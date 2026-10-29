@@ -17,8 +17,12 @@ export const fieldClass =
   'w-full rounded-lg border border-line-strong bg-field px-3 text-sm text-fg placeholder:text-subtle ' +
   'outline-none transition-[border-color,box-shadow] focus:border-focus focus:ring-[3px] focus:ring-focus-soft'
 
-/** 输入框高度档：md 表单里的常规高度；sm 工具条、筛选行、表格单元格里的紧凑框（和 sm 按钮同高） */
+/**
+ * 输入框高度档：md 表单里的常规高度；sm 工具条、筛选行、表格单元格里的紧凑框（和 sm 按钮同高）；
+ * xs 属性面板（设计页的 Details、动画时间轴）一行一个属性的小框，和 icon-sm 按钮同高
+ */
 const fieldSizes = {
+  xs: 'h-7 rounded-md px-1.5 text-[0.75rem]',
   sm: 'h-8 px-2.5 text-[0.8125rem]',
   md: 'h-10',
 }
@@ -74,7 +78,7 @@ export function Select({
   'aria-label': ariaLabel,
   size = 'md',
 }: {
-  /** sm：紧凑的下拉框，和 Input size="sm"、sm 按钮同高；不传时和原来一样 */
+  /** sm：紧凑的下拉框，和 Input size="sm"、sm 按钮同高；xs：属性面板里的小号；不传时和原来一样 */
   size?: FieldSize
   /** 没选时显示的提示 */
   placeholder?: string
@@ -100,11 +104,11 @@ export function Select({
         aria-label={ariaLabel}
         className={cn(
           ghost
-            ? [ghostTrigger, size === 'sm' && 'h-7 text-[0.8125rem]']
+            ? [ghostTrigger, size !== 'md' && 'h-7 text-[0.8125rem]']
             : [
                 fieldClass,
                 'flex h-9 items-center justify-between gap-2 data-[state=open]:border-accent data-[state=open]:ring-[3px] data-[state=open]:ring-accent-soft',
-                size === 'sm' && fieldSizes.sm,
+                size !== 'md' && fieldSizes[size],
               ],
           'cursor-pointer text-left disabled:cursor-not-allowed disabled:opacity-60',
           className,

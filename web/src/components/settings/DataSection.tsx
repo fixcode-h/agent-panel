@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/input'
 import { AiFixButton } from '@/components/ui/ai-fix'
+import { Card } from '@/components/ui/card'
 import { MemoryChart } from '@/components/settings/MemoryChart'
 import { TrashSection } from '@/components/settings/TrashSection'
 import { CleanupSection } from '@/components/settings/CleanupSection'
@@ -256,7 +257,7 @@ export function DataSection() {
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
           </Button>
         </div>
-        <div className="overflow-hidden rounded-xl border">
+        <Card className="overflow-hidden">
           {DATA_KINDS.map((k) => {
             const u = of(k.id)
             return (
@@ -286,7 +287,7 @@ export function DataSection() {
               </div>
             )
           })}
-        </div>
+        </Card>
       </section>
 
       {/* 对话记录按项目、父子对话的磁盘占用，很久没动的可以批量删（进回收站） */}

@@ -4,11 +4,12 @@ import { Copy, Loader2, Save, Sparkles, Terminal, Trash2, Undo2 } from 'lucide-r
 import type { LibraryCli, LibraryEntry, LibraryEntryContent, LibraryFile, LibraryItem } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { ChipGroup } from '@/components/ui/chip-group'
 import { SkillFiles, type FilesApi } from '@/components/library/SkillFiles'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 
@@ -178,9 +179,7 @@ export function LibraryDetail({
               {kind === 'command' ? '/' : ''}
               {name}
             </h2>
-            <span className="rounded-full border bg-card px-2 py-px text-[0.71875rem] text-muted">
-              {kind === 'skill' ? 'Skill' : t('命令')}
-            </span>
+            <Badge className="text-[0.71875rem]">{kind === 'skill' ? 'Skill' : t('命令')}</Badge>
           </div>
           <p className="mt-1 truncate text-[0.8125rem] text-muted">{here[0]?.description || t('没有说明')}</p>
           <p className="mt-0.5 truncate font-mono text-[0.71875rem] text-subtle">{path}</p>
@@ -203,22 +202,16 @@ export function LibraryDetail({
         {here.length > 1 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[0.75rem] text-subtle">{t('装在')}</span>
-            {here.map((i) => (
-              <button
-                key={i.cli}
-                type="button"
-                onClick={() => {
-                  setCli(i.cli)
-                  onPickCli(i.cli)
-                }}
-                className={cn(
-                  'cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.75rem]',
-                  i.cli === cli ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel',
-                )}
-              >
-                {label(i.cli)}
-              </button>
-            ))}
+            <ChipGroup
+              size="sm"
+              label={t('装在')}
+              options={here.map((i) => ({ id: i.cli, label: label(i.cli) }))}
+              value={cli}
+              onChange={(v) => {
+                setCli(v)
+                onPickCli(v)
+              }}
+            />
           </div>
         )}
 

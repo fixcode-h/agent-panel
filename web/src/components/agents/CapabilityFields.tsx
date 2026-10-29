@@ -3,7 +3,7 @@ import { type Agent, type AgentInput, type AgentMount } from '@shared/schema'
 import { canInline, canSubtask, mountMode, roleKind } from '@shared/agent-role'
 import { listableAgents } from '@shared/builtin/core'
 import { t } from '@shared/i18n'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
@@ -149,20 +149,17 @@ export function CapabilityFields({
                     className="w-[180px]"
                   />
                   {!locked && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t('移除')}
-                      title={t('移除')}
+                    <IconButton
+                      icon={X}
+                      size="sm"
+                      label={t('移除')}
                       onClick={() =>
                         set(
                           'mounts',
                           draft.mounts.filter((_, j) => j !== i),
                         )
                       }
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
+                    />
                   )}
                 </div>
                 {cap && (cap.when || cap.description) && (

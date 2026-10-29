@@ -8,6 +8,8 @@ export interface ChipOption<T extends string> {
   disabled?: boolean
   /** 悬停提示（选项名放不下的说明） */
   title?: string
+  /** 名字后面的淡色小字（条数） */
+  trailing?: ReactNode
 }
 
 type Single<T extends string> = { multiple?: false; value: T; onChange: (v: T) => void }
@@ -60,6 +62,7 @@ export function ChipGroup<T extends string>(
           >
             {o.icon && <span className="flex shrink-0 items-center">{o.icon}</span>}
             {o.label}
+            {o.trailing != null && <span className="text-subtle">{o.trailing}</span>}
           </button>
         )
       })}

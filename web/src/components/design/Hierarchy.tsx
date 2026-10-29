@@ -14,6 +14,8 @@ import {
   type WidgetType,
 } from '@shared/umg'
 import { cn } from '@/lib/utils'
+import { IconButton } from '@/components/ui/icon-button'
+import { InlineRename } from '@/components/ui/inline-rename'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -54,13 +56,7 @@ export function Palette({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          aria-label={t('添加控件')}
-          title={t('添加控件')}
-          className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
+        <IconButton icon={Plus} label={t('添加控件')} />
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[260px] p-1.5">
         {groupsFor(kind).map((g) => (
@@ -286,25 +282,17 @@ export function Hierarchy({
                 </button>
                 <Icon className={cn('h-3.5 w-3.5 shrink-0', on ? 'text-accent' : 'text-subtle')} />
                 {renaming === w.id ? (
-                  <input
-                    autoFocus
-                    defaultValue={w.Name}
-                    aria-label={t('控件名')}
-                    onFocus={(e) => e.target.select()}
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={(e) => {
+                  <InlineRename
+                    size="sm"
+                    value={w.Name}
+                    label={t('控件名')}
+                    onCommit={(v) => {
                       setRenaming('')
-                      if (e.target.value.trim() && e.target.value !== w.Name)
-                        actions.rename(w.id, e.target.value.trim())
+                      if (v.trim() && v !== w.Name) actions.rename(w.id, v.trim())
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') e.currentTarget.blur()
-                      if (e.key === 'Escape') {
-                        e.stopPropagation()
-                        setRenaming('')
-                      }
-                    }}
-                    className="h-5 min-w-0 flex-1 rounded border border-accent bg-field px-1 font-mono text-[0.75rem] outline-none"
+                    onCancel={() => setRenaming('')}
+                    // 控件树的行很矮，改名框跟着压到行高
+                    className="h-5 flex-1 rounded px-1 font-mono text-[0.75rem]"
                   />
                 ) : (
                   <span className={cn('min-w-0 flex-1 truncate', hidden && 'opacity-50')}>
@@ -328,21 +316,18 @@ export function Hierarchy({
                 )}
                 {locked && <Lock aria-label={t('已锁定')} className="h-3 w-3 shrink-0 text-subtle" />}
                 {parent && (
-                  <button
+                  <IconButton
+                    icon={hidden ? EyeOff : Eye}
+                    size="2xs"
                     tabIndex={-1}
+                    label={hidden ? t('显示') : t('隐藏')}
+                    // 隐藏了的控件一直露出眼睛，方便再点开
+                    reveal={hidden ? undefined : 'hover'}
                     onClick={(e) => {
                       e.stopPropagation()
                       actions.toggleVisible(w.id)
                     }}
-                    aria-label={hidden ? t('显示') : t('隐藏')}
-                    title={hidden ? t('显示') : t('隐藏')}
-                    className={cn(
-                      'grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:text-fg',
-                      !hidden && 'opacity-0 group-hover:opacity-100',
-                    )}
-                  >
-                    {hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                  </button>
+                  />
                 )}
               </div>
             </ContextMenuTrigger>

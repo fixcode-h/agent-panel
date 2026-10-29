@@ -396,7 +396,7 @@ export function ComfyPage() {
                 )}
               </div>
               {note && (
-                <p className="rounded-xl border border-accent/40 bg-accent-soft/40 px-3 py-2 text-[0.8125rem] leading-relaxed whitespace-pre-wrap">
+                <p className="rounded-xl bg-accent-soft px-3 py-2 text-[0.8125rem] leading-relaxed whitespace-pre-wrap">
                   {note}
                 </p>
               )}
@@ -663,7 +663,7 @@ function AssistModal({
           <button
             key={x}
             onClick={() => setText(x)}
-            className="cursor-pointer rounded-full border px-2.5 py-1 text-[0.75rem] text-muted hover:border-accent hover:text-accent"
+            className="chip-idle cursor-pointer rounded-full px-2.5 py-1 text-[0.75rem] text-muted transition-colors hover:text-accent"
           >
             {x}
           </button>

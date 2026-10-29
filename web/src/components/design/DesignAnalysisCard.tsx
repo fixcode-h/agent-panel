@@ -2,6 +2,7 @@ import { LayoutGrid, MessagesSquare, PenLine, Sparkles, Wand2 } from 'lucide-rea
 import type { AnalysisArea, AnalysisFinding, DesignAnalysis } from '@shared/design-analysis'
 import { CopyButton } from '@/components/chat/ChatMessage'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { t } from '@shared/i18n'
 
 const AREAS: { area: AnalysisArea; title: string; icon: typeof MessagesSquare }[] = [
@@ -104,7 +105,7 @@ function Finding({
 }) {
   const p = PRIORITY[finding.priority]
   return (
-    <div className="rounded-lg border bg-bg/60 p-2">
+    <div className="rounded-lg bg-bg/60 p-2">
       <div className="flex min-w-0 items-start gap-1.5">
         <span className="min-w-0 flex-1 text-[0.75rem] leading-snug font-medium">{finding.title}</span>
         {showPriority && (
@@ -128,16 +129,16 @@ function Finding({
           <div className="flex shrink-0 items-center gap-0.5">
             <CopyButton text={finding.suggestion} label={t('复制这条建议')} className="h-6 w-6 rounded-md" />
             {onApply && (
-              <button
-                type="button"
+              <Button
+                variant="link"
                 disabled={disabled}
                 onClick={() => onApply(finding.suggestion)}
                 title={disabled ? t('等当前这一轮结束再修改') : t('把这条要求发给 AI')}
-                className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.6875rem] text-accent hover:bg-accent-soft disabled:cursor-default disabled:opacity-40"
+                className="h-6 shrink-0 px-1.5 text-[0.6875rem]"
               >
                 <PenLine className="h-3 w-3" />
                 {t('按建议修改')}
-              </button>
+              </Button>
             )}
           </div>
         </div>

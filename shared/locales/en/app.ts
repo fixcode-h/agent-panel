@@ -54,6 +54,7 @@ export const EN_APP: Record<string, string> = {
   这个项目还没有选择本地目录: 'This project has no local folder yet',
   展开侧栏: 'Expand sidebar',
   收起侧栏: 'Collapse sidebar',
+  详情页签: 'Detail tabs',
   主导航: 'Main navigation',
   新建聊天: 'New chat',
   新建任务: 'New task',

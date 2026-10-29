@@ -18,6 +18,8 @@ import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { Card } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
@@ -194,7 +196,7 @@ export function TemplateStore({
                 <Loader2 className="h-5 w-5 animate-spin" />
               </div>
             ) : error ? (
-              <div className="rounded-xl border border-danger/40 bg-danger/5 p-4 text-[0.8125rem] text-danger">
+              <div className="rounded-xl bg-danger/8 p-4 text-[0.8125rem] text-danger">
                 <p>{error}</p>
                 <Button size="sm" variant="ghost" className="mt-2" onClick={() => void load()}>
                   {t('重试')}
@@ -218,10 +220,7 @@ export function TemplateStore({
 
 function TemplateCard({ item, onOpen }: { item: ComfyTemplateMeta; onOpen: () => void }) {
   return (
-    <button
-      onClick={onOpen}
-      className="group flex cursor-pointer flex-col gap-2 rounded-xl bg-card shadow-card p-3 text-left transition-colors hover:border-accent/60 hover:bg-sel/20"
-    >
+    <Card as="button" interactive padding="sm" onClick={onOpen} className="group flex flex-col gap-2">
       <div className="flex items-start gap-2">
         <span className="line-clamp-2 min-w-0 flex-1 text-[0.84375rem] leading-snug font-medium">{item.title}</span>
         {item.available && (
@@ -253,7 +252,7 @@ function TemplateCard({ item, onOpen }: { item: ComfyTemplateMeta; onOpen: () =>
           )}
         />
       </div>
-    </button>
+    </Card>
   )
 }
 
@@ -347,9 +346,7 @@ function TemplateDetail({
         )}
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-danger/40 bg-danger/5 p-4 text-[0.8125rem] text-danger">{error}</div>
-      )}
+      {error && <div className="rounded-xl bg-danger/8 p-4 text-[0.8125rem] text-danger">{error}</div>}
       {!detail && !error && (
         <div className="grid place-items-center py-20 text-subtle">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -372,28 +369,26 @@ function TemplateDetail({
           </div>
 
           {!isImage && (
-            <p className="rounded-xl border border-warning/40 bg-warning/5 px-3 py-2 text-[0.78125rem] leading-relaxed text-warning">
+            <p className="rounded-xl bg-warning/8 px-3 py-2 text-[0.78125rem] leading-relaxed text-warning">
               {t('这是视频或音频模板，UI 设计只处理图片，添加后也不能用于这里的出图。')}
             </p>
           )}
           {detail.template.needsInput && (
-            <p className="rounded-xl border border-line-strong bg-field/40 px-3 py-2 text-[0.78125rem] leading-relaxed text-muted">
+            <p className="rounded-xl bg-panel px-3 py-2 text-[0.78125rem] leading-relaxed text-muted">
               {t('这个模板需要先喂一张图（图生图 / 编辑）。UI 设计目前只按文字出图，可以在 ComfyUI 网页里打开使用。')}
             </p>
           )}
 
           {jobForThis && pct !== undefined && (
             <div className="flex items-center gap-3">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sel">
-                <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
-              </div>
+              <Progress label={t('下载进度')} value={pct} className="flex-1" />
               <span className="font-mono text-[0.75rem] text-subtle">
                 {bytesText(job!.progress!.done)} / {bytesText(job!.progress!.total)}
               </span>
             </div>
           )}
           {jobForThis && job?.status === 'failed' && job.error && (
-            <p className="rounded-xl border border-danger/40 bg-danger/5 px-3 py-2 text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">
+            <p className="rounded-xl bg-danger/8 px-3 py-2 text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">
               {job.error}
             </p>
           )}
@@ -416,7 +411,7 @@ function TemplateDetail({
                 {detail.assets.length ? t('{n} 个文件', { n: detail.assets.length }) : t('没有识别到模型文件')}
               </span>
             </div>
-            <div className="flex flex-col divide-y rounded-xl border">
+            <div className="flex flex-col divide-y overflow-hidden rounded-xl bg-panel">
               {detail.assets.length ? (
                 detail.assets.map((a) => <AssetRow key={`${a.dir}/${a.file}`} asset={a} />)
               ) : (

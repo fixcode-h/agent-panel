@@ -4,6 +4,7 @@ import type { ProjectComponents } from '@shared/design'
 import type { Component } from '@shared/umg'
 import { api, designFileUrl } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { t } from '@shared/i18n'
 import { UmgNode, type RenderImage } from './umg-render'
 
@@ -84,8 +85,8 @@ export function ComponentsPanel({
                     onKeyDown={mine ? (e) => e.key === 'Enter' && onOpen(c.Name) : undefined}
                     title={mine ? t('点击编辑这个子控件') : undefined}
                     className={cn(
-                      'group flex flex-col overflow-hidden rounded-lg border bg-field text-left transition-colors',
-                      mine && 'cursor-pointer hover:border-line-strong',
+                      'group flex flex-col overflow-hidden rounded-lg bg-field text-left transition-colors',
+                      mine && 'cursor-pointer hover:bg-sel',
                     )}
                   >
                     <Preview comp={c} images={images} components={comps} />
@@ -96,18 +97,20 @@ export function ComponentsPanel({
                       </span>
                     </span>
                     {!mine && (
-                      <button
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         disabled={has || !!importing}
                         onClick={() => {
                           setImporting(id)
                           void onImport(g.designId, c.Name).finally(() => setImporting(''))
                         }}
                         title={has ? t('这个设计里已经有同名的子控件') : t('连同它用到的图片一起加进这个设计')}
-                        className="mx-1.5 mb-1.5 inline-flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md border text-[0.71875rem] text-muted hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+                        className="mx-1.5 mb-1.5 h-6 justify-center gap-1 rounded-md text-[0.71875rem] font-normal"
                       >
                         {importing === id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                         {has ? t('已在这个设计里') : t('加入这个设计')}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 )
@@ -143,7 +146,7 @@ function Preview({
     return () => ro.disconnect()
   }, [comp.DesignSize.X, comp.DesignSize.Y])
   return (
-    <div ref={box} className="relative aspect-square w-full overflow-hidden bg-[#18181a]">
+    <div ref={box} className="relative aspect-square w-full overflow-hidden bg-canvas">
       {scale > 0 && (
         <div
           className="pointer-events-none absolute top-1/2 left-1/2 flex"

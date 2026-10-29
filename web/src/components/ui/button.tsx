@@ -16,11 +16,13 @@ const variants = {
   /** 深色画布（设计页画板、预览台）上的按钮：画布不跟主题变，字和悬停底色用 --canvas-* 这组 */
   'on-canvas': 'text-canvas-fg hover:bg-canvas-hover hover:text-canvas-strong',
 }
-/** variant="link" 的颜色：强调色（默认）、灰字（次要的「清除」「重置」）、警告色（「仍要继续」这类） */
+/** variant="link" 的颜色：强调色（默认）、灰字（次要的「清除」「重置」）、警告色（「仍要继续」这类）、危险色（失败记录） */
 const linkTones = {
   accent: 'text-accent',
   muted: 'text-subtle hover:text-fg',
   warning: 'text-warning',
+  /** 失败记录上的「失败 · AI 分析」：红字提示出了错，点进去看原因 */
+  danger: 'text-danger',
 }
 const sizes = {
   sm: 'h-8 px-2.5 text-[0.8125rem] gap-1.5',

@@ -1,6 +1,7 @@
 import { FolderPlus } from 'lucide-react'
 import { useData, useNav } from '@/lib/data'
 import { Button } from '@/components/ui/button'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { TaskComposer } from '@/components/tasks/TaskComposer'
 import { Logo } from '@/components/layout/Sidebar'
 import { t } from '@shared/i18n'
@@ -22,7 +23,7 @@ export function HomePage() {
           {t('{hi}，今天要做什么？', { hi: greeting() })}
         </h1>
         {!loading && projects.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed p-8 text-center">
+          <EmptyPanel as="div" className="flex flex-col items-center gap-3 p-8">
             <p className="text-[0.875rem] text-muted">
               {t('先添加一个项目：项目就是本机上的一个代码目录，Agent 会在里面执行任务。')}
             </p>
@@ -30,7 +31,7 @@ export function HomePage() {
               <FolderPlus className="h-4 w-4" />
               {t('添加项目')}
             </Button>
-          </div>
+          </EmptyPanel>
         ) : (
           <TaskComposer
             autoFocus

@@ -15,6 +15,7 @@ export const EN_DESIGN: Record<string, string> = {
   类型: 'Type',
   '游戏 UI（UE5 UMG）': 'Game UI (UE5 UMG)',
   设计尺寸: 'Design size',
+  常用尺寸: 'Common sizes',
   开始设计: 'Start designing',
 
   // 设计页
@@ -84,6 +85,8 @@ export const EN_DESIGN: Record<string, string> = {
   选择颜色: 'Pick color',
   颜色: 'Color',
   不透明度: 'Opacity',
+  水平对齐: 'Horizontal alignment',
+  垂直对齐: 'Vertical alignment',
   左对齐: 'Align left',
   水平居中: 'Center horizontally',
   右对齐: 'Align right',

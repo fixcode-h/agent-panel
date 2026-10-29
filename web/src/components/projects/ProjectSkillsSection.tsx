@@ -143,7 +143,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
       </div>
 
       {error ? (
-        <p className="rounded-xl border border-warning/40 bg-warning/5 px-3.5 py-2.5 text-[0.8125rem] text-warning">
+        <p className="rounded-xl bg-warning/10 px-3.5 py-2.5 text-[0.8125rem] text-warning">
           {t('读取失败：{error}', { error })}
         </p>
       ) : !view ? (
@@ -545,7 +545,7 @@ function EditSkillDialog({
         className="min-h-[18rem] font-mono text-[0.78125rem] leading-relaxed"
       />
       {issues.length > 0 ? (
-        <div className="flex flex-col gap-1 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[0.75rem] text-warning">
+        <div className="flex flex-col gap-1 rounded-lg bg-warning/10 px-3 py-2 text-[0.75rem] text-warning">
           {issues.map((x) => (
             <p key={x} className="flex items-start gap-1.5">
               <CircleAlert className="mt-0.5 h-3 w-3 shrink-0" />

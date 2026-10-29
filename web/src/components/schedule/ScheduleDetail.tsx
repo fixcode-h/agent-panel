@@ -342,23 +342,25 @@ export function ScheduleDetail({
                         </span>
                       )}
                       {failed ? (
-                        <button
-                          type="button"
+                        <Button
+                          variant="link"
+                          tone="danger"
                           onClick={() => analyze(run)}
-                          className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 text-[0.6875rem] text-danger hover:underline"
+                          className="shrink-0 gap-0.5 text-[0.6875rem]"
                         >
                           {t('失败 · AI 分析')}
                           <ChevronRight className="h-3 w-3" />
-                        </button>
+                        </Button>
                       ) : run.taskId ? (
-                        <button
-                          type="button"
+                        <Button
+                          variant="link"
+                          tone="muted"
                           onClick={() => onOpenTask(run.taskId)}
-                          className="inline-flex max-w-[45%] min-w-0 cursor-pointer items-center gap-0.5 text-[0.6875rem] text-subtle hover:text-fg"
+                          className="max-w-[45%] min-w-0 gap-0.5 text-[0.6875rem]"
                         >
                           <span className="truncate">{taskTitle(run.taskId) || t('打开对话')}</span>
                           <ChevronRight className="h-3 w-3 shrink-0" />
-                        </button>
+                        </Button>
                       ) : (
                         <span className={cn('text-[0.6875rem]', ok ? 'text-subtle' : 'text-danger')}>
                           {runLabel(run)}

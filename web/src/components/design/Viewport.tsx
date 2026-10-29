@@ -27,6 +27,7 @@ import {
   type Widget,
 } from '@shared/umg'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { t } from '@shared/i18n'
 import { UmgNode, type RenderImage } from './umg-render'
 import type { Annotation, AnnotationKind } from '@shared/design'
@@ -635,9 +636,13 @@ export function Viewport({
   }, [play, runs, target, root, components, device, animCommand])
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#18181a]">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
       {dragImage && !play && onDropImage && (
-        <div className="pointer-events-none absolute top-14 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/75 px-3 py-1 text-[0.75rem] whitespace-nowrap text-white/85">
+        <div
+          // 在标注工具栏下面；工具栏让到切换按钮下一行时跟着往下挪（见下面工具栏的说明）
+          style={{ top: 'calc(3.5rem + min(var(--board-switch-w, 0px), 1px) * 44)' }}
+          className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 rounded-full bg-canvas-bar px-3 py-1 text-[0.75rem] whitespace-nowrap text-canvas-fg shadow-pop"
+        >
           {slots.some((r) => r.fits)
             ? t('拖到绿框的控件上松手即可用上；按住 Alt 显示所有能放图的控件')
             : slots.length
@@ -704,7 +709,7 @@ export function Viewport({
                 <div
                   ref={stage}
                   style={{ width: size.X, height: size.Y, transform: `scale(${scale})`, transformOrigin: '0 0' }}
-                  className="absolute top-0 left-0 overflow-hidden bg-[#0e0e10] bg-[length:24px_24px] shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_12px_40px_-12px_rgba(0,0,0,0.8)] [background-image:linear-gradient(45deg,#1a1a1d_25%,transparent_25%,transparent_75%,#1a1a1d_75%),linear-gradient(45deg,#1a1a1d_25%,transparent_25%,transparent_75%,#1a1a1d_75%)] [background-position:0_0,12px_12px]"
+                  className="absolute top-0 left-0 overflow-hidden bg-canvas-board bg-[length:24px_24px] shadow-[0_0_0_1px_var(--canvas-line),var(--canvas-shadow)] [background-image:linear-gradient(45deg,var(--canvas-checker)_25%,transparent_25%,transparent_75%,var(--canvas-checker)_75%),linear-gradient(45deg,var(--canvas-checker)_25%,transparent_25%,transparent_75%,var(--canvas-checker)_75%)] [background-position:0_0,12px_12px]"
                   onPointerDown={(e) => {
                     if (tool !== 'select') return
                     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-wid]')
@@ -741,12 +746,12 @@ export function Viewport({
                     className="pointer-events-none absolute"
                     style={{ left: box.x * scale, top: box.y * scale, width: box.w * scale, height: box.h * scale }}
                   >
-                    <div className="absolute inset-0 outline-[1.5px] outline-[#4c9bff] outline-solid" />
+                    <div className="absolute inset-0 outline-[1.5px] outline-canvas-pick outline-solid" />
                     {movable && (
                       <div
                         onPointerDown={(e) => drag(e, 'resize')}
                         title={t('拖动改变大小')}
-                        className="pointer-events-auto absolute -right-1.5 -bottom-1.5 h-3 w-3 cursor-nwse-resize rounded-[2px] border border-[#4c9bff] bg-white"
+                        className="pointer-events-auto absolute -right-1.5 -bottom-1.5 h-3 w-3 cursor-nwse-resize rounded-[2px] border border-canvas-pick bg-white"
                       />
                     )}
                   </div>
@@ -755,7 +760,7 @@ export function Viewport({
                   extraBoxes.map((b, i) => (
                     <div
                       key={i}
-                      className="pointer-events-none absolute outline-[1.5px] outline-[#4c9bff]/70 outline-dashed"
+                      className="pointer-events-none absolute outline-[1.5px] outline-canvas-pick/70 outline-dashed"
                       style={{ left: b.x * scale, top: b.y * scale, width: b.w * scale, height: b.h * scale }}
                     />
                   ))}
@@ -768,13 +773,13 @@ export function Viewport({
                       className={cn(
                         'pointer-events-none absolute rounded-[2px] outline-solid',
                         r.id === hot
-                          ? 'bg-[#35c46a]/25 outline-2 outline-[#35c46a]'
-                          : 'bg-[#35c46a]/8 outline-[1.5px] outline-[#35c46a]/70',
+                          ? 'bg-canvas-drop/25 outline-2 outline-canvas-drop'
+                          : 'bg-canvas-drop/8 outline-[1.5px] outline-canvas-drop/70',
                       )}
                       style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }}
                     >
                       {r.id === hot && (
-                        <span className="absolute -top-5 left-0 rounded bg-[#35c46a] px-1.5 py-px text-[0.6875rem] whitespace-nowrap text-black">
+                        <span className="absolute -top-5 left-0 rounded bg-canvas-drop px-1.5 py-px text-[0.6875rem] whitespace-nowrap text-black">
                           {t('放到 {name}', { name: r.name })}
                         </span>
                       )}
@@ -782,7 +787,7 @@ export function Viewport({
                   ))}
                 {dropLine && (
                   <div
-                    className="pointer-events-none absolute rounded-full bg-[#4c9bff]"
+                    className="pointer-events-none absolute rounded-full bg-canvas-pick"
                     style={{
                       left: dropLine.x * scale,
                       top: dropLine.y * scale,
@@ -794,21 +799,21 @@ export function Viewport({
                 {guides.x.map((x) => (
                   <div
                     key={`gx${x}`}
-                    className="pointer-events-none absolute top-0 bottom-0 w-px bg-[#ff4fd8]"
+                    className="pointer-events-none absolute top-0 bottom-0 w-px bg-canvas-guide"
                     style={{ left: x * scale }}
                   />
                 ))}
                 {guides.y.map((y) => (
                   <div
                     key={`gy${y}`}
-                    className="pointer-events-none absolute right-0 left-0 h-px bg-[#ff4fd8]"
+                    className="pointer-events-none absolute right-0 left-0 h-px bg-canvas-guide"
                     style={{ top: y * scale }}
                   />
                 ))}
                 {!root.Children?.length && (
                   <div className="pointer-events-none absolute inset-0 grid place-items-center p-6 text-center">
-                    <div className="max-w-[320px] text-[0.78125rem] leading-relaxed text-white/45">
-                      <p className="mb-1 text-[0.84375rem] font-medium text-white/70">{t('还是空白界面')}</p>
+                    <div className="max-w-[320px] text-[0.78125rem] leading-relaxed text-canvas-subtle">
+                      <p className="mb-1 text-[0.84375rem] font-medium text-canvas-fg">{t('还是空白界面')}</p>
                       {t('在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。')}
                     </div>
                   </div>
@@ -876,7 +881,14 @@ export function Viewport({
           )}
         </ContextMenuContent>
       </ContextMenu>
-      <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
+      {/*
+       * 左上角浮着「画板 / 数据」切换时（DesignPage 量出宽度写在 --board-switch-w），工具栏挪到它下面一行：
+       * 画布窄的时候放在同一行会盖住选择、拖动这几个工具。min(宽度, 1px) × 44 在有切换时是 44px，没有时是 0
+       */}
+      <div
+        className="pointer-events-none absolute inset-x-0 flex justify-center px-3"
+        style={{ top: 'calc(0.75rem + min(var(--board-switch-w, 0px), 1px) * 44)' }}
+      >
         <AnnotationToolbar
           tool={tool}
           onTool={(x) => {
@@ -902,9 +914,9 @@ export function Viewport({
           <div
             role="toolbar"
             aria-label={t('对齐')}
-            className="pointer-events-auto flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop"
+            className="pointer-events-auto flex items-center gap-0.5 rounded-xl bg-canvas-bar p-1 text-canvas-fg shadow-pop"
           >
-            <span className="px-2 text-[0.71875rem] text-white/50">{t('已选 {n} 个', { n: multi.length })}</span>
+            <span className="px-2 text-[0.71875rem] text-canvas-subtle">{t('已选 {n} 个', { n: multi.length })}</span>
             {(
               [
                 ['left', AlignStartVertical, t('左对齐')],
@@ -917,43 +929,46 @@ export function Viewport({
                 ['vspace', AlignVerticalSpaceAround, t('垂直等间距')],
               ] as const
             ).map(([k, Icon, label]) => (
-              <button
+              <Button
                 key={k}
+                variant="on-canvas"
+                size="icon-sm"
                 onClick={() => align(k)}
                 disabled={(k === 'hspace' || k === 'vspace') && multi.length < 3}
                 aria-label={label}
                 title={label}
-                className="grid h-7 w-7 cursor-pointer place-items-center rounded-lg hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-30"
               >
                 <Icon className="h-4 w-4" strokeWidth={1.8} />
-              </button>
+              </Button>
             ))}
           </div>
         </div>
       )}
       {play && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-          <span className="flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-[0.71875rem] text-emerald-200 shadow-pop">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          <span className="flex items-center gap-1.5 rounded-full bg-canvas-bar px-3 py-1 text-[0.71875rem] text-canvas-strong shadow-pop">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-canvas-drop" />
             {t('运行模式 · 按 Esc 退出')}
           </span>
         </div>
       )}
       <div className="pointer-events-none absolute right-3 bottom-3 flex items-center gap-2">
-        <span className="rounded-md bg-black/50 px-2 py-1 font-mono text-[0.6875rem] text-white/60">
+        <span className="rounded-md bg-canvas-bar/80 px-2 py-1 font-mono text-[0.6875rem] text-canvas-subtle">
           {size.X} × {size.Y}
         </span>
-        <div className="pointer-events-auto flex items-center rounded-lg border border-white/10 bg-[#232326]/95 text-white/80 shadow-pop">
+        <div className="pointer-events-auto flex items-center rounded-lg bg-canvas-bar text-canvas-fg shadow-pop">
           <ZoomButton label={t('缩小')} onClick={() => setZoom(Math.max(0.05, scale / 1.25))}>
             <Minus className="h-3.5 w-3.5" />
           </ZoomButton>
-          <button
+          <Button
+            variant="on-canvas"
+            size="icon-sm"
             onClick={() => setZoom(1)}
             title={t('原始大小')}
-            className="h-7 w-12 cursor-pointer font-mono text-[0.71875rem] tabular-nums hover:text-white"
+            className="w-12 font-mono text-[0.71875rem] font-normal tabular-nums"
           >
             {Math.round(scale * 100)}%
-          </button>
+          </Button>
           <ZoomButton label={t('放大')} onClick={() => setZoom(Math.min(4, scale * 1.25))}>
             <Plus className="h-3.5 w-3.5" />
           </ZoomButton>
@@ -978,16 +993,15 @@ function ZoomButton({
   on?: boolean
 }) {
   return (
-    <button
+    <Button
+      variant="on-canvas"
+      size="icon-sm"
       onClick={onClick}
       aria-label={label}
       title={label}
-      className={cn(
-        'grid h-7 w-7 cursor-pointer place-items-center rounded-md hover:text-white',
-        on && 'text-[#4c9bff]',
-      )}
+      className={cn(on && 'text-canvas-pick hover:text-canvas-pick')}
     >
       {children}
-    </button>
+    </Button>
   )
 }

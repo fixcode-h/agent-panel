@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { Check, CircleAlert, Loader2 } from 'lucide-react'
 import type { SaveStatus } from '@/lib/useAutosave'
 import { t } from '@shared/i18n'
+import { TabBar, TabItem } from '@/components/ui/tab-bar'
 
 /** 右侧详情：头部 + 两栏内容（表单 / 辅助信息） */
 export function Detail({
@@ -40,32 +41,26 @@ export function DetailTabs<T extends string>({
   value,
   onChange,
   items,
+  label = t('详情页签'),
 }: {
   value: T
   onChange: (v: T) => void
   items: { id: T; label: string; icon: React.ComponentType<{ className?: string }>; extra?: React.ReactNode }[]
+  /** 页签条的读屏名 */
+  label?: string
 }) {
   return (
-    <div role="tablist" className="sticky top-0 z-10 flex gap-1 border-b bg-bg px-4 md:px-8">
+    <TabBar label={label} variant="underline" className="sticky top-0 z-10 bg-bg px-4 md:px-8">
       {items.map(({ id, label, icon: Icon, extra }) => (
-        <button
-          key={id}
-          role="tab"
-          aria-selected={value === id}
-          onClick={() => onChange(id)}
-          className={
-            'relative flex h-10 cursor-pointer items-center gap-1.5 px-2.5 text-[0.8125rem] font-medium ' +
-            (value === id
-              ? 'text-fg after:absolute after:inset-x-1 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent'
-              : 'text-muted hover:text-fg')
-          }
-        >
-          <Icon className="h-4 w-4" />
-          {label}
-          {extra}
-        </button>
+        <TabItem key={id} active={value === id} onSelect={() => onChange(id)} icon={<Icon className="h-4 w-4" />}>
+          {/* 计数等附加信息跟在名字后面，不套 TabItem 的 tag 胶囊（调用方自己画好了） */}
+          <span className="inline-flex items-center gap-1.5">
+            {label}
+            {extra}
+          </span>
+        </TabItem>
       ))}
-    </div>
+    </TabBar>
   )
 }
 

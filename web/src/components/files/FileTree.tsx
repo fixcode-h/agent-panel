@@ -27,6 +27,8 @@ import { fileIcon } from '@/lib/file-icon'
 import { startFileDrag } from '@/lib/fileDrag'
 import { Field, Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Segmented } from '@/components/ui/segmented'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import {
@@ -541,39 +543,29 @@ export function FileExplorer({
             aria-label={mode === 'name' ? t('查找文件') : t('搜索文件内容')}
           />
           {query && (
-            <button
-              aria-label={t('清除搜索')}
+            <IconButton
+              icon={X}
+              label={t('清除搜索')}
+              size="2xs"
               onClick={() => {
                 setQuery('')
                 input.current?.focus()
               }}
-              className="absolute top-1/2 right-2 grid h-5 w-5 -translate-y-1/2 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+              className="absolute top-1/2 right-2 -translate-y-1/2"
+            />
           )}
         </div>
-        <div className="flex items-center gap-1" role="tablist" aria-label={t('搜索方式')}>
-          {(
-            [
-              ['name', t('名称')],
-              ['content', t('内容')],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              role="tab"
-              aria-selected={mode === id}
-              onClick={() => setMode(id)}
-              className={cn(
-                'cursor-pointer rounded-md text-[0.8125rem] transition-colors',
-                compact ? 'h-6 px-2 text-[0.75rem]' : 'h-7 px-2.5',
-                mode === id ? 'bg-sel font-medium text-fg' : 'text-muted hover:text-fg',
-              )}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center gap-1">
+          <Segmented
+            label={t('搜索方式')}
+            size="sm"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { id: 'name', label: t('名称') },
+              { id: 'content', label: t('内容') },
+            ]}
+          />
           {/* 结果条数报给读屏：搜索是异步的，条数变化用户看不见 */}
           <span aria-live="polite" aria-atomic="true" className="ml-auto truncate text-[0.75rem] text-subtle">
             {summary}
@@ -814,9 +806,7 @@ function PathBar({
           aria-label={t('定位路径')}
           className="h-7 font-mono text-[0.75rem]"
         />
-        <Button variant="secondary" size="icon-sm" aria-label={t('取消')} onClick={() => setTyped(null)}>
-          <X className="h-3.5 w-3.5" />
-        </Button>
+        <IconButton icon={X} size="sm" label={t('取消')} onClick={() => setTyped(null)} />
       </div>
     )
   return (
@@ -837,15 +827,13 @@ function PathBar({
           </button>
         </Fragment>
       ))}
-      <button
-        type="button"
+      <IconButton
+        icon={LocateFixed}
+        label={t('定位路径')}
+        size="2xs"
         onClick={() => setTyped('')}
-        aria-label={t('定位路径')}
-        title={t('定位路径')}
-        className="ml-auto grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-      >
-        <LocateFixed className="h-3.5 w-3.5" />
-      </button>
+        className="ml-auto"
+      />
     </div>
   )
 }

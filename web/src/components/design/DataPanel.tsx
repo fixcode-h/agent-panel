@@ -15,7 +15,10 @@ import {
 } from '@shared/design-data'
 import type { Component, Widget } from '@shared/umg'
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/input'
+import { Input, Select } from '@/components/ui/input'
+import { IconButton } from '@/components/ui/icon-button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { t } from '@shared/i18n'
 import { Thumb } from './fields'
 import { cn } from '@/lib/utils'
@@ -138,7 +141,7 @@ export function DataPanel({
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {issues.length > 0 && (
-          <div className="mx-auto mb-4 flex max-w-[980px] gap-2 rounded-xl border border-danger/40 bg-danger/5 px-3 py-2 text-[0.75rem] text-danger">
+          <div className="mx-auto mb-4 flex max-w-[980px] gap-2 rounded-xl bg-danger/8 px-3 py-2 text-[0.75rem] text-danger">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div className="min-w-0">
               <p className="font-medium">{t('数据绑定有问题')}</p>
@@ -151,9 +154,9 @@ export function DataPanel({
           </div>
         )}
         {!data.sets.length ? (
-          <div className="mx-auto mt-12 max-w-[420px] rounded-xl border border-dashed p-6 text-center">
+          <EmptyPanel as="div" size="square" className="mx-auto mt-12 max-w-[420px]">
             <Database className="mx-auto h-6 w-6 text-subtle" />
-            <p className="mt-3 text-[0.8125rem] font-medium">{t('还没有运行时数据')}</p>
+            <p className="mt-3 text-[0.8125rem] font-medium text-fg">{t('还没有运行时数据')}</p>
             <p className="mt-1.5 text-[0.75rem] leading-relaxed text-muted">
               {t(
                 '让 AI 搭界面时会一起给出这个界面需要的数据结构；有了集合以后，列表控件按行渲染，格子里就能看到物品、选中和锁定状态。也可以先手动新建一个集合。',
@@ -163,7 +166,7 @@ export function DataPanel({
               <Plus className="h-3.5 w-3.5" />
               {t('新建集合')}
             </Button>
-          </div>
+          </EmptyPanel>
         ) : (
           <div className="mx-auto flex max-w-[980px] flex-col gap-4">
             {data.sets.map((s) => (
@@ -214,9 +217,6 @@ export function DataPanel({
     </div>
   )
 }
-
-const inputCls =
-  'h-7 min-w-0 w-full rounded-md border border-line bg-field px-2 text-[0.75rem] outline-none focus:border-accent'
 
 /** 字段类型的界面名：写成字面量，漏翻检查才能对上 */
 const typeLabel = (x: DataType) =>
@@ -275,22 +275,20 @@ function SetCard({
         className={cn('flex cursor-pointer items-center gap-2 px-3 py-2', !collapsed && 'border-b')}
         onClick={onToggle}
       >
-        <button
-          type="button"
-          title={collapsed ? t('展开集合') : t('收起集合')}
-          aria-label={collapsed ? t('展开集合') : t('收起集合')}
+        <IconButton
+          label={collapsed ? t('展开集合') : t('收起集合')}
           aria-expanded={!collapsed}
           onClick={(e) => {
             e.stopPropagation()
             onToggle()
           }}
-          className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-field hover:text-fg"
         >
           <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', collapsed && '-rotate-90')} />
-        </button>
-        <input
+        </IconButton>
+        <Input
+          size="xs"
           aria-label={t('集合名称')}
-          className={cn(inputCls, 'w-[180px] font-medium')}
+          className="w-[180px] min-w-0 font-medium"
           value={set.label || set.name}
           placeholder={set.name}
           onClick={(e) => e.stopPropagation()}
@@ -301,18 +299,15 @@ function SetCard({
           {where.length ? t('用在 {where}', { where: where.join('、') }) : t('还没有控件绑定这个集合')}
         </span>
         <span className="ml-auto shrink-0 text-[0.6875rem] text-subtle">{t('{n} 行', { n: set.rows.length })}</span>
-        <button
-          type="button"
-          title={t('删除集合')}
-          aria-label={t('删除集合')}
+        <IconButton
+          icon={Trash2}
+          tone="danger"
+          label={t('删除集合')}
           onClick={(e) => {
             e.stopPropagation()
             onRemove()
           }}
-          className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-field hover:text-danger"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        />
       </header>
       {!collapsed && (
         <>
@@ -324,21 +319,21 @@ function SetCard({
                 className="inline-flex items-center gap-1 rounded bg-field py-0.5 pr-0.5 pl-1.5 text-[0.6875rem]"
               >
                 {w.label}
-                <button
-                  type="button"
-                  title={t('解除绑定')}
-                  aria-label={t('解除绑定')}
+                <IconButton
+                  icon={X}
+                  size="2xs"
+                  tone="danger"
+                  label={t('解除绑定')}
                   onClick={() => onBind({ tree: w.tree, id: w.id }, '')}
-                  className="grid h-4 w-4 cursor-pointer place-items-center rounded text-subtle hover:text-danger"
-                >
-                  <X className="h-3 w-3" />
-                </button>
+                  className="h-4 w-4"
+                />
               </span>
             ))}
             {bindOptions.length ? (
               <Select
                 aria-label={t('绑定到列表控件')}
-                className="ml-auto h-7 w-[220px] text-[0.6875rem]"
+                size="xs"
+                className="ml-auto w-[220px]"
                 value=""
                 placeholder={t('选择列表控件…')}
                 options={bindOptions}
@@ -393,15 +388,7 @@ function SetCard({
                         onChange={(v) => setCell(i, f.key, v)}
                       />
                     ))}
-                    <button
-                      type="button"
-                      title={t('删除这一行')}
-                      aria-label={t('删除这一行')}
-                      onClick={() => removeRow(i)}
-                      className="grid h-6 w-6 cursor-pointer place-items-center rounded text-subtle hover:bg-field hover:text-danger"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <IconButton icon={Trash2} tone="danger" label={t('删除这一行')} onClick={() => removeRow(i)} />
                   </div>
                 ))}
               </div>
@@ -449,15 +436,7 @@ function FieldHead({
           options={DATA_TYPES.map((x) => ({ value: x, label: typeLabel(x) }))}
         />
       </div>
-      <button
-        type="button"
-        title={t('删除这个字段')}
-        aria-label={t('删除这个字段')}
-        onClick={onRemove}
-        className="grid h-6 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:text-danger"
-      >
-        <Trash2 className="h-3 w-3" />
-      </button>
+      <IconButton icon={Trash2} size="2xs" tone="danger" label={t('删除这个字段')} onClick={onRemove} />
     </div>
   )
 }
@@ -477,23 +456,23 @@ function Cell({
 }) {
   if (field.type === 'boolean')
     return (
-      <label className="flex h-7 items-center gap-1.5 text-[0.75rem] text-muted">
-        <input
-          type="checkbox"
-          aria-label={field.label || field.key}
-          className="h-3.5 w-3.5 accent-[var(--color-accent)]"
-          checked={value === true || value === 'true'}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        {value === true || value === 'true' ? t('是') : t('否')}
-      </label>
+      <Checkbox
+        ariaLabel={field.label || field.key}
+        checked={value === true || value === 'true'}
+        onChange={onChange}
+        label={
+          <span className="text-[0.75rem] text-muted">{value === true || value === 'true' ? t('是') : t('否')}</span>
+        }
+        className="h-7 items-center gap-1.5"
+      />
     )
   if (field.type === 'number')
     return (
-      <input
+      <Input
+        size="xs"
         type="number"
         aria-label={field.label || field.key}
-        className={inputCls}
+        className="min-w-0"
         value={typeof value === 'number' ? value : Number(value) || 0}
         onChange={(e) => onChange(Number(e.target.value) || 0)}
       />
@@ -506,7 +485,8 @@ function Cell({
         {img && <Thumb src={imageUrl(img)} className="h-6 w-6" />}
         <Select
           aria-label={field.label || field.key}
-          className="h-7 min-w-0 text-[0.6875rem]"
+          size="xs"
+          className="min-w-0"
           value={cur}
           onChange={(e) => onChange(e.target.value)}
           options={[{ value: '', label: t('（空）') }, ...images.map((i) => ({ value: `img:${i.id}`, label: i.name }))]}
@@ -520,22 +500,24 @@ function Cell({
         <input
           type="color"
           aria-label={field.label || field.key}
-          className="h-6 w-6 shrink-0 cursor-pointer rounded border border-line bg-field p-0"
+          className="h-7 w-7 shrink-0 cursor-pointer rounded-md border border-line-strong bg-field p-0"
           value={/^#[0-9a-f]{6}/i.test(String(value ?? '')) ? String(value).slice(0, 7) : '#ffffff'}
           onChange={(e) => onChange(`${e.target.value.toUpperCase()}FF`)}
         />
-        <input
+        <Input
+          size="xs"
           aria-label={`${field.label || field.key} 颜色值`}
-          className={cn(inputCls, 'font-mono')}
+          className="min-w-0 font-mono"
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
         />
       </div>
     )
   return (
-    <input
+    <Input
+      size="xs"
       aria-label={field.label || field.key}
-      className={inputCls}
+      className="min-w-0"
       value={String(value ?? '')}
       onChange={(e) => onChange(e.target.value)}
     />

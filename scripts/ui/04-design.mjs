@@ -70,6 +70,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   const startId = await startRow.getAttribute('data-tid')
   await startRow.hover()
   const eye = startRow.getByRole('button', { name: '隐藏', exact: true })
+  // IconButton 的显隐带一小段淡入：等淡入结束再读，不在悬停的同一刻读
+  await eye.evaluate(
+    (el) =>
+      new Promise((done) => {
+        const t0 = performance.now()
+        const tick = () =>
+          getComputedStyle(el).opacity === '1' || performance.now() - t0 > 1000
+            ? done(null)
+            : requestAnimationFrame(tick)
+        tick()
+      }),
+  )
   assert.equal(await eye.evaluate((el) => getComputedStyle(el).opacity), '1', '悬停到行上时出现隐藏按钮')
   const rowBox = await startRow.boundingBox()
   const eyeBox = await eye.boundingBox()

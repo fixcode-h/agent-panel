@@ -36,6 +36,8 @@ import { quoteFrom } from '@/lib/quote'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { IconButton } from '@/components/ui/icon-button'
+import { Textarea } from '@/components/ui/input'
 
 /** 一条建议改前改后的对比：按行标出删掉和加上的 */
 function DiffView({ before, after }: { before: string; after: string }) {
@@ -125,8 +127,6 @@ function sourcePrompt(r: ResolvedChange, agents: Agent[]) {
 /** 结果卡片上的复制：成功提示「已复制」，失败提示「复制失败」 */
 const copyResult = (text: string) => copyText(text, { done: t('已复制'), fail: t('复制失败') })
 
-const itemAction =
-  'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg'
 /** 每条结果右边的文字按钮（修复、应用、写进源代码）：比卡片底部的主按钮小一号 */
 const rowButton = 'h-7 px-2 text-xs'
 
@@ -134,31 +134,24 @@ const rowButton = 'h-7 px-2 text-xs'
 function ItemActions({ text, stop }: { text: () => string; stop?: boolean }) {
   return (
     <span className="flex shrink-0 items-center">
-      <button
-        type="button"
-        className={itemAction}
+      <IconButton
+        icon={Quote}
+        label={t('引用')}
         title={t('引用到输入框')}
-        aria-label={t('引用')}
         onClick={(e) => {
           // 放在能点开收起的标题行里时不要顺带切换
           if (stop) e.stopPropagation()
           if (!quoteFrom(e.currentTarget, text())) toast(t('这里没有可以引用到的输入框'))
         }}
-      >
-        <Quote className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        className={itemAction}
-        title={t('复制')}
-        aria-label={t('复制')}
+      />
+      <IconButton
+        icon={Copy}
+        label={t('复制')}
         onClick={(e) => {
           if (stop) e.stopPropagation()
           copyResult(text())
         }}
-      >
-        <Copy className="h-3.5 w-3.5" />
-      </button>
+      />
     </span>
   )
 }
@@ -690,13 +683,13 @@ export function AnalyzeDialog({
       </p>
       <label className="flex flex-col gap-1.5 text-[0.8125rem]">
         <span className="font-medium">{t('想重点看什么（可选）')}</span>
-        <textarea
+        <Textarea
           value={focus}
           onChange={(e) => setFocus(e.target.value)}
           maxLength={1000}
           rows={3}
           placeholder={placeholder ?? t('例如：为什么验收总是不通过、哪些节点最费 token')}
-          className="resize-none rounded-lg border bg-field px-3 py-2 outline-none focus:border-accent"
+          className="resize-none py-2 text-[0.8125rem]"
         />
       </label>
     </Modal>

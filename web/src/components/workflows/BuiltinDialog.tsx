@@ -11,6 +11,7 @@ import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Card } from '@/components/ui/card'
 
 /**
  * 内置工作流：按分类列出。自带工作流启动时已经全部加入（见 shared/builtin/install.ts 的 seedProjectWorkflows），
@@ -67,7 +68,7 @@ export function BuiltinDialog({
         {groups.map((g) => (
           <section key={g.name} className="flex flex-col gap-2">
             <h3 className="text-[0.75rem] font-medium text-subtle">{g.name}</h3>
-            <ul className="flex flex-col divide-y overflow-hidden rounded-xl border">
+            <Card as="ul" className="flex flex-col divide-y overflow-hidden">
               {g.items.map((w) => {
                 const added = addedBuiltinWorkflow(workflows, w)
                 const lack = missingAgents(w, agents).length
@@ -108,7 +109,7 @@ export function BuiltinDialog({
                   </li>
                 )
               })}
-            </ul>
+            </Card>
           </section>
         ))}
       </div>

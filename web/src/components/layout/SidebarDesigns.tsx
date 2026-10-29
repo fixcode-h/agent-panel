@@ -33,6 +33,10 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/menu'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { IconButton } from '@/components/ui/icon-button'
+import { InlineRename } from '@/components/ui/inline-rename'
+import { EmptyPanel } from '@/components/ui/empty-panel'
+import { Button } from '@/components/ui/button'
 import {
   SIDEBAR_BLOCK_ROW_OFF,
   SIDEBAR_BLOCK_ROW_ON,
@@ -183,20 +187,13 @@ export function DesignList() {
               <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
             )}
             {renaming === d.id ? (
-              <input
-                autoFocus
-                defaultValue={d.title}
-                aria-label={t('设计名称')}
-                onFocus={(e) => e.target.select()}
-                onBlur={(e) => void rename(d, e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.currentTarget.blur()
-                  if (e.key === 'Escape') {
-                    e.stopPropagation()
-                    setRenaming('')
-                  }
-                }}
-                className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[0.78125rem] text-fg outline-none"
+              <InlineRename
+                value={d.title}
+                label={t('设计名称')}
+                size="sm"
+                onCommit={(v) => void rename(d, v)}
+                onCancel={() => setRenaming('')}
+                className="flex-1"
               />
             ) : (
               // 点击冒泡到整行去跳转；保留按钮是为了能用键盘选中
@@ -245,28 +242,18 @@ export function DesignList() {
     <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
       <div className="flex h-7 shrink-0 items-center pr-1 pl-[9px]">
         <p className={cn('flex-1', SIDEBAR_GROUP_LABEL)}>{t('UI 项目')}</p>
-        <button
-          onClick={() => setEditing(null)}
-          aria-label={t('新建 UI 项目')}
-          title={t('新建 UI 项目')}
-          className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
+        <IconButton icon={Plus} label={t('新建 UI 项目')} onClick={() => setEditing(null)} />
       </div>
       {!projects.length && (
-        <div className="mx-0.5 mt-1 flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center">
+        <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
           <Palette className="h-5 w-5 text-subtle" strokeWidth={1.6} />
           <p className="text-xs leading-relaxed text-subtle">
             {t('还没有 UI 项目。UI 设计的项目和 Agent 的项目是分开的。')}
           </p>
-          <button
-            onClick={() => setEditing(null)}
-            className="cursor-pointer rounded-md px-2 py-0.5 text-xs font-medium text-accent transition-colors hover:bg-accent-soft"
-          >
+          <Button variant="link" onClick={() => setEditing(null)} className="text-xs font-medium">
             {t('新建 UI 项目')}
-          </button>
-        </div>
+          </Button>
+        </EmptyPanel>
       )}
       {list.map((p) => {
         const ds = byProject.get(p.id) ?? []
@@ -315,17 +302,16 @@ export function DesignList() {
                     <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
                   </button>
                   {ds.length > 0 && <SidebarCount n={ds.length} on={on} className="mr-0.5 group-hover/proj:hidden" />}
-                  <button
+                  <IconButton
+                    icon={Plus}
                     onClick={() => go({ page: 'design', id: 'new', sub: p.id })}
-                    aria-label={t('在「{name}」新建设计', { name: p.name })}
+                    label={t('在「{name}」新建设计', { name: p.name })}
                     title={t('新建设计')}
                     className={cn(
-                      ds.length ? 'hidden' : 'grid opacity-60',
-                      'h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle group-hover/proj:grid group-hover/proj:opacity-100 hover:bg-sel hover:text-fg',
+                      ds.length ? 'hidden' : 'opacity-60',
+                      'group-hover/proj:grid group-hover/proj:opacity-100',
                     )}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
+                  />
                 </div>
               </ContextMenuTrigger>
               <ContextMenuContent>

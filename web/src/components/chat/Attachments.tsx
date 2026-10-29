@@ -35,6 +35,9 @@ import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import { ComposerPopover } from '@/components/ui/composer-popover'
+import { IconButton } from '@/components/ui/icon-button'
+import { MenuSearch } from '@/components/ui/menu-search'
 import type { RichInputHandle } from './RichInput'
 import { useMenuBox } from './useMenuBox'
 import { attachChip, type ChipKind } from '@shared/composer'
@@ -834,14 +837,7 @@ function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () =>
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t('返回')}
-          className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
+        <IconButton size="sm" icon={ChevronLeft} label={t('返回')} onClick={onBack} />
         <span className="px-1 text-[0.8125rem]">{t('按工作流执行')}</span>
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
@@ -916,22 +912,8 @@ function StylePicker({
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t('返回')}
-          className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t('搜索风格')}
-          aria-label={t('搜索风格')}
-          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[0.8125rem] outline-none placeholder:text-subtle"
-        />
+        <IconButton size="sm" icon={ChevronLeft} label={t('返回')} onClick={onBack} />
+        <MenuSearch value={q} onChange={setQ} placeholder={t('搜索风格')} className="mb-0 h-7 flex-1" />
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
         {!list ? (
@@ -1029,22 +1011,8 @@ function SessionPicker({
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t('返回')}
-          className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t('搜索会话')}
-          aria-label={t('搜索会话')}
-          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[0.8125rem] outline-none placeholder:text-subtle"
-        />
+        <IconButton size="sm" icon={ChevronLeft} label={t('返回')} onClick={onBack} />
+        <MenuSearch value={q} onChange={setQ} placeholder={t('搜索会话')} className="mb-0 h-7 flex-1" />
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
         {items.map((x) => (
@@ -1161,11 +1129,13 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
   }
 
   const menu = open ? (
-    <div
+    <ComposerPopover
       ref={box}
       role="listbox"
       aria-label={t('项目文件')}
-      className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-[min(18rem,60vh)] overflow-y-auto overscroll-contain rounded-xl border border-line-strong bg-card p-1 shadow-pop"
+      stretch
+      scroll
+      className="max-h-[min(18rem,60vh)]"
     >
       <div className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">{t('项目文件 · ↑↓ 选择，回车确认')}</div>
       {files.map((f, i) => {
@@ -1192,7 +1162,7 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
           </button>
         )
       })}
-    </div>
+    </ComposerPopover>
   ) : null
 
   return { sync, onKeyDown, start, menu }

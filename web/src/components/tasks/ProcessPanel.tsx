@@ -3,6 +3,8 @@ import * as P from '@radix-ui/react-popover'
 import { Activity, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { popoverPanel } from '@/components/ui/menu'
+import { Segmented } from '@/components/ui/segmented'
+import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/api'
 import { MB, fmtMem } from '@/lib/mem'
 import { fmtDuration } from '@/lib/tasks'
@@ -50,19 +52,12 @@ export function ProcessMenu({ taskId }: { taskId: string }) {
   return (
     <P.Root open={open} onOpenChange={setOpen}>
       <P.Trigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('对话进程')}
-          aria-expanded={open}
-          title={t('对话进程')}
-          className="relative shrink-0"
-        >
+        <IconButton size="sm" label={t('对话进程')} aria-expanded={open} className="relative shrink-0">
           <Activity className="h-4 w-4" />
           {dot !== 'none' && (
             <span aria-hidden className={cn('absolute top-1 right-1 h-1.5 w-1.5 rounded-full', dotClass[dot])} />
           )}
-        </Button>
+        </IconButton>
       </P.Trigger>
       <P.Portal>
         <P.Content
@@ -167,34 +162,19 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-1 border-b border-line px-2 py-1.5">
-        {(
-          [
-            ['processes', t('进程')],
-            ['memory', t('内存曲线')],
-          ] as const
-        ).map(([v, label]) => (
-          <button
-            key={v}
-            aria-pressed={tab === v}
-            onClick={() => setTab(v)}
-            className={cn(
-              'h-7 cursor-pointer rounded-md px-2.5 text-xs font-medium',
-              tab === v ? 'bg-sel text-fg' : 'text-muted hover:text-fg',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="ml-auto"
-          aria-label={t('刷新')}
-          title={t('刷新')}
-          onClick={() => void load()}
-        >
+        <Segmented
+          size="sm"
+          label={t('对话进程')}
+          value={tab}
+          onChange={setTab}
+          options={[
+            { id: 'processes', label: t('进程') },
+            { id: 'memory', label: t('内存曲线') },
+          ]}
+        />
+        <IconButton size="sm" className="ml-auto" label={t('刷新')} onClick={() => void load()}>
           <RefreshCw className={cn('h-3.5 w-3.5', busy && 'animate-spin')} />
-        </Button>
+        </IconButton>
       </div>
 
       {error && (

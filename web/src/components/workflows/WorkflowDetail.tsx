@@ -27,6 +27,8 @@ import { Button } from '@/components/ui/button'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Detail, DetailHeader, DetailTabs } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -317,7 +319,7 @@ export function WorkflowDetail({
         }
         aside={
           <>
-            <section className="rounded-xl bg-card shadow-card p-4">
+            <Card as="section" padding="md">
               <h3 className="mb-3 text-[0.8125rem] font-semibold">{t('团队结构')}</h3>
               {main ? (
                 <button
@@ -329,7 +331,7 @@ export function WorkflowDetail({
                   <Crown className="h-3.5 w-3.5 text-accent" />
                 </button>
               ) : (
-                <p className="rounded-lg border border-dashed p-2 text-xs text-subtle">{t('还没有主角色')}</p>
+                <EmptyPanel className="rounded-lg p-2 text-xs">{t('还没有主角色')}</EmptyPanel>
               )}
               <div className="mt-1 ml-5 flex flex-col gap-0.5 border-l border-line-strong pt-1 pl-3">
                 {team.map(({ agent: a, responsibility }) => (
@@ -345,7 +347,7 @@ export function WorkflowDetail({
                 ))}
                 {team.length === 0 && <p className="px-2 py-1.5 text-xs text-subtle">{t('还没有子角色')}</p>}
               </div>
-            </section>
+            </Card>
 
             <ReadinessCard checks={checks} />
           </>

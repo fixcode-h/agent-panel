@@ -13,6 +13,7 @@ import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
 import { StepCommand } from './StepCommand'
 import { t } from '@shared/i18n'
+import { Badge } from '@/components/ui/badge'
 
 export { SystemNote }
 
@@ -109,16 +110,7 @@ function StepSectionBase({
               )
             )}
           </span>
-          {vt && (
-            <span
-              className={cn(
-                'rounded-full px-2 py-px text-[0.6875rem]',
-                root.verdict === 'fail' ? 'bg-warning/12 text-warning' : 'bg-success/12 text-success',
-              )}
-            >
-              {vt}
-            </span>
-          )}
+          {vt && <Badge tone={root.verdict === 'fail' ? 'warning' : 'success'}>{vt}</Badge>}
           <span className="ml-auto flex items-center gap-1.5">
             {time && <span className="font-mono text-[0.6875rem] text-subtle">{time}</span>}
             <StepCommand argv={root.command} />
@@ -165,15 +157,9 @@ function StepSectionBase({
                 <span className="min-w-0 truncate font-medium text-muted">{s ? stepLabel(s) : t('子流程')}</span>
                 {s && <StepCommand argv={s.command} className="-my-1 ml-auto" />}
                 {v && (
-                  <span
-                    className={cn(
-                      'rounded-full px-2 py-px text-[0.6875rem]',
-                      !s?.command.length && 'ml-auto',
-                      v === 'fail' ? 'bg-warning/12 text-warning' : 'bg-success/12 text-success',
-                    )}
-                  >
+                  <Badge tone={v === 'fail' ? 'warning' : 'success'} className={cn(!s?.command.length && 'ml-auto')}>
                     {v === 'fail' ? t('不通过') : t('通过')}
-                  </span>
+                  </Badge>
                 )}
               </div>
               <FoldedRun msgs={r.msgs} task={task} teamNames={teamNames} live={s?.status === 'running'} />

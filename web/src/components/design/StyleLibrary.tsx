@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
 import { toast } from '@/lib/toast'
 import { BookmarkPlus, Check, Loader2, Palette } from 'lucide-react'
 import type { DesignKind, SavedStyle, SavedStyleInput } from '@shared/design'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
+import { Modal } from '@/components/ui/modal'
 import { ScopeRequests } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
 
@@ -124,64 +124,61 @@ export function SaveStyleButton({
         {busy ? t('AI 正在总结风格…') : t('存到风格库')}
       </Button>
       <ScopeRequests scope={`style:${scope}`} active={busy} className="mt-2 mb-0 max-w-none" />
-      <D.Root open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
-        <D.Portal>
-          <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-          <D.Content className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(520px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-y-auto rounded-2xl border border-line-strong bg-card p-5 shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none">
-            <D.Title className="text-[0.9375rem] font-semibold">{t('存到风格库')}</D.Title>
-            <D.Description className="-mt-2 text-[0.78125rem] leading-relaxed text-muted">
-              {t('AI 从这个设计里总结出了下面的风格，可以改一改再存。')}
-            </D.Description>
-            {draft && (
-              <>
-                <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
-                  {t('名字')}
-                  <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-                </label>
-                <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
-                  {t('说明')}
-                  <Textarea
-                    rows={2}
-                    value={draft.summary ?? ''}
-                    onChange={(e) => setDraft({ ...draft, summary: e.target.value })}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
-                  {t('发给 AI 的英文描述')}
-                  <Textarea
-                    rows={4}
-                    value={draft.en ?? ''}
-                    onChange={(e) => setDraft({ ...draft, en: e.target.value })}
-                    className="font-mono text-[0.75rem]"
-                  />
-                </label>
-                {!!draft.prompts?.length && (
-                  <div className="flex flex-wrap gap-1">
-                    {draft.prompts.map((p, i) => (
-                      <span
-                        key={i}
-                        title={p.en}
-                        className="rounded-md bg-field px-1.5 py-0.5 text-[0.71875rem] text-muted"
-                      >
-                        {p.zh}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </>
+      <Modal
+        open={!!draft}
+        onOpenChange={(o) => !o && setDraft(null)}
+        title={t('存到风格库')}
+        footer={
+          <>
+            <span className="flex-1" />
+            <Button variant="secondary" onClick={() => setDraft(null)}>
+              {t('取消')}
+            </Button>
+            <Button onClick={() => void save()} disabled={!draft?.name.trim() || saving}>
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {t('保存')}
+            </Button>
+          </>
+        }
+      >
+        <p className="-mt-1 text-[0.78125rem] leading-relaxed text-muted">
+          {t('AI 从这个设计里总结出了下面的风格，可以改一改再存。')}
+        </p>
+        {draft && (
+          <>
+            <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
+              {t('名字')}
+              <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            </label>
+            <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
+              {t('说明')}
+              <Textarea
+                rows={2}
+                value={draft.summary ?? ''}
+                onChange={(e) => setDraft({ ...draft, summary: e.target.value })}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
+              {t('发给 AI 的英文描述')}
+              <Textarea
+                rows={4}
+                value={draft.en ?? ''}
+                onChange={(e) => setDraft({ ...draft, en: e.target.value })}
+                className="font-mono text-[0.75rem]"
+              />
+            </label>
+            {!!draft.prompts?.length && (
+              <div className="flex flex-wrap gap-1">
+                {draft.prompts.map((p, i) => (
+                  <span key={i} title={p.en} className="rounded-md bg-field px-1.5 py-0.5 text-[0.71875rem] text-muted">
+                    {p.zh}
+                  </span>
+                ))}
+              </div>
             )}
-            <div className="mt-1 flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setDraft(null)}>
-                {t('取消')}
-              </Button>
-              <Button onClick={() => void save()} disabled={!draft?.name.trim() || saving}>
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {t('保存')}
-              </Button>
-            </div>
-          </D.Content>
-        </D.Portal>
-      </D.Root>
+          </>
+        )}
+      </Modal>
     </>
   )
 }

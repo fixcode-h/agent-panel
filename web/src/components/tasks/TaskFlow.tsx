@@ -11,6 +11,7 @@ import { FlowCanvas, type EdgeTone, type NodeView } from '@/components/flow/Flow
 import { nodeViews } from '@/components/flow/views'
 import { StepSection } from './StepSection'
 import { t } from '@shared/i18n'
+import { Button } from '@/components/ui/button'
 
 /** 一组子节点合起来的状态 */
 function combined(list: StepStatus[]): StepStatus | undefined {
@@ -177,13 +178,10 @@ export function TaskFlow({
                       : t('没有输出。')}
                 </p>
               )}
-              <button
-                onClick={onOpenChat}
-                className="flex cursor-pointer items-center gap-1 self-start text-xs text-accent hover:underline"
-              >
+              <Button variant="link" onClick={onOpenChat} className="self-start text-xs">
                 <MessageSquareText className="h-3.5 w-3.5" />
                 {t('在对话中查看完整过程')}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

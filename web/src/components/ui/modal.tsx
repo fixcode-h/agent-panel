@@ -33,11 +33,17 @@ export function Modal({
   size,
   bare,
   closeOnOutside,
+  stacked,
+  onOpenAutoFocus,
+  onEscapeKeyDown,
   className,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** bare 时不画出来，只给读屏当弹窗名 */
+  /**
+   * bare 时不画出来，只给读屏当弹窗名。bare 且传 null：调用方在自己画的标题栏里放 D.Title
+   * （标题里带路径、状态这类富内容时），免得同一个标题读两遍
+   */
   title: React.ReactNode
   children: React.ReactNode
   footer?: React.ReactNode
@@ -48,25 +54,34 @@ export function Modal({
   bare?: boolean
   /** 点到外面就关：只看不填的弹窗（预览、详情）用；表单默认不关 */
   closeOnOutside?: boolean
+  /** 从另一个弹窗里打开、要整个压在它上面（文件预览里点开的差异）：遮罩和本体各抬高一层 */
+  stacked?: boolean
+  /** 打开时的默认焦点自己指定（preventDefault 后聚焦默认按钮）；不传时 Radix 聚焦第一个可聚焦元素 */
+  onOpenAutoFocus?: (e: Event) => void
+  /** Esc 先给调用方：弹窗里还有一层自己的编辑态（新建文件夹的输入框）时 preventDefault 只退出那一层，不关弹窗 */
+  onEscapeKeyDown?: (e: KeyboardEvent) => void
   /** 加在弹窗本体上（固定高度、换底色等） */
   className?: string
 }) {
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
-        <D.Overlay className={MODAL_OVERLAY} />
+        <D.Overlay className={cn(MODAL_OVERLAY, stacked && 'z-[60]')} />
         <D.Content
           aria-describedby={undefined}
           onInteractOutside={closeOnOutside ? undefined : (e) => e.preventDefault()}
+          onOpenAutoFocus={onOpenAutoFocus}
+          onEscapeKeyDown={onEscapeKeyDown}
           className={cn(
             'fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none',
             SIZES[size ?? (wide ? 'lg' : 'md')],
+            stacked && 'z-[70]',
             className,
           )}
         >
           {bare ? (
             <>
-              <D.Title className="sr-only">{title}</D.Title>
+              {title !== null && <D.Title className="sr-only">{title}</D.Title>}
               {children}
             </>
           ) : (

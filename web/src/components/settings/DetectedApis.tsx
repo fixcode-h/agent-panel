@@ -87,7 +87,7 @@ export function DetectedApis({
     toast.success(t('已存到 API 配置：{name}', { name: a.name }))
   }
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-dashed p-3.5">
+    <div className="flex flex-col gap-2 rounded-xl bg-sel/50 p-3.5">
       <div className="flex items-center gap-2">
         <ScanSearch className="h-4 w-4 shrink-0 text-accent" />
         <span className="min-w-0 flex-1 text-[0.8125rem] font-medium">

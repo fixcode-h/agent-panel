@@ -1,7 +1,7 @@
 import { ListOrdered } from 'lucide-react'
 import type { TaskMessage } from '@shared/schema'
-import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { IconButton } from '@/components/ui/icon-button'
 import { t } from '@shared/i18n'
 
 /** 少于这么多轮时不显示：一屏就看得完，不需要目录 */
@@ -25,9 +25,9 @@ export function TurnMenu({ msgs, onJump }: { msgs: TaskMessage[]; onJump: (msgId
   return (
     <Menu>
       <MenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={t('跳到某一轮')} title={t('跳到某一轮')}>
+        <IconButton size="sm" label={t('跳到某一轮')}>
           <ListOrdered className="h-4 w-4" />
-        </Button>
+        </IconButton>
       </MenuTrigger>
       <MenuContent>
         <div className="max-h-[min(420px,60vh)] w-[min(360px,calc(100vw-32px))] overflow-y-auto">

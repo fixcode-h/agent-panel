@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import { joinArgs, splitArgs } from '@/lib/utils'
 import { openAiFix } from '@/lib/ai-fix'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -211,11 +212,11 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                 )}
               </div>
               {!data.detected.length ? (
-                <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[0.75rem] leading-relaxed text-subtle">
+                <EmptyPanel size="md" className="text-[0.75rem] leading-relaxed">
                   {t(
                     '没找到项目里的 MCP 配置。支持 .mcp.json、.claude/settings*.json、.cursor/mcp.json、.vscode/mcp.json、.codex/config.toml。',
                   )}
-                </p>
+                </EmptyPanel>
               ) : (
                 <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
                   {data.detected.map((d) => (
@@ -247,11 +248,10 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                         >
                           {d.status === 'same' ? t('已导入') : d.status === 'different' ? t('覆盖全局配置') : t('导入')}
                         </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={t('用 AI 排查这条')}
-                          title={t('用 AI 排查这条')}
+                        <IconButton
+                          icon={Wand2}
+                          size="sm"
+                          label={t('用 AI 排查这条')}
                           onClick={() =>
                             void diagnose({
                               name: d.name,
@@ -260,16 +260,14 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                               raw: d.raw,
                             })
                           }
-                        >
-                          <Wand2 className="h-3.5 w-3.5" />
-                        </Button>
+                        />
                       </span>
                     </li>
                   ))}
                 </ul>
               )}
               {!!data.errors.length && (
-                <ul className="flex flex-col gap-1 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[0.75rem]">
+                <ul className="flex flex-col gap-1 rounded-lg bg-warning/10 px-3 py-2 text-[0.75rem]">
                   {data.errors.map((e) => (
                     <li key={e.file} className="flex gap-2">
                       <span className="shrink-0 font-mono">{e.file}</span>
@@ -327,24 +325,8 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                       ))}
                     </div>
                     <span className="flex items-center gap-0.5">
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label={t('编辑')}
-                        title={t('编辑')}
-                        onClick={() => setEdit(s)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label={t('删除')}
-                        title={t('删除')}
-                        onClick={() => setDel(s)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <IconButton icon={Pencil} size="sm" label={t('编辑')} onClick={() => setEdit(s)} />
+                      <IconButton icon={Trash2} size="sm" label={t('删除')} onClick={() => setDel(s)} />
                     </span>
                   </li>
                 ))}

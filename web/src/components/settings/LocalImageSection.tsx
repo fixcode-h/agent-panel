@@ -19,9 +19,11 @@ import { cn } from '@/lib/utils'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { AiFixButton } from '@/components/ui/ai-fix'
+import { Card } from '@/components/ui/card'
 import { Group, Row } from './parts'
 
 type LocalSettings = Settings['imageGen']['local']
@@ -255,7 +257,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
           </div>
         </Row>
         {job && (
-          <div className="my-2 rounded-xl bg-card shadow-card p-3">
+          <Card padding="sm" className="my-2">
             <div className="flex items-center gap-2 text-[0.8125rem]">
               {job.status === 'running' ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
@@ -304,9 +306,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
               )}
             </div>
             {pct !== undefined && job.status === 'running' && (
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sel">
-                <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
-              </div>
+              <Progress value={pct} label={t('进度')} className="mt-2" />
             )}
             {job.error && (
               <p className="mt-2 text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>
@@ -317,7 +317,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                 {t('「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 Agent，让它在安装目录里排查并修好环境。')}
               </p>
             )}
-          </div>
+          </Card>
         )}
       </Group>
 
@@ -344,9 +344,10 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                     const size = modelGb(m, (f) => st.files.includes(f))
                     const tight = !!st.vram && st.vram < m.vram
                     return (
-                      <div
+                      <Card
                         key={m.id}
-                        className={cn('flex flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center sm:gap-4')}
+                        padding="sm"
+                        className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5 text-[0.84375rem] font-medium">
@@ -392,7 +393,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                               </Button>
                             ))}
                         </div>
-                      </div>
+                      </Card>
                     )
                   })}
                 </div>

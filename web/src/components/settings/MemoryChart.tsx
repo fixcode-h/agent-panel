@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { MemorySample } from '@shared/data'
 import { chartWindow, formatBytes, formatSampleTime, panEndMs } from '@shared/memory'
 import { t } from '@shared/i18n'
+import { Button } from '@/components/ui/button'
 
 /** 曲线默认看最近一小时：采样保留两小时，右键拖动可以往前看 */
 export const CHART_WINDOW_MS = 60 * 60_000
@@ -110,13 +111,9 @@ export function MemoryChart({ samples }: { samples: MemorySample[] }) {
             : t('采样还在积累，够一小时就能往前看')}
         </span>
         {!follow && (
-          <button
-            type="button"
-            onClick={() => setFollow(true)}
-            className="cursor-pointer rounded-md border px-1.5 py-0.5 text-[0.6875rem] text-muted transition-colors hover:bg-sel"
-          >
+          <Button variant="link" tone="muted" onClick={() => setFollow(true)} className="text-[0.6875rem]">
             {t('回到最新')}
-          </button>
+          </Button>
         )}
       </div>
       <div className="overflow-hidden rounded-xl bg-sel/40">

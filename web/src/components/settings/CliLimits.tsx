@@ -6,6 +6,7 @@ import type { CliLimits } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { Progress } from '@/components/ui/progress'
 
 /** 能显示额度的 CLI：Codex 可以主动查，Claude Code 执行时会推送；Command Code 不提供 */
 /** 有账号额度可看的 CLI（定义里 limits 不是 none） */
@@ -92,7 +93,7 @@ export function LimitBars({ data, compact }: { data: CliLimits; compact?: boolea
     <div className={cn('flex flex-col', compact ? 'gap-2' : 'gap-3')}>
       {data.windows.map((w) => {
         const pct = Math.max(0, Math.min(100, w.usedPercent))
-        const tone = pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-accent'
+        const tone = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : 'accent'
         return (
           <div key={w.id} className="flex flex-col gap-1">
             <div className="flex items-baseline gap-2 text-[0.75rem]">
@@ -100,9 +101,7 @@ export function LimitBars({ data, compact }: { data: CliLimits; compact?: boolea
               <span className="font-mono text-muted">{t('已用 {n}%', { n: Math.round(pct) })}</span>
               <span className="ml-auto text-subtle">{resetText(w.resetsAt)}</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-sel">
-              <div className={cn('h-full rounded-full transition-all', tone)} style={{ width: `${pct}%` }} />
-            </div>
+            <Progress value={pct} tone={tone} label={windowName(w.id, w.minutes)} />
           </div>
         )
       })}

@@ -6,6 +6,7 @@ import { parseDiagnosis } from '@shared/diagnosis'
 import type { ReportKind } from '@/lib/analysis-report'
 import { cn } from '@/lib/utils'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
+import { IconButton } from '@/components/ui/icon-button'
 import { LessonReviewReport } from '@/components/projects/LessonReview'
 import { ProjectInitReport } from '@/components/projects/ProjectInitReport'
 import { EvolutionReport } from './Evolution'
@@ -59,20 +60,7 @@ export function AnalysisPanel({
   return (
     <div className={cn('flex min-h-0 w-full flex-1 flex-col bg-rail', className)} data-analysis-panel={kind}>
       {/* 顶上是和文件栏同一套页签条（组件库 TabBar）：报告只有一种，页签就一个，收起按钮在右端 */}
-      <TabBar
-        label={t('功能面板')}
-        trailing={
-          <button
-            type="button"
-            aria-label={t('收起功能面板')}
-            title={t('收起功能面板')}
-            onClick={onClose}
-            className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        }
-      >
+      <TabBar label={t('功能面板')} trailing={<IconButton icon={X} label={t('收起功能面板')} onClick={onClose} />}>
         {diag?.ok ? (
           diagnosisTabs(diag.value).map((x) => (
             <TabItem

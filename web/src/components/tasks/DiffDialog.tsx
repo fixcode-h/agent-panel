@@ -25,6 +25,9 @@ import { editorUrl } from '@/lib/editor-url'
 import { useScopedSetting } from '@/lib/useScopedSetting'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { IconButton, ToggleIconButton } from '@/components/ui/icon-button'
+import { Modal } from '@/components/ui/modal'
+import { Segmented } from '@/components/ui/segmented'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { DIFF_GUTTER, DIFF_HUNK, DIFF_TONE } from '@/components/ui/diff-tone'
@@ -37,10 +40,6 @@ const WRAP = 'whitespace-pre-wrap wrap-anywhere'
 
 /** 一次渲染的行数：几万行的 diff 一次铺出来会卡住界面，滚到底再接着加载下一批 */
 const PAGE = 500
-
-/** 弹窗本体：统一尺寸和圆角，两个差异窗口共用 */
-const DIALOG =
-  'fixed top-1/2 left-1/2 flex h-[min(900px,calc(100dvh-2rem))] w-[min(1440px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none'
 
 /** 工具栏右侧「更多」里的一项 */
 interface MenuAction {
@@ -160,69 +159,46 @@ function DiffShell({
         )}
         {canNav && (
           <div className="flex shrink-0 items-center rounded-md bg-field p-0.5">
-            <button
-              type="button"
-              aria-label={t('上一个文件')}
+            <IconButton
+              size="2xs"
+              icon={ChevronUp}
+              label={t('上一个文件')}
               title={t('上一个文件（Alt + ↑）')}
               onClick={() => onNavigate!(files![(index - 1 + files!.length) % files!.length])}
-              className="grid h-5 w-5 cursor-pointer place-items-center rounded text-subtle transition-colors hover:bg-sel hover:text-fg"
-            >
-              <ChevronUp className="h-3.5 w-3.5" />
-            </button>
+            />
             <span className="px-1 font-mono text-[0.6875rem] text-subtle tabular-nums">
               {index + 1} / {files!.length}
             </span>
-            <button
-              type="button"
-              aria-label={t('下一个文件')}
+            <IconButton
+              size="2xs"
+              icon={ChevronDown}
+              label={t('下一个文件')}
               title={t('下一个文件（Alt + ↓）')}
               onClick={() => onNavigate!(files![(index + 1) % files!.length])}
-              className="grid h-5 w-5 cursor-pointer place-items-center rounded text-subtle transition-colors hover:bg-sel hover:text-fg"
-            >
-              <ChevronDown className="h-3.5 w-3.5" />
-            </button>
+            />
           </div>
         )}
         {close}
       </header>
       <div className="flex h-10 shrink-0 items-center gap-1 border-b bg-card/95 px-2.5">
-        <div role="radiogroup" aria-label={t('差异显示方式')} className="flex shrink-0 rounded-md bg-field p-0.5">
-          {(
-            [
-              ['split', t('左右对照'), Columns2],
-              ['unified', t('上下对照'), List],
-            ] as const
-          ).map(([id, label, Icon]) => (
-            <button
-              key={id}
-              type="button"
-              role="radio"
-              aria-checked={mode === id}
-              onClick={() => setMode(id)}
-              className={cn(
-                'flex h-6 cursor-pointer items-center gap-1.5 rounded px-2 text-[0.6875rem] transition-colors',
-                mode === id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
-              )}
-            >
-              <Icon className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden sm:inline">{label}</span>
-            </button>
-          ))}
-        </div>
+        <Segmented
+          size="sm"
+          label={t('差异显示方式')}
+          value={mode}
+          onChange={setMode}
+          options={[
+            { id: 'split', label: t('左右对照'), icon: Columns2 },
+            { id: 'unified', label: t('上下对照'), icon: List },
+          ]}
+        />
         <span className="mx-0.5 h-4 w-px shrink-0 bg-line" aria-hidden />
-        <button
-          type="button"
-          aria-pressed={wrap}
+        <ToggleIconButton
+          icon={WrapText}
+          label={t('折行')}
           title={wrap ? t('长行折行显示') : t('长行不折行，可以左右滚动')}
-          onClick={() => setWrap(!wrap)}
-          className={cn(
-            'flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded px-2 text-[0.6875rem] transition-colors',
-            wrap ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel hover:text-fg',
-          )}
-        >
-          <WrapText className="h-3.5 w-3.5 shrink-0" />
-          <span className="hidden sm:inline">{t('折行')}</span>
-        </button>
+          pressed={wrap}
+          onPressedChange={setWrap}
+        />
         {menu && menu.length > 0 && (
           <div className="ml-auto flex shrink-0 items-center">
             <Menu>
@@ -448,45 +424,38 @@ export function ProjectDiffDialog({
       onSelect: () => window.open(editorUrl(data.dir, shown)),
     })
   return (
-    <D.Root open={!!path} onOpenChange={onOpenChange}>
-      <D.Portal>
-        {/* 它总是从文件预览窗口里打开，层级要高过那个窗口 */}
-        <D.Overlay className="fixed inset-0 z-[60] bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content aria-describedby={undefined} className={cn(DIALOG, 'z-[70]')}>
-          <DiffShell
-            path={shown}
-            diff={text}
-            menu={menu}
-            close={
-              <D.Close asChild>
-                <Button variant="ghost" size="icon-sm" aria-label={t('关闭')} title={t('关闭')}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </D.Close>
-            }
-            empty={
-              error ? (
-                <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
-              ) : !data ? (
-                <div className="flex h-full items-center justify-center gap-2 text-[0.8125rem] text-subtle">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t('正在读取差异…')}
-                </div>
-              ) : note && !text.trim() ? (
-                // 后端说明了为什么没有差异（不是 git 仓库、文件没被跟踪），照原话显示
-                <p className="p-6 text-[0.8125rem] leading-relaxed text-subtle">{note}</p>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-[0.8125rem] text-subtle">
-                  <FileText className="h-5 w-5" />
-                  {data.git ? t('这个文件还没有改动。') : t('项目不是 git 仓库，也没有拿到这个文件的改动内容。')}
-                </div>
-              )
-            }
-            note={note && text.trim() ? note : undefined}
-          />
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+    // 它总是从文件预览窗口里打开，层级要高过那个窗口（stacked）；只看不填，点到外面就关
+    <Modal open={!!path} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside stacked>
+      <DiffShell
+        path={shown}
+        diff={text}
+        menu={menu}
+        close={
+          <D.Close asChild>
+            <IconButton size="sm" icon={X} label={t('关闭')} />
+          </D.Close>
+        }
+        empty={
+          error ? (
+            <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+          ) : !data ? (
+            <div className="flex h-full items-center justify-center gap-2 text-[0.8125rem] text-subtle">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {t('正在读取差异…')}
+            </div>
+          ) : note && !text.trim() ? (
+            // 后端说明了为什么没有差异（不是 git 仓库、文件没被跟踪），照原话显示
+            <p className="p-6 text-[0.8125rem] leading-relaxed text-subtle">{note}</p>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-[0.8125rem] text-subtle">
+              <FileText className="h-5 w-5" />
+              {data.git ? t('这个文件还没有改动。') : t('项目不是 git 仓库，也没有拿到这个文件的改动内容。')}
+            </div>
+          )
+        }
+        note={note && text.trim() ? note : undefined}
+      />
+    </Modal>
   )
 }
 
@@ -584,51 +553,47 @@ export function DiffDialog({
     })
 
   return (
-    <D.Root open={own || !!path} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content aria-describedby={undefined} className={cn(DIALOG, 'z-50')}>
-          <DiffShell
-            path={shown}
-            diff={text}
-            stats={stamp ? { add: stamp.add, del: stamp.del } : undefined}
-            files={own ? undefined : files}
-            onNavigate={own ? undefined : onPathChange}
-            menu={menu}
-            close={
-              <D.Close asChild>
-                <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </D.Close>
-            }
-            empty={
-              error ? (
-                <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
-              ) : !ready ? (
-                <div className="flex h-full items-center justify-center gap-2 text-[0.8125rem] text-subtle">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t('正在读取差异…')}
-                </div>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-[0.8125rem] text-subtle">
-                  <FileText className="h-5 w-5" />
-                  {own
-                    ? t('这次修改没有给出改动内容。')
-                    : data?.git
-                      ? t('和任务开始时相比没有差异。')
-                      : t('项目不是 git 仓库，Agent 也没有给出这个文件的改动内容。')}
-                </div>
-              )
-            }
-            note={
-              !own && data && !data.git && text.trim()
-                ? t('项目不是 git 仓库：这里是 Agent 每次修改这个文件时给出的改动，按时间先后排列。')
-                : undefined
-            }
-          />
-        </D.Content>
-      </D.Portal>
+    <>
+      {/* 只看不填：点到外面就关 */}
+      <Modal open={own || !!path} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside>
+        <DiffShell
+          path={shown}
+          diff={text}
+          stats={stamp ? { add: stamp.add, del: stamp.del } : undefined}
+          files={own ? undefined : files}
+          onNavigate={own ? undefined : onPathChange}
+          menu={menu}
+          close={
+            <D.Close asChild>
+              <IconButton size="sm" icon={X} label={t('关闭')} />
+            </D.Close>
+          }
+          empty={
+            error ? (
+              <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+            ) : !ready ? (
+              <div className="flex h-full items-center justify-center gap-2 text-[0.8125rem] text-subtle">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t('正在读取差异…')}
+              </div>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-[0.8125rem] text-subtle">
+                <FileText className="h-5 w-5" />
+                {own
+                  ? t('这次修改没有给出改动内容。')
+                  : data?.git
+                    ? t('和任务开始时相比没有差异。')
+                    : t('项目不是 git 仓库，Agent 也没有给出这个文件的改动内容。')}
+              </div>
+            )
+          }
+          note={
+            !own && data && !data.git && text.trim()
+              ? t('项目不是 git 仓库：这里是 Agent 每次修改这个文件时给出的改动，按时间先后排列。')
+              : undefined
+          }
+        />
+      </Modal>
       <ConfirmDialog
         open={confirm}
         onOpenChange={setConfirm}
@@ -644,6 +609,6 @@ export function DiffDialog({
         confirmText={t('撤销')}
         onConfirm={revert}
       />
-    </D.Root>
+    </>
   )
 }

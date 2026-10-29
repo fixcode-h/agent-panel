@@ -39,6 +39,7 @@ import {
   TaskRowStatus,
 } from '@/components/ui/sidebar'
 import { UnreadDot } from '@/components/ui/badge'
+import { IconButton } from '@/components/ui/icon-button'
 import type { SearchHit } from '@shared/task-search'
 import { useTaskSearch } from '@/lib/use-task-search'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
@@ -311,30 +312,21 @@ export function TaskSearch({
           aria-label={placeholder}
           className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-subtle"
         />
-        {query && (
-          <button
-            onClick={() => onQuery('')}
-            aria-label={t('清除搜索')}
-            className="grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
+        {query && <IconButton icon={X} label={t('清除搜索')} size="2xs" onClick={() => onQuery('')} />}
       </label>
       <Menu>
         <MenuTrigger asChild>
-          <button
-            aria-label={t('筛选')}
+          <IconButton
+            icon={ListFilter}
+            label={t('筛选')}
             title={filter === 'all' ? t('筛选') : FILTERS.find((f) => f.id === filter)?.label}
+            size="sm"
+            // 和左边 32px 高的搜索框齐平；筛着的时候用强调色浅底标出来（不描边）
             className={cn(
-              'grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md border transition-colors',
-              filter === 'all'
-                ? 'border-transparent text-subtle hover:bg-sel hover:text-fg'
-                : 'border-accent/30 bg-accent-soft text-accent',
+              'h-8 w-8',
+              filter !== 'all' && 'bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent',
             )}
-          >
-            <ListFilter className="h-3.5 w-3.5" />
-          </button>
+          />
         </MenuTrigger>
         <MenuContent align="end">
           {FILTERS.map((f) => (

@@ -34,9 +34,12 @@ export function StatusPill({
   tone,
   spin,
   className,
+  title,
   children,
 }: {
   tone: StatusTone
+  /** 悬停提示（界面检查也靠它定位，例如子对话的「已解决」） */
+  title?: string
   /** 运行中时前面画一个转圈 */
   spin?: boolean
   className?: string
@@ -44,6 +47,7 @@ export function StatusPill({
 }) {
   return (
     <span
+      title={title}
       className={cn(
         'inline-flex h-[1.375rem] shrink-0 items-center gap-1.5 rounded-full px-2 text-[0.75rem] font-medium whitespace-nowrap',
         tones[tone],

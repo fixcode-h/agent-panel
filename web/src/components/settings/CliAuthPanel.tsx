@@ -27,6 +27,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
+import { IconButton } from '@/components/ui/icon-button'
+import { Card } from '@/components/ui/card'
 import { Group, Row } from './parts'
 import { t } from '@shared/i18n'
 
@@ -253,9 +255,7 @@ function AccountList({ def }: { def: CliDefinition }) {
         <ProviderChecks def={def} stamp={`${data.live.label}|${data.accounts.find((a) => a.active)?.id ?? ''}`} />
       )}
       {def.auth?.accountNote && (
-        <p className="rounded-xl border border-warning/40 bg-warning/8 px-3 py-2.5 text-[0.78125rem] leading-relaxed">
-          {def.auth.accountNote}
-        </p>
+        <p className="rounded-xl bg-warning/8 px-3 py-2.5 text-[0.78125rem] leading-relaxed">{def.auth.accountNote}</p>
       )}
       {login && <LoginProgress cli={def.id} job={login} onClose={() => setLogin(null)} />}
       {data.accounts.length > 0 && (
@@ -264,8 +264,8 @@ function AccountList({ def }: { def: CliDefinition }) {
             <li
               key={a.id}
               className={cn(
-                'group flex items-center gap-2 rounded-lg border px-3 py-2',
-                a.active ? 'border-accent/50 bg-accent-soft/40' : 'border-transparent hover:bg-sel/60',
+                'group flex items-center gap-2 rounded-lg px-3 py-2',
+                a.active ? 'bg-accent-soft' : 'hover:bg-sel/60',
               )}
             >
               <span
@@ -332,24 +332,23 @@ function AccountList({ def }: { def: CliDefinition }) {
                       {t('切换')}
                     </Button>
                   )}
-                  <button
-                    type="button"
-                    aria-label={t('重命名 {name}', { name: a.name })}
+                  <IconButton
+                    size="sm"
+                    reveal="hover"
+                    icon={Pencil}
+                    label={t('重命名 {name}', { name: a.name })}
                     title={t('重命名')}
                     onClick={() => setRenaming({ id: a.id, name: a.name })}
-                    className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-fg focus-visible:opacity-100"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t('删除 {name}', { name: a.name })}
+                  />
+                  <IconButton
+                    size="sm"
+                    reveal="hover"
+                    tone="danger"
+                    icon={Trash2}
+                    label={t('删除 {name}', { name: a.name })}
                     title={t('删除（只删除保存的，不影响 Agent 现在的登录）')}
                     onClick={() => run(`d:${a.id}`, () => api.deleteAccount(def.id, a.id))}
-                    className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-danger focus-visible:opacity-100"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  />
                 </>
               )}
             </li>
@@ -393,7 +392,7 @@ function ProviderChecks({ def, stamp }: { def: CliDefinition; stamp: string }) {
   useEffect(() => load(), [load, stamp])
   if (list && !list.length) return null
   return (
-    <div className="rounded-xl border px-3 py-2.5">
+    <Card className="px-3 py-2.5">
       <div className="mb-1.5 flex items-center gap-2">
         <p className="flex-1 text-[0.78125rem] font-medium">{t('设置里用到的提供方')}</p>
         <Button size="sm" variant="ghost" disabled={loading} onClick={load} aria-label={t('重新检查凭据')}>
@@ -423,7 +422,7 @@ function ProviderChecks({ def, stamp }: { def: CliDefinition; stamp: string }) {
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -438,9 +437,9 @@ function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onCl
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 rounded-xl border p-3 text-[0.8125rem]',
-        job.status === 'failed' && 'border-danger/40 bg-danger/5',
-        job.status === 'done' && 'border-success/40 bg-success/5',
+        'flex flex-col gap-2 rounded-xl bg-sel/50 p-3 text-[0.8125rem]',
+        job.status === 'failed' && 'bg-danger/8',
+        job.status === 'done' && 'bg-success/8',
       )}
     >
       <div className="flex items-center gap-2">

@@ -1,3 +1,4 @@
+import type { HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
 const tones = {
@@ -18,8 +19,11 @@ export function Progress({
   tone = 'accent',
   size = 'sm',
   label,
+  raw,
+  indeterminate,
   className,
-}: {
+  ...rest
+}: Omit<HTMLAttributes<HTMLDivElement>, 'role'> & {
   value: number
   max?: number
   tone?: keyof typeof tones
@@ -27,6 +31,10 @@ export function Progress({
   size?: 'xs' | 'sm'
   /** 读屏名，如「上传进度」 */
   label: string
+  /** 读屏报原始的 value / max（「3/8 步」这种计数），不折成百分比；不传时和原来一样报 0–100 */
+  raw?: boolean
+  /** 不知道进度（还没拿到百分比）：画一小段闪动的条，读屏不报数值；不传时和原来一样 */
+  indeterminate?: boolean
   className?: string
 }) {
   const pct = max > 0 && Number.isFinite(value) ? Math.min(100, Math.max(0, (value / max) * 100)) : 0
@@ -35,13 +43,18 @@ export function Progress({
       role="progressbar"
       aria-label={label}
       aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(pct)}
+      aria-valuemax={raw ? max : 100}
+      aria-valuenow={indeterminate ? undefined : raw ? Math.min(max, Math.max(0, value)) : Math.round(pct)}
       className={cn('sunken w-full overflow-hidden rounded-full', size === 'xs' ? 'h-0.5' : 'h-1.5', className)}
+      {...rest}
     >
       <div
-        className={cn('h-full rounded-full transition-[width] duration-300', tones[tone])}
-        style={{ width: `${pct}%` }}
+        className={cn(
+          'h-full rounded-full transition-[width] duration-300',
+          tones[tone],
+          indeterminate && 'w-1/3 animate-pulse',
+        )}
+        style={indeterminate ? undefined : { width: `${pct}%` }}
       />
     </div>
   )

@@ -137,6 +137,7 @@ export function CanvasCapture({
           height: req.size.Y,
           overflow: 'hidden',
           position: 'relative',
+          // 截图交给 AI 看，用定死的色值不靠 CSS 变量；和 index.css 的 --canvas-board 一致
           background: '#0e0e10',
         }}
       >

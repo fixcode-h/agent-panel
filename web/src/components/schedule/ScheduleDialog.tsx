@@ -3,21 +3,22 @@ import { whenLabel, workdayTimeLabel, SCHEDULE_WEEKDAYS, type Schedule } from '@
 import { t } from '@shared/i18n'
 import { listableAgents } from '@shared/builtin/core'
 import { useData } from '@/lib/data'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/segmented'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
+import { ChipGroup } from '@/components/ui/chip-group'
+import { Card } from '@/components/ui/card'
 import { EndChoice } from './EndChoice'
 import { REPEAT_OPTIONS, useScheduleForm } from './use-schedule-form'
 
 /** 表单里的一段：什么时候跑 / 跑什么 / 在哪跑；分组让长表单读起来有层次 */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border p-3.5">
+    <Card as="section" className="flex flex-col gap-3 p-3.5">
       <h3 className="text-[0.8125rem] font-semibold text-muted">{title}</h3>
       {children}
-    </section>
+    </Card>
   )
 }
 
@@ -115,25 +116,17 @@ export function ScheduleDialog({
         {form.repeat === 'weekly' && (
           <div className="flex flex-col gap-1.5">
             <span className="text-[0.8125rem] font-medium">{t('每周哪几天')}</span>
-            <div role="group" aria-label={t('每周哪几天')} className="flex flex-wrap gap-1">
-              {SCHEDULE_WEEKDAYS.map((d) => {
-                const on = form.weekdays.includes(d.id)
-                return (
-                  <button
-                    key={d.id}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => toggleWeekday(d.id)}
-                    className={cn(
-                      'h-8 cursor-pointer rounded-lg border px-2.5 text-[0.8125rem] transition-colors',
-                      on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:bg-sel',
-                    )}
-                  >
-                    {d.label}
-                  </button>
-                )
-              })}
-            </div>
+            <ChipGroup
+              multiple
+              label={t('每周哪几天')}
+              options={SCHEDULE_WEEKDAYS.map((d) => ({ id: String(d.id), label: d.label }))}
+              value={form.weekdays.map(String)}
+              // 点一块只会多或少一天：找出变了的那天交给 toggleWeekday，排序和默认值都还按它的规则走
+              onChange={(next) => {
+                const d = SCHEDULE_WEEKDAYS.find((x) => next.includes(String(x.id)) !== form.weekdays.includes(x.id))
+                if (d) toggleWeekday(d.id)
+              }}
+            />
           </div>
         )}
         {form.repeat !== 'once' && (
@@ -211,79 +204,66 @@ export function ScheduleDialog({
         </div>
       </Section>
 
-      <details
-        className="rounded-xl border"
-        open={advancedOpen}
-        onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}
-      >
-        <summary className="cursor-pointer px-3.5 py-2.5 text-[0.8125rem] font-semibold text-muted select-none">
-          {t('更多设置')}
-        </summary>
-        <div className="flex flex-col gap-3 border-t px-3.5 py-3">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('上游计划')}</span>
-            <span className="text-xs text-subtle">
-              {t('这些计划这一轮成功启动之后，本计划到点才会启动；留空表示不依赖。')}
-            </span>
-            {others.length ? (
-              <div
-                role="group"
-                aria-label={t('上游计划')}
-                className="flex max-h-32 flex-wrap gap-1 overflow-y-auto rounded-lg border p-1.5"
-              >
-                {others.map((x) => {
-                  const on = form.dependsOn.includes(x.id)
-                  return (
-                    <button
-                      key={x.id}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => toggleUpstream(x.id)}
-                      className={cn(
-                        'h-8 cursor-pointer rounded-lg border px-2.5 text-[0.8125rem] transition-colors',
-                        on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:bg-sel',
-                      )}
-                    >
-                      {x.name}
-                    </button>
-                  )
-                })}
-              </div>
-            ) : (
-              <span className="text-xs text-subtle">{t('还没有别的计划可以作为上游。')}</span>
-            )}
+      {/* 和上面几段同一种卡片底；details 不能直接当 Card 的标签（open / onToggle 属性对不上），套一层 */}
+      <Card>
+        <details open={advancedOpen} onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}>
+          <summary className="cursor-pointer px-3.5 py-2.5 text-[0.8125rem] font-semibold text-muted select-none">
+            {t('更多设置')}
+          </summary>
+          <div className="flex flex-col gap-3 border-t px-3.5 py-3">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[0.8125rem] font-medium">{t('上游计划')}</span>
+              <span className="text-xs text-subtle">
+                {t('这些计划这一轮成功启动之后，本计划到点才会启动；留空表示不依赖。')}
+              </span>
+              {others.length ? (
+                <ChipGroup
+                  multiple
+                  label={t('上游计划')}
+                  className="max-h-32 overflow-y-auto"
+                  options={others.map((x) => ({ id: x.id, label: x.name }))}
+                  value={form.dependsOn}
+                  onChange={(next) => {
+                    const x = others.find((o) => next.includes(o.id) !== form.dependsOn.includes(o.id))
+                    if (x) toggleUpstream(x.id)
+                  }}
+                />
+              ) : (
+                <span className="text-xs text-subtle">{t('还没有别的计划可以作为上游。')}</span>
+              )}
+            </div>
+            {/* 执行上限：超了就停，已经产出的内容留着；空着表示不限 */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8125rem] font-medium">{t('token 上限')}</span>
+                <Input
+                  inputMode="numeric"
+                  value={form.budgetTokens}
+                  placeholder={t('0 或不填表示不限')}
+                  aria-label={t('token 上限')}
+                  onChange={(e) => set('budgetTokens', e.target.value.replace(/[^\d]/g, ''))}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8125rem] font-medium">{t('时长上限（分钟）')}</span>
+                <Input
+                  inputMode="numeric"
+                  value={form.budgetMinutes}
+                  placeholder={t('0 或不填表示不限')}
+                  aria-label={t('时长上限（分钟）')}
+                  onChange={(e) => set('budgetMinutes', e.target.value.replace(/[^\d]/g, ''))}
+                />
+              </label>
+            </div>
+            <p className="text-xs text-subtle">
+              {t('超过上限时面板会停下来，已经产出的内容都保留着；填 0 或不填表示不限。')}
+            </p>
+            <p className="text-xs text-subtle">
+              {t('时间按本机时区。每天 / 每周 / 工作日的计划每次执行完自动推到下一次，只执行一次的执行完就停下。')}
+            </p>
           </div>
-          {/* 执行上限：超了就停，已经产出的内容留着；空着表示不限 */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[0.8125rem] font-medium">{t('token 上限')}</span>
-              <Input
-                inputMode="numeric"
-                value={form.budgetTokens}
-                placeholder={t('0 或不填表示不限')}
-                aria-label={t('token 上限')}
-                onChange={(e) => set('budgetTokens', e.target.value.replace(/[^\d]/g, ''))}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[0.8125rem] font-medium">{t('时长上限（分钟）')}</span>
-              <Input
-                inputMode="numeric"
-                value={form.budgetMinutes}
-                placeholder={t('0 或不填表示不限')}
-                aria-label={t('时长上限（分钟）')}
-                onChange={(e) => set('budgetMinutes', e.target.value.replace(/[^\d]/g, ''))}
-              />
-            </label>
-          </div>
-          <p className="text-xs text-subtle">
-            {t('超过上限时面板会停下来，已经产出的内容都保留着；填 0 或不填表示不限。')}
-          </p>
-          <p className="text-xs text-subtle">
-            {t('时间按本机时区。每天 / 每周 / 工作日的计划每次执行完自动推到下一次，只执行一次的执行完就停下。')}
-          </p>
-        </div>
-      </details>
+        </details>
+      </Card>
     </Modal>
   )
 }

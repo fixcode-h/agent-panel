@@ -25,6 +25,8 @@ import {
 } from '@shared/anim'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 import {
@@ -375,7 +377,7 @@ function AnchorPick({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-field px-1.5 text-[0.75rem] hover:border-line-strong">
+        <button className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-field px-1.5 text-[0.75rem] transition-colors hover:border-subtle">
           <AnchorIcon min={[a.Minimum.X, a.Minimum.Y]} max={[a.Maximum.X, a.Maximum.Y]} />
           <span className="font-mono text-[0.6875rem] text-muted">
             ({a.Minimum.X},{a.Minimum.Y}) ({a.Maximum.X},{a.Maximum.Y})
@@ -402,14 +404,19 @@ function AnchorPick({
           ))}
         </div>
         <div className="mt-2 flex flex-col gap-1 border-t pt-2 text-[0.71875rem] text-muted">
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <input type="checkbox" checked={move} onChange={(e) => setMove(e.target.checked)} />
-            {t('同时移到锚点（Ctrl）')}
-          </label>
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <input type="checkbox" checked={pivot} onChange={(e) => setPivot(e.target.checked)} />
-            {t('同时设对齐点（Shift）')}
-          </label>
+          {/* 弹层里的字比表单小一号：label 里再包一层把 Checkbox 默认的字号压下来 */}
+          <Checkbox
+            checked={move}
+            onChange={setMove}
+            label={<span className="text-[0.71875rem] text-muted">{t('同时移到锚点（Ctrl）')}</span>}
+            className="items-center gap-1.5"
+          />
+          <Checkbox
+            checked={pivot}
+            onChange={setPivot}
+            label={<span className="text-[0.71875rem] text-muted">{t('同时设对齐点（Shift）')}</span>}
+            className="items-center gap-1.5"
+          />
         </div>
       </PopoverContent>
     </Popover>
@@ -629,7 +636,7 @@ export function Details({
             placeholder={images.length ? t('选择图片') : t('还没有图片')}
             onChange={(e) => set(s.path, e.target.value ? `img:${e.target.value}` : '')}
             options={[{ value: '', label: t('无') }, ...images.map((i) => ({ value: i.id, label: i.name }))]}
-            className="h-7 rounded-md px-2 text-[0.75rem]"
+            size="xs"
           />
         )
         break
@@ -641,7 +648,7 @@ export function Details({
             placeholder={components.length ? t('选择子控件') : t('先提取一个子控件')}
             onChange={(e) => set(s.path, e.target.value)}
             options={components.map((c) => ({ value: c, label: c }))}
-            className="h-7 rounded-md px-2 text-[0.75rem]"
+            size="xs"
           />
         )
         break
@@ -781,14 +788,16 @@ export function Details({
                     // 选完复位：同一个目标再选一次还能重新对齐（下拉重复选同一个值不触发变更）
                     setAlignWith('')
                   }}
-                  className="h-7 rounded-md px-2 text-[0.75rem]"
+                  size="xs"
                 />
-                <button
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => applyRect({ x: 0, y: 0, w: parentSize().w, h: parentSize().h })}
-                  className="h-7 shrink-0 cursor-pointer rounded-md border border-line bg-field px-2 text-[0.71875rem] whitespace-nowrap hover:border-line-strong"
+                  className="h-7 px-2 text-[0.71875rem] font-normal whitespace-nowrap"
                 >
                   {t('填满父控件')}
-                </button>
+                </Button>
               </FieldRow>
               {stretchX ? (
                 <FieldRow label={t('左 / 右')}>
@@ -878,12 +887,14 @@ export function Details({
                   <span className="flex-1">
                     {t('Border 的子控件默认留 4px 内边距，槽位图和底图会错开；要对齐就把内边距清零')}
                   </span>
-                  <button
+                  <Button
+                    variant="link"
+                    tone="muted"
                     onClick={() => setSlot('Padding', { Left: 0, Top: 0, Right: 0, Bottom: 0 })}
-                    className="shrink-0 cursor-pointer underline hover:text-fg"
+                    className="shrink-0 underline"
                   >
                     {t('清零内边距')}
-                  </button>
+                  </Button>
                 </div>
               )}
               {'Size' in slot && (
@@ -948,15 +959,16 @@ export function Details({
                 })}
               </span>
               {widget.Properties?.[bp] && (
-                <button
+                <Button
+                  variant="link"
                   onClick={() => {
                     const { [bp]: _, ...rest } = widget.Properties
                     onChange({ ...widget, Properties: rest }, `bp:${widget.id}`)
                   }}
-                  className="shrink-0 cursor-pointer underline"
+                  className="shrink-0 underline"
                 >
                   {t('还原')}
-                </button>
+                </Button>
               )}
             </div>
           )}

@@ -45,6 +45,9 @@ import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Modal } from '@/components/ui/modal'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -132,15 +135,14 @@ const blank: ProjectInput = {
   initResult: undefined,
 }
 
-/** 关闭按钮：设置类弹窗共用，带边框，比纯图标更容易看到 */
+const projectDialogTitle = (project?: Project) =>
+  project ? t('项目设置 · {name}', { name: project.name }) : t('新建项目')
+
+/** 关闭按钮：设置类弹窗共用（Esc 也能关，悬停提示里写上） */
 export function DialogCloseButton({ label = t('关闭') }: { label?: string }) {
   return (
-    <D.Close
-      aria-label={label}
-      title={`${label}（Esc）`}
-      className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-sel hover:text-fg"
-    >
-      <X className="h-[18px] w-[18px]" strokeWidth={2} />
+    <D.Close asChild>
+      <IconButton icon={X} label={label} title={`${label}（Esc）`} size="sm" />
     </D.Close>
   )
 }
@@ -215,34 +217,31 @@ export function ProjectSettingsDialog({
   const aiWorkflow = ai?.workflowId ? workflows.find((w) => w.id === ai.workflowId) : undefined
   return (
     <>
-      <D.Root open={open} onOpenChange={onOpenChange}>
-        <D.Portal>
-          <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-          <D.Content
-            aria-describedby={undefined}
-            // 改到一半点到外面不关闭，免得白填
-            onInteractOutside={(e) => e.preventDefault()}
-            className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] h-[min(800px,calc(100dvh-2rem))] w-[min(1120px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
-          >
-            {open && (
-              <Body
-                key={project?.id ?? 'new'}
-                project={project}
-                initialSection={section}
-                item={item}
-                ai={ai}
-                onAssist={setAi}
-                deliver={deliver}
-                onCreated={(id) => setAi((s) => (s ? { ...s, projectId: id } : s))}
-                applyRef={applyRef}
-                queued={queued}
-                stash={stash}
-                onClose={() => onOpenChange(false)}
-              />
-            )}
-          </D.Content>
-        </D.Portal>
-      </D.Root>
+      <Modal
+        open={open}
+        onOpenChange={onOpenChange}
+        title={projectDialogTitle(project)}
+        size="xl"
+        bare
+        className="h-[min(800px,calc(100dvh-2rem))] max-w-[1120px]"
+      >
+        {open && (
+          <Body
+            key={project?.id ?? 'new'}
+            project={project}
+            initialSection={section}
+            item={item}
+            ai={ai}
+            onAssist={setAi}
+            deliver={deliver}
+            onCreated={(id) => setAi((s) => (s ? { ...s, projectId: id } : s))}
+            applyRef={applyRef}
+            queued={queued}
+            stash={stash}
+            onClose={() => onOpenChange(false)}
+          />
+        )}
+      </Modal>
       {/* 放在设置弹窗外面：关掉设置不会连带卸载它，生成和浮条都留着 */}
       {ai && (
         <AssistDialog
@@ -704,9 +703,10 @@ function Body({
   return (
     <>
       <header className="flex shrink-0 items-center gap-3 border-b px-6 py-4">
-        <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.125rem] font-semibold">
-          {project ? t('项目设置 · {name}', { name: project.name }) : t('新建项目')}
-        </D.Title>
+        {/* 弹窗名由外壳 Modal 给读屏，这里只是看得见的标题 */}
+        <h2 className="min-w-0 flex-1 truncate font-serif text-[1.125rem] font-semibold">
+          {projectDialogTitle(project)}
+        </h2>
         <DialogCloseButton />
       </header>
 
@@ -835,7 +835,7 @@ function Body({
                 note={
                   docOf('AGENT.md')?.exists &&
                   !docOf(SHARED_DOC)?.exists && (
-                    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/40 bg-warning/5 px-3.5 py-2.5 text-[0.8125rem]">
+                    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-warning/10 px-3.5 py-2.5 text-[0.8125rem]">
                       <span className="min-w-0 flex-1">
                         {t('检测到 AGENT.md，但各个 Agent 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。')}
                       </span>
@@ -1040,9 +1040,9 @@ function Body({
                   </Popover>
                 </div>
                 {optionalWorkflows.length === 0 && (
-                  <p className="rounded-xl border border-dashed px-4 py-5 text-center text-xs text-subtle">
+                  <EmptyPanel size="sm" className="text-xs">
                     {t('还没有可选工作流。像 Bug 修复、发布这类流程可以加进来，需求合适时执行角色会自动选它。')}
-                  </p>
+                  </EmptyPanel>
                 )}
                 {optionalWorkflows.map((w) => (
                   <WorkflowCard
@@ -1148,7 +1148,7 @@ function Body({
                 <FormSection title={t('本地目录')}>
                   <DirPicker value={draft.path} onChange={pickDir} info={dir} />
                   {!draft.initializedAt && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent-soft/40 px-3.5 py-2.5">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-accent-soft px-3.5 py-2.5">
                       <Sparkles className="h-4 w-4 shrink-0 text-accent" />
                       <span className="min-w-0 flex-1 text-[0.8125rem]">
                         {draft.path.trim()
@@ -1201,24 +1201,16 @@ function Body({
                   <span className="text-xs text-subtle">
                     {!draft.fileFormat && (
                       <>
-                        <button
-                          type="button"
-                          className="cursor-pointer text-accent hover:underline"
-                          onClick={() => set('fileFormat', { ...globalFormat })}
-                        >
+                        <Button variant="link" onClick={() => set('fileFormat', { ...globalFormat })}>
                           {t('和全局设置不同时，在这里单独指定')}
-                        </button>
+                        </Button>
                       </>
                     )}
                     {draft.fileFormat && (
                       <>
-                        <button
-                          type="button"
-                          className="cursor-pointer text-accent hover:underline"
-                          onClick={() => set('fileFormat', undefined)}
-                        >
+                        <Button variant="link" onClick={() => set('fileFormat', undefined)}>
                           {t('跟随全局设置')}
-                        </button>
+                        </Button>
                       </>
                     )}
                   </span>
@@ -1303,22 +1295,14 @@ function Body({
           <span className="text-xs text-subtle">{t('{n} 个说明文件有改动', { n: changedDocs.length })}</span>
         )}
         {!draft.initializedAt && (
-          <button
-            type="button"
-            className="cursor-pointer text-xs text-warning hover:underline"
-            onClick={() => setSection('init')}
-          >
+          <Button variant="link" tone="warning" className="text-xs" onClick={() => setSection('init')}>
             {t('先完成「AI 初始化项目」才能保存')}
-          </button>
+          </Button>
         )}
         {!!draft.initializedAt && !active && (
-          <button
-            type="button"
-            className="cursor-pointer text-xs text-warning hover:underline"
-            onClick={() => setSection('workflows')}
-          >
+          <Button variant="link" tone="warning" className="text-xs" onClick={() => setSection('workflows')}>
             {t('请为项目选择子对话默认工作流')}
-          </button>
+          </Button>
         )}
         <Button onClick={() => void confirm()} disabled={!valid || saving || !draft.initializedAt}>
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -1443,11 +1427,7 @@ function WorkflowCard({
               {t('AI 配置')}
             </Button>
           )}
-          {onRemove && (
-            <Button size="icon-sm" variant="ghost" aria-label={t('移除')} title={t('移除')} onClick={onRemove}>
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          )}
+          {onRemove && <IconButton icon={X} size="sm" label={t('移除')} onClick={onRemove} />}
         </>
       }
     >
@@ -1518,9 +1498,9 @@ function TestStepsEditor({
         </Button>
       </div>
       {steps.length === 0 && (
-        <p className="rounded-lg border border-dashed p-3 text-xs text-subtle">
+        <EmptyPanel size="sm" className="text-xs">
           {t('还没有测试步骤。「AI 初始化项目」会按项目的脚本推荐一份。')}
-        </p>
+        </EmptyPanel>
       )}
       <ul className="flex flex-col gap-2">
         {steps.map((s, i) => (
@@ -1541,33 +1521,14 @@ function TestStepsEditor({
                 onChange={(e) => patch(i, { env: e.target.value as TestStep['env'] })}
                 options={(Object.keys(ENV_LABEL) as TestStep['env'][]).map((k) => ({ value: k, label: ENV_LABEL[k] }))}
               />
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={t('上移')}
-                title={t('上移')}
-                onClick={() => move(i, -1)}
-              >
-                <ChevronUp className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={t('下移')}
-                title={t('下移')}
-                onClick={() => move(i, 1)}
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={t('删除这一步')}
-                title={t('删除这一步')}
+              <IconButton icon={ChevronUp} size="sm" label={t('上移')} onClick={() => move(i, -1)} />
+              <IconButton icon={ChevronDown} size="sm" label={t('下移')} onClick={() => move(i, 1)} />
+              <IconButton
+                icon={Trash2}
+                size="sm"
+                label={t('删除这一步')}
                 onClick={() => onChange(steps.filter((_, j) => j !== i))}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              />
             </div>
             <Input
               className="h-8 font-mono text-xs"
@@ -1623,27 +1584,23 @@ function TestStepsEditor({
                 placeholder={t('超时（秒）')}
                 onChange={(e) => patch(i, { timeoutSec: Math.max(0, Number(e.target.value) || 0) })}
               />
-              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted">
-                <input
-                  type="checkbox"
-                  className="accent-accent"
-                  checked={s.enabled}
-                  onChange={(e) => patch(i, { enabled: e.target.checked })}
-                />
-                {t('启用')}
-              </label>
-              <label
-                className="flex cursor-pointer items-center gap-1.5 text-xs text-muted"
+              <Checkbox
+                checked={s.enabled}
+                onChange={(v) => patch(i, { enabled: v })}
+                label={t('启用')}
+                className="items-center"
+              />
+              <span
+                className="flex"
                 title={t('角色判断是小改动时只跑勾了这项的步骤，适合几十秒内跑完的类型检查、lint')}
               >
-                <input
-                  type="checkbox"
-                  className="accent-accent"
+                <Checkbox
                   checked={s.quick}
-                  onChange={(e) => patch(i, { quick: e.target.checked })}
+                  onChange={(v) => patch(i, { quick: v })}
+                  label={t('小改动也跑')}
+                  className="items-center"
                 />
-                {t('小改动也跑')}
-              </label>
+              </span>
               <label
                 className="flex items-center gap-1.5 text-xs text-muted"
                 title={t(
@@ -1932,18 +1889,15 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
           {list.map((d) => (
             <span
               key={d}
-              className="flex h-7 items-center gap-1 rounded-md border border-line-strong bg-field pr-1 pl-2 text-[0.78125rem] text-muted"
+              className="flex h-7 items-center gap-1 rounded-md bg-sel/70 pr-1 pl-2 text-[0.78125rem] text-muted"
             >
               <span className="font-mono">{d}</span>
-              <button
-                type="button"
-                aria-label={t('删除 {name}', { name: d })}
-                title={t('删除 {name}', { name: d })}
+              <IconButton
+                icon={X}
+                size="2xs"
+                label={t('删除 {name}', { name: d })}
                 onClick={() => onChange(list.filter((x) => x !== d))}
-                className="grid h-5 w-5 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              />
             </span>
           ))}
           <Input
@@ -1965,17 +1919,13 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs">
-          <button type="button" className="cursor-pointer text-accent hover:underline" onClick={preset}>
+          <Button variant="link" onClick={preset}>
             {t('填入 UE 排除清单')}
-          </button>
+          </Button>
           {list.length > 0 && (
-            <button
-              type="button"
-              className="cursor-pointer text-subtle hover:text-fg hover:underline"
-              onClick={() => onChange([])}
-            >
+            <Button variant="link" tone="muted" onClick={() => onChange([])}>
               {t('清空')}
-            </button>
+            </Button>
           )}
         </div>
         <span className="text-xs text-subtle">

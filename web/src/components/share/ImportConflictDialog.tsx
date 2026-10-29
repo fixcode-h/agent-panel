@@ -1,5 +1,6 @@
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { t } from '@shared/i18n'
 import type { ShareMode } from '@shared/agent-share'
 import type { ImportConflict } from '@/lib/transfer'
@@ -21,31 +22,33 @@ export function ImportConflictDialog({
   onClose: () => void
 }) {
   return (
-    <D.Root open={!!conflict} onOpenChange={(open) => !open && onClose()}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
-        <D.Content className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line-strong bg-card p-6 shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none">
-          <D.Title className="text-[0.9375rem] font-semibold">
-            {t('{what}同名了', { what: conflict?.kind === 'workflow' ? t('工作流') : t('角色') })}
-          </D.Title>
-          <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
-            {conflict?.message}
-          </D.Description>
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="secondary" onClick={onClose}>
-              {t('取消')}
-            </Button>
-            <Button variant="secondary" onClick={() => onPick('copy')}>
-              {t('另存为副本')}
-            </Button>
-            {!conflict?.builtin && (
-              <Button variant="danger" onClick={() => onPick('overwrite')}>
-                {t('覆盖本机那份')}
-              </Button>
-            )}
-          </div>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+    // 和确认框一个样子（标题、说明、右下角按钮），所以只借 Modal 的外壳，D.Title 自己放
+    <Modal
+      open={!!conflict}
+      onOpenChange={(open) => !open && onClose()}
+      title={null}
+      size="sm"
+      bare
+      closeOnOutside
+      className="p-6"
+    >
+      <D.Title className="text-[0.9375rem] font-semibold">
+        {t('{what}同名了', { what: conflict?.kind === 'workflow' ? t('工作流') : t('角色') })}
+      </D.Title>
+      <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">{conflict?.message}</D.Description>
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>
+          {t('取消')}
+        </Button>
+        <Button variant="secondary" onClick={() => onPick('copy')}>
+          {t('另存为副本')}
+        </Button>
+        {!conflict?.builtin && (
+          <Button variant="danger" onClick={() => onPick('overwrite')}>
+            {t('覆盖本机那份')}
+          </Button>
+        )}
+      </div>
+    </Modal>
   )
 }

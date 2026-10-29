@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { fieldClass } from '@/components/ui/input'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import { Segmented } from '@/components/ui/segmented'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 
 /** 工作流说明、Agent 角色设定：Markdown 编辑 / 预览，可以插入模板和 @Agent */
@@ -55,28 +56,18 @@ export function DocEditor({
     })
   }
 
-  const tab = (m: typeof mode, label: string, Icon: typeof Eye) => (
-    <button
-      type="button"
-      onClick={() => setMode(m)}
-      aria-pressed={mode === m}
-      className={cn(
-        'flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[0.8125rem] font-medium',
-        mode === m ? 'bg-card text-fg shadow-card ring-1 ring-line-strong' : 'text-muted hover:text-fg',
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </button>
-  )
-
   return (
     <div className="overflow-hidden rounded-xl border border-line-strong bg-field">
       <div className="flex flex-wrap items-center gap-2 border-b bg-panel px-2 py-2">
-        <div className="flex rounded-lg bg-field p-0.5 ring-1 ring-line">
-          {tab('edit', t('编辑'), PencilLine)}
-          {tab('preview', t('预览'), Eye)}
-        </div>
+        <Segmented
+          label={t('编辑或预览')}
+          value={mode}
+          onChange={setMode}
+          options={[
+            { id: 'edit', label: t('编辑'), icon: PencilLine },
+            { id: 'preview', label: t('预览'), icon: Eye },
+          ]}
+        />
         <div className="ml-auto flex flex-wrap items-center gap-1">
           {mode === 'edit' && tools?.(insert)}
           <Popover>

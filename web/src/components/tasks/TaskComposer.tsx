@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import { IconButton } from '@/components/ui/icon-button'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
 import {
@@ -324,15 +325,13 @@ export function TaskComposer({
                   title={t('按工作流「{name}」的流程图执行', { name: workflow.name })}
                 >
                   <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
-                  <button
-                    type="button"
+                  <IconButton
+                    size="2xs"
+                    icon={X}
+                    label={t('改回直接对话')}
                     onClick={() => setWorkflowId('')}
-                    aria-label={t('改回直接对话')}
-                    title={t('改回直接对话')}
-                    className="-mr-1 grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                    className="-mr-1"
+                  />
                 </span>
               </>
             ) : (

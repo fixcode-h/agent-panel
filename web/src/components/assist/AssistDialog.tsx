@@ -35,6 +35,10 @@ import { cn } from '@/lib/utils'
 import type { McpServer } from '@shared/library'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Modal } from '@/components/ui/modal'
+import { ChipGroup } from '@/components/ui/chip-group'
+import { Checkbox } from '@/components/ui/checkbox'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { MinimizedChat } from '@/components/ui/minimized-chat'
 import { FlowCanvas } from '@/components/flow/FlowCanvas'
@@ -248,8 +252,8 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
               key={i}
               title={role}
               className={cn(
-                'flex items-center gap-1.5 rounded-full border py-0.5 pr-2.5 pl-1 text-xs',
-                a.isNew ? 'border-accent/60 bg-accent-soft' : 'bg-card',
+                'flex items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-1 text-xs',
+                a.isNew ? 'bg-accent-soft' : 'bg-sel/70',
               )}
             >
               <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
@@ -470,31 +474,28 @@ function LessonChangesPreview({
         {changes.map((c, i) => {
           const old = c.op === 'update' ? globals.find((g) => g.id === c.id) : undefined
           return (
-            <li key={i}>
-              <label
-                className={cn('flex cursor-pointer gap-2.5 rounded-lg bg-sel/40 p-2.5', !picked.has(i) && 'opacity-60')}
-              >
-                <input
-                  type="checkbox"
-                  className="mt-0.5 accent-accent"
-                  checked={picked.has(i)}
-                  onChange={(e) => onPick(i, e.target.checked)}
-                />
-                <span className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <Badge tone={old ? 'accent' : 'neutral'}>{old ? t('改写') : t('新加')}</Badge>
-                    <span className="text-[0.8125rem] font-medium">{c.title}</span>
-                  </span>
-                  {c.rule && <span className="text-xs leading-relaxed text-muted">{c.rule}</span>}
-                  {c.cause && <span className="text-xs text-subtle">{t('起因：{text}', { text: c.cause })}</span>}
-                  {old && (
-                    <span className="mt-1 rounded-md border border-dashed px-2 py-1.5 text-xs text-subtle">
-                      {t('原来：{text}', { text: old.title })}
-                      {old.rule && <span className="mt-0.5 block line-through decoration-subtle/60">{old.rule}</span>}
+            <li key={i} className={cn('rounded-lg bg-sel/40 p-2.5', !picked.has(i) && 'opacity-60')}>
+              <Checkbox
+                checked={picked.has(i)}
+                onChange={(v) => onPick(i, v)}
+                className="w-full"
+                label={
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <Badge tone={old ? 'accent' : 'neutral'}>{old ? t('改写') : t('新加')}</Badge>
+                      <span className="text-[0.8125rem] font-medium">{c.title}</span>
                     </span>
-                  )}
-                </span>
-              </label>
+                    {c.rule && <span className="text-xs leading-relaxed text-muted">{c.rule}</span>}
+                    {c.cause && <span className="text-xs text-subtle">{t('起因：{text}', { text: c.cause })}</span>}
+                    {old && (
+                      <span className="mt-1 rounded-md bg-field px-2 py-1.5 text-xs text-subtle">
+                        {t('原来：{text}', { text: old.title })}
+                        {old.rule && <span className="mt-0.5 block line-through decoration-subtle/60">{old.rule}</span>}
+                      </span>
+                    )}
+                  </span>
+                }
+              />
             </li>
           )
         })}
@@ -947,7 +948,7 @@ export function AssistDialog({
           onClose={() => close()}
         />
       )}
-      <D.Root
+      <Modal
         open={open && !minimized}
         // 按 Esc 或点窗口外面：生成中先收起来，免得误触终止；没在生成就直接关
         onOpenChange={(o) => {
@@ -955,252 +956,243 @@ export function AssistDialog({
           if (running) setMinimized(true)
           else close()
         }}
+        // 标题跟着优化对象变，D.Title 和说明放在下面自己画的标题栏里
+        title={null}
+        size="full"
+        bare
+        closeOnOutside
+        className="max-h-[min(960px,calc(100dvh-2rem))] bg-bg"
       >
-        <D.Portal>
-          <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
-          <D.Content className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6">
-            <header className="flex items-center gap-3 border-b bg-panel px-5 py-3.5">
-              <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent">
-                {shown ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
-              </span>
-              <div className="min-w-0 flex-1">
-                <D.Title className="truncate text-[0.9375rem] font-semibold">
-                  {shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
-                </D.Title>
-                <D.Description className="truncate text-xs text-subtle">{L.desc}</D.Description>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t('最小化')}
-                title={t('最小化')}
-                onClick={() => setMinimized(true)}
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t('关闭')}
-                title={running ? t('关闭并终止生成') : t('关闭')}
-                onClick={close}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </header>
+        <header className="flex items-center gap-3 border-b bg-panel px-5 py-3.5">
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent">
+            {shown ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <D.Title className="truncate text-[0.9375rem] font-semibold">
+              {shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
+            </D.Title>
+            <D.Description className="truncate text-xs text-subtle">{L.desc}</D.Description>
+          </div>
+          <IconButton icon={Minus} size="sm" label={t('最小化')} onClick={() => setMinimized(true)} />
+          <IconButton
+            icon={X}
+            size="sm"
+            label={t('关闭')}
+            title={running ? t('关闭并终止生成') : t('关闭')}
+            onClick={close}
+          />
+        </header>
 
-            <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-              {/* 对话 */}
-              <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[540px] md:border-r md:border-b-0">
-                <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
-                  <span className="mr-1 text-xs text-subtle">{t('使用')}</span>
-                  {orderClis(CLIS, settings?.cliOrder ?? [], (c) => !!clis.find((x) => x.id === c.id)?.enabled).map(
-                    (c) => {
-                      const st = clis.find((x) => x.id === c.id)
-                      const ok = !!st?.installed && st.enabled
-                      // 停用或没安装的不显示；正选着的照常显示（变灰）
-                      if (st && !ok && cli !== c.id) return null
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => pickCli(c.id)}
-                          aria-pressed={cli === c.id}
-                          disabled={running}
-                          title={ok ? st?.version : t('未安装或已停用')}
-                          className={cn(
-                            'flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs',
-                            cli === c.id ? 'border-accent bg-accent-soft text-fg' : 'text-muted hover:text-fg',
-                            !ok && 'opacity-50',
-                          )}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: cliColor(c.id) }} />
-                          {c.name}
-                        </button>
-                      )
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          {/* 对话 */}
+          <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[540px] md:border-r md:border-b-0">
+            <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
+              <span className="mr-1 text-xs text-subtle">{t('使用')}</span>
+              <ChipGroup
+                label={t('使用哪个 Agent')}
+                size="sm"
+                value={cli}
+                onChange={pickCli}
+                options={orderClis(
+                  CLIS,
+                  settings?.cliOrder ?? [],
+                  (c) => !!clis.find((x) => x.id === c.id)?.enabled,
+                ).flatMap((c) => {
+                  const st = clis.find((x) => x.id === c.id)
+                  const ok = !!st?.installed && st.enabled
+                  // 停用或没安装的不显示；正选着的照常显示（不能再点，悬停说明原因）
+                  if (st && !ok && cli !== c.id) return []
+                  return [
+                    {
+                      id: c.id,
+                      label: c.name,
+                      disabled: running || !ok,
+                      title: ok ? st?.version : t('未安装或已停用'),
+                      icon: <span className="h-1.5 w-1.5 rounded-full" style={{ background: cliColor(c.id) }} />,
                     },
-                  )}
+                  ]
+                })}
+              />
+            </div>
+            <div ref={scroller} className="flex min-h-[200px] flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+              {turns.length === 0 && !running && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-[0.8125rem] text-muted">
+                    {shown
+                      ? kind === 'skill'
+                        ? t('说说想怎么改，例如「步骤再具体一些」「description 写清楚什么时候用」。')
+                        : kind === 'command'
+                          ? t('说说想怎么改，例如「参数为空时审查全部改动」「做完列出改了哪些文件」。')
+                          : kind === 'mcp'
+                            ? L.intro
+                            : t('说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。')
+                      : L.intro}
+                  </p>
+                  {!shown &&
+                    EXAMPLES[kind].map((e) => (
+                      <button
+                        key={e}
+                        onClick={() => send(e)}
+                        className="cursor-pointer rounded-lg bg-card px-3 py-2 text-left text-[0.8125rem] text-muted shadow-card transition-colors hover:bg-sel/60 hover:text-fg"
+                      >
+                        {e}
+                      </button>
+                    ))}
                 </div>
-                <div ref={scroller} className="flex min-h-[200px] flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
-                  {turns.length === 0 && !running && (
-                    <div className="flex flex-col gap-2">
-                      <p className="text-[0.8125rem] text-muted">
-                        {shown
-                          ? kind === 'skill'
-                            ? t('说说想怎么改，例如「步骤再具体一些」「description 写清楚什么时候用」。')
-                            : kind === 'command'
-                              ? t('说说想怎么改，例如「参数为空时审查全部改动」「做完列出改了哪些文件」。')
-                              : kind === 'mcp'
-                                ? L.intro
-                                : t('说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。')
-                          : L.intro}
-                      </p>
-                      {!shown &&
-                        EXAMPLES[kind].map((e) => (
-                          <button
-                            key={e}
-                            onClick={() => send(e)}
-                            className="cursor-pointer rounded-lg bg-card shadow-card px-3 py-2 text-left text-[0.8125rem] text-muted hover:border-accent hover:text-fg"
-                          >
-                            {e}
-                          </button>
-                        ))}
-                    </div>
-                  )}
-                  {turns.map((turn, i) =>
-                    turn.role === 'user' ? (
-                      <UserMessage key={i} size="sm" text={turn.text} />
+              )}
+              {turns.map((turn, i) =>
+                turn.role === 'user' ? (
+                  <UserMessage key={i} size="sm" text={turn.text} />
+                ) : (
+                  <div key={i} className="flex flex-col gap-2 text-[0.8125rem] leading-relaxed">
+                    {turn.msgs?.length ? (
+                      <ChatReply msgs={turn.msgs} teamNames={teamNames} author={author} />
                     ) : (
-                      <div key={i} className="flex flex-col gap-2 text-[0.8125rem] leading-relaxed">
-                        {turn.msgs?.length ? (
-                          <ChatReply msgs={turn.msgs} teamNames={teamNames} author={author} />
-                        ) : (
-                          turn.text && <p className="whitespace-pre-wrap">{turn.text.split('```')[0].trim()}</p>
-                        )}
-                        {turn.proposal && (
-                          <span className="flex items-center gap-1.5 text-xs text-success">
-                            <Check className="h-3.5 w-3.5" />
-                            {t('格式校验通过，右侧是预览')}
-                          </span>
-                        )}
-                        {turn.error && (
-                          <span className="flex items-start gap-1.5 text-xs text-danger whitespace-pre-wrap">
-                            <CircleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
-                            {turn.error}
-                          </span>
-                        )}
-                      </div>
-                    ),
-                  )}
-                  {job && (
-                    <JobProgress
-                      job={job}
-                      cliName={CLIS.find((c) => c.id === cli)?.name ?? cli}
-                      author={author}
-                      teamNames={teamNames}
+                      turn.text && <p className="whitespace-pre-wrap">{turn.text.split('```')[0].trim()}</p>
+                    )}
+                    {turn.proposal && (
+                      <span className="flex items-center gap-1.5 text-xs text-success">
+                        <Check className="h-3.5 w-3.5" />
+                        {t('格式校验通过，右侧是预览')}
+                      </span>
+                    )}
+                    {turn.error && (
+                      <span className="flex items-start gap-1.5 text-xs text-danger whitespace-pre-wrap">
+                        <CircleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+                        {turn.error}
+                      </span>
+                    )}
+                  </div>
+                ),
+              )}
+              {job && (
+                <JobProgress
+                  job={job}
+                  cliName={CLIS.find((c) => c.id === cli)?.name ?? cli}
+                  author={author}
+                  teamNames={teamNames}
+                />
+              )}
+            </div>
+            <div className="p-3">
+              {job && <ScopeRequests scope={`assist:${job.id}`} active={running} />}
+              {queue.length > 0 && (
+                <p className="mb-2 truncate rounded-lg bg-field px-3 py-1.5 text-[0.75rem] text-muted">
+                  {t('排队中，这一轮结束后发送：{text}', { text: queue.join(' / ') })}
+                </p>
+              )}
+              <ChatComposer
+                size="sm"
+                value={text}
+                onChange={setText}
+                onSubmit={() => (running ? enqueue() : void send())}
+                files={files}
+                attach={false}
+                running={running}
+                onStop={() => void stop()}
+                onQueue={enqueue}
+                canSend={!!text.trim()}
+                label={t('描述')}
+                placeholder={latest ? t('继续说要改的地方') : L.placeholder}
+                tools={
+                  <>
+                    <AskToggle
+                      value={askUser}
+                      onChange={(v) => {
+                        setAskUser(v)
+                        if (job) void api.setAskUser(`assist:${job.id}`, v).catch(() => {})
+                      }}
                     />
-                  )}
-                </div>
-                <div className="p-3">
-                  {job && <ScopeRequests scope={`assist:${job.id}`} active={running} />}
-                  {queue.length > 0 && (
-                    <p className="mb-2 truncate rounded-lg bg-field px-3 py-1.5 text-[0.75rem] text-muted">
-                      {t('排队中，这一轮结束后发送：{text}', { text: queue.join(' / ') })}
-                    </p>
-                  )}
-                  <ChatComposer
-                    size="sm"
-                    value={text}
-                    onChange={setText}
-                    onSubmit={() => (running ? enqueue() : void send())}
-                    files={files}
-                    attach={false}
-                    running={running}
-                    onStop={() => void stop()}
-                    onQueue={enqueue}
-                    canSend={!!text.trim()}
-                    label={t('描述')}
-                    placeholder={latest ? t('继续说要改的地方') : L.placeholder}
-                    tools={
-                      <>
-                        <AskToggle
-                          value={askUser}
-                          onChange={(v) => {
-                            setAskUser(v)
-                            if (job) void api.setAskUser(`assist:${job.id}`, v).catch(() => {})
-                          }}
-                        />
-                        {settings && cliDef && (
-                          <RunPicker
-                            def={cliDef}
-                            settings={settings}
-                            model={model}
-                            effort={effort}
-                            onModel={setModel}
-                            onEffort={setEffort}
-                            disabled={running}
-                          />
-                        )}
-                      </>
+                    {settings && cliDef && (
+                      <RunPicker
+                        def={cliDef}
+                        settings={settings}
+                        model={model}
+                        effort={effort}
+                        onModel={setModel}
+                        onEffort={setEffort}
+                        disabled={running}
+                      />
+                    )}
+                  </>
+                }
+              />
+            </div>
+          </section>
+
+          {/* 预览 */}
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-panel">
+            <div className="flex-1 overflow-y-auto p-5">
+              {latest ? (
+                latest.kind === 'skill' ? (
+                  <SkillPreview name={latest.name} content={latest.content} before={subject?.content} />
+                ) : latest.kind === 'command' ? (
+                  <SkillPreview name={latest.name} content={latest.content} before={subject?.content} command />
+                ) : latest.kind === 'mcp' ? (
+                  <McpPreview
+                    server={latest.server}
+                    before={subject?.server ? (JSON.parse(subject.server) as McpServer) : undefined}
+                  />
+                ) : latest.kind === 'params' ? (
+                  <ParamPreview values={latest.values} spec={paramSpec ?? []} />
+                ) : latest.kind === 'teststeps' ? (
+                  <TestStepsPreview steps={latest.steps} />
+                ) : latest.kind === 'project' ? (
+                  <ProjectPreview p={latest} />
+                ) : latest.kind === 'lessons' ? (
+                  <LessonChangesPreview
+                    changes={latest.changes}
+                    globals={globalLessons ?? []}
+                    picked={picked}
+                    onPick={(i, on) =>
+                      setPicked((s) => {
+                        const n = new Set(s)
+                        if (on) n.add(i)
+                        else n.delete(i)
+                        return n
+                      })
                     }
                   />
+                ) : latest.kind === 'agent' ? (
+                  <AgentPreview
+                    agent={latest.agent}
+                    before={target as Agent | undefined}
+                    newCategory={latest.newCategory}
+                  />
+                ) : (
+                  <WorkflowPreview p={latest} />
+                )
+              ) : (
+                <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center text-subtle">
+                  <Sparkles className="h-6 w-6" />
+                  <p className="text-[0.8125rem]">{L.empty}</p>
                 </div>
-              </section>
-
-              {/* 预览 */}
-              <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-panel">
-                <div className="flex-1 overflow-y-auto p-5">
-                  {latest ? (
-                    latest.kind === 'skill' ? (
-                      <SkillPreview name={latest.name} content={latest.content} before={subject?.content} />
-                    ) : latest.kind === 'command' ? (
-                      <SkillPreview name={latest.name} content={latest.content} before={subject?.content} command />
-                    ) : latest.kind === 'mcp' ? (
-                      <McpPreview
-                        server={latest.server}
-                        before={subject?.server ? (JSON.parse(subject.server) as McpServer) : undefined}
-                      />
-                    ) : latest.kind === 'params' ? (
-                      <ParamPreview values={latest.values} spec={paramSpec ?? []} />
-                    ) : latest.kind === 'teststeps' ? (
-                      <TestStepsPreview steps={latest.steps} />
-                    ) : latest.kind === 'project' ? (
-                      <ProjectPreview p={latest} />
-                    ) : latest.kind === 'lessons' ? (
-                      <LessonChangesPreview
-                        changes={latest.changes}
-                        globals={globalLessons ?? []}
-                        picked={picked}
-                        onPick={(i, on) =>
-                          setPicked((s) => {
-                            const n = new Set(s)
-                            if (on) n.add(i)
-                            else n.delete(i)
-                            return n
-                          })
-                        }
-                      />
-                    ) : latest.kind === 'agent' ? (
-                      <AgentPreview
-                        agent={latest.agent}
-                        before={target as Agent | undefined}
-                        newCategory={latest.newCategory}
-                      />
-                    ) : (
-                      <WorkflowPreview p={latest} />
-                    )
-                  ) : (
-                    <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center text-subtle">
-                      <Sparkles className="h-6 w-6" />
-                      <p className="text-[0.8125rem]">{L.empty}</p>
-                    </div>
-                  )}
-                </div>
-                <footer className="flex items-center gap-2 border-t px-5 py-3">
-                  <span className="text-xs text-subtle">
-                    {latest
-                      ? latest.kind === 'lessons'
-                        ? t('已选 {n} 条，可以继续对话让它改', { n: picked.size })
-                        : latest.kind === 'project'
-                          ? t('文件已经写好，推荐的设置回到项目设置里应用')
-                          : shown
-                            ? t('应用后会覆盖当前内容')
-                            : t('可以继续对话修改，满意后再创建')
-                      : ''}
-                  </span>
-                  <Button
-                    className="ml-auto"
-                    disabled={!latest || running || applying || (latest.kind === 'lessons' && !picked.size)}
-                    onClick={apply}
-                  >
-                    {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    {shown && kind !== 'mcp' && kind !== 'project' ? t('应用修改') : L.button}
-                  </Button>
-                </footer>
-              </section>
+              )}
             </div>
-          </D.Content>
-        </D.Portal>
-      </D.Root>
+            <footer className="flex items-center gap-2 border-t px-5 py-3">
+              <span className="text-xs text-subtle">
+                {latest
+                  ? latest.kind === 'lessons'
+                    ? t('已选 {n} 条，可以继续对话让它改', { n: picked.size })
+                    : latest.kind === 'project'
+                      ? t('文件已经写好，推荐的设置回到项目设置里应用')
+                      : shown
+                        ? t('应用后会覆盖当前内容')
+                        : t('可以继续对话修改，满意后再创建')
+                  : ''}
+              </span>
+              <Button
+                className="ml-auto"
+                disabled={!latest || running || applying || (latest.kind === 'lessons' && !picked.size)}
+                onClick={apply}
+              >
+                {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {shown && kind !== 'mcp' && kind !== 'project' ? t('应用修改') : L.button}
+              </Button>
+            </footer>
+          </section>
+        </div>
+      </Modal>
     </>
   )
 }

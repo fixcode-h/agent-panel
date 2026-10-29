@@ -3,6 +3,7 @@ import { t } from '@shared/i18n'
 import { applyAppearance } from '@/lib/appearance'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
 import { Group, Row } from '@/components/settings/parts'
 import { cn } from '@/lib/utils'
 
@@ -226,7 +227,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             onChange={(v) => set('lineHeight', round(v, 2))}
           />
         </Row>
-        <div className="mt-4 rounded-xl bg-card shadow-card p-4">
+        <Card padding="md" className="mt-4">
           <p className="text-[0.75rem] text-subtle">{t('预览')}</p>
           <p className="mt-2 text-[0.875rem]">
             {t('Agent 面板按工作流调度本机的编码 Agent。')} The quick brown fox jumps over the lazy dog.
@@ -234,7 +235,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
           <pre className="mt-2 rounded-md bg-field px-3 py-2 font-mono text-[0.78125rem]">
             {'const ok = a => b !== c && x >= 0 // 0O 1lI 中文注释'}
           </pre>
-        </div>
+        </Card>
       </Group>
     </>
   )

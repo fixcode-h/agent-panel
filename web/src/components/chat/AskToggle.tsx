@@ -3,12 +3,13 @@ import * as D from '@radix-ui/react-dialog'
 import { MessageCircleQuestion } from 'lucide-react'
 import type { TaskRequest } from '@shared/schema'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { useScopedSetting } from '@/lib/useScopedSetting'
 import { askUserDefault } from '@/lib/askUserDefault'
 import { useData } from '@/lib/data'
 import { RequestCard } from '@/components/tasks/RequestCard'
 import { Button } from '@/components/ui/button'
+import { ToggleIconButton } from '@/components/ui/icon-button'
+import { Modal } from '@/components/ui/modal'
 import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 import { childAskChecked, childAskInitial } from '@shared/child-ask'
@@ -47,29 +48,23 @@ export function AskToggle({
     openTimer.current = setTimeout(() => setAskExisting(true), 0)
   }
   const button = (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
+    <ToggleIconButton
+      size="sm"
+      icon={MessageCircleQuestion}
+      pressed={value}
+      onPressedChange={onChange}
       // 没有「子对话也提问」菜单的地方（子对话、新建任务）也挡掉浏览器右键菜单：
       // 应用内的按钮上弹出「另存为 / 打印」没有意义，和父对话有菜单时也不一致。
       // 有菜单时交给下面的 ContextMenuTrigger，它自己会挡
       onContextMenu={onChildAskUserChange ? undefined : (e) => e.preventDefault()}
-      aria-pressed={value}
-      aria-label={t('AI 有问题时问我')}
+      label={t('AI 有问题时问我')}
       title={
         value
           ? t('AI 有问题时会问你，等你回答再继续（点一下改成让 AI 自己选）')
           : t('AI 有问题时自己选最合适的做法（点一下改成问你）')
       }
-      className={cn(
-        // 只有图标、不带底色：开着换成强调色，关着是灰色
-        'grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md transition-colors',
-        value ? 'text-accent hover:opacity-80' : 'text-subtle hover:text-fg',
-        className,
-      )}
-    >
-      <MessageCircleQuestion className="h-4 w-4" />
-    </button>
+      className={className}
+    />
   )
   // 子对话、其他会话没有「子对话也提问」这回事：保持原来的单按钮
   if (!onChildAskUserChange) return button
@@ -123,36 +118,34 @@ function ChildAskDialog({
     onOpenChange(false)
   }
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        {/* 点遮罩关闭：和 Esc 一样什么都不改 */}
-        <D.Overlay
-          className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]"
-          onClick={() => onOpenChange(false)}
-        />
-        <D.Content
-          className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-[430px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line-strong bg-card p-6 shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none"
-          // 默认焦点自己指定，不靠 autoFocus 和 Radix 菜单的焦点还原抢时序
-          onOpenAutoFocus={(e) => {
-            e.preventDefault()
-            defaultRef.current?.focus()
-          }}
-        >
-          <D.Title className="text-[0.9375rem] font-semibold">{t('子对话也提问')}</D.Title>
-          <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
-            {t('已创建的子对话要不要也打开「提问」？之后新建的子对话都会向你提问。')}
-          </D.Description>
-          <div className="mt-6 flex flex-wrap justify-end gap-2">
-            <Button variant="secondary" onClick={() => pick(true)}>
-              {t('应用到已创建的子对话')}
-            </Button>
-            <Button ref={defaultRef} onClick={() => pick(false)}>
-              {t('只对之后新建的子对话')}
-            </Button>
-          </div>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+    // 点遮罩关闭（closeOnOutside）：和 Esc 一样什么都不改
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={null}
+      size="sm"
+      bare
+      closeOnOutside
+      className="p-6"
+      // 默认焦点自己指定，不靠 autoFocus 和 Radix 菜单的焦点还原抢时序
+      onOpenAutoFocus={(e) => {
+        e.preventDefault()
+        defaultRef.current?.focus()
+      }}
+    >
+      <D.Title className="text-[0.9375rem] font-semibold">{t('子对话也提问')}</D.Title>
+      <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
+        {t('已创建的子对话要不要也打开「提问」？之后新建的子对话都会向你提问。')}
+      </D.Description>
+      <div className="mt-6 flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" onClick={() => pick(true)}>
+          {t('应用到已创建的子对话')}
+        </Button>
+        <Button ref={defaultRef} onClick={() => pick(false)}>
+          {t('只对之后新建的子对话')}
+        </Button>
+      </div>
+    </Modal>
   )
 }
 

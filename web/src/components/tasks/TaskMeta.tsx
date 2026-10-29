@@ -36,6 +36,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ContextRing } from '@/components/ui/context-ring'
+import { Progress } from '@/components/ui/progress'
 import { t } from '@shared/i18n'
 import { withTaskModel } from '@shared/task'
 import { WorktreeMark, WorktreeSection, useWorktrees, worktreeKey } from './Worktrees'
@@ -211,14 +212,7 @@ const pctOf = (u: { context: number; window: number }) => Math.min(100, (u.conte
 
 /** 占用条：细条、不描边，超过八成换警示色 */
 function ContextBar({ p }: { p: number }) {
-  return (
-    <div className="h-1 overflow-hidden rounded-full bg-field">
-      <span
-        className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
-        style={{ width: `${Math.max(p, 1)}%` }}
-      />
-    </div>
-  )
+  return <Progress value={Math.max(p, 1)} tone={p > 80 ? 'warning' : 'accent'} label={t('上下文已用')} />
 }
 
 /** 当前对话的上下文：大号百分比做主信息，用量、剩余、模型、速度、压缩按主次往下排 */

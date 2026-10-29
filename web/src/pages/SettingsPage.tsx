@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
 import { toast } from '@/lib/toast'
 import {
   ArrowUpCircle,
@@ -49,6 +48,10 @@ import { cn, splitArgs } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Modal } from '@/components/ui/modal'
+import { Badge } from '@/components/ui/badge'
+import { NavRow } from '@/components/ui/sidebar'
+import { Kbd } from '@/components/ui/kbd'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { UpdateSection } from '@/components/settings/UpdateSection'
 import { StylesSettings } from '@/components/settings/StylesSettings'
@@ -441,33 +444,36 @@ function SettingsBody({
                   {s.group}
                 </span>
               )}
-              <button
+              {/* 窄屏左栏是横向一行：行宽按文字走（w-auto），md 以上竖排才撑满 */}
+              <NavRow
                 onClick={() => onSection(s.id)}
-                aria-current={on ? 'page' : undefined}
+                on={on}
                 aria-describedby={s.id === 'models' && deployDot ? agentHintId : undefined}
-                className={cn(
-                  'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors duration-150',
-                  on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
-                )}
-              >
-                {s.id === 'models' ? (
-                  <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
-                ) : (
-                  s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
-                )}
-                <span className="truncate">{s.id === 'models' ? 'Agent' : s.label}</span>
-                {s.id === 'update' && update && (
-                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
-                )}
-                {/* 「部署」在 Agent 的二级列表里：自带技能要更新时先在这一项上亮点 */}
-                {s.id === 'models' && deployDot && (
-                  <span
-                    aria-hidden="true"
-                    title={deployDot}
-                    className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                  />
-                )}
-              </button>
+                className="w-auto shrink-0 whitespace-nowrap md:w-full"
+                icon={
+                  s.id === 'models' ? (
+                    <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
+                  ) : (
+                    s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
+                  )
+                }
+                label={s.id === 'models' ? 'Agent' : s.label}
+                trailing={
+                  <>
+                    {s.id === 'update' && update && (
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
+                    )}
+                    {/* 「部署」在 Agent 的二级列表里：自带技能要更新时先在这一项上亮点 */}
+                    {s.id === 'models' && deployDot && (
+                      <span
+                        aria-hidden="true"
+                        title={deployDot}
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                      />
+                    )}
+                  </>
+                }
+              />
               {s.id === 'models' && deployDot && (
                 <span id={agentHintId} className="sr-only">
                   {deployDot}
@@ -506,9 +512,9 @@ function SettingsBody({
                     {t('未启用')}
                   </span>
                 )}
-                <button
+                <NavRow
                   onClick={() => onSection(s.id)}
-                  aria-current={on ? 'page' : undefined}
+                  on={on}
                   aria-describedby={s.id === 'deploy' && deployDot ? deployHintId : undefined}
                   title={s.cli ? t('拖动调整顺序，或按 Alt + ↑ / ↓') : undefined}
                   draggable={!!s.cli}
@@ -531,43 +537,44 @@ function SettingsBody({
                     moveCli(s.cli.id, at + (e.key === 'ArrowUp' ? -1 : 1))
                   }}
                   className={cn(
-                    'group flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors duration-150',
-                    on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
+                    'group w-auto shrink-0 whitespace-nowrap md:w-full',
                     s.cli && dragging === s.cli.id && 'opacity-50',
                   )}
-                >
-                  {s.cli ? (
-                    <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(s.cli.id) }} />
-                  ) : (
-                    s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
-                  )}
-                  <span className="truncate">{s.label}</span>
-                  {s.id === 'deploy' && deployDot && (
-                    <span
-                      aria-hidden="true"
-                      title={deployDot}
-                      className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                    />
-                  )}
-                  {/* 选中这一行时按钮底色就是 sel，chip 不能用 sel 的透明度：会和底色合并成同色，
-                      改用卡片色 + 细边框，在 rail（未选中）和 sel（选中）上都看得出轮廓 */}
-                  {s.cli && defCli === s.cli.id && (
-                    <span className="rounded-full border border-line bg-card px-1.5 py-px text-[0.625rem] font-normal text-subtle">
-                      {t('默认')}
-                    </span>
-                  )}
-                  {s.cli && (
-                    <GripVertical className="ml-auto hidden h-3.5 w-3.5 shrink-0 text-subtle opacity-0 group-hover:opacity-100 md:block" />
-                  )}
-                  {st && (
-                    <span
-                      className={cn(
-                        'hidden h-1.5 w-1.5 shrink-0 rounded-full md:block',
-                        st.installed && st.enabled ? 'bg-success' : 'bg-line-strong',
+                  icon={
+                    s.cli ? (
+                      <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(s.cli.id) }} />
+                    ) : (
+                      s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
+                    )
+                  }
+                  label={s.label}
+                  trailing={
+                    <>
+                      {s.id === 'deploy' && deployDot && (
+                        <span
+                          aria-hidden="true"
+                          title={deployDot}
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                        />
                       )}
-                    />
-                  )}
-                </button>
+                      {/* 选中行的底色就是 sel，「默认」小签换成卡片底才分得开（同侧栏的 SidebarCount） */}
+                      {s.cli && defCli === s.cli.id && (
+                        <Badge className={cn('px-1.5 text-[0.625rem]', on && 'bg-card')}>{t('默认')}</Badge>
+                      )}
+                      {s.cli && (
+                        <GripVertical className="hidden h-3.5 w-3.5 shrink-0 text-subtle opacity-0 group-hover:opacity-100 md:block" />
+                      )}
+                      {st && (
+                        <span
+                          className={cn(
+                            'hidden h-1.5 w-1.5 shrink-0 rounded-full md:block',
+                            st.installed && st.enabled ? 'bg-success' : 'bg-line-strong',
+                          )}
+                        />
+                      )}
+                    </>
+                  }
+                />
                 {s.id === 'deploy' && deployDot && (
                   <span id={deployHintId} className="sr-only">
                     {deployDot}
@@ -614,7 +621,7 @@ function SettingsBody({
           {cur.id === 'general' && (
             <>
               {demo && (
-                <p className="mb-2 flex gap-2.5 rounded-xl border p-3.5 text-[0.8125rem] leading-relaxed text-subtle">
+                <p className="mb-2 flex gap-2.5 rounded-xl bg-sel/50 p-3.5 text-[0.8125rem] leading-relaxed text-subtle">
                   <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" />
                   {t('在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 Agent。')}
                 </p>
@@ -925,9 +932,7 @@ function SettingsBody({
                 </Row>
                 <Row title={t('抓取元素的方式')} desc={t('快捷键和用哪个鼠标键抓取，到「快捷键」里改。')}>
                   <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                    <kbd className="rounded border border-line px-1.5 py-0.5 font-mono text-[0.75rem]">
-                      {hotkeyLabel(elementPicker.hotkey)}
-                    </kbd>
+                    <Kbd className="h-auto px-1.5 py-0.5 text-[0.75rem]">{hotkeyLabel(elementPicker.hotkey)}</Kbd>
                     <span>{t('＋')}</span>
                     <span>{pickLabel(elementPicker.button)}</span>
                     <Button variant="ghost" size="sm" onClick={() => onSection('shortcuts')}>
@@ -1073,12 +1078,9 @@ function SettingsBody({
                   desc={
                     <>
                       {t('跟随 {cli} 自己的档位设置，要改请到', { cli: defDef.name })}{' '}
-                      <button
-                        className="cursor-pointer text-accent hover:underline"
-                        onClick={() => onSection(`cli:${defCli}`)}
-                      >
+                      <Button variant="link" className="inline" onClick={() => onSection(`cli:${defCli}`)}>
                         {defDef.name}
-                      </button>{' '}
+                      </Button>{' '}
                       {t('里修改。')}
                     </>
                   }
@@ -1307,20 +1309,20 @@ export function SettingsDialog({
     if (open) setCur(section ?? 'general')
   }, [open, section])
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          // 点设置外面的空白处不关闭，避免改到一半误关；用右上角的关闭按钮或 Esc 关闭
-          onInteractOutside={(e) => e.preventDefault()}
-          data-settings-dialog
-          className="fixed top-1/2 left-1/2 z-50 h-[min(840px,calc(100dvh-2rem))] w-[min(1200px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
-        >
-          <D.Title className="sr-only">{t('设置')}</D.Title>
-          {settings && <SettingsBody key={rev} initial={settings} section={cur} onSection={setCur} />}
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+    // 点设置外面的空白处不关闭（Modal 默认），避免改到一半误关；用右上角的关闭按钮或 Esc 关闭。
+    // 标题栏、左栏都由 SettingsBody 自己画，所以用 bare 外壳
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('设置')}
+      bare
+      size="xl"
+      className="h-[min(840px,calc(100dvh-2rem))] max-w-[1200px]"
+    >
+      {/* data-settings-dialog：index.css 按它换设置里的细滚动条 */}
+      <div data-settings-dialog className="h-full min-h-0">
+        {settings && <SettingsBody key={rev} initial={settings} section={cur} onSection={setCur} />}
+      </div>
+    </Modal>
   )
 }

@@ -3,6 +3,7 @@ import type { Agent, NodeTier } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
 import { useAgentView } from '@/lib/agent-view'
@@ -80,10 +81,10 @@ export function TeamEditor({
         {subs.length ? (
           <ul className="flex flex-wrap gap-2">
             {subs.map((m) => (
-              <li key={m.agent.id} className="flex items-center gap-2 rounded-lg bg-card shadow-card px-2.5 py-1.5">
+              <Card key={m.agent.id} as="li" className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
                 <AgentAvatar icon={m.agent.icon} cli={m.agent.cli} size="xs" dim={!m.agent.enabled} />
                 <span className="text-[0.8125rem]">{m.agent.name}</span>
-              </li>
+              </Card>
             ))}
           </ul>
         ) : (

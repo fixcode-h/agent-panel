@@ -10,11 +10,15 @@ export function Checkbox({
   hint,
   tip,
   disabled,
+  ariaLabel,
   className,
 }: {
   checked: boolean
   onChange: (v: boolean) => void
-  label: React.ReactNode
+  /** 不给就只画方块（列表行前的勾选），这时要给 ariaLabel */
+  label?: React.ReactNode
+  /** 读屏名：只有方块、旁边没有文字时用 */
+  ariaLabel?: string
   hint?: React.ReactNode
   /** 复杂项的说明：文字后面一个问号，鼠标移上去才显示 */
   tip?: React.ReactNode
@@ -26,6 +30,7 @@ export function Checkbox({
       type="button"
       role="checkbox"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
@@ -43,10 +48,12 @@ export function Checkbox({
       >
         {checked && <Check className="h-3 w-3" strokeWidth={3} />}
       </span>
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-[0.84375rem] text-fg">{label}</span>
-        {hint && <span className="text-xs leading-relaxed text-subtle">{hint}</span>}
-      </span>
+      {(label || hint) && (
+        <span className="flex min-w-0 flex-col gap-0.5">
+          {label && <span className="text-[0.84375rem] text-fg">{label}</span>}
+          {hint && <span className="text-xs leading-relaxed text-subtle">{hint}</span>}
+        </span>
+      )}
     </button>
   )
   if (!tip) return box

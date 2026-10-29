@@ -70,6 +70,44 @@
   --canvas-hover: rgb(255 255 255 / 0.08);
   --canvas-sel: rgb(255 255 255 / 0.12);
   --canvas-line: rgb(255 255 255 / 0.1);
+  /* 画板本身（画布中间那块设计稿大小的底）和它的透明棋盘格：比画布再深一档，看得出画板边界 */
+  --canvas-board: #0e0e10;
+  --canvas-checker: #1a1a1d;
+  /* 画布上的图片、画板浮起来的投影：深底上要压得重一点才看得出 */
+  --canvas-shadow: 0 12px 40px -12px rgb(0 0 0 / 0.8);
+  /* 画布上的编辑反馈：选中框和缩放手柄、对齐参考线、拖进容器时的落点。深色画布上要够亮，不跟配色走 */
+  --canvas-pick: #4c9bff;
+  --canvas-guide: #ff4fd8;
+  --canvas-drop: #35c46a;
+  /*
+   * 仿终端（角色页的命令预览）：不管浅色还是深色主题都是黑底，配色照常见终端主题；
+   * 命令名、参数、字符串各一种颜色，用户一眼分得出哪段是哪段
+   */
+  --term-bg: #0b0c0f;
+  --term-bar: #14151a;
+  --term-hover: #1e2026;
+  --term-fg: #d9dbe0;
+  --term-subtle: #8c909a;
+  --term-prompt: #5fd39a;
+  --term-string: #f2c46d;
+  --term-cmd: #b9aeff;
+  --term-flag: #7cc4fa;
+  /* 标签的九种颜色（用户给标签挑的，存的是名字）：浅底 + 同色字，深浅主题都看得清，所以不跟主题变 */
+  --tag-gray: #8a8f98;
+  --tag-red: #e5484d;
+  --tag-orange: #f76b15;
+  --tag-amber: #d6a100;
+  --tag-green: #30a46c;
+  --tag-teal: #12a594;
+  --tag-blue: #3e7bfa;
+  --tag-violet: #8e4ec6;
+  --tag-pink: #d6409f;
+  /* 标注的四种意思和蒙版：画在效果图上、也出现在对话里的标注小块，颜色要固定，用户才记得住哪种是哪种 */
+  --mark-change: #f43f5e;
+  --mark-add: #3b82f6;
+  --mark-remove: #f59e0b;
+  --mark-keep: #22c55e;
+  --mark-mask: #22d3ee;
 }
 .dark {
   color-scheme: dark;
@@ -275,8 +313,28 @@
   --color-canvas-hover: var(--canvas-hover);
   --color-canvas-sel: var(--canvas-sel);
   --color-canvas-line: var(--canvas-line);
+  --color-canvas-board: var(--canvas-board);
+  --color-canvas-checker: var(--canvas-checker);
+  --color-canvas-pick: var(--canvas-pick);
+  --color-canvas-guide: var(--canvas-guide);
+  --color-canvas-drop: var(--canvas-drop);
+  --color-term-bg: var(--term-bg);
+  --color-term-bar: var(--term-bar);
+  --color-term-hover: var(--term-hover);
+  --color-term-fg: var(--term-fg);
+  --color-term-subtle: var(--term-subtle);
+  --color-term-prompt: var(--term-prompt);
+  --color-term-string: var(--term-string);
+  --color-term-cmd: var(--term-cmd);
+  --color-term-flag: var(--term-flag);
+  --color-mark-change: var(--mark-change);
+  --color-mark-add: var(--mark-add);
+  --color-mark-remove: var(--mark-remove);
+  --color-mark-keep: var(--mark-keep);
+  --color-mark-mask: var(--mark-mask);
   --shadow-card: var(--shadow);
   --shadow-pop: var(--shadow-pop);
+  --shadow-canvas: var(--canvas-shadow);
   /* 字体跟着设置走（web/src/lib/appearance.ts 在 html 上改 --app-sans / --app-mono），默认值在 :root */
   --font-sans: var(--app-sans);
   --font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;

@@ -8,6 +8,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Markdown } from '@/components/tasks/Markdown'
 import { ScopeRequests } from '@/components/chat/AskToggle'
@@ -245,14 +246,13 @@ export function Optimizer({
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-accent" />
         <span className="text-[0.8125rem] font-medium">{title}</span>
-        <button
-          onClick={onClose}
-          aria-label={t('关闭')}
+        <IconButton
+          icon={X}
+          label={t('关闭')}
           title={running ? t('关闭并终止生成') : t('关闭')}
-          className="ml-auto grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+          onClick={onClose}
+          className="ml-auto"
+        />
       </div>
 
       {!job || job.status === 'failed' ? (

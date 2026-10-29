@@ -13,6 +13,7 @@ import {
 } from '@shared/comfy-chain'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 
@@ -156,10 +157,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
   const ready = new Set(data?.ready ?? [])
 
   return (
-    <section
-      aria-label={t('工作流链')}
-      className={cn('flex flex-col gap-3 rounded-xl bg-card shadow-card/60 p-3', className)}
-    >
+    <Card as="section" padding="sm" aria-label={t('工作流链')} className={cn('flex flex-col gap-3', className)}>
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-[0.8125rem] font-medium">{t('工作流链')}</h2>
         <span className="min-w-0 flex-1 text-[0.75rem] text-subtle">
@@ -245,6 +243,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
                       // 模型没下载的段标出来：链能存但跑不了
                       label: ready.has(x.id) ? x.name : t('{name}（模型没下载）', { name: x.name }),
                     }))}
+                    size="sm"
                     className="min-w-0 flex-1"
                   />
                   {/* 吃提示词的段才给单独的描述框（图生图这类）；按能力判断，用户自建的同类工作流也适用 */}
@@ -254,6 +253,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
                       placeholder={t('这一段的描述，留空用链名')}
                       value={step.prompt}
                       onChange={(e) => setStep(i, { prompt: e.target.value })}
+                      size="sm"
                       className="w-40 shrink-0"
                     />
                   )}
@@ -341,6 +341,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
               placeholder={t('描述（图生图那一段用）')}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
+              size="sm"
               className="min-w-0 flex-1"
             />
             <Button size="sm" onClick={() => void run()} disabled={running || problems.length > 0}>
@@ -353,7 +354,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
             <div className="flex flex-wrap items-start gap-2">
               {image && (
                 <figure className="flex flex-col gap-1">
-                  <img src={image} alt={t('原图')} className="h-24 w-24 rounded-lg border bg-sel object-contain" />
+                  <img src={image} alt={t('原图')} className="h-24 w-24 rounded-lg bg-sel object-contain" />
                   <figcaption className="text-[0.71875rem] text-subtle">{t('原图')}</figcaption>
                 </figure>
               )}
@@ -362,7 +363,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
                   <img
                     src={src}
                     alt={t('输出图 {n}', { n: i + 1 })}
-                    className="h-24 w-24 rounded-lg border bg-sel object-contain"
+                    className="h-24 w-24 rounded-lg bg-sel object-contain"
                   />
                   <figcaption className="text-[0.71875rem] text-subtle">{t('输出图 {n}', { n: i + 1 })}</figcaption>
                 </figure>
@@ -371,6 +372,6 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
           )}
         </div>
       )}
-    </section>
+    </Card>
   )
 }

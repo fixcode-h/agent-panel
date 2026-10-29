@@ -8,10 +8,12 @@ import {
   ImageIcon,
   Lock,
   MessageSquare,
+  Monitor,
   MoreHorizontal,
   Pencil,
   Plus,
   Search,
+  Smartphone,
   Sparkles,
   Terminal,
   Trash2,
@@ -140,6 +142,7 @@ export function ComponentsSection() {
           <Badge tone="accent">{t('新')}</Badge>
           <Badge tone="success">{t('已安装')}</Badge>
           <Badge tone="warning">{t('有更新')}</Badge>
+          <Badge tone="danger">{t('{n} 个失败', { n: 2 })}</Badge>
         </Specimen>
         <Specimen name="StatusDot · UnreadDot · Kbd">
           <StatusDot tone="success" label={t('就绪')} />
@@ -422,7 +425,12 @@ export function ComponentsSection() {
 function MoreButtonSpecimens() {
   const [readOnly, setReadOnly] = useState(true)
   const [wrap, setWrap] = useState(false)
-  const linkLabel = { accent: t('打开这次执行'), muted: t('清除'), warning: t('仍要继续') }
+  const linkLabel = {
+    accent: t('打开这次执行'),
+    muted: t('清除'),
+    warning: t('仍要继续'),
+    danger: t('失败 · AI 分析'),
+  }
   return (
     <>
       <Specimen name="Button · link">
@@ -461,8 +469,10 @@ function MoreInputSpecimens() {
   const week = [t('周一'), t('周二'), t('周三'), t('周四'), t('周五'), t('周六'), t('周日')]
   return (
     <>
-      <Specimen name="Input · Select · sm">
+      <Specimen name="Input · Select · sm · xs">
         <Input size="sm" aria-label={t('示例紧凑输入框')} placeholder={t('筛选')} className="w-44" />
+        {/* xs：属性面板一行一个属性的小框 */}
+        <Input size="xs" aria-label={t('示例属性输入框')} defaultValue="1920" className="w-20 font-mono" />
         <Select
           size="sm"
           aria-label={t('示例紧凑下拉框')}
@@ -662,6 +672,18 @@ function CardCanvasSpecimens() {
                 options={[
                   { id: 'desktop', label: t('桌面') },
                   { id: 'phone', label: t('手机') },
+                ]}
+              />
+              <Segmented
+                tone="canvas"
+                size="sm"
+                iconOnly
+                label={t('示例画布图标切换')}
+                value={device}
+                onChange={setDevice}
+                options={[
+                  { id: 'desktop', label: t('桌面'), icon: Monitor },
+                  { id: 'phone', label: t('手机'), icon: Smartphone },
                 ]}
               />
               <span aria-hidden className="mx-1 h-5 w-px bg-canvas-line" />

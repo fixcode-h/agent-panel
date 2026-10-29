@@ -36,6 +36,8 @@ import { Button } from '@/components/ui/button'
 import { HelpTip } from '@/components/ui/help-tip'
 import { Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
+import { Card } from '@/components/ui/card'
+import { Kbd } from '@/components/ui/kbd'
 import { PeriodPicker } from './PeriodPicker'
 
 /** 千分位：精确原值放 title，表格里显示短格式 */
@@ -415,7 +417,8 @@ export function UsageSection({
         />
         {group === 'time' && (
           <>
-            <div className="inline-flex rounded-lg border p-0.5" role="tablist" aria-label={t('统计粒度')}>
+            {/* 外观同 Segmented（seg-track / seg-thumb），但保留页签语义和左右方向键切换，所以没直接用部件 */}
+            <div className="seg-track inline-flex rounded-lg p-0.5" role="tablist" aria-label={t('统计粒度')}>
               {USAGE_GRAINS.map((g, i) => (
                 <button
                   key={g.id}
@@ -429,8 +432,8 @@ export function UsageSection({
                   onClick={() => changeGrain(g.id)}
                   onKeyDown={(e) => onTabKey(e, i)}
                   className={cn(
-                    'h-7 cursor-pointer rounded-md px-2.5 text-[0.78125rem] transition-colors',
-                    grain === g.id ? 'bg-sel font-medium text-fg' : 'text-muted hover:text-fg',
+                    'h-7 cursor-pointer rounded-md px-2.5 text-[0.75rem] transition-colors',
+                    grain === g.id ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
                   )}
                 >
                   {g.label}
@@ -494,19 +497,18 @@ export function UsageSection({
         {group === 'time' && (
           <>
             <span>
-              <kbd className="rounded border px-1 font-mono">[</kbd>{' '}
-              <kbd className="rounded border px-1 font-mono">]</kbd> {t('切换区间')}
+              <Kbd>[</Kbd> <Kbd>]</Kbd> {t('切换区间')}
             </span>
             <span>
-              <kbd className="rounded border px-1 font-mono">T</kbd> {t('回到今天')}
+              <Kbd>T</Kbd> {t('回到今天')}
             </span>
           </>
         )}
         <span>
-          <kbd className="rounded border px-1 font-mono">R</kbd> {t('刷新')}
+          <Kbd>R</Kbd> {t('刷新')}
         </span>
         <span>
-          <kbd className="rounded border px-1 font-mono">Esc</kbd> {t('关闭设置')}
+          <Kbd>Esc</Kbd> {t('关闭设置')}
         </span>
       </p>
       {error && <p className="text-xs text-danger">{error}</p>}
@@ -587,12 +589,12 @@ export function UsageSection({
       </div>
 
       {/* 明细：区间里有数据的天，从新到旧；表尾合计和上面汇总一致 */}
-      <div
+      <Card
         tabIndex={0}
         role="region"
         aria-label={t('用量明细（{range}）', { range: shown })}
         title={t('用量明细（{range}）', { range: shown })}
-        className="max-h-[min(46vh,420px)] overflow-y-auto rounded-xl border outline-none focus-visible:ring-[3px] focus-visible:ring-focus-soft"
+        className="max-h-[min(46vh,420px)] overflow-y-auto outline-none focus-visible:ring-[3px] focus-visible:ring-focus-soft"
       >
         {listEmpty ? (
           <div className="px-3.5 py-8 text-center text-[0.8125rem] text-subtle">
@@ -738,7 +740,7 @@ export function UsageSection({
             cost={cost}
           />
         )}
-      </div>
+      </Card>
     </section>
   )
 }

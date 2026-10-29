@@ -2,6 +2,8 @@ import { Plus, Sparkles } from 'lucide-react'
 import { WORKDAY_PLAN, workdayTimeLabel } from '@shared/schedule'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 
 /**
  * 空状态：先把「计划 → 到点 → 新建对话」这条关系讲清楚，再给模板和空白两种入口。
@@ -21,7 +23,7 @@ export function ScheduleEmpty({
   ]
 
   return (
-    <div className="flex flex-col items-center gap-6 rounded-xl border border-dashed px-4 py-10 text-center">
+    <EmptyPanel as="div" size="xl" className="flex flex-col items-center gap-6 text-fg">
       <div>
         <h2 className="text-[0.9375rem] font-semibold">{t('还没有计划')}</h2>
         <p className="mt-1 max-w-[420px] text-[0.8125rem] leading-relaxed text-subtle">
@@ -31,7 +33,7 @@ export function ScheduleEmpty({
 
       <ol className="grid w-full max-w-[620px] gap-2 text-left sm:grid-cols-3">
         {steps.map((step, i) => (
-          <li key={step.title} className="flex gap-2 rounded-xl bg-card shadow-card px-3 py-2.5">
+          <Card key={step.title} as="li" className="flex gap-2 px-3 py-2.5">
             <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field text-[0.6875rem] font-semibold text-muted tabular-nums">
               {i + 1}
             </span>
@@ -39,11 +41,11 @@ export function ScheduleEmpty({
               <p className="text-[0.8125rem] font-medium">{step.title}</p>
               <p className="mt-0.5 text-xs leading-relaxed text-subtle">{step.detail}</p>
             </div>
-          </li>
+          </Card>
         ))}
       </ol>
 
-      <div className="flex w-full max-w-[420px] flex-col gap-3 rounded-xl bg-card shadow-card p-4 text-left">
+      <Card padding="md" className="flex w-full max-w-[420px] flex-col gap-3 text-left">
         <div>
           <p className="flex items-center gap-1.5 text-[0.8125rem] font-semibold">
             <Sparkles className="h-3.5 w-3.5 text-accent" />
@@ -62,7 +64,7 @@ export function ScheduleEmpty({
             {t('新建空白计划')}
           </Button>
         </div>
-      </div>
-    </div>
+      </Card>
+    </EmptyPanel>
   )
 }

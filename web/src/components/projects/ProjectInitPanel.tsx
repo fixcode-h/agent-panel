@@ -299,9 +299,9 @@ export function RecGroups({
                   </div>
                   {r.detail && (
                     <div className="flex flex-col gap-2">
-                      <button
-                        type="button"
-                        className="flex w-fit cursor-pointer items-center gap-1 text-xs text-accent hover:underline"
+                      <Button
+                        variant="link"
+                        className="text-xs"
                         aria-expanded={open.has(r.id)}
                         onClick={() =>
                           setOpen((s) => {
@@ -316,7 +316,7 @@ export function RecGroups({
                           className={cn('h-3.5 w-3.5 transition-transform', open.has(r.id) && 'rotate-90')}
                         />
                         {t('查看推荐的步骤')}
-                      </button>
+                      </Button>
                       {open.has(r.id) && r.detail}
                     </div>
                   )}
@@ -494,7 +494,7 @@ export function ProjectInitPanel({
             </div>
           </div>
           {draft.initializedAt && !fromDir && !saved && (
-            <span className="rounded-lg border border-dashed px-3 py-2 text-[0.75rem] leading-relaxed text-subtle">
+            <span className="rounded-lg bg-field px-3 py-2 text-[0.75rem] leading-relaxed text-subtle">
               {t('这次初始化没有留下分析报告，重新初始化后可以在这里对照推荐值。')}
             </span>
           )}
@@ -578,7 +578,7 @@ export function ProjectInitPanel({
           <RecGroups groups={groups} apply={apply} applied={applied} />
 
           {skipped.length > 0 && (
-            <section className="flex flex-col gap-1.5 rounded-xl border border-dashed px-3.5 py-3">
+            <section className="flex flex-col gap-1.5 rounded-xl bg-field px-3.5 py-3">
               <span className="text-xs font-medium text-muted">{t('评估后不适用的工作流')}</span>
               <ul className="flex flex-col gap-1">
                 {skipped.map((w) => (

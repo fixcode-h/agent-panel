@@ -101,7 +101,7 @@ export function UpdateResumeDialog() {
       </p>
       <ul className="flex flex-col gap-2">
         {tasks.map((x) => (
-          <li key={x.id} className="rounded-lg border border-line bg-field px-3 py-2.5">
+          <li key={x.id} className="rounded-lg bg-field px-3 py-2.5">
             <div className="flex items-start gap-2.5">
               <Checkbox
                 checked={!!checked[x.id]}
@@ -115,13 +115,9 @@ export function UpdateResumeDialog() {
                 }
                 className="min-w-0 flex-1"
               />
-              <button
-                type="button"
-                onClick={() => openTask(x)}
-                className="shrink-0 cursor-pointer rounded-md px-1.5 py-0.5 text-xs text-subtle hover:bg-sel hover:text-fg"
-              >
+              <Button variant="link" tone="muted" onClick={() => openTask(x)} className="shrink-0 text-xs">
                 {t('打开')}
-              </button>
+              </Button>
             </div>
           </li>
         ))}

@@ -1,5 +1,6 @@
 import { nextRunLabel, nextToRun, willRunAgain, type ScheduleBucket } from '@shared/schedule'
 import { t } from '@shared/i18n'
+import { Card } from '@/components/ui/card'
 
 /**
  * 页头的一条概览：下一次是谁、什么时候，以及待执行 / 出过问题的数量。
@@ -23,10 +24,7 @@ export function ScheduleOverview({
   const next = nextToRun(all)
 
   return (
-    <section
-      aria-label={t('计划概览')}
-      className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl bg-card shadow-card px-4 py-3"
-    >
+    <Card aria-label={t('计划概览')} as="section" className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
       <div className="min-w-0 flex-1">
         <p className="text-xs text-subtle">{t('下一次执行')}</p>
         <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[0.9375rem]">
@@ -58,6 +56,6 @@ export function ScheduleOverview({
           </span>
         )}
       </div>
-    </section>
+    </Card>
   )
 }

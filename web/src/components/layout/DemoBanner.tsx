@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { FlaskConical, RotateCcw, X } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { extendDict, t } from '@shared/i18n'
 import { EN_DEMO } from '@shared/locales/en/demo'
 
@@ -23,20 +25,11 @@ export function DemoBanner() {
         <b className="font-medium">{t('在线演示')}</b>
         <span className="text-subtle">{t('：数据只存在你的浏览器里，Agent 和本机目录是模拟的。')}</span>
       </span>
-      <button
-        onClick={() => setConfirming(true)}
-        className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-accent hover:bg-accent-soft"
-      >
+      <Button variant="link" onClick={() => setConfirming(true)} className="gap-1.5">
         <RotateCcw className="h-3.5 w-3.5" />
         {t('恢复示例数据')}
-      </button>
-      <button
-        onClick={() => setOpen(false)}
-        aria-label={t('关闭提示')}
-        className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle hover:text-fg"
-      >
-        <X className="h-4 w-4" />
-      </button>
+      </Button>
+      <IconButton icon={X} label={t('关闭提示')} size="sm" onClick={() => setOpen(false)} />
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}

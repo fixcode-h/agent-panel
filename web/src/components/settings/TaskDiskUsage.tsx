@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Select } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
 import { t } from '@shared/i18n'
 
 /** 一个顶层对话连同它的子对话：占用、子对话数都合在一起算，删除时也一起进回收站（服务端就是这么删的） */
@@ -139,7 +140,7 @@ export function TaskDiskUsage({ onChanged }: { onChanged?: () => void }) {
       ) : !groups.length ? (
         <p className="text-xs text-subtle">{stale !== '0' ? t('没有这么久没动的对话。') : t('还没有对话。')}</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border">
+        <Card className="overflow-hidden">
           {groups.map((g) => {
             const expanded = open.has(g.id)
             return (
@@ -197,7 +198,7 @@ export function TaskDiskUsage({ onChanged }: { onChanged?: () => void }) {
               </div>
             )
           })}
-        </div>
+        </Card>
       )}
       <ConfirmDialog
         open={!!deleting}

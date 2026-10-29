@@ -10,15 +10,19 @@ import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { quoteLabel, quoteText } from '@/lib/quote'
 import { shownImages } from '@/lib/attachment-image'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Modal } from '@/components/ui/modal'
 import { Lightbox, type LightboxImage } from '@/components/ui/lightbox'
 import { FileDialog } from '@/components/tasks/FileDialog'
 import { Markdown } from '@/components/tasks/Markdown'
 import { attachmentUrl, isImage } from './Attachments'
 
-/** 行内卡片的样子：输入框（RichInput 用 DOM 画）和消息里（这里用 React 画）用同一套，发出去前后看起来一样 */
+/**
+ * 行内卡片的样子：输入框（RichInput 用 DOM 画）和消息里（这里用 React 画）用同一套，发出去前后看起来一样。
+ * 和 InlineChip 一样靠浅底和文字分开，不描边
+ */
 export const CHIP_CLASS =
-  'mx-0.5 inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md border border-line-strong bg-field/70 px-1.5 align-middle text-[0.8125rem] leading-[1.7] text-fg'
+  'mx-0.5 inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md bg-sel/70 px-1.5 align-middle text-[0.8125rem] leading-[1.7] text-fg'
 
 /** 点开一张卡片要看的东西 */
 export type ViewTarget =
@@ -31,37 +35,33 @@ const NO_TEAM = new Set<string>()
 /** 引用的原文：按 Markdown 显示，可以复制 */
 function QuoteDialog({ text, onClose }: { text: string | null; onClose: () => void }) {
   return (
-    <D.Root open={text !== null} onOpenChange={(o) => !o && onClose()}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          className="fixed top-1/2 left-1/2 z-50 flex max-h-[min(720px,calc(100dvh-2rem))] w-[min(760px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
-        >
-          <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-            <TextQuote className="h-4 w-4 shrink-0 text-subtle" />
-            <D.Title className="min-w-0 flex-1 truncate text-[0.875rem] font-medium">{t('引用的内容')}</D.Title>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('复制')}
-              title={t('复制')}
-              onClick={() => void copyText(text ?? '', { done: t('已复制'), fail: false })}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            <D.Close asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
-                <X className="h-4 w-4" />
-              </Button>
-            </D.Close>
-          </header>
-          <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[0.875rem]">
-            {text !== null && <Markdown text={text} teamNames={NO_TEAM} />}
-          </div>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+    // 只看不填：点到外面就关
+    <Modal
+      open={text !== null}
+      onOpenChange={(o) => !o && onClose()}
+      title={null}
+      size="lg"
+      bare
+      closeOnOutside
+      className="max-h-[min(720px,calc(100dvh-2rem))]"
+    >
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+        <TextQuote className="h-4 w-4 shrink-0 text-subtle" />
+        <D.Title className="min-w-0 flex-1 truncate text-[0.875rem] font-medium">{t('引用的内容')}</D.Title>
+        <IconButton
+          size="sm"
+          icon={Copy}
+          label={t('复制')}
+          onClick={() => void copyText(text ?? '', { done: t('已复制'), fail: false })}
+        />
+        <D.Close asChild>
+          <IconButton size="sm" icon={X} label={t('关闭')} />
+        </D.Close>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[0.875rem]">
+        {text !== null && <Markdown text={text} teamNames={NO_TEAM} />}
+      </div>
+    </Modal>
   )
 }
 
@@ -177,10 +177,7 @@ export function MessageChip({
       data-missing={missing ? 'true' : undefined}
       onClick={onOpen}
       disabled={!onOpen}
-      className={cn(
-        CHIP_CLASS,
-        'cursor-pointer text-left transition-colors hover:border-subtle/60 hover:bg-field disabled:cursor-default',
-      )}
+      className={cn(CHIP_CLASS, 'cursor-pointer text-left transition-colors hover:bg-sel disabled:cursor-default')}
     >
       {src ? (
         // 一屏之外的消息图片推到滚到时再取（首屏不再一次拉十几张）

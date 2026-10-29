@@ -4,6 +4,8 @@ import type { CliSkill } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
 
 const scopeName = (s: string) =>
   ({
@@ -75,7 +77,7 @@ export function CliSkills({ cli, projectId = '', own = false }: { cli: string; p
                 <span className="truncate font-mono">{source || t('插件')}</span>
                 <span className="shrink-0">{items.length}</span>
               </p>
-              <ul className="flex flex-col divide-y rounded-lg border">
+              <Card as="ul" className="flex flex-col divide-y rounded-lg">
                 {items.map((s) => (
                   <li key={s.path || s.name} className="flex items-start gap-2.5 px-3 py-2" title={s.path}>
                     <Sparkles
@@ -86,17 +88,13 @@ export function CliSkills({ cli, projectId = '', own = false }: { cli: string; p
                         <span className={cn('truncate font-mono', !s.enabled && 'text-subtle line-through')}>
                           {s.name}
                         </span>
-                        {s.scope && (
-                          <span className="shrink-0 rounded-full bg-sel px-1.5 py-px text-[0.65625rem] text-muted">
-                            {scopeName(s.scope)}
-                          </span>
-                        )}
+                        {s.scope && <Badge className="shrink-0 px-1.5 text-[0.65625rem]">{scopeName(s.scope)}</Badge>}
                       </p>
                       {s.description && <p className="line-clamp-2 text-[0.75rem] text-muted">{s.description}</p>}
                     </div>
                   </li>
                 ))}
-              </ul>
+              </Card>
             </div>
           ))}
         </div>

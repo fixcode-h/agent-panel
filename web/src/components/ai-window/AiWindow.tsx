@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
+
 import { CircleAlert, ExternalLink, MessageSquareOff, Minimize2, Sparkles, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { fmtDuration } from '@shared/duration'
@@ -14,7 +14,8 @@ import {
 import { timingMs } from '@/lib/analysis-report'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Modal } from '@/components/ui/modal'
 import { Spinner, StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { MinimizedChat, type ChatDockState } from '@/components/ui/minimized-chat'
 import { TaskView } from '@/components/tasks/TaskView'
@@ -106,34 +107,28 @@ export function AiWindow() {
   const actions = (
     <>
       {taskId && !gone && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={where}
+        <IconButton
+          icon={ExternalLink}
+          size="sm"
+          label={where}
           title={t('{where}（分析照常进行）', { where })}
           onClick={openInPlace}
-        >
-          <ExternalLink className="h-4 w-4" />
-        </Button>
+        />
       )}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={t('最小化')}
+      <IconButton
+        icon={Minimize2}
+        size="sm"
+        label={t('最小化')}
         title={t('最小化（分析照常进行）')}
         onClick={() => minimizeAiWindow(true)}
-      >
-        <Minimize2 className="h-4 w-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={t('关闭')}
+      />
+      <IconButton
+        icon={X}
+        size="sm"
+        label={t('关闭')}
         title={running ? t('关闭窗口（分析继续在后台进行）') : t('关闭窗口')}
         onClick={() => closeAiWindow()}
-      >
-        <X className="h-4 w-4" />
-      </Button>
+      />
     </>
   )
   return (
@@ -151,8 +146,14 @@ export function AiWindow() {
           onClose={() => closeAiWindow()}
         />
       )}
-      <D.Root
+      <Modal
         open={open && !minimized}
+        title={heading}
+        size="full"
+        bare
+        closeOnOutside
+        // 嵌的是整个对话页，底色跟页面一样用 bg；高度到 960 为止，大屏上不显得空
+        className="max-h-[min(960px,calc(100dvh-2rem))] bg-bg"
         // 按 Esc 或点窗口外面：分析中先收起来（浮条还在、状态还看得到）；没在分析就关窗口。
         // 两种都不停分析：关闭只是收窗口，分析继续在后台跑
         onOpenChange={(o) => {
@@ -161,87 +162,78 @@ export function AiWindow() {
           else closeAiWindow()
         }}
       >
-        <D.Portal>
-          <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-          <D.Content
-            aria-describedby={undefined}
-            className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1400px] flex-col overflow-hidden rounded-[0.875rem] border border-line-strong bg-bg shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6"
-          >
-            <D.Title className="sr-only">{heading}</D.Title>
-            {/* 窗口自己的标题栏（照设计稿 AiWindow）：哪种分析、分析的对象、来自哪里、现在的状态，
+        {/* 窗口自己的标题栏（照设计稿 AiWindow）：哪种分析、分析的对象、来自哪里、现在的状态，
                 最小化和关闭也放这里；下面嵌的对话只留它自己的对话操作 */}
-            <header className="flex h-[3.25rem] shrink-0 items-center gap-2.5 border-b pr-3 pl-4">
-              <span className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-lg bg-fg text-bg">
-                <Sparkles className="h-3.5 w-3.5" />
-              </span>
-              <span className="shrink-0 text-[0.9375rem] font-semibold">{job.label}</span>
-              <span
-                title={job.title}
-                className={cn(
-                  'inline-flex h-6 max-w-[45%] min-w-0 shrink items-center rounded-md px-2.5 text-[0.75rem] font-medium',
-                  fromIssue ? 'bg-danger/10 text-danger' : 'bg-sel text-muted',
-                )}
-              >
-                <span className="truncate">{job.title}</span>
-              </span>
-              {from && (
-                <span className="hidden min-w-0 truncate text-[0.75rem] text-subtle md:inline">
-                  {t('来自 {name}', { name: from })}
-                </span>
-              )}
-              <span className="flex-1" />
-              {pill && (
-                <StatusPill tone={pill.tone} spin={pill.tone === 'run'} className="h-6 px-2.5">
-                  {pill.text}
-                  {took && <span className="tabular-nums">· {took}</span>}
-                </StatusPill>
-              )}
-              {/* 嵌入对话的状态和操作（进程、轮次、功能面板开关…）挂在这里，见 TaskView 的 embed.slot */}
-              <span ref={setSlot} className="flex shrink-0 items-center gap-0.5 empty:hidden" />
-              <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
-            </header>
-            {taskId && !gone ? (
-              // 等标题栏的位置挂好再画对话：不然第一帧会先画出对话自己的页签行再收掉
-              slot && (
-                <TaskView
-                  key={taskId}
-                  taskId={taskId}
-                  project={project}
-                  embed={{ actions: null, onLeave: hideAiWindow, slot }}
-                />
-              )
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <div className="grid flex-1 place-items-center p-6">
-                  {gone ? (
-                    <div className="max-w-md rounded-xl bg-field px-6 py-8 text-center">
-                      <span className="mx-auto grid h-9 w-9 place-items-center rounded-full bg-sel text-subtle">
-                        <MessageSquareOff className="h-4 w-4" />
-                      </span>
-                      <p className="mt-3 text-[0.875rem] font-medium">{t('这个对话已经关闭了')}</p>
-                      <p className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
-                        {t('它已经从对话列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。')}
-                      </p>
-                    </div>
-                  ) : starting ? (
-                    <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                      <Spinner className="h-3.5 w-3.5 text-run" />
-                      {t('正在新建分析对话…')}
-                    </p>
-                  ) : (
-                    error && (
-                      <p className="flex max-w-lg items-start gap-2 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-danger">
-                        <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                        {error}
-                      </p>
-                    )
-                  )}
-                </div>
-              </div>
+        <header className="flex h-[3.25rem] shrink-0 items-center gap-2.5 border-b pr-3 pl-4">
+          <span className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-lg bg-fg text-bg">
+            <Sparkles className="h-3.5 w-3.5" />
+          </span>
+          <span className="shrink-0 text-[0.9375rem] font-semibold">{job.label}</span>
+          <span
+            title={job.title}
+            className={cn(
+              'inline-flex h-6 max-w-[45%] min-w-0 shrink items-center rounded-md px-2.5 text-[0.75rem] font-medium',
+              fromIssue ? 'bg-danger/10 text-danger' : 'bg-sel text-muted',
             )}
-          </D.Content>
-        </D.Portal>
-      </D.Root>
+          >
+            <span className="truncate">{job.title}</span>
+          </span>
+          {from && (
+            <span className="hidden min-w-0 truncate text-[0.75rem] text-subtle md:inline">
+              {t('来自 {name}', { name: from })}
+            </span>
+          )}
+          <span className="flex-1" />
+          {pill && (
+            <StatusPill tone={pill.tone} spin={pill.tone === 'run'} className="h-6 px-2.5">
+              {pill.text}
+              {took && <span className="tabular-nums">· {took}</span>}
+            </StatusPill>
+          )}
+          {/* 嵌入对话的状态和操作（进程、轮次、功能面板开关…）挂在这里，见 TaskView 的 embed.slot */}
+          <span ref={setSlot} className="flex shrink-0 items-center gap-0.5 empty:hidden" />
+          <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
+        </header>
+        {taskId && !gone ? (
+          // 等标题栏的位置挂好再画对话：不然第一帧会先画出对话自己的页签行再收掉
+          slot && (
+            <TaskView
+              key={taskId}
+              taskId={taskId}
+              project={project}
+              embed={{ actions: null, onLeave: hideAiWindow, slot }}
+            />
+          )
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="grid flex-1 place-items-center p-6">
+              {gone ? (
+                <div className="max-w-md rounded-xl bg-field px-6 py-8 text-center">
+                  <span className="mx-auto grid h-9 w-9 place-items-center rounded-full bg-sel text-subtle">
+                    <MessageSquareOff className="h-4 w-4" />
+                  </span>
+                  <p className="mt-3 text-[0.875rem] font-medium">{t('这个对话已经关闭了')}</p>
+                  <p className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
+                    {t('它已经从对话列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。')}
+                  </p>
+                </div>
+              ) : starting ? (
+                <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                  <Spinner className="h-3.5 w-3.5 text-run" />
+                  {t('正在新建分析对话…')}
+                </p>
+              ) : (
+                error && (
+                  <p className="flex max-w-lg items-start gap-2 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-danger">
+                    <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    {error}
+                  </p>
+                )
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </>
   )
 }

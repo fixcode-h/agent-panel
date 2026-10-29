@@ -363,4 +363,5 @@ export const EN_AGENTS: Record<string, string> = {
     'When this role runs a project parent conversation: if the change is already clear and needs no investigation, up to 2 files and 20 lines (copy, a config value, a line or two of docs), it can make and commit the change itself without opening a child conversation. The panel blocks it while a child is merging back or holds those files, and checks afterwards whether it went over the limit.',
   'AI 创建角色': 'Create a role with AI',
   'AI 创建工作流': 'Create a workflow with AI',
+  '使用哪个 Agent': 'Which agent to use',
 }

@@ -17,7 +17,7 @@ const paddings = {
 export const Card = forwardRef<
   HTMLElement,
   HTMLAttributes<HTMLElement> & {
-    as?: 'div' | 'section' | 'article' | 'li' | 'button'
+    as?: 'div' | 'section' | 'article' | 'li' | 'ul' | 'pre' | 'button'
     padding?: keyof typeof paddings
     interactive?: boolean
   }

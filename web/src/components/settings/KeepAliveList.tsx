@@ -6,6 +6,7 @@ import { getCli } from '@shared/clis'
 import { api, type KeepAliveItem } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { t } from '@shared/i18n'
 
 /** 刷新间隔：进程数量和内存变化不快，开着设置页时偶尔看一眼就够 */
@@ -77,7 +78,7 @@ export function KeepAliveList() {
       ) : !items.length ? (
         <p className="text-xs text-subtle">{t('现在没有保活中的会话')}</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border">
+        <Card className="overflow-hidden">
           {items.map((x) => {
             const project = projects.find((p) => p.id === x.projectId)?.name
             return (
@@ -114,7 +115,7 @@ export function KeepAliveList() {
               </div>
             )
           })}
-        </div>
+        </Card>
       )}
       <p className="text-xs leading-relaxed text-subtle">
         {t(

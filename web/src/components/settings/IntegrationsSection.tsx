@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { CopyText } from './parts'
 
 /**
@@ -180,26 +182,20 @@ export function IntegrationsSection() {
         const setup = installs[v.id]
         const settingUp = setup?.status === 'running'
         return (
-          <section key={v.id} className="rounded-xl bg-card shadow-card p-4">
+          <Card key={v.id} as="section" padding="md">
             <div className="flex flex-wrap items-start gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border bg-field text-muted">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-sel text-muted">
                 <SquareTerminal className="h-4 w-4" strokeWidth={1.8} />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 font-medium">
                   {v.name}
-                  <span
-                    className={cn(
-                      'rounded-full px-2 py-px text-[0.6875rem] font-normal',
-                      v.authed
-                        ? 'bg-success/12 text-success'
-                        : v.installed
-                          ? 'bg-warning/12 text-warning'
-                          : 'bg-sel text-subtle',
-                    )}
+                  <Badge
+                    tone={v.authed ? 'success' : v.installed ? 'warning' : 'neutral'}
+                    className="text-[0.6875rem] font-normal"
                   >
                     {v.authed ? t('已授权') : v.installed ? t('未授权') : t('未安装')}
-                  </span>
+                  </Badge>
                   {v.version && (
                     <span className="font-mono text-[0.71875rem] font-normal text-subtle">{v.version}</span>
                   )}
@@ -337,7 +333,7 @@ export function IntegrationsSection() {
             )}
 
             {job && <LoginBox job={job} onCancel={() => void cancel(v.id)} />}
-          </section>
+          </Card>
         )
       })}
 

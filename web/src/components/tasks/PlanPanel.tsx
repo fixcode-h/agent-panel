@@ -19,6 +19,8 @@ import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { StatusPill } from '@/components/ui/status-pill'
+import { ComposerPopover } from '@/components/ui/composer-popover'
+import { Progress } from '@/components/ui/progress'
 
 const STATUS_LABEL: Record<PlanStatus, string> = {
   pending: t('待做'),
@@ -43,25 +45,18 @@ function WaitRing({ className }: { className?: string }) {
 
 /**
  * 进度条（done/total，done 含明确跳过的步骤）：折叠头和窗口头共用。
- * 宽度用 CSS 过渡，状态推进时能看出「又走了一步」；role=progressbar 让读屏也能拿到 3/8 这件事
+ * 读屏报原始的 3/8（raw），界面检查也按 data-plan-bar 上的这两个值断言
  */
 function PlanBar({ done, total, className }: { done: number; total: number; className?: string }) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0
   return (
-    <span
-      role="progressbar"
+    <Progress
       data-plan-bar=""
-      aria-valuemin={0}
-      aria-valuemax={total}
-      aria-valuenow={done}
-      aria-label={t('计划进度 {done}/{total}', { done, total })}
-      className={cn('block h-1 overflow-hidden rounded-full bg-sel', className)}
-    >
-      <span
-        className="block h-full rounded-full bg-accent transition-[width] duration-300"
-        style={{ width: `${pct}%` }}
-      />
-    </span>
+      value={done}
+      max={total}
+      raw
+      label={t('计划进度 {done}/{total}', { done, total })}
+      className={className}
+    />
   )
 }
 
@@ -349,10 +344,11 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
   const updatedMs = planUpdatedAt(plan)
   const updatedAt = updatedMs === undefined ? undefined : new Date(updatedMs).toISOString()
   return (
-    <div
+    <ComposerPopover
       role="dialog"
       aria-label={t('执行计划')}
-      className="absolute bottom-full left-0 z-30 mb-1 flex max-h-[min(64vh,560px)] w-[min(460px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop"
+      width="min(460px, calc(100vw - 2rem))"
+      className="max-h-[min(64vh,560px)]"
     >
       <div className="flex shrink-0 items-center gap-2 px-4 pt-3 pb-1">
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-subtle" title={plan.title}>
@@ -412,7 +408,7 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
           </div>
         )}
       </div>
-    </div>
+    </ComposerPopover>
   )
 }
 

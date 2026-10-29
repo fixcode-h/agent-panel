@@ -300,12 +300,13 @@ export function AgentsPage() {
               </div>
             ) : (
               clis.length > 0 && (
-                <button
+                <Button
+                  variant="link"
                   onClick={() => openSettings(`cli:${cliToEnable(clis, settings).id}`)}
-                  className="cursor-pointer text-left text-[0.8125rem] text-accent hover:underline"
+                  className="text-[0.8125rem]"
                 >
                   {t('还没有启用 Agent，去设置里启用')}
-                </button>
+                </Button>
               )
             )}
           </div>

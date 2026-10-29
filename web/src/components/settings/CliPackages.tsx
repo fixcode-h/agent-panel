@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
 
 type Action = 'install' | 'remove' | 'update' | 'updateAll'
 
@@ -94,7 +95,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
       ) : !list.length ? (
         <p className="text-[0.75rem] text-subtle">{t('还没有装扩展包')}</p>
       ) : (
-        <ul className="flex flex-col divide-y rounded-lg border" aria-label={t('已装的扩展包')}>
+        <Card as="ul" className="flex flex-col divide-y rounded-lg" aria-label={t('已装的扩展包')}>
           {list.map((p) => (
             <li key={p.source} className="group flex items-center gap-2.5 px-3 py-2" title={p.target}>
               <Package className="h-3.5 w-3.5 shrink-0 text-accent" />
@@ -127,7 +128,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
               </Button>
             </li>
           ))}
-        </ul>
+        </Card>
       )}
       {result?.output && (
         <pre

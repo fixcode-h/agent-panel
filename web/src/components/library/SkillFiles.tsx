@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Input, Textarea } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -242,7 +243,7 @@ export function SkillFiles({
 
       <div className="flex flex-col gap-3 lg:flex-row">
         {/* 文件树 */}
-        <div className="flex min-w-0 flex-col gap-0.5 rounded-xl bg-card shadow-card p-1.5 lg:w-[260px] lg:shrink-0">
+        <Card padding="xs" className="flex min-w-0 flex-col gap-0.5 lg:w-[260px] lg:shrink-0">
           {/* 主文件在上方详情页编辑：这里只提示它在哪，点一下滚上去 */}
           <button
             type="button"
@@ -291,7 +292,7 @@ export function SkillFiles({
             )
           })}
           {truncated && <p className="px-2 py-2 text-[0.75rem] text-subtle">{t('文件太多，只显示了前面一部分。')}</p>}
-        </div>
+        </Card>
 
         {/* 附加文件的内容：没选中时给引导，选中了才显示编辑框 */}
         <div className="flex min-w-0 flex-1 flex-col gap-2">

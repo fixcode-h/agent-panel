@@ -48,6 +48,7 @@ import { isAnalysisTask } from '@/lib/analysis-report'
 import { TaskView } from './TaskView'
 import { ProjectFileExplorer } from '@/components/files/ProjectFileExplorer'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
+import { IconButton } from '@/components/ui/icon-button'
 import { t } from '@shared/i18n'
 
 /** 项目首页：参考 Claude Code，上面是这个项目的任务，输入框贴在底部，和对话页的输入框在同一个位置 */
@@ -208,15 +209,7 @@ function ProjectHome({ project }: { project: Project }) {
           {/* 面板自己的标题栏和页面标题栏同高，浮层盖住页面标题栏时也能在这里关掉 */}
           <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-3">
             <span className="text-[0.8125rem] font-semibold">{t('文件')}</span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('关闭文件')}
-              title={t('关闭文件')}
-              onClick={() => setFilesOpen(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <IconButton size="sm" icon={X} label={t('关闭文件')} onClick={() => setFilesOpen(false)} />
           </div>
           <div className="flex min-h-0 flex-1 flex-col">
             <ProjectFileExplorer projectId={project.id} dir={project.path} />

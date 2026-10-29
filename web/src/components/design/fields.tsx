@@ -13,7 +13,8 @@ import {
 import { parseColor, type Brush, type ImageFit, type Margin, type Vec2 } from '@shared/umg'
 import type { DesignImage } from '@shared/design'
 import { cn } from '@/lib/utils'
-import { Select } from '@/components/ui/input'
+import { Input, Select, Textarea } from '@/components/ui/input'
+import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
@@ -27,8 +28,7 @@ export function setPath<T>(o: T, path: string, v: unknown): T {
   return { ...cur, [k]: rest.length ? setPath(cur[k], rest.join('.'), v) : v }
 }
 
-const box =
-  'h-7 w-full min-w-0 rounded-md border border-line bg-field px-1.5 text-[0.75rem] text-fg outline-none focus:border-focus'
+// 属性面板的框都用 Input / Select 的 xs 档（h-7、0.75rem），和组件库同一套边框和焦点圈
 
 export function FieldRow({
   label,
@@ -86,7 +86,8 @@ export function NumInput({
       {prefix && (
         <span className="pointer-events-none absolute left-1.5 font-mono text-[0.625rem] text-subtle/80">{prefix}</span>
       )}
-      <input
+      <Input
+        size="xs"
         aria-label={label ?? prefix}
         value={text}
         inputMode="decimal"
@@ -100,7 +101,7 @@ export function NumInput({
             commit(String(+n.toFixed(4)))
           }
         }}
-        className={cn(box, 'font-mono tabular-nums', prefix && 'pl-4')}
+        className={cn('min-w-0 font-mono tabular-nums', prefix && 'pl-4')}
       />
     </label>
   )
@@ -135,21 +136,26 @@ export function TextInput({
     ro.observe(el)
     return () => ro.disconnect()
   }, [multiline, text])
-  const Tag = multiline ? 'textarea' : 'input'
-  return (
-    <Tag
+  const common = {
+    'aria-label': label,
+    placeholder,
+    value: text,
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setText(e.target.value),
+    onBlur: () => text !== value && onChange(text),
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && (!multiline || e.ctrlKey || e.metaKey)) e.currentTarget.blur()
+    },
+  }
+  return multiline ? (
+    <Textarea
       ref={ref}
-      aria-label={label}
-      placeholder={placeholder}
-      value={text}
-      rows={multiline ? 2 : undefined}
-      onChange={(e: any) => setText(e.target.value)}
-      onBlur={() => text !== value && onChange(text)}
-      onKeyDown={(e: any) => {
-        if (e.key === 'Enter' && (!multiline || e.ctrlKey || e.metaKey)) e.currentTarget.blur()
-      }}
-      className={cn(box, multiline && 'h-auto resize-none overflow-y-auto py-1 leading-snug')}
+      rows={2}
+      {...common}
+      // 和 xs 输入框同一个字号和圆角，高度由上面的 fit 跟着内容算
+      className="min-w-0 resize-none overflow-y-auto rounded-md px-1.5 py-1 text-[0.75rem] leading-snug"
     />
+  ) : (
+    <Input ref={ref} size="xs" {...common} className="min-w-0" />
   )
 }
 
@@ -214,7 +220,7 @@ export function ColorInput({ value, onChange }: { value: string; onChange: (v: s
   return (
     <>
       <label
-        className="relative h-7 w-7 shrink-0 cursor-pointer overflow-hidden rounded-md border border-line bg-[length:8px_8px] [background-image:conic-gradient(#ccc_25%,#fff_0_50%,#ccc_0_75%,#fff_0)]"
+        className="relative h-7 w-7 shrink-0 cursor-pointer overflow-hidden rounded-md border border-line-strong bg-[length:8px_8px] [background-image:conic-gradient(#ccc_25%,#fff_0_50%,#ccc_0_75%,#fff_0)]"
         title={t('选择颜色')}
       >
         <span className="absolute inset-0" style={{ background: `rgba(${r * 255},${g * 255},${b * 255},${a})` }} />
@@ -226,7 +232,8 @@ export function ColorInput({ value, onChange }: { value: string; onChange: (v: s
           aria-label={t('选择颜色')}
         />
       </label>
-      <input
+      <Input
+        size="xs"
         aria-label={t('颜色')}
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -238,7 +245,7 @@ export function ColorInput({ value, onChange }: { value: string; onChange: (v: s
           onChange(h.length === 7 ? `${h}FF` : h)
         }}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-        className={cn(box, 'flex-1 font-mono uppercase')}
+        className="min-w-0 flex-1 font-mono uppercase"
       />
       <div className="w-[52px] shrink-0">
         <NumInput
@@ -272,7 +279,7 @@ export function EnumInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       options={options.map((o) => ({ value: o, label: o }))}
-      className="h-7 rounded-md px-2 text-[0.75rem]"
+      size="xs"
     />
   )
 }
@@ -314,24 +321,14 @@ export function AlignInput({
 }) {
   const opts = axis === 'h' ? H_OPTS : V_OPTS
   return (
-    <div role="radiogroup" className="flex rounded-md border border-line bg-field p-px">
-      {opts.map((o) => (
-        <button
-          key={o.id}
-          role="radio"
-          aria-checked={value === o.id}
-          aria-label={o.label}
-          title={`${o.label}（${o.id}）`}
-          onClick={() => onChange(o.id)}
-          className={cn(
-            'grid h-6 w-7 cursor-pointer place-items-center rounded-[5px]',
-            value === o.id ? 'bg-accent-soft text-accent' : 'text-subtle hover:text-fg',
-          )}
-        >
-          <o.icon className="h-3.5 w-3.5" />
-        </button>
-      ))}
-    </div>
+    <Segmented
+      size="sm"
+      iconOnly
+      label={axis === 'h' ? t('水平对齐') : t('垂直对齐')}
+      value={value}
+      onChange={onChange}
+      options={opts}
+    />
   )
 }
 

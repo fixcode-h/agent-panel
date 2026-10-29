@@ -5,6 +5,7 @@ import { Check, ChevronLeft, Loader2, PencilLine, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Markdown } from '@/components/tasks/Markdown'
 
 /** 问题里的 @名字 只是普通文字时不当成提及高亮 */
@@ -181,10 +182,9 @@ export function QuestionPanel({
           </div>
         )}
         {onClose && (
-          <button
-            type="button"
-            aria-label={closeLabel ?? t('不回答，终止对话')}
-            title={closeLabel ?? t('不回答，终止对话')}
+          <IconButton
+            label={closeLabel ?? t('不回答，终止对话')}
+            icon={closing ? undefined : X}
             disabled={closing || busy}
             onClick={async () => {
               setClosing(true)
@@ -194,10 +194,11 @@ export function QuestionPanel({
                 setClosing(false)
               }
             }}
-            className="-mr-1 grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-card hover:text-fg disabled:cursor-default disabled:opacity-50"
+            // 琥珀色浅底上悬停用卡片底，和选项行同一层
+            className="-mr-1 hover:bg-card"
           >
-            {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
-          </button>
+            {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : undefined}
+          </IconButton>
         )}
       </div>
       {/* 问题正文可能是 AI 写的 Markdown：渲染出来，长了在框里滚，选项和底部按钮始终留着 */}

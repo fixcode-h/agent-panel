@@ -232,6 +232,8 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   'AI 设计': 'AI design',
   面板: 'Panel',
   查看节点图: 'Show node graph',
+  生成进度: 'Generation progress',
+  下载进度: 'Download progress',
   '正在启动 ComfyUI 并导入工作流…': 'Starting ComfyUI and importing the workflow…',
   '已导入到 ComfyUI 的工作流列表：{name}': 'Imported into the ComfyUI workflow list: {name}',
   '在 ComfyUI 右侧的「工作流」侧栏里点开它（ComfyUI 不支持用网址直接打开某个工作流）。':

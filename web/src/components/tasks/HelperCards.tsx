@@ -12,6 +12,10 @@ import { useStickToBottom } from '@/lib/useStickToBottom'
 import { helperBriefView } from '@/lib/helper-brief'
 import { useEscape } from '@/lib/useEscape'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Modal } from '@/components/ui/modal'
+import { ComposerPopover } from '@/components/ui/composer-popover'
+import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
@@ -63,27 +67,39 @@ export function StopHelper({
 }) {
   const [busy, setBusy] = useState(false)
   if (!stoppable(step)) return null
+  const stop = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setBusy(true)
+    await stopHelper(task, step)
+    setBusy(false)
+  }
+  const tip = t('终止子任务：在跑的马上结束，排队的不再开始，按「已终止」交回给对话')
+  if (!label)
+    return (
+      <IconButton
+        size={compact ? '2xs' : 'sm'}
+        tone="danger"
+        icon={busy ? undefined : Square}
+        label={t('终止子任务')}
+        title={tip}
+        disabled={busy}
+        onClick={stop}
+      >
+        {busy ? <Loader2 className={cn('animate-spin', compact ? 'h-3 w-3' : 'h-3.5 w-3.5')} /> : undefined}
+      </IconButton>
+    )
   return (
     <Button
       variant="ghost"
-      size={label ? 'sm' : 'icon-sm'}
+      size="sm"
       disabled={busy}
       aria-label={t('终止子任务')}
-      title={t('终止子任务：在跑的马上结束，排队的不再开始，按「已终止」交回给对话')}
-      onClick={async (e) => {
-        e.stopPropagation()
-        setBusy(true)
-        await stopHelper(task, step)
-        setBusy(false)
-      }}
-      className={cn('shrink-0 text-subtle hover:text-danger', compact && 'h-5 w-5 rounded')}
+      title={tip}
+      onClick={stop}
+      className="shrink-0 text-subtle hover:text-danger"
     >
-      {busy ? (
-        <Loader2 className={cn('animate-spin', compact ? 'h-3 w-3' : 'h-3.5 w-3.5')} />
-      ) : (
-        <Square className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
-      )}
-      {label && t('终止')}
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+      {t('终止')}
     </Button>
   )
 }
@@ -168,14 +184,14 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
           <span className="shrink-0 text-xs text-subtle tabular-nums">{steps.length}</span>
         )}
         {failed.length > 0 && (
-          <span className="shrink-0 rounded-full bg-danger/12 px-1.5 text-[0.6875rem] text-danger">
+          <Badge tone="danger" className="shrink-0 px-1.5 text-[0.6875rem]">
             {t('{n} 个失败', { n: failed.length })}
-          </span>
+          </Badge>
         )}
       </button>
       {open && (
         // 以这一行状态栏为基准向上弹：和「子对话」的浮层对齐，不挤在按钮下面
-        <div className="absolute bottom-full left-0 z-30 mb-1 w-[min(420px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop">
+        <ComposerPopover>
           <div className="flex items-center gap-2 border-b px-3 py-2">
             <span className="text-[0.8125rem] font-medium">{t('子任务')}</span>
             <span className="text-xs text-subtle">
@@ -211,10 +227,10 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
                           <span className="flex min-w-0 items-center gap-1.5">
                             <span className="min-w-0 truncate text-[0.8125rem]">{s.title}</span>
                             {agent && (
-                              <span className="flex shrink-0 items-center gap-1 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
+                              <Badge className="shrink-0 px-1.5 text-[0.6875rem] text-subtle">
                                 <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
                                 {agent.name}
-                              </span>
+                              </Badge>
                             )}
                             {s.status === 'running' && (
                               <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>
@@ -238,7 +254,7 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
               </Fragment>
             ))}
           </div>
-        </div>
+        </ComposerPopover>
       )}
       {win && <HelperWindow task={task} id={win} teamNames={teamNames} onClose={() => setWin('')} />}
     </div>
@@ -276,78 +292,79 @@ export function HelperWindow({
   if (!step) return null
   const time = step.endedAt && !live ? fmtDuration(stepMs(step, now)) : ''
   return (
-    <D.Root open onOpenChange={(o) => !o && onClose()}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          className="fixed top-1/2 left-1/2 z-50 flex h-[min(820px,calc(100dvh-2rem))] w-[min(880px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
-        >
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">
-            <StepIcon status={step.status} />
-            <span className="shrink-0 text-[0.8125rem] text-muted">{t('子任务')}</span>
-            <D.Title className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium" title={step.title}>
-              {step.title}
-            </D.Title>
-            {agent && (
-              <span className="hidden shrink-0 items-center gap-1.5 text-xs text-subtle sm:flex">
-                <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
-                {agent.name}
-              </span>
-            )}
-            {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
-            {/* 窄屏只留图标：留个 aria-label 和 title，否则入口没有可访问名、悬停也没有提示 */}
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={t('AI 分析')}
-              title={t('让 AI 分析这一步的耗时、角色符合度和优化空间')}
-              onClick={() => setAnalyzing(true)}
-            >
-              <Sparkles className="h-4 w-4" />
-              <span className="hidden sm:inline">{t('AI 分析')}</span>
-            </Button>
-            <StopHelper task={task} step={step} label />
-            <D.Close asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
-                <X className="h-4 w-4" />
-              </Button>
-            </D.Close>
-          </header>
-          <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto flex max-w-(--content-w) flex-col gap-4 px-4 py-5 md:px-6">
-              {/* 派发时交给它的要求放在最上面：先知道这个子任务要做什么，再看它怎么做的。
+    <>
+      {/* 只读的查看窗口：点到外面就关；对话流要够宽，高度固定不随内容跳 */}
+      <Modal
+        open
+        onOpenChange={(o) => !o && onClose()}
+        title={null}
+        size="xl"
+        bare
+        closeOnOutside
+        className="h-[min(820px,calc(100dvh-2rem))] max-w-[880px] bg-bg"
+      >
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">
+          <StepIcon status={step.status} />
+          <span className="shrink-0 text-[0.8125rem] text-muted">{t('子任务')}</span>
+          <D.Title className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium" title={step.title}>
+            {step.title}
+          </D.Title>
+          {agent && (
+            <span className="hidden shrink-0 items-center gap-1.5 text-xs text-subtle sm:flex">
+              <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
+              {agent.name}
+            </span>
+          )}
+          {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
+          {/* 窄屏只留图标：留个 aria-label 和 title，否则入口没有可访问名、悬停也没有提示 */}
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t('AI 分析')}
+            title={t('让 AI 分析这一步的耗时、角色符合度和优化空间')}
+            onClick={() => setAnalyzing(true)}
+          >
+            <Sparkles className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('AI 分析')}</span>
+          </Button>
+          <StopHelper task={task} step={step} label />
+          <D.Close asChild>
+            <IconButton size="sm" icon={X} label={t('关闭')} />
+          </D.Close>
+        </header>
+        <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex max-w-(--content-w) flex-col gap-4 px-4 py-5 md:px-6">
+            {/* 派发时交给它的要求放在最上面：先知道这个子任务要做什么，再看它怎么做的。
                   它就是普通的第一块内容，不吸顶（吸顶会盖住下面的对话流）；窗口打开时停在顶部所以它一开始就看得见。
                   有对话流时默认收起，没有对话流时展开，那正是窗口里要看的内容。展开时先 unpin 再滚到卡片顶部，
                   不然跟随底部会把刚展开的正文顶到视野之上 */}
-              <HelperBriefCard
-                step={step}
-                teamNames={teamNames}
-                msgs={msgs.length}
-                pin={scroller.pin}
-                unpin={scroller.unpin}
-              />
-              {msgs.length ? (
-                <Msgs msgs={msgs} task={task} teamNames={teamNames} live={live} />
-              ) : (
-                <p className="text-xs text-subtle">{live ? t('已开始，还没有输出') : t('没有输出')}</p>
-              )}
-            </div>
+            <HelperBriefCard
+              step={step}
+              teamNames={teamNames}
+              msgs={msgs.length}
+              pin={scroller.pin}
+              unpin={scroller.unpin}
+            />
+            {msgs.length ? (
+              <Msgs msgs={msgs} task={task} teamNames={teamNames} live={live} />
+            ) : (
+              <p className="text-xs text-subtle">{live ? t('已开始，还没有输出') : t('没有输出')}</p>
+            )}
           </div>
-          {/* 子任务没有输入框：做完 CLI 已经退出，这里只能查看 */}
-          <footer className="shrink-0 border-t bg-card px-4 py-2.5 text-xs text-subtle">
-            {live
-              ? t('子任务执行中，做完后结果会自动交回给派它的对话')
-              : step.status === 'pending'
-                ? t('子任务在排队，前面的做完就开始')
-                : step.status === 'failed'
-                  ? t('子任务失败了，派它的对话会收到失败原因。这里只能查看')
-                  : step.status === 'skipped'
-                    ? t('子任务已终止，派它的对话会收到终止原因。这里只能查看')
-                    : t('子任务已结束，结果已交回给派它的对话。这里只能查看')}
-          </footer>
-        </D.Content>
-      </D.Portal>
+        </div>
+        {/* 子任务没有输入框：做完 CLI 已经退出，这里只能查看 */}
+        <footer className="shrink-0 border-t bg-card px-4 py-2.5 text-xs text-subtle">
+          {live
+            ? t('子任务执行中，做完后结果会自动交回给派它的对话')
+            : step.status === 'pending'
+              ? t('子任务在排队，前面的做完就开始')
+              : step.status === 'failed'
+                ? t('子任务失败了，派它的对话会收到失败原因。这里只能查看')
+                : step.status === 'skipped'
+                  ? t('子任务已终止，派它的对话会收到终止原因。这里只能查看')
+                  : t('子任务已结束，结果已交回给派它的对话。这里只能查看')}
+        </footer>
+      </Modal>
       {/* 弹窗开在子任务窗口之上：分析对话按归属规则开在项目里或所属顶层对话下，在统一的 AI 分析窗口里看，子任务窗口先关掉 */}
       <AnalyzeDialog
         open={analyzing}
@@ -370,6 +387,6 @@ export function HelperWindow({
           })
         }}
       />
-    </D.Root>
+    </>
   )
 }

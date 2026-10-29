@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { useAutosave } from '@/lib/useAutosave'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, Input } from '@/components/ui/input'
@@ -96,16 +97,14 @@ function CategoryRow({ category }: { category: ProjectCategory }) {
         )}
         <span className="shrink-0 text-xs text-subtle">{t('{n} 个项目', { n: members })}</span>
         {!builtin && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t('删除分类「{name}」', { name: category.name })}
+          <IconButton
+            icon={Trash2}
+            size="sm"
+            label={t('删除分类「{name}」', { name: category.name })}
             title={t('删除分类')}
-            className="hover:text-danger"
+            tone="danger"
             onClick={() => setDeleting(true)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          />
         )}
       </div>
       <div className="flex flex-wrap gap-3">

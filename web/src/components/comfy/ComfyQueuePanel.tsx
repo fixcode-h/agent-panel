@@ -4,6 +4,8 @@ import { t } from '@shared/i18n'
 import type { ComfyQueueEntry } from '@shared/local-image'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { ComfyGraphView } from './ComfyGraphView'
 
 /** 只读展示：节点图组件要求一个改图的回调，这里不让改。放模块级，免得每次渲染换函数把节点图重建一遍 */
@@ -56,27 +58,20 @@ function Item({ item, index }: { item: ComfyQueueEntry; index?: number }) {
         {pct !== undefined && (
           <span className="w-9 shrink-0 text-right font-mono text-[0.71875rem] tabular-nums text-muted">{pct}%</span>
         )}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           title={t('查看节点图')}
-          className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded px-1.5 py-0.5 text-[0.71875rem] text-subtle hover:bg-sel hover:text-fg"
+          className="h-6 gap-0.5 px-1.5 text-[0.71875rem] font-normal text-subtle"
         >
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           {t('节点图')}
-        </button>
+        </Button>
       </div>
       {item.status === 'running' && (
-        <div className="h-1 overflow-hidden rounded-full bg-sel">
-          <div
-            className={cn(
-              'h-full rounded-full bg-accent transition-[width] duration-300',
-              pct === undefined && 'w-1/3 animate-pulse',
-            )}
-            style={pct !== undefined ? { width: `${pct}%` } : undefined}
-          />
-        </div>
+        <Progress label={t('生成进度')} value={pct ?? 0} indeterminate={pct === undefined} />
       )}
       {open && (
         <div className="max-h-[45vh] overflow-y-auto">
@@ -99,7 +94,7 @@ export function ComfyQueuePanel({ compact = false, className }: { compact?: bool
   return (
     <section
       aria-label={t('ComfyUI 正在运行的工作流')}
-      className={cn('flex flex-col gap-2', compact ? 'py-2' : 'rounded-xl bg-card shadow-card/60 p-3', className)}
+      className={cn('flex flex-col gap-2', compact ? 'py-2' : 'rounded-xl bg-card p-3 shadow-card', className)}
     >
       <div className="flex min-w-0 items-center gap-1.5 text-[0.75rem] font-medium text-muted">
         {running.length ? (

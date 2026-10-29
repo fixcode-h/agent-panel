@@ -13,6 +13,7 @@ import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Card } from '@/components/ui/card'
 import { t } from '@shared/i18n'
 
 type ChatRow = CleanupReport['chats']['top'][number]
@@ -145,7 +146,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
             '每个对话有一个自己的工作目录，Agent 在里面写文件、下载网页。清理只删目录内容，对话记录和消息都还在，下次执行时面板会重新建这个目录。回收站里的对话和正在执行的不能清。',
           )}
         </p>
-        <div className="overflow-hidden rounded-xl border">
+        <Card className="overflow-hidden">
           {chats?.top.length ? (
             chats.top.map((row) => (
               <div key={row.id} className="flex items-center gap-3 border-b px-3.5 py-2.5 last:border-b-0">
@@ -183,7 +184,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
               {report ? t('没有存了文件的工作目录') : t('正在统计…')}
             </p>
           )}
-        </div>
+        </Card>
         {!!chats?.more && (
           <p className="pt-2 text-xs leading-relaxed text-subtle">
             {t('另外 {n} 个工作目录较小，没有列出（只列占用最大的 {top} 个），都算在上面的合计里。', {
@@ -216,7 +217,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
           )}
         </p>
         {worktrees?.stale.length ? (
-          <div className="overflow-hidden rounded-xl border">
+          <Card className="overflow-hidden">
             {worktrees.stale.slice(0, 8).map((item) => (
               <div key={item.dir} className="flex items-center gap-3 border-b px-3.5 py-2 last:border-b-0">
                 <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem]" title={item.dir}>
@@ -233,7 +234,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
                 {t('还有 {n} 个没列出', { n: worktrees.stale.length - 8 })}
               </p>
             )}
-          </div>
+          </Card>
         ) : (
           <p className="text-[0.8125rem] text-subtle">
             {!worktrees ? t('点「检查占用」看看有多少能清') : t('没有失效的独立分支目录')}
@@ -263,7 +264,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
             '面板前端、演示版、打出来的安装包和界面检查截图，都由 npm run 重新生成，占地方时可以清掉。清理后刷新页面会打不开，重新构建一次就恢复。',
           )}
         </p>
-        <div className="overflow-hidden rounded-xl border">
+        <Card className="overflow-hidden">
           {BUILD_OUTPUTS.map((b) => {
             const u = report?.builds.find((x) => x.id === b.id)
             return (
@@ -280,7 +281,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
               </div>
             )
           })}
-        </div>
+        </Card>
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"

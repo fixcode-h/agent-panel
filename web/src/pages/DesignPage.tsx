@@ -78,6 +78,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
+import { ChipGroup } from '@/components/ui/chip-group'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import {
   Menu,
@@ -210,7 +211,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
         </p>
         <DesignProjectDialog open={creatingProject} onOpenChange={setCreatingProject} onSaved={(p) => setPid(p.id)} />
         {!projects.length ? (
-          <div className="mt-8 rounded-xl border p-5 text-[0.8125rem] text-muted">
+          <div className="mt-8 rounded-xl bg-panel p-5 text-[0.8125rem] text-muted">
             {t('设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。')}
             <Button className="mt-3" onClick={() => setCreatingProject(true)}>
               <Plus className="h-4 w-4" />
@@ -350,6 +351,19 @@ function Designer({ id }: { id: string }) {
   /** 主区域显示画板还是数据面板：数据面板改的是画板用的运行时假数据 */
   const [board, setBoard] = useState<'canvas' | 'data'>('canvas')
   const [overlay, setOverlay] = useState(false)
+  /**
+   * 左上角「画板 / 数据」切换（和「对照模板」）浮在画布上：量出它的宽度，写成 --board-switch-w 给画布、原画、
+   * 对比、大图这几层的顶栏让位，免得画布窄时把标注工具栏左边几个工具、原画标题盖住
+   */
+  // 用回调 ref：设计还在加载时这块没画出来，挂上之后才开始量
+  const [boardSwitch, setBoardSwitch] = useState<HTMLDivElement | null>(null)
+  const [switchW, setSwitchW] = useState(0)
+  useEffect(() => {
+    if (!boardSwitch) return
+    const ro = new ResizeObserver(() => setSwitchW(boardSwitch.offsetWidth))
+    ro.observe(boardSwitch)
+    return () => ro.disconnect()
+  }, [boardSwitch])
   /** 只重绘原画上蒙版涂过的区域（对话侧勾选）：原画面板的发送按钮也要按它换文案 */
   const [inpaint, setInpaint] = useState(false)
   /** 替用户发的一条：id 变了就发一次。带 text 是固定发这句话（确认模板后开始搭界面）；`kind: 'send'` 是「发送标注给 AI」，按输入框发送 */
@@ -1084,6 +1098,8 @@ function Designer({ id }: { id: string }) {
               { id: 'concept', label: t('原画') },
               { id: 'ui', label: t('界面') },
             ]}
+            // 顶栏挤的时候别把两段折成两行，让左边的保存状态去省略
+            className="shrink-0 flex-nowrap"
           />
         )}
         <StyleButton
@@ -1231,7 +1247,11 @@ function Designer({ id }: { id: string }) {
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="relative flex min-h-0 min-w-0 flex-1">
+          <div
+            className="relative flex min-h-0 min-w-0 flex-1"
+            // 12px 是切换按钮离左边的距离（left-3），再留 8px 空隙
+            style={{ '--board-switch-w': switchW ? `${switchW + 20}px` : '0px' } as React.CSSProperties}
+          >
             <Viewport
               actions={actions}
               onRename={(wid) => {
@@ -1341,47 +1361,33 @@ function Designer({ id }: { id: string }) {
                 busy={ed.running}
               />
             )}
-            <div className="absolute top-3 left-3 z-50 flex items-center gap-2">
-              <div
-                role="radiogroup"
-                aria-label={t('主区域显示')}
-                className="inline-flex h-8 items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop"
-              >
-                {(
-                  [
-                    ['canvas', LayoutTemplate, t('画板')],
-                    ['data', Database, t('数据')],
-                  ] as const
-                ).map(([key, Icon, label]) => (
-                  <button
-                    key={key}
-                    role="radio"
-                    aria-checked={board === key}
-                    title={label}
-                    onClick={() => setBoard(key)}
-                    className={cn(
-                      'inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] hover:text-white',
-                      board === key && 'bg-white/10 text-white',
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {label}
-                  </button>
-                ))}
-              </div>
+            <div ref={setBoardSwitch} className="absolute top-3 left-3 z-50 flex items-center gap-2">
+              <Segmented
+                // 切到「数据」时下面是普通页面，跟着主题走；画板上才用深色画布的样子
+                tone={board === 'canvas' ? 'canvas' : 'default'}
+                size="sm"
+                label={t('主区域显示')}
+                value={board}
+                onChange={setBoard}
+                options={[
+                  { id: 'canvas', label: t('画板'), icon: LayoutTemplate },
+                  { id: 'data', label: t('数据'), icon: Database },
+                ]}
+                // 段内留白收窄一点：画布窄时它和居中的标注工具栏挨得很近
+                className={cn('[&>button]:px-2', board === 'canvas' && 'shadow-pop')}
+              />
               {board === 'canvas' && view === 'ui' && approvedConcept && !target && (
-                <button
+                <Button
+                  variant="on-canvas"
+                  size="sm"
                   onClick={() => setOverlay(!overlay)}
                   aria-pressed={overlay}
                   title={t('把确认的原画模板半透明盖在界面上，对照着调')}
-                  className={cn(
-                    'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#232326]/95 px-2.5 text-[0.75rem] text-white/70 shadow-pop hover:text-white',
-                    overlay && 'text-accent hover:text-accent',
-                  )}
+                  className={cn('bg-canvas-bar shadow-pop', overlay && 'text-accent hover:text-accent')}
                 >
                   <Layers className="h-3.5 w-3.5" />
                   {t('对照模板')}
-                </button>
+                </Button>
               )}
             </div>
             {server.job?.status === 'running' && server.job.capture && !captured.current.has(server.job.capture.id) && (
@@ -1458,34 +1464,20 @@ function Designer({ id }: { id: string }) {
               />
             )}
             {server.kind === 'web' && (
-              <div
-                role="radiogroup"
-                aria-label={t('预览宽度')}
-                className="absolute bottom-3 left-3 z-20 flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop"
-              >
-                {(
-                  [
-                    ['desktop', Monitor, t('桌面（{w}）', { w: designSize.X })],
-                    ['tablet', Tablet, t('平板（{w}）', { w: DEVICE_WIDTH.tablet })],
-                    ['mobile', Smartphone, t('手机（{w}）', { w: DEVICE_WIDTH.mobile })],
-                  ] as const
-                ).map(([k, Icon, label]) => (
-                  <button
-                    key={k}
-                    role="radio"
-                    aria-checked={device === k}
-                    aria-label={label}
-                    title={label}
-                    onClick={() => setDevice(k)}
-                    className={cn(
-                      'grid h-7 w-7 cursor-pointer place-items-center rounded-lg hover:text-white',
-                      device === k && 'bg-white/10 text-white',
-                    )}
-                  >
-                    <Icon className="h-4 w-4" strokeWidth={1.8} />
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                tone="canvas"
+                size="sm"
+                iconOnly
+                label={t('预览宽度')}
+                value={device}
+                onChange={setDevice}
+                options={[
+                  { id: 'desktop', label: t('桌面（{w}）', { w: designSize.X }), icon: Monitor },
+                  { id: 'tablet', label: t('平板（{w}）', { w: DEVICE_WIDTH.tablet }), icon: Tablet },
+                  { id: 'mobile', label: t('手机（{w}）', { w: DEVICE_WIDTH.mobile }), icon: Smartphone },
+                ]}
+                className="absolute bottom-3 left-3 z-20 shadow-pop"
+              />
             )}
             {(() => {
               const img = preview ? doc.images.find((i) => i.id === preview) : undefined
@@ -1780,12 +1772,9 @@ function SizeButton({ doc, onChange }: { doc: DesignDoc; onChange: (s: { X: numb
   return (
     <Popover onOpenChange={(o) => o && (setW(String(doc.designSize.X)), setH(String(doc.designSize.Y)))}>
       <PopoverTrigger asChild>
-        <button
-          className="h-7 cursor-pointer rounded-md px-2 font-mono text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
-          title={t('设计尺寸')}
-        >
+        <Button variant="ghost" size="sm" className="px-2 font-mono text-[0.75rem] font-normal" title={t('设计尺寸')}>
           {doc.designSize.X}×{doc.designSize.Y}
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[240px] p-3">
         <p className="mb-2 text-[0.75rem] font-medium">{t('设计尺寸')}</p>
@@ -1793,32 +1782,31 @@ function SizeButton({ doc, onChange }: { doc: DesignDoc; onChange: (s: { X: numb
           <Input
             value={w}
             onChange={(e) => setW(e.target.value.replace(/\D/g, ''))}
-            className="h-8 font-mono"
+            size="sm"
+            className="font-mono"
             aria-label={t('宽')}
           />
           <span className="text-subtle">×</span>
           <Input
             value={h}
             onChange={(e) => setH(e.target.value.replace(/\D/g, ''))}
-            className="h-8 font-mono"
+            size="sm"
+            className="font-mono"
             aria-label={t('高')}
           />
         </div>
-        <div className="mt-2 flex flex-wrap gap-1">
-          {SIZES.map((s) => (
-            <button
-              key={s.v}
-              onClick={() => {
-                const [x, y] = s.v.split('x')
-                setW(x)
-                setH(y)
-              }}
-              className="cursor-pointer rounded border px-1.5 py-0.5 font-mono text-[0.6875rem] text-subtle hover:text-fg"
-            >
-              {s.v.replace('x', '×')}
-            </button>
-          ))}
-        </div>
+        <ChipGroup
+          size="sm"
+          label={t('常用尺寸')}
+          className="mt-2 font-mono"
+          options={SIZES.map((s) => ({ id: s.v, label: s.v.replace('x', '×') }))}
+          value={`${w}x${h}`}
+          onChange={(v) => {
+            const [x, y] = v.split('x')
+            setW(x)
+            setH(y)
+          }}
+        />
         <Button
           size="sm"
           className="mt-3 w-full justify-center"
@@ -1863,18 +1851,20 @@ function StyleButton({
       }}
     >
       <PopoverTrigger asChild>
-        <button
-          className="flex h-7 max-w-[220px] cursor-pointer items-center gap-1.5 rounded-md px-2 text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="max-w-[220px] px-2 text-[0.75rem] font-normal"
           title={value || t('美术风格')}
         >
           <PaletteIcon className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">
             {value || (prompts ? t('项目风格 · {n} 条', { n: prompts }) : t('美术风格'))}
           </span>
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[340px] p-3">
-        <div className="mb-3 flex items-start gap-2 rounded-lg border bg-panel/60 px-2.5 py-2">
+        <div className="mb-3 flex items-start gap-2 rounded-lg bg-panel px-2.5 py-2">
           <div className="min-w-0 flex-1">
             <p className="text-[0.75rem] font-medium">{t('项目美术提示词')}</p>
             <p className="mt-0.5 text-[0.71875rem] leading-relaxed text-subtle">

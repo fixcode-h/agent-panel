@@ -41,6 +41,7 @@ import { isReady, type Check } from '@/lib/readiness'
 import type { SaveStatus } from '@/lib/useAutosave'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Select } from '@/components/ui/input'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { Menu, MenuContent, MenuItem, MenuTrigger, menuItem } from '@/components/ui/menu'
@@ -255,28 +256,24 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                   {w.name || t('未命名工作流')}
                 </span>
                 <span aria-hidden className="h-5 w-px shrink-0 bg-line" />
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
+                <IconButton
+                  icon={Undo2}
+                  size="sm"
+                  label={t('撤销')}
                   className={toolBtn}
                   disabled={!hist.canUndo}
                   onClick={() => step('undo')}
-                  aria-label={t('撤销')}
                   title={t('撤销（Ctrl+Z）')}
-                >
-                  <Undo2 className="h-[15px] w-[15px]" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
+                />
+                <IconButton
+                  icon={Redo2}
+                  size="sm"
+                  label={t('重做')}
                   className={toolBtn}
                   disabled={!hist.canRedo}
                   onClick={() => step('redo')}
-                  aria-label={t('重做')}
                   title={t('重做（Ctrl+Shift+Z）')}
-                >
-                  <Redo2 className="h-[15px] w-[15px]" />
-                </Button>
+                />
               </div>
               <div
                 role="tablist"
@@ -333,28 +330,18 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
             aria-label={t('画布工具')}
             className="absolute bottom-3 left-16 z-10 flex h-11 items-center @3xl:left-1/2 @3xl:-translate-x-1/2 gap-0.5 rounded-[12px] bg-card px-1.5 shadow-pop md:bottom-4"
           >
-            <Button
-              variant="ghost"
-              size="icon-sm"
+            <IconButton
+              icon={Hand}
+              size="sm"
+              label={t('平移')}
               className={cn(toolBtn, pan && 'bg-sel text-fg')}
               aria-pressed={pan}
               onClick={() => setPan(!pan)}
-              aria-label={t('平移')}
               title={pan ? t('平移模式：左键拖动画布（再点一下回到框选）') : t('平移模式：左键拖动画布')}
-            >
-              <Hand className="h-4 w-4" />
-            </Button>
+            />
             <Menu>
               <MenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={toolBtn}
-                  aria-label={t('添加节点')}
-                  title={t('添加节点')}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+                <IconButton icon={Plus} size="sm" label={t('添加节点')} className={toolBtn} />
               </MenuTrigger>
               <MenuContent align="start">
                 <MenuItem onSelect={() => add('agent')}>
@@ -367,19 +354,16 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                 </MenuItem>
               </MenuContent>
             </Menu>
-            <Button
-              variant="ghost"
-              size="icon-sm"
+            <IconButton
+              icon={LayoutGrid}
+              size="sm"
+              label={t('自动排列')}
               className={toolBtn}
               onClick={() => {
                 setFlow(autoLayout(flow))
                 fit()
               }}
-              aria-label={t('自动排列')}
-              title={t('自动排列')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
+            />
             <Button
               variant="ghost"
               size="icon-sm"
@@ -433,7 +417,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                 role="menu"
                 aria-label={t('新建节点')}
                 onPointerDown={(e) => e.stopPropagation()}
-                className="absolute flex max-h-[320px] w-[240px] flex-col overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop animate-[fade-in_120ms_ease-out]"
+                className="absolute flex max-h-[320px] w-[240px] flex-col overflow-y-auto rounded-xl bg-card p-1 shadow-pop animate-[fade-in_120ms_ease-out]"
                 style={{ left: Math.max(8, drop.x), top: Math.max(8, drop.y) }}
               >
                 <span className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">

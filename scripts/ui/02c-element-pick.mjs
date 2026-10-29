@@ -796,7 +796,7 @@ await runShard(import.meta.filename, async (api) => {
   // 子对话的进程只算它自己：组头分别标出本对话 / 子对话，内存读不到的写未采集
   await check(p, '任务-对话进程-归属', ['本对话', '子对话'])
   // 内存曲线：原有左右拖动和悬停读数保留；右键也能拖，拖过之后出现「回到最新」
-  await p.getByRole('button', { name: '内存曲线', exact: true }).click()
+  await p.getByRole('radio', { name: '内存曲线', exact: true }).click()
   await check(p, '任务-内存曲线', ['AI 分析', '每 30 秒采样一次'])
   const chatChart = p.getByRole('img', { name: '会话内存随时间的变化' })
   const chatBox = await chatChart.boundingBox()
@@ -830,7 +830,7 @@ await runShard(import.meta.filename, async (api) => {
   if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起后面板内容还挂在 DOM 里')
   // AI 分析：把采样和进程占用交给演示里的 AI 排查对话，在统一的弹窗里出结论（先重新打开下拉）
   await procBtn.click()
-  await p.getByRole('button', { name: '内存曲线', exact: true }).click()
+  await p.getByRole('radio', { name: '内存曲线', exact: true }).click()
   await p.getByRole('button', { name: 'AI 分析', exact: true }).click()
   await p
     .getByRole('heading', { name: 'AI 排查：会话内存分析' })

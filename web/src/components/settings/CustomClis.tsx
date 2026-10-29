@@ -5,6 +5,7 @@ import { CLIS } from '@shared/clis'
 import { api, type UserClis } from '@/lib/api'
 import { cliColor } from '@/lib/cli-style'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Group } from './parts'
 import { t } from '@shared/i18n'
 
@@ -84,11 +85,11 @@ export function CustomClis({ demo }: { demo?: boolean }) {
         {user.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {user.map((c) => (
-              <span key={c.id} className="flex items-center gap-1.5 rounded-full bg-field px-2.5 py-1 text-[0.75rem]">
+              <Badge key={c.id} className="gap-1.5 px-2.5 py-1 text-[0.75rem] text-fg">
                 <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: cliColor(c.id) }} />
                 {c.name}
                 <span className="font-mono text-[0.6875rem] text-subtle">{c.id}</span>
-              </span>
+              </Badge>
             ))}
           </div>
         )}

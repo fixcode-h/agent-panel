@@ -31,6 +31,9 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ComboInput, Input, Select } from '@/components/ui/input'
 import { AiFixButton } from '@/components/ui/ai-fix'
+import { Card } from '@/components/ui/card'
+import { ChipGroup } from '@/components/ui/chip-group'
+import { IconButton } from '@/components/ui/icon-button'
 import { Group } from './parts'
 import { DetectedApis } from './DetectedApis'
 import { t } from '@shared/i18n'
@@ -562,8 +565,8 @@ function ApiCard({
             {probe && (
               <div
                 className={cn(
-                  'flex items-start gap-2 rounded-lg border px-2.5 py-2 text-[0.75rem]',
-                  probe.ok ? 'border-success/40 bg-success/5 text-success' : 'border-danger/40 bg-danger/5 text-danger',
+                  'flex items-start gap-2 rounded-lg px-2.5 py-2 text-[0.75rem]',
+                  probe.ok ? 'bg-success/8 text-success' : 'bg-danger/8 text-danger',
                 )}
               >
                 {probe.ok ? (
@@ -596,9 +599,9 @@ function ApiCard({
             )}
             {/* 一个模型一行：默认思考强度和映射模型都按模型配；别的协议后缀的模型不显示 */}
             {modelsForProtocol(a.models, a.protocol).map((m, i) => (
-              <div
+              <Card
                 key={m}
-                className="flex items-center gap-3 rounded-lg bg-card shadow-card px-2.5 py-1.5"
+                className="flex items-center gap-3 rounded-lg px-2.5 py-1.5"
                 title={i === 0 ? t('第一个是默认模型') : undefined}
               >
                 {/* 模型名按自己的长度占位，映射模型的下拉填满剩下的；窄的时候两边一起收，模型名至少留几个字 */}
@@ -628,15 +631,8 @@ function ApiCard({
                     onChange={(e) => setMap(m, e.target.value)}
                   />
                 </label>
-                <button
-                  type="button"
-                  aria-label={t('移除 {name}', { name: m })}
-                  onClick={() => toggle(m)}
-                  className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
+                <IconButton icon={X} label={t('移除 {name}', { name: m })} onClick={() => toggle(m)} />
+              </Card>
             ))}
             <form
               className="flex flex-wrap items-center gap-2"
@@ -659,7 +655,7 @@ function ApiCard({
               </span>
             </form>
             {found && (
-              <div className="flex flex-col gap-2 rounded-lg bg-card shadow-card p-2.5">
+              <Card className="flex flex-col gap-2 rounded-lg p-2.5">
                 <div className="flex items-center gap-2">
                   <Input
                     value={filter}
@@ -679,28 +675,28 @@ function ApiCard({
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </div>
-                <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
-                  {shown.map((m) => {
-                    const on = a.models.includes(m)
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => toggle(m)}
-                        className={cn(
-                          'inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 font-mono text-[0.75rem] transition-colors',
-                          on ? 'border-accent/50 bg-accent-soft text-accent' : 'hover:bg-sel',
-                        )}
-                      >
-                        {on && <Check className="h-3 w-3" strokeWidth={3} />}
-                        {m}
-                      </button>
-                    )
-                  })}
-                  {!shown.length && <span className="text-[0.75rem] text-subtle">{t('没有匹配的模型')}</span>}
-                </div>
-              </div>
+                {shown.length ? (
+                  // 模型名是 id，用等宽字；小块里的按钮继承字体
+                  <ChipGroup
+                    multiple
+                    size="sm"
+                    label={t('读到的模型')}
+                    className="max-h-44 overflow-y-auto font-mono"
+                    options={shown.map((m) => ({
+                      id: m,
+                      label: m,
+                      icon: a.models.includes(m) ? <Check className="h-3 w-3" strokeWidth={3} /> : undefined,
+                    }))}
+                    value={shown.filter((m) => a.models.includes(m))}
+                    onChange={(next) => {
+                      const m = shown.find((x) => next.includes(x) !== a.models.includes(x))
+                      if (m) toggle(m)
+                    }}
+                  />
+                ) : (
+                  <span className="text-[0.75rem] text-subtle">{t('没有匹配的模型')}</span>
+                )}
+              </Card>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -769,7 +765,7 @@ function ApiBalanceRow({ a }: { a: ApiConfig }) {
   // 自定义 API 没有厂家，也就没有余额接口可查：不显示这一行
   if (!findVendor(a.name)) return null
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-card shadow-card px-2.5 py-1.5 text-[0.75rem]">
+    <Card className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg px-2.5 py-1.5 text-[0.75rem]">
       <span className="flex shrink-0 items-center gap-1.5 text-subtle">
         <Wallet className="h-3.5 w-3.5" />
         {t('账户余额')}
@@ -822,6 +818,6 @@ function ApiBalanceRow({ a }: { a: ApiConfig }) {
           <RefreshCw className={cn('h-3.5 w-3.5', state.loading && 'animate-spin')} />
         </Button>
       )}
-    </div>
+    </Card>
   )
 }

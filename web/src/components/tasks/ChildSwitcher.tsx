@@ -6,6 +6,7 @@ import { childDoneDot, childIcon, childStage, sortChildren, stopReasonText, type
 import { cn } from '@/lib/utils'
 import { popoverPanel } from '@/components/ui/menu'
 import { UnreadDot } from '@/components/ui/badge'
+import { IconButton } from '@/components/ui/icon-button'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { AnalysisMark } from './AnalysisMark'
 import { childClosedHint, childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
@@ -110,19 +111,14 @@ export function ChildSwitcher({
   return (
     <M.Root modal={false}>
       <M.Trigger asChild>
-        <button
-          type="button"
+        <IconButton
+          size="2xs"
+          icon={ListTree}
+          label={t('切换子对话')}
           // 行本身是可点的（打开子对话）：点这个按钮只开列表，不跟着打开当前行
           onClick={(e) => e.stopPropagation()}
-          aria-label={t('切换子对话')}
-          title={t('切换子对话')}
-          className={cn(
-            'grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg',
-            className,
-          )}
-        >
-          <ListTree className="h-3.5 w-3.5" />
-        </button>
+          className={className}
+        />
       </M.Trigger>
       <M.Portal>
         <M.Content

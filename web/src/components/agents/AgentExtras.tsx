@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import { MenuSearch } from '@/components/ui/menu-search'
+import { IconButton } from '@/components/ui/icon-button'
 
 /** 本机各 CLI 用户目录下的 Skill 和面板自带的 Skill，打开 Agent 页时读一次 */
 let skillCache: Promise<{ items: LibraryItem[]; bundled: BundledSkill[] }> | null = null
@@ -54,21 +56,15 @@ export function SkillsPicker({
         <span
           key={n}
           title={has(n) ? undefined : t('当前 Agent 的用户目录里没有这个 Skill（可能在项目里或插件里）')}
+          // 不描边，靠底色分；当前 CLI 没装的用更浅的底和灰字，和装了的区分开
           className={cn(
-            'inline-flex h-7 items-center gap-1 rounded-md border bg-card pr-0.5 pl-2 font-mono text-[0.75rem]',
-            !has(n) && items.length > 0 && 'border-dashed text-muted',
+            'inline-flex h-7 items-center gap-1 rounded-md bg-sel/70 pr-0.5 pl-2 font-mono text-[0.75rem]',
+            !has(n) && items.length > 0 && 'bg-field text-muted',
           )}
         >
           <Sparkles className="h-3 w-3 text-accent" />
           {n}
-          <button
-            type="button"
-            aria-label={t('去掉 {name}', { name: n })}
-            onClick={() => toggle(n)}
-            className="grid h-6 w-6 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-          >
-            <X className="h-3 w-3" />
-          </button>
+          <IconButton icon={X} label={t('去掉 {name}', { name: n })} onClick={() => toggle(n)} />
         </span>
       ))}
       <Popover onOpenChange={(o) => o && setQ('')}>
@@ -79,10 +75,9 @@ export function SkillsPicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[300px]">
-          <input
-            autoFocus
+          <MenuSearch
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={setQ}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && name && !value.includes(name)) {
                 e.preventDefault()
@@ -91,7 +86,6 @@ export function SkillsPicker({
               }
             }}
             placeholder={t('搜索，或输入 Skill 名后回车')}
-            className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[0.8125rem] outline-none placeholder:text-subtle"
           />
           <div className="max-h-72 overflow-y-auto">
             {list.map((n) => {
@@ -144,14 +138,7 @@ export function StartersEditor({ value, onChange }: { value: string[]; onChange:
             onBlur={() => !value[i].trim() && onChange(value.filter((_, j) => j !== i))}
             className="h-9 text-[0.8125rem]"
           />
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t('删除')}
-            onClick={() => onChange(value.filter((_, j) => j !== i))}
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
+          <IconButton icon={X} label={t('删除')} size="sm" onClick={() => onChange(value.filter((_, j) => j !== i))} />
         </div>
       ))}
       {value.length < 8 && (

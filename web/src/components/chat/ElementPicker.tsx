@@ -29,6 +29,7 @@ import {
 import { hotkeyLabel, matchesHotkey, shouldTrigger } from '@/lib/hotkey'
 import { DEFAULT_PICK_BUTTON, DEFAULT_PICK_HOTKEY, type PickButton } from '@shared/schema'
 import { t } from '@shared/i18n'
+import { ToggleIconButton } from '@/components/ui/icon-button'
 
 /** 写进引用的属性：能帮 AI 搜到这个元素的那些 */
 const ATTRS = ['id', 'role', 'aria-label', 'title', 'placeholder', 'type', 'name', 'href', 'alt', 'data-state']
@@ -554,24 +555,19 @@ export function ElementPickButton({ onPick, className, rootRef }: ElementPickBut
   if (!on) return null
 
   return (
-    <button
-      type="button"
+    <ToggleIconButton
+      size="sm"
+      icon={SquareDashedMousePointer}
       // 从哪个输入框的按钮进来，抓到的引用就填回哪个输入框（见 takePick）
-      onClick={() => (active ? setPick(false) : setPick(true, selfRef.current))}
-      aria-pressed={active}
-      aria-label={t('抓取界面元素')}
+      pressed={active}
+      onPressedChange={(on) => (on ? setPick(true, selfRef.current) : setPick(false))}
+      label={t('抓取界面元素')}
       title={t('抓取界面元素：{key} 开始或退出，{button}抓取页面上的元素，Esc 退出', {
         key: hotkeyLabel(hotkey),
         button: pickButtonLabel(button),
       })}
-      className={cn(
-        'grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md transition-colors',
-        active ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
-        className,
-      )}
-    >
-      <SquareDashedMousePointer className="h-4 w-4" />
-    </button>
+      className={className}
+    />
   )
 }
 

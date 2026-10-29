@@ -3,7 +3,7 @@ import type { AnalysisScope } from '@shared/analysis-home'
 import {
   Bot,
   ChevronRight,
-  Lightbulb,
+  Brain,
   CircleAlert,
   GitMerge,
   Info,
@@ -172,29 +172,32 @@ function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean;
   useEffect(() => {
     if (live && shown && box.current) box.current.scrollTop = box.current.scrollHeight
   }, [text, live, shown])
-  // 收起时标题写思考的第一句（斜体），和组件库「过程行 · 思考」一致：不点开也知道它在想什么
-  const head = text.trim().split('\n')[0] ?? ''
+  // 思考过程保持原来的样子（用户要求）：一行小字按钮，展开后左边一道竖线的正文，不做成过程行
   return (
-    <RowShell
-      glyph={<Lightbulb className={cn('h-3.5 w-3.5 shrink-0 text-peer', live && 'animate-pulse')} />}
-      verb={<span className={cn(live && 'thinking-shimmer')}>{live ? t('正在思考…') : t('思考过程')}</span>}
-      title={shown ? undefined : head}
-      titleClass="font-sans text-[0.78125rem] italic"
-      detail={!live && !!ms ? <ModelTime ms={ms} /> : undefined}
-      ms={!live ? thinkingMs : undefined}
-      open={shown}
-      onToggle={() => setOpen(!shown)}
-    >
-      <div
-        ref={box}
-        className={cn(
-          'border-t px-3.5 py-2.5 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]',
-          live ? 'max-h-40 overflow-y-auto' : 'max-h-[min(50vh,420px)] overflow-y-auto',
-        )}
+    <div className="flex flex-col gap-1.5">
+      <button
+        onClick={() => setOpen(!shown)}
+        aria-expanded={shown}
+        className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-xs text-subtle hover:text-muted"
       >
-        {text.trim()}
-      </div>
-    </RowShell>
+        <Brain className={cn('h-3.5 w-3.5', live && 'animate-pulse text-accent')} />
+        <span className={cn(live && 'thinking-shimmer')}>{live ? t('正在思考…') : t('思考过程')}</span>
+        {!live && thinkingMs !== undefined && <span className="tabular-nums">{fmtDuration(thinkingMs)}</span>}
+        {!live && !!ms && <ModelTime ms={ms} />}
+        <ChevronRight className={cn('h-3 w-3 transition-transform', shown && 'rotate-90')} />
+      </button>
+      {shown && (
+        <div
+          ref={box}
+          className={cn(
+            'border-l-2 border-line-strong pl-3 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]',
+            live && 'max-h-40 overflow-y-auto',
+          )}
+        >
+          {text.trim()}
+        </div>
+      )}
+    </div>
   )
 }
 

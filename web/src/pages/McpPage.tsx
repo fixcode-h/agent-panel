@@ -12,6 +12,8 @@ import { Input, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
+import { Card } from '@/components/ui/card'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { CliTag, PageFrame } from '@/components/library/parts'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 
@@ -71,11 +73,9 @@ export function McpPage() {
       ) : !data ? (
         <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
       ) : !data.servers.length ? (
-        <p className="rounded-xl border border-dashed px-4 py-10 text-center text-[0.8125rem] text-subtle">
-          {t('还没有装 MCP 工具，点右上角「添加」。')}
-        </p>
+        <EmptyPanel size="xl">{t('还没有装 MCP 工具，点右上角「添加」。')}</EmptyPanel>
       ) : (
-        <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
+        <Card as="ul" className="flex flex-col divide-y overflow-hidden">
           {data.servers.map((s) => (
             <li key={s.name} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
               {s.transport === 'http' ? (
@@ -123,7 +123,7 @@ export function McpPage() {
               </span>
             </li>
           ))}
-        </ul>
+        </Card>
       )}
       {data && (
         <p className="text-[0.75rem] leading-relaxed text-subtle">
@@ -362,9 +362,7 @@ function EditDialog({
         />
       )}
       {test && test !== 'running' && (
-        <div
-          className={`rounded-lg border px-3 py-2.5 text-[0.78125rem] ${test.ok ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'}`}
-        >
+        <div className={`rounded-lg px-3 py-2.5 text-[0.78125rem] ${test.ok ? 'bg-success/8' : 'bg-warning/8'}`}>
           <p className="flex items-center gap-1.5 font-medium">
             {test.ok ? (
               <CircleCheck className="h-4 w-4 text-success" />

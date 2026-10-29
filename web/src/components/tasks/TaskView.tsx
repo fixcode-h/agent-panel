@@ -112,6 +112,11 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
+import { InlineRename } from '@/components/ui/inline-rename'
+import { IconButton, ToggleIconButton } from '@/components/ui/icon-button'
+import { ComposerPopover } from '@/components/ui/composer-popover'
+import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/ui/status-pill'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
 import { AgentMessage, ChatReply, DeliveryLine, NoteMessage, PendingAuthor } from './Messages'
 import { ReceivedRow } from './PeerMessage'
@@ -155,7 +160,7 @@ import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '
 import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { dropChip, forSend, pathText } from '@shared/composer'
-import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
+import { UserMessage } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 import { ProjectSwitch } from './ProjectSwitch'
 import {
@@ -1396,8 +1401,9 @@ export function TaskView({
       toast.error((e as Error).message)
     }
   }
-  const rename = async () => {
-    const title = renaming?.trim()
+  // 改名输入框（InlineRename）交回最终的值；renaming 只记「正在改、从哪个标题开始改」
+  const rename = async (value: string) => {
+    const title = value.trim()
     setRenaming(null)
     if (!title || title === task.title) return
     try {
@@ -1691,22 +1697,16 @@ export function TaskView({
       <ProcessMenu taskId={task.id} />
       {!isFlow && <TurnMenu msgs={task.messages} onJump={jumpToTurn} />}
       {task.simulated && (
-        <span
-          title={t('没有真正调用 Agent，输出是示例')}
-          className="hidden shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[0.6875rem] text-warning md:inline-flex"
-        >
+        <Badge tone="warning" title={t('没有真正调用 Agent，输出是示例')} className="hidden shrink-0 md:inline-flex">
           <FlaskConical className="h-3 w-3" />
           {t('模拟')}
-        </span>
+        </Badge>
       )}
       {task.imported && (
-        <span
-          title={t('从导出的文件导入，只能查看')}
-          className="hidden shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent md:inline-flex"
-        >
+        <Badge tone="accent" title={t('从导出的文件导入，只能查看')} className="hidden shrink-0 md:inline-flex">
           <FileInput className="h-3 w-3" />
           {t('导入')}
-        </span>
+        </Badge>
       )}
     </>
   )
@@ -1714,19 +1714,12 @@ export function TaskView({
   const titleNode = (
     <>
       {renaming !== null ? (
-        <input
-          autoFocus
-          aria-label={t('任务标题')}
+        <InlineRename
           value={renaming}
-          maxLength={80}
-          onChange={(e) => setRenaming(e.target.value)}
-          onFocus={(e) => e.currentTarget.select()}
-          onBlur={rename}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
-            if (e.key === 'Escape') setRenaming(null)
-          }}
-          className="h-8 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 font-medium outline-none"
+          label={t('任务标题')}
+          onCommit={rename}
+          onCancel={() => setRenaming(null)}
+          className="flex-1 font-medium"
         />
       ) : (
         <>
@@ -1775,7 +1768,8 @@ export function TaskView({
   const headerActions = (
     <>
       {task.mode === 'workflow' && (
-        <div className="flex shrink-0 rounded-lg bg-field p-0.5" role="tablist" aria-label={t('视图')}>
+        // 样子同 Segmented（seg-track / seg-thumb），但窄屏只留图标，Segmented 没有这种响应式写法，先手写
+        <div className="seg-track flex shrink-0 rounded-lg p-0.5" role="tablist" aria-label={t('视图')}>
           {(
             [
               ['chat', t('对话'), MessageSquareText],
@@ -1794,7 +1788,7 @@ export function TaskView({
               }}
               className={cn(
                 'flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium',
-                view === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
+                view === v ? 'seg-thumb' : 'text-muted hover:text-fg',
               )}
             >
               <Icon className={cn('h-3.5 w-3.5', v === 'flow' && 'rotate-90')} />
@@ -1804,47 +1798,37 @@ export function TaskView({
         </div>
       )}
       {task.mode === 'workflow' && tops.length > 0 && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('任务进度')}
-          title={t('任务进度')}
+        <IconButton
+          size="sm"
+          icon={ListPlus}
+          label={t('任务进度')}
           aria-expanded={progressOpen}
           onClick={() => setProgressOpen((v) => !v)}
-        >
-          <ListPlus className="h-4 w-4" />
-        </Button>
+        />
       )}
       {/* 窄屏右栏放不下：文件面板从右边滑出来盖在对话上 */}
       {!pane && !noFiles && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="xl:hidden"
-          aria-label={t('显示文件')}
+        <IconButton
+          size="sm"
+          icon={PanelRight}
+          label={t('显示文件')}
           title={t('文件')}
           onClick={() => setPanel(true)}
-        >
-          <PanelRight className="h-4 w-4" />
-        </Button>
+          className="xl:hidden"
+        />
       )}
       {/* 子对话面板右上角的「解决」：标记为已解决，记录、分支和未提交改动都保留；已经解决时换成标记 */}
       {pane &&
         task.parentTaskId &&
         (task.resolved ? (
-          <span
-            title={t('已解决')}
-            className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-success/12 px-2 text-[0.6875rem] text-success"
-          >
+          <StatusPill tone="ok" title={t('已解决')}>
             <CheckCircle2 className="h-3.5 w-3.5" />
             {t('已解决')}
-          </span>
+          </StatusPill>
         ) : (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t('解决')}
-            title={t('解决')}
+          <IconButton
+            size="sm"
+            label={t('解决')}
             disabled={resolving}
             onClick={() => void resolveChild()}
             // 默认隐起来（opacity-0），鼠标进标题栏或 Tab 聚焦才显示；
@@ -1852,13 +1836,13 @@ export function TaskView({
             className="opacity-0 group-hover/hdr:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
           >
             <CheckCircle2 className="h-4 w-4" />
-          </Button>
+          </IconButton>
         ))}
       <Menu>
         <MenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={t('更多操作')}>
+          <IconButton size="sm" label={t('更多操作')}>
             <MoreHorizontal className="h-4 w-4" />
-          </Button>
+          </IconButton>
         </MenuTrigger>
         <MenuContent>
           {/* 项目里的父对话有自己的设置：目标、全局规则、子对话 */}
@@ -1914,10 +1898,9 @@ export function TaskView({
           子对话也不给：浮条的状态和标题靠 useData().tasks 找对话，而 /tasks 列表
           只回顶层对话（见 server/tasks.ts），子对话收起来会一出现就写「对话已关闭」。 */}
       {!pane && !embed && !task.imported && !task.parentTaskId && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('转成弹窗')}
+        <IconButton
+          size="sm"
+          label={t('转成弹窗')}
           title={t('转成弹窗（对话继续在后台运行）')}
           onClick={() => {
             minimizeTask({ id: task.id, projectId: task.projectId || undefined })
@@ -1926,47 +1909,41 @@ export function TaskView({
           }}
         >
           <PictureInPicture2 className="h-4 w-4" />
-        </Button>
+        </IconButton>
       )}
       {/* AI 分析对话的功能面板：宽屏切到右栏（子对话、运行开着时先收起它们），窄屏和子对话面板里盖在对话上 */}
       {report && !pane && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="hidden xl:inline-flex"
-          aria-label={reportTitle(report.kind)}
+        <ToggleIconButton
+          size="sm"
+          icon={ClipboardList}
+          className="hidden xl:grid"
+          label={reportTitle(report.kind)}
           title={reportOn ? t('收起功能面板') : reportTitle(report.kind)}
-          aria-pressed={reportOn}
-          onClick={() => {
+          pressed={reportOn}
+          onPressedChange={() => {
             if (reportOn) return closeReport()
             setReportFolded(false)
             writeReportFolded(taskId, false)
           }}
-        >
-          <ClipboardList className={cn('h-4 w-4', reportOn && 'text-accent')} />
-        </Button>
+        />
       )}
       {report && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
+        <ToggleIconButton
+          size="sm"
+          icon={ClipboardList}
           className={pane ? undefined : 'xl:hidden'}
-          aria-label={reportTitle(report.kind)}
-          title={reportTitle(report.kind)}
-          aria-pressed={reportCover}
-          onClick={() => setReportCover((v) => !v)}
-        >
-          <ClipboardList className={cn('h-4 w-4', reportCover && 'text-accent')} />
-        </Button>
+          label={reportTitle(report.kind)}
+          pressed={reportCover}
+          onPressedChange={setReportCover}
+        />
       )}
       {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度 */}
       {!pane && !noFiles && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="hidden xl:inline-flex"
+        <IconButton
+          size="sm"
+          className="hidden xl:grid"
           // 收起时和窄屏那个按钮一样：读屏名是「显示文件」、悬停提示「文件」（两者都指同一栏）
-          aria-label={filesFolded || reportOn ? t('显示文件') : t('收起文件面板')}
+          label={filesFolded || reportOn ? t('显示文件') : t('收起文件面板')}
           title={filesFolded || reportOn ? t('文件') : t('收起文件面板')}
           aria-expanded={!filesFolded && !reportOn}
           onClick={() => {
@@ -1981,7 +1958,7 @@ export function TaskView({
           }}
         >
           {filesFolded || reportOn ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
-        </Button>
+        </IconButton>
       )}
       {embed?.actions}
     </>
@@ -2016,9 +1993,9 @@ export function TaskView({
       )}
       <Menu>
         <MenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={t('导出')} title={t('导出')}>
+          <IconButton size="sm" label={t('导出')}>
             <Upload className="h-4 w-4" />
-          </Button>
+          </IconButton>
         </MenuTrigger>
         <MenuContent>
           <MenuItem onSelect={exportHtml} title={t('导出一个自包含的 HTML 文件，没装面板的浏览器也能直接打开')}>
@@ -2032,20 +2009,18 @@ export function TaskView({
         </MenuContent>
       </Menu>
       {headerActions}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={t('开关右栏')}
+      <ToggleIconButton
+        size="sm"
+        icon={PanelRight}
+        label={t('开关右栏')}
         // 三样都没有时禁用，悬停说明为什么点不了
         title={chatRail.empty ? t('这段聊天里还没有代码、来源或附件') : chatRailShown ? t('收起右栏') : t('打开右栏')}
-        aria-pressed={chatRailShown}
+        pressed={chatRailShown}
         disabled={chatRail.empty}
-        onClick={toggleChatRail}
+        onPressedChange={toggleChatRail}
         // 右栏只在宽屏并排（窄屏放不下第二栏），开关跟着只在宽屏出现
-        className={cn('hidden xl:inline-flex', chatRailShown && 'bg-sel text-fg')}
-      >
-        <PanelRight className="h-4 w-4" />
-      </Button>
+        className="hidden xl:grid"
+      />
     </header>
   )
 
@@ -2155,14 +2130,15 @@ export function TaskView({
                     dock={conversationDock}
                   >
                     {(hidden > 0 || task.messageHasMore) && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         disabled={earlierLoading}
                         onClick={() => (task.messageHasMore ? void loadEarlier() : setLimit(Infinity))}
-                        className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-60"
+                        className="self-center rounded-full text-xs font-normal text-muted"
                       >
                         {task.messageHasMore ? t('显示更早的消息') : t('显示更早的 {n} 段', { n: hidden })}
-                      </button>
+                      </Button>
                     )}
                     {shownBlocks.map((b, i) =>
                       b.kind === 'turn' ? (
@@ -2224,35 +2200,32 @@ export function TaskView({
                               <>
                                 {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
                                 {project && !task.imported && (
-                                  <button
-                                    className={msgAction}
+                                  <IconButton
+                                    size="sm"
+                                    icon={GraduationCap}
+                                    label={t('记成项目教训')}
                                     title={t('记成项目教训：以后这个项目里的角色都会照着做')}
-                                    aria-label={t('记成项目教训')}
                                     onClick={() => setLessonOf(b.m.text)}
-                                  >
-                                    <GraduationCap className="h-3.5 w-3.5" />
-                                  </button>
+                                  />
                                 )}
                                 {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
                                 {task.mode === 'chat' && !running && !task.imported && (
                                   <>
-                                    <button
-                                      className={msgAction}
+                                    <IconButton
+                                      size="sm"
+                                      icon={GitFork}
+                                      label={t('从这里分叉')}
                                       title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
-                                      aria-label={t('从这里分叉')}
                                       onClick={() => fork(b.m.id)}
-                                    >
-                                      <GitFork className="h-3.5 w-3.5" />
-                                    </button>
+                                    />
                                     {b.m.id !== firstUser && (
-                                      <button
-                                        className={msgAction}
+                                      <IconButton
+                                        size="sm"
+                                        icon={Undo2}
+                                        label={t('撤回到这里')}
                                         title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
-                                        aria-label={t('撤回到这里')}
                                         onClick={() => setRewindAsk(b.m.id)}
-                                      >
-                                        <Undo2 className="h-3.5 w-3.5" />
-                                      </button>
+                                      />
                                     )}
                                   </>
                                 )}
@@ -2822,24 +2795,15 @@ function ChildrenBar({
                 )}
               </div>
             )}
-            {current && (
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label={t('关闭子对话')}
-                title={t('关闭子对话')}
-                className="ml-auto grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
+            {current && <IconButton icon={X} label={t('关闭子对话')} onClick={onClose} className="ml-auto" />}
           </div>
         )}
         {open && (
-          <div className="absolute bottom-full left-0 z-30 mb-1 w-[min(420px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop">
+          <ComposerPopover>
             <div className="flex items-center gap-2 border-b px-3 py-2">
               <span className="text-[0.8125rem] font-medium">{t('子对话')}</span>
-              <div className="ml-auto flex shrink-0 rounded-md bg-field p-0.5">
+              {/* 样子和 Segmented 一样，但界面检查按「按钮 + aria-pressed」找「全部」，这里不换成单选组 */}
+              <div className="seg-track ml-auto flex shrink-0 rounded-md p-0.5">
                 {(
                   [
                     [false, t('运行中')],
@@ -2853,7 +2817,7 @@ function ChildrenBar({
                     onClick={() => setAll(v)}
                     className={cn(
                       'cursor-pointer rounded px-2 py-0.5 text-xs',
-                      all === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
+                      all === v ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
                     )}
                   >
                     {label}
@@ -2921,7 +2885,7 @@ function ChildrenBar({
                 <p className="px-2.5 py-3 text-xs text-subtle">{all ? t('还没有子对话') : t('没有正在运行的子对话')}</p>
               )}
             </div>
-          </div>
+          </ComposerPopover>
         )}
       </div>
     </div>
@@ -2937,8 +2901,6 @@ const barRow =
  * 正好和输入框文字（外层 px-3/md:px-6 + 文字 px-4）左对齐
  */
 const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-[0.8125rem]'
-const barIcon =
-  'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg disabled:opacity-40'
 
 /** 工作流没走完（失败、暂停、停在某个节点的结论上）：可以继续流程，或者结束它不再继续 */
 function FlowBar({
@@ -2984,15 +2946,7 @@ function FlowBar({
           {resuming ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
           {t('继续流程')}
         </button>
-        <button
-          type="button"
-          aria-label={t('结束流程')}
-          title={t('结束流程，不再继续')}
-          onClick={() => setAsking(true)}
-          className={barIcon}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <IconButton icon={X} label={t('结束流程')} title={t('结束流程，不再继续')} onClick={() => setAsking(true)} />
       </div>
       <ConfirmDialog
         open={asking}

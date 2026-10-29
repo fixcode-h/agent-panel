@@ -9,6 +9,7 @@ import { chipMarker, commandChip, type ChipKind } from '@shared/composer'
 import { builtinCommands } from '@shared/commands'
 import type { RichInputHandle } from './RichInput'
 import { useMenuBox } from './useMenuBox'
+import { ComposerPopover } from '@/components/ui/composer-popover'
 
 /** 面板自己执行的命令：不发给 CLI，直接调对应的操作 */
 export type SlashAction = 'compact' | 'review'
@@ -197,12 +198,7 @@ export function useSlashMenu({
     { id: 'skill', label: t('Skill'), icon: BookOpen },
   ]
   const menu = open ? (
-    <div
-      ref={box}
-      role="listbox"
-      aria-label={t('命令')}
-      className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-[min(20rem,60vh)] overflow-y-auto overscroll-contain rounded-xl border border-line-strong bg-card p-1 shadow-pop"
-    >
+    <ComposerPopover ref={box} role="listbox" aria-label={t('命令')} stretch scroll>
       <div className="flex items-center gap-2 px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">
         <span className="font-medium text-muted">{getCli(cli)?.name ?? cli}</span>
         <span>{t('↑↓ 选择，回车确认')}</span>
@@ -251,7 +247,7 @@ export function useSlashMenu({
       {cmds === null && !items.length && (
         <div className="px-2.5 py-2 text-[0.75rem] text-subtle">{t('正在读取 Agent 的命令和 Skill…')}</div>
       )}
-    </div>
+    </ComposerPopover>
   ) : null
 
   return { sync, onKeyDown, menu, intercept }

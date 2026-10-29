@@ -22,6 +22,7 @@ import { useData } from '@/lib/data'
 import type { Check } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
@@ -164,36 +165,27 @@ export function NodeInspector({
                   aria-label={t('步骤标题')}
                   className="h-8 flex-1"
                 />
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
+                <IconButton
+                  icon={ArrowUp}
+                  size="sm"
+                  label={t('上移')}
                   disabled={i === 0}
                   onClick={() => moveStep(i, -1)}
-                  aria-label={t('上移')}
-                  title={t('上移')}
-                >
-                  <ArrowUp className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
+                />
+                <IconButton
+                  icon={ArrowDown}
+                  size="sm"
+                  label={t('下移')}
                   disabled={i === steps.length - 1}
                   onClick={() => moveStep(i, 1)}
-                  aria-label={t('下移')}
-                  title={t('下移')}
-                >
-                  <ArrowDown className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
+                />
+                <IconButton
+                  icon={Trash2}
+                  size="sm"
+                  label={t('删除这一步')}
                   disabled={steps.length <= 1}
                   onClick={() => setSteps(steps.filter((x) => x.id !== u.id))}
-                  aria-label={t('删除这一步')}
-                  title={t('删除这一步')}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                />
               </div>
               {!open && (
                 <p className="-mt-1 truncate text-[0.71875rem] text-subtle">
@@ -212,32 +204,17 @@ export function NodeInspector({
               )}
               {open && (
                 <>
-                  <div
-                    role="radiogroup"
-                    aria-label={t('执行方式')}
-                    className="seg-track grid grid-cols-2 rounded-lg p-0.5"
-                  >
-                    {(
-                      [
-                        { id: 'agent', label: t('交给角色'), icon: Bot },
-                        { id: 'flow', label: t('调用流程'), icon: WorkflowIcon },
-                      ] as const
-                    ).map((k) => (
-                      <button
-                        key={k.id}
-                        role="radio"
-                        aria-checked={u.kind === k.id}
-                        onClick={() => patchStep(u.id, { kind: k.id })}
-                        className={cn(
-                          'flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[0.8125rem] transition-colors',
-                          u.kind === k.id ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
-                        )}
-                      >
-                        <k.icon className="h-3.5 w-3.5" />
-                        {k.label}
-                      </button>
-                    ))}
-                  </div>
+                  <Segmented
+                    label={t('执行方式')}
+                    size="sm"
+                    fill
+                    value={u.kind}
+                    onChange={(kind) => patchStep(u.id, { kind })}
+                    options={[
+                      { id: 'agent', label: t('交给角色'), icon: Bot },
+                      { id: 'flow', label: t('调用流程'), icon: WorkflowIcon },
+                    ]}
+                  />
                   {u.kind === 'agent' ? (
                     <Select
                       aria-label={t('执行的角色')}

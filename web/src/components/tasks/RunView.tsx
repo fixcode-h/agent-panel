@@ -5,8 +5,8 @@ import type { StepStatus, Task, ToolUse } from '@shared/schema'
 import { topSteps } from '@shared/flow'
 import { t } from '@shared/i18n'
 import { useEscape } from '@/lib/useEscape'
-import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { IconButton } from '@/components/ui/icon-button'
 import { RunFlow, runState } from './RunCard'
 
 /** 节点状态的说法：复制出去的文本里要能看懂，和列表里的叫法一致 */
@@ -68,9 +68,9 @@ export function RunView({
     // 盖在对话上面，不卸载子对话：返回时滚动位置和已经看到的内容都还在
     <div className="absolute inset-0 z-30 flex min-h-0 flex-col bg-bg">
       <header className="flex h-14 shrink-0 items-center gap-1.5 border-b px-2 md:px-3">
-        <Button variant="ghost" size="icon-sm" aria-label={t('返回子对话')} title={t('返回子对话')} onClick={onBack}>
+        <IconButton size="sm" label={t('返回子对话')} onClick={onBack}>
           <ArrowLeft className="h-4 w-4" />
-        </Button>
+        </IconButton>
         <WorkflowIcon className="hidden h-4 w-4 shrink-0 text-muted sm:block" />
         {/* 标题是这次运行的名字，下面一行面包屑说明它在哪个子对话里；窄窗口下两行都截断，不挤掉右边的按钮 */}
         <span className="flex min-w-0 flex-1 flex-col justify-center">
@@ -91,9 +91,9 @@ export function RunView({
         </span>
         <Menu>
           <MenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label={t('更多操作')}>
+            <IconButton size="sm" label={t('更多操作')}>
               <MoreHorizontal className="h-4 w-4" />
-            </Button>
+            </IconButton>
           </MenuTrigger>
           <MenuContent>
             {run > 0 && (
@@ -110,17 +110,7 @@ export function RunView({
             )}
           </MenuContent>
         </Menu>
-        {onClose && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t('关闭子对话面板')}
-            title={t('关闭子对话面板')}
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        )}
+        {onClose && <IconButton size="sm" icon={X} label={t('关闭子对话面板')} onClick={onClose} />}
       </header>
       {run > 0 ? (
         <RunFlow task={task} run={run} />

@@ -368,12 +368,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .getByRole('button', { name: /^项目教训/ })
       .first()
       .click()
-    // 默认选中「默认」页签：只放一个标签都没有的教训；再点一次也不取消，带标签的在各自的页签里
+    // 默认选中「默认」：只放一个标签都没有的教训；再点一次也不取消，带标签的在各自的标签里
+    // （标签选择是组件库的 ChipGroup，单选小块是 radio）
     await check(p, '项目设置-项目教训', ['购物车相关改动同时改 legacy-cart', '默认', '加一条'])
-    const defaultTab = dlg.getByRole('tab', { name: /^默认/ })
+    const defaultTab = dlg.getByRole('radio', { name: /^默认/ })
     await defaultTab.click()
-    assert.equal(await defaultTab.getAttribute('aria-selected'), 'true', '再点一次选中的页签不能取消选中')
-    await dlg.getByRole('tab', { name: /^支付/ }).click()
+    assert.equal(await defaultTab.getAttribute('aria-checked'), 'true', '再点一次选中的标签不能取消选中')
+    await dlg.getByRole('radio', { name: /^支付/ }).click()
     await check(p, '项目设置-项目教训-标签页签', ['新增支付方式写进', '角色记录', 'src/payment/**'])
     assert.equal(
       await dlg.getByText('购物车相关改动同时改 legacy-cart').count(),

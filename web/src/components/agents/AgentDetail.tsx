@@ -40,6 +40,7 @@ import { cn, joinArgs, splitArgs } from '@/lib/utils'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
@@ -378,7 +379,7 @@ export function AgentDetail({
         form={
           <>
             {tab === 'basic' && core && (
-              <section className="flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft/40 px-4 py-3">
+              <section className="flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3">
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
                 <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
                   <span className="font-medium">{t('必备角色 · {use}', { use: coreUse(core) })}</span>
@@ -392,7 +393,7 @@ export function AgentDetail({
             )}
             {tab === 'basic' && locked && !core && (
               <>
-                <section className="flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft/40 px-4 py-3">
+                <section className="flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3">
                   <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
                   <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
                     <span className="font-medium">{t('内置角色 · 随版本更新')}</span>
@@ -472,8 +473,9 @@ export function AgentDetail({
                         title={label}
                         onClick={() => set('icon', id)}
                         className={cn(
-                          'grid h-9 w-9 cursor-pointer place-items-center rounded-lg border border-line-strong bg-field text-muted transition-colors hover:text-fg',
-                          draft.icon === id && 'border-accent bg-accent-soft text-accent hover:text-accent',
+                          // 和 ChipGroup 同一套：没选是浅灰块，选中换强调色浅底，不描边
+                          'grid h-9 w-9 cursor-pointer place-items-center rounded-lg transition-colors',
+                          draft.icon === id ? 'bg-accent-soft text-accent' : 'chip-idle text-muted hover:text-fg',
                         )}
                       >
                         <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
@@ -716,21 +718,17 @@ export function AgentDetail({
                             ) : (
                               <span className="text-subtle">{t('（已删除）')}</span>
                             )}
-                            <button
-                              type="button"
+                            <IconButton
+                              icon={X}
                               draggable={false}
-                              aria-label={t('不再引入')}
-                              title={t('不再引入')}
+                              label={t('不再引入')}
                               onClick={() =>
                                 set(
                                   'includes',
                                   draft.includes.filter((x) => x !== id),
                                 )
                               }
-                              className="grid h-6 w-6 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
+                            />
                           </span>
                         )
                       })}

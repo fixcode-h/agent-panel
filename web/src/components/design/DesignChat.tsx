@@ -54,6 +54,8 @@ import { AnswerMessage, UserMessage, msgAction } from '@/components/chat/ChatMes
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
+import { IconButton } from '@/components/ui/icon-button'
 import { AnnotationChips, markColor, markLabel } from './Annotations'
 import { DesignAnalysisCard } from './DesignAnalysisCard'
 import { analysisButtonState } from '@shared/design-analysis'
@@ -289,151 +291,146 @@ function BrowserHelp({
         ? { tone: 'ok', text: t('已连上，找到 {n} 个可以用的标签页', { n: tabs.length }) }
         : { tone: 'warn', text: t('扩展已连上，还没有打开 Gemini 或 ChatGPT') }
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-50 bg-black/40 animate-[fade-in_120ms_ease-out]" />
-        <D.Content className="fixed top-1/2 left-1/2 z-50 w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-card p-6 shadow-pop">
-          <D.Title className="flex items-center gap-2 font-serif text-[1.125rem] font-semibold">
-            <Globe className="h-5 w-5 text-accent" />
-            {t('用浏览器里的 Gemini / ChatGPT 生成图片')}
-          </D.Title>
-          <D.Description className="mt-2 text-[0.8125rem] leading-relaxed text-muted">
-            {t(
-              '不需要图片模型的 API：面板通过一个小扩展，用你在浏览器里已经登录的 Gemini 或 ChatGPT（会员版才能生成图片）。扩展只读取这两个网站的标签页。',
-            )}
-          </D.Description>
+    // 只看不填的说明弹窗：点到外面就关；标题、留白自己画（标题前带图标）
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('用浏览器里的 Gemini / ChatGPT 生成图片')}
+      bare
+      closeOnOutside
+      className="max-w-[540px] overflow-y-auto p-6"
+    >
+      <h2 aria-hidden className="flex items-center gap-2 font-serif text-[1.125rem] font-semibold">
+        <Globe className="h-5 w-5 text-accent" />
+        {t('用浏览器里的 Gemini / ChatGPT 生成图片')}
+      </h2>
+      <p className="mt-2 text-[0.8125rem] leading-relaxed text-muted">
+        {t(
+          '不需要图片模型的 API：面板通过一个小扩展，用你在浏览器里已经登录的 Gemini 或 ChatGPT（会员版才能生成图片）。扩展只读取这两个网站的标签页。',
+        )}
+      </p>
 
-          <ol className="mt-5 flex flex-col gap-4 text-[0.8125rem] leading-relaxed">
-            <Step n={1} done={connected} title={t('安装扩展')}>
-              <p className="text-muted">
-                {t('点下面的按钮，会打开浏览器的扩展页面，并打开文件夹选中 extension 文件夹。')}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {status.browsers.map((b) => (
-                  <Button
-                    key={b.id}
-                    size="sm"
-                    variant={connected ? 'secondary' : 'primary'}
-                    disabled={demo || !!installing}
-                    onClick={() => void install(b.id)}
-                  >
-                    {installing === b.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Download className="h-3.5 w-3.5" />
-                    )}
-                    {t('安装到 {name}', { name: b.name })}
-                  </Button>
-                ))}
-                {status.extensionDir && !demo && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => api.revealExtension().catch((e) => toast.error((e as Error).message))}
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                    {t('打开扩展文件夹')}
-                  </Button>
+      <ol className="mt-5 flex flex-col gap-4 text-[0.8125rem] leading-relaxed">
+        <Step n={1} done={connected} title={t('安装扩展')}>
+          <p className="text-muted">{t('点下面的按钮，会打开浏览器的扩展页面，并打开文件夹选中 extension 文件夹。')}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {status.browsers.map((b) => (
+              <Button
+                key={b.id}
+                size="sm"
+                variant={connected ? 'secondary' : 'primary'}
+                disabled={demo || !!installing}
+                onClick={() => void install(b.id)}
+              >
+                {installing === b.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
                 )}
-              </div>
-              {!status.browsers.length && !demo && (
-                <p className="mt-1.5 text-[0.75rem] text-subtle">
-                  {t('没有找到 Chrome 或 Edge：在浏览器地址栏打开 chrome://extensions 手动安装。')}
-                </p>
-              )}
-            </Step>
-            <Step n={2} done={connected} title={t('加载扩展')}>
-              <p className="text-muted">
-                {t(
-                  '在扩展页面打开右上角的「开发者模式」，把选中的 extension 文件夹拖到扩展页面上松手就装好了（也可以点「加载已解压的扩展程序」，粘贴已复制的路径）。只要装这一次，以后面板更新时扩展会自动刷新。',
-                )}
-              </p>
-            </Step>
-            <Step n={3} done={connected && tabs.length > 0} title={t('打开 Gemini 或 ChatGPT')}>
-              <p className="text-muted">{t('登录后停在聊天页面，之后就能在对话框下面选这个标签页。')}</p>
-              <div className="mt-2 flex gap-2">
-                <a href="https://gemini.google.com/app" target="_blank" rel="noreferrer" className={LINK}>
-                  Gemini
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-                <a href="https://chatgpt.com/" target="_blank" rel="noreferrer" className={LINK}>
-                  ChatGPT
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-            </Step>
-          </ol>
-
-          <div
-            role="status"
-            className={cn(
-              'mt-5 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[0.78125rem] leading-relaxed',
-              state.tone === 'ok' && 'border-success/40 bg-success/8',
-              state.tone === 'warn' && 'border-warning/40 bg-warning/8',
-            )}
-          >
-            {state.tone === 'wait' ? (
-              <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-            ) : (
-              <span
-                className={cn(
-                  'mt-1.5 h-2 w-2 shrink-0 rounded-full',
-                  state.tone === 'ok' ? 'bg-success' : state.tone === 'warn' ? 'bg-warning' : 'bg-line-strong',
-                )}
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <p>{state.text}</p>
-              {outdated && !demo && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(selfReload ? [{ id: '', name: '' }] : status.browsers).map((b) => (
-                    <Button
-                      key={b.id}
-                      size="sm"
-                      variant="primary"
-                      disabled={!!reloading}
-                      onClick={() => void reload(b.id)}
-                    >
-                      {reloading === (b.id || 'auto') ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      )}
-                      {selfReload ? t('一键刷新扩展') : t('打开 {name} 的扩展页面刷新', { name: b.name })}
-                    </Button>
-                  ))}
-                </div>
-              )}
-              {connected && tabs.length > 0 && (
-                <ul className="mt-1 flex flex-col gap-0.5 text-muted">
-                  {tabs.map((tb) => (
-                    <li key={tb.id} className="truncate">
-                      {SITE[tb.site]} · {tb.title || tb.url}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            {connected && status.version && (
-              <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">v{status.version}</span>
-            )}
-          </div>
-
-          <div className="mt-5 flex justify-end">
-            <D.Close asChild>
-              <Button variant={connected && tabs.length ? 'primary' : 'ghost'}>
-                {connected && tabs.length ? t('完成') : t('知道了')}
+                {t('安装到 {name}', { name: b.name })}
               </Button>
-            </D.Close>
+            ))}
+            {status.extensionDir && !demo && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => api.revealExtension().catch((e) => toast.error((e as Error).message))}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                {t('打开扩展文件夹')}
+              </Button>
+            )}
           </div>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+          {!status.browsers.length && !demo && (
+            <p className="mt-1.5 text-[0.75rem] text-subtle">
+              {t('没有找到 Chrome 或 Edge：在浏览器地址栏打开 chrome://extensions 手动安装。')}
+            </p>
+          )}
+        </Step>
+        <Step n={2} done={connected} title={t('加载扩展')}>
+          <p className="text-muted">
+            {t(
+              '在扩展页面打开右上角的「开发者模式」，把选中的 extension 文件夹拖到扩展页面上松手就装好了（也可以点「加载已解压的扩展程序」，粘贴已复制的路径）。只要装这一次，以后面板更新时扩展会自动刷新。',
+            )}
+          </p>
+        </Step>
+        <Step n={3} done={connected && tabs.length > 0} title={t('打开 Gemini 或 ChatGPT')}>
+          <p className="text-muted">{t('登录后停在聊天页面，之后就能在对话框下面选这个标签页。')}</p>
+          <div className="mt-2 flex gap-2">
+            <a href="https://gemini.google.com/app" target="_blank" rel="noreferrer" className={LINK}>
+              Gemini
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            <a href="https://chatgpt.com/" target="_blank" rel="noreferrer" className={LINK}>
+              ChatGPT
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+        </Step>
+      </ol>
+
+      <div
+        role="status"
+        className={cn(
+          'mt-5 flex items-start gap-2 rounded-lg bg-panel px-3 py-2.5 text-[0.78125rem] leading-relaxed',
+          state.tone === 'ok' && 'bg-success/8',
+          state.tone === 'warn' && 'bg-warning/8',
+        )}
+      >
+        {state.tone === 'wait' ? (
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+        ) : (
+          <span
+            className={cn(
+              'mt-1.5 h-2 w-2 shrink-0 rounded-full',
+              state.tone === 'ok' ? 'bg-success' : state.tone === 'warn' ? 'bg-warning' : 'bg-line-strong',
+            )}
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <p>{state.text}</p>
+          {outdated && !demo && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(selfReload ? [{ id: '', name: '' }] : status.browsers).map((b) => (
+                <Button key={b.id} size="sm" variant="primary" disabled={!!reloading} onClick={() => void reload(b.id)}>
+                  {reloading === (b.id || 'auto') ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  {selfReload ? t('一键刷新扩展') : t('打开 {name} 的扩展页面刷新', { name: b.name })}
+                </Button>
+              ))}
+            </div>
+          )}
+          {connected && tabs.length > 0 && (
+            <ul className="mt-1 flex flex-col gap-0.5 text-muted">
+              {tabs.map((tb) => (
+                <li key={tb.id} className="truncate">
+                  {SITE[tb.site]} · {tb.title || tb.url}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {connected && status.version && (
+          <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">v{status.version}</span>
+        )}
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <D.Close asChild>
+          <Button variant={connected && tabs.length ? 'primary' : 'ghost'}>
+            {connected && tabs.length ? t('完成') : t('知道了')}
+          </Button>
+        </D.Close>
+      </div>
+    </Modal>
   )
 }
 
 const LINK =
-  'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.78125rem] text-muted hover:bg-sel hover:text-fg'
+  'inline-flex items-center gap-1 rounded-md bg-sel/70 px-2.5 py-1 text-[0.78125rem] text-muted transition-colors hover:bg-sel hover:text-fg'
 
 function Step({ n, done, title, children }: { n: number; done: boolean; title: string; children: React.ReactNode }) {
   return (
@@ -873,7 +870,7 @@ export function DesignChat({
                     setText(s)
                     box.current?.focus()
                   }}
-                  className="cursor-pointer rounded-lg border px-3 py-2 text-left text-[0.75rem] leading-relaxed text-muted hover:border-line-strong hover:bg-sel/50 hover:text-fg"
+                  className="cursor-pointer rounded-lg bg-sel/50 px-3 py-2 text-left text-[0.75rem] leading-relaxed text-muted transition-colors hover:bg-sel hover:text-fg"
                 >
                   {s}
                 </button>
@@ -1086,7 +1083,7 @@ function CitationChips({
           ]
             .filter(Boolean)
             .join('\n')}
-          className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-line bg-field px-1.5 py-0.5 text-[0.71875rem] text-muted"
+          className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md bg-sel/70 px-1.5 py-0.5 text-[0.71875rem] text-muted"
         >
           <Quote className="h-3 w-3 shrink-0 text-accent" />
           <span className="truncate font-medium text-fg">{c.name}</span>
@@ -1095,15 +1092,13 @@ function CitationChips({
             {c.width || c.height ? ` · ${c.width}×${c.height}` : ''}
           </span>
           {onRemove && (
-            <button
-              type="button"
-              aria-label={t('从对话里去掉')}
-              title={t('从对话里去掉')}
+            <IconButton
+              icon={X}
+              size="2xs"
+              label={t('从对话里去掉')}
               onClick={() => onRemove(c.id)}
-              className="grid h-4 w-4 shrink-0 cursor-pointer place-items-center rounded hover:bg-sel"
-            >
-              <X className="h-3 w-3" />
-            </button>
+              className="h-4 w-4"
+            />
           )}
         </span>
       ))}
@@ -1334,17 +1329,18 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
                 </span>
               )}
               {i.status === 'failed' && onRetry && (
-                <button
+                <Button
+                  variant="link"
                   disabled={!!retrying}
                   onClick={() => {
                     setRetrying(i.id)
                     void onRetry(i.id).finally(() => setRetrying(''))
                   }}
-                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-px text-[0.71875rem] text-accent hover:bg-sel disabled:cursor-default disabled:opacity-50"
+                  className="shrink-0 px-1.5 text-[0.71875rem]"
                 >
                   {retrying === i.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                   {t('重试')}
-                </button>
+                </Button>
               )}
             </li>
           ))}

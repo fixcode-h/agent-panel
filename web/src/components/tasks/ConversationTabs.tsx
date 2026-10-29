@@ -5,6 +5,7 @@ import { childIcon, taskBusy, taskState, taskWaitText } from '@shared/task'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
+import { InlineRename } from '@/components/ui/inline-rename'
 import { cliAliveHint, cliTreeAlive } from './CliAlive'
 import type { ChildSummary } from './child-line'
 import { TaskStatusIcon } from './TaskStatusIcon'
@@ -40,10 +41,11 @@ export function ConversationTabs({
   openRun: number
   /** 中间正显示父对话还是另一个页签 */
   front: 'parent' | 'other'
-  /** 正在重命名时的草稿；null 表示没在改 */
+  /** 正在重命名时从哪个标题开始改；null 表示没在改 */
   renaming: string | null
   onRenaming: (v: string | null) => void
-  onRename: () => void
+  /** 改名提交：交回输入框里的最终值，空串、没变由调用方判 */
+  onRename: (title: string) => void
   onParent: () => void
   onOther: () => void
   onCloseChild: () => void
@@ -59,19 +61,13 @@ export function ConversationTabs({
     <TabBar as="header" label={t('对话页签')} leading={leading} trailing={trailing}>
       {renaming !== null ? (
         // 改名就地在页签位置上改：输入框不能套在页签按钮里
-        <input
-          autoFocus
-          aria-label={t('任务标题')}
+        <InlineRename
           value={renaming}
-          maxLength={80}
-          onChange={(e) => onRenaming(e.target.value)}
-          onFocus={(e) => e.currentTarget.select()}
-          onBlur={onRename}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
-            if (e.key === 'Escape') onRenaming(null)
-          }}
-          className="mx-1.5 my-1 w-60 min-w-0 rounded-md border border-focus bg-field px-2 text-[0.78125rem] outline-none"
+          label={t('任务标题')}
+          size="sm"
+          onCommit={onRename}
+          onCancel={() => onRenaming(null)}
+          className="mx-1.5 my-1 w-60"
         />
       ) : (
         <TabItem

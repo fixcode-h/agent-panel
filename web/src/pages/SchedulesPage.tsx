@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { Segmented } from '@/components/ui/segmented'
+import { Badge } from '@/components/ui/badge'
 import { ScheduleCard } from '@/components/schedule/ScheduleCard'
 import { ScheduleDetail } from '@/components/schedule/ScheduleDetail'
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog'
@@ -26,9 +27,7 @@ function GroupHeading({ group, count }: { group: string; count: number }) {
   return (
     <h2 className="flex items-center gap-2 text-[0.8125rem] font-semibold text-muted">
       {group}
-      <span className="rounded-full bg-field px-1.5 text-[0.6875rem] font-normal text-subtle tabular-nums">
-        {count}
-      </span>
+      <Badge className="px-1.5 py-0 text-[0.6875rem] font-normal tabular-nums">{count}</Badge>
     </h2>
   )
 }

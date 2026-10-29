@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
+import { Segmented } from '@/components/ui/segmented'
 import { Markdown } from '@/components/tasks/Markdown'
 import { Optimizer } from '@/components/projects/ProjectDocs'
 import { Group } from './parts'
@@ -130,27 +132,16 @@ export function DeploySection() {
               <span className="text-xs text-subtle">{t('已修改，保存或部署时写入')}</span>
             )}
             <div className="ml-auto flex items-center gap-1">
-              <div className="flex rounded-lg border p-0.5">
-                {(
-                  [
-                    ['edit', PenLine, t('编辑')],
-                    ['preview', Eye, t('预览')],
-                  ] as const
-                ).map(([m, Icon, label]) => (
-                  <button
-                    key={m}
-                    onClick={() => setMode(m)}
-                    aria-pressed={mode === m}
-                    className={cn(
-                      'flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-xs',
-                      mode === m ? 'bg-sel text-fg' : 'text-subtle hover:text-fg',
-                    )}
-                  >
-                    <Icon className="h-3 w-3" />
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                size="sm"
+                label={t('编辑或预览')}
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { id: 'edit', label: t('编辑'), icon: PenLine },
+                  { id: 'preview', label: t('预览'), icon: Eye },
+                ]}
+              />
               <Button
                 size="sm"
                 variant="ghost"
@@ -208,7 +199,7 @@ export function DeploySection() {
       </Group>
 
       <Group title={t('写到哪些 Agent')}>
-        <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
+        <Card as="ul" className="flex flex-col divide-y overflow-hidden">
           {st.targets.map((d) => (
             <li
               key={d.cli}
@@ -239,12 +230,12 @@ export function DeploySection() {
               </span>
             </li>
           ))}
-        </ul>
+        </Card>
       </Group>
 
       <Group title={t('要部署的技能（已选 {n} 个）', { n: draft.skills.length })}>
         {outdated.length > 0 && (
-          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-accent/40 bg-accent-soft/40 px-3 py-2.5">
+          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-accent-soft px-3 py-2.5">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
             <span className="min-w-0 flex-1 text-[0.78125rem] leading-relaxed">
               {t('{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。', {
@@ -279,7 +270,7 @@ export function DeploySection() {
               <h4 className="px-1 text-[0.75rem] text-subtle">
                 {g.label} · {g.items.length}
               </h4>
-              <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
+              <Card as="ul" className="flex flex-col divide-y overflow-hidden">
                 {g.items.map((s) => {
                   const on = draft.skills.includes(s.name)
                   return (
@@ -310,7 +301,7 @@ export function DeploySection() {
                     </li>
                   )
                 })}
-              </ul>
+              </Card>
             </section>
           ))}
         </div>

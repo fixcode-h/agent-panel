@@ -1,5 +1,5 @@
 ---
-paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**, web/src/pages/**, web/src/components/settings/ComponentsSection.tsx, web/src/components/tasks/ConversationTabs.tsx
+paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**, web/src/pages/**, web/src/components/settings/ComponentsSection.tsx, web/src/components/tasks/ConversationTabs.tsx, web/src/components/tasks/Messages.tsx
 ---
 
 # 视觉：部件、底色和字重
@@ -19,3 +19,7 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 ## 深色下分段切换要认得出选中项
 
 - 规则：分段切换（模式切换、`Segmented`）用 `seg-track` / `seg-thumb`，不手写 `bg-sel` + `bg-card`：深色下两者只差几个色阶，选中项认不出来；未选中文字用 `text-muted`。防线：`scripts/ui/harness.mjs` 的 `segmentedContrastProblems`（起因：用户反馈侧栏「Agent / Chat / 设计」深色下看不清）。
+
+## 思考过程保持原样，不并进过程行
+
+- 规则：对话里的「思考过程」是一行小字按钮（Brain 图标 + 用时）加展开后左侧竖线的正文，不改成过程行（RowShell）样式；统一部件时先问这一块。起因：90e8f53 把它改成过程行，用户要求「思考过程用原有的」。

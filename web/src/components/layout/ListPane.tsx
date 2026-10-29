@@ -1,6 +1,8 @@
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
 import { ChevronRight, Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
@@ -57,7 +59,7 @@ export function ListPane({
           <h1 title={title} className="min-w-0 truncate text-lg font-semibold">
             {title}
           </h1>
-          <span className="shrink-0 rounded-full border bg-card px-2 text-xs text-muted">{count}</span>
+          <Badge className="shrink-0">{count}</Badge>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {extra}
             {!hideNew &&
@@ -76,14 +78,11 @@ export function ListPane({
         <label className="relative block">
           <span className="sr-only">{t('搜索')}</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-subtle" />
-          <input
+          <Input
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             placeholder={placeholder}
-            className={cn(
-              'w-full rounded-lg border border-line-strong bg-field pr-3 pl-9 text-[0.8125rem] outline-none placeholder:text-subtle focus:border-focus focus:ring-[3px] focus:ring-focus-soft',
-              compact ? 'h-[34px]' : 'h-[38px]',
-            )}
+            className={cn('pr-3 pl-9 text-[0.8125rem]', compact ? 'h-[34px]' : 'h-[38px]')}
           />
         </label>
         {tabs}
