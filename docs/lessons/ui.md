@@ -7,16 +7,16 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui
 ## 文案、命名和控件的写法
 
 - 规则：界面文案（含服务端返回给界面的报错）都走 `t()`，英文写进 `shared/locales/en/`；提示词、注释、演示数据不翻。
-- 规则：字号用 rem（`text-[0.8125rem]`，不写 `text-[13px]`），设置里「字号」改根字号；字体用 `--app-sans` / `--app-mono`（`web/src/lib/appearance.ts`）；基础样式放 `@layer base`，否则盖掉工具类。单个字形难看就用同家族 `@font-face` + `unicode-range` 只换它（`web/src/maple-mono.css`）。
+- 规则：字号用 rem（不写 px），字体用 `--app-sans` / `--app-mono`；基础样式放 `@layer base`；单个字形难看用 `@font-face` + `unicode-range` 只换它（`web/src/maple-mono.css`）。
 - 规则：配置出来的 Agent（角色设定 + CLI + 模型）界面写「角色」（2dbcf97），编码工具本身（Claude Code、Pi…）写「Agent」，如「默认 Agent」；产品名和开发者说明写 CLI，代码里的类型名、变量名不改。
-- 规则：不列「默认」「自动」「CLI 默认」，直接预选并标「（默认）」；思考强度写 `english · 中文`，只列当前模型支持的档位、按 CLI 顺序，值不支持时用 `effortValue` / `defaultEffortOptions` 取最接近的，不补进下拉；停用/没装的 CLI 不出现在选择器和列表里；名字叫「Codex」不叫「Codex CLI」。
+- 规则：不列「默认」「自动」，直接预选并标「（默认）」；思考强度写 `english · 中文`，只列当前模型支持的档位、按 CLI 顺序，不支持的值用 `effortValue` 取最接近的；停用/没装的 CLI 不出现；叫「Codex」不叫「Codex CLI」。
 - 起因：v0.18 思考强度排序被指出（medium 排在 off 前）；「默认 CLI」改名 Agent。
 - 防线：`npm run typecheck`（`scripts/i18n-check.mjs`）、`web/src/lib/cli-style.test.ts`；改了布局、弹窗、列表跑 `scripts/ui-check.mjs`，到 `ui-shots/` 看深浅两套主题。
 
 ## 拖引用、条目点法和弹窗取数
 
 - 规则：文件拖进输入框用左键长按（`fileDrag.ts` 的 `longPressed`，约 300ms），右键留给菜单；拖完压掉补发的 click。
-- 规则：对话里一行一个的条目（工具调用、子任务、面板结果、提问）用 `RowShell`：整行是入口的传 `rowOpen`（动作名、标题、详情、耗时都可点，行尾 `action` 如终止要自己 `stopPropagation`）；没传的只有标题开窗口，动作名和箭头是展开收起，`detailStart` 的详情区不吃点击（传了 `rowOpen` 除外）。
+- 规则：对话里一行一个的条目用 `RowShell`：整行是入口的传 `rowOpen`（行尾 `action` 如终止要自己 `stopPropagation`）；没传的只有标题开窗口，动作名和箭头是展开收起。
 - 规则：会被角色或后台改动的数据（如项目教训）别只用页面缓存，弹窗打开时重新请求合进草稿，否则 `record_lesson` 记的教训在项目设置里看不到。
 - 起因：拖引用原为右键按住拖动、子任务行只有标题能点，用户要求整行可点（参考子对话行）。
 - 防线：`scripts/ui-check.mjs` 的「任务-长按拖入引用」（`scripts/ui/02-task.mjs`）、同文件「子对话-整段文本可点」「子任务-整行可点」「子任务-终止按钮不打开窗口」。
@@ -42,13 +42,13 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui
 
 ## 输入框不能被外面重渲染重画或重挂载
 
-- 规则：`RichInput` 整棵重画（`paint` → `replaceChildren`）只在文字真变了时做：上传完成只换卡片里的 `img`（`updatePreviews`）；重画会擦掉组合中的字，组合期间跳过的等结束后补。卡片操作点击时重新取 `actions()`，别闭包捕获画卡片那刻的 `files`。
-- 规则（重渲染）：输入框用 `draftKey` 自管草稿（`ChatComposer` 的 `useDraft`），打字只重渲染输入框；消息列表按 `memo` 比，`slot` 用签名 `slotKey` 比，签名要含 slot 的全部输入（如 `runningSig`，漏了会上下两段各列一遍子对话）；`Intl` 实例复用。
+- 规则：`RichInput` 整棵重画只在文字真变了时做（上传完成只换 `img`，组合输入期间跳过、结束后补）；卡片操作点击时重新取 `actions()`，别闭包捕获旧 `files`。
+- 规则：输入框用 `draftKey` 自管草稿，打字只重渲染输入框；消息列表按 `memo` 比，`slot` 的签名 `slotKey` 要含全部输入；`Intl` 实例复用。
 - 起因：用户反馈实时输出时打字卡、输入框失焦；实测 `Intl` 每次新建占 109ms/3s，`slot` 的 memo 从未命中。
 - 防线：`scripts/ui-check.mjs`（推送期间输入框不重挂载、不丢焦点；行内图片卡片上传后还能删除）。
 
 ## 对话页的 Agent、模型、强度留在输入框左下角
 
-- 规则：进了对话以后，输入框和新建对话那个保持一样：Agent · 模型 · 强度用 `ChatModelPicker` 放在输入框工具条左边（附件、提问开关后面）；用角色的对话在同一位置只读显示 `RoleModelBadge`。不挪到标题栏，也不收成输入框右侧的一个按钮。
+- 规则：对话页的输入框和新建对话时一样：Agent · 模型 · 强度用 `ChatModelPicker` 放在输入框工具条左边；用角色的对话在同位置只读显示 `RoleModelBadge`，不挪到标题栏。
 - 起因：dc23450 照设计稿把 Chat 页的「Agent · 模型」移到标题栏右侧、输入框只留强度，项目对话收成右侧的模型按钮；用户 2026-10-29 要求对话页保持新建时的输入框。
 - 防线：`scripts/ui/01-composer.mjs` 的 Chat 页用例（标题栏里不能有「对话用的 Agent」）。
