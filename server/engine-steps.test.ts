@@ -269,7 +269,7 @@ test('多步骤节点：步骤派出的子 Agent 挂在步骤记录下，一次�
   assert.equal(task.steps.find((s) => s.id === 'a/step/s1')!.output, '一步结果')
 })
 
-test('终止子任务：只停那一个，按「已终止」交回，别的子任务和节点照常做完', async () => {
+test('终止或抛异常的子任务只收它自己：终止的按「已终止」、抛异常的按失败交回，别的子任务和节点照常做完', async () => {
   const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
   let report = ''
   const { task, host } = makeHost(w, async (call) => {
@@ -277,6 +277,8 @@ test('终止子任务：只停那一个，按「已终止」交回，别的子�
       const ids = call.orch!.spawn([
         { title: '慢的', instructions: '一直查' },
         { title: '快的', instructions: '查一下' },
+        // 启动 CLI 前抛异常的：以前停在执行中、终止又说已经结束了，等它的节点也跟着抛错
+        { title: '坏的', instructions: '查一下' },
       ]).ids
       // 子任务都开始以后再终止「慢的」（界面上的按钮走的就是 stopHelper）
       await new Promise((r) => setTimeout(r, 10))
@@ -293,15 +295,24 @@ test('终止子任务：只停那一个，按「已终止」交回，别的子�
       await new Promise<void>((r) => call.signal?.addEventListener('abort', () => r(), { once: true }))
       return { ok: false as const, stopped: true, error: '已停止' }
     }
+    if (call.step?.title === '坏的') throw new Error('配置文件被占用')
     return '快的结果'
   })
   await runEngineTurn(host)
   const slow = task.steps.find((s) => s.title === '慢的')!
   const fast = task.steps.find((s) => s.title === '快的')!
+  const bad = task.steps.find((s) => s.title === '坏的')!
   assert.equal(slow.status, 'skipped')
   assert.equal(fast.status, 'done')
+  assert.equal(bad.status, 'failed')
+  assert.ok(bad.endedAt)
   assert.equal(task.steps.find((s) => s.id === 'a')!.status, 'done')
   assert.match(report, /已终止：方向错了/)
+  assert.match(report, /配置文件被占用/, '失败原因交回给派它的节点')
+  assert.ok(
+    task.messages.some((m) => m.step === bad.id && m.error && m.text.includes('配置文件被占用')),
+    '报错显示在子任务里',
+  )
 })
 
 test('推送由父对话决定：子对话的提示词不问用户要不要推送，父对话侧仍按授权流程问一次', async () => {
