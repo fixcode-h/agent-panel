@@ -521,7 +521,7 @@ export function TaskView({
   const followTa = useRef<RichInputHandle>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
   const files = useAttachments(`task:${taskId}`)
-  const mention = useFileMention(project?.id, followTa)
+  const mention = useFileMention(project, followTa, files)
   const [sending, setSending] = useState(false)
   // 输入框里此刻的附件（渲染时同步）：发送时立刻清空，失败要把这次发的那几个放回去，
   // 不能读闭包里的旧列表——那会把刚清空的当成还在，反倒让附件丢了（见 restoreDraft）
