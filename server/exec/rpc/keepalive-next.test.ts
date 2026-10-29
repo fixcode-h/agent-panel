@@ -9,7 +9,7 @@ import test from 'node:test'
 import { getCli } from '../../../shared/clis.ts'
 import { parserFor } from '../parsers.ts'
 import { canKeepAlive } from '../runner.ts'
-import { claudeAdapter } from './claude.ts'
+import { claudeAdapter, claudeContextSnapshot } from './claude.ts'
 import { codexAdapter } from './codex.ts'
 import { createRpcSession } from './session.ts'
 import type { RpcAdapter } from './types.ts'
@@ -77,15 +77,17 @@ test('保活的下一轮：Claude Code、Codex 在同一个进程里按各自的
       subtype: 'success',
       request_id: ask.request_id,
       response: {
+        // 2.1.3xx 的回复里类别只有 name（界面上显示的那几个），没有早期版本的 id 字段；
+        // 只按 id 找会让所有类别都认不出，快照 rows 为空、上下文占用恒为 0
         categories: [
-          { id: 'system_prompt', tokens: 2034 },
-          { id: 'system_tools', tokens: 28725 },
-          { id: 'system_tools_deferred', tokens: 34202, isDeferred: true },
-          { id: 'mcp_instructions', tokens: 900 },
-          { id: 'messages', tokens: 5000 },
-          { id: 'autocompact_buffer', tokens: 33000 },
-          { id: 'free_space', tokens: 930341 },
-          { id: 'something_new', tokens: 1 },
+          { name: 'System prompt', tokens: 2034 },
+          { name: 'System tools', tokens: 28725 },
+          { name: 'System tools (deferred)', tokens: 34202, isDeferred: true },
+          { name: 'MCP server instructions', tokens: 900 },
+          { name: 'Messages', tokens: 5000 },
+          { name: 'Autocompact buffer', tokens: 33000 },
+          { name: 'Free space', tokens: 930341 },
+          { name: 'Something new', tokens: 1 },
         ],
         maxTokens: 1_000_000,
         mcpTools: [{ name: 'mcp__panel__ask', tokens: 300, isLoaded: true }],
@@ -103,6 +105,18 @@ test('保活的下一轮：Claude Code、Codex 在同一个进程里按各自的
     ['systemPrompt', 'systemTools', 'systemDeferred', 'mcpInstructions', 'messages', 'buffer', 'free'],
   )
   assert.equal(snap.used, 2034 + 28725 + 900 + 5000)
+  // 早期版本按 id 报类别：同一套分类也要认得（先按 id、再按 name）
+  const legacy = claudeContextSnapshot({
+    categories: [
+      { id: 'system_prompt', tokens: 10 },
+      { id: 'messages', tokens: 20 },
+    ],
+    maxTokens: 1000,
+  })
+  assert.deepEqual(
+    legacy?.rows.map((r) => r.key),
+    ['systemPrompt', 'messages'],
+  )
   assert.deepEqual(
     snap.tools.map((x: any) => [x.name, x.deferred]),
     [

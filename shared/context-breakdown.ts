@@ -87,6 +87,27 @@ export const CLAUDE_CONTEXT_IDS: Record<string, ContextKey> = {
   free_space: 'free',
 }
 
+/**
+ * Claude Code get_context_usage 的类别名 → 面板的分类：2.1.3xx 起回复里只有 name，没有早期版本的 id。
+ * 名字是界面上显示的那几个（System prompt、MCP tools (deferred)……），两种情况下的压缩余量都算 buffer。
+ * 名称要和 CLI 输出逐字一致（认不出的类别会被丢掉）；加类别时两张表一起改
+ */
+export const CLAUDE_CONTEXT_NAMES: Record<string, ContextKey> = {
+  'System prompt': 'systemPrompt',
+  'System tools': 'systemTools',
+  'MCP tools': 'mcpTools',
+  'MCP server instructions': 'mcpInstructions',
+  'MCP tools (deferred)': 'mcpDeferred',
+  'System tools (deferred)': 'systemDeferred',
+  'Custom agents': 'agents',
+  'Memory files': 'memory',
+  Skills: 'skills',
+  Messages: 'messages',
+  'Autocompact buffer': 'buffer',
+  'Compact buffer': 'buffer',
+  'Free space': 'free',
+}
+
 const Named = z.object({ name: z.string(), tokens: z.number() })
 /**
  * CLI 自己报的一次细分（快照）：只有报得出来的 CLI 才有，挂在 AgentUsage.snapshot 上。

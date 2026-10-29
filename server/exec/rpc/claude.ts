@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { t } from '../../../shared/i18n.ts'
 import { clipDetail, oneLine, type CliEvent, type Parser } from '../parsers.ts'
 import type { RpcAdapter, RpcContext } from './types.ts'
-import { CLAUDE_CONTEXT_IDS, type ContextSnapshot } from '../../../shared/context-breakdown.ts'
+import { CLAUDE_CONTEXT_IDS, CLAUDE_CONTEXT_NAMES, type ContextSnapshot } from '../../../shared/context-breakdown.ts'
 
 /** 要上下文细分最多等多久：summary 是本地算的，正常几十毫秒；老版本不认这个请求会马上回错误 */
 const CONTEXT_TIMEOUT_MS = 3000
@@ -95,11 +95,11 @@ async function contextSnapshot(ctx: RpcContext): Promise<ContextSnapshot | undef
   return reply?.response?.subtype === 'success' ? claudeContextSnapshot(reply.response.response) : undefined
 }
 
-/** get_context_usage 的回复换成面板的快照：类别按 id 归到共用的分类，认不出的类别丢掉 */
+/** get_context_usage 的回复换成面板的快照：类别按 id 归到共用的分类（新版本只有 name），认不出的类别丢掉 */
 export function claudeContextSnapshot(r: any, at = new Date().toISOString()): ContextSnapshot | undefined {
   if (!r || !Array.isArray(r.categories) || !(r.maxTokens > 0)) return undefined
   const rows = r.categories.flatMap((c: any) => {
-    const key = CLAUDE_CONTEXT_IDS[c?.id]
+    const key = CLAUDE_CONTEXT_IDS[c?.id] ?? CLAUDE_CONTEXT_NAMES[c?.name]
     return key && typeof c.tokens === 'number' ? [{ key, tokens: Math.max(0, c.tokens) }] : []
   })
   const used = rows
