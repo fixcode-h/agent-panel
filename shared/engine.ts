@@ -94,6 +94,7 @@ import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
+import { nextSent, promptDelta, rememberSent } from './prompt-delta.ts'
 import { isHelperAgent } from './builtin/core.ts'
 import {
   activePlan,
@@ -791,6 +792,8 @@ export interface LessonInput {
 }
 
 const MAX_DEPTH = 6
+/** 父对话每轮提示里列出的已完成子对话个数（最近完成的几个），更早的用 list_conversations 查 */
+const RECENT_DONE_CHILDREN = 8
 const MAX_OUTPUT = 4000
 const now = () => new Date().toISOString()
 
@@ -1008,6 +1011,43 @@ function userRequests(task: Task) {
     .filter((m) => m.role === 'user' && !m.step)
     .map((m) => withAttachments(m.prompt || m.text, m.attachments))
   return { original: users[0] ?? '', extra: users.slice(1) }
+}
+
+/** 对话里给子任务、工作流节点看的更早的用户消息：第一条（子对话里是父对话交代的任务）留得长一些，中间的只留最近几条的开头 */
+const CHAT_FIRST_CHARS = 1500
+const CHAT_EARLIER = 3
+const CHAT_EARLIER_CHARS = 300
+
+/**
+ * 交给节点 / 子任务的「用户需求」。工作流任务就是一件事，第一条是需求、后面的都是补充，全带上。
+ * 对话（含在对话里 start_plan 跑的工作流、派出的子任务）会一直聊下去：第一条往往是很久以前的另一件事，
+ * 整段历史全带上的话，每派一个子任务、每跑一个节点都重发一遍，越聊越长。
+ * 对话只带全最新的一条（这一轮在处理的）；第一条截短留着（子对话的第一条是父对话交代的任务），
+ * 中间的只留最近几条的开头当背景；要做的事以交给它的要求为准
+ */
+export function nodeRequests(task: Task): { original: string; extra: string[]; earlier: boolean } {
+  const all = userRequests(task)
+  if (task.mode !== 'chat') return { ...all, earlier: false }
+  const users = [all.original, ...all.extra].filter(Boolean)
+  const latest = users.at(-1) ?? ''
+  const first = users.length > 1 ? [clip(users[0].trim(), CHAT_FIRST_CHARS)] : []
+  const middle = users
+    .slice(1, -1)
+    .slice(-CHAT_EARLIER)
+    .map((x) => clip(x.replace(/\s+/g, ' ').trim(), CHAT_EARLIER_CHARS))
+  return { original: latest, extra: [...first, ...middle], earlier: true }
+}
+
+function requestParts(task: Task) {
+  const { original, extra, earlier } = nodeRequests(task)
+  return {
+    head: `## 用户需求\n${original}`,
+    extra: extra.length
+      ? earlier
+        ? `## 对话里更早的消息（节选，只作背景）\n${extra.map((t) => `- ${t}`).join('\n')}`
+        : `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}`
+      : '',
+  }
 }
 
 const stepPath = (inv: Invocation, nodeId: string) =>
@@ -1383,18 +1423,19 @@ function backgroundPart(host: EngineHost) {
  * 对话的执行计划：当前计划和维护规则。项目里的对话（父、子都有）每一轮都带上，
  * 计划的规则由面板在 set_plan 里兜底（完成的锁死、做完收起），这里讲清楚什么时候列、怎么更新、等待怎么挂
  */
-function planPart(host: EngineHost, coordinator: boolean) {
+function planPart(host: EngineHost, coordinator: boolean): string[] {
   const { task } = host
-  if (!task.projectId) return ''
+  if (!task.projectId) return []
   const kind = wrapKind(host)
   const cur = activePlan(task)
   const nowMs = Date.now()
   const now = cur ? `当前计划：\n${planText(task, cur)}` : '现在没有进行中的计划。'
   // ADR 0020：每轮都把「当前第几步、多久没更新、下一步」正面摆在前面；滞后 / 新输入没处理时再插一条提醒
   const check = [planNowText(task, nowMs), planNotice(task, nowMs)].filter(Boolean).join('\n')
-  return `## 执行计划
-${now}
-${check ? `\n${check}\n` : ''}
+  // 当前计划和维护规则分成两段：计划每轮都在变，规则不变，续接会话时只重发前一段（见 shared/prompt-delta.ts）
+  return [
+    `## 执行计划\n${now}${check ? `\n\n${check}` : ''}`,
+    `## 计划怎么维护
 - 需要好几步才能做完的事（改代码、排查问题、跨模块、要测试验证），分析梳理完先用 set_plan 列出计划再动手；一问一答、一两行的小改动不用列。
 - 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
 - **动手前先把这一步标成「进行中」**（set_plan 带它的 id + status），一份计划里同时只能有一个进行中；**做完立刻**在同一批动作里把它标完成、再把下一步标进行中。不要连着做完几步再一起更新，也不要在计划里还有进行中的步骤时去做别的步骤的事。
@@ -1412,20 +1453,21 @@ ${
 `
     : ''
 }- 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
-    coordinator
-      ? `
+      coordinator
+        ? `
 - 你是父对话：分析只做到判断这件事属于哪个模块、该交给哪个子对话为止，具体定位和修改交给子对话，把你查到的模块、文件和线索一起交过去。交给子对话的每件事是计划里的一个主步骤，带 step 挂成等待中；用户随时发来的新消息马上答复或分派，不要因为在等子对话让用户等。`
-      : ''
-  }`
+        : ''
+    }`,
+  ]
 }
 
 function commonPart(host: EngineHost, w?: Workflow, chat = false) {
-  const { original, extra } = userRequests(host.task)
+  const req = requestParts(host.task)
   return [
-    `## 用户需求\n${original}`,
+    req.head,
     // 放在前面：同一个任务里各个节点提示词的开头都一样，按前缀匹配缓存的模型服务能多命中一段
     promptLangRules(),
-    extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
+    req.extra,
     w?.document.trim() ? `## 工作流说明\n${w.document.trim()}` : '',
     // 对话（含它派出的子任务）用不到共享状态：对话里跑过 start_plan 后 task.runs 会留着上一次运行，
     // 注入旧状态会让模型去调根本没注册的 read_state / write_state
@@ -1449,14 +1491,8 @@ function commonPart(host: EngineHost, w?: Workflow, chat = false) {
  * 工作流说明、搜索排除、编译收尾、授权和文件格式都是写给动手的角色的，评审拿到只会去搜项目、跑检查
  */
 function reviewCommonPart(host: EngineHost) {
-  const { original, extra } = userRequests(host.task)
-  return [
-    `## 用户需求\n${original}`,
-    promptLangRules(),
-    extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
-    goalPart(host),
-    rulesPart(host),
-  ]
+  const req = requestParts(host.task)
+  return [req.head, promptLangRules(), req.extra, goalPart(host), rulesPart(host)]
 }
 
 function unitPrompt(
@@ -3679,7 +3715,7 @@ async function runHelper(
     const role = host.agents.find((a) => a.id === step.agentId)
     const reviewing = reviewsCode(role)
     const review = await reviewPart(host, step, spec)
-    const prompt = [
+    const parts = [
       // 评审代码只要需求和必须遵守的规则：搜索范围、编译和收尾、授权这些段落是写给要动手的角色的，
       // 给评审只会引着它去搜项目、跑检查（ADR 0013）
       ...(reviewing ? reviewCommonPart(host) : commonPart(host, ctx.workflow, !!ctx.chat)),
@@ -3696,9 +3732,12 @@ async function runHelper(
         ? `## 同时进行的子 Agent\n下面这些和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings.map((x) => `- ${x}`).join('\n')}`
         : '',
       `## 要求\n只完成上面这件事，不要做发起节点的其他工作。完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。`,
-    ]
-      .filter(Boolean)
-      .join('\n\n')
+    ].filter(Boolean)
+    // 接着原来的子任务做（复看、重试）：会话里已经有需求和通用规则，只发新的和变了的段落（见 shared/prompt-delta.ts）
+    const sessionKey = step.session || step.id
+    const sent = host.task.promptSent?.[sessionKey]
+    const full = parts.join('\n\n')
+    const delta = promptDelta(parts, sent, host.task.sessions[sessionKey])
     // 评审到了软时限还没交卷：传话要它按已确认的交卷（CLI 不支持执行中补充时传不进去，不影响它继续）
     const wrap = reviewing
       ? setTimeout(() => void host.steer?.(step.id, REVIEW_WRAP_NOTE).catch(() => false), REVIEW_SOFT_LIMIT_MS)
@@ -3708,9 +3747,10 @@ async function runHelper(
       .runAgent({
         step,
         agentId: step.agentId,
-        prompt,
+        prompt: delta ?? full,
+        ...(delta ? { fresh: full } : {}),
         // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
-        sessionKey: step.session || step.id,
+        sessionKey,
         tier,
         // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
         // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
@@ -3718,6 +3758,12 @@ async function runHelper(
         signal: ac.signal,
       })
       .finally(() => clearTimeout(wrap))
+    if (host.task.sessions[sessionKey] && (r.ok || r.stopped))
+      host.task.promptSent = rememberSent(
+        host.task.promptSent,
+        sessionKey,
+        nextSent(parts, host.task.sessions[sessionKey], !!delta, sent),
+      )
     // 单独终止的：不管 CLI 怎么收的尾，都按终止交回（整个任务停止时 ac 没被触发，照旧走下面）
     if (ac.signal.aborted) return stopped()
     if (r.ok) {
@@ -3926,7 +3972,7 @@ async function conversationPrompt(
     verifyPart(host),
     editPart(host),
     backgroundPart(host),
-    planPart(host, coordinator),
+    ...planPart(host, coordinator),
     wrapUpPart(host),
     p4Part(host),
     // 对话模式没有共享状态工具：这里不注入（跑过 start_plan 时 task.runs 里是上一次运行的旧状态）
@@ -3962,7 +4008,12 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
         : '## 工作流\n当前 Agent 没有开启「按工作流执行计划」的能力，直接在对话里执行。',
   ]
   if (coordinator) {
-    const list = host.listConversations ? await host.listConversations() : []
+    const all = host.listConversations ? await host.listConversations() : []
+    // 已完成的子对话只列最近几个：子对话越开越多，每一轮都把几十个早就做完的整份列一遍，
+    // 父对话判断新消息交给谁时用不上那么早的；要找更早的用 list_conversations
+    const done = all.filter((c) => c.resolved).sort((a, b) => (b.at > a.at ? 1 : b.at < a.at ? -1 : 0))
+    const hidden = new Set(done.slice(RECENT_DONE_CHILDREN).map((c) => c.id))
+    const list = all.filter((c) => !hidden.has(c.id))
     parts.push(
       `## 现有子对话\n${
         list.length
@@ -3973,7 +4024,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
               )
               .join('\n')
           : '（还没有子对话）'
-      }`,
+      }${hidden.size ? `\n（另有 ${hidden.size} 个更早完成的子对话没列出，需要时用 list_conversations 查）` : ''}`,
       `${
         inline
           ? `## 你的定位：父对话先分析再分派，只就地做微小改动
@@ -4064,7 +4115,7 @@ ${
 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定，options 列出可选的做法）。你不能直接联系其他子对话。`,
       )
   }
-  return parts.filter(Boolean).join('\n\n')
+  return parts.filter(Boolean)
 }
 
 /**
@@ -4083,7 +4134,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
   if (turn) host.changed(true)
   try {
     const inline = coordinator && !!host.inlineEdit && agent?.inlineEdit === 'tiny'
-    let prompt = await conversationPrompt(
+    const parts = await conversationPrompt(
       host,
       kind,
       planning,
@@ -4091,6 +4142,13 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       !coordinator && delegatesRole(host, agent),
       inline,
     )
+    const full = parts.join('\n\n')
+    // 续接同一个会话时规则段落只发变了的（见 shared/prompt-delta.ts）；回退、预热不省，按完整的发
+    const sent = task.promptSent?.[who]
+    const delta = host.prewarm || task.rewind ? null : promptDelta(parts, sent, task.sessions[who])
+    let prompt = delta ?? full
+    // 第一圈之后的 prompt 是子任务结果、计划结果，不是这份规则
+    let first = true
     let orch: Orchestra | undefined
     // 回复完 CLI 就退出的（Claude Code、Codex）在这里等子任务；停在等待工具上的 CLI 在 runner 里自己等
     const gate = helperGate(
@@ -4121,6 +4179,8 @@ export async function runConversationTurn(host: EngineHost, who: string) {
         r = await host.runAgent({
           agentId: who,
           prompt,
+          // 只发了增量时带上完整的：runner 续不上会话、开了新会话时改用它
+          ...(first && delta ? { fresh: full } : {}),
           // 会话键就是 Agent id；选了「无」时用空字符串，runner 仍然按对话处理
           sessionKey: who,
           ...(host.prewarm ? { prewarm: true } : {}),
@@ -4130,6 +4190,11 @@ export async function runConversationTurn(host: EngineHost, who: string) {
         // AI 这一轮处理完了：宿主不再把转交来的子任务派进它（后面的阶段交给下一轮）
         host.onOrchestra?.(undefined)
       }
+      // 记下这个会话已经有了哪些段落：跑完或被停下的算收到了（停下时 CLI 已经读过这一轮）；报错的不记，
+      // 可能根本没交到 CLI，下一轮照旧补发。会话 id 取 runner 跑完后的（续不上开了新会话时，新会话收到的是 fresh）
+      if (first && !host.prewarm && task.sessions[who] && (r.ok || r.stopped))
+        task.promptSent = rememberSent(task.promptSent, who, nextSent(parts, task.sessions[who], !!delta, sent))
+      first = false
       if (!r.ok) {
         // 这一轮 CLI 已经报过完成（turnDoneAt）才被收掉：例如子对话交付完合并回收、父对话收尾、保活上限，
         // 这时用户没点暂停、活也已经干完，不能记成被打断。和 endTurn 用同一个判据，两处结论必须一致
