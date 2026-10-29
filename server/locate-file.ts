@@ -120,7 +120,7 @@ const SAME_TIME_MS = 2000
  * 在这些目录里按名字和大小找文件；有修改时间时挑时间最接近的。
  * 按层往下找（最多 depth 层），看过的条目和用时都有上限，找不到就算了，不让粘贴卡住
  */
-export async function searchFiles(wanted: Wanted[], dirs: string[], depth = 4, budgetMs = 4000) {
+export async function searchFiles(wanted: Wanted[], dirs: string[], depth = 4, budgetMs = 4000, loose = false) {
   const found = new Map<Wanted, { path: string; diff: number }>()
   const deadline = Date.now() + budgetMs
   const seen = new Set<string>()
@@ -145,7 +145,7 @@ export async function searchFiles(wanted: Wanted[], dirs: string[], depth = 4, b
         for (const w of wanted) {
           if (w.name !== it.name) continue
           const s = await stat(full).catch(() => null)
-          if (!s || s.size !== w.size) continue
+          if (!s || (!loose && s.size !== w.size)) continue
           const diff = w.mtime ? Math.abs(s.mtimeMs - w.mtime) : 0
           const had = found.get(w)
           if (!had || diff < had.diff) found.set(w, { path: full, diff })
@@ -159,21 +159,25 @@ export async function searchFiles(wanted: Wanted[], dirs: string[], depth = 4, b
   return found
 }
 
-/** 按名字和大小（有时间时再看时间）找回每个文件的路径；找不到的不在结果里 */
-export async function locateFiles(wanted: Wanted[], extraDirs: string[] = [], clipboard = true) {
+/**
+ * 按名字和大小（有时间时再看时间）找回每个文件的路径；找不到的不在结果里。
+ * loose：不比大小，只按名字找、挑修改时间最接近的。浏览器读不了的文件（被别的程序占用、正在写）用它：
+ * 正在写的文件大小一直在变，按大小对不上
+ */
+export async function locateFiles(wanted: Wanted[], extraDirs: string[] = [], clipboard = true, loose = false) {
   const out = new Map<Wanted, string>()
   if (clipboard) {
     const clip = await clipboardFiles()
     for (const file of clip) {
       const s = await stat(file).catch(() => null)
       if (!s?.isFile()) continue
-      const w = wanted.find((x) => !out.has(x) && x.name === path.basename(file) && x.size === s.size)
+      const w = wanted.find((x) => !out.has(x) && x.name === path.basename(file) && (loose || x.size === s.size))
       if (w) out.set(w, file)
     }
   }
   const rest = wanted.filter((w) => !out.has(w))
   if (rest.length) {
-    const found = await searchFiles(rest, [...extraDirs.filter(Boolean), ...commonDirs()])
+    const found = await searchFiles(rest, [...extraDirs.filter(Boolean), ...commonDirs()], 4, 4000, loose)
     for (const [w, hit] of found) out.set(w, hit.path)
   }
   return out

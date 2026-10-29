@@ -37,7 +37,7 @@ test('阈值分流、发送取哪份、拦发送和卡片显示', () => {
   assert.deepEqual(sendAttachmentOf(item({ source, done, state: 'copied' })), done)
   // 卡片上显示 @路径和大小，引用卡片不换
   const shown = chipTextOf(item({ source: 'C:\\Users\\Me\\需求.pdf', size: 2048, state: 'copying' }))
-  assert.equal(shown?.label, '@C:\\Users\\Me\\需求.pdf · 2 KB')
+  assert.equal(shown?.label, 'C:\\Users\\Me\\需求.pdf · 2 KB')
   assert.ok(shown?.status, '拷贝中要显示状态')
   assert.equal(chipTextOf(item({ quote: '一段话' })), undefined)
   // 没有原路径时用数据目录里的路径，最后退回文件名

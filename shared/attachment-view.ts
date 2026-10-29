@@ -57,10 +57,10 @@ export function itemStatus(state: ItemState) {
 /** 卡片上的路径：原路径优先，没有时用拷好的数据目录路径，最后退回文件名 */
 export const itemPath = (x: Pick<ItemLike, 'source' | 'done' | 'name'>) => x.source ?? x.done?.path ?? x.name
 
-/** 卡片上的文字：@路径 + 大小 + 状态；引用卡片显示原文摘要，不换 */
+/** 卡片上的文字：路径 + 大小 + 状态（前面不加 @，用户嫌多余）；引用卡片显示原文摘要，不换 */
 export function chipTextOf(x: ItemLike) {
   if (x.quote !== undefined || x.done?.quote !== undefined) return undefined
-  return { label: `@${itemPath(x)} · ${formatSize(x.size)}`, status: itemStatus(x.state) }
+  return { label: `${itemPath(x)} · ${formatSize(x.size)}`, status: itemStatus(x.state) }
 }
 
 /**
