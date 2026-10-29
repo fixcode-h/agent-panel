@@ -51,6 +51,7 @@ export function TaskFiles({
   dir,
   node,
   onTask,
+  showChanges,
 }: {
   task: Task
   /** 项目目录：分支还没读出来时先用它做说明 */
@@ -59,9 +60,14 @@ export function TaskFiles({
   node?: TaskStep
   /** 压缩、审查之后把新的任务状态交回页面 */
   onTask?: (task: Task) => void
+  /** 每变一次就切到「本对话改动」页签：会话栏的「在改动页查看」用 */
+  showChanges?: number
 }) {
   const { upsertTask } = useData()
   const [tab, setTab] = useState<'files' | 'changes'>('files')
+  useEffect(() => {
+    if (showChanges) setTab('changes')
+  }, [showChanges])
   const [diffPath, setDiffPath] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)

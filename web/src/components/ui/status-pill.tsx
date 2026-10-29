@@ -54,7 +54,8 @@ export function StatusPill({
         className,
       )}
     >
-      {spin && <Spinner className="h-2 w-2 border-[1.5px]" />}
+      {/* 转圈固定用运行色：胶囊文字换成别的颜色（侧栏的白片）时转圈仍是运行中的样子 */}
+      {spin && <Spinner className={cn('h-2 w-2 border-[1.5px]', tone === 'run' && 'text-run')} />}
       {children}
     </span>
   )

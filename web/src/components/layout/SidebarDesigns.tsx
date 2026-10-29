@@ -41,8 +41,10 @@ import {
   SIDEBAR_BLOCK_ROW_OFF,
   SIDEBAR_BLOCK_ROW_ON,
   SIDEBAR_GROUP_LABEL,
-  SIDEBAR_ROW_ON,
   SidebarCount,
+  PROJECT_CARD,
+  PROJECT_CARD_OFF,
+  PROJECT_CARD_ON,
   SidebarTaskBlock,
 } from '@/components/ui/sidebar'
 import { t } from '@shared/i18n'
@@ -167,9 +169,9 @@ export function DesignList() {
             // 整行都能点：以前只有文字能点，点到图标或空白处没反应，像是要点两次
             onClick={() => renaming !== d.id && go({ page: 'design', id: d.id })}
             className={cn(
-              'flex h-8 cursor-pointer items-center gap-2 rounded-[7px] border px-2 text-[0.8125rem] transition-colors',
-              // 设计行和 Agent 的任务行一样放在项目下的浅底块里，选中用更亮的卡片底
-              on ? cn(SIDEBAR_BLOCK_ROW_ON, 'font-medium') : SIDEBAR_BLOCK_ROW_OFF,
+              'flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border pr-1.5 pl-2.5 text-[0.8125rem] transition-colors',
+              // 设计行和 Agent 的对话卡片一样：灰底卡片，选中换卡片底 + 细边浮起来
+              on ? SIDEBAR_BLOCK_ROW_ON : SIDEBAR_BLOCK_ROW_OFF,
             )}
           >
             {d.asking ? (
@@ -263,13 +265,9 @@ export function DesignList() {
           <section key={p.id} className="mb-1">
             <ContextMenu>
               <ContextMenuTrigger asChild>
-                <div
-                  // 整行只是排成一行的容器：点空白处不展开也不打开，展开 / 打开各有自己的按钮
-                  className={cn(
-                    'group/proj flex h-8 items-center gap-1 rounded-[7px] border pr-1 pl-0.5 text-[0.8125rem] text-fg transition-colors',
-                    on ? SIDEBAR_ROW_ON : 'border-transparent hover:bg-sel/60',
-                  )}
-                >
+                {/* 整行只是排成一行的容器：点空白处不展开也不打开，展开 / 打开各有自己的按钮；
+                    折叠箭头在卡片外，和 Agent 侧栏的项目卡片一样（照设计稿 Workspace 侧栏） */}
+                <div className="group/proj flex items-center gap-1">
                   <button
                     // 折叠只由这个箭头按钮触发：以前整行可点、靠冒泡折叠，点项目名打不开主页
                     onClick={() => toggleFold(p.id)}
@@ -279,39 +277,44 @@ export function DesignList() {
                     aria-label={open ? t('收起') : t('展开')}
                     disabled={!ds.length}
                     className={cn(
-                      'grid h-6 w-5 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
+                      'grid h-6 w-4 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
                       !ds.length && 'invisible',
                     )}
                   >
                     <ChevronRight
-                      className={cn('h-[13px] w-[13px] transition-transform', open && 'rotate-90')}
-                      strokeWidth={2}
+                      className={cn('h-3 w-3 transition-transform', open && 'rotate-90')}
+                      strokeWidth={2.2}
                     />
                   </button>
-                  <button
-                    onClick={() => go(designHomeRoute(p.id))}
-                    aria-label={t('打开项目「{name}」，右键查看更多操作', { name: p.name })}
-                    title={t('打开项目「{name}」，右键查看更多操作', { name: p.name })}
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-                  >
-                    {open ? (
-                      <FolderOpen className="h-[15px] w-[15px] shrink-0 text-muted" strokeWidth={1.8} />
-                    ) : (
-                      <Folder className="h-[15px] w-[15px] shrink-0 text-muted" strokeWidth={1.8} />
-                    )}
-                    <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
-                  </button>
-                  {ds.length > 0 && <SidebarCount n={ds.length} on={on} className="mr-0.5 group-hover/proj:hidden" />}
-                  <IconButton
-                    icon={Plus}
-                    onClick={() => go({ page: 'design', id: 'new', sub: p.id })}
-                    label={t('在「{name}」新建设计', { name: p.name })}
-                    title={t('新建设计')}
-                    className={cn(
-                      ds.length ? 'hidden' : 'opacity-60',
-                      'group-hover/proj:grid group-hover/proj:opacity-100',
-                    )}
-                  />
+                  <div className={cn(PROJECT_CARD, on ? PROJECT_CARD_ON : PROJECT_CARD_OFF)}>
+                    <button
+                      onClick={() => go(designHomeRoute(p.id))}
+                      aria-label={t('打开项目「{name}」，右键查看更多操作', { name: p.name })}
+                      title={t('打开项目「{name}」，右键查看更多操作', { name: p.name })}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                    >
+                      {open ? (
+                        <FolderOpen
+                          className={cn('h-[15px] w-[15px] shrink-0', !on && 'text-muted')}
+                          strokeWidth={1.9}
+                        />
+                      ) : (
+                        <Folder className={cn('h-[15px] w-[15px] shrink-0', !on && 'text-muted')} strokeWidth={1.9} />
+                      )}
+                      <span className="min-w-0 flex-1 truncate font-semibold">{p.name}</span>
+                    </button>
+                    {ds.length > 0 && <SidebarCount n={ds.length} on={on} className="mr-0.5 group-hover/proj:hidden" />}
+                    <IconButton
+                      icon={Plus}
+                      onClick={() => go({ page: 'design', id: 'new', sub: p.id })}
+                      label={t('在「{name}」新建设计', { name: p.name })}
+                      title={t('新建设计')}
+                      className={cn(
+                        ds.length ? 'hidden' : 'opacity-60',
+                        'group-hover/proj:grid group-hover/proj:opacity-100',
+                      )}
+                    />
+                  </div>
                 </div>
               </ContextMenuTrigger>
               <ContextMenuContent>

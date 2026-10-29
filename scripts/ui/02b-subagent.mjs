@@ -373,6 +373,8 @@ await runShard(import.meta.filename, async (api) => {
     {
       await p.evaluate(() => {
         for (const k of Object.keys(localStorage)) if (k.startsWith('task-files:')) localStorage.removeItem(k)
+        // 只验文件栏：会话栏关着，1440 宽才放得下文件栏（两个都开时后打开的留着，见 02-task）
+        localStorage.setItem('task-session-bar', 'closed')
       })
       await p.reload()
       const token = p.getByTitle('Token 用量').first()

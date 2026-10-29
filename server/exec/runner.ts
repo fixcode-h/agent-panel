@@ -2129,6 +2129,18 @@ async function runAgent(
         }
       : undefined,
     onEvent: apply,
+    // 会话栏的上下文细分：记下面板交给这个会话的工具和系统提示词（压缩、审查这类操作只挂提问工具，不记）
+    onTools: op
+      ? undefined
+      : (tools, deferred) => {
+          au().parts = {
+            cli: cliId,
+            system: def.systemPromptFlag ? instructions.length : 0,
+            tools,
+            deferred,
+          }
+          ctx.changed()
+        },
     // 任务上的「提问」开关：执行中也能改，CLI 问的时候再看
     askUser: () => task.askUser,
     // 对话、工作流节点和工作流跑完后的追加要求都能接收补充；压缩、审查这类操作不接收

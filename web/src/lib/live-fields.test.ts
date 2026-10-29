@@ -5,8 +5,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Task } from '@shared/schema'
+import { askedAt, taskSummary } from '@shared/task'
 import { taskBusy } from '@shared/task'
-import { keepLiveFields } from './live-fields'
+import { keepLiveFields, windowedForSummary } from './live-fields'
 
 const base = { id: 'a', status: 'running', working: false, steps: [] } as unknown as Task
 
@@ -23,6 +24,24 @@ test('keepLiveFields：新的一份没带运行时字段时沿用旧的，转圈
   assert.equal(taskBusy(done), false)
   // 换了任务不沿用
   assert.equal(keepLiveFields(prev, { ...bare, id: 'b' }).childrenWorking, undefined)
+  // 长对话只取到最后一段时换回列表摘要：最近发言时间不能退回到第一条消息（侧栏排序会闪）
+  const msg = (role: string, at: string) => ({ id: at, role, at, text: '' })
+  const listed = taskSummary({
+    ...base,
+    workflows: [],
+    createdAt: '2026-01-01T00:00:00Z',
+    messages: [msg('user', '2026-01-01T00:00:00Z'), msg('user', '2026-01-03T00:00:00Z')],
+  } as unknown as Task)
+  const page = {
+    ...base,
+    workflows: [],
+    createdAt: '2026-01-01T00:00:00Z',
+    messages: [msg('agent', '2026-01-04T00:00:00Z')],
+  }
+  assert.equal(askedAt(taskSummary(windowedForSummary(page as unknown as Task, listed))), '2026-01-03T00:00:00Z')
+  // 打开期间刚发的那条在这一段里：以它为准
+  const sent = { ...page, messages: [...page.messages, msg('user', '2026-01-05T00:00:00Z')] }
+  assert.equal(askedAt(taskSummary(windowedForSummary(sent as unknown as Task, listed))), '2026-01-05T00:00:00Z')
 })
 
 test('keepLiveFields：CLI 存活没带时沿用，带了 false 就撤掉（CLI 关了绝不显示）', () => {

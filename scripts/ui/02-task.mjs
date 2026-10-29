@@ -92,6 +92,28 @@ await runShard(import.meta.filename, async (api) => {
 
   // 宽屏右栏默认开着（重设计：固定「项目文件 / 本对话改动」两个页签），最宽 440，不和对话平分；
   // 页签条右端的按钮能收起，再点展开
+  // 会话栏在中间对话的右边、同一块面板里（照 Claude Code）：环境、上下文、输出内容、更改四块，上下文按块细分；
+  // 右侧的文件栏照旧。标题栏的会话栏开关能收起再打开
+  await check(p, '任务-会话栏', ['已使用', '消息', 'MCP 工具'])
+  {
+    const rail = p.locator('[data-session-rail]')
+    if (!(await rail.isVisible())) errors.push('会话栏：默认没有显示')
+    else {
+      const main = await p.locator('main').first().boundingBox()
+      const box = await rail.boundingBox()
+      if (!main || !box || box.x < main.x || box.x + box.width > main.x + main.width + 1)
+        errors.push('会话栏：不在中间对话那块面板里')
+    }
+    for (const name of ['环境', '上下文', '输出内容', '更改'])
+      if (!(await rail.getByRole('region', { name, exact: true }).count())) errors.push(`会话栏：没有「${name}」这一块`)
+    await p.getByRole('button', { name: '隐藏会话栏', exact: true }).click()
+    if (await rail.isVisible()) errors.push('会话栏：点「隐藏会话栏」后还在')
+    await p.getByRole('button', { name: '显示会话栏', exact: true }).click()
+    if (!(await rail.isVisible())) errors.push('会话栏：点「显示会话栏」后没回来')
+    // 1440 宽放不下会话栏 + 文件栏 + 对话：后打开的留着。点「显示文件」换成文件栏，会话栏让开
+    await openFiles()
+    if (await rail.isVisible()) errors.push('会话栏：放不下时点了「显示文件」，会话栏没有让开')
+  }
   await check(p, '任务-文件面板默认展开')
   const filesPanel = p.locator('[data-task-panel]').first()
   if (!(await filesPanel.isVisible())) errors.push('任务：文件面板默认没有展开')

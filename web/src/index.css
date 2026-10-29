@@ -32,6 +32,10 @@
   --accent-soft: rgb(198 97 63 / 0.11);
   /* 文字用的强调色：比 --accent 深一号，小字在米色底上也够 4.5:1；色块、图标、描边仍用 --accent */
   --accent-text: #a94f2e;
+  /* 侧栏选中项目的卡片：一层浅蓝底 + 细蓝边，和对话行的灰底分开（照设计稿 Workspace 侧栏），不随配色变 */
+  --proj-bg: #e7f0fc;
+  --proj-line: #b9cff0;
+  --proj-fg: #1e3a66;
   --primary: var(--accent);
   --on-primary: #ffffff;
   /* 危险按钮上的字：深色主题里危险红偏亮，白字看不清，改用深色字 */
@@ -40,6 +44,10 @@
   --run-soft: rgb(14 110 121 / 0.1);
   --peer: #5b4fc4;
   --peer-soft: rgb(91 79 196 / 0.08);
+  /* 会话栏上下文细分的三种主色（照 Claude Code 的 /context：消息蓝、系统工具橙、MCP 工具青），其余各块用灰阶 */
+  --ctx-messages: #2f6fd6;
+  --ctx-tools: #d9661f;
+  --ctx-mcp: #0f8f7a;
   /* 输入框、按钮获得焦点时的颜色 */
   --focus: var(--accent);
   --focus-soft: var(--accent-soft);
@@ -47,7 +55,6 @@
   --warning: #935b0c;
   --danger: #b4372b;
   --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
-  --panel-shadow: 0 1px 3px rgb(60 50 30 / 0.06);
   --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
   --code-bg: #f7f6f1;
   --code-chip: #f1efe8;
@@ -130,6 +137,9 @@
   --accent: #d97757;
   --accent-soft: rgb(217 119 87 / 0.15);
   --accent-text: #e08463;
+  --proj-bg: rgb(96 165 250 / 0.13);
+  --proj-line: rgb(96 165 250 / 0.35);
+  --proj-fg: #bfd7fb;
   /* 白字在 #d97757 上只有 3.1:1，和其他配色的深色主题一样用深色字 */
   --on-primary: #1f1e1c;
   --on-danger: #1f1e1c;
@@ -137,6 +147,9 @@
   --run-soft: rgb(108 207 217 / 0.12);
   --peer: #b3a9f5;
   --peer-soft: rgb(179 169 245 / 0.1);
+  --ctx-messages: #4a8cf0;
+  --ctx-tools: #e8743a;
+  --ctx-mcp: #22b39a;
   /* 深色背景上橙色的焦点框不显眼，和 Claude Code 一样用蓝色 */
   --focus: #4a9df0;
   --focus-soft: rgb(74 157 240 / 0.28);
@@ -144,7 +157,6 @@
   --warning: #e3a752;
   --danger: #ec7a64;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
-  --panel-shadow: none;
   --shadow-pop: 0 12px 36px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.06);
   --code-bg: #1f1f1d;
   --code-chip: #353532;
@@ -305,6 +317,9 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-text: var(--accent-text);
+  --color-proj: var(--proj-bg);
+  --color-proj-line: var(--proj-line);
+  --color-proj-fg: var(--proj-fg);
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
   --color-on-danger: var(--on-danger);
@@ -314,6 +329,9 @@
   --color-run-soft: var(--run-soft);
   --color-peer: var(--peer);
   --color-peer-soft: var(--peer-soft);
+  --color-ctx-messages: var(--ctx-messages);
+  --color-ctx-tools: var(--ctx-tools);
+  --color-ctx-mcp: var(--ctx-mcp);
   --color-focus: var(--focus);
   --color-focus-soft: var(--focus-soft);
   --color-success: var(--success);
@@ -367,17 +385,12 @@ body,
   height: 100%;
 }
 /*
- * 面板：主区、右栏各是一块，浮在侧栏的底色上（照 Proma / Claude 桌面版）。
- * 边界只靠底色和圆角分开，不描边；浅色下加一层很淡的投影，免得暖白和米色贴在一起分不清。
- * 手机上整页就是一块，不留圆角
+ * 面板：主区、右栏的底。中间区域直接铺到浏览器边缘，不留外边距、不加圆角和投影（用户要求）；
+ * 和侧栏靠底色分开；对话和右栏同一个底色、中间没有缝了，用页面里的 divide-x 画一条细线
  */
 @utility panel {
   background-color: var(--bg);
   overflow: hidden;
-  @media (width >= 48rem) {
-    border-radius: 0.75rem;
-    box-shadow: var(--panel-shadow);
-  }
 }
 /*
  * 分段切换（模式切换、Segmented）的轨道和选中块：浅色下轨道是一层灰、选中块是白卡片；

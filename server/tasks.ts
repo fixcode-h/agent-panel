@@ -180,6 +180,7 @@ import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDi
 import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from './files.ts'
 import path from 'node:path'
 import { log } from './log.ts'
+import { sessionInfo } from './session-bar.ts'
 import { createWorktreeCache, type WorktreeRead } from './worktree-cache.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
@@ -5669,6 +5670,13 @@ export function tasksApi(deps: {
       .filter((x) => x.kind === 'edit' && x.label === file && x.input)
       .map((x) => x.input!)
     return c.json({ path: file, dir, diff: patches.join('\n'), git: false, before: false })
+  })
+
+  // 会话栏：环境、说明文件、Skill、新建的文件；cli 是这个对话当前用的 CLI（页面按角色算好传来）
+  routes.get('/:id/session', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    return c.json(await sessionInfo(tk, tk.imported ? '' : await taskDir(tk), c.req.query('cli') ?? ''))
   })
 
   /** 任务的工作目录；导入的任务没有本机目录，读文件时直接拒绝 */

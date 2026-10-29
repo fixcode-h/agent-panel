@@ -823,7 +823,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                             route.page === 'projects' && route.sub === t.id && go({ page: 'projects', id: pid })
                           }
                           inBlock
-                          className="px-2"
+                          className="pr-1.5 pl-2.5"
                         />
                       ))}
                       {ts.length > PER_PROJECT && (

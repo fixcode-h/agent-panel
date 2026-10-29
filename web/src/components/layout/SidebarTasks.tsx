@@ -95,7 +95,7 @@ export function TaskRow({
    * 未读点挪到行尾；选中是浅卡片底，和左栏底色拉开。转圈、需要处理、失败的图标照常画
    */
   plain?: boolean
-  /** 放在项目下的任务块里（SidebarTaskBlock）：块已经垫了浅底，选中行换成更亮的卡片底 */
+  /** 放在项目下的对话列表里（SidebarTaskBlock）：每行是一张灰底卡片，选中换成卡片底 + 细边浮起来 */
   inBlock?: boolean
   className?: string
 }) {
