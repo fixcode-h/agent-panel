@@ -160,10 +160,10 @@ test('pageWindow：一次只给一个窗口，endIndex 可以接着续读', () =
 })
 
 test('各个搜索源的响应解析：字段名对齐成 title / url / snippet，脏数据跳过', () => {
-  const degoog = searchProvider('degoog').parse({
-    results: [{ title: 'A', url: 'https://a.com', snippet: 's', score: 1 }, { title: '坏', url: 'ftp://x' }, null],
+  const searx = searchProvider('searxng').parse({
+    results: [{ title: 'A', url: 'https://a.com', content: 's', score: 1 }, { title: '坏', url: 'ftp://x' }, null],
   })
-  assert.deepEqual(degoog, [{ title: 'A', url: 'https://a.com', snippet: 's' }])
+  assert.deepEqual(searx, [{ title: 'A', url: 'https://a.com', snippet: 's' }])
   assert.deepEqual(searchProvider('searxng').parse({ results: [{ title: 'B', url: 'https://b.com', content: 'c' }] }), [
     { title: 'B', url: 'https://b.com', snippet: 'c' },
   ])
@@ -205,9 +205,9 @@ test('搜索源的请求：参数和鉴权按各服务的写法，密钥不放�
 })
 
 test('结果文本：没有结果时告诉模型换关键词，有结果时带地址和摘要', () => {
-  assert.match(formatSearchResults('abc', 'degoog', []), /没有找到结果/)
-  const text = formatSearchResults('abc', 'degoog', [{ title: 'A', url: 'https://a.com', snippet: 's' }])
-  assert.match(text, /degoog/)
+  assert.match(formatSearchResults('abc', 'searxng', []), /没有找到结果/)
+  const text = formatSearchResults('abc', 'searxng', [{ title: 'A', url: 'https://a.com', snippet: 's' }])
+  assert.match(text, /searxng/)
   assert.match(text, /https:\/\/a\.com/)
 })
 
@@ -252,10 +252,11 @@ test('抓取文本：startIndex 已经到末尾时说清楚读完了，不说「
 })
 
 test('设置里的联网搜索：没写过用默认源，源名写错回退默认，密钥去掉首尾空白', () => {
-  // 默认源是 DeepSeek 官方搜索；旧设置里存过的选择（例如 degoog）原样保留
+  // 默认源是 DeepSeek 官方搜索；旧设置里存过的选择原样保留，已经去掉的 degoog 回退到 DeepSeek
   assert.equal(Settings.parse({}).webSearch.provider, 'deepseek')
   assert.equal(Settings.parse({ webSearch: { provider: '不存在的源' } }).webSearch.provider, 'deepseek')
-  assert.equal(Settings.parse({ webSearch: { provider: 'degoog' } }).webSearch.provider, 'degoog')
+  assert.equal(Settings.parse({ webSearch: { provider: 'degoog' } }).webSearch.provider, 'deepseek')
+  assert.equal(Settings.parse({ webSearch: { provider: 'tavily' } }).webSearch.provider, 'tavily')
   const brave = Settings.parse({ webSearch: { provider: 'brave', key: '  sk-xxxx  ' } })
   assert.equal(brave.webSearch.provider, 'brave')
   assert.equal(brave.webSearch.key, 'sk-xxxx')
@@ -297,8 +298,8 @@ test('地址归属和当前源不一致时忽略它，改用当前源的默认�
     resolveSearchEndpoint({
       provider: 'searxng',
       key: '',
-      endpoint: 'https://degoog.org/api/search',
-      endpointProvider: 'degoog',
+      endpoint: 'https://api.search.brave.com/res/v1/web/search',
+      endpointProvider: 'brave',
     }),
     '',
   )

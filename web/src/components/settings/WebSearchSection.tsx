@@ -28,7 +28,7 @@ export function WebSearchSection({
           desc={
             <>
               {t(
-                '模型联网搜索时用哪个服务。默认是 DeepSeek 官方搜索，要填 DeepSeek 的 API key 才能用，没填时搜索会直接报错，不会换成别的源。也可以换成免密钥的 Degoog（查询会发给 degoog.org 这个第三方聚合服务）、自建的 SearXNG，或 Brave、Tavily。',
+                '自己不会联网搜索的 Agent（目前是 Pi）用哪个服务搜索；Claude Code、Codex、Command Code 用它们自带的搜索。默认是 DeepSeek 官方搜索，要填 DeepSeek 的 API key 才能用，没填时搜索会直接报错，不会换成别的源。也可以换成自建的 SearXNG，或 Brave、Tavily。',
               )}
               {/* 选中源自己的说明（计费、用哪种 key）：跟着下拉切换，用户换源前就看得到要花钱 */}
               {provider.note && <span className="mt-1 block">{provider.note}</span>}

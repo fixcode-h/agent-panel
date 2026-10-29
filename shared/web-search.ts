@@ -15,13 +15,13 @@ export const SEARCH_DEFAULT_RESULTS = 5
 export const SEARCH_MAX_RESULTS = 10
 /** 搜索词至少几个字：一个字的查询基本搜不到有用的东西，还容易被搜索源限流 */
 export const SEARCH_MIN_QUERY_CHARS = 2
-/** 搜索词最多几个字：degoog 这类服务对超长查询会直接报错 */
+/** 搜索词最多几个字：聚合类搜索服务对超长查询会直接报错 */
 export const SEARCH_MAX_QUERY_CHARS = 400
 /** 域名过滤最多几个：再多就等于没过滤 */
 export const SEARCH_MAX_DOMAINS = 10
 /** 一条结果摘要最多留多长，长摘要留给 web_fetch 去取 */
 export const SEARCH_SNIPPET_CHARS = 500
-/** 搜索请求最多等多久：degoog 这类聚合服务要把查询转给几个引擎，给得比普通接口宽一些 */
+/** 搜索请求最多等多久：SearXNG 这类聚合服务要把查询转给几个引擎，给得比普通接口宽一些 */
 export const SEARCH_TIMEOUT_MS = 20_000
 
 /** DeepSeek 官方搜索的端点路径：官方文档给的固定路径；设置里的地址可以带自己的前缀路径（例如自建代理），这里只往后追加 */
@@ -107,20 +107,6 @@ function pick(
     .filter((h) => h.url && /^https?:\/\//i.test(h.url))
 }
 
-/** degoog：免费的 metasearch 聚合（把查询转给 Brave 等），不需要密钥；
- * 返回固定 100 条，条数由面板自己截断；用户也可以换成自建实例 */
-const Degoog: SearchProvider = {
-  id: 'degoog',
-  label: t('Degoog（免密钥）'),
-  needsKey: false,
-  endpoint: 'https://degoog.org/api/search',
-  build: ({ query, endpoint }) => ({
-    url: `${endpoint}${endpoint.includes('?') ? '&' : '?'}q=${encodeURIComponent(query)}`,
-    init: { method: 'GET', headers: { accept: 'application/json' } },
-  }),
-  parse: (body) => pick(body, (b) => b?.results, { title: 'title', url: 'url', snippet: 'snippet' }),
-}
-
 /** searxng：自己搭的实例，地址必须填（公共实例基本都关了 JSON 接口） */
 const Searxng: SearchProvider = {
   id: 'searxng',
@@ -177,7 +163,8 @@ export function querySiteFilters(q: { query: string; allowedDomains: string[]; b
 
 /**
  * DeepSeek 官方搜索（Search API）：面板显式调它的搜索端点，用的是 DeepSeek 自己的 API 密钥。
- * 默认源：用户多半已经有 DeepSeek 的 key；没填密钥时直接报错让用户去填，不悄悄换成 Degoog。
+ * 默认源：用户多半已经有 DeepSeek 的 key；没填密钥时直接报错让用户去填，不悄悄换成别的源。
+ * 只有自己不会联网搜索的 Agent（Pi）才走面板这一套，Claude Code、Codex、Command Code 用它们自带的搜索
  * 请求体只有 query（条数用接口默认的 10 条，面板再按 numResults 截断）；
  * 结果里摘要字段有 snippet / summary / content 几种，按顺序取第一个非空的
  */
@@ -218,7 +205,7 @@ const Deepseek: SearchProvider = {
 }
 
 /** 可选的搜索源：设置界面按这个列表显示，第一个是默认 */
-export const SEARCH_PROVIDERS: SearchProvider[] = [Deepseek, Degoog, Searxng, Brave, Tavily]
+export const SEARCH_PROVIDERS: SearchProvider[] = [Deepseek, Searxng, Brave, Tavily]
 export const DEFAULT_SEARCH_PROVIDER = Deepseek.id
 
 /** 可选的搜索源 id：设置文件里写成别的值时由 schema 回退到默认源 */
