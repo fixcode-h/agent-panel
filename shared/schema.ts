@@ -1940,6 +1940,16 @@ export const TaskData = z.object({
    * 续接时角色变了就补发新版（见 server/exec/runner.ts）
    */
   roleHashes: z.record(z.string(), z.string()).optional(),
+  /**
+   * 每个会话已经收到过的提示词段落指纹（键同 sessions，见 shared/prompt-delta.ts）：续接时只发新的和变了的段落。
+   * 会话换了、压缩过就作废（runner 在压缩时删掉）
+   */
+  promptSent: z
+    .record(
+      z.string(),
+      z.object({ session: z.string(), hashes: z.record(z.string(), z.string()), turns: z.number().default(0) }),
+    )
+    .optional(),
   /** 对话的会话是哪个 CLI 的：对话中途换了 CLI 时，下一轮开新会话，把之前的对话带过去 */
   sessionCli: z.string().optional(),
   /** 对话的会话是在哪个目录里开的：改文件前开了独立分支、换了目录时，下一轮开新会话，把之前的对话带过去 */
