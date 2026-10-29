@@ -1,10 +1,6 @@
 import { useState } from 'react'
 import {
-  ChevronDown,
-  ChevronRight,
   FileText,
-  Folder,
-  FolderOpen,
   ImageIcon,
   Lock,
   MessageSquare,
@@ -41,6 +37,7 @@ import { ContextRing } from '@/components/ui/context-ring'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { FlowStrip } from '@/components/ui/flow-strip'
 import { InlineChip } from '@/components/ui/inline-chip'
+import { MessageChip } from '@/components/chat/AttachmentView'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
 import { ReplyHeader } from '@/components/ui/reply-header'
@@ -51,17 +48,14 @@ import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { SourceLink } from '@/components/ui/source-link'
 import {
   ModeTabs,
-  NAV_ROW,
   NavRow,
-  ProjectRunning,
-  SIDEBAR_BLOCK_ROW_OFF,
-  SIDEBAR_BLOCK_ROW_ON,
   SIDEBAR_GROUP_LABEL,
-  SIDEBAR_ROW_OFF,
-  SIDEBAR_ROW_ON,
-  SidebarCount,
+  SidebarProjectName,
+  SidebarProjectRow,
   SidebarTaskBlock,
+  SidebarTaskRowBody,
   TaskRowStatus,
+  sidebarTaskRowClass,
 } from '@/components/ui/sidebar'
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
@@ -318,17 +312,34 @@ export function ComponentsSection() {
         <Specimen name="InlineChip">
           <p className="text-[0.875rem] leading-7">
             {t('按这张')}
-            <InlineChip icon={<ImageIcon className="h-3.5 w-3.5" />} label="草图.png" status={t('已上传')} />
+            <InlineChip
+              tone="image"
+              icon={<ImageIcon className="h-3.5 w-3.5" />}
+              label="草图.png"
+              status={t('已上传')}
+            />
             {t('改，规则参考')}
             <InlineChip
+              tone="file"
               icon={<FileText className="h-3.5 w-3.5" />}
               label="docs/lessons/ui.md"
               status={t('引用路径')}
               mono
             />
             {t('，用')}
-            <InlineChip icon={<Sparkles className="h-3.5 w-3.5 text-peer" />} label="code-review" status="Skill" />
+            <InlineChip tone="skill" icon={<Sparkles className="h-3.5 w-3.5" />} label="code-review" status="Skill" />
           </p>
+        </Specimen>
+        <Specimen name="MessageChip">
+          {/* 用户气泡里的卡片：气泡本身是 bg-sel，卡片要靠自己的颜色从气泡里跳出来 */}
+          <div className="rounded-2xl bg-sel px-4 py-2.5 text-[0.9375rem] leading-relaxed">
+            <MessageChip kind="quote" name="关于「截图」这一段" />
+            {t('这里再改改，和')}
+            <MessageChip kind="image" name="截图-081218.png" />
+            {t('一样，参考')}
+            <MessageChip kind="file" name="设计稿.pdf" />
+            <MessageChip kind="image" name="旧图.png" missing />
+          </div>
         </Specimen>
         <Specimen name="FlowStrip">
           {/* 工作流节点条：完成绿、运行中强调、没开始灰，节点之间一小段横线 */}
@@ -369,39 +380,50 @@ export function ComponentsSection() {
               onPick={() => {}}
               className="mx-0.5 mb-2"
             />
+            {/* 快捷键和侧栏一样：悬停到这一行才出现 */}
             <NavRow
               icon={<Plus className="h-4 w-4" strokeWidth={1.8} />}
               label={t('新建任务')}
-              trailing={<Kbd>⌘⇧O</Kbd>}
+              className="group/nav"
+              trailing={<Kbd className="ml-auto opacity-0 transition-opacity group-hover/nav:opacity-100">⌘⇧O</Kbd>}
             />
             <NavRow icon={<Workflow className="h-4 w-4" strokeWidth={1.8} />} label={t('工作流')} on />
             <p className={cn('px-[9px] pt-2.5 pb-1', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
-            <div className={cn(NAV_ROW, SIDEBAR_ROW_ON, 'gap-2 pl-1')}>
-              <ChevronDown className="h-[13px] w-[13px] text-subtle" strokeWidth={2} />
-              <FolderOpen className="h-[15px] w-[15px] text-muted" strokeWidth={1.8} />
-              <span className="min-w-0 flex-1 truncate font-medium">agent-panel</span>
-              <ProjectRunning n={1} />
-            </div>
+            {/* 项目行和对话行用侧栏同一套部件：打开着里面的对话时，项目行本身不高亮 */}
+            <SidebarProjectRow
+              open
+              running={1}
+              count={3}
+              name={
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  <SidebarProjectName open name="agent-panel" />
+                </span>
+              }
+            />
             <SidebarTaskBlock>
-              <div className={cn(NAV_ROW, SIDEBAR_BLOCK_ROW_ON, 'gap-2 px-2.5 text-[0.8125rem] font-medium')}>
-                <span className="min-w-0 flex-1 truncate">{t('右栏改成页签工作台')}</span>
-                <TaskRowStatus kids={8} running />
+              <div className={cn(sidebarTaskRowClass(true, true), 'px-2')}>
+                <SidebarTaskRowBody
+                  active
+                  title={t('右栏改成页签工作台')}
+                  status={<TaskRowStatus kids={8} running />}
+                />
               </div>
-              <div className={cn(NAV_ROW, SIDEBAR_BLOCK_ROW_OFF, 'gap-2 px-2.5 text-[0.8125rem]')}>
-                <span className="min-w-0 flex-1 truncate">{t('修复设置弹窗闪动')}</span>
-                <TaskRowStatus unread />
+              <div className={cn(sidebarTaskRowClass(false, true), 'px-2')}>
+                <SidebarTaskRowBody workflow title={t('修复设置弹窗闪动')} status={<TaskRowStatus unread />} />
               </div>
-              <div className={cn(NAV_ROW, SIDEBAR_BLOCK_ROW_OFF, 'gap-2 px-2.5 text-[0.8125rem]')}>
-                <span className="min-w-0 flex-1 truncate">{t('接入 Pi CLI 输出')}</span>
-                <TaskRowStatus needs />
+              <div className={cn(sidebarTaskRowClass(false, true), 'px-2')}>
+                <SidebarTaskRowBody title={t('接入 Pi CLI 输出')} status={<TaskRowStatus needs />} />
               </div>
             </SidebarTaskBlock>
-            <div className={cn(NAV_ROW, SIDEBAR_ROW_OFF, 'gap-2 pl-1 text-fg')}>
-              <ChevronRight className="h-[13px] w-[13px] text-subtle" strokeWidth={2} />
-              <Folder className="h-[15px] w-[15px] text-muted" strokeWidth={1.8} />
-              <span className="min-w-0 flex-1 truncate font-medium">docs-site</span>
-              <SidebarCount n={2} />
-            </div>
+            <SidebarProjectRow
+              open={false}
+              count={2}
+              name={
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  <SidebarProjectName open={false} name="docs-site" />
+                </span>
+              }
+            />
           </div>
         </Specimen>
       </Group>

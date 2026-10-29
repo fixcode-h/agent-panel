@@ -258,36 +258,6 @@ await runShard(import.meta.filename, async (api) => {
           .map((r) => (r.querySelector('button[title*="打开子对话"]')?.innerText || '').trim())
           .filter(Boolean),
       )
-    /** 打开子对话弹层切到「全部」，读各分组标题上的条数（「执行中 · 5」「已完成 · 3」） */
-    const groupCounts = async () => {
-      await d
-        .getByRole('button', { name: /个进行中，共 \d+ 个/ })
-        .first()
-        .click()
-      await d.getByRole('button', { name: '全部' }).first().click()
-      await settle(d)
-      const groups = await d.evaluate(() => {
-        // 弹层就是底部那个浮层：里面有整行宽、左对齐的条目按钮
-        const tray = [...document.querySelectorAll('div.absolute.bottom-full')].find((el) =>
-          [...el.querySelectorAll('button')].some((b) => (b.className || '').includes('text-left')),
-        )
-        return tray
-          ? [...tray.querySelectorAll('p')]
-              .map((e) => (e.innerText || '').replace(/\s+/g, ' ').trim())
-              .filter((x) => / · \d+$/.test(x))
-          : []
-      })
-      await d.keyboard.press('Escape')
-      await d
-        .locator('div.absolute.bottom-full')
-        .waitFor({ state: 'detached', timeout: 3000 })
-        .catch(() => errors.push('已归档：弹层没有收起来'))
-      return groups
-    }
-    const amount = (list, name) => {
-      const hit = list.find((x) => x.startsWith(`${name} · `))
-      return hit ? Number(hit.split(' · ')[1]) : 0
-    }
     /** 运行区是异步取子对话摘要后才画出来的：等它真的列出子对话行，别在空数组上断言 */
     const waitRunRows = () =>
       d
@@ -301,8 +271,6 @@ await runShard(import.meta.filename, async (api) => {
         .catch(() => errors.push('已归档：运行区没有列出子对话'))
     await waitRunRows()
     if (!(await runTitles()).includes(hidden)) errors.push(`已归档：运行区一开始没有「${hidden}」，后面的核对没有意义`)
-    const before = await groupCounts()
-    if (amount(before, '执行中') < 1) errors.push('已归档：弹层「全部」里一开始就没有「执行中」分组')
     // 归档它：working 按归档后的样子落成 false，没做完的计划和 status 都留着——
     // 旧实现只看计划没做完，就继续把它画成在跑
     const hit = await d.evaluate((title) => {
@@ -332,13 +300,6 @@ await runShard(import.meta.filename, async (api) => {
     await waitRunRows()
     const after = await runTitles()
     if (after.includes(hidden)) errors.push(`运行区：已归档的子对话还列在这里（${after.join(' | ')}）`)
-    const next = await groupCounts()
-    if (amount(next, '执行中') !== amount(before, '执行中') - 1)
-      errors.push(`已归档：执行中分组没有少一个（改前 ${amount(before, '执行中')}、改后 ${amount(next, '执行中')}）`)
-    if (amount(next, '已完成') !== amount(before, '已完成') + 1)
-      errors.push(
-        `已归档：已归档的条目没有归到「已完成」（改前 ${amount(before, '已完成')}、改后 ${amount(next, '已完成')}）`,
-      )
     await check(d, '子对话-已收起不再列运行区')
   }
 
@@ -387,13 +348,20 @@ await runShard(import.meta.filename, async (api) => {
       await p.reload()
       await backToTask()
     }
-    /** 输入框上方的「子对话」→ 全部 → 打开那个子对话 */
+    /** 打开那个子对话：父对话里不再列全部子对话，先写好「这个对话开着哪个子对话」的本地记录（task-child:<父 id>）再加载 */
     const openChild = async () => {
+      await p.evaluate((k) => {
+        const parent = JSON.parse(localStorage.getItem(k)).tasks.find((x) => x.title.includes('购物车'))
+        localStorage.setItem(`task-child:${parent.id}`, 'demo-child-run')
+        localStorage.removeItem(`task-run:${parent.id}`)
+      }, key)
       await gotoTask()
-      // 入口按钮带 aria-expanded + aria-label；页面上还有几个禁用的「子对话」占位按钮，按名字会撞上
-      await p.locator('button[aria-expanded][aria-label^="子对话"]').first().click()
-      await p.getByRole('button', { name: '全部' }).click()
-      await p.getByText('子对话：到货提醒').first().click()
+      // 重新加载后父对话页签在前台，子对话页签留着：点它切过去
+      await p
+        .getByRole('tablist', { name: '对话页签' })
+        .getByRole('tab', { name: /到货提醒/ })
+        .click({ timeout: 10000 })
+        .catch(() => errors.push('子对话：重新加载后页签条上没有「到货提醒」页签'))
       await p
         .locator('button[title="打开这次运行的对话"]')
         .first()
@@ -638,106 +606,6 @@ await runShard(import.meta.filename, async (api) => {
           if (!after.solved) errors.push('点解决收口计划：点完没有换成「已解决」')
           if (after.resolveBtn) errors.push('点解决收口计划：已解决后还留着「解决」按钮')
           if (finished) await check(p, '子对话-点解决后计划全部完成', ['计划已完成', '已解决'])
-        }
-      }
-    }
-  }
-
-  // 子对话的未读点：做完了、用户还没点开看过的那一条，行上有个橙点；点开就消失。
-  // 判定在 shared/task.ts 的 childDoneDot（和侧栏橙点同一份口径）；在跑的那几条不算「没读过」，它们还没有结果
-  {
-    const UNREAD = '对话已完成，还没查看'
-    const DONE_CHILD = '拆分规则检查脚本'
-    const RUNNING_CHILD = '内存面板增加 AI 分析'
-    // 前面的用例可能把右栏切到了子对话面板：先从列表点回购物车这条父对话，子对话状态行才在
-    await p.getByText('购物车右上角', { exact: false }).first().click()
-    // 入口按状态行定位，不按文案：跑到这一拍时子对话大多不在跑，label 是「子对话 n」而不是「n 个进行中，共 n 个」
-    const bar = p.locator('[data-status-row="children"] button[aria-expanded]').first()
-    const onTask = await bar.waitFor({ timeout: 15000 }).then(
-      () => true,
-      () => false,
-    )
-    if (!onTask) errors.push('子对话未读点：没有回到父对话页（找不到子对话入口），用例的前提不成立')
-    else {
-      // 前面几拍可能开着浮层：先按 aria-expanded 关掉，再从「运行中」重新打开
-      if ((await bar.getAttribute('aria-expanded')) === 'true') {
-        await bar.click()
-        await settle(p)
-      }
-      await bar.click()
-      const tray = p
-        .locator('div.absolute.bottom-full')
-        .filter({ has: p.getByRole('button', { name: '全部', exact: true }) })
-        .first()
-      const allTab = tray.getByRole('button', { name: '全部', exact: true })
-      const ready = await allTab.waitFor({ timeout: 5000 }).then(
-        () => true,
-        () => false,
-      )
-      if (!ready) errors.push('子对话未读点：子对话浮层没有打开（找不到「全部」）')
-      else {
-        await allTab.click()
-        await settle(p)
-        // 按标题元素的完整文本定位：说明文字里也可能带着同名子串，hasText 会命中错行，断言就等于没测
-        const row = (title) =>
-          tray
-            .locator('[data-child-item]')
-            .filter({ has: p.getByText(title, { exact: true }) })
-            .first()
-        const dot = (title) => row(title).locator(`[aria-label="${UNREAD}"]`)
-        const doneRow = row(DONE_CHILD)
-        const listed = await doneRow.waitFor({ timeout: 5000 }).then(
-          () => true,
-          () => false,
-        )
-        if (!listed) errors.push(`子对话未读点：浮层「全部」里没有「${DONE_CHILD}」，用例的前提数据没造出来`)
-        else {
-          // 做完了、没点开过：有未读点；还在跑的那条是「还没有结果」，不是「没读过」
-          if (!(await dot(DONE_CHILD).count()))
-            errors.push(`子对话未读点：做完了没看过的「${DONE_CHILD}」行上没有未读点`)
-          if (await dot(RUNNING_CHILD).count())
-            errors.push(`子对话未读点：还在跑的「${RUNNING_CHILD}」行上不该有未读点`)
-          await check(p, '子对话-未读点', [DONE_CHILD])
-          // 点开它：中间打开这个子对话，它自己会发 /seen；当前打开的那条不画点
-          await doneRow.click()
-          const pane = childView(p)
-          const opened = await pane.waitFor({ timeout: 10000 }).then(
-            () => true,
-            () => false,
-          )
-          if (!opened) errors.push('子对话未读点：点这一行没有在中间打开子对话')
-          else {
-            const titled = await pane
-              .getByText(DONE_CHILD, { exact: false })
-              .first()
-              .waitFor({ timeout: 10000 })
-              .then(
-                () => true,
-                () => false,
-              )
-            if (!titled) errors.push(`子对话未读点：中间打开的不是「${DONE_CHILD}」`)
-            if (await dot(DONE_CHILD).count()) errors.push('子对话未读点：当前打开的这一条上还画着未读点')
-            // 换开另一个子对话，再等一轮 4 秒的轮询：刚看过的那条不能又被接口数据画回未读。
-            // 子对话在中间开着时父对话藏在后面：先切回父对话页签，重新展开子对话浮层「全部」
-            await p.getByRole('tablist', { name: '对话页签' }).getByRole('tab').first().click()
-            await settle(p)
-            if ((await bar.getAttribute('aria-expanded')) !== 'true') await bar.click()
-            await allTab.click()
-            await settle(p)
-            await row('核对通知时序').click()
-            await p.waitForTimeout(5000)
-            // 中间又换成了子对话：切回父对话、展开浮层再看那一行，否则行不在、断言等于空测
-            await p.getByRole('tablist', { name: '对话页签' }).getByRole('tab').first().click()
-            await settle(p)
-            if ((await bar.getAttribute('aria-expanded')) !== 'true') await bar.click()
-            await allTab.click()
-            await settle(p)
-            await row(DONE_CHILD)
-              .waitFor({ timeout: 5000 })
-              .catch(() => {})
-            if (await dot(DONE_CHILD).count()) errors.push('子对话未读点：点开看过以后，轮询又把未读点画回来了')
-            await check(p, '子对话-未读点消失', [DONE_CHILD])
-          }
         }
       }
     }

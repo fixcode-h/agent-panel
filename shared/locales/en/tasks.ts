@@ -173,11 +173,6 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 条面板结果': 'Panel results ×{n}',
   '{n} 次失败': '{n} failed',
 
-  // 标题栏的项目名：点开是项目下的对话
-  打开项目: 'Open project',
-  打开聊天: 'Open chat',
-  这个项目还没有对话: 'No conversations in this project yet',
-
   // 项目首页
   项目设置: 'Project settings',
   还没有选择目录: 'No folder selected yet',
@@ -254,18 +249,14 @@ export const EN_TASKS: Record<string, string> = {
   '项目设置里选了「无角色」，这个对话直接和 Agent 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）':
     'The project is set to “No role”, so this chat goes straight to the agent; pick a role in the project settings to use a role (click to use no role)',
   子对话: 'Sub-conversation',
-  '子对话，{n} 个进行中，共 {total} 个': 'Sub-conversations, {n} in progress of {total}',
   关闭子对话: 'Close sub-conversation',
   切换子对话: 'Switch sub-conversation',
-  '子对话 {n}': 'Sub-conversations ({n})',
-  '还有 {n} 个子对话': '{n} more sub-conversations',
   运行中: 'Running',
   运行区: 'Running items',
   已关闭: 'Closed',
   'Agent 进程已回收，继续会重新拉起': 'The agent process was reclaimed; continuing will start it again',
   解决: 'Resolve',
   已解决: 'Resolved',
-  还没有子对话: 'No sub-conversations yet',
   没有正在运行的子对话: 'No sub-conversation is running',
   子对话执行中: 'Sub-conversation running',
   '第 {n} 次运行': 'Run {n}',
@@ -848,8 +839,6 @@ export const EN_TASKS: Record<string, string> = {
   '不回答，终止子对话': "Don't answer and end this sub-conversation",
   '不回答，终止了子对话': 'Not answered, sub-conversation ended',
   '你没回答，子对话已终止': 'Not answered, sub-conversation ended',
-  '{n} 个子对话请你选择': '{n} sub-conversations need your choice',
-  '「{title}」请你选择': '"{title}" needs your choice',
   已交给父对话决定: 'Handed to the parent conversation',
   没能叫起父对话: "Couldn't start the parent conversation",
   '已交给父对话决定，它会在下一轮处理': 'Handed to the parent conversation; it will handle this in its next turn',
@@ -1150,7 +1139,6 @@ export const EN_TASKS: Record<string, string> = {
   '终止子任务：在跑的马上结束，排队的不再开始，按「已终止」交回给对话':
     'Stop subtask: a running one ends now, a queued one never starts, and it is handed back to the conversation as stopped',
   终止: 'Stop',
-  已终止: 'Stopped',
   '已终止，没做完的部分不会交回': 'Stopped; the unfinished part is not handed back',
   '子任务已终止，派它的对话会收到终止原因。这里只能查看':
     'The subtask was stopped; the conversation that sent it gets the reason. View only',

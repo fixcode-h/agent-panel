@@ -94,7 +94,7 @@ function ProjectHome({ project }: { project: Project }) {
   }
 
   return (
-    <div ref={row} className="flex min-w-0 flex-1 md:gap-2">
+    <div ref={row} className="flex min-w-0 flex-1 md:divide-x">
       <main className="panel flex min-w-0 flex-1 flex-col md:h-full">
         <div className="flex flex-1 flex-col md:min-h-0 md:overflow-y-auto">
           <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">

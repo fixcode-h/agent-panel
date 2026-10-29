@@ -55,6 +55,7 @@ export const EN_APP: Record<string, string> = {
   展开侧栏: 'Expand sidebar',
   收起侧栏: 'Collapse sidebar',
   详情页签: 'Detail tabs',
+  未读: 'Unread',
   主导航: 'Main navigation',
   新建聊天: 'New chat',
   新建任务: 'New task',

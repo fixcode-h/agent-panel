@@ -14,6 +14,7 @@ import {
 import { chipMarker, isAttachChip, removeChip, segments, type Chip, type ChipKind } from '@shared/composer'
 import { setClipboardText } from '@/lib/clipboard-text'
 import { cn } from '@/lib/utils'
+import { CHIP_SHAPE, CHIP_TONE } from '@/components/ui/chip-tone'
 import { scrollCaretIntoView } from '@/lib/caret'
 import { quoteLabel, quoteText } from '@/lib/quote'
 import { t } from '@shared/i18n'
@@ -63,7 +64,7 @@ const isCommand = (kind: ChipKind) => kind === 'skill' || kind === 'command'
  * 各类卡片的样子：图标（lucide 的路径）、文字前缀和配色。加新的卡片类型时在 composer.ts 加标记、在这里加一行，
  * 删除按钮、看大图这些交互所有卡片通用
  */
-const CHIP_STYLE: Record<ChipKind, { icon: string; prefix?: string; accent?: boolean }> = {
+const CHIP_STYLE: Record<ChipKind, { icon: string; prefix?: string }> = {
   image: {
     icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
   },
@@ -73,12 +74,10 @@ const CHIP_STYLE: Record<ChipKind, { icon: string; prefix?: string; accent?: boo
   skill: {
     icon: '<path d="M9.94 14.06 4 20"/><path d="m14 4 6 6"/><path d="M12 2v2M19 12h2M5 5l1.5 1.5"/><path d="m14 4-4 4 6 6 4-4Z"/>',
     prefix: '/',
-    accent: true,
   },
   command: {
     icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 17 6-10"/>',
     prefix: '/',
-    accent: true,
   },
   // 引用对话里的一段：lucide 的 text-quote
   quote: {
@@ -87,7 +86,7 @@ const CHIP_STYLE: Record<ChipKind, { icon: string; prefix?: string; accent?: boo
 }
 
 const svg = (paths: string) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-[1.05em] w-[1.05em] shrink-0 opacity-70">${paths}</svg>`
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-[1.05em] w-[1.05em] shrink-0">${paths}</svg>`
 
 /** 把一段 DOM 读回带标记的文字。chipText：卡片换成这个文字（复制到剪贴板用），不传就是卡片标记 */
 function serialize(node: Node, chipText?: (chip: Chip) => string | undefined): string {
@@ -136,11 +135,13 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   const style = CHIP_STYLE[chip.kind]
   const attach = isAttachChip(chip.kind)
   const shown = info?.(chip)
-  // 样子和消息里的卡片一样（AttachmentView.tsx 的 CHIP_CLASS），发出去前后看起来是同一张
+  // 样子和消息里的卡片一样（AttachmentView.tsx 的 MessageChip 也用 CHIP_TONE），发出去前后看起来是同一张
+  const tone = CHIP_TONE[chip.kind]
   el.className = cn(
-    'mx-0.5 group relative inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md px-1.5 align-middle text-[0.8125rem] leading-[1.7]',
-    style.accent ? 'bg-accent-soft text-accent-text' : 'bg-sel/70 text-fg',
-    attach && 'cursor-pointer transition-colors hover:bg-sel',
+    CHIP_SHAPE,
+    'group relative',
+    tone.box,
+    attach && cn('cursor-pointer transition-colors', tone.hover),
   )
   const src = chip.kind === 'image' ? preview?.(chip.name) : undefined
   // 引用卡片只显示开头一小段，鼠标停上去看完整原文
@@ -170,7 +171,7 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   if (!src) {
     // 没有缩略图的卡片前面放类型图标：文件、技能、命令一眼能分开
     const icon = document.createElement('span')
-    icon.className = 'inline-flex shrink-0'
+    icon.className = cn('inline-flex shrink-0', tone.icon)
     icon.innerHTML = svg(style.icon)
     el.append(icon)
   }
@@ -198,7 +199,7 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
     // 状态固定在末尾：路径太长时只截断路径，状态还看得见；没有状态时是空的
     const status = document.createElement('span')
     status.dataset.chipStatus = ''
-    status.className = 'shrink-0 text-[0.6875rem] text-subtle'
+    status.className = cn('shrink-0 text-[0.6875rem]', tone.status)
     status.textContent = shown?.status ?? ''
     el.append(status)
   }
