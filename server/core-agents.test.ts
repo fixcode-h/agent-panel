@@ -3,7 +3,16 @@ import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'
 import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../shared/review-limits.ts'
-import { BUG_METHOD, BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
+import {
+  BUG_METHOD,
+  BUG_REPORT_TEXT,
+  BUILTIN_AGENTS,
+  CODING_TEXT,
+  DESIGN_BRIEF_TEXT,
+  IMPL_PLAN_TEXT,
+  SELF_CHECK_TEXT,
+} from '../shared/builtin/agents.ts'
+import { isTestAgent } from '../shared/test-steps.ts'
 import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE } from '../shared/builtin/legacy.ts'
 import { renderTemplate } from '../shared/agent-role.ts'
 import { ensureProjectAgents, upgradeBuiltinAgents } from '../shared/builtin/install.ts'
@@ -195,6 +204,18 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.ok(renderTemplate(dev, { task: '修 Bug' }).includes(BUG_METHOD))
   assert.ok(!renderTemplate(dev, { task: '实现' }).includes(BUG_METHOD))
   assert.ok(!renderTemplate(dev, { task: '性能问题' }).includes(BUG_METHOD), '性能问题按基线走，不套 Bug 的逐层定位')
+
+  // 2026-10-29 加强（ADR 0029）：读代码之前先钉住现象、复现一次，回归先看最近改动；
+  // 修复要有改前失败、改后通过的测试，修根因不修症状，再查同类隐患；主理派 Bug 按现象卡写、交回时核对回归测试
+  assert.match(BUG_METHOD, /### 第 0 步：钉住现象，再去读代码/)
+  assert.match(BUG_METHOD, /复现一次抵得上读一小时代码/)
+  assert.match(BUG_METHOD, /「以前好过」的是回归：先看最近的改动/)
+  assert.match(BUG_METHOD, /差异法/)
+  assert.match(BUG_METHOD, /先有能复现的失败测试（改前失败、改后通过）/)
+  assert.match(BUG_METHOD, /把报错 try\/catch 掉、加判空绕过、加重试让它「不报了」都不算修/)
+  assert.match(BUG_METHOD, /同类隐患/)
+  assert.match(orch, /Bug 派单的「现象」按现象卡写/)
+  assert.match(orch, /修复能写自动化测试却没有「改前失败、改后通过」的回归用例，也交回补/)
 })
 
 test('评审：仍是必备角色，收尾时要按代码改动给分级意见和验收结论', () => {
@@ -238,6 +259,9 @@ test('评审：仍是必备角色，收尾时要按代码改动给分级意见�
   assert.match(code, new RegExp(`${REVIEW_SOFT_LIMIT_MIN} 分钟内交卷`), '有时限')
   assert.match(code, /评审交接单/, '用对话交来的交接单')
   assert.doesNotMatch(code, /MODULE-MAP\.md`（本项目即/, '评审代码不走模块定位')
+  // ADR 0029：按改动类型过清单，修 Bug 的改动多看根因 / 症状和回归测试
+  assert.match(code, /修的是根因还是症状/)
+  assert.match(code, /有没有能拦住它的回归测试/)
   // 参数被改成「方案或结论」时也要给结论：否则收尾门禁（shared/review-gate.ts）会一直拦着合不回去
   const plan = renderTemplate(def.agent.instructions, { target: '方案或结论' })
   assert.ok(plan.includes('验收结论：通过'), '评审（方案或结论）同样要给验收结论')
@@ -431,4 +455,70 @@ test('P4 的 changelist 描述只写一行短句，细节留在文档里', () =>
   assert.match(vcs, /不写实现细节、函数名和文件列表/)
   const git = readFileSync(new URL('../skills/vcs/project-vcs/git.md', import.meta.url), 'utf8')
   assert.match(git, /标题一行短句/, 'Git 提交说明也别把细节塞进标题')
+})
+
+test('交付契约：方案摘要、实现计划、排查报告、自测清单在角色之间串起来（ADR 0029）', () => {
+  const role = (key: string) => BUILTIN_AGENTS.find((a) => a.key === key)!.agent.instructions
+  // 方案设计交「方案摘要」：验收标准要可执行、标测试层级；开发按它的实现顺序展开，测试验收逐条对照
+  for (const s of ['目标 / 非目标', '改动清单', '实现顺序', '验收标准', '风险与回滚', '待确认'])
+    assert.ok(DESIGN_BRIEF_TEXT.includes(s), `方案摘要缺「${s}」`)
+  assert.match(DESIGN_BRIEF_TEXT, /标测试层级（单测 \/ 集成 \/ 端到端 \/ 界面走查 \/ 手测）/)
+  assert.ok(renderTemplate(role('analyst'), { scale: 'bounded' }).includes(DESIGN_BRIEF_TEXT))
+  assert.match(role('analyst'), /「功能正常」「体验更好」这类不算/, '验收标准要能执行')
+  // 执行接单先复述再写实现计划；开发的「实现」「重构」也先写计划，「修 Bug」不用（它走排查报告）
+  const worker = renderTemplate(role('worker'), { mode: '自动' })
+  assert.match(worker, /## 接单：先复述，再计划/)
+  assert.match(worker, /用 message_parent（question 设为 true）问清再动手/)
+  assert.ok(worker.includes(IMPL_PLAN_TEXT))
+  assert.ok(worker.includes(SELF_CHECK_TEXT))
+  assert.match(IMPL_PLAN_TEXT, /验收标准在实现中途不能偷偷放宽/)
+  const dev = role('developer')
+  assert.ok(renderTemplate(dev, { task: '实现' }).includes(IMPL_PLAN_TEXT))
+  assert.ok(renderTemplate(dev, { task: '重构' }).includes(IMPL_PLAN_TEXT))
+  assert.ok(!renderTemplate(dev, { task: '修 Bug' }).includes(IMPL_PLAN_TEXT))
+  assert.ok(renderTemplate(dev, { task: '实现' }).includes('方案摘要'), '开发按方案摘要的实现顺序展开')
+  for (const task of ['实现', '修 Bug', '性能问题', '重构'])
+    assert.ok(renderTemplate(dev, { task }).includes(SELF_CHECK_TEXT), `开发（${task}）交付前自测`)
+  assert.match(SELF_CHECK_TEXT, /复现用例改前失败、改后通过的输出都要有/)
+  assert.match(SELF_CHECK_TEXT, /`\[排查-…\]` 临时日志/)
+  // 排查报告：交回按固定小节，主理按同一张表核对
+  for (const s of ['现象', '复现', '调用栈', '证据链', '根因', '修复', '验证', '回归与隐患', '文档'])
+    assert.ok(BUG_REPORT_TEXT.includes(`${s}：`), `排查报告缺「${s}」`)
+  assert.ok(BUG_METHOD.includes(BUG_REPORT_TEXT), 'Bug 方法的交回按排查报告写')
+  assert.match(role('orchestrator'), /按「排查报告」的小节核对/)
+  assert.match(role('orchestrator'), /派单正文按固定小节写/)
+  assert.match(role('analyzer'), /排查部分按「排查报告」的小节组织/)
+  // 写代码的硬规则同批加的两条：接口先读定义再写，边界先想再写
+  assert.match(CODING_TEXT, /不凭记忆写接口/)
+  assert.match(CODING_TEXT, /边界先想再写/)
+})
+
+test('测试验收：多了「设计用例」「补测试」两种做法，默认仍是跑验收，仍是唯一的测试角色', () => {
+  const def = coreDefinition('tester')
+  const task = def.agent.params.find((p) => p.key === 'task')!
+  assert.deepEqual(task.options, ['跑验收', '设计用例', '补测试'])
+  assert.equal(task.default, '跑验收')
+  // 识别测试角色靠 scope / env 两个参数（shared/test-steps.ts 的 isTestAgent），加参数不能动它们
+  assert.ok(isTestAgent({ params: def.agent.params }))
+  const run = renderTemplate(def.agent.instructions, {
+    task: '跑验收',
+    scope: '本次改动',
+    env: '自动',
+    onFail: '只报告',
+  })
+  assert.match(run, /## 先读项目配置的测试步骤/)
+  assert.match(run, /验收结论：通过/)
+  assert.doesNotMatch(run, /测试矩阵/)
+  const design = renderTemplate(def.agent.instructions, { task: '设计用例' })
+  assert.match(design, /## 这次只设计用例：不写代码、不跑整套测试/)
+  assert.match(design, /正常路径 → 边界/)
+  assert.match(design, /历史 Bug 是最好的回归用例来源/)
+  assert.doesNotMatch(design, /## 先读项目配置的测试步骤/, '设计用例不跑项目测试步骤')
+  const write = renderTemplate(def.agent.instructions, { task: '补测试' })
+  assert.match(write, /只改测试文件和测试夹具，不改产品代码/)
+  assert.match(write, /不写永远通过的测试/)
+  assert.match(write, /验收结论：通过/)
+  // 执行角色知道什么时候派它设计用例
+  const worker = renderTemplate(BUILTIN_AGENTS.find((a) => a.key === 'worker')!.agent.instructions, { mode: '自动' })
+  assert.match(worker, /用「设计用例」独立列一遍测试矩阵/)
 })

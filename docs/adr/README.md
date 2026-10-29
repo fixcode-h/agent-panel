@@ -36,6 +36,7 @@
 | [0026](./0026-advanced-role-mounts-user-owned.md)         | 内置高级角色的挂载交给用户，角色页按高级 / 基本分页         | 已接受 | 2026-10-29 | `AgentInput.mountsCustom` 接管后整份按用户的、可恢复默认；列表栏「高级角色 / 基本角色」分段；新增界面走查、本地化              |
 | [0027](./0027-resumed-session-prompt-delta.md)            | 续接会话只发变了的提示词段落                                | 已接受 | 2026-10-29 | `shared/prompt-delta.ts` 按段落指纹省掉会话里已有的规则；`fresh` 兜底、压缩后作废、10 轮补一次完整的                           |
 | [0028](./0028-panel-tools-on-demand-and-input-sources.md) | 省 token 第二批：工具按需、子任务瘦身、输入构成             | 已接受 | 2026-10-29 | 不常用面板工具收进 `more_tools`；角色写过的规则不重复；子任务开头和结果瘦身；保活进程同步状态；`TaskTurn.sources`              |
+| [0029](./0029-delivery-contracts-between-roles.md)        | 角色之间按固定交付契约交接，Bug 流程加钉住现象和回归测试    | 已接受 | 2026-10-29 | 方案摘要 / 实现计划 / 排查报告 / 自测清单四段共用正文；`BUG_METHOD` 第 0 步与修复硬要求；`tester.task` 设计用例 / 补测试       |
 
 状态只有四个词，别自己造近义词：
 
