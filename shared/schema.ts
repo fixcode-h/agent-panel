@@ -1534,6 +1534,7 @@ export const StopReason = z.enum([
   'supersede', // 用户发了新消息，打断当前这一轮
   'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
   'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
+  'close', // 用户从对话菜单点「关闭 Agent」，只结束 CLI 进程，下一条消息续接会话
 ])
 export type StopReason = z.infer<typeof StopReason>
 

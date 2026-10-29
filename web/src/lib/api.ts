@@ -847,6 +847,10 @@ export const api = {
   /** 聊天置顶 / 取消置顶：只是标记，侧栏聊天列表最上面单独一组 */
   pinTaskSummary: (id: string, pinned: boolean) => request<Task>(`/tasks/${id}?summary=1`, json('PATCH', { pinned })),
   stopTaskSummary: (id: string) => request<Task>(`/tasks/${id}/stop?summary=1`, { method: 'POST' }),
+  /** 对话菜单「激活 Agent」：不发消息，先用 --resume 把 CLI 拉起来停在等下一句上 */
+  activateAgentSummary: (id: string) => request<Task>(`/tasks/${id}/agent/activate?summary=1`, json('POST', {})),
+  /** 对话菜单「关闭 Agent」：结束 CLI 进程释放资源，对话留着，下一条消息续接会话 */
+  closeAgentSummary: (id: string) => request<Task>(`/tasks/${id}/agent/close?summary=1`, json('POST', {})),
   resumeTaskSummary: (id: string) => request<Task>(`/tasks/${id}/resume?summary=1`, json('POST', { latest: false })),
   discardWorktreeSummary: (id: string) => request<Task>(`/tasks/${id}/worktree/discard?summary=1`, json('POST', {})),
   /** 子对话的「解决」标记：只改标记，不停 CLI、不影响父对话 */

@@ -277,6 +277,16 @@ export const EN_TASKS: Record<string, string> = {
   '暂停任务，之后可以继续': 'Pause the task; you can resume it later',
   从没完成的地方继续执行: 'Resume from where it left off',
 
+  // 对话菜单：激活 / 关闭 Agent
+  '激活 Agent': 'Activate Agent',
+  '关闭 Agent': 'Close Agent',
+  'Agent 已激活': 'Agent activated',
+  '已关闭 Agent，下一条消息会接着原来的会话': 'Agent closed; your next message continues the same session',
+  '这个对话现在不能提前启动 Agent，发消息时会自动启动':
+    "This conversation's Agent can't be started ahead of time; it starts when you send a message",
+  '归档的对话不能激活，先取消归档': 'Archived conversations cannot be activated; unarchive it first',
+  '对话正在执行，先暂停这一轮再关闭 Agent': 'The conversation is running; pause this turn before closing the Agent',
+
   // 流程图视图
   '{n} 轮 · 未通过': '{n} rounds · Failed',
   '{n} 轮 · 通过': '{n} rounds · Passed',
@@ -394,6 +404,7 @@ export const EN_TASKS: Record<string, string> = {
   删除时结束: 'Ended when deleted',
   面板重启时中断: 'Interrupted by panel restart',
   页面切走后结束: 'Ended after the page was left',
+  '手动关闭了 Agent': 'Agent closed manually',
   闲置太久已回收: 'Recycled after being idle too long',
   被新消息打断: 'Interrupted by a new message',
   做完后收尾: 'Cleanup after finishing',

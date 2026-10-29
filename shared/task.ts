@@ -1388,6 +1388,8 @@ export function stopReasonText(reason: StopReason | undefined): string {
       return t('做完后收尾')
     case 'stalled':
       return t('Agent 没有响应，面板重启了它')
+    case 'close':
+      return t('手动关闭了 Agent')
     default:
       return t('已暂停')
   }

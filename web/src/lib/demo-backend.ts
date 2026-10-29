@@ -3275,6 +3275,8 @@ function tasksRoute(
   }
   // 演示里没有常驻 CLI，页面在场状态和预热都不用处理
   if (sub === 'presence' || sub === 'prewarm') return task
+  // 对话菜单的激活 / 关闭 Agent：演示里没有常驻 CLI，原样返回
+  if (sub === 'agent' && method === 'POST') return task
   // 打开看过这一轮：清掉侧栏的橙点（正式后端也只回「看到哪」，不把整份对话传回来）
   if (sub === 'seen') {
     task.turnSeenAt = task.turnDoneAt
