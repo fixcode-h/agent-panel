@@ -1,9 +1,7 @@
 import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import {
   Archive,
-  CalendarClock,
   CircleAlert,
-  Bot,
   Code2,
   MessagesSquare,
   ChevronDown,
@@ -11,7 +9,6 @@ import {
   ChevronsUpDown,
   FolderPlus,
   FolderSearch,
-  FileText,
   Layers,
   MessageSquarePlus,
   PencilLine,
@@ -21,10 +18,8 @@ import {
   MoreHorizontal,
   Moon,
   Palette,
-  Plug,
   Plus,
   Settings,
-  Sparkles,
   Sun,
   Workflow,
   X,
@@ -82,6 +77,7 @@ import {
   type TaskFilter,
 } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
+import { McpIcon, RoleIcon, ScheduleIcon, SkillIcon, SummaryIcon, WorkflowIcon, type NavIcon } from './rail-icons'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
@@ -122,13 +118,13 @@ export function Logo({ className }: { className?: string }) {
  * 功能页：宽屏时放在最左边的图标栏（ActivityBar）里，打开时不显示会话侧栏、图标栏顶上换成「回到主页」；
  * 手机的抽屉菜单里照旧列在会话侧栏里
  */
-export const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
-  { id: 'summary', label: t('工作总结'), icon: FileText },
-  { id: 'schedules', label: t('计划'), icon: CalendarClock },
-  { id: 'agents', label: t('角色'), icon: Bot },
-  { id: 'workflows', label: t('工作流'), icon: Workflow },
-  { id: 'library', label: t('Skills 与命令'), icon: Sparkles },
-  { id: 'mcp', label: t('MCP 工具'), icon: Plug },
+export const NAV: { id: PageId; label: string; icon: NavIcon }[] = [
+  { id: 'summary', label: t('工作总结'), icon: SummaryIcon },
+  { id: 'schedules', label: t('计划'), icon: ScheduleIcon },
+  { id: 'agents', label: t('角色'), icon: RoleIcon },
+  { id: 'workflows', label: t('工作流'), icon: WorkflowIcon },
+  { id: 'library', label: t('Skills 与命令'), icon: SkillIcon },
+  { id: 'mcp', label: t('MCP 工具'), icon: McpIcon },
 ]
 
 /** 侧栏任务的更新时间：今天显示时刻，其余显示几天前或日期 */
@@ -216,7 +212,7 @@ function Row({
   dot,
   kbd,
 }: {
-  icon: LucideIcon
+  icon: LucideIcon | NavIcon
   label: string
   on?: boolean
   onClick: () => void
@@ -350,11 +346,12 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
             title={m.label}
             // 选中用 seg-thumb：深色下 bg-sel 贴着侧栏底色几乎看不出来；未选中用 muted，subtle 在深色下像禁用
             className={cn(
-              'grid h-8 w-8 cursor-pointer place-items-center rounded-md transition-colors',
-              m.on ? 'seg-thumb' : 'text-muted hover:bg-sel hover:text-fg',
+              'grid h-9 w-9 cursor-pointer place-items-center rounded-[10px] transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
+              m.on ? 'seg-thumb' : 'text-muted hover:bg-sel/70 hover:text-fg',
             )}
           >
-            <m.icon className="h-[17px] w-[17px]" strokeWidth={1.8} />
+            {/* 和图标栏的导航图标同一套线宽，只小一号：模式是次一级的切换 */}
+            <m.icon className="h-[18px] w-[18px]" strokeWidth={1.6} />
           </button>
         ))}
       </div>

@@ -7,6 +7,7 @@ import {
   MAX_DRAFTS_PER_REPORT,
   missingDrafts,
 } from '../shared/lesson-draft.ts'
+import { renderReport } from '../shared/summary.ts'
 
 const report = (md: string, over: Partial<{ id: string; day: string; projectNames: string[] }> = {}) => ({
   id: 'r1',
@@ -200,4 +201,30 @@ test('教训草稿：用户把标题改成「该怎么做」后再提炼，不�
   // 按指引把标题改成「该怎么做」并保存；提炼依据界面上不提供编辑，保持不变
   const existing = [{ ...found[0], title: '保存后按最终位置重新渲染' }]
   assert.deepEqual(missingDrafts(found, existing), [], '已经提炼过的那条不能再生成一份')
+})
+
+test('lessonDraftsFromReport：改版后的两节报告（需求 / Bug）也能提炼', () => {
+  const md = renderReport({
+    grain: 'day',
+    from: '2026-10-29',
+    to: '2026-10-29',
+    items: [
+      { id: 'n', kind: 'need', project: '面板', title: '支持按周生成', content: '可以按周汇总', cause: '', fix: '' },
+      {
+        id: 'b',
+        kind: 'bug',
+        project: '面板',
+        title: '子任务点暂停显示已停止',
+        content: '',
+        cause: '进程退出后状态没同步',
+        fix: '退出时同步状态',
+      },
+    ],
+  })
+  const drafts = lessonDraftsFromReport({ id: 'r', day: '2026-10-29', md })
+  assert.deepEqual(
+    drafts.map((d) => d.title),
+    ['子任务点暂停显示已停止'],
+  )
+  assert.equal(drafts[0].rule, '进程退出后状态没同步\n退出时同步状态')
 })

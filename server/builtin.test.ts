@@ -99,7 +99,7 @@ test('内置 Agent：引用的 Skill 都是自带的，引入的 Agent 存在，
   for (const a of agents.filter((x) => x.id !== 'rules')) assert.ok(a.includes.includes('rules'), a.name)
 })
 
-test('「每日工作总结」：只输出报告不改代码，按天、按项目、分条简短', () => {
+test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开，工作总结页也用它', () => {
   const b = BUILTIN_AGENTS.find((x) => x.key === 'worklog')
   assert.ok(b, '内置角色里有「每日工作总结」')
   assert.equal(b.agent.name, '每日工作总结')
@@ -112,37 +112,29 @@ test('「每日工作总结」：只输出报告不改代码，按天、按项�
   assert.ok(builtinAgentKeys(GENERAL).includes('worklog'), '挂在「通用项目」上才会在启动时建出来')
   const role = composeRole(agents.find((a) => a.id === 'worklog')!, agents)
   assert.doesNotMatch(role, /\{\{/, '模板都能展开')
-  // 输入：总结哪一天 + 要总结的项目
-  // 日期口径只能有一处：填了别的日期时正文也得跟它走，不能一处「今天」一处「这一天」（复看指出旧断言 /今天/ 拦不住这类回退）
-  assert.match(role, /只算这一天的/)
-  // 参数说明也跟同一个口径（它不出现在角色设定里，要单独查）
-  assert.match(b.agent.params.find((p) => p.key === 'projects')!.description, /留空总结这一天/)
-  assert.doesNotMatch(role, /只算今天的|各项目今天做完|留空总结今天/, '除「本机今天」外不再出现「今天」口径')
+  // 范围：只写这段时间里的事，范围外的不写（工作总结页的硬要求）
+  assert.match(role, /只算范围内的/)
+  assert.match(role, /范围外的对话、消息、报告一律不写/)
   assert.match(role, /本地自然日/)
-  // 数据来源：读任务记录，不凭空编造
-  assert.match(role, /tasks\/projects\//)
-  assert.match(role, /不要编|不猜测|不编造/)
-  // 输出：Markdown、按项目分节、分条简短
-  assert.match(role, /Markdown/)
-  assert.match(role, /按项目分节/)
-  assert.match(role, /不超过 40 字/)
-  // 真实跑一次时输出里贴了路径、函数名和接口名，这里守住「只写结果」
+  // 分类：需求只写做了什么，Bug 写原因和修复；Bug 只收用户自己报的
+  assert.match(role, /\*\*需求\*\*/)
+  assert.match(role, /只收用户自己报的问题/)
+  assert.match(role, /「原因」/)
+  assert.match(role, /「修复」/)
+  assert.match(role, /描述清楚最重要/)
+  // 只写结果：真实跑一次时输出里贴了路径、函数名和接口名
   assert.match(role, /不写具体文件名/)
-  assert.match(role, /最多 3 条/)
-  // 评审 R1：项目多时硬行数会和「每个项目都要有一节」矛盾，改成按项目算 + 项目多时压到 1–2 条
-  assert.match(role, /多于 5 个时/)
-  // 评审 R2：day 参数填了别的日期时，正文里的日期口径要跟着它走
-  assert.match(role, /「这一天」都指上面这个日期/)
-  // 评审 R3：读历史记录要有预算，读不完不能按标题编
+  assert.match(role, /不编造/)
+  // 自己跑（计划面板定时拉起）时读任务记录、有读取预算，输出 Markdown 两节
+  assert.match(role, /tasks\/projects\//)
   assert.match(role, /读取预算/)
-  assert.match(role, /只看了最新的几个任务/)
-  // 真实跑一次时报告前后带了前言和附录，用户要能直接复制
+  assert.match(role, /## 一、需求/)
+  assert.match(role, /## 二、Bug/)
   assert.match(role, /只输出报告本身/)
-  // Bug 修复要写清问题在哪、怎么修的
-  assert.match(role, /问题在哪|问题：/)
-  assert.match(role, /怎么修|修法：/)
-  // 只读边界：不改仓库文件
-  assert.match(role, /不改项目文件/)
+  // 工作总结页调用时选「面板提供」：材料由面板给，不再去读数据目录
+  const panel = composeRole(agents.find((a) => a.id === 'worklog')!, agents, { material: '面板提供' })
+  assert.match(panel, /材料和范围由面板在下面给出/)
+  assert.doesNotMatch(panel, /tasks\/projects\//)
 })
 
 test('文档角色：默认勾选「写 Bug 记录」，用户显式关掉的保留', () => {

@@ -228,7 +228,9 @@ function HelperRow({
               ? t('执行中')
               : step.apiWait?.reason === 'start'
                 ? t('排队等 API「{api}」', { api: step.apiWait.api })
-                : t('排队中')}
+                : step.interrupted
+                  ? t('已打断')
+                  : t('正在启动…')}
           </span>
           {jobs.length > 0 && (
             <span className={cn(childLabelClass.plain, 'max-[359px]:hidden')} title={names}>

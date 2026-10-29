@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：ComfyUI 模板商店与工作流链、统一的悬停提示、计划面板、工作总结。
+ * 界面检查分片：ComfyUI 模板商店与工作流链、统一的悬停提示、计划面板、工作总结（报告树、提炼、采纳）。
  *
  * 这四块各自只有 8~13 步（8 + 9 + 10 + 13 = 40），固定开销（起静态服务 + 开浏览器）就占掉一半：
  * 以前是四个分片、四个浏览器，现在合成一片按顺序跑，断言一条不少。
@@ -789,339 +789,174 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   }
 
   // ---- 工作总结 ----
+  // 左边是按日期归档的报告树，右边是提炼面板：来源（报告 / 对话）→ 按天 / 按周 → 项目 → 提炼 → 逐项采纳 → 确认生成
   {
     const p = await page({ width: 1440, height: 900 })
     await p.goto(base + '#/summary')
 
-    // 左侧导航里的入口：点进去就在这个页面
     await p
       .getByRole('button', { name: '工作总结' })
       .first()
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('工作总结：左侧导航里没有入口'))
-    await check(p, '工作总结-列表', ['工作总结', '项目', '生成报告'])
+    await check(p, '工作总结-提炼面板', ['工作总结', '提炼工作总结', '来源', '日期', '项目'])
 
-    // 左对齐：页头、选择区和报告共用同一条左边缘，整页内容靠左而不是居中。
-    // 坐标是相对主区算的（左边还有侧栏），不能拿视口绝对坐标判断
-    const mainBox = await p.locator('main').first().boundingBox()
-    const h1Box = await p.getByRole('heading', { name: '工作总结', level: 1 }).first().boundingBox()
-    const firstSection = await p.locator('main section').first().boundingBox()
-    if (!mainBox || !h1Box || !firstSection) errors.push('工作总结：取不到主区、页头或内容的位置')
-    else {
-      if (Math.abs(h1Box.x - firstSection.x) > 2)
-        errors.push(`工作总结：页头与内容没有左对齐（${h1Box.x} vs ${firstSection.x}）`)
-      // 靠左时内容左边距只该是容器内边距（md 下 32px）；居中时会被推到主区中间
-      const inset = firstSection.x - mainBox.x
-      if (inset > 80) errors.push(`工作总结：整页内容没有靠左（相对主区左边距 ${inset}）`)
+    // 报告树：演示版预置了几份报告，按日期分组（同一天两份在一个组里），周报在「第 n 周」组里
+    const tree = p.getByRole('region', { name: '工作总结列表' })
+    await tree
+      .getByRole('group')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('工作总结：左侧没有按日期分组的报告树'))
+    if (!(await tree.getByRole('group', { name: /^昨天 · / }).count()))
+      errors.push('工作总结：报告树里没有「昨天」这一组')
+    else if (
+      (await tree
+        .getByRole('group', { name: /^昨天 · / })
+        .getByRole('button')
+        .count()) < 3
+    )
+      errors.push('工作总结：同一天的两份报告没有挂在同一个日期下')
+    if (!(await tree.getByRole('group', { name: /^第 \d+ 周/ }).count()))
+      errors.push('工作总结：报告树里没有按周的分组')
+    await check(p, '工作总结-报告树')
+
+    // 来源在最上面，默认是「对话」；粒度和 Token 用量一样有按天 / 按周和月历
+    const source = p.getByRole('radiogroup', { name: '报告来源' })
+    if ((await source.getByRole('radio', { name: '对话' }).getAttribute('aria-checked')) !== 'true')
+      errors.push('工作总结：默认来源不是「对话」')
+    const grain = p.getByRole('radiogroup', { name: '报告粒度' })
+    await grain.getByRole('radio', { name: '按周' }).click()
+    await p
+      .getByRole('button', { name: /选择时间范围（第 \d+ 周/ })
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('工作总结：切到按周后时间按钮没有显示「第 n 周」'))
+    await grain.getByRole('radio', { name: '按天' }).click()
+
+    // 加项目：弹层里点一个就加进来，加过的项目留在面板上（不用再挑对话）
+    const add = p.getByRole('button', { name: '添加项目' })
+    for (let i = 0; i < 2; i++) {
+      await add.click()
+      await p.locator('[data-radix-popper-content-wrapper] button').first().click()
     }
-    await check(p, '工作总结-左对齐')
-
-    // 时间范围：默认今天（和改造前一致），可以切昨天 / 近 7 天 / 自定义日期
-    const range = p.getByRole('radiogroup', { name: '总结范围' })
-    await range.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：没有时间范围选择'))
-    if (await range.count()) {
-      const checked = async (name) => (await range.getByRole('radio', { name }).getAttribute('aria-checked')) === 'true'
-      if (!(await checked('今天'))) errors.push('工作总结：默认范围不是「今天」')
-      await range.getByRole('radio', { name: '近 7 天' }).click()
-      await p
-        .getByText('不挑就是近 7 天全部', { exact: false })
-        .first()
-        .waitFor({ timeout: 3000 })
-        .catch(() => errors.push('工作总结：切到「近 7 天」后说明文字没跟着变'))
-      // 自定义范围要能选起止日期
-      await range.getByRole('radio', { name: '自定义' }).click()
-      await p
-        .getByLabel('开始日期')
-        .waitFor({ timeout: 3000 })
-        .catch(() => errors.push('工作总结：选「自定义」后没有开始日期'))
-      await p
-        .getByLabel('结束日期')
-        .waitFor({ timeout: 3000 })
-        .catch(() => errors.push('工作总结：选「自定义」后没有结束日期'))
-      await range.getByRole('radio', { name: '今天' }).click()
-      await p
-        .getByText('不挑就是今天全部', { exact: false })
-        .first()
-        .waitFor({ timeout: 3000 })
-        .catch(() => errors.push('工作总结：切回「今天」后说明文字没恢复'))
-    }
-    await check(p, '工作总结-范围切换')
-
-    // 项目选择器：下拉选一个再点「增加」，下拉本身不会直接算选中
-    const picker = p.getByLabel('选择要总结的项目')
-    await picker.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：没有项目下拉'))
-    await p
-      .getByText('还没有加入项目。选一个项目后点「增加」。')
-      .first()
-      .waitFor({ timeout: 3000 })
-      .catch(() => errors.push('工作总结：打开时没有空状态提示'))
-
-    // 项目头部的「增加」按钮（第一个）：点一次加一个项目
-    const addProject = p.getByRole('button', { name: '增加', exact: true }).first()
-    await addProject.click()
-    await p
-      .getByText('已选 1 个')
-      .first()
-      .waitFor({ timeout: 3000 })
-      .catch(() => errors.push('工作总结：点「增加」后没有加入一个项目'))
-    const removeProjects = p.getByRole('button', { name: /^删除项目/ })
-    if ((await removeProjects.count()) !== 1) errors.push('工作总结：加入项目后没有对应的删除按钮')
-    await check(p, '工作总结-加入项目', ['已选 1 个'])
-
-    // 再加一个项目：多个项目能同时存在
-    await addProject.click()
-    await p
-      .getByText('已选 2 个')
-      .first()
-      .waitFor({ timeout: 3000 })
-      .catch(() => errors.push('工作总结：加入第二个项目后已选数量没有变成 2'))
-
-    // 切到别的页面再回来：已选的项目（顺序和名字）原样还在（页面状态存在本机，见 web/src/lib/summary-page.ts）
-    const pickNames = async () =>
-      p.getByRole('button', { name: /^删除项目/ }).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
-    const beforeSwitch = await pickNames()
+    if ((await p.locator('[data-summary-project]').count()) !== 2) errors.push('工作总结：添加两个项目后面板上不是两个')
+    await check(p, '工作总结-添加项目')
+    // 切走再回来：加过的项目还在
     await p.getByRole('button', { name: '计划', exact: true }).first().click()
     await p.getByRole('button', { name: '工作总结', exact: true }).first().click()
     await p
-      .getByText('已选 2 个')
-      .first()
+      .locator('[data-summary-project]')
+      .nth(1)
       .waitFor({ timeout: 5000 })
-      .catch(() => errors.push('工作总结：切到别的页面再回来，已选的项目没了'))
-    const afterSwitch = await pickNames()
-    if (afterSwitch.join('|') !== beforeSwitch.join('|'))
-      errors.push(`工作总结：切页面回来后项目变了（${beforeSwitch.join('、')} → ${afterSwitch.join('、')}）`)
-    await check(p, '工作总结-切页面回来')
+      .catch(() => errors.push('工作总结：切页面回来后加过的项目没了'))
 
-    // 刷新（F5）后选择也还在：存到本机才成立
-    await p.reload()
-    await p
-      .getByRole('button', { name: /^删除项目/ })
-      .first()
-      .waitFor({ timeout: 8000 })
-      .catch(() => errors.push('工作总结：刷新后已选的项目没了'))
-    if ((await pickNames()).join('|') !== beforeSwitch.join('|'))
-      errors.push('工作总结：刷新后选择的项目和刷新前不一样')
-    await check(p, '工作总结-刷新后恢复')
-
-    // 每个项目下挑对话：下拉 + 增加，加进去的能在这一项里删掉。
-    // 先在两个项目里找一个今天有对话的（演示数据里商城前台今天跑过）
-    const taskPicker = p.getByLabel('选择要分析的对话').first()
-    await taskPicker
-      .waitFor({ timeout: 5000 })
-      .catch(() => errors.push('工作总结：已加入的项目下没有对话下拉（今天应当有可总结的对话）'))
-    if (await taskPicker.count()) {
-      // 这个是 Radix 下拉，不是原生 select：点开后在浮层里点选项，没有 <option> 可取
-      await taskPicker.click()
-      const option = p.getByRole('option').first()
-      await option.waitFor({ timeout: 3000 }).catch(() => errors.push('工作总结：对话下拉点开后没有可选的对话'))
-      if (await option.count()) {
-        await option.click()
-        // 对话的「增加」在项目行里，和项目头部的那个不是同一个
-        await p.locator('li', { has: taskPicker }).getByRole('button', { name: '增加', exact: true }).first().click()
-        const removeTasks = p.getByRole('button', { name: /^删除对话/ })
-        await removeTasks
-          .first()
-          .waitFor({ timeout: 3000 })
-          .catch(() => errors.push('工作总结：点对话的「增加」后没有出现在该项目下'))
-        await check(p, '工作总结-加入对话', ['只分析已选的 1 个对话'])
-        await removeTasks.first().click()
-        await removeTasks
-          .first()
-          .waitFor({ state: 'detached', timeout: 3000 })
-          .catch(() => errors.push('工作总结：删掉对话后它还留在该项目下'))
-      }
-    }
-
-    // 删掉第二个项目：删除只影响这一项，剩下的那个继续留着
-    await removeProjects.nth(1).click()
-    await p
-      .getByText('已选 1 个')
-      .first()
-      .waitFor({ timeout: 3000 })
-      .catch(() => errors.push('工作总结：删掉第二个项目后已选数量没有回到 1'))
-
-    // 生成：演示后端过一会儿给出示例报告
-    await p.getByRole('button', { name: '生成报告' }).first().click()
-    await p
-      .getByRole('button', { name: '复制' })
+    // 提炼：出来的是一条条分项，需求和 Bug 分组，每条有「采纳」
+    await p.getByRole('button', { name: '开始提炼' }).click()
+    const adopt = p.getByRole('button', { name: /^采纳「/ })
+    await adopt
       .first()
       .waitFor({ timeout: 15000 })
-      .catch(() => errors.push('工作总结：生成后没有出现报告（看不到复制按钮）'))
-    await check(p, '工作总结-报告', ['今天的报告', '最近的报告'])
-    // 报告固定四节：节名按 Markdown 标题渲染出来
-    const preview = p.locator('section', { hasText: '今天的报告' }).first()
-    for (const heading of ['一、概览', '二、需求进度', '三、问题与修复', '四、下一步']) {
-      if (!(await preview.getByText(heading, { exact: false }).count()))
-        errors.push(`工作总结：报告里没有固定的二级节「${heading}」`)
-    }
-    // 报告头部显示这份报告的元数据：项目、对话数、字数、耗时。
-    // 限定在报告卡片里找：整页找的话「最近的报告」列表行也有这些字样，元数据没渲染时也会通过
-    for (const text of ['个对话', '字', '耗时'])
-      await preview
-        .getByText(text, { exact: false })
-        .first()
-        .waitFor({ timeout: 5000 })
-        .catch(() => errors.push(`工作总结-报告元数据：报告头没有显示「${text}」`))
-    await check(p, '工作总结-报告元数据')
+      .catch(() => errors.push('工作总结：提炼完没有出现可以采纳的分项'))
+    for (const g of ['需求', 'Bug'])
+      if (!(await p.getByRole('region', { name: g, exact: true }).count()))
+        errors.push(`工作总结：分项里没有「${g}」这一组`)
+    const confirm = p.getByRole('button', { name: '确认生成报告' })
+    if (!(await confirm.isDisabled())) errors.push('工作总结：一条都没采纳时「确认生成报告」可以点')
+    await check(p, '工作总结-分项')
 
-    // 编辑：切到编辑是 textarea，内容是 Markdown，第一行是一级标题
-    await p.getByRole('radio', { name: '编辑' }).click()
-    const area = p.getByLabel('报告内容')
-    await area.waitFor({ timeout: 3000 }).catch(() => errors.push('工作总结：切到编辑后没有出现文本框'))
-    const text = await area.inputValue().catch(() => '')
-    if (!text.startsWith('# ')) errors.push(`工作总结：编辑框里不是 Markdown 报告（${text.slice(0, 30)}）`)
-    for (const heading of ['## 一、概览', '## 二、需求进度', '## 三、问题与修复', '## 四、下一步']) {
-      if (!text.includes(heading)) errors.push(`工作总结：生成的报告缺少「${heading}」`)
-    }
-    await check(p, '工作总结-编辑')
-
-    // 改几个字但不点保存：报告头的字数要跟着编辑框里的正文变，不能等保存后才更新
-    // （同一屏的「最近的报告」也显示字数，两处必须对得上）
-    const charsOf = async () => {
-      const raw = await preview
-        .getByText(/^\d+ 字$/)
-        .first()
-        .textContent()
-        .catch(() => '')
-      return Number((raw ?? '').replace(/\D/g, '')) || 0
-    }
-    const beforeChars = await charsOf()
-    await area.fill(text + '\n\n（还没保存的草稿）')
+    // 采纳一条需求、一条 Bug，确认后报告里只有这两条
+    const needTitle = await p
+      .getByRole('region', { name: '需求', exact: true })
+      .locator('[data-summary-entry] p')
+      .first()
+      .textContent()
+    const skipped = await p
+      .getByRole('region', { name: '需求', exact: true })
+      .locator('[data-summary-entry] p')
+      .nth(2)
+      .textContent()
+      .catch(() => '')
     await p
-      .waitForFunction(
-        (prev) => {
-          const card = [...document.querySelectorAll('section')].find((s) => s.textContent?.includes('今天的报告'))
-          const m = card?.textContent?.match(/(\d+)\s*字/)
-          return !!m && Number(m[1]) > prev
-        },
-        beforeChars,
-        { timeout: 3000 },
-      )
-      .catch(() => errors.push('工作总结：编辑正文后报告头的字数没有跟着变'))
-    // 切到别的页面再回来，编辑 tab 和还没保存的改动都要还在
-    await p.getByRole('button', { name: '计划', exact: true }).first().click()
-    await p.getByRole('button', { name: '工作总结', exact: true }).first().click()
-    const areaBack = p.getByLabel('报告内容')
-    await areaBack.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：切页面回来后没有回到编辑 tab'))
-    const draftBack = await areaBack.inputValue().catch(() => '')
-    if (!draftBack.includes('（还没保存的草稿）')) errors.push('工作总结：切页面回来后编辑器里还没保存的改动丢了')
-    await check(p, '工作总结-草稿跨页面保留')
+      .getByRole('region', { name: '需求', exact: true })
+      .getByRole('button', { name: /^采纳「/ })
+      .first()
+      .click()
+    await p
+      .getByRole('region', { name: 'Bug', exact: true })
+      .getByRole('button', { name: /^采纳「/ })
+      .first()
+      .click()
+    await p
+      .getByText('已采纳 2 项', { exact: false })
+      .first()
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('工作总结：采纳两条后确认栏没有显示「已采纳 2 项」'))
+    await check(p, '工作总结-采纳')
+    await confirm.click()
+    const view = p.getByRole('main', { name: '报告' })
+    await view.waitFor({ timeout: 8000 }).catch(() => errors.push('工作总结：确认后没有打开生成的报告'))
+    for (const heading of ['一、需求', '二、Bug'])
+      if (!(await view.getByText(heading, { exact: false }).count())) errors.push(`工作总结：报告里没有「${heading}」`)
+    if (needTitle && !(await view.getByText(needTitle, { exact: false }).count()))
+      errors.push('工作总结：采纳的需求没有写进报告')
+    if (skipped && skipped !== needTitle && (await view.getByText(skipped, { exact: true }).count()))
+      errors.push('工作总结：没采纳的分项也写进了报告')
+    if (!(await tree.getByRole('group', { name: /^今天 · / }).count()))
+      errors.push('工作总结：新报告没有出现在「今天」这一组')
+    await check(p, '工作总结-报告')
+
+    // 编辑：Markdown 正文，原因 / 修复写在 Bug 条目下
+    await view.getByRole('radio', { name: '编辑' }).click()
+    const text = await view
+      .getByLabel('报告正文')
+      .inputValue()
+      .catch(() => '')
+    if (!/^# \d{4}-\d{2}-\d{2} 工作总结/.test(text))
+      errors.push(`工作总结：报告第一行不是日期标题（${text.slice(0, 30)}）`)
+    if (!/原因：[\s\S]*修复：/.test(text)) errors.push('工作总结：Bug 条目没有写原因和修复')
+    await view.getByRole('radio', { name: '预览' }).click()
 
     // 复制：写到剪贴板，并弹出成功提示
-    await p.getByRole('radio', { name: '预览' }).click()
-    await p.getByRole('button', { name: '复制' }).first().click()
+    await view.getByRole('button', { name: '复制' }).click()
     await p
       .getByText('已复制报告')
       .first()
       .waitFor({ timeout: 3000 })
       .catch(() => errors.push('工作总结：复制后没有成功提示'))
-    const copied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
-    if (!copied.includes('## 四、下一步')) errors.push(`工作总结：剪贴板里不是报告正文（${copied.slice(0, 40)}）`)
-    await check(p, '工作总结-复制')
-    // 对比两份：再生成一份（演示后端的第二份报告和第一份不同），勾选两份看新增 / 消失 / 状态变化
-    await p.getByRole('button', { name: '生成报告' }).first().click()
+
+    // 报告来源 + 按周：列出这一周可以汇总的报告
+    await p.getByRole('button', { name: '新建' }).first().click()
+    await source.getByRole('radio', { name: '报告' }).click()
+    await grain.getByRole('radio', { name: '按周' }).click()
     await p
-      .getByRole('button', { name: '对比两份' })
-      .first()
-      .waitFor({ timeout: 15000 })
-      .catch(() => errors.push('工作总结：没有「对比两份」入口'))
-    // 等第二份报告进列表（列表按时间倒序，新的在最前）
-    await p
-      .locator('section', { hasText: '最近的报告' })
-      .locator('li')
+      .getByRole('list', { name: '要汇总的报告' })
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('工作总结：报告来源按周时没有列出这一周的报告'))
+    await check(p, '工作总结-报告来源')
+
+    // 删除：确认后从树里消失，回到提炼面板
+    const before = await tree
+      .getByRole('button')
+      .filter({ hasText: /需求 \d+ · Bug \d+/ })
+      .count()
+    await tree
+      .getByRole('group', { name: /^今天 · / })
+      .getByRole('button')
       .nth(1)
-      .waitFor({ timeout: 20000 })
-      .catch(() => errors.push('工作总结：没有生成出第二份报告，没法对比'))
-    await p.getByRole('button', { name: '对比两份' }).first().click()
-    const boxes = p.getByLabel('对比这份报告')
-    await boxes
-      .first()
+      .click()
+    await p.getByRole('button', { name: '删除这份报告' }).click()
+    await p.getByRole('dialog').getByRole('button', { name: '删除' }).click()
+    await p
+      .getByRole('heading', { name: '提炼工作总结' })
       .waitFor({ timeout: 5000 })
-      .catch(() => errors.push('工作总结：对比模式里没有勾选框'))
-    if ((await boxes.count()) < 2) errors.push('工作总结：「最近的报告」里没有两份可以对比')
-    else {
-      await boxes.nth(0).check()
-      await boxes.nth(1).check()
-      const cmp = p.locator('section', { hasText: '两份报告的对比' }).first()
-      await cmp.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：勾选两份后没有出现对比区'))
-      for (const heading of ['需求进度', '问题与修复', '下一步']) {
-        if (!(await cmp.getByText(heading, { exact: true }).count()))
-          errors.push(`工作总结：对比区里没有「${heading}」`)
-      }
-      // 标题实际写成「新增（1）」「已修复（消失）（1）」：按整行精确匹配，
-      // 否则「已修复（消失）」会把「消失」也命中，看不出需求进度有没有真的消失项
-      for (const [kind, re] of [
-        ['新增', /^新增（\d+）$/],
-        ['消失', /^消失（\d+）$/],
-        ['状态变化', /^状态变化（\d+）$/],
-        ['已修复（消失）', /^已修复（消失）（\d+）$/],
-      ]) {
-        if (!(await cmp.getByText(re).count())) errors.push(`工作总结：对比区里没有「${kind}」`)
-      }
-      await check(p, '工作总结-对比两份')
-      // 取消对比：对比区收起，列表回到普通模式
-      await p.getByRole('button', { name: '取消对比' }).click()
-      await p
-        .getByText('两份报告的对比')
-        .first()
-        .waitFor({ state: 'detached', timeout: 3000 })
-        .catch(() => errors.push('工作总结：取消对比后对比区还在'))
-      // 再选一次，然后直接换范围：对比要跟着收起（不能还挂着上一段的两份报告，也不能留在对比模式）
-      await p.getByRole('button', { name: '对比两份' }).click()
-      await boxes.nth(0).check()
-      await boxes.nth(1).check()
-      await cmp.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：重新勾选两份后没有出现对比区'))
-      await range.getByRole('radio', { name: '近 7 天' }).click()
-      await p
-        .getByText('两份报告的对比')
-        .first()
-        .waitFor({ state: 'detached', timeout: 3000 })
-        .catch(() => errors.push('工作总结：换范围后对比区还在'))
-      if (await p.getByRole('button', { name: '取消对比' }).count()) errors.push('工作总结：换范围后还留在对比模式')
-      await range.getByRole('radio', { name: '今天' }).click()
-    }
+      .catch(() => errors.push('工作总结：删除后没有回到提炼面板'))
+    const after = await tree
+      .getByRole('button')
+      .filter({ hasText: /需求 \d+ · Bug \d+/ })
+      .count()
+    if (after !== before - 1) errors.push(`工作总结：删除后报告数没少一份（${before} → ${after}）`)
 
-    // 换范围不能把上一段的报告当成这一段的：切到近 7 天后当前报告消失，旧报告还在「最近的报告」里
-    await range.getByRole('radio', { name: '近 7 天' }).click()
-    await p
-      .locator('section', { hasText: '今天的报告' })
-      .first()
-      .waitFor({ state: 'detached', timeout: 3000 })
-      .catch(() => errors.push('工作总结：切到近 7 天后仍然显示「今天的报告」'))
-    await p
-      .getByText('最近的报告')
-      .first()
-      .waitFor({ timeout: 3000 })
-      .catch(() => errors.push('工作总结：切范围后「最近的报告」列表没了'))
-    await range.getByRole('radio', { name: '今天' }).click()
-    await check(p, '工作总结-换范围不串报告')
-
-    // 项目在别的地方被删掉：回到这一页时它从选择里消失并提示一次，不静默也不拿着错数据去生成。
-    // 演示版的数据库在 localStorage 里（改完要整页导航，只改 hash 会被内存里的数据盖回去）
-    await p.evaluate(() => {
-      const db = JSON.parse(localStorage.getItem('agent-panel-demo-v3') || 'null')
-      const state = JSON.parse(localStorage.getItem('summary-page:v1') || 'null')
-      const picked = state?.picks?.[0]?.projectId
-      if (!db || !picked) return
-      db.projects = db.projects.filter((x) => x.id !== picked)
-      localStorage.setItem('agent-panel-demo-v3', JSON.stringify(db))
-    })
-    await p.reload()
-    await p
-      .getByText('1 个项目已不存在，已从选择里移除')
-      .first()
-      .waitFor({ timeout: 8000 })
-      .catch(() => errors.push('工作总结：恢复时没有提示已不存在的项目被移除'))
-    if (await p.getByRole('button', { name: /^删除项目/ }).count())
-      errors.push('工作总结：已经不存在的项目还留在选择里')
-    await p
-      .getByText('已选 0 个')
-      .first()
-      .waitFor({ timeout: 3000 })
-      .catch(() => errors.push('工作总结：移除已不存在的项目后已选数量没变'))
-    await check(p, '工作总结-已删项目被过滤')
-
-    // 手机宽度：项目列表和报告都要能正常换行
+    // 手机宽度：树、设置和分项都要能正常换行
     await p.setViewportSize({ width: 480, height: 900 })
     await settle(p).catch(() => {})
     await check(p, '工作总结-手机宽度')

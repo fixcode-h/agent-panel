@@ -117,7 +117,7 @@ export function TaskComposer({
   const [askUser, setAskUser] = useNewAskUser()
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
-  const mention = useFileMention(project?.id, editor)
+  const mention = useFileMention(project, editor, files)
   const chips = useComposerChips({ files, editor, text: prompt, change: setPrompt })
   const { addFiles, addReady, drop } = chips
   // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求

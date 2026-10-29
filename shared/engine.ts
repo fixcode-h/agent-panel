@@ -2622,8 +2622,6 @@ async function runInvocation(host: EngineHost, inv: Invocation): Promise<FlowRes
 
 // ---- 编排工具：派子 Agent、查状态、提问、传话 ----
 
-/** 同时在跑的派出的子 Agent 最多几个（整个任务），多的排队 */
-const MAX_HELPERS_RUNNING = 6
 /** 一个节点最多派几个子 Agent */
 const MAX_HELPERS_PER_STEP = 12
 /** resume 对不上时报错里列出的最近子任务数：够模型认出正确 id，多了反而是干扰 */
@@ -2654,8 +2652,6 @@ interface OrchState {
   delivered: Set<string>
   /** 对话 / 节点 id → 正在等的这一批子任务 */
   batches: Map<string, Promise<HelperBatch>>
-  running: number
-  queue: (() => void)[]
 }
 const orchStates = new WeakMap<EngineHost, OrchState>()
 
@@ -2685,8 +2681,6 @@ function orchState(host: EngineHost): OrchState {
       errors: new Map(),
       delivered: new Set(),
       batches: new Map(),
-      running: 0,
-      queue: [],
     }
     orchStates.set(host, st)
   }
@@ -3729,29 +3723,8 @@ async function runHelper(
     step.endedAt = now()
     host.changed(true)
   }
-  // 有名额就当场占住；没有才排队。等待者被唤醒时不自己加一，名额由释放方直接交接，
-  // 否则唤醒到它真正继续之间新来的子 Agent 会看到还没满，又多占一个。
-  // 排队时被终止：从队里拿掉，不占名额，直接按终止交回
-  let entered = true
-  if (st.running < MAX_HELPERS_RUNNING) st.running++
-  else
-    entered = await new Promise<boolean>((resolve) => {
-      const enter = () => {
-        ac.signal.removeEventListener('abort', leave)
-        resolve(true)
-      }
-      const leave = () => {
-        const i = st.queue.indexOf(enter)
-        if (i >= 0) st.queue.splice(i, 1)
-        resolve(false)
-      }
-      st.queue.push(enter)
-      ac.signal.addEventListener('abort', leave, { once: true })
-    })
-  if (!entered) {
-    helperStops.delete(key)
-    return stopped()
-  }
+  // 派出就开跑，不按任务限数排队（用户要求）：一个节点最多派几个由 spawn 的 MAX_HELPERS_PER_STEP 管，
+  // 真要限流用 API 设置里的并发上限（server/api-slots.ts），那是按厂家限流各算各的
   try {
     if (ac.signal.aborted) return stopped()
     if (host.halted) return
@@ -3831,12 +3804,19 @@ async function runHelper(
     }
     step.endedAt = now()
     host.changed(true)
+  } catch (e) {
+    // 启动 CLI 前后抛了异常（读配置、写文件、进程起不来）：不能让它往外冒。
+    // 冒出去的话子任务一直停在执行中、没有任何输出，终止按钮又说它已经结束了；
+    // 等它的对话也跟着抛错。按失败收口，原因照常显示并交回给派它的对话
+    if (ac.signal.aborted) return stopped()
+    const error = t('子任务没能执行：{error}', { error: (e as Error)?.message || String(e) })
+    step.status = 'failed'
+    st.errors.set(step.id, error)
+    system(host, error, step.id, true)
+    step.endedAt = now()
+    host.changed(true)
   } finally {
     helperStops.delete(key)
-    // 名额直接交给排在最前面的那个，running 保持不变；没人排队时才真正空出来
-    const next = st.queue.shift()
-    if (next) next()
-    else st.running--
   }
 }
 

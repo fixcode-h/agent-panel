@@ -120,10 +120,11 @@ export const UI_SHARD_COVERS = {
     // 计划面板（shared/plan.ts 那套数据的界面）
     'web/src/pages/SchedulesPage.tsx',
     'web/src/pages/SummaryPage.tsx',
+    'web/src/components/summary/',
     'web/src/lib/summary-page.ts',
-    // 演示版的工作总结数据（第二份报告内容不同，对比才看得出差异）
+    // 演示版的工作总结数据（预置的报告撑起左侧报告树，提炼给出示例分项）
     'web/src/lib/demo-summary.ts',
-    // 两份报告的解析与对比逻辑：页面直接调，改了它就跑这一片
+    // 报告树分组、拼报告的逻辑：页面直接调，改了它就跑这一片
     'shared/summary.ts',
   ],
   '10-toast': ['web/src/lib/toast.ts', 'web/src/lib/toast-queue.ts'],

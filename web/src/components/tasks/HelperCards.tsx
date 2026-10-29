@@ -108,7 +108,7 @@ export function StopHelper({
 const helperGroups = (list: TaskStep[]) =>
   [
     { key: 'running', label: t('执行中'), items: list.filter(helperRunning) },
-    { key: 'pending', label: t('排队中'), items: list.filter((s) => s.status === 'pending') },
+    { key: 'pending', label: t('还没开始'), items: list.filter((s) => s.status === 'pending') },
     {
       key: 'unfinished',
       label: t('未完成'),
@@ -118,10 +118,19 @@ const helperGroups = (list: TaskStep[]) =>
     { key: 'stopped', label: t('已终止'), items: list.filter((s) => s.status === 'skipped') },
   ].filter((g) => g.items.length)
 
+/**
+ * 还没开跑的子任务为什么没开：子任务派出就开始、不排队，只有 API 设了并发上限且满了时才等名额；
+ * 其余是刚派出正在启动，或被停止打断了
+ */
+function pendingBrief(step: TaskStep) {
+  if (step.apiWait) return t('API「{api}」的并发名额满了，前面的释放了再开始', { api: step.apiWait.api })
+  return step.interrupted ? t('子任务被打断了，还没做完') : t('正在启动…')
+}
+
 /** 列表里每个子任务下面那行：还在跑的写它这会儿在做什么，做完的写交回结果的第一句 */
 export function helperBrief(task: Task, step: TaskStep) {
   if (step.status === 'running') return currentActivity(stepActivity(task, step.id, true)) || t('已开始，还没有输出')
-  if (step.status === 'pending') return t('子任务在排队，前面的做完就开始')
+  if (step.status === 'pending') return pendingBrief(step)
   if (step.status === 'skipped') return t('已终止，没做完的部分不会交回')
   const out =
     step.output
@@ -357,7 +366,7 @@ export function HelperWindow({
           {live
             ? t('子任务执行中，做完后结果会自动交回给派它的对话')
             : step.status === 'pending'
-              ? t('子任务在排队，前面的做完就开始')
+              ? pendingBrief(step)
               : step.status === 'failed'
                 ? t('子任务失败了，派它的对话会收到失败原因。这里只能查看')
                 : step.status === 'skipped'

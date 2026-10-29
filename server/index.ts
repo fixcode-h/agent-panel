@@ -26,11 +26,11 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
-import { SummaryRecord, type SummaryReport } from '../shared/summary.ts'
+import { SummaryConfig, SummaryRecord, type SummaryReport } from '../shared/summary.ts'
 import { LessonDraftRecord, LessonDraftInput } from '../shared/lesson-draft.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
-import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
+import { createCollection, DATA_DIR, dataPath, migrateDataDir, readJson, writeJsonAtomic } from './store.ts'
 import { serveDist, serveIndex } from './static.ts'
 import { dataApi } from './data.ts'
 import { cleanupApi, sweepTaskInfoOf } from './cleanup.ts'
@@ -866,8 +866,22 @@ async function sweepStaleWorktrees() {
 }
 
 app.route('/tasks', tasks.routes)
-// 工作总结：选项目生成今天的报告（只读任务记录，不改项目文件）
-app.route('/summary', summaryApi({ tasks, projects, reports: summaries }).routes)
+// 工作总结：按天 / 按周提炼分项，采纳后拼成报告（只读任务记录，不改项目文件）
+const summaryConfigFile = dataPath('config/summary.json')
+app.route(
+  '/summary',
+  summaryApi({
+    tasks,
+    projects,
+    agents,
+    reports: summaries,
+    // 面板里加过的项目：读坏了按空的来，页面照常能加
+    config: {
+      get: async () => SummaryConfig.catch({ projectIds: [] }).parse((await readJson(summaryConfigFile)) ?? {}),
+      set: (c) => writeJsonAtomic(summaryConfigFile, c),
+    },
+  }).routes,
+)
 app.route('/lesson-drafts', lessonDraftsApi({ drafts: lessonDrafts, reports: summaries }).routes)
 // 定时计划：到点由面板自己新建一个对话，走和页面新建任务完全一样的链路
 const schedules = schedulesApi({

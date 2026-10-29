@@ -35,6 +35,7 @@ export function PeriodPicker({
   max,
   onChange,
   label,
+  hint,
 }: {
   grain: UsageGrain
   /** 当前区间第一天 */
@@ -47,6 +48,8 @@ export function PeriodPicker({
   onChange: (day: Date) => void
   /** 触发按钮上的文字（区间标签 + 回退说明的 title） */
   label: string
+  /** 月历底部的说明；不传按用量页的写法（工作总结页传自己的） */
+  hint?: string
 }) {
   const [open, setOpen] = useState(false)
   const [month, setMonth] = useState(() => new Date(start.getFullYear(), start.getMonth(), 1))
@@ -170,7 +173,12 @@ export function PeriodPicker({
               {t('今天')}
             </Button>
             <span className="ml-auto text-[0.6875rem] text-subtle">
-              {grain === 'day' ? t('点一天看那天的用量') : grain === 'week' ? t('点一天看那一周') : t('点一天看那个月')}
+              {hint ??
+                (grain === 'day'
+                  ? t('点一天看那天的用量')
+                  : grain === 'week'
+                    ? t('点一天看那一周')
+                    : t('点一天看那个月'))}
             </span>
           </div>
         </PopoverContent>

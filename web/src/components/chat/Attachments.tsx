@@ -39,7 +39,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { MenuSearch } from '@/components/ui/menu-search'
 import type { RichInputHandle } from './RichInput'
 import { useMenuBox } from './useMenuBox'
-import { attachChip, type ChipKind } from '@shared/composer'
+import { attachChip, chipMarker, type ChipKind } from '@shared/composer'
 import { quoteName } from '@/lib/quote'
 import { t } from '@shared/i18n'
 
@@ -1104,9 +1104,14 @@ function SessionPicker({
 
 /**
  * 输入 @ 引用项目里的文件：光标前是「@关键字」时列出匹配的文件，上下键选、回车或 Tab 确认，
- * 选中后换成「@相对路径 」。Agent 在项目目录里执行，看到路径就能自己读。
+ * 选中后换成一张引用路径的文件卡片（和粘贴路径一样，只引用不拷贝）；服务端认不出这个文件时退回「@相对路径 」。
  */
-export function useFileMention(projectId: string | undefined, editor: React.RefObject<RichInputHandle | null>) {
+export function useFileMention(
+  project: { id: string; path?: string } | undefined,
+  editor: React.RefObject<RichInputHandle | null>,
+  attach: Pick<ReturnType<typeof useAttachments>, 'addRefs'>,
+) {
+  const projectId = project?.id
   const [query, setQuery] = useState<{ q: string; start: number } | null>(null)
   const [files, setFiles] = useState<string[]>([])
   const [active, setActive] = useState(0)
@@ -1151,8 +1156,27 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
   const pick = (f: string) => {
     const el = editor.current
     if (!query || !el) return
-    el.replace(query.start, el.caret(), `@${f} `)
+    // 先把「@关键字」删掉、记下位置：等服务端确认的这一小会儿光标可能被挪走
+    const at = query.start
+    el.replace(at, el.caret(), '')
     setQuery(null)
+    const put = (value: string) => {
+      el.focus()
+      el.setCaret(at)
+      el.insert(value)
+    }
+    const root = project?.path
+    if (!root) return put(`@${f} `)
+    const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+    const full = `${root.replace(/[\\/]+$/, '')}${sep}${sep === '/' ? f : f.replace(/\//g, sep)}`
+    void api
+      .resolvePaths([full])
+      .then(({ files: resolved }) => {
+        const a = resolved[0]
+        const chip = a && attach.addRefs([a]).get(a.path)
+        put(chip ? `${chipMarker(chip.kind, chip.name)} ` : `@${f} `)
+      })
+      .catch(() => put(`@${f} `))
   }
 
   /** 菜单打开时接管上下键、回车、Tab、Esc；返回 true 表示已处理 */
