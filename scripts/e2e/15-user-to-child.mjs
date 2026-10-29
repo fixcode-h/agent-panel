@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import { runShard } from './harness.mjs'
 
 await runShard('用户直接发给子对话后通知父对话', async (api) => {
-  const { call, waitFor, waitDone, step, setupBase } = api
+  const { call, sleep, waitFor, waitDone, step, setupBase } = api
   const { project, B } = await setupBase()
   let parent = await call('POST', '/tasks', {
     projectId: project.id,
@@ -29,6 +29,10 @@ await runShard('用户直接发给子对话后通知父对话', async (api) => {
   })
   kid = await waitDone(kid.id, 20000)
   await waitFor(async () => (await call('GET', `/tasks/${parent.id}`)).status === 'done', { label: '父对话空闲' })
+  // 同一轮只报一次：CLI 报完这一轮和整次执行收尾都会走到上报，以前因为 status 不同报了两条一样的
+  const reports = (p) => p.messages.filter((m) => m.panel === 'child' && /【子对话状态】/.test(m.text))
+  await sleep(500)
+  assert.equal(reports(await call('GET', `/tasks/${parent.id}`)).length, 1, '子对话一轮做完，父对话里只有一条状态')
 
   await call('POST', `/tasks/${kid.id}/messages`, { text: 'USER_DIRECT 用户直接让子对话再做一件事' })
   const noted = await call('GET', `/tasks/${parent.id}`)
@@ -51,9 +55,10 @@ await runShard('用户直接发给子对话后通知父对话', async (api) => {
     },
     { timeout: 20000, label: '子对话做完后父对话计划那一步收口，并被叫起来处理' },
   )
-  assert.ok(
-    woken.messages.some((m) => m.panel === 'child' && /【子对话状态】/.test(m.text) && m.at > noted.updatedAt),
-    '父对话收到子对话这次做完的状态',
-  )
-  step('用户直接发给子对话：父对话计划挂上等它，做完收口那一步并叫起父对话')
+  const fresh = reports(woken).filter((m) => m.at > noted.updatedAt)
+  assert.equal(fresh.length, 1, '父对话收到子对话这次做完的状态，只有一条')
+  // 带的是这一轮的回复，不是上一轮留下的摘要（task.summary 要等整次执行收尾才更新）
+  const latest = (await call('GET', `/tasks/${kid.id}`)).messages.filter((m) => m.role === 'agent').at(-1)
+  assert.ok(fresh[0].text.includes(latest.text.replace(/\s+/g, ' ').trim().slice(0, 60)), '状态里带的是这一轮的结果')
+  step('用户直接发给子对话：父对话计划挂上等它，做完收口那一步并叫起父对话；每轮只报一条状态')
 })

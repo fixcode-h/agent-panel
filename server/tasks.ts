@@ -2141,8 +2141,10 @@ export function tasksApi(deps: {
   /** 上次交给父对话的状态（见 reportChild）：同一个状态不重复报 */
   const reportedState = new Map<string, string>()
   /** 上报去重的键：收尾请求按请求的时间，别的状态按这一轮结束的时间（每轮结束各报一次） */
+  // 不带 status：CLI 报完这一轮（result）时 status 还是 running，进程退出、整次执行收尾时变成 done，
+  // 同一轮、同一状态会因为这一个字段不同被当成两次上报，父对话里出现两条一样的「子对话状态」
   const reportKey = (tk: Task, state: ConvState) =>
-    state === 'wrapup' ? `wrapup|${tk.wrapRequest?.at ?? ''}` : `${state}|${tk.turnDoneAt}|${tk.status}`
+    state === 'wrapup' ? `wrapup|${tk.wrapRequest?.at ?? ''}` : `${state}|${tk.turnDoneAt}`
 
   /**
    * 正在做的「彻底完成」：删独立分支的目录和分支、清后台命令。
@@ -2431,7 +2433,9 @@ export function tasksApi(deps: {
     const key = reportKey(tk, r.state)
     if (reportedState.get(childId) === key) return
     reportedState.set(childId, key)
-    const summary = tk.summary || lastReply(tk)
+    // 先取最新的回复：task.summary 要等整次执行收尾才更新，这一轮刚报完成（进程还在、或保活等下一句）时
+    // 它还是上一轮的，上报会带着上一轮的结果
+    const summary = lastReply(tk) || tk.summary
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
     const next =
       r.state === 'unfinished' && isolated(tk) && !openWork(tk).length
