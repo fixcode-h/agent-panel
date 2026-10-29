@@ -20,7 +20,7 @@ if (!import.meta.env.VITE_DEMO) {
   const link = document.createElement('link')
   link.rel = 'stylesheet'
   link.href =
-    'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&family=JetBrains+Mono:wght@400;500&display=swap'
+    'https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&family=JetBrains+Mono:wght@400;500&display=swap'
   document.head.appendChild(link)
 }
 

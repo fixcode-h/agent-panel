@@ -321,3 +321,52 @@ export async function stickyLeakProblems(p, label) {
   })
   return leaks.map((l) => `${label}：吸顶元素${l}，背后的内容会从缝里露出来`)
 }
+
+/**
+ * 分段切换在深色下认不出选中项：选中块和轨道的底色亮度差太小（深色下 card 和 sel 只差几个色阶）。
+ * 把页面上每个分段单选（radiogroup 里直接放 radio 按钮的）拿出来，比选中块和轨道的相对亮度，比值低于 1.15 就报。
+ * 门槛按「浅色下白卡片压在浅灰轨道上（约 1.2，另有投影）认得出、出问题的深色（约 1.0）认不出」定
+ */
+export async function segmentedContrastProblems(p, label) {
+  const bad = await p.evaluate(() => {
+    // 计算样式里的颜色可能是 oklab() / color(srgb …)（color-mix 的结果），交给 canvas 统一换成 rgba 再算
+    const ctx = document.createElement('canvas').getContext('2d')
+    const rgb = (c) => {
+      ctx.clearRect(0, 0, 1, 1)
+      ctx.fillStyle = '#000'
+      ctx.fillStyle = c
+      ctx.fillRect(0, 0, 1, 1)
+      const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+      return [r, g, b, a / 255]
+    }
+    const lum = ([r, g, b]) => {
+      const f = (c) => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+    }
+    // 半透明底色要和下面的颜色叠起来算：一路往上找，直到不透明为止
+    const solid = (el) => {
+      const layers = []
+      for (let e = el; e; e = e.parentElement) {
+        const c = rgb(getComputedStyle(e).backgroundColor)
+        const a = c[3]
+        if (a > 0) layers.push([c[0], c[1], c[2], a])
+        if (a >= 1) break
+      }
+      let out = [255, 255, 255]
+      for (const [r, g, b, a] of layers.reverse())
+        out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a)]
+      return out
+    }
+    const out = []
+    for (const g of document.querySelectorAll('[role="radiogroup"]')) {
+      const on = g.querySelector(':scope > [role="radio"][aria-checked="true"]')
+      if (!on || !on.getClientRects().length) continue
+      const a = lum(solid(on))
+      const b = lum(solid(g))
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      if (ratio < 1.15) out.push(`「${g.getAttribute('aria-label') ?? ''}」选中块和轨道亮度比 ${ratio.toFixed(2)}`)
+    }
+    return out
+  })
+  return bad.map((b) => `${label}：分段切换${b}，选中项看不清`)
+}

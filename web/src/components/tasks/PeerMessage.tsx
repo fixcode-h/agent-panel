@@ -112,14 +112,20 @@ export function PeerLine(p: PeerLineProps) {
         ? t('发给 {n} 个子对话的同一条消息', { n: many.length })
         : t('发给{name}的消息', { name: p.name })
   const child = !many && p.childId && openChild ? () => openChild(p.childId!) : undefined
+  // 转交过来的提问在等人回答：整行描一圈琥珀色，和组件库「对话之间 · 转交提问」一致
+  const ask = p.kind === 'question' && !p.failed
   return (
     <>
       <RowShell
+        // 对话之间的消息和工具行一个样子，图标统一用「对话之间」的紫色，和工具行、用户消息分开
+        className={ask ? 'border-warning/45' : undefined}
         glyph={
           p.running ? (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
           ) : (
-            <Icon className={cn('h-3.5 w-3.5 shrink-0', p.failed ? 'text-danger' : 'text-subtle')} />
+            <Icon
+              className={cn('h-3.5 w-3.5 shrink-0', p.failed ? 'text-danger' : ask ? 'text-warning' : 'text-peer')}
+            />
           )
         }
         verb={
@@ -131,10 +137,11 @@ export function PeerLine(p: PeerLineProps) {
         badge={peerKindText(p.kind)}
         badgeClass={badgeTone(p.kind, p.failed)}
         title={subject}
+        titleClass="font-sans text-[0.78125rem]"
         onOpen={() => setWin(true)}
         openTip={t('在窗口里查看这条消息')}
         detail={
-          <span className="max-w-[40%] shrink-0 truncate font-sans text-subtle">
+          <span className={cn('max-w-[40%] shrink-0 truncate text-[0.71875rem]', ask ? 'text-warning' : 'text-subtle')}>
             {[
               p.state,
               p.dir === 'in' ? sideOf(p) : many ? t('发给 {n} 个：{names}', { n: many.length, names }) : sideOf(p),

@@ -29,22 +29,27 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt, groupByDay, taskBusy, taskDoneDot, taskState } from '@shared/task'
+import { askedAt, byAskedAt, taskBusy, taskDoneDot, taskState } from '@shared/task'
+import {
+  SIDEBAR_BLOCK_ROW_OFF,
+  SIDEBAR_BLOCK_ROW_ON,
+  SIDEBAR_GROUP_LABEL,
+  SIDEBAR_ROW_OFF,
+  SIDEBAR_ROW_ON,
+  TaskRowStatus,
+} from '@/components/ui/sidebar'
 import { UnreadDot } from '@/components/ui/badge'
 import type { SearchHit } from '@shared/task-search'
 import { useTaskSearch } from '@/lib/use-task-search'
+import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
-/**
- * 侧栏一行的选中 / 悬停外观：和中间列表的选中项一致（细边框 + 微阴影）。
- * 导航、项目分组、任务行和设计行都引用这里，选中态只定义一次；用的时候基础类里要带 `border`。
- */
-export const SIDEBAR_ROW_ON = 'border-transparent bg-sel text-fg'
-export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-sel/60 hover:text-fg'
+// 行的选中 / 悬停外观和分组标题定义在侧栏部件里（components/ui/sidebar.tsx），这里转出去给设计列表用
+export { SIDEBAR_GROUP_LABEL, SIDEBAR_ROW_OFF, SIDEBAR_ROW_ON } from '@/components/ui/sidebar'
 
-/** 分组标题（项目 / 对话内容 / 按天）：小一号、字距略宽，和可点的行拉开层级 */
-export const SIDEBAR_GROUP_LABEL = 'text-[0.6875rem] font-medium tracking-[0.04em] text-subtle'
+/** Chat 列表的选中行：浅卡片底加粗，和左栏底色拉开（Chat.dc.html） */
+const SIDEBAR_CHAT_ON = 'border-transparent bg-card font-medium text-fg'
 
 /** timeOnly：分组已经写了日期，行里只留时分 */
 export function shortTime(iso: string, timeOnly = false) {
@@ -70,6 +75,8 @@ export function TaskRow({
   hint,
   unread,
   timeOnly,
+  plain,
+  inBlock,
   className,
 }: {
   task: Task
@@ -82,6 +89,13 @@ export function TaskRow({
   unread?: boolean
   /** 分组已经写了日期，行里只显示时分 */
   timeOnly?: boolean
+  /**
+   * Chat 列表的行（Chat.dc.html）：只有标题，不画对话图标和时间（分组已经写了是哪天），
+   * 未读点挪到行尾；选中是浅卡片底，和左栏底色拉开。转圈、需要处理、失败的图标照常画
+   */
+  plain?: boolean
+  /** 放在项目下的任务块里（SidebarTaskBlock）：块已经垫了浅底，选中行换成更亮的卡片底 */
+  inBlock?: boolean
   className?: string
 }) {
   const menu = useTaskRowMenu(task, onDeleted)
@@ -114,60 +128,124 @@ export function TaskRow({
             aria-current={active || undefined}
             title={task.title}
             data-cli-alive={alive || undefined}
-            className={cn(
-              'group/row flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border text-left text-[0.8125rem] transition-colors',
-              active ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
-              className,
-            )}
+            className={
+              plain
+                ? cn(
+                    'group/row flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border text-left text-[0.8125rem] transition-colors',
+                    active ? (plain ? SIDEBAR_CHAT_ON : SIDEBAR_ROW_ON) : SIDEBAR_ROW_OFF,
+                    className,
+                  )
+                : cn(
+                    'group/row flex h-8 w-full cursor-pointer items-center gap-2 rounded-[7px] border text-left text-[0.8125rem] transition-colors',
+                    active
+                      ? cn(inBlock ? SIDEBAR_BLOCK_ROW_ON : SIDEBAR_ROW_ON, 'font-medium')
+                      : inBlock
+                        ? SIDEBAR_BLOCK_ROW_OFF
+                        : SIDEBAR_ROW_OFF,
+                    className,
+                  )
+            }
           >
-            {/* 内容整体右缩一点，标题文字不至于一直顶到右边的时间上。缩进不能写进行上的 pl-*：
+            {/* Chat 列表（plain）的行由 Chat 页那边定；项目列表和搜索结果是组件库的 TaskRow：行尾一个状态胶囊 */}
+            {plain ? (
+              <>
+                {/* 内容整体右缩一点，标题文字不至于一直顶到右边的时间上。缩进不能写进行上的 pl-*：
                 行样式后跟调用方传的 px-*，cn 走 twMerge 会把它覆盖掉。放在行内这一层，
                 选中 / hover 的背景（画在行上）仍然铺满整行 */}
-            <span className="flex min-w-0 flex-1 items-center gap-2 pl-2">
-              {unreadDot && <UnreadDot />}
-              <span className="flex shrink-0 items-center gap-1">
-                {/* 转圈时只留转圈：对话 / 工作流的图标停了再显示（用户 2026-10-24 要求） */}
-                {attention !== 'running' && (
-                  <ModeIcon
-                    aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
-                    className={cn('h-3.5 w-3.5', active ? 'text-muted' : 'text-subtle')}
+                <span className={cn('flex min-w-0 flex-1 items-center gap-2', !plain && 'pl-2')}>
+                  {unreadDot && !plain && <UnreadDot />}
+                  <span className={cn('flex shrink-0 items-center gap-1', plain && !attention && 'hidden')}>
+                    {/* 转圈时只留转圈：对话 / 工作流的图标停了再显示（用户 2026-10-24 要求） */}
+                    {attention !== 'running' && !plain && (
+                      <ModeIcon
+                        aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
+                        className={cn('h-3.5 w-3.5', active ? 'text-muted' : 'text-subtle')}
+                      />
+                    )}
+                    {attention === 'ask' ? (
+                      // Agent 在等你确认操作或回答问题
+                      <CircleAlert
+                        aria-label={t('需要你处理')}
+                        className="h-3.5 w-3.5 shrink-0 text-warning"
+                        strokeWidth={2.4}
+                      />
+                    ) : attention === 'running' || attention === 'failed' ? (
+                      <TaskStatusIcon
+                        status={attention === 'running' ? 'running' : task.status}
+                        working={attention === 'running'}
+                        className="h-3.5 w-3.5"
+                      />
+                    ) : null}
+                  </span>
+                  {analysis && <AnalysisMark kind={task.analysis} />}
+                  {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
+                  <span
+                    title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
+                    className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
+                    style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
+                  >
+                    {task.title}
+                  </span>
+                  {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
+                  {/* 时间格自己留一段左间距（在 gap-2 之外再加 6px）：标题再长，截断后和时间之间也有明显间隔 */}
+                  {!plain && (
+                    <span
+                      className={cn(
+                        'shrink-0 pl-1.5 text-[0.6875rem] tabular-nums transition-colors',
+                        active ? 'text-muted' : 'text-subtle group-hover/row:text-muted',
+                      )}
+                    >
+                      {shortTime(askedAt(task), timeOnly)}
+                    </span>
+                  )}
+                  {unreadDot && plain && <UnreadDot className="mr-0.5 h-[7px] w-[7px]" />}
+                </span>
+              </>
+            ) : (
+              <>
+                {/* 内容整体右缩一点，标题文字不至于一直顶到右边的状态上。缩进不能写进行上的 pl-*：
+                行样式后跟调用方传的 px-*，cn 走 twMerge 会把它覆盖掉。放在行内这一层，
+                选中 / hover 的背景（画在行上）仍然铺满整行 */}
+                <span className="flex min-w-0 flex-1 items-center gap-2 pl-[3px]">
+                  {/* 只给工作流画图标：普通对话占大多数，每行都画只会和行尾状态抢眼（组件库的任务行不带图标） */}
+                  {task.mode === 'workflow' && (
+                    <Workflow
+                      aria-label={t('工作流')}
+                      className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-muted' : 'text-subtle')}
+                    />
+                  )}
+                  {analysis && <AnalysisMark kind={task.analysis} />}
+                  {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
+                  <span
+                    title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
+                    className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
+                    style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
+                  >
+                    {task.title}
+                  </span>
+                  {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
+                  {/* 行尾只放一个状态（等你回复 / N 子对话 / 执行中 / 失败 / 未读点），和 StatusPill 同一套颜色 */}
+                  <TaskRowStatus
+                    needs={attention === 'ask'}
+                    kids={busy ? (task.childrenWorking ?? 0) : 0}
+                    running={busy}
+                    failed={attention === 'failed'}
+                    unread={unreadDot}
                   />
-                )}
-                {attention === 'ask' ? (
-                  // Agent 在等你确认操作或回答问题
-                  <CircleAlert
-                    aria-label={t('需要你处理')}
-                    className="h-3.5 w-3.5 shrink-0 text-warning"
-                    strokeWidth={2.4}
-                  />
-                ) : attention === 'running' || attention === 'failed' ? (
-                  <TaskStatusIcon
-                    status={attention === 'running' ? 'running' : task.status}
-                    working={attention === 'running'}
-                    className="h-3.5 w-3.5"
-                  />
-                ) : null}
-              </span>
-              {analysis && <AnalysisMark kind={task.analysis} />}
-              {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
-              <span
-                title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
-                className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
-                style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
-              >
-                {task.title}
-              </span>
-              {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
-              {/* 时间格自己留一段左间距（在 gap-2 之外再加 6px）：标题再长，截断后和时间之间也有明显间隔 */}
-              <span
-                className={cn(
-                  'shrink-0 pl-1.5 text-[0.6875rem] tabular-nums transition-colors',
-                  active ? 'text-muted' : 'text-subtle group-hover/row:text-muted',
-                )}
-              >
-                {shortTime(askedAt(task), timeOnly)}
-              </span>
-            </span>
+                  {/* 没有状态时才显示时间；时间格自己留一段左间距，标题截断后和时间之间也有明显间隔 */}
+                  {!attention && !unreadDot && (
+                    <span
+                      className={cn(
+                        'shrink-0 pl-1.5 text-[0.6875rem] tabular-nums transition-colors',
+                        active ? 'text-muted' : 'text-subtle group-hover/row:text-muted',
+                      )}
+                    >
+                      {shortTime(askedAt(task), timeOnly)}
+                    </span>
+                  )}
+                </span>
+              </>
+            )}
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent>{menu.items}</ContextMenuContent>
@@ -331,9 +409,33 @@ export function ContentHits({
   )
 }
 
+/**
+ * 聊天列表按「今天 / 昨天 / 7 天内 / 30 天内 / 更早」分段（Chat.dc.html）：聊天多是一次性的，
+ * 按具体日期一天一组会切得太碎，扫一眼找不到；list 已经按最近发言排好，分段后组内顺序不变
+ */
+function chatBuckets(list: Task[], now = new Date()) {
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const today = day(now)
+  const buckets = [
+    { key: 'today', label: t('今天'), items: [] as Task[] },
+    { key: 'yesterday', label: t('昨天'), items: [] as Task[] },
+    { key: 'week', label: t('7 天内'), items: [] as Task[] },
+    { key: 'month', label: t('30 天内'), items: [] as Task[] },
+    { key: 'older', label: t('更早'), items: [] as Task[] },
+  ]
+  for (const x of list) {
+    // 跨夏令时的那天相差 23 / 25 小时，取整
+    const diff = Math.round((today - day(new Date(askedAt(x)))) / 86400000)
+    buckets[diff <= 0 ? 0 : diff === 1 ? 1 : diff < 7 ? 2 : diff < 30 ? 3 : 4].items.push(x)
+  }
+  return buckets.filter((b) => b.items.length)
+}
+
 export function ChatList() {
   const { route, go } = useNav()
   const { tasks } = useData()
+  // 未读橙点和项目列表同一个口径：服务端的 turnDoneAt / turnSeenAt，加上刚完成还没刷新的本地记录
+  const unread = useUnreadTasks()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<TaskFilter>('all')
   const [folded, toggleDay] = useFoldedDays()
@@ -342,15 +444,16 @@ export function ChatList() {
   const chats = tasks.filter((x) => !x.projectId && matchTask(x, query, filter)).sort(byAskedAt)
   const filtering = !!query.trim() || filter !== 'all'
   const chatHits = content.hits.filter((h) => !tasks.find((x) => x.id === h.taskId)?.projectId)
-  const days = groupByDay(chats, askedAt)
+  const days = chatBuckets(chats)
   return (
-    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+    <div data-chat-list className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
       <TaskSearch query={query} onQuery={setQuery} filter={filter} onFilter={setFilter} placeholder={t('搜索聊天')} />
-      <p className={cn('flex h-7 shrink-0 items-center px-2.5', SIDEBAR_GROUP_LABEL)}>
-        {filtering
-          ? t('找到 {n} 个', { n: chats.length + Math.min(chatHits.length, SIDEBAR_CONTENT_HITS) })
-          : t('最近')}
-      </p>
+      {/* 不筛选时分段标题本身就说明了时间，不再多一行「最近」 */}
+      {filtering && (
+        <p className={cn('flex h-7 shrink-0 items-center px-2.5', SIDEBAR_GROUP_LABEL)}>
+          {t('找到 {n} 个', { n: chats.length + Math.min(chatHits.length, SIDEBAR_CONTENT_HITS) })}
+        </p>
+      )}
       {chats.length === 0 && !chatHits.length && (
         <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
           <MessagesSquare className="h-5 w-5 text-subtle" strokeWidth={1.6} />
@@ -361,28 +464,36 @@ export function ChatList() {
         const open = !folded.has(d.key)
         return (
           <div key={d.key} className="flex flex-col gap-px">
+            {/* 分段标题照设计稿只是一行小字；点它仍能收起这一段，箭头悬停或收起时才露出来 */}
             <button
               onClick={() => toggleDay(d.key)}
               aria-expanded={open}
               className={cn(
-                'flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 transition-colors hover:bg-sel/40 hover:text-fg',
+                'group/day flex h-7 shrink-0 cursor-pointer items-end gap-1 px-2.5 pb-1 transition-colors hover:text-fg',
                 SIDEBAR_GROUP_LABEL,
+                'font-semibold tracking-[0.06em]',
               )}
             >
-              <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', !open && '-rotate-90')} />
               <span className="truncate">{d.label}</span>
-              <span className="shrink-0">· {d.items.length}</span>
+              {!open && <span className="shrink-0 tabular-nums">· {d.items.length}</span>}
+              <ChevronDown
+                className={cn(
+                  'mb-px h-3 w-3 shrink-0 transition-[transform,opacity]',
+                  open ? 'opacity-0 group-hover/day:opacity-100' : '-rotate-90',
+                )}
+              />
             </button>
             {open &&
               d.items.map((tk) => (
                 <TaskRow
                   key={tk.id}
                   task={tk}
-                  timeOnly
+                  plain
+                  unread={isTaskUnread(tk) || unread.includes(tk.id)}
                   active={route.page === 'chat' && route.id === tk.id}
                   onOpen={() => go({ page: 'chat', id: tk.id })}
                   onDeleted={() => route.page === 'chat' && route.id === tk.id && go({ page: 'chat' })}
-                  className="px-2.5"
+                  className="h-[30px] px-2.5"
                 />
               ))}
           </div>

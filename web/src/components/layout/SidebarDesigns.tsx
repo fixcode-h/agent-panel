@@ -33,7 +33,14 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/menu'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { SIDEBAR_GROUP_LABEL, SIDEBAR_ROW_OFF, SIDEBAR_ROW_ON } from './SidebarTasks'
+import {
+  SIDEBAR_BLOCK_ROW_OFF,
+  SIDEBAR_BLOCK_ROW_ON,
+  SIDEBAR_GROUP_LABEL,
+  SIDEBAR_ROW_ON,
+  SidebarCount,
+  SidebarTaskBlock,
+} from '@/components/ui/sidebar'
 import { t } from '@shared/i18n'
 
 /**
@@ -156,8 +163,9 @@ export function DesignList() {
             // 整行都能点：以前只有文字能点，点到图标或空白处没反应，像是要点两次
             onClick={() => renaming !== d.id && go({ page: 'design', id: d.id })}
             className={cn(
-              'flex h-8 cursor-pointer items-center gap-2 rounded-md border px-2 text-[0.8125rem] transition-colors',
-              on ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
+              'flex h-8 cursor-pointer items-center gap-2 rounded-[7px] border px-2 text-[0.8125rem] transition-colors',
+              // 设计行和 Agent 的任务行一样放在项目下的浅底块里，选中用更亮的卡片底
+              on ? cn(SIDEBAR_BLOCK_ROW_ON, 'font-medium') : SIDEBAR_BLOCK_ROW_OFF,
             )}
           >
             {d.asking ? (
@@ -168,7 +176,7 @@ export function DesignList() {
                 strokeWidth={2.4}
               />
             ) : d.running ? (
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-run" />
             ) : d.kind === 'web' ? (
               <Globe className="h-3.5 w-3.5 shrink-0 text-subtle" />
             ) : (
@@ -235,7 +243,7 @@ export function DesignList() {
 
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
-      <div className="flex h-7 shrink-0 items-center pr-1 pl-2.5">
+      <div className="flex h-7 shrink-0 items-center pr-1 pl-[9px]">
         <p className={cn('flex-1', SIDEBAR_GROUP_LABEL)}>{t('UI 项目')}</p>
         <button
           onClick={() => setEditing(null)}
@@ -265,14 +273,14 @@ export function DesignList() {
         const open = !folded.has(p.id)
         const on = route.page === 'design' && route.id === DESIGN_HOME && route.sub === p.id
         return (
-          <section key={p.id} className="mb-2">
+          <section key={p.id} className="mb-1">
             <ContextMenu>
               <ContextMenuTrigger asChild>
                 <div
                   // 整行只是排成一行的容器：点空白处不展开也不打开，展开 / 打开各有自己的按钮
                   className={cn(
-                    'group/proj flex h-8 items-center gap-1 rounded-md border pr-1 pl-1 text-[0.78125rem] transition-colors',
-                    on ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
+                    'group/proj flex h-8 items-center gap-1 rounded-[7px] border pr-1 pl-0.5 text-[0.84375rem] text-fg transition-colors',
+                    on ? SIDEBAR_ROW_ON : 'border-transparent hover:bg-sel/60',
                   )}
                 >
                   <button
@@ -284,30 +292,29 @@ export function DesignList() {
                     aria-label={open ? t('收起') : t('展开')}
                     disabled={!ds.length}
                     className={cn(
-                      'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel/70 hover:text-fg',
+                      'grid h-6 w-5 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
                       !ds.length && 'invisible',
                     )}
                   >
-                    <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
+                    <ChevronRight
+                      className={cn('h-[13px] w-[13px] transition-transform', open && 'rotate-90')}
+                      strokeWidth={2}
+                    />
                   </button>
                   <button
                     onClick={() => go(designHomeRoute(p.id))}
                     aria-label={t('打开项目「{name}」，右键查看更多操作', { name: p.name })}
                     title={t('打开项目「{name}」，右键查看更多操作', { name: p.name })}
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                   >
                     {open ? (
-                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                      <FolderOpen className="h-[15px] w-[15px] shrink-0 text-muted" strokeWidth={1.8} />
                     ) : (
-                      <Folder className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                      <Folder className="h-[15px] w-[15px] shrink-0 text-muted" strokeWidth={1.8} />
                     )}
                     <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
                   </button>
-                  {ds.length > 0 && (
-                    <span className="shrink-0 pr-1 text-[0.6875rem] text-subtle tabular-nums group-hover/proj:hidden">
-                      {ds.length}
-                    </span>
-                  )}
+                  {ds.length > 0 && <SidebarCount n={ds.length} on={on} className="mr-0.5 group-hover/proj:hidden" />}
                   <button
                     onClick={() => go({ page: 'design', id: 'new', sub: p.id })}
                     aria-label={t('在「{name}」新建设计', { name: p.name })}
@@ -342,7 +349,7 @@ export function DesignList() {
               </ContextMenuContent>
             </ContextMenu>
             {open && ds.length > 0 && (
-              <div className="mt-1 ml-3 flex flex-col gap-0.5">
+              <SidebarTaskBlock>
                 {/* 同一个项目里游戏 UI 和网页 UI 分开列，各自可以收起 */}
                 {KINDS.filter((k) => ds.some((d) => designKind(d) === k.id)).map((k) => {
                   const list = ds.filter((d) => designKind(d) === k.id)
@@ -354,18 +361,18 @@ export function DesignList() {
                         data-kind={k.id}
                         onClick={() => toggleFold(key)}
                         aria-expanded={kOpen}
-                        className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-[0.75rem] text-subtle transition-colors hover:bg-sel/60 hover:text-fg"
+                        className="flex h-7 cursor-pointer items-center gap-1.5 rounded-[7px] px-1.5 text-[0.75rem] text-subtle transition-colors hover:bg-sel/80 hover:text-fg"
                       >
                         <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', kOpen && 'rotate-90')} />
                         <k.icon className="h-3.5 w-3.5 shrink-0" />
                         <span className="min-w-0 flex-1 truncate text-left">{kindLabel(k.id)}</span>
                         <span className="shrink-0 pr-1 text-[0.6875rem] tabular-nums">{list.length}</span>
                       </button>
-                      {kOpen && <div className="ml-3 flex flex-col gap-px">{list.map(designRow)}</div>}
+                      {kOpen && <div className="ml-2 flex flex-col gap-px">{list.map(designRow)}</div>}
                     </div>
                   )
                 })}
-              </div>
+              </SidebarTaskBlock>
             )}
           </section>
         )

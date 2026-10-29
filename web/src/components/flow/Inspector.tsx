@@ -118,25 +118,7 @@ export function NodeInspector({
 
   return (
     <div className="flex flex-col gap-5 p-5">
-      <div className="flex items-center gap-2">
-        <h3 className="flex-1 font-serif text-[1.0625rem] font-semibold">{t('节点')}</h3>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('删除节点')}
-          title={t('删除节点（Delete）')}
-          onClick={() => {
-            setFlow({
-              ...flow,
-              nodes: flow.nodes.filter((n) => n.id !== node.id),
-              edges: flow.edges.filter((e) => e.from !== node.id && e.to !== node.id),
-            })
-            onSelect('')
-          }}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
+      <h3 className="font-serif text-[1.0625rem] font-semibold">{t('节点')}</h3>
       <label className="flex flex-col gap-1.5">
         <Label>{t('标题')}</Label>
         <Input
@@ -158,7 +140,7 @@ export function NodeInspector({
           const params = runner?.params ?? []
           const open = !folded.has(u.id)
           return (
-            <section key={u.id} className="flex flex-col gap-3 rounded-xl border p-3.5">
+            <section key={u.id} className="flex flex-col gap-3 rounded-xl bg-sel/40 p-3.5">
               <div className="flex items-center gap-1.5">
                 <Button
                   variant="ghost"
@@ -171,7 +153,7 @@ export function NodeInspector({
                 >
                   <ChevronRight className={cn('h-4 w-4 transition-transform', open && 'rotate-90')} />
                 </Button>
-                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field font-mono text-[0.6875rem] text-muted">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-card font-mono text-[0.6875rem] text-muted">
                   {i + 1}
                 </span>
                 <Input
@@ -233,7 +215,7 @@ export function NodeInspector({
                   <div
                     role="radiogroup"
                     aria-label={t('执行方式')}
-                    className="grid grid-cols-2 rounded-lg bg-field p-0.5"
+                    className="seg-track grid grid-cols-2 rounded-lg p-0.5"
                   >
                     {(
                       [
@@ -247,8 +229,8 @@ export function NodeInspector({
                         aria-checked={u.kind === k.id}
                         onClick={() => patchStep(u.id, { kind: k.id })}
                         className={cn(
-                          'flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[0.8125rem] transition-colors',
-                          u.kind === k.id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
+                          'flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[0.8125rem] transition-colors',
+                          u.kind === k.id ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
                         )}
                       >
                         <k.icon className="h-3.5 w-3.5" />
@@ -293,6 +275,8 @@ export function NodeInspector({
                           {t('模型档位')}
                         </Label>
                         <Segmented
+                          size="sm"
+                          className="flex w-full [&>button]:flex-1 [&>button]:justify-center"
                           label={t('模型档位')}
                           value={tier}
                           onChange={(v) => patchStep(u.id, { tier: v })}
@@ -304,7 +288,7 @@ export function NodeInspector({
                         </span>
                       </div>
                       {params.length > 0 && runner && (
-                        <section className="flex flex-col gap-3 rounded-lg border p-2.5">
+                        <section className="flex flex-col gap-3 rounded-lg bg-card p-2.5">
                           <Label
                             hint={t('{name} 暴露的参数，在这一步上的取值；没改的用角色的默认值。', {
                               name: runner.name,
@@ -332,7 +316,7 @@ export function NodeInspector({
                       className="text-[0.8125rem]"
                     />
                   </label>
-                  <div className="flex flex-col gap-2 rounded-lg border p-2.5">
+                  <div className="flex flex-col gap-2 rounded-lg bg-card p-2.5">
                     <Label hint={t('这一步完成后执行验收；不通过就把意见交回这一步继续完善')}>{t('验收流程')}</Label>
                     <Select
                       aria-label={t('验收流程')}
@@ -406,7 +390,7 @@ export function NodeInspector({
         </div>
       </div>
 
-      <section className="flex flex-col gap-4 rounded-xl border p-3.5">
+      <section className="flex flex-col gap-4 rounded-xl bg-sel/40 p-3.5">
         <h4 className="text-[0.8125rem] font-semibold">{t('挂载流程')}</h4>
         {(['start', 'end'] as HookSlot[]).map((s) => (
           <div key={s} className="flex flex-col gap-1.5">
@@ -432,6 +416,25 @@ export function NodeInspector({
         <dt className="text-subtle">{t('下游')}</dt>
         <dd className="truncate">{down.join(t('、')) || t('没有')}</dd>
       </dl>
+      {/* 删除放在最底下（照设计稿），免得改标题时误点 */}
+      <Button
+        variant="danger-outline"
+        size="sm"
+        className="self-start"
+        aria-label={t('删除节点')}
+        title={t('删除节点（Delete）')}
+        onClick={() => {
+          setFlow({
+            ...flow,
+            nodes: flow.nodes.filter((n) => n.id !== node.id),
+            edges: flow.edges.filter((e) => e.from !== node.id && e.to !== node.id),
+          })
+          onSelect('')
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        {t('删除节点')}
+      </Button>
     </div>
   )
 }
@@ -514,7 +517,7 @@ export function FlowInspector({
           className="text-[0.8125rem]"
         />
       </label>
-      <div className="flex flex-col gap-2.5 rounded-xl border p-3.5">
+      <div className="flex flex-col gap-2.5 rounded-xl bg-sel/40 p-3.5">
         <Label
           hint={
             isEntry

@@ -31,9 +31,9 @@ import type { Agent, Flow, StepStatus } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { END, START, wouldCycle } from '@shared/flow'
 import { cn } from '@/lib/utils'
-import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { cliColor } from '@/lib/cli-style'
 import { StepIcon } from '@/components/tasks/TaskStatusIcon'
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 
 export type HookSlot = 'start' | 'review' | 'end'
 export const HOOK_LABEL: Record<HookSlot, string> = { start: t('开始'), review: t('验收'), end: t('结束') }
@@ -64,109 +64,143 @@ export interface NodeView {
 type CardData = { view: NodeView }
 type TermData = { kind: 'start' | 'end'; label: string; sub?: string; status?: StepStatus }
 
+// 起止节点的状态：只描一圈，不染底
 const ring: Record<StepStatus, string> = {
   pending: '',
-  running: 'node-running border-accent',
-  done: 'border-success/50',
-  failed: 'ring-2 ring-danger/30 border-danger/70',
+  running: 'node-running',
+  done: 'ring-1 ring-success/40',
+  failed: 'ring-1 ring-danger/50',
   skipped: 'opacity-55',
 }
 
 /**
- * 流程图里的一个节点：标题和执行者在上，模型、说明在中间，开始 / 验收 / 结束流程在底部。
+ * 节点卡片按状态染浅底（照设计稿：完成浅绿、运行中青色描框、失败浅红），
+ * 胶囊文字和颜色与 StatusPill 的五种口径一致；没有状态（编辑器里）就是白卡片
+ */
+const STATE: Record<StepStatus, { tone: StatusTone; label: string; card: string }> = {
+  pending: { tone: 'idle', label: t('计划中'), card: '' },
+  running: { tone: 'run', label: t('运行中'), card: 'node-running bg-[color-mix(in_oklab,var(--run)_7%,var(--card))]' },
+  done: {
+    tone: 'ok',
+    label: t('完成'),
+    card: 'bg-[color-mix(in_oklab,var(--success)_8%,var(--card))] ring-1 ring-success/30',
+  },
+  failed: {
+    tone: 'err',
+    label: t('失败'),
+    card: 'bg-[color-mix(in_oklab,var(--danger)_6%,var(--card))] ring-1 ring-danger/40',
+  },
+  skipped: { tone: 'idle', label: t('跳过'), card: 'opacity-55' },
+}
+
+/** 卡片里的小胶囊比列表里的再矮一号，节点高度不变，已经排好的流程图不会重叠 */
+const pillSm = 'h-[1.125rem] gap-1 px-1.5 text-[0.65625rem]'
+
+/**
+ * 流程图里的一个节点：标题和状态胶囊在上，执行者标签、说明块在中间，开始 / 验收 / 结束流程在底部。
  * 选中只高亮节点自己（主题色描边和柔光），执行中有缓慢呼吸的光晕。
  */
 const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardData>>) {
   const v = data.view
   const agent = v.kind === 'agent' ? v.agent : undefined
+  const st = v.status ? STATE[v.status] : undefined
+  // 染了底的卡片里，标签和说明块用白底托出来；白卡片里用浅灰底
+  const block = st && st.card && v.status !== 'skipped' ? 'bg-card/85' : 'bg-sel/55'
   return (
     <div
       className={cn(
-        'group/node w-[264px] overflow-hidden rounded-2xl bg-card text-left shadow-card transition-[box-shadow,border-color,transform] duration-150',
-        'hover:border-line-strong hover:shadow-pop',
-        v.status && ring[v.status],
-        v.loose && 'border-dashed opacity-80',
-        selected && 'node-selected border-accent',
+        'group/node flex w-[264px] flex-col gap-1.5 overflow-hidden rounded-xl bg-card p-2.5 text-left shadow-card transition-[box-shadow,transform] duration-150',
+        'hover:shadow-pop',
+        st?.card,
+        v.loose && 'opacity-80 outline-1 -outline-offset-1 outline-line-strong outline-dashed',
+        selected && 'node-selected',
       )}
     >
       <Handle type="target" position={Position.Left} />
-      <div className="flex items-start gap-2.5 px-3.5 pt-3 pb-2.5">
-        {agent ? (
-          <AgentAvatar icon={agent.icon} cli={agent.cli} size="md" dim={!agent.enabled} />
-        ) : (
-          <span
-            className={cn(
-              'grid h-9 w-9 shrink-0 place-items-center rounded-[9px]',
-              v.kind === 'flow' ? 'bg-accent-soft text-accent' : 'bg-field text-subtle',
-            )}
-          >
-            <WorkflowIcon className="h-[18px] w-[18px]" />
-          </span>
-        )}
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[0.84375rem] leading-5 font-semibold tracking-[-0.005em]">{v.title}</span>
-          <span className="flex min-w-0 items-center gap-1.5 text-[0.71875rem] leading-4 text-subtle">
-            {v.kind === 'flow' ? (
-              <span className="truncate">
-                {t('调用流程')} · {v.flowText || t('未选择')}
-              </span>
-            ) : agent ? (
-              <>
-                <span className="truncate">{v.count && v.count > 1 ? v.sub : agent.name}</span>
-                {v.count && v.count > 1 ? (
-                  <span className="shrink-0 rounded bg-field px-1 text-[0.65625rem] leading-4 font-medium text-muted ring-1 ring-line ring-inset">
-                    +{v.count - 1}
-                  </span>
-                ) : (
-                  v.main && (
-                    <span className="shrink-0 rounded px-1 text-[0.65625rem] leading-4 font-medium text-accent ring-1 ring-accent/30 ring-inset">
-                      {t('主')}
-                    </span>
-                  )
-                )}
-                {/* 模型放在同一行，节点高度不变，已经排好的流程图不会重叠 */}
-                {v.model && (
-                  <span className="ml-auto flex min-w-0 shrink items-center gap-1 rounded bg-field px-1 font-mono text-[0.65625rem] leading-4 text-muted ring-1 ring-line ring-inset">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cliColor(agent.cli) }} />
-                    <span className="truncate">{v.model}</span>
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="truncate text-warning">{v.sub}</span>
-            )}
-          </span>
+      <div className="flex min-w-0 items-center gap-1.5">
+        {v.kind === 'flow' && <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-accent" />}
+        <span className="min-w-0 flex-1 truncate text-[0.84375rem] leading-5 font-semibold tracking-[-0.005em]">
+          {v.title}
         </span>
-        {v.status && v.status !== 'pending' && <StepIcon status={v.status} className="mt-0.5" />}
+        {st ? (
+          <StatusPill tone={st.tone} spin={v.status === 'running'} className={pillSm}>
+            {st.label}
+          </StatusPill>
+        ) : (
+          v.loose && (
+            <StatusPill tone="wait" className={pillSm}>
+              {t('未连接')}
+            </StatusPill>
+          )
+        )}
       </div>
-      {/* 行数截断放在没有内边距的元素上，否则第三行会从内边距里露出半截 */}
+      {/* 执行者标签：角色 · 模型；多步节点列出各步，流程节点写调用的流程 */}
+      <div className="flex min-w-0 items-center gap-1.5 text-[0.71875rem] leading-4">
+        <span className={cn('flex h-[1.375rem] min-w-0 items-center gap-1.5 rounded-md px-1.5', block)}>
+          {v.kind === 'flow' ? (
+            <span className="truncate text-muted">
+              {t('调用流程')} · {v.flowText || t('未选择')}
+            </span>
+          ) : agent ? (
+            <>
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cliColor(agent.cli) }} />
+              {/* 名字优先显示，模型挤在后面截断 */}
+              <span
+                className={cn(
+                  'truncate',
+                  !(v.count && v.count > 1) && 'max-w-[60%] shrink-0',
+                  !agent.enabled && 'text-subtle',
+                )}
+              >
+                {v.count && v.count > 1 ? v.sub : agent.name}
+              </span>
+              {!(v.count && v.count > 1) && v.model && (
+                <span className="min-w-0 shrink truncate font-mono text-[0.65625rem] text-subtle">· {v.model}</span>
+              )}
+            </>
+          ) : (
+            <span className="truncate text-warning">{v.sub}</span>
+          )}
+        </span>
+        {v.count && v.count > 1 ? (
+          <span className="shrink-0 rounded-md bg-sel px-1 text-[0.65625rem] leading-4 font-medium text-muted">
+            +{v.count - 1}
+          </span>
+        ) : (
+          v.main &&
+          agent && (
+            <span className="shrink-0 rounded-md bg-accent-soft px-1 text-[0.65625rem] leading-4 font-medium text-accent">
+              {t('主')}
+            </span>
+          )
+        )}
+      </div>
+      {/* 说明块：行数截断放在没有内边距的元素上，否则第三行会从内边距里露出半截 */}
       {v.note && (
-        <div className="px-3.5 pb-3">
-          <p className="line-clamp-2 text-[0.71875rem] leading-[1.6] text-subtle">{v.note}</p>
+        <div className={cn('rounded-md px-2 py-1', block)}>
+          <p className="line-clamp-2 text-[0.6875rem] leading-normal text-muted">{v.note}</p>
         </div>
       )}
-      {(v.hooks.length > 0 || v.loose || v.confirm) && (
-        <div className="flex flex-wrap gap-1 border-t bg-panel/60 px-3 py-2">
-          {v.loose && (
-            <span className="rounded-md bg-warning/12 px-1.5 py-0.5 text-[0.6875rem] text-warning">{t('未连接')}</span>
-          )}
+      {(v.hooks.length > 0 || v.confirm) && (
+        <div className="flex flex-wrap gap-1">
           {v.hooks.map((h) => (
             <span
               key={h.slot}
               title={t('{slot}：{label}', { slot: HOOK_LABEL[h.slot], label: h.label })}
               className={cn(
-                'inline-flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6875rem]',
-                h.slot === 'review' ? 'bg-accent-soft text-accent' : 'bg-field text-muted ring-1 ring-line ring-inset',
+                'inline-flex h-[1.125rem] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.65625rem]',
+                h.slot === 'review' ? 'bg-accent-soft text-accent' : 'text-subtle',
+                h.slot !== 'review' && block,
               )}
             >
               {h.status && h.status !== 'pending' && <StepIcon status={h.status} className="h-3 w-3" />}
               <span className="shrink-0 font-medium">{HOOK_LABEL[h.slot]}</span>
-              <span className="truncate">{h.label}</span>
+              {h.label && <span className="truncate">{h.label}</span>}
               {h.extra && <span className="shrink-0 opacity-75">{h.extra}</span>}
             </span>
           ))}
           {v.confirm && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-warning/12 px-1.5 py-0.5 text-[0.6875rem] text-warning">
+            <span className="inline-flex h-[1.125rem] items-center gap-1 rounded-md bg-warning/12 px-1.5 text-[0.65625rem] text-warning">
               <UserCheck className="h-3 w-3" />
               {t('等我确认')}
             </span>
@@ -183,8 +217,8 @@ const TermNode = memo(function TermNode({ data, selected }: NodeProps<Node<TermD
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-full border bg-card py-1.5 pr-4 pl-1.5 shadow-card transition-[box-shadow,border-color] hover:border-line-strong hover:shadow-pop',
-        selected && 'node-selected border-accent',
+        'flex items-center gap-2 rounded-full bg-card py-1.5 pr-4 pl-1.5 shadow-card transition-shadow hover:shadow-pop',
+        selected && 'node-selected',
         data.status && data.status !== 'pending' && ring[data.status],
       )}
     >
@@ -267,8 +301,11 @@ const FlowEdge = memo(function FlowEdge({
         <EdgeLabelRenderer>
           <span
             className={cn(
-              'nodrag nopan pointer-events-none absolute rounded-full border bg-card px-1.5 py-px text-[0.6875rem] leading-4 shadow-card',
-              when === 'pass' ? 'border-success/40 text-success' : 'border-danger/40 text-danger',
+              'nodrag nopan pointer-events-none absolute rounded-full px-1.5 py-px text-[0.6875rem] leading-4 font-medium',
+              // 底色要不透明，盖住穿过的连线
+              when === 'pass'
+                ? 'bg-[color-mix(in_oklab,var(--success)_12%,var(--card))] text-success'
+                : 'bg-[color-mix(in_oklab,var(--danger)_10%,var(--card))] text-danger',
             )}
             style={{
               transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
@@ -284,6 +321,16 @@ const FlowEdge = memo(function FlowEdge({
 const edgeTypes = { flow: FlowEdge }
 
 export type EdgeTone = 'idle' | 'active' | 'done'
+
+/** 小地图里的节点和画布同色：完成绿、运行中青，其余灰 */
+const miniColor = (n: Node) => {
+  const d = n.data as Partial<CardData> & Partial<TermData>
+  const st = d.view?.status ?? d.status
+  if (st === 'done') return 'color-mix(in oklab, var(--success) 45%, var(--card))'
+  if (st === 'running') return 'color-mix(in oklab, var(--run) 50%, var(--card))'
+  if (st === 'failed') return 'color-mix(in oklab, var(--danger) 45%, var(--card))'
+  return 'var(--line-strong)'
+}
 
 export function FlowCanvas({
   flow,
@@ -514,7 +561,7 @@ export function FlowCanvas({
         className={cn(!editable && 'read-only')}
       >
         <AutoFit />
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} />
         <Controls showInteractive={false} position="bottom-left" />
         {flow.nodes.length > 4 && (
           <MiniMap
@@ -522,10 +569,11 @@ export function FlowCanvas({
             zoomable
             position="bottom-right"
             ariaLabel={t('小地图')}
-            className="!m-3 hidden overflow-hidden rounded-lg border !bg-card sm:block"
-            style={{ width: 150, height: 96 }}
+            className="!m-4 hidden overflow-hidden rounded-[10px] !bg-card shadow-pop sm:block"
+            style={{ width: 180, height: 110 }}
             maskColor="color-mix(in oklab, var(--bg) 70%, transparent)"
-            nodeColor="var(--line-strong)"
+            nodeColor={miniColor}
+            nodeBorderRadius={3}
             nodeStrokeWidth={0}
           />
         )}

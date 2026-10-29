@@ -152,90 +152,6 @@ function Editor({
   return (
     <div className={cn('flex min-h-0 flex-1 flex-col lg:flex-row', full && 'fixed inset-0 z-30 bg-bg')}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex flex-wrap items-center gap-1.5 border-b bg-bg px-3 py-2 md:px-5">
-          <div role="tablist" aria-label={t('流程')} className="flex min-w-0 flex-wrap items-center gap-1">
-            {w.flows.map((f) => {
-              const on = f.id === flow.id
-              const entry = f.id === entryFlow(w).id
-              return (
-                <button
-                  key={f.id}
-                  role="tab"
-                  aria-selected={on}
-                  onClick={() => switchFlow(f.id)}
-                  className={cn(
-                    'inline-flex h-8 max-w-[200px] cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[0.8125rem] transition-colors',
-                    on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-                  )}
-                >
-                  {entry ? (
-                    <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />
-                  ) : (
-                    <WorkflowIcon className="h-3.5 w-3.5 shrink-0" />
-                  )}
-                  <span className="truncate">{flowLabel(f, w)}</span>
-                  <span className="text-[0.6875rem] text-subtle">{f.nodes.length}</span>
-                </button>
-              )
-            })}
-            <button
-              onClick={addFlow}
-              disabled={w.flows.length >= 20}
-              className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 text-[0.8125rem] text-subtle hover:bg-sel/70 hover:text-fg disabled:opacity-40"
-              title={t('新建子流程，可以挂到节点的开始、验收、结束上')}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {t('子流程')}
-            </button>
-          </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button variant="secondary" size="sm" onClick={() => add('agent')}>
-              <Bot className="h-3.5 w-3.5" />
-              {t('角色节点')}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => add('flow')} title={t('执行另一个流程的节点')}>
-              <WorkflowIcon className="h-3.5 w-3.5" />
-              {t('流程节点')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => {
-                setFlow(autoLayout(flow))
-                fit()
-              }}
-              aria-label={t('自动排列')}
-              title={t('自动排列')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => {
-                setFull(!full)
-                fit()
-              }}
-              aria-label={full ? t('退出全屏') : t('全屏编辑')}
-              title={full ? t('退出全屏（Esc）') : t('全屏编辑')}
-            >
-              {full ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="hidden lg:inline-flex"
-              onClick={() => {
-                setInspector(!inspector)
-                fit()
-              }}
-              aria-label={inspector ? t('收起属性栏') : t('显示属性栏')}
-              title={inspector ? t('收起属性栏') : t('显示属性栏')}
-            >
-              {inspector ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-            </Button>
-          </div>
-        </div>
         <div ref={box} className="relative flex h-[520px] min-h-0 bg-panel lg:h-auto lg:flex-1">
           <FlowCanvas
             key={flow.id}
@@ -261,6 +177,96 @@ function Editor({
             }}
             className="flex-1"
           />
+          {/* 画布上的浮动面板（照设计稿）：左上切换流程，右上加节点和画布操作；容器本身不吃点击，空白处照常拖画布 */}
+          <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-wrap items-start justify-between gap-2 md:inset-x-4 md:top-4">
+            <div
+              role="tablist"
+              aria-label={t('流程')}
+              className="pointer-events-auto flex min-h-10 max-w-full min-w-0 flex-wrap items-center gap-0.5 rounded-[10px] bg-card p-1 shadow-pop"
+            >
+              <WorkflowIcon className="mx-1.5 h-[15px] w-[15px] shrink-0 text-subtle" aria-hidden />
+              {w.flows.map((f) => {
+                const on = f.id === flow.id
+                const entry = f.id === entryFlow(w).id
+                return (
+                  <button
+                    key={f.id}
+                    role="tab"
+                    aria-selected={on}
+                    onClick={() => switchFlow(f.id)}
+                    className={cn(
+                      'inline-flex h-8 max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2.5 text-[0.8125rem] transition-colors',
+                      on ? 'bg-sel font-semibold text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                    )}
+                  >
+                    {entry && <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />}
+                    <span className="truncate">{flowLabel(f, w)}</span>
+                    <span className="font-mono text-[0.6875rem] font-normal text-subtle">{f.nodes.length}</span>
+                  </button>
+                )
+              })}
+              <span aria-hidden className="mx-1 h-5 w-px bg-line" />
+              <button
+                onClick={addFlow}
+                disabled={w.flows.length >= 20}
+                className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-[7px] px-2 text-[0.8125rem] text-muted hover:bg-sel/70 hover:text-fg disabled:opacity-40"
+                title={t('新建子流程，可以挂到节点的开始、验收、结束上')}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {t('子流程')}
+              </button>
+            </div>
+            <div className="pointer-events-auto flex h-10 items-center gap-0.5 rounded-[10px] bg-card p-1 shadow-pop">
+              <Button variant="ghost" size="sm" onClick={() => add('agent')}>
+                <Bot className="h-3.5 w-3.5" />
+                {t('角色节点')}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => add('flow')} title={t('执行另一个流程的节点')}>
+                <WorkflowIcon className="h-3.5 w-3.5" />
+                {t('流程节点')}
+              </Button>
+              <span aria-hidden className="mx-1 h-5 w-px bg-line" />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="h-8 w-8"
+                onClick={() => {
+                  setFlow(autoLayout(flow))
+                  fit()
+                }}
+                aria-label={t('自动排列')}
+                title={t('自动排列')}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="h-8 w-8"
+                onClick={() => {
+                  setFull(!full)
+                  fit()
+                }}
+                aria-label={full ? t('退出全屏') : t('全屏编辑')}
+                title={full ? t('退出全屏（Esc）') : t('全屏编辑')}
+              >
+                {full ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="hidden h-8 w-8 lg:inline-flex"
+                onClick={() => {
+                  setInspector(!inspector)
+                  fit()
+                }}
+                aria-label={inspector ? t('收起属性栏') : t('显示属性栏')}
+                title={inspector ? t('收起属性栏') : t('显示属性栏')}
+              >
+                {inspector ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
           {drop && (
             <div className="absolute inset-0 z-20" onPointerDown={() => setDrop(null)}>
               <div

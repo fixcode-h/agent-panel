@@ -213,7 +213,8 @@ export function ChatComposer({
         'relative border border-line-strong shadow-card transition-[border-color,box-shadow]',
         sm
           ? 'rounded-2xl bg-field focus-within:border-focus/60 dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft'
-          : 'mx-auto max-w-(--content-w) rounded-[20px] bg-card focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
+          : // 组件库「输入框」：白底、一圈细线、圆角 14，平时不浮起阴影，聚焦时才浮起来
+            'mx-auto max-w-(--content-w) rounded-[14px] border-line bg-card shadow-none focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
         drop.over && !dropScope && 'border-accent ring-2 ring-accent/25',
         chips.refOver && 'border-accent ring-2 ring-accent/25',
         className,

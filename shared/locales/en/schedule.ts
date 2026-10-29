@@ -39,10 +39,8 @@ export const EN_SCHEDULE: Record<string, string> = {
 
   // 下次执行时间的文案（shared/schedule.ts）
   今晚: 'tonight',
-  今天: 'today',
   明天: 'tomorrow',
   后天: 'the day after tomorrow',
-  昨天: 'yesterday',
   '{day} {time}': '{day} at {time}',
   已到点: 'due now',
   '不到 1 分钟后': 'in under a minute',
@@ -154,4 +152,18 @@ export const EN_SCHEDULE: Record<string, string> = {
   本周: 'This week',
   下一周: 'Next week',
   '第 {n} 周': 'Week {n}',
+  // 周 / 月 / 列表视图和右侧详情
+  周: 'Week',
+  月: 'Month',
+  月视图: 'Month view',
+  本月: 'This month',
+  '{y} 年 {m} 月': '{m}/{y}',
+  '还有 {n} 条': '+{n} more',
+  示例视图切换: 'Sample view switch',
+  计划详情: 'Plan details',
+  拖动调整右栏宽度: 'Drag to resize the right panel',
+  要做什么: 'What to do',
+  日期: 'Date',
+  接下来: 'Coming up',
+  现在运行一次: 'Run once now',
 }

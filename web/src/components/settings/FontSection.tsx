@@ -120,7 +120,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         </div>
       </Group>
       <Group title={t('字体')}>
-        <Row title={t('英文字体')} desc={t('默认是内置的 Maple Mono NL：不带符号连字，=> 、!= 这些不会合成一个符号。')}>
+        <Row title={t('英文字体')} desc={t('默认是内置的 Inter；喜欢等宽可以换内置的 Maple Mono NL（不带符号连字）。')}>
           <Select
             aria-label={t('英文字体')}
             value={value.uiFont}
@@ -131,6 +131,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
               update({ ...value, uiFont: f, wordSpacing: ws })
             }}
             options={[
+              { value: 'inter', label: t('Inter（内置，默认）') },
               { value: 'maple', label: t('Maple Mono NL（内置）') },
               { value: 'plex', label: t('IBM Plex Sans（内置）') },
               { value: 'system', label: t('系统字体') },

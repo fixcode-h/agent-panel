@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { Loader2, Sparkles, X } from 'lucide-react'
+import { Sparkles, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { addDock, dockSnapshot, dockVisible, subscribeDock, type ChatDockState } from '@/lib/chat-dock'
+import { Spinner, StatusPill, type StatusTone } from './status-pill'
 import { DEFAULT_INSET, clampPos, loadPos, movedEnough, savePos, type Pos } from '@/lib/minimized-chat'
 
 export type { ChatDockState }
@@ -41,6 +42,17 @@ const stateText = (s: ChatDockState) =>
             : s === 'gone'
               ? t('对话已关闭')
               : ''
+
+/** 状态胶囊的颜色：和 AI 分析窗口标题栏、对话状态用同一套（运行青、完成绿、等你琥珀、失败红） */
+const stateTone: Record<ChatDockState, StatusTone> = {
+  running: 'run',
+  needs: 'wait',
+  failed: 'err',
+  done: 'ok',
+  ended: 'idle',
+  gone: 'idle',
+  idle: 'idle',
+}
 
 /**
  * 最小化后的浮条：「AI 处理」「AI 优化」和收起来的对话都用它，形状、层级、动效、状态文字保持一致。
@@ -184,7 +196,7 @@ export function MinimizedChat({
         // pointer-events-auto：弹窗打开时 Radix 会关掉外面区域的鼠标事件，浮条要能点
         // z-[60]：跟另一个窗口的最小化浮条一致，放到所有弹窗之上——进度得一直看得到、点得到
         // portal 到 body：弹窗里可能有 transform / overflow，fixed 会跟着它跑而不是跟着视口
-        'pointer-events-auto group fixed z-[60] flex h-11 touch-none items-center rounded-full border border-line-strong bg-panel text-[0.8125rem] shadow-xl select-none animate-[pop-in_160ms_ease-out]',
+        'pointer-events-auto group fixed z-[60] flex h-11 touch-none items-center rounded-full border border-line-strong bg-bg text-[0.8125rem] shadow-pop select-none animate-[pop-in_160ms_ease-out]',
         dragging ? 'cursor-grabbing' : 'cursor-grab',
       )}
     >
@@ -200,14 +212,19 @@ export function MinimizedChat({
         )}
         style={{ paddingRight: CLOSE_RESERVE }}
       >
-        <span className="relative grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
-          {state === 'running' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+        {/* 图标和 AI 分析窗口标题栏的同一个：深底方块 + 星芒，在跑时换成转圈 */}
+        <span className="relative grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-lg bg-fg text-bg">
+          {state === 'running' ? <Spinner className="h-3 w-3" /> : <Sparkles className="h-3.5 w-3.5" />}
           {unseen && state !== 'running' && (
-            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-accent" />
+            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-bg" />
           )}
         </span>
-        <span className="max-w-[220px] truncate">{label}</span>
-        <span className="text-xs text-subtle">{stateText(state)}</span>
+        <span className="max-w-[220px] truncate font-medium">{label}</span>
+        {stateText(state) && (
+          <StatusPill tone={stateTone[state]} spin={state === 'running'}>
+            {stateText(state)}
+          </StatusPill>
+        )}
       </button>
       {/* 关闭在浮条右上角，鼠标进浮条才显示（触屏、键盘聚焦时也显示）：
           按钮矩形从浮条右上顶角起算（含内缩留白），鼠标放到浮条右上角就能点到；
@@ -226,7 +243,7 @@ export function MinimizedChat({
         }}
       >
         <span
-          className="grid place-items-center rounded-full bg-panel text-subtle shadow-sm ring-1 ring-line-strong transition-colors hover:bg-sel hover:text-fg"
+          className="grid place-items-center rounded-full bg-bg text-subtle shadow-sm ring-1 ring-line-strong transition-colors hover:bg-sel hover:text-fg"
           style={{ width: CLOSE_SIZE, height: CLOSE_SIZE }}
         >
           <X className="h-3 w-3" />

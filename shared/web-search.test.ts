@@ -174,6 +174,19 @@ test('各个搜索源的响应解析：字段名对齐成 title / url / snippet�
   assert.deepEqual(searchProvider('tavily').parse({ results: [{ title: 'D', url: 'https://d.com', content: 'e' }] }), [
     { title: 'D', url: 'https://d.com', snippet: 'e' },
   ])
+  // DeepSeek：摘要按 snippet → summary → content 取第一个非空的
+  assert.deepEqual(
+    searchProvider('deepseek').parse({
+      results: [
+        { title: 'E', url: 'https://e.com', snippet: '', summary: 'sum', content: 'full' },
+        { title: 'F', url: 'https://f.com', content: 'full' },
+      ],
+    }),
+    [
+      { title: 'E', url: 'https://e.com', snippet: 'sum' },
+      { title: 'F', url: 'https://f.com', snippet: 'full' },
+    ],
+  )
   assert.deepEqual(searchProvider('没这个源').parse({ results: [] }), [])
 })
 
@@ -239,8 +252,10 @@ test('抓取文本：startIndex 已经到末尾时说清楚读完了，不说「
 })
 
 test('设置里的联网搜索：没写过用默认源，源名写错回退默认，密钥去掉首尾空白', () => {
-  assert.equal(Settings.parse({}).webSearch.provider, 'degoog')
-  assert.equal(Settings.parse({ webSearch: { provider: '不存在的源' } }).webSearch.provider, 'degoog')
+  // 默认源是 DeepSeek 官方搜索；旧设置里存过的选择（例如 degoog）原样保留
+  assert.equal(Settings.parse({}).webSearch.provider, 'deepseek')
+  assert.equal(Settings.parse({ webSearch: { provider: '不存在的源' } }).webSearch.provider, 'deepseek')
+  assert.equal(Settings.parse({ webSearch: { provider: 'degoog' } }).webSearch.provider, 'degoog')
   const brave = Settings.parse({ webSearch: { provider: 'brave', key: '  sk-xxxx  ' } })
   assert.equal(brave.webSearch.provider, 'brave')
   assert.equal(brave.webSearch.key, 'sk-xxxx')

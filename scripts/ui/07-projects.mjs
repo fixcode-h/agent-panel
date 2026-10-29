@@ -5,7 +5,7 @@
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { runShard, dialogBottomSpaceProblems } from './harness.mjs'
+import { runShard, dialogBottomSpaceProblems, segmentedContrastProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
@@ -81,10 +81,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     assert.deepEqual((await projectRows()).slice(0, 2), ['运营后台', '商城前台'], '刷新后顺序变了')
     await check(p, '侧栏-刷新后顺序', ['运营后台', '商城前台'])
   }
+  // 深色下侧栏的模式切换（Agent / Chat / 设计）选中项要认得出来（用户反馈过「黑暗模式看不清」）
+  await p.evaluate(() => document.documentElement.classList.add('dark'))
+  errors.push(...(await segmentedContrastProblems(p, '侧栏-深色')))
   // 浅色主题
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   await p.goto(base + '#/projects')
   await check(p, '项目-浅色', ['任务', '设置'])
+  errors.push(...(await segmentedContrastProblems(p, '侧栏-浅色')))
   // 浅色主题下再看一眼 Token 浮层：边框、分隔线、速度的颜色都要跟着主题
   {
     await p.goto(base)

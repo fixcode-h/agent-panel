@@ -1,9 +1,10 @@
 // AI 问你的问题：显示在输入框的位置（换掉输入框），一次可以问好几个，全部回答完再一起交回去。
 // 每个问题的选项最后一项都是「自己输入」。任务对话（CLI 的提问）和 UI 设计（AI 问风格等）共用
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronLeft, Loader2, MessageCircleQuestion, PencilLine, X } from 'lucide-react'
+import { Check, ChevronLeft, Loader2, PencilLine, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { Button } from '@/components/ui/button'
 import { Markdown } from '@/components/tasks/Markdown'
 
 /** 问题里的 @名字 只是普通文字时不当成提及高亮 */
@@ -134,21 +135,26 @@ export function QuestionPanel({
         else return
         e.preventDefault()
       }}
+      // 组件库「提问 · AskCard」：停靠在输入框上方，琥珀色浅底（等你回复的状态色）、不描边；
+      // 选项是一行行白底，选中的描一圈前景色
       className={cn(
-        'relative mx-auto flex max-w-(--content-w) flex-col rounded-[20px] border border-accent/45 bg-card shadow-pop outline-none animate-[pop-in_160ms_ease-out]',
+        'relative mx-auto flex max-w-(--content-w) flex-col gap-2 rounded-xl bg-warning/8 p-3 outline-none animate-[pop-in_160ms_ease-out]',
         className,
       )}
     >
-      <div className="flex min-w-0 items-center gap-2 px-4 pt-3 text-xs">
-        <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0 text-accent" />
-        <span className="shrink-0 font-medium text-accent">{label ?? t('需要你回答')}</span>
-        {who && <span className="flex min-w-0 items-center gap-1.5 text-muted">{who}</span>}
+      <div className="flex min-w-0 items-center gap-2 text-[0.8125rem]">
+        <span
+          aria-hidden
+          className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-warning text-[0.625rem] font-bold text-card"
+        >
+          ?
+        </span>
+        <span className="shrink-0 font-semibold text-warning">{label ?? t('需要你回答')}</span>
+        {who && <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">{who}</span>}
         <span className="flex-1" />
         {/* 多选跟着标题行，不跟着正文滚走 */}
         {q.multiSelect && (
-          <span className="shrink-0 rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.6875rem] text-accent">
-            {t('多选')}
-          </span>
+          <span className="shrink-0 rounded-md bg-card px-1.5 py-0.5 text-[0.6875rem] text-subtle">{t('多选')}</span>
         )}
         {n > 1 && (
           <div role="tablist" className="flex min-w-0 gap-1 overflow-x-auto">
@@ -160,8 +166,8 @@ export function QuestionPanel({
                 aria-selected={i === at}
                 onClick={() => setAt(i)}
                 className={cn(
-                  'flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-[0.71875rem] transition-colors',
-                  i === at ? 'bg-sel text-fg' : 'text-subtle hover:bg-sel/60 hover:text-fg',
+                  'flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-[0.71875rem] font-medium transition-colors',
+                  i === at ? 'bg-fg text-bg' : 'bg-card text-muted hover:text-fg',
                 )}
               >
                 {done(answers[i]) ? (
@@ -188,14 +194,14 @@ export function QuestionPanel({
                 setClosing(false)
               }
             }}
-            className="-mr-1.5 grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-50"
+            className="-mr-1 grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-card hover:text-fg disabled:cursor-default disabled:opacity-50"
           >
             {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
           </button>
         )}
       </div>
       {/* 问题正文可能是 AI 写的 Markdown：渲染出来，长了在框里滚，选项和底部按钮始终留着 */}
-      <div className="px-4 pt-2 pb-2.5">
+      <div className="text-[0.8125rem]">
         <Markdown
           text={q.question}
           teamNames={teamNames ?? NO_NAMES}
@@ -203,7 +209,7 @@ export function QuestionPanel({
           className="max-h-[min(50vh,460px)] overflow-y-auto"
         />
       </div>
-      <div className="flex max-h-[min(46vh,420px)] flex-col gap-1 overflow-y-auto px-2.5">
+      <div className="flex max-h-[min(46vh,420px)] flex-col gap-1.5 overflow-y-auto p-px">
         {q.options.map((o, i) => {
           const on = a.picked.includes(i)
           return (
@@ -213,28 +219,29 @@ export function QuestionPanel({
               onClick={() => pick(i)}
               aria-pressed={on}
               className={cn(
-                'flex w-full cursor-pointer items-start gap-3 rounded-xl border px-3 py-2 text-left transition-colors',
-                on ? 'border-accent/60 bg-accent-soft/50' : 'border-transparent hover:bg-sel/70',
+                'flex min-h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg bg-card px-2.5 py-1.5 text-left transition-shadow',
+                on ? 'ring-[1.5px] ring-fg ring-inset' : 'hover:ring-1 hover:ring-line-strong hover:ring-inset',
               )}
             >
-              <Mark n={i + 1} on={on} multi={q.multiSelect} />
+              <Mark on={on} multi={q.multiSelect} />
               <span className="min-w-0 flex-1">
-                <span className="block text-[0.84375rem] font-medium">{o.label}</span>
+                <span className="block text-[0.8125rem] font-medium">{o.label}</span>
                 {o.description && (
-                  <span className="block text-[0.78125rem] leading-snug text-muted">{o.description}</span>
+                  <span className="block text-[0.75rem] leading-snug text-subtle">{o.description}</span>
                 )}
               </span>
+              <Num n={i + 1} />
             </button>
           )
         })}
         {/* 最后一项：自己输入 */}
         <label
           className={cn(
-            'flex w-full cursor-text items-center gap-3 rounded-xl border px-3 py-2 transition-colors',
-            a.own ? 'border-accent/60 bg-accent-soft/50' : 'border-transparent hover:bg-sel/70',
+            'flex min-h-8 w-full cursor-text items-center gap-2.5 rounded-lg px-2.5 py-0.5 transition-shadow',
+            a.own ? 'bg-card ring-[1.5px] ring-fg ring-inset' : 'bg-card/60 hover:bg-card',
           )}
         >
-          <Mark n={q.options.length + 1} on={a.own && !!a.text.trim()} multi={q.multiSelect} icon />
+          <PencilLine className="h-3 w-3 shrink-0 text-subtle" />
           <input
             ref={own}
             value={a.text}
@@ -254,62 +261,75 @@ export function QuestionPanel({
             }}
             placeholder={q.options.length ? t('都不合适？自己输入…') : t('输入你的回答…')}
             aria-label={t('自己输入回答')}
-            className="h-7 min-w-0 flex-1 bg-transparent text-[0.84375rem] outline-none placeholder:text-subtle"
+            className="h-7 min-w-0 flex-1 bg-transparent text-[0.8125rem] outline-none placeholder:text-subtle"
           />
+          <Num n={q.options.length + 1} />
         </label>
       </div>
-      <div className="flex items-center gap-2 px-3 pt-2 pb-3">
-        {onSkip && (
-          <button
-            type="button"
-            onClick={() => void onSkip()}
-            disabled={busy}
-            className="cursor-pointer rounded-md px-2 py-1 text-[0.78125rem] text-subtle hover:bg-sel hover:text-fg"
-          >
-            {skipLabel ?? t('不回答')}
-          </button>
-        )}
+      <div className="flex items-center gap-2">
         <span className="flex-1" />
         {/* 多选：已经选了几个，提示可以接着选 */}
         {q.multiSelect && a.picked.length > 0 && (
           <span className="text-[0.71875rem] text-subtle">{t('已选 {n} 个', { n: a.picked.length })}</span>
         )}
         {at > 0 && (
-          <button
-            type="button"
-            onClick={() => setAt(at - 1)}
-            className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-[0.78125rem] text-muted hover:bg-sel hover:text-fg"
-          >
+          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setAt(at - 1)}>
             <ChevronLeft className="h-3.5 w-3.5" />
             {t('上一题')}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        {/* 跳过和回答都在右下角：次要按钮浅底，只有回答是实心主按钮 */}
+        {onSkip && (
+          <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={() => void onSkip()} disabled={busy}>
+            {skipLabel ?? t('不回答')}
+          </Button>
+        )}
+        <Button
+          size="sm"
+          className="h-7 text-xs"
           onClick={next}
           disabled={!done(a) || (last && !all) || busy}
           title={last && !all ? t('还有问题没回答') : undefined}
-          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-accent px-3.5 text-[0.78125rem] font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {last ? (n > 1 ? t('提交 {n} 个回答', { n }) : t('提交回答')) : t('下一题')}
-        </button>
+        </Button>
       </div>
     </div>
   )
 }
 
-/** 选项前面的编号；选中时变成勾（多选是方框） */
-function Mark({ n, on, multi, icon }: { n: number; on: boolean; multi?: boolean; icon?: boolean }) {
+/** 选项前面的单选圆点（多选是方框）：选中时实心描边，和组件库「提问」一致 */
+function Mark({ on, multi }: { on: boolean; multi?: boolean }) {
+  if (multi)
+    return (
+      <span
+        className={cn(
+          'grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] transition-colors',
+          on ? 'bg-fg text-bg' : 'shadow-[inset_0_0_0_1px_var(--line-strong)]',
+        )}
+      >
+        {on && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+      </span>
+    )
   return (
     <span
       className={cn(
-        'mt-px grid h-5 w-5 shrink-0 place-items-center border font-mono text-[0.6875rem] tabular-nums transition-colors',
-        multi ? 'rounded-[5px]' : 'rounded-full',
-        on ? 'border-accent bg-accent text-white' : 'border-line-strong text-subtle',
+        'h-3 w-3 shrink-0 rounded-full transition-shadow',
+        on ? 'shadow-[inset_0_0_0_4px_var(--fg)]' : 'shadow-[inset_0_0_0_1px_var(--line-strong)]',
       )}
+    />
+  )
+}
+
+/** 选项行尾的数字键：按这个数字直接选它 */
+function Num({ n }: { n: number }) {
+  return (
+    <span
+      aria-hidden
+      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-[4px] bg-sel/70 px-1 font-mono text-[0.625rem] text-subtle tabular-nums"
     >
-      {on ? <Check className="h-3 w-3" strokeWidth={3} /> : icon ? <PencilLine className="h-3 w-3" /> : n}
+      {n}
     </span>
   )
 }

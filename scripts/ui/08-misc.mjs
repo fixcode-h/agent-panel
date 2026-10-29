@@ -357,6 +357,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   {
     const p = await page({ width: 1440, height: 900 })
     await p.goto(base + '#/schedules')
+    // 默认是周视图（照设计稿）：先看日历和右侧详情，再切到「列表」检查按状态分组的卡片
+    await check(p, '计划周视图', ['计划', '本周', '第', '新建计划', '接下来', '运行记录', '现在运行一次'])
+    if (!(await p.getByRole('region', { name: '周视图' }).count())) errors.push('计划周视图：没有「周视图」区域')
+    if (!(await p.getByRole('complementary', { name: '计划详情' }).count()))
+      errors.push('计划周视图：宽屏右侧没有「计划详情」面板')
+    /** 切到列表视图：视图记在本机，重载后还在列表；每次都点一下更稳 */
+    const listView = async () => {
+      await p.getByRole('radiogroup', { name: '视图' }).getByRole('radio', { name: '列表' }).click()
+      await p.getByRole('region', { name: '计划概览' }).or(p.getByText('还没有计划')).first().waitFor({ timeout: 5000 })
+    }
+    await p.getByRole('radiogroup', { name: '视图' }).getByRole('radio', { name: '月' }).click()
+    await check(p, '计划月视图', ['本月', '今日工作'])
+    await listView()
     // 页头一条概览（下一次是谁、什么时候，待执行 / 出过问题计数），下面按四组列卡片
     await check(p, '计划列表', [
       '计划',
@@ -576,6 +589,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     }, KEY)
     // 演示后端把数据缓存在内存里，只改 localStorage 不重载会被它覆盖回去
     await p.reload()
+    await listView()
 
     await check(p, '出过问题', ['出过问题', '错过', '面板当时没在跑', '启动失败', '项目「老项目」已经不存在'])
     // 概览的「待执行」是会再自动执行的计划数：出过问题但没停用的也算，允许和「出过问题」重叠
@@ -638,6 +652,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     for (const width of [375, 1024]) {
       await p.setViewportSize({ width, height: 820 })
       await p.reload()
+      await listView()
       await check(p, `计划-${width} 宽度`, ['出过问题', '错过', '新建计划'])
     }
 

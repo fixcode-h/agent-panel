@@ -676,7 +676,8 @@ await runShard(import.meta.filename, async (api) => {
       if (!text.includes('@package.json')) errors.push(`长按拖入：输入框里没有引用（${JSON.stringify(text)}）`)
       if (await input.locator('[data-chip]').count()) errors.push('长按拖入：引用被做成了附件卡片')
       if (await p.getByRole('dialog').count()) errors.push('长按拖入：拖动把文件也打开了')
-      // 行首的 @ 用等宽字体造形，不能是「图标和文字叠在一起」那个坏字形
+      // 行首的 @ 不能是「图标和文字叠在一起」那个坏字形（Maple Mono 的 @ 宽不到 6 或叠字）。
+      // 默认界面字体换成 Inter 后 @ 是比例字形，14px 下约 13–14px 宽，上限放到 16
       const atW = await p.evaluate(() => {
         const el = document.querySelector('#follow-up')
         const node = el?.firstChild
@@ -686,7 +687,7 @@ await runShard(import.meta.filename, async (api) => {
         r.setEnd(node, 1)
         return r.getBoundingClientRect().width
       })
-      if (atW < 6 || atW > 11) errors.push(`长按拖入：@ 的宽度是 ${atW}，不像正常等宽字形`)
+      if (atW < 6 || atW > 16) errors.push(`长按拖入：@ 的宽度是 ${atW}，不像正常字形`)
       await check(p, '任务-长按拖入引用', ['@package.json'])
       // 短按还是打开文件
       await row.click()

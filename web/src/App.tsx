@@ -51,8 +51,8 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   summary: () => <SummaryPage />,
 }
 
-/** 自己分成几块面板的页面：项目工作区（项目首页 / 任务）和打开的聊天 */
-const splitPage = (r: Route) => r.page === 'projects' || (r.page === 'chat' && !!r.id)
+/** 自己分成几块面板的页面：项目工作区（项目首页 / 任务）、打开的聊天、计划（日历 + 详情两块） */
+const splitPage = (r: Route) => r.page === 'projects' || (r.page === 'chat' && !!r.id) || r.page === 'schedules'
 
 function useTheme() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))

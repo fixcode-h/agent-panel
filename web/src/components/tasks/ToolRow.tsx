@@ -60,6 +60,22 @@ export const toolIcon = {
   other: Wrench,
 }
 
+/**
+ * 工具图标按种类上色（组件库「过程行」）：一眼分得出读、搜、改、派人；
+ * 读文件、命令这类最常见的保持灰色，不然一屏全是彩色。搜索、网页借代码高亮里的函数蓝，不另造颜色
+ */
+export const toolTone: Record<keyof typeof toolIcon, string> = {
+  read: 'text-subtle',
+  edit: 'text-success',
+  run: 'text-subtle',
+  search: 'text-(--hl-func)',
+  web: 'text-(--hl-func)',
+  skill: 'text-peer',
+  agent: 'text-peer',
+  compact: 'text-subtle',
+  other: 'text-subtle',
+}
+
 interface DiffLine {
   kind: 'add' | 'del' | 'ctx' | 'hunk'
   text: string
@@ -267,13 +283,14 @@ export function RowShell({
   // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
   const activate = rowOpen ?? toggle
   return (
-    <div className={cn('min-w-0 overflow-hidden rounded-lg border bg-field', failed && 'border-danger/30', className)}>
+    // 组件库「过程行」：单行、细线圆角、不填底，和用户消息（有底色的气泡）一眼分开
+    <div className={cn('min-w-0 overflow-hidden rounded-lg border', failed && 'border-danger/30', className)}>
       {/* 整行点了是展开收起；标题是单独的按钮，点它只开窗口，不会同时展开。
           子对话行、子任务行把整行都变成打开入口（rowOpen）：动作名、详情和耗时也一起打开 */}
       <div
         onClick={activate}
         className={cn(
-          'group flex w-full min-w-0 items-center px-2.5 py-1.5 font-mono text-xs text-muted',
+          'group flex min-h-[2.125rem] w-full min-w-0 items-center px-2.5 py-1 text-[0.78125rem] text-muted',
           container && '@container',
           // 整行打开的行左边多一个下拉：间距收一点，窄行里状态标签才不会被挤出容器
           rowOpen ? 'gap-1.5' : 'gap-2',
@@ -297,7 +314,7 @@ export function RowShell({
           className="flex shrink-0 items-center gap-2 text-left enabled:cursor-pointer"
         >
           {glyph}
-          {verb && <span className="font-sans font-medium text-fg/85">{verb}</span>}
+          {verb && <span className="font-semibold text-fg">{verb}</span>}
           {badge && (
             <span
               className={cn(
@@ -326,14 +343,14 @@ export function RowShell({
                 // 盖掉会让「已完成：合回原分支、标记完成」这类按名字找的入口定位不到
                 aria-label={rowOpen ? openTip : undefined}
                 className={cn(
-                  'min-w-0 cursor-pointer truncate text-left text-fg/75 decoration-subtle underline-offset-2 hover:text-fg hover:underline',
+                  'min-w-0 cursor-pointer truncate text-left font-mono text-[0.75rem] text-muted decoration-subtle underline-offset-2 hover:text-fg hover:underline',
                   titleClass,
                 )}
               >
                 {title}
               </button>
             ) : (
-              <span className={cn('min-w-0 truncate', titleClass)} title={titleTip}>
+              <span className={cn('min-w-0 truncate font-mono text-[0.75rem]', titleClass)} title={titleTip}>
                 {title}
               </span>
             )
@@ -352,7 +369,9 @@ export function RowShell({
         ) : (
           detail
         )}
-        {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{fmtDuration(ms)}</span>}
+        {ms !== undefined && (
+          <span className="shrink-0 text-[0.71875rem] text-subtle tabular-nums">{fmtDuration(ms)}</span>
+        )}
         {action && (
           <span className="-my-1 flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
             {action}
@@ -517,10 +536,15 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
     tool.running || bg ? (
       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
     ) : (
-      <Icon className={cn('h-3.5 w-3.5 shrink-0', tool.failed ? 'text-danger' : 'text-subtle')} />
+      <Icon
+        className={cn(
+          'h-3.5 w-3.5 shrink-0',
+          tool.failed ? 'text-danger' : view.server ? 'text-subtle' : toolTone[tool.kind],
+        )}
+      />
     )
   const detail = diff ? (
-    <span className="shrink-0">
+    <span className="shrink-0 font-mono text-[0.75rem]">
       {diff[1] && <span className="text-success">{diff[1]}</span>}{' '}
       {diff[2] && <span className="text-danger">{diff[2]}</span>}
     </span>

@@ -7,6 +7,7 @@ const CJK = {
   system: ["'PingFang SC'", "'Microsoft YaHei'", "'Hiragino Sans GB'"],
 }
 const UI = {
+  inter: ["'Inter Variable'", "'Inter'"],
   maple: ["'Maple Mono NL'"],
   plex: ["'IBM Plex Sans'"],
   system: ['-apple-system', "'Segoe UI'"],

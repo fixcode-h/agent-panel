@@ -13,6 +13,7 @@ import { useTaskStream } from '@/lib/task-stream'
 import { fmtDuration, startedRun } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { FlowStrip, type FlowNode } from '@/components/ui/flow-strip'
 import { StepIcon } from './TaskStatusIcon'
 import { StepSection } from './StepSection'
 import { t } from '@shared/i18n'
@@ -59,44 +60,43 @@ function RunCardBase({
   const state = runState(task, run)
   const done = steps.filter((s) => s.status === 'done' || s.status === 'skipped').length
   const time = runDuration(task, run, now)
-  const preview = steps
-    .map((s) => s.title)
-    .filter(Boolean)
-    .slice(0, 4)
-    .join(' · ')
+  // 组件库「计划 · 工作流」：浅底卡片，头一行写工作流和进度，下面一排节点胶囊（完成绿、运行中强调、没开始灰）
+  const nodes: FlowNode[] = steps.map((s) => ({
+    id: s.id,
+    label: s.title || t('未命名'),
+    state:
+      s.status === 'done' ? 'done' : s.status === 'running' ? 'running' : s.status === 'failed' ? 'failed' : 'idle',
+  }))
   return (
     <button
       type="button"
       onClick={onOpen}
       title={t('打开这次运行的对话')}
       data-run={run}
-      className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-card px-4 py-3 text-left shadow-card transition-colors hover:border-line-strong hover:bg-sel/40"
+      className="group flex w-full cursor-pointer flex-col gap-2.5 rounded-xl bg-sel/45 px-3 py-2.5 text-left transition-colors hover:bg-sel/70"
     >
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-field">
+      <span className="flex w-full min-w-0 items-center gap-2 text-[0.8125rem]">
         {state === 'running' ? (
-          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
         ) : state === 'done' ? (
-          <CircleCheck className="h-4 w-4 text-success" />
+          <CircleCheck className="h-3.5 w-3.5 shrink-0 text-success" />
         ) : state === 'failed' ? (
-          <CircleX className="h-4 w-4 text-danger" />
+          <CircleX className="h-3.5 w-3.5 shrink-0 text-danger" />
         ) : (
-          <WorkflowIcon className="h-4 w-4 text-muted" />
+          <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+        )}
+        <span className="shrink-0 font-semibold">{t('运行 {n}', { n: run })}</span>
+        {name && <span className="min-w-0 truncate text-muted">{name}</span>}
+        <span className="flex-1" />
+        {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
+        {steps.length > 0 && (
+          <span className="flex h-6 shrink-0 items-center gap-0.5 rounded-md bg-card px-2 text-xs font-medium text-fg tabular-nums">
+            {t('{done}/{total} 个节点', { done, total: steps.length })}
+            <ChevronRight className="h-3.5 w-3.5 text-subtle transition-transform group-hover:translate-x-0.5" />
+          </span>
         )}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-2 text-[0.8125rem] font-medium">
-          <span className="truncate">{t('运行 {n}', { n: run })}</span>
-          {name && <span className="truncate text-xs font-normal text-subtle">{name}</span>}
-        </span>
-        <span className="flex min-w-0 items-center gap-2 text-xs text-subtle">
-          {steps.length > 0 && (
-            <span className="shrink-0 tabular-nums">{t('{done}/{total} 个节点', { done, total: steps.length })}</span>
-          )}
-          {preview && <span className="min-w-0 truncate">{preview}</span>}
-        </span>
-      </span>
-      {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
-      <ChevronRight className="h-4 w-4 shrink-0 text-subtle transition-transform group-hover:translate-x-0.5" />
+      {nodes.length > 0 && <FlowStrip nodes={nodes} />}
     </button>
   )
 }

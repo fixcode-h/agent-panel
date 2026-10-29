@@ -880,8 +880,9 @@ export const EN_SETTINGS: Record<string, string> = {
   // 字体
   字体: 'Fonts',
   英文字体: 'Latin font',
-  '默认是内置的 Maple Mono NL：不带符号连字，=> 、!= 这些不会合成一个符号。':
-    'Defaults to the bundled Maple Mono NL, the no-ligature build: => and != stay as separate characters.',
+  '默认是内置的 Inter；喜欢等宽可以换内置的 Maple Mono NL（不带符号连字）。':
+    'Defaults to the bundled Inter; for a monospaced look, switch to the bundled Maple Mono NL (no ligatures).',
+  'Inter（内置，默认）': 'Inter (bundled, default)',
   'Maple Mono NL（内置）': 'Maple Mono NL (bundled)',
   'IBM Plex Sans（内置）': 'IBM Plex Sans (bundled)',
   'JetBrains Mono（内置）': 'JetBrains Mono (bundled)',
@@ -1529,8 +1530,13 @@ export const EN_SETTINGS: Record<string, string> = {
   页签: 'Tabs',
   示例页签: 'Sample tabs',
   右栏改成页签工作台: 'Turn the right pane into tabs',
+  修复设置弹窗闪动: 'Fix the settings dialog flicker',
+  '接入 Pi CLI 输出': 'Parse Pi CLI output',
   代码审查: 'Code review',
   开发流程: 'Development flow',
+  需求分析: 'Requirements',
+  方案设计: 'Design plan',
+  开发: 'Build',
   示例右栏页签: 'Sample side tabs',
   本对话改动: 'Changes in this conversation',
   对话部件: 'Conversation parts',

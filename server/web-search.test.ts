@@ -326,7 +326,7 @@ test('Pi 扩展：注册 web_search / web_fetch，参数交给面板校验，错
 // ── DeepSeek 官方搜索 ──────────────────────────────────────
 // 面板显式调官方搜索端点（不是模型侧联网）：断请求形状、结果映射、缺密钥报错和地址覆盖。
 
-test('deepseek：POST 到 /v1/tools/search，带 Bearer 和 count', async () => {
+test('deepseek：POST 到 /v1/tools/search，带 Bearer，请求体只有 query，域名过滤拼成 site:，超长报错', async () => {
   const s = session()
   await withProvider({ provider: 'deepseek', key: 'sk-test-deepseek', endpoint: '' })
   const stub = stubFetch(() => json({ results: [] }))
@@ -341,8 +341,19 @@ test('deepseek：POST 到 /v1/tools/search，带 Bearer 和 count', async () => 
   assert.equal(stub.calls[0]!.url, 'https://api.deepseek.com/v1/tools/search')
   assert.equal(stub.calls[0]!.init.method, 'POST')
   assert.equal((stub.calls[0]!.init.headers as Record<string, string>).authorization, 'Bearer sk-test-deepseek')
-  // 字段名按官方文档；numResults=3 时要 6 条，供域名过滤之后还能剩够数
-  assert.deepEqual(JSON.parse(String(stub.calls[0]!.init.body)), { query: 'deepseek search', count: 6 })
+  // 请求体按官方文档只有 query：条数用接口默认的，面板自己按 numResults 截断
+  assert.deepEqual(JSON.parse(String(stub.calls[0]!.init.body)), { query: 'deepseek search' })
+  // 接口没有域名参数：allowed / blocked 写进 query 的 site: / -site: 语法
+  const send = (body: unknown) => api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify(body) })
+  assert.equal((await send({ query: 'pi', allowed_domains: ['a.com', 'b.org'] })).status, 200)
+  assert.deepEqual(JSON.parse(String(stub.calls[1]!.init.body)), { query: 'pi site:a.com OR site:b.org' })
+  assert.equal((await send({ query: 'pi', blocked_domains: ['a.com', 'b.org'] })).status, 200)
+  assert.deepEqual(JSON.parse(String(stub.calls[2]!.init.body)), { query: 'pi -site:a.com -site:b.org' })
+  // 拼上 site: 之后超过 128 字：400 带上限和实际字数，不发请求（上游会直接拒）
+  const long = await send({ query: 'x'.repeat(120), allowed_domains: ['example.com'] })
+  assert.equal(long.status, 400)
+  assert.match(((await long.json()) as { error: string }).error, /128/)
+  assert.equal(stub.calls.length, 3)
   s.close()
 })
 
@@ -354,6 +365,8 @@ test('deepseek：结果按 title / url / snippet 映射，摘要文本带上来�
       results: [
         { title: '官方文档', url: 'https://api-docs.deepseek.com/guides/search', snippet: '搜索接口说明' },
         { title: '第二条', url: 'https://example.com/b', snippet: 'sb' },
+        // 没有 snippet 时退到 summary：DeepSeek 的结果里摘要字段时有时无
+        { title: '第三条', url: 'https://example.com/c', summary: 'sc', site_name: 'Example', date: '2026-01-01' },
       ],
     }),
   )
@@ -367,13 +380,14 @@ test('deepseek：结果按 title / url / snippet 映射，摘要文本带上来�
   assert.deepEqual(body.results, [
     { title: '官方文档', url: 'https://api-docs.deepseek.com/guides/search', snippet: '搜索接口说明' },
     { title: '第二条', url: 'https://example.com/b', snippet: 'sb' },
+    { title: '第三条', url: 'https://example.com/c', snippet: 'sc' },
   ])
   assert.match(body.text, /https:\/\/api-docs\.deepseek\.com\/guides\/search/)
   assert.match(body.text, /搜索接口说明/)
   s.close()
 })
 
-test('deepseek：没填密钥时 400 明确报错，不发请求也不回退到默认源', async () => {
+test('deepseek：没填密钥时 400 明确报错，不发请求也不回退到 Degoog', async () => {
   const s = session()
   await withProvider({ provider: 'deepseek', key: '   ', endpoint: '' })
   const stub = stubFetch(() => json({ results: [] }))

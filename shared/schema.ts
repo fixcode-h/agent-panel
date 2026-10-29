@@ -2227,7 +2227,12 @@ export const CONTENT_WIDTH = 1000
 export const CONTENT_MAX = 1280
 
 /** 各英文字体默认的空格调整：只有等宽的 Maple Mono 需要收窄 */
-export const WORD_SPACING: Record<'maple' | 'plex' | 'system', number> = { maple: -0.2, plex: 0, system: 0 }
+export const WORD_SPACING: Record<'inter' | 'maple' | 'plex' | 'system', number> = {
+  inter: 0,
+  maple: -0.2,
+  plex: 0,
+  system: 0,
+}
 /** 字体：界面（英文）、中文、代码各选一种，字号、字间距、空格宽度、行高可调 */
 /** 可选的配色：每套在 web/src/index.css 里有浅色、深色两块覆盖（html 上的 data-palette） */
 export const PALETTES = ['claude', 'neutral', 'ocean', 'forest'] as const
@@ -2235,8 +2240,8 @@ export type Palette = (typeof PALETTES)[number]
 export const Appearance = z.object({
   /** 配色：默认 Claude（暖灰底、陶土橙），换配色只换颜色，部件的形状和间距不变 */
   palette: z.enum(PALETTES).catch('claude').default('claude'),
-  /** 界面的英文字体：默认内置的 Maple Mono NL（不带符号连字的版本） */
-  uiFont: z.enum(['maple', 'plex', 'system']).catch('maple').default('maple'),
+  /** 界面的英文字体：默认内置的 Inter（比例字体，比等宽字体读起来松快）；Maple Mono NL 等宽，喜欢等宽的可以换 */
+  uiFont: z.enum(['inter', 'maple', 'plex', 'system']).catch('inter').default('inter'),
   /**
    * 中文字体：默认走系统字体（苹方 / 微软雅黑），不下载任何中文字体文件；
    * 选内置的思源黑体时才加载它的分片（web/src/lib/appearance.ts 的 ensureCjkFont）
@@ -2248,10 +2253,10 @@ export const Appearance = z.object({
   customFont: z.string().trim().max(200).default(''),
   /** 界面正文字号（像素），其他文字按比例跟着缩放 */
   fontSize: z.number().min(12).max(18).catch(14).default(14),
-  /** 字间距（em）：Maple Mono 是等宽字体，英文字母本来就疏，默认收紧一点 */
-  letterSpacing: z.number().min(-0.08).max(0.15).catch(-0.02).default(-0.02),
-  /** 空格的宽度调整（em，CSS word-spacing）：等宽字体的空格有半个汉字宽，中英文混排时显得空，默认收窄。代码里不调 */
-  wordSpacing: z.number().min(-0.4).max(0.3).catch(-0.2).default(-0.2),
+  /** 字间距（em）：默认的 Inter 不用调；换成等宽的 Maple Mono 时英文字母偏疏，可以收紧一点 */
+  letterSpacing: z.number().min(-0.08).max(0.15).catch(0).default(0),
+  /** 空格的宽度调整（em，CSS word-spacing）：等宽字体的空格有半个汉字宽，中英文混排时显得空，可以收窄（见 WORD_SPACING）。代码里不调 */
+  wordSpacing: z.number().min(-0.4).max(0.3).catch(0).default(0),
   /** 对话和文档正文的行高 */
   lineHeight: z.number().min(1.3).max(2.2).catch(1.75).default(1.75),
 })

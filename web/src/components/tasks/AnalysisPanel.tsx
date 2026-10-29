@@ -3,7 +3,7 @@ import type { Project, Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import type { ReportKind } from '@/lib/analysis-report'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { LessonReviewReport } from '@/components/projects/LessonReview'
 import { ProjectInitReport } from '@/components/projects/ProjectInitReport'
 import { EvolutionReport } from './Evolution'
@@ -47,25 +47,27 @@ export function AnalysisPanel({
   const first = task.messages.find((m) => m.role === 'user')?.text ?? ''
   return (
     <div className={cn('flex min-h-0 w-full flex-1 flex-col bg-rail', className)} data-analysis-panel={kind}>
-      <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-3">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-          <Icon className="h-3.5 w-3.5" />
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[0.8125rem] font-semibold">{k.title()}</span>
-          <span className="truncate text-[0.6875rem] text-subtle">{k.desc()}</span>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('收起功能面板')}
-          title={t('收起功能面板')}
-          onClick={onClose}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </header>
+      {/* 顶上是和文件栏同一套页签条（组件库 TabBar）：报告只有一种，页签就一个，收起按钮在右端 */}
+      <TabBar
+        label={t('功能面板')}
+        trailing={
+          <button
+            type="button"
+            aria-label={t('收起功能面板')}
+            title={t('收起功能面板')}
+            onClick={onClose}
+            className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        }
+      >
+        <TabItem active onSelect={() => {}} icon={<Icon className="h-3.5 w-3.5" />}>
+          {k.title()}
+        </TabItem>
+      </TabBar>
       <div className="min-h-0 flex-1 overflow-y-auto">
+        <p className="px-4 pt-3 text-[0.75rem] text-subtle">{k.desc()}</p>
         {kind === 'run' ? (
           <EvolutionReport task={task} project={project} text={text} onTask={onTask} />
         ) : kind === 'lessons' ? (

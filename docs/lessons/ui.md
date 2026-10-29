@@ -46,9 +46,3 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui
 - 规则（重渲染）：输入框用 `draftKey` 自管草稿（`ChatComposer` 的 `useDraft`），打字只重渲染输入框；消息列表按 `memo` 比，`slot` 用签名 `slotKey` 比，签名要含 slot 的全部输入（如 `runningSig`，漏了会上下两段各列一遍子对话）；`Intl` 实例复用。
 - 起因：用户反馈实时输出时打字卡、输入框失焦；实测 `Intl` 每次新建占 109ms/3s，`slot` 的 memo 从未命中。
 - 防线：`scripts/ui-check.mjs`（推送期间输入框不重挂载、不丢焦点；行内图片卡片上传后还能删除）。
-
-## 吸顶元素要贴住滚动区顶边，不能留缝
-
-- 规则：`sticky top-0` 吸附线是按滚动区的内边距算的：滚动区有 `pt-*` / `py-*` 时，吸住的标题上方会留一条和内边距一样高的缝，滚过去的内容从缝里露出来。吸顶元素要么放在不带上内边距的滚动区里，要么写成 `-top-<n>` 加 `-mt-<n>` 并把内边距补回自己的 `pt`，`n` 等于滚动区的上内边距。
-- 起因：设置左栏（`py-3`）滚到底时，「设置」标题上方露出半行「快捷键」。
-- 防线：`scripts/ui/harness.mjs` 的 `stickyLeakProblems`（`05-settings` 矮窗口下检查）；新的吸顶区域在对应分片里也调一次。

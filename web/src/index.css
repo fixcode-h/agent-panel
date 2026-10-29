@@ -24,8 +24,8 @@
   --sel: #ebe8df;
   --sel-line: #d5d1c4;
   --content-w: 1000px;
-  /* 默认字体：内置的 Maple Mono NL（无连字）配系统中文（苹方 / 微软雅黑）；思源黑体按需加载，见 fonts-cjk.css */
-  --app-sans: 'Maple Mono NL', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  /* 默认字体：内置的 Inter 配系统中文（苹方 / 微软雅黑）；思源黑体按需加载，见 fonts-cjk.css */
+  --app-sans: 'Inter Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --app-mono:
     'Maple Mono NL', 'JetBrains Mono Variable', 'PingFang SC', 'Microsoft YaHei', ui-monospace, Consolas, monospace;
   --accent: #c6613f;
@@ -279,6 +279,26 @@ body,
   @media (width >= 48rem) {
     border-radius: 0.75rem;
     box-shadow: var(--panel-shadow);
+  }
+}
+/*
+ * 分段切换（模式切换、Segmented）的轨道和选中块：浅色下轨道是一层灰、选中块是白卡片；
+ * 深色下 card 和 sel 只差几个色阶，选中块几乎认不出来，所以轨道往下压一层黑、选中块往上提亮，
+ * 所有配色都按同一个比例算，不用每套配色各写一份
+ */
+@utility seg-track {
+  background-color: color-mix(in oklab, var(--sel) 70%, transparent);
+  :where(.dark) & {
+    background-color: color-mix(in oklab, var(--rail) 55%, black);
+  }
+}
+@utility seg-thumb {
+  background-color: var(--card);
+  color: var(--fg);
+  box-shadow: var(--shadow-card, 0 1px 2px rgb(0 0 0 / 0.06));
+  :where(.dark) & {
+    background-color: color-mix(in oklab, var(--card) 82%, white);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
   }
 }
 /* 放进 base 层，组件上的工具类（边框色、outline）才能覆盖它们 */
@@ -737,7 +757,7 @@ body,
 .react-flow__edge:focus .react-flow__edge-path {
   stroke-width: 2.25;
 }
-/* 流程图节点：选中时主题色柔光；执行中光晕缓慢呼吸 */
+/* 流程图节点：选中时主题色柔光；执行中照设计稿用运行色（青）描框，外圈浅青光晕缓慢呼吸 */
 .node-selected {
   box-shadow:
     0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent),
@@ -750,19 +770,22 @@ body,
   0%,
   100% {
     box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent),
-      0 0 0 0 transparent;
+      0 0 0 1.5px var(--run),
+      0 0 0 4px var(--run-soft);
   }
   50% {
     box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--accent) 45%, transparent),
-      0 0 22px 2px color-mix(in oklab, var(--accent) 22%, transparent);
+      0 0 0 1.5px var(--run),
+      0 0 0 6px var(--run-soft),
+      0 0 22px 2px color-mix(in oklab, var(--run) 18%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .node-running {
     animation: none;
-    box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent);
+    box-shadow:
+      0 0 0 1.5px var(--run),
+      0 0 0 4px var(--run-soft);
   }
 }
 /* 选中多个节点后不画外框，只高亮节点本身；外框仍在（透明），按住拖动可以整体移动 */
@@ -787,9 +810,19 @@ body,
   cursor: grabbing;
 }
 .react-flow__controls {
+  /* 左下浮动的缩放控件：和画布上其他浮动面板一样，白底圆角 + 浮起阴影（阴影自带一圈细线） */
+  margin: 16px;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid var(--line);
+}
+.react-flow__controls-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.react-flow__controls-button svg {
+  max-width: 13px;
+  max-height: 13px;
 }
 
 /* 「正在思考」文字上的流光 */

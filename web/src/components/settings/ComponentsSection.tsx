@@ -1,11 +1,27 @@
 import { useState } from 'react'
-import { FileText, ImageIcon, MessageSquare, Pencil, Search, Sparkles, Terminal, Workflow } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Folder,
+  FolderOpen,
+  ImageIcon,
+  MessageSquare,
+  Pencil,
+  Plus,
+  Search,
+  Sparkles,
+  Terminal,
+  Workflow,
+} from 'lucide-react'
 import { t } from '@shared/i18n'
+import { cn } from '@/lib/utils'
 import { Badge, StatusDot, UnreadDot } from '@/components/ui/badge'
 import { BUTTON_SIZES, BUTTON_VARIANTS, Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ContextRing } from '@/components/ui/context-ring'
 import { EmptyPanel } from '@/components/ui/empty-panel'
+import { FlowStrip } from '@/components/ui/flow-strip'
 import { InlineChip } from '@/components/ui/inline-chip'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
@@ -14,6 +30,20 @@ import { Segmented } from '@/components/ui/segmented'
 import { STATUS_TONES, StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { Switch } from '@/components/ui/switch'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
+import {
+  ModeTabs,
+  NAV_ROW,
+  NavRow,
+  ProjectRunning,
+  SIDEBAR_BLOCK_ROW_OFF,
+  SIDEBAR_BLOCK_ROW_ON,
+  SIDEBAR_GROUP_LABEL,
+  SIDEBAR_ROW_OFF,
+  SIDEBAR_ROW_ON,
+  SidebarCount,
+  SidebarTaskBlock,
+  TaskRowStatus,
+} from '@/components/ui/sidebar'
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 
@@ -142,6 +172,18 @@ export function ComponentsSection() {
               { id: 'c', label: t('自带 Skill') },
             ]}
           />
+          {/* sm：页头工具条里的视图切换（计划页「周 / 月 / 列表」） */}
+          <Segmented
+            size="sm"
+            label={t('示例视图切换')}
+            value={seg}
+            onChange={setSeg}
+            options={[
+              { id: 'a', label: t('周') },
+              { id: 'b', label: t('月') },
+              { id: 'c', label: t('列表') },
+            ]}
+          />
         </Specimen>
       </Group>
       <Group title={t('页签')}>
@@ -257,6 +299,68 @@ export function ComponentsSection() {
             {t('，用')}
             <InlineChip icon={<Sparkles className="h-3.5 w-3.5 text-peer" />} label="code-review" status="Skill" />
           </p>
+        </Specimen>
+        <Specimen name="FlowStrip">
+          {/* 工作流节点条：完成绿、运行中强调、没开始灰，节点之间一小段横线 */}
+          <FlowStrip
+            nodes={[
+              { id: 'a', label: t('需求分析'), state: 'done' },
+              { id: 'b', label: t('方案设计'), state: 'done' },
+              { id: 'c', label: t('开发'), state: 'running' },
+              { id: 'd', label: t('审查'), state: 'idle' },
+              { id: 'e', label: t('合并'), state: 'idle' },
+            ]}
+          />
+        </Specimen>
+      </Group>
+      <Group title={t('侧栏')}>
+        <Specimen name="ModeTabs · NavRow · ProjectRow · TaskRow">
+          {/* 侧栏贴着底色画：项目 → 对话两层，选中只有浅底，任务块里选中是更亮的卡片底，行尾一个状态胶囊 */}
+          <div className="flex w-64 flex-col gap-0.5 rounded-lg bg-rail px-2 py-2.5">
+            <ModeTabs
+              label={t('模式')}
+              modes={[
+                { id: 'agent', name: 'Agent', on: true },
+                { id: 'chat', name: 'Chat', on: false },
+                { id: 'design', name: t('设计'), on: false },
+              ]}
+              onPick={() => {}}
+              className="mx-0.5 mb-2"
+            />
+            <NavRow
+              icon={<Plus className="h-4 w-4" strokeWidth={1.8} />}
+              label={t('新建任务')}
+              trailing={<Kbd>⌘⇧O</Kbd>}
+            />
+            <NavRow icon={<Workflow className="h-4 w-4" strokeWidth={1.8} />} label={t('工作流')} on />
+            <p className={cn('px-[9px] pt-2.5 pb-1', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
+            <div className={cn(NAV_ROW, SIDEBAR_ROW_ON, 'gap-2 pl-1')}>
+              <ChevronDown className="h-[13px] w-[13px] text-subtle" strokeWidth={2} />
+              <FolderOpen className="h-[15px] w-[15px] text-muted" strokeWidth={1.8} />
+              <span className="min-w-0 flex-1 truncate font-medium">agent-panel</span>
+              <ProjectRunning n={1} />
+            </div>
+            <SidebarTaskBlock>
+              <div className={cn(NAV_ROW, SIDEBAR_BLOCK_ROW_ON, 'gap-2 px-2.5 text-[0.8125rem] font-medium')}>
+                <span className="min-w-0 flex-1 truncate">{t('右栏改成页签工作台')}</span>
+                <TaskRowStatus kids={8} running />
+              </div>
+              <div className={cn(NAV_ROW, SIDEBAR_BLOCK_ROW_OFF, 'gap-2 px-2.5 text-[0.8125rem]')}>
+                <span className="min-w-0 flex-1 truncate">{t('修复设置弹窗闪动')}</span>
+                <TaskRowStatus unread />
+              </div>
+              <div className={cn(NAV_ROW, SIDEBAR_BLOCK_ROW_OFF, 'gap-2 px-2.5 text-[0.8125rem]')}>
+                <span className="min-w-0 flex-1 truncate">{t('接入 Pi CLI 输出')}</span>
+                <TaskRowStatus needs />
+              </div>
+            </SidebarTaskBlock>
+            <div className={cn(NAV_ROW, SIDEBAR_ROW_OFF, 'gap-2 pl-1 text-fg')}>
+              <ChevronRight className="h-[13px] w-[13px] text-subtle" strokeWidth={2} />
+              <Folder className="h-[15px] w-[15px] text-muted" strokeWidth={1.8} />
+              <span className="min-w-0 flex-1 truncate font-medium">docs-site</span>
+              <SidebarCount n={2} />
+            </div>
+          </div>
         </Specimen>
       </Group>
       <Group title={t('空状态')}>

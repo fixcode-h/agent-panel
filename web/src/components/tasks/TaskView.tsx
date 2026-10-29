@@ -1606,9 +1606,9 @@ export function TaskView({
       {traceHidden && <LoadTracePill steps={trace.steps} />}
       {task.plans?.length > 0 && (
         <div className="shrink-0 px-3 md:px-6">
-          {/* 宽度跟着内容走：计划这一行通常就一小段字，撑满会在右边留下一片空框 */}
+          {/* 计划条撑满输入框宽度（组件库「计划 · PlanBar」）：浅底一整条，和输入框左右对齐 */}
           <div className="mx-auto max-w-(--content-w)">
-            <div data-status-row="plan" className={cn(plainRow, 'mb-1 w-fit max-w-full flex-nowrap')}>
+            <div data-status-row="plan" className="mb-1.5 flex min-w-0 flex-nowrap">
               <PlanButton task={task} children={children} />
             </div>
           </div>
@@ -2463,20 +2463,21 @@ function RunChecklist({ task, run, onOpen }: { task: Task; run: number; onOpen: 
     </div>
   )
   return (
-    <div className="overflow-hidden rounded-xl border border-line-strong bg-card shadow-card">
+    // 和工作流运行卡片同一层浅底（组件库「计划 · 工作流」），不描边、不加阴影
+    <div className="overflow-hidden rounded-xl bg-sel/45">
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full cursor-pointer items-center gap-2 border-b px-3 py-2 text-left transition-colors hover:bg-sel/40"
+        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-sel/60"
       >
         <TaskStatusIcon status={status} working={working} />
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold">
           {rec?.workflowName || task.workflowName || t('工作流')}
         </span>
         <span className="shrink-0 text-xs text-subtle">{t('第 {n} 次运行', { n: run })}</span>
         <ChevronRight className="h-3.5 w-3.5 shrink-0 text-subtle" />
       </button>
-      <div className="flex flex-col divide-y divide-line">
+      <div className="flex flex-col pb-1">
         {roots.map((s) => (
           <div key={s.id}>
             {row(s)}
@@ -2632,7 +2633,7 @@ function ChildrenBar({
                 type="button"
                 onClick={() => onOpen(asking[0].id)}
                 title={asking.map((c) => c.title).join('\n')}
-                className="flex h-7 max-w-64 min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/15"
+                className="flex h-7 max-w-64 min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg bg-warning/12 px-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/18"
               >
                 <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0" />
                 <span className="min-w-0 truncate">
@@ -2666,8 +2667,9 @@ function ChildrenBar({
                       onClick={() => onOpen(c.id)}
                       title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}${gone ? ` · ${gone}` : ''}`}
                       className={cn(
-                        'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg bg-card shadow-card px-2.5 text-xs transition-colors hover:bg-sel',
-                        c.id === openChild ? 'border-line-strong' : 'border-line',
+                        // 不描边、不加阴影：和计划条同一层浅底，正在看的那个深一档
+                        'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg px-2.5 text-xs transition-colors hover:bg-sel',
+                        c.id === openChild ? 'bg-sel' : 'bg-sel/45',
                       )}
                     >
                       {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
