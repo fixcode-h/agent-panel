@@ -29,22 +29,24 @@ npm run dev     # 前端 :5173 + 后端 :8787
 
 ## 本地检查
 
-提交前按 [AGENTS.md「常用命令」](AGENTS.md#常用命令)在本地跑：
+提交前在本地只跑受影响的部分，全量交给 CI（推到 `dev` 和开 PR 时都会跑全量单测、端到端测试和界面检查）：
 
 ```bash
-npm run typecheck   # tsc --noEmit + 漏翻检查（scripts/i18n-check.mjs）
-npm run lint        # oxlint + Prettier 格式检查 + 规则检查 + 密钥扫描
-npm run test:unit   # 单元测试和 CLI 输出解析测试
-npm run test:e2e    # 端到端测试（用 scripts/fake-cli 模拟各个 CLI）
+npm run typecheck      # tsc --noEmit + 漏翻检查（scripts/i18n-check.mjs）
+npm run lint           # oxlint + Prettier 格式检查 + 规则检查 + 密钥扫描
+npm run test:affected  # 只跑受改动影响的单测；动到高风险区或影响面过宽时自动改跑全量
 ```
+
+- `test:affected` 还会列出受影响的界面检查分片、以及是否必须跑端到端测试，列出来的照跑；没列出的不用主动跑全量。
+- 全量命令：`npm run test:unit`（单测）、`npm run test:e2e`（端到端，用 scripts/fake-cli 模拟各个 CLI）、`node scripts/ui-check.mjs`（界面检查）。CI 失败后用 `--failed` 只复测失败的部分。
 
 - **端到端测试在 Windows 上必须进 WSL（Ubuntu 24.04）跑**，不要在 Windows 本机的 PowerShell / cmd 里跑：
   ```bash
   wsl.exe -d Ubuntu-24.04 -- bash -lc "npm run test:e2e"
   ```
-- 动了执行流程、CLI 参数或输出解析、内置工作流、项目与任务流程时，跑 `test:e2e`；只改文档和样式时跑前三条即可。
+- 只改文档和样式时跑前两条即可。
 - 格式问题用 `npx prettier --write <文件>` 改掉，不要留给下一个提交。
-- 改了界面：`npm run build` 确认正式版能构建；改了 `web/` 下的界面时还要跑 `npx vite build --mode demo && node scripts/ui-check.mjs`（需要 Playwright chromium，截图在 `ui-shots/`）。
+- 改了界面：`npm run build` 确认正式版能构建；`test:affected` 列出的界面分片用 `npx vite build --mode demo && node scripts/ui-check.mjs <分片>` 跑（需要 Playwright chromium，截图在 `ui-shots/`）。
 
 ## 代码约定
 
@@ -81,7 +83,7 @@ npm run test:e2e    # 端到端测试（用 scripts/fake-cli 模拟各个 CLI）
 ## 测试与踩坑记录
 
 - 修 Bug 或加功能时补上能复现问题的测试；一份改动至少要有覆盖它的单元测试或端到端用例。
-- 修完跑一遍 `npm run test:unit`，动了执行流程再跑 `test:e2e`。
+- 修完跑 `npm run test:affected`（它判定要跑 e2e 时再跑 `test:e2e`），全量交给 CI。
 - **踩过坑或被评审纠正后，在同一个提交里把教训写进 [docs/lessons/](docs/lessons/README.md)**：写成下次能直接照做的通用规则，附上起因的提交号。能写成检查的，加进 `scripts/rules-check.mjs` 或测试里，文档只留一行指针。动手前想好要改哪些文件，先跑 `node scripts/lessons.mjs <文件...>` 看有没有相关教训。
 
 ## Pull Request

@@ -74,8 +74,10 @@ npx prettier --write <文件>  # 格式化（配置在 .prettierrc.json）
 以前反复返工的几件事，提交前过一遍：
 
 1. `git status --short` 看清楚要提交的文件：新文件都 add 了，测试或 CLI 留下的临时输出没混进来。
-2. 静态检查通过：`npm run typecheck && npm run lint && npm run test:unit`（格式问题 `npx prettier --write` 改掉，别留给下一个提交）。
-3. 改了提示词或文案，搜一下测试里有没有断言原句；动了执行流程，跑 `npm run test:e2e`。
+2. 本地只跑受影响的测试，全量交给 CI（推到 `dev` 每次都会跑全量单测、e2e 和界面检查）：`npm run typecheck && npm run lint && npm run test:affected`（改动已提交时加 `-- --since <开工时的提交>`）。格式问题 `npx prettier --write` 改掉，别留给下一个提交。
+   - `test:affected` 按 import 依赖算影响面：动到高风险区或影响面过宽时它自己会改跑全量单测，按它的结论来，不自己缩回增量；它列出的界面分片和「必须跑 e2e」也要照跑（界面分片先 `npx vite build --mode demo`）。
+   - 不主动跑全量 `test:unit` / `test:e2e` / `ui-check`；推送后 CI 失败时，用 `npm run test:failed`、`npm run test:e2e -- --failed`、`node scripts/ui-check.mjs <分片>` 只复测失败的部分。
+3. 改了提示词或文案，搜一下测试里有没有断言原句。
 4. `node scripts/lessons.mjs` 对照这次改动的相关教训。
 
 ## 被纠正之后
