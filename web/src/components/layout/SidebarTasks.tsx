@@ -31,12 +31,12 @@ import {
 import { t } from '@shared/i18n'
 import { askedAt, byAskedAt, taskBusy, taskDoneDot, taskState } from '@shared/task'
 import {
-  SIDEBAR_BLOCK_ROW_OFF,
-  SIDEBAR_BLOCK_ROW_ON,
   SIDEBAR_GROUP_LABEL,
   SIDEBAR_ROW_OFF,
   SIDEBAR_ROW_ON,
+  SidebarTaskRowBody,
   TaskRowStatus,
+  sidebarTaskRowClass,
 } from '@/components/ui/sidebar'
 import { UnreadDot } from '@/components/ui/badge'
 import { IconButton } from '@/components/ui/icon-button'
@@ -136,15 +136,7 @@ export function TaskRow({
                     active ? (plain ? SIDEBAR_CHAT_ON : SIDEBAR_ROW_ON) : SIDEBAR_ROW_OFF,
                     className,
                   )
-                : cn(
-                    'group/row flex h-8 w-full cursor-pointer items-center gap-2 rounded-[7px] border text-left text-[0.8125rem] transition-colors',
-                    active
-                      ? cn(inBlock ? SIDEBAR_BLOCK_ROW_ON : SIDEBAR_ROW_ON, 'font-medium')
-                      : inBlock
-                        ? SIDEBAR_BLOCK_ROW_OFF
-                        : SIDEBAR_ROW_OFF,
-                    className,
-                  )
+                : cn(sidebarTaskRowClass(active, !!inBlock), className)
             }
           >
             {/* Chat 列表（plain）的行由 Chat 页那边定；项目列表和搜索结果是组件库的 TaskRow：行尾一个状态胶囊 */}
@@ -203,20 +195,13 @@ export function TaskRow({
                 </span>
               </>
             ) : (
-              <>
-                {/* 内容整体右缩一点，标题文字不至于一直顶到右边的状态上。缩进不能写进行上的 pl-*：
-                行样式后跟调用方传的 px-*，cn 走 twMerge 会把它覆盖掉。放在行内这一层，
-                选中 / hover 的背景（画在行上）仍然铺满整行 */}
-                <span className="flex min-w-0 flex-1 items-center gap-2 pl-[3px]">
-                  {/* 只给工作流画图标：普通对话占大多数，每行都画只会和行尾状态抢眼（组件库的任务行不带图标） */}
-                  {task.mode === 'workflow' && (
-                    <Workflow
-                      aria-label={t('工作流')}
-                      className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-muted' : 'text-subtle')}
-                    />
-                  )}
-                  {analysis && <AnalysisMark kind={task.analysis} />}
-                  {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
+              // 项目列表和搜索结果是组件库的 TaskRow：行尾一个状态胶囊，没有状态时是时间
+              <SidebarTaskRowBody
+                workflow={task.mode === 'workflow'}
+                active={active}
+                lead={analysis && <AnalysisMark kind={task.analysis} />}
+                title={
+                  // 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上
                   <span
                     title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
                     className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
@@ -224,8 +209,9 @@ export function TaskRow({
                   >
                     {task.title}
                   </span>
-                  {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
-                  {/* 行尾只放一个状态（等你回复 / N 子对话 / 执行中 / 失败 / 未读点），和 StatusPill 同一套颜色 */}
+                }
+                hint={hint}
+                status={
                   <TaskRowStatus
                     needs={attention === 'ask'}
                     kids={busy ? (task.childrenWorking ?? 0) : 0}
@@ -233,19 +219,9 @@ export function TaskRow({
                     failed={attention === 'failed'}
                     unread={unreadDot}
                   />
-                  {/* 没有状态时才显示时间；时间格自己留一段左间距，标题截断后和时间之间也有明显间隔 */}
-                  {!attention && !unreadDot && (
-                    <span
-                      className={cn(
-                        'shrink-0 pl-1.5 text-[0.6875rem] tabular-nums transition-colors',
-                        active ? 'text-muted' : 'text-subtle group-hover/row:text-muted',
-                      )}
-                    >
-                      {shortTime(askedAt(task), timeOnly)}
-                    </span>
-                  )}
-                </span>
-              </>
+                }
+                time={!attention && !unreadDot ? shortTime(askedAt(task), timeOnly) : undefined}
+              />
             )}
           </button>
         </ContextMenuTrigger>
