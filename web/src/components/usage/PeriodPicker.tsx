@@ -144,11 +144,11 @@ export function PeriodPicker({
                   aria-pressed={picked}
                   onClick={() => pick(day)}
                   className={cn(
-                    'relative grid h-8 cursor-pointer place-items-center rounded-lg text-[0.78125rem] tabular-nums transition-colors',
+                    'relative grid h-8 cursor-pointer place-items-center rounded-lg text-[0.75rem] tabular-nums transition-colors',
                     !inMonth && 'opacity-40',
                     picked ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
                     isToday && !picked && 'ring-1 ring-accent/60',
-                    grain === 'day' && picked && 'bg-accent text-white hover:bg-accent',
+                    grain === 'day' && picked && 'bg-accent text-on-accent hover:bg-accent',
                     off && 'cursor-not-allowed opacity-25',
                   )}
                 >

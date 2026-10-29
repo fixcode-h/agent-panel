@@ -95,7 +95,7 @@ export function ImagesPanel({
                 onClick={() => setFilter(f.id)}
                 aria-pressed={filter === f.id}
                 className={cn(
-                  'h-6 cursor-pointer rounded-md px-2 text-[0.71875rem]',
+                  'h-6 cursor-pointer rounded-md px-2 text-[0.6875rem]',
                   filter === f.id ? 'bg-sel font-medium text-fg' : 'text-subtle hover:text-fg',
                   f.id === 'failed' && f.n > 0 && filter !== f.id && 'text-danger',
                 )}
@@ -240,7 +240,7 @@ export function ImageDetails({
       <div className="flex flex-wrap items-center gap-1 border-b px-3 py-2">
         {users.length ? (
           <>
-            <span className="mr-1 text-[0.71875rem] text-subtle">{t('用在')}</span>
+            <span className="mr-1 text-[0.6875rem] text-subtle">{t('用在')}</span>
             {users.map((u) => (
               <button
                 key={u.id}
@@ -255,7 +255,7 @@ export function ImageDetails({
           </>
         ) : (
           <>
-            <span className="flex-1 text-[0.71875rem] text-warning">{t('设计里还没用到这张图')}</span>
+            <span className="flex-1 text-[0.6875rem] text-warning">{t('设计里还没用到这张图')}</span>
             {candidates.length > 0 && (
               <Select
                 aria-label={t('用到控件上')}
@@ -272,7 +272,7 @@ export function ImageDetails({
                     group: c.target || t('主界面'),
                   })),
                 ]}
-                className="h-6 w-auto max-w-[180px] rounded-md px-2 text-[0.71875rem]"
+                className="h-6 w-auto max-w-[180px] rounded-md px-2 text-[0.6875rem]"
               />
             )}
           </>
@@ -280,10 +280,10 @@ export function ImageDetails({
       </div>
       {image.status === 'failed' && image.error && (
         <div className="mx-3 mt-2 flex flex-col items-start gap-1.5 rounded-md bg-danger/10 px-2 py-1.5">
-          <p className="text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-danger">{image.error}</p>
+          <p className="text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-danger">{image.error}</p>
           <AiFixButton
             variant="ghost"
-            className="h-6 px-1.5 text-[0.71875rem]"
+            className="h-6 px-1.5 text-[0.6875rem]"
             issue={{
               title: t('生成图片失败：{name}', { name: image.name }),
               error: image.error,
@@ -332,7 +332,7 @@ export function ImageDetails({
           />
         </div>
         {image.variants.length > 0 && (
-          <p className="px-3 pt-2 text-[0.71875rem] leading-relaxed text-subtle">
+          <p className="px-3 pt-2 text-[0.6875rem] leading-relaxed text-subtle">
             {marks.length ? t('图上有 {n} 处标记，', { n: marks.length }) : ''}
             <Button variant="link" onClick={onPreview} className="inline">
               {t('在大图上标记要改的地方')}

@@ -48,7 +48,7 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
         <div className="flex items-center gap-2.5 rounded-lg bg-accent-soft p-2">
           <AgentAvatar icon={main.icon} cli={main.cli} size="sm" dim={!main.enabled} />
           <span className="flex-1 truncate text-[0.8125rem] font-medium">{main.name}</span>
-          <Crown className="h-3.5 w-3.5 text-accent" />
+          <Crown className="h-3.5 w-3.5 text-accent-text" />
         </div>
       )}
       {subs.length > 0 && (

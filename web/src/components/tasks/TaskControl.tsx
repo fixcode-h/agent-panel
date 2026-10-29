@@ -54,7 +54,7 @@ export function TaskControlButton({ task, className }: { task: Task; className?:
         className,
       )}
     >
-      <Icon className={cn('h-3.5 w-3.5', busy && 'animate-spin', !busy && action === 'resume' && 'text-accent')} />
+      <Icon className={cn('h-3.5 w-3.5', busy && 'animate-spin', !busy && action === 'resume' && 'text-accent-text')} />
       {label}
     </button>
   )

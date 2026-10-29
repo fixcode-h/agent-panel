@@ -95,7 +95,7 @@ function StepSectionBase({
           <StepIcon status={root.status} />
           <span className="min-w-0 truncate text-[0.875rem] font-semibold">{root.title}</span>
           <span className="flex items-center gap-1.5 text-xs text-subtle">
-            {root.kind === 'main' && <Crown className="h-3.5 w-3.5 text-accent" />}
+            {root.kind === 'main' && <Crown className="h-3.5 w-3.5 text-accent-text" />}
             {root.kind === 'flow' ? (
               <>
                 <WorkflowIcon className="h-3.5 w-3.5" />
@@ -168,7 +168,7 @@ function StepSectionBase({
         })}
         {root.status === 'running' && (
           <span className="flex items-center gap-2 text-xs text-subtle">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
             {msgs.length ? t('执行中…') : t('正在启动…')}
             <LiveStats task={task} agentIds={running(task, rootId).length ? running(task, rootId) : [root.agentId]} />
           </span>

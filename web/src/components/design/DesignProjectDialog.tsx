@@ -247,7 +247,7 @@ function Body({
               }}
             >
               <FormSection title={t('基本信息')}>
-                <p className="-mt-2 text-[0.78125rem] leading-relaxed text-muted">
+                <p className="-mt-2 text-[0.75rem] leading-relaxed text-muted">
                   {t('UI 设计的项目和 Agent 的项目分开管理。一个项目对应一个游戏，里面放它的各个界面。')}
                 </p>
                 <Field label={t('项目名称')} error={name.trim() ? undefined : t('名称不能为空')}>
@@ -356,13 +356,13 @@ function ImportStyle({ onImport }: { onImport: (s: SavedStyle) => void }) {
                         }}
                         className="flex w-full cursor-pointer flex-col items-start rounded-lg px-2.5 py-1.5 text-left hover:bg-sel"
                       >
-                        <span className="flex items-center gap-1.5 text-[0.78125rem]">
+                        <span className="flex items-center gap-1.5 text-[0.75rem]">
                           {s.name}
                           {s.builtin && (
                             <span className="rounded bg-field px-1 text-[0.625rem] text-subtle">{t('内置')}</span>
                           )}
                         </span>
-                        <span className="line-clamp-2 text-[0.71875rem] leading-snug text-subtle">
+                        <span className="line-clamp-2 text-[0.6875rem] leading-snug text-subtle">
                           {s.summary || t('{n} 条提示词', { n: s.prompts.length })}
                         </span>
                       </button>
@@ -428,7 +428,7 @@ function PromptsPage({
       <section className="flex flex-col gap-3">
         <div>
           <h3 className="text-[0.8125rem] font-semibold">{t('美术提示词')}</h3>
-          <p className="mt-1 text-[0.78125rem] leading-relaxed text-muted">
+          <p className="mt-1 text-[0.75rem] leading-relaxed text-muted">
             {t(
               '这个项目里每一张图生成时都会自动带上打开的提示词，设计界面的 AI 也会照着它来，让整个游戏的界面风格统一。这里显示中文，发给生图 AI 的是对应的英文。',
             )}
@@ -480,7 +480,7 @@ function PromptsPage({
                       f.pick ? 'bg-accent-soft text-fg' : 'chip-idle text-subtle hover:text-fg',
                     )}
                   >
-                    {f.pick ? <Check className="h-3 w-3 text-accent" /> : <Plus className="h-3 w-3" />}
+                    {f.pick ? <Check className="h-3 w-3 text-accent-text" /> : <Plus className="h-3 w-3" />}
                     <span className="text-[0.6875rem] text-subtle">{catLabel(f.category)}</span>
                     {f.zh}
                   </button>
@@ -554,7 +554,7 @@ function PromptsPage({
             )}
             {presets.length > 0 && (
               <div className="flex flex-wrap items-center gap-1">
-                <span className="mr-1 text-[0.71875rem] text-subtle">{t('常用：')}</span>
+                <span className="mr-1 text-[0.6875rem] text-subtle">{t('常用：')}</span>
                 {presets.map((p) => (
                   <button
                     key={p.zh}
@@ -636,12 +636,12 @@ function PromptRow({
         {p.zh}
       </span>
       {translating ? (
-        <span className="flex shrink-0 items-center gap-1 text-[0.71875rem] text-subtle">
+        <span className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-subtle">
           <Loader2 className="h-3 w-3 animate-spin" />
           {t('翻译中')}
         </span>
       ) : (
-        !p.en && <span className="shrink-0 text-[0.71875rem] text-warning">{t('没有英文')}</span>
+        !p.en && <span className="shrink-0 text-[0.6875rem] text-warning">{t('没有英文')}</span>
       )}
       <IconButton icon={Pencil} label={t('编辑')} reveal="hover" onClick={() => setEditing(true)} />
       <IconButton icon={X} tone="danger" label={t('删除')} reveal="hover" onClick={onRemove} />

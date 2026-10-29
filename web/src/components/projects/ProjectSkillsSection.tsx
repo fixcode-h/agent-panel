@@ -124,7 +124,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h3 className="text-[0.9375rem] font-semibold">Skill</h3>
-          <p className="text-[0.78125rem] leading-relaxed text-subtle">
+          <p className="text-[0.75rem] leading-relaxed text-subtle">
             {t(
               '这个项目里的技能，放在项目目录下的技能目录里，跟着项目一起提交。Agent 按 SKILL.md 里的 description 判断什么时候用；改了这里的内容，新开的对话就会读到。',
             )}
@@ -154,7 +154,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
         </p>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.71875rem] text-subtle">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-subtle">
             <span className="truncate font-mono">{view.path}</span>
             <span className="shrink-0">
               {view.repos.map((r) => (
@@ -174,7 +174,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
             <div className="flex flex-col gap-3">
               {groups.map(([source, items]) => (
                 <div key={source} className="flex flex-col gap-1.5">
-                  <p className="flex items-center gap-2 text-[0.71875rem] text-subtle">
+                  <p className="flex items-center gap-2 text-[0.6875rem] text-subtle">
                     <span className="truncate font-mono">{source}</span>
                     <span className="shrink-0">{items.length}</span>
                     <span className="truncate">{t('{clis} 会读这里', { clis: cliNames(items[0].clis) })}</span>
@@ -185,7 +185,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
                         <Sparkles
                           className={cn(
                             'mt-0.5 h-3.5 w-3.5 shrink-0',
-                            s.issues.length ? 'text-warning' : 'text-accent',
+                            s.issues.length ? 'text-warning' : 'text-accent-text',
                           )}
                         />
                         <button
@@ -196,7 +196,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
                           <p className="flex items-center gap-2 text-[0.8125rem]">
                             <span className="truncate font-mono">{s.name}</span>
                             {s.issues.length > 0 && (
-                              <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-px text-[0.65625rem] text-warning">
+                              <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-px text-[0.6875rem] text-warning">
                                 {t('{n} 个问题', { n: s.issues.length })}
                               </span>
                             )}
@@ -207,7 +207,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
                             {s.description || t('没写 description：Agent 不知道什么时候该用它')}
                           </p>
                           {s.issues.length > 0 && (
-                            <p className="mt-0.5 flex items-start gap-1 text-[0.71875rem] text-warning">
+                            <p className="mt-0.5 flex items-start gap-1 text-[0.6875rem] text-warning">
                               <CircleAlert className="mt-0.5 h-3 w-3 shrink-0" />
                               <span className="line-clamp-2">{s.issues.join('；')}</span>
                             </p>
@@ -529,9 +529,9 @@ function EditSkillDialog({
       }
     >
       <div className="flex min-w-0 flex-col gap-1">
-        <p className="truncate font-mono text-[0.71875rem] text-subtle">{skill.path}</p>
+        <p className="truncate font-mono text-[0.6875rem] text-subtle">{skill.path}</p>
         {opening.files.length > 0 && (
-          <p className="truncate text-[0.71875rem] text-subtle">
+          <p className="truncate text-[0.6875rem] text-subtle">
             {t('文件夹里还有：{files}', { files: opening.files.join('、') })}
           </p>
         )}
@@ -542,7 +542,7 @@ function EditSkillDialog({
         onChange={(e) => setContent(e.target.value)}
         spellCheck={false}
         rows={18}
-        className="min-h-[18rem] font-mono text-[0.78125rem] leading-relaxed"
+        className="min-h-[18rem] font-mono text-[0.75rem] leading-relaxed"
       />
       {issues.length > 0 ? (
         <div className="flex flex-col gap-1 rounded-lg bg-warning/10 px-3 py-2 text-[0.75rem] text-warning">

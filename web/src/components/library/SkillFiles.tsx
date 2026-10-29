@@ -275,7 +275,7 @@ export function SkillFiles({
                 {r.type === 'dir' ? (
                   <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
                 ) : (
-                  <Icon className="h-3.5 w-3.5 shrink-0 text-accent" />
+                  <Icon className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 )}
                 <span className="truncate font-mono">{entryName(r.path)}</span>
               </button>
@@ -346,7 +346,7 @@ export function SkillFiles({
                   onChange={(e) => setText(e.target.value)}
                   readOnly={readOnly}
                   spellCheck={false}
-                  className="h-[min(40vh,360px)] resize-none font-mono text-[0.78125rem] leading-relaxed"
+                  className="h-[min(40vh,360px)] resize-none font-mono text-[0.75rem] leading-relaxed"
                   aria-label={t('文件内容')}
                 />
               )}
@@ -401,5 +401,5 @@ const toggle = (s: ReadonlySet<string>, path: string) => {
 /** 主文件用固定的文档图标，和附加文件区分开 */
 function FileTextMain() {
   const Icon = fileIcon('SKILL.md')
-  return <Icon className="h-3.5 w-3.5 shrink-0 text-accent" />
+  return <Icon className="h-3.5 w-3.5 shrink-0 text-accent-text" />
 }

@@ -70,7 +70,7 @@ export function LessonDrafts({ reportId, day }: { reportId: string; day: string 
               onClick={extract}
               title={t('从这份报告里找返工过的地方，生成候选草稿（同一份报告只提炼一次）')}
             >
-              <Sparkles className="h-3.5 w-3.5 text-accent" />
+              <Sparkles className="h-3.5 w-3.5 text-accent-text" />
               {t('从这份报告提炼')}
             </Button>
           </div>

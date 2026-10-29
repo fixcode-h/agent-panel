@@ -69,7 +69,7 @@ export function ComponentsPanel({
         const comps = new Map(g.components.map((c) => [c.Name, c]))
         return (
           <section key={g.designId}>
-            <h3 className="mb-1.5 truncate px-1 text-[0.71875rem] font-medium text-subtle">
+            <h3 className="mb-1.5 truncate px-1 text-[0.6875rem] font-medium text-subtle">
               {mine ? t('这个设计') : g.title}
             </h3>
             <div className="grid grid-cols-2 gap-2">

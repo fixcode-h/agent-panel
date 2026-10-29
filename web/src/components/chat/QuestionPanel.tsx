@@ -167,7 +167,7 @@ export function QuestionPanel({
                 aria-selected={i === at}
                 onClick={() => setAt(i)}
                 className={cn(
-                  'flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-[0.71875rem] font-medium transition-colors',
+                  'flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-[0.6875rem] font-medium transition-colors',
                   i === at ? 'bg-fg text-bg' : 'bg-card text-muted hover:text-fg',
                 )}
               >
@@ -271,7 +271,7 @@ export function QuestionPanel({
         <span className="flex-1" />
         {/* 多选：已经选了几个，提示可以接着选 */}
         {q.multiSelect && a.picked.length > 0 && (
-          <span className="text-[0.71875rem] text-subtle">{t('已选 {n} 个', { n: a.picked.length })}</span>
+          <span className="text-[0.6875rem] text-subtle">{t('已选 {n} 个', { n: a.picked.length })}</span>
         )}
         {at > 0 && (
           <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setAt(at - 1)}>

@@ -194,7 +194,7 @@ function FixButton({
   }
   if (state === 'working' || busy)
     return (
-      <span className="inline-flex h-7 items-center gap-1 px-2 text-xs text-accent">
+      <span className="inline-flex h-7 items-center gap-1 px-2 text-xs text-accent-text">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {t('处理中')}
       </span>
@@ -239,13 +239,13 @@ function ChangeRow({
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[0.84375rem] font-medium">{r.field}</span>
+            <span className="text-[0.8125rem] font-medium">{r.field}</span>
             <span className="inline-flex min-w-0 items-center gap-1 text-xs text-subtle">
               <Icon className="h-3 w-3 shrink-0" aria-label={targetName(r.change.target)} />
               <span className="truncate">{r.scope}</span>
             </span>
           </span>
-          {r.change.reason && <span className="text-[0.78125rem] leading-relaxed text-muted">{r.change.reason}</span>}
+          {r.change.reason && <span className="text-[0.75rem] leading-relaxed text-muted">{r.change.reason}</span>}
           {!same && !r.error && (
             <button
               type="button"
@@ -501,7 +501,7 @@ export function EvolutionReport({
             issueGroups(evo.issues).map((g) => (
               <div key={`${g.scope}:${g.name}`} className="pb-1">
                 <div className="flex items-center gap-2 px-4 pt-2 pb-1">
-                  <span className="text-[0.78125rem] font-medium">{g.name}</span>
+                  <span className="text-[0.75rem] font-medium">{g.name}</span>
                   {g.scope === 'panel' && <Badge>{t('面板框架')}</Badge>}
                   <span className="text-xs text-subtle tabular-nums">{g.items.length}</span>
                 </div>
@@ -585,16 +585,16 @@ function IssueRow({ f, action }: { f: CodeIssue; action?: React.ReactNode }) {
       <div className="flex items-start gap-2.5">
         <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          {f.title && <span className="text-[0.84375rem] font-medium">{f.title}</span>}
+          {f.title && <span className="text-[0.8125rem] font-medium">{f.title}</span>}
           {f.detail && (
-            <span className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-muted">{f.detail}</span>
+            <span className="text-[0.75rem] leading-relaxed whitespace-pre-wrap text-muted">{f.detail}</span>
           )}
           {f.files.length > 0 && (
             <span className="mt-0.5 flex flex-wrap gap-1.5">
               {f.files.map((x) => (
                 <code
                   key={x}
-                  className="rounded-md border bg-field px-1.5 py-0.5 font-mono text-[0.71875rem] break-all text-subtle"
+                  className="rounded-md border bg-field px-1.5 py-0.5 font-mono text-[0.6875rem] break-all text-subtle"
                 >
                   {x}
                 </code>

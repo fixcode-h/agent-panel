@@ -49,7 +49,7 @@ export function TaskStatusIcon({
   const name = label ?? statusLabel[status]
   if (icon === 'failed') return <CircleX className={cn(c, 'text-danger')} aria-label={name} />
   if (icon === 'waiting') return <MessageCircleQuestion className={cn(c, 'text-warning')} aria-label={name} />
-  if (icon === 'running') return <Loader2 className={cn(c, 'animate-spin text-accent')} aria-label={name} />
+  if (icon === 'running') return <Loader2 className={cn(c, 'animate-spin text-accent-text')} aria-label={name} />
   if (icon === 'done') return <CircleCheck className={cn(c, 'text-success')} aria-label={name} />
   if (icon === 'stopped') return <PauseCircle className={cn(c, 'text-subtle')} aria-label={name} />
   // idle：停下了，但不是用户按的暂停（父对话收尾、换 CLI、面板重启、页面切走），用灰斜线区分
@@ -57,7 +57,7 @@ export function TaskStatusIcon({
   if (waiting && status !== 'failed')
     return <MessageCircleQuestion className={cn(c, 'text-warning')} aria-label={t('等你选择')} />
   if (spin ?? (status === 'running' && working))
-    return <Loader2 className={cn(c, 'animate-spin text-accent')} aria-label={name} />
+    return <Loader2 className={cn(c, 'animate-spin text-accent-text')} aria-label={name} />
   if (status === 'running' && !working)
     return (
       <MessageSquare
@@ -82,7 +82,7 @@ const STEP_LABEL: Record<StepStatus, string> = {
 export function StepIcon({ status, className }: { status: StepStatus; className?: string }) {
   const c = cn('h-4 w-4 shrink-0', className)
   const label = STEP_LABEL[status]
-  if (status === 'running') return <Loader2 className={cn(c, 'animate-spin text-accent')} aria-label={label} />
+  if (status === 'running') return <Loader2 className={cn(c, 'animate-spin text-accent-text')} aria-label={label} />
   if (status === 'done') return <CircleCheck className={cn(c, 'text-success')} aria-label={label} />
   if (status === 'failed') return <CircleX className={cn(c, 'text-danger')} aria-label={label} />
   if (status === 'skipped') return <CircleSlash className={cn(c, 'text-subtle')} aria-label={label} />

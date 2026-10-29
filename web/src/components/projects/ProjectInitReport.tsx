@@ -54,7 +54,7 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
   if (!res)
     return (
       <p className="flex items-center gap-2 px-4 py-4 text-[0.8125rem] text-muted">
-        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+        <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
         {t('正在读取推荐的设置…')}
       </p>
     )

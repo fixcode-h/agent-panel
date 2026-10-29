@@ -20,7 +20,7 @@
   --line-strong: #d5d1c4;
   --fg: #1f1e1c;
   --muted: #55534d;
-  --subtle: #6f6d65;
+  --subtle: #66645c;
   --sel: #ebe8df;
   --sel-line: #d5d1c4;
   --content-w: 1000px;
@@ -30,8 +30,12 @@
     'Maple Mono NL', 'JetBrains Mono Variable', 'PingFang SC', 'Microsoft YaHei', ui-monospace, Consolas, monospace;
   --accent: #c6613f;
   --accent-soft: rgb(198 97 63 / 0.11);
+  /* 文字用的强调色：比 --accent 深一号，小字在米色底上也够 4.5:1；色块、图标、描边仍用 --accent */
+  --accent-text: #a94f2e;
   --primary: var(--accent);
   --on-primary: #ffffff;
+  /* 危险按钮上的字：深色主题里危险红偏亮，白字看不清，改用深色字 */
+  --on-danger: #ffffff;
   --run: #0e6e79;
   --run-soft: rgb(14 110 121 / 0.1);
   --peer: #5b4fc4;
@@ -39,9 +43,9 @@
   /* 输入框、按钮获得焦点时的颜色 */
   --focus: var(--accent);
   --focus-soft: var(--accent-soft);
-  --success: #3d8a5a;
-  --warning: #a4660f;
-  --danger: #bf3b2c;
+  --success: #2f7349;
+  --warning: #935b0c;
+  --danger: #b4372b;
   --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
   --panel-shadow: 0 1px 3px rgb(60 50 30 / 0.06);
   --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
@@ -120,12 +124,15 @@
   --line-strong: #4a4945;
   --fg: #f5f4ef;
   --muted: #c3c1b8;
-  --subtle: #96948b;
+  --subtle: #a09e95;
   --sel: #353532;
   --sel-line: #4a4945;
   --accent: #d97757;
   --accent-soft: rgb(217 119 87 / 0.15);
-  --on-primary: #ffffff;
+  --accent-text: #e08463;
+  /* 白字在 #d97757 上只有 3.1:1，和其他配色的深色主题一样用深色字 */
+  --on-primary: #1f1e1c;
+  --on-danger: #1f1e1c;
   --run: #6ccfd9;
   --run-soft: rgb(108 207 217 / 0.12);
   --peer: #b3a9f5;
@@ -163,13 +170,13 @@
   --line-strong: #d6d5d1;
   --fg: #18181b;
   --muted: #4b4b52;
-  --subtle: #6a6a72;
+  --subtle: #65656d;
   --sel: #eaeae7;
   --sel-line: #d6d5d1;
   --primary: #18181b;
   --focus: #3b82f6;
   --focus-soft: rgb(59 130 246 / 0.18);
-  --success: #2f7d47;
+  --success: #2f7349;
   --warning: #855600;
   --danger: #b4372b;
   --shadow: 0 1px 2px rgb(24 24 27 / 0.06), 0 0 0 0.5px rgb(24 24 27 / 0.04);
@@ -214,6 +221,7 @@
   --sel-line: #c7d2de;
   --accent: #2f6fb3;
   --accent-soft: rgb(47 111 179 / 0.1);
+  --accent-text: var(--accent);
   --code-bg: #f3f7fa;
   --code-chip: #e8eff6;
   --code-chip-fg: #1f5a96;
@@ -233,6 +241,7 @@
   --sel-line: #2f3e50;
   --accent: #5b9be0;
   --accent-soft: rgb(91 155 224 / 0.16);
+  --accent-text: var(--accent);
   --on-primary: #0e151d;
   --code-bg: #0e151d;
   --code-chip: #1e2a38;
@@ -248,11 +257,12 @@
   --line-strong: #cad3c1;
   --fg: #18201a;
   --muted: #46514a;
-  --subtle: #64705f;
+  --subtle: #5e6a59;
   --sel: #e6ece0;
   --sel-line: #cad3c1;
   --accent: #3f7d58;
   --accent-soft: rgb(63 125 88 / 0.1);
+  --accent-text: #35704d;
   --code-bg: #f3f6f0;
   --code-chip: #e9eee4;
   --code-chip-fg: #2f6a47;
@@ -272,6 +282,7 @@
   --sel-line: #364038;
   --accent: #6fb58a;
   --accent-soft: rgb(111 181 138 / 0.16);
+  --accent-text: var(--accent);
   --on-primary: #111512;
   --code-bg: #111512;
   --code-chip: #232a24;
@@ -293,8 +304,12 @@
   --color-sel-line: var(--sel-line);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
+  --color-on-danger: var(--on-danger);
+  /* 强调色底上的字：各配色里主操作和强调色同色时取值一样，所以直接借 --on-primary（中性配色也成立：浅色白字、深色深字） */
+  --color-on-accent: var(--on-primary);
   --color-run: var(--run);
   --color-run-soft: var(--run-soft);
   --color-peer: var(--peer);
@@ -472,7 +487,7 @@ body,
   @apply my-2 list-decimal pl-5 text-muted;
 }
 .doc-preview code {
-  @apply rounded bg-field px-1 py-0.5 font-mono text-[0.78125rem];
+  @apply rounded bg-field px-1 py-0.5 font-mono text-[0.75rem];
 }
 .doc-preview pre {
   @apply my-3 overflow-x-auto rounded-lg border bg-field p-3;
@@ -484,7 +499,7 @@ body,
   @apply my-3 border-l-2 border-line-strong pl-3 text-subtle;
 }
 .doc-preview .mention {
-  @apply rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.8125rem] font-medium text-accent;
+  @apply rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.8125rem] font-medium text-accent-text;
 }
 .doc-preview .mention.unknown {
   @apply bg-warning/15 text-warning;
@@ -508,7 +523,7 @@ body,
   @apply mt-5 mb-2 text-[1rem] leading-snug font-semibold;
 }
 .chat-md h3 {
-  @apply mt-4 mb-1.5 text-[0.90625rem] font-semibold;
+  @apply mt-4 mb-1.5 text-[0.875rem] font-semibold;
 }
 .chat-md h4,
 .chat-md h5,
@@ -532,7 +547,7 @@ body,
   @apply font-semibold;
 }
 .chat-md a {
-  @apply text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent;
+  @apply text-accent-text underline decoration-accent/40 underline-offset-2 hover:decoration-accent;
 }
 .chat-md hr {
   @apply my-4 border-line;
@@ -545,7 +560,7 @@ body,
 }
 /* 行内代码：和 Claude Code 一样是带细边框的小标签 */
 .chat-md :not(pre) > code {
-  @apply rounded-[5px] border px-[5px] py-px font-mono text-[0.78125rem];
+  @apply rounded border px-[5px] py-px font-mono text-[0.75rem];
   background: var(--code-chip);
   color: var(--code-chip-fg);
 }
@@ -554,7 +569,7 @@ body,
   @apply cursor-pointer transition-colors;
 }
 .chat-md code.md-path:hover {
-  @apply border-accent/50 text-accent underline decoration-accent/40 underline-offset-2;
+  @apply border-accent/50 text-accent-text underline decoration-accent/40 underline-offset-2;
 }
 /* 代码块：一张卡片，顶部语言名和复制按钮 */
 .chat-md .md-code {
@@ -562,13 +577,13 @@ body,
   background: var(--code-bg);
 }
 .chat-md .md-code-bar {
-  @apply flex items-center justify-between border-b px-3.5 py-1.5 font-sans text-[0.71875rem] text-subtle;
+  @apply flex items-center justify-between border-b px-3.5 py-1.5 font-sans text-[0.6875rem] text-subtle;
 }
 .chat-md .md-copy {
-  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.71875rem] text-subtle hover:bg-sel hover:text-fg;
+  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.6875rem] text-subtle hover:bg-sel hover:text-fg;
 }
 .chat-md pre {
-  @apply m-0 overflow-x-auto px-3.5 py-3 font-mono text-[0.78125rem] leading-[1.65];
+  @apply m-0 overflow-x-auto px-3.5 py-3 font-mono text-[0.75rem] leading-[1.65];
 }
 .chat-md pre code {
   @apply whitespace-pre [overflow-wrap:normal];
@@ -621,7 +636,7 @@ body,
   @apply mr-1.5 align-[-2px] accent-accent;
 }
 .chat-md .mention {
-  @apply rounded-md bg-accent-soft px-1 py-px text-[0.8125rem] font-medium text-accent;
+  @apply rounded-md bg-accent-soft px-1 py-px text-[0.8125rem] font-medium text-accent-text;
 }
 .chat-md .mention.unknown {
   @apply bg-warning/15 text-warning;
@@ -629,7 +644,7 @@ body,
 
 /* 提问面板里的 Markdown：面板窄，字号和间距比对话正文收一档，免得把下面的选项挤走 */
 .chat-md-compact {
-  @apply text-[0.84375rem];
+  @apply text-[0.8125rem];
   line-height: 1.6;
 }
 .chat-md-compact > * {
@@ -640,10 +655,10 @@ body,
 }
 /* 标题只比正文重一档，不按文档里的大字级撑高面板 */
 .chat-md-compact h1 {
-  @apply mt-2.5 mb-1 text-[0.96875rem] leading-snug font-semibold;
+  @apply mt-2.5 mb-1 text-[1rem] leading-snug font-semibold;
 }
 .chat-md-compact h2 {
-  @apply mt-2.5 mb-1 text-[0.90625rem] leading-snug font-semibold;
+  @apply mt-2.5 mb-1 text-[0.875rem] leading-snug font-semibold;
 }
 .chat-md-compact h3 {
   @apply mt-2 mb-1 text-[0.875rem] leading-snug font-semibold;
@@ -651,7 +666,7 @@ body,
 .chat-md-compact h4,
 .chat-md-compact h5,
 .chat-md-compact h6 {
-  @apply mt-1.5 mb-0.5 text-[0.84375rem] font-semibold text-muted;
+  @apply mt-1.5 mb-0.5 text-[0.8125rem] font-semibold text-muted;
 }
 .chat-md-compact ul,
 .chat-md-compact ol {
@@ -678,7 +693,7 @@ body,
   @apply px-3 py-2 text-[0.75rem] leading-[1.6];
 }
 .chat-md-compact table {
-  @apply my-2 text-[0.78125rem];
+  @apply my-2 text-[0.75rem];
 }
 .chat-md-compact th,
 .chat-md-compact td {

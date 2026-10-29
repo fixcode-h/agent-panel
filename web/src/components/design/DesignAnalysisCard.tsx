@@ -46,8 +46,8 @@ export function DesignAnalysisCard({
   }))
   return (
     <div className="mt-1.5 rounded-xl bg-card shadow-card/70 p-2.5 shadow-card">
-      <div className="flex items-center gap-1.5 px-0.5 text-[0.78125rem] font-medium">
-        <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
+      <div className="flex items-center gap-1.5 px-0.5 text-[0.75rem] font-medium">
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-text" />
         <span className="min-w-0 flex-1">{t('AI 分析结果')}</span>
         <span className="shrink-0 text-[0.6875rem] font-normal text-subtle">
           {t('{n} 条建议', { n: analysis.findings.length })}
@@ -62,12 +62,12 @@ export function DesignAnalysisCard({
           {groups.map(({ area, title, icon: Icon, list }) => (
             <section key={area} className="flex flex-col gap-1.5">
               <div className="flex items-center gap-1.5 px-0.5 text-[0.75rem] font-medium text-muted">
-                <Icon className="h-3.5 w-3.5 shrink-0 text-accent" />
+                <Icon className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 <span>{title}</span>
                 <span className="text-[0.6875rem] font-normal text-subtle">{list.length}</span>
               </div>
               {!list.length ? (
-                <p className="px-0.5 text-[0.71875rem] text-subtle">{t('没有发现明显问题')}</p>
+                <p className="px-0.5 text-[0.6875rem] text-subtle">{t('没有发现明显问题')}</p>
               ) : (
                 list.map((f, i) => (
                   <Finding
@@ -113,17 +113,17 @@ function Finding({
         )}
       </div>
       {finding.detail && (
-        <p className="mt-1 text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-muted">{finding.detail}</p>
+        <p className="mt-1 text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-muted">{finding.detail}</p>
       )}
       {finding.evidence && (
-        <p className="mt-1 rounded bg-sel/60 px-1.5 py-1 font-mono text-[0.65625rem] leading-relaxed whitespace-pre-wrap text-subtle">
+        <p className="mt-1 rounded bg-sel/60 px-1.5 py-1 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-subtle">
           {t('证据：')}
           {finding.evidence}
         </p>
       )}
       {finding.suggestion && (
         <div className="mt-1.5 flex items-start gap-1">
-          <p className="min-w-0 flex-1 text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-fg/85">
+          <p className="min-w-0 flex-1 text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-fg/85">
             {finding.suggestion}
           </p>
           <div className="flex shrink-0 items-center gap-0.5">

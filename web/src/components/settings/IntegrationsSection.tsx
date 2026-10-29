@@ -204,19 +204,19 @@ export function IntegrationsSection() {
                       href={v.docsUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[0.71875rem] font-normal text-accent hover:underline"
+                      className="text-[0.6875rem] font-normal text-accent-text hover:underline"
                     >
                       {t('文档')}
                     </a>
                   )}
                 </p>
-                <p className="mt-0.5 text-[0.78125rem] leading-relaxed text-subtle">{v.description}</p>
+                <p className="mt-0.5 text-[0.75rem] leading-relaxed text-subtle">{v.description}</p>
               </div>
             </div>
 
             {!v.installed ? (
               <div className="mt-3 flex flex-col gap-2">
-                <div className="flex flex-wrap items-center gap-2 text-[0.78125rem] text-muted">
+                <div className="flex flex-wrap items-center gap-2 text-[0.75rem] text-muted">
                   <span>{t('没有检测到 {command}，先安装再授权。', { command: v.command })}</span>
                   {v.canInstall && (
                     <Button size="sm" onClick={() => void install(v.id)} disabled={settingUp}>
@@ -262,7 +262,7 @@ export function IntegrationsSection() {
               <div className="mt-3 flex flex-col gap-2">
                 {v.hint && <p className="text-[0.75rem] leading-relaxed text-muted">{v.hint}</p>}
                 {v.detail && (
-                  <p className="text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-subtle">{v.detail}</p>
+                  <p className="text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-subtle">{v.detail}</p>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
                   {v.browserAuth && (
@@ -355,7 +355,7 @@ function InstallBox({ job }: { job: IntegrationInstallJob }) {
     <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-3">
       {job.status === 'running' ? (
         <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
           <span className="min-w-0">
             {t('正在安装：')}
             <span className="font-mono text-[0.75rem]">{job.method}</span>
@@ -369,10 +369,10 @@ function InstallBox({ job }: { job: IntegrationInstallJob }) {
         </p>
       )}
       {job.status === 'running' && (
-        <p className="text-[0.71875rem] text-subtle">{t('Windows 上可能会弹出系统的权限确认，点「是」继续。')}</p>
+        <p className="text-[0.6875rem] text-subtle">{t('Windows 上可能会弹出系统的权限确认，点「是」继续。')}</p>
       )}
       {job.output && job.status !== 'done' && (
-        <pre className="max-h-32 overflow-auto text-[0.71875rem] whitespace-pre-wrap text-subtle">{job.output}</pre>
+        <pre className="max-h-32 overflow-auto text-[0.6875rem] whitespace-pre-wrap text-subtle">{job.output}</pre>
       )}
     </div>
   )
@@ -387,7 +387,7 @@ function LoginBox({ job, onCancel }: { job: IntegrationLoginJob; onCancel: () =>
           {job.status === 'done' ? t('授权完成') : job.error || t('授权没有完成')}
         </p>
         {job.status === 'failed' && job.output && (
-          <pre className="mt-2 max-h-32 overflow-auto text-[0.71875rem] whitespace-pre-wrap text-subtle">
+          <pre className="mt-2 max-h-32 overflow-auto text-[0.6875rem] whitespace-pre-wrap text-subtle">
             {job.output}
           </pre>
         )}
@@ -397,7 +397,7 @@ function LoginBox({ job, onCancel }: { job: IntegrationLoginJob; onCancel: () =>
   return (
     <div className="mt-3 flex flex-col gap-2 rounded-lg bg-sel/40 p-3">
       <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
         {t('等待浏览器完成授权…')}
       </p>
       {job.code && (
@@ -412,14 +412,14 @@ function LoginBox({ job, onCancel }: { job: IntegrationLoginJob; onCancel: () =>
           href={job.url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex w-fit items-center gap-1.5 text-[0.8125rem] text-accent hover:underline"
+          className="inline-flex w-fit items-center gap-1.5 text-[0.8125rem] text-accent-text hover:underline"
         >
           <LogIn className="h-3.5 w-3.5" />
           {t('打开授权页面')}
         </a>
       )}
       {job.output && (
-        <pre className="max-h-32 overflow-auto text-[0.71875rem] whitespace-pre-wrap text-subtle">{job.output}</pre>
+        <pre className="max-h-32 overflow-auto text-[0.6875rem] whitespace-pre-wrap text-subtle">{job.output}</pre>
       )}
       <div>
         <Button size="sm" variant="ghost" onClick={onCancel}>

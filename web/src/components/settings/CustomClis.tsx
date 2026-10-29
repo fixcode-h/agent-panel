@@ -52,7 +52,7 @@ export function CustomClis({ demo }: { demo?: boolean }) {
             href={DOCS}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-0.5 text-accent hover:underline"
+            className="inline-flex items-center gap-0.5 text-accent-text hover:underline"
           >
             {t('配置格式')}
             <ExternalLink className="h-3 w-3" />
@@ -94,7 +94,7 @@ export function CustomClis({ demo }: { demo?: boolean }) {
           </div>
         )}
         {!!info?.errors.length && (
-          <div className="flex gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[0.78125rem] leading-relaxed text-warning">
+          <div className="flex gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[0.75rem] leading-relaxed text-warning">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div className="flex min-w-0 flex-col gap-0.5">
               {info.errors.map((e) => (

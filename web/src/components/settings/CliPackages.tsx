@@ -81,7 +81,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
           <button
             onClick={() => void run('updateAll')}
             disabled={!!busy}
-            className="ml-auto inline-flex cursor-pointer items-center gap-1 text-accent disabled:cursor-default disabled:opacity-60"
+            className="ml-auto inline-flex cursor-pointer items-center gap-1 text-accent-text disabled:cursor-default disabled:opacity-60"
           >
             <RefreshCw className={cn('h-3 w-3', spin('updateAll') && 'animate-spin')} />
             {t('全部更新')}
@@ -98,7 +98,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
         <Card as="ul" className="flex flex-col divide-y rounded-lg" aria-label={t('已装的扩展包')}>
           {list.map((p) => (
             <li key={p.source} className="group flex items-center gap-2.5 px-3 py-2" title={p.target}>
-              <Package className="h-3.5 w-3.5 shrink-0 text-accent" />
+              <Package className="h-3.5 w-3.5 shrink-0 text-accent-text" />
               <span className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]">{p.source}</span>
               {spec.update && (
                 <Button
@@ -133,7 +133,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
       {result?.output && (
         <pre
           className={cn(
-            'max-h-40 overflow-auto rounded-lg border px-3 py-2 font-mono text-[0.71875rem] whitespace-pre-wrap',
+            'max-h-40 overflow-auto rounded-lg border px-3 py-2 font-mono text-[0.6875rem] whitespace-pre-wrap',
             result.ok ? 'text-muted' : 'border-danger/40 text-danger',
           )}
         >

@@ -48,7 +48,7 @@ export function ScheduleEmpty({
       <Card padding="md" className="flex w-full max-w-[420px] flex-col gap-3 text-left">
         <div>
           <p className="flex items-center gap-1.5 text-[0.8125rem] font-semibold">
-            <Sparkles className="h-3.5 w-3.5 text-accent" />
+            <Sparkles className="h-3.5 w-3.5 text-accent-text" />
             {WORKDAY_PLAN.name}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-subtle">

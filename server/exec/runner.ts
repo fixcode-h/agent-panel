@@ -733,6 +733,13 @@ const MAX_EMPTY_RETRIES = 1
  * 和 rpc.nativeAsk 无关：那只决定提问和审批走 CLI 自己的协议还是面板的 MCP 工具（见 invoke.ts 的 canTake），
  * 进程能不能留着开下一轮是另一件事；两者混在一起会让原生提问的常驻协议白白每轮重启。
  */
+/** 会话压缩过：之前发过的规则段落只剩摘要，下一轮对话按完整提示重发（见 shared/prompt-delta.ts） */
+export function forgetPromptSent(task: Task, sessionKey: string) {
+  if (!task.promptSent?.[sessionKey]) return
+  const { [sessionKey]: _gone, ...rest } = task.promptSent
+  task.promptSent = rest
+}
+
 export function canKeepAlive(o: { chat: boolean; op: boolean; cliKeepAlive: boolean }) {
   return o.chat && !o.op && o.cliKeepAlive
 }
@@ -1227,7 +1234,10 @@ async function runAgent(
       task.skillSlots,
     ),
   )
-  let input = op?.kind === 'review' && def.review !== 'native' ? reviewPrompt(op.target) : prompt
+  // 调用方只发了增量（续接时省掉会话里已有的规则段落）、这次却没接上原来的会话（换了 CLI / 目录、回退、续不上）：
+  // 新会话里什么都没有，改用完整的提示
+  const base = !resume && call.fresh ? call.fresh : prompt
+  let input = op?.kind === 'review' && def.review !== 'native' ? reviewPrompt(op.target) : base
   input = defaultChatPrompt(input, agentId, chat, !!op)
   // 之前的节点收不了的补充，交给这个节点
   const pending = step ? notes.get(task.id) : undefined
@@ -1697,6 +1707,8 @@ async function runAgent(
         setLimits(cliId, ev.limits)
         return
       case 'compacted': {
+        // 压缩后会话里之前发过的规则只剩摘要：下一轮按完整提示重发（见 shared/prompt-delta.ts）
+        forgetPromptSent(task, sessionKey)
         // 当作一次工具调用放进回复里，不插一条系统消息把回复切成两段；压缩后的大小晚一点从 usage 补上
         const u = au()
         const before = ev.before ?? (u.context || undefined)
@@ -2684,6 +2696,8 @@ async function runAgent(
       false,
       texts.length || errors.length ? undefined : makeAlert('warn', errors.join('\n'), 'empty_turn'),
     )
+  // 压缩过（原生压缩不一定报 compacted 事件）：会话里之前发过的规则段落不算数了
+  if (op?.kind === 'compact') forgetPromptSent(task, sessionKey)
   // 不能压缩会话的 CLI：摘要写好了，下一轮开新会话带上它
   if (op?.kind === 'compact' && def.compact === 'summary') {
     task.rewind = { session: '', through: null, latest: false, summary: done.text }

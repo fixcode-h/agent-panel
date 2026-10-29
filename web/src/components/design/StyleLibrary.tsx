@@ -42,7 +42,7 @@ export function StyleLibraryList({
   if (!list) return <Loader2 className="mx-auto my-2 h-4 w-4 animate-spin text-subtle" />
   if (!list.length)
     return (
-      <p className="text-[0.71875rem] leading-relaxed text-subtle">
+      <p className="text-[0.6875rem] leading-relaxed text-subtle">
         {t('风格库还是空的，可以把这个设计的风格存进去。')}
       </p>
     )
@@ -55,17 +55,17 @@ export function StyleLibraryList({
           title={s.en}
           className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-sel"
         >
-          <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+          <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
           <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1.5 text-[0.78125rem]">
+            <span className="flex items-center gap-1.5 text-[0.75rem]">
               <span className="truncate">{s.name}</span>
               {s.builtin && (
                 <span className="shrink-0 rounded bg-field px-1 text-[0.625rem] text-subtle">{t('内置')}</span>
               )}
             </span>
-            {s.summary && <span className="line-clamp-2 text-[0.71875rem] leading-snug text-subtle">{s.summary}</span>}
+            {s.summary && <span className="line-clamp-2 text-[0.6875rem] leading-snug text-subtle">{s.summary}</span>}
           </span>
-          {current.trim() === s.en.trim() && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />}
+          {current.trim() === s.en.trim() && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />}
         </button>
       ))}
     </div>

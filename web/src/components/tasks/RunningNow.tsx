@@ -71,9 +71,9 @@ export function activeHelpers(task: Task) {
 }
 
 /** 标题是名字（子任务、子对话）而不是路径或命令：用正文字体，和组件库里「派发子对话 · 代码审查」一样 */
-const NAME_TITLE = 'font-sans text-[0.78125rem]'
+const NAME_TITLE = 'font-sans text-[0.75rem]'
 
-const spin = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+const spin = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
 
 /**
  * 子对话这一行右边显示的时长：还在干活就走到现在（每秒刷新）；
@@ -199,7 +199,9 @@ function HelperRow({
   const names = jobs.map((j) => j.name).join(t('、'))
   return (
     <RowShell
-      glyph={<Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', running ? 'text-accent' : 'text-subtle')} />}
+      glyph={
+        <Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', running ? 'text-accent-text' : 'text-subtle')} />
+      }
       verb={<span className="sr-only md:not-sr-only">{t('子任务')}</span>}
       title={title}
       titleClass={NAME_TITLE}
@@ -320,7 +322,7 @@ export function RunningNow({
             // 宽度下行会窄一半，按视口断点会误判
             container
             // 行前不放切换子对话的下拉（用户要求去掉）：每个子对话自己一行，要换着看就点另一行
-            glyph={<Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />}
+            glyph={<Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', stale?.cls ?? 'text-accent-text')} />}
             // 窄屏不写动作名：把宽度留给标题、状态标签和耗时，否则「计划 1/2」后面的「执行中」会被裁掉。
             // 用 sr-only 不用 hidden：不占宽度，读屏仍能读到这行是子对话
             verb={<span className="sr-only md:not-sr-only">{t('子对话')}</span>}

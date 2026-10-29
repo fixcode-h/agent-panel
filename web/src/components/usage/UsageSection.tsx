@@ -107,7 +107,7 @@ function GroupedTable({
     return v === null ? <span className="text-subtle">{t('未配置单价')}</span> : formatMoney(v, currency)
   }
   return (
-    <table className="w-full text-[0.78125rem] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+    <table className="w-full text-[0.75rem] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
       <thead>
         <tr className="sticky top-0 z-10 border-b bg-card text-left text-[0.6875rem] text-subtle">
           <th className="px-2.5 py-2 font-medium">{nameLabel}</th>
@@ -601,7 +601,7 @@ export function UsageSection({
             {loading ? '…' : t('这段时间暂无用量')}
           </div>
         ) : group === 'time' ? (
-          <table className="w-full text-[0.78125rem] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+          <table className="w-full text-[0.75rem] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
             <thead>
               <tr className="sticky top-0 z-10 border-b bg-card text-left text-[0.6875rem] text-subtle">
                 <th className="px-2.5 py-2 font-medium whitespace-nowrap">{t('时间')}</th>

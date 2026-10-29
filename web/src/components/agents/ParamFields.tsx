@@ -312,7 +312,7 @@ export function ParamsEditor({
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                 aria-expanded={open}
               >
-                <code className={cn('shrink-0 font-mono text-[0.78125rem]', badKey ? 'text-danger' : 'text-accent')}>
+                <code className={cn('shrink-0 font-mono text-[0.75rem]', badKey ? 'text-danger' : 'text-accent-text')}>
                   {`{{${p.key}}}`}
                 </code>
                 <span className="truncate text-[0.8125rem]">{p.label}</span>
@@ -320,7 +320,7 @@ export function ParamsEditor({
                   <span
                     className={cn(
                       'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 text-[0.6875rem]',
-                      brokenLink(value, i) ? 'bg-danger/10 text-danger' : 'bg-accent-soft text-accent',
+                      brokenLink(value, i) ? 'bg-danger/10 text-danger' : 'bg-accent-soft text-accent-text',
                     )}
                     title={linkSummary(value, i)}
                   >
@@ -360,7 +360,7 @@ export function ParamsEditor({
                       className={cn('h-9 font-mono text-[0.8125rem]', badKey && 'border-danger')}
                     />
                     {badKey && (
-                      <span className="text-[0.71875rem] text-danger">
+                      <span className="text-[0.6875rem] text-danger">
                         {dupKeys.has(p.key) ? t('参数名重复') : t('参数名只能用字母、数字、下划线、横线和中文')}
                       </span>
                     )}
@@ -522,7 +522,7 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
         className={cn('h-9 text-[0.8125rem]', error && 'border-danger')}
         aria-label={t('新选项')}
       />
-      {error && <span className="text-[0.71875rem] text-danger">{error}</span>}
+      {error && <span className="text-[0.6875rem] text-danger">{error}</span>}
     </div>
   )
 }
@@ -631,7 +631,7 @@ function ParamLinks({
     return (
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted">{t('联动')}</span>
-        <p className="text-[0.71875rem] text-subtle">
+        <p className="text-[0.6875rem] text-subtle">
           {t('前面还没有单选、多选或开关参数。把它排在这类参数后面，就能按前面的选择决定显示它、或者换一组选项。')}
         </p>
       </div>
@@ -649,7 +649,7 @@ function ParamLinks({
         </HelpTip>
       </div>
       {broken && (
-        <p className="-mt-1 text-[0.71875rem] text-danger">
+        <p className="-mt-1 text-[0.6875rem] text-danger">
           {t('依赖的参数不在它前面了（删掉、改名或者排到了后面），规则暂不生效。重新选一下，或者把它挪回去。')}
         </p>
       )}
@@ -707,7 +707,7 @@ function ParamLinks({
                   onToggle={(v) => onChange({ when: { ...p.when!, values: toggle(p.when!.values, v) } })}
                 />
                 {!p.when.values.length && (
-                  <span className="text-[0.71875rem] text-subtle">
+                  <span className="text-[0.6875rem] text-subtle">
                     {p.when.not
                       ? t('没选取值：「{name}」为空时显示', { name: paramLabel(whenDep) })
                       : t('没选取值：「{name}」有值就显示', { name: paramLabel(whenDep) })}
@@ -740,7 +740,7 @@ function ParamLinks({
           </div>
           {p.optionsBy && byDep && (
             <div className="flex flex-col gap-2 pl-0.5">
-              <p className="text-[0.71875rem] text-subtle">
+              <p className="text-[0.6875rem] text-subtle">
                 {t('「{name}」选不同值时这里能选哪些；默认全部可选，一个都不选表示这时不显示这个参数。', {
                   name: paramLabel(byDep),
                 })}
@@ -757,7 +757,7 @@ function ParamLinks({
                 }
                 return (
                   <div key={c.value} className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2 text-[0.71875rem]">
+                    <div className="flex items-center gap-2 text-[0.6875rem]">
                       <span className="font-medium text-muted">{t('选「{v}」时', { v: c.label })}</span>
                       {limited ? (
                         <Button variant="link" onClick={() => setRow(undefined)}>

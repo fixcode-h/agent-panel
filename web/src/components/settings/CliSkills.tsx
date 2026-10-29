@@ -56,7 +56,7 @@ export function CliSkills({ cli, projectId = '', own = false }: { cli: string; p
         <button
           onClick={load}
           disabled={loading}
-          className="ml-auto inline-flex cursor-pointer items-center gap-1 text-accent"
+          className="ml-auto inline-flex cursor-pointer items-center gap-1 text-accent-text"
         >
           <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} />
           {t('刷新')}
@@ -73,7 +73,7 @@ export function CliSkills({ cli, projectId = '', own = false }: { cli: string; p
         <div className="flex flex-col gap-3">
           {groups(list).map(([source, items]) => (
             <div key={source} className="flex flex-col gap-1.5">
-              <p className="flex items-center gap-2 text-[0.71875rem] text-subtle">
+              <p className="flex items-center gap-2 text-[0.6875rem] text-subtle">
                 <span className="truncate font-mono">{source || t('插件')}</span>
                 <span className="shrink-0">{items.length}</span>
               </p>
@@ -81,7 +81,7 @@ export function CliSkills({ cli, projectId = '', own = false }: { cli: string; p
                 {items.map((s) => (
                   <li key={s.path || s.name} className="flex items-start gap-2.5 px-3 py-2" title={s.path}>
                     <Sparkles
-                      className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', s.enabled ? 'text-accent' : 'text-subtle')}
+                      className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', s.enabled ? 'text-accent-text' : 'text-subtle')}
                     />
                     <div className="min-w-0 flex-1">
                       <p className="flex items-center gap-2 text-[0.8125rem]">

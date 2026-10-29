@@ -54,7 +54,7 @@ export function MountCard({
         </Button>
       </div>
       {cap && (cap.when || cap.description) && (
-        <p className="text-[0.71875rem] leading-relaxed text-subtle">{cap.when || cap.description}</p>
+        <p className="text-[0.6875rem] leading-relaxed text-subtle">{cap.when || cap.description}</p>
       )}
       <Input
         aria-label={t('挂载说明')}

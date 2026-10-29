@@ -27,7 +27,7 @@ export const SIDEBAR_GROUP_LABEL = 'text-[0.6875rem] text-subtle'
 
 /** 导航行：32 高、13.5px，选中 bg-sel + 500 字重 */
 export const NAV_ROW =
-  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-[7px] border px-[9px] text-[0.84375rem] transition-colors'
+  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-[7px] border px-[9px] text-[0.8125rem] transition-colors'
 
 /**
  * 模式切换（Agent / Chat / 设计）：槽里平分三段，选中段是浮起的小块。
@@ -59,7 +59,7 @@ export function ModeTabs({
           title={m.label}
           onClick={() => !m.on && onPick(m.id)}
           className={cn(
-            'h-[1.625rem] min-w-0 flex-1 cursor-pointer truncate rounded-md px-1 text-[0.78125rem] transition-colors',
+            'h-[1.625rem] min-w-0 flex-1 cursor-pointer truncate rounded-md px-1 text-[0.75rem] transition-colors',
             // 未选中用 muted 不用 subtle：深色下 subtle 太暗，像禁用
             m.on ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
           )}
@@ -103,7 +103,7 @@ export function SidebarCount({ n, on, className }: { n: number; on?: boolean; cl
   return (
     <span
       className={cn(
-        'grid h-[1.125rem] min-w-[1.125rem] shrink-0 place-items-center rounded-full px-1 text-[0.65625rem] text-subtle tabular-nums',
+        'grid h-[1.125rem] min-w-[1.125rem] shrink-0 place-items-center rounded-full px-1 text-[0.6875rem] text-subtle tabular-nums',
         on ? 'bg-card' : 'bg-sel/80',
         className,
       )}
@@ -119,7 +119,7 @@ export function SidebarTaskBlock({ children, className }: { children: ReactNode;
 }
 
 /** 侧栏行尾用的小号状态胶囊：和 StatusPill 同一套状态色，只是矮一号 */
-const SMALL_PILL = 'h-[1.125rem] gap-1 px-1.5 text-[0.65625rem]'
+const SMALL_PILL = 'h-[1.125rem] gap-1 px-1.5 text-[0.6875rem]'
 
 /**
  * 任务行右边的状态：同一时刻只出一个，优先级 等你回复 > 子对话在跑 > 自己在跑 > 失败 > 未读。

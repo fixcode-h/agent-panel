@@ -25,7 +25,7 @@ export function LiveStats({
   return (
     <span className={cn('flex items-center gap-2 font-mono text-[0.6875rem] text-subtle tabular-nums', className)}>
       <span
-        className={cn('flex items-center gap-1', tps > 0 ? 'text-accent' : 'text-subtle')}
+        className={cn('flex items-center gap-1', tps > 0 ? 'text-accent-text' : 'text-subtle')}
         title={t('实时输出速度')}
       >
         <Zap className="h-3 w-3" />

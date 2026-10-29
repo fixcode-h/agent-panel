@@ -670,7 +670,7 @@ export function useDropPaste(add: (f: File[]) => void, scope?: HTMLElement | nul
 export function DropOverlay() {
   return (
     <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-bg/80 backdrop-blur-[1px]">
-      <span className="rounded-2xl border border-dashed border-accent bg-card px-5 py-3 text-[0.875rem] text-accent shadow-pop">
+      <span className="rounded-2xl border border-dashed border-accent bg-card px-5 py-3 text-[0.875rem] text-accent-text shadow-pop">
         {t('松开鼠标，把文件附到要求里')}
       </span>
     </div>
@@ -844,7 +844,7 @@ function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () =>
         <button type="button" className={menuItem} onClick={() => onPick('')}>
           <MessageSquare className="h-4 w-4 shrink-0 text-subtle" />
           <span className="flex-1">{t('不用工作流，直接对话')}</span>
-          {!value && <Check className="h-4 w-4 shrink-0 text-accent" />}
+          {!value && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
         </button>
         {workflows.map((w) => {
           const ready = isReady(workflowChecks(w, agents, clis, workflows))
@@ -860,7 +860,7 @@ function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () =>
                   {t('{n} 个节点', { n: topoOrder(entryFlow(w)).length })}
                 </span>
               </span>
-              {w.id === value && <Check className="h-4 w-4 shrink-0 text-accent" />}
+              {w.id === value && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
             </button>
           )
         })}
@@ -933,7 +933,7 @@ function StylePicker({
                   onClick={() => onPick(s)}
                   className="flex w-full cursor-pointer items-start gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-sel"
                 >
-                  <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                  <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5 text-[0.8125rem]">
                       <span className="truncate">{s.name}</span>
@@ -942,7 +942,7 @@ function StylePicker({
                       )}
                     </span>
                     {s.summary && (
-                      <span className="line-clamp-2 text-[0.71875rem] leading-snug text-subtle">{s.summary}</span>
+                      <span className="line-clamp-2 text-[0.6875rem] leading-snug text-subtle">{s.summary}</span>
                     )}
                   </span>
                 </button>
@@ -1158,7 +1158,7 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
           >
             <FileCode2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
             <span className="shrink-0 font-mono">{f.slice(cut + 1)}</span>
-            {cut > 0 && <span className="truncate font-mono text-[0.71875rem] text-subtle">{f.slice(0, cut)}</span>}
+            {cut > 0 && <span className="truncate font-mono text-[0.6875rem] text-subtle">{f.slice(0, cut)}</span>}
           </button>
         )
       })}
@@ -1171,7 +1171,7 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
 /** 拖文件进来时盖在输入框上的提示 */
 export function DropHint() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent">
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent-text">
       {t('松开鼠标，把文件附到要求里')}
     </div>
   )
@@ -1180,7 +1180,7 @@ export function DropHint() {
 /** 从文件树右键拖文件 / 文件夹过来时盖在输入框上的提示 */
 export function FileRefHint() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent">
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent-text">
       {t('松开鼠标，插入引用')}
     </div>
   )

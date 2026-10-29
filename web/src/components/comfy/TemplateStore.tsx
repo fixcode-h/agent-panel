@@ -102,10 +102,10 @@ export function TemplateStore({
       <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3 md:px-6">
         <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 text-[0.9375rem] font-semibold">
-            <LayoutGrid className="h-4 w-4 text-accent" />
+            <LayoutGrid className="h-4 w-4 text-accent-text" />
             {t('模板商店')}
           </h1>
-          <p className="mt-0.5 text-[0.78125rem] text-subtle">
+          <p className="mt-0.5 text-[0.75rem] text-subtle">
             {t('从面板内置和 ComfyUI 官方模板里挑一个，看节点图和依赖；缺的模型可以直接下载。')}
           </p>
         </div>
@@ -142,7 +142,7 @@ export function TemplateStore({
               <span className="font-mono text-[0.6875rem] text-subtle">{count(c.id)}</span>
             </button>
           ))}
-          <p className="mt-auto px-2 pt-3 text-[0.71875rem] leading-relaxed text-subtle">
+          <p className="mt-auto px-2 pt-3 text-[0.6875rem] leading-relaxed text-subtle">
             {catalog?.cached
               ? t('官方列表更新于 {time}', { time: new Date(catalog.updatedAt).toLocaleString() })
               : t('离线快照：联网后点「刷新官方模板」拿完整列表')}
@@ -222,7 +222,7 @@ function TemplateCard({ item, onOpen }: { item: ComfyTemplateMeta; onOpen: () =>
   return (
     <Card as="button" interactive padding="sm" onClick={onOpen} className="group flex flex-col gap-2">
       <div className="flex items-start gap-2">
-        <span className="line-clamp-2 min-w-0 flex-1 text-[0.84375rem] leading-snug font-medium">{item.title}</span>
+        <span className="line-clamp-2 min-w-0 flex-1 text-[0.8125rem] leading-snug font-medium">{item.title}</span>
         {item.available && (
           <span title={t('节点图已缓存，离线也能预览')} className="shrink-0 text-subtle">
             <Network className="h-3.5 w-3.5" />
@@ -394,11 +394,11 @@ function TemplateDetail({
           )}
 
           <section className="flex flex-col gap-1.5">
-            <h3 className="text-[0.78125rem] font-medium text-muted">{t('节点图')}</h3>
+            <h3 className="text-[0.75rem] font-medium text-muted">{t('节点图')}</h3>
             {graph ? (
               <ComfyGraphView graph={graph} readOnly onChange={() => {}} />
             ) : (
-              <EmptyPanel size="md" className="px-3 text-[0.78125rem]">
+              <EmptyPanel size="md" className="px-3 text-[0.75rem]">
                 {t('这个模板没有可预览的节点图')}
               </EmptyPanel>
             )}
@@ -406,8 +406,8 @@ function TemplateDetail({
 
           <section className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <h3 className="text-[0.78125rem] font-medium text-muted">{t('依赖的模型文件')}</h3>
-              <span className="text-[0.71875rem] text-subtle">
+              <h3 className="text-[0.75rem] font-medium text-muted">{t('依赖的模型文件')}</h3>
+              <span className="text-[0.6875rem] text-subtle">
                 {detail.assets.length ? t('{n} 个文件', { n: detail.assets.length }) : t('没有识别到模型文件')}
               </span>
             </div>

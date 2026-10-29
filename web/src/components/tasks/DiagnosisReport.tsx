@@ -74,7 +74,7 @@ function FileLink({ file, line, className }: { file: string; line?: number; clas
       title={t('打开 {path}', { path: label })}
       onClick={() => open(file, line)}
       className={cn(
-        'min-w-0 cursor-pointer truncate text-left font-mono text-[0.75rem] hover:text-accent hover:underline',
+        'min-w-0 cursor-pointer truncate text-left font-mono text-[0.75rem] hover:text-accent-text hover:underline',
         className,
       )}
     >
@@ -324,7 +324,7 @@ function EvidenceCard({ e }: { e: DiagnosisEvidence }) {
           {e.excerpt}
         </pre>
       )}
-      {e.note && <p className="px-3 py-2 text-[0.78125rem] leading-relaxed text-muted">{e.note}</p>}
+      {e.note && <p className="px-3 py-2 text-[0.75rem] leading-relaxed text-muted">{e.note}</p>}
     </section>
   )
 }

@@ -266,7 +266,7 @@ export function DesignList() {
                 <div
                   // 整行只是排成一行的容器：点空白处不展开也不打开，展开 / 打开各有自己的按钮
                   className={cn(
-                    'group/proj flex h-8 items-center gap-1 rounded-[7px] border pr-1 pl-0.5 text-[0.84375rem] text-fg transition-colors',
+                    'group/proj flex h-8 items-center gap-1 rounded-[7px] border pr-1 pl-0.5 text-[0.8125rem] text-fg transition-colors',
                     on ? SIDEBAR_ROW_ON : 'border-transparent hover:bg-sel/60',
                   )}
                 >

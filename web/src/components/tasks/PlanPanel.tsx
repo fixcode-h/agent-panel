@@ -261,7 +261,7 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
         aria-label={t('执行计划')}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex h-[2.125rem] w-full min-w-0 cursor-pointer items-center gap-2 rounded-[9px] px-2.5 text-[0.78125rem] text-fg transition-colors hover:bg-sel/70',
+          'flex h-[2.125rem] w-full min-w-0 cursor-pointer items-center gap-2 rounded-[9px] px-2.5 text-[0.75rem] text-fg transition-colors hover:bg-sel/70',
           open ? 'bg-sel/70' : 'bg-sel/45',
         )}
       >
@@ -298,7 +298,7 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
                 data-plan-current-time=""
                 title={t('用时 {time}', { time: currentTime })}
                 aria-label={t('用时 {time}', { time: currentTime })}
-                className="shrink-0 font-mono text-[0.71875rem] text-subtle tabular-nums"
+                className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
               >
                 {currentTime}
               </span>

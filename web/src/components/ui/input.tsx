@@ -24,7 +24,7 @@ export const fieldClass =
 const fieldSizes = {
   xs: 'h-7 rounded-md px-1.5 text-[0.75rem]',
   sm: 'h-8 px-2.5 text-[0.8125rem]',
-  md: 'h-10',
+  md: 'h-9',
 }
 export type FieldSize = keyof typeof fieldSizes
 
@@ -141,7 +141,7 @@ export function Select({
                     <S.Item key={o.value} value={enc(o.value)} className={listItem}>
                       <S.ItemText>{o.label}</S.ItemText>
                       <S.ItemIndicator className="absolute right-2.5">
-                        <Check className="h-3.5 w-3.5 text-accent" />
+                        <Check className="h-3.5 w-3.5 text-accent-text" />
                       </S.ItemIndicator>
                     </S.Item>
                   ))}
@@ -196,7 +196,7 @@ export function ComboInput({
             role="combobox"
             aria-expanded={open}
             autoComplete="off"
-            className={cn(fieldClass, 'h-10 pr-8', className)}
+            className={cn(fieldClass, 'h-9 pr-8', className)}
             onFocus={() => {
               setTyped(false)
               setOpen(true)
@@ -267,12 +267,12 @@ export function ComboInput({
                 className={listItem}
               >
                 <span className="flex min-w-0 flex-col">
-                  <span className="truncate font-mono text-[0.78125rem]">{s.value}</span>
+                  <span className="truncate font-mono text-[0.75rem]">{s.value}</span>
                   {s.label && s.label !== s.value && (
                     <span className="truncate text-[0.6875rem] text-subtle">{s.label}</span>
                   )}
                 </span>
-                {s.value === value && <Check className="absolute right-2.5 h-3.5 w-3.5 text-accent" />}
+                {s.value === value && <Check className="absolute right-2.5 h-3.5 w-3.5 text-accent-text" />}
               </button>,
             ])}
           </div>

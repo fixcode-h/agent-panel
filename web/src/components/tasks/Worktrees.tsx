@@ -277,7 +277,7 @@ export function WorktreeRow({
           className="group -mx-1 flex min-w-0 items-start gap-2 rounded-md px-1 py-1 hover:bg-sel/60"
         >
           <span className="mt-px">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> : <WorktreeMark item={item} />}
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" /> : <WorktreeMark item={item} />}
           </span>
           {onOpen ? (
             // 原生按钮：Enter / Space 和鼠标点都一样；合并、删除是旁边的独立按钮，不会连带触发

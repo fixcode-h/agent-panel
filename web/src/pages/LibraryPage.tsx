@@ -178,7 +178,7 @@ export function LibraryPage() {
                   : t('描述需求，让本机 Agent 写 Skill')
               }
             >
-              <Sparkles className="h-4 w-4 text-accent" />
+              <Sparkles className="h-4 w-4 text-accent-text" />
             </Button>
           )
         }
@@ -246,9 +246,9 @@ export function LibraryPage() {
                   onClick={() => go({ page: 'library', id: i.name, sub: i.cli })}
                   leading={
                     kind === 'skill' ? (
-                      <Sparkles className="h-4 w-4 shrink-0 text-accent" />
+                      <Sparkles className="h-4 w-4 shrink-0 text-accent-text" />
                     ) : (
-                      <Terminal className="h-4 w-4 shrink-0 text-accent" />
+                      <Terminal className="h-4 w-4 shrink-0 text-accent-text" />
                     )
                   }
                   title={kind === 'command' ? `/${i.name}` : i.name}

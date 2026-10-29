@@ -361,7 +361,7 @@ export function ImagePick({
       <PopoverContent align="end" className="max-h-[320px] w-[240px] overflow-y-auto p-1">
         <button
           onClick={() => (onChange(''), setOpen(false))}
-          className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[0.78125rem] hover:bg-sel"
+          className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[0.75rem] hover:bg-sel"
         >
           <span className="grid h-7 w-7 place-items-center rounded border border-dashed border-line-strong">
             <ImageOff className="h-3.5 w-3.5 text-subtle" />
@@ -373,13 +373,13 @@ export function ImagePick({
             key={i.id}
             onClick={() => (onChange(`img:${i.id}`), setOpen(false))}
             className={cn(
-              'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[0.78125rem] hover:bg-sel',
+              'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[0.75rem] hover:bg-sel',
               i.id === id && 'bg-accent-soft',
             )}
           >
             <Thumb src={url(i)} className="h-7 w-7" />
             <span className="min-w-0 flex-1 truncate">{i.name}</span>
-            <span className="font-mono text-[0.65625rem] text-subtle">
+            <span className="font-mono text-[0.6875rem] text-subtle">
               {i.width}×{i.height}
             </span>
           </button>

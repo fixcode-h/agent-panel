@@ -150,7 +150,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
           {chats?.top.length ? (
             chats.top.map((row) => (
               <div key={row.id} className="flex items-center gap-3 border-b px-3.5 py-2.5 last:border-b-0">
-                <span className="min-w-0 flex-1 truncate text-[0.84375rem]" title={chatName(row)}>
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem]" title={chatName(row)}>
                   {chatName(row)}
                 </span>
                 {row.orphan && <span className="shrink-0 text-xs text-subtle">{t('对话记录已删除')}</span>}
@@ -159,7 +159,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
                 {!row.trashed && !row.running && row.bytes >= CHAT_WORKSPACE_WARN_BYTES && (
                   <span className="shrink-0 text-xs text-warning">{t('占用较大')}</span>
                 )}
-                <span className="shrink-0 text-right font-mono text-[0.78125rem] text-muted">
+                <span className="shrink-0 text-right font-mono text-[0.75rem] text-muted">
                   {formatBytes(row.bytes)}
                   <span className="block text-[0.6875rem] text-subtle">{t('{n} 个文件', { n: row.files })}</span>
                 </span>
@@ -270,12 +270,12 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
             return (
               <div key={b.id} className="flex items-center gap-3 border-b px-3.5 py-2.5 last:border-b-0">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-[0.84375rem]">
-                    {b.label} <span className="font-mono text-[0.71875rem] text-subtle">{b.id}</span>
+                  <span className="text-[0.8125rem]">
+                    {b.label} <span className="font-mono text-[0.6875rem] text-subtle">{b.id}</span>
                   </span>
                   <span className="text-xs leading-relaxed text-subtle">{b.hint}</span>
                 </span>
-                <span className="shrink-0 font-mono text-[0.78125rem] text-muted">
+                <span className="shrink-0 font-mono text-[0.75rem] text-muted">
                   {u ? (u.present ? formatBytes(u.bytes) : t('不在')) : '…'}
                 </span>
               </div>

@@ -128,7 +128,7 @@ export function WorkflowDetail({
         header={
           <DetailHeader
             leading={
-              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent text-white">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent text-on-accent">
                 <WorkflowIcon className="h-6 w-6" strokeWidth={1.8} />
               </span>
             }
@@ -158,7 +158,7 @@ export function WorkflowDetail({
                   {t('分析执行')}
                 </Button>
                 <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 Agent 按你的要求优化')}>
-                  <Sparkles className="h-4 w-4 text-accent" />
+                  <Sparkles className="h-4 w-4 text-accent-text" />
                   {t('AI 优化')}
                 </Button>
                 <Button
@@ -328,7 +328,7 @@ export function WorkflowDetail({
                 >
                   <AgentAvatar icon={main.icon} cli={main.cli} size="sm" dim={!main.enabled} />
                   <span className="flex-1 truncate text-[0.8125rem] font-medium">{main.name}</span>
-                  <Crown className="h-3.5 w-3.5 text-accent" />
+                  <Crown className="h-3.5 w-3.5 text-accent-text" />
                 </button>
               ) : (
                 <EmptyPanel className="rounded-lg p-2 text-xs">{t('还没有主角色')}</EmptyPanel>

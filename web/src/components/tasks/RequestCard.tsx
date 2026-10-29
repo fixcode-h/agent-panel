@@ -159,7 +159,7 @@ export function RequestCard({
           <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
           <span
             className={cn(
-              'min-w-0 text-[0.84375rem] leading-relaxed [overflow-wrap:anywhere]',
+              'min-w-0 text-[0.8125rem] leading-relaxed [overflow-wrap:anywhere]',
               req.kind === 'command' && 'font-mono text-[0.8125rem]',
             )}
           >

@@ -92,7 +92,7 @@ export const ToggleIconButton = forwardRef<
     ref={ref}
     aria-pressed={pressed}
     onClick={() => onPressedChange(!pressed)}
-    className={cn(pressed && 'text-accent hover:text-accent', className)}
+    className={cn(pressed && 'text-accent-text hover:text-accent-text', className)}
     {...props}
   />
 ))

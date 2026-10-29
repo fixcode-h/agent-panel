@@ -176,7 +176,7 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
         <span className="shrink-0 font-medium">{t('子任务')}</span>
         {/* 和子对话那一栏同一个写法：在跑时「运行中/总数」，没在跑时只写总数，字号、间距、颜色都对齐 */}
         {running.length > 0 ? (
-          <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent tabular-nums">
+          <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent-text tabular-nums">
             <Loader2 className="h-3 w-3 animate-spin" />
             {running.length}/{steps.length}
           </span>
@@ -233,7 +233,7 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
                               </Badge>
                             )}
                             {s.status === 'running' && (
-                              <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>
+                              <span className="shrink-0 text-[0.6875rem] text-accent-text">{t('执行中')}</span>
                             )}
                             {s.status === 'failed' && (
                               <span className="shrink-0 text-[0.6875rem] text-danger">{t('失败')}</span>

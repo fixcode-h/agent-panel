@@ -541,7 +541,7 @@ function ResumeChild({ id }: { id: string }) {
           .finally(() => setBusy(false))
       }}
       title={t('让它接着做：重新占执行位，从停下的地方继续')}
-      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[0.6875rem] text-accent hover:bg-sel disabled:opacity-50"
+      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[0.6875rem] text-accent-text hover:bg-sel disabled:opacity-50"
     >
       {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
       {t('继续')}
@@ -666,7 +666,7 @@ export function Msgs({
 }
 
 /** 还在跑的行前面的转圈图标：和后台命令、子对话用同一套外观 */
-const spinning = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+const spinning = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
 
 /**
  * 运行区里的工作流运行（计划触发的那次、工作流任务自己跑的那次都一样）：和后台命令一样放在总结下面，

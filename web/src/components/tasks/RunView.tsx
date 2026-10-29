@@ -77,7 +77,7 @@ export function RunView({
           <span className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 truncate text-[0.875rem] font-medium">{title}</span>
             {state === 'running' && (
-              <span className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-accent">
+              <span className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-accent-text">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 {t('执行中')}
               </span>

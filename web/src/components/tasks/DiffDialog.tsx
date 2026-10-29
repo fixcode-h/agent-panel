@@ -234,7 +234,7 @@ function DiffShell({
             <button
               type="button"
               onClick={() => setShown((n) => n + PAGE)}
-              className="cursor-pointer rounded-lg px-3 py-1.5 text-[0.75rem] text-accent transition-colors hover:bg-sel"
+              className="cursor-pointer rounded-lg px-3 py-1.5 text-[0.75rem] text-accent-text transition-colors hover:bg-sel"
             >
               {t('显示更多（还有 {n} 行）', { n: total - shown })}
             </button>
@@ -280,7 +280,7 @@ function SplitView({ rows, wrap, shown }: { rows: Row[]; wrap: boolean; shown: n
     return n
   }, [rows])
   return (
-    <div className="font-mono text-[0.78125rem] leading-[1.65]">
+    <div className="font-mono text-[0.75rem] leading-[1.65]">
       <div className="grid grid-cols-2" style={wrap ? undefined : { width: `max(100%, ${col * 2}ch)` }}>
         {rows.slice(0, shown).map((r, i) => {
           if (r.kind === 'hunk')
@@ -339,7 +339,7 @@ function SplitView({ rows, wrap, shown }: { rows: Row[]; wrap: boolean; shown: n
 /** 上下对照：旧行号、新行号、符号各一列，像 git diff 一样逐行看，窄窗口下横向更省地方 */
 function UnifiedView({ rows, wrap, shown }: { rows: NumberedLine[]; wrap: boolean; shown: number }) {
   return (
-    <div className={cn('font-mono text-[0.78125rem] leading-[1.65]', !wrap && 'min-w-max')}>
+    <div className={cn('font-mono text-[0.75rem] leading-[1.65]', !wrap && 'min-w-max')}>
       {rows.slice(0, shown).map((r, i) => {
         if (r.l.startsWith('@@'))
           return (

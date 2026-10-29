@@ -209,7 +209,7 @@ export function useSlashMenu({
         if (!list.length) return null
         return (
           <div key={g.id}>
-            <div className="px-2.5 pt-2 pb-0.5 text-[0.65625rem] font-medium text-subtle">{g.label}</div>
+            <div className="px-2.5 pt-2 pb-0.5 text-[0.6875rem] font-medium text-subtle">{g.label}</div>
             {list.map((x) => {
               const i = items.indexOf(x)
               return (
@@ -231,10 +231,10 @@ export function useSlashMenu({
                 >
                   <g.icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
                   <span className="shrink-0 font-mono text-fg">/{x.name}</span>
-                  {x.hint && <span className="shrink-0 font-mono text-[0.71875rem] text-subtle">{x.hint}</span>}
+                  {x.hint && <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">{x.hint}</span>}
                   <span className="min-w-0 flex-1 truncate text-[0.75rem] text-subtle">{x.description}</span>
                   {x.source && (
-                    <span className="max-w-[120px] shrink-0 truncate font-mono text-[0.65625rem] text-subtle/80">
+                    <span className="max-w-[120px] shrink-0 truncate font-mono text-[0.6875rem] text-subtle/80">
                       {x.source}
                     </span>
                   )}

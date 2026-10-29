@@ -94,18 +94,18 @@ export function BuiltinAgentsDialog({
                     className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
                   >
                     <div className="min-w-0 flex-[1_1_320px]">
-                      <p className="flex items-center gap-2 text-[0.84375rem] font-medium">
+                      <p className="flex items-center gap-2 text-[0.8125rem] font-medium">
                         {b.agent.name}
                         {added && (
-                          <span className="inline-flex items-center gap-0.5 text-[0.71875rem] font-normal text-success">
+                          <span className="inline-flex items-center gap-0.5 text-[0.6875rem] font-normal text-success">
                             <Check className="h-3 w-3" />
                             {t('已添加')}
                           </span>
                         )}
                       </p>
-                      <p className="mt-0.5 text-[0.78125rem] leading-relaxed text-muted">{b.agent.description}</p>
+                      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-muted">{b.agent.description}</p>
                       {b.agent.skills.length > 0 && (
-                        <p className="mt-1 font-mono text-[0.71875rem] text-subtle">{b.agent.skills.join(' · ')}</p>
+                        <p className="mt-1 font-mono text-[0.6875rem] text-subtle">{b.agent.skills.join(' · ')}</p>
                       )}
                     </div>
                     {added ? (

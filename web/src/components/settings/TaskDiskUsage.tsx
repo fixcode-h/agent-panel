@@ -153,9 +153,9 @@ export function TaskDiskUsage({ onChanged }: { onChanged?: () => void }) {
                   <ChevronDown
                     className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', !expanded && '-rotate-90')}
                   />
-                  <span className="min-w-0 flex-1 truncate text-[0.84375rem]">{g.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-[0.8125rem]">{g.name}</span>
                   <span className="shrink-0 text-xs text-subtle">{t('{n} 个对话', { n: g.convs.length })}</span>
-                  <span className="w-[76px] shrink-0 text-right font-mono text-[0.78125rem] text-muted">
+                  <span className="w-[76px] shrink-0 text-right font-mono text-[0.75rem] text-muted">
                     {formatBytes(g.total)}
                   </span>
                 </button>

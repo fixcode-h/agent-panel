@@ -78,7 +78,7 @@ export function BundledDetail({
   return (
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
       <header className="flex flex-wrap items-start gap-3 border-b bg-bg px-4 py-5 md:px-8">
-        <Package className="mt-1 h-5 w-5 shrink-0 text-accent" />
+        <Package className="mt-1 h-5 w-5 shrink-0 text-accent-text" />
         <div className="min-w-0 flex-[1_1_260px]">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate font-mono text-lg font-semibold">{item.name}</h2>
@@ -94,7 +94,7 @@ export function BundledDetail({
             </Badge>
           </div>
           <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted">{item.description || t('没有说明')}</p>
-          <p className="mt-0.5 truncate font-mono text-[0.71875rem] text-subtle">
+          <p className="mt-0.5 truncate font-mono text-[0.6875rem] text-subtle">
             {SHARED_DIR}/{item.name}/SKILL.md
           </p>
         </div>
@@ -157,7 +157,7 @@ export function BundledDetail({
                   picked === '' && file ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60',
                 )}
               >
-                <FileText className="h-3.5 w-3.5 shrink-0 text-accent" />
+                <FileText className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 <span className="truncate font-mono">SKILL.md</span>
               </button>
               {visibleRows(rows, folded).map((r) => {
@@ -178,7 +178,7 @@ export function BundledDetail({
                       picked === r.path ? 'bg-sel text-fg' : 'hover:bg-sel/60',
                     )}
                   >
-                    <Icon className={cn('h-3.5 w-3.5 shrink-0', isDir ? 'text-subtle' : 'text-accent')} />
+                    <Icon className={cn('h-3.5 w-3.5 shrink-0', isDir ? 'text-subtle' : 'text-accent-text')} />
                     <span className={cn('truncate', isDir ? 'text-muted' : 'font-mono')}>{entryName(r.path)}</span>
                   </button>
                 )

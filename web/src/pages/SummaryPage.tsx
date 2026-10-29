@@ -228,7 +228,7 @@ function ReportEditor({
   return (
     <Card as="section">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-        <FileText className="h-4 w-4 text-accent" />
+        <FileText className="h-4 w-4 text-accent-text" />
         <span className="text-[0.8125rem] font-medium">{title}</span>
         <Segmented
           label={t('报告视图')}
@@ -331,7 +331,7 @@ function ReportCompare({ before, after }: { before: SummaryRecord; after: Summar
   return (
     <Card as="section">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-        <GitCompareArrows className="h-4 w-4 text-accent" />
+        <GitCompareArrows className="h-4 w-4 text-accent-text" />
         <span className="text-[0.8125rem] font-medium">{t('两份报告的对比')}</span>
         <span className="text-xs text-subtle">
           {label(before)} → {label(after)}
@@ -963,7 +963,7 @@ export function SummaryPage() {
       {job && job.status !== 'done' && !!job.md.trim() && (
         <Card as="section">
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-            <FileText className="h-4 w-4 text-accent" />
+            <FileText className="h-4 w-4 text-accent-text" />
             <span className="text-[0.8125rem] font-medium">{t('生成中断，这是已经写出的部分')}</span>
             <Button variant="secondary" size="sm" className="ml-auto" onClick={() => copy(job.md)}>
               <Copy className="h-3.5 w-3.5" />

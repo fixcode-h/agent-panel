@@ -457,7 +457,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="flex h-8 w-full cursor-pointer items-center gap-1 bg-panel px-2 text-[0.71875rem] font-medium tracking-wide text-muted hover:text-fg"
+        className="flex h-8 w-full cursor-pointer items-center gap-1 bg-panel px-2 text-[0.6875rem] font-medium tracking-wide text-muted hover:text-fg"
       >
         <ChevronDown className={cn('h-3 w-3 transition-transform', !open && '-rotate-90')} />
         {title}
@@ -494,7 +494,7 @@ function AnimKeyButton({ state, time, onClick }: { state: AnimKeyState; time: nu
       className={cn(
         'grid h-5 w-4 shrink-0 place-items-center rounded',
         disabled ? 'cursor-default text-subtle/40' : 'cursor-pointer hover:bg-sel hover:text-fg',
-        !disabled && (hasTrack ? 'text-accent' : 'text-subtle'),
+        !disabled && (hasTrack ? 'text-accent-text' : 'text-subtle'),
       )}
     >
       <Diamond className={cn('h-2.5 w-2.5', keyed && 'fill-current')} />
@@ -704,9 +704,9 @@ export function Details({
     <div className="text-[0.75rem]">
       {/* 名字和类型固定在属性面板顶上，往下翻属性时一直能看到选的是哪个控件 */}
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-3 py-2">
-        {Icon && <Icon className="h-4 w-4 shrink-0 text-accent" />}
-        <span className="min-w-0 flex-1 truncate font-mono text-[0.78125rem] font-medium">{widget.Name}</span>
-        <span className="shrink-0 rounded bg-sel px-1.5 py-px text-[0.65625rem] text-subtle">{widget.Type}</span>
+        {Icon && <Icon className="h-4 w-4 shrink-0 text-accent-text" />}
+        <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem] font-medium">{widget.Name}</span>
+        <span className="shrink-0 rounded bg-sel px-1.5 py-px text-[0.6875rem] text-subtle">{widget.Type}</span>
       </div>
       {widget.Type === 'UserWidget' && (
         <Section title={t('子控件')}>
@@ -952,7 +952,7 @@ export function Details({
           title={bp ? t('外观（{device}）', { device: device === 'tablet' ? t('平板') : t('手机') }) : t('外观')}
         >
           {bp && (
-            <div className="mx-3 my-1.5 flex items-center gap-2 rounded-md bg-accent-soft/50 px-2 py-1.5 text-[0.71875rem] leading-relaxed text-accent">
+            <div className="mx-3 my-1.5 flex items-center gap-2 rounded-md bg-accent-soft/50 px-2 py-1.5 text-[0.6875rem] leading-relaxed text-accent-text">
               <span className="flex-1">
                 {t('正在改{device}宽度下的样式，只影响这个宽度，桌面不变', {
                   device: device === 'tablet' ? t('平板') : t('手机'),

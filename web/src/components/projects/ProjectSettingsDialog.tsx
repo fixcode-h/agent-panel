@@ -1030,7 +1030,7 @@ function Body({
                             <span className="flex min-w-0 flex-1 flex-col">
                               <span className="truncate">{w.name}</span>
                               {w.description && (
-                                <span className="truncate text-[0.71875rem] text-subtle">{w.description}</span>
+                                <span className="truncate text-[0.6875rem] text-subtle">{w.description}</span>
                               )}
                             </span>
                           </PopoverClose>
@@ -1341,7 +1341,7 @@ function PageIntro({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="flex flex-col gap-1 pb-1">
       <h3 className="text-[0.9375rem] font-semibold">{title}</h3>
-      <p className="text-[0.78125rem] leading-relaxed text-subtle">{desc}</p>
+      <p className="text-[0.75rem] leading-relaxed text-subtle">{desc}</p>
     </div>
   )
 }
@@ -1381,10 +1381,10 @@ function Collapsible({
           {leading}
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-[0.8125rem] font-medium">{title}</span>
-            {subtitle && <span className="truncate text-[0.71875rem] text-subtle">{subtitle}</span>}
+            {subtitle && <span className="truncate text-[0.6875rem] text-subtle">{subtitle}</span>}
           </span>
           {badge && (
-            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent">
+            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text">
               {badge}
             </span>
           )}
@@ -1957,13 +1957,13 @@ export function NavItem({
       onClick={onClick}
       aria-current={on ? 'page' : undefined}
       className={cn(
-        'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
+        'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem] whitespace-nowrap transition-colors',
         on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
       )}
     >
       {children}
       {hint && (
-        <span className="ml-auto hidden truncate font-mono text-[0.65625rem] font-normal text-subtle md:inline">
+        <span className="ml-auto hidden truncate font-mono text-[0.6875rem] font-normal text-subtle md:inline">
           {hint}
         </span>
       )}

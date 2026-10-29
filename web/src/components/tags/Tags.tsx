@@ -33,10 +33,7 @@ export function TagChip({ tag, onRemove, className }: { tag: Tag; onRemove?: () 
     <span
       title={tag.description || undefined}
       style={tagStyle(tag.color)}
-      className={cn(
-        'inline-flex h-[22px] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.71875rem]',
-        className,
-      )}
+      className={cn('inline-flex h-[22px] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.6875rem]', className)}
     >
       <span className="truncate">{tag.name}</span>
       {onRemove && (
@@ -61,9 +58,9 @@ export function TagList({ ids, max = 3 }: { ids: string[]; max?: number }) {
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
       {list.slice(0, max).map((x) => (
-        <TagChip key={x.id} tag={x} className="h-[18px] px-1 text-[0.65625rem]" />
+        <TagChip key={x.id} tag={x} className="h-[18px] px-1 text-[0.6875rem]" />
       ))}
-      {list.length > max && <span className="text-[0.65625rem] text-subtle">+{list.length - max}</span>}
+      {list.length > max && <span className="text-[0.6875rem] text-subtle">+{list.length - max}</span>}
     </span>
   )
 }
@@ -116,12 +113,12 @@ export function TagPicker({ value, onChange }: { value: string[]; onChange: (ids
               <button key={x.id} type="button" className={menuItem} onClick={() => toggle(x.id)}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: TAG_HEX[x.color] }} />
                 <span className="flex-1 truncate">{x.name}</span>
-                {value.includes(x.id) && <Check className="h-4 w-4 text-accent" />}
+                {value.includes(x.id) && <Check className="h-4 w-4 text-accent-text" />}
               </button>
             ))}
             {name && !exact && (
               <button type="button" className={menuItem} onClick={() => void create()}>
-                <Plus className="h-4 w-4 text-accent" />
+                <Plus className="h-4 w-4 text-accent-text" />
                 <span className="flex-1 truncate">{t('新建标签「{name}」', { name })}</span>
               </button>
             )}
