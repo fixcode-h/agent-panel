@@ -1996,8 +1996,8 @@ export function TaskView({
               className={cn(
                 'relative flex min-w-0 flex-1',
                 pane ? 'h-full min-h-0' : 'min-h-[70vh] md:h-full md:min-h-0',
-                // 对话和右栏各是一块面板（见 index.css 的 panel），中间露出一道底色
-                !pane && !embed && 'md:gap-2',
+                // 对话和右栏各是一块面板（见 index.css 的 panel），中间一条细线
+                !pane && !embed && 'md:divide-x',
               )}
             >
               <main
