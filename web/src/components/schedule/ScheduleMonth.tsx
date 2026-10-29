@@ -11,7 +11,8 @@ const PER_DAY = 3
 
 /**
  * 计划页的月视图：6 行 × 7 列铺满这个月（前后补齐到整周），每格列出当天几点跑哪条。
- * 和周视图同一份数据（occurrencesIn）、同一套色调；点一条选中那条计划
+ * 和周视图同一份数据（occurrencesIn）、同一套色调；点一条选中那条计划。
+ * 双击一格在那天 9:00 新建；点日期或「还有 n 条」切到那一周的周视图看全
  */
 export function ScheduleMonth({
   list,
@@ -19,6 +20,8 @@ export function ScheduleMonth({
   month,
   selected,
   onSelect,
+  onCreate,
+  onOpenDay,
 }: {
   list: Schedule[]
   now: number
@@ -26,6 +29,10 @@ export function ScheduleMonth({
   month: number
   selected: string
   onSelect: (s: Schedule) => void
+  /** 在某天新建（那天 9:00） */
+  onCreate: (at: number) => void
+  /** 切到这一天所在的周 */
+  onOpenDay: (day: number) => void
 }) {
   const first = weekStartOf(month)
   const days = useMemo(
@@ -59,20 +66,27 @@ export function ScheduleMonth({
           return (
             <div
               key={i}
+              onDoubleClick={(e) => e.target === e.currentTarget && onCreate(new Date(d).setHours(9, 0, 0, 0))}
+              title={t('双击在这天新建计划')}
               className={cn(
                 'flex min-h-[7rem] flex-col gap-0.5 border-b p-1',
                 i % 7 && 'border-l',
                 i % 7 > 4 && 'bg-panel',
               )}
             >
-              <span
+              <button
+                type="button"
+                onClick={() => onOpenDay(d.getTime())}
+                aria-label={t('看 {m} 月 {d} 日这一周', { m: d.getMonth() + 1, d: d.getDate() })}
                 className={cn(
-                  'mb-0.5 grid h-6 min-w-6 place-items-center self-start rounded-full px-1 text-[0.75rem] font-semibold tabular-nums',
-                  today ? 'bg-fg text-bg' : d.getMonth() === thisMonth ? 'text-fg' : 'text-subtle/60',
+                  'mb-0.5 grid h-6 min-w-6 cursor-pointer place-items-center self-start rounded-full px-1 text-[0.75rem] font-semibold tabular-nums transition-colors',
+                  today
+                    ? 'bg-fg text-bg'
+                    : cn('hover:bg-sel', d.getMonth() === thisMonth ? 'text-fg' : 'text-subtle/60'),
                 )}
               >
                 {d.getDate()}
-              </span>
+              </button>
               {items.slice(0, PER_DAY).map((e, k) => (
                 <button
                   key={`${e.s.id}-${k}`}
@@ -92,9 +106,13 @@ export function ScheduleMonth({
                 </button>
               ))}
               {items.length > PER_DAY && (
-                <span className="px-1 text-[0.6875rem] text-subtle">
+                <button
+                  type="button"
+                  onClick={() => onOpenDay(d.getTime())}
+                  className="cursor-pointer self-start rounded px-1 text-[0.6875rem] text-subtle hover:bg-sel hover:text-fg"
+                >
                   {t('还有 {n} 条', { n: items.length - PER_DAY })}
-                </span>
+                </button>
               )}
             </div>
           )

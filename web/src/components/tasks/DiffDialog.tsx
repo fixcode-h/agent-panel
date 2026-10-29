@@ -555,7 +555,15 @@ export function DiffDialog({
   return (
     <>
       {/* 只看不填：点到外面就关 */}
-      <Modal open={own || !!path} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside>
+      {/* 编辑工具那一次的改动（own）通常就几行：弹窗跟着内容高，最高到铺满的四分之三；文件的全部改动照旧铺满 */}
+      <Modal
+        open={own || !!path}
+        onOpenChange={onOpenChange}
+        title={null}
+        size={own ? 'fit' : 'full'}
+        bare
+        closeOnOutside
+      >
         <DiffShell
           path={shown}
           diff={text}
@@ -572,12 +580,12 @@ export function DiffDialog({
             error ? (
               <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
             ) : !ready ? (
-              <div className="flex h-full items-center justify-center gap-2 text-[0.8125rem] text-subtle">
+              <div className="flex h-full min-h-32 items-center justify-center gap-2 text-[0.8125rem] text-subtle">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {t('正在读取差异…')}
               </div>
             ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-[0.8125rem] text-subtle">
+              <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 p-8 text-center text-[0.8125rem] text-subtle">
                 <FileText className="h-5 w-5" />
                 {own
                   ? t('这次修改没有给出改动内容。')

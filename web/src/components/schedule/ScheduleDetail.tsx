@@ -23,7 +23,7 @@ import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
 import { EndChoice } from './EndChoice'
 import { dayTimeLabel, scheduleDot, upcomingRuns } from './occurrences'
-import { REPEAT_OPTIONS, useScheduleForm } from './use-schedule-form'
+import { durationOptions, REPEAT_OPTIONS, useScheduleForm } from './use-schedule-form'
 
 /** 字段名：小号、加粗、淡色，和设计稿的分组标签一致 */
 function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
@@ -233,6 +233,16 @@ export function ScheduleDetail({
             />
           </Field>
         </div>
+        {/* 日历上占多长：周视图里拖底边也能改 */}
+        <Field label={t('时长')}>
+          <Select
+            size="sm"
+            aria-label={t('时长')}
+            value={String(form.durationMin)}
+            options={durationOptions(form.durationMin)}
+            onChange={(e) => set('durationMin', Number(e.target.value))}
+          />
+        </Field>
         <Field label={t('重复')}>
           <Segmented fill label={t('重复')} value={form.repeat} onChange={setRepeat} options={REPEAT_OPTIONS} />
         </Field>

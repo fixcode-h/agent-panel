@@ -1,3 +1,4 @@
+import { useUserName } from '@/lib/user-name'
 import { Fragment } from 'react'
 import * as M from '@radix-ui/react-dropdown-menu'
 import { Check, CheckCircle2, GitBranch, ListTree } from 'lucide-react'
@@ -17,10 +18,11 @@ import { childClosedHint, childLabelClass, childLabels, childNote, staleLine, ty
  */
 export function ChildRowContent({ c, viewing = false }: { c: ChildSummary; viewing?: boolean }) {
   const icon = childIcon(c)
+  const user = useUserName()
   // 执行中写正在做什么，其余写在等什么或最近结果；很久没新输出时标色
   const line = childNote(c, icon === 'running')
   const stale = staleLine(c)
-  const labels = childLabels(c)
+  const labels = childLabels(c, user)
   // 做完、没看过、而且不是当前打开的那一个：画未读点（和侧栏橙点同一份口径，见 childDoneDot）
   const unread = childDoneDot(c, viewing)
   return (

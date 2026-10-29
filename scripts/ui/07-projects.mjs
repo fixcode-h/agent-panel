@@ -87,7 +87,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 浅色主题
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   await p.goto(base + '#/projects')
-  await check(p, '项目-浅色', ['任务', '设置'])
+  await check(p, '项目-浅色', ['任务'])
   errors.push(...(await segmentedContrastProblems(p, '侧栏-浅色')))
   // 浅色主题下再看一眼 Token 用量（会话栏开着时在会话栏里）：分隔线、速度的颜色都要跟着主题
   {

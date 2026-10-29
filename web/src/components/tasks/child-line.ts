@@ -116,18 +116,18 @@ function convGone(c: ChildSummary): 'closed' | 'hint' | '' {
 }
 
 /**
- * 一行上的状态标签，顺序固定：已关闭 → 已解决 → 等你选择 → 计划 n/m → 执行中 / 等结果 / 待收尾 →
+ * 一行上的状态标签，顺序固定：已关闭 → 已解决 → 等用户选择（who 是设置里的称呼）→ 计划 n/m → 执行中 / 等结果 / 待收尾 →
  * 停下的原因。同一行只说一件事，全部从 childIcon / childState 派生，
  * 所以不会出现「已解决」和「执行中」同屏（以前徽标按 resolved/asking/plan 各算一套就是这么来的）。
  * 「已关闭」也一样只认 childIcon（见 convGone）：还在跑的对话不说它关了。
  */
-export function childLabels(c: ChildSummary): ChildLabel[] {
+export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
   const icon = childIcon(c)
   const state = childState(c)
   const out: ChildLabel[] = []
   if (convGone(c) === 'closed') out.push({ text: t('已关闭'), tone: 'plain' })
   if (c.resolved && icon === 'done') out.push({ text: t('已解决'), tone: 'success', icon: 'check' })
-  if (icon === 'waiting') out.push({ text: t('等你选择'), tone: 'warning' })
+  if (icon === 'waiting') out.push({ text: t('等{who}选择', { who }), tone: 'warning' })
   if (icon === 'running' && c.plan)
     out.push({ text: t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total }), tone: 'warning' })
   if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })

@@ -1,5 +1,7 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_APP: Record<string, string> = {
+  功能栏: 'Activity bar',
+  回到主页: 'Back to home',
   // 首页、聊天页
   夜深了: 'Up late',
   早上好: 'Good morning',

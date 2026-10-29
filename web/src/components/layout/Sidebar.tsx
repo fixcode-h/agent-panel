@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import {
   Archive,
   CalendarClock,
@@ -20,8 +20,6 @@ import {
   Menu as MenuIcon,
   MoreHorizontal,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   Palette,
   Plug,
   Plus,
@@ -120,7 +118,11 @@ export function Logo({ className }: { className?: string }) {
   )
 }
 
-const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
+/**
+ * 功能页：宽屏时放在最左边的图标栏（ActivityBar）里，打开时不显示会话侧栏、图标栏顶上换成「回到主页」；
+ * 手机的抽屉菜单里照旧列在会话侧栏里
+ */
+export const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'summary', label: t('工作总结'), icon: FileText },
   { id: 'schedules', label: t('计划'), icon: CalendarClock },
   { id: 'agents', label: t('角色'), icon: Bot },
@@ -165,27 +167,42 @@ function useFolded() {
 /** 整个「项目」分组收起时记在 folded 里的键 */
 const ALL = '__all'
 
+/**
+ * 会话侧栏收没收起：图标栏顶上的按钮、⌘B、命令面板都改它，侧栏和图标栏读同一份（记在本机）
+ */
+let collapsedNow = (() => {
+  try {
+    return localStorage.getItem('sidebar') === 'collapsed'
+  } catch {
+    return false
+  }
+})()
+const collapsedSubs = new Set<() => void>()
+export function toggleSidebar() {
+  collapsedNow = !collapsedNow
+  try {
+    localStorage.setItem('sidebar', collapsedNow ? 'collapsed' : 'open')
+  } catch {}
+  for (const f of collapsedSubs) f()
+}
+export function useSidebarCollapsed() {
+  return useSyncExternalStore(
+    (cb) => {
+      collapsedSubs.add(cb)
+      return () => void collapsedSubs.delete(cb)
+    },
+    () => collapsedNow,
+  )
+}
+
 function useCollapsed() {
-  const [v, set] = useState(() => {
-    try {
-      return localStorage.getItem('sidebar') === 'collapsed'
-    } catch {
-      return false
-    }
-  })
-  const toggle = () =>
-    set((cur) => {
-      try {
-        localStorage.setItem('sidebar', cur ? 'open' : 'collapsed')
-      } catch {}
-      return !cur
-    })
-  // ⌘B 和命令面板发来的切换
+  const v = useSidebarCollapsed()
+  // ⌘B 和命令面板发来的切换（侧栏只挂一份，监听也只有一份）
   useEffect(() => {
-    window.addEventListener(TOGGLE_SIDEBAR, toggle)
-    return () => window.removeEventListener(TOGGLE_SIDEBAR, toggle)
+    window.addEventListener(TOGGLE_SIDEBAR, toggleSidebar)
+    return () => window.removeEventListener(TOGGLE_SIDEBAR, toggleSidebar)
   }, [])
-  return [v, toggle] as const
+  return v
 }
 
 function Row({
@@ -274,13 +291,20 @@ function Row({
 let lastChatRoute: Route = { page: 'chat' }
 let lastAgentRoute: Route = { page: 'home' }
 let lastDesignRoute: Route = { page: 'design' }
+/** 最近一次看的会话页（任务、项目、聊天、设计）：功能页上「回到主页」回到这里 */
+let lastWorkRoute: Route = { page: 'home' }
+export const homeRoute = () => lastWorkRoute
+/** 功能页：会话侧栏让开，整页给这个功能 */
+export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page)
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
- * 展开时是左上角的下拉（产品图标 + 当前模式名，照设计稿 Workspace）；收起侧栏时竖着排图标。
+ * 展开时是左上角的下拉（产品图标 + 当前模式名，照设计稿 Workspace）；会话侧栏让开时（功能页、收起）竖着排在图标栏里。
+ * 功能页不属于哪个模式：三个都不亮，点哪个都回到那个模式最近的页面
  */
-function ModeSwitch({ narrow }: { narrow: boolean }) {
+export function ModeSwitch({ narrow }: { narrow: boolean }) {
   const { route, go } = useNav()
+  const tool = isToolPage(route.page)
   const chat = route.page === 'chat'
   // ComfyUI 工作流管理属于 UI 设计
   const design = route.page === 'design' || route.page === 'comfy'
@@ -291,7 +315,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
       desc: t('按项目调度 CLI'),
       label: t('Agent 模式：在项目里执行任务和工作流'),
       icon: Code2,
-      on: !chat && !design,
+      on: !chat && !design && !tool,
       to: lastAgentRoute,
     },
     {
@@ -366,7 +390,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const skillDot = sharedUpdateHint(skillUpd)
   // 「设置 → 部署」那份和这一版不同时，「设置」入口本身也要带点：用户在任务页看不到设置内部
   const deployDot = deployedUpdateHint(skillUpd)
-  const [collapsed, toggleCollapsed] = useCollapsed()
+  const collapsed = useCollapsed()
   // 侧栏可以拖宽，但中间要留出内容宽度（输入框的宽度），右边有任务面板时也要算进去；除此之外不设上限
   const pane = usePaneWidth('sidebar', 264, 200, () => {
     const panel = document.querySelector('[data-task-panel]')?.getBoundingClientRect().width ?? 0
@@ -378,9 +402,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const chatMode = route.page === 'chat'
   const designMode = route.page === 'design' || route.page === 'comfy'
   // ComfyUI 工作流管理也算 UI 设计：不能记成 Agent 模式的页面，否则点 Agent 又回到 ComfyUI，切不过去
+  // 功能页不记：从功能页切模式、回主页都回到最近的会话页，不是又回到功能页
   if (designMode) lastDesignRoute = route
   else if (chatMode) lastChatRoute = route
-  else lastAgentRoute = route
+  else if (!isToolPage(route.page)) lastAgentRoute = route
+  if (!isToolPage(route.page)) lastWorkRoute = route
 
   // 按项目分组：项目分组只按添加时间（或拖拽后的顺序）排，不受任务时间、执行状态影响；组内任务仍按最近发言排
   const [folded, toggleFolded, setFolded] = useFolded()
@@ -497,21 +523,17 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       .catch((e) => toast.error((e as Error).message))
   }
 
-  const body = (narrow: boolean) => (
+  /**
+   * 侧栏的内容。mobile 是手机抽屉：功能页入口和设置都在这里；宽屏时它们在最左边的图标栏（ActivityBar），
+   * 侧栏只放会话（新建、项目和对话），收起侧栏的按钮也在图标栏顶上
+   */
+  const body = (narrow: boolean, mobile = false) => (
     <>
-      {/* 左上角：模式下拉（产品图标 + 模式名）在左、收起侧栏在右；产品图标的左边和下面导航的图标左边对齐 */}
+      {/* 左上角：模式下拉（产品图标 + 模式名）；产品图标的左边和下面导航的图标左边对齐 */}
       <div
         className={cn('flex h-14 shrink-0 items-center gap-2 pt-1 pr-3 pb-1.5 pl-2.5', narrow && 'justify-center px-0')}
       >
         {!narrow && <ModeSwitch narrow={false} />}
-        <IconButton
-          onClick={toggleCollapsed}
-          icon={narrow ? PanelLeftOpen : PanelLeftClose}
-          label={narrow ? t('展开侧栏') : t('收起侧栏')}
-          size="sm"
-          // 收起时和下面的图标一样居中，不能靠右；手机上侧栏在抽屉里，不用收起
-          className={cn('hidden md:grid', !narrow && 'ml-auto')}
-        />
       </div>
 
       <nav aria-label={t('主导航')} className={cn('flex flex-col gap-0.5 px-2.5', narrow && 'items-center px-2')}>
@@ -553,17 +575,18 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               // 设计稿：「新建任务」是主入口，前景色 + 600，其余导航是次要色 + 500
               className="font-semibold text-fg"
             />
-            {NAV.map((n) => (
-              <Row
-                key={n.id}
-                icon={n.icon}
-                label={n.label}
-                collapsed={narrow}
-                on={route.page === n.id}
-                onClick={() => go({ page: n.id })}
-                dot={n.id === 'library' ? skillDot : undefined}
-              />
-            ))}
+            {mobile &&
+              NAV.map((n) => (
+                <Row
+                  key={n.id}
+                  icon={n.icon}
+                  label={n.label}
+                  collapsed={narrow}
+                  on={route.page === n.id}
+                  onClick={() => go({ page: n.id })}
+                  dot={n.id === 'library' ? skillDot : undefined}
+                />
+              ))}
           </>
         )}
       </nav>
@@ -865,27 +888,29 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         <div className="flex-1" />
       )}
 
-      <div className={cn('flex shrink-0 items-center gap-1 px-2.5 py-2', narrow && 'flex-col px-2')}>
-        <Row
-          icon={Settings}
-          label={t('设置')}
-          collapsed={narrow}
-          badge={update ? t('有新版本') : undefined}
-          dot={deployDot}
-          onClick={() => {
-            setMobileOpen(false)
-            openSettings(update ? 'update' : undefined)
-          }}
-          className={cn(!narrow && 'flex-1')}
-        />
-        <IconButton
-          onClick={onToggleTheme}
-          icon={dark ? Sun : Moon}
-          label={dark ? t('切换到浅色') : t('切换到深色')}
-          size="sm"
-          strokeWidth={1.7}
-        />
-      </div>
+      {mobile && (
+        <div className={cn('flex shrink-0 items-center gap-1 px-2.5 py-2', narrow && 'flex-col px-2')}>
+          <Row
+            icon={Settings}
+            label={t('设置')}
+            collapsed={narrow}
+            badge={update ? t('有新版本') : undefined}
+            dot={deployDot}
+            onClick={() => {
+              setMobileOpen(false)
+              openSettings(update ? 'update' : undefined)
+            }}
+            className={cn(!narrow && 'flex-1')}
+          />
+          <IconButton
+            onClick={onToggleTheme}
+            icon={dark ? Sun : Moon}
+            label={dark ? t('切换到浅色') : t('切换到深色')}
+            size="sm"
+            strokeWidth={1.7}
+          />
+        </div>
+      )}
     </>
   )
 
@@ -915,20 +940,20 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           onClick={() => setMobileOpen(false)}
           className="absolute top-3 right-3 z-10"
         />
-        {body(false)}
+        {body(false, true)}
       </Sheet>
-      <aside
-        aria-label={t('侧栏')}
-        data-sidebar
-        style={{ width: collapsed ? 56 : pane.width }}
-        className={cn(
-          'relative hidden shrink-0 flex-col bg-rail md:flex',
-          !pane.dragging && 'transition-[width] duration-200',
-        )}
-      >
-        {body(collapsed)}
-        {!collapsed && <ResizeHandle pane={pane} side="right" label={t('拖动调整侧栏的宽度')} />}
-      </aside>
+      {/* 宽屏：收起时整栏让开（图标栏还在），功能页（计划、工作流……）也让开，整页给那个功能 */}
+      {!collapsed && !isToolPage(route.page) && (
+        <aside
+          aria-label={t('侧栏')}
+          data-sidebar
+          style={{ width: pane.width }}
+          className="relative hidden shrink-0 flex-col bg-rail md:flex"
+        >
+          {body(false)}
+          <ResizeHandle pane={pane} side="right" label={t('拖动调整侧栏的宽度')} />
+        </aside>
+      )}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(undefined)}

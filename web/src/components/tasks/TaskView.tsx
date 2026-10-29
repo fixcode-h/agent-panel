@@ -1,3 +1,4 @@
+import { useUserName } from '@/lib/user-name'
 import {
   Fragment,
   Suspense,
@@ -2727,6 +2728,7 @@ function ChildrenBar({
   /** 停下的子对话一键继续：重新占执行位，从停下的地方接着做 */
   onResume: (id: string) => void
 }) {
+  const user = useUserName()
   const [open, setOpen] = useState(false)
   const [all, setAll] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -2831,8 +2833,8 @@ function ChildrenBar({
                 <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0" />
                 <span className="min-w-0 truncate">
                   {asking.length > 1
-                    ? t('{n} 个子对话请你选择', { n: asking.length })
-                    : t('「{title}」请你选择', { title: asking[0].title })}
+                    ? t('{n} 个子对话请{who}选择', { n: asking.length, who: user })
+                    : t('「{title}」请{who}选择', { title: asking[0].title, who: user })}
                 </span>
               </button>
             )}

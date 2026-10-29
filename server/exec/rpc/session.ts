@@ -233,7 +233,8 @@ export function createRpcSession(o: {
     },
     handle,
     steer(text) {
-      if (ended) return Promise.resolve(false)
+      // 这一轮已经结束（保活等下一句、或正要退出）：插话没人处理，交给面板按下一句消息送
+      if (ended || finished) return Promise.resolve(false)
       return o.adapter.steer(ctx, text)
     },
     redirect(note) {

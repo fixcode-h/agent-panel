@@ -187,6 +187,8 @@ import { t } from '../shared/i18n.ts'
 import { subjectLine } from '../shared/peer-message.ts'
 import {
   activePlan,
+  bindWait,
+  ensureChildStep,
   holdWait,
   markWrapUp,
   openPlan,
@@ -975,6 +977,43 @@ export function tasksApi(deps: {
     await store
       .update(parent.id, target)
       .catch((e) => log.warn('task', '回报父对话失败', { error: (e as Error).message }))
+  }
+
+  /**
+   * 用户直接在子对话里发了消息：父对话计划里挂一步等这个子对话（和父对话 send_to_conversation 同一套，
+   * 计划已结束就重开、没有能挂的一步就补一步），并在父对话里记一行说明。
+   * 不挂的话子对话做完上报时父对话计划里没人在等它，上报只进收件箱，父对话收不到这个子对话的结果（用户报过）。
+   * 父对话不用转交：子对话自己更新计划、自己做，做完由 reportChild 收口那一步并叫起父对话
+   */
+  async function trackUserToChild(child: Task, text: string) {
+    if (!child.parentTaskId) return
+    const entry = live.get(child.parentTaskId)
+    const parent = entry?.task ?? (await store.get(child.parentTaskId))
+    if (!parent || taskDeleted(parent)) return
+    const now = new Date().toISOString()
+    const at = ensureChildStep(parent, child.id, child.title, now)
+    const wait = at ? bindWait(parent, at, { kind: 'child', ref: child.id, label: child.title }, now) : ''
+    parent.updatedAt = now
+    if (entry) entry.rev++
+    await store.update(parent.id, parent)
+    // 这一轮重新算一次状态：上一次「已完成」的上报不能挡住这次做完后的上报
+    reportedState.delete(child.id)
+    const step = at
+      ? activePlan(parent)
+          ?.steps.flatMap((s) => [s, ...s.children])
+          .find((s) => s.id === at)
+      : undefined
+    const body = `【用户直接交代子对话】用户在子对话「${child.title}」（id ${child.id}）里直接发了新要求：${text.trim().slice(0, 600)}
+它会自己更新计划接着做${step && wait ? `，你计划里的「${step.title}」在等它` : ''}，做完会把状态报给你。你不用转交，也不要另建子对话重做；等它的结果回来后按你的计划接着统筹。`
+    await noteParent(
+      parent.id,
+      child,
+      body,
+      body,
+      undefined,
+      { id: child.id, title: child.title, state: 'running' },
+      await peerOf(child, 'child', 'report', `用户直接交代：${text.trim()}`),
+    )
   }
 
   /**
@@ -2102,8 +2141,10 @@ export function tasksApi(deps: {
   /** 上次交给父对话的状态（见 reportChild）：同一个状态不重复报 */
   const reportedState = new Map<string, string>()
   /** 上报去重的键：收尾请求按请求的时间，别的状态按这一轮结束的时间（每轮结束各报一次） */
+  // 不带 status：CLI 报完这一轮（result）时 status 还是 running，进程退出、整次执行收尾时变成 done，
+  // 同一轮、同一状态会因为这一个字段不同被当成两次上报，父对话里出现两条一样的「子对话状态」
   const reportKey = (tk: Task, state: ConvState) =>
-    state === 'wrapup' ? `wrapup|${tk.wrapRequest?.at ?? ''}` : `${state}|${tk.turnDoneAt}|${tk.status}`
+    state === 'wrapup' ? `wrapup|${tk.wrapRequest?.at ?? ''}` : `${state}|${tk.turnDoneAt}`
 
   /**
    * 正在做的「彻底完成」：删独立分支的目录和分支、清后台命令。
@@ -2392,7 +2433,9 @@ export function tasksApi(deps: {
     const key = reportKey(tk, r.state)
     if (reportedState.get(childId) === key) return
     reportedState.set(childId, key)
-    const summary = tk.summary || lastReply(tk)
+    // 先取最新的回复：task.summary 要等整次执行收尾才更新，这一轮刚报完成（进程还在、或保活等下一句）时
+    // 它还是上一轮的，上报会带着上一轮的结果
+    const summary = lastReply(tk) || tk.summary
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
     const next =
       r.state === 'unfinished' && isolated(tk) && !openWork(tk).length
@@ -3917,6 +3960,15 @@ export function tasksApi(deps: {
   ): Promise<{ task: Task; how: DeliveryHow }> {
     const task = entry.task
     notePlanInput(task, msg.role !== 'user' || !!msg.panel || !!msg.child, msg.at)
+    // 已标完成的子对话 CLI 还停在等下一句时（例如完成和这条消息撞在一起，进程还没收掉），消息直接交给它接着做：
+    // 不清掉完成标记的话它明明在跑，界面和父对话看到的还是「已完成」，做完也不会再上报（reportedDone 挡着）
+    if (task.parentTaskId && task.resolved && !msg.panel) {
+      task.resolved = false
+      reportedDone.delete(task.id)
+      reportedState.delete(task.id)
+      mergeNudged.delete(task.id)
+      entry.rev++
+    }
     // CLI 收到上一条后一直没有任何输出（卡住了）：再往这一轮里插话也不会有回应，停掉它、接回会话重开
     const stuck = stalledTurn(task.id)
     if (stuck) return restartStalled(entry, msg, text, placed, stuck.input)
@@ -5226,6 +5278,12 @@ export function tasksApi(deps: {
     await settleAskFromChild(id, text).catch((e) =>
       log.warn('task', '回答子对话时没能收起父对话的提问卡片', { task: id, error: (e as Error).message }),
     )
+    // 用户直接给子对话发消息：父对话计划里挂上等它，做完的状态才会报到父对话并叫起它（不打断这次发送）
+    if (cur?.parentTaskId)
+      await trackUserToChild(cur, text).catch((e) => {
+        log.warn('task', '用户直接发给子对话的要求没能登记到父对话', { task: id, error: (e as Error).message })
+        alertOn(id, 'delivery', t('这条消息没能登记到父对话的计划里，做完后父对话可能收不到状态'))(e)
+      })
     let prev = runningConv(id)
     if (prev?.task.status === 'running') {
       // 执行中：先试能实时送到 CLI 的办法（等下一句、插话、read_user_notes），

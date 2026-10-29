@@ -324,8 +324,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await aiDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：关掉 AI 优化后，被顶掉的 AI 处理浮条没有回来'))
   await check(p, 'AI处理-浮条让位后回来')
   // 窗口和对话解耦：对话从聊天列表里删掉后，浮条不消失，标成「对话已关闭」，只有用户点关闭才关
-  await p.getByRole('button', { name: '切换模式' }).first().click()
-  await p.getByRole('menuitemradio', { name: /^Chat 模式/ }).click()
+  // 功能页上会话侧栏让开了，模式切换在图标栏里（竖排的三个图标）；会话页上是侧栏左上角的下拉
+  const modeMenu = p.getByRole('button', { name: '切换模式' }).first()
+  if (await modeMenu.isVisible().catch(() => false)) {
+    await modeMenu.click()
+    await p.getByRole('menuitemradio', { name: /^Chat 模式/ }).click()
+  } else
+    await p
+      .getByRole('radio', { name: /^Chat 模式/ })
+      .first()
+      .click()
   const fixRow = p.locator('[data-sidebar] button[title="AI 排查：Pi：卸载没有成功"]').first()
   await fixRow.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：侧栏里找不到排查对话'))
   await fixRow.click({ button: 'right' })

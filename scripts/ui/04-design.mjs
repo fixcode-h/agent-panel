@@ -473,6 +473,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.mouse.down()
   await p.mouse.move(img3.x + img3.width * 0.5, img3.y + img3.height * 0.55, { steps: 6 })
   await p.mouse.up()
+  // 涂完蒙版会弹出这一处的说明框：先按 Esc 收起（标注留着），画板窄时它会盖住下面要框选的位置
+  await p.keyboard.press('Escape')
   await conceptBar.getByRole('button', { name: /^框选标注/ }).click()
   await p.mouse.move(img3.x + img3.width * 0.6, img3.y + img3.height * 0.3)
   await p.mouse.down()

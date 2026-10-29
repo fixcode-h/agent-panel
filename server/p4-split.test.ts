@@ -49,12 +49,26 @@ function fakeP4(files: string[]) {
   return { run, calls }
 }
 
-test('缺某一类的描述：不动任何文件，列出各类文件', async () => {
+test('缺某一类的描述、描述太长：不动任何文件，列出各类文件或超长的那类', async () => {
   const p4 = fakeP4(['//g/Source/Slot.cpp', '//g/Script/slot.lua'])
   const r = await splitChangelists(p4.run, { descriptions: { 'C++': '插槽描边' } })
   assert.equal(r.ok, false)
   assert.match(r.info, /缺 \[Lua\]/)
   assert.ok(!p4.calls.some((c) => c.args[0] === 'change' || c.args[0] === 'reopen'))
+
+  // 描述太长（把原因、函数名、步骤都写进去）：同样一个文件都不动，指出哪一类超了，让它改短
+  const long = fakeP4(['//g/Source/Slot.cpp', '//g/Script/slot.lua'])
+  const r2 = await splitChangelists(long.run, {
+    descriptions: {
+      'C++': '插槽描边',
+      Lua: '家装区域表保存失效修复，三个保存入口统一事务，ApplyExcelRowMutations 改用 ReadDirectExcelCellValue',
+    },
+  })
+  assert.equal(r2.ok, false)
+  assert.match(r2.info, /描述太长/)
+  assert.match(r2.info, /\[Lua\]/)
+  assert.doesNotMatch(r2.info, /\[C\+\+\]/, '没超的那一类不点名')
+  assert.ok(!long.calls.some((c) => c.args[0] === 'change' || c.args[0] === 'reopen'))
 })
 
 test('C++ 和 Lua 各建一个 pending，标签以类型为准', async () => {

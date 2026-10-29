@@ -1068,7 +1068,7 @@ await runShard(import.meta.filename, async (api) => {
   else {
     await go.scrollIntoViewIfNeeded()
     await go.click()
-    const kidAsk = p.getByRole('dialog', { name: 'AI 的问题' }).filter({ hasText: '需要你选择' })
+    const kidAsk = p.getByRole('dialog', { name: 'AI 的问题' }).filter({ hasText: '需要用户选择' })
     if (
       !(await kidAsk.waitFor({ timeout: 10000 }).then(
         () => true,
@@ -1077,7 +1077,7 @@ await runShard(import.meta.filename, async (api) => {
     )
       errors.push('子对话提问：点「去选择」后没有弹出选择窗口')
     else {
-      await check(p, '子对话提问', ['需要你选择', '购物车数量用哪种缓存？', '问题 2'])
+      await check(p, '子对话提问', ['需要用户选择', '购物车数量用哪种缓存？', '问题 2'])
       await kidAsk.getByRole('button', { name: '不回答，终止子对话' }).click()
       if (
         !(await kidAsk.waitFor({ state: 'detached', timeout: 5000 }).then(
