@@ -221,19 +221,19 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                   {data.detected.map((d) => (
                     <li key={key(d)} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                       {d.server.transport === 'http' ? (
-                        <Globe className="h-4 w-4 shrink-0 text-accent" />
+                        <Globe className="h-4 w-4 shrink-0 text-accent-text" />
                       ) : (
-                        <Terminal className="h-4 w-4 shrink-0 text-accent" />
+                        <Terminal className="h-4 w-4 shrink-0 text-accent-text" />
                       )}
                       <div className="min-w-0 flex-[1_1_240px]">
-                        <p className="flex items-center gap-2 font-mono text-[0.84375rem]">
+                        <p className="flex items-center gap-2 font-mono text-[0.8125rem]">
                           <span className="truncate">{d.name}</span>
                           <StatusBadge status={d.status} />
                         </p>
                         <p className="truncate font-mono text-[0.75rem] text-muted" title={summary(d.server)}>
                           {summary(d.server) || t('（没有填命令或地址）')}
                         </p>
-                        <p className="truncate text-[0.71875rem] text-subtle" title={d.file}>
+                        <p className="truncate text-[0.6875rem] text-subtle" title={d.file}>
                           {d.file} · {d.source}
                         </p>
                       </div>
@@ -288,7 +288,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                 {data.servers.length ? t('共 {n} 条', { n: data.servers.length }) : ''}
               </span>
               <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void diagnose()}>
-                <Wand2 className="h-3.5 w-3.5 text-accent" />
+                <Wand2 className="h-3.5 w-3.5 text-accent-text" />
                 {t('用 AI 排查整页')}
               </Button>
             </div>
@@ -301,22 +301,19 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                 {data.servers.map((s) => (
                   <li key={s.name} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                     {s.transport === 'http' ? (
-                      <Globe className="h-4 w-4 shrink-0 text-accent" />
+                      <Globe className="h-4 w-4 shrink-0 text-accent-text" />
                     ) : (
-                      <Terminal className="h-4 w-4 shrink-0 text-accent" />
+                      <Terminal className="h-4 w-4 shrink-0 text-accent-text" />
                     )}
                     <div className="min-w-0 flex-[1_1_240px]">
-                      <p className="truncate font-mono text-[0.84375rem]">{s.name}</p>
+                      <p className="truncate font-mono text-[0.8125rem]">{s.name}</p>
                       <p className="truncate font-mono text-[0.75rem] text-muted" title={summary(s)}>
                         {summary(s)}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                       {data.clis.map((c) => (
-                        <label
-                          key={c.id}
-                          className="flex cursor-pointer items-center gap-2 text-[0.78125rem] text-muted"
-                        >
+                        <label key={c.id} className="flex cursor-pointer items-center gap-2 text-[0.75rem] text-muted">
                           <Switch
                             checked={s.clis.includes(c.id)}
                             onCheckedChange={(on) => void toggle(s, c.id, on)}
@@ -421,7 +418,7 @@ function Intro({ action }: { action?: React.ReactNode }) {
     <div className="flex flex-wrap items-start gap-3 pb-1">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <h3 className="text-[0.9375rem] font-semibold">{t('MCP 工具')}</h3>
-        <p className="text-[0.78125rem] leading-relaxed text-subtle">
+        <p className="text-[0.75rem] leading-relaxed text-subtle">
           {t(
             'MCP 工具让 Agent 连上外部的服务和数据。这里管当前项目用的 MCP：面板写进各 Agent 的全局配置文件（和「MCP 工具」页是同一份），项目目录里已有的配置只读识别出来、可以一键导入。这里的改动立即生效，不用下面的按钮保存。',
           )}
@@ -433,14 +430,14 @@ function Intro({ action }: { action?: React.ReactNode }) {
 }
 
 const STATUS = {
-  new: { label: t('只在项目里'), cls: 'bg-accent/10 text-accent' },
+  new: { label: t('只在项目里'), cls: 'bg-accent/10 text-accent-text' },
   same: { label: t('和各 Agent 的配置一致'), cls: 'bg-success/10 text-success' },
   different: { label: t('和各 Agent 的配置不同'), cls: 'bg-warning/10 text-warning' },
 } as const
 
 function StatusBadge({ status }: { status: ProjectMcpDetected['status'] }) {
   return (
-    <span className={`shrink-0 rounded-full px-1.5 py-px text-[0.65625rem] ${STATUS[status].cls}`}>
+    <span className={`shrink-0 rounded-full px-1.5 py-px text-[0.6875rem] ${STATUS[status].cls}`}>
       {STATUS[status].label}
     </span>
   )
@@ -580,7 +577,7 @@ function EditDialog({
               onChange={(e) => setEnv(e.target.value)}
               placeholder="API_KEY=..."
               spellCheck={false}
-              className="font-mono text-[0.78125rem]"
+              className="font-mono text-[0.75rem]"
             />
             <span className="text-[0.75rem] text-subtle">{t('一行一个，写成 名字=值')}</span>
           </label>
@@ -604,7 +601,7 @@ function EditDialog({
               onChange={(e) => setHeaders(e.target.value)}
               placeholder="Authorization: Bearer ..."
               spellCheck={false}
-              className="font-mono text-[0.78125rem]"
+              className="font-mono text-[0.75rem]"
             />
             <span className="text-[0.75rem] text-subtle">{t('一行一个，写成 名字: 值')}</span>
           </label>
@@ -625,7 +622,7 @@ function EditDialog({
       </div>
       {test && test !== 'running' && (
         <div
-          className={`rounded-lg border px-3 py-2.5 text-[0.78125rem] ${test.ok ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'}`}
+          className={`rounded-lg border px-3 py-2.5 text-[0.75rem] ${test.ok ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'}`}
         >
           <p className="flex items-center gap-1.5 font-medium">
             {test.ok ? (
@@ -644,7 +641,7 @@ function EditDialog({
               className="mt-2"
               onClick={() => onDiagnose(server(), test.error ?? '')}
             >
-              <Wand2 className="h-3.5 w-3.5 text-accent" />
+              <Wand2 className="h-3.5 w-3.5 text-accent-text" />
               {t('用 AI 排查修复')}
             </Button>
           )}

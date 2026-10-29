@@ -101,11 +101,13 @@ function ReleaseRow({
           title={t('查看更新说明')}
         >
           <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-90')} />
-          <span className="truncate font-mono text-[0.84375rem] font-medium">{r.tag}</span>
+          <span className="truncate font-mono text-[0.8125rem] font-medium">{r.tag}</span>
         </button>
         <Channel pre={r.prerelease} />
         {isCur && (
-          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">{t('当前')}</span>
+          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent-text">
+            {t('当前')}
+          </span>
         )}
         <span className="font-mono text-xs text-subtle">{dateTime(r.publishedAt)}</span>
         <span className="ml-auto flex items-center gap-1.5">
@@ -143,7 +145,7 @@ function ReleaseRow({
               href={r.url}
               target="_blank"
               rel="noreferrer"
-              className="flex w-fit items-center gap-1 text-xs text-accent hover:underline"
+              className="flex w-fit items-center gap-1 text-xs text-accent-text hover:underline"
             >
               {t('在 GitHub 上查看')}
               <ExternalLink className="h-3 w-3" />
@@ -222,7 +224,7 @@ export function UpdateSection() {
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-1.5 text-fg">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
                 {restarting
                   ? t('已安装 v{version}，正在重启，完成后页面会自动刷新…', { version: restarting })
                   : `${job?.tag} · ${job?.phase}`}
@@ -294,7 +296,7 @@ export function UpdateSection() {
             )}
             {data.update ? (
               <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-3.5 py-2.5">
-                <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent" />
+                <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent-text" />
                 <span className="min-w-0 flex-1 text-[0.8125rem]">
                   {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
                   <span className="text-subtle"> · {dateTime(data.update.publishedAt)}</span>

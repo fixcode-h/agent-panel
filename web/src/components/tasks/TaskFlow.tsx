@@ -179,7 +179,7 @@ export function TaskFlow({
               )}
               <button
                 onClick={onOpenChat}
-                className="flex cursor-pointer items-center gap-1 self-start text-xs text-accent hover:underline"
+                className="flex cursor-pointer items-center gap-1 self-start text-xs text-accent-text hover:underline"
               >
                 <MessageSquareText className="h-3.5 w-3.5" />
                 {t('在对话中查看完整过程')}

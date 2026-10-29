@@ -228,7 +228,7 @@ export function ListItem({
         <span
           className={cn(
             'truncate text-muted',
-            compact ? 'text-[0.71875rem] leading-tight' : 'text-xs',
+            compact ? 'text-[0.6875rem] leading-tight' : 'text-xs',
             monoSubtitle && 'font-mono',
           )}
         >

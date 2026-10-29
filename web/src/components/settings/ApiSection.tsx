@@ -376,12 +376,10 @@ function ApiCard({
           // 绑定了内置厂家：名称不给直接改（改了就相当于换厂家），要改就先用右上角的按钮回到自定义 API
           <div className="flex h-9 min-w-0 flex-1 items-center gap-2">
             <span className="truncate font-medium">{a.name}</span>
-            <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[0.625rem] text-accent">
+            <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[0.625rem] text-accent-text">
               {t('内置厂家')}
             </span>
-            <span className="truncate text-[0.71875rem] text-subtle">
-              {t('名称固定，点右上角的按钮改成自定义 API')}
-            </span>
+            <span className="truncate text-[0.6875rem] text-subtle">{t('名称固定，点右上角的按钮改成自定义 API')}</span>
           </div>
         ) : (
           <div className="min-w-0 flex-1">
@@ -449,7 +447,7 @@ function ApiCard({
                 className="h-9 font-mono text-[0.8125rem]"
               />
               {vendorUrl && !a.baseUrl.trim() && (
-                <span className="text-[0.71875rem] text-subtle">
+                <span className="text-[0.6875rem] text-subtle">
                   {t('留空时用 {vendor} 的默认地址：{url}', { vendor: a.name, url: vendorUrl })}
                 </span>
               )}
@@ -464,7 +462,7 @@ function ApiCard({
                 aria-label={t('提供方 ID')}
                 className="h-9 font-mono text-[0.8125rem]"
               />
-              <span className="text-[0.71875rem] text-subtle">
+              <span className="text-[0.6875rem] text-subtle">
                 {t(
                   '写进 Agent 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 Agent 也用它拼模型 ID。',
                   {
@@ -528,7 +526,7 @@ function ApiCard({
                 aria-label={t('并发上限')}
                 className="h-9 w-28 font-mono text-[0.8125rem]"
               />
-              <span className="text-[0.71875rem] text-subtle">
+              <span className="text-[0.6875rem] text-subtle">
                 {t(
                   '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。',
                 )}
@@ -602,10 +600,12 @@ function ApiCard({
                 title={i === 0 ? t('第一个是默认模型') : undefined}
               >
                 {/* 模型名按自己的长度占位，映射模型的下拉填满剩下的；窄的时候两边一起收，模型名至少留几个字 */}
-                <span className="min-w-[6rem] max-w-[45%] shrink truncate font-mono text-[0.78125rem]">
+                <span className="min-w-[6rem] max-w-[45%] shrink truncate font-mono text-[0.75rem]">
                   {m}
                   {i === 0 && (
-                    <span className="ml-1.5 rounded bg-accent-soft px-1 text-[0.625rem] text-accent">{t('默认')}</span>
+                    <span className="ml-1.5 rounded bg-accent-soft px-1 text-[0.625rem] text-accent-text">
+                      {t('默认')}
+                    </span>
                   )}
                 </span>
                 <label className="flex shrink-0 items-center gap-1.5 text-[0.75rem] text-subtle">
@@ -654,7 +654,7 @@ function ApiCard({
                 spellCheck={false}
                 className="h-8 w-56 font-mono text-[0.75rem]"
               />
-              <span className="text-[0.71875rem] text-subtle">
+              <span className="text-[0.6875rem] text-subtle">
                 {t('映射模型默认按模型名自动识别，改过就以你选的为准；发给 Agent 的仍然是这里的模型名。')}
               </span>
             </form>
@@ -666,7 +666,7 @@ function ApiCard({
                     onChange={(e) => setFilter(e.target.value)}
                     placeholder={t('在 {n} 个模型里搜索', { n: found.length })}
                     aria-label={t('搜索模型')}
-                    className="h-8 min-w-0 flex-1 text-[0.78125rem]"
+                    className="h-8 min-w-0 flex-1 text-[0.75rem]"
                   />
                   <Button
                     size="sm"
@@ -690,7 +690,7 @@ function ApiCard({
                         onClick={() => toggle(m)}
                         className={cn(
                           'inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 font-mono text-[0.75rem] transition-colors',
-                          on ? 'border-accent/50 bg-accent-soft text-accent' : 'hover:bg-sel',
+                          on ? 'border-accent/50 bg-accent-soft text-accent-text' : 'hover:bg-sel',
                         )}
                       >
                         {on && <Check className="h-3 w-3" strokeWidth={3} />}

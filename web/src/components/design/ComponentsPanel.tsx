@@ -68,7 +68,7 @@ export function ComponentsPanel({
         const comps = new Map(g.components.map((c) => [c.Name, c]))
         return (
           <section key={g.designId}>
-            <h3 className="mb-1.5 truncate px-1 text-[0.71875rem] font-medium text-subtle">
+            <h3 className="mb-1.5 truncate px-1 text-[0.6875rem] font-medium text-subtle">
               {mine ? t('这个设计') : g.title}
             </h3>
             <div className="grid grid-cols-2 gap-2">
@@ -103,7 +103,7 @@ export function ComponentsPanel({
                           void onImport(g.designId, c.Name).finally(() => setImporting(''))
                         }}
                         title={has ? t('这个设计里已经有同名的子控件') : t('连同它用到的图片一起加进这个设计')}
-                        className="mx-1.5 mb-1.5 inline-flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md border text-[0.71875rem] text-muted hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+                        className="mx-1.5 mb-1.5 inline-flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md border text-[0.6875rem] text-muted hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
                       >
                         {importing === id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                         {has ? t('已在这个设计里') : t('加入这个设计')}

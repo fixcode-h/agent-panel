@@ -70,7 +70,7 @@ export function RouteCard({
             <div key={r.id} className="flex flex-col gap-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.8125rem]">
                 <span className="text-xs text-subtle">{t('分诊')}</span>
-                <Icon className="h-3.5 w-3.5 text-accent" />
+                <Icon className="h-3.5 w-3.5 text-accent-text" />
                 <span className="font-medium">{tg.label}</span>
                 {r.label && <span className="min-w-0 truncate text-muted">「{r.label}」</span>}
                 {done && <span className="rounded bg-sel px-1.5 text-[0.6875rem] text-subtle">{t('已改派')}</span>}

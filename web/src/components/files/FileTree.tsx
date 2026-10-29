@@ -43,7 +43,7 @@ const STATUS: Record<string, { label: string; className: string }> = {
   A: { label: 'A', className: 'text-success' },
   '?': { label: 'U', className: 'text-success' },
   D: { label: 'D', className: 'text-danger' },
-  R: { label: 'R', className: 'text-accent' },
+  R: { label: 'R', className: 'text-accent-text' },
   U: { label: '!', className: 'text-danger' },
 }
 
@@ -952,8 +952,10 @@ function LevelRows({
                   ) : (
                     <span className="w-3.5 shrink-0" />
                   )}
-                  <Icon className={cn('h-3.5 w-3.5 shrink-0', e.kind === 'dir' ? 'text-accent/80' : 'text-subtle')} />
-                  <span className={cn('min-w-0 truncate font-mono', compact ? 'text-[0.75rem]' : 'text-[0.78125rem]')}>
+                  <Icon
+                    className={cn('h-3.5 w-3.5 shrink-0', e.kind === 'dir' ? 'text-accent-text/80' : 'text-subtle')}
+                  />
+                  <span className={cn('min-w-0 truncate font-mono', compact ? 'text-[0.75rem]' : 'text-[0.75rem]')}>
                     {e.name}
                   </span>
                   {status && (
@@ -1039,7 +1041,7 @@ function LevelRows({
           onClick={() => setShown((n) => n + PAGE)}
           style={{ paddingLeft: `${indent(depth, compact)}px` }}
           className={cn(
-            'flex w-full cursor-pointer items-center rounded pr-2 text-left text-[0.75rem] text-accent hover:bg-sel',
+            'flex w-full cursor-pointer items-center rounded pr-2 text-left text-[0.75rem] text-accent-text hover:bg-sel',
             compact ? 'h-6' : 'h-7',
           )}
         >
@@ -1076,7 +1078,7 @@ function LevelError({
       <button
         type="button"
         onClick={onRetry ?? (() => void browser.load(path))}
-        className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[0.75rem] text-accent hover:bg-sel"
+        className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[0.75rem] text-accent-text hover:bg-sel"
       >
         {t('重试')}
       </button>
@@ -1216,7 +1218,7 @@ function NameResults({
           >
             <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
             <span
-              className={cn('min-w-0 truncate font-mono text-muted', compact ? 'text-[0.75rem]' : 'text-[0.78125rem]')}
+              className={cn('min-w-0 truncate font-mono text-muted', compact ? 'text-[0.75rem]' : 'text-[0.75rem]')}
             >
               <Highlight text={name} needle={needle} />
             </span>
@@ -1289,7 +1291,7 @@ function ContentResults({
         <button
           type="button"
           onClick={onRetry}
-          className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[0.75rem] text-accent hover:bg-sel"
+          className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[0.75rem] text-accent-text hover:bg-sel"
         >
           {t('重试')}
         </button>
@@ -1362,7 +1364,7 @@ function ContentResults({
             className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded px-2 text-left outline-none hover:bg-sel aria-selected:bg-sel"
           >
             <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <span className={cn('min-w-0 truncate font-mono', compact ? 'text-[0.75rem]' : 'text-[0.78125rem]')}>
+            <span className={cn('min-w-0 truncate font-mono', compact ? 'text-[0.75rem]' : 'text-[0.75rem]')}>
               {row.file.path}
             </span>
             <span className="ml-auto shrink-0 text-[0.6875rem] text-subtle">{row.file.hits.length}</span>

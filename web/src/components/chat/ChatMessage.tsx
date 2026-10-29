@@ -125,7 +125,7 @@ export function MessageMeta({
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 text-[0.71875rem] text-subtle transition-opacity',
+        'flex items-center gap-0.5 text-[0.6875rem] text-subtle transition-opacity',
         align === 'end' && 'flex-row-reverse',
       )}
     >
@@ -172,7 +172,7 @@ export function UserMessage({
           className={cn(
             'max-w-full min-w-0 rounded-2xl bg-sel whitespace-pre-wrap [overflow-wrap:anywhere]',
             size === 'sm'
-              ? 'rounded-br-md px-3.5 py-2 text-[0.84375rem] leading-relaxed'
+              ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
               : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
           )}
         >
@@ -226,7 +226,7 @@ function FoldBody({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="mt-1 inline-flex cursor-pointer items-center gap-1 text-[0.78125rem] text-muted transition-colors hover:text-fg"
+          className="mt-1 inline-flex cursor-pointer items-center gap-1 text-[0.75rem] text-muted transition-colors hover:text-fg"
         >
           <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
           {open ? t('收起') : t('展开')}
@@ -280,13 +280,13 @@ export function AnswerMessage({
         className={cn(
           'flex max-w-full min-w-0 flex-col gap-2 rounded-2xl bg-sel [overflow-wrap:anywhere]',
           size === 'sm'
-            ? 'rounded-br-md px-3.5 py-2 text-[0.84375rem] leading-relaxed'
+            ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
             : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
         )}
       >
         {answers.map((a, i) => (
           <div key={i} className="flex min-w-0 flex-col">
-            <span className={cn('text-muted', size === 'sm' ? 'text-[0.71875rem]' : 'text-[0.78125rem]')}>
+            <span className={cn('text-muted', size === 'sm' ? 'text-[0.6875rem]' : 'text-[0.75rem]')}>
               {a.question}
             </span>
             <span className="whitespace-pre-wrap">{a.answer}</span>

@@ -76,7 +76,7 @@ export function Palette({
                       key={x}
                       onClick={() => add(x)}
                       title={WIDGETS[x].hint}
-                      className="flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[0.78125rem] text-muted hover:bg-sel hover:text-fg"
+                      className="flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
                     >
                       <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
                       <span className="truncate">{x}</span>
@@ -93,7 +93,7 @@ export function Palette({
               <button
                 key={c}
                 onClick={() => add('UserWidget', c)}
-                className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[0.78125rem] text-muted hover:bg-sel hover:text-fg"
+                className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
               >
                 <Puzzle className="h-3.5 w-3.5 shrink-0 text-subtle" />
                 <span className="truncate">{c}</span>
@@ -254,7 +254,7 @@ export function Hierarchy({
                 onDoubleClick={() => setRenaming(w.id)}
                 style={{ paddingLeft: 6 + depth * 14 }}
                 className={cn(
-                  'group relative flex h-7 cursor-pointer items-center gap-1 pr-1.5 text-[0.78125rem] select-none',
+                  'group relative flex h-7 cursor-pointer items-center gap-1 pr-1.5 text-[0.75rem] select-none',
                   on
                     ? 'bg-accent-soft text-fg'
                     : extra.includes(w.id)
@@ -284,7 +284,7 @@ export function Hierarchy({
                 >
                   <ChevronRight className={cn('h-3 w-3 transition-transform', isOpen && 'rotate-90')} />
                 </button>
-                <Icon className={cn('h-3.5 w-3.5 shrink-0', on ? 'text-accent' : 'text-subtle')} />
+                <Icon className={cn('h-3.5 w-3.5 shrink-0', on ? 'text-accent-text' : 'text-subtle')} />
                 {renaming === w.id ? (
                   <input
                     autoFocus

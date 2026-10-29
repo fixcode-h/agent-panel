@@ -79,19 +79,19 @@ export function McpPage() {
           {data.servers.map((s) => (
             <li key={s.name} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
               {s.transport === 'http' ? (
-                <Globe className="h-4 w-4 shrink-0 text-accent" />
+                <Globe className="h-4 w-4 shrink-0 text-accent-text" />
               ) : (
-                <Terminal className="h-4 w-4 shrink-0 text-accent" />
+                <Terminal className="h-4 w-4 shrink-0 text-accent-text" />
               )}
               <div className="min-w-0 flex-[1_1_240px]">
-                <p className="truncate font-mono text-[0.84375rem]">{s.name}</p>
+                <p className="truncate font-mono text-[0.8125rem]">{s.name}</p>
                 <p className="truncate font-mono text-[0.75rem] text-muted" title={summary(s)}>
                   {summary(s)}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                 {data.clis.map((c) => (
-                  <label key={c.id} className="flex cursor-pointer items-center gap-2 text-[0.78125rem] text-muted">
+                  <label key={c.id} className="flex cursor-pointer items-center gap-2 text-[0.75rem] text-muted">
                     <Switch
                       checked={s.clis.includes(c.id)}
                       onCheckedChange={(on) => void toggle(s, c.id, on)}
@@ -296,7 +296,7 @@ function EditDialog({
               onChange={(e) => setEnv(e.target.value)}
               placeholder="API_KEY=..."
               spellCheck={false}
-              className="font-mono text-[0.78125rem]"
+              className="font-mono text-[0.75rem]"
             />
             <span className="text-[0.75rem] text-subtle">{t('一行一个，写成 名字=值')}</span>
           </label>
@@ -320,7 +320,7 @@ function EditDialog({
               onChange={(e) => setHeaders(e.target.value)}
               placeholder="Authorization: Bearer ..."
               spellCheck={false}
-              className="font-mono text-[0.78125rem]"
+              className="font-mono text-[0.75rem]"
             />
             <span className="text-[0.75rem] text-subtle">{t('一行一个，写成 名字: 值')}</span>
           </label>
@@ -363,7 +363,7 @@ function EditDialog({
       )}
       {test && test !== 'running' && (
         <div
-          className={`rounded-lg border px-3 py-2.5 text-[0.78125rem] ${test.ok ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'}`}
+          className={`rounded-lg border px-3 py-2.5 text-[0.75rem] ${test.ok ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'}`}
         >
           <p className="flex items-center gap-1.5 font-medium">
             {test.ok ? (
@@ -389,7 +389,7 @@ function EditDialog({
                 })
               }
             >
-              <Wand2 className="h-3.5 w-3.5 text-accent" />
+              <Wand2 className="h-3.5 w-3.5 text-accent-text" />
               {t('用 AI 排查修复')}
             </Button>
           )}

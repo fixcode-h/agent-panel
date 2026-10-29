@@ -71,7 +71,7 @@ export function ConversationTabs({
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
             if (e.key === 'Escape') onRenaming(null)
           }}
-          className="mx-1.5 my-1 w-60 min-w-0 rounded-md border border-focus bg-field px-2 text-[0.78125rem] outline-none"
+          className="mx-1.5 my-1 w-60 min-w-0 rounded-md border border-focus bg-field px-2 text-[0.75rem] outline-none"
         />
       ) : (
         <TabItem

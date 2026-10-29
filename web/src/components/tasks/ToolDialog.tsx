@@ -92,7 +92,7 @@ export function OutputDialog({
             {input && input.trim() && input.trim() !== detail?.trim() && (
               <div className="border-b px-4 py-3">
                 <div className="mb-1 font-sans text-[0.6875rem] font-medium tracking-wider text-subtle">IN</div>
-                <pre className="font-mono text-[0.78125rem] leading-[1.6] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+                <pre className="font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
                   {input}
                 </pre>
               </div>
@@ -102,7 +102,7 @@ export function OutputDialog({
               {text.trim() ? (
                 <pre
                   className={cn(
-                    'font-mono text-[0.78125rem] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
+                    'font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
                     failed ? 'text-danger' : 'text-fg/90',
                   )}
                 >
@@ -139,7 +139,7 @@ const PHASE: Record<CommandPhase, { text: () => string; badge: string; dot: stri
   queued: { text: () => t('排队中'), badge: 'border-line bg-field text-subtle', dot: 'bg-subtle' },
   running: {
     text: () => t('执行中'),
-    badge: 'border-accent/35 bg-accent-soft text-accent',
+    badge: 'border-accent/35 bg-accent-soft text-accent-text',
     dot: 'animate-pulse bg-accent',
   },
   done: { text: () => t('完成'), badge: 'border-line bg-field text-subtle', dot: 'bg-success' },
@@ -250,9 +250,9 @@ export function CommandDialog({
             onScroll={stick.onScroll}
             className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--code-bg)"
           >
-            <div className="px-5 py-4 font-mono text-[0.78125rem] leading-[1.7]">
+            <div className="px-5 py-4 font-mono text-[0.75rem] leading-[1.7]">
               <div className="flex items-start gap-2.5">
-                <span aria-hidden className="shrink-0 select-none text-accent">
+                <span aria-hidden className="shrink-0 select-none text-accent-text">
                   $
                 </span>
                 <span className="min-w-0 flex-1 whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">{command}</span>
@@ -340,7 +340,7 @@ export function CommandDialog({
           {/* 底部常驻一条状态：长输出滚到哪都看得出还在跑 */}
           {phase === 'running' && (
             <div className="flex h-9 shrink-0 items-center gap-2 border-t bg-card/70 px-4 font-sans text-xs text-muted">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
               {t('正在执行…')}
               {lines > 0 && (
                 <span className="ml-auto font-mono text-[0.6875rem] text-subtle tabular-nums">

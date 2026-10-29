@@ -71,7 +71,7 @@ export function ComfyWebDialog({
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[0.78125rem] text-muted hover:bg-sel hover:text-fg"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 {t('在浏览器中打开')}
@@ -86,7 +86,7 @@ export function ComfyWebDialog({
           </div>
           {imported && (
             <div className="flex shrink-0 items-start gap-2 border-b bg-accent-soft/40 px-4 py-2 text-[0.75rem] leading-relaxed">
-              <FileDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+              <FileDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
               <span className="min-w-0 flex-1">
                 <span className="font-medium">
                   {t('已导入到 ComfyUI 的工作流列表：{name}', { name: imported.name })}

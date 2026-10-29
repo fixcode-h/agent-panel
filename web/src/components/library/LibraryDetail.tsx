@@ -168,9 +168,9 @@ export function LibraryDetail({
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
       <header className="flex flex-wrap items-start gap-3 border-b bg-bg px-4 py-5 md:px-8">
         {kind === 'skill' ? (
-          <Sparkles className="mt-1 h-5 w-5 shrink-0 text-accent" />
+          <Sparkles className="mt-1 h-5 w-5 shrink-0 text-accent-text" />
         ) : (
-          <Terminal className="mt-1 h-5 w-5 shrink-0 text-accent" />
+          <Terminal className="mt-1 h-5 w-5 shrink-0 text-accent-text" />
         )}
         <div className="min-w-0 flex-[1_1_260px]">
           <div className="flex flex-wrap items-center gap-2">
@@ -178,17 +178,17 @@ export function LibraryDetail({
               {kind === 'command' ? '/' : ''}
               {name}
             </h2>
-            <span className="rounded-full border bg-card px-2 py-px text-[0.71875rem] text-muted">
+            <span className="rounded-full border bg-card px-2 py-px text-[0.6875rem] text-muted">
               {kind === 'skill' ? 'Skill' : t('命令')}
             </span>
           </div>
           <p className="mt-1 truncate text-[0.8125rem] text-muted">{here[0]?.description || t('没有说明')}</p>
-          <p className="mt-0.5 truncate font-mono text-[0.71875rem] text-subtle">{path}</p>
+          <p className="mt-0.5 truncate font-mono text-[0.6875rem] text-subtle">{path}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canAi && (
             <Button variant="secondary" onClick={() => setAi(true)} disabled={busy || content === null}>
-              <Sparkles className="h-4 w-4 text-accent" />
+              <Sparkles className="h-4 w-4 text-accent-text" />
               {t('AI 优化')}
             </Button>
           )}
@@ -213,7 +213,7 @@ export function LibraryDetail({
                 }}
                 className={cn(
                   'cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.75rem]',
-                  i.cli === cli ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel',
+                  i.cli === cli ? 'border-accent bg-accent-soft text-accent-text' : 'text-muted hover:bg-sel',
                 )}
               >
                 {label(i.cli)}
@@ -249,7 +249,7 @@ export function LibraryDetail({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               spellCheck={false}
-              className="h-[min(46vh,420px)] resize-none font-mono text-[0.78125rem] leading-relaxed"
+              className="h-[min(46vh,420px)] resize-none font-mono text-[0.75rem] leading-relaxed"
               aria-label={t('内容')}
             />
           </section>

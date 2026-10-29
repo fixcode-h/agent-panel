@@ -311,7 +311,7 @@ export function AgentDetail({
                 </Button>
                 {!locked && (
                   <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 Agent 按你的要求优化')}>
-                    <Sparkles className="h-4 w-4 text-accent" />
+                    <Sparkles className="h-4 w-4 text-accent-text" />
                     {t('AI 优化')}
                   </Button>
                 )}
@@ -379,7 +379,7 @@ export function AgentDetail({
           <>
             {tab === 'basic' && core && (
               <section className="flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft/40 px-4 py-3">
-                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
                 <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
                   <span className="font-medium">{t('必备角色 · {use}', { use: coreUse(core) })}</span>
                   <span className="text-muted">
@@ -393,7 +393,7 @@ export function AgentDetail({
             {tab === 'basic' && locked && !core && (
               <>
                 <section className="flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft/40 px-4 py-3">
-                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
                   <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
                     <span className="font-medium">{t('内置角色 · 随版本更新')}</span>
                     <span className="text-muted">
@@ -473,7 +473,7 @@ export function AgentDetail({
                         onClick={() => set('icon', id)}
                         className={cn(
                           'grid h-9 w-9 cursor-pointer place-items-center rounded-lg border border-line-strong bg-field text-muted transition-colors hover:text-fg',
-                          draft.icon === id && 'border-accent bg-accent-soft text-accent hover:text-accent',
+                          draft.icon === id && 'border-accent bg-accent-soft text-accent-text hover:text-accent-text',
                         )}
                       >
                         <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
@@ -654,7 +654,7 @@ export function AgentDetail({
                                 className={cn(menuItem, 'min-w-0 flex-1')}
                                 onClick={() => insert(`{{${p.key}}}`)}
                               >
-                                <code className="font-mono text-[0.75rem] text-accent">{`{{${p.key}}}`}</code>
+                                <code className="font-mono text-[0.75rem] text-accent-text">{`{{${p.key}}}`}</code>
                                 <span className="truncate text-subtle">{p.label}</span>
                               </PopoverClose>
                               <PopoverClose
@@ -675,7 +675,7 @@ export function AgentDetail({
                     )}
                   />
                   {unknownRefs.length > 0 && (
-                    <p className="flex items-start gap-1.5 text-[0.71875rem] leading-relaxed text-warning">
+                    <p className="flex items-start gap-1.5 text-[0.6875rem] leading-relaxed text-warning">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       {t(
                         '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「参数」页添加，或者改成已有的参数名。',
@@ -687,7 +687,7 @@ export function AgentDetail({
                   )}
                   <div className="flex flex-col gap-2">
                     <span className="text-xs text-muted">{t('引入的角色')}</span>
-                    <p className="-mt-1 text-[0.71875rem] leading-relaxed text-subtle">
+                    <p className="-mt-1 text-[0.6875rem] leading-relaxed text-subtle">
                       {t('引入的角色的角色设定会一起交给这个角色，可以把通用的规范、领域知识做成单独的角色复用。')}
                     </p>
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -714,7 +714,7 @@ export function AgentDetail({
                               <button
                                 type="button"
                                 draggable={false}
-                                className="flex cursor-pointer items-center gap-1.5 hover:text-accent"
+                                className="flex cursor-pointer items-center gap-1.5 hover:text-accent-text"
                                 onClick={() => go({ page: 'agents', id: a.id })}
                               >
                                 <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
@@ -752,7 +752,7 @@ export function AgentDetail({
                       </AgentPicker>
                     </div>
                     {cycle.length > 0 && (
-                      <div className="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-[0.78125rem] leading-relaxed text-danger">
+                      <div className="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-[0.75rem] leading-relaxed text-danger">
                         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         <span className="min-w-0 flex-1">
                           {t(
@@ -777,7 +777,7 @@ export function AgentDetail({
                       </div>
                     )}
                     {(tooDeep.length > 0 || deepParents.length > 0) && (
-                      <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[0.78125rem] leading-relaxed text-warning">
+                      <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[0.75rem] leading-relaxed text-warning">
                         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         <div className="flex min-w-0 flex-col gap-0.5">
                           {tooDeep.length > 0 && (
@@ -808,7 +808,7 @@ export function AgentDetail({
                     )}
                     {depth > 1 && (
                       <div className="flex flex-col gap-1 rounded-lg border bg-field px-3 py-2">
-                        <span className="text-[0.71875rem] text-subtle">
+                        <span className="text-[0.6875rem] text-subtle">
                           {t('引入层级 · 共 {n} 层（最多展开 {max} 层）', { n: depth, max: MAX_INCLUDE_DEPTH })}
                         </span>
                         <ul className="flex flex-col">
@@ -817,7 +817,7 @@ export function AgentDetail({
                             return (
                               <li
                                 key={i}
-                                className="flex h-7 items-center gap-2 text-[0.78125rem]"
+                                className="flex h-7 items-center gap-2 text-[0.75rem]"
                                 style={{ paddingLeft: (r.depth - 1) * 18 }}
                               >
                                 <span
@@ -837,7 +837,7 @@ export function AgentDetail({
                                   <button
                                     type="button"
                                     className={cn(
-                                      'flex min-w-0 cursor-pointer items-center gap-1.5 hover:text-accent',
+                                      'flex min-w-0 cursor-pointer items-center gap-1.5 hover:text-accent-text',
                                       (over || r.cycle) && 'text-subtle line-through',
                                     )}
                                     onClick={() => go({ page: 'agents', id: r.agent!.id })}
@@ -849,13 +849,13 @@ export function AgentDetail({
                                   <span className="text-subtle">{t('（已删除）')}</span>
                                 )}
                                 {r.cycle ? (
-                                  <span className="shrink-0 text-[0.71875rem] text-danger">
+                                  <span className="shrink-0 text-[0.6875rem] text-danger">
                                     {t('绕回上层，形成循环')}
                                   </span>
                                 ) : over ? (
-                                  <span className="shrink-0 text-[0.71875rem] text-warning">{t('太深，不会展开')}</span>
+                                  <span className="shrink-0 text-[0.6875rem] text-warning">{t('太深，不会展开')}</span>
                                 ) : r.agent && !r.agent.enabled ? (
-                                  <span className="shrink-0 text-[0.71875rem] text-subtle">{t('已停用')}</span>
+                                  <span className="shrink-0 text-[0.6875rem] text-subtle">{t('已停用')}</span>
                                 ) : null}
                               </li>
                             )
@@ -928,14 +928,14 @@ export function AgentDetail({
               >
                 <summary className="cursor-pointer text-[0.8125rem] font-semibold">{t('实际交给它的设定')}</summary>
                 <div className="mt-2 flex items-center gap-2">
-                  <p className="min-w-0 flex-1 text-[0.71875rem] text-subtle">
+                  <p className="min-w-0 flex-1 text-[0.6875rem] text-subtle">
                     {Object.keys(trial).length
                       ? t('按试的参数展开（不保存），包含引入的角色和 Skill 提示。')
                       : t('按参数默认值展开，包含引入的角色和 Skill 提示。')}
                   </p>
                   {draft.params.length > 0 && <ParamsChip params={draft.params} values={trial} onChange={setTrial} />}
                 </div>
-                <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-field p-2.5 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap">
+                <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-field p-2.5 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap">
                   {preview}
                 </pre>
               </details>

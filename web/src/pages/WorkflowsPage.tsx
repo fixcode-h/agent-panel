@@ -152,7 +152,7 @@ export function WorkflowsPage() {
               aria-label={t('AI 创建工作流')}
               title={t('描述需求，让本机 Agent 生成工作流')}
             >
-              <Sparkles className="h-4 w-4 text-accent" />
+              <Sparkles className="h-4 w-4 text-accent-text" />
             </Button>
           </>
         }
@@ -182,7 +182,7 @@ export function WorkflowsPage() {
                 selected={w.id === selected?.id}
                 onClick={() => go({ page: 'workflows', id: w.id })}
                 leading={
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-accent-soft text-accent">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-accent-soft text-accent-text">
                     <WorkflowIcon className="h-[18px] w-[18px]" strokeWidth={1.8} />
                   </span>
                 }

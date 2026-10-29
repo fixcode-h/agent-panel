@@ -100,7 +100,7 @@ const STATE: Record<StepStatus, { tone: StatusTone; label: string; card: string 
 const UNIT_MAX = 3
 
 /** 卡片里的小胶囊比列表里的再矮一号，节点高度不变，已经排好的流程图不会重叠 */
-const pillSm = 'h-[1.125rem] gap-1 px-1.5 text-[0.65625rem]'
+const pillSm = 'h-[1.125rem] gap-1 px-1.5 text-[0.6875rem]'
 
 /**
  * 流程图里的一个节点：标题和状态胶囊在上，执行者标签、说明块在中间，开始 / 验收 / 结束流程在底部。
@@ -128,8 +128,8 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
     >
       <Handle type="target" position={Position.Left} />
       <div className="flex min-w-0 items-center gap-1.5">
-        {v.kind === 'flow' && <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-accent" />}
-        <span className="min-w-0 flex-1 truncate text-[0.84375rem] leading-5 font-semibold tracking-[-0.005em]">
+        {v.kind === 'flow' && <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-accent-text" />}
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] leading-5 font-semibold tracking-[-0.005em]">
           {v.title}
         </span>
         {st ? (
@@ -145,7 +145,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
         )}
       </div>
       {/* 执行者标签：角色 · 模型；多步节点列出各步，流程节点写调用的流程 */}
-      <div className="flex min-w-0 items-center gap-1.5 text-[0.71875rem] leading-4">
+      <div className="flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4">
         <span className={cn('flex h-[1.375rem] min-w-0 items-center gap-1.5 rounded-md px-1.5', block)}>
           {v.kind === 'flow' ? (
             <span className="truncate text-muted">
@@ -159,7 +159,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
                 {chain ? v.sub : agent.name}
               </span>
               {!chain && v.model && (
-                <span className="min-w-0 shrink truncate font-mono text-[0.65625rem] text-subtle">· {v.model}</span>
+                <span className="min-w-0 shrink truncate font-mono text-[0.6875rem] text-subtle">· {v.model}</span>
               )}
             </>
           ) : (
@@ -167,13 +167,13 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
           )}
         </span>
         {chain ? (
-          <span className="shrink-0 rounded-md bg-sel px-1 text-[0.65625rem] leading-4 font-medium text-muted">
+          <span className="shrink-0 rounded-md bg-sel px-1 text-[0.6875rem] leading-4 font-medium text-muted">
             +{(v.count ?? 1) - 1}
           </span>
         ) : (
           v.main &&
           agent && (
-            <span className="shrink-0 rounded-md bg-accent-soft px-1 text-[0.65625rem] leading-4 font-medium text-accent">
+            <span className="shrink-0 rounded-md bg-accent-soft px-1 text-[0.6875rem] leading-4 font-medium text-accent-text">
               {t('主')}
             </span>
           )
@@ -201,7 +201,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
             </li>
           ))}
           {units.length > UNIT_MAX && (
-            <li className="px-2 text-[0.65625rem] leading-4 text-subtle">
+            <li className="px-2 text-[0.6875rem] leading-4 text-subtle">
               {t('还有 {n} 步', { n: units.length - UNIT_MAX })}
             </li>
           )}
@@ -223,8 +223,8 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
               key={h.slot}
               title={t('{slot}：{label}', { slot: HOOK_LABEL[h.slot], label: h.label })}
               className={cn(
-                'inline-flex h-[1.125rem] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.65625rem]',
-                h.slot === 'review' ? 'bg-accent-soft text-accent' : 'text-subtle',
+                'inline-flex h-[1.125rem] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.6875rem]',
+                h.slot === 'review' ? 'bg-accent-soft text-accent-text' : 'text-subtle',
                 h.slot !== 'review' && block,
               )}
             >
@@ -235,7 +235,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
             </span>
           ))}
           {v.confirm && (
-            <span className="inline-flex h-[1.125rem] items-center gap-1 rounded-md bg-warning/12 px-1.5 text-[0.65625rem] text-warning">
+            <span className="inline-flex h-[1.125rem] items-center gap-1 rounded-md bg-warning/12 px-1.5 text-[0.6875rem] text-warning">
               <UserCheck className="h-3 w-3" />
               {t('等我确认')}
             </span>
@@ -271,7 +271,10 @@ const TermNode = memo(function TermNode({ data, selected }: NodeProps<Node<TermD
     >
       {!start && <Handle type="target" position={Position.Left} />}
       <span
-        className={cn('grid h-7 w-7 place-items-center rounded-full', start ? 'bg-accent text-white' : 'bg-fg text-bg')}
+        className={cn(
+          'grid h-7 w-7 place-items-center rounded-full',
+          start ? 'bg-accent text-on-accent' : 'bg-fg text-bg',
+        )}
       >
         {start ? (
           <Play className="h-3.5 w-3.5 translate-x-px" fill="currentColor" />

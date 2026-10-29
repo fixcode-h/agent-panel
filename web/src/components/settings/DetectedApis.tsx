@@ -89,7 +89,7 @@ export function DetectedApis({
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-dashed p-3.5">
       <div className="flex items-center gap-2">
-        <ScanSearch className="h-4 w-4 shrink-0 text-accent" />
+        <ScanSearch className="h-4 w-4 shrink-0 text-accent-text" />
         <span className="min-w-0 flex-1 text-[0.8125rem] font-medium">
           {!list
             ? t('正在识别本机 Agent 配置的 API…')
@@ -125,7 +125,7 @@ export function DetectedApis({
                   {API_PROTOCOL_LABEL[d.api.protocol]}
                 </span>
               </span>
-              <span className="truncate font-mono text-[0.71875rem] text-muted" title={d.api.baseUrl}>
+              <span className="truncate font-mono text-[0.6875rem] text-muted" title={d.api.baseUrl}>
                 {[d.api.baseUrl || t('默认地址'), mask(d.api.apiKey) || t('没有密钥')].join(' · ')}
                 {d.api.models.length ? ` · ${t('{n} 个模型', { n: d.api.models.length })}` : ''}
               </span>

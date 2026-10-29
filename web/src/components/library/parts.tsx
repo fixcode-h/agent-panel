@@ -59,7 +59,7 @@ export function CliTag({
     </>
   )
   const cls = cn(
-    'inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-px text-[0.71875rem] text-muted',
+    'inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-px text-[0.6875rem] text-muted',
     onClick && 'cursor-pointer hover:bg-sel hover:text-fg',
     className,
   )

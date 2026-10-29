@@ -97,7 +97,7 @@ export function TrashSection() {
               onMouseLeave={() => confirmId === row.id && setConfirmId('')}
             >
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-[0.84375rem]">{row.title}</span>
+                <span className="truncate text-[0.8125rem]">{row.title}</span>
                 <span className="text-xs leading-relaxed text-subtle">
                   {t('{time}删除', { time: shortTime(row.deletedAt) })}
                   {row.children > 0 && t(' · 含 {n} 个子对话', { n: row.children })}

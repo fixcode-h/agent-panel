@@ -161,7 +161,7 @@ export function FileDialog({
                     : t('这是二进制文件，不显示内容。')}
                 </p>
               ) : (
-                <pre className="min-w-max py-2 font-mono text-[0.78125rem] leading-[1.6]">
+                <pre className="min-w-max py-2 font-mono text-[0.75rem] leading-[1.6]">
                   {lines.map((l, i) => (
                     <div
                       key={i}

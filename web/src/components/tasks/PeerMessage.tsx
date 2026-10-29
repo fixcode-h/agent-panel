@@ -48,7 +48,7 @@ export const PEER_ICON: Record<PeerKind, typeof Activity> = {
 /** 类型小标签的颜色：报错一律红色；提问、请求收尾这种等对方处理的用强调色，其余淡色 */
 function badgeTone(kind: PeerKind, failed?: boolean) {
   if (failed) return 'bg-danger/12 text-danger'
-  if (kind === 'question' || kind === 'wrapup') return 'bg-accent/12 text-accent'
+  if (kind === 'question' || kind === 'wrapup') return 'bg-accent/12 text-accent-text'
   return 'bg-sel text-subtle'
 }
 
@@ -121,7 +121,7 @@ export function PeerLine(p: PeerLineProps) {
         className={ask ? 'border-warning/45' : undefined}
         glyph={
           p.running ? (
-            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
           ) : (
             <Icon
               className={cn('h-3.5 w-3.5 shrink-0', p.failed ? 'text-danger' : ask ? 'text-warning' : 'text-peer')}
@@ -137,11 +137,11 @@ export function PeerLine(p: PeerLineProps) {
         badge={peerKindText(p.kind)}
         badgeClass={badgeTone(p.kind, p.failed)}
         title={subject}
-        titleClass="font-sans text-[0.78125rem]"
+        titleClass="font-sans text-[0.75rem]"
         onOpen={() => setWin(true)}
         openTip={t('在窗口里查看这条消息')}
         detail={
-          <span className={cn('max-w-[40%] shrink-0 truncate text-[0.71875rem]', ask ? 'text-warning' : 'text-subtle')}>
+          <span className={cn('max-w-[40%] shrink-0 truncate text-[0.6875rem]', ask ? 'text-warning' : 'text-subtle')}>
             {[
               p.state,
               p.dir === 'in' ? sideOf(p) : many ? t('发给 {n} 个：{names}', { n: many.length, names }) : sideOf(p),

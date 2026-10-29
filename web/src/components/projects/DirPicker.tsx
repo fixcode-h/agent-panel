@@ -125,7 +125,7 @@ function DirBrowser({
             <Input
               value={jump}
               onChange={(e) => setJump(e.target.value)}
-              className="h-9 font-mono text-[0.78125rem]"
+              className="h-9 font-mono text-[0.75rem]"
               aria-label={t('路径')}
             />
           </form>
@@ -143,11 +143,11 @@ function DirBrowser({
                     aria-current={cur ? 'location' : undefined}
                     title={r.path}
                     className={cn(
-                      'inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[0.78125rem] transition-colors',
+                      'inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[0.75rem] transition-colors',
                       cur ? 'border-accent/50 bg-accent/12 text-fg' : 'text-muted hover:bg-sel hover:text-fg',
                     )}
                   >
-                    <Icon className={cn('h-3.5 w-3.5', cur ? 'text-accent' : 'text-subtle')} />
+                    <Icon className={cn('h-3.5 w-3.5', cur ? 'text-accent-text' : 'text-subtle')} />
                     {r.name}
                   </button>
                 )
@@ -161,9 +161,9 @@ function DirBrowser({
               <div className="mb-1">
                 <div className="flex items-center gap-2.5 rounded-lg bg-sel/60 px-3 py-1.5">
                   {busy ? (
-                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent-text" />
                   ) : (
-                    <FolderPlus className="h-4 w-4 shrink-0 text-accent" />
+                    <FolderPlus className="h-4 w-4 shrink-0 text-accent-text" />
                   )}
                   <input
                     autoFocus
@@ -201,7 +201,7 @@ function DirBrowser({
                   d.path === fresh && 'bg-accent/12 text-fg',
                 )}
               >
-                <Folder className={cn('h-4 w-4', d.path === fresh ? 'text-accent' : 'text-subtle')} />
+                <Folder className={cn('h-4 w-4', d.path === fresh ? 'text-accent-text' : 'text-subtle')} />
                 {d.name}
               </button>
             ))}

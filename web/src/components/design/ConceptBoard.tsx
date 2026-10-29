@@ -172,7 +172,7 @@ export function ConceptBoard({
               }}
               disabled={busy}
               title={t('确认用这张作为最终效果，AI 会照着它搭界面、出切图')}
-              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-accent px-2.5 font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-50"
+              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-accent px-2.5 font-medium text-on-accent hover:brightness-110 disabled:cursor-default disabled:opacity-50"
             >
               <Check className="h-3.5 w-3.5" />
               {t('用这张做模板')}
@@ -283,7 +283,7 @@ export function ConceptBoard({
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 text-[0.78125rem] text-white/50">
+          <div className="flex flex-col items-center gap-2 text-[0.75rem] text-white/50">
             <Loader2 className="h-5 w-5 animate-spin" />
             {progress?.text ?? t('正在出原画…')}
           </div>
@@ -291,7 +291,7 @@ export function ConceptBoard({
       </div>
       {/* 标注完直接在这里发（在底部提示行右侧）：用户不一定知道要去右边对话框点发送 */}
       <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-3 pb-1">
-        <p className="text-center text-[0.71875rem] text-white/40">
+        <p className="text-center text-[0.6875rem] text-white/40">
           {tool === 'mask'
             ? canUndoMask
               ? t('涂出要重绘的区域；在右边勾选「只重绘蒙版区域」再发送，就是局部重绘')
@@ -307,7 +307,7 @@ export function ConceptBoard({
                 ? t('对话侧勾了「只重绘蒙版区域」：只把蒙版这一块发给 AI，其余标注会留在图上')
                 : t('把这张图上的 {n} 处标注发给 AI，让它按标注改这张原画', { n: mine.length })
             }
-            className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-accent px-2.5 text-[0.75rem] font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-50"
+            className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-accent px-2.5 text-[0.75rem] font-medium text-on-accent hover:brightness-110 disabled:cursor-default disabled:opacity-50"
           >
             <Send className="h-3.5 w-3.5" />
             {maskOnly ? t('按蒙版重绘（1）') : t('发送标注给 AI（{n}）', { n: mine.length })}
@@ -317,7 +317,7 @@ export function ConceptBoard({
       <div className="flex shrink-0 gap-3 overflow-x-auto border-t border-white/10 px-3 py-2.5">
         {rounds.map((r) => (
           <div key={r} className="flex shrink-0 flex-col gap-1">
-            <span className="text-[0.65625rem] text-white/40">{t('第 {n} 轮', { n: r })}</span>
+            <span className="text-[0.6875rem] text-white/40">{t('第 {n} 轮', { n: r })}</span>
             <div className="flex gap-1.5">
               {concept.images
                 .filter((i) => i.round === r)
@@ -348,7 +348,7 @@ export function ConceptBoard({
         ))}
         {pending > 0 && (
           <div className="flex shrink-0 flex-col gap-1">
-            <span className="text-[0.65625rem] text-white/40">{t('正在出')}</span>
+            <span className="text-[0.6875rem] text-white/40">{t('正在出')}</span>
             <div className="flex gap-1.5">
               {Array.from({ length: pending }, (_, k) => (
                 <span

@@ -55,7 +55,7 @@ export function ChipGroup<T extends string>(
               'inline-flex cursor-pointer items-center gap-1.5 rounded-md whitespace-nowrap transition-colors outline-none',
               'focus-visible:ring-2 focus-visible:ring-focus-soft disabled:cursor-not-allowed disabled:opacity-40',
               size === 'sm' ? 'h-6 px-2 text-[0.75rem]' : 'h-7 px-2.5 text-[0.8125rem]',
-              on ? 'bg-accent-soft font-medium text-accent' : 'chip-idle text-muted hover:text-fg',
+              on ? 'bg-accent-soft font-medium text-accent-text' : 'chip-idle text-muted hover:text-fg',
             )}
           >
             {o.icon && <span className="flex shrink-0 items-center">{o.icon}</span>}

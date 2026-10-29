@@ -285,14 +285,14 @@ export function ScheduleDetail({
           <span className="text-[0.6875rem] font-semibold tracking-wide text-subtle">{t('接下来')}</span>
           {next.length ? (
             next.map((ms) => (
-              <div key={ms} className="flex items-center gap-2 text-[0.78125rem]">
+              <div key={ms} className="flex items-center gap-2 text-[0.75rem]">
                 <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
                 <span className="flex-1 tabular-nums">{dayTimeLabel(ms)}</span>
                 <span className="text-[0.6875rem] text-subtle">{relativeFuture(new Date(ms).toISOString(), now)}</span>
               </div>
             ))
           ) : (
-            <span className="text-[0.78125rem] text-subtle">
+            <span className="text-[0.75rem] text-subtle">
               {ended && s.enabled ? t('已结束（{date}）', { date: s.endDate }) : t('不会再次执行')}
             </span>
           )}
@@ -314,7 +314,7 @@ export function ScheduleDetail({
                 const ok = run.event === 'run' && !failed
                 return (
                   <li key={`${run.happenedAt}-${i}`} className="flex flex-col gap-0.5 py-1.5">
-                    <div className="flex items-center gap-2 text-[0.78125rem]">
+                    <div className="flex items-center gap-2 text-[0.75rem]">
                       <span
                         aria-hidden
                         className={cn(
@@ -375,7 +375,7 @@ export function ScheduleDetail({
               })}
             </ul>
           ) : (
-            <span className="py-1.5 text-[0.78125rem] text-subtle">{t('还没执行')}</span>
+            <span className="py-1.5 text-[0.75rem] text-subtle">{t('还没执行')}</span>
           )}
         </section>
       </div>

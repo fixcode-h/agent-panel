@@ -75,17 +75,17 @@ export function BuiltinDialog({
                 return (
                   <li key={w.key} className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
                     <div className="min-w-0 flex-[1_1_320px]">
-                      <p className="flex items-center gap-2 text-[0.84375rem] font-medium">
+                      <p className="flex items-center gap-2 text-[0.8125rem] font-medium">
                         {w.name}
                         {added && (
-                          <span className="inline-flex items-center gap-0.5 text-[0.71875rem] font-normal text-success">
+                          <span className="inline-flex items-center gap-0.5 text-[0.6875rem] font-normal text-success">
                             <Check className="h-3 w-3" />
                             {t('已添加')}
                           </span>
                         )}
                       </p>
-                      <p className="mt-0.5 text-[0.78125rem] leading-relaxed text-muted">{w.description}</p>
-                      <p className="mt-1 text-[0.71875rem] text-subtle">
+                      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-muted">{w.description}</p>
+                      <p className="mt-1 text-[0.6875rem] text-subtle">
                         {t('{n} 步', { n: steps })} · {builtinAgentKeys(w).map(agentName).join(t('、'))}
                         {lack > 0 && ` · ${t('将新建 {n} 个角色', { n: lack })}`}
                       </p>

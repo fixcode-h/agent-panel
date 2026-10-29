@@ -43,7 +43,7 @@ const RUNNING_TEXT: Record<TraceStepId, string> = {
 /** 状态图标：完成、进行中、等待中、失败、未执行 —— 关掉动效时靠形状也分得开 */
 const ICON: Record<TraceStatus, { text: string; cls: string; spin?: boolean }> = {
   waiting: { text: '·', cls: 'text-subtle' },
-  running: { text: '⟳', cls: 'text-accent', spin: true },
+  running: { text: '⟳', cls: 'text-accent-text', spin: true },
   done: { text: '✓', cls: 'text-success' },
   failed: { text: '✗', cls: 'text-danger' },
   skipped: { text: '–', cls: 'text-subtle' },
@@ -255,7 +255,7 @@ function TraceLine({ step, now, delayMs }: { step: TraceStep; now: number; delay
           <span
             className={cn(
               'min-w-0 flex-1 truncate',
-              step.status === 'running' ? 'text-accent' : step.status === 'failed' ? 'text-danger' : 'text-fg',
+              step.status === 'running' ? 'text-accent-text' : step.status === 'failed' ? 'text-danger' : 'text-fg',
             )}
           >
             {LABEL[step.id]}
@@ -264,7 +264,7 @@ function TraceLine({ step, now, delayMs }: { step: TraceStep; now: number; delay
           <span
             className={cn(
               'shrink-0 tabular-nums',
-              step.status === 'running' ? 'text-accent' : step.status === 'failed' ? 'text-danger' : 'text-subtle',
+              step.status === 'running' ? 'text-accent-text' : step.status === 'failed' ? 'text-danger' : 'text-subtle',
             )}
           >
             {time ? `${state} · ${time}` : state}

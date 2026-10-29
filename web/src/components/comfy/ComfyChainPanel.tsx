@@ -172,7 +172,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
       </div>
 
       {!chains.length && !draft && (
-        <p className="text-[0.78125rem] leading-relaxed text-subtle">
+        <p className="text-[0.75rem] leading-relaxed text-subtle">
           {t('还没有链。新建一条，选两段就能试：例如先「图生图」重画，再「去背景」抠成透明底。')}
         </p>
       )}
@@ -235,7 +235,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
               const w = byId.get(step.workflowId)
               return (
                 <li key={`${step.workflowId}-${i}`} className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-5 shrink-0 text-right font-mono text-[0.71875rem] text-subtle">{i + 1}</span>
+                  <span className="w-5 shrink-0 text-right font-mono text-[0.6875rem] text-subtle">{i + 1}</span>
                   <Select
                     aria-label={t('第 {n} 段的工作流', { n: i + 1 })}
                     value={step.workflowId}
@@ -299,7 +299,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
           )}
 
           {problems.length > 0 && (
-            <ul className="flex flex-col gap-1 text-[0.78125rem] text-danger">
+            <ul className="flex flex-col gap-1 text-[0.75rem] text-danger">
               {problems.map((p) => (
                 <li key={p}>{p}</li>
               ))}
@@ -354,7 +354,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
               {image && (
                 <figure className="flex flex-col gap-1">
                   <img src={image} alt={t('原图')} className="h-24 w-24 rounded-lg border bg-sel object-contain" />
-                  <figcaption className="text-[0.71875rem] text-subtle">{t('原图')}</figcaption>
+                  <figcaption className="text-[0.6875rem] text-subtle">{t('原图')}</figcaption>
                 </figure>
               )}
               {output.map((src, i) => (
@@ -364,7 +364,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
                     alt={t('输出图 {n}', { n: i + 1 })}
                     className="h-24 w-24 rounded-lg border bg-sel object-contain"
                   />
-                  <figcaption className="text-[0.71875rem] text-subtle">{t('输出图 {n}', { n: i + 1 })}</figcaption>
+                  <figcaption className="text-[0.6875rem] text-subtle">{t('输出图 {n}', { n: i + 1 })}</figcaption>
                 </figure>
               ))}
             </div>

@@ -126,7 +126,9 @@ export function ScheduleDialog({
                     onClick={() => toggleWeekday(d.id)}
                     className={cn(
                       'h-8 cursor-pointer rounded-lg border px-2.5 text-[0.8125rem] transition-colors',
-                      on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:bg-sel',
+                      on
+                        ? 'border-accent bg-accent-soft text-accent-text'
+                        : 'border-line-strong text-muted hover:bg-sel',
                     )}
                   >
                     {d.label}
@@ -241,7 +243,9 @@ export function ScheduleDialog({
                       onClick={() => toggleUpstream(x.id)}
                       className={cn(
                         'h-8 cursor-pointer rounded-lg border px-2.5 text-[0.8125rem] transition-colors',
-                        on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:bg-sel',
+                        on
+                          ? 'border-accent bg-accent-soft text-accent-text'
+                          : 'border-line-strong text-muted hover:bg-sel',
                       )}
                     >
                       {x.name}

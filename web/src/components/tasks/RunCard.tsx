@@ -77,7 +77,7 @@ function RunCardBase({
     >
       <span className="flex w-full min-w-0 items-center gap-2 text-[0.8125rem]">
         {state === 'running' ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
         ) : state === 'done' ? (
           <CircleCheck className="h-3.5 w-3.5 shrink-0 text-success" />
         ) : state === 'failed' ? (
@@ -166,7 +166,7 @@ export function RunPanel({
           <span className="truncate text-[0.875rem] font-medium">{t('运行 {n}', { n: run })}</span>
           {name && <span className="truncate text-xs text-subtle">{name}</span>}
           {state === 'running' && (
-            <span className="flex shrink-0 items-center gap-1 text-xs text-accent">
+            <span className="flex shrink-0 items-center gap-1 text-xs text-accent-text">
               <Loader2 className="h-3 w-3 animate-spin" />
               {t('执行中')}
             </span>
@@ -234,7 +234,7 @@ export function RunDialog({
               <span className="truncate">{run ? t('运行 {n}', { n: run }) : t('启动工作流')}</span>
               {name && <span className="truncate text-xs font-normal text-subtle">{name}</span>}
               {state === 'running' && (
-                <span className="flex shrink-0 items-center gap-1 text-xs font-normal text-accent">
+                <span className="flex shrink-0 items-center gap-1 text-xs font-normal text-accent-text">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   {t('执行中')}
                 </span>

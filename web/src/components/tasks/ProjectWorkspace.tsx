@@ -126,7 +126,7 @@ function ProjectHome({ project }: { project: Project }) {
           <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-8 md:px-6 md:pt-12">
             <div className="flex flex-col gap-2">
               <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
-                <FolderGit2 className="h-7 w-7 shrink-0 text-accent" strokeWidth={1.6} />
+                <FolderGit2 className="h-7 w-7 shrink-0 text-accent-text" strokeWidth={1.6} />
                 <span className="min-w-0 truncate">{project.name}</span>
               </h1>
               <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8125rem] text-subtle">
@@ -318,7 +318,7 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                     : state === 'needs'
                       ? 'text-warning'
                       : busy
-                        ? 'text-accent'
+                        ? 'text-accent-text'
                         : 'text-subtle',
                 )}
               >
@@ -358,7 +358,7 @@ function TaskStats({ task, now }: { task: Task; now: number }) {
   const rate = cacheRate(task)
   const item = 'flex items-center gap-1 whitespace-nowrap'
   return (
-    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[0.71875rem] text-subtle tabular-nums">
+    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[0.6875rem] text-subtle tabular-nums">
       {ms > 0 && (
         <span className={item} title={t('执行时间（不含等待继续对话的时间）')}>
           <Clock className="h-3 w-3" />

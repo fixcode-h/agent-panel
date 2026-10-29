@@ -306,7 +306,7 @@ async function copyPick(text: string) {
   toast.error(t('写不进剪贴板，请手动复制下面的引用'), {
     // 整段完整引用（带标记），点一下全选就能拷走；只给首行摘要的话粘回去认不出是引用卡片
     description: (
-      <pre className="mt-1 max-h-48 cursor-text overflow-auto rounded bg-field p-2 font-mono text-[0.71875rem] whitespace-pre-wrap select-all">
+      <pre className="mt-1 max-h-48 cursor-text overflow-auto rounded bg-field p-2 font-mono text-[0.6875rem] whitespace-pre-wrap select-all">
         {full}
       </pre>
     ),
@@ -430,7 +430,7 @@ function PickOverlay({
             data-pick-label=""
             // 浮标也挡视线：指针压到它就淡出，不然要点的元素正好被这块牌子盖住
             className={cn(
-              'fixed flex max-w-[min(28rem,calc(100vw-1rem))] items-center gap-1.5 truncate rounded-md bg-fg px-2 py-0.5 font-mono text-[0.71875rem] text-bg shadow-pop transition-opacity',
+              'fixed flex max-w-[min(28rem,calc(100vw-1rem))] items-center gap-1.5 truncate rounded-md bg-fg px-2 py-0.5 font-mono text-[0.6875rem] text-bg shadow-pop transition-opacity',
               labelHidden && 'opacity-0',
             )}
             style={{
@@ -458,7 +458,7 @@ function PickOverlay({
           tipHidden && 'opacity-0',
         )}
       >
-        <SquareDashedMousePointer className="h-4 w-4 text-accent" />
+        <SquareDashedMousePointer className="h-4 w-4 text-accent-text" />
         {t('{button}抓取元素，左键、右键照常可用', { button: pickButtonLabel(button) })}
         <kbd className="rounded border border-line px-1 font-mono text-[0.6875rem] text-muted">Esc</kbd>
         <span className="text-muted">{t('或')}</span>
@@ -566,7 +566,7 @@ export function ElementPickButton({ onPick, className, rootRef }: ElementPickBut
       })}
       className={cn(
         'grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md transition-colors',
-        active ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
+        active ? 'bg-accent-soft text-accent-text' : 'text-subtle hover:bg-sel hover:text-fg',
         className,
       )}
     >

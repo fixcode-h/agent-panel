@@ -188,7 +188,9 @@ export function LessonsEditor({
               onClick={() => setTab(x)}
               className={cn(
                 'cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.6875rem] transition-colors',
-                current === x ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                current === x
+                  ? 'border-accent bg-accent-soft text-accent-text'
+                  : 'text-muted hover:bg-sel/70 hover:text-fg',
               )}
             >
               {x === DEFAULT_TAB ? t('默认') : x}
@@ -248,7 +250,7 @@ export function LessonsEditor({
                   )}
                   {l.source === 'agent' && (
                     <span
-                      className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent"
+                      className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text"
                       title={t('角色被纠正后自己记的，看一下写得对不对')}
                     >
                       {t('角色记录')}
@@ -570,13 +572,13 @@ export function RecordLessonDialog({
           className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
           <header className="flex shrink-0 items-center gap-2.5 border-b px-5 py-4">
-            <GraduationCap className="h-[18px] w-[18px] shrink-0 text-accent" strokeWidth={1.8} />
+            <GraduationCap className="h-[18px] w-[18px] shrink-0 text-accent-text" strokeWidth={1.8} />
             <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.0625rem] font-semibold">
               {t('记成项目教训')}
             </D.Title>
           </header>
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-5">
-            <p className="text-[0.78125rem] leading-relaxed text-subtle">
+            <p className="text-[0.75rem] leading-relaxed text-subtle">
               {t(
                 '记下来以后，这个项目里的角色改到相关文件时都会看到它。写成通用的规则（例如「新能力写进配置文件」），下次换个地方也用得上。',
               )}
@@ -640,7 +642,7 @@ export function ProjectLessonsCard({ project }: { project: Project }) {
         {all.length > 0 && (
           <button
             type="button"
-            className="cursor-pointer rounded px-1 font-normal text-accent hover:underline"
+            className="cursor-pointer rounded px-1 font-normal text-accent-text hover:underline"
             onClick={() => openProject(project.id, 'lessons')}
           >
             {t('全部')}
@@ -680,7 +682,7 @@ export function ProjectLessonsCard({ project }: { project: Project }) {
                   </span>
                 )}
                 {l.source === 'agent' && (
-                  <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent">
+                  <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text">
                     {t('角色记录')}
                   </span>
                 )}

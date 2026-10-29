@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger, menuItem } from '@/components/
 
 /** 状态的说法和颜色：文字用全站同一份（convStateText），这里只按状态分组给颜色 */
 function stateTone(state: ReturnType<typeof taskState>) {
-  if (state === 'running') return 'text-accent'
+  if (state === 'running') return 'text-accent-text'
   if (state === 'needs') return 'text-warning'
   if (state === 'failed') return 'text-danger'
   if (state === 'done') return 'text-success'

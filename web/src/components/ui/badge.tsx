@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 
 const tones = {
   neutral: 'bg-sel/70 text-muted',
-  accent: 'bg-accent-soft text-accent',
+  accent: 'bg-accent-soft text-accent-text',
   success: 'bg-success/12 text-success',
   warning: 'bg-warning/12 text-warning',
 }

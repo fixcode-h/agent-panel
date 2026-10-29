@@ -58,8 +58,8 @@ function ChipSelect({
               {/* 行距和设置里的下拉框一样 */}
               <PopoverClose className={cn(menuItem, 'gap-2 py-1.5')} onClick={() => onChange(o.value)}>
                 {dot && <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: dot(o.value) }} />}
-                <span className={cn('min-w-0 flex-1 truncate text-[0.78125rem]', !dot && 'font-mono')}>{o.label}</span>
-                {o.value === value && <Check className="h-4 w-4 shrink-0 text-accent" />}
+                <span className={cn('min-w-0 flex-1 truncate text-[0.75rem]', !dot && 'font-mono')}>{o.label}</span>
+                {o.value === value && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
               </PopoverClose>
             </div>
           ))}

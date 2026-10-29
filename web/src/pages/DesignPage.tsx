@@ -195,11 +195,11 @@ function NewDesign({ projectId }: { projectId?: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-12 md:py-20">
       <div className="w-full max-w-[560px]">
-        <span className="mb-4 grid h-11 w-11 place-items-center rounded-xl bg-accent-soft text-accent">
+        <span className="mb-4 grid h-11 w-11 place-items-center rounded-xl bg-accent-soft text-accent-text">
           <PaletteIcon className="h-5 w-5" />
         </span>
         <h1 className="font-serif text-[1.625rem] font-semibold tracking-tight">{t('UI 设计')}</h1>
-        <p className="mt-2 text-[0.84375rem] leading-relaxed text-muted">
+        <p className="mt-2 text-[0.8125rem] leading-relaxed text-muted">
           {kind === 'web'
             ? t(
                 '用对话设计网页界面：AI 用自动布局搭好页面、生成插图和图标，最后导出成 HTML / CSS 和图片，直接用浏览器打开。',
@@ -1066,7 +1066,7 @@ function Designer({ id }: { id: string }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        {project && <span className="hidden truncate text-[0.78125rem] text-subtle sm:block">{project.name} /</span>}
+        {project && <span className="hidden truncate text-[0.75rem] text-subtle sm:block">{project.name} /</span>}
         <input
           aria-label={t('设计名称')}
           value={doc.title}
@@ -1223,7 +1223,7 @@ function Designer({ id }: { id: string }) {
           aria-label={chatOpen ? t('收起 AI 对话') : t('打开 AI 对话')}
           title={chatOpen ? t('收起 AI 对话') : t('打开 AI 对话')}
           onClick={() => setChatOpen(!chatOpen)}
-          className={cn(chatOpen && 'text-accent')}
+          className={cn(chatOpen && 'text-accent-text')}
         >
           <MessageSquare className="h-4 w-4" />
         </Button>
@@ -1376,7 +1376,7 @@ function Designer({ id }: { id: string }) {
                   title={t('把确认的原画模板半透明盖在界面上，对照着调')}
                   className={cn(
                     'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#232326]/95 px-2.5 text-[0.75rem] text-white/70 shadow-pop hover:text-white',
-                    overlay && 'text-accent hover:text-accent',
+                    overlay && 'text-accent-text hover:text-accent-text',
                   )}
                 >
                   <Layers className="h-3.5 w-3.5" />
@@ -1600,7 +1600,7 @@ function Designer({ id }: { id: string }) {
             {tab === 'tree' ? (
               <>
                 {live && (
-                  <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-[0.71875rem] text-accent">
+                  <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-[0.6875rem] text-accent-text">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     {t('AI 正在修改，已经改了 {n} 处', { n: live.applied })}
                   </p>
@@ -1723,7 +1723,7 @@ function Designer({ id }: { id: string }) {
         {chatOpen && (
           <aside style={{ width: chatPane.width }} className="relative flex shrink-0 flex-col border-l bg-bg">
             <ResizeHandle pane={chatPane} label={t('拖动调整 AI 对话的宽度')} />
-            <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4 text-[0.78125rem] font-medium text-muted">
+            <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4 text-[0.75rem] font-medium text-muted">
               <span className="shrink-0">{t('AI 对话')}</span>
             </div>
             <DesignChat
@@ -1877,7 +1877,7 @@ function StyleButton({
         <div className="mb-3 flex items-start gap-2 rounded-lg border bg-panel/60 px-2.5 py-2">
           <div className="min-w-0 flex-1">
             <p className="text-[0.75rem] font-medium">{t('项目美术提示词')}</p>
-            <p className="mt-0.5 text-[0.71875rem] leading-relaxed text-subtle">
+            <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-subtle">
               {prompts
                 ? t('{n} 条启用中，项目里所有界面共用', { n: prompts })
                 : t('还没有设置。设置后项目里所有界面风格统一')}
@@ -1888,7 +1888,7 @@ function StyleButton({
           </Button>
         </div>
         <p className="mb-1 text-[0.75rem] font-medium">{t('这个界面的补充风格')}</p>
-        <p className="mb-2 text-[0.71875rem] leading-relaxed text-subtle">
+        <p className="mb-2 text-[0.6875rem] leading-relaxed text-subtle">
           {t('只对这个界面生效，加在项目提示词后面。AI 对话时也会帮你定。')}
         </p>
         <Textarea
@@ -1896,7 +1896,7 @@ function StyleButton({
           onChange={(e) => setText(e.target.value)}
           rows={4}
           placeholder="dark fantasy, carved stone with gold trim, glowing runes"
-          className="text-[0.78125rem]"
+          className="text-[0.75rem]"
         />
         <div className="mt-3 border-t pt-3">
           <p className="mb-1.5 text-[0.75rem] font-medium">{t('从风格库套用')}</p>

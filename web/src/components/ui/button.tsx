@@ -9,7 +9,7 @@ const variants = {
   primary: 'bg-primary text-on-primary hover:opacity-90 active:opacity-80',
   secondary: 'bg-sel/70 text-fg hover:bg-sel',
   ghost: 'text-muted hover:text-fg hover:bg-sel',
-  danger: 'bg-danger text-white hover:opacity-90 active:opacity-80',
+  danger: 'bg-danger text-on-danger hover:opacity-90 active:opacity-80',
   'danger-outline': 'bg-danger/10 text-danger hover:bg-danger/15',
   /** 文字链接样式的按钮（「打开这次执行」「重新生成」）：没有底色和高度，颜色看 tone，悬停加下划线 */
   link: '',
@@ -18,7 +18,7 @@ const variants = {
 }
 /** variant="link" 的颜色：强调色（默认）、灰字（次要的「清除」「重置」）、警告色（「仍要继续」这类） */
 const linkTones = {
-  accent: 'text-accent',
+  accent: 'text-accent-text',
   muted: 'text-subtle hover:text-fg',
   warning: 'text-warning',
 }

@@ -9,7 +9,7 @@ const tones: Record<StatusTone, string> = {
   run: 'bg-run-soft text-run',
   ok: 'bg-success/12 text-success',
   wait: 'bg-warning/12 text-warning',
-  err: 'bg-danger/10 text-danger',
+  err: 'bg-danger/12 text-danger',
   idle: 'bg-sel text-subtle',
 }
 

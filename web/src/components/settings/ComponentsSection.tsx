@@ -613,7 +613,7 @@ function OverlaySpecimens() {
         <div className="relative mt-24 w-full max-w-md rounded-xl bg-field px-3 py-2.5 text-[0.8125rem] text-subtle shadow-card">
           <ComposerPopover stretch scroll>
             {['/commit', '/review'].map((c) => (
-              <div key={c} className={cn(menuItem, 'font-mono text-[0.78125rem]')}>
+              <div key={c} className={cn(menuItem, 'font-mono text-[0.75rem]')}>
                 {c}
               </div>
             ))}

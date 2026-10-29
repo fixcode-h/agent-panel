@@ -35,7 +35,7 @@ export function Checkbox({
     >
       <span
         className={cn(
-          'mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] border transition-colors',
+          'mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded border transition-colors',
           checked
             ? 'border-primary bg-primary text-on-primary'
             : 'border-line-strong bg-field group-hover:border-subtle',
@@ -44,7 +44,7 @@ export function Checkbox({
         {checked && <Check className="h-3 w-3" strokeWidth={3} />}
       </span>
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-[0.84375rem] text-fg">{label}</span>
+        <span className="text-[0.8125rem] text-fg">{label}</span>
         {hint && <span className="text-xs leading-relaxed text-subtle">{hint}</span>}
       </span>
     </button>

@@ -31,7 +31,7 @@ export function WorkflowPicker({
         <div className="max-h-72 overflow-y-auto">
           <PopoverClose className={menuItem} onClick={() => onChange('')}>
             <span className="flex-1 text-muted">{emptyLabel}</span>
-            {!value && <Check className="h-4 w-4 text-accent" />}
+            {!value && <Check className="h-4 w-4 text-accent-text" />}
           </PopoverClose>
           {workflows.map((w) => (
             <PopoverClose key={w.id} className={menuItem} onClick={() => onChange(w.id)}>
@@ -48,7 +48,7 @@ export function WorkflowPicker({
                   {mainName(w.mainAgentId)} · {t('{n} 个子角色', { n: subAgentIds(w).length })}
                 </span>
               </span>
-              {w.id === value && <Check className="h-4 w-4 text-accent" />}
+              {w.id === value && <Check className="h-4 w-4 text-accent-text" />}
             </PopoverClose>
           ))}
           {workflows.length === 0 && (

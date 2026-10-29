@@ -85,10 +85,10 @@ function CategoryRow({ category }: { category: ProjectCategory }) {
     <section className="flex flex-col gap-3 rounded-xl bg-card shadow-card p-4">
       <div className="flex items-center gap-2">
         <Layers className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.8} />
-        <span className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium">{draft.name || t('未命名分类')}</span>
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">{draft.name || t('未命名分类')}</span>
         {builtin && (
           <span
-            className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent"
+            className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text"
             title={t('内置分类不能删除')}
           >
             {t('内置')}

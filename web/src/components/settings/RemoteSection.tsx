@@ -172,7 +172,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                     </Button>
                   )}
                   {cf?.installed && cf.path && (
-                    <span className="max-w-[280px] truncate font-mono text-[0.71875rem] text-subtle" title={cf.path}>
+                    <span className="max-w-[280px] truncate font-mono text-[0.6875rem] text-subtle" title={cf.path}>
                       {cf.path}
                     </span>
                   )}
@@ -212,7 +212,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                   <span>{status ? STATE_TEXT[status.state] : t('检测中…')}</span>
                 </div>
                 {status?.error && (
-                  <p className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">{status.error}</p>
+                  <p className="text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">{status.error}</p>
                 )}
               </div>
             </Row>
@@ -228,7 +228,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                     href={status.link || status.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="shrink-0 text-[0.8125rem] text-accent hover:underline"
+                    className="shrink-0 text-[0.8125rem] text-accent-text hover:underline"
                   >
                     {t('打开')}
                   </a>

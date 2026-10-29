@@ -236,7 +236,7 @@ function Row({
           />
         )}
         {badge && !collapsed && (
-          <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">
+          <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent-text">
             {badge}
           </span>
         )}
@@ -716,7 +716,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                     <ContextMenuTrigger asChild>
                       <div
                         className={cn(
-                          'group/proj flex h-8 items-center gap-1 rounded-[7px] border pr-1 pl-0.5 text-[0.84375rem] text-fg transition-colors',
+                          'group/proj flex h-8 items-center gap-1 rounded-[7px] border pr-1 pl-0.5 text-[0.8125rem] text-fg transition-colors',
                           onProject ? SIDEBAR_ROW_ON : 'border-transparent hover:bg-sel/60',
                         )}
                       >
@@ -749,7 +749,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                                 setRenaming('')
                               }
                             }}
-                            className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[0.84375rem] font-medium text-fg outline-none"
+                            className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[0.8125rem] font-medium text-fg outline-none"
                           />
                         ) : (
                           <button

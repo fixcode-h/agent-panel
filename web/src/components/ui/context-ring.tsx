@@ -32,7 +32,7 @@ export function ContextRing({
           className={cn('transition-[stroke-dasharray] duration-300', p >= 80 ? 'stroke-warning' : 'stroke-muted')}
         />
       </svg>
-      <span className="font-mono text-[0.71875rem] text-muted tabular-nums">{Math.round(p)}%</span>
+      <span className="font-mono text-[0.6875rem] text-muted tabular-nums">{Math.round(p)}%</span>
     </span>
   )
 }

@@ -133,7 +133,7 @@ export function CliLimitsPanel({ cli }: { cli: string }) {
         {data?.plan && <span>{t('套餐：{plan}', { plan: data.plan })}</span>}
         <button
           onClick={reload}
-          className="ml-auto inline-flex cursor-pointer items-center gap-1 text-accent"
+          className="ml-auto inline-flex cursor-pointer items-center gap-1 text-accent-text"
           disabled={loading}
         >
           <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} />
