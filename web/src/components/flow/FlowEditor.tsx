@@ -16,10 +16,12 @@ import {
   Plus,
   Redo2,
   Sparkles,
+  Spline,
   Trash2,
   TriangleAlert,
   Undo2,
   Workflow as WorkflowIcon,
+  X,
 } from 'lucide-react'
 import type { Agent, Flow, FlowNode, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -65,8 +67,10 @@ type EditorProps = {
   prepare?: () => Promise<void>
 }
 
-/** 浮动工具条里的图标按钮：和画布上其他浮动面板同一套尺寸 */
-const toolBtn = 'h-8 w-8'
+/** 左上浮动面板里的图标按钮（撤销 / 重做）：30px，和 40px 高的面板留出上下边距（照设计稿） */
+const barBtn = 'h-[30px] w-[30px] rounded-[7px]'
+/** 底部画布工具条的图标按钮：36px、圆角 9px，图标 17px（照设计稿） */
+const toolBtn = 'h-9 w-9 rounded-[9px] [&_svg]:h-[17px] [&_svg]:w-[17px]'
 
 function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps) {
   const { agents, workflows } = useData()
@@ -215,9 +219,13 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
     id === START ? t('开始') : id === END ? t('结束') : flow.nodes.find((n) => n.id === id)?.title || t('未命名节点')
 
   return (
-    <div className={cn('flex min-h-0 flex-1 flex-col lg:flex-row', full && 'fixed inset-0 z-30 bg-bg')}>
+    // 照设计稿：画布和属性栏是并排的两张圆角卡片，四周和中间留 8px 缝，露出页面底色
+    <div className={cn('flex min-h-0 flex-1 flex-col gap-2 p-2 lg:flex-row', full && 'fixed inset-0 z-30 bg-bg')}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={box} className="@container relative flex h-[520px] min-h-0 bg-panel lg:h-auto lg:flex-1">
+        <div
+          ref={box}
+          className="@container relative flex h-[520px] min-h-0 overflow-hidden rounded-xl border border-line bg-panel lg:h-auto lg:flex-1"
+        >
           <FlowCanvas
             key={flow.id}
             flow={flow}
@@ -260,7 +268,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                   icon={Undo2}
                   size="sm"
                   label={t('撤销')}
-                  className={toolBtn}
+                  className={barBtn}
                   disabled={!hist.canUndo}
                   onClick={() => step('undo')}
                   title={t('撤销（Ctrl+Z）')}
@@ -269,7 +277,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                   icon={Redo2}
                   size="sm"
                   label={t('重做')}
-                  className={toolBtn}
+                  className={barBtn}
                   disabled={!hist.canRedo}
                   onClick={() => step('redo')}
                   title={t('重做（Ctrl+Shift+Z）')}
@@ -328,7 +336,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
           <div
             role="toolbar"
             aria-label={t('画布工具')}
-            className="absolute bottom-3 left-16 z-10 flex h-11 items-center @3xl:left-1/2 @3xl:-translate-x-1/2 gap-0.5 rounded-[12px] bg-card px-1.5 shadow-pop md:bottom-4"
+            className="absolute bottom-3 left-16 z-10 flex h-12 items-center gap-1 rounded-[14px] bg-card px-2 shadow-pop md:bottom-4 @3xl:left-1/2 @3xl:-translate-x-1/2"
           >
             <IconButton
               icon={Hand}
@@ -403,7 +411,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
             <span aria-hidden className="mx-1 h-5 w-px bg-line" />
             <Button
               size="icon-sm"
-              className="h-8 w-9"
+              className="h-9 w-10 rounded-[9px]"
               onClick={() => setRunning(true)}
               aria-label={t('运行')}
               title={t('在项目里运行')}
@@ -514,83 +522,113 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
       <aside
         aria-label={t('属性')}
         style={{ '--flow-inspector-w': `${pane.width}px` } as React.CSSProperties}
-        className={cn(
-          'relative shrink-0 overflow-y-auto border-t bg-bg lg:flex lg:flex-col lg:overflow-hidden lg:w-[var(--flow-inspector-w)] lg:border-t-0 lg:border-l',
-          !inspector && 'lg:hidden',
-        )}
+        className={cn('relative flex shrink-0 flex-col lg:w-[var(--flow-inspector-w)]', !inspector && 'lg:hidden')}
       >
+        {/* 拖动条落在画布和属性栏之间的缝里；卡片的圆角裁切放在里面一层，拖动条不会被裁掉 */}
         <ResizeHandle pane={pane} label={t('拖动调整属性栏的宽度')} className="hidden lg:block" />
-        <div className="min-h-0 lg:flex-1 lg:overflow-y-auto">
-          {node ? (
-            <NodeInspector
-              key={`${node.id}:${rev}`}
-              w={w}
-              flow={flow}
-              node={node}
-              main={main}
-              team={team}
-              setFlow={(f) => setFlow(f, typing(node.id))}
-              onSelect={setSelected}
-            />
-          ) : selEdge ? (
-            <div className="flex flex-col gap-4 p-5">
-              <h3 className="font-serif text-[1.0625rem] font-semibold">{t('连线')}</h3>
-              <p className="text-[0.8125rem] leading-relaxed text-muted">
-                {t('「{from}」完成后才会开始「{to}」。', { from: name(selEdge.from), to: name(selEdge.to) })}
-              </p>
-              {selEdge.from !== START && flow.nodes.find((n) => n.id === selEdge.from)?.kind === 'agent' && (
-                <div className="flex flex-col gap-1.5">
-                  <Label
-                    hint={t(
-                      '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。',
-                      { from: name(selEdge.from) },
-                    )}
-                  >
-                    {t('条件')}
-                  </Label>
-                  <Select
-                    aria-label={t('条件')}
-                    value={selEdge.when ?? ''}
-                    onChange={(e) =>
-                      setFlow({
-                        ...flow,
-                        edges: flow.edges.map((x) =>
-                          x.id === selEdge.id ? { ...x, when: e.target.value as 'pass' | 'fail' | '' } : x,
-                        ),
-                      })
-                    }
-                    options={[
-                      { value: '', label: t('总是') },
-                      { value: 'pass', label: t('结论是「通过」时') },
-                      { value: 'fail', label: t('结论是「不通过」时') },
-                    ]}
-                  />
-                </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-card">
+          {/* 顶部页签条（照设计稿）：当前编辑的对象写在页签上，叉号收起属性栏 */}
+          <div className="flex h-10 shrink-0 items-end border-b border-line bg-bg px-1.5">
+            <div className="flex h-[34px] max-w-full min-w-0 items-center gap-1.5 rounded-t-lg bg-card pr-1 pl-2.5 text-[0.78125rem] font-medium shadow-[0_0_0_1px_var(--line)] [clip-path:inset(-1px_-1px_0_-1px)]">
+              {node ? (
+                <Bot className="h-3.5 w-3.5 shrink-0 text-subtle" aria-hidden />
+              ) : selEdge ? (
+                <Spline className="h-3.5 w-3.5 shrink-0 text-subtle" aria-hidden />
+              ) : (
+                <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-subtle" aria-hidden />
               )}
-              <Button
-                variant="danger-outline"
-                className="self-start"
+              <span className="min-w-0 truncate">
+                {node
+                  ? t('节点 · {name}', { name: node.title || t('未命名节点') })
+                  : selEdge
+                    ? t('连线')
+                    : selected === END
+                      ? t('结束')
+                      : t('流程 · {name}', { name: flowLabel(flow, w) })}
+              </span>
+              <IconButton
+                icon={X}
+                size="2xs"
+                label={t('收起属性栏')}
+                className="hidden lg:grid"
                 onClick={() => {
-                  setFlow({ ...flow, edges: flow.edges.filter((e) => e.id !== selEdge.id) })
-                  setSelected('')
+                  setInspector(false)
+                  fit()
                 }}
-              >
-                <Trash2 className="h-4 w-4" />
-                {t('删除连线')}
-              </Button>
+              />
             </div>
-          ) : (
-            <FlowInspector
-              key={rev}
-              w={w}
-              flow={flow}
-              atEnd={selected === END}
-              checks={checks}
-              setFlow={(f) => setFlow(f, typing(`flow:${f.id}`))}
-              patch={change}
-              onSwitchFlow={switchFlow}
-            />
-          )}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {node ? (
+              <NodeInspector
+                key={`${node.id}:${rev}`}
+                w={w}
+                flow={flow}
+                node={node}
+                main={main}
+                team={team}
+                setFlow={(f) => setFlow(f, typing(node.id))}
+                onSelect={setSelected}
+              />
+            ) : selEdge ? (
+              <div className="flex flex-col gap-4 p-4">
+                <p className="text-[0.8125rem] leading-relaxed text-muted">
+                  {t('「{from}」完成后才会开始「{to}」。', { from: name(selEdge.from), to: name(selEdge.to) })}
+                </p>
+                {selEdge.from !== START && flow.nodes.find((n) => n.id === selEdge.from)?.kind === 'agent' && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label
+                      hint={t(
+                        '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。',
+                        { from: name(selEdge.from) },
+                      )}
+                    >
+                      {t('条件')}
+                    </Label>
+                    <Select
+                      aria-label={t('条件')}
+                      value={selEdge.when ?? ''}
+                      onChange={(e) =>
+                        setFlow({
+                          ...flow,
+                          edges: flow.edges.map((x) =>
+                            x.id === selEdge.id ? { ...x, when: e.target.value as 'pass' | 'fail' | '' } : x,
+                          ),
+                        })
+                      }
+                      options={[
+                        { value: '', label: t('总是') },
+                        { value: 'pass', label: t('结论是「通过」时') },
+                        { value: 'fail', label: t('结论是「不通过」时') },
+                      ]}
+                    />
+                  </div>
+                )}
+                <Button
+                  variant="danger-outline"
+                  className="self-start"
+                  onClick={() => {
+                    setFlow({ ...flow, edges: flow.edges.filter((e) => e.id !== selEdge.id) })
+                    setSelected('')
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t('删除连线')}
+                </Button>
+              </div>
+            ) : (
+              <FlowInspector
+                key={rev}
+                w={w}
+                flow={flow}
+                atEnd={selected === END}
+                checks={checks}
+                setFlow={(f) => setFlow(f, typing(`flow:${f.id}`))}
+                patch={change}
+                onSwitchFlow={switchFlow}
+              />
+            )}
+          </div>
         </div>
       </aside>
       <RunInProjectDialog

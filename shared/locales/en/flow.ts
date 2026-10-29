@@ -258,6 +258,10 @@ export const EN_FLOW: Record<string, string> = {
   '输入和输出 token 合计': 'Input and output tokens combined',
   不限: 'No limit',
   收起属性栏: 'Hide properties panel',
+  // 属性栏顶部的页签：当前编辑的对象
+  '节点 · {name}': 'Node · {name}',
+  '流程 · {name}': 'Flow · {name}',
+  节点名称: 'Node name',
   显示属性栏: 'Show properties panel',
   拖动调整属性栏的宽度: 'Drag to resize the properties panel',
   推荐的下一步: 'Suggested next steps',

@@ -58,6 +58,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 属性栏的宽度可调：选中节点后拖左边缘，变宽并记住
   await p.getByText('处理并推荐').first().click()
   const inspector = p.locator('aside[aria-label="属性"]')
+  // 属性栏顶部的页签写当前编辑的对象（照 Workflow 设计稿）
+  if (!(await inspector.getByText('节点 · 处理并推荐').count()))
+    errors.push('工作流-属性栏：页签上没有写「节点 · 名称」')
   const grip = p.locator('[role="separator"][aria-label="拖动调整属性栏的宽度"]')
   const width = async () => (await inspector.boundingBox())?.width ?? 0
   const before = await width().catch(() => 0)
