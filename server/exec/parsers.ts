@@ -296,6 +296,8 @@ export function claudeParser(cwd: string): Parser {
         msgId = e.message?.id ?? ''
         textInMsg = false
         msgOut = 0
+        // 每次模型回应的开头：插话收下后说完的那段话到这里为止，之后的回应排在用户消息后面
+        out.push({ type: 'request_start' })
         const u = e.message?.usage
         if (u) {
           const c = claudeInput(u)
@@ -324,6 +326,9 @@ export function claudeParser(cwd: string): Parser {
         out.push({ type: 'text_delta', text: '\n\n' })
       } else if (e.type === 'content_block_delta' && e.delta?.type === 'thinking_delta') {
         out.push({ type: 'thinking', text: e.delta.thinking ?? '', delta: true })
+      } else if (e.type === 'content_block_delta' && e.delta?.type === 'input_json_delta') {
+        // 模型在写工具入参（写大文件时能写一两分钟）：算在输出，不然没有响应的检测会把它当成卡住
+        if (e.delta.partial_json) out.push({ type: 'gen', text: e.delta.partial_json })
       } else if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') {
         streamed.add(msgId)
         textInMsg = true

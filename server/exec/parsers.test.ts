@@ -114,6 +114,21 @@ test('Claude Code：stream-json 的文字、思考、工具、待办和用量', 
   )
 })
 
+test('Claude Code：每次模型回应开头报 request_start，写工具入参算在输出', () => {
+  const parse = claudeParser(CWD)
+  const start = parse({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm1' } } })
+  // 插话收下后说完的那段话以它为界，之后的回应排在用户消息后面
+  assert.deepEqual(start, [{ type: 'request_start' }])
+  // 写大文件时入参能流一两分钟：不报出来，没有响应的检测会把它当成卡住
+  assert.deepEqual(
+    parse({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{"file' } },
+    }),
+    [{ type: 'gen', text: '{"file' }],
+  )
+})
+
 test('Claude Code：出错的结果', () => {
   const parse = claudeParser(CWD)
   const s = summarize([
