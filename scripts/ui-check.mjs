@@ -9,7 +9,7 @@
  * 用法：npx vite build --mode demo && node scripts/ui-check.mjs
  * 只跑某几个分片：node scripts/ui-check.mjs 02 06（按文件名前缀匹配；02 会跑 02、02b、02c 三片）
  * 限制并发：AGENT_PANEL_UI_CONCURRENCY=2 node scripts/ui-check.mjs
- * 只跑 CI 的某一组：node scripts/ui-check.mjs --group a（分组见下面的 CI_GROUPS）
+ * 只跑 CI 的某一组：node scripts/ui-check.mjs --group a（分组见下面的 CI_GROUP_A）
  * 打印每个分片的全部步骤：node scripts/ui-check.mjs --verbose
  * 每步都截图（默认只拍失败步骤和分片首尾）：SHOTS=all node scripts/ui-check.mjs
  */
