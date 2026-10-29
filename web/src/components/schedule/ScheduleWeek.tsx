@@ -195,11 +195,26 @@ export function ScheduleWeek({
     }
     const origin = { day: d.day, h: ev.h, span: ev.span }
     setDrag(d)
-    const move = (m: PointerEvent) => {
+    // 拖到滚动区上下边缘时自动滚：看不见的时段也能拖过去。位移要把滚过的距离算进去
+    const scroller = box.current?.parentElement
+    const scroll0 = scroller?.scrollTop ?? 0
+    let last = { x: e.clientX, y: e.clientY }
+    let timer = 0
+    const edge = () => {
+      // 还没拖起来（只是按住）时不滚
+      if (!scroller || !dragRef.current?.moved) return
+      const r = scroller.getBoundingClientRect()
+      const step = last.y < r.top + 48 ? -12 : last.y > r.bottom - 32 ? 12 : 0
+      if (step) {
+        scroller.scrollTop += step
+        update(last)
+      }
+    }
+    const update = (m: { x: number; y: number }) => {
       const cur = dragRef.current
       if (!cur) return
-      const dx = m.clientX - d.x
-      const dy = m.clientY - d.y
+      const dx = m.x - d.x
+      const dy = m.y - d.y + ((scroller?.scrollTop ?? 0) - scroll0)
       if (!cur.moved && Math.hypot(dx, dy) < DRAG_PX) return
       const steps = Math.round(dy / (slotPx() || 1))
       if (kind === 'resize') {
@@ -207,10 +222,16 @@ export function ScheduleWeek({
         setDrag({ ...cur, span, moved: true })
       } else {
         const h = Math.max(0, Math.min(24 - SLOT_H, origin.h + steps * SLOT_H))
-        setDrag({ ...cur, day: dayAt(m.clientX), h, moved: true })
+        setDrag({ ...cur, day: dayAt(m.x), h, moved: true })
       }
     }
+    const move = (m: PointerEvent) => {
+      last = { x: m.clientX, y: m.clientY }
+      update(last)
+    }
+    timer = window.setInterval(edge, 30)
     const up = () => {
+      window.clearInterval(timer)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('keydown', esc)
@@ -236,6 +257,13 @@ export function ScheduleWeek({
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
     window.addEventListener('keydown', esc)
+  }
+
+  /** 第 day 天、从第 h 小时开始的那一格结束的时刻：拖到这里会不会是过去 */
+  const slotEnd = (day: number, h: number) => {
+    const d = new Date(days[day])
+    d.setHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0)
+    return d.getTime() + SLOT_MIN * 60_000
   }
 
   /** 空白格的开始时间 */
@@ -367,16 +395,27 @@ export function ScheduleWeek({
                 )
               })}
               {/* 拖到的位置：虚线框 + 新时间，松手才保存 */}
-              {drag?.moved && drag.kind === 'move' && drag.day === col && (
-                <div
-                  aria-hidden
-                  style={{ top: `calc(${drag.h * ROW}rem + 1px)`, height: `calc(${drag.span * ROW}rem - 3px)` }}
-                  className="pointer-events-none absolute inset-x-[3px] z-[3] flex flex-col rounded-md border-2 border-dashed border-accent bg-accent/10 px-1.5 py-1 text-[0.6875rem] font-medium text-accent-text tabular-nums"
-                >
-                  <span className="truncate">{drag.s.name}</span>
-                  {clock(drag.h)}–{clock(Math.min(24, drag.h + drag.span))}
-                </div>
-              )}
+              {drag?.moved &&
+                drag.kind === 'move' &&
+                drag.day === col &&
+                (() => {
+                  // 不重复的计划拖到已经过去的那几格：松手不会改，框先变红说清楚，不等松手后才报错
+                  const past = drag.s.repeat === 'once' && slotEnd(drag.day, drag.h) <= now
+                  return (
+                    <div
+                      aria-hidden
+                      style={{ top: `calc(${drag.h * ROW}rem + 1px)`, height: `calc(${drag.span * ROW}rem - 3px)` }}
+                      className={cn(
+                        'pointer-events-none absolute inset-x-[3px] z-[3] flex flex-col rounded-md border-2 border-dashed px-1.5 py-1 text-[0.6875rem] font-medium tabular-nums',
+                        past ? 'border-danger bg-danger/10 text-danger' : 'border-accent bg-accent/10 text-accent-text',
+                      )}
+                    >
+                      <span className="truncate">{drag.s.name}</span>
+                      {clock(drag.h)}–{clock(Math.min(24, drag.h + drag.span))}
+                      {past && <span>{t('已过去，不能挪到这里')}</span>}
+                    </div>
+                  )
+                })()}
             </div>
           )
         })}

@@ -277,7 +277,7 @@ export function alignScheduleAt(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekda
 
 /**
  * 在周视图里把某一次执行（occAt）拖到 to：算出保存用的 at 和 weekdays，放不下时给出原因（直接显示给用户）。
- * - 单次：执行时间就是 to，不能拖到过去；
+ * - 单次：执行时间就是 to，不能拖到过去（拖进现在所在的那一格算从下一分钟开始）；
  * - 每周：把那一次所在的星期换成新的星期（其余勾着的不动），时分跟着改；
  * - 工作日：不能拖到周末；每天 / 工作日只改时分（日期换到哪天都一样）；
  * 重复的计划下一次从今天起按新规则算（今天这个时刻已经过了就从下一次开始），不记一次「错过」
@@ -290,6 +290,9 @@ export function movedSchedule(
 ): { at: string; weekdays: number[] } | { error: string } {
   const target = new Date(to)
   if (s.repeat === 'once') {
+    // 拖进「现在」所在的那一格（这一格的开头已经过了）：从下一分钟开始，不当成拖到过去
+    if (to < now && to + SLOT_MIN * 60_000 > now)
+      return { at: new Date(Math.ceil(now / 60_000 + 1) * 60_000).toISOString(), weekdays: [] }
     if (to < now) return { error: t('不能挪到已经过去的时间') }
     return { at: target.toISOString(), weekdays: [] }
   }

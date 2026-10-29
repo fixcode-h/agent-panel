@@ -152,6 +152,7 @@ export const EN_SCHEDULE: Record<string, string> = {
     'Right-click or double-click an empty slot to add a schedule there; drag a schedule to move it, drag its bottom edge to resize. Slots are 30 minutes.',
   '双击一天在那天新建；点日期看那一周。': 'Double-click a day to add a schedule; click a date to see that week.',
   不能挪到已经过去的时间: "Can't move it to a time that has already passed",
+  '已过去，不能挪到这里': "Already passed, can't move here",
   工作日计划不能挪到周末: "A workday schedule can't move to a weekend",
   'token 上限': 'Token limit',
   '0 或不填表示不限': '0 or empty means no limit',
