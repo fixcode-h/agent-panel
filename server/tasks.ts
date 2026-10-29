@@ -39,6 +39,7 @@ import {
   childActivity,
   childActivityText,
   childIdleAsk,
+  planStalled,
   childLastActivity,
   childStartedAt,
   childWait,
@@ -4130,6 +4131,7 @@ export function tasksApi(deps: {
         {
           minutes,
           working: tk.working,
+          stalledPlan: planStalled(tk),
           lastActivityAt: childLastActivity(tk),
           wait: childWait(tk, { background: pendingJobs(tk.id), cliAlive: true }),
           autoAsk: tk.autoAsk,
@@ -4142,9 +4144,13 @@ export function tasksApi(deps: {
       // 读父对话的时候它可能已经被停止、替换掉了：这一轮就不问了
       if (!parent || shuttingDown || live.get(tk.id) !== entry) continue
       const mins = Math.max(1, Math.round(decision.idleMs / askUnitMs))
-      const text =
-        `【状态询问】你已经 ${mins} 分钟没有输出了。请简短报告：现在在做什么、是否卡住；` +
-        `卡住请说明卡在哪一步、需要什么才能继续。没有卡住就说明下一步还要多久，然后接着做。`
+      const open = tk.working ? undefined : openPlan(tk)
+      const text = open
+        ? `【状态询问】你的上一轮已经结束 ${mins} 分钟了，计划才做了 ${open.done}/${open.total}，` +
+          `也没有在等任何结果。没有卡住就直接调用工具接着做下一步，不要只回一句话；` +
+          `卡住了就说明卡在哪一步、需要什么才能继续。`
+        : `【状态询问】你已经 ${mins} 分钟没有输出了。请简短报告：现在在做什么、是否卡住；` +
+          `卡住请说明卡在哪一步、需要什么才能继续。没有卡住就说明下一步还要多久，然后接着做。`
       const msg: TaskMessage = {
         id: randomUUID(),
         role: 'system',

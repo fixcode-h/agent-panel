@@ -1,6 +1,6 @@
 # ADR 0024：测试默认只输出失败和汇总，失败只重跑失败的部分，用例数量有预算
 
-状态：已接受 · 2026-10-28
+状态：已接受 · 2026-10-28（第 4 条「用例预算棘轮」被 [ADR 0031](./0031-test-count-report-not-cap.md) 替代：总数不设上限，只拦本次净新增）
 
 ## 背景
 
@@ -38,13 +38,13 @@
 
 ## 操作清单 / 契约
 
-| 命令                                                                 | 作用                                           |
-| -------------------------------------------------------------------- | ---------------------------------------------- |
-| `npm run test:unit`                                                  | 全量单测，精简输出，失败文件自动重跑           |
-| `npm run test:failed`                                                | 只跑上次还失败的单测文件                       |
-| `npm run test:unit -- --verbose / --no-retry`                        | 完整输出 / 不重跑                              |
-| `npm run test:e2e -- --failed`、`node scripts/ui-check.mjs --failed` | 只跑上次失败的分片                             |
-| `node scripts/test-budget.mjs --check`、`--tap <报告>`               | 静态检查各层预算 / 用已跑出的 tap 复核         |
+| 命令                                                                 | 作用                                   |
+| -------------------------------------------------------------------- | -------------------------------------- |
+| `npm run test:unit`                                                  | 全量单测，精简输出，失败文件自动重跑   |
+| `npm run test:failed`                                                | 只跑上次还失败的单测文件               |
+| `npm run test:unit -- --verbose / --no-retry`                        | 完整输出 / 不重跑                      |
+| `npm run test:e2e -- --failed`、`node scripts/ui-check.mjs --failed` | 只跑上次失败的分片                     |
+| `node scripts/test-budget.mjs --check`、`--tap <报告>`               | 静态检查各层预算 / 用已跑出的 tap 复核 |
 
 ## 与现有实现的关系
 
