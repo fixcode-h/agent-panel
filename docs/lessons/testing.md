@@ -45,7 +45,7 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 - 规则：场景放 `scripts/e2e/NN-*.mjs`、每片调一次 `runShard()`；临时目录、端口、服务、看门狗在 `harness.mjs` 的 `setupBase()`，服务用 `onExit()` 登记，分片间不能有依赖。
 - 规则：合并分支用 `mergeTask()`（每次尝试前清、被挡住会重试），别手工 `rmSync` 假 CLI 写的 `<kind>-output.txt`；负向用例（期望 409）拿原始错误。加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 查会包含它的旧词（`SLOW`、`FAIL` 匹配整段输入）。
 - 规则：改了交给 CLI 的方式（参数、文件、只发增量）同一提交改假 CLI 的读法和 e2e 断言；触发词不能依赖会被增量省掉的规则段落。
-- 起因：`BG_SLOW` 命中 `SLOW`（7a875fe）；角色改走 `--append-system-prompt-file` 后假 CLI 认不出评审，3 片红（fc1c744）；面板工具按需给之后（c5ccab6），续接轮次的输入里不一定有 `submit_merge`，parent-tests「修好了再合一次」时好时坏——假 CLI 改为按会话记住见过的工具，和真 CLI 续接时一样。
+- 起因：`BG_SLOW` 命中 `SLOW`（7a875fe）；角色改走 `--append-system-prompt-file` 后假 CLI 认不出评审，3 片红（fc1c744）。
 - 防线：`test:e2e`（看门狗）、`outputs.test.mjs`。
 
 ## 跑 e2e / 单测前清掉继承的环境变量
