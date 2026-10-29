@@ -409,12 +409,12 @@ test('Bug 记录只记用户报的 Bug，AI 自己写代码、评审发现的问
 test('P4 的 changelist 描述只写一行短句，细节留在文档里', () => {
   // 实际出现过长描述（把根因、函数名、步骤全写进 pending），P4V 列表里根本看不完
   const p4 = readFileSync(new URL('../skills/vcs/project-vcs/p4.md', import.meta.url), 'utf8')
-  assert.match(p4, /一行、不超过约 40 个字符/)
+  assert.match(p4, /一行、不超过 25 个字/)
   assert.match(p4, /不写实现细节、函数名、文件列表/)
   assert.match(p4, /正例/)
   assert.match(p4, /反例/)
   const vcs = BUILTIN_AGENTS.find((b) => b.key === 'vcs')!.agent.instructions
-  assert.match(vcs, /约 40 字以内/, '角色提示词和技能口径一致')
+  assert.match(vcs, /25 字以内/, '角色提示词和技能口径一致')
   assert.match(vcs, /不写实现细节、函数名和文件列表/)
   const git = readFileSync(new URL('../skills/vcs/project-vcs/git.md', import.meta.url), 'utf8')
   assert.match(git, /标题一行短句/, 'Git 提交说明也别把细节塞进标题')

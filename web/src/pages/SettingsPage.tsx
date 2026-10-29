@@ -156,6 +156,7 @@ function SettingsBody({
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
+  const [userName, setUserName] = useState(initial.userName)
   const [childAskUserDefault, setChildAskUserDefault] = useState(initial.childAskUserDefault)
   const [developerMode, setDeveloperMode] = useState(initial.developerMode)
   const [elementPicker, setElementPicker] = useState(initial.elementPicker)
@@ -313,6 +314,7 @@ function SettingsBody({
     requireToken,
     remoteAccess,
     askUserDefault,
+    userName: userName.trim(),
     childAskUserDefault,
     developerMode,
     elementPicker,
@@ -900,6 +902,19 @@ function SettingsBody({
                 )}
               </Group>
               <Group title={t('输入与文件')}>
+                <Row
+                  title={t('称呼')}
+                  desc={t('提问卡片、子对话提问这些地方怎么称呼你，例如「需要用户回答」。不填写「用户」。')}
+                >
+                  <Input
+                    aria-label={t('称呼')}
+                    value={userName}
+                    maxLength={20}
+                    placeholder={t('用户')}
+                    onChange={(e) => setUserName(e.target.value)}
+                    className="w-40"
+                  />
+                </Row>
                 <Row
                   title={t('新会话默认开启提问')}
                   desc={t(

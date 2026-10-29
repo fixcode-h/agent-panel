@@ -905,6 +905,9 @@ export const EN_SETTINGS: Record<string, string> = {
     'Space between characters; negative is tighter. Maple Mono is monospaced, so it is slightly tightened by default.',
   行高: 'Line height',
   面板圆角: 'Panel corner radius',
+  称呼: 'Your name',
+  '提问卡片、子对话提问这些地方怎么称呼你，例如「需要用户回答」。不填写「用户」。':
+    'How question cards and sub-chat questions refer to you, e.g. "Needs User to answer". Leave empty for "User".',
   '主区、右栏这些面板的圆角大小，0 是直角。': 'Corner radius of the main area and side panels; 0 means square corners.',
   '对话回复和文档正文的行距。': 'Line spacing of chat replies and documents.',
   'Agent 面板按工作流调度本机的编码 Agent。': 'Agent Panel runs local coding agents by workflow.',

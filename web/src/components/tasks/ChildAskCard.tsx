@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useUserName } from '@/lib/user-name'
 import { toast } from '@/lib/toast'
 import { ArrowUpRight, Lightbulb, Loader2, MessageCircleQuestion } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
@@ -19,6 +20,7 @@ import { useChildOpen } from './child-open'
  * 几个子对话同时问时各自留在发生的位置，不挡住父对话的输入框
  */
 export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Task; teamNames: Set<string> }) {
+  const user = useUserName()
   const ask = m.ask!
   // 收尾建议是这一轮做完了在问下一步怎么做，说法和「提问」不一样：别让用户以为它还在等一个问题
   const suggestion = ask.kind === 'suggestion'
@@ -75,7 +77,7 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
         <span className="absolute inset-0 animate-ping rounded-full bg-warning/60" />
         <span className="relative h-1.5 w-1.5 rounded-full bg-warning" />
       </span>
-      {t('等你选择')}
+      {t('等{who}选择', { who: user })}
     </span>
   )
 
@@ -92,7 +94,7 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
         pending
           ? suggestion
             ? t('子对话的收尾建议，请你决定下一步')
-            : t('子对话请你选择')
+            : t('子对话请{who}选择', { who: user })
           : suggestion
             ? t('子对话的收尾建议')
             : t('子对话请你决定')
@@ -169,6 +171,7 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
  * 右上角的关闭：这些提问都不回答，子对话终止
  */
 export function ParentAskPanel({ task, onClosed }: { task: Task; onClosed: (t: Task) => void }) {
+  const user = useUserName()
   const asks = task.parentAsks ?? []
   const parentId = task.parentTaskId
   if (!asks.length || !parentId) return null
@@ -189,7 +192,7 @@ export function ParentAskPanel({ task, onClosed }: { task: Task; onClosed: (t: T
     <QuestionPanel
       className="mb-2"
       // 收尾建议和提问共用这套弹窗：只有说法不同，用户选完都是同一个结果（直接交给子对话）
-      label={suggesting ? t('下一步怎么做') : t('需要你选择')}
+      label={suggesting ? t('下一步怎么做') : t('需要{who}选择', { who: user })}
       who={
         <span className="truncate">
           {suggesting ? t('子对话给出了下一步的建议，选一下就按它继续') : t('子对话请你决定，选择会直接交给它')}

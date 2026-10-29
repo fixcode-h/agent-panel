@@ -2476,6 +2476,8 @@ export const Settings = z.object({
     .preprocess((v) => (typeof v === 'number' ? Math.min(CONTENT_MAX, Math.max(640, v)) : v), z.number().int())
     .default(CONTENT_WIDTH),
   appearance: Appearance.prefault({}),
+  /** 界面上对用户的称呼（提问卡片「需要用户回答」等）；空时写「用户」 */
+  userName: z.string().trim().max(20).default(''),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
   /**

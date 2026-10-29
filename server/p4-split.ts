@@ -79,6 +79,18 @@ function describe(bucket: P4Bucket, text: string) {
   return `[${bucket}] ${body}`
 }
 
+/**
+ * 描述最长多少字（中日韩字符算 1 个，其余算半个）：P4V 的列表一行放得下，一眼看完改了什么。
+ * 只写在提示词里时 Agent 常常写成一大段（根因、函数名、步骤），所以这里超了就退回让它改短
+ */
+export const P4_DESC_MAX = 25
+
+/** 描述的长度：中日韩字符算 1，其余（字母、数字、空格、标点）算半个 */
+export function descWidth(text: string) {
+  const cjk = text.match(/[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/g)?.length ?? 0
+  return cjk + (text.length - cjk) / 2
+}
+
 /** 新建 pending 的表单：不写 Files，建出来是空的，再用 reopen 把文件挪进去 */
 function changeSpec(desc: string) {
   return `Change: new\n\nDescription:\n\t${desc}\n`
@@ -125,7 +137,21 @@ export async function splitChangelists(run: P4Run, input: P4SplitInput): Promise
   if (missing.length)
     return {
       ok: false,
-      info: `还没动任何文件：缺 ${missing.map((b) => `[${b}]`).join('、')} 的描述。这次要分的文件：\n${list}\n给每一类在 descriptions 里写一句中文描述（约 40 字内，不带标签、不写函数名和文件列表）再调用；里面有不属于这次任务的文件就用 files 只列本次的。`,
+      info: `还没动任何文件：缺 ${missing.map((b) => `[${b}]`).join('、')} 的描述。这次要分的文件：\n${list}\n给每一类在 descriptions 里写一句中文描述（25 字以内，不带标签、不写原因、函数名和文件列表）再调用；里面有不属于这次任务的文件就用 files 只列本次的。`,
+    }
+
+  // 太长的先退回：一个文件都不动，告诉 Agent 哪几类超了、超了多少
+  const long = used
+    .map((b) => ({ b, body: describe(b, input.descriptions[b]!).replace(/^\[[^\]]*\]\s*/, '') }))
+    .filter((x) => descWidth(x.body) > P4_DESC_MAX)
+  if (long.length)
+    return {
+      ok: false,
+      info: `还没动任何文件：描述太长，每类不超过 ${P4_DESC_MAX} 个字（英文、数字算半个）。${long
+        .map((x) => `[${x.b}]「${x.body}」约 ${Math.ceil(descWidth(x.body))} 字`)
+        .join(
+          '；',
+        )}。只写一句改了什么（例如「区域表补全 QuestID 列」），不写原因、函数名、步骤和文件列表，改短后再调用。`,
     }
 
   const done: string[] = []

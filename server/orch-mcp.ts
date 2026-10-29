@@ -705,7 +705,8 @@ export function orchTools(o: Orchestra) {
               properties: {
                 descriptions: {
                   type: 'object',
-                  description: '这次有文件的每一类写一句中文描述（约 40 字内，不带 [类型] 标签，不写函数名和文件列表）',
+                  description:
+                    '这次有文件的每一类写一句中文描述，只说改了什么（25 字以内，英文数字算半个；不带 [类型] 标签，不写原因、函数名和文件列表；超长会被退回）',
                   properties: {
                     'C++': { type: 'string' },
                     XLSX: { type: 'string', description: '表格：.xlsx / .xls / .csv 等' },

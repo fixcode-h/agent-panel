@@ -9,13 +9,17 @@ import { t } from '@shared/i18n'
  */
 export const MODAL_OVERLAY = 'fixed inset-0 z-40 bg-scrim animate-[fade-in_150ms_ease-out]'
 
-/** 弹窗宽度档：sm 确认类小表单，md 常规表单（默认），lg 宽表单（原来的 wide），xl 带侧栏的编辑器，full 几乎铺满（查看器） */
+/**
+ * 弹窗宽度档：sm 确认类小表单，md 常规表单（默认），lg 宽表单（原来的 wide），xl 带侧栏的编辑器，full 几乎铺满（查看器）；
+ * fit 是跟着内容高的查看器：内容少时矮，多了才拉高，最高到 full 的四分之三（一次编辑的差异通常就几行，铺满太空）
+ */
 const SIZES = {
   sm: 'max-w-[420px]',
   md: 'max-w-[520px]',
   lg: 'max-w-[760px]',
   xl: 'max-w-[1100px]',
   full: 'h-[calc(100dvh-2rem)] max-w-[1400px]',
+  fit: 'max-h-[calc((100dvh-2rem)*0.75)] max-w-[1400px]',
 } as const
 
 export type ModalSize = keyof typeof SIZES

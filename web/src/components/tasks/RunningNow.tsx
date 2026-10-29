@@ -1,3 +1,4 @@
+import { useUserName } from '@/lib/user-name'
 import { useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
@@ -271,6 +272,7 @@ export function RunningNow({
    */
   kids: boolean
 }) {
+  const user = useUserName()
   const children = useChildList()
   const openChild = useChildOpen()
   // 列什么只算一次：RunningNow 自己列的行和外面画不画分隔线读的是同一个函数
@@ -310,7 +312,7 @@ export function RunningNow({
         // 行上的状态标签、当前活动、多久没新输出都和悬浮层那一行读同一份（见 ./child-line）：
         // 标题、状态、计划进度、正在做什么两处显示一致。
         // 这段详情按弹层里的观感跟在标题后面左对齐（detailStart），不再贴到行尾
-        const labels = childLabels(k)
+        const labels = childLabels(k, user)
         const note = childNote(k, true)
         const stale = staleLine(k)
         // 进程回收了、对话却还在跑：行上不说「已关闭」（那会和标签同屏矛盾），只在这里补一句

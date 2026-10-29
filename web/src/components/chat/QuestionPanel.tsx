@@ -1,4 +1,5 @@
 // AI 问你的问题：显示在输入框的位置（换掉输入框），一次可以问好几个，全部回答完再一起交回去。
+import { useUserName } from '@/lib/user-name'
 // 每个问题的选项最后一项都是「自己输入」。任务对话（CLI 的提问）和 UI 设计（AI 问风格等）共用
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, Loader2, PencilLine, X } from 'lucide-react'
@@ -70,6 +71,7 @@ export function QuestionPanel({
   teamNames?: Set<string>
   className?: string
 }) {
+  const user = useUserName()
   const n = questions.length
   const [at, setAt] = useState(0)
   const [answers, setAnswers] = useState<Answer[]>(() => questions.map(empty))
@@ -153,7 +155,7 @@ export function QuestionPanel({
         >
           ?
         </span>
-        <span className="shrink-0 font-semibold text-warning">{label ?? t('需要你回答')}</span>
+        <span className="shrink-0 font-semibold text-warning">{label ?? t('需要{who}回答', { who: user })}</span>
         {who && <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">{who}</span>}
         <span className="flex-1" />
         {/* 多选跟着标题行，不跟着正文滚走 */}

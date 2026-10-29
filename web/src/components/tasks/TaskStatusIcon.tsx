@@ -1,3 +1,4 @@
+import { useUserName } from '@/lib/user-name'
 import {
   Circle,
   CircleCheck,
@@ -45,6 +46,7 @@ export function TaskStatusIcon({
   cliAlive?: boolean
   className?: string
 }) {
+  const user = useUserName()
   const c = cn('h-4 w-4 shrink-0', className)
   const name = label ?? statusLabel[status]
   if (icon === 'failed') return <CircleX className={cn(c, 'text-danger')} aria-label={name} />
@@ -55,7 +57,7 @@ export function TaskStatusIcon({
   // idle：停下了，但不是用户按的暂停（父对话收尾、换 CLI、面板重启、页面切走），用灰斜线区分
   if (icon === 'idle') return <CircleSlash className={cn(c, 'text-subtle')} aria-label={name} />
   if (waiting && status !== 'failed')
-    return <MessageCircleQuestion className={cn(c, 'text-warning')} aria-label={t('等你选择')} />
+    return <MessageCircleQuestion className={cn(c, 'text-warning')} aria-label={t('等{who}选择', { who: user })} />
   if (spin ?? (status === 'running' && working))
     return <Loader2 className={cn(c, 'animate-spin text-accent-text')} aria-label={name} />
   if (status === 'running' && !working)

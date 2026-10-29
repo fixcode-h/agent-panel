@@ -1281,8 +1281,8 @@ function p4Rules(host: EngineHost) {
 - [Other]：其余要提交的代码、资源和配置
 `
   if (host.p4Split)
-    return `${head}调用 p4_split_changelists 分：面板按上面的类型建 pending 并挪文件，你只在 descriptions 里给这次有文件的每一类写一句中文描述（约 40 字内，不带标签）。default 里有不属于这次任务的文件时用 files 只列本次的；已经混在一个 pending 里的用 from 写它的编号拆开。本来就在你已有 pending 里的文件留在原处。看它返回的编号和回读结果，`
-  return `${head}只建这次真的有文件的类型；本来就在你（当前用户、当前 client）已有 pending 里的文件留在原 changelist，不挪别人的。新建用 p4 change -i 读 UTF-8 临时文件，再 p4 reopen -c <编号> <文件>；描述只写一行「[类型] 中文短句」（约 40 字内）。用 p4 opened -c <编号> 核对每个文件、p4 describe -s 回读确认描述没有乱码，`
+    return `${head}调用 p4_split_changelists 分：面板按上面的类型建 pending 并挪文件，你只在 descriptions 里给这次有文件的每一类写一句中文描述（25 字以内，只说改了什么，不带标签；超长会被退回）。default 里有不属于这次任务的文件时用 files 只列本次的；已经混在一个 pending 里的用 from 写它的编号拆开。本来就在你已有 pending 里的文件留在原处。看它返回的编号和回读结果，`
+  return `${head}只建这次真的有文件的类型；本来就在你（当前用户、当前 client）已有 pending 里的文件留在原 changelist，不挪别人的。新建用 p4 change -i 读 UTF-8 临时文件，再 p4 reopen -c <编号> <文件>；描述只写一行「[类型] 中文短句」（25 字以内，只说改了什么）。用 p4 opened -c <编号> 核对每个文件、p4 describe -s 回读确认描述没有乱码，`
 }
 
 /** 不是子对话收尾的场合（父对话、工作流节点）：P4 项目里也要按类型分 changelist */
