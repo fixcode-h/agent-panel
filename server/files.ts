@@ -174,8 +174,14 @@ async function statusCached(dir: string, rel: string, prefix: string, refresh: b
   return value
 }
 
-/** 隐藏文件除 .github、.env 这些约定文件外都不列 */
+/** 遍历搜索时跳过点开头的项（.github 除外）：.cache、.venv 这类目录里文件多，搜出来都是噪音 */
 const hidden = (name: string) => name.startsWith('.') && name !== '.github'
+
+/**
+ * 列目录时只藏 .git：.gitignore、.claude、.env 这些用户要看要改，
+ * 以前点开头的全藏，仓库根只剩一两个目录时像是列不全
+ */
+const hiddenInList = (name: string) => name === '.git'
 
 /**
  * 绝对路径的各种写法：POSIX 的 /x、Windows 的 C:\x 与 C:/x、UNC 的 \\server\share。
@@ -244,7 +250,7 @@ const byEntry = (a: DirEntry, b: DirEntry) =>
 
 /**
  * 列一个目录的直接子项。只读这一层，不往下面走。
- * 目录里的隐藏项按以前的规则跳过（.github 这类约定目录保留）。
+ * 点开头的项照常列出，只有 .git 不列。
  */
 export async function listLevel(dir: string, rel: string, opts: { refresh?: boolean } = {}): Promise<DirLevel> {
   // 先校验原始路径：只统一分隔符，不能先剥掉开头的 /，否则绝对路径会变成项目里的相对路径
@@ -262,7 +268,7 @@ export async function listLevel(dir: string, rel: string, opts: { refresh?: bool
 
   const entries: DirEntry[] = []
   for (const it of items) {
-    if (hidden(it.name)) continue
+    if (hiddenInList(it.name)) continue
     const r = want ? `${want}/${it.name}` : it.name
     // 符号链接按目标判断是不是目录，读不出来就当文件，点进去时再报错
     const kind: DirEntry['kind'] | null = it.isDirectory()
