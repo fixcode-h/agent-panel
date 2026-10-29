@@ -16,6 +16,10 @@ import { useProjectFiles } from '@/components/files/ProjectFileExplorer'
 import { ChangesTree } from './ChangesTree'
 import { DiffDialog } from './DiffDialog'
 import { FileDialog } from './FileDialog'
+import { SessionBar } from '@/components/session/SessionBar'
+
+/** 右栏显示什么：会话栏（照 Claude Code，默认），或项目文件 / 本对话改动 */
+export type RailView = 'session' | 'files'
 
 /**
  * 执行中文件改动合并的时间窗。一次工具调用可能连着改好几个文件，
@@ -51,6 +55,10 @@ export function TaskFiles({
   dir,
   node,
   onTask,
+  view = 'files',
+  onView,
+  projectName,
+  onSettings,
 }: {
   task: Task
   /** 项目目录：分支还没读出来时先用它做说明 */
@@ -59,6 +67,12 @@ export function TaskFiles({
   node?: TaskStep
   /** 压缩、审查之后把新的任务状态交回页面 */
   onTask?: (task: Task) => void
+  /** 右栏现在显示会话栏还是文件；不传时只有文件（流程图里选了节点时也只看文件） */
+  view?: RailView
+  onView?: (v: RailView) => void
+  projectName?: string
+  /** 会话栏「环境」里的齿轮：打开对话设置 */
+  onSettings?: () => void
 }) {
   const { upsertTask } = useData()
   const [tab, setTab] = useState<'files' | 'changes'>('files')
@@ -84,59 +98,78 @@ export function TaskFiles({
   const files = useProjectFiles(task.projectId, refreshKey, task.id)
   const add = changes.reduce((n, c) => n + c.add, 0)
   const del = changes.reduce((n, c) => n + c.del, 0)
+  const session = view === 'session' && !node
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 右栏固定两个页签（照 Proma 的页签条）：项目文件 / 本对话改动；分支和刷新放在右端 */}
-      <TabBar
-        label={t('文件视图')}
-        trailing={
-          <>
-            <span
-              className="flex max-w-28 min-w-0 items-center gap-1 text-[0.75rem] text-subtle"
-              title={files.info?.dir ?? dir}
-            >
-              <GitBranch className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate font-mono">{files.info?.branch ?? t('没有分支')}</span>
-            </span>
-            <IconButton label={t('刷新文件')} onClick={files.refresh}>
-              <RefreshCw className={cn('h-3.5 w-3.5', files.loading && 'animate-spin')} />
-            </IconButton>
-          </>
-        }
-      >
-        <TabItem fill active={tab === 'files'} onSelect={() => setTab('files')}>
-          {t('项目文件')}
-        </TabItem>
-        <TabItem
-          fill
-          active={tab === 'changes'}
-          onSelect={() => setTab('changes')}
-          tag={changes.length > 0 ? changes.length : undefined}
-          title={changes.length > 0 ? `+${add} -${del}` : undefined}
-        >
-          {t('本对话改动')}
-        </TabItem>
-      </TabBar>
-      {tab === 'files' ? (
-        <FileExplorer browser={files} onOpen={(path, line) => setTarget({ path, line })} compact />
-      ) : (
-        <ChangesList
-          changes={changes}
+      {session ? (
+        <SessionBar
+          task={task}
+          projectName={projectName}
+          onSettings={onSettings}
+          onOpenFile={(path) => setTarget({ path })}
           onDiff={setDiffPath}
-          scoped={!!node}
-          canReview={!node && task.status !== 'running' && !task.simulated && !!files.info?.isGit && changes.length > 0}
-          reviewing={reviewing}
-          onReview={async () => {
-            setReviewing(true)
-            try {
-              onTask?.(await api.reviewTask(task.id))
-            } catch (e) {
-              toast.error((e as Error).message)
-            } finally {
-              setReviewing(false)
-            }
+          onAllChanges={() => {
+            setTab('changes')
+            onView?.('files')
           }}
         />
+      ) : (
+        <>
+          {/* 文件这一页固定两个页签（照 Proma 的页签条）：项目文件 / 本对话改动；分支和刷新放在右端 */}
+          <TabBar
+            label={t('文件视图')}
+            trailing={
+              <>
+                <span
+                  className="flex max-w-28 min-w-0 items-center gap-1 text-[0.75rem] text-subtle"
+                  title={files.info?.dir ?? dir}
+                >
+                  <GitBranch className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate font-mono">{files.info?.branch ?? t('没有分支')}</span>
+                </span>
+                <IconButton label={t('刷新文件')} onClick={files.refresh}>
+                  <RefreshCw className={cn('h-3.5 w-3.5', files.loading && 'animate-spin')} />
+                </IconButton>
+              </>
+            }
+          >
+            <TabItem fill active={tab === 'files'} onSelect={() => setTab('files')}>
+              {t('项目文件')}
+            </TabItem>
+            <TabItem
+              fill
+              active={tab === 'changes'}
+              onSelect={() => setTab('changes')}
+              tag={changes.length > 0 ? changes.length : undefined}
+              title={changes.length > 0 ? `+${add} -${del}` : undefined}
+            >
+              {t('本对话改动')}
+            </TabItem>
+          </TabBar>
+          {tab === 'files' ? (
+            <FileExplorer browser={files} onOpen={(path, line) => setTarget({ path, line })} compact />
+          ) : (
+            <ChangesList
+              changes={changes}
+              onDiff={setDiffPath}
+              scoped={!!node}
+              canReview={
+                !node && task.status !== 'running' && !task.simulated && !!files.info?.isGit && changes.length > 0
+              }
+              reviewing={reviewing}
+              onReview={async () => {
+                setReviewing(true)
+                try {
+                  onTask?.(await api.reviewTask(task.id))
+                } catch (e) {
+                  toast.error((e as Error).message)
+                } finally {
+                  setReviewing(false)
+                }
+              }}
+            />
+          )}
+        </>
       )}
       {task.projectId ? (
         <ProjectFileDialog

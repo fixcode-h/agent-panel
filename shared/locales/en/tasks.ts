@@ -1339,4 +1339,47 @@ export const EN_TASKS: Record<string, string> = {
   只有项目里的分析能记成项目教训: 'Only analyses inside a project can be recorded as project lessons',
   记成教训: 'Record as lesson',
   不针对具体文件: 'Not tied to a file',
+
+  // 会话栏（照 Claude Code）
+  '对话内容、工具调用和结果：Agent 报的总占用减去其余各块':
+    "Conversation, tool calls and results: the agent's reported total minus the other parts",
+  系统工具: 'System tools',
+  'Agent 自带的读写文件、执行命令等工具的定义（估计值）':
+    "Definitions of the agent's built-in tools such as file edits and commands (estimate)",
+  '面板交给 Agent 的工具（派子任务、提问、计划……），按工具说明的字数换算':
+    'Tools the panel gives the agent (subtasks, questions, plans…), converted from the length of their descriptions',
+  系统提示词: 'System prompt',
+  'Agent 自己的系统提示词（估计值）加上面板追加的角色设定':
+    "The agent's own system prompt (estimate) plus the role setup the panel appends",
+  '可用 Skill 的名字和描述：正文用到时才读':
+    'Names and descriptions of available skills; the body is read only when used',
+  记忆文件: 'Memory files',
+  'Agent 启动时读的说明文件（AGENTS.md、CLAUDE.md 等）':
+    'Instruction files the agent reads on start (AGENTS.md, CLAUDE.md, …)',
+  自动压缩余量: 'Autocompact buffer',
+  '占用到这里之前会自动压缩：留给压缩本身和模型输出':
+    'Context is compacted before usage reaches this part; kept for the compaction itself and model output',
+  还能用的上下文: 'Context still available',
+  'MCP 工具（按需）': 'MCP tools (deferred)',
+  '收进 more_tools 的面板工具：不占上下文，用到时才取用法':
+    'Panel tools kept behind more_tools: they take no context until their usage is fetched',
+  '已使用 {n}%': '{n}% used',
+  '估计值：Agent 没有报这一块，按版本的量级估的':
+    'Estimate: the agent does not report this part, so it is sized from typical versions',
+  按需: 'Deferred',
+  '本机 · 独立分支': 'This computer · separate branch',
+  本机: 'This computer',
+  没有项目目录: 'No project folder',
+  '不是 git 仓库': 'Not a git repository',
+  下一轮开始后才能细分面板工具: 'panel tools are broken down from the next turn',
+  'Agent 回复后显示上下文占用': 'Context usage appears after the agent replies',
+  输出内容: 'Outputs',
+  这个对话还没有新建文件: 'This conversation has not created any files yet',
+  更改: 'Changes',
+  '查看全部 {n} 个文件的改动': 'View changes in all {n} files',
+  在改动页查看: 'Open in changes',
+  显示会话栏: 'Show session bar',
+  隐藏会话栏: 'Hide session bar',
+  空闲空间: 'Free space',
+  会话栏: 'Session bar',
 }

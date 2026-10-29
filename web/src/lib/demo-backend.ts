@@ -3604,6 +3604,23 @@ function tasksRoute(
   }
   // 演示里没有本机的文件管理器：和「打开数据目录」一样明说打不开，不假装成功
   if (sub === 'reveal') fail('在线演示不能打开本机目录')
+  // 会话栏：演示里没有本机目录，按演示项目给一份像样的环境、说明文件和 Skill
+  if (sub === 'session') {
+    const p = d.projects.find((x) => x.id === task.projectId)
+    return {
+      dir: p?.path ?? '',
+      repo: p ? `demo/${p.name}` : '',
+      branch: task.worktree?.branch || (p?.path ? 'main' : ''),
+      isGit: !!p?.path,
+      memory: p?.path ? [{ path: 'AGENTS.md', chars: 6200 }] : [],
+      skills: [
+        { name: 'project-documentation', chars: 240 },
+        { name: 'bug-locating', chars: 310 },
+        { name: 'ui-review', chars: 180 },
+      ],
+      outputs: task.changes.filter((c) => c.del === 0).map((c) => c.path),
+    }
+  }
   // 演示里没有真的目录：差异用 Agent 修改文件时给出的改动拼出来，不能撤销
   if (sub === 'diff') {
     const file = query.get('path') ?? ''

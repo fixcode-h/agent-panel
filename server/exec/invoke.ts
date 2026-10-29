@@ -123,6 +123,8 @@ export async function invokeCli(o: {
   limits?: { context?: number; maxOutput?: number }
   /** 这个进程是哪个对话（含子对话、子任务、工作流）起的：进程面板按它归属和统计内存 */
   owner?: TrackedOwner
+  /** CLI 取了面板的工具清单（字数）：会话栏的上下文细分用 */
+  onTools?: (listed: { name: string; chars: number }[], deferred: { name: string; chars: number }[]) => void
 }): Promise<ProcessResult> {
   const def = getCli(o.cliId)!
   // 旧设置里的模型可能没带 API 的 provider 前缀（例如 deepseek/...），执行前按当前 API 归一化
@@ -196,6 +198,7 @@ export async function invokeCli(o: {
       ...(own && wait ? { wait } : {}),
       ...(o.orch ? { orch: o.orch } : {}),
       ...(o.orch && o.app ? { app: o.app } : {}),
+      ...(o.onTools ? { onTools: o.onTools } : {}),
     })
     // 写配置文件接 MCP 的 CLI（Command Code、Pi）：同一个目录里平时只有一项 agent-panel，
     // 同时在跑的另几轮才带后缀，不然后写的会把先写的那一项冲掉（见 panel-mcp-files.ts）。用参数传的保持固定的名字

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
+import { ContextParts } from './context-breakdown.ts'
 import { DEFAULT_SEARCH_PROVIDER, SEARCH_PROVIDER_IDS } from './web-search.ts'
 import type { ProjectProposal } from './project-init.ts'
 
@@ -949,6 +950,22 @@ export interface DirInfo {
   initialized: boolean
 }
 
+/** 会话栏要现读的本机信息（见 server/session-bar.ts） */
+export interface SessionInfo {
+  /** 对话的工作目录（独立分支时是 worktree） */
+  dir: string
+  /** 「owner/repo」，没有远端时是目录名 */
+  repo: string
+  branch: string
+  isGit: boolean
+  /** CLI 启动时读的说明文件（字数） */
+  memory: { path: string; chars: number }[]
+  /** 进了上下文的 Skill（名字 + 描述的字数） */
+  skills: { name: string; chars: number }[]
+  /** 改动里这个对话新建的文件 */
+  outputs: string[]
+}
+
 /** 目录所在 git 仓库的本地分支 */
 export interface DirBranches {
   /** 当前所在的分支；分离 HEAD 时为空 */
@@ -1585,6 +1602,8 @@ export const AgentUsage = z.object({
   /** 这个 Agent 累计输出的 token 和花在生成上的时间，用来算平均速度 */
   outputTokens: z.number().default(0),
   genMs: z.number().default(0),
+  /** 面板交给这个会话的内容（面板工具、追加的系统提示词）：会话栏的上下文细分用；旧记录没有 */
+  parts: ContextParts.optional(),
 })
 export type AgentUsage = z.infer<typeof AgentUsage>
 

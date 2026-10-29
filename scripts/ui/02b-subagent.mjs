@@ -404,7 +404,8 @@ await runShard(import.meta.filename, async (api) => {
     // 收起后按钮标成未展开，再点回来
     {
       await p.evaluate(() => {
-        for (const k of Object.keys(localStorage)) if (k.startsWith('task-files:')) localStorage.removeItem(k)
+        for (const k of Object.keys(localStorage))
+          if (k.startsWith('task-files:') || k === 'task-rail-view') localStorage.removeItem(k)
       })
       await p.reload()
       const token = p.getByTitle('Token 用量').first()
@@ -421,7 +422,14 @@ await runShard(import.meta.filename, async (api) => {
       const open = p.getByRole('button', { name: '显示文件', exact: true })
       const fold = p.getByRole('button', { name: '收起文件面板', exact: true })
       if (!(await aside.isVisible().catch(() => false))) errors.push('文件面板：默认没有展开')
-      else if (!(await fold.count())) errors.push('文件面板：展开时没有「收起文件面板」')
+      // 右栏默认是会话栏：点「显示文件」换成文件
+      else if (
+        !(await open.click().then(
+          () => settle(p).then(() => fold.count()),
+          () => 0,
+        ))
+      )
+        errors.push('文件面板：展开时没有「收起文件面板」')
       else {
         await check(p, '文件面板-默认展开', ['src'])
         await fold.click()

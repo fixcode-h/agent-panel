@@ -28,8 +28,10 @@ import {
   Loader2,
   MessageSquareText,
   MoreHorizontal,
+  FolderOpen,
   PanelRight,
   PanelRightClose,
+  SquareChartGantt,
   Undo2,
   Pencil,
   RotateCw,
@@ -143,7 +145,7 @@ import {
   worktreeKey,
   worktreeSummary,
 } from './Worktrees'
-import { TaskFiles } from './TaskFiles'
+import { TaskFiles, type RailView } from './TaskFiles'
 import { ConversationTabs } from './ConversationTabs'
 import { ChatRail, useChatRail } from './ChatRail'
 import { FileDialog, FileOpenCtx } from './FileDialog'
@@ -422,6 +424,9 @@ const readPaneRun = (taskId: string) => Number(readStored(paneRunKey(taskId))) |
 /** 文件面板收没收起按对话记在本地：右栏「项目文件 / 本对话改动」默认开着，用户收起过才记一笔 */
 const readFilesFolded = (taskId: string) => readStored(paneFilesKey(taskId)) === 'closed'
 const writeFilesFolded = (taskId: string, folded: boolean) => writeStored(paneFilesKey(taskId), folded ? 'closed' : '')
+/** 右栏显示会话栏还是文件：所有对话共用一个，默认会话栏（照 Claude Code） */
+const RAIL_VIEW_KEY = 'task-rail-view'
+const readRailView = (): RailView => (readStored(RAIL_VIEW_KEY) === 'files' ? 'files' : 'session')
 /** 分析对话的功能面板默认开着：用户收起过才记一笔 */
 const readReportFolded = (taskId: string) => readStored(paneReportKey(taskId)) === 'closed'
 const writeReportFolded = (taskId: string, folded: boolean) =>
@@ -576,6 +581,11 @@ export function TaskView({
   const outerNav = useContext(PaneNavCtx)
   // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在页签条。默认开着，用户收起过就按本地记着的来
   const [filesFolded, setFilesFolded] = useState(() => readFilesFolded(taskId))
+  const [railView, setRailViewState] = useState<RailView>(readRailView)
+  const setRailView = (v: RailView) => {
+    setRailViewState(v)
+    writeStored(RAIL_VIEW_KEY, v === 'files' ? 'files' : '')
+  }
   // AI 分析对话的功能面板（分析报告、教训评审、项目设置）：宽屏是对话右边的一栏，默认开着、收起按对话记住；
   // 窄屏和放在父对话右栏里（pane）时没有地方并排，点标题栏的按钮盖在对话上打开
   const [reportFolded, setReportFolded] = useState(() => readReportFolded(taskId))
@@ -894,6 +904,17 @@ export function TaskView({
   }, [taskId, pane])
 
   // 文件面板的开合：按对话记在本地，下次打开还是用户最后一次选的那样。子对话自己的右栏（pane）不写
+  /** 宽屏右栏正开着这一页 */
+  const railOn = (v: RailView) => !filesFolded && !reportOn && railView === v
+  /** 标题栏的会话栏 / 文件开关：亮着的再点是收起，没亮的点了换成它（右栏收着就打开） */
+  const openRail = (v: RailView) => {
+    if (reportOn) {
+      setReportFolded(true)
+      writeReportFolded(taskId, true)
+    } else if (railOn(v)) return toggleFiles()
+    setRailView(v)
+    if (filesFolded) toggleFiles()
+  }
   const toggleFiles = () => {
     setFilesFolded(!filesFolded)
     if (!pane) writeFilesFolded(taskId, !filesFolded)
@@ -1808,14 +1829,29 @@ export function TaskView({
       )}
       {/* 窄屏右栏放不下：文件面板从右边滑出来盖在对话上 */}
       {!pane && !noFiles && (
-        <IconButton
-          size="sm"
-          icon={PanelRight}
-          label={t('显示文件')}
-          title={t('文件')}
-          onClick={() => setPanel(true)}
-          className="xl:hidden"
-        />
+        <>
+          <IconButton
+            size="sm"
+            icon={SquareChartGantt}
+            label={t('显示会话栏')}
+            onClick={() => {
+              setRailView('session')
+              setPanel(true)
+            }}
+            className="xl:hidden"
+          />
+          <IconButton
+            size="sm"
+            icon={PanelRight}
+            label={t('显示文件')}
+            title={t('文件')}
+            onClick={() => {
+              setRailView('files')
+              setPanel(true)
+            }}
+            className="xl:hidden"
+          />
+        </>
       )}
       {/* 子对话面板右上角的「解决」：标记为已解决，记录、分支和未提交改动都保留；已经解决时换成标记 */}
       {pane &&
@@ -1937,28 +1973,30 @@ export function TaskView({
           onPressedChange={setReportCover}
         />
       )}
-      {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度 */}
+      {/* 宽屏右栏一直占着位置（照 Claude Code 的会话栏、文件两个开关）：点亮着的那个收起右栏让对话用满宽度，
+          点另一个就把右栏换成它。功能面板占着右栏时先收起它 */}
       {!pane && !noFiles && (
-        <IconButton
-          size="sm"
-          className="hidden xl:grid"
-          // 收起时和窄屏那个按钮一样：读屏名是「显示文件」、悬停提示「文件」（两者都指同一栏）
-          label={filesFolded || reportOn ? t('显示文件') : t('收起文件面板')}
-          title={filesFolded || reportOn ? t('文件') : t('收起文件面板')}
-          aria-expanded={!filesFolded && !reportOn}
-          onClick={() => {
-            // 功能面板占着右栏：收起它换成文件
-            if (reportOn) {
-              setReportFolded(true)
-              writeReportFolded(taskId, true)
-              if (filesFolded) toggleFiles()
-              return
-            }
-            toggleFiles()
-          }}
-        >
-          {filesFolded || reportOn ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
-        </IconButton>
+        <>
+          <ToggleIconButton
+            size="sm"
+            icon={SquareChartGantt}
+            className="hidden xl:grid"
+            label={railOn('session') ? t('隐藏会话栏') : t('显示会话栏')}
+            pressed={railOn('session')}
+            onPressedChange={() => openRail('session')}
+          />
+          <IconButton
+            size="sm"
+            className="hidden xl:grid"
+            // 收起时和窄屏那个按钮一样：读屏名是「显示文件」、悬停提示「文件」（两者都指同一栏）
+            label={railOn('files') ? t('收起文件面板') : t('显示文件')}
+            title={railOn('files') ? t('收起文件面板') : t('文件')}
+            aria-expanded={railOn('files')}
+            onClick={() => openRail('files')}
+          >
+            {railOn('files') ? <PanelRightClose className="h-4 w-4" /> : <FolderOpen className="h-4 w-4" />}
+          </IconButton>
+        </>
       )}
       {embed?.actions}
     </>
@@ -2361,7 +2399,13 @@ export function TaskView({
               {!pane && (
                 <aside
                   ref={setRail}
-                  aria-label={!panel && (reportOn || reportCover) && report ? reportTitle(report.kind) : t('文件')}
+                  aria-label={
+                    !panel && (reportOn || reportCover) && report
+                      ? reportTitle(report.kind)
+                      : railView === 'session'
+                        ? t('会话栏')
+                        : t('文件')
+                  }
                   data-task-panel
                   style={{
                     // 功能面板：覆盖态（窄屏从标题栏打开、pane 里）没有并排可拖，按定宽封顶在容器内；
@@ -2392,7 +2436,9 @@ export function TaskView({
                   )}
                   {panel && (
                     <div className="flex shrink-0 items-center justify-between border-b px-3 py-2 xl:hidden">
-                      <span className="text-[0.8125rem] font-semibold">{t('文件')}</span>
+                      <span className="text-[0.8125rem] font-semibold">
+                        {railView === 'session' ? t('会话栏') : t('文件')}
+                      </span>
                       <Button
                         autoFocus
                         variant="ghost"
@@ -2412,6 +2458,14 @@ export function TaskView({
                       dir={project?.path}
                       node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
                       onTask={apply}
+                      view={railView}
+                      onView={setRailView}
+                      projectName={project?.name}
+                      onSettings={
+                        task.projectId && !task.parentTaskId && task.mode === 'chat' && !task.imported
+                          ? () => setConvSettings(true)
+                          : undefined
+                      }
                     />
                   )}
                 </aside>

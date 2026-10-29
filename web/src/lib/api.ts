@@ -6,6 +6,7 @@ import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@sha
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
 import type {
+  SessionInfo,
   Attachment,
   TaskRequest,
   CliInstallJob,
@@ -767,6 +768,7 @@ export const api = {
   stopTask: (id: string, force = false) =>
     request<Task>(`/tasks/${id}/stop${force ? '?force=1' : ''}`, { method: 'POST' }),
   resumeTask: (id: string, latest = false) => request<Task>(`/tasks/${id}/resume`, json('POST', { latest })),
+  taskSession: (id: string, cli: string) => request<SessionInfo>(`/tasks/${id}/session?cli=${encodeURIComponent(cli)}`),
   taskDiff: (id: string, path: string) =>
     request<{ path: string; dir: string; diff: string; git: boolean; before: boolean }>(
       `/tasks/${id}/diff?path=${encodeURIComponent(path)}`,

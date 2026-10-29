@@ -727,6 +727,7 @@
   "docs": ["AGENTS.md", "CLAUDE.md"],
   "docsNote": "Pi 每次启动读项目目录和上级目录里的 AGENTS.md（没有时读 CLAUDE.md），以及 ~/.pi/agent/AGENTS.md。",
   "globalDoc": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/AGENTS.md",
+  "context": { "systemPrompt": 900, "systemTools": 1300, "compactReserve": 16384, "docsMode": "first" },
   "skills": {
     "user": ["${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills", "~/.agents/skills"],
     "repo": [".pi/skills", ".agents/skills"]

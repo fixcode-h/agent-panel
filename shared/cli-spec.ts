@@ -9,6 +9,7 @@ import { z } from 'zod'
 import type { BuildOptions, CliDefinition, ModelTier } from './clis.ts'
 import { getLang, t } from './i18n.ts'
 import { CliAuth } from './accounts.ts'
+import { CliContextBase } from './context-breakdown.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
@@ -425,6 +426,8 @@ export const CliSpec = z.object({
   docsNote: z.string().default(''),
   /** 用户目录里的全局说明文件（~ 开头，可以用 ${ENV:-默认值}），设置的「部署」页往这里写 */
   globalDoc: z.string().default(''),
+  /** 会话栏「上下文」细分里 CLI 自己那部分的估计值（见 shared/context-breakdown.ts） */
+  context: CliContextBase.optional(),
   /** Skill 目录（每个子目录一个 SKILL.md）：user 是相对用户目录（~ 开头），repo 是相对项目目录 */
   skills: Dirs.default({ user: [], repo: [] }),
   /** 自定义命令：目录下每个文件一个命令；md 是 Markdown（$ARGUMENTS 换成参数），toml 是 prompt 字段（{{args}} 换成参数） */
@@ -595,6 +598,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     docs: spec.docs,
     docsNote: tr(spec.docsNote),
     globalDoc: spec.globalDoc || undefined,
+    context: spec.context,
     skills: spec.skills,
     commands: spec.commands,
     modelsFrom: spec.modelsFrom,

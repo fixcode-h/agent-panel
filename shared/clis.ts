@@ -188,6 +188,8 @@ export interface CliDefinition {
   docsNote: string
   /** 用户目录里的全局说明文件（所有项目都读），设置的「部署」页往这里写；为空表示不支持 */
   globalDoc?: string
+  /** 会话栏「上下文」细分里 CLI 自己那部分的估计值和读说明文件的方式（见 shared/context-breakdown.ts） */
+  context?: Partial<import('./context-breakdown.ts').CliContextBase>
   /** Skill 目录：user 相对用户目录（~ 开头，可以用 ${ENV:-默认值}），repo 相对项目目录 */
   skills: { user: string[]; repo: string[] }
   /** 自定义命令的目录和格式 */
@@ -327,6 +329,8 @@ export const CLIS: CliDefinition[] = [
     limits: 'push',
     docs: ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md'],
     globalDoc: '${CLAUDE_CONFIG_DIR:-~/.claude}/CLAUDE.md',
+    // 量级取自 Claude Code 2.x 的 /context：系统提示词约 3k、内置工具约 12k，自动压缩留约 33k
+    context: { systemPrompt: 3000, systemTools: 12000, compactReserve: 33000, docsMode: 'all', docsImports: true },
     docsNote: t(
       'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。',
     ),
@@ -536,6 +540,8 @@ export const CLIS: CliDefinition[] = [
     limits: 'query',
     docs: ['AGENTS.md', 'AGENTS.override.md'],
     globalDoc: '${CODEX_HOME:-~/.codex}/AGENTS.md',
+    // Codex 的基础指令约 5k token、内置工具约 1.5k；默认到窗口的九成自动压缩。同目录有 override 时用它代替，按 first 读
+    context: { systemPrompt: 5000, systemTools: 1500, compactReservePct: 10, docsMode: 'first' },
     docsNote: t(
       'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。',
     ),
