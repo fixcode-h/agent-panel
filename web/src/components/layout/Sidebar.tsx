@@ -21,7 +21,6 @@ import {
   Plus,
   Settings,
   Sun,
-  Workflow,
   X,
   GripVertical,
   type LucideIcon,
@@ -77,7 +76,16 @@ import {
   type TaskFilter,
 } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
-import { McpIcon, RoleIcon, ScheduleIcon, SkillIcon, SummaryIcon, WorkflowIcon, type NavIcon } from './rail-icons'
+import {
+  ComfyIcon,
+  McpIcon,
+  RoleIcon,
+  ScheduleIcon,
+  SkillIcon,
+  SummaryIcon,
+  WorkflowIcon,
+  type NavIcon,
+} from './rail-icons'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
@@ -123,8 +131,16 @@ export const NAV: { id: PageId; label: string; icon: NavIcon }[] = [
   { id: 'schedules', label: t('计划'), icon: ScheduleIcon },
   { id: 'agents', label: t('角色'), icon: RoleIcon },
   { id: 'workflows', label: t('工作流'), icon: WorkflowIcon },
-  { id: 'library', label: t('Skills 与命令'), icon: SkillIcon },
+  { id: 'library', label: t('Skills'), icon: SkillIcon },
   { id: 'mcp', label: t('MCP 工具'), icon: McpIcon },
+]
+
+/**
+ * 只属于设计模式的功能页：宽屏时也在图标栏里，但只在设计模式（设计页、ComfyUI 页）下出现；
+ * 打开时和其它功能页一样让开会话侧栏（ComfyUI 页自己有工作流列表）
+ */
+export const DESIGN_NAV: { id: PageId; label: string; icon: NavIcon }[] = [
+  { id: 'comfy', label: t('ComfyUI 工作流'), icon: ComfyIcon },
 ]
 
 /** 侧栏任务的更新时间：今天显示时刻，其余显示几天前或日期 */
@@ -289,9 +305,14 @@ let lastAgentRoute: Route = { page: 'home' }
 let lastDesignRoute: Route = { page: 'design' }
 /** 最近一次看的会话页（任务、项目、聊天、设计）：功能页上「回到主页」回到这里 */
 let lastWorkRoute: Route = { page: 'home' }
-export const homeRoute = () => lastWorkRoute
+/** 最近看的设计页（不含 ComfyUI 页）：ComfyUI 页上「回到主页」回到设计里，不跳回 Agent 模式 */
+let lastDesignHome: Route = { page: 'design' }
+export const homeRoute = (from?: PageId) =>
+  from && DESIGN_NAV.some((n) => n.id === from) ? lastDesignHome : lastWorkRoute
 /** 功能页：会话侧栏让开，整页给这个功能 */
-export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page)
+export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page)
+/** 设计模式：设计页和它的 ComfyUI 工作流页 */
+export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy'
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
@@ -303,7 +324,7 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
   const tool = isToolPage(route.page)
   const chat = route.page === 'chat'
   // ComfyUI 工作流管理属于 UI 设计
-  const design = route.page === 'design' || route.page === 'comfy'
+  const design = isDesignPage(route.page)
   const modes = [
     {
       id: 'agent',
@@ -382,7 +403,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 有可以安装的新版本时在「设置」上提示（在线演示不提示）
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
-  // 「自带 Skill」那份有新内容时在「Skills 与命令」上亮点；部署的那份归「设置 → 部署」，不在这里算
+  // 「自带 Skill」那份有新内容时在「Skills」上亮点；部署的那份归「设置 → 部署」，不在这里算
   const skillUpd = useSkillUpdates()
   const skillDot = sharedUpdateHint(skillUpd)
   // 「设置 → 部署」那份和这一版不同时，「设置」入口本身也要带点：用户在任务页看不到设置内部
@@ -397,13 +418,14 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => setMobileOpen(false), [route])
   const chatMode = route.page === 'chat'
-  const designMode = route.page === 'design' || route.page === 'comfy'
+  const designMode = isDesignPage(route.page)
   // ComfyUI 工作流管理也算 UI 设计：不能记成 Agent 模式的页面，否则点 Agent 又回到 ComfyUI，切不过去
   // 功能页不记：从功能页切模式、回主页都回到最近的会话页，不是又回到功能页
   if (designMode) lastDesignRoute = route
   else if (chatMode) lastChatRoute = route
   else if (!isToolPage(route.page)) lastAgentRoute = route
   if (!isToolPage(route.page)) lastWorkRoute = route
+  if (route.page === 'design') lastDesignHome = route
 
   // 按项目分组：项目分组只按添加时间（或拖拽后的顺序）排，不受任务时间、执行状态影响；组内任务仍按最近发言排
   const [folded, toggleFolded, setFolded] = useFolded()
@@ -544,13 +566,18 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               on={route.page === 'design' && (!route.id || route.id === 'new')}
               onClick={() => go({ page: 'design' })}
             />
-            <Row
-              icon={Workflow}
-              label={t('ComfyUI 工作流')}
-              collapsed={narrow}
-              on={route.page === 'comfy'}
-              onClick={() => go({ page: 'comfy' })}
-            />
+            {/* 宽屏时 ComfyUI 入口在图标栏里，手机抽屉里照旧列在这 */}
+            {mobile &&
+              DESIGN_NAV.map((n) => (
+                <Row
+                  key={n.id}
+                  icon={n.icon}
+                  label={n.label}
+                  collapsed={narrow}
+                  on={route.page === n.id}
+                  onClick={() => go({ page: n.id })}
+                />
+              ))}
           </>
         ) : chatMode ? (
           <Row

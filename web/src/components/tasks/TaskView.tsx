@@ -2244,6 +2244,12 @@ export function TaskView({
                           <Fragment key={b.m.id}>
                             <UserMessage
                               anchorId={b.m.id}
+                              // AI 分析窗口里，分析对话的第一句是面板拼好的报错 / 记录：画成「分析对象」卡片（设计稿 AiWindow）
+                              subject={
+                                embed && b.m.id === firstUser && isAnalysisTask(task, localAgents)
+                                  ? { label: t('分析对象'), hint: t('面板自动附上') }
+                                  : undefined
+                              }
                               text={b.m.text}
                               at={b.m.at}
                               attachments={b.m.attachments}

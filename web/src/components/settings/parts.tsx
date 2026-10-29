@@ -21,7 +21,9 @@ export function Row({
   stack?: boolean
 }) {
   return (
+    // data-setting：设置搜索点结果时按标题找到这一行（section-nav.tsx 的 revealSetting）
     <div
+      data-setting={title}
       className={cn(
         'flex flex-col gap-3 border-b border-line/80 py-4 last:border-b-0',
         !stack && 'sm:flex-row sm:items-center sm:justify-between sm:gap-8',
@@ -46,7 +48,7 @@ export function Row({
 export function Group({ title, children }: { title?: string; children: React.ReactNode }) {
   const anchor = useSectionAnchor(title)
   return (
-    <section ref={anchor.ref} id={title ? anchor.id : undefined} className="flex flex-col">
+    <section ref={anchor.ref} id={title ? anchor.id : undefined} data-setting-group={title} className="flex flex-col">
       {title && <h3 className="pt-6 pb-1.5 text-[0.75rem] font-semibold tracking-wide text-muted">{title}</h3>}
       {children}
     </section>

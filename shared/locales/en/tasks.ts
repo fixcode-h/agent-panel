@@ -1395,4 +1395,6 @@ export const EN_TASKS: Record<string, string> = {
   '各块是按字数和版本量级估的，总数是 Agent 报的':
     'Categories are estimated from text length and version defaults; the total is reported by the agent',
   会话栏: 'Session bar',
+  分析对象: 'Analyzing',
+  面板自动附上: 'attached by the panel',
 }
