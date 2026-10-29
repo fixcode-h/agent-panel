@@ -13,7 +13,6 @@ export const EN_TASKS: Record<string, string> = {
   // 不写 steps：n=1 时「1 steps」是错的，和「{n} waiting」一样回避单复数
   '{n} 步没做完（已保留）': '{n} unfinished (kept)',
   '计划 {done}/{total}': 'Plan {done}/{total}',
-  '正在：{what}': 'Now: {what}',
   '计划进度 {done}/{total}': 'Plan progress {done}/{total}',
   '{ago}更新': 'updated {ago}',
   '计划最后更新时间：{ago}': 'Plan last updated: {ago}',
@@ -174,6 +173,8 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 条面板结果': 'Panel results ×{n}',
   '{n} 次失败': '{n} failed',
 
+  // 标题栏的项目名：点开是项目下的对话
+
   // 项目首页
   项目设置: 'Project settings',
   还没有选择目录: 'No folder selected yet',
@@ -236,7 +237,7 @@ export const EN_TASKS: Record<string, string> = {
   开始执行: 'Start',
   '开始执行（Enter）': 'Start (Enter)',
   '松开鼠标，把文件附到要求里': 'Drop to attach files to your request',
-  '拖到输入框上，松开插入引用': 'Drag onto the input box and release to insert a reference',
+  '拖到对话区，松开插入引用': 'Drop onto the conversation to insert a reference',
   '松开鼠标，插入引用': 'Release to insert the reference',
   '无角色，直接用 Agent': 'No role, use the agent directly',
   无角色: 'No role',
@@ -250,14 +251,18 @@ export const EN_TASKS: Record<string, string> = {
   '项目设置里选了「无角色」，这个对话直接和 Agent 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）':
     'The project is set to “No role”, so this chat goes straight to the agent; pick a role in the project settings to use a role (click to use no role)',
   子对话: 'Sub-conversation',
+  '子对话，{n} 个进行中，共 {total} 个': 'Sub-conversations, {n} in progress of {total}',
   关闭子对话: 'Close sub-conversation',
   切换子对话: 'Switch sub-conversation',
+  '子对话 {n}': 'Sub-conversations ({n})',
+  '还有 {n} 个子对话': '{n} more sub-conversations',
   运行中: 'Running',
   运行区: 'Running items',
   已关闭: 'Closed',
   'Agent 进程已回收，继续会重新拉起': 'The agent process was reclaimed; continuing will start it again',
   解决: 'Resolve',
   已解决: 'Resolved',
+  还没有子对话: 'No sub-conversations yet',
   没有正在运行的子对话: 'No sub-conversation is running',
   子对话执行中: 'Sub-conversation running',
   '第 {n} 次运行': 'Run {n}',
@@ -357,6 +362,11 @@ export const EN_TASKS: Record<string, string> = {
   输出: 'Output',
   缓存命中: 'Cache hits',
   'Token 用量': 'Token usage',
+  工具调用: 'Tool calls',
+  'Agent 回复后显示 Token 用量': 'Token usage appears after the agent replies',
+  还没有工具调用: 'No tool calls yet',
+  次调用: 'calls',
+  '分支、独立分支和额度': 'Branches, worktrees and limits',
   '累计 token': 'Total tokens',
   整个运行: 'Whole run',
   本对话: 'This chat',
@@ -650,7 +660,7 @@ export const EN_TASKS: Record<string, string> = {
   修复: 'Fix',
   '面板框架的问题要在 agent-panel 源代码项目里修':
     'Panel framework issues can only be fixed in an agent-panel source project',
-  '在中间打开子对话「{title}」': 'Open child conversation "{title}" in a tab',
+  '在右栏打开子对话「{title}」': 'Open child conversation "{title}" in the side panel',
   '打开子任务「{title}」': 'Open subtask "{title}"',
   '后台命令 {name}': 'Background command {name}',
   处理中: 'Working',
@@ -840,6 +850,8 @@ export const EN_TASKS: Record<string, string> = {
   '不回答，终止子对话': "Don't answer and end this sub-conversation",
   '不回答，终止了子对话': 'Not answered, sub-conversation ended',
   '你没回答，子对话已终止': 'Not answered, sub-conversation ended',
+  '{n} 个子对话请你选择': '{n} sub-conversations need your choice',
+  '「{title}」请你选择': '"{title}" needs your choice',
   已交给父对话决定: 'Handed to the parent conversation',
   没能叫起父对话: "Couldn't start the parent conversation",
   '已交给父对话决定，它会在下一轮处理': 'Handed to the parent conversation; it will handle this in its next turn',
@@ -904,7 +916,7 @@ export const EN_TASKS: Record<string, string> = {
   '等待子任务：{list}': 'Waiting for subtasks: {list}',
   '等待 {n} 个子任务完成': 'Waiting for {n} subtask(s) to finish',
   新建子对话: 'New sub-chat',
-  在中间打开子对话: 'Open the sub-chat in a tab',
+  在右栏打开子对话: 'Open the sub-chat in the side panel',
   查看子对话: 'List sub-chats',
   查看工具用法: 'Look up tool usage',
   派出子任务: 'Start subtasks',
@@ -1140,6 +1152,7 @@ export const EN_TASKS: Record<string, string> = {
   '终止子任务：在跑的马上结束，排队的不再开始，按「已终止」交回给对话':
     'Stop subtask: a running one ends now, a queued one never starts, and it is handed back to the conversation as stopped',
   终止: 'Stop',
+  已终止: 'Stopped',
   '已终止，没做完的部分不会交回': 'Stopped; the unfinished part is not handed back',
   '子任务已终止，派它的对话会收到终止原因。这里只能查看':
     'The subtask was stopped; the conversation that sent it gets the reason. View only',
@@ -1217,7 +1230,6 @@ export const EN_TASKS: Record<string, string> = {
   // 工具与返工（web/src/components/tasks/ToolFailuresChip.tsx）
   工具与返工: 'Tools & rework',
   '失败 {n}': '{n} failed',
-  '工具调用 {calls} 次，失败 {failed} 次': '{calls} tool calls, {failed} failed',
   '其中探路失败 {n} 次': '{n} of them were probing failures',
   工具不存在: 'Tool not found',
   路径不存在: 'Path not found',
@@ -1335,16 +1347,8 @@ export const EN_TASKS: Record<string, string> = {
   '模型和思考强度跟着角色设置：{model}': 'Model and thinking effort follow the role settings: {model}',
 
   // 会话栏（照 Claude Code）
-  '对话内容、工具调用和结果：Agent 报的总占用减去其余各块':
-    "Conversation, tool calls and results: the agent's reported total minus the other parts",
   系统工具: 'System tools',
-  'Agent 自带的读写文件、执行命令等工具的定义（估计值）':
-    "Definitions of the agent's built-in tools such as file edits and commands (estimate)",
-  '面板交给 Agent 的工具（派子任务、提问、计划……），按工具说明的字数换算':
-    'Tools the panel gives the agent (subtasks, questions, plans…), converted from the length of their descriptions',
   系统提示词: 'System prompt',
-  'Agent 自己的系统提示词（估计值）加上面板追加的角色设定':
-    "The agent's own system prompt (estimate) plus the role setup the panel appends",
   '可用 Skill 的名字和描述：正文用到时才读':
     'Names and descriptions of available skills; the body is read only when used',
   记忆文件: 'Memory files',
@@ -1355,8 +1359,6 @@ export const EN_TASKS: Record<string, string> = {
     'Context is compacted before usage reaches this part; kept for the compaction itself and model output',
   还能用的上下文: 'Context still available',
   'MCP 工具（按需）': 'MCP tools (deferred)',
-  '收进 more_tools 的面板工具：不占上下文，用到时才取用法':
-    'Panel tools kept behind more_tools: they take no context until their usage is fetched',
   '已使用 {n}%': '{n}% used',
   '估计值：Agent 没有报这一块，按版本的量级估的':
     'Estimate: the agent does not report this part, so it is sized from typical versions',
@@ -1367,13 +1369,28 @@ export const EN_TASKS: Record<string, string> = {
   '不是 git 仓库': 'Not a git repository',
   下一轮开始后才能细分面板工具: 'panel tools are broken down from the next turn',
   'Agent 回复后显示上下文占用': 'Context usage appears after the agent replies',
-  输出内容: 'Outputs',
-  这个对话还没有新建文件: 'This conversation has not created any files yet',
-  更改: 'Changes',
-  '查看全部 {n} 个文件的改动': 'View changes in all {n} files',
-  在改动页查看: 'Open in changes',
   显示会话栏: 'Show session bar',
   隐藏会话栏: 'Hide session bar',
   空闲空间: 'Free space',
+  '对话内容、工具调用和结果': 'Conversation text, tool calls and results',
+  'Agent 自带的读写文件、执行命令等工具的定义':
+    "Definitions of the agent's built-in tools (read/write files, run commands…)",
+  'MCP 服务提供的工具（含面板交给 Agent 的派子任务、提问、计划……）的定义':
+    'Definitions of tools from MCP servers (including the panel tools for sub-tasks, questions, plans…)',
+  'MCP 服务说明': 'MCP server instructions',
+  'MCP 服务连上时给的使用说明，Agent 放进系统提示词':
+    'Usage instructions MCP servers send when they connect; the agent puts them in its system prompt',
+  'Agent 自己的系统提示词加上面板追加的角色设定': "The agent's own system prompt plus the role setup the panel appends",
+  '自定义 Agent': 'Custom agents',
+  '能派出去的子 Agent 的名字和用途说明': 'Names and descriptions of the sub-agents it can dispatch',
+  上次细分以来: 'Since last update',
+  'Agent 上次报细分之后新增的内容（多是这一轮的消息）：这一轮结束时再细分':
+    'Added since the agent last reported its breakdown (mostly this turn’s messages); refreshed when the turn ends',
+  '用到时才加载用法的 MCP 工具：不占上下文': 'MCP tools loaded only when used; they take no context',
+  '系统工具（按需）': 'System tools (deferred)',
+  'Agent 自带、用到时才加载用法的工具：不占上下文': 'Built-in tools loaded only when used; they take no context',
+  '{cli} 报的细分，{ago}更新': 'Breakdown reported by {cli}, updated {ago}',
+  '各块是按字数和版本量级估的，总数是 Agent 报的':
+    'Categories are estimated from text length and version defaults; the total is reported by the agent',
   会话栏: 'Session bar',
 }

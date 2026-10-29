@@ -274,7 +274,7 @@ export function RowShell({
   container?: boolean
   /**
    * 保留卡片外框：要人处理的条目（等你选择的子对话提问）还是一块带框的卡片；
-   * 其余过程行不画框，相邻几行连成一组、行间一条细线（见 index.css 的 proc-list）
+   * 其余过程行不画框，每行默认一层浅底的圆角块，相邻几行之间留一点间距（见 index.css 的 proc-list）
    */
   boxed?: boolean
   /** 标题被截断时悬停看全文：后台命令行用完整命令，优先于 openTip */
@@ -289,11 +289,12 @@ export function RowShell({
   // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
   const activate = rowOpen ?? toggle
   return (
-    // 组件库「过程行」（设计稿）：不画框、不填底，悬停才出浅底；相邻的过程行连成一组，行间一条细线。
-    // 失败靠图标和结果的红字表达，不再描红边
+    // 组件库「过程行」：不画框，默认一层浅底（用户要求底色常显，不只在悬停时出现），悬停再深一点；
+    // 相邻的过程行之间不画分隔线，靠间距分开。失败靠图标和结果的红字表达，不再描红边
     <div
       className={cn(
         'min-w-0',
+        !boxed && 'rounded-lg bg-fg/[0.035]',
         boxed && 'overflow-hidden rounded-lg border',
         boxed && failed && 'border-danger/30',
         className,
@@ -305,7 +306,7 @@ export function RowShell({
         onClick={activate}
         className={cn(
           'group flex min-h-8 w-full min-w-0 items-center py-1 pr-1 pl-2 text-[0.75rem] text-muted',
-          !boxed && 'rounded-md',
+          !boxed && 'rounded-lg',
           boxed && 'px-2.5',
           container && '@container',
           // 整行打开的行左边多一个下拉：间距收一点，窄行里状态标签才不会被挤出容器
@@ -599,7 +600,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
     : file
       ? { open: () => openFile?.(file), tip: t('查看文件') }
       : view.child && openChild
-        ? { open: () => openChild(view.child!), tip: t('在中间打开子对话') }
+        ? { open: () => openChild(view.child!), tip: t('在右栏打开子对话') }
         : view.startsRun && task?.id
           ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本。
             // 子对话面板里点它就地把面板换成这次运行的视图（带返回），别的页面照旧弹运行窗口

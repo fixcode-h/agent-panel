@@ -38,6 +38,7 @@ export function appearanceVars(a: Appearance): Record<string, string> {
     '--app-tracking': `${a.letterSpacing}em`,
     '--app-word-spacing': `${a.wordSpacing}em`,
     '--app-leading': String(a.lineHeight),
+    '--panel-radius': `${a.panelRadius}px`,
   }
 }
 

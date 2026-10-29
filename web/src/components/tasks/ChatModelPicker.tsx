@@ -2,6 +2,7 @@ import { Check, ChevronDown, Sparkles } from 'lucide-react'
 import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { getCli, type CliDefinition } from '@shared/clis'
 import { apiModelIdFor } from '@shared/accounts'
+import { apiModelKey } from '@shared/model-catalog'
 import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
 import { cliColor, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'
@@ -188,13 +189,14 @@ export function effortName(cli: string, id: string) {
   return getCli(cli)?.efforts.find((e) => e.id === id)?.label ?? id
 }
 
-/** 角色实际用的思考强度的显示名：回复头「· 模型 · 强度」用，和执行时同一个取值（agentRun） */
+/** 角色实际用的思考强度（英文档位 id）：回复头「· 模型 · 强度」用，和执行时同一个取值（agentRun） */
 export function useEffortOf() {
   const { settings } = useData()
   const s = settings ?? defaultSettings()
   return (a: { cli: string; model: string; effort?: string }) => {
     const r = agentRun(a, s)
-    return effortName(r.cli, r.effort)
+    // 和输入框上的模型按钮一致：强度写英文档位 id
+    return effortShort(r.effort)
   }
 }
 
@@ -235,7 +237,7 @@ function ModelFace({ model, cli, effort }: { model: string; cli: string; effort:
       {effort && (
         <>
           <EffortBars n={effortBars(cli, effort)} />
-          <span className="shrink-0 text-subtle">{effortName(cli, effort)}</span>
+          <span className="shrink-0 text-subtle">{effortShort(effort)}</span>
         </>
       )}
     </>
@@ -244,6 +246,24 @@ function ModelFace({ model, cli, effort }: { model: string; cli: string; effort:
 
 const FACE =
   'inline-flex h-[1.875rem] max-w-[220px] min-w-0 shrink items-center gap-[7px] rounded-lg pr-1.5 pl-2 text-[0.78125rem]'
+
+/**
+ * 输入框和角色徽标上显示的模型名：CLI 走 API 且这个模型在 API 设置里配了映射时显示映射到的模型
+ * （用户想看实际在用的是哪个模型），名字只留最后一个「/」后面那段（provider 前缀太长、挤掉强度）
+ */
+function useShownModel() {
+  const { settings } = useData()
+  return (cli: string, model: string, fallback: string) => {
+    const cs = settings?.clis?.[cli]
+    const api = cs?.authMode === 'api' ? settings?.apis.find((a) => a.id === cs.apiId) : undefined
+    const mapped = (model && api?.modelMap?.[apiModelKey(model, api.modelMap)]) || ''
+    const name = mapped || fallback
+    return name.slice(name.lastIndexOf('/') + 1) || name
+  }
+}
+
+/** 强度在按钮上的写法：用英文档位 id（low / medium / high…），比中文档位名短，各 CLI 的叫法也一致 */
+const effortShort = (id: string) => id
 
 /** 模型的显示名：CLI 列表里有就用它的名字，没有用模型 id */
 function modelName(def: CliDefinition | undefined, id: string) {
@@ -264,6 +284,7 @@ export function ComposerModelPicker({
   parts?: 'all' | 'effort'
 }) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
+  const shownModel = useShownModel()
   if (!usable.length || !def) return null
   const clisOpts = usable.map((c) => ({
     value: c.id,
@@ -301,10 +322,10 @@ export function ComposerModelPicker({
         {parts === 'effort' ? (
           <>
             <EffortBars n={effortBars(cli, shownEffort)} />
-            <span className="shrink-0 text-subtle">{effortName(cli, shownEffort) || t('默认')}</span>
+            <span className="shrink-0 text-subtle">{effortShort(shownEffort) || t('默认')}</span>
           </>
         ) : (
-          <ModelFace model={modelName(def, run.model)} cli={cli} effort={shownEffort} />
+          <ModelFace model={shownModel(cli, run.model, modelName(def, run.model))} cli={cli} effort={shownEffort} />
         )}
         <ChevronDown className="h-3 w-3 shrink-0 text-subtle" />
       </PopoverTrigger>
@@ -332,8 +353,9 @@ export function RoleModelBadge({ agent }: { agent: { cli: string; model: string;
   const { settings } = useData()
   const r = agentRun(agent, settings ?? defaultSettings())
   const def = useCliDef(r.cli || undefined)
+  const shownModel = useShownModel()
   if (!r.cli) return null
-  const name = modelName(def, r.model)
+  const name = shownModel(r.cli, r.model, modelName(def, r.model))
   // 角色和 CLI 设置都没指定强度时 CLI 用模型自己的默认档：照样显示出来，不留空
   const effort = r.effort || def?.models.find((m) => m.id === r.model)?.defaultEffort || ''
   return (

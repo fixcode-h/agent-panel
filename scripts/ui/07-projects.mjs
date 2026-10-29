@@ -89,13 +89,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.goto(base + '#/projects')
   await check(p, '项目-浅色', ['任务', '设置'])
   errors.push(...(await segmentedContrastProblems(p, '侧栏-浅色')))
-  // 浅色主题下再看一眼 Token 浮层：边框、分隔线、速度的颜色都要跟着主题
+  // 浅色主题下再看一眼 Token 用量（会话栏开着时在会话栏里）：分隔线、速度的颜色都要跟着主题
   {
     await p.goto(base)
     await p.getByText('购物车右上角', { exact: false }).first().click()
-    await p.getByTitle('Token 用量').first().click()
+    await p.locator('[data-session-rail] [data-token-usage]').first().waitFor({ timeout: 10000 })
     await check(p, '任务-浅色-Token浮层', ['整个运行', '缓存命中'])
-    await p.keyboard.press('Escape')
   }
   // 项目首页右侧的文件面板：首屏只读根目录一层，展开哪个目录才读哪一层，收起再展开用缓存。
   // 左侧栏原来的独立文件页已经去掉，这里验证的是同一套 FileExplorer

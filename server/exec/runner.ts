@@ -202,7 +202,7 @@ const waiters = new Map<string, Set<Waiter>>()
  */
 const NO_RESPONSE_MS = Number(process.env.AGENT_PANEL_NO_RESPONSE_MS) || 90_000
 /** 只说明 CLI 收下了、不说明模型在回的事件：不算有了响应 */
-const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'files_changed'])
+const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'files_changed', 'context'])
 /** 任务 id → 卡住的这一轮（没得到回应的那条输入）：下一条消息据此停掉卡住的 CLI、接回会话重开 */
 const stalled = new Map<string, { input: string; since: number }>()
 export const stalledTurn = (taskId: string) => stalled.get(taskId)
@@ -1678,6 +1678,12 @@ async function runAgent(
           t.costUsd += ev.addCost ?? 0
         }
         if (owner?.usage) Object.assign(owner.usage, { context: u.context, window: u.window, model: u.model })
+        break
+      }
+      case 'context': {
+        // CLI 自己报的上下文细分：会话栏优先按它分块（一轮结束后才到，单独推一次）
+        au().snapshot = ev.snapshot
+        ctx.changed()
         break
       }
       case 'tool_result': {

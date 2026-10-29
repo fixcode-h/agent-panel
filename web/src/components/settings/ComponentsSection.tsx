@@ -301,7 +301,7 @@ export function ComponentsSection() {
           />
         </Specimen>
         <Specimen name="RowShell">
-          {/* 过程行一组：不画框，行间一条细线（proc-list） */}
+          {/* 过程行一组：每行默认浅底，行间留间距、不画分隔线（proc-list） */}
           <div className="proc-list flex w-full flex-col">
             <RowShell
               glyph={<Search className="h-3.5 w-3.5" />}

@@ -1,18 +1,21 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { Loader2, Sparkles, Square, X } from 'lucide-react'
+import { ListTree, Loader2, Sparkles, Square, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { api } from '@/lib/api'
 import { currentActivity, fmtDuration, stepActivity } from '@/lib/tasks'
-import { stepMs } from '@shared/task'
+import { helperRunning, sortHelpers, stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { helperBriefView } from '@/lib/helper-brief'
+import { useEscape } from '@/lib/useEscape'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { Modal } from '@/components/ui/modal'
+import { ComposerPopover } from '@/components/ui/composer-popover'
+import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
@@ -22,6 +25,10 @@ import { HelperBriefCard } from './HelperBriefCard'
 import { startAnalysis } from '@/lib/task-transfer'
 import { t } from '@shared/i18n'
 import { isHelperAgent } from '@shared/builtin/core'
+
+/** 子任务用了多久：没开始也没结束的不显示（排队中），正在跑的跟着 now 每秒变 */
+const helperTime = (step: TaskStep, now: number) =>
+  step.startedAt || step.endedAt ? fmtDuration(stepMs(step, now)) : ''
 
 /** 还能终止：在跑或在排队 */
 const stoppable = (s: TaskStep) => s.status === 'running' || s.status === 'pending'
@@ -97,6 +104,20 @@ export function StopHelper({
   )
 }
 
+/** 列表分组：和子对话「全部」里同一套分组写法，只是按节点自己的状态分 */
+const helperGroups = (list: TaskStep[]) =>
+  [
+    { key: 'running', label: t('执行中'), items: list.filter(helperRunning) },
+    { key: 'pending', label: t('排队中'), items: list.filter((s) => s.status === 'pending') },
+    {
+      key: 'unfinished',
+      label: t('未完成'),
+      items: list.filter((s) => s.status === 'failed'),
+    },
+    { key: 'done', label: t('已完成'), items: list.filter((s) => s.status === 'done') },
+    { key: 'stopped', label: t('已终止'), items: list.filter((s) => s.status === 'skipped') },
+  ].filter((g) => g.items.length)
+
 /** 列表里每个子任务下面那行：还在跑的写它这会儿在做什么，做完的写交回结果的第一句 */
 export function helperBrief(task: Task, step: TaskStep) {
   if (step.status === 'running') return currentActivity(stepActivity(task, step.id, true)) || t('已开始，还没有输出')
@@ -108,6 +129,136 @@ export function helperBrief(task: Task, step: TaskStep) {
       .split('\n')
       .find((x) => x.trim()) ?? ''
   return out || t('没有输出')
+}
+
+/**
+ * 输入框上方的「子任务」入口，单独占状态栏中间一行（计划 → 子任务 → 子对话）、和子对话同一个弹层样式：
+ * 派出的子任务不再画在消息流里，点这里的条目打开只读的子任务窗口看它的实时对话流。
+ * 栏上只有这一个计数入口（执行中 x/y、失败数），不再把运行中的子任务单独排成卡片——
+ * 运行中的卡片只给子对话用，子任务在跑的信息从这里的 x/y 就能看出来。
+ */
+export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[]; teamNames: Set<string> }) {
+  const { agents } = useData()
+  const [open, setOpen] = useState(false)
+  // 点开的是哪个子任务的窗口
+  const [win, setWin] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  useEscape(open, () => setOpen(false))
+  // 点外面关：和子对话的浮层一样
+  useEffect(() => {
+    if (!open) return
+    const down = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', down)
+    return () => document.removeEventListener('mousedown', down)
+  }, [open])
+
+  // 顺序见 sortHelpers：执行中 → 排队中 → 未完成 → 已完成 → 已终止，同一档里最新的在最上面
+  const steps = sortHelpers(ids.map((id) => task.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s))
+  const running = steps.filter(helperRunning)
+  const failed = steps.filter((s) => s.status === 'failed')
+  const now = useNow(running.length > 0)
+  // 角色名：默认的「子任务」角色不用再写一遍，点名派给「测试验收」这类角色时才标出来
+  const who = (step: TaskStep) => agents.find((a) => a.id === step.agentId && !isHelperAgent(a))
+  if (!steps.length) return null
+
+  return (
+    <div ref={ref} className="flex min-w-0 shrink-0 items-center gap-1.5">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={t('子任务')}
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
+      >
+        <ListTree className="h-3.5 w-3.5 shrink-0 text-subtle" />
+        <span className="shrink-0 font-medium">{t('子任务')}</span>
+        {/* 和子对话那一栏同一个写法：在跑时「运行中/总数」，没在跑时只写总数，字号、间距、颜色都对齐 */}
+        {running.length > 0 ? (
+          <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent-text tabular-nums">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {running.length}/{steps.length}
+          </span>
+        ) : (
+          <span className="shrink-0 text-xs text-subtle tabular-nums">{steps.length}</span>
+        )}
+        {failed.length > 0 && (
+          <Badge tone="danger" className="shrink-0 px-1.5 text-[0.6875rem]">
+            {t('{n} 个失败', { n: failed.length })}
+          </Badge>
+        )}
+      </button>
+      {open && (
+        // 以这一行状态栏为基准向上弹：和「子对话」的浮层对齐，不挤在按钮下面
+        <ComposerPopover>
+          <div className="flex items-center gap-2 border-b px-3 py-2">
+            <span className="text-[0.8125rem] font-medium">{t('子任务')}</span>
+            <span className="text-xs text-subtle">
+              {running.length ? t('{n} 个执行中', { n: running.length }) : t('共 {n} 个', { n: steps.length })}
+            </span>
+          </div>
+          <div className="max-h-[min(46vh,320px)] overflow-y-auto p-1">
+            {helperGroups(steps).map((g) => (
+              <Fragment key={g.key}>
+                <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">
+                  {g.label} · {g.items.length}
+                </p>
+                {g.items.map((s) => {
+                  const agent = who(s)
+                  return (
+                    // 行和终止按钮并排：按钮不能嵌在打开窗口的按钮里
+                    <div
+                      key={s.id}
+                      className="flex min-w-0 items-start gap-1 rounded-lg transition-colors hover:bg-sel"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWin(s.id)
+                          setOpen(false)
+                        }}
+                        className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left"
+                      >
+                        <span className="mt-0.5 shrink-0">
+                          <StepIcon status={s.status} />
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="min-w-0 truncate text-[0.8125rem]">{s.title}</span>
+                            {agent && (
+                              <Badge className="shrink-0 px-1.5 text-[0.6875rem] text-subtle">
+                                <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
+                                {agent.name}
+                              </Badge>
+                            )}
+                            {s.status === 'running' && (
+                              <span className="shrink-0 text-[0.6875rem] text-accent-text">{t('执行中')}</span>
+                            )}
+                            {s.status === 'failed' && (
+                              <span className="shrink-0 text-[0.6875rem] text-danger">{t('失败')}</span>
+                            )}
+                          </span>
+                          <span className="line-clamp-1 text-xs text-subtle">{helperBrief(task, s)}</span>
+                        </span>
+                        <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">
+                          {helperTime(s, now)}
+                        </span>
+                      </button>
+                      <span className="shrink-0 pt-1 pr-1">
+                        <StopHelper task={task} step={s} />
+                      </span>
+                    </div>
+                  )
+                })}
+              </Fragment>
+            ))}
+          </div>
+        </ComposerPopover>
+      )}
+      {win && <HelperWindow task={task} id={win} teamNames={teamNames} onClose={() => setWin('')} />}
+    </div>
+  )
 }
 
 /** 子任务窗口：只读的对话流，跟着父对话的推送实时更新；没有输入框 */

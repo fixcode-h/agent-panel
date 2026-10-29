@@ -3,7 +3,11 @@ import { z } from 'zod'
 /**
  * 会话栏的「上下文」细分（照 Claude Code 的 /context）：一个会话的上下文窗口里各块各占多少。
  *
- * CLI 能报出来的只有总占用和窗口（各家都一样，没有一家按块报），其余按来源分三种：
+ * 分类照 Claude Code 自己的 /context（2.1.3xx 起控制协议 get_context_usage 能直接要到，分类 id 见 CLAUDE_CONTEXT_IDS），
+ * 各家 CLI 共用同一套分类：
+ * - CLI 自己报细分的（Claude Code 的 get_context_usage）：每轮结束要一次快照（ContextSnapshot），各块按它报的，
+ *   之后新增的那部分记成「上次细分以来」，直到下一次快照；
+ * - 其余 CLI 只报总占用和窗口，各块按来源分三种估：
  * - 面板交给 CLI 的（面板工具、追加的系统提示词）：运行时记下字数，换算成 token，最准；
  * - 本机文件（说明文件、Skill 的名字和描述）：会话栏打开时现读字数换算；
  * - CLI 自己的系统提示词和内置工具：写在 CLI 定义的 context 里的估计值（各版本会变，只求量级对）。
@@ -45,16 +49,60 @@ export interface ContextFiles {
   skills: { name: string; chars: number }[]
 }
 
-export type ContextKey =
-  | 'messages'
-  | 'systemTools'
-  | 'mcpTools'
-  | 'systemPrompt'
-  | 'skills'
-  | 'memory'
-  | 'buffer'
-  | 'free'
-  | 'mcpDeferred'
+export const CONTEXT_KEYS = [
+  'messages',
+  'systemTools',
+  'mcpTools',
+  'mcpInstructions',
+  'systemPrompt',
+  'agents',
+  'skills',
+  'memory',
+  'since',
+  'buffer',
+  'free',
+  'mcpDeferred',
+  'systemDeferred',
+] as const
+/**
+ * 上下文的分类：和 Claude Code /context 的类别一一对应（since 是面板自己加的：快照之后新增、还没细分的）。
+ * mcpDeferred、systemDeferred 是按需取用的工具（Claude Code 的 deferred）：不占窗口，单列
+ */
+export type ContextKey = (typeof CONTEXT_KEYS)[number]
+
+/** Claude Code get_context_usage 的类别 id → 面板的分类（两种压缩余量都算 buffer） */
+export const CLAUDE_CONTEXT_IDS: Record<string, ContextKey> = {
+  system_prompt: 'systemPrompt',
+  system_tools: 'systemTools',
+  mcp_tools: 'mcpTools',
+  mcp_instructions: 'mcpInstructions',
+  mcp_tools_deferred: 'mcpDeferred',
+  system_tools_deferred: 'systemDeferred',
+  custom_agents: 'agents',
+  memory_files: 'memory',
+  skills: 'skills',
+  messages: 'messages',
+  autocompact_buffer: 'buffer',
+  compact_buffer: 'buffer',
+  free_space: 'free',
+}
+
+const Named = z.object({ name: z.string(), tokens: z.number() })
+/**
+ * CLI 自己报的一次细分（快照）：只有报得出来的 CLI 才有，挂在 AgentUsage.snapshot 上。
+ * used 是这次快照里占窗口的各块之和；之后 CLI 报的总占用比它多出来的就是「上次细分以来」
+ */
+export const ContextSnapshot = z.object({
+  at: z.string(),
+  used: z.number(),
+  window: z.number(),
+  rows: z.array(z.object({ key: z.enum(CONTEXT_KEYS), tokens: z.number() })),
+  tools: z.array(Named.extend({ deferred: z.boolean().default(false) })).default([]),
+  memory: z.array(z.object({ path: z.string(), tokens: z.number() })).default([]),
+  skills: z.array(Named).default([]),
+  agents: z.array(Named).default([]),
+})
+export type ContextSnapshot = z.infer<typeof ContextSnapshot>
 
 export interface ContextRow {
   key: ContextKey
@@ -62,6 +110,9 @@ export interface ContextRow {
   /** 估算的（不是 CLI 报的、也不是面板按字数换算的）：界面上标出来 */
   estimated?: boolean
 }
+
+/** 占窗口的块：按需取用的（deferred）不占 */
+const DEFERRED_KEYS: ContextKey[] = ['mcpDeferred', 'systemDeferred']
 
 export interface ContextBreakdown {
   used: number
@@ -76,6 +127,51 @@ export interface ContextBreakdown {
   deferredTools: { name: string; tokens: number }[]
   memory: { path: string; tokens: number }[]
   skills: { name: string; tokens: number }[]
+  /** 自定义 Agent（子 Agent 的名字和用途说明）：只有 CLI 报细分时才有 */
+  agents: { name: string; tokens: number }[]
+  /** reported：各块是 CLI 自己报的（at 是快照时间）；estimated：面板按来源估的 */
+  source: 'reported' | 'estimated'
+  at?: string
+}
+
+/** 快照之后总占用又涨了多少才单列「上次细分以来」：差几百是两边计数口径不同，不算新增 */
+const SINCE_MIN = 500
+
+/**
+ * 用 CLI 报的快照画细分。总占用比快照时少了一截（压缩过、清过对话）时快照已经作废，返回 null 退回估算
+ */
+function fromSnapshot(snap: ContextSnapshot, used: number, window: number): ContextBreakdown | null {
+  if (!window || used < snap.used * 0.9) return null
+  const inWindow = snap.rows.filter((r) => !DEFERRED_KEYS.includes(r.key) && r.key !== 'free' && r.key !== 'buffer')
+  const sum = inWindow.reduce((n, r) => n + r.tokens, 0)
+  const since = used - sum > SINCE_MIN ? used - sum : 0
+  const reserve = snap.rows.filter((r) => r.key === 'buffer').reduce((n, r) => n + r.tokens, 0)
+  const buffer = Math.max(0, Math.min(reserve, window - sum - since))
+  const total = sum + since
+  const order = (k: ContextKey) => CONTEXT_KEYS.indexOf(k)
+  const rows: ContextRow[] = [
+    ...inWindow.filter((r) => r.tokens > 0).sort((a, b) => order(a.key) - order(b.key)),
+    ...(since ? [{ key: 'since' as const, tokens: since }] : []),
+    ...(buffer ? [{ key: 'buffer' as const, tokens: buffer }] : []),
+    { key: 'free', tokens: Math.max(0, window - total - buffer) },
+  ]
+  if (!rows.some((r) => r.key === 'messages')) rows.unshift({ key: 'messages', tokens: 0 })
+  const tools = snap.tools.filter((x) => !x.deferred).map(({ name, tokens }) => ({ name, tokens }))
+  const deferredTools = snap.tools.filter((x) => x.deferred).map(({ name, tokens }) => ({ name, tokens }))
+  return {
+    used: total,
+    window,
+    percent: Math.min(100, (total / window) * 100),
+    rows,
+    deferred: snap.rows.filter((r) => DEFERRED_KEYS.includes(r.key) && r.tokens > 0),
+    tools,
+    deferredTools,
+    memory: snap.memory,
+    skills: snap.skills,
+    agents: snap.agents,
+    source: 'reported',
+    at: snap.at,
+  }
 }
 
 /**
@@ -99,9 +195,13 @@ export function contextBreakdown(o: {
   parts?: Partial<ContextParts>
   files?: ContextFiles
   autoCompactPct?: number
+  /** CLI 自己报的细分（有就优先用，作废了才退回估算） */
+  snapshot?: ContextSnapshot
 }): ContextBreakdown {
   const window = Math.max(0, o.window)
   const used = Math.max(0, Math.min(o.used, window || o.used))
+  const reported = o.snapshot && fromSnapshot(o.snapshot, used, window)
+  if (reported) return reported
   const base = CliContextBase.parse(o.base ?? {})
   const tools = (o.parts?.tools ?? []).map((x) => ({ name: x.name, tokens: tokensOfChars(x.chars) }))
   const deferredTools = (o.parts?.deferred ?? []).map((x) => ({ name: x.name, tokens: tokensOfChars(x.chars) }))
@@ -141,5 +241,7 @@ export function contextBreakdown(o: {
     deferredTools,
     memory,
     skills,
+    agents: [],
+    source: 'estimated',
   }
 }

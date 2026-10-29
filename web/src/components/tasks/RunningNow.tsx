@@ -286,7 +286,7 @@ export function RunningNow({
   // 这边不再判会画出只有分割线、没有内容的一块
   if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length && !helpers.length) return null
   const box = (
-    // 过程行连成一组（见 index.css 的 proc-list）：不留间距，行间一条细线
+    // 过程行连成一组（见 index.css 的 proc-list）：每行默认浅底，行间留一点间距，不画分隔线
     <div className="proc-list flex flex-col" aria-label={t('运行中')}>
       <ToolRows tools={tools} task={task} />
       {task &&
@@ -334,7 +334,7 @@ export function RunningNow({
             rowOpen={openChild ? () => openChild(k.id) : undefined}
             onOpen={openChild ? () => openChild(k.id) : undefined}
             // 标题被前宽截断时，悬停能看全文（活动文字本来就有 title）
-            openTip={t('在中间打开子对话「{title}」', { title: k.title || t('未命名') })}
+            openTip={t('在右栏打开子对话「{title}」', { title: k.title || t('未命名') })}
             detailStart
             detail={
               <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">

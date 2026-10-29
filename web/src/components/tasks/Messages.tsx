@@ -222,8 +222,8 @@ function RoleGlyph({ icon, cli }: { icon?: string; cli: string }) {
   const { cliOf } = useAgentView()
   const Icon = agentIcon(icon ?? 'sparkles')
   return (
-    <span className="flex h-[26px] w-[18px] items-center justify-center" style={{ color: cliColor(cliOf({ cli })) }}>
-      <Icon className="h-[15px] w-[15px]" strokeWidth={2} />
+    <span className="flex h-7 w-[22px] items-center justify-center" style={{ color: cliColor(cliOf({ cli })) }}>
+      <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
     </span>
   )
 }
@@ -330,7 +330,10 @@ function StickyAuthor({ author }: { author: Author }) {
   const { cliName } = useAgentView()
   const cli = cliName({ cli: author.cli })
   return (
-    <div className="sticky top-0 z-10 -mx-2 -mb-2.5 bg-linear-to-b from-bg from-[calc(100%-10px)] to-transparent px-2 pt-3 pb-2.5">
+    <div
+      data-reply-head="sticky"
+      className="sticky top-0 z-10 -mx-2 -mb-2.5 bg-linear-to-b from-bg from-[calc(100%-10px)] to-transparent px-2 pt-3 pb-2.5"
+    >
       {/* 和每条回复开头同一个部件：彩色角色图标 + 名字 +「· 模型 · 强度」；CLI 名放进悬停提示 */}
       <ReplyHeader
         avatar={<RoleGlyph icon={author.icon} cli={author.cli} />}
@@ -350,7 +353,7 @@ function StickyAuthor({ author }: { author: Author }) {
 /** 回复还没开始输出时的占位：发出消息马上显示是谁在回复、用的模型，下面放进度 */
 export function PendingAuthor({ author, children }: { author: Author; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="reply-body flex flex-col gap-2">
       <StickyAuthor author={author} />
       <div className="flex min-w-0 flex-col gap-2">{children}</div>
     </div>
@@ -391,7 +394,7 @@ const MessageBody = memo(
       >
         {!noHeader && (
           <ReplyHeader
-            avatar={icon ? <RoleGlyph icon={icon} cli={cli} /> : <span className="h-[26px] w-[18px]" />}
+            avatar={icon ? <RoleGlyph icon={icon} cli={cli} /> : <span className="h-7 w-[22px]" />}
             name={name}
             // 角色名本来就是 CLI 名（按 CLI 显示的对话）时不再重复
             agent={name.startsWith(cliLabel) ? undefined : cliLabel}
@@ -411,7 +414,7 @@ const MessageBody = memo(
         )}
         {!hideProcess && !m.thinking?.trim() && !!m.modelMs && <ModelTime ms={m.modelMs} />}
         {!hideProcess && m.tools.length > 0 && (
-          // 同一轮连续的过程行合成一组：组内不留间距、行间一条细分隔线（见 index.css 的 proc-list）
+          // 同一轮连续的过程行合成一组：每行默认浅底，行间留一点间距、不画分隔线（见 index.css 的 proc-list）
           <div className="proc-list flex flex-col">
             <ToolRows tools={m.tools} task={task} />
           </div>
@@ -1062,11 +1065,12 @@ export function ChatReply({
       {children}
     </>
   )
-  if (live) return <div className="flex flex-col gap-2">{body}</div>
+  // 正文比回复头缩进一格（reply-body）：图标在最左，名字、正文、下面的复制按钮在同一条竖线上
+  if (live) return <div className="reply-body flex flex-col gap-2">{body}</div>
   const replies = list.map(replyText).filter((x, i) => list[i].role === 'agent' && x.trim())
   return (
     <ReplyFrame text={replies.map((x) => x.trim()).join('\n\n')} at={list.at(-1)?.at} actions={actions} always={last}>
-      <div className="flex flex-col gap-2">{body}</div>
+      <div className="reply-body flex flex-col gap-2">{body}</div>
     </ReplyFrame>
   )
 }

@@ -21,6 +21,7 @@ export function ConversationShell({
   onScroll,
   overlay,
   dock,
+  rail = 0,
 }: {
   /** `useConversationScroll` 的返回值：滚动容器、贴底状态和「回到底部」 */
   scroller: Scroller
@@ -38,6 +39,11 @@ export function ConversationShell({
   overlay?: React.ReactNode
   /** 输入框停靠区：状态栏、提问、进度、输入框，由调用方决定顺序和内边距 */
   dock?: React.ReactNode
+  /**
+   * 右边固定浮着的一栏（会话栏）占的宽度：消息区和停靠区右边让出这么多，但滚动容器本身铺满到最右，
+   * 滚动条贴在中间页面的最右边，不夹在消息和会话栏中间；会话栏由调用方绝对定位盖在这块空白上，不跟着滚
+   */
+  rail?: number
 }) {
   return (
     <>
@@ -58,6 +64,7 @@ export function ConversationShell({
               ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
               : 'thin-scroll fade-top flex-1 overflow-x-hidden overflow-y-auto'
           }
+          style={rail ? { paddingRight: rail } : undefined}
         >
           {fill ?? (
             <div
@@ -73,6 +80,8 @@ export function ConversationShell({
             onClick={scroller.toBottom}
             aria-label={t('回到底部')}
             title={t('回到底部')}
+            // 有会话栏时按消息区（让出会话栏之后那块）居中
+            style={rail ? { left: `calc((100% - ${rail}px) / 2)` } : undefined}
             className="absolute bottom-3 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 cursor-pointer place-items-center rounded-full border border-line-strong bg-card text-muted shadow-pop transition-colors hover:text-fg"
           >
             <ArrowDown className="h-4 w-4" />
@@ -80,7 +89,13 @@ export function ConversationShell({
         )}
       </div>
       {/* 停靠区是定位容器的兄弟：消息区、状态栏、输入框还是同一个 flex 列里的三项 */}
-      {dock}
+      {rail && dock ? (
+        <div className="flex shrink-0 flex-col" style={{ paddingRight: rail }}>
+          {dock}
+        </div>
+      ) : (
+        dock
+      )}
     </>
   )
 }

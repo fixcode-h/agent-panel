@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
-import { ContextParts } from './context-breakdown.ts'
+import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
 import { DEFAULT_SEARCH_PROVIDER, SEARCH_PROVIDER_IDS } from './web-search.ts'
 import type { ProjectProposal } from './project-init.ts'
 
@@ -1604,6 +1604,8 @@ export const AgentUsage = z.object({
   genMs: z.number().default(0),
   /** 面板交给这个会话的内容（面板工具、追加的系统提示词）：会话栏的上下文细分用；旧记录没有 */
   parts: ContextParts.optional(),
+  /** CLI 自己报的上下文细分（Claude Code 每轮结束时要一次）：会话栏优先用它；报不出来的 CLI 没有 */
+  snapshot: ContextSnapshot.optional(),
 })
 export type AgentUsage = z.infer<typeof AgentUsage>
 
@@ -2315,6 +2317,8 @@ export const Appearance = z.object({
   wordSpacing: z.number().min(-0.4).max(0.3).catch(0).default(0),
   /** 对话和文档正文的行高 */
   lineHeight: z.number().min(1.3).max(2.2).catch(1.75).default(1.75),
+  /** 主区、右栏这些面板的圆角（像素）；0 是直角 */
+  panelRadius: z.number().min(0).max(24).catch(12).default(12),
 })
 export type Appearance = z.infer<typeof Appearance>
 

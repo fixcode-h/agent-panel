@@ -12,22 +12,32 @@ const META: Record<ContextKey, { label: () => string; swatch: string; tip: () =>
   messages: {
     label: () => t('消息'),
     swatch: 'bg-ctx-messages',
-    tip: () => t('对话内容、工具调用和结果：Agent 报的总占用减去其余各块'),
+    tip: () => t('对话内容、工具调用和结果'),
   },
   systemTools: {
     label: () => t('系统工具'),
     swatch: 'bg-ctx-tools',
-    tip: () => t('Agent 自带的读写文件、执行命令等工具的定义（估计值）'),
+    tip: () => t('Agent 自带的读写文件、执行命令等工具的定义'),
   },
   mcpTools: {
     label: () => t('MCP 工具'),
     swatch: 'bg-ctx-mcp',
-    tip: () => t('面板交给 Agent 的工具（派子任务、提问、计划……），按工具说明的字数换算'),
+    tip: () => t('MCP 服务提供的工具（含面板交给 Agent 的派子任务、提问、计划……）的定义'),
+  },
+  mcpInstructions: {
+    label: () => t('MCP 服务说明'),
+    swatch: 'bg-ctx-mcp/55',
+    tip: () => t('MCP 服务连上时给的使用说明，Agent 放进系统提示词'),
   },
   systemPrompt: {
     label: () => t('系统提示词'),
     swatch: 'bg-muted',
-    tip: () => t('Agent 自己的系统提示词（估计值）加上面板追加的角色设定'),
+    tip: () => t('Agent 自己的系统提示词加上面板追加的角色设定'),
+  },
+  agents: {
+    label: () => t('自定义 Agent'),
+    swatch: 'bg-muted/90',
+    tip: () => t('能派出去的子 Agent 的名字和用途说明'),
   },
   skills: {
     label: () => t('Skill'),
@@ -39,6 +49,11 @@ const META: Record<ContextKey, { label: () => string; swatch: string; tip: () =>
     swatch: 'bg-muted/65',
     tip: () => t('Agent 启动时读的说明文件（AGENTS.md、CLAUDE.md 等）'),
   },
+  since: {
+    label: () => t('上次细分以来'),
+    swatch: 'bg-ctx-messages/45',
+    tip: () => t('Agent 上次报细分之后新增的内容（多是这一轮的消息）：这一轮结束时再细分'),
+  },
   buffer: {
     label: () => t('自动压缩余量'),
     swatch: 'bg-subtle/60',
@@ -48,7 +63,12 @@ const META: Record<ContextKey, { label: () => string; swatch: string; tip: () =>
   mcpDeferred: {
     label: () => t('MCP 工具（按需）'),
     swatch: 'bg-subtle/60',
-    tip: () => t('收进 more_tools 的面板工具：不占上下文，用到时才取用法'),
+    tip: () => t('用到时才加载用法的 MCP 工具：不占上下文'),
+  },
+  systemDeferred: {
+    label: () => t('系统工具（按需）'),
+    swatch: 'bg-subtle/60',
+    tip: () => t('Agent 自带、用到时才加载用法的工具：不占上下文'),
   },
 }
 
@@ -126,7 +146,7 @@ function ContextLegendRow({
   )
 }
 
-/** 细分：按窗口画的各块，按需取用的工具另起一组，最后是可展开的 MCP 工具、记忆文件和 Skill 列表 */
+/** 细分：按窗口画的各块，按需取用的工具另起一组，最后是可展开的 MCP 工具、记忆文件、自定义 Agent 和 Skill 列表 */
 export function ContextLegend({ data }: { data: ContextBreakdown }) {
   return (
     <div className="flex flex-col gap-2.5">
@@ -157,6 +177,13 @@ export function ContextLegend({ data }: { data: ContextBreakdown }) {
             <SessionDisclosureItem key={x.path} name={x.path} value={fmtTokens(x.tokens)} />
           ))}
         </SessionDisclosure>
+        {data.agents.length > 0 && (
+          <SessionDisclosure label={t('自定义 Agent')} count={data.agents.length}>
+            {data.agents.map((x) => (
+              <SessionDisclosureItem key={x.name} name={x.name} value={fmtTokens(x.tokens)} />
+            ))}
+          </SessionDisclosure>
+        )}
         <SessionDisclosure label={t('Skill')} count={data.skills.length}>
           {data.skills.map((x) => (
             <SessionDisclosureItem key={x.name} name={x.name} value={fmtTokens(x.tokens)} />

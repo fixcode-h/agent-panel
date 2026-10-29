@@ -64,6 +64,7 @@
   --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
   /* 中间对话、右栏两块面板的投影：浅色下很淡的一层，免得面板和侧栏底色贴在一起 */
   --panel-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
+  --panel-edge: var(--line);
   /* 等你回答的提问卡（设计稿）：浅琥珀底 + 淡琥珀边，选项悬停 / 选中是一层更深的琥珀 */
   --ask-bg: #fffbf3;
   --ask-line: #f0d9a8;
@@ -175,6 +176,7 @@
   --danger: #ec7a64;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
   --panel-shadow: none;
+  --panel-edge: var(--line-strong);
   --ask-bg: rgb(232 182 90 / 0.08);
   --ask-line: rgb(232 182 90 / 0.22);
   --ask-sel: rgb(232 182 90 / 0.1);
@@ -413,15 +415,17 @@ body,
 }
 /*
  * 面板：主区、右栏各是一块圆角面板，浮在侧栏的底色上，中间露出一道底色（照设计稿 Workspace，用户确认要面板）。
- * 一圈淡线 + 浅色下很淡的投影，免得面板和侧栏底色贴在一起分不清。手机上整页就是一块，不留圆角
+ * 一圈淡线 + 浅色下很淡的投影，免得面板和侧栏底色贴在一起分不清；深色下 line 和底色只差几个色阶，
+ * 低对比的显示器上看不出面板边，所以深色用 line-strong（--panel-edge）。手机上整页就是一块，不留圆角
  */
 @utility panel {
   background-color: var(--bg);
   overflow: hidden;
   @media (width >= 48rem) {
-    border-radius: 0.75rem;
+    /* 圆角在外观设置里调（appearance.panelRadius → --panel-radius） */
+    border-radius: var(--panel-radius, 12px);
     box-shadow:
-      0 0 0 1px var(--line),
+      0 0 0 1px var(--panel-edge),
       var(--panel-shadow);
   }
 }
@@ -549,16 +553,15 @@ body,
   mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
 }
 /*
- * 过程行一组（设计稿）：同一轮连续的过程行（工具调用、派发子对话、收到汇报、转交提问）不画框，
- * 组内行间一条细分隔线。proc-list 里的行直接相邻；跨消息的相邻过程块（标了 data-proc）
- * 本来隔着回复列的 gap-2，往回收掉这段间距，接成同一组
+ * 过程行一组：同一轮连续的过程行（工具调用、派发子对话、收到汇报、转交提问）每行一块默认浅底的圆角块，
+ * 行间不画分隔线（用户要求），靠 4px 间距分开。proc-list 里的行直接相邻；跨消息的相邻过程块（标了 data-proc）
+ * 本来隔着回复列的 gap-2，往回收一半，和组内间距一致
  */
-.proc-list > * + *,
-[data-proc] + [data-proc] {
-  border-top: 1px solid var(--line);
+.proc-list > * + * {
+  margin-top: 4px;
 }
 [data-proc] + [data-proc] {
-  margin-top: -0.5rem;
+  margin-top: -4px;
 }
 
 /* 预览工作流文档 */
@@ -1285,4 +1288,20 @@ html [data-sonner-toast][data-styled='true'] {
 }
 [data-settings-dialog] ::-webkit-scrollbar-thumb {
   border-width: 2px;
+}
+
+/*
+ * AI 回复的正文比回复头缩进 32px：彩色图标留在最左，名字、正文、过程行、下面的复制按钮在同一条竖线上（用户要求）。
+ * 回复头（ReplyHeader 带 data-reply-head）退回最左；吸顶的署名栏本身就是 -mx-2，再多退一个缩进。
+ * 不写在 @layer 里：要压过回复头上的 -mx-2 这类工具类
+ */
+.reply-body {
+  --reply-indent: 32px;
+  padding-left: var(--reply-indent);
+}
+.reply-body [data-reply-head='sticky'] {
+  margin-left: calc(-1 * var(--reply-indent) - 0.5rem);
+}
+.reply-body [data-reply-head='row']:not([data-reply-head='sticky'] *) {
+  margin-left: calc(-1 * var(--reply-indent));
 }

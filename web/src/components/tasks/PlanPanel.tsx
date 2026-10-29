@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronRight, ChevronUp, CircleCheck, CircleSlash, ListChecks, TriangleAlert, X } from 'lucide-react'
+import { Check, ChevronRight, CircleCheck, CircleSlash, ListChecks, TriangleAlert, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan } from '@shared/schema'
 import {
@@ -18,7 +18,6 @@ import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
-import { StatusPill } from '@/components/ui/status-pill'
 import { ComposerPopover } from '@/components/ui/composer-popover'
 import { Progress } from '@/components/ui/progress'
 
@@ -172,7 +171,8 @@ function ItemTime({ item, now }: { item: PlanItem; now: number }) {
       data-plan-time=""
       title={label}
       aria-label={label}
-      className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
+      // 定宽右对齐：各步的用时上下对成一列
+      className="min-w-[3.25rem] shrink-0 text-right font-mono text-[0.6875rem] text-subtle tabular-nums"
     >
       {time}
     </span>
@@ -218,19 +218,7 @@ function itemLine(x: PlanItem, kids?: WaitChild[]) {
  * 输入框上方的计划按钮：「计划 2/5 · 正在做的那一步」，点开是实时更新的计划窗口。
  * 只有对话列过计划才显示
  */
-export function PlanButton({
-  task,
-  children,
-  compact,
-}: {
-  task: Task
-  children?: WaitChild[]
-  /**
-   * 收成一行小字（设计稿：上面有提问卡时计划让位）：「计划 3/6 · 正在：…」+ 展开箭头，不画浅底条；
-   * 点开还是同一个计划窗口
-   */
-  compact?: boolean
-}) {
+export function PlanButton({ task, children }: { task: Task; children?: WaitChild[] }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEscape(open, () => setOpen(false))
@@ -264,44 +252,16 @@ export function PlanButton({
   const updatedAt = updatedMs === undefined ? undefined : new Date(updatedMs).toISOString()
   // 标题里已经带着同样的用时就不重复写一遍
   const withTime = currentTime !== '' && !current?.includes(currentTime)
-  if (compact)
-    return (
-      <div ref={ref} className="relative flex min-w-0 flex-1 items-center">
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-label={t('执行计划')}
-          onClick={() => setOpen((v) => !v)}
-          className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-1 text-left text-[0.75rem] text-subtle transition-colors hover:text-fg"
-        >
-          <ListChecks className="h-3 w-3 shrink-0" />
-          <span className="shrink-0 font-medium text-muted tabular-nums">
-            {head === 'done' ? t('计划已完成') : head === 'closed' ? t('计划已结束') : t('计划')}
-            {!finished && ` ${p.done}/${p.total}`}
-          </span>
-          {!finished && current && (
-            <>
-              <span className="shrink-0">·</span>
-              <span className="min-w-0 flex-1 truncate">{t('正在：{what}', { what: current })}</span>
-            </>
-          )}
-          {(finished || !current) && <span className="flex-1" />}
-          <ChevronUp aria-hidden className={cn('h-3 w-3 shrink-0 transition-transform', open && 'rotate-180')} />
-        </button>
-        {open && <PlanWindow task={task} plan={plan} children={children} />}
-      </div>
-    )
-  // 组件库「计划 · PlanBar」：贴在输入框上方的一整条浅底，「计划 3/6 正在：…」，点开是计划窗口
   return (
-    <div ref={ref} className="relative flex min-w-0 flex-1 items-center">
+    <div ref={ref} className="relative flex min-w-0 shrink items-center">
       <button
         type="button"
         aria-expanded={open}
         aria-label={t('执行计划')}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex h-[2.125rem] w-full min-w-0 cursor-pointer items-center gap-2 rounded-[9px] px-2.5 text-[0.75rem] text-fg transition-colors hover:bg-sel/70',
-          open ? 'bg-sel/70' : 'bg-sel/45',
+          'flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg',
+          open && 'bg-sel text-fg',
         )}
       >
         {head === 'done' ? (
@@ -309,42 +269,37 @@ export function PlanButton({
         ) : head === 'closed' ? (
           <CircleSlash className="h-3.5 w-3.5 shrink-0 text-subtle" />
         ) : (
-          <ListChecks className="h-3.5 w-3.5 shrink-0 text-muted" />
+          <ListChecks className="h-3.5 w-3.5 shrink-0 text-subtle" />
         )}
-        {/* 提前结束但还有遗留：标题和徽标都要说「已结束、还剩几步」，不能只写「计划已完成」。
-            进度胶囊前留一个空格：读屏和界面检查读到的仍是「计划 2/6」 */}
-        <span className="shrink-0 font-semibold">
-          {head === 'done' ? t('计划已完成') : head === 'closed' ? t('计划已结束') : t('计划')}
+        {/* 提前结束但还有遗留：标题和徽标都要说「已结束、还剩几步」，不能只写「计划已完成」 */}
+        <span className="shrink-0 font-medium">
+          {head === 'done'
+            ? t('计划已完成')
+            : head === 'closed'
+              ? t('计划已结束')
+              : t('计划 {done}/{total}', { done: p.done, total: p.total })}
         </span>
-        {!finished && (
-          <>
-            {' '}
-            <StatusPill tone="ok" className="h-[1.125rem] px-1.5 text-[0.6875rem] tabular-nums">
-              {p.done}/{p.total}
-            </StatusPill>
-          </>
-        )}
         {left > 0 && (
           <span data-plan-left="" className="shrink-0 text-xs text-subtle">
             {t('{n} 步没做完（已保留）', { n: left })}
           </span>
         )}
-        {!finished && current ? (
-          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-muted">
-            <span className="min-w-0 truncate">{t('正在：{what}', { what: current })}</span>
+        {!finished && <PlanBar done={p.done} total={p.total} className="w-10 shrink-0 sm:w-14" />}
+        {!finished && current && (
+          <span className="flex min-w-0 items-center gap-1 text-xs text-subtle">
+            <span>·</span>
+            <span className="min-w-0 truncate">{current}</span>
             {withTime && (
               <span
                 data-plan-current-time=""
                 title={t('用时 {time}', { time: currentTime })}
                 aria-label={t('用时 {time}', { time: currentTime })}
-                className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
+                className="shrink-0 font-mono tabular-nums"
               >
                 {currentTime}
               </span>
             )}
           </span>
-        ) : (
-          <span className="flex-1" />
         )}
         {!finished && p.waiting > 0 && (
           <span className="flex shrink-0 items-center gap-1 text-xs text-warning">
@@ -354,10 +309,6 @@ export function PlanButton({
         )}
         {/* 空间够时再显示「多久前更新」：窄窗口里前面的进度已经说明了状态 */}
         {!finished && <UpdatedAt at={updatedAt} stale={stale} className="hidden text-xs sm:inline" />}
-        <ChevronUp
-          aria-hidden
-          className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-180')}
-        />
       </button>
       {open && <PlanWindow task={task} plan={plan} children={children} />}
     </div>
@@ -389,41 +340,54 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
       width="min(460px, calc(100vw - 2rem))"
       className="max-h-[min(64vh,560px)]"
     >
-      <div className="flex shrink-0 items-center gap-2 px-4 pt-3 pb-1">
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-subtle" title={plan.title}>
-          {plan.title || t('执行计划')}
-        </span>
-        {total !== undefined && (
-          <span
-            data-plan-total=""
-            title={t('总用时 {time}', { time: fmtDuration(total) })}
-            aria-label={t('总用时 {time}', { time: fmtDuration(total) })}
-            className="shrink-0 font-mono text-xs text-subtle tabular-nums"
-          >
-            {fmtDuration(total)}
+      {/* 窗口头：标题和计数一行，细进度条一行，总用时 · 多久前更新一行小字；和下面的步骤用分隔线隔开 */}
+      <div className="flex shrink-0 flex-col gap-2 border-b px-4 pt-3.5 pb-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <ListChecks className="h-4 w-4 shrink-0 text-muted" />
+          <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold text-fg" title={plan.title}>
+            {plan.title || t('执行计划')}
           </span>
-        )}
-        <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">
-          {p.done}/{p.total}
-        </span>
-      </div>
-      <div className="flex shrink-0 items-center gap-2 px-4 pb-2">
-        <PlanBar done={p.done} total={p.total} className="min-w-0 flex-1" />
-        {planRebuilt(task) && (
-          <span
-            data-plan-rebuilt=""
-            className="shrink-0 text-[0.6875rem] text-subtle"
-            title={t('上一份计划没做完就结束了，这是新开的一份')}
-          >
-            {t('重建')}
+          <span className="shrink-0 font-mono text-xs text-muted tabular-nums">
+            {p.done}/{p.total}
           </span>
-        )}
-        <UpdatedAt at={updatedAt} stale={stale} className="text-[0.6875rem]" />
+        </div>
+        <PlanBar done={p.done} total={p.total} className="h-1" />
+        <div className="flex min-w-0 items-center gap-1.5 text-[0.6875rem] text-subtle">
+          {total !== undefined && (
+            <span
+              data-plan-total=""
+              title={t('总用时 {time}', { time: fmtDuration(total) })}
+              aria-label={t('总用时 {time}', { time: fmtDuration(total) })}
+              className="shrink-0 font-mono tabular-nums"
+            >
+              {fmtDuration(total)}
+            </span>
+          )}
+          {total !== undefined && updatedAt && <span aria-hidden>·</span>}
+          <UpdatedAt at={updatedAt} stale={stale} />
+          {planRebuilt(task) && (
+            <span
+              data-plan-rebuilt=""
+              className="ml-auto shrink-0 rounded bg-sel px-1.5 py-px"
+              title={t('上一份计划没做完就结束了，这是新开的一份')}
+            >
+              {t('重建')}
+            </span>
+          )}
+        </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        <ol className="flex flex-col">
-          {plan.steps.map((s) => (
-            <PlanStepRow key={s.id} task={task} step={s} now={now} waitingKids={children} settled={settled} />
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
+        <ol className="flex flex-col gap-0.5">
+          {plan.steps.map((s, i) => (
+            <PlanStepRow
+              key={s.id}
+              task={task}
+              step={s}
+              now={now}
+              waitingKids={children}
+              settled={settled}
+              last={i === plan.steps.length - 1}
+            />
           ))}
         </ol>
         {older.length > 0 && (
@@ -458,6 +422,7 @@ function PlanStepRow({
   now,
   waitingKids,
   settled,
+  last,
 }: {
   task: Task
   step: PlanStep
@@ -466,6 +431,8 @@ function PlanStepRow({
   waitingKids?: WaitChild[]
   /** 这份计划已经结束了：没做完的步骤画成静止的「未完成」，不再写成等待中 / 进行中 */
   settled?: boolean
+  /** 最后一步：下面不再画连到下一步的竖线 */
+  last?: boolean
 }) {
   const kids = planChildren(task, step)
   const active = step.status === 'running' || step.status === 'waiting'
@@ -478,14 +445,18 @@ function PlanStepRow({
   // 计划已经结束了就不标「卡住」：它不会再推进了，标出来只会让人以为还在等它
   const staleMs = settled ? undefined : itemStale(step, now)
   return (
-    <li>
+    <li className="relative">
+      {/* 步骤之间的竖线：从这一步的圆点下面连到下一步，读起来是一条从上到下的进度线 */}
+      {!last && <span aria-hidden className="absolute top-[1.875rem] bottom-0 left-[1.0625rem] w-px bg-line" />}
       <button
         type="button"
         disabled={!kids.length}
         aria-expanded={kids.length ? open : undefined}
         onClick={() => setManual(!open)}
         className={cn(
-          'flex w-full min-w-0 items-start gap-3 rounded-lg px-2 py-2 text-left',
+          'relative flex w-full min-w-0 items-start gap-3 rounded-lg px-2 py-2 text-left',
+          // 正在做的这一步整行浅底：一眼找到当前在哪
+          active && !settled && 'bg-sel/60',
           kids.length ? 'cursor-pointer hover:bg-sel' : 'cursor-default',
         )}
       >
@@ -496,9 +467,13 @@ function PlanStepRow({
           <span className="flex min-w-0 items-baseline gap-2">
             <span
               className={cn(
-                'min-w-0 flex-1 truncate text-[0.875rem] leading-5',
-                step.status === 'pending' ? 'text-muted' : 'text-fg',
-                step.status === 'running' && 'font-medium',
+                'min-w-0 flex-1 truncate text-[0.8125rem] leading-5',
+                step.status === 'pending' || step.status === 'skipped'
+                  ? 'text-muted'
+                  : step.status === 'done'
+                    ? 'text-muted line-through decoration-line-strong'
+                    : 'text-fg',
+                active && 'font-medium',
               )}
             >
               {step.title}

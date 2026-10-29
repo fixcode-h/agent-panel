@@ -1,5 +1,5 @@
 ---
-paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**, web/src/pages/**, web/src/components/settings/ComponentsSection.tsx, web/src/components/tasks/ConversationTabs.tsx, web/src/components/tasks/Messages.tsx
+paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**, web/src/pages/**, web/src/components/settings/ComponentsSection.tsx, web/src/components/tasks/ConversationTabs.tsx, web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.tsx
 ---
 
 # 视觉：部件、底色和字重
@@ -24,3 +24,15 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 ## 思考过程保持原样，不并进过程行
 
 - 规则：对话里的「思考过程」是一行小字按钮（Brain 图标 + 用时）加展开后左侧竖线的正文，不改成过程行（RowShell）样式；统一部件时先问这一块。起因：90e8f53 把它改成过程行，用户要求「思考过程用原有的」。
+
+## 过程行默认带浅底，行间不画分隔线
+
+- 规则：工具 / 过程行（`RowShell`）每行一块默认浅底的圆角块（`bg-fg/[0.035]`），悬停再深一点；相邻行靠 4px 间距分开，不画分隔线（`index.css` 的 `proc-list`）。起因：dc23450 照设计稿改成「无底、行间细线、悬停才出底」，用户要求「工具不加分割线，背景默认显示」。
+
+## 输入框上方的状态栏保持三行：计划、子任务、子对话
+
+- 规则：输入框上方固定三行轻量状态栏（`data-status-row` 为 plan / helpers / children），计划是一小段字加细进度条（`w-fit`，不撑满成浅底条）；不因为运行区或页签里也有就删掉子任务、子对话两行。计划弹窗可以按设计改，折叠行不动。起因：5b72252 删了子任务、子对话栏，dc23450 把计划改成整条浅底，用户要求「输入框的计划和子任务恢复到原来的样式和布局」。
+
+## 去掉一个入口前，先看它挂着哪些功能
+
+- 规则：用户说某个小块「可以去掉」时，先列出它点开后的功能（切分支、独立分支列表、CLI 额度…），没有别处承接的就挪到新位置，不连功能一起删。输入框下的环境块收进会话栏「环境」标题行的分支图标，会话栏不在时（窄屏、子对话面板）仍放在输入框下。

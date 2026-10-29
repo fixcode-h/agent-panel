@@ -92,7 +92,7 @@ await runShard(import.meta.filename, async (api) => {
 
   // 宽屏右栏默认开着（重设计：固定「项目文件 / 本对话改动」两个页签），最宽 440，不和对话平分；
   // 页签条右端的按钮能收起，再点展开
-  // 会话栏在中间对话的右边、同一块面板里（照 Claude Code）：环境、上下文、输出内容、更改四块，上下文按块细分；
+  // 会话栏在中间对话的右边、同一块面板里（照 Claude Code）：环境、上下文、Token 用量、工具调用四块，上下文按块细分；
   // 右侧的文件栏照旧。标题栏的会话栏开关能收起再打开
   await check(p, '任务-会话栏', ['已使用', '消息', 'MCP 工具'])
   {
@@ -104,7 +104,7 @@ await runShard(import.meta.filename, async (api) => {
       if (!main || !box || box.x < main.x || box.x + box.width > main.x + main.width + 1)
         errors.push('会话栏：不在中间对话那块面板里')
     }
-    for (const name of ['环境', '上下文', '输出内容', '更改'])
+    for (const name of ['环境', '上下文', 'Token 用量', '工具调用'])
       if (!(await rail.getByRole('region', { name, exact: true }).count())) errors.push(`会话栏：没有「${name}」这一块`)
     await p.getByRole('button', { name: '隐藏会话栏', exact: true }).click()
     if (await rail.isVisible()) errors.push('会话栏：点「隐藏会话栏」后还在')
@@ -169,7 +169,7 @@ await runShard(import.meta.filename, async (api) => {
           .flatMap((box) => [...box.children])
           .filter((r) => norm(r.innerText).startsWith('子对话'))
           .map((row) => {
-            // openTip「在中间打开子对话」就是标题按钮：可点的只有这一段
+            // openTip「在右栏打开子对话」就是标题按钮：可点的只有这一段
             const title = [...row.querySelectorAll('button')].find((b) =>
               (b.getAttribute('title') || '').includes('打开子对话'),
             )
@@ -779,16 +779,14 @@ await runShard(import.meta.filename, async (api) => {
     }
   }
 
-  // 子任务、子对话不在输入框上方列（用户要求去掉）：计划下面不再有这两行；
-  // 在跑的子任务、子对话照样在消息流的运行区里，子对话还有对话页签
+  // 输入框上方的状态栏照原来的三行（用户要求恢复）：计划在上、子任务中间、子对话在下
   {
     const openTask = () => backToTask()
-    const extraRows = await p.evaluate(() =>
-      ['helpers', 'children'].filter((n) => document.querySelector(`[data-status-row="${n}"]`)),
+    const missing = await p.evaluate(() =>
+      ['plan', 'helpers', 'children'].filter((n) => !document.querySelector(`[data-status-row="${n}"]`)),
     )
-    if (extraRows.length) errors.push(`状态栏：计划下面还有 ${extraRows.join('、')} 这一行`)
-    if (await p.locator('button[aria-label="子任务"]').count()) errors.push('状态栏：输入框上方还有「子任务」入口')
-    await check(p, '状态栏-只剩计划')
+    if (missing.length) errors.push(`状态栏：输入框上方少了 ${missing.join('、')} 这一行`)
+    await check(p, '状态栏-计划子任务子对话')
     {
       const key = 'agent-panel-demo-v3'
       const saved = await p.evaluate((k) => localStorage.getItem(k), key)
@@ -1108,7 +1106,7 @@ await runShard(import.meta.filename, async (api) => {
     await p.getByTitle('工具与返工').first().click()
     await check(p, '任务-工具与返工', [
       '工具与返工',
-      '工具调用',
+      '次调用',
       '其中探路失败',
       '路径不存在',
       '命令不存在',
@@ -1325,7 +1323,7 @@ await runShard(import.meta.filename, async (api) => {
       if (!id) return false
       await p.goto(`${base}#/chat/${encodeURIComponent(id)}`)
       await p
-        .getByTitle('Token 用量')
+        .locator('[title="Token 用量"], [data-token-usage]')
         .first()
         .waitFor({ timeout: 10000 })
         .catch(() => {})
@@ -1370,7 +1368,7 @@ await runShard(import.meta.filename, async (api) => {
     await p.goto(base)
     await p.getByText('购物车右上角', { exact: false }).first().click()
     await p
-      .getByTitle('Token 用量')
+      .locator('[title="Token 用量"], [data-token-usage]')
       .first()
       .waitFor({ timeout: 10000 })
       .catch(() => {})
