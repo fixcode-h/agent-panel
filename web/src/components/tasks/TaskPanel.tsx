@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, Clock, Coins, Crown, Hourglass } from 'lucide-react'
-import type { StepUsage, Task, TaskStep, TaskTodo } from '@shared/schema'
+import type { StepUsage, Task, TaskStep, TaskTodo, TurnSources } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { useNow } from '@/lib/useNow'
 import { fmtClock, fmtDuration, fmtTokens, stepDepth, stepDuration, stepLabel, verdictText } from '@/lib/tasks'
@@ -325,12 +325,43 @@ function TurnRows({
                     span={spanTitle(step)}
                   />
                 </span>
+                {x.sources && <SourceBar sources={x.sources} />}
               </span>
             </li>
           )
         })}
       </ol>
     </div>
+  )
+}
+
+/** 输入构成的几块：颜色固定，顺序按「先有的」排（设定 → 规则 → 消息 → 结果 → 工具输出） */
+const SOURCE_PARTS: { key: keyof TurnSources; label: () => string; color: string }[] = [
+  { key: 'setup', label: () => t('角色设定和教训'), color: 'bg-line-strong' },
+  { key: 'rules', label: () => t('面板规则'), color: 'bg-accent' },
+  { key: 'user', label: () => t('消息'), color: 'bg-success' },
+  { key: 'results', label: () => t('子任务和计划结果'), color: 'bg-peer' },
+  { key: 'tools', label: () => t('工具输出'), color: 'bg-run' },
+]
+
+/**
+ * 这一轮交给 Agent 的内容按来源的比例：一眼看出 token 花在了规则、消息还是工具输出上。
+ * 记的是字数（估算），悬停看各块的数字
+ */
+function SourceBar({ sources }: { sources: TurnSources }) {
+  const parts = SOURCE_PARTS.map((p) => ({ ...p, n: sources[p.key] ?? 0 })).filter((p) => p.n > 0)
+  const total = parts.reduce((n, p) => n + p.n, 0)
+  if (!total) return null
+  const title = [
+    t('这一轮交给 Agent 的内容（按字数估算）'),
+    ...parts.map((p) => `${p.label()}  ${fmtTokens(p.n)} (${Math.round((p.n / total) * 100)}%)`),
+  ].join('\n')
+  return (
+    <span className="mt-0.5 flex h-1 w-full overflow-hidden rounded-full bg-line" title={title}>
+      {parts.map((p) => (
+        <span key={p.key} className={cn('h-full', p.color)} style={{ width: `${(p.n / total) * 100}%` }} />
+      ))}
+    </span>
   )
 }
 

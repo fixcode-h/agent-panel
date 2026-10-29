@@ -259,6 +259,16 @@ export function endRun(
 type TurnHost = Timed & {
   usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number }
   turns: TaskTurn[]
+  messages?: { role: string; at?: string; tools?: { output?: string }[] }[]
+}
+
+/** 这一轮里工具输出的总字数：读文件、跑命令的输出都会进上下文，常常是一轮里最大的一块 */
+function toolChars(task: TurnHost, turn: TaskTurn) {
+  const from = Date.parse(turn.startedAt)
+  let n = 0
+  for (const m of task.messages ?? [])
+    if (m.role !== 'user' && Date.parse(m.at ?? '') >= from) for (const x of m.tools ?? []) n += x.output?.length ?? 0
+  return n
 }
 
 /** 开始一轮追加要求 / 对话：记下开始时间和这时的累计用量 */
@@ -307,6 +317,7 @@ export function endTurn(
   if (turn.status !== 'running') return
   const end = turnEndOf(status, reason)
   Object.assign(turn, turnStats(task, turn, now), { status, endedAt: new Date(now).toISOString() }, end ? { end } : {})
+  if (turn.sources) turn.sources.tools = toolChars(task, turn)
 }
 
 /**

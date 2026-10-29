@@ -21,6 +21,9 @@ export const ALWAYS_SECTIONS = [
   '## 接着上一次做',
 ]
 
+/** 同一个保活进程里比较用的会话占位：进程活着就是同一个会话，真实 id 跑完才记 */
+export const LIVE = '@live'
+
 /** 连续续接这么多轮之后补发一次完整提示 */
 export const FULL_EVERY = 10
 
@@ -112,4 +115,27 @@ export function rememberSent(
   const keys = Object.keys(rest)
   for (const k of keys.slice(0, Math.max(0, keys.length - MAX_SENT + 1))) delete rest[k]
   return { ...rest, [key]: value }
+}
+
+/** 上下文从多大开始、掉到几成以下算「被压缩过」 */
+const SILENT_COMPACT_MIN = 20_000
+const SILENT_COMPACT_RATIO = 0.5
+
+/**
+ * 同一个会话里上下文一下掉到一半以下：CLI 自己压缩了却没报压缩事件（各家 CLI 不一定都报）。
+ * 这时之前发过的规则只剩摘要，runner 据此作废记录，下一轮整份重发
+ */
+export function compactedSilently(prev: number, next: number) {
+  return prev >= SILENT_COMPACT_MIN && next > 0 && next < prev * SILENT_COMPACT_RATIO
+}
+
+/**
+ * 这次真正发出去的提示里，消息（用户 / 子对话发来的、要做的事）和面板规则各占多少字：
+ * 给对话轮次的「输入构成」用，看清 token 花在了规则还是内容上。sent 是增量时规则只算发了的那部分
+ */
+export function promptSources(parts: string[], sent: string) {
+  const user = promptSections(parts)
+    .filter((s) => always(s.key))
+    .reduce((n, s) => n + s.text.length, 0)
+  return { user, rules: Math.max(0, sent.length - user) }
 }

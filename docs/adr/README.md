@@ -35,6 +35,7 @@
 | [0025](./0025-model-design-blender.md)                    | 模型设计接入 Blender，对话驱动建模、网页实时预览            | 提议   | 2026-10-29 | 模型对话（`Task.modelDesign`）+ 后台 Blender 桥接 + `blender_python` MCP 工具；每次改动导出 glb，右栏 three.js 实时看          |
 | [0026](./0026-advanced-role-mounts-user-owned.md)         | 内置高级角色的挂载交给用户，角色页按高级 / 基本分页         | 已接受 | 2026-10-29 | `AgentInput.mountsCustom` 接管后整份按用户的、可恢复默认；列表栏「高级角色 / 基本角色」分段；新增界面走查、本地化              |
 | [0027](./0027-resumed-session-prompt-delta.md)            | 续接会话只发变了的提示词段落                                | 已接受 | 2026-10-29 | `shared/prompt-delta.ts` 按段落指纹省掉会话里已有的规则；`fresh` 兜底、压缩后作废、10 轮补一次完整的                           |
+| [0028](./0028-panel-tools-on-demand-and-input-sources.md) | 省 token 第二批：工具按需、子任务瘦身、输入构成             | 已接受 | 2026-10-29 | 不常用面板工具收进 `more_tools`；角色写过的规则不重复；子任务开头和结果瘦身；保活进程同步状态；`TaskTurn.sources`              |
 
 状态只有四个词，别自己造近义词：
 

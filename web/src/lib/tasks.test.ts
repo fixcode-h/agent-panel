@@ -33,6 +33,16 @@ test('面板工具在对话里显示中文名，不再露出原始工具名', ()
   // 带 id 的是改写已有的一条
   const rewrite = toolView(tool('mcp__panel__record_lesson', '改写', { input: '{"id":"l1","title":"旧规则"}' }))
   assert.equal(rewrite?.tool.name, '改写教训')
+  // 经 more_tools 调用的按真正的工具显示；只查用法的显示「查看工具用法」
+  const viaMore = toolView(
+    tool('mcp__panel__more_tools', '', { input: '{"name":"record_lesson","arguments":{"title":"写进配置"}}' }),
+  )
+  assert.equal(viaMore?.tool.name, '记下教训')
+  assert.equal(viaMore?.tool.label, '写进配置')
+  assert.equal(
+    toolView(tool('mcp__panel__more_tools', '', { input: '{"name":"record_lesson"}' }))?.tool.name,
+    '查看工具用法',
+  )
 
   const view = toolView(tool('mcp__panel__project_lessons', '查看', { input: '{"files":["a.ts"]}' }))
   assert.equal(view?.tool.name, '查看项目教训')

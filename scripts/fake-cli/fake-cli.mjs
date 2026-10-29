@@ -16,6 +16,13 @@ import { wrapRequestIds } from './wrap-request.mjs'
 import { cliOutputFile } from './outputs.mjs'
 
 const args = process.argv.slice(2)
+// 角色设定（system prompt）的全文：面板会把长角色说明写成文件、只传 --append-system-prompt-file 路径
+// （Windows 命令行长度上限），这时读文件内容；认角色（评审等）时和 args 一起看
+const promptFileArg = args[args.indexOf('--append-system-prompt-file') + 1]
+const systemText =
+  args.includes('--append-system-prompt-file') && promptFileArg && existsSync(promptFileArg)
+    ? readFileSync(promptFileArg, 'utf8')
+    : ''
 // Claude Code 和自定义 CLI 都输出 stream-json，Claude Code 带 -p，自定义 CLI 从 stdin 读任务描述、不带 -p；Pi 默认 --mode rpc
 const kind =
   args[0] === 'app-server'
@@ -91,7 +98,7 @@ if (args.includes('--version')) {
 let input = ''
 // 评审这类只读子任务（角色设定里有「你负责独立评审」）：它的 input 里还带着子对话的用户原话（COMMIT、BEGIN_EDIT 这些场景标记），
 // 不能让它跟着做场景动作，也不往子对话的工作目录里写文件。input 每轮都会换，所以写成函数、用时再算
-const isReviewRole = () => [input, ...args].join('\n').includes('你负责独立评审')
+const isReviewRole = () => [input, ...args, systemText].join('\n').includes('你负责独立评审')
 let appThread = ''
 let appResume = ''
 let developer = ''
@@ -509,10 +516,20 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
     anthropic: [process.env.ANTHROPIC_BASE_URL, process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_AUTH_TOKEN],
     agentpanel: process.env.AGENT_PANEL_API_KEY,
   }
+  // system：--append-system-prompt-file 指向的角色说明全文。文件在这一轮跑完后就被面板删掉，测试事后只能读这里
   appendFileSync(
     log,
-    JSON.stringify({ kind, args, cwd: process.cwd(), input, ...extra, apiEnv, pid: process.pid, start: Date.now() }) +
-      '\n',
+    JSON.stringify({
+      kind,
+      args,
+      system: systemText || undefined,
+      cwd: process.cwd(),
+      input,
+      ...extra,
+      apiEnv,
+      pid: process.pid,
+      start: Date.now(),
+    }) + '\n',
   )
   // 结束时间单独记一个文件，用来检查并行节点是否真的同时运行
   process.on('exit', () => appendFileSync(`${log}.end`, JSON.stringify({ pid: process.pid, end: Date.now() }) + '\n'))
@@ -630,9 +647,9 @@ if (input.includes('PLAN_LEFT') && input.includes('set_plan') && !input.includes
     ],
   })
 }
-// 计划结束就是结束了：下一件事直接开新计划，不需要先写总结（提示里已经写明「现在没有进行中的计划」）
-if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes('现在没有进行中的计划'))
-  await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
+// 计划结束就是结束了：下一件事直接开新计划，不需要先写总结。
+// 续接的会话只重发变了的段落（ADR 0027）：计划规则和没变的计划状态这一轮都不一定在，只按场景标记开新计划
+if (input.includes('PLAN_NEXT')) await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
 // 子对话自己跑项目测试步骤（ADR 0018 / 0020）：命令和项目里一条 scope 不是 parent 的步骤完全一致，
 // 面板按命令认出是哪条步骤、记下 by='self' 的真实耗时。命令跑完后歇一会儿再往下走，
 // 否则同一条指令后面的 SUBMIT_MERGE 会撞上「后台还有命令没跑完」被拒绝
@@ -691,7 +708,13 @@ if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation
   // 评审子是任务角色（isReviewRole）：它没有面板工具，也不应换收尾流程
   // 交回结果的那一轮 input 里只有「你派出的子任务都结束了…」，不再带用户原话，所以按 [fake-review] 标记驱动后续
   const back = [...input.matchAll(/\[fake-review\] (pass|fail)/g)].at(-1)?.[1]
-  const asked = input.includes('SUBMIT_MERGE') && input.includes('submit_merge')
+  // 续接的会话只重发变了的规则、面板工具也按需给（ADR 0027 / 0028）：submit_merge 的说明头一轮给过，
+  // 之后这一轮的输入里不一定还有。真 CLI 靠续接的会话记得有这个工具，假 CLI 按会话记一笔，
+  // 否则「修好了再合一次」这种续接轮次时有时没有工具说明，用例时好时坏
+  const mergeSeen = session ? path.join(tmpdir(), `fake-cli-merge-tool-${session}`) : ''
+  if (mergeSeen && input.includes('submit_merge')) writeFileSync(mergeSeen, '1')
+  const asked =
+    input.includes('SUBMIT_MERGE') && (input.includes('submit_merge') || (!!mergeSeen && existsSync(mergeSeen)))
   if (!beganEdit && !isReviewRole() && (asked || back)) {
     const review = (instructions) =>
       // 第一次派评审要带交接单（ADR 0013，缺 goal / checks 面板会拒绝）；这里复看也是新派，同样带上
@@ -922,8 +945,8 @@ const turnReply = () => {
   // 结论由派它的子对话在 instructions 里用 REVIEW_MARK:pass / REVIEW_MARK:fail 指定（取最后一次），
   // 不能光看「input 里有没有 REVIEW_BLOCK」：评审的 input 里也带着子对话的原始需求。
   // 结尾的 [fake-review] pass/fail 是给下一轮识别用的：它会把这段输出作为子任务结果交回给派它的子对话。
-  // 角色设定走 CLI 的 system prompt（在 args 里，不在 input），所以两份拼起来看才认得出来它是评审
-  const roleText = [input, ...args].join('\n')
+  // 角色设定走 CLI 的 system prompt（在 args 或 systemText 里，不在 input），所以拼起来看才认得出来它是评审
+  const roleText = [input, ...args, systemText].join('\n')
   const mark = [...roleText.matchAll(/REVIEW_MARK:(pass|fail)/g)].at(-1)?.[1] ?? 'pass'
   const review = roleText.includes('你负责独立评审')
     ? mark === 'fail'

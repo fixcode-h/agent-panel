@@ -51,7 +51,6 @@
   --warning: #935b0c;
   --danger: #b4372b;
   --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
-  --panel-shadow: 0 1px 3px rgb(60 50 30 / 0.06);
   --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
   --code-bg: #f7f6f1;
   --code-chip: #f1efe8;
@@ -151,7 +150,6 @@
   --warning: #e3a752;
   --danger: #ec7a64;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
-  --panel-shadow: none;
   --shadow-pop: 0 12px 36px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.06);
   --code-bg: #1f1f1d;
   --code-chip: #353532;
@@ -377,17 +375,12 @@ body,
   height: 100%;
 }
 /*
- * 面板：主区、右栏各是一块，浮在侧栏的底色上（照 Proma / Claude 桌面版）。
- * 边界只靠底色和圆角分开，不描边；浅色下加一层很淡的投影，免得暖白和米色贴在一起分不清。
- * 手机上整页就是一块，不留圆角
+ * 面板：主区、右栏的底。中间区域直接铺到浏览器边缘，不留外边距、不加圆角和投影（用户要求）；
+ * 和侧栏靠底色分开；对话和右栏同一个底色、中间没有缝了，用页面里的 divide-x 画一条细线
  */
 @utility panel {
   background-color: var(--bg);
   overflow: hidden;
-  @media (width >= 48rem) {
-    border-radius: 0.75rem;
-    box-shadow: var(--panel-shadow);
-  }
 }
 /*
  * 分段切换（模式切换、Segmented）的轨道和选中块：浅色下轨道是一层灰、选中块是白卡片；

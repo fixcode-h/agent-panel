@@ -7,11 +7,8 @@ import {
   Code2,
   MessagesSquare,
   ChevronDown,
-  ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
-  Folder,
-  FolderOpen,
   FolderPlus,
   FolderSearch,
   FileText,
@@ -60,16 +57,7 @@ import { InlineRename } from '@/components/ui/inline-rename'
 import { Sheet } from '@/components/ui/sheet'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Kbd } from '@/components/ui/kbd'
-import {
-  ModeTabs,
-  NAV_ROW,
-  PROJECT_CARD,
-  PROJECT_CARD_OFF,
-  PROJECT_CARD_ON,
-  ProjectRunning,
-  SidebarCount,
-  SidebarTaskBlock,
-} from '@/components/ui/sidebar'
+import { ModeTabs, NAV_ROW, SidebarProjectName, SidebarProjectRow, SidebarTaskBlock } from '@/components/ui/sidebar'
 import { isMac } from '@/lib/hotkey'
 import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/resize'
 import { TOGGLE_SIDEBAR } from './CommandPalette'
@@ -708,25 +696,15 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                   )}
                   <ContextMenu>
                     <ContextMenuTrigger asChild>
-                      {/* 折叠箭头在卡片外，卡片里是文件夹、名字和行尾（照设计稿 Workspace 侧栏） */}
-                      <div className="group/proj flex items-center gap-1">
-                        <button
-                          onClick={() => toggleFolded(pid)}
-                          aria-expanded={open}
-                          aria-label={open ? t('收起') : t('展开')}
-                          disabled={!ts.length}
-                          className={cn(
-                            'grid h-6 w-4 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
-                            !ts.length && 'invisible',
-                          )}
-                        >
-                          <ChevronRight
-                            className={cn('h-3 w-3 transition-transform', open && 'rotate-90')}
-                            strokeWidth={2.2}
-                          />
-                        </button>
-                        <div className={cn(PROJECT_CARD, onProject ? PROJECT_CARD_ON : PROJECT_CARD_OFF)}>
-                          {renaming === pid ? (
+                      <SidebarProjectRow
+                        open={open}
+                        on={onProject}
+                        canToggle={ts.length > 0}
+                        onToggle={() => toggleFolded(pid)}
+                        running={running}
+                        count={ts.length}
+                        name={
+                          renaming === pid ? (
                             <InlineRename
                               value={p.name}
                               label={t('项目名称')}
@@ -741,65 +719,54 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                               title={t('打开项目「{name}」，右键查看更多操作', { name: projectName(pid) })}
                               className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                             >
-                              {open ? (
-                                <FolderOpen
-                                  className={cn('h-[15px] w-[15px] shrink-0', !onProject && 'text-muted')}
-                                  strokeWidth={1.9}
-                                />
-                              ) : (
-                                <Folder
-                                  className={cn('h-[15px] w-[15px] shrink-0', !onProject && 'text-muted')}
-                                  strokeWidth={1.9}
-                                />
-                              )}
-                              <span className="min-w-0 flex-1 truncate font-semibold">{projectName(pid)}</span>
+                              <SidebarProjectName open={open} name={projectName(pid)} />
                             </button>
-                          )}
-                          {!open && ts.some((t) => t.requests?.length) && (
+                          )
+                        }
+                        alert={
+                          !open &&
+                          ts.some((t) => t.requests?.length) && (
                             <CircleAlert
                               aria-label={t('有对话需要你处理')}
                               className="h-3.5 w-3.5 shrink-0 text-warning"
                               strokeWidth={2.4}
                             />
-                          )}
-                          {/* 行尾：有对话在跑写「N 个执行中」（和 StatusPill 同一套运行色），否则是对话数 */}
-                          {running > 0 ? (
-                            <ProjectRunning n={running} className="group-hover/proj:hidden" />
-                          ) : (
-                            ts.length > 0 && (
-                              <SidebarCount n={ts.length} on={onProject} className="mr-0.5 group-hover/proj:hidden" />
-                            )
-                          )}
-                          <span
-                            {...handle}
-                            tabIndex={0}
-                            role="button"
-                            aria-label={t('拖动调整「{name}」的顺序', { name: projectName(pid) })}
-                            title={t('拖动调整顺序（也可以按 Alt + ↑ / ↓）')}
-                            // 手柄放在行尾，原有对齐不变；只负责拖拽，按下不会展开或打开项目，右键也不弹项目菜单
-                            onClick={(e) => e.preventDefault()}
-                            onContextMenu={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
-                              handle.onKeyDown(e)
-                            }}
-                            className="grid h-6 w-4 shrink-0 cursor-grab place-items-center rounded text-subtle opacity-0 group-hover/proj:opacity-60 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none active:cursor-grabbing"
-                          >
-                            <GripVertical className="h-3.5 w-3.5" />
-                          </span>
-                          <IconButton
-                            icon={Plus}
-                            onClick={() => go({ page: 'projects', id: pid })}
-                            label={t('在「{name}」新建对话', { name: projectName(pid) })}
-                            title={t('新建对话')}
-                            // 还没有对话的项目一直显示 +，有对话的鼠标移上去才显示
-                            className={cn(
-                              ts.length ? 'hidden' : 'opacity-60',
-                              'group-hover/proj:grid group-hover/proj:opacity-100',
-                            )}
-                          />
-                        </div>
-                      </div>
+                          )
+                        }
+                        actions={
+                          <>
+                            <span
+                              {...handle}
+                              tabIndex={0}
+                              role="button"
+                              aria-label={t('拖动调整「{name}」的顺序', { name: projectName(pid) })}
+                              title={t('拖动调整顺序（也可以按 Alt + ↑ / ↓）')}
+                              // 手柄只负责拖拽，按下不会展开或打开项目，右键也不弹项目菜单。
+                              // 不悬停时宽度收成 0：隐藏的手柄还占着位置的话，行尾的「N 个执行中」会离右边空出一截
+                              onClick={(e) => e.preventDefault()}
+                              onContextMenu={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
+                                handle.onKeyDown(e)
+                              }}
+                              className="grid h-6 w-0 shrink-0 cursor-grab place-items-center overflow-hidden rounded text-subtle opacity-0 group-hover/proj:w-4 group-hover/proj:opacity-60 hover:opacity-100 focus-visible:w-4 focus-visible:opacity-100 focus-visible:outline-none active:cursor-grabbing"
+                            >
+                              <GripVertical className="h-3.5 w-3.5" />
+                            </span>
+                            <IconButton
+                              icon={Plus}
+                              onClick={() => go({ page: 'projects', id: pid })}
+                              label={t('在「{name}」新建对话', { name: projectName(pid) })}
+                              title={t('新建对话')}
+                              // 还没有对话的项目一直显示 +，有对话的鼠标移上去才显示
+                              className={cn(
+                                ts.length ? 'hidden' : 'opacity-60',
+                                'group-hover/proj:grid group-hover/proj:opacity-100',
+                              )}
+                            />
+                          </>
+                        }
+                      />
                     </ContextMenuTrigger>
                     <ContextMenuContent>
                       <ContextMenuItem onSelect={() => go({ page: 'projects', id: pid })}>

@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
+import { ChevronRight, Folder, FolderOpen, Workflow } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { StatusPill } from './status-pill'
@@ -193,5 +194,143 @@ export function ProjectRunning({ n, className }: { n: number; className?: string
     <StatusPill tone="run" className={cn(SMALL_PILL, className)}>
       {t('{n} 个执行中', { n })}
     </StatusPill>
+  )
+}
+
+/**
+ * 项目行：展开箭头 + 文件夹 + 项目名 + 行尾状态（「N 个执行中」或对话数），悬停时行尾状态让位给操作按钮。
+ * 侧栏和组件库的示例都用这一个，外观只在这里定义。
+ * name 由调用方给：侧栏里是可点的按钮（或改名输入框），里面放 SidebarProjectName
+ */
+export const SidebarProjectRow = forwardRef<
+  HTMLDivElement,
+  {
+    open: boolean
+    /** 当前就在这个项目的首页 */
+    on?: boolean
+    /** 没有对话的项目不能展开：箭头隐藏但占位，名字对齐不变 */
+    canToggle?: boolean
+    onToggle?: () => void
+    name: ReactNode
+    /** 收起时下面有对话在等你处理：名字后面一个提示图标 */
+    alert?: ReactNode
+    /** 在跑的对话数；为 0 时显示对话数 */
+    running?: number
+    count?: number
+    /** 悬停才出现的操作（拖动手柄、新建对话），行尾状态在悬停时让位 */
+    actions?: ReactNode
+  } & Omit<HTMLAttributes<HTMLDivElement>, 'children'>
+>(function SidebarProjectRow(
+  { open, on, canToggle = true, onToggle, name, alert, running = 0, count = 0, actions, className, ...rest },
+  ref,
+) {
+  return (
+    // 折叠箭头在卡片外，卡片里是文件夹、名字和行尾（照设计稿 Workspace 侧栏）
+    <div ref={ref} className={cn('group/proj flex items-center gap-1', className)} {...rest}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label={open ? t('收起') : t('展开')}
+        disabled={!canToggle}
+        className={cn(
+          'grid h-6 w-4 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
+          !canToggle && 'invisible',
+        )}
+      >
+        <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} strokeWidth={2.2} />
+      </button>
+      <div className={cn(PROJECT_CARD, on ? PROJECT_CARD_ON : PROJECT_CARD_OFF)}>
+        {name}
+        {alert}
+        {/* 行尾：有对话在跑写「N 个执行中」（和 StatusPill 同一套运行色），否则是对话数 */}
+        {running > 0 ? (
+          <ProjectRunning n={running} className="group-hover/proj:hidden" />
+        ) : (
+          count > 0 && <SidebarCount n={count} on={on} className="group-hover/proj:hidden" />
+        )}
+        {actions}
+      </div>
+    </div>
+  )
+})
+
+/** 项目行里的文件夹图标 + 名字：展开时是打开的文件夹 */
+export function SidebarProjectName({ open, name }: { open: boolean; name: ReactNode }) {
+  const Icon = open ? FolderOpen : Folder
+  return (
+    <>
+      {/* 图标跟卡片文字同色：选中卡片上是项目蓝，其余卡片上是 muted（由 PROJECT_CARD_* 定） */}
+      <Icon className="h-[15px] w-[15px] shrink-0 opacity-80" strokeWidth={1.9} />
+      <span className="min-w-0 flex-1 truncate font-semibold">{name}</span>
+    </>
+  )
+}
+
+/** 项目下对话行的外框：块里的行（项目下）和不在块里的行（搜索结果）选中时底色不同 */
+export function sidebarTaskRowClass(active: boolean, inBlock: boolean) {
+  return cn(
+    'group/row flex w-full cursor-pointer items-center gap-2 border text-left text-[0.8125rem] transition-colors',
+    // 项目下的对话是一张张卡片（36 高、10px 圆角），搜索结果等其他地方还是紧凑行
+    inBlock ? 'h-9 rounded-[10px]' : 'h-8 rounded-[7px]',
+    active
+      ? inBlock
+        ? SIDEBAR_BLOCK_ROW_ON
+        : cn(SIDEBAR_ROW_ON, 'font-medium')
+      : inBlock
+        ? SIDEBAR_BLOCK_ROW_OFF
+        : SIDEBAR_ROW_OFF,
+  )
+}
+
+/**
+ * 对话行的内容：工作流对话前面一个流程图标（普通对话占大多数，不画图标，免得和行尾状态抢眼），
+ * 标题、补充说明，行尾一个状态（TaskRowStatus），没有状态时是时间
+ */
+export function SidebarTaskRowBody({
+  workflow,
+  active,
+  lead,
+  title,
+  hint,
+  status,
+  time,
+}: {
+  workflow?: boolean
+  active?: boolean
+  /** 标题前的标记（AI 分析的标签） */
+  lead?: ReactNode
+  /** 标题：调用方可以传带悬停说明、流光的 span */
+  title: ReactNode
+  hint?: ReactNode
+  status?: ReactNode
+  time?: ReactNode
+}) {
+  return (
+    // 内容整体右缩一点，标题不至于顶到右边的状态上。缩进不能写进行上的 pl-*：行样式后跟调用方传的 px-*，
+    // cn 走 twMerge 会把它覆盖掉。放在行内这一层，选中 / 悬停的背景（画在行上）仍然铺满整行
+    <span className="flex min-w-0 flex-1 items-center gap-2 pl-[3px]">
+      {workflow && (
+        <Workflow
+          aria-label={t('工作流')}
+          className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-muted' : 'text-subtle')}
+        />
+      )}
+      {lead}
+      {typeof title === 'string' ? <span className="min-w-0 flex-1 truncate">{title}</span> : title}
+      {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
+      {status}
+      {/* 时间格自己留一段左间距（在 gap-2 之外再加 6px）：标题截断后和时间之间也有明显间隔 */}
+      {time && (
+        <span
+          className={cn(
+            'shrink-0 pl-1.5 text-[0.6875rem] tabular-nums transition-colors',
+            active ? 'text-muted' : 'text-subtle group-hover/row:text-muted',
+          )}
+        >
+          {time}
+        </span>
+      )}
+    </span>
   )
 }
