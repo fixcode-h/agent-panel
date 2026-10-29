@@ -49,6 +49,7 @@
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
 
 ## MOSS-Image 布局出图（2026-10-24）
+
 - 目的：整屏原画里要出现准确的中英文、并且按设计稿的位置摆放时，把画布上的文字块和主要元素转成 MOSS-Image 的布局 JSON 一起交给工作流，而不是只靠自然语言描述位置。
 - 取布局项（`shared/moss.ts` 的 `designLayoutItems`）：只取有实际文字的文字块（跳过默认的 `Text Block` / `Text`）和用到了有 `prompt` 描述图片的控件；文字块的 `caption` 写字号、粗细、对齐和颜色，文字内容放在 `text` 里。坐标按 `CanvasPanelSlot` 逐层累加；非 `CanvasPanel` 容器里的控件和网页 `Frame` 根量不出像素位置，直接跳过；最多 24 项。宁可少给几项，不给错坐标。
 - 编译布局（`mossBbox` / `mossLayoutJson`）：设计稿像素按实际出图尺寸等比换算，左 / 上 `floor`、右 / 下 `ceil`，越界裁剪，减画布中心后按 `yxyx` 输出；空框丢弃。输出单行 JSON：`summary.caption` 放这次的正向描述，`items` 里是 `text` / `object`，并带 `bbox_coord_space: "abs_centralized"`、`bbox_format: "yxyx"`。没有有效项时返回 `undefined`。
@@ -112,3 +113,11 @@
 
 - `pendingTurns` 只存在进程内，服务重启后不会自动接续这些消息；是否需要落盘（待确认）。
 - 插话时附件用的是上传目录的绝对路径，如果这一轮的 CLI 被限制在工作目录里，可能读不到（待确认）。
+
+## 页面布局与设计类型下拉（2026-10-29）
+
+- 照设计稿 `Design.dc.html`：打开的设计是三块圆角面板并排（`App.tsx` 的 `splitPage` 把 `page: 'design'` 且 `id` 不是 `new` / `home` 的路由算进去）——左边 AI 对话（默认 320，拖动条在右缘）、中间画板、右边检查器（默认 280）。
+- 设计名和保存状态在对话栏标题行，收起对话栏后回到画板标题行；收起按钮在对话栏标题行，打开按钮在画板标题行。
+- 画板标题行夹在两栏中间，只放阶段条（`StageSteps`：原画 → 界面，就是原来的「原画 / 界面」切换，确认模板后原画打勾）、尺寸、风格、版本、撤销重做、「更多」（动画面板开关 + 本机 ComfyUI）和导出；用 `@container` 在窄的时候收起风格文字和阶段圆点，放不下时横向滚动兜底。
+- 侧栏 `SidebarDesigns.tsx` 顶部是「UI 设计 / 模型设计」下拉（选择记在本机 `agent-panel:design-mode`）。模型设计列的是 Agent 项目里 `Task.modelDesign` 的顶层对话（ADR 0025），按项目分组，点进对话页；新建模型对话的入口还没有接到界面上，空时只显示说明。
+- 回归：`scripts/ui/04-design.mjs` 在项目行折叠检查之后切到「模型设计」再切回。

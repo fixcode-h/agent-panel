@@ -129,7 +129,6 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '从 ComfyUI 导入工作流': 'Import a workflow from ComfyUI',
   '在 ComfyUI 里打开工作流，菜单「工作流 → 导出（API）」，把得到的 JSON 贴在下面。描述、尺寸、种子会自动换成占位符。':
     'Open the workflow in ComfyUI, choose Workflow → Export (API), and paste the JSON below. Prompt, size and seed are replaced with placeholders automatically.',
-  '本机 ComfyUI：工作流和网页': 'Local ComfyUI: workflows and web UI',
   网页工作流管理: 'Web workflows',
   游戏工作流管理: 'Game workflows',
   '打开 ComfyUI 网页': 'Open ComfyUI web UI',
