@@ -1305,3 +1305,12 @@ html [data-sonner-toast][data-styled='true'] {
 .reply-body [data-reply-head='row']:not([data-reply-head='sticky'] *) {
   margin-left: calc(-1 * var(--reply-indent));
 }
+
+/*
+ * 最左边的图标栏：和会话侧栏同是 rail 底色时两栏糊成一片（用户反馈看不出边界），
+ * 底色往前景色方向挪一点（浅色下略深、深色下略亮，所有配色同一个比例），再加一道竖线
+ */
+.activity-bar {
+  background-color: color-mix(in oklab, var(--rail) 95%, var(--fg));
+  box-shadow: inset -1px 0 0 var(--line);
+}
