@@ -122,24 +122,9 @@ export function useRunAuthor(run: ChatRun | undefined) {
 }
 
 /** 对话时选 CLI、模型和思考强度；模型默认的那项标「（默认）」，强度只显示 CLI 的英文取值 */
-export function ChatModelPicker({
-  value,
-  onChange,
-  parts = 'all',
-}: {
-  value: ChatRun
-  onChange: (v: ChatRun) => void
-  /**
-   * 只画其中一段：Chat 页标题栏放「Agent · 模型」（run），输入框里只留思考强度（effort）（Chat.dc.html）；
-   * 不给时三个都画
-   */
-  parts?: 'all' | 'run' | 'effort'
-}) {
+export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange: (v: ChatRun) => void }) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
-  if (!usable.length)
-    return parts === 'effort' ? null : <span className="px-2 text-[0.75rem] text-subtle">{t('没有可用的 Agent')}</span>
-  const showRun = parts !== 'effort'
-  const showEffort = parts !== 'run'
+  if (!usable.length) return <span className="px-2 text-[0.75rem] text-subtle">{t('没有可用的 Agent')}</span>
   const clisOpts = usable.map((c) => ({
     value: c.id,
     label: c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name,
@@ -149,18 +134,16 @@ export function ChatModelPicker({
   const efforts = def ? defaultEffortOptions(def, defEffort, modelEfforts(def, run.model)) : []
   return (
     <div className="flex min-w-0 items-center">
-      {showRun && (
-        <ChipSelect
-          title={t('对话用的 Agent')}
-          value={cli}
-          options={clisOpts}
-          // 换了 CLI，模型和思考强度回到那个 CLI 的默认
-          onChange={(c) => onChange({ cli: c, model: '', effort: '' })}
-          dot={cliColor}
-          className="max-w-[160px]"
-        />
-      )}
-      {showRun && models.length > 0 && (
+      <ChipSelect
+        title={t('对话用的 Agent')}
+        value={cli}
+        options={clisOpts}
+        // 换了 CLI，模型和思考强度回到那个 CLI 的默认
+        onChange={(c) => onChange({ cli: c, model: '', effort: '' })}
+        dot={cliColor}
+        className="max-w-[160px]"
+      />
+      {models.length > 0 && (
         <ChipSelect
           title={t('模型')}
           value={run.model === defModel ? '' : run.model}
@@ -170,7 +153,7 @@ export function ChatModelPicker({
           className="max-w-[200px]"
         />
       )}
-      {showEffort && efforts.length > 1 && (
+      {efforts.length > 1 && (
         <ChipSelect
           title={t('思考强度')}
           value={effortValue(def!, defEffort, modelEfforts(def!, run.model), run.effort)}
@@ -268,82 +251,6 @@ const effortShort = (id: string) => id
 /** 模型的显示名：CLI 列表里有就用它的名字，没有用模型 id */
 function modelName(def: CliDefinition | undefined, id: string) {
   return def?.models.find((m) => m.id === id)?.label || id || t('默认模型')
-}
-
-/**
- * 输入框工具条里的模型和思考强度（设计稿）：一个无底按钮，悬停浅底；点开是分组列表——
- * Agent（不用角色的对话才能换）、模型、思考强度。effort 时只列思考强度（Chat 页的 Agent 和模型在标题栏）
- */
-export function ComposerModelPicker({
-  value,
-  onChange,
-  parts = 'all',
-}: {
-  value: ChatRun
-  onChange: (v: ChatRun) => void
-  parts?: 'all' | 'effort'
-}) {
-  const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
-  const shownModel = useShownModel()
-  if (!usable.length || !def) return null
-  const clisOpts = usable.map((c) => ({
-    value: c.id,
-    label: c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name,
-  }))
-  const models = modelOptions(def, { defaultValue: defModel, extra: [run.model] })
-  const effortList = modelEfforts(def, run.model)
-  const efforts = defaultEffortOptions(def, defEffort, effortList)
-  const effortPicked = effortValue(def, defEffort, effortList, run.effort)
-  // 实际用的强度：选的是「默认」（''）时显示默认那档
-  const shownEffort = run.effort || defEffort
-  const label = t('模型 {model}，思考强度 {effort}，点开切换', {
-    model: modelName(def, run.model),
-    effort: effortName(cli, shownEffort) || t('默认'),
-  })
-  const section = (title: string, opts: Opt[], cur: string, pick: (v: string) => void, dot?: boolean) => (
-    <div className="py-1">
-      <p className="px-2.5 pt-1 pb-1 text-[0.6875rem] text-subtle">{title}</p>
-      {opts.map((o, i) => (
-        <PopoverClose key={o.value + i} className={cn(menuItem, 'gap-2 py-1.5')} onClick={() => pick(o.value)}>
-          {dot && <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: cliColor(o.value) }} />}
-          <span className={cn('min-w-0 flex-1 truncate text-[0.75rem]', !dot && 'font-mono')}>{o.label}</span>
-          {o.value === cur && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
-        </PopoverClose>
-      ))}
-    </div>
-  )
-  return (
-    <Popover>
-      <PopoverTrigger
-        aria-label={label}
-        title={t('模型和思考强度')}
-        className={cn(FACE, 'cursor-pointer transition-colors hover:bg-sel data-[state=open]:bg-sel')}
-      >
-        {parts === 'effort' ? (
-          <>
-            <EffortBars n={effortBars(cli, shownEffort)} />
-            <span className="shrink-0 text-subtle">{effortShort(shownEffort) || t('默认')}</span>
-          </>
-        ) : (
-          <ModelFace model={shownModel(cli, run.model, modelName(def, run.model))} cli={cli} effort={shownEffort} />
-        )}
-        <ChevronDown className="h-3 w-3 shrink-0 text-subtle" />
-      </PopoverTrigger>
-      <PopoverContent className="w-max max-w-[min(420px,calc(100vw-24px))] min-w-[240px]" align="end">
-        <div className="max-h-96 divide-y divide-line overflow-y-auto">
-          {parts === 'all' &&
-            section(t('Agent'), clisOpts, cli, (c) => onChange({ cli: c, model: '', effort: '' }), true)}
-          {parts === 'all' &&
-            models.length > 0 &&
-            section(t('模型'), models, run.model === defModel ? '' : run.model, (m) =>
-              onChange({ ...value, cli, model: m, effort: '' }),
-            )}
-          {efforts.length > 1 &&
-            section(t('思考强度'), efforts, effortPicked, (e) => onChange({ ...value, cli, effort: e }))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
 }
 
 /**

@@ -981,7 +981,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await d.close()
   }
 
-  // Chat 页：置顶组、标题栏（Agent · 模型、导出、右栏开关）、右栏「代码 / 来源 / 附件」（Chat.dc.html）。
+  // Chat 页：置顶组、标题栏（导出、右栏开关）、输入框左下角的 Agent · 模型 · 强度、右栏「代码 / 来源 / 附件」（Chat.dc.html）。
   // 演示数据里「React 19 的 use() 怎么用」三样都有，「周报写作助手」是置顶的
   {
     const c = await page({ width: 1440, height: 900 })
@@ -1019,6 +1019,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     if (!(await rail.getByRole('button', { name: '存到项目…' }).count()))
       errors.push('Chat 右栏：代码页签没有「存到项目…」')
     if (!(await c.getByRole('button', { name: '导出' }).count())) errors.push('Chat 标题栏：没有「导出」按钮')
+    // Agent 和模型留在输入框里（和新建对话的输入框一样），不挪到标题栏
+    if (await c.locator('header').getByTitle('对话用的 Agent').count())
+      errors.push('Chat 标题栏：Agent 选择跑到了标题栏，应该留在输入框左下角')
+    // 演示里的聊天都用了角色：输入框里只读显示角色的模型
+    if (!(await c.getByTitle(/^模型和思考强度跟着角色设置/).count())) errors.push('Chat 输入框：没有显示角色用的模型')
     await check(c, 'Chat-右栏-代码', ['ProfileOld'])
     await tabs.getByRole('tab', { name: /^来源/ }).click()
     if (!(await rail.locator('a[href="https://react.dev/reference/react/use"]').count()))

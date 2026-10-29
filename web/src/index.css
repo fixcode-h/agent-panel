@@ -889,6 +889,23 @@ body,
     transform: none;
   }
 }
+/* 设置搜索跳到某一项时闪一下底色（section-nav.tsx 的 revealSetting）。
+   设置行左右没有内边距，底色贴着文字不好看：用同色的 box-shadow 往外扩 12px 当留白，不改布局 */
+[data-setting-flash] {
+  border-radius: 6px;
+  animation: setting-flash 1.8s ease-out;
+}
+@keyframes setting-flash {
+  0%,
+  35% {
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 12px var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 12px transparent;
+  }
+}
 @keyframes pop-in {
   /* 居中靠 Tailwind 的 translate 属性，这里只动 transform，两者叠加，不会把弹窗挪到左上角 */
   from {
@@ -1056,13 +1073,17 @@ body,
   overflow: hidden;
 }
 .react-flow__controls-button {
-  width: 32px;
-  height: 32px;
+  /* 照设计稿：34px 一格，格与格之间一条细线（xyflow 自带的按钮下边框，颜色是上面的 line） */
+  width: 34px;
+  height: 34px;
   padding: 0;
 }
+.react-flow__controls-button:last-child {
+  border-bottom: none;
+}
 .react-flow__controls-button svg {
-  max-width: 13px;
-  max-height: 13px;
+  max-width: 12px;
+  max-height: 12px;
 }
 
 /* 「正在思考」文字上的流光 */

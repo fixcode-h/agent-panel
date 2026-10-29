@@ -4,7 +4,7 @@ import { t } from '@shared/i18n'
 import { api } from './api'
 
 /**
- * 自带技能要不要更新：侧栏「Skills 与命令」、设置里的「部署」和「自带 Skill」分页共用一份。
+ * 自带技能要不要更新：侧栏「Skills」、设置里的「部署」和「自带 Skill」分页共用一份。
  * 打开页面、窗口切回来时各读一次；装完、部署完由那里调 refreshSkillUpdates 立刻刷新，提示点跟着消失
  */
 let state: SkillUpdates = { shared: [], deployed: [] }
@@ -25,12 +25,12 @@ export async function refreshSkillUpdates() {
 }
 
 /**
- * 提示点的数量和文案只在这里判定：侧栏「Skills 与命令」、侧栏「设置」和设置页的
+ * 提示点的数量和文案只在这里判定：侧栏「Skills」、侧栏「设置」和设置页的
  * 「Agent」「部署」两项都读这几个函数，不各自再算一遍（一个状态只允许一处判定）
  */
 
 /**
- * 「Skills 与命令 → 自带 Skill」那份（~/.agents/skills/<名字>）要更新的技能数。
+ * 「Skills → 自带 Skill」那份（~/.agents/skills/<名字>）要更新的技能数。
  * 不含 deployed：那一份只有「设置 → 部署」能更新，而「自带 Skill」页的「更新全部」
  * 只写 shared，算进来会亮一个在这一页里永远消不掉的点
  */

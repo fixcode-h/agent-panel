@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from '@/lib/toast'
-import { Loader2, Plus, Sparkles, Terminal } from 'lucide-react'
+import { Loader2, Plus, Sparkles } from 'lucide-react'
 import type { LibraryCli, LibraryItem } from '@shared/library'
 import { libraryName } from '@shared/library'
-import { ALL_AGENTS } from '@shared/commands'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useNav } from '@/lib/data'
@@ -21,9 +20,11 @@ import { BundledBulkBar, BundledSkills } from '@/components/library/BundledSkill
 import { BundledDetail, BundledEmpty } from '@/components/library/BundledDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 
-type Kind = 'skill' | 'command'
-/** 页面上的分页：多一个「自带 Skill」 */
-type Tab = Kind | 'bundled'
+/**
+ * 页面上的分页：Skill 和「自带 Skill」。
+ * 命令分页按用户要求去掉了（这一页只管 Skill），命令仍可在对话里用 / 调出
+ */
+type Tab = 'skill' | 'bundled'
 
 /**
  * 分页下拉的选项：有可更新的自带技能时写进选项文字。
@@ -32,18 +33,13 @@ type Tab = Kind | 'bundled'
 function tabOptions(updates: number) {
   return [
     { value: 'skill', label: 'Skill' },
-    { value: 'command', label: t('命令') },
     { value: 'bundled', label: updates ? t('自带 Skill（{n} 个可更新）', { n: updates }) : t('自带 Skill') },
   ]
 }
 
-/** 新建时的模板：命令按 CLI 的格式（md / toml）写 */
-function template(kind: Kind, name: string, format: 'md' | 'toml') {
-  if (kind === 'skill')
-    return `---\nname: ${name}\ndescription: ${t('一句话说明什么时候该用它')}\n---\n\n${t('在这里写步骤和注意事项。')}\n`
-  return format === 'toml'
-    ? `description = ${JSON.stringify(t('一句话说明它做什么'))}\nprompt = """\n${t('在这里写要做的事，{{args}} 是输入的参数。')}\n"""\n`
-    : `---\ndescription: ${t('一句话说明它做什么')}\n---\n${t('在这里写要做的事，$ARGUMENTS 是输入的参数。')}\n`
+/** 新建 Skill 时的模板 */
+function template(name: string) {
+  return `---\nname: ${name}\ndescription: ${t('一句话说明什么时候该用它')}\n---\n\n${t('在这里写步骤和注意事项。')}\n`
 }
 
 /** 分页种类按本地存储记住：切走页面再回来还是原来那一页 */
@@ -51,7 +47,8 @@ const TAB_KEY = 'library.tab'
 function readTab(): Tab {
   try {
     const v = localStorage.getItem(TAB_KEY)
-    return v === 'command' || v === 'bundled' ? v : 'skill'
+    // 以前记下的「命令」分页已经没有了，回到 Skill
+    return v === 'bundled' ? v : 'skill'
   } catch {
     return 'skill'
   }
@@ -67,7 +64,6 @@ function writeTab(tab: Tab) {
 export function LibraryPage() {
   const { route, go } = useNav()
   const [tab, setTab] = useState<Tab>(readTab)
-  const kind: Kind = tab === 'command' ? 'command' : 'skill'
   const [data, setData] = useState<{ clis: LibraryCli[]; items: LibraryItem[] } | null>(null)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
@@ -84,20 +80,14 @@ export function LibraryPage() {
   // 搜到别的名字时右边开着的那份不能跟着消失（和 Skill 分页同一个口径）
   const bundledPicked = tab === 'bundled' ? bundled.items?.find((i) => i.name === route.id) : undefined
 
-  // 切换分页前发出的读取（例如保存后刷新）晚回来时不能盖掉新分页的列表
-  const current = useRef(kind)
-  current.current = kind
-  const load = () => {
-    const k = kind
-    return api
-      .library(k)
+  const load = () =>
+    api
+      .library('skill')
       .then((d) => {
-        if (current.current !== k) return
         setData(d)
         setError('')
       })
-      .catch((e) => current.current === k && setError((e as Error).message))
-  }
+      .catch((e) => setError((e as Error).message))
   /**
    * 换分页：清掉地址里的选中项，再换种类。
    * 清地址放在这个动作上（不放 effect 里）：挂载时不能清，否则刷新或从链接打开会丢掉地址里的那一项；
@@ -105,7 +95,7 @@ export function LibraryPage() {
    */
   const pickTab = (next: Tab) => {
     if (next === tab) return
-    // 上一页的技能名在新一页没有意义（命令页里不会有 Skill），清掉让新列表自己选第一项
+    // 上一页选中的名字在新一页没有意义（自带 Skill 和已装的 Skill 是两份列表），清掉让新列表自己选第一项
     if (route.id) go({ page: 'library' })
     setTab(next)
   }
@@ -125,8 +115,8 @@ export function LibraryPage() {
   }, [data, query])
   const cliName = (id: string) => data?.clis.find((c) => c.id === id)?.name ?? id
   const groups = useMemo(() => {
-    // 「所有 Agent」排第一（只有命令会放在那里），其余跟 CLI 列表的顺序
-    const ids = [...new Set(hits.map((i) => i.cli))].sort((a, b) => Number(b === ALL_AGENTS) - Number(a === ALL_AGENTS))
+    // 跟 CLI 列表的顺序
+    const ids = [...new Set(hits.map((i) => i.cli))]
     return ids
       .map((cli) => ({ cli, label: cliName(cli), items: hits.filter((i) => i.cli === cli) }))
       .filter((g) => g.items.length)
@@ -157,7 +147,7 @@ export function LibraryPage() {
   return (
     <>
       <ListPane
-        title={t('Skills 与命令')}
+        title={t('Skills')}
         // 自带技能的点数来自它自己的列表（Skill 分页里没有读那份数据）
         count={tab === 'bundled' ? (bundled.items?.length ?? 0) : (data?.items.length ?? 0)}
         onNew={() => setCreating(true)}
@@ -171,12 +161,8 @@ export function LibraryPage() {
               variant="secondary"
               onClick={() => setAi(true)}
               disabled={!data}
-              aria-label={kind === 'command' ? t('AI 创建命令') : t('AI 创建 Skill')}
-              title={
-                kind === 'command'
-                  ? t('描述需求，让本机 Agent 写命令，所有 Agent 都能用')
-                  : t('描述需求，让本机 Agent 写 Skill')
-              }
+              aria-label={t('AI 创建 Skill')}
+              title={t('描述需求，让本机 Agent 写 Skill')}
             >
               <Sparkles className="h-4 w-4 text-accent-text" />
             </Button>
@@ -211,9 +197,7 @@ export function LibraryPage() {
           tab === 'bundled' ? (
             <BundledBulkBar items={bundled.items} busy={bundled.busy} onInstall={bundled.install} />
           ) : (
-            <p className="text-[0.75rem] leading-relaxed text-subtle">
-              {t('放在各个 Agent 的用户目录里；放进「所有 Agent」的由面板展开，选哪个 Agent 都能用。')}
-            </p>
+            <p className="text-[0.75rem] leading-relaxed text-subtle">{t('放在各个 Agent 的用户目录里。')}</p>
           )
         }
       >
@@ -231,9 +215,7 @@ export function LibraryPage() {
           <p className="px-2 py-6 text-[0.8125rem] text-subtle">{t('读取中…')}</p>
         ) : !hits.length ? (
           <ListEmpty>
-            {query
-              ? t('没有符合的{kind}。', { kind: kind === 'skill' ? 'Skill' : t('命令') })
-              : t('还没有，点右上角的 ＋ 新建。')}
+            {query ? t('没有符合的{kind}。', { kind: 'Skill' }) : t('还没有，点右上角的 ＋ 新建。')}
           </ListEmpty>
         ) : (
           // 按 Agent 分组：一眼看出哪些装在哪个 CLI 里（同名会同时出现在几组）
@@ -244,14 +226,8 @@ export function LibraryPage() {
                   key={`${i.cli}:${i.name}`}
                   selected={shown?.name === i.name && shown.cli === i.cli}
                   onClick={() => go({ page: 'library', id: i.name, sub: i.cli })}
-                  leading={
-                    kind === 'skill' ? (
-                      <Sparkles className="h-4 w-4 shrink-0 text-accent-text" />
-                    ) : (
-                      <Terminal className="h-4 w-4 shrink-0 text-accent-text" />
-                    )
-                  }
-                  title={kind === 'command' ? `/${i.name}` : i.name}
+                  leading={<Sparkles className="h-4 w-4 shrink-0 text-accent-text" />}
+                  title={i.name}
                   subtitle={i.description || t('没有说明')}
                   monoSubtitle={false}
                   menu={
@@ -287,7 +263,7 @@ export function LibraryPage() {
         )
       ) : shown ? (
         <LibraryDetail
-          key={`${kind}:${shown.name}:${shown.cli}`}
+          key={`${shown.name}:${shown.cli}`}
           item={shown}
           clis={data?.clis ?? []}
           same={same}
@@ -301,10 +277,7 @@ export function LibraryPage() {
         />
       ) : (
         !data || (
-          <DetailEmpty
-            icon={kind === 'skill' ? <Sparkles className="h-6 w-6" /> : <Terminal className="h-6 w-6" />}
-            title={t('还没有{kind}', { kind: kind === 'skill' ? 'Skill' : t('命令') })}
-          >
+          <DetailEmpty icon={<Sparkles className="h-6 w-6" />} title={t('还没有{kind}', { kind: 'Skill' })}>
             <p>{t('在左边选一项，或新建一个：装好之后所有 Agent 都能用。')}</p>
             <Button className="mt-5" onClick={() => setCreating(true)}>
               <Plus className="h-4 w-4" />
@@ -316,7 +289,6 @@ export function LibraryPage() {
 
       {data && creating && tab !== 'bundled' && (
         <CreateDialog
-          kind={kind}
           clis={data.clis}
           taken={data.items}
           onClose={() => setCreating(false)}
@@ -327,29 +299,7 @@ export function LibraryPage() {
           }}
         />
       )}
-      {data && kind === 'command' && (
-        <AssistDialog
-          open={ai}
-          onOpenChange={setAi}
-          kind="command"
-          subject={{ taken: [...new Set(data.items.map((i) => i.name))].join(',') }}
-          onApply={async (p) => {
-            if (p.kind !== 'command') return
-            // AI 写的命令放进「所有 Agent」：由面板展开，哪个 CLI 都能用
-            await api.saveLibraryFile({
-              cli: ALL_AGENTS,
-              kind: 'command',
-              name: p.name,
-              content: p.content,
-              create: true,
-            })
-            toast.success(t('已创建「/{name}」，所有 Agent 都能用', { name: p.name }))
-            void load()
-            go({ page: 'library', id: p.name, sub: ALL_AGENTS })
-          }}
-        />
-      )}
-      {data && kind === 'skill' && (
+      {data && (
         <AssistDialog
           open={ai}
           onOpenChange={setAi}
@@ -373,24 +323,22 @@ export function LibraryPage() {
 }
 
 function CreateDialog({
-  kind,
   clis,
   taken,
   onClose,
   onDone,
 }: {
-  kind: Kind
   clis: LibraryCli[]
   taken: LibraryItem[]
   onClose: () => void
   /** 创建成功后把新建的那一项交给页面去选中 */
   onDone: (created?: { name: string; cli: string }) => void
 }) {
-  const ok = clis.filter((c) => (kind === 'skill' ? c.skillDir : c.commandDir))
+  const ok = clis.filter((c) => c.skillDir)
   const [name, setName] = useState('')
   const [picked, setPicked] = useState<string[]>(ok.slice(0, 1).map((c) => c.id))
   const [busy, setBusy] = useState(false)
-  const valid = libraryName(kind, name)
+  const valid = libraryName('skill', name)
   const dup = taken.filter((i) => i.name === name && picked.includes(i.cli))
   const create = async () => {
     setBusy(true)
@@ -398,10 +346,10 @@ function CreateDialog({
       for (const id of picked)
         await api.saveLibraryFile({
           cli: id,
-          kind,
+          kind: 'skill',
           name,
           create: true,
-          content: template(kind, name, ok.find((c) => c.id === id)!.commandFormat),
+          content: template(name),
         })
       onDone({ name, cli: picked[0] })
     } catch (e) {
@@ -413,7 +361,7 @@ function CreateDialog({
     <Modal
       open
       onOpenChange={(o) => !o && onClose()}
-      title={kind === 'skill' ? t('新建 Skill') : t('新建命令')}
+      title={t('新建 Skill')}
       footer={
         <>
           <span className="flex-1 text-[0.75rem] text-warning">
@@ -435,7 +383,7 @@ function CreateDialog({
           autoFocus
           value={name}
           onChange={(e) => setName(e.target.value.trim())}
-          placeholder={kind === 'skill' ? 'commit-message' : 'review'}
+          placeholder="commit-message"
           className="font-mono"
         />
         <span className="text-[0.75rem] text-subtle">
@@ -450,7 +398,7 @@ function CreateDialog({
             checked={picked.includes(c.id)}
             onChange={(v) => setPicked((p) => (v ? [...p, c.id] : p.filter((x) => x !== c.id)))}
             label={c.name}
-            hint={kind === 'skill' ? c.skillDir : c.commandDir}
+            hint={c.skillDir}
           />
         ))}
       </div>
