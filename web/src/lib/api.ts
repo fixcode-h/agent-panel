@@ -2,6 +2,7 @@ import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
 import type { ComfyChain } from '@shared/comfy-chain'
+import type { ModelMeta } from '@shared/blender'
 import type { SpeechStatus } from '@shared/speech'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
@@ -72,6 +73,7 @@ import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
+import type { FixApplyItem, FixApplyResult } from '@shared/diagnosis'
 import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project-mcp'
 import type {
   BundledSkill,
@@ -278,6 +280,18 @@ export const api = {
   localImage: () => request<LocalStatus>('/local-image/status'),
   /** 模型设计用的 Blender 找到没有（ADR 0025） */
   blenderStatus: () => request<{ path: string; version: string; error: string }>('/blender/status'),
+  /** 模型对话的预览状态：版本号每次执行加一，变了就重新加载 glb（ADR 0025） */
+  blenderModel: (taskId: string) => request<ModelMeta>(`/blender/models/${encodeURIComponent(taskId)}`),
+  /** 预览用的 glb：版本号放在地址里，同一版浏览器可以缓存 */
+  blenderGlbUrl: (taskId: string, version: number) =>
+    `/api/blender/models/${encodeURIComponent(taskId)}/scene.glb?v=${version}`,
+  /** 预览加载的 glb 内容；演示版没有 Blender，换成现场拼的示例模型 */
+  blenderGlb: async (taskId: string, version: number): Promise<ArrayBuffer> => {
+    if (import.meta.env.VITE_DEMO) return (await import('./demo-model')).demoModelGlb()
+    const res = await fetch(api.blenderGlbUrl(taskId, version))
+    if (!res.ok) await failure(res)
+    return res.arrayBuffer()
+  },
   localImageQueue: () => request<ComfyQueueState>('/local-image/queue'),
   localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>
     request<LocalStatus>(`/local-image/${action}`, { method: 'POST' }),
@@ -805,6 +819,9 @@ export const api = {
       content: string
       truncated: boolean
     }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
+  /** 排查结论的「应用这 N 处修改」：在被分析对话的目录里逐条按原文替换，每条给出结果 */
+  applyFixes: (id: string, fixes: FixApplyItem[]) =>
+    request<{ dir: string; results: FixApplyResult[] }>(`/tasks/${id}/apply-fixes`, json('POST', { fixes })),
   /** 任务目录里的图片：读到的文件是图片时按原图查看（同样给 <img> 用，路径自己带 /api） */
   taskFileRaw: (id: string, path: string) => `/api/tasks/${id}/file/raw?path=${encodeURIComponent(path)}`,
   /** 任务页右栏的根信息：任务工作目录（独立分支时是 worktree）的目录和分支 */

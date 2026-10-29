@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { t } from './i18n.ts'
 
 /**
  * 排查类分析（AI 排查、报错交给 AI）的结构化结论：回复末尾的 diagnosis 代码块（JSON），
@@ -40,8 +41,16 @@ const Impact = z.object({
   severity: DiagnosisSeverity.catch('medium').default('medium'),
 })
 
+/**
+ * 证据的角色：证据卡右上角的小标签。problem 是出问题的那段，reference 是对照的正确写法 / 口径，
+ * repro 是复现出来的报错或输出，context 是旁证（例如「这里不受影响」）。写错或没写时不画标签
+ */
+export const EvidenceKind = z.enum(['problem', 'reference', 'repro', 'context'])
+export type EvidenceKind = z.infer<typeof EvidenceKind>
+
 const Evidence = z
   .object({
+    kind: EvidenceKind.optional().catch(undefined),
     /** 文件路径（相对项目根）；命令输出类的证据没有文件 */
     file: text(300),
     line,
@@ -160,6 +169,65 @@ export function diagnosisLessonText(d: Diagnosis) {
     .join('\n')
 }
 
+/**
+ * 「应用这 N 处修改」：把修复建议里的 before 原样换成 after。
+ * 只认原文精确匹配、在文件里恰好出现一次的：找不到说明文件已经变了或 AI 没照抄，多处说明不知道改哪一处，
+ * 这两种都逐条报原因，不猜、不悄悄跳过（服务端 server/files.ts 的 applyFixesInDir 和演示版共用这一份判定）
+ */
+export const FixApplyItem = z.object({
+  file: z.string().max(300).default(''),
+  before: z.string().max(1500).default(''),
+  after: z.string().max(1500).default(''),
+})
+export type FixApplyItem = z.infer<typeof FixApplyItem>
+export const FixApplyInput = z.object({ fixes: z.array(FixApplyItem).min(1).max(20) })
+
+/** 每一处的结果，按请求里的顺序；失败的写明原因 */
+export interface FixApplyResult {
+  index: number
+  file: string
+  ok: boolean
+  error?: string
+}
+
+/** 有文件、有改前原文、有改后内容才能一键应用；只写了改法的要人（或 Agent）动手 */
+export const fixApplicable = (f: { file: string; before: string; after: string }) => !!(f.file && f.before && f.after)
+
+/** 不重叠地数 needle 出现了几次（够判断「恰好一次」就停） */
+function countOf(hay: string, needle: string, stop = 2) {
+  let n = 0
+  for (let i = hay.indexOf(needle); i >= 0 && n < stop; i = hay.indexOf(needle, i + needle.length)) n++
+  return n
+}
+
+/** 一处修改落到文件内容上：成功给出新内容，失败给出给用户看的原因 */
+export function replaceFix(
+  content: string,
+  fix: FixApplyItem,
+): { ok: true; text: string } | { ok: false; error: string } {
+  if (!fix.file) return { ok: false, error: t('没有写要改哪个文件') }
+  if (!fix.before) return { ok: false, error: t('没有给出改前的原文，没法定位要改的地方') }
+  if (!fix.after) return { ok: false, error: t('没有给出改后的内容') }
+  let { before, after } = fix
+  // AI 抄出来的原文都是 LF；文件是 CRLF 时按 CRLF 再找一次，换进去的内容也用 CRLF，不把文件改成混合换行
+  if (!countOf(content, before) && content.includes('\r\n') && !before.includes('\r')) {
+    before = before.replace(/\n/g, '\r\n')
+    after = after.replace(/\r?\n/g, '\r\n')
+  }
+  const n = countOf(content, before)
+  if (n === 0)
+    return {
+      ok: false,
+      error: countOf(content, after)
+        ? t('文件里找不到改前的原文，改后的内容已经在文件里了，可能已经改过')
+        : t('文件里找不到改前的原文，文件可能已经变了，或者原文没有照抄'),
+    }
+  if (n > 1) return { ok: false, error: t('改前的原文在文件里出现了不止一处，不知道该改哪一处') }
+  const at = content.indexOf(before)
+  // 不用 String.replace：after 里的 $& 这类写法会被当成替换模式
+  return { ok: true, text: content.slice(0, at) + after + content.slice(at + before.length) }
+}
+
 /** 写进排查提示词的「结论块」要求：放在回复末尾，界面按它画右栏 */
 export function diagnosisPromptRules() {
   return [
@@ -171,8 +239,14 @@ export function diagnosisPromptRules() {
         confidence: 'high | medium | low',
         impacts: [{ text: '影响到什么', severity: 'high | medium | low | none' }],
         evidence: [
-          { file: '相对项目根的路径', line: 42, excerpt: '相关的几行代码', note: '这段说明了什么' },
-          { command: '跑过的命令', excerpt: '输出里关键的几行', note: '说明了什么' },
+          {
+            kind: 'problem | reference | repro | context',
+            file: '相对项目根的路径',
+            line: 42,
+            excerpt: '相关的几行代码',
+            note: '这段说明了什么',
+          },
+          { kind: 'repro', command: '跑过的命令', excerpt: '输出里关键的几行', note: '说明了什么' },
         ],
         fixes: [{ file: '要改的文件', line: 42, change: '具体改什么，写到不看对话也能动手', before: '', after: '' }],
         files: ['相关文件的路径'],
@@ -182,7 +256,9 @@ export function diagnosisPromptRules() {
     ),
     '```',
     '- 证据要是真的看过的：文件给路径和行号、命令给原命令和输出摘录，拿不准的不写；没查出根因时 confidence 写 low，并在 detail 里说明还缺什么。',
+    '- evidence 的 kind 标出这条证据的角色：problem 是出问题的那段，reference 是对照的正确写法或口径，repro 是复现出来的报错或输出，context 是旁证；拿不准就不写 kind。',
     '- fixes 只写建议，不代表已经改了；before / after 可以留空，写的话只写几行。',
+    '- 面板可以一键应用 before → after：before 必须从文件里原样复制（包括缩进），并且在那个文件里只出现一次；做不到原样就留空，只写 change。',
   ].join('\n')
 }
 
@@ -203,11 +279,19 @@ export function demoDiagnosis(memory: boolean): Diagnosis {
         evidence: [
           {
             file: '',
+            kind: 'repro',
             command: '进程列表（演示数据）',
             excerpt: 'claude      612 MB\nmcp-server  148 MB',
             note: '占用集中在 CLI 进程',
           },
-          { file: 'shared/memory-analysis.ts', line: 1, command: '', excerpt: '', note: '进程归属的统计口径' },
+          {
+            kind: 'reference',
+            file: 'shared/memory-analysis.ts',
+            line: 1,
+            command: '',
+            excerpt: '',
+            note: '进程归属的统计口径',
+          },
         ],
         fixes: [
           { file: '', change: '在「对话进程」里清理已结束的子任务进程，再观察十分钟的曲线', before: '', after: '' },
@@ -227,19 +311,28 @@ export function demoDiagnosis(memory: boolean): Diagnosis {
         ],
         evidence: [
           {
+            kind: 'problem',
             file: 'src/components/ProductCard.tsx',
             line: 7,
             command: '',
             excerpt: '<div className="text-sm text-muted">￥{product.price.toFixed(2)}</div>',
-            note: '问题所在：没有判空',
+            note: '没有判空',
           },
           {
+            kind: 'repro',
             file: '',
             command: 'npm test',
             excerpt: "TypeError: Cannot read properties of null (reading 'toFixed')",
             note: '测试里复现的报错',
           },
-          { file: 'src/store/cart.ts', line: 11, command: '', excerpt: '', note: '购物车只存 productId，不受影响' },
+          {
+            kind: 'context',
+            file: 'src/store/cart.ts',
+            line: 11,
+            command: '',
+            excerpt: '',
+            note: '购物车只存 productId，不受影响',
+          },
         ],
         fixes: [
           {

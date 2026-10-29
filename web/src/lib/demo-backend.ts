@@ -2,6 +2,7 @@
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
+import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
@@ -175,6 +176,8 @@ import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from
 import { AssistInput, resolveProposal, type AssistContext } from '@shared/assist'
 import { demoAssistJob, demoDraft, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
+import { FixApplyInput, fixApplicable, replaceFix, type FixApplyResult } from '@shared/diagnosis'
+import { t } from '@shared/i18n'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoDeploy } from './demo-deploy'
@@ -2142,6 +2145,19 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'speech') return demoSpeech(method, seg)
   // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
   if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
+  // 演示里没有 Blender 建出来的模型：预览一直是「还没有模型」
+  if (res === 'blender' && id === 'models') {
+    // 模型设计对话给一只示例宝箱（demo-model.ts 现场拼的），其余对话还没有模型
+    const task = (d.tasks ?? []).find((x) => x.id === sub)
+    if (!task?.modelDesign) return { version: 0, updatedAt: '', objects: [], exportError: '' }
+    const { DEMO_MODEL_OBJECTS } = await import('./demo-model')
+    return {
+      version: 1,
+      updatedAt: task.createdAt,
+      objects: DEMO_MODEL_OBJECTS.map((o) => ModelObject.parse(o)),
+      exportError: '',
+    }
+  }
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'project-mcp') {
     const project = d.projects.find((p) => p.id === (query.get('projectId') ?? ''))
@@ -3586,6 +3602,26 @@ function tasksRoute(
     }
     persist()
     return task
+  }
+  // 排查结论的「应用这 N 处修改」：演示里改的是示例工程的演示内容（DEMO_CONTENTS），判定和正式版共用 replaceFix；
+  // 没有内容的文件当作不存在，越界路径同样拒绝
+  if (sub === 'apply-fixes' && method === 'POST') {
+    const b = FixApplyInput.safeParse(body)
+    if (!b.success) fail(z.prettifyError(b.error))
+    const results = b.data!.fixes.map((fix, index): FixApplyResult => {
+      const file = fix.file.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+      const no = (error: string) => ({ index, file, ok: false, error })
+      const missing = !fixApplicable({ ...fix, file }) && replaceFix('', { ...fix, file })
+      if (missing && !missing.ok) return no(missing.error)
+      if (/^([a-zA-Z]:)?\//.test(file) || file.split('/').includes('..')) return no(t('路径不在项目目录里，不能改'))
+      const content = DEMO_CONTENTS[file]
+      if (content === undefined) return no(t('文件不存在'))
+      const r = replaceFix(content, { ...fix, file })
+      if (!r.ok) return no(r.error)
+      DEMO_CONTENTS[file] = r.text
+      return { index, file, ok: true }
+    })
+    return { dir: '~/demo/shop', results }
   }
   // 演示里没有真的项目目录：示例工程里的文件按演示内容返回，别的文件说明看不到
   if (sub === 'file') {

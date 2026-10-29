@@ -1,16 +1,19 @@
 import { useState, type ReactNode } from 'react'
-import { CircleAlert, GraduationCap, Loader2, SquarePlus, Terminal } from 'lucide-react'
+import { Check, CircleAlert, GraduationCap, Loader2, SquarePlus, Terminal } from 'lucide-react'
 import type { Project, Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { taskSummary } from '@shared/task'
 import {
   diagnosisFixPrompt,
   diagnosisLessonText,
+  fixApplicable,
   type Diagnosis,
   type DiagnosisConfidence,
   type DiagnosisEvidence,
   type DiagnosisFix,
   type DiagnosisParse,
+  type EvidenceKind,
+  type FixApplyResult,
   type DiagnosisSeverity,
 } from '@shared/diagnosis'
 import { api } from '@/lib/api'
@@ -122,6 +125,9 @@ export function DiagnosisReport({
   const [busy, setBusy] = useState<'' | 'here' | 'new'>('')
   const [sentTo, setSentTo] = useState('')
   const [lesson, setLesson] = useState(false)
+  // 「应用这 N 处修改」每一处的结果（按修复的序号）：只在这次打开里记着，重开后再点会按文件现状重新判断
+  const [applied, setApplied] = useState<Record<number, FixApplyResult>>({})
+  const [applying, setApplying] = useState(false)
   // 被分析的那个对话：记在 analysisOf 上；和对话无关的排查（设置页、CLI 的报错）就在这个分析对话里修
   const target = task.analysisOf && task.analysisOf !== task.id ? task.analysisOf : ''
   const selfState = target ? 'todo' : fixState(task, d.rootCause.title)
@@ -184,6 +190,36 @@ export function DiagnosisReport({
     }
   }
 
+  // 能一键应用的：有文件、有改前改后的原文，而且这次还没应用成功过
+  const pending = d.fixes.map((f, i) => i).filter((i) => fixApplicable(d.fixes[i]) && !applied[i]?.ok)
+  const canApply = d.fixes.some(fixApplicable)
+  const applyFixes = async () => {
+    if (applying) return
+    // 没有改前改后原文的也一起发：服务端逐条写明为什么不能应用，不在这里悄悄略过
+    const idx = d.fixes.map((_, i) => i).filter((i) => !applied[i]?.ok)
+    setApplying(true)
+    try {
+      const r = await api.applyFixes(
+        task.id,
+        idx.map((i) => ({ file: d.fixes[i].file, before: d.fixes[i].before, after: d.fixes[i].after })),
+      )
+      const next = { ...applied }
+      for (const x of r.results) next[idx[x.index]] = { ...x, index: idx[x.index] }
+      setApplied(next)
+      // 提示里只数按钮上说的那 N 处；只写了改法的那几条原因照样写在各自的卡片上
+      const tried = r.results.filter((x) => fixApplicable(d.fixes[idx[x.index]]))
+      const ok = tried.filter((x) => x.ok).length
+      const bad = tried.length - ok
+      if (!bad) toast.success(t('已应用 {n} 处修改', { n: ok }))
+      else if (ok) toast.warning(t('应用了 {ok} 处，{bad} 处没能应用，原因写在各条修复上', { ok, bad }))
+      else toast.error(t('一处都没能应用，原因写在各条修复上'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setApplying(false)
+    }
+  }
+
   const fixButton = (
     <Button
       className="h-[2.375rem] w-full justify-center rounded-[0.5625rem] font-semibold"
@@ -209,8 +245,26 @@ export function DiagnosisReport({
   if (tab === 'fix')
     return (
       <div className="flex flex-col gap-2.5 p-[1.125rem]">
-        {d.fixes.length ? d.fixes.map((f, i) => <FixCard key={i} f={f} />) : <Empty text={t('没有给出修复建议')} />}
-        {d.fixes.length > 0 && fixButton}
+        {d.fixes.length ? (
+          d.fixes.map((f, i) => <FixCard key={i} f={f} result={applied[i]} />)
+        ) : (
+          <Empty text={t('没有给出修复建议')} />
+        )}
+        {/* 照设计稿：修复页底部的主按钮是「应用这 N 处修改」，只在至少一处带改前改后原文时出现；
+            全部应用完以后退回「在当前对话里修」，剩下只写了改法的交给 Agent */}
+        {canApply && pending.length > 0 ? (
+          <Button
+            className="h-[2.375rem] w-full justify-center rounded-[0.5625rem] font-semibold"
+            disabled={applying}
+            title={t('把每处改前的原文在项目里原样换成改后的内容；原文找不到或不止一处的不改，并写明原因')}
+            onClick={() => void applyFixes()}
+          >
+            {applying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {t('应用这 {n} 处修改', { n: pending.length })}
+          </Button>
+        ) : (
+          d.fixes.length > 0 && fixButton
+        )}
       </div>
     )
   if (tab === 'files')
@@ -335,18 +389,34 @@ function Empty({ text }: { text: string }) {
   return <p className="px-1 py-6 text-center text-[0.8125rem] text-subtle">{text}</p>
 }
 
+/** 证据卡右上角的标签（设计稿「问题所在 / 正确口径」）：AI 在 evidence.kind 里标的角色 */
+const EVIDENCE_KIND: Record<EvidenceKind, { label: () => string; tone: string }> = {
+  problem: { label: () => t('问题所在'), tone: 'text-danger' },
+  reference: { label: () => t('正确口径'), tone: 'text-success' },
+  repro: { label: () => t('复现'), tone: 'text-warning' },
+  context: { label: () => t('旁证'), tone: 'text-subtle' },
+}
+
 function EvidenceCard({ e }: { e: DiagnosisEvidence }) {
+  const kind = e.kind && EVIDENCE_KIND[e.kind]
   return (
     <section className={cn('flex flex-col overflow-hidden', CARD)}>
-      {/* 设计稿：路径一行，下面一道细线隔开摘录；只有路径没有摘录和说明时就不画这道线 */}
-      {(e.file || e.command) && (
+      {/* 设计稿：路径一行（右端是标签），下面一道细线隔开摘录；只有路径没有摘录和说明时就不画这道线 */}
+      {(e.file || e.command || kind) && (
         <header className={cn('flex min-w-0 items-center gap-2 px-3 py-2', (e.excerpt || e.note) && 'border-b')}>
           {e.file ? (
             <FileLink file={e.file} line={e.line} className="flex-1" />
-          ) : (
+          ) : e.command ? (
             <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[0.75rem] text-muted">
               <Terminal className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{e.command}</span>
+            </span>
+          ) : (
+            <span className="flex-1" />
+          )}
+          {kind && (
+            <span data-evidence-kind={e.kind} className={cn('shrink-0 text-[0.6875rem]', kind.tone)}>
+              {kind.label()}
             </span>
           )}
         </header>
@@ -361,7 +431,7 @@ function EvidenceCard({ e }: { e: DiagnosisEvidence }) {
   )
 }
 
-function FixCard({ f }: { f: DiagnosisFix }) {
+function FixCard({ f, result }: { f: DiagnosisFix; result?: FixApplyResult }) {
   const rows = [
     ...(f.before ? f.before.split('\n').map((x) => ['del', x] as const) : []),
     ...(f.after ? f.after.split('\n').map((x) => ['add', x] as const) : []),
@@ -377,9 +447,27 @@ function FixCard({ f }: { f: DiagnosisFix }) {
         ) : (
           <span className="flex-1 text-[0.75rem] text-subtle">{t('不针对具体文件')}</span>
         )}
-        {adds > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-success">+{adds}</span>}
-        {dels > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-danger">−{dels}</span>}
+        {result?.ok ? (
+          <span data-fix-applied="" className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-success">
+            <Check className="h-3 w-3" />
+            {t('已应用')}
+          </span>
+        ) : (
+          <>
+            {adds > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-success">+{adds}</span>}
+            {dels > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-danger">−{dels}</span>}
+          </>
+        )}
       </header>
+      {result && !result.ok && (
+        <p
+          data-fix-error=""
+          className="flex items-start gap-1.5 border-b bg-danger/5 px-3 py-2 text-[0.75rem] leading-relaxed text-danger"
+        >
+          <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{t('没能应用：{error}', { error: result.error ?? '' })}</span>
+        </p>
+      )}
       <p className="px-3 py-2.5 text-[0.8125rem] leading-relaxed">{f.change}</p>
       {rows.length > 0 && (
         <div className="overflow-x-auto font-mono text-[0.75rem] leading-5 whitespace-pre">
