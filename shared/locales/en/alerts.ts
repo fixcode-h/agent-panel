@@ -74,11 +74,11 @@ export const EN_ALERTS: Record<string, string> = {
     'This step ran longer than the per-step time limit in Settings, so the panel stopped it.',
   '点「继续执行」接着做；经常超时就在设置里调大「单步时限」，或者把任务拆小。':
     'Click Continue to keep going. If it happens often, raise the per-step time limit in Settings or split the task.',
-  这一轮没有产出: 'Nothing produced this turn',
-  '模型这一轮没有返回内容，或者只说了一句「我先…」就结束了，没有动手也没有结论。':
-    'The model returned nothing this turn, or said "Let me first…" and stopped without acting or concluding.',
-  '面板会自动再推一次；仍然没有产出就换一个模型，或者把要求写得更具体。':
-    'The panel nudges it once more automatically. If nothing comes out, switch models or make the request more specific.',
+  没有收到回复: 'No reply received',
+  'CLI 报告这一轮结束了，但没有返回任何内容，也没调工具、没改文件，这条要求没有被处理。常见于网关吞了请求、带图的请求被拒。':
+    'The CLI reported the turn as finished but returned nothing, called no tools and changed no files, so the request was not handled. This usually means a gateway dropped the request or a request with an image was rejected.',
+  '重发这条消息或点「继续执行」；反复出现就换一个模型，或检查网关和 CLI 的登录状态。':
+    'Send the message again or click Continue. If it keeps happening, switch models or check the gateway and the CLI sign-in.',
   正在重试: 'Retrying',
   'Agent 向模型发的请求失败了，它正在自动重试。':
     "The agent's request to the model failed and it is retrying automatically.",
@@ -113,7 +113,6 @@ export const EN_ALERTS: Record<string, string> = {
   // 面板写进对话的警告
   'Agent 没有响应，面板重启了它': 'The agent stopped responding, so the panel restarted it',
   '已自动续接，从中断的地方继续了': 'Resumed automatically from where it stopped',
-  '已自动接一轮，继续做完了': 'Nudged once more automatically and it finished',
   '已自动重试，继续做完了': 'Retried automatically and it finished',
   '{s} 秒后有输出了，接着在处理': 'Output resumed after {s}s and it is working again',
   '{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。':
