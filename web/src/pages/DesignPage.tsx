@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { toast } from '@/lib/toast'
 import {
+  Check,
   ChevronDown,
   Clapperboard,
   Database,
@@ -17,6 +18,8 @@ import {
   Gamepad2,
   Globe,
   MessageSquare,
+  MoreHorizontal,
+  PanelLeftClose,
   Palette as PaletteIcon,
   Plus,
   Puzzle,
@@ -401,8 +404,10 @@ function Designer({ id }: { id: string }) {
   const captured = useRef(new Set<string>())
   const [, setCaptureTick] = useState(0)
   // 控件树和对话栏可以拖动调整宽度，效果区占剩下的
-  const treePane = usePaneWidth('design-tree', 300, 220, 560)
-  const chatPane = usePaneWidth('design-chat', 380, 300, 720)
+  // 检查器默认 280：左边多了一条图标栏，比设计稿（300）收一点，把宽度留给夹在中间的画板
+  const treePane = usePaneWidth('design-tree', 280, 220, 560)
+  // 对话栏在画板左边，默认 320（照设计稿）；画板夹在两栏中间，对话栏太宽会把画板挤得很窄
+  const chatPane = usePaneWidth('design-chat', 320, 280, 720)
 
   // AI 一步步改的时候，效果图和控件树显示已经收到的改动（还没存下，改完整体检查通过才存）
   const live = server?.job?.status === 'running' && server.job.phase === 'design' ? server.job.preview : undefined
@@ -797,7 +802,8 @@ function Designer({ id }: { id: string }) {
 
   if (ed.error)
     return (
-      <div className="grid flex-1 place-items-center p-8 text-center text-[0.8125rem] text-muted">
+      // 打开的设计是 splitPage，外面没有面板：出错和加载中的占位自己是一块面板
+      <div className="panel grid flex-1 place-items-center p-8 text-center text-[0.8125rem] text-muted">
         <div>
           <p>{ed.error}</p>
           <Button variant="ghost" className="mt-3" onClick={() => go({ page: 'design' })}>
@@ -806,7 +812,7 @@ function Designer({ id }: { id: string }) {
         </div>
       </div>
     )
-  if (!doc || !server || !tree) return <div className="flex-1" />
+  if (!doc || !server || !tree) return <div className="panel flex-1" />
 
   const selWidget = selected ? findWidget(tree, selected) : undefined
   const selParent = selWidget ? findParent(tree, selWidget.id) : undefined
@@ -1077,176 +1083,241 @@ function Designer({ id }: { id: string }) {
     }
   }
 
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        {project && <span className="hidden truncate text-[0.75rem] text-subtle sm:block">{project.name} /</span>}
-        <input
-          aria-label={t('设计名称')}
-          value={doc.title}
-          onChange={(e) => ed.change((d) => ({ ...d, title: e.target.value }), 'title')}
-          className="h-8 w-[min(240px,30vw)] min-w-0 rounded-md bg-transparent px-1.5 text-[0.875rem] font-medium outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-focus"
-        />
-        <SaveIndicator status={ed.save.status} error={ed.save.error} />
-        <span className="flex-1" />
-        {(conceptCount > 0 || conceptsRunning) && (
-          <Segmented
-            label={t('显示')}
-            value={view}
-            onChange={setView}
-            options={[
-              { id: 'concept', label: t('原画') },
-              { id: 'ui', label: t('界面') },
-            ]}
-            // 顶栏挤的时候别把两段折成两行，让左边的保存状态去省略
-            className="shrink-0 flex-nowrap"
-          />
-        )}
-        <StyleButton
-          value={doc.style}
-          onChange={(style) => ed.change((d) => ({ ...d, style }), 'style')}
-          prompts={project?.prompts.filter((p) => p.enabled).length ?? 0}
-          onPrompts={() => setPromptsOpen(true)}
-          designId={id}
-          kind={server.kind}
-          beforeExtract={ed.flush}
-        />
-        {project && (
-          <DesignProjectDialog open={promptsOpen} onOpenChange={setPromptsOpen} project={project} section="prompts" />
-        )}
-        <SizeButton doc={doc} onChange={(designSize) => ed.change((d) => ({ ...d, designSize }), 'size')} />
-        <VersionsButton
-          designId={id}
-          beforeSave={async () => {
-            ed.absorb(await api.saveDesign(id, doc))
-          }}
-          onRestored={(d) => {
-            ed.absorb(d)
-            setCompare(undefined)
-          }}
-          onCompare={setCompare}
-        />
-        <div className="flex items-center">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={t('撤销')}
-            title={t('撤销（Ctrl+Z）')}
-            disabled={!ed.canUndo}
-            onClick={ed.undo}
-          >
-            <Undo2 className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={t('重做')}
-            title={t('重做（Ctrl+Shift+Z）')}
-            disabled={!ed.canRedo}
-            onClick={ed.redo}
-          >
-            <Redo2 className="h-4 w-4" />
-          </Button>
-        </div>
-        <Menu>
-          <MenuTrigger asChild>
-            <Button size="sm" variant="ghost" title={t('本机 ComfyUI：工作流和网页')}>
-              <Workflow className="h-3.5 w-3.5" />
-              ComfyUI
-              <ChevronDown className="h-3 w-3 text-subtle" />
-            </Button>
-          </MenuTrigger>
-          <MenuContent align="end">
-            <MenuItem onSelect={() => go({ page: 'comfy', id: server.kind === 'web' ? 'web' : 'game' })}>
-              <Workflow className="h-4 w-4" />
-              {server.kind === 'web' ? t('网页工作流管理') : t('游戏工作流管理')}
-            </MenuItem>
-            <MenuItem onSelect={() => setComfyWeb(true)}>
-              <Globe className="h-4 w-4" />
-              {t('打开 ComfyUI 网页')}
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem onSelect={() => openSettings('local-image')}>
-              <Settings2 className="h-4 w-4" />
-              {t('本机生图设置')}
-            </MenuItem>
-          </MenuContent>
-        </Menu>
-        <ComfyWebDialog open={comfyWeb} onOpenChange={setComfyWeb} />
-        <Button
-          size="sm"
-          variant={animOpen ? 'secondary' : 'ghost'}
-          aria-pressed={animOpen}
-          title={t('动画：打开时间轴，给控件加动画和动效')}
-          onClick={() => setAnimOpen(!animOpen)}
-        >
-          <Clapperboard className="h-3.5 w-3.5" />
-          {t('动画')}
-          {(doc.animations?.length ?? 0) > 0 && (
-            <span className="text-[0.6875rem] text-subtle tabular-nums">{doc.animations!.length}</span>
-          )}
-        </Button>
-        <Menu>
-          <MenuTrigger asChild>
-            <Button size="sm" variant="secondary">
-              <Download className="h-3.5 w-3.5" />
-              {t('导出')}
-              <ChevronDown className="h-3 w-3 text-subtle" />
-            </Button>
-          </MenuTrigger>
-          <MenuContent align="end">
-            <MenuItem onSelect={() => void exportFile('zip')}>
-              <FileArchive className="h-4 w-4" />
-              {server.kind === 'web' ? t('ZIP（HTML + 图片文件）') : t('ZIP（JSON + 贴图文件）')}
-            </MenuItem>
-            <MenuItem onSelect={() => void exportFile('json')}>
-              <FileJson className="h-4 w-4" />
-              {server.kind === 'web' ? t('单个 HTML（图片内嵌）') : t('单个 JSON（贴图内嵌）')}
-            </MenuItem>
-            {server.kind === 'web' && (
-              <MenuItem onSelect={() => void exportFile('react')}>
-                <FileCode2 className="h-4 w-4" />
-                {t('React + Tailwind 组件（ZIP）')}
-              </MenuItem>
-            )}
-            {!import.meta.env.VITE_DEMO && (
-              <MenuItem
-                disabled={!project?.path}
-                onSelect={async () => {
-                  try {
-                    ed.absorb(await api.saveDesign(id, doc))
-                    const r = await api.exportDesignToProject(id)
-                    toast.success(t('已导出到 {dir}', { dir: r.dir }))
-                  } catch (e) {
-                    toast.error((e as Error).message)
-                  }
-                }}
-              >
-                <FolderDown className="h-4 w-4" />
-                {t('导出到项目目录')}
-              </MenuItem>
-            )}
-            <MenuSeparator />
-            <MenuItem danger onSelect={() => setDeleting(true)}>
-              <Trash2 className="h-4 w-4" />
-              {t('删除这个设计')}
-            </MenuItem>
-          </MenuContent>
-        </Menu>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label={chatOpen ? t('收起 AI 对话') : t('打开 AI 对话')}
-          title={chatOpen ? t('收起 AI 对话') : t('打开 AI 对话')}
-          onClick={() => setChatOpen(!chatOpen)}
-          className={cn(chatOpen && 'text-accent-text')}
-        >
-          <MessageSquare className="h-4 w-4" />
-        </Button>
-      </header>
+  // 设计名和保存状态：对话栏开着时放在对话栏的标题行（照设计稿，对话的标题就是这个设计），收起时回到画板标题行
+  const titleField = (
+    <>
+      <input
+        aria-label={t('设计名称')}
+        value={doc.title}
+        onChange={(e) => ed.change((d) => ({ ...d, title: e.target.value }), 'title')}
+        className="h-8 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-[0.8125rem] font-semibold outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-focus"
+      />
+      <SaveIndicator status={ed.save.status} error={ed.save.error} />
+    </>
+  )
 
-      <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
+  return (
+    // 对话 / 画板 / 检查器三块圆角面板并排，中间露出 8px 底色（照设计稿 Design.dc.html）；
+    // App 里把打开的设计算作 splitPage，外面不再套一整块面板
+    <div className="flex min-h-0 min-w-0 flex-1 md:gap-2">
+      {chatOpen && (
+        <aside
+          aria-label={t('AI 对话')}
+          style={{ width: chatPane.width }}
+          className="panel relative flex shrink-0 flex-col"
+        >
+          <ResizeHandle pane={chatPane} side="right" label={t('拖动调整 AI 对话的宽度')} />
+          <div className="flex h-[46px] shrink-0 items-center gap-1.5 border-b pr-2 pl-2">
+            {titleField}
+            <span className="shrink-0 text-[0.6875rem] text-subtle">{t('AI 对话')}</span>
+            {/* 收起按钮放在对话栏自己的标题行：画板标题行夹在两栏中间，位置要留给阶段条和导出 */}
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={t('收起 AI 对话')}
+              title={t('收起 AI 对话')}
+              onClick={() => setChatOpen(false)}
+              className="shrink-0"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
+          </div>
+          <DesignChat
+            messages={server.messages}
+            job={server.job}
+            source={source}
+            onSource={setSource}
+            count={count}
+            onCount={setCount}
+            onSend={send}
+            onAnalyze={analyze}
+            onStop={() => void api.stopDesign(id).then(() => ed.reload())}
+            kind={server.kind}
+            designId={id}
+            dir={project?.path}
+            onRetry={async (imageId) => {
+              try {
+                ed.absorb(await api.retryDesignImage(id, imageId, { source, count }))
+              } catch (e) {
+                toast.error((e as Error).message)
+              }
+            }}
+            annotations={doc.annotations}
+            onRemoveAnnotation={(aid) =>
+              ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => a.id !== aid) }), `ann:rm:${aid}`)
+            }
+            cites={cites}
+            onRemoveCite={(cid) => setCites((list) => list.filter((c) => c.id !== cid))}
+            onClearCites={() => setCites([])}
+            hasTemplate={!!concept.approved}
+            request={request}
+            inpaint={inpaint}
+            onInpaint={setInpaint}
+            conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}
+          />
+        </aside>
+      )}
+
+      <main className="panel flex min-w-0 flex-1 flex-col">
+        {/* 画板标题行：@container 让它窄的时候（两边面板都开着）把次要按钮上的字收起来只留图标；
+            实在放不下时横向滚动兜底，不把按钮挤成两行 */}
+        <header className="@container flex h-[46px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2 [scrollbar-width:none]">
+          {!chatOpen && (
+            <div className="flex min-w-[160px] flex-1 items-center gap-1.5">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t('打开 AI 对话')}
+                title={t('打开 AI 对话')}
+                onClick={() => setChatOpen(true)}
+                className="shrink-0"
+              >
+                <MessageSquare className="h-4 w-4" />
+              </Button>
+              {project && <span className="shrink-0 truncate text-[0.75rem] text-subtle">{project.name} /</span>}
+              {titleField}
+            </div>
+          )}
+          {(conceptCount > 0 || conceptsRunning) && (
+            <StageSteps value={view} onChange={setView} conceptDone={!!approvedConcept} />
+          )}
+          {chatOpen && <span className="flex-1" />}
+          <SizeButton doc={doc} onChange={(designSize) => ed.change((d) => ({ ...d, designSize }), 'size')} />
+          <StyleButton
+            value={doc.style}
+            onChange={(style) => ed.change((d) => ({ ...d, style }), 'style')}
+            prompts={project?.prompts.filter((p) => p.enabled).length ?? 0}
+            onPrompts={() => setPromptsOpen(true)}
+            designId={id}
+            kind={server.kind}
+            beforeExtract={ed.flush}
+          />
+          {project && (
+            <DesignProjectDialog open={promptsOpen} onOpenChange={setPromptsOpen} project={project} section="prompts" />
+          )}
+          <VersionsButton
+            designId={id}
+            beforeSave={async () => {
+              ed.absorb(await api.saveDesign(id, doc))
+            }}
+            onRestored={(d) => {
+              ed.absorb(d)
+              setCompare(undefined)
+            }}
+            onCompare={setCompare}
+          />
+          <div className="flex shrink-0 items-center">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={t('撤销')}
+              title={t('撤销（Ctrl+Z）')}
+              disabled={!ed.canUndo}
+              onClick={ed.undo}
+            >
+              <Undo2 className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={t('重做')}
+              title={t('重做（Ctrl+Shift+Z）')}
+              disabled={!ed.canRedo}
+              onClick={ed.redo}
+            >
+              <Redo2 className="h-4 w-4" />
+            </Button>
+          </div>
+          {/* 动画和本机 ComfyUI 收进一个「更多」菜单：画板夹在对话栏和检查器中间，标题行放不下一排文字按钮
+              （照设计稿，这一行只留阶段、尺寸和主操作）。动画面板自己也有关闭按钮 */}
+          <Menu>
+            <MenuTrigger asChild>
+              <Button
+                size="icon-sm"
+                variant={animOpen ? 'secondary' : 'ghost'}
+                aria-label={t('更多操作')}
+                title={t('动画、本机 ComfyUI')}
+                className="shrink-0"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => setAnimOpen(!animOpen)}>
+                <Clapperboard className="h-4 w-4" />
+                <span className="flex-1">{animOpen ? t('收起动画面板') : t('动画')}</span>
+                {(doc.animations?.length ?? 0) > 0 && (
+                  <span className="text-[0.6875rem] text-subtle tabular-nums">{doc.animations!.length}</span>
+                )}
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem onSelect={() => go({ page: 'comfy', id: server.kind === 'web' ? 'web' : 'game' })}>
+                <Workflow className="h-4 w-4" />
+                {server.kind === 'web' ? t('网页工作流管理') : t('游戏工作流管理')}
+              </MenuItem>
+              <MenuItem onSelect={() => setComfyWeb(true)}>
+                <Globe className="h-4 w-4" />
+                {t('打开 ComfyUI 网页')}
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem onSelect={() => openSettings('local-image')}>
+                <Settings2 className="h-4 w-4" />
+                {t('本机生图设置')}
+              </MenuItem>
+            </MenuContent>
+          </Menu>
+          <ComfyWebDialog open={comfyWeb} onOpenChange={setComfyWeb} />
+          <Menu>
+            <MenuTrigger asChild>
+              {/* 导出是这一页的主操作：照设计稿用前景色实底按钮，颜色取 token，深色主题下自动反过来 */}
+              <Button size="sm" className="ml-1 h-[30px] gap-1 bg-fg px-3 font-semibold text-bg">
+                <Download className="h-3.5 w-3.5" />
+                {t('导出')}
+                <ChevronDown className="h-3 w-3 opacity-70" />
+              </Button>
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => void exportFile('zip')}>
+                <FileArchive className="h-4 w-4" />
+                {server.kind === 'web' ? t('ZIP（HTML + 图片文件）') : t('ZIP（JSON + 贴图文件）')}
+              </MenuItem>
+              <MenuItem onSelect={() => void exportFile('json')}>
+                <FileJson className="h-4 w-4" />
+                {server.kind === 'web' ? t('单个 HTML（图片内嵌）') : t('单个 JSON（贴图内嵌）')}
+              </MenuItem>
+              {server.kind === 'web' && (
+                <MenuItem onSelect={() => void exportFile('react')}>
+                  <FileCode2 className="h-4 w-4" />
+                  {t('React + Tailwind 组件（ZIP）')}
+                </MenuItem>
+              )}
+              {!import.meta.env.VITE_DEMO && (
+                <MenuItem
+                  disabled={!project?.path}
+                  onSelect={async () => {
+                    try {
+                      ed.absorb(await api.saveDesign(id, doc))
+                      const r = await api.exportDesignToProject(id)
+                      toast.success(t('已导出到 {dir}', { dir: r.dir }))
+                    } catch (e) {
+                      toast.error((e as Error).message)
+                    }
+                  }}
+                >
+                  <FolderDown className="h-4 w-4" />
+                  {t('导出到项目目录')}
+                </MenuItem>
+              )}
+              <MenuSeparator />
+              <MenuItem danger onSelect={() => setDeleting(true)}>
+                <Trash2 className="h-4 w-4" />
+                {t('删除这个设计')}
+              </MenuItem>
+            </MenuContent>
+          </Menu>
+        </header>
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
             className="relative flex min-h-0 min-w-0 flex-1"
             // 12px 是切换按钮离左边的距离（left-3），再留 8px 空隙
@@ -1537,223 +1608,184 @@ function Designer({ id }: { id: string }) {
             />
           )}
         </div>
+      </main>
 
-        <aside style={{ width: treePane.width }} className="relative flex shrink-0 flex-col border-l bg-card">
-          <ResizeHandle pane={treePane} label={t('拖动调整控件树的宽度')} />
-          {/* 和对话页、右栏同一套页签条（照 Proma）：选中只画底部指示条 */}
-          <TabBar
-            label={t('检查器')}
-            className="bg-card"
-            trailing={
-              tab === 'tree' && (
-                <Palette kind={server.kind} components={doc.components.map((c) => c.Name)} onAdd={addWidget} />
-              )
-            }
-          >
-            {(['tree', 'images', 'widgets'] as const).map((k) => (
-              <TabItem key={k} fill active={tab === k} onSelect={() => setTab(k)}>
-                {k === 'tree' ? t('控件树') : k === 'images' ? t('图片 {n}', { n: doc.images.length }) : t('控件')}
-              </TabItem>
-            ))}
-          </TabBar>
-          {tab === 'tree' && (doc.components.length > 0 || target) && (
-            <div className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
-              <Puzzle className="h-3.5 w-3.5 shrink-0 text-subtle" />
-              <Select
-                aria-label={t('正在编辑')}
-                value={target}
-                onChange={(e) => {
-                  setTarget(e.target.value)
-                  setSelected('')
+      <aside
+        aria-label={t('检查器')}
+        style={{ width: treePane.width }}
+        className="panel relative flex shrink-0 flex-col bg-card"
+      >
+        <ResizeHandle pane={treePane} label={t('拖动调整控件树的宽度')} />
+        {/* 和对话页、右栏同一套页签条（照 Proma）：选中只画底部指示条 */}
+        <TabBar
+          label={t('检查器')}
+          className="bg-card"
+          trailing={
+            tab === 'tree' && (
+              <Palette kind={server.kind} components={doc.components.map((c) => c.Name)} onAdd={addWidget} />
+            )
+          }
+        >
+          {(['tree', 'images', 'widgets'] as const).map((k) => (
+            <TabItem key={k} fill active={tab === k} onSelect={() => setTab(k)}>
+              {k === 'tree' ? t('控件树') : k === 'images' ? t('图片 {n}', { n: doc.images.length }) : t('控件')}
+            </TabItem>
+          ))}
+        </TabBar>
+        {tab === 'tree' && (doc.components.length > 0 || target) && (
+          <div className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
+            <Puzzle className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            <Select
+              aria-label={t('正在编辑')}
+              value={target}
+              onChange={(e) => {
+                setTarget(e.target.value)
+                setSelected('')
+              }}
+              options={[
+                { value: '', label: t('主界面') },
+                ...doc.components.map((c) => ({ value: c.Name, label: c.Name, group: t('子控件') })),
+              ]}
+              className="h-7 rounded-md px-2 text-[0.75rem]"
+            />
+            {target && (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t('删除这个子控件')}
+                title={t('删除这个子控件')}
+                onClick={() => {
+                  ed.change((d) => ({ ...d, components: d.components.filter((c) => c.Name !== target) }))
+                  setTarget('')
                 }}
-                options={[
-                  { value: '', label: t('主界面') },
-                  ...doc.components.map((c) => ({ value: c.Name, label: c.Name, group: t('子控件') })),
-                ]}
-                className="h-7 rounded-md px-2 text-[0.75rem]"
-              />
-              {target && (
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={t('删除这个子控件')}
-                  title={t('删除这个子控件')}
-                  onClick={() => {
-                    ed.change((d) => ({ ...d, components: d.components.filter((c) => c.Name !== target) }))
-                    setTarget('')
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        )}
+        <div className="min-h-[120px] flex-1 overflow-y-auto">
+          {tab === 'tree' ? (
+            <>
+              {live && (
+                <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-[0.6875rem] text-accent-text">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t('AI 正在修改，已经改了 {n} 处', { n: live.applied })}
+                </p>
               )}
-            </div>
-          )}
-          <div className="min-h-[120px] flex-1 overflow-y-auto">
-            {tab === 'tree' ? (
-              <>
-                {live && (
-                  <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-[0.6875rem] text-accent-text">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    {t('AI 正在修改，已经改了 {n} 处', { n: live.applied })}
-                  </p>
-                )}
-                <Hierarchy
-                  root={shownTree ?? tree}
-                  selected={selected}
-                  actions={actions}
-                  extra={extra.filter((x) => x !== selected)}
-                  onPick={pick}
-                  renameRequest={renameRequest}
-                />
-              </>
-            ) : tab === 'widgets' ? (
-              <ComponentsPanel
-                projectId={server.projectId}
-                designId={id}
-                kind={server.kind}
-                own={doc.components.map((c) => c.Name)}
-                onOpen={(name) => {
-                  setTarget(name)
-                  setSelected('')
-                  setTab('tree')
-                }}
-                onImport={async (from, name) => {
-                  try {
-                    // 先保存本地的修改，服务端在保存的内容上加
-                    ed.absorb(await api.saveDesign(id, doc))
-                    ed.absorb(await api.importComponent(id, { from, name }))
-                    toast.success(t('已把 {name} 加进这个设计', { name }))
-                  } catch (e) {
-                    toast.error((e as Error).message)
-                  }
-                }}
+              <Hierarchy
+                root={shownTree ?? tree}
+                selected={selected}
+                actions={actions}
+                extra={extra.filter((x) => x !== selected)}
+                onPick={pick}
+                renameRequest={renameRequest}
               />
-            ) : (
-              <ImagesPanel
-                images={doc.images}
-                url={imageUrl}
-                selected={imageSel}
-                onSelect={setImageSel}
-                onUpload={(f) => void upload(f)}
-                onPreview={setPreview}
-                onDragImage={setDragImage}
-                usedIds={used}
-                canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
-                onGenerateAll={async (ids) => {
-                  try {
-                    ed.absorb(await api.saveDesign(id, doc))
-                    ed.absorb(await api.generateDesignImages(id, { ids, source, count }))
-                  } catch (e) {
-                    toast.error((e as Error).message)
-                  }
-                }}
-              />
-            )}
-          </div>
-          <div className={cn('min-h-[160px] flex-[1.3] overflow-y-auto border-t', tab === 'widgets' && 'hidden')}>
-            {tab === 'tree' && selWidget ? (
-              <Details
-                key={selWidget.id}
-                device={server.kind === 'web' ? device : 'desktop'}
-                widget={selWidget}
-                parent={selParent}
-                slotType={selParent ? WIDGETS[selParent.Type].slot : undefined}
-                parentSize={() => {
-                  const el =
-                    selParent && document.querySelector<HTMLElement>(`[data-wid="${CSS.escape(selParent.id)}"]`)
-                  return { w: el?.offsetWidth ?? designSize.X, h: el?.offsetHeight ?? designSize.Y }
-                }}
-                images={doc.images}
-                url={imageUrl}
-                components={doc.components.map((c) => c.Name)}
-                anim={curAnim}
-                animTime={animTime}
-                onKey={pinKey}
-                onChange={(w, key) => editTree((r) => mapWidget(r, w.id, () => w), key)}
-              />
-            ) : tab === 'images' && selImage ? (
-              <ImageDetails
-                key={selImage.id}
-                image={selImage}
-                url={fileUrl}
-                onChange={setImage}
-                onGenerate={() => void generate(selImage)}
-                onUpload={(f) => void upload([f], selImage.id)}
-                onDelete={() => {
-                  ed.change((d) => ({ ...d, images: d.images.filter((i) => i.id !== selImage.id) }))
-                  setImageSel('')
-                }}
-                // 正在生成别的图时也能点：排进这一轮的队列；AI 还在改设计时不行
-                canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
-                sourceLabel={sourceLabel}
-                marks={doc.annotations.filter((a) => a.target === imgTarget(selImage.id))}
-                onPreview={() => setPreview(selImage.id)}
-                users={imageUsers(trees, selImage.id)}
-                candidates={imageSlots}
-                onJump={jumpTo}
-                onAssign={(w) => {
-                  ed.change(
-                    (d) =>
-                      setTree(
-                        d,
-                        w.target,
-                        mapWidget(treeOf(d, w.target)!, w.id, (x) => assignImage(x, selImage)),
-                      ),
-                    `assign:${selImage.id}`,
-                  )
-                  jumpTo(w)
-                }}
-              />
-            ) : (
-              <p className="px-4 py-6 text-center text-[0.75rem] leading-relaxed text-subtle">
-                {tab === 'tree' ? t('选中一个控件查看和修改它的属性') : t('选中一张图片查看它的每一版和生成设置')}
-              </p>
-            )}
-          </div>
-        </aside>
-
-        {chatOpen && (
-          <aside style={{ width: chatPane.width }} className="relative flex shrink-0 flex-col border-l bg-bg">
-            <ResizeHandle pane={chatPane} label={t('拖动调整 AI 对话的宽度')} />
-            <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4 text-[0.75rem] font-medium text-muted">
-              <span className="shrink-0">{t('AI 对话')}</span>
-            </div>
-            <DesignChat
-              messages={server.messages}
-              job={server.job}
-              source={source}
-              onSource={setSource}
-              count={count}
-              onCount={setCount}
-              onSend={send}
-              onAnalyze={analyze}
-              onStop={() => void api.stopDesign(id).then(() => ed.reload())}
-              kind={server.kind}
+            </>
+          ) : tab === 'widgets' ? (
+            <ComponentsPanel
+              projectId={server.projectId}
               designId={id}
-              dir={project?.path}
-              onRetry={async (imageId) => {
+              kind={server.kind}
+              own={doc.components.map((c) => c.Name)}
+              onOpen={(name) => {
+                setTarget(name)
+                setSelected('')
+                setTab('tree')
+              }}
+              onImport={async (from, name) => {
                 try {
-                  ed.absorb(await api.retryDesignImage(id, imageId, { source, count }))
+                  // 先保存本地的修改，服务端在保存的内容上加
+                  ed.absorb(await api.saveDesign(id, doc))
+                  ed.absorb(await api.importComponent(id, { from, name }))
+                  toast.success(t('已把 {name} 加进这个设计', { name }))
                 } catch (e) {
                   toast.error((e as Error).message)
                 }
               }}
-              annotations={doc.annotations}
-              onRemoveAnnotation={(aid) =>
-                ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => a.id !== aid) }), `ann:rm:${aid}`)
-              }
-              cites={cites}
-              onRemoveCite={(cid) => setCites((list) => list.filter((c) => c.id !== cid))}
-              onClearCites={() => setCites([])}
-              hasTemplate={!!concept.approved}
-              request={request}
-              inpaint={inpaint}
-              onInpaint={setInpaint}
-              conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}
             />
-          </aside>
-        )}
-      </div>
+          ) : (
+            <ImagesPanel
+              images={doc.images}
+              url={imageUrl}
+              selected={imageSel}
+              onSelect={setImageSel}
+              onUpload={(f) => void upload(f)}
+              onPreview={setPreview}
+              onDragImage={setDragImage}
+              usedIds={used}
+              canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
+              onGenerateAll={async (ids) => {
+                try {
+                  ed.absorb(await api.saveDesign(id, doc))
+                  ed.absorb(await api.generateDesignImages(id, { ids, source, count }))
+                } catch (e) {
+                  toast.error((e as Error).message)
+                }
+              }}
+            />
+          )}
+        </div>
+        <div className={cn('min-h-[160px] flex-[1.3] overflow-y-auto border-t', tab === 'widgets' && 'hidden')}>
+          {tab === 'tree' && selWidget ? (
+            <Details
+              key={selWidget.id}
+              device={server.kind === 'web' ? device : 'desktop'}
+              widget={selWidget}
+              parent={selParent}
+              slotType={selParent ? WIDGETS[selParent.Type].slot : undefined}
+              parentSize={() => {
+                const el = selParent && document.querySelector<HTMLElement>(`[data-wid="${CSS.escape(selParent.id)}"]`)
+                return { w: el?.offsetWidth ?? designSize.X, h: el?.offsetHeight ?? designSize.Y }
+              }}
+              images={doc.images}
+              url={imageUrl}
+              components={doc.components.map((c) => c.Name)}
+              anim={curAnim}
+              animTime={animTime}
+              onKey={pinKey}
+              onChange={(w, key) => editTree((r) => mapWidget(r, w.id, () => w), key)}
+            />
+          ) : tab === 'images' && selImage ? (
+            <ImageDetails
+              key={selImage.id}
+              image={selImage}
+              url={fileUrl}
+              onChange={setImage}
+              onGenerate={() => void generate(selImage)}
+              onUpload={(f) => void upload([f], selImage.id)}
+              onDelete={() => {
+                ed.change((d) => ({ ...d, images: d.images.filter((i) => i.id !== selImage.id) }))
+                setImageSel('')
+              }}
+              // 正在生成别的图时也能点：排进这一轮的队列；AI 还在改设计时不行
+              canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
+              sourceLabel={sourceLabel}
+              marks={doc.annotations.filter((a) => a.target === imgTarget(selImage.id))}
+              onPreview={() => setPreview(selImage.id)}
+              users={imageUsers(trees, selImage.id)}
+              candidates={imageSlots}
+              onJump={jumpTo}
+              onAssign={(w) => {
+                ed.change(
+                  (d) =>
+                    setTree(
+                      d,
+                      w.target,
+                      mapWidget(treeOf(d, w.target)!, w.id, (x) => assignImage(x, selImage)),
+                    ),
+                  `assign:${selImage.id}`,
+                )
+                jumpTo(w)
+              }}
+            />
+          ) : (
+            <p className="px-4 py-6 text-center text-[0.75rem] leading-relaxed text-subtle">
+              {tab === 'tree' ? t('选中一个控件查看和修改它的属性') : t('选中一张图片查看它的每一版和生成设置')}
+            </p>
+          )}
+        </div>
+      </aside>
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
@@ -1762,6 +1794,72 @@ function Designer({ id }: { id: string }) {
         onConfirm={() => void removeDesign()}
       />
     </div>
+  )
+}
+
+/**
+ * 画板标题行左边的阶段条（照设计稿）：原画 → 界面两步，带序号圆点和连线。
+ * 只是「显示原画还是界面」的切换，步骤顺序不强制：任何时候都能点回原画；
+ * 确认了模板、停在界面时原画那一步打勾
+ */
+function StageSteps({
+  value,
+  onChange,
+  conceptDone,
+}: {
+  value: 'concept' | 'ui'
+  onChange: (v: 'concept' | 'ui') => void
+  conceptDone: boolean
+}) {
+  const steps = [
+    { id: 'concept' as const, label: t('原画') },
+    { id: 'ui' as const, label: t('界面') },
+  ]
+  const cur = steps.findIndex((s) => s.id === value)
+  return (
+    <nav aria-label={t('阶段')} className="flex shrink-0 items-center gap-0.5">
+      {steps.map((s, i) => {
+        const on = i === cur
+        const done = i < cur && conceptDone
+        return (
+          <div key={s.id} className="flex items-center gap-0.5">
+            {i > 0 && (
+              <span
+                aria-hidden
+                className={cn('h-[1.5px] w-3.5', i <= cur && conceptDone ? 'bg-success' : 'bg-line-strong')}
+              />
+            )}
+            <button
+              type="button"
+              aria-current={on ? 'step' : undefined}
+              onClick={() => onChange(s.id)}
+              className={cn(
+                'flex h-8 cursor-pointer items-center gap-[7px] rounded-[9px] px-2.5 text-[0.8125rem] font-semibold whitespace-nowrap transition-colors',
+                // 当前这一步：比面板低一档的底色 + 一点内阴影，像按下去的样子
+                on
+                  ? 'bg-panel text-fg shadow-[inset_0_1px_2px_rgb(0_0_0/0.08)]'
+                  : cn('hover:bg-sel', done ? 'text-fg' : 'text-subtle'),
+              )}
+            >
+              <span
+                className={cn(
+                  // 标题行窄的时候（@container）圆点先让位，只留步骤名
+                  'hidden h-5 w-5 shrink-0 place-items-center rounded-full text-[0.6875rem] tabular-nums @min-[600px]:grid',
+                  done
+                    ? 'bg-success text-on-primary'
+                    : on
+                      ? 'bg-fg text-bg'
+                      : 'text-subtle shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
+                )}
+              >
+                {done ? <Check className="h-3 w-3" strokeWidth={2.6} /> : i + 1}
+              </span>
+              {s.label}
+            </button>
+          </div>
+        )
+      })}
+    </nav>
   )
 }
 
@@ -1854,11 +1952,13 @@ function StyleButton({
         <Button
           variant="ghost"
           size="sm"
+          aria-label={t('美术风格')}
           className="max-w-[220px] px-2 text-[0.75rem] font-normal"
           title={value || t('美术风格')}
         >
           <PaletteIcon className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">
+          {/* 画板标题行窄的时候（@container，两边面板都开着）只留图标，风格内容在悬停提示里 */}
+          <span className="hidden truncate @min-[640px]:inline">
             {value || (prompts ? t('项目风格 · {n} 条', { n: prompts }) : t('美术风格'))}
           </span>
         </Button>

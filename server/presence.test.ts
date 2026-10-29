@@ -19,6 +19,7 @@ const {
   setPresenceReclaimPolicy,
   setPresenceUnreadKeeper,
   setViewer,
+  touchPresence,
 } = await import('./presence.ts')
 
 // 上限默认 8，这里的用例自己设定；未读宽限默认 30 分钟，用例里调小
@@ -420,5 +421,28 @@ test('保活上限只放过前台开着的页面：切走后宽限期里 hasView
   setViewer(id, 'tab-b', false)
   assert.equal(hasViewer(id), true, '宽限期里回来还能接着说')
   assert.equal(isViewing(id), false, '但已经不在看了，超过保活上限时可以收掉')
+  forgetPresence(id)
+})
+
+test('菜单「激活 Agent」：过了宽限的对话重新算有人看，再过一整段宽限照常回收', async () => {
+  const id = 'presence-touch'
+  let idle = 0
+  setPresenceIdleHandler((taskId) => {
+    if (taskId === id) idle++
+  })
+  setPresenceUnreadKeeper(() => false)
+  setViewer(id, 'tab-a', true)
+  setViewer(id, 'tab-a', false)
+  await wait(60)
+  assert.equal(hasViewer(id), false, '页面切走、过了宽限')
+  assert.equal(idle, 1)
+
+  // 从侧栏点激活：不然拉起的 CLI 一停到等下一句就会退出
+  touchPresence(id)
+  assert.equal(hasViewer(id), true)
+  assert.equal(isWatched(id), true)
+  await wait(60)
+  assert.equal(hasViewer(id), false, '激活后仍然没人打开：宽限到了照常回收')
+  assert.equal(idle, 2)
   forgetPresence(id)
 })

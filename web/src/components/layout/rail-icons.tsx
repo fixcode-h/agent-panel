@@ -80,7 +80,7 @@ export const WorkflowIcon = icon(
 )
 
 const STAR = 'M11 5.5c.6 4.7 2.3 6.5 7.5 7.5-5.2 1-6.9 2.8-7.5 7.5-.6-4.7-2.3-6.5-7.5-7.5 5.2-1 6.9-2.8 7.5-7.5z'
-/** Skills 与命令：一大一小两颗星 */
+/** Skills：一大一小两颗星 */
 export const SkillIcon = icon(
   <path d={STAR} />,
   <>
@@ -114,5 +114,16 @@ export const HomeIcon = icon(
   <>
     <path d="M4 10.5 12 4l8 6.5V17a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 4 17z" />
     <path d="M10 20.5v-4.25a2 2 0 0 1 4 0v4.25" />
+  </>,
+)
+
+/** ComfyUI 工作流：上面两个节点汇到下面一个（照设计稿 ComfyUI 画板） */
+export const ComfyIcon = icon(
+  <rect x="8.5" y="14" width="7" height="6.5" rx="2.25" />,
+  <>
+    <rect x="2.5" y="3.5" width="7" height="6.5" rx="2.25" />
+    <rect x="14.5" y="3.5" width="7" height="6.5" rx="2.25" />
+    <rect x="8.5" y="14" width="7" height="6.5" rx="2.25" />
+    <path d="M6 10v1.5a2.5 2.5 0 0 0 2.5 2.5M18 10v1.5a2.5 2.5 0 0 1-2.5 2.5" />
   </>,
 )

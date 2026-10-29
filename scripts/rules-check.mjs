@@ -69,10 +69,18 @@ for (const f of docs) {
 }
 
 // 3. 教训分片
+// 分片按功能模块拆，拆出来的 paths 必须比原来窄：paths 一模一样的两个分片改同一个文件时照样都要读，
+// 等于只换了文件名、把 6 KB 的上限绕过去了（见 docs/lessons/README.md「怎么让它不越积越多」）
+const shardsByPaths = new Map()
 for (const s of readShards()) {
   const f = `docs/lessons/${s.name}`
   if (!s.globs.length) errors.push(`${f} 开头缺少 paths`)
-  if (Buffer.byteLength(s.text) > 6144) errors.push(`${f} 超过 6 KB，合并同类项或把能检查的改成检查`)
+  if (Buffer.byteLength(s.text) > 6144)
+    errors.push(`${f} 超过 6 KB，把只和某个模块有关的几条拆进 paths 更窄的分片；拆不动再合并同类项或改成检查`)
+  const key = [...new Set(s.globs)].sort().join(', ')
+  if (key && shardsByPaths.has(key))
+    errors.push(`${f} 的 paths 和 docs/lessons/${shardsByPaths.get(key)} 完全一样：拆分片要收窄 paths，否则合成一个`)
+  else shardsByPaths.set(key, s.name)
   for (const g of s.globs) {
     const re = globToRegExp(g)
     if (!files.some((x) => re.test(x))) errors.push(`${f} 的 paths 里 ${g} 一个文件都没命中`)
@@ -182,7 +190,7 @@ if (nulFiles.length)
   )
 
 // 5. 附件的两个路径：记进对话的用上传目录的原路径，拷进任务目录的 placed 只给 CLI
-// （见 docs/lessons/data.md「附件有两个路径」）
+// （见 docs/lessons/attachments.md「附件落盘」）
 for (const f of files) {
   if (!/^server\/.+\.ts$/.test(f) || /\.test\.ts$/.test(f)) continue
   if (/attachments:\s*placed\b/.test(read(f)))
@@ -201,7 +209,7 @@ for (const f of files) {
     })
 }
 
-// 6b. 界面不用细字重：主次靠颜色和字号分（见 docs/lessons/ui.md「视觉：边界靠底色分，字不能细」）
+// 6b. 界面不用细字重：主次靠颜色和字号分（见 docs/lessons/visual.md「边界靠底色分，字不能细」）
 for (const f of files) {
   if (!/^web\/src\/.+\.(tsx|css)$/.test(f)) continue
   read(f)
@@ -240,7 +248,7 @@ errors.push(...checkBugIndexesInRoot(root))
 
 // 9. 共享仓库的 config 里不能有 core.worktree：在 WSL 里带 GIT_DIR/GIT_WORK_TREE 跑 lint 或测试时，
 // 测试里的 git init 会把它们写进共享 config（core.worktree = /mnt/...），
-// 之后主目录所有 git 命令都报 `fatal: Invalid path '/mnt'`，HEAD 也可能变成分离状态（见 docs/lessons/testing.md）
+// 之后主目录所有 git 命令都报 `fatal: Invalid path '/mnt'`，HEAD 也可能变成分离状态（见 docs/lessons/e2e.md）
 {
   // worktree 的 .git 文件里是 Windows 路径（E:/...），在 WSL 里要换成 /mnt/e/... 才找得到；
   // 解析不出来时报错，不要静默跳过——WSL 正是会写坏 config 的那个环境
@@ -307,7 +315,7 @@ errors.push(...checkBugIndexesInRoot(root))
 }
 
 // 11. 界面检查用例必须写在 runShard 的回调里：runShard 在回调结束后直接 process.exit(0/1)，
-// 写在回调之后的代码永远不执行，分片却照样报「通过」，用例等于没加（见 docs/lessons/ui.md）
+// 写在回调之后的代码永远不执行，分片却照样报「通过」，用例等于没加（这条教训已经整条改成下面的检查）
 for (const f of files) {
   if (!/^scripts\/ui\/.+\.mjs$/.test(f) || f.endsWith('harness.mjs')) continue
   const src = read(f)

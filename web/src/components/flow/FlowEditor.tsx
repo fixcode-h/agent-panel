@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react'
 import { toast } from '@/lib/toast'
 import {
+  Activity,
   Bot,
   ChevronRight,
   Crown,
+  FileText,
+  FolderOpen,
   Hand,
   LayoutGrid,
   ListChecks,
@@ -15,11 +18,14 @@ import {
   Play,
   Plus,
   Redo2,
+  RotateCcw,
   Sparkles,
+  Spline,
   Trash2,
   TriangleAlert,
   Undo2,
   Workflow as WorkflowIcon,
+  X,
 } from 'lucide-react'
 import type { Agent, Flow, FlowNode, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -35,7 +41,7 @@ import {
   newFlow,
   newNode,
 } from '@shared/flow'
-import { useData } from '@/lib/data'
+import { useData, useNav } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
 import { isReady, type Check } from '@/lib/readiness'
 import type { SaveStatus } from '@/lib/useAutosave'
@@ -46,12 +52,16 @@ import { Select } from '@/components/ui/input'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { Menu, MenuContent, MenuItem, MenuTrigger, menuItem } from '@/components/ui/menu'
 import { SaveIndicator } from '@/components/layout/Detail'
-import { RunInProjectDialog } from '@/components/workflows/RunInProjectDialog'
+import { RunInProjectDialog, lastProject, useRerun } from '@/components/workflows/RunInProjectDialog'
+import { DocEditor } from '@/components/workflows/DocEditor'
+import { docTemplate } from '@/lib/workflow-doc'
+import { Spinner } from '@/components/ui/status-pill'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FlowCanvas, smartFit } from './FlowCanvas'
 import { nodeViews, parseRef, refOptions } from './views'
 import { FlowInspector, Label, NodeInspector, type Team, type W } from './Inspector'
 import { useFlowHistory } from './history'
+import { RunProgress, useFlowRuns } from './RunProgress'
 
 type EditorProps = {
   w: W
@@ -65,11 +75,18 @@ type EditorProps = {
   prepare?: () => Promise<void>
 }
 
-/** 浮动工具条里的图标按钮：和画布上其他浮动面板同一套尺寸 */
-const toolBtn = 'h-8 w-8'
+/** 左上浮动面板里的图标按钮（撤销 / 重做）：30px，和 40px 高的面板留出上下边距（照设计稿） */
+const barBtn = 'h-[30px] w-[30px] rounded-[7px]'
+/** 底部画布工具条的图标按钮：36px、圆角 9px，图标 17px（照设计稿） */
+const toolBtn = 'h-9 w-9 rounded-[9px] [&_svg]:h-[17px] [&_svg]:w-[17px]'
+/** 属性栏顶部页签：选中的页签是和下面内容连成一体的白卡（照设计稿），其余只是灰字 */
+const tabOn =
+  'rounded-t-lg bg-card font-medium text-fg shadow-[0_0_0_1px_var(--line)] [clip-path:inset(-1px_-1px_0_-1px)]'
+const tabOff = 'rounded-t-lg text-subtle hover:text-fg'
 
 function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps) {
-  const { agents, workflows } = useData()
+  const { agents, workflows, projects } = useData()
+  const { go } = useNav()
   const { modelOf } = useAgentView()
   const [flowId, setFlowId] = useState(() => entryFlow(w).id)
   const [selected, setSelected] = useState('')
@@ -77,9 +94,20 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
   const [inspector, setInspector] = useState(true)
   // 属性栏可以拖宽：节点的字段和说明比较长，默认比原来的 320 宽一些；拖动时至少给画布留 480
   const pane = usePaneWidth('flow-inspector', 380, 280, () => Math.min(720, Math.max(280, window.innerWidth - 480)))
+  // 属性栏顶部的页签（照设计稿）：当前编辑的对象、工作流说明、运行进度。选中画布上的东西时回到第一页
+  const [tab, setTab] = useState<'object' | 'doc' | 'progress'>('object')
   useEffect(() => {
+    if (selected) setTab('object')
     if (selected && selected !== START && selected !== END) setInspector(true)
   }, [selected])
+  // 底部工具条选的项目：「运行中」「重新运行」和运行进度都看这个项目；默认上次新建任务用的项目，没有就第一个。
+  // 项目列表变了（删掉了选中的）时退回默认
+  const [pickedProject, setProject] = useState(lastProject)
+  const projectId = projects.some((p) => p.id === pickedProject) ? pickedProject : (projects[0]?.id ?? '')
+  const project = projects.find((p) => p.id === projectId)
+  const runs = useFlowRuns(w.id, projectId)
+  const { rerun, busy: rerunning } = useRerun(w.id, prepare)
+  const openTask = (tk: { projectId: string; id: string }) => go({ page: 'projects', id: tk.projectId, sub: tk.id })
   // 全屏编辑：画布占满窗口
   const [full, setFull] = useState(false)
   useEffect(() => {
@@ -146,6 +174,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
   // 就绪检查在属性栏「流程」那一页的最下面：回到那一页、展开属性栏，再滚过去
   const showChecks = () => {
     setSelected('')
+    setTab('object')
     setInspector(true)
     setTimeout(
       () => document.querySelector('[data-flow-readiness]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
@@ -215,9 +244,13 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
     id === START ? t('开始') : id === END ? t('结束') : flow.nodes.find((n) => n.id === id)?.title || t('未命名节点')
 
   return (
-    <div className={cn('flex min-h-0 flex-1 flex-col lg:flex-row', full && 'fixed inset-0 z-30 bg-bg')}>
+    // 照设计稿：画布和属性栏是并排的两张圆角卡片，四周和中间留 8px 缝，露出页面底色
+    <div className={cn('flex min-h-0 flex-1 flex-col gap-2 p-2 lg:flex-row', full && 'fixed inset-0 z-30 bg-bg')}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={box} className="@container relative flex h-[520px] min-h-0 bg-panel lg:h-auto lg:flex-1">
+        <div
+          ref={box}
+          className="@container relative flex h-[520px] min-h-0 overflow-hidden rounded-xl border border-line bg-panel lg:h-auto lg:flex-1"
+        >
           <FlowCanvas
             key={flow.id}
             flow={flow}
@@ -260,7 +293,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                   icon={Undo2}
                   size="sm"
                   label={t('撤销')}
-                  className={toolBtn}
+                  className={barBtn}
                   disabled={!hist.canUndo}
                   onClick={() => step('undo')}
                   title={t('撤销（Ctrl+Z）')}
@@ -269,7 +302,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                   icon={Redo2}
                   size="sm"
                   label={t('重做')}
-                  className={toolBtn}
+                  className={barBtn}
                   disabled={!hist.canRedo}
                   onClick={() => step('redo')}
                   title={t('重做（Ctrl+Shift+Z）')}
@@ -328,7 +361,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
           <div
             role="toolbar"
             aria-label={t('画布工具')}
-            className="absolute bottom-3 left-16 z-10 flex h-11 items-center @3xl:left-1/2 @3xl:-translate-x-1/2 gap-0.5 rounded-[12px] bg-card px-1.5 shadow-pop md:bottom-4"
+            className="absolute bottom-3 left-16 z-10 flex h-12 items-center gap-1 rounded-[14px] bg-card px-2 shadow-pop md:bottom-4 @3xl:left-1/2 @3xl:-translate-x-1/2"
           >
             <IconButton
               icon={Hand}
@@ -403,13 +436,52 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
             <span aria-hidden className="mx-1 h-5 w-px bg-line" />
             <Button
               size="icon-sm"
-              className="h-8 w-9"
+              className="h-9 w-10 rounded-[9px]"
               onClick={() => setRunning(true)}
               aria-label={t('运行')}
               title={t('在项目里运行')}
             >
               <Play className="h-3.5 w-3.5" fill="currentColor" />
             </Button>
+            {/* 重新运行：照所选项目里上次那次执行的任务描述和开关再跑一次；没跑过就不显示 */}
+            {runs.last && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(toolBtn, 'border border-line')}
+                disabled={rerunning}
+                onClick={() => runs.last && void rerun(runs.last)}
+                aria-label={t('重新运行')}
+                title={t('用上次的任务描述再运行一次：{title}', { title: runs.last.title })}
+              >
+                {rerunning ? <Spinner className="h-3.5 w-3.5" /> : <RotateCcw className="h-4 w-4" />}
+              </Button>
+            )}
+            {/* 在哪个项目里运行：画布窄时收起，运行弹窗里仍能选 */}
+            {projects.length > 0 && (
+              <div className="ml-1 hidden min-w-0 items-center @xl:flex">
+                <Select
+                  size="sm"
+                  aria-label={t('在哪个项目里运行')}
+                  title={t('在哪个项目里运行')}
+                  value={projectId}
+                  onChange={(e) => setProject(e.target.value)}
+                  options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                  className="h-9 w-[130px] rounded-[9px]"
+                />
+              </div>
+            )}
+            {runs.running.length > 0 && (
+              <button
+                type="button"
+                onClick={() => openTask(runs.running[0])}
+                title={t('打开正在运行的执行：{title}', { title: runs.running[0].title })}
+                className="ml-1 inline-flex h-[26px] shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-run/30 bg-run-soft px-2.5 text-[0.75rem] font-medium whitespace-nowrap text-run hover:border-run/60"
+              >
+                <Spinner className="h-2 w-2 border-[1.5px]" />
+                {runs.running.length > 1 ? t('运行中 {n}', { n: runs.running.length }) : t('运行中')}
+              </button>
+            )}
           </div>
           {drop && (
             <div className="absolute inset-0 z-20" onPointerDown={() => setDrop(null)}>
@@ -514,89 +586,191 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
       <aside
         aria-label={t('属性')}
         style={{ '--flow-inspector-w': `${pane.width}px` } as React.CSSProperties}
-        className={cn(
-          'relative shrink-0 overflow-y-auto border-t bg-bg lg:flex lg:flex-col lg:overflow-hidden lg:w-[var(--flow-inspector-w)] lg:border-t-0 lg:border-l',
-          !inspector && 'lg:hidden',
-        )}
+        className={cn('relative flex shrink-0 flex-col lg:w-[var(--flow-inspector-w)]', !inspector && 'lg:hidden')}
       >
+        {/* 拖动条落在画布和属性栏之间的缝里；卡片的圆角裁切放在里面一层，拖动条不会被裁掉 */}
         <ResizeHandle pane={pane} label={t('拖动调整属性栏的宽度')} className="hidden lg:block" />
-        <div className="min-h-0 lg:flex-1 lg:overflow-y-auto">
-          {node ? (
-            <NodeInspector
-              key={`${node.id}:${rev}`}
-              w={w}
-              flow={flow}
-              node={node}
-              main={main}
-              team={team}
-              setFlow={(f) => setFlow(f, typing(node.id))}
-              onSelect={setSelected}
-            />
-          ) : selEdge ? (
-            <div className="flex flex-col gap-4 p-5">
-              <h3 className="font-serif text-[1.0625rem] font-semibold">{t('连线')}</h3>
-              <p className="text-[0.8125rem] leading-relaxed text-muted">
-                {t('「{from}」完成后才会开始「{to}」。', { from: name(selEdge.from), to: name(selEdge.to) })}
-              </p>
-              {selEdge.from !== START && flow.nodes.find((n) => n.id === selEdge.from)?.kind === 'agent' && (
-                <div className="flex flex-col gap-1.5">
-                  <Label
-                    hint={t(
-                      '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。',
-                      { from: name(selEdge.from) },
-                    )}
-                  >
-                    {t('条件')}
-                  </Label>
-                  <Select
-                    aria-label={t('条件')}
-                    value={selEdge.when ?? ''}
-                    onChange={(e) =>
-                      setFlow({
-                        ...flow,
-                        edges: flow.edges.map((x) =>
-                          x.id === selEdge.id ? { ...x, when: e.target.value as 'pass' | 'fail' | '' } : x,
-                        ),
-                      })
-                    }
-                    options={[
-                      { value: '', label: t('总是') },
-                      { value: 'pass', label: t('结论是「通过」时') },
-                      { value: 'fail', label: t('结论是「不通过」时') },
-                    ]}
-                  />
-                </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-card">
+          {/* 顶部页签条（照设计稿）：当前编辑的对象写在页签上，叉号收起属性栏 */}
+          <div
+            role="tablist"
+            aria-label={t('属性栏页签')}
+            className="flex h-10 shrink-0 items-end gap-0.5 border-b border-line bg-bg px-1.5"
+          >
+            <div
+              role="tab"
+              aria-selected={tab === 'object'}
+              tabIndex={0}
+              onClick={() => setTab('object')}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setTab('object')}
+              className={cn(
+                'flex h-[34px] max-w-full min-w-0 cursor-pointer items-center gap-1.5 pr-1 pl-2.5 text-[0.78125rem]',
+                tab === 'object' ? tabOn : tabOff,
               )}
-              <Button
-                variant="danger-outline"
-                className="self-start"
-                onClick={() => {
-                  setFlow({ ...flow, edges: flow.edges.filter((e) => e.id !== selEdge.id) })
-                  setSelected('')
+            >
+              {node ? (
+                <Bot className="h-3.5 w-3.5 shrink-0 text-subtle" aria-hidden />
+              ) : selEdge ? (
+                <Spline className="h-3.5 w-3.5 shrink-0 text-subtle" aria-hidden />
+              ) : (
+                <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-subtle" aria-hidden />
+              )}
+              <span className="min-w-0 truncate">
+                {node
+                  ? t('节点 · {name}', { name: node.title || t('未命名节点') })
+                  : selEdge
+                    ? t('连线')
+                    : selected === END
+                      ? t('结束')
+                      : t('流程 · {name}', { name: flowLabel(flow, w) })}
+              </span>
+              <IconButton
+                icon={X}
+                size="2xs"
+                label={t('收起属性栏')}
+                className="hidden lg:grid"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setInspector(false)
+                  fit()
                 }}
-              >
-                <Trash2 className="h-4 w-4" />
-                {t('删除连线')}
-              </Button>
+              />
             </div>
-          ) : (
-            <FlowInspector
-              key={rev}
-              w={w}
-              flow={flow}
-              atEnd={selected === END}
-              checks={checks}
-              setFlow={(f) => setFlow(f, typing(`flow:${f.id}`))}
-              patch={change}
-              onSwitchFlow={switchFlow}
-            />
-          )}
+            <button
+              role="tab"
+              aria-selected={tab === 'doc'}
+              onClick={() => setTab('doc')}
+              title={t('工作流说明：每个节点执行时都会带上')}
+              className={cn(
+                'flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 px-2.5 text-[0.78125rem]',
+                tab === 'doc' ? tabOn : tabOff,
+              )}
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {t('流程说明')}
+            </button>
+            <button
+              role="tab"
+              aria-selected={tab === 'progress'}
+              onClick={() => setTab('progress')}
+              title={project ? t('「{name}」里最近一次执行的进度', { name: project.name }) : undefined}
+              className={cn(
+                'flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 px-2.5 text-[0.78125rem]',
+                tab === 'progress' ? tabOn : tabOff,
+              )}
+            >
+              {runs.running.length ? <Spinner className="text-run" /> : <Activity className="h-3.5 w-3.5 shrink-0" />}
+              {t('运行进度')}
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {tab === 'doc' ? (
+              <div className="flex flex-col gap-2 p-4">
+                <p className="text-[0.6875rem] leading-relaxed text-subtle">
+                  {t('写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给角色。')}
+                </p>
+                <DocEditor
+                  value={w.document}
+                  onChange={(v) => onChange({ document: v })}
+                  team={[...(main ? [main] : []), ...team.map((m) => m.agent)]}
+                  onTemplate={() => docTemplate(main, team)}
+                  minHeight={320}
+                />
+              </div>
+            ) : tab === 'progress' ? (
+              <>
+                {projects.length > 1 && (
+                  <div className="flex items-center gap-2 px-4 pt-4">
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" aria-hidden />
+                    <Select
+                      size="sm"
+                      aria-label={t('看哪个项目的运行进度')}
+                      value={projectId}
+                      onChange={(e) => setProject(e.target.value)}
+                      options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                      className="flex-1"
+                    />
+                  </div>
+                )}
+                <RunProgress task={runs.last} projectName={project?.name ?? ''} />
+              </>
+            ) : node ? (
+              <NodeInspector
+                key={`${node.id}:${rev}`}
+                w={w}
+                flow={flow}
+                node={node}
+                main={main}
+                team={team}
+                setFlow={(f) => setFlow(f, typing(node.id))}
+                onSelect={setSelected}
+              />
+            ) : selEdge ? (
+              <div className="flex flex-col gap-4 p-4">
+                <p className="text-[0.8125rem] leading-relaxed text-muted">
+                  {t('「{from}」完成后才会开始「{to}」。', { from: name(selEdge.from), to: name(selEdge.to) })}
+                </p>
+                {selEdge.from !== START && flow.nodes.find((n) => n.id === selEdge.from)?.kind === 'agent' && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label
+                      hint={t(
+                        '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。',
+                        { from: name(selEdge.from) },
+                      )}
+                    >
+                      {t('条件')}
+                    </Label>
+                    <Select
+                      aria-label={t('条件')}
+                      value={selEdge.when ?? ''}
+                      onChange={(e) =>
+                        setFlow({
+                          ...flow,
+                          edges: flow.edges.map((x) =>
+                            x.id === selEdge.id ? { ...x, when: e.target.value as 'pass' | 'fail' | '' } : x,
+                          ),
+                        })
+                      }
+                      options={[
+                        { value: '', label: t('总是') },
+                        { value: 'pass', label: t('结论是「通过」时') },
+                        { value: 'fail', label: t('结论是「不通过」时') },
+                      ]}
+                    />
+                  </div>
+                )}
+                <Button
+                  variant="danger-outline"
+                  className="self-start"
+                  onClick={() => {
+                    setFlow({ ...flow, edges: flow.edges.filter((e) => e.id !== selEdge.id) })
+                    setSelected('')
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t('删除连线')}
+                </Button>
+              </div>
+            ) : (
+              <FlowInspector
+                key={rev}
+                w={w}
+                flow={flow}
+                atEnd={selected === END}
+                checks={checks}
+                setFlow={(f) => setFlow(f, typing(`flow:${f.id}`))}
+                patch={change}
+                onSwitchFlow={switchFlow}
+              />
+            )}
+          </div>
         </div>
       </aside>
       <RunInProjectDialog
         open={running}
         onOpenChange={setRunning}
         workflow={{ id: w.id, name: w.name }}
+        projectId={projectId}
         notReady={ready ? undefined : t('就绪检查还有没通过的项，运行时可能出错')}
         prepare={prepare}
       />

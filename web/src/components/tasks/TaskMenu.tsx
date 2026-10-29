@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Archive, ArchiveRestore, Pause, PencilLine, Pin, PinOff, Play, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Pause, PencilLine, Pin, PinOff, Play, Power, PowerOff, Trash2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Task } from '@shared/schema'
 import { TRASH_RETENTION_DAYS } from '@shared/task'
@@ -12,7 +12,7 @@ import { useTaskControl } from './TaskControl'
 import { t } from '@shared/i18n'
 
 /**
- * 任务行右键菜单的动作（工作区任务列表、侧栏共用）：暂停 / 继续、重命名、置顶（只有聊天）、归档、删除。
+ * 任务行右键菜单的动作（工作区任务列表、侧栏共用）：暂停 / 继续、激活 / 关闭 Agent、重命名、置顶（只有聊天）、归档、删除。
  * items 放进 ContextMenuContent，confirm 放在行外面；重命名时把行换成 TaskRenameInput。
  */
 export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
@@ -46,6 +46,31 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
       toast.error((e as Error).message)
     }
   }
+  // CLI 进程还活着（含预热中、停在等下一句）：给「关闭 Agent」；没有进程时对话任务给「激活 Agent」
+  const agentAlive = !!task.cliAlive || task.prewarming || task.awaitingUser
+  const canActivate = !agentAlive && task.mode === 'chat' && !task.imported && !task.archived
+  const showAgent = agentAlive || canActivate
+  const [agentBusy, setAgentBusy] = useState(false)
+  const toggleAgent = async () => {
+    if (agentBusy) return
+    setAgentBusy(true)
+    try {
+      if (agentAlive) {
+        upsertTask(await api.closeAgentSummary(task.id))
+        toast.success(t('已关闭 Agent，下一条消息会接着原来的会话'))
+        return
+      }
+      const next = await api.activateAgentSummary(task.id)
+      upsertTask(next)
+      // 没有会话、CLI 不支持停在等待上时服务端原样返回：说清楚，别让用户以为已经启动了
+      if (next.cliAlive || next.prewarming || next.awaitingUser || next.working) toast.success(t('Agent 已激活'))
+      else toast.info(t('这个对话现在不能提前启动 Agent，发消息时会自动启动'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setAgentBusy(false)
+    }
+  }
   const remove = async () => {
     try {
       await api.deleteTask(task.id)
@@ -64,6 +89,17 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
           <ContextMenuItem disabled={control.busy} onSelect={control.run}>
             {control.action === 'pause' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             {control.label}
+          </ContextMenuItem>
+          {/* 和下面的 Agent 开关同属「执行」一组，只在组尾分隔一次 */}
+          {!showAgent && <ContextMenuSeparator />}
+        </>
+      )}
+      {showAgent && (
+        <>
+          {/* 正在执行这一轮的不能关：关进程会把这一轮掐断，那是「暂停」的事 */}
+          <ContextMenuItem disabled={agentBusy || (agentAlive && !!task.working)} onSelect={toggleAgent}>
+            {agentAlive ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+            {agentAlive ? t('关闭 Agent') : t('激活 Agent')}
           </ContextMenuItem>
           <ContextMenuSeparator />
         </>

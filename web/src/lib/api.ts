@@ -2,6 +2,8 @@ import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
 import type { ComfyChain } from '@shared/comfy-chain'
+import type { ModelMeta } from '@shared/blender'
+import type { SpeechStatus } from '@shared/speech'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -71,6 +73,7 @@ import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
+import type { FixApplyItem, FixApplyResult } from '@shared/diagnosis'
 import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project-mcp'
 import type {
   BundledSkill,
@@ -277,6 +280,18 @@ export const api = {
   localImage: () => request<LocalStatus>('/local-image/status'),
   /** 模型设计用的 Blender 找到没有（ADR 0025） */
   blenderStatus: () => request<{ path: string; version: string; error: string }>('/blender/status'),
+  /** 模型对话的预览状态：版本号每次执行加一，变了就重新加载 glb（ADR 0025） */
+  blenderModel: (taskId: string) => request<ModelMeta>(`/blender/models/${encodeURIComponent(taskId)}`),
+  /** 预览用的 glb：版本号放在地址里，同一版浏览器可以缓存 */
+  blenderGlbUrl: (taskId: string, version: number) =>
+    `/api/blender/models/${encodeURIComponent(taskId)}/scene.glb?v=${version}`,
+  /** 预览加载的 glb 内容；演示版没有 Blender，换成现场拼的示例模型 */
+  blenderGlb: async (taskId: string, version: number): Promise<ArrayBuffer> => {
+    if (import.meta.env.VITE_DEMO) return (await import('./demo-model')).demoModelGlb()
+    const res = await fetch(api.blenderGlbUrl(taskId, version))
+    if (!res.ok) await failure(res)
+    return res.arrayBuffer()
+  },
   localImageQueue: () => request<ComfyQueueState>('/local-image/queue'),
   localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>
     request<LocalStatus>(`/local-image/${action}`, { method: 'POST' }),
@@ -284,6 +299,16 @@ export const api = {
     request<LocalStatus>(`/local-image/models/${id}${action === 'download' ? '/download' : ''}`, {
       method: action === 'download' ? 'POST' : 'DELETE',
     }),
+
+  /** 本机语音输入：识别库和模型的下载状态（shared/speech.ts） */
+  speech: () => request<SpeechStatus>('/speech/status'),
+  speechCancel: () => request<SpeechStatus>('/speech/cancel', { method: 'POST' }),
+  speechModel: (id: string, action: 'download' | 'remove') =>
+    request<SpeechStatus>(`/speech/models/${id}${action === 'download' ? '/download' : ''}`, {
+      method: action === 'download' ? 'POST' : 'DELETE',
+    }),
+  /** 一段 16kHz 单声道 16 位 PCM（base64）转成文字 */
+  transcribe: (audio: string) => request<{ text: string }>('/speech/transcribe', json('POST', { audio })),
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
   /** 工作流链：存下来的链 + 可用的工作流（面板里选段要用） */
@@ -297,10 +322,16 @@ export const api = {
   deleteComfyChain: (id: string) =>
     request<{ list: ComfyChain[] }>(`/local-image/chains/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   /** 试跑：传链和一张原图（data URL），返回输出图（data URL） */
-  runComfyChain: (chain: ComfyChain, image?: string, prompt?: string) =>
+  runComfyChain: (
+    chain: ComfyChain,
+    image?: string,
+    prompt?: string,
+    /** 出图尺寸和张数（ComfyUI 页的试生成用）；不传是 1024² 一张 */
+    out?: { width: number; height: number; count: number },
+  ) =>
     request<{ images: string[] }>(
       `/local-image/chains/${encodeURIComponent(chain.id)}/run`,
-      json('POST', { chain, image, prompt }),
+      json('POST', { chain, image, prompt, ...out }),
     ),
   comfyTemplates: () =>
     request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates'),
@@ -788,6 +819,9 @@ export const api = {
       content: string
       truncated: boolean
     }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
+  /** 排查结论的「应用这 N 处修改」：在被分析对话的目录里逐条按原文替换，每条给出结果 */
+  applyFixes: (id: string, fixes: FixApplyItem[]) =>
+    request<{ dir: string; results: FixApplyResult[] }>(`/tasks/${id}/apply-fixes`, json('POST', { fixes })),
   /** 任务目录里的图片：读到的文件是图片时按原图查看（同样给 <img> 用，路径自己带 /api） */
   taskFileRaw: (id: string, path: string) => `/api/tasks/${id}/file/raw?path=${encodeURIComponent(path)}`,
   /** 任务页右栏的根信息：任务工作目录（独立分支时是 worktree）的目录和分支 */
@@ -847,6 +881,10 @@ export const api = {
   /** 聊天置顶 / 取消置顶：只是标记，侧栏聊天列表最上面单独一组 */
   pinTaskSummary: (id: string, pinned: boolean) => request<Task>(`/tasks/${id}?summary=1`, json('PATCH', { pinned })),
   stopTaskSummary: (id: string) => request<Task>(`/tasks/${id}/stop?summary=1`, { method: 'POST' }),
+  /** 对话菜单「激活 Agent」：不发消息，先用 --resume 把 CLI 拉起来停在等下一句上 */
+  activateAgentSummary: (id: string) => request<Task>(`/tasks/${id}/agent/activate?summary=1`, json('POST', {})),
+  /** 对话菜单「关闭 Agent」：结束 CLI 进程释放资源，对话留着，下一条消息续接会话 */
+  closeAgentSummary: (id: string) => request<Task>(`/tasks/${id}/agent/close?summary=1`, json('POST', {})),
   resumeTaskSummary: (id: string) => request<Task>(`/tasks/${id}/resume?summary=1`, json('POST', { latest: false })),
   discardWorktreeSummary: (id: string) => request<Task>(`/tasks/${id}/worktree/discard?summary=1`, json('POST', {})),
   /** 子对话的「解决」标记：只改标记，不停 CLI、不影响父对话 */

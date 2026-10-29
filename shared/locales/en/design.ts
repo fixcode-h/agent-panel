@@ -316,7 +316,15 @@ export const EN_DESIGN: Record<string, string> = {
   '例如：暗夜远征': 'e.g. Night Expedition',
   '可以不填。「导出到项目目录」会写到这个目录下的 UI 文件夹，一般选 UE 工程的目录。':
     'Optional. “Export to project folder” writes into a UI folder here; usually pick your UE project folder.',
-  'UI 项目': 'UI projects',
+  // 设计侧栏顶部的设计类型下拉（UI 设计 / 模型设计）
+  '界面 · 原画 · 切图': 'Screens · concepts · slices',
+  模型设计: 'Model design',
+  'Blender 建模 · 按项目对话': 'Blender modeling · per-project chats',
+  切换设计类型: 'Switch design type',
+  设计类型: 'Design type',
+  '还没有模型设计对话。模型设计在 Agent 项目里用 Blender 建模，对话会按项目列在这里。':
+    'No model design chats yet. Model design uses Blender inside Agent projects; its chats are listed here by project.',
+  阶段: 'Stage',
   '这个 UI 项目已经不在了。': 'This UI project no longer exists.',
   '{n} 个界面': '{n} screens',
   '游戏 UI {n} 个': 'Game UI {n}',
@@ -736,7 +744,8 @@ export const EN_DESIGN: Record<string, string> = {
   删除关键帧: 'Delete key',
   '点关键帧修改；拖动关键帧改时间（按住 Shift 对齐到 0.1 秒）；双击轨道空白处加关键帧':
     'Click a key to edit it; drag keys to retime (hold Shift to snap to 0.1s); double-click an empty spot on a track to add a key',
-  '动画：打开时间轴，给控件加动画和动效': 'Animation: open the timeline to animate widgets',
+  '动画、本机 ComfyUI': 'Animation, local ComfyUI',
+  收起动画面板: 'Hide animation panel',
   // 拖图片到控件
   '拖到绿框的控件上松手即可用上；按住 Alt 显示所有能放图的控件':
     'Drop on a green-outlined widget to use it; hold Alt to show every widget that takes an image',
@@ -833,4 +842,15 @@ export const EN_DESIGN: Record<string, string> = {
   数字: 'Number',
   开关: 'Toggle',
   图片: 'Image',
+  新建模型设计: 'New model design',
+  '没找到 Blender：{why}': 'Blender not found: {why}',
+  还没设置路径: 'no path set',
+  去设置: 'Open settings',
+  开始建模: 'Start modeling',
+  '模型设计在 Agent 项目里开一个对话，后台启动 Blender，Agent 用它建模并在对话里汇报进度。':
+    'Model design opens a conversation in an Agent project and starts Blender in the background; the agent models with it and reports progress in the conversation.',
+  模型放在哪个项目里: 'Project for the model',
+  要建什么模型: 'What to model',
+  '例如：低多边形风格的宝箱，带开合的盖子，导出 GLB':
+    'e.g. a low-poly treasure chest with an opening lid, exported as GLB',
 }

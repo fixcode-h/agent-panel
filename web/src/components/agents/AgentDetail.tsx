@@ -888,7 +888,7 @@ export function AgentDetail({
               <FormSection title={t('Skill 与开场白')}>
                 <Field
                   label="Skill"
-                  hint={t('执行时提醒它优先用这些 Skill。Skill 本身装在 Agent 里，在「Skills 与命令」页面管理。')}
+                  hint={t('执行时提醒它优先用这些 Skill。Skill 本身装在 Agent 里，在「Skills」页面管理。')}
                 >
                   <SkillsPicker value={draft.skills} onChange={(v) => set('skills', v)} cli={cliId} />
                 </Field>

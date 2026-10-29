@@ -4,6 +4,7 @@ import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
 import { DEFAULT_SEARCH_PROVIDER, SEARCH_PROVIDER_IDS } from './web-search.ts'
+import { DEFAULT_SPEECH_MODEL, SPEECH_MODEL_IDS } from './speech.ts'
 import type { ProjectProposal } from './project-init.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
@@ -1534,6 +1535,7 @@ export const StopReason = z.enum([
   'supersede', // 用户发了新消息，打断当前这一轮
   'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
   'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
+  'close', // 用户从对话菜单点「关闭 Agent」，只结束 CLI 进程，下一条消息续接会话
 ])
 export type StopReason = z.infer<typeof StopReason>
 
@@ -2468,6 +2470,19 @@ export const Settings = z.object({
         .union([z.enum(SEARCH_PROVIDER_IDS), z.literal('')])
         .catch('')
         .default(''),
+    })
+    .prefault({}),
+  /**
+   * 本机语音输入（见 shared/speech.ts）：默认关，关着时输入框上不显示麦克风按钮，也不下载任何东西。
+   * 模型和识别库要用户在设置里自己挑了才下载
+   */
+  speech: z
+    .object({
+      enabled: z.boolean().catch(false).default(false),
+      /** 识别用哪个模型；设置文件里写成不认识的值时回退到默认模型 */
+      model: z.enum(SPEECH_MODEL_IDS).catch(DEFAULT_SPEECH_MODEL).default(DEFAULT_SPEECH_MODEL),
+      /** 模型从 hf-mirror.com、识别库从 npmmirror 下载 */
+      mirror: z.boolean().catch(false).default(false),
     })
     .prefault({}),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */

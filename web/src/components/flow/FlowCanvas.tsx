@@ -103,6 +103,13 @@ const UNIT_MAX = 3
 const pillSm = 'h-[1.125rem] gap-1 px-1.5 text-[0.6875rem]'
 
 /**
+ * 卡片里胶囊的底（照设计稿）：染了底的卡片上是白底 + 同色细框，从浅绿 / 浅青里托出来；
+ * 白卡片（计划中、跳过）上不出底，只留一圈细线，免得一张白卡片里堆两块灰
+ */
+const pillOn = (status: StepStatus) =>
+  STATE[status].card && status !== 'skipped' ? 'bg-card ring-1 ring-current/30' : 'bg-transparent ring-1 ring-line'
+
+/**
  * 流程图里的一个节点：标题和状态胶囊在上，执行者标签、说明块在中间，开始 / 验收 / 结束流程在底部。
  * 选中只高亮节点自己（主题色描边和柔光），执行中有缓慢呼吸的光晕。
  */
@@ -115,7 +122,10 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
   const stats = v.stats && (v.stats.time || v.stats.tokens) ? v.stats : undefined
   const st = v.status ? STATE[v.status] : undefined
   // 染了底的卡片里，标签和说明块用白底托出来；白卡片里用浅灰底
-  const block = st && st.card && v.status !== 'skipped' ? 'bg-card/85' : 'bg-sel/55'
+  const tinted = !!(st && st.card && v.status !== 'skipped')
+  const block = tinted ? 'bg-card/85' : 'bg-sel/55'
+  // 底部一行只有耗时和 token 时，照设计稿耗时靠左、token 靠右
+  const statsOnly = !!stats && v.hooks.length === 0 && !v.confirm
   return (
     <div
       className={cn(
@@ -133,7 +143,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
           {v.title}
         </span>
         {st ? (
-          <StatusPill tone={st.tone} spin={v.status === 'running'} className={pillSm}>
+          <StatusPill tone={st.tone} spin={v.status === 'running'} className={cn(pillSm, pillOn(v.status!))}>
             {st.label}
           </StatusPill>
         ) : (
@@ -146,7 +156,14 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
       </div>
       {/* 执行者标签：角色 · 模型；多步节点列出各步，流程节点写调用的流程 */}
       <div className="flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4">
-        <span className={cn('flex h-[1.375rem] min-w-0 items-center gap-1.5 rounded-md px-1.5', block)}>
+        {/* 染了底的卡片上，执行者标签照设计稿加一圈细线，和下面的说明块分开 */}
+        <span
+          className={cn(
+            'flex h-[1.375rem] min-w-0 items-center gap-1.5 rounded-md px-1.5',
+            block,
+            tinted && 'ring-1 ring-line ring-inset',
+          )}
+        >
           {v.kind === 'flow' ? (
             <span className="truncate text-muted">
               {t('调用流程')} · {v.flowText || t('未选择')}
@@ -193,7 +210,12 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
               <span className={cn('min-w-0 flex-1 truncate', u.status === 'running' ? 'font-medium' : 'text-muted')}>
                 {u.title}
               </span>
-              {u.status && u.status !== 'pending' ? (
+              {u.status === 'running' ? (
+                // 正在跑的那一步：序号反色成实心小胶囊（照设计稿），一眼看出跑到第几步
+                <span className="shrink-0 rounded-full bg-fg px-1.5 font-mono text-[0.625rem] leading-4 text-card">
+                  {i + 1}
+                </span>
+              ) : u.status && u.status !== 'pending' ? (
                 <StepIcon status={u.status} className="h-3 w-3 shrink-0" />
               ) : (
                 <span className="shrink-0 font-mono text-[0.625rem] text-subtle">{i + 1}</span>
@@ -244,7 +266,8 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
             <span
               aria-label={t('耗时和用量')}
               className={cn(
-                'ml-auto inline-flex h-[1.125rem] items-center gap-2 text-[0.6875rem] tabular-nums',
+                'inline-flex h-[1.125rem] items-center gap-2 text-[0.6875rem] tabular-nums',
+                statsOnly ? 'flex-1 justify-between' : 'ml-auto',
                 v.status === 'done' ? 'text-success' : v.status === 'running' ? 'text-run' : 'text-subtle',
               )}
             >
@@ -372,11 +395,14 @@ const edgeTypes = { flow: FlowEdge }
 
 export type EdgeTone = 'idle' | 'active' | 'done'
 
-/** 连线颜色用主题 token：完成 = 绿（success），运行中 = 青（run），其余跟随画布的默认线色 */
+/**
+ * 连线颜色用主题 token：完成 = 浅绿、运行中 = 浅青（照设计稿用状态色的「描边档」，和卡片的细框同一深浅，
+ * 不比节点本身还抢眼），其余跟随画布的默认线色
+ */
 const EDGE_COLOR: Record<EdgeTone, string> = {
   idle: 'var(--xy-edge-stroke)',
-  active: 'var(--run)',
-  done: 'var(--success)',
+  active: 'color-mix(in oklab, var(--run) 55%, var(--card))',
+  done: 'color-mix(in oklab, var(--success) 45%, var(--card))',
 }
 
 /** 三种状态的箭头，和 xyflow 自带的 ArrowClosed 同形 */

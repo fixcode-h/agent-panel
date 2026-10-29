@@ -160,7 +160,7 @@ server/   Hono API、JSON 存储、CLI 检测、模型读取、安装 / 卸载�
 web/      React 前端
   src/components/  assist/（AI 创建 / 优化）、ai-fix/（AI 处理对话框）、flow/（流程图布局和流程编辑）、
                    files/（文件树和文件面板）、tasks/（任务列表、对话页、任务流程图、右栏）、projects/、settings/
-  src/pages/       Agents、Workflows、Home、Projects、Chat、Library（Skills 与命令）、Mcp、Design、Comfy、Settings
+  src/pages/       Agents、Workflows、Home、Projects、Chat、Library（Skills）、Mcp、Design、Comfy、Settings
 scripts/  端到端测试（e2e/、e2e.mjs）、模拟 CLI（fake-cli/）、界面检查（ui-check.mjs）、出包、
           规则检查 / 漏翻检查 / 密钥扫描、教训检索、托盘和开机自启脚本
 skills/   自带的 Skill（见 skills/README.md）

@@ -331,6 +331,29 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   // 分类行仍能单独收起展开
   await side().locator('[data-kind="game"]').click()
   await side().locator('[data-kind="game"]').click()
+  // 侧栏顶部的设计类型下拉：切到「模型设计」列的是 Agent 项目里的模型对话（演示数据里没有，显示说明和新建入口），
+  // 切回「UI 设计」项目列表还在
+  await side().getByRole('button', { name: '切换设计类型' }).click()
+  await p.getByRole('menuitemradio', { name: /模型设计/ }).click()
+  await side()
+    .getByText(/还没有模型设计对话/)
+    .waitFor()
+  assert.equal(await projFold().count(), 0, '模型设计下不列 UI 项目')
+  // 新建模型设计：选项目、写要建的模型；演示版没有 Blender，弹窗里要说清楚并给去设置的入口
+  await side().getByRole('button', { name: '新建模型设计' }).first().click()
+  await check(p, 'UI设计-新建模型设计', ['要建什么模型', '在线演示不能运行 Blender', '开始建模'])
+  // 建好跳进对话：右栏默认是「模型」页签，演示版给一只示例宝箱，列出场景里的物体（预览本身要 WebGL，这里只断言物体列表）
+  await p.getByLabel('要建什么模型').fill('低多边形宝箱')
+  await p.getByRole('button', { name: '开始建模' }).click()
+  await p
+    .getByText('Chest_Body', { exact: true })
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('模型设计：建好对话后右栏没有显示模型的物体列表'))
+  await check(p, 'UI设计-模型预览', ['第 1 版 · 5 个物体', 'Chest_Lid'])
+  await p.goto(base + '#/design')
+  await side().getByRole('button', { name: '切换设计类型' }).click()
+  await p.getByRole('menuitemradio', { name: /UI 设计/ }).click()
+  await gameKind().waitFor()
   // 画板按运行时假数据渲染：背包格子有物品、数量、选中和锁定；数据面板能改，改完切回画板立刻生效
   await p.goto(base + '#/design/demo-design-inventory')
   await check(p, 'UI设计-画板数据', ['星辉宝石'])
@@ -576,9 +599,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   const row = await p.getByRole('button', { name: '主菜单', exact: true }).boundingBox()
   await p.mouse.click(row.x - 14, row.y + row.height / 2)
   await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
-  // ComfyUI 工作流：游戏和网页分开，内置的只读
+  // ComfyUI 工作流（照设计稿 ComfyUI 画板）：列表按游戏 / 网页 / 图片处理分组，内置的只读；
+  // 入口在图标栏里，只在设计模式下出现
   await p.goto(base + '#/comfy/game')
-  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler', '导入到 ComfyUI'])
+  await check(p, 'ComfyUI-工作流', [
+    '游戏图标 · 道具与技能',
+    '内置，只读',
+    '{{prompt}}',
+    'KSampler',
+    '导入到 ComfyUI',
+    '试生成',
+  ])
+  if (!(await p.locator('[data-activity-bar]').getByRole('button', { name: 'ComfyUI 工作流' }).count()))
+    errors.push('ComfyUI 页：图标栏里没有 ComfyUI 工作流的入口')
   // 节点图打开时就要适应到画布：节点占满主要区域、文字看得清
   // （以前视口宽的比例缩放成 0.43，上下各留一半空白）
   const graphFit = () =>
@@ -596,11 +629,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
       const bottom = Math.max(...rects.map((r) => r.bottom))
       return { zoom, coverW: (right - left) / box.width, coverH: (bottom - top) / box.height }
     })
+  // 画布现在撑满整块（上下还浮着工具条和试生成）：按宽或按高有一边铺满就算适应好了
   const checkGraph = async (where) => {
     const g = await graphFit()
     if (!g) return errors.push(`ComfyUI-节点图 ${where}：没有画出来`)
     if (g.zoom < 0.5) errors.push(`ComfyUI-节点图 ${where}：缩放只有 ${g.zoom.toFixed(2)}，节点文字看不清`)
-    if (g.coverW < 0.8 || g.coverH < 0.8)
+    if (Math.max(g.coverW, g.coverH) < 0.75)
       errors.push(
         `ComfyUI-节点图 ${where}：节点只占画布宽 ${Math.round(g.coverW * 100)}%、高 ${Math.round(g.coverH * 100)}%，留白太多`,
       )
@@ -625,15 +659,27 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   // 切回图形要重新适应，不是带着上一次的缩放
   await p.waitForTimeout(500)
   await checkGraph('切回图形')
+  // 点画布上的节点：右栏切到「节点」，列出它的参数
+  await p.locator('.react-flow__node').first().click()
+  await p
+    .getByText(/ · #\w+$/)
+    .first()
+    .waitFor({ timeout: 3000 })
+    .catch(() => errors.push('ComfyUI：点节点后右栏没有显示它的参数'))
+  await check(p, 'ComfyUI-节点参数')
   // 在 ComfyUI 页点 Agent 模式要能切回去（之前会停在 ComfyUI）
-  // 模式切换在左上角的下拉里：先点开，再选菜单项
-  await p.getByRole('button', { name: '切换模式' }).click()
-  await p.getByRole('menuitemradio', { name: /^Agent 模式/ }).click()
+  // ComfyUI 页让开了会话侧栏，模式切换竖排在图标栏里
+  await p.getByRole('radio', { name: /^Agent 模式/ }).click()
   await p
     .waitForURL((u) => !u.hash.startsWith('#/comfy'), { timeout: 5000 })
     .catch(() => errors.push('在 ComfyUI 页点 Agent 模式没有切过去'))
+  if (await p.locator('[data-activity-bar]').getByRole('button', { name: 'ComfyUI 工作流' }).count())
+    errors.push('Agent 模式下图标栏里不该有 ComfyUI 工作流的入口')
   await p.goto(base + '#/comfy/game')
-  await p.getByRole('radio', { name: '网页 UI' }).click()
+  await p
+    .getByRole('button', { name: /网页插画/ })
+    .first()
+    .click()
   await check(p, 'ComfyUI-网页工作流', ['网页插画'])
   // 换了工作流也要重新适应，不能带着上一个工作流的位置和缩放
   await p.waitForTimeout(500)

@@ -1,5 +1,5 @@
 ---
-paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server/*store*.ts, server/settings.ts, server/tasks.ts, server/update*.ts, server/exec/worktree.ts, web/src/components/tasks/Worktrees.tsx, scripts/package.mjs, web/src/lib/demo-backend.ts, web/src/lib/api.ts, server/attachments.ts, server/uploads.ts, web/src/components/chat/AttachmentView.tsx, web/src/components/chat/Attachments.tsx, web/src/components/projects/ProjectSettingsDialog.tsx
+paths: shared/schema.ts, shared/task.ts, shared/data.ts, shared/settings.ts, server/store.ts, server/*store*.ts, server/settings*.ts, server/tasks.ts, server/update*.ts, scripts/package.mjs, web/src/lib/demo-backend.ts, web/src/lib/api.ts
 ---
 
 # 数据结构、存储、升级兼容和出包
@@ -22,32 +22,13 @@ paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server
 - 起因：834da58、22d2481，漏提交模块导致 typecheck 和构建失败；434c940，插入的内容落在对象闭合括号之后。
 - 防线：`npm run typecheck`、`npm run build`、`npx vite build --mode demo`。
 
-## 状态字段是记录不是事实，判据按实际情况算
-
-- 规则：`task.worktree.state` 只记面板自己走过的动作（合并、丢弃），分支被手动删掉或 `submit_build` 合完清掉后它可能还停在 `active`。判「合没合回原分支」在 `worktreeStatus()` 里按 `ahead`/`dirty` 算（分支已经不存在时按 `state` 兜底），`merged`、合并按钮和界面上的数字都从这一个判据出来，不要一处看 `state`、一处看数字。
-- 起因：分支已经通过 `submit_build` 合进原分支、分支也删了，`state` 还是 `active`，`ahead`/`dirty` 都是 0 却算出 `merged: false`，界面显示「未合并到「…」：」后面空着，还挂着没用的合并按钮。
-- 防线：`server/exec/worktree.test.ts` 的「分支已经删掉时」用例。
-
 ## 正式包里不能有演示内容
 
 - 规则：模拟执行只在 `--mode demo` 里存在；正式代码不 import `demo-*`。
 - 防线：`scripts/package.mjs` 会检查。
-
-## 附件落盘：图片进对话目录根，其它只引用原路径
-
-- 规则：`server/attachments.ts` 的 `placeAttachments()` 只把图片（用 `shared/composer.ts` 的 `attachChip` 判）拷进任务执行目录（对话目录）根；重名加序号且不覆盖已有文件，同一源文件再次放置沿用任务上记的那份。其它类型不拷、原样返回绝对路径；`ref` / `quote` 不拷；超过 `MAX_ATTACHMENT_BYTES` 的图片也不拷。放行目录统一用 `attachmentAddDirs()` 算。
-- 面板拷进去的图片不算 Agent 的改动：文件名记在 `Task.placedAttachments`（源文件绝对路径 → 对话目录文件名），`server/exec/git.ts` 的四个 git 函数按名单排除；不按文件名猜。旧任务没有映射时 `placedFiles()` 按消息里的 `attachments/名字` 补上。`task.messages[].attachments` 存用户上传时的绝对路径（气泡、看大图、导出按它读），`placed` 只用在提示词里；`/uploads/raw` 认 `attachments/名字` 只兜旧数据。
-- 起因：6f60814 把附件拷进任务目录后，`deliver()` 的 stale 分支把 `placed` 记进对话导致破图；现在只有图片拷。2026-10 用户嫌 P4 项目里堆 `attachments/`：改成直接放对话目录根，排除按任务上记的名单。
-- 防线：`server/attachments.test.ts`、`server/exec/git-ignore.test.ts`、`server/task-text.test.ts`、`scripts/e2e/05-workflow-edge.mjs` 的附件段；`scripts/rules-check.mjs` 拦 `attachments: placed`。
 
 ## 清掉任务上的字段写 undefined，不用 delete
 
 - 规则：要清掉 Task 上的可选字段（`wrapRequest`、`rewind` 这类）时写 `x.field = undefined`，不要 `delete x.field`：`store.update` 是把传入的字段盖到旧记录上（`{ ...old, ...input }`），删掉的键盖不掉旧值，落盘后还是原样。由 `scripts/rules-check.mjs` 拦（确实不是 Task 的对象在行尾写 `delete-ok: 原因`）。
 - 起因：2026-10-24 用户导出的对话里 7 个已完成的子对话都挂着 `wrapRequest: merging`；叫醒后 submit_merge 一直被拒「父对话正在合并你的分支」（真实 Pi 复现）。
 - 防线：`scripts/real-cli/pi-handoff.mjs` 的「叫醒后再请求收尾」；规则检查第 6 条。
-
-## 弹窗外的 AI 会话记住结果该存到哪个对象
-
-- 规则：关掉弹窗还在跑的 AI 会话（项目设置的 `AiSession`）要记下途中建好的对象（`projectId`），应用时打开那个对象；没保存的新建草稿暂存在弹窗外壳。不能靠重开空白的新建弹窗来应用，保存时会多建一个同名项目。
-- 起因：新建项目时 AI 初始化 → 关掉设置 → 点「查看推荐并应用」，多出同名项目、目录也丢了（0e1df58 修复）。
-- 防线：`scripts/ui/07-projects.mjs` 的「先创建再应用」「关掉设置再应用」。

@@ -43,6 +43,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 8000 })
       .catch(() => errors.push('模板商店：添加后没有回到工作流页并选中新工作流'))
     await check(p, '模板添加为工作流')
+    // 模板商店加的算「导入的」：筛「导入的」时还在，筛「我的」时不在
+    await p.getByRole('radio', { name: '导入的', exact: true }).click()
+    await check(p, '工作流-导入的', ['SDXL1.0: Text to Image (Simple)（副本）'])
+    await p.getByRole('radio', { name: '我的', exact: true }).click()
+    // 只在列表里找：画布标题还是选中的那个工作流
+    if (
+      await p
+        .locator('section[aria-label="工作流列表"]')
+        .getByText('SDXL1.0: Text to Image (Simple)（副本）', { exact: false })
+        .count()
+    )
+      errors.push('ComfyUI 工作流：模板商店加的工作流不该出现在「我的」里')
+    await p.getByRole('radio', { name: '全部', exact: true }).click()
+    // 试生成条：尺寸、张数可选
+    await p.getByRole('button', { name: '试生成的张数' }).click()
+    await p.getByRole('menuitemradio', { name: '× 2' }).click()
+    await check(p, '试生成-张数', ['× 2', '1024²'])
 
     // 手机宽度：分类、筛选和卡片都不出横向滚动
     const m = await page({ width: 390, height: 844 })

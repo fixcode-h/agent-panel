@@ -397,7 +397,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await footSpace('AI 初始化')
     await dlg.getByRole('button', { name: '重新初始化' }).click()
     // 重新初始化后报告面板和「写入的文件」是异步算出来的，10 个分片并行时页面更慢、会超过 check 默认的 5 秒：
-    // 把这条断言要的每一项都先等到再断言，免得界面还没渲染完就被当成没显示（见 docs/lessons/ui.md 异步加载先 waitFor）
+    // 把这条断言要的每一项都先等到再断言，免得界面还没渲染完就被当成没显示（见 docs/lessons/ui-check.md「等控件终态而不是等文案」）
     for (const text of ['写入的文件', 'AGENTS.md'])
       await p
         .getByText(text, { exact: false })
@@ -406,7 +406,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .catch(() => {})
     const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
     // 推荐面板要等对话跑完、结果解析完才出现（演示里实测 5~6 秒），先等面板再断言：
-    // 不能指望 check 默认的 5 秒（见 docs/lessons/ui.md 那条「异步加载的入口先 waitFor 再断言」）
+    // 不能指望 check 默认的 5 秒（见 docs/lessons/ui-check.md「等控件终态而不是等文案」）
     await p
       .locator('[data-analysis-panel="init"]')
       .waitFor({ timeout: 20000 })

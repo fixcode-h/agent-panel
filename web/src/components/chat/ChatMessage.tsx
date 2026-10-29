@@ -7,6 +7,7 @@ import { copyText as clipboardCopy } from '@/lib/copy-text'
 import { quoteFrom } from '@/lib/quote'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
+import { useAiLook } from '@/lib/ai-look'
 import { getLang, t } from '@shared/i18n'
 import { copyText } from '@shared/composer'
 import { MessageBody } from './AttachmentView'
@@ -157,6 +158,7 @@ export function UserMessage({
   /** 这条消息在对话里对应的消息 id：搜索结果跳过来时按它定位（见 web/src/lib/message-anchor.ts） */
   anchorId,
   size = 'md',
+  subject,
 }: {
   text: string
   at?: string
@@ -166,17 +168,47 @@ export function UserMessage({
   actions?: React.ReactNode
   anchorId?: string
   size?: 'sm' | 'md'
+  /**
+   * 不是用户打的、是面板替他拼好的第一句话（AI 分析把报错、记录交给分析对话）：
+   * 照设计稿 AiWindow 画成整行宽的「分析对象」卡片，标题条写明是什么、怎么来的，不冒充用户的气泡
+   */
+  subject?: { label: string; hint?: string }
 }) {
+  const ai = useAiLook()
+  if (subject)
+    return (
+      <div data-msg={anchorId} data-user="" className="group/msg overflow-hidden rounded-[0.625rem] border">
+        <div className="flex h-[2.125rem] items-center gap-2 bg-sel/60 pr-1.5 pl-3 text-[0.75rem]">
+          <span className="text-[0.6875rem] font-semibold tracking-[0.06em] text-subtle">{subject.label}</span>
+          {subject.hint && <span className="min-w-0 truncate text-muted">{subject.hint}</span>}
+          <span className="ml-auto" />
+          <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} />
+        </div>
+        <div className="bg-panel px-3 py-2.5 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]">
+          <FoldBody>
+            <MessageBody text={text} attachments={attachments} />
+          </FoldBody>
+          {extra}
+        </div>
+      </div>
+    )
   return (
     // data-user：界面检查要区分用户的消息和 Agent 的回复（两者都有 data-msg）
-    <div data-msg={anchorId} data-user="" className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
+    <div
+      data-msg={anchorId}
+      data-user=""
+      className={cn('group/msg ml-auto flex flex-col items-end gap-1.5', ai ? 'max-w-[80%]' : 'max-w-[85%]')}
+    >
       {(text || extra || !!attachments?.length) && (
         <div
           className={cn(
             'max-w-full min-w-0 rounded-2xl bg-sel whitespace-pre-wrap [overflow-wrap:anywhere]',
             size === 'sm'
               ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
-              : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
+              : ai
+                ? // AI 分析窗口的追问气泡（设计稿 AiWindow）：浅一档的底、圆角 12、14px 字
+                  'rounded-xl bg-sel/70 px-3.5 py-2.5 text-[0.875rem] leading-relaxed'
+                : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
           )}
         >
           <FoldBody>

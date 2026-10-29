@@ -68,14 +68,7 @@ import {
   type ToolUse,
   type TaskSeenResult,
 } from '@shared/schema'
-import {
-  ChatModelPicker,
-  ComposerModelPicker,
-  RoleModelBadge,
-  useChatRun,
-  useRunAuthor,
-  type ChatRun,
-} from './ChatModelPicker'
+import { ChatModelPicker, RoleModelBadge, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childCounts,
@@ -156,6 +149,7 @@ import { SessionBar } from '@/components/session/SessionBar'
 import { ConversationTabs } from './ConversationTabs'
 import { ChatRail, useChatRail } from './ChatRail'
 import { FileDialog, FileOpenCtx } from './FileDialog'
+import { AiLookCtx } from '@/lib/ai-look'
 import { JobDialog, type JobTarget } from './JobDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
 import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } from './child-line'
@@ -1281,7 +1275,11 @@ export function TaskView({
   const sessionFits = rowW >= SESSION_BAR_W + CONVERSATION_MIN
   const bothFit = rowW >= SESSION_BAR_W + CONVERSATION_MIN + sideW
   const sessionShown =
-    sessionAllowed && sessionOpen && sessionFits && (bothFit || !sideWanted || (lastRail === 'session' && !reportOn))
+    sessionAllowed &&
+    sessionOpen &&
+    sessionFits &&
+    // 模型设计对话：右栏是 3D 预览（「模型」页签），放不下时会话栏让开，不让预览被挤掉
+    (bothFit || !sideWanted || (lastRail === 'session' && !reportOn && !task.modelDesign))
   const filesYield = !reportOn && !childOn && !filesFolded && sessionShown && !bothFit
   const filesHidden = (filesFolded && !childOn) || filesYield
   const closeReport = () => {
@@ -1565,8 +1563,12 @@ export function TaskView({
   // 右边看某一次运行的实时输出时，输入框跟着挪到那个面板底下，不用关掉再看对话
   // 子对话请用户选择：和 Agent 的提问一样换掉输入框（Agent 自己的提问优先）
   const askOpen = (task.parentAsks ?? []).length > 0 && !task.imported && !asksQuestion(task.requests)
+  // AI 分析窗口里嵌的分析对话：左侧对话区照设计稿 AiWindow 画（见 lib/ai-look.ts），普通对话页不受影响
+  const aiLook = !!embed && isAnalysisTask(task, localAgents)
   const composer = !task.imported && !asksQuestion(task.requests) && !askOpen && (
     <ChatComposer
+      // 设计稿的追问框：深一档的细线、圆角 12；附件、模型、提问开关这些照旧留在下面一行
+      className={aiLook ? 'rounded-xl border-line-strong' : undefined}
       id="follow-up"
       // 草稿由输入框自己记：打字只重渲染输入框，不带着整页消息重画
       draftKey={`task:${taskId}`}
@@ -1609,6 +1611,13 @@ export function TaskView({
                   }
             }
           />
+          {/* Agent、模型、思考强度和新建对话的输入框一样放在左下角（不挪到标题栏）。不用角色的对话能换；
+              用角色的对话跟着角色设置，只读显示 */}
+          {byCli ? (
+            <ChatModelPicker value={chatRun} onChange={changeRun} />
+          ) : (
+            chatAgent && <RoleModelBadge agent={chatAgent} />
+          )}
           {task.mode === 'workflow' && (
             <span className="min-w-0 truncate pl-1 text-xs text-subtle">
               {working
@@ -1634,13 +1643,6 @@ export function TaskView({
       onStop={stop}
       leading={
         <>
-          {/* 右侧（设计稿）：模型和思考强度紧挨着上下文圆环。不用角色的对话能换（Chat 页的 Agent 和模型在标题栏，
-              这里只留思考强度）；用角色的对话跟着角色设置，只读显示 */}
-          {byCli ? (
-            <ComposerModelPicker value={chatRun} onChange={changeRun} parts={chatPage ? 'effort' : 'all'} />
-          ) : (
-            chatAgent && <RoleModelBadge agent={chatAgent} />
-          )}
           <TaskContextRing task={task} node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined} />
           {/* 还在等名下的东西跑完时不放「继续执行」：那一轮不是「被中断」，再拉起一遍会和还在跑的子对话重复。
               只挡「已停止」这一种：失败时「重试」是用户主动重跑，哪怕子对话还在跑也要能点 */}
@@ -1665,13 +1667,15 @@ export function TaskView({
       }
       label={t('继续输入要求')}
       placeholder={
-        !working
-          ? waitText
-            ? t('{what}，可以直接输入要求', { what: waitText })
-            : t('继续输入要求')
-          : canSteer
-            ? t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
-            : t('执行中也可以输入，这一轮结束后接着处理')
+        aiLook && !working && !waitText
+          ? t('追问，或让它换个方向查…')
+          : !working
+            ? waitText
+              ? t('{what}，可以直接输入要求', { what: waitText })
+              : t('继续输入要求')
+            : canSteer
+              ? t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
+              : t('执行中也可以输入，这一轮结束后接着处理')
       }
     />
   )
@@ -2027,7 +2031,7 @@ export function TaskView({
     </>
   )
 
-  // Chat 页（没有项目的聊天）的标题栏（Chat.dc.html）：标题，右边「Agent · 模型」、导出、开关右栏
+  // Chat 页（没有项目的聊天）的标题栏（Chat.dc.html）：标题，右边导出、开关右栏
   const chatRailShown = chatPage && chatRailOn && !chatRail.empty && !reportOn && !reportCover
   const chatHeader = (
     <header
@@ -2048,12 +2052,8 @@ export function TaskView({
         {titleNode}
         {headerBadges}
       </div>
-      {/* 不用角色的聊天在这里换 CLI 和模型（思考强度留在输入框里）；用了角色的只写是谁在回答 */}
-      {byCli ? (
-        <ChatModelPicker value={chatRun} onChange={changeRun} parts="run" />
-      ) : (
-        <span className="min-w-0 truncate px-2 text-xs text-subtle">{chatLabel}</span>
-      )}
+      {/* 用了角色的写一下是谁在回答；Agent 和模型的选择都在输入框里，不放标题栏 */}
+      {!byCli && <span className="min-w-0 truncate px-2 text-xs text-subtle">{chatLabel}</span>}
       <Menu>
         <MenuTrigger asChild>
           <IconButton size="sm" tone="bare" label={t('导出')}>
@@ -2091,7 +2091,7 @@ export function TaskView({
 
   return (
     <WithAgents agents={agents}>
-      <FileOpenCtx.Provider value={openFile}>
+      <TaskViewCtx openFile={openFile} aiLook={aiLook}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider
           value={
@@ -2255,6 +2255,12 @@ export function TaskView({
                           <Fragment key={b.m.id}>
                             <UserMessage
                               anchorId={b.m.id}
+                              // AI 分析窗口里，分析对话的第一句是面板拼好的报错 / 记录：画成「分析对象」卡片（设计稿 AiWindow）
+                              subject={
+                                embed && b.m.id === firstUser && isAnalysisTask(task, localAgents)
+                                  ? { label: t('分析对象'), hint: t('面板自动附上') }
+                                  : undefined
+                              }
                               text={b.m.text}
                               at={b.m.at}
                               attachments={b.m.attachments}
@@ -2629,7 +2635,7 @@ export function TaskView({
             />
           </ChildListCtx.Provider>
         </PaneNavCtx.Provider>
-      </FileOpenCtx.Provider>
+      </TaskViewCtx>
     </WithAgents>
   )
 }
@@ -3286,4 +3292,24 @@ function RunPhase({ task, label, agentIds }: { task: Task; label: string; agentI
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
   return <>{busy || streaming || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
+}
+
+/**
+ * 对话页往下传的两个上下文：点文件路径打开文件窗口、AI 分析窗口的样式（lib/ai-look.ts）。
+ * 合成一个组件是为了不在 TaskView 的大段 JSX 外面再套一层（套一层整段都要重新缩进）
+ */
+function TaskViewCtx({
+  openFile,
+  aiLook,
+  children,
+}: {
+  openFile: (path: string, line?: number) => void
+  aiLook: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <FileOpenCtx.Provider value={openFile}>
+      <AiLookCtx.Provider value={aiLook}>{children}</AiLookCtx.Provider>
+    </FileOpenCtx.Provider>
+  )
 }

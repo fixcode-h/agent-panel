@@ -52,8 +52,17 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   summary: () => <SummaryPage />,
 }
 
-/** 自己分成几块面板的页面：项目工作区（项目首页 / 任务）、打开的聊天、计划（日历 + 详情两块） */
-const splitPage = (r: Route) => r.page === 'projects' || (r.page === 'chat' && !!r.id) || r.page === 'schedules'
+/**
+ * 自己分成几块面板的页面：项目工作区（项目首页 / 任务）、打开的聊天、计划（日历 + 详情两块）、
+ * 打开的设计（对话 / 画板 / 检查器三块，照设计稿 Design.dc.html）。
+ * 设计的 'new'（新建）和 'home'（项目主页，见 lib/design-projects 的 DESIGN_HOME）还是一整块；
+ * 这里写字面量不导入常量，免得把设计模块拉进首屏的包
+ */
+const splitPage = (r: Route) =>
+  r.page === 'projects' ||
+  (r.page === 'chat' && !!r.id) ||
+  r.page === 'schedules' ||
+  (r.page === 'design' && !!r.id && r.id !== 'new' && r.id !== 'home')
 
 function useTheme() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))

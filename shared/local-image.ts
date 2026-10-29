@@ -522,6 +522,12 @@ export interface LocalStatus {
 export const modelReady = (m: LocalModel, st: Pick<LocalStatus, 'files' | 'external'>) =>
   st.external || m.files.every((f) => st.files.includes(f))
 
+/** 试跑传来的尺寸：不是 64~4096 的数就按 1024 算，免得一个坏值让 localSize 算出 NaN */
+export const chainSize = (width?: unknown, height?: unknown) => {
+  const ok = (v: unknown) => (typeof v === 'number' && v >= 64 && v <= 4096 ? Math.round(v) : 1024)
+  return { width: ok(width), height: ok(height) }
+}
+
 /** 按图片比例换算出图尺寸：面积接近 base²，边长是 64 的倍数，不超出模型能处理的范围 */
 export function localSize(width: number, height: number, base: number) {
   const ar = Math.min(4, Math.max(0.25, width / height))
@@ -818,8 +824,12 @@ export const ComfyWorkflow = z.object({
     z.object({ class_type: z.string(), inputs: z.record(z.string(), z.unknown()) }).passthrough(),
   ),
   builtin: z.boolean().optional(),
+  /** 从哪来：从 ComfyUI 导入的、模板商店加的、AI 生成的；手动建的、复制的、旧数据没有。ComfyUI 页按它分「我的 / 导入的」 */
+  origin: z.enum(['import', 'template', 'ai']).optional().catch(undefined),
   updatedAt: z.string().default(''),
 })
+/** 「导入的」：从 ComfyUI 导入或者模板商店加进来的，不是在面板里自己做的 */
+export const importedWorkflow = (w: Pick<ComfyWorkflow, 'origin'>) => w.origin === 'import' || w.origin === 'template'
 export type ComfyWorkflow = z.infer<typeof ComfyWorkflow>
 
 /** 工作流在游戏 / 网页这一栏里出不出来：处理类工作流两边都要能用 */

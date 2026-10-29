@@ -258,6 +258,10 @@ export const EN_FLOW: Record<string, string> = {
   '输入和输出 token 合计': 'Input and output tokens combined',
   不限: 'No limit',
   收起属性栏: 'Hide properties panel',
+  // 属性栏顶部的页签：当前编辑的对象
+  '节点 · {name}': 'Node · {name}',
+  '流程 · {name}': 'Flow · {name}',
+  节点名称: 'Node name',
   显示属性栏: 'Show properties panel',
   拖动调整属性栏的宽度: 'Drag to resize the properties panel',
   推荐的下一步: 'Suggested next steps',
@@ -295,4 +299,29 @@ export const EN_FLOW: Record<string, string> = {
   开始运行: 'Start run',
   '要在这个项目里做什么，例如：商品详情页增加「看了又看」推荐':
     'What to do in this project, e.g. add "customers also viewed" recommendations to the product page',
+  // 流程图编辑器：底部工具条的项目、运行中、重新运行；属性栏的流程说明、运行进度页签；步骤选项
+  重新运行: 'Run again',
+  '用上次的任务描述再运行一次：{title}': 'Run again with the last task description: {title}',
+  在哪个项目里运行: 'Project to run in',
+  '打开正在运行的执行：{title}': 'Open the running execution: {title}',
+  '运行中 {n}': 'Running {n}',
+  属性栏页签: 'Inspector tabs',
+  '工作流说明：每个节点执行时都会带上': 'Workflow guide: sent along with every node',
+  流程说明: 'Guide',
+  '「{name}」里最近一次执行的进度': 'Progress of the latest run in "{name}"',
+  运行进度: 'Run progress',
+  '写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给角色。':
+    'Describe the goals, conventions and definition of done. This guide is sent to the role for every node.',
+  看哪个项目的运行进度: 'Project to show progress for',
+  '执行的 Agent': 'Agent that runs it',
+  '节点上的步骤都用默认 Agent 执行，在设置里更换默认 Agent':
+    'Node steps always run on the default Agent; change the default Agent in Settings',
+  步骤选项: 'Step options',
+  '这个工作流还没有在「{name}」里运行过。点底部工具条的运行按钮开始一次执行。':
+    'This workflow has not run in "{name}" yet. Use the run button in the bottom toolbar to start one.',
+  '还没有项目。先在「项目」里添加一个本机目录，再在项目里运行这个工作流。':
+    'No projects yet. Add a local folder under Projects first, then run this workflow in it.',
+  节点进度: 'Node progress',
+  '这次执行还没有开始执行节点。': 'This run has not started any nodes yet.',
+  '上次运行没有任务描述，无法重新运行': 'The last run has no task description, so it cannot be run again',
 }

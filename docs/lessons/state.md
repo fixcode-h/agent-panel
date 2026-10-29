@@ -1,8 +1,8 @@
 ---
-paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks.ts, server/orch-mcp.ts, server/exec/process.ts, server/exec/proc-stats.ts, web/src/lib/useStickToBottom.ts, web/src/components/tasks/Messages.tsx, web/src/components/tasks/TaskView.tsx
+paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks.ts
 ---
 
-# 对话状态、父子同步和停止
+# 对话状态和父子对话之间的交付
 
 ## 父子对话之间的交付：消息走 deliver，收口按面板的完成条件判断
 
@@ -17,24 +17,6 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks.ts, server
 - 规则：独立分支的子对话收尾是请求：`submit_merge` 只登记 `wrapRequest` 并叫醒父对话，合并、标完成、删分支由父对话 `finish_child` 触发。合并就是验收，测试必须在合并前、在子对话分支里跑通。
 - 起因：用户 2026-10-23 指出子对话结束显示「这一轮被中断」、上报给父对话的状态不准；根因是 `childTurnSettle`、`childHolds`、`taskStage` 三套判据和三条上报路径各说各的，`completeChild` 的 `finish` 停止又被引擎当成中断。
 - 防线：`shared/task-stage.test.ts` 的 `convState` 用例；`shared/plan.test.ts` 的 `childReport` 用例；`server/engine-steps.test.ts` 的 finish 用例；`scripts/e2e/04-subagents.mjs` 的收尾请求断言。
-
-## 驱动转圈、计时的字段必须进 messageStamp；停止要杀到孙进程
-
-- 规则：界面靠 `messageStamp` 判断消息变没变，工具行的 `running`、`ms` 这类决定转圈和耗时的字段必须进 stamp，否则服务端收掉了界面也不刷新。停止后台命令用 `killTreeDeep`：先拍进程表快照，按 ppid 把子孙都杀掉，Windows 上父进程先退、孙进程被改挂（或 setsid）也能找到。
-- 起因：用户 2026-10-23 反馈「强制停止对话，不会终止后台运行命令」，截图里 `git config…` 一直转圈：stamp 没包含 `running`，停止的更新推不到界面；`taskkill /T` 找不到已经脱离父进程的孙进程。
-- 防线：`shared/task-stage.test.ts` 的 `messageStamp` 用例；`server/exec/proc-stats.test.ts` 的 `descendants` 用例。
-
-## 跟随到底部按滚动方向判断，不按离底部多远
-
-- 规则：`useStickToBottom` 贴底时只有 `scrollTop` 变小（用户往上滚）才松开（`stillPinned`）。内容变高后浏览器补发的 scroll 事件里 `scrollTop` 没变、离底部却变远了，按距离判断会误以为用户滚走。
-- 起因：用户 2026-10-23 反馈对话进行中偶发不回到底部。
-- 防线：`web/src/lib/useStickToBottom.test.ts` 的 `stillPinned` 用例。
-
-## 等子对话的步骤只由面板标完成；子对话收尾只走 submit_merge
-
-- 规则：计划里挂着等待（子对话、后台命令）的步骤，Agent 自己标完成不算，面板在结果推回时标；父对话开子对话、交消息没写 step 时挂在正在做（或在等）的那一步。独立分支里的子对话不派「版本控制」收尾（`spawn` 直接拒），自己或子任务 `git merge` 过去后计划停在「合回」时也要提醒它 submit_merge。finish_child 每条出口都由 syncParentPlan 刷新父计划。
-- 起因：2026-10-24 父对话把子对话的计划抄进自己的计划一口气标完成，界面显示「计划已完成」；子对话的工具搜索没找到 submit_merge，派「版本控制」直接合进 dev，分支已合进去所以面板不提醒，子对话在收尾卡了 13 分钟。
-- 防线：`shared/plan.test.ts` 的「还在等子对话的步骤」「刷新计划」；`scripts/real-cli/pi-handoff.mjs`（真实 Pi + 模拟模型，不进 CI）。
 
 ## 「在运行」只看 convActive，在运行的不失活
 

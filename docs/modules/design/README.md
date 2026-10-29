@@ -1,7 +1,7 @@
 # design：UI 设计、AI 对话与导出
 
 - status: verified
-- source_paths: `server/designs.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`
+- source_paths: `web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`
 - entry: `server/designs.ts`
 - analyzed_at: 2026-10-24
 
@@ -49,6 +49,7 @@
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
 
 ## MOSS-Image 布局出图（2026-10-24）
+
 - 目的：整屏原画里要出现准确的中英文、并且按设计稿的位置摆放时，把画布上的文字块和主要元素转成 MOSS-Image 的布局 JSON 一起交给工作流，而不是只靠自然语言描述位置。
 - 取布局项（`shared/moss.ts` 的 `designLayoutItems`）：只取有实际文字的文字块（跳过默认的 `Text Block` / `Text`）和用到了有 `prompt` 描述图片的控件；文字块的 `caption` 写字号、粗细、对齐和颜色，文字内容放在 `text` 里。坐标按 `CanvasPanelSlot` 逐层累加；非 `CanvasPanel` 容器里的控件和网页 `Frame` 根量不出像素位置，直接跳过；最多 24 项。宁可少给几项，不给错坐标。
 - 编译布局（`mossBbox` / `mossLayoutJson`）：设计稿像素按实际出图尺寸等比换算，左 / 上 `floor`、右 / 下 `ceil`，越界裁剪，减画布中心后按 `yxyx` 输出；空框丢弃。输出单行 JSON：`summary.caption` 放这次的正向描述，`items` 里是 `text` / `object`，并带 `bbox_coord_space: "abs_centralized"`、`bbox_format: "yxyx"`。没有有效项时返回 `undefined`。
@@ -105,6 +106,14 @@
 - 段的失效处理：链里存的某个工作流被删掉时，`checkChain` 收 `workflow: ComfyWorkflow | undefined`，按**原下标**报「第 n 段的工作流已经不在了」，不压缩数组（第一段要不要原图、锚点检查都依赖下标）；界面不 `filter` 掉失效段，单段链也照样校验。
 - 链的描述口径：`localGenerateChain` 每段取「段自己的描述 → 本次传进来的描述 → 该工作流自己的说明」，链名（常是「新链」）不当提示词；试跑接口没填描述时传空串，由上面这条兜底。
 - 前端：`web/src/components/comfy/ComfyChainPanel.tsx` 挂在 ComfyPage 的队列面板下面。可以新建链、选段（只列该分类或 `both` 的工作流，模型没下载的标出来）、上下移、删段、给图生图段单独写描述，上传一张原图试跑并看原图和输出图的预览。新建链的默认段由 `defaultChainSteps` 按特征挑「不吃提示词的纯处理段 → 吃提示词的段」（即「去背景 → 图生图」），不按 id 写死。不合法时显示 `checkChain` 的问题、`chainNotes` 的提醒；第一段要原图却还没选时提示。演示版 `web/src/lib/demo-backend.ts` 的 `chains` 分支能存链，试跑返回「演示版没有真的 ComfyUI」。
+- ComfyUI 工作流页（`web/src/pages/ComfyPage.tsx`，2026-10-29 照设计稿 ComfyUI 画板重排）：
+  - 入口：宽屏在最左图标栏（`web/src/components/layout/Sidebar.tsx` 的 `DESIGN_NAV`，`ActivityBar` 只在 `isDesignPage` 时画这一组），是设计模式的功能页——`isToolPage` 算它，打开时会话侧栏让开；图标栏顶上的「回到主页」从这里回到最近的设计页（`homeRoute(page)`），不跳回 Agent 模式。手机抽屉里仍列在设计模式的导航下。
+  - 左栏：工作流按 `kind` 分「游戏 UI / 网页 UI / 图片处理（`both`）」三组，来源筛选「全部 / 内置 / 我的」，缩略块按用途上色（`USE_LOOK`），角上的点是模型下载了没有；底下常驻 ComfyUI 运行状态和「本机设置」。旧链接 `#/comfy/web` 没带工作流 id 时选第一个网页工作流。AI 生成、导入弹窗里自己选游戏 / 网页（`KindPick`），默认跟当前工作流。
+  - 画布：`ComfyGraphView` 的 `fill` 撑满整块，`inset` 让开上面浮着的标题 + 工具条（量出实际高度，放不下一行时折成两行）和下面的试生成条；工具条的次要按钮在画布窄于 1000px 时只留图标。节点头和连线按 `nodeTone`（class_type 归到模型 / 条件 / 潜空间 / 图片）上色；点节点 → 右栏「节点」页签显示参数（`ComfyValueField` 和画布上同一个输入组件）；「整理」用 `layoutToken` 把手动拖乱的节点摆回 `layoutComfyGraph` 的位置。
+  - 试生成：把当前工作流当成一段的工作流链走 `POST /local-image/chains/:id/run`（1024²、1 张），结果只记在这一页的「队列」页签里；没保存、或工作流要 `{{image}}` 原图时按钮禁用并写明原因（服务端按 id 取存下来的那份）。出错原样 toast，演示版返回「演示版没有真的 ComfyUI」。
+  - 来源：`ComfyWorkflow.origin`（`import` 从 ComfyUI 导入、`template` 模板商店加的、`ai` AI 生成的；手动建、复制、旧数据为空），`importedWorkflow` 判「导入的」；列表筛选「全部 / 内置 / 我的 / 导入的」按它分，服务端 `addTemplate` 写 `template`。试生成可选比例（1024² / 3:2 / 2:3 / 16:9，只定比例，服务端 `localSize` 按模型基准边长换算）和张数 1~4，经 `POST /local-image/chains/:id/run` 的 `width` / `height` / `count`（`chainSize` 把坏值退回 1024，不传仍是 1024² 一张）。
+  - 右栏页签：说明（字段、用途块、占位符、问题、三条「AI 优化」快捷要求）/ 节点 / 模型（当前工作流用到的内置模型的文件、下载状态和进度，缺的一键下载；外接 ComfyUI 或自己的模型不检查）/ 队列（试生成、`ComfyQueuePanel`、`ComfyChainPanel`）。
+  - 回归：`scripts/ui/04-design.mjs` 的 ComfyUI 段（图标栏入口只在设计模式出现、节点图适应、点节点出参数、从图标栏切回 Agent 模式）、`scripts/ui/08-misc.mjs`（模板商店、工作流链）。
 - 回归：`shared/comfy-chain.test.ts`（两段 / 三段链的接线、中间图不落盘、纯文生图段改写成图生图、四种组合合并后无断线）、`shared/local-image.test.ts`（三个处理类工作流的节点和连线、`imageToImage` 两种采样器、auto 不选需要输入图的工作流、`{{image}}` 填空与保留）、`server/local-image.test.ts`（内置工作流通过 `checkWorkflow`）。
 - 真实 ComfyUI 验证（本机 0.42.0，`/object_info` 核对 6 个节点存在）：把合并后的链直接 `POST /prompt` 提交——「图生图 → 放大」带一张真实 PNG 时**被 ComfyUI 接受**（节点图和连线合法）；含去背景的链只报 `bg_removal_name: 'birefnet.safetensors' not in []`，即 `models/background_removal` 没装权重，与节点图无关。**完整出图未跑通**：去背景要下载 BiRefNet 权重（设置 → 本机生图 → 「图片处理」），且 Z-Image 权重是否就绪本次未确认。
 
@@ -112,3 +121,12 @@
 
 - `pendingTurns` 只存在进程内，服务重启后不会自动接续这些消息；是否需要落盘（待确认）。
 - 插话时附件用的是上传目录的绝对路径，如果这一轮的 CLI 被限制在工作目录里，可能读不到（待确认）。
+
+## 页面布局与设计类型下拉（2026-10-29）
+
+- 照设计稿 `Design.dc.html`：打开的设计是三块圆角面板并排（`App.tsx` 的 `splitPage` 把 `page: 'design'` 且 `id` 不是 `new` / `home` 的路由算进去）——左边 AI 对话（默认 320，拖动条在右缘）、中间画板、右边检查器（默认 280）。
+- 设计名和保存状态在对话栏标题行，收起对话栏后回到画板标题行；收起按钮在对话栏标题行，打开按钮在画板标题行。
+- 画板标题行夹在两栏中间，只放阶段条（`StageSteps`：原画 → 界面，就是原来的「原画 / 界面」切换，确认模板后原画打勾）、尺寸、风格、版本、撤销重做、「更多」（动画面板开关 + 本机 ComfyUI）和导出；用 `@container` 在窄的时候收起风格文字和阶段圆点，放不下时横向滚动兜底。
+- 侧栏 `SidebarDesigns.tsx` 顶部是「UI 设计 / 模型设计」下拉（选择记在本机 `agent-panel:design-mode`）。模型设计列的是 Agent 项目里 `Task.modelDesign` 的顶层对话（ADR 0025），按项目分组，点进对话页；「项目」标题行的 + 和空状态里的按钮打开 `web/src/components/design/NewModelDesignDialog.tsx`：选 Agent 项目、写要建的模型，走 `POST /tasks`（`mode: 'chat'`、`modelDesign: true`）后跳进对话；打开时查一次 `api.blenderStatus()`，找不到 Blender 照样能建，但在弹窗底部写明原因并给「去设置」（设置的 `blender` 小节）。
+- 3D 预览（ADR 0025 决策 4）：模型设计对话的右栏多一个默认选中的「模型」页签（`web/src/components/tasks/TaskFiles.tsx` 按 `task.modelDesign` 加，`ModelPreview.tsx` 用 `lazy` 单独分块，three.js 只在这里加载）。`api.blenderModel` 轮询 `GET /api/blender/models/:taskId`（执行中 2 秒、空闲 8 秒），版本号变了才用 `api.blenderGlb` 取 `scene.glb` 重新加载；只有第一次加载自动对准（`fit` 按横竖两个视角里窄的那个算距离），之后保持用户的视角；换模型时释放旧的几何体、材质和贴图。按需渲染（转动、换模型、改尺寸时才画一帧）；没有 WebGL 时写明并留下载入口。会话栏和右栏放不下时，模型对话让会话栏让开（`TaskView` 的 `sessionShown`）。演示版没有 Blender：`api.blenderGlb` 换成 `web/src/lib/demo-model.ts` 现场拼的宝箱，`demo-backend` 对 `modelDesign` 对话返回版本 1 和五个物体；正式包里这段被 `VITE_DEMO` 判断整段去掉（`npm run build` 后 dist 里没有 `Chest_Body`）。
+- 回归：`scripts/ui/04-design.mjs` 在项目行折叠检查之后切到「模型设计」、打开新建模型设计弹窗（演示版提示没有 Blender）、建一个模型对话看右栏「模型」页签的物体列表，再切回。

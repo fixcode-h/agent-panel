@@ -215,6 +215,20 @@ export function rescheduleIfUnwatched(taskId: string) {
   scheduleIdle(taskId)
 }
 
+/**
+ * 用户从菜单手动「激活 Agent」：页面可能早就切走、已经过了宽限（left），这时启动的 CLI 一停到等下一句就会退出。
+ * 当成刚有人看过：清掉「已离开」的标记，没人在看时从现在起重新算一整段宽限，到点照常回收
+ */
+export function touchPresence(taskId: string) {
+  reported.add(taskId)
+  left.delete(taskId)
+  pending.delete(taskId)
+  if (viewers.get(taskId)?.size) return
+  clearTimer(timers, taskId)
+  clearTimer(rechecks, taskId)
+  scheduleIdle(taskId)
+}
+
 /** 还有人在看吗：页面还没上报过时当作在看，避免刚开始执行就结束 */
 export function isWatched(taskId: string) {
   return !left.has(taskId)

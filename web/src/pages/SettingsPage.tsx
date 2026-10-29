@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { toast } from '@/lib/toast'
 import {
   ArrowUpCircle,
@@ -23,6 +23,7 @@ import {
   GraduationCap,
   Gauge,
   Keyboard,
+  Mic,
   Search,
   Component,
   Box,
@@ -65,6 +66,7 @@ import { GlobalLessonsSection } from '@/components/projects/Lessons'
 import { RemoteSection } from '@/components/settings/RemoteSection'
 import { NetworkSection } from '@/components/settings/NetworkSection'
 import { WebSearchSection } from '@/components/settings/WebSearchSection'
+import { SpeechSection } from '@/components/settings/SpeechSection'
 import { IntegrationsSection } from '@/components/settings/IntegrationsSection'
 import { DeploySection } from '@/components/settings/DeploySection'
 import { FontSection } from '@/components/settings/FontSection'
@@ -75,7 +77,10 @@ import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { Group, ReadValue, Row } from '@/components/settings/parts'
-import { SectionToc, setSectionScroll } from '@/components/settings/section-nav'
+import { SectionToc, revealSetting, setSectionScroll } from '@/components/settings/section-nav'
+import { SettingsSearchBox, SettingsSearchResults, type SettingsHitGroup } from '@/components/settings/SettingsSearch'
+import { fillVars, searchSettings, searchTerms, type SettingsItem } from '@/lib/settings-search'
+import settingsIndex from 'virtual:settings-index'
 import { ShellSetting } from '@/components/settings/ShellSetting'
 import { CustomClis } from '@/components/settings/CustomClis'
 import {
@@ -104,6 +109,7 @@ const pickLabel = pickButtonLabel
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
+  { id: 'speech', label: t('语音输入'), icon: Mic, group: t('通用') },
   { id: 'fonts', label: t('外观'), icon: Type, group: t('通用') },
   { id: 'components', label: t('组件'), icon: Component, group: t('通用') },
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
@@ -164,6 +170,7 @@ function SettingsBody({
   const [proxy, setProxy] = useState(initial.proxy)
   const [proxyOn, setProxyOn] = useState(initial.networkProxyEnabled)
   const [webSearch, setWebSearch] = useState(initial.webSearch)
+  const [speech, setSpeech] = useState(initial.speech)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [fileFormat, setFileFormat] = useState(initial.fileFormat)
   const [language, setLanguage] = useState(initial.language)
@@ -333,6 +340,7 @@ function SettingsBody({
     webhook: { enabled: webhookOn, url: webhookValid ? webhookUrlTrimmed : initial.webhook.url },
     // 联网搜索：搜索源和密钥（开关在 CLI 自己的设置里，不在这份全局设置里）
     webSearch,
+    speech,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
@@ -417,6 +425,106 @@ function SettingsBody({
   const defApi = defDraft.authMode === 'api' ? apis.find((a) => a.id === defDraft.apiId) : undefined
   const defProtocol = defApi?.protocol
 
+  // 搜索：跨所有页搜设置项（索引在构建时从源码抽出，见 scripts/lib/settings-index.mjs）
+  const [query, setQuery] = useState('')
+  const [hit, setHit] = useState(0)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const terms = searchTerms(query)
+  const searching = terms.length > 0
+  const sectionPath = (s: Section) => (cliPage(s) && s.id !== 'models' ? `Agent › ${s.label}` : s.label)
+  const sectionIcon = (s: Section) =>
+    s.cli ? (
+      <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ background: cliColor(s.cli.id) }} />
+    ) : s.id === 'models' ? (
+      <SquareTerminal className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+    ) : (
+      s.icon && <s.icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+    )
+  const defName = CLIS.find((c) => c.id === defCli)?.name ?? defCli
+  // 索引存的是中文原文：翻成当前语言再搜；各个 CLI 共用的那页（@cli）落到默认 CLI 上
+  const searchItems = useMemo(() => {
+    const vars = { cli: defName }
+    const pages = new Set(SECTIONS.map((s) => s.id))
+    const tr = (zh?: string) => (zh ? fillVars(t(zh), vars) : undefined)
+    const items: SettingsItem[] = SECTIONS.map((s) => ({
+      section: s.id,
+      title: s.id === 'models' ? 'Agent' : s.label,
+      isSection: true,
+      zh: s.id,
+    }))
+    for (const e of settingsIndex) {
+      const section = e.section === '@cli' ? `cli:${defCli}` : e.section
+      if (!pages.has(section)) continue
+      items.push({
+        section,
+        title: tr(e.title)!,
+        group: e.isGroup ? undefined : tr(e.group),
+        desc: tr(e.desc),
+        isGroup: e.isGroup,
+        zh: [e.title, e.group, e.desc].filter(Boolean).join('\n'),
+      })
+    }
+    return items
+    // SECTIONS 每次渲染都重建，按它的 id 序列判断变化即可
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [SECTIONS.map((s) => s.id).join(), defCli, defName])
+  // 结果按左栏的顺序分组；整页那一项排在组里最前面
+  const hitGroups: SettingsHitGroup[] = searching
+    ? SECTIONS.flatMap((s) => {
+        const items = searchSettings(
+          searchItems.filter((it) => it.section === s.id),
+          query,
+        )
+        return items.length ? [{ section: s.id, label: sectionPath(s), icon: sectionIcon(s), items }] : []
+      })
+    : []
+  const hits = hitGroups.flatMap((g) => g.items)
+  const hitCount = (id: string) => hitGroups.find((g) => g.section === id)?.items.length ?? 0
+  // 左栏每一项命中几条：Agent 那一项合计默认 Agent、部署、API 和各个 CLI 页
+  const navHits = (s: Section) =>
+    (s.id === 'models' ? SECTIONS.filter(cliPage) : [s]).reduce((n, x) => n + hitCount(x.id), 0)
+  // 换了搜索词从第一项开始选
+  useEffect(() => setHit(0), [query])
+  const pick = (it: SettingsItem) => {
+    setQuery('')
+    onSection(it.section)
+    if (it.isSection) return
+    const css = (v: string) => CSS.escape(v)
+    revealSetting(
+      it.isGroup
+        ? [`[data-setting-group="${css(it.title)}"] > h3`]
+        : [
+            ...(it.group ? [`[data-setting-group="${css(it.group)}"] [data-setting="${css(it.title)}"]`] : []),
+            `[data-setting="${css(it.title)}"]`,
+          ],
+    )
+  }
+  const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape' && query) {
+      e.preventDefault()
+      setQuery('')
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!hits.length) return
+      e.preventDefault()
+      const d = e.key === 'ArrowDown' ? 1 : -1
+      setHit((i) => (i + d + hits.length) % hits.length)
+    } else if (e.key === 'Enter' && hits[hit]) {
+      e.preventDefault()
+      pick(hits[hit])
+    }
+  }
+  // Ctrl / ⌘ + F 聚焦搜索框（照 VS Code 的设置页），不弹浏览器自己的页内查找
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'f') return
+      e.preventDefault()
+      searchRef.current?.focus()
+      searchRef.current?.select()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       <nav
@@ -429,9 +537,11 @@ function SettingsBody({
         <span className="sticky top-0 z-10 hidden bg-rail px-2.5 pt-1 pb-4 md:-top-3 md:-mt-3 md:pt-4 font-serif text-[1.25rem] font-semibold tracking-tight md:block">
           {t('设置')}
         </span>
+        <SettingsSearchBox value={query} onChange={setQuery} onKeyDown={onSearchKey} inputRef={searchRef} />
         {SECTIONS.filter((s) => !cliPage(s) || s.id === 'models').map((s, i, list) => {
           // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
-          const on = s.id === 'models' ? inCli : s.id === cur.id
+          // 搜索时内容区是结果列表，左栏不再标当前页
+          const on = !searching && (s.id === 'models' ? inCli : s.id === cur.id)
           const head = s.group && s.group !== list[i - 1]?.group
           return (
             <div key={s.id} className="contents">
@@ -448,10 +558,13 @@ function SettingsBody({
               )}
               {/* 窄屏左栏是横向一行：行宽按文字走（w-auto），md 以上竖排才撑满 */}
               <NavRow
-                onClick={() => onSection(s.id)}
+                onClick={() => {
+                  setQuery('')
+                  onSection(s.id)
+                }}
                 on={on}
                 aria-describedby={s.id === 'models' && deployDot ? agentHintId : undefined}
-                className="w-auto shrink-0 whitespace-nowrap md:w-full"
+                className={cn('w-auto shrink-0 whitespace-nowrap md:w-full', searching && !navHits(s) && 'opacity-50')}
                 icon={
                   s.id === 'models' ? (
                     <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
@@ -462,6 +575,10 @@ function SettingsBody({
                 label={s.id === 'models' ? 'Agent' : s.label}
                 trailing={
                   <>
+                    {/* 搜索时每页右边写命中几项，没命中的页淡下去 */}
+                    {searching && navHits(s) > 0 && (
+                      <span className="shrink-0 text-[0.75rem] text-subtle tabular-nums">{navHits(s)}</span>
+                    )}
                     {s.id === 'update' && update && (
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
                     )}
@@ -486,7 +603,7 @@ function SettingsBody({
         })}
       </nav>
 
-      {inCli && (
+      {inCli && !searching && (
         // CLI 的二级列表：默认 CLI 和各个 CLI，CLI 可以拖动调整顺序（新建 Agent、下拉框里也按这个顺序）
         <nav
           aria-label="Agent"
@@ -593,714 +710,748 @@ function SettingsBody({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-4 md:px-9 md:pt-6">
           <h2 className="min-w-0 flex-1 truncate font-serif text-[1.25rem] font-semibold tracking-tight">
-            {cur.label}
+            {searching ? t('搜索设置') : cur.label}
+            {searching && hits.length > 0 && (
+              <span className="ml-2.5 font-sans text-[0.8125rem] font-normal tracking-normal text-subtle">
+                {t('{n} 项', { n: hits.length })}
+              </span>
+            )}
           </h2>
           <SaveIndicator {...save} invalid={valid ? undefined : t('超时时间需要是 0 到 1440 的整数')} />
           <DialogCloseButton label={t('关闭设置')} />
         </header>
         {/* 这一节有多个小节时，标题下面多一条页内导航（见 section-nav.tsx） */}
-        <SectionToc />
+        {!searching && <SectionToc />}
         <div
           ref={setSectionScroll}
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-12 [scrollbar-gutter:stable] md:px-9"
         >
-          {cur.id === 'styles' && <StylesSettings />}
-          {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
-          {cur.id === 'components' && <ComponentsSection />}
-          {cur.id === 'shortcuts' && <ShortcutsSection value={elementPicker} onChange={setElementPicker} />}
-          {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}
-          {cur.id === 'network' && (
-            <NetworkSection
-              enabled={proxyOn}
-              proxy={proxy}
-              onChange={({ enabled, proxy: url }) => {
-                setProxyOn(enabled)
-                setProxy(url)
-              }}
+          {searching && (
+            <SettingsSearchResults
+              groups={hitGroups}
+              terms={terms}
+              query={query}
+              active={hit}
+              onActive={setHit}
+              onPick={pick}
             />
           )}
-          {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
-          {cur.id === 'web-search' && <WebSearchSection value={webSearch} onChange={setWebSearch} />}
-          {cur.id === 'integrations' && <IntegrationsSection />}
-          {cur.id === 'general' && (
-            <>
-              {demo && (
-                <p className="mb-2 flex gap-2.5 rounded-xl bg-sel/50 p-3.5 text-[0.8125rem] leading-relaxed text-subtle">
-                  <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" />
-                  {t('在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 Agent。')}
-                </p>
-              )}
-              <Group title={t('执行与超时')}>
-                <Row
-                  title={t('单个步骤最长运行时间')}
-                  desc={t('分钟，填 0 不限制。超时后会停止这一步，任务标记为失败。')}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={timeout}
-                      onChange={(e) => setTimeoutMin(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!valid}
-                      className={cn('h-9', !valid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('单个步骤最长运行时间（分钟）')}
-                    />
-                    {!valid && (
-                      <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不限制')}</span>
-                    )}
-                  </div>
-                </Row>
-                <Row
-                  title={t('没有输出时提醒')}
-                  desc={t(
-                    '分钟，填 0 不检测。Agent 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。',
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={idle}
-                      onChange={(e) => setIdle(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!idleValid}
-                      className={cn('h-9', !idleValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('没有输出时提醒（分钟）')}
-                    />
-                    {!idleValid && (
-                      <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不检测')}</span>
-                    )}
-                  </div>
-                </Row>
-                <Row
-                  title={t('子对话没有输出时自动询问')}
-                  desc={t(
-                    '分钟，填 0 关闭。子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住；收到回复就重新计时，最多问 3 次后交给上面的「没有输出时提醒」。这两个时间互不影响，自动询问只问、不停止对话。',
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={childAsk}
-                      onChange={(e) => setChildAsk(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!childAskValid}
-                      className={cn('h-9', !childAskValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('子对话没有输出时自动询问（分钟）')}
-                    />
-                    {!childAskValid && (
-                      <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不问')}</span>
-                    )}
-                  </div>
-                </Row>
-              </Group>
-              <Group title={t('Webhook 通知')}>
-                <Row
-                  title={t('计划执行时发送 Webhook')}
-                  desc={t(
-                    '计划成功启动、启动失败、错过或上游没成功时，向这个地址 POST 一份 JSON，里面有计划、项目、这一轮的时间和结果。投递失败只记在计划上、不影响计划执行，最多重试 {n} 次。',
-                    { n: WEBHOOK_MAX_ATTEMPTS },
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      value={webhookUrl}
-                      placeholder="https://example.com/hook"
-                      onChange={(e) => setWebhookUrl(e.target.value)}
-                      aria-invalid={!webhookValid}
-                      aria-label={t('Webhook 地址')}
-                      className={cn('h-9', !webhookValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                    />
-                    {!webhookValid && <span className="text-xs text-danger">{t('填 http 或 https 开头的地址')}</span>}
-                  </div>
-                </Row>
-                <Row title={t('启用 Webhook')} desc={t('关掉时计划照常执行，只是不往外发。')}>
-                  <Switch aria-label={t('启用 Webhook')} checked={webhookOn} onCheckedChange={setWebhookOn} />
-                </Row>
-              </Group>
-              <Group title={t('会话保活')}>
-                <Row
-                  title={t('自动回收闲置 Agent')}
-                  desc={t(
-                    '回复完没人看着的空闲 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这两段时间和数量上限管，页面切到后台也照样跑完。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。',
-                  )}
-                >
-                  <Switch aria-label={t('自动回收闲置 Agent')} checked={reclaim} onCheckedChange={setReclaim} />
-                </Row>
-                <Row
-                  title={t('离开对话后保留多久')}
-                  desc={t(
-                    '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 Agent 留着，这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。只算回复完停在等下一句的空闲对话：正在执行的对话不管页面开着还是切到后台，都不会因为这个时长被收掉。',
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={presence}
-                      onChange={(e) => setPresence(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!presenceValid}
-                      className={cn('h-9', !presenceValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('离开对话后保留多久（分钟）')}
-                    />
-                    {!presenceValid && (
-                      <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
-                    )}
-                  </div>
-                </Row>
-                <Row
-                  title={t('没看过的回复保留多久')}
-                  desc={t(
-                    '分钟，填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。同样是只算空闲对话，正在执行的不受影响。',
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={unread}
-                      onChange={(e) => setUnread(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!unreadValid}
-                      className={cn('h-9', !unreadValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('没看过的回复保留多久（分钟）')}
-                    />
-                    {!unreadValid && (
-                      <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
-                    )}
-                  </div>
-                </Row>
-                <Row
-                  title={t('同时保活的会话上限')}
-                  desc={t(
-                    '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。只统计回复完在等下一句的空闲对话：正在执行的对话（包括已经切到后台在跑的）不占名额，也不会被收掉。填 0 表示不限制。',
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={keepAlive}
-                      onChange={(e) => setKeepAlive(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!keepValid}
-                      className={cn('h-9', !keepValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('同时保活的会话上限')}
-                    />
-                    {!keepValid && <span className="text-xs text-danger">{t('填 0 到 50 之间的整数')}</span>}
-                  </div>
-                </Row>
-              </Group>
-              <Group title={t('对话归档')}>
-                <Row
-                  title={t('自动归档不动的对话')}
-                  desc={t(
-                    '对话（连同子对话）这么多天没有动静、没在执行、回复也都看过了，就自动归档：列表里不再显示，在筛选里选「已归档」还能找到，随时可以取消归档。填 0 表示不自动归档。',
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={archiveDays}
-                      onChange={(e) => setArchiveDays(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!archiveValid}
-                      className={cn('h-9', !archiveValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('自动归档不动的对话')}
-                    />
-                    {!archiveValid && (
-                      <span className="text-xs text-danger">{t('填 0 到 3650 之间的整数，单位是天')}</span>
-                    )}
-                  </div>
-                </Row>
-              </Group>
-              <Group title={t('后台命令')}>
-                <Row
-                  title={t('同时运行的后台命令')}
-                  desc={t(
-                    '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。',
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={bgLimit}
-                      onChange={(e) => setBgLimit(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!bgValid}
-                      className={cn('h-9', !bgValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('同时运行的后台命令')}
-                    />
-                    {!bgValid && <span className="text-xs text-danger">{t('填 1 到 64 之间的整数')}</span>}
-                  </div>
-                </Row>
-              </Group>
-              <Group title={t('界面与启动')}>
-                <Row title="语言 · Language" desc={t('界面显示的语言，切换后页面会重新加载。')}>
-                  <Select
-                    aria-label={t('语言')}
-                    value={language}
-                    onChange={async (e) => {
-                      const v = e.target.value as Settings['language']
-                      setLanguage(v)
-                      // 文案在页面加载时就定了，保存后重新加载页面
-                      try {
-                        setSettings(await api.saveSettings({ ...value, language: v }))
-                      } catch (err) {
-                        return toast.error((err as Error).message)
-                      }
-                      switchLang(v)
-                    }}
-                    options={[
-                      { value: 'auto', label: t('跟随浏览器 · Auto') },
-                      ...LANGS.map((l) => ({ value: l.id, label: l.label })),
-                    ]}
-                    className="w-48"
-                  />
-                </Row>
-                <Row
-                  title={t('内容宽度')}
-                  desc={t('项目首页的输入框和任务列表、任务页的对话和工作流节点都用这个宽度，窗口窄时自动缩小。')}
-                >
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min={640}
-                      max={CONTENT_MAX}
-                      step={20}
-                      value={contentWidth}
-                      aria-label={t('内容宽度')}
-                      onChange={(e) => {
-                        const w = Number(e.target.value)
-                        setContentWidth(w)
-                        // 拖动时立即生效，不用等保存
-                        applyContentWidth(w)
-                      }}
-                      className="w-40 cursor-pointer accent-[var(--color-accent)]"
-                    />
-                    <span className="w-14 font-mono text-[0.8125rem] text-muted tabular-nums">{contentWidth}px</span>
-                    {contentWidth !== CONTENT_WIDTH && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setContentWidth(CONTENT_WIDTH)
-                          applyContentWidth(CONTENT_WIDTH)
-                        }}
-                      >
-                        {t('恢复默认')}
-                      </Button>
-                    )}
-                  </div>
-                </Row>
-                {!demo && (
-                  <Row
-                    title={t('启动后打开浏览器')}
-                    desc={t('启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。')}
-                  >
-                    <Switch aria-label={t('启动后打开浏览器')} checked={openBrowser} onCheckedChange={setOpenBrowser} />
-                  </Row>
+          {/* 搜索时各页照常挂着、只是藏起来：切回来时没保存的输入、读好的数据都还在 */}
+          <div hidden={searching}>
+            {cur.id === 'styles' && <StylesSettings />}
+            {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
+            {cur.id === 'components' && <ComponentsSection />}
+            {cur.id === 'shortcuts' && <ShortcutsSection value={elementPicker} onChange={setElementPicker} />}
+            {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}
+            {cur.id === 'network' && (
+              <NetworkSection
+                enabled={proxyOn}
+                proxy={proxy}
+                onChange={({ enabled, proxy: url }) => {
+                  setProxyOn(enabled)
+                  setProxy(url)
+                }}
+              />
+            )}
+            {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
+            {cur.id === 'web-search' && <WebSearchSection value={webSearch} onChange={setWebSearch} />}
+            {cur.id === 'speech' && <SpeechSection value={speech} onChange={setSpeech} />}
+            {cur.id === 'integrations' && <IntegrationsSection />}
+            {cur.id === 'general' && (
+              <>
+                {demo && (
+                  <p className="mb-2 flex gap-2.5 rounded-xl bg-sel/50 p-3.5 text-[0.8125rem] leading-relaxed text-subtle">
+                    <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" />
+                    {t('在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 Agent。')}
+                  </p>
                 )}
-                {!demo && (
+                <Group title={t('执行与超时')}>
                   <Row
-                    title={t('访问令牌')}
+                    title={t('单个步骤最长运行时间')}
+                    desc={t('分钟，填 0 不限制。超时后会停止这一步，任务标记为失败。')}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={timeout}
+                        onChange={(e) => setTimeoutMin(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!valid}
+                        className={cn('h-9', !valid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                        aria-label={t('单个步骤最长运行时间（分钟）')}
+                      />
+                      {!valid && (
+                        <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不限制')}</span>
+                      )}
+                    </div>
+                  </Row>
+                  <Row
+                    title={t('没有输出时提醒')}
                     desc={t(
-                      '打开后，只有用启动时显示的地址（带 token）打开过的浏览器能访问面板，本机的其他程序不能直接调用接口。这个浏览器会自动获得授权。',
+                      '分钟，填 0 不检测。Agent 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。',
                     )}
                   >
-                    <Switch aria-label={t('访问令牌')} checked={requireToken} onCheckedChange={setRequireToken} />
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={idle}
+                        onChange={(e) => setIdle(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!idleValid}
+                        className={cn('h-9', !idleValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                        aria-label={t('没有输出时提醒（分钟）')}
+                      />
+                      {!idleValid && (
+                        <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不检测')}</span>
+                      )}
+                    </div>
                   </Row>
-                )}
-              </Group>
-              <Group title={t('输入与文件')}>
-                <Row
-                  title={t('称呼')}
-                  desc={t('提问卡片、子对话提问这些地方怎么称呼你，例如「需要用户回答」。不填写「用户」。')}
-                >
-                  <Input
-                    aria-label={t('称呼')}
-                    value={userName}
-                    maxLength={20}
-                    placeholder={t('用户')}
-                    onChange={(e) => setUserName(e.target.value)}
-                    className="w-40"
-                  />
-                </Row>
-                <Row
-                  title={t('新会话默认开启提问')}
-                  desc={t(
-                    '输入框上的「提问」按钮在新会话里默认打开：AI 有问题时弹出卡片问你，等你回答再继续。关着时 AI 自己选最合适的做法。已有的会话保持各自的选择。',
-                  )}
-                >
-                  <Switch
-                    aria-label={t('新会话默认开启提问')}
-                    checked={askUserDefault}
-                    onCheckedChange={setAskUserDefault}
-                  />
-                </Row>
-                <Row
-                  title={t('子对话默认也提问')}
-                  desc={t(
-                    '新建的父对话里「子对话也提问」默认打开：它之后新建的子对话会向你提问，而不是自己决定。已经创建的父对话和子对话不受影响，父对话上右键提问按钮可以单独改。',
-                  )}
-                >
-                  <Switch
-                    aria-label={t('子对话默认也提问')}
-                    checked={childAskUserDefault}
-                    onCheckedChange={setChildAskUserDefault}
-                  />
-                </Row>
-                <Row
-                  title={t('开发者模式')}
-                  desc={t(
-                    '打开后对话输入框上多一个「抓取界面元素」按钮，也可以按快捷键开启抓取：抓取期间左键、右键照常可用，用设置里的鼠标键（默认中键）点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出。',
-                  )}
-                >
-                  <Switch aria-label={t('开发者模式')} checked={developerMode} onCheckedChange={setDeveloperMode} />
-                </Row>
-                <Row title={t('抓取元素的方式')} desc={t('快捷键和用哪个鼠标键抓取，到「快捷键」里改。')}>
-                  <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                    <Kbd className="h-auto px-1.5 py-0.5 text-[0.75rem]">{hotkeyLabel(elementPicker.hotkey)}</Kbd>
-                    <span>{t('＋')}</span>
-                    <span>{pickLabel(elementPicker.button)}</span>
-                    <Button variant="ghost" size="sm" onClick={() => onSection('shortcuts')}>
-                      {t('去修改')}
-                    </Button>
-                  </div>
-                </Row>
-                <Row
-                  title={t('大文件只引用路径')}
-                  desc={t(
-                    'MB。粘贴、拖进输入框的文件超过这么大时不上传、不拷进对话目录，面板在本机找到原文件后直接引用它的路径。',
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={largeMB}
-                      onChange={(e) => setLargeMB(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!largeValid}
-                      className={cn('h-9', !largeValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('大文件只引用路径（MB）')}
-                    />
-                    {!largeValid && <span className="text-xs text-danger">{t('填 1 到 50 之间的整数')}</span>}
-                  </div>
-                </Row>
-                <Row
-                  title={t('长文字存成文件')}
-                  desc={t(
-                    '字，填 0 不转。粘贴进输入框的纯文字超过这么多字时存成一个文本文件，输入框里只放这个文件的卡片，消息不会被一大段文字撑满。',
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <Input
-                      inputMode="numeric"
-                      value={longPaste}
-                      onChange={(e) => setLongPaste(e.target.value.replace(/[^\d]/g, ''))}
-                      aria-invalid={!pasteValid}
-                      className={cn('h-9', !pasteValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                      aria-label={t('长文字存成文件（字）')}
-                    />
-                    {!pasteValid && (
-                      <span className="text-xs text-danger">{t('填 0 到 1000000 之间的整数，0 表示不转')}</span>
+                  <Row
+                    title={t('子对话没有输出时自动询问')}
+                    desc={t(
+                      '分钟，填 0 关闭。子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住；收到回复就重新计时，最多问 3 次后交给上面的「没有输出时提醒」。这两个时间互不影响，自动询问只问、不停止对话。',
                     )}
-                  </div>
-                </Row>
-                <ShellSetting value={shell} onChange={setShell} />
-                <Row
-                  title={t('新建文件的格式')}
-                  desc={t(
-                    '面板写说明文件、部署全局说明，以及交给角色的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。',
-                  )}
-                  stack
-                >
-                  <div className="flex flex-wrap gap-3">
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-xs text-muted">{t('编码')}</span>
-                      <Select
-                        aria-label={t('文件编码')}
-                        value={fileFormat.encoding}
-                        onChange={(e) =>
-                          setFileFormat({ ...fileFormat, encoding: e.target.value as typeof fileFormat.encoding })
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={childAsk}
+                        onChange={(e) => setChildAsk(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!childAskValid}
+                        className={cn(
+                          'h-9',
+                          !childAskValid && 'border-danger focus:border-danger focus:ring-danger/20',
+                        )}
+                        aria-label={t('子对话没有输出时自动询问（分钟）')}
+                      />
+                      {!childAskValid && (
+                        <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不问')}</span>
+                      )}
+                    </div>
+                  </Row>
+                </Group>
+                <Group title={t('Webhook 通知')}>
+                  <Row
+                    title={t('计划执行时发送 Webhook')}
+                    desc={t(
+                      '计划成功启动、启动失败、错过或上游没成功时，向这个地址 POST 一份 JSON，里面有计划、项目、这一轮的时间和结果。投递失败只记在计划上、不影响计划执行，最多重试 {n} 次。',
+                      { n: WEBHOOK_MAX_ATTEMPTS },
+                    )}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        value={webhookUrl}
+                        placeholder="https://example.com/hook"
+                        onChange={(e) => setWebhookUrl(e.target.value)}
+                        aria-invalid={!webhookValid}
+                        aria-label={t('Webhook 地址')}
+                        className={cn('h-9', !webhookValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                      />
+                      {!webhookValid && <span className="text-xs text-danger">{t('填 http 或 https 开头的地址')}</span>}
+                    </div>
+                  </Row>
+                  <Row title={t('启用 Webhook')} desc={t('关掉时计划照常执行，只是不往外发。')}>
+                    <Switch aria-label={t('启用 Webhook')} checked={webhookOn} onCheckedChange={setWebhookOn} />
+                  </Row>
+                </Group>
+                <Group title={t('会话保活')}>
+                  <Row
+                    title={t('自动回收闲置 Agent')}
+                    desc={t(
+                      '回复完没人看着的空闲 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这两段时间和数量上限管，页面切到后台也照样跑完。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。',
+                    )}
+                  >
+                    <Switch aria-label={t('自动回收闲置 Agent')} checked={reclaim} onCheckedChange={setReclaim} />
+                  </Row>
+                  <Row
+                    title={t('离开对话后保留多久')}
+                    desc={t(
+                      '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 Agent 留着，这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。只算回复完停在等下一句的空闲对话：正在执行的对话不管页面开着还是切到后台，都不会因为这个时长被收掉。',
+                    )}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={presence}
+                        onChange={(e) => setPresence(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!presenceValid}
+                        className={cn(
+                          'h-9',
+                          !presenceValid && 'border-danger focus:border-danger focus:ring-danger/20',
+                        )}
+                        aria-label={t('离开对话后保留多久（分钟）')}
+                      />
+                      {!presenceValid && (
+                        <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
+                      )}
+                    </div>
+                  </Row>
+                  <Row
+                    title={t('没看过的回复保留多久')}
+                    desc={t(
+                      '分钟，填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。同样是只算空闲对话，正在执行的不受影响。',
+                    )}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={unread}
+                        onChange={(e) => setUnread(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!unreadValid}
+                        className={cn('h-9', !unreadValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                        aria-label={t('没看过的回复保留多久（分钟）')}
+                      />
+                      {!unreadValid && (
+                        <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
+                      )}
+                    </div>
+                  </Row>
+                  <Row
+                    title={t('同时保活的会话上限')}
+                    desc={t(
+                      '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。只统计回复完在等下一句的空闲对话：正在执行的对话（包括已经切到后台在跑的）不占名额，也不会被收掉。填 0 表示不限制。',
+                    )}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={keepAlive}
+                        onChange={(e) => setKeepAlive(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!keepValid}
+                        className={cn('h-9', !keepValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                        aria-label={t('同时保活的会话上限')}
+                      />
+                      {!keepValid && <span className="text-xs text-danger">{t('填 0 到 50 之间的整数')}</span>}
+                    </div>
+                  </Row>
+                </Group>
+                <Group title={t('对话归档')}>
+                  <Row
+                    title={t('自动归档不动的对话')}
+                    desc={t(
+                      '对话（连同子对话）这么多天没有动静、没在执行、回复也都看过了，就自动归档：列表里不再显示，在筛选里选「已归档」还能找到，随时可以取消归档。填 0 表示不自动归档。',
+                    )}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={archiveDays}
+                        onChange={(e) => setArchiveDays(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!archiveValid}
+                        className={cn('h-9', !archiveValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                        aria-label={t('自动归档不动的对话')}
+                      />
+                      {!archiveValid && (
+                        <span className="text-xs text-danger">{t('填 0 到 3650 之间的整数，单位是天')}</span>
+                      )}
+                    </div>
+                  </Row>
+                </Group>
+                <Group title={t('后台命令')}>
+                  <Row
+                    title={t('同时运行的后台命令')}
+                    desc={t(
+                      '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。',
+                    )}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={bgLimit}
+                        onChange={(e) => setBgLimit(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!bgValid}
+                        className={cn('h-9', !bgValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                        aria-label={t('同时运行的后台命令')}
+                      />
+                      {!bgValid && <span className="text-xs text-danger">{t('填 1 到 64 之间的整数')}</span>}
+                    </div>
+                  </Row>
+                </Group>
+                <Group title={t('界面与启动')}>
+                  <Row title="语言 · Language" desc={t('界面显示的语言，切换后页面会重新加载。')}>
+                    <Select
+                      aria-label={t('语言')}
+                      value={language}
+                      onChange={async (e) => {
+                        const v = e.target.value as Settings['language']
+                        setLanguage(v)
+                        // 文案在页面加载时就定了，保存后重新加载页面
+                        try {
+                          setSettings(await api.saveSettings({ ...value, language: v }))
+                        } catch (err) {
+                          return toast.error((err as Error).message)
                         }
-                        className="w-[190px]"
-                        options={[
-                          { value: 'utf8', label: t('UTF-8（不带 BOM）') },
-                          { value: 'utf8-bom', label: 'UTF-8（带 BOM）' },
-                        ]}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-xs text-muted">{t('换行符')}</span>
-                      <Select
-                        aria-label={t('换行符')}
-                        value={fileFormat.eol}
-                        onChange={(e) => setFileFormat({ ...fileFormat, eol: e.target.value as typeof fileFormat.eol })}
-                        className="w-[190px]"
-                        options={[
-                          { value: 'lf', label: 'LF（Linux / macOS）' },
-                          { value: 'crlf', label: 'CRLF（Windows）' },
-                        ]}
-                      />
-                    </label>
-                  </div>
-                </Row>
-              </Group>
-              <Group title={t('提示与通知')}>
-                <Row
-                  title={t('任务完成时通知我')}
-                  desc={t('页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。')}
-                >
-                  <Switch
-                    aria-label={t('任务完成时通知我')}
-                    checked={notify}
-                    disabled={!notifySupported()}
-                    onCheckedChange={async (on) => {
-                      const ok = await setNotify(on)
-                      setNotifyOn(ok)
-                      if (on && !ok) toast.error(t('浏览器没有允许通知，可以在地址栏左侧的网站设置里打开'))
-                    }}
-                  />
-                </Row>
-              </Group>
-            </>
-          )}
-
-          {cur.id === 'models' && (
-            <>
-              <p className="text-[0.8125rem] leading-relaxed text-subtle">
-                {t(
-                  '角色可以不指定 Agent，选「系统默认」时用这里的 Agent；模型可以只选高、中、低一档，执行时换成那个 Agent 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。',
-                )}
-              </p>
-              <Group>
-                <Row title={t('默认 Agent')} desc={t('角色选了「系统默认」或没有指定 Agent 时使用')}>
-                  <Select
-                    aria-label={t('默认 Agent')}
-                    value={defCli}
-                    onChange={(e) => setDefCli(e.target.value)}
-                    className="w-[240px]"
-                    // 停用或没安装的 CLI 不给选；当前的默认照常显示，并标出原因
-                    options={ordered
-                      .filter((c) => {
-                        const st = statusOf(c.id)
-                        return !st || (st.installed && st.enabled) || c.id === defCli
-                      })
-                      .map((c) => {
-                        const st = statusOf(c.id)
-                        const note = !st
-                          ? ''
-                          : !st.installed
-                            ? ` · ${t('未安装')}`
-                            : !st.enabled
-                              ? ` · ${t('已停用')}`
-                              : ''
-                        return { value: c.id, label: c.name + note }
-                      })}
-                  />
-                </Row>
-              </Group>
-              <Group title={t('{cli} 的模型', { cli: defDef.name })}>
-                <Row
-                  title={t('三档模型')}
-                  desc={
-                    <>
-                      {t('跟随 {cli} 自己的档位设置，要改请到', { cli: defDef.name })}{' '}
-                      <Button variant="link" className="inline" onClick={() => onSection(`cli:${defCli}`)}>
-                        {defDef.name}
-                      </Button>{' '}
-                      {t('里修改。')}
-                    </>
-                  }
-                  stack
-                >
-                  <TierTable
-                    def={defDef}
-                    value={defDraft.tiers}
-                    defaultModel={defDraft.defaultModel}
-                    protocol={defProtocol}
-                    apiModelMap={defApi?.modelMap}
-                    apiModelEfforts={defApi?.modelEfforts}
-                    readOnly
-                  />
-                </Row>
-                {/* 默认模型和思考强度也只展示，在对应 CLI 里改 */}
-                <Row title={t('默认模型')} desc={t('角色没有指定模型时使用，跟随 {cli} 的设置', { cli: defDef.name })}>
-                  <ReadValue mono>{defaultModelText(defDef, drafts[defCli])}</ReadValue>
-                </Row>
-                <Row
-                  title={t('默认思考强度')}
-                  desc={t('角色和档位都没有指定时使用，跟随 {cli} 的设置', { cli: defDef.name })}
-                >
-                  <ReadValue>{defaultEffortText(defDef, defDraft)}</ReadValue>
-                </Row>
-              </Group>
-              <Group title={t('模型目录')}>
-                <Row
-                  title={t('未知模型用 AI 补全')}
-                  desc={t(
-                    '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 Agent 联网查上下文窗口、最大输出、默认和可选的思考强度。',
-                  )}
-                >
-                  <Switch
-                    aria-label={t('未知模型用 AI 补全')}
-                    checked={modelCatalog.aiLookup}
-                    onCheckedChange={(v) => setModelCatalog({ ...modelCatalog, aiLookup: v })}
-                  />
-                </Row>
-                <Row
-                  title={t('补充目录')}
-                  desc={t('AI 补全的模型信息写在这里，和内置目录合并使用；目前收录 {n} 个模型。', {
-                    n: catalogInfo?.entries.length ?? 0,
-                  })}
-                >
-                  <ReadValue mono>{catalogInfo?.file || '~/.agent-panel/config/models.json'}</ReadValue>
-                </Row>
-              </Group>
-              <Group title={t('图片生成')}>
-                <Row
-                  title={t('图片生成 Agent')}
-                  desc={t(
-                    'UI 设计里生成图片时使用。目前只有 Codex 内置了生图工具，用 ChatGPT 账号登录即可，不需要 API Key。',
-                  )}
-                >
-                  <Select
-                    aria-label={t('图片生成 Agent')}
-                    value={imageGen.cli}
-                    onChange={(e) => setImageGen({ ...imageGen, cli: e.target.value, model: '' })}
-                    className="w-[240px]"
-                    options={ordered
-                      .filter((c) => {
-                        const st = statusOf(c.id)
-                        return c.images && (!st || (st.installed && st.enabled) || c.id === imageGen.cli)
-                      })
-                      .map((c) => {
-                        const st = statusOf(c.id)
-                        const note = !st
-                          ? ''
-                          : !st.installed
-                            ? ` · ${t('未安装')}`
-                            : !st.enabled
-                              ? ` · ${t('已停用')}`
-                              : ''
-                        return { value: c.id, label: c.name + note }
-                      })}
-                  />
-                </Row>
-                <Row title={t('图片生成模型')} desc={t('调用生图工具的模型，不选时用这个 Agent 的高档模型')}>
-                  <div className="w-[240px]">
-                    <AssistModel
-                      cli={imageGen.cli}
-                      draft={drafts[imageGen.cli]}
-                      value={imageGen.model}
-                      onChange={(model) => setImageGen({ ...imageGen, model })}
-                      label={t('图片生成模型')}
-                      fallback="@high"
+                        switchLang(v)
+                      }}
+                      options={[
+                        { value: 'auto', label: t('跟随浏览器 · Auto') },
+                        ...LANGS.map((l) => ({ value: l.id, label: l.label })),
+                      ]}
+                      className="w-48"
                     />
-                  </div>
-                </Row>
-                <Row
-                  title={t('同时生成几张')}
-                  desc={t(
-                    'Agent 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。',
+                  </Row>
+                  <Row
+                    title={t('内容宽度')}
+                    desc={t('项目首页的输入框和任务列表、任务页的对话和工作流节点都用这个宽度，窗口窄时自动缩小。')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={640}
+                        max={CONTENT_MAX}
+                        step={20}
+                        value={contentWidth}
+                        aria-label={t('内容宽度')}
+                        onChange={(e) => {
+                          const w = Number(e.target.value)
+                          setContentWidth(w)
+                          // 拖动时立即生效，不用等保存
+                          applyContentWidth(w)
+                        }}
+                        className="w-40 cursor-pointer accent-[var(--color-accent)]"
+                      />
+                      <span className="w-14 font-mono text-[0.8125rem] text-muted tabular-nums">{contentWidth}px</span>
+                      {contentWidth !== CONTENT_WIDTH && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setContentWidth(CONTENT_WIDTH)
+                            applyContentWidth(CONTENT_WIDTH)
+                          }}
+                        >
+                          {t('恢复默认')}
+                        </Button>
+                      )}
+                    </div>
+                  </Row>
+                  {!demo && (
+                    <Row
+                      title={t('启动后打开浏览器')}
+                      desc={t('启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。')}
+                    >
+                      <Switch
+                        aria-label={t('启动后打开浏览器')}
+                        checked={openBrowser}
+                        onCheckedChange={setOpenBrowser}
+                      />
+                    </Row>
                   )}
-                >
-                  <Select
-                    aria-label={t('同时生成几张')}
-                    value={String(imageGen.concurrency)}
-                    onChange={(e) => setImageGen({ ...imageGen, concurrency: Number(e.target.value) })}
-                    className="w-[240px]"
-                    options={Array.from({ length: 10 }, (_, i) => ({
-                      value: String(i + 1),
-                      label: i + 1 === 3 ? t('{n} 个（默认）', { n: i + 1 }) : t('{n} 个', { n: i + 1 }),
-                    }))}
-                  />
-                </Row>
-              </Group>
-              <CustomClis demo={demo} />
-            </>
-          )}
-
-          {cur.cli && (
-            <CliSection
-              key={cur.cli.id}
-              def={cur.cli}
-              draft={drafts[cur.cli.id]}
-              status={statusOf(cur.cli.id)}
-              isDefault={defCli === cur.cli.id}
-              onChange={(d) => setDrafts((ds) => ({ ...ds, [cur.cli!.id]: d }))}
-              onDetect={detect}
-              detecting={detecting}
-              apis={apis}
-              onGoApis={() => onSection('apis')}
-              onAddApi={(a) => setApis((l) => [...l, a])}
-            />
-          )}
-
-          {cur.id === 'local-image' && (
-            <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
-          )}
-          {cur.id === 'blender' && (
-            <BlenderSection path={blender.path} onPath={(path) => setBlender({ ...blender, path })} />
-          )}
-          {cur.id === 'data' && <DataSection />}
-          {cur.id === 'usage' && <UsageSection pricingModel={pricingModel} onPricingModel={setPricingModel} />}
-          {cur.id === 'deploy' && <DeploySection />}
-          {cur.id === 'tags' && <TagsSection />}
-          {cur.id === 'global-lessons' && <GlobalLessonsSection />}
-          {cur.id === 'update' && <UpdateSection />}
-
-          {cur.id === 'categories' && <ProjectCategoryList />}
-
-          {cur.id === 'assist' && (
-            <>
-              <p className="text-[0.8125rem] leading-relaxed text-subtle">
-                {t(
-                  '在角色和工作流页面可以用本机 Agent 对话生成或优化配置。Agent 按固定格式输出，面板校验通过后才能应用。',
-                )}
-              </p>
-              <Group>
-                <Row title={t('使用的 Agent')} desc={t('默认用「Agent」里设为默认的那个')}>
-                  <Select
-                    aria-label={t('AI 创建使用的 Agent')}
-                    value={assist.cli || defCli}
-                    // 选回默认的就不单独记，之后换了默认 CLI 会跟着变
-                    // 换 CLI 时模型名不通用，清空回到那个 CLI 的默认模型
-                    onChange={(e) =>
-                      setAssist({ ...assist, cli: e.target.value === defCli ? '' : e.target.value, model: '' })
-                    }
-                    options={ordered
-                      .filter((c) => {
-                        const st = statusOf(c.id)
-                        return !st || (st.installed && st.enabled) || c.id === (assist.cli || defCli)
-                      })
-                      .map((c) => ({
-                        value: c.id,
-                        label: `${c.name}${c.id === defCli ? t('（默认）') : ''}`,
-                      }))}
-                  />
-                </Row>
-                <Row title={t('模型')} desc={t('默认用这个 Agent 设置里的默认模型')}>
-                  <AssistModel
-                    key={assist.cli || defCli}
-                    cli={assist.cli || defCli}
-                    draft={drafts[assist.cli || defCli]}
-                    value={assist.model}
-                    onChange={(v) => setAssist({ ...assist, model: v })}
-                  />
-                </Row>
-                <Row title={t('创建角色的补充规则')} desc={t('会加进提示词，例如命名习惯、团队约定')} stack>
-                  <Textarea
-                    rows={4}
-                    value={assist.agentRules}
-                    onChange={(e) => setAssist({ ...assist, agentRules: e.target.value })}
-                    placeholder={t(
-                      '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的角色默认用 Claude Code',
+                  {!demo && (
+                    <Row
+                      title={t('访问令牌')}
+                      desc={t(
+                        '打开后，只有用启动时显示的地址（带 token）打开过的浏览器能访问面板，本机的其他程序不能直接调用接口。这个浏览器会自动获得授权。',
+                      )}
+                    >
+                      <Switch aria-label={t('访问令牌')} checked={requireToken} onCheckedChange={setRequireToken} />
+                    </Row>
+                  )}
+                </Group>
+                <Group title={t('输入与文件')}>
+                  <Row
+                    title={t('称呼')}
+                    desc={t('提问卡片、子对话提问这些地方怎么称呼你，例如「需要用户回答」。不填写「用户」。')}
+                  >
+                    <Input
+                      aria-label={t('称呼')}
+                      value={userName}
+                      maxLength={20}
+                      placeholder={t('用户')}
+                      onChange={(e) => setUserName(e.target.value)}
+                      className="w-40"
+                    />
+                  </Row>
+                  <Row
+                    title={t('新会话默认开启提问')}
+                    desc={t(
+                      '输入框上的「提问」按钮在新会话里默认打开：AI 有问题时弹出卡片问你，等你回答再继续。关着时 AI 自己选最合适的做法。已有的会话保持各自的选择。',
                     )}
-                    className="font-mono text-[0.8125rem]"
-                  />
-                </Row>
-                <Row title={t('创建工作流的补充规则')} stack>
-                  <Textarea
-                    rows={4}
-                    value={assist.workflowRules}
-                    onChange={(e) => setAssist({ ...assist, workflowRules: e.target.value })}
-                    placeholder={t('例如：\n- 写代码的节点都要配一个代码审查的验收流程\n- 验收最多 2 轮')}
-                    className="font-mono text-[0.8125rem]"
-                  />
-                </Row>
-              </Group>
-            </>
-          )}
+                  >
+                    <Switch
+                      aria-label={t('新会话默认开启提问')}
+                      checked={askUserDefault}
+                      onCheckedChange={setAskUserDefault}
+                    />
+                  </Row>
+                  <Row
+                    title={t('子对话默认也提问')}
+                    desc={t(
+                      '新建的父对话里「子对话也提问」默认打开：它之后新建的子对话会向你提问，而不是自己决定。已经创建的父对话和子对话不受影响，父对话上右键提问按钮可以单独改。',
+                    )}
+                  >
+                    <Switch
+                      aria-label={t('子对话默认也提问')}
+                      checked={childAskUserDefault}
+                      onCheckedChange={setChildAskUserDefault}
+                    />
+                  </Row>
+                  <Row
+                    title={t('开发者模式')}
+                    desc={t(
+                      '打开后对话输入框上多一个「抓取界面元素」按钮，也可以按快捷键开启抓取：抓取期间左键、右键照常可用，用设置里的鼠标键（默认中键）点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出。',
+                    )}
+                  >
+                    <Switch aria-label={t('开发者模式')} checked={developerMode} onCheckedChange={setDeveloperMode} />
+                  </Row>
+                  <Row title={t('抓取元素的方式')} desc={t('快捷键和用哪个鼠标键抓取，到「快捷键」里改。')}>
+                    <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                      <Kbd className="h-auto px-1.5 py-0.5 text-[0.75rem]">{hotkeyLabel(elementPicker.hotkey)}</Kbd>
+                      <span>{t('＋')}</span>
+                      <span>{pickLabel(elementPicker.button)}</span>
+                      <Button variant="ghost" size="sm" onClick={() => onSection('shortcuts')}>
+                        {t('去修改')}
+                      </Button>
+                    </div>
+                  </Row>
+                  <Row
+                    title={t('大文件只引用路径')}
+                    desc={t(
+                      'MB。粘贴、拖进输入框的文件超过这么大时不上传、不拷进对话目录，面板在本机找到原文件后直接引用它的路径。',
+                    )}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={largeMB}
+                        onChange={(e) => setLargeMB(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!largeValid}
+                        className={cn('h-9', !largeValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                        aria-label={t('大文件只引用路径（MB）')}
+                      />
+                      {!largeValid && <span className="text-xs text-danger">{t('填 1 到 50 之间的整数')}</span>}
+                    </div>
+                  </Row>
+                  <Row
+                    title={t('长文字存成文件')}
+                    desc={t(
+                      '字，填 0 不转。粘贴进输入框的纯文字超过这么多字时存成一个文本文件，输入框里只放这个文件的卡片，消息不会被一大段文字撑满。',
+                    )}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        inputMode="numeric"
+                        value={longPaste}
+                        onChange={(e) => setLongPaste(e.target.value.replace(/[^\d]/g, ''))}
+                        aria-invalid={!pasteValid}
+                        className={cn('h-9', !pasteValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                        aria-label={t('长文字存成文件（字）')}
+                      />
+                      {!pasteValid && (
+                        <span className="text-xs text-danger">{t('填 0 到 1000000 之间的整数，0 表示不转')}</span>
+                      )}
+                    </div>
+                  </Row>
+                  <ShellSetting value={shell} onChange={setShell} />
+                  <Row
+                    title={t('新建文件的格式')}
+                    desc={t(
+                      '面板写说明文件、部署全局说明，以及交给角色的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。',
+                    )}
+                    stack
+                  >
+                    <div className="flex flex-wrap gap-3">
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-xs text-muted">{t('编码')}</span>
+                        <Select
+                          aria-label={t('文件编码')}
+                          value={fileFormat.encoding}
+                          onChange={(e) =>
+                            setFileFormat({ ...fileFormat, encoding: e.target.value as typeof fileFormat.encoding })
+                          }
+                          className="w-[190px]"
+                          options={[
+                            { value: 'utf8', label: t('UTF-8（不带 BOM）') },
+                            { value: 'utf8-bom', label: 'UTF-8（带 BOM）' },
+                          ]}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-xs text-muted">{t('换行符')}</span>
+                        <Select
+                          aria-label={t('换行符')}
+                          value={fileFormat.eol}
+                          onChange={(e) =>
+                            setFileFormat({ ...fileFormat, eol: e.target.value as typeof fileFormat.eol })
+                          }
+                          className="w-[190px]"
+                          options={[
+                            { value: 'lf', label: 'LF（Linux / macOS）' },
+                            { value: 'crlf', label: 'CRLF（Windows）' },
+                          ]}
+                        />
+                      </label>
+                    </div>
+                  </Row>
+                </Group>
+                <Group title={t('提示与通知')}>
+                  <Row
+                    title={t('任务完成时通知我')}
+                    desc={t('页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。')}
+                  >
+                    <Switch
+                      aria-label={t('任务完成时通知我')}
+                      checked={notify}
+                      disabled={!notifySupported()}
+                      onCheckedChange={async (on) => {
+                        const ok = await setNotify(on)
+                        setNotifyOn(ok)
+                        if (on && !ok) toast.error(t('浏览器没有允许通知，可以在地址栏左侧的网站设置里打开'))
+                      }}
+                    />
+                  </Row>
+                </Group>
+              </>
+            )}
+
+            {cur.id === 'models' && (
+              <>
+                <p className="text-[0.8125rem] leading-relaxed text-subtle">
+                  {t(
+                    '角色可以不指定 Agent，选「系统默认」时用这里的 Agent；模型可以只选高、中、低一档，执行时换成那个 Agent 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。',
+                  )}
+                </p>
+                <Group>
+                  <Row title={t('默认 Agent')} desc={t('角色选了「系统默认」或没有指定 Agent 时使用')}>
+                    <Select
+                      aria-label={t('默认 Agent')}
+                      value={defCli}
+                      onChange={(e) => setDefCli(e.target.value)}
+                      className="w-[240px]"
+                      // 停用或没安装的 CLI 不给选；当前的默认照常显示，并标出原因
+                      options={ordered
+                        .filter((c) => {
+                          const st = statusOf(c.id)
+                          return !st || (st.installed && st.enabled) || c.id === defCli
+                        })
+                        .map((c) => {
+                          const st = statusOf(c.id)
+                          const note = !st
+                            ? ''
+                            : !st.installed
+                              ? ` · ${t('未安装')}`
+                              : !st.enabled
+                                ? ` · ${t('已停用')}`
+                                : ''
+                          return { value: c.id, label: c.name + note }
+                        })}
+                    />
+                  </Row>
+                </Group>
+                <Group title={t('{cli} 的模型', { cli: defDef.name })}>
+                  <Row
+                    title={t('三档模型')}
+                    desc={
+                      <>
+                        {t('跟随 {cli} 自己的档位设置，要改请到', { cli: defDef.name })}{' '}
+                        <Button variant="link" className="inline" onClick={() => onSection(`cli:${defCli}`)}>
+                          {defDef.name}
+                        </Button>{' '}
+                        {t('里修改。')}
+                      </>
+                    }
+                    stack
+                  >
+                    <TierTable
+                      def={defDef}
+                      value={defDraft.tiers}
+                      defaultModel={defDraft.defaultModel}
+                      protocol={defProtocol}
+                      apiModelMap={defApi?.modelMap}
+                      apiModelEfforts={defApi?.modelEfforts}
+                      readOnly
+                    />
+                  </Row>
+                  {/* 默认模型和思考强度也只展示，在对应 CLI 里改 */}
+                  <Row
+                    title={t('默认模型')}
+                    desc={t('角色没有指定模型时使用，跟随 {cli} 的设置', { cli: defDef.name })}
+                  >
+                    <ReadValue mono>{defaultModelText(defDef, drafts[defCli])}</ReadValue>
+                  </Row>
+                  <Row
+                    title={t('默认思考强度')}
+                    desc={t('角色和档位都没有指定时使用，跟随 {cli} 的设置', { cli: defDef.name })}
+                  >
+                    <ReadValue>{defaultEffortText(defDef, defDraft)}</ReadValue>
+                  </Row>
+                </Group>
+                <Group title={t('模型目录')}>
+                  <Row
+                    title={t('未知模型用 AI 补全')}
+                    desc={t(
+                      '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 Agent 联网查上下文窗口、最大输出、默认和可选的思考强度。',
+                    )}
+                  >
+                    <Switch
+                      aria-label={t('未知模型用 AI 补全')}
+                      checked={modelCatalog.aiLookup}
+                      onCheckedChange={(v) => setModelCatalog({ ...modelCatalog, aiLookup: v })}
+                    />
+                  </Row>
+                  <Row
+                    title={t('补充目录')}
+                    desc={t('AI 补全的模型信息写在这里，和内置目录合并使用；目前收录 {n} 个模型。', {
+                      n: catalogInfo?.entries.length ?? 0,
+                    })}
+                  >
+                    <ReadValue mono>{catalogInfo?.file || '~/.agent-panel/config/models.json'}</ReadValue>
+                  </Row>
+                </Group>
+                <Group title={t('图片生成')}>
+                  <Row
+                    title={t('图片生成 Agent')}
+                    desc={t(
+                      'UI 设计里生成图片时使用。目前只有 Codex 内置了生图工具，用 ChatGPT 账号登录即可，不需要 API Key。',
+                    )}
+                  >
+                    <Select
+                      aria-label={t('图片生成 Agent')}
+                      value={imageGen.cli}
+                      onChange={(e) => setImageGen({ ...imageGen, cli: e.target.value, model: '' })}
+                      className="w-[240px]"
+                      options={ordered
+                        .filter((c) => {
+                          const st = statusOf(c.id)
+                          return c.images && (!st || (st.installed && st.enabled) || c.id === imageGen.cli)
+                        })
+                        .map((c) => {
+                          const st = statusOf(c.id)
+                          const note = !st
+                            ? ''
+                            : !st.installed
+                              ? ` · ${t('未安装')}`
+                              : !st.enabled
+                                ? ` · ${t('已停用')}`
+                                : ''
+                          return { value: c.id, label: c.name + note }
+                        })}
+                    />
+                  </Row>
+                  <Row title={t('图片生成模型')} desc={t('调用生图工具的模型，不选时用这个 Agent 的高档模型')}>
+                    <div className="w-[240px]">
+                      <AssistModel
+                        cli={imageGen.cli}
+                        draft={drafts[imageGen.cli]}
+                        value={imageGen.model}
+                        onChange={(model) => setImageGen({ ...imageGen, model })}
+                        label={t('图片生成模型')}
+                        fallback="@high"
+                      />
+                    </div>
+                  </Row>
+                  <Row
+                    title={t('同时生成几张')}
+                    desc={t(
+                      'Agent 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。',
+                    )}
+                  >
+                    <Select
+                      aria-label={t('同时生成几张')}
+                      value={String(imageGen.concurrency)}
+                      onChange={(e) => setImageGen({ ...imageGen, concurrency: Number(e.target.value) })}
+                      className="w-[240px]"
+                      options={Array.from({ length: 10 }, (_, i) => ({
+                        value: String(i + 1),
+                        label: i + 1 === 3 ? t('{n} 个（默认）', { n: i + 1 }) : t('{n} 个', { n: i + 1 }),
+                      }))}
+                    />
+                  </Row>
+                </Group>
+                <CustomClis demo={demo} />
+              </>
+            )}
+
+            {cur.cli && (
+              <CliSection
+                key={cur.cli.id}
+                def={cur.cli}
+                draft={drafts[cur.cli.id]}
+                status={statusOf(cur.cli.id)}
+                isDefault={defCli === cur.cli.id}
+                onChange={(d) => setDrafts((ds) => ({ ...ds, [cur.cli!.id]: d }))}
+                onDetect={detect}
+                detecting={detecting}
+                apis={apis}
+                onGoApis={() => onSection('apis')}
+                onAddApi={(a) => setApis((l) => [...l, a])}
+              />
+            )}
+
+            {cur.id === 'local-image' && (
+              <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
+            )}
+            {cur.id === 'blender' && (
+              <BlenderSection path={blender.path} onPath={(path) => setBlender({ ...blender, path })} />
+            )}
+            {cur.id === 'data' && <DataSection />}
+            {cur.id === 'usage' && <UsageSection pricingModel={pricingModel} onPricingModel={setPricingModel} />}
+            {cur.id === 'deploy' && <DeploySection />}
+            {cur.id === 'tags' && <TagsSection />}
+            {cur.id === 'global-lessons' && <GlobalLessonsSection />}
+            {cur.id === 'update' && <UpdateSection />}
+
+            {cur.id === 'categories' && <ProjectCategoryList />}
+
+            {cur.id === 'assist' && (
+              <>
+                <p className="text-[0.8125rem] leading-relaxed text-subtle">
+                  {t(
+                    '在角色和工作流页面可以用本机 Agent 对话生成或优化配置。Agent 按固定格式输出，面板校验通过后才能应用。',
+                  )}
+                </p>
+                <Group>
+                  <Row title={t('使用的 Agent')} desc={t('默认用「Agent」里设为默认的那个')}>
+                    <Select
+                      aria-label={t('AI 创建使用的 Agent')}
+                      value={assist.cli || defCli}
+                      // 选回默认的就不单独记，之后换了默认 CLI 会跟着变
+                      // 换 CLI 时模型名不通用，清空回到那个 CLI 的默认模型
+                      onChange={(e) =>
+                        setAssist({ ...assist, cli: e.target.value === defCli ? '' : e.target.value, model: '' })
+                      }
+                      options={ordered
+                        .filter((c) => {
+                          const st = statusOf(c.id)
+                          return !st || (st.installed && st.enabled) || c.id === (assist.cli || defCli)
+                        })
+                        .map((c) => ({
+                          value: c.id,
+                          label: `${c.name}${c.id === defCli ? t('（默认）') : ''}`,
+                        }))}
+                    />
+                  </Row>
+                  <Row title={t('模型')} desc={t('默认用这个 Agent 设置里的默认模型')}>
+                    <AssistModel
+                      key={assist.cli || defCli}
+                      cli={assist.cli || defCli}
+                      draft={drafts[assist.cli || defCli]}
+                      value={assist.model}
+                      onChange={(v) => setAssist({ ...assist, model: v })}
+                    />
+                  </Row>
+                  <Row title={t('创建角色的补充规则')} desc={t('会加进提示词，例如命名习惯、团队约定')} stack>
+                    <Textarea
+                      rows={4}
+                      value={assist.agentRules}
+                      onChange={(e) => setAssist({ ...assist, agentRules: e.target.value })}
+                      placeholder={t(
+                        '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的角色默认用 Claude Code',
+                      )}
+                      className="font-mono text-[0.8125rem]"
+                    />
+                  </Row>
+                  <Row title={t('创建工作流的补充规则')} stack>
+                    <Textarea
+                      rows={4}
+                      value={assist.workflowRules}
+                      onChange={(e) => setAssist({ ...assist, workflowRules: e.target.value })}
+                      placeholder={t('例如：\n- 写代码的节点都要配一个代码审查的验收流程\n- 验收最多 2 轮')}
+                      className="font-mono text-[0.8125rem]"
+                    />
+                  </Row>
+                </Group>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1335,6 +1486,11 @@ export function SettingsDialog({
       bare
       size="xl"
       className="h-[min(840px,calc(100dvh-2rem))] max-w-[1200px]"
+      // 搜索框里有字时 Esc 先清空搜索（框自己处理），不关掉整个设置
+      onEscapeKeyDown={(e) => {
+        const el = e.target
+        if (el instanceof HTMLInputElement && el.hasAttribute('data-settings-search') && el.value) e.preventDefault()
+      }}
     >
       {/* data-settings-dialog：index.css 按它换设置里的细滚动条 */}
       <div data-settings-dialog className="h-full min-h-0">

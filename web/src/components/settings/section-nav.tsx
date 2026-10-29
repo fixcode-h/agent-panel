@@ -86,6 +86,29 @@ function go(id: string) {
   setActive(id)
 }
 
+/**
+ * 搜索结果点进来后定位到那一项：滚到它所在的位置（放在视口上方三分之一处，上下文都看得到），再闪一下底色。
+ * 刚切页时那一项可能还没挂载（CLI 页要等数据），每帧找一次，最多等一秒；找不到就停在页顶。
+ */
+export function revealSetting(selectors: string[]) {
+  let tries = 0
+  const step = () => {
+    const el = container && selectors.map((s) => container!.querySelector<HTMLElement>(s)).find(Boolean)
+    if (!el || !container) {
+      if (++tries < 60) requestAnimationFrame(step)
+      return
+    }
+    const offset = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
+    container.scrollTo({ top: Math.max(0, offset - container.clientHeight / 3), behavior: 'smooth' })
+    // 先摘掉再加回去：连着点同一项时动画能从头再放一次
+    el.removeAttribute('data-setting-flash')
+    void el.offsetWidth
+    el.setAttribute('data-setting-flash', '')
+    setTimeout(() => el.removeAttribute('data-setting-flash'), 2000)
+  }
+  requestAnimationFrame(step)
+}
+
 /** 内容区的滚动容器挂这个回调 ref：跳转和「当前小节」都按它的滚动算 */
 export function setSectionScroll(el: HTMLDivElement | null) {
   if (container) {

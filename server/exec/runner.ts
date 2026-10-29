@@ -207,6 +207,19 @@ const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'fil
 const stalled = new Map<string, { input: string; since: number }>()
 export const stalledTurn = (taskId: string) => stalled.get(taskId)
 
+/** 插话收下后还算「同一段输出」的事件：不产生新内容（见 runAgent 的 cutAfter） */
+const CONTINUES = new Set(['session', 'turn', 'limits', 'usage', 'gen', 'context', 'files_changed'])
+/**
+ * 这个事件还属于正在输出的那一段（cur）：同一段正文、思考的增量，和不产生内容的用量、会话这些事件。
+ * 换成工具、新一次模型回应、正文之后又开始思考，这一段就说完了
+ */
+export const continuesOutput = (ev: CliEvent, cur: TaskMessage | undefined) => {
+  if (CONTINUES.has(ev.type)) return true
+  if (ev.type === 'text_delta') return !!cur?.text.trim()
+  if (ev.type === 'thinking') return !!cur?.thinking && !cur.text.trim() && !cur.tools.length
+  return false
+}
+
 /** 预热时不记进对话的事件：正文、思考、工具和待办 */
 const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
 
@@ -1494,13 +1507,19 @@ async function runAgent(
   let armedAt = 0
   let armedInput = call.prompt
   let stallMsg: TaskMessage | undefined
+  /** 计时起点之后已经有过输出：再停住就是「输出到一半停了」，不是「一直没开始」 */
+  let midway = false
   const arm = (input?: string) => {
     if (!chat || op) return
     armedAt = Date.now()
+    midway = false
     if (input !== undefined) armedInput = input
   }
   const heard = () => {
-    armedAt = 0
+    // 有了输出也接着计时：模型（多是第三方网关）流到半句就断了、进程还活着时，页面会一直停在「等待模型」，
+    // 用户只能自己停下再发。这一轮还在跑就从这次输出重新算，到点同样告诉用户
+    armedAt = chat && !op && task.working ? Date.now() : 0
+    midway = !!armedAt
     const st = stalled.get(task.id)
     if (!st) return
     stalled.delete(task.id)
@@ -1538,15 +1557,25 @@ async function runAgent(
         role: 'system',
         agentId,
         step,
-        text: t('{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。', {
-          cli: def.name,
-          s: secs,
-        }),
+        text: midway
+          ? t('{cli} 输出到一半停了，{s} 秒没有新的内容。直接再发一条消息，面板会停掉它、接回这个会话重新开始。', {
+              cli: def.name,
+              s: secs,
+            })
+          : t('{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。', {
+              cli: def.name,
+              s: secs,
+            }),
         tools: [],
         alert: makeAlert(
           'warn',
           [
-            t('{cli} 在 {s} 秒里没有任何输出（没有思考、正文或工具调用）。', { cli: def.name, s: secs }),
+            midway
+              ? t('{cli} 输出到一半后 {s} 秒没有新的输出（没有思考、正文或工具调用），模型的流可能断了。', {
+                  cli: def.name,
+                  s: secs,
+                })
+              : t('{cli} 在 {s} 秒里没有任何输出（没有思考、正文或工具调用）。', { cli: def.name, s: secs }),
             t('交给它的最后一条内容：'),
             clip(armedInput, 800),
           ].join('\n'),
@@ -1567,6 +1596,11 @@ async function runAgent(
     if (ev.type === 'tool_result' || ev.type === 'request_start') arm()
     // 预热时模型可能先回一句话再调用等待工具：这些不显示，也不占消息
     if (prewarmMode && PREWARM_QUIET.has(ev.type)) return
+    // 插话收下时正在输出的那段话：说完再断开，用户的消息排在它后面，不把一句话从中间劈开
+    if (cutAfter && !continuesOutput(ev, cur)) {
+      cutAfter = false
+      cur = undefined
+    }
     // 延迟取走的补充：CLI 开始下一次模型请求时说明它真的接受了补充，之后的输出另起一条。
     // 消息本身在交出去时就已经记进对话，这里只断开输出
     if (steerPending && ev.type === 'request_start') {
@@ -1789,6 +1823,8 @@ async function runAgent(
       }
       case 'result':
         result = ev
+        // 这一轮结束了：之后没有输出是在等下一句，不算卡住
+        armedAt = 0
         // 一轮结束还没等到结果的调用（被打断、CLI 没报结果）：算到这里为止
         for (const x of [...toolStart.keys()]) endTool(x)
         // 一轮结束以 CLI 的 result 为准：进程还活着也可能已经回复完了
@@ -1832,6 +1868,11 @@ async function runAgent(
   let steerer: Steerer | undefined
   /** 延迟取走的补充：消息已经显示在对话里，CLI 开始下一次模型请求时再把后面的输出另起一条 */
   let steerPending = false
+  /**
+   * 插话收下时 Agent 正说到一半：CLI 让模型把这段话说完才看插话，面板也等这段说完再另起一条。
+   * 收下就断开的话，后半句会跑到用户消息下面，一句话被劈成两半（用户报过）
+   */
+  let cutAfter = false
   let control: CliControl | undefined
   let redirectTimer: ReturnType<typeof setTimeout> | undefined
   /**
@@ -1875,7 +1916,7 @@ async function runAgent(
         if (c.deferSteer) {
           steerPending = true
           checkRedirect()
-        } else cur = undefined
+        } else cutAfter = true
         ctx.changed(true)
       },
     }

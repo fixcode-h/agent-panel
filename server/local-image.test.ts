@@ -12,6 +12,7 @@ import {
   fillWorkflow,
   imageUse,
   localSize,
+  chainSize,
   localWorkflow,
   parsePythonProbe,
   pickWorkflow,
@@ -53,6 +54,9 @@ test('出图尺寸按比例换算成 64 的倍数', () => {
   assert.deepEqual(localSize(100, 100, 1024), { width: 1024, height: 1024 })
   const wide = localSize(1920, 1080, 1024)
   assert.ok(wide.width > wide.height && wide.width % 64 === 0 && wide.height % 64 === 0)
+  // 试生成传来的尺寸：坏值（不是数、超出 64~4096）按 1024 算，不让 localSize 算出 NaN
+  assert.deepEqual(chainSize(1536, 1024), { width: 1536, height: 1024 })
+  assert.deepEqual(chainSize('x', 99999), { width: 1024, height: 1024 })
 })
 
 test('自动模式按图片用途和分类选工作流，模型没下载的跳过', () => {

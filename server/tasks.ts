@@ -120,6 +120,7 @@ import {
   setPresenceIdleHandler,
   setPresenceUnreadKeeper,
   setViewer,
+  touchPresence,
 } from './presence.ts'
 import { settleReclaimed } from './exec/reclaim.ts'
 import { placedFiles, placeAttachments, relativeAttachName } from './attachments.ts'
@@ -177,7 +178,17 @@ import {
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf, uploadFileOf } from './uploads.ts'
-import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from './files.ts'
+import {
+  applyFixesInDir,
+  listDir,
+  listLevel,
+  rawInDir,
+  readInDir,
+  revealInDir,
+  searchInDir,
+  searchNameInDir,
+} from './files.ts'
+import { FixApplyInput } from '../shared/diagnosis.ts'
 import path from 'node:path'
 import { log } from './log.ts'
 import { sessionInfo } from './session-bar.ts'
@@ -5438,6 +5449,49 @@ export function tasksApi(deps: {
     return c.json(await prewarmChat(task))
   })
 
+  /**
+   * 对话菜单「激活 Agent」：不发消息，先把这个对话的 CLI 用 --resume 拉起来停在等下一句上（和打开对话页的预热同一条路）。
+   * 从侧栏点的时候页面可能没开着、早过了宽限：先当成刚有人看过，不然 CLI 一停到等待就退出了。
+   * 不能提前启动的（没有会话、CLI 不支持停在等待上）原样返回，界面按返回的状态告诉用户
+   */
+  routes.post('/:id/agent/activate', async (c) => {
+    const id = c.req.param('id')
+    const reused = await reusedPrewarmEntry(id)
+    if (reused) return c.json(withJobs(reused))
+    const task = await store.get(id)
+    if (!task) return bad(c, t('任务不存在'), 404)
+    if (task.archived) return bad(c, t('归档的对话不能激活，先取消归档'), 409)
+    touchPresence(id)
+    return c.json(withJobs(await prewarmChat(task)))
+  })
+
+  /**
+   * 对话菜单「关闭 Agent」：结束这个对话的 CLI 进程、释放资源，对话和会话都留着，下一条消息按 --resume 续接。
+   * 正在执行这一轮的不关（和归档一样）：那是「暂停」的事，关进程会把这一轮掐断。
+   * 名下子对话不跟着关：它们有自己的进程，只是父对话这边不再占着 CLI
+   */
+  routes.post('/:id/agent/close', async (c) => {
+    const id = c.req.param('id')
+    const e = live.get(id)
+    if (!e && !(await getMeta(id))) return bad(c, t('任务不存在'), 404)
+    if (e?.task.working) return bad(c, t('对话正在执行，先暂停这一轮再关闭 Agent'), 409)
+    if (e) {
+      if (!cancelWait(id)) stopTask(id, 'close')
+      await e.done?.catch(() => {})
+      // 计划没做完、落盘还写着执行中的，和页面宽限回收一样收口成已停止，界面不会一直转圈
+      if (!live.has(id)) await settleReclaimed(store, id, 'close')
+    }
+    // 执行位已经没了、进程登记还在（某条路径漏停、重启前留下的）：按登记结束，界面说关了就真的关了
+    if (!live.has(id))
+      await killTaskClis(id, killTree).catch((err) =>
+        log.warn('task', '关闭 Agent 时结束残留进程失败', { task: id, error: (err as Error).message }),
+      )
+    log.info('task', '用户关闭了对话的 Agent', { task: id })
+    const now = await current(id)
+    if (!now) return bad(c, t('任务不存在'), 404)
+    return c.json(withJobs(now))
+  })
+
   // 对话页还开着：CLI 回复完才能停在等下一句的工具上；切走一分钟内切回来还能接着发
   routes.post('/:id/presence', async (c) => {
     const id = c.req.param('id')
@@ -5847,6 +5901,29 @@ export function tasksApi(deps: {
       await revealInDir(dir, want)
       return c.json({ ok: true, dir })
     })
+  })
+
+  /**
+   * 排查结论的「应用这 N 处修改」：在被分析的那个对话的工作目录里按原文替换（分析的就是它的代码，
+   * 它有独立分支时 taskDir 给的是 worktree）；和对话无关的排查（没有 analysisOf）改分析对话自己的目录。
+   * 被分析的对话找不到了不退回别的目录：改错地方比不改更糟，报出来让用户自己处理
+   */
+  routes.post('/:id/apply-fixes', async (c) => {
+    const body = FixApplyInput.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return bad(c, z.prettifyError(body.error))
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const owner = tk.analysisOf && tk.analysisOf !== tk.id ? await current(tk.analysisOf) : tk
+    if (!owner) return bad(c, t('被分析的对话已经不在了，不知道该改哪个目录'), 404)
+    // 正在动手的对话可能也在改这几个文件，两边一起写会互相覆盖
+    if (owner.working) return bad(c, t('「{title}」正在执行，等这一轮结束后再应用', { title: owner.title }), 409)
+    let dir: string
+    try {
+      dir = await readableDir(owner.id)
+    } catch (e) {
+      return bad(c, (e as Error).message, (e as { status?: 400 | 404 }).status ?? 400)
+    }
+    return c.json({ dir, results: await applyFixesInDir(dir, body.data.fixes) })
   })
 
   // 撤销一个文件的改动：恢复成任务开始时的样子

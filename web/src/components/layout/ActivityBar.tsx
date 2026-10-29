@@ -7,7 +7,16 @@ import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { HomeIcon, PanelIcon, type NavIcon } from './rail-icons'
-import { ModeSwitch, NAV, homeRoute, isToolPage, toggleSidebar, useSidebarCollapsed } from './Sidebar'
+import {
+  DESIGN_NAV,
+  ModeSwitch,
+  NAV,
+  homeRoute,
+  isDesignPage,
+  isToolPage,
+  toggleSidebar,
+  useSidebarCollapsed,
+} from './Sidebar'
 
 /**
  * 图标栏里的一格：只有图标，名字在悬停提示和读屏名里。
@@ -58,7 +67,8 @@ function Item({
 }
 
 /**
- * 最左边的图标栏（照 Proma）：工作总结、计划、角色、工作流、Skills、MCP 这些功能页一格一个，底下是主题和设置。
+ * 最左边的图标栏（照 Proma）：工作总结、计划、角色、工作流、Skills、MCP 这些功能页一格一个，底下是主题和设置；
+ * 设计模式下再多一组只属于设计的（ComfyUI 工作流）。
  * 最上面一格看在哪：会话页（任务、项目、聊天、设计）是收起 / 展开会话侧栏；
  * 功能页上会话侧栏让开了，这一格换成「回到主页」，回到最近看的那个会话页。
  * 只在宽屏显示，手机上这些入口在抽屉菜单里
@@ -77,7 +87,7 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
       className="activity-bar hidden w-14 shrink-0 flex-col items-center gap-1.5 py-2.5 md:flex"
     >
       {tool ? (
-        <Item icon={HomeIcon} label={t('回到主页')} onClick={() => go(homeRoute())} />
+        <Item icon={HomeIcon} label={t('回到主页')} onClick={() => go(homeRoute(route.page))} />
       ) : (
         <Item icon={PanelIcon} label={collapsed ? t('展开侧栏') : t('收起侧栏')} onClick={toggleSidebar} />
       )}
@@ -98,6 +108,21 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
           onClick={() => go({ page: n.id })}
         />
       ))}
+      {/* 设计模式自己的功能页（ComfyUI 工作流）：只在设计模式下出现，和上面的通用功能页隔开 */}
+      {isDesignPage(route.page) && (
+        <>
+          <span aria-hidden className="activity-sep my-1 h-px w-5 shrink-0" />
+          {DESIGN_NAV.map((n) => (
+            <Item
+              key={n.id}
+              icon={n.icon}
+              label={n.label}
+              on={route.page === n.id}
+              onClick={() => go({ page: n.id })}
+            />
+          ))}
+        </>
+      )}
       <span className="flex-1" />
       <Item icon={dark ? Sun : Moon} label={dark ? t('切换到浅色') : t('切换到深色')} onClick={onToggleTheme} />
       <Item
