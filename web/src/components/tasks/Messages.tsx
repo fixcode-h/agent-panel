@@ -411,7 +411,7 @@ const MessageBody = memo(
         )}
         {!hideProcess && !m.thinking?.trim() && !!m.modelMs && <ModelTime ms={m.modelMs} />}
         {!hideProcess && m.tools.length > 0 && (
-          // 同一轮连续的过程行合成一组：组内不留间距、行间一条细分隔线（见 index.css 的 proc-list）
+          // 同一轮连续的过程行合成一组：每行默认浅底，行间留一点间距、不画分隔线（见 index.css 的 proc-list）
           <div className="proc-list flex flex-col">
             <ToolRows tools={m.tools} task={task} />
           </div>

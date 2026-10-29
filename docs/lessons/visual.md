@@ -1,5 +1,5 @@
 ---
-paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**, web/src/pages/**, web/src/components/settings/ComponentsSection.tsx, web/src/components/tasks/ConversationTabs.tsx, web/src/components/tasks/Messages.tsx
+paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**, web/src/pages/**, web/src/components/settings/ComponentsSection.tsx, web/src/components/tasks/ConversationTabs.tsx, web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.tsx
 ---
 
 # 视觉：部件、底色和字重
@@ -24,3 +24,7 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 ## 思考过程保持原样，不并进过程行
 
 - 规则：对话里的「思考过程」是一行小字按钮（Brain 图标 + 用时）加展开后左侧竖线的正文，不改成过程行（RowShell）样式；统一部件时先问这一块。起因：90e8f53 把它改成过程行，用户要求「思考过程用原有的」。
+
+## 过程行默认带浅底，行间不画分隔线
+
+- 规则：工具 / 过程行（`RowShell`）每行一块默认浅底的圆角块（`bg-fg/[0.035]`），悬停再深一点；相邻行靠 4px 间距分开，不画分隔线（`index.css` 的 `proc-list`）。起因：dc23450 照设计稿改成「无底、行间细线、悬停才出底」，用户要求「工具不加分割线，背景默认显示」。

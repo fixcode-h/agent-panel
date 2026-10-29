@@ -549,16 +549,15 @@ body,
   mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
 }
 /*
- * 过程行一组（设计稿）：同一轮连续的过程行（工具调用、派发子对话、收到汇报、转交提问）不画框，
- * 组内行间一条细分隔线。proc-list 里的行直接相邻；跨消息的相邻过程块（标了 data-proc）
- * 本来隔着回复列的 gap-2，往回收掉这段间距，接成同一组
+ * 过程行一组：同一轮连续的过程行（工具调用、派发子对话、收到汇报、转交提问）每行一块默认浅底的圆角块，
+ * 行间不画分隔线（用户要求），靠 4px 间距分开。proc-list 里的行直接相邻；跨消息的相邻过程块（标了 data-proc）
+ * 本来隔着回复列的 gap-2，往回收一半，和组内间距一致
  */
-.proc-list > * + *,
-[data-proc] + [data-proc] {
-  border-top: 1px solid var(--line);
+.proc-list > * + * {
+  margin-top: 4px;
 }
 [data-proc] + [data-proc] {
-  margin-top: -0.5rem;
+  margin-top: -4px;
 }
 
 /* 预览工作流文档 */
