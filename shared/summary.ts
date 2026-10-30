@@ -17,6 +17,7 @@ import type { Agent, Task } from './schema.ts'
 import { BUILTIN_AGENTS } from './builtin/agents.ts'
 import { dayKey, isoWeek, periodLabel, usagePeriod } from './usage.ts'
 import { clip as clipText } from './text.ts'
+import { splitSummaryCards } from './summary-card.ts'
 
 /**
  * 数据目录里最多留多少份报告：左侧树要列出全部报告，这里只是防止数据文件无限长大的保险，
@@ -35,6 +36,19 @@ export const SUMMARY_ASKS_MAX = 4
 export const SUMMARY_OUTCOMES_MAX = 3
 export const SUMMARY_STEPS_MAX = 8
 export const SUMMARY_FILES_MAX = 8
+/**
+ * 每个任务最多带几张总结卡、每个字段最多多少字：原因和修法就在卡片里，
+ * 只给 CLI 一行结论时它只能写出「修复了 xx 问题」这种没有因果的条目
+ */
+export const SUMMARY_CARDS_MAX = 6
+export const SUMMARY_CARD_FIELD_MAX = 300
+/** 回复里没有总结卡时（老对话、闲聊轮），最后一条回复多带一段正文，原因和修法常写在中间 */
+export const SUMMARY_REPLY_MAX = 600
+/**
+ * 不交给 CLI 的卡片字段：验证（测试过没过）、要你处理、改动的文件清单。
+ * 报告只写做了什么、为什么坏、怎么修的，这几样对看报告的人没用，带上 CLI 就会照抄
+ */
+const CARD_FIELDS_SKIP = new Set(['verified', 'needs', 'changes'])
 /** 一次最多提炼多少条分项：再多用户也挑不过来 */
 export const SUMMARY_ITEMS_MAX = 60
 /** 面板里最多加几个项目 */
@@ -329,6 +343,10 @@ export interface DayTask {
   asks: string[]
   /** 窗口里 Agent 给出的结论（已截短） */
   outcomes: string[]
+  /** 窗口里 Agent 写的总结卡（类型、结论和字段，去掉了验证等不进报告的字段），按时间顺序取最近几张 */
+  cards: { kind: string; title: string; fields: { label: string; text: string }[] }[]
+  /** 窗口里最后一条回复没有总结卡时，它的一段正文（已截短）；有卡片时为空 */
+  reply: string
   /** 窗口里跑过的节点（名称和状态） */
   steps: { title: string; status: string }[]
   /** 改动的文件（相对路径） */
@@ -355,6 +373,11 @@ function firstLine(text: string) {
   return ''
 }
 
+/** 回复正文的一段：去掉代码块（日志、补丁对报告没用）后压成一行截断 */
+function replyExcerpt(text: string) {
+  return clip(text.replace(/```[\s\S]*?(```|$)/g, ' '), SUMMARY_REPLY_MAX)
+}
+
 /** 这条消息要不要丢：面板自己推的消息（后台结果、子对话回报、提问卡片）不是 Agent 写的工作内容 */
 const isPanelNote = (m: Task['messages'][number]) => !!m.panel || !!m.ask || !!m.peer
 
@@ -363,6 +386,8 @@ export function rangeTask(task: Task, win: Pick<SummaryWindow, 'start' | 'end'>)
   /** 窗口里的全部用户要求：Bug 判定要扫全量，不能只看截给提示词的那几条 */
   const userTexts: string[] = []
   const outcomes: string[] = []
+  const cards: DayTask['cards'] = []
+  let reply = ''
   let at = ''
   const touch = (iso: string) => {
     if (inRange(iso, win) && iso > at) at = iso
@@ -376,6 +401,18 @@ export function rangeTask(task: Task, win: Pick<SummaryWindow, 'start' | 'end'>)
     else if (m.role === 'agent') {
       const one = firstLine(m.text)
       if (one) outcomes.push(one)
+      const found = splitSummaryCards(m.text).flatMap((x) => ('card' in x ? [x.card] : []))
+      for (const c of found)
+        cards.push({
+          kind: c.label,
+          title: clip(c.title, 120),
+          fields: c.fields
+            .filter((x) => !x.key || !CARD_FIELDS_SKIP.has(x.key))
+            .map((x) => ({ label: x.label, text: clip(x.text, SUMMARY_CARD_FIELD_MAX) }))
+            .filter((x) => x.text),
+        })
+      // 只留最后一条回复的正文：它通常是这一段工作的结论
+      reply = replyExcerpt(m.text)
     }
   }
   // 提示词里只放开头一条和最近几条：开头常是用户报的问题，最近几条是结论所在
@@ -398,6 +435,9 @@ export function rangeTask(task: Task, win: Pick<SummaryWindow, 'start' | 'end'>)
     status: task.status,
     asks,
     outcomes: outcomes.slice(-SUMMARY_OUTCOMES_MAX),
+    cards: cards.slice(-SUMMARY_CARDS_MAX),
+    // 有卡片时原因和修法已经在卡片里，再带一段正文只是重复（还常是「已推送」这类收尾话）
+    reply: cards.length ? '' : reply,
     steps,
     files,
     at,
@@ -456,6 +496,11 @@ export function tasksContext(projects: DayProject[]) {
           ]
           if (task.asks.length) lines.push(`  用户的要求：${task.asks.join('；')}`)
           if (task.outcomes.length) lines.push(`  结论：${task.outcomes.join('；')}`)
+          for (const c of task.cards) {
+            lines.push(`  总结卡「${c.kind}｜${c.title}」`)
+            for (const x of c.fields) lines.push(`    ${x.label}：${x.text}`)
+          }
+          if (task.reply) lines.push(`  最后的回复：${task.reply}`)
           if (task.steps.length) lines.push(`  节点：${task.steps.map((s) => `${s.title}（${s.status}）`).join('、')}`)
           if (task.files.length) lines.push(`  改动的文件：${task.files.join('、')}`)
           return lines.join('\n')
@@ -531,10 +576,11 @@ export function extractPrompt(input: {
     '- 输出：只输出一个 ```json 代码块，不要别的文字。格式：',
     '```json',
     '{"items":[',
-    '  {"kind":"need","project":"<项目名>","title":"<需求标题>","content":"<做了什么、实现了什么>"},',
-    '  {"kind":"bug","project":"<项目名>","title":"<问题标题：用户看到的现象>","cause":"<原因>","fix":"<修复方案>"}',
+    '  {"kind":"need","project":"<项目名>","title":"<需求标题>","content":"<做了什么、用户能感受到什么变化>"},',
+    '  {"kind":"bug","project":"<项目名>","title":"<问题标题：用户看到的现象>","cause":"<为什么会出现这个现象>","fix":"<改了什么、为什么这样改就好了>"}',
     ']}',
     '```',
+    '- 材料里的「总结卡」是 Agent 当时写的现象、原因、修复，优先照它写清因果；材料里有的原因和修法要写进去，不要压成一句「修复了 xx 问题」。',
     `- 最多 ${SUMMARY_ITEMS_MAX} 条；没有可写的内容就输出 {"items":[]}，不要凑数。`,
     '',
     '## 材料',
