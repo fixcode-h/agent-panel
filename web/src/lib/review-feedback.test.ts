@@ -1,4 +1,7 @@
-/** 审阅弹窗「修改」交给 Agent 的意见：逐条带原文和意见，没写意见的标注也要带上，长原文截断 */
+/**
+ * 审阅弹窗「修改」交给 Agent 的意见：逐条带原文和意见，没写意见的标注也要带上，长原文截断。
+ * 界面检查 02d 只验一条标注能退回，空意见、整体意见和截断的拼法在这里钉住
+ */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { reviewFeedback } from './review-feedback'
