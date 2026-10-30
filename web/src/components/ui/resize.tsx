@@ -59,7 +59,8 @@ export function usePaneWidth(key: string, initial: number | (() => number), min:
 }
 
 /**
- * 栏边缘的拖动条：左栏（side="right"）往右拖变宽，右栏（默认）往左拖变宽；双击恢复默认宽度。
+ * 栏边缘的拖动条：左栏（side="right"）往右拖变宽，右栏（默认）往左拖变宽；
+ * 上下分栏的上半（side="bottom"）往下拖变高，pane 记的就是高度。双击恢复默认。
  * 拖动时盖一层透明遮罩，免得鼠标经过效果区的 iframe、画布时丢掉事件
  */
 export function ResizeHandle({
@@ -70,35 +71,38 @@ export function ResizeHandle({
 }: {
   pane: ReturnType<typeof usePaneWidth>
   label?: string
-  /** 拖动条在哪一侧：right 用于左边的侧栏 */
-  side?: 'left' | 'right'
+  /** 拖动条在哪一侧：right 用于左边的侧栏，bottom 用于上下分栏的上半 */
+  side?: 'left' | 'right' | 'bottom'
   className?: string
 }) {
   const start = useRef<{ x: number; w: number } | null>(null)
-  const dir = side === 'right' ? 1 : -1
+  const rows = side === 'bottom'
+  const dir = side === 'left' ? -1 : 1
+  const pos = (e: { clientX: number; clientY: number }) => (rows ? e.clientY : e.clientX)
+  const cursor = rows ? 'cursor-row-resize' : 'cursor-col-resize'
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
-      aria-label={label ?? t('拖动调整宽度')}
+      aria-orientation={rows ? 'horizontal' : 'vertical'}
+      aria-label={label ?? (rows ? t('拖动调整高度') : t('拖动调整宽度'))}
       aria-valuenow={pane.width}
       aria-valuemin={pane.min}
       aria-valuemax={pane.max}
       tabIndex={0}
-      title={t('拖动调整宽度，双击恢复默认')}
+      title={rows ? t('拖动调整高度，双击恢复默认') : t('拖动调整宽度，双击恢复默认')}
       onPointerDown={(e) => {
         e.preventDefault()
         e.currentTarget.setPointerCapture(e.pointerId)
-        start.current = { x: e.clientX, w: pane.width }
+        start.current = { x: pos(e), w: pane.width }
         pane.setDragging(true)
       }}
       onPointerMove={(e) => {
         if (!start.current) return
-        pane.set(start.current.w + dir * (e.clientX - start.current.x))
+        pane.set(start.current.w + dir * (pos(e) - start.current.x))
       }}
       onPointerUp={(e) => {
         if (!start.current) return
-        const w = Math.min(pane.max, Math.max(pane.min, start.current.w + dir * (e.clientX - start.current.x)))
+        const w = Math.min(pane.max, Math.max(pane.min, start.current.w + dir * (pos(e) - start.current.x)))
         start.current = null
         pane.setDragging(false)
         pane.save(Math.round(w))
@@ -106,26 +110,29 @@ export function ResizeHandle({
       onDoubleClick={pane.reset}
       onKeyDown={(e) => {
         const step = e.shiftKey ? 40 : 10
-        if (e.key === 'ArrowLeft') pane.set(pane.width - dir * step)
-        else if (e.key === 'ArrowRight') pane.set(pane.width + dir * step)
+        if (e.key === (rows ? 'ArrowUp' : 'ArrowLeft')) pane.set(pane.width - dir * step)
+        else if (e.key === (rows ? 'ArrowDown' : 'ArrowRight')) pane.set(pane.width + dir * step)
         else return
         e.preventDefault()
       }}
       onKeyUp={() => pane.save(pane.width)}
       className={cn(
-        'group absolute inset-y-0 z-20 w-[6px] cursor-col-resize outline-none',
-        side === 'right' ? '-right-[3px]' : '-left-[3px]',
+        'group absolute z-20 outline-none',
+        cursor,
+        rows ? 'inset-x-0 -bottom-[3px] h-[6px]' : 'inset-y-0 w-[6px]',
+        side === 'right' ? '-right-[3px]' : side === 'left' && '-left-[3px]',
         className,
       )}
     >
       <span
         className={cn(
-          'absolute inset-y-0 w-[2px] transition-colors',
-          side === 'right' ? 'right-[2px]' : 'left-[2px]',
+          'absolute transition-colors',
+          rows ? 'inset-x-0 bottom-[2px] h-[2px]' : 'inset-y-0 w-[2px]',
+          side === 'right' ? 'right-[2px]' : side === 'left' && 'left-[2px]',
           pane.dragging ? 'bg-accent' : 'group-hover:bg-accent/60 group-focus-visible:bg-accent/60',
         )}
       />
-      {pane.dragging && <span className="fixed inset-0 z-50 cursor-col-resize" />}
+      {pane.dragging && <span className={cn('fixed inset-0 z-50', cursor)} />}
     </div>
   )
 }

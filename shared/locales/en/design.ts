@@ -466,6 +466,8 @@ export const EN_DESIGN: Record<string, string> = {
   未选条目: 'No entry',
   拖动调整宽度: 'Drag to resize',
   '拖动调整宽度，双击恢复默认': 'Drag to resize, double-click to reset',
+  拖动调整高度: 'Drag to resize',
+  '拖动调整高度，双击恢复默认': 'Drag to resize, double-click to reset',
   拖动调整控件树的宽度: 'Drag to resize the widget tree',
   '拖动调整 AI 对话的宽度': 'Drag to resize the AI chat',
   拖动调整侧栏的宽度: 'Drag to resize the sidebar',
