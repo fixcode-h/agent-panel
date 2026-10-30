@@ -131,6 +131,30 @@ await runShard(import.meta.filename, async (api) => {
         ))
     )
       errors.push('会话栏：父对话的「协作」里没有来往的消息')
+    // 排列顺序：上下文 → 状态 → 协作（用户要求把这两张卡放到「上下文」下面）。
+    // 按会话栏里各卡片在 DOM 里的先后核对，不靠截图认位置
+    {
+      const NAME = { context: '上下文', status: '状态', collab: '协作' }
+      const order = await p.evaluate(() =>
+        [...document.querySelectorAll('[data-session-rail] [data-session-card]')].map((el) =>
+          el.getAttribute('data-session-card'),
+        ),
+      )
+      const pairs = [
+        ['context', 'status'],
+        ['status', 'collab'],
+      ]
+      for (const [before, after] of pairs) {
+        const i = order.indexOf(before)
+        const j = order.indexOf(after)
+        if (i < 0 || j < 0) errors.push(`会话栏：缺少「${NAME[before]}」或「${NAME[after]}」这一块，核对不了排列顺序`)
+        else if (i > j)
+          errors.push(
+            `会话栏：应该先「${NAME[before]}」后「${NAME[after]}」，实际顺序 ${order.map((x) => NAME[x] ?? x).join(' → ')}`,
+          )
+      }
+      await check(p, '任务-会话栏顺序')
+    }
     await p.getByRole('button', { name: '隐藏会话栏', exact: true }).click()
     if (await rail.isVisible()) errors.push('会话栏：点「隐藏会话栏」后还在')
     await p.getByRole('button', { name: '显示会话栏', exact: true }).click()
