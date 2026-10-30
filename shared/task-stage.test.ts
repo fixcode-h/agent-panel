@@ -4,6 +4,7 @@ import { setLang } from './i18n.ts'
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { TaskIcon } from './task.ts'
 import {
+  resumeNote,
   convActive,
   convState,
   taskActive,
@@ -740,4 +741,26 @@ test('子对话的未读点：做完了没看才画，当前打开的和没做�
   assert.equal(childSeenLocally(child(), undefined), false)
   // 交出去的后台命令还没跑完时也不算看过（taskTurnUnread 的口径）
   assert.equal(childSeenLocally(child({ background: 1 }), turnDoneAt), false)
+})
+
+test('继续执行的续接说明：写清被打断的原因、连带拉起的子对话、没跑完的子任务和工作流', () => {
+  const note = resumeNote(
+    {
+      stopReason: 'restart',
+      steps: [
+        { id: 'h1', title: '查日志', slot: 'sub', interrupted: true, status: 'pending' },
+        { id: 'h2', title: '已完成的子任务', slot: 'sub', interrupted: true, status: 'done' },
+      ] as unknown as Task['steps'],
+      runs: [{ id: 1, workflowName: '修复 Bug', status: 'stopped' }] as unknown as Task['runs'],
+    },
+    ['改侧栏'],
+  )
+  assert.match(note, /面板重启时中断/)
+  assert.match(note, /已经完成的不要重做/)
+  assert.match(note, /「改侧栏」[\s\S]*不用另建子对话重做/)
+  assert.match(note, /「查日志」（id h1）[\s\S]*resume/)
+  assert.doesNotMatch(note, /已完成的子任务/, '做完的子任务不列')
+  assert.match(note, /「修复 Bug」[\s\S]*start_plan/)
+  // 没有可列的：只有一句续接说明
+  assert.equal(resumeNote({ stopReason: 'user', steps: [], runs: [] }).split('\n').length, 1)
 })

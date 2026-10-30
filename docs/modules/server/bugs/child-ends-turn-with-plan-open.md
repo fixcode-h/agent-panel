@@ -32,3 +32,7 @@
 
 - `scripts/e2e/04-subagents.mjs`：「子对话计划做一半就收尾：面板马上推它接着做，推过仍不动就上报父对话，不来回推」。
 - `shared/task-idle-ask.test.ts`：`planStalled` 的判定（含只剩合回不算停住）。
+
+## 后续（2026-10-30）
+
+父对话也出现同样的现象（「我跑 `test:failed`。」然后停住）。推进推广到所有对话：顶层对话这一轮调过工具才推；「未完成」不再给父对话发消息，面板推过仍停住才报一次。见 [ADR 0032](../../../adr/0032-conversations-keep-going.md)。

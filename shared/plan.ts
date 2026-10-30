@@ -281,8 +281,10 @@ export function inputUnhandled(plan: TaskPlan, now = Date.now()): number | undef
   if (!Number.isFinite(input)) return undefined
   const noted = Date.parse(plan.inputNotedAt || '')
   if (Number.isFinite(noted) && noted >= input) return undefined
-  const changed = planUpdatedAt(plan)
-  if (changed !== undefined && changed >= input) return undefined
+  // 只认对话自己改的（set_plan）：派子对话挂等待、结果回来标完成这些面板替它改的，会让它看起来「改过了」，
+  // 新要求其实没进计划（用户要求新要求进来后要排进计划）。旧数据没有这个字段时退回计划的最后变化时间
+  const changed = plan.agentUpdatedAt ? Date.parse(plan.agentUpdatedAt) : planUpdatedAt(plan)
+  if (changed !== undefined && Number.isFinite(changed) && changed >= input) return undefined
   const ms = now - input
   return ms >= 0 ? ms : undefined
 }
@@ -341,8 +343,9 @@ export function planNotice(task: PlanTask, now = Date.now()): string {
   const unhandled = inputUnhandled(plan, now)
   if (unhandled !== undefined)
     lines.push(
-      `⚠ 上一轮进来了新要求（${staleMinutes(unhandled)} 分钟前），计划之后没有变化。` +
-        `如果它确实不改变计划，用一句话说明为什么；要改就现在 set_plan（同一件事增量更新，目标变了就 finish_plan 后开新计划）。`,
+      `⚠ ${unhandled < 60_000 ? '刚进来了新要求' : `${staleMinutes(unhandled)} 分钟前进来了新要求`}，计划还没有跟着改。` +
+        `先判断它要不要进计划：要做的事加进计划（同一件事的细化加子步骤或新步骤，set_plan 增量更新；目标变了就 finish_plan 后开新计划），` +
+        `交给子对话的也要在计划里有对应的一步；确实不改变计划，就用一句话说明为什么。`,
     )
   return lines.join('\n')
 }

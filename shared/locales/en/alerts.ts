@@ -132,6 +132,7 @@ export const EN_ALERTS: Record<string, string> = {
   '子对话的结果没能马上交给这个对话，已放进收件箱，下一轮会处理':
     "A subconversation's result couldn't be handed to this conversation right away. It is in the inbox for the next turn",
   执行这个子对话时出错: 'Error while running this subconversation',
+  这个子对话没能开始执行: 'This subconversation could not start',
   父对话的编译结果没能交给这个对话: "The parent's build result couldn't be handed to this conversation",
   '后台命令的结果两次都没能交给 Agent，已经记在对话里，下一轮会处理':
     "The background command's result couldn't reach the agent after two tries. It is saved in the conversation for the next turn",
