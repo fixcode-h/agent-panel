@@ -281,6 +281,8 @@ await runShard(import.meta.filename, async (api) => {
           updatedWarning: updated ? [...updated.classList].includes('text-warning') : false,
           // 滞后步骤旁边的小标记、失败状态的图标
           stale: !!dlg.querySelector('[data-plan-stale-step]'),
+          // 计划里没有「失败」（ADR 0032）：没做成的一步仍是进行中，备注红字写「需要修复：原因」
+          fixNote: [...dlg.querySelectorAll('.text-danger')].some((e) => e.textContent.includes('需要修复：')),
           failedIcon: [...dlg.querySelectorAll('[role="img"]')].some((e) => e.getAttribute('aria-label') === '失败'),
           totalLabel: total?.getAttribute('aria-label') || '',
           items: [...dlg.querySelectorAll('[data-plan-time]')].map((e) => ({
@@ -315,14 +317,15 @@ await runShard(import.meta.filename, async (api) => {
       if (a.waitingMeta !== '等：端到端测试')
         errors.push(`执行计划：等待中的说明不对（「${a.waitingMeta}」，应该只有「等：端到端测试」）`)
       if (a.doneMeta) errors.push(`执行计划：完成的步骤下面还重复显示用时（「${a.doneMeta}」）`)
-      // ADR 0020：进度条、「N 分钟前更新」、滞后警示、失败态都要在界面上看得见
+      // ADR 0020 / 0032：进度条、「N 分钟前更新」、滞后警示、「需要修复」都要在界面上看得见
       if (!a.bar || a.bar.now !== 1 || a.bar.max !== 4)
         errors.push(`执行计划：进度条不对（${JSON.stringify(a.bar)}），应该是 1/4`)
       if (!/分钟前更新|刚刚更新/.test(a.updated)) errors.push(`执行计划：没有显示「N 分钟前更新」（「${a.updated}」）`)
       if (!a.updatedWarning)
         errors.push(`执行计划：计划 12 分钟没更新了，「N 分钟前更新」没有用警示色（「${a.updated}」）`)
       if (!a.stale) errors.push('执行计划：进行中的步骤 12 分钟没变化，旁边没有滞后标记')
-      if (!a.failedIcon) errors.push('执行计划：失败的步骤没有失败图标')
+      if (!a.fixNote) errors.push('执行计划：没做成的步骤没有用红字写「需要修复」')
+      if (a.failedIcon) errors.push('执行计划：计划里不该再有「失败」图标')
       // 进行中每秒在涨；完成的用 endedAt 固定住
       await p.waitForTimeout(1600)
       const b = await readPlan()
