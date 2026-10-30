@@ -12,7 +12,7 @@ import { CollabCard } from './CollabCard'
 import type { ChildEntry } from '@shared/task'
 
 /**
- * 对话页右栏的会话栏（照 Claude Code）：状态（为什么停在这里）、父子协作、环境、上下文细分、Token 用量、工具调用（改动在右侧文件栏的改动页看）。
+ * 对话页右栏的会话栏（照 Claude Code）：环境、上下文细分、状态（为什么停在这里）、父子协作、Token 用量、工具调用（改动在右侧文件栏的改动页看）。
  * 上下文的总数来自 Agent 报的用量，细分里面板交给它的部分按字数换算，CLI 自己的部分是 CLI 定义里的估计值
  */
 export function SessionBar({
@@ -43,14 +43,6 @@ export function SessionBar({
   const worktree = task.worktree
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overscroll-contain p-3" data-session-bar>
-      <StatusCard task={task} kids={kids} onOpenChild={onOpenChild} />
-      {(task.parentTaskId || !!kids?.length) && (
-        <CollabCard
-          task={task}
-          kidsStamp={(kids ?? []).map((k) => `${k.id}:${k.status}:${k.working}:${k.turnDoneAt ?? ''}`).join('|')}
-          onOpenChild={onOpenChild}
-        />
-      )}
       <SessionCard id="env" title={t('环境')} trailing={env}>
         <SessionRow
           icon={worktree ? <Split /> : <Monitor />}
@@ -73,6 +65,16 @@ export function SessionBar({
       <SessionCard id="context" title={t('上下文')}>
         <SessionContextBody task={task} ctx={ctx} onTask={onTask} />
       </SessionCard>
+
+      {/* 「状态」和「协作」放在「上下文」下面（用户要求）：先看上下文用得怎么样，再看这轮在等什么、父子之间来往了什么 */}
+      <StatusCard task={task} kids={kids} onOpenChild={onOpenChild} />
+      {(task.parentTaskId || !!kids?.length) && (
+        <CollabCard
+          task={task}
+          kidsStamp={(kids ?? []).map((k) => `${k.id}:${k.status}:${k.working}:${k.turnDoneAt ?? ''}`).join('|')}
+          onOpenChild={onOpenChild}
+        />
+      )}
 
       <SessionCard id="tokens" title={t('Token 用量')}>
         <TokenUsage task={task} />
