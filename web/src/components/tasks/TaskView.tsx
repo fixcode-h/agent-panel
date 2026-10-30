@@ -1554,6 +1554,9 @@ export function TaskView({
     if (scrollerEl.current) scrollerEl.current.scrollTop = 0
     if (id) setFocus({ id, at: Date.now() })
   }
+  // 运行区那行「工作流」：工作流对话里和卡片一样切到流程图，普通对话（计划触发的运行）没有流程图，仍打开那次运行
+  const runNav =
+    task.mode === 'workflow' ? { runView: () => openFlow(), runTip: t('在流程图里查看') } : { runView: openRunIn }
   // 工作流没走完时输入框上面有「继续流程」，输入框里就不再放「继续执行」
   const flowLeft = task.mode === 'workflow' && !running && flowUnfinished(task, workflow)
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
@@ -2141,8 +2144,8 @@ export function TaskView({
         <PaneNavCtx.Provider
           value={
             pane || task.parentTaskId
-              ? { runTool: openPaneRun, runView: openRunIn, openChild, job: openJob }
-              : { child: openChildRow, runView: openRunIn, openChild, job: openJob }
+              ? { runTool: openPaneRun, ...runNav, openChild, job: openJob }
+              : { child: openChildRow, ...runNav, openChild, job: openJob }
           }
         >
           <ChildMailProvider kids={children} mail={peerMail}>

@@ -29,7 +29,7 @@ import { dedupePeerReports } from '@/lib/peer-dedupe'
 import { ChildAskCard } from './ChildAskCard'
 import { ReceivedRow } from './PeerMessage'
 import { peerOfMessage } from '@shared/peer-message'
-import { useChildOpen, useChildList, useRunViewOpen } from './child-open'
+import { useChildOpen, useChildList, useRunViewOpen, useRunViewTip } from './child-open'
 import { runRow, type WorkflowRun } from '@/lib/run-row'
 import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
@@ -733,13 +733,14 @@ const spinning = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-acce
 
 /**
  * 运行区里的工作流运行（计划触发的那次、工作流任务自己跑的那次都一样）：和后台命令一样放在总结下面，
- * 没跑完就一直转圈，右边写做到第几个节点，点整行打开这次运行的视图；
+ * 没跑完就一直转圈，右边写做到第几个节点，点整行打开这次运行（工作流对话里是切到流程图）；
  * 完成后从这行消失，失败或被停止时留一行说明和失败的节点，不悄无声息地不见了。
  * 要不要画已经在 runRow 里判过，这里只按拿到的数据画
  */
 function RunRow({ info }: { info: WorkflowRun }) {
   const [open, setOpen] = useState(false)
   const openRun = useRunViewOpen()
+  const runTip = useRunViewTip()
   const running = info.status === 'running'
   // 跑的时候每秒刷新已经用了多久，和后台命令一样
   const now = useNow(!!running)
@@ -759,7 +760,7 @@ function RunRow({ info }: { info: WorkflowRun }) {
       open={false}
       rowOpen={openView}
       onOpen={openView}
-      openTip={t('打开这次运行的对话')}
+      openTip={runTip ?? t('打开这次运行的对话')}
     />
   ) : (
     <RowShell
