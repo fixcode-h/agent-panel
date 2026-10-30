@@ -54,7 +54,7 @@ import {
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
-import { TurnMenu } from './TurnMenu'
+import { TurnRail } from './TurnRail'
 import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields, windowedForSummary } from '@/lib/live-fields'
 import { latestTurnIndex } from '@/lib/latest-turn'
@@ -1754,7 +1754,6 @@ export function TaskView({
   const headerBadges = (
     <>
       <ProcessMenu taskId={task.id} />
-      {!isFlow && <TurnMenu msgs={task.messages} onJump={jumpToTurn} />}
       {task.simulated && (
         <Badge tone="warning" title={t('没有真正调用 Agent，输出是示例')} className="hidden shrink-0 md:inline-flex">
           <FlaskConical className="h-3 w-3" />
@@ -2174,11 +2173,22 @@ export function TaskView({
                     <ConversationShell
                       scroller={scroller}
                       overlay={
-                        progressOpen && (
-                          <div className="absolute top-3 left-3 z-20 w-[min(340px,calc(100%-1.5rem))] md:left-4">
-                            <TaskPanel task={task} onStep={openStep} className="shadow-pop" />
-                          </div>
-                        )
+                        <>
+                          {progressOpen && (
+                            <div className="absolute top-3 left-3 z-20 w-[min(340px,calc(100%-1.5rem))] md:left-4">
+                              <TaskPanel task={task} onStep={openStep} className="shadow-pop" />
+                            </div>
+                          )}
+                          {/* 右上角的轮次导航：没有会话栏时让出滚动条（12px），有会话栏时贴着会话栏左边 */}
+                          {!isFlow && (
+                            <TurnRail
+                              msgs={task.messages}
+                              scrollEl={scroller.el}
+                              onJump={jumpToTurn}
+                              right={sessionShown ? SESSION_BAR_W + RAIL_GUTTER + 4 : 14}
+                            />
+                          )}
+                        </>
                       }
                       // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
                       fill={
