@@ -110,6 +110,8 @@ const DEFAULT_CHANGES: { id: string; core: CoreKey; key: string; from: ParamValu
   { id: 'docsync.bug-on', core: 'docsync', key: 'bug', from: false },
   // 主理的「大改动先确认」默认打开：拆三个以上子对话、跨模块的派单先给用户看方案（角色分层改造）
   { id: 'orchestrator.confirm-on', core: 'orchestrator', key: 'confirm', from: false },
+  // 主理的「汇报」默认改成详细：用户 2026-10-30 要求主理的汇报写详细（已装的副本还是精简的）
+  { id: 'orchestrator.report-detailed', core: 'orchestrator', key: 'report', from: '精简' },
 ]
 
 /** 对已装的必备角色补做还没做过的默认值升级（幂等） */

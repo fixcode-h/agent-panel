@@ -27,3 +27,9 @@ paths: web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.t
 - 规则：`useStickToBottom` 贴底时只有 `scrollTop` 变小（用户往上滚）才松开（`stillPinned`）。内容变高后浏览器补发的 scroll 事件里 `scrollTop` 没变、离底部却变远了，按距离判断会误以为用户滚走。
 - 起因：用户 2026-10-23 反馈对话进行中偶发不回到底部。
 - 防线：`web/src/lib/useStickToBottom.test.ts` 的 `stillPinned` 用例。
+
+## 回复的总结一律留在折叠外面
+
+- 规则：一轮回复收尾折叠时，总结整段留在外面，父对话、子对话都一样。AI 写完总结常再调收尾动作（`suggest_next_step`、`submit_merge`、`set_plan` 这类）再补一句「已提交」，`summaryStart`（`web/src/lib/fold.ts`）把中间只隔着这些动作的几段话都算作总结；新的收尾类面板工具要加进 `WRAP_TOOLS`。
+- 起因：用户 2026-10-30 要求「对话的总结不要折叠，父对话、子对话都要记住」；之前只留最后一条带正文的消息，真正的总结被算成「n 段说明」收了进去。
+- 防线：`web/src/lib/fold.test.ts` 的 summaryStart 用例。

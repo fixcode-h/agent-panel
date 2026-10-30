@@ -901,7 +901,7 @@ export function FoldedRun({
     />
   )
   // 折叠行只统计这一段里的操作：一段收尾后又来了新内容时，前面几段各自折一行，不会重复计数
-  const { last, parts, failed } = foldStats(msgs)
+  const { last, first, parts, failed } = foldStats(msgs)
   // 没有可折的过程：还在运行的东西接在回复后面（和工具调用一样缩进在头像后面）
   if (live || last < 0 || !parts.length)
     return (
@@ -910,7 +910,9 @@ export function FoldedRun({
         {running}
       </>
     )
-  const before = msgs.slice(0, last)
+  const before = msgs.slice(0, first)
+  // 总结里收尾动作之后的那几段话（见 summaryStart）：只显示文字，接在总结第一段下面，不再重复名字
+  const more = msgs.slice(first + 1, last + 1).filter((m) => m.role === 'agent' && replyText(m).trim())
   // 搜索跳转要知道「目标在哪一段」（见 message-anchor）：把这一段的 id 挂在开关上。
   // 直接每次渲染都 join 会在长对话里每 200ms 拼一次上千个 id（实测会拖慢渲染），所以按内容签名缓存：
   // 流式输出时末尾消息还是同一条，签名不变就沿用上次的字符串（引用也不变，React 比属性时直接命中）
@@ -955,7 +957,7 @@ export function FoldedRun({
   // 收起时：报错和提问照常显示，其余的过程收起来，最后一条回复带上名字和折叠行显示
   const tail = msgs.slice(last + 1)
   // 名字行要吸顶时和展开时一样放在整段外面（理由见 Msgs）
-  const sticky = !author && stickyAuthor && agents.find((x) => x.id === msgs[last].agentId)
+  const sticky = !author && stickyAuthor && agents.find((x) => x.id === msgs[first].agentId)
   return (
     <>
       {sticky && (
@@ -978,7 +980,7 @@ export function FoldedRun({
             (m.role === 'system' && <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />),
         )}
       <AgentMessage
-        m={msgs[last]}
+        m={msgs[first]}
         task={task}
         teamNames={teamNames}
         hideProcess
@@ -988,6 +990,18 @@ export function FoldedRun({
         author={author}
         command={command}
       />
+      {more.map((m) => (
+        <AgentMessage
+          key={m.id}
+          m={m}
+          task={task}
+          teamNames={teamNames}
+          hideProcess
+          compact
+          author={author}
+          command={command}
+        />
+      ))}
       <Msgs
         msgs={tail}
         task={task}
