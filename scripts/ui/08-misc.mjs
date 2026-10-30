@@ -447,6 +447,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       const occ = p.locator('[data-occ="今日工作"]').last()
       const before = await stored('今日工作')
       const slot = (await p.locator('[data-slot]').nth(1).boundingBox())?.height ?? 0
+      // 周视图打开时滚到「现在的前一小时」：凌晨跑检查时 19:00 那一块在滚动区外面，按坐标拖会落空（检查时好时坏）。
+      // 先把它滚进可视区再取位置
+      await occ.scrollIntoViewIfNeeded().catch(() => {})
       const box = await occ.boundingBox()
       if (!box || !slot) errors.push('计划拖动：周视图里找不到「今日工作」或时间格')
       else {
@@ -469,6 +472,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           errors.push(`计划拖动：往下拖两格应该晚一小时（${before.at} → ${moved.at}）`)
         if (Date.parse(moved.at) - Date.parse(before.at) > 86_400_000)
           errors.push(`计划拖动：每天的计划拖了最后一格，下一次被推到了好几天后（${moved.at}）`)
+        await p
+          .locator('[data-occ="今日工作"]')
+          .last()
+          .scrollIntoViewIfNeeded()
+          .catch(() => {})
         const b2 = await p.locator('[data-occ="今日工作"]').last().boundingBox()
         await p.mouse.move(b2.x + b2.width / 2, b2.y + b2.height - 2)
         await p.mouse.down()
