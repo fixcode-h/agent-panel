@@ -10,6 +10,8 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, server/exec/worktre
 - 规则：合并分支用 `mergeTask()`（每次尝试前清、被挡住会重试），别手工 `rmSync` 假 CLI 写的 `<kind>-output.txt`；负向用例（期望 409）拿原始错误。加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 查会包含它的旧词（`SLOW`、`FAIL` 匹配整段输入）。
 - 规则：改了交给 CLI 的方式（参数、文件、只发增量）同一提交改假 CLI 的读法和 e2e 断言；触发词不能依赖会被增量省掉的规则段落。
 - 起因：`BG_SLOW` 命中 `SLOW`（7a875fe）；角色改走 `--append-system-prompt-file` 后假 CLI 认不出评审，3 片红（fc1c744）。
+- 规则：用例发给对话的触发词（`FINISH_CHILD:` 这类）假 CLI 要在本轮 input 和插话（`takeSteer`）两条路上都认：对话正被子对话的上报、后台命令结果叫起来时，用户消息会插进这一轮，真的 CLI 会处理，只认 input 的假 CLI 就永远不动。复现办法是直接 `node scripts/e2e/<分片>.mjs`（不经总入口时序不同，更容易撞上）。
+- 起因：出包 CI 在「计划没做完时父对话收尾仍被拦」等 finish_child 超时（286465b），PR 上的检查是过的。
 - 防线：`test:e2e`（看门狗）、`outputs.test.mjs`。
 
 ## 跑 e2e / 单测前清掉继承的环境变量
