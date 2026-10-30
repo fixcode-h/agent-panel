@@ -573,6 +573,23 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
   process.on('exit', () => appendFileSync(`${log}.end`, JSON.stringify({ pid: process.pid, end: Date.now() }) + '\n'))
 }
 
+// FAKE_REPLAY：按录下的 Claude Code 输出一轮一轮回放（见 scripts/fake-cli/replay.mjs），不走下面手写的固定输出。
+// 服务的环境变量启动后改不了：e2e 用例在 <FAKE_CLI_LOG>.replay-src 里写录像路径，只让那一段用例回放
+const replaySrc = `${process.env.FAKE_CLI_LOG}.replay-src`
+const replayFile =
+  process.env.FAKE_REPLAY ||
+  (process.env.FAKE_CLI_LOG && existsSync(replaySrc) ? readFileSync(replaySrc, 'utf8').trim() : '')
+if (replayFile && kind === 'claude' && titleFor === null) {
+  const { replayTurn } = await import('./replay.mjs')
+  await replayTurn({
+    file: replayFile,
+    state: `${process.env.FAKE_CLI_LOG ?? path.join(tmpdir(), 'fake-cli')}.replay`,
+    write: (line) => process.stdout.write(line + '\n'),
+    speed: Number(process.env.FAKE_REPLAY_SPEED) || 10,
+  })
+  process.exit(0)
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // 模拟一次调用要花的时间：默认和真实 CLI 一样有一点延迟，e2e 通过环境变量压到最小。
 // 只有专门验证时序的用例（插话、停止、执行中发消息）才需要慢回合持续得久一点

@@ -10,3 +10,7 @@
 
 CLI 升级后输出格式变了，就重新录一段真实输出替换这里的样本（路径换成 `/work/shop`，去掉密钥和个人信息），
 再跑一次测试，看解析结果有没有变。
+
+这些样本也能在 e2e 里回放：把路径交给假 CLI 的回放模式（`FAKE_REPLAY`，或写进 `<FAKE_CLI_LOG>.replay-src`，见
+`scripts/fake-cli/replay.mjs`），面板就按录下的事件顺序和间隔跑一轮。用户报的卡住、转圈类 Bug，可以把那段对话导出，
+用 `node scripts/replay-from-export.mjs <对话包.task.json> <录像.jsonl>` 转成录像，存进 `scripts/e2e/fixtures/replay/` 做回归用例。
