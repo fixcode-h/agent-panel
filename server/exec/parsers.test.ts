@@ -112,6 +112,44 @@ test('Claude Code：stream-json 的文字、思考、工具、待办和用量', 
     { input: 2030, output: 10, read: 2000, write: 0 },
     '第二轮没推流式事件时由 result 补上本轮用量',
   )
+
+  // 有的网关（本机用的代理）流式 message_start 报的输入用量全是 0，真实输入只在完整消息的 usage 里：
+  // message_start 的 0 不当成上下文占用（否则会把上一条有效值盖成 0），完整消息补上这次请求的输入
+  const gw = claudeParser(CWD)
+  const start = gw({
+    type: 'stream_event',
+    event: {
+      type: 'message_start',
+      message: {
+        id: 'gm1',
+        model: 'deepseek-v4.1-flash',
+        content: [],
+        usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 },
+      },
+    },
+  })
+  assert.equal(
+    start.find((e) => e.type === 'usage' && e.context !== undefined),
+    undefined,
+    '0 不当成上下文占用',
+  )
+  // 完整消息带着真实用量：input_tokens 不含缓存，缓存读取要加上
+  const done = gw({
+    type: 'assistant',
+    message: {
+      id: 'gm1',
+      model: 'deepseek-v4.1-flash',
+      usage: { input_tokens: 25733, cache_creation_input_tokens: 0, cache_read_input_tokens: 384, output_tokens: 12 },
+      content: [{ type: 'text', text: '好了' }],
+    },
+  })
+  const usage = done.find((e): e is Extract<CliEvent, { type: 'usage' }> => e.type === 'usage')
+  assert.ok(usage, '完整消息的用量要交给面板')
+  assert.equal(usage.context, 26117, '上下文 = 输入 + 缓存读取')
+  // 累计由 message_start / result 负责，这条只补上下文，不能重复加
+  assert.equal(usage.addInput, undefined)
+  assert.equal(usage.addCacheRead, undefined)
+  assert.equal(usage.addOutput, undefined)
 })
 
 test('Claude Code：出错的结果、Bash 的退出码；每次模型回应开头报 request_start，写工具入参算在输出', () => {

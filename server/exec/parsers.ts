@@ -389,6 +389,12 @@ export function claudeParser(cwd: string): Parser {
     } else if (o.type === 'assistant' && o.message) {
       const id = o.message.id ?? ''
       if (typeof o.uuid === 'string' && !o.parent_tool_use_id) out.push({ type: 'turn', end: o.uuid })
+      // 有的网关流式 message_start 不报用量（全 0），真实输入只在完整消息的 usage 里：在这里补一次上下文占用。
+      // 累计仍由 message_start / result 负责，这里不带 add*，不重复累加；子 Agent 的上下文和主会话无关，不算
+      if (o.message.usage && !o.parent_tool_use_id) {
+        const c = claudeInput(o.message.usage)
+        if (c.input > 0) out.push({ type: 'usage', context: c.input, model: o.message.model })
+      }
       for (const b of o.message.content ?? []) {
         if (b.type === 'text' && b.text && !streamed.has(id)) out.push({ type: 'text', text: b.text })
         if (b.type === 'tool_use') {

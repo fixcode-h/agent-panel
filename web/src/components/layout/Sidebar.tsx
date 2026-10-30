@@ -51,7 +51,7 @@ import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Kbd } from '@/components/ui/kbd'
 import {
   NAV_ROW,
-  SidebarModeMenu,
+  SidebarModeTabs,
   SidebarProjectName,
   SidebarProjectRow,
   SidebarTaskBlock,
@@ -318,7 +318,7 @@ export const isDesignPage = (page: PageId) => page === 'design' || page === 'com
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
- * 展开时是左上角的下拉（产品图标 + 当前模式名，照设计稿 Workspace）；会话侧栏让开时（功能页、收起）竖着排在图标栏里。
+ * 展开时是侧栏顶部的三段并排 tab（照设计稿）；会话侧栏让开时（功能页、收起）竖着排在图标栏里。
  * 功能页不属于哪个模式：三个都不亮，点哪个都回到那个模式最近的页面
  */
 export function ModeSwitch({ narrow }: { narrow: boolean }) {
@@ -331,7 +331,6 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'agent',
       name: 'Agent',
-      desc: t('按项目调度 CLI'),
       label: t('Agent 模式：在项目里执行任务和工作流'),
       icon: Code2,
       on: !chat && !design && !tool,
@@ -340,7 +339,6 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'chat',
       name: 'Chat',
-      desc: t('直接对话'),
       label: t('Chat 模式：直接聊天，不用选项目'),
       icon: MessagesSquare,
       on: chat,
@@ -349,7 +347,6 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'design',
       name: t('设计'),
-      desc: t('画板'),
       label: t('UI 设计：用对话设计游戏界面，导出给 UE'),
       icon: Palette,
       on: design,
@@ -381,9 +378,8 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
     )
   }
   return (
-    <SidebarModeMenu
+    <SidebarModeTabs
       modes={modes}
-      logo={<Logo />}
       onPick={(id) => {
         const m = modes.find((x) => x.id === id)
         if (m) go(m.to)
@@ -551,10 +547,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
    */
   const body = (narrow: boolean, mobile = false) => (
     <>
-      {/* 左上角：模式下拉（产品图标 + 模式名）；产品图标的左边和下面导航的图标左边对齐 */}
-      <div
-        className={cn('flex h-14 shrink-0 items-center gap-2 pt-1 pr-3 pb-1.5 pl-2.5', narrow && 'justify-center px-0')}
-      >
+      {/* 左上角：模式切换（三段并排 tab，占满整行，不放 logo） */}
+      <div className={cn('flex h-14 shrink-0 items-center pt-1 pr-3 pb-1.5 pl-2.5', narrow && 'justify-center px-0')}>
         {!narrow && <ModeSwitch narrow={false} />}
       </div>
 
