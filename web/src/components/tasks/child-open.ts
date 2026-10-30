@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, createElement, useContext, type ReactNode } from 'react'
 import type { ToolUse } from '@shared/schema'
 import type { ChildSummary } from './child-line'
 import type { JobTarget } from './JobDialog'
@@ -53,3 +53,20 @@ export interface PeerMail {
 }
 export const PeerMailCtx = createContext<PeerMail | null>(null)
 export const usePeerMail = () => useContext(PeerMailCtx)
+
+/** 父对话页一次提供子对话列表和信件两份上下文（一层包住，不让对话页整段多缩进一层） */
+export function ChildMailProvider({
+  kids,
+  mail,
+  children,
+}: {
+  kids: ChildSummary[]
+  mail: PeerMail
+  children: ReactNode
+}) {
+  return createElement(
+    ChildListCtx.Provider,
+    { value: kids },
+    createElement(PeerMailCtx.Provider, { value: mail }, children),
+  )
+}
