@@ -1451,4 +1451,8 @@ export const EN_TASKS: Record<string, string> = {
   '「{title}」正在执行，等这一轮结束后再应用': '"{title}" is running; apply after this turn finishes',
   '追问，或让它换个方向查…': 'Ask a follow-up, or point it in another direction…',
   思考: 'Thinking',
+  '距自动压缩还剩 {n}': '{n} until auto-compact',
+  '上下文还剩 {n}': '{n} of context left',
+  'Agent 正在回复，这一轮结束后才能压缩': 'The agent is replying; you can compact after this turn ends',
+  压缩会话: 'Compact session',
 }

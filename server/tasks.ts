@@ -5635,17 +5635,20 @@ export function tasksApi(deps: {
    * 正在执行这一轮的不关（和归档一样）：那是「暂停」的事，关进程会把这一轮掐断。
    * 名下子对话不跟着关：它们有自己的进程，只是父对话这边不再占着 CLI
    */
+  /** 结束停在等下一句的 CLI 进程（下一轮续接会话）：「关闭 Agent」和压缩会话共用 */
+  async function closeWaiting(id: string, e: NonNullable<ReturnType<typeof live.get>>) {
+    if (!cancelWait(id)) stopTask(id, 'close')
+    await e.done?.catch(() => {})
+    // 计划没做完、落盘还写着执行中的，和页面宽限回收一样收口成已停止，界面不会一直转圈
+    if (!live.has(id)) await settleReclaimed(store, id, 'close')
+  }
+
   routes.post('/:id/agent/close', async (c) => {
     const id = c.req.param('id')
     const e = live.get(id)
     if (!e && !(await getMeta(id))) return bad(c, t('任务不存在'), 404)
     if (e?.task.working) return bad(c, t('对话正在执行，先暂停这一轮再关闭 Agent'), 409)
-    if (e) {
-      if (!cancelWait(id)) stopTask(id, 'close')
-      await e.done?.catch(() => {})
-      // 计划没做完、落盘还写着执行中的，和页面宽限回收一样收口成已停止，界面不会一直转圈
-      if (!live.has(id)) await settleReclaimed(store, id, 'close')
-    }
+    if (e) await closeWaiting(id, e)
     // 执行位已经没了、进程登记还在（某条路径漏停、重启前留下的）：按登记结束，界面说关了就真的关了
     if (!live.has(id))
       await killTaskClis(id, killTree).catch((err) =>
@@ -6394,6 +6397,12 @@ export function tasksApi(deps: {
 
   // 压缩上下文：让 CLI 把这个对话的会话压缩（不能压缩的 CLI 写一份摘要，下一轮开新会话带上）
   routes.post('/:id/compact', async (c) => {
+    const id = c.req.param('id')
+    const e = live.get(id)
+    // 正在回复：现有的 CLI 都没法不打断这一轮就压缩，等这一轮结束（界面上按钮这时是灰的）
+    if (e?.task.working) return bad(c, t('Agent 正在回复，这一轮结束后才能压缩'), 409)
+    // 回复完停在等下一句（保活）：先关掉等着的进程，压缩那一轮再续接会话
+    if (e) await closeWaiting(id, e)
     const task = await idleTask(c)
     if (task instanceof Response) return task
     if (!task.sessions[task.agentId] && !task.rewind) return bad(c, t('还没有会话，不需要压缩'))

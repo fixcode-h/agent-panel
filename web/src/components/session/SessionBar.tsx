@@ -17,8 +17,11 @@ export function SessionBar({
   projectName,
   onSettings,
   env,
+  onTask,
 }: {
   task: Task
+  /** 压缩会话后把新的任务状态交回页面 */
+  onTask?: (task: Task) => void
   projectName?: string
   /** 打开对话设置；子对话、工作流任务没有 */
   onSettings?: () => void
@@ -51,7 +54,7 @@ export function SessionBar({
       </SessionCard>
 
       <SessionCard id="context" title={t('上下文')}>
-        <SessionContextBody ctx={ctx} />
+        <SessionContextBody task={task} ctx={ctx} onTask={onTask} />
       </SessionCard>
 
       <SessionCard id="tokens" title={t('Token 用量')}>
