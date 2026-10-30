@@ -1560,6 +1560,15 @@ html [data-sonner-toast][data-styled='true'] {
   background-color: color-mix(in oklab, var(--rail) 95%, var(--fg));
   box-shadow: inset -1px 0 0 var(--line);
 }
+/*
+ * 会话侧栏让开时（功能页、侧栏收起）页面面板左边留和上、右、下一样的 0.5rem 间距，
+ * 不贴着图标栏；会话侧栏在时它本身就是左边的留白，不再加
+ */
+@media (width >= 48rem) {
+  :not(:has(> [data-sidebar])) > .page-area {
+    padding-left: 0.5rem;
+  }
+}
 /* 图标栏分隔线：bg-line 在浅色图标栏上几乎看不见，按前景色调一点出来，深浅两套都看得到 */
 .activity-sep {
   background-color: color-mix(in oklab, var(--fg) 14%, transparent);
