@@ -2386,6 +2386,8 @@ export function TaskView({
                         task={task}
                         projectName={project?.name}
                         onTask={apply}
+                        kids={children}
+                        onOpenChild={openChildIn}
                         env={
                           <EnvChip
                             compact

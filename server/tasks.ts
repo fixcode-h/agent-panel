@@ -52,6 +52,7 @@ import { releaseIfSame, reserveOnce } from './slots.ts'
 import { killTree } from './exec/process.ts'
 import { reapSettledTaskClis } from './exec/orphans.ts'
 import { registerFileRoutes } from './tasks/files-routes.ts'
+import { registerCollabRoutes } from './tasks/collab-routes.ts'
 import { createTrash } from './tasks/trash.ts'
 import { registerActionRoutes } from './tasks/actions-routes.ts'
 import { registerConversationRoutes } from './tasks/conversation-routes.ts'
@@ -638,6 +639,7 @@ export function tasksApi(deps: {
   })
   registerListRoutes(scope)
   const { childUnmerged, gitGate } = registerChildrenRoutes(scope)
+  registerCollabRoutes(scope)
   registerProcessRoutes(scope)
   registerReadRoutes(scope)
   const { prewarmChat, createTask } = registerConversationRoutes(scope)

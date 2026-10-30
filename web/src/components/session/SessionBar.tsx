@@ -7,9 +7,12 @@ import { TokenUsage } from '@/components/tasks/TaskMeta'
 import { ToolStats } from '@/components/tasks/ToolFailuresChip'
 import { SessionCard, SessionRow } from './SessionCard'
 import { SessionContextBody, useSessionContext } from './SessionContext'
+import { StatusCard } from './StatusCard'
+import { CollabCard } from './CollabCard'
+import type { ChildEntry } from '@shared/task'
 
 /**
- * 对话页右栏的会话栏（照 Claude Code）：环境、上下文细分、Token 用量、工具调用（改动在右侧文件栏的改动页看）。
+ * 对话页右栏的会话栏（照 Claude Code）：状态（为什么停在这里）、父子协作、环境、上下文细分、Token 用量、工具调用（改动在右侧文件栏的改动页看）。
  * 上下文的总数来自 Agent 报的用量，细分里面板交给它的部分按字数换算，CLI 自己的部分是 CLI 定义里的估计值
  */
 export function SessionBar({
@@ -18,8 +21,14 @@ export function SessionBar({
   onSettings,
   env,
   onTask,
+  kids,
+  onOpenChild,
 }: {
   task: Task
+  /** 名下的子对话（/children 的摘要）：「状态」里列出在等的那几个 */
+  kids?: (ChildEntry & { title: string })[]
+  /** 点「状态」里的子对话：在右栏打开它 */
+  onOpenChild?: (id: string) => void
   /** 压缩会话后把新的任务状态交回页面 */
   onTask?: (task: Task) => void
   projectName?: string
@@ -34,6 +43,14 @@ export function SessionBar({
   const worktree = task.worktree
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overscroll-contain p-3" data-session-bar>
+      <StatusCard task={task} kids={kids} onOpenChild={onOpenChild} />
+      {(task.parentTaskId || !!kids?.length) && (
+        <CollabCard
+          task={task}
+          kidsStamp={(kids ?? []).map((k) => `${k.id}:${k.status}:${k.working}:${k.turnDoneAt ?? ''}`).join('|')}
+          onOpenChild={onOpenChild}
+        />
+      )}
       <SessionCard id="env" title={t('环境')} trailing={env}>
         <SessionRow
           icon={worktree ? <Split /> : <Monitor />}
