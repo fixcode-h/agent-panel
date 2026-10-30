@@ -84,6 +84,8 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
+import { helperKey, helperStops, planSignal, planStops, stoppedPlanText, stopHelper, stopPlan } from './run-stops.ts'
+import { fixRoutePart } from './fix-route.ts'
 import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
@@ -103,6 +105,7 @@ import {
   bindRun,
   bindWait,
   endRun,
+  PARENT_FIX_REF,
   finishPlan,
   finishStepNow,
   planNotice,
@@ -117,6 +120,9 @@ import {
   type WrapUpAnswer,
   type WrapUpKind,
 } from './plan.ts'
+
+/** 子任务、工作流运行的终止开关在 run-stops.ts：服务端路由从这里取 */
+export { stopHelper, stopPlan } from './run-stops.ts'
 
 /** 每个父对话交给子对话的话 → 交给了哪个子对话（见 sendToConversation：一条消息只交给一个子对话） */
 const handedOff = new WeakMap<object, Map<string, string>>()
@@ -451,6 +457,8 @@ export interface Orchestra {
     step?: string,
     route?: RouteInput,
   ): Promise<{ ok: boolean; info: string }>
+  /** 终止子对话正在跑的工作流（start_plan 启动的那次运行）：子对话本身不停，改动由子对话决定留不留 */
+  stopConversationWorkflow(id: string, why: string): { ok: boolean; info: string }
   /** 调用者的角色挂了能力：可以 use_capability 就地加载它们的做法 */
   capabilities: boolean
   loadCapability(name: string, params?: ParamValues): { ok: boolean; info: string }
@@ -503,7 +511,17 @@ export interface Orchestra {
   peers: boolean
   listPeers(): Promise<string>
   messagePeer(id: string, text: string): Promise<{ ok: boolean; info: string }>
-  toParent(text: string, question: boolean, options?: string[], kind?: AskKind): Promise<{ ok: boolean; info: string }>
+  /**
+   * 给父对话发消息。waitFix 是被「不是自己改出来的报错」卡住的计划步骤：那一步挂上等父对话通知修复，
+   * 子对话接着做别的步骤，父对话安排好修复、发消息回来时面板把它退回进行中（见 releaseParentWait）
+   */
+  toParent(
+    text: string,
+    question: boolean,
+    options?: string[],
+    kind?: AskKind,
+    waitFix?: string,
+  ): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
   /**
@@ -1758,6 +1776,7 @@ async function runNodeSingle(
         tier: node.tier,
         params: node.params,
         orch,
+        signal: planSignal(host),
       })
     let r = await call((extra || cont || full) + tail)
     // 失败自动重试（CLI 断线、偶发错误）：续接同一个会话，让它检查做到哪了接着做
@@ -2165,6 +2184,7 @@ async function runNodeSteps(
         tier: unit.tier,
         params: unit.params,
         orch: makeOrchestra(host, { workflow: inv.workflow, main: inv.main, tier: unit.tier }, r),
+        signal: planSignal(host),
       })
     let res = await call((extra || cont || full) + tail)
     // 失败自动重试（CLI 断线、偶发错误）：续接这一步自己的会话
@@ -2577,6 +2597,7 @@ function mainTurn(
       tier: main.workflow.mainTier ?? '',
       dispatching: kind,
       orch: makeOrchestra(host, { workflow: main.workflow, main, tier: main.workflow.mainTier ?? '' }, main.step),
+      signal: planSignal(host),
     })
   }
   const p = main.chain.then(go, go)
@@ -2659,20 +2680,6 @@ interface OrchState {
 }
 const orchStates = new WeakMap<EngineHost, OrchState>()
 
-/**
- * 正在跑、在排队的子任务：任务 id + 子任务 id → 终止它用的开关。
- * 界面上的终止按钮（服务端的路由）和对话的 stop_subtask 工具都走 stopHelper，只停这一个，不动对话本身
- */
-const helperStops = new Map<string, AbortController>()
-const helperKey = (taskId: string, stepId: string) => `${taskId}\n${stepId}`
-
-/** 终止一个子任务：还在跑就结束它的 CLI，还在排队就不再开始。why 写进交回给对话的结果；没找到返回 false */
-export function stopHelper(taskId: string, stepId: string, why: string) {
-  const ac = helperStops.get(helperKey(taskId, stepId))
-  if (!ac || ac.signal.aborted) return false
-  ac.abort(why)
-  return true
-}
 /** 这个对话已经 use_capability 加载过的能力（按调用者 + 能力 + 参数）：重复加载只回一句，不再整段返回 */
 const loadedCaps = new WeakMap<EngineHost, Set<string>>()
 
@@ -3177,6 +3184,17 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
     },
+    stopConversationWorkflow(id, why) {
+      if (!coordinator) return { ok: false, info: '这个对话不能管理子对话' }
+      const cur = planStops.get(id.trim())
+      if (!cur || cur.host.task.parentTaskId !== task.id)
+        return { ok: false, info: `子对话 ${id} 现在没有在跑的工作流` }
+      if (!stopPlan(id.trim(), why)) return { ok: false, info: `子对话 ${id} 的工作流已经结束了` }
+      return {
+        ok: true,
+        info: `已终止子对话 ${id} 的工作流。它会收到「工作流被终止」和这次运行改了哪些文件，由它决定保留还是清理，处理完照常报状态。`,
+      }
+    },
     // 挂了能力的高级角色就地用能力：取能力的完整做法（子任务只做派给它的那件事，不加载别的能力）
     capabilities: !helper && !!selfAgent && mountedAgents(selfAgent, host.agents).length > 0,
     loadCapability(name, params) {
@@ -3287,10 +3305,20 @@ function makeOrchestra(
       if (!text.trim()) return { ok: false, info: 'text 不能为空' }
       return host.messagePeer(id.trim(), text.trim())
     },
-    async toParent(text, question, options, kind) {
+    async toParent(text, question, options, kind, waitFix) {
       if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
       if (!text.trim()) return { ok: false, info: 'text 不能为空' }
-      return host.messageParent(text.trim(), question, options, kind)
+      const at = waitFix?.trim()
+      // 写明这是要父对话分派修复的报错：父对话按「编译、测试报错的分派」规则找改出它的子对话（见 shared/fix-route.ts）
+      const body = at ? `【报错不是我改出来的，请安排修复后通知我】\n${text.trim()}` : text.trim()
+      const r = await host.messageParent(body, question, options, kind)
+      if (!r.ok || !at) return r
+      const wait = bindWait(task, at, { kind: 'parent', ref: PARENT_FIX_REF, label: '父对话安排修复' })
+      host.changed(true)
+      return {
+        ok: true,
+        info: `${r.info}\n${wait}父对话安排好修复会发消息给你，那时这一步退回进行中，你再重跑它的编译 / 测试。`,
+      }
     },
     claim(paths) {
       if (!host.claimFiles) return { ok: false, info: '这个对话不需要认领文件' }
@@ -3943,7 +3971,10 @@ function chatStep(host: EngineHost, agentId: string): TaskStep {
 }
 
 /** 对话里启动一次工作流运行：节点全部新建，同步跑完，结果交回对话 */
-async function startPlan(host: EngineHost, plan: PlannedRun): Promise<{ ok: boolean; text: string; error?: string }> {
+async function startPlan(
+  host: EngineHost,
+  plan: PlannedRun,
+): Promise<{ ok: boolean; text: string; error?: string; stopped?: { why: string; changes: string } }> {
   const snap = host.resolveWorkflow?.(plan.workflowId)
   const workflow =
     snap?.workflow ?? (plan.workflowId ? host.workflows.find((w) => w.id === plan.workflowId) : host.workflow)
@@ -3981,16 +4012,32 @@ async function startPlan(host: EngineHost, plan: PlannedRun): Promise<{ ok: bool
     depth: 0,
     run,
   }
-  const r = await runFlow(host, inv)
+  // 运行前的工作区快照：被终止时只把这次运行改的文件交给对话，运行前已有的改动不算它的
+  const before = host.reviewDiff ? await host.reviewDiff().catch(() => null) : null
+  const ac = new AbortController()
+  planStops.set(host.task.id, { ac, host })
+  let r: Awaited<ReturnType<typeof runFlow>>
+  try {
+    r = await runFlow(host, inv)
+  } finally {
+    if (planStops.get(host.task.id)?.ac === ac) planStops.delete(host.task.id)
+  }
+  // 被终止（界面上的终止、父对话的 stop_workflow）：整个对话停止时 ac 没被触发，照旧按 r 收尾
+  const cut = ac.signal.aborted && !host.signal?.aborted
+  const why = cut ? String(ac.signal.reason ?? '') || '对话终止了这次运行' : ''
   const rec = host.task.runs.find((x) => x.id === run)
   if (rec) {
-    rec.status = r.ok ? 'done' : r.stopped ? 'stopped' : 'failed'
+    rec.status = r.ok && !cut ? 'done' : r.ok || cut || r.stopped ? 'stopped' : 'failed'
     rec.endedAt = now()
   }
-  endRun(host.task, run, r.ok, r.ok ? '' : r.error)
+  endRun(host.task, run, r.ok && !cut, cut ? `工作流被终止：${why}` : r.ok ? '' : r.error)
   // 一次运行失败不拖住后面的对话：下一次计划重新开始
   host.halted = false
   host.changed(true)
+  if (cut) {
+    const d = host.reviewDiff ? await host.reviewDiff(before?.snapshot).catch(() => null) : null
+    return { ok: false, text: '', error: why, stopped: { why, changes: d?.stat.trim() ?? '' } }
+  }
   return r.ok ? { ok: true, text: r.output } : { ok: false, text: '', error: r.error }
 }
 
@@ -4024,6 +4071,7 @@ async function conversationPrompt(
     inboxPart(host),
     buildPart(host),
     verifyPart(host),
+    fixRoutePart(host, coordinator),
     editPart(host),
     backgroundPart(host),
     ...planPart(host, coordinator),
@@ -4333,7 +4381,9 @@ export async function runConversationTurn(host: EngineHost, who: string) {
         results.push(
           out.ok
             ? `### 计划执行完成\n${clip(out.text || '（没有文字输出）', 12000)}`
-            : `### 计划执行失败\n${clip(out.error || '执行失败', 4000)}`,
+            : out.stopped
+              ? stoppedPlanText(out.stopped)
+              : `### 计划执行失败\n${clip(out.error || '执行失败', 4000)}`,
         )
       }
       prompt = `## 计划执行结果\n${results.join('\n\n')}\n\n请根据结果继续：向用户说明完成了什么、有哪些改动和遗留问题；需要再启动一次计划就继续调用 start_plan。`

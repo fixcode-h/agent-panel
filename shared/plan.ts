@@ -1248,6 +1248,35 @@ export function settleWait(
   return hit
 }
 
+/** 子对话等父对话通知修复时挂的等待：ref 固定，一次只等一件 */
+export const PARENT_FIX_REF = 'fix'
+
+/**
+ * 父对话给子对话发了消息：子对话计划里在等父对话通知修复的步骤退回进行中（不是标完成——
+ * 别人修好了，这一步的编译、测试还要它自己重跑一遍才算数）。返回放开的步骤标题；空数组表示没在等
+ */
+export function releaseParentWait(task: PlanTask, now = new Date().toISOString()) {
+  const hit: string[] = []
+  const plan = activePlan(task)
+  if (!plan) return hit
+  const visit = (item: PlanItem, parent?: PlanStep) => {
+    const w = item.waits.find((x) => x.kind === 'parent' && x.state === 'waiting')
+    if (!w) return
+    w.state = 'ok'
+    if (item.waits.some((x) => x.state === 'waiting')) return
+    setStatus(item, 'running', now)
+    item.note = '父对话已回复：按它说的确认修好了，再重跑这一步的编译 / 测试，通过后标完成'
+    hit.push(item.title)
+    if (parent) rollUp(parent, now)
+  }
+  for (const s of plan.steps) {
+    for (const c of s.children) visit(c, s)
+    visit(s)
+  }
+  if (hit.length) plan.updatedAt = now
+  return hit
+}
+
 /**
  * 收口推迟：子对话这一轮结束了但还没交付完，父对话计划里等它的那一步继续等着，note 写清在等什么。
  * 只改等待中的那一项的 note（状态保持 waiting / 父步骤有在做的就还是 running），

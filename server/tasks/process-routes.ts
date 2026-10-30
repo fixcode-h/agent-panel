@@ -1,7 +1,7 @@
 import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
 import { getSettings } from '../settings.ts'
-import { stopHelper } from '../../shared/engine.ts'
+import { stopHelper, stopPlan } from '../../shared/engine.ts'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { log } from '../log.ts'
@@ -54,6 +54,18 @@ export function registerProcessRoutes(sc: TasksScope) {
       return c.json(await sc.current(id))
     }
     log.info('task', '用户终止了子任务', { task: id, step: step.id })
+    return c.json(await sc.current(id))
+  })
+
+  /**
+   * 终止对话里正在跑的工作流（工作流卡片上的终止按钮）：只停这次运行，不停对话；
+   * 对话收到「工作流被终止」和这次运行改了哪些文件，由它决定保留还是清理
+   */
+  sc.routes.post('/:id/runs/stop', async (c) => {
+    const id = c.req.param('id')
+    if (!(await sc.current(id))) return sc.bad(c, t('任务不存在'), 404)
+    if (!stopPlan(id, '用户在界面上终止了这次工作流运行')) return sc.bad(c, t('这次工作流运行已经结束了'), 409)
+    log.info('task', '用户终止了工作流运行', { task: id })
     return c.json(await sc.current(id))
   })
 

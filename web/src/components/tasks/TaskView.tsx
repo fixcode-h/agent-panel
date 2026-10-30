@@ -50,6 +50,7 @@ import {
   ClipboardList,
   PictureInPicture2,
   Upload,
+  Square,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
@@ -2224,15 +2225,19 @@ export function TaskView({
                           </div>
                         ) : b.kind === 'run' ? (
                           task.mode === 'chat' && (task.runs?.length ?? 0) > 0 ? (
-                            <RunChecklist key={b.key} task={task} run={b.run} onOpen={() => openRunIn(b.run)} />
+                            // 和 AI 回复的正文对齐（缩进同 .reply-body）：对话里的工作流卡片、收发消息都在同一条竖线上
+                            <div key={b.key} className="reply-indent min-w-0">
+                              <RunChecklist task={task} run={b.run} onOpen={() => openRunIn(b.run)} />
+                            </div>
                           ) : (
-                            <RunCard
-                              key={b.key}
-                              task={task}
-                              run={b.run}
-                              name={task.workflowName || workflow?.name}
-                              onOpen={() => openRunIn(b.run)}
-                            />
+                            <div key={b.key} className="reply-indent min-w-0">
+                              <RunCard
+                                task={task}
+                                run={b.run}
+                                name={task.workflowName || workflow?.name}
+                                onOpen={() => openRunIn(b.run)}
+                              />
+                            </div>
                           )
                         ) : b.kind === 'steps' ? (
                           <div key={b.key} className="flex flex-col gap-7">
@@ -2248,7 +2253,7 @@ export function TaskView({
                             ))}
                           </div>
                         ) : b.m.peer ? (
-                          <div key={b.m.id} className="min-w-0">
+                          <div key={b.m.id} className="reply-indent min-w-0">
                             <ReceivedRow m={b.m} />
                           </div>
                         ) : b.m.role === 'user' ? (
@@ -2664,21 +2669,52 @@ function RunChecklist({ task, run, onOpen }: { task: Task; run: number; onOpen: 
       <span className="shrink-0 text-[0.6875rem] text-subtle">{who(s.agentId)}</span>
     </div>
   )
+  // 对话里 start_plan 跑的这一次还没结束：可以单独终止它，对话不停，收到结果后自己决定改动留不留
+  const canStop = task.mode === 'chat' && rec?.status === 'running' && task.status === 'running'
+  const [stopping, setStopping] = useState(false)
+  const stop = async () => {
+    setStopping(true)
+    try {
+      await api.stopRun(task.id)
+      toast.success(t('已终止工作流，对话会决定这次的改动保留还是清理'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setStopping(false)
+    }
+  }
   return (
     // 和工作流运行卡片同一层浅底（组件库「计划 · 工作流」），不描边、不加阴影
     <div className="overflow-hidden rounded-xl bg-sel/45">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-sel/60"
-      >
-        <TaskStatusIcon status={status} working={working} />
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold">
-          {rec?.workflowName || task.workflowName || t('工作流')}
+      <div className="flex items-center transition-colors hover:bg-sel/60">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 pl-3 text-left"
+        >
+          <TaskStatusIcon status={status} working={working} />
+          <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold">
+            {rec?.workflowName || task.workflowName || t('工作流')}
+          </span>
+          <span className="shrink-0 text-xs text-subtle">{t('第 {n} 次运行', { n: run })}</span>
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-subtle" />
+        </button>
+        <span className={cn('flex shrink-0 items-center', canStop ? 'px-2' : 'pr-3')}>
+          {canStop && (
+            <IconButton
+              size="2xs"
+              tone="danger"
+              icon={stopping ? undefined : Square}
+              label={t('终止工作流')}
+              title={t('只终止这次工作流运行，对话不停；这次运行改的文件由对话决定保留还是清理')}
+              disabled={stopping}
+              onClick={stop}
+            >
+              {stopping ? <Loader2 className="h-3 w-3 animate-spin" /> : undefined}
+            </IconButton>
+          )}
         </span>
-        <span className="shrink-0 text-xs text-subtle">{t('第 {n} 次运行', { n: run })}</span>
-        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-subtle" />
-      </button>
+      </div>
       <div className="flex flex-col pb-1">
         {roots.map((s) => (
           <div key={s.id}>

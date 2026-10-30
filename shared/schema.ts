@@ -1665,7 +1665,8 @@ export type PlanStatus = z.infer<typeof PlanStatus>
  * 结果回来时按 kind + ref 找到挂在计划里的那一步
  */
 export const PlanWait = z.object({
-  kind: z.enum(['background', 'child', 'helper']),
+  /** parent：子对话把不是自己改出来的报错交给父对话，等父对话通知修好（ref 固定 fix） */
+  kind: z.enum(['background', 'child', 'helper', 'parent']),
   ref: z.string(),
   label: z.string().default(''),
   state: z.enum(['waiting', 'ok', 'failed']).default('waiting'),
@@ -2128,6 +2129,11 @@ export const TaskData = z.object({
    * 对话这一轮已经说完、命令还在后台跑时，界面靠它在回复上面转圈
    */
   jobs: z.array(TaskJob).optional(),
+  /**
+   * 对话停止（用户暂停、父对话结束时一起结束、归档）时被连带停掉的后台命令：存盘，
+   * 下次继续时写进续接说明，让 Agent 知道哪些命令没跑完、要不要重新启动；续接后清空
+   */
+  stoppedJobs: z.array(z.object({ name: z.string(), command: z.string() })).optional(),
   /** CLI 最近一次完成一轮回复的时间：判断「完成但没看」用，和进程是否结束无关 */
   turnDoneAt: z.string().default(''),
   /**

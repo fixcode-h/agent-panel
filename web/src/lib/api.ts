@@ -679,6 +679,8 @@ export const api = {
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
   /** 终止对话派出的一个子任务：还在跑的结束，排队的不再开始，按「已终止」交回给对话 */
   stopSubtask: (id: string, step: string) => request<Task>(`/tasks/${id}/subtasks/stop`, json('POST', { step })),
+  /** 终止对话里 start_plan 正在跑的工作流：只停这次运行，对话收到结果后自己决定改动留不留 */
+  stopRun: (id: string) => request<Task>(`/tasks/${id}/runs/stop`, json('POST', {})),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   /** 定时计划：到点由面板自己新建对话，存到数据目录的 config/schedules.json */
   schedules: () => request<Schedule[]>('/schedules'),

@@ -217,7 +217,28 @@ export function createJobs(sc: TasksScope) {
    */
   async function endBackground(id: string) {
     const kids = (await sc.store.list()).filter((x) => x.parentTaskId === id)
+    await noteStoppedJobs(id)
     await Promise.all([background.stop(id), ...kids.map((k) => endBackground(k.id))])
+  }
+
+  /**
+   * 停之前记下这个对话还在跑、在排队的后台命令（存盘）：停掉的命令不会再推回结果，
+   * 下次继续时续接说明里列出来（见 resumeNote），Agent 才知道要不要重新启动，不会干等一个永远不来的结果
+   */
+  async function noteStoppedJobs(id: string) {
+    const live = background.list(id).filter((j) => j.state === 'queued' || j.state === 'running')
+    if (!live.length) return
+    const e = sc.live.get(id)
+    const tk = e?.task ?? (await sc.store.get(id))
+    if (!tk) return
+    const known = new Set((tk.stoppedJobs ?? []).map((j) => j.command))
+    const add = live.filter((j) => !known.has(j.command)).map((j) => ({ name: j.name, command: j.command }))
+    if (!add.length) return
+    tk.stoppedJobs = [...(tk.stoppedJobs ?? []), ...add]
+    if (e) e.rev++
+    await sc.store
+      .update(tk.id, tk)
+      .catch((err) => log.warn('task', '没能记下被停掉的后台命令', { task: id, error: (err as Error).message }))
   }
 
   return { background, endBackground, withJobs, settling }
