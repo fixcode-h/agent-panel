@@ -27,6 +27,7 @@ import {
   Search,
   Component,
   Box,
+  Heading,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -70,6 +71,7 @@ import { SpeechSection } from '@/components/settings/SpeechSection'
 import { IntegrationsSection } from '@/components/settings/IntegrationsSection'
 import { DeploySection } from '@/components/settings/DeploySection'
 import { FontSection } from '@/components/settings/FontSection'
+import { MarkdownSection } from '@/components/settings/MarkdownSection'
 import { ComponentsSection } from '@/components/settings/ComponentsSection'
 import { ShortcutsSection } from '@/components/settings/ShortcutsSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
@@ -111,6 +113,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
   { id: 'speech', label: t('语音输入'), icon: Mic, group: t('通用') },
   { id: 'fonts', label: t('外观'), icon: Type, group: t('通用') },
+  { id: 'markdown', label: t('Markdown 样式'), icon: Heading, group: t('通用') },
   { id: 'components', label: t('组件'), icon: Component, group: t('通用') },
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
   { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
@@ -748,6 +751,7 @@ function SettingsBody({
           <div hidden={searching}>
             {cur.id === 'styles' && <StylesSettings />}
             {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
+            {cur.id === 'markdown' && <MarkdownSection value={appearance} onChange={setAppearance} />}
             {cur.id === 'components' && <ComponentsSection />}
             {cur.id === 'shortcuts' && <ShortcutsSection value={elementPicker} onChange={setElementPicker} />}
             {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}

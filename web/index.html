@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent 面板</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23d97757'/><path d='M9 22l7-12 7 12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23d97757'/><path d='M9 22l7-12 7 12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"
+    />
     <script>
       // 选过主题就用选过的，否则跟随系统
       try {
@@ -17,6 +20,14 @@
         // 配色：同样先用上次记下的（web/src/lib/appearance.ts 的 applyPalette）
         var p = localStorage.getItem('appearance-palette')
         if (p && p !== 'claude') document.documentElement.dataset.palette = p
+        // Markdown 样式里改过的项（web/src/lib/markdown-style.ts 的 applyMarkdownStyle）
+        var m = localStorage.getItem('appearance-md')
+        if (m) {
+          var st = document.createElement('style')
+          st.id = 'md-style'
+          st.textContent = m
+          document.head.appendChild(st)
+        }
       } catch {}
     </script>
   </head>

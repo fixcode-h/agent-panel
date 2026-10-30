@@ -16,6 +16,8 @@ import { Modal } from '@/components/ui/modal'
 import { IconButton } from '@/components/ui/icon-button'
 import { Lightbox } from '@/components/ui/lightbox'
 import { DialogScroll, ProjectDiffDialog } from '@/components/tasks/DiffDialog'
+import { Markdown } from '@/components/tasks/Markdown'
+import { Segmented } from '@/components/ui/segmented'
 
 /** 按扩展名先认出图片，直接看原图，不用等文本接口回来再切换 */
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i
@@ -135,6 +137,9 @@ function sizeText(n: number) {
  * 文件浏览页里点开一个文件：显示内容（带语法高亮），跳到指定的行，可以在编辑器里打开、
  * 直接改完保存，也能看这个文件相对 git 的改了什么。图片用看图的浮层看原图。
  */
+/** 文件预览里没有 @角色 */
+const NO_TEAM = new Set<string>()
+
 export function ProjectFileDialog({
   projectId,
   dir,
@@ -165,8 +170,12 @@ export function ProjectFileDialog({
   const path = target?.path ?? ''
   const isImage = !!target && IMAGE.test(target.path)
   const raw = isImage ? api.projectFileRaw(projectId, target!.path) : ''
+  // Markdown 文件默认按对话里的同一套样式渲染；带行号打开（从引用跳过来）时要看那一行，先显示源码
+  const isMd = /\.(md|mdx|markdown)$/i.test(path)
+  const [mdView, setMdView] = useState<'preview' | 'source'>('preview')
   useEffect(() => {
     if (!target) return
+    setMdView(target.line ? 'source' : 'preview')
     setFile(null)
     setError('')
     setDraft(null)
@@ -208,6 +217,7 @@ export function ProjectFileDialog({
   const canEdit = !!file?.exists && !file.binary && !file.truncated
   const canDiff = !!file?.exists && !file.binary && !isImage
   const textOpen = !!target && !raw
+  const mdPreview = isMd && mdView === 'preview' && !!file?.exists && !file.binary
 
   const close = () => {
     setDraft(null)
@@ -286,6 +296,18 @@ export function ProjectFileDialog({
               {target?.line ? <span className="text-subtle">:{target.line}</span> : null}
               {dirty && <span className="ml-2 text-[0.75rem] font-normal text-warning">{t('未保存')}</span>}
             </D.Title>
+            {isMd && !editing && file?.exists && !file.binary && (
+              <Segmented
+                size="sm"
+                label={t('预览或源码')}
+                value={mdView}
+                onChange={setMdView}
+                options={[
+                  { id: 'preview', label: t('预览') },
+                  { id: 'source', label: t('源码') },
+                ]}
+              />
+            )}
             {(size || mtime) && (
               <span className="hidden shrink-0 items-center gap-1.5 font-mono text-[0.6875rem] text-subtle sm:flex">
                 {size && <span title={t('文件大小')}>{size}</span>}
@@ -360,6 +382,10 @@ export function ProjectFileDialog({
                 spellCheck={false}
                 className="h-full w-full resize-none bg-transparent px-4 py-2 font-mono text-[0.75rem] leading-[1.6] text-fg/90 outline-none"
               />
+            ) : mdPreview ? (
+              <div className="mx-auto max-w-[860px] px-8 py-6">
+                <Markdown text={file.content} teamNames={NO_TEAM} />
+              </div>
             ) : (
               <pre className="min-w-max py-2 font-mono text-[0.75rem] leading-[1.6]">
                 {lines.map((l, i) => (
