@@ -46,4 +46,13 @@ export const EN_MCP: Record<string, string> = {
   '面板管理的配置（各 Agent 的全局配置）：\n{list}':
     "Configs managed by the panel (each agent's global config):\n{list}",
   '读不懂的配置文件：\n{list}': 'Config files that could not be read:\n{list}',
+  '从 JSON 填入': 'Fill from JSON',
+  'JSON 里有 {n} 个工具，点名字切换要填的那个': 'The JSON has {n} tools; click a name to fill that one',
+  '已填入下面的表单，保存前可以再改': 'Filled in the form below; you can still edit it before saving',
+  '粘贴文档里的 MCP 配置，点「分析」自动填好下面各项':
+    'Paste an MCP config from the docs and click "Analysis" to fill in the fields below',
+  '（没有名字）': '(no name)',
+  '先粘贴 MCP 配置的 JSON': 'Paste the MCP config JSON first',
+  'JSON 格式不对：{error}': 'Invalid JSON: {error}',
+  '没在 JSON 里找到 MCP 工具的配置': 'No MCP tool config found in the JSON',
 }

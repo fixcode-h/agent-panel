@@ -782,6 +782,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('button', { name: '测试连接' }).click()
   await check(p, 'MCP编辑', ['连接成功', 'read_file'])
   await p.keyboard.press('Escape')
+  // 粘贴文档里的 JSON 点「分析」：名字、命令、参数、环境变量都要填进表单
+  await p.getByRole('button', { name: '添加' }).click()
+  await p
+    .getByPlaceholder(/mcpServers/)
+    .fill('{ "mcpServers": { "pasted": { "command": "uvx", "args": ["mcp-server-time"], "env": { "TZ": "UTC" } } } }')
+  await p.getByRole('button', { name: '分析', exact: true }).click()
+  if (!(await p.locator('input[value="pasted"]').count())) errors.push('MCP-JSON填入：分析后名字没填进去')
+  if (!(await p.locator('input[value="mcp-server-time"]').count())) errors.push('MCP-JSON填入：分析后参数没填进去')
+  await check(p, 'MCP-JSON填入', ['已填入下面的表单'])
+  await p.keyboard.press('Escape')
   // 工作流「重新运行」放在最后：它会在演示项目里新建一个对话，放前面会挡住上面按标题找的那条工作流任务。
   // 「Web 功能开发」在演示项目「商城前台」里跑过：运行进度列出节点，重新运行建一个新对话并打开，
   // 回到工作流时工具条上有「运行中」，点它打开的就是这次执行
