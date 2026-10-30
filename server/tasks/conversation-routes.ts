@@ -417,9 +417,8 @@ export function registerConversationRoutes(s: TasksScope) {
       // 对话：一起被中断的子对话由面板连带拉起来（先拉，父对话的续接提示里才写得清哪些已经在接着做）
       const resumed = task.mode === 'chat' && !task.parentTaskId ? await resumeKids(task.id) : []
       const prompt = resumePrompt(task, users, resumed)
-      // 被停掉的后台命令已经写进续接说明：交出去就清掉，下次中断只列那时候停的
-      if (entry.task.stoppedJobs) delete entry.task.stoppedJobs
-      return c.json(await s.start(entry, prompt, false, await s.deps.agents.list(), undefined, true))
+      const agents = await s.deps.agents.list()
+      return c.json(await withoutStoppedJobs(entry.task, () => s.start(entry, prompt, false, agents, undefined, true)))
     } catch (e) {
       s.release(entry)
       throw e
@@ -467,8 +466,7 @@ export function registerConversationRoutes(s: TasksScope) {
         dropEndNotes(got.value.task)
         const users = kid.messages.filter((m) => m.role === 'user' && !m.step)
         const prompt = resumePrompt(kid, users)
-        if (got.value.task.stoppedJobs) delete got.value.task.stoppedJobs
-        await s.start(got.value, prompt, false, agents, undefined, true)
+        await withoutStoppedJobs(got.value.task, () => s.start(got.value, prompt, false, agents, undefined, true))
         titles.push(kid.title)
         log.info('task', '父对话继续执行，连带拉起被打断的子对话', { parent: parentId, task: kid.id })
       } catch (e) {
@@ -486,4 +484,19 @@ export function registerConversationRoutes(s: TasksScope) {
   }
 
   return { prewarmChat, createTask }
+}
+
+/**
+ * 被停掉的后台命令已经写进续接说明：交出去就清掉，下次中断只列那时候停的。
+ * 没能启动（CLI 没装、目录不在）时放回去，下次继续还要再说一遍
+ */
+async function withoutStoppedJobs<T>(task: Task, start: () => Promise<T>): Promise<T> {
+  const kept = task.stoppedJobs
+  task.stoppedJobs = undefined
+  try {
+    return await start()
+  } catch (e) {
+    if (kept && !task.stoppedJobs) task.stoppedJobs = kept
+    throw e
+  }
 }

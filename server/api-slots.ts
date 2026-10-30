@@ -46,9 +46,6 @@ export function setApiLimits(apis: { id: string; maxConcurrent?: number }[]) {
   for (const key of [...queues.keys()]) pump(key)
 }
 
-/** 这个 API 有没有上限 */
-export const apiLimited = (key: string) => (limits.get(key) ?? 0) > 0
-
 /**
  * 占一个名额。没空位时排队，onQueue 拿到前面还有几个（队伍动了会再调）；停止信号到了从队里拿掉、返回 false。
  * 名额由释放方直接交接给排在最前面的，不会被后来的插队

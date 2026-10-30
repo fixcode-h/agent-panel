@@ -39,7 +39,7 @@ const demoBuildInfo = (): Plugin => ({
 })
 
 export default defineConfig(({ mode }) => {
-  // `vite build --mode demo`：后端在浏览器里模拟，打成单个 JS + CSS，便于做成在线演示页
+  // `vite build --mode demo`：后端在浏览器里模拟，做成在线演示页
   const demo = mode === 'demo'
   return {
     root: 'web',
@@ -59,32 +59,26 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: { '/api': 'http://localhost:8787' },
     },
-    build: demo
-      ? {
-          outDir: '../dist-demo',
-          emptyOutDir: true,
-          cssCodeSplit: false,
-          assetsInlineLimit: 100_000_000,
-          rollupOptions: { output: { inlineDynamicImports: true } },
-        }
-      : {
-          outDir: '../dist',
-          emptyOutDir: true,
-          // 字体有 400 多个文件，和 js、css 堆在 assets/ 里很难翻；按类型分到子目录。
-          // 文件名带哈希，按类型分不影响缓存；引用路径由 Vite 统一重写
-          rollupOptions: {
-            output: {
-              entryFileNames: 'assets/js/[name]-[hash].js',
-              chunkFileNames: 'assets/js/[name]-[hash].js',
-              assetFileNames: (info) => {
-                const name = info.names?.[0] ?? ''
-                if (name.endsWith('.css')) return 'assets/css/[name]-[hash][extname]'
-                if (/\.(woff2?|ttf|otf|eot)$/.test(name)) return 'assets/fonts/[name]-[hash][extname]'
-                if (/\.(png|jpe?g|gif|svg|webp|avif|ico)$/.test(name)) return 'assets/img/[name]-[hash][extname]'
-                return 'assets/[name]-[hash][extname]'
-              },
-            },
+    build: {
+      // 演示版以前打成单个 JS + CSS（字体全部 base64 内联，CSS 有 15 MB），打开在线演示要先下十几 MB；
+      // GitHub Pages 和界面检查都是按目录托管的，和正式版一样分包、字体走文件就行
+      outDir: demo ? '../dist-demo' : '../dist',
+      emptyOutDir: true,
+      // 字体有 400 多个文件，和 js、css 堆在 assets/ 里很难翻；按类型分到子目录。
+      // 文件名带哈希，按类型分不影响缓存；引用路径由 Vite 统一重写
+      rollupOptions: {
+        output: {
+          entryFileNames: 'assets/js/[name]-[hash].js',
+          chunkFileNames: 'assets/js/[name]-[hash].js',
+          assetFileNames: (info) => {
+            const name = info.names?.[0] ?? ''
+            if (name.endsWith('.css')) return 'assets/css/[name]-[hash][extname]'
+            if (/\.(woff2?|ttf|otf|eot)$/.test(name)) return 'assets/fonts/[name]-[hash][extname]'
+            if (/\.(png|jpe?g|gif|svg|webp|avif|ico)$/.test(name)) return 'assets/img/[name]-[hash][extname]'
+            return 'assets/[name]-[hash][extname]'
           },
         },
+      },
+    },
   }
 })

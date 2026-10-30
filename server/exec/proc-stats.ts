@@ -51,12 +51,6 @@ export function processSnapshot(maxAgeMs = SNAPSHOT_TTL_MS): Promise<Map<number,
   return p
 }
 
-/** 换一次快照（测试用，也让「刚杀完进程马上刷新」拿到新数据） */
-export function resetSnapshotCache() {
-  cache = null
-  inflight = null
-}
-
 async function collect(): Promise<Map<number, ProcNode> | null> {
   try {
     return process.platform === 'win32' ? await collectWindows() : await collectPosix()

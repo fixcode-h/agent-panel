@@ -205,8 +205,6 @@ export const EN_FLOW: Record<string, string> = {
   '{n} 个子角色': '{n} sub-roles',
   '还没有工作流，先去工作流页面创建': 'No workflows yet. Create one on the Workflows page first',
   工作流: 'Workflow',
-  '还没有指定工作流。': 'No workflow assigned yet.',
-  '未就绪，点开查看': 'Not ready, click to see why',
 
   // 工作流页面
   新工作流: 'New workflow',

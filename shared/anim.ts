@@ -16,12 +16,6 @@ export const ANIM_PROPS = ['RenderOpacity', 'Translation', 'Scale', 'Angle'] as 
 export type AnimProp = (typeof ANIM_PROPS)[number]
 /** 值是二维的属性（X、Y） */
 export const isVecProp = (p: AnimProp) => p === 'Translation' || p === 'Scale'
-export const ANIM_PROP_LABEL: Record<AnimProp, string> = {
-  RenderOpacity: '不透明度',
-  Translation: '位移',
-  Scale: '缩放',
-  Angle: '旋转',
-}
 /** 属性的初始值（控件不动时的样子） */
 export const propRest = (p: AnimProp): AnimValue =>
   p === 'Scale' ? { X: 1, Y: 1 } : p === 'Translation' ? { X: 0, Y: 0 } : p === 'RenderOpacity' ? 1 : 0
@@ -96,18 +90,6 @@ export const EASES = [
   'bounce-out',
 ] as const
 export type Ease = (typeof EASES)[number]
-export const EASE_LABEL: Record<Ease, string> = {
-  linear: '线性',
-  constant: '跳变（不过渡）',
-  ease: '平滑',
-  'ease-in': '缓入（先慢后快）',
-  'ease-out': '缓出（先快后慢）',
-  'ease-in-out': '缓入缓出',
-  'back-in': '回拉后加速',
-  'back-out': '冲过头再回弹',
-  'elastic-out': '弹簧',
-  'bounce-out': '落地弹跳',
-}
 
 /**
  * 触发方式：show 打开时（UE 的 Construct，网页载入时）、hover 鼠标移上去播放、移开倒着播回去、
@@ -115,13 +97,6 @@ export const EASE_LABEL: Record<Ease, string> = {
  */
 export const ANIM_TRIGGERS = ['show', 'hover', 'click', 'scroll', 'manual'] as const
 export type AnimTrigger = (typeof ANIM_TRIGGERS)[number]
-export const TRIGGER_LABEL: Record<AnimTrigger, string> = {
-  show: '打开时',
-  hover: '鼠标悬停',
-  click: '点击时',
-  scroll: '滚动到可见时',
-  manual: '程序调用',
-}
 
 const Vec = z.object({ X: z.number(), Y: z.number() })
 export const AnimValue = z.union([z.number(), Vec])

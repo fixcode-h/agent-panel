@@ -136,5 +136,3 @@ async function waitRestart(version: string) {
   set({ restarting: undefined })
   throw new Error(t('新版本已经装好，但服务没有自动重启成功，请手动重新启动面板'))
 }
-
-export const clearUpdateJob = () => set({ job: undefined })

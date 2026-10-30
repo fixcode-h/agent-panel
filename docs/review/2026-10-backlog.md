@@ -72,7 +72,7 @@
 - [ ] **设置页没有搜索** — 9 个分类、40 多个 Row，改「子对话默认也提问」这类项只能靠记忆翻 — 证据：`web/src/pages/SettingsPage.tsx:391`、`web/src/pages/SettingsPage.tsx:113` — 建议：分类导航顶部加过滤框，按 Row 的 title/desc 前端过滤并高亮命中分类 — P2
 - [ ] **计划错过 / 启动失败不发系统通知** — 面板没开时计划错过只在计划页留一条徽标 — 证据：`web/src/lib/notify.ts:26`、`server/schedules.ts:29` — 建议：启动时把「错过的计划」作为事件推给前端，复用同一套 notify — P2
 - [ ] **进程 / 内存清理入口太深** — 清残留进程要打开对话 → `ProcessMenu` → 勾选；内存曲线与 AI 分析在另一个弹窗 — 证据：`web/src/components/tasks/TaskView.tsx:51`、`MemoryChart.tsx:77` — 建议：设置页「系统」下加汇总入口，列出所有对话进程/内存，一键清理残留 — P2
-- [ ] **缩略图链路的三处尾巴** — ① `server/thumbnail.ts:72`–`:79` 只在 `catch` 里 `rm` 临时文件，进程被杀会留 `*.tmp`；② 极长宽比图片 `Math.round((img.height * width) / img.width)`（`:69`）可能算成 0 高，需下限保护；③ `serialize()`（`:37`–`:39`）把缓存命中一起排队，命中时也要等前面解码完 — 证据：`server/thumbnail.ts:37`、`:69`、`:72`–`:79` — 建议：临时文件用定期清扫、高度取 `max(1, …)`、命中缓存的判断提到队列外 — P2
+- [ ] **缩略图链路的三处尾巴** — ① `server/thumbnail.ts:72`–`:79` 只在 `catch` 里 `rm` 临时文件，进程被杀会留 `*.tmp`；② ~~极长宽比图片可能算成 0 高~~（2026-10-30 复核：不成立，`server/image.ts` 的 `resize` 已经取 `Math.max(1, …)`）；③ `serialize()`（`:37`–`:39`）把缓存命中一起排队，命中时也要等前面解码完 — 证据：`server/thumbnail.ts:37`、`:69`、`:72`–`:79` — 建议：临时文件用定期清扫、高度取 `max(1, …)`、命中缓存的判断提到队列外 — P2
 - [ ] **上下文降级的预算计算与二次降级** — ① `clippedTranscript` 里 `clipTokens(text, room)`（`server/exec/runner.ts:497`）没扣 `who` 前缀（父对话前缀更长）和「中间省略 N 个字」标记本身；② `toolLine`（`:432`–`:446`）的「等 N 项」用的是原始剩余长度，把被 `seen` 去重跳过的重复项也算进去；③ 降级重入后 `resume` 已删，`chatResume: Boolean(chat && resume)`（`:2200`）为 false，裁剪后 **再** 撞上限时不会再降级（`contextFallbackKind` 只对 `chatResume` 返回 `restart`）— 证据：`server/exec/runner.ts:404`–`:410`、`:432`–`:446`、`:497`、`:2200`、`:2229`–`:2231` — 建议：预算扣除前缀与标记、`rest` 用已收条数算、把「已经降级过一次」作为独立状态传下去 — P2
 
 ## 五、原已在处理中的三项（已完成）

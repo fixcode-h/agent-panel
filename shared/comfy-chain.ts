@@ -214,9 +214,6 @@ export function chainGraph(
   return merged
 }
 
-/** 链合并后拿到的出图节点前缀（只有最后一段保留 SaveImage） */
-export const chainSavePrefix = (steps: number) => chainPrefix(steps - 1)
-
 /**
  * 新建链时的默认段：优先挑「要原图 → 再重画」这种真的能连起来的组合（去背景 → 图生图），
  * 也就是用户最常搭的那条；凑不出来时退回第一个要原图的工作流，再不行给一段普通工作流。

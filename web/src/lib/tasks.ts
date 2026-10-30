@@ -5,7 +5,7 @@ import { stepMs, timeAgo } from '@shared/task'
 import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/task-export'
 import { tokenCount, type RunUsage } from '@shared/run-usage'
-import { PANEL_TOOL_NAMES, bgJobIds, bgPendingIds, unwrapMoreTools } from '@shared/panel-tools'
+import { PANEL_TOOL_RE, bgJobIds, bgPendingIds, unwrapMoreTools } from '@shared/panel-tools'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -141,19 +141,12 @@ export function toolVerb(tool: ToolUse) {
   return tool.name ?? VERB_TEXT[tool.kind]
 }
 
-/**
- * 面板自己的工具（panel MCP）调用名。各家 CLI 的写法不一样：
- * 「panel-xxxx · record_lesson」「panel_record_lesson」「mcp__panel-xxxx__record_lesson」，
- * 还有解析层归一后的「mcp__panel__record_lesson」（Pi 这类用扩展注册工具的 CLI 报的是裸名字）。
- */
-const PANEL_TOOL = new RegExp(`panel[\\w-]*[\\W_]{1,4}(${PANEL_TOOL_NAMES.join('|')})\\b`)
-
 /** 旧数据：Pi 报上来的 wait_agents 被记成了 CLI 自己的子 Agent（没有名字、没有标题），按它的输出认回来 */
 const OLD_WAIT = /^(做完 \d+ 个|还在执行 \d+ 个|你还没有派出子任务)/
 
 /** 面板工具的名字：认不出来时是空的 */
 function panelName(tool: ToolUse) {
-  const hit = PANEL_TOOL.exec(`${tool.name ?? ''} ${tool.label}`)
+  const hit = PANEL_TOOL_RE.exec(`${tool.name ?? ''} ${tool.label}`)
   if (hit) return hit[1]
   // 旧数据：带服务名前缀的后台命令被解析成了 CLI 自己的「运行命令」，按面板给的回复认回来
   if (tool.kind === 'run' && /已放到后台（编号 [0-9a-f]{8}）/.test(tool.output ?? '')) return 'run_background'

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { type AnalysisKind, type Attachment, type Task } from '@shared/schema'
-import { analysisHome, analyzerId, rootIdOf, type AnalysisHome, type AnalysisScope } from '@shared/analysis-home'
+import { analysisHome, analyzerId, rootIdOf, type AnalysisScope } from '@shared/analysis-home'
 import { t } from '@shared/i18n'
 import { type ClosePlan, closeWindowPlan } from './ai-window-close'
 import { api } from './api'
@@ -220,11 +220,6 @@ async function rootOf(scope: AnalysisScope) {
   const tk = scope.task
   if (!tk.parentTaskId) return tk
   return api.task(rootIdOf(tk)).catch(() => undefined)
-}
-
-/** 按归属规则算出分析对话放哪（界面上提前说明用） */
-export async function resolveHome(scope: AnalysisScope): Promise<AnalysisHome> {
-  return analysisHome(scope, await rootOf(scope))
 }
 
 /**

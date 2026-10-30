@@ -275,7 +275,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 口径是用户定的「调用前先读配置判断怎么调用」：**不在保存设置时去遍历改写跑着的对话**（那是同步机制），
 而是在每个要作判断的点上现读一次项目设置。已经开始的对话因此不用等新建，改了设置就按新设置跑。
 
-在哪些点现读（`server/tasks.ts`）：
+在哪些点现读（`server/tasks/` 下各模块，函数所在文件见 [server 模块 README](modules/server/README.md) 的拆分表）：
 
 | 判断点                        | 做什么                                                             | 现读的地方                                                                           |
 | ----------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
@@ -450,7 +450,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 | `scripts/lib/changed-tests.mjs`                         | 定位规则（闭包内测试 / 同名测试 / 同目录回退 / 分片映射 / 高风险区强制全量），纯逻辑、有单测                                                            |
 | `scripts/ui/covers.mjs`                                 | 界面检查分片覆盖的源码前缀表                                                                                                                            |
 | `server/parent-tests.ts`                                | 父对话测试队列：一次一步、结果和耗时交给调用方                                                                                                          |
-| `server/tasks.ts`                                       | 父对话测试的接入：`finishChildStep`、`startParentTests`、`recoverParentTests`、`parentRunRole`                                                          |
+| `server/tasks/test-runs.ts`                             | 父对话测试的接入：`startParentTests`、`recoverParentTests`（`finishChildStep` 在 `merge.ts`，`parentRunRole` 在 `helpers.ts`）                          |
 | `shared/expose.ts`                                      | `applyExpose`：项目值 → 节点参数 → 快照                                                                                                                 |
 | `shared/assist.ts`                                      | AI 配置的提示词和校验（params / teststeps）                                                                                                             |
 | `server/assist.ts`                                      | AI 配置的执行（项目目录只读）                                                                                                                           |

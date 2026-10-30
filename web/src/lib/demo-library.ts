@@ -150,8 +150,6 @@ const mcpClis = (active: string[]) =>
     file: c.mcpStore!.file,
   }))
 
-/** 项目设置里的 MCP 分节在演示版也用这同一份数据：正式版里两边本来就是同一份配置 */
-export const demoMcpClis = mcpClis
 export const demoMcpServers = servers
 export const demoMcpOverview = (active: string[]): McpOverview => ({
   clis: mcpClis(active),

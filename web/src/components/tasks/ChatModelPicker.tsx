@@ -166,12 +166,6 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
   )
 }
 
-/** 思考强度的显示名（「高」「很高」）：CLI 定义里没有这一档时原样写取值 */
-export function effortName(cli: string, id: string) {
-  if (!id) return ''
-  return getCli(cli)?.efforts.find((e) => e.id === id)?.label ?? id
-}
-
 /** 角色实际用的思考强度（英文档位 id）：回复头「· 模型 · 强度」用，和执行时同一个取值（agentRun） */
 export function useEffortOf() {
   const { settings } = useData()

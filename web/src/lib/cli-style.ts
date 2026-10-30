@@ -14,13 +14,6 @@ export const modelGroup = (def: CliDefinition, m: { origin?: 'cli' | 'config' })
       : t('{cli} 读取', { cli: def.name })
 /** 配置文件里第三方 API 模型的组名；排序时按它认组，不按中文前缀 */
 export const CONFIG_GROUP = () => t('配置文件 · 第三方 API')
-/** 模型建议的说明：CLI 自己的默认模型后面标上（默认） */
-export const modelSuggestions = (def: CliDefinition | undefined) =>
-  (def?.models ?? []).map((m) => ({
-    value: m.id,
-    label: m.isDefault ? t('{name}（默认）', { name: m.label }) : m.label,
-    group: modelGroup(def!, m),
-  }))
 /** CLI 自己的默认模型和它的默认思考强度 */
 export const cliDefaultModel = (def: CliDefinition) => def.models.find((m) => m.isDefault)
 /** 这个模型支持的思考强度：CLI 报了这个模型的（读到的模型列表、安装包里的模型目录）就按它，不知道时按 CLI 的全部 */

@@ -74,8 +74,6 @@ export function clearInstallJob(cli: string) {
   emit()
 }
 
-export const anyInstallRunning = () => [...jobs.values()].some((j) => j.status === 'running')
-
 export function useInstallJob(cli: string) {
   const [, tick] = useState(0)
   useEffect(() => {

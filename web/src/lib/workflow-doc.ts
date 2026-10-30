@@ -37,11 +37,6 @@ ${team.length ? team.join('\n') : '- 在上面的「团队」里选择主 Agent 
 `
 }
 
-/** 文档大纲：取出一级和二级标题 */
-export function docOutline(doc: string) {
-  return [...doc.matchAll(/^(#{1,2})\s+(.+)$/gm)].map((m) => ({ level: m[1].length, text: m[2].trim() }))
-}
-
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 // Agent 输出也走这里：只放行 http(s)、mailto 和相对链接，javascript: 之类的链接当普通文字显示
