@@ -297,9 +297,9 @@ export function RowShell({
     <div
       className={cn(
         'min-w-0',
-        !boxed && 'rounded-lg',
-        !boxed && !ai && 'bg-fg/[0.035]',
-        boxed && 'overflow-hidden rounded-lg border',
+        !boxed && 'rounded-(--c-row-radius)',
+        !boxed && !ai && 'bg-(--c-row-bg)',
+        boxed && 'overflow-hidden rounded-(--c-row-radius) border',
         boxed && failed && 'border-danger/30',
         className,
       )}
@@ -311,7 +311,7 @@ export function RowShell({
         className={cn(
           'group flex w-full min-w-0 items-center py-1 pr-1 pl-2 text-[0.75rem] text-muted',
           ai ? 'min-h-[1.875rem]' : 'min-h-8',
-          !boxed && 'rounded-lg',
+          !boxed && 'rounded-(--c-row-radius)',
           boxed && 'px-2.5',
           container && '@container',
           // 整行打开的行左边多一个下拉：间距收一点，窄行里状态标签才不会被挤出容器

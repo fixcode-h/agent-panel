@@ -46,7 +46,7 @@ export function Sheet({
           aria-describedby={undefined}
           style={{ width }}
           className={cn(
-            'fixed inset-y-0 z-50 flex max-w-full flex-col overflow-hidden bg-bg shadow-pop focus:outline-none md:inset-y-2 md:rounded-xl',
+            'fixed inset-y-0 z-50 flex max-w-full flex-col overflow-hidden bg-(--c-sheet-bg) shadow-pop focus:outline-none md:inset-y-2 md:rounded-(--c-sheet-radius)',
             side === 'right'
               ? 'right-0 animate-[sheet-in-right_180ms_ease-out] md:right-2'
               : 'left-0 animate-[sheet-in-left_180ms_ease-out] md:left-2',

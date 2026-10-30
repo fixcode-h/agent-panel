@@ -14,15 +14,15 @@ import { t } from '@shared/i18n'
 import { HelpTip } from './help-tip'
 
 export const fieldClass =
-  'w-full rounded-lg border border-line-strong bg-field px-3 text-sm text-fg placeholder:text-subtle ' +
-  'outline-none transition-[border-color,box-shadow] focus:border-focus focus:ring-[3px] focus:ring-focus-soft'
+  'w-full rounded-(--c-input-radius) border-(length:--c-input-border) border-line-strong bg-(--c-input-bg) px-3 text-sm text-fg placeholder:text-subtle ' +
+  'outline-none transition-[border-color,box-shadow] focus:border-focus focus:ring-(length:--c-input-ring) focus:ring-focus-soft'
 
 /**
  * 输入框高度档：md 表单里的常规高度；sm 工具条、筛选行、表格单元格里的紧凑框（和 sm 按钮同高）；
  * xs 属性面板（设计页的 Details、动画时间轴）一行一个属性的小框，和 icon-sm 按钮同高
  */
 const fieldSizes = {
-  xs: 'h-7 rounded-md px-1.5 text-[0.75rem]',
+  xs: 'h-7 rounded-[min(6px,var(--c-input-radius))] px-1.5 text-[0.75rem]',
   sm: 'h-8 px-2.5 text-[0.8125rem]',
   md: 'h-9',
 }
@@ -60,9 +60,9 @@ const dec = (v: string) => (v === EMPTY ? '' : v)
 
 const listPanel =
   'z-50 max-h-[min(360px,var(--radix-select-content-available-height))] min-w-[var(--radix-select-trigger-width)] ' +
-  'overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop animate-[fade-in_120ms_ease-out]'
+  'overflow-hidden rounded-(--c-menu-radius) border-(length:--c-menu-border) border-line-strong bg-(--c-menu-bg) shadow-pop animate-[fade-in_120ms_ease-out]'
 export const listItem =
-  'relative flex w-full cursor-pointer select-none items-center gap-2 rounded-lg py-1 pr-8 pl-2.5 text-left text-[0.8125rem] leading-5 ' +
+  'relative flex w-full cursor-pointer select-none items-center gap-2 rounded-(--c-menu-itemRadius) py-1 pr-8 pl-2.5 text-left text-[0.8125rem] leading-5 ' +
   'outline-none data-[highlighted]:bg-sel data-[state=checked]:text-fg data-[disabled]:pointer-events-none data-[disabled]:opacity-50'
 
 /** 下拉框：样式和输入框一致，弹出的列表也跟随主题（不用系统原生列表） */
@@ -107,7 +107,7 @@ export function Select({
             ? [ghostTrigger, size !== 'md' && 'h-7 text-[0.8125rem]']
             : [
                 fieldClass,
-                'flex h-9 items-center justify-between gap-2 data-[state=open]:border-accent data-[state=open]:ring-[3px] data-[state=open]:ring-accent-soft',
+                'flex h-9 items-center justify-between gap-2 data-[state=open]:border-accent data-[state=open]:ring-(length:--c-input-ring) data-[state=open]:ring-accent-soft',
                 size !== 'md' && fieldSizes[size],
               ],
           'cursor-pointer text-left disabled:cursor-not-allowed disabled:opacity-60',
@@ -243,7 +243,7 @@ export function ComboInput({
           onInteractOutside={(e) => {
             if ((e.target as HTMLElement).closest?.('[role=combobox]')) e.preventDefault()
           }}
-          className="z-50 max-h-[min(320px,var(--radix-popover-content-available-height))] w-[var(--radix-popover-trigger-width)] overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop animate-[fade-in_120ms_ease-out]"
+          className="z-50 max-h-[min(320px,var(--radix-popover-content-available-height))] w-[var(--radix-popover-trigger-width)] overflow-y-auto rounded-(--c-menu-radius) border-(length:--c-menu-border) border-line-strong bg-(--c-menu-bg) p-1 shadow-pop animate-[fade-in_120ms_ease-out]"
         >
           <div role="listbox">
             {list.map((s, i) => [

@@ -752,7 +752,7 @@ function SettingsBody({
             {cur.id === 'styles' && <StylesSettings />}
             {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
             {cur.id === 'markdown' && <MarkdownSection value={appearance} onChange={setAppearance} />}
-            {cur.id === 'components' && <ComponentsSection />}
+            {cur.id === 'components' && <ComponentsSection value={appearance} onChange={setAppearance} />}
             {cur.id === 'shortcuts' && <ShortcutsSection value={elementPicker} onChange={setElementPicker} />}
             {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}
             {cur.id === 'network' && (

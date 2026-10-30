@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { MarkdownStyle } from './markdown-style.ts'
+import { ComponentStyle } from './component-style.ts'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
@@ -2349,6 +2350,8 @@ export const Appearance = z.object({
   panelRadius: z.number().min(0).max(24).catch(12).default(12),
   /** 对话、文档里 Markdown 每种元素的样式，只存改过的项（定义和默认值见 shared/markdown-style.ts） */
   markdown: MarkdownStyle,
+  /** 设置 → 组件里各部件的微调（圆角、底色、边框……），只存改过的项（定义和默认值见 shared/component-style.ts） */
+  components: ComponentStyle,
 })
 export type Appearance = z.infer<typeof Appearance>
 
