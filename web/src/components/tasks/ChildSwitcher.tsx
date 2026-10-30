@@ -16,7 +16,16 @@ import { childClosedHint, childLabelClass, childLabels, childNote, staleLine, ty
  * 子对话列表的一行内容：图标、标题、状态标签、正在做什么 / 在等什么、独立分支。
  * 悬浮层列表和标题旁的下拉读同一份，两处不再各画一套
  */
-export function ChildRowContent({ c, viewing = false }: { c: ChildSummary; viewing?: boolean }) {
+export function ChildRowContent({
+  c,
+  viewing = false,
+  pending = 0,
+}: {
+  c: ChildSummary
+  viewing?: boolean
+  /** 交回父对话、父对话还没读到的汇报数（收件箱）：子对话面板里写「n 封未读 · 汇报待父对话处理」 */
+  pending?: number
+}) {
   const icon = childIcon(c)
   const user = useUserName()
   // 执行中写正在做什么，其余写在等什么或最近结果；很久没新输出时标色
@@ -54,6 +63,12 @@ export function ChildRowContent({ c, viewing = false }: { c: ChildSummary; viewi
             </span>
           ))}
         </span>
+        {pending > 0 && (
+          <span data-child-pending className="flex min-w-0 items-center gap-1 text-xs text-accent-text">
+            <span className="shrink-0 rounded bg-accent/12 px-1 tabular-nums">{pending}</span>
+            <span className="min-w-0 truncate">{t('汇报待父对话处理')}</span>
+          </span>
+        )}
         {(line || stale) && (
           <span className="flex min-w-0 items-center gap-1">
             {line && <span className="line-clamp-1 min-w-0 text-xs text-subtle">{line}</span>}

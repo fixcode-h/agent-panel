@@ -448,7 +448,7 @@ export function ToolRow({
   const alert =
     raw.alert ?? (raw.kind === 'other' && raw.failed && raw.name === t('提示') ? makeAlert('error', raw.label) : null)
   if (alert) return <AlertRow alert={alert} text={raw.label} />
-  // 给另一个对话发消息：和收件方的「接收消息」一样画成「发送消息 + 类型 + 内容标题」
+  // 给另一个对话发消息：和收件方一样画成「→ 对方 + 类型 + 内容标题」
   if (view.send)
     return (
       <PeerLine
@@ -462,6 +462,7 @@ export function ToolRow({
         childId={view.child}
         receipt={raw.output?.trim()}
         ms={raw.ms}
+        at={raw.startedAt ? new Date(raw.startedAt).toISOString() : undefined}
       />
     )
   return <ToolLine view={view} task={task} />

@@ -438,7 +438,10 @@ export function createChildren(sc: TasksScope) {
     reportedState.set(childId, key)
     // 先取最新的回复：task.summary 要等整次执行收尾才更新，这一轮刚报完成（进程还在、或保活等下一句）时
     // 它还是上一轮的，上报会带着上一轮的结果
-    const summary = sc.lastReply(tk) || tk.summary
+    // 这一轮 AI 自己用 message_parent 写的汇报并进这一封当「结果」（ADR 0034：一轮只交一封），没写才取最后一条回复
+    const summary = tk.pendingReport?.trim() || sc.lastReply(tk) || tk.summary
+    // 用户直接在子对话里交代过新要求：不再单独发消息，这封汇报里带上原话
+    const direct = tk.userDirect ? `\n用户在这个子对话里直接交代过：${tk.userDirect}` : ''
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
     const next =
       r.state === 'unfinished' && isolated(tk) && !openWork(tk).length
@@ -448,7 +451,7 @@ export function createChildren(sc: TasksScope) {
           : r.state === 'failed' || r.state === 'stopped'
             ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
             : ''
-    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
+    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
     await sc.noteParent(
       tk.parentTaskId,
       tk,
@@ -461,6 +464,17 @@ export function createChildren(sc: TasksScope) {
       // 只有「只剩合回却没请收尾」要叫起父对话；失败、中断的重试提示照旧放进收件箱
       !!next && r.state === 'unfinished',
     )
+    // 并进去的阶段汇报、用户的原话已经交出去了，下一封不再重复带。
+    // 随父对话停下的那次 noteParent 只改计划、不发（见 noteParent 的 cascaded），留到继续后的那一封
+    const sent = !(r.state === 'stopped' && tk.stopReason === 'parent')
+    if (sent && (tk.pendingReport || tk.userDirect)) {
+      const ce = sc.live.get(tk.id)
+      const cur = ce?.task ?? tk
+      cur.pendingReport = undefined
+      cur.userDirect = undefined
+      if (ce) ce.rev++
+      else await sc.store.update(tk.id, cur).catch(() => {})
+    }
   }
 
   /**

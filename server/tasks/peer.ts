@@ -9,6 +9,9 @@ import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
 
+/** 子对话请父对话安排修复的报错（engine 的 toParent 带 wait_fix 时加的开头）：要父对话马上动手，不并进一轮结束的汇报 */
+const FIX_HEAD = /^【报错不是我改出来的/
+
 /**
  * 子对话和父对话之间的消息：子对话传话给父对话、转交子任务请求、把排着的转交接到父对话这一轮的 Orchestra 上。
  */
@@ -54,6 +57,19 @@ export function createPeer(s: TasksScope) {
           .update(child.id, target)
           .catch((e) => log.warn('task', '记下「汇报没交出去」失败', { task: child.id, error: (e as Error).message }))
       return { ok: false, info: '找不到父对话（它可能已经被删了），这条消息没能交回去；子对话自己的结果还在本对话里' }
+    }
+    // 阶段汇报不单独发（ADR 0034：一轮只交一封）：记在子对话上，这一轮结束面板上报状态时并进去当「结果」。
+    // 要父对话动手的（提问、收尾建议、请它安排修复）照旧马上发
+    if (!question && !FIX_HEAD.test(text)) {
+      const ce = s.live.get(child.id)
+      const target = ce?.task ?? child
+      target.pendingReport = [target.pendingReport, text.trim()].filter(Boolean).join('\n\n').slice(-4000)
+      if (ce) ce.rev++
+      else await s.store.update(child.id, target).catch(() => {})
+      return {
+        ok: true,
+        info: '已记下。这一轮结束时面板会把它和你的状态合成一封交给父对话（一轮只交一封），不用再重复发；要父对话决定或动手的事把 question 设为 true。',
+      }
     }
     const suggestion = question && kind === 'suggestion'
     // 「提问」开关关着（默认就是关的）：子对话的提问和收尾建议不交给用户，直接交给父对话的 AI 决定。

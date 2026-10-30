@@ -7,6 +7,7 @@ import { t } from '../../shared/i18n.ts'
 import {
   activePlan,
   bindWait,
+  holdWait,
   releaseParentWait,
   ensureChildStep,
   settleWait,
@@ -55,14 +56,22 @@ export function createChildMessages(sc: TasksScope) {
       if (settle?.onlyIfWaiting && !hit.length) await sc.store.update(parent.id, parent).catch(() => {})
     }
     if (settle?.onlyIfWaiting && !hit.length) return
+    // 子对话是跟着父对话一起停下的（用户停止、归档父对话时 closeChildren 记成 parent）：这是父对话自己做的事，
+    // 告诉它没有用（ADR 0034）。只改计划那一步的状态，不写进对话流、不进收件箱；父对话继续时由面板连带拉起（ADR 0032）
+    const cascaded = child?.state === 'stopped' && from.stopReason === 'parent'
+    if (cascaded) {
+      if (hit.length) {
+        parent.updatedAt = new Date().toISOString()
+        const e = sc.live.get(parent.id)
+        if (e) e.rev++
+        await sc.store.update(parent.id, sc.live.get(parent.id)?.task ?? parent).catch(() => {})
+      }
+      return
+    }
     const text = waitNote(hit) + body
     // 用户亲手停下的父对话：子对话的结果不把它叫起来（用户让它停的），记进收件箱，用户点「继续执行」时一起处理
     const userStopped = parent.status === 'stopped' && parent.stopReason === 'user' && !sc.runningConv(parent.id)
-    // 子对话是跟着父对话一起停下的（用户停止、归档父对话时 closeChildren 记成 parent）：它的「已中断」同样不叫起父对话。
-    // 不能只看上面父对话自己的状态：父对话这一轮已经答完、停在等下一句（或进程已退出）时被停下，收尾记成 done、
-    // 不记停止原因；还在收尾时执行位也还占着。这两种都会漏过 userStopped，父对话就被子对话的中断上报叫起来又跑一轮（用户报过）
-    const cascaded = child?.state === 'stopped' && from.stopReason === 'parent'
-    if ((hit.length || wake) && !userStopped && !cascaded) {
+    if ((hit.length || wake) && !userStopped) {
       const entry = sc.live.get(parent.id)
       parent.updatedAt = new Date().toISOString()
       if (entry) entry.rev++
@@ -102,8 +111,28 @@ export function createChildMessages(sc: TasksScope) {
     // 再往旧对象里写、拿旧对象落盘，收件箱这条会被执行器下一次落盘盖掉，父对话永远收不到这个子对话的回报
     const target = sc.live.get(parent.id)?.task ?? parent
     if (!how) {
+      // 同一个子对话的汇报父对话还没读，新的来了就替换掉旧的：收件箱里每个子对话只留最新一封，
+      // 对话流里旧的那行变淡、写「已被新的汇报取代」（ADR 0034）。提问、回答不替换
+      const report = !!child && peer?.kind === 'report'
+      if (report) {
+        const old = target.inbox.filter((x) => x.from === from.id && x.report)
+        if (old.length) {
+          target.inbox = target.inbox.filter((x) => !old.includes(x))
+          for (const o of old) {
+            const m = o.mid ? target.messages.find((x) => x.id === o.mid) : undefined
+            if (m?.peer) m.peer = { ...m.peer, superseded: true }
+          }
+        }
+      }
       target.messages.push(msg)
-      target.inbox.push({ from: from.id, title: from.title, text: inboxText, at: msg.at })
+      target.inbox.push({
+        from: from.id,
+        title: from.title,
+        text: inboxText,
+        at: msg.at,
+        mid: msg.id,
+        ...(report && { report: true }),
+      })
     }
     target.updatedAt = new Date().toISOString()
     const now = sc.live.get(parent.id)
@@ -116,9 +145,9 @@ export function createChildMessages(sc: TasksScope) {
 
   /**
    * 用户直接在子对话里发了消息：父对话计划里挂一步等这个子对话（和父对话 send_to_conversation 同一套，
-   * 计划已结束就重开、没有能挂的一步就补一步），并在父对话里记一行说明。
+   * 计划已结束就重开、没有能挂的一步就补一步），那一步写明「你直接交代了新要求」，不往父对话流里发消息。
    * 不挂的话子对话做完上报时父对话计划里没人在等它，上报只进收件箱，父对话收不到这个子对话的结果（用户报过）。
-   * 父对话不用转交：子对话自己更新计划、自己做，做完由 reportChild 收口那一步并叫起父对话
+   * 父对话不用转交：子对话自己更新计划、自己做，做完由 reportChild 收口那一步并叫起父对话，汇报里带上用户的原话
    */
   async function trackUserToChild(child: Task, text: string) {
     if (!child.parentTaskId) return
@@ -128,27 +157,21 @@ export function createChildMessages(sc: TasksScope) {
     const now = new Date().toISOString()
     const at = ensureChildStep(parent, child.id, child.title, now)
     const wait = at ? bindWait(parent, at, { kind: 'child', ref: child.id, label: child.title }, now) : ''
+    // 这一轮重新算一次状态：上一次「已完成」的上报不能挡住这次做完后的上报
+    sc.reportedState.delete(child.id)
+    // 不再给父对话发「用户直接交代」的消息（ADR 0034）：这是状态不是信。父计划那一步写明你直接交代了新要求，
+    // 要求原文记在子对话上，下一封汇报里带给父对话
+    const brief = text.trim().replace(/\s+/g, ' ')
+    if (wait || at) holdWait(parent, 'child', child.id, `你直接交代了新要求：${brief.slice(0, 80)}`, now)
     parent.updatedAt = now
     if (entry) entry.rev++
     await sc.store.update(parent.id, parent)
-    // 这一轮重新算一次状态：上一次「已完成」的上报不能挡住这次做完后的上报
-    sc.reportedState.delete(child.id)
-    const step = at
-      ? activePlan(parent)
-          ?.steps.flatMap((s) => [s, ...s.children])
-          .find((s) => s.id === at)
-      : undefined
-    const body = `【用户直接交代子对话】用户在子对话「${child.title}」（id ${child.id}）里直接发了新要求：${text.trim().slice(0, 600)}
-它会自己更新计划接着做${step && wait ? `，你计划里的「${step.title}」在等它` : ''}，做完会把状态报给你。你不用转交，也不要另建子对话重做；等它的结果回来后按你的计划接着统筹。`
-    await noteParent(
-      parent.id,
-      child,
-      body,
-      body,
-      undefined,
-      { id: child.id, title: child.title, state: 'running' },
-      await sc.peerOf(child, 'child', 'report', `用户直接交代：${text.trim()}`),
-    )
+    // 记在「现在」的那一份上：发消息时子对话已经被拉起来了，执行器落盘用的是 live 里那份
+    const ce = sc.live.get(child.id)
+    const target = ce?.task ?? (await sc.store.get(child.id)) ?? child
+    target.userDirect = brief.slice(0, 600)
+    if (ce) ce.rev++
+    else await sc.store.update(child.id, target)
   }
 
   /**
