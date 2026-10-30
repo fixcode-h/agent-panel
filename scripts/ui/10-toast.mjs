@@ -359,53 +359,69 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
        直接拿它们当背景，验证期间会陆续到期、各自触发一次「移除 + 补位」，
        屏上条数自己就在变，分不清是我们要的那次补位还是别人的计时到了。
        并发抢 CPU 时这种撞车更容易踩上，就是之前全量跑偶发失败的原因。 */
-    await clearAll()
-    const emptied = await p
-      .waitForFunction(
-        () =>
-          [...document.querySelectorAll('[data-sonner-toast]')].filter(
-            (el) => el.getAttribute('data-removed') !== 'true',
-          ).length === 0,
-        null,
-        { timeout: 5000 },
+    let beforeQueue = []
+    let closing
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await clearAll()
+      const emptied = await p
+        .waitForFunction(
+          () =>
+            [...document.querySelectorAll('[data-sonner-toast]')].filter(
+              (el) => el.getAttribute('data-removed') !== 'true',
+            ).length === 0,
+          null,
+          { timeout: 5000 },
+        )
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!emptied) {
+        errors.push('提示-补位：没法先把屏上的提示清空，后面量不准补位')
+        return
+      }
+      /* 连弹 VISIBLE_LIMIT 条建出满额。它们各自从投递那一刻开始走 4 秒计时，
+         所以后面的判定链必须短：实测这条链约 1s，而 4 条约 3.7s 后陆续到期。
+         不能靠「先 hover 冻住再重建」——popOne 要右键点菜单，鼠标一离开提示区
+         sonner 就把 expanded 置回 false、计时照走（实测：先弹 1 条再 hover 补满，
+         第 1 条仍在 4.0s 到期）。所以靠的不是冻结，而是判定链本身够短。 */
+      for (let i = 0; i < VISIBLE_LIMIT; i += 1) await popOne()
+      beforeQueue = await snapshot()
+      if (beforeQueue.length !== VISIBLE_LIMIT) {
+        const s = await rawStat()
+        errors.push(`提示-补位：重建满额失败（屏上只有 ${s.live} 条活着的）`)
+        return
+      }
+      /* 再弹一条：屏上已经满额，这一条只进队列、不进 DOM。
+         不单独等「条数没变」再判一次——那是多一段可能撞上到期的窗口；
+         下面按元素身份确认时，如果它其实进了 DOM，gotNew 会多出一条、keptOthers 也会对不上。 */
+      await popOne({ expectQueued: true })
+      /* 用元素句柄盯住被关的那一条：它真的从 DOM 里移除（＝关闭生效、且退出动画已经播完）
+         才是可观测的关闭事实。不能只看条数——刚点下去时它还在、正在播退出动画。
+         先确认最上面那条就是快照里的第 0 个元素：
+         名额上限失效时第 5 条会直接进 DOM、插到最上面，两者就不是同一条了——
+         那样「等被关元素消失」会等到一条永远不会被关的，最后报成「点了关闭也不消失」，
+         掩盖掉真正的原因（排队没生效）。 */
+      closing = beforeQueue[0]
+      const topHandle = await toasts.first().elementHandle()
+      const sameTop = topHandle && closing ? await p.evaluate(([a, b]) => a === b, [topHandle, closing]) : false
+      if (sameTop) break
+      /* 最上面换了人有两种可能：排队真的没生效（第 5 条直接进了 DOM），或者 CI 很慢、
+         满额那几条在判定链走完前就 4 秒到期了。后者满额那几条会有人已经不在，换一轮重建再量；
+         前者那几条都还在，直接报 */
+      const expired = await p.evaluate(
+        (els) => els.some((el) => !el.isConnected || el.getAttribute('data-removed') === 'true'),
+        beforeQueue,
       )
-      .then(
-        () => true,
-        () => false,
-      )
-    if (!emptied) {
-      errors.push('提示-补位：没法先把屏上的提示清空，后面量不准补位')
-      return
-    }
-    /* 连弹 VISIBLE_LIMIT 条建出满额。它们各自从投递那一刻开始走 4 秒计时，
-       所以后面的判定链必须短：实测这条链约 1s，而 4 条约 3.7s 后陆续到期。
-       不能靠「先 hover 冻住再重建」——popOne 要右键点菜单，鼠标一离开提示区
-       sonner 就把 expanded 置回 false、计时照走（实测：先弹 1 条再 hover 补满，
-       第 1 条仍在 4.0s 到期）。所以靠的不是冻结，而是判定链本身够短。 */
-    for (let i = 0; i < VISIBLE_LIMIT; i += 1) await popOne()
-    const beforeQueue = await snapshot()
-    if (beforeQueue.length !== VISIBLE_LIMIT) {
-      const s = await rawStat()
-      errors.push(`提示-补位：重建满额失败（屏上只有 ${s.live} 条活着的）`)
-      return
-    }
-    /* 再弹一条：屏上已经满额，这一条只进队列、不进 DOM。
-       不单独等「条数没变」再判一次——那是多一段可能撞上到期的窗口；
-       下面按元素身份确认时，如果它其实进了 DOM，gotNew 会多出一条、keptOthers 也会对不上。 */
-    await popOne({ expectQueued: true })
-    /* 用元素句柄盯住被关的那一条：它真的从 DOM 里移除（＝关闭生效、且退出动画已经播完）
-       才是可观测的关闭事实。不能只看条数——刚点下去时它还在、正在播退出动画。
-       先确认最上面那条就是快照里的第 0 个元素：
-       名额上限失效时第 5 条会直接进 DOM、插到最上面，两者就不是同一条了——
-       那样「等被关元素消失」会等到一条永远不会被关的，最后报成「点了关闭也不消失」，
-       掩盖掉真正的原因（排队没生效）。 */
-    const closing = beforeQueue[0]
-    const topHandle = await toasts.first().elementHandle()
-    const sameTop = topHandle && closing ? await p.evaluate(([a, b]) => a === b, [topHandle, closing]) : false
-    if (!sameTop) {
-      const st = await rawStat()
-      errors.push(`提示-补位：满额后再弹一条，它直接进了界面并排到最上面（现在 ${st.live} 条，排队没生效）`)
-      return
+      if (!expired || attempt === 2) {
+        const st = await rawStat()
+        errors.push(
+          expired
+            ? `提示-补位：连着 3 轮满额的提示都在判定前到期，量不了补位（现在 ${st.live} 条）`
+            : `提示-补位：满额后再弹一条，它直接进了界面并排到最上面（现在 ${st.live} 条，排队没生效）`,
+        )
+        return
+      }
     }
     await toasts.first().hover()
     await toasts.first().locator('[data-close-button]').click()
