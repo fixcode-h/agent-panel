@@ -12,6 +12,7 @@ import { nodeViews } from '@/components/flow/views'
 import { StepSection } from './StepSection'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 
 /** 一组子节点合起来的状态 */
 function combined(list: StepStatus[]): StepStatus | undefined {
@@ -38,6 +39,14 @@ export function TaskFlow({
 }) {
   const data = useData()
   const { agents } = data
+  // 上面流程图的高度：中间的分界线上下拖，记在本机；流程图至少 180px（放得下缩放按钮和小地图），下面的节点输出至少留 160px
+  const box = useRef<HTMLDivElement>(null)
+  const graph = usePaneWidth(
+    'task-flow-graph',
+    () => Math.round(Math.min(320, window.innerHeight * 0.36)),
+    180,
+    () => (box.current?.clientHeight ?? window.innerHeight) - 160,
+  )
   const { modelOf } = useAgentView()
   // 用任务创建时存下的工作流画图，之后改了工作流也和执行记录对得上
   const { workflow, workflows } = taskWorkflows(task, data.workflows)
@@ -142,21 +151,24 @@ export function TaskFlow({
     : []
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <FlowCanvas
-        flow={flow}
-        views={views}
-        startSub={t('任务开始')}
-        terms={{ start: 'done', end: allDone ? 'done' : undefined }}
-        selected={sel}
-        onSelect={(id) => {
-          if (!id || id === START || id === END) return
-          setSel(id)
-          setFollow(false)
-        }}
-        edgeTone={edgeTone}
-        className="flex h-[min(440px,50vh)] shrink-0 border-b bg-panel"
-      />
+    <div ref={box} className="flex min-h-0 flex-1 flex-col">
+      <div className="relative flex shrink-0 border-b" style={{ height: graph.width }}>
+        <FlowCanvas
+          flow={flow}
+          views={views}
+          startSub={t('任务开始')}
+          terms={{ start: 'done', end: allDone ? 'done' : undefined }}
+          selected={sel}
+          onSelect={(id) => {
+            if (!id || id === START || id === END) return
+            setSel(id)
+            setFollow(false)
+          }}
+          edgeTone={edgeTone}
+          className="flex min-w-0 flex-1 bg-panel"
+        />
+        <ResizeHandle pane={graph} side="bottom" label={t('拖动调整流程图的高度')} />
+      </div>
       {step && (
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div
