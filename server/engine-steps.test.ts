@@ -544,14 +544,13 @@ test('这一轮已经答完才被收掉：不写「这一轮被中断」，这�
   assert.ok(!task.messages.some((m) => m.role === 'system'), '既没有「这一轮被中断」，也没有「已暂停」')
 })
 
-test('真停止（用户暂停、面板重启之类）照旧写中断说明', async () => {
+test('真停止：用户自己暂停不写提示行，别的来源（父对话收尾、面板重启之类）照旧写中断说明', async () => {
   const paused = await stoppedChatTurn({ answered: false, reason: 'user' })
   assert.equal(paused.turns.at(-1)?.status, 'stopped')
   assert.equal(paused.status, 'stopped')
   assert.equal(paused.stopReason, 'user')
-  assert.ok(
-    paused.messages.some((m) => m.text === t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')),
-  )
+  // 用户自己按的暂停不写提示行：输入框旁已经有「继续执行」按钮
+  assert.ok(!paused.messages.some((m) => m.role === 'system'), '暂停后不再显示「已暂停。点「继续执行」…」')
 
   // 父对话结束时一起结束、而这一轮没答完：是真的中断，要说清是谁结束的
   const byParent = await stoppedChatTurn({ answered: false, reason: 'parent' })

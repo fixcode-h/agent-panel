@@ -4484,25 +4484,21 @@ export function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean })
     }
   if (r.budget) system(host, r.error, '', false, true, 'budget')
   else if (r.stopped && !answered) {
-    // 谁结束的这一轮：只有用户按的暂停才说「已暂停」，别的动作要说清是谁结束的，
-    // 不能让用户看到「我没点暂停却变成已暂停」（父对话收尾的时候子对话就是这种）
+    // 谁结束的这一轮：用户自己按的暂停不写提示行（输入框旁已经有「继续执行」按钮）；
+    // 别的动作要说清是谁结束的，不能让用户看到「我没点暂停却停了」（父对话收尾的时候子对话就是这种）
     const reason = host.stopReason?.() ?? 'user'
     host.task.stopReason = reason
-    const next = host.task.mode === 'workflow' ? t('点「继续流程」') : t('点「继续执行」')
-    system(
-      host,
-      reason === 'user'
-        ? host.task.mode === 'workflow'
-          ? t('已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。')
-          : t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')
-        : t('这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。', {
-            reason: stopReasonText(reason),
-            next,
-          }),
-      '',
-      false,
-      true,
-    )
+    if (reason !== 'user')
+      system(
+        host,
+        t('这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。', {
+          reason: stopReasonText(reason),
+          next: host.task.mode === 'workflow' ? t('点「继续流程」') : t('点「继续执行」'),
+        }),
+        '',
+        false,
+        true,
+      )
   } else if (!r.stopped) {
     const failed = host.task.steps
       .filter((s) => s.status === 'failed' && !s.parentId)
