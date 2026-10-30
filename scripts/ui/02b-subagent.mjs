@@ -399,6 +399,39 @@ await runShard(import.meta.filename, async (api) => {
           await settle(p)
         }
       }
+      // 弹出提问（子对话请用户决定）时输入框让位给选择弹窗：上下文圆环不能回落到这一排、和小块并排成两个
+      {
+        const key = 'agent-panel-demo-v3'
+        const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+        await p.evaluate((k) => {
+          const db = JSON.parse(localStorage.getItem(k))
+          const task = db.tasks.find((x) => x.title.includes('购物车右上角'))
+          task.parentAsks = [{ id: 'demo-ask', question: '角标用红色还是主题色？', options: ['红色', '主题色'] }]
+          localStorage.setItem(k, JSON.stringify(db))
+        }, key)
+        await p.reload()
+        const chip = p.locator('[data-context-chip]')
+        if (
+          !(await chip.waitFor({ timeout: 10000 }).then(
+            () => true,
+            () => false,
+          ))
+        )
+          await p.getByText('购物车右上角', { exact: false }).first().click()
+        await chip.waitFor({ timeout: 5000 }).catch(() => {})
+        await settle(p)
+        const rings = await p.locator('[title="上下文占用"]:visible').count()
+        if (rings !== 1) errors.push(`弹出提问时：上下文圆环应只有 1 个，实际 ${rings} 个`)
+        await check(p, '上下文小块-弹出提问')
+        await p.evaluate(([k, v]) => localStorage.setItem(k, v), [key, saved])
+        await p.reload()
+        await p
+          .getByText('购物车右上角', { exact: false })
+          .first()
+          .click()
+          .catch(() => {})
+        await settle(p)
+      }
       const aside = p.locator('[data-task-panel]')
       const open = p.getByRole('button', { name: '显示文件', exact: true })
       const fold = p.getByRole('button', { name: '收起文件面板', exact: true })
