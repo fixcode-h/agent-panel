@@ -1441,6 +1441,8 @@ export function stopReasonText(reason: StopReason | undefined): string {
       return t('手动关闭了 Agent')
     case 'lost':
       return t('执行已经中断，面板核对时收口')
+    case 'budget':
+      return t('用到了项目设的用量上限')
     default:
       return t('已暂停')
   }

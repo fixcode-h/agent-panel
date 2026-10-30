@@ -505,3 +505,24 @@ test('UsageQuery.group：认不出来的分组回落到按时间', () => {
   assert.equal(UsageQuery.group('week'), 'time')
   assert.equal(UsageQuery.group(undefined), 'time')
 })
+
+test('按角色分组：按每轮的角色归桶，轮次没记时取对话的角色，合计和按时间一致', () => {
+  const coder = { ...turn(new Date(2026, 9, 20, 9), 100, 10), agentId: 'coder' }
+  const docs = { ...turn(new Date(2026, 9, 20, 10), 40, 4), agentId: 'docs' }
+  const tasks = [
+    // 同一个对话换过角色：两轮分到两个桶
+    projectTask('a', 'p1', '改造', [coder, docs]),
+    // 轮次没记角色：用对话自己的角色
+    { ...projectTask('b', 'p1', '补测试', [turn(new Date(2026, 9, 20, 11), 30, 3)]), agentId: 'coder' },
+    // 都没有：直接选 Agent 的聊天，归到空 key
+    projectTask('c', '', '聊天', [turn(new Date(2026, 9, 20, 12), 5, 1)]),
+  ]
+  const byTime = at('day', 366, tasks)
+  const byRole = aggregateUsage(tasks.flatMap(usageSamples), { grain: 'day', count: 366, groupBy: 'role' }, now)
+  assert.equal(byRole.groupBy, 'role')
+  assert.deepEqual(keys(byRole), ['coder', 'docs', ''])
+  assert.equal(byRole.buckets[0].inputTokens, 130)
+  assert.equal(byRole.buckets[0].tasks, 2)
+  assert.equal(byRole.total.inputTokens, byTime.total.inputTokens)
+  assert.equal(byRole.total.turns, byTime.total.turns)
+})

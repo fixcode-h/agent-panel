@@ -918,6 +918,11 @@ const ProjectFields = z.object({
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**
+   * 每个顶层对话（连同名下全部子对话）的用量上限：80% 提醒一次，100% 停下整个对话（见 shared/budget.ts）。
+   * 两项都是 0 表示不限；旧项目没有这个字段，也是不限
+   */
+  budget: z.object({ tokens: z.number().int().min(0).default(0), costUsd: z.number().min(0).default(0) }).optional(),
+  /**
    * 「AI 初始化项目」完成并应用的时间（ISO）。空表示还没初始化：项目设置里要先初始化才能确认保存，
    * 旧项目也是空的，第一次打开设置时补做一次
    */
@@ -1537,6 +1542,7 @@ export const StopReason = z.enum([
   'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
   'close', // 用户从对话菜单点「关闭 Agent」，只结束 CLI 进程，下一条消息续接会话
   'lost', // 记录写着在执行，面板里却已经没人在跑它（哪条路径忘了落状态），定时核对时收口（见 shared/task-settle.ts）
+  'budget', // 对话树用到了项目设的用量上限（见 shared/budget.ts）
 ])
 export type StopReason = z.infer<typeof StopReason>
 
@@ -1959,6 +1965,8 @@ export const TaskData = z.object({
   status: TaskStatus,
   /** 停下来的原因：只有 'user' 是用户按的暂停，其余几种界面要写清是谁结束的（见 StopReason） */
   stopReason: StopReason.optional(),
+  /** 顶层对话的用量上限提醒到了哪一级（warn 提醒过、over 停过）：同一级只说一次；调高上限后跟着回落 */
+  budgetNotice: z.enum(['warn', 'over']).optional(),
   /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
   runMs: z.number().default(0),
   /** 这一轮开始执行的时间；没在执行时为空 */

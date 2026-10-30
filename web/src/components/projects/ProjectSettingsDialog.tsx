@@ -52,6 +52,7 @@ import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
+import { BudgetField } from './BudgetField'
 import { Switch } from '@/components/ui/switch'
 import { HelpTip } from '@/components/ui/help-tip'
 import type { ProjectProposal, Proposal } from '@shared/assist'
@@ -1245,6 +1246,10 @@ function Body({
                       />
                     </div>
                   </Field>
+                </FormSection>
+
+                <FormSection title={t('用量上限')}>
+                  <BudgetField value={draft.budget} onChange={(v) => set('budget', v)} />
                 </FormSection>
 
                 <FormSection title={t('版本与推送')}>

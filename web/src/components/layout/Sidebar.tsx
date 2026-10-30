@@ -79,6 +79,7 @@ import { DesignList } from './SidebarDesigns'
 import {
   ComfyIcon,
   McpIcon,
+  OverviewIcon,
   RoleIcon,
   ScheduleIcon,
   SkillIcon,
@@ -127,6 +128,7 @@ export function Logo({ className }: { className?: string }) {
  * 手机的抽屉菜单里照旧列在会话侧栏里
  */
 export const NAV: { id: PageId; label: string; icon: NavIcon }[] = [
+  { id: 'overview', label: t('对话总览'), icon: OverviewIcon },
   { id: 'summary', label: t('工作总结'), icon: SummaryIcon },
   { id: 'schedules', label: t('计划'), icon: ScheduleIcon },
   { id: 'agents', label: t('角色'), icon: RoleIcon },
