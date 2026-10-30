@@ -112,6 +112,7 @@ export function tasksApi(deps: {
     childUnmerged: () => childUnmerged,
     childrenRunning: () => childrenRunning,
     claims: () => claims,
+    closeWaiting: () => closeWaiting,
     cliChildren: () => cliChildren,
     closeChildren: () => closeChildren,
     completing: () => completing,
@@ -607,8 +608,16 @@ export function tasksApi(deps: {
     createAsks(scope)
   const { deliver, expandForWorkflow, followUp, start } = createRun(scope)
   const { armIdleAsk, disarmIdleAsk } = createIdleAsk(scope)
-  const { allowedPids, processPanel, stopTask, subtreeIdsOf, taskAlive, keepAliveBusy, enforceKeepAlive } =
-    createKeepAlive(scope)
+  const {
+    allowedPids,
+    processPanel,
+    stopTask,
+    subtreeIdsOf,
+    taskAlive,
+    keepAliveBusy,
+    enforceKeepAlive,
+    closeWaiting,
+  } = createKeepAlive(scope)
 
   const routes = new Hono()
 

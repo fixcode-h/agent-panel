@@ -671,6 +671,41 @@ ${prompt}
     assert.ok(c.input.includes('之前对话的摘要') && c.input.includes('接着做'), '新会话带上摘要')
     step('压缩上下文：Codex 用 thread/compact/start，Claude Code 用 /compact，Command Code 写摘要后开新会话')
 
+    // 回复完停在等下一句（保活，status 仍是 running）时也能压缩：先关掉等着的进程再压缩，不报「正在执行」
+    {
+      let kp = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: def.id,
+        cli: 'commandcode',
+        askUser: false,
+        prompt: '保活里压缩',
+      })
+      await call('POST', `/tasks/${kp.id}/seen`, {})
+      await call('POST', `/tasks/${kp.id}/presence`, { viewerId: 'e2e-compact-keep', active: true })
+      for (let i = 0; i < 120 && !kp.awaitingUser; i++) {
+        await sleep(100)
+        kp = await call('GET', `/tasks/${kp.id}`)
+      }
+      assert.ok(kp.awaitingUser && !kp.working, '第一轮回复完停在等下一句上')
+      const before = calls().length
+      await call('POST', `/tasks/${kp.id}/compact`)
+      kp = await waitFor(
+        async () => {
+          const x = await call('GET', `/tasks/${kp.id}`)
+          return calls()
+            .slice(before)
+            .some((y) => y.input?.includes('整理成一份摘要')) && !x.working
+            ? x
+            : null
+        },
+        { label: '保活中压缩完', timeout: 20000 },
+      )
+      await call('POST', `/tasks/${kp.id}/presence`, { viewerId: 'e2e-compact-keep', active: false })
+      await waitDone(kp.id, 20000)
+    }
+    step('保活等下一句时压缩：先关掉等着的进程再压缩')
+
     // ---- CLI 收下消息后一直没有输出 ----
     // 先在对话里写一行「CLI 没有响应」的警告；再发消息时不再插进卡住的这一轮，而是停掉它、接回会话重开，
     // 没被处理的那条和新消息一起交过去

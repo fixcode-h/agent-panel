@@ -1410,7 +1410,7 @@ export function resumeNote(
   const runs = (task.runs ?? []).filter((r) => r.status === 'stopped' || r.status === 'running')
   if (runs.length)
     lines.push(
-      `- 中断时没跑完的工作流：${runs.map((r) => `「${r.workflowName || r.workflowId}」`).join('、')}。计划里绑着它的那一步已标失败，还要跑就用 start_plan 重新启动那一步。`,
+      `- 中断时没跑完的工作流：${runs.map((r) => `「${r.workflowName || r.workflowId}」`).join('、')}。计划里绑着它的那一步已退回进行中（需要修复），还要跑就用 start_plan 重新启动那一步。`,
     )
   return lines.join('\n')
 }

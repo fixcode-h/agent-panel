@@ -12,6 +12,9 @@ import { trackedClis, untrackCliProcess } from '../exec/orphans.ts'
 import { commandSummary, ownedEntries, processSnapshot, subtree, sumRss, trackedStatus } from '../exec/proc-stats.ts'
 import { HARD_STOP } from '../exec/invoke.ts'
 import type { TasksScope } from './scope.ts'
+import type { Live } from './types.ts'
+import { cancelWait } from '../exec/runner.ts'
+import { settleReclaimed } from '../exec/reclaim.ts'
 
 /**
  * 停止对话、保活上限与回收（还在运行的对话不回收，见 ADR 0012）、对话名下的进程面板。
@@ -187,5 +190,13 @@ export function createKeepAlive(s: TasksScope) {
     return out
   }
 
-  return { allowedPids, processPanel, stopTask, subtreeIdsOf, taskAlive, keepAliveBusy, enforceKeepAlive }
+  /** 结束停在等下一句的 CLI 进程（下一轮续接会话）：「关闭 Agent」和压缩会话共用 */
+  async function closeWaiting(id: string, e: Live) {
+    if (!cancelWait(id)) stopTask(id, 'close')
+    await e.done?.catch(() => {})
+    // 计划没做完、落盘还写着执行中的，和页面宽限回收一样收口成已停止，界面不会一直转圈
+    if (!s.live.has(id)) await settleReclaimed(s.store, id, 'close')
+  }
+
+  return { allowedPids, processPanel, stopTask, subtreeIdsOf, taskAlive, keepAliveBusy, enforceKeepAlive, closeWaiting }
 }

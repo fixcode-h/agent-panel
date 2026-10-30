@@ -293,6 +293,12 @@ export function registerActionRoutes(s: TasksScope) {
 
   // 压缩上下文：让 CLI 把这个对话的会话压缩（不能压缩的 CLI 写一份摘要，下一轮开新会话带上）
   s.routes.post('/:id/compact', async (c) => {
+    const id = c.req.param('id')
+    const e = s.live.get(id)
+    // 正在回复：现有的 CLI 都没法不打断这一轮就压缩，等这一轮结束（界面上按钮这时是灰的）
+    if (e?.task.working) return s.bad(c, t('Agent 正在回复，这一轮结束后才能压缩'), 409)
+    // 回复完停在等下一句（保活）：先关掉等着的进程，压缩那一轮再续接会话
+    if (e) await s.closeWaiting(id, e)
     const task = await idleTask(c)
     if (task instanceof Response) return task
     if (!task.sessions[task.agentId] && !task.rewind) return s.bad(c, t('还没有会话，不需要压缩'))

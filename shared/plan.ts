@@ -48,13 +48,12 @@ export interface PlanItemInput {
   children?: PlanItemInput[]
 }
 
-const STATUSES: PlanStatus[] = ['pending', 'running', 'waiting', 'done', 'failed', 'skipped']
+const STATUSES: PlanStatus[] = ['pending', 'running', 'waiting', 'done', 'skipped']
 const STATUS_TEXT: Record<PlanStatus, string> = {
   pending: '待做',
   running: '进行中',
   waiting: '等待中',
   done: '完成',
-  failed: '失败',
   skipped: '跳过',
 }
 
@@ -247,12 +246,13 @@ export function runningItem(task: PlanTask): { item: PlanItem; step: PlanStep } 
 }
 
 /**
- * 计划滞后：有 running 的步骤，且它超过阈值没变化。waiting / failed 不参与：
- * 前者本来就该在等（跑 10 分钟 e2e 正常），后者已经是一个需要处理的状态
+ * 计划滞后：有 running 的步骤，且它超过阈值没变化。waiting 和要修的那一步不参与：
+ * 前者本来就该在等（跑 10 分钟 e2e 正常），后者已经点名要先修
  */
 export function staleStep(task: PlanTask, now = Date.now(), staleMs = PLAN_STALE_MS) {
   const cur = runningItem(task)
-  if (!cur) return undefined
+  // 要修的那一步（等的结果没成功）：「现在」那一行已经点名先修它，不再另提一条滞后
+  if (!cur || needsFix(cur.item)) return undefined
   const at = itemUpdatedAt(cur.item)
   if (at === undefined) return undefined
   const ms = now - at
@@ -265,7 +265,7 @@ export function staleStep(task: PlanTask, now = Date.now(), staleMs = PLAN_STALE
  * 把 planNotice 给的那一项和每行自己的判定分开，两者读同一个函数，不会出现「提示词说滞后、界面不标」
  */
 export function itemStale(item: PlanItem, now: number, staleMs = PLAN_STALE_MS): number | undefined {
-  if (item.status !== 'running') return undefined
+  if (item.status !== 'running' || needsFix(item)) return undefined
   const at = itemUpdatedAt(item)
   if (at === undefined) return undefined
   const ms = now - at
@@ -304,6 +304,9 @@ export function planNowText(task: PlanTask, now = Date.now()): string {
   if (!plan) return ''
   const order = (s: PlanStep) => plan.steps.indexOf(s) + 1
   const nextOf = (skip?: PlanStep) => plan.steps.find((s) => s !== skip && s.status === 'pending' && !s.wrapUp)
+  const fix = plan.steps.find((s) => needsFix(s) || s.children.some(needsFix))
+  if (fix)
+    return `现在：第 ${order(fix)} 步「${fix.title}」需要修复（${(fix.note || fix.children.find(needsFix)?.note || '').replace(FIX_PREFIX, '')}）：先查清原因、修好后重做，确实不做了就标成跳过并说明原因。`
   const cur = runningItem(task)
   if (cur) {
     const started = Date.parse(cur.item.startedAt)
@@ -311,9 +314,6 @@ export function planNowText(task: PlanTask, now = Date.now()): string {
     const next = nextOf(cur.step)
     return `现在：第 ${order(cur.step)} 步「${cur.item.title}」进行中（${mins < 1 ? '刚开始' : `已 ${mins} 分钟`}）${next ? `，下一步是「${next.title}」` : ''}。`
   }
-  const failed = plan.steps.find((s) => s.status === 'failed')
-  if (failed)
-    return `现在：第 ${order(failed)} 步「${failed.title}」失败了，先处理它（重做就把这一步重新标成进行中，不做了就标成跳过）。`
   const waiting = plan.steps.find((s) => s.status === 'waiting')
   if (waiting) {
     const what = waitingOn(waiting)
@@ -405,11 +405,26 @@ export function openPlan(task: Pick<Task, 'plans' | 'steps'>) {
 /** 面板写进 note 的「还在等它」前缀：结果回来时按它认出这是过时的面板说明，Agent 自己写的备注不动 */
 export const HOLD_PREFIX = '还在等它：'
 
+/**
+ * 计划里没有「失败」：等的结果没成功、工作流没走完，那一步退回进行中，备注以它开头写清原因，
+ * 对话去查问题、修好重做（用户 2026-10-30 定的，见 ADR 0032）
+ */
+export const FIX_PREFIX = '需要修复：'
+
 /** 面板写进 note 的「等的结果没成功」前缀：重跑成功后它同样过时，和 HOLD_PREFIX 一起清掉 */
-export const FAIL_PREFIX = '等的结果没成功：'
+export const FAIL_PREFIX = `${FIX_PREFIX}等的结果没成功：`
 
 /** 工作流没跑完时写进步骤备注的前缀（见 endRun）：收口后这条和「已完成」矛盾，一起清掉 */
-export const RUN_FAIL_PREFIX = '工作流没走完：'
+export const RUN_FAIL_PREFIX = `${FIX_PREFIX}工作流没走完：`
+
+/** 旧版本写的失败备注（那时还有「失败」状态）：认得出来，过时了照样清掉 */
+const LEGACY_FAIL = ['等的结果没成功：', '工作流没走完：']
+
+/** 这条备注是面板写的「需要修复」说明（含旧版本的写法） */
+export const isFixNote = (note: string) => note.startsWith(FIX_PREFIX) || LEGACY_FAIL.some((p) => note.startsWith(p))
+
+/** 这一步要修：进行中、备注是面板写的「需要修复」（等的结果没成功、工作流没走完） */
+export const needsFix = (x: { status: PlanStatus; note: string }) => x.status === 'running' && isFixNote(x.note)
 
 const clean = (s: unknown, max: number) =>
   String(s ?? '')
@@ -423,7 +438,8 @@ function asStatus(v: unknown): PlanStatus {
   if (s === 'in_progress' || s === 'active') return 'running'
   if (s === 'completed' || s === 'finished') return 'done'
   if (s === 'blocked') return 'waiting'
-  if (s === 'fail' || s === 'error') return 'failed'
+  // 没有「失败」：没做成就是还要做（修好重做），按进行中记；确实不做了用 skipped
+  if (s === 'fail' || s === 'failed' || s === 'error') return 'running'
   if (s === 'skip' || s === 'cancelled' || s === 'canceled') return 'skipped'
   return STATUSES.includes(s as PlanStatus) ? (s as PlanStatus) : 'pending'
 }
@@ -438,8 +454,9 @@ function setStatus(item: PlanItem, status: PlanStatus, now: string, since = now)
   if (item.status === status) return
   item.status = status
   if (status !== 'pending' && !item.startedAt) item.startedAt = since < now ? since : now
-  // failed 不是终态（还要重做或明确跳过），endAt 留给真正的结束
   item.endedAt = isSettled(status) ? now : ''
+  // 修好了（完成）或明确不做了（跳过）：「需要修复」的说明已经过时，Agent 自己写的备注不动
+  if (isSettled(status) && isFixNote(item.note)) item.note = ''
   touch(item, now)
 }
 
@@ -546,9 +563,9 @@ function rollUp(step: PlanStep, now: string) {
       .map((c) => c.startedAt)
       .filter(Boolean)
       .sort()[0] ?? now
-  // 子步骤里有失败：主步骤也是失败（需要处理），不能因为其他子步骤做完了就算完成
-  if (step.children.some((c) => c.status === 'failed')) {
-    if (step.status !== 'done') setStatus(step, 'failed', now, first)
+  // 子步骤里有要修的：主步骤也还在做（需要修复），不能因为其他子步骤做完了就算完成
+  if (step.children.some(needsFix)) {
+    if (step.status !== 'done') setStatus(step, 'running', now, first)
     return
   }
   if (step.children.every((c) => isSettled(c.status))) {
@@ -559,7 +576,7 @@ function rollUp(step: PlanStep, now: string) {
       .at(-1)
     return setStatus(step, 'done', last && last < now ? last : now, first)
   }
-  if (step.status === 'done' || step.status === 'failed') return
+  if (step.status === 'done') return
   if (step.children.some((c) => c.status === 'running')) setStatus(step, 'running', now, first)
   else if (step.children.some((c) => c.status === 'waiting') && step.status === 'pending')
     setStatus(step, 'waiting', now, first)
@@ -932,12 +949,12 @@ export function applyPlan(
   const held: string[] = []
   for (const s of plan.steps)
     for (const x of [...s.children, s])
-      // 结果还没回来就说完成 / 失败都不算：退回等待中，等面板收到结果再收口
-      if ((x.status === 'done' || x.status === 'failed') && waitingBefore.has(x)) {
+      // 结果还没回来就说完成不算：退回等待中，等面板收到结果再收口
+      if (x.status === 'done' && waitingBefore.has(x)) {
         setStatus(x, 'waiting', now)
         held.push(`「${x.title}」（等：${waitingOn(x).join('、')}）`)
-        // 子步骤退回了，主步骤也不能算完成 / 失败（rollUp 不会把已完成 / 失败的主步骤改回去）
-        if (x !== s && (s.status === 'done' || s.status === 'failed')) setStatus(s, 'waiting', now)
+        // 子步骤退回了，主步骤也不能算完成（rollUp 不会把已完成的主步骤改回去）
+        if (x !== s && s.status === 'done') setStatus(s, 'waiting', now)
       }
   // 先把面板能从真实事件挂上的等待挂好（子对话 / 已提到它的步骤），再判断「写着等待中却什么也没在等」：
   // 反过来会把 Agent 写 waiting、下一行才被 linkKids 认出来的步骤先改成进行中，等待就丢了
@@ -1210,14 +1227,14 @@ export function settleWait(
     }
     const failed = item.waits.filter((x) => x.state === 'failed')
     if (failed.length) {
-      // 失败不退回进行中：那是「对话正在做」的意思。标成失败，等对话决定重做（标 running）还是放弃（标 skipped）
-      setStatus(item, 'failed', now)
+      // 没有「失败」：退回进行中、写清要修什么，对话查问题修好重做；确实不做了由它标 skipped
+      setStatus(item, 'running', now)
       item.note = `${FAIL_PREFIX}${failed.map((x) => x.label || x.ref).join('、')}`
     } else if (item.status === 'waiting') {
       setStatus(item, 'done', now)
       // 等都成功了：holdWait 的「还在等它：…」和上一轮失败留下的「等的结果没成功：…」都已经过时，
       // 留着会让完成的步骤下面挂一行说明。只清面板写的这两种，Agent 自己写的备注（做了什么）留着
-      if (item.note.startsWith(HOLD_PREFIX) || item.note.startsWith(FAIL_PREFIX)) item.note = ''
+      if (item.note.startsWith(HOLD_PREFIX) || isFixNote(item.note)) item.note = ''
     }
     hit.push({ title: item.title, done: isSettled(item.status) })
     if (parent) rollUp(parent, now)
@@ -1354,9 +1371,14 @@ function linkKids(task: PlanTask, plan: TaskPlan, kids: PlanKid[], now: string) 
       changed = true
     }
     if (end && x.status === 'waiting' && !x.waits.some((w) => w.state === 'waiting')) {
-      // 失败与 settleWait 同一口径：下标失败（需要处理），不退回进行中
-      if (x.waits.some((w) => w.state === 'failed')) setStatus(x, 'failed', now)
-      else setStatus(x, 'done', end > x.startedAt ? end : now)
+      // 和 settleWait 同一口径：没成功就退回进行中、写清要修什么
+      if (x.waits.some((w) => w.state === 'failed')) {
+        setStatus(x, 'running', now)
+        x.note = `${FAIL_PREFIX}${x.waits
+          .filter((w) => w.state === 'failed')
+          .map((w) => w.label || w.ref)
+          .join('、')}`
+      } else setStatus(x, 'done', end > x.startedAt ? end : now)
     }
     if (parent) rollUp(parent, now)
   }
@@ -1471,8 +1493,8 @@ export function endRun(task: PlanTask, run: number, ok: boolean, error = '', now
   if (!plan || !step) return
   if (ok) setStatus(step, 'done', now)
   else {
-    // 工作流没走完：和等的结果失败同一口径（failed，需要对话处理），不是「还在做」
-    setStatus(step, 'failed', now)
+    // 工作流没走完：和等的结果没成功同一口径，退回进行中、写清要修什么
+    setStatus(step, 'running', now)
     step.note = clean(`${RUN_FAIL_PREFIX}${error}`, 300)
   }
   closeIfSettled(plan, now)
@@ -1498,14 +1520,14 @@ export function settlePlan(task: PlanTask, now = new Date().toISOString()): numb
     // 不再等结果：不记成「等成功」，也不留成「等失败」，就是不等了
     for (const w of item.waits) if (w.state === 'waiting') w.state = 'ok'
     // 面板写的「还在等它：…」「等的结果没成功：…」都已经过时，Agent 自己写的备注留着
-    if (item.note.startsWith(HOLD_PREFIX) || item.note.startsWith(FAIL_PREFIX)) item.note = ''
+    if (item.note.startsWith(HOLD_PREFIX) || isFixNote(item.note)) item.note = ''
   }
   for (const s of plan.steps) {
     for (const c of s.children) close(c)
     close(s)
     // 工作流步骤的子项是那次运行的节点（见 planChildren）：不跟着收口的话折叠头说完成、展开还挂着未完成的节点
     if (s.run !== undefined) settled += settleRunNodes(task, s.run, now)
-    if (s.note.startsWith(RUN_FAIL_PREFIX)) s.note = ''
+    if (isFixNote(s.note)) s.note = ''
   }
   if (!settled) return 0
   // doneAt 可能已经有（finish_plan 提前结束过）：closeIfSettled 不会重复写，折叠头按 leftSteps 变 done
@@ -1565,17 +1587,7 @@ export function finishPlan(
 /** 计划的文字版：交给 Agent 看（工具结果、每轮提示），带 id 方便它引用 */
 export function planText(task: PlanTask, plan: TaskPlan) {
   const mark = (s: PlanStatus) =>
-    s === 'done'
-      ? '[x]'
-      : s === 'running'
-        ? '[>]'
-        : s === 'waiting'
-          ? '[~]'
-          : s === 'failed'
-            ? '[!]'
-            : s === 'skipped'
-              ? '[-]'
-              : '[ ]'
+    s === 'done' ? '[x]' : s === 'running' ? '[>]' : s === 'waiting' ? '[~]' : s === 'skipped' ? '[-]' : '[ ]'
   const line = (x: PlanItem, pad: string) => {
     const wait = x.waits.filter((w) => w.state === 'waiting').map((w) => w.label || w.ref)
     const extra = [x.note, wait.length ? `等：${wait.join('、')}` : ''].filter(Boolean).join('；')

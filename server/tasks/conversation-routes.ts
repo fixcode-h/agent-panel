@@ -28,9 +28,7 @@ import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
 import { childAskDefaultOf, childAskInitial } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
-import { cancelWait } from '../exec/runner.ts'
 import { rescheduleIfUnwatched, setViewer, touchPresence } from '../presence.ts'
-import { settleReclaimed } from '../exec/reclaim.ts'
 import type { Live } from './types.ts'
 import { createWorktree } from '../exec/worktree.ts'
 import { existsSync } from 'node:fs'
@@ -307,12 +305,7 @@ export function registerConversationRoutes(s: TasksScope) {
     const e = s.live.get(id)
     if (!e && !(await s.getMeta(id))) return s.bad(c, t('任务不存在'), 404)
     if (e?.task.working) return s.bad(c, t('对话正在执行，先暂停这一轮再关闭 Agent'), 409)
-    if (e) {
-      if (!cancelWait(id)) s.stopTask(id, 'close')
-      await e.done?.catch(() => {})
-      // 计划没做完、落盘还写着执行中的，和页面宽限回收一样收口成已停止，界面不会一直转圈
-      if (!s.live.has(id)) await settleReclaimed(s.store, id, 'close')
-    }
+    if (e) await s.closeWaiting(id, e)
     // 执行位已经没了、进程登记还在（某条路径漏停、重启前留下的）：按登记结束，界面说关了就真的关了
     if (!s.live.has(id))
       await killTaskClis(id, killTree).catch((err) =>

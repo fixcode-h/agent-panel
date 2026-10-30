@@ -122,6 +122,14 @@ test('这一轮说完了、计划没做完也没在等别的：算停住了（�
   // 只剩面板加的「合回」那一步：归「催它 submit_merge」管
   assert.equal(planStalled(plan([{ status: 'done' }, { status: 'pending', wrapUp: 'merge' }])), false)
   assert.equal(planStalled({ ...stalled, working: true }), false)
-  // 失败的步骤（等的结果没成功）也算没做完：一轮结束停在这里要推它先处理（用户报过计划失败后对话不继续）
-  assert.equal(planStalled(plan([{ status: 'done' }, { status: 'failed', waits: [{ state: 'failed' }] }])), true)
+  // 要修的步骤（等的结果没成功，退回进行中）也算没做完：一轮结束停在这里要推它先修（用户报过计划失败后对话不继续）
+  assert.equal(
+    planStalled(
+      plan([
+        { status: 'done' },
+        { status: 'running', note: '需要修复：等的结果没成功：e2e', waits: [{ state: 'failed' }] } as never,
+      ]),
+    ),
+    true,
+  )
 })

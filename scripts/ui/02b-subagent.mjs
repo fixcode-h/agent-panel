@@ -394,7 +394,7 @@ await runShard(import.meta.filename, async (api) => {
         else {
           await chip.click()
           await settle(p)
-          await check(p, '上下文小块-会话栏收起', ['已使用', '空闲空间'])
+          await check(p, '上下文小块-会话栏收起', ['已使用', '空闲空间', '距自动压缩还剩'])
           await p.keyboard.press('Escape')
           await settle(p)
         }

@@ -22,6 +22,7 @@ import type { createClaims } from '../claims.ts'
  * 模块要用闭包里的新名字时：在这里加一项类型，在 scope 对象（lazyScope）里加一个同名取值函数（let 变量写成 [取值, 写入]）。
  */
 export interface TasksScope {
+  closeWaiting: (id: string, e: Live) => Promise<void>
   PLAN_NUDGE_MS: number
   READONLY: string
   activeChildren: (parentId: string) => Promise<number>

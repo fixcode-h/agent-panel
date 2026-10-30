@@ -8,7 +8,6 @@ import {
   GitBranch,
   Loader2,
   MessageSquare,
-  Shrink,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
@@ -107,7 +106,7 @@ export function TaskMeta({
     <div className="mx-auto mt-2 flex max-w-(--content-w) flex-wrap items-center gap-x-1 gap-y-1 px-1">
       {!hideContext && lines.length > 0 && <ContextChip lines={lines} />}
       {/* 会话栏收起时它的「上下文」细分挪到这里；流程图选了节点时上面已经按节点列，不重复 */}
-      {!inRail && !scope && <SessionContextChip task={task} />}
+      {!inRail && !scope && <SessionContextChip task={task} onTask={onTask} />}
       {!inRail && <TokenChip task={task} scope={scope} />}
       {!inRail && (
         <EnvChip
@@ -115,7 +114,6 @@ export function TaskMeta({
           projectName={projectName}
           projectPath={projectPath}
           workflowName={workflowName}
-          onTask={onTask}
           onOpenChild={onOpenChild}
         />
       )}
@@ -408,7 +406,7 @@ export function TokenUsage({ task, scope }: { task: Task; scope?: TaskStep[] }) 
 }
 
 /** 上下文小块：会话栏不在时放在输入框下面，显示占用和用量，点开是会话栏里那份细分 */
-function SessionContextChip({ task }: { task: Task }) {
+function SessionContextChip({ task, onTask }: { task: Task; onTask: (task: Task) => void }) {
   const ctx = useSessionContext(task)
   const { data } = ctx
   if (!data) return null
@@ -423,7 +421,7 @@ function SessionContextChip({ task }: { task: Task }) {
       </PopoverTrigger>
       <PopoverContent className="max-h-[min(560px,calc(100vh-96px))] w-[min(340px,calc(100vw-24px))] overflow-y-auto">
         <div className="p-3">
-          <SessionContextBody ctx={ctx} />
+          <SessionContextBody task={task} ctx={ctx} onTask={onTask} />
         </div>
       </PopoverContent>
     </Popover>
@@ -465,7 +463,6 @@ export function EnvChip({
   projectName,
   projectPath,
   workflowName,
-  onTask,
   onOpenChild,
   compact,
 }: {
@@ -473,7 +470,6 @@ export function EnvChip({
   projectName?: string
   projectPath?: string
   workflowName?: string
-  onTask: (task: Task) => void
   onOpenChild?: (id: string) => void
   /** 放在会话栏「环境」块的标题行：目录和分支那块已经列着了，入口只留一个小图标 */
   compact?: boolean
@@ -588,24 +584,6 @@ export function EnvChip({
           {limited.map((c) => (
             <LimitRow key={c} cli={c} named={limited.length > 1} />
           ))}
-          {task.mode === 'chat' && !task.simulated && idle && Object.keys(task.sessions).length > 0 && (
-            <button
-              type="button"
-              disabled={!idle}
-              title={t('让 Agent 把之前的对话压缩成摘要，腾出上下文')}
-              onClick={async () => {
-                try {
-                  onTask(await api.compactTask(task.id))
-                } catch (e) {
-                  toast.error((e as Error).message)
-                }
-              }}
-              className="-mx-1 flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-muted"
-            >
-              <Shrink className="h-3.5 w-3.5 shrink-0" />
-              {t('压缩上下文')}
-            </button>
-          )}
         </div>
       </PopoverContent>
     </Popover>

@@ -156,8 +156,9 @@ const planItem = {
     title: { type: 'string', description: '步骤名：要做的一件事，10–30 字' },
     status: {
       type: 'string',
-      enum: ['pending', 'running', 'waiting', 'done'],
-      description: '待做 / 进行中 / 等待中 / 完成',
+      enum: ['pending', 'running', 'waiting', 'done', 'skipped'],
+      description:
+        '待做 / 进行中 / 等待中 / 完成 / 跳过。没有「失败」：没做成就是还要修，保持进行中、查清原因修好重做；确实不做了才标跳过，note 写原因',
     },
     note: { type: 'string', description: '一句备注：在等什么、卡在哪；没有不写' },
     review: {
