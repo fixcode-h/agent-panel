@@ -457,7 +457,8 @@ await runShard('子对话与计划', async (api) => {
     )
     const rebornList = (await call('GET', `/tasks/${wtParent.id}/worktrees`)).items
     assert.equal(rebornList[0].branch, oldBranch, '状态栏上显示重建后的分支')
-    assert.equal(rebornList[0].state, 'active')
+    // 重建时是 active（上面已断言）；这一轮跑得快、又没有要合回的改动时，读到列表前可能已经收口成 merged
+    assert.ok(['active', 'merged'].includes(rebornList[0].state), `状态栏上的分支状态（${rebornList[0].state}）`)
     step('子对话工作区被回收后继续：自动重建同名分支并在新目录里执行')
     step('子对话标记完成：没合并时拦下，合并后删掉独立分支')
     // 子对话做完（测试跑通、只剩合回）调用 submit_merge 请父对话收尾：父对话 finish_child 合回自己的分支，
