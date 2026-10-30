@@ -15,10 +15,13 @@
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { availableParallelism, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fmtDuration } from './lib/duration.mjs'
 import { lastFailedShards, retryShards, saveShardResults } from './lib/shard-retry.mjs'
+import { writeFlakyReport } from './lib/flaky-report.mjs'
+import { concurrencyLine, suggestConcurrency } from './lib/concurrency.mjs'
+import { cleanTestEnv, cleanedLine } from './lib/test-env.mjs'
 import { UI_SHARD_COVERS } from './ui/covers.mjs'
 import { assertDemoBuildFresh } from './lib/demo-build-info.mjs'
 import { fileURLToPath } from 'node:url'
@@ -79,11 +82,17 @@ else
       for (const s of readdirSync(shots)) if (s.startsWith(prefix)) rmSync(path.join(shots, s), { force: true })
   }
 
-// 默认同时跑的分片不超过 CPU 核数：每个分片一个浏览器，挤在一起时页面变慢，一些时序敏感的步骤会偶发失败
-const limit = Math.max(
-  1,
-  Number(process.env.AGENT_PANEL_UI_CONCURRENCY ?? Math.min(shards.length, availableParallelism())),
-)
+// 同时跑的分片：CPU、可用内存（每片一个浏览器约 500M）和分片数取小，挤在一起时页面变慢，一些时序敏感的步骤会偶发失败；
+// AGENT_PANEL_UI_CONCURRENCY 只能再往下压（scripts/lib/concurrency.mjs）
+const conc = suggestConcurrency({
+  kind: 'ui',
+  units: shards.length,
+  env: process.env.AGENT_PANEL_UI_CONCURRENCY,
+  envName: 'AGENT_PANEL_UI_CONCURRENCY',
+})
+const limit = conc.value
+// 分片继承的环境：去掉会把服务指到真实数据目录、改 git 行为的变量（scripts/lib/test-env.mjs）
+const { env: shardEnv, removed } = cleanTestEnv()
 const timingDir = mkdtempSync(path.join(tmpdir(), 'agent-panel-ui-timings-'))
 const startedAt = Date.now()
 
@@ -113,7 +122,10 @@ if (unregistered.length || stale.length) {
   console.log('')
 }
 
-console.log(`界面检查：${shards.length} 个分片，最多同时跑 ${limit} 个\n`)
+console.log(`界面检查：${shards.length} 个分片，最多同时跑 ${limit} 个`)
+console.log(concurrencyLine('[ui]', conc))
+if (removed.length) console.log(cleanedLine('[ui]', removed))
+console.log('')
 
 /** 跑一个分片，收集它的全部输出（成功时只打印摘要，失败时原样打印） */
 const runShard = (file) =>
@@ -125,8 +137,9 @@ const runShard = (file) =>
     const child = spawn(process.execPath, [path.join(shardDir, file)], {
       cwd: root,
       env: {
-        ...process.env,
+        ...shardEnv,
         AGENT_PANEL_UI_TIMINGS: timingFile(file),
+        AGENT_PANEL_UI_SHARD_ID: name,
         // --verbose 看每一步的样子，等于 SHOTS=all（用户自己在环境里设的 SHOTS 不被覆盖）
         ...(verbose ? { SHOTS: 'all' } : {}),
       },
@@ -168,7 +181,9 @@ const worker = async () => {
 }
 await Promise.all(Array.from({ length: Math.min(limit, shards.length) }, worker))
 // 失败的分片串行再跑一次（scripts/lib/shard-retry.mjs）：只重跑失败的，不整轮重来
-const retried = retry ? await retryShards(results, runShard) : { results, flaky: [] }
+const retried = retry ? await retryShards(results, runShard) : { results, flaky: [], detail: [] }
+// 抖动报告整份替换这一类（scripts/lib/flaky-report.mjs）：没有抖动就清掉上一次留下的
+writeFlakyReport(root, 'ui', retried.detail, shards.length)
 results.splice(0, results.length, ...retried.results)
 results.sort((a, b) => a.file.localeCompare(b.file))
 saveShardResults(

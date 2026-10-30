@@ -51,7 +51,7 @@ test('分片重跑：只重跑失败的，重跑通过记成抖动，还失败�
   const runs = []
   const results = [
     { file: '01-a.mjs', name: 'a', code: 0 },
-    { file: '02-b.mjs', name: 'b', code: 1 },
+    { file: '02-b.mjs', name: 'b', code: 1, out: ['启动', '超时：等不到回复'] },
     { file: '03-c.mjs', name: 'c', code: 1 },
   ]
   const r = await retryShards(
@@ -64,6 +64,8 @@ test('分片重跑：只重跑失败的，重跑通过记成抖动，还失败�
   )
   assert.deepEqual(runs, ['02-b.mjs', '03-c.mjs'])
   assert.deepEqual(r.flaky, ['b'])
+  // 抖动报告的明细：第几次通过、第一次失败的输出末尾
+  assert.deepEqual(r.detail, [{ unit: 'b', attempts: 2, firstError: '启动\n超时：等不到回复' }])
   assert.deepEqual(
     r.results.map((x) => x.code),
     [0, 0, 1],

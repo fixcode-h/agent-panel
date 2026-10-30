@@ -84,8 +84,10 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 
 - **输出**：单测入口用自定义 reporter（`scripts/lib/test-reporter.mjs`）出结构化事件，终端只打每批结论、失败详情（每条最多 20 行）、抖动、慢用例（单条 > 2s）和最慢的 5 个文件；完整 TAP 写进 `logs/tests/unit-*.tap`。一次全量从约 50 万字节降到 3KB 左右。端到端、界面检查本来就只在失败时打全量输出。
 - **失败只重跑失败的**：单测失败的文件串行重跑，总共最多 3 次（`scripts/lib/test-results.mjs` 的 `MAX_ATTEMPTS`）；端到端、界面检查失败的分片串行再跑一次（`scripts/lib/shard-retry.mjs`）。重跑通过的记成「抖动」，醒目打出来、写进 `logs/tests/*-last.json`，退出码按最后一次算。抖动要去修（注入时钟、事件驱动、放宽到实测 p99 两倍），不能靠重跑兜着。
+- **抖动报告**：三个入口都把抖动的单元（试了几次、第一次报的什么错）写进同一份 `logs/tests/flaky-report.json`，每次用自己这一类整份替换（没有抖动就清空这一类，旧报告不会把干净的一次判红）。CI 的 test job 跑完单测后跑 `node scripts/flaky-check-report.mjs`：有抖动就判红，不只看退出码（`scripts/lib/flaky-report.mjs`）。
 - **改完只复测失败的**：还失败的记在 `logs/tests/unit-last.json` / `e2e-last.json` / `ui-last.json`，`npm run test:failed`、`--failed` 只跑它们。
-- **继承环境**：单测和端到端起进程前去掉 `ANTHROPIC_*`、`OPENAI_*`、`CLAUDE_CODE_*` 这类会改变 CLI 行为的变量（`scripts/lib/test-env.mjs`）。
+- **继承环境**：单测、端到端、界面检查起进程前去掉 `ANTHROPIC_*`、`OPENAI_*`、`CLAUDE_CODE_*` 这类会改变 CLI 行为的变量，面板自己的 `AGENT_PANEL_*`（测试入口的开关 `AGENT_PANEL_UNIT_*` / `E2E_*` / `UI_*` 保留）和 `GIT_CONFIG_*`、`GIT_DIR` 这类 git 变量，日志里按前缀列出去掉了哪些（`scripts/lib/test-env.mjs`）。分片额外带 `AGENT_PANEL_E2E_SHARD_ID` / `AGENT_PANEL_UI_SHARD_ID`。
+- **并发**：三个入口都用 `scripts/lib/concurrency.mjs` 的 `suggestConcurrency`，CPU、可用内存（`process.availableMemory`，会算进 cgroup；每个单元按单测 120M、e2e 600M、界面 500M 估，只用 70%）和单元数取小，日志打印「并发 N，由哪一项决定」。`AGENT_PANEL_UNIT_CONCURRENCY` 写了就照它开（调试用）；`AGENT_PANEL_E2E_CONCURRENCY`（e2e 另有默认上限 4）和 `AGENT_PANEL_UI_CONCURRENCY` 只是上限之一，写大了不会抬高，日志会写明没用上。
 - **用例报数**：见上面「分层边界与报数」；总数不设上限，`npm run lint` 只拦本次净新增（要写「测试预算:」理由），清理靠「测试验收」的「清理用例」定期一批做。
 - **串行清单**：`TIMING_FILES` 仍是最后手段，进清单要有证据；串行不等于稳定（`server/background.test.ts` 在串行批里也超过窗口）。
 
@@ -102,5 +104,5 @@ Node.js 20+、`tsx`（单测执行器）、Playwright chromium（界面检查）
 
 ## 待确认
 
-- 分层后缀（`*.integration.test.ts`）、自适应并发、用例级影响面选择、验收入口（`verify-local` / `flaky-check` / `ci-timings`）仍在 change `test-governance-budget-and-parallel-safety` 里，没有实现；ADR 0024 先落地了输出、重跑和预算这三件收益最大的。
-- `AGENT_PANEL_E2E_CONCURRENCY` 默认 4 是经验值。
+- 分层后缀（`*.integration.test.ts`）、用例级影响面选择、默认英文环境、验收入口（`verify-local` / `flaky-check` / `ci-timings`）仍在 change `test-governance-budget-and-parallel-safety` 里，没有实现；已经落地的是输出、重跑、报数（ADR 0024 / 0031）和 2026-10-30 的自适应并发、继承环境清理、抖动报告。
+- e2e 默认上限 4、各单元的内存估算是经验值。

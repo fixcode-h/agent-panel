@@ -36,6 +36,8 @@ export function saveShardResults(root, kind, failed, flaky) {
 export async function retryShards(results, run, { attempts = SHARD_ATTEMPTS, log = console.log } = {}) {
   const final = [...results]
   const flaky = []
+  /** 抖动报告用（scripts/lib/flaky-report.mjs）：第几次通过、第一次失败时输出的最后几行 */
+  const detail = []
   for (let i = 2; i <= attempts; i++) {
     const failing = final.filter((r) => r.code !== 0)
     if (!failing.length) break
@@ -43,9 +45,12 @@ export async function retryShards(results, run, { attempts = SHARD_ATTEMPTS, log
     for (const r of failing) {
       const again = await run(r.file)
       final[final.indexOf(r)] = again
-      if (again.code === 0) flaky.push(r.name)
+      if (again.code === 0) {
+        flaky.push(r.name)
+        detail.push({ unit: r.name, attempts: i, firstError: (r.out ?? []).slice(-8).join('\n') })
+      }
       log(`${again.code === 0 ? '✓ 重跑通过（抖动）' : '✗ 仍失败'}：${r.name}`)
     }
   }
-  return { results: final, flaky }
+  return { results: final, flaky, detail }
 }

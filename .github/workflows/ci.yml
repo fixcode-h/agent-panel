@@ -32,6 +32,8 @@ jobs:
       # 不能再传 --test-reporter=tap：单测入口自己就有 reporter，叠加会报「reporter 和 destination 数量对不上」。
       - run: npm run test:unit
       - run: cat logs/tests/unit-timing.tap logs/tests/unit-rest.tap > "$RUNNER_TEMP/unit-tap.txt" && node scripts/test-budget.mjs --tap "$RUNNER_TEMP/unit-tap.txt"
+      # 重跑通过的单测退出码是 0：读抖动报告，有抖动就判红（scripts/flaky-check-report.mjs）
+      - run: node scripts/flaky-check-report.mjs
       - run: npm run build
 
   # 端到端单独一个 job：scripts/e2e.mjs 内部并行跑各个分片（各自临时目录、端口和服务），
