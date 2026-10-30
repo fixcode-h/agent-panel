@@ -1,4 +1,5 @@
-import { Check, ChevronDown, Sparkles } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { Brain, Check, ChevronDown, Sparkles } from 'lucide-react'
 import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { getCli, type CliDefinition } from '@shared/clis'
 import { apiModelIdFor } from '@shared/accounts'
@@ -21,6 +22,7 @@ function ChipSelect({
   title,
   className,
   dot,
+  icon,
 }: {
   value: string
   options: Opt[]
@@ -29,6 +31,8 @@ function ChipSelect({
   className?: string
   /** 选项前的色块（选 CLI 时用 CLI 的颜色） */
   dot?: (value: string) => string
+  /** 按钮上选中项前的图标（思考强度用大脑） */
+  icon?: (value: string) => ReactNode
 }) {
   const cur = options.find((o) => o.value === value) ?? options[0]
   // 按钮上不要「（默认）」后缀，太长；列表里还标着
@@ -45,6 +49,7 @@ function ChipSelect({
         )}
       >
         {dot && <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: dot(cur?.value ?? '') }} />}
+        {icon?.(cur?.value ?? '')}
         <span className="truncate">{text}</span>
         <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
       </PopoverTrigger>
@@ -159,6 +164,7 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
           value={effortValue(def!, defEffort, modelEfforts(def!, run.model), run.effort)}
           options={efforts}
           onChange={(e) => onChange({ ...value, cli, effort: e })}
+          icon={(e) => <EffortIcon effort={e} />}
           className="max-w-[160px]"
         />
       )}
@@ -177,43 +183,26 @@ export function useEffortOf() {
   }
 }
 
-/**
- * 强度条亮几格（共三格）：按这一档在 CLI 强度列表里的位置折算，关掉思考是 0 格；
- * 不按名字判断（各 CLI 的档位名不一样）
- */
-function effortBars(cli: string, id: string) {
-  const ids = getCli(cli)?.efforts.map((e) => e.id) ?? []
-  const i = ids.indexOf(id)
-  if (!id || i < 0) return 0
-  if (id === 'off') return 0
-  const on = ids.filter((x) => x !== 'off')
-  return Math.max(1, Math.ceil(((on.indexOf(id) + 1) / on.length) * 3))
-}
-
-/** 三格强度条（设计稿）：由低到高三根，亮着的用强调色 */
-function EffortBars({ n }: { n: number }) {
+/** 思考强度前的大脑图标：关掉思考时变灰，开着的各档都用强调色（具体档位看旁边的字） */
+function EffortIcon({ effort }: { effort: string }) {
   return (
-    <span aria-hidden className="inline-flex h-[11px] items-end gap-0.5">
-      {[5, 8, 11].map((h, i) => (
-        <span
-          key={h}
-          className={cn('w-[3px] rounded-[1px]', i < n ? 'bg-accent' : 'bg-line-strong')}
-          style={{ height: h }}
-        />
-      ))}
-    </span>
+    <Brain
+      aria-hidden
+      className={cn('h-3.5 w-3.5 shrink-0', effort === 'off' ? 'text-subtle' : 'text-accent')}
+      strokeWidth={1.8}
+    />
   )
 }
 
-/** 模型按钮上的那一串：星芒图标 + 加粗模型名 + 强度条 + 强度字（输入框工具条、只读的角色模型共用） */
-function ModelFace({ model, cli, effort }: { model: string; cli: string; effort: string }) {
+/** 模型按钮上的那一串：星芒图标 + 加粗模型名 + 大脑图标 + 强度字（输入框工具条、只读的角色模型共用） */
+function ModelFace({ model, effort }: { model: string; effort: string }) {
   return (
     <>
       <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={1.8} />
       <span className="min-w-0 truncate font-semibold text-fg">{model}</span>
       {effort && (
         <>
-          <EffortBars n={effortBars(cli, effort)} />
+          <EffortIcon effort={effort} />
           <span className="shrink-0 text-subtle">{effortShort(effort)}</span>
         </>
       )}
@@ -264,7 +253,7 @@ export function RoleModelBadge({ agent }: { agent: { cli: string; model: string;
       className={FACE}
       title={t('模型和思考强度跟着角色设置：{model}', { model: [r.model, effort].filter(Boolean).join(' · ') })}
     >
-      <ModelFace model={name} cli={r.cli} effort={effort} />
+      <ModelFace model={name} effort={effort} />
     </span>
   )
 }
