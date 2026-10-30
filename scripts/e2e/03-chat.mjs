@@ -164,6 +164,39 @@ await runShard('对话与续接', async (api) => {
   assert.equal(empAgent.length, 1, '只有模型自己那一轮，面板没有再推')
   assert.match(empAgent[0].text, /我先把工作区更新到最新/)
 
+  // 回放真实 Claude Code 录下的输出（scripts/fake-cli/replay.mjs）：面板按原来的事件顺序解析出正文、工具调用和用量；
+  // 录像只有一轮，面板再起一轮时假 CLI 报错，不会悄悄当成成功
+  step('回放录下的真实 CLI 输出：正文、工具调用、用量照常解析；录像用完再跑报错')
+  writeFileSync(`${log}.replay-src`, path.join(root, 'server/exec/fixtures/claude-stream.jsonl'))
+  try {
+    let rep = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: def.id,
+      cli: 'claude',
+      prompt: '把购物车角标改成订阅数量',
+    })
+    rep = await waitDone(rep.id)
+    const said = rep.messages.filter((m) => m.role === 'agent')
+    assert.ok(
+      said.some((m) => m.text.includes('改好了：角标现在订阅购物车数量。')),
+      `回放的最后一句要显示出来：${JSON.stringify(said.map((m) => m.text))}`,
+    )
+    const tools = said.flatMap((m) => m.tools.map((t) => t.kind))
+    assert.ok(tools.includes('read') && tools.includes('edit'), `回放里的读取和修改要解析成工具调用：${tools}`)
+    assert.ok(rep.usage.outputTokens > 0, '回放的用量记进对话')
+    await call('POST', `/tasks/${rep.id}/messages`, { text: '再改一处' })
+    rep = await waitDone(rep.id)
+    assert.ok(
+      rep.messages.some(
+        (m) => (m.error || m.role === 'system' || m.role === 'agent') && /回放录像只有 1 轮/.test(m.text),
+      ),
+      `录像用完：报错要显示出来；现有消息：${JSON.stringify(rep.messages.map((m) => [m.role, m.text.slice(0, 40)]))}`,
+    )
+  } finally {
+    rmSync(`${log}.replay-src`, { force: true })
+  }
+
   // 一个字都没回的一轮（CLI 报成功、但没有正文也没有用量）：不能算完成，也不自动重试，直接报错。
   // 真实现场是带图请求被网关吞掉：以前那一轮被标成已完成并保活等下一句，用户之后发来的消息全落进死回合
   step('一个字都没回的一轮：报错显示出来，按失败结束，不自动重试')

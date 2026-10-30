@@ -6,7 +6,7 @@
  *
  * 运行：npm run test:e2e
  * 只跑某几个分片：npm run test:e2e -- 03 07（按文件名前缀匹配）
- * 限制并发：AGENT_PANEL_E2E_CONCURRENCY=3 npm run test:e2e（默认最多同时跑 4 个）
+ * 并发：按 CPU / 内存取小，最多 4 个；AGENT_PANEL_E2E_CONCURRENCY=3 npm run test:e2e 再往下压
  * 打印每个分片的全部步骤：npm run test:e2e -- --verbose
  */
 import { spawn } from 'node:child_process'
@@ -53,7 +53,8 @@ const DEFAULT_CONCURRENCY = 4
 
 const conc = suggestConcurrency({
   kind: 'e2e',
-  units: Math.min(shards.length, DEFAULT_CONCURRENCY),
+  units: shards.length,
+  defaultCap: DEFAULT_CONCURRENCY,
   env: process.env.AGENT_PANEL_E2E_CONCURRENCY,
   envName: 'AGENT_PANEL_E2E_CONCURRENCY',
 })

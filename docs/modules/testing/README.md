@@ -80,6 +80,10 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 5. **加了就写理由**：净新增用例时提交说明写「测试预算:」一句话（覆盖了什么、为什么现有用例覆盖不到）；能合进已有用例的先合；不能因为「跑得慢」删测试。
 6. **加 e2e 分片**：场景放 `scripts/e2e/` 下的 NN-主题.mjs，调 `runShard()`；临时目录、端口、服务、看门狗都在 `harness.mjs` 的 `setupBase()` 里，别在分片里自己起服务或写死端口。加界面分片还要登记 `scripts/ui/covers.mjs`。
 
+## 回放录像
+
+假 CLI 有回放模式（`scripts/fake-cli/replay.mjs`）：`FAKE_REPLAY=<录像.jsonl>`，或者 e2e 用例把录像路径写进 `<FAKE_CLI_LOG>.replay-src`，Claude Code 的每次执行按录像回放下一轮（到 `result` 为止，带 `_t` 时按原间隔 10 倍速吐），录像用完再被调用报错。录像可以是真实 CLI 的原始输出（`server/exec/fixtures/claude-stream.jsonl`，`03-chat` 里回放它），也可以用 `node scripts/replay-from-export.mjs` 从面板导出的对话包转出来（`scripts/lib/replay-export.mjs`）。转出来的录像只复现事件顺序和时序，面板自己的工具不会真的被调用。
+
 ## 输出、失败重跑和报数（[ADR 0024](../../adr/0024-test-output-retry-budget.md)、[ADR 0031](../../adr/0031-test-count-report-not-cap.md)）
 
 - **输出**：单测入口用自定义 reporter（`scripts/lib/test-reporter.mjs`）出结构化事件，终端只打每批结论、失败详情（每条最多 20 行）、抖动、慢用例（单条 > 2s）和最慢的 5 个文件；完整 TAP 写进 `logs/tests/unit-*.tap`。一次全量从约 50 万字节降到 3KB 左右。端到端、界面检查本来就只在失败时打全量输出。
@@ -87,7 +91,7 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 - **抖动报告**：三个入口都把抖动的单元（试了几次、第一次报的什么错）写进同一份 `logs/tests/flaky-report.json`，每次用自己这一类整份替换（没有抖动就清空这一类，旧报告不会把干净的一次判红）。CI 的 test job 跑完单测后跑 `node scripts/flaky-check-report.mjs`：有抖动就判红，不只看退出码（`scripts/lib/flaky-report.mjs`）。
 - **改完只复测失败的**：还失败的记在 `logs/tests/unit-last.json` / `e2e-last.json` / `ui-last.json`，`npm run test:failed`、`--failed` 只跑它们。
 - **继承环境**：单测、端到端、界面检查起进程前去掉 `ANTHROPIC_*`、`OPENAI_*`、`CLAUDE_CODE_*` 这类会改变 CLI 行为的变量，面板自己的 `AGENT_PANEL_*`（测试入口的开关 `AGENT_PANEL_UNIT_*` / `E2E_*` / `UI_*` 保留）和 `GIT_CONFIG_*`、`GIT_DIR` 这类 git 变量，日志里按前缀列出去掉了哪些（`scripts/lib/test-env.mjs`）。分片额外带 `AGENT_PANEL_E2E_SHARD_ID` / `AGENT_PANEL_UI_SHARD_ID`。
-- **并发**：三个入口都用 `scripts/lib/concurrency.mjs` 的 `suggestConcurrency`，CPU、可用内存（`process.availableMemory`，会算进 cgroup；每个单元按单测 120M、e2e 600M、界面 500M 估，只用 70%）和单元数取小，日志打印「并发 N，由哪一项决定」。`AGENT_PANEL_UNIT_CONCURRENCY` 写了就照它开（调试用）；`AGENT_PANEL_E2E_CONCURRENCY`（e2e 另有默认上限 4）和 `AGENT_PANEL_UI_CONCURRENCY` 只是上限之一，写大了不会抬高，日志会写明没用上。
+- **并发**：三个入口都用 `scripts/lib/concurrency.mjs` 的 `suggestConcurrency`，CPU、可用内存（`process.availableMemory`，会算进 cgroup；每个单元按单测 120M、e2e 600M、界面 500M 估，只用 70%）和单元数取小，e2e 另有默认上限 4，日志打印「并发 N，由哪一项决定」。只管测试进程，和面板里对话的执行无关；用户 2026-10-30 定为一直开着、不设开关。`AGENT_PANEL_UNIT_CONCURRENCY` 写了就照它开（调试用）；`AGENT_PANEL_E2E_CONCURRENCY` 和 `AGENT_PANEL_UI_CONCURRENCY` 只能再往下压，写大了日志会写明没用上。
 - **用例报数**：见上面「分层边界与报数」；总数不设上限，`npm run lint` 只拦本次净新增（要写「测试预算:」理由），清理靠「测试验收」的「清理用例」定期一批做。
 - **串行清单**：`TIMING_FILES` 仍是最后手段，进清单要有证据；串行不等于稳定（`server/background.test.ts` 在串行批里也超过窗口）。
 

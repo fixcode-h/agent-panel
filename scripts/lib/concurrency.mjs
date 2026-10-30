@@ -48,6 +48,8 @@ const positive = (v) => {
 export function suggestConcurrency({
   kind,
   units,
+  /** 额外的默认上限（e2e 的 4）；0 表示没有 */
+  defaultCap = 0,
   env,
   envName,
   mode = 'cap',
@@ -58,7 +60,7 @@ export function suggestConcurrency({
   const per = UNIT_MEMORY[kind] ?? UNIT_MEMORY.unit
   const cpu = Math.max(1, Math.ceil(cpus * cpuFactor))
   const memory = Math.max(1, Math.floor((memoryBytes * MEMORY_SHARE) / per))
-  const count = Math.max(1, units)
+  const count = Math.max(1, defaultCap ? Math.min(units, defaultCap) : units)
   const asked = positive(env)
   const facts = `CPU ${cpus} 核 → ${cpu}，可用内存 ${(memoryBytes / 1024 ** 3).toFixed(1)}G → ${memory}，单元 ${count}`
   if (asked && mode === 'override') {

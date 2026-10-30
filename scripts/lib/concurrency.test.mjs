@@ -39,3 +39,8 @@ test('环境变量的非法值（空、0、负数、非数字）按没写处理�
     assert.equal(suggestConcurrency({ ...base, env }).value, 8, String(env))
   assert.equal(suggestConcurrency({ ...base, memoryBytes: 0 }).value, 1)
 })
+
+test('默认上限（e2e 的 4）和 CPU、内存一起取小', () => {
+  assert.equal(suggestConcurrency({ ...base, defaultCap: 4 }).value, 4)
+  assert.equal(suggestConcurrency({ ...base, defaultCap: 4, units: 2 }).value, 2)
+})
