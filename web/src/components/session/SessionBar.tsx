@@ -43,14 +43,6 @@ export function SessionBar({
   const worktree = task.worktree
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overscroll-contain p-3" data-session-bar>
-      <StatusCard task={task} kids={kids} onOpenChild={onOpenChild} />
-      {(task.parentTaskId || !!kids?.length) && (
-        <CollabCard
-          task={task}
-          kidsStamp={(kids ?? []).map((k) => `${k.id}:${k.status}:${k.working}:${k.turnDoneAt ?? ''}`).join('|')}
-          onOpenChild={onOpenChild}
-        />
-      )}
       <SessionCard id="env" title={t('环境')} trailing={env}>
         <SessionRow
           icon={worktree ? <Split /> : <Monitor />}
@@ -73,6 +65,16 @@ export function SessionBar({
       <SessionCard id="context" title={t('上下文')}>
         <SessionContextBody task={task} ctx={ctx} onTask={onTask} />
       </SessionCard>
+
+      {/* 状态、协作放在上下文下面（用户 2026-10-30 定的）：先看环境和上下文，再看为什么停在这里、父子之间来往了什么 */}
+      <StatusCard task={task} kids={kids} onOpenChild={onOpenChild} />
+      {(task.parentTaskId || !!kids?.length) && (
+        <CollabCard
+          task={task}
+          kidsStamp={(kids ?? []).map((k) => `${k.id}:${k.status}:${k.working}:${k.turnDoneAt ?? ''}`).join('|')}
+          onOpenChild={onOpenChild}
+        />
+      )}
 
       <SessionCard id="tokens" title={t('Token 用量')}>
         <TokenUsage task={task} />

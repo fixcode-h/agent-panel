@@ -4,7 +4,15 @@ import { type ConvState, taskDeleted } from '../../shared/task.ts'
 import { steerTask } from '../exec/runner.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
-import { activePlan, bindWait, ensureChildStep, settleWait, syncKids, waitNote } from '../../shared/plan.ts'
+import {
+  activePlan,
+  bindWait,
+  releaseParentWait,
+  ensureChildStep,
+  settleWait,
+  syncKids,
+  waitNote,
+} from '../../shared/plan.ts'
 import type { PlanWait } from '../../shared/schema.ts'
 import type { TasksScope } from './scope.ts'
 
@@ -174,6 +182,13 @@ export function createChildMessages(sc: TasksScope) {
     const child = sc.live.get(id)?.task ?? (await sc.store.get(id))
     if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
     if (child.imported) return { ok: false, info: sc.READONLY }
+    // 父对话回话了：子对话计划里在等父对话安排修复的那一步退回进行中，让它重跑验证（见 releaseParentWait）。
+    // 不在跑的子对话先落盘，下面 wakeConv 从盘上读
+    if (kind && releaseParentWait(child).length) {
+      const e = sc.live.get(id)
+      if (e) e.rev++
+      else await sc.store.update(child.id, child)
+    }
     const parent = kind ? (sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))) : undefined
     // 回答是「用户的决定：」换行再写答案：标题里接成一行
     const subject = kind === 'answer' ? message.replace(/：\n/, '：') : message

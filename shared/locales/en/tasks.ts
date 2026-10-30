@@ -1160,6 +1160,11 @@ export const EN_TASKS: Record<string, string> = {
   '让它接着做：重新占执行位，从停下的地方继续':
     'Let it keep working: take the run slot again and continue where it stopped',
   '已终止子任务「{title}」': 'Stopped subtask "{title}"',
+  '已终止工作流，对话会决定这次的改动保留还是清理':
+    'Workflow stopped. The conversation will decide whether to keep or clean up this run’s changes',
+  终止工作流: 'Stop workflow',
+  '只终止这次工作流运行，对话不停；这次运行改的文件由对话决定保留还是清理':
+    'Stop only this workflow run, not the conversation. The conversation decides whether to keep or clean up the files this run changed',
   终止子任务: 'Stop subtask',
   '终止子任务：在跑的马上结束，排队的不再开始，按「已终止」交回给对话':
     'Stop subtask: a running one ends now, a queued one never starts, and it is handed back to the conversation as stopped',

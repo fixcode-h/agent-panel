@@ -10,6 +10,8 @@ import {
   bindRun,
   bindWait,
   endRun,
+  PARENT_FIX_REF,
+  releaseParentWait,
   finishPlan,
   holdWait,
   inputUnhandled,
@@ -262,6 +264,13 @@ test('等待：挂上后台命令，成功自动完成；没成功退回进行�
   assert.equal(activePlan(task)!.steps[1].status, 'done')
   // 完成的步骤不能再挂等待
   assert.match(bindWait(task, '2', { kind: 'child', ref: 'c', label: 'x' }), /已经结束/)
+  // 不是自己改出来的报错交给父对话：那一步等父对话通知，父对话回话时退回进行中重跑验证（不直接算完成）
+  bindWait(task, '3', { kind: 'parent', ref: PARENT_FIX_REF, label: '父对话安排修复' })
+  assert.equal(activePlan(task)!.steps[2].status, 'waiting')
+  assert.deepEqual(releaseParentWait(task), ['写文档'])
+  assert.equal(activePlan(task)!.steps[2].status, 'running')
+  assert.match(activePlan(task)!.steps[2].note, /重跑/)
+  assert.deepEqual(releaseParentWait(task), [], '没在等父对话时什么都不动')
 })
 
 test('子步骤在等子对话：结果回来子步骤完成，主步骤跟着收', () => {

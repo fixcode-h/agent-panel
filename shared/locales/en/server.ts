@@ -532,4 +532,5 @@ export const EN_SERVER: Record<string, string> = {
   'Blender 执行这段代码时卡住或退出了，已重启，场景回到上一次保存的样子：{error}':
     'Blender hung or quit while running this code. It was restarted and the scene is back to the last save: {error}',
   还没有模型: 'No model yet',
+  这次工作流运行已经结束了: 'This workflow run has already ended',
 }

@@ -752,6 +752,7 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起的�
         { id: 'h2', title: '已完成的子任务', slot: 'sub', interrupted: true, status: 'done' },
       ] as unknown as Task['steps'],
       runs: [{ id: 1, workflowName: '修复 Bug', status: 'stopped' }] as unknown as Task['runs'],
+      stoppedJobs: [{ name: 'e2e', command: 'npm run test:e2e' }],
     },
     ['改侧栏'],
   )
@@ -761,6 +762,8 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起的�
   assert.match(note, /「查日志」（id h1）[\s\S]*resume/)
   assert.doesNotMatch(note, /已完成的子任务/, '做完的子任务不列')
   assert.match(note, /「修复 Bug」[\s\S]*start_plan/)
+  // 一起停掉的后台命令不会再推回结果：写明不要等，要结果就重新启动
+  assert.match(note, /「e2e」（npm run test:e2e）[\s\S]*不要等[\s\S]*run_background/)
   // 没有可列的：只有一句续接说明
   assert.equal(resumeNote({ stopReason: 'user', steps: [], runs: [] }).split('\n').length, 1)
 })

@@ -1391,7 +1391,7 @@ export const childStage = (x: ChildEntry) => stageOf(childState(x))
  * resumed：面板这次连带拉起来的子对话标题
  */
 export function resumeNote(
-  task: Pick<Task, 'stopReason' | 'steps' | 'runs'> & { plans?: Task['plans'] },
+  task: Pick<Task, 'stopReason' | 'steps' | 'runs'> & { plans?: Task['plans']; stoppedJobs?: Task['stoppedJobs'] },
   resumed: string[] = [],
 ): string {
   const lines = [
@@ -1411,6 +1411,11 @@ export function resumeNote(
   if (runs.length)
     lines.push(
       `- 中断时没跑完的工作流：${runs.map((r) => `「${r.workflowName || r.workflowId}」`).join('、')}。计划里绑着它的那一步已退回进行中（需要修复），还要跑就用 start_plan 重新启动那一步。`,
+    )
+  const jobs = task.stoppedJobs ?? []
+  if (jobs.length)
+    lines.push(
+      `- 中断时一起停掉的后台命令：${jobs.map((j) => `「${j.name}」（${j.command.split('\n')[0].slice(0, 120)}）`).join('、')}。它们不会再推回结果，不要等；还需要结果就用 run_background 重新启动，不需要了就在计划里把等它的那一步改掉。`,
     )
   return lines.join('\n')
 }

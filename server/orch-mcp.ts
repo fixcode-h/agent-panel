@@ -402,6 +402,20 @@ export function orchTools(o: Orchestra) {
               required: ['id', 'message'],
             },
           },
+          {
+            name: 'stop_workflow',
+            title: '终止子对话的工作流',
+            description:
+              '终止子对话里 start_plan 正在跑的工作流：方向错了、已经不需要、卡住不动时用。只停这次运行，子对话本身不停；它会收到「工作流被终止」和这次运行改了哪些文件，由它决定保留还是清理。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: '子对话 id' },
+                reason: { type: 'string', description: '为什么终止，一句话（会交给子对话）' },
+              },
+              required: ['id', 'reason'],
+            },
+          },
         ]
       : []),
     ...(o.inlineEdit
@@ -535,6 +549,15 @@ export function orchTools(o: Orchestra) {
                   items: { type: 'string' },
                   description: 'question 为 true 时可选的几种做法（2–4 个，每个一句话），用户可以直接点选',
                 },
+                ...(o.plans
+                  ? {
+                      wait_fix: {
+                        type: 'string',
+                        description:
+                          '编译 / 测试报错不是你改出来的、要父对话安排别的子对话修时，写被它卡住的计划步骤 id：面板把这一步标成等父对话通知，你接着做计划里别的步骤，不要停下干等；text 里写清报错原文、出错的文件和为什么判断不是你改的',
+                      },
+                    }
+                  : {}),
               },
               required: ['text'],
             },
@@ -1008,6 +1031,12 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const r = await o.sendToConversation(id, message, str(a?.step).trim(), routeOf(a?.route))
       return text(r.info, !r.ok)
     }
+    case 'stop_workflow': {
+      const id = str(a?.id).trim()
+      if (!id) return text('id 要写：子对话的 id', true)
+      const r = o.stopConversationWorkflow(id, str(a?.reason).trim() || '父对话决定终止这次运行')
+      return text(r.info, !r.ok)
+    }
     case 'run_background': {
       const command = str(a?.command).trim()
       if (!command) return text('command 是空的：写要执行的命令', true)
@@ -1078,7 +1107,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const body = str(a?.text).trim()
       if (!body) return text('text 是空的', true)
       const options = Array.isArray(a?.options) ? a.options.map(String).filter((x: string) => x.trim()) : undefined
-      const r = await o.toParent(body, a?.question === true, options)
+      const r = await o.toParent(body, a?.question === true, options, undefined, str(a?.wait_fix).trim() || undefined)
       return text(r.info, !r.ok)
     }
     case 'suggest_next_step': {
@@ -1249,7 +1278,7 @@ export function orchHint(o: Orchestra) {
   // 对话里派完子任务结束这一轮就行，结果自动交回；工作流节点要自己用 wait_agents 取
   const collect = o.autoReturn ? '派完结束这一轮，结果会自动交回' : '再用 wait_agents 取结果'
   if (o.planning)
-    return `（你有面板工具 panel：${o.parentOf ? 'finish_child 收到子对话的收尾请求时合回并结束它；' : ''}${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话（用户的一条消息只交给关联最紧密的一个子对话）；` : ''}${o.ueBuild === 'parent' ? 'request_build 收到编译申请时向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    return `（你有面板工具 panel：${o.parentOf ? 'finish_child 收到子对话的收尾请求时合回并结束它；' : ''}${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话（用户的一条消息只交给关联最紧密的一个子对话）、stop_workflow 终止子对话正在跑的工作流；` : ''}${o.ueBuild === 'parent' ? 'request_build 收到编译申请时向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   if (o.coordinator)
     return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它（用户的一条消息只交给关联最紧密的一个子对话），需要新建就用 create_conversation；${o.parentOf ? 'finish_child 收到子对话的收尾请求时合回并结束它；' : ''}${o.ueBuild === 'parent' ? '收到编译申请时用 request_build 向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}${bg}get_status 查看节点状态；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   return o.self.endsWith('@main')

@@ -3,7 +3,7 @@ import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { convStateText, newTask } from '../shared/task.ts'
 import { activePlan, applyPlan } from '../shared/plan.ts'
-import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
+import { runEngineTurn, stopPlan, type AgentCall, type EngineHost } from '../shared/engine.ts'
 
 /**
  * 项目对话：Agent 在对话里直接执行，或者用 start_plan 按工作流执行一次计划；
@@ -107,6 +107,45 @@ test('对话里启动计划：同步跑完工作流，再把结果交回同一�
   assert.equal(talks.length, 2, '对话一轮 + 计划结果一轮，不再追要总结')
   assert.equal(talks[1].sessionKey, 'm')
   assert.equal(log.filter((c) => !!c.step).length, 2, '两个节点各执行一次')
+})
+
+test('终止对话里的工作流：只停这次运行，后面的节点不再跑，改了哪些文件交回对话决定留不留', async () => {
+  const w = workflow()
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '做功能' } as never, undefined, '', 't2'),
+    id: 't2',
+  } as Task
+  const log: AgentCall[] = []
+  let turn = 0
+  const h = host(task, log, async (call) => {
+    if (call.step) {
+      // 节点调用带着这次运行的终止信号：终止时正在跑的节点跟着结束
+      assert.ok(call.signal, '工作流节点要带上运行的终止信号')
+      assert.equal(stopPlan('t2', '方向错了'), true)
+      assert.equal(call.signal!.aborted, true)
+      return { ok: false, stopped: true, error: '' }
+    }
+    if (turn++ === 0) {
+      call.orch!.plan(w.id, '做功能')
+      return { ok: true, text: '开始处理' }
+    }
+    assert.match(call.prompt, /### 工作流被终止\n原因：方向错了/)
+    assert.match(call.prompt, /src\/a\.ts \| 3/, '这次运行改的文件交回对话')
+    assert.match(call.prompt, /由你决定这些改动怎么处理/)
+    return { ok: true, text: '撤回了 src/a.ts' }
+  })
+  h.agents = [agent('m', '协调', { canPlan: true }), agent('w', '开发')]
+  h.reviewDiff = async (since) => ({ snapshot: 's1', stat: since ? ' src/a.ts | 3 +++' : '', diff: '' })
+
+  await runEngineTurn(h)
+  assert.equal(task.status, 'done', '对话本身没停')
+  assert.equal(task.runs[0].status, 'stopped')
+  assert.deepEqual(
+    log.filter((c) => !!c.step).map((c) => c.step!.id),
+    ['a'],
+    '终止后「验收」不再开始',
+  )
+  assert.equal(stopPlan('t2', '再停一次'), false, '运行结束后没有可停的')
 })
 
 test('对话 Agent 没开「按工作流执行计划」：没有 start_plan 能力，直接回答', async () => {
