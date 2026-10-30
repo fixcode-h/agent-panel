@@ -1138,6 +1138,17 @@ body,
     transform: none;
   }
 }
+/* 轮次导航的预览卡片（TurnRail）：从横杠那边往左轻轻滑出 */
+@keyframes turn-peek-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 
 /* 打开对话时加载日志新出现的一行：淡入并轻微上移，160ms 就够，不做花哨动画 */
 @keyframes trace-line-in {
@@ -1559,6 +1570,15 @@ html [data-sonner-toast][data-styled='true'] {
 .activity-bar {
   background-color: color-mix(in oklab, var(--rail) 95%, var(--fg));
   box-shadow: inset -1px 0 0 var(--line);
+}
+/*
+ * 会话侧栏让开时（功能页、侧栏收起）页面面板左边留和上、右、下一样的 0.5rem 间距，
+ * 不贴着图标栏；会话侧栏在时它本身就是左边的留白，不再加
+ */
+@media (width >= 48rem) {
+  :not(:has(> [data-sidebar])) > .page-area {
+    padding-left: 0.5rem;
+  }
 }
 /* 图标栏分隔线：bg-line 在浅色图标栏上几乎看不见，按前景色调一点出来，深浅两套都看得到 */
 .activity-sep {
