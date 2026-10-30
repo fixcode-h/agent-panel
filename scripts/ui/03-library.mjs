@@ -226,6 +226,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 功能面板能收起，从标题栏的按钮再打开
   await report.getByRole('button', { name: '收起功能面板' }).click()
   if (await p.locator('[data-analysis-panel]').count()) errors.push('AI 分析：功能面板收起后还在')
+  // 收起后右栏换回项目文件：窗口里的文件栏默认比对话页窄（最宽 320），分析对话占主体（用户 2026-10-30 要求）
+  {
+    const filesW = await p.evaluate(() => {
+      const rail = [...document.querySelectorAll('[role="dialog"] [data-task-panel]')].find(
+        (el) => el.getBoundingClientRect().width > 0,
+      )
+      return rail ? Math.round(rail.getBoundingClientRect().width) : 0
+    })
+    if (!filesW || filesW > 320) errors.push(`AI 分析：窗口里的项目文件栏宽 ${filesW}px，默认应不超过 320px`)
+  }
   await check(p, 'AI分析-收起功能面板')
   await p.getByRole('dialog').getByRole('button', { name: '分析报告' }).first().click()
   await report.getByText('工作流优化', { exact: true }).waitFor({ timeout: 5000 })
