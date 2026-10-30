@@ -154,6 +154,17 @@ async function takeSteer(text) {
         JSON.stringify({ kind, id, via: 'steer', got, at: Date.now() }) + '\n',
       )
   }
+  // 用户点名收尾的子对话（FINISH_CHILD:id）以插话进来时同样马上办：父对话正在处理子对话的上报时，
+  // 用户这条消息会插进这一轮，只认本轮 input 的话 finish_child 永远不会被调用（CI 上父对话正好在跑时偶发超时）
+  const forced = /FINISH_CHILD:(\S+)/.exec(text)?.[1]
+  if (forced) {
+    const got = await panelCall('finish_child', { id: forced })
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(
+        process.env.FAKE_CLI_LOG + '.finish',
+        JSON.stringify({ kind, id: forced, via: 'marker', got }) + '\n',
+      )
+  }
   // 收尾请求办完（finish_child 返回、.finish 记下）才算等到：收到就放掉的话，HOLD_STEER 那一轮
   // 最多 1 秒后就结束、进程退出，finish_child 还在合并，.finish 那行来不及写，用例在「以插话交给父对话」那步偶发失败
   if (wrapRequestIds(text).length) steerCount++
