@@ -41,20 +41,23 @@ function runDuration(task: Task, run: number, now: number) {
 }
 
 /**
- * 主 Agent 对话流里代表一次工作流运行的卡片：节点输出不直接铺在对话里，
- * 点开在右边按节点看这一次运行的对话
+ * 对话流里代表一次工作流运行的卡片：节点输出不直接铺在对话里。
+ * 点卡片和标题栏「流程图」一样切到当前对话的流程图，点某个节点胶囊就在流程图里选中那一步
  */
 function RunCardBase({
   task,
   run,
   name,
   onOpen,
+  onStep,
 }: {
   task: Task
   run: number
   /** 工作流名字，显示在标题旁边 */
   name?: string
   onOpen: () => void
+  /** 点了某个节点胶囊 */
+  onStep?: (id: string) => void
 }) {
   const now = useNow(task.status === 'running')
   const steps = topSteps(task, run)
@@ -69,12 +72,18 @@ function RunCardBase({
       s.status === 'done' ? 'done' : s.status === 'running' ? 'running' : s.status === 'failed' ? 'failed' : 'idle',
   }))
   return (
-    // 设计稿：浅底卡片、不描边；头一行图标块 +「工作流」+ 名字，右边「查看运行 · 3/6 ›」是链接样式。
-    // 整张卡片仍是一个按钮（点哪里都打开这次运行），链接只是视觉提示
-    <button
-      type="button"
+    // 设计稿：浅底卡片、不描边；头一行图标块 +「工作流」+ 名字，右边「查看流程图 · 3/6 ›」是链接样式。
+    // 整张卡片可点（切到流程图），链接只是视觉提示；里面的节点胶囊是按钮，所以外层不用 button 套 button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      title={`${t('打开这次运行的对话')} · ${t('运行 {n}', { n: run })}`}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+        e.preventDefault()
+        onOpen()
+      }}
+      title={`${t('在流程图里查看')} · ${t('运行 {n}', { n: run })}`}
       data-run={run}
       className="group flex w-full cursor-pointer flex-col gap-2 rounded-[10px] bg-sel/45 px-3 py-2.5 text-left transition-colors hover:bg-sel/70"
     >
@@ -95,18 +104,19 @@ function RunCardBase({
         <span className="flex-1" />
         {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
         <span className="shrink-0 text-xs whitespace-nowrap text-subtle underline decoration-transparent underline-offset-[3px] transition-colors group-hover:text-fg group-hover:decoration-current">
-          {t('查看运行')}
+          {t('查看流程图')}
           {steps.length > 0 && ` · ${done}/${steps.length}`} ›
         </span>
       </span>
-      {nodes.length > 0 && <FlowStrip nodes={nodes} />}
-    </button>
+      {nodes.length > 0 && <FlowStrip nodes={nodes} onPick={onStep} />}
+    </div>
   )
 }
 
 export const RunCard = memo(
   RunCardBase,
-  (a, b) => a.run === b.run && a.name === b.name && runSig(a.task, a.run) === runSig(b.task, b.run),
+  (a, b) =>
+    a.run === b.run && a.name === b.name && !a.onStep === !b.onStep && runSig(a.task, a.run) === runSig(b.task, b.run),
 )
 
 /**

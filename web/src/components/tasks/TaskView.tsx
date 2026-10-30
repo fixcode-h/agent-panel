@@ -1527,6 +1527,12 @@ export function TaskView({
           })
         }
       : undefined
+  // 对话里的工作流卡片：和标题栏点「流程图」一样就地切到流程图，点了某个节点就在流程图里选中它
+  const openFlow = (id?: string) => {
+    setView('flow')
+    if (scrollerEl.current) scrollerEl.current.scrollTop = 0
+    if (id) setFocus({ id, at: Date.now() })
+  }
   // 工作流没走完时输入框上面有「继续流程」，输入框里就不再放「继续执行」
   const flowLeft = task.mode === 'workflow' && !running && flowUnfinished(task, workflow)
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
@@ -2251,7 +2257,8 @@ export function TaskView({
                                 task={task}
                                 run={b.run}
                                 name={task.workflowName || workflow?.name}
-                                onOpen={() => openRunIn(b.run)}
+                                onOpen={() => (task.mode === 'workflow' ? openFlow() : openRunIn(b.run))}
+                                onStep={task.mode === 'workflow' ? openFlow : undefined}
                               />
                             </div>
                           )
