@@ -45,12 +45,16 @@ export function Progress({
       aria-valuemin={0}
       aria-valuemax={raw ? max : 100}
       aria-valuenow={indeterminate ? undefined : raw ? Math.min(max, Math.max(0, value)) : Math.round(pct)}
-      className={cn('sunken w-full overflow-hidden rounded-full', size === 'xs' ? 'h-0.5' : 'h-1.5', className)}
+      className={cn(
+        'sunken w-full overflow-hidden rounded-(--c-progress-radius)',
+        size === 'xs' ? 'h-0.5' : 'h-(--c-progress-height)',
+        className,
+      )}
       {...rest}
     >
       <div
         className={cn(
-          'h-full rounded-full transition-[width] duration-300',
+          'h-full rounded-(--c-progress-radius) transition-[width] duration-300',
           tones[tone],
           indeterminate && 'w-1/3 animate-pulse',
         )}

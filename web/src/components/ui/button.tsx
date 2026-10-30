@@ -47,7 +47,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         // 链接按钮嵌在句子或说明里，字号、字重跟着上下文，不套按钮的高度和留白
         variant === 'link'
           ? 'inline-flex w-fit max-w-full cursor-pointer items-center gap-1 text-left underline-offset-2 transition-colors hover:underline'
-          : 'inline-flex shrink-0 cursor-pointer items-center rounded-lg font-medium transition-[background-color,opacity,color] select-none',
+          : 'inline-flex shrink-0 cursor-pointer items-center rounded-(--c-button-radius) font-(weight:--c-button-weight) transition-[background-color,opacity,color] select-none',
         'disabled:pointer-events-none disabled:opacity-50',
         variants[variant],
         variant === 'link' ? linkTones[tone] : sizes[size],

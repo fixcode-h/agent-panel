@@ -36,7 +36,7 @@ export function Segmented<T extends string>({
       role="radiogroup"
       aria-label={label}
       className={cn(
-        'inline-flex max-w-full flex-wrap rounded-lg p-0.5',
+        'inline-flex max-w-full flex-wrap rounded-(--c-segmented-radius) p-0.5',
         canvas ? 'bg-canvas-bar text-canvas-fg' : 'seg-track',
         fill && 'flex w-full',
         className,
@@ -52,7 +52,7 @@ export function Segmented<T extends string>({
           aria-label={iconOnly ? o.label : undefined}
           title={o.dot ?? (iconOnly ? o.label : undefined)}
           className={cn(
-            'inline-flex cursor-pointer items-center gap-1.5 rounded-md px-3 transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+            'inline-flex cursor-pointer items-center gap-1.5 rounded-(--c-segmented-itemRadius) px-3 transition-colors disabled:cursor-not-allowed disabled:opacity-40',
             fill && 'flex-1 justify-center px-2 whitespace-nowrap',
             iconOnly && (size === 'sm' ? 'w-7 justify-center px-0' : 'w-8 justify-center px-0'),
             size === 'sm' ? 'h-7 text-[0.75rem]' : 'h-8 text-[0.8125rem]',

@@ -344,6 +344,7 @@ export const EN_TASKS: Record<string, string> = {
   // 任务面板
   任务进度: 'Progress',
   在流程图里查看这一步: 'View this step in the flow',
+  在流程图里查看: 'View in the flow',
   '直接对话没有固定步骤；Agent 列出待办清单或计划后会显示在这里。':
     'Chats have no fixed steps. When the Agent writes a to-do list or plan, it shows up here.',
   上下文: 'Context',
@@ -1359,7 +1360,7 @@ export const EN_TASKS: Record<string, string> = {
   记成教训: 'Record as lesson',
   不针对具体文件: 'Not tied to a file',
   // 输入框工具条的模型按钮
-  查看运行: 'View run',
+  查看流程图: 'View flow',
   '模型和思考强度跟着角色设置：{model}': 'Model and thinking effort follow the role settings: {model}',
 
   // 会话栏（照 Claude Code）
