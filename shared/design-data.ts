@@ -22,15 +22,6 @@ import { DATA_PROPS, WIDGETS, deepMerge, mapWidget, walk, type Component, type W
 export const DATA_TYPES = ['string', 'number', 'boolean', 'image', 'color'] as const
 export type DataType = (typeof DATA_TYPES)[number]
 
-/** 面板和 AI 用的类型说明；image 的值是 "img:<图片 id>" */
-export const DATA_TYPE_LABEL: Record<DataType, string> = {
-  string: '文字',
-  number: '数字',
-  boolean: '开关',
-  image: '图片',
-  color: '颜色',
-}
-
 export const DataValue = z.union([z.string(), z.number(), z.boolean()])
 export type DataValue = z.infer<typeof DataValue>
 export type DataRow = Record<string, DataValue>
@@ -351,6 +342,3 @@ export function dataBrief(data: DesignData | undefined) {
     })
     .join('\n')
 }
-
-/** 控件能不能显示数据（给面板选绑定字段时过滤，也给 check 用） */
-export const canBindData = (type: WidgetType) => !!DATA_BINDING[type] && !!WIDGETS[type]

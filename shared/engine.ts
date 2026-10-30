@@ -4012,13 +4012,20 @@ async function startPlan(
     depth: 0,
     run,
   }
-  // 运行前的工作区快照：被终止时只把这次运行改的文件交给对话，运行前已有的改动不算它的
-  const before = host.reviewDiff ? await host.reviewDiff().catch(() => null) : null
+  // 先登记终止开关再拍快照：大仓库拍快照要几百毫秒，这段时间里点终止也要停得下来，不能回「已经结束了」
   const ac = new AbortController()
   planStops.set(host.task.id, { ac, host })
+  let snapshot: string | undefined
+  /** 节点开始跑了没有：快照期间就被终止的，没有这次运行的改动可交 */
+  let ran = false
   let r: Awaited<ReturnType<typeof runFlow>>
   try {
-    r = await runFlow(host, inv)
+    // 运行前的工作区快照：被终止时只把这次运行改的文件交给对话，运行前已有的改动不算它的
+    const before = host.reviewDiff ? await host.reviewDiff().catch(() => null) : null
+    snapshot = before?.snapshot
+    // 快照还没拍完就被终止：一个节点都没跑，按「被终止、没有改动」收尾
+    ran = !ac.signal.aborted
+    r = ran ? await runFlow(host, inv) : { ok: false, halted: true, error: '' }
   } finally {
     if (planStops.get(host.task.id)?.ac === ac) planStops.delete(host.task.id)
   }
@@ -4035,7 +4042,7 @@ async function startPlan(
   host.halted = false
   host.changed(true)
   if (cut) {
-    const d = host.reviewDiff ? await host.reviewDiff(before?.snapshot).catch(() => null) : null
+    const d = ran && host.reviewDiff ? await host.reviewDiff(snapshot).catch(() => null) : null
     return { ok: false, text: '', error: why, stopped: { why, changes: d?.stat.trim() ?? '' } }
   }
   return r.ok ? { ok: true, text: r.output } : { ok: false, text: '', error: r.error }

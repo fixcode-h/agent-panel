@@ -14,8 +14,6 @@ export type Device = 'desktop' | 'tablet' | 'mobile'
 export const DEVICE_MAX: Record<Exclude<Device, 'desktop'>, number> = { tablet: 1023, mobile: 767 }
 /** 预览时的宽度：桌面是设计稿宽度 */
 export const DEVICE_WIDTH: Record<Exclude<Device, 'desktop'>, number> = { tablet: 768, mobile: 390 }
-export const deviceOf = (width: number): Device =>
-  width <= DEVICE_MAX.mobile ? 'mobile' : width <= DEVICE_MAX.tablet ? 'tablet' : 'desktop'
 /** 这些属性是按宽度 / 悬停叠上去的改动，不是样式本身 */
 export const OVERRIDES = ['Tablet', 'Mobile', 'Hover'] as const
 /** 断点里属性存在哪个键下 */

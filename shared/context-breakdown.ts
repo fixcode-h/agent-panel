@@ -200,14 +200,6 @@ function fromSnapshot(snap: ContextSnapshot, used: number, window: number, pct: 
   }
 }
 
-/**
- * 字数换算 token：中日韩字符约一个字一个 token，其余约四个字符一个（和 runner 的 estTokens 同一口径）。
- * 只有字数时（面板记的 chars）按中英混合的平均 3 个字符一个估
- */
-export function tokensOfText(s: string) {
-  const cjk = s.match(/[぀-ヿ㐀-鿿가-힯＀-￯]/g)?.length ?? 0
-  return Math.round(cjk + (s.length - cjk) / 4)
-}
 export const tokensOfChars = (n: number) => Math.round(n / 3)
 
 /**

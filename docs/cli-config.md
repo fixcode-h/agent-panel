@@ -251,8 +251,8 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 切走对话页后有宽限（设置里的「离开对话后保留多久」，默认 60 分钟；这一轮完成但还没打开看过的用「没看过的回复保留多久」，
 默认 30 分钟；环境变量 `AGENT_PANEL_PRESENCE_GRACE_MS`、`AGENT_PANEL_PRESENCE_UNREAD_GRACE_MS` 优先，测试用），
 过了宽限进程正常退出。这两种宽限都会排计时：橙点只有用户点开才会消，不收的话进程永远挂着。
-**这两段时长和下面的数量上限都只管「回复完停在等下一句」的空闲会话**：这一轮还在跑的对话（CLI 正在回话、在等它派出的子任务、在等后台命令结果、名下还有活着的子对话）不按时间回收、也不进上限候选，不管页面开着还是已经切到后台。判定在 `shared/task.ts` 的 `keepAliveBusy`（纯函数），配 `server/tasks.ts` 的 `keepAliveBusy(id)` 补上后台命令数、名下子对话数。`server/presence.ts` 到了宽限先问这一句：还在跑就只记一个待回收标记（不重排定时器：宽限期可以设成 0，会自旋），等这一轮结束由 `resetIdleCountdown` 从那一刻算满一整段。
-保活会话的总数上限由「同时保活的会话上限」（`keepAliveLimit`，默认 4，填 0 不限制）管，实现在 `server/tasks.ts` 的 `enforceKeepAlive`：
+**这两段时长和下面的数量上限都只管「回复完停在等下一句」的空闲会话**：这一轮还在跑的对话（CLI 正在回话、在等它派出的子任务、在等后台命令结果、名下还有活着的子对话）不按时间回收、也不进上限候选，不管页面开着还是已经切到后台。判定在 `shared/task.ts` 的 `keepAliveBusy`（纯函数），配 `server/tasks/keepalive.ts` 的 `keepAliveBusy(id)` 补上后台命令数、名下子对话数。`server/presence.ts` 到了宽限先问这一句：还在跑就只记一个待回收标记（不重排定时器：宽限期可以设成 0，会自旋），等这一轮结束由 `resetIdleCountdown` 从那一刻算满一整段。
+保活会话的总数上限由「同时保活的会话上限」（`keepAliveLimit`，默认 4，填 0 不限制）管，实现在 `server/tasks/keepalive.ts` 的 `enforceKeepAlive`：
 超了先结束最久没用、又没人在看的那个（「在看」只算前台开着的页面，切走后宽限期里的也算进上限；名下有子对话在跑的不动，那是真误杀；有后台命令在跑的不算空闲，也不动）。
 已知限制（都不影响主行为，改这块时留意）：
 

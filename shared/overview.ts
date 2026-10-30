@@ -3,6 +3,7 @@
  * 侧栏是「项目 → 对话」树、每个项目只露几条，项目一多就看不出哪些在等你、哪些停住了；
  * 这里只做分组和排序，状态判定全部读 shared/task.ts（taskState / taskBusy / taskDoneDot）和 openPlan。
  */
+import { treeUsage } from './budget.ts'
 import { openPlan } from './plan.ts'
 import type { Task } from './schema.ts'
 import { askedAt, taskDeleted, taskDoneDot, taskState, taskTurnUnread, type ConvState } from './task.ts'
@@ -18,12 +19,10 @@ export interface OverviewRow {
   state: ConvState
   /** 名下（含多层）还在动的子对话数 */
   kidsBusy: number
-  /** 自己加名下全部子对话的 token（输入 + 输出） */
+  /** 自己加名下全部子对话的 token（输入 + 输出），和用量上限同一个口径（shared/budget.ts 的 treeUsage） */
   tokens: number
   plan?: { done: number; total: number }
 }
-
-const tokensOf = (tk: Task) => (tk.usage?.inputTokens ?? 0) + (tk.usage?.outputTokens ?? 0)
 
 /**
  * 分好组的行：每组按最后活动从新到旧。只列顶层对话（子对话算进父对话的 token 和「在跑的子对话」），
@@ -38,6 +37,7 @@ export function overviewRows(tasks: Task[]): OverviewRow[] {
     seen.add(id)
     return (kids.get(id) ?? []).flatMap((k) => [k, ...subtree(k.id, seen)])
   }
+  const usage = treeUsage(tasks)
   const rows: OverviewRow[] = []
   for (const tk of tasks) {
     if (tk.parentTaskId || tk.archived || taskDeleted(tk)) continue
@@ -61,7 +61,7 @@ export function overviewRows(tasks: Task[]): OverviewRow[] {
         const s = taskState(k)
         return s === 'running' || s === 'waiting' || s === 'needs'
       }).length,
-      tokens: tokensOf(tk) + below.reduce((n, k) => n + tokensOf(k), 0),
+      tokens: usage(tk.id).tokens,
       plan,
     })
   }

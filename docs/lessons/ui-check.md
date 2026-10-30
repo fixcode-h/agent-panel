@@ -32,3 +32,9 @@ paths: scripts/ui/**, scripts/ui-check.mjs
 - 规则：按坐标拖（`mouse.down` → `move` → `up`）之前用 `el.scrollIntoView({ block: 'center' })` 把目标滚到滚动区中间，不用 `scrollIntoViewIfNeeded`：后者只保证露出来，目标常贴着上下边，拖几格就进了组件的边缘自动滚动区，位移被多算一截。周视图打开时按「现在」定滚动位置，这类失败随跑检查的时刻时好时坏。
 - 起因：56cca91 前后「计划拖动」先因 19:00 那一块在可视区外拖落空，补了 `scrollIntoViewIfNeeded` 后又因贴底触发自动滚动，拖两格变成晚两小时（CI 06:00 UTC 复现）。
 - 防线：`node scripts/ui-check.mjs 08-misc`。
+
+## 等状态变化时盯住那个元素，别搜整段文字
+
+- 规则：等「卡片 / 行变成某个状态」时，`waitForFunction` 里先定位到那个元素，再判它自己的文字（去掉名字等固定部分），不要判整个输入框、整页的 `textContent` 包不包含状态词：名字里正好有这个词（「拷贝中.pdf」）时一开始就满足，接着读到的是上一个状态。
+- 起因：`01-composer`「后台拷贝：卡片没有显示路径（拷贝中.pdf · 13 B查找中）」在 CI 上反复偶发红，连串行重跑都失败；本次提交修掉。
+- 防线：`node scripts/ui-check.mjs 01`。

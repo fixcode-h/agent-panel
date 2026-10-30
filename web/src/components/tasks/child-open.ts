@@ -29,7 +29,6 @@ export interface PaneNav {
 export const PaneNavCtx = createContext<PaneNav | null>(null)
 
 export const useChildOpen = () => useContext(PaneNavCtx)?.child ?? null
-export const useOpenChildId = () => useContext(PaneNavCtx)?.openChild ?? ''
 export const useRunToolOpen = () => useContext(PaneNavCtx)?.runTool ?? null
 export const useRunViewOpen = () => useContext(PaneNavCtx)?.runView ?? null
 export const useJobOpen = () => useContext(PaneNavCtx)?.job ?? null

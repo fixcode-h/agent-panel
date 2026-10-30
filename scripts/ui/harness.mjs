@@ -51,7 +51,17 @@ export const TINY_PNG = Buffer.from(
 // 不缩到 0：「生成中」「授权中」这些中间状态也要截图，太快就看不到了
 const DEMO_SPEED = process.env.AGENT_PANEL_UI_DEMO_SPEED ?? '4'
 
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
+// 演示版按目录分包：字体、图片也是单独的文件
+const TYPES = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.png': 'image/png',
+  '.json': 'application/json',
+}
 
 /**
  * 跑一个分片：fn(api) 里写这个分片的检查。

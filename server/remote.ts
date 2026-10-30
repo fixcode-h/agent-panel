@@ -46,7 +46,6 @@ let active = { enabled: false, hosts: new Set<string>() }
 const setActive = (enabled: boolean, hosts: string[]) =>
   (active = { enabled, hosts: new Set(hosts.map((h) => h.trim().toLowerCase()).filter(Boolean)) })
 
-export const remoteHosts = () => active.hosts
 /** 外部请求只接受当前隧道/反代地址；本机地址由调用方另外判断 */
 export const isRemoteHostAllowed = (host: string) => active.enabled && active.hosts.has(host.toLowerCase())
 

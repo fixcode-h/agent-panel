@@ -712,13 +712,6 @@ export function registerCliSpecs(specs: unknown[]): { index: number; error: stri
   return errors
 }
 
-const quote = (a: string) => (/[\s"'<>|&]/.test(a) || a === '' ? JSON.stringify(a) : a)
-
-/** 拼成一行便于展示的命令（任务描述通过 stdin 传入） */
-export function previewCommand(command: string, args: string[]): string {
-  return [quote(command), ...args.map(quote)].join(' ')
-}
-
 /** 命令行里的一个参数：有空白或引号时加引号 */
 export const quoteArg = (t: string) => (/[\s"]/.test(t) ? JSON.stringify(t) : t)
 

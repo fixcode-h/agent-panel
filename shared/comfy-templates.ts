@@ -488,8 +488,6 @@ const LOADERS: Record<string, { input: string; dir: LocalDir }[]> = {
   UpscaleModelLoader: [{ input: 'model_name', dir: 'upscale_models' }],
 }
 
-export const LOADER_DIRS = LOADERS
-
 function noteTexts(ui: UiGraph | UiSubgraph): string[] {
   const out: string[] = []
   for (const n of ui.nodes ?? []) {
@@ -669,9 +667,3 @@ export function builtinTemplates(models: LocalModel[]): ComfyTemplate[] {
 
 export const builtinTemplateMeta = (list: ComfyTemplate[]): ComfyTemplateMeta[] =>
   list.map(({ graph: _graph, assets: _assets, ...meta }) => meta)
-
-/** 模板里的模型标签是否都在本机模型清单里 */
-export function templateModelNames(meta: ComfyTemplateMeta, models: LocalModel[]): string[] {
-  const names = new Set(models.flatMap((m) => [m.name, m.id]))
-  return meta.models.filter((x) => names.has(x))
-}

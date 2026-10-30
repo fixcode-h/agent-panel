@@ -148,6 +148,39 @@ test('终止对话里的工作流：只停这次运行，后面的节点不再�
   assert.equal(stopPlan('t2', '再停一次'), false, '运行结束后没有可停的')
 })
 
+test('终止工作流：运行开始前拍快照的那段时间里也停得下来，一个节点都不跑', async () => {
+  const w = workflow()
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '做功能' } as never, undefined, '', 't3'),
+    id: 't3',
+  } as Task
+  const log: AgentCall[] = []
+  let turn = 0
+  const h = host(task, log, async (call) => {
+    if (turn++ === 0) {
+      call.orch!.plan(w.id, '做功能')
+      return { ok: true, text: '开始处理' }
+    }
+    assert.match(call.prompt, /### 工作流被终止\n原因：点早了/)
+    assert.match(call.prompt, /这次运行没有留下文件改动/, '一个节点都没跑，不能把运行前的改动算成它的')
+    return { ok: true, text: '好的' }
+  })
+  h.agents = [agent('m', '协调', { canPlan: true }), agent('w', '开发')]
+  // 拍快照的时候用户点了终止：这时开关必须已经登记好
+  h.reviewDiff = async (since) => {
+    if (!since) assert.equal(stopPlan('t3', '点早了'), true, '快照期间点终止要停得下来')
+    return { snapshot: 's1', stat: ' old.ts | 1 +', diff: '' }
+  }
+
+  await runEngineTurn(h)
+  assert.equal(task.runs[0].status, 'stopped')
+  assert.deepEqual(
+    log.filter((c) => !!c.step),
+    [],
+    '一个节点都不跑',
+  )
+})
+
 test('对话 Agent 没开「按工作流执行计划」：没有 start_plan 能力，直接回答', async () => {
   const task = {
     ...newTask(

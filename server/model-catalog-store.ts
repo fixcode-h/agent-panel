@@ -36,11 +36,3 @@ export async function saveModelEntry(entry: ModelCatalogEntry): Promise<ModelCat
   await writeJsonAtomic(MODEL_CONFIG_FILE, { updated: new Date().toISOString().slice(0, 10), models: next })
   return next
 }
-
-/** 手动删除一条补充记录；返回删除后的全部补充记录 */
-export async function removeModelEntry(vendor: string, id: string): Promise<ModelCatalogEntry[]> {
-  const list = await userModelCatalog()
-  const next = list.filter((m) => !(m.vendor === vendor && m.id.toLowerCase() === id.toLowerCase()))
-  await writeJsonAtomic(MODEL_CONFIG_FILE, { updated: new Date().toISOString().slice(0, 10), models: next })
-  return next
-}

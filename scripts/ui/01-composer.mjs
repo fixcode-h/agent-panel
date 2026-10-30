@@ -353,13 +353,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .setInputFiles({ name: '拷贝中.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') })
     const copying = q.locator('#task-prompt [data-chip="file"][data-name="拷贝中.pdf"]')
     await copying.waitFor({ timeout: 10000 }).catch(() => errors.push('后台拷贝：附上文件后输入框里没有卡片'))
+    // 等卡片自己从「查找中」变成路径 + 「拷贝中」：文件名本身就叫「拷贝中.pdf」，
+    // 只看输入框文字里有没有「拷贝中」的话，卡片还在查找原路径时就算等到了，接着读到的是「…查找中」
     await q
       .waitForFunction(
-        () => (document.querySelector('#task-prompt')?.textContent ?? '').includes('拷贝中'),
-        undefined,
-        {
-          timeout: 5000,
+        () => {
+          const chip = document.querySelector('#task-prompt [data-chip="file"][data-name="拷贝中.pdf"]')
+          const text = (chip?.textContent ?? '').replace('拷贝中.pdf', '')
+          return /[\\/]/.test(text) && text.includes('拷贝中')
         },
+        undefined,
+        { timeout: 5000 },
       )
       .catch(() => errors.push('后台拷贝：卡片没有显示「拷贝中」状态'))
     const shown = await copying.textContent().catch(() => '')

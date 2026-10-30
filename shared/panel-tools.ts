@@ -57,7 +57,7 @@ export const PANEL_TOOL_NAMES = [
  * 从 CLI 报上来的工具名里认出面板工具，返回裸名字；认不出返回空。各家写法不一样：
  * 裸名字（Pi）、「mcp__panel-xxxx__run_background」「panel_run_background」「mcp_panel-xxxx_run_background」
  */
-const PANEL_TOOL_RE = new RegExp(`panel[\\w-]*[\\W_]{1,4}(${PANEL_TOOL_NAMES.join('|')})\\b`)
+export const PANEL_TOOL_RE = new RegExp(`panel[\\w-]*[\\W_]{1,4}(${PANEL_TOOL_NAMES.join('|')})\\b`)
 export function panelToolName(name: string): string {
   if ((PANEL_TOOL_NAMES as readonly string[]).includes(name)) return name
   return PANEL_TOOL_RE.exec(name)?.[1] ?? ''

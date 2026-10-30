@@ -186,7 +186,6 @@ export function orderClis<T extends { id: string; name?: string }>(
   })
 }
 
-export const tierToken = (t: ModelTier) => `@${t}`
 /** 模型字段是档位时返回档位 */
 export const tierOf = (model: string) => MODEL_TIERS.find((t) => model === `@${t.id}`)
 
@@ -246,8 +245,6 @@ export function agentPermission(a: { cli: string; permission?: string }, setting
   const ok = a.permission && getCli(cli)?.permissions.some((p) => p.id === a.permission)
   return ok ? a.permission! : cliSettings(settings, cli).permission
 }
-
-export const agentModel = (a: { cli: string; model: string }, settings: Settings) => agentRun(a, settings).model
 
 /** 列表里显示的模型：「中档 · sonnet」「opus」「默认 · sonnet」 */
 export function modelText(a: { cli: string; model: string; effort?: string }, settings: Settings) {

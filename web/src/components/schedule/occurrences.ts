@@ -72,14 +72,6 @@ export function upcomingRuns(s: Schedule, count = 4): number[] {
   return out
 }
 
-/**
- * 计划块画多高用的时长：计划本身没有时长，取最近一次跑完的那次运行的耗时（运行记录新的在前）；
- * 还没有跑完过的返回 0，日历按默认高度画
- */
-export function lastDurationMs(s: Schedule): number {
-  return s.runs.find((r) => (r.durationMs ?? 0) > 0)?.durationMs ?? 0
-}
-
 /** 「10-29 周四 09:00」：详情面板里一次执行的时间，日期和星期都在，不用再换算 */
 export function dayTimeLabel(ms: number): string {
   const d = new Date(ms)

@@ -20,23 +20,36 @@ type Usage = Pick<Task, 'id' | 'parentTaskId'> & { usage?: Partial<Task['usage']
 
 const tokensOf = (tk: Usage) => (tk.usage?.inputTokens ?? 0) + (tk.usage?.outputTokens ?? 0)
 
-/** 一个顶层对话加名下全部子对话（多层）的用量；tasks 里没有的对话不算 */
-export function budgetUse(rootId: string, tasks: Usage[]): BudgetUse {
+/**
+ * 按对话树合计用量：返回「给一个对话 id，算它自己加名下全部子对话（多层）的用量」。
+ * 父子关系只建一次，总览页一次算几百个顶层对话时不用每个都重扫全表。
+ * 进了回收站的子对话照样算：钱已经花出去了，总览页和用量上限必须是同一个数
+ */
+export function treeUsage(tasks: Usage[]): (rootId: string) => BudgetUse {
   const kids = new Map<string, Usage[]>()
-  for (const tk of tasks) if (tk.parentTaskId) kids.set(tk.parentTaskId, [...(kids.get(tk.parentTaskId) ?? []), tk])
-  const root = tasks.find((x) => x.id === rootId)
-  const use: BudgetUse = { tokens: 0, costUsd: 0 }
-  const seen = new Set<string>()
-  const walk = (tk: Usage) => {
-    if (seen.has(tk.id)) return
-    seen.add(tk.id)
-    use.tokens += tokensOf(tk)
-    use.costUsd += tk.usage?.costUsd ?? 0
-    for (const k of kids.get(tk.id) ?? []) walk(k)
+  const byId = new Map<string, Usage>()
+  for (const tk of tasks) {
+    byId.set(tk.id, tk)
+    if (tk.parentTaskId) kids.set(tk.parentTaskId, [...(kids.get(tk.parentTaskId) ?? []), tk])
   }
-  if (root) walk(root)
-  return use
+  return (rootId) => {
+    const use: BudgetUse = { tokens: 0, costUsd: 0 }
+    const seen = new Set<string>()
+    const walk = (tk: Usage) => {
+      if (seen.has(tk.id)) return
+      seen.add(tk.id)
+      use.tokens += tokensOf(tk)
+      use.costUsd += tk.usage?.costUsd ?? 0
+      for (const k of kids.get(tk.id) ?? []) walk(k)
+    }
+    const root = byId.get(rootId)
+    if (root) walk(root)
+    return use
+  }
 }
+
+/** 一个顶层对话加名下全部子对话（多层）的用量；tasks 里没有的对话不算 */
+export const budgetUse = (rootId: string, tasks: Usage[]): BudgetUse => treeUsage(tasks)(rootId)
 
 /** 用到上限的比例：两项里取更高的那个；都没设时是 0 */
 export function budgetRatio(use: BudgetUse, budget: Budget | undefined): number {

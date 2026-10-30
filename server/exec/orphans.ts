@@ -184,11 +184,6 @@ export function trackedClis(): TrackedCli[] {
   return [...foreign, ...tracked()].map((x) => ({ ...x }))
 }
 
-/** 这条登记现在还在不在 */
-export function isTrackedCli(pid: number) {
-  return tracked().some((x) => x.pid === pid)
-}
-
 /** 本实例的进程正常结束了：从登记里去掉（不在登记里时不碰文件，短命令很多） */
 export function untrackCliProcess(pid: number) {
   const list = tracked()
