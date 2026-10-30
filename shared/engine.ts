@@ -89,6 +89,7 @@ import { fixRoutePart } from './fix-route.ts'
 import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
+import { summaryCardRules } from './summary-card.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyBlock } from './test-steps.ts'
@@ -1521,7 +1522,9 @@ function commonPart(host: EngineHost, w?: Workflow, chat = false, helper = false
         : ''
       : buildPart(host),
     fileFormatPart(host),
-    `## 通用要求\n完成后用${promptLangWord()}简要总结：做了什么、改了哪些文件、有没有遗留问题。\n` +
+    // 总结的类型和字段在 shared/summary-card.ts 定义，界面按同一张表把它画成卡片
+    summaryCardRules(),
+    `## 通用要求\n完成后用${promptLangWord()}按上面的「总结格式」写总结卡：做了什么、改了哪些文件、有没有遗留问题都在卡片字段里。\n` +
       // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
       '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。\n' +
       // 用户明确要求：所有命令静默跑。弹出来的窗口既把结果带走（对话拿不到输出），也打断用户手上的事
@@ -4084,6 +4087,8 @@ async function conversationPrompt(
     ...planPart(host, coordinator),
     wrapUpPart(host),
     p4Part(host),
+    // 每轮结束写给人看的总结卡：父对话、子对话、用户自建的角色都一样（类型和字段见 shared/summary-card.ts）
+    summaryCardRules(),
     // 对话模式没有共享状态工具：这里不注入（跑过 start_plan 时 task.runs 里是上一次运行的旧状态）
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt
