@@ -132,6 +132,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await tue.click()
     if ((await tue.getAttribute('aria-pressed')) !== 'true') errors.push('设置-组件：多选小块点「周二」后应该选中')
   }
+  // 微调：总结卡默认直角；按钮的「微调」改字重立刻写进 #md-style，恢复本组后清空
+  {
+    const radius = await p
+      .locator('.md-card')
+      .first()
+      .evaluate((el) => getComputedStyle(el).borderTopLeftRadius)
+    if (radius !== '0px') errors.push(`设置-组件：总结卡默认应该是直角，实际圆角 ${radius}`)
+    await p.getByRole('button', { name: '微调', exact: true }).first().click()
+    await p.getByRole('radio', { name: '半粗' }).first().click()
+    if (
+      !(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes(
+        '--c-button-weight:600',
+      )
+    )
+      errors.push('设置-组件：按钮字重改成半粗后 #md-style 里应该有 --c-button-weight:600')
+    await check(p, '设置-组件-微调', ['圆角', '字重', '恢复本组'])
+    await p.getByRole('button', { name: '恢复本组' }).first().click()
+    if (await p.evaluate(() => document.getElementById('md-style')?.textContent))
+      errors.push('设置-组件：恢复本组后 #md-style 应该是空的')
+  }
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新

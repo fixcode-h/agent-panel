@@ -28,7 +28,7 @@ export function SourceLink({
       rel="noopener noreferrer"
       title={url}
       className={cn(
-        'group/src flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.8125rem] transition-colors hover:bg-sel/60',
+        'group/src flex min-w-0 items-center gap-2.5 rounded-(--c-row-radius) px-2.5 py-2 text-[0.8125rem] transition-colors hover:bg-sel/60',
         className,
       )}
     >

@@ -27,7 +27,7 @@ export const SIDEBAR_GROUP_LABEL = 'text-[0.6875rem] text-subtle'
 
 /** 导航行：32 高、14px、500 字重，图标 16px 线宽 1.8；选中 bg-sel */
 export const NAV_ROW =
-  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg border px-2 text-[0.875rem] font-medium transition-colors'
+  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--c-nav-radius) border px-2 text-[0.875rem] font-medium transition-colors'
 
 /**
  * 侧栏顶部的模式切换（照设计稿）：三段并排 tab 占满一行，点哪段切到哪个模式。
@@ -43,7 +43,11 @@ export function SidebarModeTabs({
   onPick: (id: string) => void
 }) {
   return (
-    <div role="radiogroup" aria-label={t('模式')} className="seg-track flex w-full min-w-0 rounded-[10px] p-0.5">
+    <div
+      role="radiogroup"
+      aria-label={t('模式')}
+      className="seg-track flex w-full min-w-0 rounded-[calc(var(--c-nav-radius)+2px)] p-0.5"
+    >
       {modes.map((m) => (
         <button
           key={m.id}
@@ -54,7 +58,7 @@ export function SidebarModeTabs({
           title={m.label}
           onClick={() => !m.on && onPick(m.id)}
           className={cn(
-            'h-8 min-w-0 flex-1 cursor-pointer truncate rounded-lg px-1.5 transition-colors',
+            'h-8 min-w-0 flex-1 cursor-pointer truncate rounded-(--c-nav-radius) px-1.5 transition-colors',
             'text-[0.8125rem]',
             m.on ? 'seg-thumb-strong font-semibold' : 'text-muted hover:text-fg',
           )}
@@ -98,7 +102,7 @@ export function NavRow({
  * 未选中无底、悬停浅底；选中是很淡的蓝底（--proj-bg）+ 前景色加粗，文件夹图标换成项目蓝（SidebarProjectName）
  */
 export const PROJECT_CARD =
-  'flex h-[33px] min-w-0 flex-1 items-center gap-2 rounded-lg pr-2 pl-2.5 text-[0.84375rem] transition-colors'
+  'flex h-[33px] min-w-0 flex-1 items-center gap-2 rounded-(--c-nav-radius) pr-2 pl-2.5 text-[0.84375rem] transition-colors'
 export const PROJECT_CARD_ON = 'bg-proj font-semibold text-fg'
 export const PROJECT_CARD_OFF = 'font-medium text-fg hover:bg-sel'
 
@@ -260,7 +264,9 @@ export function sidebarTaskRowClass(active: boolean, inBlock: boolean) {
   return cn(
     'group/row flex w-full cursor-pointer items-center gap-2 border text-left text-[0.8125rem] transition-colors',
     // 项目下的对话 31 高、离竖线 4px（ml-1，宽度扣掉这 4px）；搜索结果等其他地方还是 32 高的紧凑行
-    inBlock ? 'ml-1 h-[31px] w-[calc(100%-4px)] rounded-lg' : 'h-8 rounded-[7px]',
+    inBlock
+      ? 'ml-1 h-[31px] w-[calc(100%-4px)] rounded-(--c-nav-radius)'
+      : 'h-8 rounded-[min(7px,var(--c-nav-radius))]',
     active
       ? inBlock
         ? SIDEBAR_BLOCK_ROW_ON

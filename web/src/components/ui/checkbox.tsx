@@ -40,7 +40,7 @@ export function Checkbox({
     >
       <span
         className={cn(
-          'mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded border transition-colors',
+          'mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded-(--c-checkbox-radius) border transition-colors',
           checked
             ? 'border-primary bg-primary text-on-primary'
             : 'border-line-strong bg-field group-hover:border-subtle',
