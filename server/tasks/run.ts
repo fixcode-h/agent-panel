@@ -225,18 +225,21 @@ export function createRun(sc: TasksScope) {
         // 子对话这一轮真结束的地方收口父对话计划里等它的步骤（进程保活等下一句时 run 不返回，等不到收尾）
         // 顶层对话：做到一半（这一轮调过工具）就收尾、计划还没做完时，面板推它接着做（见 nudgePlan）。
         // 只回答了一句话、没动手的那一轮不推：可能是用户问了个问题，或者让它先停下
+        // 每一轮结束都按整棵对话树核一次用量上限（见 tasks/budget.ts）：到了上限就停下，也不再推它接着做
         onTurnEnd: task.parentTaskId
-          ? () => sc.settleChildTurn(entry.task)
-          : task.mode === 'chat'
-            ? (turn) => {
-                if (turn.tools > 0)
-                  void sc
-                    .nudgePlan(entry.task)
-                    .catch((e) =>
-                      log.warn('task', '推对话接着做计划失败', { task: task.id, error: (e as Error).message }),
-                    )
-              }
-            : undefined,
+          ? () => {
+              sc.settleChildTurn(entry.task)
+              void sc.checkBudget(entry.task)
+            }
+          : (turn) =>
+              void sc.checkBudget(entry.task).then((over) => {
+                if (over || task.mode !== 'chat' || turn.tools <= 0) return
+                return sc
+                  .nudgePlan(entry.task)
+                  .catch((e) =>
+                    log.warn('task', '推对话接着做计划失败', { task: task.id, error: (e as Error).message }),
+                  )
+              }),
         isGit: snapshot !== null,
         op,
         resume,

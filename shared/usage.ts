@@ -31,6 +31,7 @@ export const USAGE_GROUPS = [
   { id: 'time', label: t('按时间') },
   { id: 'project', label: t('按项目') },
   { id: 'task', label: t('按对话') },
+  { id: 'role', label: t('按角色') },
 ] as const
 export type UsageGroup = (typeof USAGE_GROUPS)[number]['id']
 
@@ -62,6 +63,8 @@ export type UsageSample = {
   projectId?: string
   /** 对话标题（按对话分组时做标签） */
   title?: string
+  /** 这一轮用的角色（按角色分组用）；轮次没记时取对话的角色，都没有是空串（直接选 Agent 的聊天） */
+  agentId?: string
   /** 这一轮的开始时间（ISO），按它的本地日期归桶 */
   at: string
   inputTokens: number
@@ -117,7 +120,7 @@ export const DEEPSEEK_PEAK_WINDOW: PeakWindow = {
 
 /** 一个桶（一天 / 一周 / 一个月；分组时是一个项目 / 一条对话） */
 export type UsageBucket = TokenTotals & {
-  /** 桶的标识：时间和周是桶第一天的日期 2026-10-20，月是 2026-10；分组时是项目 id / 对话 id */
+  /** 桶的标识：时间和周是桶第一天的日期 2026-10-20，月是 2026-10；分组时是项目 id / 对话 id / 角色 id */
   key: string
   /** 桶的第一天（本地时间的零点，ISO）；前端用它格式化标签。分组时为空串（没有时间含义） */
   start: string
@@ -268,7 +271,7 @@ export function usageLabel(bucket: Pick<UsageBucket, 'start'>, grain: UsageGrain
  * projectId / title 只有分组时才用，取不到时按空值处理（旧数据、测试里的精简任务）。
  */
 export function usageSamples(
-  task: Pick<Task, 'id' | 'turns' | 'usage'> & Partial<Pick<Task, 'projectId' | 'title'>>,
+  task: Pick<Task, 'id' | 'turns' | 'usage'> & Partial<Pick<Task, 'projectId' | 'title' | 'agentId'>>,
 ): UsageSample[] {
   const turns = (task.turns ?? []).filter((x) => x.startedAt && !Number.isNaN(Date.parse(x.startedAt)))
   if (!turns.length) return []
@@ -295,6 +298,7 @@ export function usageSamples(
       // 分组用：项目 id（可能为空，聊天模式的对话不属于项目）和标题
       projectId: task.projectId ?? '',
       title: task.title?.trim() || '',
+      agentId: x.agentId || task.agentId || '',
       at: x.startedAt,
       inputTokens: num(x.inputTokens),
       outputTokens: num(x.outputTokens),
@@ -422,9 +426,10 @@ export function aggregateUsage(
 }
 
 /**
- * 按项目 / 对话汇总：桶的 key 是项目 id（空串表示不属于项目）或对话 id，按 token 总量从多到少排。
+ * 按项目 / 对话 / 角色汇总：桶的 key 是项目 id（空串表示不属于项目）、对话 id 或角色 id（空串表示没用角色），
+ * 按 token 总量从多到少排。
  * 窗口和按时间分组用同一段（同一个 from / to），所以四项 token、费用、轮数的合计完全一致；
- * 同一个对话只落在一个桶里，任务数也等于去重后的对话数。
+ * 按项目和对话分组时同一个对话只落在一个桶里，任务数等于去重后的对话数；按角色分组时换过角色的对话会在几个桶里各算一次。
  */
 function aggregateGroups(
   samples: UsageSample[],
@@ -439,7 +444,8 @@ function aggregateGroups(
   for (const s of samples) {
     const at = new Date(s.at)
     if (Number.isNaN(at.getTime()) || at.getTime() < fromMs || at.getTime() >= toMs) continue
-    const key = q.groupBy === 'project' ? (s.projectId ?? '') : s.taskId
+    // 按角色分组按轮次算：同一个对话换过角色时，各轮落在各自角色的桶里
+    const key = q.groupBy === 'project' ? (s.projectId ?? '') : q.groupBy === 'role' ? (s.agentId ?? '') : s.taskId
     if (q.groupBy === 'task' && !key) continue
     let b = index.get(key)
     if (!b) {

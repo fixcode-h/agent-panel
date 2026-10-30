@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：ComfyUI 模板商店与工作流链、统一的悬停提示、计划面板、工作总结（报告树、提炼、采纳）。
+ * 界面检查分片：ComfyUI 模板商店与工作流链、统一的悬停提示、计划面板、工作总结（报告树、提炼、采纳）、对话总览。
  *
  * 这四块各自只有 8~13 步（8 + 9 + 10 + 13 = 40），固定开销（起静态服务 + 开浏览器）就占掉一半：
  * 以前是四个分片、四个浏览器，现在合成一片按顺序跑，断言一条不少。
@@ -985,5 +985,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.setViewportSize({ width: 480, height: 900 })
     await settle(p).catch(() => {})
     await check(p, '工作总结-手机宽度')
+  }
+  // ---- 对话总览 ----
+  // 所有项目的顶层对话按「要不要你管」分组；勾选后出现批量停止 / 归档，手机宽度不横向滚动
+  {
+    const p = await page({ width: 1440, height: 900 })
+    await p.goto(base + '#/overview')
+    await p
+      .locator('[data-overview-row]')
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('对话总览：没有列出对话'))
+    await check(p, '对话总览', ['对话总览', '等你处理', '执行中'])
+    await p.locator('[data-overview-row]').first().getByRole('checkbox').click()
+    await p
+      .locator('[data-overview-batch]')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('对话总览：勾选后没有出现批量操作'))
+    await check(p, '对话总览-已选', ['已选 1 个', '停止', '归档'])
+    await p.setViewportSize({ width: 480, height: 900 })
+    await settle(p).catch(() => {})
+    await check(p, '对话总览-手机宽度')
   }
 })
