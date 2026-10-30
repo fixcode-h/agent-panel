@@ -36,6 +36,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ContextRing } from '@/components/ui/context-ring'
+import { SessionContextBody, useSessionContext } from '@/components/session/SessionContext'
 import { Progress } from '@/components/ui/progress'
 import { t } from '@shared/i18n'
 import { withTaskModel } from '@shared/task'
@@ -105,6 +106,8 @@ export function TaskMeta({
   return (
     <div className="mx-auto mt-2 flex max-w-(--content-w) flex-wrap items-center gap-x-1 gap-y-1 px-1">
       {!hideContext && lines.length > 0 && <ContextChip lines={lines} />}
+      {/* 会话栏收起时它的「上下文」细分挪到这里；流程图选了节点时上面已经按节点列，不重复 */}
+      {!inRail && !scope && <SessionContextChip task={task} />}
       {!inRail && <TokenChip task={task} scope={scope} />}
       {!inRail && (
         <EnvChip
@@ -401,6 +404,29 @@ export function TokenUsage({ task, scope }: { task: Task; scope?: TaskStep[] }) 
         </dl>
       )}
     </div>
+  )
+}
+
+/** 上下文小块：会话栏不在时放在输入框下面，显示占用和用量，点开是会话栏里那份细分 */
+function SessionContextChip({ task }: { task: Task }) {
+  const ctx = useSessionContext(task)
+  const { data } = ctx
+  if (!data) return null
+  const p = data.percent
+  return (
+    <Popover>
+      <PopoverTrigger className={META_CHIP} title={t('上下文占用')} data-context-chip>
+        <ContextRing small percent={p} label={t('上下文已用 {n}%', { n: Math.round(p) })} />
+        <span className="font-mono">
+          {fmtTokens(data.used)} / {fmtTokens(data.window)}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent className="max-h-[min(560px,calc(100vh-96px))] w-[min(340px,calc(100vw-24px))] overflow-y-auto">
+        <div className="p-3">
+          <SessionContextBody ctx={ctx} />
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
