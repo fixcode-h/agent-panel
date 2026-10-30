@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/copy-text'
@@ -6,6 +6,20 @@ import { t } from '@shared/i18n'
 import { splitSummaryCards, type SummaryCard } from '@shared/summary-card'
 import { linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
+import { toast } from '@/lib/toast'
+
+/**
+ * 任务页提供：总结卡「要你处理」那一行的「处理」按钮把这些事交给当前对话的 Agent（新的一轮，不新建对话）。
+ * 没有提供时（设置预览、导出、只读的导入对话）不画按钮
+ */
+export const HandleNeedsCtx = createContext<((text: string) => Promise<void>) | null>(null)
+
+/** 「处理」按钮发给 Agent 的话：卡片标题说清是哪件事，原文照搬，要用户拍板的地方让它先给建议再问 */
+export const handleNeedsText = (title: string, needs: string) =>
+  t(
+    '请直接处理总结卡「{title}」里原本要我处理的事：\n\n{needs}\n\n能自己做的直接做完并验证；必须由我决定的，给出建议后再问我。处理完从刚才停下的地方接着往下做。',
+    { title, needs },
+  )
 
 let seq = 0
 let mermaidLoad: Promise<typeof import('mermaid').default> | undefined
@@ -54,21 +68,28 @@ const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)}
  * 总结卡（shared/summary-card.ts）：类型标签 + 一句话结论在顶上，字段名一列对齐、内容一列，
  * 一眼扫下来就是「原因 / 修复 / 验证」。字段内容仍按 Markdown 渲染（行内代码、路径、链接照常可点）
  */
-function cardHtml(card: SummaryCard, teamNames: Set<string>, live?: boolean) {
+function cardHtml(card: SummaryCard, teamNames: Set<string>, live?: boolean, act?: boolean) {
   const rows = card.fields
     .map((f) => {
       const empty = /^(无|没有|none|n\/a)[。.]?$/i.test(f.text.trim())
-      return `<div class="md-card-row"${f.key ? ` data-key="${f.key}"` : ''}${empty ? ' data-empty' : ''}><dt>${escape(f.label)}</dt><dd>${renderDoc(f.text, teamNames, live)}</dd></div>`
+      // 「要你处理」：可以一键交给当前对话的 Agent；流式输出还没写完时不放，免得发出去半截
+      const handle =
+        act && !live && !empty && f.key === 'needs'
+          ? `<button type="button" class="md-card-act" data-needs="${escape(f.text)}" data-card="${escape(card.title)}" title="${escape(t('交给当前对话的 Agent 处理'))}">${escape(t('处理'))}</button>`
+          : ''
+      return `<div class="md-card-row"${f.key ? ` data-key="${f.key}"` : ''}${empty ? ' data-empty' : ''}><dt>${escape(f.label)}${handle}</dt><dd>${renderDoc(f.text, teamNames, live)}</dd></div>`
     })
     .join('')
   return `<section class="md-card" data-kind="${card.kind}"><header class="md-card-head"><span class="md-card-kind">${escape(card.label)}</span><span class="md-card-title">${renderDoc(card.title, teamNames, live)}</span></header><dl class="md-card-rows">${rows}</dl></section>`
 }
 
 /** 回复里有总结卡时分段渲染：卡片画成卡片，其余照常 */
-function renderReply(text: string, teamNames: Set<string>, live?: boolean) {
+function renderReply(text: string, teamNames: Set<string>, live?: boolean, act?: boolean) {
   const segs = splitSummaryCards(text)
   if (segs.length === 1 && 'md' in segs[0]) return renderDoc(text, teamNames, live)
-  return segs.map((s) => ('md' in s ? renderDoc(s.md, teamNames, live) : cardHtml(s.card, teamNames, live))).join('')
+  return segs
+    .map((s) => ('md' in s ? renderDoc(s.md, teamNames, live) : cardHtml(s.card, teamNames, live, act)))
+    .join('')
 }
 
 /**
@@ -93,6 +114,8 @@ export function Markdown({
   const openFile = useFileOpen()
   // 在任务页里时，像文件路径的行内代码可以点开看文件
   const canOpen = !!openFile
+  const handleNeeds = useContext(HandleNeedsCtx)
+  const canAct = !!handleNeeds
   // 流式输出每 200ms 换一次文字：解析放到低优先级，输入和滚动不被长回复卡住
   const deferred = useDeferredValue(text)
   const [ready, setReady] = useState(() => hljsReady())
@@ -107,9 +130,9 @@ export function Markdown({
   const html = useMemo(() => {
     // 高亮库加载完（ready 变了）要重算一次，否则代码块一直是没有颜色的原文
     void ready
-    const h = renderReply(deferred, teamNames, live)
+    const h = renderReply(deferred, teamNames, live, canAct)
     return canOpen ? linkPaths(h) : h
-  }, [deferred, teamNames, canOpen, live, ready])
+  }, [deferred, teamNames, canOpen, live, ready, canAct])
 
   useEffect(() => {
     const root = ref.current
@@ -154,6 +177,22 @@ export function Markdown({
     if (el && openFile) {
       // 路径和行号是 linkPaths 解析好放在 data-* 上的，这里直接用
       openFile(el.dataset.path ?? '', el.dataset.mdLine ? Number(el.dataset.mdLine) : undefined)
+      return
+    }
+    const act = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-needs]')
+    if (act && handleNeeds) {
+      if (act.disabled) return
+      // 发出去之前就锁住：连点两下不会让 Agent 收到两遍。按钮是渲染出来的 HTML，状态直接写在元素上
+      act.disabled = true
+      act.textContent = t('发送中')
+      handleNeeds(handleNeedsText(act.dataset.card ?? '', act.dataset.needs ?? '')).then(
+        () => (act.textContent = t('已交给 Agent')),
+        (err: Error) => {
+          act.disabled = false
+          act.textContent = t('处理')
+          toast.error(err.message)
+        },
+      )
       return
     }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]')

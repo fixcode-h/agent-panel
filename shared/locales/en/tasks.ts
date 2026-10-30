@@ -1536,6 +1536,12 @@ export const EN_TASKS: Record<string, string> = {
   '【用量上限】这个对话和名下子对话合起来已经用到项目设的上限（{spent}），面板停下了整个对话。你再发消息时会接着跑一轮，跑完又会停下；要放开跑，在项目设置「用量上限」里调高或清零。':
     '[Usage cap] This conversation and its sub-conversations have reached the project cap ({spent}), so the panel stopped the whole conversation. Each message you send runs one more turn and then stops again; to let it run freely, raise or clear the cap under Project settings › Usage cap.',
   用到了项目设的用量上限: 'Reached the project usage cap',
+  '请直接处理总结卡「{title}」里原本要我处理的事：\n\n{needs}\n\n能自己做的直接做完并验证；必须由我决定的，给出建议后再问我。处理完从刚才停下的地方接着往下做。':
+    'Please handle the items the summary card "{title}" left for me:\n\n{needs}\n\nDo whatever you can yourself and verify it; for anything only I can decide, give your recommendation and then ask me. When done, carry on from where you stopped.',
+  '交给当前对话的 Agent 处理': 'Hand these to the agent in this conversation',
+  处理: 'Handle',
+  发送中: 'Sending',
+  '已交给 Agent': 'Handed to the agent',
   还没有往来的信: 'No letters yet',
   收到: 'Received',
   发出: 'Sent',
