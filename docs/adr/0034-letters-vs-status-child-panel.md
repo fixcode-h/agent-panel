@@ -19,7 +19,7 @@
 | `server/tasks/child-messages.ts` `trackUserToChild`   | 用户直接对子对话说话：给父对话发一条【用户直接交代子对话】                                                            |
 | `Task.inbox`                                          | 同一个子对话没读的汇报一封封堆着                                                                                      |
 | `web/src/components/tasks/PeerMessage.tsx` `PeerLine` | 行首写「接收消息 / 发送消息」，对方名字在行尾「来自 X（标题）」，截断就看不出方向                                     |
-| `web/src/components/session/CollabCard.tsx`           | 会话栏「协作」卡：从两边消息拼出的时间线（`shared/collab-timeline.ts`），和对话流重复                                 |
+| 会话栏 `CollabCard`（现 `CollabLog.tsx`）             | 会话栏「协作」卡：从两边消息拼出的时间线（`shared/collab-timeline.ts`），和对话流重复                                 |
 | `web/src/components/session/StatusCard.tsx`           | 会话栏「状态」卡里逐个列在等的子对话，和输入框上方的子对话栏重复                                                      |
 | `web/src/components/tasks/TaskView.tsx` `ChildrenBar` | 输入框上方子对话一行 + 浮层列表（运行中 / 全部），只有状态，看不到每个子对话和父对话之间的往来                        |
 

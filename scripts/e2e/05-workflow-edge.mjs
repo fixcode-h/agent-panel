@@ -52,7 +52,7 @@ await runShard('工作流条件与失败', async (api) => {
     '正在跑的节点记为被打断 ' + JSON.stringify([half.steps.map((s) => [s.id, s.status, s.interrupted]), half.sessions]),
   )
   assert.ok(half.sessions[cut.id], '被打断的节点留着会话')
-  assert.equal(half.messages.at(-1).transient, true, '结束时写的暂停说明是临时的')
+  assert.ok(!half.messages.some((m) => m.transient), '用户自己暂停不写暂停说明（输入框旁有「继续执行」按钮）')
   const beforeResume = calls().length
   await call('POST', `/tasks/${half.id}/resume`)
   half = await waitDone(half.id, 20000)
@@ -60,7 +60,7 @@ await runShard('工作流条件与失败', async (api) => {
   const cont = calls().slice(beforeResume)[0]
   assert.match(cont.input, /从中断的地方接着完成本节点/)
   assert.ok(!half.steps.some((s) => s.interrupted))
-  assert.ok(!half.messages.some((m) => m.transient), '继续执行后去掉暂停说明，输出接在同一个节点里')
+  assert.ok(!half.messages.some((m) => m.transient), '继续执行后没有残留的状态说明，输出接在同一个节点里')
   step('中断恢复：停止后继续执行，被打断的节点续接会话接着做')
 
   // ---- 工作流执行中补充信息：交给正在跑的节点（收不了时留给下一个节点），不算新要求 ----
