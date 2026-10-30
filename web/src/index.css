@@ -1138,6 +1138,17 @@ body,
     transform: none;
   }
 }
+/* 轮次导航的预览卡片（TurnRail）：从横杠那边往左轻轻滑出 */
+@keyframes turn-peek-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 
 /* 打开对话时加载日志新出现的一行：淡入并轻微上移，160ms 就够，不做花哨动画 */
 @keyframes trace-line-in {

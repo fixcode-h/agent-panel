@@ -1334,6 +1334,7 @@ export const EN_TASKS: Record<string, string> = {
   理由: 'Why',
   假设: 'Assumed',
   跳到某一轮: 'Jump to a turn',
+  '第 {n} 轮：{text}': 'Turn {n}: {text}',
   // AI 分析窗口：排查的结构化结论（DiagnosisReport）
   排查结论: 'Diagnosis',
   '修复建议可以发回被分析的对话，或开新任务修':

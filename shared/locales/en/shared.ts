@@ -108,15 +108,11 @@ export const EN_SHARED: Record<string, string> = {
   '引用的流程不存在，可能已被删除': 'The referenced flow does not exist. It may have been deleted',
   '流程嵌套超过 {max} 层，请检查是否循环引用':
     'Flows are nested more than {max} levels deep. Check for circular references',
-  '已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。':
-    'Paused. Click "Resume" to pick up where it left off, or enter new instructions below.',
   '「{title}」': '"{title}"',
   '、': ', ',
   有节点: 'Some nodes',
   '{nodes}执行失败，原因见节点里的错误。可以点「继续流程」重试，或者在下面输入新的要求。':
     '{nodes} failed. See the error in the node for details. Click "Continue flow" to retry, or enter new instructions below.',
-  '已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。':
-    'Paused. Click "Continue flow" to pick up where it left off, or enter new instructions below.',
   '点「继续执行」': 'Resume',
   '点「继续流程」': 'Continue flow',
   '这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。':

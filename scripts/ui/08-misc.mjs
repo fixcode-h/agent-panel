@@ -1,11 +1,12 @@
 /**
- * 界面检查分片：ComfyUI 模板商店与工作流链、统一的悬停提示、计划面板、工作总结（报告树、提炼、采纳）、对话总览。
+ * 界面检查分片：ComfyUI 模板商店与工作流链、统一的悬停提示、计划面板、工作总结（报告树、提炼、采纳）、对话总览、对话右上角的轮次导航。
  *
  * 这四块各自只有 8~13 步（8 + 9 + 10 + 13 = 40），固定开销（起静态服务 + 开浏览器）就占掉一半：
  * 以前是四个分片、四个浏览器，现在合成一片按顺序跑，断言一条不少。
  * 每一块自己开页面（见 harness.mjs 的 page()）：演示数据各在自己的浏览器上下文里，互不影响。
  */
 import { runShard } from './harness.mjs'
+import { openCartTask } from './task-page.mjs'
 
 /**
  * 和 web/src/components/ui/hint.tsx 里的 SKIP_TAGS 一致：
@@ -1006,5 +1007,47 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.setViewportSize({ width: 480, height: 900 })
     await settle(p).catch(() => {})
     await check(p, '对话总览-手机宽度')
+  }
+  // ---- 轮次导航 ----
+  // 对话右上角每轮一根横杠：悬停弹出那一轮的要求和回复开头，点横杠跳过去并高亮那一根
+  {
+    const p = await openCartTask({ base, page, errors })
+    for (const text of ['把按钮颜色改成主题色', '再检查一下窄屏下会不会挤到标题']) {
+      await p.locator('#follow-up').click()
+      await p.keyboard.type(text)
+      await p.keyboard.press('Enter')
+      await p
+        .locator('[data-user]')
+        .filter({ hasText: text })
+        .waitFor({ timeout: 8000 })
+        .catch(() => {})
+    }
+    const dashes = p.locator('[data-turn-rail] nav button')
+    await dashes
+      .nth(2)
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('轮次导航：三轮对话没有出现三根横杠'))
+    if ((await dashes.count()) >= 3) {
+      await dashes.nth(1).hover()
+      const card = p.locator('[data-turn-rail] [role=tooltip]')
+      await card.waitFor({ timeout: 3000 }).catch(() => errors.push('轮次导航：悬停横杠没有弹出预览'))
+      await check(p, '轮次导航-悬停预览', ['第 2 轮', '把按钮颜色改成主题色'])
+      // 卡片整张在视口里：贴着顶端的横杠也不能把卡片顶出页签栏
+      const box = await card.boundingBox()
+      if (box && box.y < 0) errors.push(`轮次导航：预览卡片超出视口顶端（y=${box.y}）`)
+      await dashes.nth(0).click()
+      await p
+        .waitForFunction(() =>
+          document
+            .querySelector('[data-turn-rail] nav button[aria-current]')
+            ?.getAttribute('aria-label')
+            ?.includes('第 1 轮'),
+        )
+        .catch(() => errors.push('轮次导航：点第一根横杠后没有跳到第一轮'))
+      await p.mouse.move(10, 450)
+      await card
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => errors.push('轮次导航：鼠标移开后预览没收起'))
+    }
   }
 })
