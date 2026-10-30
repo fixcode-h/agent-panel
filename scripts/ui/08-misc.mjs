@@ -448,8 +448,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       const before = await stored('今日工作')
       const slot = (await p.locator('[data-slot]').nth(1).boundingBox())?.height ?? 0
       // 周视图打开时滚到「现在的前一小时」：凌晨跑检查时 19:00 那一块在滚动区外面，按坐标拖会落空（检查时好时坏）。
-      // 先把它滚进可视区再取位置
-      await occ.scrollIntoViewIfNeeded().catch(() => {})
+      // 先把它滚到可视区中间再取位置：只滚进可视区的话它贴着底边，往下拖两格就进了底部的自动滚动区，多滚出一格
+      await occ.evaluate((el) => el.scrollIntoView({ block: 'center' })).catch(() => {})
       const box = await occ.boundingBox()
       if (!box || !slot) errors.push('计划拖动：周视图里找不到「今日工作」或时间格')
       else {

@@ -26,3 +26,9 @@ paths: scripts/ui/**, scripts/ui-check.mjs
 - 规则：默认只在失败步骤截图时，判定用「自上次截图以来新增的错误数」，不能只看本条 `check` 期间新增的（console 错误是异步到的）。
 - 起因：`02-task.mjs` 3908 行、124 条断言，整轮 168.5s 全被这一片卡住；拆成三片后 61s，截图 399→31 张、68→1.7MB。
 - 防线：`node scripts/ui-check.mjs 02b`（单跑新分片）、`SHOTS=all node scripts/ui-check.mjs 02c`（看每一步的样子）。
+
+## 按坐标拖动前把目标滚到可视区中间
+
+- 规则：按坐标拖（`mouse.down` → `move` → `up`）之前用 `el.scrollIntoView({ block: 'center' })` 把目标滚到滚动区中间，不用 `scrollIntoViewIfNeeded`：后者只保证露出来，目标常贴着上下边，拖几格就进了组件的边缘自动滚动区，位移被多算一截。周视图打开时按「现在」定滚动位置，这类失败随跑检查的时刻时好时坏。
+- 起因：56cca91 前后「计划拖动」先因 19:00 那一块在可视区外拖落空，补了 `scrollIntoViewIfNeeded` 后又因贴底触发自动滚动，拖两格变成晚两小时（CI 06:00 UTC 复现）。
+- 防线：`node scripts/ui-check.mjs 08-misc`。
