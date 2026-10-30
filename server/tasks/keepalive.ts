@@ -15,6 +15,7 @@ import type { TasksScope } from './scope.ts'
 import type { Live } from './types.ts'
 import { cancelWait } from '../exec/runner.ts'
 import { settleReclaimed } from '../exec/reclaim.ts'
+import { taskLog } from '../task-log.ts'
 
 /**
  * 停止对话、保活上限与回收（还在运行的对话不回收，见 ADR 0012）、对话名下的进程面板。
@@ -27,6 +28,7 @@ export function createKeepAlive(s: TasksScope) {
     // 还在跑的不能跟着被杀，做完结果照样推回父对话（见 ADR 0012）
     if (reason === 'user' || reason === 'archive') void s.closeChildren(id)
     const e = s.live.get(id)
+    taskLog(id, '停止', { reason, live: !!e, already: e?.stop || undefined })
     if (!e) return
     // 已经在停了（停止按钮连点、closeChildren 先停一次再补一次）：别再推一条一模一样的提示
     const firstStop = !e.stop
@@ -192,7 +194,9 @@ export function createKeepAlive(s: TasksScope) {
 
   /** 结束停在等下一句的 CLI 进程（下一轮续接会话）：「关闭 Agent」和压缩会话共用 */
   async function closeWaiting(id: string, e: Live) {
-    if (!cancelWait(id)) stopTask(id, 'close')
+    const canceled = cancelWait(id)
+    taskLog(id, '结束等下一句的进程', { canceled })
+    if (!canceled) stopTask(id, 'close')
     await e.done?.catch(() => {})
     // 计划没做完、落盘还写着执行中的，和页面宽限回收一样收口成已停止，界面不会一直转圈
     if (!s.live.has(id)) await settleReclaimed(s.store, id, 'close')

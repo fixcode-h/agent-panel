@@ -53,6 +53,7 @@ import { placedFiles } from '../attachments.ts'
 import { currentBranch, isBigProject } from '../exec/worktree.ts'
 import { currentTestSteps, isUeBuildCommand } from '../../shared/test-steps.ts'
 import { log } from '../log.ts'
+import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { markWrapUp } from '../../shared/plan.ts'
 import { childFilesInfo, collisionNotice, normClaimPath, scopeOverlaps } from '../claims.ts'
@@ -101,6 +102,11 @@ export function createRun(sc: TasksScope) {
   ) {
     const task = entry.task
     const before = task.status
+    taskLog(task.id, prewarm ? '启动（预热）' : resume ? '启动（继续执行）' : first ? '启动（新对话）' : '启动', {
+      from: before,
+      op: op || undefined,
+      prompt: prewarm ? undefined : prompt.trim().slice(0, 80),
+    })
     const beforeUpdatedAt = task.updatedAt
     const beforeTurnDoneAt = task.turnDoneAt ?? ''
     // 先标成执行中，接口返回时页面就能开始轮询
@@ -495,6 +501,7 @@ export function createRun(sc: TasksScope) {
     entry.done = run
       .catch((e) => {
         log.error('task', '任务执行出错', { task: task.id, error: e })
+        taskLog(task.id, '执行出错', { error: e as Error })
         // 预热失败不打扰对话：恢复原来的状态，等用户发消息时再按正常流程报错
         if (prewarm) {
           entry.task.status = before
@@ -522,6 +529,12 @@ export function createRun(sc: TasksScope) {
       })
       .finally(async () => {
         log.info('task', `任务结束：${entry.task.status}`, { task: task.id })
+        taskLog(task.id, '执行结束', {
+          status: entry.task.status,
+          stopReason: entry.stop ? entry.stopReason : undefined,
+          restart: entry.restart || undefined,
+          held: hasHeld(task.id) || undefined,
+        })
         entry.task.working = false
         entry.task.awaitingUser = false
         entry.task.prewarming = false
@@ -654,7 +667,10 @@ export function createRun(sc: TasksScope) {
     if (!task || taskDeleted(task)) throw new Error('任务不存在')
     const got = sc.reserve(task)
     // 已经有了执行位：并发进来的两条消息只能有一条启动，另一条交给路由按 409 处理
-    if (!got.fresh) throw new TaskBusyError('任务正在执行，请等它完成或先停止')
+    if (!got.fresh) {
+      taskLog(id, '新开一轮被拒：执行位已被占', { messageId: msg?.messageId })
+      throw new TaskBusyError('任务正在执行，请等它完成或先停止')
+    }
     const entry = got.value
     const next = entry.task
     let m = msg
@@ -664,6 +680,7 @@ export function createRun(sc: TasksScope) {
         sc.release(entry)
         return next
       }
+      taskLog(id, '接着处理排着的消息', { messageId: q.id })
       m = { text: q.text, attachments: q.attachments, recorded: true }
       // 这一轮已经结束、马上按新的一轮交给 CLI：把消息上的交付状态从将来的「结束后自动处理」改成实际发生的事
       const was = next.messages.find((x) => x.id === q.id && x.role === 'user')
@@ -728,6 +745,7 @@ export function createRun(sc: TasksScope) {
     const project = next.projectId ? await sc.deps.projects.get(next.projectId) : null
     const restoreErr = project ? await sc.restoreWorktree(next, project) : ''
     if (restoreErr) {
+      taskLog(id, '独立分支没建起来，消息没交出去', { messageId: m.messageId, error: restoreErr })
       // 独立分支没建起来，这一轮没跑：这条消息没能交给 CLI，不能标成「已交给 CLI」
       if (!m.recorded) next.messages.push({ ...newMessage(), delivery: { how: 'lost', at: new Date().toISOString() } })
       sc.recordWorktreeError(next, restoreErr)
@@ -738,6 +756,12 @@ export function createRun(sc: TasksScope) {
     // 附件拷进这个任务的执行目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
     const placed = m.placed ?? (await sc.placeInTask(next, m.attachments))
     if (!m.recorded) next.messages.push(newMessage())
+    taskLog(id, '新开一轮', {
+      messageId: m.messageId,
+      recorded: m.recorded || undefined,
+      panel: m.panel,
+      delivery: how,
+    })
     // start 一进去就把任务标成执行中（status / working / 速度 / runStartedAt，见它的开头）。
     // 失败时执行位已经释放，落盘前要把这些恢复回去，不然任务会停在「执行中」却没有进程在跑
     const usage = next.usage.agents[next.agentId]
@@ -758,6 +782,7 @@ export function createRun(sc: TasksScope) {
         await sc.deps.agents.list(),
       )
     } catch (e) {
+      taskLog(id, '新开一轮启动失败', { messageId: m.messageId, error: e as Error })
       // 启动失败：这条消息没交给 CLI，别让对话里一直写着「已交给 CLI」；
       // 同时把 start 标上的执行中状态恢复过来（执行位已经释放，留着它就自相矛盾）
       next.status = beforeRun.status
@@ -806,9 +831,19 @@ export function createRun(sc: TasksScope) {
     }
     // CLI 收到上一条后一直没有任何输出（卡住了）：再往这一轮里插话也不会有回应，停掉它、接回会话重开
     const stuck = stalledTurn(task.id)
-    if (stuck) return restartStalled(entry, msg, text, placed, stuck.input)
+    if (stuck) {
+      taskLog(task.id, '交付：CLI 卡住，重开', { messageId: msg.id })
+      return restartStalled(entry, msg, text, placed, stuck.input)
+    }
     // 交给 CLI 的是拷进任务目录的那一份（placed）；记进对话的 msg 仍是用户原来的附件，缩略图从附件目录读
     const wait = deliverWait(task, msg, placed)
+    taskLog(task.id, '交付：等下一句', {
+      messageId: msg.id,
+      role: msg.role === 'user' && !msg.panel ? undefined : msg.panel || msg.role,
+      wait,
+      awaitingUser: task.awaitingUser,
+      working: task.working,
+    })
     if (wait === 'ok') {
       task.updatedAt = new Date().toISOString()
       markDelivery(task, msg, 'wait')
@@ -817,6 +852,7 @@ export function createRun(sc: TasksScope) {
     }
     // 等着的还是旧 CLI：让它退出，按输入框里现在的选择重新开始这一轮
     if (wait === 'stale') {
+      taskLog(task.id, '交付：等着的是旧 CLI，按现在的选择重开', { messageId: msg.id })
       entry.restart = true
       if (entry.done) await entry.done
       const next = sc.live.get(task.id)
@@ -906,6 +942,7 @@ export function createRun(sc: TasksScope) {
       task.messages.push(msg)
       holdForNextTurn(task.id, msg)
     }
+    taskLog(task.id, '交付：插进这一轮', { messageId: msg.id, how: how || 'held' })
     markDelivery(task, msg, how || 'held')
     task.updatedAt = new Date().toISOString()
     await sc.store.update(task.id, task)

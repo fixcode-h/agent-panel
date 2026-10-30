@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Task, TaskMessage, type TaskData } from '../shared/schema.ts'
 import { t } from '../shared/i18n.ts'
 import { messageStamp, taskTitle } from '../shared/task.ts'
+import { removeTaskLog, setTaskLogPath } from './task-log.ts'
 import {
   CACHE_DIR,
   DATA_DIR,
@@ -170,6 +171,12 @@ export function createTaskStore() {
 
   const fileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}.json`)
   const msgFileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}${MSG}`)
+  // 对话专属日志和对话文件放在一起（见 task-log.ts）：按 id 找它属于哪个项目目录，内存里没有的不写
+  const logFileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}.log`)
+  setTaskLogPath((id) => {
+    const t = full.get(id) ?? metas?.get(id)
+    return t ? logFileOf(t) : undefined
+  })
 
   async function writeFull(t: Task) {
     await writeJsonAtomic(fileOf(t), head(t))
@@ -627,6 +634,7 @@ export function createTaskStore() {
       await (writing.get(id) ?? Promise.resolve()).catch(() => {})
       await unlink(fileOf(meta)).catch(() => {})
       await unlink(msgFileOf(meta)).catch(() => {})
+      removeTaskLog(logFileOf(meta))
       return true
     },
   }
