@@ -84,6 +84,7 @@ import { promptLangReminder, promptLangRules } from '../../shared/prompt-lang.ts
 import { compactedSilently } from '../../shared/prompt-delta.ts'
 import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
+import { taskLog } from '../task-log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { orchHint } from '../orch-mcp.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
@@ -301,8 +302,10 @@ function waitChat(task: Task, signal: AbortSignal, changed: (flush?: boolean) =>
       resolve(value)
     }
     const onAbort = () => done(null)
+    taskLog(task.id, '等子任务期间等用户消息')
     const w: Waiter = {
       deliver: (msg, placed, recorded) => {
+        taskLog(task.id, '消息交给等子任务的对话', { messageId: msg.id, recorded: recorded || undefined })
         if (!recorded) task.messages.push(msg)
         task.working = true
         changed(true)
@@ -324,6 +327,7 @@ export function cancelWait(taskId: string) {
     w.cancel()
     canceled = true
   }
+  if (canceled) taskLog(taskId, '取消等下一句')
   return canceled
 }
 
@@ -1552,6 +1556,7 @@ async function runAgent(
       }
       task.messages.push(stallMsg)
       log.warn('agent', `${def.name} 交出消息后 ${secs} 秒没有输出，标成卡住`, { task: task.id, step })
+      taskLog(task.id, '标成卡住', { step: step || undefined, secs, midway: midway || undefined })
       ctx.changed(true)
     },
     Math.min(5000, Math.max(50, NO_RESPONSE_MS / 4)),
@@ -2034,6 +2039,10 @@ async function runAgent(
         const done = (value: string | null) => {
           if (settled) return
           settled = true
+          taskLog(task.id, helpers ? '等子任务结束' : '等下一句结束', {
+            got: value === null ? 'none' : 'message',
+            aborted: signal.aborted || undefined,
+          })
           signal.removeEventListener('abort', onAbort)
           const set = waiters.get(task.id)
           if (waiter) set?.delete(waiter)
@@ -2049,6 +2058,7 @@ async function runAgent(
         const onAbort = () => done(null)
         waiter = {
           deliver: (msg, placed, recorded) => {
+            taskLog(task.id, '消息交给等下一句的 CLI', { messageId: msg.id, recorded: recorded || undefined })
             fromUser = true
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
@@ -2071,6 +2081,12 @@ async function runAgent(
           current: helpers ? () => true : stillCurrent,
         }
         ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(waiter)
+        taskLog(task.id, helpers ? '停下等子任务' : '停下等下一句', {
+          cli: def.name,
+          prewarm: prewarmMode || undefined,
+          waiters: waiters.get(task.id)!.size,
+          viewer: isWatched(task.id),
+        })
         signal.addEventListener('abort', onAbort, { once: true })
         // 页面已经离开（宽限过了）：不再一直挂着，让 CLI 结束这一轮（排着的消息由整次执行结束后接着处理）
         if (!isWatched(task.id)) done(null)
@@ -2113,6 +2129,14 @@ async function runAgent(
   // 模型对话（ADR 0025）：挂上 Blender 工具，新会话的提示词里说明怎么用；令牌只在这一轮有效
   const blender = task.modelDesign && def.mcp && !op ? openBlenderSession(task.id) : undefined
   if (blender && !resume) input = `${input}\n\n${MODEL_HINT}`
+  if (chat)
+    taskLog(task.id, '对话的 CLI 进程启动', {
+      cli: def.name,
+      model: model || undefined,
+      resume: resume ? true : undefined,
+      prewarm: prewarmMode || undefined,
+      keepAlive: !!keepAlive,
+    })
   const r = await invokeCli({
     mcp: blender ? [{ name: 'blender', url: blender.url }] : undefined,
     cliId,
@@ -2189,6 +2213,7 @@ async function runAgent(
     limits: manual,
   }).finally(() => {
     finished = true
+    if (chat) taskLog(task.id, '对话的 CLI 进程结束', { cli: def.name, aborted: ctx.signal.aborted || undefined })
     blender?.close()
     clearInterval(stallTimer)
     stalled.delete(task.id)

@@ -30,6 +30,8 @@ import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
 import { CliTag } from '@/components/library/parts'
+import { McpJsonFill } from '@/components/library/McpJsonFill'
+import type { McpDraft } from '@shared/mcp-json'
 
 /**
  * 项目设置里的 MCP：面板管理的工具（写进各 Agent 的全局配置，和「MCP 工具」页同一份数据）+
@@ -461,6 +463,17 @@ function EditDialog({
     url: url.trim(),
     headers: fromLines(headers, ':'),
   })
+  // 粘贴 JSON 分析出来的配置：编辑已有工具时名字不能改，只换其余各项
+  const fillFrom = (d: McpDraft) => {
+    if (!entry && d.name) setName(d.name)
+    setTransport(d.transport)
+    setCommand(d.command)
+    setArgs(joinArgs(d.args))
+    setEnv(toLines(d.env, '='))
+    setUrl(d.url)
+    setHeaders(toLines(d.headers, ': '))
+    setTest(null)
+  }
   const valid =
     /^[A-Za-z0-9][\w-]*$/.test(name) && (transport === 'stdio' ? !!command.trim() : /^https?:\/\//.test(url.trim()))
 
@@ -505,6 +518,7 @@ function EditDialog({
         </>
       }
     >
+      <McpJsonFill onFill={fillFrom} />
       <label className="flex flex-col gap-1.5">
         <span className="text-[0.8125rem] font-medium">{t('名字')}</span>
         <Input

@@ -166,6 +166,15 @@
 
 **给以后改这块的人**：新增数据文件时用 `writeJsonAtomic`，别直接 `writeFile`；判断「数据不存在」之前先想清楚「文件坏了」和「文件没有」是不是一回事，需要区分就用 `readJsonDetailed`，不要拿 `readJson` 的 `undefined` 同时表示两种含义。
 
+## 对话专属日志
+
+每个对话在对话文件旁边有一份自己的日志：`tasks/projects/<项目 id>/<对话 id>.log`（聊天在 `tasks/chats/`），由 `server/task-log.ts` 的 `taskLog(id, 事件, 字段)` 写，一行一件事：`2026-10-30 09:07:12.123 [收到消息] messageId=… live=true status=running awaitingUser=true`。全局日志（`server/log.ts`）按启动分文件、各对话混在一起且主要记报错；这一份只回答「这个对话经历了什么」，查「消息发出去却没了」这类问题时先看它。
+
+- 记的事件：收到消息（当时的执行位、状态、是否在等下一句）、走了哪条交付路径（等下一句 `wait=ok/none/stale`、插话 `how=steer/notes/held`、卡住重开、新开一轮、执行位被占被拒）、最后「消息已记下 / 消息没有记进对话」、启动 / 执行结束（状态、停止原因）、对话 CLI 进程启动和结束、停下等下一句 / 等子任务及其结束、取消等待、标成卡住、停止（原因）、预热、激活 / 关闭 Agent、用户停止。
+- 不记模型输出；消息正文只留开头 80 字，字段超过 200 字截断。写满 2 MB 改名成 `.log.1`（只留一份旧的）。删除对话时连同日志一起删（`task-store` 的 `remove`）。
+- 路径由任务存储注册（`setTaskLogPath`），只认内存里已知的对话；写失败吞掉，不影响执行。
+- 新加会改变消息去向或对话状态的路径时，同时在这里补一行 `taskLog`。
+
 ## 附件落盘：只有图片拷一份进对话目录根，其它文件只引用原路径
 
 - 只有图片（`shared/composer.ts` 的 `attachChip` 判出的 image：mime 是 `image/` 或扩展名是 png/jpeg/gif/webp/bmp）由 `server/attachments.ts` 的 `placeAttachments()` 拷进任务执行目录（对话目录）根下，提示里给的就是这个相对文件名（`截图-132004.png`）：Agent 的 cwd 就是这个目录，直接能读。重名时加序号（`note (2).png`），**对话目录里本来就有同名文件时也不覆盖**，同样加序号另起一个名字；同一个源文件再次放置时沿用任务上记的那份，不会越攒越多副本。超过 `MAX_ATTACHMENT_BYTES` 的图片不拷、保留原绝对路径。**其它文件（文本、代码、PDF、压缩包、音视频）一律不拷**，直接把原来的本机绝对路径交给 Agent；上传的文件只有 `~/.agent-panel/uploads/<uuid>/<名字>` 一份，任务目录里不出现第二份。`ref`（粘贴回来的路径）和 `quote`（引用原文落成的文件）本来就不拷。

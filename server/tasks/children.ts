@@ -444,9 +444,9 @@ export function createChildren(sc: TasksScope) {
       r.state === 'unfinished' && isolated(tk) && !openWork(tk).length
         ? '\n下一步：用 send_to_conversation 让它在自己的分支里跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。'
         : r.state === 'unfinished'
-          ? `\n面板已经推过它一次接着做，它仍停在这里。用 send_to_conversation 交回这个子对话（id ${tk.id}），写清下一步要做什么；不要另建一个子对话重做。`
+          ? `\n下一步：面板已经推过它一次接着做，它仍停在这里。用 send_to_conversation 交回这个子对话（id ${tk.id}），写清下一步要做什么；不要另建一个子对话重做。`
           : r.state === 'failed' || r.state === 'stopped'
-            ? `\n要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
+            ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
             : ''
     const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
     await sc.noteParent(

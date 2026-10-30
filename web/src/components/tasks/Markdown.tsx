@@ -3,6 +3,7 @@ import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
+import { splitSummaryCards, type SummaryCard } from '@shared/summary-card'
 import { linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
 
@@ -50,6 +51,27 @@ async function getMermaid() {
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 /**
+ * 总结卡（shared/summary-card.ts）：类型标签 + 一句话结论在顶上，字段名一列对齐、内容一列，
+ * 一眼扫下来就是「原因 / 修复 / 验证」。字段内容仍按 Markdown 渲染（行内代码、路径、链接照常可点）
+ */
+function cardHtml(card: SummaryCard, teamNames: Set<string>, live?: boolean) {
+  const rows = card.fields
+    .map((f) => {
+      const empty = /^(无|没有|none|n\/a)[。.]?$/i.test(f.text.trim())
+      return `<div class="md-card-row"${f.key ? ` data-key="${f.key}"` : ''}${empty ? ' data-empty' : ''}><dt>${escape(f.label)}</dt><dd>${renderDoc(f.text, teamNames, live)}</dd></div>`
+    })
+    .join('')
+  return `<section class="md-card" data-kind="${card.kind}"><header class="md-card-head"><span class="md-card-kind">${escape(card.label)}</span><span class="md-card-title">${renderDoc(card.title, teamNames, live)}</span></header><dl class="md-card-rows">${rows}</dl></section>`
+}
+
+/** 回复里有总结卡时分段渲染：卡片画成卡片，其余照常 */
+function renderReply(text: string, teamNames: Set<string>, live?: boolean) {
+  const segs = splitSummaryCards(text)
+  if (segs.length === 1 && 'md' in segs[0]) return renderDoc(text, teamNames, live)
+  return segs.map((s) => ('md' in s ? renderDoc(s.md, teamNames, live) : cardHtml(s.card, teamNames, live))).join('')
+}
+
+/**
  * Agent 回复的 Markdown，排版参照 Claude Code：行内代码是小标签，代码块带语言栏、复制按钮和高亮，
  * mermaid 画成图、源码收在下面。流式输出时不画图，等这段输出完再画，免得半截的图反复报错。
  */
@@ -85,7 +107,7 @@ export function Markdown({
   const html = useMemo(() => {
     // 高亮库加载完（ready 变了）要重算一次，否则代码块一直是没有颜色的原文
     void ready
-    const h = renderDoc(deferred, teamNames, live)
+    const h = renderReply(deferred, teamNames, live)
     return canOpen ? linkPaths(h) : h
   }, [deferred, teamNames, canOpen, live, ready])
 

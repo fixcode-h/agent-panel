@@ -8,6 +8,7 @@ import { childAskEffect } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
 import { gitChanges, gitNumstat, gitRevertFile } from '../exec/git.ts'
 import { answerRequest, dropRequests, cancelWait, forgetNotes } from '../exec/runner.ts'
+import { taskLog } from '../task-log.ts'
 import { placedFiles } from '../attachments.ts'
 import { applyFixesInDir } from '../files.ts'
 import { FixApplyInput } from '../../shared/diagnosis.ts'
@@ -381,6 +382,7 @@ export function registerActionRoutes(s: TasksScope) {
 
   s.routes.post('/:id/stop', async (c) => {
     const id = c.req.param('id')
+    taskLog(id, '用户停止', { force: c.req.query('force') ? true : undefined })
     await userStop(id)
     // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
     // 进程不该再留着时（卡住、换机器前的清理）用这个
