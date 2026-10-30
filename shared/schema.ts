@@ -1536,6 +1536,7 @@ export const StopReason = z.enum([
   'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
   'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
   'close', // 用户从对话菜单点「关闭 Agent」，只结束 CLI 进程，下一条消息续接会话
+  'lost', // 记录写着在执行，面板里却已经没人在跑它（哪条路径忘了落状态），定时核对时收口（见 shared/task-settle.ts）
 ])
 export type StopReason = z.infer<typeof StopReason>
 

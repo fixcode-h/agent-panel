@@ -405,6 +405,9 @@ export const EN_TASKS: Record<string, string> = {
   面板重启时中断: 'Interrupted by panel restart',
   页面切走后结束: 'Ended after the page was left',
   '手动关闭了 Agent': 'Agent closed manually',
+  '执行已经中断，面板核对时收口': 'Run had already stopped; the panel settled it during a check',
+  '面板核对时发现这一轮已经没有在执行（记录还写着执行中），已落成「已中断」。发消息或点「继续执行」接着做。':
+    'A check found this turn was no longer running (the record still said running), so it was marked interrupted. Send a message or click Resume to continue.',
   闲置太久已回收: 'Recycled after being idle too long',
   被新消息打断: 'Interrupted by a new message',
   做完后收尾: 'Cleanup after finishing',

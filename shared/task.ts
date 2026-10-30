@@ -1439,6 +1439,8 @@ export function stopReasonText(reason: StopReason | undefined): string {
       return t('Agent 没有响应，面板重启了它')
     case 'close':
       return t('手动关闭了 Agent')
+    case 'lost':
+      return t('执行已经中断，面板核对时收口')
     default:
       return t('已暂停')
   }
