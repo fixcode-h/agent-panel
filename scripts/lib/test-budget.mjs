@@ -1,37 +1,16 @@
 /**
- * 各层用例的硬预算（spec: Per-layer test budget）。
+ * 用例数报数与「本次新增」判定（ADR 0031，替代 ADR 0024 的硬预算）。
  *
- * 「一处定义」：预算数字、冻结基线、判定规则都在这个文件里。检查脚本、CI、文档引用同一份值，
- * 别处不要再写一份数字——要调上限只改这里。
- *
- * 「只降不升」：BUDGET_BASELINE 是首次写入时的快照，TEST_BUDGET 只允许等或更低；
- * 把上限往上调会被检查拦下（要加用例就先合并 / 淘汰等量旧用例，见 spec: Test retirement criteria）。
+ * 各层用例总数不设上限，只报数：出包时和上次发版对比，涨了多少看得见。
+ * 拦的只有一件事：这次改动**净新增**了用例（新增减去删掉，改名、合并不算新增），
+ * 提交说明里要有「测试预算:」段写一句为什么加。重复的、被覆盖的旧用例不再要求每次一换一，
+ * 定期由「测试验收」的「清理用例」一次列出一批，用户确认后一起删。
  */
-import { LAYERS } from './test-layers.mjs'
+import { LAYERS, isE2eShard, isUnitTestPath } from './test-layers.mjs'
 
 /**
- * 首次写入的基线快照（向上取整到 10 的倍数）。这个对象不随日常调整变化，只用来判「有没有往上抬」。
- * 基线日期：2026-10-27；生成命令：
- *   node scripts/test-layers.mjs --report --out docs/openspec/changes/test-governance-budget-and-parallel-safety/evidence/test-layers.json
- * 首次快照（同日修正一次）：第一版判据漏了 `node:fs/promises` 的异步读写，
- * server/exec/system-prompt.test.ts（5 例）被算进纯函数层；补齐判据后重跑了基线，
- * 集成层从 717 例修正为 722 例（上限 720 → 730）。这是「基线算错后的纠正」，不是放宽上限。
- * 2026-10-27 合并 main 后重算一次：main 带来的角色分层、测试输出重跑等用例让纯函数层到 1507、
- * 集成层到 733；这是上游合入的既有用例，不是本次新增，按合并后的实测重算基线。
- */
-export const BUDGET_BASELINE = {
-  [LAYERS.pure]: 1510, // 基线实测 1507 例（合并 main 后重算；原 1500）
-  [LAYERS.integration]: 740, // 基线实测 733 例（合并 main 后重算；原 730）
-  e2eShards: 20, // 基线实测 13 个分片
-  e2eSteps: 130, // 基线实测 122 步
-}
-
-/** 当前上限：默认等于冻结基线，只在淘汰 / 合并用例后往下调；不能高于 BUDGET_BASELINE */
-export const TEST_BUDGET = { ...BUDGET_BASELINE }
-
-/**
- * 预算项：计数键与预算键同名，检查时按键遍历。
- * 加一类新预算（例如资源文件数）时只加一行，检查脚本不用改。
+ * 报数项：计数键与报数键同名，按键遍历。
+ * 加一类新报数（例如资源文件数）时只加一行，脚本不用改。
  */
 export const BUDGET_ITEMS = [
   { key: LAYERS.pure, label: '纯函数层用例' },
@@ -40,22 +19,15 @@ export const BUDGET_ITEMS = [
   { key: 'e2eSteps', label: 'e2e 步骤' },
 ]
 
-/** 提交说明里允许用这个段说明「超预算的新增换掉了哪些旧用例」（spec: 超限时必须写清替代关系） */
+/** 提交说明里写「为什么要加这些用例」的段 */
 export const BUDGET_NOTE_PREFIX = '测试预算:'
 
 /** 提交说明的分类前缀（见 AGENTS.md「提交说明」）：预算段到这里就结束 */
 const COMMIT_SECTIONS = /^(?:新功能|改进|修复|依赖|内部|测试预算)[:：]/
 
 /**
- * 拼接多份提交说明时的分隔行。用分类前缀开头有两个作用：读起来知道下面换了一份说明，
- * 同时让上一份的「测试预算:」段在这里结束——子提交标题通常不是分类前缀（例如「Agent 面板：…」），
- * 不隔开的话它的标题和正文会被并进 HEAD 的预算段。
- */
-const MERGED_MESSAGE_SEPARATOR = '内部：被合并进来的提交说明'
-
-/**
  * 取提交说明里的「测试预算:」段。没有就返回空字符串。
- * 段从 `测试预算:` 那行开始，到空行后的下一个分类前缀或说明结尾为止。
+ * 段从 `测试预算:` 那行开始，到下一个分类前缀或说明结尾为止。
  */
 export function parseBudgetNote(message) {
   const lines = String(message ?? '')
@@ -70,157 +42,96 @@ export function parseBudgetNote(message) {
     body.push(line)
   }
   const text = [lines[start], ...body].join('\n').trim()
-  // 只写了前缀、没写内容的按没写处理：空段说明不了「用什么替代了哪些旧用例」
+  // 只写了前缀、没写内容的按没写处理：空段说明不了为什么加
   return text.replace(/^测试预算[:：]/, '').trim() ? text : ''
 }
 
 /**
- * 判定预算。返回 { ok, raised, over, note }：
- * - raised：上限被抬到冻结基线之上（只降不升，写说明也不行）
- * - over：某项计数超过上限；有非空的「测试预算:」段时放行（说明里写了替代关系）
- */
-export function checkBudget({ counts, budget = TEST_BUDGET, baseline = BUDGET_BASELINE, commitMessage = '' }) {
-  const note = parseBudgetNote(commitMessage)
-  const raised = raisedBudgets({ budget, baseline })
-  const over = overBudgets({ counts, budget })
-  return { ok: budgetVerdict({ raised, over, note }), raised, over, note }
-}
-
-/** 各层静态计数超过上限的项；tap 复核时也要用它把「某一层超了」报出来（tap 只有总数，分不到层） */
-export function overBudgets({ counts, budget = TEST_BUDGET }) {
-  const over = []
-  for (const item of BUDGET_ITEMS) {
-    const limit = budget[item.key]
-    const count = counts[item.key]
-    if (typeof count !== 'number') throw new Error(`预算项 ${item.key} 缺计数：count=${count}`)
-    if (count > limit) over.push({ key: item.key, label: item.label, count, limit, excess: count - limit })
-  }
-  return over
-}
-
-/**
- * 本次检查该看哪份提交说明：显式传入的优先（调用方已处理）；没有时只有工作区干净才用 HEAD 的说明。
- * 有未提交改动时 HEAD 是上一次提交——它的「测试预算:」段不属于本次改动，
- * 拿它当本次说明会静默放行超预算的新用例。
- *
- * HEAD 是合并提交时（面板合并子对话、GitHub 的 PR merge ref），它自己的说明通常只有一行标题，
- * 被合进来的子提交里写的「测试预算:」段也要算本次的：mergedMessages 按顺序接在后面，
- * parseBudgetNote 取第一个非空段。普通提交没有 mergedMessages，行为不变。
- */
-export function commitMessageFor({ headMessage = '', mergedMessages = [], hasUncommittedChanges = false } = {}) {
-  if (hasUncommittedChanges) return ''
-  return [headMessage, ...mergedMessages]
-    .filter((m) => String(m ?? '').trim())
-    .join(`\n\n${MERGED_MESSAGE_SEPARATOR}\n\n`)
-}
-
-/**
- * 合并链最多往下走几层。正常最多两层（GitHub 的 PR merge → dev 上的面板合并提交 → 子对话提交），
- * 留余量并在超限时停下，避免异常数据（环、超长链）把检查拖住。
- */
-export const MERGE_CHAIN_MAX_DEPTH = 10
-
-/**
- * 合并提交时该读的说明：从被合进来的 tip 开始，是合并提交就继续取它的第二个父，直到普通提交。
- *
- * 只走第二个父这一侧，不横向读 base / 更早的兄弟提交——那些提交里的预算段不属于本次改动，
- * 读了会把本次超预算的新用例误放行（复看 R2）。向下走是必要的：GitHub 的 PR merge ref 里
- * parents[1] 是 dev tip，而 dev tip 往往又是面板生成的合并提交（说明只有标题），
- * 真正的预算段在它自己的 parents[1] 里（复看 R3）。
- *
- * 往下走的前提是「第二父是被合进来的分支方向」，这个前提对面板 / GitHub 生成的合并不一定成立：
- * 子分支自己 merge 过 dev 时，那一层合并提交的第二父是 base 方向，再往下就是上一次改动的历史。
- * isBaseSide 用来在每一步判断第二父是否落在 base 侧，落在那里就停在当前提交（复看 R4）。
- *
- * getParents / getMessage / isBaseSide 由调用方接 git，单测里换成假数据。
- */
-export function mergedChainMessages({
-  tip,
-  getParents,
-  getMessage,
-  isBaseSide = () => false,
-  maxDepth = MERGE_CHAIN_MAX_DEPTH,
-}) {
-  const messages = []
-  let sha = tip
-  for (let depth = 0; sha && depth < maxDepth; depth++) {
-    messages.push(getMessage(sha))
-    const parents = getParents(sha)
-    if (parents.length < 2) break
-    if (isBaseSide(parents[1])) break
-    sha = parents[1]
-  }
-  return messages
-}
-
-/**
  * 有没有会影响用例计数的未提交改动：测试目录里的已跟踪改动，或未跟踪的测试文件。
- * 不能用整仓 `git status`：CI 里前一步会在工作区留下生成物（unit-tap.txt、各种缓存），
- * 那会把「本次提交说明」当成空、合规的超预算提交被挡下（复看 R1）。
+ * 有的话本次改动就是工作区，HEAD 的说明属于上一次提交、不能当本次的。
+ * 不能用整仓 `git status`：CI 里前一步会在工作区留下生成物（unit-tap.txt、各种缓存）。
  */
 export function pendingTestChanges({ tracked = '', untracked = [] } = {}) {
   if (String(tracked).trim()) return true
   return untracked.some((file) => /\.test\.(ts|mjs)$/.test(file))
 }
 
-/** 上限被抬到冻结基线之上的项（只降不升）；静态检查与 tap 复核共用 */
-export function raisedBudgets({ budget = TEST_BUDGET, baseline = BUDGET_BASELINE }) {
-  const raised = []
-  for (const item of BUDGET_ITEMS) {
-    const limit = budget[item.key]
-    const base = baseline[item.key]
-    if (typeof limit !== 'number' || typeof base !== 'number')
-      throw new Error(`预算项 ${item.key} 缺数字：limit=${limit} baseline=${base}`)
-    if (limit > base) raised.push({ key: item.key, label: item.label, limit, baseline: base })
-  }
-  return raised
-}
+/** 测试文件里算一条用例的行：单测的 test( / it(，e2e 分片的 step( */
+const caseLine = (file, text) =>
+  isE2eShard(file) ? /^\s*(?:await\s+)?step\s*\(/.test(text) : /^\s*(?:test|it)\s*\(/.test(text)
+
+/** 这个路径的用例算不算数：单测文件或 e2e 分片 */
+const countsAsTest = (file) => isUnitTestPath(file) || isE2eShard(file)
 
 /**
- * 最终判定只写在这里：上限被抬一定不放行；用例超限时必须有非空的「测试预算:」段。
- * 静态计数和 tap 复核的计数方式不同，但放行规则必须一致，两边都调它。
+ * 从 `git diff -U0` 的输出里取出新增和删掉的用例（file / line / 源码行）。
+ * 改名是删一条加一条，合并是删两条加一条：净新增 = 新增 - 删掉，用它判定才不会把改名、合并当成新增。
  */
-export function budgetVerdict({ raised, over, note }) {
-  return raised.length === 0 && (over.length === 0 || !!note)
-}
-
-/** 两层合计上限：tap 报告只有总用例数（不分层），CI 复核时按这个数判 */
-export const UNIT_CASE_LIMIT = TEST_BUDGET[LAYERS.pure] + TEST_BUDGET[LAYERS.integration]
-
-/**
- * 从 `git diff -U0` 的输出里取出新增的用例位置（file / line / 源码行）。
- * 超预算时打印这些位置，比只报「多了 3 条」更容易定位到要合并的那几条。
- */
-export function newCasesFromDiff(diffText) {
-  const out = []
-  let file = ''
-  let line = 0
+export function diffCases(diffText) {
+  const added = []
+  const removed = []
+  let from = ''
+  let to = ''
+  let oldLine = 0
+  let newLine = 0
   for (const raw of String(diffText ?? '').split('\n')) {
+    if (raw.startsWith('--- ')) {
+      const p = raw.slice(4).trim()
+      from = p === '/dev/null' ? '' : p.replace(/^a\//, '')
+      continue
+    }
     if (raw.startsWith('+++ ')) {
       // `+++ b/path` 或 `+++ /dev/null`（删文件，没有新增行）
-      const target = raw.slice(4).trim()
-      file = target === '/dev/null' ? '' : target.replace(/^b\//, '')
+      const p = raw.slice(4).trim()
+      to = p === '/dev/null' ? '' : p.replace(/^b\//, '')
       continue
     }
-    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw)
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw)
     if (hunk) {
-      line = Number(hunk[1])
+      oldLine = Number(hunk[1])
+      newLine = Number(hunk[2])
       continue
     }
-    if (!file || !raw.startsWith('+') || raw.startsWith('+++')) continue
-    if (/^\s*(?:test|it)\s*\(/.test(raw.slice(1))) out.push({ file, line, text: raw.slice(1).trim() })
-    line++
+    if (raw.startsWith('+')) {
+      const text = raw.slice(1)
+      if (to && countsAsTest(to) && caseLine(to, text)) added.push({ file: to, line: newLine, text: text.trim() })
+      newLine++
+    } else if (raw.startsWith('-')) {
+      const text = raw.slice(1)
+      if (from && countsAsTest(from) && caseLine(from, text))
+        removed.push({ file: from, line: oldLine, text: text.trim() })
+      oldLine++
+    }
   }
-  return out
+  return { added, removed }
 }
 
 /**
  * 未跟踪的新测试文件不在 `git diff` 里：整份都是新增，逐行扫一遍用例调用。
- * 新增文件是最容易把某层顶超预算的情况，不能漏。
+ * 新增文件是最容易一下子加很多用例的情况，不能漏。
  */
 export function newCasesInSource(file, sourceText) {
+  if (!countsAsTest(file)) return []
   return String(sourceText ?? '')
     .split('\n')
     .map((text, i) => ({ file, line: i + 1, text: text.trim() }))
-    .filter((c) => /^\s*(?:test|it)\s*\(/.test(c.text))
+    .filter((c) => caseLine(file, c.text))
+}
+
+/**
+ * 判定只写在这里：净新增大于 0 时要有非空的「测试预算:」段。
+ * 总数多少不管（不设上限）；删掉、合并、改名都放行。
+ */
+export function newCaseVerdict({ added = [], removed = [], note = '' }) {
+  const net = added.length - removed.length
+  return { net, ok: net <= 0 || !!note }
+}
+
+/** 两份计数逐项对比（出包时和上次发版比）：返回每项的前后值和差 */
+export function countDelta(before, after) {
+  return BUDGET_ITEMS.map((item) => {
+    const was = before?.[item.key] ?? 0
+    const now = after[item.key] ?? 0
+    return { key: item.key, label: item.label, before: was, after: now, delta: now - was }
+  })
 }

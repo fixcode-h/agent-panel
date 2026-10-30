@@ -5,7 +5,7 @@
  * 一个文件要不要起服务、建临时目录、跑 git、开子进程，看它源码里的调用就知道，改名迁移也只是改文件名。
  *
  * 判据只在下面这张表里写一次：新增一类运行时特征就加一行，报告、预算、测试都读它。
- * 层名同时也是「用例预算」的键（见 scripts/lib/test-budget.mjs），两边不要各写一套字符串。
+ * 层名同时也是用例报数的键（见 scripts/lib/test-budget.mjs），两边不要各写一套字符串。
  */
 import { readdirSync } from 'node:fs'
 import path from 'node:path'
@@ -19,7 +19,7 @@ export const LAYERS = { pure: 'pure', integration: 'integration', e2e: 'e2e' }
  */
 export const E2E_SHARD_FILE = /^\d+-.*\.mjs$/
 
-const E2E_SHARD_DIR = 'scripts/e2e/'
+export const E2E_SHARD_DIR = 'scripts/e2e/'
 
 /**
  * 集成层的运行时特征。任何一条命中即归集成层（spec: Test layer classification）。
@@ -106,6 +106,16 @@ export const SKIP_DIRS = new Set([
 ])
 
 const relPath = (root, file) => path.relative(root, file).split(path.sep).join('/')
+
+/**
+ * 一个相对路径是不是单测文件：和 listUnitTestFiles 同一份口径，只是不读磁盘。
+ * 按 git 里某个版本数用例（出包时和上次发版对比）、从 diff 里认测试文件都用它
+ */
+export function isUnitTestPath(file) {
+  const rel = String(file).replace(/\\/g, '/')
+  if (rel.split('/').some((part) => SKIP_DIRS.has(part))) return false
+  return TEST_ROOTS.some(([dir, suffix]) => rel.startsWith(`${dir}/`) && suffix.test(rel))
+}
 
 /** 枚举单测文件，返回相对 root、用 / 分隔、按字典序排列的路径 */
 export function listUnitTestFiles(root) {

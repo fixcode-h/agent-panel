@@ -79,6 +79,7 @@ import { DesignList } from './SidebarDesigns'
 import {
   ComfyIcon,
   McpIcon,
+  OverviewIcon,
   RoleIcon,
   ScheduleIcon,
   SkillIcon,
@@ -127,6 +128,7 @@ export function Logo({ className }: { className?: string }) {
  * 手机的抽屉菜单里照旧列在会话侧栏里
  */
 export const NAV: { id: PageId; label: string; icon: NavIcon }[] = [
+  { id: 'overview', label: t('对话总览'), icon: OverviewIcon },
   { id: 'summary', label: t('工作总结'), icon: SummaryIcon },
   { id: 'schedules', label: t('计划'), icon: ScheduleIcon },
   { id: 'agents', label: t('角色'), icon: RoleIcon },
@@ -312,7 +314,7 @@ export const homeRoute = (from?: PageId) =>
 /** 功能页：会话侧栏让开，整页给这个功能 */
 export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page)
 /** 设计模式：设计页和它的 ComfyUI 工作流页 */
-export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy'
+export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy' || page === 'model'
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
@@ -434,7 +436,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 免得同一次输入发两份请求或者为看不见的结果白扫一遍对话
   const content = useTaskSearch(chatMode || designMode ? '' : query)
   // 子对话只在父对话页的「子对话」一栏里看，不占项目下的任务列表
-  const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId)
+  // 模型设计对话属于设计模式（#/model），不列进 Agent 模式的项目对话
+  const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.modelDesign)
   const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter)).sort(byAskedAt) : []
   // 只留项目里的对话：侧栏这一栏不列 Chat，正文命中也不该混进来
   const contentHits = content.hits.filter((h) => projectTasks.some((x) => x.id === h.taskId))

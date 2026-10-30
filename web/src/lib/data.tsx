@@ -365,9 +365,11 @@ export type PageId =
   | 'chat'
   | 'design'
   | 'comfy'
+  | 'model'
   | 'library'
   | 'mcp'
   | 'summary'
+  | 'overview'
 export interface Route {
   page: PageId
   id?: string

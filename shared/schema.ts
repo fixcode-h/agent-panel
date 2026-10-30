@@ -918,6 +918,11 @@ const ProjectFields = z.object({
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**
+   * 每个顶层对话（连同名下全部子对话）的用量上限：80% 提醒一次，100% 停下整个对话（见 shared/budget.ts）。
+   * 两项都是 0 表示不限；旧项目没有这个字段，也是不限
+   */
+  budget: z.object({ tokens: z.number().int().min(0).default(0), costUsd: z.number().min(0).default(0) }).optional(),
+  /**
    * 「AI 初始化项目」完成并应用的时间（ISO）。空表示还没初始化：项目设置里要先初始化才能确认保存，
    * 旧项目也是空的，第一次打开设置时补做一次
    */
@@ -1193,7 +1198,7 @@ export const AlertKind = z.enum([
   'no_response', // 交给 CLI 后迟迟没有任何输出
   'idle', // 执行中很久没有输出
   'timeout', // 超过单步时限被停掉
-  'empty_turn', // 这一轮没有产出
+  'empty_turn', // CLI 报这一轮结束，却什么都没返回
   'retry', // CLI 自己在重试
   'delivery', // 面板没能把消息交给对话（后台结果、子对话上报）
   'worktree', // 独立分支建不起来、删不掉
@@ -1536,6 +1541,8 @@ export const StopReason = z.enum([
   'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
   'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
   'close', // 用户从对话菜单点「关闭 Agent」，只结束 CLI 进程，下一条消息续接会话
+  'lost', // 记录写着在执行，面板里却已经没人在跑它（哪条路径忘了落状态），定时核对时收口（见 shared/task-settle.ts）
+  'budget', // 对话树用到了项目设的用量上限（见 shared/budget.ts）
 ])
 export type StopReason = z.infer<typeof StopReason>
 
@@ -1643,9 +1650,14 @@ export type TaskTestRun = z.infer<typeof TaskTestRun>
  * 完成的步骤锁死不再改；整份做完、写了总结后收起，之后的新内容开一份新计划。
  * waiting：步骤在等后台命令、子对话这类耗时的结果，对话先去做下一步，结果回来再处理它。
  * running 与 waiting 分开：running 是「对话现在在动手」（一份计划里最多一个），waiting 是「在等外部结果」（必须挂着 waits）。
- * failed：这一步没做成、需要处理（重做或明确跳过），不是终态；skipped：明确不做，终态（见 ADR 0020）
+ * skipped：明确不做，终态（见 ADR 0020）。
+ * 没有「失败」：等的结果没成功、工作流没走完，那一步退回进行中、备注写「需要修复：原因」，对话去查问题修好重做，
+ * 不在计划上留一个失败的步骤（用户 2026-10-30 定的，见 ADR 0032）。旧数据里的 failed 读出来就是进行中
  */
-export const PlanStatus = z.enum(['pending', 'running', 'waiting', 'done', 'failed', 'skipped'])
+export const PlanStatus = z.preprocess(
+  (v) => (v === 'failed' ? 'running' : v),
+  z.enum(['pending', 'running', 'waiting', 'done', 'skipped']),
+)
 export type PlanStatus = z.infer<typeof PlanStatus>
 
 /**
@@ -1731,6 +1743,11 @@ export const TaskPlan = z.object({
    * 否则对话选了「不改计划、说明一句」时会被每轮重复追问（见 shared/plan.ts 的 inputUnhandled）
    */
   inputNotedAt: z.string().optional(),
+  /**
+   * 对话自己（set_plan）最后一次改这份计划的时间。「新要求进来后计划有没有跟着改」只认它：
+   * 面板替它推进的变化（结果回来标完成、派子对话挂等待、子对话上报改备注）不算对话看过了新要求
+   */
+  agentUpdatedAt: z.string().optional(),
   /** 计划完成后 Agent 写的总结（必须有）；auto 表示 Agent 没写、面板取了它最后的回复 */
   summary: z.string().default(''),
   autoSummary: z.boolean().default(false),
@@ -1948,6 +1965,8 @@ export const TaskData = z.object({
   status: TaskStatus,
   /** 停下来的原因：只有 'user' 是用户按的暂停，其余几种界面要写清是谁结束的（见 StopReason） */
   stopReason: StopReason.optional(),
+  /** 顶层对话的用量上限提醒到了哪一级（warn 提醒过、over 停过）：同一级只说一次；调高上限后跟着回落 */
+  budgetNotice: z.enum(['warn', 'over']).optional(),
   /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
   runMs: z.number().default(0),
   /** 这一轮开始执行的时间；没在执行时为空 */

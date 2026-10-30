@@ -8,7 +8,6 @@ import {
   GitBranch,
   Loader2,
   MessageSquare,
-  Shrink,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
@@ -36,6 +35,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ContextRing } from '@/components/ui/context-ring'
+import { SessionContextBody, useSessionContext } from '@/components/session/SessionContext'
 import { Progress } from '@/components/ui/progress'
 import { t } from '@shared/i18n'
 import { withTaskModel } from '@shared/task'
@@ -105,6 +105,8 @@ export function TaskMeta({
   return (
     <div className="mx-auto mt-2 flex max-w-(--content-w) flex-wrap items-center gap-x-1 gap-y-1 px-1">
       {!hideContext && lines.length > 0 && <ContextChip lines={lines} />}
+      {/* 会话栏收起时它的「上下文」细分挪到这里；流程图选了节点时上面已经按节点列，不重复 */}
+      {!inRail && !scope && <SessionContextChip task={task} onTask={onTask} />}
       {!inRail && <TokenChip task={task} scope={scope} />}
       {!inRail && (
         <EnvChip
@@ -112,7 +114,6 @@ export function TaskMeta({
           projectName={projectName}
           projectPath={projectPath}
           workflowName={workflowName}
-          onTask={onTask}
           onOpenChild={onOpenChild}
         />
       )}
@@ -404,6 +405,29 @@ export function TokenUsage({ task, scope }: { task: Task; scope?: TaskStep[] }) 
   )
 }
 
+/** 上下文小块：会话栏不在时放在输入框下面，显示占用和用量，点开是会话栏里那份细分 */
+function SessionContextChip({ task, onTask }: { task: Task; onTask: (task: Task) => void }) {
+  const ctx = useSessionContext(task)
+  const { data } = ctx
+  if (!data) return null
+  const p = data.percent
+  return (
+    <Popover>
+      <PopoverTrigger className={META_CHIP} title={t('上下文占用')} data-context-chip>
+        <ContextRing small percent={p} label={t('上下文已用 {n}%', { n: Math.round(p) })} />
+        <span className="font-mono">
+          {fmtTokens(data.used)} / {fmtTokens(data.window)}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent className="max-h-[min(560px,calc(100vh-96px))] w-[min(340px,calc(100vw-24px))] overflow-y-auto">
+        <div className="p-3">
+          <SessionContextBody task={task} ctx={ctx} onTask={onTask} />
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 /** Token 用量小块：会话栏不在时（窄屏、子对话面板、工作流）才放在输入框下面，点开是同一份明细 */
 function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
   const { u, tps, total } = useTokenUsage(task, scope)
@@ -439,7 +463,6 @@ export function EnvChip({
   projectName,
   projectPath,
   workflowName,
-  onTask,
   onOpenChild,
   compact,
 }: {
@@ -447,7 +470,6 @@ export function EnvChip({
   projectName?: string
   projectPath?: string
   workflowName?: string
-  onTask: (task: Task) => void
   onOpenChild?: (id: string) => void
   /** 放在会话栏「环境」块的标题行：目录和分支那块已经列着了，入口只留一个小图标 */
   compact?: boolean
@@ -562,24 +584,6 @@ export function EnvChip({
           {limited.map((c) => (
             <LimitRow key={c} cli={c} named={limited.length > 1} />
           ))}
-          {task.mode === 'chat' && !task.simulated && idle && Object.keys(task.sessions).length > 0 && (
-            <button
-              type="button"
-              disabled={!idle}
-              title={t('让 Agent 把之前的对话压缩成摘要，腾出上下文')}
-              onClick={async () => {
-                try {
-                  onTask(await api.compactTask(task.id))
-                } catch (e) {
-                  toast.error((e as Error).message)
-                }
-              }}
-              className="-mx-1 flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-muted"
-            >
-              <Shrink className="h-3.5 w-3.5 shrink-0" />
-              {t('压缩上下文')}
-            </button>
-          )}
         </div>
       </PopoverContent>
     </Popover>

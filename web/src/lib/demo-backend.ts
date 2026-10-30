@@ -92,6 +92,7 @@ import {
   taskTrendText,
 } from '@shared/memory-analysis'
 import { descendantTotals } from '@shared/task-export'
+import { collabEvents } from '@shared/collab-timeline'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/lesson-review'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
@@ -3409,6 +3410,12 @@ function tasksRoute(
   if (sub === 'memory' && method === 'GET') return demoMemory(task, query)
   if (sub === 'memory-analysis' && method === 'GET') return demoMemoryAnalysis(task, tasks, d.projects ?? [])
   if (sub === 'run-usage' && method === 'GET') return runUsage(task, tasks)
+  // 父子协作时间线：和正式后端一样按父对话那一组算
+  if (sub === 'collab' && method === 'GET') {
+    const root = (task.parentTaskId && tasks.find((x) => x.id === task.parentTaskId)) || task
+    const kids = tasks.filter((x) => x.parentTaskId === root.id && !x.deletedAt)
+    return { rootId: root.id, events: collabEvents(root, kids) }
+  }
   // 子对话的统计合计：和正式后端一样，把子对话（含多层）的耗时、token、报错汇总进来
   if (sub === 'children-stats' && method === 'GET')
     return descendantTotals(runTree(task, tasks).filter((x) => x.id !== task.id))
@@ -4352,8 +4359,8 @@ function demoPlans(task: Task) {
             item('3.3', '覆盖未登录的本地购物车', 'pending'),
           ],
         },
-        // 失败态：需要对话处理（重做或明确跳过），不是正在跑；没有结束时间，所以不显示用时
-        { ...item('4', '整理改动和总结', 'failed'), note: '等的结果没成功：npm run build', children: [] },
+        // 等的结果没成功：没有「失败」，仍是进行中，备注红字写「需要修复：原因」，对话去查问题修好重做
+        { ...item('4', '整理改动和总结', 'running'), note: '需要修复：等的结果没成功：npm run build', children: [] },
       ],
     },
   ]

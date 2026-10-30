@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { childAutoAskWaiting, childIdleAsk, CHILD_IDLE_ASK_MAX } from './task.ts'
+import { childAutoAskWaiting, childIdleAsk, CHILD_IDLE_ASK_MAX, planStalled } from './task.ts'
 
 /** 一分钟按 1 秒算：阈值、上限这些判定不用真的等几分钟 */
 const unitMs = 1000
@@ -94,4 +94,42 @@ test('询问之后还没有新输出才算「等回复」', () => {
 test('这一轮收不下、已经撤掉的询问不算在等回复', () => {
   const autoAsk = { at: at(now), count: 1, held: true }
   assert.equal(childAutoAskWaiting({ autoAsk, lastActivityAt: at(now) }), false)
+})
+
+test('这一轮说完了、计划没做完也没在等别的：算停住了（面板推它接着做），在等别人、只剩合回都不算', () => {
+  const plan = (steps: { status: string; waits?: { state: string }[]; wrapUp?: string }[]) =>
+    ({
+      working: false,
+      steps: [],
+      plans: [
+        {
+          id: 'p',
+          title: '',
+          steps: steps.map((s, i) => ({ id: String(i), title: `第 ${i} 步`, waits: [], children: [], ...s })),
+        },
+      ],
+    }) as unknown as Parameters<typeof planStalled>[0]
+  // 用户报过：子对话只回了一句「先跑类型检查」就收尾，计划 1/8，父对话等它、它等下一句
+  const stalled = plan([{ status: 'done' }, { status: 'running' }, { status: 'pending' }])
+  assert.equal(planStalled(stalled), true)
+  // 在等孙对话、已经请父对话收尾、计划做完了：是在等别人，不算停住
+  assert.equal(planStalled(plan([{ status: 'done' }, { status: 'waiting', waits: [{ state: 'waiting' }] }])), false)
+  assert.equal(
+    planStalled({ ...stalled, wrapRequest: { state: 'requested', at: '', note: '' } } as typeof stalled),
+    false,
+  )
+  assert.equal(planStalled(plan([{ status: 'done' }])), false)
+  // 只剩面板加的「合回」那一步：归「催它 submit_merge」管
+  assert.equal(planStalled(plan([{ status: 'done' }, { status: 'pending', wrapUp: 'merge' }])), false)
+  assert.equal(planStalled({ ...stalled, working: true }), false)
+  // 要修的步骤（等的结果没成功，退回进行中）也算没做完：一轮结束停在这里要推它先修（用户报过计划失败后对话不继续）
+  assert.equal(
+    planStalled(
+      plan([
+        { status: 'done' },
+        { status: 'running', note: '需要修复：等的结果没成功：e2e', waits: [{ state: 'failed' }] } as never,
+      ]),
+    ),
+    true,
+  )
 })

@@ -56,25 +56,25 @@
 
 ## Agent 清单
 
-| key            | 名称             | 能力块                                              | 通用 | 用到它的工作流                                                       | 关键参数                                                                              |
-| -------------- | ---------------- | --------------------------------------------------- | ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `rules`        | 通用约束         | 常驻规则                                            | —    | 全部（includes）                                                     | —                                                                                     |
-| `orchestrator` | 主理（必备）     | 父对话：分析、澄清、分诊                            |      | general、ue（主 Agent）                                              | `vcs` `split` `confirm` `clarify` `report`                                            |
-| `worker`       | 执行（必备）     | 子对话执行                                          |      | 项目对话运行路径                                                     | `vcs` `mode` `batch` `verify` `commit`                                                |
-| `helper`       | 子任务（必备）   | 并行收集、核实、计划                                |      | —（spawn_agents 不点名时默认用它，不作为可选角色展示）               | —                                                                                     |
-| `docsync`      | 文档（必备）     | 文档落盘                                            | ✓    | 改代码的工作流最后一个节点都是它；architecture、release              | `docRoot` `lang` `index` `adr` `bug`                                                  |
-| `tester`       | 测试验收（必备） | 构建/测试/验收，独立设计用例、补测试                | ✓    | openspec（延期验证项）、migration（旧数据验证）、release（产物验证） | `task`（跑验收 / 设计用例 / 补测试）`scope` `env` `regress` `onFail` `write` `serial` |
-| `explorer`     | 调研             | 只读调研（可回写模块文档）                          | ✓    | ue、review                                                           | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene`       |
-| `reviewer`     | 评审（必备）     | 独立评审与复核                                      | ✓    | review；子对话收尾前由执行角色直接派                                 | `target`（代码改动 / 安全 / 方案或结论）`vcs`                                         |
-| `analyst`      | 方案设计         | 需求、方案与架构契约                                |      | general、ue、openspec、architecture、migration                       | `scene` `scale`（spike / bounded / architectural）`grill` `stack`                     |
-| `spec`         | 规范撰写         | OpenSpec 产物与门禁                                 |      | openspec                                                             | `scene` `stage`                                                                       |
-| `developer`    | 开发             | 写代码                                              |      | general、ue、openspec、bugfix、migration                             | `task`（实现 / 修 Bug / 性能问题 / 重构）`scene` `lang` `vcs` `tdd` `records`         |
-| `uiqa`         | 界面走查         | 打开真实页面看界面                                  | ✓    | —（执行默认挂成派出：改了界面时评审之后派）                          | `pages` `theme` `width` `states`                                                      |
-| `i18n`         | 本地化           | 界面文案翻译与漏翻                                  |      | —（执行默认挂成自动判断）                                            | `mode`（补翻译 / 查漏翻 / 整体校对）`langs`                                           |
-| `deps`         | 依赖与安全       | 依赖体检与升级                                      |      | deps                                                                 | `vcs` `mode` `audit` `license`                                                        |
-| `vcs`          | 版本控制（必备） | 版本控制与交付收尾                                  | ✓    | release（发布范围）；子对话没有 submit_merge 时由执行角色派          | `vcs` `branch` `merge` `mergeReview` `commit`                                         |
-| `blender`      | Blender 建模     | 建模、动画与质检                                    |      | blender                                                              | `stage`（含「质检」）                                                                 |
-| `worklog`      | 每日工作总结     | 按天 / 按周提炼需求和 Bug（只读），工作总结页也用它 |      | general                                                              | `material` `day` `projects`                                                           |
+| key            | 名称             | 能力块                                              | 通用 | 用到它的工作流                                                       | 关键参数                                                                                         |
+| -------------- | ---------------- | --------------------------------------------------- | ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `rules`        | 通用约束         | 常驻规则                                            | —    | 全部（includes）                                                     | —                                                                                                |
+| `orchestrator` | 主理（必备）     | 父对话：分析、澄清、分诊                            |      | general、ue（主 Agent）                                              | `vcs` `split` `confirm` `clarify` `report`                                                       |
+| `worker`       | 执行（必备）     | 子对话执行                                          |      | 项目对话运行路径                                                     | `vcs` `mode` `batch` `verify` `commit`                                                           |
+| `helper`       | 子任务（必备）   | 并行收集、核实、计划                                |      | —（spawn_agents 不点名时默认用它，不作为可选角色展示）               | —                                                                                                |
+| `docsync`      | 文档（必备）     | 文档落盘                                            | ✓    | 改代码的工作流最后一个节点都是它；architecture、release              | `docRoot` `lang` `index` `adr` `bug`                                                             |
+| `tester`       | 测试验收（必备） | 构建/测试/验收，独立设计用例、补测试                | ✓    | openspec（延期验证项）、migration（旧数据验证）、release（产物验证） | `task`（跑验收 / 设计用例 / 补测试 / 清理用例）`scope` `env` `regress` `onFail` `write` `serial` |
+| `explorer`     | 调研             | 只读调研（可回写模块文档）                          | ✓    | ue、review                                                           | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene`                  |
+| `reviewer`     | 评审（必备）     | 独立评审与复核                                      | ✓    | review；子对话收尾前由执行角色直接派                                 | `target`（代码改动 / 安全 / 方案或结论）`vcs`                                                    |
+| `analyst`      | 方案设计         | 需求、方案与架构契约                                |      | general、ue、openspec、architecture、migration                       | `scene` `scale`（spike / bounded / architectural）`grill` `stack`                                |
+| `spec`         | 规范撰写         | OpenSpec 产物与门禁                                 |      | openspec                                                             | `scene` `stage`                                                                                  |
+| `developer`    | 开发             | 写代码                                              |      | general、ue、openspec、bugfix、migration                             | `task`（实现 / 修 Bug / 性能问题 / 重构）`scene` `lang` `vcs` `tdd` `records`                    |
+| `uiqa`         | 界面走查         | 打开真实页面看界面                                  | ✓    | —（执行默认挂成派出：改了界面时评审之后派）                          | `pages` `theme` `width` `states`                                                                 |
+| `i18n`         | 本地化           | 界面文案翻译与漏翻                                  |      | —（执行默认挂成自动判断）                                            | `mode`（补翻译 / 查漏翻 / 整体校对）`langs`                                                      |
+| `deps`         | 依赖与安全       | 依赖体检与升级                                      |      | deps                                                                 | `vcs` `mode` `audit` `license`                                                                   |
+| `vcs`          | 版本控制（必备） | 版本控制与交付收尾                                  | ✓    | release（发布范围）；子对话没有 submit_merge 时由执行角色派          | `vcs` `branch` `merge` `mergeReview` `commit`                                                    |
+| `blender`      | Blender 建模     | 建模、动画与质检                                    |      | blender                                                              | `stage`（含「质检」）                                                                            |
+| `worklog`      | 每日工作总结     | 按天 / 按周提炼需求和 Bug（只读），工作总结页也用它 |      | general                                                              | `material` `day` `projects`                                                                      |
 
 `worklog`（每日工作总结）是唯一只输出报告的角色：`docsync` 负责写文档、`explorer` 只读调研代码、`orchestrator` 负责调度，
 没有谁会按天把各项目执行过的对话压成一份报告，所以单独新增；它不动代码（`canPlan` / `canDelegate` 都关、不引 Skill）。
@@ -90,6 +90,7 @@
 同一批评估过、**没有**新增或合并的：`helper`（子任务）和 `explorer`（调研）都只读、都能回写模块文档，但 `helper` 是 `spawn_agents` 不点名时的引擎兜底（`isHelperAgent`），
 合并会动引擎，收益只是少一份短设定；`spec`（规范撰写）绑着 OpenSpec 的命令和门禁，并进 `analyst` 会让方案设计每次都带一段用不上的流程；`i18n` 并回 `developer` 会丢掉「拿已有译文当术语表」这类独立交付标准。
 现有 17 个角色里没有职责被别的角色完整覆盖的，前几轮已经合掉 12 个（见下表），这次不再删。
+同日的「清理用例」（[ADR 0031](adr/0031-test-count-report-not-cap.md)）：用例总数不再设上限，重复、被覆盖、过时的用例由它定期一次列出一批候选（只认三类淘汰理由），用户确认后才删。
 
 ### 交付契约：角色之间按固定小节交接
 

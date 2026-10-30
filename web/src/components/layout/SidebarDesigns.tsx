@@ -65,7 +65,7 @@ import { t } from '@shared/i18n'
 /**
  * 设计模式的侧栏（照设计稿 Design.dc.html）：最上面一个下拉在「UI 设计 / 模型设计」之间切换，下面按项目列。
  * - UI 设计：UI 设计自己的项目（和 Agent 的项目分开），展开后是这个项目的各个界面。
- * - 模型设计：模型设计是 Agent 项目里带 modelDesign 标记的对话（ADR 0025），按 Agent 项目分组列出来。
+ * - 模型设计：带 modelDesign 标记的对话（ADR 0025），按所在项目分组列出来，在 #/model 里打开，不进 Agent 模式。
  */
 const KINDS = [
   { id: 'game', icon: Gamepad2 },
@@ -84,12 +84,18 @@ const readMode = (): DesignMode => {
 }
 
 export function DesignList() {
-  const [mode, setMode] = useState<DesignMode>(readMode)
+  const { route, go } = useNav()
+  const [saved, setMode] = useState<DesignMode>(readMode)
+  // 打开着模型对话（#/model）时侧栏一定是模型设计，打开着 UI 设计时一定是 UI 设计，不看上次记的
+  const mode: DesignMode = route.page === 'model' ? 'model' : route.page === 'design' && route.id ? 'ui' : saved
   const pick = (m: DesignMode) => {
     setMode(m)
     try {
       localStorage.setItem(MODE_KEY, m)
     } catch {}
+    // 换了类型就换到那一类的页面：停在原页面的话，下一次渲染又按页面把下拉改回去
+    if (m === 'model' && route.page !== 'model') go({ page: 'model' })
+    if (m === 'ui' && route.page === 'model') go({ page: 'design' })
   }
   return (
     <div className="mt-2 flex min-h-0 flex-1 flex-col">
@@ -184,7 +190,7 @@ function ModelDesignList() {
         <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
           <Box className="h-5 w-5 text-subtle" strokeWidth={1.6} />
           <p className="text-xs leading-relaxed text-subtle">
-            {t('还没有模型设计对话。模型设计在 Agent 项目里用 Blender 建模，对话会按项目列在这里。')}
+            {t('还没有模型设计对话。模型设计用 Blender 建模，对话会按项目列在这里。')}
           </p>
           <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
             <Plus className="h-3.5 w-3.5" />
@@ -202,8 +208,9 @@ function ModelDesignList() {
               onToggle={() => setFolded((f) => toggleFoldKey(f, p.id))}
               count={ts.length}
               name={
+                // 点项目名只是收起展开：项目主页在 Agent 模式里，模型设计不往那边跳
                 <button
-                  onClick={() => go({ page: 'projects', id: p.id })}
+                  onClick={() => setFolded((f) => toggleFoldKey(f, p.id))}
                   className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                 >
                   <SidebarProjectName open={open} name={p.name} />
@@ -216,12 +223,10 @@ function ModelDesignList() {
                   <TaskRow
                     key={x.id}
                     task={x}
-                    active={route.page === 'projects' && route.sub === x.id}
+                    active={route.page === 'model' && route.id === x.id}
                     unread={isTaskUnread(x) || unread.includes(x.id)}
-                    onOpen={() => go({ page: 'projects', id: x.projectId, sub: x.id })}
-                    onDeleted={() =>
-                      route.page === 'projects' && route.sub === x.id && go({ page: 'projects', id: p.id })
-                    }
+                    onOpen={() => go({ page: 'model', id: x.id })}
+                    onDeleted={() => route.page === 'model' && route.id === x.id && go({ page: 'model' })}
                     inBlock
                     className="pr-2 pl-2"
                   />

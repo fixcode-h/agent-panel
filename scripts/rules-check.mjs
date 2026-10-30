@@ -11,6 +11,7 @@
 // 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
 // 13. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
 // 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
+// 15. 大文件只许变小：超过 scripts/file-caps.json 里的上限就失败
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -238,7 +239,7 @@ errors.push(...checkBugIndexesInRoot(root))
     const code = read(f)
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/\/\/[^\n]*/g, '')
-    const calls = code.match(/\bmarkTurnDone\(\s*task\s*\)|ctx\.onTurnEnd\?\.\(\)/g) ?? []
+    const calls = code.match(/\bmarkTurnDone\(\s*task\s*\)|ctx\.onTurnEnd\?\.\(/g) ?? []
     if (calls.length !== 2)
       errors.push(
         `${f} 里一轮结束只能从 endTurn() 一处发出（markTurnDone + onTurnEnd 各一次），实际 ${calls.length} 处`,
@@ -396,6 +397,22 @@ else {
   for (const f of uiShards) {
     if (!shotPrefix.test(path.posix.basename(f)))
       errors.push(`${f}：截图前缀正则（scripts/ui/harness.mjs）认不出这个文件名，截图会和别的分片互相覆盖`)
+  }
+}
+
+// 15. 大文件只许变小：scripts/file-caps.json 里列的文件不能超过各自的上限，没列的源码文件不能超过 default。
+// server/tasks.ts 拆分前四天涨了 1000 行；上限只拦「继续变大」，新代码放进拆出来的模块（见 scripts/file-caps.mjs）
+{
+  const { capsPath, linesOf, sourceFiles } = await import('./lib/file-caps.mjs')
+  const caps = JSON.parse(readFileSync(capsPath(root), 'utf8'))
+  for (const f of sourceFiles(root)) {
+    if (!existsSync(path.join(root, f))) continue
+    const cap = caps.files[f] ?? caps.default
+    const lines = linesOf(root, f)
+    if (lines > cap)
+      errors.push(
+        `${f}：${lines} 行，超过上限 ${cap}（scripts/file-caps.json）。把新加的部分拆到独立模块里；文件变小了跑 node scripts/file-caps.mjs --update 把上限降下来`,
+      )
   }
 }
 

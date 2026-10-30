@@ -88,7 +88,17 @@ export type CliEvent =
    * 环境性卡住：等请求回复超时了，但进程还活着、stderr 一个字都没有（多半是 CLI 启动 / 扩展加载慢）。
    * runner 只对这一类失败自动重试一次；模型明确报错、工具失败这些内容性失败不带它
    */
-  | { type: 'result'; ok: boolean; error?: string; envStall?: boolean }
+  | {
+      type: 'result'
+      ok: boolean
+      error?: string
+      envStall?: boolean
+      /**
+       * 模型最后一次回应为什么停（Claude 的 stop_reason：end_turn / tool_use / max_tokens / refusal…）。
+       * 只用来写日志排查「说了要做却没调工具就结束」：是模型自己收尾（end_turn），还是被截断
+       */
+      stopReason?: string
+    }
   /** CLI 要用户确认（权限不够的命令、改文件）或回答问题；reply 把用户的选择交回给 CLI */
   | {
       type: 'ask'
@@ -282,9 +292,13 @@ export function claudeParser(cwd: string): Parser {
   // 保活时同一进程连着跑多轮，每轮的 result 都要从零做差（见 result 分支）
   const live = { input: 0, output: 0, read: 0, write: 0 }
   let msgOut = 0
+  /** 这条回应已经计入的输入（开头 message_start 报的），结尾 message_delta 报得更多时只补差额 */
+  let msgIn = { input: 0, read: 0, write: 0 }
   // result 的 total_cost_usd：stream-json 常驻多轮时是会话累计值（每轮重述 running total），
   // 和 usage 的「本轮」口径不同，要按差值记，不能每轮直接累加
   let costTotal = 0
+  /** 最近一次模型回应停下的原因（流式 message_delta 里报），result 时带出去 */
+  let stopReason = ''
   return (o) => {
     const out: CliEvent[] = []
     if (o.type === 'system' && o.subtype === 'init' && o.session_id) {
@@ -299,8 +313,10 @@ export function claudeParser(cwd: string): Parser {
         // 每次模型回应的开头：插话收下后说完的那段话到这里为止，之后的回应排在用户消息后面
         out.push({ type: 'request_start' })
         const u = e.message?.usage
+        msgIn = { input: 0, read: 0, write: 0 }
         if (u) {
           const c = claudeInput(u)
+          msgIn = c
           live.input += c.input
           live.read += c.read
           live.write += c.write
@@ -308,7 +324,8 @@ export function claudeParser(cwd: string): Parser {
           live.output += msgOut
           out.push({
             type: 'usage',
-            // 有的网关在这里报的输入用量全是 0：不当作上下文占用，免得把上一条有效值盖成 0
+            // 有的网关（DeepSeek 等兼容 Anthropic 的接口）开头报 0、结尾的 message_delta 才报真实输入：
+            // 0 不当成上下文，不然每次回应开头都把上下文改回 0，会话栏一直显示 0（用户报过）
             ...(c.input > 0 ? { context: c.input } : {}),
             model: e.message?.model,
             addInput: c.input,
@@ -317,12 +334,36 @@ export function claudeParser(cwd: string): Parser {
             addOutput: msgOut,
           })
         }
-      } else if (e.type === 'message_delta' && e.usage?.output_tokens !== undefined) {
-        // output_tokens 是这条消息到目前为止的累计数
-        const add = Math.max(0, e.usage.output_tokens - msgOut)
-        msgOut = e.usage.output_tokens
-        live.output += add
-        if (add) out.push({ type: 'usage', addOutput: add })
+      } else if (e.type === 'message_delta') {
+        if (typeof e.delta?.stop_reason === 'string') stopReason = e.delta.stop_reason
+        const u = e.usage ?? {}
+        // 结尾才报输入的网关：输入比开头报的多就补上，上下文按它算（见 message_start 那里的说明）
+        const c = claudeInput(u)
+        if (c.input > msgIn.input) {
+          const add = {
+            input: c.input - msgIn.input,
+            read: Math.max(0, c.read - msgIn.read),
+            write: Math.max(0, c.write - msgIn.write),
+          }
+          msgIn = c
+          live.input += add.input
+          live.read += add.read
+          live.write += add.write
+          out.push({
+            type: 'usage',
+            context: c.input,
+            addInput: add.input,
+            addCacheRead: add.read,
+            addCacheWrite: add.write,
+          })
+        }
+        if (u.output_tokens !== undefined) {
+          // output_tokens 是这条消息到目前为止的累计数
+          const add = Math.max(0, u.output_tokens - msgOut)
+          msgOut = u.output_tokens
+          live.output += add
+          if (add) out.push({ type: 'usage', addOutput: add })
+        }
       } else if (e.type === 'content_block_start' && e.content_block?.type === 'text' && textInMsg) {
         out.push({ type: 'text_delta', text: '\n\n' })
       } else if (e.type === 'content_block_delta' && e.delta?.type === 'thinking_delta') {
@@ -406,10 +447,14 @@ export function claudeParser(cwd: string): Parser {
       live.output = 0
       if (o.session_id) out.push({ type: 'session', id: o.session_id })
       const ok = !o.is_error && (o.subtype === undefined || o.subtype === 'success')
+      // 新版 result 里直接带 stop_reason；旧版只能从流式的 message_delta 里拿最后一次
+      const why = typeof o.stop_reason === 'string' ? o.stop_reason : stopReason
+      stopReason = ''
       out.push({
         type: 'result',
         ok,
         error: ok ? undefined : String(o.result || o.errors?.join('\n') || o.subtype || t('执行失败')),
+        ...(why ? { stopReason: why } : {}),
       })
     }
     return out

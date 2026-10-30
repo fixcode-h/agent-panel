@@ -100,6 +100,20 @@ test('后台命令马上返回，跑完把结果推回；跑的期间文件变�
   assert.match(bg.check('t2', ''), /没有后台命令/)
 })
 
+test('命令没能启动（跑命令之前就抛错）：照样置终态并把失败推回，不留一条永远「运行中」的记录', async () => {
+  const dir = repo()
+  const { bg, got, all } = collect(1, {
+    run: (() => {
+      throw new Error('拼不出命令行')
+    }) as never,
+  })
+  bg.start({ taskId: 't9', name: '起不来', command: 'echo hi', cwd: '', root: dir, exclusive: false })
+  await all
+  assert.equal(got[0].job.state, 'failed')
+  assert.ok(got[0].job.endedAt, '记录要置终态，门禁和计划才不会一直等它')
+  assert.match(got[0].text, /没能启动这条命令：拼不出命令行/)
+})
+
 test('独占命令按目录排队，一条跑完才开始下一条；cwd 不能跳出目录', async () => {
   const dir = repo()
   const { bg, got, all } = collect(2)

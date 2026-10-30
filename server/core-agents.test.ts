@@ -496,7 +496,7 @@ test('交付契约：方案摘要、实现计划、排查报告、自测清单�
 test('测试验收：多了「设计用例」「补测试」两种做法，默认仍是跑验收，仍是唯一的测试角色', () => {
   const def = coreDefinition('tester')
   const task = def.agent.params.find((p) => p.key === 'task')!
-  assert.deepEqual(task.options, ['跑验收', '设计用例', '补测试'])
+  assert.deepEqual(task.options, ['跑验收', '设计用例', '补测试', '清理用例'])
   assert.equal(task.default, '跑验收')
   // 识别测试角色靠 scope / env 两个参数（shared/test-steps.ts 的 isTestAgent），加参数不能动它们
   assert.ok(isTestAgent({ params: def.agent.params }))
@@ -518,6 +518,14 @@ test('测试验收：多了「设计用例」「补测试」两种做法，默�
   assert.match(write, /只改测试文件和测试夹具，不改产品代码/)
   assert.match(write, /不写永远通过的测试/)
   assert.match(write, /验收结论：通过/)
+  // ADR 0031：用例总数不设上限，靠「清理用例」定期一批清掉；先列候选等用户确认，只认三类淘汰理由
+  const clean = renderTemplate(def.agent.instructions, { task: '清理用例' })
+  assert.match(clean, /中间必须停下来等用户确认，不能一口气删完/)
+  assert.match(clean, /被测能力已经删了/)
+  assert.match(clean, /被更强的用例完全覆盖/)
+  assert.match(clean, /用户报过的 Bug 的回归用例/)
+  assert.doesNotMatch(clean, /## 先读项目配置的测试步骤/, '清理用例不跑整套验收')
+  assert.match(BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions, /用「清理用例」：它先交候选表/)
   // 执行角色知道什么时候派它设计用例
   const worker = renderTemplate(BUILTIN_AGENTS.find((a) => a.key === 'worker')!.agent.instructions, { mode: '自动' })
   assert.match(worker, /用「设计用例」独立列一遍测试矩阵/)

@@ -144,8 +144,9 @@ await runShard('对话与续接', async (api) => {
   assert.ok(c.args.includes('--resume'), '仍然续接原会话')
   assert.match(c.input, /## 你的角色（已更新[^\n]*\n你是戊，新版设定。/, '角色变了：续接时补发新版')
   await call('DELETE', `/tasks/${gr.id}`)
-  // 空回合：模型只回一句「我先…」就收尾（零工具、零改动），面板要先把这件事写进对话再自动接一轮；
-  // 接上之后模型正常交结果，那条报错卡片要收成普通说明，不能一直挂成失败
+  // 只回一句「我先…」就收尾（零工具、零改动）：照常收尾，不挂提示、不自动接一轮。
+  // 用户 2026-10-29 要求去掉按回复文字猜的「这一轮没有产出」：寒暄、反问这类正常回复会被误判
+  step('只回一句就收尾的照常收尾：不挂提示、不自动接一轮')
   let emp = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -155,56 +156,17 @@ await runShard('对话与续接', async (api) => {
   })
   emp = await waitDone(emp.id)
   assert.equal(emp.status, 'done', emp.messages.at(-1)?.text)
-  const empNotes = emp.messages.filter((m) => m.role === 'system' && !m.step)
-  const empNote = empNotes.find((m) => /只回了一句话就结束了/.test(m.text))
   assert.ok(
-    empNote,
-    `自动接一轮要可见；现有消息：${JSON.stringify(
-      emp.messages.map((x) => [x.role, x.step, x.transient ?? false, x.error ?? false, x.text.slice(0, 30)]),
-    )}`,
+    !emp.messages.some((m) => m.alert?.kind === 'empty_turn'),
+    `不能再挂空回合提示；现有消息：${JSON.stringify(emp.messages.map((x) => [x.role, x.error ?? false, x.text.slice(0, 30)]))}`,
   )
-  assert.ok(!empNote.error, '接上之后不能还挂着红色错误卡片')
-  assert.match(empNote.text, /已自动接一轮，这一轮继续做完了/, '写明已经接一轮做完了')
   const empAgent = emp.messages.filter((m) => m.role === 'agent')
-  assert.equal(empAgent.length, 2, '第一轮只说了一句 + 催促后的一轮')
+  assert.equal(empAgent.length, 1, '只有模型自己那一轮，面板没有再推')
   assert.match(empAgent[0].text, /我先把工作区更新到最新/)
-  assert.match(empAgent[1].text, /这是 claude 的回复/, '被催之后正常交了结果')
 
-  // 同一件事走常驻保活的 CLI（Command Code）：回复完会先进入 keepAlive 等下一句，
-  // 一挂起 runAgent 就不返回，收尾处的空回合兜底没机会跑。必须在保活前判定，命中就不保活。
-  let empKeep = await call('POST', '/tasks', {
-    projectId: project.id,
-    mode: 'chat',
-    agentId: def.id,
-    cli: 'commandcode',
-    askUser: false,
-    prompt: 'FAKE_EMPTY 确认一下保活下的空回合',
-  })
-  await call('POST', `/tasks/${empKeep.id}/seen`, {})
-  await call('POST', `/tasks/${empKeep.id}/presence`, { viewerId: 'e2e-empty', active: true })
-  // 这个 CLI 回复完会停在等下一句上（保活），任务状态一直算执行中，不能等 status；按消息判断
-  const empKeepDone = () =>
-    empKeep.messages.some((m) => m.role === 'system' && /只回了一句话就结束了/.test(m.text)) &&
-    empKeep.messages.filter((m) => m.role === 'agent').length >= 2
-  for (let i = 0; i < 200 && !empKeepDone(); i++) {
-    await sleep(150)
-    empKeep = await call('GET', `/tasks/${empKeep.id}`)
-  }
-  assert.ok(
-    empKeep.messages.some((m) => m.role === 'system' && /只回了一句话就结束了/.test(m.text)),
-    `保活路径下也要自动接一轮；现有消息：${JSON.stringify(
-      empKeep.messages.map((x) => [x.role, x.error ?? false, x.text.slice(0, 40)]),
-    )}`,
-  )
-  assert.equal(empKeep.messages.filter((m) => m.role === 'agent').length, 2, '第一轮只说了一句 + 催促后的一轮')
-  // 收尾：页面切走，让还挂着等下一句的 CLI 结束这一轮
-  await call('POST', `/tasks/${empKeep.id}/presence`, { viewerId: 'e2e-empty', active: false })
-  empKeep = await waitDone(empKeep.id, 20000)
-  assert.equal(empKeep.status, 'done')
-
-  // 一个字都没回的一轮（CLI 报成功、但没有正文也没有用量）：不能算完成。
-  // 真实现场是带图请求被网关吞掉：那一轮被标成已完成并保活等下一句，用户之后发来的消息全落进死回合，既没回复也没报错
-  step('一个字都没回的一轮不算完成：留下说明并自动接一轮')
+  // 一个字都没回的一轮（CLI 报成功、但没有正文也没有用量）：不能算完成，也不自动重试，直接报错。
+  // 真实现场是带图请求被网关吞掉：以前那一轮被标成已完成并保活等下一句，用户之后发来的消息全落进死回合
+  step('一个字都没回的一轮：报错显示出来，按失败结束，不自动重试')
   let sil = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -213,20 +175,25 @@ await runShard('对话与续接', async (api) => {
     prompt: 'FAKE_SILENT 分析一下这个对话',
   })
   sil = await waitDone(sil.id, 20000)
-  assert.equal(sil.status, 'done', sil.messages.at(-1)?.text)
-  const silNote = sil.messages.find((m) => m.role === 'system' && /没有返回任何内容/.test(m.text))
+  const silNote = sil.messages.find((m) => m.role === 'system' && m.alert?.kind === 'empty_turn')
   assert.ok(
-    silNote,
-    `空成功的一轮必须留下可见说明，不能静默收尾；现有消息：${JSON.stringify(
+    silNote?.error,
+    `空成功的一轮必须留下红色报错，不能静默收尾；现有消息：${JSON.stringify(
       sil.messages.map((x) => [x.role, x.error ?? false, x.text.slice(0, 40)]),
     )}`,
   )
-  assert.equal(sil.messages.filter((m) => m.role === 'agent' && m.text.trim()).length, 1, '自动接一轮之后正常给出回复')
-  assert.match(sil.messages.find((m) => m.role === 'agent' && m.text.trim()).text, /这是 claude 的回复/)
+  assert.match(silNote.text, /没有返回任何内容/)
+  assert.equal(sil.status, 'failed', '这条要求没被处理，按失败结束')
+  assert.equal(
+    sil.messages.filter((m) => m.role === 'agent' && m.text.trim()).length,
+    0,
+    '没有自动重试，也就没有第二轮的回复',
+  )
+  assert.ok(!calls().some((x) => x.input.includes('上一次请求没有返回任何内容')), '面板不再自动重发这条要求')
 
-  // 保活时第二句才空：同一个进程里前一轮有正文，空回合判定不能把它算进来，
+  // 保活时第二句才空：同一个进程里前一轮有正文，判定不能把它算进来，
   // 否则这条消息被标成已完成、进程接着保活，用户的话落进死回合（真实现场：17:54、17:55 两条消息都没回应）
-  step('保活中的第二句一个字都没回：同样留下说明并重发这一句')
+  step('保活中的第二句一个字都没回：同样报错，不保活等下一句')
   {
     let sk = await call('POST', '/tasks', {
       projectId: project.id,
@@ -244,24 +211,20 @@ await runShard('对话与续接', async (api) => {
     }
     assert.ok(sk.awaitingUser, '第一轮正常回复完停在等下一句上')
     await call('POST', `/tasks/${sk.id}/messages`, { text: 'FAKE_SILENT 第二句' })
-    const retried = () =>
-      sk.messages.some((m) => m.role === 'system' && /没有返回任何内容/.test(m.text)) &&
-      sk.messages
-        .slice(sk.messages.findIndex((m) => m.text === 'FAKE_SILENT 第二句') + 1)
-        .some((m) => m.role === 'agent' && m.text.trim())
-    for (let i = 0; i < 200 && !retried(); i++) {
+    const after = () => sk.messages.slice(sk.messages.findIndex((m) => m.text === 'FAKE_SILENT 第二句') + 1)
+    const reported = () => after().some((m) => m.role === 'system' && m.error && m.alert?.kind === 'empty_turn')
+    for (let i = 0; i < 200 && !reported(); i++) {
       await sleep(150)
       sk = await call('GET', `/tasks/${sk.id}`)
     }
     assert.ok(
-      retried(),
-      `第二句空回合要留下说明并重发；现有消息：${JSON.stringify(
-        sk.messages.map((x) => [x.role, x.error ?? false, x.text.slice(0, 40)]),
-      )}`,
+      reported(),
+      `第二句空回合要报错；现有消息：${JSON.stringify(sk.messages.map((x) => [x.role, x.error ?? false, x.text.slice(0, 40)]))}`,
     )
     await call('POST', `/tasks/${sk.id}/presence`, { viewerId: 'e2e-silent-keep', active: false })
     sk = await waitDone(sk.id, 20000)
-    assert.equal(sk.status, 'done', sk.messages.at(-1)?.text)
+    assert.equal(sk.status, 'failed', '没有被处理的一句不能记成完成')
+    assert.ok(!after().some((m) => m.role === 'agent' && m.text.trim()), '没有自动重发这一句')
   }
 
   // Pi：按配置文件（shared/clis/pi.json）拼参数、走 --mode rpc（get_state / prompt / agent_settled）
@@ -707,6 +670,41 @@ ${prompt}
     assert.ok(!c.args.includes('--resume'), '压缩后开新会话')
     assert.ok(c.input.includes('之前对话的摘要') && c.input.includes('接着做'), '新会话带上摘要')
     step('压缩上下文：Codex 用 thread/compact/start，Claude Code 用 /compact，Command Code 写摘要后开新会话')
+
+    // 回复完停在等下一句（保活，status 仍是 running）时也能压缩：先关掉等着的进程再压缩，不报「正在执行」
+    {
+      let kp = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: def.id,
+        cli: 'commandcode',
+        askUser: false,
+        prompt: '保活里压缩',
+      })
+      await call('POST', `/tasks/${kp.id}/seen`, {})
+      await call('POST', `/tasks/${kp.id}/presence`, { viewerId: 'e2e-compact-keep', active: true })
+      for (let i = 0; i < 120 && !kp.awaitingUser; i++) {
+        await sleep(100)
+        kp = await call('GET', `/tasks/${kp.id}`)
+      }
+      assert.ok(kp.awaitingUser && !kp.working, '第一轮回复完停在等下一句上')
+      const before = calls().length
+      await call('POST', `/tasks/${kp.id}/compact`)
+      kp = await waitFor(
+        async () => {
+          const x = await call('GET', `/tasks/${kp.id}`)
+          return calls()
+            .slice(before)
+            .some((y) => y.input?.includes('整理成一份摘要')) && !x.working
+            ? x
+            : null
+        },
+        { label: '保活中压缩完', timeout: 20000 },
+      )
+      await call('POST', `/tasks/${kp.id}/presence`, { viewerId: 'e2e-compact-keep', active: false })
+      await waitDone(kp.id, 20000)
+    }
+    step('保活等下一句时压缩：先关掉等着的进程再压缩')
 
     // ---- CLI 收下消息后一直没有输出 ----
     // 先在对话里写一行「CLI 没有响应」的警告；再发消息时不再插进卡住的这一轮，而是停掉它、接回会话重开，

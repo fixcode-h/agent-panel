@@ -389,27 +389,17 @@ export const EN_SERVER: Record<string, string> = {
   '正在自动续接会话重试（第 {n}/{max} 次）…': 'Resuming the session automatically (attempt {n}/{max})…',
   '已自动续接会话（第 {n} 次），从中断的地方继续了。':
     'Automatically resumed the session (attempt {n}) and continued from where it broke off.',
-  '已自动接一轮，这一轮继续做完了。': 'Continued automatically and finished the work in this turn.',
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
   '这一轮没有响应，已自动重试 {n} 次（等待放宽到 {wait}）…':
     'This turn got no response. Retried {n} time(s) automatically (waiting up to {wait})…',
   '已自动重试 {n} 次，仍然没有响应。': 'Still no response after {n} automatic retries.',
   '已自动重试 {n} 次，这一轮继续做完了。': 'Retried {n} time(s) automatically and finished the work in this turn.',
-  '这一轮 {cli} 没有返回任何内容，用户的要求还没处理':
-    'This turn produced no output from {cli}, so the request has not been handled',
-  '回复里说已经转给子对话，但这一轮没有调用 send_to_conversation，消息没有发出去':
-    'The reply says it was forwarded to a child conversation, but send_to_conversation was never called this turn, so nothing was sent',
-  '{what}。正在自动接一轮，让它真的发出去…': '{what}. Starting another turn automatically so it actually sends it…',
-  '这一轮只回了一句话就结束了，没有动手也没给出结论':
-    'This turn ended after a single sentence: nothing was done and no conclusion was given',
-  '{what}。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…':
-    '{what}. Continuing automatically so it acts now (attempt {n}/{max})…',
+  '这一轮 {cli} 没有返回任何内容，这条要求没有被处理':
+    'This turn produced no output from {cli}, so the request was not handled',
   '这次没有拿到 {cli} 报告的用量，下面的 token 和费用统计不可信（不代表没有消耗）。':
     'No usage was reported by {cli} for this turn, so the token and cost figures below are unreliable (it does not mean nothing was consumed).',
   '这次没有拿到 {cli} 的任何输出和用量：这条要求很可能没有被处理，可以重发或换一个模型再试。':
     'No output or usage was reported by {cli} for this turn: the request was probably not handled. Send it again or try another model.',
-  '{what}。自动接了一轮仍然没有产出，已停在这里。可以点「继续」再推一次，或者换一个模型、把要求写得更具体。':
-    '{what}. It was continued automatically once but still produced nothing, so it stopped here. Click Continue to push it again, or switch models or make the request more specific.',
   服务出错: 'Server error',
   连接超时: 'connection timed out',
   域名解析失败: 'DNS lookup failed',

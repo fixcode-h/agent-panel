@@ -457,7 +457,8 @@ await runShard('子对话与计划', async (api) => {
     )
     const rebornList = (await call('GET', `/tasks/${wtParent.id}/worktrees`)).items
     assert.equal(rebornList[0].branch, oldBranch, '状态栏上显示重建后的分支')
-    assert.equal(rebornList[0].state, 'active')
+    // 重建时是 active（上面已断言）；这一轮跑得快、又没有要合回的改动时，读到列表前可能已经收口成 merged
+    assert.ok(['active', 'merged'].includes(rebornList[0].state), `状态栏上的分支状态（${rebornList[0].state}）`)
     step('子对话工作区被回收后继续：自动重建同名分支并在新目录里执行')
     step('子对话标记完成：没合并时拦下，合并后删掉独立分支')
     // 子对话做完（测试跑通、只剩合回）调用 submit_merge 请父对话收尾：父对话 finish_child 合回自己的分支，
@@ -1344,6 +1345,101 @@ await runShard('子对话与计划', async (api) => {
       await call('PUT', '/settings', full)
       await call('DELETE', `/tasks/${askParent.id}`)
       step('子对话长时间没有输出：自动询问送达并被回复，用户消息不被挡')
+    }
+    // ---- 子对话计划做了一半就收尾（只回一句打算、不调工具）：面板马上推它接着做，同一进度只推一次 ----
+    {
+      const stallParent = await waitDone(
+        (
+          await call('POST', '/tasks', {
+            projectId: project.id,
+            mode: 'chat',
+            agentId: B.id,
+            prompt: '计划停住的父对话',
+          })
+        ).id,
+        20000,
+      )
+      const stallKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: stallParent.id,
+        prompt: 'PLAN_STALL 计划做一半就停',
+      })
+      const pushes = (x) => x.messages.filter((m) => m.panel === 'build' && m.text.includes('你的计划才做了'))
+      // 推送交到了 CLI：它回复里带上标记
+      const pushed = await waitFor(
+        async () => {
+          const t = await call('GET', `/tasks/${stallKid.id}`)
+          return t.messages.some((m) => m.role === 'agent' && m.text.includes('PLAN_NUDGE_GOT')) ? t : undefined
+        },
+        { label: '面板推子对话接着做计划，并交到了 CLI', timeout: 20000 },
+      )
+      assert.equal(pushes(pushed).length, 1, '计划停住时推了一次')
+      assert.match(pushes(pushed)[0].text, /1\/3[\s\S]*「跑检查」/, '推的时候写明进度和接下来做哪一步')
+      // 被推之后仍然原地不动：不再推第二次，改成照常上报父对话「未完成」
+      await waitFor(
+        async () => {
+          const p = await call('GET', `/tasks/${stallParent.id}`)
+          return p.messages.some((m) => m.child?.id === stallKid.id && m.text.includes('计划还没做完'))
+        },
+        { label: '推过一次仍没动：上报父对话未完成', timeout: 20000 },
+      )
+      assert.equal(pushes(await call('GET', `/tasks/${stallKid.id}`)).length, 1, '同一进度只推一次，不来回推')
+      await call('DELETE', `/tasks/${stallParent.id}`)
+      step('子对话计划做一半就收尾：面板马上推它接着做，推过仍不动就上报父对话，不来回推')
+    }
+    // ---- 父对话被停下后继续：一起被打断的子对话由面板连带拉起来，续接的提示写清是续接、子对话已在接着做 ----
+    {
+      const rp = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        prompt: 'SLOW 父对话中断后继续',
+      })
+      await waitFor(() => calls().some((c) => c.input.includes('SLOW 父对话中断后继续')), { label: '父对话开始执行' })
+      const rk = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: rp.id,
+        prompt: 'SLOW 被连带中断的子对话',
+      })
+      await waitFor(() => calls().some((c) => c.input.includes('SLOW 被连带中断的子对话')), { label: '子对话开始执行' })
+      await call('POST', `/tasks/${rp.id}/stop`)
+      await waitFor(
+        async () => {
+          const k = await call('GET', `/tasks/${rk.id}`)
+          return k.status === 'stopped' && k.stopReason === 'parent'
+        },
+        { label: '子对话随父对话一起停下', timeout: 20000 },
+      )
+      await waitFor(async () => (await call('GET', `/tasks/${rp.id}`)).status === 'stopped', {
+        label: '父对话停下',
+        timeout: 20000,
+      })
+      const before = calls().length
+      await call('POST', `/tasks/${rp.id}/resume`, {})
+      const kidCall = await waitFor(
+        () =>
+          calls()
+            .slice(before)
+            .find((c) => c.input.includes('被连带中断的子对话') && c.input.includes('面板说明：上一轮')),
+        { label: '子对话被连带拉起来、续接提示写清是续接', timeout: 20000 },
+      )
+      assert.ok(kidCall, '父对话继续时，一起被打断的子对话接着做')
+      const parentCall = await waitFor(
+        () =>
+          calls()
+            .slice(before)
+            .find((c) => c.input.includes('父对话中断后继续') && c.input.includes('一起中断的子对话已经由面板拉起来')),
+        { label: '父对话的续接提示点名已经拉起来的子对话', timeout: 20000 },
+      )
+      assert.match(parentCall.input, /被连带中断的子对话/, '续接提示写明拉起来的是哪个子对话')
+      await call('POST', `/tasks/${rp.id}/stop`).catch(() => {})
+      await call('POST', `/tasks/${rk.id}/stop`).catch(() => {})
+      await call('DELETE', `/tasks/${rp.id}`)
+      step('父对话被停下后继续：一起被打断的子对话由面板连带拉起来，续接提示写清是续接')
     }
   }
   // 用户点「解决」时计划一并收口：走正式后端这条路径（PATCH resolved → settleChildForUser → settlePlan → 流转）。

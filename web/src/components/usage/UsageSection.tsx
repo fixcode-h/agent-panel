@@ -202,8 +202,8 @@ export function UsageSection({
   pricingModel: string
   onPricingModel: (id: string) => void
 }) {
-  const { projects } = useData()
-  /** 分组方式：时间（可以再切天 / 周 / 月）/ 项目 / 对话 */
+  const { projects, agents } = useData()
+  /** 分组方式：时间（可以再切天 / 周 / 月）/ 项目 / 对话 / 角色 */
   const [group, setGroup] = useState<UsageGroup>('time')
   const [grain, setGrain] = useState<UsageGrain>('day')
   /** 当前区间的第一天；按天是那天，按周是周一，按月是一号 */
@@ -307,13 +307,17 @@ export function UsageSection({
     : ''
   const shown = group === 'time' ? periodLabel(selected) : groupRange
   const groupRows = groupReport?.buckets ?? []
-  /** 分组桶的名字：项目名（被删或不属于项目时写清） / 对话标题 */
+  /** 分组桶的名字：项目名（被删或不属于项目时写清） / 对话标题 / 角色名（被删或没用角色时写清） */
   const groupName = (b: UsageBucket) =>
     group === 'project'
       ? b.key
         ? (projects.find((p) => p.id === b.key)?.name ?? t('项目已删除'))
         : t('不属于项目')
-      : b.label?.trim() || t('未命名对话')
+      : group === 'role'
+        ? b.key
+          ? (agents.find((a) => a.id === b.key)?.name ?? t('角色已删除'))
+          : t('没用角色')
+        : b.label?.trim() || t('未命名对话')
   /** 汇总卡片里的任务数：按对话分组时每个桶就是一条对话 */
   const taskStatLabel = group === 'task' ? t('对话') : t('任务')
   // 已经在当前区间（今天 / 本周 / 本月）时没什么可重置的，按钮不显示
@@ -488,7 +492,7 @@ export function UsageSection({
           : t(
               '按{group}汇总{range}的用量：token、费用和轮数的口径与按时间视图一致，都按同一段窗口统计。输入含缓存命中和缓存写入的部分。',
               {
-                group: group === 'project' ? t('项目') : t('对话'),
+                group: group === 'project' ? t('项目') : group === 'role' ? t('角色') : t('对话'),
                 range: groupRange,
               },
             )}
@@ -732,7 +736,7 @@ export function UsageSection({
         ) : (
           <GroupedTable
             rows={groupRows}
-            nameLabel={group === 'project' ? t('项目') : t('对话')}
+            nameLabel={group === 'project' ? t('项目') : group === 'role' ? t('角色') : t('对话')}
             nameOf={groupName}
             model={model}
             currency={currency}

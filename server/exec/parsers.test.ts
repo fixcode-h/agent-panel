@@ -166,6 +166,29 @@ test('Claude Code：出错的结果、Bash 的退出码；每次模型回应开�
     }),
     [{ type: 'gen', text: '{"file' }],
   )
+  // 开头报 0、结尾 message_delta 才报真实输入的网关（DeepSeek 等）：0 不当上下文，结尾报的才算（用户报过上下文一直是 0）
+  const zero = parse({
+    type: 'stream_event',
+    event: { type: 'message_start', message: { id: 'm2', usage: { input_tokens: 0, output_tokens: 0 } } },
+  })
+  assert.ok(!zero.some((e) => e.type === 'usage' && 'context' in e), '开头报 0 不覆盖上下文')
+  const tail = parse({
+    type: 'stream_event',
+    event: { type: 'message_delta', usage: { input_tokens: 1200, cache_read_input_tokens: 800, output_tokens: 5 } },
+  })
+  assert.equal((tail.find((e) => e.type === 'usage' && 'context' in e) as { context?: number })?.context, 2000)
+  // 一轮结束时带上模型停下的原因（流式 message_delta 里报的最后一次），排查「说了要做却没调工具」用
+  parse({
+    type: 'stream_event',
+    event: { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } },
+  })
+  const end = parse({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    usage: { input_tokens: 1, output_tokens: 3 },
+  })
+  assert.equal((end.find((e) => e.type === 'result') as { stopReason?: string }).stopReason, 'end_turn')
   const s = summarize([
     ...parse({ type: 'system', subtype: 'init', session_id: 's2' }),
     ...parse({

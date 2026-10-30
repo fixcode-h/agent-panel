@@ -685,6 +685,22 @@ if (input.includes('PLAN_LEFT') && input.includes('set_plan') && !input.includes
     ],
   })
 }
+// 计划做了一半就收尾（只回一句打算、不调工具）：面板要马上推它接着做；被推之后仍然原地不动，用来验证同一进度只推一次
+if (
+  input.includes('PLAN_STALL') &&
+  input.includes('set_plan') &&
+  !input.includes('之前的对话') &&
+  !input.includes('你的计划才做了')
+) {
+  await panelCall('set_plan', {
+    title: '做一半就停',
+    steps: [
+      { title: '改代码', status: 'done' },
+      { title: '跑检查', status: 'running' },
+      { title: '写文档', status: 'pending' },
+    ],
+  })
+}
 // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结。
 // 续接的会话只重发变了的段落（ADR 0027）：计划规则和没变的计划状态这一轮都不一定在，只按场景标记开新计划
 if (input.includes('PLAN_NEXT')) await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
@@ -940,11 +956,9 @@ const assistText = () => {
 const turnReply = () => {
   if (titleFor !== null) return `「${titleFor}·AI」`
   if (input.startsWith('你是「Agent 面板」里的配置助手')) return assistText()
-  // FAKE_EMPTY：第一轮只回一句「我先…」就收尾（复现模型只报准备语、不调工具），
-  // 面板催了之后（提示里带「只说了要做什么就结束了这一轮」）才正常回复。用来测空回合自动接一轮。
-  // 第一轮连工具都不发（noTools），否则 zero 工具永远不成立，这条分支就测不到。
-  if (input.includes('FAKE_EMPTY') && !input.includes('只说了要做什么就结束了这一轮'))
-    return '我先把工作区更新到最新，顺便确认分支和本地改动的基线。'
+  // FAKE_EMPTY：只回一句「我先…」就收尾（复现模型只报准备语、不调工具）。
+  // 用来测面板照常收尾、不再按文字猜「没做完」去催；连工具都不发（emptyTurn），否则这条回复就不只是一句话。
+  if (input.includes('FAKE_EMPTY')) return '我先把工作区更新到最新，顺便确认分支和本地改动的基线。'
   const verdict = input.includes('最后单独一行写「验收结论')
     ? input.includes('第 1 轮验收')
       ? '\n验收结论：不通过'
@@ -998,7 +1012,9 @@ const turnReply = () => {
 这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。`
   // 面板自动询问子对话状态（长时间没有输出）：回复带上标记，端到端测试据此确认它真的收到了
   const statusGot = input.includes('【状态询问】') ? '\nSTATUS_ASK_GOT' : ''
-  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}`
+  // 面板推它「计划没做完，接着做」：回复带上标记，端到端测试据此确认推送真的交到了 CLI
+  const planNudgeGot = input.includes('你的计划才做了') ? '\nPLAN_NUDGE_GOT' : ''
+  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}${planNudgeGot}`
 }
 // 写配置文件接的 CLI 同一目录里第一轮叫 agent-panel、同时在跑的另几轮带后缀，按参数和文件名找这一轮的那一项（最后写进去的）
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
@@ -1048,11 +1064,10 @@ if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind 
 // 一次性执行（stdin 传一个任务、跑一轮就退出）用的回复；RPC 保活时每轮用 turnReply() 重算
 const reply = turnReply()
 // 空回合：这一轮只回一句准备语，连工具都不调（复现「只回一句话就结束」）
-const emptyTurn = input.includes('FAKE_EMPTY') && !input.includes('只说了要做什么就结束了这一轮')
+const emptyTurn = input.includes('FAKE_EMPTY')
 // 一个字都不回、也不报用量的一轮：CLI 报这一轮「成功」，面板什么都没收到。
-// 复现「网关吞掉请求后空成功收尾」——那一轮会被当成已完成并保活，用户后面发的消息全落进死回合。
-// 面板重试时会带上「上一次请求没有返回任何内容」，那时正常回复
-const silentTurn = () => input.includes('FAKE_SILENT') && !input.includes('上一次请求没有返回任何内容')
+// 复现「网关吞掉请求后空成功收尾」——面板要把它报成错误，不能当成已完成并保活。
+const silentTurn = () => input.includes('FAKE_SILENT')
 
 // HOLD_STEER：这一轮不靠固定时长模拟「在忙」，而是一直挂到真的收到带【收尾请求】的插话（或超时）才继续。
 // 用 SLOW 那段固定时长当同步点时，子对话跑完 begin_edit、评审、再请收尾往往已经超过了那个窗口，
