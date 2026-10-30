@@ -161,13 +161,18 @@ const SINCE_MIN = 500
 /**
  * 用 CLI 报的快照画细分。总占用比快照时少了一截（压缩过、清过对话）时快照已经作废，返回 null 退回估算
  */
-function fromSnapshot(snap: ContextSnapshot, used: number, window: number): ContextBreakdown | null {
+function fromSnapshot(snap: ContextSnapshot, used: number, window: number, pct: number): ContextBreakdown | null {
   if (!window || used < snap.used * 0.9) return null
   const inWindow = snap.rows.filter((r) => !DEFERRED_KEYS.includes(r.key) && r.key !== 'free' && r.key !== 'buffer')
   const sum = inWindow.reduce((n, r) => n + r.tokens, 0)
   const since = used - sum > SINCE_MIN ? used - sum : 0
-  const reserve = snap.rows.filter((r) => r.key === 'buffer').reduce((n, r) => n + r.tokens, 0)
-  const buffer = Math.max(0, Math.min(reserve, window - sum - since))
+  // 设置里定了自动压缩百分比时余量按设置算：面板把它交给了 CLI（环境变量 / 配置 / 面板自己压缩），
+  // CLI 报的余量是它自己的默认值（Claude Code 固定报三万多），照抄的话「距自动压缩」和设置对不上（用户报过）
+  const reserve =
+    pct > 0
+      ? (window * (100 - pct)) / 100
+      : snap.rows.filter((r) => r.key === 'buffer').reduce((n, r) => n + r.tokens, 0)
+  const buffer = Math.round(Math.max(0, Math.min(reserve, window - sum - since)))
   const total = sum + since
   const order = (k: ContextKey) => CONTEXT_KEYS.indexOf(k)
   const rows: ContextRow[] = [
@@ -206,7 +211,7 @@ export function tokensOfText(s: string) {
 export const tokensOfChars = (n: number) => Math.round(n / 3)
 
 /**
- * 算细分：used / window 是 CLI 报的；autoCompactPct 是面板设置的自动压缩百分比（0 = 按 CLI 自己的规则）。
+ * 算细分：used / window 是 CLI 报的；autoCompactPct 是面板设置的自动压缩百分比（0 = 按 CLI 自己的规则），CLI 报了细分时余量也按它算。
  * 估出来的几块加起来超过总占用时（刚开会话、CLI 还没报用量），按比例缩到总占用以内，消息记 0
  */
 export function contextBreakdown(o: {
@@ -221,7 +226,7 @@ export function contextBreakdown(o: {
 }): ContextBreakdown {
   const window = Math.max(0, o.window)
   const used = Math.max(0, Math.min(o.used, window || o.used))
-  const reported = o.snapshot && fromSnapshot(o.snapshot, used, window)
+  const reported = o.snapshot && fromSnapshot(o.snapshot, used, window, o.autoCompactPct ?? 0)
   if (reported) return reported
   const base = CliContextBase.parse(o.base ?? {})
   const tools = (o.parts?.tools ?? []).map((x) => ({ name: x.name, tokens: tokensOfChars(x.chars) }))

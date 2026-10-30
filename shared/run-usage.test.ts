@@ -144,6 +144,11 @@ function checkContextBreakdown() {
     ],
   )
   assert.deepEqual(live.deferred, [{ key: 'systemDeferred', tokens: 7_000 }])
+  // 设置里定了自动压缩百分比：余量按设置算（70% → 留 30%），不照抄 CLI 报的 33k，「距自动压缩」才和设置对得上
+  const set = contextBreakdown({ used: 60_000, window: 200_000, base, parts, files, snapshot, autoCompactPct: 70 })
+  assert.equal(set.source, 'reported')
+  assert.equal(set.rows.find((r) => r.key === 'buffer')?.tokens, 60_000)
+  assert.equal(set.rows.find((r) => r.key === 'free')?.tokens, 80_000)
   assert.equal(contextBreakdown({ used: 20_000, window: 200_000, base, snapshot }).source, 'estimated')
 
   // 刚开会话、估的比报的还多：按比例缩到总占用以内，消息记 0，不会出现负数
