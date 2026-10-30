@@ -205,6 +205,7 @@ import {
   ensureChildStep,
   holdWait,
   markWrapUp,
+  needsFix,
   openPlan,
   planProgress,
   wrapUpKind,
@@ -2625,13 +2626,13 @@ export function tasksApi(deps: {
           return
         }
         const left = openWork(again.tk)
-        // 失败的步骤（等的结果没成功、工作流没走完）先处理：不点明的话对话会跳过它往下做，或者干脆停着
-        const failed = left.find((s) => s.status === 'failed')
+        // 要修的步骤（等的结果没成功、工作流没走完）先处理：不点明的话对话会跳过它往下做，或者干脆停着
+        const failed = left.find(needsFix)
         const next = failed ?? left.find((s) => s.status === 'running') ?? left[0]
         const text =
           `【面板】你的计划才做了 ${again.p.done}/${again.p.total}，也没有在等任何结果，这一轮却结束了。` +
           (failed
-            ? `「${failed.title}」失败了${failed.note ? `（${failed.note}）` : ''}，先处理它：查清原因修好后重做（把它标回进行中），确实不做了就标成跳过，然后接着做计划。`
+            ? `「${failed.title}」${failed.note}。先查清原因、修好后重做，不要把它当成失败放着；确实不做了就标成跳过并说明原因，然后接着做计划。`
             : next
               ? `接着做「${next.title}」：`
               : '接着做下一步：') +

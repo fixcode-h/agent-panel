@@ -4352,8 +4352,8 @@ function demoPlans(task: Task) {
             item('3.3', '覆盖未登录的本地购物车', 'pending'),
           ],
         },
-        // 失败态：需要对话处理（重做或明确跳过），不是正在跑；没有结束时间，所以不显示用时
-        { ...item('4', '整理改动和总结', 'failed'), note: '等的结果没成功：npm run build', children: [] },
+        // 等的结果没成功：没有「失败」，仍是进行中，备注红字写「需要修复：原因」，对话去查问题修好重做
+        { ...item('4', '整理改动和总结', 'running'), note: '需要修复：等的结果没成功：npm run build', children: [] },
       ],
     },
   ]

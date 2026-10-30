@@ -4,6 +4,7 @@ import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan } from '@shared/schema'
 import {
   itemStale,
+  needsFix,
   planChildren,
   planHeadline,
   planProgress,
@@ -26,7 +27,6 @@ const STATUS_LABEL: Record<PlanStatus, string> = {
   running: t('进行中'),
   waiting: t('等待中'),
   done: t('完成'),
-  failed: t('失败'),
   skipped: t('跳过'),
 }
 
@@ -105,13 +105,7 @@ function PlanIcon({ status, small, settled }: { status: PlanStatus; small?: bool
   // 都和进行中不同，关掉动效时形状也分得开；颜色和透明度只作辅助
   if (status === 'waiting')
     return <span role="img" aria-label={label} className={cn(box, 'plan-wait-ring border-[1.5px] border-warning')} />
-  // 失败：实心警示色 + 叉；跳过：静止的圈里一道减号。形状也和上面几种分得开
-  if (status === 'failed')
-    return (
-      <span role="img" aria-label={label} className={cn(box, 'bg-danger text-card')}>
-        <X className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} strokeWidth={3} />
-      </span>
-    )
+  // 跳过：静止的圈里一道减号。计划里没有「失败」：没做成的一步仍是进行中，备注用红字写「需要修复：原因」
   if (status === 'skipped')
     return (
       <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-line-strong')}>
@@ -491,7 +485,11 @@ function PlanStepRow({
             <span
               className={cn(
                 'line-clamp-2 text-xs',
-                step.status === 'waiting' && !settled ? 'text-warning' : 'text-subtle',
+                needsFix(step) && !settled
+                  ? 'text-danger'
+                  : step.status === 'waiting' && !settled
+                    ? 'text-warning'
+                    : 'text-subtle',
               )}
               title={meta}
             >
@@ -531,7 +529,11 @@ function PlanStepRow({
                     <span
                       className={cn(
                         'truncate text-[0.6875rem]',
-                        c.status === 'waiting' && !settled ? 'text-warning' : 'text-subtle',
+                        needsFix(c) && !settled
+                          ? 'text-danger'
+                          : c.status === 'waiting' && !settled
+                            ? 'text-warning'
+                            : 'text-subtle',
                       )}
                     >
                       {m}

@@ -167,18 +167,18 @@ test('spawn_agents 带 step：子任务全部成功后，计划里那一步标�
   assert.equal(plan.steps[1].status, 'done', '第二个步骤的两个子任务也做完了，同样收口')
 })
 
-test('spawn_agents 带 step：子任务失败或没跑起来，这一步标成失败并写清原因（ADR 0020）', async () => {
+test('spawn_agents 带 step：子任务失败或没跑起来，这一步退回进行中并写清要修什么（ADR 0032）', async () => {
   const { plan } = await spawnWithStep(false)
   assert.notEqual(plan.steps[0].status, 'done', '子任务没成功，不能盲目标完成')
-  // failed 不是终态：等对话决定重做（标 running）还是明确跳过（标 skipped），不会一直显示「进行中」
-  assert.equal(plan.steps[0].status, 'failed')
-  assert.match(plan.steps[0].note, /没成功/)
+  // 计划里没有「失败」：退回进行中、备注写「需要修复」，对话查问题修好重做
+  assert.equal(plan.steps[0].status, 'running')
+  assert.match(plan.steps[0].note, /需要修复：.*没成功/)
 })
 
-test('spawn_agents 带 step：同一批一成败，这一步标成失败而不是完成', async () => {
+test('spawn_agents 带 step：同一批一成败，这一步要修而不是完成', async () => {
   // 这组「甲成功、乙失败」挂在第 2 步上：只要还有一只没成功，整步就不能算完成
   const { plan } = await spawnWithStep(false, false, true)
-  assert.equal(plan.steps[1].status, 'failed', '一只成功一只失败：整步失败，需要处理')
+  assert.equal(plan.steps[1].status, 'running', '一只成功一只失败：整步还要修，不能算完成')
   assert.match(plan.steps[1].note, /没成功/)
 })
 
