@@ -119,6 +119,42 @@ test('rangeTask：只取窗口里的消息和节点，范围外和面板推的�
   assert.equal(rangeTask(makeTask({ messages: [msg('user', '昨天的事', yesterday)] }), dayWin), null)
 })
 
+test('rangeTask：总结卡的原因和修法交给 CLI，验证、改动、要你处理这类不进报告的字段去掉', () => {
+  const card = [
+    '改好了。',
+    '',
+    '### 修复｜登录后不再报 500',
+    '- **现象**：登录后首页报 500',
+    '- **原因**：token 过期后没有刷新，接口拿旧 token 被拒',
+    '- **修复**：请求前检查过期时间，过期先刷新再发',
+    '- **验证**：单测全过',
+    '- **遗留**：无',
+    '- **要你处理**：合并到主干',
+  ].join('\n')
+  const d = rangeTask(
+    makeTask({ messages: [msg('agent', card, today(9)), msg('agent', '已推送', today(10))] }),
+    dayWin,
+  )!
+  assert.equal(d.cards.length, 1)
+  assert.equal(d.cards[0].kind, '修复')
+  assert.equal(d.cards[0].title, '登录后不再报 500')
+  assert.deepEqual(
+    d.cards[0].fields.map((x) => x.label),
+    ['现象', '原因', '修复', '遗留'],
+  )
+  assert.equal(d.reply, '', '有卡片时不再带正文')
+  const ctx = tasksContext([{ projectId: 'p1', projectName: '面板', tasks: [d] }])
+  assert.match(ctx, /总结卡「修复｜登录后不再报 500」\n {4}现象：登录后首页报 500\n {4}原因：token 过期后没有刷新/)
+  assert.doesNotMatch(ctx, /单测全过|合并到主干/)
+  // 没有卡片的老对话：带最后一条回复的一段正文（代码块去掉），原因常写在中间
+  const old = rangeTask(
+    makeTask({ messages: [msg('agent', '先看日志\n```\nError 500\n```\n原因是 token 过期没刷新', today(9))] }),
+    dayWin,
+  )!
+  assert.deepEqual(old.cards, [])
+  assert.equal(old.reply, '先看日志 原因是 token 过期没刷新')
+})
+
 test('rangeTask：用户要求很多时留开头一条和最近几条，Bug 线索扫全量', () => {
   const asks = Array.from({ length: 8 }, (_, i) => msg('user', i === 0 ? '点保存报错' : `第 ${i} 条要求`, today(9, i)))
   const d = rangeTask(makeTask({ title: '整理', messages: asks }), dayWin)!
