@@ -104,8 +104,33 @@ await runShard(import.meta.filename, async (api) => {
       if (!main || !box || box.x < main.x || box.x + box.width > main.x + main.width + 1)
         errors.push('会话栏：不在中间对话那块面板里')
     }
-    for (const name of ['环境', '上下文', 'Token 用量', '工具调用'])
+    for (const name of ['状态', '环境', '上下文', 'Token 用量', '工具调用'])
       if (!(await rail.getByRole('region', { name, exact: true }).count())) errors.push(`会话栏：没有「${name}」这一块`)
+    // 「状态」说清现在是什么情况（见 shared/task-diagnosis.ts）：标题行要有一句话
+    if (
+      !(
+        await rail
+          .locator('[data-diagnosis]')
+          .first()
+          .innerText()
+          .catch(() => '')
+      ).trim()
+    )
+      errors.push('会话栏：「状态」没有一句说明')
+    await rail.screenshot({ path: 'ui-shots/02-会话栏-状态.png' }).catch(() => {})
+    // 有子对话的父对话多一块「协作」：父子之间来往的消息（见 shared/collab-timeline.ts）
+    // 时间线是展开后另取的（GET /tasks/:id/collab），并发高时晚一点到：等它出来再判
+    if (
+      !(await rail
+        .locator('[data-collab] li')
+        .first()
+        .waitFor({ timeout: 10000 })
+        .then(
+          () => true,
+          () => false,
+        ))
+    )
+      errors.push('会话栏：父对话的「协作」里没有来往的消息')
     await p.getByRole('button', { name: '隐藏会话栏', exact: true }).click()
     if (await rail.isVisible()) errors.push('会话栏：点「隐藏会话栏」后还在')
     await p.getByRole('button', { name: '显示会话栏', exact: true }).click()

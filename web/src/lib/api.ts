@@ -1,4 +1,5 @@
 import type { ShellReport } from '@shared/shells'
+import type { CollabEvent } from '@shared/collab-timeline'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
 import type { ComfyChain } from '@shared/comfy-chain'
@@ -805,6 +806,7 @@ export const api = {
   stopTask: (id: string, force = false) =>
     request<Task>(`/tasks/${id}/stop${force ? '?force=1' : ''}`, { method: 'POST' }),
   resumeTask: (id: string, latest = false) => request<Task>(`/tasks/${id}/resume`, json('POST', { latest })),
+  taskCollab: (id: string) => request<{ rootId: string; events: CollabEvent[] }>(`/tasks/${id}/collab`),
   taskSession: (id: string, cli: string) => request<SessionInfo>(`/tasks/${id}/session?cli=${encodeURIComponent(cli)}`),
   taskDiff: (id: string, path: string) =>
     request<{ path: string; dir: string; diff: string; git: boolean; before: boolean }>(
