@@ -63,6 +63,7 @@ import { registerChildrenRoutes } from './tasks/children-routes.ts'
 import { registerProcessRoutes } from './tasks/process-routes.ts'
 import { registerListRoutes } from './tasks/list-routes.ts'
 import { createIdleAsk } from './tasks/idle-ask.ts'
+import { createBudget } from './tasks/budget.ts'
 import { createKeepAlive } from './tasks/keepalive.ts'
 import { createRun } from './tasks/run.ts'
 import { createAsks } from './tasks/asks.ts'
@@ -106,6 +107,7 @@ export function tasksApi(deps: {
     beginInlineEdit: () => beginInlineEdit,
     buildFor: () => buildFor,
     chatProject: () => chatProject,
+    checkBudget: () => checkBudget,
     chatWorkspace: () => chatWorkspace,
     childActive: () => childActive,
     childMerged: () => childMerged,
@@ -609,6 +611,7 @@ export function tasksApi(deps: {
     createAsks(scope)
   const { deliver, expandForWorkflow, followUp, start } = createRun(scope)
   const { armIdleAsk, disarmIdleAsk } = createIdleAsk(scope)
+  const { checkBudget } = createBudget(scope)
   const {
     allowedPids,
     processPanel,

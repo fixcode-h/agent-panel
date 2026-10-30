@@ -1170,6 +1170,8 @@ export const EN_SETTINGS: Record<string, string> = {
   按时间: 'By time',
   按项目: 'By project',
   按对话: 'By conversation',
+  按角色: 'By role',
+  没用角色: 'No role',
   项目已删除: 'Project deleted',
   不属于项目: 'No project',
   '按{group}汇总{range}的用量：token、费用和轮数的口径与按时间视图一致，都按同一段窗口统计。输入含缓存命中和缓存写入的部分。':

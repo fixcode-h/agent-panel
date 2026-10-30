@@ -1497,4 +1497,35 @@ export const EN_TASKS: Record<string, string> = {
   推它接着做: 'Nudge to continue',
   你直接说的: 'You said directly',
   你: 'You',
+  // 对话总览
+  对话总览: 'Overview',
+  停住了: 'Stalled',
+  最近: 'Recent',
+  '所有项目的对话一页看：先列等你处理的，再列停住了的（计划没做完、也没在跑）和执行中的。可以多选后一起停止或归档。':
+    'Conversations from every project on one page: first the ones waiting for you, then stalled ones (plan unfinished and not running) and running ones. Select several to stop or archive them together.',
+  搜标题或项目: 'Search title or project',
+  '全部 {n}': 'All {n}',
+  有要你处理的对话: 'Some conversations need you',
+  '已停止 {n} 个对话': 'Stopped {n} conversations',
+  '已归档 {n} 个对话': 'Archived {n} conversations',
+  取消选择: 'Clear selection',
+  没有符合的对话: 'No matching conversations',
+  这一组现在没有对话: 'No conversations in this group right now',
+  '计划 {done}/{total}，没在执行': 'Plan {done}/{total}, not running',
+  '选择「{title}」': 'Select “{title}”',
+  // 用量上限
+  'token 上限（百万）': 'Token cap (millions)',
+  '每个顶层对话连同名下全部子对话合起来算（输入 + 输出）。用到 80% 时在对话里提醒一次，用满时停下整个对话；之后你再发消息会接着跑一轮。0 或留空表示不限。':
+    'Counted per top-level conversation together with all its sub-conversations (input + output). At 80% the conversation gets one reminder; at the cap the whole conversation stops, and each message you send after that runs one more turn. 0 or empty means no cap.',
+  '费用上限（美元）': 'Cost cap (USD)',
+  '按 Agent 报的费用累计，不报费用的 Agent 不计入。0 或留空表示不限。':
+    'Adds up the cost the Agent reports; Agents that report no cost are not counted. 0 or empty means no cap.',
+  用量上限: 'Usage cap',
+  '{used} / {cap} token': '{used} / {cap} tokens',
+  '${used} / ${cap}': '${used} / ${cap}',
+  '【用量提醒】这个对话和名下子对话合起来已经用到项目设的上限的 {pct}%（{spent}）。到上限时面板会停下整个对话。':
+    '[Usage reminder] This conversation and its sub-conversations have used {pct}% of the project cap ({spent}). The panel stops the whole conversation when the cap is reached.',
+  '【用量上限】这个对话和名下子对话合起来已经用到项目设的上限（{spent}），面板停下了整个对话。你再发消息时会接着跑一轮，跑完又会停下；要放开跑，在项目设置「用量上限」里调高或清零。':
+    '[Usage cap] This conversation and its sub-conversations have reached the project cap ({spent}), so the panel stopped the whole conversation. Each message you send runs one more turn and then stops again; to let it run freely, raise or clear the cap under Project settings › Usage cap.',
+  用到了项目设的用量上限: 'Reached the project usage cap',
 }

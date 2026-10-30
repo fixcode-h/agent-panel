@@ -31,6 +31,20 @@ function icon(fill: ReactNode, line: ReactNode): NavIcon {
   }
 }
 
+/** 对话总览：三行列表，每行前一个状态点 */
+export const OverviewIcon = icon(
+  <rect x="3.5" y="4" width="17" height="16" rx="3.5" />,
+  <>
+    <rect x="3.5" y="4" width="17" height="16" rx="3.5" />
+    <path d="M10 9h6.5M10 12h6.5M10 15h4" />
+    <g stroke="none" fill="currentColor">
+      <circle cx="7.25" cy="9" r="1.1" />
+      <circle cx="7.25" cy="12" r="1.1" />
+      <circle cx="7.25" cy="15" r="1.1" />
+    </g>
+  </>,
+)
+
 /** 工作总结：一页报告 */
 export const SummaryIcon = icon(
   <rect x="5" y="3" width="14" height="18" rx="3.5" />,
