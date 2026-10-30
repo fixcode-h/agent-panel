@@ -1687,6 +1687,14 @@ test('新输入之后计划没动过：提醒一次；改了计划、或已经�
   applyPlan(task, { partial: true, steps: [{ id: '1', title: 'A', status: 'running' }] }, at(3))
   assert.equal(inputUnhandled(activePlan(task)!, Date.parse(at(4))), undefined)
   assert.doesNotMatch(planNotice(task, Date.parse(at(4))), /进来了新要求/)
+  // 面板替它改的（派子对话挂等待）不算对话看过了新要求：只认对话自己 set_plan 的时间
+  const masked = activePlan(task)!
+  masked.agentUpdatedAt = at(3)
+  masked.lastInputAt = at(4)
+  bindWait(task, '2', { kind: 'child', ref: 'kid1', label: '子对话' }, at(5))
+  assert.equal(inputUnhandled(masked, Date.parse(at(6))), 2 * 60_000, '挂等待把计划时间刷新了，新要求仍算没进计划')
+  masked.agentUpdatedAt = at(6)
+  assert.equal(inputUnhandled(masked, Date.parse(at(7))), undefined)
   // 已经提醒过的那一次不重复追（对话选择「不改计划、说明一句」时不能被每轮追问）
   const noted = activePlan(task)!
   noted.lastInputAt = at(5)

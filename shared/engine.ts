@@ -621,6 +621,8 @@ export interface EngineHost {
       id: string
       title: string
       status: string
+      /** 状态（ConvState）：判断原来的子对话还能不能接着做（failed 才允许另建子对话接手） */
+      state?: string
       /** 正在执行或排队等着执行：有这样的子对话时父对话自己不改文件 */
       busy?: boolean
       summary: string
@@ -1464,7 +1466,8 @@ ${
 }- 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
       coordinator
         ? `
-- 你是父对话：分析只做到判断这件事属于哪个模块、该交给哪个子对话为止，具体定位和修改交给子对话，把你查到的模块、文件和线索一起交过去。交给子对话的每件事是计划里的一个主步骤，带 step 挂成等待中；用户随时发来的新消息马上答复或分派，不要因为在等子对话让用户等。`
+- 你是父对话：分析只做到判断这件事属于哪个模块、该交给哪个子对话为止，具体定位和修改交给子对话，把你查到的模块、文件和线索一起交过去。交给子对话的每件事是计划里的一个主步骤，带 step 挂成等待中；用户随时发来的新消息马上答复或分派，不要因为在等子对话让用户等。
+- 子对话停住、被中断、没继续：用 send_to_conversation 交回原来那个子对话接着做（面板会把它重新拉起来），不要另建一个子对话重做同一件事；只有它确实起不来（交回时报错、状态是失败）才另建，并在派单里写明接手的是哪个子对话的活。`
         : ''
     }`,
   ]
@@ -3054,7 +3057,12 @@ function makeOrchestra(
     async setPlan(input) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
       const r = applyPlan(task, input, undefined, host.wrapUp, await kidsOf(host))
-      if (r.ok) host.changed(true)
+      if (r.ok) {
+        // 对话自己改了计划：新要求算看过了（见 inputUnhandled）
+        const plan = activePlan(task)
+        if (plan) plan.agentUpdatedAt = new Date().toISOString()
+        host.changed(true)
+      }
       return r
     },
     async finishPlan(summary) {
@@ -3110,6 +3118,23 @@ function makeOrchestra(
           ok: false,
           info: `role 写的「${roleName}」不是可用的高级角色${names ? `：可以写 ${names}` : ''}；不写就用「执行」`,
         }
+      }
+      // 计划里这一步还在等一个没做完的子对话：同一件事交回原来的子对话接着做，不另起一个重做（用户 2026-10-30 定的）。
+      // 原来的子对话失败了（起不来、交回时报错）才允许另建一个接手它的活
+      const at0 = step?.trim() ? activePlan(task)?.steps.find((s) => s.id === step.trim()) : undefined
+      if (at0) {
+        const kids = host.listConversations ? await host.listConversations().catch(() => []) : []
+        const holder = at0.waits.find(
+          (w) =>
+            w.kind === 'child' &&
+            w.state === 'waiting' &&
+            kids.some((k) => k.id === w.ref && !k.resolved && k.state !== 'failed' && k.state !== 'done'),
+        )
+        if (holder)
+          return {
+            ok: false,
+            info: `计划里「${at0.title}」这一步还在等子对话「${holder.label}」（id ${holder.ref}），它还没做完。用 send_to_conversation 交回它接着做，写清下一步；不要另建一个子对话重做。它确实起不来（交回时报错、状态是失败）再另建，并在派单里写明接手的是哪个子对话的活。`,
+          }
       }
       const r = await host.createConversation({
         title: title.trim(),

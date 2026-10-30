@@ -1731,6 +1731,11 @@ export const TaskPlan = z.object({
    * 否则对话选了「不改计划、说明一句」时会被每轮重复追问（见 shared/plan.ts 的 inputUnhandled）
    */
   inputNotedAt: z.string().optional(),
+  /**
+   * 对话自己（set_plan）最后一次改这份计划的时间。「新要求进来后计划有没有跟着改」只认它：
+   * 面板替它推进的变化（结果回来标完成、派子对话挂等待、子对话上报改备注）不算对话看过了新要求
+   */
+  agentUpdatedAt: z.string().optional(),
   /** 计划完成后 Agent 写的总结（必须有）；auto 表示 Agent 没写、面板取了它最后的回复 */
   summary: z.string().default(''),
   autoSummary: z.boolean().default(false),

@@ -25,3 +25,7 @@
 ## 防线
 
 - `shared/task-idle-ask.test.ts`：「这一轮说完了、计划没做完也没在等别的……」。
+
+## 后续（2026-10-30）
+
+「停在等下一句」的那种改由一轮结束时的推进（`nudgePlan`）马上处理，自动询问不再管它，免得重复推；见 [child-ends-turn-with-plan-open](./child-ends-turn-with-plan-open.md) 和 [ADR 0032](../../../adr/0032-conversations-keep-going.md)。

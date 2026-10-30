@@ -96,7 +96,7 @@ test('这一轮收不下、已经撤掉的询问不算在等回复', () => {
   assert.equal(childAutoAskWaiting({ autoAsk, lastActivityAt: at(now) }), false)
 })
 
-test('这一轮说完了、计划没做完也没在等别的：停在等下一句也要问，问够了不再问', () => {
+test('这一轮说完了、计划没做完也没在等别的：算停住了（面板推它接着做），在等别人、只剩合回都不算', () => {
   const plan = (steps: { status: string; waits?: { state: string }[]; wrapUp?: string }[]) =>
     ({
       working: false,
@@ -122,11 +122,6 @@ test('这一轮说完了、计划没做完也没在等别的：停在等下一�
   // 只剩面板加的「合回」那一步：归「催它 submit_merge」管
   assert.equal(planStalled(plan([{ status: 'done' }, { status: 'pending', wrapUp: 'merge' }])), false)
   assert.equal(planStalled({ ...stalled, working: true }), false)
-
-  const lastActivityAt = at(now - 3000)
-  assert.equal(ask({ minutes: 3, working: false, stalledPlan: true, lastActivityAt }).ask, true)
-  // 每次问完它回一句又收尾：次数不清零，问满上限就停，不会每隔几分钟问下去
-  const asked = { at: at(now - 4000), count: CHILD_IDLE_ASK_MAX }
-  const r = ask({ minutes: 3, working: false, stalledPlan: true, lastActivityAt: at(now - 3500), autoAsk: asked })
-  assert.equal(r.reason, 'limit')
+  // 失败的步骤（等的结果没成功）也算没做完：一轮结束停在这里要推它先处理（用户报过计划失败后对话不继续）
+  assert.equal(planStalled(plan([{ status: 'done' }, { status: 'failed', waits: [{ state: 'failed' }] }])), true)
 })
