@@ -3331,7 +3331,7 @@ function makeOrchestra(
       const lines = [
         r.granted.length ? `已认领：${r.granted.join('、')}` : '',
         r.held.length
-          ? `被其他子对话占着（不要改）：${r.held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。先做别的部分，过一会儿再认领；绕不开就用 message_parent 请父对话协调。`
+          ? `被其他子对话占着（不要改）：${r.held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。先做别的部分，过一会儿再认领；绕不开就用 message_parent（question 设为 true）请父对话协调。`
           : '',
       ]
       return { ok: !r.held.length, info: lines.filter(Boolean).join('\n') }
@@ -4234,13 +4234,13 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
         host.claimFiles
           ? `## 和父对话、其他子对话的协作
 你是项目对话分出来的子对话，和其他子对话在同一个目录里同时工作（没有独立分支）：
-- 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent 请父对话协调。做完一部分可以用 release_files 释放。
+- 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent（question 设为 true）请父对话协调。做完一部分可以用 release_files 释放。
 - 不要切换分支、不要 reset / checkout 别人的文件、不要格式化整个仓库，只动自己负责的范围。
 - 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；提交时只 git add 你自己改的文件，不用 -A。
-- 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定，options 列出可选的做法）。你不能直接联系其他子对话。`
+- 需要父对话决定或协调时用 message_parent 并把 question 设为 true（options 列出可选的做法）；阶段进展不用单独发，一轮结束面板会把你的汇报和状态合成一封交给父对话。你不能直接联系其他子对话。`
           : `## 和父对话的协作
 你是项目对话分出来的子对话。只动自己负责的范围，不要格式化整个仓库。
-需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定，options 列出可选的做法）。你不能直接联系其他子对话。`,
+需要父对话决定或协调时用 message_parent 并把 question 设为 true（options 列出可选的做法）；阶段进展不用单独发，一轮结束面板会把你的汇报和状态合成一封交给父对话。你不能直接联系其他子对话。`,
       )
   }
   return parts.filter(Boolean)

@@ -6,6 +6,7 @@ import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/task-export'
 import { tokenCount, type RunUsage } from '@shared/run-usage'
 import { PANEL_TOOL_RE, bgJobIds, bgPendingIds, unwrapMoreTools } from '@shared/panel-tools'
+import { peerOfMessage, subjectLine } from '@shared/peer-message'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -581,4 +582,84 @@ export function apiQueueWait(task: Pick<Task, 'apiWait'>, streaming: boolean) {
   const wait = task.apiWait
   if (!wait || wait.reason !== 'start' || streaming) return undefined
   return wait
+}
+
+/**
+ * 父对话和名下子对话之间的一封信（ADR 0034）：交代任务、回答、提问、汇报、收尾……只有信，没有状态。
+ * 发出去的从父对话的工具调用里认（create_conversation、send_to_conversation），收到的从带 peer 的消息和提问卡片里认
+ */
+export interface Letter {
+  /** 消息 id 或工具调用 id：对话流里那一行的锚点 */
+  id: string
+  at: string
+  /** out 父对话发给子对话，in 子对话发给父对话 */
+  dir: 'in' | 'out'
+  kind: PeerKind
+  subject: string
+  child: string
+  failed?: boolean
+  /** 同一个子对话后来的汇报替换掉了它（父对话没读到这封） */
+  superseded?: boolean
+  /** 收到的汇报：上报时子对话的状态（ConvState） */
+  state?: string
+}
+
+/** 按子对话分好的往来信件，每个子对话按时间从早到晚 */
+export function childLetters(messages: TaskMessage[]): Map<string, Letter[]> {
+  const out = new Map<string, Letter[]>()
+  const add = (x: Letter) => {
+    if (!x.child) return
+    const list = out.get(x.child)
+    if (list) list.push(x)
+    else out.set(x.child, [x])
+  }
+  for (const m of messages) {
+    m.tools.forEach((tool, i) => {
+      const name = panelName(tool)
+      if (name !== 'create_conversation' && name !== 'send_to_conversation') return
+      const child = panelChildId(tool)
+      const a = toolArgs(tool)
+      const body = typeof a.message === 'string' ? a.message : ''
+      add({
+        id: `${m.id}:${i}`,
+        at: tool.startedAt ? new Date(tool.startedAt).toISOString() : m.at,
+        dir: 'out',
+        kind: 'task',
+        subject: subjectLine(body) || firstLine(a.title),
+        child,
+        ...(tool.failed && { failed: true }),
+      })
+    })
+    if (m.panel === 'ask' && m.ask) {
+      add({
+        id: m.id,
+        at: m.at,
+        dir: 'in',
+        kind: 'question',
+        subject: subjectLine(m.ask.question || m.text),
+        child: m.ask.from,
+      })
+      continue
+    }
+    const p = peerOfMessage(m)
+    if (p?.rel !== 'child') continue
+    add({
+      id: m.id,
+      at: m.at,
+      dir: 'in',
+      kind: p.kind,
+      subject: p.subject || subjectLine(m.text),
+      child: p.id,
+      ...(p.failed && { failed: true }),
+      ...(p.superseded && { superseded: true }),
+      ...(m.child?.state && { state: m.child.state }),
+    })
+  }
+  for (const list of out.values()) list.sort((a, b) => a.at.localeCompare(b.at))
+  return out
+}
+
+/** 一封交代之后子对话回的第一封信（汇报、收尾、提问）：交代那行原地写「已完成 · 看汇报」，点了跳过去 */
+export function replyOf(letters: Letter[] | undefined, at: string): Letter | undefined {
+  return letters?.find((x) => x.dir === 'in' && x.at > at && !x.superseded)
 }

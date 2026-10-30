@@ -26,7 +26,7 @@
     "web/src/components/design/DesignChat.tsx": 1450,
     "web/src/components/files/FileTree.tsx": 1500,
     "web/src/components/projects/ProjectSettingsDialog.tsx": 2050,
-    "web/src/components/tasks/TaskView.tsx": 3400,
+    "web/src/components/tasks/TaskView.tsx": 3150,
     "web/src/lib/demo-backend.ts": 4900,
     "web/src/lib/demo-design.ts": 2000,
     "web/src/pages/ComfyPage.tsx": 1500,
