@@ -15,3 +15,9 @@ paths: server/background.ts, server/exec/parsers.ts, web/src/lib/tasks.ts, serve
 - 规则：带 `command` 的输入被解析层存成命令原文（`parsers.ts` 的 `inputText`），标题要用名字或命令第一行兜底（`true` 这类 JSON 字面量也算命令）；名字不能带换行，否则推回结果行显示时会截掉「成功 / 失败」。
 - 起因：后台命令折叠行只剩动作名和耗时，用户要求显示命令。
 - 防线：`web/src/lib/tasks.test.ts`、`server/orch-mcp.test.ts`、ui-check。
+
+## 异步发出去的事要收住错误，排着的消息要有人送
+
+- 规则：`void someAsync()` 发出去的后台命令、消息投递，抛错时也要把记录置终态并把结果推回；排进「下一轮」的消息在 CLI 停到等下一句时就要送（`runner.ts` 的 `flushHeld`），保活进程不会结束这一轮；重试前撤掉第一次已记进对话的那条。
+- 起因：后台命令跑之前抛错，记录一直「运行中」，对话一直等结果（ADR 0032）。
+- 防线：`server/background.test.ts`「命令没能启动」。

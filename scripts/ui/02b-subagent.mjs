@@ -387,6 +387,18 @@ await runShard(import.meta.filename, async (api) => {
         await p.getByText('购物车右上角', { exact: false }).first().click()
       await token.waitFor({ timeout: 5000 }).catch(() => {})
       await settle(p)
+      // 会话栏收起时，它的上下文细分挪到输入框下面那一排：小块在，点开是同一份细分
+      {
+        const chip = p.locator('[data-context-chip]')
+        if (!(await chip.isVisible().catch(() => false))) errors.push('会话栏收起：输入框下面没有上下文小块')
+        else {
+          await chip.click()
+          await settle(p)
+          await check(p, '上下文小块-会话栏收起', ['已使用', '空闲空间', '距自动压缩还剩'])
+          await p.keyboard.press('Escape')
+          await settle(p)
+        }
+      }
       const aside = p.locator('[data-task-panel]')
       const open = p.getByRole('button', { name: '显示文件', exact: true })
       const fold = p.getByRole('button', { name: '收起文件面板', exact: true })

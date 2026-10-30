@@ -1388,6 +1388,58 @@ await runShard('子对话与计划', async (api) => {
       await call('DELETE', `/tasks/${stallParent.id}`)
       step('子对话计划做一半就收尾：面板马上推它接着做，推过仍不动就上报父对话，不来回推')
     }
+    // ---- 父对话被停下后继续：一起被打断的子对话由面板连带拉起来，续接的提示写清是续接、子对话已在接着做 ----
+    {
+      const rp = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        prompt: 'SLOW 父对话中断后继续',
+      })
+      await waitFor(() => calls().some((c) => c.input.includes('SLOW 父对话中断后继续')), { label: '父对话开始执行' })
+      const rk = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: rp.id,
+        prompt: 'SLOW 被连带中断的子对话',
+      })
+      await waitFor(() => calls().some((c) => c.input.includes('SLOW 被连带中断的子对话')), { label: '子对话开始执行' })
+      await call('POST', `/tasks/${rp.id}/stop`)
+      await waitFor(
+        async () => {
+          const k = await call('GET', `/tasks/${rk.id}`)
+          return k.status === 'stopped' && k.stopReason === 'parent'
+        },
+        { label: '子对话随父对话一起停下', timeout: 20000 },
+      )
+      await waitFor(async () => (await call('GET', `/tasks/${rp.id}`)).status === 'stopped', {
+        label: '父对话停下',
+        timeout: 20000,
+      })
+      const before = calls().length
+      await call('POST', `/tasks/${rp.id}/resume`, {})
+      const kidCall = await waitFor(
+        () =>
+          calls()
+            .slice(before)
+            .find((c) => c.input.includes('被连带中断的子对话') && c.input.includes('面板说明：上一轮')),
+        { label: '子对话被连带拉起来、续接提示写清是续接', timeout: 20000 },
+      )
+      assert.ok(kidCall, '父对话继续时，一起被打断的子对话接着做')
+      const parentCall = await waitFor(
+        () =>
+          calls()
+            .slice(before)
+            .find((c) => c.input.includes('父对话中断后继续') && c.input.includes('一起中断的子对话已经由面板拉起来')),
+        { label: '父对话的续接提示点名已经拉起来的子对话', timeout: 20000 },
+      )
+      assert.match(parentCall.input, /被连带中断的子对话/, '续接提示写明拉起来的是哪个子对话')
+      await call('POST', `/tasks/${rp.id}/stop`).catch(() => {})
+      await call('POST', `/tasks/${rk.id}/stop`).catch(() => {})
+      await call('DELETE', `/tasks/${rp.id}`)
+      step('父对话被停下后继续：一起被打断的子对话由面板连带拉起来，续接提示写清是续接')
+    }
   }
   // 用户点「解决」时计划一并收口：走正式后端这条路径（PATCH resolved → settleChildForUser → settlePlan → 流转）。
   // 界面检查只覆盖演示后端，这条改的是 server/tasks.ts，得在这里兜住

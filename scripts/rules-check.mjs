@@ -238,7 +238,7 @@ errors.push(...checkBugIndexesInRoot(root))
     const code = read(f)
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/\/\/[^\n]*/g, '')
-    const calls = code.match(/\bmarkTurnDone\(\s*task\s*\)|ctx\.onTurnEnd\?\.\(\)/g) ?? []
+    const calls = code.match(/\bmarkTurnDone\(\s*task\s*\)|ctx\.onTurnEnd\?\.\(/g) ?? []
     if (calls.length !== 2)
       errors.push(
         `${f} 里一轮结束只能从 endTurn() 一处发出（markTurnDone + onTurnEnd 各一次），实际 ${calls.length} 处`,

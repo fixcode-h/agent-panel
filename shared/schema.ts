@@ -1643,9 +1643,14 @@ export type TaskTestRun = z.infer<typeof TaskTestRun>
  * 完成的步骤锁死不再改；整份做完、写了总结后收起，之后的新内容开一份新计划。
  * waiting：步骤在等后台命令、子对话这类耗时的结果，对话先去做下一步，结果回来再处理它。
  * running 与 waiting 分开：running 是「对话现在在动手」（一份计划里最多一个），waiting 是「在等外部结果」（必须挂着 waits）。
- * failed：这一步没做成、需要处理（重做或明确跳过），不是终态；skipped：明确不做，终态（见 ADR 0020）
+ * skipped：明确不做，终态（见 ADR 0020）。
+ * 没有「失败」：等的结果没成功、工作流没走完，那一步退回进行中、备注写「需要修复：原因」，对话去查问题修好重做，
+ * 不在计划上留一个失败的步骤（用户 2026-10-30 定的，见 ADR 0032）。旧数据里的 failed 读出来就是进行中
  */
-export const PlanStatus = z.enum(['pending', 'running', 'waiting', 'done', 'failed', 'skipped'])
+export const PlanStatus = z.preprocess(
+  (v) => (v === 'failed' ? 'running' : v),
+  z.enum(['pending', 'running', 'waiting', 'done', 'skipped']),
+)
 export type PlanStatus = z.infer<typeof PlanStatus>
 
 /**
@@ -1731,6 +1736,11 @@ export const TaskPlan = z.object({
    * 否则对话选了「不改计划、说明一句」时会被每轮重复追问（见 shared/plan.ts 的 inputUnhandled）
    */
   inputNotedAt: z.string().optional(),
+  /**
+   * 对话自己（set_plan）最后一次改这份计划的时间。「新要求进来后计划有没有跟着改」只认它：
+   * 面板替它推进的变化（结果回来标完成、派子对话挂等待、子对话上报改备注）不算对话看过了新要求
+   */
+  agentUpdatedAt: z.string().optional(),
   /** 计划完成后 Agent 写的总结（必须有）；auto 表示 Agent 没写、面板取了它最后的回复 */
   summary: z.string().default(''),
   autoSummary: z.boolean().default(false),

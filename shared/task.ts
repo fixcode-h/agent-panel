@@ -1297,8 +1297,9 @@ export function childStale(
 export const CHILD_IDLE_ASK_MAX = 3
 
 /**
- * 这一轮已经说完、计划却没做完，也没有在等任何东西：子对话停在等下一句，没人推就不会往下走。
- * 常见于模型只回了一句「先跑类型检查」就收尾、没真的调工具（用户报过：父对话一直等它，它一直等下一句）。
+ * 这一轮已经说完、计划却没做完，也没有在等任何东西：对话停在等下一句，没人推就不会往下走。
+ * 常见于模型只回了一句「先跑类型检查」就收尾、没真的调工具（用户报过：父对话一直等子对话，子对话一直等下一句）。
+ * 面板据此在一轮结束时推它接着做（server/tasks.ts 的 nudgePlan）。
  * 计划里还有在等结果的步骤（等孙对话、等合并）、已经请父对话收尾的，都不算：那是在等别人
  */
 export function planStalled(tk: Pick<Task, 'plans' | 'steps' | 'working' | 'resolved' | 'wrapRequest'>) {
@@ -1328,8 +1329,6 @@ export function childIdleAsk(
     /** 设置里的分钟数，0 关闭 */
     minutes: number
     working?: boolean
-    /** 没在执行，但这一轮说完时计划还没做完、也没在等别的（见 planStalled）：同样要问 */
-    stalledPlan?: boolean
     lastActivityAt?: string
     /** 能解释的等待（见 childWait）：等用户、等后台命令、等工作流、等子任务时不问 */
     wait?: ChildWait
@@ -1341,8 +1340,7 @@ export function childIdleAsk(
   now = Date.now(),
 ): ChildIdleAskDecision {
   if (x.minutes <= 0) return { ask: false, reason: 'off', idleMs: 0, count: x.autoAsk?.count ?? 0 }
-  if (!x.working && !x.stalledPlan)
-    return { ask: false, reason: 'not-running', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  if (!x.working) return { ask: false, reason: 'not-running', idleMs: 0, count: x.autoAsk?.count ?? 0 }
   if (x.wait && x.wait.kind !== 'next')
     return { ask: false, reason: 'waiting', idleMs: 0, count: x.autoAsk?.count ?? 0 }
   const last = x.lastActivityAt ? Date.parse(x.lastActivityAt) : NaN
@@ -1351,9 +1349,8 @@ export function childIdleAsk(
   // 询问自己的那条消息也在 messages 里：从它之后继续算静默，否则每次问完都会重新等满一轮
   const since = Number.isFinite(asked) ? Math.max(last, asked) : last
   const idleMs = Math.max(0, now - since)
-  // 问过之后子对话有了新的输出：重新从 0 次算。
-  // 停在等下一句的那种不清零：它每次回一句又收尾，清零的话会每隔几分钟问一次、永远问下去
-  const count = x.working && Number.isFinite(asked) && last > asked ? 0 : (x.autoAsk?.count ?? 0)
+  // 问过之后子对话有了新的输出：重新从 0 次算
+  const count = Number.isFinite(asked) && last > asked ? 0 : (x.autoAsk?.count ?? 0)
   if (idleMs < x.minutes * (x.unitMs ?? 60_000)) return { ask: false, reason: 'too-soon', idleMs, count }
   if (count >= CHILD_IDLE_ASK_MAX) return { ask: false, reason: 'limit', idleMs, count }
   return { ask: true, idleMs, count: count + 1 }
@@ -1387,6 +1384,37 @@ export const childStage = (x: ChildEntry) => stageOf(childState(x))
  * 等用户处理（提问、待确认）不转：那是在等你，转圈会把「等你选择」说成「还在跑」
  */
 /** 停下原因的文案：只有用户按的暂停才说「已暂停」，别的一律说清是谁结束的 */
+/**
+ * 对话被打断后点「继续执行」：交给 CLI 的那句话前面写清这是续接、中断时还有哪些没跑完。
+ * 以前只把最后一条要求原样再发一遍：模型不知道自己被打断过，要么从头重做，要么不知道还有子任务、工作流没跑完；
+ * 父对话也不知道面板已经把子对话拉起来了，又另建一个子对话重做（用户报过）。
+ * resumed：面板这次连带拉起来的子对话标题
+ */
+export function resumeNote(
+  task: Pick<Task, 'stopReason' | 'steps' | 'runs'> & { plans?: Task['plans'] },
+  resumed: string[] = [],
+): string {
+  const lines = [
+    `（面板说明：上一轮${task.stopReason ? `${stopReasonText(task.stopReason)}` : '被中断了'}，现在在原来的会话里接着做。` +
+      '先看计划里没做完的步骤接着做，已经完成的不要重做。）',
+  ]
+  if (resumed.length)
+    lines.push(
+      `- 一起中断的子对话已经由面板拉起来接着做：${resumed.map((x) => `「${x}」`).join('、')}。不用另建子对话重做，等它们的结果；要补充就 send_to_conversation 交给它们。`,
+    )
+  const helpers = task.steps.filter((s) => s.slot === 'sub' && s.interrupted && s.status !== 'done')
+  if (helpers.length)
+    lines.push(
+      `- 中断时没跑完的子任务：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。还需要就用 spawn_agents 带 resume: <id> 在原来的会话里接着跑，不要重新派一个。`,
+    )
+  const runs = (task.runs ?? []).filter((r) => r.status === 'stopped' || r.status === 'running')
+  if (runs.length)
+    lines.push(
+      `- 中断时没跑完的工作流：${runs.map((r) => `「${r.workflowName || r.workflowId}」`).join('、')}。计划里绑着它的那一步已退回进行中（需要修复），还要跑就用 start_plan 重新启动那一步。`,
+    )
+  return lines.join('\n')
+}
+
 export function stopReasonText(reason: StopReason | undefined): string {
   switch (reason) {
     case 'parent':

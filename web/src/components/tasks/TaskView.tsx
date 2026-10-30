@@ -2385,6 +2385,7 @@ export function TaskView({
                       <SessionBar
                         task={task}
                         projectName={project?.name}
+                        onTask={apply}
                         env={
                           <EnvChip
                             compact
@@ -2394,7 +2395,6 @@ export function TaskView({
                             workflowName={
                               task.mode === 'workflow' ? (workflow?.name ?? t('已删除的工作流')) : undefined
                             }
-                            onTask={apply}
                             onOpenChild={openChildIn}
                           />
                         }

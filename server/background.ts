@@ -357,7 +357,15 @@ export function createBackground(
       } finally {
         releaseGate(j.id)
       }
-    })().finally(() => runs.delete(j.id))
+    })()
+      .catch((e: Error) => {
+        // 启动前就出错了（读不到 shell 设置、拼不出命令行……）：命令根本没跑起来。
+        // 不收口的话这条记录一直是「运行中」，结果永远不会推回，计划里等它的那一步也一直在等（用户报过对话卡在这里）
+        aborts.delete(j.id)
+        log.warn('background', '后台命令没能启动', { id: j.id, task: j.taskId, error: e.message })
+        if (finish(j, 'failed', { note: `（面板没能启动这条命令：${e.message}）` })) onDone(j, resultText(j))
+      })
+      .finally(() => runs.delete(j.id))
     runs.set(j.id, p)
     return p
   }

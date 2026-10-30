@@ -21,7 +21,15 @@ import {
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { classifyError, isGatewayError, makeAlert } from '../../shared/alerts.ts'
-import { addNoteTaker, holdForNextTurn, noteTakersOf, removeNoteTaker, type NoteTaker } from './delivery.ts'
+import {
+  addNoteTaker,
+  hasHeld,
+  holdForNextTurn,
+  noteTakersOf,
+  removeNoteTaker,
+  takeHeld,
+  type NoteTaker,
+} from './delivery.ts'
 import { clearApiWait, markApiWait } from './api-wait.ts'
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import {
@@ -112,9 +120,10 @@ export interface RealContext {
   onKeepAlive?: (taskId: string) => void
   /**
    * 对话这一轮真的结束了（CLI 报了这一轮的结果，或者回复完停在等下一句）。
-   * 子对话靠它收口父对话计划里等自己的步骤：进程会被保活留着等下一句，run 不会返回，收尾处的回报等不到
+   * 子对话靠它收口父对话计划里等自己的步骤：进程会被保活留着等下一句，run 不会返回，收尾处的回报等不到。
+   * tools：这一轮调用过几次工具（顶层对话据此分辨「做到一半停了」和「只是回答了一句话」）
    */
-  onTurnEnd?: () => void
+  onTurnEnd?: (turn: { tools: number }) => void
   changed: (flush?: boolean) => void
   newId: () => string
   /** 任务所在目录是否是 git 仓库（决定改动从 git 读还是从工具调用里统计） */
@@ -187,8 +196,11 @@ const notes = new Map<string, string[]>()
  * 用户发消息时直接作为工具结果交回去，进程不用结束再 --resume；页面切走宽限到了就让它结束这一轮
  */
 interface Waiter {
-  /** 用户发来下一句：记进对话再交给正在等的 CLI（placed 是拷进任务目录的那份，只有 CLI 用） */
-  deliver: (msg: TaskMessage, placed?: Attachment[]) => void
+  /**
+   * 用户发来下一句：记进对话再交给正在等的 CLI（placed 是拷进任务目录的那份，只有 CLI 用）。
+   * recorded：消息早已记在对话里（排着等下一轮的那些），只交给 CLI、不再记一遍
+   */
+  deliver: (msg: TaskMessage, placed?: Attachment[], recorded?: boolean) => void
   /** 用户离开了：结束等待 */
   cancel: () => void
   /** 输入框里的 CLI/模型/强度还是启动这个进程时的那一套 */
@@ -228,15 +240,41 @@ const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 
  * 没有在等时返回 none；等着的进程已经不是输入框里的选择时返回 stale，
  * 调用方等它退出后按新的选择重新开始，不能把消息交给旧 CLI。
  */
-export function deliverWait(task: Task, msg: TaskMessage, placed?: Attachment[]): 'ok' | 'stale' | 'none' {
+export function deliverWait(
+  task: Task,
+  msg: TaskMessage,
+  placed?: Attachment[],
+  recorded = false,
+): 'ok' | 'stale' | 'none' {
   const w = waiters.get(task.id)?.values().next().value
   if (!w) return 'none'
   if (!w.current()) {
     w.cancel()
     return 'stale'
   }
-  w.deliver(msg, placed)
+  w.deliver(msg, placed, recorded)
   return 'ok'
+}
+
+/**
+ * CLI 刚停到等下一句上：这一轮里没交出去、排着「这一轮结束后处理」的消息直接交给它。
+ * 排着的消息原本要等整次执行结束才接着处理，可保活的进程不会结束——这一轮刚说完、还没停稳时到的
+ * 后台命令结果、子对话回报、用户的话就一直排着，对话收不到（用户报过：后台命令结果没回来，对话一直卡着）
+ */
+function flushHeld(task: Task) {
+  if (!hasHeld(task.id)) return
+  const q = takeHeld(task.id)!
+  const msg = task.messages.find((m) => m.id === q.id)
+  if (msg?.role === 'user') msg.delivery = { how: 'wait', at: new Date().toISOString() }
+  const got = deliverWait(
+    task,
+    msg ?? { id: q.id, role: 'system', agentId: '', step: '', text: q.text, tools: [], at: new Date().toISOString() },
+    q.attachments,
+    !!msg,
+  )
+  // 交不出去（进程已经换了一套 CLI）：放回去，由整次执行结束后接着处理
+  if (got !== 'ok')
+    holdForNextTurn(task.id, msg ?? ({ id: q.id, text: q.text, attachments: q.attachments } as TaskMessage))
 }
 
 /** 对话派出的子任务（不是工作流节点） */
@@ -264,8 +302,8 @@ function waitChat(task: Task, signal: AbortSignal, changed: (flush?: boolean) =>
     }
     const onAbort = () => done(null)
     const w: Waiter = {
-      deliver: (msg, placed) => {
-        task.messages.push(msg)
+      deliver: (msg, placed, recorded) => {
+        if (!recorded) task.messages.push(msg)
         task.working = true
         changed(true)
         done(withAttachments(msg.text, placed ?? msg.attachments ?? []))
@@ -1426,7 +1464,7 @@ async function runAgent(
     if (turnEnded) return
     turnEnded = true
     markTurnDone(task)
-    ctx.onTurnEnd?.()
+    ctx.onTurnEnd?.({ tools: turnTools() })
   }
   /**
    * 没有响应的检测（见 NO_RESPONSE_MS）：交出一句话、一个工具结果，或 CLI 开始一次模型请求时开始计时，
@@ -1754,6 +1792,16 @@ async function runAgent(
         result = ev
         // 这一轮结束了：之后没有输出是在等下一句，不算卡住
         armedAt = 0
+        // 留一条「为什么停」：排查「说了要做却没调工具就结束」时看是模型自己收尾（end_turn）还是被截断
+        if (chat && !op)
+          log.info('agent', `${def.name} 这一轮结束`, {
+            task: task.id,
+            step,
+            ok: ev.ok,
+            stopReason: ev.stopReason ?? '',
+            tools: turnTools(),
+            model,
+          })
         // 一轮结束还没等到结果的调用（被打断、CLI 没报结果）：算到这里为止
         for (const x of [...toolStart.keys()]) endTool(x)
         // 一轮结束以 CLI 的 result 为准：进程还活着也可能已经回复完了
@@ -2000,11 +2048,11 @@ async function runAgent(
         }
         const onAbort = () => done(null)
         waiter = {
-          deliver: (msg, placed) => {
+          deliver: (msg, placed, recorded) => {
             fromUser = true
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
-            task.messages.push(msg)
+            if (!recorded) task.messages.push(msg)
             // 继续执行：等待到此结束，从这一刻重新算执行时间
             resumeRun(task)
             // 收到用户消息，CLI 开始处理这一轮
@@ -2024,8 +2072,10 @@ async function runAgent(
         }
         ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(waiter)
         signal.addEventListener('abort', onAbort, { once: true })
-        // 页面已经离开（宽限过了）：不再一直挂着，让 CLI 结束这一轮
+        // 页面已经离开（宽限过了）：不再一直挂着，让 CLI 结束这一轮（排着的消息由整次执行结束后接着处理）
         if (!isWatched(task.id)) done(null)
+        // 这一轮结束前后到的、排着等下一轮的消息：停稳了马上交给它
+        else if (!prewarmMode) flushHeld(task)
       })
     } finally {
       if (task.awaitingUser || task.prewarming) {

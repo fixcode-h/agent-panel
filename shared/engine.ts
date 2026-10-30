@@ -621,6 +621,8 @@ export interface EngineHost {
       id: string
       title: string
       status: string
+      /** 状态（ConvState）：判断原来的子对话还能不能接着做（failed 才允许另建子对话接手） */
+      state?: string
       /** 正在执行或排队等着执行：有这样的子对话时父对话自己不改文件 */
       busy?: boolean
       summary: string
@@ -1449,7 +1451,7 @@ function planPart(host: EngineHost, coordinator: boolean): string[] {
 - **动手前先把这一步标成「进行中」**（set_plan 带它的 id + status），一份计划里同时只能有一个进行中；**做完立刻**在同一批动作里把它标完成、再把下一步标进行中。不要连着做完几步再一起更新，也不要在计划里还有进行中的步骤时去做别的步骤的事。
 - **按计划一直做下去**：计划没做完、也没在等结果时，不要结束这一轮——做完一步马上接着做下一步。不要只写一句「接下来跑检查 / 先改某处」就停下，要做的事直接调用工具去做；只有全部做完、卡住了要问、或者在等结果时才结束这一轮。
 - 什么算完成一步：改完代码并且跑通这一步该跑的检查（这一步涉及多项时，跑完它该跑的那几项）；只是起了个子任务、跑完一条命令、写了一段说明，都不算完成。
-- **要等结果的用「等待中」，不要用「进行中」**：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，面板会把那一步标成等待中，你立刻接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会标成「失败」并带上原因（需要你重做或明确跳过）。跑十几分钟的命令、等子对话时那一步本来就该是等待中。
+- **要等结果的用「等待中」，不要用「进行中」**：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，面板会把那一步标成等待中，你立刻接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成；没成功面板会把它退回进行中、备注写「需要修复：原因」——计划里没有「失败」，先查清原因修好后重做，确实不做了才标跳过并写明原因。跑十几分钟的命令、等子对话时那一步本来就该是等待中。
 - **新输入先判计划**：这一轮的输入带了新要求（用户新消息、父对话转达、子对话 / 后台结果里带了新任务）时，第一件事是判断现有计划要不要改——要改就立刻 set_plan 再动手；不改就用一句话说明为什么不变，再继续。
 - **增量还是重开**：同一件事的细化、加一步、插一步、调顺序、改步骤名、作废某一步 → 用 set_plan 带已有步骤 id、partial: true 只交变更项（默认做法）；目标本身变了（换方向、需求被推翻、方案整体换掉）、剩下的步骤大部分作废、或者用户明确说「重新做 / 换个方案 / 别按刚才那个来」→ 先 finish_plan 结束这份计划，再用 set_plan 带新 title 开一份新的（旧计划和耗时留在「以前的计划」里）。只加内容却整份重开、或者换了方向还在旧计划上打补丁，都不行。
 - 每次 set_plan 交整份列表时，已有的步骤带上 id；步骤一多（10 条以上）就分两批交：一批带上 partial 为 true 只写要变的步骤（带 id），其余没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。
@@ -1464,7 +1466,8 @@ ${
 }- 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
       coordinator
         ? `
-- 你是父对话：分析只做到判断这件事属于哪个模块、该交给哪个子对话为止，具体定位和修改交给子对话，把你查到的模块、文件和线索一起交过去。交给子对话的每件事是计划里的一个主步骤，带 step 挂成等待中；用户随时发来的新消息马上答复或分派，不要因为在等子对话让用户等。`
+- 你是父对话：分析只做到判断这件事属于哪个模块、该交给哪个子对话为止，具体定位和修改交给子对话，把你查到的模块、文件和线索一起交过去。交给子对话的每件事是计划里的一个主步骤，带 step 挂成等待中；用户随时发来的新消息马上答复或分派，不要因为在等子对话让用户等。
+- 子对话停住、被中断、没继续：用 send_to_conversation 交回原来那个子对话接着做（面板会把它重新拉起来），不要另建一个子对话重做同一件事；只有它确实起不来（交回时报错、状态是失败）才另建，并在派单里写明接手的是哪个子对话的活。`
         : ''
     }`,
   ]
@@ -3054,7 +3057,12 @@ function makeOrchestra(
     async setPlan(input) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
       const r = applyPlan(task, input, undefined, host.wrapUp, await kidsOf(host))
-      if (r.ok) host.changed(true)
+      if (r.ok) {
+        // 对话自己改了计划：新要求算看过了（见 inputUnhandled）
+        const plan = activePlan(task)
+        if (plan) plan.agentUpdatedAt = new Date().toISOString()
+        host.changed(true)
+      }
       return r
     },
     async finishPlan(summary) {
@@ -3110,6 +3118,23 @@ function makeOrchestra(
           ok: false,
           info: `role 写的「${roleName}」不是可用的高级角色${names ? `：可以写 ${names}` : ''}；不写就用「执行」`,
         }
+      }
+      // 计划里这一步还在等一个没做完的子对话：同一件事交回原来的子对话接着做，不另起一个重做（用户 2026-10-30 定的）。
+      // 原来的子对话失败了（起不来、交回时报错）才允许另建一个接手它的活
+      const at0 = step?.trim() ? activePlan(task)?.steps.find((s) => s.id === step.trim()) : undefined
+      if (at0) {
+        const kids = host.listConversations ? await host.listConversations().catch(() => []) : []
+        const holder = at0.waits.find(
+          (w) =>
+            w.kind === 'child' &&
+            w.state === 'waiting' &&
+            kids.some((k) => k.id === w.ref && !k.resolved && k.state !== 'failed' && k.state !== 'done'),
+        )
+        if (holder)
+          return {
+            ok: false,
+            info: `计划里「${at0.title}」这一步还在等子对话「${holder.label}」（id ${holder.ref}），它还没做完。用 send_to_conversation 交回它接着做，写清下一步；不要另建一个子对话重做。它确实起不来（交回时报错、状态是失败）再另建，并在派单里写明接手的是哪个子对话的活。`,
+          }
       }
       const r = await host.createConversation({
         title: title.trim(),

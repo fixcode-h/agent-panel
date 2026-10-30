@@ -3,6 +3,7 @@ import { makeAlert } from './alerts.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PlanStep, Task, TaskMessage, TaskPlan } from './schema.ts'
+import { PlanStatus } from './schema.ts'
 import {
   activePlan,
   applyPlan,
@@ -38,6 +39,7 @@ import {
   unsummarized,
   WRAP_UP,
   wrapUpKind,
+  needsFix,
 } from './plan.ts'
 
 const fresh = () => ({ plans: [], steps: [] }) as unknown as Pick<Task, 'plans' | 'steps'>
@@ -242,7 +244,7 @@ test('折叠头该说哪件事：还在做 / 全部做完 / 提前结束但还�
   assert.equal(planHeadline(doneTask.plans![0]), 'done', '全部做完收起才说已完成')
 })
 
-test('等待：挂上后台命令，成功自动完成；失败标失败（需要处理）', () => {
+test('等待：挂上后台命令，成功自动完成；没成功退回进行中、写「需要修复」', () => {
   const task = fresh()
   applyPlan(task, { steps: [{ title: '改代码', status: 'done' }, { title: '端到端测试' }, { title: '写文档' }] })
   assert.match(bindWait(task, '2', { kind: 'background', ref: 'job1', label: 'e2e' }), /等待中/)
@@ -251,9 +253,10 @@ test('等待：挂上后台命令，成功自动完成；失败标失败（需�
   assert.deepEqual(settleWait(task, 'background', 'other', true), [])
   const hit = settleWait(task, 'background', 'job1', false)
   assert.deepEqual(hit, [{ title: '端到端测试', done: false }])
-  // 失败不退回进行中：那是「对话正在做」的意思；标成失败等对话重做或放弃
-  assert.equal(activePlan(task)!.steps[1].status, 'failed')
-  assert.match(activePlan(task)!.steps[1].note, /e2e/)
+  // 计划里没有「失败」：退回进行中、备注写要修什么，对话查问题修好重做（用户 2026-10-30 定的）
+  assert.equal(activePlan(task)!.steps[1].status, 'running')
+  assert.match(activePlan(task)!.steps[1].note, /^需要修复：.*e2e/)
+  assert.ok(needsFix(activePlan(task)!.steps[1]))
   bindWait(task, '2', { kind: 'background', ref: 'job2', label: 'e2e' })
   assert.deepEqual(settleWait(task, 'background', 'job2', true), [{ title: '端到端测试', done: true }])
   assert.equal(activePlan(task)!.steps[1].status, 'done')
@@ -391,8 +394,8 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
     const badTask = waiting()
     assert.deepEqual(settleWait(badTask, 'child', 'kid', false), [{ title: '改文件', done: false }])
     const item = activePlan(badTask)!.steps[0].children[0]
-    assert.equal(item.status, 'failed')
-    assert.match(item.note, /改文件/)
+    assert.equal(item.status, 'running')
+    assert.match(item.note, /需要修复：.*改文件/)
   }
 
   // 彻底完成后面板结束等下一句的进程（stopReason 为 finish）：是完成，不是中断
@@ -943,12 +946,13 @@ test('父对话收尾子对话后刷新计划：合进去还没收口继续等�
   const done = refreshChildWait(task, kid, { settle: 'ok', why: '' })
   assert.equal(activePlan(task)!.steps[0].status, 'done')
   assert.match(done, /\[x\] 1 改登录页/)
-  // 失败标失败（需要处理）
+  // 没成功：退回进行中、写「需要修复」
   const other = fresh()
   applyPlan(other, { steps: [{ title: 'A', status: 'running' }] })
   bindWait(other, '1', { kind: 'child', ref: 'kid', label: 'A' })
   refreshChildWait(other, kid, { settle: 'fail', why: '执行失败了' })
-  assert.equal(activePlan(other)!.steps[0].status, 'failed')
+  assert.equal(activePlan(other)!.steps[0].status, 'running')
+  assert.ok(needsFix(activePlan(other)!.steps[0]))
 })
 
 test('父对话收尾子对话后刷新计划：计划里没挂它时点明要 Agent 自己标，没有计划时不出', () => {
@@ -1232,8 +1236,8 @@ test('等的结果成功回来了：把「还在等它」的备注清掉，不�
   bindWait(bad, '1', { kind: 'child', ref: 'kid2', label: '版本控制' })
   holdWait(bad, 'child', 'kid2', '执行中')
   settleWait(bad, 'child', 'kid2', false)
-  assert.equal(activePlan(bad)!.steps[0].status, 'failed')
-  assert.match(activePlan(bad)!.steps[0].note, /没成功/)
+  assert.equal(activePlan(bad)!.steps[0].status, 'running')
+  assert.match(activePlan(bad)!.steps[0].note, /需要修复：.*没成功/)
 })
 
 test('同一步骤先失败后重跑成功：失败的备注不留下来，已经完成的不挂「等的结果没成功」', () => {
@@ -1271,12 +1275,12 @@ test('子任务的等待项按子任务真实状态收口：已经取走过结�
   assert.equal(task.plans[0].steps[1].status, 'done', '最后一个子任务也完成了，这一步收口')
 })
 
-test('等子任务的步骤：子任务成功了才标完成，失败或被终止标失败并写清原因', () => {
+test('等子任务的步骤：子任务成功了才标完成，失败或被终止退回进行中并写清要修什么', () => {
   const task = fresh()
   applyPlan(task, { steps: [{ title: '派版本控制收尾', status: 'running' }, { title: '汇总' }] })
   assert.match(bindWait(task, '1', { kind: 'helper', ref: 'chat/sub/h1', label: '版本控制' }), /等待中/)
   assert.equal(settleWait(task, 'helper', 'chat/sub/h1', false).length, 1)
-  assert.equal(activePlan(task)!.steps[0].status, 'failed')
+  assert.equal(activePlan(task)!.steps[0].status, 'running')
   assert.match(activePlan(task)!.steps[0].note, /版本控制/)
   bindWait(task, '1', { kind: 'helper', ref: 'chat/sub/h2', label: '版本控制' })
   settleWait(task, 'helper', 'chat/sub/h2', true)
@@ -1533,7 +1537,7 @@ test('工作流没跑完的节点跟着收口成「跳过」：折叠头和展�
   // 运行失败结束：主步骤还在进行中，备注写着「工作流没走完」
   endRun(task, 3, false, '实现 失败')
   const plan = activePlan(task)!
-  assert.match(plan.steps[0].note, /^工作流没走完：/)
+  assert.match(plan.steps[0].note, /^需要修复：工作流没走完：/)
   assert.deepEqual(
     planChildren(task, plan.steps[0]).map((c) => c.status),
     ['done', 'pending', 'pending'],
@@ -1564,7 +1568,7 @@ test('工作流没跑完的节点跟着收口成「跳过」：折叠头和展�
 const T0 = '2026-10-28T10:00:00.000Z'
 const at = (min: number) => new Date(Date.parse(T0) + min * 60_000).toISOString()
 
-test('失败不是终态：计划不收起；明确跳过是终态：计划跟着收起', () => {
+test('计划里没有「失败」：写 failed 按进行中记，计划不收起；明确跳过是终态：计划跟着收起', () => {
   const task = fresh()
   applyPlan(task, {
     steps: [
@@ -1573,9 +1577,11 @@ test('失败不是终态：计划不收起；明确跳过是终态：计划跟�
     ],
   })
   const plan = activePlan(task)!
-  assert.equal(plan.doneAt, '', '还有一步失败需要处理，计划不能收起')
+  // 用户 2026-10-30 定的：没做成就是还要修，不在计划上留一个失败的步骤
+  assert.equal(plan.steps[1].status, 'running', '写了 failed 也按进行中记')
+  assert.equal(plan.doneAt, '', '还有一步要修，计划不能收起')
   assert.equal(planHeadline(plan), 'open')
-  assert.equal(unfinishedSteps(plan), 1, '失败算没做完，会挡住收尾')
+  assert.equal(unfinishedSteps(plan), 1, '要修的算没做完，会挡住收尾')
   assert.equal(openPlan(task)?.done, 1)
   // 放弃这一步：标跳过、计划全部终态，收起
   applyPlan(task, { partial: true, steps: [{ id: '2', title: 'B', status: 'skipped' }] })
@@ -1584,7 +1590,8 @@ test('失败不是终态：计划不收起；明确跳过是终态：计划跟�
   assert.equal(planHeadline(closed), 'done', '跳过算处理过了，不能一直说还有遗留')
   assert.deepEqual(leftSteps(closed), [])
   assert.equal(isSettled('skipped'), true)
-  assert.equal(isSettled('failed'), false)
+  // 旧数据里的 failed 读出来是进行中
+  assert.equal(PlanStatus.parse('failed'), 'running')
 })
 
 test('一份计划里同一层只能有一个进行中：同一批标了多个，只留最后一个并说明', () => {
@@ -1654,7 +1661,7 @@ test('计划内容真变了才推进「最后变化时间」：原样重交不�
   assert.equal(itemUpdatedAt(plan.steps[0]), Date.parse(at(6)))
 })
 
-test('滞后检测：running 超过阈值才提醒，waiting / failed 不算；差 1 毫秒不提醒', () => {
+test('滞后检测：running 超过阈值才提醒，waiting / 要修的不算；差 1 毫秒不提醒', () => {
   const task = fresh()
   applyPlan(task, { steps: [{ title: '接线', status: 'running' }, { title: '跑测试' }] }, T0)
   const t0 = Date.parse(T0)
@@ -1668,7 +1675,7 @@ test('滞后检测：running 超过阈值才提醒，waiting / failed 不算；�
   bindWait(waiting, '1', { kind: 'background', ref: 'job1', label: 'e2e' }, T0)
   assert.equal(staleStep(waiting, t0 + 10 * 60_000), undefined)
   assert.equal(planNotice(waiting, t0 + 10 * 60_000), '')
-  // 失败也不提醒：它已经是一个要处理的状态
+  // 要修的也不提醒：「现在」那一行已经点名先修它
   const failed = fresh()
   applyPlan(failed, { steps: [{ title: '跑 e2e' }] }, T0)
   bindWait(failed, '1', { kind: 'background', ref: 'job2', label: 'e2e' }, T0)
@@ -1687,6 +1694,14 @@ test('新输入之后计划没动过：提醒一次；改了计划、或已经�
   applyPlan(task, { partial: true, steps: [{ id: '1', title: 'A', status: 'running' }] }, at(3))
   assert.equal(inputUnhandled(activePlan(task)!, Date.parse(at(4))), undefined)
   assert.doesNotMatch(planNotice(task, Date.parse(at(4))), /进来了新要求/)
+  // 面板替它改的（派子对话挂等待）不算对话看过了新要求：只认对话自己 set_plan 的时间
+  const masked = activePlan(task)!
+  masked.agentUpdatedAt = at(3)
+  masked.lastInputAt = at(4)
+  bindWait(task, '2', { kind: 'child', ref: 'kid1', label: '子对话' }, at(5))
+  assert.equal(inputUnhandled(masked, Date.parse(at(6))), 2 * 60_000, '挂等待把计划时间刷新了，新要求仍算没进计划')
+  masked.agentUpdatedAt = at(6)
+  assert.equal(inputUnhandled(masked, Date.parse(at(7))), undefined)
   // 已经提醒过的那一次不重复追（对话选择「不改计划、说明一句」时不能被每轮追问）
   const noted = activePlan(task)!
   noted.lastInputAt = at(5)

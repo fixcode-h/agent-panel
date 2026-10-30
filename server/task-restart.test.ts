@@ -296,3 +296,38 @@ test('终态判定：已收口的任务名下不该再有 CLI 进程', () => {
     false,
   )
 })
+
+test('重启前没走完的工作流运行和合并到一半的子对话：运行置成已停止、计划那一步写「需要修复」；合并退回「已请求收尾」并告诉父对话', async () => {
+  const t = task('stale-run', {
+    status: 'running',
+    runs: [{ id: 1, workflowName: '修复 Bug', status: 'running', startedAt: at }],
+    plans: [
+      {
+        id: 'p1',
+        title: '',
+        createdAt: at,
+        doneAt: '',
+        steps: [{ id: 's1', title: '按流程修', status: 'running', run: 1 }],
+      },
+    ],
+  })
+  const back = await afterRestart(t)
+  assert.equal(back.runs[0].status, 'stopped', '没人在跑的运行不再标成运行中，不然对话一直「等工作流跑完」')
+  assert.equal(back.plans.at(-1)?.steps[0].status, 'running', '计划里绑着它的那一步退回进行中')
+  assert.match(back.plans.at(-1)?.steps[0].note ?? '', /^需要修复：工作流没走完/, '写清要修什么')
+
+  const parent = task('merge-parent', {})
+  await createTaskStore().create(parent)
+  const kid = await afterRestart(
+    task('merging-kid', {
+      parentTaskId: parent.id,
+      wrapRequest: { state: 'merging', at, note: '' },
+    }),
+  )
+  assert.equal(kid.wrapRequest?.state, 'requested', '「合并中」只在内存里有效：重启后退回已请求，finish_child 才能重来')
+  const p = await createTaskStore().get(parent.id)
+  assert.ok(
+    p?.inbox.some((x) => x.from === kid.id && /重新调用 finish_child/.test(x.text)),
+    '父对话收件箱里写明合并没完成、要重新收尾',
+  )
+})
