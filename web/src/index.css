@@ -1675,3 +1675,11 @@ html [data-sonner-toast][data-styled='true'] {
 [aria-current='page'] .rail-fill {
   opacity: 0.26;
 }
+
+/* 阶段确认审阅弹窗里的标注（ReviewDialog 用 CSS Custom Highlight 画，不改 DOM） */
+::highlight(review-note) {
+  background-color: color-mix(in oklab, var(--warning) 22%, transparent);
+}
+::highlight(review-note-active) {
+  background-color: color-mix(in oklab, var(--warning) 45%, transparent);
+}

@@ -599,7 +599,7 @@ export async function runTurn(ctx: RunContext) {
         agentId: step.agentId,
         kind: 'confirm' as const,
         title: `「${step.title}」完成了，看一下结果再继续`,
-        detail: text.length > 6000 ? text.slice(0, 6000) + '…' : text,
+        detail: text.length > 40000 ? text.slice(0, 40000) + '…' : text,
         options: [],
         at: new Date().toISOString(),
       })
