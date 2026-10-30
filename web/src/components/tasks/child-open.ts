@@ -23,6 +23,8 @@ export interface PaneNav {
    * 和 runTool 的区别：那个认的是「启动工作流」那条工具调用，这个只要一个运行号（见 web/src/lib/run-row.ts 的 runRow）
    */
   runView?: (run: number) => void
+  /** runView 的悬停提示：工作流对话里它是切到流程图，不是打开运行页 */
+  runTip?: string
   /** 后台命令行的标题点了：在任务页顶层打开这条命令的窗口（命令跑完那一行会消失，窗口不能跟着没） */
   job?: (job: JobTarget) => void
 }
@@ -32,6 +34,7 @@ export const PaneNavCtx = createContext<PaneNav | null>(null)
 export const useChildOpen = () => useContext(PaneNavCtx)?.child ?? null
 export const useRunToolOpen = () => useContext(PaneNavCtx)?.runTool ?? null
 export const useRunViewOpen = () => useContext(PaneNavCtx)?.runView ?? null
+export const useRunViewTip = () => useContext(PaneNavCtx)?.runTip
 export const useJobOpen = () => useContext(PaneNavCtx)?.job ?? null
 
 /**

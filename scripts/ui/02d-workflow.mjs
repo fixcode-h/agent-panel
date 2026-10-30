@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：运行区里的工作流行——在跑时列出来（进度、已跑多久）、点开打开这次运行的视图、跑完整行消失。
+ * 界面检查分片：运行区里的工作流行——在跑时列出来（进度、已跑多久）、点了切到流程图、跑完整行消失。
  *
  * 原来是 02b 的最后一块：它要两次整页重载（改 localStorage 造「正在跑」，再改回去看它消失），
  * 单步就要 30 秒，是 02b 里最慢的一步（其余 27 步合计只有 33 秒）。拆成单独一片后，
@@ -15,7 +15,7 @@ await runShard(import.meta.filename, async (api) => {
 
   // 运行区也列「正在跑的工作流」（用户要求「有运行中的工作流也展示在这」）：谁在跑工作流就显示在谁的对话页。
   // 以前运行区那行的判定只认 mode === 'chat'，工作流任务自己跑的时候什么也不列。
-  // 这一条同时验「点它能打开这次运行的视图」和「跑完这一行消失、不留空横线」
+  // 这一条同时验「点它切到流程图」和「跑完这一行消失、不留空横线」
   {
     const KEY = 'agent-panel-demo-v3'
     const TITLE = '商品详情页增加'
@@ -64,20 +64,19 @@ await runShard(import.meta.filename, async (api) => {
         if (!/\d+m \d+(?:\.\d+)?s/.test(text))
           errors.push(`运行区-工作流在跑：这一行没有显示已跑了多久（实际「${text}」）`)
         await check(p, '运行区-工作流在跑', ['工作流'])
-        // 整行点了打开这次运行的视图：中间开一个页签，标签写「运行 n」，不是另外弹一个窗口
+        // 工作流对话里点整行和点工作流卡片一样：就地切到流程图，不另开「运行 n」页签（用户 2026-10-30 要求）
         const runner = box.locator('div').filter({ hasText: '个节点' }).last()
+        const runTabs = p.getByRole('tablist', { name: '对话页签' }).getByRole('tab', { name: /运行 \d+/ })
+        const before = await runTabs.count()
         await runner.click()
-        const opened = await p
-          .getByRole('tablist', { name: '对话页签' })
-          .getByRole('tab', { name: new RegExp(`运行 ${info.run}`) })
-          .first()
-          .waitFor({ timeout: 10000 })
-          .then(
-            () => true,
-            () => false,
-          )
-        if (!opened) errors.push('运行区-工作流在跑：点这一行没有打开这次运行的视图')
-        else await check(p, '运行区-工作流在跑-打开运行视图', [`运行 ${info.run}`])
+        await settle(p)
+        const flowTab = p.getByRole('tab', { name: '流程图' }).first()
+        if ((await flowTab.getAttribute('aria-selected')) !== 'true')
+          errors.push('运行区-工作流在跑：点这一行没有切到当前对话的流程图')
+        else if ((await runTabs.count()) > before) errors.push('运行区-工作流在跑：点这一行还另外打开了运行页签')
+        else await check(p, '运行区-工作流在跑-切到流程图', ['流程图'])
+        await p.getByRole('tab', { name: '对话' }).first().click()
+        await settle(p)
         // 跑完：这一行从运行区消失，也不在总结下面留一条空横线
         await patch(false)
         await p.reload()
