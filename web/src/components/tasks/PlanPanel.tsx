@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronRight, CircleCheck, CircleSlash, ListChecks, TriangleAlert, X } from 'lucide-react'
+import { Check, ChevronRight, CircleCheck, CircleSlash, ListChecks, TriangleAlert } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan } from '@shared/schema'
 import {
