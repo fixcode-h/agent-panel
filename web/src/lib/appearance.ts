@@ -91,7 +91,7 @@ export function applyAppearance(a: Appearance | undefined) {
   const root = document.documentElement.style
   for (const [k, v] of Object.entries(vars)) root.setProperty(k, v)
   applyPalette(parsed.palette)
-  applyMarkdownStyle(parsed.markdown)
+  applyMarkdownStyle(parsed.markdown, parsed.components)
   try {
     localStorage.setItem('appearance', JSON.stringify(vars))
     localStorage.setItem(PALETTE_KEY, parsed.palette)

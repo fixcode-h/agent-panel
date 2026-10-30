@@ -49,7 +49,7 @@ export function StatusPill({
     <span
       title={title}
       className={cn(
-        'inline-flex h-[1.375rem] shrink-0 items-center gap-1.5 rounded-full px-2 text-[0.75rem] font-medium whitespace-nowrap',
+        'inline-flex h-[1.375rem] shrink-0 items-center gap-1.5 rounded-(--c-statusPill-radius) px-2 text-[0.75rem] font-(weight:--c-statusPill-weight) whitespace-nowrap',
         tones[tone],
         className,
       )}

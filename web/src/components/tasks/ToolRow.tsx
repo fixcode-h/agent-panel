@@ -297,9 +297,9 @@ export function RowShell({
     <div
       className={cn(
         'min-w-0',
-        !boxed && 'rounded-lg',
-        !boxed && !ai && 'bg-fg/[0.035]',
-        boxed && 'overflow-hidden rounded-lg border',
+        !boxed && 'rounded-(--c-row-radius)',
+        !boxed && !ai && 'bg-(--c-row-bg)',
+        boxed && 'overflow-hidden rounded-(--c-row-radius) border',
         boxed && failed && 'border-danger/30',
         className,
       )}
@@ -311,7 +311,7 @@ export function RowShell({
         className={cn(
           'group flex w-full min-w-0 items-center py-1 pr-1 pl-2 text-[0.75rem] text-muted',
           ai ? 'min-h-[1.875rem]' : 'min-h-8',
-          !boxed && 'rounded-lg',
+          !boxed && 'rounded-(--c-row-radius)',
           boxed && 'px-2.5',
           container && '@container',
           // 整行打开的行左边多一个下拉：间距收一点，窄行里状态标签才不会被挤出容器
@@ -448,7 +448,7 @@ export function ToolRow({
   const alert =
     raw.alert ?? (raw.kind === 'other' && raw.failed && raw.name === t('提示') ? makeAlert('error', raw.label) : null)
   if (alert) return <AlertRow alert={alert} text={raw.label} />
-  // 给另一个对话发消息：和收件方的「接收消息」一样画成「发送消息 + 类型 + 内容标题」
+  // 给另一个对话发消息：和收件方一样画成「→ 对方 + 类型 + 内容标题」
   if (view.send)
     return (
       <PeerLine
@@ -462,6 +462,7 @@ export function ToolRow({
         childId={view.child}
         receipt={raw.output?.trim()}
         ms={raw.ms}
+        at={raw.startedAt ? new Date(raw.startedAt).toISOString() : undefined}
       />
     )
   return <ToolLine view={view} task={task} />

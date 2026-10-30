@@ -31,7 +31,7 @@ export function InlineChip({
 }) {
   const c = CHIP_TONE[tone]
   const cls = cn(
-    'mx-0.5 my-0.5 inline-flex h-6 max-w-full items-center gap-1.5 rounded-md px-1.5 align-top text-[0.75rem] leading-none whitespace-nowrap ring-1 ring-inset',
+    'mx-0.5 my-0.5 inline-flex h-6 max-w-full items-center gap-1.5 rounded-(--c-chip-radius) px-1.5 align-top text-[0.75rem] leading-none whitespace-nowrap ring-(length:--c-chip-ring) ring-inset',
     c.box,
     onClick && cn('cursor-pointer transition-colors', c.hover),
     className,

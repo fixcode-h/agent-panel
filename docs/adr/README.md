@@ -41,6 +41,7 @@
 | [0031](./0031-test-count-report-not-cap.md)               | 用例总数不设上限，只拦本次净新增，出包时报数，定期批量清理                 | 已接受 | 2026-10-29 | `--check` 只判净新增；`--tap` 只报数；`--report --since auto` 出包对比；「测试验收」`task=清理用例`                                                |
 | [0032](./0032-conversations-keep-going.md)                | 对话靠面板推着走完：收尾时推进、父子只发必要消息、继续时连带恢复           | 已接受 | 2026-10-30 | `nudgePlan` 按计划状态推所有对话；「未完成」不发消息；`resumeKids` + `resumeNote`；`agentUpdatedAt`；消息与后台结果不丢                            |
 | [0033](./0033-state-settle-and-tasks-split.md)            | 状态收口只有一种写法并定时核对，server/tasks.ts 按功能拆开、大文件只许变小 | 已接受 | 2026-10-30 | `settleStopped` + `stateBreaks` 连看两次才收（`lost`）；`server/tasks/` 工厂 + `TasksScope`；`scripts/file-caps.json`                              |
+| [0034](./0034-letters-vs-status-child-panel.md)           | 父子之间分清「信」和「状态」，子对话只在输入框上方的面板里看               | 已接受 | 2026-10-30 | 连带中断、阶段汇报、用户直接交代不再单独发；箭头 + 对方的信行和回执；右栏不列子对话，草图二放到输入框上方                                          |
 
 状态只有四个词，别自己造近义词：
 

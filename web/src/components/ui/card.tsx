@@ -27,7 +27,7 @@ export const Card = forwardRef<
     ref={ref as never}
     {...(Tag === 'button' ? { type: 'button' as const } : {})}
     className={cn(
-      'rounded-xl bg-card shadow-card',
+      'rounded-(--c-card-radius) border-(length:--c-card-border) bg-(--c-card-bg) shadow-(--c-card-shadow)',
       paddings[padding],
       interactive &&
         'cursor-pointer text-left transition-colors outline-none hover:bg-sel/45 focus-visible:ring-[3px] focus-visible:ring-focus-soft',

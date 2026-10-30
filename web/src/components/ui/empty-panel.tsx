@@ -31,7 +31,11 @@ export function EmptyPanel({
   className?: string
   children: ReactNode
 }) {
-  const cls = cn('rounded-xl border border-dashed text-center text-[0.8125rem] text-subtle', PADDING[size], className)
+  const cls = cn(
+    'rounded-(--c-empty-radius) border border-(--c-empty-border) bg-(--c-empty-bg) text-center text-[0.8125rem] text-subtle',
+    PADDING[size],
+    className,
+  )
   if (as === 'button')
     return (
       <button type="button" className={cls} onClick={onClick}>

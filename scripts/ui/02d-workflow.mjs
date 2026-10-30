@@ -99,4 +99,25 @@ await runShard(import.meta.filename, async (api) => {
       await backToTask()
     }
   }
+
+  // 对话里的工作流卡片：点它和标题栏点「流程图」一样就地切到流程图，不另开运行页（用户 2026-10-30 要求）
+  {
+    const card = p.locator('[role="button"][data-run]').filter({ hasText: '查看流程图' }).first()
+    if (!(await card.count())) errors.push('工作流卡片：购物车任务的对话里没有工作流卡片，用例前提不成立')
+    else {
+      // 前面的用例可能留着别的「运行 n」页签：只看点卡片有没有多开
+      const runTabs = p.getByRole('tablist', { name: '对话页签' }).getByRole('tab', { name: /运行 \d+/ })
+      const before = await runTabs.count()
+      await card.scrollIntoViewIfNeeded()
+      await card.click()
+      await settle(p)
+      const flowTab = p.getByRole('tab', { name: '流程图' }).first()
+      if ((await flowTab.getAttribute('aria-selected')) !== 'true')
+        errors.push('工作流卡片：点卡片没有切到当前对话的流程图')
+      else if ((await runTabs.count()) > before) errors.push('工作流卡片：点卡片还另外打开了运行页')
+      else await check(p, '工作流卡片-切到流程图', ['流程图'])
+      await p.getByRole('tab', { name: '对话' }).first().click()
+      await settle(p)
+    }
+  }
 })

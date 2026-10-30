@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils'
  * 尺寸：sm 28px（工具条），xs 24px（列表行），2xs 20px（行内、页签里）；图标跟着尺寸缩放
  */
 const sizes = {
-  sm: { box: 'h-7 w-7 rounded-md', icon: 'h-4 w-4' },
-  xs: { box: 'h-6 w-6 rounded-md', icon: 'h-3.5 w-3.5' },
+  sm: { box: 'h-7 w-7 rounded-(--c-iconButton-radius)', icon: 'h-4 w-4' },
+  xs: { box: 'h-6 w-6 rounded-(--c-iconButton-radius)', icon: 'h-3.5 w-3.5' },
   '2xs': { box: 'h-5 w-5 rounded', icon: 'h-3 w-3' },
 }
 const tones = {

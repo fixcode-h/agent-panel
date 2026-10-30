@@ -122,6 +122,10 @@ test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开�
   assert.match(role, /「原因」/)
   assert.match(role, /「修复」/)
   assert.match(role, /描述清楚最重要/)
+  // 原因和修法要讲清因果；测试过没过、推没推送这类不写（用户嫌报告里全是这些）
+  assert.match(role, /把因果讲完整/)
+  assert.match(role, /为什么这样改现象就消失了/)
+  assert.match(role, /测试是否通过/)
   // 只写结果：真实跑一次时输出里贴了路径、函数名和接口名
   assert.match(role, /不写具体文件名/)
   assert.match(role, /不编造/)

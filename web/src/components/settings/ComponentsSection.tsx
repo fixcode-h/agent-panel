@@ -60,13 +60,32 @@ import {
 } from '@/components/ui/sidebar'
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
+import { Markdown } from '@/components/tasks/Markdown'
+import { TuneProvider, TuneToggle, useTune } from '@/components/settings/ComponentTune'
+import type { CompName, ComponentStyle } from '@shared/component-style'
+import type { Appearance } from '@shared/schema'
+import { applyAppearance } from '@/lib/appearance'
 
-/** 一格展示：左边部件名（代码里的名字），右边实物 */
-function Specimen({ name, children }: { name: string; children: React.ReactNode }) {
+/** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
+const SUMMARY_SAMPLE = `### 未完成｜前置检查不通过，两项环境问题挡住后续节点
+- **卡在哪**：\`/opsx\` 斜杠指令在当前 CLI 不可用，\`openspec validate\` 失败。
+- **已完成**：项目根、Git 基线、相关模块和历史 Bug 均已定位。
+- **要你处理**：在项目根执行 \`openspec update\` 生成指令文件。`
+const NO_TEAM = new Set<string>()
+
+/** 一格展示：左边部件名（代码里的名字），右边实物；能微调的部件下面多一个「微调」，展开就地调 */
+function Specimen({ name, tune, children }: { name: string; tune?: CompName[]; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2.5 border-b border-line/80 py-4 last:border-b-0 sm:flex-row sm:gap-6">
-      <span className="w-40 shrink-0 pt-1 font-mono text-[0.75rem] text-subtle">{name}</span>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">{children}</div>
+    <div className="flex flex-col gap-2.5 border-b border-line/80 py-4 last:border-b-0">
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:gap-6">
+        <span className="w-40 shrink-0 pt-1 font-mono text-[0.75rem] text-subtle">{name}</span>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">{children}</div>
+      </div>
+      {tune && (
+        <div className="sm:pl-46">
+          <TuneToggle comps={tune} />
+        </div>
+      )}
     </div>
   )
 }
@@ -75,7 +94,12 @@ function Specimen({ name, children }: { name: string; children: React.ReactNode 
  * 设置 → 组件：界面用到的通用部件全在这里，按当前配色和深浅色画出来。
  * 页面只用 components/ui 里的部件拼；新加或改了部件，在这里加一格，换配色时一眼能看全
  */
-export function ComponentsSection() {
+export function ComponentsSection({ value, onChange }: { value: Appearance; onChange: (a: Appearance) => void }) {
+  const tune = useTune(value.components, (components: ComponentStyle) => {
+    const next = { ...value, components }
+    onChange(next)
+    applyAppearance(next)
+  })
   const [tab, setTab] = useState('parent')
   const [side, setSide] = useState('files')
   const [seg, setSeg] = useState<'a' | 'b' | 'c'>('a')
@@ -96,12 +120,14 @@ export function ComponentsSection() {
     if (tab === id) setTab('parent')
   }
   return (
-    <>
+    <TuneProvider value={tune}>
       <p className="pt-2 text-[0.8125rem] leading-relaxed text-subtle">
-        {t('界面里用到的通用部件都在这里，按当前配色画出来。页面只用这些部件拼，改一处全站跟着变。')}
+        {t(
+          '界面里用到的通用部件都在这里，按当前配色画出来。页面只用这些部件拼，改一处全站跟着变：点部件下面的「微调」调圆角、底色、边框这些，改了立刻生效。',
+        )}
       </p>
       <Group title={t('按钮')}>
-        <Specimen name="Button · variant">
+        <Specimen name="Button · variant" tune={['button']}>
           {BUTTON_VARIANTS.map((v) => (
             <Button key={v} variant={v}>
               {v}
@@ -125,21 +151,21 @@ export function ComponentsSection() {
         <MoreButtonSpecimens />
       </Group>
       <Group title={t('状态')}>
-        <Specimen name="StatusPill">
+        <Specimen name="StatusPill" tune={['statusPill']}>
           {STATUS_TONES.map((tone) => (
             <StatusPill key={tone} tone={tone} spin={tone === 'run'}>
               {toneLabel[tone]}
             </StatusPill>
           ))}
         </Specimen>
-        <Specimen name="Badge">
+        <Specimen name="Badge" tune={['badge']}>
           <Badge>{t('内置')}</Badge>
           <Badge tone="accent">{t('新')}</Badge>
           <Badge tone="success">{t('已安装')}</Badge>
           <Badge tone="warning">{t('有更新')}</Badge>
           <Badge tone="danger">{t('{n} 个失败', { n: 2 })}</Badge>
         </Specimen>
-        <Specimen name="StatusDot · UnreadDot · Kbd">
+        <Specimen name="StatusDot · UnreadDot · Kbd" tune={['kbd']}>
           <StatusDot tone="success" label={t('就绪')} />
           <StatusDot tone="warning" label={t('未登录')} />
           <StatusDot tone="muted" label={t('已停用')} />
@@ -151,7 +177,7 @@ export function ComponentsSection() {
           <ContextRing percent={23} label={t('上下文已用 {n}%', { n: 23 })} />
           <ContextRing percent={86} label={t('上下文已用 {n}%', { n: 86 })} />
         </Specimen>
-        <Specimen name="Progress">
+        <Specimen name="Progress" tune={['progress']}>
           <div className="flex w-full max-w-sm flex-col gap-2.5">
             {PROGRESS_TONES.map((tone, i) => (
               <Progress key={tone} tone={tone} value={22 + i * 18} size={i % 2 ? 'xs' : 'sm'} label={t('示例进度')} />
@@ -160,7 +186,7 @@ export function ComponentsSection() {
         </Specimen>
       </Group>
       <Group title={t('输入')}>
-        <Specimen name="Input · Select">
+        <Specimen name="Input · Select" tune={['input', 'menu']}>
           <Input aria-label={t('示例输入框')} placeholder={t('搜索任务')} className="w-56" />
           <Select
             aria-label={t('示例下拉框')}
@@ -182,7 +208,7 @@ export function ComponentsSection() {
             className="w-full max-w-md"
           />
         </Specimen>
-        <Specimen name="Switch · Checkbox · Segmented">
+        <Specimen name="Switch · Checkbox · Segmented" tune={['switch', 'checkbox', 'segmented']}>
           <Switch checked={on} onCheckedChange={setOn} aria-label={t('示例开关')} />
           <Checkbox checked={checked} onChange={setChecked} label={t('推送到远端')} />
           <Segmented
@@ -286,6 +312,10 @@ export function ComponentsSection() {
         <UnderlineTabSpecimen />
       </Group>
       <Group title={t('对话部件')}>
+        <Specimen name="SummaryCard" tune={['summary']}>
+          {/* Agent 每轮结束的总结卡（.md-card）：画的就是对话里的那个，类型色只在左边色条和小标签上 */}
+          <Markdown text={SUMMARY_SAMPLE} teamNames={NO_TEAM} className="w-full max-w-xl" />
+        </Specimen>
         <Specimen name="ReplyHeader">
           {/* 和对话里一样：图标 22px 宽、名字 15px，模型只写最后一段、强度写英文；正文缩进到名字那一列（reply-body） */}
           <div className="reply-body flex w-full flex-col gap-2">
@@ -303,7 +333,7 @@ export function ComponentsSection() {
             <p className="text-[0.875rem] leading-relaxed text-fg">{t('先看一下现有的实现，再按设计稿改。')}</p>
           </div>
         </Specimen>
-        <Specimen name="RowShell">
+        <Specimen name="RowShell" tune={['row']}>
           {/* 过程行一组：每行默认浅底，行间留间距、不画分隔线（proc-list） */}
           <div className="proc-list flex w-full flex-col">
             <RowShell
@@ -337,7 +367,7 @@ export function ComponentsSection() {
             />
           </div>
         </Specimen>
-        <Specimen name="InlineChip">
+        <Specimen name="InlineChip" tune={['chip']}>
           <p className="text-[0.875rem] leading-7">
             {t('按这张')}
             <InlineChip
@@ -395,7 +425,7 @@ export function ComponentsSection() {
         </Specimen>
       </Group>
       <Group title={t('侧栏')}>
-        <Specimen name="ModeTabs · NavRow · ProjectRow · TaskRow">
+        <Specimen name="ModeTabs · NavRow · ProjectRow · TaskRow" tune={['nav']}>
           {/* 侧栏贴着底色画：项目 → 对话两层，选中项目是淡蓝底，选中对话是白卡片，行尾状态做轻 */}
           <div className="flex w-64 flex-col gap-0.5 rounded-lg bg-rail px-2.5 py-2.5">
             <div className="mb-2 flex">
@@ -457,7 +487,7 @@ export function ComponentsSection() {
         </Specimen>
       </Group>
       <Group title={t('空状态')}>
-        <Specimen name="EmptyPanel">
+        <Specimen name="EmptyPanel" tune={['empty']}>
           <EmptyPanel size="md" className="w-full max-w-md">
             {t('还没有计划')}
           </EmptyPanel>
@@ -465,7 +495,7 @@ export function ComponentsSection() {
       </Group>
       <OverlaySpecimens />
       <CardCanvasSpecimens />
-    </>
+    </TuneProvider>
   )
 }
 
@@ -491,7 +521,7 @@ function MoreButtonSpecimens() {
           </Button>
         ))}
       </Specimen>
-      <Specimen name="IconButton">
+      <Specimen name="IconButton" tune={['iconButton']}>
         {ICON_BUTTON_SIZES.map((s) => (
           <IconButton key={s} size={s} icon={MoreHorizontal} label={t('更多操作')} />
         ))}
@@ -622,7 +652,7 @@ function OverlaySpecimens() {
   const bare = modal === 'bare'
   return (
     <Group title={t('弹层')}>
-      <Specimen name="Modal · size · bare">
+      <Specimen name="Modal · size · bare" tune={['modal']}>
         {MODAL_SIZES.map((s) => (
           <Button key={s} variant="secondary" size="sm" onClick={() => setModal(s)}>
             {s}
@@ -651,7 +681,7 @@ function OverlaySpecimens() {
           )}
         </Modal>
       </Specimen>
-      <Specimen name="Sheet">
+      <Specimen name="Sheet" tune={['sheet']}>
         {(['right', 'left'] as const).map((s) => (
           <Button
             key={s}
@@ -671,7 +701,7 @@ function OverlaySpecimens() {
           </p>
         </Sheet>
       </Specimen>
-      <Specimen name="ComposerPopover">
+      <Specimen name="ComposerPopover" tune={['popover']}>
         {/* 输入框外壳要是 relative，弹层贴在它顶上往上长 */}
         <div className="relative mt-24 w-full max-w-md rounded-xl bg-field px-3 py-2.5 text-[0.8125rem] text-subtle shadow-card">
           <ComposerPopover stretch scroll>
@@ -694,7 +724,7 @@ function CardCanvasSpecimens() {
   return (
     <>
       <Group title={t('卡片')}>
-        <Specimen name="Card · padding · interactive">
+        <Specimen name="Card · padding · interactive" tune={['card']}>
           <Card padding="md" className="flex w-56 flex-col gap-1 text-[0.8125rem]">
             <span className="font-medium">{t('代码审查')}</span>
             <span className="text-subtle">padding="md"</span>

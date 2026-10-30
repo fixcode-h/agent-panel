@@ -1,7 +1,8 @@
-import { createContext, useContext } from 'react'
+import { createContext, createElement, useContext, type ReactNode } from 'react'
 import type { ToolUse } from '@shared/schema'
 import type { ChildSummary } from './child-line'
 import type { JobTarget } from './JobDialog'
+import type { Letter } from '@/lib/tasks'
 
 /**
  * 面板里的跳转，由父对话的任务页提供：
@@ -41,3 +42,31 @@ export const useJobOpen = () => useContext(PaneNavCtx)?.job ?? null
  */
 export const ChildListCtx = createContext<ChildSummary[]>([])
 export const useChildList = () => useContext(ChildListCtx)
+
+/**
+ * 父对话的任务页提供：它和名下子对话之间的往来信件（见 web/src/lib/tasks.ts 的 childLetters）
+ * 和每个子对话还没被父对话读到的汇报数（收件箱）。交代任务那行据此原地写回执，子对话面板据此列每个子对话的信
+ */
+export interface PeerMail {
+  letters: Map<string, Letter[]>
+  unread: Map<string, number>
+}
+export const PeerMailCtx = createContext<PeerMail | null>(null)
+export const usePeerMail = () => useContext(PeerMailCtx)
+
+/** 父对话页一次提供子对话列表和信件两份上下文（一层包住，不让对话页整段多缩进一层） */
+export function ChildMailProvider({
+  kids,
+  mail,
+  children,
+}: {
+  kids: ChildSummary[]
+  mail: PeerMail
+  children: ReactNode
+}) {
+  return createElement(
+    ChildListCtx.Provider,
+    { value: kids },
+    createElement(PeerMailCtx.Provider, { value: mail }, children),
+  )
+}
