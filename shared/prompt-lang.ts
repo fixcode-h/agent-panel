@@ -83,3 +83,17 @@ export const VERDICT_LINE = {
   review: '单独一行写「验收结论：通过」或「验收结论：不通过」（回复用英文时写「Verdict: pass」或「Verdict: fail」）',
   branch: '单独一行写「结论：通过」或「结论：不通过」（回复用英文时写「Verdict: pass」或「Verdict: fail」）',
 } as const
+
+/**
+ * 「怎么称呼用户」一节：设置里填了「称呼」才有，跟角色设定一起放（系统提示词或会话第一轮的角色段）。
+ * 以前称呼只用在界面标签上（提问卡片「需要X回答」），Agent 不知道，回复和提问里仍写「你」「用户」（用户报的问题）。
+ * 和语言规则一样每次拼提示词时现算：改了称呼，系统提示词下一轮就是新的；没有系统提示词参数的 CLI
+ * 靠角色段的哈希变化补发（server/exec/runner.ts 的 roleStale）
+ */
+export function promptUserNameRules(name: string | undefined, lang: Lang = getLang()): string {
+  const n = name?.trim()
+  if (!n) return ''
+  return lang === 'zh'
+    ? `## 怎么称呼用户\n用户希望被称呼为「${n}」：回复里称呼用户、向用户提问（提问卡片的问题和选项说明）、给父对话转达要用户决定的事时，都用「${n}」来指代用户。`
+    : `## How to address the user\nThe user wants to be called "${n}": use "${n}" whenever you address or refer to the user — in replies, in questions you ask them (question text and option descriptions), and when relaying decisions that need them to the parent conversation.`
+}

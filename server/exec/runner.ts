@@ -80,7 +80,7 @@ import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 import { redirectWait } from './redirect.ts'
 import { t, getLang } from '../../shared/i18n.ts'
 import { fmtDuration } from '../../shared/duration.ts'
-import { promptLangReminder, promptLangRules } from '../../shared/prompt-lang.ts'
+import { promptLangReminder, promptLangRules, promptUserNameRules } from '../../shared/prompt-lang.ts'
 import { compactedSilently } from '../../shared/prompt-delta.ts'
 import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
@@ -1213,7 +1213,10 @@ async function runAgent(
   const carryBudget = () => Math.max(MIN_CLIP_TOKENS * 2, Math.floor(windowFor(model) * CONTEXT_CARRY_SHARE))
   // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
   // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
-  const instructions = def.systemPromptFlag ? [role, promptLangRules()].filter(Boolean).join('\n\n') : role
+  // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次
+  const instructions = [role, def.systemPromptFlag ? promptLangRules() : '', promptUserNameRules(settings.userName)]
+    .filter(Boolean)
+    .join('\n\n')
   // Command Code 没有系统提示词参数，改用 --mod 加载的 mod 追加同一段规则（见 prompt-lang-mod.ts）
   const systemPromptModPath = def.systemPromptMod ? await ensurePromptLangMod() : undefined
   // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
