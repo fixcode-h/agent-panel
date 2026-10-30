@@ -28,6 +28,7 @@ import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
 import { childAskDefaultOf, childAskInitial } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
+import { taskLog } from '../task-log.ts'
 import { rescheduleIfUnwatched, setViewer, touchPresence } from '../presence.ts'
 import type { Live } from './types.ts'
 import { createWorktree } from '../exec/worktree.ts'
@@ -138,12 +139,31 @@ export function registerConversationRoutes(s: TasksScope) {
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
     const { text, attachments, interrupt, messageId } = p.data
     const cur = await s.current(id)
+    const liveNow = s.live.get(id)
+    taskLog(id, '收到消息', {
+      messageId,
+      interrupt: interrupt || undefined,
+      attachments: attachments.length || undefined,
+      text: text.trim().slice(0, 80),
+      live: !!liveNow,
+      status: liveNow?.task.status ?? cur?.status,
+      working: liveNow?.task.working,
+      awaitingUser: liveNow?.task.awaitingUser,
+      prewarming: liveNow?.task.prewarming || undefined,
+    })
+    // 页面上发的消息最后有没有记进对话：没记进去时页面会撤掉本地那条，日志里要能看出是在哪一步丢的
+    const replied = (how: string, task: Task) => {
+      const recorded = !messageId || task.messages.some((m) => m.id === messageId)
+      taskLog(id, recorded ? '消息已记下' : '消息没有记进对话', { messageId, how, status: task.status })
+      return task
+    }
     // 进了回收站的对话和 GET /tasks/:id 一样当不存在：不能再往它里面发消息（否则会被重新拉起来跑一轮）
     if (cur?.deletedAt) return s.bad(c, t('任务不存在'), 404)
     if (cur?.imported) return s.bad(c, s.READONLY, 409)
     // 「/rule」：父对话发布全局规则，面板自己处理，不发给 CLI
     if (RULE_CMD.test(text.trim())) {
       const r = await s.ruleCommand(id, text.trim())
+      taskLog(id, '面板命令', { cmd: '/rule', error: 'error' in r ? r.error : undefined })
       return 'error' in r ? s.bad(c, r.error) : c.json(r.task)
     }
     // 用户直接进子对话回复，就当作回答了它挂在父对话里的提问（不打断这次发送）
@@ -176,18 +196,29 @@ export function registerConversationRoutes(s: TasksScope) {
           ...(attachments.length ? { attachments } : {}),
           at: new Date().toISOString(),
         }
-        return c.json((await s.deliver(prev, msg, expanded || text, placed)).task)
+        const r = await s.deliver(prev, msg, expanded || text, placed).catch((e: Error) => {
+          taskLog(id, '发消息失败', { messageId, error: e })
+          throw e
+        })
+        return c.json(replied(r.how, r.task))
       }
       // 打断：停下当前这一轮再发
       s.stopTask(id, 'supersede')
     }
     // 刚执行完、还在落盘的任务：等它写完再接着跑
     prev = s.live.get(id)
-    if (prev) await prev.done
-    if (s.live.has(id)) return s.bad(c, t('任务正在执行，请等它完成或先停止'), 409)
+    if (prev) {
+      taskLog(id, '等上一轮收尾', { messageId, status: prev.task.status })
+      await prev.done
+    }
+    if (s.live.has(id)) {
+      taskLog(id, '拒收：正在执行', { messageId })
+      return s.bad(c, t('任务正在执行，请等它完成或先停止'), 409)
+    }
     try {
-      return c.json(await s.followUp(id, { text, attachments, messageId }))
+      return c.json(replied('new-turn', await s.followUp(id, { text, attachments, messageId })))
     } catch (e) {
+      taskLog(id, '发消息失败', { messageId, error: e as Error })
       // 检查执行位和真正占到之间另一条请求先占了：按「正在执行」返回，不能冒成 500
       if (e instanceof TaskBusyError) return s.bad(c, t('任务正在执行，请等它完成或先停止'), 409)
       throw e
@@ -258,8 +289,10 @@ export function registerConversationRoutes(s: TasksScope) {
       entry = got.value
       // 另一个请求已经先占住（真正发消息或另一次预热）：复用它的执行位，不再开第二个 CLI
       if (!got.fresh) return entry.task
+      taskLog(task.id, '预热', { cli: run.cli, force: force || undefined })
       return await s.start(entry, PREWARM_PROMPT, false, agents, undefined, false, true)
     } catch (e) {
+      taskLog(task.id, '预热失败', { error: e as Error })
       if (entry) s.release(entry)
       log.warn('task', '对话预热失败', { task: task.id, error: (e as Error).message })
       s.alertOn(task.id, 'cli_exit', t('提前启动 Agent 失败：发消息时会再启动一次，仍然失败会在这里报错'))(e)
@@ -292,6 +325,7 @@ export function registerConversationRoutes(s: TasksScope) {
     if (!task) return s.bad(c, t('任务不存在'), 404)
     if (task.archived) return s.bad(c, t('归档的对话不能激活，先取消归档'), 409)
     touchPresence(id)
+    taskLog(id, '激活 Agent')
     return c.json(s.withJobs(await prewarmChat(task)))
   })
 
@@ -312,6 +346,7 @@ export function registerConversationRoutes(s: TasksScope) {
         log.warn('task', '关闭 Agent 时结束残留进程失败', { task: id, error: (err as Error).message }),
       )
     log.info('task', '用户关闭了对话的 Agent', { task: id })
+    taskLog(id, '关闭 Agent')
     const now = await s.current(id)
     if (!now) return s.bad(c, t('任务不存在'), 404)
     return c.json(s.withJobs(now))
