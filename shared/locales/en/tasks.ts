@@ -1382,7 +1382,6 @@ export const EN_TASKS: Record<string, string> = {
   本机: 'This computer',
   没有项目目录: 'No project folder',
   '不是 git 仓库': 'Not a git repository',
-  下一轮开始后才能细分面板工具: 'panel tools are broken down from the next turn',
   'Agent 回复后显示上下文占用': 'Context usage appears after the agent replies',
   显示会话栏: 'Show session bar',
   隐藏会话栏: 'Hide session bar',
@@ -1410,9 +1409,6 @@ export const EN_TASKS: Record<string, string> = {
   '用到时才加载用法的 MCP 工具：不占上下文': 'MCP tools loaded only when used; they take no context',
   '系统工具（按需）': 'System tools (deferred)',
   'Agent 自带、用到时才加载用法的工具：不占上下文': 'Built-in tools loaded only when used; they take no context',
-  '{cli} 报的细分，{ago}更新': 'Breakdown reported by {cli}, updated {ago}',
-  '各块是按字数和版本量级估的，总数是 Agent 报的':
-    'Categories are estimated from text length and version defaults; the total is reported by the agent',
   会话栏: 'Session bar',
   分析对象: 'Analyzing',
   面板自动附上: 'attached by the panel',

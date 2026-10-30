@@ -5,7 +5,6 @@ import { contextBreakdown } from '@shared/context-breakdown'
 import { t } from '@shared/i18n'
 import type { AgentUsage, SessionInfo, Task } from '@shared/schema'
 import { agentRun, cliSettings, defaultCli } from '@shared/settings'
-import { timeAgo } from '@shared/task'
 import { api } from '@/lib/api'
 import { fmtTokens } from '@/lib/tasks'
 import { toast } from '@/lib/toast'
@@ -130,7 +129,7 @@ function CompactFooter({ task, data, onTask }: { task: Task; data: ContextBreakd
   )
 }
 
-/** 上下文细分的正文：总占用、分色条、各块明细，写清是谁、哪个模型、细分是报的还是估的，最后是压缩那一行 */
+/** 上下文细分的正文：总占用、分色条、各块明细，最后是压缩那一行（角色、模型、细分来源那行用户要求去掉了：标题行已经写了模型） */
 export function SessionContextBody({
   task,
   ctx,
@@ -141,20 +140,12 @@ export function SessionContextBody({
   /** 点了压缩后把新的任务状态交回页面；不传就等推送 */
   onTask?: (t: Task) => void
 }) {
-  const { cur, agent, cli, def, data } = ctx
+  const { cur, data } = ctx
   if (!data) return <p className="text-xs text-subtle">{t('Agent 回复后显示上下文占用')}</p>
   return (
     <div className="flex flex-col gap-3">
       <ContextHead data={data} caption={cur?.usage.model} />
       <ContextLegend data={data} />
-      <p className="text-[0.6875rem] leading-relaxed text-subtle">
-        {[agent?.name, cur?.usage.model].filter(Boolean).join(' · ')}
-        {/* 细分从哪来：Agent 自己报的写上报的时间；估的说明是估的，免得当成精确值 */}
-        {data.source === 'reported'
-          ? ` · ${t('{cli} 报的细分，{ago}更新', { cli: def?.name ?? cli, ago: timeAgo(data.at ?? '') })}`
-          : ` · ${t('各块是按字数和版本量级估的，总数是 Agent 报的')}`}
-        {data.source === 'estimated' && !cur?.usage.parts && ` · ${t('下一轮开始后才能细分面板工具')}`}
-      </p>
       <CompactFooter task={task} data={data} onTask={onTask} />
     </div>
   )
