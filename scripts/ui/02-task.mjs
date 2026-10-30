@@ -1,6 +1,6 @@
 /**
  * 界面检查分片：任务页（核心）：加载日志、文件面板、运行区子对话、窄窗口运行区、
- * 接收消息 / 后台命令 / 发送消息、状态栏与子任务列表、Token 浮层与转成弹窗。
+ * 收发的信 / 后台命令、状态栏与子任务列表、子对话面板、Token 浮层与转成弹窗。
  *
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
@@ -118,41 +118,17 @@ await runShard(import.meta.filename, async (api) => {
     )
       errors.push('会话栏：「状态」没有一句说明')
     await rail.screenshot({ path: 'ui-shots/02-会话栏-状态.png' }).catch(() => {})
-    // 有子对话的父对话多一块「协作」：父子之间来往的消息（见 shared/collab-timeline.ts）
-    // 时间线是展开后另取的（GET /tasks/:id/collab），并发高时晚一点到：等它出来再判
-    if (
-      !(await rail
-        .locator('[data-collab] li')
-        .first()
-        .waitFor({ timeout: 10000 })
-        .then(
-          () => true,
-          () => false,
-        ))
-    )
-      errors.push('会话栏：父对话的「协作」里没有来往的消息')
-    // 排列顺序：上下文 → 状态 → 协作（用户要求把这两张卡放到「上下文」下面）。
-    // 按会话栏里各卡片在 DOM 里的先后核对，不靠截图认位置
+    // 右栏不再列子对话（ADR 0034）：「协作」卡去掉，状态卡里也不逐个列子对话，它们只在输入框上方的子对话面板里
     {
-      const NAME = { context: '上下文', status: '状态', collab: '协作' }
-      const order = await p.evaluate(() =>
+      const cards = await p.evaluate(() =>
         [...document.querySelectorAll('[data-session-rail] [data-session-card]')].map((el) =>
           el.getAttribute('data-session-card'),
         ),
       )
-      const pairs = [
-        ['context', 'status'],
-        ['status', 'collab'],
-      ]
-      for (const [before, after] of pairs) {
-        const i = order.indexOf(before)
-        const j = order.indexOf(after)
-        if (i < 0 || j < 0) errors.push(`会话栏：缺少「${NAME[before]}」或「${NAME[after]}」这一块，核对不了排列顺序`)
-        else if (i > j)
-          errors.push(
-            `会话栏：应该先「${NAME[before]}」后「${NAME[after]}」，实际顺序 ${order.map((x) => NAME[x] ?? x).join(' → ')}`,
-          )
-      }
+      if (cards.includes('collab')) errors.push('会话栏：还有「协作」卡，子对话应该只在输入框上方的面板里')
+      const i = cards.indexOf('context')
+      const j = cards.indexOf('status')
+      if (i < 0 || j < 0 || i > j) errors.push(`会话栏：应该先「上下文」后「状态」，实际 ${cards.join(' → ')}`)
       await check(p, '任务-会话栏顺序')
     }
     await p.getByRole('button', { name: '隐藏会话栏', exact: true }).click()
@@ -655,24 +631,25 @@ await runShard(import.meta.filename, async (api) => {
     await settle(p)
   }
 
-  // 子对话交回的状态不再藏起来：画成「接收消息 + 类型 + 内容标题」，点标题弹窗看全文
+  // 子对话交回的信：开头是「← 子对话标题」，然后是类型和内容标题（ADR 0034），点标题弹窗看全文
   {
-    const row = p.getByText('接收消息', { exact: true }).first()
-    if (!(await row.count())) errors.push('父对话里没有「接收消息」行：子对话交回的上报被藏起来了')
+    const row = p.locator('[aria-label^="收到 "]').first()
+    if (!(await row.count())) errors.push('父对话里没有收到子对话的信：子对话交回的上报被藏起来了')
     else {
       await row.scrollIntoViewIfNeeded()
-      await check(p, '接收消息-子对话上报', ['接收消息', '汇报', '已完成：合回原分支'])
-      // 来源带子对话标题：几个子对话的角色名相同时（都是「前端开发」），靠标题区分
+      await check(p, '收到的信-子对话上报', ['汇报', '已完成：合回原分支'])
+      if (await p.getByText('接收消息', { exact: true }).count())
+        errors.push('信行开头还写着「接收消息」：方向已经由箭头说明')
+      // 行首写子对话的标题：几个子对话的角色名相同时（都是「前端开发」），靠标题区分
       for (const title of ['压测导入大文件', '核对通知时序']) {
-        const n = await p.getByText(`来自 前端开发（${title}）`, { exact: false }).count()
-        if (!n) errors.push(`接收消息行没显示子对话标题「${title}」`)
+        const n = await p.locator(`[aria-label="收到 ${title} 的信"]`).count()
+        if (!n) errors.push(`收到的信没在行首写子对话标题「${title}」`)
       }
-      // 同一子对话的同一份汇报在旧数据里写了两遍（演示数据里留了一条这样的样本）：界面上只显示一行，
-      // 不同来源的汇报仍然各占一行
-      const dup = await p.getByText('来自 前端开发（核对通知时序）', { exact: false }).count()
+      // 同一子对话的同一份汇报在旧数据里写了两遍（演示数据里留了一条这样的样本）：界面上只显示一行
+      const dup = await p.locator('[aria-label="收到 核对通知时序 的信"]').count()
       if (dup !== 1) errors.push(`同一子对话的重复汇报应该只显示一行，实际 ${dup} 行`)
       await p.getByRole('button', { name: '已完成：合回原分支、标记完成' }).first().click()
-      await check(p, '接收消息-弹窗', ['已收到', '打开子对话'])
+      await check(p, '收到的信-弹窗', ['已收到', '打开子对话'])
       await p.keyboard.press('Escape')
       await closed()
     }
@@ -805,29 +782,28 @@ await runShard(import.meta.filename, async (api) => {
     }
     await patchJobs(null)
   }
-  // 发出去的消息也是工具行：父对话里画成「发送消息 · 传话」，不把正文铺成居中的系统块
+  // 发出去的信也是工具行：父对话里画成「→ 收件方 · 传话」，不把正文铺成居中的系统块
   {
-    const row = p.getByText('发送消息', { exact: true }).first()
-    if (!(await row.count())) errors.push('父对话里没有「发送消息」行：send_message 又被铺成居中的说明块')
+    const row = p.locator('[aria-label^="发给 "]').first()
+    if (!(await row.count())) errors.push('父对话里没有发出的信：send_message 又被铺成居中的说明块')
     else {
       await row.scrollIntoViewIfNeeded()
-      await check(p, '发送消息-传话', ['发送消息', '传话', '核对通知时序'])
+      await check(p, '发出的信-传话', ['传话', '核对通知时序'])
     }
   }
-  // 同一段话逐个交给几个子对话的旧记录：合成一行「发给 3 个」，展开列出每个收件人
+  // 同一段话逐个交给几个子对话的旧记录：合成一行「→ 3 个子对话」，展开列出每个收件人
   {
-    const row = p.getByText('发给 3 个：', { exact: false }).first()
-    if (!(await row.count())) errors.push('同一段话交给几个子对话：没有合成一行「发给 3 个」')
+    const row = p.getByText('3 个子对话', { exact: true }).first()
+    if (!(await row.count())) errors.push('同一段话交给几个子对话：没有合成一行「3 个子对话」')
     else {
       await row.scrollIntoViewIfNeeded()
       if ((await p.getByText('截图失败就不下视觉结论', { exact: false }).count()) !== 1)
         errors.push('同一段话交给几个子对话：还是画成了好几行')
       await row.click()
-      await check(p, '发送消息-同一段话合成一行', ['发送消息', '交代任务', '发给 3 个子对话的同一条消息'])
+      await check(p, '发出的信-同一段话合成一行', ['交代任务', '发给 3 个子对话的同一条消息'])
       await row.click()
     }
   }
-
   // 输入框上方的状态栏照原来的三行（用户要求恢复）：计划在上、子任务中间、子对话在下
   {
     const openTask = () => backToTask()
@@ -836,6 +812,49 @@ await runShard(import.meta.filename, async (api) => {
     )
     if (missing.length) errors.push(`状态栏：输入框上方少了 ${missing.join('、')} 这一行`)
     await check(p, '状态栏-计划子任务子对话')
+    // 子对话面板（草稿二，ADR 0034）：按子对话列状态，头上写「n 个」，展开一个才列它和父对话之间的信
+    {
+      await p.locator('[data-status-row="children"] button[aria-expanded]').first().click()
+      const summary = p.locator('[data-child-summary]').first()
+      if (
+        !(await summary.waitFor({ timeout: 3000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        errors.push('子对话面板：头上没有「n 个 · n 封未读」')
+      // 切到「全部」：有往来的子对话（交代过任务）才一定在列表里
+      await p.getByRole('button', { name: '全部', exact: true }).first().click()
+      const expand = p.locator('[data-child-expand]').first()
+      if (!(await expand.count())) errors.push('子对话面板：子对话行没有展开往来的按钮')
+      else {
+        await expand.click()
+        if (
+          !(await p.locator('[data-child-letters], [data-child-letters] + *').count()) &&
+          !(await p.getByText('还没有往来的信').count())
+        )
+          errors.push('子对话面板：展开一个子对话后没有列出它的信')
+        await check(p, '子对话面板-展开往来')
+      }
+      await p.keyboard.press('Escape')
+      // 完整的父子往来（含面板推进、来源标签）挪进对话菜单，排查时才看
+      await p.getByRole('button', { name: '更多操作', exact: true }).first().click()
+      await p.getByRole('menuitem', { name: '父子往来记录' }).click()
+      if (
+        !(await p
+          .locator('[data-collab-all] li')
+          .first()
+          .waitFor({ timeout: 10000 })
+          .then(
+            () => true,
+            () => false,
+          ))
+      )
+        errors.push('对话菜单「父子往来记录」：弹窗里没有来往的消息')
+      await check(p, '父子往来记录')
+      await p.keyboard.press('Escape')
+      await closed()
+    }
     {
       const key = 'agent-panel-demo-v3'
       const saved = await p.evaluate((k) => localStorage.getItem(k), key)

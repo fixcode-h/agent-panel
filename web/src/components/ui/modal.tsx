@@ -77,7 +77,7 @@ export function Modal({
           onOpenAutoFocus={onOpenAutoFocus}
           onEscapeKeyDown={onEscapeKeyDown}
           className={cn(
-            'fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none',
+            'fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-(--c-modal-radius) border-(length:--c-modal-border) border-line-strong bg-(--c-modal-bg) shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none',
             SIZES[size ?? (wide ? 'lg' : 'md')],
             stacked && 'z-[70]',
             className,

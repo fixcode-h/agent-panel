@@ -624,7 +624,12 @@ function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<stri
   if (!body) return null
   // 提问卡片要人回答，单独一块；其余（接收消息、面板结果）是过程行，和相邻的过程行连成一组
   return (
-    <div key={m.id} data-proc={m.panel === 'ask' && m.ask ? undefined : ''} className="min-w-0">
+    <div
+      key={m.id}
+      data-proc={m.panel === 'ask' && m.ask ? undefined : ''}
+      data-letter={m.panel === 'ask' && m.ask ? m.id : undefined}
+      className="min-w-0"
+    >
       {body}
     </div>
   )
