@@ -9,13 +9,20 @@ import { t } from './i18n.ts'
 /** 正文开头的【收尾请求】【子对话状态】这类标签是说给 AI 的，标题里不重复它 */
 export const LEAD_TAG = /^【[^】]{1,12}】/
 
+/** waitNote（shared/plan.ts）推回结果时加在最前面的那句：「（计划步骤「a」、「b」等的结果到了……）」 */
+const PLAN_NOTE = /^（计划步骤(.+?)等的结果到了(，已标为完成)?[：:].*）$/
+/** 子对话状态上报的第一行：【子对话状态】「标题」（id xxx）状态：原因 */
+const REPORT_HEAD = /^【子对话状态】「([^」]*)」(?:（id:? [^）\s]+）)?(.*)$/
+
 /** 一行里放得下的内容标题：去掉开头的标签，取第一行非空的话 */
 export function subjectLine(text: string, max = 120) {
   const line =
     text
-      .replace(LEAD_TAG, '')
       .split('\n')
       .map((l) => l.trim())
+      // 计划步骤那句是给 AI 的提醒，不当标题
+      .filter((l) => !PLAN_NOTE.test(l))
+      .map((l) => l.replace(LEAD_TAG, ''))
       .find(Boolean) ?? ''
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
 }
@@ -92,4 +99,74 @@ export function sentToOther(task: Pick<Task, 'messages'>, id: string, message: s
       if (to && to !== id && typeof a.message === 'string' && a.message.trim() === body) return to
     }
   return undefined
+}
+
+/**
+ * 子对话汇报拆成的字段：正文是写给父对话 AI 的一段纯文本，界面按字段排开，一眼看出
+ * 哪个子对话、什么状态、为什么、对应计划哪一步、下一步做什么、最近的结果
+ */
+export interface PeerReport {
+  /** 计划里等这个结果的步骤 */
+  steps: string[]
+  /** 那几步已经被标成完成（不只是「结果到了」） */
+  stepsDone: boolean
+  /** 子对话标题；不是状态上报（只有计划步骤那句）时为空 */
+  child: string
+  /** 状态（「已中断」），取自原因前的短词；说不出时为空 */
+  state: string
+  /** 原因（「父对话结束时一起结束」），没有短词前缀时就是整句 */
+  reason: string
+  /** 给父对话的下一步提示 */
+  next: string[]
+  /** 子对话最近一轮的回复 */
+  result: string
+  /** 认不出是哪个字段的其余文字（只有计划步骤那句时，是后面的结果原文） */
+  rest: string
+}
+
+/**
+ * 把汇报正文拆成字段：认得出计划步骤那句或【子对话状态】开头才算，其余返回 null 照旧画全文。
+ * 只按服务端拼出的固定写法认（server/tasks/children.ts 的 reportChild、shared/plan.ts 的 waitNote），
+ * 旧数据里「下一步」没写前缀的重试说明也归到下一步
+ */
+export function parseReport(text: string): PeerReport | null {
+  const lines = text.replace(/\n处理完这个结果后[^\n]*$/, '').split('\n')
+  const out: PeerReport = {
+    steps: [],
+    stepsDone: false,
+    child: '',
+    state: '',
+    reason: '',
+    next: [],
+    result: '',
+    rest: '',
+  }
+  const note = lines[0]?.trim().match(PLAN_NOTE)
+  if (note) {
+    out.steps = [...note[1].matchAll(/「([^」]+)」/g)].map((m) => m[1])
+    out.stepsDone = !!note[2]
+    lines.shift()
+  }
+  const head = lines[0]?.trim().match(REPORT_HEAD)
+  if (head) {
+    out.child = head[1]
+    const why = head[2].trim()
+    // 「已中断：父对话结束时一起结束」：冒号前是状态短词；没有短词（startup 的说明）整句当原因
+    const m = why.match(/^([^：，。\s]{2,6})：(.+)$/s)
+    out.state = m ? m[1] : ''
+    out.reason = m ? m[2] : why
+    lines.shift()
+  }
+  if (!note && !head) return null
+  // 只有计划步骤那句（后台命令、子任务的结果）：后面整段是结果原文，不拆
+  if (!head) {
+    out.rest = lines.join('\n').trim()
+    return out
+  }
+  const at = lines.findIndex((l) => l.startsWith('最近的结果：'))
+  if (at >= 0) out.result = [lines[at].slice('最近的结果：'.length), ...lines.slice(at + 1)].join('\n').trim()
+  for (const l of (at < 0 ? lines : lines.slice(0, at)).map((x) => x.trim()).filter(Boolean))
+    // 「（id xxx）」是给 AI 调工具用的，界面上有打开子对话的按钮
+    out.next.push(l.replace(/^下一步：/, '').replace(/（id:? [^）\s]+）/g, ''))
+  return out
 }
