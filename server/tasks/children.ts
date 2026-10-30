@@ -13,6 +13,7 @@ import {
   type ConvState,
   helperRunning,
   runRunning,
+  announcedOnly,
   taskDeleted,
   withAttachments,
   type ChildFlowStop,
@@ -512,6 +513,8 @@ export function createChildren(sc: TasksScope) {
    * 推出去了（或者已经排好稍后推）返回 true
    */
   async function nudgePlan(conv: Task): Promise<boolean> {
+    // 没列计划的对话（Chat 模式、只聊几句就动手的项目对话）：看这一轮是不是说完打算就停了（见 nudgeAnnounced）
+    if (!activePlan(conv)) return nudgeAnnounced(conv)
     /** settled：这一轮已经停稳（进程结束，或者停在保活上等下一句）；刚结束那一下 CLI 还没停到等待上，不看这一项 */
     const stalled = async (settled: boolean) => {
       const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
@@ -565,6 +568,48 @@ export function createChildren(sc: TasksScope) {
           })
         else if (conv.parentTaskId) await reportChild(conv.id)
       })().catch((e) => log.warn('task', '推对话接着做计划失败', { task: conv.id, error: (e as Error).message }))
+    }, sc.PLAN_NUDGE_MS).unref?.()
+    return true
+  }
+
+  /**
+   * 没有计划的对话这一轮以一句打算收尾（「我再确认…」，见 announcedOnly）、之后没调用任何工具：
+   * 等 CLI 停稳后推一次「接着做你刚说的」。每条用户消息只推一次，推了还停着就留给用户。
+   * 用户报过：Chat 模式的对话说完「我再确认这些连接的状态」就停住，要用户说「继续啊」才接着做
+   */
+  async function nudgeAnnounced(conv: Task): Promise<boolean> {
+    const said = (tk: Task) => (tk.working || tk.resolved ? '' : announcedOnly(tk))
+    if (!said(conv)) return false
+    // 一条用户（或父对话）消息只推一次：推过之后它又只说打算就停，就留给用户，不来回推。
+    // 面板自己推的那条不算新消息（panel），所以按最后一条不是面板发的消息记
+    const asked = [...conv.messages].reverse().find((m) => m.role === 'user' && !m.panel)
+    const key = `said:${asked?.id ?? ''}`
+    if (sc.planNudged.get(conv.id) === key) return false
+    sc.planNudged.set(conv.id, key)
+    setTimeout(() => {
+      void (async () => {
+        const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
+        // 停稳的才推：进程结束了，或者停在保活上等下一句；这期间用户发了消息、开了新一轮就不推
+        const settled = !!tk && (tk.status === 'done' || (tk.status === 'running' && tk.awaitingUser))
+        const intent = tk && settled && tk.turnDoneAt === conv.turnDoneAt ? said(tk) : ''
+        if (!tk || !intent || tk.imported || taskDeleted(tk)) {
+          if (conv.parentTaskId) await reportChild(conv.id)
+          return
+        }
+        if (tk.requests.length || tk.parentAsks?.length || hasHeld(tk.id) || sc.startQueue.has(tk.id)) return
+        if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return
+        const text =
+          `【面板】你说了「${intent}」，但这一轮没有调用工具就结束了。直接接着做：调用工具去做这件事，做完给出结论；` +
+          '确实做不了就说明卡在哪里、需要什么。'
+        const ok = tk.parentTaskId
+          ? (await sc.sendToChild(tk.parentTaskId, tk.id, text, 'build')).ok
+          : await sc.wakeConv(tk.id, text, { panel: 'build' }).then(
+              () => true,
+              () => false,
+            )
+        if (ok) log.info('task', '对话说完打算就收尾，已推它接着做', { task: conv.id })
+        else if (conv.parentTaskId) await reportChild(conv.id)
+      })().catch((e) => log.warn('task', '推对话接着做失败', { task: conv.id, error: (e as Error).message }))
     }, sc.PLAN_NUDGE_MS).unref?.()
     return true
   }

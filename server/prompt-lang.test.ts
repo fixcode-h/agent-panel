@@ -156,7 +156,7 @@ test('工作流节点提示词：设置成中文时注入中文规则，通用�
   await withLang('zh', async () => {
     const prompt = await nodePrompt()
     assert.match(prompt, /## 回复语言\n界面语言设成了中文/)
-    assert.match(prompt, /完成后用中文简要总结/)
+    assert.match(prompt, /完成后用中文按上面的「总结格式」写总结卡/)
     // 结论行的中文措辞不要改：scripts/fake-cli 按这个片段模拟 CLI 给出的结论
     assert.match(prompt, /最后单独一行写「结论：通过」或「结论：不通过」/)
     assert.doesNotMatch(prompt, /## Reply language/)
@@ -169,7 +169,7 @@ test('工作流节点提示词：设置成英文时注入英文规则，通用�
     const prompt = await nodePrompt()
     assert.match(prompt, /## Reply language/)
     assert.match(prompt, /reasoning \/ thinking/)
-    assert.match(prompt, /完成后用英文简要总结/)
+    assert.match(prompt, /完成后用英文按上面的「总结格式」写总结卡/)
     assert.doesNotMatch(prompt, /## 回复语言/)
   })
 })
