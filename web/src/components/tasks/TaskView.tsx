@@ -150,6 +150,7 @@ import { SessionBar } from '@/components/session/SessionBar'
 import { ConversationTabs } from './ConversationTabs'
 import { ChatRail, useChatRail } from './ChatRail'
 import { FileDialog, FileOpenCtx } from './FileDialog'
+import { HandleNeedsCtx } from './Markdown'
 import { AiLookCtx } from '@/lib/ai-look'
 import { JobDialog, type JobTarget } from './JobDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
@@ -757,6 +758,10 @@ export function TaskView({
       if (lastTask.current) upsertTask(summaryOf(lastTask.current))
     }, 1000)
   }
+  // 总结卡「要你处理」的「处理」按钮：交给当前对话新的一轮（见 Markdown 的 HandleNeedsCtx）。
+  // 给出去的函数保持不变，免得每次刷新都让所有回复重画；真正发送的那份在下面任务加载后更新
+  const needsRef = useRef<(text: string) => Promise<void>>(async () => {})
+  const handleNeeds = useCallback((text: string) => needsRef.current(text), [])
   const apply = (raw: TaskPage) => {
     // 数据到手，开始画：渲染这一步从这一刻算到两帧画完（含 React 把消息挂进 DOM 的时间）。
     // 两条路都会经过这里（GET 与 SSE 首包谁先到都可能），所以起始点记在这，不记在某一条请求的 then 里；
@@ -1304,6 +1309,13 @@ export function TaskView({
       onClose={closeReport}
     />
   )
+
+  // 「处理」按钮发的话不碰输入框：用户正在写的草稿和附件原样留着。
+  // 执行中也照样发，和输入框一样由服务端决定插话还是排到这一轮结束后；工作流停住时处理完会接着走流程
+  needsRef.current = async (text: string) => {
+    stickToBottom()
+    apply(await api.sendMessage(task.id, text, [], false))
+  }
 
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
   const send = async (input?: string) => {
@@ -2097,7 +2109,7 @@ export function TaskView({
 
   return (
     <WithAgents agents={agents}>
-      <TaskViewCtx openFile={openFile} aiLook={aiLook}>
+      <TaskViewCtx openFile={openFile} aiLook={aiLook} handleNeeds={task.imported ? null : handleNeeds}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider
           value={
@@ -3355,15 +3367,19 @@ function RunPhase({ task, label, agentIds }: { task: Task; label: string; agentI
 function TaskViewCtx({
   openFile,
   aiLook,
+  handleNeeds,
   children,
 }: {
   openFile: (path: string, line?: number) => void
   aiLook: boolean
+  handleNeeds: ((text: string) => Promise<void>) | null
   children: React.ReactNode
 }) {
   return (
     <FileOpenCtx.Provider value={openFile}>
-      <AiLookCtx.Provider value={aiLook}>{children}</AiLookCtx.Provider>
+      <AiLookCtx.Provider value={aiLook}>
+        <HandleNeedsCtx.Provider value={handleNeeds}>{children}</HandleNeedsCtx.Provider>
+      </AiLookCtx.Provider>
     </FileOpenCtx.Provider>
   )
 }
