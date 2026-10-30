@@ -4,6 +4,8 @@
 > 阶段 3 由父对话另行通知后执行；本文件先固定分组、验证方式和对应的 spec 需求。
 > 执行前提：动 `scripts/unit-tests.mjs`、`scripts/ui-check.mjs`、`scripts/ui/` 下的分片（含 `scripts/ui/harness.mjs`、`scripts/ui/covers.mjs`）、`scripts/rules-check.mjs`、`shared/clis/pi.json`、`server/exec/worktree.test.ts`、`server/exec/worktree-merge.test.ts` 之前，先由父对话协调另一条父对话让路（见 design 的「阶段 3 的协调前提」）；同一文件同一时间只一条任务改。
 
+> 2026-10-30 落地：3.1（重试判定实际在 `scripts/lib/test-results.mjs` 的 `MAX_ATTEMPTS` / `classifyAttempts`，没有另起 retry.mjs）、3.2、3.3（分片沿用 `SHARD_ATTEMPTS = 2`，在 3 次上限内）、4.1–4.3、6.10、6.11；证据见 `acceptance.md`。其余条目未动。
+
 ## 1. 分层判定与用例预算（spec: test-layering-and-budget）
 
 - [x] 1.1 新增 scripts/lib/test-layers.mjs：`INTEGRATION_MARKERS` 与 `layerOf(file, sourceText)`，按运行时特征判纯函数 / 集成 / e2e；含单测覆盖服务、临时目录、git、子进程、纯逻辑五类样例。验证：`node scripts/unit-tests.mjs --files scripts/lib/test-layers.test.mjs`。
@@ -23,17 +25,17 @@
 
 ## 3. flaky 隔离、重试与串行清单收缩（spec: test-execution-stability）
 
-- [ ] 3.1 新增 scripts/lib/retry.mjs：`MAX_ATTEMPTS = 3`、`classifyAttempts(results)`（全通过 / flaky / 真失败）、`failedUnitsFromTap(tap)`；含单测覆盖三种判定和重试上限。验证：`node scripts/unit-tests.mjs --files scripts/lib/retry.test.mjs`。
-- [ ] 3.2 单测 runner 接入：失败后只重跑失败文件，总尝试 ≤ 3 次；写 `flaky-report.json`（单元、尝试次数、首次报错、最终状态、flaky 率）并打印。验证：注入一个必失败文件跑一次，确认尝试 3 次后真失败；注入一次失败后通过的文件，确认 flaky 报告并最终退出 0。
-- [ ] 3.3 e2e 与界面检查 runner 接入：只重跑失败分片，上限 3 次尝试，分片结果并入同一份 flaky 报告。验证：`node scripts/e2e.mjs 07` 正常通过；用 `FAKE_*` 触发一次分片失败后确认重跑范围只有该分片。
+- [x] 3.1 新增 scripts/lib/retry.mjs：`MAX_ATTEMPTS = 3`、`classifyAttempts(results)`（全通过 / flaky / 真失败）、`failedUnitsFromTap(tap)`；含单测覆盖三种判定和重试上限。验证：`node scripts/unit-tests.mjs --files scripts/lib/retry.test.mjs`。
+- [x] 3.2 单测 runner 接入：失败后只重跑失败文件，总尝试 ≤ 3 次；写 `flaky-report.json`（单元、尝试次数、首次报错、最终状态、flaky 率）并打印。验证：注入一个必失败文件跑一次，确认尝试 3 次后真失败；注入一次失败后通过的文件，确认 flaky 报告并最终退出 0。
+- [x] 3.3 e2e 与界面检查 runner 接入：只重跑失败分片，上限 3 次尝试，分片结果并入同一份 flaky 报告。验证：`node scripts/e2e.mjs 07` 正常通过；用 `FAKE_*` 触发一次分片失败后确认重跑范围只有该分片。
 - [ ] 3.4 `TIMING_FILES` 每条补证据注释（断言位置 + 最近失败记录）；先落地第 4 组并发上限，再逐条移出：移出前 MUST 已经改成注入时钟 / 事件驱动 / 窗口 ≥ 实测 p99 的 2 倍三者之一（串行不等于稳定：`server/background.test.ts` 曾在串行批里以 5599ms 超 4000ms 窗口失败，见 design D5），未改造的条目不得移出；改造后在隔离条件下连续 3 次全量通过、记录日期与机器配置，失败即加回并附输出；目标 ≤ 2 条。验证：先跑 `node scripts/unit-tests.mjs --files server/background.test.ts` 连跑 3 次确认不再超窗，并记录改造前后实测 p99 与窗口倍数；每次移出跑 3 次 `npm run test:unit` + `npm run test:e2e` 并记录；`node scripts/unit-tests.mjs timing` 对剩余条目通过。
 - [ ] 3.5 文档：`docs/modules/testing/README.md` 写「失败隔离、重试上限、串行清单依据」；`docs/lessons/testing.md` 补「重试语义」与「串行清单不是首选修复」两条。验证：`npm run lint`。
 
 ## 4. 并行度自适应与分片隔离（spec: test-execution-stability）
 
-- [ ] 4.1 新增 scripts/lib/concurrency.mjs：`suggestConcurrency`（env 优先、CPU / 内存 / 单元上限取小、非法值走默认）与 `availableMemoryBytes`（cgroup v2 回退 `os.freemem`）；含单测覆盖 env 优先、内存限制、单元上限、0/负数/非数字。验证：`node scripts/unit-tests.mjs --files scripts/lib/concurrency.test.mjs`。
-- [ ] 4.2 单测 runner 接入 `--test-concurrency=<value>`（timing 批固定 1），日志打印并发值、来源、CPU / 内存 / 单元估算。验证：`npm run test:unit` 通过，日志含「并发 N（来源：…）」；`AGENT_PANEL_UNIT_CONCURRENCY=1 npm run test:unit` 生效。
-- [ ] 4.3 `scripts/e2e.mjs` 与 `scripts/ui-check.mjs` 接入 `suggestConcurrency`：`AGENT_PANEL_E2E_CONCURRENCY`、`AGENT_PANEL_UI_CONCURRENCY` 作为**上限之一**（不能抬高自动建议），界面默认上限为分片数，e2e 默认上限 4。验证：分别设 `=1` / `=2` 跑 `node scripts/e2e.mjs 07`、`npx vite build --mode demo && node scripts/ui-check.mjs 08-misc`，日志并发值与设置一致；再设 `AGENT_PANEL_UI_CONCURRENCY=99` 且内存只够 2 时，实际并发仍为 2 且日志写明环境变量作为上限未生效。
+- [x] 4.1 新增 scripts/lib/concurrency.mjs：`suggestConcurrency`（env 优先、CPU / 内存 / 单元上限取小、非法值走默认）与 `availableMemoryBytes`（cgroup v2 回退 `os.freemem`）；含单测覆盖 env 优先、内存限制、单元上限、0/负数/非数字。验证：`node scripts/unit-tests.mjs --files scripts/lib/concurrency.test.mjs`。
+- [x] 4.2 单测 runner 接入 `--test-concurrency=<value>`（timing 批固定 1），日志打印并发值、来源、CPU / 内存 / 单元估算。验证：`npm run test:unit` 通过，日志含「并发 N（来源：…）」；`AGENT_PANEL_UNIT_CONCURRENCY=1 npm run test:unit` 生效。
+- [x] 4.3 `scripts/e2e.mjs` 与 `scripts/ui-check.mjs` 接入 `suggestConcurrency`：`AGENT_PANEL_E2E_CONCURRENCY`、`AGENT_PANEL_UI_CONCURRENCY` 作为**上限之一**（不能抬高自动建议），界面默认上限为分片数，e2e 默认上限 4。验证：分别设 `=1` / `=2` 跑 `node scripts/e2e.mjs 07`、`npx vite build --mode demo && node scripts/ui-check.mjs 08-misc`，日志并发值与设置一致；再设 `AGENT_PANEL_UI_CONCURRENCY=99` 且内存只够 2 时，实际并发仍为 2 且日志写明环境变量作为上限未生效。
 - [ ] 4.4 分片隔离补齐：分片设 `AGENT_PANEL_SHARD_ID`；e2e harness 校验服务回报的数据目录等于本次 `mkdtemp` 路径；界面检查每分片独立浏览器 `userDataDir`；端口冲突报错带分片名。验证：`node scripts/e2e.mjs 07` 与 `node scripts/ui-check.mjs 08-misc` 通过；人为占用某分片端口时失败信息含分片名。
 - [ ] 4.5 文档：`docs/modules/testing/README.md` 写「并发计算、环境变量、分片隔离」；`docs/lessons/testing.md` 补「并发按内存取小」一条。验证：`npm run lint`。
 
@@ -56,8 +58,8 @@
 - [ ] 6.7 文档与模块登记：新建 `docs/modules/testing/README.md`（入口脚本、分片结构、各层边界、怎么跑、怎么加用例、预算与并发、失败处理），在 `docs/MODULE-MAP.md` 加 `testing` 行并在「不容易发现位置的改动」补一行；`docs/agent-test-steps.md` 的常用命令补验收入口。验证：`npm run lint`（`scripts/lib/doc-modules.mjs` 校验模块表与 `docs/modules/*` 双向一致）。
 - [ ] 6.8 WSL 限制：在 Windows 上直接运行 `npm run test:e2e` 时先检查环境，非 WSL 就输出「e2e 需要 WSL（Ubuntu-24.04），当前环境不满足」并非零退出；`npm run test:e2e:wsl` 正常执行（走 WSL 默认发行版，要求默认发行版是 Ubuntu-24.04）。验证：PowerShell 里跑 `npm run test:e2e` 期望非零退出并看到提示；`npm run test:e2e:wsl` 通过；需要显式指定发行版时命令必须带 `cd <工作区>`（`bash -lc` 会落到 `$HOME`）。
 - [ ] 6.9 演示 / 正式后端字段一致：界面检查读取后端字段前先核对该字段在两份后端都存在；后端新增或重命名字段时同一次提交补 `web/src/lib/demo-*.ts`；缺字段时检查直接失败并指出字段名。验证：`npx vite build --mode demo && node scripts/ui-check.mjs 08-misc` 通过；临时从演示后端删一个界面检查读取的字段，确认检查失败并输出字段名。
-- [ ] 6.10 继承环境清理：单测 / e2e / 界面检查入口启动前清掉 `AGENT_PANEL_*`、`GIT_CONFIG_*` 等干扰变量并打印被清理的变量名；分片数据目录只取本次 `mkdtemp`。验证：带 `AGENT_PANEL_TRAY=1`、`GIT_CONFIG_COUNT=1` 跑三个入口，核对日志与分片数据目录。
-- [ ] 6.11 CI 读 flaky 报告判红：CI 的 `test` job 在单测后加一步 `node scripts/flaky-check-report.mjs`，`flaky-report.json` 存在且 `units` 非空则非零退出（不只看退出码）；每次运行开始先删旧报告（没有 flaky 就写 `{ units: [] }`）。验证：注入一个首次失败后重跑通过的文件，本地跑该步骤期望非零退出并列出 flaky 用例；先留一份非空报告再跑一次干净单测，期望该步骤退出 0；正常通过时也退出 0。
+- [x] 6.10 继承环境清理：单测 / e2e / 界面检查入口启动前清掉 `AGENT_PANEL_*`、`GIT_CONFIG_*` 等干扰变量并打印被清理的变量名；分片数据目录只取本次 `mkdtemp`。验证：带 `AGENT_PANEL_TRAY=1`、`GIT_CONFIG_COUNT=1` 跑三个入口，核对日志与分片数据目录。
+- [x] 6.11 CI 读 flaky 报告判红：CI 的 `test` job 在单测后加一步 `node scripts/flaky-check-report.mjs`，`flaky-report.json` 存在且 `units` 非空则非零退出（不只看退出码）；每次运行开始先删旧报告（没有 flaky 就写 `{ units: [] }`）。验证：注入一个首次失败后重跑通过的文件，本地跑该步骤期望非零退出并列出 flaky 用例；先留一份非空报告再跑一次干净单测，期望该步骤退出 0；正常通过时也退出 0。
 
 ## 需求覆盖核对（阶段 2 出口门禁）
 

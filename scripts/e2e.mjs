@@ -15,7 +15,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fmtDuration } from './lib/duration.mjs'
 import { lastFailedShards, retryShards, saveShardResults } from './lib/shard-retry.mjs'
-import { shardLimit } from './lib/shard-limit.mjs'
+import { writeFlakyReport } from './lib/flaky-report.mjs'
+import { concurrencyLine, suggestConcurrency } from './lib/concurrency.mjs'
+import { cleanTestEnv, cleanedLine } from './lib/test-env.mjs'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -44,15 +46,27 @@ if (!shards.length) {
 
 /**
  * 默认最多同时跑几个分片：每个分片一个服务 + 一组假 CLI 进程，全并发会把同一台机器的
- * CPU、内存和端口抢满，偶发的时序失败大多来自这里。要比默认更快时用环境变量调大。
+ * CPU、内存和端口抢满，偶发的时序失败大多来自这里。CPU、可用内存（每片约 600M）、分片数和这个默认上限取小；
+ * AGENT_PANEL_E2E_CONCURRENCY 只能再往下压（scripts/lib/concurrency.mjs）
  */
 const DEFAULT_CONCURRENCY = 4
 
-const limit = shardLimit(shards.length, process.env.AGENT_PANEL_E2E_CONCURRENCY, DEFAULT_CONCURRENCY)
+const conc = suggestConcurrency({
+  kind: 'e2e',
+  units: Math.min(shards.length, DEFAULT_CONCURRENCY),
+  env: process.env.AGENT_PANEL_E2E_CONCURRENCY,
+  envName: 'AGENT_PANEL_E2E_CONCURRENCY',
+})
+const limit = conc.value
+// 分片继承的环境：去掉会把服务指到真实数据目录、改 git 行为的变量（scripts/lib/test-env.mjs）
+const { env: shardEnv, removed } = cleanTestEnv()
 const timingDir = mkdtempSync(path.join(tmpdir(), 'agent-panel-e2e-timings-'))
 const startedAt = Date.now()
 
-console.log(`端到端测试：${shards.length} 个分片，最多同时跑 ${limit} 个\n`)
+console.log(`端到端测试：${shards.length} 个分片，最多同时跑 ${limit} 个`)
+console.log(concurrencyLine('[e2e]', conc))
+if (removed.length) console.log(cleanedLine('[e2e]', removed))
+console.log('')
 
 /** 跑一个分片，收集它的全部输出（成功时只打印摘要，失败时原样打印） */
 const runShard = (file) =>
@@ -64,7 +78,7 @@ const runShard = (file) =>
     let pending = ''
     const child = spawn(process.execPath, [path.join(shardDir, file)], {
       cwd: root,
-      env: { ...process.env, AGENT_PANEL_E2E_TIMINGS: timingFile },
+      env: { ...shardEnv, AGENT_PANEL_E2E_TIMINGS: timingFile, AGENT_PANEL_E2E_SHARD_ID: name },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const collect = (chunk) => {
@@ -106,7 +120,9 @@ const worker = async () => {
 }
 await Promise.all(Array.from({ length: Math.min(limit, shards.length) }, worker))
 // 失败的分片串行再跑一次（scripts/lib/shard-retry.mjs）：只重跑失败的，不整轮重来
-const retried = retry ? await retryShards(results, runShard) : { results, flaky: [] }
+const retried = retry ? await retryShards(results, runShard) : { results, flaky: [], detail: [] }
+// 抖动报告整份替换这一类（scripts/lib/flaky-report.mjs）：没有抖动就清掉上一次留下的
+writeFlakyReport(root, 'e2e', retried.detail, shards.length)
 results.splice(0, results.length, ...retried.results)
 results.sort((a, b) => a.file.localeCompare(b.file))
 saveShardResults(

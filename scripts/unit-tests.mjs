@@ -9,7 +9,7 @@
  * 用法：
  *   node scripts/unit-tests.mjs          # 两批都跑（npm run test:unit）
  *   node scripts/unit-tests.mjs timing   # 只跑计时文件，串行
- *   node scripts/unit-tests.mjs rest     # 只跑其余文件，并发（核数 × 1.5，AGENT_PANEL_UNIT_CONCURRENCY 可改）
+ *   node scripts/unit-tests.mjs rest     # 只跑其余文件，并发（核数 × 1.5 与内存取小，AGENT_PANEL_UNIT_CONCURRENCY 可改）
  *   node scripts/unit-tests.mjs --files a.test.ts,b.test.ts   # 只跑指定文件（test:affected 用）
  *   node scripts/unit-tests.mjs --failed  # 只跑上一次还失败的文件（改完复测用，npm run test:failed）
  *   node scripts/unit-tests.mjs --verbose # 完整 TAP 也打到终端（默认只写进 logs/tests/）
@@ -24,10 +24,11 @@
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { availableParallelism } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { cleanTestEnv } from './lib/test-env.mjs'
+import { concurrencyLine, suggestConcurrency } from './lib/concurrency.mjs'
+import { writeFlakyReport } from './lib/flaky-report.mjs'
+import { cleanTestEnv, cleanedLine } from './lib/test-env.mjs'
 import { listUnitTests } from './lib/test-files.mjs'
 import {
   LAST_RESULTS,
@@ -56,15 +57,21 @@ const TIMING_FILES = [
 const TSX_CLI = path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')
 
 /**
- * 并发批同时跑的文件数：核数的 1.5 倍（AGENT_PANEL_UNIT_CONCURRENCY 可覆盖）。
+ * 并发批同时跑的文件数：核数的 1.5 倍，再按可用内存（每个文件约 120M）和文件数取小
+ * （scripts/lib/concurrency.mjs；AGENT_PANEL_UNIT_CONCURRENCY 写了就照它开）。
  * node --test 默认只开「核数 - 1」个，但并发批的文件大半时间在等真实的定时器、子进程和磁盘，
  * CPU 闲着；4 核机器上实测 3 个 69s、6 个 49s、8 个 48s（再多就是 CPU 打满了）。
  * 怕抢 CPU 的计时类用例在 TIMING_FILES 里单独串行，不受这里影响。
  */
-const REST_CONCURRENCY = Math.max(
-  1,
-  Number(process.env.AGENT_PANEL_UNIT_CONCURRENCY) || Math.ceil(availableParallelism() * 1.5),
-)
+const restConcurrency = (units) =>
+  suggestConcurrency({
+    kind: 'unit',
+    units,
+    env: process.env.AGENT_PANEL_UNIT_CONCURRENCY,
+    envName: 'AGENT_PANEL_UNIT_CONCURRENCY',
+    mode: 'override',
+    cpuFactor: 1.5,
+  })
 
 /**
  * 取出 --files（`--files a.test.ts,b.test.ts` 或 `--files=a,b`）：受影响的单测文件由
@@ -122,10 +129,14 @@ if (!which && argv[0] && !argv[0].startsWith('-')) {
   process.exit(1)
 }
 const extra = which ? argv.slice(1) : argv
-// 命令行自己传了 --test-concurrency 就听它的，不再叠加一份
-const restOpts = extra.some((a) => a.startsWith('--test-concurrency'))
-  ? extra
-  : [...extra, `--test-concurrency=${REST_CONCURRENCY}`]
+// 命令行自己传了 --test-concurrency 就听它的，不再叠加一份；否则按这批的文件数算（见 restConcurrency）
+const ownConcurrency = extra.some((a) => a.startsWith('--test-concurrency'))
+const restOptsFor = (files) => {
+  if (ownConcurrency) return extra
+  const c = restConcurrency(files.length)
+  console.log(concurrencyLine('[unit]', c))
+  return [...extra, `--test-concurrency=${c.value}`]
+}
 if (given.length && which) {
   console.error('--files 和 timing / rest 不能同时用：指定了文件就只跑这些文件')
   process.exit(1)
@@ -146,6 +157,9 @@ if (missing.length) {
 const rest = all.filter((file) => !TIMING_FILES.includes(file))
 
 const REPORTER = path.join(root, 'scripts/lib/test-reporter.mjs')
+// 继承来的接口、面板和 git 变量会让断言随机器变：去掉，日志里只列名字（scripts/lib/test-env.mjs）
+const { env: testEnv, removed: envRemoved } = cleanTestEnv()
+if (envRemoved.length) console.log(cleanedLine('[unit]', envRemoved))
 mkdirSync(path.join(root, RESULTS_DIR), { recursive: true })
 
 /**
@@ -165,8 +179,7 @@ function run(files, extra, logName) {
   const startedAt = Date.now()
   const result = spawnSync(process.execPath, [TSX_CLI, '--test', ...reporters, ...extra, ...files], {
     cwd: root,
-    // 继承来的接口变量（ANTHROPIC_BASE_URL 这类）会让断言随机器变：去掉（scripts/lib/test-env.mjs）
-    env: cleanTestEnv().env,
+    env: testEnv,
     stdio: ['ignore', 'pipe', verbose ? 'inherit' : 'pipe'],
     maxBuffer: 256 * 1024 * 1024,
   })
@@ -188,11 +201,11 @@ if (given.length) {
   const timing = all.filter((file) => given.includes(file) && TIMING_FILES.includes(file))
   const others = all.filter((file) => given.includes(file) && !TIMING_FILES.includes(file))
   batches.push(['指定的计时文件（串行）', timing, [...extra, '--test-concurrency=1']])
-  batches.push(['指定的其余文件（并发）', others, restOpts])
+  batches.push(['指定的其余文件（并发）', others, () => restOptsFor(others)])
 } else {
   // 计时文件先跑：整轮有失败时也能先看到最容易抖的那批结果
   if (which !== 'rest') batches.push(['计时文件（串行）', TIMING_FILES, [...extra, '--test-concurrency=1']])
-  if (which !== 'timing') batches.push(['其余文件（并发）', rest, restOpts])
+  if (which !== 'timing') batches.push(['其余文件（并发）', rest, () => restOptsFor(rest)])
 }
 
 let exitCode = 0
@@ -201,13 +214,16 @@ const verdicts = []
 const allSummary = []
 const stillFailed = []
 const flakyAll = []
+/** 抖动报告（scripts/lib/flaky-report.mjs）：每个抖动文件试了几次、第一次报的什么错 */
+const flakyEntries = []
+let unitsRun = 0
 for (const [label, files, opts] of batches) {
   if (!files.length) {
     console.log(`[unit] ${label}：没有文件，跳过`)
     continue
   }
   const slug = label.startsWith('计时') || label.startsWith('指定的计时') ? 'timing' : 'rest'
-  const first = run(files, opts, `unit-${slug}`)
+  const first = run(files, typeof opts === 'function' ? opts() : opts, `unit-${slug}`)
   const summary = summarize(first.events, root)
   allSummary.push(...summary)
   const tests = summary.reduce((n, f) => n + f.tests, 0)
@@ -237,6 +253,15 @@ for (const [label, files, opts] of batches) {
   const { failed, flaky } = classifyAttempts(attempts)
   stillFailed.push(...failed)
   flakyAll.push(...flaky)
+  unitsRun += files.length
+  for (const f of flaky) {
+    const x = summary.find((y) => y.file === f)?.failures[0]
+    flakyEntries.push({
+      unit: f,
+      attempts: attempts.filter((list) => list.includes(f)).length + 1,
+      firstError: x ? `${x.name}：${x.error ?? ''}` : '',
+    })
+  }
   const verdict = failed.length ? '失败' : flaky.length ? '通过（有抖动）' : '通过'
   console.log(`[unit] 完整输出：${first.log}`)
   verdicts.push(`${label}${verdict}`)
@@ -271,6 +296,8 @@ writeFileSync(
     2,
   ),
 )
+// 抖动报告整份替换单测这一类：这次没有抖动就清掉上一次留下的，CI 的 flaky-check-report 读它判红
+writeFlakyReport(root, 'unit', flakyEntries, unitsRun)
 if (stillFailed.length) console.log(`\n[unit] 改完后只复测这些文件：npm run test:failed`)
 // 汇总行和判定逻辑无关，只是防止「前一批失败、最后一批通过」被读成「全过却退出码非零」
 console.log(`[unit] 汇总：${verdicts.length ? verdicts.join('；') : '没有批次'} → 退出码 ${exitCode}`)
