@@ -2,9 +2,9 @@ import { useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import {
   Activity,
-  ArrowDownLeft,
+  ArrowLeft,
+  ArrowRight,
   Check,
-  ArrowUpRight,
   CircleHelp,
   ClipboardList,
   Copy,
@@ -32,7 +32,8 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Modal } from '@/components/ui/modal'
 import { RowShell } from './ToolRow'
 import { Markdown } from './Markdown'
-import { useChildOpen } from './child-open'
+import { useChildList, useChildOpen, usePeerMail } from './child-open'
+import { replyOf } from '@/lib/tasks'
 
 /** 消息类型的图标：收发两边同一套，一眼分得出是交代任务、上报、收尾还是编译 */
 export const PEER_ICON: Record<PeerKind, typeof Activity> = {
@@ -89,6 +90,10 @@ export interface PeerLineProps {
   report?: PeerReport
   /** 上报时子对话的状态（ConvState）：状态小标签的颜色 */
   convState?: string
+  /** 什么时候发的：交代任务那行按它找子对话后来回的信 */
+  at?: string
+  /** 同一个子对话后来又交了汇报、这封没被读就被替换了：整行变淡 */
+  superseded?: boolean
 }
 
 /** 状态小标签的颜色：完成绿、失败红、中断和没做完琥珀、待收尾强调色 */
@@ -168,16 +173,9 @@ function ReportFields({ r, convState, big }: { r: PeerReport; convState?: string
   )
 }
 
-/** 行右侧写的来源：几个子对话的角色名相同时（都是「执行」），带上各自的对话标题才分得清是哪一条 */
-function sideOf(p: PeerLineProps) {
-  const title = p.title && p.title !== p.name ? p.title : ''
-  if (p.dir === 'in')
-    return title ? t('来自 {name}（{title}）', { name: p.name, title }) : t('来自 {name}', { name: p.name })
-  return title ? t('发给 {name}（{title}）', { name: p.name, title }) : t('发给 {name}', { name: p.name })
-}
-
 /**
- * 对话之间的一条消息：「发送消息 / 接收消息 + 类型 + 内容标题」，像一次工具调用。
+ * 对话之间的一封信：开头固定是方向箭头 + 对方名字，然后是类型和内容标题（ADR 0034）。
+ * 「接收消息 / 发送消息」几个字不再写，箭头已经说明了方向；标题截断也不会丢掉「谁发给谁」。
  * 点整行在下面展开全文，点中间的标题弹窗看全文
  */
 export function PeerLine(p: PeerLineProps) {
@@ -185,7 +183,9 @@ export function PeerLine(p: PeerLineProps) {
   const [win, setWin] = useState(false)
   const openChild = useChildOpen()
   const Icon = PEER_ICON[p.kind]
-  const Dir = p.dir === 'in' ? ArrowDownLeft : ArrowUpRight
+  const Dir = p.dir === 'in' ? ArrowLeft : ArrowRight
+  // 对方是子对话时写它的标题：几个子对话的角色名常常一样（都是「执行」），标题才分得清
+  const party = p.childId ? p.title || p.name : p.name
   const subject = p.subject || subjectLine(p.body) || peerKindText(p.kind)
   const many = p.targets && p.targets.length > 1 ? p.targets : undefined
   const names = many?.map((x) => x.name).join('、') ?? ''
@@ -202,7 +202,6 @@ export function PeerLine(p: PeerLineProps) {
     <>
       <RowShell
         // 对话之间的消息和工具行一个样子，图标统一用「对话之间」的紫色，和工具行、用户消息分开
-        className={ask ? 'border-warning/45' : undefined}
         glyph={
           p.running ? (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
@@ -212,10 +211,16 @@ export function PeerLine(p: PeerLineProps) {
             />
           )
         }
+        className={cn(ask && 'border-warning/45', p.superseded && 'opacity-55')}
         verb={
-          <span className="inline-flex items-center gap-0.5">
-            {p.dir === 'in' ? t('接收消息') : t('发送消息')}
-            <Dir className="h-3 w-3 text-subtle" aria-hidden />
+          <span
+            className="inline-flex max-w-40 min-w-0 items-center gap-1"
+            aria-label={
+              p.dir === 'in' ? t('收到 {name} 的信', { name: party }) : t('发给 {name} 的信', { name: party })
+            }
+          >
+            <Dir className="h-3 w-3 shrink-0 text-subtle" aria-hidden />
+            <span className="min-w-0 truncate">{many ? t('{n} 个子对话', { n: many.length }) : party}</span>
           </span>
         }
         badge={peerKindText(p.kind)}
@@ -225,14 +230,18 @@ export function PeerLine(p: PeerLineProps) {
         onOpen={() => setWin(true)}
         openTip={t('在窗口里查看这条消息')}
         detail={
-          <span className={cn('max-w-[40%] shrink-0 truncate text-[0.6875rem]', ask ? 'text-warning' : 'text-subtle')}>
-            {[
-              p.state,
-              p.dir === 'in' ? sideOf(p) : many ? t('发给 {n} 个：{names}', { n: many.length, names }) : sideOf(p),
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
+          p.superseded ? (
+            <span className="max-w-[40%] shrink-0 truncate text-[0.6875rem] text-subtle">{t('已被新的汇报取代')}</span>
+          ) : p.dir === 'out' && !many && !p.failed && !p.running && p.childId && p.at ? (
+            <LetterReceipt childId={p.childId} at={p.at} />
+          ) : p.state || many ? (
+            <span
+              className={cn('max-w-[40%] shrink-0 truncate text-[0.6875rem]', ask ? 'text-warning' : 'text-subtle')}
+              title={many ? names : undefined}
+            >
+              {p.state || names}
+            </span>
+          ) : undefined
         }
         ms={p.ms}
         open={open}
@@ -267,6 +276,56 @@ export function PeerLine(p: PeerLineProps) {
       </RowShell>
       {win && <PeerDialog {...p} subject={subject} who={who} openChild={child} onClose={() => setWin(false)} />}
     </>
+  )
+}
+
+/**
+ * 交代任务那行的回执：已送达 → 对方在处理 → 已完成 · 看汇报（ADR 0034）。
+ * 回执从子对话后来回的信和它现在的状态算出来，不另记数据，旧对话照样有；点「看汇报」滚到那一封
+ */
+function LetterReceipt({ childId, at }: { childId: string; at: string }) {
+  const mail = usePeerMail()
+  const kids = useChildList()
+  if (!mail) return null
+  const reply = replyOf(mail.letters.get(childId), at)
+  const cls = 'max-w-[45%] shrink-0 truncate text-[0.6875rem]'
+  if (reply) {
+    const text =
+      reply.kind === 'question'
+        ? t('提了问题 · 去看')
+        : reply.state === 'done' || reply.kind === 'merge'
+          ? t('已完成 · 看汇报')
+          : reply.failed || reply.state === 'failed'
+            ? t('失败 · 看汇报')
+            : t('已回复 · 看汇报')
+    return (
+      <button
+        type="button"
+        data-receipt="replied"
+        onClick={(e) => {
+          e.stopPropagation()
+          const el = document.querySelector(`[data-letter="${CSS.escape(reply.id)}"]`)
+          el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        }}
+        className={cn(
+          cls,
+          'cursor-pointer rounded px-1 hover:bg-sel',
+          reply.failed || reply.state === 'failed' ? 'text-danger' : 'text-success',
+        )}
+      >
+        {text} ↓
+      </button>
+    )
+  }
+  const kid = kids.find((k) => k.id === childId)
+  if (!kid) return null
+  return (
+    <span
+      data-receipt={kid.working ? 'working' : 'delivered'}
+      className={cn(cls, kid.working ? 'text-accent-text' : 'text-subtle')}
+    >
+      {kid.working ? t('对方在处理') : t('已送达')}
+    </span>
   )
 }
 
@@ -387,25 +446,29 @@ export function ReceivedRow({ m }: { m: TaskMessage }) {
   if (!peer) return null
   const state = m.child?.state ? convStateText(m.child.state) : ''
   return (
-    <PeerLine
-      dir="in"
-      kind={peer.kind}
-      name={peerName(peer)}
-      title={peer.title}
-      subject={peer.subject}
-      body={peerBody(m.text)}
-      failed={peer.failed}
-      // 失败汇报要说清是「子对话自己这一轮跑挂了」，不是「汇报这个动作失败」——用户报的「汇报失败」其实是前者
-      state={
-        peer.kind === 'report' && peer.failed
-          ? t('子对话自己这一轮失败')
-          : peer.kind === 'report' && !peer.subject
-            ? state
-            : ''
-      }
-      childId={peer.rel === 'child' ? peer.id : undefined}
-      report={parseReport(m.text) ?? undefined}
-      convState={m.child?.state}
-    />
+    <div data-letter={m.id} className="min-w-0">
+      <PeerLine
+        dir="in"
+        kind={peer.kind}
+        name={peerName(peer)}
+        title={peer.title}
+        subject={peer.subject}
+        body={peerBody(m.text)}
+        failed={peer.failed}
+        // 失败汇报要说清是「子对话自己这一轮跑挂了」，不是「汇报这个动作失败」——用户报的「汇报失败」其实是前者
+        state={
+          peer.kind === 'report' && peer.failed
+            ? t('子对话自己这一轮失败')
+            : peer.kind === 'report' && !peer.subject
+              ? state
+              : ''
+        }
+        childId={peer.rel === 'child' ? peer.id : undefined}
+        report={parseReport(m.text) ?? undefined}
+        convState={m.child?.state}
+        at={m.at}
+        superseded={peer.superseded}
+      />
+    </div>
   )
 }

@@ -241,8 +241,9 @@ export function App() {
             {/* 最左边的图标栏（功能页、主题、设置），右边是会话侧栏；功能页上会话侧栏让开 */}
             <ActivityBar dark={dark} onToggleTheme={toggleTheme} />
             <Sidebar dark={dark} onToggleTheme={toggleTheme} />
-            {/* 页面放在圆角面板里浮在侧栏底色上（照设计稿）；任务页、项目页自己分成「对话 + 右栏」两块面板（split），外面不再套一块 */}
-            <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden md:py-2 md:pr-2">
+            {/* 页面放在圆角面板里浮在侧栏底色上（照设计稿）；任务页、项目页自己分成「对话 + 右栏」两块面板（split），外面不再套一块。
+                会话侧栏让开时（功能页、收起）左边也留同样的间距，不贴着图标栏，见 index.css 的 .page-area */}
+            <div className="page-area flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden md:py-2 md:pr-2">
               <div
                 className={cn(
                   'flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden',

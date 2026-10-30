@@ -538,7 +538,7 @@ export function orchTools(o: Orchestra) {
             name: 'message_parent',
             title: '回报父对话',
             description:
-              '给父对话发消息：汇报阶段进展、发现和别的任务有关的事、或者需要父对话决定时用。你不能直接联系其他子对话，需要配合都经过父对话。',
+              '给父对话发消息。需要父对话决定或动手（协调、拍板）时 question 设为 true，马上交给它；只是汇报阶段进展时不设，面板记下来，这一轮结束时和你的状态合成一封交给父对话（一轮只交一封，不叫醒它）。你不能直接联系其他子对话，需要配合都经过父对话。',
             inputSchema: {
               type: 'object',
               properties: {

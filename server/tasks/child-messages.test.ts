@@ -59,13 +59,53 @@ const report = (r: ReturnType<typeof rig>, kid: Task) =>
     },
   )
 
-test('父对话这一轮已答完时被用户停下（记成 done）：跟着停下的子对话上报中断，不把父对话叫起来', async () => {
+test('父对话这一轮已答完时被用户停下（记成 done）：跟着停下的子对话不报中断，只改计划（ADR 0034）', async () => {
   const kid = task('kid', 'root', 'stopped', 'parent')
   const r = rig(task('root', '', 'done'), kid)
   await report(r, kid)
   assert.deepEqual(r.woke, [])
-  // 上报没丢：记进收件箱，用户继续时一起处理
-  assert.equal(r.map.get('root')!.inbox.length, 1)
+  // 告诉父对话一件它自己做的事没有用：不写进对话流、不进收件箱，继续时由面板连带拉起
+  const root = r.map.get('root')!
+  assert.equal(root.inbox.length, 0)
+  assert.equal(root.messages.length, 0)
+  // 计划那一步照旧退回进行中，继续后等它的结果
+  const step = root.plans.at(-1)!.steps.find((x) => x.waits.some((w) => w.ref === kid.id))!
+  assert.notEqual(step.status, 'done')
+})
+
+test('同一个子对话的汇报父对话还没读：新的替换掉旧的，旧那行标成已被取代（ADR 0034）', async () => {
+  const kid = task('kid', 'root', 'done')
+  const other = task('other', 'root', 'done')
+  const r = rig(task('root', '', 'stopped', 'user'), kid)
+  const peer = (from: Task) => ({
+    id: from.id,
+    title: from.title,
+    name: '',
+    rel: 'child' as const,
+    kind: 'report' as const,
+    subject: '',
+  })
+  const send = (from: Task, text: string) =>
+    r.noteParent(
+      'root',
+      from,
+      text,
+      undefined,
+      undefined,
+      { id: from.id, title: from.title, state: 'done' },
+      peer(from),
+    )
+  await send(kid, '第一封')
+  await send(other, '别的子对话')
+  await send(kid, '第二封')
+  const root = r.map.get('root')!
+  assert.deepEqual(
+    root.inbox.map((x) => x.text),
+    ['别的子对话', '第二封'],
+  )
+  const first = root.messages.find((m) => m.text === '第一封')!
+  assert.equal(first.peer?.superseded, true)
+  assert.equal(root.messages.find((m) => m.text === '第二封')!.peer?.superseded, undefined)
 })
 
 test('子对话自己被停下（不是跟着父对话）：计划在等它，照旧叫起父对话处理', async () => {

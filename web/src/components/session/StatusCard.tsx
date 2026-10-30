@@ -45,17 +45,10 @@ const TONE: Record<DiagTone, string> = {
 
 /**
  * 会话栏最上面的「状态」：这个对话现在是什么情况、在等什么、为什么停住了（见 shared/task-diagnosis.ts）。
- * 子对话那几行能点，点了在右栏打开它
+ * 那句话照旧把子对话算进去（「在等 2 个子对话」），但子对话不在这里逐个列：
+ * 它们只有一个家，输入框上方的子对话面板（ADR 0034），右栏再列一遍就是两处
  */
-export function StatusCard({
-  task,
-  kids = [],
-  onOpenChild,
-}: {
-  task: Task
-  kids?: (ChildEntry & { title: string })[]
-  onOpenChild?: (id: string) => void
-}) {
+export function StatusCard({ task, kids = [] }: { task: Task; kids?: (ChildEntry & { title: string })[] }) {
   // 「已 n 分钟没有新输出」「已运行 3 分钟」要跟着走：半分钟刷一次够了
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -63,6 +56,7 @@ export function StatusCard({
     return () => clearInterval(id)
   }, [])
   const d = useMemo(() => diagnoseTask(task, kids, now), [task, kids, now])
+  const items = d.items.filter((x) => x.kind !== 'child')
   return (
     <SessionCard id="status" title={t('状态')}>
       <div className="flex items-start gap-2.5 px-0 py-1" data-diagnosis={d.state}>
@@ -71,17 +65,15 @@ export function StatusCard({
         </span>
         <p className="min-w-0 flex-1 text-[0.8125rem] leading-5 break-words text-fg">{d.headline}</p>
       </div>
-      {d.items.length > 0 && (
+      {items.length > 0 && (
         <div className="mt-1 flex flex-col">
-          {d.items.map((x, i) => {
+          {items.map((x, i) => {
             const Icon = KIND_ICON[x.kind]
-            const open = x.taskId && onOpenChild ? () => onOpenChild(x.taskId!) : undefined
             return (
               <SessionRow
                 key={`${x.kind}-${x.taskId ?? i}`}
                 icon={<Icon className={x.kind === 'hint' ? 'text-subtle' : undefined} />}
                 title={[x.text, x.detail].filter(Boolean).join('\n')}
-                onClick={open}
                 className={cn('min-h-0 py-1', x.kind === 'hint' && 'text-muted')}
               >
                 <span className="block truncate">{x.text}</span>

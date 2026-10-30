@@ -1,5 +1,5 @@
 /**
- * 用户直接在子对话里发消息：子对话自己接着做，父对话计划里挂一步等它，做完把状态报回父对话并叫起它。
+ * 用户直接在子对话里发消息：子对话自己接着做，父对话计划里挂一步等它（不往父对话流里发消息），做完把状态报回父对话并叫起它，汇报里带上用户的原话。
  *
  * 以前父对话计划里没人等这个子对话：做完的上报只进父对话的收件箱，父对话不会被叫起，
  * 一直以为子对话停在「已完成」（用户报过）。
@@ -39,10 +39,12 @@ await runShard('用户直接发给子对话后通知父对话', async (api) => {
   const plan = noted.plans?.at(-1)
   const waitStep = plan?.steps.find((s) => s.waits?.some((w) => w.kind === 'child' && w.ref === kid.id))
   assert.ok(waitStep, '父对话计划里挂上一步等这个子对话')
+  // 用户直接交代是状态不是信（ADR 0034）：父对话流里不再记一行，只在计划那一步写明
   assert.ok(
-    noted.messages.some((m) => m.panel === 'child' && /【用户直接交代子对话】/.test(m.text)),
-    '父对话里记一行：用户直接交代了子对话，不用它转交',
+    !noted.messages.some((m) => /【用户直接交代子对话】|用户直接交代/.test(m.text)),
+    '父对话流里不再记「用户直接交代」的消息',
   )
+  assert.match(waitStep.note ?? '', /你直接交代了新要求/, '父计划那一步写明你直接交代了新要求')
 
   await waitDone(kid.id, 20000)
   const woken = await waitFor(
@@ -60,5 +62,6 @@ await runShard('用户直接发给子对话后通知父对话', async (api) => {
   // 带的是这一轮的回复，不是上一轮留下的摘要（task.summary 要等整次执行收尾才更新）
   const latest = (await call('GET', `/tasks/${kid.id}`)).messages.filter((m) => m.role === 'agent').at(-1)
   assert.ok(fresh[0].text.includes(latest.text.replace(/\s+/g, ' ').trim().slice(0, 60)), '状态里带的是这一轮的结果')
+  assert.ok(fresh[0].text.includes('USER_DIRECT'), '汇报里带上用户直接交代的原话')
   step('用户直接发给子对话：父对话计划挂上等它，做完收口那一步并叫起父对话；每轮只报一条状态')
 })

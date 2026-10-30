@@ -1300,6 +1300,8 @@ export const PeerFrom = z.object({
   subject: z.string().default(''),
   /** 报错、失败、没合进去这一类：行标红 */
   failed: z.boolean().optional(),
+  /** 同一个子对话后来又交了一封汇报、这封还没被读就被替换掉了：对话流里这一行变淡（ADR 0034） */
+  superseded: z.boolean().optional(),
 })
 export type PeerFrom = z.infer<typeof PeerFrom>
 
@@ -1928,7 +1930,27 @@ export const TaskData = z.object({
   /** 父对话给子对话定的 CLI、模型和思考强度；空表示按执行角色自己的配置 */
   childRun: z.object({ cli: z.string(), model: z.string(), effort: z.string() }).optional(),
   /** 子对话发给父对话、父对话还没读到的消息：父对话下一轮开始时交给它，读完清空 */
-  inbox: z.array(z.object({ from: z.string(), title: z.string(), text: z.string(), at: z.string() })).default([]),
+  inbox: z
+    .array(
+      z.object({
+        from: z.string(),
+        title: z.string(),
+        text: z.string(),
+        at: z.string(),
+        /** 对话里对应的那条消息：同一个子对话的新汇报替换掉没读的旧汇报时，旧的那行标成「已被取代」 */
+        mid: z.string().optional(),
+        /** 子对话的汇报（不是提问、回答）：只有它会被同一个子对话更新的汇报替换 */
+        report: z.boolean().optional(),
+      }),
+    )
+    .default([]),
+  /**
+   * 子对话：这一轮 AI 自己用 message_parent 写的阶段汇报，还没交给父对话。
+   * 一轮只交一封（ADR 0034）：面板这一轮结束上报状态时把它并进去当「结果」，交出后清空
+   */
+  pendingReport: z.string().optional(),
+  /** 子对话：用户直接在子对话里交代的要求（最近一条）。不再给父对话单独发消息，下一封汇报里带上，交出后清空 */
+  userDirect: z.string().optional(),
   /**
    * 子对话：请用户决定、还没人回答的提问（父对话里也有一张对应的卡片，id 是那条消息的 id）。
    * 有它时子对话的输入框换成选择弹窗；回答、交给父对话决定或父对话转达了决定后清掉
