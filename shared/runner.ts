@@ -349,7 +349,18 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       : {
           tools: [{ kind: 'edit', label: last ?? 'src/index.ts', detail: '+6 -4' }],
           changes: [{ path: last ?? 'src/index.ts', add: 6, del: 4 }],
-          text: `收到：「${need}」\n\n已经按要求调整，改动在 \`${last ?? 'src/index.ts'}\`。还有需要修改的地方可以继续说。`,
+          // 演示总结卡（shared/summary-card.ts）：真实 Agent 按「总结格式」写，界面画成卡片
+          text: [
+            `收到：「${need}」，已经按要求调整。`,
+            '',
+            `### 功能｜${need}`,
+            `- **做了什么**：按要求调整了相关逻辑，改动集中在 \`${last ?? 'src/index.ts'}\``,
+            '- **怎么用**：刷新页面后直接生效，不用改设置',
+            `- **改动**：\`${last ?? 'src/index.ts'}\`（+6 -4）`,
+            '- **验证**：演示环境未真实运行检查',
+            '- **遗留**：无',
+            '- **要你处理**：看一眼效果，还要改可以继续说',
+          ].join('\n'),
         }
   }
   // 演示权限请求：对话里提到「安装」时，先请你确认一条命令，确认后才接着输出

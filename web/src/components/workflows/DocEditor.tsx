@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { AtSign, Eye, FileText, PencilLine } from 'lucide-react'
 import type { Agent } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { fieldClass } from '@/components/ui/input'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { Segmented } from '@/components/ui/segmented'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { Markdown } from '@/components/tasks/Markdown'
 
 /** 工作流说明、Agent 角色设定：Markdown 编辑 / 预览，可以插入模板和 @Agent */
 export function DocEditor({
@@ -37,12 +37,7 @@ export function DocEditor({
   minHeight?: number
 }) {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
-  // 高亮库按需加载：加载完重渲染一次，预览里的代码块就有颜色了
-  const [hlReady, setHlReady] = useState(() => hljsReady())
-  useEffect(() => {
-    if (hlReady) return
-    void ensureHljs().then(() => setHlReady(true))
-  }, [hlReady])
+  const teamNames = useMemo(() => new Set(team.map((a) => a.name)), [team])
   const ref = useRef<HTMLTextAreaElement>(null)
 
   const insert = (text: string) => {
@@ -119,9 +114,10 @@ export function DocEditor({
           )}
         />
       ) : (
-        <div className="doc-preview px-5 py-4" style={{ minHeight }}>
+        // 预览和对话回复同一套 Markdown 样式（设置 → Markdown 样式）
+        <div className="px-5 py-4" style={{ minHeight }}>
           {value.trim() ? (
-            <div dangerouslySetInnerHTML={{ __html: renderDoc(value, new Set(team.map((a) => a.name))) }} />
+            <Markdown text={value} teamNames={teamNames} />
           ) : (
             <p className="text-subtle">{t('文档还是空的。')}</p>
           )}

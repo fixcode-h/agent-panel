@@ -58,7 +58,11 @@ export function createChildMessages(sc: TasksScope) {
     const text = waitNote(hit) + body
     // 用户亲手停下的父对话：子对话的结果不把它叫起来（用户让它停的），记进收件箱，用户点「继续执行」时一起处理
     const userStopped = parent.status === 'stopped' && parent.stopReason === 'user' && !sc.runningConv(parent.id)
-    if ((hit.length || wake) && !userStopped) {
+    // 子对话是跟着父对话一起停下的（用户停止、归档父对话时 closeChildren 记成 parent）：它的「已中断」同样不叫起父对话。
+    // 不能只看上面父对话自己的状态：父对话这一轮已经答完、停在等下一句（或进程已退出）时被停下，收尾记成 done、
+    // 不记停止原因；还在收尾时执行位也还占着。这两种都会漏过 userStopped，父对话就被子对话的中断上报叫起来又跑一轮（用户报过）
+    const cascaded = child?.state === 'stopped' && from.stopReason === 'parent'
+    if ((hit.length || wake) && !userStopped && !cascaded) {
       const entry = sc.live.get(parent.id)
       parent.updatedAt = new Date().toISOString()
       if (entry) entry.rev++

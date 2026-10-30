@@ -329,6 +329,11 @@ const OPEN_MESSAGE_LIMIT = 50
 const PANE_MIN = 280
 /** 文件面板默认最宽多少：右栏是辅助，默认不和对话平分 */
 const FILES_PANE_CAP = 440
+/**
+ * AI 分析窗口里文件面板默认最宽多少：弹窗本身比页面窄（最宽 1300），440 会占去三分之一，
+ * 分析对话才是主体，文件栏只是顺手翻文件（用户 2026-10-30 要求文件栏别太宽、比例合适）
+ */
+const EMBED_FILES_PANE_CAP = 320
 /** 会话栏的宽度，和中间对话至少要留的宽度：放不下时会话栏和右侧文件栏只显示后打开的那个 */
 const SESSION_BAR_W = 320
 /** 会话栏和面板右边缘之间留给消息区滚动条的宽度（和 index.css 的 thin-scroll 一样宽） */
@@ -617,13 +622,14 @@ export function TaskView({
   const rowWidth = useCallback(() => rail.current?.parentElement?.clientWidth ?? 0, [])
   // 功能面板默认和中间对话对半（见 lib/pane-width.ts）；文件面板对半但最宽 FILES_PANE_CAP，右栏只是辅助。
   // 手动拖过之后按拖动后的宽度、双击拖动条也回到对半；上限至少留出中间 320
+  // AI 分析窗口单独记一个宽度：对话页上拖宽过的文件面板不该把弹窗里的也撑宽
   const taskPanel = useHalfPane(
-    'task-panel',
+    embed ? 'ai-task-panel' : 'task-panel',
     PANE_MIN,
     () => Math.max(340, paneMax(rail.current, PANE_MIN)),
     rowWidth,
     railMounted,
-    FILES_PANE_CAP,
+    embed ? EMBED_FILES_PANE_CAP : FILES_PANE_CAP,
   )
   // 和文件面板并排在同一栏，但宽度偏好不同，各自记一个（共用 key 会互相改成对方拖过的宽度）
   const reportPane = useHalfPane(

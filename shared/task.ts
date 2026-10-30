@@ -1297,6 +1297,34 @@ export function childStale(
 export const CHILD_IDLE_ASK_MAX = 3
 
 /**
+ * 这一轮说完了打算却没去做：最后一条回复以「我再确认…」「接下来看…」这类要动手的话收尾，之后没有任何工具调用，
+ * 也不是在问用户。没列计划的对话 planStalled 管不到它（用户报过：说完「我再确认这些连接的状态」就停住，
+ * 要用户说「继续啊」才接着做）。返回那句打算（交给面板推它接着做），不是这种情况返回空串
+ */
+export function announcedOnly(tk: Pick<Task, 'messages'>): string {
+  const msgs = tk.messages
+  let i = msgs.length - 1
+  // 这一轮的回复：从最后一条往回取到上一条用户消息为止
+  while (i >= 0 && msgs[i].role !== 'agent' && msgs[i].role !== 'user') i--
+  const last = msgs[i]
+  if (!last || last.role !== 'agent' || last.tools?.length || last.step) return ''
+  const text = (last.text ?? '').trim()
+  if (!text || text.length > 600) return ''
+  // 最后一句（按句号、换行切）：问用户的、给结论的不算
+  const tail =
+    text
+      .split(/(?<=[。！!\n])/)
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .at(-1) ?? ''
+  if (/[?？]/.test(tail) || /[?？]\s*$/.test(text)) return ''
+  return INTENT.test(tail) ? tail : ''
+}
+/** 第一人称说接下来要做的事：「我再…」「我先…」「让我…」「接下来…」「现在去…」 */
+const INTENT =
+  /^(好的?[，,]\s*)?((我|咱们|我们)(再|先|来|去|要|会|现在|接下来|马上|继续|这就|顺便)|让我|接下来|下一步|现在(我)?(去|来|开始|要)|然后(我)?(再|去))|\b(let me|i'll|i will|next,? i|now i'?ll)\b/i
+
+/**
  * 这一轮已经说完、计划却没做完，也没有在等任何东西：对话停在等下一句，没人推就不会往下走。
  * 常见于模型只回了一句「先跑类型检查」就收尾、没真的调工具（用户报过：父对话一直等子对话，子对话一直等下一句）。
  * 面板据此在一轮结束时推它接着做（server/tasks.ts 的 nudgePlan）。

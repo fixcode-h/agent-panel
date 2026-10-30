@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { GitBranch, Pencil, Route, Split } from 'lucide-react'
+import { Fragment, useState } from 'react'
+import { Check, GitBranch, Pencil, Route, Split } from 'lucide-react'
 import type { TaskMessage, TaskRoute } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
@@ -57,32 +57,56 @@ export function RouteCard({
   if (!routes.length) return null
   const rerouted = (r: TaskRoute) => later.some((m) => m.role === 'user' && m.text.includes(rerouteTag(r.id)))
   return (
-    <div className="flex gap-3">
-      <span className="grid w-[26px] shrink-0 place-items-start justify-center pt-2">
+    <div className="flex gap-3" data-route-card>
+      <span className="grid w-[26px] shrink-0 place-items-start justify-center pt-0.5">
         <Route className="h-3.5 w-3.5 text-subtle" />
       </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-lg bg-card shadow-card px-3 py-2">
+      {/* 一次分诊可能派出好几条：每条一张卡，卡之间留空隙，不再挤在同一块底色里分不清边界 */}
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex h-[18px] items-center gap-1.5 text-xs text-subtle">
+          {t('分诊')}
+          {routes.length > 1 && <span className="tabular-nums">· {routes.length}</span>}
+        </div>
         {routes.map((r) => {
           const tg = TARGET[r.target]
           const Icon = tg.icon
           const done = rerouted(r)
+          const rows = [
+            [t('理解'), r.understanding],
+            [t('理由'), r.reason],
+            [t('假设'), r.assumptions],
+          ].filter(([, v]) => v)
           return (
-            <div key={r.id} className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.8125rem]">
-                <span className="text-xs text-subtle">{t('分诊')}</span>
-                <Icon className="h-3.5 w-3.5 text-accent-text" />
-                <span className="font-medium">{tg.label}</span>
-                {r.label && <span className="min-w-0 truncate text-muted">「{r.label}」</span>}
-                {done && <span className="rounded bg-sel px-1.5 text-[0.6875rem] text-subtle">{t('已改派')}</span>}
+            // 已改派的只把内容调淡，「已改派」标签保持清楚
+            <div key={r.id} className="rounded-lg bg-card px-3 py-2.5 shadow-card">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                <span
+                  className={cn(
+                    'grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent-soft',
+                    done && 'opacity-50',
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5 text-accent-text" />
+                </span>
+                <span className={cn('flex min-w-0 flex-1 items-baseline gap-2 text-[0.8125rem]', done && 'opacity-60')}>
+                  <span className="shrink-0 font-medium">{tg.label}</span>
+                  {r.label && <span className="min-w-0 truncate text-muted">{r.label}</span>}
+                </span>
+                {done && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-sel px-1.5 py-0.5 text-[0.6875rem] text-muted">
+                    <Check className="h-3 w-3" />
+                    {t('已改派')}
+                  </span>
+                )}
                 {onReroute && !done && (
-                  <span className="ml-auto flex gap-1">
+                  <span className="ml-auto flex shrink-0 gap-1">
                     {OPTIONS[r.target].map((to) => (
                       <Button
                         key={to}
                         size="sm"
-                        variant="ghost"
+                        variant="secondary"
                         disabled={!!busy}
-                        className="h-6 px-2 text-xs"
+                        className="h-6 rounded-md px-2 text-xs font-normal text-muted hover:text-fg"
                         onClick={async () => {
                           setBusy(r.id)
                           try {
@@ -98,31 +122,20 @@ export function RouteCard({
                   </span>
                 )}
               </div>
-              {(r.understanding || r.reason || r.assumptions) && (
+              {rows.length > 0 && (
+                // 正文和标题文字左对齐（让出图标那一格），标签固定宽度，三行的正文起点对齐
                 <dl
                   className={cn(
-                    'grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs leading-relaxed text-muted',
+                    'mt-2 grid grid-cols-[2.25rem_1fr] gap-x-2 gap-y-1 pl-8 text-xs leading-relaxed',
                     done && 'opacity-60',
                   )}
                 >
-                  {r.understanding && (
-                    <>
-                      <dt className="text-subtle">{t('理解')}</dt>
-                      <dd className="min-w-0 break-words">{r.understanding}</dd>
-                    </>
-                  )}
-                  {r.reason && (
-                    <>
-                      <dt className="text-subtle">{t('理由')}</dt>
-                      <dd className="min-w-0 break-words">{r.reason}</dd>
-                    </>
-                  )}
-                  {r.assumptions && (
-                    <>
-                      <dt className="text-subtle">{t('假设')}</dt>
-                      <dd className="min-w-0 break-words">{r.assumptions}</dd>
-                    </>
-                  )}
+                  {rows.map(([k, v]) => (
+                    <Fragment key={k}>
+                      <dt className="text-subtle">{k}</dt>
+                      <dd className="min-w-0 break-words text-muted">{v}</dd>
+                    </Fragment>
+                  ))}
                 </dl>
               )}
             </div>

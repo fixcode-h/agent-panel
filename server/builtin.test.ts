@@ -162,6 +162,23 @@ test('文档角色：旧副本存着旧默认（关）的「写 Bug 记录」升
   assert.equal(upgradeParamDefaults(off, 'docsync').params.find((p) => p.key === 'bug')!.default, false)
 })
 
+test('主理：汇报默认详细，旧副本的「精简」升级一次，之后用户再选精简的保留', () => {
+  const orch = coreDefinition('orchestrator').agent
+  assert.equal(orch.params.find((p) => p.key === 'report')!.default, '详细', '主理的汇报应该默认详细')
+  const old = AgentInput.parse({
+    ...orch,
+    params: orch.params.map((p) => (p.key === 'report' ? { ...p, default: '精简' } : p)),
+    // 大改动先确认那条已经做过，只看汇报这一条
+    upgrades: ['orchestrator.confirm-on'],
+  })
+  const up = upgradeParamDefaults(old, 'orchestrator')
+  assert.equal(up.params.find((p) => p.key === 'report')!.default, '详细')
+  assert.deepEqual(up.upgrades, ['orchestrator.confirm-on', 'orchestrator.report-detailed'])
+  assert.deepEqual(upgradeParamDefaults(up, 'orchestrator'), up)
+  const brief = { ...up, params: up.params.map((p) => (p.key === 'report' ? { ...p, default: '精简' } : p)) }
+  assert.equal(upgradeParamDefaults(brief, 'orchestrator').params.find((p) => p.key === 'report')!.default, '精简')
+})
+
 test('内置工作流：结构合法，节点的 Agent、验收流程和参数都对得上', () => {
   for (const w of BUILTIN_WORKFLOWS) {
     const keys = builtinAgentKeys(w)

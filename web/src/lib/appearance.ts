@@ -1,4 +1,5 @@
 import { Appearance, type Palette } from '@shared/schema'
+import { applyMarkdownStyle } from './markdown-style'
 
 const CJK = {
   noto: ["'Noto Sans SC'", "'PingFang SC'", "'Microsoft YaHei UI'", "'Microsoft YaHei'"],
@@ -90,6 +91,7 @@ export function applyAppearance(a: Appearance | undefined) {
   const root = document.documentElement.style
   for (const [k, v] of Object.entries(vars)) root.setProperty(k, v)
   applyPalette(parsed.palette)
+  applyMarkdownStyle(parsed.markdown)
   try {
     localStorage.setItem('appearance', JSON.stringify(vars))
     localStorage.setItem(PALETTE_KEY, parsed.palette)

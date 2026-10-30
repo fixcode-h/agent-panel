@@ -581,106 +581,272 @@ body,
   margin-top: -4px;
 }
 
-/* 预览工作流文档 */
-.doc-preview {
-  @apply text-[0.875rem] text-fg;
-  line-height: calc(var(--app-leading, 1.75) * 1.143);
+/*
+ * Markdown 统一样式：对话回复、工作流 / 角色说明预览、项目文档、总结报告、文件预览都用 .chat-md。
+ * 每个元素的取值都是 --md-* 变量，默认值在下面的 :root（和 shared/markdown-style.ts 的 MD_SPEC 一致，有测试对照）；
+ * 设置 → Markdown 样式里改过的项由 web/src/lib/markdown-style.ts 写进一个 <style>，盖掉这里的默认值。
+ * 尺寸变量是相对正文字号（--md-base）的倍数，间距再乘 --md-k：窄面板（.chat-md-compact）只改这两个就整体收一档。
+ */
+:root {
+  --md-body-size: 1;
+  --md-body-gap: 0.57;
+  --md-body-color: var(--fg);
+  --md-h1-size: 1.29;
+  --md-h1-weight: 600;
+  --md-h1-color: var(--fg);
+  --md-h1-mt: 1.43;
+  --md-h1-mb: 0.57;
+  --md-h1-rule: 0px;
+  --md-h1-font: var(--font-sans);
+  --md-h2-size: 1.14;
+  --md-h2-weight: 600;
+  --md-h2-color: var(--fg);
+  --md-h2-mt: 1.43;
+  --md-h2-mb: 0.57;
+  --md-h2-rule: 0px;
+  --md-h2-font: var(--font-sans);
+  --md-h3-size: 1;
+  --md-h3-weight: 600;
+  --md-h3-color: var(--fg);
+  --md-h3-mt: 1.14;
+  --md-h3-mb: 0.43;
+  --md-h3-rule: 0px;
+  --md-h3-font: var(--font-sans);
+  --md-h4-size: 1;
+  --md-h4-weight: 600;
+  --md-h4-color: var(--muted);
+  --md-h4-mt: 0.86;
+  --md-h4-mb: 0.29;
+  --md-h4-rule: 0px;
+  --md-h4-font: var(--font-sans);
+  --md-h5-size: 1;
+  --md-h5-weight: 600;
+  --md-h5-color: var(--muted);
+  --md-h5-mt: 0.86;
+  --md-h5-mb: 0.29;
+  --md-h5-rule: 0px;
+  --md-h5-font: var(--font-sans);
+  --md-h6-size: 1;
+  --md-h6-weight: 600;
+  --md-h6-color: var(--muted);
+  --md-h6-mt: 0.86;
+  --md-h6-mb: 0.29;
+  --md-h6-rule: 0px;
+  --md-h6-font: var(--font-sans);
+  --md-strong-weight: 600;
+  --md-strong-color: currentColor;
+  --md-em-color: currentColor;
+  --md-del-color: currentColor;
+  --md-link-color: var(--accent-text);
+  --md-link-underline-rest: underline;
+  --md-link-underline-hover: underline;
+  --md-code-size: 0.86;
+  --md-code-color: var(--code-chip-fg);
+  --md-code-bg: var(--code-chip);
+  --md-code-border: 1px;
+  --md-code-radius: 4px;
+  --md-pre-size: 0.86;
+  --md-pre-leading: 1.65;
+  --md-pre-bg: var(--code-bg);
+  --md-pre-radius: 12px;
+  --md-pre-border: 1px;
+  --md-pre-bar: flex;
+  --md-pre-wrap: pre;
+  --md-quote-line: var(--line-strong);
+  --md-quote-lineWidth: 3px;
+  --md-quote-color: var(--muted);
+  --md-quote-bg: transparent;
+  --md-quote-italic: normal;
+  --md-ul-marker: disc;
+  --md-ul-markerColor: var(--subtle);
+  --md-ul-indent: 1.43;
+  --md-ul-gap: 0.29;
+  --md-ol-markerColor: var(--subtle);
+  --md-ol-markerWeight: 450;
+  --md-ol-indent: 1.43;
+  --md-ol-gap: 0.29;
+  --md-task-color: var(--accent-text);
+  --md-task-doneFade: 1;
+  --md-table-size: 0.93;
+  --md-table-border-row: 1px;
+  --md-table-border-col: 0px;
+  --md-table-headerBg: transparent;
+  --md-table-headerWeight: 600;
+  --md-table-zebra: transparent;
+  --md-table-pad: 1;
+  --md-hr-style: solid;
+  --md-hr-width: 1px;
+  --md-hr-color: var(--line);
+  --md-hr-space: 1.14;
+  --md-img-radius: 8px;
+  --md-img-maxWidth: 100%;
+  --md-img-border: 0px;
+  --md-mention-color: var(--accent-text);
+  --md-mention-bg: var(--accent-soft);
 }
-.doc-preview h1 {
-  @apply mt-6 mb-2 text-[1.125rem] font-semibold first:mt-0;
-}
-.doc-preview h2 {
-  @apply mt-5 mb-2 text-[0.9375rem] font-semibold first:mt-0;
-}
-.doc-preview h3 {
-  @apply mt-4 mb-1 text-[0.875rem] font-semibold;
-}
-.doc-preview p {
-  @apply my-2 text-muted;
-}
-.doc-preview ul {
-  @apply my-2 list-disc pl-5 text-muted;
-}
-.doc-preview ol {
-  @apply my-2 list-decimal pl-5 text-muted;
-}
-.doc-preview code {
-  @apply rounded bg-field px-1 py-0.5 font-mono text-[0.75rem];
-}
-.doc-preview pre {
-  @apply my-3 overflow-x-auto rounded-lg border bg-field p-3;
-}
-.doc-preview pre code {
-  @apply bg-transparent p-0;
-}
-.doc-preview blockquote {
-  @apply my-3 border-l-2 border-line-strong pl-3 text-subtle;
-}
-.doc-preview .mention {
-  @apply rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.8125rem] font-medium text-accent-text;
-}
-.doc-preview .mention.unknown {
-  @apply bg-warning/15 text-warning;
-}
-
-/* 任务对话里 Agent 的回复：正文用主文字色，段距更紧 */
 .chat-md {
-  @apply text-[0.875rem] text-fg;
+  --md-base: calc(var(--md-body-size) * 0.875rem);
+  --md-k: 1;
+  font-size: var(--md-base);
+  color: var(--md-body-color);
   line-height: var(--app-leading, 1.75);
 }
+/* 提问面板、助手简报这类窄面板：字号小一档、间距收到六成，不另写一套元素样式 */
+.chat-md-compact {
+  --md-base: calc(var(--md-body-size) * 0.8125rem);
+  --md-k: 0.6;
+  line-height: 1.6;
+}
 .chat-md > * {
-  @apply my-2.5 first:mt-0 last:mb-0;
+  margin-block: calc(0.72 * var(--md-base) * var(--md-k));
 }
 .chat-md p {
-  @apply my-2 first:mt-0 last:mb-0;
+  margin-block: calc(var(--md-body-gap) * var(--md-base) * var(--md-k));
+}
+.chat-md > :first-child,
+.chat-md p:first-child {
+  margin-top: 0;
+}
+.chat-md > :last-child,
+.chat-md p:last-child {
+  margin-bottom: 0;
+}
+.chat-md :is(h1, h2, h3, h4, h5, h6) {
+  border-bottom: 0 solid var(--line);
 }
 .chat-md h1 {
-  @apply mt-5 mb-2 text-[1.125rem] leading-snug font-semibold;
+  font: var(--md-h1-weight) calc(var(--md-h1-size) * var(--md-base)) / 1.375 var(--md-h1-font);
+  color: var(--md-h1-color);
+  margin: calc(var(--md-h1-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h1-mb) * var(--md-base) * var(--md-k));
+  border-bottom-width: var(--md-h1-rule);
+  padding-bottom: calc(var(--md-h1-rule) * 4);
 }
 .chat-md h2 {
-  @apply mt-5 mb-2 text-[1rem] leading-snug font-semibold;
+  font: var(--md-h2-weight) calc(var(--md-h2-size) * var(--md-base)) / 1.375 var(--md-h2-font);
+  color: var(--md-h2-color);
+  margin: calc(var(--md-h2-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h2-mb) * var(--md-base) * var(--md-k));
+  border-bottom-width: var(--md-h2-rule);
+  padding-bottom: calc(var(--md-h2-rule) * 4);
 }
 .chat-md h3 {
-  @apply mt-4 mb-1.5 text-[0.875rem] font-semibold;
+  font: var(--md-h3-weight) calc(var(--md-h3-size) * var(--md-base)) / 1.375 var(--md-h3-font);
+  color: var(--md-h3-color);
+  margin: calc(var(--md-h3-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h3-mb) * var(--md-base) * var(--md-k));
+  border-bottom-width: var(--md-h3-rule);
+  padding-bottom: calc(var(--md-h3-rule) * 4);
 }
-.chat-md h4,
-.chat-md h5,
+.chat-md h4 {
+  font: var(--md-h4-weight) calc(var(--md-h4-size) * var(--md-base)) / 1.375 var(--md-h4-font);
+  color: var(--md-h4-color);
+  margin: calc(var(--md-h4-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h4-mb) * var(--md-base) * var(--md-k));
+  border-bottom-width: var(--md-h4-rule);
+  padding-bottom: calc(var(--md-h4-rule) * 4);
+}
+.chat-md h5 {
+  font: var(--md-h5-weight) calc(var(--md-h5-size) * var(--md-base)) / 1.375 var(--md-h5-font);
+  color: var(--md-h5-color);
+  margin: calc(var(--md-h5-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h5-mb) * var(--md-base) * var(--md-k));
+  border-bottom-width: var(--md-h5-rule);
+  padding-bottom: calc(var(--md-h5-rule) * 4);
+}
 .chat-md h6 {
-  @apply mt-3 mb-1 text-[0.875rem] font-semibold text-muted;
+  font: var(--md-h6-weight) calc(var(--md-h6-size) * var(--md-base)) / 1.375 var(--md-h6-font);
+  color: var(--md-h6-color);
+  margin: calc(var(--md-h6-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h6-mb) * var(--md-base) * var(--md-k));
+  border-bottom-width: var(--md-h6-rule);
+  padding-bottom: calc(var(--md-h6-rule) * 4);
+}
+.chat-md > :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+.chat-md :is(strong, b) {
+  font-weight: var(--md-strong-weight);
+  color: var(--md-strong-color);
+}
+.chat-md em {
+  color: var(--md-em-color);
+}
+.chat-md del {
+  color: var(--md-del-color);
 }
 .chat-md ul {
-  @apply my-2 list-disc pl-5;
+  list-style-type: var(--md-ul-marker);
+  padding-left: calc(var(--md-ul-indent) * var(--md-base));
 }
 .chat-md ol {
-  @apply my-2 list-decimal pl-5;
+  @apply list-decimal;
+  padding-left: calc(var(--md-ol-indent) * var(--md-base));
+}
+.chat-md :is(ul, ol) {
+  margin-block: calc(0.57 * var(--md-base) * var(--md-k));
 }
 .chat-md li {
-  @apply my-1 pl-0.5 marker:text-subtle;
+  @apply pl-0.5;
 }
-.chat-md li > ul,
-.chat-md li > ol {
-  @apply my-1;
+.chat-md ul > li {
+  margin-block: calc(var(--md-ul-gap) * var(--md-base) * var(--md-k));
 }
-.chat-md strong {
-  @apply font-semibold;
+.chat-md ol > li {
+  margin-block: calc(var(--md-ol-gap) * var(--md-base) * var(--md-k));
+}
+.chat-md ul > li::marker {
+  color: var(--md-ul-markerColor);
+}
+.chat-md ol > li::marker {
+  color: var(--md-ol-markerColor);
+  font-weight: var(--md-ol-markerWeight);
+}
+.chat-md li > :is(ul, ol) {
+  margin-block: calc(var(--md-ul-gap) * var(--md-base) * var(--md-k));
+}
+/* 任务列表：勾选框用强调色，勾掉的项可以变淡 */
+.chat-md input[type='checkbox'] {
+  @apply mr-1.5 align-[-2px];
+  accent-color: var(--md-task-color);
+}
+.chat-md li:has(> input[type='checkbox']:checked) {
+  opacity: var(--md-task-doneFade);
+}
+/* 任务项前面已经有勾选框，不再画列表符号 */
+.chat-md li:has(> input[type='checkbox']) {
+  list-style: none;
 }
 .chat-md a {
-  @apply text-accent-text underline decoration-accent/40 underline-offset-2 hover:decoration-accent;
+  @apply underline-offset-2;
+  color: var(--md-link-color);
+  text-decoration-line: var(--md-link-underline-rest);
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+}
+.chat-md a:hover {
+  text-decoration-line: var(--md-link-underline-hover);
+  text-decoration-color: currentColor;
 }
 .chat-md hr {
-  @apply my-4 border-line;
+  border: 0;
+  border-top: var(--md-hr-width) var(--md-hr-style) var(--md-hr-color);
+  margin-block: calc(var(--md-hr-space) * var(--md-base) * var(--md-k));
 }
 .chat-md blockquote {
-  @apply border-l-[3px] border-line-strong pl-3.5 text-muted;
+  border-left: var(--md-quote-lineWidth) solid var(--md-quote-line);
+  color: var(--md-quote-color);
+  background: var(--md-quote-bg);
+  font-style: var(--md-quote-italic);
+  padding: 0.125em 0 0.125em 1em;
 }
 .chat-md img {
-  @apply max-w-full rounded-lg;
+  @apply h-auto;
+  max-width: var(--md-img-maxWidth);
+  border-radius: var(--md-img-radius);
+  border: var(--md-img-border) solid var(--line);
 }
 /* 行内代码：和 Claude Code 一样是带细边框的小标签 */
 .chat-md :not(pre) > code {
-  @apply rounded border px-[5px] py-px font-mono text-[0.75rem];
-  background: var(--code-chip);
-  color: var(--code-chip-fg);
+  @apply px-[5px] py-px font-mono;
+  font-size: calc(var(--md-code-size) * var(--md-base));
+  background: var(--md-code-bg);
+  color: var(--md-code-color);
+  border: var(--md-code-border) solid var(--line);
+  border-radius: var(--md-code-radius);
 }
 /* 能点开的文件路径：鼠标移上去带下划线，像链接一样 */
 .chat-md code.md-path {
@@ -690,31 +856,35 @@ body,
   @apply border-accent/50 text-accent-text underline decoration-accent/40 underline-offset-2;
 }
 /* 代码块：一张卡片，顶部语言名和复制按钮 */
-.chat-md .md-code {
-  @apply my-3 overflow-hidden rounded-xl border;
-  background: var(--code-bg);
+.chat-md .md-code,
+.chat-md > pre,
+.chat-md .md-mermaid {
+  @apply overflow-hidden;
+  margin-block: calc(0.86 * var(--md-base) * var(--md-k));
+  background: var(--md-pre-bg);
+  border: var(--md-pre-border) solid var(--line);
+  border-radius: var(--md-pre-radius);
 }
 .chat-md .md-code-bar {
-  @apply flex items-center justify-between border-b px-3.5 py-1.5 font-sans text-[0.6875rem] text-subtle;
+  @apply items-center justify-between border-b px-3.5 py-1.5 font-sans text-[0.6875rem] text-subtle;
+  display: var(--md-pre-bar);
 }
 .chat-md .md-copy {
   @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.6875rem] text-subtle hover:bg-sel hover:text-fg;
 }
 .chat-md pre {
-  @apply m-0 overflow-x-auto px-3.5 py-3 font-mono text-[0.75rem] leading-[1.65];
+  @apply m-0 overflow-x-auto px-3.5 py-3 font-mono;
+  font-size: calc(var(--md-pre-size) * var(--md-base));
+  line-height: var(--md-pre-leading);
+}
+.chat-md-compact pre {
+  @apply px-3 py-2;
 }
 .chat-md pre code {
-  @apply whitespace-pre [overflow-wrap:normal];
-}
-.chat-md > pre {
-  @apply my-3 rounded-xl border;
-  background: var(--code-bg);
+  @apply [overflow-wrap:normal];
+  white-space: var(--md-pre-wrap);
 }
 /* mermaid：图居中，源码收在下面 */
-.chat-md .md-mermaid {
-  @apply my-3 overflow-hidden rounded-xl border;
-  background: var(--code-bg);
-}
 /* 画不出来时里面就是一个普通代码块，外面这层不再加边框 */
 .chat-md .md-mermaid[data-done='error'] {
   @apply overflow-visible rounded-none border-0 bg-transparent;
@@ -737,85 +907,119 @@ body,
 .chat-md .md-mermaid details pre {
   @apply border-t;
 }
-/* 表格：细线、表头加粗，太宽时横向滚动 */
+/* 总结卡（shared/summary-card.ts）：类型标签 + 一句话结论，字段名一列对齐。
+   类型色只用在小标签和左边一条细线上，正文保持主文字色，不抢内容 */
+.chat-md .md-card {
+  --card-tone: var(--success);
+  @apply my-3 overflow-hidden rounded-xl border bg-card;
+  box-shadow: inset 3px 0 0 var(--card-tone);
+}
+.chat-md .md-card[data-kind='fix'] {
+  --card-tone: var(--danger);
+}
+.chat-md .md-card[data-kind='improve'] {
+  --card-tone: var(--run);
+}
+.chat-md .md-card[data-kind='analysis'] {
+  --card-tone: var(--peer);
+}
+.chat-md .md-card[data-kind='blocked'] {
+  --card-tone: var(--warning);
+}
+.chat-md .md-card-head {
+  @apply flex items-baseline gap-2 border-b py-2 pr-3.5 pl-4;
+}
+.chat-md .md-card-kind {
+  @apply shrink-0 rounded-md px-1.5 py-px text-[0.6875rem] leading-[1.25rem] font-semibold;
+  color: var(--card-tone);
+  background: color-mix(in oklab, var(--card-tone) 13%, transparent);
+}
+.chat-md .md-card-title {
+  @apply min-w-0 font-semibold;
+}
+.chat-md .md-card-title > p {
+  @apply m-0 inline;
+}
+.chat-md .md-card-rows {
+  @apply m-0 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 py-1.5 pr-3.5 pl-4;
+}
+.chat-md .md-card-row {
+  @apply col-span-2 grid grid-cols-subgrid py-1;
+}
+.chat-md .md-card-row > dt {
+  @apply text-[0.8125rem] text-muted;
+}
+.chat-md .md-card-row > dd {
+  @apply m-0 min-w-0;
+}
+.chat-md .md-card-row > dd > :first-child {
+  @apply mt-0;
+}
+.chat-md .md-card-row > dd > :last-child {
+  @apply mb-0;
+}
+.chat-md .md-card-row[data-empty] > dd {
+  @apply text-subtle;
+}
+/* 「要你处理」：用户要动手的事，单独一条警示色底 */
+.chat-md .md-card-row[data-key='needs'] {
+  @apply -mx-2 my-1 rounded-md px-2;
+  background: color-mix(in oklab, var(--warning) 12%, transparent);
+}
+.chat-md .md-card-row[data-key='needs'] > dt {
+  @apply font-semibold text-warning;
+}
+/* 手机宽度：字段名放到内容上面，不挤成两条窄列 */
+@media (max-width: 480px) {
+  .chat-md .md-card-rows {
+    @apply grid-cols-1;
+  }
+  .chat-md .md-card-row {
+    @apply col-span-1 grid-cols-1;
+  }
+}
+/* 表格：默认细横线、表头加粗，太宽时横向滚动 */
 .chat-md table {
-  @apply my-3 block w-max max-w-full overflow-x-auto border-collapse text-[0.8125rem];
+  @apply block w-max max-w-full overflow-x-auto border-collapse;
+  margin-block: calc(0.86 * var(--md-base) * var(--md-k));
+  font-size: calc(var(--md-table-size) * var(--md-base));
+}
+.chat-md :is(th, td) {
+  padding: calc(0.43 * var(--md-base) * var(--md-table-pad) * var(--md-k))
+    calc(0.86 * var(--md-base) * var(--md-table-pad));
+  border-style: solid;
+  border-color: var(--line);
+  border-width: 0 var(--md-table-border-col) var(--md-table-border-row);
 }
 .chat-md th {
-  @apply border-b border-line-strong px-3 py-1.5 text-left font-semibold;
+  @apply text-left;
+  font-weight: var(--md-table-headerWeight);
+  background: var(--md-table-headerBg);
+  border-bottom-color: var(--line-strong);
 }
 .chat-md td {
-  @apply border-b px-3 py-1.5 align-top;
+  @apply align-top;
 }
+/* 横线样式时最后一行不画底线（全边框时要画） */
 .chat-md tr:last-child td {
-  @apply border-b-0;
+  border-bottom-width: var(--md-table-border-col);
 }
-.chat-md input[type='checkbox'] {
-  @apply mr-1.5 align-[-2px] accent-accent;
+/* 全边框时表格外圈也要有线 */
+.chat-md table {
+  border-top: var(--md-table-border-col) solid var(--line);
+  border-left: var(--md-table-border-col) solid var(--line);
+}
+.chat-md tbody tr:nth-child(even) {
+  background: var(--md-table-zebra);
 }
 .chat-md .mention {
-  @apply rounded-md bg-accent-soft px-1 py-px text-[0.8125rem] font-medium text-accent-text;
+  @apply rounded-md px-1 py-px font-medium;
+  font-size: calc(0.93 * var(--md-base));
+  color: var(--md-mention-color);
+  background: var(--md-mention-bg);
 }
 .chat-md .mention.unknown {
   @apply bg-warning/15 text-warning;
-}
-
-/* 提问面板里的 Markdown：面板窄，字号和间距比对话正文收一档，免得把下面的选项挤走 */
-.chat-md-compact {
-  @apply text-[0.8125rem];
-  line-height: 1.6;
-}
-.chat-md-compact > * {
-  @apply my-1.5 first:mt-0 last:mb-0;
-}
-.chat-md-compact p {
-  @apply my-1.5 first:mt-0 last:mb-0;
-}
-/* 标题只比正文重一档，不按文档里的大字级撑高面板 */
-.chat-md-compact h1 {
-  @apply mt-2.5 mb-1 text-[1rem] leading-snug font-semibold;
-}
-.chat-md-compact h2 {
-  @apply mt-2.5 mb-1 text-[0.875rem] leading-snug font-semibold;
-}
-.chat-md-compact h3 {
-  @apply mt-2 mb-1 text-[0.875rem] leading-snug font-semibold;
-}
-.chat-md-compact h4,
-.chat-md-compact h5,
-.chat-md-compact h6 {
-  @apply mt-1.5 mb-0.5 text-[0.8125rem] font-semibold text-muted;
-}
-.chat-md-compact ul,
-.chat-md-compact ol {
-  @apply my-1.5 pl-4;
-}
-.chat-md-compact li {
-  @apply my-0.5;
-}
-.chat-md-compact li > ul,
-.chat-md-compact li > ol {
-  @apply my-0.5;
-}
-.chat-md-compact hr {
-  @apply my-2.5;
-}
-.chat-md-compact :not(pre) > code {
-  @apply text-[0.75rem];
-}
-.chat-md-compact .md-code,
-.chat-md-compact > pre {
-  @apply my-2;
-}
-.chat-md-compact pre {
-  @apply px-3 py-2 text-[0.75rem] leading-[1.6];
-}
-.chat-md-compact table {
-  @apply my-2 text-[0.75rem];
-}
-.chat-md-compact th,
-.chat-md-compact td {
-  @apply px-2 py-1;
 }
 
 /* 代码高亮配色（两套主题各一份，颜色在 :root / .dark 的变量里） */

@@ -226,6 +226,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 功能面板能收起，从标题栏的按钮再打开
   await report.getByRole('button', { name: '收起功能面板' }).click()
   if (await p.locator('[data-analysis-panel]').count()) errors.push('AI 分析：功能面板收起后还在')
+  // 收起后右栏换回项目文件：窗口里的文件栏默认比对话页窄（最宽 320），分析对话占主体（用户 2026-10-30 要求）
+  {
+    const filesW = await p.evaluate(() => {
+      const rail = [...document.querySelectorAll('[role="dialog"] [data-task-panel]')].find(
+        (el) => el.getBoundingClientRect().width > 0,
+      )
+      return rail ? Math.round(rail.getBoundingClientRect().width) : 0
+    })
+    if (!filesW || filesW > 320) errors.push(`AI 分析：窗口里的项目文件栏宽 ${filesW}px，默认应不超过 320px`)
+  }
   await check(p, 'AI分析-收起功能面板')
   await p.getByRole('dialog').getByRole('button', { name: '分析报告' }).first().click()
   await report.getByText('工作流优化', { exact: true }).waitFor({ timeout: 5000 })
@@ -781,6 +791,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByLabel('编辑').first().click()
   await p.getByRole('button', { name: '测试连接' }).click()
   await check(p, 'MCP编辑', ['连接成功', 'read_file'])
+  await p.keyboard.press('Escape')
+  // 粘贴文档里的 JSON 点「分析」：名字、命令、参数、环境变量都要填进表单
+  await p.getByRole('button', { name: '添加' }).click()
+  await p
+    .getByPlaceholder(/mcpServers/)
+    .fill('{ "mcpServers": { "pasted": { "command": "uvx", "args": ["mcp-server-time"], "env": { "TZ": "UTC" } } } }')
+  await p.getByRole('button', { name: '分析', exact: true }).click()
+  if (!(await p.locator('input[value="pasted"]').count())) errors.push('MCP-JSON填入：分析后名字没填进去')
+  if (!(await p.locator('input[value="mcp-server-time"]').count())) errors.push('MCP-JSON填入：分析后参数没填进去')
+  await check(p, 'MCP-JSON填入', ['已填入下面的表单'])
   await p.keyboard.press('Escape')
   // 工作流「重新运行」放在最后：它会在演示项目里新建一个对话，放前面会挡住上面按标题找的那条工作流任务。
   // 「Web 功能开发」在演示项目「商城前台」里跑过：运行进度列出节点，重新运行建一个新对话并打开，

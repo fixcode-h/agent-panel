@@ -16,6 +16,8 @@ import { Card } from '@/components/ui/card'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { CliTag, PageFrame } from '@/components/library/parts'
 import { AssistDialog } from '@/components/assist/AssistDialog'
+import { McpJsonFill } from '@/components/library/McpJsonFill'
+import type { McpDraft } from '@shared/mcp-json'
 
 /** 「键=值」一行一个 */
 const toLines = (r: Record<string, string>, sep: string) =>
@@ -197,6 +199,17 @@ function EditDialog({
     url: url.trim(),
     headers: fromLines(headers, ':'),
   })
+  // 粘贴 JSON 分析出来的配置：编辑已有工具时名字不能改，只换其余各项
+  const fillFrom = (d: McpDraft) => {
+    if (!entry && d.name) setName(d.name)
+    setTransport(d.transport)
+    setCommand(d.command)
+    setArgs(joinArgs(d.args))
+    setEnv(toLines(d.env, '='))
+    setUrl(d.url)
+    setHeaders(toLines(d.headers, ': '))
+    setTest(null)
+  }
   const valid =
     /^[A-Za-z0-9][\w-]*$/.test(name) && (transport === 'stdio' ? !!command.trim() : /^https?:\/\//.test(url.trim()))
   const taken = !entry && data.servers.some((s) => s.name === name)
@@ -242,6 +255,7 @@ function EditDialog({
         </>
       }
     >
+      <McpJsonFill onFill={fillFrom} />
       <label className="flex flex-col gap-1.5">
         <span className="text-[0.8125rem] font-medium">{t('名字')}</span>
         <Input

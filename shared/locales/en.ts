@@ -11,6 +11,7 @@ import { EN_PROJECT_SKILLS } from './en/project-skills.ts'
 import { EN_SCHEDULE } from './en/schedule.ts'
 import { EN_SERVER } from './en/server.ts'
 import { EN_SETTINGS } from './en/settings.ts'
+import { EN_MARKDOWN_STYLE } from './en/markdown-style.ts'
 import { EN_SHARED } from './en/shared.ts'
 import { EN_SUMMARY } from './en/summary.ts'
 import { EN_TASKS } from './en/tasks.ts'
@@ -27,6 +28,7 @@ export const EN: Record<string, string> = {
   ...EN_AGENTS,
   ...EN_FLOW,
   ...EN_SETTINGS,
+  ...EN_MARKDOWN_STYLE,
   ...EN_TASKS,
   ...EN_DESIGN,
   ...EN_EXTEND,

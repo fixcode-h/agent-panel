@@ -101,12 +101,15 @@ export function TaskMeta({
   const byId = new Map(agents.map((a) => [a.id, a]))
   const scope = node ? [node, ...task.steps.filter((s) => s.id.startsWith(node.id + '/'))] : undefined
   const lines = contextLines(task, scope, node, byId)
-  // 没有上下文的 Agent（例如对话还没开始）就不显示这一块
+  // 会话栏收起时它的「上下文」细分挪到这里；流程图选了节点时由下面按节点列的圆环来显示
+  const sessionChip = !inRail && !scope
+  // 没有上下文的 Agent（例如对话还没开始）就不显示这一块。
+  // 输入框收起（提问卡片、子对话提问占了位置）时 hideContext 为假，圆环会回落到这一条；
+  // 这时上下文小块已经在了，再放一个就是两个圆环
   return (
     <div className="mx-auto mt-2 flex max-w-(--content-w) flex-wrap items-center gap-x-1 gap-y-1 px-1">
-      {!hideContext && lines.length > 0 && <ContextChip lines={lines} />}
-      {/* 会话栏收起时它的「上下文」细分挪到这里；流程图选了节点时上面已经按节点列，不重复 */}
-      {!inRail && !scope && <SessionContextChip task={task} onTask={onTask} />}
+      {!hideContext && !sessionChip && lines.length > 0 && <ContextChip lines={lines} />}
+      {sessionChip && <SessionContextChip task={task} onTask={onTask} />}
       {!inRail && <TokenChip task={task} scope={scope} />}
       {!inRail && (
         <EnvChip

@@ -22,7 +22,8 @@ import {
 import { copyText } from '@/lib/copy-text'
 import type { PeerKind, TaskMessage } from '@shared/schema'
 import type { SendTarget } from '@/lib/tasks'
-import { LEAD_TAG, peerKindText, peerName, peerOfMessage, subjectLine } from '@shared/peer-message'
+import { LEAD_TAG, parseReport, peerKindText, peerName, peerOfMessage, subjectLine } from '@shared/peer-message'
+import type { PeerReport } from '@shared/peer-message'
 import { convStateText } from '@shared/task'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
@@ -84,6 +85,87 @@ export interface PeerLineProps {
   ms?: number
   /** 旧记录里同一段话逐个交给了几个子对话：只画一行，展开列出每个收件人和回执 */
   targets?: SendTarget[]
+  /** 正文拆得出字段（子对话状态上报、计划步骤等的结果）：按字段排开，不画整段原文 */
+  report?: PeerReport
+  /** 上报时子对话的状态（ConvState）：状态小标签的颜色 */
+  convState?: string
+}
+
+/** 状态小标签的颜色：完成绿、失败红、中断和没做完琥珀、待收尾强调色 */
+function stateTone(s?: string) {
+  if (s === 'done') return 'bg-success/12 text-success'
+  if (s === 'failed') return 'bg-danger/12 text-danger'
+  if (s === 'stopped' || s === 'unfinished') return 'bg-warning/12 text-warning'
+  if (s === 'wrapup') return 'bg-accent/12 text-accent-text'
+  return 'bg-sel text-subtle'
+}
+
+/**
+ * 汇报按字段排开：左边字段名、右边内容，最近的结果单独一段放在下面。
+ * 原文是写给父对话 AI 的一整段，人看要一行行找；拆开后状态、哪个子对话、对应哪一步、下一步做什么一眼看到
+ */
+function ReportFields({ r, convState, big }: { r: PeerReport; convState?: string; big?: boolean }) {
+  const rows: [string, React.ReactNode][] = []
+  if (r.child || r.reason)
+    rows.push([
+      t('状态'),
+      <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        {r.state && (
+          <span className={cn('rounded px-1.5 py-px text-[0.75rem] leading-4 font-medium', stateTone(convState))}>
+            {r.state}
+          </span>
+        )}
+        <span>{r.reason}</span>
+      </span>,
+    ])
+  if (r.child) rows.push([t('子对话'), <span className="font-medium">{r.child}</span>])
+  if (r.steps.length)
+    rows.push([
+      t('计划步骤'),
+      <ul className="flex flex-col gap-1">
+        {r.steps.map((s) => (
+          <li key={s} className="flex items-baseline gap-2">
+            <span>{s}</span>
+            {r.stepsDone && (
+              <span className="shrink-0 text-[0.75rem] text-success">
+                <Check className="mr-0.5 inline h-3 w-3 align-[-1px]" aria-hidden />
+                {t('已标完成')}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>,
+    ])
+  if (r.next.length)
+    rows.push([
+      t('下一步'),
+      <div className="flex flex-col gap-1">
+        {r.next.map((n) => (
+          <p key={n}>{n}</p>
+        ))}
+      </div>,
+    ])
+  const tail = r.result || r.rest
+  return (
+    <div className={cn('flex flex-col gap-3', big ? 'text-[0.875rem]' : 'text-[0.8125rem]')}>
+      {rows.length > 0 && (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-2.5 leading-relaxed">
+          {rows.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="pt-px text-[0.75rem] whitespace-nowrap text-subtle">{k}</dt>
+              <dd className="min-w-0 break-words">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {tail && (
+        <section className={cn(rows.length > 0 && 'border-t pt-3')}>
+          {r.result && <h3 className="mb-1.5 text-[0.75rem] font-normal text-subtle">{t('最近的结果')}</h3>}
+          <Markdown text={tail} teamNames={new Set()} />
+        </section>
+      )}
+    </div>
+  )
 }
 
 /** 行右侧写的来源：几个子对话的角色名相同时（都是「执行」），带上各自的对话标题才分得清是哪一条 */
@@ -172,7 +254,11 @@ export function PeerLine(p: PeerLineProps) {
           </div>
           {many && <TargetList targets={many} openChild={openChild ?? undefined} />}
           <div className="max-h-[min(50vh,420px)] overflow-y-auto px-3 py-2 text-[0.8125rem]">
-            <Markdown text={p.body || subject} teamNames={new Set()} />
+            {p.report ? (
+              <ReportFields r={p.report} convState={p.convState} />
+            ) : (
+              <Markdown text={p.body || subject} teamNames={new Set()} />
+            )}
           </div>
           {p.receipt && !many && (
             <div className="border-t px-3 py-1.5 font-sans text-[0.75rem] text-subtle">{p.receipt}</div>
@@ -223,6 +309,8 @@ function PeerDialog({
   name,
   receipt,
   targets,
+  report,
+  convState,
   openChild,
   onClose,
 }: PeerLineProps & { who: string; openChild?: () => void; onClose: () => void }) {
@@ -280,7 +368,11 @@ function PeerDialog({
         {targets && targets.length > 1 && (
           <p className="mb-3 text-[0.75rem] text-subtle">{targets.map((x) => x.name).join('、')}</p>
         )}
-        <Markdown text={text} teamNames={new Set()} />
+        {report ? (
+          <ReportFields r={report} convState={convState} big />
+        ) : (
+          <Markdown text={text} teamNames={new Set()} />
+        )}
       </div>
       {receipt && !(targets && targets.length > 1) && (
         <footer className="shrink-0 border-t px-5 py-2 text-[0.75rem] text-subtle">{receipt}</footer>
@@ -312,6 +404,8 @@ export function ReceivedRow({ m }: { m: TaskMessage }) {
             : ''
       }
       childId={peer.rel === 'child' ? peer.id : undefined}
+      report={parseReport(m.text) ?? undefined}
+      convState={m.child?.state}
     />
   )
 }

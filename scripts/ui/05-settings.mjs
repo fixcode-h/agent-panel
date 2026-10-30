@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：设置：常规、全局教训、字体、风格库、数据和内存曲线、用量统计；英文界面
+ * 界面检查分片：设置：常规、全局教训、字体、Markdown 样式、风格库、数据和内存曲线、用量统计；英文界面
  *
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
@@ -103,6 +103,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('radio', { name: 'Claude（默认）' }).click()
   if ((await p.evaluate(() => document.documentElement.dataset.palette)) !== undefined)
     errors.push('设置-外观：换回默认配色后 html 上不应该再有 data-palette')
+  // Markdown 样式：顶部预览是真的 Markdown 组件；改一项立刻写进 #md-style，恢复默认后清空
+  await p.getByRole('button', { name: 'Markdown 样式', exact: true }).click()
+  await check(p, '设置-Markdown样式', ['一级标题', '表格斑马纹', '代码块自动换行', '标题字号'])
+  await p.getByRole('switch', { name: '表格斑马纹' }).click()
+  if (!(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes('--md-table-zebra'))
+    errors.push('设置-Markdown样式：打开斑马纹后 #md-style 里应该有 --md-table-zebra')
+  await check(p, '设置-Markdown样式-斑马纹')
+  await p.getByRole('button', { name: '全部恢复默认' }).click()
+  await p.getByRole('dialog').getByRole('button', { name: '恢复默认', exact: true }).click()
+  if (await p.evaluate(() => document.getElementById('md-style')?.textContent))
+    errors.push('设置-Markdown样式：全部恢复默认后 #md-style 应该是空的')
   // 组件页：通用部件都画出来；页签可以关掉、关掉后回到第一个
   await p.getByRole('button', { name: '组件', exact: true }).click()
   await check(p, '设置-组件', ['StatusPill', 'TabBar · TabItem', 'RowShell', 'InlineChip', 'ReplyHeader'])

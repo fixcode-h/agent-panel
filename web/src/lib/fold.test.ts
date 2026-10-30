@@ -17,6 +17,7 @@ import {
   replyText,
   segOpenOf,
   splitFolds,
+  summaryStart,
   toggleSegOpen,
 } from './fold.ts'
 
@@ -216,4 +217,23 @@ test('liveHelpers：一次派了几个子任务，只有还在跑的那几个留
   )
   // 折叠行照旧统计这段派出了几个（运行中的工具也是这样：既在折叠行计数，又留在外面转圈）
   assert.deepEqual(foldStats(msgs).parts, [t('派出 {n} 个子任务', { n: 2 })])
+})
+
+test('summaryStart：总结后面只跟着收尾动作和一句补充时，整段总结都留在折叠外面', () => {
+  const suggest = tool('other', 'panel · suggest_next_step', { name: 'mcp__panel-1__suggest_next_step' })
+  const msgs = [
+    agent('w1', '', { tools: [tool('edit', 'web/src/a.ts')] }),
+    agent('w2', '## 总结\n改好了 a.ts，测试通过', { tools: [tool('run', 'npm test')] }),
+    agent('w3', '已提交建议，等你选', { tools: [suggest] }),
+  ]
+  const stats = foldStats(msgs)
+  assert.equal(stats.last, 2)
+  // 真正的总结（w2）不被当成「中间的说明」收进折叠
+  assert.equal(stats.first, 1)
+  assert.ok(!stats.parts.some((p) => p.includes('说明')))
+
+  // 隔着干活的工具（读、改、跑命令）就不算：前面那段是过程里的说明
+  const work = [agent('n1', '我先看看代码'), agent('n2', '改好了', { tools: [tool('read', 'a.ts')] })]
+  assert.equal(summaryStart(work, 1), 1)
+  assert.deepEqual(foldStats(work).parts, [t('查看 {n} 个文件', { n: 1 }), t('{n} 段说明', { n: 1 })])
 })

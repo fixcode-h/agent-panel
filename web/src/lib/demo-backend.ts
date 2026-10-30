@@ -4113,7 +4113,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
         role: 'system' as const,
         agentId: '',
         step: '',
-        text: `【子对话状态】「${title}」（id ${it.id}）已完成：合回原分支、标记完成`,
+        // 和真实后端拼法一致（waitNote + reportChild）：前面是计划步骤那句，后面带最近的结果，弹窗按字段拆开
+        text: `（计划步骤「${title}」等的结果到了，已标为完成：先看一眼结果，有问题再在计划里新加一步处理，然后接着按计划做。）\n【子对话状态】「${title}」（id ${it.id}）已完成：合回原分支、标记完成\n最近的结果：${title}已经做完，改动合回原分支，单元测试全部通过。`,
         tools: [],
         panel: 'child' as const,
         child: { id: it.id, title, state: 'done' },

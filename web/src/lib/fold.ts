@@ -5,6 +5,7 @@
 import type { StepStatus, TaskMessage, ToolUse } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { stripToolMarkup } from '@shared/task'
+import { PANEL_TOOL_RE, panelToolName } from '@shared/panel-tools'
 import { toolView, type ToolView } from './tasks'
 
 /** 正文里显示的文字：模型当成文字说出来的工具调用写法去掉，那些在工具的折叠块里已经有了 */
@@ -93,18 +94,58 @@ function processBrief(process: TaskMessage[], helpers: number, notes: number) {
  */
 export function foldStats(msgs: TaskMessage[]) {
   const last = lastIndex(msgs, (m) => m.role === 'agent' && !!replyText(m).trim())
-  if (last < 0) return { last, parts: [] as string[], failed: 0 }
+  if (last < 0) return { last, first: last, parts: [] as string[], failed: 0 }
+  const first = summaryStart(msgs, last)
   const before = msgs.slice(0, last)
   const process = msgs.slice(0, last + 1).filter((m) => m.role === 'agent')
   const folded = before.filter((m) => !keptOut(m) && m.role !== 'agent' && m.panel !== 'child' && m.panel !== 'wrapup')
   const helpers = folded.reduce((n, m) => n + (m.spawned?.length ?? 0), 0)
-  // 中间说过的几段说明（最后一条是回复本身，不算）
-  const notes = process.slice(0, -1).filter((m) => replyText(m).trim()).length
+  // 中间说过的几段说明（总结那几段不算，它们在折叠外面）
+  const notes = msgs.slice(0, first).filter((m) => m.role === 'agent' && replyText(m).trim()).length
   const { parts, failed } = processBrief(process, helpers, notes)
   // 面板推回的结果（后台命令、合并编译、子任务交回）也收在里面，按条数写
   const results = folded.filter((m) => m.panel).length
   if (results) parts.push(t('{n} 条面板结果', { n: results }))
-  return { last, parts, failed }
+  return { last, first, parts, failed }
+}
+
+/**
+ * 总结之后常跟着的收尾动作：交建议、请求合回、结束计划这类面板工具。
+ * 它们不干活，只是把总结交出去，后面 CLI 往往再补一句「已提交建议」
+ */
+const WRAP_TOOLS = new Set([
+  'suggest_next_step',
+  'submit_merge',
+  'submit_build',
+  'finish_child',
+  'finish_plan',
+  'set_plan',
+  'message_parent',
+  'record_lesson',
+  'release_files',
+  'end_inline_edit',
+])
+
+const wrapTool = (x: ToolUse) =>
+  WRAP_TOOLS.has(panelToolName(x.name ?? '') || PANEL_TOOL_RE.exec(`${x.name ?? ''} ${x.label}`)?.[1] || '')
+
+/**
+ * 总结从第几条开始：最后一条回复前面，中间只隔着收尾动作的那几段话也是总结。
+ * 不然 AI 写完总结、调一下 suggest_next_step / submit_merge、再补一句「已提交」，
+ * 真正的总结就被当成「中间的说明」收进折叠，外面只剩那一句（用户要求总结一律不折叠，父对话、子对话都一样）
+ */
+export function summaryStart(msgs: TaskMessage[], last: number) {
+  let first = last
+  // 一条消息里工具在前、文字在后（文字接在工具后面，工具不会接在文字后面，见 server/exec/runner.ts）：
+  // 判断能不能再往前一条，看的是这条消息自己的工具是不是都是收尾动作
+  let wrapOnly = msgs[last].tools.every(wrapTool)
+  for (let i = last - 1; i >= 0 && wrapOnly; i--) {
+    const m = msgs[i]
+    if (m.role !== 'agent') break
+    if (replyText(m).trim()) first = i
+    wrapOnly = m.tools.every(wrapTool)
+  }
+  return first
 }
 
 /**

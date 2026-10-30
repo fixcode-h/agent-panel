@@ -5,6 +5,7 @@ import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { TaskIcon } from './task.ts'
 import {
   resumeNote,
+  announcedOnly,
   convActive,
   convState,
   taskActive,
@@ -766,4 +767,19 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起的�
   assert.match(note, /「e2e」（npm run test:e2e）[\s\S]*不要等[\s\S]*run_background/)
   // 没有可列的：只有一句续接说明
   assert.equal(resumeNote({ stopReason: 'user', steps: [], runs: [] }).split('\n').length, 1)
+})
+
+test('说完打算就收尾：最后一句是要动手的话、之后没调工具才算，问用户、给结论的不算', () => {
+  const m = (role: string, text: string, tools: unknown[] = []) => ({ role, text, tools, step: '' })
+  const of = (...messages: unknown[]) => announcedOnly({ messages } as never)
+  // 用户报的那一轮：查到一半说「我再确认…」就停了
+  assert.equal(
+    of(m('user', '能优化么'), m('agent', '', [{}]), m('agent', '情况基本清楚了。我再确认这些连接的状态和目标 IP。')),
+    '我再确认这些连接的状态和目标 IP。',
+  )
+  assert.match(of(m('user', 'x'), m('agent', '配置拿到了。\n现在我要定位是哪个程序在发起连接。')), /^现在我要定位/)
+  assert.equal(of(m('user', 'x'), m('agent', '你更想先解决哪个：日志刷屏，还是关掉探测？')), '', '在问用户')
+  assert.equal(of(m('user', 'x'), m('agent', '改好了，测试都通过。')), '', '给了结论')
+  assert.equal(of(m('user', 'x'), m('agent', '我再看看。', [{}])), '', '说完接着调了工具')
+  assert.equal(of(m('agent', '我再看看。'), m('user', '继续')), '', '最后是用户消息')
 })
