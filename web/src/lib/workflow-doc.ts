@@ -213,7 +213,7 @@ function mention(html: string, teamNames: Set<string>) {
     (_, lead: string, text: string) =>
       lead +
       text.replace(
-        /@([^\s@#，。、,.;；:：()（）\[\]【】<>&]+)/g,
+        /@([^\s@#，。、,.;；:：()（）[\]【】<>&]+)/g,
         (_m, name: string) => `<span class="mention${teamNames.has(name) ? '' : ' unknown'}">@${name}</span>`,
       ),
   )

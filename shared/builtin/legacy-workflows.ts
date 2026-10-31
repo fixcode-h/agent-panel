@@ -497,7 +497,7 @@ const EXTRA_WORKFLOWS: BuiltinWorkflow[] = [
             maxRounds: 3,
             retries: 1,
             instructions:
-              '按上一节点给出的批次升级（先确认用户的 \`mode\` 是不是允许改依赖）。每批升级后装依赖、跑项目测试步骤，通过才进下一批；失败就按 systematic-debugging 找根因，修不好就回退这一批并说明。',
+              '按上一节点给出的批次升级（先确认用户的 `mode` 是不是允许改依赖）。每批升级后装依赖、跑项目测试步骤，通过才进下一批；失败就按 systematic-debugging 找根因，修不好就回退这一批并说明。',
           },
           {
             id: 'commit',

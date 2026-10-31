@@ -17,7 +17,7 @@ import { t } from '@shared/i18n'
 import { OVERVIEW_GROUPS, overviewRows, type OverviewGroup, type OverviewRow } from '@shared/overview'
 import { taskWaitText, timeAgo } from '@shared/task'
 import { api } from '@/lib/api'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { fmtTokens } from '@/lib/tasks'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
@@ -64,7 +64,8 @@ const REST_MAX = 30
  * 顶部四张统计卡片兼做筛选；每组一张卡片，勾选后底部浮出批量停止 / 归档。点一行打开那个对话
  */
 export function OverviewPage() {
-  const { tasks, projects, upsertTask } = useData()
+  const { projects, upsertTask } = useData()
+  const { tasks } = useTasks()
   const { go } = useNav()
   const [tab, setTab] = useState<Tab>('all')
   const [query, setQuery] = useState('')

@@ -10,7 +10,8 @@ async function rpc(token: string, msg: unknown) {
     body: JSON.stringify(msg),
     headers: { 'content-type': 'application/json' },
   })
-  return res.json()
+  // 服务端只带 Node 类型，Response.json() 是 unknown（DOM 里是 any）；测试按接口约定直接读字段，放宽成 any
+  return res.json() as Promise<any>
 }
 const tokenOf = (url: string) => new URL(url).pathname.split('/').pop()!
 

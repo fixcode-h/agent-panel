@@ -439,3 +439,19 @@ test('环境性重试的计数和留痕要在每个 runAgent 调用点上都带�
     assert.match(call, /envStallNotes/, `这处调用没传 envStallNotes：${call.replace(/\s+/g, ' ').slice(0, 160)}`)
   }
 })
+
+test('上下文超长：截断后的整段（含「谁说的」前缀和省略标记）不超过预算；「等 N 项」按去重后的数算', () => {
+  const task = asTask([{ ...chatMsg('m1', 'agent', '结论：' + '丁'.repeat(5000)), tools: [] }])
+  for (const budget of [300, 600, 1500]) {
+    const out = clippedTranscript(task, 1, budget)
+    assert.match(out, /中间省略/)
+    assert.ok(estTokens(out) <= budget, `预算 ${budget}，实际 ${estTokens(out)}`)
+  }
+  // 同一个文件读 20 次只算一项：去重后 9 项，列 8 项 + 等 1 项
+  const tools: ToolUse[] = [
+    ...Array.from({ length: 20 }, () => ({ kind: 'read' as const, label: 'a.ts', detail: '' })),
+    ...Array.from({ length: 8 }, (_, i) => ({ kind: 'read' as const, label: `f${i}.ts`, detail: '' })),
+  ]
+  const many = clippedTranscript(asTask([{ ...chatMsg('m2', 'agent', '好'), tools }]), 1, 10_000)
+  assert.match(many, /等 1 项/)
+})

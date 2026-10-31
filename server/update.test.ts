@@ -154,8 +154,9 @@ test('更新卡住时不再一直挡住：没有进展超过 10 分钟的会作�
     const first = await post()
     assert.equal(first.status, 201, '下载失败不影响「已经开始」这件事')
     await new Promise((r) => setTimeout(r, 300))
-    const failed = await routes.request(`/install/${(await first.json()).id}`)
-    const failedBody = await failed.json()
+    // 服务端只带 Node 类型，Response.json() 是 unknown（DOM 里是 any）；测试按接口约定直接读字段，放宽成 any
+    const failed = await routes.request(`/install/${((await first.json()) as any).id}`)
+    const failedBody: any = await failed.json()
     assert.equal(failedBody.status, 'failed', '下载失败要标成失败，不能永远停在 running')
 
     // 失败之后可以直接再来一次：不会因为上一次而一直被 409 挡住
@@ -166,7 +167,7 @@ test('更新卡住时不再一直挡住：没有进展超过 10 分钟的会作�
     // 正在跑的那次可以从 /install-current 读回来（页面刷新后靠它接回进度）
     const cur = await routes.request('/install-current')
     assert.equal(cur.status, 200)
-    const body = await cur.json()
+    const body: any = await cur.json()
     assert.ok(body === null || body.job, '要么没有正在跑的更新，要么给出它的进度')
   } finally {
     await close()
@@ -241,20 +242,20 @@ test('检查更新被限流时：没有缓存就报错，有缓存就回退并�
     // 1. 没有缓存：只能如实报错，不能假装有结果
     clearReleasesCache()
     const api = makeUpdateApi().api
-    const none = await (await api.request('/releases?refresh=1')).json()
+    const none: any = await (await api.request('/releases?refresh=1')).json()
     assert.equal(none.releases.length, 0)
     assert.ok(none.error, '没有缓存时只能告诉用户失败了')
     assert.equal(none.limitedUntil, undefined, '没有能显示的结果时不要标成「显示的是缓存」')
     assert.equal(gh.hits.length, 1)
 
     // 1b. 没有缓存也要进入冷却：再点一次不能再请求 GitHub
-    const blocked = await (await api.request('/releases?refresh=1')).json()
+    const blocked: any = await (await api.request('/releases?refresh=1')).json()
     assert.ok(blocked.error, '没缓存时仍然只能是失败')
     assert.equal(gh.hits.length, 1, '没有缓存可回退时同样要冷却，不能每次都去撞限流')
 
     // 2. 有缓存：回退到上次的列表，并标出恢复时间
     writeReleasesCache({ at: Date.now() - 7 * 3600_000, list: [cachedRelease()], etag: '"old"' })
-    const cached = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    const cached: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
     assert.equal(cached.error, undefined, '有缓存时不算检查失败')
     assert.equal(cached.releases[0].tag, 'v9.9.9')
     assert.equal(cached.update?.tag, 'v9.9.9', '缓存里的新版本照常提示')
@@ -262,7 +263,7 @@ test('检查更新被限流时：没有缓存就报错，有缓存就回退并�
     assert.equal(gh.hits.length, 2)
 
     // 3. 冷却期内再点「检查更新」：直接用缓存，不再撞限流
-    const cooled = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    const cooled: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
     assert.equal(cooled.releases[0].tag, 'v9.9.9')
     assert.ok(cooled.limitedUntil)
     assert.equal(gh.hits.length, 2, '冷却期内不能再去撞限流')
@@ -271,7 +272,7 @@ test('检查更新被限流时：没有缓存就报错，有缓存就回退并�
     retryAfter = '120'
     writeReleasesCache({ at: Date.now() - 7 * 3600_000, list: [cachedRelease()] })
     const before = Date.now()
-    const retried = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    const retried: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
     const until = Date.parse(retried.limitedUntil)
     assert.ok(until >= before + 110_000 && until <= before + 130_000, '大约 2 分钟后恢复')
   } finally {
@@ -285,7 +286,7 @@ test('列表没变化时带 If-None-Match 拿到 304，复用缓存并更新检�
   writeReleasesCache({ at: oldAt, list: [cachedRelease()], etag: '"v1"' })
   const gh = await stubGithub((req) => (req.headers['if-none-match'] === '"v1"' ? { status: 304 } : { status: 500 }))
   try {
-    const body = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    const body: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
     assert.equal(gh.hits[0].headers['if-none-match'], '"v1"', '没变化时靠 ETag 换 304，不消耗配额')
     assert.equal(body.error, undefined)
     assert.equal(body.releases[0].tag, 'v9.9.9', '304 时沿用缓存的列表')
@@ -343,7 +344,7 @@ test('版本列表按版本号从新到旧排：后出包的旧版本不会排�
       stopAll: async () => {},
       interrupted: () => [],
     })
-    const body = await (await routes.request('/releases?refresh=1')).json()
+    const body: any = await (await routes.request('/releases?refresh=1')).json()
     assert.deepEqual(
       body.releases.map((r: { version: string }) => r.version),
       ['0.28.999', '0.28.997', '0.28.995'],

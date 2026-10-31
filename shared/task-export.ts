@@ -2099,8 +2099,11 @@ export function lineDiff(a: string, b: string): { kind: 'same' | 'add' | 'del'; 
   let i = 0
   let j = 0
   while (i < n && j < m) {
-    if (x[i] === y[j]) (out.push({ kind: 'same', text: x[i] }), i++, j++)
-    else if (dp[i + 1][j] >= dp[i][j + 1]) out.push({ kind: 'del', text: x[i++] })
+    if (x[i] === y[j]) {
+      out.push({ kind: 'same', text: x[i] })
+      i++
+      j++
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) out.push({ kind: 'del', text: x[i++] })
     else out.push({ kind: 'add', text: y[j++] })
   }
   while (i < n) out.push({ kind: 'del', text: x[i++] })

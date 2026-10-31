@@ -31,7 +31,7 @@ import type { DesignKind, SavedStyle } from '@shared/design'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { useData } from '@/lib/data'
+import { useData, useTasks } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { ComposerPopover } from '@/components/ui/composer-popover'
@@ -1033,7 +1033,8 @@ function SessionPicker({
   onBack: () => void
   onPick: (a: Attachment) => void
 }) {
-  const { tasks, designs, projects } = useData()
+  const { designs, projects } = useData()
+  const { tasks } = useTasks()
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState('')
   const kw = q.trim().toLowerCase()

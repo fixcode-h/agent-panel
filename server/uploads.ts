@@ -49,6 +49,7 @@ const UploadInput = z.object({
 })
 
 /** 文件名里去掉路径和系统不允许的字符 */
+// oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
 const safeName = (n: string) => path.basename(n).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_') || 'file'
 
 /** dirs：找大文件原路径时额外翻的目录（各个项目的目录） */

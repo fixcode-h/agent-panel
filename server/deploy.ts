@@ -29,7 +29,7 @@ import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
 import { dataPath, readJson, writeJsonAtomic } from './store.ts'
 import { getSettings } from './settings.ts'
-import { writeTextFile } from '../shared/file-format.ts'
+import { writeTextFile } from './file-format.ts'
 import { cliSettings } from '../shared/settings.ts'
 
 const FILE = dataPath('config/deploy.json')

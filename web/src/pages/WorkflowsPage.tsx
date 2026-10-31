@@ -19,7 +19,7 @@ import { CategoryHeader } from '@/components/agents/CategoryHeader'
 import { TagFilter, TagList } from '@/components/tags/Tags'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { WorkflowDetail } from '@/components/workflows/WorkflowDetail'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { BuiltinDialog } from '@/components/workflows/BuiltinDialog'
 
 /** 「默认」分类的分组 id，和用户分类的 id 不会冲突 */

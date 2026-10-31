@@ -275,7 +275,8 @@ test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失
   const path = new URL(s.url).pathname.replace('/api/mcp', '')
   const post = (body: unknown) =>
     app.request(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
-  const list = await (await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).json()
+  // 服务端只带 Node 类型，Response.json() 是 unknown（DOM 里是 any）；测试按接口约定直接读字段，放宽成 any
+  const list: any = await (await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).json()
   const names = list.result.tools.map((x: { name: string }) => x.name)
   // 节点里的调用没有起停运行、分派子对话的工具
   assert.deepEqual(names, [
@@ -288,7 +289,7 @@ test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失
     'send_message',
     'read_messages',
   ])
-  const st = await (
+  const st: any = await (
     await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_status', arguments: {} } })
   ).json()
   assert.match(st.result.content[0].text, /- a｜实现（开发）【你】：完成/)
@@ -309,7 +310,7 @@ test('编排工具：通用 Agent 列在 spawn_agents 和用法说明里', async
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
     headers: { 'content-type': 'application/json' },
   })
-  const tools = (await res.json()).result.tools
+  const tools = ((await res.json()) as any).result.tools
   const spawn = tools.find((x: { name: string }) => x.name === 'spawn_agents')
   assert.match(spawn.inputSchema.properties.tasks.items.properties.agent.description, /「代码侦察」（只读定位代码）/)
   assert.match(orchHint(o), /可以派的通用 Agent：「代码侦察」/)

@@ -6,7 +6,7 @@
  * UTF-8 无 BOM + LF，并且允许在项目设置和全局设置里改。
  */
 import { writeFile } from 'node:fs/promises'
-import { DEFAULT_FILE_FORMAT, type FileFormat, type Settings } from './schema.ts'
+import { DEFAULT_FILE_FORMAT, type FileFormat, type Settings } from '../shared/schema.ts'
 
 /** 项目的格式：项目自己设了就用项目的，否则跟随全局设置 */
 export function projectFormat(project: { fileFormat?: FileFormat } | undefined, settings: Settings): FileFormat {

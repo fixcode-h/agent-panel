@@ -25,7 +25,7 @@ import { taskDeleted } from '@shared/task'
 import { dayKey, USAGE_LOOKBACK_DAYS } from '@shared/usage'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { loadSummaryPage, pruneProjects, saveSummaryPage, type SummaryPageState } from '@/lib/summary-page'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { DetailEmpty } from '@/components/layout/Detail'
@@ -40,7 +40,8 @@ const POLL_FAIL_MAX = 3
 
 export function SummaryPage() {
   const { route, go } = useNav()
-  const { projects, tasks, agents, settings, clis, loading } = useData()
+  const { projects, agents, settings, clis, loading } = useData()
+  const { tasks } = useTasks()
   const [page, setPage] = useState<SummaryPageState>(() => loadSummaryPage())
   /** 改页面状态的唯一入口：同时写回本机，切页面 / 刷新后按它恢复 */
   const patch = (p: Partial<SummaryPageState>) =>

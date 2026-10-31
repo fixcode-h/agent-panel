@@ -18,13 +18,13 @@ import { startAnalysis } from '@/lib/task-transfer'
 import { isDefaultWorkflow } from '@shared/builtin/default'
 import { nodeSteps } from '@shared/flow'
 import { api } from '@/lib/api'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
 import { docTemplate } from '@/lib/workflow-doc'
 import { StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -56,7 +56,8 @@ export function WorkflowDetail({
   /** AI 优化写回后让页面重新加载草稿 */
   onOptimized: () => void
 }) {
-  const { agents, clis, workflows, setWorkflows, projects, projectCategories, tasks } = useData()
+  const { agents, clis, workflows, setWorkflows, projects, projectCategories } = useData()
+  const { tasks } = useTasks()
   // 这个工作流最近几次跑完（含失败、停止）的执行，「分析执行」交给 AI 看
   const runs = tasks
     .filter((tk) => tk.mode === 'workflow' && tk.workflowId === workflow.id && tk.status !== 'running')

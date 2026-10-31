@@ -15,7 +15,7 @@ import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { CliTag, PageFrame } from '@/components/library/parts'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { McpJsonFill } from '@/components/library/McpJsonFill'
 import type { McpDraft } from '@shared/mcp-json'
 

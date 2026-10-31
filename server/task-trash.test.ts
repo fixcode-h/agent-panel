@@ -43,7 +43,9 @@ const make = async (id: string, over: Record<string, unknown> = {}) =>
   })
 
 const listIds = async (t: ReturnType<typeof api>, parentId = '') =>
-  (await (await t.routes.request(parentId ? `/?parentId=${parentId}` : '/')).json()).map((x: { id: string }) => x.id)
+  ((await (await t.routes.request(parentId ? `/?parentId=${parentId}` : '/')).json()) as { id: string }[]).map(
+    (x) => x.id,
+  )
 const trashRows = async (t: ReturnType<typeof api>) =>
   (await (await t.routes.request('/trash')).json()) as {
     id: string

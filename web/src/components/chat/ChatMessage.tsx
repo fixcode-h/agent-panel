@@ -153,19 +153,14 @@ export function MessageMenu({ items }: { items: MessageMenuItem[] }) {
   )
 }
 
-/**
- * 消息下面的一行：时间和操作按钮。默认一直显示（AI 回复）；reveal 时只在鼠标移上消息或键盘聚焦到它时出现，
- * 触屏没有悬停，照样一直显示（用户消息：一屏十几条，每条下面一整排图标太吵）
- */
+/** 消息下面的一行：时间和操作按钮，一直显示（用户要求：不做悬停才出现，见 docs/lessons/messages.md） */
 export function MessageMeta({
   text,
   at,
   attachments,
   actions,
   align = 'start',
-  reveal,
 }: {
-  reveal?: boolean
   text: string
   at?: string
   /** 用户消息：复制、引用时卡片换成文件路径 */
@@ -180,8 +175,6 @@ export function MessageMeta({
       className={cn(
         'flex items-center gap-0.5 text-caption text-subtle transition-opacity',
         align === 'end' && 'flex-row-reverse',
-        reveal &&
-          'opacity-0 duration-(--dur-fast) group-hover/msg:opacity-100 group-focus-within/msg:opacity-100 has-[[data-state=open]]:opacity-100 [@media(hover:none)]:opacity-100',
       )}
     >
       {text && <CopyButton text={text} attachments={attachments} />}
@@ -273,7 +266,7 @@ export function UserMessage({
         </div>
       )}
       {status}
-      <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} align="end" reveal />
+      <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} align="end" />
     </div>
   )
 }

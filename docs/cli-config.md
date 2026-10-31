@@ -9,13 +9,15 @@
   界面文案的英文写进配置的 `i18n.en`（或 `shared/locales/en/`），再给 `scripts/fake-cli` 和 `server/exec/fixtures/` 补上样本和测试。
 
 前提：CLI 要有**结构化输出**。一次性执行的 CLI 用非交互模式（任务描述从 stdin 读，跑完就退出）；有常驻双向协议的 CLI 把 `protocol` 写成 `rpc`，
-按下面的 `rpc` 配置握手、开始一轮、插话和判断结束。Claude Code、Codex 的协议差别较大，走内置的 `codex` / `claude` 适配器（同样经过统一的 RPC 会话引擎），
-其余标准的 JSON-RPC 或按 `type` 区分的记录流只写配置就能接。Command Code、Pi 的配置可以直接参考
-[`shared/clis/commandcode.json`](../shared/clis/commandcode.json)、[`shared/clis/pi.json`](../shared/clis/pi.json)。
+按下面的 `rpc` 配置握手、开始一轮、插话和判断结束。四个内置 CLI 都是这样一份配置：
+[`claude.json`](../shared/clis/claude.json)、[`codex.json`](../shared/clis/codex.json)、
+[`commandcode.json`](../shared/clis/commandcode.json)、[`pi.json`](../shared/clis/pi.json)。
+Claude Code、Codex 的协议差别较大，配置里写 `rpc.kind` 为 `claude` / `codex`，由内置适配器处理审批和控制消息（同样经过统一的 RPC 会话引擎）；
+其余标准的 JSON-RPC 或按 `type` 区分的记录流只写配置就能接。
 
 Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-prompt-tool stdio` 让 CLI 把 `control_request(can_use_tool)` 交给面板，
 转成卡片后 `AskUserQuestion` 的回答写回 `updatedInput.answers`。**跳过确认（`--dangerously-skip-permissions`）时也要带这个参数**：
-不带它 Claude Code 不把 `AskUserQuestion` 放进工具列表，模型的提问只能变成纯文本，卡片弹不出来（参数见 [`shared/clis.ts`](../shared/clis.ts) 的 `buildArgs`，转换见 `server/exec/rpc/claude.ts`）。
+不带它 Claude Code 不把 `AskUserQuestion` 放进工具列表，模型的提问只能变成纯文本，卡片弹不出来（参数见 [`shared/clis/claude.json`](../shared/clis/claude.json) 的 `args`，转换见 `server/exec/rpc/claude.ts`）。
 
 ## 接入检查清单
 
@@ -42,6 +44,9 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `npmPackage` / `brew` / `docsUrl` | 设置里的安装、卸载、更新和文档链接                                                                                                                                                                                                                                                                                                          |
 | `npmRenameFrom`                   | 改名前用过的 npm 包名：安装新包前先卸掉旧的，否则两个包提供同一个命令时 npm 会报 `EEXIST`                                                                                                                                                                                                                                                   |
 | `color`                           | 界面上的标识色                                                                                                                                                                                                                                                                                                                              |
+| `images`                          | CLI 内置了生成图片的工具（UI 设计里用，例如 Codex）                                                                                                                                                                                                                                                                                         |
+| `modelsRead`                      | 模型列表是运行 CLI 读出来的（例如 Codex 的 app-server）：界面上这组叫「{cli} 读取」，否则叫「{cli} 内置」                                                                                                                                                                                                                                   |
+| `extraArgsKeep`                   | 设置里的「额外参数」只保留这些参数（每个带一个值，长参数也认 `--x=值`），其余丢掉；例如 Codex 的 app-server 只认 `-c`、`--enable`、`--disable`。不写时全部保留                                                                                                                                                                              |
 | `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填；上下文窗口、最大输出和思考强度按[模型目录](./model-catalog.md)识别                                                                                                                                                                                                             |
 | `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                                                                                                                                                                                                                                                                |
 | `effortsFromModel`                | 思考强度跟着模型走：模型目录/配置里这个模型支持哪些就能选哪些；为 `true` 时不用 `efforts` 过滤                                                                                                                                                                                                                                              |
@@ -52,7 +57,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `readOnlyPermission`              | 只分析、不改文件时用的权限（例如优化项目说明）                                                                                                                                                                                                                                                                                              |
 | `args`                            | 参数规则，见下面                                                                                                                                                                                                                                                                                                                            |
 | `output`                          | 输出解析，见下面                                                                                                                                                                                                                                                                                                                            |
-| `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；不写时角色说明拼进任务描述                                                                                                                                                                                                                                                             |
+| `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；写 `true` 表示 CLI 的协议里就能传、不加参数（Codex 的 `developerInstructions`）；不写时角色说明拼进任务描述                                                                                                                                                                            |
 | `systemPromptFileFlag`            | 系统提示词能传文件时用的参数（值写成文件路径，例如 Pi 的 `--append-system-prompt`）：填了就把角色说明写进临时目录传路径，参数里不带换行                                                                                                                                                                                                     |
 | `systemPromptMod`                 | 系统提示词只能靠 mod / 插件追加（Command Code 的 `--mod`）：面板生成一个只追加「回复语言」规则的 mod，参数里传路径（`{systemPromptModPath}`）                                                                                                                                                                                               |
 | `features`                        | 能力，见下面                                                                                                                                                                                                                                                                                                                                |
@@ -91,7 +96,9 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 
 - 条件：`model` 有值、`!resume` 没值、`permission=yolo` 等于、`permission!=yolo` 不等于、`opt.codemode` 设置里这个开关开着；写成数组时全部满足才加。
   同一个参数只认最后一次的 CLI（例如 Pi 的 `--tools`），开关要和权限组合成几条规则，并进同一个值里。
-- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`systemPrompt`、`systemPromptModPath`（面板生成的语言 mod 路径）、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）。
+- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`forkEnd`（`features.fork` 为 `end` 时截到的那条回复，Claude Code 的 `--resume-session-at`）、`systemPrompt`、`systemPromptFile`（`systemPrompt` 已经写成文件、值是路径）、`systemPromptModPath`（面板生成的语言 mod 路径）、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）、`noEdit`（这一轮不许改文件）、`autoCompactTokens`（`features.autoCompact` 为 `config` 时的 token 数）、`contextWindow` / `maxOutput`（设置里手动改的上限，见 `features.limitArgs`）。
+- 规则里自己写了 `{systemPrompt}` 时（例如按 `systemPromptFile` 选参数），面板不再在末尾自动补系统提示词那一条。
+- 每条规则可以带一个 `why` 写为什么这样传（JSON 里没法写注释），面板不读。
 - 占位：`{model}`；`{addDirs|,}` 把数组用逗号连起来；`{maxTurns:200}` 没值时用 200；`each` 对数组每一项加一次，`{item}` 是那一项。
 
 ## 回复语言
@@ -246,7 +253,7 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 取用户在执行中补充的要求（`read_user_notes`，见 `features.notes`）。
 对话的保活由面板自己做，不靠模型调用工具：一轮回复结束、对话页还开着时面板先不关进程，用户再发消息时
 在同一个进程里开下一轮（Claude Code 再写一条不带 `priority` 的 user 消息，Codex 在同一个 thread 再发 `turn/start`，
-面板不用结束再 `--resume`）。能不能保活只看 `features.keepAlive`（内置 CLI 是 `shared/clis.ts` 的顶层 `keepAlive`）
+面板不用结束再 `--resume`）。能不能保活只看 `features.keepAlive`
 和是不是对话（压缩、审查这类操作除外）；`rpc.nativeAsk` 只决定提问、审批走 CLI 自己的协议还是面板的 MCP 工具，不影响保活。
 切走对话页后有宽限（设置里的「离开对话后保留多久」，默认 60 分钟；这一轮完成但还没打开看过的用「没看过的回复保留多久」，
 默认 30 分钟；环境变量 `AGENT_PANEL_PRESENCE_GRACE_MS`、`AGENT_PANEL_PRESENCE_UNREAD_GRACE_MS` 优先，测试用），
@@ -337,18 +344,21 @@ Pi 的「联网搜索」开关（`shared/clis/pi.json` 的 `options` 里 id 为 
 
 ## 能力 `features`
 
-| 字段             | 说明                                                                                                                                                                                                                                                                          |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compact`        | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                    |
-| `modelSwitch`    | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                             |
-| `fork`           | 分叉、撤回对话：`before` 能从任意一轮分叉（每轮记下自己的 id，见 `rpc.turnId`；续接原会话后按 `rpc.fork` 里带 `if: forkBefore` 的动作分叉到那一轮之前，Pi 是 `fork` 命令的 `entryId`）；`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话 |
-| `autoCompact`    | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                              |
-| `slash`          | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                                           |
-| `nativeCommands` | 会话里自己就有的内置命令（例如 `init`）：面板的同名内置命令原样发过去，不再展开；其他内置命令和「所有 Agent」的命令都由面板展开                                                                                                                                               |
-| `steer`          | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                                             |
-| `notes`          | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句    |
-| `limitEnv`       | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                           |
-| `limitFile`      | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名    |
+| 字段             | 说明                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compact`        | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                                                                                                                                  |
+| `modelSwitch`    | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                                                                                                                                           |
+| `fork`           | 分叉、撤回对话：`before` 能从任意一轮分叉（每轮记下自己的 id，见 `rpc.turnId`；续接原会话后按 `rpc.fork` 里带 `if: forkBefore` 的动作分叉到那一轮之前，Pi 是 `fork` 命令的 `entryId`）；`turn` 能截到某一轮（Codex，内置适配器用轮次 id）；`end` 能截到某条回复（Claude Code，参数里用 `{forkEnd}`）；`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话 |
+| `autoCompact`    | 自动压缩：`config` 把 token 数写进参数（规则里用 `{autoCompactTokens}`，Codex）；`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                                                                     |
+| `review`         | 审查改动：`native` 走 CLI 自己的审查模式（Codex，内置适配器）；`prompt`（默认）按审查要求跑一轮                                                                                                                                                                                                                                                                                             |
+| `limits`         | 账号额度：`query` 能主动查（配合 `rpc.limitsQuery`，Codex）；`push` 执行时 CLI 才报告（Claude Code）；`none`（默认）没有                                                                                                                                                                                                                                                                    |
+| `limitArgs`      | 设置里手动改的上限哪几项写成了参数（`context`、`maxOutput`，规则里用 `{contextWindow}`、`{maxOutput}`），例如 Codex 的 `model_context_window`                                                                                                                                                                                                                                               |
+| `slash`          | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                                                                                                                                                         |
+| `nativeCommands` | 会话里自己就有的内置命令（例如 `init`）：面板的同名内置命令原样发过去，不再展开；其他内置命令和「所有 Agent」的命令都由面板展开                                                                                                                                                                                                                                                             |
+| `steer`          | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                                                                                                                                                           |
+| `notes`          | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句                                                                                                                  |
+| `limitEnv`       | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                                                                                                                                         |
+| `limitFile`      | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名                                                                                                                  |
 
 设置里「自动压缩上下文」这一项的默认值是 70%（`shared/schema.ts` 的 `AUTO_COMPACT_DEFAULT`），0 表示按 CLI 自己的规则；
 老设置里存着的 0 在读取时迁成 70（按 `Settings.defaultsVersion` 只做一次，见 `server/settings.ts`）。

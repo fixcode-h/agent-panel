@@ -1,7 +1,6 @@
 import { CliSkills } from '@/components/settings/CliSkills'
 import { ProjectMcpSection } from './ProjectMcpSection'
 import { useEffect, useRef, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
 import { toast } from '@/lib/toast'
 import {
   ChevronDown,
@@ -41,13 +40,13 @@ import {
   type DerivedParam,
 } from '@shared/agent-params'
 import { ENV_LABEL, newTestStepId, parseGlobs } from '@shared/test-steps'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
-import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
+import { Modal, ModalHeader } from '@/components/ui/modal'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
@@ -71,6 +70,7 @@ import { cliSettings, orderClis } from '@shared/settings'
 import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
+import { NavItem } from '@/components/ui/dialog-nav'
 import { DocPage } from './ProjectDocs'
 import { ProjectSkillsSection } from './ProjectSkillsSection'
 import { runAssistInProject } from '@/lib/assist-conv'
@@ -141,15 +141,6 @@ const blank: ProjectInput = {
 
 const projectDialogTitle = (project?: Project) =>
   project ? t('项目设置 · {name}', { name: project.name }) : t('新建项目')
-
-/** 关闭按钮：设置类弹窗共用（Esc 也能关，悬停提示里写上） */
-export function DialogCloseButton({ label = t('关闭') }: { label?: string }) {
-  return (
-    <D.Close asChild>
-      <ModalButton icon={X} label={`${label}（Esc）`} className="[&>svg]:h-[1.125rem] [&>svg]:w-[1.125rem]" />
-    </D.Close>
-  )
-}
 
 /**
  * 项目设置弹窗：改完点「确认」才保存，「取消」放弃改动。
@@ -1948,45 +1939,6 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
         </span>
       </div>
     </ParamRow>
-  )
-}
-
-export function NavItem({
-  on,
-  onClick,
-  dot,
-  hint,
-  children,
-}: {
-  on: boolean
-  onClick: () => void
-  /** 有没保存的改动 */
-  dot?: boolean
-  /** 右边的小字：用的是哪个文件 */
-  hint?: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={on ? 'page' : undefined}
-      className={cn(
-        'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-body whitespace-nowrap transition-colors',
-        on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-      )}
-    >
-      {children}
-      {hint && (
-        <span className="ml-auto hidden truncate font-mono text-caption font-normal text-subtle md:inline">{hint}</span>
-      )}
-      {dot && (
-        <span
-          className={cn('h-1.5 w-1.5 shrink-0 rounded-full bg-accent', !hint && 'ml-auto')}
-          title={t('有未保存的改动')}
-        />
-      )}
-    </button>
   )
 }
 

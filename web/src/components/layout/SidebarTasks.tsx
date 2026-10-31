@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-react'
 import type { Task } from '@shared/schema'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
 import { AnalysisMark } from '@/components/tasks/AnalysisMark'
@@ -415,7 +415,7 @@ function chatBuckets(list: Task[], now = new Date()) {
 
 export function ChatList() {
   const { route, go } = useNav()
-  const { tasks } = useData()
+  const { tasks } = useTasks()
   // 未读橙点和项目列表同一个口径：服务端的 turnDoneAt / turnSeenAt，加上刚完成还没刷新的本地记录
   const unread = useUnreadTasks()
   const [query, setQuery] = useState('')

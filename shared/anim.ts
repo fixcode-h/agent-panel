@@ -770,6 +770,49 @@ export function animationsBrief(list: UiAnimation[]) {
 
 // ---- 播放（面板预览、运行模式和导出的网页共用） ----
 
+// 播放只在浏览器里跑，但这个文件服务端也要用（导出网页时把 animRuntime 原样写进页面），
+// shared 不带 DOM 类型，所以只按用到的成员声明页面元素和 Web Animations；浏览器里的 Element、Animation 结构上都满足。
+
+/** 一帧：CSS 属性名 → 值，外加 offset / easing（同 Web Animations 的 Keyframe） */
+export type AnimKeyframe = { [prop: string]: string | number | null | undefined }
+
+/** Element.animate 的播放参数里用到的部分（取值是 KeyframeAnimationOptions 的子集） */
+type AnimTiming = {
+  duration: number
+  delay: number
+  iterations: number
+  direction: 'alternate' | 'normal'
+  fill: 'both'
+  easing: string
+}
+
+/** Element.animate 返回的 Animation 里用到的部分 */
+interface AnimPlayer {
+  cancel(): void
+  pause(): void
+  play(): void
+  reverse(): void
+  readonly playbackRate: number
+  readonly playState: string
+  /** 只写不读；浏览器里的类型是 number | CSSNumericValue | null */
+  currentTime: unknown
+}
+
+/** 页面元素里用到的部分：找子元素、播放关键帧、监听悬停和点击 */
+export interface AnimTarget {
+  matches(selector: string): boolean
+  querySelectorAll(selector: string): Iterable<AnimTarget>
+  animate(keyframes: AnimKeyframe[], options: AnimTiming): AnimPlayer
+  addEventListener(type: string, listener: () => void): void
+  removeEventListener(type: string, listener: () => void): void
+}
+
+/** IntersectionObserver 里用到的部分；老浏览器没有，所以从 globalThis 上可选地取 */
+type AnimObserverCtor = new (
+  callback: (entries: { isIntersecting: boolean }[]) => void,
+  options: { threshold: number },
+) => { observe(target: AnimTarget): void; disconnect(): void }
+
 /** 编译好的动画：关键帧换成 Web Animations 的写法，时间用毫秒 */
 export interface AnimRun {
   name: string
@@ -781,7 +824,7 @@ export interface AnimRun {
   pingPong: boolean
   delay: number
   duration: number
-  tracks: { key: string; keyframes: Keyframe[] }[]
+  tracks: { key: string; keyframes: AnimKeyframe[] }[]
 }
 
 /** 控件在页面上的标记（data-an）：主界面的控件是控件名，子控件里的是「子控件名/控件名」 */
@@ -820,7 +863,7 @@ export function compileAnimations(list: UiAnimation[]): AnimRun[] {
 
 export interface AnimController {
   /** 播放一个动画；scope 是哪个子控件实例（不写就是全部），reverse 倒着播 */
-  play: (name: string, o?: { scope?: Element; reverse?: boolean; tree?: string }) => void
+  play: (name: string, o?: { scope?: AnimTarget; reverse?: boolean; tree?: string }) => void
   /** 停在某个时间（毫秒），时间轴拖动时用 */
   seek: (name: string, ms: number, tree?: string) => void
   /** 停下并回到原样 */
@@ -835,32 +878,32 @@ export interface AnimController {
  * triggers 为 true 时按触发方式自动播放：打开时、滚动到可见时、悬停、点击。
  */
 export function animRuntime(
-  root: Element,
+  root: AnimTarget,
   runs: AnimRun[],
   o: { rootTree?: string; triggers?: boolean } = {},
 ): AnimController {
   const rootTree = o.rootTree || ''
-  const live = new Map<string, Animation[]>()
+  const live = new Map<string, AnimPlayer[]>()
   const cleanups: (() => void)[] = []
-  const all = (el: Element, sel: string) => [...(el.matches(sel) ? [el] : []), ...el.querySelectorAll(sel)]
+  const all = (el: AnimTarget, sel: string) => [...(el.matches(sel) ? [el] : []), ...el.querySelectorAll(sel)]
   const css = (s: string) => s.replace(/["\\]/g, '\\$&')
   const scopesOf = (r: AnimRun) => (r.in === rootTree ? [root] : all(root, `[data-ac~="${css(r.in)}"]`))
   // 子控件里的控件只在自己那个实例里找；主界面的不进子控件里找（名字可能重复）
-  const targets = (scope: Element, key: string) => all(scope, `[data-an~="${css(key)}"]`)
-  const ids = new WeakMap<Element, number>()
+  const targets = (scope: AnimTarget, key: string) => all(scope, `[data-an~="${css(key)}"]`)
+  const ids = new WeakMap<AnimTarget, number>()
   let nextId = 1
-  const idOf = (el: Element) => {
+  const idOf = (el: AnimTarget) => {
     let n = ids.get(el)
     if (!n) ids.set(el, (n = nextId++))
     return n
   }
-  const make = (r: AnimRun, scope: Element, paused: boolean) => {
+  const make = (r: AnimRun, scope: AnimTarget, paused: boolean) => {
     const id = `${r.in}/${r.name}@${idOf(scope)}`
     for (const a of live.get(id) ?? []) a.cancel()
-    const list: Animation[] = []
+    const list: AnimPlayer[] = []
     for (const tr of r.tracks)
       for (const el of targets(scope, tr.key)) {
-        const opts: KeyframeAnimationOptions = {
+        const opts: AnimTiming = {
           duration: r.duration,
           delay: r.delay,
           iterations: r.loop === 0 ? Infinity : r.loop,
@@ -868,12 +911,12 @@ export function animRuntime(
           fill: 'both',
           easing: 'linear',
         }
-        let a: Animation
+        let a: AnimPlayer
         try {
-          a = (el as HTMLElement).animate(tr.keyframes, opts)
+          a = el.animate(tr.keyframes, opts)
         } catch {
           // 老浏览器不认 linear() 缓动：换成普通的缓出
-          a = (el as HTMLElement).animate(
+          a = el.animate(
             tr.keyframes.map((k) => ({ ...k, easing: String(k.easing).startsWith('linear(') ? 'ease-out' : k.easing })),
             opts,
           )
@@ -932,11 +975,12 @@ export function animRuntime(
         // 先停在第一帧（例如还是透明的），滚动到能看见时再播
         const list = make(r, scope, true)
         const first = targets(scope, r.tracks[0]?.key ?? '')[0]
-        if (!first || typeof IntersectionObserver === 'undefined') {
+        const Observer = (globalThis as { IntersectionObserver?: AnimObserverCtor }).IntersectionObserver
+        if (!first || !Observer) {
           for (const a of list) a.play()
           continue
         }
-        const io = new IntersectionObserver(
+        const io = new Observer(
           (es) => {
             if (!es.some((e) => e.isIntersecting)) return
             io.disconnect()

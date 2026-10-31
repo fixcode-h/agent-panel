@@ -108,7 +108,7 @@
 ## 入口
 
 - `shared/schema.ts`：所有跨前后端的数据结构。
-- `shared/clis.ts`：CLI 列表和能力的统一出口。
+- `shared/clis.ts`：CLI 列表和能力的统一出口。四个内置 CLI（Claude Code、Codex、Command Code、Pi）都是 `shared/clis/` 下的一份 JSON 配置，由 `shared/cli-spec.ts` 的 `specToDefinition` 编译成定义；格式见 [docs/cli-config.md](../../cli-config.md)。
 - `shared/engine.ts`：执行引擎，被 `server/` 和在线演示的模拟实现调用。
 - `shared/ansi.ts`：`stripAnsi` 清 CLI 输出里的 ANSI 转义，目前由账号登录（`server/accounts.ts`）在存 CLI 输出前调用。
 - `shared/web-search.ts`：联网搜索的搜索源注册表、参数规范化、地址守卫、正文窗口和给模型的结果文本（纯逻辑，不联网；网络请求在 `server/web-search.ts`）。
@@ -117,6 +117,8 @@
 ## 依赖
 
 只依赖 `zod`，不引用 `server/` 和 `web/`。前端通过 Vite 别名 `@shared` 引用（见 `vite.config.ts`）。
+
+运行环境：shared 的代码浏览器（前端、在线演示）和 Node（服务端）都会跑，`shared/tsconfig.json` 既不带 DOM 也不带 `@types/node`，两边都有的 Web 标准全局只按用到的成员声明在 `shared/runtime.d.ts`。只在 Node 里能跑的（`node:*`、`Buffer`、`process`）放 `server/`（例如写文件的 `server/file-format.ts`），只在浏览器里能跑的（`document`、`Element`）放 `web/`；确实要跨两边的（`shared/anim.ts` 的播放代码要被服务端原样写进导出的网页），按结构声明用到的成员、运行时再判断有没有。
 
 ## 回归验证
 

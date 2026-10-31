@@ -719,6 +719,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('步骤写得再具体一些')
   await p.keyboard.press('Enter')
   await check(p, 'Skill-AI优化', ['格式校验通过', 'SKILL.md'])
+  // 对话和预览之间能拖：往右拖 120，左边对话跟着变宽
+  {
+    const handle = p.getByRole('dialog').getByRole('separator', { name: '拖动调整对话和预览的宽度' })
+    const chat = p.getByRole('dialog').locator('section').first()
+    const before = (await chat.boundingBox())?.width ?? 0
+    const hb = await handle.boundingBox()
+    if (!hb) errors.push('AI优化：对话和预览之间没有拖动条')
+    else {
+      await p.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+      await p.mouse.down()
+      await p.mouse.move(hb.x + hb.width / 2 + 120, hb.y + hb.height / 2, { steps: 5 })
+      await p.mouse.up()
+      await p.waitForTimeout(200)
+      const after = (await chat.boundingBox())?.width ?? 0
+      if (Math.abs(after - before - 120) > 8) errors.push(`AI优化：拖动条拖了 120，对话宽度从 ${before} 变到 ${after}`)
+      await check(p, 'Skill-AI优化-拖宽对话')
+      // 双击恢复默认，别把拖宽的宽度带给后面的用例
+      await handle.dblclick()
+    }
+  }
   await p.getByRole('button', { name: '应用修改' }).click()
   await p
     .getByRole('button', { name: '应用修改' })

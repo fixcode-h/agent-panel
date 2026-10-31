@@ -20,7 +20,7 @@ import { DetailEmpty } from '@/components/layout/Detail'
 import { LibraryDetail } from '@/components/library/LibraryDetail'
 import { BundledBulkBar, BundledSkills } from '@/components/library/BundledSkills'
 import { BundledDetail, BundledEmpty } from '@/components/library/BundledDetail'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 
 /**
  * 页面上的分页：Skill 和「自带 Skill」。

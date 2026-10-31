@@ -37,7 +37,7 @@ import type {
 } from '../shared/files.ts'
 import { capture } from './exec/process.ts'
 import { gitFileDiff } from './exec/git.ts'
-import { projectFormat, writeTextFile } from '../shared/file-format.ts'
+import { projectFormat, writeTextFile } from './file-format.ts'
 import { getSettings } from './settings.ts'
 import { resolvePath } from './fs.ts'
 import { revealItem } from './open.ts'

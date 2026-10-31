@@ -407,7 +407,7 @@ else {
       errors.push(`${f}：不能被 scripts/ui-check.mjs 的 SHARD_FILE 收录，这个分片会被静默跳过`)
   }
 }
-const shotPrefixSrc = read('scripts/ui/harness.mjs').match(/path\.basename\(file\)\.match\(\/\^\((.+?)\)\-\/\)/)?.[1]
+const shotPrefixSrc = read('scripts/ui/harness.mjs').match(/path\.basename\(file\)\.match\(\/\^\((.+?)\)-\/\)/)?.[1]
 if (!shotPrefixSrc) errors.push('scripts/ui/harness.mjs：读不到截图前缀正则（path.basename(file).match(...)）')
 else {
   const shotPrefix = new RegExp(`^(${shotPrefixSrc})-`)

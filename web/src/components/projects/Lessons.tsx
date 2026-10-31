@@ -28,7 +28,7 @@ import { Field, Input, Textarea } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/tasks'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { AnalyzeDialog } from '@/components/tasks/Evolution'
 import { startLessonReview } from '@/lib/task-transfer'
 

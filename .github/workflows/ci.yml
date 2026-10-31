@@ -71,6 +71,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # 15-browser 分片要开浏览器（正式版前端连真实服务端）：浏览器按 Playwright 版本缓存，和 ui job 一样
+      - id: pw
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
       - run: npm run test:e2e
       # 各分片耗时写进 e2e-timings.json，改了测试可以下载对比
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -1,0 +1,315 @@
+{
+  "id": "codex",
+  "name": "Codex",
+  "command": "codex",
+  "npmPackage": "@openai/codex",
+  "brew": ["codex"],
+  "docsUrl": "https://github.com/openai/codex",
+  "color": "#0e8a6b",
+  "images": true,
+  "modelsRead": true,
+  "models": [
+    {
+      "id": "gpt-6.1-sol",
+      "label": "GPT-6.1-Sol"
+    },
+    {
+      "id": "gpt-6-astra",
+      "label": "GPT-6-Astra"
+    },
+    {
+      "id": "gpt-6-sol",
+      "label": "GPT-6-Sol"
+    },
+    {
+      "id": "gpt-6-luna",
+      "label": "GPT-6-Luna"
+    }
+  ],
+  "efforts": [
+    {
+      "id": "low",
+      "label": "低"
+    },
+    {
+      "id": "medium",
+      "label": "中"
+    },
+    {
+      "id": "high",
+      "label": "高"
+    },
+    {
+      "id": "xhigh",
+      "label": "很高"
+    },
+    {
+      "id": "max",
+      "label": "最高"
+    }
+  ],
+  "tiers": {
+    "high": {
+      "model": "gpt-6-astra",
+      "effort": "high"
+    },
+    "medium": {
+      "model": "gpt-6.1-sol",
+      "effort": "medium"
+    },
+    "low": {
+      "model": "gpt-6-luna",
+      "effort": "low"
+    }
+  },
+  "permissions": [
+    {
+      "id": "workspace-write",
+      "label": "可写项目目录",
+      "hint": "沙箱内运行，可以改项目目录里的文件；需要越过沙箱时在任务页上请你确认"
+    },
+    {
+      "id": "read-only",
+      "label": "只读",
+      "hint": "只能读文件和跑只读命令"
+    },
+    {
+      "id": "danger-full-access",
+      "label": "完全访问",
+      "hint": "不使用沙箱、不确认，只在信任的项目里用"
+    }
+  ],
+  "defaultPermission": "workspace-write",
+  "modelsFrom": "codex",
+  "readOnlyPermission": "read-only",
+  "systemPromptFlag": true,
+  "protocol": "rpc",
+  "args": [
+    {
+      "args": ["app-server"],
+      "why": "用 app-server 执行才能拿到流式输出；模型、思考强度、沙箱也会在 thread/start、turn/start 里再传一次，写在参数里是为了让「环境」里显示的命令看得出用了什么。任务描述和续接的会话走协议，不在参数里"
+    },
+    {
+      "if": "model",
+      "args": ["-c", "model=\"{model}\""]
+    },
+    {
+      "if": "effort",
+      "args": ["-c", "model_reasoning_effort=\"{effort}\""]
+    },
+    {
+      "if": "autoCompactTokens",
+      "args": ["-c", "model_auto_compact_token_limit={autoCompactTokens}"]
+    },
+    {
+      "if": "contextWindow",
+      "args": ["-c", "model_context_window={contextWindow}"],
+      "why": "Codex 只有上下文窗口的配置（model_context_window），没有最大输出的"
+    },
+    {
+      "if": "permission",
+      "args": ["-c", "sandbox_mode=\"{permission}\""]
+    },
+    {
+      "if": "!permission",
+      "args": ["-c", "sandbox_mode=\"workspace-write\""]
+    },
+    {
+      "if": "permission=danger-full-access",
+      "args": ["-c", "approval_policy=\"never\""],
+      "why": "和 thread/start 里传的一致：完全访问不确认，其余越过沙箱时请用户确认"
+    },
+    {
+      "if": "permission!=danger-full-access",
+      "args": ["-c", "approval_policy=\"on-request\""]
+    }
+  ],
+  "extraArgsKeep": ["-c", "--config", "--enable", "--disable"],
+  "rpc": {
+    "kind": "codex",
+    "nativeAsk": true,
+    "limitsQuery": true,
+    "skillsQuery": true,
+    "skillsDir": "${CODEX_HOME:-~/.codex}/skills",
+    "queryArgs": ["app-server"],
+    "handshake": [
+      {
+        "method": "initialize",
+        "params": {
+          "clientInfo": {
+            "name": "agent-panel",
+            "version": "1"
+          }
+        }
+      },
+      {
+        "method": "initialized",
+        "notify": true
+      }
+    ]
+  },
+  "output": "",
+  "features": {
+    "steer": true,
+    "notes": false,
+    "keepAlive": true,
+    "compact": "native",
+    "review": "native",
+    "fork": "turn",
+    "autoCompact": "config",
+    "limitArgs": ["context"],
+    "slash": false,
+    "limits": "query"
+  },
+  "docs": ["AGENTS.md", "AGENTS.override.md"],
+  "globalDoc": "${CODEX_HOME:-~/.codex}/AGENTS.md",
+  "context": {
+    "systemPrompt": 5000,
+    "systemTools": 1500,
+    "compactReservePct": 10,
+    "docsMode": "first"
+  },
+  "docsNote": "Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。",
+  "skills": {
+    "user": [],
+    "repo": []
+  },
+  "commands": {
+    "user": ["${CODEX_HOME:-~/.codex}/prompts"],
+    "repo": [],
+    "format": "md",
+    "prefix": "prompts:"
+  },
+  "envExample": "OPENAI_API_KEY=sk-...",
+  "auth": {
+    "login": ["login"],
+    "home": "${CODEX_HOME:-~/.codex}",
+    "files": ["auth.json"],
+    "fields": [],
+    "keychain": "",
+    "identity": "codex",
+    "loginEdits": [],
+    "loginStdin": "",
+    "loginAlreadyLoggedIn": false,
+    "accountNote": "",
+    "api": {
+      "protocols": ["openai-responses"],
+      "defaultProvider": "agentpanel",
+      "modelSource": "api",
+      "modelPrefix": "",
+      "env": {},
+      "args": [],
+      "edits": [
+        {
+          "file": "${CODEX_HOME:-~/.codex}/config.toml",
+          "format": "toml",
+          "merge": true,
+          "set": {
+            "model_provider": "{provider}",
+            "model_providers.{provider}": {
+              "name": "{name}",
+              "base_url": "{baseUrl}",
+              "wire_api": "{wire}",
+              "experimental_bearer_token": "{apiKey}"
+            }
+          },
+          "unset": []
+        }
+      ],
+      "accountEdits": [
+        {
+          "file": "${CODEX_HOME:-~/.codex}/config.toml",
+          "format": "toml",
+          "merge": false,
+          "set": {},
+          "unset": ["model_provider", "model_providers.{provider}"]
+        }
+      ],
+      "wire": {
+        "openai-responses": "responses"
+      },
+      "baseUrl": {},
+      "thinkArgs": ["-c", "model_supports_reasoning_summaries=true"]
+    },
+    "apiSources": [
+      {
+        "file": "${CODEX_HOME:-~/.codex}/config.toml",
+        "format": "toml",
+        "at": "model_providers",
+        "each": true,
+        "protocol": "openai-responses",
+        "wire": {
+          "responses": "openai-responses",
+          "chat": "openai-chat"
+        },
+        "baseUrl": ["base_url"],
+        "defaultBaseUrl": "",
+        "apiKey": ["experimental_bearer_token"],
+        "bearerKey": [],
+        "keyEnv": ["env_key"],
+        "models": [],
+        "wireKey": ["wire_api"],
+        "name": ["name"]
+      },
+      {
+        "file": "",
+        "format": "json",
+        "at": "",
+        "each": false,
+        "protocol": "openai-responses",
+        "wire": {},
+        "baseUrl": ["OPENAI_BASE_URL"],
+        "defaultBaseUrl": "https://api.openai.com/v1",
+        "apiKey": ["OPENAI_API_KEY"],
+        "bearerKey": [],
+        "keyEnv": [],
+        "models": [],
+        "wireKey": [],
+        "name": []
+      },
+      {
+        "file": "${CODEX_HOME:-~/.codex}/auth.json",
+        "format": "json",
+        "at": "",
+        "each": false,
+        "protocol": "openai-responses",
+        "wire": {},
+        "baseUrl": [],
+        "defaultBaseUrl": "https://api.openai.com/v1",
+        "apiKey": ["OPENAI_API_KEY"],
+        "bearerKey": [],
+        "keyEnv": [],
+        "models": [],
+        "wireKey": [],
+        "name": []
+      }
+    ]
+  },
+  "mcp": {
+    "args": ["-c", "mcp_servers.{name}.url=\"{url}\""],
+    "files": {},
+    "vars": {},
+    "extras": []
+  },
+  "mcpStore": {
+    "file": "${CODEX_HOME:-~/.codex}/config.toml",
+    "format": "toml",
+    "key": "mcp_servers",
+    "urlKey": "url",
+    "remoteType": "",
+    "stdioType": false,
+    "headersKey": "http_headers"
+  },
+  "i18n": {
+    "en": {
+      "很高": "Extra high",
+      "最高": "Max",
+      "Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。": "Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.",
+      "可写项目目录": "Workspace write",
+      "沙箱内运行，可以改项目目录里的文件；需要越过沙箱时在任务页上请你确认": "Runs in a sandbox and can edit files in the project directory; leaving the sandbox is confirmed on the task page",
+      "只能读文件和跑只读命令": "Can only read files and run read-only commands",
+      "完全访问": "Full access",
+      "不使用沙箱、不确认，只在信任的项目里用": "No sandbox, no confirmations. Use only in trusted projects"
+    }
+  }
+}

@@ -947,14 +947,14 @@ await runShard(import.meta.filename, async (api) => {
     // 送达状态在气泡外面，不挤进气泡里和正文抢注意力
     if (await p.locator('[data-user] .bg-sel [data-delivery]').count())
       errors.push('执行中发消息：送达状态还画在气泡里面')
-    // 用户消息下面的时间和操作平时不显示，鼠标移上去才出来；撤回重发、分叉、记成教训收在「⋯」里，每项带一行说明
+    // 用户消息下面的时间和操作一直显示（用户要求，不做悬停才出现）；撤回重发、分叉、记成教训收在「⋯」里，每项带一行说明
     {
       const bubble = p.locator('[data-user]', { hasText: '顺手看看测试配置' }).last()
       const meta = bubble.locator('time').first()
       await p.mouse.move(2, 2)
       await p.waitForTimeout(200)
-      const restOpacity = await meta.evaluate((el) => getComputedStyle(el.parentElement).opacity).catch(() => '1')
-      if (restOpacity !== '0') errors.push(`用户消息：鼠标没移上去时操作行就显示了（opacity ${restOpacity}）`)
+      const restOpacity = await meta.evaluate((el) => getComputedStyle(el.parentElement).opacity).catch(() => '0')
+      if (restOpacity !== '1') errors.push(`用户消息：鼠标没移上去时时间和操作被藏起来了（opacity ${restOpacity}）`)
       await bubble.hover()
       await bubble.getByRole('button', { name: '这条消息的更多操作' }).click()
       const items = p.getByRole('menuitem')

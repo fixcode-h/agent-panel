@@ -7,28 +7,10 @@ export const EN_SHARED: Record<string, string> = {
   高: 'High',
   中: 'Medium',
   低: 'Low',
-  很高: 'Extra high',
-  最高: 'Max',
   '复杂任务、架构设计': 'Complex tasks, architecture design',
   日常开发: 'Everyday development',
   '简单改动、速度优先': 'Simple changes, speed first',
-  自动接受改文件: 'Auto-accept edits',
-  '可以直接读写文件；需要审批的命令会在任务页上请你确认':
-    'Reads and writes files directly; commands that need approval are confirmed on the task page',
-  跳过所有确认: 'Skip all confirmations',
-  '可以执行任意命令，只在信任的项目里用': 'Can run any command. Use only in trusted projects',
-  只读规划: 'Read-only planning',
-  '只分析和出方案，不改文件': 'Only analyzes and proposes a plan; does not edit files',
-  逐项确认: 'Confirm each action',
-  改文件和需要审批的命令都会在任务页上请你确认:
-    'File edits and commands that need approval are confirmed on the task page',
-  可写项目目录: 'Workspace write',
-  '沙箱内运行，可以改项目目录里的文件；需要越过沙箱时在任务页上请你确认':
-    'Runs in a sandbox and can edit files in the project directory; leaving the sandbox is confirmed on the task page',
   只读: 'Read-only',
-  只能读文件和跑只读命令: 'Can only read files and run read-only commands',
-  完全访问: 'Full access',
-  '不使用沙箱、不确认，只在信任的项目里用': 'No sandbox, no confirmations. Use only in trusted projects',
   '<任务描述>': '<task>',
 
   // data.ts：数据分类

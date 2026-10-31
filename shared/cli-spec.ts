@@ -23,6 +23,8 @@ export const ArgRule = z.object({
   if: z.union([z.string(), z.array(z.string())]).optional(),
   each: z.enum(['addDirs']).optional(),
   args: z.array(z.string()),
+  /** 为什么这样传（JSON 里没法写注释，写在这里），面板不读 */
+  why: z.string().optional(),
 })
 export type ArgRule = z.infer<typeof ArgRule>
 
@@ -324,6 +326,13 @@ export const CliSpec = z.object({
   docsUrl: z.string().default(''),
   /** 界面上的标识色 */
   color: z.string().default('#64748b'),
+  /** 内置了生成图片的工具（UI 设计里用，例如 Codex） */
+  images: z.boolean().default(false),
+  /**
+   * 模型列表是运行 CLI 读出来的（例如 Codex 的 app-server 列模型）：界面上这组叫「{cli} 读取」；
+   * 否则是配置里写的或从安装包、配置文件里取的，叫「{cli} 内置」
+   */
+  modelsRead: z.boolean().default(false),
   models: z.array(z.object({ id: z.string(), label: z.string(), isDefault: z.boolean().optional() })).default([]),
   efforts: z.array(z.object({ id: z.string(), label: z.string() })).default([]),
   /** 思考强度跟着模型走，不用 efforts 的全局列表过滤 */
@@ -339,6 +348,12 @@ export const CliSpec = z.object({
   readOnlyPermission: z.string().default(''),
   args: z.array(ArgRule),
   /**
+   * 设置里的「额外参数」只保留这些参数（每个都带一个值，长参数也认 --x=值 的写法），其余丢掉。
+   * 例如 Codex 的 app-server 只认配置类参数（-c、--enable、--disable），设置里按 codex exec 写的其他参数会让它启动失败。
+   * 不写表示全部保留
+   */
+  extraArgsKeep: z.array(z.string()).default([]),
+  /**
    * 怎么调用：默认 stdin（任务描述从 stdin 传入、进程一轮后退出）；
    * rpc 是常驻的双向协议（stdin/stdout 一行一条 JSON），可以执行中插话、中断，具体写法见 rpc
    */
@@ -349,8 +364,11 @@ export const CliSpec = z.object({
   rpcArgs: z.array(ArgRule).optional(),
   /** stdout 怎么解析：内置解析器的名字（claude、commandcode），或者事件映射 */
   output: z.union([z.string(), OutputSpec]),
-  /** 角色说明怎么给：flag 是追加系统提示词的参数（如 --append-system-prompt），不给时拼进任务描述 */
-  systemPromptFlag: z.string().default(''),
+  /**
+   * 角色说明怎么给：追加系统提示词的参数（如 --append-system-prompt），不给时拼进任务描述。
+   * 写 true 表示 CLI 自己的协议里就能传（例如 Codex 的 developerInstructions），不加参数
+   */
+  systemPromptFlag: z.union([z.string(), z.literal(true)]).default(''),
   /**
    * 这个 CLI 能把系统提示词从文件读时用的参数（值写成文件路径）：例如 Pi 的 --append-system-prompt 会读文件内容。
    * 填了就总是传文件路径（invoke 把角色说明写进这一轮的临时目录），参数里不再带多行文本：
@@ -381,11 +399,21 @@ export const CliSpec = z.object({
       modelSwitch: z.boolean().default(false),
       /**
        * 会话能分叉到哪：before 能分叉到任意一轮之前（rpc.turnId 记下每轮的位置，分叉时 {forkBefore} 是要丢掉的第一轮），
+       * turn 能截到某一轮（Codex，内置适配器用轮次 id），end 能截到某条回复（Claude Code，参数里用 {forkEnd}），
        * latest 只能从最后分叉（要有分叉参数，见 args 里的 fork 条件），none 不能分叉（带上对话记录开新会话）
        */
-      fork: z.enum(['before', 'latest', 'none']).default('none'),
-      /** 自动压缩：env 是用环境变量告诉 CLI 百分比（autoCompactEnv），panel 是面板在一轮结束后压缩 */
-      autoCompact: z.enum(['env', 'panel']).default('panel'),
+      fork: z.enum(['before', 'turn', 'end', 'latest', 'none']).default('none'),
+      /**
+       * 自动压缩：config 是把 token 数写进参数（参数规则里用 {autoCompactTokens}，例如 Codex），
+       * env 是用环境变量告诉 CLI 百分比（autoCompactEnv），panel 是面板在一轮结束后压缩
+       */
+      autoCompact: z.enum(['config', 'env', 'panel']).default('panel'),
+      /** 审查改动：native 走 CLI 自己的审查模式（内置适配器），prompt 按审查要求跑一轮 */
+      review: z.enum(['native', 'prompt']).default('prompt'),
+      /** 账号额度：query 能主动查（rpc.limitsQuery），push 执行时才报告，none 没有 */
+      limits: z.enum(['query', 'push', 'none']).default('none'),
+      /** 参数规则里会写成参数的手动上限（{contextWindow}、{maxOutput}），面板据此知道这两项能交给 CLI */
+      limitArgs: z.array(z.enum(['context', 'maxOutput'])).default([]),
       autoCompactEnv: z.string().default(''),
       /** 会话里认识「/命令」和「/Skill」，原样发过去；否则面板展开 */
       slash: z.boolean().default(false),
@@ -419,6 +447,9 @@ export const CliSpec = z.object({
       nativeCommands: [],
       limitEnv: {},
       modelSwitch: false,
+      review: 'prompt',
+      limits: 'none',
+      limitArgs: [],
     }),
   /** 项目里每次启动会读的说明文件；第一个是还没有文件时新建的那个 */
   docs: z.array(z.string().regex(/^(?!\/)(?!.*\.\.)[\w.\-/]+$/, '只能是项目目录里的相对路径')).default(['AGENTS.md']),
@@ -496,6 +527,16 @@ function value(o: BuildOptions, key: string): unknown {
       return o.fork
     case 'forkBefore':
       return o.fork?.before
+    case 'forkEnd':
+      return o.fork?.end
+    case 'systemPromptFile':
+      return o.systemPromptFile
+    case 'autoCompactTokens':
+      return o.autoCompactTokens
+    case 'contextWindow':
+      return o.contextWindow
+    case 'maxOutput':
+      return o.maxOutput
     case 'title':
       return o.title
     case 'noEdit':
@@ -539,6 +580,23 @@ export function buildFromRules(rules: ArgRule[], o: BuildOptions): string[] {
   return [...out, ...o.extraArgs]
 }
 
+/**
+ * 设置里的额外参数只留 keep 里的参数（每个带一个值；长参数也认 --x=值），其余丢掉；keep 为空时全部保留
+ */
+export function keepExtraArgs(args: string[], keep: string[]): string[] {
+  if (!keep.length) return args
+  const out: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (keep.includes(a) && i + 1 < args.length) out.push(a, args[++i])
+    else if (keep.some((k) => k.startsWith('--') && a.startsWith(`${k}=`))) out.push(a)
+  }
+  return out
+}
+
+/** 规则里自己写了 {systemPrompt} 时（例如按是否传文件选参数），不再自动在末尾补一条 */
+const mentionsPrompt = (rules: ArgRule[]) => rules.some((r) => r.args.some((a) => a.includes('{systemPrompt}')))
+
 /** 配置编译成面板用的 CLI 定义 */
 export function specToDefinition(input: CliSpecInput): CliDefinition {
   const spec = CliSpec.parse(input)
@@ -566,12 +624,15 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     buildArgs: (o) => {
       // 常驻协议和一次性执行的参数不一样（不能再带 -p / --output-format）
       const rules = spec.protocol === 'rpc' ? (spec.rpcArgs ?? spec.args) : spec.args
-      // 系统提示词能传文件时用文件参数（调用方已经把内容写成文件，见 invoke）
-      const promptFlag = spec.systemPromptFileFlag || spec.systemPromptFlag
-      return buildFromRules(
-        promptFlag ? [...rules, { if: 'systemPrompt', args: [promptFlag, '{systemPrompt}'] }] : rules,
-        o,
-      )
+      // 系统提示词能传文件时用文件参数（调用方已经把内容写成文件，见 invoke）；
+      // systemPromptFlag 为 true 时由协议传，不加参数；规则里自己写了 {systemPrompt} 的按规则来
+      const promptFlag =
+        spec.systemPromptFileFlag || (typeof spec.systemPromptFlag === 'string' ? spec.systemPromptFlag : '')
+      const all =
+        promptFlag && !mentionsPrompt(rules)
+          ? [...rules, { if: 'systemPrompt', args: [promptFlag, '{systemPrompt}'] }]
+          : rules
+      return buildFromRules(all, { ...o, extraArgs: keepExtraArgs(o.extraArgs, spec.extraArgsKeep) })
     },
     installHint: spec.installHint || (spec.npmPackage ? `npm install -g ${spec.npmPackage}` : ''),
     npmPackage: spec.npmPackage,
@@ -585,7 +646,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     notes: f.notes,
     keepAlive: f.keepAlive,
     compact: f.compact,
-    review: 'prompt',
+    review: f.review,
     fork: f.fork,
     autoCompact: f.autoCompact,
     autoCompactEnv: f.autoCompactEnv,
@@ -593,8 +654,9 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     nativeCommands: f.nativeCommands,
     limitEnv: f.limitEnv,
     limitFile: f.limitFile,
+    limitArgs: f.limitArgs.length ? f.limitArgs : undefined,
     modelSwitch: f.modelSwitch,
-    limits: 'none',
+    limits: f.limits,
     docs: spec.docs,
     docsNote: tr(spec.docsNote),
     globalDoc: spec.globalDoc || undefined,
@@ -604,6 +666,8 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     modelsFrom: spec.modelsFrom,
     readOnly: spec.readOnlyPermission,
     color: spec.color,
+    images: spec.images || undefined,
+    modelsRead: spec.modelsRead || undefined,
     envExample: spec.envExample,
     env: spec.env,
     options: spec.options.map((x) => ({ ...x, label: tr(x.label), hint: tr(x.hint) })),
