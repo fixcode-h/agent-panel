@@ -2337,9 +2337,10 @@ export function TaskView({
                           <Fragment key={b.m.id}>
                             <UserMessage
                               anchorId={b.m.id}
-                              // AI 分析窗口里，分析对话的第一句是面板拼好的报错 / 记录：画成「分析对象」卡片（设计稿 AiWindow）
+                              // 分析对话的第一句是面板拼好的报错 / 记录：画成「分析对象」卡片（设计稿 AiWindow）。
+                              // 不只在 AI 分析窗口里：从窗口「在父对话里打开」放大到对话页后也一样折叠成卡片，不铺成整段长文
                               subject={
-                                embed && b.m.id === firstUser && isAnalysisTask(task, localAgents)
+                                b.m.id === firstUser && isAnalysisTask(task, localAgents)
                                   ? { label: t('分析对象'), hint: t('面板自动附上') }
                                   : undefined
                               }

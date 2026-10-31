@@ -1116,6 +1116,9 @@ export const EN_TASKS: Record<string, string> = {
   '已收到{name}发来的消息': 'Received a message from {name}',
   '发给{name}的消息': 'Message to {name}',
   '来自 {name}': 'from {name}',
+  // 子任务窗口标题栏的状态胶囊
+  '等 API 名额': 'Waiting for API slot',
+  正在启动: 'Starting',
   '发给 {n} 个子对话的同一条消息': 'The same message sent to {n} sub-conversations',
   没送到: 'Not delivered',
   已送达: 'Delivered',
