@@ -88,18 +88,27 @@ import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
 import { docRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
-import { sentToOther } from './peer-message.ts'
+import { currentAskIndex, sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { summaryCardRules, summaryDetailRules } from './summary-card.ts'
 import { changedFilesPart, sharedWrapPart, uePart } from './wrapup-prompt.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
-import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyBlock } from './test-steps.ts'
+import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from './test-steps.ts'
 import { parseVerdict } from './verdict.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
-import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
+import {
+  beginTurn,
+  CHILD_STALE_MS,
+  convStateText,
+  endTurn,
+  pauseStep,
+  stopReasonText,
+  timeAgo,
+  withAttachments,
+} from './task.ts'
 import { isPlainChat } from './conv-mode.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
@@ -131,8 +140,11 @@ import {
 /** 子任务、工作流运行的终止开关在 run-stops.ts：服务端路由从这里取 */
 export { stopHelper, stopPlan } from './run-stops.ts'
 
-/** 每个父对话交给子对话的话 → 交给了哪个子对话（见 sendToConversation：一条消息只交给一个子对话） */
-const handedOff = new WeakMap<object, Map<string, string>>()
+/**
+ * 每个父对话在这条用户消息（ask 是它的 id）里交给子对话的话 → 交给了哪个子对话（见 sendToConversation：
+ * 用户的一条消息只交给一个子对话）。用户发了新消息就换一份，和 sentToOther 的范围一致
+ */
+const handedOff = new WeakMap<object, { ask: string; sent: Map<string, string> }>()
 
 /**
  * 这个对话名下的子对话（计划按它对上等待、收口）：set_plan、finish_plan 都按这一份算。
@@ -1368,10 +1380,10 @@ function buildPart(host: EngineHost) {
 }
 
 /** 对话自己改代码时的验证范围：小改动跑快速检查就收尾，省掉完整测试的时间 */
-function verifyPart(host: EngineHost) {
+function verifyPart(host: EngineHost): string[] {
   const v = host.verify
-  if (!v) return ''
-  const block = verifyBlock(v.steps, {
+  if (!v) return []
+  const [rules, picked] = verifyParts(v.steps, {
     platform: v.platform,
     wslDistro: v.wslDistro,
     scaled: v.scaled,
@@ -1381,11 +1393,8 @@ function verifyPart(host: EngineHost) {
   // 收尾总结里的耗时统计：只对独立分支的子对话提，它才是写收尾总结的那个。
   // 项目配了测试步骤就要求（不限于范围为 parent 的）：它自己跑的那几步也有后台命令的真实耗时
   const timed = v.parentRun === 'child' && v.steps.some((x) => x.enabled)
-  return timed
-    ? `${block}
-
-${TEST_TIME_SUMMARY_RULE}`
-    : block
+  // 规则、本轮结论、耗时要求各是一段：改动清单一变只重发结论那段（见 shared/prompt-delta.ts）
+  return [rules, picked, timed ? TEST_TIME_SUMMARY_RULE : '']
 }
 
 /** 要改文件时才开独立分支：不说清楚的话模型会直接在原目录里改，隔离就落空了 */
@@ -1426,7 +1435,9 @@ function planPart(host: EngineHost, coordinator: boolean): string[] {
   const check = [planNowText(task, nowMs), planNotice(task, nowMs)].filter(Boolean).join('\n')
   // 当前计划和维护规则分成两段：计划每轮都在变，规则不变，续接会话时只重发前一段（见 shared/prompt-delta.ts）
   return [
-    `## 执行计划\n${now}${check ? `\n\n${check}` : ''}`,
+    `## 执行计划\n${now}`,
+    // 进度一句（「已 N 分钟」每分钟都变）单独成段：计划没动时只重发这一句，不连计划全文
+    check ? `## 计划进度\n${check}` : '',
     `## 计划怎么维护
 - 需要好几步才能做完的事（改代码、排查问题、跨模块、要测试验证），分析梳理完先用 set_plan 列出计划再动手；一问一答、一两行的小改动不用列。
 - 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
@@ -3124,18 +3135,19 @@ function makeOrchestra(
       // 一条消息只交给一个子对话（用户 2026-10-24 定的）：同一段话逐个转给几个子对话，
       // 父对话里刷出一排一模一样的「发送消息」，几个子对话还会各改各的同一处
       // 并行发出的几次调用可能还没记进对话：这一轮已经交出去的也记在内存里一起查
-      const handed = handedOff.get(task) ?? new Map<string, string>()
-      handedOff.set(task, handed)
-      const prev = handed.get(message.trim())
+      const ask = task.messages[currentAskIndex(task.messages)]?.id ?? ''
+      let handed = handedOff.get(task)
+      if (handed?.ask !== ask) handedOff.set(task, (handed = { ask, sent: new Map<string, string>() }))
+      const prev = handed.sent.get(message.trim())
       const other = (prev !== id.trim() ? prev : undefined) ?? sentToOther(task, id.trim(), message)
       if (other)
         return {
           ok: false,
           info: `这段话已经交给了子对话 ${other}，一条消息只交给一个子对话：选最相关的那一个交，别的子对话不用重复发。`,
         }
-      handed.set(message.trim(), id.trim())
+      handed.sent.set(message.trim(), id.trim())
       const r = await host.sendToConversation(id.trim(), message)
-      if (!r.ok) handed.delete(message.trim())
+      if (!r.ok) handed.sent.delete(message.trim())
       // 标题从子对话列表里取：补步骤时用它当标题（只看 id 的话计划里会出现「子对话：c1」这种没信息量的标题）
       const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''
       const at = r.ok ? step?.trim() || ensureChildStep(task, id.trim(), kidTitle) : ''
@@ -4059,7 +4071,7 @@ async function conversationPrompt(
     searchPart(host),
     inboxPart(host),
     buildPart(host),
-    verifyPart(host),
+    ...verifyPart(host),
     fixRoutePart(host, coordinator),
     editPart(host),
     backgroundPart(host),
@@ -4121,13 +4133,21 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     const done = all.filter((c) => c.resolved).sort((a, b) => (b.at > a.at ? 1 : b.at < a.at ? -1 : 0))
     const hidden = new Set(done.slice(RECENT_DONE_CHILDREN).map((c) => c.id))
     const list = all.filter((c) => !hidden.has(c.id))
+    // 这一段按全文记指纹（shared/prompt-delta.ts），逐分钟变的「最后活动 N 分钟前」会让整段每轮重发；
+    // 卡住了面板会自动询问、重启（ADR 0036），父对话只需要「执行中却很久没输出」这一个事实，精确时间用 list_conversations 查。
+    // 用 state（等于 CLI 在处理这一轮），不用 busy：排队、收尾中的本来就没有输出
+    const quiet = (c: (typeof all)[number]) =>
+      c.state === 'running' &&
+      !c.waiting &&
+      !!c.lastActivityAt &&
+      Date.now() - Date.parse(c.lastActivityAt) >= CHILD_STALE_MS
     parts.push(
       `## 现有子对话\n${
         list.length
           ? list
               .map(
                 (c) =>
-                  `- ${c.id}｜${c.title}｜${c.busy ? '执行中' : c.status}${c.waiting ? `｜${c.waiting}` : ''}${c.lastActivityAt ? `｜最后活动 ${timeAgo(c.lastActivityAt)}` : ''}：${clip(c.summary, 200) || '（还没有结果）'}`,
+                  `- ${c.id}｜${c.title}｜${c.busy ? '执行中' : c.status}${c.waiting ? `｜${c.waiting}` : ''}${quiet(c) ? `｜已超过 ${CHILD_STALE_MS / 60_000} 分钟没有新输出（详情用 list_conversations 查）` : ''}：${clip(c.summary, 200) || '（还没有结果）'}`,
               )
               .join('\n')
           : '（还没有子对话）'
@@ -4240,15 +4260,11 @@ export async function runConversationTurn(host: EngineHost, who: string) {
   if (turn) host.changed(true)
   try {
     const inline = coordinator && !!host.inlineEdit && agent?.inlineEdit === 'tiny'
-    const parts = await conversationPrompt(
-      host,
-      kind,
-      planning,
-      coordinator,
-      !coordinator && delegatesRole(host, agent),
-      inline,
-      agent,
-    )
+    // 第一轮和保活进程里的下一条必须用同一套参数拼：以前保活那处漏传了 agent，
+    // 角色设定里已写过的规则（主理的分派规则、子对话的提问和完成标准）被发回去，下一轮又宣布作废
+    const buildPrompt = () =>
+      conversationPrompt(host, kind, planning, coordinator, !coordinator && delegatesRole(host, agent), inline, agent)
+    const parts = await buildPrompt()
     const full = parts.join('\n\n')
     // 续接同一个会话时规则段落只发变了的（见 shared/prompt-delta.ts）；回退、预热不省，按完整的发
     const sent = task.promptSent?.[who]
@@ -4271,14 +4287,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
     const onCompacted = () => (live = undefined)
     const nextPrompt = async (text: string) => {
       host.prompt = text
-      const now = await conversationPrompt(
-        host,
-        kind,
-        planning,
-        coordinator,
-        !coordinator && delegatesRole(host, agent),
-        inline,
-      )
+      const now = await buildPrompt()
       const d = promptDelta(now, live, LIVE)
       live = nextSent(now, LIVE, !!d, live)
       const out = d ?? now.join('\n\n')

@@ -1,5 +1,5 @@
 ---
-paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**
+paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**, shared/peer-message.ts
 ---
 
 # 对话状态和父子对话之间的交付
@@ -22,3 +22,15 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**
 
 - 规则：在不在运行只用 `convActive`（`taskActive` / `childActive` / `keepAliveBusy`）；回收前先问它，子对话只随用户停止、归档、删除结束。见 ADR 0012。
 - 防线：`shared/task-stage.test.ts`「对外状态统一」；e2e `04-subagents`「父对话切走」。
+
+## 兜底收口把子对话落成停下后也要上报父对话
+
+- 规则：任何把子对话落成 stopped 的路径都走 `reportToParent`，父计划里等它的那一步才会收口、空闲的父对话才会被叫醒；兜底模块的上报依赖写成必填参数，不写成可选回调（漏接线时 tsc 会报）。
+- 起因：审计发现 ADR 0033 的定时核对只留了可选的 `settled` 又没接，孤儿子对话落成「已中断」后父对话一直停在等它。
+- 防线：`server/tasks/state-sweep.test.ts`「子对话落成已中断后交给父对话上报」。
+
+## 「一条消息只交给一个子对话」按用户消息算范围
+
+- 规则：`sentToOther` 和 `handedOff` 只在当前这条用户消息（`currentAskIndex`：用户亲自发的、已交给 CLI 的最后一条）里去重；子对话交回、面板推进拉起的几轮仍算同一条，用户发了新消息就重新算。
+- 起因：审计发现按整个对话历史去重，父对话对 A 说过「继续」，以后对 B 说「继续」永远被拒。
+- 防线：`shared/peer-message.test.ts`、`server/orchestrator.test.ts` 的去重用例。

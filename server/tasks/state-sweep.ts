@@ -26,6 +26,11 @@ export function createStateSweep(d: {
   live(id: string): StateLive
   /** 收口后通知（日志之外，比如推一次列表刷新）；可选 */
   settled?(id: string, kind: StateBreak): void
+  /**
+   * 孤儿子对话落成「已中断」后交给父对话（计划里等它的那一步收口、父对话空闲时叫醒）。
+   * 必填：以前只留了可选的 settled 又没接，父对话一直停在「等子对话」
+   */
+  reportChild(task: Task): void | Promise<void>
 }) {
   /** 上一次看到的矛盾：id → 「矛盾种类 + updatedAt」 */
   const seen = new Map<string, string>()
@@ -50,6 +55,13 @@ export function createStateSweep(d: {
       },
     ]
     await d.store.update(id, next, { keepUpdatedAt: true })
+    // 上报失败不影响这次收口（子对话已经落盘了），只记日志；用 try/await 连同步抛错一起接住
+    if (next.parentTaskId)
+      try {
+        await d.reportChild(next)
+      } catch (err) {
+        log.warn('task', '定时核对：已中断的子对话没能上报父对话', { task: id, error: (err as Error).message })
+      }
     return true
   }
 
