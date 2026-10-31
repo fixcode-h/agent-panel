@@ -179,6 +179,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!designRunning) return
     const t = setInterval(
       () =>
+        !document.hidden &&
         void api
           .designs()
           .then((ds) =>
@@ -224,7 +225,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const anyRunning = tasks.some((t) => t.status === 'running' || t.cliAlive || !!t.childrenCli)
   useEffect(() => {
     if (!anyRunning) return
-    const t = setInterval(() => void reloadTasks().catch(() => {}), 2500)
+    // 标签页在后台时不刷：多开几个标签页时后台的照样每 2.5 秒拉一次列表
+    const t = setInterval(() => !document.hidden && void reloadTasks().catch(() => {}), 2500)
     return () => clearInterval(t)
     // 有任务在执行时才定时刷新
     // oxlint-disable-next-line react-hooks/exhaustive-deps

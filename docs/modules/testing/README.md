@@ -97,7 +97,7 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 
 ## 依赖
 
-Node.js 22+、`tsx`（单测执行器）、Playwright chromium（界面检查）。端到端需要 macOS / Linux；Windows 用 `npm run test:e2e:wsl`（走 WSL 默认发行版，默认发行版必须是 Ubuntu-24.04），不能在 PowerShell 里直接跑。需要显式指定发行版时，`bash -lc` 会落到 `$HOME`，命令里必须显式 `cd` 到工作区。
+Node.js 22+、`tsx`（单测执行器）、Playwright chromium（界面检查；`npm ci` 只装 Playwright 包，浏览器要另外装一次：`npx playwright install chromium`，CI 的 `.github/workflows/ci.yml` 也是这一步）。端到端需要 macOS / Linux；Windows 用 `npm run test:e2e:wsl`（走 WSL 默认发行版，默认发行版必须是 Ubuntu-24.04），不能在 PowerShell 里直接跑。需要显式指定发行版时，`bash -lc` 会落到 `$HOME`，命令里必须显式 `cd` 到工作区。
 
 ## 回归验证
 

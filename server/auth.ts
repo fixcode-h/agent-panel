@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DATA_DIR } from './store.ts'
@@ -28,6 +28,17 @@ export function accessToken() {
     writeFileSync(FILE, token, { mode: 0o600 })
   }
   return token
+}
+
+/**
+ * 核对令牌：按固定时间比较，不用 ===（逐字符比、第一个不同就返回，按响应时间能一位一位猜出令牌）。
+ * 长度不同直接不等：timingSafeEqual 要求等长，令牌长度本身不是秘密
+ */
+export function tokenMatches(given: string | undefined) {
+  if (!given) return false
+  const a = Buffer.from(given)
+  const b = Buffer.from(accessToken())
+  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 /** 启动时打印和自动打开的地址带上令牌，浏览器第一次打开时换成 Cookie */
@@ -64,7 +75,7 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
   if (!local && !isAllowedHost(host)) return c.text(t('这个地址不能访问面板'), 403)
   const q = c.req.query('token')
   // 带令牌的地址：发 Cookie，再跳到去掉令牌的地址，免得令牌留在地址栏和历史记录里
-  if (q && q === accessToken() && c.req.method === 'GET' && !c.req.path.startsWith('/api/')) {
+  if (q && tokenMatches(q) && c.req.method === 'GET' && !c.req.path.startsWith('/api/')) {
     grantCookie(c)
     const url = new URL(c.req.url)
     url.searchParams.delete('token')
@@ -74,7 +85,7 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
   // 外网访问开着时本机也要：自建反代不加转发头、又把 Host 改成 127.0.0.1 时，外网请求和本机请求分不出来
   const settings = await getSettings()
   const requireToken = settings.requireToken || settings.remoteAccess.enabled || !local
-  if (!requireToken || getCookie(c, COOKIE) === accessToken()) return next()
+  if (!requireToken || tokenMatches(getCookie(c, COOKIE))) return next()
   // AI 改设计用的工具由 CLI 调，没有 Cookie；地址里的随机令牌只在那一轮设计里有效，由接口自己核对
   if (c.req.path.startsWith('/api/mcp/design/')) return next()
   // 面板工具（提问、派子任务、新建子对话）同理：CLI 拿着这一轮的随机地址来调，没有 Cookie，

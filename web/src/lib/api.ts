@@ -617,6 +617,21 @@ export const api = {
   /** 清理无效进程：pids 是用户在确认列表里勾选的，空表示清这个对话的全部残留 */
   cleanTaskProcesses: (id: string, pids: number[]) =>
     request<CleanProcessesResult>(`/tasks/${id}/processes/clean`, json('POST', { pids })),
+  /** 所有对话里留下的 CLI 进程（任务不在跑、进程还活着）：设置里一处看全 */
+  staleProcesses: () =>
+    request<{
+      processes: {
+        pid: number
+        command: string
+        ownerTaskId: string
+        ownerTitle: string
+        startedAt: number
+        rss: number | null
+      }[]
+      unavailable: string
+    }>('/tasks/stale-processes'),
+  cleanStaleProcesses: (pids: number[]) =>
+    request<CleanProcessesResult>('/tasks/stale-processes/clean', json('POST', { pids })),
   /** AI 清理建议：只给建议，确认后前端再调 cleanTaskProcesses */
   suggestTaskProcesses: (id: string) =>
     request<ProcessSuggestResult>(`/tasks/${id}/processes/suggest`, json('POST', {})),
@@ -912,6 +927,22 @@ export const api = {
   trash: () => request<TrashRow[]>('/tasks/trash'),
   /** 从回收站恢复；worktreeCleared 表示独立分支目录已经没了，恢复后要重新执行 */
   restoreTask: (id: string) => request<{ worktreeCleared: boolean }>(`/tasks/${id}/restore`, { method: 'POST' }),
+  /** 删掉的角色、工作流、项目（对话的回收站在上面）：保留期和对话一样 */
+  itemTrash: () =>
+    request<
+      {
+        kind: 'agent' | 'workflow' | 'project'
+        id: string
+        name: string
+        deletedAt: string
+        tasks: number
+        leftDays: number
+      }[]
+    >('/trash/items'),
+  restoreItem: (kind: string, id: string) =>
+    request<{ ok: true; tasks: number }>(`/trash/items/${kind}/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
+  purgeItem: (kind: string, id: string) =>
+    request<void>(`/trash/items/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   /** 永久删除：不进回收站，内容直接清掉（界面先让用户二次确认） */
   permanentDeleteTask: (id: string) => request<void>(`/tasks/${id}/permanent`, { method: 'DELETE' }),
   /** 搜对话正文：只回命中片段和定位信息，不回整条消息（口径见 shared/task-search.ts） */

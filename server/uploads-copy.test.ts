@@ -78,3 +78,20 @@ test('没确认过、超过上限的路径都不拷；确认过的拷进数据�
   assert.ok(!existsSync(path.dirname(owned[0].path)), '副本目录整个删掉')
   assert.ok(existsSync(other), '没确认过的路径不删')
 })
+
+test('/open 只认附件：随便一段本机路径拒绝，对话里发过的附件放行', async () => {
+  const outside = make('outside.txt')
+  const res = await post('/open', { path: outside, reveal: true })
+  assert.equal(res.status, 403)
+  assert.match(((await res.json()) as { error: string }).error, /只能打开对话里的附件/)
+  // 不存在的附件目录外路径同样先按「不是附件」拒绝，不透露文件在不在
+  assert.equal((await post('/open', { path: path.join(src, 'nope.txt') })).status, 403)
+  // 对话里发过的附件（known）放行：这里用不存在的文件，只验到「过了路径校验、报附件已经不在了」，不真的打开程序
+  const known = uploadsApi({ known: async (f) => f === path.join(src, 'gone.txt') })
+  const r2 = await known.request('/open', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: path.join(src, 'gone.txt') }),
+  })
+  assert.equal(r2.status, 404)
+})

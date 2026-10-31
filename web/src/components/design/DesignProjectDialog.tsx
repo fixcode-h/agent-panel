@@ -33,7 +33,7 @@ import { DirPicker, useDirInfo } from '@/components/projects/DirPicker'
 import { NavItem } from '@/components/ui/dialog-nav'
 import { ScopeRequests } from '@/components/chat/AskToggle'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
-import { t } from '@shared/i18n'
+import { getLang, t } from '@shared/i18n'
 
 export type DesignProjectSection = 'general' | 'prompts'
 
@@ -492,7 +492,7 @@ function PromptsPage({
                   >
                     {f.pick ? <Check className="h-3 w-3 text-accent-text" /> : <Plus className="h-3 w-3" />}
                     <span className="text-caption text-subtle">{catLabel(f.category)}</span>
-                    {f.zh}
+                    {getLang() === 'en' ? f.en : f.zh}
                   </button>
                 ))}
               </div>
@@ -568,12 +568,13 @@ function PromptsPage({
                 {presets.map((p) => (
                   <button
                     key={p.zh}
-                    title={p.en}
+                    // 英文界面显示英文说法（预设两种都写好了），提示里给另一种
+                    title={getLang() === 'en' ? p.zh : p.en}
                     onClick={() => onChange((l) => [...l, { id: newId(), category: c, ...p, enabled: true }])}
                     className="chip-idle flex cursor-pointer items-center gap-0.5 rounded-md px-1.5 py-0.5 text-footnote text-subtle transition-colors hover:text-fg"
                   >
                     <Plus className="h-3 w-3" />
-                    {p.zh}
+                    {getLang() === 'en' ? p.en : p.zh}
                   </button>
                 ))}
               </div>

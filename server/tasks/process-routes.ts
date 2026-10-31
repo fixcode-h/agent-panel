@@ -138,6 +138,47 @@ export function registerProcessRoutes(sc: TasksScope) {
   })
 
   /**
+   * 全局的残留进程：所有对话里任务已经不在跑、CLI 还活着的。设置「数据」里一处看全、一键清理，
+   * 不用一个个打开对话再进进程菜单。和单个对话的清理同一套判定（cleanableClis），这里只是不限对话
+   */
+  sc.routes.get('/stale-processes', async (c) => {
+    const map = await processSnapshot()
+    const { targets } = cleanableClis({ entries: trackedClis(), map, aliveTask: sc.taskAlive })
+    const rows = await Promise.all(
+      targets.map(async (e) => ({
+        pid: e.pid,
+        command: e.argv.slice(0, 200),
+        ownerTaskId: e.owner?.taskId ?? '',
+        ownerTitle: e.owner?.taskId ? ((await sc.current(e.owner.taskId))?.title ?? '') : '',
+        startedAt: e.startedAt,
+        rss: map?.get(e.pid)?.rss ?? null,
+      })),
+    )
+    return c.json({ processes: rows, unavailable: map ? '' : t('读不到系统进程信息') })
+  })
+
+  sc.routes.post('/stale-processes/clean', async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { pids?: unknown }
+    const only = Array.isArray(body.pids) ? body.pids.filter((x): x is number => Number.isInteger(x)) : []
+    const map = await processSnapshot()
+    const { targets, skipped, gone } = cleanableClis({ entries: trackedClis(), map, aliveTask: sc.taskAlive, only })
+    for (const pid of gone) untrackCliProcess(pid)
+    for (const e of targets) killTree(e.pid)
+    if (targets.length) await new Promise((r) => setTimeout(r, 1200))
+    const killed: number[] = []
+    for (const e of targets) {
+      if (isProcessAlive(e.pid)) {
+        skipped.push({ pid: e.pid, reason: t('进程没有结束（可能权限不足）') })
+        continue
+      }
+      killed.push(e.pid)
+      untrackCliProcess(e.pid)
+    }
+    if (killed.length || gone.length) log.info('exec', '全局清理残留进程', { 清理: killed, 登记残留: gone })
+    return c.json({ killed, skipped, gone })
+  })
+
+  /**
    * 清理无效进程：只清面板登记过、任务已经不在跑的（登记残留）。
    * 用户确认列表里的 pid 传进来就只清这些；传空时清这个对话的全部残留
    */

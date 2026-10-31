@@ -28,7 +28,8 @@ export function useRunUsage(task: Task, enabled = true): RunUsage {
         .catch(() => alive && setFetched(null))
     void load()
     if (!busy) return () => void (alive = false)
-    const timer = setInterval(load, 1000)
+    // 标签页在后台时不问：多开几个标签页时后台的也每秒打一次接口
+    const timer = setInterval(() => !document.hidden && load(), 1000)
     return () => {
       alive = false
       clearInterval(timer)

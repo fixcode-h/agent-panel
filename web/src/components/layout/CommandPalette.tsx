@@ -14,10 +14,11 @@ import {
 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { listableAgents } from '@shared/builtin/core'
-import { useData, useNav, useTasks } from '@/lib/data'
+import { useData, useNav, useTasks, type Route } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
-import { byAskedAt } from '@shared/task'
+import { byAskedAt, taskDeleted } from '@shared/task'
+import type { Task } from '@shared/schema'
 import { Modal } from '@/components/ui/modal'
 import { Kbd } from '@/components/ui/kbd'
 import { useTaskSearch } from '@/lib/use-task-search'
@@ -253,11 +254,45 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   )
 }
 
-/** 全局快捷键：⌘K 命令面板，⌘⇧O 新建任务，⌘B 收起侧栏 */
-export function useShortcuts(openPalette: () => void) {
-  const { go } = useNav()
+/** 焦点在可输入的地方（输入框、文本区、可编辑区域）：单键快捷键（?）不能抢用户打的字 */
+const typing = (el: Element | null) =>
+  !!el &&
+  (el.matches('input, textarea, select, [contenteditable=""], [contenteditable="true"]') ||
+    !!el.closest('[contenteditable="true"]'))
+
+/**
+ * 同一栏里的对话顺序：和侧栏一样，项目里的顶层对话、或聊天，按最近活动排。
+ * Alt+↑ / Alt+↓ 按这个顺序切换
+ */
+function siblingTasks(tasks: Task[], route: Route) {
+  const inProject = route.page === 'projects' && !!route.id
+  return tasks
+    .filter((x) => !taskDeleted(x) && !x.parentTaskId && (inProject ? x.projectId === route.id : !x.projectId))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+/** 全局快捷键：⌘K 命令面板，⌘⇧O 新建任务，⌘B 收起侧栏，Alt+↑/↓ 切对话，? 快捷键一览 */
+export function useShortcuts(openPalette: () => void, openHelp?: () => void) {
+  const { go, route } = useNav()
+  const { tasks } = useTasks()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && openHelp && !typing(document.activeElement)) {
+        e.preventDefault()
+        openHelp()
+        return
+      }
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        const cur = route.page === 'projects' ? route.sub : route.page === 'chat' ? route.id : undefined
+        if (!cur || (route.page !== 'projects' && route.page !== 'chat')) return
+        const list = siblingTasks(tasks, route)
+        const i = list.findIndex((x) => x.id === cur)
+        const next = list[i + (e.key === 'ArrowDown' ? 1 : -1)]
+        if (i < 0 || !next) return
+        e.preventDefault()
+        go(next.projectId ? { page: 'projects', id: next.projectId, sub: next.id } : { page: 'chat', id: next.id })
+        return
+      }
       const mod = isMac ? e.metaKey : e.ctrlKey
       if (!mod || e.altKey) return
       const k = e.key.toLowerCase()
@@ -275,5 +310,5 @@ export function useShortcuts(openPalette: () => void) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [go, openPalette])
+  }, [go, openPalette, openHelp, route, tasks])
 }

@@ -71,3 +71,9 @@ test('图片只放行外链和内联的位图 / SVG，替代文字放到图注�
   )
   assert.doesNotMatch(html, /data:text\/html/)
 })
+
+test('链接：协议里夹着制表符、换行的 javascript: 不能被当成相对链接放行', () => {
+  for (const href of ['java\tscript:alert(1)', 'java\nscript:alert(1)', ' javascript:alert(1)', 'JaVa\u0000Script:x'])
+    assert.doesNotMatch(renderDoc(`[a](<${href}>)`, NONE), /<a /, href)
+  assert.match(renderDoc('[a](https://example.com)', NONE), /<a href="https:\/\/example\.com"/)
+})

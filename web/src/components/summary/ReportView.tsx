@@ -14,7 +14,7 @@ import {
   windowLabel,
   type SummaryRecord,
 } from '@shared/summary'
-import { t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useAutosave } from '@/lib/useAutosave'
 import type { ReportMode } from '@/lib/summary-page'
@@ -70,7 +70,7 @@ export function ReportView({
           .join(' · '),
     t('{n} 字', { n: reportChars(md) }),
     duration && t('提炼耗时 {time}', { time: duration }),
-    new Date(report.createdAt).toLocaleString(),
+    new Date(report.createdAt).toLocaleString(uiLocale()),
   ]
     .filter(Boolean)
     .join(' · ')

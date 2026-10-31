@@ -311,6 +311,8 @@ export const EN_SERVER: Record<string, string> = {
   '「{name}」超过 {size} MB': '“{name}” exceeds {size} MB',
   不是附件: 'Not an attachment',
   附件已经不在了: 'The attachment no longer exists',
+  '只能打开对话里的附件：这个路径不是面板记录过的附件':
+    'Only attachments from conversations can be opened: the panel has no record of this path as an attachment',
   '工作流已经被删除，只能按任务创建时的工作流继续':
     'The workflow was deleted; you can only resume with the workflow the task was created with',
   这个文件不在任务的改动里: "This file is not among the task's changes",
@@ -381,6 +383,8 @@ export const EN_SERVER: Record<string, string> = {
   校验中: 'Verifying',
   '下载校验文件失败：{status}': 'Failed to download the checksum file: {status}',
   '校验文件里没有 {name}': '{name} is missing from the checksum file',
+  '这个版本的发布里没有校验文件（SHA256SUMS），无法确认安装包完整、没被改过，已取消更新。可以到 GitHub Releases 手动下载':
+    'This release has no checksum file (SHA256SUMS), so the package cannot be verified as complete and untampered. The update was cancelled; you can download it manually from GitHub Releases',
   '下载的包校验不通过，可能下载不完整，请重试':
     'The downloaded package failed verification and may be incomplete. Please try again',
   检查新版本: 'Checking the new version',
@@ -507,6 +511,10 @@ export const EN_SERVER: Record<string, string> = {
   '{method} 退出码 {code}': '{method} exited with code {code}',
   '{name} 没有装上': '{name} was not installed',
   '正在下载 cloudflared，稍后再试': 'cloudflared is already downloading, try again later',
+  '下载的 cloudflared 只有 {n} 字节，不是完整的程序':
+    'The downloaded cloudflared is only {n} bytes, not a complete program',
+  '下载的 cloudflared 不是这个系统能运行的程序（文件头 {magic}）':
+    'The downloaded cloudflared is not a program this system can run (file header {magic})',
   '没能接上面板的工具（{error}），这一轮不能向你提问、也收不到执行中的补充':
     "Couldn't attach the panel's tools ({error}), so this turn can't ask you questions or receive notes you add while it runs",
   '模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}': 'Model request failed; retry {n}/{max} in {s}s: {error}',
@@ -558,4 +566,7 @@ export const EN_SERVER: Record<string, string> = {
   这一轮没有记下改动: 'No changes were recorded for this turn',
   这一轮的改动已经撤销过了: 'The changes from this turn were already reverted',
   这个文件不在这一轮的改动里: 'This file is not among the changes from this turn',
+  回收站里没有这一项: 'This item is not in the recycle bin',
+  '「{name}」已经存在，不需要恢复': '"{name}" already exists; nothing to restore',
+  读不到系统进程信息: 'Could not read system process information',
 }

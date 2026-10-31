@@ -16,8 +16,10 @@ import { AiFixButton } from '@/components/ui/ai-fix'
 import { Card } from '@/components/ui/card'
 import { MemoryChart } from '@/components/settings/MemoryChart'
 import { TrashSection } from '@/components/settings/TrashSection'
+import { ItemTrashSection } from '@/components/settings/ItemTrashSection'
 import { CleanupSection } from '@/components/settings/CleanupSection'
 import { KeepAliveList } from '@/components/settings/KeepAliveList'
+import { StaleProcesses } from '@/components/settings/StaleProcesses'
 import { TaskDiskUsage } from '@/components/settings/TaskDiskUsage'
 import { t } from '@shared/i18n'
 
@@ -299,6 +301,7 @@ export function DataSection() {
 
       {/* 回收站：删掉的对话先放 7 天，这里能恢复或永久删除 */}
       <TrashSection key={trashKey} />
+      <ItemTrashSection key={`items-${trashKey}`} />
 
       {/* 内存：面板自己的进程 + 它拉起的 CLI 子进程，按采样间隔画曲线；AI 分析把这份采样交给本机 CLI 体检 */}
       <section className="flex flex-col gap-2">
@@ -364,6 +367,7 @@ export function DataSection() {
           )}
         </p>
         <KeepAliveList />
+        <StaleProcesses />
       </section>
 
       <section className="flex flex-col gap-3">

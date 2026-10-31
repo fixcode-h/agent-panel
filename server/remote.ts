@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createWriteStream } from 'node:fs'
-import { chmod, mkdir, rename, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { chmod, mkdir, open, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -278,6 +279,49 @@ async function downloadFile(from: string, to: string, onPercent: (n: number) => 
   await rename(part, to)
 }
 
+/** 小于这个大小的不可能是 cloudflared（正常 20–50 MB）：多半是被代理、门户页换成了一段 HTML */
+const MIN_BINARY_BYTES = 5 * 1024 * 1024
+
+/**
+ * 文件头是不是这个系统能跑的可执行文件：Windows 是 PE（MZ），Linux 是 ELF，macOS 是 Mach-O（含通用二进制）。
+ * 只看文件头，返回给用户看的原因，通过时返回空字符串
+ */
+export function binaryProblem(head: Buffer, size: number, platform: NodeJS.Platform): string {
+  if (size < MIN_BINARY_BYTES) return t('下载的 cloudflared 只有 {n} 字节，不是完整的程序', { n: String(size) })
+  const magic = head.subarray(0, 4).toString('hex')
+  const ok =
+    platform === 'win32'
+      ? head.subarray(0, 2).toString('latin1') === 'MZ'
+      : platform === 'linux'
+        ? magic === '7f454c46'
+        : platform === 'darwin'
+          ? ['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe'].includes(magic)
+          : false
+  return ok ? '' : t('下载的 cloudflared 不是这个系统能运行的程序（文件头 {magic}）', { magic })
+}
+
+/**
+ * 下载完的 cloudflared 先核对再用：cloudflared 的 GitHub Release 没有可以离线核对的校验文件，
+ * 至少确认它是完整大小的、本系统格式的可执行文件，并把 sha256 记进日志，出了问题能对照官方发布页核对
+ */
+async function verifyBinary(file: string) {
+  const fh = await open(file, 'r')
+  let head: Buffer
+  let size: number
+  try {
+    size = (await fh.stat()).size
+    head = Buffer.alloc(4)
+    await fh.read(head, 0, 4, 0)
+  } finally {
+    await fh.close()
+  }
+  const why = binaryProblem(head, size, process.platform)
+  if (why) throw new Error(why)
+  const h = createHash('sha256')
+  await pipeline(createReadStream(file), h)
+  log.info('remote', 'cloudflared 文件核对通过', { path: file, bytes: size, sha256: h.digest('hex') })
+}
+
 /** 下载 cloudflared 到数据目录；返回错误信息，成功时为空 */
 export async function installCloudflared(): Promise<string> {
   if (download?.running) return t('正在下载 cloudflared，稍后再试')
@@ -305,6 +349,11 @@ export async function installCloudflared(): Promise<string> {
       await execFileAsync('tar', ['-xzf', file, '-C', BIN])
       await rm(file, { force: true })
     }
+    // 核对不过就删掉：留着的话下次检测会把这个坏文件当成已装好
+    await verifyBinary(BIN_FILE).catch(async (e) => {
+      await rm(BIN_FILE, { force: true })
+      throw e
+    })
     if (!isWin) await chmod(BIN_FILE, 0o755)
     // 下载到的文件可能和设置里填的命令不是同一个；重新检测一次
     cache = null

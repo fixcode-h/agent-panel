@@ -32,6 +32,11 @@ function detect(): Lang {
 
 let lang: Lang = detect()
 export const getLang = () => lang
+/**
+ * 界面语言对应的日期 / 数字格式：所有 toLocale*、Intl.*Format 都传它。
+ * 不传的话跟着浏览器走，英文界面配中文系统时会混出两种格式
+ */
+export const uiLocale = () => (lang === 'en' ? 'en-US' : 'zh-CN')
 export function setLang(l: Lang) {
   lang = l
 }

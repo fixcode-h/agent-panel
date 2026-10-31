@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronRight, CircleCheck, CircleSlash, ListChecks, TriangleAlert } from 'lucide-react'
-import { t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan } from '@shared/schema'
 import {
   itemStale,
@@ -567,7 +567,7 @@ function OldPlan({ plan }: { plan: TaskPlan }) {
         <span className="shrink-0 text-caption text-subtle tabular-nums">
           {t('{done}/{total} 步', { done, total: plan.steps.length })}
           {at &&
-            ` · ${at.toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+            ` · ${at.toLocaleString(uiLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
         </span>
       </button>
       {open && (

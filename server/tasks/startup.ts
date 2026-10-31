@@ -42,6 +42,19 @@ export async function migrateOnStart(store: Store) {
     ]
     await store.update(task.id, next)
   }
+  // 上面没处理的（status 不是 running、也不在恢复名单里）还可能带着 working / awaitingUser / prewarming：
+  // 崩溃时这一轮的收尾没来得及落盘。刚启动时一个 CLI 进程都没有，这些「在用」标记都是假的，
+  // 不清掉的话清理（cleanup.ts 的 chatBusy、sweepTaskInfoOf）永远当它在用，保活上限也会把它算进去
+  for (const meta of await store.list())
+    if (meta.working === true || meta.awaitingUser === true || meta.prewarming === true) {
+      const task = await store.get(meta.id)
+      if (!task) continue
+      await store.update(
+        task.id,
+        { ...task, working: false, awaitingUser: false, prewarming: false },
+        { keepUpdatedAt: true },
+      )
+    }
   // 合并到一半面板退出的子对话：「合并中」只在内存里有效，重启后没人在合，finish_child 和 submit_merge 却都按它拒绝，
   // 父子两边都卡住。退回「已请求收尾」，并告诉父对话重新 finish_child
   for (const meta of all.filter((x) => x.wrapRequest?.state === 'merging' && !taskDeleted(x)))

@@ -58,6 +58,7 @@ export function ChatComposer({
   above,
   onSync,
   onKeyDown,
+  recall,
   attach,
   tools,
   actions,
@@ -131,6 +132,8 @@ export function ChatComposer({
   /** 页面级的拖入状态交给外面画（传了 dropScope 时用） */
   onDropOver?: (over: boolean) => void
   className?: string
+  /** 输入框空着时按 ↑：取回上一条发出去的话接着改（和终端、Claude Code 一样）；没有可取回的返回空 */
+  recall?: () => string | undefined
 }) {
   const own = useRef<RichInputHandle>(null)
   const editor = taRef ?? own
@@ -235,6 +238,14 @@ export function ChatComposer({
         onSync={onSync}
         onKeyDown={(e) => {
           if (onKeyDown?.(e)) return true
+          if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !text.trim() && recall) {
+            const last = recall()
+            if (!last) return false
+            e.preventDefault()
+            editor.current?.setText(last)
+            change(last)
+            return true
+          }
           if (e.key !== 'Enter' || e.shiftKey) return false
           e.preventDefault()
           // 和发送按钮同一个判定：不能发就说清原因，不要默默什么都不做

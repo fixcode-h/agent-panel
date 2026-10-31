@@ -15,7 +15,7 @@
     "build": "vite build",
     "start": "tsx server/index.ts --prod",
     "typecheck": "tsc -b && node scripts/i18n-check.mjs",
-    "lint": "oxlint --deny-warnings && prettier --check --cache --cache-location .tmp/prettier-cache web/src server shared scripts vite.config.ts && node scripts/rules-check.mjs && node scripts/secret-check.mjs && node scripts/test-budget.mjs --check",
+    "lint": "oxlint --deny-warnings && prettier --check --cache --cache-location .tmp/prettier-cache web/src server shared scripts vite.config.ts extension \"docs/**/*.md\" \"skills/**/*.md\" \"README*.md\" CONTRIBUTING.md && node scripts/rules-check.mjs && node scripts/secret-check.mjs && node scripts/test-budget.mjs --check",
     "check:secrets": "node scripts/secret-check.mjs",
     "lessons": "node scripts/lessons.mjs",
     "docs:bugs": "node scripts/doc-bugs.mjs",

@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
 import { openAiFix } from '@/lib/ai-fix'
 import { MB, fmtMem } from '@/lib/mem'
 import { cn } from '@/lib/utils'
-import { getLang, t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { TASK_MEMORY_TOPIC } from '@shared/memory-analysis'
 import type { MemoryPoint } from '@shared/schema'
 
@@ -37,7 +37,7 @@ function readAnalysis(taskId: string): LastAnalysis | null {
 
 function timeLabel(t: number) {
   const d = new Date(t)
-  return d.toLocaleTimeString(getLang() === 'en' ? 'en-US' : 'zh-CN', {
+  return d.toLocaleTimeString(uiLocale(), {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -46,7 +46,7 @@ function timeLabel(t: number) {
 
 function dayLabel(t: number) {
   const d = new Date(t)
-  return d.toLocaleDateString(getLang() === 'en' ? 'en-US' : 'zh-CN', { month: 'numeric', day: 'numeric' })
+  return d.toLocaleDateString(uiLocale(), { month: 'numeric', day: 'numeric' })
 }
 
 /** 跨天的带上日期，不然「上次分析 09:12」看不出是哪天 */

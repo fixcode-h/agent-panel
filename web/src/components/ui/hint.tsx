@@ -577,12 +577,39 @@ export function GlobalHintHost() {
       if (el) clickedEl.current = el
     }
     document.addEventListener('pointerdown', onDown, { passive: true, capture: true })
+    // 键盘用 Tab 聚焦到图标按钮时也弹提示：只认 :focus-visible（键盘聚焦），鼠标点出来的焦点不弹，
+    // 免得点开面板后提示盖在面板上。读屏不靠这个（按钮本来就有 aria-label）
+    // 只在用 Tab / 方向键移动焦点时弹：按 Esc 关掉提示、关掉弹窗后焦点回到按钮上也会算 :focus-visible，
+    // 这时再弹就成了「Esc 关不掉提示」
+    let navKey = false
+    const onKeyDown = (e: KeyboardEvent) => {
+      navKey = e.key === 'Tab' || e.key.startsWith('Arrow')
+    }
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target instanceof HTMLElement ? e.target : null
+      if (!navKey || !el || !el.matches(':focus-visible')) return
+      const text = el.getAttribute('title') ? hideTitle(el) : (el.dataset.hint ?? '')
+      if (!text) return
+      clearTimers()
+      if (tipRef.current && tipRef.current.el !== el) closeTip()
+      setTipState({ text, el, rect: el.getBoundingClientRect() })
+    }
+    const onFocusOut = (e: FocusEvent) => {
+      const cur = tipRef.current
+      if (cur && cur.el === e.target && hoveredEl.current !== cur.el) closeTip()
+    }
+    document.addEventListener('keydown', onKeyDown, { capture: true })
+    document.addEventListener('focusin', onFocusIn)
+    document.addEventListener('focusout', onFocusOut)
     window.addEventListener('scroll', onScroll, { capture: true, passive: true })
     window.addEventListener('resize', reposition, { passive: true })
     return () => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerleave', onLeaveWindow)
       document.removeEventListener('pointerdown', onDown, { capture: true })
+      document.removeEventListener('keydown', onKeyDown, { capture: true })
+      document.removeEventListener('focusin', onFocusIn)
+      document.removeEventListener('focusout', onFocusOut)
       window.removeEventListener('scroll', onScroll, { capture: true })
       window.removeEventListener('resize', reposition)
       if (rafId.current) cancelAnimationFrame(rafId.current)

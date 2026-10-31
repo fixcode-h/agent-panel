@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, ChevronDown, CornerDownRight } from 'lucide-react'
-import { t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import { peerKindText, subjectLine } from '@shared/peer-message'
 import { timeAgo } from '@shared/task'
@@ -50,7 +50,7 @@ export function ChildLetters({ letters }: { letters: Letter[] }) {
               {x.superseded ? t('（已被新的汇报取代）') : ''}
               {x.subject}
             </span>
-            <span className="shrink-0 text-subtle tabular-nums" title={new Date(x.at).toLocaleString()}>
+            <span className="shrink-0 text-subtle tabular-nums" title={new Date(x.at).toLocaleString(uiLocale())}>
               {timeAgo(x.at)}
             </span>
           </>

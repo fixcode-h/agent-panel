@@ -27,6 +27,18 @@ function nodeScript(dir: string, name: string, code: string) {
 const tick = () => new Promise<void>((r) => setImmediate(r))
 
 /**
+ * 等条件成立：算指纹（真的 git）、读 shell 设置都是真实 I/O，假时钟推不动，只能轮询。
+ * 以前每处固定 25–50ms 一轮、40 轮后静默落空，靠后面的断言兜；这里 5ms 一轮，到点直接报出等的是什么
+ */
+async function until(cond: () => boolean, what: string, ms = 5000) {
+  const end = Date.now() + ms
+  while (!cond()) {
+    if (Date.now() > end) assert.fail(`等了 ${ms}ms 仍未成立：${what}`)
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
+/**
  * 可控的假时钟：只有 advance() 推进时间才触发定时器。
  * 后台命令的超时兜底不能靠真实计时——等真实定时器时事件循环先空掉，node:test 会把用例判成 cancelledByParent
  */
@@ -117,11 +129,19 @@ test('命令没能启动（跑命令之前就抛错）：照样置终态并把�
 test('独占命令按目录排队，一条跑完才开始下一条；cwd 不能跳出目录', async () => {
   const dir = repo()
   const { bg, got, all } = collect(2)
-  // cmd 没有 sleep：用 node 等一会儿再写，命令行写法在 Windows 和 Unix 上一致
-  const wait = nodeScript(dir, 'wait.cjs', "setTimeout(() => require('fs').appendFileSync('order.log', '1\\n'), 300)\n")
-  bg.start({ taskId: 't1', name: '一', command: wait, cwd: '', root: dir, exclusive: true })
+  // 第一条跑起来先报一声，然后等用例放行才写：不靠「等 300ms」赌第二条没插队，而是在它跑着时直接看第二条还在排队。
+  // cmd 没有 sleep，用 node 脚本，命令行写法在 Windows 和 Unix 上一致
+  const wait = nodeScript(
+    dir,
+    'wait.cjs',
+    "const fs = require('fs')\nconsole.log('ready')\nconst t = setInterval(() => { if (fs.existsSync('go')) { clearInterval(t); fs.appendFileSync('order.log', '1\\n') } }, 5)\n",
+  )
+  const a = bg.start({ taskId: 't1', name: '一', command: wait, cwd: '', root: dir, exclusive: true })
   const b = bg.start({ taskId: 't2', name: '二', command: 'echo 2 >> order.log', cwd: '', root: dir, exclusive: true })
   assert.match(b.info, /前面还有 1 条/)
+  await until(() => (bg.view('t1', a.id!)?.output ?? '').includes('ready'), '第一条跑起来')
+  assert.equal(bg.list('t2')[0].state, 'queued', '第一条跑着时，同目录的第二条还在排队')
+  writeFileSync(path.join(dir, 'go'), '')
   await all
   assert.deepEqual(
     got.map((g) => g.job.name),
@@ -137,16 +157,20 @@ test('停止对话时正在跑的会结束，排队的不再执行，也不再�
   const dir = repo()
   const got: BgJob[] = []
   const bg = createBackground((job) => got.push(job))
-  // 同上：cmd 没有 sleep，改成长时间不结束的 node 进程
-  const long = nodeScript(dir, 'long.cjs', 'setTimeout(() => {}, 5000)\n')
-  bg.start({ taskId: 't1', name: '长', command: long, cwd: '', root: dir, exclusive: true })
+  // 同上：cmd 没有 sleep，改成长时间不结束的 node 进程；先报一声，用例等到它真的在跑再停
+  const long = nodeScript(dir, 'long.cjs', "console.log('ready')\nsetTimeout(() => {}, 5000)\n")
+  const a = bg.start({ taskId: 't1', name: '长', command: long, cwd: '', root: dir, exclusive: true })
   bg.start({ taskId: 't1', name: '排队', command: 'echo no > never.txt', cwd: '', root: dir, exclusive: true })
-  await new Promise((r) => setTimeout(r, 300))
+  await until(() => (bg.view('t1', a.id!)?.output ?? '').includes('ready'), '长命令的进程跑起来')
   const t0 = Date.now()
   // 等进程真正退出才返回：调用方接着要删工作目录
   await bg.stop('t1')
   assert.ok(Date.now() - t0 < 4000)
-  await new Promise((r) => setTimeout(r, 200))
+  // stop 等到了长命令的 run 收尾（推不推结果在那之前就定了）；排队那条的链在之后几个微任务里接上，
+  // 给它两轮事件循环：真被启动的话 exec 会同步写 startedAt
+  await tick()
+  await tick()
+  assert.equal(bg.list('t1')[1].startedAt, '', '排队的那条没有开始跑')
   assert.deepEqual(got, [])
   assert.deepEqual(
     bg.list('t1').map((j) => [j.name, j.state]),
@@ -173,8 +197,7 @@ test('进程不退出（close 永远不来）：停止后记录先置终态，�
   const dir = mkdtempSync(path.join(tmpdir(), 'bg-stuck-'))
   bg.start({ taskId: 't1', name: '卡住', command: 'npm test', cwd: '', root: dir, exclusive: false })
   // 等它真的跑起来：算指纹那一步也可能被 stop 拦住，那样测不到「close 不来」
-  for (let i = 0; i < 40 && !started; i++) await new Promise((r) => setTimeout(r, 50))
-  assert.ok(started, '命令已经开始跑')
+  await until(() => started, '命令已经开始跑')
   assert.equal(bg.list('t1')[0].state, 'running', '先算在执行中')
 
   const pending = () => bg.list('t1').filter((j) => j.state === 'queued' || j.state === 'running').length
@@ -264,19 +287,19 @@ test('全局名额：同时跑的后台命令有上限，多的排队；卡住�
   const infos = dirs.map(
     (root, i) => bg.start({ taskId: `t${i}`, name: `job${i}`, command: 'x', cwd: '', root, exclusive: false }).info,
   )
-  for (let i = 0; i < 40 && running < 2; i++) await new Promise((r) => setTimeout(r, 25))
-  await new Promise((r) => setTimeout(r, 100))
+  await until(() => running >= 2, '前两条调到 runner')
+  // 三条的 gate.take 都在 start 时同步排上：前两条已经走完真实的算指纹到了 runner，第三条若被错放，早就置 running 了
+  await tick()
   assert.equal(running, 2, '只跑两条')
   assert.equal(bg.list('t2')[0].state, 'queued', '第三条排队')
   assert.match(infos[2], /同时最多跑 2 条/)
   // 停掉卡住的第一条：记录置终态就还名额，第三条马上开始，不用等 close
   void bg.stop('t0')
-  for (let i = 0; i < 40 && bg.list('t2')[0].state !== 'running'; i++) await new Promise((r) => setTimeout(r, 25))
-  assert.equal(bg.list('t2')[0].state, 'running')
+  await until(() => bg.list('t2')[0].state === 'running', '第三条拿到名额', 1000)
   // 第三条真正调到 runner（算完指纹）才有它的结束开关
-  for (let i = 0; i < 40 && finishers.length < 3; i++) await new Promise((r) => setTimeout(r, 25))
+  await until(() => finishers.length >= 3, '第三条调到 runner')
   while (finishers.length) finishers.shift()!()
-  for (let i = 0; i < 40 && got.length < 2; i++) await new Promise((r) => setTimeout(r, 25))
+  await until(() => got.length >= 2, '两条结果推回')
   assert.ok(peak <= 3)
   assert.deepEqual(got.map((g) => g.job.name).sort(), ['job1', 'job2'])
 })
@@ -291,12 +314,12 @@ test('上限从设置里取：每次排名额时重新读，改了马上生效',
   const { bg, all } = collect(3, { run: fake, maxRunning: () => limit })
   const dirs = [0, 1, 2].map((i) => mkdtempSync(path.join(tmpdir(), `bg-limit-${i}-`)))
   bg.start({ taskId: 'a', name: 'a', command: 'x', cwd: '', root: dirs[0], exclusive: false })
-  for (let i = 0; i < 40 && finishers.length < 1; i++) await new Promise((r) => setTimeout(r, 25))
+  await until(() => finishers.length >= 1, '第一条调到 runner')
   // 上限调大以后再来的两条马上一起跑，不用等第一条
   limit = 3
   bg.start({ taskId: 'b', name: 'b', command: 'x', cwd: '', root: dirs[1], exclusive: false })
   bg.start({ taskId: 'c', name: 'c', command: 'x', cwd: '', root: dirs[2], exclusive: false })
-  for (let i = 0; i < 40 && finishers.length < 3; i++) await new Promise((r) => setTimeout(r, 25))
+  await until(() => finishers.length >= 3, '调大上限后三条一起跑')
   assert.equal(finishers.length, 3)
   while (finishers.length) finishers.shift()!()
   await all
@@ -330,7 +353,7 @@ test('监管：没输出、跑得久都提醒对话；停掉一条后记录置�
   const dir = mkdtempSync(path.join(tmpdir(), 'bg-watch-'))
   const r = bg.start({ taskId: 't1', name: '装浏览器', command: 'x', cwd: '', root: dir, exclusive: false })
   assert.match(r.info, /盯着它直到真正结束/)
-  for (let i = 0; i < 40 && !started; i++) await new Promise((r) => setTimeout(r, 25))
+  await until(() => started, '命令调到 runner')
   const step = async (ms: number) => {
     t += ms
     await clock.advance(ms)
@@ -361,7 +384,7 @@ test('监管：没输出、跑得久都提醒对话；停掉一条后记录置�
   // 对话判断卡住了：停掉
   assert.equal(bg.stopOne('t1', 'nope').ok, false)
   assert.equal(bg.stopOne('t1', r.id!).ok, true)
-  for (let i = 0; i < 40 && !settled.length; i++) await new Promise((r) => setTimeout(r, 25))
+  await until(() => settled.length > 0, '停掉后置终态')
   assert.equal(settled.length, 1, '置终态时通知一次')
   assert.equal(settled[0].state, 'stopped')
   void end
@@ -469,22 +492,19 @@ test('那一行收口：CLI 在结果前面插了说明也认得出，结果到�
 test('按编号读一条后台命令：跑着能读到已输出的内容，跑完读得到最终输出和退出码', async () => {
   const dir = repo()
   const { bg, all } = collect(1)
-  // 先输出一行再等着，好在它跑着的时候读一次
+  // 先输出一行再等用例放行（写 go 文件）：保证读的那一刻它一定还在跑，不靠「等 400ms」赌时序
   const slow = nodeScript(
     dir,
     'slow.cjs',
-    "console.log('first-line')\nsetTimeout(() => { console.log('last-line'); process.exit(0) }, 400)\n",
+    "const fs = require('fs')\nconsole.log('first-line')\nconst t = setInterval(() => { if (fs.existsSync('go')) { clearInterval(t); console.log('last-line'); process.exit(0) } }, 5)\n",
   )
   const started = bg.start({ taskId: 't1', name: '慢命令', command: slow, cwd: '', root: dir, exclusive: false })
   assert.ok(started.ok)
   const id = started.id!
 
   // 跑着：读得到状态和已经输出的内容（输出不进对话记录，界面窗口按这个编号自己拉）
+  await until(() => (bg.view('t1', id)?.output ?? '').includes('first-line'), '读到第一行输出')
   let view = bg.view('t1', id)
-  for (let i = 0; i < 40 && !(view?.output ?? '').includes('first-line'); i++) {
-    await new Promise((r) => setTimeout(r, 50))
-    view = bg.view('t1', id)
-  }
   assert.equal(view?.state, 'running')
   assert.equal(view?.name, '慢命令')
   assert.equal(view?.command, slow)
@@ -495,6 +515,7 @@ test('按编号读一条后台命令：跑着能读到已输出的内容，跑�
   // 输出里不掺面板自己的话（推回对话的 jobOutput 才会写「跑完了」这些）
   assert.doesNotMatch(view!.output, /跑完了|后台命令「/)
 
+  writeFileSync(path.join(dir, 'go'), '')
   await all
   // 跑完：仍然读得到，带最终输出和退出码（用户可能过一阵才点开）
   view = bg.view('t1', id)
