@@ -613,7 +613,7 @@ export function orchTools(o: Orchestra) {
                             build: {
                               type: 'boolean',
                               description:
-                                'UE 项目：合回原分支后替你向父对话申请编译（默认 true）；只改文档、注释这类不影响编译的内容时写 false',
+                                'UE 项目：合回原分支后替你向父对话申请编译（默认 true）；没改 C++（只改 Lua、配置、表格、资源、文档）时写 false，面板也会按改动文件判断',
                             },
                           }
                         : {}),

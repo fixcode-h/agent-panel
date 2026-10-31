@@ -71,7 +71,20 @@ type TestStep = {
 
 ### 按改动范围筛选（`appliesTo`）
 
-测试只做有意义的那几条：UE 没改 C++ 就不编译 C++，C# 没动过就不跑 `dotnet build`。
+测试只做有意义的那几条，**改了什么才编译、测试什么，所有项目都一样**（用户 2026-10-31 定）：
+UE 没改 C++ 就不编译 C++；只改 Lua 只跑 `luac -p` 查语法，不编译 C++；只改配置、表格、资源、文档时不编译；
+C# 没动过就不跑 `dotnet build`。
+
+- **认得出类型的命令按文件类型筛**：`commandGlobs(command)` 认 UE 编译（`isUeBuildCommand`，看 `UE_CPP_GLOBS`）、
+  `luac`（`**/*.lua`）、`cargo`、`go build/test/vet`、`dotnet build/test` / `msbuild`、`cmake --build` / `ctest`。
+  这类步骤没写 `appliesTo` 时按它推断（`stepGlobs`），范围写成 `always` 也照样按文件类型筛——
+  用户自己建的「编译」步骤、老项目升级上来的步骤常常没填适用改动，按「总是执行」就会出现只改了 Lua 也去编 C++。
+  认不出的命令（npm 脚本、自定义脚本）不猜，按用户写的范围走。
+- **一条都没命中就不跑**：以前「有改动清单但没有步骤命中」会退回「全部跑」，结果只改配置也全量编译、测试；
+  现在 `pickSteps` 只返回命中的，提示词写「本轮该跑：没有」并列出跳过的步骤。改动清单取不到（空）时仍按全部跑。
+- **UE 编译申请也按改动筛**（`buildStepsFor` / `buildSkipText`）：`submit_merge` 的改动不涉及编译的文件类型时
+  不带 `build`、父对话收尾消息里写明「合回后不用编译」；共用目录的 `request_build`（子对话侧）直接回「不用编译」；
+  父对话 `request_build` 带 `children` 时按这些子对话的改动筛，都没命中就不排编译。不带 `children`（用户要求、父对话自己改的）照常编。
 
 - **匹配算法只有一份**：`shared/test-steps.ts` 的 `matchesGlob` / `stepApplies(step, changedFiles)`。
   界面的输入解析（`parseGlobs`）、交给 Agent 的提示词（`appliesToText`）、单测都读它，不在前端或别的地方再写一套 glob 判断。
@@ -99,7 +112,7 @@ type TestStep = {
   （`shared/builtin/workflows.ts` 里硬编码），它们的存在意义就是不按改动清单筛——按步骤顺序全跑，
   跳过的只能因为环境跑不了（需要 Editor、需要别的系统），不能写「本次没改 X」。`CHANGED_FILES_RULE` 第 0 条
   写了这条优先级，和测试角色里 `{{#if scope=本次改动}}` 的分支一致。
-- 没写 `appliesTo` 的步骤（老项目升级上来的、用户新加的）表示总是执行。
+- 没写 `appliesTo`、命令也认不出类型的步骤（老项目升级上来的、用户新加的）表示总是执行。
 - **升级提示**：以前把条件写在 `when` 里的步骤（例如「仅改了 web/ 时」），升级后 `appliesTo` 是空数组，
   按「总是执行」处理——不会漏跑，但那条文字条件已经不再生效。要恢复原来的筛选，把条件改填到「适用改动」里；
   `when` 现在只当人看的补充说明。
@@ -115,11 +128,11 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 
 测试步骤按「跑多大范围」分三档（`TestStepFields.scope`，[ADR 0020](./adr/0020-test-scope-and-incremental-tests.md)）：
 
-| scope     | 什么时候跑、谁跑                                                                         | 典型步骤                           |
-| --------- | ---------------------------------------------------------------------------------------- | ---------------------------------- |
-| `always`  | 每次改动都跑，不看 `appliesTo`                                                           | 类型检查、lint、语法检查           |
-| `changed` | 改动清单命中 `appliesTo` 才跑；没有 `appliesTo` 表示总是跑                               | 相关单测、编译、构建、界面检查分片 |
-| `parent`  | 子对话一律不跑；合并回父对话的分支后由父对话按改动筛出的那几条跑（一条都没命中就跑全部） | 全量单测、全量界面检查、端到端测试 |
+| scope     | 什么时候跑、谁跑                                                                       | 典型步骤                           |
+| --------- | -------------------------------------------------------------------------------------- | ---------------------------------- |
+| `always`  | 每次改动都跑，不看 `appliesTo`（编译、luac 这类认得出类型的命令仍按文件类型筛）        | 类型检查、lint                     |
+| `changed` | 改动清单命中 `appliesTo` 才跑；没有 `appliesTo` 时按命令推断，推断不出表示总是跑       | 相关单测、编译、构建、界面检查分片 |
+| `parent`  | 子对话一律不跑；合并回父对话的分支后由父对话按改动筛出的那几条跑（一条都没命中就不跑） | 全量单测、全量界面检查、端到端测试 |
 
 **和原来的 `runInParent` 合并了**：勾「禁止子对话执行」就是 `scope: 'parent'`，不再保留两个字段。老数据解析时
 `migrateTestStep` 按原语义换算：`runInParent: true` → `parent`；命令明显是跑全量的（`test:unit`、`test:e2e`、`ui-check`、playwright 这类）→ `parent`，
@@ -474,7 +487,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 
 项目目录（或仓库根）里有 `.uproject` 时，编译不在子对话里做（[ADR 0004](./adr/0004-ue-build-by-parent.md)）：
 
-- 子对话只改代码、做不用编译的检查。有独立分支的 `submit_merge` 带 `build`（默认 true），合回后面板替它向父对话申请；共用目录的用 `request_build`。
+- 子对话只改代码、做不用编译的检查（Lua 用 `luac -p`）。改了 C++ 才申请编译：有独立分支的 `submit_merge` 带 `build`（默认 true），合回后面板替它向父对话申请；共用目录的用 `request_build`。改动不涉及 C++ 时面板不申请（见上面「按改动范围筛选」）。
 - 父对话收到申请（或用户要求）才调用 `request_build`：面板跑勾了「合并时编译」的步骤（没有就认名字带「编译」的），排进后台独占队列。
 - 占位按编译目录：同一目录同一时间只编译一次，别的父对话占着时排在后面，双方都会收到说明；各自 worktree 的目录互不占位。
 - 子对话和父对话用 `run_background` 跑 Build.bat、UBT、UHT、RunUAT、Editor 都会被拒绝，不能绕过排队。
