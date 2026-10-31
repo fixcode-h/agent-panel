@@ -60,7 +60,6 @@ export function EntryCard({
         <div className="flex min-w-0 items-center gap-2">
           <p className="min-w-0 text-[0.875rem] leading-snug font-medium">{entry.title}</p>
         </div>
-        {!!entry.project && <p className="mt-0.5 text-[0.6875rem] text-subtle">{entry.project}</p>}
         <EntryBody entry={entry} />
       </div>
       <Button
