@@ -55,3 +55,42 @@ test('并发更新不同的条目，两边的改动都保留', async () => {
   assert.equal(list.find((x) => x.id === a.id)?.name, 'a2')
   assert.equal(list.find((x) => x.id === b.id)?.name, 'b2')
 })
+
+test('集合里一条数据读不懂：其余照常加载，那一条写盘时原样保留，并留档到 broken/', async () => {
+  const { writeFileSync, readdirSync, existsSync } = await import('node:fs')
+  const file = path.join(dir, 'mixed.json')
+  const good = { id: 'a', name: 'ok', createdAt: 'x', updatedAt: 'x' }
+  const bad = { id: 'b', name: 42, createdAt: 'x', updatedAt: 'x' }
+  writeFileSync(file, JSON.stringify([good, bad]))
+  const c = createCollection('mixed.json', Item)
+  assert.deepEqual(
+    (await c.list()).map((x) => x.id),
+    ['a'],
+    '坏的那条跳过，不让整个集合读不出来',
+  )
+  await c.create({ name: 'new' })
+  const onDisk = JSON.parse(readFileSync(file, 'utf8')) as { id: string }[]
+  assert.ok(
+    onDisk.some((x) => x.id === 'b'),
+    '读不懂的那条写回文件，升回能读懂的版本还在',
+  )
+  assert.equal(onDisk.length, 3)
+  const broken = path.join(dir, 'broken')
+  assert.ok(existsSync(broken) && readdirSync(broken).some((f) => f.startsWith('mixed.json.items-')), '留档了一份')
+})
+
+test('集合写盘失败：接口报错，内存里还是旧值', async () => {
+  const { mkdirSync } = await import('node:fs')
+  const c = createCollection('unwritable.json', Item)
+  await c.create({ name: 'first' })
+  // 把目标文件换成同名目录：rename 到它上面必然失败
+  const { rmSync } = await import('node:fs')
+  rmSync(path.join(dir, 'unwritable.json'))
+  mkdirSync(path.join(dir, 'unwritable.json'))
+  await assert.rejects(c.create({ name: 'second' }))
+  assert.deepEqual(
+    (await c.list()).map((x) => x.name),
+    ['first'],
+    '写失败的那条没进缓存',
+  )
+})

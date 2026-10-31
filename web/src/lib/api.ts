@@ -1,4 +1,5 @@
 import type { ShellReport } from '@shared/shells'
+import { trackedFetch } from './connection'
 import type { CollabEvent } from '@shared/collab-timeline'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
@@ -167,7 +168,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const { handle } = await import('./demo-backend')
     return handle(init?.method ?? 'GET', url, init?.body ? JSON.parse(init.body as string) : undefined) as Promise<T>
   }
-  const res = await fetch(`/api${url}`, {
+  const res = await trackedFetch(`/api${url}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
@@ -185,7 +186,7 @@ let tasksEtag = ''
 const allTasks = async (): Promise<Task[] | null> => {
   // 演示版没有后端，也没有 ETag，直接回全量
   if (import.meta.env.VITE_DEMO) return request<Task[]>('/tasks')
-  const res = await fetch('/api/tasks', { headers: tasksEtag ? { 'If-None-Match': tasksEtag } : {} })
+  const res = await trackedFetch('/api/tasks', { headers: tasksEtag ? { 'If-None-Match': tasksEtag } : {} })
   if (res.status === 304) return null
   if (!res.ok) await failure(res)
   const tag = res.headers.get('ETag')

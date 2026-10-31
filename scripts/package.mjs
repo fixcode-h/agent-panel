@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 出包：把正式版前端和打成单文件的服务端放进 release/agent-panel-<版本>/，再压成 zip 和 tar.gz。
- * 包里只有正式版（不含在线演示的模拟后端），解压后只需要 Node.js 20+，不用 npm install。
+ * 包里只有正式版（不含在线演示的模拟后端），解压后只需要 Node.js 22+，不用 npm install。
  *
  * 用法：node scripts/package.mjs [版本号]   版本号默认取 package.json
  */
@@ -118,7 +118,7 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
-  target: 'node20',
+  target: 'node22',
   minify: false,
   legalComments: 'none',
   // 版本号写进服务端，设置里的「版本更新」靠它判断有没有新包
@@ -141,10 +141,10 @@ await build({
     __BLENDER_BRIDGE__: JSON.stringify(readFileSync(path.join(root, 'server/blender/bridge.py'), 'utf8')),
     __EXTENSION_FILES__: JSON.stringify(
       Object.fromEntries(
-        readdirSync(path.join(root, 'extension')).map((f) => [
-          f,
-          readFileSync(path.join(root, 'extension', f)).toString('base64'),
-        ]),
+        // pairing.json 是本机面板写出来的配对令牌，绝不能跟着包发出去
+        readdirSync(path.join(root, 'extension'))
+          .filter((f) => f !== 'pairing.json')
+          .map((f) => [f, readFileSync(path.join(root, 'extension', f)).toString('base64')]),
       ),
     ),
   },
@@ -175,7 +175,7 @@ writeFileSync(
       private: true,
       type: 'module',
       description: pkg.description,
-      engines: { node: '>=20' },
+      engines: { node: '>=22.12' },
       scripts: { start: 'node server.mjs --prod' },
     },
     null,
@@ -190,12 +190,12 @@ writeFileSync(
     'cd "$(dirname "$0")" || exit 1',
     // 没装 Node 或版本太旧时直接说清楚，不让用户对着一串报错猜
     'if ! command -v node >/dev/null 2>&1; then',
-    '  echo "没有找到 Node.js。Agent 面板需要 Node.js 20 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
+    '  echo "没有找到 Node.js。Agent 面板需要 Node.js 22 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
     '  exit 1',
     'fi',
     'major=$(node -p "process.versions.node.split(\'.\')[0]" 2>/dev/null || echo 0)',
-    'if [ "$major" -lt 20 ] 2>/dev/null; then',
-    '  echo "Node.js 版本太旧（$(node -v)），需要 20 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
+    'if [ "$major" -lt 22 ] 2>/dev/null; then',
+    '  echo "Node.js 版本太旧（$(node -v)），需要 22 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
     '  exit 1',
     'fi',
     'exec node server.mjs --prod "$@"',
@@ -214,7 +214,7 @@ writeFileSync(
   [
     `Agent 面板 v${version}`,
     '',
-    '1. 安装 Node.js 20 或更新版本：https://nodejs.org',
+    '1. 安装 Node.js 22 或更新版本：https://nodejs.org',
     '2. 至少安装并登录一个 CLI：Claude Code（claude）、Codex（codex）或 Command Code（cmdc）',
     '3. 启动：',
     '   Windows：双击 AgentPanel.exe，程序在任务栏右下角的通知区显示图标，不会打开命令行窗口，',
@@ -236,7 +236,10 @@ writeFileSync(
 )
 cpSync(path.join(root, 'README.md'), path.join(out, 'README.md'))
 // 浏览器扩展：UI 设计里用已登录的 Gemini / ChatGPT 网页生成图片，在浏览器里「加载已解压的扩展程序」选这个目录
-cpSync(path.join(root, 'extension'), path.join(out, 'extension'), { recursive: true })
+cpSync(path.join(root, 'extension'), path.join(out, 'extension'), {
+  recursive: true,
+  filter: (src) => path.basename(src) !== 'pairing.json',
+})
 
 // 打好的服务端要能直接加载（更新时新版本也是这样试跑的）
 run(process.execPath, [path.join(stage, 'server.mjs'), '--self-check'], stage)

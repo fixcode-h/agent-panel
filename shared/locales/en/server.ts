@@ -128,6 +128,9 @@ export const EN_SERVER: Record<string, string> = {
 
   // 接口校验
   只接受来自本机的访问: 'Only local access is allowed',
+  浏览器扩展只能从本机连接: 'The browser extension can only connect from this computer',
+  '浏览器扩展没有配对：请在面板里重新加载扩展': 'The browser extension is not paired: reload it from the panel',
+  '请求太大，超过了 {mb} MB': 'Request too large: over {mb} MB',
   不接受其他网站发来的请求: 'Requests from other sites are not accepted',
   '请求必须是 JSON': 'Request body must be JSON',
   分类不存在: 'Category not found',
@@ -226,6 +229,8 @@ export const EN_SERVER: Record<string, string> = {
   聊天: 'Chat',
   任务所属的项目已经不存在: 'The task’s project no longer exists',
   '执行出错：{error}': 'Execution error: {error}',
+  '保存对话失败，这之后的内容重启面板后可能丢失：{error}':
+    'Failed to save the conversation; anything after this may be lost when the panel restarts: {error}',
   任务不存在: 'Task not found',
   找不到这个子任务: 'Subtask not found',
   没有这条后台命令: 'Background command not found',

@@ -398,7 +398,7 @@ test('任务记录损坏（全 0 的空洞文件）：从对话重建，坏文�
   assert.ok(task, '任务记录坏了也要出现在列表里')
   assert.equal(task.title, '帮我看一下这个问题')
   // 坏的任务记录挪进了缓存目录留档，不是删掉
-  const cacheDir = path.join(dir, 'cache', 'broken')
+  const cacheDir = path.join(dir, 'broken')
   const backups = readdirSync(cacheDir).filter((f) => f.startsWith(`${id}.json.broken-`) && !f.endsWith('.broken.json'))
   assert.equal(backups.length, 1, '坏的任务记录被留档')
   assert.equal(readFileSync(path.join(cacheDir, backups[0])).length, 2048, '原样保留原始字节')
@@ -422,7 +422,7 @@ test('对话文件也是全 0：不重建、不伪造，留档后不抛错也不
   )
   assert.equal(existsSync(path.join(dirOfProject, `${id}.json`)), false, '绝不写半截任务记录')
   // 坏对话文件挪进缓存目录留档：下次启动看不到它，不会反复重试
-  const cacheDir = path.join(dir, 'cache', 'broken')
+  const cacheDir = path.join(dir, 'broken')
   const backups = readdirSync(cacheDir).filter(
     (f) => f.startsWith(`${id}.messages.json.broken-`) && !f.endsWith('.broken.json'),
   )
@@ -508,8 +508,8 @@ test('任务记录过不了 schema 且没能留档：本次可见但不覆盖原
   const metaFile = path.join(dirOfProject, `${id}.json`)
   const before = readFileSync(metaFile, 'utf8')
 
-  // 让归档必然失败：把 cache/broken 本身换成一个普通文件，mkdir 和 rename 到它下面都会失败
-  const brokenDir = path.join(dir, 'cache', 'broken')
+  // 让归档必然失败：把 broken/ 本身换成一个普通文件，mkdir 和 rename 到它下面都会失败
+  const brokenDir = path.join(dir, 'broken')
   rmSync(brokenDir, { recursive: true, force: true })
   mkdirSync(path.dirname(brokenDir), { recursive: true })
   writeFileSync(brokenDir, '占位，不是目录', 'utf8')

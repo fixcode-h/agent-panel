@@ -11,6 +11,7 @@ import { callOrchTool, orchTools } from './orch-mcp.ts'
 import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
 import { MORE_TOOLS, moreTools, splitDeferred } from '../shared/panel-tools.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
+import { log } from './log.ts'
 
 /**
  * 给没有「向用户提问」通道的 CLI（无界面运行的 Command Code）一个提问工具：
@@ -226,12 +227,24 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
     case 'tools/call': {
       const name = String(msg.params?.name ?? '')
       const args = msg.params?.arguments ?? {}
+      // 工具里面板自己出错（写盘失败等）：如实告诉 Agent 这一步没做成，不能让它以为已经记下了
+      const safe = async (n: string, a: unknown) => {
+        try {
+          return await call(n, a)
+        } catch (e) {
+          log.error('mcp', '面板工具出错', { tool: n, error: (e as Error).message })
+          return {
+            content: [{ type: 'text', text: `面板出错，这一步没有做成：${(e as Error).message}` }],
+            isError: true,
+          }
+        }
+      }
       if (name === MORE_TOOLS && deferred.length) {
         const r = moreTools(deferred, args)
-        return reply('call' in r ? await call(r.call, r.args) : r)
+        return reply('call' in r ? await safe(r.call, r.args) : r)
       }
       // 收起来的工具直接按名字调也照样执行：保活的旧进程、记住了工具名的模型都会这么调
-      return reply(await call(name, args))
+      return reply(await safe(name, args))
     }
     default:
       return { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `不支持 ${msg.method}` } }

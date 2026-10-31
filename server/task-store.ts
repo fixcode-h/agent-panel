@@ -35,6 +35,8 @@ const safeId = (id: string) => /^[\w-]+$/.test(id)
 const dirOf = (projectId: string) =>
   projectId && safeId(projectId) ? path.join(TASKS_ROOT, 'projects', projectId) : path.join(TASKS_ROOT, 'chats')
 const MSG = '.messages.json'
+/** 一次启动里最多自动留档重建几条过不了 schema 的任务记录（见 load 里的说明） */
+const BAD_META_LIMIT = 5
 
 /** 任务文件里只放用户消息：摘要要第一条要求，清理附件要知道哪些附件还在用 */
 const head = (t: Task): Task => ({ ...t, messages: t.messages.filter((m) => m.role === 'user') })
@@ -293,6 +295,12 @@ export function createTaskStore() {
     const rebuilt: string[] = []
     /** 任务记录过不了 schema、没能留档的 id：原文件还在原位，重建时不能覆盖它 */
     const kept = new Set<string>()
+    /**
+     * 这次启动里过不了 schema 的记录数：超过上限就不再留档重建，原文件原地保留。
+     * 一下子坏很多通常是升级后某个迁移漏了字段，不是文件真坏了；全部重建成最小记录会把
+     * 父子关系、独立分支、计划步骤批量丢掉，宁可先停下来让用户看到日志、等修复版本
+     */
+    let invalid = 0
     for (const { dir, projectId } of dirs) {
       if (!existsSync(dir)) continue
       const names = await readdir(dir)
@@ -300,11 +308,14 @@ export function createTaskStore() {
         if (!f.endsWith('.json') || f.endsWith(MSG)) continue
         const file = path.join(dir, f)
         const raw = await readJsonDetailed(file)
-        // 坏了的那份已经被 readJsonDetailed 挪进缓存目录并打了日志：这里当「这个任务的记录读不出来」处理，
+        // 坏了的那份已经被 readJsonDetailed 挪进留档目录并打了日志：这里当「这个任务的记录读不出来」处理，
         // 下面会用同目录的 `.messages.json` 把它重建回来，不能让整个对话从列表里消失
         const task = raw.state === 'ok' ? parseTask(raw.value) : undefined
         if (task) map.set(task.id, task)
-        else if (raw.state === 'ok' && !(await archiveBadMeta(file, f))) kept.add(f.slice(0, -'.json'.length))
+        else if (raw.state === 'ok') {
+          invalid++
+          if (invalid > BAD_META_LIMIT || !(await archiveBadMeta(file, f))) kept.add(f.slice(0, -'.json'.length))
+        }
       }
       // 只有 `.messages.json`、没有（或丢了、坏了）任务记录：从对话反推一个最小的任务记录，
       // 让这个对话重新出现在列表里、内容能打开。同一个 load 里做，不另起一次扫描
@@ -320,6 +331,11 @@ export function createTaskStore() {
       }
     }
     if (rebuilt.length) console.error(`这些对话的任务记录丢失，已从对话内容重建：${rebuilt.join('、')}`)
+    if (invalid > BAD_META_LIMIT)
+      console.error(
+        `有 ${invalid} 条任务记录这个版本读不懂，超过 ${BAD_META_LIMIT} 条，只留档重建了前 ${BAD_META_LIMIT} 条，其余原文件原地保留没动。` +
+          '多半是升级后的数据迁移有问题：请先别手动改这些文件，升级到修复版本后会重新读到',
+      )
     await migrate(map)
     return map
   }
@@ -335,7 +351,7 @@ export function createTaskStore() {
     console.error(
       broken.archived
         ? `任务记录格式不对，已留档为 ${broken.backup}（按对话内容重建）：${name}`
-        : `任务记录格式不对，没能挪进缓存目录：${name}`,
+        : `任务记录格式不对，没能挪进留档目录：${name}`,
     )
     return broken.archived
   }

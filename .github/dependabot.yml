@@ -1,0 +1,18 @@
+# 依赖更新：每周查一次 npm 和 GitHub Actions（actions 已按 SHA 固定，靠这里提醒升级）。
+# 大版本更新单独开 PR，不和补丁混在一起
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: dev
+    open-pull-requests-limit: 5
+    groups:
+      patch-and-minor:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: dev

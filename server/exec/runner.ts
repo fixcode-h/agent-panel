@@ -979,7 +979,7 @@ export function failureHints(detail: string, cli?: { id: string; name: string })
 }
 
 /** 调用一次 Agent 对应的 CLI，把输出写进任务消息 */
-/** 两个信号任一触发就触发（AbortSignal.any 要 Node 20.3+，包只要求 20） */
+/** 两个信号任一触发就触发（AbortSignal.any 要 Node 20.3+；包现在要求 22，这里留着兜底） */
 function anySignal(a: AbortSignal, b: AbortSignal) {
   const ac = new AbortController()
   const fire = (x: AbortSignal) => () => ac.abort(x.reason)

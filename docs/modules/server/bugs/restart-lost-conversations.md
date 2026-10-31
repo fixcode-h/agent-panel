@@ -60,7 +60,7 @@
   - `{ state: 'broken', value: undefined, broken: { file, backup, reason, size } }`：存在但坏了。`file` 是原路径、`backup` 是留档路径、`reason` 是解析错误、`size` 是按字节读到的原始大小（全 0 的空洞文件靠它和原文件对上）。
 - `readJson` 保持旧签名（返回 `.value`），老调用方不用改；要区分损坏的调用方用 `readJsonDetailed`。
 - 新增导出的 `archiveBrokenFile(file, reason, size)`：把文件挪进 `cache/broken/<原文件名>.broken-<时间戳>`，旁边写一份 `<backup>.broken.json` 说明（`file`、`backup`、`reason`、`size`、`at`、`stamp`）。**只挪不改**，坏文件的原始字节原样保留，需要时能手工恢复。备份名已被占用时自动加序号（`-2`、`-3`…），同一毫秒里归档两次同名文件不会盖掉前一份（有用例拦）。返回的 `archived` 说明文件真的挪走没有：被别的进程占着挪不动时是 `false`，日志会写明「下次启动会再处理一遍」，不让调用方误以为已经留档。除了 JSON 解析失败，「能读成 JSON 但内容用不了」的文件也走这里，避免每次启动重读同一个用不了的文件。
-- `cache/broken/` 属于缓存目录，在设置里清理缓存会一起删掉，不会留在数据目录里当垃圾。
+- 留档目录后来挪到了数据目录下的 `broken/`（2026-10-31）：原来放在 `cache/broken/`，清理缓存会把唯一能手工恢复的原件一起删掉。
 
 ### 任务记录：缺了就按对话重建
 

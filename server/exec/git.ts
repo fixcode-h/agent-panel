@@ -368,6 +368,24 @@ async function blobAt(cwd: string, tree: string, file: string): Promise<Buffer |
 
 const same = (a: Buffer | null, b: Buffer | null) => (a === null || b === null ? a === b : a.equals(b))
 
+/** 文本文件（不含 NUL 字节）的换行统一成 LF；二进制原样返回 */
+const isText = (b: Buffer) => !b.includes(0)
+const toLf = (b: Buffer) => (isText(b) ? Buffer.from(b.toString('latin1').replace(/\r\n/g, '\n'), 'latin1') : b)
+
+/**
+ * 只差换行符也算一样：Windows 上 autocrlf 时快照取出来是 CRLF，而 Agent / 用户写进工作区的常常是 LF，
+ * 按字节比每一行都对不上，撤销会误报「后来又被改过」（Windows CI 上撤销的用例全挂）
+ */
+const sameText = (a: Buffer | null, b: Buffer | null) =>
+  same(a, b) || (a !== null && b !== null && isText(a) && isText(b) && toLf(a).equals(toLf(b)))
+
+/** 按 like 的换行风格写回：工作区原来是 LF 就写 LF、是 CRLF 就写 CRLF，撤销不顺手把整个文件的换行换掉 */
+function eolLike(content: Buffer, like: Buffer | null): Buffer {
+  if (!like || !isText(content) || !isText(like)) return content
+  const lf = toLf(content)
+  return like.includes('\r\n') ? Buffer.from(lf.toString('latin1').replace(/\n/g, '\r\n'), 'latin1') : lf
+}
+
 /** 三方合并一个文件：在 mine 上撤掉 base → other 的改动。有冲突或是二进制文件时返回 null */
 async function mergeText(cwd: string, mine: Buffer, base: Buffer, other: Buffer): Promise<Buffer | null> {
   const dir = await mkdtemp(path.join(tmpdir(), 'ap-undo-'))
@@ -414,16 +432,18 @@ export async function undoSpans(
       if (e?.code === 'ENOENT') return null
       throw e
     })
+    // 写回时照工作区现在的换行风格
+    const original = cur
     let bad = ''
     for (const s of [...spans].reverse()) {
       if (s.from === s.to) continue
       const [before, after] = await Promise.all([blobAt(cwd, s.from, file), blobAt(cwd, s.to, file)])
-      if (same(before, after)) continue
-      if (same(cur, after)) {
+      if (sameText(before, after)) continue
+      if (sameText(cur, after)) {
         cur = before
         continue
       }
-      if (same(cur, before)) continue
+      if (sameText(cur, before)) continue
       // 之后又改过：新建的文件被改了、删掉的文件又建回来了，都没法只撤这一段
       if (cur === null) {
         bad = t('这个文件后来被删掉了')
@@ -437,7 +457,8 @@ export async function undoSpans(
         bad = t('这一轮删掉的文件后来又建了回来')
         break
       }
-      const merged = await mergeText(cwd, cur, after, before)
+      // 三份统一成 LF 再合：换行风格不同会让每一行都算冲突
+      const merged = await mergeText(cwd, toLf(cur), toLf(after), toLf(before))
       if (!merged) {
         bad = t('这一轮改过的地方后来又被改过')
         break
@@ -445,14 +466,14 @@ export async function undoSpans(
       cur = merged
     }
     if (bad) conflicts.push({ path: file, reason: bad })
-    else plan.set(file, cur)
+    else plan.set(file, cur && eolLike(cur, original))
   }
   if (conflicts.length) return { ok: false, conflicts }
   const done: string[] = []
   for (const [file, content] of plan) {
     const full = path.resolve(root, file)
     const now = await readFile(full).catch(() => null)
-    if (same(now, content)) continue
+    if (sameText(now, content)) continue
     if (content === null) {
       await unlink(full).catch((e) => {
         if (e?.code !== 'ENOENT') throw e

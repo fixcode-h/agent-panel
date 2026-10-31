@@ -43,9 +43,23 @@ export const grantCookie = (c: Parameters<MiddlewareHandler>[0]) =>
     maxAge: 60 * 60 * 24 * 400,
   })
 
+/**
+ * 经过反向代理转发来的请求带的头。Host 可以被代理改成 127.0.0.1（nginx 默认 `proxy_set_header Host $proxy_host`），
+ * 只看 Host 会把外网请求当成本机、免令牌放行；带了这些头的一律按外网处理
+ */
+const PROXY_HEADERS = [
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'forwarded',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'true-client-ip',
+]
+export const viaProxy = (header: (name: string) => string | undefined) => PROXY_HEADERS.some((h) => !!header(h))
+
 export const tokenGuard: MiddlewareHandler = async (c, next) => {
   const host = c.req.header('host') ?? ''
-  const local = isLocalHost(host)
+  const local = isLocalHost(host) && !viaProxy((h) => c.req.header(h))
   // 外网访问关着的时候只认本机地址；开着时也只认当前隧道 / 反代地址
   if (!local && !isAllowedHost(host)) return c.text(t('这个地址不能访问面板'), 403)
   const q = c.req.query('token')
@@ -56,17 +70,21 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
     url.searchParams.delete('token')
     return c.redirect(url.pathname + url.search, 302)
   }
-  // 外网来源一律要求令牌：本机访问可以按设置决定，外部不行
-  const requireToken = (await getSettings()).requireToken || !local
+  // 外网来源一律要求令牌：本机访问可以按设置决定，外部不行。
+  // 外网访问开着时本机也要：自建反代不加转发头、又把 Host 改成 127.0.0.1 时，外网请求和本机请求分不出来
+  const settings = await getSettings()
+  const requireToken = settings.requireToken || settings.remoteAccess.enabled || !local
   if (!requireToken || getCookie(c, COOKIE) === accessToken()) return next()
   // AI 改设计用的工具由 CLI 调，没有 Cookie；地址里的随机令牌只在那一轮设计里有效，由接口自己核对
   if (c.req.path.startsWith('/api/mcp/design/')) return next()
   // 面板工具（提问、派子任务、新建子对话）同理：CLI 拿着这一轮的随机地址来调，没有 Cookie，
   // 拦下来 CLI 就一个面板工具都没有了；地址不对的由接口自己回 404
   if (c.req.path.startsWith('/api/mcp/ask/')) return next()
+  // Blender 建模工具同理：地址里是这一轮的随机令牌，接口自己核对（以前漏了，开令牌后 Blender 工具一律 401）
+  if (c.req.path.startsWith('/api/mcp/blender/')) return next()
   // 联网搜索同理：地址里是本轮 CLI 的随机令牌，由接口自己核对；令牌不对时回 404
   if (c.req.path.startsWith('/api/web-search/')) return next()
-  // 浏览器扩展拿不到面板的 Cookie；它能调的只有 /bridge 下面的几个接口（index.ts 里按来源限制了）
+  // 浏览器扩展拿不到面板的 Cookie：它带的是配对令牌（index.ts 里再核对来源、本机和令牌）
   if (c.req.path.startsWith('/api/bridge/') && /^(chrome|moz)-extension:\/\//.test(c.req.header('origin') ?? ''))
     return next()
   if (c.req.path.startsWith('/api/')) return c.json({ error: t('需要访问令牌：请用启动时显示的地址打开面板') }, 401)

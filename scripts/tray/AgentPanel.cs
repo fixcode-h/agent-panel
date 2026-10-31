@@ -118,16 +118,16 @@ class Tray : ApplicationContext
         string nodePath = FindNode();
         if (nodePath == null)
         {
-            if (MessageBox.Show("没有找到 Node.js。Agent 面板需要 Node.js 20 或更新的版本。\n\n要打开 Node.js 的下载页面吗？",
+            if (MessageBox.Show("没有找到 Node.js。Agent 面板需要 Node.js 22 或更新的版本。\n\n要打开 Node.js 的下载页面吗？",
                     "Agent 面板", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                 OpenUrl("https://nodejs.org/zh-cn/download");
             Exit();
             return;
         }
         int major = NodeMajor(nodePath);
-        if (major > 0 && major < 20)
+        if (major > 0 && major < 22)
         {
-            if (MessageBox.Show("找到的 Node.js 版本太旧（v" + major + "），Agent 面板需要 Node.js 20 或更新的版本。\n\n要打开 Node.js 的下载页面吗？",
+            if (MessageBox.Show("找到的 Node.js 版本太旧（v" + major + "），Agent 面板需要 Node.js 22 或更新的版本。\n\n要打开 Node.js 的下载页面吗？",
                     "Agent 面板", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                 OpenUrl("https://nodejs.org/zh-cn/download");
             Exit();

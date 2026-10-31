@@ -913,9 +913,25 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     )
 
     // 浏览器扩展：只认 Gemini 和 ChatGPT 的标签页，只有扩展能调 /bridge
-    const ext = { 'content-type': 'application/json', origin: 'chrome-extension://abcdefghijklmnop' }
+    // 配对令牌：面板第一次用时才读数据目录里的 bridge-token，这里先写好一个已知值
+    writeFileSync(path.join(dataDir, 'bridge-token'), 'e2e-bridge-token')
+    const unpaired = { 'content-type': 'application/json', origin: 'chrome-extension://abcdefghijklmnop' }
+    const ext = { ...unpaired, 'x-panel-bridge': 'e2e-bridge-token' }
     const bridge = (method, url, body, headers = ext) =>
       fetch(`${base}/bridge${url}`, { method, headers, body: body && JSON.stringify(body) })
+    // 只凭 Origin 冒充扩展不行：没带配对令牌取不到指令，报到也只会被要求重新加载、不改任何状态
+    assert.equal((await bridge('GET', '/poll', undefined, unpaired)).status, 401, '没配对的扩展取不到指令')
+    const stale = await (
+      await bridge('POST', '/hello', { tabs: [{ id: 1, url: 'https://gemini.google.com/' }] }, unpaired)
+    ).json()
+    assert.equal(stale.reload, true, '旧扩展被要求重新加载')
+    assert.equal(stale.paired, false)
+    // 经过反代（带转发头）来的扩展请求一律不认
+    assert.equal(
+      (await bridge('POST', '/hello', { tabs: [] }, { ...ext, 'x-forwarded-for': '1.2.3.4' })).status,
+      403,
+      '扩展只能从本机连',
+    )
     assert.equal(
       (
         await bridge(

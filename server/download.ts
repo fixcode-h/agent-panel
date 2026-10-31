@@ -160,7 +160,7 @@ async function probe(url: string, headers: Record<string, string>, signal: Abort
 }
 
 async function readState(file: string) {
-  // 读不到、坏了、内容不对都当作没下过；坏文件由 readJson 归档到 cache/broken，下次从头下
+  // 读不到、坏了、内容不对都当作没下过；坏文件由 readJson 归档到 broken/，下次从头下
   const s = (await readJson(file).catch(() => undefined)) as PartState | undefined
   return s && typeof s.size === 'number' && Array.isArray(s.done) ? s : undefined
 }

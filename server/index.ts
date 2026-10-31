@@ -4,6 +4,7 @@ import './lang.ts'
 import { CLI_CONFIG_DIR, loadUserClis, userClis } from './cli-config.ts'
 import { asksApi } from './asks.ts'
 import { Hono, type Context } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { serve } from '@hono/node-server'
 import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -47,7 +48,16 @@ import { blenderMcpApi } from './blender-mcp.ts'
 import { blenderApi } from './blender.ts'
 import { askMcpApi } from './ask-mcp.ts'
 import { webSearchApi } from './web-search.ts'
-import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
+import {
+  askExtensionReload,
+  bridgeApi,
+  bridgePaired,
+  browserStatus,
+  bundledExtensionVersion,
+  extensionDir,
+  openExtensionsPage,
+  PAIRING_HEADER,
+} from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { summaryApi } from './summary.ts'
 import { lessonDraftsApi } from './lesson-drafts.ts'
@@ -116,7 +126,7 @@ import { loadSeededWorkflows, saveSeededWorkflows } from './builtin-seeded.ts'
 import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-aliases.ts'
 import { analyzeProject, detectVcs } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
-import { grantCookie, tokenGuard, withToken } from './auth.ts'
+import { grantCookie, tokenGuard, viaProxy, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
@@ -346,6 +356,16 @@ app.use('*', async (c, next) => {
   // 浏览器扩展只能调 /bridge 下面的接口（报标签页、取指令、交图片），别的一律不行
   if (/^(chrome|moz)-extension:\/\//.test(origin ?? '')) {
     if (!c.req.path.startsWith('/api/bridge/')) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
+    // 扩展只会从本机连：经过隧道、反代来的一律不认（Origin 谁都能伪造）
+    if (!isLocalHost(host) || viaProxy((h) => c.req.header(h)))
+      return c.json({ error: t('浏览器扩展只能从本机连接') }, 403)
+    // 没配对的旧扩展（1.4 及以前）：只回「重新加载」让它换上新文件（新文件里带着配对令牌），别的什么都不做。
+    // 回 200：旧扩展遇到非 2xx 直接当连不上，读不到 reload
+    if (!bridgePaired(c.req.header(PAIRING_HEADER))) {
+      if (c.req.path === '/api/bridge/hello')
+        return c.json({ ok: false, paired: false, latestVersion: bundledExtensionVersion(), reload: true })
+      return c.json({ error: t('浏览器扩展没有配对：请在面板里重新加载扩展') }, 401)
+    }
     return next()
   }
   if (origin !== undefined) {
@@ -421,7 +441,8 @@ app.put('/settings', async (c) => {
   if (!p.success) return bad(c, z.prettifyError(p.error))
   for (const id of Object.keys(p.data.clis)) if (!getCli(id)) delete p.data.clis[id]
   // 打开访问令牌的是这个浏览器：先给它发 Cookie，免得刚打开就把自己关在外面
-  if (p.data.requireToken) grantCookie(c)
+  // 打开外网访问后本机也要令牌（见 auth.ts），同样先给这个浏览器发上
+  if (p.data.requireToken || p.data.remoteAccess.enabled) grantCookie(c)
   const prev = await getSettings()
   const before = JSON.stringify(prev.remoteAccess)
   const saved = await saveSettings(p.data)
@@ -1117,6 +1138,31 @@ root.onError((e, c) => {
   log.error('http', `${c.req.method} ${c.req.path} 出错`, e)
   return c.json({ error: e.message || t('服务出错') }, 500)
 })
+// 不许被别的网页用 iframe 嵌进去：令牌默认关着时，任意网页都能嵌入面板诱导用户点「运行」「删除」（点击劫持）
+root.use('*', async (c, next) => {
+  await next()
+  c.header('X-Frame-Options', 'DENY')
+  c.header('Content-Security-Policy', "frame-ancestors 'none'")
+  c.header('X-Content-Type-Options', 'nosniff')
+})
+// 请求体上限：以前整段读进内存再检查，超大的请求能把面板内存吃光。
+// 附件上传 base64 后最大约 67MB；数据备份、对话导入可能很大，单独放宽；扩展和 MCP 只传图片和短文本
+const MB = 1024 * 1024
+const limitFor = (p: string) =>
+  p === '/api/data/import' || p === '/api/tasks/import'
+    ? 2048 * MB
+    : p.startsWith('/api/bridge/')
+      ? 40 * MB
+      : p.startsWith('/api/mcp/') || p.startsWith('/api/web-search/')
+        ? 16 * MB
+        : 100 * MB
+root.use('/api/*', (c, next) =>
+  bodyLimit({
+    maxSize: limitFor(c.req.path),
+    onError: (cc) =>
+      cc.json({ error: t('请求太大，超过了 {mb} MB', { mb: Math.round(limitFor(cc.req.path) / MB) }) }, 413),
+  })(c, next),
+)
 root.use('*', tokenGuard)
 root.route('/', app)
 // 生产模式下直接托管前端构建产物

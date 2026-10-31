@@ -22,5 +22,6 @@ test('打开访问令牌后，CLI 调的面板工具地址照样能用，其他�
   // CLI 拿着这一轮的随机地址来调，没有 Cookie：拦下来 CLI 就一个面板工具都没有（Pi 的面板工具全丢就是这样）
   assert.equal((await call('/api/mcp/ask/some-token')).status, 200)
   assert.equal((await call('/api/mcp/design/some-token')).status, 200)
+  assert.equal((await call('/api/mcp/blender/some-token')).status, 200, 'Blender 工具也是 CLI 拿随机地址调')
   assert.equal((await call('/api/tasks')).status, 401)
 })
