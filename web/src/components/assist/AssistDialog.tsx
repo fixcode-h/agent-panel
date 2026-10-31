@@ -961,10 +961,12 @@ export function AssistDialog({
         }}
         // 标题跟着优化对象变，D.Title 和说明放在下面自己画的标题栏里
         title={null}
-        size="full"
+        // 不铺满屏幕（用户嫌太宽）：用 xl 档 1100，和差异、文件查看器一样宽；左边对话 540、右边预览 560，
+        // 整篇 SKILL.md、角色设定都放得下。高度固定，生成过程中窗口不跟着内容一会儿高一会儿矮
+        size="xl"
         bare
         closeOnOutside
-        className="max-h-[min(960px,calc(100dvh-3.75rem))]"
+        className="h-[min(860px,calc(100dvh-3.75rem))]"
       >
         <ModalHeader
           icon={shown ? Wand2 : Sparkles}
