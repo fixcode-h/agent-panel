@@ -725,8 +725,8 @@ export const EN_SETTINGS: Record<string, string> = {
   全不选: 'Select none',
   已部署: 'Deployed',
   覆盖本机改过的技能: 'Overwrite locally changed skills',
-  '不勾时保留本机的版本；面板更新后要勾上才能换成新版本':
-    'When unchecked, the local versions are kept; check it after a panel update to switch to the new versions',
+  '默认换成这一版自带的；不勾时保留本机改过的版本':
+    'Replaced with the bundled version by default; uncheck to keep your locally changed versions',
   部署: 'Deploy',
   // AI 处理报错
   'AI 处理': 'Handle with AI',
@@ -1223,6 +1223,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。':
     '{n} skills differ from this version: {names}. Check "Overwrite locally changed skills" below, then click Deploy to update.',
   勾选覆盖: 'Check overwrite',
+  '{n} 个技能和这一版自带的不同：{names}。点「部署」即可更新。':
+    '{n} skills differ from this version: {names}. Click Deploy to update.',
   '和自带的不同，可更新': 'Differs from bundled, update available',
   '全部推荐都已和当前设置一致，点「确认」保存': 'All recommendations match the current settings; click Confirm to save',
   没有需要调整的设置: 'No settings need changing',

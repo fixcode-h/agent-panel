@@ -340,7 +340,9 @@ test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行
     assert.deepEqual(added, ['grilling'])
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '用户的')
   } finally {
-    process.env = old
+    // 按键还原：process.env = old 会换成普通对象，之后再设 HOME，os.homedir() 读不到（rules-check 第 17 条）
+    for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]
+    Object.assign(process.env, old)
     rmSync(home, { recursive: true, force: true })
   }
 })

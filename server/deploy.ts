@@ -24,7 +24,16 @@ import {
 } from '../shared/deploy.ts'
 import { frontField } from '../shared/library.ts'
 import { resolveSkills } from '../shared/skill-guide.ts'
-import { entries, retireBundled, sharedRoot, statusIn, writeSkill, type Entry } from './bundled-skills.ts'
+import {
+  deployedRoot,
+  entries,
+  refreshCopy,
+  retireBundled,
+  sharedRoot,
+  statusIn,
+  writeSkill,
+  type Entry,
+} from './bundled-skills.ts'
 import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
 import { dataPath, readJson, writeJsonAtomic } from './store.ts'
@@ -110,9 +119,11 @@ export async function deploy(run: DeployRun): Promise<DeployResult> {
   // 选了特化技能（例如 ue-project-structure）就连它扩展的通用技能一起部署，单独一份读不全
   run = { ...run, skills: resolveSkills(run.skills) }
   for (const e of all) {
-    const dir = path.join(root, e.category)
+    const dir = deployedRoot(e)
     const s = await statusIn(e, dir)
     if (run.skills.includes(e.name)) {
+      // 勾了覆盖：「自带 Skill」页装的那份装过又旧了的一起换掉，不然那边的提示点还亮着
+      if (run.overwrite && (await refreshCopy(e, sharedRoot()))) out.skills.push(e.name)
       if (s === 'same') continue
       if (s === 'changed' && !run.overwrite) {
         out.kept.push(e.name)
@@ -120,7 +131,7 @@ export async function deploy(run: DeployRun): Promise<DeployResult> {
       }
       await rm(path.join(dir, e.name), { recursive: true, force: true })
       await writeSkill(e, dir)
-      out.skills.push(e.name)
+      if (!out.skills.includes(e.name)) out.skills.push(e.name)
     } else if (s === 'same') {
       // 取消勾选就是不要了；只移除和自带的完全一样的，改过的留给用户自己处理
       await rm(path.join(dir, e.name), { recursive: true, force: true })
