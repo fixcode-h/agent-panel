@@ -137,7 +137,10 @@ export async function cherryPickGit(
       await git(dir, 'cherry-pick', '--abort')
       return {
         ok: false,
-        info: `cherry-pick 到「${target}」有冲突，已全部撤回、目标分支没动${conflicts.length ? `（冲突文件：${conflicts.join('、')}）` : `：${r.stderr.trim().slice(0, 400)}`}。把冲突情况告诉用户，由用户决定怎么处理，不要改用别的办法把整份差异搬过去。`,
+        // 没有冲突文件就不是冲突（例如没配提交身份）：照实写 git 的报错，别说成冲突
+        info: conflicts.length
+          ? `cherry-pick 到「${target}」有冲突，已全部撤回、目标分支没动（冲突文件：${conflicts.join('、')}）。把冲突情况告诉用户，由用户决定怎么处理，不要改用别的办法把整份差异搬过去。`
+          : `cherry-pick 到「${target}」失败，已撤回、目标分支没动：${r.stderr.trim().slice(0, 400)}。把报错告诉用户。`,
       }
     }
     const head = (await git(dir, 'rev-parse', '--short', 'HEAD')).stdout.trim()

@@ -28,6 +28,9 @@ test('cherry-pick（Git）：只收这个对话自己的提交，混了别的文
   const dir = mkdtempSync(path.join(tmpdir(), 'ap-pick-test-'))
   try {
     sh(dir, 'init', '-q', '-b', 'main')
+    // 面板执行 cherry-pick 时用的是仓库自己的提交身份：CI 机器上没有全局配置，这里给仓库设上
+    sh(dir, 'config', 'user.name', 't')
+    sh(dir, 'config', 'user.email', 't@t')
     commit(dir, 'a.txt', 'a\n', 'base')
     sh(dir, 'branch', 'release')
     // 目标分支上本来就有、当前分支没有的内容：搬完要原样留着
