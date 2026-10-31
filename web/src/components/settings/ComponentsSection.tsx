@@ -69,7 +69,7 @@ import { Markdown } from '@/components/tasks/Markdown'
 import { TuneProvider, TuneToggle, useTune } from '@/components/settings/ComponentTune'
 import type { CompName, ComponentStyle } from '@shared/component-style'
 import type { Appearance } from '@shared/schema'
-import { applyAppearance } from '@/lib/appearance'
+import { applyLocalAppearance } from '@/lib/appearance'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
 const SUMMARY_SAMPLE = `### 未完成｜前置检查不通过，两项环境问题挡住后续节点
@@ -135,7 +135,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
   const tune = useTune(value.components, (components: ComponentStyle) => {
     const next = { ...value, components }
     onChange(next)
-    applyAppearance(next)
+    applyLocalAppearance(next)
   })
   const [tab, setTab] = useState('parent')
   const [side, setSide] = useState('files')

@@ -14,7 +14,7 @@ import type {
 import type { DesignMeta, DesignProject } from '@shared/design'
 import { api } from './api'
 import { rememberAskUserDefault } from './askUserDefault'
-import { applyAppearance } from './appearance'
+import { applySavedAppearance } from './appearance'
 import { setCliModes } from './cli-models'
 import { registerCliSpecs } from '@shared/clis'
 import { t } from '@shared/i18n'
@@ -133,7 +133,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [settings])
   const appearance = settings?.appearance
   useEffect(() => {
-    if (appearance) applyAppearance(appearance)
+    if (appearance) applySavedAppearance(appearance)
   }, [appearance])
   // 新会话的「提问」开关要同步读默认值，设置还没取回来时也能用上次存的
   const askDefault = settings?.askUserDefault

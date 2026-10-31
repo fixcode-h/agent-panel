@@ -1757,6 +1757,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '读取 web/src/cart.ts 第 1 到 48 行': 'Read web/src/cart.ts lines 1–48',
   深色文字亮度: 'Dark text brightness',
   深色主题下主文字有多白: 'How bright primary text is in dark theme',
-  '默认 93%，和 Claude Code 深色的主文字一样；100% 是纯白，调低更柔和。浅色主题不受影响。':
-    'Default 93%, matching Claude Code dark primary text; 100% is pure white, lower is softer. Light theme is unaffected.',
+  '默认 90%，比 Claude Code 深色的主文字（93%）略柔和；100% 是纯白，调低更柔和。浅色主题不受影响。':
+    'Default 90%, slightly softer than Claude Code dark primary text (93%); 100% is pure white, lower is softer. Light theme is unaffected.',
 }

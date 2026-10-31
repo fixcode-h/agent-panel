@@ -494,12 +494,12 @@
 }
 
 /*
- * 深色下的主文字亮度（设置 → 外观 →「深色文字亮度」，html 上的 --fg-level，默认 93%）：
+ * 深色下的主文字亮度（设置 → 外观 →「深色文字亮度」，html 上的 --fg-level，默认 90%）：
  * 各配色深色块只写原色 --fg-raw，这里按亮度往页面底色里混成不透明的 --fg。
- * 照 Claude Code 深色的主文字（白色 93%）；纯白在深底上太刺眼。混成不透明色，别处 color-mix 拿 --fg 算浅底时不会叠出透明
+ * 比 Claude Code 深色的主文字（白色 93%）再柔一点；纯白在深底上太刺眼。混成不透明色，别处 color-mix 拿 --fg 算浅底时不会叠出透明
  */
 .dark {
-  --fg: color-mix(in srgb, var(--fg-raw) var(--fg-level, 93%), var(--bg));
+  --fg: color-mix(in srgb, var(--fg-raw) var(--fg-level, 90%), var(--bg));
 }
 
 @theme inline {
