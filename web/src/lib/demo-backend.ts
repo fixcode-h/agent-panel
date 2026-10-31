@@ -3751,7 +3751,7 @@ function tasksRoute(
   if (method === 'PATCH') {
     const p = parse(TaskPatch, body)
     const { childRun, applyChildAsk, ...rest } = p
-    // 「提问」联动和正式后端同一份规则（shared/child-ask.ts）：父对话关掉时已有子对话一起关
+    // 「提问」联动和正式后端同一份规则（shared/child-ask.ts）：按钮只管父对话自己，菜单选了才动已有子对话
     const askEffect = childAskEffect({
       askUser: p.askUser,
       childAskUser: p.childAskUser,

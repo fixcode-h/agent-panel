@@ -4,7 +4,6 @@ import { t } from '@shared/i18n'
 import { taskSummary } from '@shared/task'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
-import { childAskUserDefault } from '@/lib/askUserDefault'
 import { useNewAskUser } from '@/components/chat/AskToggle'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
@@ -68,7 +67,6 @@ export function NewModelDesignDialog({ open, onOpenChange }: { open: boolean; on
         prompt: prompt.trim(),
         attachments: [],
         askUser,
-        childAskUser: childAskUserDefault(),
         modelDesign: true,
       })
       upsertTask(taskSummary(created))

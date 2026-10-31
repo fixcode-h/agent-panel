@@ -1,6 +1,6 @@
 /**
  * 父对话「提问」和「子对话也提问」的联动落库结果（规则本身见 shared/child-ask.test.ts）：
- * 父对话关掉提问时已有子对话一起关，重开后只开自己；右键菜单改的只是「之后新建」的默认值。
+ * 提问按钮只影响父对话自己（已有子对话不跟着开关）；右键菜单改的只是「之后新建」的默认值，用户选了才动已有的。
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
@@ -41,39 +41,29 @@ const patch = async (t: ReturnType<typeof api>, id: string, body: Record<string,
   return (await res.json()) as Awaited<ReturnType<typeof make>>
 }
 
-test('父对话关掉提问：已创建的子对话一起关，「之后新建」的值不变', async () => {
+test('父对话开关提问：只改自己，已创建的子对话保持各自的选择', async () => {
   await make('pa', { askUser: true, childAskUser: true })
   await make('ca', { parentTaskId: 'pa', rootTaskId: 'pa', askUser: true })
-  await make('cb', { parentTaskId: 'pa', rootTaskId: 'pa', askUser: true })
+  await make('cb', { parentTaskId: 'pa', rootTaskId: 'pa', askUser: false })
   const t = api()
 
   const parent = await patch(t, 'pa', { askUser: false })
   assert.equal(parent.askUser, false)
-  assert.equal(parent.childAskUser, true, '重新打开父对话时菜单项还能回到勾选')
-  assert.equal((await read(t, 'ca')).askUser, false, '子对话 a 的提问也关掉')
-  assert.equal((await read(t, 'cb')).askUser, false, '子对话 b 的提问也关掉')
+  assert.equal(parent.childAskUser, true, '「之后新建」的值不变')
+  assert.equal((await read(t, 'ca')).askUser, true, '子对话 a 照旧开着')
+  assert.equal((await read(t, 'cb')).askUser, false, '子对话 b 照旧关着')
+  await patch(t, 'pa', { askUser: true })
+  assert.equal((await read(t, 'cb')).askUser, false, '重新打开父对话也不动子对话')
 })
 
-test('父对话重新打开提问：只开自己，之前被关掉的子对话保持关着', async () => {
-  await make('pb', { askUser: true, childAskUser: true })
-  await make('cc', { parentTaskId: 'pb', rootTaskId: 'pb', askUser: true })
-  const t = api()
-  await patch(t, 'pb', { askUser: false })
-  assert.equal((await read(t, 'cc')).askUser, false)
-
-  const parent = await patch(t, 'pb', { askUser: true })
-  assert.equal(parent.askUser, true)
-  assert.equal((await read(t, 'cc')).askUser, false, '不自动打开已有的子对话')
-})
-
-test('右键勾上「子对话也提问」并选应用到已创建：父对话和已有子对话一起开', async () => {
+test('右键勾上「子对话也提问」并选应用到已创建：已有子对话一起开，父对话自己不动', async () => {
   await make('pc', { askUser: false, childAskUser: false })
   await make('cd', { parentTaskId: 'pc', rootTaskId: 'pc', askUser: false })
   const t = api()
 
   const parent = await patch(t, 'pc', { childAskUser: true, applyChildAsk: true })
   assert.equal(parent.childAskUser, true)
-  assert.equal(parent.askUser, true, '父对话关着时勾上这一项，父对话自己也打开')
+  assert.equal(parent.askUser, false, '父对话自己的提问不跟着变')
   assert.equal((await read(t, 'cd')).askUser, true)
 })
 

@@ -166,7 +166,6 @@ function SettingsBody({
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
   const [userName, setUserName] = useState(initial.userName)
-  const [childAskUserDefault, setChildAskUserDefault] = useState(initial.childAskUserDefault)
   const [developerMode, setDeveloperMode] = useState(initial.developerMode)
   const [elementPicker, setElementPicker] = useState(initial.elementPicker)
   const [shell, setShell] = useState(initial.shell)
@@ -325,7 +324,6 @@ function SettingsBody({
     remoteAccess,
     askUserDefault,
     userName: userName.trim(),
-    childAskUserDefault,
     developerMode,
     elementPicker,
     shell,
@@ -1082,18 +1080,6 @@ function SettingsBody({
                       aria-label={t('新会话默认开启提问')}
                       checked={askUserDefault}
                       onCheckedChange={setAskUserDefault}
-                    />
-                  </Row>
-                  <Row
-                    title={t('子对话默认也提问')}
-                    desc={t(
-                      '新建的父对话里「子对话也提问」默认打开：它之后新建的子对话会向你提问，而不是自己决定。已经创建的父对话和子对话不受影响，父对话上右键提问按钮可以单独改。',
-                    )}
-                  >
-                    <Switch
-                      aria-label={t('子对话默认也提问')}
-                      checked={childAskUserDefault}
-                      onCheckedChange={setChildAskUserDefault}
                     />
                   </Row>
                   <Row

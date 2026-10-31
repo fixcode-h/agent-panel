@@ -37,7 +37,6 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { RichInput, type RichInputHandle } from '@/components/chat/RichInput'
 import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
-import { childAskUserDefault } from '@/lib/askUserDefault'
 import { ElementPickButton } from '@/components/chat/ElementPicker'
 import { SpeechButton } from '@/components/chat/SpeechButton'
 import { ParamsChip } from '@/components/agents/ParamFields'
@@ -200,8 +199,6 @@ export function TaskComposer({
           // 只有打开了「独立分支」才传；子对话一律不建独立分支
           isolate: canIsolate && isolate ? true : undefined,
           askUser,
-          // 父对话上「子对话也提问」的初始值：按设置里的全局默认（缓存里的值，设置没拉回来也能用）
-          childAskUser: childAskUserDefault(),
         }),
       )
       setPrompt('')

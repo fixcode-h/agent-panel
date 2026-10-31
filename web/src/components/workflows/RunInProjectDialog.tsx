@@ -5,7 +5,6 @@ import type { Task } from '@shared/schema'
 import { taskSummary } from '@shared/task'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
-import { childAskUserDefault } from '@/lib/askUserDefault'
 import { useNewAskUser } from '@/components/chat/AskToggle'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
@@ -79,7 +78,6 @@ export function RunInProjectDialog({
         prompt: prompt.trim(),
         attachments: [],
         askUser,
-        childAskUser: childAskUserDefault(),
       })
       upsertTask(taskSummary(created))
       setPrompt('')

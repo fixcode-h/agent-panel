@@ -77,7 +77,7 @@ export function AskToggle({
         <ContextMenuTrigger asChild>{button}</ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuCheckboxItem
-            // 父对话关着提问时这一项跟着显示未勾选，重新打开后回到原来的值
+            // 只看「子对话也提问」自己的值，父对话自己开没开提问不影响它
             checked={childAskChecked({ askUser: value, childAskUser: childAskInitial({ childAskUser }) })}
             onCheckedChange={(next) => {
               // 取消勾选只影响之后新建的子对话，已有子对话保持不动，所以不弹窗

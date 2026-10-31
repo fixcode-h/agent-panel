@@ -18,59 +18,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.setViewportSize({ width: 1440, height: 560 })
   errors.push(...(await stickyLeakProblems(p, '设置-矮窗口')))
   await p.setViewportSize({ width: 1440, height: 900 })
-  // 「子对话默认也提问」：和「新会话默认开启提问」同一组，默认开着；改了之后新建的父对话右键菜单跟着变
-  {
-    const childAsk = p.getByRole('switch', { name: '子对话默认也提问' })
-    if (!(await childAsk.count())) errors.push('设置：没有「子对话默认也提问」这一项')
-    else if ((await childAsk.getAttribute('aria-checked')) !== 'true')
-      errors.push('设置：「子对话默认也提问」默认应该是打开的')
-    // 新开一个页面改设置再新建父对话：设置存在这个页面的演示数据里，和在另一个页面改的不通
-    const d = await page({ width: 1440, height: 900 })
-    await d.goto(base)
-    await d.getByRole('button', { name: '设置' }).first().click()
-    const newAsk = d.getByRole('switch', { name: '新会话默认开启提问' })
-    await newAsk.waitFor({ timeout: 10000 }).catch(() => errors.push('设置：新页面里没有「新会话默认开启提问」'))
-    if ((await newAsk.getAttribute('aria-checked')) !== 'true') await newAsk.click()
-    const dChildAsk = d.getByRole('switch', { name: '子对话默认也提问' })
-    await dChildAsk.waitFor({ timeout: 5000 }).catch(() => errors.push('设置：新页面里没有「子对话默认也提问」'))
-    if ((await dChildAsk.getAttribute('aria-checked')) !== 'true')
-      errors.push('设置：「子对话默认也提问」默认应该是打开的')
-    await dChildAsk.click()
-    await d
-      .waitForFunction(() => localStorage.getItem('ask-user-child-default') === '0', undefined, { timeout: 5000 })
-      .catch(() => errors.push('设置：「子对话默认也提问」改了之后没有同步到新会话读的缓存'))
-    await check(d, '设置-子对话默认也提问')
-    // 设置是 dialog：hash 导航不会关掉它，留着会用自己的焦点陷阱抢走输入框焦点，Enter 发不出去
-    await d.keyboard.press('Escape')
-    await d
-      .getByRole('dialog')
-      .first()
-      .waitFor({ state: 'detached', timeout: 5000 })
-      .catch(() => errors.push('设置：Esc 没有关掉设置弹窗'))
-    await d.goto(base + '#/chat')
-    await d
-      .locator('#task-prompt')
-      .waitFor({ timeout: 10000 })
-      .catch(() => errors.push('设置：回到新聊天页后没有输入框'))
-    await settle(d)
-    await d.locator('#task-prompt').fill('验证子对话提问的默认值')
-    await d.locator('#task-prompt').press('Enter')
-    await d
-      .locator('#task-prompt')
-      .waitFor({ state: 'detached', timeout: 20000 })
-      .catch(() => errors.push('设置：新建对话后没有打开任务页'))
-    const ask = d.getByRole('button', { name: 'AI 有问题时问我' }).first()
-    await ask.waitFor({ timeout: 10000 }).catch(() => errors.push('设置：新建的父对话里没有提问按钮'))
-    if ((await ask.getAttribute('aria-pressed')) !== 'true')
-      errors.push('设置：新会话的提问应该开着（这条用例的前提），实际没开')
-    await ask.click({ button: 'right' })
-    const item = d.getByRole('menuitemcheckbox', { name: '子对话也提问' })
-    await item.waitFor({ timeout: 5000 }).catch(() => errors.push('设置：新建的父对话右键没有「子对话也提问」'))
-    if ((await item.getAttribute('aria-checked')) !== 'false')
-      errors.push('设置：关掉「子对话默认也提问」后，新建父对话的右键菜单应该默认不勾选')
-    await check(d, '设置-新父对话的子对话默认')
-    await d.close()
-  }
+  // 「子对话默认也提问」这一项去掉了（用户 2026-10-31）：新父对话的「子对话也提问」固定默认开着
+  if (await p.getByRole('switch', { name: '子对话默认也提问' }).count())
+    errors.push('设置：「子对话默认也提问」已经去掉，不该再出现')
   // 设置搜索：Ctrl+F 聚焦，跨页搜到别的页的项；回车跳过去并定位到那一行；Esc 先清空搜索、不关弹窗
   {
     await p.keyboard.press('Control+f')
