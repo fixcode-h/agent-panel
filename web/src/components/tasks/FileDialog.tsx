@@ -132,7 +132,7 @@ export function FileDialog({
             </>
           }
         />
-        <div ref={box} className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
+        <div ref={box} className="min-h-0 flex-1 overflow-auto">
           {error ? (
             <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
           ) : !file ? (
@@ -159,13 +159,11 @@ export function FileDialog({
                 <div
                   key={i}
                   data-line={i + 1}
-                  // 奇偶行隔一层浅底（照设计稿），长文件横着看不串行；跳到的那一行高亮盖过它
-                  className={cn(
-                    'flex whitespace-pre',
-                    target?.line === i + 1 ? 'bg-accent/12' : i % 2 === 1 && 'bg-sel/35',
-                  )}
+                  // 不画斑马纹：深色下底色和隔行浅底明暗差太大，看久了累眼（用户 2026-10-31 反馈）。
+                  // 改成悬停那一行淡淡高亮帮着横向对行；跳到的那一行用强调色盖过悬停
+                  className={cn('flex whitespace-pre', target?.line === i + 1 ? 'bg-accent/12' : 'hover:bg-fg/4')}
                 >
-                  <span className="w-14 shrink-0 pr-3 text-right text-subtle/70 select-none">{i + 1}</span>
+                  <span className="w-14 shrink-0 pr-3 text-right text-subtle/55 select-none">{i + 1}</span>
                   <span className="pr-4 text-fg/90">{l || ' '}</span>
                 </div>
               ))}
