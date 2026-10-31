@@ -758,6 +758,8 @@ body,
   --c-kbd-bg: var(--sel);
   --c-progress-height: 6px;
   --c-progress-radius: 12px;
+  /* 进度条未完成段：前景色淡淡一层，深浅色下都看得见（原来深色下是压暗的 sunken，和行底一样黑） */
+  --c-progress-track: color-mix(in oklab, var(--fg) 14%, transparent);
   --c-input-radius: 8px;
   --c-input-border: 1px;
   --c-input-bg: var(--field);

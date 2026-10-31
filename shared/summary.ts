@@ -581,6 +581,7 @@ export function extractPrompt(input: {
     '  {"kind":"bug","project":"<项目名>","title":"<问题标题：用户看到的现象>","cause":"<为什么会出现这个现象>","fix":"<改了什么、为什么这样改就好了>"}',
     ']}',
     '```',
+    '- 标题和内容里不要写项目名称，报告不按项目区分。',
     '- 材料里的「总结卡」是 Agent 当时写的现象、原因、修复，优先照它写清因果；材料里有的原因和修法要写进去，不要压成一句「修复了 xx 问题」。',
     `- 最多 ${SUMMARY_ITEMS_MAX} 条；没有可写的内容就输出 {"items":[]}，不要凑数。`,
     '',
@@ -672,26 +673,15 @@ export function reportHeading(grain: SummaryGrain, from: string, to: string) {
 /** 报告固定的两节：需求在前、Bug 在后 */
 export const REPORT_SECTIONS = ['## 一、需求', '## 二、Bug'] as const
 
-/** 分项按项目分组，项目顺序按第一次出现的顺序（也就是 CLI 给出 / 用户采纳的顺序） */
-function byProject(items: SummaryEntry[]) {
-  const map = new Map<string, SummaryEntry[]>()
-  for (const x of items) {
-    const key = x.project || '其他'
-    map.set(key, [...(map.get(key) ?? []), x])
-  }
-  return [...map.entries()]
-}
-
 /**
- * 用采纳的分项拼报告：需求和 Bug 分两节，节内按项目分小节、条目编号。
+ * 用采纳的分项拼报告：需求和 Bug 分两节，节内直接编号列条目，不按项目分小节、不写项目名。
  * 需求只写「内容」（做了什么、实现了什么），Bug 写「原因」和「修复」；某一节没有条目时写「暂无」
  */
 export function renderReport(input: { grain: SummaryGrain; from: string; to: string; items: SummaryEntry[] }) {
-  const section = (no: number, kind: SummaryKind) => {
-    const groups = byProject(input.items.filter((x) => x.kind === kind))
-    if (!groups.length) return ['暂无', '']
-    return groups.flatMap(([name, list], gi) => [
-      `### ${no}.${gi + 1} ${name}`,
+  const section = (kind: SummaryKind) => {
+    const list = input.items.filter((x) => x.kind === kind)
+    if (!list.length) return ['暂无', '']
+    return [
       ...list.flatMap((x, i) => [
         `${i + 1}. **${x.title}**`,
         ...(kind === 'need'
@@ -701,17 +691,17 @@ export function renderReport(input: { grain: SummaryGrain; from: string; to: str
           : [...(x.cause ? [`   原因：${x.cause}`] : []), ...(x.fix ? [`   修复：${x.fix}`] : [])]),
       ]),
       '',
-    ])
+    ]
   }
   return [
     `# ${reportHeading(input.grain, input.from, input.to)}`,
     '',
     REPORT_SECTIONS[0],
     '',
-    ...section(1, 'need'),
+    ...section('need'),
     REPORT_SECTIONS[1],
     '',
-    ...section(2, 'bug'),
+    ...section('bug'),
   ]
     .join('\n')
     .trimEnd()
