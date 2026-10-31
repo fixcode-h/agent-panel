@@ -269,10 +269,10 @@ function ContextCard({ line }: { line: ContextLine }) {
         </span>
         {live && (
           <span
-            className={cn('shrink-0 text-xs', tps > 0 ? 'text-accent-text' : 'text-subtle')}
+            className={cn('shrink-0 whitespace-nowrap text-xs', tps > 0 ? 'text-accent-text' : 'text-subtle')}
             title={t('实时输出速度')}
           >
-            {tps > 0 ? `${tps.toFixed(1)} token/s` : t('空闲')}
+            {tps > 0 ? `${tps.toFixed(1)} t/s` : t('空闲')}
           </span>
         )}
       </div>
@@ -320,7 +320,7 @@ function ContextRow({ line }: { line: ContextLine }) {
         <span className="min-w-0 flex-1 truncate font-medium text-fg" title={name}>
           {name ?? t('已删除的角色')}
         </span>
-        {tps > 0 && <span className="text-accent-text">{tps.toFixed(1)} token/s</span>}
+        {tps > 0 && <span className="shrink-0 whitespace-nowrap text-accent-text">{tps.toFixed(1)} t/s</span>}
         <span className="text-muted tabular-nums">{p < 10 ? p.toFixed(1) : Math.round(p)}%</span>
       </div>
       <ContextBar p={p} />
@@ -363,7 +363,7 @@ export function TokenUsage({ task, scope }: { task: Task; scope?: TaskStep[] }) 
         <span className="font-mono text-base font-semibold tabular-nums">{fmtTokens(total)}</span>
         <span className="text-xs text-subtle">{label}</span>
         <span className="ml-auto flex items-baseline gap-2 font-mono text-xs">
-          {tps > 0 && <span className="text-accent-text">{tps.toFixed(1)} token/s</span>}
+          {tps > 0 && <span className="shrink-0 whitespace-nowrap text-accent-text">{tps.toFixed(1)} t/s</span>}
           {u.inputTokens > 0 && (
             <span className={cn(rate >= 0.5 ? 'text-success' : 'text-subtle')}>
               {t('命中 {n}%', { n: (rate * 100).toFixed(0) })}
@@ -394,7 +394,7 @@ export function TokenUsage({ task, scope }: { task: Task; scope?: TaskStep[] }) 
               <dd className="ml-auto font-mono text-muted tabular-nums">{fmtTokens(g.tokens)}</dd>
               {g.tps > 0 ? (
                 <dd className="min-w-[5.5rem] whitespace-nowrap text-right font-mono text-accent-text tabular-nums">
-                  {g.tps.toFixed(1)} token/s
+                  {g.tps.toFixed(1)} t/s
                 </dd>
               ) : (
                 // 停下的部分写「空闲」：不拿这一轮最后一次的速度冒充实时
@@ -441,7 +441,7 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
       <PopoverTrigger className={META_CHIP} title={t('Token 用量')}>
         <Coins className="h-3.5 w-3.5" />
         <span className="font-mono">{fmtTokens(total)}</span>
-        {tps > 0 && <span className="font-mono text-accent-text">{tps.toFixed(1)} token/s</span>}
+        {tps > 0 && <span className="shrink-0 whitespace-nowrap font-mono text-accent-text">{tps.toFixed(1)} t/s</span>}
         {u.inputTokens > 0 && (
           <span className={cn('font-mono', rate >= 0.5 && 'text-success')}>
             {t('命中 {n}%', { n: (rate * 100).toFixed(0) })}
