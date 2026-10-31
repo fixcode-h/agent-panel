@@ -35,8 +35,7 @@ import { cn } from '@/lib/utils'
 import type { McpServer } from '@shared/library'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { IconButton } from '@/components/ui/icon-button'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -965,27 +964,25 @@ export function AssistDialog({
         size="full"
         bare
         closeOnOutside
-        className="max-h-[min(960px,calc(100dvh-2rem))] bg-bg"
+        className="max-h-[min(960px,calc(100dvh-3.75rem))]"
       >
-        <header className="flex items-center gap-3 border-b bg-panel px-5 py-3.5">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent-text">
-            {shown ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <D.Title className="truncate text-[0.9375rem] font-semibold">
-              {shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
-            </D.Title>
-            <D.Description className="truncate text-xs text-subtle">{L.desc}</D.Description>
-          </div>
-          <IconButton icon={Minus} size="sm" label={t('最小化')} onClick={() => setMinimized(true)} />
-          <IconButton
-            icon={X}
-            size="sm"
-            label={t('关闭')}
-            title={running ? t('关闭并终止生成') : t('关闭')}
-            onClick={close}
-          />
-        </header>
+        <ModalHeader
+          icon={shown ? Wand2 : Sparkles}
+          title={shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
+          meta={<D.Description className="hidden truncate md:inline">{L.desc}</D.Description>}
+          close={false}
+          actions={
+            <>
+              <ModalButton icon={Minus} label={t('最小化')} onClick={() => setMinimized(true)} />
+              <ModalButton
+                icon={X}
+                label={running ? t('关闭并终止生成') : t('关闭')}
+                className="[&>svg]:h-[1.125rem] [&>svg]:w-[1.125rem]"
+                onClick={close}
+              />
+            </>
+          }
+        />
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           {/* 对话 */}

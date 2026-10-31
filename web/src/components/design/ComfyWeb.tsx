@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Modal } from '@/components/ui/modal'
-import { IconButton } from '@/components/ui/icon-button'
+import { MODAL_BTN, Modal, ModalHeader } from '@/components/ui/modal'
 import { toast } from '@/lib/toast'
-import { ExternalLink, FileDown, Loader2, Play, X } from 'lucide-react'
+import { ExternalLink, FileDown, Loader2, Play, Globe } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -56,33 +55,27 @@ export function ComfyWebDialog({
     }
   }, [open, url])
   return (
-    // 内嵌整个 ComfyUI 网页，要比 full 档再大：四边只留一点边距
-    <Modal
-      open={open}
-      onOpenChange={onOpenChange}
-      title={t('ComfyUI 网页')}
-      bare
-      size="full"
-      closeOnOutside
-      className="h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] max-w-none md:h-[calc(100dvh-3rem)] md:w-[calc(100%-3rem)]"
-    >
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
-        <span className="text-[0.875rem] font-semibold">{t('ComfyUI 网页')}</span>
-        {url && <span className="font-mono text-[0.75rem] text-subtle">{url}</span>}
-        <span className="flex-1" />
-        {url && (
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            {t('在浏览器中打开')}
-          </a>
-        )}
-        <IconButton icon={X} size="sm" label={t('关闭')} onClick={() => onOpenChange(false)} />
-      </div>
+    // 内嵌整个 ComfyUI 网页：和所有铺满的弹窗一样四边留 30px
+    <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="full" closeOnOutside>
+      <ModalHeader
+        icon={Globe}
+        title={t('ComfyUI 网页')}
+        meta={url && <span className="font-mono">{url}</span>}
+        actions={
+          url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={t('在浏览器中打开')}
+              title={t('在浏览器中打开')}
+              className={MODAL_BTN}
+            >
+              <ExternalLink />
+            </a>
+          )
+        }
+      />
       {imported && (
         <div className="flex shrink-0 items-start gap-2 border-b bg-accent-soft/40 px-4 py-2 text-[0.75rem] leading-relaxed">
           <FileDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />

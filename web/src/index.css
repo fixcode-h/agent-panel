@@ -92,6 +92,12 @@
   /* 弹窗遮罩：Modal、Sheet 共用一个透明度，深浅色一样 */
   --scrim: rgb(0 0 0 / 0.45);
   /*
+   * 弹窗外壳（照 Claude Code 网页版的方案弹窗）：浅色是卡片白；深色比页面亮一档（#191919 上是 #1f1f1f），
+   * 外圈和标题栏下沿是一道前景色 7% 的细线，深浅色、各配色都跟着前景色走
+   */
+  --window: var(--card);
+  --modal-edge: color-mix(in oklab, var(--fg) 7%, transparent);
+  /*
    * 深色画布（设计页的画板、概念图、预览台）：不管浅色还是深色主题，画布都是深底，上面的工具条和按钮用这组色。
    * 底色按配色的 --rail 带一点色相，换配色时画布跟着偏暖 / 偏蓝 / 偏绿，不用每套配色各写一份
    */
@@ -202,6 +208,9 @@
   --hl-tag: #f07f6c;
   /* 深色主题下页面本身就暗，画布再压一层，和面板分得开 */
   --canvas: color-mix(in oklab, var(--rail) 25%, #0f0f11);
+  --window: color-mix(in oklab, var(--bg), #fff 2.5%);
+  /* 深色下页面压暗一半，弹窗才浮得出来 */
+  --scrim: rgb(0 0 0 / 0.52);
 }
 
 /* 配色「中性」：内容在白、框架在灰，主操作用黑（深色反白），陶土橙只留在未读点 */
@@ -779,8 +788,8 @@ body,
   --c-menu-itemRadius: 8px;
   --c-menu-bg: var(--pop);
   --c-menu-border: 1px;
-  --c-modal-radius: 16px;
-  --c-modal-bg: var(--card);
+  --c-modal-radius: 8px;
+  --c-modal-bg: var(--window);
   --c-modal-border: 1px;
   --c-sheet-radius: 12px;
   --c-sheet-bg: var(--bg);

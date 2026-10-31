@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { Code2, Copy, GitCompareArrows, Loader2, PencilLine, X } from 'lucide-react'
+import { Code2, Copy, GitCompareArrows, Loader2, PencilLine, X, FileText } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
@@ -12,7 +12,7 @@ import { ensureHljs } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Modal } from '@/components/ui/modal'
+import { MODAL_HEADER, MODAL_ICON_BTN, MODAL_TITLE, Modal } from '@/components/ui/modal'
 import { IconButton } from '@/components/ui/icon-button'
 import { Lightbox } from '@/components/ui/lightbox'
 import { DialogScroll, ProjectDiffDialog } from '@/components/tasks/DiffDialog'
@@ -277,7 +277,7 @@ export function ProjectFileDialog({
         closeOnOutside
         className={cn(
           // 只有一句说明（找不到、二进制、出错）时弹窗按内容高度，不撑满
-          editing || !file || lines.length ? 'h-[min(760px,calc(100dvh-2rem))] max-w-[1000px]' : 'max-w-[560px]',
+          editing || !file || lines.length ? 'h-[min(760px,calc(100dvh-3.75rem))] max-w-[1000px]' : 'max-w-[560px]',
         )}
       >
         <div
@@ -290,8 +290,9 @@ export function ProjectFileDialog({
             }
           }}
         >
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-            <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={target?.path}>
+          <header className={MODAL_HEADER}>
+            <FileText className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            <D.Title className={cn(MODAL_TITLE, 'flex-1 font-mono')} title={target?.path}>
               {file?.path || target?.path}
               {target?.line ? <span className="text-subtle">:{target.line}</span> : null}
               {dirty && <span className="ml-2 text-[0.75rem] font-normal text-warning">{t('未保存')}</span>}
@@ -299,6 +300,7 @@ export function ProjectFileDialog({
             {isMd && !editing && file?.exists && !file.binary && (
               <Segmented
                 size="sm"
+                className={MODAL_ICON_BTN}
                 label={t('预览或源码')}
                 value={mdView}
                 onChange={setMdView}
@@ -318,16 +320,24 @@ export function ProjectFileDialog({
             <IconButton
               icon={Copy}
               size="sm"
+              className={MODAL_ICON_BTN}
               label={t('复制路径')}
               onClick={() => void copyText(file?.path || target?.path || '', { done: t('已复制'), fail: false })}
             />
             {canDiff && !editing && (
-              <IconButton icon={GitCompareArrows} size="sm" label={t('查看改动')} onClick={openDiff} />
+              <IconButton
+                icon={GitCompareArrows}
+                size="sm"
+                className={MODAL_ICON_BTN}
+                label={t('查看改动')}
+                onClick={openDiff}
+              />
             )}
             {canEdit && !editing && (
               <IconButton
                 icon={PencilLine}
                 size="sm"
+                className={MODAL_ICON_BTN}
                 label={t('编辑')}
                 onClick={() => {
                   setDraft(file!.content)
@@ -337,24 +347,29 @@ export function ProjectFileDialog({
             )}
             {editing ? (
               <>
-                <Button variant="ghost" size="sm" onClick={() => setDraft(null)}>
+                <Button variant="ghost" size="sm" className="h-6" onClick={() => setDraft(null)}>
                   {t('取消')}
                 </Button>
-                <Button size="sm" disabled={saving || !dirty} onClick={() => void save()}>
+                <Button size="sm" className="h-6" disabled={saving || !dirty} onClick={() => void save()}>
                   {saving ? t('保存中') : t('保存')}
                 </Button>
               </>
             ) : (
               file?.exists &&
               dir && (
-                <Button variant="ghost" size="sm" onClick={() => window.open(editorUrl(dir, file.path, target?.line))}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6"
+                  onClick={() => window.open(editorUrl(dir, file.path, target?.line))}
+                >
                   <Code2 className="h-4 w-4" />
                   {t('在编辑器中打开')}
                 </Button>
               )
             )}
             <D.Close asChild>
-              <IconButton icon={X} label={t('关闭')} size="sm" />
+              <IconButton icon={X} label={t('关闭')} size="sm" className={MODAL_ICON_BTN} />
             </D.Close>
           </header>
           {saveError && (

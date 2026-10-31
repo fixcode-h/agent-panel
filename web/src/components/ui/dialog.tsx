@@ -2,6 +2,8 @@ import { useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { Loader2 } from 'lucide-react'
 import { Button } from './button'
+import { MODAL_OVERLAY, MODAL_SURFACE } from './modal'
+import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
 /**
@@ -47,8 +49,14 @@ export function ConfirmDialog({
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
-        <D.Content className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line-strong bg-card p-6 shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none">
+        <D.Overlay className={MODAL_OVERLAY} />
+        {/* 外壳和所有弹窗同一份（MODAL_SURFACE）：圆角、细线、窗口底色 */}
+        <D.Content
+          className={cn(
+            MODAL_SURFACE,
+            'fixed top-1/2 left-1/2 z-50 block w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 p-6 animate-[pop-in_160ms_ease-out] focus:outline-none',
+          )}
+        >
           <D.Title className="text-[0.9375rem] font-semibold">{title}</D.Title>
           {description && (
             <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">{description}</D.Description>

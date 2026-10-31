@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookMarked, Check, Loader2, Palette, Pencil, Plus, Settings2, Sparkles, Trash2, X } from 'lucide-react'
+import {
+  BookMarked,
+  Check,
+  Loader2,
+  Palette,
+  Pencil,
+  Plus,
+  Settings2,
+  Sparkles,
+  Trash2,
+  X,
+  FolderCog,
+} from 'lucide-react'
 import { toast } from '@/lib/toast'
 import {
   PROMPT_CATEGORIES,
@@ -14,11 +26,11 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
 import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Checkbox } from '@/components/ui/checkbox'
 import { IconButton } from '@/components/ui/icon-button'
 import { DirPicker, useDirInfo } from '@/components/projects/DirPicker'
-import { DialogCloseButton, NavItem } from '@/components/projects/ProjectSettingsDialog'
+import { NavItem } from '@/components/projects/ProjectSettingsDialog'
 import { ScopeRequests } from '@/components/chat/AskToggle'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
@@ -107,10 +119,10 @@ export function DesignProjectDialog({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title={project ? t('项目设置 · {name}', { name: project.name }) : t('新建 UI 项目')}
+      title={null}
       bare
       size="xl"
-      className="h-[min(760px,calc(100dvh-2rem))] max-w-[980px]"
+      className="h-[min(760px,calc(100dvh-3.75rem))] max-w-[980px]"
     >
       {open && (
         <Body
@@ -213,12 +225,10 @@ function Body({
   const enabled = prompts.filter((p) => p.enabled).length
   return (
     <>
-      <header className="flex shrink-0 items-center gap-3 border-b px-6 py-4">
-        <h2 aria-hidden className="min-w-0 flex-1 truncate font-serif text-[1.125rem] font-semibold">
-          {project ? t('项目设置 · {name}', { name: project.name }) : t('新建 UI 项目')}
-        </h2>
-        <DialogCloseButton />
-      </header>
+      <ModalHeader
+        icon={FolderCog}
+        title={project ? t('项目设置 · {name}', { name: project.name }) : t('新建 UI 项目')}
+      />
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <nav
           aria-label={t('项目设置分类')}

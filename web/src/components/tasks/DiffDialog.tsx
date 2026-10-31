@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
 import {
   ChevronDown,
   ChevronUp,
@@ -13,7 +12,7 @@ import {
   Loader2,
   Undo2,
   WrapText,
-  X,
+  FileDiff as FileDiffIcon,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { copyText } from '@/lib/copy-text'
@@ -26,7 +25,7 @@ import { useScopedSetting } from '@/lib/useScopedSetting'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { IconButton, ToggleIconButton } from '@/components/ui/icon-button'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalClose, ModalHeader } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
@@ -142,14 +141,42 @@ export function DiffShell({
 
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        <D.Title
-          className="m-0 flex min-w-0 flex-1 items-baseline gap-1 font-mono text-[0.8125rem] font-normal"
-          title={path}
-        >
-          {dir && <span className="min-w-0 truncate text-subtle">{dir}</span>}
-          <span className="max-w-[70%] shrink-0 truncate font-medium">{name || path}</span>
-        </D.Title>
+      <ModalHeader
+        icon={FileDiffIcon}
+        title={
+          <span className="flex min-w-0 items-baseline gap-1">
+            {dir && <span className="min-w-0 truncate font-normal text-subtle">{dir}</span>}
+            <span className="max-w-[70%] shrink-0 truncate">{name || path}</span>
+          </span>
+        }
+        titleClass="font-mono"
+        titleAttr={path}
+        close={false}
+        actions={close}
+        aside={
+          canNav && (
+            <div className="flex shrink-0 items-center rounded-md bg-field p-0.5">
+              <IconButton
+                size="2xs"
+                icon={ChevronUp}
+                label={t('上一个文件')}
+                title={t('上一个文件（Alt + ↑）')}
+                onClick={() => onNavigate!(files![(index - 1 + files!.length) % files!.length])}
+              />
+              <span className="px-1 font-mono text-[0.6875rem] text-subtle tabular-nums">
+                {index + 1} / {files!.length}
+              </span>
+              <IconButton
+                size="2xs"
+                icon={ChevronDown}
+                label={t('下一个文件')}
+                title={t('下一个文件（Alt + ↓）')}
+                onClick={() => onNavigate!(files![(index + 1) % files!.length])}
+              />
+            </div>
+          )
+        }
+      >
         {(hasText || stats) && (
           <span className="hidden shrink-0 items-center gap-1.5 font-mono text-[0.75rem] sm:flex">
             <span className="text-success">+{add}</span>
@@ -157,29 +184,7 @@ export function DiffShell({
             {counted.hunks > 0 && <span className="text-subtle">· {t('{n} 处改动', { n: counted.hunks })}</span>}
           </span>
         )}
-        {canNav && (
-          <div className="flex shrink-0 items-center rounded-md bg-field p-0.5">
-            <IconButton
-              size="2xs"
-              icon={ChevronUp}
-              label={t('上一个文件')}
-              title={t('上一个文件（Alt + ↑）')}
-              onClick={() => onNavigate!(files![(index - 1 + files!.length) % files!.length])}
-            />
-            <span className="px-1 font-mono text-[0.6875rem] text-subtle tabular-nums">
-              {index + 1} / {files!.length}
-            </span>
-            <IconButton
-              size="2xs"
-              icon={ChevronDown}
-              label={t('下一个文件')}
-              title={t('下一个文件（Alt + ↓）')}
-              onClick={() => onNavigate!(files![(index + 1) % files!.length])}
-            />
-          </div>
-        )}
-        {close}
-      </header>
+      </ModalHeader>
       <div className="flex h-10 shrink-0 items-center gap-1 border-b bg-card/95 px-2.5">
         <Segmented
           size="sm"
@@ -430,11 +435,7 @@ export function ProjectDiffDialog({
         path={shown}
         diff={text}
         menu={menu}
-        close={
-          <D.Close asChild>
-            <IconButton size="sm" icon={X} label={t('关闭')} />
-          </D.Close>
-        }
+        close={<ModalClose />}
         empty={
           error ? (
             <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
@@ -571,11 +572,7 @@ export function DiffDialog({
           files={own ? undefined : files}
           onNavigate={own ? undefined : onPathChange}
           menu={menu}
-          close={
-            <D.Close asChild>
-              <IconButton size="sm" icon={X} label={t('关闭')} />
-            </D.Close>
-          }
+          close={<ModalClose />}
           empty={
             error ? (
               <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
