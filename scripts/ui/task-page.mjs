@@ -11,20 +11,40 @@
 export const CART_CONVERSATION = '购物车右上角'
 
 /** 任务页的默认视口：窄屏用例会自己再改 */
+/** 演示数据存在 localStorage 的这个键里（web/src/lib/demo-backend.ts 的 KEY） */
+const DEMO_KEY = 'agent-panel-demo-v3'
+
 export const TASK_VIEWPORT = { width: 1440, height: 900 }
 
 /**
  * 开一个页面、进入那条父对话，返回这个 page。
  * afterOpen 在点开对话之后、等输入框之前调用：加载日志这类「打开瞬间才看得到」的断言要在那里做。
  */
-export async function openCartTask({ base, page, errors }, { viewport = TASK_VIEWPORT, afterOpen } = {}) {
+export async function openCartTask(
+  { base, page, errors },
+  { viewport = TASK_VIEWPORT, afterOpen, devMode = false } = {},
+) {
   const p = await page(viewport)
   await p.goto(base)
   const conv = p.getByText(CART_CONVERSATION, { exact: false }).first()
-  const found = await conv.waitFor({ timeout: 15000 }).then(
-    () => true,
-    () => false,
-  )
+  const listed = () =>
+    conv.waitFor({ timeout: 15000 }).then(
+      () => true,
+      () => false,
+    )
+  let found = await listed()
+  // 开发者模式：加载日志（分步面板、后台胶囊）只在开发者模式里显示。演示数据生成后改设置再整页导航
+  // （只改 hash 会被内存里的演示数据盖回去，见 docs/lessons/ui-check.md）
+  if (found && devMode) {
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k) ?? 'null')
+      if (!db) return
+      db.settings = { ...db.settings, developerMode: true }
+      localStorage.setItem(k, JSON.stringify(db))
+    }, DEMO_KEY)
+    await p.goto(base)
+    found = await listed()
+  }
   // 列表项都没出来就别接着 click：click 会白等 30 秒默认超时、抛错穿到 catch 分支，
   // 这条更有用的提示反而看不到。直接返回，后面每一步各自报出找不到元素，分片照样以失败结束
   if (!found) {

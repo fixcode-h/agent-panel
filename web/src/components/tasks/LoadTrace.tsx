@@ -4,6 +4,7 @@ import { t } from '@shared/i18n'
 import { fmtDuration } from '@shared/duration'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
+import { useData } from '@/lib/data'
 import {
   backgroundSteps,
   blockingFailed,
@@ -22,6 +23,9 @@ import { IconButton } from '@/components/ui/icon-button'
  * 打开对话时的加载日志：像终端那样一行一步，卡在哪一眼能看到。
  * 状态全部来自真实请求（见 load-trace 与 TaskView 里的埋点），不伪造进度；
  * 这里只管画，以及「走完后停一小会儿再淡出」。
+ *
+ * 分步日志只在开发者模式（设置 → 常规）里显示：平时打开对话只给一个转圈（没有数据时）或什么都不画
+ * （数据到了、盖在对话上的那一层）。挡内容的步骤失败时照样显示错误卡片——错误原文不吞。
  */
 
 /** 每一步叫什么，按加载顺序（文案在模块顶层翻，和 web/src/lib/tasks.ts 的 statusLabel 一样） */
@@ -80,6 +84,7 @@ export function LoadTrace({
   const failed = blockingFailed(steps)
   // 有步骤还在跑才每秒刷新：等待时长要看得见地涨，跑完了就不必再重渲染
   const now = useNow(traceRunning(steps))
+  const dev = useData().settings?.developerMode === true
   const [shown, setShown] = useState(true)
   const hidden = useRef(onHidden)
   hidden.current = onHidden
@@ -95,10 +100,11 @@ export function LoadTrace({
     // 阻塞步骤失败时要停在屏幕上给人看（淡成空白比转圈更糟）
     if (!overlay || !blocking || failed) return
     const base = Number.isFinite(startedAt) ? startedAt : Date.now()
-    const left = Math.max(0, MIN_VISIBLE_MS - (Date.now() - base))
+    // 不在开发者模式时这一层本来就不画，不必为了「看清走了哪几步」多停一会儿
+    const left = dev ? Math.max(0, MIN_VISIBLE_MS - (Date.now() - base)) : 0
     const timer = setTimeout(() => setShown(false), left)
     return () => clearTimeout(timer)
-  }, [overlay, blocking, failed, startedAt])
+  }, [overlay, blocking, failed, startedAt, dev])
   useEffect(() => {
     if (shown) return
     // 淡出完就交给调用方卸载。不靠 transitionend：动效被关掉、标签页在后台时它不一定来，
@@ -106,6 +112,15 @@ export function LoadTrace({
     const timer = setTimeout(() => hidden.current?.(), FADE_MS + 60)
     return () => clearTimeout(timer)
   }, [shown])
+
+  // 不在开发者模式：不显示分步日志。没有数据时它是页面主体，留一个转圈表示在加载；
+  // 盖在对话上的那一层什么都不画（不挡、不变暗），挡内容的步骤走完照常交给调用方卸载
+  if (!dev && !failed)
+    return overlay ? null : (
+      <div className="flex w-full flex-1 items-center justify-center" data-load-spinner="">
+        <Loader2 className="h-4 w-4 animate-spin text-subtle" aria-label={t('加载中…')} />
+      </div>
+    )
 
   return (
     <div
@@ -156,9 +171,11 @@ export function LoadTrace({
 /**
  * 面板收起以后还在跑的后台步骤（实时更新、子对话列表、标记已读）：在输入框上方留一个小胶囊，
  * 失败时直接写错误原文，点开是完整日志。没有在跑 / 失败的后台步骤时什么也不画——不新增常驻噪音。
+ * 不在开发者模式时只在失败时出现（错误原文不吞），「正在连接实时更新」这类进度不显示。
  */
 export function LoadTracePill({ steps }: { steps: TraceStep[] }) {
   const pending = backgroundSteps(steps)
+  const dev = useData().settings?.developerMode === true
   const [open, setOpen] = useState(false)
   const now = useNow(traceRunning(pending))
   useEscape(open, () => setOpen(false))
@@ -168,6 +185,7 @@ export function LoadTracePill({ steps }: { steps: TraceStep[] }) {
   }, [pending.length])
   if (!pending.length) return null
   const failed = pending.find((s) => s.status === 'failed')
+  if (!dev && !failed) return null
   const running = pending.find((s) => s.status === 'running')
   return (
     <div className="shrink-0 px-3 pt-1 md:px-6">

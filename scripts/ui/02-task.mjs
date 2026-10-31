@@ -14,7 +14,9 @@ import { closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
 await runShard(import.meta.filename, async (api) => {
   const { base, check, errors, settle, shotOf } = api
   // 加载日志：打开对话的一瞬间才看得到，点开后立刻断言，再等输入框画出来
+  // 加载日志只在开发者模式里显示：这一片按开发者模式打开（非开发者模式不显示由下面单独一条覆盖）
   const p = await openCartTask(api, {
+    devMode: true,
     afterOpen: async (p) => {
       // 打开对话时先出现加载日志：逐行打出真的走了哪几步，加载完淡出卸载。
       // 这里在点开之后立刻断言（面板至少露 MIN_VISIBLE_MS，够测量和截图）
@@ -1130,6 +1132,58 @@ await runShard(import.meta.filename, async (api) => {
     // 改回现场：后面的用例按原本那条已完成的对话跑
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
     await p.reload()
+    await backToTask()
+  }
+
+  // 不在开发者模式时打开对话不显示分步加载日志（用户要的：「非开发者模式不显示这个」），后台胶囊也不显示进度；
+  // 对话照常打开。执行中的对话首轮轮询要等一会儿，正好覆盖「后台步骤还在跑」的那一段
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      db.settings = { ...db.settings, developerMode: false }
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      task.status = 'running'
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await p.goto(base)
+    const conv = p.getByText('购物车右上角', { exact: false }).first()
+    if (
+      await conv.waitFor({ timeout: 15000 }).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      await p.evaluate(() => {
+        window.__traceSeen = false
+        const seen = () => document.querySelector('[data-load-trace], [data-load-trace-pill]')
+        const obs = new MutationObserver(() => {
+          if (seen()) window.__traceSeen = true
+        })
+        obs.observe(document.body, { childList: true, subtree: true })
+        window.__traceObs = obs
+      })
+      await conv.click()
+      if (
+        !(await p
+          .locator('#follow-up')
+          .waitFor({ timeout: 10000 })
+          .then(
+            () => true,
+            () => false,
+          ))
+      )
+        errors.push('任务-非开发者模式：点开对话后没有出现输入框')
+      await p.waitForTimeout(1200)
+      const seen = await p.evaluate(() => {
+        window.__traceObs?.disconnect()
+        return window.__traceSeen
+      })
+      if (seen) errors.push('任务-非开发者模式：打开对话时显示了加载日志（只该在开发者模式里显示）')
+    } else errors.push('任务-非开发者模式：演示数据没生成出来（找不到对话列表项）')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.goto(base)
     await backToTask()
   }
 
