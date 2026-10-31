@@ -119,6 +119,8 @@ export function TurnRail({
     >
       <nav
         aria-label={t('跳到某一轮')}
+        // 横杠一列滚动时预览卡片的位置就对不上了：先收起，指针落到下一根横杠上再弹
+        onScroll={() => setHover(null)}
         className="flex max-h-[min(60vh,32rem)] flex-col items-end overflow-y-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {turns.map((turn, i) => {
