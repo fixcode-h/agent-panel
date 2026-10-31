@@ -462,11 +462,10 @@ function PlanStepRow({
             <span
               className={cn(
                 'min-w-0 flex-1 truncate text-[0.8125rem] leading-5',
-                step.status === 'pending' || step.status === 'skipped'
+                // 完成的只调灰、不加删除线（用户要求）：左边的完成图标已经说明了状态，划掉反而看不清做了什么
+                step.status === 'pending' || step.status === 'skipped' || step.status === 'done'
                   ? 'text-muted'
-                  : step.status === 'done'
-                    ? 'text-muted line-through decoration-line-strong'
-                    : 'text-fg',
+                  : 'text-fg',
                 active && 'font-medium',
               )}
             >

@@ -917,6 +917,11 @@ const ProjectFields = z.object({
   childIsolation: z.enum(['worktree', 'claim']).catch('worktree').default('worktree'),
   /** 新建对话时「独立分支」默认勾上（只是输入框里的默认值，每次新建仍可以改） */
   isolateDefault: z.boolean().default(false),
+  /**
+   * cherry-pick 的目标：Git 项目是本地分支名，P4 项目是目标工作区里的项目路径（另一条分支映射到本机的目录）。
+   * 用户让 Agent 把改动 cherry-pick 过去时按它做；没设时为空（可选：旧数据和直接拼 Project 字面量的地方不用补）
+   */
+  cherryPick: z.string().trim().max(500).optional(),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**

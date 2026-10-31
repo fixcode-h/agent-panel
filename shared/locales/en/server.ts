@@ -252,6 +252,9 @@ export const EN_SERVER: Record<string, string> = {
   '强制更新停掉了这些任务正在做的事。勾选的任务会接着往下执行，没勾选的不处理。':
     'The forced update stopped what these tasks were doing. Checked tasks continue where they left off; unchecked ones are left as they are.',
   '被打断时：{doing}': 'Interrupted at: {doing}',
+  未命名项目: 'Untitled project',
+  '整组勾选：{name}': 'Select all in {name}',
+  '{on}/{n} 个': '{on}/{n}',
   '继续执行选中的任务（{n}）': 'Resume selected tasks ({n})',
   稍后再说: 'Later',
   '已在后台继续 {ok} 个任务': 'Resuming {ok} tasks in the background',

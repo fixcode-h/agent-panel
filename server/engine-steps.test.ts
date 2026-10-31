@@ -454,6 +454,19 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   assert.match(deny[0], /不建 PR、不合并主干/)
   assert.doesNotMatch(deny[0], /用提问工具问用户一次要不要推送/)
   assert.doesNotMatch(deny[0], /gh pr create/)
+  // cherry-pick 目标：只搬这个对话自己的提交 / 改动，不按两条分支的差异同步（用户 2026-10-31 定的）
+  const pick = await promptsOf(
+    {},
+    { policy: { push: 'ask', tools: [], cherryPick: { vcs: 'git', target: 'release/1.2' } } },
+  )
+  assert.match(pick[0], /## Cherry-pick\n[\s\S]*「release\/1\.2」[\s\S]*只把这个对话里你自己做的那几个提交/)
+  assert.match(pick[0], /不要 merge \/ rebase 整个分支/)
+  const pickP4 = await promptsOf(
+    {},
+    { policy: { push: 'ask', tools: [], cherryPick: { vcs: 'p4', target: 'D:/p4/rel' } } },
+  )
+  assert.match(pickP4[0], /「D:\/p4\/rel」[\s\S]*目标里本来就和这里不同的内容不是这次的修改/)
+  assert.doesNotMatch(deny[0], /## Cherry-pick/, '没设目标时不提')
 })
 
 test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也用同一份 globs', async () => {
