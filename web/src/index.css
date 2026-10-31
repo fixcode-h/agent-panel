@@ -2018,19 +2018,33 @@ body,
 /* 设置页的分组卡片（settings/parts.tsx 的 Group）：边界靠底色分、不描边（docs/lessons/visual.md），
    底色从当前配色的 fg 混出来，各套配色、深浅色都跟着走；卡片里直接放的行、折叠和自定义内容之间一道细线 */
 /* 设置页的分组卡片跟外观里的「圆角」走（--panel-radius，默认 0 直角），不再写死 12px */
+/* 背景块和外层背景之间的边距（用户 2026-10-31：背景块不能和外层背景的边重合）：
+   有底色的块（Card 和标了 data-surface 的块）放进另一块有底色的区域里，四周都要离外层的边留出这么多。
+   界面检查每一步都会扫一遍（scripts/ui/harness.mjs 的 nestedEdgeProblems） */
+:root {
+  --surface-inset: 16px;
+}
 .settings-card {
   display: flex;
   flex-direction: column;
   border-radius: var(--panel-radius, 0);
-  padding-inline: 16px;
+  padding-inline: var(--surface-inset);
   background: color-mix(in srgb, var(--color-fg) 3.5%, transparent);
 }
-.settings-card > * + *,
+/* 分隔线只画在两段文字内容之间；有底色的块本身就和上下分开了，不再压一道线 */
+.settings-card > :where(:not([data-surface])) + :where(:not([data-surface])),
 .settings-advanced[open] > .settings-row {
   border-top: 1px solid color-mix(in srgb, var(--color-line) 80%, transparent);
 }
-.settings-card > :not(.settings-row):not(.settings-advanced):not(section):not(.settings-card-head) {
+.settings-card > :not(.settings-row):not(.settings-advanced):not(section):not(.settings-card-head):not([data-surface]) {
   padding-block: 14px;
+}
+/* 卡片里直接放的有底色的块（预览框、列表卡片、编辑器）：上下也留和左右一样的边距，底边不贴着卡片底边 */
+.settings-card > [data-surface] {
+  margin-block: var(--surface-inset);
+}
+.settings-card > [data-surface] + [data-surface] {
+  margin-top: 0;
 }
 /* 卡片顶部放「恢复本组」的固定高度行：没东西可恢复时按钮隐藏、行照样占位，布局不跳 */
 .settings-card > .settings-card-head {

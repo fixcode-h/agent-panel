@@ -189,6 +189,7 @@ export async function runShard(file, fn) {
     await settle(p).catch(() => {})
     const overflow = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     if (overflow > 1) errors.push(`${name}：出现横向滚动（多出 ${overflow}px）`)
+    errors.push(...(await nestedEdgeProblems(p, name)))
     const seq = ++stepsRun
     lastPage = p
     // 默认只拍第一步（分片开头）和出错的步骤：
@@ -395,4 +396,67 @@ export async function segmentedContrastProblems(p, label) {
     return out
   })
   return bad.map((b) => `${label}：分段切换${b}，选中项看不清`)
+}
+
+/**
+ * 背景块贴着外层背景的边：一块有底色的圆角块（卡片、预览框、代码块）放在另一块有底色的区域里，
+ * 有一两条边和外层的内边重合，看起来像两层背景叠在一起、没留边距（字体页的预览卡贴着设置卡底边）。
+ * 四条边都重合的是铺满的包裹层，不算；用户要求所有背景块和外层边缘之间都留边距（2026-10-31）
+ */
+export async function nestedEdgeProblems(p, label) {
+  const bad = await p.evaluate(NESTED_EDGE_SCAN)
+  return bad.map((b) => `${label}：背景块贴着外层背景的边（${b}），要留边距`)
+}
+const NESTED_EDGE_SCAN = () => {
+  // 计算样式里的颜色可能是 oklab() / color-mix 的结果：交给 canvas 换成 rgba 再看透明度
+  const ctx = document.createElement('canvas').getContext('2d')
+  const alpha = (c) => {
+    ctx.clearRect(0, 0, 1, 1)
+    ctx.fillStyle = 'rgba(0,0,0,0)'
+    ctx.fillStyle = c
+    ctx.fillRect(0, 0, 1, 1)
+    return ctx.getImageData(0, 0, 1, 1).data[3]
+  }
+  const surface = (el) => {
+    const s = getComputedStyle(el)
+    return alpha(s.backgroundColor) > 0 || (s.backgroundImage !== 'none' && !s.backgroundImage.includes('url('))
+  }
+  const scrolls = (el) => ['auto', 'scroll'].includes(getComputedStyle(el).overflowY)
+  const where = (el) => (el.getAttribute('data-src') || el.className?.toString?.() || el.tagName).slice(0, 60)
+  const out = []
+  for (const el of document.querySelectorAll('body *')) {
+    if (!el.getClientRects().length) continue
+    const s = getComputedStyle(el)
+    if (s.visibility === 'hidden' || parseFloat(s.opacity) === 0) continue
+    // 圆角的有底色块才算「一块背景」；页签贴着页签条、画布上自由摆放的节点是有意贴边的
+    if (!surface(el) || parseFloat(s.borderTopLeftRadius) < 2) continue
+    if (['absolute', 'fixed'].includes(s.position) || el.closest('[role="tab"]')) continue
+    const r = el.getBoundingClientRect()
+    if (r.height < 20 || r.width < 40) continue
+    // 往上找最近的有底色的外层；中间隔着滚动区的不算（贴不贴边看滚到哪）
+    let a = el.parentElement
+    let scrolled = false
+    let placed = false
+    while (a && a !== document.body && !surface(a)) {
+      if (scrolls(a)) scrolled = true
+      // 画布上摆放的节点（外面包着绝对定位、带变换的一层）：位置由用户拖，不按边距排
+      const as = getComputedStyle(a)
+      if (['absolute', 'fixed'].includes(as.position) || as.transform !== 'none') placed = true
+      a = a.parentElement
+    }
+    if (!a || a === document.body || scrolled || placed) continue
+    const ar = a.getBoundingClientRect()
+    const as = getComputedStyle(a)
+    const edge = {
+      上: Math.abs(r.top - ar.top - parseFloat(as.borderTopWidth)),
+      下: Math.abs(ar.bottom - parseFloat(as.borderBottomWidth) - r.bottom),
+      左: Math.abs(r.left - ar.left - parseFloat(as.borderLeftWidth)),
+      右: Math.abs(ar.right - parseFloat(as.borderRightWidth) - r.right),
+    }
+    const touch = Object.keys(edge).filter((k) => edge[k] < 1.5)
+    // 一两条边重合才是问题：三条边重合是铺满的标题栏 / 底栏，四条是包裹层
+    if (!touch.length || touch.length > 2) continue
+    out.push(`${touch.join('')}边，「${(el.textContent ?? '').trim().slice(0, 16)}」${where(el)} 在 ${where(a)} 里`)
+  }
+  return out
 }
