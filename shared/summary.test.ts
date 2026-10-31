@@ -205,7 +205,7 @@ const entry = (over: Partial<SummaryEntry>): SummaryEntry => ({
 const record = (over: Partial<SummaryRecord>) =>
   SummaryRecord.parse({ id: 'r', createdAt: today(9), updatedAt: today(9), day: '2026-10-23', ...over })
 
-test('renderReport：需求和 Bug 分两节、按项目分小节，需求写内容，Bug 写原因和修复', () => {
+test('renderReport：需求和 Bug 分两节、不写项目名，需求写内容，Bug 写原因和修复', () => {
   const md = renderReport({
     grain: 'day',
     from: '2026-10-23',
@@ -223,17 +223,13 @@ test('renderReport：需求和 Bug 分两节、按项目分小节，需求写内
       '',
       '## 一、需求',
       '',
-      '### 1.1 面板',
       '1. **支持按周生成**',
       '   内容：可以选一周，从日报汇总成周报',
-      '',
-      '### 1.2 后台',
-      '1. **加接口**',
+      '2. **加接口**',
       '   内容：新增删除报告的接口',
       '',
       '## 二、Bug',
       '',
-      '### 2.1 面板',
       '1. **点暂停显示已停止**',
       '   原因：子任务进程已退出但状态没更新',
       '   修复：退出时同步状态',
