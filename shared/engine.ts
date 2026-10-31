@@ -555,6 +555,8 @@ export interface Orchestra {
   }
   /** P4 工作区：按文件类型把改动分进各自的 pending（面板执行，不是 P4 项目时没有） */
   p4Split?: EngineHost['p4Split']
+  /** 项目设了 cherry-pick 目标：由面板核对后搬（只收这个对话自己的提交 / 改动，见 server/cherry-pick.ts） */
+  cherryPick?: EngineHost['cherryPick']
 }
 
 /** p4_split_changelists 的参数：从哪个 changelist 分、只分哪些文件、每类一句描述 */
@@ -826,6 +828,7 @@ export interface EngineHost {
   }
   /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
   p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
+  cherryPick?: (input: { commits?: string[]; changelist?: string }) => Promise<{ ok: boolean; info: string }>
 }
 
 /** Agent 用 record_lesson 记的一条教训 */
@@ -3350,6 +3353,7 @@ function makeOrchestra(
         }
       : undefined,
     p4Split: host.p4Split,
+    cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
     status: () => statusTree(host, self.id),
     spawn(tasks, step, opts) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }

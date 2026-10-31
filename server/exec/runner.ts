@@ -163,6 +163,7 @@ export interface RealContext {
   branch?: EngineHost['branch']
   wrapUp?: EngineHost['wrapUp']
   p4Split?: EngineHost['p4Split']
+  cherryPick?: EngineHost['cherryPick']
   submitMerge?: EngineHost['submitMerge']
   isolated?: EngineHost['isolated']
   finishChild?: EngineHost['finishChild']
@@ -2882,6 +2883,7 @@ export async function runRealTurn(ctx: RealContext) {
     branch: ctx.branch,
     wrapUp: ctx.wrapUp,
     p4Split: ctx.p4Split,
+    cherryPick: ctx.cherryPick,
     submitMerge: ctx.submitMerge,
     isolated: ctx.isolated,
     finishChild: ctx.finishChild,
