@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
-import { Code2, Copy, ExternalLink, FolderOpen, Loader2, X } from 'lucide-react'
+import { Code2, Copy, ExternalLink, FolderOpen, Loader2, FileText } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
@@ -8,9 +7,7 @@ import { api } from '@/lib/api'
 import { editorUrl } from '@/lib/editor-url'
 import { isImagePath } from '@/lib/file-path'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { IconButton } from '@/components/ui/icon-button'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { Lightbox } from '@/components/ui/lightbox'
 
 /** 任务页提供：Agent 输出里的文件路径点了以后在这里打开；没有提供时路径就是普通的行内代码 */
@@ -100,38 +97,41 @@ export function FileDialog({
         size={!file || lines.length ? 'xl' : 'md'}
         bare
         closeOnOutside
-        className={!file || lines.length ? 'h-[min(760px,calc(100dvh-2rem))]' : undefined}
+        className={!file || lines.length ? 'h-[min(760px,calc(100dvh-3.75rem))]' : undefined}
       >
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={target?.path}>
-            {file?.path || target?.path}
-            {target?.line ? <span className="text-subtle">:{target.line}</span> : null}
-          </D.Title>
-          <IconButton
-            size="sm"
-            icon={Copy}
-            label={t('复制路径')}
-            onClick={() => void copyText(file?.path || target?.path || '', { done: t('已复制'), fail: false })}
-          />
-          {local && file?.exists && (
+        <ModalHeader
+          icon={FileText}
+          title={
             <>
-              <Button variant="ghost" size="sm" onClick={() => openLocal(false)}>
-                <ExternalLink className="h-4 w-4" />
-                {t('用默认程序打开')}
-              </Button>
-              <IconButton size="sm" icon={FolderOpen} label={t('在文件夹中显示')} onClick={() => openLocal(true)} />
+              {file?.path || target?.path}
+              {target?.line ? <span className="text-subtle">:{target.line}</span> : null}
             </>
-          )}
-          {file?.exists && file.dir && !(local && file.binary) && (
-            <Button variant="ghost" size="sm" onClick={() => window.open(editorUrl(file.dir, file.path, target?.line))}>
-              <Code2 className="h-4 w-4" />
-              {t('在编辑器中打开')}
-            </Button>
-          )}
-          <D.Close asChild>
-            <IconButton size="sm" icon={X} label={t('关闭')} />
-          </D.Close>
-        </header>
+          }
+          titleClass="font-mono"
+          titleAttr={target?.path}
+          actions={
+            <>
+              <ModalButton
+                icon={Copy}
+                label={t('复制路径')}
+                onClick={() => void copyText(file?.path || target?.path || '', { done: t('已复制'), fail: false })}
+              />
+              {local && file?.exists && (
+                <>
+                  <ModalButton icon={ExternalLink} label={t('用默认程序打开')} onClick={() => openLocal(false)} />
+                  <ModalButton icon={FolderOpen} label={t('在文件夹中显示')} onClick={() => openLocal(true)} />
+                </>
+              )}
+              {file?.exists && file.dir && !(local && file.binary) && (
+                <ModalButton
+                  icon={Code2}
+                  label={t('在编辑器中打开')}
+                  onClick={() => window.open(editorUrl(file.dir, file.path, target?.line))}
+                />
+              )}
+            </>
+          }
+        />
         <div ref={box} className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
           {error ? (
             <p className="p-6 text-[0.8125rem] text-danger">{error}</p>

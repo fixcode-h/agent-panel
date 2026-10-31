@@ -1446,7 +1446,7 @@ export function SettingsDialog({
       title={t('设置')}
       bare
       size="xl"
-      className="h-[min(840px,calc(100dvh-2rem))] max-w-[1200px]"
+      className="h-[min(840px,calc(100dvh-3.75rem))] max-w-[1200px]"
       // 搜索框里有字时 Esc 先清空搜索（框自己处理），不关掉整个设置
       onEscapeKeyDown={(e) => {
         const el = e.target

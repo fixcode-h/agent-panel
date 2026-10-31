@@ -1,8 +1,7 @@
 // 附件卡片点开以后怎么看：图片用看图浮层，文件用文件弹窗（看不了的可以用默认程序打开），引用看原文。
 // 输入框里的卡片和发出去的消息里的卡片共用这一套
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
-import { Copy, File as FileIcon, Image as ImageIcon, ImageOff, TextQuote, X } from 'lucide-react'
+import { Copy, File as FileIcon, Image as ImageIcon, ImageOff, TextQuote } from 'lucide-react'
 import { copyText } from '@/lib/copy-text'
 import { attachOf, segments, type ChipKind } from '@shared/composer'
 import type { Attachment } from '@shared/schema'
@@ -11,8 +10,7 @@ import { cn } from '@/lib/utils'
 import { CHIP_SHAPE, CHIP_TONE } from '@/components/ui/chip-tone'
 import { quoteLabel, quoteText } from '@/lib/quote'
 import { shownImages } from '@/lib/attachment-image'
-import { IconButton } from '@/components/ui/icon-button'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { Lightbox, type LightboxImage } from '@/components/ui/lightbox'
 import { FileDialog } from '@/components/tasks/FileDialog'
 import { Markdown } from '@/components/tasks/Markdown'
@@ -37,21 +35,19 @@ function QuoteDialog({ text, onClose }: { text: string | null; onClose: () => vo
       size="lg"
       bare
       closeOnOutside
-      className="max-h-[min(720px,calc(100dvh-2rem))]"
+      className="max-h-[min(720px,calc(100dvh-3.75rem))]"
     >
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-        <TextQuote className="h-4 w-4 shrink-0 text-subtle" />
-        <D.Title className="min-w-0 flex-1 truncate text-[0.875rem] font-medium">{t('引用的内容')}</D.Title>
-        <IconButton
-          size="sm"
-          icon={Copy}
-          label={t('复制')}
-          onClick={() => void copyText(text ?? '', { done: t('已复制'), fail: false })}
-        />
-        <D.Close asChild>
-          <IconButton size="sm" icon={X} label={t('关闭')} />
-        </D.Close>
-      </header>
+      <ModalHeader
+        icon={TextQuote}
+        title={t('引用的内容')}
+        actions={
+          <ModalButton
+            icon={Copy}
+            label={t('复制')}
+            onClick={() => void copyText(text ?? '', { done: t('已复制'), fail: false })}
+          />
+        }
+      />
       <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[0.875rem]">
         {text !== null && <Markdown text={text} teamNames={NO_TEAM} />}
       </div>

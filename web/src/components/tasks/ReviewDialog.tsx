@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
-import { ClipboardCheck, Highlighter, Loader2, Trash2, X } from 'lucide-react'
+import { ClipboardCheck, Highlighter, Loader2, Trash2 } from 'lucide-react'
 import type { TaskRequest } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/input'
 import { IconButton } from '@/components/ui/icon-button'
@@ -144,22 +143,14 @@ export function ReviewDialog({
 
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="full">
-      <div className="flex items-center gap-2 border-b px-5 py-3">
-        <ClipboardCheck className="h-4 w-4 shrink-0 text-warning" />
-        <D.Title className="min-w-0 truncate text-[0.9375rem] font-semibold">{req.title}</D.Title>
+      <ModalHeader icon={ClipboardCheck} iconClass="text-warning" title={req.title}>
         {agent && (
-          <span className="hidden min-w-0 items-center gap-1.5 text-xs text-muted sm:flex">
+          <span className="hidden min-w-0 items-center gap-1.5 text-[0.75rem] text-subtle sm:flex">
             <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
             <span className="truncate">{agent.name}</span>
           </span>
         )}
-        <D.Close
-          aria-label={t('关闭')}
-          className="ml-auto grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <X className="h-4 w-4" />
-        </D.Close>
-      </div>
+      </ModalHeader>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div
           ref={scrollRef}

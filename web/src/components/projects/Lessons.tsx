@@ -1,6 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { Badge } from '@/components/ui/badge'
@@ -551,14 +550,9 @@ export function RecordLessonDialog({
     }
   }
   return (
-    // 标题栏带图标、用衬线字，自己画；D.Title 放在标题栏里，外壳不再重复给读屏名
+    // 标题栏带图标，和所有弹窗一样用 ModalHeader
     <Modal open onOpenChange={(o) => !o && onClose()} title={null} bare className="max-w-[560px]">
-      <header className="flex shrink-0 items-center gap-2.5 border-b px-5 py-4">
-        <GraduationCap className="h-[18px] w-[18px] shrink-0 text-accent-text" strokeWidth={2.2} />
-        <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.0625rem] font-semibold">
-          {t('记成项目教训')}
-        </D.Title>
-      </header>
+      <ModalHeader icon={GraduationCap} title={t('记成项目教训')} />
       <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-5">
         <p className="text-[0.75rem] leading-relaxed text-subtle">
           {t(

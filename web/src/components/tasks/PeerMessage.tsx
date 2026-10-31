@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
 import {
   Activity,
   ArrowLeft,
@@ -28,8 +27,7 @@ import { convStateText } from '@shared/task'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { IconButton } from '@/components/ui/icon-button'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { RowShell } from './ToolRow'
 import { Markdown } from './Markdown'
 import { useChildList, useChildOpen, usePeerMail } from './child-open'
@@ -384,45 +382,47 @@ function PeerDialog({
       size="xl"
       bare
       closeOnOutside
-      className="max-h-[min(760px,calc(100dvh-2rem))] max-w-[860px]"
+      className="max-h-[min(760px,calc(100dvh-3.75rem))] max-w-[860px]"
     >
-      <header className="flex shrink-0 items-start gap-3 border-b px-4 py-3">
-        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', failed ? 'text-danger' : 'text-subtle')} />
-        <div className="min-w-0 flex-1">
-          <D.Title className="truncate text-[0.875rem] font-medium" title={subject}>
-            {subject}
-          </D.Title>
-          <div className="mt-0.5 flex items-center gap-2 text-[0.75rem] text-subtle">
-            <span className={cn('rounded px-1.5 py-px leading-4', badgeTone(kind, failed))}>{peerKindText(kind)}</span>
-            <span className="min-w-0 truncate">
-              {who}
-              {title && title !== name ? ` · ${title}` : ''}
-            </span>
-          </div>
-        </div>
-        {openChild && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              onClose()
-              openChild()
-            }}
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            {t('打开子对话')}
-          </Button>
-        )}
-        <IconButton
-          size="sm"
-          icon={Copy}
-          label={t('复制')}
-          onClick={() => void copyText(text, { done: t('已复制消息'), fail: false })}
-        />
-        <D.Close asChild>
-          <IconButton size="sm" icon={X} label={t('关闭')} />
-        </D.Close>
-      </header>
+      <ModalHeader
+        icon={Icon}
+        iconClass={failed ? 'text-danger' : undefined}
+        title={subject}
+        titleAttr={subject}
+        meta={
+          <>
+            {who}
+            {title && title !== name ? ` · ${title}` : ''}
+          </>
+        }
+        actions={
+          <>
+            {openChild && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[0.75rem]"
+                onClick={() => {
+                  onClose()
+                  openChild()
+                }}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                {t('打开子对话')}
+              </Button>
+            )}
+            <ModalButton
+              icon={Copy}
+              label={t('复制')}
+              onClick={() => void copyText(text, { done: t('已复制消息'), fail: false })}
+            />
+          </>
+        }
+      >
+        <span className={cn('shrink-0 rounded px-1.5 py-px text-[0.6875rem] leading-4', badgeTone(kind, failed))}>
+          {peerKindText(kind)}
+        </span>
+      </ModalHeader>
       <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[0.875rem]">
         {targets && targets.length > 1 && (
           <p className="mb-3 text-[0.75rem] text-subtle">{targets.map((x) => x.name).join('、')}</p>

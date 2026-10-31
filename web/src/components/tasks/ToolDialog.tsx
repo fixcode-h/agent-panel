@@ -1,7 +1,5 @@
-import * as D from '@radix-ui/react-dialog'
-import { Copy, Loader2, Terminal, TerminalSquare, X } from 'lucide-react'
-import { Modal } from '@/components/ui/modal'
-import { IconButton } from '@/components/ui/icon-button'
+import { Copy, Loader2, Terminal, TerminalSquare, Wrench } from 'lucide-react'
+import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
@@ -15,7 +13,7 @@ import { jobLive } from '@/lib/job-poll'
  * 命令行窗口的高度跟着输出走：命令短、输出只有几行时不用撑满一屏白片，
  * 输出多了才长到上限、在窗口里滚动。外壳用 Modal 的 full 档，只把固定高度换成按内容长
  */
-const termHeight = 'h-auto min-h-[min(360px,calc(100dvh-2rem))]'
+const termHeight = 'h-auto min-h-[min(360px,calc(100dvh-3.75rem))]'
 
 /** 复制成功都说一句复制了什么：命令和输出共用一个按钮时，光说「已复制」分不清 */
 const copy = (text: string, done: string) => void copyText(text, { done })
@@ -58,20 +56,19 @@ export function OutputDialog({
   return (
     // 只看不填：点到外面就关（和原来手写外壳的默认行为一致）
     <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside>
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-        <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={title}>
-          {title}
-        </D.Title>
+      <ModalHeader
+        icon={Wrench}
+        title={title}
+        titleClass="font-mono"
+        titleAttr={title}
+        actions={<ModalButton icon={Copy} label={t('复制')} disabled={!text} onClick={() => copy(text, t('已复制'))} />}
+      >
         {detail && (
-          <span className="max-w-[40%] shrink-0 truncate font-mono text-xs text-muted" title={detail}>
+          <span className="max-w-[40%] min-w-0 truncate font-mono text-[0.75rem] text-subtle" title={detail}>
             {detail}
           </span>
         )}
-        <IconButton size="sm" icon={Copy} label={t('复制')} disabled={!text} onClick={() => copy(text, t('已复制'))} />
-        <D.Close asChild>
-          <IconButton size="sm" icon={X} label={t('关闭')} />
-        </D.Close>
-      </header>
+      </ModalHeader>
       <div className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
         {input && input.trim() && input.trim() !== detail?.trim() && (
           <div className="border-b px-4 py-3">
@@ -173,35 +170,41 @@ export function CommandDialog({
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside className={termHeight}>
       {/* 标题就是命令本身（悬停看全文），右边是状态和用时，不再是空的「命令」两个字 */}
-      <header className="flex h-14 shrink-0 items-center gap-2.5 border-b bg-card px-4">
-        <Terminal className="h-4 w-4 shrink-0 text-subtle" />
-        <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={command}>
-          <span aria-hidden className="mr-1.5 select-none text-subtle">
-            $
-          </span>
-          {command}
-        </D.Title>
-        <StatusPill tone={PHASE[phase].tone} className="font-sans">
-          <span className={cn('h-1.5 w-1.5 rounded-full', PHASE[phase].dot)} />
-          {PHASE[phase].text()}
-          {elapsed !== undefined && <span className="tabular-nums opacity-80">{fmtDuration(elapsed)}</span>}
-          {/* 退出码：只在结束时说，跑着时没有 */}
-          {!jobLive(phase) && code !== undefined && code !== null && (
-            <span className="tabular-nums opacity-80">{t('退出码 {code}', { code })}</span>
-          )}
-        </StatusPill>
-        <IconButton size="sm" icon={Copy} label={t('复制命令')} onClick={() => copy(command, t('已复制命令'))} />
-        <IconButton
-          size="sm"
-          icon={Copy}
-          label={t('复制全部输出')}
-          disabled={!hasOutput}
-          onClick={() => copy(text, t('已复制输出'))}
-        />
-        <D.Close asChild>
-          <IconButton size="sm" icon={X} label={t('关闭')} />
-        </D.Close>
-      </header>
+      <ModalHeader
+        icon={Terminal}
+        title={
+          <>
+            <span aria-hidden className="mr-1.5 select-none text-subtle">
+              $
+            </span>
+            {command}
+          </>
+        }
+        titleClass="font-mono"
+        titleAttr={command}
+        aside={
+          <StatusPill tone={PHASE[phase].tone} className="h-5 shrink-0 px-2 font-sans">
+            <span className={cn('h-1.5 w-1.5 rounded-full', PHASE[phase].dot)} />
+            {PHASE[phase].text()}
+            {elapsed !== undefined && <span className="tabular-nums opacity-80">{fmtDuration(elapsed)}</span>}
+            {/* 退出码：只在结束时说，跑着时没有 */}
+            {!jobLive(phase) && code !== undefined && code !== null && (
+              <span className="tabular-nums opacity-80">{t('退出码 {code}', { code })}</span>
+            )}
+          </StatusPill>
+        }
+        actions={
+          <>
+            <ModalButton icon={Copy} label={t('复制命令')} onClick={() => copy(command, t('已复制命令'))} />
+            <ModalButton
+              icon={Copy}
+              label={t('复制全部输出')}
+              disabled={!hasOutput}
+              onClick={() => copy(text, t('已复制输出'))}
+            />
+          </>
+        }
+      />
       <div
         ref={stick.ref}
         onScroll={stick.onScroll}

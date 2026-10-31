@@ -1,5 +1,4 @@
 import { memo, useEffect, useState, type ReactNode } from 'react'
-import * as D from '@radix-ui/react-dialog'
 import { CircleCheck, CircleX, Loader2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { stepMs } from '@shared/task'
@@ -13,7 +12,7 @@ import { useTaskStream } from '@/lib/task-stream'
 import { fmtDuration, startedRun } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { IconButton } from '@/components/ui/icon-button'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalHeader } from '@/components/ui/modal'
 import { FlowStrip, type FlowNode } from '@/components/ui/flow-strip'
 import { StepIcon } from './TaskStatusIcon'
 import { StepSection } from './StepSection'
@@ -233,23 +232,15 @@ export function RunDialog({
   const heading = run ? t('运行 {n}', { n: run }) : t('启动工作流')
   return (
     // 和命令行、差异窗口一样用铺满的查看窗口：只看不填，点到外面就关
-    <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside className="bg-bg">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-        <WorkflowIcon className="h-4 w-4 shrink-0 text-muted" />
-        <D.Title className="flex min-w-0 flex-1 items-center gap-2 text-[0.875rem] font-medium">
-          <span className="truncate">{heading}</span>
-          {name && <span className="truncate text-xs font-normal text-subtle">{name}</span>}
-          {state === 'running' && (
-            <span className="flex shrink-0 items-center gap-1 text-xs font-normal text-accent-text">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              {t('执行中')}
-            </span>
-          )}
-        </D.Title>
-        <D.Close asChild>
-          <IconButton size="sm" icon={X} label={t('关闭')} />
-        </D.Close>
-      </header>
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside>
+      <ModalHeader icon={WorkflowIcon} title={heading} meta={name}>
+        {state === 'running' && (
+          <span className="flex shrink-0 items-center gap-1 text-[0.75rem] text-accent-text">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t('执行中')}
+          </span>
+        )}
+      </ModalHeader>
       {task === null ? (
         <p className="mx-auto flex w-full max-w-(--content-w) items-center gap-2 px-4 py-5 text-[0.8125rem] text-subtle md:px-6">
           <Loader2 className="h-4 w-4 animate-spin" />

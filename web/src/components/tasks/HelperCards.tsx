@@ -335,6 +335,7 @@ export function HelperWindow({
             <IconButton
               icon={Sparkles}
               size="sm"
+              className={WIN_BTN}
               label={t('AI 分析')}
               title={t('让 AI 分析这一步的耗时、角色符合度和优化空间')}
               onClick={() => setAnalyzing(true)}

@@ -88,7 +88,8 @@ export const COMP_SPEC = {
   row: { radius: px(8, 0, 16), bg: color('default', { default: tint(3.5), ...BG }) },
   nav: { radius: px(8, 0, 16) },
   menu: { radius: px(12, 0, 20), itemRadius: px(8, 0, 14), bg: color('pop'), border: BORDER },
-  modal: { radius: px(16, 0, 28), bg: color('card'), border: BORDER },
+  // 弹窗照 Claude Code 网页版的方案弹窗：圆角 8、深色下比页面亮一档的窗口色（--window）
+  modal: { radius: px(8, 0, 28), bg: color('window', { window: 'var(--window)', ...BG }), border: BORDER },
   sheet: { radius: px(12, 0, 24), bg: color('bg') },
   popover: { radius: px(12, 0, 24), bg: color('pop') },
   empty: {

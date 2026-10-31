@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ArrowUp, Folder, FolderOpen, FolderPlus, GitBranch, HardDrive, House, Loader2, X } from 'lucide-react'
+import { ArrowUp, Folder, FolderOpen, FolderPlus, GitBranch, HardDrive, House, Loader2 } from 'lucide-react'
 import type { DirInfo, DirListing } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Modal } from '@/components/ui/modal'
-import { IconButton } from '@/components/ui/icon-button'
+import { Modal, ModalHeader } from '@/components/ui/modal'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { t } from '@shared/i18n'
 
@@ -103,13 +102,9 @@ function DirBrowser({
       }}
       className="max-h-[80vh] max-w-[560px]"
     >
-      <div className="flex items-center gap-3 border-b px-5 py-4">
-        <D.Title className="text-[0.9375rem] font-semibold">{t('选择项目目录')}</D.Title>
+      <ModalHeader icon={FolderOpen} title={t('选择项目目录')}>
         <D.Description className="sr-only">{t('浏览本机目录，选中项目所在的文件夹')}</D.Description>
-        <D.Close asChild>
-          <IconButton icon={X} label={t('关闭')} size="sm" className="ml-auto" />
-        </D.Close>
-      </div>
+      </ModalHeader>
       <form
         className="flex gap-2 border-b px-5 py-3"
         onSubmit={(e) => {

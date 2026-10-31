@@ -20,6 +20,7 @@ import {
   Users,
   Workflow as WorkflowIcon,
   X,
+  FolderCog,
 } from 'lucide-react'
 import type {
   Agent,
@@ -46,7 +47,7 @@ import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
@@ -145,7 +146,7 @@ const projectDialogTitle = (project?: Project) =>
 export function DialogCloseButton({ label = t('关闭') }: { label?: string }) {
   return (
     <D.Close asChild>
-      <IconButton icon={X} label={label} title={`${label}（Esc）`} size="sm" />
+      <ModalButton icon={X} label={`${label}（Esc）`} className="[&>svg]:h-[1.125rem] [&>svg]:w-[1.125rem]" />
     </D.Close>
   )
 }
@@ -223,10 +224,10 @@ export function ProjectSettingsDialog({
       <Modal
         open={open}
         onOpenChange={onOpenChange}
-        title={projectDialogTitle(project)}
+        title={null}
         size="xl"
         bare
-        className="h-[min(800px,calc(100dvh-2rem))] max-w-[1120px]"
+        className="h-[min(800px,calc(100dvh-3.75rem))] max-w-[1120px]"
       >
         {open && (
           <Body
@@ -709,13 +710,7 @@ function Body({
 
   return (
     <>
-      <header className="flex shrink-0 items-center gap-3 border-b px-6 py-4">
-        {/* 弹窗名由外壳 Modal 给读屏，这里只是看得见的标题 */}
-        <h2 className="min-w-0 flex-1 truncate font-serif text-[1.125rem] font-semibold">
-          {projectDialogTitle(project)}
-        </h2>
-        <DialogCloseButton />
-      </header>
+      <ModalHeader icon={FolderCog} title={projectDialogTitle(project)} />
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <nav
