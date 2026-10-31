@@ -8,7 +8,7 @@ import test from 'node:test'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-store-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { BROKEN_DIR, CACHE_DIR, archiveBrokenFile, readJson, readJsonDetailed, sweepStaleTmp, writeFileOnce, writeJsonAtomic } =
+const { BROKEN_DIR, archiveBrokenFile, readJson, readJsonDetailed, sweepStaleTmp, writeFileOnce, writeJsonAtomic } =
   await import('./store.ts')
 
 /** 目录里剩下的临时文件：写入失败或中断时不能留 */
