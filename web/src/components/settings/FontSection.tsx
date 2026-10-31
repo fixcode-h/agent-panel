@@ -14,7 +14,7 @@ const DEFAULTS = Appearance.parse({})
  * 依次是侧栏、内容、强调色、主按钮；和 index.css 里对应配色的值保持一致
  */
 const PALETTE_SAMPLES: Record<Palette, { light: string[]; dark: string[] }> = {
-  code: { light: ['#f8f8f7', '#ffffff', '#2b6cd4', '#1a1a1a'], dark: ['#1f1f1f', '#191919', '#6aabf1', '#ececec'] },
+  code: { light: ['#fafafa', '#ffffff', '#257de0', '#000000'], dark: ['#1f1f1f', '#191919', '#257de0', '#ffffff'] },
   claude: { light: ['#f3f1ea', '#faf9f5', '#c6613f', '#c6613f'], dark: ['#1f1e1d', '#262624', '#d97757', '#d97757'] },
   neutral: { light: ['#f4f4f2', '#ffffff', '#c6613f', '#18181b'], dark: ['#151517', '#1d1d20', '#d97757', '#ededef'] },
   ocean: { light: ['#eef3f7', '#f7fafc', '#2f6fb3', '#2f6fb3'], dark: ['#0e151d', '#121a24', '#5b9be0', '#5b9be0'] },

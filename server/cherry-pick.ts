@@ -6,6 +6,7 @@ import type { Task } from '../shared/schema.ts'
 import { capture } from './exec/process.ts'
 import { p4Runner, parseZtag, type P4Run } from './p4-split.ts'
 import { detectVcs } from './projects-analyze.ts'
+import { ownFiles, rel } from './own-changes.ts'
 
 /**
  * cherry-pick 到项目设置的目标（Git 分支 / P4 目标项目路径），由面板执行（用户 2026-10-31 定的强制要求）：
@@ -28,30 +29,7 @@ type Result = { ok: boolean; info: string }
 const git = (cwd: string, ...args: string[]) =>
   capture('git', ['-c', 'core.quotepath=off', ...args], cwd, process.env, 60_000)
 
-/** 统一成相对项目根、正斜杠的路径；不在项目里的返回空 */
-function rel(root: string, file: string) {
-  const abs = path.isAbsolute(file) ? file : path.join(root, file)
-  const r = path.relative(root, abs).split(path.sep).join('/')
-  return r && !r.startsWith('..') && !path.isAbsolute(r) ? r : ''
-}
-
-/**
- * 这个对话改过的文件（相对项目根）：每轮改动卡片记的文件（撤销过的不算）、改文件的工具调用、更改面板里的改动。
- * 子任务、工作流节点的消息也在 task.messages 里，一并算这个对话的
- */
-export function ownFiles(task: Pick<Task, 'messages' | 'changes'>, root: string): Set<string> {
-  const out = new Set<string>()
-  const add = (f: string) => {
-    const r = rel(root, f.trim())
-    if (r) out.add(r)
-  }
-  for (const m of task.messages) {
-    if (m.turnChanges && !m.turnChanges.revertedAt) for (const f of m.turnChanges.files) add(f.path)
-    for (const x of m.tools ?? []) if (x.kind === 'edit' && x.label) add(x.label)
-  }
-  for (const c of task.changes ?? []) add(c.path)
-  return out
-}
+export { ownFiles }
 
 export async function cherryPickGit(
   root: string,

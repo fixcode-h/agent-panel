@@ -8,6 +8,7 @@ import { setLang } from '../shared/i18n.ts'
 import type { TurnChanges } from '../shared/schema.ts'
 import { gitSnapshot, spansFileDiff, undoSpans } from './exec/git.ts'
 import { aroundMerge, beginTurnChanges, endTurnChanges } from './turn-changes.ts'
+import { taskChanges } from './own-changes.ts'
 
 setLang('zh')
 delete process.env.GIT_DIR
@@ -139,4 +140,36 @@ test('子对话合进来的那一下不算进父对话这一轮', async () => {
   assert.equal(r.ok, true)
   assert.equal(read(dir, 'child.txt'), 'from child\n', '撤销不碰子对话的改动')
   assert.equal(existsSync(path.join(dir, 'mine.txt')), false)
+})
+
+test('这一轮里拉代码带进来的文件不算，自己的提交和没提交的改动照算；更改面板只留自己改过的', async () => {
+  const up = repo()
+  const dir = mkdtempSync(path.join(tmpdir(), 'ap-turn-clone-'))
+  git(dir, 'clone', '-q', up, '.')
+  // 上游在对话期间又提交了几个文件
+  writeFileSync(path.join(up, 'upstream.txt'), 'u\n')
+  writeFileSync(path.join(up, 'b.txt'), 'keep\nup\n')
+  git(up, 'add', '-A')
+  git(up, 'commit', '-qm', 'upstream')
+  const c = (await turn('t5', dir, () => {
+    writeFileSync(path.join(dir, 'a.txt'), 'one\nTWO\nthree\nfour\nfive\n')
+    git(dir, 'add', 'a.txt')
+    git(dir, 'commit', '-qm', 'mine')
+    git(dir, 'pull', '-q', '--no-rebase', '--no-edit', 'origin', 'HEAD')
+    writeFileSync(path.join(dir, 'b.txt'), 'keep\nup\nlocal\n')
+  }))!
+  assert.deepEqual(
+    c.files.map((f) => f.path).sort(),
+    ['a.txt', 'b.txt'],
+    '上游的 upstream.txt 不算，b.txt 自己又改了照算',
+  )
+  const tk = {
+    messages: [{ turnChanges: c, tools: [] }],
+    changes: [],
+    baseline: {},
+    baseRef: git(dir, 'rev-parse', 'HEAD~2').trim(),
+    placedAttachments: {},
+  } as unknown as Parameters<typeof taskChanges>[1]
+  const all = await taskChanges(dir, tk)
+  assert.deepEqual(all?.map((f) => f.path).sort(), ['a.txt', 'b.txt'])
 })
