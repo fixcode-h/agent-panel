@@ -276,7 +276,7 @@ export function ScheduleWeek({
   return (
     <section ref={box} aria-label={t('周视图')} className={cn('min-w-[44rem]', drag?.moved && 'select-none')}>
       {/* 星期表头：吸在滚动区顶上，往下滚时间还能对上是哪天 */}
-      <div className="sticky top-0 z-20 grid grid-cols-[3.5rem_repeat(7,minmax(0,1fr))] border-b bg-bg">
+      <div className="frost sticky top-0 z-20 grid grid-cols-[3.5rem_repeat(7,minmax(0,1fr))] border-b">
         <span />
         {days.map((d, i) => (
           <div key={i} className="border-l">

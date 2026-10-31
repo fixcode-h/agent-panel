@@ -42,6 +42,7 @@ import { stripInitJson } from '@/lib/analysis-report'
 import { agentIcon } from '@/lib/agent-icons'
 import { cliColor } from '@/lib/cli-style'
 import { ReplyHeader } from '@/components/ui/reply-header'
+import { FrostBarBg } from '@/components/ui/frost'
 import { useEffortOf } from './ChatModelPicker'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningRows, runningTools } from './RunningNow'
@@ -326,17 +327,16 @@ const sig = (m: TaskMessage) =>
   `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.thinkingMs ?? 0}|${m.tools.map(toolSig).join(',')}`
 
 /**
- * 对话一轮的回复头：滚到顶部后吸住，下一次回复头前被顶走（设计稿：吸顶、底边渐隐到透明，
- * 下面的内容从它下沿淡进来，不是一刀切）
+ * 对话一轮的回复头：滚到顶部后吸住，下一次回复头前被顶走。
+ * 吸住时照 Claude Code 网页版顶栏做成毛玻璃通栏（用户 2026-10-31 要求）：底色铺满整个滚动区的宽度，
+ * 下面滚过去的内容半透明地模糊透出来，吸住时底边一道细线；文字仍和回复对齐（见 index.css 的 frost-bar）
  */
 function StickyAuthor({ author }: { author: Author }) {
   const { cliName } = useAgentView()
   const cli = cliName({ cli: author.cli })
   return (
-    <div
-      data-reply-head="sticky"
-      className="sticky top-0 z-10 -mx-2 -mb-2.5 bg-linear-to-b from-bg from-[calc(100%-10px)] to-transparent px-2 pt-3 pb-2.5"
-    >
+    <div data-reply-head="sticky" className="frost-bar sticky top-0 z-10 -mx-2 px-2 py-2">
+      <FrostBarBg />
       {/* 和每条回复开头同一个部件：彩色角色图标 + 名字 +「· 模型 · 强度」；CLI 名放进悬停提示 */}
       <ReplyHeader
         avatar={<RoleGlyph icon={author.icon} cli={author.cli} />}

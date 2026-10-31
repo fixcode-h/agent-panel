@@ -177,7 +177,7 @@ export function TaskFlow({
               const el = e.currentTarget
               stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
             }}
-            className="min-h-0 flex-1 overflow-y-auto"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
           >
             <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-4 px-4 pb-6 md:px-6">
               <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky="flow" />

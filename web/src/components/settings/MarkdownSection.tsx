@@ -339,7 +339,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
   return (
     <StyleCtx.Provider value={{ style, set, basePx, compact: compact === 'compact' }}>
-      <div className="sticky top-0 z-10 -mx-1 bg-card px-1 pt-4 pb-1">
+      <div className="frost-card sticky top-0 z-10 -mx-1 px-1 pt-4 pb-1">
         <div className="flex items-center gap-2">
           <p className="flex-1 text-[0.8125rem] text-subtle">
             {t('对话回复、工作流说明、项目文档、总结报告都用这一套。每组上面的预览会跟着这一组的设置变。')}

@@ -703,7 +703,7 @@ export function Details({
   return (
     <div className="text-[0.75rem]">
       {/* 名字和类型固定在属性面板顶上，往下翻属性时一直能看到选的是哪个控件 */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-3 py-2">
+      <div className="frost-card sticky top-0 z-10 flex items-center gap-2 border-b px-3 py-2">
         {Icon && <Icon className="h-4 w-4 shrink-0 text-accent-text" />}
         <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem] font-medium">{widget.Name}</span>
         <span className="shrink-0 rounded bg-sel px-1.5 py-px text-[0.6875rem] text-subtle">{widget.Type}</span>

@@ -129,7 +129,7 @@ export function RunFlow({ task, run }: { task: Task; run: number }) {
   // 和对话窗口一样：打开时停在最新的输出，停在底部时跟着新输出走，往上翻看时不打扰；换看另一次运行时回到最新输出
   const scroller = useStickToBottom(run, 80)
   return (
-    <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
+    <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
       <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-7 px-4 py-5 md:px-6">
         {steps.map((s) => {
           const msgs = task.messages.filter(
