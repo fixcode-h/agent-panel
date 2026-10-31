@@ -1483,34 +1483,44 @@ export function stopReasonText(reason: StopReason | undefined): string {
   }
 }
 
+/** 送达状态的色调：发送中淡灰、已交给 Agent 用运行色、排队等待灰、没送出去警告色 */
+export type DeliveryTone = 'pending' | 'run' | 'wait' | 'warn'
+
 /**
- * 用户消息的交付结果一句话：用户在对话里能看懂的实际情况，不直接摆出内部枚举值。
- * 「插进当前轮」和「排到下一轮」必须说清区别：看得出这条消息是现在就会被处理，还是等这一轮完。
+ * 用户消息气泡外那一行送达状态：用户在对话里能看懂的实际情况，不直接摆出内部枚举值。
+ * 只在还有意义时显示：发送中、没送出去一直显示（后者要用户动手）；插进去 / 排队的只在那一轮还没跑完时显示，
+ * 这一轮结束后就和普通消息一样（`active` 由调用方按对话是否在跑、这条是不是在最近一轮完成之后交的算）；
+ * 新开一轮（next）、卡住重启（restart）不用说明：重启另有一条系统提示写在对话里。
+ * wait / steer / notes 对用户是同一件事（Agent 这一轮收到了），统一成一句
  */
-export function deliveryText(how: DeliveryHow | undefined): string {
+export function deliveryStatus(
+  how: DeliveryHow | undefined,
+  active: boolean,
+): { text: string; tone: DeliveryTone } | null {
   switch (how) {
-    case 'wait':
-      return t('已交给 Agent，这一轮接着处理')
-    case 'steer':
-      return t('已插进当前这一轮')
-    case 'notes':
-      return t('已交给正在执行的 Agent，它会在这一轮里读取')
-    case 'next-node':
-      return t('已交给工作流里下一个开始的节点')
-    case 'held':
-      return t('这一轮结束后自动处理')
-    case 'lost':
-      return t('没送出去：这一轮停下了，重新发一次')
-    case 'next':
-      return t('这一轮已结束，按新的一轮处理')
-    case 'restart':
-      return t('Agent 没有响应，已重启并按新的一轮处理')
-    // 页面本地状态：面板还没接收、Agent 也还没认领（见 DeliveryHow 的 pending）
     case 'pending':
-      return t('待认领')
+      return { text: t('发送中'), tone: 'pending' }
+    case 'lost':
+      return { text: t('没送出去，这一轮停下了'), tone: 'warn' }
+    case 'wait':
+    case 'steer':
+    case 'notes':
+      return active ? { text: t('已插进当前这一轮'), tone: 'run' } : null
+    case 'next-node':
+      return active ? { text: t('已交给工作流里下一个开始的节点'), tone: 'run' } : null
+    case 'held':
+      return active ? { text: t('这一轮结束后处理'), tone: 'wait' } : null
     default:
-      return ''
+      return null
   }
+}
+
+/**
+ * 这条交付状态所在的那一轮还在不在跑：对话在跑（working），而且是在最近一轮完成（turnDoneAt）之后交的。
+ * 排队的消息在下一轮开始前就交了，下一轮开始时它那一轮已经结束，所以不会一直挂着「排队中」
+ */
+export function deliveryActive(at: string, task: { working?: boolean; turnDoneAt?: string }): boolean {
+  return !!task.working && (!task.turnDoneAt || at > task.turnDoneAt)
 }
 
 /**

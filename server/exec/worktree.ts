@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import {
   copyFile,
   mkdir,
@@ -10,6 +10,7 @@ import {
   lstat,
   readFile,
   readlink,
+  realpath,
   rename,
   stat,
   utimes,
@@ -967,19 +968,17 @@ export interface SweepOptions {
 }
 
 const normPath = (p: string) => {
-  let abs = path.resolve(p)
-  // Windows 上同一个目录可能有两种写法：8.3 短名（C:\Users\RUNNER~1，os.tmpdir() 常给这种）和长名
-  // （git worktree list 报的）。不展开的话注册表里查不到，在用的独立目录会被当成残留清掉：用 realpath 展开
-  if (process.platform === 'win32') {
-    try {
-      abs = realpathSync.native(abs)
-    } catch {
-      // 目录已经不在了：按原样比
-    }
-    return abs.toLowerCase()
-  }
-  return abs
+  const abs = path.resolve(p)
+  return process.platform === 'win32' ? abs.toLowerCase() : abs
 }
+
+/**
+ * 比对 git 注册表用的路径：先解析成真实路径再 normPath。git 记的是真实长路径（C:/Users/runneradmin/...），
+ * 面板手里的可能是 8.3 短名（C:\Users\RUNNER~1\...）或经过符号链接（macOS 的 /var → /private/var）；
+ * 不解析的话在用的工作区会被当成「注册表外的残留」整个删掉（Windows CI 上清扫用例就是这样挂的）。
+ * 目录不在了 / 读不出来时退回原路径
+ */
+const realNorm = async (p: string) => normPath(await realpath(p).catch(() => p))
 
 /** 目录所在主仓库的 .git 目录；不是 git 工作目录时返回空 */
 async function commonGitDir(dir: string): Promise<string> {
@@ -1011,7 +1010,7 @@ async function brokenGitLink(dir: string): Promise<string> {
 /** git 登记的工作区：路径 → 分支名（分离 HEAD 时为空）；读不出来时返回 null */
 async function worktreeRegistry(repo: string, common: string): Promise<Map<string, string> | null> {
   const r = await git(repo, 'worktree', 'list', '--porcelain')
-  if (r.code === 0) return parseRegistry(r.stdout)
+  if (r.code === 0) return realKeys(parseRegistry(r.stdout))
   // git 列不出来（.git/config 里的 core.worktree 指向别的平台路径、某条注册坏掉）时：
   // 直接读 .git/worktrees 下的注册文件，免得把整个仓的目录都当成「不在注册表里」误清
   const map = new Map<string, string>()
@@ -1024,7 +1023,14 @@ async function worktreeRegistry(repo: string, common: string): Promise<Map<strin
     const branch = head.startsWith('ref: ') ? head.slice(5).replace(/^refs\/heads\//, '') : ''
     map.set(normPath(at.replace(/[\\/]\.git$/, '')), branch)
   }
-  return map.size ? map : null
+  return map.size ? realKeys(map) : null
+}
+
+/** 注册表的键也换成真实路径，和 realNorm(dir) 同一口径 */
+async function realKeys(map: Map<string, string>) {
+  const out = new Map<string, string>()
+  for (const [at, branch] of map) out.set(await realNorm(at), branch)
+  return out
 }
 
 /** 解析 git worktree list --porcelain 的输出 */
@@ -1143,7 +1149,8 @@ export async function sweepWorktrees(opts: SweepOptions = {}): Promise<SweepResu
       result.kept.push({ dir, taskId, why: '读不出 git 注册表，按在用处理' })
       return
     }
-    if (!registry.has(normPath(dir))) {
+    const key = await realNorm(dir)
+    if (!registry.has(key)) {
       // 注册表外的残留：prune 之后目录还在（面板重启、手动清过注册）
       const st = await worktreeFacts(owner, dir, named, '')
       if (!st) {
@@ -1184,7 +1191,7 @@ export async function sweepWorktrees(opts: SweepOptions = {}): Promise<SweepResu
       result.kept.push({ dir, taskId, why: '任务还在执行' })
       return
     }
-    const branch = registry.get(normPath(dir)) || named
+    const branch = registry.get(key) || named
     const st = await worktreeFacts(owner, dir, branch, info?.baseBranch ?? '')
     if (!st) {
       result.kept.push({ dir, taskId, why: '读不出 git 状态，按在用处理' })

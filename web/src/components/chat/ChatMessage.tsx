@@ -1,7 +1,8 @@
 // 通用的对话消息：用户的气泡、AI 回复下面的时间和操作。
 // 除了工作流的节点输出，所有 AI 对话（任务对话、UI 设计）都用这一套，各自通过 actions 加自己的按钮
 import { useLayoutEffect, useRef, useState } from 'react'
-import { ChevronDown, Quote } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, Quote, type LucideIcon } from 'lucide-react'
+import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu'
 import { CopyIcon } from '@/components/ui/copy-icon'
 import { toast } from '@/lib/toast'
 import { copyText as clipboardCopy } from '@/lib/copy-text'
@@ -110,14 +111,60 @@ export function QuoteButton({ text }: { text: string }) {
   )
 }
 
-/** 消息下面的一行：时间和操作按钮，一直显示（always 保留给调用方，不再控制显隐） */
+/** 「⋯」菜单里的一项：名字 + 一行说明（撤回、分叉这类会改对话走向的操作，光看图标猜不出来） */
+export interface MessageMenuItem {
+  label: string
+  hint: string
+  icon: LucideIcon
+  onSelect: () => void
+  /** 现在不能用时写原因（例如对话还在执行），项照样列着、灰掉，不让菜单忽长忽短 */
+  disabledReason?: string
+  /** 在这一项上面画一道分隔线 */
+  separated?: boolean
+}
+
+/**
+ * 消息的「⋯」菜单：复制、引用之外不常用、会改对话走向的操作（撤回重发、分叉、记成教训）收在这里，
+ * 每项写清楚是什么，消息下面不再摆一排看不懂的图标
+ */
+export function MessageMenu({ items }: { items: MessageMenuItem[] }) {
+  if (!items.length) return null
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        <IconButton size="sm" icon={MoreHorizontal} label={t('更多操作')} title={t('更多操作')} />
+      </MenuTrigger>
+      <MenuContent className="w-[280px]">
+        {items.map((m) => (
+          <div key={m.label}>
+            {m.separated && <MenuSeparator />}
+            <MenuItem onSelect={m.onSelect} disabled={!!m.disabledReason} className="items-start">
+              <m.icon className="mt-0.5 h-4 w-4 shrink-0 text-subtle" />
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span>{m.label}</span>
+                <span className="text-caption leading-snug text-subtle">{m.disabledReason ?? m.hint}</span>
+              </span>
+            </MenuItem>
+          </div>
+        ))}
+      </MenuContent>
+    </Menu>
+  )
+}
+
+/**
+ * 消息下面的一行：时间和操作按钮。默认一直显示（AI 回复）；reveal 时只在鼠标移上消息或键盘聚焦到它时出现，
+ * 触屏没有悬停，照样一直显示（用户消息：一屏十几条，每条下面一整排图标太吵）
+ */
 export function MessageMeta({
   text,
   at,
   attachments,
   actions,
   align = 'start',
+  reveal,
 }: {
+  reveal?: boolean
   text: string
   at?: string
   /** 用户消息：复制、引用时卡片换成文件路径 */
@@ -132,6 +179,8 @@ export function MessageMeta({
       className={cn(
         'flex items-center gap-0.5 text-caption text-subtle transition-opacity',
         align === 'end' && 'flex-row-reverse',
+        reveal &&
+          'opacity-0 duration-(--dur-fast) group-hover/msg:opacity-100 group-focus-within/msg:opacity-100 has-[[data-state=open]]:opacity-100 [@media(hover:none)]:opacity-100',
       )}
     >
       {text && <CopyButton text={text} attachments={attachments} />}
@@ -155,6 +204,7 @@ export function UserMessage({
   at,
   attachments,
   extra,
+  status,
   actions,
   /** 这条消息在对话里对应的消息 id：搜索结果跳过来时按它定位（见 web/src/lib/message-anchor.ts） */
   anchorId,
@@ -166,6 +216,8 @@ export function UserMessage({
   attachments?: Attachment[]
   /** 气泡里文字下面的内容（例如 UI 设计的标注） */
   extra?: React.ReactNode
+  /** 气泡外右下的一行状态（送达状态 DeliveryLine）：不放进气泡，免得和正文抢注意力 */
+  status?: React.ReactNode
   actions?: React.ReactNode
   anchorId?: string
   size?: 'sm' | 'md'
@@ -191,6 +243,7 @@ export function UserMessage({
           </FoldBody>
           {extra}
         </div>
+        {status && <div className="flex justify-end bg-panel px-3 pb-2">{status}</div>}
       </div>
     )
   return (
@@ -218,7 +271,8 @@ export function UserMessage({
           {extra}
         </div>
       )}
-      <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} align="end" />
+      {status}
+      <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} align="end" reveal />
     </div>
   )
 }

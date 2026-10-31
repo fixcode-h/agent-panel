@@ -887,6 +887,8 @@ export function DesignChat({
               dir={dir}
               last={i === messages.length - 1 && !running}
               disabled={running || sending}
+              // 插进去、排队的状态只在它那一轮还在跑时显示：设计对话没有轮次完成时间，按「在跑、后面还没有回复」算
+              deliveryActive={running && messages.slice(i + 1).every((m) => m.role === 'user')}
               onApplyAnalysis={(v) => void applyAnalysis(v)}
               onResend={
                 running
@@ -1114,9 +1116,12 @@ function ChatMessage({
   dir,
   last,
   disabled,
+  deliveryActive,
   onApplyAnalysis,
   onResend,
 }: {
+  /** 用户消息的送达状态那一轮还在跑（DeliveryLine 的 active） */
+  deliveryActive?: boolean
   msg: DesignMessage
   /** 整个对话：系统消息出错时，把前后几条一起交给 AI 排查 */
   msgs: DesignMessage[]
@@ -1141,6 +1146,7 @@ function ChatMessage({
         text={msg.text}
         at={msg.at}
         attachments={msg.attachments}
+        status={msg.delivery && <DeliveryLine delivery={msg.delivery} active={!!deliveryActive} />}
         actions={
           onResend && (
             <button
@@ -1156,7 +1162,6 @@ function ChatMessage({
         }
         extra={
           <>
-            {msg.delivery && <DeliveryLine delivery={msg.delivery} />}
             {msg.style && <StyleTag name={msg.style} className="mt-1.5 flex" />}
             {!!msg.refs?.length && <CitationChips list={msg.refs} className="mt-1.5" />}
             {!!msg.annotations?.length && (

@@ -5,14 +5,16 @@ import {
   ChevronRight,
   Brain,
   CircleAlert,
+  Clock,
   GitMerge,
   Info,
   Loader2,
   RotateCw,
-  SendHorizontal,
   Terminal,
+  TriangleAlert,
   Workflow,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import type { Alert, Task, TaskMessage, ToolUse } from '@shared/schema'
 import { makeAlert } from '@shared/alerts'
 import { toast } from '@/lib/toast'
@@ -33,7 +35,7 @@ import { runRow, type WorkflowRun } from '@/lib/run-row'
 import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
-import { convStateText, deliveryText } from '@shared/task'
+import { convStateText, deliveryStatus } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { stripLessonReview } from '@shared/lesson-review'
@@ -142,22 +144,48 @@ export function NoteMessage({
 }
 
 /**
- * 执行中发的消息去了哪里：用户气泡底部一行小字，写的是用户能看懂的事实（插进当前轮 / 排到下一轮 / 结束后自动处理），
- * 不直接把内部枚举值摆出来（见 shared/task.ts 的 deliveryText）。对话页和工作流节点都读这一份
+ * 执行中发的消息去了哪里：用户气泡外右下的一行小字 + 状态色点（不放进气泡里抢正文的注意力）。
+ * 文案和什么时候显示都在 shared/task.ts 的 deliveryStatus：那一轮跑完就不再显示，只有「没送出去」一直留着，
+ * 并带「重新发送」。对话页、工作流节点、设计页都读这一份
  */
-export function DeliveryLine({ delivery }: { delivery: NonNullable<TaskMessage['delivery']> }) {
-  const text = deliveryText(delivery.how)
-  if (!text) return null
+export function DeliveryLine({
+  delivery,
+  active,
+  onResend,
+}: {
+  delivery: NonNullable<TaskMessage['delivery']>
+  /** 这条所在的那一轮还在跑（deliveryActive）：插进去、排队的只在这时显示 */
+  active: boolean
+  /** 没送出去时的「重新发送」：不传就只写原因 */
+  onResend?: () => void
+}) {
+  const s = deliveryStatus(delivery.how, active)
+  if (!s) return null
   return (
     <span
-      className={cn(
-        'mt-1.5 flex items-center gap-1 text-footnote',
-        // 没送出去的需要用户重发：和其他交付状态一样的灰色会被滑过去
-        delivery.how === 'lost' ? 'text-warning' : 'text-subtle',
-      )}
+      data-delivery={delivery.how}
+      className={cn('flex items-center gap-1.5 px-1 text-caption', s.tone === 'warn' ? 'text-warning' : 'text-subtle')}
     >
-      <SendHorizontal className="h-3 w-3 shrink-0" />
-      {text}
+      {s.tone === 'warn' ? (
+        <TriangleAlert className="h-3 w-3 shrink-0" />
+      ) : s.tone === 'wait' ? (
+        <Clock className="h-3 w-3 shrink-0" />
+      ) : (
+        <span
+          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', s.tone === 'run' ? 'bg-run' : 'animate-pulse bg-subtle')}
+        />
+      )}
+      {s.text}
+      {s.tone === 'warn' && onResend && (
+        <Button
+          size="sm"
+          variant="danger-outline"
+          className="ml-1 h-6 bg-warning/15 px-2 text-caption text-warning hover:bg-warning/25"
+          onClick={onResend}
+        >
+          {t('重新发送')}
+        </Button>
+      )}
     </span>
   )
 }
