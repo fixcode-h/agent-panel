@@ -39,6 +39,27 @@ export interface FilesApi {
   reload: () => Promise<void>
 }
 
+/**
+ * 主文件（SKILL.md）也放进同一个编辑区时传：文件树里点 SKILL.md 就在右边编辑它，
+ * 不再在详情页顶部单独放一个大编辑框、下面再放一个附加文件的编辑框（同一页两套编辑区）
+ */
+export interface MainFile {
+  content: string
+  onChange: (v: string) => void
+  dirty: boolean
+  busy: boolean
+  onSave: () => void
+  onReset: () => void
+}
+
+/** Ctrl / ⌘ + S 保存：编辑器里按了就拦下浏览器的「另存网页」 */
+const saveKey = (e: React.KeyboardEvent, save: () => void) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault()
+    save()
+  }
+}
+
 /** 一次操作的弹窗形态：新建文件、新建目录、重命名 */
 type Ask = { kind: 'file' | 'dir' | 'rename'; path: string } | null
 
@@ -57,7 +78,10 @@ export function SkillFiles({
   mainDirty,
   mainEditorId,
   readOnly,
+  main,
 }: {
+  /** 传了就在同一个编辑区里编辑主文件，默认选中它；不传时主文件在别处编辑，这里只管附加文件 */
+  main?: MainFile
   entries: LibraryEntry[]
   truncated?: boolean
   api: FilesApi
@@ -65,15 +89,16 @@ export function SkillFiles({
   mainPath: string
   /** 主文件有未保存的改动时在文件树里标出来 */
   mainDirty?: boolean
-  /** 主文件编辑框的 id：点文件树里的 SKILL.md 滚到那里（主文件只在详情页顶部编辑） */
-  mainEditorId: string
+  /** 主文件编辑框的 id：不传 main 时，点文件树里的 SKILL.md 滚到那里 */
+  mainEditorId?: string
   /** 项目技能：附加文件只读（写在项目仓库里，由项目自己管） */
   readOnly?: boolean
 }) {
   const rows = useMemo(() => toTree(entries), [entries])
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set())
-  // 默认不选中附加文件：主文件在上方详情页编辑，这里只管附加文件
-  const [picked, setPicked] = useState('')
+  // 主文件在这里编辑时默认选中它；否则默认不选中（主文件在上方详情页编辑，这里只管附加文件）
+  const [picked, setPicked] = useState(main ? mainPath : '')
+  const onMain = !!main && picked === mainPath
   const [file, setFile] = useState<LibraryEntryContent | null>(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -115,10 +140,12 @@ export function SkillFiles({
   // 换了技能（树整体变了）就清空选中，不带着上一个技能的文件
   useEffect(() => {
     opened.current++
-    setPicked('')
+    setPicked(main ? mainPath : '')
     setFile(null)
     setText('')
     setFolded(new Set())
+    // 只在换了技能（主文件路径变了）时重置；main 每次渲染都是新对象，放进来会把选中一直打回主文件
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [mainPath])
 
   const save = async () => {
@@ -243,15 +270,26 @@ export function SkillFiles({
 
       <div className="flex flex-col gap-3 lg:flex-row">
         {/* 文件树 */}
-        <Card padding="xs" className="flex min-w-0 flex-col gap-0.5 lg:w-[260px] lg:shrink-0">
+        <Card padding="xs" className="flex min-w-0 flex-col gap-0.5 self-start lg:w-[240px] lg:shrink-0">
           {/* 主文件在上方详情页编辑：这里只提示它在哪，点一下滚上去 */}
           <button
             type="button"
-            onClick={() =>
-              document.getElementById(mainEditorId)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-            }
+            onClick={() => {
+              if (main) {
+                // 切回主文件：附加文件的读取请求作废，免得晚回来的结果把选中又改走
+                opened.current++
+                setPicked(mainPath)
+                setFile(null)
+                setText('')
+              } else if (mainEditorId)
+                document.getElementById(mainEditorId)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+            }}
+            aria-current={onMain || undefined}
             title={mainPath}
-            className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-body text-muted hover:bg-sel/60"
+            className={cn(
+              'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-body',
+              onMain ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60',
+            )}
           >
             <span className="h-3.5 w-3.5 shrink-0" />
             <FileTextMain />
@@ -294,9 +332,38 @@ export function SkillFiles({
           {truncated && <p className="px-2 py-2 text-footnote text-subtle">{t('文件太多，只显示了前面一部分。')}</p>}
         </Card>
 
-        {/* 附加文件的内容：没选中时给引导，选中了才显示编辑框 */}
+        {/* 附加文件的内容：没选中时给引导，选中了才显示编辑框；主文件选中时编辑主文件 */}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          {file === null ? (
+          {onMain && main ? (
+            <>
+              <div className="flex min-h-8 flex-wrap items-center gap-2">
+                <span className="truncate font-mono text-footnote text-subtle">{mainPath}</span>
+                {main.dirty && <span className="text-footnote text-warning">{t('未保存')}</span>}
+                {/* 保存按钮只在改过之后出现：一直挂着一个灰掉的按钮，看着像坏了 */}
+                {main.dirty && (
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <Button size="sm" variant="secondary" onClick={main.onReset}>
+                      <Undo2 className="h-3.5 w-3.5" />
+                      {t('重置')}
+                    </Button>
+                    <Button size="sm" onClick={main.onSave} disabled={main.busy} title={t('保存（Ctrl / ⌘ + S）')}>
+                      {main.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      {t('保存')}
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <Textarea
+                id={mainEditorId}
+                value={main.content}
+                onChange={(e) => main.onChange(e.target.value)}
+                onKeyDown={(e) => saveKey(e, () => main.dirty && !main.busy && main.onSave())}
+                spellCheck={false}
+                className="h-[min(62vh,640px)] resize-none font-mono text-footnote leading-relaxed"
+                aria-label={t('内容')}
+              />
+            </>
+          ) : file === null ? (
             <EmptyPanel>
               {!countFiles(rows)
                 ? t('这个技能只有 SKILL.md，还没有附加文件。')
@@ -344,9 +411,13 @@ export function SkillFiles({
                 <Textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => saveKey(e, () => !readOnly && dirty && !busy && !tooBig && void save())}
                   readOnly={readOnly}
                   spellCheck={false}
-                  className="h-[min(40vh,360px)] resize-none font-mono text-footnote leading-relaxed"
+                  className={cn(
+                    'resize-none font-mono text-footnote leading-relaxed',
+                    main ? 'h-[min(62vh,640px)]' : 'h-[min(40vh,360px)]',
+                  )}
                   aria-label={t('文件内容')}
                 />
               )}

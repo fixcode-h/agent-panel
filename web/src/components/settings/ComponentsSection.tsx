@@ -42,7 +42,10 @@ import { EmptyPanel } from '@/components/ui/empty-panel'
 import { FlowStrip } from '@/components/ui/flow-strip'
 import { InlineChip } from '@/components/ui/inline-chip'
 import { MessageChip } from '@/components/chat/AttachmentView'
-import { Input, Select, Textarea } from '@/components/ui/input'
+import { FieldSizeContext, Input, Select, Textarea } from '@/components/ui/input'
+import { cliColor } from '@/lib/cli-style'
+import { ToggleChip } from '@/components/ui/toggle-chip'
+import { IssueBar } from '@/components/layout/Detail'
 import { Kbd } from '@/components/ui/kbd'
 import { Collapse } from '@/components/ui/collapse'
 import { CopyIcon } from '@/components/ui/copy-icon'
@@ -210,6 +213,19 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
           <Kbd>⌘K</Kbd>
           <Kbd>Esc</Kbd>
         </Specimen>
+        <Specimen name="IssueBar">
+          <div className="w-full max-w-md overflow-hidden rounded-lg">
+            <IssueBar
+              issues={[
+                {
+                  label: t('Agent 不可用'),
+                  hint: t('没有找到 {cmd}，安装后或在设置里填写路径', { cmd: 'codex' }),
+                  action: { label: t('去设置'), onClick: () => {} },
+                },
+              ]}
+            />
+          </div>
+        </Specimen>
         <Specimen name="text-* 字号角色">
           <div className="flex flex-col gap-1">
             {TYPE_ROLES.map((r) => (
@@ -283,6 +299,33 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               { id: 'c', label: t('列表') },
             ]}
           />
+        </Specimen>
+        <Specimen name="ToggleChip">
+          <ToggleChip label="Claude Code" dot={cliColor('claude')} checked={on} onCheckedChange={setOn} active />
+          <ToggleChip
+            label="Codex"
+            dot={cliColor('codex')}
+            checked={checked}
+            onCheckedChange={setChecked}
+            onPick={() => {}}
+          />
+        </Specimen>
+        <Specimen name="Input · Select · size=sm">
+          {/* 角色页、技能页的表单用 FieldSizeContext 整片切到 sm，和 sm 按钮同高 */}
+          <FieldSizeContext value="sm">
+            <Input aria-label={t('示例输入框')} placeholder={t('搜索任务')} className="w-56" />
+            <Select
+              aria-label={t('示例下拉框')}
+              className="w-56"
+              value={pick}
+              onChange={(e) => setPick(e.target.value)}
+              options={[
+                { value: 'claude', label: 'Claude Code' },
+                { value: 'codex', label: 'Codex' },
+              ]}
+            />
+            <Button size="sm">{t('保存')}</Button>
+          </FieldSizeContext>
         </Specimen>
         <MoreInputSpecimens />
       </Group>

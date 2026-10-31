@@ -276,7 +276,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .getByRole('radio', { name: /^基本角色/ })
     .click()
   await p.getByText('代码审查', { exact: true }).first().click()
-  await p.getByRole('button', { name: 'AI 优化' }).first().click()
+  // 角色详情头部只留「对话」，AI 优化收在「⋯」菜单里
+  await p.locator('main header').getByRole('button', { name: '更多操作' }).click()
+  await p.getByRole('menuitem', { name: 'AI 优化' }).click()
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()
   const assistDock = dock('用 AI 优化「代码审查」')
   await assistDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：AI 优化最小化后没有浮条'))

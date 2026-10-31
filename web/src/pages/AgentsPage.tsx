@@ -202,16 +202,12 @@ export function AgentsPage() {
       .finally(() => setChecking(false))
   }
 
-  // 列表右边的状态带文字：只有一个点时看不出是什么意思
+  // 列表右边只标不正常的状态（停用、Agent 不可用）：每行都挂「就绪」只是重复，反而看不出哪行有问题
   const status = (a: Agent) => {
-    const installed = clis.find((c) => c.id === cliOf(a))?.installed
-    return !a.enabled ? (
-      <StatusDot compact tone="muted" label={t('已停用')} />
-    ) : installed ? (
-      <StatusDot compact tone="success" label={t('就绪')} />
-    ) : (
-      <StatusDot compact tone="warning" label={t('Agent 未安装')} />
-    )
+    const c = clis.find((x) => x.id === cliOf(a))
+    if (!a.enabled) return <StatusDot compact tone="muted" label={t('已停用')} />
+    if (!c?.installed || !c.enabled) return <StatusDot compact tone="warning" label={t('Agent 不可用')} />
+    return null
   }
 
   // 列表的一行：分组只决定它在哪一节里出现
@@ -224,10 +220,11 @@ export function AgentsPage() {
       leading={<AgentAvatar icon={a.icon} cli={a.cli} size="sm" dim={!a.enabled} />}
       title={a.name}
       monoSubtitle={false}
-      // 角色层已经由分页区分，副标题只写运行配置
-      subtitle={`${cliName(a)} · ${modelOf(a)}`}
+      // 第二行写它干什么（简介）：运行配置的「Claude（默认）· 高档 · claude-op…」在窄栏里总被截断，看不出区别；
+      // 没写简介时才退回运行配置
+      subtitle={a.description || `${cliName(a)} · ${modelOf(a)}`}
       tags={a.tags.length ? <TagList ids={a.tags} /> : undefined}
-      trailing={<span className="shrink-0">{status(a)}</span>}
+      trailing={status(a) && <span className="shrink-0">{status(a)}</span>}
       menu={
         <>
           <ContextMenuItem onSelect={() => duplicate(a)}>
@@ -261,42 +258,26 @@ export function AgentsPage() {
         title={t('角色')}
         count={listed.length}
         onNew={() => create()}
-        // 头部有四个按钮（内置、导入、AI 创建、新建）：窄栏里都收成图标，「角色」标题才不被挤成半个字
-        compactNew
+        // 新建、AI 创建、从内置添加、导入收进一个「＋」菜单：原来四个图标按钮并排，看不出各是什么
+        newMenu={[
+          { label: t('新建角色'), icon: Plus, onSelect: () => create() },
+          {
+            label: t('AI 创建角色'),
+            icon: Sparkles,
+            hint: t('描述需求，让本机 Agent 生成角色'),
+            onSelect: () => setAssist(true),
+          },
+          { label: t('添加内置角色'), icon: LayoutTemplate, onSelect: () => setBuiltin(true), separated: true },
+          {
+            label: t('导入角色文件'),
+            icon: Upload,
+            hint: t('导入角色文件（分享包）'),
+            onSelect: () => file.current?.click(),
+          },
+        ]}
         // 角色数量多、要一眼扫完：列表行比工作流 / 技能页更紧凑
         compact
-        extra={
-          <>
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              aria-label={t('添加内置角色')}
-              title={t('添加内置角色')}
-              onClick={() => setBuiltin(true)}
-            >
-              <LayoutTemplate className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              aria-label={t('导入角色文件')}
-              title={t('导入角色文件（分享包）')}
-              onClick={() => file.current?.click()}
-            >
-              <Upload className="h-4 w-4" />
-            </Button>
-            <input ref={file} type="file" accept=".json,application/json" hidden onChange={share.onFile} />
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              onClick={() => setAssist(true)}
-              aria-label={t('AI 创建角色')}
-              title={t('描述需求，让本机 Agent 生成角色')}
-            >
-              <Sparkles className="h-4 w-4 text-accent-text" />
-            </Button>
-          </>
-        }
+        extra={<input ref={file} type="file" accept=".json,application/json" hidden onChange={share.onFile} />}
         query={query}
         onQuery={setQuery}
         placeholder={t('搜索名称、简介、模型或标签')}

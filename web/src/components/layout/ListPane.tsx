@@ -1,10 +1,31 @@
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
-import { ChevronRight, Plus, Search } from 'lucide-react'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuSeparator,
+  MenuTrigger,
+} from '@/components/ui/menu'
+import { ChevronRight, Plus, Search, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+
+/** 「＋」菜单里的一项：新建、AI 创建、从内置添加、导入这类「往列表里加东西」的入口 */
+export interface NewMenuItem {
+  label: string
+  icon: LucideIcon
+  onSelect: () => void
+  /** 悬停说明 */
+  hint?: string
+  disabled?: boolean
+  /** 在这一项上面画一道分隔线（把「新建」和「导入」这类分开） */
+  separated?: boolean
+}
 
 /** 中间的列表栏：标题、新建按钮、搜索框、列表和底部信息 */
 export function ListPane({
@@ -21,7 +42,13 @@ export function ListPane({
   hideNew,
   compactNew,
   compact,
+  newMenu,
 }: {
+  /**
+   * 传了就把「新建」换成一个「＋」菜单：头部只留一个按钮，新建、AI 创建、从内置添加、导入都收进去
+   * （角色页原来四个图标按钮看不出各是什么）。传了它就不用再传 onNew 对应的按钮和 extra 里的图标
+   */
+  newMenu?: NewMenuItem[]
   title: string
   count: number
   onNew: () => void
@@ -62,7 +89,27 @@ export function ListPane({
           <Badge className="shrink-0">{count}</Badge>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {extra}
-            {!hideNew &&
+            {!hideNew && newMenu?.length ? (
+              <Menu>
+                <MenuTrigger asChild>
+                  <Button size="icon-sm" aria-label={t('新建')} title={t('新建')}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </MenuTrigger>
+                <MenuContent className="min-w-[200px]">
+                  {newMenu.map((m) => (
+                    <div key={m.label}>
+                      {m.separated && <MenuSeparator />}
+                      <MenuItem onSelect={m.onSelect} disabled={m.disabled} title={m.hint}>
+                        <m.icon className="h-4 w-4 text-subtle" />
+                        {m.label}
+                      </MenuItem>
+                    </div>
+                  ))}
+                </MenuContent>
+              </Menu>
+            ) : (
+              !hideNew &&
               (compactNew ? (
                 <Button size="icon-sm" onClick={onNew} aria-label={t('新建')} title={t('新建')}>
                   <Plus className="h-4 w-4" />
@@ -72,7 +119,8 @@ export function ListPane({
                   <Plus className="h-4 w-4" />
                   {t('新建')}
                 </Button>
-              ))}
+              ))
+            )}
           </div>
         </div>
         <label className="relative block">
@@ -82,7 +130,7 @@ export function ListPane({
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             placeholder={placeholder}
-            className={cn('pr-3 pl-9 text-body', compact ? 'h-[34px]' : 'h-[38px]')}
+            className={cn('pr-3 pl-9 text-body', compact ? 'h-8' : 'h-[38px]')}
           />
         </label>
         {tabs}

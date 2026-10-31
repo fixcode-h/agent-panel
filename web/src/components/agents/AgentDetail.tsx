@@ -6,6 +6,8 @@ import {
   Blocks,
   Braces,
   Copy,
+  Download,
+  Eye,
   GitBranch,
   GripVertical,
   Lock,
@@ -34,7 +36,7 @@ import { useData, useNav } from '@/lib/data'
 import { AGENT_ICONS } from '@/lib/agent-icons'
 import { cliDefaultModel, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'
 import { useCliDef } from '@/lib/cli-models'
-import { agentChecks, isReady } from '@/lib/readiness'
+import { agentChecks } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
@@ -43,12 +45,12 @@ import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Field, FormSection, Input, Select } from '@/components/ui/input'
+import { Field, FieldSizeContext, FormSection, Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Segmented } from '@/components/ui/segmented'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Detail, DetailHeader, DetailTabs } from '@/components/layout/Detail'
-import { ReadinessCard } from '@/components/layout/ReadinessCard'
+import { Detail, DetailHeader, DetailTabs, IssueBar } from '@/components/layout/Detail'
+import { exportAgent } from '@/lib/transfer'
 import { AgentAvatar } from './AgentAvatar'
 import { CategoryPicker } from './CategoryPicker'
 import { CommandPreview } from './CommandPreview'
@@ -65,7 +67,15 @@ import {
   wouldCycle,
 } from '@shared/agent-role'
 import { DocEditor } from '@/components/workflows/DocEditor'
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import {
+  MenuItem,
+  MenuSeparator,
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverTrigger,
+  menuItem,
+} from '@/components/ui/menu'
 import { TagPicker } from '@/components/tags/Tags'
 import { AgentPicker } from './AgentPicker'
 import { ParamsChip, ParamsEditor, ParamsForm } from './ParamFields'
@@ -88,8 +98,13 @@ const ROLE_TEMPLATE = `# 角色
 // 会改文件、执行任意命令、不用沙箱的权限，界面上标成警告色
 const DANGER_PERMS = ['bypassPermissions', 'danger-full-access', 'yolo']
 
-const ROLE_TABS = ['basic', 'role', 'caps', 'params', 'extras'] as const
+/**
+ * 页签按「这个角色干什么（设定）/ 能派给谁（能力）/ 在哪跑（运行）/ 最终交给它什么（预览）」分。
+ * 以前是概览、角色设定、能力、参数、Skill 与开场白五页，记在本机的旧值映射到新的一页
+ */
+const ROLE_TABS = ['role', 'caps', 'run', 'preview'] as const
 type RoleTab = (typeof ROLE_TABS)[number]
+const OLD_TABS: Record<string, RoleTab> = { basic: 'role', extras: 'role', params: 'run' }
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Agent): AgentInput => rest
 
@@ -109,7 +124,7 @@ export function AgentDetail({
   onOptimized: () => void
 }) {
   const { clis, categories, workflows, agents, setAgents, settings } = useData()
-  const { go } = useNav()
+  const { go, openSettings } = useNav()
   const [draft, setDraft] = useState<AgentInput>(() => toInput(agent))
   const [args, setArgs] = useState(() => joinArgs(agent.extraArgs))
   const [deleting, setDeleting] = useState(false)
@@ -117,14 +132,14 @@ export function AgentDetail({
     if (deleteSignal) setDeleting(true)
   }, [deleteSignal])
   const [assist, setAssist] = useState(false)
-  // 表单按「概览 / 角色设定 / 参数 / Skill 与开场白」分页：一页只看一类设置，不用在长表单里来回滚。
+  // 表单按「设定 / 能力 / 运行 / 预览」分页：一页只看一类设置，不用在长表单里来回滚。
   // 看到哪一页记在本地，切到别的角色还停在同一页
   const [tab, setTabState] = useState<RoleTab>(() => {
     try {
-      const v = localStorage.getItem('role-tab') as RoleTab | null
-      return v && ROLE_TABS.includes(v) ? v : 'basic'
+      const v = localStorage.getItem('role-tab') ?? ''
+      return ROLE_TABS.includes(v as RoleTab) ? (v as RoleTab) : (OLD_TABS[v] ?? 'role')
     } catch {
-      return 'basic'
+      return 'role'
     }
   })
   const setTab = (v: RoleTab) => {
@@ -243,6 +258,15 @@ export function AgentDetail({
   const unknownRefs = [...templateKeys(draft.instructions)].filter((k) => !draft.params.some((p) => p.key === k))
   const startChat = () => go({ page: 'chat' })
   const checks = agentChecks(live, cli)
+  // 头部下面的问题条：只列没过的必需项；「已启用」头部已经有开关和「已停用」标记，不重复说
+  const issues = checks
+    .filter((c) => !c.ok && !c.optional && c.label !== t('已启用'))
+    .map((c) => ({
+      label: c.label === t('Agent 已安装') ? t('Agent 不可用') : c.label,
+      hint: c.hint,
+      action:
+        c.label === t('Agent 已安装') ? { label: t('去设置'), onClick: () => openSettings(`cli:${cliId}`) } : undefined,
+    }))
   const category = categories.find((c) => c.id === draft.categoryId)
   const usedIn = workflows
     .map((w) => ({
@@ -274,81 +298,76 @@ export function AgentDetail({
     <>
       <Detail
         header={
-          <DetailHeader
-            leading={<AgentAvatar icon={draft.icon} cli={draft.cli} size="lg" dim={!draft.enabled} />}
-            title={draft.name || t('未命名角色')}
-            meta={
-              <>
-                {core ? <Badge tone="accent">{t('必备')}</Badge> : <Badge>{category?.name ?? t('未分类')}</Badge>}
-                {locked && !core && <Badge tone="accent">{t('内置')}</Badge>}
-                {draft.common && <Badge tone="accent">{t('通用')}</Badge>}
-                {!draft.enabled ? (
-                  <StatusDot tone="muted" label={t('已停用')} />
-                ) : isReady(checks) ? (
-                  <StatusDot tone="success" label={t('就绪')} />
-                ) : (
-                  <StatusDot tone="warning" label={t('Agent 未安装')} />
-                )}
-              </>
-            }
-            subtitle={draft.description || t('还没有简介')}
-            save={{ ...save, invalid: valid ? undefined : t('名称为空，未保存') }}
-            actions={
-              <>
-                {!core && (
-                  <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-body text-muted">
-                    <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
-                    {t('启用')}
-                  </label>
-                )}
-                <Button
-                  variant="secondary"
-                  onClick={startChat}
-                  disabled={!draft.enabled}
-                  title={t('用这个角色开一个新对话')}
-                >
-                  <MessageSquare className="h-4 w-4" />
-                  {t('对话')}
-                </Button>
-                {!locked && (
-                  <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 Agent 按你的要求优化')}>
-                    <Sparkles className="h-4 w-4 text-accent-text" />
-                    {t('AI 优化')}
+          <>
+            <DetailHeader
+              compact
+              quietSave
+              leading={<AgentAvatar icon={draft.icon} cli={draft.cli} size="lg" dim={!draft.enabled} />}
+              title={draft.name || t('未命名角色')}
+              meta={
+                <>
+                  {core ? <Badge tone="accent">{t('必备')}</Badge> : <Badge>{category?.name ?? t('未分类')}</Badge>}
+                  {locked && !core && <Badge tone="accent">{t('内置')}</Badge>}
+                  {draft.common && <Badge tone="accent">{t('通用')}</Badge>}
+                  {/* 就绪不标：一切正常不占位置，有问题由下面的提示条说 */}
+                  {!draft.enabled && <StatusDot tone="muted" label={t('已停用')} />}
+                </>
+              }
+              subtitle={draft.description || t('还没有简介')}
+              save={{ ...save, invalid: valid ? undefined : t('名称为空，未保存') }}
+              actions={
+                <>
+                  {!core && (
+                    <label className="flex h-8 cursor-pointer items-center gap-2 px-1.5 text-body text-muted">
+                      <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
+                      {t('启用')}
+                    </label>
+                  )}
+                  <Button size="sm" onClick={startChat} disabled={!draft.enabled} title={t('用这个角色开一个新对话')}>
+                    <MessageSquare className="h-4 w-4" />
+                    {t('对话')}
                   </Button>
-                )}
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  aria-label={t('复制一份')}
-                  title={t('复制一份')}
-                  onClick={onDuplicate}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-                {!core && (
-                  <Button
-                    variant="danger-outline"
-                    size="icon"
-                    aria-label={t('删除')}
-                    title={t('删除')}
-                    onClick={() => setDeleting(true)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </>
-            }
-          />
+                </>
+              }
+              more={
+                <>
+                  {!locked && (
+                    <MenuItem onSelect={() => setAssist(true)}>
+                      <Sparkles className="h-4 w-4 text-accent-text" />
+                      {t('AI 优化')}
+                    </MenuItem>
+                  )}
+                  <MenuItem onSelect={onDuplicate}>
+                    <Copy className="h-4 w-4 text-subtle" />
+                    {t('复制一份')}
+                  </MenuItem>
+                  <MenuItem onSelect={() => exportAgent(agent)}>
+                    <Download className="h-4 w-4 text-subtle" />
+                    {t('导出分享包')}
+                  </MenuItem>
+                  {!core && (
+                    <>
+                      <MenuSeparator />
+                      <MenuItem danger onSelect={() => setDeleting(true)}>
+                        <Trash2 className="h-4 w-4" />
+                        {t('删除')}
+                      </MenuItem>
+                    </>
+                  )}
+                </>
+              }
+            />
+            <IssueBar issues={issues} />
+          </>
         }
         tabs={
           <DetailTabs
             value={tab}
             onChange={setTab}
             items={[
-              { id: 'basic', label: t('概览'), icon: SlidersHorizontal },
               {
                 id: 'role',
-                label: t('角色设定'),
+                label: t('设定'),
                 icon: ScrollText,
                 extra: draft.includes.length ? <TabCount n={draft.includes.length} /> : undefined,
               },
@@ -359,65 +378,45 @@ export function AgentDetail({
                 extra: draft.mounts.length ? <TabCount n={draft.mounts.length} /> : undefined,
               },
               {
-                id: 'params',
-                label: t('参数'),
-                icon: Braces,
+                id: 'run',
+                label: t('运行'),
+                icon: SlidersHorizontal,
                 extra: draft.params.length ? <TabCount n={draft.params.length} /> : undefined,
               },
-              {
-                id: 'extras',
-                label: locked ? t('开场白') : t('Skill 与开场白'),
-                icon: Sparkles,
-                // 必备角色的这一页只有开场白，数开场白；其他角色数 Skill
-                extra: (locked ? draft.starters.length : draft.skills.length) ? (
-                  <TabCount n={locked ? draft.starters.length : draft.skills.length} />
-                ) : undefined,
-              },
+              { id: 'preview', label: t('预览'), icon: Eye },
             ]}
           />
         }
         form={
-          <>
-            {tab === 'basic' && core && (
-              <section className="flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3">
-                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
-                <div className="flex min-w-0 flex-col gap-1 text-body leading-relaxed">
-                  <span className="font-medium">{t('必备角色 · {use}', { use: coreUse(core) })}</span>
-                  <span className="text-muted">
-                    {t(
-                      '项目对话离不开的必备角色之一，不能删除，也不能改成别的角色。名称、角色设定、能力和 Skill 由面板维护并随版本更新；你可以改下面的参数和运行环境，每个项目还能在项目设置里单独调参数。',
-                    )}
+          // 角色页的表单整片用紧凑一档的输入框（和 sm 按钮同高），别的页面不受影响
+          <FieldSizeContext value="sm">
+            {tab === 'role' && locked && (
+              <div className="flex items-start gap-2.5 rounded-lg bg-accent-soft px-3 py-2.5 text-body leading-relaxed">
+                <Lock className="mt-1 h-3.5 w-3.5 shrink-0 text-accent-text" />
+                <span className="flex min-w-0 flex-col text-muted">
+                  <span className="font-medium text-fg">
+                    {core ? t('必备角色 · {use}', { use: coreUse(core) }) : t('内置角色 · 随版本更新')}
                   </span>
+                  <span>
+                    {t('名称、角色设定、能力和 Skill 由面板维护并随版本更新，参数和运行环境在「运行」页改。')}
+                    {!core && t('想改设定就在「⋯」里复制一份。')}
+                  </span>
+                </span>
+              </div>
+            )}
+            {tab === 'role' && locked && !core && (
+              <FormSection title={t('分类与标签')}>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">{t('分类')}</span>
+                  <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
                 </div>
-              </section>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">{t('标签')}</span>
+                  <TagPicker value={draft.tags} onChange={(v) => set('tags', v)} />
+                </div>
+              </FormSection>
             )}
-            {tab === 'basic' && locked && !core && (
-              <>
-                <section className="flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3">
-                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
-                  <div className="flex min-w-0 flex-col gap-1 text-body leading-relaxed">
-                    <span className="font-medium">{t('内置角色 · 随版本更新')}</span>
-                    <span className="text-muted">
-                      {t(
-                        '名称、角色设定、能力和 Skill 由面板维护，每次更新都换成最新版本，用到它的对话下一轮就用新版。你可以改参数、运行环境、分类和标签；想改设定就「复制一份」，改复制出来的角色。',
-                      )}
-                    </span>
-                  </div>
-                </section>
-                <FormSection title={t('分类与标签')}>
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-xs text-muted">{t('分类')}</span>
-                    <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-xs text-muted">{t('标签')}</span>
-                    <TagPicker value={draft.tags} onChange={(v) => set('tags', v)} />
-                  </div>
-                </FormSection>
-              </>
-            )}
-            {tab === 'basic' && locked && <FormSection title={t('对话范围')}>{runInField}</FormSection>}
-            {tab === 'basic' && !locked && (
+            {tab === 'role' && !locked && (
               <FormSection title={t('基本信息')}>
                 <div className="flex flex-wrap gap-4">
                   <Field label={t('名称')} className="flex-[1_1_200px]" error={valid ? undefined : t('名称不能为空')}>
@@ -457,7 +456,6 @@ export function AgentDetail({
                   label={t('能启动计划')}
                   hint={t('需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。')}
                 />
-                {runInField}
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted">{t('标签')}</span>
                   <TagPicker value={draft.tags} onChange={(v) => set('tags', v)} />
@@ -483,132 +481,6 @@ export function AgentDetail({
                     ))}
                   </div>
                 </div>
-              </FormSection>
-            )}
-
-            {tab === 'basic' && (
-              <FormSection title={t('运行环境')}>
-                <>
-                  <Checkbox
-                    checked={follow}
-                    onChange={(v) => pickCli(v ? '' : defCli)}
-                    label={t('跟随默认 Agent（现在是 {cli}）', {
-                      cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
-                    })}
-                    hint={t(
-                      '在设置里换了默认 Agent，这个角色也跟着换，模型换成新 Agent 同一档位的模型。取消后可以固定用某个 Agent。',
-                    )}
-                  />
-                  <div className="flex flex-wrap gap-4">
-                    <Field label="Agent" className="flex-[1_1_220px]">
-                      <Select
-                        aria-label="Agent"
-                        value={cliId}
-                        disabled={follow}
-                        onChange={(e) => pickCli(e.target.value)}
-                        // 停用或没安装的 CLI 不给选；当前选着的照常显示，并标出原因
-                        options={clis
-                          .filter((c) => (c.installed && c.enabled) || c.id === cliId)
-                          .map((c) => ({
-                            value: c.id,
-                            label:
-                              (c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name) +
-                              (!c.installed ? ` · ${t('未安装')}` : c.enabled ? '' : ` · ${t('已停用')}`),
-                          }))}
-                      />
-                    </Field>
-                    <Field
-                      label={t('模型')}
-                      className="flex-[2_1_280px]"
-                      hint={t('三档对应的模型在设置里每个 Agent 下配置')}
-                    >
-                      <Select
-                        aria-label={t('模型')}
-                        value={draft.model}
-                        onChange={(e) => set('model', e.target.value)}
-                        options={tierOptions}
-                        className="font-mono text-body"
-                      />
-                    </Field>
-                  </div>
-                  {cliDef && (
-                    <Field
-                      label={t('思考强度')}
-                      hint={t('越高想得越久、越慢。选档位时默认用档位的思考强度。')}
-                      className="max-w-[320px]"
-                    >
-                      <Select
-                        aria-label={t('思考强度')}
-                        value={effortValue(cliDef, defEffort, modelEfforts(cliDef, usedModel ?? ''), draft.effort)}
-                        onChange={(e) => set('effort', e.target.value)}
-                        // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
-                        options={defaultEffortOptions(cliDef, defEffort, modelEfforts(cliDef, usedModel ?? ''))}
-                      />
-                    </Field>
-                  )}
-                </>
-                {cliDef && (
-                  <Field
-                    label={t('权限')}
-                    hint={
-                      <span
-                        className={cn(
-                          // 按权限 id 判断，提示文字翻译成英文后正则就匹配不上了
-                          (DANGER_PERMS.includes(perm.id) || /任意命令|不使用沙箱/.test(perm.hint)) && 'text-warning',
-                        )}
-                      >
-                        {perm.hint}
-                      </span>
-                    }
-                  >
-                    <div>
-                      <Segmented
-                        label={t('权限')}
-                        // CLI 设置里的权限标（默认），选它就是跟随设置
-                        value={perm.id === cs.permission ? '' : perm.id}
-                        onChange={(v) => set('permission', v)}
-                        options={cliDef.permissions.map((p) => ({
-                          id: p.id === cs.permission ? '' : p.id,
-                          label: p.id === cs.permission ? t('{name}（默认）', { name: p.label }) : p.label,
-                        }))}
-                      />
-                    </div>
-                  </Field>
-                )}
-              </FormSection>
-            )}
-
-            {tab === 'caps' && (
-              <CapabilityFields
-                draft={draft}
-                self={agent}
-                agents={agents}
-                locked={locked}
-                defaults={coreDef ? defaultMounts(coreDef, agents) : undefined}
-                set={set}
-              />
-            )}
-            {tab === 'params' && locked && coreDef && (
-              <FormSection title={t('参数')}>
-                <p className="-mt-2 text-xs leading-relaxed text-subtle">
-                  {core
-                    ? t('这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。')
-                    : t('这里改的是默认取值，工作流节点上还能单独改；参数本身随内置定义更新。')}
-                </p>
-                <ParamsForm params={coreDef.agent.params} values={coreValues} onChange={setCoreValues} />
-              </FormSection>
-            )}
-            {tab === 'extras' && locked && (
-              <FormSection title={t('开场白')}>
-                <StartersEditor value={draft.starters} onChange={(v) => set('starters', v)} />
-                <Field label={t('额外参数')} hint={t('追加给 Agent 的参数，用空格分隔，含空格的值用引号包住。')}>
-                  <Input
-                    value={args}
-                    onChange={(e) => setArgs(e.target.value)}
-                    placeholder={t('例如：--add-dir ../shared')}
-                    className="font-mono text-body"
-                  />
-                </Field>
               </FormSection>
             )}
             {tab === 'role' && locked && (
@@ -670,7 +542,7 @@ export function AgentDetail({
                             </div>
                           ))}
                           {!draft.params.length && (
-                            <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有参数，先在「参数」页里添加')}</p>
+                            <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有参数，先在「运行」页里添加')}</p>
                           )}
                         </PopoverContent>
                       </Popover>
@@ -680,7 +552,7 @@ export function AgentDetail({
                     <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       {t(
-                        '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「参数」页添加，或者改成已有的参数名。',
+                        '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「运行」页的参数里添加，或者改成已有的参数名。',
                         {
                           list: unknownRefs.map((k) => `{{${k}}}`).join(t('、')),
                         },
@@ -863,7 +735,142 @@ export function AgentDetail({
                 </FormSection>
               </>
             )}
-            {tab === 'params' && !locked && (
+            {tab === 'role' && (
+              <FormSection title={locked ? t('开场白') : t('Skill 与开场白')}>
+                {!locked && (
+                  <Field
+                    label="Skill"
+                    hint={t('执行时提醒它优先用这些 Skill。Skill 本身装在 Agent 里，在「Skills」页面管理。')}
+                  >
+                    <SkillsPicker value={draft.skills} onChange={(v) => set('skills', v)} cli={cliId} />
+                  </Field>
+                )}
+                <Field label={t('开场白')} hint={t('常用的要求，和它对话时显示在输入框上方，点一下就填进去。')}>
+                  <StartersEditor value={draft.starters} onChange={(v) => set('starters', v)} />
+                </Field>
+              </FormSection>
+            )}
+
+            {tab === 'caps' && (
+              <CapabilityFields
+                draft={draft}
+                self={agent}
+                agents={agents}
+                locked={locked}
+                defaults={coreDef ? defaultMounts(coreDef, agents) : undefined}
+                set={set}
+              />
+            )}
+            {tab === 'run' && (
+              <FormSection title={t('运行环境')}>
+                <>
+                  <Checkbox
+                    checked={follow}
+                    onChange={(v) => pickCli(v ? '' : defCli)}
+                    label={t('跟随默认 Agent（现在是 {cli}）', {
+                      cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
+                    })}
+                    hint={t(
+                      '在设置里换了默认 Agent，这个角色也跟着换，模型换成新 Agent 同一档位的模型。取消后可以固定用某个 Agent。',
+                    )}
+                  />
+                  <div className="flex flex-wrap gap-4">
+                    <Field label="Agent" className="flex-[1_1_220px]">
+                      <Select
+                        aria-label="Agent"
+                        value={cliId}
+                        disabled={follow}
+                        onChange={(e) => pickCli(e.target.value)}
+                        // 停用或没安装的 CLI 不给选；当前选着的照常显示，并标出原因
+                        options={clis
+                          .filter((c) => (c.installed && c.enabled) || c.id === cliId)
+                          .map((c) => ({
+                            value: c.id,
+                            label:
+                              (c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name) +
+                              (!c.installed ? ` · ${t('未安装')}` : c.enabled ? '' : ` · ${t('已停用')}`),
+                          }))}
+                      />
+                    </Field>
+                    <Field
+                      label={t('模型')}
+                      className="flex-[2_1_280px]"
+                      hint={t('三档对应的模型在设置里每个 Agent 下配置')}
+                    >
+                      <Select
+                        aria-label={t('模型')}
+                        value={draft.model}
+                        onChange={(e) => set('model', e.target.value)}
+                        options={tierOptions}
+                        className="font-mono text-body"
+                      />
+                    </Field>
+                  </div>
+                  {cliDef && (
+                    <Field
+                      label={t('思考强度')}
+                      hint={t('越高想得越久、越慢。选档位时默认用档位的思考强度。')}
+                      className="max-w-[320px]"
+                    >
+                      <Select
+                        aria-label={t('思考强度')}
+                        value={effortValue(cliDef, defEffort, modelEfforts(cliDef, usedModel ?? ''), draft.effort)}
+                        onChange={(e) => set('effort', e.target.value)}
+                        // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
+                        options={defaultEffortOptions(cliDef, defEffort, modelEfforts(cliDef, usedModel ?? ''))}
+                      />
+                    </Field>
+                  )}
+                </>
+                {cliDef && (
+                  <Field
+                    label={t('权限')}
+                    hint={
+                      <span
+                        className={cn(
+                          // 按权限 id 判断，提示文字翻译成英文后正则就匹配不上了
+                          (DANGER_PERMS.includes(perm.id) || /任意命令|不使用沙箱/.test(perm.hint)) && 'text-warning',
+                        )}
+                      >
+                        {perm.hint}
+                      </span>
+                    }
+                  >
+                    <div>
+                      <Segmented
+                        label={t('权限')}
+                        // CLI 设置里的权限标（默认），选它就是跟随设置
+                        value={perm.id === cs.permission ? '' : perm.id}
+                        onChange={(v) => set('permission', v)}
+                        options={cliDef.permissions.map((p) => ({
+                          id: p.id === cs.permission ? '' : p.id,
+                          label: p.id === cs.permission ? t('{name}（默认）', { name: p.label }) : p.label,
+                        }))}
+                      />
+                    </div>
+                  </Field>
+                )}
+                <Field label={t('额外参数')} hint={t('追加给 Agent 的参数，用空格分隔，含空格的值用引号包住。')}>
+                  <Input
+                    value={args}
+                    onChange={(e) => setArgs(e.target.value)}
+                    placeholder={t('例如：--add-dir ../shared')}
+                    className="font-mono text-body"
+                  />
+                </Field>
+              </FormSection>
+            )}
+            {tab === 'run' && locked && coreDef && (
+              <FormSection title={t('参数')}>
+                <p className="-mt-2 text-xs leading-relaxed text-subtle">
+                  {core
+                    ? t('这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。')
+                    : t('这里改的是默认取值，工作流节点上还能单独改；参数本身随内置定义更新。')}
+                </p>
+                <ParamsForm params={coreDef.agent.params} values={coreValues} onChange={setCoreValues} />
+              </FormSection>
+            )}
+            {tab === 'run' && !locked && (
               <>
                 <FormSection title={t('参数')}>
                   <p className="-mt-2 text-xs leading-relaxed text-subtle">
@@ -881,92 +888,69 @@ export function AgentDetail({
                 </FormSection>
               </>
             )}
+            {tab === 'run' && <FormSection title={t('对话范围')}>{runInField}</FormSection>}
 
-            {tab === 'extras' && !locked && (
-              <FormSection title={t('Skill 与开场白')}>
-                <Field
-                  label="Skill"
-                  hint={t('执行时提醒它优先用这些 Skill。Skill 本身装在 Agent 里，在「Skills」页面管理。')}
-                >
-                  <SkillsPicker value={draft.skills} onChange={(v) => set('skills', v)} cli={cliId} />
-                </Field>
-                <Field label={t('开场白')} hint={t('常用的要求，和它对话时显示在输入框上方，点一下就填进去。')}>
-                  <StartersEditor value={draft.starters} onChange={(v) => set('starters', v)} />
-                </Field>
-                <Field label={t('额外参数')} hint={t('追加给 Agent 的参数，用空格分隔，含空格的值用引号包住。')}>
-                  <Input
-                    value={args}
-                    onChange={(e) => setArgs(e.target.value)}
-                    placeholder={t('例如：--add-dir ../shared')}
-                    className="font-mono text-body"
-                  />
-                </Field>
-              </FormSection>
+            {tab === 'preview' && (
+              <>
+                <CommandPreview
+                  cli={draft.cli}
+                  model={draft.model}
+                  effort={draft.effort}
+                  permission={draft.permission}
+                  extraArgs={value.extraArgs}
+                />
+                {preview && (
+                  <FormSection title={t('实际交给它的设定')}>
+                    <div className="-mt-2 flex items-center gap-2">
+                      <p className="min-w-0 flex-1 text-caption text-subtle">
+                        {Object.keys(trial).length
+                          ? t('按试的参数展开（不保存），包含引入的角色和 Skill 提示。')
+                          : t('按参数默认值展开，包含引入的角色和 Skill 提示。')}
+                      </p>
+                      {draft.params.length > 0 && (
+                        <ParamsChip params={draft.params} values={trial} onChange={setTrial} />
+                      )}
+                    </div>
+                    <pre className="max-h-[520px] overflow-auto rounded-lg bg-field p-3 font-mono text-footnote leading-relaxed whitespace-pre-wrap">
+                      {preview}
+                    </pre>
+                  </FormSection>
+                )}
+                {includedBy.length > 0 && (
+                  <FormSection title={t('被这些角色引入')}>
+                    <div className="-mx-2 flex flex-col">
+                      {includedBy.map((a) => (
+                        <button
+                          key={a.id}
+                          onClick={() => go({ page: 'agents', id: a.id })}
+                          className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-body hover:bg-sel"
+                        >
+                          <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
+                          <span className="flex-1 truncate">{a.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </FormSection>
+                )}
+                <FormSection title={t('所在工作流')}>
+                  <div className="-mx-2 flex flex-col">
+                    {usedIn.length === 0 && <p className="text-xs text-subtle">{t('还没有工作流使用它。')}</p>}
+                    {usedIn.map(({ w, role }) => (
+                      <button
+                        key={w.id}
+                        onClick={() => go({ page: 'workflows', id: w.id })}
+                        className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-body hover:bg-sel"
+                      >
+                        <WorkflowIcon className="h-4 w-4 text-subtle" />
+                        <span className="flex-1 truncate">{w.name}</span>
+                        <Badge tone={role === t('主角色') ? 'accent' : 'neutral'}>{role}</Badge>
+                      </button>
+                    ))}
+                  </div>
+                </FormSection>
+              </>
             )}
-          </>
-        }
-        aside={
-          <>
-            <CommandPreview
-              cli={draft.cli}
-              model={draft.model}
-              effort={draft.effort}
-              permission={draft.permission}
-              extraArgs={value.extraArgs}
-            />
-            <ReadinessCard checks={checks} />
-            {preview && (
-              // 看角色设定时默认展开：改设定的同时对照最终交给它的全文
-              <details
-                key={tab === 'role' ? 'open' : 'closed'}
-                open={tab === 'role'}
-                className="group rounded-xl bg-card shadow-card p-4"
-              >
-                <summary className="cursor-pointer text-body font-semibold">{t('实际交给它的设定')}</summary>
-                <div className="mt-2 flex items-center gap-2">
-                  <p className="min-w-0 flex-1 text-caption text-subtle">
-                    {Object.keys(trial).length
-                      ? t('按试的参数展开（不保存），包含引入的角色和 Skill 提示。')
-                      : t('按参数默认值展开，包含引入的角色和 Skill 提示。')}
-                  </p>
-                  {draft.params.length > 0 && <ParamsChip params={draft.params} values={trial} onChange={setTrial} />}
-                </div>
-                <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-field p-2.5 font-mono text-caption leading-relaxed whitespace-pre-wrap">
-                  {preview}
-                </pre>
-              </details>
-            )}
-            {includedBy.length > 0 && (
-              <section className="flex flex-col gap-2 rounded-xl bg-card shadow-card p-4">
-                <h3 className="text-body font-semibold">{t('被这些角色引入')}</h3>
-                {includedBy.map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => go({ page: 'agents', id: a.id })}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-body hover:bg-sel"
-                  >
-                    <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
-                    <span className="flex-1 truncate">{a.name}</span>
-                  </button>
-                ))}
-              </section>
-            )}
-            <section className="flex flex-col gap-2 rounded-xl bg-card shadow-card p-4">
-              <h3 className="text-body font-semibold">{t('所在工作流')}</h3>
-              {usedIn.length === 0 && <p className="text-xs text-subtle">{t('还没有工作流使用它。')}</p>}
-              {usedIn.map(({ w, role }) => (
-                <button
-                  key={w.id}
-                  onClick={() => go({ page: 'workflows', id: w.id })}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-body hover:bg-sel"
-                >
-                  <WorkflowIcon className="h-4 w-4 text-subtle" />
-                  <span className="flex-1 truncate">{w.name}</span>
-                  <Badge tone={role === t('主角色') ? 'accent' : 'neutral'}>{role}</Badge>
-                </button>
-              ))}
-            </section>
-          </>
+          </FieldSizeContext>
         }
       />
       <ConfirmDialog

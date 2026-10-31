@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Download, Loader2, Package, RefreshCw } from 'lucide-react'
+import { Check, Download, Loader2, Package, RefreshCw } from 'lucide-react'
 import { BUNDLED_CATEGORIES, type BundledSkill } from '@shared/library'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
@@ -49,23 +49,22 @@ export function BundledSkills({
           {g.items.map((i) => (
             <ListItem
               key={i.name}
+              compact
               selected={picked === i.name}
               onClick={() => onPick(i.name)}
               leading={<Package className="h-4 w-4 shrink-0 text-accent-text" />}
-              title={
-                <>
-                  {i.name}
-                  {i.files > 0 && (
-                    <span className="ml-2 font-sans text-caption font-normal text-subtle">
-                      {t('另有 {n} 个文件', { n: i.files })}
-                    </span>
-                  )}
-                </>
-              }
+              title={i.name}
               subtitle={i.description || t('没有说明')}
               monoSubtitle={false}
+              // 只标装了的和改过的：没装是大多数，每行都写「未安装」只是噪音
               trailing={
-                <span className="shrink-0 text-caption text-subtle">{BUNDLED_STATUS_LABEL[i.status.shared]}</span>
+                i.status.shared === 'changed' ? (
+                  <span className="shrink-0 text-caption text-warning">{BUNDLED_STATUS_LABEL.changed}</span>
+                ) : i.status.shared === 'same' ? (
+                  <span role="img" aria-label={BUNDLED_STATUS_LABEL.same} title={BUNDLED_STATUS_LABEL.same}>
+                    <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+                  </span>
+                ) : undefined
               }
             />
           ))}
