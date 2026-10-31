@@ -239,6 +239,15 @@ async function into(dir: string, rel: string) {
   return full
 }
 
+/**
+ * 只读的接口（看文件内容、看图片）用的路径：哪里都能看（用户 2026-10-31 定的：交接文件、对话目录、数据目录里的文件
+ * 都要能在对话里点开）。绝对路径直接用，相对路径接在项目目录后面。写、新建、删除仍走 into，只限项目目录。
+ * 面板只监听本机，接口按 Host / Origin 拦掉外部网页（见 server/index.ts），放开读不会被网页借去读本机文件
+ */
+function readable(dir: string, want: string) {
+  return path.isAbsolute(want) || absoluteLike(want) ? path.resolve(want) : path.resolve(dir, want)
+}
+
 /** 链接（符号链接、Windows 的 junction）都不跟：lstat 才看得到，Dirent 在 Windows 上不一定标出来 */
 const isLink = (full: string) =>
   lstat(full).then(
@@ -433,7 +442,7 @@ async function gitTracked(dir: string, prefix: string): Promise<FileEntry[]> {
 
 /** 读一个文件的内容；二进制文件不给内容 */
 export async function readInDir(dir: string, want: string): Promise<FileContent> {
-  const full = await into(dir, want)
+  const full = readable(dir, want)
   const info = await stat(full).catch(() => null)
   if (!info?.isFile()) return { path: norm(want), exists: false, content: '', truncated: false }
   const buf = await readFile(full)
@@ -674,7 +683,7 @@ export async function applyFixesInDir(dir: string, fixes: FixApplyItem[]): Promi
 
 /** 图片的原始内容；不是图片或文件不在了给错误 */
 export async function rawInDir(dir: string, want: string): Promise<{ type: string; buf: Buffer }> {
-  const full = await into(dir, want)
+  const full = readable(dir, want)
   const type = IMAGE_TYPES[path.extname(full).slice(1).toLowerCase()]
   if (!type) throw new Error(t('不是图片'))
   const buf = await readFile(full).catch(() => null)

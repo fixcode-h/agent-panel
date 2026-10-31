@@ -264,12 +264,14 @@ function outsideDir(name: string): string {
   return dir
 }
 
-test('项目里指向外面的链接：读文件、列目录、往里写都被拒绝', async (t) => {
+test('项目里指向外面的链接：列目录、往里写都被拒绝，只读查看放开', async (t) => {
   const dir = project()
   const outside = outsideDir('secret.txt')
   if (!linkTo(outside, path.join(dir, 'link'))) return t.skip('这个系统建不了链接')
-  // 字面路径在项目里，真实位置在项目外
-  await assert.rejects(() => readInDir(dir, 'link/secret.txt'), /只能查看项目目录里的文件/)
+  // 字面路径在项目里，真实位置在项目外：只读查看放开（哪里都能看），列目录、写仍限项目目录
+  assert.equal((await readInDir(dir, 'link/secret.txt')).content, 'top secret\n')
+  // 项目外的绝对路径（例如数据目录里的交接文件）也能直接看
+  assert.equal((await readInDir(dir, path.join(outside, 'secret.txt'))).content, 'top secret\n')
   await assert.rejects(() => listLevel(dir, 'link'), /只能查看项目目录里的文件/)
   await assert.rejects(() => createInDir(dir, 'link', 'evil.txt', 'x', DEFAULT_FILE_FORMAT), /只能查看项目目录里的文件/)
   await assert.rejects(() => writeInDir(dir, 'link/secret.txt', 'x', DEFAULT_FILE_FORMAT), /只能查看项目目录里的文件/)
