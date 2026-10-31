@@ -65,6 +65,7 @@ import { resolveParams } from '@shared/agent-role'
 import { CLIS } from '@shared/clis'
 import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
+import { paramsForVcs, resolveDocRoot } from '@shared/doc-root'
 import { cliSettings, orderClis } from '@shared/settings'
 import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
@@ -938,9 +939,10 @@ function Body({
                       </Button>
                     }
                   >
-                    {a.params.length ? (
+                    {paramsForVcs(a.params, vcs).length ? (
                       <ParamsForm
-                        params={a.params}
+                        // 「文档位置」只对 P4 / SVN 项目有意义，Git 项目不显示（见 shared/doc-root.ts）
+                        params={paramsForVcs(a.params, vcs)}
                         values={draft.agentParams[a.id] ?? {}}
                         onChange={(v) =>
                           setDraft((d) => {
@@ -953,6 +955,9 @@ function Body({
                       />
                     ) : (
                       <p className="text-xs text-subtle">{t('这个角色没有可调的参数。')}</p>
+                    )}
+                    {coreKey(a) === 'docsync' && (
+                      <DocRootHint path={draft.path} vcs={vcs} agent={a} values={draft.agentParams[a.id] ?? {}} />
                     )}
                   </Collapsible>
                 ))}
@@ -1991,5 +1996,17 @@ export function NavItem({
         />
       )}
     </button>
+  )
+}
+
+/** P4 / SVN 项目按文档角色现在的参数算出来的文档根：改「文档位置」时马上看到会写到哪 */
+function DocRootHint({ path, vcs, agent, values }: { path: string; vcs: string; agent: Agent; values: ParamValues }) {
+  const d = resolveDocRoot(path, vcs, resolveParams(agent.params, values).values)
+  if (!d) return null
+  return (
+    <p className="mt-2 text-xs text-subtle">
+      {t('这个项目的文档根：{dir}', { dir: d.root })}
+      {d.outside ? t('（在项目外，写进去的文档不做 P4 / SVN 操作）') : t('（在项目里，随项目纳入版本管理）')}
+    </p>
   )
 }

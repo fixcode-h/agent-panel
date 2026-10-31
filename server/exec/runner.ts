@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { detectVcs } from '../projects-analyze.ts'
+import { projectDocRoot } from '../doc-root.ts'
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
@@ -2826,12 +2827,15 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
   const views = await listIntegrations().catch(() => [])
   // cherry-pick 目标只对 Git / P4 项目有意义：按项目目录现在的版本管理说清怎么搬（目录换了类型就不提）
   const target = ctx.project.cherryPick?.trim()
-  const vcs = target && ctx.project.path ? (await detectVcs(ctx.project.path).catch(() => null))?.vcs : undefined
+  const vcs = ctx.project.path ? (await detectVcs(ctx.project.path).catch(() => null))?.vcs : undefined
+  // P4 / SVN 项目的文档根由面板按「文档」角色的参数算好，所有角色拿到同一个路径（见 shared/doc-root.ts）
+  const docs = await projectDocRoot(ctx.project.path, ctx.agents, vcs ?? 'none')
   return {
     push: ctx.project.gitPolicy ?? 'ask',
     answered: ctx.task.remotePush,
     tools: views.filter((v) => v.installed && v.authed).map((v) => v.name),
     ...(target && (vcs === 'git' || vcs === 'p4') ? { cherryPick: { vcs, target } } : {}),
+    ...(docs ? { docs } : {}),
   }
 }
 

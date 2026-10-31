@@ -1206,6 +1206,10 @@ export const EN_SETTINGS: Record<string, string> = {
     'Test steps, sub-chat isolation, pushing, encoding and line endings, search exclusions and more, each with a reason',
   初始化完成: 'Initialization finished',
   '文档根：{dir}': 'Docs root: {dir}',
+  '这个项目的文档根：{dir}': 'Docs root for this project: {dir}',
+  '（在项目外，写进去的文档不做 P4 / SVN 操作）':
+    ' (outside the project: docs written here get no P4 / SVN operations)',
+  '（在项目里，随项目纳入版本管理）': ' (inside the project: versioned with the project)',
   'Agent 没有报告写了哪些文件，可以在左边的「项目说明」里查看 AGENTS.md。':
     'The agent did not report which files it wrote; check AGENTS.md under Project notes on the left.',
   '{n} 项和当前设置不同，应用后点「确认」保存':
