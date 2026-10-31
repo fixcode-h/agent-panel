@@ -56,6 +56,16 @@ function pointerOn(el: Element | null): boolean {
 }
 
 /**
+ * 这次滚动是不是带着这个元素一起动了：滚的是整页，或者是它外面的某个滚动容器。
+ * 别处的滚动（另一栏的对话在自动往下滚）和它无关，不能把这边的提示关掉。
+ */
+function scrollMoves(e: Event, el: Element): boolean {
+  const target = e.target
+  if (target === document || target === window) return true
+  return target instanceof Node && target.contains(el)
+}
+
+/**
  * 焦点是不是 Tab 走过来的。
  * 键盘操作要能看到提示，但弹窗、下拉、参数面板打开时会把焦点自动挪到第一个可聚焦元素上，
  * 那里正好有提示，于是浮层自己弹出来（用户并没碰过它）。
@@ -194,6 +204,8 @@ export function Hint({ children, content, className }: HintProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const openTimer = useRef(0)
   const closeTimer = useRef(0)
+  /** 这次是不是悬停打开的：悬停的一滚动就关，键盘 / 点击打开的跟着元素走 */
+  const viaHover = useRef(false)
   useEffect(trackTabFocus, [])
   useEffect(trackPointer, [])
 
@@ -217,6 +229,7 @@ export function Hint({ children, content, className }: HintProps) {
       if (!byUser && performance.now() - pointerMovedAt > HOVER_DELAY_MS * 4) return
       const fire = () => {
         openTimer.current = 0
+        viaHover.current = !byUser
         const el = triggerRef.current
         if (el) setAnchor(el.getBoundingClientRect())
       }
@@ -248,7 +261,10 @@ export function Hint({ children, content, className }: HintProps) {
   // 所以这里自己在 capture 阶段处理，并且吃掉这次按键（不然底下的弹窗会跟着关）
   useHintEscape(!!anchor, dismiss)
 
-  // 滚动、改窗口大小时位置会漂：跟着重算，浮层不能停在原来的地方
+  // 滚动时：悬停打开的直接关掉 —— 滚轮滚动没有 pointermove，指针早已不在元素上，
+  // 跟着元素走的话浮层会一直挂着、甚至飘到滚动区外面（原生 title 一滚就没了）。
+  // 键盘 / 点击打开的跟着元素重算位置（Tab 过去时浏览器会把元素滚进视野，关掉就看不到了）。
+  // 改窗口大小只重算位置。
   useEffect(() => {
     if (!anchor) return
     const sync = () => {
@@ -256,13 +272,23 @@ export function Hint({ children, content, className }: HintProps) {
       if (!el?.isConnected) return setAnchor(null)
       setAnchor(el.getBoundingClientRect())
     }
-    window.addEventListener('scroll', sync, { capture: true, passive: true })
+    const onScroll = (e: Event) => {
+      const el = triggerRef.current
+      if (!el?.isConnected) return setAnchor(null)
+      if (!scrollMoves(e, el)) return
+      if (viaHover.current) {
+        clearTimers()
+        return setAnchor(null)
+      }
+      sync()
+    }
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true })
     window.addEventListener('resize', sync, { passive: true })
     return () => {
-      window.removeEventListener('scroll', sync, { capture: true })
+      window.removeEventListener('scroll', onScroll, { capture: true })
       window.removeEventListener('resize', sync)
     }
-  }, [anchor])
+  }, [anchor, clearTimers])
 
   const own = children.props
   const trigger = {
@@ -492,7 +518,18 @@ export function GlobalHintHost() {
       hoveredEl.current = null
       scheduleClose()
     }
-    // 滚动、改窗口大小时位置会漂：按元素当前位置重算，浮层不能停在原来的地方
+    // 滚动：这里的提示都是悬停出来的，滚轮滚动时指针已不在元素上（又没有 pointermove），直接关掉，
+    // 跟原生 title 一样；同时忘掉「正悬停的元素」，指针再动一下、还停在它上面就重新按悬停弹出。
+    // 别处容器的滚动（另一栏对话自动滚）不碰这边的提示。
+    const onScroll = (e: Event) => {
+      const cur = tipRef.current
+      const el = cur?.el ?? hoveredEl.current
+      if (!el || !scrollMoves(e, el)) return
+      clearTimers()
+      if (hoveredEl.current === el) hoveredEl.current = null
+      if (cur) closeTip()
+    }
+    // 改窗口大小时位置会漂：按元素当前位置重算，浮层不能停在原来的地方
     const reposition = () => {
       const cur = tipRef.current
       if (!cur) return
@@ -540,13 +577,13 @@ export function GlobalHintHost() {
       if (el) clickedEl.current = el
     }
     document.addEventListener('pointerdown', onDown, { passive: true, capture: true })
-    window.addEventListener('scroll', reposition, { capture: true, passive: true })
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true })
     window.addEventListener('resize', reposition, { passive: true })
     return () => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerleave', onLeaveWindow)
       document.removeEventListener('pointerdown', onDown, { capture: true })
-      window.removeEventListener('scroll', reposition, { capture: true })
+      window.removeEventListener('scroll', onScroll, { capture: true })
       window.removeEventListener('resize', reposition)
       if (rafId.current) cancelAnimationFrame(rafId.current)
       observer.disconnect()
