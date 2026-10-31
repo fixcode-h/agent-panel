@@ -192,6 +192,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (!(await p.getByLabel('上个月').count())) errors.push('用量统计：日历没有翻月按钮')
   await check(p, '设置-用量统计-日历')
   await p.keyboard.press('Escape')
+  // 日历弹层有 60ms 退场动画，放完才卸载、把焦点还给区间按钮；退场途中马上再点开，新弹层会把焦点记成正在消失的那颗按钮，
+  // 选完日子焦点落回 body，后面的 [ ] T 快捷键就收不到了
+  await p.locator('[data-usage-calendar]').waitFor({ state: 'detached', timeout: 2000 })
   // 点一个有数据的历史日子：表格切到那一天
   await p.locator('[data-usage-period-trigger]').click()
   await p.locator('[data-usage-calendar]').waitFor({ timeout: 5000 })
@@ -321,6 +324,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 否则遮罩盖着侧栏，下面的点击会一直等
   const settingsDialog = p.getByRole('dialog')
   const closeSettings = async () => {
+    // 上面的 Esc 可能已经在关弹窗：退场动画（120ms）放完才卸载，先等一下，别去点一个正在消失的关闭按钮
+    await settingsDialog.waitFor({ state: 'detached', timeout: 500 }).catch(() => {})
     if (!(await settingsDialog.count())) return
     await settingsDialog.getByRole('button', { name: /^关闭/ }).click()
     await settingsDialog.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})

@@ -13,14 +13,14 @@ import { UnreadDot } from './badge'
  * 用的时候基础类里要带 `border`（透明边只占位，拖拽插入提示等场景切换时行高不跳）
  */
 export const SIDEBAR_ROW_ON = 'border-transparent bg-sel text-fg'
-export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-sel hover:text-fg'
+export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-hover hover:text-fg'
 
 /**
  * 项目下的对话行（照设计稿 Workspace 侧栏）：平时无底、次要色，悬停浅底；
  * 选中是一张白卡片（深色比 card 再亮一档，见 --conv-sel）+ 极淡投影，不描边
  */
 export const SIDEBAR_BLOCK_ROW_ON = 'border-transparent bg-conv font-semibold text-fg shadow-conv'
-export const SIDEBAR_BLOCK_ROW_OFF = 'border-transparent text-muted hover:bg-sel hover:text-fg'
+export const SIDEBAR_BLOCK_ROW_OFF = 'border-transparent text-muted hover:bg-hover hover:text-fg'
 
 /** 分组标题（项目 / 对话内容 / 按天）：小一号的次要色，和可点的行靠字号和颜色拉开，不加粗 */
 export const SIDEBAR_GROUP_LABEL = 'text-[0.6875rem] text-subtle'
@@ -104,7 +104,7 @@ export function NavRow({
 export const PROJECT_CARD =
   'flex h-[33px] min-w-0 flex-1 items-center gap-2 rounded-(--c-nav-radius) pr-2 pl-2.5 text-[0.84375rem] transition-colors'
 export const PROJECT_CARD_ON = 'bg-proj font-semibold text-fg'
-export const PROJECT_CARD_OFF = 'font-medium text-fg hover:bg-sel'
+export const PROJECT_CARD_OFF = 'font-medium text-fg hover:bg-hover'
 
 /** 项目行右边的对话数：次要色的纯数字，选中时跟着行加一点字重 */
 export function SidebarCount({ n, on, className }: { n: number; on?: boolean; className?: string }) {

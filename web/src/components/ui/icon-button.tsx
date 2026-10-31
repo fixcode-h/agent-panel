@@ -13,7 +13,7 @@ const sizes = {
   '2xs': { box: 'h-5 w-5 rounded', icon: 'h-3 w-3' },
 }
 const tones = {
-  default: 'text-subtle hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg',
+  default: 'text-subtle hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg',
   danger:
     'text-subtle hover:bg-danger/10 hover:text-danger data-[state=open]:bg-danger/10 data-[state=open]:text-danger',
   // 页签条右端、输入框工具条这类一排图标（设计稿 `.ib`）：悬停也不出底，只把图标提到前景色；
@@ -63,13 +63,13 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       title={label}
       className={cn(
         // icon-btn / icon-btn-<tone>：给配色覆盖用的钩子（index.css 里「Claude Code」配色的悬停、选中底色）
-        'icon-btn grid shrink-0 cursor-pointer place-items-center transition-[background-color,color,opacity] outline-none',
+        'icon-btn grid shrink-0 cursor-pointer place-items-center press outline-none',
         `icon-btn-${tone}`,
         'focus-visible:ring-2 focus-visible:ring-focus-soft disabled:pointer-events-none disabled:opacity-40',
         sizes[size].box,
         tones[tone],
         reveal === 'hover' &&
-          'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100',
+          'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100',
         className,
       )}
       {...props}

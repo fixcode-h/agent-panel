@@ -19,7 +19,7 @@ export const ComposerPopover = forwardRef<
     ref={ref}
     style={stretch ? style : { width, ...style }}
     className={cn(
-      'absolute bottom-full z-30 flex flex-col rounded-(--c-popover-radius) bg-(--c-popover-bg) shadow-pop animate-[fade-in_120ms_ease-out]',
+      'absolute bottom-full z-30 flex flex-col rounded-(--c-popover-radius) bg-(--c-popover-bg) shadow-pop anim-pop [--pop-origin:bottom_left]',
       stretch ? 'right-3 left-3 mb-2 p-1' : 'left-0 mb-1',
       scroll ? 'max-h-[min(20rem,60vh)] overflow-y-auto overscroll-contain' : 'overflow-hidden',
       className,

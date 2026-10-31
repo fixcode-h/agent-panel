@@ -125,7 +125,7 @@ export function TabItem({
                 // 选中只画底部指示条：左右各缩进 6px，盖住页签条的底线
                 active
                   ? 'font-medium text-fg after:absolute after:inset-x-1.5 after:-bottom-px after:h-[3px] after:bg-primary'
-                  : 'text-subtle hover:bg-sel/60 hover:text-fg',
+                  : 'text-subtle hover:bg-hover hover:text-fg',
               ),
         className,
       )}
@@ -166,7 +166,7 @@ export function TabItem({
           title={closeLabel ?? t('关闭页签')}
           onClick={onClose}
           className={cn(
-            'mr-2 flex h-[1.125rem] w-[1.125rem] shrink-0 cursor-pointer items-center justify-center rounded transition-opacity hover:bg-sel',
+            'mr-2 flex h-[1.125rem] w-[1.125rem] shrink-0 cursor-pointer items-center justify-center rounded transition-opacity hover:bg-hover',
             active ? 'opacity-60 hover:opacity-100' : 'opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100',
           )}
         >
