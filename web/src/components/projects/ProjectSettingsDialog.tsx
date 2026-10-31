@@ -65,7 +65,7 @@ import { resolveParams } from '@shared/agent-role'
 import { CLIS } from '@shared/clis'
 import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
-import { paramsForVcs, resolveDocRoot } from '@shared/doc-root'
+import { exposesForVcs, paramsForVcs, resolveDocRoot } from '@shared/doc-root'
 import { cliSettings, orderClis } from '@shared/settings'
 import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
@@ -443,10 +443,12 @@ function Body({
   // 一个工作流的配置：暴露项 + 它用到的角色的参数（按角色分组）
   const workflowParamsBody = (w: (typeof workflows)[number]) => {
     const { derived, exposed, groups } = paramsFor(w)
-    if (!w.expose.length && !hasAgentParams(w)) return null
+    // 「文档根」只在 P4 项目里显示（见 shared/doc-root.ts 的 exposesForVcs）
+    const shown = exposesForVcs(w.expose, vcs)
+    if (!shown.length && !hasAgentParams(w)) return null
     return (
       <div className="flex flex-col gap-3">
-        {w.expose.map((e) => (
+        {shown.map((e) => (
           <ExposeField
             key={e.key}
             e={e}
@@ -941,7 +943,7 @@ function Body({
                   >
                     {paramsForVcs(a.params, vcs).length ? (
                       <ParamsForm
-                        // 「文档位置」只对 P4 / SVN 项目有意义，Git 项目不显示（见 shared/doc-root.ts）
+                        // 「文档根」下拉只在 P4 项目里显示（见 shared/doc-root.ts）
                         params={paramsForVcs(a.params, vcs)}
                         values={draft.agentParams[a.id] ?? {}}
                         onChange={(v) =>
@@ -1999,7 +2001,7 @@ export function NavItem({
   )
 }
 
-/** P4 / SVN 项目按文档角色现在的参数算出来的文档根：改「文档位置」时马上看到会写到哪 */
+/** P4 项目按文档角色现在选的文档根算出完整路径：改下拉时马上看到会写到哪 */
 function DocRootHint({ path, vcs, agent, values }: { path: string; vcs: string; agent: Agent; values: ParamValues }) {
   const d = resolveDocRoot(path, vcs, resolveParams(agent.params, values).values)
   if (!d) return null
