@@ -88,12 +88,12 @@ export function RouteCard({
                 >
                   <Icon className="h-3.5 w-3.5 text-accent-text" />
                 </span>
-                <span className={cn('flex min-w-0 flex-1 items-baseline gap-2 text-[0.8125rem]', done && 'opacity-60')}>
+                <span className={cn('flex min-w-0 flex-1 items-baseline gap-2 text-body', done && 'opacity-60')}>
                   <span className="shrink-0 font-medium">{tg.label}</span>
                   {r.label && <span className="min-w-0 truncate text-muted">{r.label}</span>}
                 </span>
                 {done && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-sel px-1.5 py-0.5 text-[0.6875rem] text-muted">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-sel px-1.5 py-0.5 text-caption text-muted">
                     <Check className="h-3 w-3" />
                     {t('已改派')}
                   </span>

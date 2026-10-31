@@ -180,7 +180,7 @@ export function ModelPreview({ taskId, running }: { taskId: string; running: boo
   const problem = error || loadError || meta?.exportError
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-[0.75rem] text-subtle">
+      <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-footnote text-subtle">
         <Box className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={2.2} />
         <span className="min-w-0 truncate">
           {version
@@ -209,24 +209,24 @@ export function ModelPreview({ taskId, running }: { taskId: string; running: boo
         {!version && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
             <Box className="h-6 w-6 text-subtle" strokeWidth={1.9} />
-            <p className="text-[0.78125rem] leading-relaxed text-subtle">
+            <p className="text-body leading-relaxed text-subtle">
               {t('还没有模型。Agent 用 Blender 建模后，这里会实时显示，可以拖动旋转、滚轮缩放。')}
             </p>
           </div>
         )}
         {noGl && (
-          <p className="absolute inset-x-4 top-4 text-[0.75rem] text-warning">
+          <p className="absolute inset-x-4 top-4 text-footnote text-warning">
             {t('浏览器不支持 WebGL，没法预览模型；可以下载 glb 用别的软件看。')}
           </p>
         )}
       </div>
-      {problem && <p className="shrink-0 border-t px-4 py-2 text-[0.75rem] leading-relaxed text-danger">{problem}</p>}
+      {problem && <p className="shrink-0 border-t px-4 py-2 text-footnote leading-relaxed text-danger">{problem}</p>}
       {!!meta?.objects.length && (
         <ul aria-label={t('场景里的物体')} className="max-h-[35%] shrink-0 overflow-y-auto border-t py-1">
           {meta.objects.map((o) => (
-            <li key={o.name} className="flex items-center gap-2 px-4 py-1 text-[0.75rem]">
+            <li key={o.name} className="flex items-center gap-2 px-4 py-1 text-footnote">
               <span className={cn('min-w-0 flex-1 truncate', o.hidden && 'text-subtle line-through')}>{o.name}</span>
-              <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">
+              <span className="shrink-0 font-mono text-caption text-subtle">
                 {o.type}
                 {o.faces !== undefined ? ` · ${t('{n} 面', { n: o.faces })}` : ''}
               </span>

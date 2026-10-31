@@ -89,11 +89,11 @@ export function ReportTree({
       placeholder={t('搜索报告内容')}
       compact
       footer={
-        <p className="text-[0.75rem] leading-relaxed text-subtle">{t('按日期归档；右键一份报告可以复制或删除。')}</p>
+        <p className="text-footnote leading-relaxed text-subtle">{t('按日期归档；右键一份报告可以复制或删除。')}</p>
       }
     >
       {!loaded ? (
-        <p className="px-2 py-6 text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+        <p className="px-2 py-6 text-body text-subtle">{t('读取中…')}</p>
       ) : !groups.length ? (
         <ListEmpty>{query ? t('没有符合的报告。') : t('还没有报告，在右边提炼一份。')}</ListEmpty>
       ) : (

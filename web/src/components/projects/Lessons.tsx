@@ -223,8 +223,8 @@ export function LessonsEditor({
                     strokeWidth={2.3}
                   />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-[0.8125rem] font-medium">{l.title || t('（还没写规则）')}</span>
-                    <span className="flex min-w-0 items-center gap-2 text-[0.6875rem] text-subtle">
+                    <span className="truncate text-body font-medium">{l.title || t('（还没写规则）')}</span>
+                    <span className="flex min-w-0 items-center gap-2 text-caption text-subtle">
                       <span className="truncate font-mono">{l.paths.length ? l.paths.join('  ') : t('所有改动')}</span>
                       {l.tags.length > 0 && (
                         <span className="shrink-0 truncate">{l.tags.map((x) => `#${x}`).join(' ')}</span>
@@ -233,7 +233,7 @@ export function LessonsEditor({
                   </span>
                   {l.history.length > 0 && (
                     <Badge
-                      className="shrink-0 text-[0.6875rem]"
+                      className="shrink-0 text-caption"
                       title={t('你的新要求和它冲突时，角色找了两全的做法改写过它；展开看改写记录')}
                     >
                       {t('已改写')}
@@ -242,7 +242,7 @@ export function LessonsEditor({
                   {l.source === 'agent' && (
                     <Badge
                       tone="accent"
-                      className="shrink-0 text-[0.6875rem]"
+                      className="shrink-0 text-caption"
                       title={t('角色被纠正后自己记的，看一下写得对不对')}
                     >
                       {t('角色记录')}
@@ -478,7 +478,7 @@ function LessonFields({
                   type="button"
                   onClick={() => setTags([...(lesson.tags ?? []), x])}
                   // 建议的标签点一下就加上：和 ChipGroup 没选中的块同一个底色，不描边
-                  className="chip-idle cursor-pointer rounded-full px-2 py-0.5 text-[0.6875rem] text-muted hover:text-fg"
+                  className="chip-idle cursor-pointer rounded-full px-2 py-0.5 text-caption text-muted hover:text-fg"
                 >
                   + {x}
                 </button>
@@ -554,7 +554,7 @@ export function RecordLessonDialog({
     <Modal open onOpenChange={(o) => !o && onClose()} title={null} bare className="max-w-[560px]">
       <ModalHeader icon={GraduationCap} title={t('记成项目教训')} />
       <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-5">
-        <p className="text-[0.75rem] leading-relaxed text-subtle">
+        <p className="text-footnote leading-relaxed text-subtle">
           {t(
             '记下来以后，这个项目里的角色改到相关文件时都会看到它。写成通用的规则（例如「新能力写进配置文件」），下次换个地方也用得上。',
           )}
@@ -641,18 +641,18 @@ export function ProjectLessonsCard({ project }: { project: Project }) {
                 )}
               >
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-[0.8125rem]">{l.title}</span>
-                  <span className="truncate font-mono text-[0.6875rem] text-subtle">
+                  <span className="truncate text-body">{l.title}</span>
+                  <span className="truncate font-mono text-caption text-subtle">
                     {l.paths.length ? l.paths.join('  ') : t('所有改动')}
                   </span>
                 </span>
-                {l.history.length > 0 && <Badge className="shrink-0 text-[0.6875rem]">{t('已改写')}</Badge>}
+                {l.history.length > 0 && <Badge className="shrink-0 text-caption">{t('已改写')}</Badge>}
                 {l.source === 'agent' && (
-                  <Badge tone="accent" className="shrink-0 text-[0.6875rem]">
+                  <Badge tone="accent" className="shrink-0 text-caption">
                     {t('角色记录')}
                   </Badge>
                 )}
-                {!l.enabled && <span className="shrink-0 text-[0.6875rem] text-subtle">{t('停用')}</span>}
+                {!l.enabled && <span className="shrink-0 text-caption text-subtle">{t('停用')}</span>}
                 {lessonTime(l) && (
                   <span className="w-16 shrink-0 text-right text-xs text-subtle">{timeAgo(lessonTime(l))}</span>
                 )}
@@ -726,7 +726,7 @@ export function GlobalLessonsSection() {
   if (!saved) return <Loader2 className="h-4 w-4 animate-spin text-subtle" />
   return (
     <div className="flex max-w-[760px] flex-col gap-4">
-      <p className="text-[0.8125rem] leading-relaxed text-muted">
+      <p className="text-body leading-relaxed text-muted">
         {t(
           '全局教训会带进所有项目的对话，优先级低于项目教训和你当次的要求。角色改不了它：在项目设置的「教训」里用「提取全局教训」从项目教训里挑出通用的，或者在这里手动加；所有修改都要你确认后才保存。',
         )}
@@ -768,8 +768,8 @@ export function GlobalLessonsSection() {
                     strokeWidth={2.3}
                   />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-[0.8125rem] font-medium">{l.title || t('（还没写规则）')}</span>
-                    <span className="truncate text-[0.6875rem] text-subtle">
+                    <span className="truncate text-body font-medium">{l.title || t('（还没写规则）')}</span>
+                    <span className="truncate text-caption text-subtle">
                       {l.from.length ? t('来自 {names}', { names: l.from.join('、') }) : t('手动添加')}
                     </span>
                   </span>

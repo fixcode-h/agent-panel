@@ -22,8 +22,8 @@ export const fieldClass =
  * xs 属性面板（设计页的 Details、动画时间轴）一行一个属性的小框，和 icon-sm 按钮同高
  */
 const fieldSizes = {
-  xs: 'h-7 rounded-[min(6px,var(--c-input-radius))] px-1.5 text-[0.75rem]',
-  sm: 'h-8 px-2.5 text-[0.8125rem]',
+  xs: 'h-7 rounded-[min(6px,var(--c-input-radius))] px-1.5 text-footnote',
+  sm: 'h-8 px-2.5 text-body',
   md: 'h-9',
 }
 export type FieldSize = keyof typeof fieldSizes
@@ -62,7 +62,7 @@ const listPanel =
   'z-50 max-h-[min(360px,var(--radix-select-content-available-height))] min-w-[var(--radix-select-trigger-width)] ' +
   'overflow-hidden rounded-(--c-menu-radius) border-(length:--c-menu-border) border-pop-edge bg-(--c-menu-bg) shadow-pop anim-pop'
 export const listItem =
-  'relative flex w-full cursor-pointer select-none items-center gap-2 rounded-(--c-menu-itemRadius) py-1 pr-8 pl-2.5 text-left text-[0.8125rem] leading-5 ' +
+  'relative flex w-full cursor-pointer select-none items-center gap-2 rounded-(--c-menu-itemRadius) py-1 pr-8 pl-2.5 text-left text-body leading-5 ' +
   'outline-none data-[highlighted]:bg-hover data-[state=checked]:text-fg data-[disabled]:pointer-events-none data-[disabled]:opacity-50'
 
 /** 下拉框：样式和输入框一致，弹出的列表也跟随主题（不用系统原生列表） */
@@ -104,7 +104,7 @@ export function Select({
         aria-label={ariaLabel}
         className={cn(
           ghost
-            ? [ghostTrigger, size !== 'md' && 'h-7 text-[0.8125rem]']
+            ? [ghostTrigger, size !== 'md' && 'h-7 text-body']
             : [
                 fieldClass,
                 'flex h-9 items-center justify-between gap-2 data-[state=open]:border-accent data-[state=open]:ring-(length:--c-input-ring) data-[state=open]:ring-accent-soft',
@@ -132,7 +132,7 @@ export function Select({
                 {g && (
                   <>
                     {i > 0 && <S.Separator className="mx-1 my-1 h-px bg-line" />}
-                    <S.Label className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">{g}</S.Label>
+                    <S.Label className="px-2.5 pt-1.5 pb-1 text-caption text-subtle">{g}</S.Label>
                   </>
                 )}
                 {options
@@ -250,7 +250,7 @@ export function ComboInput({
               s.group && s.group !== list[i - 1]?.group && (
                 <div
                   key={`g:${s.group}`}
-                  className={cn('px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle', i > 0 && 'mt-1 border-t pt-2')}
+                  className={cn('px-2.5 pt-1.5 pb-1 text-caption text-subtle', i > 0 && 'mt-1 border-t pt-2')}
                 >
                   {s.group}
                 </div>
@@ -267,9 +267,9 @@ export function ComboInput({
                 className={listItem}
               >
                 <span className="flex min-w-0 flex-col">
-                  <span className="truncate font-mono text-[0.75rem]">{s.value}</span>
+                  <span className="truncate font-mono text-footnote">{s.value}</span>
                   {s.label && s.label !== s.value && (
-                    <span className="truncate text-[0.6875rem] text-subtle">{s.label}</span>
+                    <span className="truncate text-caption text-subtle">{s.label}</span>
                   )}
                 </span>
                 {s.value === value && <Check className="absolute right-2.5 h-3.5 w-3.5 text-accent-text" />}
@@ -327,7 +327,7 @@ export function FormSection({
   return (
     <section className="flex flex-col gap-4 border-t pt-7 first:border-t-0 first:pt-0">
       <div className="flex items-center gap-2">
-        <h3 className="text-[0.8125rem] font-semibold">{title}</h3>
+        <h3 className="text-body font-semibold">{title}</h3>
         {aside && <div className="ml-auto">{aside}</div>}
       </div>
       {children}

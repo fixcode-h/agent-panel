@@ -72,7 +72,7 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
       {nudgeError ? t('没能叫起父对话') : t('已交给父对话决定')}
     </span>
   ) : (
-    <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-warning/15 px-1.5 font-sans text-[0.6875rem] leading-[1.125rem] text-warning">
+    <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-warning/15 px-1.5 font-sans text-caption leading-[1.125rem] text-warning">
       <span className="relative flex h-1.5 w-1.5">
         <span className="absolute inset-0 animate-ping rounded-full bg-warning/60" />
         <span className="relative h-1.5 w-1.5 rounded-full bg-warning" />
@@ -113,7 +113,7 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
       <div className={cn('flex flex-col gap-2.5 border-t px-3 py-2.5', pending ? 'border-warning/25' : 'bg-card/60')}>
         <div
           className={cn(
-            'text-[0.8125rem]',
+            'text-body',
             // 等选择时只露个开头，完整的问题在子对话的选择弹窗里看
             pending
               ? 'max-h-[4.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,#000_60%,transparent)]'
@@ -123,13 +123,13 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
           <Markdown text={ask.question} teamNames={teamNames} />
         </div>
         {answered ? (
-          <div className="flex gap-2 rounded-lg bg-field px-2.5 py-2 text-[0.8125rem]">
+          <div className="flex gap-2 rounded-lg bg-field px-2.5 py-2 text-body">
             <span className="shrink-0 text-subtle">{t('决定')}</span>
             <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{ask.answer}</span>
           </div>
         ) : delegated ? (
           nudgeError ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-destructive/10 px-2.5 py-2 text-[0.8125rem] text-destructive">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-destructive/10 px-2.5 py-2 text-body text-destructive">
               <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                 {t('没能叫起父对话：{error}', { error: nudgeError })}
               </span>

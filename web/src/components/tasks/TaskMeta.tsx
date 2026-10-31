@@ -264,7 +264,7 @@ function ContextCard({ line }: { line: ContextLine }) {
     <div className="flex flex-col gap-3 p-3">
       <div className="flex items-center gap-2">
         {icon && <AgentAvatar icon={icon} cli={cli ?? ''} size="xs" />}
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium text-fg" title={name}>
+        <span className="min-w-0 flex-1 truncate text-body font-medium text-fg" title={name}>
           {name}
         </span>
         {live && (
@@ -288,8 +288,8 @@ function ContextCard({ line }: { line: ContextLine }) {
       <dl className="grid grid-cols-3 gap-2">
         {stats.map(([k, v]) => (
           <div key={k} className="flex flex-col gap-0.5 rounded-md bg-field/60 px-2 py-1.5">
-            <dt className="text-[0.6875rem] text-subtle">{k}</dt>
-            <dd className="text-[0.8125rem] font-medium text-fg tabular-nums">{v}</dd>
+            <dt className="text-caption text-subtle">{k}</dt>
+            <dd className="text-body font-medium text-fg tabular-nums">{v}</dd>
           </div>
         ))}
       </dl>
@@ -324,7 +324,7 @@ function ContextRow({ line }: { line: ContextLine }) {
         <span className="text-muted tabular-nums">{p < 10 ? p.toFixed(1) : Math.round(p)}%</span>
       </div>
       <ContextBar p={p} />
-      <span className="truncate text-[0.6875rem] text-subtle" title={compact || undefined}>
+      <span className="truncate text-caption text-subtle" title={compact || undefined}>
         {fmtTokens(u.context)} / {fmtTokens(u.window)} · {u.model || t('默认模型')}
         {compact && ` · ${compact}`}
       </span>
@@ -597,7 +597,7 @@ function LimitRow({ cli, named }: { cli: string; named: boolean }) {
   const { data, error } = useCliLimits(cli, true)
   return (
     <div className="flex flex-col gap-1.5 border-t pt-2">
-      {named && <p className="text-[0.75rem] font-medium text-fg">{getCli(cli)?.name}</p>}
+      {named && <p className="text-footnote font-medium text-fg">{getCli(cli)?.name}</p>}
       {data?.windows.length ? (
         <LimitBars data={data} compact />
       ) : (
@@ -680,7 +680,7 @@ function BranchRow({ path, branch, disabled }: { path: string; branch: string; d
           {list?.length === 0 && <p className="px-2.5 py-2 text-xs text-subtle">{t('没有其他分支')}</p>}
           {list?.map((b) => (
             <PopoverClose key={b} className={cn(menuItem, 'gap-2 py-1.5')} onClick={() => void pick(b)}>
-              <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem]">{b}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-footnote">{b}</span>
               {b === current && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
             </PopoverClose>
           ))}

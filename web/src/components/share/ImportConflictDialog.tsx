@@ -32,10 +32,10 @@ export function ImportConflictDialog({
       closeOnOutside
       className="p-6"
     >
-      <D.Title className="text-[0.9375rem] font-semibold">
+      <D.Title className="text-heading font-semibold">
         {t('{what}同名了', { what: conflict?.kind === 'workflow' ? t('工作流') : t('角色') })}
       </D.Title>
-      <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">{conflict?.message}</D.Description>
+      <D.Description className="mt-1.5 text-body leading-relaxed text-muted">{conflict?.message}</D.Description>
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose}>
           {t('取消')}

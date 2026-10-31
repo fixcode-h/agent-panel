@@ -42,7 +42,7 @@ export const MODAL_HEADER =
   'flex h-[2.0625rem] shrink-0 items-center gap-2 border-b border-(color:--modal-edge) pr-1.5 pl-2.5'
 
 /** 标题栏标题文字：13px、中等字重、前景色 */
-export const MODAL_TITLE = 'min-w-0 shrink truncate text-[0.8125rem] font-medium text-fg'
+export const MODAL_TITLE = 'min-w-0 shrink truncate text-body font-medium text-fg'
 
 /** 已经用 IconButton（size="sm"）写的标题栏按钮叠这个 class，就和 ModalButton 一样大 */
 export const MODAL_ICON_BTN = 'h-6 w-6 rounded-md text-muted hover:text-fg'
@@ -118,7 +118,7 @@ export function ModalHeader({
           {title}
         </D.Title>
       )}
-      {meta && <span className="min-w-0 shrink-[2] truncate text-[0.75rem] text-subtle">{meta}</span>}
+      {meta && <span className="min-w-0 shrink-[2] truncate text-footnote text-subtle">{meta}</span>}
       {children}
       <span className="flex-1" />
       {aside}

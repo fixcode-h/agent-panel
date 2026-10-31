@@ -17,14 +17,14 @@ export const KIND_VIEW: Record<SummaryKind, { label: () => string; icon: typeof 
 /** 分项的一行说明：需求写「内容」，Bug 写「原因 / 修复」；没写的那一栏不占位 */
 function EntryBody({ entry }: { entry: SummaryEntry }) {
   if (entry.kind === 'need')
-    return entry.content ? <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted">{entry.content}</p> : null
+    return entry.content ? <p className="mt-1 text-body leading-relaxed text-muted">{entry.content}</p> : null
   const rows = [
     { label: t('原因'), text: entry.cause },
     { label: t('修复'), text: entry.fix },
   ].filter((r) => r.text)
   if (!rows.length) return null
   return (
-    <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1 text-[0.8125rem] leading-relaxed">
+    <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1 text-body leading-relaxed">
       {rows.map((r) => (
         <div key={r.label} className="contents">
           <dt className="text-subtle">{r.label}</dt>
@@ -58,7 +58,7 @@ export function EntryCard({
     >
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <p className="min-w-0 text-[0.875rem] leading-snug font-medium">{entry.title}</p>
+          <p className="min-w-0 text-prose leading-snug font-medium">{entry.title}</p>
         </div>
         <EntryBody entry={entry} />
       </div>
@@ -104,7 +104,7 @@ function EntryGroup({
         <span className={cn('grid h-6 w-6 place-items-center rounded-lg', view.soft, view.tone)}>
           <Icon className="h-3.5 w-3.5" />
         </span>
-        <h3 className="text-[0.8125rem] font-medium">{view.label()}</h3>
+        <h3 className="text-body font-medium">{view.label()}</h3>
         <span className="text-xs text-subtle tabular-nums">
           {t('已采纳 {n}/{total}', { n: picked, total: entries.length })}
         </span>
@@ -180,7 +180,7 @@ export function ConfirmBar({
   return (
     <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-3 rounded-xl border border-line frost-card px-4 py-2.5 shadow-card">
       <ListChecks className="h-4 w-4 text-accent-text" />
-      <span className="text-[0.8125rem]">
+      <span className="text-body">
         {picked.length
           ? t('已采纳 {n} 项 · 需求 {need} · Bug {bug}', { n: picked.length, need, bug })
           : t('还没有采纳分项')}

@@ -21,7 +21,7 @@ import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } 
  * 每行各自 flex-nowrap、只占一行；左内边距 2.5 加上行内按钮自己的 px-1.5，
  * 正好和输入框文字（外层 px-3/md:px-6 + 文字 px-4）左对齐
  */
-export const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-[0.8125rem]'
+export const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-body'
 
 /**
  * 子对话入口：贴在输入框上方的一条状态栏，点开是悬浮窗列表。
@@ -126,7 +126,7 @@ export function ChildrenBar({
               }
               onClick={() => setOpen((v) => !v)}
               title={cliKids ? t('Agent 存活：{n} 个子对话', { n: cliKids }) : undefined}
-              className="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
+              className="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-body text-muted transition-colors hover:bg-sel hover:text-fg"
             >
               <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
               {/* 有子对话的 CLI 还活着：「子对话」三个字流光，和标题、侧栏一致 */}
@@ -239,7 +239,7 @@ export function ChildrenBar({
         {open && (
           <ComposerPopover width="min(480px, calc(100% - 1.5rem))">
             <div className="flex items-center gap-2 border-b px-3 py-2">
-              <span className="text-[0.8125rem] font-medium">{t('子对话')}</span>
+              <span className="text-body font-medium">{t('子对话')}</span>
               <span data-child-summary className="min-w-0 truncate text-xs text-subtle">
                 {unread > 0
                   ? t('{n} 个 · {m} 封未读', { n: children.length, m: unread })
@@ -259,7 +259,7 @@ export function ChildrenBar({
                     aria-pressed={all === v}
                     onClick={() => setAll(v)}
                     className={cn(
-                      'cursor-pointer rounded px-2 py-0.5 text-xs',
+                      'cursor-pointer rounded-sm px-2 py-0.5 text-xs',
                       all === v ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
                     )}
                   >
@@ -272,7 +272,7 @@ export function ChildrenBar({
               {childGroups(shown, all).map((g) => (
                 <Fragment key={g.key}>
                   {g.label && (
-                    <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">
+                    <p className="px-2.5 pt-2 pb-1 text-caption font-medium text-subtle">
                       {g.label} · {g.items.length}
                     </p>
                   )}
@@ -308,7 +308,7 @@ export function ChildrenBar({
                             aria-label={t('「{title}」的往来', { title: c.title })}
                             title={t('看它和父对话之间的信')}
                             onClick={() => setFold((f) => ({ ...f, [c.id]: !exp }))}
-                            className="absolute top-1.5 right-1.5 flex h-6 cursor-pointer items-center gap-0.5 rounded-md px-1 text-[0.6875rem] text-subtle tabular-nums hover:bg-sel hover:text-fg"
+                            className="absolute top-1.5 right-1.5 flex h-6 cursor-pointer items-center gap-0.5 rounded-md px-1 text-caption text-subtle tabular-nums hover:bg-sel hover:text-fg"
                           >
                             {letters.length > 0 && letters.length}
                             <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', exp && 'rotate-90')} />
@@ -319,19 +319,17 @@ export function ChildrenBar({
                           // 没提交的改动还在分支目录里：写清几个文件、哪个目录，并给一键继续
                           <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
                             <CircleAlert className="h-3 w-3 shrink-0 text-warning" />
-                            <span className="shrink-0 text-[0.6875rem] text-warning" title={dirty.dir || undefined}>
+                            <span className="shrink-0 text-caption text-warning" title={dirty.dir || undefined}>
                               {dirty.text}
                             </span>
                             {dirty.dir && (
-                              <span className="min-w-0 truncate font-mono text-[0.6875rem] text-subtle">
-                                {dirty.dir}
-                              </span>
+                              <span className="min-w-0 truncate font-mono text-caption text-subtle">{dirty.dir}</span>
                             )}
                             <button
                               type="button"
                               onClick={() => onResume(c.id)}
                               title={t('让它接着做：重新占执行位，从停下的地方继续')}
-                              className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6875rem] text-accent-text hover:bg-sel"
+                              className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-caption text-accent-text hover:bg-sel"
                             >
                               <RotateCw className="h-3 w-3" />
                               {t('继续')}

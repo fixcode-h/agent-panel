@@ -661,7 +661,7 @@ function webTemplate() {
       {
         id: 'feature_icon',
         name: 'Feature_Icon',
-        prompt: 'flat rounded app icon of two overlapping chat bubbles, orange gradient',
+        prompt: 'flat rounded-sm app icon of two overlapping chat bubbles, orange gradient',
         width: 96,
         height: 96,
         transparent: true,
@@ -1204,14 +1204,14 @@ async function runChat(
                   {
                     label: '温暖手作',
                     desc: '米色纸张质感、手绘插画、圆润字体',
-                    style: 'warm handmade, beige paper texture, hand-drawn illustrations, rounded type',
+                    style: 'warm handmade, beige paper texture, hand-drawn illustrations, rounded-sm type',
                   },
                 ]
               : [
                   {
                     label: '日系卡通',
                     desc: '明亮配色、圆润描边、Q 版可爱',
-                    style: 'bright japanese cartoon, rounded thick outlines, cute chibi, saturated pastel palette',
+                    style: 'bright japanese cartoon, rounded-sm thick outlines, cute chibi, saturated pastel palette',
                   },
                   {
                     label: '科幻全息',

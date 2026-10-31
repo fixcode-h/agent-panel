@@ -57,15 +57,13 @@ export function ConfirmDialog({
             'fixed top-1/2 left-1/2 z-50 block w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 p-6 anim-dialog focus:outline-none',
           )}
         >
-          <D.Title className="text-[0.9375rem] font-semibold">{title}</D.Title>
+          <D.Title className="text-heading font-semibold">{title}</D.Title>
           {description && (
-            <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">{description}</D.Description>
+            <D.Description className="mt-1.5 text-body leading-relaxed text-muted">{description}</D.Description>
           )}
           {extra && <div className="mt-3">{extra}</div>}
           {blocked && (
-            <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-[0.8125rem] leading-relaxed text-warning">
-              {blocked}
-            </p>
+            <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-body leading-relaxed text-warning">{blocked}</p>
           )}
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => onOpenChange(false)}>

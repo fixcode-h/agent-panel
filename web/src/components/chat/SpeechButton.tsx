@@ -134,7 +134,7 @@ export function SpeechButton({ onText, className }: { onText: (text: string) => 
             />
             <Mic className="relative h-3.5 w-3.5" />
           </span>
-          <span className="font-mono text-[0.6875rem] tabular-nums">
+          <span className="font-mono text-caption tabular-nums">
             {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
           </span>
         </>

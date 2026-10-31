@@ -67,7 +67,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
           onChange={(e) => setSource(e.target.value)}
           placeholder={spec.placeholder}
           aria-label={t('包的来源')}
-          className="h-9 flex-1 font-mono text-[0.8125rem]"
+          className="h-9 flex-1 font-mono text-body"
           spellCheck={false}
         />
         <Button type="submit" variant="secondary" disabled={!source.trim() || !!busy}>
@@ -75,7 +75,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
           {t('安装')}
         </Button>
       </form>
-      <div className="flex items-center text-[0.75rem] text-subtle">
+      <div className="flex items-center text-footnote text-subtle">
         {list && t('共 {n} 个', { n: list.length })}
         {spec.updateAll && !!list?.length && (
           <button
@@ -89,17 +89,17 @@ export function CliPackages({ def }: { def: CliDefinition }) {
         )}
       </div>
       {error ? (
-        <p className="text-[0.75rem] text-warning">{t('读取失败：{error}', { error })}</p>
+        <p className="text-footnote text-warning">{t('读取失败：{error}', { error })}</p>
       ) : !list ? (
-        <p className="text-[0.75rem] text-subtle">{t('读取中…')}</p>
+        <p className="text-footnote text-subtle">{t('读取中…')}</p>
       ) : !list.length ? (
-        <p className="text-[0.75rem] text-subtle">{t('还没有装扩展包')}</p>
+        <p className="text-footnote text-subtle">{t('还没有装扩展包')}</p>
       ) : (
         <Card as="ul" className="flex flex-col divide-y rounded-lg" aria-label={t('已装的扩展包')}>
           {list.map((p) => (
             <li key={p.source} className="group flex items-center gap-2.5 px-3 py-2" title={p.target}>
               <Package className="h-3.5 w-3.5 shrink-0 text-accent-text" />
-              <span className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]">{p.source}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-body">{p.source}</span>
               {spec.update && (
                 <Button
                   size="icon-sm"
@@ -133,7 +133,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
       {result?.output && (
         <pre
           className={cn(
-            'max-h-40 overflow-auto rounded-lg border px-3 py-2 font-mono text-[0.6875rem] whitespace-pre-wrap',
+            'max-h-40 overflow-auto rounded-lg border px-3 py-2 font-mono text-caption whitespace-pre-wrap',
             result.ok ? 'text-muted' : 'border-danger/40 text-danger',
           )}
         >

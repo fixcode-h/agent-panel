@@ -77,7 +77,7 @@ export function ComfyWebDialog({
         }
       />
       {imported && (
-        <div className="flex shrink-0 items-start gap-2 border-b bg-accent-soft/40 px-4 py-2 text-[0.75rem] leading-relaxed">
+        <div className="flex shrink-0 items-start gap-2 border-b bg-accent-soft/40 px-4 py-2 text-footnote leading-relaxed">
           <FileDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
           <span className="min-w-0 flex-1">
             <span className="font-medium">{t('已导入到 ComfyUI 的工作流列表：{name}', { name: imported.name })}</span>
@@ -98,7 +98,7 @@ export function ComfyWebDialog({
         />
       ) : (
         <div className="grid flex-1 place-items-center p-6 text-center">
-          <div className="flex max-w-[360px] flex-col items-center gap-3 text-[0.8125rem] text-muted">
+          <div className="flex max-w-[360px] flex-col items-center gap-3 text-body text-muted">
             {importing ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />

@@ -99,7 +99,7 @@ export function Segmented<T extends string>({
             'group-data-[sliding]/seg:bg-transparent! group-data-[sliding]/seg:shadow-none!',
             fill && 'flex-1 justify-center px-2 whitespace-nowrap',
             iconOnly && (size === 'sm' ? 'w-7 justify-center px-0' : 'w-8 justify-center px-0'),
-            size === 'sm' ? 'h-7 text-[0.75rem]' : 'h-8 text-[0.8125rem]',
+            size === 'sm' ? 'h-7 text-footnote' : 'h-8 text-body',
             value === o.id
               ? canvas
                 ? 'bg-canvas-sel font-medium text-canvas-strong'

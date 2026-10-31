@@ -50,7 +50,7 @@ export function ChildRowContent({
           {/* CLI 还活着：标题流光（和侧栏、标题栏同一个效果）；关了变灰。
               进程回收了但对话还在跑：行上不写「已关闭」，悬停说清进程没了、继续会重新拉起 */}
           <span
-            className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? 'cli-alive-title' : 'text-muted')}
+            className={cn('min-w-0 truncate text-body', c.cliAlive ? 'cli-alive-title' : 'text-muted')}
             title={childClosedHint(c) || undefined}
           >
             {c.title}
@@ -65,7 +65,7 @@ export function ChildRowContent({
         </span>
         {pending > 0 && (
           <span data-child-pending className="flex min-w-0 items-center gap-1 text-xs text-accent-text">
-            <span className="shrink-0 rounded bg-accent/12 px-1 tabular-nums">{pending}</span>
+            <span className="shrink-0 rounded-sm bg-accent/12 px-1 tabular-nums">{pending}</span>
             <span className="min-w-0 truncate">{t('汇报待父对话处理')}</span>
           </span>
         )}
@@ -76,7 +76,7 @@ export function ChildRowContent({
           </span>
         )}
         {c.branch && (
-          <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
+          <span className="flex min-w-0 items-center gap-1 font-mono text-caption text-subtle">
             <GitBranch className="h-3 w-3 shrink-0" />
             <span className="truncate">{c.branch}</span>
           </span>
@@ -150,7 +150,7 @@ export function ChildSwitcher({
           {childGroups(sortChildren(list), true).map((g) => (
             <Fragment key={g.key}>
               {g.label && (
-                <M.Label className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">
+                <M.Label className="px-2.5 pt-2 pb-1 text-caption font-medium text-subtle">
                   {g.label} · {g.items.length}
                 </M.Label>
               )}

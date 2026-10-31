@@ -31,9 +31,9 @@ export function ReplyHeader({
     // data-reply-head：放在缩进的回复（.reply-body）里时，回复头退回最左边，见 index.css
     <div data-reply-head="row" title={title} className={cn('flex h-7 min-w-0 items-center gap-2.5', className)}>
       <span className="flex shrink-0 items-center">{avatar}</span>
-      <span className="shrink-0 text-[0.9375rem] font-semibold whitespace-nowrap">{name}</span>
+      <span className="shrink-0 text-heading font-semibold whitespace-nowrap">{name}</span>
       {meta.length > 0 && (
-        <span className="min-w-0 truncate text-[0.78125rem] whitespace-nowrap text-subtle">
+        <span className="min-w-0 truncate text-body whitespace-nowrap text-subtle">
           {meta.map((m, i) => (
             <span key={i}>· {m} </span>
           ))}

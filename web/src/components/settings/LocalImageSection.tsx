@@ -61,14 +61,12 @@ const GPU_LABEL: Record<LocalStatus['gpu'], string> = {
 function EnvLine({ label, value, hint, mono }: { label: string; value: string; hint?: string; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5 py-2 sm:flex-row sm:gap-3">
-      <span className="shrink-0 text-[0.75rem] text-subtle sm:w-20">{label}</span>
+      <span className="shrink-0 text-footnote text-subtle sm:w-20">{label}</span>
       <div className="min-w-0 flex-1">
-        <span
-          className={cn('block break-all', mono ? 'font-mono text-[0.75rem] text-muted' : 'text-[0.8125rem] text-fg')}
-        >
+        <span className={cn('block break-all', mono ? 'font-mono text-footnote text-muted' : 'text-body text-fg')}>
           {value}
         </span>
-        {hint && <span className="mt-0.5 block break-all text-[0.75rem] leading-relaxed text-subtle">{hint}</span>}
+        {hint && <span className="mt-0.5 block break-all text-footnote leading-relaxed text-subtle">{hint}</span>}
       </div>
     </div>
   )
@@ -85,7 +83,7 @@ function JobLog({ job }: { job: NonNullable<LocalStatus['job']> }) {
     <div className="relative mt-2">
       <div ref={ref} onScroll={onScroll} className="max-h-48 overflow-x-hidden overflow-y-auto rounded-lg bg-field p-2">
         {/* 等宽、自动折行：URL 和路径这类长行不把容器撑出横向滚动条 */}
-        <pre className="font-mono text-[0.6875rem] leading-relaxed break-all whitespace-pre-wrap text-muted">
+        <pre className="font-mono text-caption leading-relaxed break-all whitespace-pre-wrap text-muted">
           {job.log.slice(-6000)}
         </pre>
       </div>
@@ -133,7 +131,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
 
   return (
     <>
-      <p className="text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="text-body leading-relaxed text-subtle">
         {t(
           '用 ComfyUI 在本机跑开源图片模型，不花额度、不用联网生成，适合大批量的图标和素材。安装在软件目录下的 comfyui 文件夹里，需要 Python {range}；有独立显卡（NVIDIA 8GB 显存以上）或苹果芯片的电脑才实用。',
           { range: PYTHON_RANGE },
@@ -148,7 +146,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
           <div className="flex items-center justify-end gap-2">
             <span
               className={cn(
-                'inline-flex items-center gap-1.5 text-[0.8125rem]',
+                'inline-flex items-center gap-1.5 text-body',
                 st.running ? 'text-success' : ready ? 'text-muted' : 'text-subtle',
               )}
             >
@@ -252,7 +250,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
               </Button>
             </div>
             {!st.venv && !usable && (
-              <p className="border-t border-line/60 py-2 text-[0.75rem] leading-relaxed text-subtle">
+              <p className="border-t border-line/60 py-2 text-footnote leading-relaxed text-subtle">
                 {t(
                   '装 Python {v}（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH）后回来点「一键安装」；也可以点出错后的「AI 处理」让 AI 帮你装。',
                   { v: PYTHON_SUPPORT.recommend },
@@ -263,7 +261,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
         </Row>
         {job && (
           <Card padding="sm" className="my-2">
-            <div className="flex items-center gap-2 text-[0.8125rem]">
+            <div className="flex items-center gap-2 text-body">
               {job.status === 'running' ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
               ) : job.status === 'done' ? (
@@ -273,7 +271,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
               )}
               <span className="min-w-0 flex-1 truncate font-medium">{job.step}</span>
               {pct !== undefined && job.status === 'running' && (
-                <span className="font-mono text-[0.75rem] text-subtle">
+                <span className="font-mono text-footnote text-subtle">
                   {gb(job.progress!.done / 1024 ** 3)} / {gb(job.progress!.total / 1024 ** 3)}
                 </span>
               )}
@@ -314,11 +312,11 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
               <Progress value={pct} label={t('进度')} className="mt-2" />
             )}
             {job.error && (
-              <p className="mt-2 text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>
+              <p className="mt-2 text-footnote leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>
             )}
             {job.log && <JobLog job={job} />}
             {job.status === 'failed' && (
-              <p className="mt-2 text-[0.75rem] text-subtle">
+              <p className="mt-2 text-footnote text-subtle">
                 {t('「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 Agent，让它在安装目录里排查并修好环境。')}
               </p>
             )}
@@ -327,7 +325,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
       </Group>
 
       <Group title={t('模型')}>
-        <p className="pb-2 text-[0.75rem] leading-relaxed text-subtle">
+        <p className="pb-2 text-footnote leading-relaxed text-subtle">
           {t(
             '选一个下载即可开始用，推荐的模型放在最前面。下载好的模型会出现在 UI 设计的「生成图片的方式」里；显存比建议的少也能跑，只是慢一些。',
           )}
@@ -339,8 +337,8 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
             return (
               <section key={g.id} className="flex flex-col gap-2">
                 <div>
-                  <h4 className="text-[0.8125rem] font-medium">{g.title}</h4>
-                  <p className="mt-0.5 text-[0.75rem] leading-relaxed text-subtle">{g.desc}</p>
+                  <h4 className="text-body font-medium">{g.title}</h4>
+                  <p className="mt-0.5 text-footnote leading-relaxed text-subtle">{g.desc}</p>
                 </div>
                 <div className="flex flex-col gap-2">
                   {models.map((m) => {
@@ -355,16 +353,16 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                         className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5 text-[0.8125rem] font-medium">
+                          <div className="flex flex-wrap items-center gap-1.5 text-body font-medium">
                             {m.name}
                             {m.recommended && (
-                              <span className="rounded bg-accent-soft px-1.5 py-px text-[0.6875rem] font-normal text-accent-text">
+                              <span className="rounded-sm bg-accent-soft px-1.5 py-px text-caption font-normal text-accent-text">
                                 {t('推荐')}
                               </span>
                             )}
                           </div>
-                          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-muted">{m.use}</p>
-                          <p className={cn('mt-0.5 text-[0.75rem] text-subtle', tight && 'text-warning')}>
+                          <p className="mt-0.5 text-footnote leading-relaxed text-muted">{m.use}</p>
+                          <p className={cn('mt-0.5 text-footnote text-subtle', tight && 'text-warning')}>
                             {t('建议显存 {n}GB', { n: m.vram })} ·{' '}
                             {ok ? t('已下载') : t('下载约 {size}', { size: gb(size) })} · {m.license}
                           </p>

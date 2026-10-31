@@ -179,10 +179,10 @@ export function LibraryDetail({
               {kind === 'command' ? '/' : ''}
               {name}
             </h2>
-            <Badge className="text-[0.6875rem]">{kind === 'skill' ? 'Skill' : t('命令')}</Badge>
+            <Badge className="text-caption">{kind === 'skill' ? 'Skill' : t('命令')}</Badge>
           </div>
-          <p className="mt-1 truncate text-[0.8125rem] text-muted">{here[0]?.description || t('没有说明')}</p>
-          <p className="mt-0.5 truncate font-mono text-[0.6875rem] text-subtle">{path}</p>
+          <p className="mt-1 truncate text-body text-muted">{here[0]?.description || t('没有说明')}</p>
+          <p className="mt-0.5 truncate font-mono text-caption text-subtle">{path}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canAi && (
@@ -201,7 +201,7 @@ export function LibraryDetail({
       <div className="mx-auto flex w-full max-w-[1000px] flex-col gap-5 px-4 pt-6 pb-12 md:px-8">
         {here.length > 1 && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[0.75rem] text-subtle">{t('装在')}</span>
+            <span className="text-footnote text-subtle">{t('装在')}</span>
             <ChipGroup
               size="sm"
               label={t('装在')}
@@ -216,14 +216,14 @@ export function LibraryDetail({
         )}
 
         {error ? (
-          <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
+          <p className="text-body text-warning">{t('读取失败：{error}', { error })}</p>
         ) : content === null ? (
-          <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+          <p className="text-body text-subtle">{t('读取中…')}</p>
         ) : (
           <section className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-[0.8125rem] font-medium">{kind === 'skill' ? 'SKILL.md' : t('命令文件')}</h3>
-              {dirty && <span className="text-[0.75rem] text-warning">{t('未保存')}</span>}
+              <h3 className="text-body font-medium">{kind === 'skill' ? 'SKILL.md' : t('命令文件')}</h3>
+              {dirty && <span className="text-footnote text-warning">{t('未保存')}</span>}
               <div className="ml-auto flex items-center gap-1.5">
                 {dirty && (
                   <Button size="sm" variant="secondary" onClick={() => setContent(saved)}>
@@ -242,7 +242,7 @@ export function LibraryDetail({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               spellCheck={false}
-              className="h-[min(46vh,420px)] resize-none font-mono text-[0.75rem] leading-relaxed"
+              className="h-[min(46vh,420px)] resize-none font-mono text-footnote leading-relaxed"
               aria-label={t('内容')}
             />
           </section>
@@ -262,7 +262,7 @@ export function LibraryDetail({
 
         {!!targets.length && (
           <section className="flex flex-col gap-2 border-t pt-4">
-            <span className="text-[0.8125rem] font-medium">{t('复制给别的 Agent')}</span>
+            <span className="text-body font-medium">{t('复制给别的 Agent')}</span>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               {targets.map((c) => (
                 <Checkbox
@@ -277,7 +277,7 @@ export function LibraryDetail({
                 {t('复制')}
               </Button>
             </div>
-            {dirty && <p className="text-[0.75rem] text-subtle">{t('先保存修改再复制')}</p>}
+            {dirty && <p className="text-footnote text-subtle">{t('先保存修改再复制')}</p>}
           </section>
         )}
       </div>

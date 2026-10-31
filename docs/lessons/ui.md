@@ -9,7 +9,7 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts
 ## 文案、命名和控件的写法
 
 - 规则：界面文案（含服务端返回给界面的报错）都走 `t()`，英文写进 `shared/locales/en/`；提示词、注释、演示数据不翻。
-- 规则：字号用 rem（不写 px），字体用 `--app-sans` / `--app-mono`；基础样式放 `@layer base`；单个字形难看用 `@font-face` + `unicode-range` 只换它（`web/src/maple-mono.css`）。
+- 规则：字号用 `index.css` `@theme` 里的字号角色（`text-caption` / `text-body` / `text-prose`…），不手写 `text-[…rem]`；圆角用 `rounded-sm/lg/xl/2xl/3xl` 五级阶梯，不手写 5px 以上的 `rounded-[…]`（原来散着 20 多种字号、十几种圆角，相邻差半像素，由 `scripts/rules-check.mjs` 第 6c 条拦）。字体用 `--app-sans` / `--app-mono`；基础样式放 `@layer base`；单个字形难看用 `@font-face` + `unicode-range` 只换它（`web/src/maple-mono.css`）。
 - 规则：配置出来的 Agent（角色设定 + CLI + 模型）界面写「角色」（2dbcf97），编码工具本身（Claude Code、Pi…）写「Agent」，如「默认 Agent」；产品名和开发者说明写 CLI，代码里的类型名、变量名不改。
 - 规则：不列「默认」「自动」，直接预选并标「（默认）」；思考强度写 `english · 中文`，只列当前模型支持的档位、按 CLI 顺序，不支持的值用 `effortValue` 取最接近的；停用/没装的 CLI 不出现；叫「Codex」不叫「Codex CLI」。
 - 起因：v0.18 思考强度排序被指出（medium 排在 off 前）；「默认 CLI」改名 Agent。

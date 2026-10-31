@@ -307,7 +307,7 @@ async function copyPick(text: string) {
   toast.error(t('写不进剪贴板，请手动复制下面的引用'), {
     // 整段完整引用（带标记），点一下全选就能拷走；只给首行摘要的话粘回去认不出是引用卡片
     description: (
-      <pre className="mt-1 max-h-48 cursor-text overflow-auto rounded bg-field p-2 font-mono text-[0.6875rem] whitespace-pre-wrap select-all">
+      <pre className="mt-1 max-h-48 cursor-text overflow-auto rounded-sm bg-field p-2 font-mono text-caption whitespace-pre-wrap select-all">
         {full}
       </pre>
     ),
@@ -431,7 +431,7 @@ function PickOverlay({
             data-pick-label=""
             // 浮标也挡视线：指针压到它就淡出，不然要点的元素正好被这块牌子盖住
             className={cn(
-              'fixed flex max-w-[min(28rem,calc(100vw-1rem))] items-center gap-1.5 truncate rounded-md bg-fg px-2 py-0.5 font-mono text-[0.6875rem] text-bg shadow-pop transition-opacity',
+              'fixed flex max-w-[min(28rem,calc(100vw-1rem))] items-center gap-1.5 truncate rounded-md bg-fg px-2 py-0.5 font-mono text-caption text-bg shadow-pop transition-opacity',
               labelHidden && 'opacity-0',
             )}
             style={{
@@ -455,15 +455,15 @@ function PickOverlay({
         // 淡出而不是挪走、卸载：留着位置就不跳动；也不让 Tab 停在它上面（整条都是纯文字）
         inert={tipHidden}
         className={cn(
-          'fixed top-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-card px-3.5 py-1.5 text-[0.8125rem] text-fg shadow-pop transition-opacity',
+          'fixed top-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-card px-3.5 py-1.5 text-body text-fg shadow-pop transition-opacity',
           tipHidden && 'opacity-0',
         )}
       >
         <SquareDashedMousePointer className="h-4 w-4 text-accent-text" />
         {t('{button}抓取元素，左键、右键照常可用', { button: pickButtonLabel(button) })}
-        <kbd className="rounded border border-line px-1 font-mono text-[0.6875rem] text-muted">Esc</kbd>
+        <kbd className="rounded-sm border border-line px-1 font-mono text-caption text-muted">Esc</kbd>
         <span className="text-muted">{t('或')}</span>
-        <kbd className="rounded border border-line px-1 font-mono text-[0.6875rem] text-muted">
+        <kbd className="rounded-sm border border-line px-1 font-mono text-caption text-muted">
           {hotkeyLabel(hotkey)}
         </kbd>
         <span className="text-muted">{t('退出抓取')}</span>

@@ -23,11 +23,11 @@ export const SIDEBAR_BLOCK_ROW_ON = 'border-transparent bg-conv font-semibold te
 export const SIDEBAR_BLOCK_ROW_OFF = 'border-transparent text-muted hover:bg-hover hover:text-fg'
 
 /** 分组标题（项目 / 对话内容 / 按天）：小一号的次要色，和可点的行靠字号和颜色拉开，不加粗 */
-export const SIDEBAR_GROUP_LABEL = 'text-[0.6875rem] text-subtle'
+export const SIDEBAR_GROUP_LABEL = 'text-caption text-subtle'
 
 /** 导航行：32 高、14px、500 字重，图标 16px 线宽 1.8；选中 bg-sel */
 export const NAV_ROW =
-  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--c-nav-radius) border px-2 text-[0.875rem] font-medium transition-colors'
+  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--c-nav-radius) border px-2 text-prose font-medium transition-colors'
 
 /**
  * 侧栏顶部的模式切换（照 Claude 桌面版左上角）：一组小图标按钮靠左排，点哪个切到哪个模式，名字放在悬停提示里。
@@ -102,7 +102,7 @@ export function NavRow({
  * 未选中无底、悬停浅底；选中是很淡的蓝底（--proj-bg）+ 前景色加粗，文件夹图标换成项目蓝（SidebarProjectName）
  */
 export const PROJECT_CARD =
-  'flex h-[33px] min-w-0 flex-1 items-center gap-2 rounded-(--c-nav-radius) pr-2 pl-2.5 text-[0.84375rem] transition-colors'
+  'flex h-[33px] min-w-0 flex-1 items-center gap-2 rounded-(--c-nav-radius) pr-2 pl-2.5 text-prose transition-colors'
 export const PROJECT_CARD_ON = 'bg-proj font-semibold text-fg'
 export const PROJECT_CARD_OFF = 'font-medium text-fg hover:bg-hover'
 
@@ -110,7 +110,7 @@ export const PROJECT_CARD_OFF = 'font-medium text-fg hover:bg-hover'
 export function SidebarCount({ n, on, className }: { n: number; on?: boolean; className?: string }) {
   return (
     <span
-      className={cn('shrink-0 text-[0.75rem] text-subtle tabular-nums', on ? 'font-medium' : 'font-normal', className)}
+      className={cn('shrink-0 text-footnote text-subtle tabular-nums', on ? 'font-medium' : 'font-normal', className)}
     >
       {n}
     </span>
@@ -126,7 +126,7 @@ export function SidebarTaskBlock({ children, className }: { children: ReactNode;
 }
 
 /** 侧栏行尾的浅色小胶囊（等你回复、失败）：18 高、浅底同色字，不用实心底，免得一列里太抢眼 */
-const SMALL_PILL = 'h-[18px] gap-1 px-[7px] text-[0.6875rem] font-medium'
+const SMALL_PILL = 'h-[18px] gap-1 px-[7px] text-caption font-medium'
 
 /** 行尾的「运行中」类状态：次要色小字 + 运行色小转圈（设计稿：行尾状态做轻） */
 function RunTag({ children, className }: { children: ReactNode; className?: string }) {
@@ -134,7 +134,7 @@ function RunTag({ children, className }: { children: ReactNode; className?: stri
     <span
       className={cn(
         // 不跟着选中行加粗：行尾状态只是次要信息
-        'inline-flex shrink-0 items-center gap-[5px] text-[0.71875rem] font-normal whitespace-nowrap text-subtle',
+        'inline-flex shrink-0 items-center gap-[5px] text-footnote font-normal whitespace-nowrap text-subtle',
         className,
       )}
     >
@@ -262,7 +262,7 @@ export function SidebarProjectName({ on, name }: { open?: boolean; on?: boolean;
 /** 项目下对话行的外框：块里的行（项目下）和不在块里的行（搜索结果）选中时底色不同 */
 export function sidebarTaskRowClass(active: boolean, inBlock: boolean) {
   return cn(
-    'group/row flex w-full cursor-pointer items-center gap-2 border text-left text-[0.8125rem] transition-colors',
+    'group/row flex w-full cursor-pointer items-center gap-2 border text-left text-body transition-colors',
     // 项目下的对话 31 高、离竖线 4px（ml-1，宽度扣掉这 4px）；搜索结果等其他地方还是 32 高的紧凑行
     inBlock
       ? 'ml-1 h-[31px] w-[calc(100%-4px)] rounded-(--c-nav-radius)'
@@ -312,13 +312,13 @@ export function SidebarTaskRowBody({
       )}
       {lead}
       {typeof title === 'string' ? <span className="min-w-0 flex-1 truncate">{title}</span> : title}
-      {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
+      {hint && <span className="max-w-[40%] shrink truncate text-caption text-subtle">{hint}</span>}
       {status}
       {/* 时间格自己留一段左间距（在 gap-2 之外再加 6px）：标题截断后和时间之间也有明显间隔 */}
       {time && (
         <span
           className={cn(
-            'shrink-0 pl-1.5 text-[0.6875rem] font-normal tabular-nums transition-colors',
+            'shrink-0 pl-1.5 text-caption font-normal tabular-nums transition-colors',
             active ? 'text-muted' : 'text-subtle group-hover/row:text-muted',
           )}
         >

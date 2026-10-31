@@ -39,11 +39,11 @@ function Item({ item, index }: { item: ComfyQueueEntry; index?: number }) {
       : undefined
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <div className="flex min-w-0 items-center gap-2 text-[0.8125rem]">
+      <div className="flex min-w-0 items-center gap-2 text-body">
         {item.status === 'running' ? (
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
         ) : (
-          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-sel font-mono text-[0.625rem] text-subtle">
+          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-sel font-mono text-micro text-subtle">
             {index}
           </span>
         )}
@@ -51,12 +51,12 @@ function Item({ item, index }: { item: ComfyQueueEntry; index?: number }) {
           {item.workflowName || t('未命名工作流')}
         </span>
         {item.source && (
-          <span className="shrink-0 rounded bg-sel px-1.5 py-0.5 text-[0.6875rem] text-muted">
+          <span className="shrink-0 rounded-sm bg-sel px-1.5 py-0.5 text-caption text-muted">
             {item.source === 'design' ? t('AI 设计') : t('面板')}
           </span>
         )}
         {pct !== undefined && (
-          <span className="w-9 shrink-0 text-right font-mono text-[0.6875rem] tabular-nums text-muted">{pct}%</span>
+          <span className="w-9 shrink-0 text-right font-mono text-caption tabular-nums text-muted">{pct}%</span>
         )}
         <Button
           variant="ghost"
@@ -64,7 +64,7 @@ function Item({ item, index }: { item: ComfyQueueEntry; index?: number }) {
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           title={t('查看节点图')}
-          className="h-6 gap-0.5 px-1.5 text-[0.6875rem] font-normal text-subtle"
+          className="h-6 gap-0.5 px-1.5 text-caption font-normal text-subtle"
         >
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           {t('节点图')}
@@ -96,7 +96,7 @@ export function ComfyQueuePanel({ compact = false, className }: { compact?: bool
       aria-label={t('ComfyUI 正在运行的工作流')}
       className={cn('flex flex-col gap-2', compact ? 'py-2' : 'rounded-xl bg-card p-3 shadow-card', className)}
     >
-      <div className="flex min-w-0 items-center gap-1.5 text-[0.75rem] font-medium text-muted">
+      <div className="flex min-w-0 items-center gap-1.5 text-footnote font-medium text-muted">
         {running.length ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
         ) : (
@@ -107,7 +107,7 @@ export function ComfyQueuePanel({ compact = false, className }: { compact?: bool
           {t('{n} 个任务', { n: String(running.length + pending.length) })}
         </span>
         {!compact && <span className="min-w-0 flex-1" />}
-        {!compact && <span className="truncate font-mono text-[0.6875rem] text-subtle">{q.url}</span>}
+        {!compact && <span className="truncate font-mono text-caption text-subtle">{q.url}</span>}
       </div>
       {running.map((x) => (
         <Item key={x.id} item={x} />

@@ -30,6 +30,7 @@ import { RunDialog } from './RunCard'
 import { PeerLine } from './PeerMessage'
 import { AlertRow } from './AlertRow'
 import { makeAlert } from '@shared/alerts'
+import { Collapse } from '@/components/ui/collapse'
 
 /** 命令还在跑时行内只跟这么多行：再长就把对话撑长了，完整输出去命令行窗口看 */
 const LIVE_ROWS = 8
@@ -124,7 +125,7 @@ export function DiffView({ diff }: { diff: string }) {
   const rows = useMemo(() => parseDiff(diff), [diff])
   const numbered = rows.some((r) => r.old !== undefined || r.new !== undefined)
   return (
-    <div className="max-h-[420px] overflow-auto font-mono text-[0.75rem] leading-[1.6]">
+    <div className="max-h-[420px] overflow-auto font-mono text-footnote leading-[1.6]">
       <table className="w-full border-collapse">
         <tbody>
           {rows.map((r, i) => {
@@ -177,12 +178,12 @@ function Block({
   return (
     <div className="px-3.5 py-2.5">
       <div className="mb-1 flex items-center gap-2">
-        <span className="font-mono text-[0.625rem] font-medium tracking-[0.14em] text-subtle/80">{label}</span>
+        <span className="font-mono text-micro font-medium tracking-[0.14em] text-subtle/80">{label}</span>
         {aside}
       </div>
       <pre
         className={cn(
-          'max-h-[320px] min-w-0 overflow-auto font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap [overflow-wrap:anywhere]',
+          'max-h-[320px] min-w-0 overflow-auto font-mono text-footnote leading-[1.65] whitespace-pre-wrap [overflow-wrap:anywhere]',
           tone === 'danger' ? 'text-danger' : 'text-fg/90',
         )}
       >
@@ -306,7 +307,7 @@ export function RowShell({
       <div
         onClick={activate}
         className={cn(
-          'group flex w-full min-w-0 items-center py-1 pr-1 pl-2 text-[0.75rem] text-muted min-h-8',
+          'group flex w-full min-w-0 items-center py-1 pr-1 pl-2 text-footnote text-muted min-h-8',
           !boxed && 'rounded-(--c-row-radius)',
           boxed && 'px-2.5',
           container && '@container',
@@ -331,11 +332,11 @@ export function RowShell({
           className="flex shrink-0 items-center gap-2 text-left enabled:cursor-pointer"
         >
           {glyph}
-          {verb && <span className="text-[0.8125rem] font-semibold whitespace-nowrap text-fg">{verb}</span>}
+          {verb && <span className="text-body font-semibold whitespace-nowrap text-fg">{verb}</span>}
           {badge && (
             <span
               className={cn(
-                'rounded px-1.5 py-px font-sans text-[0.6875rem] leading-4',
+                'rounded-sm px-1.5 py-px font-sans text-caption leading-4',
                 badgeClass ?? 'bg-sel text-subtle',
               )}
             >
@@ -360,14 +361,14 @@ export function RowShell({
                 // 盖掉会让「已完成：合回原分支、标记完成」这类按名字找的入口定位不到
                 aria-label={rowOpen ? openTip : undefined}
                 className={cn(
-                  'min-w-0 cursor-pointer truncate text-left font-mono text-[0.75rem] text-muted decoration-subtle underline-offset-2 hover:text-fg hover:underline',
+                  'min-w-0 cursor-pointer truncate text-left font-mono text-footnote text-muted decoration-subtle underline-offset-2 hover:text-fg hover:underline',
                   titleClass,
                 )}
               >
                 {title}
               </button>
             ) : (
-              <span className={cn('min-w-0 truncate font-mono text-[0.75rem]', titleClass)} title={titleTip}>
+              <span className={cn('min-w-0 truncate font-mono text-footnote', titleClass)} title={titleTip}>
                 {title}
               </span>
             )
@@ -386,9 +387,7 @@ export function RowShell({
         ) : (
           detail
         )}
-        {ms !== undefined && (
-          <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">{fmtDuration(ms)}</span>
-        )}
+        {ms !== undefined && <span className="shrink-0 text-caption text-subtle tabular-nums">{fmtDuration(ms)}</span>}
         {action && (
           <span className="-my-1 flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
             {action}
@@ -403,15 +402,18 @@ export function RowShell({
           />
         )}
       </div>
-      {open &&
-        (boxed ? (
-          children
-        ) : (
-          // 展开的内容缩进到动作名下面，自己一块细线圆角框；内容自带的顶线和外框重了，去掉
-          <div className="mt-0.5 mb-2 ml-[1.8125rem] min-w-0 overflow-hidden rounded-lg border [&>*:first-child]:border-t-0">
-            {children}
-          </div>
-        ))}
+      {/* 展开收起带高度过渡（ui/collapse.tsx），收起的内容不渲染 */}
+      {boxed ? (
+        <Collapse open={open}>{children}</Collapse>
+      ) : (
+        // 展开的内容缩进到动作名下面，自己一块细线圆角框；内容自带的顶线和外框重了，去掉
+        <Collapse
+          open={open}
+          className="mt-0.5 mb-2 ml-[1.8125rem] min-w-0 overflow-hidden rounded-lg border [&>*:first-child]:border-t-0"
+        >
+          {children}
+        </Collapse>
+      )}
     </div>
   )
 }
@@ -570,7 +572,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
       />
     )
   const detail = diff ? (
-    <span className="shrink-0 font-mono text-[0.75rem]">
+    <span className="shrink-0 font-mono text-footnote">
       {diff[1] && <span className="text-success">{diff[1]}</span>}{' '}
       {diff[2] && <span className="text-danger">{diff[2]}</span>}
     </span>
@@ -647,7 +649,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                 <DiffView diff={input} />
                 <button
                   onClick={() => setWin('edit')}
-                  className="absolute top-1.5 right-2 cursor-pointer rounded-md bg-card/90 px-2 py-1 font-sans text-[0.6875rem] text-muted hover:text-fg"
+                  className="absolute top-1.5 right-2 cursor-pointer rounded-md bg-card/90 px-2 py-1 font-sans text-caption text-muted hover:text-fg"
                 >
                   {t('窗口里查看')}
                 </button>
@@ -664,10 +666,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                   // 完整输出点命令打开命令行窗口看
                   <div className="px-3.5 py-2.5">
                     <div className="mb-1 flex items-center gap-2">
-                      <span className="font-mono text-[0.625rem] font-medium tracking-[0.14em] text-subtle/80">
-                        OUT
-                      </span>
-                      <span className="flex items-center gap-1.5 font-sans text-[0.6875rem] text-accent-text">
+                      <span className="font-mono text-micro font-medium tracking-[0.14em] text-subtle/80">OUT</span>
+                      <span className="flex items-center gap-1.5 font-sans text-caption text-accent-text">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
                         {t('正在输出')}
                       </span>
@@ -676,11 +676,11 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                       {/* 只跟最新的几行，更早的不显示：上面用一行提示说还有多少行，
                           不靠裁高度，任何字号下都不会切出半行 */}
                       {liveCut && (
-                        <div className="mb-0.5 font-sans text-[0.6875rem] text-subtle/70">
+                        <div className="mb-0.5 font-sans text-caption text-subtle/70">
                           {t('前面还有 {n} 行', { n: liveRows.length - LIVE_ROWS })}
                         </div>
                       )}
-                      <pre className="font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+                      <pre className="font-mono text-footnote leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
                         {liveTail.join('\n')}
                       </pre>
                     </div>
@@ -691,7 +691,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                     text={short}
                     tone={tool.failed ? 'danger' : undefined}
                     aside={
-                      <span className="font-mono text-[0.625rem] text-subtle/70 tabular-nums">
+                      <span className="font-mono text-micro text-subtle/70 tabular-nums">
                         {t('{n} 行', { n: tool.outputCut?.lines ?? output.split('\n').length })}
                       </span>
                     }

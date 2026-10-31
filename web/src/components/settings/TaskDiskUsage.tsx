@@ -105,7 +105,7 @@ export function TaskDiskUsage({ onChanged }: { onChanged?: () => void }) {
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <h3 className="text-[0.8125rem] font-semibold">{t('对话占用')}</h3>
+        <h3 className="text-body font-semibold">{t('对话占用')}</h3>
         {items && (
           <span className="text-xs text-subtle">
             {t('{n} 个对话 · 共 {size}', { n: all.length, size: formatBytes(all.reduce((a, c) => a + c.total, 0)) })}
@@ -153,9 +153,9 @@ export function TaskDiskUsage({ onChanged }: { onChanged?: () => void }) {
                   <ChevronDown
                     className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', !expanded && '-rotate-90')}
                   />
-                  <span className="min-w-0 flex-1 truncate text-[0.8125rem]">{g.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-body">{g.name}</span>
                   <span className="shrink-0 text-xs text-subtle">{t('{n} 个对话', { n: g.convs.length })}</span>
-                  <span className="w-[76px] shrink-0 text-right font-mono text-[0.75rem] text-muted">
+                  <span className="w-[76px] shrink-0 text-right font-mono text-footnote text-muted">
                     {formatBytes(g.total)}
                   </span>
                 </button>
@@ -164,7 +164,7 @@ export function TaskDiskUsage({ onChanged }: { onChanged?: () => void }) {
                     {g.convs.slice(0, SHOWN).map((c) => (
                       <div key={c.id} className="flex items-center gap-3 py-2 pr-3.5 pl-9">
                         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span className="truncate text-[0.8125rem]">{c.title}</span>
+                          <span className="truncate text-body">{c.title}</span>
                           <span className="truncate text-xs text-subtle">
                             {[
                               t('{time}更新', { time: timeAgo(c.latest) }),
@@ -175,7 +175,7 @@ export function TaskDiskUsage({ onChanged }: { onChanged?: () => void }) {
                               .join(' · ')}
                           </span>
                         </span>
-                        <span className="shrink-0 font-mono text-[0.75rem] text-muted">{formatBytes(c.total)}</span>
+                        <span className="shrink-0 font-mono text-footnote text-muted">{formatBytes(c.total)}</span>
                         <Button
                           variant="ghost"
                           size="icon-sm"

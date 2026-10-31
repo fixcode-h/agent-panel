@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 const sizes = {
   sm: { box: 'h-7 w-7 rounded-(--c-iconButton-radius)', icon: 'h-4 w-4' },
   xs: { box: 'h-6 w-6 rounded-(--c-iconButton-radius)', icon: 'h-3.5 w-3.5' },
-  '2xs': { box: 'h-5 w-5 rounded', icon: 'h-3 w-3' },
+  '2xs': { box: 'h-5 w-5 rounded-sm', icon: 'h-3 w-3' },
 }
 const tones = {
   default: 'text-subtle hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg',

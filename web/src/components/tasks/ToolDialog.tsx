@@ -64,7 +64,7 @@ export function OutputDialog({
         actions={<ModalButton icon={Copy} label={t('复制')} disabled={!text} onClick={() => copy(text, t('已复制'))} />}
       >
         {detail && (
-          <span className="max-w-[40%] min-w-0 truncate font-mono text-[0.75rem] text-subtle" title={detail}>
+          <span className="max-w-[40%] min-w-0 truncate font-mono text-footnote text-subtle" title={detail}>
             {detail}
           </span>
         )}
@@ -72,30 +72,30 @@ export function OutputDialog({
       <div className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
         {input && input.trim() && input.trim() !== detail?.trim() && (
           <div className="border-b px-4 py-3">
-            <div className="mb-1 font-sans text-[0.6875rem] font-medium tracking-wider text-subtle">IN</div>
-            <pre className="font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+            <div className="mb-1 font-sans text-caption font-medium tracking-wider text-subtle">IN</div>
+            <pre className="font-mono text-footnote leading-[1.6] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
               {input}
             </pre>
           </div>
         )}
         <div className="px-4 py-3">
-          <div className="mb-1 font-sans text-[0.6875rem] font-medium tracking-wider text-subtle">OUT</div>
+          <div className="mb-1 font-sans text-caption font-medium tracking-wider text-subtle">OUT</div>
           {text.trim() ? (
             <pre
               className={cn(
-                'font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
+                'font-mono text-footnote leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
                 failed ? 'text-danger' : 'text-fg/90',
               )}
             >
               {text}
             </pre>
           ) : running ? (
-            <p className="flex items-center gap-2 text-[0.8125rem] text-subtle">
+            <p className="flex items-center gap-2 text-body text-subtle">
               <Loader2 className="h-4 w-4 animate-spin" />
               {t('还在执行…')}
             </p>
           ) : (
-            <p className="text-[0.8125rem] text-subtle">{t('没有输出')}</p>
+            <p className="text-body text-subtle">{t('没有输出')}</p>
           )}
         </div>
       </div>
@@ -210,7 +210,7 @@ export function CommandDialog({
         onScroll={stick.onScroll}
         className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--code-bg)"
       >
-        <div className="px-5 py-4 font-mono text-[0.75rem] leading-[1.7]">
+        <div className="px-5 py-4 font-mono text-footnote leading-[1.7]">
           <div className="flex items-start gap-2.5">
             <span aria-hidden className="shrink-0 select-none text-accent-text">
               $
@@ -238,7 +238,7 @@ export function CommandDialog({
             <div className="mt-2.5 flex items-start gap-2.5 rounded-lg bg-danger/8 px-3 py-2 font-sans">
               <TerminalSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
               <div className="min-w-0">
-                <p className="text-[0.8125rem] font-medium text-danger">{t('读不到这条命令的输出')}</p>
+                <p className="text-body font-medium text-danger">{t('读不到这条命令的输出')}</p>
                 <p className="mt-0.5 text-xs leading-relaxed break-words text-subtle [overflow-wrap:anywhere]">
                   {error}
                 </p>
@@ -260,7 +260,7 @@ export function CommandDialog({
               <div className="mt-5 flex items-start gap-3 rounded-xl border border-dashed border-line-strong/70 bg-card/40 px-4 py-4 font-sans">
                 <TerminalSquare className="mt-0.5 h-4 w-4 shrink-0 text-subtle" />
                 <div className="min-w-0">
-                  <p className="text-[0.8125rem] font-medium text-muted">{t('排队中，还没有输出')}</p>
+                  <p className="text-body font-medium text-muted">{t('排队中，还没有输出')}</p>
                   <p className="mt-0.5 text-xs leading-relaxed text-subtle">
                     {t('前面还有命令在跑，排到它时这里会跟着输出。')}
                   </p>
@@ -273,7 +273,7 @@ export function CommandDialog({
                   className={cn('mt-0.5 h-4 w-4 shrink-0', phase === 'failed' ? 'text-danger' : 'text-subtle')}
                 />
                 <div className="min-w-0">
-                  <p className={cn('text-[0.8125rem] font-medium', phase === 'failed' ? 'text-danger' : 'text-muted')}>
+                  <p className={cn('text-body font-medium', phase === 'failed' ? 'text-danger' : 'text-muted')}>
                     {phase === 'failed'
                       ? t('执行失败，没有输出')
                       : phase === 'stopped'
@@ -298,7 +298,7 @@ export function CommandDialog({
           <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
           {t('正在执行…')}
           {lines > 0 && (
-            <span className="ml-auto font-mono text-[0.6875rem] text-subtle tabular-nums">
+            <span className="ml-auto font-mono text-caption text-subtle tabular-nums">
               {t('输出 {n} 行', { n: lines })}
             </span>
           )}

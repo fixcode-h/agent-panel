@@ -72,7 +72,7 @@ export function activeHelpers(task: Task) {
 }
 
 /** 标题是名字（子任务、子对话）而不是路径或命令：用正文字体，和组件库里「派发子对话 · 代码审查」一样 */
-const NAME_TITLE = 'font-sans text-[0.75rem]'
+const NAME_TITLE = 'font-sans text-footnote'
 
 const spin = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
 
@@ -122,7 +122,7 @@ function JobRow({ job, now }: { job: TaskJob; now: number }) {
       }
       openTip={t('打开命令行窗口')}
     >
-      <pre className="border-t bg-card/60 px-3.5 py-2.5 font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+      <pre className="border-t bg-card/60 px-3.5 py-2.5 font-mono text-footnote leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
         {job.command}
       </pre>
     </RowShell>
@@ -164,7 +164,7 @@ function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now
               <span className="truncate font-mono">{jobLabel(j)}</span>
               {j.state === 'queued' && <span className="shrink-0">{t('排队中')}</span>}
             </p>
-            <pre className="font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+            <pre className="font-mono text-footnote leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
               {j.command}
             </pre>
           </div>

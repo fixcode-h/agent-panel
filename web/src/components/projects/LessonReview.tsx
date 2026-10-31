@@ -64,7 +64,7 @@ export function LessonReviewReport({ text, project }: { text: string; project?: 
       <div className="flex flex-col gap-2 px-4 pt-3">
         <div className="flex flex-wrap items-center gap-2">
           <GraduationCap className="h-3.5 w-3.5 text-accent-text" />
-          <span className="text-[0.8125rem] font-medium">{t('教训评审')}</span>
+          <span className="text-body font-medium">{t('教训评审')}</span>
           {pending.length > 0 ? (
             <Badge tone="accent">{t('{n} 条建议待处理', { n: pending.length })}</Badge>
           ) : (
@@ -77,7 +77,7 @@ export function LessonReviewReport({ text, project }: { text: string; project?: 
             </Button>
           )}
         </div>
-        {review.summary && <p className="text-[0.8125rem] leading-relaxed text-muted">{review.summary}</p>}
+        {review.summary && <p className="text-body leading-relaxed text-muted">{review.summary}</p>}
       </div>
       {rows.length > 0 && (
         <ul className="mx-3 mt-3 flex flex-col divide-y overflow-hidden rounded-lg bg-card shadow-card">
@@ -123,18 +123,18 @@ function ReviewRow({
           {it.problems.map((p) => (
             <Badge key={p}>{problemText(p)}</Badge>
           ))}
-          <span className="min-w-0 truncate text-[0.8125rem] font-medium">
+          <span className="min-w-0 truncate text-body font-medium">
             {l?.title ?? (state === 'applied' ? t('（已删除）') : t('（这条教训已经不在了）'))}
           </span>
         </span>
-        {it.why && <span className="text-[0.75rem] leading-relaxed text-muted">{it.why}</span>}
+        {it.why && <span className="text-footnote leading-relaxed text-muted">{it.why}</span>}
         {merged.length > 0 && (
-          <span className="text-[0.75rem] text-subtle">
+          <span className="text-footnote text-subtle">
             {t('并入：{titles}', { titles: merged.map((x) => `「${x}」`).join('') })}
           </span>
         )}
         {rewrites && (
-          <span className="flex flex-col gap-0.5 rounded-lg bg-sel/40 px-2.5 py-1.5 text-[0.75rem]">
+          <span className="flex flex-col gap-0.5 rounded-lg bg-sel/40 px-2.5 py-1.5 text-footnote">
             <span className="font-medium text-fg">{t('改成：{text}', { text: it.title })}</span>
             {it.rule && <span className="leading-relaxed text-muted">{it.rule}</span>}
             {it.paths && (

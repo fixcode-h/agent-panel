@@ -105,13 +105,13 @@ export function MemoryChart({ samples }: { samples: MemorySample[] }) {
           {t('进程')}
           {!hasChild && <span className="text-warning">{t('未采集')}</span>}
         </span>
-        <span className="ml-auto text-[0.6875rem]">
+        <span className="ml-auto text-caption">
           {earliest < latest - CHART_WINDOW_MS
             ? t('按住右键左右拖动查看更早的采样')
             : t('采样还在积累，够一小时就能往前看')}
         </span>
         {!follow && (
-          <Button variant="link" tone="muted" onClick={() => setFollow(true)} className="text-[0.6875rem]">
+          <Button variant="link" tone="muted" onClick={() => setFollow(true)} className="text-caption">
             {t('回到最新')}
           </Button>
         )}
@@ -172,7 +172,7 @@ export function MemoryChart({ samples }: { samples: MemorySample[] }) {
           </text>
         </svg>
       </div>
-      <div className="flex justify-between font-mono text-[0.6875rem] text-subtle">
+      <div className="flex justify-between font-mono text-caption text-subtle">
         <span>{formatSampleTime(new Date(win.from).toISOString())}</span>
         <span>{formatSampleTime(new Date(win.to).toISOString())}</span>
       </div>

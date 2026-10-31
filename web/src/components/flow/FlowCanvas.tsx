@@ -100,7 +100,7 @@ const STATE: Record<StepStatus, { tone: StatusTone; label: string; card: string 
 const UNIT_MAX = 3
 
 /** 卡片里的小胶囊比列表里的再矮一号，节点高度不变，已经排好的流程图不会重叠 */
-const pillSm = 'h-[1.125rem] gap-1 px-1.5 text-[0.6875rem]'
+const pillSm = 'h-[1.125rem] gap-1 px-1.5 text-caption'
 
 /**
  * 卡片里胶囊的底（照设计稿）：染了底的卡片上是白底 + 同色细框，从浅绿 / 浅青里托出来；
@@ -139,9 +139,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
       <Handle type="target" position={Position.Left} />
       <div className="flex min-w-0 items-center gap-1.5">
         {v.kind === 'flow' && <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-accent-text" />}
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] leading-5 font-semibold tracking-[-0.005em]">
-          {v.title}
-        </span>
+        <span className="min-w-0 flex-1 truncate text-body leading-5 font-semibold tracking-[-0.005em]">{v.title}</span>
         {st ? (
           <StatusPill tone={st.tone} spin={v.status === 'running'} className={cn(pillSm, pillOn(v.status!))}>
             {st.label}
@@ -155,7 +153,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
         )}
       </div>
       {/* 执行者标签：角色 · 模型；多步节点列出各步，流程节点写调用的流程 */}
-      <div className="flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4">
+      <div className="flex min-w-0 items-center gap-1.5 text-caption leading-4">
         {/* 染了底的卡片上，执行者标签照设计稿加一圈细线，和下面的说明块分开 */}
         <span
           className={cn(
@@ -176,7 +174,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
                 {chain ? v.sub : agent.name}
               </span>
               {!chain && v.model && (
-                <span className="min-w-0 shrink truncate font-mono text-[0.6875rem] text-subtle">· {v.model}</span>
+                <span className="min-w-0 shrink truncate font-mono text-caption text-subtle">· {v.model}</span>
               )}
             </>
           ) : (
@@ -184,13 +182,13 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
           )}
         </span>
         {chain ? (
-          <span className="shrink-0 rounded-md bg-sel px-1 text-[0.6875rem] leading-4 font-medium text-muted">
+          <span className="shrink-0 rounded-md bg-sel px-1 text-caption leading-4 font-medium text-muted">
             +{(v.count ?? 1) - 1}
           </span>
         ) : (
           v.main &&
           agent && (
-            <span className="shrink-0 rounded-md bg-accent-soft px-1 text-[0.6875rem] leading-4 font-medium text-accent-text">
+            <span className="shrink-0 rounded-md bg-accent-soft px-1 text-caption leading-4 font-medium text-accent-text">
               {t('主')}
             </span>
           )
@@ -203,7 +201,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
             <li
               key={u.id}
               className={cn(
-                'flex h-[1.375rem] min-w-0 items-center gap-1.5 rounded-md px-2 text-[0.6875rem] leading-4',
+                'flex h-[1.375rem] min-w-0 items-center gap-1.5 rounded-md px-2 text-caption leading-4',
                 block,
               )}
             >
@@ -212,18 +210,18 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
               </span>
               {u.status === 'running' ? (
                 // 正在跑的那一步：序号反色成实心小胶囊（照设计稿），一眼看出跑到第几步
-                <span className="shrink-0 rounded-full bg-fg px-1.5 font-mono text-[0.625rem] leading-4 text-card">
+                <span className="shrink-0 rounded-full bg-fg px-1.5 font-mono text-micro leading-4 text-card">
                   {i + 1}
                 </span>
               ) : u.status && u.status !== 'pending' ? (
                 <StepIcon status={u.status} className="h-3 w-3 shrink-0" />
               ) : (
-                <span className="shrink-0 font-mono text-[0.625rem] text-subtle">{i + 1}</span>
+                <span className="shrink-0 font-mono text-micro text-subtle">{i + 1}</span>
               )}
             </li>
           ))}
           {units.length > UNIT_MAX && (
-            <li className="px-2 text-[0.6875rem] leading-4 text-subtle">
+            <li className="px-2 text-caption leading-4 text-subtle">
               {t('还有 {n} 步', { n: units.length - UNIT_MAX })}
             </li>
           )}
@@ -232,7 +230,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
         /* 说明块：行数截断放在没有内边距的元素上，否则第三行会从内边距里露出半截 */
         v.note && (
           <div className={cn('rounded-md px-2 py-1', block)}>
-            <p className="line-clamp-2 text-[0.6875rem] leading-normal text-muted">{v.note}</p>
+            <p className="line-clamp-2 text-caption leading-normal text-muted">{v.note}</p>
           </div>
         )
       )}
@@ -245,7 +243,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
               key={h.slot}
               title={t('{slot}：{label}', { slot: HOOK_LABEL[h.slot], label: h.label })}
               className={cn(
-                'inline-flex h-[1.125rem] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.6875rem]',
+                'inline-flex h-[1.125rem] max-w-full items-center gap-1 rounded-md px-1.5 text-caption',
                 h.slot === 'review' ? 'bg-accent-soft text-accent-text' : 'text-subtle',
                 h.slot !== 'review' && block,
               )}
@@ -257,7 +255,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
             </span>
           ))}
           {v.confirm && (
-            <span className="inline-flex h-[1.125rem] items-center gap-1 rounded-md bg-warning/12 px-1.5 text-[0.6875rem] text-warning">
+            <span className="inline-flex h-[1.125rem] items-center gap-1 rounded-md bg-warning/12 px-1.5 text-caption text-warning">
               <UserCheck className="h-3 w-3" />
               {t('等我确认')}
             </span>
@@ -266,7 +264,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
             <span
               aria-label={t('耗时和用量')}
               className={cn(
-                'inline-flex h-[1.125rem] items-center gap-2 text-[0.6875rem] tabular-nums',
+                'inline-flex h-[1.125rem] items-center gap-2 text-caption tabular-nums',
                 statsOnly ? 'flex-1 justify-between' : 'ml-auto',
                 v.status === 'done' ? 'text-success' : v.status === 'running' ? 'text-run' : 'text-subtle',
               )}
@@ -306,8 +304,8 @@ const TermNode = memo(function TermNode({ data, selected }: NodeProps<Node<TermD
         )}
       </span>
       <span className="flex flex-col">
-        <span className="text-[0.8125rem] leading-4 font-medium">{data.label}</span>
-        {data.sub && <span className="max-w-[140px] truncate text-[0.6875rem] leading-4 text-subtle">{data.sub}</span>}
+        <span className="text-body leading-4 font-medium">{data.label}</span>
+        {data.sub && <span className="max-w-[140px] truncate text-caption leading-4 text-subtle">{data.sub}</span>}
       </span>
       {start && <Handle type="source" position={Position.Right} />}
     </div>
@@ -374,7 +372,7 @@ const FlowEdge = memo(function FlowEdge({
         <EdgeLabelRenderer>
           <span
             className={cn(
-              'nodrag nopan pointer-events-none absolute rounded-full px-1.5 py-px text-[0.6875rem] leading-4 font-medium',
+              'nodrag nopan pointer-events-none absolute rounded-full px-1.5 py-px text-caption leading-4 font-medium',
               // 底色要不透明，盖住穿过的连线
               when === 'pass'
                 ? 'bg-[color-mix(in_oklab,var(--success)_12%,var(--card))] text-success'
@@ -699,7 +697,7 @@ export function FlowCanvas({
             zoomable
             position="bottom-right"
             ariaLabel={t('小地图')}
-            className="!m-4 hidden overflow-hidden rounded-[10px] !bg-card shadow-pop @2xl:block"
+            className="!m-4 hidden overflow-hidden rounded-xl !bg-card shadow-pop @2xl:block"
             style={{ width: 180, height: 110 }}
             maskColor="color-mix(in oklab, var(--bg) 70%, transparent)"
             nodeColor={miniColor}

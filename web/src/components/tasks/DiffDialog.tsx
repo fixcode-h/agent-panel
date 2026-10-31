@@ -163,7 +163,7 @@ export function DiffShell({
                 title={t('上一个文件（Alt + ↑）')}
                 onClick={() => onNavigate!(files![(index - 1 + files!.length) % files!.length])}
               />
-              <span className="px-1 font-mono text-[0.6875rem] text-subtle tabular-nums">
+              <span className="px-1 font-mono text-caption text-subtle tabular-nums">
                 {index + 1} / {files!.length}
               </span>
               <IconButton
@@ -178,7 +178,7 @@ export function DiffShell({
         }
       >
         {(hasText || stats) && (
-          <span className="hidden shrink-0 items-center gap-1.5 font-mono text-[0.75rem] sm:flex">
+          <span className="hidden shrink-0 items-center gap-1.5 font-mono text-footnote sm:flex">
             <span className="text-success">+{add}</span>
             <span className="text-danger">-{del}</span>
             {counted.hunks > 0 && <span className="text-subtle">· {t('{n} 处改动', { n: counted.hunks })}</span>}
@@ -239,7 +239,7 @@ export function DiffShell({
             <button
               type="button"
               onClick={() => setShown((n) => n + PAGE)}
-              className="cursor-pointer rounded-lg px-3 py-1.5 text-[0.75rem] text-accent-text transition-colors hover:bg-sel"
+              className="cursor-pointer rounded-lg px-3 py-1.5 text-footnote text-accent-text transition-colors hover:bg-sel"
             >
               {t('显示更多（还有 {n} 行）', { n: total - shown })}
             </button>
@@ -285,7 +285,7 @@ function SplitView({ rows, wrap, shown }: { rows: Row[]; wrap: boolean; shown: n
     return n
   }, [rows])
   return (
-    <div className="font-mono text-[0.75rem] leading-[1.65]">
+    <div className="font-mono text-footnote leading-[1.65]">
       <div className="grid grid-cols-2" style={wrap ? undefined : { width: `max(100%, ${col * 2}ch)` }}>
         {rows.slice(0, shown).map((r, i) => {
           if (r.kind === 'hunk')
@@ -299,7 +299,7 @@ function SplitView({ rows, wrap, shown }: { rows: Row[]; wrap: boolean; shown: n
               <div
                 key={i}
                 className={cn(
-                  'col-span-2 px-3 py-0.5 text-[0.75rem] text-subtle/70 italic',
+                  'col-span-2 px-3 py-0.5 text-footnote text-subtle/70 italic',
                   wrap ? WRAP : 'whitespace-pre',
                 )}
               >
@@ -344,7 +344,7 @@ function SplitView({ rows, wrap, shown }: { rows: Row[]; wrap: boolean; shown: n
 /** 上下对照：旧行号、新行号、符号各一列，像 git diff 一样逐行看，窄窗口下横向更省地方 */
 function UnifiedView({ rows, wrap, shown }: { rows: NumberedLine[]; wrap: boolean; shown: number }) {
   return (
-    <div className={cn('font-mono text-[0.75rem] leading-[1.65]', !wrap && 'min-w-max')}>
+    <div className={cn('font-mono text-footnote leading-[1.65]', !wrap && 'min-w-max')}>
       {rows.slice(0, shown).map((r, i) => {
         if (r.l.startsWith('@@'))
           return (
@@ -356,7 +356,7 @@ function UnifiedView({ rows, wrap, shown }: { rows: NumberedLine[]; wrap: boolea
           return (
             <div
               key={i}
-              className={cn('px-3 py-0.5 text-[0.75rem] text-subtle/70 italic', wrap ? WRAP : 'whitespace-pre')}
+              className={cn('px-3 py-0.5 text-footnote text-subtle/70 italic', wrap ? WRAP : 'whitespace-pre')}
             >
               {r.l}
             </div>
@@ -439,17 +439,17 @@ export function ProjectDiffDialog({
         close={<ModalClose />}
         empty={
           error ? (
-            <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+            <p className="p-6 text-body text-danger">{error}</p>
           ) : !data ? (
-            <div className="flex h-full items-center justify-center gap-2 text-[0.8125rem] text-subtle">
+            <div className="flex h-full items-center justify-center gap-2 text-body text-subtle">
               <Loader2 className="h-4 w-4 animate-spin" />
               {t('正在读取差异…')}
             </div>
           ) : note && !text.trim() ? (
             // 后端说明了为什么没有差异（不是 git 仓库、文件没被跟踪），照原话显示
-            <p className="p-6 text-[0.8125rem] leading-relaxed text-subtle">{note}</p>
+            <p className="p-6 text-body leading-relaxed text-subtle">{note}</p>
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-[0.8125rem] text-subtle">
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-body text-subtle">
               <FileText className="h-5 w-5" />
               {data.git ? t('这个文件还没有改动。') : t('项目不是 git 仓库，也没有拿到这个文件的改动内容。')}
             </div>
@@ -576,14 +576,14 @@ export function DiffDialog({
           close={<ModalClose />}
           empty={
             error ? (
-              <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+              <p className="p-6 text-body text-danger">{error}</p>
             ) : !ready ? (
-              <div className="flex h-full min-h-32 items-center justify-center gap-2 text-[0.8125rem] text-subtle">
+              <div className="flex h-full min-h-32 items-center justify-center gap-2 text-body text-subtle">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {t('正在读取差异…')}
               </div>
             ) : (
-              <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 p-8 text-center text-[0.8125rem] text-subtle">
+              <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 p-8 text-center text-body text-subtle">
                 <FileText className="h-5 w-5" />
                 {own
                   ? t('这次修改没有给出改动内容。')

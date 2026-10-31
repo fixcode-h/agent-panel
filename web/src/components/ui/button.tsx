@@ -25,8 +25,8 @@ const linkTones = {
   danger: 'text-danger',
 }
 const sizes = {
-  sm: 'h-8 px-2.5 text-[0.8125rem] gap-1.5',
-  md: 'h-9 px-3.5 text-[0.8125rem] gap-1.5',
+  sm: 'h-8 px-2.5 text-body gap-1.5',
+  md: 'h-9 px-3.5 text-body gap-1.5',
   icon: 'h-9 w-9 justify-center',
   'icon-sm': 'h-7 w-7 justify-center',
 }

@@ -84,9 +84,9 @@ function RunCardBase({
       }}
       title={`${t('在流程图里查看')} · ${t('运行 {n}', { n: run })}`}
       data-run={run}
-      className="group flex w-full cursor-pointer flex-col gap-2 rounded-[10px] bg-sel/45 px-3 py-2.5 text-left transition-colors hover:bg-sel/70"
+      className="group flex w-full cursor-pointer flex-col gap-2 rounded-xl bg-sel/45 px-3 py-2.5 text-left transition-colors hover:bg-sel/70"
     >
-      <span className="flex w-full min-w-0 items-center gap-2 text-[0.8125rem]">
+      <span className="flex w-full min-w-0 items-center gap-2 text-body">
         <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-lg bg-card shadow-[0_0_0_1px_var(--line)]">
           {state === 'running' ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
@@ -137,7 +137,7 @@ export function RunFlow({ task, run }: { task: Task; run: number }) {
           )
           if (!msgs.length && s.status === 'pending')
             return (
-              <div key={s.id} className="flex items-center gap-2 text-[0.8125rem] text-subtle">
+              <div key={s.id} className="flex items-center gap-2 text-body text-subtle">
                 <StepIcon status={s.status} />
                 <span className="min-w-0 truncate">{s.title}</span>
                 <span className="shrink-0 text-xs">{t('等待执行')}</span>
@@ -145,7 +145,7 @@ export function RunFlow({ task, run }: { task: Task; run: number }) {
             )
           return <StepSection key={s.id} task={task} rootId={s.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
         })}
-        {!steps.length && <p className="text-[0.8125rem] text-subtle">{t('这次运行还没有节点。')}</p>}
+        {!steps.length && <p className="text-body text-subtle">{t('这次运行还没有节点。')}</p>}
       </div>
     </div>
   )
@@ -175,7 +175,7 @@ export function RunPanel({
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
         <WorkflowIcon className="h-4 w-4 shrink-0 text-muted" />
         <span className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="truncate text-[0.875rem] font-medium">{t('运行 {n}', { n: run })}</span>
+          <span className="truncate text-prose font-medium">{t('运行 {n}', { n: run })}</span>
           {name && <span className="truncate text-xs text-subtle">{name}</span>}
           {state === 'running' && (
             <span className="flex shrink-0 items-center gap-1 text-xs text-accent-text">
@@ -235,14 +235,14 @@ export function RunDialog({
     <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside>
       <ModalHeader icon={WorkflowIcon} title={heading} meta={name}>
         {state === 'running' && (
-          <span className="flex shrink-0 items-center gap-1 text-[0.75rem] text-accent-text">
+          <span className="flex shrink-0 items-center gap-1 text-footnote text-accent-text">
             <Loader2 className="h-3 w-3 animate-spin" />
             {t('执行中')}
           </span>
         )}
       </ModalHeader>
       {task === null ? (
-        <p className="mx-auto flex w-full max-w-(--content-w) items-center gap-2 px-4 py-5 text-[0.8125rem] text-subtle md:px-6">
+        <p className="mx-auto flex w-full max-w-(--content-w) items-center gap-2 px-4 py-5 text-body text-subtle md:px-6">
           <Loader2 className="h-4 w-4 animate-spin" />
           {t('正在读取这次运行…')}
         </p>
@@ -252,11 +252,11 @@ export function RunDialog({
         // 没有运行可看（调用失败、还没开始执行）：把原因和这次的输出照原样留着，不换成一句「没有内容」
         <div className="min-h-0 flex-1 overflow-auto">
           <div className="mx-auto w-full max-w-(--content-w) px-4 py-5 md:px-6">
-            <p className="mb-2 text-[0.8125rem] text-subtle">{t('这次调用没有启动运行。')}</p>
+            <p className="mb-2 text-body text-subtle">{t('这次调用没有启动运行。')}</p>
             {text && (
               <pre
                 className={cn(
-                  'font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap [overflow-wrap:anywhere]',
+                  'font-mono text-footnote leading-[1.65] whitespace-pre-wrap [overflow-wrap:anywhere]',
                   tool.failed ? 'text-danger' : 'text-fg/90',
                 )}
               >

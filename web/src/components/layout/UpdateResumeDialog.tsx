@@ -117,7 +117,7 @@ export function UpdateResumeDialog() {
         </>
       }
     >
-      <p className="text-[0.8125rem] leading-relaxed text-muted">
+      <p className="text-body leading-relaxed text-muted">
         {t('强制更新停掉了这些任务正在做的事。勾选的任务会接着往下执行，没勾选的不处理。')}
       </p>
       <div className="flex flex-col gap-4">

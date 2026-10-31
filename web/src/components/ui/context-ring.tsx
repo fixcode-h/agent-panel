@@ -44,7 +44,7 @@ export function ContextRing({
         />
       </svg>
       {/* 百分比跟着外面的字色：放在无底按钮里时悬停一起变成前景色 */}
-      <span className={cn('font-mono tabular-nums', !small && 'text-[0.71875rem]')}>{Math.round(p)}%</span>
+      <span className={cn('font-mono tabular-nums', !small && 'text-footnote')}>{Math.round(p)}%</span>
     </span>
   )
 }

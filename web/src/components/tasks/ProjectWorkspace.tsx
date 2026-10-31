@@ -127,11 +127,11 @@ function ProjectHome({ project }: { project: Project }) {
           </header>
           <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-8 md:px-6 md:pt-12">
             <div className="flex flex-col gap-2">
-              <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
+              <h1 className="flex items-center gap-3 font-serif text-display leading-tight font-semibold tracking-tight">
                 <FolderGit2 className="h-7 w-7 shrink-0 text-accent-text" strokeWidth={2} />
                 <span className="min-w-0 truncate">{project.name}</span>
               </h1>
-              <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8125rem] text-subtle">
+              <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-body text-subtle">
                 <span className="max-w-full truncate font-mono">{project.path || t('还没有选择目录')}</span>
                 {dir?.gitBranch && (
                   <span className="flex items-center gap-1">
@@ -152,7 +152,7 @@ function ProjectHome({ project }: { project: Project }) {
                   <span className="flex-1">{t('任务 · {n}', { n: 0 })}</span>
                   {archived > 0 && <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>}
                 </h2>
-                <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[0.8125rem] text-subtle">
+                <p className="rounded-xl border border-dashed px-4 py-6 text-center text-body text-subtle">
                   {t('还没有任务。在下面描述要做的事，Agent 会按工作流完成。')}
                 </p>
               </section>
@@ -209,7 +209,7 @@ function ProjectHome({ project }: { project: Project }) {
           <ResizeHandle pane={filesPane} label={t('拖动调整文件面板的宽度')} className="hidden lg:block" />
           {/* 面板自己的标题栏和页面标题栏同高，浮层盖住页面标题栏时也能在这里关掉 */}
           <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-3">
-            <span className="text-[0.8125rem] font-semibold">{t('文件')}</span>
+            <span className="text-body font-semibold">{t('文件')}</span>
             <IconButton size="sm" icon={X} label={t('关闭文件')} onClick={() => setFilesOpen(false)} />
           </div>
           <div className="flex min-h-0 flex-1 flex-col">
@@ -265,7 +265,7 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
           task={task}
           onCommit={menu.rename}
           onCancel={() => menu.setRenaming(false)}
-          className="min-w-0 flex-1 text-[0.875rem]"
+          className="min-w-0 flex-1 text-prose"
         />
       </li>
     )
@@ -292,7 +292,7 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                   {/* 自己或名下子对话有活着的 CLI：标题流光 */}
                   <span
                     title={cliAliveHint(task) || undefined}
-                    className={cn('truncate text-[0.875rem]', cliTreeAlive(task) && 'cli-alive-title')}
+                    className={cn('truncate text-prose', cliTreeAlive(task) && 'cli-alive-title')}
                   >
                     {task.title}
                   </span>
@@ -352,7 +352,7 @@ function TaskStats({ task, now }: { task: Task; now: number }) {
   const rate = cacheRate(task)
   const item = 'flex items-center gap-1 whitespace-nowrap'
   return (
-    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[0.6875rem] text-subtle tabular-nums">
+    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-caption text-subtle tabular-nums">
       {ms > 0 && (
         <span className={item} title={t('执行时间（不含等待继续对话的时间）')}>
           <Clock className="h-3 w-3" />

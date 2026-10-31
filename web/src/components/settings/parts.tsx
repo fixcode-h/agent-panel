@@ -46,11 +46,11 @@ export function Row({
       )}
     >
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 text-[0.875rem] font-medium">
+        <span className="flex items-center gap-1.5 text-prose font-medium">
           {title}
           {hint && <HelpTip>{hint}</HelpTip>}
         </span>
-        {desc && <span className="text-[0.8125rem] leading-relaxed text-subtle">{desc}</span>}
+        {desc && <span className="text-body leading-relaxed text-subtle">{desc}</span>}
       </div>
       {/* 右边的下拉照 Claude 设置页：不带框、右对齐（SelectLook）；上下排时还是带框的输入框样式 */}
       <SelectLook.Provider value={stack ? 'field' : 'ghost'}>
@@ -76,7 +76,7 @@ export function Group({ title, children, plain }: { title?: string; children: Re
       data-setting-group={title}
       className="flex flex-col pt-6 first:pt-2"
     >
-      {title && <h3 className="pb-2 pl-1 text-[0.75rem] font-semibold tracking-wide text-subtle">{title}</h3>}
+      {title && <h3 className="pb-2 pl-1 text-footnote font-semibold tracking-wide text-subtle">{title}</h3>}
       {plain ? <div className="flex flex-col">{children}</div> : <div className="settings-card">{children}</div>}
     </section>
   )
@@ -89,7 +89,7 @@ export function Group({ title, children, plain }: { title?: string; children: Re
 export function Advanced({ children, label }: { children: React.ReactNode; label?: string }) {
   return (
     <details className="settings-advanced group/adv">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 py-3 text-[0.8125rem] text-subtle transition-colors select-none hover:text-fg [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 py-3 text-body text-subtle transition-colors select-none hover:text-fg [&::-webkit-details-marker]:hidden">
         <ChevronRight className="h-3.5 w-3.5 transition-transform group-open/adv:rotate-90" />
         {label ? `${t('高级')} · ${label}` : t('高级')}
       </summary>
@@ -141,7 +141,7 @@ export function NumberField({
           )}
         />
         {unit && (
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[0.75rem] text-subtle">
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-footnote text-subtle">
             {unit}
           </span>
         )}
@@ -177,7 +177,7 @@ export function ReadValue({ children, mono }: { children: React.ReactNode; mono?
   return (
     <span
       className={cn(
-        'flex h-9 items-center truncate rounded-lg border border-line bg-field/50 px-3 text-[0.8125rem] text-muted',
+        'flex h-9 items-center truncate rounded-lg border border-line bg-field/50 px-3 text-body text-muted',
         mono && 'font-mono',
       )}
     >

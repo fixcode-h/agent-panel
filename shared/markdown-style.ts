@@ -98,7 +98,7 @@ const heading = (
  * 链接和 @提及用蓝色，行内代码暖橙，代码块带行号，表格圆角外框、隔行底色，分隔线两头渐隐
  */
 export const MD_SPEC = {
-  body: { size: num(1, 0.85, 1.3, 0.01), gap: em(0.6, 0, 1.5), color: color('fg') },
+  body: { size: num(1, 0.85, 1.3, 0.01), gap: em(0.75, 0, 1.5), color: color('fg') },
   h1: heading(1.5, 1.6, 0.7, 'gold', '700', 'underline'),
   h2: heading(1.28, 1.5, 0.6, 'blue', '600', 'bar'),
   h3: heading(1.12, 1.3, 0.5, 'violet', '600', 'diamond'),

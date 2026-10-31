@@ -295,7 +295,7 @@ export function ProjectFileDialog({
             <D.Title className={cn(MODAL_TITLE, 'flex-1 font-mono')} title={target?.path}>
               {file?.path || target?.path}
               {target?.line ? <span className="text-subtle">:{target.line}</span> : null}
-              {dirty && <span className="ml-2 text-[0.75rem] font-normal text-warning">{t('未保存')}</span>}
+              {dirty && <span className="ml-2 text-footnote font-normal text-warning">{t('未保存')}</span>}
             </D.Title>
             {isMd && !editing && file?.exists && !file.binary && (
               <Segmented
@@ -312,7 +312,7 @@ export function ProjectFileDialog({
               />
             )}
             {(size || mtime) && (
-              <span className="hidden shrink-0 items-center gap-1.5 font-mono text-[0.6875rem] text-subtle sm:flex">
+              <span className="hidden shrink-0 items-center gap-1.5 font-mono text-caption text-subtle sm:flex">
                 {size && <span title={t('文件大小')}>{size}</span>}
                 {size && mtime && <span aria-hidden>·</span>}
                 {mtime && <span title={t('最后修改')}>{mtime}</span>}
@@ -373,22 +373,18 @@ export function ProjectFileDialog({
               <IconButton icon={X} label={t('关闭')} size="sm" className={MODAL_ICON_BTN} />
             </D.Close>
           </header>
-          {saveError && (
-            <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-[0.8125rem] text-danger">{saveError}</p>
-          )}
+          {saveError && <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-body text-danger">{saveError}</p>}
           <DialogScroll box={box}>
             {error ? (
-              <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+              <p className="p-6 text-body text-danger">{error}</p>
             ) : !file ? (
               <div className="flex h-full items-center justify-center text-subtle">
                 <Loader2 className="h-5 w-5 animate-spin" />
               </div>
             ) : !file.exists ? (
-              <p className="p-6 text-[0.8125rem] text-subtle">
-                {t('项目目录里找不到这个文件，可能已经被移动或删除。')}
-              </p>
+              <p className="p-6 text-body text-subtle">{t('项目目录里找不到这个文件，可能已经被移动或删除。')}</p>
             ) : file.binary ? (
-              <p className="p-6 text-[0.8125rem] text-subtle">{t('这是二进制文件，不显示内容。')}</p>
+              <p className="p-6 text-body text-subtle">{t('这是二进制文件，不显示内容。')}</p>
             ) : editing ? (
               // 编辑时不带行号：行号会随输入变，写起来反而碍眼
               <textarea
@@ -396,14 +392,14 @@ export function ProjectFileDialog({
                 onChange={(e) => setDraft(e.target.value)}
                 aria-label={t('文件内容')}
                 spellCheck={false}
-                className="h-full w-full resize-none bg-transparent px-4 py-2 font-mono text-[0.75rem] leading-[1.6] text-fg/90 outline-none"
+                className="h-full w-full resize-none bg-transparent px-4 py-2 font-mono text-footnote leading-[1.6] text-fg/90 outline-none"
               />
             ) : mdPreview ? (
               <div className="mx-auto max-w-[860px] px-8 py-6">
                 <Markdown text={file.content} teamNames={NO_TEAM} />
               </div>
             ) : (
-              <pre className="min-w-max py-2 font-mono text-[0.75rem] leading-[1.6]">
+              <pre className="min-w-max py-2 font-mono text-footnote leading-[1.6]">
                 {lines.map((l, i) => (
                   <div
                     key={i}

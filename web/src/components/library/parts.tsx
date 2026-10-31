@@ -30,7 +30,7 @@ export function PageFrame({
         <header className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold">{title}</h1>
-            <p className="mt-1 max-w-[620px] text-[0.8125rem] leading-relaxed text-muted">{intro}</p>
+            <p className="mt-1 max-w-[620px] text-body leading-relaxed text-muted">{intro}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">{actions}</div>
         </header>
@@ -59,7 +59,7 @@ export function CliTag({
     </>
   )
   const cls = cn(
-    'inline-flex items-center gap-1.5 rounded-full bg-sel/70 px-2 py-px text-[0.6875rem] text-muted',
+    'inline-flex items-center gap-1.5 rounded-full bg-sel/70 px-2 py-px text-caption text-muted',
     onClick && 'cursor-pointer hover:bg-sel hover:text-fg',
     className,
   )

@@ -199,7 +199,7 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
     // 状态固定在末尾：路径太长时只截断路径，状态还看得见；没有状态时是空的
     const status = document.createElement('span')
     status.dataset.chipStatus = ''
-    status.className = cn('shrink-0 text-[0.6875rem]', tone.status)
+    status.className = cn('shrink-0 text-caption', tone.status)
     status.textContent = shown?.status ?? ''
     el.append(status)
   }

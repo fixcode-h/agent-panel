@@ -180,7 +180,7 @@
   --field: #2b2b29;
   --line: #3b3a37;
   --line-strong: #4a4945;
-  --fg: #f5f4ef;
+  --fg-raw: #f5f4ef;
   --muted: #c3c1b8;
   --subtle: #a09e95;
   --sel: #353532;
@@ -269,7 +269,7 @@
   --field: #202023;
   --line: #2c2c30;
   --line-strong: #3b3b40;
-  --fg: #ededef;
+  --fg-raw: #ededef;
   --muted: #bdbdc4;
   --subtle: #95959d;
   --sel: #2c2c30;
@@ -311,7 +311,7 @@
   --field: #151e29;
   --line: #233040;
   --line-strong: #2f3e50;
-  --fg: #e6edf5;
+  --fg-raw: #e6edf5;
   --muted: #b4c2d2;
   --subtle: #8696a8;
   --sel: #1e2a38;
@@ -352,7 +352,7 @@
   --field: #191e1a;
   --line: #283029;
   --line-strong: #364038;
-  --fg: #e8eee7;
+  --fg-raw: #e8eee7;
   --muted: #bac5b8;
   --subtle: #8e9a8c;
   --sel: #232a24;
@@ -425,7 +425,7 @@
   --window: #1f1f1f;
   --line: #303030;
   --line-strong: #474747;
-  --fg: #ffffff;
+  --fg-raw: #ffffff;
   --muted: #c6c6c6;
   --subtle: #9c9c9c;
   --sel: #404040;
@@ -491,6 +491,15 @@
     --dur-base: 1ms;
     --dur-sheet: 1ms;
   }
+}
+
+/*
+ * 深色下的主文字亮度（设置 → 外观 →「深色文字亮度」，html 上的 --fg-level，默认 93%）：
+ * 各配色深色块只写原色 --fg-raw，这里按亮度往页面底色里混成不透明的 --fg。
+ * 照 Claude Code 深色的主文字（白色 93%）；纯白在深底上太刺眼。混成不透明色，别处 color-mix 拿 --fg 算浅底时不会叠出透明
+ */
+.dark {
+  --fg: color-mix(in srgb, var(--fg-raw) var(--fg-level, 93%), var(--bg));
 }
 
 @theme inline {
@@ -578,6 +587,34 @@
      主次靠颜色和字号分，不靠更细的字 */
   --font-weight-normal: 500;
   --font-weight-medium: 550;
+  /*
+   * 字号角色（照 Claude Code 网页版的 cds 字号表收拢，原来散着 20 多种 text-[…rem]，相邻差半像素）：
+   * 写 text-body、text-caption 这些名字，不再手写 text-[…rem]（scripts/rules-check.mjs 会拦）。
+   * 不带行高：原来的手写字号也不带，带上会让上千处行高一起变、布局跟着挪；要行高单独写 leading-*。
+   * 都是 rem，设置里调字号时一起缩放
+   */
+  --text-micro: 0.625rem; /* 10px：角标数字、图表刻度 */
+  --text-caption: 0.6875rem; /* 11px：状态标签、耗时、次要说明 */
+  --text-footnote: 0.75rem; /* 12px：路径、分支、元信息 */
+  --text-body: 0.8125rem; /* 13px：界面正文（列表行、按钮、菜单） */
+  --text-prose: 0.875rem; /* 14px：对话正文、输入框 */
+  --text-heading: 0.9375rem; /* 15px：卡片和分组标题 */
+  --text-subtitle: 1.0625rem; /* 17px：面板标题 */
+  --text-title: 1.25rem; /* 20px：页面标题、大数字 */
+  --text-display: 1.75rem; /* 28px：首页问候 */
+  --text-hero: 2.125rem; /* 34px：宽屏首页问候 */
+  /*
+   * 圆角阶梯（照 cds 的 radius--xs / lg / composer）：5 / 7 / 10 / 14 四级加全圆，原来有十几种手写值。
+   * 嵌套时外层比里层大一级（卡片 10 里的按钮 7）。Tailwind 的名字沿用，只改取值：
+   * sm 5（标签、行内代码）、md / lg 7（按钮、列表行、菜单项）、xl 10（卡片、菜单、浮层）、2xl 14（弹窗、气泡）；
+   * 输入框外壳 20（rounded-3xl）。8px 以下的小色块（图例、CLI 色点）按自身大小写，不在阶梯里
+   */
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 7px;
+  --radius-xl: 10px;
+  --radius-2xl: 14px;
+  --radius-3xl: 20px;
   /* 间距固定用像素：设置里调字号改的是根字号，界面字号都写 rem，这样只有字变大、布局不跟着撑开 */
   --spacing: 4px;
 }
@@ -596,6 +633,111 @@ body,
   background-color: color-mix(in oklab, var(--bg) 72%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
   backdrop-filter: blur(16px) saturate(1.6);
+}
+/*
+ * 滚动边缘渐隐（照 Claude Code 的 scroll-fade）：列表滚到一半时，还能往哪个方向滚，哪个边缘就淡出 16px，
+ * 不再被容器边缘硬切。用滚动驱动动画改 --sf-top / --sf-bot：滚到顶时上边不淡、滚到底时下边不淡，
+ * 内容不够滚时动画不生效，两边都不淡。不支持 animation-timeline 的浏览器保持原样（不加遮罩）
+ */
+@property --sf-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --sf-bot {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes sf-y {
+  0% {
+    --sf-top: 0px;
+    --sf-bot: 16px;
+  }
+  4%,
+  96% {
+    --sf-top: 16px;
+    --sf-bot: 16px;
+  }
+  100% {
+    --sf-top: 16px;
+    --sf-bot: 0px;
+  }
+}
+@utility scroll-fade {
+  @supports (animation-timeline: scroll()) {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--sf-top),
+      #000 calc(100% - var(--sf-bot)),
+      transparent
+    );
+    animation: sf-y linear both;
+    animation-timeline: scroll(self);
+  }
+}
+/* 展开收起（ui/collapse.tsx）：高度 200ms，内容晚 40ms 淡入；收起时内容先 60ms 淡出 */
+.collapse-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-base) var(--ease-snap);
+}
+.collapse-grid > div {
+  opacity: 0;
+  transition: opacity var(--dur-fast) linear;
+}
+.collapse-grid[data-collapse='open'] {
+  grid-template-rows: 1fr;
+}
+.collapse-grid[data-collapse='open'] > div {
+  opacity: 1;
+  transition: opacity var(--dur-base) var(--ease-snap) 40ms;
+}
+/* 新插进列表的一行（侧栏新对话、子对话列表新的一项）：从上方 4px 处淡入，底色先亮一下强调色再褪掉 */
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes row-flash {
+  from {
+    background-color: var(--accent-soft);
+  }
+}
+.row-enter {
+  animation:
+    row-in var(--dur-sheet) var(--ease-snap) both,
+    row-flash 1.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-enter {
+    animation: none;
+  }
+}
+/*
+ * 原地换内容（复制 → 对勾、「复制」→「已复制」）：两样叠在同一格里交叉缩放，按钮宽度按宽的那个算、不跳。
+ * 出现 120ms，缩放用 300ms 的 snap 曲线收尾
+ */
+.swap {
+  display: inline-grid;
+  place-items: center;
+}
+.swap > * {
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--dur-snap) var(--ease-snap),
+    transform var(--dur-sheet) var(--ease-snap);
+}
+.swap > :last-child,
+.swap[data-done] > :first-child {
+  opacity: 0;
+  transform: scale(0.5);
+}
+.swap[data-done] > :last-child {
+  opacity: 1;
+  transform: none;
 }
 @utility frost-card {
   background-color: color-mix(in oklab, var(--card) 78%, transparent);
@@ -726,14 +868,35 @@ body,
     font-weight: var(--font-weight-normal);
     letter-spacing: var(--app-tracking, -0.02em);
     word-spacing: var(--app-word-spacing, -0.2em);
+    /*
+     * 中文排版：连续的全角标点（「」）。这类）挤掉半个字的空白；汉字和英文、数字之间自动留 1/8 字宽，
+     * Agent 回复里大量的「用Claude Code跑了3个」不用手打空格也分得开（已经有空格的地方不再加）。
+     * 浏览器不支持时保持原样
+     */
+    text-spacing-trim: normal;
+    text-autospace: normal;
   }
-  /* 代码要按空格对齐，不跟着收窄空格 */
+  /* 段落最后一行不只剩一两个字；标题、对话框标题各行长度尽量均匀 */
+  p,
+  li,
+  blockquote,
+  .chat-md td {
+    text-wrap: pretty;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+  /* 代码要按空格对齐，不跟着收窄空格，也不在中英文之间插空隙 */
   pre,
   code,
   kbd,
   textarea,
   .font-mono {
     word-spacing: normal;
+    text-autospace: no-autospace;
   }
   * {
     @apply border-line;
@@ -852,48 +1015,48 @@ body,
   --c-summary-border: 1px;
   --c-summary-divider: 1px;
   --c-summary-needs: color-mix(in oklab, var(--warning) 12%, transparent);
-  --c-summary-kindRadius: 6px;
-  --c-card-radius: 12px;
+  --c-summary-kindRadius: 5px;
+  --c-card-radius: 10px;
   --c-card-bg: var(--card);
   --c-card-shadow: var(--shadow-card);
   --c-card-border: 0px;
-  --c-button-radius: 8px;
+  --c-button-radius: 7px;
   --c-button-weight: 500;
-  --c-iconButton-radius: 6px;
+  --c-iconButton-radius: 7px;
   --c-statusPill-radius: 12px;
   --c-statusPill-weight: 500;
   --c-badge-radius: 12px;
-  --c-kbd-radius: 4px;
+  --c-kbd-radius: 5px;
   --c-kbd-bg: var(--sel);
   --c-progress-height: 6px;
   --c-progress-radius: 12px;
   /* 进度条未完成段：前景色淡淡一层，深浅色下都看得见（原来深色下是压暗的 sunken，和行底一样黑） */
   --c-progress-track: color-mix(in oklab, var(--fg) 14%, transparent);
-  --c-input-radius: 8px;
+  --c-input-radius: 7px;
   --c-input-border: 1px;
   --c-input-bg: var(--field);
   --c-input-ring: 6px;
-  --c-checkbox-radius: 4px;
+  --c-checkbox-radius: 5px;
   --c-switch-on: var(--primary);
-  --c-segmented-radius: 8px;
-  --c-segmented-itemRadius: 6px;
-  --c-chip-radius: 6px;
+  --c-segmented-radius: 7px;
+  --c-segmented-itemRadius: 5px;
+  --c-chip-radius: 5px;
   --c-chip-ring: 1px;
-  --c-row-radius: 8px;
+  --c-row-radius: 7px;
   --c-row-bg: color-mix(in oklab, var(--fg) 3.5%, transparent);
-  --c-nav-radius: 8px;
+  --c-nav-radius: 7px;
   --c-menu-radius: 10px;
-  --c-menu-itemRadius: 6px;
+  --c-menu-itemRadius: 7px;
   --c-menu-bg: var(--pop);
   --c-menu-border: 1px;
-  --c-modal-radius: 8px;
+  --c-modal-radius: 14px;
   --c-modal-bg: var(--window);
   --c-modal-border: 1px;
-  --c-sheet-radius: 12px;
+  --c-sheet-radius: 14px;
   --c-sheet-bg: var(--bg);
-  --c-popover-radius: 12px;
+  --c-popover-radius: 10px;
   --c-popover-bg: var(--pop);
-  --c-empty-radius: 12px;
+  --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;
 }
@@ -931,7 +1094,7 @@ body,
   --mmd-crit-line: #df9a83;
   --mmd-edge: #8a8a92;
   --md-body-size: 1;
-  --md-body-gap: 0.6;
+  --md-body-gap: 0.75;
   --md-body-color: var(--fg);
   --md-h1-size: 1.5;
   --md-h1-weight: 700;
@@ -1104,7 +1267,7 @@ body,
   --md-k: 1;
   font-size: var(--md-base);
   color: var(--md-body-color);
-  line-height: var(--app-leading, 1.75);
+  line-height: var(--app-leading, 1.65);
 }
 /* 提问面板、助手简报这类窄面板：字号小一档、间距收到六成，不另写一套元素样式 */
 .chat-md-compact {
@@ -1367,7 +1530,7 @@ body,
   @apply block;
 }
 .chat-md .md-cap {
-  @apply mt-1.5 text-center font-sans text-[0.75rem] text-subtle;
+  @apply mt-1.5 text-center font-sans text-footnote text-subtle;
   display: var(--md-img-caption);
   max-width: var(--md-img-maxWidth);
 }
@@ -1403,7 +1566,7 @@ body,
   border-radius: var(--md-pre-radius);
 }
 .chat-md .md-code-bar {
-  @apply items-center justify-between gap-2 border-b py-1.5 pr-2 pl-3.5 font-sans text-[0.6875rem] text-subtle;
+  @apply items-center justify-between gap-2 border-b py-1.5 pr-2 pl-3.5 font-sans text-caption text-subtle;
   display: var(--md-pre-bar);
   background: color-mix(in srgb, var(--fg) 2%, transparent);
 }
@@ -1419,13 +1582,13 @@ body,
   background: var(--md-violet);
 }
 .chat-md .md-code-lang small {
-  @apply text-[0.6875rem] opacity-80;
+  @apply text-caption opacity-80;
 }
 .chat-md .md-code-acts {
   @apply flex shrink-0 items-center gap-0.5;
 }
 .chat-md .md-copy {
-  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.6875rem] text-subtle transition-colors hover:bg-sel hover:text-fg;
+  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-caption text-subtle transition-colors hover:bg-sel hover:text-fg;
 }
 .chat-md .md-copy[data-on] {
   color: var(--md-teal);
@@ -1531,7 +1694,7 @@ body,
 }
 /* 缩放按钮：鼠标移到图上才浮出来 */
 .chat-md .md-mmd-zoom {
-  @apply absolute right-2 bottom-2 flex items-center gap-0.5 rounded-lg border p-0.5 font-sans text-[0.6875rem] text-muted opacity-0 backdrop-blur-sm transition-[opacity,translate] duration-200;
+  @apply absolute right-2 bottom-2 flex items-center gap-0.5 rounded-lg border p-0.5 font-sans text-caption text-muted opacity-0 backdrop-blur-sm transition-[opacity,translate] duration-200;
   translate: 0 4px;
   background: color-mix(in srgb, var(--md-pre-bg) 88%, transparent);
 }
@@ -1550,14 +1713,14 @@ body,
   @apply border-t;
 }
 .chat-md .md-mermaid summary {
-  @apply flex cursor-pointer list-none items-center gap-1.5 px-3.5 py-1.5 font-sans text-[0.75rem] text-subtle select-none hover:text-fg;
+  @apply flex cursor-pointer list-none items-center gap-1.5 px-3.5 py-1.5 font-sans text-footnote text-subtle select-none hover:text-fg;
 }
 .chat-md .md-mermaid summary::-webkit-details-marker {
   display: none;
 }
 .chat-md .md-mermaid summary::before {
   content: '›';
-  @apply inline-block text-[0.9375rem] leading-none transition-[rotate] duration-200;
+  @apply inline-block text-heading leading-none transition-[rotate] duration-200;
 }
 .chat-md .md-mermaid details[open] summary::before {
   rotate: 90deg;
@@ -1582,7 +1745,7 @@ body,
   background: var(--md-coral);
 }
 .chat-md .md-mmd-why {
-  @apply border-b px-3.5 py-1.5 font-sans text-[0.75rem];
+  @apply border-b px-3.5 py-1.5 font-sans text-footnote;
   color: var(--md-coral);
   background: color-mix(in srgb, var(--md-coral) 8%, transparent);
   animation: md-slide 0.3s both;
@@ -1816,7 +1979,7 @@ body,
   background: linear-gradient(90deg, color-mix(in oklab, var(--card-tone) 9%, transparent), transparent 60%);
 }
 .chat-md .md-card-kind {
-  @apply shrink-0 px-1.5 py-px text-[0.6875rem] leading-[1.25rem] font-semibold;
+  @apply shrink-0 px-1.5 py-px text-caption leading-[1.25rem] font-semibold;
   border-radius: var(--c-summary-kindRadius);
   color: var(--card-tone);
   background: color-mix(in oklab, var(--card-tone) 13%, transparent);
@@ -1857,7 +2020,7 @@ body,
   @apply col-span-2 grid grid-cols-subgrid py-1.5;
 }
 .chat-md .md-card-row > dt {
-  @apply text-[0.8125rem] font-medium text-muted;
+  @apply text-body font-medium text-muted;
   color: var(--row-tone, var(--muted));
 }
 /* 字段之间一条细分割线，和标题下面那条同粗细（设置 → 组件里调） */
@@ -1918,7 +2081,7 @@ body,
 }
 /* 「处理」：把要你处理的事交给当前对话的 Agent，放在字段名下面，不占内容那一列 */
 .chat-md .md-card-act {
-  @apply cursor-pointer rounded-md border px-2 py-px text-[0.75rem] leading-[1.25rem] font-medium whitespace-nowrap text-warning;
+  @apply cursor-pointer rounded-md border px-2 py-px text-footnote leading-[1.25rem] font-medium whitespace-nowrap text-warning;
   border-color: color-mix(in oklab, var(--warning) 45%, transparent);
   background: color-mix(in oklab, var(--warning) 10%, transparent);
 }
@@ -2514,11 +2677,11 @@ body,
 
 /* 设置里的版本更新说明：标题小一号，和正文拉开 */
 .release-notes h1 {
-  @apply mb-1 text-[0.875rem] font-semibold;
+  @apply mb-1 text-prose font-semibold;
 }
 .release-notes h2,
 .release-notes h3 {
-  @apply mt-3 mb-1 text-[0.8125rem] font-semibold text-fg first:mt-0;
+  @apply mt-3 mb-1 text-body font-semibold text-fg first:mt-0;
 }
 .release-notes ul {
   @apply my-1;

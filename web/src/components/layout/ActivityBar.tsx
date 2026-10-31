@@ -48,7 +48,7 @@ function Item({
       title={typeof dot === 'string' ? `${label}\n${dot}` : label}
       onClick={onClick}
       className={cn(
-        'rail-item relative grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-[10px] transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
+        'rail-item relative grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-xl transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
         on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
       )}
     >

@@ -76,11 +76,11 @@ export function TrashSection() {
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center">
-        <h3 className="text-[0.8125rem] font-semibold">{t('回收站')}</h3>
+        <h3 className="text-body font-semibold">{t('回收站')}</h3>
         {rows.length > 0 && <span className="ml-2 text-xs text-subtle">{t('{n} 个对话', { n: rows.length })}</span>}
         {loading && <Loader2 className="ml-2 h-3.5 w-3.5 animate-spin text-subtle" />}
       </div>
-      <p className="text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="text-body leading-relaxed text-subtle">
         {t(
           '删除的对话先进回收站，{days} 天后自动永久删除。恢复后能接着对话；永久删除会清掉对话内容、附件和独立分支。',
           { days: TRASH_RETENTION_DAYS },
@@ -97,7 +97,7 @@ export function TrashSection() {
               onMouseLeave={() => confirmId === row.id && setConfirmId('')}
             >
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-[0.8125rem]">{row.title}</span>
+                <span className="truncate text-body">{row.title}</span>
                 <span className="text-xs leading-relaxed text-subtle">
                   {t('{time}删除', { time: shortTime(row.deletedAt) })}
                   {row.children > 0 && t(' · 含 {n} 个子对话', { n: row.children })}

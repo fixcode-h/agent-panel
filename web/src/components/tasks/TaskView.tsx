@@ -1852,7 +1852,7 @@ export function TaskView({
     </>
   )
   const headerNav = (
-    <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[0.8125rem]">
+    <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-body">
       {/* 右栏打开子对话：标题左边给一个下拉，和消息流里的入口一样列出父对话的全部子对话，
           点一项就地切换；列表中用外层（父对话）的那份数据，当前这一项带勾选 */}
       {pane && task.parentTaskId && outerNav?.child && (
@@ -2109,7 +2109,7 @@ export function TaskView({
         scrolled ? 'border-line' : 'border-transparent',
       )}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-1 text-[0.875rem] [&_h2]:font-semibold">
+      <div className="flex min-w-0 flex-1 items-center gap-1 text-prose [&_h2]:font-semibold">
         <TaskStatusIcon
           status={task.status}
           working={taskBusy(task)}
@@ -2420,7 +2420,7 @@ export function TaskView({
                         task.mode === 'chat' &&
                         working &&
                         (blocks.at(-1)?.kind === 'turn' ? (
-                          <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                          <div className="flex items-center gap-2 text-body text-muted">
                             <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
                             <RunPhase
                               task={task}
@@ -2432,7 +2432,7 @@ export function TaskView({
                         ) : (
                           // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
                           <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
-                            <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                            <div className="flex items-center gap-2 text-body text-muted">
                               <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
                               <RunPhase task={task} label={t('思考中…')} agentIds={[task.agentId]} />
                               <LiveStats task={task} agentIds={[task.agentId]} />
@@ -2446,7 +2446,7 @@ export function TaskView({
                         <ChatWaitLine wait={chatWait} awaiting={task.awaitingUser} task={task} />
                       )}
                       {working && task.mode === 'workflow' && runningSteps.length === 0 && (
-                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                        <div className="flex items-center gap-2 text-body text-muted">
                           <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
                           <RunPhase
                             task={task}
@@ -2572,7 +2572,7 @@ export function TaskView({
                   )}
                   {panel && (
                     <div className="flex shrink-0 items-center justify-between border-b px-3 py-2 xl:hidden">
-                      <span className="text-[0.8125rem] font-semibold">{t('文件')}</span>
+                      <span className="text-body font-semibold">{t('文件')}</span>
                       <Button
                         autoFocus
                         variant="ghost"
@@ -2754,8 +2754,8 @@ function RunChecklist({ task, run, onOpen }: { task: Task; run: number; onOpen: 
     <div key={s.id} className={cn('flex min-w-0 items-center gap-2 py-1.5', child ? 'pr-3 pl-10' : 'px-3')}>
       {child && <span className="h-px w-3 shrink-0 bg-line-strong" />}
       <StepIcon status={s.status} />
-      <span className="min-w-0 flex-1 truncate text-[0.8125rem]">{s.title}</span>
-      <span className="shrink-0 text-[0.6875rem] text-subtle">{who(s.agentId)}</span>
+      <span className="min-w-0 flex-1 truncate text-body">{s.title}</span>
+      <span className="shrink-0 text-caption text-subtle">{who(s.agentId)}</span>
     </div>
   )
   // 对话里 start_plan 跑的这一次还没结束：可以单独终止它，对话不停，收到结果后自己决定改动留不留
@@ -2782,7 +2782,7 @@ function RunChecklist({ task, run, onOpen }: { task: Task; run: number; onOpen: 
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 pl-3 text-left"
         >
           <TaskStatusIcon status={status} working={working} />
-          <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold">
+          <span className="min-w-0 flex-1 truncate text-body font-semibold">
             {rec?.workflowName || task.workflowName || t('工作流')}
           </span>
           <span className="shrink-0 text-xs text-subtle">{t('第 {n} 次运行', { n: run })}</span>
@@ -2822,7 +2822,7 @@ function RunChecklist({ task, run, onOpen }: { task: Task; run: number; onOpen: 
 
 /** 输入框上面一行的提示条（没走完的流程）：本身有实质内容，保留虚线圆角的框 */
 const barRow =
-  'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[0.8125rem]'
+  'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-body'
 
 /** 工作流没走完（失败、暂停、停在某个节点的结论上）：可以继续流程，或者结束它不再继续 */
 function FlowBar({
@@ -2904,7 +2904,7 @@ function WorktreeBar({ task }: { task: Task }) {
   // 要改文件时才开：还没开时说明现在在哪个目录，免得以为已经在分支里了
   if (!wt && task.wantsWorktree)
     return (
-      <div className="mx-auto mb-2 flex max-w-(--content-w) items-center gap-2 rounded-xl border border-line bg-card/60 px-3 py-2 text-[0.8125rem]">
+      <div className="mx-auto mb-2 flex max-w-(--content-w) items-center gap-2 rounded-xl border border-line bg-card/60 px-3 py-2 text-body">
         <GitBranch className="h-3.5 w-3.5 shrink-0 text-subtle" />
         <span className="min-w-0 flex-1 text-muted">{t('还在项目目录里查看，要改文件时才开独立分支')}</span>
       </div>
@@ -2914,7 +2914,7 @@ function WorktreeBar({ task }: { task: Task }) {
   const active = wt.state === 'active'
   const busy = actions.busy === task.id
   return (
-    <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-line bg-card/60 px-3 py-1.5 text-[0.8125rem]">
+    <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-line bg-card/60 px-3 py-1.5 text-body">
       {busy ? (
         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
       ) : item ? (
@@ -2922,7 +2922,7 @@ function WorktreeBar({ task }: { task: Task }) {
       ) : (
         <GitBranch className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-accent-text' : 'text-subtle')} />
       )}
-      <span className="flex min-w-0 items-center gap-1 font-mono text-[0.75rem]">
+      <span className="flex min-w-0 items-center gap-1 font-mono text-footnote">
         <span className="shrink-0 text-subtle">{wt.baseBranch || 'HEAD'}</span>
         <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
         <span className={cn('min-w-0 truncate', active ? 'text-fg' : 'text-subtle line-through')} title={wt.path}>
@@ -3051,7 +3051,7 @@ function ChatWaitLine({ wait, awaiting, task }: { wait: ChildWait; awaiting: boo
           : t('等待你的下一条消息')
   const next = wait.kind === 'next'
   return (
-    <div className="flex items-center gap-2 text-[0.8125rem] text-muted" data-chat-wait={wait.kind}>
+    <div className="flex items-center gap-2 text-body text-muted" data-chat-wait={wait.kind}>
       {/* 还在等别人的结果：转圈；等你的下一句：对话气泡 + 动态点 */}
       {next ? (
         <MessageSquareText className="h-4 w-4 text-subtle" />

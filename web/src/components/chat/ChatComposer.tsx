@@ -215,7 +215,7 @@ export function ChatComposer({
         sm
           ? 'rounded-2xl bg-field focus-within:border-focus/60 dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft'
           : // 组件库「输入框」：白底、一圈细线、圆角 14，平时一层很淡的投影微微浮起，聚焦时投影加深（照 Claude Code）
-            'mx-auto max-w-(--content-w) rounded-[14px] border-pop-edge bg-card shadow-(--composer-shadow) focus-within:border-line-strong focus-within:shadow-(--composer-shadow-focus) dark:focus-within:border-focus/70',
+            'mx-auto max-w-(--content-w) rounded-2xl border-pop-edge bg-card shadow-(--composer-shadow) focus-within:border-line-strong focus-within:shadow-(--composer-shadow-focus) dark:focus-within:border-focus/70',
         drop.over && !dropScope && 'drop-ring',
         chips.refOver && 'drop-ring',
         className,
@@ -256,7 +256,7 @@ export function ChatComposer({
         pad={sm ? 'px-3.5 pt-3 pb-1' : 'px-4 pt-3.5'}
         className={cn(
           'leading-relaxed',
-          sm ? 'max-h-[200px] min-h-[60px] text-[0.8125rem]' : 'max-h-48 min-h-[62px] text-[0.875rem]',
+          sm ? 'max-h-[200px] min-h-[60px] text-body' : 'max-h-48 min-h-[62px] text-prose',
         )}
       />
       <div className={cn('flex min-w-0 items-center gap-1', sm ? 'px-2 pb-2' : 'px-2.5 pb-2.5')}>
@@ -277,7 +277,7 @@ export function ChatComposer({
         {tools}
         <span className="flex-1" />
         {hint && (
-          <span role="status" aria-live="polite" className="min-w-0 truncate text-[0.75rem] text-warning">
+          <span role="status" aria-live="polite" className="min-w-0 truncate text-footnote text-warning">
             {hint}
           </span>
         )}
@@ -296,7 +296,7 @@ export function ChatComposer({
                   disabled={sending}
                   title={t('等这一轮结束再发')}
                   className={cn(
-                    'inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-[0.75rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-40',
+                    'inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-footnote text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-40',
                     sm ? 'h-7' : 'h-8',
                   )}
                 >

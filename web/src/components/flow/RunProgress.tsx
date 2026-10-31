@@ -44,7 +44,7 @@ export function RunProgress({ task, projectName }: { task?: Task; projectName: s
   }, [live])
   if (!task)
     return (
-      <p className="p-4 text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="p-4 text-body leading-relaxed text-subtle">
         {projectName
           ? t('这个工作流还没有在「{name}」里运行过。点底部工具条的运行按钮开始一次执行。', { name: projectName })
           : t('还没有项目。先在「项目」里添加一个本机目录，再在项目里运行这个工作流。')}
@@ -58,10 +58,10 @@ export function RunProgress({ task, projectName }: { task?: Task; projectName: s
     <div className="flex flex-col gap-3 p-4">
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[0.8125rem] font-medium" title={task.title}>
+          <span className="truncate text-body font-medium" title={task.title}>
             {task.title}
           </span>
-          <span className="text-[0.6875rem] text-subtle">
+          <span className="text-caption text-subtle">
             {[statusLabel[task.status], fmtClock(task.createdAt), steps.length ? `${done}/${steps.length}` : '']
               .filter(Boolean)
               .join(' · ')}
@@ -78,24 +78,24 @@ export function RunProgress({ task, projectName }: { task?: Task; projectName: s
         </Button>
       </div>
       {steps.length ? (
-        <ol aria-label={t('节点进度')} className="overflow-hidden rounded-[10px] border border-line">
+        <ol aria-label={t('节点进度')} className="overflow-hidden rounded-xl border border-line">
           {steps.map((s, i) => (
             <li
               key={s.id}
               className={cn(
-                'flex h-10 items-center gap-2.5 px-3 text-[0.8125rem]',
+                'flex h-10 items-center gap-2.5 px-3 text-body',
                 i > 0 && 'border-t border-line',
                 (s.status === 'pending' || s.status === 'skipped') && 'text-muted',
               )}
             >
               <StepIcon status={s.status} />
               <span className="min-w-0 flex-1 truncate">{s.title}</span>
-              <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">{stepDuration(s, now)}</span>
+              <span className="shrink-0 font-mono text-caption text-subtle">{stepDuration(s, now)}</span>
             </li>
           ))}
         </ol>
       ) : (
-        <p className="text-[0.8125rem] text-subtle">{t('这次执行还没有开始执行节点。')}</p>
+        <p className="text-body text-subtle">{t('这次执行还没有开始执行节点。')}</p>
       )}
     </div>
   )

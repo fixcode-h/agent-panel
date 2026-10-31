@@ -54,7 +54,7 @@ export function KeepAliveList() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <span className="text-[0.8125rem] font-medium">{t('保活中的会话')}</span>
+        <span className="text-body font-medium">{t('保活中的会话')}</span>
         {!!items?.length && (
           <span className="text-xs text-subtle">
             {t('{n} 个 · 共 {size}', { n: items.length, size: formatBytes(total) })}
@@ -85,9 +85,9 @@ export function KeepAliveList() {
               <div key={x.id} className="flex items-center gap-3 border-b px-3.5 py-2.5 last:border-b-0">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-[0.8125rem]">{x.title}</span>
+                    <span className="truncate text-body">{x.title}</span>
                     {x.viewing && (
-                      <span className="flex shrink-0 items-center gap-1 rounded-md bg-accent/10 px-1.5 py-px text-[0.6875rem] text-accent-text">
+                      <span className="flex shrink-0 items-center gap-1 rounded-md bg-accent/10 px-1.5 py-px text-caption text-accent-text">
                         <Eye className="h-3 w-3" />
                         {t('正在看')}
                       </span>
@@ -99,7 +99,7 @@ export function KeepAliveList() {
                       .join(' · ')}
                   </span>
                 </span>
-                <span className="shrink-0 font-mono text-[0.75rem] text-muted">
+                <span className="shrink-0 font-mono text-footnote text-muted">
                   {x.rss === null ? t('未采集') : formatBytes(x.rss)}
                 </span>
                 <Button

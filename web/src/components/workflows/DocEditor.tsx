@@ -110,7 +110,7 @@ export function DocEditor({
           style={{ minHeight }}
           className={cn(
             fieldClass,
-            'block resize-y rounded-none border-0 py-3 font-mono text-[0.8125rem] leading-[1.75] focus:ring-0',
+            'block resize-y rounded-none border-0 py-3 font-mono text-body leading-[1.75] focus:ring-0',
           )}
         />
       ) : (

@@ -114,7 +114,7 @@ function ReportFields({ r, convState, big }: { r: PeerReport; convState?: string
       t('状态'),
       <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
         {r.state && (
-          <span className={cn('rounded px-1.5 py-px text-[0.75rem] leading-4 font-medium', stateTone(convState))}>
+          <span className={cn('rounded-sm px-1.5 py-px text-footnote leading-4 font-medium', stateTone(convState))}>
             {r.state}
           </span>
         )}
@@ -130,7 +130,7 @@ function ReportFields({ r, convState, big }: { r: PeerReport; convState?: string
           <li key={s} className="flex items-baseline gap-2">
             <span>{s}</span>
             {r.stepsDone && (
-              <span className="shrink-0 text-[0.75rem] text-success">
+              <span className="shrink-0 text-footnote text-success">
                 <Check className="mr-0.5 inline h-3 w-3 align-[-1px]" aria-hidden />
                 {t('已标完成')}
               </span>
@@ -150,12 +150,12 @@ function ReportFields({ r, convState, big }: { r: PeerReport; convState?: string
     ])
   const tail = r.result || r.rest
   return (
-    <div className={cn('flex flex-col gap-3', big ? 'text-[0.875rem]' : 'text-[0.8125rem]')}>
+    <div className={cn('flex flex-col gap-3', big ? 'text-prose' : 'text-body')}>
       {rows.length > 0 && (
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-2.5 leading-relaxed">
           {rows.map(([k, v]) => (
             <div key={k} className="contents">
-              <dt className="pt-px text-[0.75rem] whitespace-nowrap text-subtle">{k}</dt>
+              <dt className="pt-px text-footnote whitespace-nowrap text-subtle">{k}</dt>
               <dd className="min-w-0 break-words">{v}</dd>
             </div>
           ))}
@@ -163,7 +163,7 @@ function ReportFields({ r, convState, big }: { r: PeerReport; convState?: string
       )}
       {tail && (
         <section className={cn(rows.length > 0 && 'border-t pt-3')}>
-          {r.result && <h3 className="mb-1.5 text-[0.75rem] font-normal text-subtle">{t('最近的结果')}</h3>}
+          {r.result && <h3 className="mb-1.5 text-footnote font-normal text-subtle">{t('最近的结果')}</h3>}
           <Markdown text={tail} teamNames={new Set()} />
         </section>
       )}
@@ -224,17 +224,17 @@ export function PeerLine(p: PeerLineProps) {
         badge={peerKindText(p.kind)}
         badgeClass={badgeTone(p.kind, p.failed)}
         title={subject}
-        titleClass="font-sans text-[0.75rem]"
+        titleClass="font-sans text-footnote"
         onOpen={() => setWin(true)}
         openTip={t('在窗口里查看这条消息')}
         detail={
           p.superseded ? (
-            <span className="max-w-[40%] shrink-0 truncate text-[0.6875rem] text-subtle">{t('已被新的汇报取代')}</span>
+            <span className="max-w-[40%] shrink-0 truncate text-caption text-subtle">{t('已被新的汇报取代')}</span>
           ) : p.dir === 'out' && !many && !p.failed && !p.running && p.childId && p.at ? (
             <LetterReceipt childId={p.childId} at={p.at} />
           ) : p.state || many ? (
             <span
-              className={cn('max-w-[40%] shrink-0 truncate text-[0.6875rem]', ask ? 'text-warning' : 'text-subtle')}
+              className={cn('max-w-[40%] shrink-0 truncate text-caption', ask ? 'text-warning' : 'text-subtle')}
               title={many ? names : undefined}
             >
               {p.state || names}
@@ -247,7 +247,7 @@ export function PeerLine(p: PeerLineProps) {
         failed={p.failed}
       >
         <div className="border-t bg-card/60">
-          <div className="flex items-center gap-2 px-3 pt-2 font-sans text-[0.75rem] text-subtle">
+          <div className="flex items-center gap-2 px-3 pt-2 font-sans text-footnote text-subtle">
             <span className="min-w-0 truncate">
               {who}
               {p.title && p.title !== p.name ? ` · ${p.title}` : ''}
@@ -260,7 +260,7 @@ export function PeerLine(p: PeerLineProps) {
             )}
           </div>
           {many && <TargetList targets={many} openChild={openChild ?? undefined} />}
-          <div className="max-h-[min(50vh,420px)] overflow-y-auto px-3 py-2 text-[0.8125rem]">
+          <div className="max-h-[min(50vh,420px)] overflow-y-auto px-3 py-2 text-body">
             {p.report ? (
               <ReportFields r={p.report} convState={p.convState} />
             ) : (
@@ -268,7 +268,7 @@ export function PeerLine(p: PeerLineProps) {
             )}
           </div>
           {p.receipt && !many && (
-            <div className="border-t px-3 py-1.5 font-sans text-[0.75rem] text-subtle">{p.receipt}</div>
+            <div className="border-t px-3 py-1.5 font-sans text-footnote text-subtle">{p.receipt}</div>
           )}
         </div>
       </RowShell>
@@ -286,7 +286,7 @@ function LetterReceipt({ childId, at }: { childId: string; at: string }) {
   const kids = useChildList()
   if (!mail) return null
   const reply = replyOf(mail.letters.get(childId), at)
-  const cls = 'max-w-[45%] shrink-0 truncate text-[0.6875rem]'
+  const cls = 'max-w-[45%] shrink-0 truncate text-caption'
   if (reply) {
     const text =
       reply.kind === 'question'
@@ -307,7 +307,7 @@ function LetterReceipt({ childId, at }: { childId: string; at: string }) {
         }}
         className={cn(
           cls,
-          'cursor-pointer rounded px-1 hover:bg-sel',
+          'cursor-pointer rounded-sm px-1 hover:bg-sel',
           reply.failed || reply.state === 'failed' ? 'text-danger' : 'text-success',
         )}
       >
@@ -330,7 +330,7 @@ function LetterReceipt({ childId, at }: { childId: string; at: string }) {
 /** 同一段话的几个收件人：每人一行，送到没有、面板的回执（取第一行），子对话可以直接打开 */
 function TargetList({ targets, openChild }: { targets: SendTarget[]; openChild?: (id: string) => void }) {
   return (
-    <ul className="mx-3 mt-2 flex flex-col divide-y rounded-md border font-sans text-[0.75rem]">
+    <ul className="mx-3 mt-2 flex flex-col divide-y rounded-md border font-sans text-footnote">
       {targets.map((x, i) => (
         <li key={`${x.child ?? x.name}-${i}`} className="flex min-w-0 items-center gap-2 px-2 py-1">
           {x.failed ? (
@@ -401,7 +401,7 @@ function PeerDialog({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 px-2 text-[0.75rem]"
+                className="h-6 px-2 text-footnote"
                 onClick={() => {
                   onClose()
                   openChild()
@@ -419,13 +419,13 @@ function PeerDialog({
           </>
         }
       >
-        <span className={cn('shrink-0 rounded px-1.5 py-px text-[0.6875rem] leading-4', badgeTone(kind, failed))}>
+        <span className={cn('shrink-0 rounded-sm px-1.5 py-px text-caption leading-4', badgeTone(kind, failed))}>
           {peerKindText(kind)}
         </span>
       </ModalHeader>
-      <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[0.875rem]">
+      <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-prose">
         {targets && targets.length > 1 && (
-          <p className="mb-3 text-[0.75rem] text-subtle">{targets.map((x) => x.name).join('、')}</p>
+          <p className="mb-3 text-footnote text-subtle">{targets.map((x) => x.name).join('、')}</p>
         )}
         {report ? (
           <ReportFields r={report} convState={convState} big />
@@ -434,7 +434,7 @@ function PeerDialog({
         )}
       </div>
       {receipt && !(targets && targets.length > 1) && (
-        <footer className="shrink-0 border-t px-5 py-2 text-[0.75rem] text-subtle">{receipt}</footer>
+        <footer className="shrink-0 border-t px-5 py-2 text-footnote text-subtle">{receipt}</footer>
       )}
     </Modal>
   )

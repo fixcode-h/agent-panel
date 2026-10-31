@@ -101,11 +101,11 @@ export function TemplateStore({
     <div className="fixed inset-0 z-30 flex flex-col bg-bg text-fg">
       <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3 md:px-6">
         <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-2 text-[0.9375rem] font-semibold">
+          <h1 className="flex items-center gap-2 text-heading font-semibold">
             <LayoutGrid className="h-4 w-4 text-accent-text" />
             {t('模板商店')}
           </h1>
-          <p className="mt-0.5 text-[0.75rem] text-subtle">
+          <p className="mt-0.5 text-footnote text-subtle">
             {t('从面板内置和 ComfyUI 官方模板里挑一个，看节点图和依赖；缺的模型可以直接下载。')}
           </p>
         </div>
@@ -134,15 +134,15 @@ export function TemplateStore({
               }}
               aria-current={query.category === c.id}
               className={cn(
-                'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem]',
+                'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-body',
                 query.category === c.id ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60',
               )}
             >
               <span className="min-w-0 flex-1 truncate">{c.title}</span>
-              <span className="font-mono text-[0.6875rem] text-subtle">{count(c.id)}</span>
+              <span className="font-mono text-caption text-subtle">{count(c.id)}</span>
             </button>
           ))}
-          <p className="mt-auto px-2 pt-3 text-[0.6875rem] leading-relaxed text-subtle">
+          <p className="mt-auto px-2 pt-3 text-caption leading-relaxed text-subtle">
             {catalog?.cached
               ? t('官方列表更新于 {time}', { time: new Date(catalog.updatedAt).toLocaleString() })
               : t('离线快照：联网后点「刷新官方模板」拿完整列表')}
@@ -179,7 +179,7 @@ export function TemplateStore({
               onChange={(e) => setQuery({ ...query, sort: e.target.value as TemplateQuery['sort'] })}
               options={TEMPLATE_SORTS.map((x) => ({ value: x.id, label: x.title }))}
             />
-            <span className="text-[0.75rem] text-subtle">{t('{n} 个模板', { n: list.length })}</span>
+            <span className="text-footnote text-subtle">{t('{n} 个模板', { n: list.length })}</span>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -196,14 +196,14 @@ export function TemplateStore({
                 <Loader2 className="h-5 w-5 animate-spin" />
               </div>
             ) : error ? (
-              <div className="rounded-xl bg-danger/8 p-4 text-[0.8125rem] text-danger">
+              <div className="rounded-xl bg-danger/8 p-4 text-body text-danger">
                 <p>{error}</p>
                 <Button size="sm" variant="ghost" className="mt-2" onClick={() => void load()}>
                   {t('重试')}
                 </Button>
               </div>
             ) : !list.length ? (
-              <p className="py-16 text-center text-[0.8125rem] text-subtle">{t('没有符合条件的模板')}</p>
+              <p className="py-16 text-center text-body text-subtle">{t('没有符合条件的模板')}</p>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {list.map((m) => (
@@ -222,24 +222,22 @@ function TemplateCard({ item, onOpen }: { item: ComfyTemplateMeta; onOpen: () =>
   return (
     <Card as="button" interactive padding="sm" onClick={onOpen} className="group flex flex-col gap-2">
       <div className="flex items-start gap-2">
-        <span className="line-clamp-2 min-w-0 flex-1 text-[0.8125rem] leading-snug font-medium">{item.title}</span>
+        <span className="line-clamp-2 min-w-0 flex-1 text-body leading-snug font-medium">{item.title}</span>
         {item.available && (
           <span title={t('节点图已缓存，离线也能预览')} className="shrink-0 text-subtle">
             <Network className="h-3.5 w-3.5" />
           </span>
         )}
       </div>
-      {item.description && (
-        <p className="line-clamp-2 text-[0.75rem] leading-relaxed text-subtle">{item.description}</p>
-      )}
+      {item.description && <p className="line-clamp-2 text-footnote leading-relaxed text-subtle">{item.description}</p>}
       <div className="flex flex-wrap gap-1">
         {[SOURCE_LABEL[item.source] ?? item.source, ...item.tags.slice(0, 2)].map((tag) => (
-          <span key={tag} className="rounded bg-sel px-1.5 py-px text-[0.6875rem] text-muted">
+          <span key={tag} className="rounded-sm bg-sel px-1.5 py-px text-caption text-muted">
             {tag}
           </span>
         ))}
       </div>
-      <div className="mt-auto flex items-center gap-2 text-[0.6875rem] text-subtle">
+      <div className="mt-auto flex items-center gap-2 text-caption text-subtle">
         <span className="min-w-0 flex-1 truncate" title={item.models.join('、')}>
           {item.models.slice(0, 2).join(' · ') || t('没有模型信息')}
         </span>
@@ -346,7 +344,7 @@ function TemplateDetail({
         )}
       </div>
 
-      {error && <div className="rounded-xl bg-danger/8 p-4 text-[0.8125rem] text-danger">{error}</div>}
+      {error && <div className="rounded-xl bg-danger/8 p-4 text-body text-danger">{error}</div>}
       {!detail && !error && (
         <div className="grid place-items-center py-20 text-subtle">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -357,24 +355,22 @@ function TemplateDetail({
         <>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-[1.0625rem] font-semibold">{detail.template.title}</h2>
-              <span className="rounded bg-sel px-1.5 py-px text-[0.6875rem] text-muted">
+              <h2 className="text-subtitle font-semibold">{detail.template.title}</h2>
+              <span className="rounded-sm bg-sel px-1.5 py-px text-caption text-muted">
                 {SOURCE_LABEL[detail.template.source] ?? detail.template.source}
               </span>
-              <span className="text-[0.75rem] text-subtle">{templateCategoryTitle(detail.template.category)}</span>
+              <span className="text-footnote text-subtle">{templateCategoryTitle(detail.template.category)}</span>
             </div>
-            <p className="mt-1 max-w-[820px] text-[0.8125rem] leading-relaxed text-muted">
-              {detail.template.description}
-            </p>
+            <p className="mt-1 max-w-[820px] text-body leading-relaxed text-muted">{detail.template.description}</p>
           </div>
 
           {!isImage && (
-            <p className="rounded-xl bg-warning/8 px-3 py-2 text-[0.75rem] leading-relaxed text-warning">
+            <p className="rounded-xl bg-warning/8 px-3 py-2 text-footnote leading-relaxed text-warning">
               {t('这是视频或音频模板，UI 设计只处理图片，添加后也不能用于这里的出图。')}
             </p>
           )}
           {detail.template.needsInput && (
-            <p className="rounded-xl bg-panel px-3 py-2 text-[0.75rem] leading-relaxed text-muted">
+            <p className="rounded-xl bg-panel px-3 py-2 text-footnote leading-relaxed text-muted">
               {t('这个模板需要先喂一张图（图生图 / 编辑）。UI 设计目前只按文字出图，可以在 ComfyUI 网页里打开使用。')}
             </p>
           )}
@@ -382,23 +378,23 @@ function TemplateDetail({
           {jobForThis && pct !== undefined && (
             <div className="flex items-center gap-3">
               <Progress label={t('下载进度')} value={pct} className="flex-1" />
-              <span className="font-mono text-[0.75rem] text-subtle">
+              <span className="font-mono text-footnote text-subtle">
                 {bytesText(job!.progress!.done)} / {bytesText(job!.progress!.total)}
               </span>
             </div>
           )}
           {jobForThis && job?.status === 'failed' && job.error && (
-            <p className="rounded-xl bg-danger/8 px-3 py-2 text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">
+            <p className="rounded-xl bg-danger/8 px-3 py-2 text-footnote leading-relaxed whitespace-pre-wrap text-danger">
               {job.error}
             </p>
           )}
 
           <section className="flex flex-col gap-1.5">
-            <h3 className="text-[0.75rem] font-medium text-muted">{t('节点图')}</h3>
+            <h3 className="text-footnote font-medium text-muted">{t('节点图')}</h3>
             {graph ? (
               <ComfyGraphView graph={graph} readOnly onChange={() => {}} />
             ) : (
-              <EmptyPanel size="md" className="px-3 text-[0.75rem]">
+              <EmptyPanel size="md" className="px-3 text-footnote">
                 {t('这个模板没有可预览的节点图')}
               </EmptyPanel>
             )}
@@ -406,8 +402,8 @@ function TemplateDetail({
 
           <section className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <h3 className="text-[0.75rem] font-medium text-muted">{t('依赖的模型文件')}</h3>
-              <span className="text-[0.6875rem] text-subtle">
+              <h3 className="text-footnote font-medium text-muted">{t('依赖的模型文件')}</h3>
+              <span className="text-caption text-subtle">
                 {detail.assets.length ? t('{n} 个文件', { n: detail.assets.length }) : t('没有识别到模型文件')}
               </span>
             </div>
@@ -415,13 +411,13 @@ function TemplateDetail({
               {detail.assets.length ? (
                 detail.assets.map((a) => <AssetRow key={`${a.dir}/${a.file}`} asset={a} />)
               ) : (
-                <p className="px-3 py-3 text-[0.75rem] text-subtle">
+                <p className="px-3 py-3 text-footnote text-subtle">
                   {t('模板说明里没有列出模型文件；在 ComfyUI 里打开时会提示缺少什么。')}
                 </p>
               )}
             </div>
             {missing.length > 0 && !canDownload && (
-              <p className="text-[0.75rem] leading-relaxed text-subtle">
+              <p className="text-footnote leading-relaxed text-subtle">
                 {t('缺失的文件没有下载地址，需要自己放到 ComfyUI 的 models 目录。')}
               </p>
             )}
@@ -436,21 +432,21 @@ function AssetRow({ asset }: { asset: TemplateAsset }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2">
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-mono text-[0.75rem]" title={asset.file}>
+        <span className="block truncate font-mono text-footnote" title={asset.file}>
           {asset.file}
         </span>
-        <span className="block text-[0.6875rem] text-subtle">
+        <span className="block text-caption text-subtle">
           {asset.dir}
           {asset.gb > 0 ? ` · ${gbText(asset.gb)}` : ''}
         </span>
       </span>
       {asset.have ? (
-        <span className="inline-flex items-center gap-1 text-[0.75rem] text-success">
+        <span className="inline-flex items-center gap-1 text-footnote text-success">
           <Check className="h-3 w-3" />
           {t('已下载')}
         </span>
       ) : (
-        <span className={cn('text-[0.75rem]', asset.url ? 'text-warning' : 'text-subtle')}>
+        <span className={cn('text-footnote', asset.url ? 'text-warning' : 'text-subtle')}>
           {asset.url ? t('缺') : t('需要自己放')}
         </span>
       )}

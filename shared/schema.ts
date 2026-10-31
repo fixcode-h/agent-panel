@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DARK_TEXT_LEVEL_DEFAULT, LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
 import { MarkdownStyle } from './markdown-style.ts'
 import { ComponentStyle } from './component-style.ts'
 import { ApiConfig } from './accounts.ts'
@@ -2366,7 +2367,6 @@ export const WORD_SPACING: Record<'inter' | 'maple' | 'plex' | 'system', number>
 }
 /** 默认字间距（em）：默认的 Maple Mono 是等宽字体，字母偏疏，稍微收紧 */
 export const LETTER_SPACING_DEFAULT = -0.02
-/** 字体：界面（英文）、中文、代码各选一种，字号、字间距、空格宽度、行高可调 */
 /** 可选的配色：每套在 web/src/index.css 里有浅色、深色两块覆盖（html 上的 data-palette） */
 export const PALETTES = ['code', 'claude', 'neutral', 'ocean', 'forest'] as const
 export type Palette = (typeof PALETTES)[number]
@@ -2397,7 +2397,9 @@ export const Appearance = z.object({
   /** 空格的宽度调整（em，CSS word-spacing）：等宽字体的空格有半个汉字宽，中英文混排时显得空，可以收窄（见 WORD_SPACING）。代码里不调 */
   wordSpacing: z.number().min(-0.4).max(0.3).catch(WORD_SPACING.maple).default(WORD_SPACING.maple),
   /** 对话和文档正文的行高 */
-  lineHeight: z.number().min(1.3).max(2.2).catch(1.75).default(1.75),
+  lineHeight: z.number().min(1.3).max(2.2).catch(LINE_HEIGHT_DEFAULT).default(LINE_HEIGHT_DEFAULT),
+  /** 深色主题下主文字的亮度（%）：主文字色往页面底色里混，100 是配色原来的颜色（多半是纯白） */
+  darkTextLevel: z.number().min(70).max(100).catch(DARK_TEXT_LEVEL_DEFAULT).default(DARK_TEXT_LEVEL_DEFAULT),
   /** 主区、右栏这些面板的圆角（像素）；0 是直角 */
   // 默认 0：照 Claude Code，主区、右栏贴着排、只用细线分隔，不做圆角面板（2026-10-31 用户要求）
   panelRadius: z.number().min(0).max(24).catch(0).default(0),
@@ -2448,7 +2450,7 @@ export type RemoteAccess = z.infer<typeof RemoteAccess>
  * 不用「值正好等于旧默认值」判断，是因为有的项旧默认值本身就是界面上的一个选项（例如自动压缩的 0），
  * 用户显式选回它之后不能再被反复改掉。用户保存过一次设置就视为已迁移（见 server/settings.ts 的 saveSettings）
  */
-export const SETTINGS_DEFAULTS_VERSION = 3
+export const SETTINGS_DEFAULTS_VERSION = 4
 
 export const Settings = z.object({
   /** 见 SETTINGS_DEFAULTS_VERSION */

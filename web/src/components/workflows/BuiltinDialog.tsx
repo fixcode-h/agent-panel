@@ -60,14 +60,14 @@ export function BuiltinDialog({
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={t('内置工作流')} wide>
       <div className="flex flex-col gap-5 overflow-y-auto px-5 py-4">
-        <p className="text-[0.8125rem] leading-relaxed text-muted">
+        <p className="text-body leading-relaxed text-muted">
           {t(
             '自带的工作流启动时已经全部加入，用到的角色也随之建好；删掉的可以在这里重新添加。角色引用的自带 Skill 在执行时自动装进 Agent。',
           )}
         </p>
         {groups.map((g) => (
           <section key={g.name} className="flex flex-col gap-2">
-            <h3 className="text-[0.75rem] font-medium text-subtle">{g.name}</h3>
+            <h3 className="text-footnote font-medium text-subtle">{g.name}</h3>
             <Card as="ul" className="flex flex-col divide-y overflow-hidden">
               {g.items.map((w) => {
                 const added = addedBuiltinWorkflow(workflows, w)
@@ -76,17 +76,17 @@ export function BuiltinDialog({
                 return (
                   <li key={w.key} className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
                     <div className="min-w-0 flex-[1_1_320px]">
-                      <p className="flex items-center gap-2 text-[0.8125rem] font-medium">
+                      <p className="flex items-center gap-2 text-body font-medium">
                         {w.name}
                         {added && (
-                          <span className="inline-flex items-center gap-0.5 text-[0.6875rem] font-normal text-success">
+                          <span className="inline-flex items-center gap-0.5 text-caption font-normal text-success">
                             <Check className="h-3 w-3" />
                             {t('已添加')}
                           </span>
                         )}
                       </p>
-                      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-muted">{w.description}</p>
-                      <p className="mt-1 text-[0.6875rem] text-subtle">
+                      <p className="mt-0.5 text-footnote leading-relaxed text-muted">{w.description}</p>
+                      <p className="mt-1 text-caption text-subtle">
                         {t('{n} 步', { n: steps })} · {builtinAgentKeys(w).map(agentName).join(t('、'))}
                         {lack > 0 && ` · ${t('将新建 {n} 个角色', { n: lack })}`}
                       </p>

@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import { copyText } from '@/lib/copy-text'
-import { Check, Copy, SquareTerminal } from 'lucide-react'
+import { SquareTerminal } from 'lucide-react'
+import { CopyIcon } from '@/components/ui/copy-icon'
 import { commandText, getCli, quoteArg } from '@shared/clis'
 import type { Settings } from '@shared/schema'
 import { agentCli, agentPermission, agentRun, cliSettings, defaultSettings } from '@shared/settings'
@@ -65,8 +66,12 @@ function CopyButton({ text }: { text: string }) {
       aria-label={t('复制命令')}
       className="ml-auto flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-term-subtle transition-colors hover:bg-term-hover hover:text-term-fg"
     >
-      {done ? <Check className="h-3.5 w-3.5 text-term-prompt" /> : <Copy className="h-3.5 w-3.5" />}
-      {done ? t('已复制') : t('复制')}
+      <CopyIcon done={done} className="h-3.5 w-3.5" doneClassName="text-term-prompt" />
+      {/* 两个字样叠在一格里交叉切换，按钮宽度不跳 */}
+      <span className="swap" data-done={done || undefined}>
+        <span>{t('复制')}</span>
+        <span>{t('已复制')}</span>
+      </span>
     </button>
   )
 }
@@ -95,7 +100,7 @@ export function Terminal({
       </div>
       {/* 只在参数之间换行：参数里的「-」也是浏览器默认的断行点，不禁掉的话「--verbose」会被拆成两行；
           特别长的单个参数（路径、JSON）才在中间断开 */}
-      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[0.75rem] leading-[1.7] select-text">
+      <p className="px-3.5 pt-3 pb-3.5 font-mono text-footnote leading-[1.7] select-text">
         <span className="text-term-prompt">$ </span>
         <span className="whitespace-nowrap text-term-string">echo "{t('<任务描述>')}"</span>{' '}
         <span className="text-term-subtle">| </span>

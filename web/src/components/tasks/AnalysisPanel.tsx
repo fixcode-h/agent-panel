@@ -86,7 +86,7 @@ export function AnalysisPanel({
         )}
       </TabBar>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {kind !== 'diagnosis' && <p className="px-[1.125rem] pt-3 text-[0.75rem] text-subtle">{k.desc()}</p>}
+        {kind !== 'diagnosis' && <p className="px-[1.125rem] pt-3 text-footnote text-subtle">{k.desc()}</p>}
         {kind === 'diagnosis' ? (
           diag?.ok ? (
             <DiagnosisReport task={task} project={project} diagnosis={diag.value} tab={tab} onTask={onTask} />

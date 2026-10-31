@@ -84,7 +84,7 @@ export function ContextHead({ data, caption }: { data: ContextBreakdown; caption
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline gap-2">
-        <span className={cn('text-[0.875rem] font-semibold tabular-nums', p > 80 ? 'text-warning' : 'text-fg')}>
+        <span className={cn('text-prose font-semibold tabular-nums', p > 80 ? 'text-warning' : 'text-fg')}>
           {t('已使用 {n}%', { n: p < 10 ? p.toFixed(1) : Math.round(p) })}
         </span>
         <span className="ml-auto font-mono text-xs text-muted tabular-nums" title={caption}>
@@ -125,7 +125,7 @@ function ContextLegendRow({
   const m = META[k]
   const tip = estimated ? `${m.tip()}\n${t('估计值：Agent 没有报这一块，按版本的量级估的')}` : m.tip()
   return (
-    <li className="flex h-6 items-center gap-2.5 text-[0.8125rem]">
+    <li className="flex h-6 items-center gap-2.5 text-body">
       <span
         className={cn('h-2.5 w-2.5 shrink-0 rounded-[3px]', k === 'free' ? 'border border-line-strong' : m.swatch)}
       />

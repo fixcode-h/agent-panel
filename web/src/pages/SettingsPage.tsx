@@ -536,7 +536,7 @@ function SettingsBody({
         {/* 标题和搜索框固定在左栏顶部，不跟着分类滚动：滚到下面的分类（例如 Agent）时还认得出这是设置、随时能搜。
             只让下面的分类列表滚动，滚动条从搜索框下面开始，不越过搜索框（用户要求） */}
         <div className="flex shrink-0 items-center p-2 pr-0 md:block md:px-2.5 md:pt-3 md:pb-0">
-          <span className="hidden px-2.5 pt-1 pb-4 font-serif text-[1.25rem] font-semibold tracking-tight md:block">
+          <span className="hidden px-2.5 pt-1 pb-4 font-serif text-title font-semibold tracking-tight md:block">
             {t('设置')}
           </span>
           <SettingsSearchBox value={query} onChange={setQuery} onKeyDown={onSearchKey} inputRef={searchRef} />
@@ -553,7 +553,7 @@ function SettingsBody({
                   // 窄屏左栏是横向的一行，不显示组名
                   <span
                     className={cn(
-                      'hidden px-2.5 pb-1.5 text-[0.6875rem] font-medium tracking-wide text-subtle md:block',
+                      'hidden px-2.5 pb-1.5 text-caption font-medium tracking-wide text-subtle md:block',
                       i > 0 ? 'pt-4' : 'pt-0',
                     )}
                   >
@@ -586,7 +586,7 @@ function SettingsBody({
                     <>
                       {/* 搜索时每页右边写命中几项，没命中的页淡下去 */}
                       {searching && navHits(s) > 0 && (
-                        <span className="shrink-0 text-[0.75rem] text-subtle tabular-nums">{navHits(s)}</span>
+                        <span className="shrink-0 text-footnote text-subtle tabular-nums">{navHits(s)}</span>
                       )}
                       {s.id === 'update' && update && (
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
@@ -631,13 +631,13 @@ function SettingsBody({
             return (
               <div key={s.id} className="contents">
                 {firstReady && (
-                  <span className="hidden items-center justify-between px-2.5 pt-4 pb-1.5 text-[0.6875rem] font-medium tracking-wide text-subtle md:flex">
+                  <span className="hidden items-center justify-between px-2.5 pt-4 pb-1.5 text-caption font-medium tracking-wide text-subtle md:flex">
                     {t('已接入')}
                     <span className="font-normal tracking-normal text-subtle/70">{t('拖动调整顺序')}</span>
                   </span>
                 )}
                 {firstOff && (
-                  <span className="hidden px-2.5 pt-4 pb-1.5 text-[0.6875rem] font-medium tracking-wide text-subtle md:flex">
+                  <span className="hidden px-2.5 pt-4 pb-1.5 text-caption font-medium tracking-wide text-subtle md:flex">
                     {t('未启用')}
                   </span>
                 )}
@@ -690,7 +690,7 @@ function SettingsBody({
                       )}
                       {/* 选中行的底色就是 sel，「默认」小签换成卡片底才分得开（同侧栏的 SidebarCount） */}
                       {s.cli && defCli === s.cli.id && (
-                        <Badge className={cn('px-1.5 text-[0.625rem]', on && 'bg-card')}>{t('默认')}</Badge>
+                        <Badge className={cn('px-1.5 text-micro', on && 'bg-card')}>{t('默认')}</Badge>
                       )}
                       {s.cli && (
                         <GripVertical className="hidden h-3.5 w-3.5 shrink-0 text-subtle opacity-0 group-hover:opacity-100 md:block" />
@@ -719,10 +719,10 @@ function SettingsBody({
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-4 md:px-9 md:pt-6">
-          <h2 className="min-w-0 flex-1 truncate font-serif text-[1.25rem] font-semibold tracking-tight">
+          <h2 className="min-w-0 flex-1 truncate font-serif text-title font-semibold tracking-tight">
             {searching ? t('搜索设置') : cur.label}
             {searching && hits.length > 0 && (
-              <span className="ml-2.5 font-sans text-[0.8125rem] font-normal tracking-normal text-subtle">
+              <span className="ml-2.5 font-sans text-body font-normal tracking-normal text-subtle">
                 {t('{n} 项', { n: hits.length })}
               </span>
             )}
@@ -772,7 +772,7 @@ function SettingsBody({
             {cur.id === 'general' && (
               <>
                 {demo && (
-                  <p className="mb-2 flex gap-2.5 rounded-xl bg-sel/50 p-3.5 text-[0.8125rem] leading-relaxed text-subtle">
+                  <p className="mb-2 flex gap-2.5 rounded-xl bg-sel/50 p-3.5 text-body leading-relaxed text-subtle">
                     <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" />
                     {t('在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 Agent。')}
                   </p>
@@ -833,7 +833,7 @@ function SettingsBody({
                         }}
                         className="w-32 cursor-pointer accent-[var(--color-accent)]"
                       />
-                      <span className="w-14 text-right font-mono text-[0.8125rem] text-muted tabular-nums">
+                      <span className="w-14 text-right font-mono text-body text-muted tabular-nums">
                         {contentWidth}px
                       </span>
                     </div>
@@ -1151,8 +1151,8 @@ function SettingsBody({
                   </Row>
                   {developerMode && (
                     <Row indent title={t('抓取方式')} desc={t('在「快捷键」里修改')}>
-                      <div className="flex items-center justify-end gap-2 text-[0.8125rem] text-muted">
-                        <Kbd className="h-auto px-1.5 py-0.5 text-[0.75rem]">{hotkeyLabel(elementPicker.hotkey)}</Kbd>
+                      <div className="flex items-center justify-end gap-2 text-body text-muted">
+                        <Kbd className="h-auto px-1.5 py-0.5 text-footnote">{hotkeyLabel(elementPicker.hotkey)}</Kbd>
                         <span>{t('＋')}</span>
                         <span>{pickLabel(elementPicker.button)}</span>
                         <Button variant="ghost" size="sm" onClick={() => onSection('shortcuts')}>
@@ -1167,7 +1167,7 @@ function SettingsBody({
 
             {cur.id === 'models' && (
               <>
-                <p className="text-[0.8125rem] text-subtle">{t('没指定 Agent 和模型的角色都用这里的设置。')}</p>
+                <p className="text-body text-subtle">{t('没指定 Agent 和模型的角色都用这里的设置。')}</p>
                 <Group>
                   <Row
                     title={t('默认 Agent')}
@@ -1354,7 +1354,7 @@ function SettingsBody({
 
             {cur.id === 'assist' && (
               <>
-                <p className="text-[0.8125rem] text-subtle">{t('在角色和工作流页面用 Agent 对话生成或优化配置。')}</p>
+                <p className="text-body text-subtle">{t('在角色和工作流页面用 Agent 对话生成或优化配置。')}</p>
                 <Group>
                   <Row
                     title={t('使用的 Agent')}
@@ -1397,7 +1397,7 @@ function SettingsBody({
                       placeholder={t(
                         '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的角色默认用 Claude Code',
                       )}
-                      className="font-mono text-[0.8125rem]"
+                      className="font-mono text-body"
                     />
                   </Row>
                   <Row title={t('工作流规则')} desc={t('加进创建工作流的提示词')} stack>
@@ -1406,7 +1406,7 @@ function SettingsBody({
                       value={assist.workflowRules}
                       onChange={(e) => setAssist({ ...assist, workflowRules: e.target.value })}
                       placeholder={t('例如：\n- 写代码的节点都要配一个代码审查的验收流程\n- 验收最多 2 轮')}
-                      className="font-mono text-[0.8125rem]"
+                      className="font-mono text-body"
                     />
                   </Row>
                 </Group>

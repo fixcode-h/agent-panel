@@ -43,7 +43,7 @@ export function NetworkSection({
           onChange={(e) => onChange({ enabled, proxy: e.target.value })}
           placeholder={DEFAULT_PROXY_URL}
           disabled={!enabled}
-          className="font-mono text-[0.8125rem]"
+          className="font-mono text-body"
           spellCheck={false}
           aria-label={t('代理地址')}
         />

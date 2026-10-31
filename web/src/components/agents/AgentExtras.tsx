@@ -58,7 +58,7 @@ export function SkillsPicker({
           title={has(n) ? undefined : t('当前 Agent 的用户目录里没有这个 Skill（可能在项目里或插件里）')}
           // 不描边，靠底色分；当前 CLI 没装的用更浅的底和灰字，和装了的区分开
           className={cn(
-            'inline-flex h-7 items-center gap-1 rounded-md bg-sel/70 pr-0.5 pl-2 font-mono text-[0.75rem]',
+            'inline-flex h-7 items-center gap-1 rounded-md bg-sel/70 pr-0.5 pl-2 font-mono text-footnote',
             !has(n) && items.length > 0 && 'bg-field text-muted',
           )}
         >
@@ -96,13 +96,13 @@ export function SkillsPicker({
               return (
                 <button key={n} type="button" className={menuItem} onClick={() => toggle(n)}>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex items-center gap-1.5 truncate font-mono text-[0.75rem]">
+                    <span className="flex items-center gap-1.5 truncate font-mono text-footnote">
                       {n}
                       {isBundled(n) && (
-                        <span className="rounded bg-sel px-1 font-sans text-[0.6875rem] text-subtle">{t('自带')}</span>
+                        <span className="rounded-sm bg-sel px-1 font-sans text-caption text-subtle">{t('自带')}</span>
                       )}
                     </span>
-                    {it?.description && <span className="truncate text-[0.6875rem] text-subtle">{it.description}</span>}
+                    {it?.description && <span className="truncate text-caption text-subtle">{it.description}</span>}
                   </span>
                   {value.includes(n) && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
                 </button>
@@ -136,7 +136,7 @@ export function StartersEditor({ value, onChange }: { value: string[]; onChange:
             maxLength={500}
             onChange={(e) => onChange(value.map((x, j) => (j === i ? e.target.value : x)))}
             onBlur={() => !value[i].trim() && onChange(value.filter((_, j) => j !== i))}
-            className="h-9 text-[0.8125rem]"
+            className="h-9 text-body"
           />
           <IconButton icon={X} label={t('删除')} size="sm" onClick={() => onChange(value.filter((_, j) => j !== i))} />
         </div>
@@ -154,7 +154,7 @@ export function StartersEditor({ value, onChange }: { value: string[]; onChange:
               }
             }}
             placeholder={t('例如：审查当前分支相对 main 的改动')}
-            className="h-9 text-[0.8125rem]"
+            className="h-9 text-body"
           />
           <Button variant="secondary" size="sm" onClick={add} disabled={!text.trim()}>
             <Plus className="h-3.5 w-3.5" />

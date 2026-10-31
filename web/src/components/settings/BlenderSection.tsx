@@ -32,7 +32,7 @@ export function BlenderSection({ path, onPath }: { path: string; onPath: (p: str
   }, [path])
   return (
     <>
-      <p className="text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="text-body leading-relaxed text-subtle">
         {t('模型对话里 Agent 用 Blender 建模，网页右侧实时预览。面板在后台起一个 Blender，不弹窗口。')}
       </p>
       <Group>
@@ -56,7 +56,7 @@ export function BlenderSection({ path, onPath }: { path: string; onPath: (p: str
           }
         >
           <div className="flex items-center gap-2">
-            <span className={cn('text-[0.8125rem]', st?.error ? 'text-subtle' : 'font-medium text-fg')}>
+            <span className={cn('text-body', st?.error ? 'text-subtle' : 'font-medium text-fg')}>
               {!st ? t('检测中…') : st.error ? t('没有找到') : `Blender ${st.version}`}
             </span>
             <Button size="sm" variant="ghost" onClick={detect} disabled={busy} title={t('重新检测')}>

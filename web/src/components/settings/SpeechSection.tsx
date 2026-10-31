@@ -60,7 +60,7 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
 
   return (
     <>
-      <p className="text-[0.8125rem] text-subtle">{t('在本机把说的话转成文字，录音不上传。')}</p>
+      <p className="text-body text-subtle">{t('在本机把说的话转成文字，录音不上传。')}</p>
 
       <Group title={t('语音输入')}>
         <Row
@@ -88,9 +88,7 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
                   : t('还没下载，在下面的列表里下载')
           }
         >
-          <span
-            className={cn('flex items-center justify-end gap-1.5 text-[0.8125rem]', ready ? 'text-fg' : 'text-subtle')}
-          >
+          <span className={cn('flex items-center justify-end gap-1.5 text-body', ready ? 'text-fg' : 'text-subtle')}>
             <span className={cn('h-2 w-2 shrink-0 rounded-full', ready ? 'bg-success' : 'bg-line-strong')} />
             <span className="truncate">{using?.name}</span>
           </span>
@@ -98,7 +96,7 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
       </Group>
 
       <Group title={t('模型')}>
-        <p className="pb-2 text-[0.75rem] leading-relaxed text-subtle">
+        <p className="pb-2 text-footnote leading-relaxed text-subtle">
           {t(
             '选一个下载，下载好后点「使用」切换。中文为主推荐 SenseVoice；电脑内存小选 Paraformer；英文和其它语言多选 Whisper。第一次下载还会带上识别库（约 30 MB）。',
           )}
@@ -116,21 +114,21 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
               return (
                 <Card key={m.id} padding="sm" className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5 text-[0.8125rem] font-medium">
+                    <div className="flex flex-wrap items-center gap-1.5 text-body font-medium">
                       {m.name}
                       {m.recommended && (
-                        <span className="rounded bg-accent-soft px-1.5 py-px text-[0.6875rem] font-normal text-accent-text">
+                        <span className="rounded-sm bg-accent-soft px-1.5 py-px text-caption font-normal text-accent-text">
                           {t('推荐')}
                         </span>
                       )}
                       {current && (
-                        <span className="rounded bg-sel px-1.5 py-px text-[0.6875rem] font-normal text-muted">
+                        <span className="rounded-sm bg-sel px-1.5 py-px text-caption font-normal text-muted">
                           {t('使用中')}
                         </span>
                       )}
                     </div>
-                    <p className="mt-0.5 text-[0.75rem] leading-relaxed text-muted">{m.use}</p>
-                    <p className="mt-0.5 text-[0.75rem] text-subtle">
+                    <p className="mt-0.5 text-footnote leading-relaxed text-muted">{m.use}</p>
+                    <p className="mt-0.5 text-footnote text-subtle">
                       {m.langs} · {have ? t('已下载') : t('下载约 {size}', { size: mb(speechModelMb(m)) })} ·{' '}
                       {m.license}
                     </p>
@@ -180,7 +178,7 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
         )}
         {job && (
           <Card padding="sm" className="my-2">
-            <div className="flex items-center gap-2 text-[0.8125rem]">
+            <div className="flex items-center gap-2 text-body">
               {job.status === 'running' ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
               ) : job.status === 'done' ? (
@@ -190,7 +188,7 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
               )}
               <span className="min-w-0 flex-1 truncate font-medium">{job.step}</span>
               {pct !== undefined && busy && (
-                <span className="font-mono text-[0.75rem] text-subtle">
+                <span className="font-mono text-footnote text-subtle">
                   {mb(job.progress!.done / 1024 ** 2)} / {mb(job.progress!.total / 1024 ** 2)}
                 </span>
               )}
@@ -211,7 +209,7 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
             </div>
             {pct !== undefined && busy && <Progress value={pct} label={t('进度')} className="mt-2" />}
             {job.error && (
-              <p className="mt-2 text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>
+              <p className="mt-2 text-footnote leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>
             )}
           </Card>
         )}

@@ -28,17 +28,17 @@ export function SourceLink({
       rel="noopener noreferrer"
       title={url}
       className={cn(
-        'group/src flex min-w-0 items-center gap-2.5 rounded-(--c-row-radius) px-2.5 py-2 text-[0.8125rem] transition-colors hover:bg-sel/60',
+        'group/src flex min-w-0 items-center gap-2.5 rounded-(--c-row-radius) px-2.5 py-2 text-body transition-colors hover:bg-sel/60',
         className,
       )}
     >
-      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-sel text-[0.6875rem] font-semibold text-muted uppercase">
+      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-sel text-caption font-semibold text-muted uppercase">
         {host.slice(0, 1)}
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium text-fg">{host}</span>
         {(path || note) && (
-          <span className="truncate text-[0.6875rem] text-subtle">{[path, note].filter(Boolean).join(' · ')}</span>
+          <span className="truncate text-caption text-subtle">{[path, note].filter(Boolean).join(' · ')}</span>
         )}
       </span>
       <ExternalLink className="h-3.5 w-3.5 shrink-0 text-subtle opacity-0 transition-opacity group-hover/src:opacity-100" />

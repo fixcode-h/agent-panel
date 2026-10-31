@@ -34,7 +34,7 @@ export function DesignProjectHome({ projectId }: { projectId: string }) {
   if (!project && !designProjectsLoaded) return <main className="flex-1" data-design-home={projectId} />
   if (!project) {
     return (
-      <div className="grid flex-1 place-items-center p-8 text-center text-[0.8125rem] text-muted">
+      <div className="grid flex-1 place-items-center p-8 text-center text-body text-muted">
         <div>
           <p>{t('这个 UI 项目已经不在了。')}</p>
           <Button variant="ghost" className="mt-3" onClick={() => go({ page: 'design' })}>
@@ -70,11 +70,11 @@ export function DesignProjectHome({ projectId }: { projectId: string }) {
         </header>
         <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-10 md:px-6 md:pt-12">
           <div className="flex flex-col gap-2">
-            <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
+            <h1 className="flex items-center gap-3 font-serif text-display leading-tight font-semibold tracking-tight">
               <Palette className="h-7 w-7 shrink-0 text-accent-text" strokeWidth={2} />
               <span className="min-w-0 truncate">{project.name}</span>
             </h1>
-            <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8125rem] text-subtle">
+            <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-body text-subtle">
               <span>{t('{n} 个界面', { n: summary.total })}</span>
               {summary.games > 0 && (
                 <span className="flex items-center gap-1">
@@ -148,7 +148,7 @@ function DesignRow({ design, now, onOpen }: { design: DesignMeta; now: number; o
       <button onClick={onOpen} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-3 text-left">
         <Icon className="h-4 w-4 shrink-0 text-subtle" />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[0.875rem]">{design.title}</span>
+          <span className="truncate text-prose">{design.title}</span>
           <span className="truncate text-xs text-subtle">
             {kind === 'web' ? t('网页 UI') : t('游戏 UI（UE5 UMG）')}
           </span>

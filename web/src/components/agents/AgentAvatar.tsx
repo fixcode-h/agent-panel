@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils'
 
 const sizes = {
   xs: 'h-[22px] w-[22px] rounded-md [&>svg]:h-3 [&>svg]:w-3',
-  sm: 'h-[26px] w-[26px] rounded-[7px] [&>svg]:h-3.5 [&>svg]:w-3.5',
-  md: 'h-9 w-9 rounded-[9px] [&>svg]:h-[18px] [&>svg]:w-[18px]',
+  sm: 'h-[26px] w-[26px] rounded-lg [&>svg]:h-3.5 [&>svg]:w-3.5',
+  md: 'h-9 w-9 rounded-xl [&>svg]:h-[18px] [&>svg]:w-[18px]',
   lg: 'h-12 w-12 rounded-xl [&>svg]:h-6 [&>svg]:w-6',
 }
 

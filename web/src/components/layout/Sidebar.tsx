@@ -282,7 +282,7 @@ function Row({
           />
         )}
         {badge && !collapsed && (
-          <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent-text">
+          <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-caption text-accent-text">
             {badge}
           </span>
         )}
@@ -366,7 +366,7 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
             title={m.label}
             // 选中用 seg-thumb：深色下 bg-sel 贴着侧栏底色几乎看不出来；未选中用 muted，subtle 在深色下像禁用
             className={cn(
-              'grid h-9 w-9 cursor-pointer place-items-center rounded-[10px] transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
+              'grid h-9 w-9 cursor-pointer place-items-center rounded-xl transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
               m.on ? 'seg-thumb' : 'text-muted hover:bg-sel/70 hover:text-fg',
             )}
           >
@@ -625,7 +625,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           <ChatList />
         )
       ) : !narrow && filtering ? (
-        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+        <div className="scroll-fade mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -669,7 +669,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           />
         </div>
       ) : !narrow ? (
-        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+        <div className="scroll-fade mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -808,7 +808,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                                 if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
                                 handle.onKeyDown(e)
                               }}
-                              className="grid h-6 w-0 shrink-0 cursor-grab place-items-center overflow-hidden rounded text-subtle opacity-0 group-hover/proj:w-4 group-hover/proj:opacity-60 hover:opacity-100 focus-visible:w-4 focus-visible:opacity-100 focus-visible:outline-none active:cursor-grabbing"
+                              className="grid h-6 w-0 shrink-0 cursor-grab place-items-center overflow-hidden rounded-sm text-subtle opacity-0 group-hover/proj:w-4 group-hover/proj:opacity-60 hover:opacity-100 focus-visible:w-4 focus-visible:opacity-100 focus-visible:outline-none active:cursor-grabbing"
                             >
                               <GripVertical className="h-3.5 w-3.5" />
                             </span>
@@ -941,7 +941,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       <div className="flex h-12 shrink-0 items-center gap-2 bg-rail px-3 md:hidden">
         <IconButton icon={MenuIcon} label={t('打开菜单')} size="sm" onClick={() => setMobileOpen(true)} />
         <Logo />
-        <span className="font-serif text-[0.9375rem] font-semibold">{t('Agent 面板')}</span>
+        <span className="font-serif text-heading font-semibold">{t('Agent 面板')}</span>
       </div>
       {/* 抽屉只在手机宽度用：窗口拉宽时侧栏本身就出来了，抽屉跟着藏起来 */}
       <Sheet

@@ -161,15 +161,15 @@ export function TurnRail({
             onClick={() => onJump(shown.id)}
             className="block w-full cursor-pointer rounded-xl border border-line-strong bg-card p-3 text-left shadow-pop animate-[turn-peek-in_160ms_ease-out]"
           >
-            <div className="mb-1 flex items-center gap-2 text-[0.6875rem] text-subtle">
+            <div className="mb-1 flex items-center gap-2 text-caption text-subtle">
               <span className="font-medium">{t('第 {n} 轮', { n: hover.i + 1 })}</span>
               <span className="ml-auto tabular-nums">{shown.at.slice(5, 16).replace('T', ' ')}</span>
             </div>
-            <p className="line-clamp-4 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
+            <p className="line-clamp-4 text-body leading-relaxed whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
               {shown.ask}
             </p>
             {shown.reply && (
-              <p className="mt-2 line-clamp-3 border-t border-line pt-2 text-[0.75rem] leading-relaxed text-muted [overflow-wrap:anywhere]">
+              <p className="mt-2 line-clamp-3 border-t border-line pt-2 text-footnote leading-relaxed text-muted [overflow-wrap:anywhere]">
                 {shown.reply}
               </p>
             )}

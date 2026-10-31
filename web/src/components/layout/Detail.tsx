@@ -87,7 +87,7 @@ export function DetailHeader({
           <h2 className="truncate text-xl font-semibold">{title}</h2>
           {meta}
         </div>
-        <p className="truncate text-[0.8125rem] text-muted">{subtitle}</p>
+        <p className="truncate text-body text-muted">{subtitle}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <SaveIndicator {...save} />
@@ -144,7 +144,7 @@ export function DetailEmpty({
       <div className="flex max-w-sm flex-col items-center text-center">
         <div className="grid h-12 w-12 place-items-center rounded-xl bg-accent-soft text-accent-text">{icon}</div>
         <h2 className="mt-4 text-base font-semibold">{title}</h2>
-        <div className="mt-2 text-[0.8125rem] leading-relaxed text-muted">{children}</div>
+        <div className="mt-2 text-body leading-relaxed text-muted">{children}</div>
       </div>
     </main>
   )

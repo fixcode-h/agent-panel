@@ -48,7 +48,7 @@ function QuoteDialog({ text, onClose }: { text: string | null; onClose: () => vo
           />
         }
       />
-      <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[0.875rem]">
+      <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-prose">
         {text !== null && <Markdown text={text} teamNames={NO_TEAM} />}
       </div>
     </Modal>

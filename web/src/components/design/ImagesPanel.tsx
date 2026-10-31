@@ -95,7 +95,7 @@ export function ImagesPanel({
                 onClick={() => setFilter(f.id)}
                 aria-pressed={filter === f.id}
                 className={cn(
-                  'h-6 cursor-pointer rounded-md px-2 text-[0.6875rem]',
+                  'h-6 cursor-pointer rounded-md px-2 text-caption',
                   filter === f.id ? 'bg-sel font-medium text-fg' : 'text-subtle hover:text-fg',
                   f.id === 'failed' && f.n > 0 && filter !== f.id && 'text-danger',
                 )}
@@ -109,7 +109,7 @@ export function ImagesPanel({
               onClick={() => onGenerateAll(todo.map((i) => i.id))}
               disabled={!canGenerate}
               title={t('生成还没生成和失败的图片')}
-              className="ml-auto px-1 text-[0.6875rem]"
+              className="ml-auto px-1 text-caption"
             >
               <RefreshCw className="h-3 w-3" />
               {t('生成 {n} 张', { n: todo.length })}
@@ -118,7 +118,7 @@ export function ImagesPanel({
         </div>
       )}
       {!images.length && (
-        <p className="px-1 py-4 text-center text-[0.75rem] leading-relaxed text-subtle">
+        <p className="px-1 py-4 text-center text-footnote leading-relaxed text-subtle">
           {t('还没有图片。在右边告诉 AI 想要什么界面，它会列出需要的图片并生成。')}
         </p>
       )}
@@ -154,15 +154,15 @@ export function ImagesPanel({
                 </span>
               )}
               {i.variants.length > 1 && (
-                <span className="absolute bottom-1 left-1 rounded bg-scrim px-1 font-mono text-[0.625rem] text-white">
+                <span className="absolute bottom-1 left-1 rounded-sm bg-scrim px-1 font-mono text-micro text-white">
                   {i.selected + 1}/{i.variants.length}
                 </span>
               )}
             </span>
             <span className="flex items-center gap-1 px-1.5 py-1">
-              <span className="min-w-0 flex-1 truncate font-mono text-[0.6875rem]">{i.name}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-caption">{i.name}</span>
               {!usedIds.has(i.id) && (
-                <span className="shrink-0 text-[0.625rem] text-subtle" title={t('设计里没有用到这张图')}>
+                <span className="shrink-0 text-micro text-subtle" title={t('设计里没有用到这张图')}>
                   {t('未用')}
                 </span>
               )}
@@ -214,10 +214,10 @@ export function ImageDetails({
   const set = (patch: Partial<DesignImage>, key: string) => onChange({ ...image, ...patch }, `img:${image.id}:${key}`)
   const busy = image.status === 'generating' || image.status === 'pending'
   return (
-    <div className="text-[0.75rem]">
+    <div className="text-footnote">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <ImagePlus className="h-4 w-4 shrink-0 text-accent-text" />
-        <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem] font-medium">{image.name}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-footnote font-medium">{image.name}</span>
         <IconButton icon={Trash2} tone="danger" label={t('删除图片')} onClick={onDelete} />
       </div>
       {image.variants.length > 0 && (
@@ -240,13 +240,13 @@ export function ImageDetails({
       <div className="flex flex-wrap items-center gap-1 border-b px-3 py-2">
         {users.length ? (
           <>
-            <span className="mr-1 text-[0.6875rem] text-subtle">{t('用在')}</span>
+            <span className="mr-1 text-caption text-subtle">{t('用在')}</span>
             {users.map((u) => (
               <button
                 key={u.id}
                 onClick={() => onJump(u)}
                 title={u.target ? t('在子控件 {name} 里', { name: u.target }) : undefined}
-                className="cursor-pointer rounded bg-sel/70 px-1.5 py-px font-mono text-[0.6875rem] text-muted hover:bg-sel hover:text-fg"
+                className="cursor-pointer rounded-sm bg-sel/70 px-1.5 py-px font-mono text-caption text-muted hover:bg-sel hover:text-fg"
               >
                 {u.target ? `${u.target} › ` : ''}
                 {u.name}
@@ -255,7 +255,7 @@ export function ImageDetails({
           </>
         ) : (
           <>
-            <span className="flex-1 text-[0.6875rem] text-warning">{t('设计里还没用到这张图')}</span>
+            <span className="flex-1 text-caption text-warning">{t('设计里还没用到这张图')}</span>
             {candidates.length > 0 && (
               <Select
                 aria-label={t('用到控件上')}
@@ -272,7 +272,7 @@ export function ImageDetails({
                     group: c.target || t('主界面'),
                   })),
                 ]}
-                className="h-6 w-auto max-w-[180px] rounded-md px-2 text-[0.6875rem]"
+                className="h-6 w-auto max-w-[180px] rounded-md px-2 text-caption"
               />
             )}
           </>
@@ -280,10 +280,10 @@ export function ImageDetails({
       </div>
       {image.status === 'failed' && image.error && (
         <div className="mx-3 mt-2 flex flex-col items-start gap-1.5 rounded-md bg-danger/10 px-2 py-1.5">
-          <p className="text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-danger">{image.error}</p>
+          <p className="text-caption leading-relaxed whitespace-pre-wrap text-danger">{image.error}</p>
           <AiFixButton
             variant="ghost"
-            className="h-6 px-1.5 text-[0.6875rem]"
+            className="h-6 px-1.5 text-caption"
             issue={{
               title: t('生成图片失败：{name}', { name: image.name }),
               error: image.error,
@@ -323,7 +323,7 @@ export function ImageDetails({
           </FieldRow>
         )}
         <div className="px-3 pt-1.5">
-          <p className="mb-1 text-[0.75rem] text-subtle">{t('描述（生成用）')}</p>
+          <p className="mb-1 text-footnote text-subtle">{t('描述（生成用）')}</p>
           <TextInput
             label={t('描述')}
             multiline
@@ -332,7 +332,7 @@ export function ImageDetails({
           />
         </div>
         {image.variants.length > 0 && (
-          <p className="px-3 pt-2 text-[0.6875rem] leading-relaxed text-subtle">
+          <p className="px-3 pt-2 text-caption leading-relaxed text-subtle">
             {marks.length ? t('图上有 {n} 处标记，', { n: marks.length }) : ''}
             <Button variant="link" onClick={onPreview} className="inline">
               {t('在大图上标记要改的地方')}
@@ -366,7 +366,7 @@ export function ImageDetails({
             {t('上传替换')}
           </Button>
         </div>
-        {canGenerate && <p className="px-3 pb-3 text-[0.6875rem] text-subtle">{sourceLabel}</p>}
+        {canGenerate && <p className="px-3 pb-3 text-caption text-subtle">{sourceLabel}</p>}
       </div>
     </div>
   )
@@ -427,7 +427,7 @@ export function ImagePreview({
       onClick={(e) => e.target === e.currentTarget && tool === 'select' && !active && onClose()}
       className="absolute inset-0 z-30 flex flex-col bg-canvas/95 animate-[fade-in_120ms_ease-out]"
     >
-      <div className="flex h-11 shrink-0 items-center gap-2 pr-3 pl-[max(0.75rem,var(--board-switch-w,0px))] text-[0.75rem] text-canvas-fg">
+      <div className="flex h-11 shrink-0 items-center gap-2 pr-3 pl-[max(0.75rem,var(--board-switch-w,0px))] text-footnote text-canvas-fg">
         <span className="font-mono font-medium text-canvas-strong">{image.name}</span>
         <span className="font-mono text-canvas-subtle">
           {size.X}×{size.Y}
@@ -498,7 +498,7 @@ export function ImagePreview({
         </div>
       </div>
       {!marks.length && (
-        <p className="pointer-events-none shrink-0 pb-3 text-center text-[0.6875rem] text-canvas-subtle">
+        <p className="pointer-events-none shrink-0 pb-3 text-center text-caption text-canvas-subtle">
           {t('选上面的框选、箭头、画笔或打点，在图上标出要改的地方，再在右边的对话框里写修改意见发送')}
         </p>
       )}

@@ -79,7 +79,7 @@ export function VersionsButton({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t('版本名，例如：第一稿、给老板看的')}
-            className="h-8 text-[0.75rem]"
+            className="h-8 text-footnote"
             onKeyDown={(e) => e.key === 'Enter' && !busy && save()}
           />
           <Button size="sm" disabled={!!busy} onClick={save}>
@@ -91,7 +91,7 @@ export function VersionsButton({
           {!list ? (
             <Loader2 className="mx-auto my-4 h-4 w-4 animate-spin text-subtle" />
           ) : !list.length ? (
-            <p className="px-3 py-5 text-center text-[0.75rem] leading-relaxed text-subtle">
+            <p className="px-3 py-5 text-center text-footnote leading-relaxed text-subtle">
               {t('还没有版本。AI 每次修改前会自动存一个，也可以在上面手动存。')}
             </p>
           ) : (
@@ -103,8 +103,8 @@ export function VersionsButton({
                   <Save className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 )}
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className={cn('truncate text-[0.75rem]', v.auto ? 'text-muted' : 'font-medium')}>{v.name}</span>
-                  <span className="text-[0.6875rem] text-subtle">
+                  <span className={cn('truncate text-footnote', v.auto ? 'text-muted' : 'font-medium')}>{v.name}</span>
+                  <span className="text-caption text-subtle">
                     {when(v.at)} · {t('{n} 个控件', { n: v.widgets })}
                   </span>
                 </span>
@@ -189,7 +189,7 @@ export function VersionCompare({
   }, [onClose])
   return (
     <div className="absolute inset-0 z-30 flex flex-col bg-canvas animate-[fade-in_120ms_ease-out]">
-      <div className="flex h-11 shrink-0 items-center gap-2 pr-3 pl-[max(0.75rem,var(--board-switch-w,0px))] text-[0.75rem] text-canvas-fg">
+      <div className="flex h-11 shrink-0 items-center gap-2 pr-3 pl-[max(0.75rem,var(--board-switch-w,0px))] text-footnote text-canvas-fg">
         <span className="font-medium text-canvas-strong">{t('对比版本')}</span>
         <span className="flex-1" />
         <Button size="sm" onClick={onRestore}>
@@ -233,7 +233,7 @@ function Pane({
   }, [X, Y])
   return (
     <div className="flex min-h-0 flex-col gap-1.5">
-      <p className="truncate text-[0.6875rem] text-canvas-subtle">{label}</p>
+      <p className="truncate text-caption text-canvas-subtle">{label}</p>
       <div ref={box} className="relative min-h-0 flex-1 overflow-hidden rounded-lg bg-canvas-board/60">
         {scale > 0 && (
           <div

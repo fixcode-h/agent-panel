@@ -47,10 +47,10 @@ export function DayHead({
 }) {
   return (
     <div className="flex flex-col items-center gap-0.5 py-2">
-      <span className="text-[0.75rem] text-subtle">{label}</span>
+      <span className="text-footnote text-subtle">{label}</span>
       <span
         className={cn(
-          'grid h-8 min-w-8 place-items-center rounded-full px-1 text-[1.0625rem] font-semibold tabular-nums',
+          'grid h-8 min-w-8 place-items-center rounded-full px-1 text-subtitle font-semibold tabular-nums',
           today ? 'bg-fg text-bg' : weekend ? 'text-subtle' : 'text-fg',
         )}
       >
@@ -291,7 +291,7 @@ export function ScheduleWeek({
             <div
               key={i}
               style={{ height: `${ROW}rem` }}
-              className="-translate-y-[0.45rem] pr-2 text-right font-mono text-[0.6875rem] text-subtle tabular-nums"
+              className="-translate-y-[0.45rem] pr-2 text-right font-mono text-caption text-subtle tabular-nums"
             >
               {i ? `${pad2(i)}:00` : ''}
             </div>
@@ -375,11 +375,11 @@ export function ScheduleWeek({
                       drag?.key === e.key && drag.moved && drag.kind === 'move' && 'opacity-40',
                     )}
                   >
-                    <span className="flex w-full min-w-0 items-center gap-1 text-[0.75rem] font-semibold">
+                    <span className="flex w-full min-w-0 items-center gap-1 text-footnote font-semibold">
                       <span aria-hidden className={cn('h-1.5 w-1.5 shrink-0 rounded-full', scheduleDot(e.s.id))} />
                       <span className="truncate">{e.s.name}</span>
                     </span>
-                    <span className="flex items-center gap-1 text-[0.6875rem] tabular-nums opacity-85">
+                    <span className="flex items-center gap-1 text-caption tabular-nums opacity-85">
                       {clock(h)}–{clock(Math.min(24, h + span))}
                       {e.s.repeat !== 'once' && <Repeat className="h-2.5 w-2.5" aria-label={t('重复')} />}
                     </span>
@@ -406,7 +406,7 @@ export function ScheduleWeek({
                       aria-hidden
                       style={{ top: `calc(${drag.h * ROW}rem + 1px)`, height: `calc(${drag.span * ROW}rem - 3px)` }}
                       className={cn(
-                        'pointer-events-none absolute inset-x-[3px] z-[3] flex flex-col rounded-md border-2 border-dashed px-1.5 py-1 text-[0.6875rem] font-medium tabular-nums',
+                        'pointer-events-none absolute inset-x-[3px] z-[3] flex flex-col rounded-md border-2 border-dashed px-1.5 py-1 text-caption font-medium tabular-nums',
                         past ? 'border-danger bg-danger/10 text-danger' : 'border-accent bg-accent/10 text-accent-text',
                       )}
                     >

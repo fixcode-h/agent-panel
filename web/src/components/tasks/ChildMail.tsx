@@ -26,7 +26,7 @@ export function scrollToLetter(id: string) {
  */
 export function ChildLetters({ letters }: { letters: Letter[] }) {
   const list = letters.slice(-SHOWN)
-  if (!list.length) return <p className="py-1 pl-9 text-[0.6875rem] text-subtle">{t('还没有往来的信')}</p>
+  if (!list.length) return <p className="py-1 pl-9 text-caption text-subtle">{t('还没有往来的信')}</p>
   return (
     <ul data-child-letters className="flex flex-col pb-1 pl-7">
       {list.map((x) => {
@@ -36,7 +36,7 @@ export function ChildLetters({ letters }: { letters: Letter[] }) {
             <Dir className="h-3 w-3 shrink-0 text-subtle" aria-label={x.dir === 'in' ? t('收到') : t('发出')} />
             <span
               className={cn(
-                'shrink-0 rounded px-1 py-px text-[0.6875rem] leading-4',
+                'shrink-0 rounded-sm px-1 py-px text-caption leading-4',
                 x.failed
                   ? 'bg-danger/12 text-danger'
                   : x.kind === 'question'
@@ -108,7 +108,7 @@ export function ParentBar({ task, className }: { task: Task; className?: string 
   const subject = first.peer?.subject || subjectLine(first.text)
   return (
     <div ref={ref} className={cn('relative', className)}>
-      <div data-status-row="parent" className="flex min-w-0 items-center gap-2 px-2.5 text-[0.8125rem]">
+      <div data-status-row="parent" className="flex min-w-0 items-center gap-2 px-2.5 text-body">
         <button
           type="button"
           aria-expanded={open}
@@ -126,10 +126,10 @@ export function ParentBar({ task, className }: { task: Task; className?: string 
       {open && (
         <ComposerPopover data-parent-card width="min(520px, calc(100% - 1.5rem))" className="max-h-[min(56vh,420px)]">
           <div className="flex items-center gap-2 border-b px-3 py-2">
-            <span className="text-[0.8125rem] font-medium">{t('父对话')}</span>
+            <span className="text-body font-medium">{t('父对话')}</span>
             {name && <span className="min-w-0 truncate text-xs text-subtle">{name}</span>}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-[0.8125rem]">
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-body">
             <Section title={t('交代的任务')} at={first.at} id={first.id} onPick={() => setOpen(false)}>
               <Markdown text={first.text} teamNames={new Set()} />
             </Section>
@@ -165,13 +165,13 @@ function Section({
 }) {
   return (
     <section className="border-b pb-2 last:border-b-0 [&+&]:pt-2">
-      <h3 className="mb-1 flex items-center gap-2 text-[0.75rem] font-normal text-subtle">
+      <h3 className="mb-1 flex items-center gap-2 text-footnote font-normal text-subtle">
         {title}
         <span className="tabular-nums">{timeAgo(at)}</span>
         <button
           type="button"
           onClick={() => scrollToLetter(id) && onPick()}
-          className="ml-auto cursor-pointer rounded px-1 text-[0.6875rem] hover:bg-sel hover:text-fg"
+          className="ml-auto cursor-pointer rounded-sm px-1 text-caption hover:bg-sel hover:text-fg"
         >
           {t('在对话里看')}
         </button>

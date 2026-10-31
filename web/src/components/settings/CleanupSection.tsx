@@ -126,7 +126,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
     <div className="flex flex-col gap-6">
       <section className="flex flex-col">
         <div className="flex items-center pb-2">
-          <h3 className="text-[0.8125rem] font-semibold">{t('对话工作目录')}</h3>
+          <h3 className="text-body font-semibold">{t('对话工作目录')}</h3>
           <span className="ml-2 text-xs text-subtle">
             {chats ? t('共 {size}', { size: formatBytes(chats.bytes) }) : '…'}
           </span>
@@ -141,7 +141,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
           </Button>
         </div>
-        <p className="pb-2 text-[0.8125rem] leading-relaxed text-subtle">
+        <p className="pb-2 text-body leading-relaxed text-subtle">
           {t(
             '每个对话有一个自己的工作目录，Agent 在里面写文件、下载网页。清理只删目录内容，对话记录和消息都还在，下次执行时面板会重新建这个目录。回收站里的对话和正在执行的不能清。',
           )}
@@ -150,7 +150,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
           {chats?.top.length ? (
             chats.top.map((row) => (
               <div key={row.id} className="flex items-center gap-3 border-b px-3.5 py-2.5 last:border-b-0">
-                <span className="min-w-0 flex-1 truncate text-[0.8125rem]" title={chatName(row)}>
+                <span className="min-w-0 flex-1 truncate text-body" title={chatName(row)}>
                   {chatName(row)}
                 </span>
                 {row.orphan && <span className="shrink-0 text-xs text-subtle">{t('对话记录已删除')}</span>}
@@ -159,9 +159,9 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
                 {!row.trashed && !row.running && row.bytes >= CHAT_WORKSPACE_WARN_BYTES && (
                   <span className="shrink-0 text-xs text-warning">{t('占用较大')}</span>
                 )}
-                <span className="shrink-0 text-right font-mono text-[0.75rem] text-muted">
+                <span className="shrink-0 text-right font-mono text-footnote text-muted">
                   {formatBytes(row.bytes)}
-                  <span className="block text-[0.6875rem] text-subtle">{t('{n} 个文件', { n: row.files })}</span>
+                  <span className="block text-caption text-subtle">{t('{n} 个文件', { n: row.files })}</span>
                 </span>
                 <Button
                   variant="secondary"
@@ -180,9 +180,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
               </div>
             ))
           ) : (
-            <p className="px-3.5 py-3 text-[0.8125rem] text-subtle">
-              {report ? t('没有存了文件的工作目录') : t('正在统计…')}
-            </p>
+            <p className="px-3.5 py-3 text-body text-subtle">{report ? t('没有存了文件的工作目录') : t('正在统计…')}</p>
           )}
         </Card>
         {!!chats?.more && (
@@ -197,7 +195,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-[0.8125rem] font-semibold">{t('独立分支')}</h3>
+          <h3 className="text-body font-semibold">{t('独立分支')}</h3>
           <span className="text-xs text-subtle">
             {worktrees
               ? t('共 {total} · 可清 {stale}', {
@@ -211,7 +209,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
             {t('检查占用')}
           </Button>
         </div>
-        <p className="text-[0.8125rem] leading-relaxed text-subtle">
+        <p className="text-body leading-relaxed text-subtle">
           {t(
             '子对话的独立工作目录。改动已经合回原分支、任务也收口的可以清；正在执行、回收站里的、还有没合回的提交或有没提交的改动的都不会动。没有目标的链接也一起清掉。',
           )}
@@ -220,11 +218,11 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
           <Card className="overflow-hidden">
             {worktrees.stale.slice(0, 8).map((item) => (
               <div key={item.dir} className="flex items-center gap-3 border-b px-3.5 py-2 last:border-b-0">
-                <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem]" title={item.dir}>
+                <span className="min-w-0 flex-1 truncate font-mono text-footnote" title={item.dir}>
                   {item.dir}
                 </span>
                 <span className="shrink-0 text-xs text-subtle">{item.reason}</span>
-                <span className="w-16 shrink-0 text-right font-mono text-[0.75rem] text-muted">
+                <span className="w-16 shrink-0 text-right font-mono text-footnote text-muted">
                   {formatBytes(item.bytes)}
                 </span>
               </div>
@@ -236,7 +234,7 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
             )}
           </Card>
         ) : (
-          <p className="text-[0.8125rem] text-subtle">
+          <p className="text-body text-subtle">
             {!worktrees ? t('点「检查占用」看看有多少能清') : t('没有失效的独立分支目录')}
           </p>
         )}
@@ -258,8 +256,8 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
       </section>
 
       <section className="flex flex-col gap-2">
-        <h3 className="text-[0.8125rem] font-semibold">{t('构建产物')}</h3>
-        <p className="text-[0.8125rem] leading-relaxed text-subtle">
+        <h3 className="text-body font-semibold">{t('构建产物')}</h3>
+        <p className="text-body leading-relaxed text-subtle">
           {t(
             '面板前端、演示版、打出来的安装包和界面检查截图，都由 npm run 重新生成，占地方时可以清掉。清理后刷新页面会打不开，重新构建一次就恢复。',
           )}
@@ -270,12 +268,12 @@ export function CleanupSection({ onCleared }: { onCleared?: () => void }) {
             return (
               <div key={b.id} className="flex items-center gap-3 border-b px-3.5 py-2.5 last:border-b-0">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-[0.8125rem]">
-                    {b.label} <span className="font-mono text-[0.6875rem] text-subtle">{b.id}</span>
+                  <span className="text-body">
+                    {b.label} <span className="font-mono text-caption text-subtle">{b.id}</span>
                   </span>
                   <span className="text-xs leading-relaxed text-subtle">{b.hint}</span>
                 </span>
-                <span className="shrink-0 font-mono text-[0.75rem] text-muted">
+                <span className="shrink-0 font-mono text-footnote text-muted">
                   {u ? (u.present ? formatBytes(u.bytes) : t('不在')) : '…'}
                 </span>
               </div>

@@ -1,4 +1,5 @@
 import { t } from './i18n.ts'
+import { LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
 import { CLIS, getCli, MODEL_TIERS, type CliDefinition, type ModelTier } from './clis.ts'
 import {
   AUTO_COMPACT_DEFAULT,
@@ -102,6 +103,8 @@ export function migrateSettingsDefaults(s: Settings): boolean {
     }
     if (a.cjkFont === 'system') a.cjkFont = 'noto'
   }
+  // 版本 4：正文行高默认值 1.75 → 1.65。还是旧默认值的升级一次，之后再调回 1.75 不会被改掉
+  if (s.defaultsVersion < 4 && s.appearance.lineHeight === 1.75) s.appearance.lineHeight = LINE_HEIGHT_DEFAULT
   if (s.defaultsVersion < SETTINGS_DEFAULTS_VERSION) {
     s.defaultsVersion = SETTINGS_DEFAULTS_VERSION
     dirty = true

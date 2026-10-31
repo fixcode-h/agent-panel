@@ -35,7 +35,7 @@ export function McpJsonFill({ onFill }: { onFill: (d: McpDraft) => void }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[0.8125rem] font-medium">{t('从 JSON 填入')}</span>
+      <span className="text-body font-medium">{t('从 JSON 填入')}</span>
       <Textarea
         rows={3}
         value={text}
@@ -48,10 +48,10 @@ export function McpJsonFill({ onFill }: { onFill: (d: McpDraft) => void }) {
         }}
         placeholder={'{ "mcpServers": { "github": { "command": "npx", "args": ["-y", "..."] } } }'}
         spellCheck={false}
-        className="font-mono text-[0.75rem]"
+        className="font-mono text-footnote"
       />
       <div className="flex items-start gap-3">
-        <span className={`min-w-0 flex-1 text-[0.75rem] ${error ? 'text-warning' : 'text-subtle'}`}>
+        <span className={`min-w-0 flex-1 text-footnote ${error ? 'text-warning' : 'text-subtle'}`}>
           {error ||
             (drafts.length > 1
               ? t('JSON 里有 {n} 个工具，点名字切换要填的那个', { n: drafts.length })

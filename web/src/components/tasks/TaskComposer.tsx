@@ -43,7 +43,7 @@ import { ParamsChip } from '@/components/agents/ParamFields'
 import { t } from '@shared/i18n'
 
 export const chip =
-  'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
+  'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-body text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
 /**
  * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、Agent，从「+」里可以改成按工作流执行。
@@ -240,7 +240,7 @@ export function TaskComposer({
               disabled={busy}
               onClick={() => sendTo(x.id)}
               title={t('把这条要求发到「{title}」', { title: x.title })}
-              className="group flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
+              className="group flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-body text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
             >
               <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
               <span className="min-w-0 flex-1 truncate">{x.title}</span>
@@ -257,7 +257,7 @@ export function TaskComposer({
         {...drop.container}
         className={cn(
           // 照 Claude Code 的输入框：一圈细线 + 很淡的大半径投影微微浮起，聚焦时投影加深、边线提一档，不套彩色光圈
-          'composer-shell relative rounded-[20px] border border-pop-edge bg-card shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-snap) focus-within:border-line-strong focus-within:shadow-(--composer-shadow-focus) dark:focus-within:border-focus/70',
+          'composer-shell relative rounded-3xl border border-pop-edge bg-card shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-snap) focus-within:border-line-strong focus-within:shadow-(--composer-shadow-focus) dark:focus-within:border-focus/70',
           (drop.over || chips.refOver) && 'drop-ring',
         )}
       >
@@ -294,7 +294,7 @@ export function TaskComposer({
           info={chips.chipInfo}
           placeholder={workflow ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')}
           pad="px-4 pt-4"
-          className="max-h-80 min-h-[84px] text-[0.9375rem] leading-relaxed"
+          className="max-h-80 min-h-[84px] text-heading leading-relaxed"
         />
         {loading ? (
           // 数据还没到时先占位，不要闪一下「选择项目」「对话」再跳成别的
@@ -392,9 +392,7 @@ export function TaskComposer({
                       <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate">{p.name}</span>
-                        <span className="truncate font-mono text-[0.6875rem] text-subtle">
-                          {p.path || t('未选择目录')}
-                        </span>
+                        <span className="truncate font-mono text-caption text-subtle">{p.path || t('未选择目录')}</span>
                       </span>
                       {p.id === project?.id && <Check className="h-4 w-4 text-accent-text" />}
                     </PopoverClose>

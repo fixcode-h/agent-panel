@@ -55,7 +55,7 @@ function PaletteCard({ id, on, onPick }: { id: Palette; on: boolean; onPick: () 
         {sample(PALETTE_SAMPLES[id].light)}
         {sample(PALETTE_SAMPLES[id].dark)}
       </span>
-      <span className="px-0.5 text-[0.8125rem] font-medium">{names[id]}</span>
+      <span className="px-0.5 text-body font-medium">{names[id]}</span>
     </button>
   )
 }
@@ -92,7 +92,7 @@ function Slider({
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-40 cursor-pointer accent-[var(--color-accent)]"
       />
-      <span className="w-16 font-mono text-[0.8125rem] text-muted tabular-nums">{format(value)}</span>
+      <span className="w-16 font-mono text-body text-muted tabular-nums">{format(value)}</span>
       {value !== def && (
         <Button variant="ghost" size="sm" onClick={() => onChange(def)}>
           {t('恢复默认')}
@@ -113,7 +113,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
   return (
     <>
       <Group title={t('配色')}>
-        <p className="pb-3 text-[0.8125rem] text-subtle">{t('只换颜色，布局不变；深浅色跟随侧栏的主题开关。')}</p>
+        <p className="pb-3 text-body text-subtle">{t('只换颜色，布局不变；深浅色跟随侧栏的主题开关。')}</p>
         <div role="radiogroup" aria-label={t('配色')} className="grid grid-cols-2 gap-3 pb-4 sm:grid-cols-3">
           {PALETTES.map((p) => (
             <PaletteCard key={p} id={p} on={value.palette === p} onPick={() => set('palette', p)} />
@@ -129,6 +129,22 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             def={DEFAULTS.panelRadius}
             format={(v) => `${Math.round(v)}px`}
             onChange={(v) => set('panelRadius', Math.round(v))}
+          />
+        </Row>
+        <Row
+          title={t('深色文字亮度')}
+          desc={t('深色主题下主文字有多白')}
+          hint={t('默认 93%，和 Claude Code 深色的主文字一样；100% 是纯白，调低更柔和。浅色主题不受影响。')}
+        >
+          <Slider
+            label={t('深色文字亮度')}
+            value={value.darkTextLevel}
+            min={70}
+            max={100}
+            step={1}
+            def={DEFAULTS.darkTextLevel}
+            format={(v) => `${Math.round(v)}%`}
+            onChange={(v) => set('darkTextLevel', Math.round(v))}
           />
         </Row>
       </Group>
@@ -252,11 +268,11 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
           />
         </Row>
         <Card padding="md" className="mt-4">
-          <p className="text-[0.75rem] text-subtle">{t('预览')}</p>
-          <p className="mt-2 text-[0.875rem]">
+          <p className="text-footnote text-subtle">{t('预览')}</p>
+          <p className="mt-2 text-prose">
             {t('Agent 面板按工作流调度本机的编码 Agent。')} The quick brown fox jumps over the lazy dog.
           </p>
-          <pre className="mt-2 rounded-md bg-field px-3 py-2 font-mono text-[0.75rem]">
+          <pre className="mt-2 rounded-md bg-field px-3 py-2 font-mono text-footnote">
             {'const ok = a => b !== c && x >= 0 // 0O 1lI 中文注释'}
           </pre>
         </Card>
