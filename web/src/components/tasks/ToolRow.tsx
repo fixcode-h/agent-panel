@@ -19,7 +19,6 @@ import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
-import { useAiLook } from '@/lib/ai-look'
 import { useChildOpen, useJobOpen, useRunToolOpen } from './child-open'
 import { api } from '@/lib/api'
 import { t } from '@shared/i18n'
@@ -287,8 +286,6 @@ export function RowShell({
   children?: React.ReactNode
 }) {
   const toggle = onToggle
-  // AI 分析窗口（设计稿 AiWindow）：过程行不铺底色、行高 30，动作名占固定宽度，几行的标题竖着对齐
-  const ai = useAiLook()
   // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
   const activate = rowOpen ?? toggle
   return (
@@ -298,7 +295,7 @@ export function RowShell({
       className={cn(
         'min-w-0',
         !boxed && 'rounded-(--c-row-radius)',
-        !boxed && !ai && 'bg-(--c-row-bg)',
+        !boxed && 'bg-(--c-row-bg)',
         boxed && 'overflow-hidden rounded-(--c-row-radius) border',
         boxed && failed && 'border-danger/30',
         className,
@@ -309,8 +306,7 @@ export function RowShell({
       <div
         onClick={activate}
         className={cn(
-          'group flex w-full min-w-0 items-center py-1 pr-1 pl-2 text-[0.75rem] text-muted',
-          ai ? 'min-h-[1.875rem]' : 'min-h-8',
+          'group flex w-full min-w-0 items-center py-1 pr-1 pl-2 text-[0.75rem] text-muted min-h-8',
           !boxed && 'rounded-(--c-row-radius)',
           boxed && 'px-2.5',
           container && '@container',
@@ -335,16 +331,7 @@ export function RowShell({
           className="flex shrink-0 items-center gap-2 text-left enabled:cursor-pointer"
         >
           {glyph}
-          {verb && (
-            <span
-              className={cn(
-                'font-semibold whitespace-nowrap text-fg',
-                ai ? 'min-w-8 text-[0.78125rem]' : 'text-[0.8125rem]',
-              )}
-            >
-              {verb}
-            </span>
-          )}
+          {verb && <span className="text-[0.8125rem] font-semibold whitespace-nowrap text-fg">{verb}</span>}
           {badge && (
             <span
               className={cn(

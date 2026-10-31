@@ -16,6 +16,7 @@ import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttac
 import { t } from './i18n.ts'
 import { isHelperAgent } from './builtin/core.ts'
 import { promptLangRules, promptLangWord } from './prompt-lang.ts'
+import { diagnosisPromptRules } from './diagnosis.ts'
 import { fmtDuration } from './duration.ts'
 import { leadVerdict } from './verdict.ts'
 import { clip as clipText } from './text.ts'
@@ -1457,10 +1458,52 @@ ${FRAMEWORK_MAP}
 
 不带任何工作流修改建议块（这个分析只给结论）。`
 
-/** 交给 Agent 的分析要求 */
+/**
+ * 用户在「想重点看什么」里写了具体问题时的分析要求（用户 2026-10-31 要求）：
+ * 只回答这个问题、找出原因，不做整个对话 / 执行的分析（不按五类、四类分节，不给工作流修改块）。
+ * 结论写成排查的结论块（shared/diagnosis.ts），右侧功能面板画成结论、证据、修复。
+ */
+function questionPrompt(bundles: TaskExport[], question: string, scope?: HelperScope) {
+  const tk = bundles[0]?.task
+  let what: string
+  let running = false
+  if (scope) {
+    const step = tk?.steps.find((s) => s.id === scope.stepId)
+    const who = tk ? (tk.mode === 'workflow' ? `工作流执行「${tk.title}」` : `对话「${tk.title}」`) : ''
+    what = `${who}派出的子任务${step ? `「${step.title}」（${step.id}，状态 ${step.status}）` : scope.stepId}`
+    running = step?.status === 'running' || step?.status === 'pending'
+  } else
+    what =
+      bundles.length === 1 && tk
+        ? `这次${tk.mode === 'workflow' ? '工作流执行' : '对话'}「${tk.title}」`
+        : `工作流最近 ${bundles.length} 次执行`
+  // 子任务范围的标记照旧放最前面（演示版假 Agent 只认它，用户的问题伪造不出来）
+  return `${scope ? `${HELPER_SCOPE_MARK}\n` : ''}附件里是${what}的完整记录。用户问了一个具体的问题，这次只回答这个问题：找出原因，给出有依据的结论。只分析，不要修改任何文件。
+
+用户的问题：${question}
+${running ? '\n注意：这个子任务还没有结束（或还在排队），记录是到导出这一刻的快照。「还没交回结果」本身不是问题，不要当成它没做完。\n' : ''}
+${promptLangRules()}
+
+## 要求
+- 只围绕这个问题：在记录里找到和它相关的那几段（消息、节点或子任务、工具调用、报错、耗时），顺着它们把原因找出来。
+- 不做整体分析：不评结果质量、工作流、角色设定、面板框架这些和问题无关的方面，不按类别分节，和问题无关的发现一条都不写。
+- 原因可能在记录里（要求写得不清、角色设定、某一步的做法），也可能在面板本身（执行引擎、调度、CLI 调用、计时统计）或交付的代码里；要去代码里找证据时只看和问题相关的位置。面板代码的位置：
+${FRAMEWORK_MAP}
+- 每条结论都要能追到依据：记录里的原文、时间或数字，代码的 \`path:line\`；推不出来的写「待确认」并说明还缺什么。
+- 原因有几种可能时按可能性排序，写清怎么确认、怎么排除。
+
+## 回复格式
+用${promptLangWord()}写：开头两三句直接回答这个问题（原因是什么），再分点写依据和建议怎么改；不加和问题无关的小节，不带工作流修改建议块。
+
+${diagnosisPromptRules()}`
+}
+
+/** 交给 Agent 的分析要求：用户写了具体问题时只分析那个问题，否则做整体分析 */
 export function analysisPrompt(bundles: TaskExport[], focus = '', scope?: HelperScope) {
+  const question = focus.trim()
+  if (question) return questionPrompt(bundles, question, scope)
   // 子任务范围只用得到那一条记录，先分出去：下面两轮遍历（flows、agents）只是整体分析要的
-  if (scope) return helperPrompt(bundles, focus, scope)
+  if (scope) return helperPrompt(bundles, scope)
   const flows = new Map<string, Workflow>()
   for (const b of bundles) for (const w of b.task.workflows) if (!flows.has(w.id)) flows.set(w.id, w)
   const agents = new Map<string, Agent>()
@@ -1481,7 +1524,7 @@ export function analysisPrompt(bundles: TaskExport[], focus = '', scope?: Helper
   return `${head}，判断哪里需要优化，并给出可以直接应用的修改建议。只分析，不要修改任何文件。
 
 ${promptLangRules()}
-${focus.trim() ? `\n用户特别关心：${focus.trim()}\n` : ''}
+
 ## 要回答的问题
 1. 结果质量：最终产出是否达到了用户的要求？哪里不够好、为什么（引用记录里的原文或节点）。
 2. 工作流本身：节点拆分是否合理、要求写得清不清楚、有没有多余或缺少的节点、验收标准和轮数、模型档位和重试是否合适；
@@ -1533,19 +1576,19 @@ ${targets.join('\n') || '（没有工作流，只能给 Agent 的建议）'}`
 export const HELPER_SCOPE_MARK = '<!-- 面板：子任务范围 -->'
 
 /** 子任务分析的要求：只看这一步，四类问题，不给工作流修改块 */
-function helperPrompt(bundles: TaskExport[], focus: string, scope: HelperScope) {
+function helperPrompt(bundles: TaskExport[], scope: HelperScope) {
   const tk = bundles[0]?.task
   const step = tk?.steps.find((s) => s.id === scope.stepId)
   const what = step ? `「${step.title}」（${step.id}，状态 ${step.status}）` : scope.stepId
   const who = tk ? (tk.mode === 'workflow' ? `工作流执行「${tk.title}」` : `对话「${tk.title}」`) : ''
   // 还在跑的那一步只能分析到目前为止：不写清楚，AI 会把「还没交回结果」当成「子任务没做」
   const running = step?.status === 'running' || step?.status === 'pending'
-  // 标记放最前面：用户在 focus 里写什么都挪不动它，也伪造不出它（focus 拼在下面的「用户特别关心」里）
+  // 标记放最前面：只有代码能写它（用户写了问题时走 questionPrompt，问题拼在标记后面），伪造不出来
   return `${HELPER_SCOPE_MARK}
 分析附件里${who}派出的一个子任务${what}。这次只分析这一个子任务，不看其它子任务和整条业务交付的质量。只分析，不要修改任何文件。
 ${running ? '\n注意：这个子任务还没有结束（或还在排队），记录是到导出这一刻的快照。「还没交回结果」本身不是问题，不要当成它没做完。\n' : ''}
 ${promptLangRules()}
-${focus.trim() ? `\n用户特别关心：${focus.trim()}\n` : ''}
+
 ${HELPER_QUESTIONS}`
 }
 

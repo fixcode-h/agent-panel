@@ -320,12 +320,13 @@ test('分析：报告列出统计、工作流定义和过程；要求里列出�
   assert.match(report, /缓存命中 600，60%/)
   assert.match(report, /node id: handle/)
   assert.match(report, /执行出错：超时/)
-  const prompt = analysisPrompt([b], '为什么慢')
+  const prompt = analysisPrompt([b])
   assert.match(prompt, /workflowId: w1｜日常开发/)
   assert.match(prompt, /flowId: main, nodeId: handle/)
   assert.match(prompt, /agentId: a1｜开发/)
-  assert.match(prompt, /用户特别关心：为什么慢/)
   assert.ok(prompt.length < 20000)
+  // 写了具体问题：只围绕这个问题找原因
+  assert.match(analysisPrompt([b], '为什么慢'), /用户的问题：为什么慢/)
 })
 
 test('修改建议：解析、对比、应用；不合法的值和找不到的对象标出来，不会应用', () => {
