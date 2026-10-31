@@ -616,7 +616,9 @@ export function createRun(sc: TasksScope) {
         // 整轮结束了，没被节点取走的补充不会再有人取
         forgetNotes(task.id)
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
-        if (entry.task.status === 'done' && hasHeld(task.id) && !sc.shuttingDown) {
+        // 收尾停掉的（父对话 finish_child、用户点解决：stopReason finish）不是出错：收尾时交来的新任务照样接着处理
+        const endedOk = entry.task.status === 'done' || (entry.stop && entry.stopReason === 'finish')
+        if (endedOk && hasHeld(task.id) && !sc.shuttingDown) {
           // 这一轮跑着的时候对话被删了（进了回收站或彻底删掉）：排着的消息没有对话可接，直接丢掉，不当成故障报
           const cur = await sc.store.peek(task.id)
           if (!cur || taskDeleted(cur)) dropHeld(task.id)
@@ -624,7 +626,7 @@ export function createRun(sc: TasksScope) {
             await followUp(task.id).catch((e) =>
               log.error('task', '接着处理执行中收到的消息失败', { task: task.id, error: (e as Error).message }),
             )
-        } else if (entry.task.status !== 'done') {
+        } else if (!endedOk) {
           // 这一轮没能正常结束（失败、被停止）：排着的消息不会再被自动处理了。
           // 在对话里把它们改成「没送出去」，用户才知道要重新发一次，而不是一直等着
           const lost = dropHeld(task.id)

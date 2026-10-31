@@ -7,7 +7,7 @@ import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
 import { bindWait, ensureChildStep } from '../../shared/plan.ts'
 import { Task, type StopReason } from '../../shared/schema.ts'
-import { createChildMessages } from './child-messages.ts'
+import { createChildMessages, setSendWaitMs } from './child-messages.ts'
 import type { TasksScope } from './scope.ts'
 
 setLang('zh')
@@ -113,4 +113,32 @@ test('子对话自己被停下（不是跟着父对话）：计划在等它，�
   const r = rig(task('root', '', 'done'), kid)
   await report(r, kid)
   assert.deepEqual(r.woke, ['root'])
+})
+
+test('父对话交给收尾中的子对话：子对话迟迟开不起来时限时回话，不让父对话的工具调用挂到超时', async () => {
+  setSendWaitMs(30)
+  try {
+    const kid = task('kid', 'root', 'done')
+    const parent = task('root', '', 'running')
+    const map = new Map([parent, kid].map((x) => [x.id, x]))
+    let finish: () => void = () => {}
+    const s = {
+      live: new Map(),
+      store: { get: async (id: string) => map.get(id) ?? null, update: async () => {} },
+      runningConv: () => undefined,
+      peerOf: async () => undefined,
+      // 子对话上一轮还在收尾：消息排着，等收尾结束才开新一轮
+      wakeConv: () => new Promise<'held'>((r) => (finish = () => r('held'))),
+      alertOn: () => () => {},
+    } as unknown as TasksScope
+    // 限时的定时器 unref 了：留一个定时器撑住事件循环，等它到点
+    const hold = setTimeout(() => {}, 5000)
+    const r = await createChildMessages(s).sendToChild('root', 'kid', '清理排查代码', undefined, 'task')
+    clearTimeout(hold)
+    assert.equal(r.ok, true)
+    assert.match(r.info, /收尾完会自动开始处理/)
+    finish()
+  } finally {
+    setSendWaitMs(40_000)
+  }
 })

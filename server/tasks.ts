@@ -117,6 +117,7 @@ export function tasksApi(deps: {
     childrenRunning: () => childrenRunning,
     claims: () => claims,
     closeWaiting: () => closeWaiting,
+    endLive: () => endLive,
     cliChildren: () => cliChildren,
     closeChildren: () => closeChildren,
     completing: () => completing,
@@ -623,6 +624,7 @@ export function tasksApi(deps: {
     keepAliveBusy,
     enforceKeepAlive,
     closeWaiting,
+    endLive,
   } = createKeepAlive(scope)
 
   const routes = new Hono()

@@ -23,6 +23,8 @@ import type { createClaims } from '../claims.ts'
  */
 export interface TasksScope {
   closeWaiting: (id: string, e: Live) => Promise<void>
+  /** 结束对话的 CLI 并等执行位释放，限时内没收完就强制停（见 keepalive.ts） */
+  endLive: (id: string, e: Live, reason: import('../../shared/schema.ts').StopReason, graceMs?: number) => Promise<void>
   PLAN_NUDGE_MS: number
   READONLY: string
   activeChildren: (parentId: string) => Promise<number>

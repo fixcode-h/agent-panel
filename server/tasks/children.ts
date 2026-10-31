@@ -173,10 +173,8 @@ export function createChildren(sc: TasksScope) {
     // 以前这一步只在独立分支里做，共用目录的子对话 resolved 之后 CLI 还在等下一句，
     // 只能等 presence 宽限期（未读的连计时都不排）兜底，实测会留下十几个没人用的进程。
     // 原因写 finish：界面和引擎都按「做完后收尾」处理，不显示成「这一轮被中断」
-    if (entry) {
-      if (!cancelWait(childId)) sc.stopTask(childId, 'finish')
-      await entry.done?.catch(() => {})
-    }
+    // 限时：CLI 取消等待后不退出时强制停掉，收尾不能一直卡着（父对话再交代任务会跟着卡住）
+    if (entry) await sc.endLive(childId, entry, 'finish')
     // 后台命令结果推回来还要开新一轮，彻底完成时一起停掉
     await sc.background.stop(childId)
     if (isolated(tk)) {

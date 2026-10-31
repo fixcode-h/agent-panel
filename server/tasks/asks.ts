@@ -178,7 +178,9 @@ export function createAsks(s: TasksScope) {
       entry.rev++
       await s.store.update(id, entry.task)
       await entry.done?.catch(() => {})
-      if (entry.task.status !== 'done' && !runningConv(id))
+      // 收尾停掉的（stopReason finish）不算没正常结束：排着的这条由收尾后的新一轮接着处理
+      const finished = entry.stop && entry.stopReason === 'finish'
+      if (entry.task.status !== 'done' && !finished && !runningConv(id))
         throw new Error(t('这一轮没有正常结束，消息留在对话里，发一条消息或点「继续执行」会处理'))
       if (hasHeld(id) && !runningConv(id))
         await s.followUp(id).catch((e) => {

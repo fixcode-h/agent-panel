@@ -164,6 +164,7 @@ import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '
 import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { dropChip, forSend, pathText } from '@shared/composer'
+import { ImportedBar, ResolvedBar } from './InputBars'
 import { UserMessage } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 import {
@@ -1619,7 +1620,9 @@ export function TaskView({
   const askOpen = (task.parentAsks ?? []).length > 0 && !task.imported && !asksQuestion(task.requests)
   // AI 分析窗口里嵌的分析对话：左侧对话区照设计稿 AiWindow 画（见 lib/ai-look.ts），普通对话页不受影响
   const aiLook = !!embed && isAnalysisTask(task, localAgents)
-  const composer = !task.imported && !asksQuestion(task.requests) && !askOpen && (
+  // 已收尾（已解决）的子对话不给输入框：换成「已收尾 + 重新打开」一行，点了才重新出现输入框（用户 2026-10-31）
+  const closedChild = !!task.parentTaskId && !!task.resolved && !task.imported
+  const composer = !task.imported && !closedChild && !asksQuestion(task.requests) && !askOpen && (
     <ChatComposer
       // 设计稿的追问框：深一档的细线、圆角 12；附件、模型、提问开关这些照旧留在下面一行
       className={aiLook ? 'rounded-xl border-line-strong' : undefined}
@@ -1781,6 +1784,7 @@ export function TaskView({
           <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
         )}
         {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
+        {closedChild && <ResolvedBar taskId={task.id} onTask={apply} />}
         {/* 点开运行面板、子对话里就地打开运行时输入框挪进去，这里先空着，避免出现两个输入框 */}
         {!(showOther && openRun) && !paneRun && composer}
         {/* 上下文、Token 用量和环境放在输入框下面，右栏留给文件系统 */}
@@ -2815,25 +2819,6 @@ function RunChecklist({ task, run, onOpen }: { task: Task; run: number; onOpen: 
 }
 
 /** 导入的任务在输入框的位置显示来源，只能查看；可以交给 AI 分析 */
-function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void }) {
-  const info = task.imported!
-  return (
-    <div className="mx-auto flex max-w-(--content-w) items-center gap-3 rounded-2xl border border-line-strong bg-card px-4 py-3 shadow-card">
-      <FileInput className="h-4 w-4 shrink-0 text-accent-text" />
-      <span className="min-w-0 flex-1 text-[0.8125rem] text-muted">
-        {t('这是从文件导入的任务（{at} 导出{app}），只能查看，不能继续执行。', {
-          at: (info.exportedAt || info.at).slice(0, 16).replace('T', ' '),
-          app: info.app ? t('，面板 {v}', { v: info.app }) : '',
-        })}
-      </span>
-      <Button size="sm" variant="secondary" className="shrink-0 rounded-lg" onClick={onAnalyze}>
-        <Sparkles className="h-3.5 w-3.5 text-accent-text" />
-        {t('AI 分析')}
-      </Button>
-    </div>
-  )
-}
-
 /** 用户消息下面的小按钮（分叉、撤回） */
 
 /** 输入框上面一行的提示条（没走完的流程）：本身有实质内容，保留虚线圆角的框 */

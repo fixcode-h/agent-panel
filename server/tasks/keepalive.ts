@@ -20,6 +20,9 @@ import { taskLog } from '../task-log.ts'
 /**
  * 停止对话、保活上限与回收（还在运行的对话不回收，见 ADR 0012）、对话名下的进程面板。
  */
+/** 取消等下一句后等进程自己退出的时长，过了就强制停止（见 endLive）。比 invoke 的 EXIT_GRACE_MS 长：常驻协议的 CLI 先按正常退出收掉 */
+export const END_LIVE_GRACE_MS = 20_000
+
 export function createKeepAlive(s: TasksScope) {
   const stopTask = (id: string, reason: StopReason) => {
     // 只有用户自己停止、归档时名下子对话才一起结束（原因记成 parent，不是用户暂停）。
@@ -193,14 +196,48 @@ export function createKeepAlive(s: TasksScope) {
   }
 
   /** 结束停在等下一句的 CLI 进程（下一轮续接会话）：「关闭 Agent」和压缩会话共用 */
-  async function closeWaiting(id: string, e: Live) {
+  /**
+   * 让对话的 CLI 结束、等它这一份执行真的收完（执行位释放）。停在等下一句的先取消等待，让它自己退出；
+   * 一会儿还没收完（CLI 关了输入也不退、收尾卡住）就按 reason 停掉，不能无限等：
+   * 以前子对话收尾在这里等一个不退出的 CLI，执行位一直占着，父对话再交代任务时一直卡在「收尾那一刻」
+   */
+  async function endLive(id: string, e: Live, reason: StopReason, graceMs = END_LIVE_GRACE_MS) {
     const canceled = cancelWait(id)
-    taskLog(id, '结束等下一句的进程', { canceled })
-    if (!canceled) stopTask(id, 'close')
-    await e.done?.catch(() => {})
+    taskLog(id, '结束等下一句的进程', { canceled, reason })
+    if (!canceled) stopTask(id, reason)
+    const done = e.done?.catch(() => {})
+    if (!done) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = await Promise.race([
+      done.then(() => false),
+      new Promise<boolean>((r) => {
+        timer = setTimeout(() => r(true), graceMs)
+        timer.unref?.()
+      }),
+    ])
+    clearTimeout(timer)
+    if (late) {
+      taskLog(id, '取消等待后进程没在限时内结束，强制停止', { reason, graceMs })
+      stopTask(id, reason)
+      await done
+    }
+  }
+
+  async function closeWaiting(id: string, e: Live) {
+    await endLive(id, e, 'close')
     // 计划没做完、落盘还写着执行中的，和页面宽限回收一样收口成已停止，界面不会一直转圈
     if (!s.live.has(id)) await settleReclaimed(s.store, id, 'close')
   }
 
-  return { allowedPids, processPanel, stopTask, subtreeIdsOf, taskAlive, keepAliveBusy, enforceKeepAlive, closeWaiting }
+  return {
+    allowedPids,
+    processPanel,
+    stopTask,
+    subtreeIdsOf,
+    taskAlive,
+    keepAliveBusy,
+    enforceKeepAlive,
+    closeWaiting,
+    endLive,
+  }
 }
