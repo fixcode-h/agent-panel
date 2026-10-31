@@ -13,7 +13,8 @@ import { helperBriefView } from '@/lib/helper-brief'
 import { useEscape } from '@/lib/useEscape'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
-import { Modal } from '@/components/ui/modal'
+import { type StatusTone } from '@/components/ui/status-pill'
+import { ChatWindow, WIN_BTN } from '@/components/ai-window/ChatWindow'
 import { ComposerPopover } from '@/components/ui/composer-popover'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -299,50 +300,56 @@ export function HelperWindow({
   const hasBrief = useMemo(() => !helperBriefView(step?.brief).empty, [step?.brief])
   const scroller = useStickToBottom(id, undefined, true, hasBrief ? 'top' : 'bottom')
   if (!step) return null
-  const time = step.endedAt && !live ? fmtDuration(stepMs(step, now)) : ''
+  const time = step.startedAt || step.endedAt ? fmtDuration(stepMs(step, now)) : ''
+  // 标题栏右侧的状态胶囊：和 AI 分析窗口同一个位置、同一套颜色
+  const pill: { tone: StatusTone; text: string } =
+    step.status === 'running'
+      ? { tone: 'run', text: t('执行中') }
+      : step.status === 'pending'
+        ? { tone: 'wait', text: step.apiWait ? t('等 API 名额') : step.interrupted ? t('已打断') : t('正在启动') }
+        : step.status === 'failed'
+          ? { tone: 'err', text: t('失败') }
+          : step.status === 'skipped'
+            ? { tone: 'idle', text: t('已终止') }
+            : { tone: 'ok', text: t('已完成') }
   return (
     <>
-      {/* 只读的查看窗口：点到外面就关；对话流要够宽，高度固定不随内容跳 */}
-      <Modal
+      {/* 和 AI 分析窗口同一个外壳（ChatWindow）：标题栏、尺寸都一样，只是没有右侧的项目文件 / 改动栏，
+          底部也不是输入框——子任务做完 CLI 已经退出，这里只能查看。点到外面就关 */}
+      <ChatWindow
         open
         onOpenChange={(o) => !o && onClose()}
-        title={null}
-        size="xl"
-        bare
-        closeOnOutside
-        className="h-[min(820px,calc(100dvh-2rem))] max-w-[880px] bg-bg"
-      >
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">
-          <StepIcon status={step.status} />
-          <span className="shrink-0 text-[0.8125rem] text-muted">{t('子任务')}</span>
-          <D.Title className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium" title={step.title}>
-            {step.title}
-          </D.Title>
-          {agent && (
-            <span className="hidden shrink-0 items-center gap-1.5 text-xs text-subtle sm:flex">
-              <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
-              {agent.name}
-            </span>
-          )}
-          {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
-          {/* 窄屏只留图标：留个 aria-label 和 title，否则入口没有可访问名、悬停也没有提示 */}
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={t('AI 分析')}
-            title={t('让 AI 分析这一步的耗时、角色符合度和优化空间')}
-            onClick={() => setAnalyzing(true)}
-          >
-            <Sparkles className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('AI 分析')}</span>
-          </Button>
-          <StopHelper task={task} step={step} label />
+        title={t('子任务 {title}', { title: step.title })}
+        icon={ListTree}
+        label={t('子任务')}
+        subject={step.title}
+        meta={[agent?.name, t('来自 {name}', { name: task.title })].filter(Boolean).join(' · ')}
+        pill={{ ...pill, took: time }}
+        tools={
+          <div className="flex shrink-0 items-center gap-0.5">
+            <IconButton
+              icon={Sparkles}
+              size="sm"
+              label={t('AI 分析')}
+              title={t('让 AI 分析这一步的耗时、角色符合度和优化空间')}
+              onClick={() => setAnalyzing(true)}
+            />
+            <StopHelper task={task} step={step} />
+          </div>
+        }
+        actions={
           <D.Close asChild>
-            <IconButton size="sm" icon={X} label={t('关闭')} />
+            <IconButton icon={X} size="sm" className={WIN_BTN} label={t('关闭')} />
           </D.Close>
-        </header>
-        <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-(--content-w) flex-col gap-4 px-4 py-5 md:px-6">
+        }
+      >
+        <div
+          ref={scroller.ref}
+          onScroll={scroller.onScroll}
+          className="min-h-0 flex-1 overflow-y-auto px-3 py-5 md:px-6"
+        >
+          {/* 留白放在外层、内容区和底下那块只读说明同一个宽度，左右对齐 */}
+          <div className="mx-auto flex max-w-(--content-w) flex-col gap-4">
             {/* 派发时交给它的要求放在最上面：先知道这个子任务要做什么，再看它怎么做的。
                   它就是普通的第一块内容，不吸顶（吸顶会盖住下面的对话流）；窗口打开时停在顶部所以它一开始就看得见。
                   有对话流时默认收起，没有对话流时展开，那正是窗口里要看的内容。展开时先 unpin 再滚到卡片顶部，
@@ -361,19 +368,22 @@ export function HelperWindow({
             )}
           </div>
         </div>
-        {/* 子任务没有输入框：做完 CLI 已经退出，这里只能查看 */}
-        <footer className="shrink-0 border-t bg-card px-4 py-2.5 text-xs text-subtle">
-          {live
-            ? t('子任务执行中，做完后结果会自动交回给派它的对话')
-            : step.status === 'pending'
-              ? pendingBrief(step)
-              : step.status === 'failed'
-                ? t('子任务失败了，派它的对话会收到失败原因。这里只能查看')
-                : step.status === 'skipped'
-                  ? t('子任务已终止，派它的对话会收到终止原因。这里只能查看')
-                  : t('子任务已结束，结果已交回给派它的对话。这里只能查看')}
-        </footer>
-      </Modal>
+        {/* AI 分析窗口放输入框的位置：子任务没有输入框，换成同样外形的只读说明 */}
+        <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
+          <p className="mx-auto flex max-w-(--content-w) items-center gap-2 rounded-xl border border-line-strong bg-card px-4 py-3 text-[0.8125rem] text-subtle">
+            <StepIcon status={step.status} />
+            {live
+              ? t('子任务执行中，做完后结果会自动交回给派它的对话')
+              : step.status === 'pending'
+                ? pendingBrief(step)
+                : step.status === 'failed'
+                  ? t('子任务失败了，派它的对话会收到失败原因。这里只能查看')
+                  : step.status === 'skipped'
+                    ? t('子任务已终止，派它的对话会收到终止原因。这里只能查看')
+                    : t('子任务已结束，结果已交回给派它的对话。这里只能查看')}
+          </p>
+        </div>
+      </ChatWindow>
       {/* 弹窗开在子任务窗口之上：分析对话按归属规则开在项目里或所属顶层对话下，在统一的 AI 分析窗口里看，子任务窗口先关掉 */}
       <AnalyzeDialog
         open={analyzing}
