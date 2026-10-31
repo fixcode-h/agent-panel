@@ -182,7 +182,7 @@ function TurnDiffDialog({
       return next
     })
   return (
-    <Modal open={!!path} onOpenChange={(o) => !o && onPath(null)} title={null} size="full" bare closeOnOutside>
+    <Modal open={!!path} onOpenChange={(o) => !o && onPath(null)} title={null} size="xl" bare closeOnOutside>
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-64 shrink-0 flex-col border-r bg-card md:flex" aria-label={t('这一轮的改动')}>
           {/* 和右边差异的标题栏（ModalHeader）同高，横线连成一条 */}

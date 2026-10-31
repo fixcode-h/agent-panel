@@ -178,7 +178,7 @@ export function ConfirmBar({
   const need = picked.filter((x) => x.kind === 'need').length
   const bug = picked.length - need
   return (
-    <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-3 rounded-xl border border-line frost-card px-4 py-2.5 shadow-card">
+    <div className="sticky bottom-4 z-10 -mx-1 flex flex-wrap items-center gap-3 rounded-xl border border-line frost-card px-4 py-2.5 shadow-card">
       <ListChecks className="h-4 w-4 text-accent-text" />
       <span className="text-body">
         {picked.length

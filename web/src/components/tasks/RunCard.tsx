@@ -232,7 +232,7 @@ export function RunDialog({
   const heading = run ? t('运行 {n}', { n: run }) : t('启动工作流')
   return (
     // 和命令行、差异窗口一样用铺满的查看窗口：只看不填，点到外面就关
-    <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside>
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="xl" bare closeOnOutside>
       <ModalHeader icon={WorkflowIcon} title={heading} meta={name}>
         {state === 'running' && (
           <span className="flex shrink-0 items-center gap-1 text-footnote text-accent-text">

@@ -57,6 +57,8 @@ export function TurnRail({
   const turns = useMemo(() => toTurns(msgs), [msgs])
   const [current, setCurrent] = useState(-1)
   const [hover, setHover] = useState<{ i: number; top: number } | null>(null)
+  // 正贴在顶上的毛玻璃吸顶栏（回复头、工作流节点标题）有多高：横杠从它下沿往下排，不压在毛玻璃上（用户要求）
+  const [barGap, setBarGap] = useState(0)
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const railRef = useRef<HTMLDivElement>(null)
 
@@ -76,6 +78,12 @@ export function TurnRail({
       })
       // 一轮都没越过（停在最上面）时算第一轮
       setCurrent(at < 0 ? 0 : at)
+      let gap = 0
+      for (const bar of el.querySelectorAll<HTMLElement>('.frost-bar')) {
+        const r = bar.getBoundingClientRect()
+        if (r.top <= box.top + 2 && r.bottom > box.top) gap = Math.max(gap, r.bottom - box.top)
+      }
+      setBarGap(Math.round(gap))
     }
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(measure)
@@ -112,8 +120,8 @@ export function TurnRail({
     <div
       ref={railRef}
       data-turn-rail
-      className="absolute top-3 z-20"
-      style={{ right }}
+      className="absolute z-20 transition-[top] duration-(--dur-base) ease-(--ease-snap)"
+      style={{ right, top: barGap + 12 }}
       onMouseLeave={leave}
       onMouseEnter={keep}
     >

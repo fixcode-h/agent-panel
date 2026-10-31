@@ -25,6 +25,8 @@ export const Card = forwardRef<
   <Tag
     // 不同标签的 ref 类型不一样，这里统一按 HTMLElement 收
     ref={ref as never}
+    // 有底色的块：放进设置卡这类有底色的区域时，四周按 --surface-inset 留边距（index.css）
+    data-surface=""
     {...(Tag === 'button' ? { type: 'button' as const } : {})}
     className={cn(
       'rounded-(--c-card-radius) border-(length:--c-card-border) bg-(--c-card-bg) shadow-(--c-card-shadow)',

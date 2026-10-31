@@ -9,12 +9,6 @@ import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { jobLive } from '@/lib/job-poll'
 
-/**
- * 命令行窗口的高度跟着输出走：命令短、输出只有几行时不用撑满一屏白片，
- * 输出多了才长到上限、在窗口里滚动。外壳用 Modal 的 full 档，只把固定高度换成按内容长
- */
-const termHeight = 'h-auto min-h-[min(360px,calc(100dvh-3.75rem))]'
-
 /** 复制成功都说一句复制了什么：命令和输出共用一个按钮时，光说「已复制」分不清 */
 const copy = (text: string, done: string) => void copyText(text, { done })
 
@@ -55,7 +49,7 @@ export function OutputDialog({
   const text = output ?? ''
   return (
     // 只看不填：点到外面就关（和原来手写外壳的默认行为一致）
-    <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside>
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="lg" bare closeOnOutside>
       <ModalHeader
         icon={Wrench}
         title={title}
@@ -168,7 +162,8 @@ export function CommandDialog({
   const stick = useStickToBottom(command)
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside className={termHeight}>
+    // 命令行窗口：lg 档固定宽 800、最小高 480，输出多了才长到上限、在窗口里滚动
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="lg" bare closeOnOutside>
       {/* 标题就是命令本身（悬停看全文），右边是状态和用时，不再是空的「命令」两个字 */}
       <ModalHeader
         icon={Terminal}

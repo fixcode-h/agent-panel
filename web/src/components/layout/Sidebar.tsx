@@ -366,12 +366,12 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
             title={m.label}
             // 选中用 seg-thumb：深色下 bg-sel 贴着侧栏底色几乎看不出来；未选中用 muted，subtle 在深色下像禁用
             className={cn(
-              'grid h-9 w-9 cursor-pointer place-items-center rounded-xl transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
-              m.on ? 'seg-thumb' : 'text-muted hover:bg-sel/70 hover:text-fg',
+              'press grid h-9 w-9 cursor-pointer place-items-center rounded-xl',
+              m.on ? 'seg-thumb' : 'text-subtle hover:bg-hover hover:text-fg',
             )}
           >
-            {/* 和图标栏的导航图标同一套线宽，小一号（铺满大半个按钮）：模式是次一级的切换 */}
-            <m.icon className="h-7 w-7" strokeWidth={1.9} />
+            {/* 和图标栏的导航图标同一套线宽，小一号：模式是次一级的切换 */}
+            <m.icon className="h-5 w-5" strokeWidth={1.75} />
           </button>
         ))}
       </div>
