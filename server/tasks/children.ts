@@ -37,7 +37,7 @@ import { reapLostJobs } from '../background.ts'
 import { log } from '../log.ts'
 import { aroundMerge } from '../turn-changes.ts'
 import { t } from '../../shared/i18n.ts'
-import { activePlan, holdWait, needsFix, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
+import { activePlan, holdWait, needsFix, panelWrap, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
 import { RULE_CMD, isolated, HELPER_STOP_TIMEOUT_MS, HELPER_STOP_POLL_MS } from './helpers.ts'
@@ -448,8 +448,8 @@ export function createChildren(sc: TasksScope) {
     const direct = tk.userDirect ? `\n用户在这个子对话里直接交代过：${tk.userDirect}` : ''
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
     const next =
-      r.state === 'unfinished' && isolated(tk) && !openWork(tk).length
-        ? '\n下一步：用 send_to_conversation 让它在自己的分支里跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。'
+      r.state === 'unfinished' && !openWork(tk).length
+        ? `\n下一步：用 send_to_conversation 让它${isolated(tk) ? '在自己的分支里' : ''}评审处置完、跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。`
         : r.state === 'unfinished'
           ? `\n下一步：面板已经推过它一次接着做，它仍停在这里。用 send_to_conversation 交回这个子对话（id ${tk.id}），写清下一步要做什么；不要另建一个子对话重做。`
           : r.state === 'failed' || r.state === 'stopped'
@@ -499,6 +499,8 @@ export function createChildren(sc: TasksScope) {
       return
     }
     void (async () => {
+      // 共用目录的子对话（P4、没有版本管理）改完没请收尾：和独立分支一样提醒一次，评审、验收不因版本管理方式省掉
+      if (!isolated(child) && !hasHeld(child.id) && !child.resolved && (await nudgeMerge(child))) return
       if (await nudgePlan(child)) return
       await reportChild(child.id)
     })().catch((e) => {
@@ -639,14 +641,20 @@ export function createChildren(sc: TasksScope) {
   async function nudgeMerge(child: Task): Promise<boolean> {
     if (!child.parentTaskId || sc.mergeNudged.has(child.id) || child.wrapRequest) return false
     if (child.status !== 'done' || child.working) return false
+    // 用户停下、父对话收尾、归档删除这类被叫停的：不能再推它开新一轮，停止键按下去对话又自己跑起来（e2e 保活子对话那段撞到过）。
+    // 页面切走、闲置回收只是收掉等下一句的进程，这一轮是正常做完的，照常提醒
+    const live = sc.live.get(child.id)
+    const why = live?.stop ? live.stopReason : child.stopReason
+    if (why && why !== 'presence' && why !== 'idle') return false
     if (child.requests.length || child.parentAsks?.length || openWork(child).length) return false
     if (sc.background.list(child.id).some((j) => j.state === 'queued' || j.state === 'running')) return false
+    if (!isolated(child)) return nudgeShared(child)
     const project = await sc.deps.projects.get(child.projectId)
     const st = project ? await worktreeStatus(project.path, child.worktree!).catch(() => null) : null
     if (!st) return false
     // 分支已经在原分支里了（子对话或它派的子任务自己 git merge 过去），计划却还停在「合回」这一步：
     // 不提醒的话没人会去调用 submit_merge，计划一直卡在收尾、子对话也一直不算完成
-    const wrapOpen = !!activePlan(child)?.steps.some((s) => s.wrapUp === 'merge' && s.status !== 'done')
+    const wrapOpen = !!activePlan(child)?.steps.some((s) => panelWrap(s.wrapUp) && s.status !== 'done')
     if (st.merged && !wrapOpen) return false
     sc.mergeNudged.add(child.id)
     const what = [st.ahead ? `${st.ahead} 个提交` : '', st.dirty ? `${st.dirty} 个未提交的文件` : ''].filter(Boolean)
@@ -656,6 +664,26 @@ export function createChildren(sc: TasksScope) {
       st.merged
         ? '【面板】你的分支已经在父对话的分支里了，但还没请父对话收尾，计划停在「合回父对话所在的分支」。直接调用 submit_merge（tests 写上跑过的验证），父对话确认后面板标完成并删除分支。以后收尾都用 submit_merge，不要自己或派子任务去 git merge。'
         : `【面板】你的独立分支里还有没合回父对话分支的改动（${what.join('、')}），也还没请父对话收尾。按「验证」在你的分支里跑通编译和测试后调用 submit_merge（tests 写上跑了什么、结果如何），父对话会合并、标完成并删除分支；没合回去之前不算做完。验证没过就修好再交，确实不该合并就说明原因。`,
+      'build',
+    )
+    return r.ok
+  }
+
+  /**
+   * 共用目录的子对话（P4、没有版本管理、项目设成共用目录）这一轮做完了，改过文件却没请父对话验收：
+   * 推一条面板消息提醒它评审、验证后调用 submit_merge。条件和独立分支一样只提醒一次（调用方已查过计划、提问和后台命令）。
+   * 计划里还挂着收尾（P4 分 changelist、请验收），或者没列计划但改了文件，都算没交付完
+   */
+  async function nudgeShared(child: Task): Promise<boolean> {
+    const plan = activePlan(child)
+    const wrapOpen = !!plan?.steps.some((s) => panelWrap(s.wrapUp) && s.status !== 'done')
+    // 列了计划的看收尾那一步还挂着没有（只读排查也要 submit_merge 交结果，评审只在改过文件时要求）；没列计划的看改没改文件
+    if (plan ? !wrapOpen : !child.changes.length) return false
+    sc.mergeNudged.add(child.id)
+    const r = await sc.sendToChild(
+      child.parentTaskId!,
+      child.id,
+      `【面板】${child.changes.length ? `你改了 ${child.changes.length} 个文件，` : '计划只剩收尾，'}还没请父对话验收。你和父对话共用目录（P4、没有版本管理或项目设成共用目录），没有分支要合，但收尾的必备步骤一样要做：改了代码先按「收尾前评审」派评审、逐条处置${plan?.steps.some((s) => s.wrapUp === 'p4' && s.status !== 'done') ? '，P4 按文件类型分好 changelist' : ''}，按「验证」跑通编译和测试，再调用 submit_merge（tests 写上跑了什么、结果如何，handoff 写交接要点）。没请父对话验收之前不算做完；确实不该交付就说明原因。`,
       'build',
     )
     return r.ok

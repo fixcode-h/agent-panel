@@ -716,13 +716,12 @@ export function mergeSidesText(sides: MergeSides): string {
 /**
  * 合并失败是不是因为 index.lock 被别的 git 进程占着。新一点的 git（2.43 起）合并前先跑 `git stash create`，
  * 撞上锁时报的是「fatal: stash failed」而不是 index.lock：只认 index.lock 的话会把它当成冲突报给子对话
- * （本机 git 2.43 实测）。stash failed 的原因不止锁，所以只在锁文件真的在时才算
+ * （本机 git 2.43 实测）。stash failed 不能再看锁文件在不在：占锁的进程往往在 git 报错之后、
+ * 我们去查之前就放开了，查到「不在」就把一次撞锁当成冲突报出去（CI 上 worktree.test 的锁用例因此时好时坏）。
+ * 锁以外的原因重试几次照样失败，最后照常报错，只是多等几秒
  */
-async function lockBusy(target: string, stderr: string) {
-  if (/index\.lock|Unable to write index/.test(stderr)) return true
-  if (!/stash failed/.test(stderr)) return false
-  const lock = (await git(target, 'rev-parse', '--git-path', 'index.lock')).stdout.trim()
-  return !!lock && existsSync(path.resolve(target, lock))
+function lockBusy(stderr: string) {
+  return /index\.lock|Unable to write index|stash failed/.test(stderr)
 }
 
 /** 没配置 git 用户时用面板的身份提交，免得提交失败 */
@@ -760,7 +759,7 @@ export async function mergeWorktree(repo: string, wt: TaskWorktree, message: str
     // 别的 git 进程（Agent 自己的 git add / commit、面板的状态查询）正好占着 index.lock：合并根本没开始，
     // 不是冲突，等一下重试；直接报「有冲突」会让父对话、子对话去处理一个不存在的冲突
     // 写索引那一步才撞上锁时 git 已经留下了 MERGE_HEAD：先撤掉这次没合成的，再重来（撤也撞锁就下一圈再撤）
-    for (let i = 1; r.code !== 0 && i <= 5 && (await lockBusy(target, r.stderr)); i++) {
+    for (let i = 1; r.code !== 0 && i <= 5 && lockBusy(r.stderr); i++) {
       await new Promise((ok) => setTimeout(ok, 200 * i))
       const head = (await git(target, 'rev-parse', '--git-path', 'MERGE_HEAD')).stdout.trim()
       if (head && existsSync(path.resolve(target, head)) && (await git(target, 'merge', '--abort')).code !== 0) continue

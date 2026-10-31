@@ -1,5 +1,5 @@
 ---
-paths: server/tasks.ts, shared/test-steps.ts, shared/test-steps.test.ts, web/src/components/projects/**, docs/agent-test-steps.md, scripts/e2e/12-parent-tests.mjs, scripts/ui/07-projects.mjs
+paths: server/tasks/**, shared/test-steps.ts, shared/test-steps.test.ts, web/src/components/projects/**, docs/agent-test-steps.md, scripts/e2e/12-parent-tests.mjs, scripts/ui/07-projects.mjs
 ---
 
 # 项目设置
@@ -20,7 +20,7 @@ paths: server/tasks.ts, shared/test-steps.ts, shared/test-steps.test.ts, web/src
 
 - 规则：关掉弹窗还在跑的 AI 会话（项目设置的 `AiSession`）要记下途中建好的对象（`projectId`），应用时打开那个对象；没保存的新建草稿暂存在弹窗外壳。不能靠重开空白的新建弹窗来应用，保存时会多建一个同名项目。
 - 起因：新建项目时 AI 初始化 → 关掉设置 → 点「查看推荐并应用」，多出同名项目、目录也丢了（0e1df58 修复）。
-- 防线：`scripts/ui/07-projects.mjs` 的「先创建再应用」「关掉设置再应用」。
+- 防线：人工（`scripts/ui/07-projects.mjs` 的「AI初始化」截图只覆盖已有项目，新建项目时关掉设置再应用这条要手动点一遍）。
 
 ## 改了什么才编译、测试什么，不要「没命中就全跑」
 

@@ -17,7 +17,7 @@ paths: server/exec/runner.ts, server/exec/delivery.ts, server/exec/hints.test.ts
 
 - 规则：任务页之外自己拼消息处（`server/assist.ts` 的 AI 创建 / 分析、`server/designs.ts` 的 UI 设计）和 runner 一样处理工具事件：`tool_result` 删掉 `running`、`tool_delta` 的 `snapshot` 直接替换输出，结束时（停止、超时、退出）收掉在跑的行；给 CLI 加字段时一起过。
 - 起因：Pi 的 `tool_execution_start` 带 `running: true`，c5e408d 只改了 runner，AI 分析一直转圈；任务页被打断时 `endTool` 没清 `running`。
-- 防线：`scripts/e2e.mjs` 的「工具结束后不再显示运行中」。
+- 防线：`scripts/e2e/06-assist.mjs` 的「工具结束后不再显示运行中」。
 
 ## 一轮结束只发一次回调，result 和保活等待同出口
 

@@ -18,7 +18,10 @@ import {
   isSettled,
   itemUpdatedAt,
   leftSteps,
+  markChildWrapUp,
   markWrapUp,
+  openWork,
+  panelWrap,
   openPlan,
   planChildren,
   planHeadline,
@@ -615,9 +618,36 @@ test('子对话的收尾：面板加在计划最后，漏写、挪到前面都�
   plan = activePlan(task)!
   assert.equal(plan.steps.at(-1)!.wrapUp, 'p4')
   assert.equal(plan.doneAt, '', '收尾没做完，计划不收起')
-  // P4 的收尾由 Agent 自己标完成
+  // P4 分完 changelist 也要请父对话验收：Agent 自己标完成不算，父对话收下后面板标（评审、验收不因版本管理省掉）
   applyPlan(task, { steps: [{ id: '3', title: plan.steps.at(-1)!.title, status: 'done' }] }, undefined, 'p4')
-  assert.notEqual(task.plans!.at(-1)!.doneAt, '', '收尾做完，计划结束')
+  assert.equal(task.plans!.at(-1)!.doneAt, '', 'Agent 自己标完成不算，计划不收起')
+  assert.deepEqual(openWork(task), [], '收尾这一步不挡 submit_merge')
+  assert.ok(markChildWrapUp(task, 'done', '父对话已验收'))
+  assert.notEqual(task.plans!.at(-1)!.doneAt, '', '父对话收下后收尾做完，计划结束')
+})
+
+test('共用目录、没有版本管理的子对话也有收尾：请父对话验收，只由面板标完成', () => {
+  const task = fresh()
+  applyPlan(
+    task,
+    {
+      steps: [
+        { title: '改代码', status: 'done' },
+        { title: '评审本次改动', review: true },
+      ],
+    },
+    undefined,
+    'deliver',
+  )
+  const wrap = () => activePlan(task)!.steps.at(-1)!
+  assert.equal(wrap().wrapUp, 'deliver')
+  assert.match(wrap().title, /请父对话验收/)
+  applyPlan(task, { steps: [{ id: wrap().id, title: wrap().title, status: 'done' }] }, undefined, 'deliver')
+  assert.notEqual(wrap().status, 'done', 'Agent 自己标完成不算')
+  assert.ok(markChildWrapUp(task, 'waiting'))
+  assert.equal(wrap().status, 'waiting')
+  assert.ok(markChildWrapUp(task, 'running', '又有新的要求'))
+  assert.equal(wrap().status, 'running')
 })
 
 test('合回分支的收尾只由面板标完成，新加的工作流步骤插在它前面', () => {
@@ -878,10 +908,17 @@ test('父对话的推送收尾只在这个对话明确授权时才有', () => {
   assert.equal(wrapUpKind({ child: false, git: false, push: 'allow' }), undefined)
   // P4 工作区走 changelist，不推 git（工作区建在 git 仓库目录下时也会认到 .git）
   assert.equal(wrapUpKind({ child: false, p4: true, git: true, push: 'allow' }), undefined)
-  // 子对话保持不碰远端：还是合并回父对话分支或分 changelist
+  // 子对话保持不碰远端：合并回父对话分支、分 changelist，或者共用目录 / 没有版本管理时请父对话验收——
+  // 不管哪种版本管理都有收尾，评审和验收挂在它上面
   assert.equal(wrapUpKind({ child: true, isolated: true, git: true, push: 'allow' }), 'merge')
   assert.equal(wrapUpKind({ child: true, p4: true, git: true, push: 'allow' }), 'p4')
-  assert.equal(wrapUpKind({ child: true, git: true, push: 'allow' }), undefined)
+  assert.equal(wrapUpKind({ child: true, git: true, push: 'allow' }), 'deliver')
+  assert.equal(wrapUpKind({ child: true }), 'deliver')
+  // 必备的收尾不跟着版本管理方式变：子对话不管独立分支、共用目录、P4、没有版本管理，都落到面板标完成的收尾上
+  for (const isolated of [true, false])
+    for (const p4 of [true, false])
+      for (const git of [true, false])
+        assert.ok(panelWrap(wrapUpKind({ child: true, isolated, p4, git })), JSON.stringify({ isolated, p4, git }))
   // 项目设置「不推送」不影响子对话：它的收尾是合回分支 / 分 changelist，不推送也要照做
   assert.equal(wrapUpKind({ child: true, isolated: true, git: true, push: 'deny' }), 'merge')
   assert.equal(wrapUpKind({ child: true, p4: true, git: true, push: 'deny' }), 'p4')

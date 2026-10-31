@@ -1376,7 +1376,8 @@ await runShard('子对话与计划', async (api) => {
         { label: '面板推子对话接着做计划，并交到了 CLI', timeout: 20000 },
       )
       assert.equal(pushes(pushed).length, 1, '计划停住时推了一次')
-      assert.match(pushes(pushed)[0].text, /1\/3[\s\S]*「跑检查」/, '推的时候写明进度和接下来做哪一步')
+      // 三步计划加上面板放在最后的收尾（共用目录也要请父对话验收）一共四步
+      assert.match(pushes(pushed)[0].text, /1\/4[\s\S]*「跑检查」/, '推的时候写明进度和接下来做哪一步')
       // 被推之后仍然原地不动：不再推第二次，改成照常上报父对话「未完成」
       await waitFor(
         async () => {
@@ -1480,10 +1481,11 @@ await runShard('子对话与计划', async (api) => {
     assert.equal(solveKid.worktree, null, '前提：共用目录的子对话不建独立分支')
     const planBefore = solveKid.plans.at(-1)
     assert.ok(planBefore, '前提：子对话列了计划')
+    // 6 步之外还有面板放在最后的收尾（共用目录也要请父对话验收）
     assert.equal(
       planBefore.steps.filter((s) => s.status !== 'done').length,
-      4,
-      '前提：计划 6 步里 2 步做完、4 步没做完',
+      5,
+      '前提：计划 6 步里 2 步做完、4 步没做完，加上没做的收尾',
     )
     // 反向保护：同一个「计划没做完」的子对话走父对话收尾（finish_child）仍然被拦住——
     // 这条路径不传 fromUser，不能把真没做完的工作也当成做完
@@ -1510,7 +1512,7 @@ await runShard('子对话与计划', async (api) => {
     assert.equal(afterFinish.resolved ?? false, false, '父对话收尾被拦后子对话没有被标完成')
     assert.equal(
       afterFinish.plans.at(-1).steps.filter((s) => s.status !== 'done').length,
-      4,
+      5,
       '父对话收尾不会顺手把计划收口（fromUser 只走用户点解决那条路）',
     )
     step('计划没做完时父对话收尾仍被拦（计划不会跟着收口）')
@@ -1553,6 +1555,47 @@ await runShard('子对话与计划', async (api) => {
       reportsBefore + 1,
       '已经解决过的子对话不会再往父对话上报一次「已完成」',
     )
+    // ---- 共用目录的子对话（和 P4、没有版本管理同一条路）：评审、验证、交接、父对话验收一样不少 ----
+    // 以前只有独立分支有 submit_merge，共用目录的子对话改完计划一收就算完成，评审门禁根本走不到（用户 2026-10-31 报的 P4 场景）
+    {
+      clearCliOutputs(project.path)
+      const mergesBefore = readLog(log + '.merge').length
+      const sharedParent = await waitDone(
+        (
+          await call('POST', '/tasks', {
+            projectId: project.id,
+            mode: 'chat',
+            agentId: A.id,
+            prompt: '共用目录：父对话',
+          })
+        ).id,
+        20000,
+      )
+      const kid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: sharedParent.id,
+        prompt: 'REVIEW_BLOCK SUBMIT_MERGE 共用目录的子对话评审给必须改项时不许收尾',
+      })
+      const closed = await waitTask(kid.id, (x) => x.resolved, 40000)
+      assert.equal(closed.worktree, null, '前提：共用目录的子对话没有独立分支')
+      const merges = readLog(log + '.merge').slice(mergesBefore)
+      assert.ok(
+        merges.some((x) => x.got.isError && /评审/.test(JSON.stringify(x.got))),
+        '评审给了必须改项时 submit_merge 被拦下：共用目录也过评审门禁',
+      )
+      assert.ok(
+        merges.some((x) => !x.got.isError && /验收/.test(JSON.stringify(x.got))),
+        '复看通过后请父对话验收成功（没有分支要合）',
+      )
+      // 假 CLI 收到「已验收」那一轮会把整份计划再交一次，收尾不一定还在最后：按种类找
+      const wrap = closed.plans.at(-1).steps.find((x) => x.wrapUp)
+      assert.equal(wrap?.wrapUp, 'deliver', '计划里有面板加的「请父对话验收」')
+      assert.equal(wrap.status, 'done', '父对话验收后面板把收尾标完成')
+      assert.ok(closed.handoff?.text, '交接要点照样留在任务上')
+      step('共用目录的子对话：评审门禁照样拦、复看通过后请父对话验收，验收后才完成')
+    }
     if (isoBefore !== 'claim')
       await call('PUT', `/projects/${project.id}`, { ...projPayload, childIsolation: isoBefore })
     // 不在这里删父对话：子对话刚被置完成时 CLI 还在收尾，那一轮结束时要处理手上的消息，

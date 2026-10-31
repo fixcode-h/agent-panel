@@ -1,5 +1,5 @@
 ---
-paths: shared/schema.ts, shared/task.ts, shared/data.ts, shared/settings.ts, server/store.ts, server/*store*.ts, server/settings*.ts, server/tasks.ts, server/update*.ts, scripts/package.mjs, web/src/lib/demo-backend.ts, web/src/lib/api.ts
+paths: shared/schema.ts, shared/task.ts, shared/data.ts, shared/settings.ts, server/store.ts, server/*store*.ts, server/settings*.ts, server/tasks/**, server/update*.ts, scripts/package.mjs, web/src/lib/demo-backend.ts, web/src/lib/api.ts
 ---
 
 # 数据结构、存储、升级兼容和出包

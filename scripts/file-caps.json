@@ -9,7 +9,6 @@
     "server/exec/worktree.ts": 1350,
     "server/index.ts": 1300,
     "server/orch-mcp.ts": 1350,
-    "server/tasks.ts": 900,
     "shared/assist.ts": 1400,
     "shared/builtin/agents.ts": 1650,
     "shared/builtin/legacy.ts": 1800,

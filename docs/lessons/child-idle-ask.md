@@ -1,5 +1,5 @@
 ---
-paths: shared/task.ts, server/tasks.ts, server/exec/delivery.ts, web/src/components/tasks/child-line.ts
+paths: shared/task.ts, server/tasks/**, server/exec/delivery.ts, web/src/components/tasks/child-line.ts
 ---
 
 # 子对话没有输出时自动询问

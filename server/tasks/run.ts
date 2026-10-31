@@ -55,7 +55,7 @@ import { currentTestSteps, isUeBuildCommand } from '../../shared/test-steps.ts'
 import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
-import { markWrapUp } from '../../shared/plan.ts'
+import { markChildWrapUp } from '../../shared/plan.ts'
 import { childFilesInfo, collisionNotice, normClaimPath, scopeOverlaps } from '../claims.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { p4Runner, splitChangelists } from '../p4-split.ts'
@@ -279,11 +279,13 @@ export function createRun(sc: TasksScope) {
           dir && project?.path && (await isP4(project.path))
             ? (input) => splitChangelists(p4Runner(dir), input)
             : undefined,
+        // 不管用哪种版本管理，子对话都要请父对话收尾：评审、测试、交接和父对话验收挂在这一步上（独立分支还要合回）
         submitMerge:
-          task.parentTaskId && isolated(entry.task)
+          task.parentTaskId && task.projectId
             ? (note, tests, build, handoff, triage, override) =>
                 sc.submitMerge(task.id, note, tests, ueRole === 'child' && build !== false, handoff, triage, override)
             : undefined,
+        isolated: !!task.parentTaskId && isolated(entry.task),
         ueBuild:
           ueRole === 'child'
             ? { role: 'child', request: (note) => sc.childRequestBuild(entry.task, note) }
@@ -713,7 +715,7 @@ export function createRun(sc: TasksScope) {
     // （记录上是 merging、内存里却没在合并的是残留：旧版本完成时没清掉，留着它 submit_merge 会一直被拒）
     if (next.wrapRequest && !sc.merging.has(id)) {
       if (next.wrapRequest.state === 'requested')
-        markWrapUp(next, 'merge', 'running', '又有新的要求：做完、验证后再请父对话收尾')
+        markChildWrapUp(next, 'running', '又有新的要求：做完、验证后再请父对话收尾')
       next.wrapRequest = undefined
       sc.reportedState.delete(id)
     }
