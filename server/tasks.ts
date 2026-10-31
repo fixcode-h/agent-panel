@@ -36,7 +36,7 @@ import { createStateSweep, STATE_SWEEP_MS } from './tasks/state-sweep.ts'
 import { lazyScope, type Lister, type Live } from './tasks/types.ts'
 import type { TasksScope } from './tasks/scope.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
-import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
+import { CHATS_DIR, HANDOFF_DIR, TASK_FILES_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { worktreeStatus } from './exec/worktree.ts'
 import { mkdir, rm } from 'node:fs/promises'
@@ -774,6 +774,7 @@ export function tasksApi(deps: {
         forgetPresence(t.id)
         await dropWorktree(t, repo)
         await rm(path.join(HANDOFF_DIR, t.id), { recursive: true, force: true }).catch(() => {})
+        await rm(path.join(TASK_FILES_DIR, t.id), { recursive: true, force: true }).catch(() => {})
       }
       await dropUploads(removed)
     },

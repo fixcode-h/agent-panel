@@ -397,7 +397,7 @@ push、PR、改远端、发布、P4 submit、同步整个工作区、切换分�
 /** 10-23 之前那一版（2026-10-19 引入时就这样，到 10-23 前逐字未变） */
 export const LEGACY_SCENE_TEXT = `{{#if scene}}
 先只读识别现场（不改文件）：
-1. 确定 PROJECT_ROOT 和 DOC_ROOT：Git / 普通项目的文档根是项目下的 docs；P4 项目的文档根是所有项目共同外层目录下的 ProjectDoc/doc/<项目文件夹名>。
+1. 确定 PROJECT_ROOT 和 DOC_ROOT：Git / 普通项目的文档根是项目下的 docs；P4 项目的文档根是所有项目共同外层目录下的 ProjectDoc/docs。
 2. 记录版本控制基线：Git 的分支、HEAD、未提交改动；P4 的 client、stream 和限定路径下的 opened 文件。这些是用户已有的改动，后面的步骤不能认领或覆盖。
 3. 读 DOC_ROOT 下的 README、MODULE-MAP 和相关模块的 README、bugs.md，按文档定位代码；文档定位不到时再限定范围搜索。
 结果开头先写：工作区类型、PROJECT_ROOT、DOC_ROOT、基线和已有改动，以及相关模块、关键文件、已知的历史 Bug（后面的节点会直接用）。
@@ -406,7 +406,7 @@ export const LEGACY_SCENE_TEXT = `{{#if scene}}
 /** 10-23 起那一版：只有这一天之后写下的指纹（当时展开的就是它）才该用它 */
 export const LEGACY_SCENE_TEXT_SEARCH_SCOPE = `{{#if scene}}
 先只读识别现场（不改文件）：
-1. 确定 PROJECT_ROOT 和 DOC_ROOT：Git / 普通项目的文档根是项目下的 docs；P4 项目的文档根是所有项目共同外层目录下的 ProjectDoc/doc/<项目文件夹名>。
+1. 确定 PROJECT_ROOT 和 DOC_ROOT：Git / 普通项目的文档根是项目下的 docs；P4 项目的文档根是所有项目共同外层目录下的 ProjectDoc/docs。
 2. 记录版本控制基线：Git 的分支、HEAD、未提交改动；P4 的 client、stream 和限定路径下的 opened 文件。这些是用户已有的改动，后面的步骤不能认领或覆盖。
 3. 读 DOC_ROOT 下的 README、MODULE-MAP 和相关模块的 README、bugs.md，按文档定位代码；文档定位不到时再限定范围搜（按「搜索范围」的规则带排除，不扫全仓）。
 结果开头先写：工作区类型、PROJECT_ROOT、DOC_ROOT、基线和已有改动，以及相关模块、关键文件、已知的历史 Bug（后面的节点会直接用）。

@@ -52,6 +52,10 @@ import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { attachmentAddDirs, placedFiles } from '../attachments.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { CACHE_DIR, HANDOFF_DIR } from '../store.ts'
+import { taskFiles } from '../task-files.ts'
+import { noPushEnv } from './no-push.ts'
+
+export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
 import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
@@ -1233,7 +1237,13 @@ async function runAgent(
   // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
   // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
   // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次
-  const instructions = [role, def.systemPromptFlag ? promptLangRules() : '', promptUserNameRules(settings.userName)]
+  const taskDir = await taskFiles(task.id) // 对话目录：截图和临时文件放这里，规则进系统提示词（见 task-files.ts）
+  const instructions = [
+    role,
+    def.systemPromptFlag ? promptLangRules() : '',
+    promptUserNameRules(settings.userName),
+    def.systemPromptFlag ? taskDir.rule : '',
+  ]
     .filter(Boolean)
     .join('\n\n')
   // Command Code 没有系统提示词参数，改用 --mod 加载的 mod 追加同一段规则（见 prompt-lang-mod.ts）
@@ -1275,6 +1285,8 @@ async function runAgent(
     const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, await readGlobalLessons())
     if (lessons) input = `${input}\n\n${lessons}`
   }
+  // 没有系统提示词参数的 CLI：对话目录的规则接在新会话的任务描述后面（有参数的已经放进系统提示词）
+  if (!resume && !op && !def.systemPromptFlag) input = `${input}\n\n${taskDir.rule}`
   // 没有系统提示词参数的 CLI 只在会话第一轮带角色设定。续接旧会话时角色变了（内置角色随版本更新、用户改了设定），
   // 把新版补发一次，旧对话再聊也按新角色做；以前开的会话没记过，按变了处理补一次
   const roleHash = instructions ? createHash('sha1').update(instructions).digest('hex').slice(0, 16) : ''
@@ -1325,6 +1337,8 @@ async function runAgent(
         { cwd, uploadsRoot: UPLOADS_DIR },
       ),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
+      // 对话目录在工作目录外：放行，Agent 才能把截图、临时文件写进去
+      taskDir.dir,
     ],
     noEdit: chat && !!ctx.beginEdit,
     autoCompactTokens: pct && def.autoCompact === 'config' ? Math.floor((windowFor(model) * pct) / 100) : undefined,
@@ -2777,20 +2791,6 @@ async function runAgent(
     if (!c.ok && !c.stopped) sysMsg(t('自动压缩失败：{error}', { error: c.error }), true, makeAlert('error', c.error))
   }
   return done
-}
-
-/**
- * 子对话的独立分支一律不推到远端（推送只由父对话在原分支上做），项目设置成「不推送」时整个项目都不推：
- * 提示词拦不住所有模型，用 git 的 pushInsteadOf 把所有远端地址的推送改写到一个不存在的协议，
- * CLI 里跑的 git push 都会失败，拉取不受影响
- */
-export function noPushEnv(task: Task, gitPolicy?: Project['gitPolicy']): { key: string; value: string }[] {
-  if (gitPolicy !== 'deny' && (!task.parentTaskId || task.worktree?.state !== 'active')) return []
-  return [
-    { key: 'GIT_CONFIG_COUNT', value: '1' },
-    { key: 'GIT_CONFIG_KEY_0', value: 'url.agent-panel-no-push://.pushInsteadOf' },
-    { key: 'GIT_CONFIG_VALUE_0', value: '' },
-  ]
 }
 
 /**

@@ -3,7 +3,7 @@ import { taskDeleted } from '../../shared/task.ts'
 import { forgetNotes } from '../exec/runner.ts'
 import { forgetPresence } from '../presence.ts'
 import type { TasksScope } from './scope.ts'
-import { CHATS_DIR, HANDOFF_DIR } from '../store.ts'
+import { CHATS_DIR, HANDOFF_DIR, TASK_FILES_DIR } from '../store.ts'
 import { rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
@@ -24,6 +24,7 @@ export function createTrash(s: TasksScope) {
     s.background.forget(tk.id)
     await s.dropWorktree(tk)
     await rm(path.join(HANDOFF_DIR, tk.id), { recursive: true, force: true }).catch(() => {})
+    await rm(path.join(TASK_FILES_DIR, tk.id), { recursive: true, force: true }).catch(() => {})
     // 聊天的工作目录、节点交接的文件跟着删掉
     await rm(path.join(CHATS_DIR, tk.id), { recursive: true, force: true }).catch(() => {})
   }

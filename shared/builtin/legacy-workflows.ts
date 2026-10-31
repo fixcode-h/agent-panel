@@ -929,7 +929,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
 - 版本控制在「识别现场与侦察」自动识别，后面的节点按识别结果操作；想固定成某一种，把节点参数里的「工作区」改成 git 或 p4。
 - Git：只提交本次任务的文件，按功能拆本地提交，不 push。
 - P4：只读识别 client / stream；修改前先 p4 edit / add 进 default；不 sync、不 submit、不 revert；最后按 [C++]、[XLSX]、[Lua]、[Other] 分 pending。
-- 文档根：Git 项目用项目下的 docs；P4 项目用共同外层目录下的 ProjectDoc/doc/<项目文件夹名>，不写回 P4 项目目录。
+- 文档根：Git 项目用项目下的 docs；P4 项目用共同外层目录下的 ProjectDoc/docs，不写回 P4 项目目录。
 - 编译是项目测试步骤里的一条（例如 \`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`），由验收流程里的「测试与验收」节点执行，同一时间只编译一次；不把编译拆成独立节点，实现节点自己也不编译。
 - 推送 / submit 由父对话决定，子对话不执行、不询问、也不建议。`,
     flows: [
