@@ -459,13 +459,16 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
     {},
     { policy: { push: 'ask', tools: [], cherryPick: { vcs: 'git', target: 'release/1.2' } } },
   )
-  assert.match(pick[0], /## Cherry-pick\n[\s\S]*「release\/1\.2」[\s\S]*只把这个对话里你自己做的那几个提交/)
-  assert.match(pick[0], /不要 merge \/ rebase 整个分支/)
+  assert.match(
+    pick[0],
+    /## Cherry-pick\n[\s\S]*必须调用 cherry_pick[\s\S]*「release\/1\.2」[\s\S]*只列这个对话里你自己做的提交/,
+  )
+  assert.match(pick[0], /不要自己跑 git cherry-pick \/ merge \/ rebase/)
   const pickP4 = await promptsOf(
     {},
     { policy: { push: 'ask', tools: [], cherryPick: { vcs: 'p4', target: 'D:/p4/rel' } } },
   )
-  assert.match(pickP4[0], /「D:\/p4\/rel」[\s\S]*目标里本来就和这里不同的内容不是这次的修改/)
+  assert.match(pickP4[0], /「D:\/p4\/rel」[\s\S]*建一个对应的 pending，不 submit/)
   assert.doesNotMatch(deny[0], /## Cherry-pick/, '没设目标时不提')
 })
 

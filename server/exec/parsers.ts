@@ -4,7 +4,7 @@ import type { ContextSnapshot } from '../../shared/context-breakdown.ts'
 import { t } from '../../shared/i18n.ts'
 import { getCli } from '../../shared/clis.ts'
 import type { OutputSpec } from '../../shared/cli-spec.ts'
-import { panelToolName } from '../../shared/panel-tools.ts'
+import { isToolLookup, panelToolName, toolLookupLabel } from '../../shared/panel-tools.ts'
 import { clip } from '../../shared/text.ts'
 
 /** 各 CLI 的输出统一成这几种事件 */
@@ -247,6 +247,8 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
       return tool({ kind: 'search', label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
     case 'Glob':
       return tool({ kind: 'search', name: t('查找文件'), label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
+    case 'ToolSearch':
+      return tool(toolLookup(input))
     case 'WebSearch':
       return tool({ kind: 'web', name: t('网页搜索'), label: String(input?.query ?? '') })
     case 'WebFetch':
@@ -273,6 +275,14 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
       return otherTool(name, input)
   }
 }
+
+/** 加载工具定义（ToolSearch / tool_search）：不按参数里的工具名显示，见 shared/panel-tools.ts 的 isToolLookup */
+const toolLookup = (input: any) => ({
+  kind: 'search' as const,
+  name: t('查询 MCP 工具'),
+  label: toolLookupLabel(input?.query),
+  detail: '',
+})
 
 const searchLabel = (pattern: unknown, where: string) => `${pattern ?? ''}${where ? ` · ${where}` : ''}`
 
@@ -542,6 +552,7 @@ function genericTool(name: string, input: any, cwd: string): CliEvent {
   // 界面显示成「运行命令」、0.09 秒就「完成」，看不出命令还在后台跑
   const panel = panelToolName(name)
   if (panel) return otherTool(`mcp__panel__${panel}`, input)
+  if (isToolLookup(name)) return { type: 'tool', tool: toolLookup(input) }
   const n = name.toLowerCase()
   const file = rel(cwd, input?.path ?? input?.file_path ?? input?.filePath ?? input?.absolute_path ?? input?.file)
   if (/skill/.test(n))

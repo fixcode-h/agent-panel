@@ -22,6 +22,16 @@ setLang('zh')
 const tool = (name: string, label: string, extra: Record<string, unknown> = {}) =>
   ({ kind: 'other', name, label, detail: '', input: '', ...extra }) as Parameters<typeof toolView>[0]
 
+test('加载工具定义不显示成被加载的面板工具：旧记录的 ToolSearch 和新记录都显示「查询 MCP 工具」', () => {
+  const input = '{"query":"select:mcp__panel__finish_child","max_results":3}'
+  const old = toolView(tool('ToolSearch', 'select:mcp__panel__finish_child', { input }))
+  assert.equal(old?.tool.name, '查询 MCP 工具')
+  assert.equal(old?.tool.label, 'finish_child')
+  assert.equal(old?.child, undefined)
+  const now = toolView(tool('查询 MCP 工具', 'finish_child', { kind: 'search', input }))
+  assert.equal(now?.tool.name, '查询 MCP 工具')
+})
+
 test('面板工具在对话里显示中文名，不再露出原始工具名', () => {
   // Pi 的桥接扩展注册裸名字，解析层会归一成 mcp__panel__<name>，界面按「做了什么」显示
   const record = toolView(

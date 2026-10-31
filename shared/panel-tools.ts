@@ -192,3 +192,22 @@ export function unwrapMoreTools(input: string): { name: string; args: Record<str
     return undefined
   }
 }
+
+/**
+ * CLI 按需加载工具定义的那一步（Claude Code 的 ToolSearch、Pi 的 tool_search）：参数里写着要加载的工具名
+ * （「select:mcp__panel__finish_child」），但它只是查出工具定义、没有真的调用。
+ * 不单独认出来的话，界面会按参数里的面板工具名把它显示成「收尾子对话」，看起来像同一个工具调了两次
+ */
+export const isToolLookup = (name: string) => /^tool_?search$/i.test(name)
+
+/** 工具查询那一行的副标题：select 写法列出要加载的工具名（去掉 mcp__服务名__ 前缀），关键词搜索原样显示 */
+export function toolLookupLabel(query: unknown): string {
+  const q = String(query ?? '').trim()
+  const select = /^select:(.*)$/s.exec(q)
+  if (!select) return q
+  return select[1]
+    .split(',')
+    .map((s) => s.trim().replace(/^mcp__.+?__/, ''))
+    .filter(Boolean)
+    .join(', ')
+}

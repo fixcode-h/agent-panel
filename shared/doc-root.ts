@@ -124,3 +124,10 @@ export function docRootText(d: DocRootInfo | undefined) {
   return `## 文档根
 这是 ${name} 项目，文档根是 \`${d.root}\`（${why}）。所有项目文档（模块说明、设计、ADR、Bug 记录、worklog、openspec）都写在它下面，不另找位置。${rule}`
 }
+
+/** P4 分 changelist 的规则里补一句：项目外文档根里的文件不纳管 */
+export function p4DocsSkip(d: DocRootInfo | undefined) {
+  return d?.outside
+    ? `文档根 \`${d.root}\` 在项目目录外：里面的文档不 p4 edit / add、不放进任何 changelist，分 changelist 时也不列。\n`
+    : ''
+}
