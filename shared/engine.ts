@@ -207,6 +207,11 @@ export interface AgentCall {
   onInput?: (info: { setup: number; rules: number; fresh: boolean }) => void
   /** 只停这一次调用（终止单个子任务）；整个任务停止仍走宿主的信号 */
   signal?: AbortSignal
+  /**
+   * 这一圈接着上一圈做（子任务、计划交回的结果），不是用户的新要求：
+   * 总结下面的改动卡片接着上一圈的终点算，子任务和工作流在空档里改的文件才算得进来
+   */
+  carry?: boolean
 }
 
 /** 交给评审的改动：snapshot 是这一刻的工作区快照（下一轮复看和它比），diff 太长时 diff 为空、完整内容在 file */
@@ -4349,6 +4354,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
           // 只发了增量时带上完整的：runner 续不上会话、开了新会话时改用它
           ...(first && delta ? { fresh: full } : {}),
           ...(first && !host.prewarm ? { nextPrompt, onInput } : {}),
+          ...(first ? {} : { carry: true }),
           // 会话键就是 Agent id；选了「无」时用空字符串，runner 仍然按对话处理
           sessionKey: who,
           ...(host.prewarm ? { prewarm: true } : {}),

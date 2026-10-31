@@ -1317,6 +1317,21 @@ export type PeerFrom = z.infer<typeof PeerFrom>
 export const DeliveryHow = z.enum(['wait', 'steer', 'notes', 'next-node', 'held', 'next', 'lost', 'restart', 'pending'])
 export type DeliveryHow = z.infer<typeof DeliveryHow>
 
+export const FileChange = z.object({ path: z.string(), add: z.number().int(), del: z.number().int() })
+export type FileChange = z.infer<typeof FileChange>
+
+/**
+ * 一轮对话改了哪些文件（总结下面的「已更改 N 个文件」，见 server/turn-changes.ts）：
+ * spans 是 git 快照树的起止（中间被子对话合并隔开时有几段），撤销时只撤这几段自己的改动。
+ * revertedAt 是撤销的时间：撤过的卡片只显示「已撤销」，不能再撤
+ */
+export const TurnChanges = z.object({
+  spans: z.array(z.object({ from: z.string(), to: z.string() })),
+  files: z.array(FileChange),
+  revertedAt: z.string().optional(),
+})
+export type TurnChanges = z.infer<typeof TurnChanges>
+
 export const TaskMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
@@ -1413,6 +1428,8 @@ export const TaskMessage = z.object({
     .optional(),
   /** 对话里这条回复用的 CLI、模型和思考强度：对话中途可以换，每条记自己的 */
   run: z.object({ cli: z.string(), model: z.string().default(''), effort: z.string().default('') }).optional(),
+  /** 这条是一轮的总结时，这一轮改了哪些文件（只在 git 仓库里记） */
+  turnChanges: TurnChanges.optional(),
   at: z.string(),
 })
 export type TaskMessage = z.infer<typeof TaskMessage>
@@ -1424,8 +1441,6 @@ export type StepStatus = z.infer<typeof StepStatus>
  * 任务里执行过（或将要执行）的一个节点。主流程的节点在任务创建时就列出来；
  * 节点的开始 / 验收 / 结束流程、流程节点里的子节点在执行时才加进来，用 parentId 挂在发起它的节点下。
  */
-export const FileChange = z.object({ path: z.string(), add: z.number().int(), del: z.number().int() })
-export type FileChange = z.infer<typeof FileChange>
 
 /** 节点的用量：最近一次的上下文占用，以及累计的 token 和费用 */
 export const StepUsage = z.object({

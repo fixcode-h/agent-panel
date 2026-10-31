@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, stat, unlink } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { copyFile, mkdir, mkdtemp, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FileChange } from '../../shared/schema.ts'
@@ -171,8 +172,17 @@ export async function gitSnapshot(cwd: string, ignore?: PlacedFiles): Promise<st
   const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, 'index') }
   const run = (...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd, env, 30_000)
   try {
+    // 从真正的暂存区拷一份起步：里面有文件的时间戳和大小，add 只需重新读改过的文件；
+    // 只 read-tree HEAD 的话每个文件都要重新算哈希，大仓库每轮对话都这样做会卡好几秒
+    const index = (await git(cwd, 'rev-parse', '--git-path', 'index')).stdout.trim()
+    const seeded =
+      !!index &&
+      (await copyFile(path.resolve(cwd, index), env.GIT_INDEX_FILE).then(
+        () => true,
+        () => false,
+      ))
     const head = (await git(cwd, 'rev-parse', '--verify', 'HEAD')).code === 0
-    if (head && (await run('read-tree', 'HEAD')).code !== 0) return ''
+    if (!seeded && head && (await run('read-tree', 'HEAD')).code !== 0) return ''
     // 面板放进来的附件不是改动（见 placedSet）；literal 让文件名里的 * ? [ 按字面比较
     const paths = ['.', ...[...placedSet(ignore)].map((p) => `:(exclude,literal)${p}`)]
     if ((await run('add', '-A', '--', ...paths)).code !== 0) return ''
@@ -233,4 +243,179 @@ export async function reviewDiff(cwd: string, ref: string, since = '', files?: s
       ? full
       : (await git(cwd, 'diff', '--no-color', `-U${REVIEW_CONTEXT_SHORT}`, from, snapshot, ...body)).stdout
   return { snapshot, from, stat, diff: diff.length <= REVIEW_DIFF_MAX ? diff : '', full }
+}
+
+/** 一段改动：from、to 都是 gitSnapshot 记下的树 */
+export interface TreeSpan {
+  from: string
+  to: string
+}
+
+/**
+ * 几段改动合起来改了哪些文件、各增删多少行（按出现的先后排）。
+ * 不认重命名：改名记成删掉旧文件、新建新文件，撤销时也按这两步各自回退
+ */
+export async function spansNumstat(cwd: string, spans: TreeSpan[]): Promise<FileChange[]> {
+  const out = new Map<string, FileChange>()
+  for (const s of spans) {
+    if (s.from === s.to) continue
+    const r = await git(cwd, 'diff', '--numstat', '--no-renames', s.from, s.to)
+    if (r.code !== 0) throw new Error(r.stderr.trim() || t('读不出改动'))
+    for (const line of r.stdout.split('\n')) {
+      const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/)
+      if (!m) continue
+      const add = m[1] === '-' ? 0 : Number(m[1])
+      const del = m[2] === '-' ? 0 : Number(m[2])
+      const had = out.get(m[3])
+      if (had) {
+        had.add += add
+        had.del += del
+      } else out.set(m[3], { path: m[3], add, del })
+    }
+  }
+  return [...out.values()]
+}
+
+/** 一个文件在几段改动里的差异，按先后拼起来 */
+export async function spansFileDiff(cwd: string, spans: TreeSpan[], file: string) {
+  const parts: string[] = []
+  for (const s of spans) {
+    if (s.from === s.to) continue
+    const r = await git(cwd, 'diff', '--no-color', '--no-renames', s.from, s.to, '--', file)
+    if (r.code !== 0) throw new Error(r.stderr.trim() || t('读不出改动'))
+    if (r.stdout.trim()) parts.push(r.stdout)
+  }
+  const out = parts.join('\n')
+  return out.length > MAX_DIFF ? `${out.slice(0, MAX_DIFF)}\n${t('…（差异太长，只显示前面一部分）')}` : out
+}
+
+/** 二进制安全地跑一次 git：cat-file、merge-file 的输出不能按行拆 */
+function gitRaw(cwd: string, args: string[]) {
+  return new Promise<{ code: number; stdout: Buffer; stderr: string }>((resolve) => {
+    execFile(
+      'git',
+      ['-c', 'core.quotepath=off', ...args],
+      { cwd, encoding: 'buffer', maxBuffer: 256 * 1024 * 1024, windowsHide: true, timeout: 60_000 },
+      (err, stdout, stderr) => {
+        const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
+        resolve({ code, stdout: stdout ?? Buffer.alloc(0), stderr: stderr?.toString() ?? '' })
+      },
+    )
+  })
+}
+
+/**
+ * 树里一个文件的内容，按检出到工作区的样子给（换行符、过滤器都按仓库设置转换）：
+ * Windows 上 autocrlf 时树里存的是 LF、工作区是 CRLF，直接比会每一行都对不上。没有这个文件返回 null
+ */
+async function blobAt(cwd: string, tree: string, file: string): Promise<Buffer | null> {
+  const r = await gitRaw(cwd, ['cat-file', '--filters', `${tree}:${file}`])
+  if (r.code === 0) return r.stdout
+  // 树本身不在了（太久以前的快照被 git 清理了）和「这个文件不在树里」要分开：前者不能当成文件不存在
+  const tree0 = await gitRaw(cwd, ['cat-file', '-e', `${tree}^{tree}`])
+  if (tree0.code !== 0) throw new Error(t('改动记录已经被 git 清理，没法撤销'))
+  return null
+}
+
+const same = (a: Buffer | null, b: Buffer | null) => (a === null || b === null ? a === b : a.equals(b))
+
+/** 三方合并一个文件：在 mine 上撤掉 base → other 的改动。有冲突或是二进制文件时返回 null */
+async function mergeText(cwd: string, mine: Buffer, base: Buffer, other: Buffer): Promise<Buffer | null> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ap-undo-'))
+  try {
+    const f = (n: string) => path.join(dir, n)
+    await Promise.all([writeFile(f('mine'), mine), writeFile(f('base'), base), writeFile(f('other'), other)])
+    // 退出码是冲突的个数，负数是出错（含二进制文件）
+    const r = await gitRaw(cwd, ['merge-file', '-p', f('mine'), f('base'), f('other')])
+    return r.code === 0 ? r.stdout : null
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+export interface UndoConflict {
+  path: string
+  reason: string
+}
+
+/**
+ * 撤销几段改动（一轮对话改的文件）：只撤这几段自己的改动，之后别人（用户、后面几轮）又改的地方保留。
+ * 每个文件从现在的内容出发，按从后往前的顺序撤掉每一段：
+ * - 现在的内容就是这段改完的样子：直接换回改之前的
+ * - 已经是改之前的样子：这段已经撤过了，跳过
+ * - 之后又改过：做三方合并，只撤这段的改动；改到了同一处、或是二进制文件，就算冲突
+ * 有任何一个文件冲突时一个都不写，把冲突列出来交给调用方；全部算好再一起写进工作区。
+ * 只改工作区的文件，不碰暂存区和提交（Agent 这一轮提交过的话，撤销后会多出没提交的改动）
+ */
+export async function undoSpans(
+  cwd: string,
+  spans: TreeSpan[],
+  files: string[],
+): Promise<{ ok: true; files: string[] } | { ok: false; conflicts: UndoConflict[] }> {
+  const root = path.resolve(cwd)
+  const plan = new Map<string, Buffer | null>()
+  const conflicts: UndoConflict[] = []
+  for (const file of files) {
+    const full = path.resolve(root, file)
+    if (!full.startsWith(root + path.sep)) {
+      conflicts.push({ path: file, reason: t('文件不在项目目录里') })
+      continue
+    }
+    let cur: Buffer | null = await readFile(full).catch((e) => {
+      if (e?.code === 'ENOENT') return null
+      throw e
+    })
+    let bad = ''
+    for (const s of [...spans].reverse()) {
+      if (s.from === s.to) continue
+      const [before, after] = await Promise.all([blobAt(cwd, s.from, file), blobAt(cwd, s.to, file)])
+      if (same(before, after)) continue
+      if (same(cur, after)) {
+        cur = before
+        continue
+      }
+      if (same(cur, before)) continue
+      // 之后又改过：新建的文件被改了、删掉的文件又建回来了，都没法只撤这一段
+      if (cur === null) {
+        bad = t('这个文件后来被删掉了')
+        break
+      }
+      if (before === null) {
+        bad = t('这一轮新建的文件后来又被改过')
+        break
+      }
+      if (after === null) {
+        bad = t('这一轮删掉的文件后来又建了回来')
+        break
+      }
+      const merged = await mergeText(cwd, cur, after, before)
+      if (!merged) {
+        bad = t('这一轮改过的地方后来又被改过')
+        break
+      }
+      cur = merged
+    }
+    if (bad) conflicts.push({ path: file, reason: bad })
+    else plan.set(file, cur)
+  }
+  if (conflicts.length) return { ok: false, conflicts }
+  const done: string[] = []
+  for (const [file, content] of plan) {
+    const full = path.resolve(root, file)
+    const now = await readFile(full).catch(() => null)
+    if (same(now, content)) continue
+    if (content === null) {
+      await unlink(full).catch((e) => {
+        if (e?.code !== 'ENOENT') throw e
+      })
+      // Agent 这一轮 add 过的新文件：暂存区里也去掉，不然 git status 里留一条「新增后删除」
+      if ((await git(cwd, 'cat-file', '-e', `HEAD:${file}`)).code !== 0)
+        await git(cwd, 'rm', '-q', '--cached', '--ignore-unmatch', '--', file)
+    } else {
+      await mkdir(path.dirname(full), { recursive: true })
+      await writeFile(full, content)
+    }
+    done.push(file)
+  }
+  return { ok: true, files: done }
 }

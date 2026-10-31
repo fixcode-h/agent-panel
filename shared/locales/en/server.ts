@@ -533,4 +533,13 @@ export const EN_SERVER: Record<string, string> = {
     'Blender hung or quit while running this code. It was restarted and the scene is back to the last save: {error}',
   还没有模型: 'No model yet',
   这次工作流运行已经结束了: 'This workflow run has already ended',
+  读不出改动: "Couldn't read the changes",
+  '改动记录已经被 git 清理，没法撤销': 'The change record was cleaned up by git, so it can no longer be reverted',
+  这个文件后来被删掉了: 'This file was deleted later',
+  这一轮新建的文件后来又被改过: 'The file created in this turn was edited later',
+  这一轮删掉的文件后来又建了回来: 'The file deleted in this turn was created again later',
+  这一轮改过的地方后来又被改过: 'The lines changed in this turn were edited again later',
+  这一轮没有记下改动: 'No changes were recorded for this turn',
+  这一轮的改动已经撤销过了: 'The changes from this turn were already reverted',
+  这个文件不在这一轮的改动里: 'This file is not among the changes from this turn',
 }

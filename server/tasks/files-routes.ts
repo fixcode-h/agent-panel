@@ -1,5 +1,5 @@
 import { type Context } from 'hono'
-import { gitFileDiff, gitNumstat } from '../exec/git.ts'
+import { gitFileDiff, gitNumstat, spansFileDiff } from '../exec/git.ts'
 import { uploadFileOf } from '../uploads.ts'
 import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from '../files.ts'
 import path from 'node:path'
@@ -29,6 +29,22 @@ export function registerFileRoutes(s: TasksScope) {
       .filter((x) => x.kind === 'edit' && x.label === file && x.input)
       .map((x) => x.input!)
     return c.json({ path: file, dir, diff: patches.join('\n'), git: false, before: false })
+  })
+
+  // 一轮改动里一个文件的差异（总结下面的改动卡片点开文件）：只看这一轮自己的改动
+  s.routes.get('/:id/turn-diff', async (c) => {
+    const tk = await s.current(c.req.param('id'))
+    if (!tk) return s.bad(c, t('任务不存在'), 404)
+    const file = c.req.query('path') ?? ''
+    const ch = tk.messages.find((m) => m.id === c.req.query('msg'))?.turnChanges
+    if (!ch || !ch.files.some((x) => x.path === file)) return s.bad(c, t('这个文件不在这一轮的改动里'))
+    const dir = await s.taskDir(tk)
+    if (!dir || tk.imported) return s.bad(c, t('导入的任务看不到对方电脑上的文件'))
+    try {
+      return c.json({ path: file, diff: await spansFileDiff(dir, ch.spans, file) })
+    } catch (e) {
+      return s.bad(c, (e as Error).message)
+    }
   })
 
   // 会话栏：环境、说明文件、Skill、新建的文件；cli 是这个对话当前用的 CLI（页面按角色算好传来）

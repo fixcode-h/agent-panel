@@ -6,7 +6,7 @@ import { childHoldText, helpersWorking, trackWait, withTaskModel } from '../../s
 import { agentRun } from '../../shared/settings.ts'
 import { childAskEffect } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
-import { gitChanges, gitNumstat, gitRevertFile } from '../exec/git.ts'
+import { gitChanges, gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
 import { answerRequest, dropRequests, cancelWait, forgetNotes } from '../exec/runner.ts'
 import { taskLog } from '../task-log.ts'
 import { placedFiles } from '../attachments.ts'
@@ -63,6 +63,50 @@ export function registerActionRoutes(s: TasksScope) {
     }
     const changes = (await gitChanges(dir, tk.baseline, tk.baseRef, placedFiles(tk)).catch(() => null)) ?? tk.changes
     return c.json(await s.store.update(id, { ...tk, changes }))
+  })
+
+  // 撤销一轮的改动（总结下面「已更改 N 个文件」的撤销）：只撤这一轮自己改的，之后用户或后面几轮又改的保留；
+  // 有文件撤不干净（同一处后来又改过）时一个都不动，把冲突的文件和原因交回页面
+  s.routes.post('/:id/turn-revert', async (c) => {
+    const id = c.req.param('id')
+    const { msg } = (await c.req.json().catch(() => ({}))) as { msg?: string }
+    const tk = await s.current(id)
+    if (!tk) return s.bad(c, t('任务不存在'), 404)
+    if (tk.imported) return s.bad(c, s.READONLY, 409)
+    // 保活等下一句时进程还在，但这时没人在改文件，可以撤；正在回复、子任务或工作流节点还在跑时会和它们抢着写同一批文件
+    if (tk.working || tk.steps.some((x) => x.status === 'running'))
+      return s.bad(c, t('对话正在执行，等这一轮结束后再撤销'), 409)
+    const m = tk.messages.find((x) => x.id === msg)
+    const ch = m?.turnChanges
+    if (!m || !ch) return s.bad(c, t('这一轮没有记下改动'), 404)
+    if (ch.revertedAt) return s.bad(c, t('这一轮的改动已经撤销过了'), 409)
+    const dir = await s.taskDir(tk)
+    if (!dir) return s.bad(c, t('任务没有工作目录'), 404)
+    let r: Awaited<ReturnType<typeof undoSpans>>
+    try {
+      r = await undoSpans(
+        dir,
+        ch.spans,
+        ch.files.map((f) => f.path),
+      )
+    } catch (e) {
+      return s.bad(c, t('撤销失败：{error}', { error: (e as Error).message }))
+    }
+    if (!r.ok) return c.json({ ok: false, conflicts: r.conflicts })
+    taskLog(id, '撤销了一轮的改动', { message: m.id, files: r.files.length })
+    // 对话可能还在内存里（保活）：改内存那份，引擎下一次落盘才不会把撤销标记盖掉
+    const at = new Date().toISOString()
+    const live = s.live.get(id)?.task
+    for (const x of [live, tk]) {
+      const lm = x?.messages.find((y) => y.id === m.id)
+      if (lm?.turnChanges) lm.turnChanges = { ...lm.turnChanges, revertedAt: at }
+    }
+    const base = live ?? tk
+    const changes =
+      (await gitChanges(dir, base.baseline, base.baseRef, placedFiles(base)).catch(() => null)) ?? base.changes
+    if (live) live.changes = changes
+    const saved = await s.store.update(id, { ...base, changes }, { now: true })
+    return c.json({ ok: true, task: saved, files: r.files })
   })
 
   // 回答子对话交给父对话决定的提问：直接把决定交给子对话，或者交给父对话的 AI 决定

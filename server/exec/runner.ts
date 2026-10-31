@@ -93,6 +93,7 @@ import { lessonsPrompt } from '../../shared/lessons.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
+import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn-changes.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -1347,6 +1348,26 @@ async function runAgent(
   let turnMark = { from: 0, touched: 0, input: call.prompt }
   const turnMsgs = () => mine.slice(turnMark.from)
   const turnTools = () => turnMsgs().reduce((n, m) => n + m.tools.length, 0)
+  // 这一轮改了哪些文件，记在这一轮的总结上（见 server/turn-changes.ts）：只有对话自己的轮次记，子任务、节点不记
+  const trackChanges = chat && !op && ctx.isGit
+  let changesOpen = false
+  const openChanges = (carry: boolean) => {
+    if (!trackChanges) return
+    changesOpen = true
+    void beginTurnChanges(task.id, cwd, placedFiles(task), carry)
+  }
+  const closeChanges = () => {
+    if (!changesOpen) return
+    changesOpen = false
+    // 这一刻的消息就是这一轮的：快照要一会儿，等它的时候下一轮可能已经开始往 mine 里加了
+    const msgs = turnMsgs()
+    void endTurnChanges(task.id, (c) => {
+      const m = summaryMessage(msgs)
+      if (!m) return
+      m.turnChanges = c
+      ctx.changed(true)
+    })
+  }
   let cur: TaskMessage | undefined
   const texts: string[] = []
   const errors: string[] = []
@@ -1471,6 +1492,7 @@ async function runAgent(
     if (turnEnded) return
     turnEnded = true
     markTurnDone(task)
+    closeChanges()
     ctx.onTurnEnd?.({ tools: turnTools() })
   }
   /**
@@ -1999,6 +2021,7 @@ async function runAgent(
       // 交回的结果会让 CLI 接着做，这一段的结束要照常上报：result 之后停在这里等子任务时
       // 这一轮已经标记过结束了（见 endTurn），不复位会吞掉交回后那次结束
       turnEnded = false
+      openChanges(true)
       // 之后的输出另起一条，排在交回的结果后面
       cur = undefined
       task.working = true
@@ -2076,6 +2099,8 @@ async function runAgent(
             // 新的一轮从这里算起：空回合判定只看这条消息之后的输出
             turnMark = { from: mine.length, touched: touched.size, input: text }
             turnEnded = false
+            // 等子任务时插进来的消息：子任务还在改文件，接着算；等下一句时来的是新要求，重新拍起点
+            openChanges(helpers)
             arm(text)
             done(text)
           },
@@ -2126,6 +2151,8 @@ async function runAgent(
     : undefined
 
   if (!prewarmMode) arm()
+  // 总结下面的改动卡片从这里算起：用户的新要求重新拍起点，子任务、计划交回的结果接着上一圈的终点
+  if (trackChanges && !prewarmMode) openChanges(!!call.carry)
   // 时长上限有两个来源：设置里的单步时限、计划带的时长上限。取小的那个，谁先到都停；
   // 停的时候要说清是哪个上限到的（见 effectiveTimeoutMinutes）
   const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
@@ -2265,6 +2292,10 @@ async function runAgent(
   // 记下这一轮在会话里的位置，分叉、撤回时让 CLI 从这里截断
   if (asker && task.sessions[sessionKey])
     asker.turn = { session: task.sessions[sessionKey], id: turn.id, end: turn.end }
+  // 被停下、出错的一轮没走到 endTurn：改过的文件照样记上，用户才能撤销做了一半的改动。
+  // 等快照拍完再落盘，免得卡片写在落盘之后丢了
+  if (!prewarmMode) closeChanges()
+  if (trackChanges) await settleTurnChanges(task.id)
   if (ctx.isGit) {
     const changes = await gitChanges(cwd, task.baseline, task.baseRef, placedFiles(task)).catch(() => null)
     if (changes) {

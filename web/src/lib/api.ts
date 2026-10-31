@@ -814,6 +814,17 @@ export const api = {
     request<{ path: string; dir: string; diff: string; git: boolean; before: boolean }>(
       `/tasks/${id}/diff?path=${encodeURIComponent(path)}`,
     ),
+  /** 一轮改动里一个文件的差异（总结下面的改动卡片） */
+  turnDiff: (id: string, msg: string, path: string) =>
+    request<{ path: string; diff: string }>(
+      `/tasks/${id}/turn-diff?msg=${encodeURIComponent(msg)}&path=${encodeURIComponent(path)}`,
+    ),
+  /** 撤销一轮的改动：有文件撤不干净时 ok 为 false，列出冲突的文件，一个都没动 */
+  turnRevert: (id: string, msg: string) =>
+    request<{ ok: true; task: Task; files: string[] } | { ok: false; conflicts: { path: string; reason: string }[] }>(
+      `/tasks/${id}/turn-revert`,
+      json('POST', { msg }),
+    ),
   taskFile: (id: string, path: string) =>
     request<{
       path: string

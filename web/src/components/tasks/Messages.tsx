@@ -46,6 +46,7 @@ import { ReplyHeader } from '@/components/ui/reply-header'
 import { useEffortOf } from './ChatModelPicker'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningRows, runningTools } from './RunningNow'
+import { TurnChangesCard } from './TurnChanges'
 import { useAgentView } from '@/lib/agent-view'
 import { conversationAround } from '@shared/fix'
 import { useNow } from '@/lib/useNow'
@@ -1116,6 +1117,8 @@ export function ChatReply({
             isTail={isTail}
           />
         )
+        // 这一段的总结带着这一轮改的文件：「已更改 N 个文件」卡片放在总结下面、运行区上面
+        const turnMsg = task && !isLive ? [...part].reverse().find((m) => m.turnChanges?.files.length) : undefined
         return (
           <FoldedRun
             key={i}
@@ -1123,7 +1126,16 @@ export function ChatReply({
             live={isLive}
             foldId={`${key}#${i}`}
             stickyAuthor={!author && i === 0}
-            running={footer}
+            running={
+              turnMsg ? (
+                <>
+                  <TurnChangesCard task={task!} msg={turnMsg} />
+                  {footer}
+                </>
+              ) : (
+                footer
+              )
+            }
           />
         )
       })}
