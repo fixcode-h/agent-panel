@@ -24,6 +24,13 @@ export const CACHE_DIR = path.join(DATA_DIR, 'cache')
 export const CHATS_DIR = path.join(DATA_DIR, 'chats')
 /** 节点之间交接的完整结果（太长时提示里只放开头），按任务分目录 */
 export const HANDOFF_DIR = path.join(DATA_DIR, 'tasks', 'handoff')
+/**
+ * 对话目录：Agent 自己产出的截图、临时测试脚本和数据、其他临时文件按对话分目录放这里（用户 2026-10-31 定的），
+ * 不在项目里、系统临时目录里随手建 temp 文件夹。删对话时一起删
+ */
+export const TASK_FILES_DIR = path.join(DATA_DIR, 'tasks', 'files')
+/** 对话目录下的几个子目录：截图、临时测试、其他临时文件 */
+export const TASK_FILE_KINDS = ['screenshots', 'tests', 'tmp'] as const
 
 /** 每个数据文件在数据目录里的位置；左边是旧版本平铺在 data/ 下的文件名 */
 export const DATA_FILES: Record<string, string> = {
