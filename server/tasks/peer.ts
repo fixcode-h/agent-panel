@@ -66,9 +66,13 @@ export function createPeer(s: TasksScope) {
           .catch((e) => log.warn('task', '记下「汇报没交出去」失败', { task: child.id, error: (e as Error).message }))
       return { ok: false, info: '找不到父对话（它可能已经被删了），这条消息没能交回去；子对话自己的结果还在本对话里' }
     }
+    // 请父对话安排修复（toParent 带 wait_fix）：交给父对话的 AI 马上分派，不是问用户的问题。
+    // 子对话那一步挂着等父对话，自己的一轮结束也不会再上报（计划在等别人），只记收件箱就成了父子互等
+    const fix = FIX_HEAD.test(text)
+    if (fix) question = false
     // 阶段汇报不单独发（ADR 0034：一轮只交一封）：记在子对话上，这一轮结束面板上报状态时并进去当「结果」。
     // 要父对话动手的（提问、收尾建议、请它安排修复）照旧马上发
-    if (!question && !FIX_HEAD.test(text)) {
+    if (!question && !fix) {
       const ce = s.live.get(child.id)
       const target = ce?.task ?? child
       target.pendingReport = [target.pendingReport, text.trim()].filter(Boolean).join('\n\n').slice(-4000)
@@ -104,7 +108,9 @@ export function createPeer(s: TasksScope) {
       ? suggestion
         ? `子对话「${child.title}」的收尾建议`
         : `子对话「${child.title}」提问`
-      : `子对话「${child.title}」汇报`
+      : fix
+        ? `子对话「${child.title}」请你安排修复`
+        : `子对话「${child.title}」汇报`
     const opts = question ? askOptions(options, kind) : []
     const body = opts.length ? `${text}\n\n可选的做法：\n${opts.map((x, i) => `${i + 1}. ${x}`).join('\n')}` : text
     // 自动交给父对话时把「谁来答」写进正文：父对话的 AI 之后从对话历史和收件箱读到的就是这句
@@ -116,7 +122,7 @@ export function createPeer(s: TasksScope) {
       role: 'system',
       agentId: '',
       step: '',
-      text: `${head}：\n${body}${question ? `\n\n（决定后用 send_to_conversation 交给这个子对话，id: ${child.id}）` : ''}${why}`,
+      text: `${head}：\n${body}${question ? `\n\n（决定后用 send_to_conversation 交给这个子对话，id: ${child.id}）` : fix ? `\n\n（修好后用 send_to_conversation 通知这个子对话重跑验证，id: ${child.id}）` : ''}${why}`,
       tools: [],
       panel: question && !auto ? 'ask' : 'child',
       ...(!(question && !auto) && { peer }),
@@ -145,7 +151,12 @@ export function createPeer(s: TasksScope) {
     const how = entry?.task.working ? await steerTask(entry.task, msg.text, msg).catch(() => false) : false
     if (!how) {
       parent.messages.push(msg)
-      parent.inbox.push({ from: child.id, title: child.title, text: question ? `（提问）${body}` : text, at: msg.at })
+      parent.inbox.push({
+        from: child.id,
+        title: child.title,
+        text: question ? `（提问）${body}` : fix ? `${text}\n（修好后通知它重跑验证，id: ${child.id}）` : text,
+        at: msg.at,
+      })
     } else if (!parent.messages.some((x) => x.id === msg.id)) {
       // 正在跑的父对话已经从插话里收到问题：也记一条（自动交出时 panel 是 child，界面不画），它下一轮还能看到
       parent.messages.push(msg)
@@ -155,20 +166,46 @@ export function createPeer(s: TasksScope) {
     else await s.store.update(parent.id, parent).catch(saveFailed)
     // 自动交给父对话的 AI 作答：已经从插话里收到的不再叫；其余的按实时交付叫起它（答案从收件箱里看全文）。
     // 不能只看 working：父对话停在等下一句、正在收尾、预热时 working 是 false 但执行位还占着，直接开新一轮会被拒
-    if (auto) {
+    // 请它安排修复的同样要叫：子对话那一步在等它，不叫就互等到用户介入。
+    // 用户亲手停下的父对话不叫（ADR 0032）：记在收件箱里，用户点「继续执行」时一起处理
+    // 子对话自己正跟着父对话一起停下（closeChildren 记成 parent）：这条是停下前在路上的，同样不叫
+    const kidLive = s.live.get(child.id)
+    const userStopped =
+      (entry
+        ? entry.stop && entry.stopReason === 'user'
+        : parent.status === 'stopped' && parent.stopReason === 'user') ||
+      (!!kidLive?.stop && kidLive.stopReason === 'parent')
+    if (auto || fix) {
       await s.store.update(parent.id, parent).catch(saveFailed)
-      if (!how)
+      if (!how && !userStopped)
         void s
           .wakeConv(
             parent.id,
-            `子对话「${child.title}」${suggestion ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${child.id}）。`,
+            fix
+              ? `子对话「${child.title}」报了一个不是它改出来的报错，请你安排修复（报错原文在收件箱里）。按出错的文件找出改出它的子对话，用 send_to_conversation 交给它修；没有对应的子对话、或是你自己改出来的，就自己修或新建子对话修。修好后用 send_to_conversation 通知「${child.title}」（id: ${child.id}）重跑验证：它卡住的那一步在等你的通知。`
+              : `子对话「${child.title}」${suggestion ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${child.id}）。`,
             { panel: 'child', peer },
           )
           .catch((e) => {
-            log.warn('task', '自动交给父对话决定时没能开始新的一轮', { error: (e as Error).message })
-            s.alertOn(parent.id, 'delivery', t('子对话等你决定，但没能开一轮来处理，问题在收件箱里'))(e)
+            log.warn('task', fix ? '请父对话安排修复时没能开始新的一轮' : '自动交给父对话决定时没能开始新的一轮', {
+              error: (e as Error).message,
+            })
+            s.alertOn(
+              parent.id,
+              'delivery',
+              fix
+                ? t('子对话请你安排修复，但没能开一轮来处理，报错在收件箱里')
+                : t('子对话等你决定，但没能开一轮来处理，问题在收件箱里'),
+            )(e)
           })
     }
+    if (fix && !how)
+      return {
+        ok: true,
+        info: userStopped
+          ? '父对话被用户停下了：这条报错记在它的收件箱里，用户让它继续时会安排修复。先做计划里不依赖它的步骤，不要去改别人的文件。'
+          : '父对话现在没在执行，面板已经叫起它安排修复（报错记在它的收件箱里）。',
+      }
     if (auto)
       return {
         ok: true,

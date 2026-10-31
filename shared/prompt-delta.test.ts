@@ -10,6 +10,7 @@ import {
   rememberSent,
 } from './prompt-delta.ts'
 import { nodeRequests, runConversationTurn, type AgentCall, type EngineHost } from './engine.ts'
+import { applyPlan } from './plan.ts'
 import { Agent, Task } from './schema.ts'
 
 const rules = ['## 授权情况\n推送：先问一次', '## 计划怎么维护\n- 先列计划再动手', '## 执行方式\n直接做']
@@ -184,6 +185,14 @@ test('续接只发增量：段落按变化发、子对话第二轮起只发增�
   const full = calls[6].fresh ?? calls[6].prompt
   assert.doesNotMatch(full, /## 停下之前先提问|## 收尾建议要交给用户选/)
   assert.match(full, /## 子对话的完成标准/)
+  // 保活进程里用户接着发（runner 调 nextPrompt）：和第一轮用同一套参数拼，增量只剩用户消息。
+  // 以前这里漏传了角色，角色里写过的提问、收尾规则被发回去，还宣布「子对话的完成标准」不再适用
+  for (const text of ['保活第一条', '保活第二条']) {
+    const next = await calls[6].nextPrompt!(text)
+    assert.match(next, new RegExp(text))
+    assert.doesNotMatch(next, /## 停下之前先提问|## 收尾建议要交给用户选|## 不再适用的规则/)
+    assert.ok(next.length < 300, `保活的下一条只该有消息：${next.length} 字`)
+  }
 
   // 对话里派子任务、跑工作流：用户需求取最新的一条，更早的只留开头
   const long = '很长'.repeat(1000)
@@ -209,4 +218,46 @@ test('续接只发增量：段落按变化发、子对话第二轮起只发增�
   // 工作流任务照旧全带
   const wf = nodeRequests({ ...task, mode: 'workflow' } as Task)
   assert.equal(wf.extra.length, 21)
+})
+
+// 审计发现：会变的状态和不变的规则拼在同一段，指纹一变整段重发（验证规则 2–4 千字跟着改动清单、计划全文跟着「已 N 分钟」）
+test('续接只发增量：改动清单变了只重发「本轮该跑的测试步骤」，计划进度变了只重发「计划进度」', async () => {
+  const calls: AgentCall[] = []
+  const h = childHost(calls)
+  const step = (id: string, appliesTo: string[]) => ({
+    id,
+    name: id,
+    command: id,
+    env: 'auto' as const,
+    cwd: '',
+    when: '',
+    appliesTo,
+    timeoutSec: 0,
+    note: '',
+    enabled: true,
+    merge: false,
+    scope: 'changed' as const,
+    quick: false,
+  })
+  const verify = {
+    steps: [step('前端检查', ['web/**']), step('后端检查', ['server/**'])],
+    platform: 'linux',
+    wslDistro: '',
+    scaled: true,
+    changedFiles: ['web/a.ts'],
+  }
+  ;(h as { verify?: unknown }).verify = verify
+  applyPlan(h.task, { steps: [{ title: '改页面', status: 'running' }, { title: '收尾' }] })
+  await say(h, '改页面')
+  assert.match(calls[0].prompt, /## 验证按改动大小定[\s\S]*## 本轮该跑的测试步骤/)
+  verify.changedFiles = ['web/a.ts', 'server/b.ts']
+  await say(h, '再改后端')
+  assert.match(calls[1].prompt, /## 本轮该跑的测试步骤[\s\S]*后端检查/)
+  assert.doesNotMatch(calls[1].prompt, /## 验证按改动大小定/)
+  // 进行中那一步的开始时间往前挪：只重发进度一句，计划全文不跟着重发
+  const plan = h.task.plans.at(-1)!
+  plan.steps[0].startedAt = new Date(Date.now() - 6 * 60_000).toISOString()
+  await say(h, '接着改')
+  assert.match(calls[2].prompt, /## 计划进度/)
+  assert.doesNotMatch(calls[2].prompt, /## 执行计划|## 计划怎么维护|## 本轮该跑的测试步骤/)
 })

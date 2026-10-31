@@ -234,6 +234,80 @@ test('协调 Agent：一条消息只交给一个子对话，同一段话再发�
   assert.deepEqual(sent, ['c1', 'c1', 'c2'])
 })
 
+test('协调 Agent：同一段话只在这条用户消息里去重，用户新发一条后交给别的子对话照常放行（重启后按记录同样判断）', async () => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '先把 A 做完' } as never, undefined, '', 'u1'),
+    id: 'p1',
+  } as Task
+  const got: { id: string; ok: boolean }[] = []
+  let to = 'c1'
+  const h = host(task, [], async (call) => {
+    const r = await call.orch!.sendToConversation(to, '继续')
+    got.push({ id: to, ok: r.ok })
+    // 照 CLI 的样子把这次调用记进对话：重启后内存里的记录没了，只能按对话里的记录查
+    task.messages.push({
+      id: `a${got.length}`,
+      role: 'agent',
+      agentId: 'm',
+      step: '',
+      text: '',
+      tools: [
+        {
+          kind: 'other',
+          name: 'MCP',
+          label: 'panel · send_to_conversation',
+          detail: '',
+          input: JSON.stringify({ id: to, message: '继续' }),
+          ...(!r.ok && { failed: true }),
+        },
+      ],
+      at: '',
+    } as never)
+    return { ok: true, text: '好' }
+  })
+  h.agents = [agent('m', '协调', { canDelegate: true })]
+  h.listConversations = async () => []
+  h.sendToConversation = async (id) => ({ ok: true, info: `已交给「${id}」` })
+
+  await runEngineTurn(h)
+  // 子对话交回拉起的一轮：还是同一条用户消息，「继续」再交给 c2 被拒
+  task.messages.push({
+    id: 's1',
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: '子对话 A 做完了',
+    tools: [],
+    at: '',
+    panel: 'child',
+  } as never)
+  to = 'c2'
+  await runEngineTurn(h)
+  // 用户新发一条：同一句短话交给 c2 放行
+  task.messages.push({ id: 'u2', role: 'user', agentId: '', step: '', text: 'B 也继续', tools: [], at: '' } as never)
+  await runEngineTurn(h)
+  // 重启：换一个对象（内存里的 handedOff 没了），这条消息里再交给 c3 仍按对话记录拒绝
+  const again = structuredClone(task)
+  const h2 = { ...h, task: again }
+  to = 'c3'
+  const r = await (async () => {
+    let out: { ok: boolean; info: string } | undefined
+    h2.runAgent = async (call) => {
+      out = await call.orch!.sendToConversation('c3', '继续')
+      return { ok: true, text: '好' }
+    }
+    await runEngineTurn(h2)
+    return out!
+  })()
+  assert.deepEqual(got, [
+    { id: 'c1', ok: true },
+    { id: 'c2', ok: false },
+    { id: 'c2', ok: true },
+  ])
+  assert.equal(r.ok, false)
+  assert.match(r.info, /已经交给了子对话 c2/)
+})
+
 test('协调 Agent：新建子对话并交给它，子对话自己不能再分派', async () => {
   const task = {
     ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '实现登录' } as never, undefined, '', 'p1'),
@@ -446,6 +520,11 @@ test('list_conversations：父对话能看到子对话在做什么、在等什�
     assert.match(text, /等 1 个后台命令/)
     assert.match(text, /在做：跑测试/)
     assert.match(text, /最后活动/)
+    // 每轮的「现有子对话」段不带逐分钟变的时间（会让整段每轮重发）：只有执行中、静默过阈值的标一句
+    const section = call.prompt.split('## 现有子对话')[1]?.split('\n## ')[0] ?? ''
+    assert.doesNotMatch(section, /最后活动|分钟前/)
+    assert.match(section, /c2｜改前端｜[^\n]*已超过 10 分钟没有新输出/)
+    assert.doesNotMatch(section, /c1｜[^\n]*没有新输出/, '在等后台命令的不标')
     return { ok: true, text: '好' }
   })
   h.agents = [agent('m', '协调', { canDelegate: true })]
@@ -460,6 +539,16 @@ test('list_conversations：父对话能看到子对话在做什么、在等什�
       doing: '跑测试',
       waiting: '等 1 个后台命令',
       lastActivityAt: new Date().toISOString(),
+    },
+    {
+      id: 'c2',
+      title: '改前端',
+      status: 'running',
+      state: 'running',
+      busy: true,
+      summary: '在改页面',
+      at: '2026-01-01T10:00:00Z',
+      lastActivityAt: new Date(Date.now() - 15 * 60_000).toISOString(),
     },
   ]
 

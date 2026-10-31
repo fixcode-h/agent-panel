@@ -79,14 +79,31 @@ export function peerOfMessage(m: TaskMessage): PeerFrom | undefined {
 }
 
 /**
- * 同一段话之前已经交给了别的子对话：返回那个子对话的 id。一条消息只交给一个子对话（用户 2026-10-24 定的），
+ * 这一轮在处理的那条用户消息在 messages 里的下标：最后一条用户亲自发的、已经交给 CLI 的消息；没有时 -1。
+ * 面板推的（panel）、子对话交回的（peer / child）不算，它们拉起的几轮还在处理同一条用户消息；
+ * 还排着没交出去的（held）、页面本地待认领（pending）、没送到（lost）的也不算，这一轮还没开始处理它们
+ */
+export function currentAskIndex(messages: readonly TaskMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== 'user' || m.panel || m.peer || m.child) continue
+    const how = m.delivery?.how
+    if (how === 'held' || how === 'pending' || how === 'lost') continue
+    return i
+  }
+  return -1
+}
+
+/**
+ * 同一段话在这条用户消息里已经交给了别的子对话：返回那个子对话的 id。用户的一条消息只交给一个子对话（用户 2026-10-24 定的），
  * 父对话把用户的一句话逐个转给四五个子对话会被拒绝。按对话里记下的 send_to_conversation 调用查，
- * 跨轮次也认得出；失败的那次不算，再发给同一个子对话（补充、催）照常放行
+ * 子对话交回、面板推进拉起的几轮也认得出；用户发了新消息就重新算——「继续」「按你的方案做」这类短话
+ * 上一条消息交给过 A，这次交给 B 不算转发同一条消息。失败的那次不算，再发给同一个子对话（补充、催）照常放行
  */
 export function sentToOther(task: Pick<Task, 'messages'>, id: string, message: string): string | undefined {
   const body = message.trim()
   if (!body) return undefined
-  for (const m of task.messages)
+  for (const m of task.messages.slice(currentAskIndex(task.messages) + 1))
     for (const tool of m.tools) {
       if (tool.failed || !/\bsend_to_conversation\b/.test(`${tool.name ?? ''} ${tool.label}`)) continue
       let a: { id?: unknown; message?: unknown }

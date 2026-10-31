@@ -579,6 +579,12 @@ export function tasksApi(deps: {
       jobs: pendingJobs(id),
       merging: merging.has(id),
     }),
+    // 落成「已中断」的子对话要交给父对话：计划里等它的那一步收口、父对话空闲时叫醒（用户亲手停下的父对话不叫，见 noteParent）。
+    // 先清上报去重：「停下→继续→这一轮没跑完就丢了」时 turnDoneAt 没变，去重键和上次一样，这次上报会被吞掉
+    reportChild: (tk) => {
+      reportedState.delete(tk.id)
+      return reportToParent(tk)
+    },
   })
   let sweepTimer: ReturnType<typeof setInterval> | undefined
   void ready.then(() => {

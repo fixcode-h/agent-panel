@@ -1145,6 +1145,69 @@ test('换了一份计划：上一份里还在等的子对话跟着同名步骤�
   assert.equal(plan.steps[0].status, 'done')
 })
 
+// 审计发现：按「标题里含着子对话标题」挂等待，会把另一件事的步骤挂上，子对话已完成时当场标完成
+test('按标题认子对话：只认标题一致或 Agent 写成等待中的；已完成的子对话不把只是同名字眼的新步骤标完成', () => {
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const base = Date.parse('2026-10-25T01:00:00.000Z')
+  // 已完成的「类型检查」：后加的「合并后跑全量类型检查」是另一件事，不挂、不标完成
+  const a = fresh()
+  applyPlan(a, { steps: [{ title: '修类型错误', status: 'running' }] }, iso(base))
+  const at = ensureChildStep(a, 'kid-1', '类型检查', iso(base))
+  bindWait(a, at, { kind: 'child', ref: 'kid-1', label: '类型检查' }, iso(base))
+  const done = [{ id: 'kid-1', title: '类型检查', createdAt: iso(base), done: true, endedAt: iso(base + 60_000) }]
+  syncKids(a, done, iso(base + 70_000))
+  applyPlan(a, { partial: true, steps: [{ title: '合并后跑全量类型检查' }] }, iso(base + 120_000), undefined, done)
+  const later = activePlan(a)!.steps.find((x) => x.title === '合并后跑全量类型检查')!
+  assert.equal(later.status, 'pending')
+  assert.equal(later.waits.length, 0)
+  // 备注里写了已完成子对话的 id，但没写成等待中：是要去复查它，不是在等它
+  applyPlan(
+    a,
+    { partial: true, steps: [{ title: '复查改动', note: 'kid-1 的改动再看一遍' }] },
+    iso(base + 130_000),
+    undefined,
+    [{ ...done[0], id: 'abcdef12-kid' }],
+  )
+  assert.equal(activePlan(a)!.steps.find((x) => x.title === '复查改动')!.status, 'pending')
+
+  // 还在跑的「类型检查」已经挂在第一步上：后面含同样字眼的步骤不跟着挂，子对话完成时只收第一步
+  const b = fresh()
+  applyPlan(b, { steps: [{ title: '类型检查', status: 'running' }, { title: '合并后跑全量类型检查' }] }, iso(base))
+  bindWait(b, '1', { kind: 'child', ref: 'kid-1', label: '类型检查' }, iso(base))
+  const kids = [{ id: 'kid-1', title: '类型检查', createdAt: iso(base), done: false }]
+  syncKids(b, kids, iso(base + 1000))
+  assert.equal(activePlan(b)!.steps[1].waits.length, 0)
+  syncKids(b, [{ ...kids[0], done: true, endedAt: iso(base + 60_000) }], iso(base + 70_000))
+  assert.deepEqual(
+    activePlan(b)!.steps.map((x) => x.status),
+    ['done', 'pending'],
+  )
+
+  // 回归：标题带「子对话：」前缀、Agent 写成等待中并在备注里写了标题的，照样挂上
+  const c = fresh()
+  const ks = [
+    { id: 'k-ai', title: '子任务弹窗加 AI 分析', createdAt: iso(base), done: false },
+    { id: 'k-login', title: '修复登录误报', createdAt: iso(base), done: false },
+  ]
+  applyPlan(
+    c,
+    {
+      steps: [
+        { title: '子对话：子任务弹窗加 AI 分析' },
+        { title: '等登录修复合回', status: 'waiting', note: '等「修复登录误报」合回' },
+        { title: '登录误报的回归测试' },
+      ],
+    },
+    iso(base),
+    undefined,
+    ks,
+  )
+  const st = activePlan(c)!.steps
+  assert.equal(st[0].waits[0]?.ref, 'k-ai')
+  assert.equal(st[1].waits[0]?.ref, 'k-login')
+  assert.equal(st[2].waits.length, 0, '没写成等待中、只是提到同样字眼的不挂')
+})
+
 /**
  * 回归：父对话把一件事先写成一条步骤、后来又把标题改写了一遍（6 与 8 就是同一件事的两条），
  * 或者只交变更步骤却漏带了 id。以前按标题精确匹配对不上就新建一条，旧步永远停在原状态，
