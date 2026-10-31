@@ -62,3 +62,12 @@ test('> [!WARNING] 画成提示块，普通引用不变', () => {
   assert.match(html, /<div class="md-alert" data-kind="warning"><p class="md-alert-title">[^<]+<\/p><p>小心<\/p>/)
   assert.match(html, /<blockquote>\n<p>普通引用<\/p>/)
 })
+
+test('图片只放行外链和内联的位图 / SVG，替代文字放到图注里', () => {
+  const html = renderDoc('![图注](data:image/png;base64,AAAA) ![坏](data:text/html,x)', new Set())
+  assert.match(
+    html,
+    /<span class="md-fig"><img src="data:image\/png;base64,AAAA" alt="图注"><span class="md-cap">图注<\/span><\/span>/,
+  )
+  assert.doesNotMatch(html, /data:text\/html/)
+})

@@ -22,77 +22,45 @@ import { Switch } from '@/components/ui/switch'
 import { IconButton } from '@/components/ui/icon-button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Group, Row } from '@/components/settings/parts'
-import { revealSetting } from '@/components/settings/section-nav'
 import { Markdown } from '@/components/tasks/Markdown'
 
-/** 预览用的示例：每种元素都出现一次（图片要外链地址，预览里不放） */
-const SAMPLE = `# 一级标题
-正文段落里有 **粗体**、*斜体*、~~删除线~~、[链接](https://example.com) 和 \`行内代码\`，还能 @主理 提及角色。
-
-## 二级标题
-> 引用：Agent 汇报里的原话放在这里。
-
-> [!TIP]
-> 提示块：> [!NOTE]、[!TIP]、[!IMPORTANT]、[!WARNING]、[!CAUTION] 五种。
-
-- 无序列表
-  - 第二层
-- [x] 已完成的任务
-- [ ] 没完成的任务
-
-1. 有序列表第一项
-2. 第二项
-
-### 三级标题
-| 文件 | 改动 | 状态 |
-| --- | --- | --- |
-| index.css | +120 | 通过 |
-| Markdown.tsx | +8 | 通过 |
-| schema.ts | +3 | 待测 |
-
-\`\`\`ts
-// 代码块：带行号，顶栏有折行和复制
-const ok = (a: number) => a > 0
-\`\`\`
-
-\`\`\`mermaid
-flowchart LR
-  A([开始]) --> B{通过?}
-  B -- 是 --> C[合并]
-  B -- 否 --> D[返工] --> B
-\`\`\`
-
----
-#### 四级标题
-##### 五级标题
-###### 六级标题
-`
+/**
+ * 每组设置上面一块自己的预览：只放这一组管的元素，改哪项就在旁边看到哪里变（用户要求不要把效果都堆在一个大预览里）。
+ * 图片用内联的 SVG（data:image），不依赖外网
+ */
+const IMG =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    "<svg xmlns='http://www.w3.org/2000/svg' width='480' height='140'><defs><linearGradient id='g' x1='0' x2='1'><stop offset='0' stop-color='#6aabf1' stop-opacity='.35'/><stop offset='1' stop-color='#b7a1ff' stop-opacity='.35'/></linearGradient></defs><rect width='480' height='140' fill='url(#g)'/><circle cx='90' cy='70' r='38' fill='#6aabf1' opacity='.6'/><circle cx='190' cy='70' r='28' fill='#b7a1ff' opacity='.6'/><circle cx='265' cy='70' r='20' fill='#6fd6bd' opacity='.6'/><circle cx='320' cy='70' r='14' fill='#f2c46d' opacity='.6'/></svg>",
+  )
+const PREVIEW: Record<string, string> = {
+  body: '正文段落：Agent 的回复、工作流说明、项目文档都按这里的字号、颜色和段距排版。\n\n第二段：段落之间的距离就是「段落间距」。',
+  strong: '正文里有 **粗体**、*斜体* 和 ~~删除线~~ 三种强调。',
+  link: '详细说明见 [ADR 0034](https://example.com)，链接在正文里这样显示。',
+  code: '改完运行 `npm run lint`，配置在 `.prettierrc.json`。',
+  pre: '```ts\n// 找到这个对话最近一次工作流运行\nexport function latestRun(runs: Run[], id: string) {\n  return runs.filter((r) => r.conv === id).at(-1) ?? null\n}\n```\n\n```diff\n- onClick={() => openTab(run)}\n+ onClick={() => showGraph(run)}\n```',
+  quote: '> 引用：Agent 汇报里的原话放在这里。\n>\n> > 引用里再引用换一种颜色。',
+  alert:
+    '> [!NOTE]\n> 说明：普通的补充信息。\n\n> [!TIP]\n> 提示：双击分界线恢复默认高度。\n\n> [!WARNING]\n> 注意：等出包后更新才能用上。\n\n> [!CAUTION]\n> 警告：这一步不能撤销。',
+  ul: '- 无序列表第一项\n  - 第二层\n- 第二项',
+  ol: '1. 有序列表第一项\n2. 第二项\n3. 第三项',
+  task: '- [x] 已完成的任务\n- [ ] 没完成的任务',
+  table:
+    '| 文件 | 改动 | 状态 |\n| --- | --: | :-: |\n| index.css | +120 | 通过 |\n| Markdown.tsx | +8 | 通过 |\n| schema.ts | +3 | 待测 |',
+  hr: '分隔线上面的一段。\n\n---\n\n分隔线下面的一段。',
+  img: `![替代文字显示成图注](${IMG})`,
+  mention: '@主理 是团队里的角色；@不存在 不在团队里，标成警告色。',
+  mermaid:
+    '```mermaid\nflowchart LR\n  A([开始]) --> B{通过?}\n  B -- 是 --> C[合并]\n  B -- 否 --> D[返工] --> B\n```',
+}
+const headingPreview = (h: string) =>
+  `${'#'.repeat(Number(h.slice(1)))} ${h.toUpperCase()} 标题\n标题下面跟着的正文，看上下间距。`
 const SAMPLE_TEAM = new Set(['主理'])
-
-/** 点预览里的元素跳到对应的设置组：选择器按从里到外的顺序试 */
-const PICK: [string, MdElement][] = [
-  ['.md-mermaid', 'mermaid'],
-  ['.md-alert', 'alert'],
-  ['.md-code, .chat-md > pre', 'pre'],
-  [':not(pre) > code', 'code'],
-  ['.mention', 'mention'],
-  ['a', 'link'],
-  ['strong, b', 'strong'],
-  ['em', 'em'],
-  ['del', 'del'],
-  ['input[type=checkbox]', 'task'],
-  ['table', 'table'],
-  ['blockquote', 'quote'],
-  ['h1, h2, h3, h4, h5, h6', 'h1'],
-  ['ol', 'ol'],
-  ['ul', 'ul'],
-  ['hr', 'hr'],
-  ['img', 'img'],
-  ['p', 'body'],
-]
 
 type Ctx = {
   style: MarkdownStyle
+  /** 预览用紧凑密度（提问面板那种窄面板） */
+  compact: boolean
   set: (el: MdElement, prop: string, v: MdValue | undefined) => void
   /** 正文多少像素：尺寸项按它换算成像素显示 */
   basePx: number
@@ -303,6 +271,21 @@ function ColorPick({
   )
 }
 
+/** 一组设置自己的预览：真的 Markdown 组件，样式改了立刻跟着变；里面的链接、按钮不真的执行 */
+function Preview({ md, remount }: { md: string; remount?: string }) {
+  const { compact } = useStyle()
+  return (
+    <div
+      onClickCapture={(e) => {
+        if ((e.target as HTMLElement).closest('a')) e.preventDefault()
+      }}
+      className="mb-2 rounded-xl bg-panel px-5 py-4 ring-1 ring-line"
+    >
+      <Markdown key={remount} text={md} teamNames={SAMPLE_TEAM} compact={compact} />
+    </div>
+  )
+}
+
 /** 小节右上角：这一组有改过的项才出现「恢复本组」 */
 function GroupReset({ els }: { els: MdElement[] }) {
   const { style, set } = useStyle()
@@ -348,47 +331,14 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
   const rootPx = (16 * value.fontSize) / 14
   const basePx = 0.875 * rootPx * (mdValue(style, 'body', 'size') as number)
 
-  // 小节标题（翻译后的）：点预览时按它找到小节
-  const groupTitle: Record<string, string> = {
-    body: t('正文'),
-    h1: t('标题'),
-    strong: t('粗体、斜体、删除线'),
-    em: t('粗体、斜体、删除线'),
-    del: t('粗体、斜体、删除线'),
-    link: t('链接'),
-    code: t('行内代码'),
-    pre: t('代码块'),
-    quote: t('引用'),
-    alert: t('提示块'),
-    mermaid: t('Mermaid 图'),
-    ul: t('无序列表'),
-    ol: t('有序列表'),
-    task: t('任务列表'),
-    table: t('表格'),
-    hr: t('分隔线'),
-    img: t('图片'),
-    mention: t('@提及'),
-  }
-  const onPreviewClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement
-    // 预览里的链接、复制按钮不真的执行
-    e.preventDefault()
-    for (const [sel, el] of PICK) {
-      const hit = target.closest(sel)
-      if (!hit || !e.currentTarget.contains(hit)) continue
-      if (el === 'h1') setLevel(hit.tagName.toLowerCase() as (typeof HEADINGS)[number])
-      revealSetting([`[data-setting-group="${groupTitle[el]}"]`])
-      return
-    }
-  }
   const changed = Object.keys(style).length > 0
 
   return (
-    <StyleCtx.Provider value={{ style, set, basePx }}>
-      <div className="sticky top-0 z-10 -mx-1 bg-card px-1 pt-4 pb-3">
-        <div className="flex items-center gap-2 pb-2">
+    <StyleCtx.Provider value={{ style, set, basePx, compact: compact === 'compact' }}>
+      <div className="sticky top-0 z-10 -mx-1 bg-card px-1 pt-4 pb-1">
+        <div className="flex items-center gap-2">
           <p className="flex-1 text-[0.8125rem] text-subtle">
-            {t('对话回复、工作流说明、项目文档、总结报告都用这一套。点预览里的元素跳到它的设置。')}
+            {t('对话回复、工作流说明、项目文档、总结报告都用这一套。每组上面的预览会跟着这一组的设置变。')}
           </p>
           <Segmented
             size="sm"
@@ -406,16 +356,11 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
             </Button>
           )}
         </div>
-        <div
-          onClickCapture={onPreviewClick}
-          className="thin-scroll max-h-72 cursor-pointer overflow-y-auto rounded-xl bg-panel px-5 py-4 ring-1 ring-line"
-        >
-          <Markdown text={SAMPLE} teamNames={SAMPLE_TEAM} compact={compact === 'compact'} />
-        </div>
       </div>
 
       <Group title={t('正文')}>
         <GroupReset els={['body']} />
+        <Preview md={PREVIEW.body} />
         <Row title={t('正文字号')} desc={t('相对「外观 → 字号」的倍数，其他元素按正文等比缩放。行高在「外观」里调。')}>
           <F el="body" prop="size" label={t('正文字号')} />
         </Row>
@@ -429,6 +374,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('标题')}>
         <GroupReset els={[...HEADINGS]} />
+        <Preview md={headingPreview(level)} />
         <div className="pb-1">
           <Segmented
             size="sm"
@@ -469,6 +415,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('粗体、斜体、删除线')}>
         <GroupReset els={['strong', 'em', 'del']} />
+        <Preview md={PREVIEW.strong} />
         <Row title={t('粗体字重')}>
           <F el="strong" prop="weight" label={t('粗体字重')} />
         </Row>
@@ -485,6 +432,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('链接')}>
         <GroupReset els={['link']} />
+        <Preview md={PREVIEW.link} />
         <Row title={t('链接颜色')}>
           <F el="link" prop="color" label={t('链接颜色')} />
         </Row>
@@ -495,6 +443,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('行内代码')}>
         <GroupReset els={['code']} />
+        <Preview md={PREVIEW.code} />
         <Row title={t('行内代码字号')}>
           <F el="code" prop="size" label={t('行内代码字号')} />
         </Row>
@@ -514,6 +463,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('代码块')}>
         <GroupReset els={['pre']} />
+        <Preview md={PREVIEW.pre} />
         <Row title={t('代码块字号')}>
           <F el="pre" prop="size" label={t('代码块字号')} />
         </Row>
@@ -542,6 +492,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('引用')}>
         <GroupReset els={['quote']} />
+        <Preview md={PREVIEW.quote} />
         <Row title={t('引用左线颜色')}>
           <F el="quote" prop="line" label={t('引用左线颜色')} />
         </Row>
@@ -564,6 +515,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('提示块')}>
         <GroupReset els={['alert']} />
+        <Preview md={PREVIEW.alert} />
         <Row title={t('提示块浅底')} desc={t('按类型（说明、提示、重要、注意、警告）铺一层同色浅底。')}>
           <F el="alert" prop="tint" label={t('提示块浅底')} />
         </Row>
@@ -574,6 +526,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('无序列表')}>
         <GroupReset els={['ul']} />
+        <Preview md={PREVIEW.ul} />
         <Row title={t('列表符号')}>
           <F el="ul" prop="marker" label={t('列表符号')} />
         </Row>
@@ -590,6 +543,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('有序列表')}>
         <GroupReset els={['ol']} />
+        <Preview md={PREVIEW.ol} />
         <Row title={t('序号颜色')}>
           <F el="ol" prop="markerColor" label={t('序号颜色')} />
         </Row>
@@ -606,6 +560,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('任务列表')}>
         <GroupReset els={['task']} />
+        <Preview md={PREVIEW.task} />
         <Row title={t('勾选框颜色')}>
           <F el="task" prop="color" label={t('勾选框颜色')} />
         </Row>
@@ -616,6 +571,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('表格')}>
         <GroupReset els={['table']} />
+        <Preview md={PREVIEW.table} />
         <Row title={t('表格字号')}>
           <F el="table" prop="size" label={t('表格字号')} />
         </Row>
@@ -644,6 +600,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('分隔线')}>
         <GroupReset els={['hr']} />
+        <Preview md={PREVIEW.hr} />
         <Row title={t('分隔线线型')}>
           <F el="hr" prop="style" label={t('分隔线线型')} />
         </Row>
@@ -660,6 +617,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('图片')}>
         <GroupReset els={['img']} />
+        <Preview md={PREVIEW.img} />
         <Row title={t('图片圆角')}>
           <F el="img" prop="radius" label={t('图片圆角')} />
         </Row>
@@ -676,6 +634,8 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('Mermaid 图')}>
         <GroupReset els={['mermaid']} />
+        {/* 动画、悬停、渐变是画图时读的设置：改了就重新挂载，让图按新设置再画一遍 */}
+        <Preview md={PREVIEW.mermaid} remount={JSON.stringify(style.mermaid ?? {})} />
         <Row title={t('出场动画')} desc={t('画好后节点依次浮现、连线从头画到尾、饼图展开、甘特条长出。')}>
           <F el="mermaid" prop="motion" label={t('出场动画')} />
         </Row>
@@ -692,6 +652,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
 
       <Group title={t('@提及')}>
         <GroupReset els={['mention']} />
+        <Preview md={PREVIEW.mention} />
         <Row title={t('提及文字颜色')}>
           <F el="mention" prop="color" label={t('提及文字颜色')} />
         </Row>

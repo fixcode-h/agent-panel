@@ -54,7 +54,9 @@ renderer.link = function ({ href, title, tokens }) {
 }
 // 有替代文字的图片：文字放到图下面当图注（设置里可关）
 renderer.image = ({ href, text }) => {
-  if (!safe(href) || !/^https?:/i.test(href)) return escape(text)
+  // 外链图片和内联的位图 / SVG（data:image，img 里的 SVG 不会执行脚本）
+  const ok = (safe(href) && /^https?:/i.test(href)) || /^data:image\/(png|jpe?g|gif|webp|svg\+xml)[;,]/i.test(href)
+  if (!ok) return escape(text)
   const img = `<img src="${escape(href)}" alt="${escape(text)}">`
   return text.trim() ? `<span class="md-fig">${img}<span class="md-cap">${escape(text)}</span></span>` : img
 }
