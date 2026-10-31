@@ -50,6 +50,7 @@ import {
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
 import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { attachmentAddDirs, placedFiles } from '../attachments.ts'
+import { taskChanges } from '../own-changes.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { CACHE_DIR, HANDOFF_DIR } from '../store.ts'
 import { taskFiles } from '../task-files.ts'
@@ -77,7 +78,7 @@ import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '..
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
 import { ensureBundled } from '../bundled-skills.ts'
-import { gitChanges, reviewDiff } from './git.ts'
+import { reviewDiff } from './git.ts'
 import { invokeCli, type CliControl } from './invoke.ts'
 import { setLimits } from '../cli-extras.ts'
 import type { BuildOptions } from '../../shared/clis.ts'
@@ -1486,7 +1487,7 @@ async function runAgent(
     gitTimer = setTimeout(async () => {
       gitTimer = undefined
       gitBusy = true
-      const changes = await gitChanges(cwd, task.baseline, task.baseRef, placedFiles(task)).catch(() => null)
+      const changes = await taskChanges(cwd, task, touched).catch(() => null)
       gitBusy = false
       if (changes && !finished) {
         task.changes = changes
@@ -2348,7 +2349,7 @@ async function runAgent(
   if (!prewarmMode) closeChanges()
   if (trackChanges) await settleTurnChanges(task.id)
   if (ctx.isGit) {
-    const changes = await gitChanges(cwd, task.baseline, task.baseRef, placedFiles(task)).catch(() => null)
+    const changes = await taskChanges(cwd, task, touched).catch(() => null)
     if (changes) {
       // 只在跑的节点的改动也会出现在差值里：只算 CLI 亲自报告的文件改动（Write、Edit 报的 file 事件）。
       // 没报告过文件的节点（只读调研、用命令写的）不加归因：差值里可能是并行子对话的改动，算给它就变成了它的改动
@@ -2952,13 +2953,7 @@ export async function runRealTurn(ctx: RealContext) {
           // 没点名文件时只取这个对话改过的（和「更改」面板一致）：对话开始前就没提交的改动不算它的，不交给评审
           const own =
             files ??
-            (since
-              ? undefined
-              : (
-                  await gitChanges(ctx.project.path, ctx.task.baseline, ctx.task.baseRef, placedFiles(ctx.task)).catch(
-                    () => null,
-                  )
-                )?.map((c) => c.path))
+            (since ? undefined : (await taskChanges(ctx.project.path, ctx.task).catch(() => null))?.map((c) => c.path))
           const d = await reviewDiff(ctx.project.path, ctx.task.baseRef, since, own, placedFiles(ctx.task))
           if (!d) return null
           if (d.diff || !d.full) return { snapshot: d.snapshot, stat: d.stat, diff: d.diff }
