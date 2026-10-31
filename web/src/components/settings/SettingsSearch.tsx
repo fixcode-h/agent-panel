@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { hotkeyLabel, isMac } from '@/lib/hotkey'
 import { fieldClass } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
-import { highlightParts, snippet, type SettingsItem } from '@/lib/settings-search'
+import { highlightParts, hitText, snippet, type SettingsItem } from '@/lib/settings-search'
 
 /**
  * 设置页的搜索：左栏顶部的搜索框，和输入后内容区显示的结果列表。
@@ -115,7 +115,8 @@ export function SettingsSearchResults({
           {g.items.map((it) => {
             const i = ++n
             const on = i === active
-            const desc = it.desc && snippet(it.desc, terms)
+            const text = hitText(it, terms)
+            const desc = text && snippet(text, terms)
             return (
               <button
                 key={`${it.isSection ? '@' : it.isGroup ? '#' : ''}${it.group ?? ''}\u0000${it.title}`}

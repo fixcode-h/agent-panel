@@ -24,7 +24,7 @@ import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { Card } from '@/components/ui/card'
-import { Group, Row } from './parts'
+import { Advanced, Group, Row } from './parts'
 
 type LocalSettings = Settings['imageGen']['local']
 
@@ -193,7 +193,12 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
             )}
           </div>
         </Row>
-        <Row title={t('电脑环境')} desc={t('显卡决定装哪个版本的 PyTorch；没有检测到显卡时用 CPU，能出图但很慢')} stack>
+        <Row
+          title={t('显卡')}
+          desc={t('决定装哪个版本的 PyTorch')}
+          hint={t('没有检测到显卡时用 CPU，能出图但很慢。')}
+          stack
+        >
           <div className="rounded-xl bg-sel/40 px-3 py-1">
             <div className="flex items-start gap-1">
               <div className="min-w-0 flex-1 divide-y divide-line/60">
@@ -404,30 +409,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
       </Group>
 
       <Group title={t('下载和连接')}>
-        <Row
-          title={t('使用国内镜像')}
-          desc={t('打不开 Hugging Face 时打开：模型从 hf-mirror.com 下载，Python 依赖从清华镜像安装')}
-        >
-          <div className="flex justify-end">
-            <Switch
-              aria-label={t('使用国内镜像')}
-              checked={value.mirror}
-              onCheckedChange={(mirror) => onChange({ ...value, mirror })}
-            />
-          </div>
-        </Row>
-        <Row title={t('端口')} desc={t('ComfyUI 只在本机监听这个端口')}>
-          <Input
-            aria-label={t('端口')}
-            type="number"
-            value={value.port}
-            onChange={(e) => onChange({ ...value, port: Number(e.target.value) || 8188 })}
-          />
-        </Row>
-        <Row
-          title={t('已有的 ComfyUI')}
-          desc={t('已经装了 ComfyUI 时填它的地址，就不用再装；模型要自己放进它的 models 目录')}
-        >
+        <Row title={t('已有 ComfyUI')} desc={t('填它的地址就不用再装')} hint={t('模型要自己放进它的 models 目录。')}>
           <Input
             aria-label={t('已有的 ComfyUI')}
             placeholder="http://127.0.0.1:8188"
@@ -435,6 +417,30 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
             onChange={(e) => onChange({ ...value, url: e.target.value })}
           />
         </Row>
+        <Advanced label={t('镜像、端口')}>
+          <Row
+            title={t('国内镜像')}
+            desc={t('打不开 Hugging Face 时打开')}
+            hint={t('模型从 hf-mirror.com 下载，Python 依赖从清华镜像安装。')}
+          >
+            <div className="flex justify-end">
+              <Switch
+                aria-label={t('使用国内镜像')}
+                checked={value.mirror}
+                onCheckedChange={(mirror) => onChange({ ...value, mirror })}
+              />
+            </div>
+          </Row>
+          <Row title={t('端口')} desc={t('ComfyUI 只在本机监听这个端口')}>
+            <Input
+              aria-label={t('端口')}
+              type="number"
+              value={value.port}
+              onChange={(e) => onChange({ ...value, port: Number(e.target.value) || 8188 })}
+              className="ml-auto block w-32 text-right tabular-nums"
+            />
+          </Row>
+        </Advanced>
       </Group>
 
       <ConfirmDialog

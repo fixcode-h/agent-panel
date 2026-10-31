@@ -1987,6 +1987,29 @@ body,
     transform: none;
   }
 }
+/* 设置页的分组卡片（settings/parts.tsx 的 Group）：边界靠底色分、不描边（docs/lessons/visual.md），
+   底色从当前配色的 fg 混出来，各套配色、深浅色都跟着走；卡片里直接放的行、折叠和自定义内容之间一道细线 */
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  padding-inline: 16px;
+  background: color-mix(in srgb, var(--color-fg) 3.5%, transparent);
+}
+.settings-card > * + *,
+.settings-advanced[open] > .settings-row {
+  border-top: 1px solid color-mix(in srgb, var(--color-line) 80%, transparent);
+}
+.settings-card > :not(.settings-row):not(.settings-advanced):not(section) {
+  padding-block: 14px;
+}
+@media (min-width: 640px) {
+  /* 开关贴控件栏右边，和下拉、数字框对齐 */
+  .settings-row > div > [role='switch'] {
+    display: flex;
+    margin-left: auto;
+  }
+}
 /* 设置搜索跳到某一项时闪一下底色（section-nav.tsx 的 revealSetting）。
    设置行左右没有内边距，底色贴着文字不好看：用同色的 box-shadow 往外扩 12px 当留白，不改布局 */
 /* 从父对话的结果卡片跳到子对话的总结时，总结标题闪一下（TaskView 的 jumpSummary） */

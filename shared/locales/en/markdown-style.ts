@@ -63,8 +63,6 @@ export const EN_MARKDOWN_STYLE: Record<string, string> = {
   紧凑: 'Compact',
   全部恢复默认: 'Reset all',
   正文字号: 'Body size',
-  '相对「外观 → 字号」的倍数，其他元素按正文等比缩放。行高在「外观」里调。':
-    'A multiple of Appearance → Font size; other elements scale with the body text. Line height is set in Appearance.',
   段落间距: 'Paragraph spacing',
   正文颜色: 'Body color',
   标题级别: 'Heading level',
@@ -151,8 +149,6 @@ export const EN_MARKDOWN_STYLE: Record<string, string> = {
   标题装饰: 'Heading decoration',
   '标题前的竖条、菱形、短横、圆点，或标题下一条渐隐的线，颜色跟标题。':
     'A bar, diamond, dash or dot before the heading, or a fading line under it, in the heading color.',
-  '关掉时长行横向滚动，顶栏的「折行」可以单独打开一块。':
-    'When off, long lines scroll sideways; "Wrap" in the header turns it on for one block.',
   代码块行号: 'Line numbers',
   '只有一行的代码块不显示；复制时不会带上行号。': 'Hidden for one-line blocks; never copied with the code.',
   引用圆角: 'Quote corner radius',

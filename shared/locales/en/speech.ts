@@ -16,22 +16,14 @@ export const EN_SPEECH: Record<string, string> = {
 
   // 设置 → 语音输入
   语音输入: 'Voice input',
-  '在本机把说的话转成文字，录音不上传到任何网站。识别用开源的 sherpa-onnx，模型和识别库都要在下面自己选了才下载，放在数据目录里。':
-    'Turns speech into text on this computer; recordings are never uploaded anywhere. Recognition uses open-source sherpa-onnx. Nothing is downloaded until you pick a model below; models and the recognition library are stored in the data folder.',
   启用语音输入: 'Enable voice input',
-  '打开后对话输入框上多一个麦克风按钮：点一下开始说话，再点一下转成文字插到光标处，录音中按 Esc 放弃。要先在下面下载一个模型。':
-    'Adds a microphone button to the chat input: click to start talking, click again to insert the text at the cursor, press Esc while recording to discard. Download a model below first.',
-  正在使用的模型: 'Model in use',
   '语音识别库没有这台电脑（{platform}）的版本，暂时用不了语音输入':
     "The speech recognition library has no build for this computer ({platform}), so voice input isn't available yet",
   '已下载，可以直接用': 'Downloaded and ready',
-  '还没下载：在下面的模型列表里点「下载」': 'Not downloaded yet: click "Download" in the model list below',
   '选一个下载，下载好后点「使用」切换。中文为主推荐 SenseVoice；电脑内存小选 Paraformer；英文和其它语言多选 Whisper。第一次下载还会带上识别库（约 30 MB）。':
     'Download one, then click "Use" to switch to it. SenseVoice is best for mostly Chinese; Paraformer for low-memory computers; Whisper for English and other languages. The first download also fetches the recognition library (about 30 MB).',
   使用中: 'In use',
   使用国内镜像下载语音模型: 'Download speech models from China mirrors',
-  '打不开 Hugging Face 时打开：模型从 hf-mirror.com 下载，识别库从 npmmirror 下载':
-    'Turn on if Hugging Face is unreachable: models come from hf-mirror.com and the recognition library from npmmirror',
   存放位置: 'Location',
   '删掉后要用需要重新下载。识别库保留，别的模型不受影响。':
     "You'll need to download it again to use it. The recognition library and other models are kept.",

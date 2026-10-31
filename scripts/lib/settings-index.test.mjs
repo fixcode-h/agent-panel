@@ -14,7 +14,7 @@ test('设置页索引：按 cur.id 判定页，组件里的行跟着使用处归
           {cur.id === 'general' && (
             <>
               <Group title={t('执行')}>
-                <Row title={t('超时')} desc={t('分钟，填 0 不限制')}><Input /></Row>
+                <Row title={t('超时')} desc={t('分钟，填 0 不限制')} hint={t('超时后停止')}><Input /></Row>
                 <Shell />
                 <Row title={t('尾巴')}><Input /></Row>
               </Group>
@@ -45,7 +45,7 @@ test('设置页索引：按 cur.id 判定页，组件里的行跟着使用处归
   const index = extractSettingsIndex({ 'Page.tsx': page, 'parts.tsx': parts })
   assert.deepEqual(index, [
     { section: 'general', title: '执行', isGroup: true },
-    { section: 'general', title: '超时', group: '执行', desc: '分钟，填 0 不限制' },
+    { section: 'general', title: '超时', group: '执行', desc: '分钟，填 0 不限制', hint: '超时后停止' },
     { section: 'general', title: '命令行', group: '执行', desc: '甲 乙' },
     { section: 'general', title: '尾巴', group: '执行' },
     { section: 'network', title: 'Proxy', desc: '代理地址' },
@@ -59,10 +59,13 @@ test('设置页索引：按 cur.id 判定页，组件里的行跟着使用处归
 test('设置页索引：真实源码里的几项落在对的页', () => {
   const index = buildSettingsIndex(root)
   const find = (title) => index.find((e) => e.title === title && !e.isGroup)
-  assert.equal(find('单个步骤最长运行时间')?.section, 'general')
-  assert.equal(find('单个步骤最长运行时间')?.group, '执行与超时')
-  // ShellSetting 是单独的组件，用在「常规」的「输入与文件」小节里
-  assert.equal(find('命令行环境')?.section, 'general')
+  assert.equal(find('单步超时')?.section, 'general')
+  assert.equal(find('单步超时')?.group, '运行')
+  // ShellSetting 是单独的组件，用在「常规」的「运行」小节里
+  assert.equal(find('命令行 Shell')?.section, 'general')
+  assert.equal(find('命令行 Shell')?.group, '运行')
+  // Markdown 样式每组都有「字号」：按小节分开去重，不能只剩第一组的
+  assert.ok(index.filter((e) => e.section === 'markdown' && e.title === '字号').length > 3)
   assert.equal(find('代理地址')?.section, 'network')
   assert.equal(find('额外参数')?.section, '@cli')
   assert.ok(index.length > 80, `只抽到 ${index.length} 项，抽取规则可能和页面写法对不上了`)

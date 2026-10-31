@@ -2,7 +2,7 @@ import { t } from '@shared/i18n'
 import { SEARCH_PROVIDERS, searchProvider, switchSearchProvider } from '@shared/web-search'
 import type { Settings } from '@shared/schema'
 import { Input, Select } from '@/components/ui/input'
-import { Group, Row } from './parts'
+import { Advanced, Group, Row } from './parts'
 
 /**
  * 设置里的「联网搜索」：CLI 调 web_search / web_fetch 时用哪个搜索服务、密钥和地址。
@@ -20,15 +20,39 @@ export function WebSearchSection({
   // 地址是所有源共用的一个字段：归属对不上就说明它是上一源留下的，服务端会忽略它（见 resolveSearchEndpoint），
   // 输入框也按实际生效的情况显示成空，不然用户会以为这个地址还在用
   const endpointShown = value.endpointProvider && value.endpointProvider !== provider.id ? '' : value.endpoint
+  // SearXNG 没有默认地址、必须填，不能折起来：只有带默认地址的源才收进「高级」
+  const endpointRow = (
+    <Row
+      title={t('地址')}
+      desc={provider.endpoint ? t('留空用默认地址 {url}', { url: provider.endpoint }) : t('填自己实例的主机地址')}
+      hint={
+        provider.endpoint
+          ? t('也可以填自己的网关或代理。')
+          : t(
+              '公共实例一般不开放 JSON 接口。只填主机就行（例如 https://searxng.example.com），/search 路径会自动补上。',
+            )
+      }
+    >
+      <Input
+        aria-label={t('搜索源地址')}
+        value={endpointShown}
+        onChange={(e) => onChange({ ...value, endpoint: e.target.value, endpointProvider: provider.id })}
+        placeholder={provider.endpoint || 'https://searxng.example.com'}
+        spellCheck={false}
+        className="font-mono text-[0.8125rem]"
+      />
+    </Row>
+  )
   return (
     <>
-      <Group>
+      <Group title={t('搜索服务')}>
         <Row
-          title={t('搜索源')}
-          desc={
+          title={t('服务')}
+          desc={provider.needsKey ? t('这个服务要填密钥') : t('不用密钥')}
+          hint={
             <>
               {t(
-                '自己不会联网搜索的 Agent（目前是 Pi）用哪个服务搜索；Claude Code、Codex、Command Code 用它们自带的搜索。默认是 DeepSeek 官方搜索，要填 DeepSeek 的 API key 才能用，没填时搜索会直接报错，不会换成别的源。也可以换成自建的 SearXNG，或 Brave、Tavily。',
+                'Claude Code、Codex、Command Code 用它们自带的搜索，不走这里。默认是 DeepSeek 官方搜索，要填 DeepSeek 的 API key 才能用，没填时搜索会直接报错，不会换成别的源。也可以换成自建的 SearXNG，或 Brave、Tavily。',
               )}
               {/* 选中源自己的说明（计费、用哪种 key）：跟着下拉切换，用户换源前就看得到要花钱 */}
               {provider.note && <span className="mt-1 block">{provider.note}</span>}
@@ -44,8 +68,9 @@ export function WebSearchSection({
         </Row>
         {provider.needsKey && (
           <Row
-            title={t('搜索源的密钥')}
-            desc={t('只存在本机数据目录的设置文件里。搜索请求由面板代发，扩展脚本和模型都拿不到密钥。')}
+            title={t('密钥')}
+            desc={t('只存在本机，模型拿不到')}
+            hint={t('只存在本机数据目录的设置文件里。搜索请求由面板代发，扩展脚本和模型都拿不到密钥。')}
           >
             <Input
               type="password"
@@ -59,31 +84,11 @@ export function WebSearchSection({
             />
           </Row>
         )}
-        <Row
-          title={t('搜索源地址')}
-          desc={
-            provider.endpoint
-              ? t('留空用默认地址 {url}；也可以填自己的网关或代理。', { url: provider.endpoint })
-              : t(
-                  'SearXNG 要填自己实例的地址：公共实例一般不开放 JSON 接口。只填主机就行（例如 https://searxng.example.com），/search 路径会自动补上。',
-                )
-          }
-        >
-          <Input
-            aria-label={t('搜索源地址')}
-            value={endpointShown}
-            onChange={(e) => onChange({ ...value, endpoint: e.target.value, endpointProvider: provider.id })}
-            placeholder={provider.endpoint || 'https://searxng.example.com'}
-            spellCheck={false}
-            className="font-mono text-[0.8125rem]"
-          />
-        </Row>
+        {provider.endpoint ? <Advanced label={t('自定义地址')}>{endpointRow}</Advanced> : endpointRow}
       </Group>
       <Group title={t('怎么打开')}>
-        <p className="border-b py-4 text-[0.8125rem] leading-relaxed text-subtle">
-          {t(
-            '这一页只管搜索源和密钥。模型要真正能用 web_search / web_fetch，还要在对应 CLI 的设置里打开「联网搜索」开关（默认关闭，打开前先确认搜索源）。',
-          )}
+        <p className="text-[0.8125rem] text-subtle">
+          {t('模型要用 web_search / web_fetch，还要在对应 Agent 的设置里打开「联网搜索」开关（默认关闭）。')}
         </p>
       </Group>
     </>

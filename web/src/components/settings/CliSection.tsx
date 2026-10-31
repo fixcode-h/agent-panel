@@ -46,7 +46,7 @@ import { Badge } from '@/components/ui/badge'
 import { IconButton } from '@/components/ui/icon-button'
 import { Card } from '@/components/ui/card'
 import { ModelSelect } from '@/components/agents/ModelSelect'
-import { CopyText, Group, Row } from './parts'
+import { Advanced, CopyText, Group, Row } from './parts'
 import { CliAuthPanel } from './CliAuthPanel'
 import type { ApiConfig, ApiProtocol } from '@shared/accounts'
 import { CliLimitsPanel, hasLimits } from './CliLimits'
@@ -794,7 +794,8 @@ export function CliSection({
         <ModelSource cli={def} data={models} />
         <Row
           title={t('三档模型')}
-          desc={t(
+          desc={t('高、中、低档对应的模型和思考强度')}
+          hint={t(
             '角色选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文、最大输出和思考强度按模型目录自动填，目录里没有的模型按 1M / 128K 估算，也可以手动改。',
           )}
           stack
@@ -809,10 +810,10 @@ export function CliSection({
             onChange={(v) => set('tiers', v)}
           />
         </Row>
-        <Row title={t('默认模型')} desc={t('角色没有指定模型时使用，可以选一个档位')}>
+        <Row title={t('默认模型')} desc={t('角色没指定模型时用，可以选一档')}>
           <DefaultModel def={full} draft={view} onChange={(v) => set('defaultModel', v)} />
         </Row>
-        <Row title={t('默认思考强度')} desc={t('角色和档位都没有指定时使用')}>
+        <Row title={t('默认思考强度')} desc={t('角色和档位都没指定时用')}>
           <Select
             aria-label={t('{cli} 默认思考强度', { cli: def.name })}
             value={effortValue(
@@ -846,7 +847,8 @@ export function CliSection({
         </Row>
         <Row
           title={t('最大回合')}
-          desc={t('一轮任务最多执行多少回合（模型请求次数）。留空用 Agent 自己的默认值，Command Code 是 1000')}
+          desc={t('一轮最多请求模型几次')}
+          hint={t('留空用 Agent 自己的默认值，Command Code 是 1000。')}
         >
           <Input
             type="number"
@@ -856,7 +858,7 @@ export function CliSection({
             value={draft.maxTurns || ''}
             onChange={(e) => set('maxTurns', Math.min(1000, Math.max(0, Math.trunc(Number(e.target.value) || 0))))}
             placeholder="1000"
-            className="h-9 w-28 font-mono text-[0.8125rem]"
+            className="ml-auto block h-9 w-28 text-right font-mono text-[0.8125rem]"
           />
         </Row>
         {(def.options ?? []).map((o) => (
@@ -868,41 +870,14 @@ export function CliSection({
             />
           </Row>
         ))}
-        <Row title={t('可执行文件')} desc={t('留空时从 PATH 查找 {command}', { command: def.command })}>
-          <Input
-            value={draft.command}
-            onChange={(e) => set('command', e.target.value)}
-            placeholder={def.command}
-            className="h-9 font-mono text-[0.8125rem]"
-            spellCheck={false}
-          />
-        </Row>
-        <Row title={t('额外参数')} desc={t('每次调用都会追加，角色自己的参数排在后面')}>
-          <Input
-            value={draft.args}
-            onChange={(e) => set('args', e.target.value)}
-            placeholder={t('例如 --add-dir ../shared')}
-            className="h-9 font-mono text-[0.8125rem]"
-            spellCheck={false}
-          />
-        </Row>
-        <Row title={t('环境变量')} desc={t('每行一个 KEY=VALUE，只传给这个 Agent')}>
-          <Textarea
-            rows={2}
-            value={draft.envText}
-            onChange={(e) => set('envText', e.target.value)}
-            placeholder={def.envExample || PROXY_ENV_EXAMPLE}
-            className="font-mono text-[0.8125rem]"
-            spellCheck={false}
-          />
-        </Row>
         <Row
-          title={t('自动压缩上下文')}
-          desc={
+          title={t('自动压缩')}
+          desc={t('上下文占到这个比例时压缩')}
+          hint={
             // 能原地压缩会话的（Pi 走协议压缩）不用开新会话，只有写摘要的才这样说明
             def.autoCompact === 'panel' && def.compact === 'summary'
-              ? t('上下文占用达到这个比例时，对话结束一轮后自动压缩（写一份摘要，下一轮开新会话带上）')
-              : t('上下文占用达到这个比例时自动压缩')
+              ? t('对话结束一轮后自动压缩：写一份摘要，下一轮开新会话带上。')
+              : undefined
           }
         >
           <Select
@@ -918,6 +893,36 @@ export function CliSection({
             ]}
           />
         </Row>
+        <Advanced label={t('可执行文件、参数、环境变量')}>
+          <Row title={t('可执行文件')} desc={t('留空时从 PATH 查找 {command}', { command: def.command })}>
+            <Input
+              value={draft.command}
+              onChange={(e) => set('command', e.target.value)}
+              placeholder={def.command}
+              className="h-9 font-mono text-[0.8125rem]"
+              spellCheck={false}
+            />
+          </Row>
+          <Row title={t('额外参数')} desc={t('每次调用都追加')} hint={t('角色自己的参数排在后面。')}>
+            <Input
+              value={draft.args}
+              onChange={(e) => set('args', e.target.value)}
+              placeholder={t('例如 --add-dir ../shared')}
+              className="h-9 font-mono text-[0.8125rem]"
+              spellCheck={false}
+            />
+          </Row>
+          <Row title={t('环境变量')} desc={t('每行一个 KEY=VALUE，只传给这个 Agent')} stack>
+            <Textarea
+              rows={2}
+              value={draft.envText}
+              onChange={(e) => set('envText', e.target.value)}
+              placeholder={def.envExample || PROXY_ENV_EXAMPLE}
+              className="font-mono text-[0.8125rem]"
+              spellCheck={false}
+            />
+          </Row>
+        </Advanced>
         <div className="pt-4">
           <CommandPreview
             cli={def.id}
@@ -946,7 +951,7 @@ export function CliSection({
 
       {hasLimits(def.id) && (
         <Group title={t('额度')}>
-          <Row title={t('显示额度')} desc={t('在这里和任务页右栏显示账号的 5 小时、每周额度用了多少')}>
+          <Row title={t('显示额度')} desc={t('5 小时和每周额度用了多少')} hint={t('显示在这里和任务页右栏。')}>
             <Switch
               checked={draft.showLimits}
               onCheckedChange={(v) => set('showLimits', v)}

@@ -98,6 +98,8 @@ export function revealSetting(selectors: string[]) {
       if (++tries < 60) requestAnimationFrame(step)
       return
     }
+    // 收在「高级」折叠里的项先展开，不然定位到的是一个看不见的元素
+    for (let d = el.closest('details'); d; d = d.parentElement?.closest('details') ?? null) d.open = true
     const offset = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
     container.scrollTo({ top: Math.max(0, offset - container.clientHeight / 3), behavior: 'smooth' })
     // 先摘掉再加回去：连着点同一项时动画能从头再放一次
