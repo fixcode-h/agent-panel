@@ -56,8 +56,8 @@ export const EN_MARKDOWN_STYLE: Record<string, string> = {
   图片: 'Images',
   '@提及': '@mentions',
   标题: 'Headings',
-  '对话回复、工作流说明、项目文档、总结报告都用这一套。点预览里的元素跳到它的设置。':
-    'Used by chat replies, workflow docs, project docs and summary reports. Click an element in the preview to jump to its settings.',
+  '对话回复、工作流说明、项目文档、总结报告都用这一套。每组上面的预览会跟着这一组的设置变。':
+    "Used by chat replies, workflow docs, project docs and summary reports. The preview above each group follows that group's settings.",
   预览密度: 'Preview density',
   正常: 'Normal',
   紧凑: 'Compact',

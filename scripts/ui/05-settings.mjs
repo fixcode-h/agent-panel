@@ -108,7 +108,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     errors.push('设置-外观：换回默认的「Claude Code」配色后 html 上应该挂 data-palette="code"')
   // Markdown 样式：顶部预览是真的 Markdown 组件；改一项立刻写进 #md-style，恢复默认后清空
   await p.getByRole('button', { name: 'Markdown 样式', exact: true }).click()
-  await check(p, '设置-Markdown样式', ['一级标题', '表格斑马纹', '代码块自动换行', '标题字号'])
+  await check(p, '设置-Markdown样式', ['H1 标题', '表格斑马纹', '代码块自动换行', '标题字号'])
   await p.getByRole('switch', { name: '表格斑马纹' }).click()
   if (!(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes('--md-table-zebra'))
     errors.push('设置-Markdown样式：打开斑马纹后 #md-style 里应该有 --md-table-zebra')
