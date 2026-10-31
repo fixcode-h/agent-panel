@@ -799,10 +799,11 @@ export const EN_SETTINGS: Record<string, string> = {
   'Maple Mono NL（内置）': 'Maple Mono NL (bundled)',
   'IBM Plex Sans（内置）': 'IBM Plex Sans (bundled)',
   'JetBrains Mono（内置）': 'JetBrains Mono (bundled)',
-  '系统字体（默认）': 'System font (default)',
+  系统字体: 'System font',
+  'Maple Mono CN（内置）': 'Maple Mono CN (bundled)',
   中文字体: 'Chinese font',
-  '英文字体里没有汉字，汉字用这里选的字体。思源黑体和 Maple Mono 中文版是同一套字形。':
-    'The Latin font has no Chinese characters, so they use this font. Noto Sans SC shares its glyphs with the Chinese build of Maple Mono.',
+  '英文字体里没有汉字，汉字用这里选的字体。Maple Mono CN 是 Maple Mono 的中文版：一个汉字正好占两个英文字母宽，和 Maple Mono 英文上下对齐，但汉字之间比思源黑体疏；它只有常规和中粗两档，标题由浏览器加粗。':
+    'The Latin font has no Chinese characters, so they use this font. Maple Mono CN is the Chinese build of Maple Mono: each character is exactly two Latin letters wide, so it lines up with Maple Mono, but characters sit further apart than with Noto Sans SC; it only has regular and medium weights, and headings are bolded by the browser.',
   '思源黑体 Noto Sans SC（内置）': 'Noto Sans SC (bundled)',
   '系统字体（苹方 / 微软雅黑）': 'System font (PingFang / Microsoft YaHei)',
   代码字体: 'Code font',
@@ -1542,9 +1543,9 @@ export const EN_SETTINGS: Record<string, string> = {
   '只换颜色，布局不变；深浅色跟随侧栏的主题开关。':
     'Only colors change, the layout stays; light/dark follows the theme switch in the sidebar.',
   '主区和右栏的圆角，0 是直角': 'Corner radius of the main area and right panel; 0 is square',
-  '默认跟随系统，和 Claude Code 一样': 'Follows the system by default, like Claude Code',
-  '默认是系统界面字体（Segoe UI / 苹方）；也可以换内置的 Inter，喜欢等宽可以换 Maple Mono NL（不带符号连字）。':
-    'Defaults to the system UI font (Segoe UI / PingFang); you can switch to the bundled Inter, or Maple Mono NL (no ligatures) if you like monospace.',
+  '字母、数字和符号用的字体': 'Font for letters, digits and symbols',
+  '默认是内置的等宽 Maple Mono NL（不带符号连字）；也可以换系统界面字体（Segoe UI / 苹方）、内置的 Inter 或 IBM Plex Sans。':
+    'Defaults to the bundled monospace Maple Mono NL (no ligatures); you can switch to the system UI font (Segoe UI / PingFang), the bundled Inter or IBM Plex Sans.',
   汉字用的字体: 'Font for Chinese characters',
   '代码、命令和路径用的等宽字体': 'Monospace font for code, commands and paths',
   '本机字体名，优先于上面选的': 'Installed font names, used before the ones above',
