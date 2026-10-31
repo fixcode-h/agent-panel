@@ -300,7 +300,8 @@ export function ProjectFileDialog({
             {isMd && !editing && file?.exists && !file.binary && (
               <Segmented
                 size="sm"
-                className={MODAL_ICON_BTN}
+                // 标题栏一排都是 24px 高：段控件整体压到 24px（每段 20px），不折行、不被挤窄
+                className="shrink-0 flex-nowrap *:h-5 *:px-2 *:whitespace-nowrap"
                 label={t('预览或源码')}
                 value={mdView}
                 onChange={setMdView}
