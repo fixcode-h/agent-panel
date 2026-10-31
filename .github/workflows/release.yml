@@ -27,7 +27,7 @@ jobs:
       group: release-${{ github.ref_name }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 发布只用下面 gh 的 GH_TOKEN；不把令牌留在 .git/config 里给 npm ci 的安装脚本
           persist-credentials: false
