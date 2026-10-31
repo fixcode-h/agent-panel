@@ -100,6 +100,7 @@ import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, 
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { LIVE, nextSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
 import { isHelperAgent } from './builtin/core.ts'
+import { childAskPrompt } from './child-ask.ts'
 import {
   activePlan,
   applyPlan,
@@ -4222,12 +4223,11 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
       : ''
     const roleAsks = roleText.includes('子对话停下来等用户时必须先提问')
     const roleSuggests = roleText.includes('子对话的收尾建议也交给用户选')
-    // 界面把「没在跑、也没有提问」的子对话当成已完成：子对话安静停下等于把未决的问题藏起来
-    if (!roleAsks)
-      parts.push(`## 停下之前先提问
-子对话的「已停止」只由用户或父对话主动停止产生，你不要安静地停下。遇到拿不准的、需要用户确认的、不可逆的操作、缺外部信息时：用提问工具（有原生提问的用原生方式，没有的用面板的 ask_user）把问题、选项和各自的后果写清楚；要父对话决定时用 message_parent 并把 question 设为 true。先把提问发出去再结束这一轮，不要只在结论里写一句「待确认」。`)
-    if (host.messageParent && roleSuggests)
-      // 通用规则在角色里；这里只补随项目变的完成标准（独立分支 / P4 / 共用目录不一样）
+    // 提问怎么问、问给谁按子对话自己的「提问」开关（见 shared/child-ask.ts）
+    const askPart = childAskPrompt(host.task.askUser, roleAsks)
+    if (askPart) parts.push(askPart)
+    // 通用规则在角色里、或关着提问（收尾建议也不交给别人选）时：只补随项目变的完成标准
+    if (host.messageParent && (roleSuggests || !host.task.askUser))
       parts.push(`## 子对话的完成标准
 这个子对话做到「${wrapDone(wrapKind(host), parentRunsIn(host))}」为止${wrapKind(host) ? '，这是收尾，面板已经把它列成计划的最后一步，不要写成建议' : ''}；和角色设定里写的不一样时以这里为准。`)
     else if (host.messageParent)
