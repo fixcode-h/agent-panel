@@ -153,7 +153,16 @@ function scanFile(code, filename) {
       if (tag === 'Row') {
         const title = titleOf(attrOf(node, 'title'))
         const desc = texts(attrOf(node, 'desc')?.value).join(' ')
-        if (title) ctx.comp.nodes.push({ section: ctx.section, group: ctx.group, title, desc: desc || undefined })
+        // hint 是问号悬停的详细说明：界面上不铺开，但搜里面的词也要能找到这一项
+        const hint = texts(attrOf(node, 'hint')?.value).join(' ')
+        if (title)
+          ctx.comp.nodes.push({
+            section: ctx.section,
+            group: ctx.group,
+            title,
+            desc: desc || undefined,
+            hint: hint || undefined,
+          })
       } else if (tag === 'Group') {
         const title = titleOf(attrOf(node, 'title'))
         if (title) {
@@ -176,7 +185,7 @@ function scanFile(code, filename) {
 
 /**
  * 抽出全部设置项。files 是 { 路径: 源码 }（测试可以直接传字符串），第一个文件当作设置页本身。
- * 返回按页面顺序排的 `{ section, group?, title, desc?, isGroup? }`，同一页同一标题只留第一条。
+ * 返回按页面顺序排的 `{ section, group?, title, desc?, hint?, isGroup? }`，同一页同一小节里同一标题只留第一条。
  */
 export function extractSettingsIndex(files) {
   const all = new Map()
@@ -185,7 +194,8 @@ export function extractSettingsIndex(files) {
   const out = []
   const seen = new Set()
   const emit = (e) => {
-    const key = `${e.section}\u0000${e.isGroup ? '#' : ''}${e.title}`
+    // 同一页不同小节可以有同名的项（Markdown 样式里每组都有「颜色」「圆角」），按小节分开去重
+    const key = `${e.section}\u0000${e.isGroup ? '#' : (e.group ?? '')}\u0000${e.title}`
     if (seen.has(key)) return
     seen.add(key)
     out.push(e)
@@ -205,10 +215,11 @@ export function extractSettingsIndex(files) {
   // 从设置页文件里定义的组件开始展开：它们自己知道每一段属于哪一页
   const [rootFile, rootCode] = Object.entries(files)[0]
   for (const name of scanFile(rootCode, rootFile).keys()) expand(name, undefined, undefined, [])
-  return out.map(({ isGroup, group, desc, ...rest }) => ({
+  return out.map(({ isGroup, group, desc, hint, ...rest }) => ({
     ...rest,
     ...(isGroup ? { isGroup: true } : group ? { group } : {}),
     ...(desc ? { desc } : {}),
+    ...(hint ? { hint } : {}),
   }))
 }
 

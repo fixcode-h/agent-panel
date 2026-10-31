@@ -759,8 +759,6 @@ export const EN_TASKS: Record<string, string> = {
   '独立分支：对话一创建就开单独的 git 分支和目录，在里面执行，不改动项目目录，完成后再决定合并还是丢弃；父对话的子对话也从这个分支开出、合回这里':
     "Separate branch: creates its own git branch and folder as soon as the conversation starts and works there, leaving the project folder untouched; merge or discard when done. A parent conversation's children branch from and merge back into it",
   同时运行的后台命令: 'Concurrent background commands',
-  '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。':
-    'How many background commands (full test runs, builds) handed to the panel can run at once across all conversations. Extra ones wait until an earlier one finishes. Lower it on a slower machine so they do not bog it down together.',
   '填 1 到 64 之间的整数': 'Enter a whole number from 1 to 64',
   '全局规则只能在项目对话里发布，子对话会自动遵守父对话的规则':
     "Global rules can only be published in a project conversation; sub-conversations follow their parent's rules automatically",

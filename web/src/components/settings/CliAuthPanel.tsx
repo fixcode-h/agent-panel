@@ -61,12 +61,9 @@ export function CliAuthPanel({
     <Group title={t('登录方式')}>
       <Row
         title={t('使用')}
-        desc={
-          mode === 'account'
-            ? t('用浏览器登录的账号，可以保存几个账号随时切换')
-            : t(
-                '用全局设置里配的 API（接口地址和密钥）；支持写配置的 Agent 会立即保存到它自己的配置，模型下拉优先从 Agent 读取',
-              )
+        desc={mode === 'account' ? t('浏览器登录的账号，可存几个随时切换') : t('用「API 配置」里的接口地址和密钥')}
+        hint={
+          mode === 'api' ? t('支持写配置的 Agent 会立即保存到它自己的配置，模型下拉优先从 Agent 读取。') : undefined
         }
         stack
       >

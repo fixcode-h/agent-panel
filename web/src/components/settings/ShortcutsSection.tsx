@@ -73,26 +73,25 @@ export function ShortcutsSection({ value, onChange }: { value: ElementPicker; on
   const broken = !parseHotkey(value.hotkey)
   return (
     <>
-      <p className="text-[0.8125rem] leading-relaxed text-subtle">
-        {t(
-          '抓取界面元素（开发者模式）的快捷键：按一下进入抓取，再按一下退出。在输入框里打字时不会触发，带了 Ctrl / Alt 的组合键除外。',
-        )}
-      </p>
-      <Group>
+      <p className="text-[0.8125rem] text-subtle">{t('开发者模式下抓取界面元素用的按键。')}</p>
+      <Group title={t('抓取元素')}>
         <Row
-          title={t('抓取元素的快捷键')}
-          desc={t('默认是「{key}」。键盘上打不出这个键时，可以点右边换成别的组合（例如 Ctrl+Shift+E）。', {
-            key: DEFAULT_PICK_HOTKEY,
-          })}
+          title={t('快捷键')}
+          desc={t('按一下进入抓取，再按一下退出')}
+          hint={t(
+            '默认是「{key}」。键盘上打不出这个键时，可以点右边换成别的组合（例如 Ctrl+Shift+E）。在输入框里打字时不会触发，带了 Ctrl / Alt 的组合键除外。',
+            { key: DEFAULT_PICK_HOTKEY },
+          )}
         >
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col items-end gap-1">
             <HotkeyField label={t('抓取元素的快捷键')} value={value.hotkey} onChange={(k) => set('hotkey', k)} />
             {broken && <span className="text-xs text-danger">{t('这个写法认不出来，按 Backspace 恢复默认')}</span>}
           </div>
         </Row>
         <Row
-          title={t('用哪个鼠标键抓取')}
-          desc={t('其他两个键在抓取期间照常可用：左键还能点按钮、右键还能弹菜单，所以抓取键一般用中键。')}
+          title={t('鼠标键')}
+          desc={t('点选元素用的键，建议中键')}
+          hint={t('其他两个键在抓取期间照常可用：左键还能点按钮、右键还能弹菜单。')}
         >
           <Select
             aria-label={t('用哪个鼠标键抓取')}
@@ -102,11 +101,8 @@ export function ShortcutsSection({ value, onChange }: { value: ElementPicker; on
             options={PICK_BUTTONS.map((b) => ({ value: b, label: pickButtonLabel(b) }))}
           />
         </Row>
-        <Row
-          title={t('退出抓取')}
-          desc={t('抓取期间按 Esc 或再按一次上面的快捷键都能退出；抓到一个元素后也会自动退出。')}
-        >
-          <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+        <Row title={t('退出抓取')} desc={t('抓到一个元素后也会自动退出')}>
+          <div className="flex items-center justify-end gap-2 text-[0.8125rem] text-muted">
             <MousePointerClick className="h-4 w-4 text-subtle" />
             <Kbd className="h-auto px-1.5 py-0.5 text-[0.75rem]">Esc</Kbd>
             <span>{t('或')}</span>
@@ -114,10 +110,11 @@ export function ShortcutsSection({ value, onChange }: { value: ElementPicker; on
           </div>
         </Row>
         {!isDefault && (
-          <Row title={t('恢复默认')} desc={t('快捷键回到「{key}」，抓取键回到中键。', { key: DEFAULT_PICK_HOTKEY })}>
+          <Row title={t('恢复默认')} desc={t('「{key}」+ 中键', { key: DEFAULT_PICK_HOTKEY })}>
             <Button
               variant="ghost"
               size="sm"
+              className="ml-auto flex"
               onClick={() => onChange({ hotkey: DEFAULT_PICK_HOTKEY, button: DEFAULT_PICK_BUTTON })}
             >
               {t('恢复默认')}

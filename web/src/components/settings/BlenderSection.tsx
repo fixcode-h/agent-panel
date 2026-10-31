@@ -36,7 +36,7 @@ export function BlenderSection({ path, onPath }: { path: string; onPath: (p: str
         {t('模型对话里 Agent 用 Blender 建模，网页右侧实时预览。面板在后台起一个 Blender，不弹窗口。')}
       </p>
       <Group>
-        <Row title={t('Blender 路径')} desc={t('留空时自动在 PATH 和常见安装位置里找')} stack>
+        <Row title={t('路径')} desc={t('留空时自动查找')} hint={t('在 PATH 和常见安装位置里找。')} stack>
           <Input
             aria-label={t('Blender 路径')}
             value={path}

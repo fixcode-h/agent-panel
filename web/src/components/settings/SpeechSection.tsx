@@ -60,18 +60,13 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
 
   return (
     <>
-      <p className="text-[0.8125rem] leading-relaxed text-subtle">
-        {t(
-          '在本机把说的话转成文字，录音不上传到任何网站。识别用开源的 sherpa-onnx，模型和识别库都要在下面自己选了才下载，放在数据目录里。',
-        )}
-      </p>
+      <p className="text-[0.8125rem] text-subtle">{t('在本机把说的话转成文字，录音不上传。')}</p>
 
       <Group title={t('语音输入')}>
         <Row
-          title={t('启用语音输入')}
-          desc={t(
-            '打开后对话输入框上多一个麦克风按钮：点一下开始说话，再点一下转成文字插到光标处，录音中按 Esc 放弃。要先在下面下载一个模型。',
-          )}
+          title={t('启用')}
+          desc={t('输入框上多一个麦克风按钮')}
+          hint={t('点一下开始说话，再点一下转成文字插到光标处，录音中按 Esc 放弃。要先在下面下载一个模型。')}
         >
           <div className="flex justify-end">
             <Switch
@@ -82,7 +77,7 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
           </div>
         </Row>
         <Row
-          title={t('正在使用的模型')}
+          title={t('当前模型')}
           desc={
             !st
               ? undefined
@@ -90,7 +85,7 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
                 ? t('语音识别库没有这台电脑（{platform}）的版本，暂时用不了语音输入', { platform: st.platform })
                 : ready
                   ? t('已下载，可以直接用')
-                  : t('还没下载：在下面的模型列表里点「下载」')
+                  : t('还没下载，在下面的列表里下载')
           }
         >
           <span
@@ -224,8 +219,9 @@ export function SpeechSection({ value, onChange }: { value: SpeechSettings; onCh
 
       <Group title={t('下载')}>
         <Row
-          title={t('使用国内镜像下载语音模型')}
-          desc={t('打不开 Hugging Face 时打开：模型从 hf-mirror.com 下载，识别库从 npmmirror 下载')}
+          title={t('国内镜像')}
+          desc={t('打不开 Hugging Face 时打开')}
+          hint={t('模型从 hf-mirror.com 下载，识别库从 npmmirror 下载。')}
         >
           <div className="flex justify-end">
             <Switch

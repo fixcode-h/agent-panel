@@ -54,13 +54,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       )
   if (!(await waitAddressEmpty()))
     errors.push(`联网搜索：切源后地址栏还是上一源的地址（${await addressInput.inputValue()}）`)
-  await check(p, '设置-联网搜索-切源后清地址', ['搜索源地址'])
+  // Brave 有默认地址，地址收进「高级 · 自定义地址」折叠里
+  await check(p, '设置-联网搜索-切源后清地址', ['自定义地址'])
   // 再切回 SearXNG，地址栏仍然是空的：清掉的是存下来的地址，不只是显示层把旧值遮住了
   await providerSelect.click()
   await p.getByRole('option', { name: /^SearXNG/ }).click()
   if (!(await waitAddressEmpty()))
     errors.push(`联网搜索：切回原源后地址栏又出现了上回填的地址（${await addressInput.inputValue()}）`)
-  await check(p, '设置-联网搜索-切回原源仍是空地址', ['搜索源地址'])
+  // SearXNG 没有默认地址、必须填，地址行不折起来
+  await check(p, '设置-联网搜索-切回原源仍是空地址', ['填自己实例的主机地址'])
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   // 侧栏导航和分组标题都叫「添加其他 Agent」：定位要看正文那个标题，不看导航项
   await p.getByRole('heading', { name: '添加其他 Agent', exact: true }).first().scrollIntoViewIfNeeded()

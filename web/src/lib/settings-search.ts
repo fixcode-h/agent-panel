@@ -9,6 +9,8 @@ export interface SettingsEntry {
   title: string
   group?: string
   desc?: string
+  /** 问号悬停里的详细说明：能搜到，结果里只在说明没命中时拿它当摘要 */
+  hint?: string
   /** 小节标题本身（`<Group title>`），跳转时定位到小节 */
   isGroup?: boolean
 }
@@ -19,6 +21,7 @@ export interface SettingsItem {
   title: string
   group?: string
   desc?: string
+  hint?: string
   isGroup?: boolean
   /** 左栏那一页本身（标题就是页名），点了只切页 */
   isSection?: boolean
@@ -36,7 +39,7 @@ export function searchTerms(query: string): string[] {
  */
 export function matchSetting(item: SettingsItem, terms: string[]): boolean {
   if (!terms.length) return false
-  const hay = [item.title, item.group, item.desc, item.zh].filter(Boolean).join('\n').toLowerCase()
+  const hay = [item.title, item.group, item.desc, item.hint, item.zh].filter(Boolean).join('\n').toLowerCase()
   return terms.every((w) => hay.includes(w))
 }
 
@@ -75,6 +78,13 @@ export function highlightParts(text: string, terms: string[]): { text: string; h
   }
   if (i < text.length) out.push({ text: text.slice(i), hit: false })
   return out
+}
+
+/** 结果里显示的那行说明：说明里命中了就用说明，否则命中落在悬停详情里时显示详情，都没命中时用说明 */
+export function hitText(item: { desc?: string; hint?: string }, terms: string[]): string | undefined {
+  const has = (s?: string) => !!s && terms.some((w) => s.toLowerCase().includes(w))
+  if (has(item.desc) || !has(item.hint)) return item.desc
+  return item.hint
 }
 
 /**

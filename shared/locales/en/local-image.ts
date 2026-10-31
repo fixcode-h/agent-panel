@@ -32,9 +32,6 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '这个源没装上，换下一个：{src}': 'This index failed, trying the next one: {src}',
   默认索引: 'the default index',
   启动: 'Start',
-  电脑环境: 'Hardware',
-  '显卡决定装哪个版本的 PyTorch；没有检测到显卡时用 CPU，能出图但很慢':
-    'The GPU decides which PyTorch build is installed; without a GPU it uses the CPU, which works but is very slow',
   显卡: 'GPU',
   解释器: 'Interpreter',
   '其它 Python': 'Other Pythons',
@@ -65,13 +62,9 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '先安装 ComfyUI': 'Install ComfyUI first',
   下载和连接: 'Downloads and connection',
   使用国内镜像: 'Use China mirrors',
-  '打不开 Hugging Face 时打开：模型从 hf-mirror.com 下载，Python 依赖从清华镜像安装':
-    'Turn on if Hugging Face is unreachable: models come from hf-mirror.com and Python packages from the Tsinghua mirror',
   端口: 'Port',
   'ComfyUI 只在本机监听这个端口': 'ComfyUI listens on this port, local only',
   '已有的 ComfyUI': 'Existing ComfyUI',
-  '已经装了 ComfyUI 时填它的地址，就不用再装；模型要自己放进它的 models 目录':
-    'If you already run ComfyUI, enter its address to skip installing; put models in its models folder yourself',
   '删除 {name} 的模型文件？': 'Delete the model files of {name}?',
   '会删掉这个模型下载的文件（别的模型共用的文件保留），之后要用需要重新下载。':
     "This removes the files downloaded for this model (files shared with other models are kept). You'll need to download it again to use it.",

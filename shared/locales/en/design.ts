@@ -281,8 +281,6 @@ export const EN_DESIGN: Record<string, string> = {
   'UI 设计里生成图片时使用。目前只有 Codex 内置了生图工具，用 ChatGPT 账号登录即可，不需要 API Key。':
     'Used to generate images in UI Design. Only Codex has a built-in image tool for now; signing in with a ChatGPT account is enough, no API key needed.',
   图片生成模型: 'Image generation model',
-  '调用生图工具的模型，不选时用这个 Agent 的高档模型':
-    'The model that calls the image tool. Defaults to this agent’s high-tier model',
 
   // 服务端
   '浏览器扩展没有连上：请确认浏览器开着，并装好了 Agent 面板扩展':
