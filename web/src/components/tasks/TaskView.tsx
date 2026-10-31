@@ -2176,8 +2176,6 @@ export function TaskView({
               className={cn(
                 'relative flex min-w-0 flex-1',
                 pane ? 'h-full min-h-0' : 'min-h-[70vh] md:h-full md:min-h-0',
-                // 对话和右栏各是一块面板（见 index.css 的 panel），中间露出一道底色
-                !pane && !embed && 'md:gap-2',
               )}
             >
               <main
@@ -2467,7 +2465,8 @@ export function TaskView({
                       aria-label={t('会话栏')}
                       data-session-rail
                       style={{ width: SESSION_BAR_W, right: RAIL_GUTTER }}
-                      className="absolute inset-y-0 z-10 flex flex-col"
+                      // 和对话之间一道细线分开（照 Claude Code 的功能区），不再是浮着的圆角卡片
+                      className="absolute inset-y-0 z-10 flex flex-col border-l border-line bg-bg"
                     >
                       <SessionBar
                         task={task}

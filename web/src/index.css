@@ -514,19 +514,16 @@ body,
   height: 100%;
 }
 /*
- * 面板：主区、右栏各是一块圆角面板，浮在侧栏的底色上，中间露出一道底色（照设计稿 Workspace，用户确认要面板）。
- * 一圈淡线 + 浅色下很淡的投影，免得面板和侧栏底色贴在一起分不清；深色下 line 和底色只差几个色阶，
- * 低对比的显示器上看不出面板边，所以深色用 line-strong（--panel-edge）。手机上整页就是一块，不留圆角
+ * 面板：主区、右栏照 Claude Code 贴着排，不留间隙、不做圆角卡片，每块左边一道 1px 细线（--line）和左边的侧栏 / 主区分开
+ * （2026-10-31 用户要求「主页面不再采用圆角，就用 Claude Code 的白线分隔，也不需要留空」）。
+ * 外观设置里的面板圆角（appearance.panelRadius → --panel-radius）默认 0，想要圆角的人还能自己调回来
  */
 @utility panel {
   background-color: var(--bg);
   overflow: hidden;
   @media (width >= 48rem) {
-    /* 圆角在外观设置里调（appearance.panelRadius → --panel-radius） */
-    border-radius: var(--panel-radius, 12px);
-    box-shadow:
-      0 0 0 1px var(--panel-edge),
-      var(--panel-shadow);
+    border-radius: var(--panel-radius, 0);
+    border-left: 1px solid var(--line);
   }
 }
 /*
@@ -2502,17 +2499,9 @@ html [data-sonner-toast][data-styled='true'] {
  * 底色往前景色方向挪一点（浅色下略深、深色下略亮，所有配色同一个比例），再加一道竖线
  */
 .activity-bar {
-  background-color: color-mix(in oklab, var(--rail) 95%, var(--fg));
+  /* 和会话侧栏同一个底色（Claude Code 侧栏 #1f1f1f），右边一道细线分开 */
+  background-color: var(--rail);
   box-shadow: inset -1px 0 0 var(--line);
-}
-/*
- * 会话侧栏让开时（功能页、侧栏收起）页面面板左边留和上、右、下一样的 0.5rem 间距，
- * 不贴着图标栏；会话侧栏在时它本身就是左边的留白，不再加
- */
-@media (width >= 48rem) {
-  :not(:has(> [data-sidebar])) > .page-area {
-    padding-left: 0.5rem;
-  }
 }
 /* 图标栏分隔线：bg-line 在浅色图标栏上几乎看不见，按前景色调一点出来，深浅两套都看得到 */
 .activity-sep {
