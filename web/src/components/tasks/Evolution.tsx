@@ -630,11 +630,11 @@ export function AnalyzeDialog({
   title?: string
   /** 弹窗里说明会分析什么；不写是执行结果的那段 */
   intro?: string
-  /** 「想重点看什么」的示例；不写是执行结果的那句 */
+  /** 「要问的具体问题」的示例；不写是执行结果的那句 */
   placeholder?: string
   /** 分析对象：窗口和浮条上显示 */
   subject: string
-  /** 带上用户写的重点，新建分析对话 */
+  /** 带上用户写的问题，新建分析对话（写了问题就只分析那个问题） */
   start: (focus: string) => Promise<Task>
 }) {
   const { upsertTask } = useData()
@@ -682,7 +682,7 @@ export function AnalyzeDialog({
           )}
       </p>
       <label className="flex flex-col gap-1.5 text-[0.8125rem]">
-        <span className="font-medium">{t('想重点看什么（可选）')}</span>
+        <span className="font-medium">{t('要问的具体问题（可选）')}</span>
         <Textarea
           value={focus}
           onChange={(e) => setFocus(e.target.value)}
@@ -691,6 +691,9 @@ export function AnalyzeDialog({
           placeholder={placeholder ?? t('例如：为什么验收总是不通过、哪些节点最费 token')}
           className="resize-none py-2 text-[0.8125rem]"
         />
+        <span className="text-xs text-subtle">
+          {t('写了问题就只分析这个问题、找出原因，不做整体分析；不写时按上面说的整体分析')}
+        </span>
       </label>
     </Modal>
   )

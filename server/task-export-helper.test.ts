@@ -5,6 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Agent, Task } from '../shared/schema.ts'
+import { DIAGNOSIS_LANG } from '../shared/diagnosis.ts'
 import {
   analysisPrompt,
   analysisReport,
@@ -253,7 +254,25 @@ test('子任务提示词：四类问题，带「可能还没跑完」的说明�
 
   const running = analysisPrompt([bundle], '为什么这么慢', { stepId: '@chat/sub/h2' })
   assert.match(running, /还没有结束（或还在排队）/)
-  assert.match(running, /用户特别关心：为什么这么慢/)
+  assert.match(running, /用户的问题：为什么这么慢/)
+})
+
+test('写了具体问题：只分析这个问题、找原因，不做整体分析，结论写成排查结论块', () => {
+  const helper = analysisPrompt([bundle], '为什么这么慢', { stepId: '@chat/sub/h1' })
+  assert.ok(helper.startsWith(HELPER_SCOPE_MARK), '子任务范围的标记照旧在最前面')
+  assert.match(helper, /这次只回答这个问题/)
+  assert.ok(!helper.includes('2. 是否符合角色'), '不再按四类分析整个子任务')
+  assert.ok(helper.includes('```' + DIAGNOSIS_LANG))
+
+  const whole = analysisPrompt([bundle], '  为什么验收不通过  ')
+  assert.match(whole, /用户的问题：为什么验收不通过\n/)
+  assert.ok(!whole.includes('### 1. 结果质量'), '不再按五类分析整个对话')
+  assert.ok(!whole.includes('```' + EVOLUTION_LANG), '不带工作流修改块')
+  assert.ok(whole.includes('```' + DIAGNOSIS_LANG))
+  assert.ok(!whole.includes(HELPER_SCOPE_MARK))
+
+  // 只写了空白：照旧整体分析
+  assert.ok(analysisPrompt([bundle], '   ').includes('```' + EVOLUTION_LANG))
 })
 
 test('子任务提示词：整体分析的 focus 里写「派出的一个子任务」也不会被当成子任务范围', () => {
@@ -261,7 +280,7 @@ test('子任务提示词：整体分析的 focus 里写「派出的一个子任�
   // 回复就被换成子任务四类结论，连 workflow-evolution 块都没了。标记只能由 helperPrompt 写，focus 进不去
   const overall = analysisPrompt([bundle], '帮我看派出的一个子任务为什么慢')
   assert.ok(!overall.includes(HELPER_SCOPE_MARK), '整体分析的提示词里不能有子任务标记')
-  assert.ok(overall.includes('```' + EVOLUTION_LANG), '整体分析照旧要求修改建议块')
+  assert.ok(overall.includes('```' + DIAGNOSIS_LANG), '写了问题的整体分析按问题出结论块')
 })
 
 test('子任务报告：导出时还在跑的任务写明「统计到导出那一刻」，不说成已停止', () => {
