@@ -27,4 +27,4 @@ export const CHIP_TONE: Record<ChipKind | 'missing', { box: string; hover: strin
 
 /** 所有行内卡片共用的外形：一行高、圆角、细内框（颜色由 CHIP_TONE 给） */
 export const CHIP_SHAPE =
-  'mx-0.5 inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md px-1.5 align-middle text-[0.8125rem] leading-[1.7] text-fg ring-1 ring-inset'
+  'mx-0.5 inline-flex max-w-[min(16rem,calc(100%-0.25rem))] shrink-0 items-center gap-1.5 rounded-md px-1.5 align-middle text-[0.8125rem] leading-[1.7] text-fg ring-1 ring-inset'

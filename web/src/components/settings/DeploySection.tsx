@@ -125,7 +125,7 @@ export function DeploySection() {
       </p>
 
       <Group title={t('全局说明（AGENTS.md）')}>
-        <div className="flex min-h-[380px] flex-col overflow-hidden rounded-xl bg-sel/40">
+        <div data-surface="" className="flex min-h-[380px] flex-col overflow-hidden rounded-xl bg-sel/40">
           <div className="flex flex-wrap items-center gap-2 border-b bg-panel/60 px-3 py-2">
             <span className="font-mono text-[0.75rem]">AGENTS.md</span>
             {draft.agentsMd !== st.config.agentsMd && (

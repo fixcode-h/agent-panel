@@ -97,8 +97,9 @@ export function TemplateStore({
     }
   }
 
+  // 窄屏整页一起滚：分类、筛选条和列表都按内容高度排，筛选条不会把列表挤没、贴到窗口底边；宽屏才分栏各自滚
   return (
-    <div className="fixed inset-0 z-30 flex flex-col bg-bg text-fg">
+    <div className="fixed inset-0 z-30 flex flex-col overflow-y-auto bg-bg text-fg lg:overflow-hidden">
       <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3 md:px-6">
         <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 text-[0.9375rem] font-semibold">
@@ -123,7 +124,7 @@ export function TemplateStore({
         </Button>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+      <div className="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink lg:flex-row">
         <aside className="flex max-h-[34vh] shrink-0 flex-col gap-0.5 overflow-y-auto border-b p-3 lg:max-h-none lg:w-[188px] lg:border-r lg:border-b-0">
           {categories.map((c) => (
             <button
@@ -149,7 +150,7 @@ export function TemplateStore({
           </p>
         </aside>
 
-        <section className="flex min-h-0 flex-1 flex-col">
+        <section className="flex flex-col lg:min-h-0 lg:flex-1">
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
             <div className="relative min-w-[180px] flex-1">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-subtle" />
@@ -182,7 +183,7 @@ export function TemplateStore({
             <span className="text-[0.75rem] text-subtle">{t('{n} 个模板', { n: list.length })}</span>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div className="p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
             {selected ? (
               <TemplateDetail
                 name={selected}

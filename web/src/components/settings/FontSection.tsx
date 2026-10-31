@@ -251,7 +251,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             onChange={(v) => set('lineHeight', round(v, 2))}
           />
         </Row>
-        <Card padding="md" className="mt-4">
+        <Card padding="md">
           <p className="text-[0.75rem] text-subtle">{t('预览')}</p>
           <p className="mt-2 text-[0.875rem]">
             {t('Agent 面板按工作流调度本机的编码 Agent。')} The quick brown fox jumps over the lazy dog.
