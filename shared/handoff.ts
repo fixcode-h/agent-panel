@@ -22,12 +22,6 @@ export const HANDOFF_FIELDS = [
 export type HandoffKey = (typeof HANDOFF_FIELDS)[number]['key']
 export type HandoffInput = Partial<Record<HandoffKey, string>>
 
-/**
- * 完成时上下文占用到这么多 token，再被叫醒才换成「新会话 + 交接摘要」。
- * 小于它时接回原会话更省（摘要本身也要一两千 token），还保留全部细节
- */
-export const HANDOFF_MIN_CONTEXT = 30_000
-
 /** 从工具参数里取关键信息：只认模板里的字段，字符串以外的丢掉 */
 export function handoffInput(raw: unknown): HandoffInput {
   const out: HandoffInput = {}
@@ -96,9 +90,4 @@ export function handoffText(
       : '',
   ]
   return parts.filter(Boolean).join('\n\n')
-}
-
-/** 叫醒已完成的子对话时要不要换成「新会话 + 交接摘要」 */
-export function wantsHandoff(context: number | undefined, hasHandoff: boolean) {
-  return hasHandoff && (context ?? 0) >= HANDOFF_MIN_CONTEXT
 }

@@ -60,6 +60,8 @@ export interface CliControl {
 
 /** 中断后等 CLI 自己收尾的时间，超过就直接结束进程 */
 const INTERRUPT_GRACE_MS = 8000
+/** 保活结束、关掉输入后等 CLI 自己退出的时长，过了就结束进程（见 armExit） */
+const EXIT_GRACE_MS = 15_000
 /** 停止时带上这个原因（abort(HARD_STOP)）：不发中断等它收尾，直接结束进程。CLI 已经卡住时，它不会理会中断 */
 export const HARD_STOP = 'hard-stop'
 
@@ -260,7 +262,7 @@ export async function invokeCli(o: {
   }
   const restoreLimits = await applyLimitFile(def, o.cwd, model, cs.api ? undefined : o.limits)
   try {
-    return await invoke(run, def, setControl, hard.signal)
+    return await invoke(run, def, setControl, hard.signal, () => hard.abort())
   } finally {
     o.signal?.removeEventListener('abort', onStop)
     bridge?.close()
@@ -305,6 +307,8 @@ async function invoke(
   def: NonNullable<ReturnType<typeof getCli>>,
   setControl: (c: CliControl) => void,
   signal: AbortSignal,
+  /** 直接结束进程（不发中断）：保活结束后 CLI 不退出时用 */
+  kill?: () => void,
 ): Promise<ProcessResult> {
   // 按这个 CLI 现在用账号还是 API，先把它的配置文件改成对应的样子
   await prepareAuth(o.cliId)
@@ -333,6 +337,23 @@ async function invoke(
     // 请求超时时把进程状态和 stderr 带进错误里：用户能自己看出是启动卡住、还是进程已经崩了
     let exited = false
     let stderrTail = ''
+    /**
+     * 保活结束、输入已经关了，CLI 却一直不退出（还挂着自己的后台任务、卡在收尾）：这一份执行永远收不完，
+     * 执行位一直占着，之后交给这个对话的消息（父对话交代任务、用户再发一句）全都卡住。限时后直接结束进程
+     */
+    let exitTimer: ReturnType<typeof setTimeout> | undefined
+    /** 是 armExit 到点结束的进程：这一轮早就正常结束了，不能算成「被停止」 */
+    let forcedExit = false
+    const armExit = () => {
+      if (exitTimer || exited || !kill) return
+      exitTimer = setTimeout(() => {
+        if (exited) return
+        log.warn('agent', `${def.name} 关掉输入后没有退出，结束进程`, { cwd: o.cwd, graceMs: EXIT_GRACE_MS })
+        forcedExit = true
+        kill()
+      }, EXIT_GRACE_MS)
+      exitTimer.unref?.()
+    }
     const session = rpcSessionFor(def, {
       cwd: o.cwd,
       input: o.input,
@@ -341,8 +362,16 @@ async function invoke(
       onEvent: emit,
       // 对话页还开着、用户也没点停止：一轮结束后留住进程，下一条消息在同一进程里开下一轮
       hold: () => !!o.keepAlive && !signal.aborted && !o.signal?.aborted,
-      next: () =>
-        signal.aborted || o.signal?.aborted ? Promise.resolve(null) : (o.keepAlive?.() ?? Promise.resolve(null)),
+      next: async () => {
+        if (signal.aborted || o.signal?.aborted) return null
+        const text = await (o.keepAlive?.() ?? Promise.resolve(null)).catch((e: unknown) => {
+          armExit()
+          throw e
+        })
+        // 不再等下一句（用户离开、收尾、关闭 Agent）：会话随后关掉输入让 CLI 自己退出，限时内没退就结束进程
+        if (text === null) armExit()
+        return text
+      },
       waited: o.waited,
       diagnose: { alive: () => !exited, stderr: () => stderrTail },
       requestTimeoutMs: o.requestTimeoutMs,
@@ -377,6 +406,9 @@ async function invoke(
         onLine: (line) => session.line(line),
       })
       exited = true
+      clearTimeout(exitTimer)
+      // 这一轮已经报完结果、只是关输入后不退出被结束：按正常退出交回，别显示成「已停止」
+      if (forcedExit && session.finished && r.killed) return { ...r, killed: null, code: 0 }
       // 没等到这一轮结束就退出了（崩溃、配置错误、登录过期），算失败；stderr 的尾巴一起给用户
       if (!session.finished && !r.killed && !r.spawnError) {
         const tail = stderrTail.trim().split('\n').slice(-3).join('\n')
@@ -389,6 +421,7 @@ async function invoke(
       }
       return r
     } finally {
+      clearTimeout(exitTimer)
       session.close()
     }
   }

@@ -527,7 +527,7 @@ await runShard('子对话与计划', async (api) => {
     // 交接摘要（ADR 0007）：子对话写的关键信息加面板补的提交和改动文件，分支删掉后还留着
     assert.match(closed.handoff?.text ?? '', /## 关键文件和模块\nchild-done\.txt — 子对话完成的标记/)
     assert.match(closed.handoff.text, /## 合回的改动（分支 [^）]+）[\s\S]*child-done\.txt/, '面板补上了改动文件')
-    // 上下文大的已完成子对话再被叫醒：开新会话只带交接摘要，不接回原会话把上次的工具输出全读一遍
+    // 已完成的子对话再被叫醒：不管上下文多大都 resume 接回原会话（用户 2026-10-31 定的，取代 ADR 0007 的换新会话）
     const logBefore = readLog(log).length
     const wokeAt = new Date().toISOString()
     await call('POST', `/tasks/${doneKid.id}/messages`, { text: '再补一个小改动' })
@@ -536,9 +536,9 @@ await runShard('子对话与计划', async (api) => {
       .slice(logBefore)
       .find((x) => x.kind === 'codex' && x.input.includes('再补一个小改动'))
     assert.ok(revived, '叫醒后执行了这一轮')
-    assert.ok(!revived.resume, '没有接回原会话')
-    assert.match(revived.input, /## 之前对话的摘要[\s\S]*## 关键文件和模块\nchild-done\.txt/, '新会话带上交接摘要')
-    step('已完成的子对话再被叫醒：上下文大时开新会话只带交接摘要')
+    assert.ok(revived.resume, '接回了原会话')
+    assert.ok(!revived.input.includes('## 之前对话的摘要'), '不换成只带交接摘要的新会话')
+    step('已完成的子对话再被叫醒：不管上下文多大都接回原会话')
     // 叫醒的这一轮没有新改动，结束后又收口完成、上报父对话
     await waitTask(doneKid.id, (x) => x.resolved, 20000)
     await waitTask(wtParent.id, (p) => p.messages.some((m) => m.child?.id === doneKid.id && m.at > wokeAt), 20000)

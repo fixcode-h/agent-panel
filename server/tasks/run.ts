@@ -36,7 +36,6 @@ import { childAskInitial } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
 import { detectClis } from '../detect.ts'
 import { gitHead, gitNumstat } from '../exec/git.ts'
-import { wantsHandoff } from '../../shared/handoff.ts'
 import {
   deliverWait,
   forgetNotes,
@@ -616,7 +615,9 @@ export function createRun(sc: TasksScope) {
         // 整轮结束了，没被节点取走的补充不会再有人取
         forgetNotes(task.id)
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
-        if (entry.task.status === 'done' && hasHeld(task.id) && !sc.shuttingDown) {
+        // 收尾停掉的（父对话 finish_child、用户点解决：stopReason finish）不是出错：收尾时交来的新任务照样接着处理
+        const endedOk = entry.task.status === 'done' || (entry.stop && entry.stopReason === 'finish')
+        if (endedOk && hasHeld(task.id) && !sc.shuttingDown) {
           // 这一轮跑着的时候对话被删了（进了回收站或彻底删掉）：排着的消息没有对话可接，直接丢掉，不当成故障报
           const cur = await sc.store.peek(task.id)
           if (!cur || taskDeleted(cur)) dropHeld(task.id)
@@ -624,7 +625,7 @@ export function createRun(sc: TasksScope) {
             await followUp(task.id).catch((e) =>
               log.error('task', '接着处理执行中收到的消息失败', { task: task.id, error: (e as Error).message }),
             )
-        } else if (entry.task.status !== 'done') {
+        } else if (!endedOk) {
           // 这一轮没能正常结束（失败、被停止）：排着的消息不会再被自动处理了。
           // 在对话里把它们改成「没送出去」，用户才知道要重新发一次，而不是一直等着
           const lost = dropHeld(task.id)
@@ -724,15 +725,7 @@ export function createRun(sc: TasksScope) {
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
     if (next.parentTaskId && next.resolved) {
       next.resolved = false
-      // 上次的上下文大：开新会话只带交接摘要，不把上次的工具输出全读一遍（见 ADR 0007）。
-      // 旧会话的位置还记在各条消息的轮次上，要完整过程时用户可以回退到旧消息接回去
-      if (!next.rewind && wantsHandoff(next.usage.agents[next.agentId]?.context, !!next.handoff?.text)) {
-        next.rewind = { session: '', through: null, latest: false, summary: next.handoff!.text }
-        log.info('task', '叫醒已完成的子对话：上下文大，开新会话带交接摘要', {
-          task: id,
-          context: next.usage.agents[next.agentId]?.context,
-        })
-      }
+      // 一律用 --resume 接回原会话，不管上下文多大（用户 2026-10-31 定的，取代 ADR 0007 的「上下文大就开新会话带摘要」）
       // 又要接着做：再完成一次时该重新上报父对话
       sc.reportedDone.delete(id)
       sc.mergeNudged.delete(id)

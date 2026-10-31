@@ -18,6 +18,15 @@ import type { PlanWait } from '../../shared/schema.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
+ * 交给子对话时最多等它开起来多久：CLI 的工具调用一分钟超时，要在那之前回话（见 sendToChild）。
+ * 测试里可以改小
+ */
+export let SEND_WAIT_MS = 40_000
+export function setSendWaitMs(ms: number) {
+  SEND_WAIT_MS = ms
+}
+
+/**
  * 父子之间的通知：子对话状态变化写进父计划 / 收件箱（noteParent）、用户直接对子对话说的要求、新要求进计划、父对话交给子对话（sendToChild）。
  */
 export function createChildMessages(sc: TasksScope) {
@@ -250,8 +259,27 @@ export function createChildMessages(sc: TasksScope) {
     // 等它真的开起来再回话：起不来（CLI 没装、独立分支重建失败……）要把错误交回给发消息的一方。
     // 以前是发出去就不管、先回「已交给」，父对话以为它在做，它其实没起来（用户要求起不来必须报错）。
     // 上一轮刚结束、还在收尾时执行位还占着：wakeConv 记进对话排到下一轮，收尾过了那一步就由它补开，消息不能丢
+    // 限时：子对话上一轮收尾慢（等 CLI 退出、删独立分支）时不能让父对话的工具调用一直挂着——
+    // CLI 的工具调用一分钟就超时，父对话以为没送到又重发一遍。过了时限先回话，后面起不来照样在子对话里报警告
+    const woke = sc.wakeConv(id, message, { ...(panel ? { panel } : {}), ...(peer && { peer }) })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<'late'>((r) => {
+      timer = setTimeout(() => r('late'), SEND_WAIT_MS)
+      timer.unref?.()
+    })
     try {
-      await sc.wakeConv(id, message, { ...(panel ? { panel } : {}), ...(peer && { peer }) })
+      const how = await Promise.race([woke, late])
+      if (how === 'late') {
+        void woke.catch((e) => {
+          log.error('task', '子对话没能开始执行', { task: id, error: (e as Error).message })
+          sc.alertOn(id, 'panel', t('这个子对话没能开始执行'), 'error')(e)
+        })
+        log.warn('task', '交给子对话时它还在收尾上一轮，先回话', { task: id, waitMs: SEND_WAIT_MS })
+        return {
+          ok: true,
+          info: `子对话「${child.title}」上一轮还在收尾，这条已交给它，收尾完会自动开始处理，不用重发。起不来时会在子对话里报警告`,
+        }
+      }
     } catch (e) {
       const why = (e as Error).message
       log.error('task', '子对话没能开始执行', { task: id, error: why })
@@ -260,6 +288,8 @@ export function createChildMessages(sc: TasksScope) {
         ok: false,
         info: `子对话「${child.title}」没能开始执行：${why}。它确实起不来时，可以另建一个子对话接手它的活（派单里写明接手的是「${child.title}」）。`,
       }
+    } finally {
+      clearTimeout(timer)
     }
     void (async () => {
       await sc.live.get(id)?.done

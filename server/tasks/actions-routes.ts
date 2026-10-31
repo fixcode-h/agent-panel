@@ -160,7 +160,10 @@ export function registerActionRoutes(s: TasksScope) {
       })
     }
     // 取消完成：再完成一次时该重新上报父对话
-    if (p.data.resolved === false && cur.parentTaskId) s.reportedDone.delete(id)
+    if (p.data.resolved === false && cur.parentTaskId) {
+      s.reportedDone.delete(id)
+      s.mergeNudged.delete(id)
+    }
     // 归档：只拦正在执行这一轮的；CLI 只是活着（等下一句、预热）时照样归档，顺手结束这个进程和它名下的子对话
     if (p.data.archived === true && e) {
       if (e.task.working) return s.bad(c, t('对话正在执行，等这一轮结束或停止后再归档'), 409)
