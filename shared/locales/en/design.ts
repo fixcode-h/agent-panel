@@ -856,4 +856,15 @@ export const EN_DESIGN: Record<string, string> = {
   找不到这个模型设计对话: 'This model design conversation was not found',
   '模型设计在后台启动 Blender，Agent 用它建模，右栏实时预览。左侧按项目列出已有的模型对话。':
     'Model design starts Blender in the background; the agent models with it and the right panel previews it live. Existing model conversations are listed on the left by project.',
+  // 新建模型设计：新建项目或指定文件夹（2026-10-31）
+  模型放在哪里: 'Where the model goes',
+  已有项目: 'Existing project',
+  '新建项目 / 指定文件夹': 'New project / pick a folder',
+  文件夹: 'Folder',
+  '选一个本机文件夹当项目；填一个还不存在的路径，开始建模时会新建这个文件夹。':
+    'Pick a local folder to use as the project. If you enter a path that doesn’t exist yet, the folder is created when modeling starts.',
+  '这个文件夹已经是项目「{name}」，直接用它。':
+    'This folder is already the project “{name}”, so that project will be used.',
+  项目名: 'Project name',
+  开始建模时会新建这个文件夹: 'This folder will be created when modeling starts',
 }
