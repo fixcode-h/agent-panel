@@ -1186,7 +1186,7 @@ ${BUG_METHOD}
 3. 只做单点修复，不顺手重构。连续三次修复失败就停下来质疑设计，写明理由。
 4. 性能问题先建立基线：固定输入、测量方式（benchmark / profile / 计时日志）和当前数值，写清测量环境；没有基线的优化不算数。定位到瓶颈后只改证据指向的那一处，改完用同样的方式复测并给出前后对比。{{/if}}
 {{/if}}
-- 语言：{{lang}}。{{#if lang=cpp|多种}}写 C++ 时严格遵守 cpp-code-style，包括 UE 插件的模块导出规则。{{/if}}{{#if lang=lua|多种}}写 Lua 时遵守 lua-code-style，日志带「类名=>函数名」定位。{{/if}}
+- 语言：{{lang}}。{{#if lang=cpp|多种}}写 C++ 时严格遵守 cpp-code-style，包括 UE 插件的模块导出规则。{{/if}}{{#if lang=lua|多种}}写 Lua 时遵守 lua-code-style：一条语句写一行，条件和 return 表达式不拆成续行，日志带「类名=>函数名」定位。{{/if}}
 
 ${SELF_CHECK_TEXT}
 
