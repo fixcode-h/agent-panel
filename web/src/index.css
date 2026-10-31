@@ -1304,19 +1304,12 @@ body,
   border: var(--md-code-border) solid color-mix(in srgb, var(--md-code-color) 18%, var(--line));
   border-radius: var(--md-code-radius);
 }
-/* 能点开的文件路径：和普通行内代码分开，透明底 + 描边 + 前面一个小文件图标，移上去像链接 */
+/* 能点开的文件路径：和普通行内代码分开，透明底 + 描边，移上去像链接（前面不加图标） */
 .chat-md code.md-path {
   @apply cursor-pointer transition-colors;
   color: var(--fg);
   background: transparent;
   border-color: var(--line-strong);
-}
-.chat-md code.md-path::before {
-  content: '';
-  @apply mr-1.5 inline-block rounded-[2px] align-[-0.05em];
-  width: 0.55em;
-  height: 0.7em;
-  border: 1.5px solid var(--subtle);
 }
 .chat-md code.md-path:hover {
   @apply underline underline-offset-2;
