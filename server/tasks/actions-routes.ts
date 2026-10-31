@@ -6,10 +6,10 @@ import { childHoldText, helpersWorking, trackWait, withTaskModel } from '../../s
 import { agentRun } from '../../shared/settings.ts'
 import { childAskEffect } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
-import { gitChanges, gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
+import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
 import { answerRequest, dropRequests, cancelWait, forgetNotes } from '../exec/runner.ts'
 import { taskLog } from '../task-log.ts'
-import { placedFiles } from '../attachments.ts'
+import { taskChanges } from '../own-changes.ts'
 import { applyFixesInDir } from '../files.ts'
 import { FixApplyInput } from '../../shared/diagnosis.ts'
 import { t } from '../../shared/i18n.ts'
@@ -61,7 +61,7 @@ export function registerActionRoutes(s: TasksScope) {
     } catch (e) {
       return s.bad(c, t('撤销失败：{error}', { error: (e as Error).message }))
     }
-    const changes = (await gitChanges(dir, tk.baseline, tk.baseRef, placedFiles(tk)).catch(() => null)) ?? tk.changes
+    const changes = (await taskChanges(dir, tk).catch(() => null)) ?? tk.changes
     return c.json(await s.store.update(id, { ...tk, changes }))
   })
 
@@ -102,8 +102,7 @@ export function registerActionRoutes(s: TasksScope) {
       if (lm?.turnChanges) lm.turnChanges = { ...lm.turnChanges, revertedAt: at }
     }
     const base = live ?? tk
-    const changes =
-      (await gitChanges(dir, base.baseline, base.baseRef, placedFiles(base)).catch(() => null)) ?? base.changes
+    const changes = (await taskChanges(dir, base).catch(() => null)) ?? base.changes
     if (live) live.changes = changes
     const saved = await s.store.update(id, { ...base, changes }, { now: true })
     return c.json({ ok: true, task: saved, files: r.files })

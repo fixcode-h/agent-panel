@@ -65,6 +65,49 @@ export async function gitHead(cwd: string) {
   return r.code === 0 ? r.stdout.trim() : ''
 }
 
+/** HEAD 的移动里算「亲手做的改动」的几种：提交、修改上一次提交、撤销提交、cherry-pick（不含合并提交，合并带进来的是别的分支） */
+const OWN_MOVE = /^(commit( \((amend|initial)\))?|revert|cherry-pick): /
+
+/**
+ * HEAD 从 from 移到 to 之间，不是在这里亲手提交带进来的文件：拉代码（pull、merge、快进）、切分支、reset 换来的。
+ * 按 HEAD 的 reflog 认：since（毫秒）之后每一步移动，提交类的那几步改的文件算自己的，其余移动带来的差异都不算。
+ * 读不到 reflog（关掉了、被清了）时认不出来，返回空集合（照旧全算）
+ */
+export async function syncedFiles(cwd: string, from: string, to: string, since: number): Promise<Set<string>> {
+  const out = new Set<string>()
+  if (!from || !to || from === to) return out
+  const moved = await git(cwd, 'diff', '--name-only', '--no-renames', from, to)
+  if (moved.code !== 0) return out
+  const log = await git(cwd, 'reflog', 'show', '--date=unix', '--format=%H%x09%gd%x09%gs', '-n', '500', 'HEAD')
+  if (log.code !== 0) return out
+  const rows = log.stdout
+    .split('\n')
+    .map((l) => l.split('\t'))
+    .filter((r) => r.length >= 3)
+    .map(([sha, gd, gs]) => ({ sha, at: Number(gd.match(/@\{(\d+)\}/)?.[1] ?? NaN) * 1000, gs: gs ?? '' }))
+  // 这一段里的移动（新的在前）；reflog 时间只到秒，往前放一秒
+  const n = rows.findIndex((r) => !(r.at >= since - 1000))
+  const span = n < 0 ? rows : rows.slice(0, n)
+  if (!span.length) return out
+  const own = new Set<string>()
+  for (let i = 0; i < span.length; i++) {
+    if (!OWN_MOVE.test(span[i].gs)) continue
+    const prev = rows[i + 1]?.sha
+    const r = prev
+      ? await git(cwd, 'diff', '--name-only', '--no-renames', prev, span[i].sha)
+      : await git(cwd, 'show', '--name-only', '--no-renames', '--format=', span[i].sha)
+    for (const p of r.stdout.split('\n')) if (p) own.add(p)
+  }
+  for (const p of moved.stdout.split('\n')) if (p && !own.has(p)) out.add(p)
+  return out
+}
+
+/** 两棵树（提交或快照）之间有差异的文件；读不出来返回 null */
+export async function diffNames(cwd: string, a: string, b: string): Promise<Set<string> | null> {
+  const r = await git(cwd, 'diff', '--name-only', '--no-renames', a, b)
+  return r.code === 0 ? new Set(r.stdout.split('\n').filter(Boolean)) : null
+}
+
 /** 和任务开始时相比有变化的文件；ref 是任务开始时的提交 */
 export async function gitChanges(
   cwd: string,

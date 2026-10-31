@@ -1,6 +1,14 @@
 import path from 'node:path'
 import type { TaskMessage, TurnChanges } from '../shared/schema.ts'
-import { gitSnapshot, spansNumstat, type PlacedFiles, type TreeSpan } from './exec/git.ts'
+import {
+  diffNames,
+  gitHead,
+  gitSnapshot,
+  spansNumstat,
+  syncedFiles,
+  type PlacedFiles,
+  type TreeSpan,
+} from './exec/git.ts'
 import { log } from './log.ts'
 
 /**
@@ -14,6 +22,8 @@ import { log } from './log.ts'
  * - 子任务、工作流（计划）交回结果后接着做的一轮，接着上一轮的终点算：子任务和工作流节点就在这段空档里改文件，
  *   重新拍起点就把它们漏了
  * - 子对话合回这个目录的那一下单独切掉（见 aroundMerge）：父对话的卡片不含子对话的改动
+ * - 这一轮里拉代码、合并别的分支、切分支带进来的文件不算（见 dropSynced）：Agent 按规则 fetch + merge 同步，
+ *   上游改的几百个文件不是这个对话改的
  *
  * 只记在内存里：面板重启时进行中的那一轮就没有卡片了，不影响已经记在消息上的。
  */
@@ -24,6 +34,9 @@ interface Track {
   mark: Promise<string>
   /** 这一轮里已经切下来的几段（中间被子对话合并隔开） */
   spans: TreeSpan[]
+  /** 这一段开始时的提交和时刻：中间 HEAD 动过时用来认出拉代码带进来的文件 */
+  head: Promise<string>
+  at: number
 }
 
 const tracks = new Map<string, Track>()
@@ -57,8 +70,10 @@ export function beginTurnChanges(taskId: string, dir: string, ignore: PlacedFile
   return queued(taskId, async () => {
     const had = tracks.get(taskId)
     if (carry && had && had.dir === dir) return
+    const at = Date.now()
+    const head = gitHead(dir).catch(() => '')
     const mark = snap(dir, list)
-    tracks.set(taskId, { dir, ignore: list, mark, spans: [] })
+    tracks.set(taskId, { dir, ignore: list, mark, spans: [], head, at })
     await mark
   })
 }
@@ -72,17 +87,46 @@ export function endTurnChanges(taskId: string, put: (changes: TurnChanges) => vo
     const tr = tracks.get(taskId)
     if (!tr) return
     const from = await tr.mark
+    const head = await tr.head
+    const since = tr.at
     const to = await snap(tr.dir, tr.ignore)
+    const endHead = await gitHead(tr.dir).catch(() => '')
+    const first = tr.spans[0]?.from || from
     const spans = [...tr.spans, { from, to }].filter((s) => s.from && s.to && s.from !== s.to)
     tr.spans = []
     tr.mark = Promise.resolve(to)
+    tr.head = Promise.resolve(endHead)
+    tr.at = Date.now()
     if (!from || !to || !spans.length) return
-    const files = await spansNumstat(tr.dir, spans).catch((e) => {
+    const all = await spansNumstat(tr.dir, spans).catch((e) => {
       log.warn('task', '读这一轮的改动失败', { task: taskId, error: (e as Error).message })
       return []
     })
+    const files = await dropSynced(tr.dir, all, { head, endHead, from: first, to, since }).catch(() => all)
+    if (files.length < all.length)
+      log.info('task', '这一轮拉代码带进来的文件不算改动', { task: taskId, dropped: all.length - files.length })
     if (files.length) put({ spans, files })
   })
+}
+
+/**
+ * 去掉这一轮里 HEAD 移动（拉代码、合并、切分支）带进来的文件：只有前后都和各自的 HEAD 一样（没有自己没提交的改动）、
+ * 又不在自己这一轮的提交里的才去掉。自己改了又拉了同一个文件的照样算
+ */
+export async function dropSynced<T extends { path: string }>(
+  dir: string,
+  files: T[],
+  at: { head: string; endHead: string; from: string; to: string; since: number },
+): Promise<T[]> {
+  if (!at.head || !at.endHead || at.head === at.endHead || !files.length) return files
+  const synced = await syncedFiles(dir, at.head, at.endHead, at.since)
+  if (!synced.size) return files
+  const [dirtyStart, dirtyEnd] = await Promise.all([
+    diffNames(dir, at.head, at.from),
+    diffNames(dir, at.endHead, at.to),
+  ])
+  if (!dirtyStart || !dirtyEnd) return files
+  return files.filter((f) => !synced.has(f.path) || dirtyStart.has(f.path) || dirtyEnd.has(f.path))
 }
 
 /** 等这个对话还没做完的快照（收尾落盘前调用，免得卡片写在落盘之后丢了） */
