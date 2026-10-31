@@ -12,7 +12,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('button', { name: '设置' }).first().click()
   // 默认项断言当前真正默认的那一个（不写成「或」，默认再变时要红）：演示后端固定返回 win32 和
   // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
-  await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'Git Bash（默认）', '子对话没有输出时自动询问'])
+  await check(p, '设置', ['常规', '内容宽度', '命令行 Shell', 'Git Bash（默认）', '子对话卡住时追问'])
   if (!(await p.getByLabel('子对话没有输出时自动询问（分钟）').count())) errors.push('设置：没有子对话自动询问的输入框')
   // 窗口矮到左栏要滚动时：吸顶的「设置」标题上方不能露出滚过去的分类（以前漏出半行「快捷键」）
   await p.setViewportSize({ width: 1440, height: 560 })
@@ -26,8 +26,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.keyboard.press('Control+f')
     const box = p.getByRole('textbox', { name: '搜索设置' })
     if (!(await box.evaluate((el) => el === document.activeElement))) errors.push('设置搜索：Ctrl+F 没有聚焦搜索框')
-    await box.fill('保活 分钟')
-    await check(p, '设置-搜索', ['搜索设置', '离开对话后保留多久', '没看过的回复保留多久'])
+    await box.fill('保留')
+    await check(p, '设置-搜索', ['搜索设置', '离开后保留', '未读回复保留'])
+    // 问号里的详细说明也要能搜到：「橙点」只出现在「未读回复保留」的悬停说明里
+    await box.fill('橙点')
+    await check(p, '设置-搜索-悬停说明', ['未读回复保留'])
     await box.fill('额外参数')
     await p.getByRole('option', { name: /额外参数/ }).waitFor({ timeout: 5000 })
     await box.press('Enter')
@@ -58,7 +61,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     errors.push('设置-外观：换回默认的「Claude Code」配色后 html 上应该挂 data-palette="code"')
   // Markdown 样式：顶部预览是真的 Markdown 组件；改一项立刻写进 #md-style，恢复默认后清空
   await p.getByRole('button', { name: 'Markdown 样式', exact: true }).click()
-  await check(p, '设置-Markdown样式', ['H1 标题', '表格斑马纹', '代码块自动换行', '标题字号'])
+  await check(p, '设置-Markdown样式', ['H1 标题', '斑马纹', '自动换行', '字号'])
   await p.getByRole('switch', { name: '表格斑马纹' }).click()
   if (!(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes('--md-table-zebra'))
     errors.push('设置-Markdown样式：打开斑马纹后 #md-style 里应该有 --md-table-zebra')

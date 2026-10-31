@@ -13,12 +13,11 @@ import {
 } from '@/lib/ai-window'
 import { timingMs } from '@/lib/analysis-report'
 import { useData, useNav } from '@/lib/data'
-import { cn } from '@/lib/utils'
 import { IconButton } from '@/components/ui/icon-button'
-import { Modal } from '@/components/ui/modal'
-import { Spinner, StatusPill, type StatusTone } from '@/components/ui/status-pill'
+import { Spinner, type StatusTone } from '@/components/ui/status-pill'
 import { MinimizedChat, type ChatDockState } from '@/components/ui/minimized-chat'
 import { TaskView } from '@/components/tasks/TaskView'
+import { ChatWindow, WIN_BTN } from './ChatWindow'
 
 /**
  * 统一的 AI 分析窗口：「AI 处理」报错、「AI 分析执行结果」、子任务分析、内存分析都在这里看，
@@ -104,15 +103,13 @@ export function AiWindow() {
   // 来源标签：排查（报错交给 AI）用红色，和设计稿「测试失败」那种一致；别的分析用中性底色
   const fromIssue = entry?.analysis === 'fix'
   const from = [project?.name, parent?.title].filter(Boolean).join(' · ')
-  // 窗口自己的按钮照设计稿是 32px、圆角 8、灰字：比对话挂上来的工具按钮大一号，一眼分得出哪些是管窗口的
-  const winBtn = 'h-8 w-8 rounded-lg text-muted'
   const actions = (
     <>
       {taskId && !gone && (
         <IconButton
           icon={ExternalLink}
           size="sm"
-          className={winBtn}
+          className={WIN_BTN}
           label={where}
           title={t('{where}（分析照常进行）', { where })}
           onClick={openInPlace}
@@ -121,7 +118,7 @@ export function AiWindow() {
       <IconButton
         icon={Minimize2}
         size="sm"
-        className={winBtn}
+        className={WIN_BTN}
         label={t('最小化')}
         title={t('最小化（分析照常进行）')}
         onClick={() => minimizeAiWindow(true)}
@@ -129,7 +126,7 @@ export function AiWindow() {
       <IconButton
         icon={X}
         size="sm"
-        className={winBtn}
+        className={WIN_BTN}
         label={t('关闭')}
         title={running ? t('关闭窗口（分析继续在后台进行）') : t('关闭窗口')}
         onClick={() => closeAiWindow()}
@@ -151,15 +148,18 @@ export function AiWindow() {
           onClose={() => closeAiWindow()}
         />
       )}
-      <Modal
+      <ChatWindow
         open={open && !minimized}
         title={heading}
-        size="full"
-        bare
-        closeOnOutside
-        // 嵌的是整个对话页，底色跟页面一样用 bg。尺寸照设计稿 AiWindow：1440×900 下是 1300×828，
-        // 四周露出背后的页面（左右各 70、上下各 36），让人知道这是盖在原页面上的窗口；高度到 960 为止，大屏上不显得空
-        className="h-[min(960px,calc(100dvh-4.5rem))] max-h-none max-w-[1300px] rounded-[0.875rem] bg-bg"
+        icon={Sparkles}
+        label={job.label}
+        subject={job.title}
+        danger={fromIssue}
+        meta={from ? t('来自 {name}', { name: from }) : undefined}
+        pill={pill && { ...pill, took }}
+        // 嵌入对话的状态和操作（进程、轮次、功能面板开关…）挂在这里，见 TaskView 的 embed.slot
+        tools={<span ref={setSlot} className="flex shrink-0 items-center gap-0.5 empty:hidden" />}
+        actions={actions}
         // 按 Esc 或点窗口外面：分析中先收起来（浮条还在、状态还看得到）；没在分析就关窗口。
         // 两种都不停分析：关闭只是收窗口，分析继续在后台跑
         onOpenChange={(o) => {
@@ -168,38 +168,6 @@ export function AiWindow() {
           else closeAiWindow()
         }}
       >
-        {/* 窗口自己的标题栏（照设计稿 AiWindow）：哪种分析、分析的对象、来自哪里、现在的状态，
-                最小化和关闭也放这里；下面嵌的对话只留它自己的对话操作 */}
-        <header className="flex h-[3.25rem] shrink-0 items-center gap-2.5 border-b pr-3 pl-[1.125rem]">
-          <span className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-lg bg-fg text-bg">
-            <Sparkles className="h-3.5 w-3.5" />
-          </span>
-          <span className="shrink-0 text-[0.9375rem] font-semibold">{job.label}</span>
-          <span
-            title={job.title}
-            className={cn(
-              'inline-flex h-6 max-w-[45%] min-w-0 shrink items-center rounded-md px-2.5 text-[0.75rem] font-medium',
-              fromIssue ? 'bg-danger/10 text-danger' : 'bg-sel text-muted',
-            )}
-          >
-            <span className="truncate">{job.title}</span>
-          </span>
-          {from && (
-            <span className="hidden min-w-0 truncate text-[0.75rem] text-subtle md:inline">
-              {t('来自 {name}', { name: from })}
-            </span>
-          )}
-          <span className="flex-1" />
-          {pill && (
-            <StatusPill tone={pill.tone} spin={pill.tone === 'run'} className="h-6 px-2.5">
-              {pill.text}
-              {took && <span className="tabular-nums">· {took}</span>}
-            </StatusPill>
-          )}
-          {/* 嵌入对话的状态和操作（进程、轮次、功能面板开关…）挂在这里，见 TaskView 的 embed.slot */}
-          <span ref={setSlot} className="flex shrink-0 items-center gap-0.5 empty:hidden" />
-          <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
-        </header>
         {taskId && !gone ? (
           // 等标题栏的位置挂好再画对话：不然第一帧会先画出对话自己的页签行再收掉
           slot && (
@@ -239,7 +207,7 @@ export function AiWindow() {
             </div>
           </div>
         )}
-      </Modal>
+      </ChatWindow>
     </>
   )
 }

@@ -1476,6 +1476,8 @@ export function stopReasonText(reason: StopReason | undefined): string {
       return t('执行已经中断，面板核对时收口')
     case 'budget':
       return t('用到了项目设的用量上限')
+    case 'replaced':
+      return t('卡住了，已由新的子对话接手')
     default:
       return t('已暂停')
   }

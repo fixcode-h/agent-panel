@@ -41,14 +41,15 @@ export function ShellSetting({
   const distros = cur.id === 'wsl' ? (cur.distros ?? []) : []
   return (
     <Row
-      title={t('命令行环境')}
-      desc={t(
+      title={t('命令行 Shell')}
+      desc={t('后台命令和测试步骤用的 shell')}
+      hint={t(
         '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。默认用 Git Bash（Windows 路径可以直接用），没有 Git Bash 时用 WSL，再没有用 cmd。',
       )}
     >
       {/* 发行版放在第二行：两个下拉框并排时右栏放不下，会把发行版名字截断 */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-1.5">
+      <div className="flex flex-col items-end gap-2">
+        <div className="flex items-center justify-end gap-1.5">
           <Select
             aria-label={t('命令行环境')}
             value={cur.id}

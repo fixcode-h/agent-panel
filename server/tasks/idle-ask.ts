@@ -1,15 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import { type TaskMessage } from '../../shared/schema.ts'
 import { childIdleAsk, childLastActivity, childWait } from '../../shared/task.ts'
+import { childAskUnanswered, childToolRunning } from '../../shared/stuck-child.ts'
+import { createStuckChild } from './stuck-child.ts'
 import { getSettings } from '../settings.ts'
 import { hasHeld, removeHeld } from '../exec/delivery.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
- * 子对话没有输出时以父对话的名义自动问它状态（阈值和次数上限在 shared/task.ts 的 childIdleAsk）。
+ * 子对话没有输出时以父对话的名义自动问它状态（阈值和次数上限在 shared/task.ts 的 childIdleAsk）；
+ * 问过之后到时间还没回复就停掉它、接回会话重启，重启没恢复就换新的子对话接手（见 ./stuck-child.ts）。
  */
 export function createIdleAsk(s: TasksScope) {
+  const stuck = createStuckChild(s)
   /** 自动询问状态时一分钟按多少毫秒算：测试用环境变量缩短（和 runner 的 idle 检测同一种做法） */
   const askUnitMs = Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000
   /** 下一次扫描的定时器：服务退出时清掉 */
@@ -33,6 +37,8 @@ export function createIdleAsk(s: TasksScope) {
     if (!minutes) return 60_000
     const next = Math.min(60_000, Math.max(200, (minutes * askUnitMs) / 4))
     if (s.shuttingDown) return next
+    // 先核对面板重启过的子对话：动起来了就放手，没起来就换人接手
+    await stuck.checkRestarted()
     const now = Date.now()
     for (const entry of [...s.live.values()]) {
       const tk = entry.task
@@ -41,15 +47,32 @@ export function createIdleAsk(s: TasksScope) {
       if (s.live.get(tk.id) !== entry) continue
       // 用户的消息还排着：先让用户的消息走，这一轮不问（下一轮再判断）
       if (hasHeld(tk.id)) continue
+      // 正在重启、正在换人接手的：等那边出结论
+      if (stuck.recovering(tk.id)) continue
+      const lastActivityAt = childLastActivity(tk)
+      const wait = childWait(tk, { background: s.pendingJobs(tk.id), cliAlive: true })
+      // 问过状态、到时间还没回复：不再接着问，停掉它接回会话重启
+      if (
+        childAskUnanswered(
+          {
+            minutes,
+            working: tk.working,
+            lastActivityAt,
+            wait,
+            autoAsk: tk.autoAsk,
+            toolRunning: childToolRunning(tk),
+            unitMs: askUnitMs,
+          },
+          now,
+        )
+      ) {
+        const since = Date.parse(lastActivityAt)
+        const silent = Math.max(1, Math.round((now - (Number.isFinite(since) ? since : now)) / askUnitMs))
+        await stuck.restartStuck(entry, silent)
+        continue
+      }
       const decision = childIdleAsk(
-        {
-          minutes,
-          working: tk.working,
-          lastActivityAt: childLastActivity(tk),
-          wait: childWait(tk, { background: s.pendingJobs(tk.id), cliAlive: true }),
-          autoAsk: tk.autoAsk,
-          unitMs: askUnitMs,
-        },
+        { minutes, working: tk.working, lastActivityAt, wait, autoAsk: tk.autoAsk, unitMs: askUnitMs },
         now,
       )
       if (!decision.ask) continue
@@ -73,7 +96,10 @@ export function createIdleAsk(s: TasksScope) {
         at: new Date().toISOString(),
       }
       try {
+        const sentAt = Date.now()
         const r = await s.deliver(entry, msg, text, [])
+        // CLI 已经被标成没有响应，询问交付时就停掉它接回会话重开了：一样核对重开后有没有动起来
+        if (r.how === 'restart') stuck.noteRestart(tk.id, sentAt)
         // deliver 可能已经重启了卡住的 CLI（换了一份任务）：记在现在的那一份上，别覆盖掉新状态
         const after = s.live.get(tk.id)?.task ?? r.task
         // 这一轮收不下（CLI 没有插话 / 取补充，或者刚好在收尾）：撤掉这条询问。
@@ -139,5 +165,5 @@ export function createIdleAsk(s: TasksScope) {
     clearTimeout(askTimer)
   }
 
-  return { armIdleAsk, disarmIdleAsk }
+  return { armIdleAsk, disarmIdleAsk, childRecovering: stuck.recovering }
 }

@@ -1,14 +1,11 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_SETTINGS: Record<string, string> = {
   // Webhook 通知
-  'Webhook 通知': 'Webhook notifications',
-  '计划执行时发送 Webhook': 'Send a webhook when a plan runs',
   '计划成功启动、启动失败、错过或上游没成功时，向这个地址 POST 一份 JSON，里面有计划、项目、这一轮的时间和结果。投递失败只记在计划上、不影响计划执行，最多重试 {n} 次。':
     'When a plan starts, fails to start, is missed, or is blocked by an upstream plan, the panel POSTs a JSON payload to this URL with the plan, project, the time and result of that run. Delivery failures are recorded on the plan only, never block the plan, and are retried at most {n} times.',
   'Webhook 地址': 'Webhook URL',
   '填 http 或 https 开头的地址': 'Use a URL starting with http or https',
   '启用 Webhook': 'Enable webhook',
-  '关掉时计划照常执行，只是不往外发。': 'When off, plans still run; nothing is sent out.',
   // 项目设置：测试步骤和 Agent 参数
   测试步骤: 'Test steps',
   停用: 'Disabled',
@@ -113,12 +110,8 @@ export const EN_SETTINGS: Record<string, string> = {
   // 常规
   '在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 Agent。':
     'The online demo has no local environment, so task output is sample data. Download and run it locally to call real agents.',
-  单个步骤最长运行时间: 'Max run time per step',
-  '分钟，填 0 不限制。超时后会停止这一步，任务标记为失败。':
-    'In minutes; 0 means no limit. A step that times out is stopped and the task is marked as failed.',
   '单个步骤最长运行时间（分钟）': 'Max run time per step (minutes)',
   '填 0 到 1440 之间的整数，0 表示不限制': 'Enter a whole number from 0 to 1440; 0 means no limit',
-  '界面显示的语言，切换后页面会重新加载。': 'The interface language. The page reloads after you switch.',
   语言: 'Language',
   '跟随浏览器 · Auto': 'Follow browser · Auto',
   内容宽度: 'Content width',
@@ -127,16 +120,9 @@ export const EN_SETTINGS: Record<string, string> = {
   恢复默认: 'Reset to default',
   启动后打开浏览器: 'Open browser on startup',
   新会话默认开启提问: 'Ask me by default in new chats',
-  '输入框上的「提问」按钮在新会话里默认打开：AI 有问题时弹出卡片问你，等你回答再继续。关着时 AI 自己选最合适的做法。已有的会话保持各自的选择。':
-    'Turns on the Ask button above the input in new chats: when the AI has a question it shows a card and waits for your answer. When off, the AI picks the best option itself. Existing chats keep their own choice.',
-  '启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。':
-    'Open http://127.0.0.1:8787 in your default browser when the panel server starts.',
   任务完成时通知我: 'Notify me when tasks finish',
-  '页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。':
-    'Show a system notification when a task finishes or fails while the page is in the background. Requires browser notification permission.',
   '浏览器没有允许通知，可以在地址栏左侧的网站设置里打开':
     'Notifications are blocked by the browser. You can allow them in the site settings next to the address bar.',
-  新建文件的格式: 'Format of new files',
   '面板写说明文件、部署全局说明，以及交给角色的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。':
     'Applies to the doc files the panel writes, the global instructions it deploys, and the convention it gives roles. The default is UTF-8 without BOM and LF line endings: when you edit on Windows and run tests in WSL or Linux, scripts do not fail with "bad interpreter" because of CRLF or a BOM. Each project can override this.',
   编码: 'Encoding',
@@ -160,15 +146,9 @@ export const EN_SETTINGS: Record<string, string> = {
   // 默认 CLI
   '角色可以不指定 Agent，选「系统默认」时用这里的 Agent；模型可以只选高、中、低一档，执行时换成那个 Agent 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。':
     'Roles can leave the agent unset: "System default" uses the agent chosen here. A model can be just a High, Medium or Low tier, which resolves to that agent\'s model and effort for the tier at run time. Changing this switches every role that uses the defaults.',
-  '角色选了「系统默认」或没有指定 Agent 时使用': 'Used when a role picks "System default" or has no agent set',
   已停用: 'Disabled',
   未安装: 'Not installed',
   '{cli} 的模型': '{cli} models',
-  '跟随 {cli} 自己的档位设置，要改请到': "Follows {cli}'s own tier settings. To change them, go to",
-  '里修改。': 'settings.',
-  '角色没有指定模型时使用，跟随 {cli} 的设置': "Used when a role has no model set. Follows {cli}'s settings",
-  '角色和档位都没有指定时使用，跟随 {cli} 的设置':
-    "Used when neither the role nor the tier sets one. Follows {cli}'s settings",
 
   // 单个 CLI
   系统默认: 'System default',
@@ -195,9 +175,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '角色选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文、最大输出和思考强度按模型目录自动填，目录里没有的模型按 1M / 128K 估算，也可以手动改。':
     'The model and effort used when a role picks the High, Medium or Low tier. An empty model follows the default model below, or the suggested one if no default is set. Context, max output and reasoning efforts are filled in from the model catalog; models missing from it default to 1M / 128K. You can change them manually.',
   默认模型: 'Default model',
-  '角色没有指定模型时使用，可以选一个档位': 'Used when a role has no model set. Can be a tier',
   默认思考强度: 'Default effort',
-  角色和档位都没有指定时使用: 'Used when neither the role nor the tier sets one',
   '{cli} 默认模型': '{cli} default model',
   '{cli} 默认思考强度': '{cli} default effort',
   运行: 'Execution',
@@ -206,7 +184,6 @@ export const EN_SETTINGS: Record<string, string> = {
   可执行文件: 'Executable',
   '留空时从 PATH 查找 {command}': 'Leave empty to look up {command} in PATH',
   额外参数: 'Extra arguments',
-  '每次调用都会追加，角色自己的参数排在后面': "Appended to every call; the role's own arguments come after",
   '例如 --add-dir ../shared': 'e.g. --add-dir ../shared',
   环境变量: 'Environment variables',
   '每行一个 KEY=VALUE，只传给这个 Agent': 'One KEY=VALUE per line, passed only to this agent',
@@ -260,18 +237,11 @@ export const EN_SETTINGS: Record<string, string> = {
   '{name} 卸载失败': '{name} uninstall failed',
 
   // AI 创建
-  '在角色和工作流页面可以用本机 Agent 对话生成或优化配置。Agent 按固定格式输出，面板校验通过后才能应用。':
-    'On the Roles and Workflows pages, you can chat with a local agent to generate or refine configs. The agent replies in a fixed format, and changes apply only after the panel validates them.',
   '使用的 Agent': 'Agent',
-  '默认用「Agent」里设为默认的那个': 'Defaults to the one set as default under "Agent"',
   'AI 创建使用的 Agent': 'Agent for AI assist',
   'AI 创建使用的模型': 'Model for AI assist',
-  '默认用这个 Agent 设置里的默认模型': "Defaults to this agent's default model",
-  创建角色的补充规则: 'Extra rules for creating roles',
-  '会加进提示词，例如命名习惯、团队约定': 'Added to the prompt, e.g. naming habits or team conventions',
   '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的角色默认用 Claude Code':
     'For example:\n- Every role definition has three sections: Responsibilities / Way of working / Deliverables\n- Frontend roles use Claude Code by default',
-  创建工作流的补充规则: 'Extra rules for creating Workflows',
   '例如：\n- 写代码的节点都要配一个代码审查的验收流程\n- 验收最多 2 轮':
     'For example:\n- Every coding node gets a code review step\n- At most 2 review rounds',
 
@@ -389,41 +359,19 @@ export const EN_SETTINGS: Record<string, string> = {
   // 在线演示提示条
   关闭提示: 'Dismiss',
   恢复: 'Restore',
-  大文件只引用路径: 'Reference large files by path',
-  'MB。粘贴、拖进输入框的文件超过这么大时不上传、不拷进对话目录，面板在本机找到原文件后直接引用它的路径。':
-    'MB. Files pasted or dropped into the input above this size are not uploaded or copied into the conversation folder. The panel finds the original file on this computer and references its path.',
   '大文件只引用路径（MB）': 'Reference large files by path (MB)',
   '填 1 到 50 之间的整数': 'Enter a whole number from 1 to 50',
-  长文字存成文件: 'Save long text as a file',
-  '字，填 0 不转。粘贴进输入框的纯文字超过这么多字时存成一个文本文件，输入框里只放这个文件的卡片，消息不会被一大段文字撑满。':
-    'Characters, 0 to turn off. Plain text pasted into the input longer than this is saved as a text file, and only that file shows in the input as a chip, so the message is not flooded with text.',
   '长文字存成文件（字）': 'Save long text as a file (characters)',
   '填 0 到 1000000 之间的整数，0 表示不转': 'Enter a whole number from 0 to 1000000; 0 turns it off',
-  没有输出时提醒: 'Warn when there is no output',
-  '分钟，填 0 不检测。Agent 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。':
-    'Minutes; 0 turns it off. When an agent prints nothing for this long the task shows a warning, and if it stays silent for the same time again it is stopped, so an agent stuck on a login or confirmation prompt doesn\'t stay "running" forever.',
   '没有输出时提醒（分钟）': 'Warn when there is no output (minutes)',
   '填 0 到 1440 之间的整数，0 表示不检测': 'Enter a whole number from 0 to 1440; 0 turns it off',
-  子对话没有输出时自动询问: 'Ask a sub-conversation for its status when it goes quiet',
-  '分钟，填 0 关闭。子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住；收到回复就重新计时，最多问 3 次后交给上面的「没有输出时提醒」。这两个时间互不影响，自动询问只问、不停止对话。':
-    'Minutes; 0 turns it off. When a sub-conversation prints nothing for this long, the panel asks it, in the parent conversation\'s name, what it is doing and whether it is stuck. Any new output restarts the timer; after at most 3 asks it hands over to "Warn when there is no output" above. The two timers are independent, and the automatic ask only asks — it never stops the conversation.',
   '子对话没有输出时自动询问（分钟）': 'Ask a sub-conversation for its status when it goes quiet (minutes)',
   '填 0 到 1440 之间的整数，0 表示不问': 'Enter a whole number from 0 to 1440; 0 turns it off',
-  离开对话后保留多久: 'Keep the conversation alive after you leave',
-  '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 Agent 留着，这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。只算回复完停在等下一句的空闲对话：正在执行的对话不管页面开着还是切到后台，都不会因为这个时长被收掉。':
-    'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished agent alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one agent process. Only idle conversations waiting for your next message count: a turn still running keeps going whether its page is open or in the background, and this window never closes it.',
   '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
   '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
   '自动回收闲置 Agent': 'Reclaim idle agents automatically',
-  '回复完没人看着的空闲 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这两段时间和数量上限管，页面切到后台也照样跑完。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。':
-    'Idle agents that finished with nobody watching are reclaimed after the two windows below; coming back restarts one in a few seconds and resumes the conversation. Running turns are not subject to these windows or to the limit below and finish even when the page is in the background. Turned off, they are no longer reclaimed by time and only limited by "Max kept-alive conversations", so these processes keep piling up.',
-  没看过的回复保留多久: 'Keep unread replies for',
-  '分钟，填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。同样是只算空闲对话，正在执行的不受影响。':
-    'Minutes; 0 reclaims as soon as the reply finishes. When a turn finished but you have not opened the conversation yet (the orange dot in the sidebar is still on), the agent is kept at most this long; after that opening it restarts the agent and resumes the conversation. Idle conversations only: a turn still running is not affected.',
   '没看过的回复保留多久（分钟）': 'Keep unread replies for (minutes)',
   同时保活的会话上限: 'Max kept-alive conversations',
-  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。只统计回复完在等下一句的空闲对话：正在执行的对话（包括已经切到后台在跑的）不占名额，也不会被收掉。填 0 表示不限制。':
-    'How many finished conversations with no page open may stay alive waiting for your next message. Beyond this, the least recently used one is closed (opening it again restarts it once). Only idle conversations waiting for your next message count: a turn still running (including one running in the background) takes no slot and is never closed. 0 means no limit.',
   '填 0 到 50 之间的整数': 'Enter a whole number from 0 to 50',
   '回到上一个版本 v{version}': 'Back to previous version v{version}',
   '回到 v{version}？': 'Go back to v{version}?',
@@ -445,12 +393,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '本机代理的地址，例如 {proxy}。留空时就不用这个地址，顺序和关掉开关一样（环境变量 → 直连 → 本机代理）。只支持 http 代理：v2rayN 默认的入站是 SOCKS，面板用不了，要把它改成 http / mixed 入站，或者填它的 http 入站端口。':
     'Address of a local proxy, for example {proxy}. When empty this address is skipped, with the same order as turning the switch off (environment variable → direct → local proxy). Only HTTP proxies are supported: v2rayN default inbound is SOCKS, which the panel cannot use; change it to an http / mixed inbound or enter its HTTP inbound port.',
   本页小节: 'Sections on this page',
-  执行与超时: 'Execution and timeouts',
-  会话保活: 'Keeping sessions alive',
   后台命令: 'Background commands',
-  界面与启动: 'Interface and startup',
-  输入与文件: 'Input and files',
-  提示与通知: 'Alerts and notifications',
   '{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的':
     'Skills {cli} can use in this project, including those in your user folder and in the project',
   '5 小时': '5 hours',
@@ -473,20 +416,12 @@ export const EN_SETTINGS: Record<string, string> = {
     'No usage limits found (there are none when signed in with an API key)',
   '套餐：{plan}': 'Plan: {plan}',
   刷新: 'Refresh',
-  自动压缩上下文: 'Auto-compact context',
-  '上下文占用达到这个比例时，对话结束一轮后自动压缩（写一份摘要，下一轮开新会话带上）':
-    'When context usage reaches this level, compact after the turn ends (write a summary and start a new session with it next turn)',
-  上下文占用达到这个比例时自动压缩: 'Compact automatically when context usage reaches this level',
   '{cli} 自动压缩': '{cli} auto-compact',
   最大回合: 'Max turns',
-  '一轮任务最多执行多少回合（模型请求次数）。留空用 Agent 自己的默认值，Command Code 是 1000':
-    'Maximum number of turns (model requests) per run. Leave empty to use the agent default; 1000 for Command Code',
   '{cli} 最大回合': '{cli} max turns',
   '按 Agent 自己的规则': "Agent's own rule",
   额度: 'Usage limits',
   显示额度: 'Show usage limits',
-  '在这里和任务页右栏显示账号的 5 小时、每周额度用了多少':
-    'Show how much of the 5-hour and weekly limits is used, here and in the task side panel',
   '显示 {cli} 的额度': 'Show {cli} usage limits',
   用户: 'User',
   插件: 'Plugin',
@@ -555,10 +490,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '还没有 Agent 在用这个 API': 'No agent is using this API yet',
   '可以用在：{clis}': 'Usable by: {clis}',
   登录方式: 'Sign-in method',
-  '用浏览器登录的账号，可以保存几个账号随时切换':
-    'Use an account signed in through the browser; you can save several and switch any time',
-  '用全局设置里配的 API（接口地址和密钥）；支持写配置的 Agent 会立即保存到它自己的配置，模型下拉优先从 Agent 读取':
-    'Use an API configured in global settings (base URL and key); agents that support config files save it immediately, and their model list comes from the agent first',
   '{cli} 登录方式': '{cli} sign-in method',
   账号: 'Account',
   API: 'API',
@@ -848,8 +779,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 Agent 联网查上下文窗口、最大输出、默认和可选的思考强度。':
     'For models missing from the catalog, click “AI fill in” next to the tiers. It uses the agent set under “Create with AI” to look up the context window, max output, and default/available reasoning efforts online.',
   补充目录: 'Supplement file',
-  'AI 补全的模型信息写在这里，和内置目录合并使用；目前收录 {n} 个模型。':
-    'Model info filled in by AI is written here and merged with the built-in catalog. {n} models are currently listed.',
   '模型配置里没有 {model}，按 {context} / {maxOutput} 估算':
     '{model} isn’t in the model catalog; estimating {context} / {maxOutput}',
   'AI 补全': 'AI fill in',
@@ -866,8 +795,6 @@ export const EN_SETTINGS: Record<string, string> = {
   // 字体
   字体: 'Fonts',
   英文字体: 'Latin font',
-  '默认是系统界面字体（Segoe UI / 苹方），和 Claude Code 一样；也可以换内置的 Inter，喜欢等宽可以换 Maple Mono NL（不带符号连字）。':
-    'Defaults to the system UI font (Segoe UI / PingFang), the same as Claude Code; you can switch to the bundled Inter, or Maple Mono NL (no ligatures) for a monospaced look.',
   'Inter（内置）': 'Inter (bundled)',
   'Maple Mono NL（内置）': 'Maple Mono NL (bundled)',
   'IBM Plex Sans（内置）': 'IBM Plex Sans (bundled)',
@@ -879,28 +806,20 @@ export const EN_SETTINGS: Record<string, string> = {
   '思源黑体 Noto Sans SC（内置）': 'Noto Sans SC (bundled)',
   '系统字体（苹方 / 微软雅黑）': 'System font (PingFang / Microsoft YaHei)',
   代码字体: 'Code font',
-  '代码块、命令、路径用的等宽字体。': 'Monospace font for code blocks, commands and paths.',
   自定义字体: 'Custom font',
   '填本机装了的字体名，多个用逗号隔开，会排在上面选的字体前面；没有的字还用上面的。留空不用。':
     'Names of fonts installed on this computer, separated by commas. They go before the fonts above, which still cover missing characters. Leave empty to skip.',
   '例如 Sarasa Gothic SC': 'e.g. Sarasa Gothic SC',
   字号: 'Font size',
-  '界面正文的字号，其他文字按比例跟着变。': 'Size of body text; other text scales with it.',
   字间距: 'Letter spacing',
-  '字和字之间的距离，负数更紧凑。Maple Mono 是等宽字体，默认稍微收紧一点。':
-    'Space between characters; negative is tighter. Maple Mono is monospaced, so it is slightly tightened by default.',
   行高: 'Line height',
   面板圆角: 'Panel corner radius',
   '先看一下现有的实现，再按设计稿改。': 'Let me look at the current implementation first, then follow the design.',
   称呼: 'Your name',
   '提问卡片、子对话提问这些地方怎么称呼你，例如「需要用户回答」。不填写「用户」。':
     'How question cards and sub-chat questions refer to you, e.g. "Needs User to answer". Leave empty for "User".',
-  '主区、右栏这些面板的圆角大小，0 是直角。': 'Corner radius of the main area and side panels; 0 means square corners.',
-  '对话回复和文档正文的行距。': 'Line spacing of chat replies and documents.',
   'Agent 面板按工作流调度本机的编码 Agent。': 'Agent Panel runs local coding agents by workflow.',
   空格宽度: 'Space width',
-  '调整空格的宽度，中英文之间的空隙主要来自它。等宽字体的空格比较宽，默认收窄；代码里的空格不调。':
-    'Adjusts the width of spaces, which make most of the gap between Chinese and Latin text. Monospaced fonts have wide spaces, so they are narrowed by default; spaces in code are left alone.',
   // 外部访问
   外部访问: 'Remote access',
   允许外部访问: 'Allow remote access',
@@ -908,12 +827,6 @@ export const EN_SETTINGS: Record<string, string> = {
     'Off by default. When on, the server still listens only on 127.0.0.1 and a tunnel or reverse proxy forwards outside requests. This computer and other computers open the same panel, with data, task progress and conversations syncing in real time. Remote requests always require the access token.',
   访问方式: 'Connection method',
   方式: 'Method',
-  '用 cloudflared 生成一个临时地址，不用账号，重启后地址会变。适合临时给别的电脑看。':
-    'Use cloudflared to create a temporary address. No account needed, but the address changes after a restart. Good for temporary access.',
-  '在 Cloudflare 后台建好 Tunnel，把 token 和域名填进来，地址固定不变。':
-    'Create a Tunnel in the Cloudflare dashboard, then fill in the token and domain. The address stays the same.',
-  '已经用 frp、nginx 等把 127.0.0.1:8787 转到了外网时选这个，面板只负责校验地址。':
-    'Choose this if frp, nginx or similar already exposes 127.0.0.1:8787; the panel only validates the address.',
   临时地址: 'Temporary address',
   固定域名: 'Fixed domain',
   自建反向代理: 'Own reverse proxy',
@@ -921,26 +834,14 @@ export const EN_SETTINGS: Record<string, string> = {
   'Cloudflare 后台创建 Tunnel 时给出的 token，只保存在本机数据目录里。':
     'The token shown when creating a Tunnel in the Cloudflare dashboard. It is stored only in the local data directory.',
   外部访问地址: 'Public address',
-  '这个 Tunnel 对外提供服务的域名，例如 https://panel.example.com。':
-    'The domain this Tunnel serves, e.g. https://panel.example.com.',
-  '反向代理后的完整地址，例如 https://panel.example.com。':
-    'The full address after the reverse proxy, e.g. https://panel.example.com.',
   环境检测: 'Environment check',
-  '外网访问靠 cloudflared 建立隧道，不需要在路由器上开放端口。没有安装时可以直接下载到面板的数据目录。':
-    "cloudflared creates the tunnel, so no router ports need to be opened. If it isn't installed, you can download it into the panel's data directory.",
   '已安装 {version}': 'Installed {version}',
   '正在下载 {n}%': 'Downloading {n}%',
   '正在下载…': 'Downloading…',
   '下载 cloudflared': 'Download cloudflared',
-  '自己装好了 cloudflared（例如用 Homebrew、winget）时点一下。':
-    'Click this after installing cloudflared yourself (e.g. with Homebrew or winget).',
   'cloudflared 路径': 'cloudflared path',
-  '自动找到的不用填；装在别处时填可执行文件的完整路径。':
-    'Leave empty if it was found automatically; otherwise enter the full path to the executable.',
   连接状态: 'Connection status',
   外网地址: 'Public address',
-  '在其他电脑的浏览器里打开。第一次打开会要求访问令牌，这个链接里已经带上了。':
-    'Open this in a browser on another computer. The first visit asks for the access token; this link already includes it.',
   复制地址: 'Copy address',
   正在连接: 'Connecting',
   已连接: 'Connected',
@@ -1345,8 +1246,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '超过 20 分钟没有完成，已停止': 'Did not finish within 20 minutes and was stopped',
   // 开发者模式：抓取界面元素
   开发者模式: 'Developer mode',
-  '打开后对话输入框上多一个「抓取界面元素」按钮，也可以按快捷键开启抓取：抓取期间左键、右键照常可用，用设置里的鼠标键（默认中键）点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出。':
-    'Adds a "Pick UI element" button to chat inputs, and a shortcut to start picking anywhere: while picking, the left and right buttons work as usual; press the mouse button chosen in settings (middle by default) on any element of the panel\'s UI to quote its source location, component, text and styles into the input, so AI can edit the panel\'s own code. Esc stops picking.',
   抓取界面元素: 'Pick UI element',
   '抓取界面元素：{key} 开始或退出，{button}抓取页面上的元素，Esc 退出':
     'Pick UI element: {key} to start or stop, {button} to pick an element on the page, Esc to cancel',
@@ -1361,20 +1260,9 @@ export const EN_SETTINGS: Record<string, string> = {
   // 设置 →「快捷键」
   快捷键: 'Shortcuts',
   抓取元素的快捷键: 'Shortcut for picking an element',
-  '抓取界面元素（开发者模式）的快捷键：按一下进入抓取，再按一下退出。在输入框里打字时不会触发，带了 Ctrl / Alt 的组合键除外。':
-    'Shortcut for picking UI elements (developer mode): press it to start picking, press again to stop. It does not trigger while you are typing in an input, unless it includes Ctrl / Alt.',
-  '默认是「{key}」。键盘上打不出这个键时，可以点右边换成别的组合（例如 Ctrl+Shift+E）。':
-    'Defaults to “{key}”. If your keyboard cannot type it, click the field on the right and press another combination (for example Ctrl+Shift+E).',
   '按下想用的键，Esc 取消': 'Press the keys to use, Esc to cancel',
   '这个写法认不出来，按 Backspace 恢复默认': 'This value is not recognized; press Backspace to restore the default',
   用哪个鼠标键抓取: 'Mouse button used to pick',
-  '其他两个键在抓取期间照常可用：左键还能点按钮、右键还能弹菜单，所以抓取键一般用中键。':
-    'The other two buttons keep working while picking: the left button still clicks, the right button still opens menus, so the middle button is the usual choice.',
-  '抓取期间按 Esc 或再按一次上面的快捷键都能退出；抓到一个元素后也会自动退出。':
-    'While picking, press Esc or the shortcut above to stop; picking also stops after you pick an element.',
-  '快捷键回到「{key}」，抓取键回到中键。': 'Restore the shortcut to “{key}” and the pick button to the middle button.',
-  抓取元素的方式: 'How to pick elements',
-  '快捷键和用哪个鼠标键抓取，到「快捷键」里改。': 'Change the shortcut and the pick button under “Shortcuts”.',
   '＋': '+',
   去修改: 'Change',
   并发上限: 'Concurrency limit',
@@ -1495,10 +1383,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '对话和子对话一起移到回收站（共 {size}），{days} 天内可以在下面的回收站里恢复，之后自动永久删除、释放空间。':
     'The conversation and its sub-conversations ({size}) move to the trash. You can restore them from the trash below within {days} days; after that they are permanently deleted and the space is freed.',
   '已移到回收站 {n} 个对话': 'Moved {n} conversations to the trash',
-  对话归档: 'Archiving',
   自动归档不动的对话: 'Auto-archive idle conversations',
-  '对话（连同子对话）这么多天没有动静、没在执行、回复也都看过了，就自动归档：列表里不再显示，在筛选里选「已归档」还能找到，随时可以取消归档。填 0 表示不自动归档。':
-    'Archive a conversation (with its sub-conversations) after this many days without activity, when it isn\'t running and all replies have been read. Archived conversations leave the list but stay under the "Archived" filter and can be unarchived anytime. 0 turns this off.',
   '填 0 到 3650 之间的整数，单位是天': 'Enter a whole number of days from 0 to 3650',
   // 设置 → 外观 → 配色、设置 → 组件
   配色: 'Color palette',
@@ -1506,8 +1391,6 @@ export const EN_SETTINGS: Record<string, string> = {
   中性: 'Neutral',
   海蓝: 'Ocean',
   森绿: 'Forest',
-  '只换颜色，按钮、列表、对话这些部件的形状和间距不变。深浅色跟随侧栏里的主题开关。':
-    'Only colors change; buttons, lists and conversations keep the same shapes and spacing. Light or dark follows the theme switch in the sidebar.',
   组件: 'Components',
   '界面里用到的通用部件都在这里，按当前配色画出来。页面只用这些部件拼，改一处全站跟着变：点部件下面的「微调」调圆角、底色、边框这些，改了立刻生效。':
     'Every shared component used in the interface, drawn with the current palette. Pages are built only from these, so a change here applies everywhere: open “Fine-tune” under a component to adjust radius, background, border and more, with changes applied right away.',
@@ -1616,7 +1499,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '模型对话里 Agent 用 Blender 建模，网页右侧实时预览。面板在后台起一个 Blender，不弹窗口。':
     'In model conversations the Agent builds in Blender and the page previews it live on the right. The panel runs Blender in the background without a window.',
   'Blender 路径': 'Blender path',
-  '留空时自动在 PATH 和常见安装位置里找': 'Leave empty to search PATH and the usual install locations',
   检测结果: 'Detection',
   建模: 'Modeling',
   读到的模型: 'Models found',
@@ -1630,4 +1512,240 @@ export const EN_SETTINGS: Record<string, string> = {
   '换个说法试试，或者用空格分开几个关键词': 'Try different words, or separate several keywords with spaces',
   整页: 'Page',
   小节: 'Section',
+  // 设置页改版（2026-10-31）：精简后的名字、一行说明和问号里的详细说明
+  留空时自动查找: 'Searched automatically when left empty',
+  '在 PATH 和常见安装位置里找。': 'Looks in PATH and common install locations.',
+  '浏览器登录的账号，可存几个随时切换': 'Signed-in browser account; save several and switch anytime',
+  '用「API 配置」里的接口地址和密钥': 'Uses the URL and key from API settings',
+  '支持写配置的 Agent 会立即保存到它自己的配置，模型下拉优先从 Agent 读取。':
+    'Agents that support it get the config written right away; model lists are read from the agent first.',
+  '高、中、低档对应的模型和思考强度': 'Model and reasoning effort for the high, medium and low tiers',
+  '角色没指定模型时用，可以选一档': 'Used when a role sets no model; can be a tier',
+  角色和档位都没指定时用: 'Used when neither role nor tier sets one',
+  一轮最多请求模型几次: 'Max model requests per turn',
+  '留空用 Agent 自己的默认值，Command Code 是 1000。':
+    "Leave empty to use the agent's own default; Command Code uses 1000.",
+  自动压缩: 'Auto compact',
+  上下文占到这个比例时压缩: 'Compact when context use reaches this share',
+  '对话结束一轮后自动压缩：写一份摘要，下一轮开新会话带上。':
+    'After a turn ends, compacts automatically: writes a summary and carries it into a new session next turn.',
+  '可执行文件、参数、环境变量': 'Executable, arguments, environment',
+  每次调用都追加: 'Appended to every call',
+  '角色自己的参数排在后面。': "The role's own arguments come after these.",
+  '5 小时和每周额度用了多少': '5-hour and weekly quota used',
+  '显示在这里和任务页右栏。': "Shown here and in the task page's right panel.",
+  '只换颜色，布局不变；深浅色跟随侧栏的主题开关。':
+    'Only colors change, the layout stays; light/dark follows the theme switch in the sidebar.',
+  '主区和右栏的圆角，0 是直角': 'Corner radius of the main area and right panel; 0 is square',
+  '默认跟随系统，和 Claude Code 一样': 'Follows the system by default, like Claude Code',
+  '默认是系统界面字体（Segoe UI / 苹方）；也可以换内置的 Inter，喜欢等宽可以换 Maple Mono NL（不带符号连字）。':
+    'Defaults to the system UI font (Segoe UI / PingFang); you can switch to the bundled Inter, or Maple Mono NL (no ligatures) if you like monospace.',
+  汉字用的字体: 'Font for Chinese characters',
+  '代码、命令和路径用的等宽字体': 'Monospace font for code, commands and paths',
+  '本机字体名，优先于上面选的': 'Installed font names, used before the ones above',
+  '正文字号，其他文字按比例跟着变': 'Body text size; other text scales with it',
+  负数更紧凑: 'Negative is tighter',
+  'Maple Mono 是等宽字体，默认稍微收紧一点。': 'Maple Mono is monospace, so it is tightened slightly by default.',
+  中英文之间的空隙主要来自它: 'Most of the gap between Chinese and English comes from it',
+  '等宽字体的空格比较宽，默认收窄；代码里的空格不调。':
+    'Monospace spaces are wide, so they are narrowed by default; spaces in code are left alone.',
+  对话回复和文档正文的行距: 'Line spacing of replies and documents',
+  '决定装哪个版本的 PyTorch': 'Decides which PyTorch build to install',
+  '没有检测到显卡时用 CPU，能出图但很慢。': 'Without a detected GPU it uses the CPU, which works but is slow.',
+  '已有 ComfyUI': 'Existing ComfyUI',
+  填它的地址就不用再装: 'Enter its URL and skip the install',
+  '模型要自己放进它的 models 目录。': 'Put models into its models folder yourself.',
+  '镜像、端口': 'Mirror, port',
+  国内镜像: 'China mirror',
+  '打不开 Hugging Face 时打开': 'Turn on when Hugging Face is unreachable',
+  '模型从 hf-mirror.com 下载，Python 依赖从清华镜像安装。':
+    'Models download from hf-mirror.com, Python packages from the Tsinghua mirror.',
+  '相对「外观 → 字号」的倍数': 'Multiple of Appearance → Font size',
+  '其他元素按正文等比缩放。行高在「外观」里调。':
+    'Other elements scale with the body text. Line height is set in Appearance.',
+  装饰: 'Decoration',
+  标题前的符号或标题下的线: 'A mark before the heading or a line under it',
+  上间距: 'Top spacing',
+  下间距: 'Bottom spacing',
+  底线: 'Bottom rule',
+  下划线: 'Underline',
+  文字颜色: 'Text color',
+  语言栏: 'Language bar',
+  关掉时长行横向滚动: 'Long lines scroll sideways when off',
+  '顶栏的「折行」可以单独打开一块。': 'The “Wrap” button in the header can turn it on per block.',
+  行号: 'Line numbers',
+  左线颜色: 'Left bar color',
+  左线粗细: 'Left bar width',
+  斜体: 'Italic',
+  浅底: 'Tinted background',
+  符号: 'Marker',
+  符号颜色: 'Marker color',
+  缩进: 'Indent',
+  项间距: 'Item spacing',
+  外框: 'Outer border',
+  斑马纹: 'Striped rows',
+  线型: 'Line style',
+  粗细: 'Thickness',
+  上下间距: 'Vertical spacing',
+  最大宽度: 'Max width',
+  图注: 'Caption',
+  使用代理: 'Use proxy',
+  检查和下载更新时走这个代理: 'Use this proxy to check for and download updates',
+  '只支持 http 代理': 'HTTP proxies only',
+  让其他电脑也能打开这个面板: 'Let other computers open this panel',
+  '不用账号，重启后地址会变': 'No account needed; the URL changes on restart',
+  'Cloudflare Tunnel，地址固定': 'Cloudflare Tunnel with a fixed URL',
+  '已用 frp、nginx 等转到外网': 'Already forwarded with frp, nginx, etc.',
+  '用 cloudflared 生成一个临时地址，适合临时给别的电脑看。':
+    'Uses cloudflared to create a temporary URL, good for a quick look from another computer.',
+  '在 Cloudflare 后台建好 Tunnel，把 token 和域名填进来。':
+    'Create a Tunnel in the Cloudflare dashboard and enter its token and domain.',
+  '已经把 127.0.0.1:8787 转到了外网时选这个，面板只负责校验地址。':
+    'Pick this when 127.0.0.1:8787 is already exposed; the panel only checks the URL.',
+  只存在本机: 'Stored only on this computer',
+  访问地址: 'Public URL',
+  'Tunnel 对外的域名': "The Tunnel's public domain",
+  反向代理后的完整地址: 'Full URL behind the reverse proxy',
+  '建立隧道用，不用在路由器上开端口': 'Builds the tunnel; no router ports to open',
+  '没有安装时可以直接下载到面板的数据目录；自己装好了（例如用 Homebrew、winget）就点重新检测。':
+    "If it isn't installed you can download it into the panel's data folder; if you installed it yourself (e.g. with Homebrew or winget), click Re-check.",
+  自动找到的不用填: 'Leave empty if it was found automatically',
+  '装在别处时填可执行文件的完整路径。': 'Enter the full path to the executable if it lives elsewhere.',
+  '在其他电脑打开，链接里已带令牌': 'Open it on another computer; the link carries the token',
+  '命令行 Shell': 'Command shell',
+  '后台命令和测试步骤用的 shell': 'Shell used for background commands and test steps',
+  '开发者模式下抓取界面元素用的按键。': 'Keys used to pick UI elements in developer mode.',
+  抓取元素: 'Pick elements',
+  '按一下进入抓取，再按一下退出': 'Press once to start picking, again to stop',
+  '默认是「{key}」。键盘上打不出这个键时，可以点右边换成别的组合（例如 Ctrl+Shift+E）。在输入框里打字时不会触发，带了 Ctrl / Alt 的组合键除外。':
+    "Default is “{key}”. If your keyboard can't type it, click on the right to choose another combo (e.g. Ctrl+Shift+E). It doesn't fire while typing in an input, except combos with Ctrl / Alt.",
+  鼠标键: 'Mouse button',
+  '点选元素用的键，建议中键': 'Button that picks an element; middle is recommended',
+  '其他两个键在抓取期间照常可用：左键还能点按钮、右键还能弹菜单。':
+    'The other two buttons keep working while picking: left still clicks buttons, right still opens menus.',
+  抓到一个元素后也会自动退出: 'Also stops after an element is picked',
+  '「{key}」+ 中键': '“{key}” + middle button',
+  '在本机把说的话转成文字，录音不上传。': 'Turns speech into text on this computer; recordings are never uploaded.',
+  输入框上多一个麦克风按钮: 'Adds a microphone button to the input box',
+  '点一下开始说话，再点一下转成文字插到光标处，录音中按 Esc 放弃。要先在下面下载一个模型。':
+    'Click to start talking, click again to insert the text at the cursor; Esc cancels while recording. Download a model below first.',
+  当前模型: 'Current model',
+  '还没下载，在下面的列表里下载': 'Not downloaded yet; download one from the list below',
+  '模型从 hf-mirror.com 下载，识别库从 npmmirror 下载。':
+    'Models download from hf-mirror.com, the recognizer from npmmirror.',
+  '留空用默认地址 {url}': 'Leave empty to use {url}',
+  填自己实例的主机地址: "Your instance's host address",
+  '也可以填自己的网关或代理。': 'You can also enter your own gateway or proxy.',
+  '公共实例一般不开放 JSON 接口。只填主机就行（例如 https://searxng.example.com），/search 路径会自动补上。':
+    "Public instances usually don't expose the JSON API. Just the host is enough (e.g. https://searxng.example.com); /search is added automatically.",
+  搜索服务: 'Search service',
+  服务: 'Service',
+  这个服务要填密钥: 'This service needs a key',
+  不用密钥: 'No key needed',
+  'Claude Code、Codex、Command Code 用它们自带的搜索，不走这里。默认是 DeepSeek 官方搜索，要填 DeepSeek 的 API key 才能用，没填时搜索会直接报错，不会换成别的源。也可以换成自建的 SearXNG，或 Brave、Tavily。':
+    "Claude Code, Codex and Command Code use their own search and don't go through here. The default is DeepSeek's official search, which needs a DeepSeek API key; without one, searches fail with an error and never fall back to another source. You can also use a self-hosted SearXNG, or Brave or Tavily.",
+  '只存在本机，模型拿不到': "Stored only on this computer; models can't read it",
+  自定义地址: 'Custom URL',
+  '模型要用 web_search / web_fetch，还要在对应 Agent 的设置里打开「联网搜索」开关（默认关闭）。':
+    "For models to use web_search / web_fetch, also turn on “Web search” in that agent's settings (off by default).",
+  高级: 'Advanced',
+  切换后页面会重新加载: 'The page reloads after switching',
+  对话和任务列表的最大宽度: 'Max width of chats and task lists',
+  服务启动时自动打开面板: 'Opens the panel when the server starts',
+  我的称呼: 'What to call me',
+  'AI 提问时怎么称呼你': 'How AI addresses you when it asks',
+  默认允许提问: 'Allow questions by default',
+  '新会话的「提问」按钮默认打开': 'The “Ask” button starts on in new sessions',
+  'AI 有问题时弹出卡片问你，等你回答再继续；关着时 AI 自己选最合适的做法。已有的会话保持各自的选择。':
+    'When AI has a question it shows a card and waits for your answer; when off, AI picks the best option itself. Existing sessions keep their own setting.',
+  大文件只传路径: 'Large files as paths',
+  '超过这个大小不上传，直接引用原文件': 'Above this size, link the original file instead of uploading',
+  '粘贴、拖进输入框的文件超过这么大时不上传、不拷进对话目录，面板在本机找到原文件后直接引用它的路径。':
+    'Files pasted or dropped into the input above this size are not uploaded or copied into the conversation folder; the panel finds the original on this computer and references its path.',
+  长文本转文件: 'Long text as file',
+  粘贴超过这么多字时存成附件: 'Pasted text over this length is saved as an attachment',
+  '输入框里只放这个文件的卡片，消息不会被一大段文字撑满。':
+    "The input shows only that file's card, so the message isn't flooded with text.",
+  字: 'chars',
+  不转: 'Never',
+  单步超时: 'Step timeout',
+  '超时停止这一步，任务记为失败': 'Stops the step and fails the task',
+  分钟: 'min',
+  无输出提醒: 'Idle warning',
+  '长时间没输出先提醒，再停止': 'Warns after no output for a while, then stops',
+  'Agent 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。':
+    "If the agent prints nothing for this long, the task shows a warning; after the same time again it stops automatically, so it doesn't sit “running” while stuck on a login or confirmation.",
+  不检测: 'Off',
+  子对话卡住时追问: 'Nudge stuck sub-chats',
+  '替父对话问进展，不回就重启或换人接手': 'Asks for progress as the parent; restarts or hands over if no reply',
+  '子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住，收到回复就重新计时。问过之后再过这么久还没回复（正在跑命令时多等几倍），就停掉它、接回原会话重启；重启也没恢复，就在对话里记一条警告，新开一个子对话带上原任务和已有进展接手。':
+    'When a sub-chat prints nothing for this long, the panel asks it, as the parent, what it is doing and whether it is stuck; a reply resets the timer. If there is still no reply after another such period (several times longer while a command runs), the panel stops it and restarts it on its original session. If that does not help, it adds a warning and starts a new sub-chat that takes over with the original task and progress so far.',
+  后台命令并发: 'Background commands at once',
+  '测试、编译最多同时跑几条': 'How many tests or builds run at the same time',
+  '所有对话交给面板在后台跑的命令（完整测试、编译）超出这个数就排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。':
+    "Commands that chats hand to the panel to run in the background (full tests, builds) queue up beyond this number and start as earlier ones finish. Lower it on slower machines so they don't all bog down.",
+  条: 'cmds',
+  新建文件格式: 'New file format',
+  面板写文件时用的编码和换行符: 'Encoding and line endings the panel writes with',
+  后台会话: 'Background sessions',
+  '回收空闲 Agent': 'Reclaim idle agents',
+  '空闲到时结束进程，再用时续接会话': 'Ends idle processes on a timer; the session resumes later',
+  '回复完没人看着的空闲 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这两段时间和数量上限管，页面切到后台也照样跑完。关掉后不再按时间回收，只会按「最多保活」收，进程会越攒越多。':
+    'Idle agents whose replies nobody is watching are reclaimed after the two times below, and restarted when you come back (a few seconds; the session resumes). Running chats ignore these times and the limit, and keep going in the background. When off, nothing is reclaimed on a timer, only by “Max kept alive”, so processes pile up.',
+  离开后保留: 'Keep after leaving',
+  '离开对话后 Agent 留多久': 'How long the agent stays after you leave a chat',
+  '填 0 表示回复完就结束这一轮。这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。只算回复完停在等下一句的空闲对话，正在执行的对话不会因为这个时长被收掉。':
+    '0 ends the turn as soon as the reply is done. Within this time you can send a message and continue without restarting the agent; each waiting chat holds one agent process. Only idle chats waiting for the next message count; running chats are never reclaimed by this.',
+  未读回复保留: 'Keep unread replies',
+  回复还没看时最多留多久: "How long to keep a reply you haven't read",
+  '填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。正在执行的不受影响。':
+    "0 reclaims as soon as the reply is done. While a finished reply hasn't been opened (the orange dot in the sidebar is still on), it is kept at most this long; then it is reclaimed, and opening the chat restarts the agent and resumes the session. Running chats are not affected.",
+  最多保活: 'Max kept alive',
+  超出时结束最久没用的: 'Ends the least recently used beyond this',
+  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用的（下次打开需要重新启动一次）。正在执行的对话（包括已经切到后台在跑的）不占名额，也不会被收掉。':
+    "How many idle chats waiting for the next message, with nobody watching, are kept; beyond that the least recently used ends (it restarts once next time you open it). Running chats, including ones in the background, don't count and are never reclaimed.",
+  个: 'chats',
+  自动归档: 'Auto-archive',
+  多久没动静的对话收进归档: 'Archive chats that have been quiet this long',
+  '对话（连同子对话）这么多天没有动静、没在执行、回复也都看过了，就自动归档：列表里不再显示，在筛选里选「已归档」还能找到，随时可以取消归档。':
+    'After this many days with no activity, not running and every reply read, a chat (with its sub-chats) is archived: hidden from the list, still findable under the “Archived” filter, and you can unarchive it anytime.',
+  天: 'days',
+  不归档: 'Never',
+  通知与安全: 'Notifications & security',
+  任务完成通知: 'Task done notifications',
+  页面在后台时弹出系统通知: 'Shows a system notification when the page is in the background',
+  '需要浏览器允许通知。': 'The browser must allow notifications.',
+  '计划 Webhook': 'Schedule webhook',
+  把计划的运行结果推送到你的地址: 'Pushes schedule results to your URL',
+  只允许带令牌打开过的浏览器访问: 'Only browsers that opened the tokenized URL can connect',
+  '输入框多一个「抓取界面元素」按钮': 'Adds a “Pick UI element” button to the input box',
+  '也可以按快捷键开启抓取：抓取期间左键、右键照常可用，用设置里的鼠标键（默认中键）点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出。':
+    "You can also start picking with the shortcut: left and right clicks keep working, and the mouse button set in settings (middle by default) picks an element in the panel; its source location, component, text and styles go into the input as a reference, so you can ask AI to change the panel's own code. Esc exits.",
+  抓取方式: 'Picking',
+  '在「快捷键」里修改': 'Change it in Shortcuts',
+  '没指定 Agent 和模型的角色都用这里的设置。': 'Roles that set no agent or model use these settings.',
+  '角色没指定 Agent 时用': 'Used when a role sets no agent',
+  '跟随 {cli} 的设置': "Follows {cli}'s settings",
+  角色没指定模型时用: 'Used when a role sets no model',
+  'AI 补全模型信息': 'Fill in model info with AI',
+  目录里没有的模型联网查: 'Looks up models missing from the catalog online',
+  '已收录 {n} 个模型': '{n} models listed',
+  'AI 补全的模型信息写在这个文件里，和内置目录合并使用。':
+    'Model info filled in by AI is written to this file and merged with the built-in catalog.',
+  '生图 Agent': 'Image agent',
+  'UI 设计生成图片时用': 'Used to generate images in UI design',
+  生图模型: 'Image model',
+  '不选时用这个 Agent 的高档模型': "Uses this agent's high-tier model when not set",
+  同时生成: 'Concurrent images',
+  最多并行生成几张图: 'How many images generate in parallel',
+  '在角色和工作流页面用 Agent 对话生成或优化配置。':
+    'Generate or refine configs by chatting with an agent on the Roles and Workflows pages.',
+  '默认用默认 Agent': 'Uses the default agent',
+  'Agent 按固定格式输出，面板校验通过后才能应用。':
+    'The agent replies in a fixed format; it can only be applied after the panel validates it.',
+  '默认用这个 Agent 的默认模型': "Uses this agent's default model",
+  角色规则: 'Role rules',
+  加进创建角色的提示词: 'Added to the prompt when creating roles',
+  工作流规则: 'Workflow rules',
+  加进创建工作流的提示词: 'Added to the prompt when creating workflows',
 }

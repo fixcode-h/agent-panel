@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { setLang } from '../shared/i18n.ts'
 import type { TurnChanges } from '../shared/schema.ts'
-import { spansFileDiff, undoSpans } from './exec/git.ts'
+import { gitSnapshot, spansFileDiff, undoSpans } from './exec/git.ts'
 import { aroundMerge, beginTurnChanges, endTurnChanges } from './turn-changes.ts'
 
 setLang('zh')
@@ -58,6 +58,22 @@ test('一轮的改动：只算这一轮开始以后的，撤销后回到开始�
   assert.equal(read(dir, 'a.txt'), 'one\ntwo\nthree\nfour\nfive\n')
   assert.equal(existsSync(path.join(dir, 'new.txt')), false, '这一轮新建的文件删掉')
   assert.equal(read(dir, 'b.txt'), 'user edit\n', '这一轮之前的改动不动')
+})
+
+test('快照：和暂存区同一秒里改过、大小没变的文件也算改动', async () => {
+  // 不靠真实等待：把文件、暂存区条目和暂存区文件的时间都拨到同一个过去的时刻，正是 git 要回头比内容的「可疑」条目。
+  // 快照拷出来的暂存区如果用了现在的时间，git 就当这个条目可信、只比时间和大小，改动整个漏掉（CI 上偶发拿不到这一轮的改动）
+  const dir = repo()
+  const past = new Date(Date.now() - 3600_000)
+  const file = path.join(dir, 'a.txt')
+  utimesSync(file, past, past)
+  // 只刷新暂存区里这个文件的时间戳（内容没变，提交不了）
+  git(dir, 'update-index', '--refresh')
+  utimesSync(path.join(dir, '.git', 'index'), past, past)
+  const before = await gitSnapshot(dir)
+  writeFileSync(file, 'one\nTWO\nthree\nfour\nfive\n')
+  utimesSync(file, past, past)
+  assert.notEqual(await gitSnapshot(dir), before)
 })
 
 test('撤销：之后又改了别的地方的保留，改到同一处的算冲突、一个都不写', async () => {

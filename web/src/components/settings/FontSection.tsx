@@ -113,15 +113,13 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
   return (
     <>
       <Group title={t('配色')}>
-        <p className="pb-3 text-[0.8125rem] leading-relaxed text-subtle">
-          {t('只换颜色，按钮、列表、对话这些部件的形状和间距不变。深浅色跟随侧栏里的主题开关。')}
-        </p>
+        <p className="pb-3 text-[0.8125rem] text-subtle">{t('只换颜色，布局不变；深浅色跟随侧栏的主题开关。')}</p>
         <div role="radiogroup" aria-label={t('配色')} className="grid grid-cols-2 gap-3 pb-4 sm:grid-cols-3">
           {PALETTES.map((p) => (
             <PaletteCard key={p} id={p} on={value.palette === p} onPick={() => set('palette', p)} />
           ))}
         </div>
-        <Row title={t('面板圆角')} desc={t('主区、右栏这些面板的圆角大小，0 是直角。')}>
+        <Row title={t('圆角')} desc={t('主区和右栏的圆角，0 是直角')}>
           <Slider
             label={t('面板圆角')}
             value={value.panelRadius}
@@ -137,8 +135,9 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
       <Group title={t('字体')}>
         <Row
           title={t('英文字体')}
-          desc={t(
-            '默认是系统界面字体（Segoe UI / 苹方），和 Claude Code 一样；也可以换内置的 Inter，喜欢等宽可以换 Maple Mono NL（不带符号连字）。',
+          desc={t('默认跟随系统，和 Claude Code 一样')}
+          hint={t(
+            '默认是系统界面字体（Segoe UI / 苹方）；也可以换内置的 Inter，喜欢等宽可以换 Maple Mono NL（不带符号连字）。',
           )}
         >
           <Select
@@ -160,7 +159,8 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         </Row>
         <Row
           title={t('中文字体')}
-          desc={t('英文字体里没有汉字，汉字用这里选的字体。思源黑体和 Maple Mono 中文版是同一套字形。')}
+          desc={t('汉字用的字体')}
+          hint={t('英文字体里没有汉字，汉字用这里选的字体。思源黑体和 Maple Mono 中文版是同一套字形。')}
         >
           <Select
             aria-label={t('中文字体')}
@@ -172,7 +172,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             ]}
           />
         </Row>
-        <Row title={t('代码字体')} desc={t('代码块、命令、路径用的等宽字体。')}>
+        <Row title={t('代码字体')} desc={t('代码、命令和路径用的等宽字体')}>
           <Select
             aria-label={t('代码字体')}
             value={value.monoFont}
@@ -185,7 +185,8 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         </Row>
         <Row
           title={t('自定义字体')}
-          desc={t('填本机装了的字体名，多个用逗号隔开，会排在上面选的字体前面；没有的字还用上面的。留空不用。')}
+          desc={t('本机字体名，优先于上面选的')}
+          hint={t('填本机装了的字体名，多个用逗号隔开，会排在上面选的字体前面；没有的字还用上面的。留空不用。')}
         >
           <Input
             value={value.customFont}
@@ -195,7 +196,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             className="h-9"
           />
         </Row>
-        <Row title={t('字号')} desc={t('界面正文的字号，其他文字按比例跟着变。')}>
+        <Row title={t('字号')} desc={t('正文字号，其他文字按比例跟着变')}>
           <Slider
             label={t('字号')}
             value={value.fontSize}
@@ -207,7 +208,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             onChange={(v) => set('fontSize', v)}
           />
         </Row>
-        <Row title={t('字间距')} desc={t('字和字之间的距离，负数更紧凑。Maple Mono 是等宽字体，默认稍微收紧一点。')}>
+        <Row title={t('字间距')} desc={t('负数更紧凑')} hint={t('Maple Mono 是等宽字体，默认稍微收紧一点。')}>
           <Slider
             label={t('字间距')}
             value={value.letterSpacing}
@@ -221,7 +222,8 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         </Row>
         <Row
           title={t('空格宽度')}
-          desc={t('调整空格的宽度，中英文之间的空隙主要来自它。等宽字体的空格比较宽，默认收窄；代码里的空格不调。')}
+          desc={t('中英文之间的空隙主要来自它')}
+          hint={t('等宽字体的空格比较宽，默认收窄；代码里的空格不调。')}
         >
           <Slider
             label={t('空格宽度')}
@@ -234,7 +236,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             onChange={(v) => set('wordSpacing', round(v, 2))}
           />
         </Row>
-        <Row title={t('行高')} desc={t('对话回复和文档正文的行距。')}>
+        <Row title={t('行高')} desc={t('对话回复和文档正文的行距')}>
           <Slider
             label={t('行高')}
             value={value.lineHeight}

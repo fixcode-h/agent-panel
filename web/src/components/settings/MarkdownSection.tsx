@@ -361,13 +361,17 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('正文')}>
         <GroupReset els={['body']} />
         <Preview md={PREVIEW.body} />
-        <Row title={t('正文字号')} desc={t('相对「外观 → 字号」的倍数，其他元素按正文等比缩放。行高在「外观」里调。')}>
+        <Row
+          title={t('字号')}
+          desc={t('相对「外观 → 字号」的倍数')}
+          hint={t('其他元素按正文等比缩放。行高在「外观」里调。')}
+        >
           <F el="body" prop="size" label={t('正文字号')} />
         </Row>
         <Row title={t('段落间距')}>
           <F el="body" prop="gap" label={t('段落间距')} />
         </Row>
-        <Row title={t('正文颜色')}>
+        <Row title={t('颜色')}>
           <F el="body" prop="color" label={t('正文颜色')} />
         </Row>
       </Group>
@@ -387,28 +391,32 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
             }))}
           />
         </div>
-        <Row title={t('标题字号')}>
+        <Row title={t('字号')}>
           <F el={level} prop="size" label={t('标题字号')} />
         </Row>
-        <Row title={t('标题字重')}>
+        <Row title={t('字重')}>
           <F el={level} prop="weight" label={t('标题字重')} />
         </Row>
-        <Row title={t('标题颜色')}>
+        <Row title={t('颜色')}>
           <F el={level} prop="color" label={t('标题颜色')} />
         </Row>
-        <Row title={t('标题装饰')} desc={t('标题前的竖条、菱形、短横、圆点，或标题下一条渐隐的线，颜色跟标题。')}>
+        <Row
+          title={t('装饰')}
+          desc={t('标题前的符号或标题下的线')}
+          hint={t('标题前的竖条、菱形、短横、圆点，或标题下一条渐隐的线，颜色跟标题。')}
+        >
           <F el={level} prop="deco" label={t('标题装饰')} />
         </Row>
-        <Row title={t('标题字体')}>
+        <Row title={t('字体')}>
           <F el={level} prop="font" label={t('标题字体')} />
         </Row>
-        <Row title={t('标题上间距')}>
+        <Row title={t('上间距')}>
           <F el={level} prop="mt" label={t('标题上间距')} />
         </Row>
-        <Row title={t('标题下间距')}>
+        <Row title={t('下间距')}>
           <F el={level} prop="mb" label={t('标题下间距')} />
         </Row>
-        <Row title={t('标题底线')} desc={t('标题下面画一条细线，像文档里的章节分隔。')}>
+        <Row title={t('底线')} desc={t('标题下面画一条细线，像文档里的章节分隔。')}>
           <F el={level} prop="rule" label={t('标题底线')} />
         </Row>
       </Group>
@@ -433,10 +441,10 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('链接')}>
         <GroupReset els={['link']} />
         <Preview md={PREVIEW.link} />
-        <Row title={t('链接颜色')}>
+        <Row title={t('颜色')}>
           <F el="link" prop="color" label={t('链接颜色')} />
         </Row>
-        <Row title={t('链接下划线')}>
+        <Row title={t('下划线')}>
           <F el="link" prop="underline" label={t('链接下划线')} />
         </Row>
       </Group>
@@ -444,19 +452,19 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('行内代码')}>
         <GroupReset els={['code']} />
         <Preview md={PREVIEW.code} />
-        <Row title={t('行内代码字号')}>
+        <Row title={t('字号')}>
           <F el="code" prop="size" label={t('行内代码字号')} />
         </Row>
-        <Row title={t('行内代码文字颜色')}>
+        <Row title={t('文字颜色')}>
           <F el="code" prop="color" label={t('行内代码文字颜色')} />
         </Row>
-        <Row title={t('行内代码底色')}>
+        <Row title={t('底色')}>
           <F el="code" prop="bg" label={t('行内代码底色')} />
         </Row>
-        <Row title={t('行内代码边框')}>
+        <Row title={t('边框')}>
           <F el="code" prop="border" label={t('行内代码边框')} />
         </Row>
-        <Row title={t('行内代码圆角')}>
+        <Row title={t('圆角')}>
           <F el="code" prop="radius" label={t('行内代码圆角')} />
         </Row>
       </Group>
@@ -464,28 +472,28 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('代码块')}>
         <GroupReset els={['pre']} />
         <Preview md={PREVIEW.pre} />
-        <Row title={t('代码块字号')}>
+        <Row title={t('字号')}>
           <F el="pre" prop="size" label={t('代码块字号')} />
         </Row>
-        <Row title={t('代码块行高')}>
+        <Row title={t('行高')}>
           <F el="pre" prop="leading" label={t('代码块行高')} />
         </Row>
-        <Row title={t('代码块底色')} desc={t('mermaid 图也用这个底色、圆角和边框。')}>
+        <Row title={t('底色')} desc={t('mermaid 图也用这个底色、圆角和边框。')}>
           <F el="pre" prop="bg" label={t('代码块底色')} />
         </Row>
-        <Row title={t('代码块圆角')}>
+        <Row title={t('圆角')}>
           <F el="pre" prop="radius" label={t('代码块圆角')} />
         </Row>
-        <Row title={t('代码块边框')}>
+        <Row title={t('边框')}>
           <F el="pre" prop="border" label={t('代码块边框')} />
         </Row>
-        <Row title={t('代码块语言栏')} desc={t('顶部的语言名和复制按钮。')}>
+        <Row title={t('语言栏')} desc={t('顶部的语言名和复制按钮。')}>
           <F el="pre" prop="bar" label={t('代码块语言栏')} />
         </Row>
-        <Row title={t('代码块自动换行')} desc={t('关掉时长行横向滚动，顶栏的「折行」可以单独打开一块。')}>
+        <Row title={t('自动换行')} desc={t('关掉时长行横向滚动')} hint={t('顶栏的「折行」可以单独打开一块。')}>
           <F el="pre" prop="wrap" label={t('代码块自动换行')} />
         </Row>
-        <Row title={t('代码块行号')} desc={t('只有一行的代码块不显示；复制时不会带上行号。')}>
+        <Row title={t('行号')} desc={t('只有一行的代码块不显示；复制时不会带上行号。')}>
           <F el="pre" prop="lineNumbers" label={t('代码块行号')} />
         </Row>
       </Group>
@@ -493,22 +501,22 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('引用')}>
         <GroupReset els={['quote']} />
         <Preview md={PREVIEW.quote} />
-        <Row title={t('引用左线颜色')}>
+        <Row title={t('左线颜色')}>
           <F el="quote" prop="line" label={t('引用左线颜色')} />
         </Row>
-        <Row title={t('引用左线粗细')}>
+        <Row title={t('左线粗细')}>
           <F el="quote" prop="lineWidth" label={t('引用左线粗细')} />
         </Row>
-        <Row title={t('引用文字颜色')}>
+        <Row title={t('文字颜色')}>
           <F el="quote" prop="color" label={t('引用文字颜色')} />
         </Row>
-        <Row title={t('引用底色')}>
+        <Row title={t('底色')}>
           <F el="quote" prop="bg" label={t('引用底色')} />
         </Row>
-        <Row title={t('引用圆角')}>
+        <Row title={t('圆角')}>
           <F el="quote" prop="radius" label={t('引用圆角')} />
         </Row>
-        <Row title={t('引用斜体')}>
+        <Row title={t('斜体')}>
           <F el="quote" prop="italic" label={t('引用斜体')} />
         </Row>
       </Group>
@@ -516,10 +524,10 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('提示块')}>
         <GroupReset els={['alert']} />
         <Preview md={PREVIEW.alert} />
-        <Row title={t('提示块浅底')} desc={t('按类型（说明、提示、重要、注意、警告）铺一层同色浅底。')}>
+        <Row title={t('浅底')} desc={t('按类型（说明、提示、重要、注意、警告）铺一层同色浅底。')}>
           <F el="alert" prop="tint" label={t('提示块浅底')} />
         </Row>
-        <Row title={t('提示块圆角')}>
+        <Row title={t('圆角')}>
           <F el="alert" prop="radius" label={t('提示块圆角')} />
         </Row>
       </Group>
@@ -527,16 +535,16 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('无序列表')}>
         <GroupReset els={['ul']} />
         <Preview md={PREVIEW.ul} />
-        <Row title={t('列表符号')}>
+        <Row title={t('符号')}>
           <F el="ul" prop="marker" label={t('列表符号')} />
         </Row>
-        <Row title={t('列表符号颜色')}>
+        <Row title={t('符号颜色')}>
           <F el="ul" prop="markerColor" label={t('列表符号颜色')} />
         </Row>
-        <Row title={t('无序列表缩进')}>
+        <Row title={t('缩进')}>
           <F el="ul" prop="indent" label={t('无序列表缩进')} />
         </Row>
-        <Row title={t('无序列表项间距')}>
+        <Row title={t('项间距')}>
           <F el="ul" prop="gap" label={t('无序列表项间距')} />
         </Row>
       </Group>
@@ -550,10 +558,10 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         <Row title={t('序号字重')}>
           <F el="ol" prop="markerWeight" label={t('序号字重')} />
         </Row>
-        <Row title={t('有序列表缩进')}>
+        <Row title={t('缩进')}>
           <F el="ol" prop="indent" label={t('有序列表缩进')} />
         </Row>
-        <Row title={t('有序列表项间距')}>
+        <Row title={t('项间距')}>
           <F el="ol" prop="gap" label={t('有序列表项间距')} />
         </Row>
       </Group>
@@ -572,16 +580,16 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('表格')}>
         <GroupReset els={['table']} />
         <Preview md={PREVIEW.table} />
-        <Row title={t('表格字号')}>
+        <Row title={t('字号')}>
           <F el="table" prop="size" label={t('表格字号')} />
         </Row>
-        <Row title={t('表格边框')}>
+        <Row title={t('边框')}>
           <F el="table" prop="border" label={t('表格边框')} />
         </Row>
-        <Row title={t('表格外框')} desc={t('表格外面一圈圆角细框。')}>
+        <Row title={t('外框')} desc={t('表格外面一圈圆角细框。')}>
           <F el="table" prop="outer" label={t('表格外框')} />
         </Row>
-        <Row title={t('表格圆角')}>
+        <Row title={t('圆角')}>
           <F el="table" prop="radius" label={t('表格圆角')} />
         </Row>
         <Row title={t('表头底色')}>
@@ -590,7 +598,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         <Row title={t('表头字重')}>
           <F el="table" prop="headerWeight" label={t('表头字重')} />
         </Row>
-        <Row title={t('表格斑马纹')} desc={t('隔行加一层浅底，长表格更好对行。')}>
+        <Row title={t('斑马纹')} desc={t('隔行加一层浅底，长表格更好对行。')}>
           <F el="table" prop="zebra" label={t('表格斑马纹')} />
         </Row>
         <Row title={t('单元格内边距')}>
@@ -601,16 +609,16 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('分隔线')}>
         <GroupReset els={['hr']} />
         <Preview md={PREVIEW.hr} />
-        <Row title={t('分隔线线型')}>
+        <Row title={t('线型')}>
           <F el="hr" prop="style" label={t('分隔线线型')} />
         </Row>
-        <Row title={t('分隔线粗细')}>
+        <Row title={t('粗细')}>
           <F el="hr" prop="width" label={t('分隔线粗细')} />
         </Row>
-        <Row title={t('分隔线颜色')}>
+        <Row title={t('颜色')}>
           <F el="hr" prop="color" label={t('分隔线颜色')} />
         </Row>
-        <Row title={t('分隔线上下间距')}>
+        <Row title={t('上下间距')}>
           <F el="hr" prop="space" label={t('分隔线上下间距')} />
         </Row>
       </Group>
@@ -618,16 +626,16 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('图片')}>
         <GroupReset els={['img']} />
         <Preview md={PREVIEW.img} />
-        <Row title={t('图片圆角')}>
+        <Row title={t('圆角')}>
           <F el="img" prop="radius" label={t('图片圆角')} />
         </Row>
-        <Row title={t('图片最大宽度')}>
+        <Row title={t('最大宽度')}>
           <F el="img" prop="maxWidth" label={t('图片最大宽度')} />
         </Row>
-        <Row title={t('图片边框')}>
+        <Row title={t('边框')}>
           <F el="img" prop="border" label={t('图片边框')} />
         </Row>
-        <Row title={t('图片图注')} desc={t('把图片的替代文字显示在图下面。')}>
+        <Row title={t('图注')} desc={t('把图片的替代文字显示在图下面。')}>
           <F el="img" prop="caption" label={t('图片图注')} />
         </Row>
       </Group>
@@ -653,10 +661,10 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
       <Group title={t('@提及')}>
         <GroupReset els={['mention']} />
         <Preview md={PREVIEW.mention} />
-        <Row title={t('提及文字颜色')}>
+        <Row title={t('文字颜色')}>
           <F el="mention" prop="color" label={t('提及文字颜色')} />
         </Row>
-        <Row title={t('提及底色')}>
+        <Row title={t('底色')}>
           <F el="mention" prop="bg" label={t('提及底色')} />
         </Row>
       </Group>

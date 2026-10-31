@@ -21,8 +21,9 @@ export function NetworkSection({
   return (
     <Group>
       <Row
-        title={t('启用代理')}
-        desc={t(
+        title={t('使用代理')}
+        desc={t('检查和下载更新时走这个代理')}
+        hint={t(
           '检查更新、下载新版本时用下面填的代理。关掉后不用这个地址，但仍会先走环境变量 HTTPS_PROXY（设了的话），没设时先直连；请求失败后再自动找本机正在运行的代理（系统代理或常见端口）。',
         )}
       >
@@ -30,7 +31,9 @@ export function NetworkSection({
       </Row>
       <Row
         title={t('代理地址')}
-        desc={t(
+        indent
+        desc={t('只支持 http 代理')}
+        hint={t(
           '本机代理的地址，例如 {proxy}。留空时就不用这个地址，顺序和关掉开关一样（环境变量 → 直连 → 本机代理）。只支持 http 代理：v2rayN 默认的入站是 SOCKS，面板用不了，要把它改成 http / mixed 入站，或者填它的 http 入站端口。',
           { proxy: DEFAULT_PROXY_URL },
         )}
@@ -40,7 +43,7 @@ export function NetworkSection({
           onChange={(e) => onChange({ enabled, proxy: e.target.value })}
           placeholder={DEFAULT_PROXY_URL}
           disabled={!enabled}
-          className="w-[240px] font-mono text-[0.8125rem]"
+          className="font-mono text-[0.8125rem]"
           spellCheck={false}
           aria-label={t('代理地址')}
         />
