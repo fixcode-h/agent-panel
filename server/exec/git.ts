@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FileChange } from '../../shared/schema.ts'
@@ -175,12 +175,18 @@ export async function gitSnapshot(cwd: string, ignore?: PlacedFiles): Promise<st
     // 从真正的暂存区拷一份起步：里面有文件的时间戳和大小，add 只需重新读改过的文件；
     // 只 read-tree HEAD 的话每个文件都要重新算哈希，大仓库每轮对话都这样做会卡好几秒
     const index = (await git(cwd, 'rev-parse', '--git-path', 'index')).stdout.trim()
+    const source = index && path.resolve(cwd, index)
     const seeded =
-      !!index &&
-      (await copyFile(path.resolve(cwd, index), env.GIT_INDEX_FILE).then(
-        () => true,
-        () => false,
-      ))
+      !!source &&
+      (await copyFile(source, env.GIT_INDEX_FILE)
+        // 拷贝要带上原暂存区的修改时间：git 靠「条目时间不早于暂存区文件时间」认出同一秒里改过的文件再去比内容，
+        // 拷出来的文件时间是现在，同一秒里改了、大小又没变的文件就被当成没改，这一轮的改动整个漏掉
+        .then(() => stat(source))
+        .then((st) => utimes(env.GIT_INDEX_FILE, st.atime, st.mtime))
+        .then(
+          () => true,
+          () => false,
+        ))
     const head = (await git(cwd, 'rev-parse', '--verify', 'HEAD')).code === 0
     if (!seeded && head && (await run('read-tree', 'HEAD')).code !== 0) return ''
     // 面板放进来的附件不是改动（见 placedSet）；literal 让文件名里的 * ? [ 按字面比较

@@ -27,3 +27,9 @@ paths: server/exec/**, server/merge-build.ts, server/background.ts, shared/panel
 - 规则：`genericTool` 这类按名字正则猜 kind 的解析，先查 `shared/panel-tools.ts` 的面板工具表再猜；新加面板工具时同时登记进这张表，别让面板工具被当成 CLI 自己的读文件、子 Agent。
 - 起因：Pi 的桥接扩展（b0a47d2）按裸名字注册面板工具，`wait_agents` 因为名字里有 agent 被当成 CLI 自己的子 Agent，对话里显示成没头没尾的「子任务」。
 - 防线：`server/exec/parsers.test.ts`（Pi 面板工具是裸名字）。
+
+## 拷贝 git 暂存区做快照要带上原文件的修改时间
+
+- 规则：用 `GIT_INDEX_FILE` 指向一份拷贝来的暂存区时，拷完把原文件的 atime / mtime 设回去（`server/exec/git.ts` 的 `gitSnapshot`）。git 靠「条目时间不早于暂存区文件时间」认出同一秒里改过的文件再比内容，拷贝的时间是现在，同一秒里改了、大小没变的文件会被当成没改。
+- 起因：每轮改动卡片（49e3eb0）的快照在 CI 上偶发拿不到这一轮的改动，`turn-changes.test.ts` 时好时坏。
+- 防线：`server/turn-changes.test.ts` 的「快照：和暂存区同一秒里改过、大小没变的文件也算改动」。
