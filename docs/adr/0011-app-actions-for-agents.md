@@ -1,7 +1,7 @@
 # ADR 0011：Agent 操控软件一律走「动作注册表」，对 Agent 只暴露两个 MCP 工具
 
-- 状态：已接受（定了就不换：以后加能力只加动作，不再讨论 CLI 还是 MCP）
-- 日期：2026-10-24
+状态：已接受（定了就不换：以后加能力只加动作，不再讨论 CLI 还是 MCP） · 2026-10-24
+
 - 取代：[ADR 0001](./0001-ai-operate-panel-mcp-or-cli.md) 里「每个操作一个 `panel_*` 工具」的形态；0001 选 MCP 的结论保留
 - 影响范围：新增 `server/app-actions/`（注册表、各组动作、HTTP 入口）、`web/src/lib/ui-actions.ts`；改动 `server/ask-mcp.ts`（挂两个工具）、`server/exec/invoke.ts`、`server/exec/runner.ts`（把调用者传进去）、`server/page-events.ts`（多一种推给页面的信号）、`server/tasks.ts`（补「停全部子任务」「停后台命令」两个接口）、`server/index.ts`（接上宿主）
 

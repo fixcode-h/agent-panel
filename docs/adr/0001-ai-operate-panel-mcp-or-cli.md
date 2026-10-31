@@ -1,7 +1,7 @@
 # ADR 0001：让 AI 对话操作面板自身功能——走 MCP 工具，CLI 只做可选薄壳
 
-- 状态：被 [0011](./0011-app-actions-for-agents.md) 替代（选 MCP 的结论保留；「一个操作一个 `panel_*` 工具」改成动作注册表 + 两个固定工具）
-- 日期：2026-10-23
+状态：被替代（被 [0011](./0011-app-actions-for-agents.md) 替代：选 MCP 的结论保留；「一个操作一个 `panel_*` 工具」改成动作注册表 + 两个固定工具） · 2026-10-23
+
 - 影响范围：新增 `panel-ops.ts`（本次提议要新建的文件，现在仓库里还没有）；改动 `server/ask-mcp.ts`（注册与派发）、`server/exec/invoke.ts`（把面板组传进 bridge）、`server/exec/runner.ts`（`RealContext` 加一个可选字段）、`server/tasks.ts`（组装数据并注入）；`server/orch-mcp.ts`、`server/design-mcp.ts` 只作参照，不改；不涉及 `web/` 的界面改动（确认弹窗复用现有审批组件）
 - 相关文档：`docs/cli-config.md`（`mcp` 能力、面板工具的接入方式）、`AGENTS.md`（硬规则与安全边界）、`docs/lessons/server.md`
 
@@ -115,7 +115,7 @@
 | `panel_get_log`       | `id`、`limit?`（默认 40）、`after?`（消息 id）、`role?`   | 消息列表：`role`、`at`、`text`（单条截到 2000 字）、`tools`、失败标记；被截断时给「还有更多，用 after 取」               | read | 否       |
 | `panel_get_changes`   | `id`、`path?`                                             | 改动文件与增删行数、`worktree` 状态；给了 `path` 时附 diff（截到 8000 字），非 git 仓库要明说                            | read | 否       |
 | `panel_get_usage`     | `id`                                                      | `RunUsage` 原样：`total`、`own`、`sub`、`tps`、`runTps`、`children`、`helpers`                                           | read | 否       |
-| `panel_get_settings`  | 无                                                        | 白名单字段（`backgroundLimit`、`gitPolicy`、`requireToken`、语言、上下文阈值…）；**绝不返回密钥、访问令牌、账号信息**         | read | 否       |
+| `panel_get_settings`  | 无                                                        | 白名单字段（`backgroundLimit`、`gitPolicy`、`requireToken`、语言、上下文阈值…）；**绝不返回密钥、访问令牌、账号信息**    | read | 否       |
 | `panel_list_projects` | `q?`                                                      | `id`、`name`、`path`、`branch`、worktree 数、`gitPolicy`、活动对话数                                                     | read | 否       |
 
 ### 低风险写（write，第一阶段只做前四个）

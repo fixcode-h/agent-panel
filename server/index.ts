@@ -4,7 +4,6 @@ import './lang.ts'
 import { CLI_CONFIG_DIR, loadUserClis, userClis } from './cli-config.ts'
 import { asksApi } from './asks.ts'
 import { Hono, type Context } from 'hono'
-import { bodyLimit } from 'hono/body-limit'
 import { serve } from '@hono/node-server'
 import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -31,7 +30,15 @@ import { SummaryConfig, SummaryRecord, type SummaryReport } from '../shared/summ
 import { LessonDraftRecord, LessonDraftInput } from '../shared/lesson-draft.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
-import { createCollection, DATA_DIR, dataPath, migrateDataDir, readJson, writeJsonAtomic } from './store.ts'
+import {
+  createCollection,
+  DATA_DIR,
+  dataPath,
+  migrateDataDir,
+  readJson,
+  sweepStaleTmp,
+  writeJsonAtomic,
+} from './store.ts'
 import { serveDist, serveIndex } from './static.ts'
 import { dataApi } from './data.ts'
 import { cleanupApi, sweepTaskInfoOf } from './cleanup.ts'
@@ -136,6 +143,8 @@ import { detectShells, currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
 import { staleProjectWrite } from './project-lock.ts'
 import { acquireInstanceLock } from './instance-lock.ts'
+import { installHttpGuards } from './http-guards.ts'
+import { cleanupItemTrash, itemTrashRoutes, trashItem } from './item-trash.ts'
 import { LESSON_REVIEW_LANG, parseLessonReview } from '../shared/lesson-review.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
@@ -637,7 +646,10 @@ app.delete('/agents/:id', async (c) => {
   if (isCoreAgent((await agents.get(id)) ?? undefined)) return bad(c, t('必备角色不能删除'), 409)
   const err = agentDeleteError(id, await workflows.list())
   if (err) return bad(c, err, 409)
-  if (!(await agents.remove(id))) return bad(c, t('角色不存在'), 404)
+  const agent = await agents.get(id)
+  if (!agent) return bad(c, t('角色不存在'), 404)
+  await trashItem('agent', agent)
+  await agents.remove(id)
   // 引入了它的 Agent 去掉这条引入
   for (const a of await agents.list())
     if (a.includes.includes(id)) await agents.update(a.id, { ...a, includes: a.includes.filter((x) => x !== id) })
@@ -663,7 +675,11 @@ app.delete('/workflows/:id', async (c) => {
   const id = c.req.param('id')
   const err = workflowDeleteError(id, await projectCategories.list(), await projects.list())
   if (err) return bad(c, err, 409)
-  return (await workflows.remove(id)) ? c.body(null, 204) : bad(c, t('工作流不存在'), 404)
+  const wf = await workflows.get(id)
+  if (!wf) return bad(c, t('工作流不存在'), 404)
+  await trashItem('workflow', wf)
+  await workflows.remove(id)
+  return c.body(null, 204)
 })
 
 // ---- 项目分类 ----
@@ -858,11 +874,20 @@ app.get('/projects/:id/panel-source', async (c) => {
 
 app.delete('/projects/:id', async (c) => {
   const id = c.req.param('id')
-  const repo = (await projects.get(id))?.path
-  if (!(await projects.remove(id))) return bad(c, t('项目不存在'), 404)
-  await tasks.removeByProject(id, repo)
+  const project = await projects.get(id)
+  if (!project) return bad(c, t('项目不存在'), 404)
+  // 项目和它的对话一起进回收站：保留期内能整个恢复（以前对话直接物理删除，删错项目就全没了）
+  const taskIds = await tasks.trashByProject(id)
+  await trashItem('project', project, taskIds)
+  await projects.remove(id)
   return c.body(null, 204)
 })
+
+// 角色、工作流、项目的回收站（对话的回收站在 /tasks/trash）
+app.route(
+  '/trash/items',
+  itemTrashRoutes({ agents, workflows, projects, restoreTasks: (ids) => tasks.restoreTasks(ids) }),
+)
 
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
@@ -874,6 +899,9 @@ const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordL
  */
 function runCleanup() {
   void tasks.cleanupTrash().catch((e: Error) => log.error('tasks', '回收站清理出错', { error: e.message }))
+  void cleanupItemTrash().catch((e: Error) =>
+    log.error('trash', '角色 / 工作流 / 项目回收站清理出错', { error: e.message }),
+  )
   void tasks
     .reapSettledClis()
     .catch((e: Error) => log.warn('exec', '兜底回收已收口任务的 CLI 出错', { error: e.message }))
@@ -1002,7 +1030,13 @@ app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----
 app.route('/uploads/raw', uploadsRawApi())
-app.route('/uploads', uploadsApi({ dirs: async () => (await projects.list()).map((p) => p.path).filter(Boolean) }))
+app.route(
+  '/uploads',
+  uploadsApi({
+    dirs: async () => (await projects.list()).map((p) => p.path).filter(Boolean),
+    known: (file) => tasks.hasAttachment(file),
+  }),
+)
 // 文件浏览页：项目里的文件树、内容搜索、看单个文件
 app.route('/project-files', filesApi({ projects }))
 app.get('/projects/:id/files', async (c) => {
@@ -1138,31 +1172,7 @@ root.onError((e, c) => {
   log.error('http', `${c.req.method} ${c.req.path} 出错`, e)
   return c.json({ error: e.message || t('服务出错') }, 500)
 })
-// 不许被别的网页用 iframe 嵌进去：令牌默认关着时，任意网页都能嵌入面板诱导用户点「运行」「删除」（点击劫持）
-root.use('*', async (c, next) => {
-  await next()
-  c.header('X-Frame-Options', 'DENY')
-  c.header('Content-Security-Policy', "frame-ancestors 'none'")
-  c.header('X-Content-Type-Options', 'nosniff')
-})
-// 请求体上限：以前整段读进内存再检查，超大的请求能把面板内存吃光。
-// 附件上传 base64 后最大约 67MB；数据备份、对话导入可能很大，单独放宽；扩展和 MCP 只传图片和短文本
-const MB = 1024 * 1024
-const limitFor = (p: string) =>
-  p === '/api/data/import' || p === '/api/tasks/import'
-    ? 2048 * MB
-    : p.startsWith('/api/bridge/')
-      ? 40 * MB
-      : p.startsWith('/api/mcp/') || p.startsWith('/api/web-search/')
-        ? 16 * MB
-        : 100 * MB
-root.use('/api/*', (c, next) =>
-  bodyLimit({
-    maxSize: limitFor(c.req.path),
-    onError: (cc) =>
-      cc.json({ error: t('请求太大，超过了 {mb} MB', { mb: Math.round(limitFor(cc.req.path) / MB) }) }, 413),
-  })(c, next),
-)
+installHttpGuards(root)
 root.use('*', tokenGuard)
 root.route('/', app)
 // 生产模式下直接托管前端构建产物
@@ -1211,6 +1221,11 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   setInterval(runCleanup, 60 * 60_000).unref()
   // 上次关掉、崩溃时没来得及删的面板 MCP 条目（项目 .mcp.json 里的 agent-panel、panel-xxxx）：启动时清一遍
   void sweepProjectsPanelMcp()
+  // 上次崩溃时写到一半的 JSON 临时文件：不清的话数据目录里会越积越多
+  void sweepStaleTmp().then(
+    (files) => files.length && log.info('server', '清掉了上次留下的临时文件', { files: files.length }),
+    (e) => log.warn('server', `清理临时文件失败：${(e as Error).message}`),
+  )
   void applyRemote()
   void getSettings().then(applyPresenceReclaim)
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
@@ -1241,6 +1256,11 @@ async function shutdown(code = 0) {
   await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
   // 不在任务里的 CLI（AI 创建、设计、文档、模型补全、检测命令）也要一起结束
   killAllProcesses()
+  // 停任务时写进对话的最后几条还可能在 400ms 合并窗口里：等它们落盘再退出，最多等 3 秒（盘卡住也要能退）
+  await Promise.race([
+    tasks.flush().catch((e) => log.error('server', `退出前写对话记录失败：${(e as Error).message}`)),
+    new Promise((r) => setTimeout(r, 3000)),
+  ])
   process.exit(code)
 }
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => void shutdown())

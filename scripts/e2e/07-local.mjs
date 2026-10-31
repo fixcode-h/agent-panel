@@ -1478,4 +1478,50 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     for (const p of created) await call('DELETE', `/projects/${p.id}`)
   }
   step('项目分组：默认按添加时间排序，拖拽后的顺序持久化，重复 / 不存在 / 漏项的重排请求被拒绝')
+
+  // 角色、工作流、项目的回收站：删掉的能按原 id 找回来；项目连同它的对话一起恢复
+  {
+    const role = await call('POST', '/agents', { name: '回收站测试角色', instructions: '测试' })
+    await call('DELETE', `/agents/${role.id}`)
+    let items = await call('GET', '/trash/items')
+    assert.ok(
+      items.some((x) => x.kind === 'agent' && x.id === role.id),
+      '删掉的角色进了回收站',
+    )
+    await call('POST', `/trash/items/agent/${role.id}/restore`, {})
+    assert.ok(
+      (await call('GET', '/agents')).some((x) => x.id === role.id),
+      '按原 id 恢复',
+    )
+    await call('DELETE', `/agents/${role.id}`)
+
+    const dir = path.join(tmp, 'trash-project')
+    mkdirSync(dir, { recursive: true })
+    const proj = await call('POST', '/projects', {
+      name: '回收站测试项目',
+      description: '',
+      path: dir,
+      categoryId: '',
+      workflowId: wf.id,
+    })
+    const talk = await call('POST', '/tasks', { projectId: proj.id, mode: 'chat', agentId: C.id, prompt: '你好' })
+    await waitDone(talk.id)
+    await call('DELETE', `/projects/${proj.id}`)
+    assert.ok(
+      (await call('GET', '/tasks/trash')).some((x) => x.id === talk.id),
+      '项目里的对话进了对话回收站，不是直接删掉',
+    )
+    items = await call('GET', '/trash/items')
+    assert.equal(items.find((x) => x.kind === 'project' && x.id === proj.id)?.tasks, 1)
+    const r = await call('POST', `/trash/items/project/${proj.id}/restore`, {})
+    assert.equal(r.tasks, 1)
+    assert.ok(
+      (await call('GET', '/projects')).some((x) => x.id === proj.id),
+      '项目回来了',
+    )
+    const back = await call('GET', `/tasks/${talk.id}`)
+    assert.ok(!back.deletedAt, '对话跟着项目一起回来了')
+    await call('DELETE', `/projects/${proj.id}`)
+  }
+  step('回收站：删掉的角色、项目能按原 id 恢复，项目里的对话跟着一起回来')
 })

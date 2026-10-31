@@ -33,6 +33,9 @@ const COMPONENT = /^[A-Z]/
 
 function declName(node) {
   if (node.type === 'FunctionDeclaration') return node.id?.name
+  // `const X = lazy(() => import(...))` 只是按需加载的壳，真正的组件定义在别的文件里：不能拿它覆盖掉
+  if (node.type === 'VariableDeclarator' && node.init?.type === 'CallExpression' && node.init.callee?.name === 'lazy')
+    return undefined
   if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier') return node.id.name
   return undefined
 }

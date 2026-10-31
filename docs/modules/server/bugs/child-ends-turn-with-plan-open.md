@@ -1,6 +1,6 @@
 # 子对话说一句打算就收尾，一直停在等下一条消息
 
-- 状态：已修复（e2e `04-subagents`「子对话计划做一半就收尾……」、`shared/task-idle-ask.test.ts` 通过）
+- 状态：已修复（e2e `09-subagent-runtime`「子对话计划做一半就收尾……」、`shared/task-idle-ask.test.ts` 通过）
 - 症状：子对话回一句「现在启动全量界面检查（后台），同时跑 lint。」之类的打算就结束这一轮，没有调用任何工具；计划停在一半，子对话一直「等待下一条消息」，父对话那一步一直在等它
 - 入口：`server/tasks.ts` 的 `settleChildTurn` / `settleChildWorktree` → `nudgePlan`；`shared/task.ts` 的 `planStalled`；`shared/engine.ts` 的「计划怎么维护」
 - 根因类型：模型提前结束回合（CLI 正常报 result、没有工具调用），面板对「计划没做完就收尾」只上报父对话，没有自己的兜底
@@ -30,7 +30,7 @@
 
 ## 防线
 
-- `scripts/e2e/04-subagents.mjs`：「子对话计划做一半就收尾：面板马上推它接着做，推过仍不动就上报父对话，不来回推」。
+- `scripts/e2e/09-subagent-runtime.mjs`：「子对话计划做一半就收尾：面板马上推它接着做，推过仍不动就上报父对话，不来回推」。
 - `shared/task-idle-ask.test.ts`：`planStalled` 的判定（含只剩合回不算停住）。
 
 ## 后续（2026-10-30）

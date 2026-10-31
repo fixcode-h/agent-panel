@@ -18,7 +18,7 @@ import {
   type Workflow,
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
-import { getLang, t } from './i18n.ts'
+import { t, uiLocale } from './i18n.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
 
@@ -1263,7 +1263,7 @@ export function timeAgo(iso: string, now = Date.now()) {
   if (s < 3600) return t('{n} 分钟前', { n: Math.floor(s / 60) })
   if (s < 86400) return t('{n} 小时前', { n: Math.floor(s / 3600) })
   if (s < 86400 * 30) return t('{n} 天前', { n: Math.floor(s / 86400) })
-  return new Date(iso).toLocaleDateString(getLang() === 'en' ? 'en-US' : 'zh-CN')
+  return new Date(iso).toLocaleDateString(uiLocale())
 }
 
 /** 多久没有任何新输出算慢（黄）、算可能卡住（红）：模型一步就要几十秒，阈值留足 */
@@ -1831,7 +1831,7 @@ export function groupByDay<T>(list: T[], at: (x: T) => string, now = new Date())
   const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
   const today = dayStart(now)
   const yesterday = dayStart(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
-  const loc = getLang() === 'en' ? 'en-US' : 'zh-CN'
+  const loc = uiLocale()
   const groups = new Map<string, { key: string; label: string; items: T[] }>()
   for (const x of list) {
     const d = new Date(at(x))

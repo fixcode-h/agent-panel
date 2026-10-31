@@ -89,7 +89,8 @@ export function useBrowserTabs(fast = false) {
         .catch(() => {})
     load()
     // 安装说明打开着时问得勤一些，装好扩展后马上能看到连上
-    const timer = setInterval(load, fast ? 1500 : 4000)
+    // 标签页在后台时不问
+    const timer = setInterval(() => !document.hidden && load(), fast ? 1500 : 4000)
     return () => {
       alive = false
       clearInterval(timer)

@@ -1,6 +1,6 @@
 import type { PeerKind, Task, TaskJob, TaskMessage, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL, topSteps } from '@shared/flow'
-import { getLang, t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { stepMs, timeAgo } from '@shared/task'
 import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/task-export'
@@ -544,7 +544,7 @@ export function stepDuration(
 export function fmtClock(iso: string) {
   if (!iso) return ''
   const d = new Date(iso)
-  const locale = getLang() === 'en' ? 'en-US' : 'zh-CN'
+  const locale = uiLocale()
   const time = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
   return d.toDateString() === new Date().toDateString()
     ? time

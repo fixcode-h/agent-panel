@@ -76,17 +76,17 @@ npm run test:e2e:wsl         # 涉及 CLI 参数/输出解析的改动，在 WSL
 
 ## 落地改动
 
-| 位置                                      | 改了什么                                                                     |
-| ----------------------------------------- | ---------------------------------------------------------------------------- |
-| `shared/accounts.ts`（`CliAuth`）         | 新增 `loginAlreadyLoggedIn` 字段，默认 `false`                               |
-| `shared/clis.ts`                          | 两个内置定义（Claude Code、Codex）显式补 `loginAlreadyLoggedIn: false`       |
-| `shared/clis/commandcode.json`            | `auth.loginAlreadyLoggedIn: true`                                            |
-| `server/accounts.ts`                      | 登录判定抽成纯函数 `loginOutcome`，失败文案抽成 `loginFailure`（`no-credential` 和 `unchanged` 分开）；`take()` 存 `job.output` 前先 `stripAnsi` |
-| `shared/ansi.ts`                          | 新增 `stripAnsi`：清 SGR、其他 CSI（含 8 位引导）、OSC 和 `\r`，普通方括号文本不动          |
-| `server/accounts.test.ts`                 | `loginOutcome` 各分支（成功 / 退出码非 0 / 无凭据 / 主动停止 / 字段未开启）与 `loginFailure` 的文案分支 |
-| `shared/ansi.test.ts`                     | 颜色、加粗、暗色、8 位 CSI、OSC、混排、普通方括号不被改                                     |
-| `scripts/fake-cli`                        | `FAKE_AUTH_ALREADY` 模拟「已登录时 `login` 输出 `Already logged in` 并退出 0」；`FAKE_AUTH_NO_CREDENTIALS` 模拟「退出码 0 但没写凭据」 |
-| `scripts/e2e/14-accounts.mjs`              | 端到端走两条真实路径：已登录再登录断言 `done` 且输出无 `\x1b`；无凭据断言 `failed` 且文案是「没有找到登录凭据」 |
+| 位置                              | 改了什么                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `shared/accounts.ts`（`CliAuth`） | 新增 `loginAlreadyLoggedIn` 字段，默认 `false`                                                                                                   |
+| `shared/clis.ts`                  | 两个内置定义（Claude Code、Codex）显式补 `loginAlreadyLoggedIn: false`                                                                           |
+| `shared/clis/commandcode.json`    | `auth.loginAlreadyLoggedIn: true`                                                                                                                |
+| `server/accounts.ts`              | 登录判定抽成纯函数 `loginOutcome`，失败文案抽成 `loginFailure`（`no-credential` 和 `unchanged` 分开）；`take()` 存 `job.output` 前先 `stripAnsi` |
+| `shared/ansi.ts`                  | 新增 `stripAnsi`：清 SGR、其他 CSI（含 8 位引导）、OSC 和 `\r`，普通方括号文本不动                                                               |
+| `server/accounts.test.ts`         | `loginOutcome` 各分支（成功 / 退出码非 0 / 无凭据 / 主动停止 / 字段未开启）与 `loginFailure` 的文案分支                                          |
+| `shared/ansi.test.ts`             | 颜色、加粗、暗色、8 位 CSI、OSC、混排、普通方括号不被改                                                                                          |
+| `scripts/fake-cli`                | `FAKE_AUTH_ALREADY` 模拟「已登录时 `login` 输出 `Already logged in` 并退出 0」；`FAKE_AUTH_NO_CREDENTIALS` 模拟「退出码 0 但没写凭据」           |
+| `scripts/e2e/14-accounts.mjs`     | 端到端走两条真实路径：已登录再登录断言 `done` 且输出无 `\x1b`；无凭据断言 `failed` 且文案是「没有找到登录凭据」                                  |
 
 ## 待确认
 

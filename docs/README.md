@@ -10,7 +10,7 @@
 ## 快速开始
 
 ```bash
-npm install
+npm ci             # 按 package-lock.json 装依赖，不改锁文件
 npm run dev        # 前端 http://localhost:5173，后端 http://127.0.0.1:8787
 npm run typecheck  # 类型检查 + 漏翻检查
 npm run lint       # oxlint、Prettier 格式检查、规则检查、密钥扫描
@@ -19,7 +19,7 @@ npm run build      # 正式版前端（在线演示版用 npx vite build --mode 
 ```
 
 端到端测试需要 macOS / Linux；在 Windows 上放到 WSL（Ubuntu 24.04）里跑：`npm run test:e2e:wsl`（等同于在 WSL 里 `npm run test:e2e`）。
-界面检查先 `npx vite build --mode demo`，再 `node scripts/ui-check.mjs`。出包用 `npm run package`，产物在 `release/`。
+界面检查先 `npx vite build --mode demo`，再 `node scripts/ui-check.mjs`；第一次跑之前装一次 Playwright 的浏览器：`npx playwright install chromium`。出包用 `npm run package`，产物在 `release/`。
 
 ## 文档索引
 
@@ -43,6 +43,17 @@ npm run build      # 正式版前端（在线演示版用 npx vite build --mode 
 | [lessons/README.md](lessons/README.md)                         | 项目教训：返工过的地方整理成按文件取用的规则                          |
 | [adr/README.md](adr/README.md)                                 | 架构决策记录（ADR）：为什么这么定、放弃了什么                         |
 | [review/2026-10-backlog.md](review/2026-10-backlog.md)         | 优化与补充清单：按优先级排好、可逐项勾选的待办                        |
+| [openspec/](openspec/)                                         | OpenSpec 变更记录（过程文档，不是现行规范，见下）                     |
+
+## openspec/ 的用途和现状
+
+`openspec/` 是试用 OpenSpec「提案 → 设计 → 任务 → 验收」流程时留下的变更记录，只记过程，不当长期规范读；现行结论以 ADR、模块文档和代码为准。现状（2026-10-31 核对）：
+
+- `changes/role-composition-and-dispatch/`：已实施（2026-10-28），落地结论见 [ADR 0023](adr/0023-role-layers-and-triage.md)。
+- `changes/test-governance-budget-and-parallel-safety/`：收益最大的三件已按 [ADR 0024](adr/0024-test-output-retry-budget.md)（预算部分后来被 [ADR 0031](adr/0031-test-count-report-not-cap.md) 替代）落地，其余任务没做、暂停，`acceptance.md` 里「待验证」的条目没有继续回填。
+- `specs/` 和 `changes/archive/` 还是空的：没有走完归档，也没有沉淀出 spec。
+
+新改动不需要走 OpenSpec；要记「为什么这么定」写 ADR，要记模块现状写模块文档。
 
 ## 文档怎么写
 

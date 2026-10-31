@@ -1,3 +1,4 @@
+import * as D from '@radix-ui/react-dialog'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { ArrowLeft, Check, Download, FileInput, LayoutGrid, Loader2, Network, RefreshCw, Search } from 'lucide-react'
@@ -15,7 +16,7 @@ import {
   type TemplateQuery,
 } from '@shared/comfy-templates'
 import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
-import { t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
@@ -99,123 +100,131 @@ export function TemplateStore({
 
   // 窄屏整页一起滚：分类、筛选条和列表都按内容高度排，筛选条不会把列表挤没、贴到窗口底边；宽屏才分栏各自滚
   return (
-    <div className="fixed inset-0 z-30 flex flex-col overflow-y-auto bg-bg text-fg lg:overflow-hidden">
-      <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3 md:px-6">
-        <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-2 text-heading font-semibold">
-            <LayoutGrid className="h-4 w-4 text-accent-text" />
-            {t('模板商店')}
-          </h1>
-          <p className="mt-0.5 text-footnote text-subtle">
-            {t('从面板内置和 ComfyUI 官方模板里挑一个，看节点图和依赖；缺的模型可以直接下载。')}
-          </p>
-        </div>
-        <Button size="sm" variant="ghost" onClick={onImport}>
-          <FileInput className="h-3.5 w-3.5" />
-          {t('导入 ComfyUI 工作流')}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => void refresh()} disabled={refreshing}>
-          {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          {t('刷新官方模板')}
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onClose}>
-          <ArrowLeft className="h-3.5 w-3.5" />
-          {t('返回工作流')}
-        </Button>
-      </header>
-
-      <div className="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink lg:flex-row">
-        <aside className="flex max-h-[34vh] shrink-0 flex-col gap-0.5 overflow-y-auto border-b p-3 lg:max-h-none lg:w-[188px] lg:border-r lg:border-b-0">
-          {categories.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => {
-                setQuery({ ...query, category: c.id })
-                setSelected('')
-              }}
-              aria-current={query.category === c.id}
-              className={cn(
-                'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-body',
-                query.category === c.id ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60',
-              )}
-            >
-              <span className="min-w-0 flex-1 truncate">{c.title}</span>
-              <span className="font-mono text-caption text-subtle">{count(c.id)}</span>
-            </button>
-          ))}
-          <p className="mt-auto px-2 pt-3 text-caption leading-relaxed text-subtle">
-            {catalog?.cached
-              ? t('官方列表更新于 {time}', { time: new Date(catalog.updatedAt).toLocaleString() })
-              : t('离线快照：联网后点「刷新官方模板」拿完整列表')}
-          </p>
-        </aside>
-
-        <section className="flex flex-col lg:min-h-0 lg:flex-1">
-          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
-            <div className="relative min-w-[180px] flex-1">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-subtle" />
-              <Input
-                aria-label={t('搜索模板')}
-                value={query.query}
-                onChange={(e) => setQuery({ ...query, query: e.target.value })}
-                placeholder={t('搜索模板、模型或标签')}
-                className="pl-8"
-              />
+    // 全屏的一层：用 Radix Dialog 拿到焦点陷阱和 Esc 关闭，Tab 不会跑到下面被盖住的页面里
+    <D.Root open onOpenChange={(o) => !o && onClose()}>
+      <D.Portal>
+        <D.Content
+          aria-describedby={undefined}
+          className="fixed inset-0 z-30 flex flex-col overflow-y-auto bg-bg text-fg outline-none lg:overflow-hidden"
+        >
+          <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3 md:px-6">
+            <div className="min-w-0 flex-1">
+              <D.Title className="flex items-center gap-2 text-heading font-semibold">
+                <LayoutGrid className="h-4 w-4 text-accent-text" />
+                {t('模板商店')}
+              </D.Title>
+              <p className="mt-0.5 text-footnote text-subtle">
+                {t('从面板内置和 ComfyUI 官方模板里挑一个，看节点图和依赖；缺的模型可以直接下载。')}
+              </p>
             </div>
-            <Select
-              aria-label={t('来源')}
-              value={query.source}
-              onChange={(e) => setQuery({ ...query, source: e.target.value as TemplateQuery['source'] })}
-              options={TEMPLATE_SOURCES.map((x) => ({ value: x.id, label: x.title }))}
-            />
-            <Select
-              aria-label={t('依赖状态')}
-              value={query.ready}
-              onChange={(e) => setQuery({ ...query, ready: e.target.value as TemplateQuery['ready'] })}
-              options={TEMPLATE_READY.map((x) => ({ value: x.id, label: x.title }))}
-            />
-            <Select
-              aria-label={t('排序')}
-              value={query.sort}
-              onChange={(e) => setQuery({ ...query, sort: e.target.value as TemplateQuery['sort'] })}
-              options={TEMPLATE_SORTS.map((x) => ({ value: x.id, label: x.title }))}
-            />
-            <span className="text-footnote text-subtle">{t('{n} 个模板', { n: list.length })}</span>
-          </div>
+            <Button size="sm" variant="ghost" onClick={onImport}>
+              <FileInput className="h-3.5 w-3.5" />
+              {t('导入 ComfyUI 工作流')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => void refresh()} disabled={refreshing}>
+              {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              {t('刷新官方模板')}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={onClose}>
+              <ArrowLeft className="h-3.5 w-3.5" />
+              {t('返回工作流')}
+            </Button>
+          </header>
 
-          <div className="p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-            {selected ? (
-              <TemplateDetail
-                name={selected}
-                kind={kind}
-                status={status}
-                onBack={() => setSelected('')}
-                onAdded={onAdded}
-              />
-            ) : loading ? (
-              <div className="grid place-items-center py-20 text-subtle">
-                <Loader2 className="h-5 w-5 animate-spin" />
+          <div className="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink lg:flex-row">
+            <aside className="flex max-h-[34vh] shrink-0 flex-col gap-0.5 overflow-y-auto border-b p-3 lg:max-h-none lg:w-[188px] lg:border-r lg:border-b-0">
+              {categories.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => {
+                    setQuery({ ...query, category: c.id })
+                    setSelected('')
+                  }}
+                  aria-current={query.category === c.id}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-body',
+                    query.category === c.id ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60',
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                  <span className="font-mono text-caption text-subtle">{count(c.id)}</span>
+                </button>
+              ))}
+              <p className="mt-auto px-2 pt-3 text-caption leading-relaxed text-subtle">
+                {catalog?.cached
+                  ? t('官方列表更新于 {time}', { time: new Date(catalog.updatedAt).toLocaleString(uiLocale()) })
+                  : t('离线快照：联网后点「刷新官方模板」拿完整列表')}
+              </p>
+            </aside>
+
+            <section className="flex flex-col lg:min-h-0 lg:flex-1">
+              <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
+                <div className="relative min-w-[180px] flex-1">
+                  <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-subtle" />
+                  <Input
+                    aria-label={t('搜索模板')}
+                    value={query.query}
+                    onChange={(e) => setQuery({ ...query, query: e.target.value })}
+                    placeholder={t('搜索模板、模型或标签')}
+                    className="pl-8"
+                  />
+                </div>
+                <Select
+                  aria-label={t('来源')}
+                  value={query.source}
+                  onChange={(e) => setQuery({ ...query, source: e.target.value as TemplateQuery['source'] })}
+                  options={TEMPLATE_SOURCES.map((x) => ({ value: x.id, label: x.title }))}
+                />
+                <Select
+                  aria-label={t('依赖状态')}
+                  value={query.ready}
+                  onChange={(e) => setQuery({ ...query, ready: e.target.value as TemplateQuery['ready'] })}
+                  options={TEMPLATE_READY.map((x) => ({ value: x.id, label: x.title }))}
+                />
+                <Select
+                  aria-label={t('排序')}
+                  value={query.sort}
+                  onChange={(e) => setQuery({ ...query, sort: e.target.value as TemplateQuery['sort'] })}
+                  options={TEMPLATE_SORTS.map((x) => ({ value: x.id, label: x.title }))}
+                />
+                <span className="text-footnote text-subtle">{t('{n} 个模板', { n: list.length })}</span>
               </div>
-            ) : error ? (
-              <div className="rounded-xl bg-danger/8 p-4 text-body text-danger">
-                <p>{error}</p>
-                <Button size="sm" variant="ghost" className="mt-2" onClick={() => void load()}>
-                  {t('重试')}
-                </Button>
+
+              <div className="p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                {selected ? (
+                  <TemplateDetail
+                    name={selected}
+                    kind={kind}
+                    status={status}
+                    onBack={() => setSelected('')}
+                    onAdded={onAdded}
+                  />
+                ) : loading ? (
+                  <div className="grid place-items-center py-20 text-subtle">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  </div>
+                ) : error ? (
+                  <div className="rounded-xl bg-danger/8 p-4 text-body text-danger">
+                    <p>{error}</p>
+                    <Button size="sm" variant="ghost" className="mt-2" onClick={() => void load()}>
+                      {t('重试')}
+                    </Button>
+                  </div>
+                ) : !list.length ? (
+                  <p className="py-16 text-center text-body text-subtle">{t('没有符合条件的模板')}</p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                    {list.map((m) => (
+                      <TemplateCard key={m.name} item={m} onOpen={() => setSelected(m.name)} />
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : !list.length ? (
-              <p className="py-16 text-center text-body text-subtle">{t('没有符合条件的模板')}</p>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {list.map((m) => (
-                  <TemplateCard key={m.name} item={m} onOpen={() => setSelected(m.name)} />
-                ))}
-              </div>
-            )}
+            </section>
           </div>
-        </section>
-      </div>
-    </div>
+        </D.Content>
+      </D.Portal>
+    </D.Root>
   )
 }
 

@@ -55,6 +55,7 @@ import { AgentAvatar } from './AgentAvatar'
 import { CategoryPicker } from './CategoryPicker'
 import { CommandPreview } from './CommandPreview'
 import { t } from '@shared/i18n'
+import { TRASH_RETENTION_DAYS } from '@shared/task'
 import {
   MAX_INCLUDE_DEPTH,
   composeRole,
@@ -957,7 +958,7 @@ export function AgentDetail({
         open={deleting}
         onOpenChange={setDeleting}
         title={t('删除「{name}」？', { name: agent.name })}
-        description={t('删除后无法恢复。')}
+        description={t('删除后放进回收站，{days} 天内可以在「设置 → 数据」里恢复。', { days: TRASH_RETENTION_DAYS })}
         blocked={
           usedIn.length
             ? t('它正在被工作流 {names} 使用，需要先从这些工作流中移除才能删除。', {

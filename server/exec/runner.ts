@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { detectVcs } from '../projects-analyze.ts'
 import { projectDocRoot } from '../doc-root.ts'
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import {
@@ -52,7 +52,7 @@ import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { attachmentAddDirs, placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
-import { CACHE_DIR, HANDOFF_DIR } from '../store.ts'
+import { CACHE_DIR, HANDOFF_DIR, writeFileOnce } from '../store.ts'
 import { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 
@@ -2652,12 +2652,7 @@ async function searchExcludeEnv(ctx: RealContext): Promise<{ key: string; value:
   // 按内容起名、已有就不再写：并行的几个 Agent 同时启动时，rg 不会读到写了一半的文件
   const file = path.join(CACHE_DIR, 'rg', `${createHash('sha1').update(body).digest('hex').slice(0, 16)}.rc`)
   try {
-    if (!existsSync(file)) {
-      await mkdir(path.dirname(file), { recursive: true })
-      const tmp = `${file}.${process.pid}.tmp`
-      await writeFile(tmp, body)
-      await rename(tmp, file)
-    }
+    await writeFileOnce(file, body)
   } catch (e) {
     log.warn('agent', '写搜索排除配置失败', e)
     return []

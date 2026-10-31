@@ -6,7 +6,7 @@ import { ENV_LABEL } from '@shared/test-steps'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 
 /** 一条推荐：当前值 → 推荐值，apply 只改草稿（保存项目设置后才生效） */
 export interface Rec {
@@ -461,7 +461,7 @@ export function ProjectInitPanel({
                 {fromDir
                   ? t('目录已经初始化过')
                   : draft.initializedAt
-                    ? t('已于 {date} 初始化', { date: new Date(draft.initializedAt).toLocaleString() })
+                    ? t('已于 {date} 初始化', { date: new Date(draft.initializedAt).toLocaleString(uiLocale()) })
                     : t('这个项目还没有初始化')}
               </span>
               <span className="text-footnote text-subtle">

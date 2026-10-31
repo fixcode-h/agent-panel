@@ -31,7 +31,7 @@ ADR 0018 把「很吃资源的步骤」（e2e）挪到了合并后由父对话�
 | `shared/test-steps.ts` `stepApplies`                        | 匹配判定的唯一实现；改成 `always` 直接为真、`changed` 才看 globs、`parent` 在父对话侧为真      |
 | `shared/test-steps.ts` `verifyBlock` / `testStepsBlock`     | 提示词的唯一出口；新增 `CHILD_INCREMENTAL_RULE` 和 `FLAKY_TEST_RULE`                           |
 | `server/parent-tests.ts` `createParentTests`                | 合并后排队跑 `parent` 步骤的队列，这次原样复用（结果和耗时回传、失败退回子对话）               |
-| `scripts/ui-check.mjs`                                      | 已经支持按分片前缀筛选（`node scripts/ui-check.mjs 08-misc`），产物过期会直接失败           |
+| `scripts/ui-check.mjs`                                      | 已经支持按分片前缀筛选（`node scripts/ui-check.mjs 08-misc`），产物过期会直接失败              |
 | `scripts/ui/` 12 个分片                                     | 每个分片覆盖一页或一类组件，但「哪个源码属于哪个分片」只写在各自文件头的注释里，没有可读的映射 |
 
 ## 决策

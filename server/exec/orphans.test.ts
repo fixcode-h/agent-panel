@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import test from 'node:test'
+import test, { mock } from 'node:test'
 
 // 登记文件在 DATA_DIR 下，必须在 import 之前指到临时目录
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'orphans-data-'))
@@ -19,7 +20,23 @@ const {
   untrackCliProcess,
 } = await import('./orphans.ts')
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+/**
+ * 等子进程真的起来：spawn 事件在 exec 成功之后才发，这时 ps 看到的已经是它自己的命令行。
+ * 以前固定等 500–800ms，慢机器上不够、快机器上白等
+ */
+const started = (...cs: ChildProcess[]) => Promise.all(cs.map((c) => (c.pid ? once(c, 'spawn') : Promise.resolve())))
+/** 结束子进程并等它真的退出（被 SIGKILL 过的就只等 exit）：以前固定等 300ms 赌它退了 */
+const ended = (...cs: ChildProcess[]) =>
+  Promise.all(
+    cs.map((c) => {
+      if (c.exitCode !== null || c.signalCode !== null) return Promise.resolve()
+      const exit = once(c, 'exit')
+      try {
+        c.kill()
+      } catch {}
+      return exit
+    }),
+  )
 /** 每个实例一份登记文件，文件名就是面板 pid：本实例那份是 process.pid */
 const DIR = path.join(process.env.AGENT_PANEL_DATA!, 'run', 'cli-pids')
 const OWN = path.join(DIR, `${process.pid}.json`)
@@ -147,7 +164,7 @@ test('启动清理：只杀命令行还带面板痕迹的，pid 被复用的不�
   // 同一个 pid 现在跑的是用户自己起的 pi（模拟 pid 复用）：命令行没有面板痕迹
   const userPi = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' })
   assert.ok(panel.pid && userPi.pid)
-  await wait(500)
+  await started(panel, userPi)
 
   resetFiles()
   trackCliProcess(panel.pid!, `node -e setTimeout ${panelArg} ${panelJson}`, '/tmp')
@@ -164,12 +181,7 @@ test('启动清理：只杀命令行还带面板痕迹的，pid 被复用的不�
   assert.deepEqual(killed, [panel.pid], '只清理认得出是面板起的那个')
   assert.deepEqual(saved(), [], '确认退了才丢登记，不会下次再杀一遍')
 
-  for (const child of [panel, userPi]) {
-    try {
-      child.kill()
-    } catch {}
-  }
-  await wait(300)
+  await ended(panel, userPi)
 })
 
 test('登记按面板实例分账：一个实例退出不清掉另一个的登记', () => {
@@ -202,7 +214,7 @@ test('启动清理不碰另一个还活着的面板实例的 CLI；那个面板 
   const reusedPanel = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' })
   const orphanCli = spawnCli()
   assert.ok(otherPanel.pid && otherCli.pid && reusedPanel.pid && orphanCli.pid)
-  await wait(500)
+  await started(otherPanel, otherCli, reusedPanel, orphanCli)
 
   resetFiles()
   pushForeign(otherPanel.pid!, [{ pid: otherCli.pid, argv: `node -e setTimeout ${panelArg} ${panelJson}` }])
@@ -223,12 +235,7 @@ test('启动清理不碰另一个还活着的面板实例的 CLI；那个面板 
     '活实例的登记留着；遗留实例的登记清掉',
   )
 
-  for (const child of [otherPanel, otherCli, reusedPanel, orphanCli]) {
-    try {
-      child.kill()
-    } catch {}
-  }
-  await wait(300)
+  await ended(otherPanel, otherCli, reusedPanel, orphanCli)
   resetFiles()
 })
 
@@ -240,7 +247,7 @@ test('兜底回收：任务已收口、CLI 还活着的收掉；还在等下一�
   const done = spawnCli()
   const waiting = spawnCli()
   assert.ok(done.pid && waiting.pid)
-  await wait(500)
+  await started(done, waiting)
 
   resetFiles()
   trackCliProcess(done.pid!, `node -e setTimeout ${panelArg} ${panelJson}`, '/tmp', {
@@ -279,10 +286,7 @@ test('兜底回收：任务已收口、CLI 还活着的收掉；还在等下一�
     '回收掉的那条登记清掉；还在等下一句的留着',
   )
 
-  try {
-    waiting.kill()
-  } catch {}
-  await wait(300)
+  await ended(done, waiting)
   resetFiles()
 })
 
@@ -296,7 +300,7 @@ test('兜底回收不碰另一个活着的面板实例正在用的进程', async
     stdio: 'ignore',
   })
   assert.ok(otherPanel.pid && otherCli.pid)
-  await wait(500)
+  await started(otherPanel, otherCli)
 
   resetFiles()
   // 另一个实例的任务在本实例盘上看起来「已收口」（摘要落后），但它的面板还活着：不能从这边杀
@@ -316,12 +320,7 @@ test('兜底回收不碰另一个活着的面板实例正在用的进程', async
   assert.deepEqual(killed, [], '别的实例还活着，它的进程由它自己收')
   assert.deepEqual(reaped, [])
 
-  for (const child of [otherPanel, otherCli]) {
-    try {
-      child.kill()
-    } catch {}
-  }
-  await wait(300)
+  await ended(otherPanel, otherCli)
   resetFiles()
 })
 
@@ -332,14 +331,33 @@ test('启动清理：进程没结束的条目写回登记，不留成永久僵�
     stdio: 'ignore',
   })
   assert.ok(cli.pid)
-  await wait(500)
+  await started(cli)
 
   resetFiles()
   trackCliProcess(cli.pid, `node -e setTimeout ${panelArg} ${panelJson}`, '/tmp')
 
   // kill 什么都不做（模拟权限不足 / taskkill 失败）：进程还活着，登记不能丢
   const killed: number[] = []
-  await cleanStaleCliProcesses((pid) => killed.push(pid))
+  // 进程不退，清理会等满 KILL_SETTLE_MS（3.5 秒）才认定它没结束：这段换成假时钟推过去，不真等。
+  // 只假 setTimeout 和 Date：列进程的 ps 是真实子进程，靠 setImmediate 让出事件循环等它回来
+  mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
+  try {
+    const cleaning = cleanStaleCliProcesses((pid) => killed.push(pid))
+    const deadline = performance.now() + 10_000
+    // kill 发出之后清理同步走到等待那一步，排上第一个假定时器
+    while (!killed.length) {
+      assert.ok(performance.now() < deadline, '清理没走到发出停止那一步')
+      await new Promise((r) => setImmediate(r))
+    }
+    // 每次推 100ms（等待里的轮询间隔），让每轮的检查和下一个定时器接上；推过 3.5 秒上限就该放行
+    for (let i = 0; i < 40; i++) {
+      mock.timers.tick(100)
+      await new Promise((r) => setImmediate(r))
+    }
+    await cleaning
+  } finally {
+    mock.timers.reset()
+  }
 
   assert.deepEqual(killed, [cli.pid], '发出过停止')
   assert.deepEqual(
@@ -348,10 +366,7 @@ test('启动清理：进程没结束的条目写回登记，不留成永久僵�
     '没结束的进程要留在登记里，下次启动还能认出来',
   )
 
-  try {
-    cli.kill()
-  } catch {}
-  await wait(300)
+  await ended(cli)
   resetFiles()
 })
 
@@ -368,7 +383,8 @@ test('兜底回收不改写另一个活实例的登记文件：它自己清（R1
   // 已经退出的进程：本实例会想把它从登记里清掉
   const dead = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1)'], { stdio: 'ignore' })
   assert.ok(otherPanel.pid && otherCli.pid && dead.pid)
-  await wait(800)
+  // dead 要真的退出并被回收（pid 查不到了），本实例才会想清它那条
+  await Promise.all([started(otherPanel, otherCli), once(dead, 'exit')])
 
   resetFiles()
   pushForeign(otherPanel.pid!, [
@@ -389,12 +405,7 @@ test('兜底回收不改写另一个活实例的登记文件：它自己清（R1
     '活实例的文件原样保留：已死那条由它自己清，本实例不能读-改-写',
   )
 
-  for (const child of [otherPanel, otherCli]) {
-    try {
-      child.kill()
-    } catch {}
-  }
-  await wait(300)
+  await ended(otherPanel, otherCli)
   resetFiles()
 })
 
@@ -408,7 +419,7 @@ test('收尾后按任务回收：只动这个任务名下的进程', async () =>
     stdio: 'ignore',
   })
   assert.ok(mine.pid && other.pid)
-  await wait(500)
+  await started(mine, other)
 
   resetFiles()
   trackCliProcess(mine.pid!, `node -e setTimeout ${panelArg} ${panelJson}`, '/tmp', {
@@ -434,9 +445,6 @@ test('收尾后按任务回收：只动这个任务名下的进程', async () =>
     '兄弟对话的进程和登记都不能动',
   )
 
-  try {
-    other.kill()
-  } catch {}
-  await wait(300)
+  await ended(mine, other)
   resetFiles()
 })

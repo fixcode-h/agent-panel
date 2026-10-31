@@ -69,13 +69,32 @@ export async function revealDir(dir: string): Promise<void> {
   }
 }
 
-/** 可执行的文件不直接打开：点一下附件卡片不该跑起一个程序 */
-const RUNNABLE =
-  /\.(exe|com|bat|cmd|msi|msc|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|hta|scr|pif|lnk|reg|jar|app|command|sh|run|appimage|desktop)$/i
+/**
+ * 能直接交给系统默认程序打开的类型（白名单）：点一下附件卡片不该跑起一个程序。
+ * 以前按黑名单拦可执行文件，漏一个扩展名（.py 在装了 Python 的 Windows 上双击就执行、.jsx 关联 ExtendScript……）
+ * 就会被直接运行，所以改成只放行「打开就是看」的类型，其余一律只在文件夹里显示：
+ * - 图片、PDF、Office 文档（不含带宏的 docm / xlsm / pptm）、纯文本、Markdown、JSON / YAML / CSV、音视频；
+ * - 代码只放行不会被系统当脚本执行的（C/C++、Java、Go、Rust、C#、TS、CSS、SQL、diff）；js / py / sh / ps1 这类会被执行的不放；
+ * - 不放 svg / html（浏览器里会以本机文件的身份跑脚本）和压缩包（交给解压程序处理，出过多次解压漏洞）
+ */
+const SAFE_OPEN = new Set(
+  [
+    'png jpg jpeg gif webp bmp ico tif tiff heic avif',
+    'pdf doc docx xls xlsx ppt pptx odt ods odp rtf',
+    'txt md markdown log json jsonc yaml yml toml csv tsv xml',
+    'c h cc cpp cxx hpp java kt go rs cs swift ts tsx css scss less sql diff patch',
+    'mp3 wav ogg flac m4a aac mp4 mov m4v webm mkv avi',
+  ]
+    .join(' ')
+    .split(' '),
+)
 
-/** 用系统默认的程序打开文件（参数直接传给程序，不经过 shell）；可执行文件返回 false，不打开 */
+/** 这个文件能不能直接交给系统默认程序打开（见 SAFE_OPEN） */
+export const safeToOpen = (file: string) => SAFE_OPEN.has(path.extname(file).slice(1).toLowerCase())
+
+/** 用系统默认的程序打开文件（参数直接传给程序，不经过 shell）；不在白名单里的类型返回 false，不打开 */
 export async function openWithSystem(file: string): Promise<boolean> {
-  if (RUNNABLE.test(file)) return false
+  if (!safeToOpen(file)) return false
   try {
     await shellOpen(file)
   } catch (e) {

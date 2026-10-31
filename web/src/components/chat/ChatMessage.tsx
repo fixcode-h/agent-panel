@@ -10,7 +10,7 @@ import { quoteFrom } from '@/lib/quote'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { useAiLook } from '@/lib/ai-look'
-import { getLang, t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { copyText } from '@shared/composer'
 import { MessageBody } from './AttachmentView'
 import { IconButton } from '@/components/ui/icon-button'
@@ -33,7 +33,7 @@ function fmt(loc: string, opts: Intl.DateTimeFormatOptions) {
 export function formatAt(at: string) {
   const d = new Date(at)
   if (Number.isNaN(d.getTime())) return { short: '', full: '' }
-  const loc = getLang() === 'en' ? 'en-US' : 'zh-CN'
+  const loc = uiLocale()
   const now = new Date()
   const time = fmt(loc, { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
   const short =

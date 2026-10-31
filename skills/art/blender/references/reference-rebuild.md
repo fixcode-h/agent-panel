@@ -33,6 +33,7 @@ python scripts/reference_frames.py --crop 帧.jpg 细节.jpg --box x,y,w,h --sca
 ## 阶段 2：分件工坊建模
 
 按 `references/part-workshop.md`：拆件 → 单件构建/预览/精修 → 装配。
+
 - 每件的验收标准先写清（参考件的形状特征逐条对照）。
 - 高细节件（行走机构/履带/炮塔）优先做，因为它们决定「像不像」。
 

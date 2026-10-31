@@ -202,4 +202,9 @@ export const EN_SCHEDULE: Record<string, string> = {
   '项目：{name}': 'Project: {name}',
   '启动的对话 id：{id}': 'Conversation id: {id}',
   '到点后执行的对话内容：': 'Prompt run on schedule:',
+  '计划{names}没能启动：{error}': 'Schedule {names} failed to start: {error}',
+  '计划{names}到点时没有执行（面板没在运行或上游没成功）':
+    'Schedule {names} did not run when due (the panel was not running, or an upstream run did not succeed)',
+  '{n} 个计划出了问题：{names}': '{n} schedules had problems: {names}',
+  计划出了问题: 'A schedule had a problem',
 }

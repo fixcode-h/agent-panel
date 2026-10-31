@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -8,7 +8,8 @@ import test from 'node:test'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-store-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { BROKEN_DIR, archiveBrokenFile, readJson, readJsonDetailed, writeJsonAtomic } = await import('./store.ts')
+const { BROKEN_DIR, archiveBrokenFile, readJson, readJsonDetailed, sweepStaleTmp, writeFileOnce, writeJsonAtomic } =
+  await import('./store.ts')
 
 /** 目录里剩下的临时文件：写入失败或中断时不能留 */
 const tmpFiles = (d: string) => readdirSync(d).filter((f) => f.endsWith('.tmp'))
@@ -94,4 +95,31 @@ test('同一毫秒里归档两次同名文件：不覆盖前一份留档', async
   assert.equal(readFileSync(first.backup, 'utf8'), '坏的内容 1')
   assert.equal(readFileSync(second.backup, 'utf8'), '坏的内容 2，长一点')
   assert.equal(existsSync(file), false)
+})
+
+test('sweepStaleTmp：只删一小时前留下的 writeJsonAtomic 临时文件，新的、别人的 .tmp 和对话工作目录不动', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'agent-panel-sweep-'))
+  const put = (rel: string) => {
+    const f = path.join(root, rel)
+    mkdirSync(path.dirname(f), { recursive: true })
+    writeFileSync(f, '{')
+    return f
+  }
+  const old = put('tasks/chats/t1.messages.json.1234.abcdef01.tmp')
+  const fresh = put('tasks/chats/t2.json.1234.abcdef02.tmp')
+  const other = put('tasks/chats/notes.tmp')
+  const chat = put('chats/t1/out.json.1234.abcdef03.tmp')
+  const hourAgo = Date.now() - 2 * 60 * 60_000
+  for (const f of [old, other, chat]) utimesSync(f, hourAgo / 1000, hourAgo / 1000)
+  const removed = await sweepStaleTmp(root)
+  assert.deepEqual(removed, [old])
+  assert.equal(existsSync(old), false)
+  for (const f of [fresh, other, chat]) assert.equal(existsSync(f), true, f)
+})
+
+test('writeFileOnce：同一个按内容起名的文件同时写十次都成功，内容完整、不留临时文件', async () => {
+  const file = path.join(dir, 'once', 'abc.rc')
+  await Promise.all(Array.from({ length: 10 }, () => writeFileOnce(file, '--glob=!Intermediate\n')))
+  assert.equal(readFileSync(file, 'utf8'), '--glob=!Intermediate\n')
+  assert.deepEqual(tmpFiles(path.dirname(file)), [])
 })
