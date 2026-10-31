@@ -212,7 +212,7 @@ export function OverviewPage() {
       {picked.size > 0 && (
         // 浮在滚动区底部：列表很长时勾完不用滚回顶上去点按钮
         <div
-          className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 self-center rounded-xl border border-line bg-card/95 py-2 pr-2 pl-4 shadow-card backdrop-blur"
+          className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 self-center rounded-xl border border-line frost-card py-2 pr-2 pl-4 shadow-card"
           data-overview-batch
         >
           <span className="mr-2 text-[0.8125rem] text-fg tabular-nums">{t('已选 {n} 个', { n: picked.size })}</span>

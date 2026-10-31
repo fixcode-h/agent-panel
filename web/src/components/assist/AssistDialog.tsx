@@ -1015,7 +1015,10 @@ export function AssistDialog({
                 })}
               />
             </div>
-            <div ref={scroller} className="flex min-h-[200px] flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            <div
+              ref={scroller}
+              className="flex min-h-[200px] flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-4 py-4"
+            >
               {turns.length === 0 && !running && (
                 <div className="flex flex-col gap-2">
                   <p className="text-[0.8125rem] text-muted">

@@ -352,7 +352,7 @@ export function HelperWindow({
         <div
           ref={scroller.ref}
           onScroll={scroller.onScroll}
-          className="min-h-0 flex-1 overflow-y-auto px-3 py-5 md:px-6"
+          className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-5 md:px-6"
         >
           {/* 留白放在外层、内容区和底下那块只读说明同一个宽度，左右对齐 */}
           <div className="mx-auto flex max-w-(--content-w) flex-col gap-4">

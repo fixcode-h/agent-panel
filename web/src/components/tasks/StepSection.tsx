@@ -14,6 +14,7 @@ import { StepIcon } from './TaskStatusIcon'
 import { StepCommand } from './StepCommand'
 import { t } from '@shared/i18n'
 import { Badge } from '@/components/ui/badge'
+import { FrostBarBg } from '@/components/ui/frost'
 
 export { SystemNote }
 
@@ -86,12 +87,13 @@ function StepSectionBase({
         <header
           className={cn(
             'flex flex-wrap items-center gap-x-2.5 gap-y-1',
-            // 粘顶的背景必须和对话内容区的背景一致：内容区统一 bg-bg（父对话、右栏、运行面板都是），
-            // 这里就只用 bg-bg，不要再按容器换颜色，否则滚动时会透出一条色带
-            sticky === 'flow' && 'sticky top-0 z-10 -mx-1 border-b bg-bg px-1 pt-5 pb-3',
-            sticky === 'chat' && 'sticky top-0 z-10 -mx-2 -my-2 bg-bg px-2 py-2',
+            // 粘顶的底和对话的回复头一样是毛玻璃通栏（FrostBarBg，铺满滚动区宽度、吸住时底边细线），
+            // 底色按 bg 算：内容区统一 bg-bg（父对话、右栏、运行面板都是），不要再按容器换颜色
+            sticky === 'flow' && 'frost-bar sticky top-0 z-10 -mx-1 px-1 pt-5 pb-3',
+            sticky === 'chat' && 'frost-bar sticky top-0 z-10 -mx-2 -my-2 px-2 py-2',
           )}
         >
+          {sticky && <FrostBarBg />}
           <StepIcon status={root.status} />
           <span className="min-w-0 truncate text-[0.875rem] font-semibold">{root.title}</span>
           <span className="flex items-center gap-1.5 text-xs text-subtle">

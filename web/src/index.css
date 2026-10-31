@@ -528,6 +528,21 @@ body,
   height: 100%;
 }
 /*
+ * 毛玻璃（照 Claude Code 网页版顶栏，用户 2026-10-31 要求）：底色留七成多，后面滚过的内容模糊、提饱和后透出来。
+ * frost 用在页面底色（bg）上的吸顶栏、浮条；frost-card 用在卡片底色（card）上的浮层。
+ * 只在盖着会滚动内容的地方用：后面没东西时和实底一样，白白多一层合成
+ */
+@utility frost {
+  background-color: color-mix(in oklab, var(--bg) 72%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  backdrop-filter: blur(16px) saturate(1.6);
+}
+@utility frost-card {
+  background-color: color-mix(in oklab, var(--card) 78%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  backdrop-filter: blur(16px) saturate(1.6);
+}
+/*
  * 面板：主区、右栏照 Claude Code 贴着排，不留间隙、不做圆角卡片，每块左边一道 1px 细线（--line）和左边的侧栏 / 主区分开
  * （2026-10-31 用户要求「主页面不再采用圆角，就用 Claude Code 的白线分隔，也不需要留空」）。
  * 外观设置里的面板圆角（appearance.panelRadius → --panel-radius）默认 0，想要圆角的人还能自己调回来
@@ -736,11 +751,6 @@ body,
 [data-palette='code'] .thin-scroll::-webkit-scrollbar-thumb:hover,
 [data-palette='code'] ::-webkit-scrollbar-thumb:hover {
   background-color: var(--scroll-thumb-hover);
-}
-/* 滚动区顶部 16px 渐隐：第一行滚上去时淡出，不被上面的页签栏生硬截断（设计稿 `.fade-top`） */
-.fade-top {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
 }
 /*
  * 过程行一组：同一轮连续的过程行（工具调用、派发子对话、收到汇报、转交提问）每行一块默认浅底的圆角块，
@@ -2503,6 +2513,32 @@ html [data-sonner-toast][data-styled='true'] {
 }
 .reply-body [data-reply-head='row']:not([data-reply-head='sticky'] *) {
   margin-left: calc(-1 * var(--reply-indent));
+}
+/*
+ * 吸顶的毛玻璃通栏（回复头、工作流节点标题）：元素本身仍按内容对齐，底（FrostBarBg）左右各伸出一屏宽，
+ * 被滚动区的 overflow-x 裁到正好铺满滚动区；z-index -1 落在吸顶元素自己的层叠上下文里，压在文字下面。
+ * 吸住时（scroll-state 容器查询）才画底边细线，没吸住的回复头在对话流里不多出一道道横线；不支持的浏览器只是没有细线
+ */
+.frost-bar {
+  container-type: scroll-state;
+}
+.frost-bar-bg {
+  position: absolute;
+  inset-block: 0;
+  left: -100vw;
+  right: -100vw;
+  z-index: -1;
+  pointer-events: none;
+  background-color: color-mix(in oklab, var(--bg) 72%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  backdrop-filter: blur(16px) saturate(1.6);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+@container scroll-state(stuck: top) {
+  .frost-bar-bg {
+    border-bottom-color: var(--line);
+  }
 }
 /* 对话流里不在回复里面的块（工作流卡片、接收消息）：缩进和回复正文一样，和 AI 输出在同一条竖线上（用户要求） */
 .reply-indent {

@@ -46,3 +46,8 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 
 - 规则：并排的栏（图标栏和会话侧栏、侧栏和面板）要么底色差一档，要么有一道分隔线；新加一栏时用 `color-mix` 从这套配色的 rail / fg 算出来（`.activity-bar`），不另写每套配色的颜色。
 - 起因：e8c094d 的图标栏和会话侧栏都是 `bg-rail`，用户反馈「侧栏和左侧栏要有边界，目前融合在一起」。
+
+## 盖在滚动内容上的吸顶栏、浮条用毛玻璃
+
+- 规则：吸顶栏、浮在内容上的操作条和按钮用 `frost`（bg 底）/ `frost-card`（card 底），不再写 `bg-bg`、`bg-card/95 backdrop-blur`；对话里吸顶的回复头、工作流节点标题是通栏：加 `frost-bar` 类、第一个孩子放 `<FrostBarBg />`，所在滚动区要 `overflow-x-hidden`（底左右各伸出一屏宽，靠它裁掉）。
+- 起因：用户 2026-10-31 要求照 Claude Code 网页版顶栏复刻毛玻璃、回复头拉满整个横向空间，并在其他能用的地方都用上。

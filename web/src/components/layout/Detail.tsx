@@ -50,7 +50,7 @@ export function DetailTabs<T extends string>({
   label?: string
 }) {
   return (
-    <TabBar label={label} variant="underline" className="sticky top-0 z-10 bg-bg px-4 md:px-8">
+    <TabBar label={label} variant="underline" className="frost sticky top-0 z-10 px-4 md:px-8">
       {items.map(({ id, label, icon: Icon, extra }) => (
         <TabItem key={id} active={value === id} onSelect={() => onChange(id)} icon={<Icon className="h-4 w-4" />}>
           {/* 计数等附加信息跟在名字后面，不套 TabItem 的 tag 胶囊（调用方自己画好了） */}

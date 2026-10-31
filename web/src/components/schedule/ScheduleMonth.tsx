@@ -50,7 +50,7 @@ export function ScheduleMonth({
 
   return (
     <section aria-label={t('月视图')} className="flex min-w-[44rem] flex-col">
-      <div className="sticky top-0 z-20 grid grid-cols-7 border-b bg-bg">
+      <div className="frost sticky top-0 z-20 grid grid-cols-7 border-b">
         {SCHEDULE_WEEKDAYS.map((w) => (
           <span key={w.id} className="py-2 text-center text-[0.75rem] text-subtle">
             {w.label}
