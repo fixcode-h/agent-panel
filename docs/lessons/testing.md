@@ -53,3 +53,8 @@ e2e 和假 CLI 在 [e2e.md](./e2e.md)，界面检查在 [ui-check.md](./ui-check
 - 规则：各层用例总数不设上限（ADR 0031）；`npm run lint` 只看本次净新增（新增 - 删掉，改名合并不算），大于 0 时提交说明写「测试预算:」理由。不要再加「总数超过 N 就失败」的检查：上限一顶满，之后每个提交都要补说明。重复和过时的用例用「测试验收」的「清理用例」定期一批删。
 - 起因：ADR 0024 的硬上限上线两天集成层就停在 740～742，2 条合成 1 条的提交也被当成新增拦下；用户 2026-10-29 要求改成只拦新增、出包报数、批量清理。
 - 防线：`scripts/lib/test-budget.test.mjs`。
+
+## 测试里还原环境变量按键还原，不给 process.env 整个赋值
+
+- 规则：`finally` 里删掉多出来的键再 `Object.assign(process.env, old)`，不写 `process.env = old`：换成普通对象后再设 `HOME`，`os.homedir()` 读不到，后面的用例会写进前一条用例的临时目录（`server/deploy.test.ts` 加第二条用例时挂了）。
+- 防线：`scripts/rules-check.mjs` 第 17 条。

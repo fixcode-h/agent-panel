@@ -13,6 +13,7 @@ import {
   type LibraryTree,
 } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
+import { SKILL_TARGET } from '../shared/deploy.ts'
 import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
 
@@ -220,6 +221,21 @@ export async function writeSkill(e: Entry, root: string) {
   }
 }
 
+/** 「设置 → 部署」放这个技能的目录：~/.agents/skills/<分类>（「自带 Skill」页装的是 ~/.agents/skills/<名字>） */
+export const deployedRoot = (e: Entry) => path.join(expandHome(SKILL_TARGET), e.category)
+
+/**
+ * 同一个自带技能有两份：「自带 Skill」页装的和「部署」放的。用户在一处点了更新（覆盖），
+ * 另一处装过、也和这一版不同的那份一起换成这一版，两处的提示点一起消（用户要求）。
+ * 另一处没装的不顺手装上；和这一版一样的不动。返回换没换
+ */
+export async function refreshCopy(e: Entry, root: string): Promise<boolean> {
+  if ((await statusIn(e, root)) !== 'changed') return false
+  await rm(path.join(root, e.name), { recursive: true, force: true })
+  await writeSkill(e, root)
+  return true
+}
+
 /** 装到用户共享目录；已经装了的只有 overwrite 时才覆盖（用户可能改过）。clis 只为接口兼容保留 */
 export async function installBundled(names: string[], _clis: string[], overwrite: boolean) {
   const all = await entries()
@@ -229,13 +245,15 @@ export async function installBundled(names: string[], _clis: string[], overwrite
   for (const name of names) {
     const e = all.find((x) => x.name === name)
     if (!e) throw new Error(t('没有自带的 Skill「{name}」', { name }))
+    // 点了更新（覆盖）：「部署」那份装过又旧了的一起换掉，不然部署那边的提示点还亮着
+    if (overwrite && (await refreshCopy(e, deployedRoot(e)))) done.push(name)
     const s = await statusIn(e, root)
     if (s === 'same' || (s === 'changed' && !overwrite)) {
-      skipped.push(name)
+      if (!done.includes(name)) skipped.push(name)
       continue
     }
     await writeSkill(e, root)
-    done.push(name)
+    if (!done.includes(name)) done.push(name)
   }
   return { done, skipped }
 }

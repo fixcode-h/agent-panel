@@ -18,6 +18,7 @@
 // 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
 // 15. 大文件只许变小：超过 scripts/file-caps.json 里的上限就失败
 // 16. 界面上的中文要走 t()：JSX 文字节点里直接写中文会在英文界面里露出来
+// 17. 不给 process.env 整个赋值：换成普通对象后再设 HOME 等变量，os.homedir() 和子进程都读不到
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -454,6 +455,24 @@ else {
             `${f}:${i + 1}：JSX 里直接写了中文「${m[1].trim().slice(0, 20)}」，界面文案要用 t('中文')（见 AGENTS.md）`,
           )
       }
+    })
+  }
+}
+
+// 17. 不给 process.env 整个赋值（测试里还原环境变量常写成 process.env = old）：换成普通对象后，
+// 再设 HOME / USERPROFILE，os.homedir() 读不到，后面的用例会写进前一条用例的临时目录甚至真实家目录。
+// 按键还原：删掉多出来的键，再 Object.assign(process.env, old)
+{
+  const assign = /\bprocess\.env\s*=(?!=)/
+  for (const f of files.filter((x) => /\.(ts|tsx|mjs|js)$/.test(x) && !x.startsWith('node_modules/'))) {
+    const lines = readFileSync(path.join(root, f), 'utf8').split('\n')
+    lines.forEach((line, i) => {
+      const code = line.trimStart()
+      if (code.startsWith('//') || code.startsWith('*')) return
+      if (assign.test(line))
+        errors.push(
+          `${f}:${i + 1}：不要给 process.env 整个赋值，按键还原（删掉多出来的键再 Object.assign(process.env, old)）`,
+        )
     })
   }
 }
