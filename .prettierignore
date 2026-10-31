@@ -1,0 +1,9 @@
+# Prettier 检查的范围写在 package.json 的 lint 里；这里只列不该格式化的生成物和原样样本（.gitignore 里的也会跳过）。
+# docs/modules/*/bugs.md 虽是 scripts/doc-bugs.mjs 的生成物，但输出和 Prettier 一致，照常检查，不放进来。
+
+# 脚本生成的分层基线（node scripts/test-layers.mjs --report --out …），格式由生成脚本决定
+docs/openspec/changes/*/evidence/*.json
+# CLI 输出样本保持 CLI 的原样（见 server/exec/fixtures/README.md）
+server/exec/fixtures/
+# npm 生成
+package-lock.json

@@ -39,6 +39,7 @@ npm run test:affected  # 只跑受改动影响的单测；动到高风险区或�
 
 - `test:affected` 还会列出受影响的界面检查分片、以及是否必须跑端到端测试，列出来的照跑；没列出的不用主动跑全量。
 - 全量命令：`npm run test:unit`（单测）、`npm run test:e2e`（端到端，用 scripts/fake-cli 模拟各个 CLI）、`node scripts/ui-check.mjs`（界面检查）。CI 失败后用 `--failed` 只复测失败的部分。
+- 界面检查用 Playwright 驱动 chromium，第一次跑之前装一次浏览器：`npx playwright install chromium`（`npm ci` 只装 Playwright 包，不下载浏览器）。
 
 - **端到端测试在 Windows 上必须进 WSL（Ubuntu 24.04）跑**，不要在 Windows 本机的 PowerShell / cmd 里跑：
   ```bash
@@ -46,7 +47,7 @@ npm run test:affected  # 只跑受改动影响的单测；动到高风险区或�
   ```
 - 只改文档和样式时跑前两条即可。
 - 格式问题用 `npx prettier --write <文件>` 改掉，不要留给下一个提交。
-- 改了界面：`npm run build` 确认正式版能构建；`test:affected` 列出的界面分片用 `npx vite build --mode demo && node scripts/ui-check.mjs <分片>` 跑（需要 Playwright chromium，截图在 `ui-shots/`）。
+- 改了界面：`npm run build` 确认正式版能构建；`test:affected` 列出的界面分片用 `npx vite build --mode demo && node scripts/ui-check.mjs <分片>` 跑（需要先 `npx playwright install chromium`，截图在 `ui-shots/`）。
 
 ## 代码约定
 

@@ -1,5 +1,7 @@
 # Agent 面板
 
+中文 | [English](README.en.md)
+
 一个跑在本机的网页控制台：按项目分类，调度本机的编码 Agent（Claude Code、Codex、Command Code、Pi），
 由主 Agent 和子 Agent 按工作流的流程图执行：连线决定先后，没有先后关系的节点同时执行，节点里的每一步可以挂载验收流程，不通过就退回修改。
 界面参考 Claude Code。
@@ -70,7 +72,7 @@
 CLI 需要先在终端里登录一次（或在设置的「环境变量」里填 API Key）。
 
 ```bash
-npm install
+npm ci             # 按 package-lock.json 装依赖，不改锁文件
 npm run dev        # 前端 http://localhost:5173 ，后端 http://127.0.0.1:8787
 ```
 
@@ -124,6 +126,8 @@ npm run test:unit  # 执行引擎、CLI 输出解析、内置模板、前端纯�
 npm run test:e2e   # 用 scripts/fake-cli 模拟各个 CLI 的输出，走完整流程（需要 macOS / Linux 和 git）
 node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo（产物和源码对不上会直接失败），分片并行跑，截图在 ui-shots/
 ```
+
+界面检查用 Playwright 驱动 chromium，第一次跑之前装一次浏览器：`npx playwright install chromium`（CI 里也是这一步）。
 
 单元测试覆盖多步骤节点的顺序执行、步骤间交接、失败即停、每步确认 / 验收、中断续跑和子 Agent 归属，
 以及内置「通用项目」旧副本的迁移。

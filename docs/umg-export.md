@@ -14,21 +14,30 @@ UI 设计页「导出」得到的数据，用来在 UE5 里生成 Widget Bluepri
 {
   "Format": "AgentPanel.UMG",
   "Version": 1,
-  "Name": "WBP_MainMenu",              // 蓝图名，PascalCase
+  "Name": "WBP_MainMenu", // 蓝图名，PascalCase
   "DesignSize": { "X": 1920, "Y": 1080 },
   "Textures": [
     {
-      "Name": "T_ButtonFrame",          // 导入后的贴图资源名
+      "Name": "T_ButtonFrame", // 导入后的贴图资源名
       "File": "Textures/T_ButtonFrame.png",
       "Size": { "X": 320, "Y": 72 },
       "NineSlice": { "Left": 0.2, "Top": 0.3, "Right": 0.2, "Bottom": 0.3 }, // 可选，0~1 的比例
-      "Data": "iVBORw0..."              // 只在单个 JSON 里有
-    }
+      "Data": "iVBORw0...", // 只在单个 JSON 里有
+    },
   ],
-  "UserWidgets": [                       // 提取出来的子控件，各自生成一个 Widget Blueprint
-    { "Name": "WBP_MenuButton", "DesignSize": { "X": 320, "Y": 72 }, "Root": { /* 控件 */ } }
+  "UserWidgets": [
+    // 提取出来的子控件，各自生成一个 Widget Blueprint
+    {
+      "Name": "WBP_MenuButton",
+      "DesignSize": { "X": 320, "Y": 72 },
+      "Root": {
+        /* 控件 */
+      },
+    },
   ],
-  "Root": { /* 控件 */ }
+  "Root": {
+    /* 控件 */
+  },
 }
 ```
 
@@ -38,12 +47,16 @@ UI 设计页「导出」得到的数据，用来在 UE5 里生成 Widget Bluepri
 
 ```jsonc
 {
-  "Type": "Button",                     // UMG 控件类名去掉 U 前缀
-  "Name": "Btn_Start",                  // 控件名，同一棵树里不重复
-  "Class": "WBP_MenuButton",            // 只有 Type 为 UserWidget 时有：引用的子控件
-  "Slot": { "Type": "VerticalBoxSlot", /* 插槽属性 */ }, // 根控件没有
-  "Properties": { /* 控件属性 */ },
-  "Children": [ /* 子控件 */ ]           // 只有面板类控件有
+  "Type": "Button", // UMG 控件类名去掉 U 前缀
+  "Name": "Btn_Start", // 控件名，同一棵树里不重复
+  "Class": "WBP_MenuButton", // 只有 Type 为 UserWidget 时有：引用的子控件
+  "Slot": { "Type": "VerticalBoxSlot" /* 插槽属性 */ }, // 根控件没有
+  "Properties": {
+    /* 控件属性 */
+  },
+  "Children": [
+    /* 子控件 */
+  ], // 只有面板类控件有
 }
 ```
 
@@ -72,22 +85,22 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
   "data": {
     "sets": [
       {
-        "id": "items",                     // 面板内部 id；normalizeData 在 AI 只写 name 时按 name 补
-        "name": "Items",                   // 绑定用的英文标识
+        "id": "items", // 面板内部 id；normalizeData 在 AI 只写 name 时按 name 补
+        "name": "Items", // 绑定用的英文标识
         "label": "背包物品",
         "fields": [
           { "key": "icon", "label": "图标", "type": "image", "widget": "Icon", "note": "" },
           { "key": "count", "label": "数量", "type": "number", "example": 1 },
           { "key": "selected", "label": "选中", "type": "boolean", "example": false },
-          { "key": "locked", "label": "锁定", "type": "boolean", "example": false }
+          { "key": "locked", "label": "锁定", "type": "boolean", "example": false },
         ],
         "rows": [
           { "icon": "img:sword", "count": 1, "selected": true, "locked": false },
-          { "icon": "", "count": 0, "selected": false, "locked": true }
-        ]
-      }
-    ]
-  }
+          { "icon": "", "count": 0, "selected": false, "locked": true },
+        ],
+      },
+    ],
+  },
 }
 ```
 
@@ -100,11 +113,11 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
 
 只认控件 `Properties` 里的三个属性，都在条目子控件内部声明：
 
-| 属性 | 写在哪 | 作用 |
-| --- | --- | --- |
-| `DataSet` | 列表控件（UniformGridPanel、ListView、TileView、DynamicEntryBox） | 值是集合的 id 或 name，画板上的条目数就是集合的行数（集合没有行时不画条目）；没绑定或集合不存在时按 `NumEntries` / `NumDesignerPreviewEntries` 预览空条目 |
-| `DataField` | 条目子控件里要显示数据的控件 | 值是字段 key，按控件类型显示这一行的值 |
-| `States` | 任意控件（通常写在条目子控件里） | 当前行满足条件时换一套属性，见下 |
+| 属性        | 写在哪                                                            | 作用                                                                                                                                                      |
+| ----------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DataSet`   | 列表控件（UniformGridPanel、ListView、TileView、DynamicEntryBox） | 值是集合的 id 或 name，画板上的条目数就是集合的行数（集合没有行时不画条目）；没绑定或集合不存在时按 `NumEntries` / `NumDesignerPreviewEntries` 预览空条目 |
+| `DataField` | 条目子控件里要显示数据的控件                                      | 值是字段 key，按控件类型显示这一行的值                                                                                                                    |
+| `States`    | 任意控件（通常写在条目子控件里）                                  | 当前行满足条件时换一套属性，见下                                                                                                                          |
 
 一个列表控件同一时间只绑一个集合；同一个集合可以给多个列表控件用，不同集合也能分别绑到不同的列表控件。画板按每个列表控件自己 `DataSet` 指向的集合取行（`dataRows`），不是所有列表都套第一个集合。数据面板集合卡片上「绑定到列表控件」一行是换绑入口：
 
@@ -114,14 +127,14 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
 
 `DataField` 按控件类型换成的属性（`DATA_BINDING`）：
 
-| 控件 | 属性 | 说明 |
-| --- | --- | --- |
-| TextBlock、EditableTextBox、Text、WebButton | `Text` | 转成字符串 |
-| Image | `Brush.ResourceObject` | 值是 `img:<id>` 时换图；空字符串把控件设为 `Visibility: "Hidden"`（空格子没有图标） |
-| Picture | `Src` | 同上，网页用 |
-| ProgressBar | `Percent` | 限制在 0~1 |
-| CheckBox | `CheckedState` | `true` 为 `Checked`，否则 `Unchecked` |
-| Input | `Value` | 转成字符串 |
+| 控件                                        | 属性                   | 说明                                                                                |
+| ------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------- |
+| TextBlock、EditableTextBox、Text、WebButton | `Text`                 | 转成字符串                                                                          |
+| Image                                       | `Brush.ResourceObject` | 值是 `img:<id>` 时换图；空字符串把控件设为 `Visibility: "Hidden"`（空格子没有图标） |
+| Picture                                     | `Src`                  | 同上，网页用                                                                        |
+| ProgressBar                                 | `Percent`              | 限制在 0~1                                                                          |
+| CheckBox                                    | `CheckedState`         | `true` 为 `Checked`，否则 `Unchecked`                                               |
+| Input                                       | `Value`                | 转成字符串                                                                          |
 
 不在表里的控件只套用 `States`，不显示数据。
 
@@ -159,27 +172,29 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
 
 ```jsonc
 {
-  "Name": "Anim_Open",                 // WidgetAnimation 名
-  "Length": 0.45,                      // 秒，最后一个关键帧的时间
-  "Trigger": "Construct",              // Construct（打开时播放）| Hover（Source 悬停时正放、移开倒放）| Click（Source 点击时）| Manual（蓝图里自己 PlayAnimation）
-  "Source": "Btn_Start",               // 只有 Hover / Click 有：绑定事件的控件
-  "NumLoops": 1,                       // 0 表示一直循环（PlayAnimation 的 NumLoopsToPlay）
-  "PlayMode": "Forward",               // Forward | PingPong
-  "Delay": 0,                          // 开始前等多久（秒）
+  "Name": "Anim_Open", // WidgetAnimation 名
+  "Length": 0.45, // 秒，最后一个关键帧的时间
+  "Trigger": "Construct", // Construct（打开时播放）| Hover（Source 悬停时正放、移开倒放）| Click（Source 点击时）| Manual（蓝图里自己 PlayAnimation）
+  "Source": "Btn_Start", // 只有 Hover / Click 有：绑定事件的控件
+  "NumLoops": 1, // 0 表示一直循环（PlayAnimation 的 NumLoopsToPlay）
+  "PlayMode": "Forward", // Forward | PingPong
+  "Delay": 0, // 开始前等多久（秒）
   "Tracks": [
     {
-      "Widget": "Panel",                       // 控件名（同一个 Widget Blueprint 里）
-      "Property": "RenderTransform.Scale",     // RenderOpacity | RenderTransform.Translation | RenderTransform.Scale | RenderTransform.Angle
-      "Keys": [                                // 直接用的关键帧：Linear / Constant 插值
+      "Widget": "Panel", // 控件名（同一个 Widget Blueprint 里）
+      "Property": "RenderTransform.Scale", // RenderOpacity | RenderTransform.Translation | RenderTransform.Scale | RenderTransform.Angle
+      "Keys": [
+        // 直接用的关键帧：Linear / Constant 插值
         { "Time": 0, "Value": { "X": 0.6, "Y": 0.6 }, "Interp": "Linear" },
-        { "Time": 0.0333, "Value": { "X": 0.71, "Y": 0.71 }, "Interp": "Linear" }
+        { "Time": 0.0333, "Value": { "X": 0.71, "Y": 0.71 }, "Interp": "Linear" },
       ],
-      "Source": [                              // 设计里的原始关键帧和缓动，想自己设切线时用
+      "Source": [
+        // 设计里的原始关键帧和缓动，想自己设切线时用
         { "Time": 0, "Value": { "X": 0.6, "Y": 0.6 }, "Ease": "back-out" },
-        { "Time": 0.45, "Value": { "X": 1, "Y": 1 }, "Ease": "ease-out" }
-      ]
-    }
-  ]
+        { "Time": 0.45, "Value": { "X": 1, "Y": 1 }, "Ease": "ease-out" },
+      ],
+    },
+  ],
 }
 ```
 

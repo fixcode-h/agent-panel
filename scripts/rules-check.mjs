@@ -5,11 +5,15 @@
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 4b. 文本文件里不能有裸 NUL 字节：写成 `` `\0` `` 的文本被误存成 0x00 时 grep / rg 会整份跳过、搜不到
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
+// 6b. 界面不用细字重（font-thin / extralight / light、font-weight 100–300）：主次靠颜色和字号分
 // 6c. 字号、圆角不手写，用阶梯里的名字
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
 // 7b. `docs/modules/<模块>/bugs.md` 由 `bugs/<bug-id>.md` 生成：手改索引、改了详情忘了重生成都会被拦下
+// 8. 一轮结束只发一次回调：server/exec/runner.ts 里 markTurnDone 和 ctx.onTurnEnd 只能从 endTurn() 一处发出
 // 9. 共享仓库的 config 里不能有 core.worktree
 // 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
+// 11. 界面检查用例必须写在 runShard 的回调里：`scripts/ui/` 分片里 runShard 调用之后的代码永远不执行
+// 12. 提示只能从 web/src/lib/toast.ts 取 toast：直接从 sonner 引会绕过排队（例外写 `sonner-toast-ok: 原因`）
 // 13. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
 // 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
 // 15. 大文件只许变小：超过 scripts/file-caps.json 里的上限就失败

@@ -13,21 +13,21 @@
 
 ## 视角清单
 
-| 视角 | 文件 | 结论 | 说明 |
-|---|---|---|---|
-| front | `view_front.png` |  |  |
-| back | `view_back.png` |  |  |
-| left | `view_left.png` |  |  |
-| right | `view_right.png` |  |  |
-| top | `view_top.png` |  |  |
-| three_quarter | `view_three_quarter.png` |  |  |
-| closeup | `view_closeup.png` |  |  |
+| 视角          | 文件                     | 结论 | 说明 |
+| ------------- | ------------------------ | ---- | ---- |
+| front         | `view_front.png`         |      |      |
+| back          | `view_back.png`          |      |      |
+| left          | `view_left.png`          |      |      |
+| right         | `view_right.png`         |      |      |
+| top           | `view_top.png`           |      |      |
+| three_quarter | `view_three_quarter.png` |      |      |
+| closeup       | `view_closeup.png`       |      |      |
 
 ## 六维审查（每个不通过的视角逐项填写）
 
 | 视角 | 比例尺寸 | 轮廓可读 | 结构/穿模 | 法线/平滑 | 材质/UV | 动画姿态 | 修改动作 |
-|---|---|---|---|---|---|---|---|
-|  |  |  |  |  |  |  |  |
+| ---- | -------- | -------- | --------- | --------- | ------- | -------- | -------- |
+|      |          |          |           |           |         |          |          |
 
 ## 指标摘要（inspect_scene.py）
 
@@ -39,8 +39,8 @@
 ## 迭代记录
 
 | 轮次 | 修改内容 | 复渲视角 | 结果 |
-|---|---|---|---|
-| 1 |  |  |  |
+| ---- | -------- | -------- | ---- |
+| 1    |          |          |      |
 
 ## 最终结论
 
