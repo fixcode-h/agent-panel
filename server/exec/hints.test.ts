@@ -12,7 +12,6 @@ import { classifyError, makeAlert } from '../../shared/alerts.ts'
 import {
   clippedTranscript,
   contextFallbackKind,
-  describeCompaction,
   envStallBudget,
   envStallFailure,
   envStallNote,
@@ -26,6 +25,7 @@ import {
   settleRetryNotes,
   shouldRetryEnvStall,
 } from './runner.ts'
+import { CompactTracker, describeCompaction, settleCompactRow } from './compaction.ts'
 import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -101,6 +101,41 @@ test('压缩上下文：写明压缩了多少、现在占上下文窗口多少',
   describeCompaction(late, 96_000, 14_000, 200_000)
   assert.equal(late.compact?.before, 96_000)
   assert.equal(late.compact?.after, 14_000)
+  // 压缩一开始就有一行在转圈（像后台命令），完成后收掉；重试接着用同一行
+  const ended: ToolUse[] = []
+  const starts = new Map<ToolUse, number>()
+  const op = { kind: 'compact' as const }
+  const track = new CompactTracker((x) => (delete x.running, ended.push(x)))
+  const row = track.startOp(op, 415_300, starts)!
+  assert.ok(row.running && row.startedAt && starts.has(row))
+  assert.equal(row.label, '压缩前 415.3k token')
+  assert.equal(new CompactTracker(() => {}).startOp(op, 415_300, starts), undefined, '重试不另起一行')
+  // Claude Code 的 post_tokens 只算消息：加上细分里固定占的部分（系统提示词、工具……）才是整个上下文
+  const snapshot = {
+    at: '',
+    used: 400_000,
+    window: 1_000_000,
+    rows: [
+      { key: 'messages' as const, tokens: 380_000 },
+      { key: 'systemTools' as const, tokens: 12_000 },
+      { key: 'systemPrompt' as const, tokens: 8_000 },
+    ],
+    tools: [],
+    memory: [],
+    skills: [],
+    agents: [],
+  }
+  const u = { context: 415_300, window: 1_000_000, snapshot }
+  assert.equal(track.done({ before: 415_300, messages: 11_900 }, u), undefined)
+  assert.deepEqual(ended, [row])
+  assert.equal(u.context, 31_900)
+  // 之后细分报了真实大小：改成真实的
+  assert.ok(track.measured(33_000, 1_000_000))
+  assert.equal(row.compact?.after, 33_000)
+  // 没成功的压缩：标成失败，不能显示得像压缩成功了
+  settleCompactRow(op, { ok: false, error: '断了' })
+  assert.ok(row.failed)
+  assert.equal(row.label as string, '压缩失败')
 })
 
 test('空回合：只有什么都没收到才算，回复里说了什么都照常收尾（不按文字猜）', () => {
