@@ -700,7 +700,9 @@ export const EN_TASKS: Record<string, string> = {
   还没有可以分析的执行记录: 'No runs to analyze yet',
   'AI 分析执行结果': 'AI run analysis',
   开始分析: 'Analyze',
-  '想重点看什么（可选）': 'What to focus on (optional)',
+  '要问的具体问题（可选）': 'A specific question (optional)',
+  '写了问题就只分析这个问题、找出原因，不做整体分析；不写时按上面说的整体分析':
+    'With a question, only that question is analyzed and its cause found; leave it empty for the full analysis above',
   '例如：为什么验收总是不通过、哪些节点最费 token': 'e.g. why reviews keep failing, which nodes use the most tokens',
   '已导入「{title}」': 'Imported "{title}"',
   '已导入「{title}」和 {n} 个子对话': 'Imported "{title}" and {n} sub-conversations',
