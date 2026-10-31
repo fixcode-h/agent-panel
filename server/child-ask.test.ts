@@ -1,5 +1,6 @@
 /**
- * 子对话的提问 / 收尾建议由谁回答：父对话「提问」开关关着（默认）时自动交给父对话的 AI 决定，
+ * 子对话的提问 / 收尾建议由谁回答：子对话自己没开「提问」时它自己决定，不往上交；
+ * 开着时交给父对话：父对话「提问」开关关着时自动交给父对话的 AI 决定，
  * 不产生要用户回答的卡片（展开的卡片和「交给父对话决定」的折叠行都是 ask 卡片渲染的）；
  * 开着时仍然交给用户选。关掉开关时，已经挂在父对话里、还没人回答的提问也一起交给 AI。
  * 运行：npm run test:unit
@@ -18,6 +19,7 @@ const { tasksApi } = await import('./tasks.ts')
 const { createTaskStore } = await import('./task-store.ts')
 const { newTask } = await import('../shared/task.ts')
 const { setLang } = await import('../shared/i18n.ts')
+const { childQuestion } = await import('./exec/child-question.ts')
 
 setLang('zh')
 
@@ -48,7 +50,7 @@ const make = async (id: string, over: Record<string, unknown> = {}) =>
 
 test('「提问」关着：子对话提问自动交给父对话决定，不产生要用户回答的卡片', async () => {
   await make('p1', { askUser: false })
-  await make('c1', { parentTaskId: 'p1', rootTaskId: 'p1' })
+  await make('c1', { parentTaskId: 'p1', rootTaskId: 'p1', askUser: true })
   // tasksApi 启动时一次性加载任务列表，测试里先建任务再起服务
   const t = api()
 
@@ -74,7 +76,7 @@ test('「提问」关着：子对话提问自动交给父对话决定，不产�
 
 test('「提问」开着：仍然交给用户选，不自动交出', async () => {
   await make('p2', { askUser: true })
-  await make('c2', { parentTaskId: 'p2', rootTaskId: 'p2' })
+  await make('c2', { parentTaskId: 'p2', rootTaskId: 'p2', askUser: true })
   const t = api()
 
   await t.askParent('c2', '先做前端还是后端？', ['前端', '后端'])
@@ -88,7 +90,7 @@ test('「提问」开着：仍然交给用户选，不自动交出', async () =>
 
 test('用户点「交给父对话决定」：记成已交出，并收起子对话的弹窗', async () => {
   await make('p3', { askUser: true })
-  await make('c3', { parentTaskId: 'p3', rootTaskId: 'p3' })
+  await make('c3', { parentTaskId: 'p3', rootTaskId: 'p3', askUser: true })
   const t = api()
   await t.askParent('c3', '要不要顺手重构？', ['重构', '不动'])
   const pending = (await read('p3')).messages.find((m) => m.panel === 'ask')!
@@ -110,7 +112,7 @@ test('用户点「交给父对话决定」：记成已交出，并收起子对�
 
 test('收尾建议：「提问」关着时同样自动交给父对话，不弹给用户', async () => {
   await make('p4', { askUser: false })
-  await make('c4', { parentTaskId: 'p4', rootTaskId: 'p4' })
+  await make('c4', { parentTaskId: 'p4', rootTaskId: 'p4', askUser: true })
   const t = api()
 
   const r = await t.askParent('c4', '接着补两个模块的回归测试', ['继续补测试（推荐）', '先停在这'], 'suggestion')
@@ -124,7 +126,7 @@ test('收尾建议：「提问」关着时同样自动交给父对话，不弹�
 
 test('关掉「提问」：父对话里还没回答的子对话提问一起交给 AI，子对话的弹窗收起', async () => {
   await make('p5', { askUser: true })
-  await make('c5', { parentTaskId: 'p5', rootTaskId: 'p5' })
+  await make('c5', { parentTaskId: 'p5', rootTaskId: 'p5', askUser: true })
   const t = api()
   await t.askParent('c5', '要不要一起改配置？', ['改', '不改'])
   const pending = (await askStateUntil(t, 'p5', (x) => x.messages.some((m) => m.panel === 'ask'))).messages.find(
@@ -152,4 +154,54 @@ test('关掉「提问」：父对话里还没回答的子对话提问一起交�
   )
   const kid = await askStateUntil(t, 'c5', (x) => (x.parentAsks?.length ?? 0) === 0)
   assert.equal(kid.parentAsks?.length ?? 0, 0, '子对话的选择弹窗收起')
+})
+
+test('子对话自己没开「提问」：提问和收尾建议不交给父对话，由它自己决定、记进这一轮的汇报', async () => {
+  await make('p6', { askUser: true })
+  await make('c6', { parentTaskId: 'p6', rootTaskId: 'p6', askUser: false })
+  const t = api()
+  const r = await t.askParent('c6', '日志要不要保留旧格式？', ['保留', '不保留'])
+  assert.equal(r.ok, true)
+  assert.match(r.info, /「提问」关着/)
+  assert.match(r.info, /保留/)
+  const s = await t.askParent('c6', '下一步要不要顺手补测试？', [], 'suggestion')
+  assert.match(s.info, /收尾建议不交给别人选/)
+  const kid = await askState(t, 'c6')
+  assert.equal(kid.parentAsks?.length ?? 0, 0, '子对话上没有等人选的弹窗')
+  assert.match(kid.pendingReport ?? '', /由我自己决定）日志要不要保留旧格式？/)
+  assert.match(kid.pendingReport ?? '', /收尾建议，「提问」关着由我自己决定）下一步要不要顺手补测试？/)
+  const parent = await askState(t, 'p6')
+  assert.equal(
+    parent.messages.filter((m) => m.panel === 'ask' || m.panel === 'child').length,
+    0,
+    '父对话里什么都没收到',
+  )
+  assert.equal(parent.inbox.length, 0)
+})
+
+test('子对话的提问工具交给父对话：单个问题带选项，几个问题逐条写出', () => {
+  assert.deepEqual(
+    childQuestion({
+      title: '选方案',
+      detail: '',
+      questions: [
+        { header: '', question: '用哪个方案？', options: [{ label: 'A', description: '' }], multiSelect: false },
+      ],
+    }),
+    { text: '用哪个方案？', options: ['A'] },
+  )
+  assert.deepEqual(childQuestion({ title: '要不要删旧表？', detail: '删了不能恢复', options: ['删', '不删'] }), {
+    text: '要不要删旧表？\n删了不能恢复',
+    options: ['删', '不删'],
+  })
+  const many = childQuestion({
+    title: '',
+    detail: '',
+    questions: [
+      { header: '', question: '一？', options: [{ label: 'x', description: '' }], multiSelect: false },
+      { header: '', question: '二？', options: [], multiSelect: false },
+    ],
+  })
+  assert.equal(many.text, '1. 一？（可选：x）\n2. 二？')
+  assert.deepEqual(many.options, [])
 })

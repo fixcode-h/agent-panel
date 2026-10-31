@@ -7,7 +7,8 @@
  * - 等待中的步骤挂着后台命令、子对话：结果回来时 settleWait 按编号找到它，成功就标完成，失败退回进行中
  * - 用时按真实的开始、结束时间算：挂上子对话的步骤从子对话创建时算起、合回时停；
  *   Agent 一次把几个没开始的步骤直接标完成，按顺序摊开上一次记时间到现在这段，不记成 0 秒
- * - 子对话的计划最后一步是面板加的收尾（wrapUp）：合回父对话所在的分支，或者 P4 按文件类型分 changelist。
+ * - 子对话的计划最后一步是面板加的收尾（wrapUp）：合回父对话所在的分支，P4 分好 changelist 后请父对话验收，
+ *   或者共用目录、没有版本管理时直接请父对话验收；都由父对话收下后面板标完成。
  *   Agent 漏写、删掉、挪到中间都会被放回最后，免得做完改动就停下、收尾没人做
  * - 派子对话一定挂到某一步（ensureChildStep）：没有能挂的一步就补一步（标 auto），上一份计划已结束就重开它。
  *   auto 步骤 Agent 不知道、不会写进 set_plan，合并时按原索引放回，不当成「不做了」删掉
@@ -15,6 +16,8 @@
  */
 import { topSteps } from './flow.ts'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan, TaskStep } from './schema.ts'
+import { panelWrap, type WrapUpKind } from './wrap-up.ts'
+export { PANEL_WRAPS, panelWrap, wrapUpKind, type WrapUpInput, type WrapUpKind } from './wrap-up.ts'
 
 /** 一份计划最多多少个主步骤、每个主步骤最多多少个子步骤：再多就该拆成几份计划 */
 export const MAX_PLAN_STEPS = 20
@@ -66,12 +69,6 @@ export function isSettled(status: PlanStatus): boolean {
   return status === 'done' || status === 'skipped'
 }
 
-/**
- * 收尾步骤的种类，永远是计划的最后一步：merge 子对话的独立分支合回父对话所在的分支，
- * p4 子对话按文件类型分进各自的 pending changelist，push 父对话把当前分支推到远端
- */
-export type WrapUpKind = NonNullable<PlanStep['wrapUp']>
-
 /** 面板加的收尾步骤长什么样：标题、备注都直接写清楚要做什么，Agent 照着做 */
 export const WRAP_UP: Record<WrapUpKind, { title: string; note: string }> = {
   merge: {
@@ -79,8 +76,12 @@ export const WRAP_UP: Record<WrapUpKind, { title: string; note: string }> = {
     note: '前面的步骤都做完、编译测试跑通后调用 submit_merge 请父对话收尾；父对话合进去后面板自动标完成，不用自己标',
   },
   p4: {
-    title: '收尾：按文件类型把改动分进各自的 changelist',
-    note: '调用 p4_split_changelists：[C++]、[XLSX]（表格）、[Lua]、[Other] 各放一个 pending，不全留在 default 或塞进同一个；每类写一句中文描述。不 submit',
+    title: '收尾：按文件类型分好 changelist，请父对话验收',
+    note: '先调用 p4_split_changelists：[C++]、[XLSX]（表格）、[Lua]、[Other] 各放一个 pending，不全留在 default 或塞进同一个；每类写一句中文描述，不 submit。分好后调用 submit_merge 请父对话验收；父对话验收后面板自动标完成，不用自己标',
+  },
+  deliver: {
+    title: '收尾：请父对话验收',
+    note: '前面的步骤都做完、改了代码的评审过、验证跑通后调用 submit_merge 请父对话验收（改动已经在父对话的目录里，不用合并）；父对话验收后面板自动标完成，不用自己标',
   },
   push: {
     title: '收尾：推送到远端并合并主干',
@@ -94,7 +95,8 @@ export const WRAP_UP: Record<WrapUpKind, { title: string; note: string }> = {
  */
 const WRAP_UP_TITLES_LEGACY: Record<WrapUpKind, string[]> = {
   merge: [],
-  p4: [],
+  p4: ['收尾：按文件类型把改动分进各自的 changelist'],
+  deliver: [],
   push: ['收尾：推送到远端'],
 }
 
@@ -103,38 +105,6 @@ const WRAP_UP_TITLES_LEGACY: Record<WrapUpKind, string[]> = {
  * 区分这两种是为了不误删：项目目录这一轮没探测到时不能当成「用户不推了」
  */
 export type WrapUpAnswer = WrapUpKind | 'none'
-
-/**
- * 这个对话的计划要不要收尾、收哪种（见 ensureWrapUp）：判定和提示词里「授权情况」那段同一套口径，
- * 免得计划里有一步推送、提示词却写着不许推（或者反过来）
- */
-export interface WrapUpInput {
-  /** 父对话（用户直接对话的那个）还是子对话 */
-  child: boolean
-  /** 子对话在独立分支里改（或者要改的时候才开分支） */
-  isolated?: boolean
-  /** P4 工作区 */
-  p4?: boolean
-  /** Git 仓库：推送收尾只在 Git 里成立 */
-  git?: boolean
-  /** 项目设置的推送策略 */
-  push?: 'ask' | 'allow' | 'deny'
-  /** 这个对话里用户对推送做过的选择 */
-  answered?: 'allowed' | 'denied'
-}
-
-export function wrapUpKind(x: WrapUpInput): WrapUpKind | undefined {
-  if (x.child) {
-    if (x.isolated) return 'merge'
-    return x.p4 ? 'p4' : undefined
-  }
-  // 父对话只在明确授权推送时才有这一步：项目设置「不推送」和用户拒绝过都不加；「第一次问一次」还没回答时也不加，
-  // 等这一轮问完、下一轮带上 answered 再加。P4 工作区的改动走 changelist，不推 git（工作区建在 git 仓库目录下时
-  // 也认到 .git，推上去的会是旧历史）
-  if (x.p4 || x.push === 'deny' || x.answered === 'denied') return undefined
-  const allowed = x.answered === 'allowed' || x.push === 'allow'
-  return allowed && x.git ? 'push' : undefined
-}
 
 /** 当前计划：最后一份还没做完的 */
 export function activePlan(task: Pick<Task, 'plans'>): TaskPlan | undefined {
@@ -589,7 +559,7 @@ function rollUp(step: PlanStep, now: string) {
  */
 export function openWork(task: Pick<Task, 'plans'>): PlanStep[] {
   const plan = activePlan(task)
-  return plan ? plan.steps.filter((s) => !isSettled(s.status) && s.wrapUp !== 'merge') : []
+  return plan ? plan.steps.filter((s) => !isSettled(s.status) && !panelWrap(s.wrapUp)) : []
 }
 
 /**
@@ -742,6 +712,11 @@ function ensureWrapUp(
   if (keep.wrapUp === 'push') {
     keep.title = WRAP_UP.push.title
     keep.note = WRAP_UP.push.note
+  }
+  // P4 的收尾以前是 Agent 分完 changelist 自己标，现在要请父对话验收：升级前挂着的旧标题换成新的说法
+  if (keep.wrapUp === 'p4' && keep.title !== WRAP_UP.p4.title) {
+    keep.title = WRAP_UP.p4.title
+    keep.note = WRAP_UP.p4.note
   }
   plan.steps = [...rest.filter((s) => s !== keep), keep]
 }
@@ -913,11 +888,11 @@ export function applyPlan(
   const kind = wrapUp === 'none' ? undefined : wrapUp
   if (kind) {
     ensureWrapUp(plan, kind, prevWrap, () => String(++seq), now, task.plans.length === 1)
-    // 合回分支只有面板说了算：Agent 自己标完成不算，等合并结果
-    const merge = plan.steps.find((s) => s.wrapUp === 'merge' && s.status === 'done' && s === prevWrap)
+    // 子对话的收尾只有面板说了算：Agent 自己标完成不算，等父对话合回或验收
+    const merge = plan.steps.find((s) => panelWrap(s.wrapUp) && s.status === 'done' && s === prevWrap)
     if (merge && prevWrapStatus !== 'done') {
       setStatus(merge, prevWrapStatus === 'pending' ? 'pending' : 'running', now)
-      notes0.push(`「${merge.title}」由面板在合并成功后标完成：调用 submit_merge，不要自己标。`)
+      notes0.push(`「${merge.title}」由面板在父对话收下后标完成：调用 submit_merge，不要自己标。`)
     }
   } else if (wrapUp === 'none' && dropWrapUp(plan, 'push')) {
     // 推送策略改成不推了（用户拒绝过、或设置改成不推送）：还挂着的推送收尾永远做不了，删掉它计划才收得起来
@@ -1513,6 +1488,17 @@ export function markWrapUp(
   closeIfSettled(plan, now)
   plan.updatedAt = now
   return true
+}
+
+/** 子对话的收尾不管是哪一种（见 PANEL_WRAPS）：请父对话收尾时标等待中、父对话收下标完成、退回时回到进行中 */
+export function markChildWrapUp(
+  task: PlanTask,
+  status: 'running' | 'waiting' | 'done',
+  note = '',
+  now = new Date().toISOString(),
+) {
+  const kind = activePlan(task)?.steps.find((s) => panelWrap(s.wrapUp) && !isSettled(s.status))?.wrapUp
+  return kind ? markWrapUp(task, kind, status, note, now) : false
 }
 
 /** 工作流跑完：成功标完成，失败标失败并记下原因，交给 Agent 处理 */

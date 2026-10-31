@@ -1,8 +1,20 @@
 ---
-paths: server/tasks.ts, server/orch-mcp.ts, server/exec/worktree.ts, server/no-push.test.ts, web/src/components/tasks/Worktrees.tsx, shared/plan.ts
+paths: server/tasks/merge.ts, server/tasks/children.ts, server/tasks/run.ts, server/tasks/helpers.ts, server/orch-mcp.ts, server/exec/worktree.ts, server/no-push.test.ts, web/src/components/tasks/Worktrees.tsx, shared/plan.ts
 ---
 
 # 子对话收尾和独立分支
+
+## 必备的收尾步骤不跟着版本管理方式变
+
+- 规则：评审、测试记录、交接要点、父对话验收、做完没请收尾的提醒是交付的必备步骤，Git 独立分支、共用目录、P4、没有版本管理都要做；版本管理方式只决定最后一步是合回分支（`merge`）、分 changelist（`p4`）还是直接验收（`deliver`）。新加按 `isolated()` / `isP4()` / `isGit` 分叉的代码时先问：这一支是不是把必备步骤也一起跳过了；门禁、提醒按「改没改文件」（`task.changes`）判，不按有没有分支判。
+- 起因：用户 2026-10-31 报 P4 项目的子对话改完代码不评审：`submit_merge` 只开给独立分支，P4 的收尾是 Agent 自己标完成，评审门禁、交接、父对话验收全被跳过。
+- 防线：`shared/plan.test.ts`（每种版本管理组合的子对话都落到 `panelWrap`）、e2e `04-subagents`「共用目录的子对话」。
+
+## 面板的提醒不能把用户停下的对话又推起来
+
+- 规则：一轮结束时面板推对话接着做（`nudgeMerge`、`nudgePlan` 这类）之前，先看这次是不是被叫停的（`live.stop` / `stopReason`：用户暂停、父对话收尾、归档删除），是就不推；页面切走、闲置回收照常推。
+- 起因：同一次改动里 e2e 保活子对话那段，按了停止后面板的收尾提醒又开了一轮，任务一直停不下来。
+- 防线：e2e `04-subagents`「保活的子对话跑完一轮」。
 
 ## 对话的独立分支不推远端，标记完成就删
 
@@ -12,7 +24,7 @@ paths: server/tasks.ts, server/orch-mcp.ts, server/exec/worktree.ts, server/no-p
 
 ## 合并成功不等于做完了：置完成和删 worktree 必须过同一套「彻底完成」判定
 
-- 规则：`shared/task.ts` 的 `childFlowOf` / `childHolds` 是唯一判定，置 `resolved`、回收独立分支、面板阶段和转圈都读它；任何路径（合并成功、一轮结束、后台命令结束、面板或父对话手动标记完成）都只走 `server/tasks.ts` 的 `advanceChildTo`（第 4 步置完成 → 第 5 步上报父对话 → 第 6 步列表刷新），顺序和幂等由 `shared/task.ts` 的 `advanceChild` 管，不许直接调 `removeWorktree` 或写 `resolved`；条件不满足就保留目录和分支并把 `childHoldText` 的原因显示给用户。用户显式「删除独立分支 / 丢弃」照旧直接删。
+- 规则：`shared/task.ts` 的 `childFlowOf` / `childHolds` 是唯一判定，置 `resolved`、回收独立分支、面板阶段和转圈都读它；任何路径（合并成功、一轮结束、后台命令结束、面板或父对话手动标记完成）都只走 `server/tasks/children.ts` 的 `advanceChildTo`（第 4 步置完成 → 第 5 步上报父对话 → 第 6 步列表刷新），顺序和幂等由 `shared/task.ts` 的 `advanceChild` 管，不许直接调 `removeWorktree` 或写 `resolved`；条件不满足就保留目录和分支并把 `childHoldText` 的原因显示给用户。用户显式「删除独立分支 / 丢弃」照旧直接删。
 - 起因：合并本改动的那次提交（2026-10，子对话 worktree-ed7cb8cc）——用户报「还有后台命令、计划没完成就被标成已完成」，worktree 也跟着被删了；后来用户要求完成状态只能单向流转，父对话不许跳步直接改子对话的最终状态。
 - 防线：`shared/child-flow.test.ts`、`shared/task-stage.test.ts`、`server/exec/worktree.test.ts`。
 
@@ -26,4 +38,4 @@ paths: server/tasks.ts, server/orch-mcp.ts, server/exec/worktree.ts, server/no-p
 
 - 规则：`task.worktree.state` 只记面板自己走过的动作（合并、丢弃），分支被手动删掉或 `submit_build` 合完清掉后它可能还停在 `active`。判「合没合回原分支」在 `worktreeStatus()` 里按 `ahead`/`dirty` 算（分支已经不存在时按 `state` 兜底），`merged`、合并按钮和界面上的数字都从这一个判据出来，不要一处看 `state`、一处看数字。
 - 起因：分支已经通过 `submit_build` 合进原分支、分支也删了，`state` 还是 `active`，`ahead`/`dirty` 都是 0 却算出 `merged: false`，界面显示「未合并到「…」：」后面空着，还挂着没用的合并按钮。
-- 防线：`server/exec/worktree.test.ts` 的「分支已经删掉时」用例。
+- 防线：`server/exec/worktree-merge.test.ts` 的「分支已经删掉时」用例。

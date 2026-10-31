@@ -42,6 +42,7 @@
 | [0032](./0032-conversations-keep-going.md)                | 对话靠面板推着走完：收尾时推进、父子只发必要消息、继续时连带恢复           | 已接受 | 2026-10-30 | `nudgePlan` 按计划状态推所有对话；「未完成」不发消息；`resumeKids` + `resumeNote`；`agentUpdatedAt`；消息与后台结果不丢                            |
 | [0033](./0033-state-settle-and-tasks-split.md)            | 状态收口只有一种写法并定时核对，server/tasks.ts 按功能拆开、大文件只许变小 | 已接受 | 2026-10-30 | `settleStopped` + `stateBreaks` 连看两次才收（`lost`）；`server/tasks/` 工厂 + `TasksScope`；`scripts/file-caps.json`                              |
 | [0034](./0034-letters-vs-status-child-panel.md)           | 父子之间分清「信」和「状态」，子对话只在输入框上方的面板里看               | 已接受 | 2026-10-30 | 连带中断、阶段汇报、用户直接交代不再单独发；箭头 + 对方的信行和回执；右栏不列子对话，草图二放到输入框上方                                          |
+| [0035](./0035-wrapup-independent-of-vcs.md)               | 子对话收尾的必备步骤不跟着版本管理方式变                                   | 已接受 | 2026-10-31 | submit_merge 开给所有子对话；P4 分完 changelist、共用目录和没有版本管理都请父对话验收，评审门禁照样拦                                              |
 
 状态只有四个词，别自己造近义词：
 

@@ -6,8 +6,8 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 
 ## 边界靠底色分，字不能细
 
-- 规则：分区、选中、次要按钮、小标签靠底色深浅区分，不描边、不加阴影；只有输入框、工具行、弹窗这类必须看出边界的地方留一圈细线。差异照 Claude Code 只用底色（`components/ui/diff-tone.ts`）。
-- 例外：插在文字里的行内卡片（图片、文件、Skill、引用）按类型着色加同色细内框，统一用 `components/ui/chip-tone.ts` 的 `CHIP_TONE`；只靠中性浅底时它们在用户气泡（同为 `bg-sel`）里看不出来，用户说「太不明显了」。
+- 规则：分区、选中、次要按钮、小标签靠底色深浅区分，不描边、不加阴影；只有输入框、工具行、弹窗这类必须看出边界的地方留一圈细线。差异照 Claude Code 只用底色（`web/src/components/ui/diff-tone.ts`）。
+- 例外：插在文字里的行内卡片（图片、文件、Skill、引用）按类型着色加同色细内框，统一用 `web/src/components/ui/chip-tone.ts` 的 `CHIP_TONE`；只靠中性浅底时它们在用户气泡（同为 `bg-sel`）里看不出来，用户说「太不明显了」。
 - 规则：常规字重 450（`--font-weight-normal`，Maple Mono 的 400 偏细），不用 `font-light` / `font-thin`；主次用颜色（fg / muted / subtle）和字号分，500 / 600 只给名字和标题。
 - 规则：页面只用 `components/ui` 的部件拼，新加或改了部件在设置 → 组件（`ComponentsSection.tsx`）里加一格，换配色时一眼能看全。
 - 起因：界面重设计时用户指出「不要加乱七八糟的描边」「字体不要太细」。

@@ -71,3 +71,19 @@ export function childAskInitial(parent: Partial<ChildAskState>): boolean {
 export function childAskDefaultOf(settings?: { childAskUserDefault?: boolean }): boolean {
   return settings?.childAskUserDefault ?? CHILD_ASK_DEFAULT
 }
+
+/**
+ * 子对话提示词里「有问题怎么办」那一节，按子对话自己的「提问」开关二选一（用户 2026-10-31 定的）：
+ * - 关着：自己决定，不交给用户也不交给父对话；
+ * - 开着：用提问工具问，面板把问题交给父对话（父对话开着提问再转给用户，关着由它的 AI 作答），答案按回话交回来。
+ * 界面把「没在跑、也没有提问」的子对话当成已完成：开着时要求先把提问发出去再停，不能安静地停下把未决的问题藏起来。
+ * roleAsks：角色（或它引入的通用约束）里已经写了「先提问」，开着时不再重复
+ */
+export function childAskPrompt(askUser: boolean, roleAsks: boolean): string {
+  if (!askUser)
+    return `## 「提问」关着：自己决定
+你的问题不交给用户，也不交给父对话。遇到拿不准的地方按已有信息选最合理的做法继续，不可逆的操作选最保守的做法；结论里写清「你替自己决定了什么、依据、不对怎么改」。不要因为等回答而停下；和角色设定里「先提问」的要求不一样时以这里为准。`
+  if (roleAsks) return ''
+  return `## 停下之前先提问
+子对话的「已停止」只由用户或父对话主动停止产生，你不要安静地停下。遇到拿不准的、需要用户确认的、不可逆的操作、缺外部信息时：用提问工具（有原生提问的用原生方式，没有的用面板的 ask_user）把问题、选项和各自的后果写清楚，问题会交给父对话（父对话开着「提问」时再转给用户）；要父对话决定时也可以用 message_parent 并把 question 设为 true。先把提问发出去再结束这一轮，不要只在结论里写一句「待确认」；回答会作为父对话的回话交回给你。`
+}

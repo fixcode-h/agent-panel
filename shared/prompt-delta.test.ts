@@ -95,6 +95,7 @@ function childHost(calls: AgentCall[]) {
     status: 'running',
     agentId: 'exec',
     parentTaskId: 'p',
+    askUser: true,
     messages: [],
   })
   let session = 'sess-1'

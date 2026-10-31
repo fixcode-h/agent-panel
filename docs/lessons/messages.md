@@ -6,9 +6,9 @@ paths: web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.t
 
 ## 面板的产物不冒充用户、不另起居中提示
 
-- 规则：面板推给 CLI 的内容（后台命令、合并编译、子任务结果）记成 `TaskMessage.panel`，画成 AI 回复的一行；面板工具调用按「做了什么 + 对象名」显示（`toolView` / `panelTool`，新工具要进 `PANEL_TOOL`），不另记居中提示，也不插提示截断回复。子对话汇报只给父对话 AI，提问是父对话的卡片（`panel: 'child'` / `'ask'`）。
+- 规则：面板推给 CLI 的内容（后台命令、合并编译、子任务结果）记成 `TaskMessage.panel`，画成 AI 回复的一行；面板工具调用按「做了什么 + 对象名」显示（`toolView` / `panelTool`，新工具要进 `shared/panel-tools.ts` 的 `PANEL_TOOL_NAMES`），不另记居中提示，也不插提示截断回复。子对话汇报只给父对话 AI，提问是父对话的卡片（`panel: 'child'` / `'ask'`）。
 - 起因：15c1a1d 把后台命令结果当用户消息推回、新建子对话另记居中提示；之后「要改文件了…」截断回复。
-- 防线：`server/orch-mcp.test.ts`、`server/orchestrator.test.ts`、`scripts/e2e.mjs`（开分支不记提示、提问卡片）。
+- 防线：`server/orch-mcp.test.ts`、`server/orchestrator.test.ts`、`scripts/e2e/04-subagents.mjs`（开分支不记提示、提问卡片）。
 
 ## 对话里一行一个的条目整行可点
 
@@ -20,7 +20,7 @@ paths: web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.t
 
 - 规则：认行内代码是不是文件路径用 `web/src/lib/file-path.ts` 的 `parsePath` / `linkPaths`，别另写正则；字符集用 `\p{L}\p{N}`（带 `u`），不用 `\w`（只认 ASCII）；扩展名白名单带图片格式；不误判靠「按段校验 + 白名单 + 拒绝 URL 和命令参数」，不收紧字符集。
 - 起因：`ui-shots/107-对话-图片气泡.png` 这类中文路径点不开。
-- 防线：`web/src/lib/file-path.test.ts`、`scripts/ui-check.mjs` 的「对话-路径可点」。
+- 防线：`web/src/lib/file-path.test.ts`、`scripts/ui/01-composer.mjs` 的「对话-路径可点」。
 
 ## 跟随到底部按滚动方向判断，不按离底部多远
 

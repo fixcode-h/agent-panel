@@ -6,7 +6,7 @@ paths: shared/plan.ts, shared/engine.ts, server/p4-split.ts
 
 ## 子对话的收尾是计划的最后一步，由面板加
 
-- 规则：子对话的收尾（独立分支 `submit_merge` 合回父对话所在的分支；P4 工作区按 [C++]/[XLSX]/[Lua]/[Other] 分进各自的 pending changelist）由 `applyPlan` 的 `wrapUp` 自动放在计划最后（`shared/plan.ts` 的 `ensureWrapUp`），Agent 漏写、删掉、挪到前面都会放回去；合回分支那一步只由面板在合并成功后标完成（`markWrapUp`）。提示词里不要再写「收尾不列进计划」，P4 分桶规则写在对话提示词（`wrapUpPart`）里，不要只靠 project-vcs 技能或「版本控制」角色。
+- 规则：子对话的收尾（独立分支 `submit_merge` 合回父对话所在的分支；P4 工作区按 [C++]/[XLSX]/[Lua]/[Other] 分进各自的 pending changelist 再请验收；共用目录、没有版本管理时直接请验收）由 `applyPlan` 的 `wrapUp` 自动放在计划最后（`shared/plan.ts` 的 `ensureWrapUp`），Agent 漏写、删掉、挪到前面都会放回去；这三种收尾（`PANEL_WRAPS`）都只由面板在父对话收下后标完成（`markChildWrapUp`），Agent 自己标不算。提示词里不要再写「收尾不列进计划」，P4 分桶规则写在对话提示词（`wrapUpPart`）里，不要只靠 project-vcs 技能或「版本控制」角色。
 - 起因：用户纠正——以前提示词要求「合回父分支是收尾动作，不写进计划步骤」，子对话改完就停，P4 改动全留在 default 或塞进同一个 changelist。
 - 防线：`shared/plan.test.ts` 的收尾用例、`server/engine-steps.test.ts` 的提示词断言。
 

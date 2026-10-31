@@ -90,6 +90,7 @@ import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { summaryCardRules, summaryDetailRules } from './summary-card.ts'
+import { changedFilesPart, sharedWrapPart, uePart } from './wrapup-prompt.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyBlock } from './test-steps.ts'
@@ -100,6 +101,7 @@ import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, 
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { LIVE, nextSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
 import { isHelperAgent } from './builtin/core.ts'
+import { childAskPrompt } from './child-ask.ts'
 import {
   activePlan,
   applyPlan,
@@ -491,8 +493,10 @@ export interface Orchestra {
   }>
   checkBackground(id: string): string
   stopBackground(id: string): { ok: boolean; info: string }
-  /** 独立分支里的子对话：测试跑通就调用，面板合回原分支后子对话算完成（排队，结果推回来） */
+  /** 子对话请父对话收尾：独立分支里由父对话合回原分支，共用目录、P4、没有版本管理时由父对话验收（结果推回来） */
   canSubmit: boolean
+  /** 子对话在自己的独立分支里（Git worktree）：收尾时面板提交并合回；不在的改动已经在父对话的目录里 */
+  isolated: boolean
   /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
@@ -692,7 +696,10 @@ export interface EngineHost {
    * push 父对话把分支推到远端；不用收尾的不传，'none' 是明确不推送（去掉计划里还挂着的推送收尾）
    */
   wrapUp?: WrapUpAnswer
-  /** 独立分支里的子对话：测试跑通后合回原分支（面板排队试合并，有冲突撤回，结果推回子对话；合进去就算完成） */
+  /**
+   * 子对话请父对话收尾（不管用哪种版本管理都有）：评审、测试、交接、待回答的提问都在这里校验。
+   * 独立分支里的由父对话合回原分支（面板排队试合并，有冲突撤回，结果推回子对话）；其余的由父对话验收后标完成
+   */
   submitMerge?: (
     note: string,
     tests: string,
@@ -707,6 +714,8 @@ export interface EngineHost {
    * parent：父对话收到申请（或用户要求）后向面板占位编译，面板按编译目录排队：同一目录同一时间只编译一次，
    * 各自 worktree 的目录互不占位；结果推回父对话
    */
+  /** 子对话在自己的独立分支（Git worktree）里：分支目录、提交和合回都由面板管 */
+  isolated?: boolean
   ueBuild?: {
     role: 'child' | 'parent'
     request: (note: string, children?: string[]) => Promise<{ ok: boolean; info: string; id?: string }>
@@ -1259,7 +1268,9 @@ const parentRunsIn = (host: EngineHost) =>
 
 /** 计划的「做完」是什么：按收尾种类说，没有收尾的（共用父对话目录的 Git 子对话）改完就在父对话的分支上 */
 function wrapDone(kind: WrapUpAnswer | undefined, parentRuns = false) {
-  if (kind === 'p4') return '改动已按文件类型分进各自的 pending changelist'
+  if (kind === 'p4')
+    return '改动已按文件类型分进各自的 pending changelist，并且父对话已经验收（submit_merge 后由父对话收下）'
+  if (kind === 'deliver') return '父对话已经验收你的改动（submit_merge 后由父对话收下）'
   if (kind === 'merge')
     return parentRuns
       ? '改动已合回父对话所在的分支、父对话跑范围为「全量，合并后由父对话跑」的步骤通过（submit_merge 由面板合并）'
@@ -1288,11 +1299,14 @@ function wrapUpPart(host: EngineHost) {
         : ''
     }`
   // 推送归 Agent 自己做（面板拿不到 git push 的结果，不像合并那样能替它标完成）：讲清做什么、做完自己标
+  if (kind === 'deliver')
+    return `${head}
+做法：调用 submit_merge（tests 写上跑过的编译和测试，handoff 写交接要点）。你和父对话共用目录（或者项目没有版本管理），改动已经在原目录里，不用合并；父对话验收后面板把这一步标完成，你不要自己标。改了代码的照样要先评审、跑通验证：这些和版本管理方式无关，面板会照样校验。`
   if (kind === 'push')
     return `${head}
 做法：${WRAP_UP.push.note}。计划里的其他步骤都做完、验证通过、改动已在本地提交之后再推；这一步做完自己用 set_plan 把它标完成，面板不会替你标。在独立分支里时按上面「执行目录」那段先合回原分支，再在原目录推送原分支并合并主干。`
   return `${head}
-${p4Rules(host)}做完再把这一步标完成。不 submit、不 revert、不 sync。`
+${p4Rules(host)}分好之后调用 submit_merge 请父对话验收（tests 写上跑过的编译和测试，handoff 写交接要点）：父对话验收后面板把这一步标完成，你不要自己标。改了代码的照样要先评审、跑通验证：这些和版本管理方式无关，面板会照样校验。不 submit、不 revert、不 sync。`
 }
 
 /**
@@ -1373,40 +1387,14 @@ function fileFormatPart(host: EngineHost) {
  */
 function buildPart(host: EngineHost) {
   // UE 项目的子对话不编译：「在分支里编译测试」那一段换成申请编译
-  if (host.ueBuild) return uePart(host)
+  if (host.ueBuild) return uePart(host.ueBuild.role, !!host.isolated, !!host.submitMerge)
   if (!host.submitMerge) return ''
+  if (!host.isolated) return sharedWrapPart()
   return `## 在独立分支里验证，再请父对话收尾
 编译、测试都在你这个独立分支的目录里跑，不用交给别人：合并就是验收，合进去的代码就算验收通过，所以能在你这里做的测试都在合并之前、在这里做完。
 - 这个目录是新检出的，没有依赖和编译产物：第一次编译、测试前按项目的方式装好依赖（例如 npm ci），装出来的东西不要提交。
 - 只剩合回时调用 submit_merge 请父对话收尾：计划其余步骤都做完、后台命令都结束、没有等回答的提问、按下面的「验证」跑通，tests 写上跑了哪些编译、测试和结果，handoff 按模板写交接要点（关键文件和模块必填，以后再交给你时上下文大就只带这份摘要，写清哪里的代码、哪些文档、做了什么决定）。面板把改动提交到你的分支，父对话合回原分支（父对话所在的分支）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。调用后结束这一轮。
 - 验证没跑通不要调用，先修好；做完却不调用的，面板会提醒你。父对话合不进去（冲突）或者觉得验证不够时会退回给你，按它说的处理好再调用。合并结果推回来之前不说完成。不要推送这个分支（面板会拦下，git push 报 remote-agent-panel-no-push），也不要自己去原目录合并。`
-}
-
-/**
- * UE 项目的编译归父对话：UBT / UHT、Editor、DDC 是整台机器共用的，几个子对话各编各的只会互相抢锁、
- * 撑满机器。子对话只改代码、做不用编译的检查，编译向父对话申请；父对话也不随手编译，
- * 收到申请才向面板占位，面板按编译目录排队（同一目录同一时间只编译一次，各自 worktree 的目录互不占位）
- */
-function uePart(host: EngineHost) {
-  const ue = host.ueBuild
-  if (!ue) return ''
-  if (ue.role === 'parent')
-    return `## UE 编译按申请占位执行
-这是 UE 项目：编译只在父对话这一层发起，子对话不编译（上面说子对话自己编译测试的地方，在这个项目里都以这里为准）。你也不随手编译：
-- 只在收到子对话的编译申请（消息里写着「编译申请」）或用户要求时，调用 request_build 向面板申请编译。改了什么才编译什么：只改 Lua（用 luac -p 查语法）、配置、表格、资源、文档的不编译 C++；带上 children 时面板也会按它们的改动文件判断，不涉及 C++ 就不编。几个申请先后到了就合成一次，note 写清为了哪些子对话、哪些改动，children 写上这些子对话的 id（结果面板会直接推给它们）。
-- 编译是占位的资源：面板按编译目录排队，同一目录同一时间只编译一次。同一目录里别的父对话占着时，你的申请排在后面，面板会告诉你占着的是谁，也会告诉对方你在等；各自在独立 worktree 里的不互相占位。不要用 run_background 或直接执行 Build.bat、UBT、UHT、Editor 来绕过排队。
-- 编译结果会推回给你，也直接推给 children 里的子对话：失败时它们自己修好再申请；报错落在没申请的子对话的改动上时，用 send_to_conversation 交给它。
-- 同一项目里还有别的父对话时：用 list_peers 看它们在做什么、谁占着编译；要协调（例如你要等它的编译、它要改你这边也在改的公共文件）用 message_peer 传话，不要替它做决定。`
-  return `## UE 编译交给父对话申请
-这是 UE 项目：编译（Build.bat、UBT、UHT）、Cook、启动 Editor 都不在子对话里做，面板也会拦下这类后台命令。你只改代码，做不需要编译的检查（Lua 用 luac -p 查语法、静态检查、对照调用方自查），编译向父对话申请。改了什么才编译什么：改了 C++（.cpp / .h / .inl、Build.cs / Target.cs、.uproject / .uplugin）才需要编译；只改 Lua、配置、表格、资源、文档时不申请编译（面板也会按改动文件判断，不涉及 C++ 不编）：
-${
-  host.submitMerge
-    ? `- 你在独立分支里，这个目录编不了 UE（没有中间产物、大文件没检出）：检查完调用 submit_merge 请父对话收尾，tests 写上做了哪些检查，并写明「UE 编译交父对话」，handoff 按模板写交接要点；改了 C++ 时 build 保持 true，父对话合回后在它的目录里编译；没改 C++（只改 Lua、配置、表格、资源、文档）时 build 写 false。
-- 合回去不等于编译通过：编译报错时会交回给你，修好后再 submit_merge 一次。`
-    : `- 改了 C++ 时，改完、检查完调用 request_build 向父对话申请编译，note 写清改了哪些模块和文件、需要编哪个目标；然后结束这一轮，编译结果面板会直接推给你。没改 C++ 不用申请。
-- 编译报错就修好再申请一次；改了 C++ 时编译通过才算这次改动验证过。`
-}
-- 不要因为没编译就说做不完：你的完成标准是改动和检查都交代清楚、编译申请已经发出。`
 }
 
 /** 对话自己改代码时的验证范围：小改动跑快速检查就收尾，省掉完整测试的时间 */
@@ -2779,7 +2767,8 @@ async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
   const agent = host.agents.find((a) => a.id === step.agentId)
   if (agent?.origin !== 'builtin:reviewer') return ''
   const brief = briefPart(spec.review)
-  if (!host.reviewDiff) return brief
+  if (!host.reviewDiff)
+    return [brief, changedFilesPart(host.task.changes.map((c) => c.path))].filter(Boolean).join('\n\n')
   const key = step.session || ''
   const prev = key
     ? host.task.steps.filter((s) => s !== step && (s.session || s.id) === key && s.snapshot).at(-1)
@@ -2988,7 +2977,7 @@ function makeOrchestra(
     hasMain: !!ctx.main,
     planner,
     common: commonAgents(host.agents)
-      .filter((a) => a.id !== self.agentId && !(host.submitMerge && a.origin === VCS_ORIGIN))
+      .filter((a) => a.id !== self.agentId && !(host.isolated && a.origin === VCS_ORIGIN))
       .map((a) => ({ name: a.name, description: a.description })),
     helper,
     autoReturn: !!ctx.chat && !helper,
@@ -3262,6 +3251,7 @@ function makeOrchestra(
       return host.stopBackground ? host.stopBackground(id.trim()) : { ok: false, info: '这里没有后台命令' }
     },
     canSubmit: !helper && !!host.submitMerge,
+    isolated: !!host.isolated,
     // 只有对话自己能开：派出去的子角色、计划里的节点中途换目录，会和对话本身对不上
     canBeginEdit: !!host.beginEdit && !!ctx.chat && !self.parentId,
     async beginEdit() {
@@ -3271,7 +3261,7 @@ function makeOrchestra(
       return r
     },
     async submitMerge(note, tests, build, handoff, triage, override) {
-      if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
+      if (!host.submitMerge) return { ok: false, info: '只有项目里的子对话能请父对话收尾' }
       const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff, triage, override)
       if (r.ok) host.changed(true)
       return r
@@ -3374,7 +3364,7 @@ function makeOrchestra(
       const helperRole = host.agents.find((a) => isHelperAgent(a) && a.enabled)
       // 独立分支里的子对话：提交和合回只走 submit_merge。派「版本控制」去收尾，它会照角色设定自己提交、
       // 甚至自己去合并，面板的收尾步骤一直等不到 submit_merge，子对话就卡在最后一步
-      if (host.submitMerge) {
+      if (host.isolated) {
         const vcs = list.find((x) => {
           const want = x.agent?.trim()
           return want && host.agents.some((a) => a.origin === VCS_ORIGIN && (a.id === want || a.name === want))
@@ -4222,12 +4212,11 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
       : ''
     const roleAsks = roleText.includes('子对话停下来等用户时必须先提问')
     const roleSuggests = roleText.includes('子对话的收尾建议也交给用户选')
-    // 界面把「没在跑、也没有提问」的子对话当成已完成：子对话安静停下等于把未决的问题藏起来
-    if (!roleAsks)
-      parts.push(`## 停下之前先提问
-子对话的「已停止」只由用户或父对话主动停止产生，你不要安静地停下。遇到拿不准的、需要用户确认的、不可逆的操作、缺外部信息时：用提问工具（有原生提问的用原生方式，没有的用面板的 ask_user）把问题、选项和各自的后果写清楚；要父对话决定时用 message_parent 并把 question 设为 true。先把提问发出去再结束这一轮，不要只在结论里写一句「待确认」。`)
-    if (host.messageParent && roleSuggests)
-      // 通用规则在角色里；这里只补随项目变的完成标准（独立分支 / P4 / 共用目录不一样）
+    // 提问怎么问、问给谁按子对话自己的「提问」开关（见 shared/child-ask.ts）
+    const askPart = childAskPrompt(host.task.askUser, roleAsks)
+    if (askPart) parts.push(askPart)
+    // 通用规则在角色里、或关着提问（收尾建议也不交给别人选）时：只补随项目变的完成标准
+    if (host.messageParent && (roleSuggests || !host.task.askUser))
       parts.push(`## 子对话的完成标准
 这个子对话做到「${wrapDone(wrapKind(host), parentRunsIn(host))}」为止${wrapKind(host) ? '，这是收尾，面板已经把它列成计划的最后一步，不要写成建议' : ''}；和角色设定里写的不一样时以这里为准。`)
     else if (host.messageParent)
