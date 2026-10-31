@@ -1251,7 +1251,7 @@ await runShard(import.meta.filename, async (api) => {
     // 父对话在写：整体 = 本对话，子任务与子对话那行是「空闲」
     await setup('writing')
     await openToken()
-    await check(p, '任务-Token浮层-父对话在写', ['整个运行', '空闲', '42.0 token/s'])
+    await check(p, '任务-Token浮层-父对话在写', ['整个运行', '空闲', '42.0 t/s'])
     const writing = await popover()
     if (/2041\.7|3000\.0/.test(writing)) errors.push(`Token 浮层：停下的子任务还在贡献速度（${writing}）`)
     await p.keyboard.press('Escape')

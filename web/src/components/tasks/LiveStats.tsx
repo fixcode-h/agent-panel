@@ -25,11 +25,14 @@ export function LiveStats({
   return (
     <span className={cn('flex items-center gap-2 font-mono text-[0.6875rem] text-subtle tabular-nums', className)}>
       <span
-        className={cn('flex items-center gap-1', tps > 0 ? 'text-accent-text' : 'text-subtle')}
+        className={cn(
+          'flex shrink-0 items-center gap-1 whitespace-nowrap',
+          tps > 0 ? 'text-accent-text' : 'text-subtle',
+        )}
         title={t('实时输出速度')}
       >
         <Zap className="h-3 w-3" />
-        {tps > 0 ? `${tps.toFixed(1)} token/s` : waiting ? t('等待中') : t('空闲')}
+        {tps > 0 ? `${tps.toFixed(1)} t/s` : waiting ? t('等待中') : t('空闲')}
       </span>
       <span
         title={t('输入 {input} · 输出 {output}', { input: task.usage.inputTokens, output: task.usage.outputTokens })}
