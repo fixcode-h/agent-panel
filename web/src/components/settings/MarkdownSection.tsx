@@ -32,6 +32,9 @@ const SAMPLE = `# 一级标题
 ## 二级标题
 > 引用：Agent 汇报里的原话放在这里。
 
+> [!TIP]
+> 提示块：> [!NOTE]、[!TIP]、[!IMPORTANT]、[!WARNING]、[!CAUTION] 五种。
+
 - 无序列表
   - 第二层
 - [x] 已完成的任务
@@ -48,7 +51,15 @@ const SAMPLE = `# 一级标题
 | schema.ts | +3 | 待测 |
 
 \`\`\`ts
-const ok = (a: number) => a > 0 // 代码块
+// 代码块：带行号，顶栏有折行和复制
+const ok = (a: number) => a > 0
+\`\`\`
+
+\`\`\`mermaid
+flowchart LR
+  A([开始]) --> B{通过?}
+  B -- 是 --> C[合并]
+  B -- 否 --> D[返工] --> B
 \`\`\`
 
 ---
@@ -60,6 +71,8 @@ const SAMPLE_TEAM = new Set(['主理'])
 
 /** 点预览里的元素跳到对应的设置组：选择器按从里到外的顺序试 */
 const PICK: [string, MdElement][] = [
+  ['.md-mermaid', 'mermaid'],
+  ['.md-alert', 'alert'],
   ['.md-code, .chat-md > pre', 'pre'],
   [':not(pre) > code', 'code'],
   ['.mention', 'mention'],
@@ -106,6 +119,11 @@ const optionLabel = (v: string) =>
     solid: t('实线'),
     dashed: t('虚线'),
     dotted: t('点线'),
+    fade: t('两头渐隐'),
+    bar: t('左侧竖条'),
+    diamond: t('菱形'),
+    dot: t('圆点'),
+    underline: t('渐隐底线'),
     '450': t('常规'),
     '500': t('中等'),
     '600': t('半粗'),
@@ -125,6 +143,14 @@ const colorLabel = (v: string) =>
     code: t('代码色'),
     line: t('边框色'),
     border: t('强边框色'),
+    gold: t('金色'),
+    blue: t('蓝色'),
+    violet: t('紫色'),
+    teal: t('青绿'),
+    coral: t('珊瑚色'),
+    gray: t('灰色'),
+    bright: t('亮白'),
+    sand: t('沙色'),
     custom: t('自定义'),
   })[v] ?? v
 
@@ -137,6 +163,9 @@ const bgLabel = (v: string) =>
     chip: t('代码标签底色'),
     sel: t('选中底色'),
     accent: t('强调浅底'),
+    blue: t('蓝色浅底'),
+    warm: t('暖色浅底'),
+    head: t('表头浅底'),
     custom: t('自定义'),
   })[v] ?? v
 
@@ -330,6 +359,8 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
     code: t('行内代码'),
     pre: t('代码块'),
     quote: t('引用'),
+    alert: t('提示块'),
+    mermaid: t('Mermaid 图'),
     ul: t('无序列表'),
     ol: t('有序列表'),
     task: t('任务列表'),
@@ -419,6 +450,9 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         <Row title={t('标题颜色')}>
           <F el={level} prop="color" label={t('标题颜色')} />
         </Row>
+        <Row title={t('标题装饰')} desc={t('标题前的竖条、菱形、短横、圆点，或标题下一条渐隐的线，颜色跟标题。')}>
+          <F el={level} prop="deco" label={t('标题装饰')} />
+        </Row>
         <Row title={t('标题字体')}>
           <F el={level} prop="font" label={t('标题字体')} />
         </Row>
@@ -498,8 +532,11 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         <Row title={t('代码块语言栏')} desc={t('顶部的语言名和复制按钮。')}>
           <F el="pre" prop="bar" label={t('代码块语言栏')} />
         </Row>
-        <Row title={t('代码块自动换行')} desc={t('关掉时长行横向滚动。')}>
+        <Row title={t('代码块自动换行')} desc={t('关掉时长行横向滚动，顶栏的「折行」可以单独打开一块。')}>
           <F el="pre" prop="wrap" label={t('代码块自动换行')} />
+        </Row>
+        <Row title={t('代码块行号')} desc={t('只有一行的代码块不显示；复制时不会带上行号。')}>
+          <F el="pre" prop="lineNumbers" label={t('代码块行号')} />
         </Row>
       </Group>
 
@@ -517,8 +554,21 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         <Row title={t('引用底色')}>
           <F el="quote" prop="bg" label={t('引用底色')} />
         </Row>
+        <Row title={t('引用圆角')}>
+          <F el="quote" prop="radius" label={t('引用圆角')} />
+        </Row>
         <Row title={t('引用斜体')}>
           <F el="quote" prop="italic" label={t('引用斜体')} />
+        </Row>
+      </Group>
+
+      <Group title={t('提示块')}>
+        <GroupReset els={['alert']} />
+        <Row title={t('提示块浅底')} desc={t('按类型（说明、提示、重要、注意、警告）铺一层同色浅底。')}>
+          <F el="alert" prop="tint" label={t('提示块浅底')} />
+        </Row>
+        <Row title={t('提示块圆角')}>
+          <F el="alert" prop="radius" label={t('提示块圆角')} />
         </Row>
       </Group>
 
@@ -572,6 +622,12 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         <Row title={t('表格边框')}>
           <F el="table" prop="border" label={t('表格边框')} />
         </Row>
+        <Row title={t('表格外框')} desc={t('表格外面一圈圆角细框。')}>
+          <F el="table" prop="outer" label={t('表格外框')} />
+        </Row>
+        <Row title={t('表格圆角')}>
+          <F el="table" prop="radius" label={t('表格圆角')} />
+        </Row>
         <Row title={t('表头底色')}>
           <F el="table" prop="headerBg" label={t('表头底色')} />
         </Row>
@@ -612,6 +668,25 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         </Row>
         <Row title={t('图片边框')}>
           <F el="img" prop="border" label={t('图片边框')} />
+        </Row>
+        <Row title={t('图片图注')} desc={t('把图片的替代文字显示在图下面。')}>
+          <F el="img" prop="caption" label={t('图片图注')} />
+        </Row>
+      </Group>
+
+      <Group title={t('Mermaid 图')}>
+        <GroupReset els={['mermaid']} />
+        <Row title={t('出场动画')} desc={t('画好后节点依次浮现、连线从头画到尾、饼图展开、甘特条长出。')}>
+          <F el="mermaid" prop="motion" label={t('出场动画')} />
+        </Row>
+        <Row title={t('悬停高亮')} desc={t('鼠标停在节点上时，它和相连的线高亮并流动，其余变淡。')}>
+          <F el="mermaid" prop="hover" label={t('悬停高亮')} />
+        </Row>
+        <Row title={t('节点渐变底')}>
+          <F el="mermaid" prop="gradient" label={t('节点渐变底')} />
+        </Row>
+        <Row title={t('画布点阵底')}>
+          <F el="mermaid" prop="grid" label={t('画布点阵底')} />
         </Row>
       </Group>
 
