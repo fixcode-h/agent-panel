@@ -2017,10 +2017,11 @@ body,
 }
 /* 设置页的分组卡片（settings/parts.tsx 的 Group）：边界靠底色分、不描边（docs/lessons/visual.md），
    底色从当前配色的 fg 混出来，各套配色、深浅色都跟着走；卡片里直接放的行、折叠和自定义内容之间一道细线 */
+/* 设置页的分组卡片跟外观里的「圆角」走（--panel-radius，默认 0 直角），不再写死 12px */
 .settings-card {
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
+  border-radius: var(--panel-radius, 0);
   padding-inline: 16px;
   background: color-mix(in srgb, var(--color-fg) 3.5%, transparent);
 }
