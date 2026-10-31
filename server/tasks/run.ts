@@ -36,7 +36,6 @@ import { childAskInitial } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
 import { detectClis } from '../detect.ts'
 import { gitHead, gitNumstat } from '../exec/git.ts'
-import { wantsHandoff } from '../../shared/handoff.ts'
 import {
   deliverWait,
   forgetNotes,
@@ -726,15 +725,7 @@ export function createRun(sc: TasksScope) {
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
     if (next.parentTaskId && next.resolved) {
       next.resolved = false
-      // 上次的上下文大：开新会话只带交接摘要，不把上次的工具输出全读一遍（见 ADR 0007）。
-      // 旧会话的位置还记在各条消息的轮次上，要完整过程时用户可以回退到旧消息接回去
-      if (!next.rewind && wantsHandoff(next.usage.agents[next.agentId]?.context, !!next.handoff?.text)) {
-        next.rewind = { session: '', through: null, latest: false, summary: next.handoff!.text }
-        log.info('task', '叫醒已完成的子对话：上下文大，开新会话带交接摘要', {
-          task: id,
-          context: next.usage.agents[next.agentId]?.context,
-        })
-      }
+      // 一律用 --resume 接回原会话，不管上下文多大（用户 2026-10-31 定的，取代 ADR 0007 的「上下文大就开新会话带摘要」）
       // 又要接着做：再完成一次时该重新上报父对话
       sc.reportedDone.delete(id)
       sc.mergeNudged.delete(id)

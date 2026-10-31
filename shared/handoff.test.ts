@@ -1,13 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  HANDOFF_MIN_CONTEXT,
-  handoffInput,
-  handoffMissing,
-  handoffTemplate,
-  handoffText,
-  wantsHandoff,
-} from './handoff.ts'
+import { handoffInput, handoffMissing, handoffTemplate, handoffText } from './handoff.ts'
 
 const facts = {
   title: '修登录',
@@ -41,11 +34,4 @@ test('交接摘要：子对话写的在前，面板补的需求、验证、提�
   assert.ok(!text.includes('## 相关文档'), '没写的段落不出现')
   assert.match(text, /1234567 Agent 面板：修登录/)
   assert.match(text, /web\/src\/Login\.tsx（3\/1）/)
-})
-
-test('叫醒时：上下文到阈值且有摘要才换新会话', () => {
-  assert.equal(wantsHandoff(HANDOFF_MIN_CONTEXT, true), true)
-  assert.equal(wantsHandoff(HANDOFF_MIN_CONTEXT - 1, true), false, '小的接回原会话更省')
-  assert.equal(wantsHandoff(HANDOFF_MIN_CONTEXT * 3, false), false, '没有摘要只能接回原会话')
-  assert.equal(wantsHandoff(undefined, true), false)
 })
