@@ -97,8 +97,6 @@ export const EN_AGENTS: Record<string, string> = {
   低: 'Low',
   中: 'Medium',
   高: 'High',
-  很高: 'Extra high',
-  最高: 'Max',
 
   // AI 创建 / 优化
   '一个专门写 Playwright 端到端测试的角色，用 Claude Code':
