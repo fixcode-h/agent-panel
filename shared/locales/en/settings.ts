@@ -971,8 +971,6 @@ export const EN_SETTINGS: Record<string, string> = {
   记下: 'Save',
   '{n} 条': '{n}',
   项目教训: 'Project lessons',
-  '记成项目教训：以后这个项目里的角色都会照着做':
-    'Save as project lesson: roles in this project will follow it from now on',
   规则不能为空: 'Rule cannot be empty',
   '项目教训已经有 {n} 条，先在项目设置里合并同类项再记':
     'There are already {n} project lessons; merge similar ones in project settings first',

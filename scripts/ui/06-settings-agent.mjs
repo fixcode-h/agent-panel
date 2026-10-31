@@ -277,7 +277,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .click()
   await p.getByText('代码审查', { exact: true }).first().click()
   // 角色详情头部只留「对话」，AI 优化收在「⋯」菜单里
-  await p.locator('main header').getByRole('button', { name: '更多操作' }).click()
+  await p.locator('main header').getByRole('button', { name: '更多操作', exact: true }).click()
   await p.getByRole('menuitem', { name: 'AI 优化' }).click()
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()
   const assistDock = dock('用 AI 优化「代码审查」')
