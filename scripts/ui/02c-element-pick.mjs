@@ -956,7 +956,7 @@ await runShard(import.meta.filename, async (api) => {
       const restOpacity = await meta.evaluate((el) => getComputedStyle(el.parentElement).opacity).catch(() => '1')
       if (restOpacity !== '0') errors.push(`用户消息：鼠标没移上去时操作行就显示了（opacity ${restOpacity}）`)
       await bubble.hover()
-      await bubble.getByRole('button', { name: '更多操作' }).click()
+      await bubble.getByRole('button', { name: '这条消息的更多操作' }).click()
       const items = p.getByRole('menuitem')
       await items
         .first()

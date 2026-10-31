@@ -177,7 +177,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 工作流任务从项目首页的任务列表点进去
   await p.goto(base)
   await p.getByText('商品详情页增加', { exact: false }).first().click()
-  await p.getByRole('button', { name: '更多操作' }).click()
+  await p.getByRole('button', { name: '更多操作', exact: true }).click()
   await p.getByRole('menuitem', { name: 'AI 分析执行结果' }).click()
   await p.getByRole('dialog').getByRole('button', { name: '开始分析' }).click()
   await p.getByText('工作流优化', { exact: true }).waitFor({ timeout: 20000 })
@@ -517,7 +517,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (await p.getByText('已自动保存').count()) errors.push('角色详情：没有改动时还常驻「已自动保存」')
   if (await p.getByText('就绪检查').count()) errors.push('角色详情：还留着常驻的「就绪检查」卡片')
   // 复制一份就是普通 Agent（参数定义可以改）：入口在头部的「⋯」菜单里
-  await p.locator('main header').getByRole('button', { name: '更多操作' }).click()
+  await p.locator('main header').getByRole('button', { name: '更多操作', exact: true }).click()
   await check(p, '角色-更多操作', ['复制一份', '导出分享包'])
   await p.getByRole('menuitem', { name: '复制一份' }).click()
   await p.getByRole('tab', { name: /^运行/ }).click()

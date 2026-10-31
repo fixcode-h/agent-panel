@@ -132,7 +132,8 @@ export function MessageMenu({ items }: { items: MessageMenuItem[] }) {
   return (
     <Menu>
       <MenuTrigger asChild>
-        <IconButton size="sm" icon={MoreHorizontal} label={t('更多操作')} title={t('更多操作')} />
+        {/* 和页头的「更多操作」分开叫：读屏和界面检查都要分得清是哪一个「⋯」 */}
+        <IconButton size="sm" icon={MoreHorizontal} label={t('这条消息的更多操作')} title={t('更多操作')} />
       </MenuTrigger>
       <MenuContent className="w-[280px]">
         {items.map((m) => (
