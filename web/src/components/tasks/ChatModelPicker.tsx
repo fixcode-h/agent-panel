@@ -189,7 +189,7 @@ function EffortIcon({ effort }: { effort: string }) {
     <Brain
       aria-hidden
       className={cn('h-3.5 w-3.5 shrink-0', effort === 'off' ? 'text-subtle' : 'text-accent')}
-      strokeWidth={1.8}
+      strokeWidth={2.2}
     />
   )
 }
@@ -198,7 +198,7 @@ function EffortIcon({ effort }: { effort: string }) {
 function ModelFace({ model, effort }: { model: string; effort: string }) {
   return (
     <>
-      <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={1.8} />
+      <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2.2} />
       <span className="min-w-0 truncate font-semibold text-fg">{model}</span>
       {effort && (
         <>

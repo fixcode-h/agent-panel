@@ -264,7 +264,7 @@ function Row({
         )}
       >
         <span className="relative shrink-0">
-          <Icon className="h-4 w-4" strokeWidth={1.8} />
+          <Icon className="h-4 w-4" strokeWidth={2.2} />
           {(badge || dot) && collapsed && (
             <span
               aria-hidden="true"
@@ -370,8 +370,8 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
               m.on ? 'seg-thumb' : 'text-muted hover:bg-sel/70 hover:text-fg',
             )}
           >
-            {/* 和图标栏的导航图标同一套线宽，只小一号：模式是次一级的切换 */}
-            <m.icon className="h-[18px] w-[18px]" strokeWidth={1.6} />
+            {/* 和图标栏的导航图标同一套线宽，小一号（铺满大半个按钮）：模式是次一级的切换 */}
+            <m.icon className="h-7 w-7" strokeWidth={1.9} />
           </button>
         ))}
       </div>
@@ -639,7 +639,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           </p>
           {found.length === 0 && !contentHits.length && (
             <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-              <FolderSearch className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+              <FolderSearch className="h-5 w-5 text-subtle" strokeWidth={2} />
               <p className="text-xs leading-relaxed text-subtle">{t('没有符合的任务。')}</p>
             </div>
           )}
@@ -717,7 +717,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           </div>
           {allOpen && projects.length === 0 && (
             <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
-              <FolderPlus className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+              <FolderPlus className="h-5 w-5 text-subtle" strokeWidth={2} />
               <p className="text-xs leading-relaxed text-subtle">
                 {t('还没有项目。点右边的 + 添加一个本机目录，再在项目里新建对话。')}
               </p>
@@ -928,7 +928,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             icon={dark ? Sun : Moon}
             label={dark ? t('切换到浅色') : t('切换到深色')}
             size="sm"
-            strokeWidth={1.7}
+            strokeWidth={2.1}
           />
         </div>
       )}

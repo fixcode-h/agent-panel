@@ -9,7 +9,7 @@ import type { ReactNode, SVGProps } from 'react'
 export type NavIcon = (p: { className?: string; strokeWidth?: number }) => ReactNode
 
 function icon(fill: ReactNode, line: ReactNode): NavIcon {
-  return function RailIcon({ className, strokeWidth = 1.7 }) {
+  return function RailIcon({ className, strokeWidth = 2.1 }) {
     const p: SVGProps<SVGSVGElement> = {
       viewBox: '0 0 24 24',
       fill: 'none',

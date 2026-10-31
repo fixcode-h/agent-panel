@@ -185,7 +185,7 @@ export function IntegrationsSection() {
           <Card key={v.id} as="section" padding="md">
             <div className="flex flex-wrap items-start gap-3">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-sel text-muted">
-                <SquareTerminal className="h-4 w-4" strokeWidth={1.8} />
+                <SquareTerminal className="h-4 w-4" strokeWidth={2.2} />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 font-medium">

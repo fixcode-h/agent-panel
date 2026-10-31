@@ -65,7 +65,7 @@ export function Segmented<T extends string>({
                 : 'text-muted hover:text-fg',
           )}
         >
-          {o.icon && <o.icon className={iconOnly ? 'h-4 w-4' : 'h-3.5 w-3.5'} strokeWidth={1.8} />}
+          {o.icon && <o.icon className={iconOnly ? 'h-4 w-4' : 'h-3.5 w-3.5'} strokeWidth={2.2} />}
           {!iconOnly && o.label}
           {o.dot && <span aria-label={o.dot} className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
         </button>

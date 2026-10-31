@@ -801,7 +801,7 @@ export function AttachMenu({
             className,
           )}
         >
-          <Paperclip className="h-4 w-4" strokeWidth={1.8} />
+          <Paperclip className="h-4 w-4" strokeWidth={2.2} />
         </PopoverTrigger>
         <PopoverContent
           align="start"

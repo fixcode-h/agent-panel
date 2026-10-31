@@ -227,7 +227,7 @@ export function TaskFiles({
         <>
           {/* 项目信息行：分支 · 改动数；行尾是这一页的工具（查找、显示方式）和刷新 */}
           <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-[0.75rem] text-subtle">
-            <GitBranch className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={1.8} />
+            <GitBranch className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={2.2} />
             <span className="min-w-0 truncate font-mono text-[0.71875rem] text-muted" title={files.info?.dir ?? dir}>
               {files.info?.branch ?? t('没有分支')}
             </span>

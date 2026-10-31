@@ -181,7 +181,7 @@ export function ModelPreview({ taskId, running }: { taskId: string; running: boo
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-[0.75rem] text-subtle">
-        <Box className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={1.8} />
+        <Box className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={2.2} />
         <span className="min-w-0 truncate">
           {version
             ? t('第 {n} 版 · {count} 个物体', { n: version, count: meta?.objects.length ?? 0 })
@@ -208,7 +208,7 @@ export function ModelPreview({ taskId, running }: { taskId: string; running: boo
         <div ref={host} aria-label={t('模型预览')} className={cn('absolute inset-0', !version && 'invisible')} />
         {!version && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
-            <Box className="h-6 w-6 text-subtle" strokeWidth={1.5} />
+            <Box className="h-6 w-6 text-subtle" strokeWidth={1.9} />
             <p className="text-[0.78125rem] leading-relaxed text-subtle">
               {t('还没有模型。Agent 用 Blender 建模后，这里会实时显示，可以拖动旋转、滚轮缩放。')}
             </p>

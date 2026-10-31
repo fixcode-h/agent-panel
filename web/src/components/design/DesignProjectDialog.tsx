@@ -225,7 +225,7 @@ function Body({
           className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:border-r md:border-b-0 md:p-3"
         >
           <NavItem on={section === 'general'} onClick={() => setSection('general')}>
-            <Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <Settings2 className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('常规')}
           </NavItem>
           <NavItem
@@ -233,7 +233,7 @@ function Body({
             onClick={() => setSection('prompts')}
             hint={enabled ? String(enabled) : undefined}
           >
-            <Palette className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <Palette className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('美术提示词')}
           </NavItem>
         </nav>
