@@ -326,7 +326,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               // 回复头的角色图标不带底色块，只是一个按 CLI 着色的图标
               avatar={
                 <span className="flex h-7 w-[22px] items-center justify-center text-[#be185d]">
-                  <Workflow className="h-[18px] w-[18px]" strokeWidth={2} />
+                  <Workflow className="h-[18px] w-[18px]" strokeWidth={2.3} />
                 </span>
               }
               name={t('主理')}
@@ -443,12 +443,12 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
             </div>
             {/* 快捷键和侧栏一样：悬停到这一行才出现 */}
             <NavRow
-              icon={<Plus className="h-4 w-4" strokeWidth={1.8} />}
+              icon={<Plus className="h-4 w-4" strokeWidth={2.2} />}
               label={t('新建任务')}
               className="group/nav"
               trailing={<Kbd className="ml-auto opacity-0 transition-opacity group-hover/nav:opacity-100">⌘⇧O</Kbd>}
             />
-            <NavRow icon={<Workflow className="h-4 w-4" strokeWidth={1.8} />} label={t('工作流')} on />
+            <NavRow icon={<Workflow className="h-4 w-4" strokeWidth={2.2} />} label={t('工作流')} on />
             <p className={cn('px-2 pt-2.5 pb-1.5 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
             {/* 项目行和对话行用侧栏同一套部件：正在看的项目是淡蓝底，里面选中的对话是白卡片 */}
             <SidebarProjectRow

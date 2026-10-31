@@ -437,9 +437,9 @@ function SettingsBody({
     s.cli ? (
       <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ background: cliColor(s.cli.id) }} />
     ) : s.id === 'models' ? (
-      <SquareTerminal className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+      <SquareTerminal className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
     ) : (
-      s.icon && <s.icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+      s.icon && <s.icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
     )
   const defName = CLIS.find((c) => c.id === defCli)?.name ?? defCli
   // 索引存的是中文原文：翻成当前语言再搜；各个 CLI 共用的那页（@cli）落到默认 CLI 上
@@ -574,10 +574,10 @@ function SettingsBody({
                   )}
                   icon={
                     s.id === 'models' ? (
-                      <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
+                      <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
                     ) : (
                       s.icon && (
-                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
+                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
                       )
                     )
                   }
@@ -674,7 +674,7 @@ function SettingsBody({
                       <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(s.cli.id) }} />
                     ) : (
                       s.icon && (
-                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
+                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
                       )
                     )
                   }
@@ -732,6 +732,7 @@ function SettingsBody({
         </header>
         {/* 这一节有多个小节时，标题下面多一条页内导航（见 section-nav.tsx） */}
         {!searching && <SectionToc />}
+        {/* 改这里的 pb-12 / px-5 / md:px-9 时要同步 DeploySection 吸底操作栏的偏移，不然栏下面会漏出列表 */}
         <div
           ref={setSectionScroll}
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-12 [scrollbar-gutter:stable] md:px-9"

@@ -723,11 +723,11 @@ function Body({
           className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[244px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3"
         >
           <NavItem on={section === 'general'} onClick={() => setSection('general')}>
-            <Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <Settings2 className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('常规')}
           </NavItem>
           <NavItem on={section === 'init'} onClick={() => setSection('init')} dot={!draft.initializedAt}>
-            <Sparkles className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <Sparkles className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('AI 初始化')}
           </NavItem>
           <NavItem
@@ -735,11 +735,11 @@ function Body({
             onClick={() => setSection('roles')}
             dot={Object.values(draft.agentParams).some((v) => Object.keys(v).length > 0)}
           >
-            <Users className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <Users className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('必备角色')}
           </NavItem>
           <NavItem on={section === 'workflows'} onClick={() => setSection('workflows')}>
-            <WorkflowIcon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <WorkflowIcon className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('工作流')}
           </NavItem>
           <NavItem
@@ -747,7 +747,7 @@ function Body({
             onClick={() => setSection('tests')}
             hint={draft.testSteps.length ? t('{n} 步', { n: draft.testSteps.length }) : undefined}
           >
-            <FlaskConical className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <FlaskConical className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('测试步骤')}
           </NavItem>
           <NavItem
@@ -755,15 +755,15 @@ function Body({
             onClick={() => setSection('lessons')}
             hint={draft.lessons.length ? t('{n} 条', { n: draft.lessons.length }) : undefined}
           >
-            <GraduationCap className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <GraduationCap className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('项目教训')}
           </NavItem>
           <NavItem on={section === 'skills'} onClick={() => setSection('skills')}>
-            <Library className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <Library className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             Skill
           </NavItem>
           <NavItem on={section === 'mcp'} onClick={() => setSection('mcp')}>
-            <Plug className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <Plug className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('MCP')}
           </NavItem>
           <NavItem
@@ -772,7 +772,7 @@ function Body({
             dot={isChanged([SHARED_DOC, 'AGENT.md'])}
             hint={hasDoc([SHARED_DOC]) ? SHARED_DOC : undefined}
           >
-            <FileText className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <FileText className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('项目说明')}
           </NavItem>
           <span className="hidden px-2.5 pt-4 pb-1 text-[0.6875rem] text-subtle md:block">
@@ -1400,7 +1400,7 @@ function Collapsible({
         >
           <ChevronRight
             className={cn('h-4 w-4 shrink-0 text-subtle transition-transform', open && 'rotate-90')}
-            strokeWidth={2}
+            strokeWidth={2.3}
           />
           {leading}
           <span className="flex min-w-0 flex-col">

@@ -226,7 +226,7 @@ function RoleGlyph({ icon, cli }: { icon?: string; cli: string }) {
   const Icon = agentIcon(icon ?? 'sparkles')
   return (
     <span className="flex h-7 w-[22px] items-center justify-center" style={{ color: cliColor(cliOf({ cli })) }}>
-      <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
+      <Icon className="h-[18px] w-[18px]" strokeWidth={2.3} />
     </span>
   )
 }

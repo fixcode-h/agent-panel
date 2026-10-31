@@ -221,7 +221,7 @@ export function LessonsEditor({
                 >
                   <ChevronRight
                     className={cn('h-4 w-4 shrink-0 text-subtle transition-transform', expanded && 'rotate-90')}
-                    strokeWidth={2}
+                    strokeWidth={2.3}
                   />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="truncate text-[0.8125rem] font-medium">{l.title || t('（还没写规则）')}</span>
@@ -554,7 +554,7 @@ export function RecordLessonDialog({
     // 标题栏带图标、用衬线字，自己画；D.Title 放在标题栏里，外壳不再重复给读屏名
     <Modal open onOpenChange={(o) => !o && onClose()} title={null} bare className="max-w-[560px]">
       <header className="flex shrink-0 items-center gap-2.5 border-b px-5 py-4">
-        <GraduationCap className="h-[18px] w-[18px] shrink-0 text-accent-text" strokeWidth={1.8} />
+        <GraduationCap className="h-[18px] w-[18px] shrink-0 text-accent-text" strokeWidth={2.2} />
         <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.0625rem] font-semibold">
           {t('记成项目教训')}
         </D.Title>
@@ -771,7 +771,7 @@ export function GlobalLessonsSection() {
                 >
                   <ChevronRight
                     className={cn('h-4 w-4 shrink-0 text-subtle transition-transform', expanded && 'rotate-90')}
-                    strokeWidth={2}
+                    strokeWidth={2.3}
                   />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="truncate text-[0.8125rem] font-medium">{l.title || t('（还没写规则）')}</span>

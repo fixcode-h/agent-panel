@@ -117,7 +117,7 @@ function DesignModeSwitch({ value, onChange }: { value: DesignMode; onChange: (m
   const cur = modes.find((m) => m.id === value) ?? modes[0]
   const tile = (m: (typeof modes)[number], size: string) => (
     <span className={cn('grid shrink-0 place-items-center rounded-lg text-on-primary', size, m.tone)}>
-      <m.icon className="h-3.5 w-3.5" strokeWidth={2} />
+      <m.icon className="h-3.5 w-3.5" strokeWidth={2.3} />
     </span>
   )
   return (
@@ -188,7 +188,7 @@ function ModelDesignList() {
       </div>
       {!groups.length && (
         <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
-          <Box className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+          <Box className="h-5 w-5 text-subtle" strokeWidth={2} />
           <p className="text-xs leading-relaxed text-subtle">
             {t('还没有模型设计对话。模型设计用 Blender 建模，对话会按项目列在这里。')}
           </p>
@@ -425,7 +425,7 @@ function UiDesignList() {
       </div>
       {!projects.length && (
         <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
-          <Palette className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+          <Palette className="h-5 w-5 text-subtle" strokeWidth={2} />
           <p className="text-xs leading-relaxed text-subtle">
             {t('还没有 UI 项目。UI 设计的项目和 Agent 的项目是分开的。')}
           </p>
@@ -458,7 +458,10 @@ function UiDesignList() {
                       !ds.length && 'invisible',
                     )}
                   >
-                    <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} strokeWidth={2} />
+                    <ChevronRight
+                      className={cn('h-3 w-3 transition-transform', open && 'rotate-90')}
+                      strokeWidth={2.3}
+                    />
                   </button>
                   <div className={cn(PROJECT_CARD, on ? PROJECT_CARD_ON : PROJECT_CARD_OFF)}>
                     <button

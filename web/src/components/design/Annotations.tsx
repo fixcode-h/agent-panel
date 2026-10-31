@@ -140,7 +140,7 @@ export function AnnotationToolbar({
               text={labels ? x.text : undefined}
               tall={labels}
             >
-              <x.icon className="h-4 w-4" strokeWidth={1.8} />
+              <x.icon className="h-4 w-4" strokeWidth={2.2} />
             </ToolButton>
           </span>
         ))}
@@ -161,10 +161,10 @@ export function AnnotationToolbar({
               />
               <span className="w-7 text-center font-mono text-[0.6875rem] text-canvas-subtle">{mask.size}</span>
               <ToolButton label={t('橡皮擦')} on={mask.erase} onClick={() => mask.onErase(!mask.erase)}>
-                <Eraser className="h-4 w-4" strokeWidth={1.8} />
+                <Eraser className="h-4 w-4" strokeWidth={2.2} />
               </ToolButton>
               <ToolButton label={t('撤销上一笔')} onClick={mask.onUndo} disabled={!mask.canUndo}>
-                <Undo2 className="h-4 w-4" strokeWidth={1.8} />
+                <Undo2 className="h-4 w-4" strokeWidth={2.2} />
               </ToolButton>
             </div>
           </>

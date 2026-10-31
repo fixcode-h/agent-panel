@@ -653,7 +653,7 @@ export function CliSection({
           className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] text-white"
           style={{ background: cliColor(def.id) }}
         >
-          <SquareTerminal className="h-5 w-5" strokeWidth={1.8} />
+          <SquareTerminal className="h-5 w-5" strokeWidth={2.2} />
         </span>
         <div className="min-w-0 flex-[1_1_180px]">
           <p className="flex items-center gap-2 font-medium">

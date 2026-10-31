@@ -431,7 +431,7 @@ export function ChatList() {
       )}
       {chats.length === 0 && !chatHits.length && (
         <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-          <MessagesSquare className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+          <MessagesSquare className="h-5 w-5 text-subtle" strokeWidth={2} />
           <p className="text-xs leading-relaxed text-subtle">{filtering ? t('没有符合的聊天。') : t('还没有聊天。')}</p>
         </div>
       )}

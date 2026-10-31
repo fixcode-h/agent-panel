@@ -128,7 +128,7 @@ function ProjectHome({ project }: { project: Project }) {
           <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-8 md:px-6 md:pt-12">
             <div className="flex flex-col gap-2">
               <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
-                <FolderGit2 className="h-7 w-7 shrink-0 text-accent-text" strokeWidth={1.6} />
+                <FolderGit2 className="h-7 w-7 shrink-0 text-accent-text" strokeWidth={2} />
                 <span className="min-w-0 truncate">{project.name}</span>
               </h1>
               <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8125rem] text-subtle">

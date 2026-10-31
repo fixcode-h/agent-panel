@@ -938,7 +938,7 @@ export function Viewport({
                 aria-label={label}
                 title={label}
               >
-                <Icon className="h-4 w-4" strokeWidth={1.8} />
+                <Icon className="h-4 w-4" strokeWidth={2.2} />
               </Button>
             ))}
           </div>

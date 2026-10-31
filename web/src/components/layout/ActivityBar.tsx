@@ -52,7 +52,7 @@ function Item({
         on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
       )}
     >
-      <Icon className="h-5 w-5" strokeWidth={1.6} />
+      <Icon className="h-8 w-8" strokeWidth={1.9} />
       {/* 圆点描一圈图标栏的底色，压在图标角上也分得开 */}
       {dot && (
         <span aria-hidden className="activity-dot absolute top-[7px] right-[7px] h-2 w-2 rounded-full bg-accent" />
