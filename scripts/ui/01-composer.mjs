@@ -201,7 +201,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     }
     await check(p, '对话-图片气泡')
     // 右上角「⋯」里的「复制对话」：剪贴板里是转录文件的路径，粘贴回输入框变成一张会话卡片，不是一段文字
-    await p.getByRole('button', { name: '更多操作' }).first().click()
+    await p.getByRole('button', { name: '更多操作', exact: true }).first().click()
     // 导出菜单里除了 JSON 包还要有单文件 HTML 报告（不点：点了会下载文件）
     if (!(await p.getByRole('menuitem', { name: '导出 HTML 报告' }).count()))
       errors.push('导出：更多操作菜单里没有「导出 HTML 报告」')

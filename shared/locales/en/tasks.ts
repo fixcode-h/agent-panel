@@ -1583,6 +1583,7 @@ export const EN_TASKS: Record<string, string> = {
     'No text differences for this file in this turn (it may be a binary file).',
   // 用户消息气泡：送达状态和「⋯」菜单（2026-10-31）
   重新发送: 'Resend',
+  这条消息的更多操作: 'More actions for this message',
   编辑并重发: 'Edit and resend',
   '撤回这条和之后的对话，原文放回输入框':
     'Remove this message and everything after it; the text goes back into the input box',
