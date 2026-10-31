@@ -1593,4 +1593,6 @@ export const EN_TASKS: Record<string, string> = {
   以后这个项目里的角色都照着做: 'Every role in this project will follow it from now on',
   '没送出去，这一轮停下了': 'Not delivered — this turn stopped',
   这一轮结束后处理: 'Handled after this turn',
+  这一轮执行出错了: 'This turn failed',
+  这一轮执行完了: 'This turn finished',
 }

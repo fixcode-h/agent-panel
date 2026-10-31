@@ -13,6 +13,7 @@
 // 13. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
 // 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
 // 15. 大文件只许变小：超过 scripts/file-caps.json 里的上限就失败
+// 16. 界面上的中文要走 t()：JSX 文字节点里直接写中文会在英文界面里露出来
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -430,6 +431,26 @@ else {
       errors.push(
         `${f}：${lines} 行，超过上限 ${cap}（scripts/file-caps.json）。把新加的部分拆到独立模块里；文件变小了跑 node scripts/file-caps.mjs --update 把上限降下来`,
       )
+  }
+}
+
+// 16. 界面上的中文要走 t()：i18n-check 只查 t() 里的文案有没有英文，没包 t() 直接写在 JSX 里的中文查不出来，
+// 英文界面就会冒出中文（设计项目的风格预设就这样漏过）。只看 JSX 的文字节点（>中文<），演示数据和测试不管；
+// 确实要原样显示中文的行在结尾加 i18n-ok 并写明原因
+{
+  const cjk = /[\u4e00-\u9fff]/
+  const jsxText = />([^<>{}\n]*)</g
+  for (const f of files.filter((x) => x.startsWith('web/src/') && x.endsWith('.tsx') && !x.includes('.test.'))) {
+    const lines = readFileSync(path.join(root, f), 'utf8').split('\n')
+    lines.forEach((line, i) => {
+      if (line.includes('i18n-ok') || line.trimStart().startsWith('//') || line.trimStart().startsWith('*')) return
+      for (const m of line.matchAll(jsxText)) {
+        if (cjk.test(m[1]))
+          errors.push(
+            `${f}:${i + 1}：JSX 里直接写了中文「${m[1].trim().slice(0, 20)}」，界面文案要用 t('中文')（见 AGENTS.md）`,
+          )
+      }
+    })
   }
 }
 

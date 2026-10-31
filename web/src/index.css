@@ -48,7 +48,8 @@
   --conv-shadow: 0 1px 2px rgb(24 24 27 / 0.06), 0 0 0 0.5px rgb(24 24 27 / 0.04);
   /* 左上角的产品图标：陶土橙渐变，是品牌色，不跟配色变 */
   --logo-bg: linear-gradient(135deg, #e59a78 0%, #d97757 45%, #b9532f 100%);
-  --primary: var(--accent);
+  /* 主按钮底比 --accent 深一点点：白字在 #c6613f 上只有 4.05:1，不到 AA 的 4.5:1；#b95938 是 4.62:1，看着几乎一样 */
+  --primary: #b95938;
   --on-primary: #ffffff;
   /* 危险按钮上的字：深色主题里危险红偏亮，白字看不清，改用深色字 */
   --on-danger: #ffffff;
@@ -2913,4 +2914,36 @@ html [data-sonner-toast][data-styled='true'] {
 }
 ::highlight(review-note-active) {
   background-color: color-mix(in oklab, var(--warning) 45%, transparent);
+}
+
+/*
+ * 触屏（没有悬停）：只在悬停时出现的行尾操作要一直显示。
+ * 手机抽屉布局、外网访问时用手机打开都会遇到；IconButton 的 reveal 已经自带这条，
+ * 这里兜住直接写 group-hover:opacity-100 的那些（约 20 处），新写的也不会漏
+ */
+@media (hover: none) {
+  [class*='group-hover:opacity-100'],
+  [class*='group-hover/'][class*=':opacity-100'] {
+    opacity: 1;
+  }
+}
+
+/*
+ * 系统设置了「减少动态效果」时的兜底：23 个 @keyframes 只有一部分单独写了 reduce，
+ * 无限循环的流光、等待点、伪元素上的高光（.md-mermaid::after 这类，`*` 匹配不到伪元素）都没停。
+ * 这里统一压成一次、几乎瞬间；加载转圈保留（停住的转圈会被当成卡死）
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
 }

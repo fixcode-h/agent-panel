@@ -5,6 +5,7 @@ import { TOAST_VISIBLE_LIMIT } from '@/lib/toast-queue'
 import { DataProvider, NavCtx, useData, useNav, type Route, useTasks } from '@/lib/data'
 import { useTaskNotifications } from '@/lib/notify'
 import { useTaskDoneUnread } from '@/lib/task-unread'
+import { useScheduleAlerts } from '@/lib/schedule-alerts'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { HomePage } from '@/pages/HomePage'
 import { ChatPage } from '@/pages/ChatPage'
@@ -12,6 +13,7 @@ import { DemoBanner } from '@/components/layout/DemoBanner'
 import { NoCliBanner } from '@/components/layout/NoCliBanner'
 import { ConnectionBanner } from '@/components/layout/ConnectionBanner'
 import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette'
+import { ShortcutsHelp } from '@/components/layout/ShortcutsHelp'
 import { ElementPickHost } from '@/components/chat/ElementPicker'
 import { ActivityBar } from '@/components/layout/ActivityBar'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -135,6 +137,7 @@ function TaskWatcher() {
   // 正在看的对话：项目里的任务或 Chat 里的聊天
   const viewing = route.page === 'projects' && route.sub ? route.sub : route.page === 'chat' ? (route.id ?? '') : ''
   useTaskDoneUnread(tasks, viewing)
+  useScheduleAlerts()
   useTaskNotifications(tasks, (t) =>
     go(t.projectId ? { page: 'projects', id: t.projectId, sub: t.id } : { page: 'chat', id: t.id }),
   )
@@ -173,10 +176,15 @@ function UiActions({ reopenProject }: { reopenProject: (id: string, section?: st
 /** 命令面板和全局快捷键（要在导航上下文里面） */
 function Shortcuts() {
   const [open, setOpen] = useState(false)
-  useShortcuts(() => setOpen((o) => !o))
+  const [help, setHelp] = useState(false)
+  useShortcuts(
+    () => setOpen((o) => !o),
+    () => setHelp(true),
+  )
   return (
     <>
       <CommandPalette open={open} onOpenChange={setOpen} />
+      <ShortcutsHelp open={help} onOpenChange={setHelp} />
       {/* 开发者模式的抓取：快捷键 + 覆盖层（全页只一份） */}
       <ElementPickHost />
     </>

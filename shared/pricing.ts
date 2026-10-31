@@ -1,3 +1,4 @@
+import { uiLocale } from './i18n.ts'
 import { DEEPSEEK_PEAK_WINDOW, type PeakWindow, type TokenTotals } from './usage.ts'
 
 /**
@@ -142,7 +143,7 @@ function moneyFormat(currency: Currency, digits: number) {
   const key = `${currency}-${digits}`
   let f = moneyFormats.get(key)
   if (!f) {
-    f = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+    f = new Intl.NumberFormat(uiLocale(), { minimumFractionDigits: digits, maximumFractionDigits: digits })
     moneyFormats.set(key, f)
   }
   return f

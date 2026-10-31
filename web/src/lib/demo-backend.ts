@@ -2123,6 +2123,12 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   const seg = path.split('/').filter(Boolean)
   const [res, id, sub] = seg
 
+  // 残留进程：演示版没有真实进程
+  if (res === 'tasks' && id === 'stale-processes')
+    return method === 'GET' ? { processes: [], unavailable: '' } : { killed: [], skipped: [], gone: [] }
+  // 角色、工作流、项目的回收站：演示版里删掉就是删掉，列表一直是空的
+  if (res === 'trash' && id === 'items') return method === 'GET' ? [] : { ok: true, tasks: 0 }
+
   if (res === 'settings') {
     if (method === 'PUT') d.settings = parse(Settings, body)
     // 和正式后端同一套迁移（见 shared/settings.ts）：旧设置里的 Gemini 协议先清掉，再升到新默认值

@@ -100,5 +100,13 @@ export function createTrash(s: TasksScope) {
     return c.json({ worktreeCleared: cleared })
   })
 
-  return { purgeTasks }
+  /** 恢复一组对话（删项目时一起进回收站的那些）：只清删除标记，和单条恢复一样 */
+  async function restoreTasks(ids: string[]) {
+    for (const id of ids) {
+      const tk = await s.store.peek(id)
+      if (tk && taskDeleted(tk)) await s.store.updateMeta(id, { deletedAt: undefined, stopReason: 'delete' as const })
+    }
+  }
+
+  return { purgeTasks, enterTrash, restoreTasks }
 }

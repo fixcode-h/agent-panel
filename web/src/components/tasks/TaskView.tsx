@@ -1135,6 +1135,17 @@ export function TaskView({
   const running = task?.status === 'running'
   // CLI 真的在处理这一轮才算执行中；等下一句时页面按空闲显示
   const working = task?.working ?? false
+  // 读屏用的状态播报：一轮做完、出错时说一句（画面上靠转圈和颜色，读屏用户看不到）。
+  // 只在「执行中 → 停下」那一下更新，打开对话时不播报
+  const [announce, setAnnounce] = useState('')
+  const wasWorking = useRef(working)
+  useEffect(() => {
+    if (wasWorking.current && !working)
+      setAnnounce(task?.status === 'failed' ? t('这一轮执行出错了') : t('这一轮执行完了'))
+    wasWorking.current = working
+    // 只跟着 working 变：status 在同一次推送里一起到
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [working])
   // 还列着后台命令（等结果）时也要跟数据：命令跑完那一刻它从 jobs 里消失，
   // 不刷新的话界面上那一行会一直挂着「执行中」。正式版靠 SSE 推送，这里主要是演示版的轮询口径
   const jobRunning = (task?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
@@ -1638,6 +1649,8 @@ export function TaskView({
         slash.sync()
       }}
       onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
+      // 空着按 ↑ 取回自己上一条发的话（不取父对话、面板代发的）
+      recall={() => [...task.messages].reverse().find((m) => m.role === 'user' && !m.peer && !m.panel)?.text}
       attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
       tools={
         <>
@@ -2152,6 +2165,9 @@ export function TaskView({
   const needs = task.imported ? null : handleNeeds
   return (
     <WithAgents agents={agents}>
+      <div role="status" aria-live="polite" className="sr-only">
+        {announce}
+      </div>
       <TaskViewCtx openFile={openFile} aiLook={aiLook} handleNeeds={needs} cards={!task.parentTaskId}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider

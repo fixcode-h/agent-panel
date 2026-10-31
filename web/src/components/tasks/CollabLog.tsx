@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { collabParty, type CollabEvent } from '@shared/collab-timeline'
-import { t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { timeAgo } from '@shared/task'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -75,7 +75,10 @@ function CollabRow({ x, rootId, onClick }: { x: CollabEvent; rootId: string; onC
         <span className="min-w-0 truncate">{from}</span>
         <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
         <span className="min-w-0 truncate">{to}</span>
-        <span className="ml-auto shrink-0 pl-2 text-subtle tabular-nums" title={new Date(x.at).toLocaleString()}>
+        <span
+          className="ml-auto shrink-0 pl-2 text-subtle tabular-nums"
+          title={new Date(x.at).toLocaleString(uiLocale())}
+        >
           {timeAgo(x.at)}
         </span>
       </span>

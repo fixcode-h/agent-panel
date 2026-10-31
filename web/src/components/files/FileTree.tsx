@@ -80,7 +80,7 @@ function chainOf(path: string) {
 /** 名字里不能有的东西：路径分隔符和 Windows 不认的字符，服务端也会拦，这里先给一句人话 */
 function nameProblem(name: string) {
   if (!name) return t('名字不能为空')
-  if (name === '.' || name === '..' || /[\\/:*?"<>|]/.test(name)) return t('名字里不能有路径分隔符和 : * ? " < > |')
+  if (name === '.' || name === '..' || /[\\/:*?"<>|]/.test(name)) return t('名字里不能有路径分隔符和 : * ? " < > |') // i18n-ok：这里的「中文」是正则里的字符，不是界面文案
   return ''
 }
 

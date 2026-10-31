@@ -71,6 +71,7 @@ import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclud
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { NavItem } from '@/components/ui/dialog-nav'
+import { TRASH_RETENTION_DAYS } from '@shared/task'
 import { DocPage } from './ProjectDocs'
 import { ProjectSkillsSection } from './ProjectSkillsSection'
 import { runAssistInProject } from '@/lib/assist-conv'
@@ -1321,7 +1322,10 @@ function Body({
           open={deleting}
           onOpenChange={setDeleting}
           title={t('删除「{name}」？', { name: project.name })}
-          description={t('会删除面板里的配置和这个项目的所有对话，不会动本地目录里的文件。')}
+          description={t(
+            '项目配置和它的所有对话一起放进回收站，{days} 天内可以在「设置 → 数据」里恢复；不会动本地目录里的文件。',
+            { days: TRASH_RETENTION_DAYS },
+          )}
           onConfirm={remove}
         />
       )}

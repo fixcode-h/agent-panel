@@ -6,7 +6,7 @@
  * 和任务里的「执行计划」（task.plans，见 shared/plan.ts）不是一回事，这里叫 Schedule。
  */
 import { z } from 'zod'
-import { getLang, t } from './i18n.ts'
+import { t, uiLocale } from './i18n.ts'
 import { hhmm, pad2, ymd } from './datetime.ts'
 import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
 
@@ -735,7 +735,7 @@ export function whenLabel(iso: string, now = Date.now()): string {
   const d = new Date(iso)
   if (!Number.isFinite(d.getTime())) return ''
   const base = new Date(now)
-  const locale = getLang() === 'en' ? 'en-US' : 'zh-CN'
+  const locale = uiLocale()
   const gap = dayGap(d, base)
   const day =
     gap === 0

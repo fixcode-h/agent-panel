@@ -136,6 +136,7 @@ import { detectShells, currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
 import { staleProjectWrite } from './project-lock.ts'
 import { acquireInstanceLock } from './instance-lock.ts'
+import { cleanupItemTrash, itemTrashRoutes, trashItem } from './item-trash.ts'
 import { LESSON_REVIEW_LANG, parseLessonReview } from '../shared/lesson-review.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
@@ -637,7 +638,10 @@ app.delete('/agents/:id', async (c) => {
   if (isCoreAgent((await agents.get(id)) ?? undefined)) return bad(c, t('必备角色不能删除'), 409)
   const err = agentDeleteError(id, await workflows.list())
   if (err) return bad(c, err, 409)
-  if (!(await agents.remove(id))) return bad(c, t('角色不存在'), 404)
+  const agent = await agents.get(id)
+  if (!agent) return bad(c, t('角色不存在'), 404)
+  await trashItem('agent', agent)
+  await agents.remove(id)
   // 引入了它的 Agent 去掉这条引入
   for (const a of await agents.list())
     if (a.includes.includes(id)) await agents.update(a.id, { ...a, includes: a.includes.filter((x) => x !== id) })
@@ -663,7 +667,11 @@ app.delete('/workflows/:id', async (c) => {
   const id = c.req.param('id')
   const err = workflowDeleteError(id, await projectCategories.list(), await projects.list())
   if (err) return bad(c, err, 409)
-  return (await workflows.remove(id)) ? c.body(null, 204) : bad(c, t('工作流不存在'), 404)
+  const wf = await workflows.get(id)
+  if (!wf) return bad(c, t('工作流不存在'), 404)
+  await trashItem('workflow', wf)
+  await workflows.remove(id)
+  return c.body(null, 204)
 })
 
 // ---- 项目分类 ----
@@ -858,11 +866,20 @@ app.get('/projects/:id/panel-source', async (c) => {
 
 app.delete('/projects/:id', async (c) => {
   const id = c.req.param('id')
-  const repo = (await projects.get(id))?.path
-  if (!(await projects.remove(id))) return bad(c, t('项目不存在'), 404)
-  await tasks.removeByProject(id, repo)
+  const project = await projects.get(id)
+  if (!project) return bad(c, t('项目不存在'), 404)
+  // 项目和它的对话一起进回收站：保留期内能整个恢复（以前对话直接物理删除，删错项目就全没了）
+  const taskIds = await tasks.trashByProject(id)
+  await trashItem('project', project, taskIds)
+  await projects.remove(id)
   return c.body(null, 204)
 })
+
+// 角色、工作流、项目的回收站（对话的回收站在 /tasks/trash）
+app.route(
+  '/trash/items',
+  itemTrashRoutes({ agents, workflows, projects, restoreTasks: (ids) => tasks.restoreTasks(ids) }),
+)
 
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
@@ -874,6 +891,9 @@ const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordL
  */
 function runCleanup() {
   void tasks.cleanupTrash().catch((e: Error) => log.error('tasks', '回收站清理出错', { error: e.message }))
+  void cleanupItemTrash().catch((e: Error) =>
+    log.error('trash', '角色 / 工作流 / 项目回收站清理出错', { error: e.message }),
+  )
   void tasks
     .reapSettledClis()
     .catch((e: Error) => log.warn('exec', '兜底回收已收口任务的 CLI 出错', { error: e.message }))

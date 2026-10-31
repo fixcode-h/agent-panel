@@ -29,17 +29,17 @@ import {
 import { getSettings } from './settings.ts'
 import { cancelWait } from './exec/runner.ts'
 import { makeAlert } from '../shared/alerts.ts'
-import { forgetPresence, setPresenceBusy, setPresenceIdleHandler, setPresenceUnreadKeeper } from './presence.ts'
+import { setPresenceBusy, setPresenceIdleHandler, setPresenceUnreadKeeper } from './presence.ts'
 import { settleReclaimed } from './exec/reclaim.ts'
 import { migrateOnStart } from './tasks/startup.ts'
 import { createStateSweep, STATE_SWEEP_MS } from './tasks/state-sweep.ts'
 import { lazyScope, type Lister, type Live } from './tasks/types.ts'
 import type { TasksScope } from './tasks/scope.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
-import { CHATS_DIR, HANDOFF_DIR, TASK_FILES_DIR } from './store.ts'
+import { CHATS_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { worktreeStatus } from './exec/worktree.ts'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { cleanupUploads, removeUploads, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
 import { log } from './log.ts'
@@ -653,7 +653,7 @@ export function tasksApi(deps: {
   const { dropWorktree, taskDir, worktreeHome } = registerWorktreeRoutes(scope)
   const { readableDir } = registerFileRoutes(scope)
   registerActionRoutes(scope)
-  const { purgeTasks } = createTrash(scope)
+  const { purgeTasks, enterTrash, restoreTasks } = createTrash(scope)
 
   // 子对话静默自动询问的扫描：数据准备好之后开始，退出时在 stopAll 里清掉
   void ready.then(() => armIdleAsk()).catch(() => {})
@@ -764,20 +764,16 @@ export function tasksApi(deps: {
       return Promise.allSettled([...[...live.values()].map((e) => e.done), jobsDone])
     },
     /** repo：项目目录。项目已经删掉了，要靠它清理任务的独立分支 */
-    async removeByProject(projectId: string, repo?: string) {
-      const removed = (await store.list()).filter((t) => t.projectId === projectId)
-      for (const t of removed) {
-        stopTask(t.id, 'archive')
-        await background.stop(t.id)
-        background.forget(t.id)
-        await store.remove(t.id)
-        forgetPresence(t.id)
-        await dropWorktree(t, repo)
-        await rm(path.join(HANDOFF_DIR, t.id), { recursive: true, force: true }).catch(() => {})
-        await rm(path.join(TASK_FILES_DIR, t.id), { recursive: true, force: true }).catch(() => {})
-      }
-      await dropUploads(removed)
+    /**
+     * 删项目时它的对话一起进回收站（以前直接物理删除，删错项目就连对话一起找不回来）。
+     * 返回进了回收站的对话 id：恢复项目时按它把这些对话一起找回来；过期后由 cleanupTrash 物理删除
+     */
+    async trashByProject(projectId: string) {
+      const list = (await store.list()).filter((t) => t.projectId === projectId && !t.deletedAt)
+      for (const t of list) await enterTrash(t, 'archive')
+      return list.map((t) => t.id)
     },
+    restoreTasks,
     /**
      * 兜底回收：任务已经收口（resolved / 这一轮做完 / 已停下），它登记的 CLI 进程却还活着。
      * 挂在启动后和每小时那一次清理上（见 server/index.ts 的 runCleanup），不另起定时器。

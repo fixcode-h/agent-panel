@@ -65,7 +65,6 @@ export const EN_AGENTS: Record<string, string> = {
   所在工作流: 'Used in workflows',
   '还没有工作流使用它。': 'No workflow uses it yet.',
   '删除「{name}」？': 'Delete “{name}”?',
-  '删除后无法恢复。': 'This can’t be undone.',
   '它正在被工作流 {names} 使用，需要先从这些工作流中移除才能删除。':
     'It’s used by the workflows {names}. Remove it from them before deleting.',
 
@@ -363,4 +362,6 @@ export const EN_AGENTS: Record<string, string> = {
   'AI 创建角色': 'Create a role with AI',
   'AI 创建工作流': 'Create a workflow with AI',
   '使用哪个 Agent': 'Which agent to use',
+  '删除后放进回收站，{days} 天内可以在「设置 → 数据」里恢复。':
+    'It goes to the recycle bin and can be restored from Settings → Data within {days} days.',
 }

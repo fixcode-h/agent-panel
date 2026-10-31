@@ -1772,4 +1772,21 @@ export const EN_SETTINGS: Record<string, string> = {
   '保存（Ctrl / ⌘ + S）': 'Save (Ctrl / ⌘ + S)',
   '我的 Skill': 'My skills',
   '装在 {cli}': 'Installed in {cli}',
+  '项目配置和它的所有对话一起放进回收站，{days} 天内可以在「设置 → 数据」里恢复；不会动本地目录里的文件。':
+    'The project settings and all its conversations go to the recycle bin and can be restored from Settings → Data within {days} days. Files in the local folder are not touched.',
+  '已恢复「{name}」和它的 {n} 个对话': 'Restored "{name}" and its {n} conversations',
+  '已恢复「{name}」': 'Restored "{name}"',
+  '已永久删除「{name}」': 'Permanently deleted "{name}"',
+  '删除的角色、工作流和项目': 'Deleted roles, workflows and projects',
+  '{days} 天内可以恢复；恢复项目时它的对话一起回来。':
+    'Can be restored within {days} days; restoring a project also brings back its conversations.',
+  ' · 含 {n} 个对话': ' · {n} conversations',
+  '结束了 {n} 个，{m} 个没能结束：{why}': 'Ended {n}; {m} could not be ended: {why}',
+  '已结束 {n} 个残留进程': 'Ended {n} leftover processes',
+  残留进程: 'Leftover processes',
+  重新检查: 'Check again',
+  全部结束: 'End all',
+  '没有残留进程：所有对话的 CLI 都在跑或已经结束。':
+    "No leftover processes: every conversation's CLI is either running or has exited.",
+  '（不属于任何对话）': '(not part of any conversation)',
 }

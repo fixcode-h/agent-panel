@@ -558,4 +558,7 @@ export const EN_SERVER: Record<string, string> = {
   这一轮没有记下改动: 'No changes were recorded for this turn',
   这一轮的改动已经撤销过了: 'The changes from this turn were already reverted',
   这个文件不在这一轮的改动里: 'This file is not among the changes from this turn',
+  回收站里没有这一项: 'This item is not in the recycle bin',
+  '「{name}」已经存在，不需要恢复': '"{name}" already exists; nothing to restore',
+  读不到系统进程信息: 'Could not read system process information',
 }
