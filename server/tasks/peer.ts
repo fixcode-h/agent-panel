@@ -72,7 +72,23 @@ export function createPeer(s: TasksScope) {
       }
     }
     const suggestion = question && kind === 'suggestion'
-    // 「提问」开关关着（默认就是关的）：子对话的提问和收尾建议不交给用户，直接交给父对话的 AI 决定。
+    // 子对话自己没开「提问」：它的提问和收尾建议不往上交，由它自己选（用户 2026-10-31 定的）。
+    // 记进这一轮的汇报，父对话从一轮结束那封信里看到它替自己决定了什么
+    if (question && !child.askUser) {
+      const ce = s.live.get(child.id)
+      const target = ce?.task ?? child
+      const note = `（${suggestion ? '收尾建议' : '提问'}，「提问」关着由我自己决定）${text.trim()}`
+      target.pendingReport = [target.pendingReport, note].filter(Boolean).join('\n\n').slice(-4000)
+      if (ce) ce.rev++
+      else await s.store.update(child.id, target).catch(() => {})
+      return {
+        ok: true,
+        info: suggestion
+          ? '你的「提问」关着，收尾建议不交给别人选：这一轮可以结束，结论里写清建议和推荐做法，父对话会从这一轮的汇报里看到。'
+          : `你的「提问」关着，问题不交给父对话或用户：按${options.length ? `你判断最合适的做法（没把握就选「${options[0]}」）` : '你判断最合适的做法'}直接继续，结论里写一句你替自己决定了什么、依据是什么。`,
+      }
+    }
+    // 子对话开着「提问」、父对话的「提问」关着：子对话的提问和收尾建议不交给用户，直接交给父对话的 AI 决定。
     // 这时不产生 ask 卡片：卡片和「交给父对话决定」的折叠行都是给用户准备的，用户已经不回答问题了，
     // 留着它只会让父对话里多出一条等人点「去选择」的东西；只有 panel 为 child 的汇报记一条给 AI 看
     const auto = question && !parent.askUser

@@ -349,7 +349,7 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
     return prompts
   }
 
-  const child = await promptsOf({ parentTaskId: 'parent' }, { wrapUp: 'merge' })
+  const child = await promptsOf({ parentTaskId: 'parent', askUser: true }, { wrapUp: 'merge' })
   assert.equal(child.length, 1)
   assert.match(child[0], /由父对话决定，不在你的处理范围内/)
   assert.match(child[0], /不执行、不询问用户、也不写进提问、计划步骤或建议/)
@@ -378,6 +378,12 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   assert.doesNotMatch(child[0], /用提问工具问用户一次要不要推送/, '子对话不再问用户要不要推送')
   // 收尾建议的工具说明也写清了：只能写本地动作、remote 必须写 none
   assert.match(child[0], /remote 必须写/)
+  assert.match(child[0], /问题会交给父对话（父对话开着「提问」时再转给用户）/)
+  // 子对话没开「提问」：问题和收尾建议都自己决定，不要求提问、也不要求 suggest_next_step
+  const solo = await promptsOf({ parentTaskId: 'parent', askUser: false }, { wrapUp: 'merge' })
+  assert.match(solo[0], /## 「提问」关着：自己决定/)
+  assert.doesNotMatch(solo[0], /## 停下之前先提问|## 收尾建议要交给用户选/)
+  assert.match(solo[0], /## 子对话的完成标准/)
 
   const main = await promptsOf({})
   assert.equal(main.length, 1)

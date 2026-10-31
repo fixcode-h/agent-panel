@@ -86,6 +86,7 @@ import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
+import { askViaParent } from './child-question.ts'
 import { orchHint } from '../orch-mcp.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
 import { MODEL_HINT } from '../../shared/blender.ts'
@@ -1850,6 +1851,8 @@ async function runAgent(
           ev.reply({ allow: false, message: '预热中，用户还没有发新消息；不要做别的，直接调用 wait_user_message。' })
           return
         }
+        // 子对话开着「提问」：交给父对话，不在子对话里弹给用户（见 askViaParent）
+        if (ev.kind === 'question' && task.parentTaskId && ctx.messageParent) return askViaParent(ev, ctx.messageParent)
         const id = ctx.newId()
         asked.push(id)
         replies.set(id, ev.reply)
