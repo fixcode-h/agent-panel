@@ -218,7 +218,8 @@ export function TuneToggle({ comps }: { comps: CompName[] }) {
         <div className="mt-2 flex w-full flex-col gap-3 rounded-lg bg-panel px-4 py-3 ring-1 ring-line">
           {comps.map((c) => (
             <div key={c} className="flex flex-col" aria-label={compLabel(c)}>
-              <div className="flex items-center pb-1">
+              {/* 固定高度的标题行，「恢复本组」不需要时隐藏但不改变行高 */}
+              <div className="flex h-9 items-center pb-1">
                 <span className="flex-1 text-[0.75rem] font-semibold text-subtle">{compLabel(c)}</span>
                 {style[c] && (
                   <Button

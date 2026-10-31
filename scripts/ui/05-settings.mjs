@@ -368,6 +368,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if ((await hintOf(deployItem)) !== deployHint) errors.push('部署提醒点：设置里「部署」项上没有提示')
   // 进去能看到具体哪一项要更新
   await deployItem.click()
+  // 部署页底部操作栏吸在滚动区底边：栏下面不能漏出列表（以前漏出半行「编码 · 3」）
+  await p.getByRole('button', { name: '保存', exact: true }).last().waitFor({ timeout: 5000 })
+  errors.push(...(await stickyLeakProblems(p, '设置-部署')))
   await p
     .getByText('和自带的不同，可更新')
     .first()

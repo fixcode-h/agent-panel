@@ -732,6 +732,7 @@ function SettingsBody({
         </header>
         {/* 这一节有多个小节时，标题下面多一条页内导航（见 section-nav.tsx） */}
         {!searching && <SectionToc />}
+        {/* 改这里的 pb-12 / px-5 / md:px-9 时要同步 DeploySection 吸底操作栏的偏移，不然栏下面会漏出列表 */}
         <div
           ref={setSectionScroll}
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-12 [scrollbar-gutter:stable] md:px-9"

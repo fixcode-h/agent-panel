@@ -307,8 +307,11 @@ export function DeploySection() {
         </div>
       </Group>
 
-      {/* 吸底的操作栏：滚动区域底下还有一段内边距（pb-10），栏下面和两侧用同色底盖住，下面的列表不会透上来 */}
-      <div className="sticky -bottom-10 z-10 -mx-5 mt-5 -mb-10 flex flex-wrap items-center gap-3 border-t bg-card px-5 pt-3 pb-13 md:-mx-8 md:px-8">
+      {/* 吸底的操作栏。设置页滚动区域（SettingsPage 里 setSectionScroll 那个 div）底下有 pb-12、两侧 px-5 / md:px-9，
+          吸附位置会让开这段内边距，所以这里用 -bottom-12 把栏推到可视区最底下、-mb-12 抵掉滚到底时多出的空白、
+          pb-15（= 12 + 3）把伸出可视区的那段用同色底填满，-mx 和两侧内边距对齐。改滚动区域的内边距时这里要一起改，
+          对不上就会在栏下面或两侧漏出列表（界面检查 stickyLeakProblems 会报）。 */}
+      <div className="sticky -bottom-12 z-10 -mx-5 mt-5 -mb-12 flex flex-wrap items-center gap-3 border-t bg-card px-5 pt-3 pb-15 md:-mx-9 md:px-9">
         {changed && (
           <Checkbox
             checked={overwrite}

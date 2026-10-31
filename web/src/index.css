@@ -2002,8 +2002,24 @@ body,
 .settings-advanced[open] > .settings-row {
   border-top: 1px solid color-mix(in srgb, var(--color-line) 80%, transparent);
 }
-.settings-card > :not(.settings-row):not(.settings-advanced):not(section) {
+.settings-card > :not(.settings-row):not(.settings-advanced):not(section):not(.settings-card-head) {
   padding-block: 14px;
+}
+/* 卡片顶部放「恢复本组」的固定高度行：没东西可恢复时按钮隐藏、行照样占位，布局不跳 */
+.settings-card > .settings-card-head {
+  display: flex;
+  height: 2.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  margin-inline-end: -8px;
+  padding-block: 0;
+}
+.settings-card > .settings-card-head + * {
+  border-top: 0;
+}
+.settings-card > .settings-card-head + :not(.settings-row):not(.settings-advanced):not(section) {
+  padding-top: 0;
 }
 @media (min-width: 640px) {
   /* 开关贴控件栏右边，和下拉、数字框对齐 */
