@@ -197,6 +197,8 @@ await runShard(import.meta.filename, async (api) => {
     if ((await menuItem.getAttribute('aria-checked').catch(() => null)) !== 'true')
       errors.push('提问菜单：重新打开父对话提问后这一项应该还是勾着的')
     await menuItem.click()
+    // 右键菜单有 60ms 退场动画：等它卸载再点别处，不然点击可能落在还没消失的菜单遮挡层上
+    await menuItem.waitFor({ state: 'detached', timeout: 3000 })
     if (await d.getByRole('dialog').count()) errors.push('提问菜单：取消勾选不该弹选择窗口')
     await openChild()
     if (await childAskOn()) errors.push('提问菜单：取消勾选不该打开已创建的子对话')
