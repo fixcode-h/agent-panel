@@ -2922,19 +2922,33 @@ export async function runRealTurn(ctx: RealContext) {
           return { snapshot: d.snapshot, stat: d.stat, diff: '', file }
         }
       : undefined,
-    saveHandoff: async (step, text) => {
-      const dir = path.join(HANDOFF_DIR, ctx.task.id)
-      await mkdir(dir, { recursive: true })
-      const file = path.join(dir, `${step.id}.md`)
-      await writeFile(file, `# ${step.title}\n\n${text}\n`)
-      return file
-    },
+    saveHandoff: (step, text) => saveHandoffFile(ctx.task.id, step, text),
   })
   if (noticedInput && plan) {
     plan.inputNotedAt = noticedInput
     ctx.changed()
   }
 }
+
+/**
+ * 交接内容存成文件，返回路径。子任务的 id 带「/」（@chat/sub/h3）：直接拿来当文件名会落进不存在的子目录，
+ * 写盘失败后结果只剩开头、也没有路径（评审意见被截断的原因），所以文件名里不能当路径的字符都换掉
+ */
+export async function saveHandoffFile(
+  taskId: string,
+  step: { id: string; title: string },
+  text: string,
+  root = HANDOFF_DIR,
+) {
+  const dir = path.join(root, taskId)
+  await mkdir(dir, { recursive: true })
+  const file = path.join(dir, `${handoffName(step.id)}.md`)
+  await writeFile(file, `# ${step.title}\n\n${text}\n`)
+  return file
+}
+
+/** 步骤 id 变成一个安全的文件名（Windows 也能用）：路径分隔符和保留字符都换成「_」 */
+export const handoffName = (id: string) => id.replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^[._]+/, '') || 'step'
 
 const fmtTok = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n))

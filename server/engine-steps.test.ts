@@ -777,6 +777,25 @@ test('子任务：输出超过交接上限时完整内容存成文件，不再�
   assert.ok(sub.output.startsWith('验收结论：不通过'))
 })
 
+test('子任务：输出超长但存不了文件时整段交回，不悄悄截掉后半段', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  const long = `验收结论：不通过\n${'🛑 R1 一条很长的意见。'.repeat(500)}\n🛑 R9 最后一条`
+  const { task, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const ids = call.orch!.spawn([{ title: '评审', instructions: '看 diff' }]).ids
+      await call.orch!.wait(ids, 1000)
+      return '一步结果'
+    }
+    return long
+  })
+  host.saveHandoff = async () => {
+    throw new Error('ENOENT')
+  }
+  await runEngineTurn(host)
+  const sub = task.steps.find((s) => s.slot === 'sub')!
+  assert.equal(sub.output, long)
+})
+
 test('子任务：被停止时标成打断，不像没开始过', async () => {
   const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
   const { task, host } = makeHost(w, (call) => {

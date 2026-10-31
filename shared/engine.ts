@@ -921,12 +921,19 @@ function sendRunMessage(host: EngineHost, from: string, to: string, text: string
 
 /** 节点 / 步骤的输出：太长时另存文件，交给下游的结果里写明去哪读 */
 async function storeOutput(host: EngineHost, step: TaskStep, text: string) {
-  let out = clip(text, MAX_OUTPUT)
-  if (text.length > MAX_OUTPUT && host.saveHandoff) {
-    const file = await host.saveHandoff(step, text).catch(() => '')
-    if (file) out += `\n\n（完整结果有 ${text.length} 字，这里只附了开头。完整内容在文件 ${file}，开始之前请先读完。）`
-  }
-  return out
+  return clipToFile(host, step, text, MAX_OUTPUT, '开始之前请先读完。')
+}
+
+/**
+ * 交回的结果超出上限：完整内容存成文件，只交开头 + 文件路径。
+ * 截断就必须写明全文在哪：存不了文件（宿主不支持、写盘失败）时整段交回，不能悄悄丢掉后半段
+ * （评审的意见在后半段被截掉，派它的对话既看不到也找不到全文）
+ */
+async function clipToFile(host: EngineHost, step: TaskStep, text: string, limit: number, hint: string) {
+  if (text.length <= limit) return text
+  const file = host.saveHandoff ? await host.saveHandoff(step, text).catch(() => '') : ''
+  if (!file) return text
+  return `${clip(text, limit)}\n\n（完整结果有 ${text.length} 字，这里只附了开头。完整内容在文件 ${file}，${hint}）`
 }
 
 /** 一次流程调用：在哪个工作流的哪个流程，挂在哪个节点的哪个入口下 */
@@ -1998,13 +2005,8 @@ async function runNodeSingle(
     if (e.output) text = `${text}\n\n结束流程的结果：\n${e.output}`
   }
 
-  step.output = clip(text, MAX_OUTPUT)
   // 架构方案、测试的失败清单经常比交接上限长：完整内容存成文件，交给下游的结果里写明去哪读
-  if (text.length > MAX_OUTPUT && host.saveHandoff) {
-    const file = await host.saveHandoff(step, text).catch(() => '')
-    if (file)
-      step.output += `\n\n（完整结果有 ${text.length} 字，这里只附了开头。完整内容在文件 ${file}，开始之前请先读完。）`
-  }
+  step.output = await storeOutput(host, step, text)
   step.status = 'done'
   step.endedAt = now()
   host.changed(true)
@@ -2630,7 +2632,7 @@ async function runInvocation(host: EngineHost, inv: Invocation): Promise<FlowRes
     return { ok: false, error, reported: true }
   }
   const text = stripDispatch(s.text).trim() || r.output
-  main.step.output = clip(text, MAX_OUTPUT)
+  main.step.output = await storeOutput(host, main.step, text)
   // 最外层的编排器常驻：这一轮只是把结果整理给用户，不结束它，下一条要求回来还是同一个会话；
   // 嵌套的（委派给另一个工作流）属于那次调用，照常结束
   if (main.nested) {
@@ -2866,12 +2868,9 @@ async function layeredOutput(host: EngineHost, step: TaskStep, output: string, s
   const pointer = FULL_POINTER.exec(output)?.[0] ?? ''
   const body = pointer ? output.slice(0, -pointer.length) : output
   if (body.length <= share) return output
-  let tail = pointer
-  if (!tail && host.saveHandoff) {
-    const file = await host.saveHandoff(step, output).catch(() => '')
-    if (file) tail = `\n\n（完整结果有 ${output.length} 字，这里只附了开头。完整内容在文件 ${file}，需要细节时再读。）`
-  }
-  return `${clip(body, share)}${tail}`
+  if (pointer) return `${clip(body, share)}${pointer}`
+  // 没存过文件的现存一份；存不了就整段交回，不截掉看不到的部分
+  return clipToFile(host, step, output, share, '需要细节时再读。')
 }
 
 /** 任务里各个 Agent 的状态，按层级缩进，给 get_status 用 */
