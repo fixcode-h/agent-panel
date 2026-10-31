@@ -264,7 +264,7 @@ export function createAsks(s: TasksScope) {
   }
 
   /**
-   * 父对话的「提问」/「子对话也提问」联动到名下已有的子对话：改它们各自的 askUser（引擎按它判断允不允许提问），
+   * 右键菜单「子对话也提问」选了应用到已创建的子对话时：改它们各自的 askUser（引擎按它判断允不允许提问），
    * 并马上落盘——只改界面上的勾选不够，引擎还按旧值决定让不让它问
    */
   async function applyChildAskUser(parent: Task, on: boolean) {

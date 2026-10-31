@@ -220,7 +220,7 @@ export function registerActionRoutes(s: TasksScope) {
         : { session: '', through: null, latest: false }
     }
     if (askEffect.askUser !== undefined) await s.applyAskUser(task, askEffect.askUser, !!e?.task.working)
-    // 已有的子对话跟着父对话一起开 / 关（引擎按各自的 askUser 判断，界面靠推送和定时刷新跟着变）
+    // 右键菜单选了「应用到已创建的子对话」才改已有的（引擎按各自的 askUser 判断，界面靠推送和定时刷新跟着变）
     if (askEffect.existingChildren !== undefined) await s.applyChildAskUser(task, askEffect.existingChildren)
     // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢。
     // 只改置顶时不动列表时间：置顶只是标记，不该让这条聊天在别处（最近活动、未读）显得「刚更新过」

@@ -129,9 +129,6 @@ export const EN_SETTINGS: Record<string, string> = {
   新会话默认开启提问: 'Ask me by default in new chats',
   '输入框上的「提问」按钮在新会话里默认打开：AI 有问题时弹出卡片问你，等你回答再继续。关着时 AI 自己选最合适的做法。已有的会话保持各自的选择。':
     'Turns on the Ask button above the input in new chats: when the AI has a question it shows a card and waits for your answer. When off, the AI picks the best option itself. Existing chats keep their own choice.',
-  子对话默认也提问: 'Ask in sub-chats by default',
-  '新建的父对话里「子对话也提问」默认打开：它之后新建的子对话会向你提问，而不是自己决定。已经创建的父对话和子对话不受影响，父对话上右键提问按钮可以单独改。':
-    'Turns on "Ask in sub-chats" in new parent chats: the sub-chats they create ask you instead of deciding on their own. Existing parent chats and sub-chats are not affected; right-click the Ask button in a parent chat to change it for that chat.',
   '启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。':
     'Open http://127.0.0.1:8787 in your default browser when the panel server starts.',
   任务完成时通知我: 'Notify me when tasks finish',

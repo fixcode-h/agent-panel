@@ -26,7 +26,7 @@ import {
 import { agentRun } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
-import { childAskDefaultOf, childAskInitial } from '../../shared/child-ask.ts'
+import { CHILD_ASK_DEFAULT, childAskInitial } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
 import { taskLog } from '../task-log.ts'
 import { rescheduleIfUnwatched, setViewer, touchPresence } from '../presence.ts'
@@ -70,8 +70,8 @@ export function registerConversationRoutes(s: TasksScope) {
       // 新建子对话的「提问」初始值跟着父对话的「子对话也提问」走（父对话关掉提问只管已经建好的，不管之后的）
       input.askUser = childAskInitial(parent)
     }
-    // 顶层对话（父对话、普通会话）：之后新建的子对话默认问不问，取设置里的全局默认（界面传了就用界面的）
-    if (!parent) input.childAskUser = input.childAskUser ?? childAskDefaultOf(await getSettings())
+    // 顶层对话（父对话、普通会话）：之后新建的子对话默认开着提问（设置里不再有这一项，用户 2026-10-31 定的）；右键菜单改过的以父对话上的为准
+    if (!parent) input.childAskUser = input.childAskUser ?? CHILD_ASK_DEFAULT
     let workflow: Workflow | undefined
     if (input.mode === 'workflow') {
       workflow = input.workflowId
