@@ -392,7 +392,8 @@ export function DialogScroll({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-(--code-bg) pb-4">
+    // 代码区不另铺 --code-bg：深色下比弹窗底色暗一截，和标题栏一深一浅显得发黑，直接沿用弹窗底色
+    <div className="flex min-h-0 flex-1 flex-col pb-4">
       <div ref={box} className="min-h-0 flex-1 overflow-auto">
         {children}
       </div>
