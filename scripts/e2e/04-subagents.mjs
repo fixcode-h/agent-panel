@@ -1206,7 +1206,9 @@ await runShard('子对话与计划', async (api) => {
     assert.ok(!('childLimit' in conf), '对话设置里不再有子对话并发上限，旧字段被忽略')
     assert.equal(conf.childRun.cli, 'codex')
     await waitDone((await call('POST', `/tasks/${ruleKid.id}/messages`, { text: '按设置再做一次' })).id, 20000)
-    const confLog = await callOf('按设置再做一次')
+    // 只认这条消息本身那一轮：子对话做完后父对话被叫醒，汇报里会引用「用户在这个子对话里直接交代过：按设置再做一次」，
+    // 按子串取最后一条时偶尔拿到的是父对话那一轮（CI 上时好时坏）
+    const confLog = await callOf('## 用户这次的消息\n按设置再做一次')
     assert.equal(confLog.kind, 'codex', '子对话按父对话设置里的 CLI 执行')
     const confText = JSON.stringify(confLog)
     assert.ok(confText.includes('父对话的目标') && confText.includes('商品页支持到货通知'), '子对话看得到父对话的目标')
