@@ -18,7 +18,7 @@ import {
   RefreshCw,
   Sparkles,
 } from 'lucide-react'
-import { toast } from '@/lib/toast'
+import { toast, toastError } from '@/lib/toast'
 import { copyText } from '@/lib/copy-text'
 import { extensionSelfReload, hasMask } from '@shared/design'
 import type {
@@ -1002,7 +1002,7 @@ export function DesignChat({
                   onChange={(v) => {
                     setAskUserState(v)
                     // 执行中改也马上生效：等着的问题会按新的设置处理
-                    if (running) void api.setAskUser(`design:${designId}`, v).catch(() => {})
+                    if (running) void api.setAskUser(`design:${designId}`, v).catch(toastError)
                   }}
                 />
                 <ConceptToggle

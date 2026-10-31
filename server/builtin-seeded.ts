@@ -8,7 +8,7 @@ const FILE = dataPath('config/builtin-workflows.json')
 
 export async function loadSeededWorkflows(): Promise<string[]> {
   // 第一次启动（或升级前）没有这个文件、或者文件坏了：都当作没装过，全部装一次。
-  // 坏文件由 readJson 归档到 cache/broken，不会让启动失败
+  // 坏文件由 readJson 归档到 broken/，不会让启动失败
   const raw = (await readJson(FILE).catch(() => undefined)) as { seeded?: unknown } | undefined
   const seeded = raw?.seeded
   return Array.isArray(seeded) ? seeded.filter((k): k is string => typeof k === 'string') : []

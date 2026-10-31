@@ -18,12 +18,36 @@ async function base() {
   return `http://127.0.0.1:${port || DEFAULT_PORT}/api/bridge`
 }
 
+/**
+ * 配对令牌：面板写出扩展文件时一起写进 pairing.json，每个请求都带上。
+ * 面板不认没带令牌的请求（Origin 谁都能伪造）；读不到时每次重读，面板重新写出文件后就能连上
+ */
+let pairing = ''
+async function pairToken() {
+  if (pairing) return pairing
+  try {
+    const r = await fetch(chrome.runtime.getURL('pairing.json'))
+    pairing = String((await r.json()).token ?? '')
+  } catch {
+    pairing = ''
+  }
+  return pairing
+}
+async function headers(extra = {}) {
+  return { ...extra, 'X-Panel-Bridge': await pairToken() }
+}
+
 async function post(path, body) {
   const r = await fetch(`${await base()}/${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
+  if (r.status === 401) {
+    // 令牌对不上（面板换了数据目录、扩展文件夹是旧的）：下次重读 pairing.json
+    pairing = ''
+    throw new Error('没有和面板配对：请在面板里点「刷新扩展」，或重新加载扩展')
+  }
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json()
 }
@@ -85,7 +109,7 @@ async function loop() {
         continue
       }
       try {
-        const r = await fetch(`${await base()}/poll`)
+        const r = await fetch(`${await base()}/poll`, { headers: await headers() })
         const j = await r.json()
         if (j.cmd) void handle(j.cmd)
       } catch {

@@ -88,6 +88,9 @@ export const EN_SHARED: Record<string, string> = {
   '（流程已删除）': '(Flow deleted)',
   '（工作流已删除）': '(Workflow deleted)',
   '节点 {n}': 'Node {n}',
+  '节点「{title}」出错：{error}': 'Node "{title}" failed: {error}',
+  '工作流里有环，这些节点互相等待、一直没能开始：{nodes}。请在流程图里断开其中一条连线':
+    'The workflow has a cycle; these nodes wait on each other and never started: {nodes}. Remove one of the connections in the flow chart',
   开始: 'Start',
   结束: 'End',
   执行: 'Run',

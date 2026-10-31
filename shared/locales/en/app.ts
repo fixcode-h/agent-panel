@@ -348,4 +348,9 @@ export const EN_APP: Record<string, string> = {
   '这份报告里没有可提炼的返工，不硬造条目': 'No rework in this report to draft lessons from, so none were invented',
   找不到这条草稿: 'Draft not found',
   已停止生成: 'Generation stopped',
+  连不上面板服务: 'Cannot reach the panel service',
+  '：页面上的内容可能不是最新的，操作也不会生效。面板重启后会自动重连。':
+    ': what you see may be out of date and actions will not take effect. It reconnects automatically once the panel is back.',
+  '正在重连…': 'Reconnecting…',
+  立即重连: 'Reconnect now',
 }

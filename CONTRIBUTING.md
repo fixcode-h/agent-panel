@@ -11,7 +11,7 @@
 
 ## 环境与启动
 
-需要 Node.js 20 及以上版本。
+需要 Node.js 22.12 及以上版本（Node 20 已于 2026-04 停止维护，Vite 8 也要求 22.12+）。
 
 ```bash
 npm ci          # 按 package-lock.json 装依赖，不要用 npm i 改锁文件

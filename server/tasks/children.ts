@@ -479,7 +479,12 @@ export function createChildren(sc: TasksScope) {
       cur.pendingReport = undefined
       cur.userDirect = undefined
       if (ce) ce.rev++
-      else await sc.store.update(tk.id, cur).catch(() => {})
+      else
+        await sc.store
+          .update(tk.id, cur)
+          .catch((e) =>
+            log.error('task', '清掉已交出的阶段汇报时写盘失败', { task: tk.id, error: (e as Error).message }),
+          )
     }
   }
 

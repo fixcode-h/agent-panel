@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { toast } from '@/lib/toast'
+import { toast, toastError } from '@/lib/toast'
 import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Terminal, Wand2, X } from 'lucide-react'
 import {
   applyProposal,
@@ -864,7 +864,7 @@ export function AssistDialog({
   }
 
   const stop = async () => {
-    if (job) await api.stopAssist(job.id).catch(() => {})
+    if (job) await api.stopAssist(job.id).catch(toastError)
   }
   // 生成中说的话：AI 创建一次生成完一份配置，不能中途补充，排队等这一轮结束再发
   const [queue, setQueue] = useState<string[]>([])
@@ -1104,7 +1104,7 @@ export function AssistDialog({
                       value={askUser}
                       onChange={(v) => {
                         setAskUser(v)
-                        if (job) void api.setAskUser(`assist:${job.id}`, v).catch(() => {})
+                        if (job) void api.setAskUser(`assist:${job.id}`, v).catch(toastError)
                       }}
                     />
                     {settings && cliDef && (

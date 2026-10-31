@@ -879,3 +879,66 @@ test('子任务：派「评审」时面板把改动附进提示词，复看只�
     ['tree1', 'tree2'],
   )
 })
+
+const graph = (nodes: string[], edges: [string, string][]): Workflow =>
+  Workflow.parse({
+    id: 'wf',
+    createdAt: '',
+    updatedAt: '',
+    name: '图',
+    mainAgentId: 'm',
+    dispatch: false,
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: nodes.map((id) => ({ id, title: id, agentId: 'w', instructions: `做 ${id}。` })),
+        edges: edges.map(([from, to], i) => ({ id: `e${i}`, from, to })),
+      },
+    ],
+  })
+
+test('流程图里有环：环上的节点互相等待，任务判失败并说出是哪些节点，不当成功', async () => {
+  // b 等 a 和 c，c 又等 b：b、c 永远开始不了
+  const w = graph(
+    ['a', 'b', 'c'],
+    [
+      ['start', 'a'],
+      ['a', 'b'],
+      ['c', 'b'],
+      ['b', 'c'],
+      ['b', 'end'],
+    ],
+  )
+  const { task, host } = makeHost(w, () => '完成')
+  await runEngineTurn(host)
+  assert.equal(task.status, 'failed')
+  assert.ok(
+    task.messages.some((m) => m.error && /环/.test(m.text) && /「b」/.test(m.text)),
+    '错误写明环上的节点',
+  )
+})
+
+test('节点里抛异常：按失败收口、叫停并行的另一支，不让异常把整轮直接抛出去', async () => {
+  const w = graph(
+    ['boom', 'slow'],
+    [
+      ['start', 'boom'],
+      ['start', 'slow'],
+      ['boom', 'end'],
+      ['slow', 'end'],
+    ],
+  )
+  let slowDone = false
+  const { task, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'boom') throw new Error('炸了')
+    await new Promise((r) => setTimeout(r, 30))
+    slowDone = true
+    return '慢的完成'
+  })
+  await runEngineTurn(host)
+  assert.equal(task.status, 'failed')
+  assert.ok(slowDone, '等并行的另一支结束才收口，不提前释放')
+  assert.equal(host.halted, true, '叫停了其余分支')
+  assert.ok(task.messages.some((m) => m.error && /炸了/.test(m.text)))
+})

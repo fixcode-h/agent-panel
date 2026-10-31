@@ -9,6 +9,17 @@ on:
   workflow_dispatch:
   workflow_call:
 
+# 检查只需要读代码：被出包流程调用时也不继承写权限，npm ci 跑依赖的安装脚本时拿不到能写仓库的令牌
+permissions:
+  contents: read
+
+# 多个助手连续往 dev 推时，同一分支只留最新一次检查。
+# 被出包流程调用（workflow_call）时 github 上下文是调用方的：github.workflow 是「出包」，这时不取消，
+# 否则连着合两次主干会把前一次出包的检查取消掉
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.workflow == '检查' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,10 +28,11 @@ jobs:
     steps:
       # 预算检查要读合并提交的父提交（子提交里的「测试预算:」段）：浅克隆看不到父提交，
       # 合并提交会被当成普通提交、说明只剩标题。这个 job 必须拉全历史。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -35,6 +47,10 @@ jobs:
       # 重跑通过的单测退出码是 0：读抖动报告，有抖动就判红（scripts/flaky-check-report.mjs）
       - run: node scripts/flaky-check-report.mjs
       - run: npm run build
+      # 依赖的已知漏洞：只报不拦（多数要等上游发版），结果在这一步的日志里
+      - name: 依赖漏洞报告
+        continue-on-error: true
+        run: npm audit --omit=dev
 
   # 端到端单独一个 job：scripts/e2e.mjs 内部并行跑各个分片（各自临时目录、端口和服务），
   # 和上面的类型检查 / 单测 / 构建同时进行，总时长取两者里最慢的那个。
@@ -47,15 +63,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run test:e2e
       # 各分片耗时写进 e2e-timings.json，改了测试可以下载对比
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: e2e-timings
@@ -75,8 +93,10 @@ jobs:
       matrix:
         group: [a, b]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -86,7 +106,7 @@ jobs:
       - id: pw
         run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
       - id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -94,18 +114,42 @@ jobs:
         run: npx playwright install chromium
       - run: npx vite build --mode demo
       - run: node scripts/ui-check.mjs --group ${{ matrix.group }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: ui-shots-${{ matrix.group }}
           path: ui-shots/
           retention-days: 7
       # 各分片每一步的耗时写进 ui-timings.json，改了检查可以下载对比
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: ui-timings-${{ matrix.group }}
           path: ui-timings.json
+          retention-days: 7
+
+  # Windows 上跑单测：面板的主要用户在 Windows，server/shared 里有几十处 win32 分支、只在 Windows 上跑的用例
+  # （真的 .cmd 垫片、路径分隔符、杀进程树）在 ubuntu 上永远是 skip。和托盘一样按改动决定跑不跑
+  unit-windows:
+    needs: changes
+    if: needs.changes.outputs.tray == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: unit-windows-logs
+          path: logs/tests/
           retention-days: 7
 
   # 推送到 dev 时看这次改了哪些文件：Windows 托盘那一步最慢，只在托盘程序、服务端或出包相关的文件变了时才跑。
@@ -115,8 +159,9 @@ jobs:
     outputs:
       tray: ${{ steps.diff.outputs.tray }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: diff
         env:
@@ -143,7 +188,9 @@ jobs:
     # 编译 + 出包 + 试运行正常几分钟；卡住时快速失败
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: 编译 AgentPanel.exe
         shell: pwsh
         run: |
@@ -161,7 +208,7 @@ jobs:
           if ($code -ne 0) { exit $code }
           Get-Item build/tray/AgentPanel.exe | Format-List Name, Length
       # 在 Windows 上真的跑一遍：托盘程序启动服务、第二次双击直接退出、托盘程序结束后服务跟着结束
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -189,7 +236,7 @@ jobs:
           Start-Sleep 3
           if (& $server) { Write-Output '::error::托盘程序结束后服务还在运行'; exit 1 }
           Write-Output '托盘程序试运行通过'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tray
           path: build/tray/AgentPanel.exe

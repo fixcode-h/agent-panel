@@ -104,6 +104,7 @@ import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
 import { isHelperAgent } from './builtin/core.ts'
 import { childAskPrompt } from './child-ask.ts'
+import { budgetLimit, overBudget } from './engine-budget.ts'
 import {
   activePlan,
   applyPlan,
@@ -980,6 +981,7 @@ interface MainCtl {
 type FlowResult = { ok: true; output: string } | Fail
 
 export { parseVerdict }
+export { budgetLimit, overBudget }
 
 export function system(host: EngineHost, text: string, step = '', error = false, transient = false, kind?: AlertKind) {
   host.task.messages.push({
@@ -1011,62 +1013,7 @@ function planStarted(host: EngineHost, text: string, step = '') {
   })
 }
 
-/**
- * 两个上限（工作流设的、计划设的）取更小的非零值：都设了时谁先到都算超。
- * 返回上限值和它是谁设的，文案要说清是哪个上限到了，用户才知道该去哪里改。
- */
-export function budgetLimit(
-  workflow: number | undefined,
-  plan: number,
-): { value: number; by: 'workflow' | 'plan' } | null {
-  const w = workflow && workflow > 0 ? workflow : 0
-  const p = plan && plan > 0 ? plan : 0
-  if (!w && !p) return null
-  if (!p) return { value: w, by: 'workflow' }
-  if (!w) return { value: p, by: 'plan' }
-  return w <= p ? { value: w, by: 'workflow' } : { value: p, by: 'plan' }
-}
-
-/**
- * 这一轮用掉的花费 / token / 时长超过上限时，返回暂停的说明（导出给单测验证聊天模式也走这套判定）。
- * includeWorkflow：要把工作流设的上限也算进来吗。节点执行路径传 true；
- * chat 路径传 false——工作流预算管的是「这次工作流执行」，对话里跑过一次 start_plan 之后，
- * 任务会一直带着工作流快照（host.workflow 非空），不能让那个上限转头把普通的聊天轮次也停掉。
- */
-export function overBudget(host: EngineHost, includeWorkflow = true): string {
-  const w = includeWorkflow ? host.workflow : undefined
-  const { usage, budgetFrom, budgetTokens, budgetMinutes } = host.task
-  const usd = usage.costUsd - (budgetFrom?.usd ?? 0)
-  const tokens = usage.inputTokens + usage.outputTokens - (budgetFrom?.tokens ?? 0)
-  if (w?.budgetUsd && usd >= w.budgetUsd)
-    return t('这次执行已经花了 ${used}，达到工作流设定的上限 ${limit}，已暂停。点「继续执行」会再给一份同样的额度。', {
-      used: usd.toFixed(2),
-      limit: w.budgetUsd.toFixed(2),
-    })
-  // token：工作流和计划都设了上限时取小的那个
-  const tokenLimit = budgetLimit(w?.budgetTokens, budgetTokens ?? 0)
-  if (tokenLimit && tokens >= tokenLimit.value)
-    return tokenLimit.by === 'workflow'
-      ? t('这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。', {
-          used: Math.round(tokens).toLocaleString(),
-          limit: tokenLimit.value.toLocaleString(),
-        })
-      : t(
-          '这次执行已经用了 {used} token，达到计划设定的上限 {limit}，已暂停。已经产出的内容都保留着，点「继续执行」会重新计。',
-          { used: Math.round(tokens).toLocaleString(), limit: tokenLimit.value.toLocaleString() },
-        )
-  // 时长：从这一轮开始算，旧任务没有开始时刻（at）时按不限处理
-  const startedAt = budgetFrom?.at
-  if (budgetMinutes && startedAt) {
-    const usedMinutes = (Date.now() - startedAt) / 60_000
-    if (usedMinutes >= budgetMinutes)
-      return t(
-        '这次执行已经用了 {used} 分钟，达到计划设定的上限 {limit} 分钟，已暂停。已经产出的内容都保留着，点「继续执行」会重新计时。',
-        { used: Math.round(usedMinutes), limit: budgetMinutes },
-      )
-  }
-  return ''
-}
+// 执行上限（花费 / token / 时长）的判定在 engine-budget.ts
 
 function userRequests(task: Task) {
   // 和实际交给 CLI 的一样：文字里的附件引用换成路径，没引用的列在后面
@@ -3922,17 +3869,33 @@ async function runFlow(host: EngineHost, inv: Invocation): Promise<FlowResult> {
         )
         running.set(
           n.id,
-          runNode(host, inv, n, inv.flow.nodes.indexOf(n), upstream).then((r) => {
-            running.delete(n.id)
-            if (r.ok) {
-              const step = host.task.steps.find((s) => s.id === stepPath(inv, n.id))
-              if (step?.branch) branch.set(n.id, step.branch)
-              outputs.set(n.id, { title: title(n), text: r.output })
-            } else {
-              failures.push(r)
+          runNode(host, inv, n, inv.flow.nodes.indexOf(n), upstream).then(
+            (r) => {
+              running.delete(n.id)
+              if (r.ok) {
+                const step = host.task.steps.find((s) => s.id === stepPath(inv, n.id))
+                if (step?.branch) branch.set(n.id, step.branch)
+                outputs.set(n.id, { title: title(n), text: r.output })
+              } else {
+                failures.push(r)
+                host.halted = true
+              }
+            },
+            // 节点里抛了异常（不是正常的失败结果）：也按失败收口并叫停其余分支。
+            // 不接住的话 Promise.race 直接抛出去，任务记成失败、执行位释放，并行的另一支 CLI 却还在跑，
+            // 之后把旧状态写回去盖掉新一轮
+            (e: unknown) => {
+              running.delete(n.id)
+              failures.push({
+                ok: false,
+                error: t('节点「{title}」出错：{error}', {
+                  title: title(n),
+                  error: (e as Error)?.message ?? String(e),
+                }),
+              })
               host.halted = true
-            }
-          }),
+            },
+          ),
         )
       }
     }
@@ -3949,9 +3912,18 @@ async function runFlow(host: EngineHost, inv: Invocation): Promise<FlowResult> {
       ? real[0]
       : { ok: false, error: real.map((f) => f.error).join('\n\n'), reported: real.every((f) => f.reported) }
   }
+  const unrun = nodes.filter((n) => !outputs.has(n.id) && !skipped.has(n.id))
   // 别处失败后这里没跑完：不能当成功返回
-  if (host.halted && nodes.some((n) => !outputs.has(n.id) && !skipped.has(n.id)))
-    return { ok: false, halted: true, error: '' }
+  if (host.halted && unrun.length) return { ok: false, halted: true, error: '' }
+  // 没人叫停、却还有节点既没跑也没被跳过：它们在环上（互相等对方），永远等不到。
+  // 画布连线时会拦环，但导入的、手改的、从库里装进来的工作流可能有环，不能当成功
+  if (unrun.length)
+    return {
+      ok: false,
+      error: t('工作流里有环，这些节点互相等待、一直没能开始：{nodes}。请在流程图里断开其中一条连线', {
+        nodes: unrun.map((n) => `「${title(n)}」`).join('、'),
+      }),
+    }
   const ends = inv.flow.edges.filter((e) => e.to === END && outputs.has(e.from) && taken(e)).map((e) => e.from)
   const sinks = ends.length
     ? ends

@@ -259,10 +259,32 @@ export function createRun(sc: TasksScope) {
      * 落盘。now：对话消息立即写，不等 400ms 合并窗口——关键节点（changed(true)、这一轮结束/失败/停止）
      * 用它，面板被强杀时不会丢最后一段。keepUpdatedAt：预热收尾要保留原来的列表时间
      */
+    /** 这一轮已经报过写盘失败：磁盘满时每次落盘都会失败，只在对话里报一次，恢复后再失败再报 */
+    let saveErrorShown = false
     const flush = (keepUpdatedAt = false, now = false) =>
-      sc.store
-        .update(task.id, entry.task, { keepUpdatedAt, now })
-        .catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
+      sc.store.update(task.id, entry.task, { keepUpdatedAt, now }).then(
+        () => {
+          saveErrorShown = false
+        },
+        (e) => {
+          log.error('task', '保存任务失败', { task: task.id, error: (e as Error).message })
+          if (saveErrorShown) return
+          saveErrorShown = true
+          // 写盘失败只写日志的话，对话在内存里照常跑，重启后这段全丢而用户毫不知情：在对话里如实报出来
+          entry.task.messages.push({
+            id: randomUUID(),
+            role: 'system',
+            agentId: '',
+            step: '',
+            text: t('保存对话失败，这之后的内容重启面板后可能丢失：{error}', { error: (e as Error).message }),
+            tools: [],
+            error: true,
+            alert: makeAlert('error', (e as Error).stack ?? (e as Error).message, 'panel'),
+            at: new Date().toISOString(),
+          })
+          entry.rev++
+        },
+      )
     const changed = (f?: boolean) => {
       entry.task.updatedAt = new Date().toISOString()
       trackWait(entry.task)

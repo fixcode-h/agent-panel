@@ -8,7 +8,7 @@ import test from 'node:test'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-store-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { CACHE_DIR, archiveBrokenFile, readJson, readJsonDetailed, writeJsonAtomic } = await import('./store.ts')
+const { BROKEN_DIR, archiveBrokenFile, readJson, readJsonDetailed, writeJsonAtomic } = await import('./store.ts')
 
 /** 目录里剩下的临时文件：写入失败或中断时不能留 */
 const tmpFiles = (d: string) => readdirSync(d).filter((f) => f.endsWith('.tmp'))
@@ -51,7 +51,7 @@ test('readJson：坏 JSON 被留档，调用方能拿到「存在但坏了」和
   assert.equal(res.broken.file, file)
   assert.equal(res.broken.size, size, '记下原文件的字节数，全 0 的空洞文件靠它认出来')
   assert.equal(readFileSync(res.broken.backup).length, size, '坏文件原样留档')
-  assert.ok(res.broken.backup.startsWith(path.join(CACHE_DIR, 'broken')), '归档到缓存目录')
+  assert.ok(res.broken.backup.startsWith(BROKEN_DIR), '归档到数据目录的留档目录')
 
   // 备份旁边有一份说明，写明原路径、时间、原因和字节数
   const note = JSON.parse(readFileSync(`${res.broken.backup}.broken.json`, 'utf8'))

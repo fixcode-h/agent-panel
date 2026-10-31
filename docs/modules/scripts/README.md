@@ -29,7 +29,7 @@
 
 ## 依赖
 
-Playwright（界面检查）、esbuild（出包）、Node.js 20+。端到端测试需要 macOS / Linux；Windows 上用 `npm run test:e2e:wsl`。
+Playwright（界面检查）、esbuild（出包）、Node.js 22+。端到端测试需要 macOS / Linux；Windows 上用 `npm run test:e2e:wsl`。
 
 ## 回归验证
 

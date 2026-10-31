@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from '@/lib/toast'
+import { toast, toastError } from '@/lib/toast'
 import { AlertTriangle, Check, Eye, Loader2, PenLine, Sparkles, Square, X } from 'lucide-react'
 import type { DocFile, DocJob, ProjectDoc } from '@shared/docs'
 import { CLIS } from '@shared/clis'
@@ -301,7 +301,7 @@ export function Optimizer({
             <span className="tabular-nums text-subtle">
               {secs}s{job.outChars ? ` · ${t('已输出 {n} 字', { n: job.outChars })}` : ''}
             </span>
-            <Button size="sm" variant="secondary" onClick={() => void api.stopDocJob(job.id).catch(() => {})}>
+            <Button size="sm" variant="secondary" onClick={() => void api.stopDocJob(job.id).catch(toastError)}>
               <Square className="h-3 w-3" />
               {t('停止')}
             </Button>

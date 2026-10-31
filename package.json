@@ -4,6 +4,9 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
   "description": "本机 Agent 任务面板：按项目分类编排 Codex / Claude Code 等本地 Agent",
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",

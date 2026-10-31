@@ -4,7 +4,7 @@ import { CliSettings, SETTINGS_DEFAULTS_VERSION, Settings } from '../shared/sche
 import { CLIS } from '../shared/clis.ts'
 import { defaultSettings, migrateRemovedClis, migrateSettingsDefaults } from '../shared/settings.ts'
 
-import { CACHE_DIR, dataPath, onReset, readJson, writeJsonAtomic } from './store.ts'
+import { BROKEN_DIR, dataPath, onReset, readJson, writeJsonAtomic } from './store.ts'
 import { applyServerLang } from './lang.ts'
 import { setApiLimits } from './api-slots.ts'
 
@@ -40,7 +40,7 @@ export async function getSettings(): Promise<Settings> {
   }
   // JSON 没坏但字段不合法（手动改错、旧版本留下的值）：不能让每个依赖设置的接口都一直 500。
   // 备份原文件，按默认设置继续跑，用户可以从备份里找回原来填的内容
-  const backup = path.join(CACHE_DIR, 'broken', `${path.basename(FILE)}.broken-${Date.now()}`)
+  const backup = path.join(BROKEN_DIR, `${path.basename(FILE)}.broken-${Date.now()}`)
   await mkdir(path.dirname(backup), { recursive: true }).catch(() => {})
   await rename(FILE, backup).catch(() => {})
   console.error(`设置文件内容不合法，已备份为 ${backup}，按默认设置处理：${parsed.error.message}`)

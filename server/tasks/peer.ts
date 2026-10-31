@@ -9,6 +9,14 @@ import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
 
+/**
+ * 写盘失败时抛出说得清的错：调用方是面板工具，ask-mcp 会把它作为工具错误交回 Agent。
+ * 以前这里静默吞掉，工具照样回「已记下 / 已交给父对话」，重启后这些消息全丢
+ */
+const saveFailed = (e: unknown): never => {
+  throw new Error(`写盘失败，这条消息没有记下（重启后会丢）：${(e as Error).message}`)
+}
+
 /** 子对话请父对话安排修复的报错（engine 的 toParent 带 wait_fix 时加的开头）：要父对话马上动手，不并进一轮结束的汇报 */
 const FIX_HEAD = /^【报错不是我改出来的/
 
@@ -65,7 +73,7 @@ export function createPeer(s: TasksScope) {
       const target = ce?.task ?? child
       target.pendingReport = [target.pendingReport, text.trim()].filter(Boolean).join('\n\n').slice(-4000)
       if (ce) ce.rev++
-      else await s.store.update(child.id, target).catch(() => {})
+      else await s.store.update(child.id, target).catch(saveFailed)
       return {
         ok: true,
         info: '已记下。这一轮结束时面板会把它和你的状态合成一封交给父对话（一轮只交一封），不用再重复发；要父对话决定或动手的事把 question 设为 true。',
@@ -80,7 +88,7 @@ export function createPeer(s: TasksScope) {
       const note = `（${suggestion ? '收尾建议' : '提问'}，「提问」关着由我自己决定）${text.trim()}`
       target.pendingReport = [target.pendingReport, note].filter(Boolean).join('\n\n').slice(-4000)
       if (ce) ce.rev++
-      else await s.store.update(child.id, target).catch(() => {})
+      else await s.store.update(child.id, target).catch(saveFailed)
       return {
         ok: true,
         info: suggestion
@@ -131,7 +139,7 @@ export function createPeer(s: TasksScope) {
       child.parentAsks = [...(child.parentAsks ?? []), { id: msg.id, question: text, options: opts, kind }]
       const ce = s.live.get(child.id)
       if (ce) ce.rev++
-      else await s.store.update(child.id, child).catch(() => {})
+      else await s.store.update(child.id, child).catch(saveFailed)
     }
     const entry = s.live.get(parent.id)
     const how = entry?.task.working ? await steerTask(entry.task, msg.text, msg).catch(() => false) : false
@@ -144,11 +152,11 @@ export function createPeer(s: TasksScope) {
     }
     parent.updatedAt = msg.at
     if (entry) entry.rev++
-    else await s.store.update(parent.id, parent).catch(() => {})
+    else await s.store.update(parent.id, parent).catch(saveFailed)
     // 自动交给父对话的 AI 作答：已经从插话里收到的不再叫；其余的按实时交付叫起它（答案从收件箱里看全文）。
     // 不能只看 working：父对话停在等下一句、正在收尾、预热时 working 是 false 但执行位还占着，直接开新一轮会被拒
     if (auto) {
-      await s.store.update(parent.id, parent).catch(() => {})
+      await s.store.update(parent.id, parent).catch(saveFailed)
       if (!how)
         void s
           .wakeConv(
