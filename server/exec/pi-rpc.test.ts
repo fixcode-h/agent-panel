@@ -640,21 +640,26 @@ test('Pi 桥接扩展：面板 MCP 端点不回时，初始化超时后照常加
     on: (_name: string, cb: (event: unknown, ctx: any) => void) => (onSessionStart = cb),
     registerTool: () => {},
   }
-  const startedAt = Date.now()
+  let waited = -1
   try {
     const mod = await import(pathToFileURL(file).href)
+    // 只量扩展加载本身：import（转译、读盘）的耗时和负载有关，不该算进超时预算的断言
+    const startedAt = Date.now()
     await mod.default(pi)
+    waited = Date.now() - startedAt
   } finally {
     server.closeAllConnections?.()
     server.close()
     rmSync(dir, { recursive: true, force: true })
   }
-  const waited = Date.now() - startedAt
   // 超时和次数用上面注入的小值算：生产值改了这里不用跟着改；总预算仍写在脚本里
   const step = FAST_TIMING.stepTimeout
   const budget = Number(/const LOAD_BUDGET_MS = ([0-9]+)/.exec(content)![1])
   assert.ok(waited >= step * FAST_TIMING.attempts - 150, `握手两次都等满超时才放行：${waited}ms`)
-  assert.ok(waited < budget + 1000, `不会超总预算：${waited}ms`)
+  // 该等多久：两次单步超时，且不超过总预算。余量按它的倍数给，不写死毫秒——
+  // 以前是「总预算 + 1000ms」，预算一改余量就失真，负载高时也容易误报
+  const expected = Math.min(budget, step * FAST_TIMING.attempts)
+  assert.ok(waited < expected * 2, `等满两次超时就放行、不超总预算（应约 ${expected}ms）：${waited}ms`)
   // 超时要让面板知道原因（界面显示成一行错误），而不是只剩模型说「没有面板的工具」
   onSessionStart?.({}, { ui: { setStatus: (key: string, text: string) => statuses.push(`${key}=${text}`) } })
   assert.ok(statuses[0]?.includes(`握手等了 ${step / 1000} 秒还没回应`), `报出超时的原因：${statuses[0]}`)

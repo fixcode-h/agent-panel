@@ -722,13 +722,61 @@ await runShard(import.meta.filename, async (api) => {
       )
     if (!seenKids) errors.push('父对话在跑时运行区没有列出子对话')
     else {
-      const n = await p.evaluate(
-        () =>
-          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
-            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
-          ).length,
+      // 运行区列出的子对话标题（按显示顺序）：取行上的读屏名「在右栏打开子对话「标题」」
+      const runTitles = await p.evaluate(() =>
+        [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+          [...box.children]
+            .filter((r) => (r.innerText || '').trim().startsWith('子对话'))
+            .map((r) => {
+              const sel = '[aria-label^="在右栏打开子对话「"]'
+              const el = r.matches(sel) ? r : r.querySelector(sel)
+              return (el?.getAttribute('aria-label') || '').replace(/^在右栏打开子对话「/, '').replace(/」$/, '')
+            }),
+        ),
       )
-      if (n !== 5) errors.push(`父对话在跑时运行区列了 ${n} 个子对话，应该和弹层一样是 5 个`)
+      // 对照口径：子对话弹层「全部」里按状态分组的「执行中 · N」那一组。分组走 childStage，
+      // 运行区走 visibleChildren，不是同一个函数，所以逐项对上才算数。以前写死「正好 5 个」，
+      // 演示数据一改就误报；和弹层「运行中」页签比条数又是同一份数据自己比自己，测不出东西
+      await p.locator('[data-status-row="children"] button[aria-expanded]').first().click()
+      const popped = await p
+        .locator('[data-child-summary]')
+        .first()
+        .waitFor({ timeout: 3000 })
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!popped) errors.push('父对话在跑时：点「子对话」没有打开子对话弹层，没法对照运行区')
+      else {
+        await p.getByRole('button', { name: '全部', exact: true }).first().click()
+        /** 弹层里的分组：标题「执行中 · N」写的个数和组里实际列出的标题 */
+        const groups = await p.evaluate(() => {
+          const list = document.querySelector('[data-child-item]')?.parentElement?.parentElement
+          const out = []
+          for (const el of list?.children ?? []) {
+            const head = el.tagName === 'P' ? /^(.+?) · (\d+)$/.exec((el.textContent || '').trim()) : null
+            if (head) out.push({ label: head[1], count: Number(head[2]), titles: [] })
+            const item = el.querySelector('[data-child-item]')
+            if (item && out.length)
+              out[out.length - 1].titles.push((item.querySelector('span.text-body')?.textContent || '').trim())
+          }
+          return out
+        })
+        const running = groups.find((g) => g.label === '执行中')
+        if (!running) errors.push(`父对话在跑时：子对话弹层「全部」里没有「执行中」分组（${JSON.stringify(groups)}）`)
+        else {
+          if (running.titles.length !== running.count)
+            errors.push(`子对话弹层：「执行中 · ${running.count}」下面实际列了 ${running.titles.length} 个`)
+          // 前提：至少两个在跑，才测得出「运行区把在跑的全列出来，不只第一个」
+          if (running.count < 2)
+            errors.push(`父对话在跑时：演示数据只有 ${running.count} 个执行中的子对话，用例前提不成立`)
+          if (runTitles.join('\n') !== running.titles.join('\n'))
+            errors.push(
+              `父对话在跑时运行区列的子对话（${runTitles.length} 个：${runTitles.join('、')}）和弹层「执行中 · ${running.count}」（${running.titles.join('、')}）对不上`,
+            )
+        }
+      }
+      await p.keyboard.press('Escape')
     }
     await check(p, '子对话-父对话在跑时仍列出')
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])

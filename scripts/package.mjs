@@ -21,6 +21,7 @@ import {
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { build } from 'esbuild'
+import { build as viteBuild } from 'vite'
 
 const root = path.resolve(import.meta.dirname, '..')
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
@@ -99,9 +100,45 @@ mkdirSync(stage, { recursive: true })
 // 各平台包先从同一个暂存目录复制，最后再删掉暂存目录
 const out = stage
 
+/** 演示内容的源码位置：web/src/lib/demo-*.ts（模拟后端、模拟执行、示例数据） */
+const DEMO_SOURCE = /(^|\/)web\/src\/lib\/demo-[^/]*$/
+/** 模块 id 统一成正斜杠、去掉 ?query 和 \0 前缀（插件生成的虚拟模块），再和 DEMO_SOURCE 比 */
+const modulePath = (id) => id.replace(/^\0/, '').replace(/\?.*$/, '').split(path.sep).join('/')
+/**
+ * 打进包里的模块有没有演示源码：按打包器自己记下的模块清单判，不靠猜产物里会出现什么字符串。
+ * 清单是空的、或者连必然在的入口都没有，说明这道检查本身没跑起来（打包器换了、字段改名了），也直接失败
+ */
+function assertNoDemoModules(where, ids, mustHave) {
+  const list = [...ids].map(modulePath)
+  if (!list.length) throw new Error(`${where}：没拿到打包的模块清单，没法确认包里没有演示内容`)
+  if (!list.some((id) => id.endsWith(mustHave)))
+    throw new Error(`${where}：模块清单里没有 ${mustHave}，清单不可信，没法确认包里没有演示内容`)
+  const hit = list.filter((id) => DEMO_SOURCE.test(id))
+  if (hit.length)
+    throw new Error(
+      `包里混进了演示内容（${where} 打进了 ${hit.map((id) => path.relative(root, id).split(path.sep).join('/')).join('、')}）`,
+    )
+}
+
 // 1. 正式版前端（不带 --mode demo，演示用的模拟后端不会打进来）
-// 直接用 node 跑 vite：Windows 上 npx 是 .cmd，execFileSync 启动不了
-run(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build'])
+// 用 Vite 的 JS 接口构建（配置仍是 vite.config.ts）：Windows 上 npx 是 .cmd，execFileSync 启动不了；
+// 另外挂一个只在这里用的插件，记下每个产物 chunk 实际打进了哪些模块，下面按它查演示内容
+const webModules = new Set()
+await viteBuild({
+  configFile: path.join(root, 'vite.config.ts'),
+  mode: 'production',
+  plugins: [
+    {
+      name: 'release-module-list',
+      apply: 'build',
+      generateBundle(_, bundle) {
+        for (const f of Object.values(bundle))
+          if (f.type === 'chunk') for (const id of f.moduleIds ?? Object.keys(f.modules ?? {})) webModules.add(id)
+      },
+    },
+  ],
+})
+assertNoDemoModules('前端', webModules, 'web/src/main.tsx')
 cpSync(path.join(root, 'dist'), path.join(out, 'dist'), { recursive: true })
 // 内置的 Maple Mono 是 SIL OFL 字体，许可证要跟着字体一起发
 cpSync(path.join(root, 'web/src/assets/fonts/maple-mono-nl/OFL.txt'), path.join(out, 'dist/assets/MapleMono-OFL.txt'))
@@ -112,7 +149,7 @@ cpSync(
 )
 const files = (p) => (statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => files(path.join(p, f))) : [p])
 // 2. 服务端打成一个文件，依赖全部内联
-await build({
+const serverBuild = await build({
   entryPoints: [path.join(root, 'server/index.ts')],
   outfile: path.join(out, 'server.mjs'),
   bundle: true,
@@ -150,9 +187,17 @@ await build({
   },
   // 依赖里有 CommonJS 模块（cross-spawn），给它一个 require
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
+  // 记下打进 server.mjs 的源文件，和前端一样按模块清单查演示内容
+  metafile: true,
 })
+assertNoDemoModules(
+  '服务端',
+  Object.keys(serverBuild.metafile?.inputs ?? {}).map((f) => path.resolve(process.cwd(), f)),
+  'server/index.ts',
+)
 
-// 演示用的模拟后端和模拟执行（示例输出）都不能出现在包里
+// 演示用的模拟后端和模拟执行（示例输出）都不能出现在包里。上面已经按模块清单查过；这里是第二道：
+// 演示文案被复制进非 demo 文件时模块清单查不出来，按产物里的几句标志性字符串再扫一遍。
 // 不用系统的 grep：Windows 上没有，而且找不到命令时会被当成「没找到」
 const shipped = [...files(path.join(out, 'dist')), path.join(out, 'server.mjs')]
 const grep = (word) =>
