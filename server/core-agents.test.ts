@@ -530,3 +530,18 @@ test('测试验收：多了「设计用例」「补测试」两种做法，默�
   const worker = renderTemplate(BUILTIN_AGENTS.find((a) => a.key === 'worker')!.agent.instructions, { mode: '自动' })
   assert.match(worker, /用「设计用例」独立列一遍测试矩阵/)
 })
+
+test('OpenSpec 前置检查缺 CLI 或指令时自己装好接着走，不报「没有安装」就停', () => {
+  // 用户反馈：OpenSpec 工作流启动总因为没装指令报不通过；要求没装就自行安装再继续
+  const spec = BUILTIN_AGENTS.find((a) => a.key === 'spec')!.agent
+  const pre = renderTemplate(spec.instructions, { stage: '前置检查' })
+  assert.match(pre, /npm install -g @fission-ai\/openspec@latest/)
+  assert.match(pre, /openspec init --tools <当前 CLI> --no-animation \./)
+  assert.match(pre, /不因为「没有安装」判不通过/)
+  assert.doesNotMatch(pre, /只读检查/)
+  // 其他阶段不带这段
+  assert.doesNotMatch(renderTemplate(spec.instructions, { stage: '落规范' }), /npm install -g/)
+  const skill = readFileSync('skills/workflow/openspec/SKILL.md', 'utf8')
+  assert.doesNotMatch(skill, /缺失则停止并报告/)
+  assert.doesNotMatch(skill, /经确认后再 `openspec init`/)
+})
