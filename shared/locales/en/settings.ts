@@ -590,7 +590,6 @@ export const EN_SETTINGS: Record<string, string> = {
   没有说明: 'No description',
   '还没有{kind}': 'No {kind} yet',
   命令文件: 'Command file',
-  打开这一份: 'Open this copy',
   文件结构: 'Files',
   '另有 {n} 个文件': '{n} more files',
   在这里新建文件: 'New file here',
@@ -626,8 +625,6 @@ export const EN_SETTINGS: Record<string, string> = {
   覆盖: 'Overwrite',
   装在: 'Installed in',
   内容: 'Content',
-  '复制给别的 Agent': 'Copy to other agents',
-  先保存修改再复制: 'Save your changes before copying',
   '只删 {cli} 里的这一份，文件会从磁盘上删掉，不能撤销。':
     "Only the copy in {cli} is deleted. The file is removed from disk and can't be restored.",
   'MCP 工具让 Agent 能连上外部的服务和数据（文档、数据库、浏览器…）。这里直接读写各个 Agent 自己的配置文件，装在哪个 Agent 里由右边的开关决定；用 Agent 自己的命令装的也会列出来。':
@@ -663,13 +660,10 @@ export const EN_SETTINGS: Record<string, string> = {
     'A Skill for writing technical design docs, with background, option comparison, risks and schedule',
   没有变化: 'No change',
   'AI 创建 Skill': 'Create Skill with AI',
-  '自带 Skill（{n} 个可更新）': 'Bundled skills ({n} to update)',
   '还没有，点右上角的 ＋ 新建。': 'Nothing yet — click ＋ at the top right.',
   '还没有自带 Skill。': 'No bundled skills yet.',
   '，所有 Agent 共用': ', shared by all agents',
   '（所有 Agent 共用）': ' (shared by all agents)',
-  '自带技能的内容由面板随版本提供，不能在这里编辑；修改请复制一份放到自己的技能目录里。':
-    'Bundled skills ship with the panel and cannot be edited here. To customize one, copy it into your own skills directory.',
   '这个技能还有一份部署在「设置 → 部署」，那份要覆盖部署一次才会更新。':
     'This skill is also deployed from Settings → Deploy; redeploy there to update that copy.',
   '在左边的文件树里点一个文件，看它的内容。': 'Click a file in the tree to see its contents.',
@@ -1759,4 +1753,25 @@ export const EN_SETTINGS: Record<string, string> = {
   深色主题下主文字有多白: 'How bright primary text is in dark theme',
   '默认 90%，比 Claude Code 深色的主文字（93%）略柔和；100% 是纯白，调低更柔和。浅色主题不受影响。':
     'Default 90%, slightly softer than Claude Code dark primary text (93%); 100% is pure white, lower is softer. Light theme is unaffected.',
+  // 角色页、技能页重排（2026-10-31）
+  'Agent 不可用': 'Agent unavailable',
+  设定: 'Setup',
+  '名称、角色设定、能力和 Skill 由面板维护并随版本更新，参数和运行环境在「运行」页改。':
+    'The name, instructions, capabilities and skills are maintained by the panel and updated with each release. Change parameters and runtime on the “Run” tab.',
+  '想改设定就在「⋯」里复制一份。': ' To change the instructions, duplicate it from the “⋯” menu.',
+  '还没有参数，先在「运行」页里添加': 'No parameters yet. Add some on the “Run” tab',
+  '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「运行」页的参数里添加，或者改成已有的参数名。':
+    'The instructions reference parameters that don’t exist: {list}. They’ll be left as-is in the prompt. Add them under Parameters on the “Run” tab, or use an existing parameter name.',
+  '随面板版本提供，只读；要改请复制一份到自己的技能目录':
+    'Ships with the panel and is read-only; copy it into your own skills folder to change it',
+  '先保存修改再装到别的 Agent': 'Save your changes before installing to another agent',
+  '删除 {cli} 里的这一份': 'Delete the copy in {cli}',
+  '关掉会删除 {cli} 里的这一份': 'Turning this off deletes the copy in {cli}',
+  '打开会复制一份到 {cli}': 'Turning this on copies it to {cli}',
+  '删除 {cli} 里的「{name}」？': 'Delete “{name}” from {cli}?',
+  '这是最后一份，删掉后所有 Agent 都用不了它，文件会从磁盘上删掉，不能撤销。':
+    'This is the last copy. After deleting it no agent can use it. The files are removed from disk and this can’t be undone.',
+  '保存（Ctrl / ⌘ + S）': 'Save (Ctrl / ⌘ + S)',
+  '我的 Skill': 'My skills',
+  '装在 {cli}': 'Installed in {cli}',
 }

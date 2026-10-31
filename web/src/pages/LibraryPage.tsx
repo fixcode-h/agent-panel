@@ -6,14 +6,16 @@ import { libraryName } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useNav } from '@/lib/data'
-import { sharedUpdateCount, sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
+import { sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { useBundledSkills } from '@/lib/use-bundled-skills'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input, Select } from '@/components/ui/input'
+import { Input } from '@/components/ui/input'
+import { Segmented } from '@/components/ui/segmented'
+import { cliColor } from '@/lib/cli-style'
 import { Modal } from '@/components/ui/modal'
-import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/menu'
-import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/components/layout/ListPane'
+import { ContextMenuItem } from '@/components/ui/menu'
+import { ListEmpty, ListItem, ListPane } from '@/components/layout/ListPane'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { LibraryDetail } from '@/components/library/LibraryDetail'
 import { BundledBulkBar, BundledSkills } from '@/components/library/BundledSkills'
@@ -25,17 +27,6 @@ import { AssistDialog } from '@/components/assist/AssistDialog'
  * 命令分页按用户要求去掉了（这一页只管 Skill），命令仍可在对话里用 / 调出
  */
 type Tab = 'skill' | 'bundled'
-
-/**
- * 分页下拉的选项：有可更新的自带技能时写进选项文字。
- * 分段按钮上的小圆点在下拉里没地方画，所以文字和下拉右边的小圆点一起提示（用户要能发现更新）。
- */
-function tabOptions(updates: number) {
-  return [
-    { value: 'skill', label: 'Skill' },
-    { value: 'bundled', label: updates ? t('自带 Skill（{n} 个可更新）', { n: updates }) : t('自带 Skill') },
-  ]
-}
 
 /** 新建 Skill 时的模板 */
 function template(name: string) {
@@ -72,7 +63,6 @@ export function LibraryPage() {
   const [rev, setRev] = useState(0)
   // 自带技能有新内容：「自带 Skill」分页亮点，进去能看到在哪里更新
   const upd = useSkillUpdates()
-  const updN = sharedUpdateCount(upd)
   const updHint = sharedUpdateHint(upd)
   // 自带技能：列表和安装动作两边都用（左栏列表、右详情、底部的批量按钮）
   const bundled = useBundledSkills()
@@ -113,16 +103,14 @@ export function LibraryPage() {
     const q = query.trim().toLowerCase()
     return (data?.items ?? []).filter((i) => !q || `${i.name} ${i.description}`.toLowerCase().includes(q))
   }, [data, query])
+  // 同名的合成一条：装在几个 Agent 里由行尾的色点标出来，进详情再用开关管装在哪些 Agent。
+  // 原来按 Agent 分组，同一个 Skill 装了两份就在列表里出现两次
+  const merged = useMemo(() => {
+    const byName = new Map<string, LibraryItem[]>()
+    for (const i of hits) byName.set(i.name, [...(byName.get(i.name) ?? []), i])
+    return [...byName.values()]
+  }, [hits])
   const cliName = (id: string) => data?.clis.find((c) => c.id === id)?.name ?? id
-  const groups = useMemo(() => {
-    // 跟 CLI 列表的顺序
-    const ids = [...new Set(hits.map((i) => i.cli))]
-    return ids
-      .map((cli) => ({ cli, label: cliName(cli), items: hits.filter((i) => i.cli === cli) }))
-      .filter((g) => g.items.length)
-    // cliName 只依赖 data.clis，跟着 hits 一起算
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [hits, data])
 
   // 地址里的名字（和可选的 Agent）决定选中项；不在列表里（例如刚删掉）就回第一项。
   // 这里用未过滤的全量算：搜索只过滤左栏，搜到别的名字时右边开的那个技能不能跟着消失
@@ -152,46 +140,34 @@ export function LibraryPage() {
         count={tab === 'bundled' ? (bundled.items?.length ?? 0) : (data?.items.length ?? 0)}
         onNew={() => setCreating(true)}
         hideNew={tab === 'bundled'}
-        // 头部有「AI 创建」+「新建」两个按钮：窄栏里都收成图标，标题才有地方放下
-        compactNew
-        extra={
-          tab !== 'bundled' && (
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              onClick={() => setAi(true)}
-              disabled={!data}
-              aria-label={t('AI 创建 Skill')}
-              title={t('描述需求，让本机 Agent 写 Skill')}
-            >
-              <Sparkles className="h-4 w-4 text-accent-text" />
-            </Button>
-          )
-        }
+        compact
+        // 新建、AI 创建收进一个「＋」菜单，头部只留一个按钮
+        newMenu={[
+          { label: t('新建 Skill'), icon: Plus, onSelect: () => setCreating(true) },
+          {
+            label: t('AI 创建 Skill'),
+            icon: Sparkles,
+            hint: t('描述需求，让本机 Agent 写 Skill'),
+            onSelect: () => setAi(true),
+            disabled: !data,
+          },
+        ]}
         query={query}
         onQuery={setQuery}
         placeholder={t('搜索名字和说明')}
         tabs={
-          <div className="flex items-center gap-2">
-            <Select
-              aria-label={t('种类')}
-              className="min-w-0 flex-1"
-              value={tab}
-              onChange={(e) => pickTab(e.target.value as Tab)}
-              options={tabOptions(updN)}
-            />
-            {/* 有可更新的自带技能时标出来：展开下拉才看到文字的话，不少人根本不会去展开 */}
-            {updHint && (
-              // role=status 播报的是元素里的文字，光有 aria-label 有些读屏读不出来
-              <span
-                className="grid h-1.5 w-1.5 shrink-0 place-items-center rounded-full bg-accent"
-                role="status"
-                title={updHint}
-              >
-                <span className="sr-only">{updHint}</span>
-              </span>
-            )}
-          </div>
+          // 两页并排摆出来：原来是下拉框，看不出还有「自带 Skill」这一页；有可更新的自带技能时挂一个点
+          <Segmented
+            fill
+            size="sm"
+            label={t('种类')}
+            value={tab}
+            onChange={pickTab}
+            options={[
+              { id: 'skill', label: t('我的 Skill') },
+              { id: 'bundled', label: t('自带 Skill'), dot: updHint || undefined },
+            ]}
+          />
         }
         footer={
           tab === 'bundled' ? (
@@ -218,35 +194,37 @@ export function LibraryPage() {
             {query ? t('没有符合的{kind}。', { kind: 'Skill' }) : t('还没有，点右上角的 ＋ 新建。')}
           </ListEmpty>
         ) : (
-          // 按 Agent 分组：一眼看出哪些装在哪个 CLI 里（同名会同时出现在几组）
-          groups.map((g) => (
-            <ListGroup key={g.cli || 'all'} header={<GroupHeader label={g.label} count={g.items.length} />}>
-              {g.items.map((i) => (
-                <ListItem
-                  key={`${i.cli}:${i.name}`}
-                  selected={shown?.name === i.name && shown.cli === i.cli}
-                  onClick={() => go({ page: 'library', id: i.name, sub: i.cli })}
-                  leading={<Sparkles className="h-4 w-4 shrink-0 text-accent-text" />}
-                  title={i.name}
-                  subtitle={i.description || t('没有说明')}
-                  monoSubtitle={false}
-                  menu={
-                    <>
-                      <ContextMenuItem onSelect={() => go({ page: 'library', id: i.name, sub: i.cli })}>
-                        <Sparkles className="h-4 w-4" />
-                        {t('打开这一份')}
-                      </ContextMenuItem>
-                      <ContextMenuSeparator />
-                      <ContextMenuItem onSelect={() => setCreating(true)}>
-                        <Plus className="h-4 w-4" />
-                        {t('新建')}
-                      </ContextMenuItem>
-                    </>
-                  }
-                />
-              ))}
-            </ListGroup>
-          ))
+          merged.map((copies) => {
+            const i = copies[0]
+            return (
+              <ListItem
+                key={i.name}
+                compact
+                selected={shown?.name === i.name}
+                onClick={() => go({ page: 'library', id: i.name, sub: i.cli })}
+                leading={<Sparkles className="h-4 w-4 shrink-0 text-accent-text" />}
+                title={i.name}
+                subtitle={i.description || t('没有说明')}
+                monoSubtitle={false}
+                trailing={
+                  <span
+                    className="flex shrink-0 items-center gap-1"
+                    title={t('装在 {cli}', { cli: copies.map((c) => cliName(c.cli)).join(t('、')) })}
+                  >
+                    {copies.map((c) => (
+                      <span key={c.cli} className="h-1.5 w-1.5 rounded-full" style={{ background: cliColor(c.cli) }} />
+                    ))}
+                  </span>
+                }
+                menu={
+                  <ContextMenuItem onSelect={() => setCreating(true)}>
+                    <Plus className="h-4 w-4" />
+                    {t('新建')}
+                  </ContextMenuItem>
+                }
+              />
+            )
+          })
         )}
       </ListPane>
 

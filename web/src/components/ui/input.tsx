@@ -28,13 +28,20 @@ const fieldSizes = {
 }
 export type FieldSize = keyof typeof fieldSizes
 
+/**
+ * 一整片表单的默认高度档：角色页、技能页这类紧凑的详情页用 Provider 整片切成 sm，
+ * 不用每个 Input / Select 各传一遍 size；单个控件传了 size 仍以它为准
+ */
+export const FieldSizeContext = createContext<FieldSize>('md')
+
 export const Input = forwardRef<
   HTMLInputElement,
   // 原生的 size（按字符数定宽）没人用，名字让给高度档
   Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & { size?: FieldSize }
->(({ className, size = 'md', ...props }, ref) => (
-  <input ref={ref} className={cn(fieldClass, fieldSizes[size], className)} {...props} />
-))
+>(({ className, size, ...props }, ref) => {
+  const ctx = useContext(FieldSizeContext)
+  return <input ref={ref} className={cn(fieldClass, fieldSizes[size ?? ctx], className)} {...props} />
+})
 Input.displayName = 'Input'
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
@@ -76,7 +83,7 @@ export function Select({
   title,
   placeholder,
   'aria-label': ariaLabel,
-  size = 'md',
+  size: sizeProp,
 }: {
   /** sm：紧凑的下拉框，和 Input size="sm"、sm 按钮同高；xs：属性面板里的小号；不传时和原来一样 */
   size?: FieldSize
@@ -96,6 +103,8 @@ export function Select({
   const groups = [...new Set(options.map((o) => o.group ?? ''))]
   const current = options.find((o) => o.value === value)
   const ghost = useContext(SelectLook) === 'ghost'
+  const ctxSize = useContext(FieldSizeContext)
+  const size = sizeProp ?? ctxSize
   return (
     <S.Root value={enc(value)} onValueChange={(v) => onChange({ target: { value: dec(v) } })} disabled={disabled}>
       <S.Trigger

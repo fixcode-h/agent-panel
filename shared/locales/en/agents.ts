@@ -41,7 +41,6 @@ export const EN_AGENTS: Record<string, string> = {
   子角色: 'Sub-roles',
   '已删除「{name}」': 'Deleted “{name}”',
   未命名角色: 'Untitled role',
-  'Agent 未安装': 'Agent not installed',
   还没有简介: 'No description yet',
   '名称为空，未保存': 'Name is empty, not saved',
   '让本机 Agent 按你的要求优化': 'Have a local agent refine it to your requirements',
@@ -253,14 +252,10 @@ export const EN_AGENTS: Record<string, string> = {
   关闭并终止生成: 'Close and stop generating',
   必备: 'Core',
   '必备角色 · {use}': 'Core role · {use}',
-  '项目对话离不开的必备角色之一，不能删除，也不能改成别的角色。名称、角色设定、能力和 Skill 由面板维护并随版本更新；你可以改下面的参数和运行环境，每个项目还能在项目设置里单独调参数。':
-    "One of the core roles every project conversation relies on. It can't be deleted or turned into a different role. Its name, instructions, abilities and skills are maintained by the panel and updated with each release; you can change the parameters and runtime below, and each project can tune the parameters in its settings.",
   '这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。':
     "These are the defaults for all projects. To use different values in one project, change them under Core roles in that project's settings.",
   '由面板维护，只读。Skill：{list}': 'Maintained by the panel, read-only. Skills: {list}',
   '内置角色 · 随版本更新': 'Built-in role · updated with each release',
-  '名称、角色设定、能力和 Skill 由面板维护，每次更新都换成最新版本，用到它的对话下一轮就用新版。你可以改参数、运行环境、分类和标签；想改设定就「复制一份」，改复制出来的角色。':
-    'Its name, instructions, abilities and skills are maintained by the panel and replaced with the latest version on every update; conversations using it pick up the new version on their next turn. You can change the parameters, runtime, category and tags. To change the instructions, duplicate it and edit the copy.',
   分类与标签: 'Category and tags',
   '这里改的是默认取值，工作流节点上还能单独改；参数本身随内置定义更新。':
     'These are the default values; workflow nodes can still override them. The parameters themselves follow the built-in definition.',
@@ -280,8 +275,6 @@ export const EN_AGENTS: Record<string, string> = {
   概览: 'Overview',
   '插入按「{name}」走不同做法的分支': 'Insert a branch on “{name}”',
   分支: 'Branch',
-  '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「参数」页添加，或者改成已有的参数名。':
-    "The role references parameters that don't exist: {list}. They stay in the prompt as-is. Add them on the Parameters tab or use an existing name.",
   '按试的参数展开（不保存），包含引入的角色和 Skill 提示。':
     'Expanded with the trial values (not saved), including included roles and Skill hints.',
   联动: 'Linked',
