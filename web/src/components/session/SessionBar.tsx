@@ -48,14 +48,24 @@ export function SessionBar({
           {worktree ? t('本机 · 独立分支') : t('本机')}
           {def && <span className="text-subtle"> · {def.name}</span>}
         </SessionRow>
-        <SessionRow icon={<BookMarked />} title={info?.dir}>
-          {info?.repo || projectName || t('没有项目目录')}
-        </SessionRow>
-        <SessionRow icon={<GitBranch />} title={worktree?.path}>
-          <span className="font-mono text-[0.8125rem]">
-            {worktree?.branch || info?.branch || (info && !info.isGit ? t('不是 git 仓库') : '…')}
-          </span>
-        </SessionRow>
+        {/* 仓库和分支合成一行（仓库 · 分支）；不是 git 仓库就整行不显示 */}
+        {(worktree || info?.isGit) && (
+          <SessionRow
+            icon={<BookMarked />}
+            title={[info?.dir ?? worktree?.path, worktree?.branch || info?.branch].filter(Boolean).join(' · ')}
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="min-w-0 truncate">{info?.repo || projectName || '…'}</span>
+              <span aria-hidden className="shrink-0 text-subtle">
+                ·
+              </span>
+              <GitBranch className="!h-3.5 !w-3.5 shrink-0 text-muted" />
+              <span className="max-w-[50%] min-w-0 shrink-0 truncate font-mono text-[0.8125rem]">
+                {worktree?.branch || info?.branch || '…'}
+              </span>
+            </span>
+          </SessionRow>
+        )}
       </SessionCard>
 
       <SessionCard id="context" title={t('上下文')}>
