@@ -48,14 +48,16 @@ function Item({
       title={typeof dot === 'string' ? `${label}\n${dot}` : label}
       onClick={onClick}
       className={cn(
-        'rail-item relative grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-[10px] transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
-        on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+        'rail-item press relative grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-[10px]',
+        on ? 'bg-active text-fg' : 'text-subtle hover:bg-hover hover:text-fg',
       )}
     >
-      <Icon className="h-8 w-8" strokeWidth={1.9} />
+      {/* 24px、线宽 1.75：32px 把格子撑满、像一排贴纸（用户反馈「很丑」），20px 又偏小；
+          留出 8px 的底色边，选中 / 悬停的底才看得出是一块按钮 */}
+      <Icon className="h-6 w-6" strokeWidth={1.75} />
       {/* 圆点描一圈图标栏的底色，压在图标角上也分得开 */}
       {dot && (
-        <span aria-hidden className="activity-dot absolute top-[7px] right-[7px] h-2 w-2 rounded-full bg-accent" />
+        <span aria-hidden className="activity-dot absolute top-[6px] right-[6px] h-2 w-2 rounded-full bg-accent" />
       )}
       {hint && (
         <span id={hintId} hidden>
@@ -84,7 +86,7 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
     <nav
       aria-label={t('功能栏')}
       data-activity-bar
-      className="activity-bar hidden w-14 shrink-0 flex-col items-center gap-1.5 py-2.5 md:flex"
+      className="activity-bar hidden w-14 shrink-0 flex-col items-center gap-1 py-2.5 md:flex"
     >
       {tool ? (
         <Item icon={HomeIcon} label={t('回到主页')} onClick={() => go(homeRoute(route.page))} />

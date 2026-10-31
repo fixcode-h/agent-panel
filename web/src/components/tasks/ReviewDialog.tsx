@@ -142,7 +142,7 @@ export function ReviewDialog({
   }
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="full">
+    <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="xl">
       <ModalHeader icon={ClipboardCheck} iconClass="text-warning" title={req.title}>
         {agent && (
           <span className="hidden min-w-0 items-center gap-1.5 text-[0.75rem] text-subtle sm:flex">

@@ -431,7 +431,7 @@ export function ProjectDiffDialog({
     })
   return (
     // 它总是从文件预览窗口里打开，层级要高过那个窗口（stacked）；只看不填，点到外面就关
-    <Modal open={!!path} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside stacked>
+    <Modal open={!!path} onOpenChange={onOpenChange} title={null} size="xl" bare closeOnOutside stacked>
       <DiffShell
         path={shown}
         diff={text}
@@ -557,12 +557,12 @@ export function DiffDialog({
   return (
     <>
       {/* 只看不填：点到外面就关 */}
-      {/* 编辑工具那一次的改动（own）通常就几行：弹窗跟着内容高，最高到铺满的四分之三；文件的全部改动照旧铺满 */}
+      {/* 编辑工具那一次的改动（own）通常就几行：弹窗跟着内容高，最高到铺满的四分之三；文件的全部改动用 xl 档 */}
       <Modal
         open={own || !!path}
         onOpenChange={onOpenChange}
         title={null}
-        size={own ? 'fit' : 'full'}
+        size={own ? 'fit' : 'xl'}
         bare
         closeOnOutside
       >
