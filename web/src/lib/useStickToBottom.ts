@@ -47,7 +47,8 @@ export type ScrollStart = 'bottom' | 'top'
  *   变回 true 时重新贴底——切回对话视图就该停在最新一行
  * @param startAt 挂上容器时停在哪一端。默认 'bottom'（对话、日志这类看最新内容）；
  *   'top' 是「先看第一块内容」——最上面那块本身就说明这里是什么（子任务窗口的「派给它的要求」）。
- *   停顶部时不贴底、新输出也不把人拽走（正在读的要求会被顶掉），用户自己滚到底部附近才恢复跟随
+ *   停顶部时不贴底、新输出也不把人拽走（正在读的要求会被顶掉），用户自己滚到底部附近才恢复跟随；
+ *   例外是还没滚过、内容一屏放得下（底部本来就在视野里）：新内容进来接着跟，实时输出不会停在原地
  */
 export function useStickToBottom<K = unknown>(
   key?: K,
@@ -64,6 +65,9 @@ export function useStickToBottom<K = unknown>(
   }, [])
   // 用户把内容翻上去了就不再拽回底部
   const pinned = useRef(true)
+  // 停顶部打开、用户还没滚过：内容一屏放得下（已经看得到底部）时，新输出进来要接着跟，
+  // 不然「刚开始还没输出」的子任务窗口之后的实时输出就一直停在原地
+  const fromTop = useRef(false)
   // 上一次看到的 scrollTop：判断这次滚动是不是往上
   const lastTop = useRef(0)
   // 离开底部（可以显示「回到底部」）：只在真的变了时才 setState，滚动过程中不反复重渲染
@@ -78,6 +82,8 @@ export function useStickToBottom<K = unknown>(
   const onScroll = useCallback(() => {
     const el = box.current
     if (!el) return
+    // 用户自己滚过了，跟不跟由滚动位置决定（stillPinned），不再走「停顶部但一屏放得下」的特例
+    if (el.scrollTop !== lastTop.current) fromTop.current = false
     pinned.current = stillPinned(el, lastTop.current, pinned.current, threshold)
     lastTop.current = el.scrollTop
     markAway(!nearBottom(el, threshold))
@@ -86,6 +92,7 @@ export function useStickToBottom<K = unknown>(
   // 主动回到最新内容：点了「回到底部」，或者刚发出一条消息、点了某一步时接着看最新的
   const pin = useCallback(() => {
     pinned.current = true
+    fromTop.current = false
     const el = box.current
     if (el) {
       el.scrollTop = el.scrollHeight
@@ -97,6 +104,7 @@ export function useStickToBottom<K = unknown>(
   // 主动停在某段内容上（点了任务里的某一步），别让下一段输出把它顶走
   const unpin = useCallback(() => {
     pinned.current = false
+    fromTop.current = false
   }, [])
 
   useLayoutEffect(() => {
@@ -104,13 +112,19 @@ export function useStickToBottom<K = unknown>(
     // 停在顶部时不贴底：最上面那块（子任务窗口的「派给它的要求」）才是打开时要看的内容。
     // 新输出进来也不拽到底部，否则用户正在读的要求会被顶走；滚到底部附近由 onScroll 恢复跟随
     pinned.current = startAt !== 'top'
+    fromTop.current = startAt === 'top'
     if (startAt === 'top') {
       node.scrollTop = 0
       lastTop.current = 0
     }
     markAway(startAt === 'top' ? !nearBottom(node, threshold) : false)
     const stick = () => {
-      if (!pinned.current) return
+      // 停顶部且没动过：内容变高之前底部就在视野里（awayRef 是上次看到的位置），按「本来就在看最新的」接着跟
+      if (!pinned.current && fromTop.current && !awayRef.current) pinned.current = true
+      if (!pinned.current) {
+        if (fromTop.current) markAway(!nearBottom(node, threshold))
+        return
+      }
       node.scrollTop = node.scrollHeight
       lastTop.current = node.scrollTop
     }

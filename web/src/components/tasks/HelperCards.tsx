@@ -8,7 +8,7 @@ import { api } from '@/lib/api'
 import { currentActivity, fmtDuration, stepActivity } from '@/lib/tasks'
 import { helperRunning, sortHelpers, stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
-import { useStickToBottom } from '@/lib/useStickToBottom'
+import { type ScrollStart, useStickToBottom } from '@/lib/useStickToBottom'
 import { helperBriefView } from '@/lib/helper-brief'
 import { useEscape } from '@/lib/useEscape'
 import { Button } from '@/components/ui/button'
@@ -292,13 +292,18 @@ export function HelperWindow({
   // 这个子任务自己的消息（旧数据里它再派出去的也在它名下）
   const msgs = task.messages.filter((m) => m.step === id || m.step.startsWith(`${id}/`))
   const agent = agents.find((a) => a.id === step?.agentId && !isHelperAgent(a))
-  // 有要求时打开先停在最上面：那块「派给它的要求」说明这个子任务要做什么，贴底会把它滚出视野，
-  // 用户滚到底部附近之后才跟着新内容走（startAt: 'top'）。
-  // 没有要求（旧记录 / 派发时只写了标题）时卡片整块不渲染，滚动区第一块就是对话流，停顶部没有意义——
-  // 这种窗口照旧贴底看最新输出，所以按有没有要求选起点
+  // 打开时停在哪一端，按打开那一刻定下来（换看另一个子任务时重新定），之后不再变：
+  // - 已经有输出：贴底看最新的实时输出，新输出进来接着跟（和普通对话一样）。「派给它的要求」这时是收起的一行，
+  //   在最上面，往上翻就看得到；
+  // - 还没有输出但有要求：要求默认展开，它就是窗口里要看的内容，停顶部；一屏放得下时等输出进来就接着跟底部。
+  // 起点只在打开时定：要是跟着「有没有输出」变，第一条输出进来会让正在读要求的人被拽走，
+  // 旧记录重试补上 brief 时也会把正跟着底部的窗口拽回顶部
   // 缓存：brief 动辄几千字，而跑着的子任务会因 useNow 高频重渲染，别每次都重新拆一遍
   const hasBrief = useMemo(() => !helperBriefView(step?.brief).empty, [step?.brief])
-  const scroller = useStickToBottom(id, undefined, true, hasBrief ? 'top' : 'bottom')
+  const pickStart = (): { id: string; at: ScrollStart } => ({ id, at: hasBrief && !msgs.length ? 'top' : 'bottom' })
+  const [start, setStart] = useState(pickStart)
+  if (start.id !== id) setStart(pickStart())
+  const scroller = useStickToBottom(id, undefined, true, start.id === id ? start.at : pickStart().at)
   if (!step) return null
   const time = step.startedAt || step.endedAt ? fmtDuration(stepMs(step, now)) : ''
   // 标题栏右侧的状态胶囊：和 AI 分析窗口同一个位置、同一套颜色

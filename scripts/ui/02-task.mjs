@@ -995,6 +995,44 @@ await runShard(import.meta.filename, async (api) => {
             )
           if (!opened) errors.push(`运行区：点详情区「${rowInfo.tagText}」后没打开子任务「${rowInfo.title}」的窗口`)
           await check(p, '子任务-整行可点')
+          // 打开有输出的子任务要停在最新输出（和普通对话一样贴底），不是停在最上面的「派给它的要求」
+          if (opened) {
+            // 演示里这个子任务的对话流在默认窗口里刚好一屏放得下，看不出停在哪一端：把窗口压矮，内容超过一屏，
+            // 贴底跟随时会随容器变矮停回底部，停顶部（旧行为）就还在 scrollTop 0
+            const vp = p.viewportSize()
+            await p.setViewportSize({ width: vp.width, height: 520 })
+            const gap = await p
+              .waitForFunction(
+                () => {
+                  const d = [...document.querySelectorAll('[role="dialog"]')].at(-1)
+                  const sc = [...(d?.querySelectorAll('div') || [])].find(
+                    (el) => getComputedStyle(el).overflowY === 'auto' && el.scrollHeight > el.clientHeight + 40,
+                  )
+                  if (!sc) return null
+                  const g = sc.scrollHeight - sc.scrollTop - sc.clientHeight
+                  return g <= 40 ? { g } : null
+                },
+                null,
+                { timeout: 3000 },
+              )
+              .then(
+                (h) => h.jsonValue(),
+                () => null,
+              )
+            if (!gap) {
+              const info = await p.evaluate(() => {
+                const d = [...document.querySelectorAll('[role="dialog"]')].at(-1)
+                return [...(d?.querySelectorAll('div') || [])]
+                  .filter((el) => getComputedStyle(el).overflowY === 'auto')
+                  .map(
+                    (el) =>
+                      `${el.className.slice(0, 40)} top=${el.scrollTop} h=${el.scrollHeight} c=${el.clientHeight}`,
+                  )
+              })
+              errors.push(`子任务窗口：打开有输出的子任务没有滚到最下面的最新输出（${info.join(' | ')}）`)
+            }
+            await p.setViewportSize(vp)
+          }
           await p.keyboard.press('Escape')
           await closed()
         }
