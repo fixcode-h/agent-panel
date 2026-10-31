@@ -111,6 +111,7 @@ test('子对话：有独立分支的用 submit_merge 带 build 申请，没有�
   const branch = orch({
     child: true,
     canSubmit: true,
+    isolated: true,
     ueBuild: 'child',
     submitMerge: async (_n: string, _t: string, build?: boolean) => {
       merged.push(build)
@@ -138,6 +139,13 @@ test('子对话：有独立分支的用 submit_merge 带 build 申请，没有�
   assert.ok(names(shared).includes('request_build'))
   await callOrchTool(shared, 'request_build', { note: '改了 Inventory 模块' })
   assert.deepEqual(asked, ['改了 Inventory 模块'])
+  // 共用目录的子对话（P4 等）也能请父对话验收：编译走 request_build，submit_merge 不带 build
+  const sharedSubmit = orch({ child: true, canSubmit: true, ueBuild: 'child' })
+  assert.ok(names(sharedSubmit).includes('request_build'))
+  const sharedTool = (
+    orchTools(sharedSubmit) as { name: string; inputSchema: { properties: Record<string, unknown> } }[]
+  ).find((x) => x.name === 'submit_merge')!
+  assert.ok(!('build' in sharedTool.inputSchema.properties))
 
   const plain = orch({ child: true, canSubmit: true, ueBuild: '' })
   assert.ok(!names(plain).includes('request_build'))

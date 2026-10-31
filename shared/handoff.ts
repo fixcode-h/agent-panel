@@ -66,11 +66,13 @@ export function handoffText(
     triage?: string
     /** 显式放行记录（overrideText 写好的几行）：谁、什么时候、为什么、原本拦住什么 */
     override?: string
+    /** 和父对话共用目录（P4、没有版本管理、共用目录）：没有分支要合，改动直接交父对话验收 */
+    shared?: boolean
   },
 ): string {
   const files = Object.entries(facts.changed)
   const parts = [
-    `这个子对话「${facts.title}」之前已经做完一次并合回了「${facts.base || '父对话所在的分支'}」，下面是当时留下的交接摘要。` +
+    `这个子对话「${facts.title}」之前已经做完一次并${facts.shared ? '交父对话验收' : `合回了「${facts.base || '父对话所在的分支'}」`}，下面是当时留下的交接摘要。` +
       '上次的完整过程没有带过来：先按摘要找到对应的代码和文档，需要细节时直接读文件，别凭印象改。',
     facts.request ? `## 原始需求\n${clip(facts.request, 1500)}` : '',
     ...HANDOFF_FIELDS.map((f) => (h[f.key] ? `## ${f.title}\n${clip(h[f.key]!, 3000)}` : '')),
@@ -80,7 +82,7 @@ export function handoffText(
     facts.override ? `## 评审门禁的显式放行\n${clip(facts.override, 800)}` : '',
     facts.commits.length || files.length
       ? [
-          `## 合回的改动（分支 ${facts.branch}）`,
+          facts.shared ? '## 交付的改动（和父对话共用目录）' : `## 合回的改动（分支 ${facts.branch}）`,
           ...facts.commits.slice(0, 20).map((c) => `- ${c}`),
           files.length
             ? `改动文件（增加/删除行数）：${files

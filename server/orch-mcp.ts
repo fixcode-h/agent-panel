@@ -595,8 +595,9 @@ export function orchTools(o: Orchestra) {
                 {
                   name: 'submit_merge',
                   title: '请父对话收尾',
-                  description:
-                    '只剩合回时调用：计划其余步骤都做完、后台命令都结束、没有待回答的提问、编译测试在你的独立分支里跑通。面板把你现在的改动提交到你的分支，请父对话收尾：父对话把它合回原分支（合并就是验收）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。项目里有范围为「全量，合并后由父对话跑」的步骤时，合回后由父对话跑它们：通过才标完成、删分支，失败会把报错推回来，修好再调用一次（这些步骤会全部重跑）。完成只是「已合回父对话所在的分支」，不涉及推送。还有没做完的会直接拒绝并说明还差什么；合不进去（冲突）会退回给你。马上返回，调用后结束这一轮。',
+                  description: o.isolated
+                    ? '只剩合回时调用：计划其余步骤都做完、后台命令都结束、没有待回答的提问、编译测试在你的独立分支里跑通。面板把你现在的改动提交到你的分支，请父对话收尾：父对话把它合回原分支（合并就是验收）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。项目里有范围为「全量，合并后由父对话跑」的步骤时，合回后由父对话跑它们：通过才标完成、删分支，失败会把报错推回来，修好再调用一次（这些步骤会全部重跑）。完成只是「已合回父对话所在的分支」，不涉及推送。还有没做完的会直接拒绝并说明还差什么；合不进去（冲突）会退回给你。马上返回，调用后结束这一轮。'
+                    : '只剩收尾时调用：计划其余步骤都做完（P4 已按类型分好 changelist）、后台命令都结束、没有待回答的提问、改了代码的已经评审并处置、编译测试跑通。你和父对话共用目录（P4、没有版本管理或项目设成共用目录），改动已经在原目录里，面板不提交也不合并，只请父对话验收：父对话收下后面板把计划最后的收尾步骤标完成、结束这个子对话。评审、测试、交接要点的校验和独立分支一样，不因为版本管理方式不同就省掉。还有没做完的会直接拒绝并说明还差什么；验收没过会退回给你。马上返回，调用后结束这一轮。',
                   inputSchema: {
                     type: 'object',
                     properties: {
@@ -606,9 +607,9 @@ export function orchTools(o: Orchestra) {
                         description:
                           o.ueBuild === 'child'
                             ? '做了哪些不用编译的检查、结果如何，并写明「UE 编译已申请父对话」'
-                            : '在独立分支里跑了哪些编译、测试，结果如何（例如「npm run typecheck、npm test 全部通过」）',
+                            : `${o.isolated ? '在独立分支里' : ''}跑了哪些编译、测试，结果如何（例如「npm run typecheck、npm test 全部通过」）；只读排查没改文件时写明`,
                       },
-                      ...(o.ueBuild === 'child'
+                      ...(o.ueBuild === 'child' && o.isolated
                         ? {
                             build: {
                               type: 'boolean',
@@ -677,7 +678,7 @@ export function orchTools(o: Orchestra) {
               ]
             : []),
           // 有独立分支的走 submit_merge 的 build：改动要先合回父对话的目录才编得到
-          ...(o.ueBuild === 'child' && !o.canSubmit
+          ...(o.ueBuild === 'child' && !o.isolated
             ? [
                 {
                   name: 'request_build',
@@ -1067,7 +1068,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const r = await o.submitMerge(
         str(a?.note),
         str(a?.tests),
-        o.ueBuild === 'child' ? a?.build !== false : undefined,
+        o.ueBuild === 'child' && o.isolated ? a?.build !== false : undefined,
         handoffInput(a?.handoff),
         triageInput(a?.review_triage),
         overrideInput(a?.review_override),
@@ -1273,7 +1274,7 @@ export function orchHint(o: Orchestra) {
   const child =
     bg +
     (o.child
-      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? (o.ueBuild === 'child' ? 'submit_merge 检查完请父对话收尾（合回原分支后由父对话申请编译，UE 不在子对话里编译）、' : 'submit_merge 测试跑通、只剩合回时请父对话收尾（结果会推回来）、') : o.ueBuild === 'child' ? 'request_build 向父对话申请编译（UE 不在子对话里编译，结果会推回来）、' : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
+      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.ueBuild === 'child' && !o.isolated ? 'request_build 向父对话申请编译（UE 不在子对话里编译，结果会推回来）、' : ''}${o.canSubmit ? (o.ueBuild === 'child' && o.isolated ? 'submit_merge 检查完请父对话收尾（合回原分支后由父对话申请编译，UE 不在子对话里编译）、' : o.isolated ? 'submit_merge 测试跑通、只剩合回时请父对话收尾（结果会推回来）、' : 'submit_merge 评审处置完、测试跑通、只剩收尾时请父对话验收（结果会推回来）、') : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
       : '')
   // 对话里派完子任务结束这一轮就行，结果自动交回；工作流节点要自己用 wait_agents 取
   const collect = o.autoReturn ? '派完结束这一轮，结果会自动交回' : '再用 wait_agents 取结果'

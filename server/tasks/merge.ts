@@ -14,6 +14,7 @@ import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import {
   activePlan,
+  markChildWrapUp,
   markWrapUp,
   planProgress,
   openWork,
@@ -73,7 +74,9 @@ export function createMerge(sc: TasksScope) {
     const entry = sc.live.get(childId)
     const tk = entry?.task ?? (await sc.store.get(childId))
     if (!tk?.parentTaskId) return { ok: false, info: '只有子对话能请父对话收尾' }
-    if (!isolated(tk)) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
+    // 共用父对话目录的子对话（P4、没有版本管理、项目设成共用目录）：没有分支要合，但下面的校验一条不少，
+    // 评审、测试、交接、父对话验收是交付的必备步骤，不跟着版本管理方式变（用户 2026-10-31 定的）
+    const own = isolated(tk)
     // 合并就是验收：没写跑了什么就不收，免得没验证的改动进了父对话的分支
     if (!tests)
       return {
@@ -114,17 +117,21 @@ export function createMerge(sc: TasksScope) {
     // 读不到角色列表时单独说明：兜底成空数组会让门禁报「还没有真的派过评审」，把模型引向重复派评审
     const known = await sc.deps.agents.list().catch(() => null)
     if (!known) return { ok: false, info: '没有请求收尾：读取角色列表失败，稍后再试一次。' }
-    const review = reviewGate(
-      tk.steps,
-      (id) => known.some((a) => a.id === id && (a.origin === 'builtin:reviewer' || a.name === reviewerName)),
-      activePlan(tk)?.steps ?? [],
-      triage,
-      override,
-    )
-    if (!review.ok) return review
+    // 改过文件才要评审：独立分支是 begin_edit 要改文件时才开的，开了就算交付代码；
+    // 共用目录看这个对话记下的改动（Git 按差异算，P4 和没有版本管理时按 CLI 报的写文件）。只读排查不用评审
+    const review =
+      (own || tk.changes.length > 0) &&
+      reviewGate(
+        tk.steps,
+        (id) => known.some((a) => a.id === id && (a.origin === 'builtin:reviewer' || a.name === reviewerName)),
+        activePlan(tk)?.steps ?? [],
+        triage,
+        override,
+      )
+    if (review && !review.ok) return review
     // 放行记录的时间由面板记：调用方自报的时间挡不住「先传一个过去的时间」。
     // 这里只算出来、先不写回任务：后面还有几步校验，被拒时不留下一条没发起过收尾的「已放行」
-    const bypass = review.bypass && { ...review.bypass, at: new Date().toISOString() }
+    const bypass = review && review.bypass ? { ...review.bypass, at: new Date().toISOString() } : undefined
     // 只认内存里的 merging：记录上的 merging 可能是合并途中面板重启、或旧版本没清掉留下的
     if (merging.has(childId)) return { ok: false, info: '父对话正在合并你的分支，等结果推回来。' }
     // 交接要点放在最后查：前面几样没满足时先修那些，别让它为了写摘要白跑一趟
@@ -135,20 +142,23 @@ export function createMerge(sc: TasksScope) {
         info: `没有请求收尾：handoff 里还缺「${missing.join('、')}」。以后父对话再把消息交给你、上下文又大时，新会话只带这份交接摘要，按下面的模板写（每项写具体路径和结论，不写过程）：\n${handoffTemplate()}`,
       }
     const parentId = tk.parentTaskId
-    const wt = tk.worktree!
+    const wt = own ? tk.worktree! : undefined
     // 先把现在的改动提交到它自己的分支：之后再改的不在这次合并里
-    try {
-      await commitWorktree(wt, `Agent 面板：${tk.title}${note ? ` — ${note.slice(0, 60)}` : ''}`)
-    } catch (e) {
-      return { ok: false, info: `提交到独立分支失败：${(e as Error).message}` }
-    }
+    if (wt)
+      try {
+        await commitWorktree(wt, `Agent 面板：${tk.title}${note ? ` — ${note.slice(0, 60)}` : ''}`)
+      } catch (e) {
+        return { ok: false, info: `提交到独立分支失败：${(e as Error).message}` }
+      }
     mergeNudged.delete(childId)
     const at = new Date().toISOString()
-    // 面板补的事实（提交、改动文件）现在就读：合回去以后分支和目录会被删掉
-    const [commits, changed] = await Promise.all([
-      branchCommits(wt.path, tk.baseRef).catch(() => []),
-      gitNumstat(wt.path, tk.baseRef, placedFiles(tk)).catch(() => null),
-    ])
+    // 面板补的事实（提交、改动文件）现在就读：合回去以后分支和目录会被删掉；共用目录的用这个对话记下的改动
+    const [commits, changed] = wt
+      ? await Promise.all([
+          branchCommits(wt.path, tk.baseRef).catch(() => []),
+          gitNumstat(wt.path, tk.baseRef, placedFiles(tk)).catch(() => null),
+        ])
+      : [[], Object.fromEntries(tk.changes.map((c) => [c.path, `+${c.add} -${c.del}`]))]
     const request = tk.messages.find((m) => m.role === 'user' && !m.step && !m.panel)?.text ?? ''
     tk.handoff = {
       text: handoffText(handoff, {
@@ -156,12 +166,13 @@ export function createMerge(sc: TasksScope) {
         request,
         note,
         tests,
-        branch: wt.branch,
-        base: wt.baseBranch,
+        branch: wt?.branch ?? '',
+        base: wt?.baseBranch ?? '',
         commits,
         changed: changed ?? {},
         triage: triageText(triage),
         override: bypass ? overrideText(bypass) : '',
+        shared: !wt,
       }),
       files: handoff.files ?? '',
       at,
@@ -169,7 +180,7 @@ export function createMerge(sc: TasksScope) {
     tk.wrapRequest = { state: 'requested', at, note, tests, ...(build && { build }), info: '' }
     // 校验都过了才记放行；这次没绕过门禁就清掉旧的，留着的只能是当前这次收尾的放行
     tk.reviewOverride = bypass
-    markWrapUp(tk, 'merge', 'waiting', '已请父对话收尾，等父对话合并')
+    markChildWrapUp(tk, 'waiting', wt ? '已请父对话收尾，等父对话合并' : '已请父对话验收，等父对话收下')
     tk.updatedAt = at
     if (entry) entry.rev++
     await sc.store.update(tk.id, tk)
@@ -179,14 +190,24 @@ export function createMerge(sc: TasksScope) {
     await wakeTask(
       parentId,
       tk,
-      `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩合回了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
-它在独立分支 ${wt.branch} 里的验证：${tests.slice(0, 600)}${note ? `\n它的说明：${note.slice(0, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${triageText(triage).slice(0, 1500)}` : ''}${bypass ? `\n⚠️ 它这次的收尾用了**显式放行**：评审门禁被绕过，记录如下（谁、什么时候、为什么、原本拦住什么）——用户要求带着这个问题先合并，你如果觉得理由站不住，打回给它或者直接问用户：\n${overrideText(bypass)}` : ''}
-请你收尾：调用 finish_child（id ${tk.id}），面板把它的分支合回「${wt.baseBranch || '你所在的分支'}」、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支。验证不够、你看出问题时不要收，用 send_to_conversation 把要补的交回给它。`,
-      { panel: 'wrapup', child, peer: await sc.peerOf(tk, 'child', 'wrapup', note || '只剩合回，请收尾') },
+      `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩${wt ? '合回' : '验收'}了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
+${wt ? `它在独立分支 ${wt.branch} 里的验证` : '它和你共用目录（改动已经在你的目录里，没有分支要合），它的验证'}：${tests.slice(0, 600)}${note ? `\n它的说明：${note.slice(0, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${triageText(triage).slice(0, 1500)}` : ''}${bypass ? `\n⚠️ 它这次的收尾用了**显式放行**：评审门禁被绕过，记录如下（谁、什么时候、为什么、原本拦住什么）——用户要求带着这个问题先合并，你如果觉得理由站不住，打回给它或者直接问用户：\n${overrideText(bypass)}` : ''}
+${
+  wt
+    ? `请你收尾：调用 finish_child（id ${tk.id}），面板把它的分支合回「${wt.baseBranch || '你所在的分支'}」、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支。`
+    : `请你验收：核对它的验证和改动，没问题就调用 finish_child（id ${tk.id}），面板把它计划里的收尾步骤标完成、结束它。`
+}验证不够、你看出问题时不要收，用 send_to_conversation 把要补的交回给它。`,
+      {
+        panel: 'wrapup',
+        child,
+        peer: await sc.peerOf(tk, 'child', 'wrapup', note || (wt ? '只剩合回，请收尾' : '只剩验收，请收尾')),
+      },
     )
     return {
       ok: true,
-      info: '已请父对话收尾：它会把你的分支合回原分支、标完成并删除独立分支，结果推回给你。现在结束这一轮，不要再改文件（这次提交之后再改的不在这次合并里）；父对话退回要你补的，按它说的做完再调用 submit_merge。',
+      info: wt
+        ? '已请父对话收尾：它会把你的分支合回原分支、标完成并删除独立分支，结果推回给你。现在结束这一轮，不要再改文件（这次提交之后再改的不在这次合并里）；父对话退回要你补的，按它说的做完再调用 submit_merge。'
+        : '已请父对话验收：它核对后标完成，结果推回给你。现在结束这一轮，不要再改文件；父对话退回要你补的，按它说的做完再调用 submit_merge。',
     }
   }
 
@@ -340,7 +361,7 @@ export function createMerge(sc: TasksScope) {
   }
 
   /**
-   * 合并成功：只更新分支状态（「已在「dev」里」）和计划最后一步，不等于这个子对话做完了。
+   * 合并成功（共用目录的子对话是父对话验收通过）：只更新分支状态（「已在「dev」里」）和计划最后一步，不等于这个子对话做完了。
    * 还在一轮里的把结果交给它，等这一轮结束再按 childFlowOf 收口；已经停下的马上试一次，
    * 计划、后台命令、提问还没完就保留独立分支（见 advanceChildTo）。返回收口的结果（还在一轮里时为空）
    */
@@ -365,8 +386,8 @@ export function createMerge(sc: TasksScope) {
     }
     const steered = entry?.task.working ? await steerTask(entry.task, text, msg).catch(() => false) : false
     if (!steered) tk.messages.push(msg)
-    // 计划最后一步「合回父对话所在的分支」由面板标完成：计划做完才走得到完成那一步
-    markWrapUp(tk, 'merge', 'done', '已合回父对话所在的分支')
+    // 计划最后一步的收尾（合回、验收）由面板标完成：计划做完才走得到完成那一步
+    markChildWrapUp(tk, 'done', isolated(tk) ? '已合回父对话所在的分支' : '父对话已验收')
     // 收尾请求办完了：合进去之后它就不再是「待收尾」。
     // 写 undefined 不用 delete：store.update 是把传入的字段盖到旧记录上，删掉的键盖不掉旧值
     tk.wrapRequest = undefined
@@ -439,6 +460,34 @@ export function createMerge(sc: TasksScope) {
     }
   }
 
+  /**
+   * 共用目录的子对话（P4、没有版本管理、项目设成共用目录）收尾：没有分支要合，父对话收下就是验收。
+   * 改过文件的和独立分支一样要先请求收尾（submit_merge 里校验了评审、测试和交接），没请求的不收：
+   * 以前这里直接标完成，评审、验证、交接全被跳过（用户 2026-10-31 报的 P4 子对话改完不评审）
+   */
+  async function acceptShared(parent: Task, tk: Task): Promise<{ ok: boolean; info: string }> {
+    if (tk.changes.length && tk.wrapRequest?.state !== 'requested')
+      return {
+        ok: false,
+        info: `子对话「${tk.title}」${openWork(tk).length ? `还没做完：${t('计划还没做完')}。它` : ''}改了 ${tk.changes.length} 个文件，还没请求收尾：它和你共用目录，没有分支要合，但评审、验证和交接一样要做，要它先做完再调用 submit_merge。需要催它就用 send_to_conversation。`,
+      }
+    const accepted = tk.wrapRequest?.state === 'requested'
+    // 没改文件、也没请求过的（只读排查）：不替它把收尾标完成，条件都满足才收口，免得计划没做完也被收掉一步
+    const r = !accepted
+      ? await sc.advanceChildTo(tk.id, { quiet: true })
+      : ((await childMerged(
+          tk.id,
+          '【父对话收尾】父对话已验收你的改动。计划、后台命令、提问都收口后面板结束这个子对话；不要再改这次交付的文件。',
+          { quiet: true, peer: await sc.peerOf(parent, 'parent', 'merge', '已验收') },
+        )) ?? { holds: ['working'] as ChildHold[], info: '它这一轮还没结束，收口后面板自动结束它' })
+    return r.holds.length
+      ? { ok: false, info: `子对话「${tk.title}」${accepted ? '已验收，但' : ''}还没做完：${r.info}` }
+      : {
+          ok: true,
+          info: `子对话「${tk.title}」已${accepted ? '验收并' : ''}标完成（它和你共用目录，改动已经在原目录里，不用合并）`,
+        }
+  }
+
   async function finishChild(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
     const r = await finishChildStep(parent, childId)
     const plan = await syncParentPlan(parent.id, childId).catch((e) => {
@@ -509,13 +558,7 @@ export function createMerge(sc: TasksScope) {
     if (!tk || tk.parentTaskId !== parent.id)
       return { ok: false, info: '找不到这个子对话：id 从 list_conversations 取，只能收尾你自己名下的子对话' }
     if (tk.resolved) return { ok: true, info: `子对话「${tk.title}」已经完成了，不用再收尾` }
-    if (!isolated(tk)) {
-      // 共用目录的子对话没有分支要合：条件都满足就直接收口
-      const r = await sc.advanceChildTo(childId, { quiet: true })
-      return r.holds.length
-        ? { ok: false, info: `子对话「${tk.title}」还没做完：${r.info}` }
-        : { ok: true, info: `子对话「${tk.title}」已标完成（它和你共用目录，改动已经在原目录里，不用合并）` }
-    }
+    if (!isolated(tk)) return acceptShared(parent, tk)
     if (merging.has(childId)) return { ok: false, info: `子对话「${tk.title}」正在合并，结果出来会告诉你` }
     if (tk.wrapRequest?.state === 'testing')
       return {

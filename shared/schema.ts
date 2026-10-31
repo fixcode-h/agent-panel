@@ -1718,10 +1718,11 @@ export const PlanStep = PlanItem.extend({
   run: z.number().int().optional(),
   /**
    * 面板加的收尾步骤，永远是计划的最后一步（见 plan.ts 的 ensureWrapUp）：merge 是子对话的独立分支合回父对话
-   * 所在的分支，由合并结果标完成；p4 是子对话把改动按文件类型分进各自的 pending changelist，Agent 做完自己标；
+   * 所在的分支，由合并结果标完成；p4 是子对话把改动按文件类型分进各自的 pending changelist 后请父对话验收、
+   * deliver 是共用目录或没有版本管理的子对话请父对话验收，这两种都由父对话收下后面板标完成；
    * push 是父对话把分支推到远端，Agent 推完自己标。旧数据没有这个字段，当普通步骤
    */
-  wrapUp: z.enum(['merge', 'p4', 'push']).optional(),
+  wrapUp: z.enum(['merge', 'p4', 'deliver', 'push']).optional(),
   /**
    * 评审本次改动的一步：子对话收尾前必须把它写进计划（标 review: true）并做完，
    * submit_merge 会校验计划里有没有这样一步（见 shared/review-gate.ts）。旧数据没有这个字段
