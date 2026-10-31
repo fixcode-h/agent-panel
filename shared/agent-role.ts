@@ -462,9 +462,13 @@ export function loadCapability(
   return { ok: true, text: `${capabilityBlock(m, passed, false, override)}${skillText}` }
 }
 
-/** 默认对话没有 Agent 角色设定，补一条可见进度规则，避免整轮只剩工具调用。 */
+/**
+ * 默认对话没有 Agent 角色设定：补可见进度和「回合怎么推进」两条规则（内置角色从通用约束里拿到同样的规则）。
+ * 只有可见进度那条时，模型把「报告阶段结果再继续」读成「报告完就停」，做一步就结束回合、要用户催（用户报过）
+ */
 export const DEFAULT_CHAT_PROGRESS =
-  '## 可见进度\n连续做两次以上工具操作前先用一句话说明当前目标，完成一组工具后先用一句话报告阶段结果再继续；不要让一整轮只剩工具调用。模型没有返回思考内容时不要编造内部思考，至少给出简短的可见进度。'
+  '## 可见进度\n连续做两次以上工具操作前先用一句话说明当前目标，完成一组工具后先用一句话报告阶段结果再继续；不要让一整轮只剩工具调用。模型没有返回思考内容时不要编造内部思考，至少给出简短的可见进度。' +
+  '\n\n## 回合怎么推进\n说了要做什么就在这一回合做完：不要只回一句「我先看一下」就结束回合，紧接着调用工具去做。读文件、查代码、跑命令、改文件这些这一回合能做完的，就做完再收尾；报告阶段结果之后接着做下一步，不要停下等用户催。只在做完了、需要用户拿主意、或者确实卡住时才结束回合，并说清楚是哪一种。'
 
 export function defaultChatPrompt(input: string, agentId: string, chat: boolean, operation: boolean) {
   return chat && !agentId && !operation ? `${input}\n\n${DEFAULT_CHAT_PROGRESS}` : input

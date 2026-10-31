@@ -538,7 +538,9 @@ await runShard('本机请求与设置', async (api) => {
       .slice(before)
       .at(-1)
     assert.match(rec.got, /接着看看测试/)
-    assert.ok(rec.hint, '提示里告诉模型可以等下一句')
+    // 不再提示「每轮回复完成后调用 wait_user_message」（ADR 0037）：那句提示让模型做完一步就把自己挂起；
+    // 保活由面板在这一轮结束时自己做，工具照样挂着（上面停在等下一句就是它）
+    assert.ok(!rec.hint, '提示里不再要求每轮回复完都调 wait_user_message')
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '接着看看测试')
     assert.ok(at > 0, '用户消息记进对话')
     assert.ok(

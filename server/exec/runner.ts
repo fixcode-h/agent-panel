@@ -1124,7 +1124,9 @@ async function runAgent(
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? call.orch : undefined
-  if (orch && !resume) input = `${input}\n\n${orchHint(orch)}`
+  // Chat 页的对话没有后台命令时说明是空的，不拼空行
+  const hint = orch && !resume ? orchHint(orch) : ''
+  if (hint) input = `${input}\n\n${hint}`
   // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取
   if (!resume && !op && task.projectId) {
     const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, await readGlobalLessons())

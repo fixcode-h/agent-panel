@@ -26,10 +26,12 @@ import {
   endRun,
   trackWait,
   newTask,
+  announcedOnly,
   taskDeleted,
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
+import { isPlainChat } from '../../shared/conv-mode.ts'
 import { agentRun, defaultCli } from '../../shared/settings.ts'
 import { expandSlash } from '../slash.ts'
 import { childAskInitial } from '../../shared/child-ask.ts'
@@ -340,7 +342,8 @@ export function createRun(sc: TasksScope) {
         newId: randomUUID,
         // 子对话这一轮真结束的地方收口父对话计划里等它的步骤（进程保活等下一句时 run 不返回，等不到收尾）
         // 顶层对话：做到一半（这一轮调过工具）就收尾、计划还没做完时，面板推它接着做（见 nudgePlan）。
-        // 只回答了一句话、没动手的那一轮不推：可能是用户问了个问题，或者让它先停下
+        // 只回答了一句话、没动手的那一轮不推：可能是用户问了个问题，或者让它先停下。
+        // Agent 模式（项目里的对话）例外：没动手但最后一句是「我先…」「接下来…」这种要动手的话，也推（ADR 0037）
         // 每一轮结束都按整棵对话树核一次用量上限（见 tasks/budget.ts）：到了上限就停下，也不再推它接着做
         onTurnEnd: task.parentTaskId
           ? () => {
@@ -349,7 +352,8 @@ export function createRun(sc: TasksScope) {
             }
           : (turn) =>
               void sc.checkBudget(entry.task).then((over) => {
-                if (over || task.mode !== 'chat' || turn.tools <= 0) return
+                if (over || task.mode !== 'chat') return
+                if (turn.tools <= 0 && (isPlainChat(entry.task) || !announcedOnly(entry.task))) return
                 return sc
                   .nudgePlan(entry.task)
                   .catch((e) =>

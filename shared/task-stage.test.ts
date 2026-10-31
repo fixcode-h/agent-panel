@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { TaskIcon } from './task.ts'
+import { isPlainChat, nextNudge, nudgeMax } from './conv-mode.ts'
 import {
   resumeNote,
   announcedOnly,
@@ -782,4 +783,27 @@ test('说完打算就收尾：最后一句是要动手的话、之后没调工�
   assert.equal(of(m('user', 'x'), m('agent', '改好了，测试都通过。')), '', '给了结论')
   assert.equal(of(m('user', 'x'), m('agent', '我再看看。', [{}])), '', '说完接着调了工具')
   assert.equal(of(m('agent', '我再看看。'), m('user', '继续')), '', '最后是用户消息')
+})
+
+test('Chat 页和 Agent 模式分开：Chat 页、子对话只推一次，项目里的顶层对话同一进度最多推 3 次，进度变了重新数', () => {
+  const plain = { mode: 'chat' as const, projectId: '', parentTaskId: '' }
+  const agentConv = { mode: 'chat' as const, projectId: 'p1', parentTaskId: '' }
+  const child = { mode: 'chat' as const, projectId: 'p1', parentTaskId: 'parent' }
+  assert.equal(isPlainChat(plain), true)
+  assert.equal(isPlainChat(agentConv), false)
+  assert.equal(isPlainChat(child), false)
+  assert.equal(isPlainChat({ ...plain, mode: 'workflow' }), false)
+  assert.equal(nudgeMax(plain), 1)
+  assert.equal(nudgeMax(child), 1)
+  assert.equal(nudgeMax(agentConv), 3)
+  // 同一进度：第 1、2、3 次能推，第 4 次推满；进度变了从 1 重新数
+  let r = nextNudge(undefined, 'plan:1', 3)
+  assert.deepEqual(r, { key: 'plan:1', n: 1 })
+  r = nextNudge(r!, 'plan:1', 3)
+  r = nextNudge(r!, 'plan:1', 3)
+  assert.deepEqual(r, { key: 'plan:1', n: 3 })
+  assert.equal(nextNudge(r!, 'plan:1', 3), null)
+  assert.deepEqual(nextNudge(r!, 'plan:2', 3), { key: 'plan:2', n: 1 })
+  // 只推一次的：同一进度第二次就推满
+  assert.equal(nextNudge({ key: 'said:m1', n: 1 }, 'said:m1', 1), null)
 })

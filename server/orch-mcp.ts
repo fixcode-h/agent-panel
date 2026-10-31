@@ -176,7 +176,15 @@ const shellHint = () => {
   return sh ? shellNote(sh) : ''
 }
 
+/** Chat 页的对话（Orchestra.plain）只留这几个：长命令放后台跑，不派子任务、不互相传话 */
+const PLAIN_TOOLS = new Set(['run_background', 'check_background', 'stop_background'])
+
 export function orchTools(o: Orchestra) {
+  const all = allOrchTools(o)
+  return o.plain ? all.filter((x) => PLAIN_TOOLS.has(x.name)) : all
+}
+
+function allOrchTools(o: Orchestra) {
   const main = o.self.endsWith('@main')
   return [
     {
@@ -1280,6 +1288,11 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
 
 /** 交给 CLI 的一句用法说明：工具列表模型自己看得到，这里说什么时候用 */
 export function orchHint(o: Orchestra) {
+  // Chat 页的对话：只有后台命令；没有时什么都不提
+  if (o.plain)
+    return o.canBackground
+      ? '（你有面板工具 panel：run_background 把要跑很久的命令放到后台（跑完结果自动推回），check_background / stop_background 查看、停止它们。不要用 CLI 自带的后台命令。）'
+      : ''
   // 子任务只做派给它的那件事：不提派子任务、工作流、子对话这些它用不了的工具
   if (o.helper)
     return `（你有面板工具 panel：get_status 查看其他节点和子任务的状态；${o.sharedState ? 'read_state / write_state 读写共享状态；' : ''}send_message 给同时执行的节点传话、read_messages 看别人发给你的。你不能再派子任务、不能启动工作流或子对话。不要用 CLI 自带的子 Agent（Task / agent 这类工具）。）`

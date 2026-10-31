@@ -729,3 +729,17 @@ test('子对话的工具清单：计划、后台命令、收尾合并都在；�
   assert.ok(helper.includes('run_background'), '子任务也能用后台命令：结果推回派它的对话')
   assert.ok(helper.includes('send_message'), '子任务能和其他节点传话')
 })
+
+test('Chat 页的对话（plain）：只有后台命令三件，说明只讲后台命令；没有后台命令时说明为空', () => {
+  const namesOf = (o: object) => (orchTools(o as unknown as Orchestra) as { name: string }[]).map((x) => x.name)
+  // 用户要求 Chat 模式和 Agent 模式分开：Chat 页一问一答，不派子任务、不互相传话，后台命令保留
+  const plain = { self: '@chat', hasMain: false, plain: true, autoReturn: true, canBackground: true, common: [] }
+  assert.deepEqual(namesOf(plain).sort(), ['check_background', 'run_background', 'stop_background'])
+  const hint = orchHint(plain as unknown as Orchestra)
+  assert.match(hint, /run_background/)
+  assert.doesNotMatch(hint, /spawn_agents|派完结束这一轮/)
+  assert.deepEqual(namesOf({ ...plain, canBackground: false }), [])
+  assert.equal(orchHint({ ...plain, canBackground: false } as unknown as Orchestra), '')
+  // 项目里的对话（不是 plain）照旧能派子任务
+  assert.ok(namesOf({ ...plain, plain: false }).includes('spawn_agents'))
+})
