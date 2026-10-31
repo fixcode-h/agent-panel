@@ -414,6 +414,8 @@ export function createChildren(sc: TasksScope) {
     // 面板正在退出：每个对话都在被停下，这时报「已中断」会在父对话里刷一串、还可能把父对话叫起来；
     // 重启后由恢复流程统一接着做（见 restartUnfinished / 父对话继续时连带恢复子对话）
     if (sc.shuttingDown) return
+    // 卡住了、面板正在重启它或找人接手：结论出来前不报中断 / 失败（恢复了照常报，换人接手由那边写信）
+    if (sc.childRecovering(childId)) return
     const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
     if (!tk?.parentTaskId) return
     // 父对话正在合并：合并结果出来时再报，这时报「待收尾」「未完成」会让父对话误判
@@ -437,6 +439,8 @@ export function createChildren(sc: TasksScope) {
     }
     // 面板重启时被停下的：不是出错，重启后由恢复流程接着做，不往父对话里报「已中断」
     if (r.state === 'stopped' && tk.stopReason === 'restart') return
+    // 已经换新的子对话接手：换人那封信说过了，不再报「已中断」
+    if (r.state === 'stopped' && tk.stopReason === 'replaced') return
     const key = reportKey(tk, r.state)
     if (reportedState.get(childId) === key) return
     reportedState.set(childId, key)

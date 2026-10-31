@@ -110,6 +110,7 @@ export function tasksApi(deps: {
     checkBudget: () => checkBudget,
     chatWorkspace: () => chatWorkspace,
     childActive: () => childActive,
+    childRecovering: () => childRecovering,
     childMerged: () => childMerged,
     childRequestBuild: () => childRequestBuild,
     childUnmerged: () => childUnmerged,
@@ -186,6 +187,7 @@ export function tasksApi(deps: {
     settleChildTurn: () => settleChildTurn,
     settleChildWorktree: () => settleChildWorktree,
     shuttingDown: [() => shuttingDown, (v: TasksScope['shuttingDown']) => (shuttingDown = v)],
+    spawnChildOf: () => spawnChildOf,
     start: () => start,
     startChild: () => startChild,
     startParentTests: () => startParentTests,
@@ -609,8 +611,8 @@ export function tasksApi(deps: {
   const { attachOrchestra, forwardSpawn, messageParent } = createPeer(scope)
   const { answerChildAsk, applyAskUser, applyChildAskUser, runningConv, settleAskFromChild, settleAsks, wakeConv } =
     createAsks(scope)
-  const { deliver, expandForWorkflow, followUp, start } = createRun(scope)
-  const { armIdleAsk, disarmIdleAsk } = createIdleAsk(scope)
+  const { deliver, expandForWorkflow, followUp, spawnChildOf, start } = createRun(scope)
+  const { armIdleAsk, disarmIdleAsk, childRecovering } = createIdleAsk(scope)
   const { checkBudget } = createBudget(scope)
   const {
     allowedPids,

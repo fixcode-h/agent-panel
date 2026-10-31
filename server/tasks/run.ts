@@ -5,6 +5,7 @@ import {
   Task,
   type Agent,
   type Attachment,
+  type Project,
   type DeliveryHow,
   type TaskMessage,
   defaultAgent,
@@ -89,6 +90,92 @@ export function createRun(sc: TasksScope) {
       tools: [],
       at: new Date().toISOString(),
     })
+  }
+
+  /**
+   * 给父对话新建一个子对话并在后台开始执行：父对话的 create_conversation 和面板替卡住的子对话找人接手
+   * （server/tasks/stuck-child.ts）都走这里。agentId 不写用「执行」角色
+   */
+  async function spawnChild(
+    parent: Task,
+    project: Project,
+    agents: Agent[],
+    { title, message, files, agentId }: { title: string; message: string; files?: string[]; agentId?: string },
+  ) {
+    const worker = agents.find((a) => a.origin === 'builtin:worker')
+    const subId = randomUUID()
+    const at = new Date().toISOString()
+    const input = NewTaskInput.parse({
+      projectId: parent.projectId,
+      mode: 'chat',
+      parentTaskId: parent.id,
+      rootTaskId: parent.rootTaskId || parent.id,
+      agentId: agentId || worker?.id || project.defaultAgentId,
+      prompt: message,
+      // 父对话的「子对话也提问」决定这条新子对话开不开提问
+      askUser: childAskInitial(parent),
+    })
+    const draft = { ...newTask(input, undefined, at, subId, [], {}), id: subId }
+    // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
+    // 只有直接调接口没给时才退回用户消息开头
+    if (title.trim()) draft.title = title.trim().slice(0, 80)
+    // 第一条要求是父对话交代的：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
+    if (draft.messages[0]) draft.messages[0].peer = await sc.peerOf(parent, 'parent', 'task', message)
+    // 共用目录模式：父对话划好的范围先替它认领，别的子对话改这些文件要等它做完
+    // 独立分支模式不认领：两个子对话可以同时改同一个文件，各在自己的 worktree 里改互不影响
+    const sharedDir = project.childIsolation !== 'worktree'
+    const got =
+      sharedDir && files?.length
+        ? sc.claims.claim(parent.id, { taskId: subId, title: draft.title }, files)
+        : { granted: [], held: [] }
+    let both: { path: string; with: string }[] = []
+    const round = (files ?? []).map(normClaimPath).filter(Boolean)
+    if (round.length && !sharedDir) {
+      const mine = sc.scopes.get(parent.id) ?? sc.scopes.set(parent.id, new Map()).get(parent.id)!
+      const others: { title: string; files: string[] }[] = []
+      for (const [otherId, s] of mine) {
+        const other = sc.live.get(otherId)?.task
+        if (!other || !isolated(other)) {
+          mine.delete(otherId)
+          continue
+        }
+        others.push({ title: s.title, files: s.files })
+        // 兄弟没声明范围、但已经改了这些文件：同样算重叠
+        others.push({ title: other.title, files: other.changes.map((c) => c.path) })
+      }
+      both = scopeOverlaps(round, others)
+      mine.set(subId, { title: draft.title, files: round })
+    }
+    const sub = await sc.store.create({ ...draft, id: subId })
+    void sc.startChild(sub, message, agents)
+    return {
+      ok: true,
+      id: sub.id,
+      title: sub.title,
+      info: [
+        `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
+        ...childFilesInfo({
+          isolation: sharedDir ? 'claim' : 'worktree',
+          granted: got.granted,
+          held: got.held,
+          both,
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }
+  }
+
+  /** 面板自己替父对话新建子对话（不经父对话的那一轮）：按父对话所在项目和现在的角色列表来 */
+  async function spawnChildOf(parentId: string, input: { title: string; message: string; agentId?: string }) {
+    const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
+    if (!parent || taskDeleted(parent)) return { ok: false, info: '找不到父对话' }
+    const project = parent.projectId ? await sc.deps.projects.get(parent.projectId) : null
+    if (!project) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
+    const agents = withProjectParams(await sc.deps.agents.list(), project)
+    // 点名的角色停用、删掉了：退回「执行」
+    const agentId = agents.some((a) => a.id === input.agentId && a.enabled) ? input.agentId : undefined
+    return spawnChild(parent, project, agents, { ...input, agentId })
   }
 
   async function start(
@@ -428,68 +515,7 @@ export function createRun(sc: TasksScope) {
         },
         createConversation: async ({ title, message, files }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          const worker = agents.find((a) => a.origin === 'builtin:worker')
-          const subId = randomUUID()
-          const at = new Date().toISOString()
-          const input = NewTaskInput.parse({
-            projectId: entry.task.projectId,
-            mode: 'chat',
-            parentTaskId: entry.task.id,
-            rootTaskId: entry.task.rootTaskId || entry.task.id,
-            agentId: worker?.id ?? project.defaultAgentId,
-            prompt: message,
-            // 父对话的「子对话也提问」决定这条新子对话开不开提问
-            askUser: childAskInitial(entry.task),
-          })
-          const draft = { ...newTask(input, undefined, at, subId, [], {}), id: subId }
-          // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
-          // 只有直接调接口没给时才退回用户消息开头
-          if (title.trim()) draft.title = title.trim().slice(0, 80)
-          // 第一条要求是父对话交代的：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
-          if (draft.messages[0]) draft.messages[0].peer = await sc.peerOf(entry.task, 'parent', 'task', message)
-          // 共用目录模式：父对话划好的范围先替它认领，别的子对话改这些文件要等它做完
-          // 独立分支模式不认领：两个子对话可以同时改同一个文件，各在自己的 worktree 里改互不影响
-          const sharedDir = project.childIsolation !== 'worktree'
-          const got =
-            sharedDir && files?.length
-              ? sc.claims.claim(entry.task.id, { taskId: subId, title: draft.title }, files)
-              : { granted: [], held: [] }
-          let both: { path: string; with: string }[] = []
-          const round = (files ?? []).map(normClaimPath).filter(Boolean)
-          if (round.length && !sharedDir) {
-            const mine = sc.scopes.get(entry.task.id) ?? sc.scopes.set(entry.task.id, new Map()).get(entry.task.id)!
-            const others: { title: string; files: string[] }[] = []
-            for (const [otherId, s] of mine) {
-              const other = sc.live.get(otherId)?.task
-              if (!other || !isolated(other)) {
-                mine.delete(otherId)
-                continue
-              }
-              others.push({ title: s.title, files: s.files })
-              // 兄弟没声明范围、但已经改了这些文件：同样算重叠
-              others.push({ title: other.title, files: other.changes.map((c) => c.path) })
-            }
-            both = scopeOverlaps(round, others)
-            mine.set(subId, { title: draft.title, files: round })
-          }
-          const sub = await sc.store.create({ ...draft, id: subId })
-          void sc.startChild(sub, message, agents)
-          return {
-            ok: true,
-            id: sub.id,
-            title: sub.title,
-            info: [
-              `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
-              ...childFilesInfo({
-                isolation: sharedDir ? 'claim' : 'worktree',
-                granted: got.granted,
-                held: got.held,
-                both,
-              }),
-            ]
-              .filter(Boolean)
-              .join('\n'),
-          }
+          return spawnChild(entry.task, project, agents, { title, message, files })
         },
         sendToConversation: async (id, message) => {
           // 父对话交给已有子对话：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
@@ -951,5 +977,5 @@ export function createRun(sc: TasksScope) {
     return { task, how: how || ('held' as const) }
   }
 
-  return { deliver, expandForWorkflow, followUp, start }
+  return { deliver, expandForWorkflow, followUp, spawnChildOf, start }
 }

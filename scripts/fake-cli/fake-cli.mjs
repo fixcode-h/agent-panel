@@ -1368,7 +1368,10 @@ if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {
 // 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）。
 // 面板判定它没有响应、接回会话重开时提示里带「一直没有回应」：那一轮照常回复，
 // 用来测「长时间没有输出时自动询问」之后还能收到回复
-if (input.includes('HANG') && !input.includes('一直没有回应')) {
+// HANG_FOREVER：接回会话重开也一直卡着（测「重启没恢复 → 新开子对话接手」）；接手的子对话（派单带「【接手】」）照常回复
+if (input.includes('HANG_FOREVER') && !input.includes('【接手】'))
+  await new Promise(() => setInterval(() => {}, 60_000))
+if (input.includes('HANG') && !input.includes('一直没有回应') && !input.includes('【接手】')) {
   process.stderr.write('Invalid API key · Please run /login\n')
   await new Promise(() => setInterval(() => {}, 60_000))
 }

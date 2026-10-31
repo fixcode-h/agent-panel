@@ -1348,6 +1348,69 @@ await runShard('子对话与计划', async (api) => {
       await call('DELETE', `/tasks/${askParent.id}`)
       step('子对话长时间没有输出：自动询问送达并被回复，用户消息不被挡')
     }
+    // ---- 子对话卡住：问过没回复就接回会话重启，重启也没恢复就记警告、新开子对话带上原任务接手 ----
+    {
+      const full = await call('GET', '/settings')
+      await call('PUT', '/settings', { ...full, childIdleAskMinutes: 2 })
+      const stuckParent = await waitDone(
+        (
+          await call('POST', '/tasks', {
+            projectId: project.id,
+            mode: 'chat',
+            agentId: B.id,
+            prompt: '卡住接手的父对话',
+          })
+        ).id,
+        20000,
+      )
+      const dead = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: stuckParent.id,
+        prompt: 'HANG_FOREVER 一直卡死的子对话',
+      })
+      const kidsOf = async () =>
+        (await call('GET', `/tasks/${stuckParent.id}/children`)).filter((x) => x.id !== dead.id)
+      const heir = await waitFor(async () => (await kidsOf()).find((x) => x.title.includes('（接手）')), {
+        label: '重启没恢复，新开子对话接手',
+        timeout: 40000,
+        describe: async () => {
+          const t = await call('GET', `/tasks/${dead.id}`)
+          return {
+            status: t.status,
+            stopReason: t.stopReason,
+            autoAsk: t.autoAsk,
+            tail: t.messages.slice(-4).map((m) => `${m.role}:${m.text.slice(0, 50)}`),
+          }
+        },
+      })
+      const old = await call('GET', `/tasks/${dead.id}`)
+      assert.equal(old.status, 'stopped', '卡住的子对话停下了')
+      assert.equal(old.stopReason, 'replaced', '停下原因是换人接手，父对话继续时不会再拉起它')
+      assert.ok(
+        old.messages.some((m) => m.text.includes('【状态询问】')),
+        '换人前先以父对话的名义问过状态',
+      )
+      assert.ok(
+        old.messages.some((m) => m.alert?.kind === 'no_response' && m.text.includes('接手')),
+        '原子对话里记了一条警告',
+      )
+      const parentNow = await call('GET', `/tasks/${stuckParent.id}`)
+      assert.ok(
+        parentNow.messages.some((m) => m.alert && m.text.includes('卡住了') && m.text.includes('接手')),
+        '父对话里也记了一条警告',
+      )
+      const done = await waitDone(heir.id, 20000)
+      const brief = done.messages[0]
+      assert.ok(brief.text.includes('【接手】'), '接手的派单说明为什么换人')
+      assert.ok(brief.text.includes('HANG_FOREVER 一直卡死的子对话'), '接手的派单带上原来的任务')
+      assert.equal(brief.peer?.rel, 'parent', '派单以父对话的名义交代')
+      assert.equal(done.agentId, dead.agentId ?? B.id, '接手的子对话沿用原来的角色')
+      await call('PUT', '/settings', full)
+      await call('DELETE', `/tasks/${stuckParent.id}`)
+      step('子对话卡住：问过没回复就重启，重启没恢复就警告并新开子对话接手')
+    }
     // ---- 子对话计划做了一半就收尾（只回一句打算、不调工具）：面板马上推它接着做，同一进度只推一次 ----
     {
       const stallParent = await waitDone(

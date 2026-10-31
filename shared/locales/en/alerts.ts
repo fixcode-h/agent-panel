@@ -112,6 +112,7 @@ export const EN_ALERTS: Record<string, string> = {
     'Click Continue to retry. If it keeps happening, copy the raw details to the developers, or click AI fix.',
   // 面板写进对话的警告
   'Agent 没有响应，面板重启了它': 'The agent stopped responding, so the panel restarted it',
+  '卡住了，已由新的子对话接手': 'Got stuck; a new sub-conversation took over',
   '已自动续接，从中断的地方继续了': 'Resumed automatically from where it stopped',
   '已自动重试，继续做完了': 'Retried automatically and it finished',
   '{s} 秒后有输出了，接着在处理': 'Output resumed after {s}s and it is working again',
@@ -132,6 +133,14 @@ export const EN_ALERTS: Record<string, string> = {
   '子对话的结果没能马上交给这个对话，已放进收件箱，下一轮会处理':
     "A subconversation's result couldn't be handed to this conversation right away. It is in the inbox for the next turn",
   执行这个子对话时出错: 'Error while running this subconversation',
+  '子对话「{title}」卡住了，重启也没恢复（{why}），新开子对话接手也失败了':
+    'Subconversation “{title}” got stuck and restarting it did not help ({why}); starting a new subconversation to take over also failed',
+  '这个子对话卡住了，重启也没恢复（{why}），已新开子对话「{title}」接手':
+    'This subconversation got stuck and restarting it did not help ({why}); a new subconversation “{title}” took over',
+  '子对话「{old}」卡住了，重启也没恢复（{why}），已新开子对话「{title}」接手':
+    'Subconversation “{old}” got stuck and restarting it did not help ({why}); a new subconversation “{title}” took over',
+  '这个子对话卡住了，换新的子对话接手时出错':
+    'This subconversation got stuck, and handing it over to a new subconversation failed',
   这个子对话没能开始执行: 'This subconversation could not start',
   父对话的编译结果没能交给这个对话: "The parent's build result couldn't be handed to this conversation",
   '后台命令的结果两次都没能交给 Agent，已经记在对话里，下一轮会处理':

@@ -159,6 +159,8 @@ export interface TasksScope {
   /** 一轮结束后按整棵对话树核用量上限；true 表示到了上限、已经停下（见 tasks/budget.ts） */
   checkBudget: (tk: Task) => Promise<boolean>
   childActive: (tk: Task) => boolean
+  /** 子对话卡住了、面板正在重启它或找人接手（见 server/tasks/stuck-child.ts）：这段时间不往父对话报中断 / 失败 */
+  childRecovering: (id: string) => boolean
   childMerged: (
     childId: string,
     text: string,
@@ -582,6 +584,11 @@ export interface TasksScope {
   settleChildTurn: (child: Task) => void
   settleChildWorktree: (childId: string) => Promise<void>
   shuttingDown: boolean
+  /** 面板替父对话新建子对话（卡住的子对话找人接手时用），和父对话的 create_conversation 走同一条创建路径 */
+  spawnChildOf: (
+    parentId: string,
+    input: { title: string; message: string; agentId?: string },
+  ) => Promise<{ ok: boolean; info: string; id?: string; title?: string }>
   start: (
     entry: Live,
     prompt: string,

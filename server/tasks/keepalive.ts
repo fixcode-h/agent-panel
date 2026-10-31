@@ -35,8 +35,8 @@ export function createKeepAlive(s: TasksScope) {
     e.stop = true
     // 只有用户按的暂停才标成 'user'，其余调用点必须传清是谁结束的，界面才能不把它说成「已暂停」
     e.stopReason = reason
-    // CLI 卡住了（没有响应）：不理会中断，直接结束进程，别让用户的新消息再等上几秒
-    e.abort.abort(reason === 'stalled' ? HARD_STOP : undefined)
+    // CLI 卡住了（没有响应、换人接手）：不理会中断，直接结束进程，别让用户的新消息再等上几秒
+    e.abort.abort(reason === 'stalled' || reason === 'replaced' ? HARD_STOP : undefined)
     // 用户按的暂停、父对话收尾、打断并重发：独立分支里没提交的改动会留在那儿，
     // 现在就在父对话里点明，不留到用户自己发现
     if (firstStop && (reason === 'user' || reason === 'parent' || reason === 'supersede'))

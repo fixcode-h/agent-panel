@@ -1562,6 +1562,7 @@ export const StopReason = z.enum([
   'close', // 用户从对话菜单点「关闭 Agent」，只结束 CLI 进程，下一条消息续接会话
   'lost', // 记录写着在执行，面板里却已经没人在跑它（哪条路径忘了落状态），定时核对时收口（见 shared/task-settle.ts）
   'budget', // 对话树用到了项目设的用量上限（见 shared/budget.ts）
+  'replaced', // 子对话卡住、面板重启也没恢复，换成新开的子对话接手（见 shared/stuck-child.ts）
 ])
 export type StopReason = z.infer<typeof StopReason>
 
@@ -2450,7 +2451,8 @@ export const Settings = z.object({
   idleTimeoutMinutes: z.number().int().min(0).max(1440).default(15),
   /**
    * 子对话这么多分钟没有任何输出时，面板以父对话的名义自动问它当前在做什么、是否卡住；0 表示不问。
-   * 和 idleTimeoutMinutes 是两个独立的档位：这里只问、不停止，问过几次仍没有输出就交给那一条提醒 / 自动停止
+   * 问过之后再过这么久还没回复就停掉它、接回原会话重启，重启没恢复就新开子对话接手（见 shared/stuck-child.ts）。
+   * 和 idleTimeoutMinutes 是两个独立的档位：那一条管所有对话的提醒 / 自动停止
    */
   childIdleAskMinutes: z.number().int().min(0).max(1440).catch(3).default(3),
   /**
