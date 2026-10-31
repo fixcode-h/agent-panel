@@ -2710,13 +2710,16 @@ html [data-sonner-toast][data-styled='true'] {
 .activity-sep {
   background-color: color-mix(in oklab, var(--fg) 14%, transparent);
 }
-/* 角标圆点描一圈图标栏底色：选中格是 bg-sel，描边跟着换，不会露出一圈错色 */
+/* 角标圆点描一圈图标栏底色：选中、悬停的格子底色不同，描边跟着换，不会露出一圈错色 */
 .activity-dot {
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--rail) 95%, var(--fg));
 }
-.rail-item:hover .activity-dot,
+/* 悬停 / 选中的格子是半透明叠加（bg-hover 6% / bg-active 10%），描边按同样比例从图标栏底色混出来 */
+.rail-item:hover .activity-dot {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--rail) 94%, var(--fg));
+}
 .rail-item[aria-current='page'] .activity-dot {
-  box-shadow: 0 0 0 2px var(--sel);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--rail) 90%, var(--fg));
 }
 /* 自绘导航图标（rail-icons.tsx）的主体层：平时透明，选中时填一层浅色 */
 .rail-fill {

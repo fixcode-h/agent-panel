@@ -159,9 +159,21 @@ export function DiffView({ diff }: { diff: string }) {
 }
 
 /**
- * 展开后的 IN / OUT 一段：小标签单独一行，正文和对话里的代码块同一套字号、行高，
- * 不再用左侧挤着的窄标签，长文本也不会被标签列压得换行
+ * 展开后的 IN / OUT 一段（照 Claude Code）：左边一列窄标签（OUT 下面跟行数），右边是正文；
+ * 正文用次一级的文字色，不和上面的工具名、对话正文抢眼。标签列定宽，正文列长文本自己换行
  */
+/** 一段 IN / OUT 的版式：标签列 3rem（放得下「正在输出」）+ 正文列 */
+const BLOCK = 'grid grid-cols-[3rem_minmax(0,1fr)] gap-x-2.5 px-3 py-2'
+
+function BlockLabel({ label, aside }: { label: string; aside?: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 pt-[0.1875rem]">
+      <span className="font-mono text-[0.625rem] leading-none font-medium tracking-[0.08em] text-subtle">{label}</span>
+      {aside}
+    </div>
+  )
+}
+
 function Block({
   label,
   text,
@@ -175,15 +187,12 @@ function Block({
   aside?: React.ReactNode
 }) {
   return (
-    <div className="px-3.5 py-2.5">
-      <div className="mb-1 flex items-center gap-2">
-        <span className="font-mono text-[0.625rem] font-medium tracking-[0.14em] text-subtle/80">{label}</span>
-        {aside}
-      </div>
+    <div className={BLOCK}>
+      <BlockLabel label={label} aside={aside} />
       <pre
         className={cn(
-          'max-h-[320px] min-w-0 overflow-auto font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap [overflow-wrap:anywhere]',
-          tone === 'danger' ? 'text-danger' : 'text-fg/90',
+          'max-h-[320px] min-w-0 overflow-auto font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
+          tone === 'danger' ? 'text-danger' : 'text-muted',
         )}
       >
         {text}
@@ -198,7 +207,7 @@ function MoreLink({ onClick, label }: { onClick: () => void; label: string }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-1.5 px-3.5 py-2 text-left font-sans text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
+      className="flex w-full cursor-pointer items-center gap-1.5 px-3 py-2 text-left font-sans text-xs text-muted transition-colors hover:bg-hover hover:text-fg"
     >
       <Maximize2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
       <span className="min-w-0 truncate">{label}</span>
@@ -407,8 +416,9 @@ export function RowShell({
         (boxed ? (
           children
         ) : (
-          // 展开的内容缩进到动作名下面，自己一块细线圆角框；内容自带的顶线和外框重了，去掉
-          <div className="mt-0.5 mb-2 ml-[1.8125rem] min-w-0 overflow-hidden rounded-lg border [&>*:first-child]:border-t-0">
+          // 展开的内容缩进到动作名下面，是嵌在过程行浅底里的一块代码底色（不再是框里套框）；
+          // 内容自带的顶线去掉，外圈一道很淡的细线
+          <div className="mt-0.5 mr-2 mb-2 ml-[1.8125rem] min-w-0 overflow-hidden rounded-md bg-(--code-bg) shadow-[inset_0_0_0_1px_var(--pop-edge)] [&>*:first-child]:border-t-0">
             {children}
           </div>
         ))}
@@ -641,7 +651,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
         failed={tool.failed}
       >
         {
-          <div className="divide-y border-t bg-card/60">
+          <div className="divide-y divide-pop-edge">
             {isDiff ? (
               <div className="relative">
                 <DiffView diff={input} />
@@ -655,24 +665,27 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
             ) : tool.kind === 'read' ? (
               input && input !== tool.label && <Block label="IN" text={input} />
             ) : (
-              <Block label="IN" text={input || tool.label} />
+              // 输入和标题一样（压缩上下文这类）就不再重复一遍；命令行没有单独输入时照样把命令写在 IN 里
+              (tool.kind === 'run' || (input && input !== tool.label)) && (
+                <Block label="IN" text={input || tool.label} />
+              )
             )}
             {output ? (
               <>
                 {live ? (
                   // 命令还在跑：只跟最新的几行，高度固定，不会把对话越撑越长；
                   // 完整输出点命令打开命令行窗口看
-                  <div className="px-3.5 py-2.5">
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="font-mono text-[0.625rem] font-medium tracking-[0.14em] text-subtle/80">
-                        OUT
-                      </span>
-                      <span className="flex items-center gap-1.5 font-sans text-[0.6875rem] text-accent-text">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                        {t('正在输出')}
-                      </span>
-                    </div>
-                    <div>
+                  <div className={BLOCK}>
+                    <BlockLabel
+                      label="OUT"
+                      aside={
+                        <span className="mt-0.5 flex items-center gap-1 font-sans text-[0.625rem] text-accent-text">
+                          <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />
+                          {t('正在输出')}
+                        </span>
+                      }
+                    />
+                    <div className="min-w-0">
                       {/* 只跟最新的几行，更早的不显示：上面用一行提示说还有多少行，
                           不靠裁高度，任何字号下都不会切出半行 */}
                       {liveCut && (
@@ -680,7 +693,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                           {t('前面还有 {n} 行', { n: liveRows.length - LIVE_ROWS })}
                         </div>
                       )}
-                      <pre className="font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+                      <pre className="font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap text-muted [overflow-wrap:anywhere]">
                         {liveTail.join('\n')}
                       </pre>
                     </div>
@@ -691,7 +704,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                     text={short}
                     tone={tool.failed ? 'danger' : undefined}
                     aside={
-                      <span className="font-mono text-[0.625rem] text-subtle/70 tabular-nums">
+                      <span className="mt-0.5 font-sans text-[0.625rem] text-subtle/70 tabular-nums">
                         {t('{n} 行', { n: tool.outputCut?.lines ?? output.split('\n').length })}
                       </span>
                     }
@@ -707,7 +720,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
               </>
             ) : (
               !isDiff && (
-                <div className="px-3.5 py-2.5 font-sans text-xs text-subtle">
+                <div className="px-3 py-2 font-sans text-xs text-subtle">
                   {tool.kind === 'read' && !input ? tool.label : live ? t('正在执行…') : t('没有输出')}
                 </div>
               )
