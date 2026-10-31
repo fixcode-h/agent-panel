@@ -14,11 +14,11 @@ user-invocable: true
 - AI 无法执行或客观确认的非阻塞验证，登记为「延期验证」：原因、影响、建议执行者、验证步骤、当前证据、状态（`deferred` / `accepted-risk`），写入 `acceptance.md`；不得伪造通过，也不因此中断其余安全步骤。
 - **阶段切换检查**：进入阶段 2、3、4 以及续接恢复时，先重新确认当前 change、`PROJECT_ROOT`、`DOC_ROOT`、`tasks.md` 状态。不得把前一阶段未完成的决策或未验证的产物当作已完成事实。
 
-## 阶段 0 · 前置检查（只读）
+## 阶段 0 · 前置检查（缺什么装什么）
 
 1. 按 `project-documentation` 的规则确定 `PROJECT_ROOT` 与 `DOC_ROOT`；确认后所有 OpenSpec CLI、斜杠指令、文件读写和归档都只针对这同一个 `DOC_ROOT`。
-2. `openspec --version` 可执行。所有 OpenSpec CLI 命令 MUST 在 `DOC_ROOT` 下运行（`openspec new change` 也在此目录）；从别处运行会输出空列表或直接报错，容易误判成「无未归档 change」。每次调用前显式设置到 `DOC_ROOT`，第一步失败时先检查当前目录再下结论。未初始化时先向用户说明，经确认后再 `openspec init`。
-3. 当前 CLI 提供 `/opsx-propose`、`/opsx-apply`、`/opsx-archive`（`/opsx:propose` 写法是同一指令，以 CLI 实际列出的名称为准）；缺失则停止并报告，不臆造指令，也不手工模拟其产物。
+2. `openspec --version` 可执行；命令不存在时直接 `npm install -g @fission-ai/openspec@latest` 安装，装完再确认版本，不先停下问用户。所有 OpenSpec CLI 命令 MUST 在 `DOC_ROOT` 下运行（`openspec new change` 也在此目录）；从别处运行会输出空列表或直接报错，容易误判成「无未归档 change」。每次调用前显式设置到 `DOC_ROOT`，第一步失败时先检查当前目录再下结论。未初始化时直接在 `DOC_ROOT` 下 `openspec init --tools <当前 CLI> --no-animation .`（`--tools` 取 `claude` / `codex` / `command-code` / `pi` 中对应当前 CLI 的值，`openspec init --help` 列出全部可选值）。
+3. 当前 CLI 的 OpenSpec 指令文件存在：`/opsx-propose`、`/opsx-apply`、`/opsx-archive`（`/opsx:propose` 写法是同一指令；也可能装成 `openspec-propose` 等同名技能）。缺失时在 `DOC_ROOT` 下重跑上面的 `openspec init --tools <当前 CLI> --no-animation .` 补装（已初始化的项目只补指令文件，不动已有 specs 和 changes），装好继续。指令文件装在 `DOC_ROOT` 下，斜杠菜单里看不到不算缺失，用到时读文件照着做。只有安装或初始化本身失败才停止，并报告命令和完整报错；不臆造指令，也不手工模拟其产物。
 4. 扫描 `DOC_ROOT/openspec/changes/`：每个子目录必须有 `.openspec.yaml`。缺失者视为非 OpenSpec 目录，不复用、不修改、不归档，报告并建议迁到 `DOC_ROOT/worklog/<task-id>/`。`openspec/changes/` 只允许 `openspec new change` 创建目录，非 OpenSpec 的任务记录不得放进来。
 
 ## 阶段 1 · 需求收敛 + 压测
