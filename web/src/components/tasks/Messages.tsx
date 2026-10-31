@@ -7,7 +7,6 @@ import {
   CircleAlert,
   GitMerge,
   Info,
-  Lightbulb,
   Loader2,
   RotateCw,
   SendHorizontal,
@@ -177,48 +176,8 @@ function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean;
   useEffect(() => {
     if (live && shown && box.current) box.current.scrollTop = box.current.scrollHeight
   }, [text, live, shown])
-  const ai = useAiLook()
-  // AI 分析窗口（设计稿 AiWindow）：一整行「💡 思考 + 斜体摘要 + 右端用时」，点开看全文。
-  // 摘要在思考中取最新一行、想完取第一行：一眼看出它在想什么，不用展开
-  if (ai) {
-    const lines = text
-      .trim()
-      .split('\n')
-      .map((x) => x.trim())
-      .filter(Boolean)
-    const gist = (live ? lines.at(-1) : lines[0]) ?? ''
-    return (
-      <div className="flex flex-col gap-1.5" data-thinking="">
-        <button
-          onClick={() => setOpen(!shown)}
-          aria-expanded={shown}
-          className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md py-0.5 text-left text-[0.78125rem] text-muted hover:text-fg"
-        >
-          <Lightbulb className={cn('h-3.5 w-3.5 shrink-0 text-peer', live && 'animate-pulse')} />
-          <span className={cn('shrink-0 font-semibold text-fg', live && 'thinking-shimmer')}>
-            {live ? t('正在思考…') : t('思考')}
-          </span>
-          {!shown && gist && <span className="min-w-0 truncate italic">{gist}</span>}
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[0.6875rem] text-subtle tabular-nums">
-            {!live && thinkingMs !== undefined && fmtDuration(thinkingMs)}
-            <ChevronRight className={cn('h-3 w-3 transition-transform', shown && 'rotate-90')} />
-          </span>
-        </button>
-        {shown && (
-          <div
-            ref={box}
-            className={cn(
-              'ml-[1.375rem] border-l-2 border-line-strong pl-3 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted italic [overflow-wrap:anywhere]',
-              live && 'max-h-40 overflow-y-auto',
-            )}
-          >
-            {text.trim()}
-          </div>
-        )}
-      </div>
-    )
-  }
-  // 思考过程保持原来的样子（用户要求）：一行小字按钮，展开后左边一道竖线的正文，不做成过程行
+  // 思考过程保持原来的样子（用户要求）：一行小字按钮，展开后左边一道竖线的正文，不做成过程行。
+  // AI 分析窗口里也用这一份（用户 2026-10-31 要求和对话一样），不再另画「思考 + 斜体摘要」
   return (
     <div className="flex flex-col gap-1.5">
       <button
