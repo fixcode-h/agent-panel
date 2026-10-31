@@ -353,15 +353,7 @@ export function registerActionRoutes(s: TasksScope) {
     const got = s.reserve(task)
     if (!got.fresh) return s.bad(c, t('任务正在执行，请等它完成或先停止'), 409)
     const entry = got.value
-    entry.task.messages.push({
-      id: randomUUID(),
-      role: 'system',
-      agentId: '',
-      step: '',
-      text: t('压缩上下文'),
-      tools: [],
-      at: new Date().toISOString(),
-    })
+    // 不插居中的「压缩上下文」：压缩一开始 runner 就放一行转圈的工具调用，压缩完成换成前后大小
     try {
       return c.json(await s.start(entry, '', false, await s.deps.agents.list(), { kind: 'compact' }))
     } catch (e) {

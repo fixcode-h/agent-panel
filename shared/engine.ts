@@ -99,7 +99,7 @@ import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
-import { LIVE, nextSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
+import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
 import { isHelperAgent } from './builtin/core.ts'
 import { childAskPrompt } from './child-ask.ts'
 import {
@@ -189,7 +189,7 @@ export interface AgentCall {
   /** 会话续不上时（CLI 清理了历史）改用的完整提示；prompt 只是续接用的简短要求时才需要 */
   fresh?: string
   /** 不是普通的一轮：压缩上下文，或者审查代码 */
-  op?: { kind: 'compact' } | { kind: 'review'; target: ReviewTarget }
+  op?: { kind: 'compact'; reason?: string } | { kind: 'review'; target: ReviewTarget }
   /** 工作流里的调用：用默认 CLI 的这一档（空表示按 Agent 设的档位）；对话不传，用 Agent 自己的设置 */
   tier?: NodeTier
   /** Agent 参数的值（节点上填的）；不传时对话用任务里选的 */
@@ -205,6 +205,11 @@ export interface AgentCall {
    * 不给时 runner 原样交给 CLI
    */
   nextPrompt?: (text: string) => Promise<string>
+  /**
+   * 这次调用里会话被压缩了（手动压缩、CLI 自己压缩、上下文骤降）：之前发过的规则只剩摘要。
+   * 调用方要忘掉「这个会话已经有哪些段落」，下一条消息发完整提示，不能在这一轮结束后又把旧记录写回去
+   */
+  onCompacted?: () => void
   /** runner 拼好这次的输入后告诉调用方：新会话开头补的角色设定、教训有多少字，是不是改用了 fresh（记进这一轮的输入构成） */
   onInput?: (info: { setup: number; rules: number; fresh: boolean }) => void
   /** 只停这一次调用（终止单个子任务）；整个任务停止仍走宿主的信号 */
@@ -3813,11 +3818,14 @@ async function runHelper(
       ? setTimeout(() => void host.steer?.(step.id, REVIEW_WRAP_NOTE).catch(() => false), REVIEW_SOFT_LIMIT_MS)
       : undefined
     wrap?.unref?.()
+    // 这次调用里会话压缩过：规则只剩摘要，不记已发段落，下次接着做时发完整的
+    let compacted = false
     const r = await host
       .runAgent({
         step,
         agentId: step.agentId,
         prompt: delta ?? full,
+        onCompacted: () => (compacted = true),
         ...(delta ? { fresh: full } : {}),
         // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
         sessionKey,
@@ -3828,7 +3836,7 @@ async function runHelper(
         signal: ac.signal,
       })
       .finally(() => clearTimeout(wrap))
-    if (host.task.sessions[sessionKey] && (r.ok || r.stopped))
+    if (!compacted && host.task.sessions[sessionKey] && (r.ok || r.stopped))
       host.task.promptSent = rememberSent(
         host.task.promptSent,
         sessionKey,
@@ -4280,8 +4288,10 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       source('user', x.user)
       source('rules', x.rules)
     }
-    // 这个 CLI 进程已经收到的段落：保活时后面的消息在同一个进程里接着发，比的是它；会话 id 跑完才知道，先用占位
-    let live = nextSent(parts, LIVE, !!delta, sent)
+    // 这个 CLI 进程已经收到的段落：保活时后面的消息在同一个进程里接着发，比的是它；会话 id 跑完才知道，先用占位。
+    // 会话压缩过就清空：之后的消息发完整提示，这一轮结束时也不把压缩前的记录写回去
+    let live: PromptSent | undefined = nextSent(parts, LIVE, !!delta, sent)
+    const onCompacted = () => (live = undefined)
     const nextPrompt = async (text: string) => {
       host.prompt = text
       const now = await conversationPrompt(
@@ -4341,7 +4351,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
           prompt,
           // 只发了增量时带上完整的：runner 续不上会话、开了新会话时改用它
           ...(first && delta ? { fresh: full } : {}),
-          ...(first && !host.prewarm ? { nextPrompt, onInput } : {}),
+          ...(first && !host.prewarm ? { nextPrompt, onInput, onCompacted } : {}),
           ...(first ? {} : { carry: true }),
           // 会话键就是 Agent id；选了「无」时用空字符串，runner 仍然按对话处理
           sessionKey: who,
@@ -4354,7 +4364,8 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       }
       // 记下这个会话已经有了哪些段落：跑完或被停下的算收到了（停下时 CLI 已经读过这一轮）；报错的不记，
       // 可能根本没交到 CLI，下一轮照旧补发。会话 id 取 runner 跑完后的（续不上开了新会话时，新会话收到的是 fresh）
-      if (first && !host.prewarm && task.sessions[who] && (r.ok || r.stopped))
+      // 这一轮里压缩过（含手动压缩：那一轮只发了压缩命令，规则根本没发）：不记，下一轮发完整提示
+      if (first && !host.prewarm && live && task.sessions[who] && (r.ok || r.stopped))
         task.promptSent = rememberSent(task.promptSent, who, { ...live, session: task.sessions[who] })
       first = false
       if (!r.ok) {

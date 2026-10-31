@@ -27,6 +27,9 @@ import { inlineEditBlocker, inlineEditOverrun, inlineEditOverrunText } from '../
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 
+/** finish_child 最多等多久再回话：CLI 的工具调用一分钟超时，要在那之前回（见 finishChild） */
+const FINISH_WAIT_MS = 45_000
+
 /**
  * 子对话收尾：submit_merge 合回父对话分支（评审门禁、合并时编译）、UE 编译请求、就地微改动、finish_child、父计划里等子对话的那一步。
  */
@@ -523,13 +526,37 @@ ${
   }
 
   async function finishChild(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
-    const r = await finishChildStep(parent, childId)
-    const plan = await syncParentPlan(parent.id, childId).catch((e) => {
-      log.warn('task', '收尾后刷新父对话计划失败', { task: parent.id, error: (e as Error).message })
-      sc.alertOn(parent.id, 'panel', t('收尾子对话后刷新计划失败'))(e)
-      return ''
+    const work = (async () => {
+      const r = await finishChildStep(parent, childId)
+      const plan = await syncParentPlan(parent.id, childId).catch((e) => {
+        log.warn('task', '收尾后刷新父对话计划失败', { task: parent.id, error: (e as Error).message })
+        sc.alertOn(parent.id, 'panel', t('收尾子对话后刷新计划失败'))(e)
+        return ''
+      })
+      return plan ? { ok: r.ok, info: `${r.info}\n\n${plan}` } : r
+    })()
+    // 限时回话：收尾要等子对话的 CLI 退出、删独立分支，慢的时候会撞上 CLI 工具调用一分钟的超时，
+    // 父对话只看到「The operation timed out」，不知道收尾到底成没成，又反复调用。过了时限先说清楚，收尾在后台接着做
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<undefined>((r) => {
+      timer = setTimeout(() => r(undefined), FINISH_WAIT_MS)
+      timer.unref?.()
     })
-    return plan ? { ok: r.ok, info: `${r.info}\n\n${plan}` } : r
+    try {
+      const r = await Promise.race([work, late])
+      if (r) return r
+    } finally {
+      clearTimeout(timer)
+    }
+    void work.catch((e) => {
+      log.error('task', '收尾子对话失败', { task: childId, error: (e as Error).message })
+      sc.alertOn(parent.id, 'panel', t('收尾子对话失败'), 'error')(e)
+    })
+    log.warn('task', '收尾子对话超过时限，转到后台接着做', { task: childId, waitMs: FINISH_WAIT_MS })
+    return {
+      ok: true,
+      info: '收尾还在进行（在等子对话的进程退出），面板会在后台做完，不用再调用 finish_child。过一会儿用 list_conversations 看它是不是已完成。',
+    }
   }
 
   /**

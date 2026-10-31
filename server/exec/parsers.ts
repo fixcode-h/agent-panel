@@ -30,7 +30,14 @@ export type CliEvent =
   | { type: 'limits'; limits: CliLimits }
   /** 上下文压缩完了；context 是压缩后的占用（知道时） */
   /** 压缩了上下文：before 是压缩前的 token 数，context 是压缩后的（CLI 给了才有） */
-  | { type: 'compacted'; context?: number; before?: number }
+  /**
+   * 压缩完了：before 是压缩前的整个上下文；context 是压缩后的整个上下文。
+   * messages 是压缩后只算消息（摘要 + 恢复的附件）的大小：Claude Code 的 post_tokens 不含系统提示词和工具定义，
+   * 不能直接当成上下文占用，要加上这些固定部分（runner 按 CLI 报的细分补）
+   */
+  | { type: 'compacted'; context?: number; before?: number; messages?: number }
+  /** CLI 自己开始压缩了（Claude Code 的 status: compacting）：先放一行转圈的压缩，压缩完成再填前后大小 */
+  | { type: 'compacting' }
   /** patch：改文件的工具给出的 unified diff，用来替换调用时记下的改前改后 */
   /** exitCode：CLI 报得出命令的退出码时给（Claude Code 的 tool_use_result.code、Pi 的 structuredContent.exit_code），没有就不写 */
   | {
@@ -376,12 +383,15 @@ export function claudeParser(cwd: string): Parser {
         textInMsg = true
         out.push({ type: 'text_delta', text: e.delta.text ?? '' })
       }
+    } else if (o.type === 'system' && o.subtype === 'status' && o.status === 'compacting') {
+      out.push({ type: 'compacting' })
     } else if (o.type === 'system' && o.subtype === 'compact_boundary') {
       const meta = o.compact_metadata ?? {}
       out.push({
         type: 'compacted',
         ...(typeof meta.pre_tokens === 'number' ? { before: meta.pre_tokens } : {}),
-        ...(typeof meta.post_tokens === 'number' ? { context: meta.post_tokens } : {}),
+        // post_tokens 只算压缩后的消息（摘要和恢复的附件），不含系统提示词、工具定义：不能当整个上下文
+        ...(typeof meta.post_tokens === 'number' ? { messages: meta.post_tokens } : {}),
       })
     } else if (o.type === 'rate_limit_event' && o.rate_limit_info) {
       const l = claudeLimits(o.rate_limit_info)

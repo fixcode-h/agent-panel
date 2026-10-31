@@ -74,7 +74,7 @@ export const COMP_SPEC = {
   statusPill: { radius: px(12, 0, 12), weight: pick('500', WEIGHT) },
   badge: { radius: px(12, 0, 12) },
   kbd: { radius: px(4, 0, 9), bg: color('sel') },
-  progress: { height: px(6, 2, 12), radius: px(12, 0, 12) },
+  progress: { height: px(6, 2, 12), radius: px(12, 0, 12), track: color('default', { default: tint(14), ...BG }) },
   input: {
     radius: px(8, 0, 16),
     border: BORDER,

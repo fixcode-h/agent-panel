@@ -158,6 +158,16 @@ test('Claude Code：出错的结果、Bash 的退出码；每次模型回应开�
   assert.deepEqual(parse({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm1' } } }), [
     { type: 'request_start' },
   ])
+  // 自动压缩：开始时报 compacting（先放一行转圈）；post_tokens 只算压缩后的消息，不当整个上下文
+  assert.deepEqual(parse({ type: 'system', subtype: 'status', status: 'compacting' }), [{ type: 'compacting' }])
+  assert.deepEqual(
+    parse({
+      type: 'system',
+      subtype: 'compact_boundary',
+      compact_metadata: { pre_tokens: 415300, post_tokens: 11900 },
+    }),
+    [{ type: 'compacted', before: 415300, messages: 11900 }],
+  )
   // 写大文件时入参能流一两分钟：不报出来，没有响应的检测会把它当成卡住
   assert.deepEqual(
     parse({

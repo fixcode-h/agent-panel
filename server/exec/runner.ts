@@ -66,6 +66,7 @@ import {
 import { projectFormat } from '../../shared/file-format.ts'
 import { searchExcludeOf, searchExcludeRgConfig } from '../../shared/search-exclude.ts'
 import { clip } from '../../shared/text.ts'
+import { CompactTracker, settleCompactRow } from './compaction.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -791,9 +792,15 @@ export function envStallFailure(n: number) {
  */
 /** 会话压缩过：之前发过的规则段落只剩摘要，下一轮对话按完整提示重发（见 shared/prompt-delta.ts） */
 export function forgetPromptSent(task: Task, sessionKey: string) {
-  if (!task.promptSent?.[sessionKey]) return
-  const { [sessionKey]: _gone, ...rest } = task.promptSent
-  task.promptSent = rest
+  if (task.promptSent?.[sessionKey]) {
+    const { [sessionKey]: _gone, ...rest } = task.promptSent
+    task.promptSent = rest
+  }
+  // 没有系统提示词参数的 CLI 只在会话第一条消息里带角色设定：压缩后它也只剩摘要，下一轮要重发
+  if (task.roleHashes?.[sessionKey]) {
+    const { [sessionKey]: _role, ...roles } = task.roleHashes
+    task.roleHashes = roles
+  }
 }
 
 export function canKeepAlive(o: { chat: boolean; op: boolean; cliKeepAlive: boolean }) {
@@ -1026,6 +1033,12 @@ async function takeApiSlot(
  * 先拿名额再启动 CLI，结束时还回去。名额按 API 计，没设上限的也记着数，改成有上限时马上按实际占用算
  */
 async function gatedRunAgent(ctx: RealContext, call: AgentCall): Promise<AgentResult> {
+  const r = await runWithSlot(ctx, call)
+  if (call.op?.kind === 'compact') settleCompactRow(call.op, r)
+  return r
+}
+
+async function runWithSlot(ctx: RealContext, call: AgentCall): Promise<AgentResult> {
   const api = callApi(ctx, call)
   if (!api) return runAgent(ctx, call)
   const key = slotKey(ctx.task.id, call.step?.id ?? '')
@@ -1263,8 +1276,11 @@ async function runAgent(
   // 把新版补发一次，旧对话再聊也按新角色做；以前开的会话没记过，按变了处理补一次
   const roleHash = instructions ? createHash('sha1').update(instructions).digest('hex').slice(0, 16) : ''
   const roleStale = !!resume && !op && !!roleHash && task.roleHashes?.[sessionKey] !== roleHash
+  // 记录被压缩清掉的（见 forgetPromptSent）：角色没变，只是会话里只剩摘要，原样重发
   if (instructions && !def.systemPromptFlag && roleStale)
-    input = `## 你的角色（已更新，以这一版为准，之前的角色设定作废）\n${instructions}\n\n${input}`
+    input = task.roleHashes?.[sessionKey]
+      ? `## 你的角色（已更新，以这一版为准，之前的角色设定作废）\n${instructions}\n\n${input}`
+      : `## 你的角色\n${instructions}\n\n${input}`
   if (instructions && !def.systemPromptFlag && (!resume || roleStale))
     task.roleHashes = { ...task.roleHashes, [sessionKey]: roleHash }
   if (instructions && !def.systemPromptFlag && !resume) {
@@ -1436,7 +1452,13 @@ async function runAgent(
   // 正在思考的那条消息和第一段思考到达的时刻：思考之后来了别的输出，思考就结束了
   let thinkingOf: { m: TaskMessage; at: number } | undefined
   // 刚压缩完、还不知道压缩后多大：下一次报告上下文用量时补到这次压缩的工具调用上
-  let compaction: { tool: ToolUse; before?: number } | undefined
+  // 压缩那一行：一开始就转圈，压缩完成换成前后大小；不知道压缩后多大时等用量或细分补上
+  const compaction = new CompactTracker(endTool)
+  /** 会话压缩过：作废已发的规则段落和角色记录，告诉调用方别把压缩前的记录写回去 */
+  const compacted = () => {
+    forgetPromptSent(task, sessionKey)
+    call.onCompacted?.()
+  }
   // 这一轮在 CLI 会话里的位置，结束后记在触发它的用户消息上（分叉、撤回用）
   const turn: { id: string; end: string } = { id: '', end: '' }
   // 改了文件就去 git 里重新读一次改动，更改面板边跑边更新；读得太勤会拖慢大仓库，最多一秒半一次
@@ -1689,17 +1711,14 @@ async function runAgent(
         if (ev.model) u.model = ev.model
         if (ev.context !== undefined) {
           // 对话的会话里上下文骤降：CLI 自己压缩了却没报 compacted，同样作废已发的规则段落
-          if (chat && compactedSilently(u.context, ev.context)) forgetPromptSent(task, sessionKey)
+          if (chat && compactedSilently(u.context, ev.context)) compacted()
           u.context = ev.context
         }
         if (ev.window) {
           u.window = ev.window
           reported = true
         } else if (!reported) u.window = windowFor(u.model || model)
-        if (compaction && ev.context !== undefined) {
-          describeCompaction(compaction.tool, compaction.before, ev.context, u.window)
-          compaction = undefined
-        }
+        if (ev.context !== undefined) compaction.measured(ev.context, u.window)
         u.outputTokens = (u.outputTokens ?? 0) + (ev.addOutput ?? 0)
         meter.real(ev.addOutput ?? 0)
         // 任务的累计和节点自己的都记一份，右栏点了节点时只看节点的
@@ -1716,7 +1735,10 @@ async function runAgent(
       case 'context': {
         // CLI 自己报的上下文细分：会话栏优先按它分块（一轮结束后才到，单独推一次）
         au().snapshot = ev.snapshot
-        ctx.changed()
+        // 刚压缩完还不知道整个上下文多大：细分里的总占用就是压缩后的真实大小
+        const fixed = compaction.measured(ev.snapshot.used, ev.snapshot.window || au().window)
+        if (fixed) au().context = ev.snapshot.used
+        ctx.changed(fixed)
         break
       }
       case 'tool_result': {
@@ -1758,19 +1780,19 @@ async function runAgent(
       case 'limits':
         setLimits(cliId, ev.limits)
         return
+      case 'compacting': {
+        // CLI 自己开始压缩（自动压缩）：像后台命令一样先放一行转圈，压缩完成（compacted）再收掉
+        const tool = compaction.startCli(au().context || undefined, toolStart)
+        if (tool) (!cur || cur.text.trim() ? newMsg() : cur).tools.push(tool)
+        break
+      }
       case 'compacted': {
         // 压缩后会话里之前发过的规则只剩摘要：下一轮按完整提示重发（见 shared/prompt-delta.ts）
-        forgetPromptSent(task, sessionKey)
+        compacted()
         // 当作一次工具调用放进回复里，不插一条系统消息把回复切成两段；压缩后的大小晚一点从 usage 补上
-        const u = au()
-        const before = ev.before ?? (u.context || undefined)
-        if (ev.context !== undefined) u.context = ev.context
-        const tool: ToolUse = { kind: 'compact', name: t('压缩上下文'), label: '', detail: '' }
-        compaction = { tool, before }
-        describeCompaction(tool, before, ev.context, u.window)
-        if (ev.context !== undefined) compaction = undefined
-        const m = !cur || cur.text.trim() ? newMsg() : cur
-        m.tools.push(tool)
+        const tool = compaction.done(ev, au())
+        if (tool) (!cur || cur.text.trim() ? newMsg() : cur).tools.push(tool)
+        ctx.changed(true)
         break
       }
       case 'todos':
@@ -2171,6 +2193,12 @@ async function runAgent(
       prewarm: prewarmMode || undefined,
       keepAlive: !!keepAlive,
     })
+  // 压缩上下文：像后台命令一样，一开始就放一行转圈，压缩完成换成前后大小（不再插一行居中的「压缩上下文」）
+  if (op?.kind === 'compact' && !prewarmMode) {
+    const fresh = compaction.startOp(op, au().context || undefined, toolStart)
+    if (fresh) newMsg().tools.push(fresh)
+    ctx.changed(true)
+  }
   const r = await invokeCli({
     mcp: blender ? [{ name: 'blender', url: blender.url }] : undefined,
     cliId,
@@ -2253,6 +2281,8 @@ async function runAgent(
     stalled.delete(task.id)
     clearTimeout(redirectTimer)
     for (const x of [...toolStart.keys()]) endTool(x)
+    // CLI 说开始压缩了，进程结束都没等到压缩完成：不能显示得像压缩成功了
+    compaction.processEnd()
     // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
     if (steerPending) {
       steerPending = false
@@ -2570,15 +2600,18 @@ async function runAgent(
         delete task.sessions[sessionKey]
         delete task.sessionDirs[sessionKey]
         au().context = 0
-        task.messages.push({
-          id: ctx.newId(),
-          role: 'system',
-          agentId,
-          step,
-          text: t('已压缩上下文：对话本身太长，模型连压缩请求都拒绝了，已改为裁剪后开新会话带上（保留最近的内容）'),
-          tools: [],
-          at: new Date().toISOString(),
-        })
+        const note = t('已压缩上下文：对话本身太长，模型连压缩请求都拒绝了，已改为裁剪后开新会话带上（保留最近的内容）')
+        // 写在压缩那一行上，不另插一行居中的说明
+        if (!compaction.settle(t('对话太长，已裁剪后交给新会话'), note))
+          task.messages.push({
+            id: ctx.newId(),
+            role: 'system',
+            agentId,
+            step,
+            text: note,
+            tools: [],
+            at: new Date().toISOString(),
+          })
         ctx.changed(true)
         log.warn('agent', `${def.name} 压缩上下文时仍然超过上限，改用裁剪后的记录开新会话`, {
           task: task.id,
@@ -2699,15 +2732,16 @@ async function runAgent(
       texts.length || errors.length ? undefined : makeAlert('warn', errors.join('\n'), 'empty_turn'),
     )
   // 压缩过（原生压缩不一定报 compacted 事件）：会话里之前发过的规则段落不算数了
-  if (op?.kind === 'compact') forgetPromptSent(task, sessionKey)
+  if (op?.kind === 'compact') compacted()
   // 不能压缩会话的 CLI：摘要写好了，下一轮开新会话带上它
   if (op?.kind === 'compact' && def.compact === 'summary') {
     task.rewind = { session: '', through: null, latest: false, summary: done.text }
     delete task.sessions[sessionKey]
     delete task.sessionDirs[sessionKey]
     au().context = 0
-    sysMsg(t('已压缩上下文：下一轮会开新的会话，带上这份摘要'))
-  }
+    if (!compaction.settle(t('摘要写好了，下一轮开新会话带上')))
+      sysMsg(t('已压缩上下文：下一轮会开新的会话，带上这份摘要'))
+  } else if (op?.kind === 'compact') compaction.finishOp(au())
   // 达到设置的上下文占用时自动压缩（Claude Code 和 Codex 由 CLI 自己按设置压缩）
   const u = task.usage.agents[agentId]
   if (
@@ -2719,11 +2753,15 @@ async function runAgent(
     u?.window &&
     (u.context / u.window) * 100 >= pct
   ) {
-    sysMsg(t('上下文占用达到 {n}%，自动压缩', { n: Math.round((u.context / u.window) * 100) }))
+    // 原因写在压缩那一行里（点开看），不另插一行居中的说明
+    const auto = {
+      kind: 'compact' as const,
+      reason: t('上下文占用达到 {n}%，自动压缩', { n: Math.round((u.context / u.window) * 100) }),
+    }
     // 压缩也是这一轮里的一次完整调用：环境性重试的计数和留痕要接着传，否则重置后可能再重试一次
     const c = await runAgent(
       ctx,
-      { ...call, op: { kind: 'compact' } },
+      { ...call, op: auto },
       undefined,
       undefined,
       undefined,
@@ -2732,6 +2770,7 @@ async function runAgent(
       envStalls,
       envStallNotes,
     )
+    settleCompactRow(auto, c)
     if (!c.ok && !c.stopped) sysMsg(t('自动压缩失败：{error}', { error: c.error }), true, makeAlert('error', c.error))
   }
   return done
@@ -2949,32 +2988,3 @@ export async function saveHandoffFile(
 
 /** 步骤 id 变成一个安全的文件名（Windows 也能用）：路径分隔符和保留字符都换成「_」 */
 export const handoffName = (id: string) => id.replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^[._]+/, '') || 'step'
-
-const fmtTok = (n: number) =>
-  n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n))
-
-/** 压缩上下文的工具调用：一行写压缩了多少，右边写现在占上下文窗口多少，点开看明细 */
-export function describeCompaction(tool: ToolUse, before?: number, after?: number, window?: number) {
-  // 前后大小单独存一份结构化字段：界面要显示「压缩前 / 压缩后」，不解析下面的中文 label
-  if (before !== undefined || after !== undefined) tool.compact = { before, after }
-  const pct = after !== undefined && window ? Math.round((after / window) * 100) : undefined
-  tool.label =
-    before !== undefined && after !== undefined
-      ? t('压缩了 {freed} token（{before} → {after}）', {
-          freed: fmtTok(Math.max(0, before - after)),
-          before: fmtTok(before),
-          after: fmtTok(after),
-        })
-      : before !== undefined
-        ? t('压缩前 {before} token', { before: fmtTok(before) })
-        : t('已压缩上下文')
-  tool.detail = pct !== undefined ? t('当前占用 {pct}%', { pct }) : ''
-  tool.output = [
-    before !== undefined && t('压缩前：{n} token', { n: fmtTok(before) }),
-    after !== undefined && t('压缩后：{n} token', { n: fmtTok(after) }),
-    window && t('上下文窗口：{n} token', { n: fmtTok(window) }),
-    pct !== undefined && t('当前占用：{pct}%', { pct }),
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
