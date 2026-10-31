@@ -15,6 +15,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -284,8 +285,9 @@ if (process.argv.includes('--no-archive')) {
 }
 
 // 5. 压缩：Windows 用 zip（解压出来带目录，双击 AgentPanel.exe）；macOS / Linux 用 tar.gz。
-// macOS 也出 zip：.app 是目录，zip 能带上可执行权限，方便在 Finder 里直接解压
-// 用系统自带的 tar：Windows 10 起是 bsdtar，-a 按扩展名选格式，能直接写 zip；不依赖只有 Linux 才有的 zip 命令
+// macOS 也出 zip：.app 是目录，zip 能带上可执行权限，方便在 Finder 里直接解压。
+// zip 怎么写看本机的 tar：bsdtar（Windows 10 起自带、macOS）的 -a 按扩展名写 zip；GNU tar（Linux、CI）不认 -a 写 zip，
+// 会悄悄写成未压缩的 tar——发布过的 .zip 就是这样打不开的，所以 Linux 上用 zip 命令，最后再核对文件头
 const archives = {
   win: [`${base}.zip`],
   mac: [`${base}-mac.tar.gz`, `${base}-mac.zip`],
@@ -293,14 +295,52 @@ const archives = {
 }
 for (const list of Object.values(archives)) for (const f of list) rmRetry(path.join(outRoot, f))
 
+const gnuTar = (() => {
+  try {
+    return execFileSync('tar', ['--version'], { encoding: 'utf8' }).includes('GNU tar')
+  } catch {
+    return false
+  }
+})()
+// 同一份代码两次出包哈希要一样：文件时间统一成这次提交的时间，GNU tar 再固定排序和属主
+const stamp = (() => {
+  try {
+    return Number(execFileSync('git', ['log', '-1', '--format=%ct'], { cwd: root, encoding: 'utf8' }).trim()) || 0
+  } catch {
+    return 0
+  }
+})()
+function touchTree(dir) {
+  if (!stamp) return
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name)
+    if (e.isDirectory()) touchTree(p)
+    if (!e.isSymbolicLink()) utimesSync(p, stamp, stamp)
+  }
+  utimesSync(dir, stamp, stamp)
+}
+const reproducible = gnuTar ? ['--sort=name', '--owner=0', '--group=0', '--numeric-owner'] : []
 const archive = (file, dir) => {
-  if (file.endsWith('.tar.gz')) run('tar', ['-czf', file, dir], outRoot)
+  touchTree(path.join(outRoot, dir))
+  if (file.endsWith('.tar.gz')) {
+    // gzip 头里不写文件名和时间（-n），否则每次出包都不一样
+    if (gnuTar) run('tar', [...reproducible, '-I', 'gzip -n', '-cf', file, dir], outRoot)
+    else run('tar', ['-czf', file, dir], outRoot)
+  } else if (gnuTar) run('zip', ['-qrX', file, dir], outRoot)
   else run('tar', ['-a', '-cf', file, dir], outRoot)
 }
 for (const [platform, list] of Object.entries(archives)) for (const name of list) archive(name, nameOf(platform))
 
 const all = [...archives.win, ...archives.mac, ...archives.linux]
 for (const f of all) if (!existsSync(path.join(outRoot, f))) throw new Error(`压缩失败：${f}`)
+// 核对文件头：.zip 必须是真的 zip（PK\x03\x04），.tar.gz 必须是 gzip（1f 8b）
+for (const f of all) {
+  const head = readFileSync(path.join(outRoot, f)).subarray(0, 4)
+  const ok = f.endsWith('.zip')
+    ? head.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
+    : head[0] === 0x1f && head[1] === 0x8b
+  if (!ok) throw new Error(`压缩格式不对：${f} 的文件头是 ${head.toString('hex')}`)
+}
 // 校验文件和包一起发布：设置里更新时先对哈希，下载不完整就不装
 const sums = all.map(
   (f) =>

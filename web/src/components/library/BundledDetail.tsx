@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, FileText, Loader2, Package, RefreshCw } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Download, FileText, Loader2, Package, RefreshCw } from 'lucide-react'
 import type { BundledSkill, LibraryEntryContent } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { DetailEmpty } from '@/components/layout/Detail'
+import { DetailEmpty, DetailHeader } from '@/components/layout/Detail'
 import { categoryLabel } from '@/components/library/BundledSkills'
 
 /** 装到用户目录里的位置：所有 Agent 共用这一份 */
@@ -77,11 +77,17 @@ export function BundledDetail({
 
   return (
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
-      <header className="flex flex-wrap items-start gap-3 border-b bg-bg px-4 py-5 md:px-8">
-        <Package className="mt-1 h-5 w-5 shrink-0 text-accent-text" />
-        <div className="min-w-0 flex-[1_1_260px]">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate font-mono text-lg font-semibold">{item.name}</h2>
+      <DetailHeader
+        compact
+        quietSave
+        leading={
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
+            <Package className="h-5 w-5" />
+          </span>
+        }
+        title={item.name}
+        meta={
+          <>
             <Badge className="text-caption">{t('自带 Skill')}</Badge>
             {/* 和自带版本不一样（被改过）换成警告色，不靠虚线边框区分 */}
             <Badge tone={changed ? 'warning' : 'neutral'} className="gap-1.5 text-caption">
@@ -92,39 +98,44 @@ export function BundledDetail({
                 <RefreshCw className="h-3 w-3 text-warning" />
               ) : null}
             </Badge>
-          </div>
-          <p className="mt-1 text-body leading-relaxed text-muted">{item.description || t('没有说明')}</p>
-          <p className="mt-0.5 truncate font-mono text-caption text-subtle">
-            {SHARED_DIR}/{item.name}/SKILL.md
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+          </>
+        }
+        subtitle={item.description || t('没有说明')}
+        save={{ status: 'idle', error: '' }}
+        actions={
           <Button
-            variant="secondary"
+            size="sm"
+            variant={item.status.shared === 'missing' ? 'primary' : 'secondary'}
             onClick={() => onInstall([item.name], item.name, true)}
             disabled={!!busy || item.status.shared === 'same'}
             title={changed ? t('用自带的版本覆盖（你改过的内容会丢掉）') : undefined}
           >
-            {busy === item.name ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {busy === item.name ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : item.status.shared === 'missing' ? (
+              <Download className="h-4 w-4" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
             {item.status.shared === 'same' ? t('已安装') : changed ? t('更新') : t('安装')}
           </Button>
-        </div>
-      </header>
+        }
+      />
 
-      <div className="mx-auto flex w-full max-w-[1000px] flex-col gap-5 px-4 pt-6 pb-12 md:px-8">
+      <div className="flex w-full max-w-[1100px] flex-col gap-4 px-4 pt-5 pb-12 md:px-8">
+        {/* 分类、装在哪、为什么不能编辑并成一行：原来三行加一块灰底说明，占了半屏 */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-footnote text-muted">
           <span className="text-subtle">{t('分类')}</span>
           <span>{categoryLabel(item.category)}</span>
           <span className="text-subtle">·</span>
           <span className="text-subtle">{t('装在')}</span>
-          <span className="font-mono">{SHARED_DIR}</span>
+          <span className="font-mono">
+            {SHARED_DIR}/{item.name}
+          </span>
           <span className="text-subtle">{t('（所有 Agent 共用）')}</span>
+          <span className="text-subtle">·</span>
+          <span className="text-subtle">{t('随面板版本提供，只读；要改请复制一份到自己的技能目录')}</span>
         </div>
-
-        {/* 自带技能的内容由面板随版本提供：说明清楚为什么这里不能编辑，不留一个空详情页 */}
-        <p className="rounded-xl bg-sel/50 px-4 py-3 text-body leading-relaxed text-muted">
-          {t('自带技能的内容由面板随版本提供，不能在这里编辑；修改请复制一份放到自己的技能目录里。')}
-        </p>
         {deployed && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-accent-soft px-4 py-3">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
@@ -145,7 +156,7 @@ export function BundledDetail({
             )}
           </div>
           <div className="flex flex-col gap-3 lg:flex-row">
-            <Card padding="xs" className="flex min-w-0 flex-col gap-0.5 lg:w-[260px] lg:shrink-0">
+            <Card padding="xs" className="flex min-w-0 flex-col gap-0.5 self-start lg:w-[240px] lg:shrink-0">
               {/* 主文件也列在树里：自带技能的内容只读，不存在「主文件在别处编辑」 */}
               <button
                 type="button"

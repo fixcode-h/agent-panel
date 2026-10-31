@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
-import { Copy, Loader2, Save, Sparkles, Terminal, Trash2, Undo2 } from 'lucide-react'
+import { Loader2, Save, Sparkles, Terminal, Trash2, Undo2 } from 'lucide-react'
 import type { LibraryCli, LibraryEntry, LibraryEntryContent, LibraryFile, LibraryItem } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { ChipGroup } from '@/components/ui/chip-group'
+import { ToggleChip } from '@/components/ui/toggle-chip'
+import { MenuItem } from '@/components/ui/menu'
+import { DetailHeader } from '@/components/layout/Detail'
+import { cliColor } from '@/lib/cli-style'
 import { SkillFiles, type FilesApi } from '@/components/library/SkillFiles'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 
@@ -57,8 +59,8 @@ export function LibraryDetail({
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [del, setDel] = useState(false)
-  const [to, setTo] = useState<string[]>([])
+  // 要删的是哪个 Agent 里的那一份（关掉「装在」的开关、或者「⋯」里删当前这一份）
+  const [del, setDel] = useState<string | null>(null)
   const [ai, setAi] = useState(false)
 
   // 编辑器当前的内容：判断「有没有未保存的改动」要用最新值，不能靠闭包里的旧值
@@ -90,7 +92,6 @@ export function LibraryDetail({
     setContent(null)
     setSaved('')
     setTree([])
-    setTo([])
     editor.current = { content: '', saved: '' }
     void load()
     // load 每次渲染都是新的函数，只在换项、换 Agent 或外面刷新时重读
@@ -116,7 +117,6 @@ export function LibraryDetail({
   const dirty = content !== null && content !== saved
   // AI 优化要改的是 md 文件：toml 格式的命令不用 AI 改，免得格式被换掉
   const canAi = kind === 'skill' || clis.find((c) => c.id === cli)?.commandFormat === 'md'
-  const targets = clis.filter((c) => c.id !== cli && (kind === 'skill' ? c.skillDir : c.commandDir))
 
   const save = async () => {
     setBusy(true)
@@ -132,7 +132,7 @@ export function LibraryDetail({
     }
   }
 
-  const copy = async (overwrite = false, ids = to) => {
+  const copy = async (overwrite = false, ids: string[]) => {
     setBusy(true)
     try {
       const r = await api.copyLibraryItem({ cli, kind, name, to: ids, overwrite })
@@ -141,7 +141,6 @@ export function LibraryDetail({
         toast.warning(t('{cli} 里已经有同名的，没有覆盖', { cli: r.skipped.map(label).join(t('、')) }), {
           action: { label: t('覆盖'), onClick: () => void copy(true, r.skipped) },
         })
-      setTo([])
       onChanged()
     } catch (e) {
       toast.error((e as Error).message)
@@ -162,94 +161,84 @@ export function LibraryDetail({
     rename: async (from, to_) => {
       await api.renameLibraryEntry({ cli, kind, name, from, to: to_ })
     },
-    reload: load,
+    // 只刷新文件树：附加文件保存、改名、删除后重读，编辑器里主文件没保存的改动不能被冲掉
+    // （主文件和附加文件共用一个编辑区后，先写主文件、再去改附加文件是常见操作）
+    reload: () => load(true),
+  }
+
+  // 能放 Skill 的 Agent 都列出来：开着的是装了的，开关就是装 / 卸（复制过去 / 删掉那一份）
+  const slots = clis.filter((c) => (kind === 'skill' ? c.skillDir : c.commandDir))
+  const toggle = (id: string, on: boolean) => {
+    if (!on) return setDel(id)
+    // 复制的是磁盘上的内容：编辑器里没保存的改动不会带过去，先说清楚
+    if (dirty) return toast.warning(t('先保存修改再装到别的 Agent'))
+    void copy(false, [id])
   }
 
   return (
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
-      <header className="flex flex-wrap items-start gap-3 border-b bg-bg px-4 py-5 md:px-8">
-        {kind === 'skill' ? (
-          <Sparkles className="mt-1 h-5 w-5 shrink-0 text-accent-text" />
-        ) : (
-          <Terminal className="mt-1 h-5 w-5 shrink-0 text-accent-text" />
-        )}
-        <div className="min-w-0 flex-[1_1_260px]">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate font-mono text-lg font-semibold">
-              {kind === 'command' ? '/' : ''}
-              {name}
-            </h2>
-            <Badge className="text-caption">{kind === 'skill' ? 'Skill' : t('命令')}</Badge>
-          </div>
-          <p className="mt-1 truncate text-body text-muted">{here[0]?.description || t('没有说明')}</p>
-          <p className="mt-0.5 truncate font-mono text-caption text-subtle">{path}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {canAi && (
-            <Button variant="secondary" onClick={() => setAi(true)} disabled={busy || content === null}>
+      <DetailHeader
+        compact
+        quietSave
+        leading={
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
+            {kind === 'skill' ? <Sparkles className="h-5 w-5" /> : <Terminal className="h-5 w-5" />}
+          </span>
+        }
+        title={(kind === 'command' ? '/' : '') + name}
+        meta={<Badge className="text-caption">{kind === 'skill' ? 'Skill' : t('命令')}</Badge>}
+        subtitle={here.find((i) => i.cli === cli)?.description || here[0]?.description || t('没有说明')}
+        save={{ status: 'idle', error: '' }}
+        actions={
+          canAi && (
+            <Button size="sm" variant="secondary" onClick={() => setAi(true)} disabled={busy || content === null}>
               <Sparkles className="h-4 w-4 text-accent-text" />
               {t('AI 优化')}
             </Button>
-          )}
-          <Button variant="danger-outline" onClick={() => setDel(true)} disabled={busy}>
+          )
+        }
+        more={
+          <MenuItem danger onSelect={() => setDel(cli)} disabled={busy}>
             <Trash2 className="h-4 w-4" />
-            {t('删除')}
-          </Button>
-        </div>
-      </header>
+            {t('删除 {cli} 里的这一份', { cli: label(cli) })}
+          </MenuItem>
+        }
+      />
 
-      <div className="mx-auto flex w-full max-w-[1000px] flex-col gap-5 px-4 pt-6 pb-12 md:px-8">
-        {here.length > 1 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-footnote text-subtle">{t('装在')}</span>
-            <ChipGroup
-              size="sm"
-              label={t('装在')}
-              options={here.map((i) => ({ id: i.cli, label: label(i.cli) }))}
-              value={cli}
-              onChange={(v) => {
-                setCli(v)
-                onPickCli(v)
+      <div className="flex w-full max-w-[1100px] flex-col gap-4 px-4 pt-5 pb-12 md:px-8">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-footnote text-subtle">{t('装在')}</span>
+          {slots.map((c) => (
+            <ToggleChip
+              key={c.id}
+              label={c.name}
+              dot={cliColor(c.id)}
+              checked={here.some((i) => i.cli === c.id)}
+              active={c.id === cli}
+              disabled={busy}
+              title={
+                here.some((i) => i.cli === c.id)
+                  ? t('关掉会删除 {cli} 里的这一份', { cli: c.name })
+                  : t('打开会复制一份到 {cli}', { cli: c.name })
+              }
+              onCheckedChange={(v) => toggle(c.id, v)}
+              onPick={() => {
+                setCli(c.id)
+                onPickCli(c.id)
               }}
             />
-          </div>
-        )}
+          ))}
+          <span className="ml-auto min-w-0 truncate font-mono text-caption text-subtle" title={path}>
+            {path}
+          </span>
+        </div>
 
         {error ? (
           <p className="text-body text-warning">{t('读取失败：{error}', { error })}</p>
         ) : content === null ? (
           <p className="text-body text-subtle">{t('读取中…')}</p>
-        ) : (
-          <section className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-body font-medium">{kind === 'skill' ? 'SKILL.md' : t('命令文件')}</h3>
-              {dirty && <span className="text-footnote text-warning">{t('未保存')}</span>}
-              <div className="ml-auto flex items-center gap-1.5">
-                {dirty && (
-                  <Button size="sm" variant="secondary" onClick={() => setContent(saved)}>
-                    <Undo2 className="h-3.5 w-3.5" />
-                    {t('重置')}
-                  </Button>
-                )}
-                <Button size="sm" onClick={save} disabled={!dirty || busy}>
-                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  {t('保存')}
-                </Button>
-              </div>
-            </div>
-            <Textarea
-              id={MAIN_EDITOR_ID}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              spellCheck={false}
-              className="h-[min(46vh,420px)] resize-none font-mono text-footnote leading-relaxed"
-              aria-label={t('内容')}
-            />
-          </section>
-        )}
-
-        {/* 命令没有附加文件（只有一个命令文件），文件树只给 Skill */}
-        {kind === 'skill' && content !== null && !error && (
+        ) : kind === 'skill' ? (
+          // 主文件和附加文件在同一个编辑区：左边文件树（SKILL.md 置顶、默认选中），右边一个编辑器
           <SkillFiles
             entries={tree}
             truncated={truncated}
@@ -257,27 +246,41 @@ export function LibraryDetail({
             mainPath="SKILL.md"
             mainDirty={dirty}
             mainEditorId={MAIN_EDITOR_ID}
+            main={{
+              content,
+              onChange: setContent,
+              dirty,
+              busy,
+              onSave: () => void save(),
+              onReset: () => setContent(saved),
+            }}
           />
-        )}
-
-        {!!targets.length && (
-          <section className="flex flex-col gap-2 border-t pt-4">
-            <span className="text-body font-medium">{t('复制给别的 Agent')}</span>
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-              {targets.map((c) => (
-                <Checkbox
-                  key={c.id}
-                  checked={to.includes(c.id)}
-                  onChange={(v) => setTo((p) => (v ? [...p, c.id] : p.filter((x) => x !== c.id)))}
-                  label={c.name}
-                />
-              ))}
-              <Button size="sm" variant="secondary" disabled={!to.length || busy || dirty} onClick={() => void copy()}>
-                <Copy className="h-3.5 w-3.5" />
-                {t('复制')}
-              </Button>
+        ) : (
+          <section className="flex flex-col gap-2">
+            <div className="flex min-h-8 flex-wrap items-center gap-2">
+              <h3 className="text-body font-medium">{t('命令文件')}</h3>
+              {dirty && <span className="text-footnote text-warning">{t('未保存')}</span>}
+              {dirty && (
+                <div className="ml-auto flex items-center gap-1.5">
+                  <Button size="sm" variant="secondary" onClick={() => setContent(saved)}>
+                    <Undo2 className="h-3.5 w-3.5" />
+                    {t('重置')}
+                  </Button>
+                  <Button size="sm" onClick={save} disabled={busy}>
+                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    {t('保存')}
+                  </Button>
+                </div>
+              )}
             </div>
-            {dirty && <p className="text-footnote text-subtle">{t('先保存修改再复制')}</p>}
+            <Textarea
+              id={MAIN_EDITOR_ID}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              spellCheck={false}
+              className="h-[min(62vh,640px)] resize-none font-mono text-footnote leading-relaxed"
+              aria-label={t('内容')}
+            />
           </section>
         )}
       </div>
@@ -303,14 +306,21 @@ export function LibraryDetail({
       )}
 
       <ConfirmDialog
-        open={del}
-        onOpenChange={setDel}
-        title={t('删除「{name}」？', { name })}
-        description={t('只删 {cli} 里的这一份，文件会从磁盘上删掉，不能撤销。', { cli: label(cli) })}
+        open={del !== null}
+        onOpenChange={(o) => !o && setDel(null)}
+        title={t('删除 {cli} 里的「{name}」？', { cli: label(del ?? cli), name })}
+        description={
+          here.length > 1
+            ? t('只删 {cli} 里的这一份，文件会从磁盘上删掉，不能撤销。', { cli: label(del ?? cli) })
+            : t('这是最后一份，删掉后所有 Agent 都用不了它，文件会从磁盘上删掉，不能撤销。')
+        }
         onConfirm={async () => {
+          const target = del ?? cli
           try {
-            await api.deleteLibraryFile(cli, kind, name)
-            setDel(false)
+            await api.deleteLibraryFile(target, kind, name)
+            setDel(null)
+            // 删的不是正在看的那一份：留在原地，刷新一下装在哪些 Agent
+            if (target !== cli) return onChanged()
             // 别的 Agent 里还有同名的：换个 Agent 继续看这一项，否则回空态
             const next = here.find((i) => i.cli !== cli)
             if (next) {
