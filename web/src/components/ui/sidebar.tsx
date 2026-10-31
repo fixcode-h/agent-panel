@@ -62,8 +62,8 @@ export function SidebarModeTabs({
             m.on ? 'seg-thumb-strong' : 'text-muted hover:bg-fg/[0.06] hover:text-fg',
           )}
         >
-          {/* 和图标栏同一套线性图标，小一号：模式是次一级的切换 */}
-          <m.icon className="h-4 w-4" strokeWidth={2.1} />
+          {/* 和图标栏同一套线性图标，小一号：模式是次一级的切换；小图标线要粗一点才不显得发虚 */}
+          <m.icon className="h-4 w-4" strokeWidth={2.5} />
         </button>
       ))}
     </div>
