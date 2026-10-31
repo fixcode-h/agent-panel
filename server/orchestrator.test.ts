@@ -520,11 +520,10 @@ test('list_conversations：父对话能看到子对话在做什么、在等什�
     assert.match(text, /等 1 个后台命令/)
     assert.match(text, /在做：跑测试/)
     assert.match(text, /最后活动/)
-    // 每轮的「现有子对话」段不带逐分钟变的时间（会让整段每轮重发）：只有执行中、静默过阈值的标一句
+    // 每轮的「现有子对话」段不带逐分钟变的时间（会让整段每轮重发）：要看多久没输出用上面的 list_conversations
     const section = call.prompt.split('## 现有子对话')[1]?.split('\n## ')[0] ?? ''
-    assert.doesNotMatch(section, /最后活动|分钟前/)
-    assert.match(section, /c2｜改前端｜[^\n]*已超过 10 分钟没有新输出/)
-    assert.doesNotMatch(section, /c1｜[^\n]*没有新输出/, '在等后台命令的不标')
+    assert.match(section, /c2｜改前端/)
+    assert.doesNotMatch(section, /最后活动|分钟前|没有新输出/)
     return { ok: true, text: '好' }
   })
   h.agents = [agent('m', '协调', { canDelegate: true })]

@@ -2035,7 +2035,14 @@ async function runAgent(
         // 保活进程里的下一条消息：以前原样交给 CLI，计划状态、子对话发来的消息、授权变化都带不进去。
         // 交给调用方按当前状态补上变了的段落（见 shared/prompt-delta.ts）；子任务结果、/命令照旧原样
         if (text !== null && fromUser && call.nextPrompt && !text.trim().startsWith('/'))
-          return await call.nextPrompt(text).catch(() => text)
+          return await call.nextPrompt(text).catch((e) => {
+            // 拼不出带状态的提示时退回原文照常交给 CLI（用户的话不能丢），但要留日志，不悄悄吞掉
+            log.warn('task', '保活的下一条消息没能补上当前状态，按原文交给 CLI', {
+              task: task.id,
+              error: (e as Error).message,
+            })
+            return text
+          })
         return text
       }
     : undefined

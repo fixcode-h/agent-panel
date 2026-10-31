@@ -99,16 +99,7 @@ import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from './test-step
 import { parseVerdict } from './verdict.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
-import {
-  beginTurn,
-  CHILD_STALE_MS,
-  convStateText,
-  endTurn,
-  pauseStep,
-  stopReasonText,
-  timeAgo,
-  withAttachments,
-} from './task.ts'
+import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { isPlainChat } from './conv-mode.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
@@ -1436,8 +1427,9 @@ function planPart(host: EngineHost, coordinator: boolean): string[] {
   // 当前计划和维护规则分成两段：计划每轮都在变，规则不变，续接会话时只重发前一段（见 shared/prompt-delta.ts）
   return [
     `## 执行计划\n${now}`,
-    // 进度一句（「已 N 分钟」每分钟都变）单独成段：计划没动时只重发这一句，不连计划全文
-    check ? `## 计划进度\n${check}` : '',
+    // 进度一句（「已 N 分钟」每分钟都变）单独成段：计划没动时只重发这一句，不连计划全文。
+    // 这一段总要有：变空了会被列进「不再适用的规则」，计划收起或只剩收尾那一轮，模型会以为计划不用管了
+    `## 计划进度\n${check || (cur ? '没有进行中或待做的步骤：前面的都做完了，就接着做计划最后的收尾步骤。' : '没有进行中的计划。')}`,
     `## 计划怎么维护
 - 需要好几步才能做完的事（改代码、排查问题、跨模块、要测试验证），分析梳理完先用 set_plan 列出计划再动手；一问一答、一两行的小改动不用列。
 - 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
@@ -4133,21 +4125,15 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     const done = all.filter((c) => c.resolved).sort((a, b) => (b.at > a.at ? 1 : b.at < a.at ? -1 : 0))
     const hidden = new Set(done.slice(RECENT_DONE_CHILDREN).map((c) => c.id))
     const list = all.filter((c) => !hidden.has(c.id))
-    // 这一段按全文记指纹（shared/prompt-delta.ts），逐分钟变的「最后活动 N 分钟前」会让整段每轮重发；
-    // 卡住了面板会自动询问、重启（ADR 0036），父对话只需要「执行中却很久没输出」这一个事实，精确时间用 list_conversations 查。
-    // 用 state（等于 CLI 在处理这一轮），不用 busy：排队、收尾中的本来就没有输出
-    const quiet = (c: (typeof all)[number]) =>
-      c.state === 'running' &&
-      !c.waiting &&
-      !!c.lastActivityAt &&
-      Date.now() - Date.parse(c.lastActivityAt) >= CHILD_STALE_MS
+    // 这一段按全文记指纹（shared/prompt-delta.ts），逐分钟变的「最后活动 N 分钟前」会让整段每轮重发，不放进来。
+    // 卡住了面板会自动询问、重启（ADR 0036），父对话要看多久没输出时用 list_conversations 查
     parts.push(
       `## 现有子对话\n${
         list.length
           ? list
               .map(
                 (c) =>
-                  `- ${c.id}｜${c.title}｜${c.busy ? '执行中' : c.status}${c.waiting ? `｜${c.waiting}` : ''}${quiet(c) ? `｜已超过 ${CHILD_STALE_MS / 60_000} 分钟没有新输出（详情用 list_conversations 查）` : ''}：${clip(c.summary, 200) || '（还没有结果）'}`,
+                  `- ${c.id}｜${c.title}｜${c.busy ? '执行中' : c.status}${c.waiting ? `｜${c.waiting}` : ''}：${clip(c.summary, 200) || '（还没有结果）'}`,
               )
               .join('\n')
           : '（还没有子对话）'

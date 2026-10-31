@@ -260,4 +260,14 @@ test('续接只发增量：改动清单变了只重发「本轮该跑的测试�
   await say(h, '接着改')
   assert.match(calls[2].prompt, /## 计划进度/)
   assert.doesNotMatch(calls[2].prompt, /## 执行计划|## 计划怎么维护|## 本轮该跑的测试步骤/)
+  // 计划里的步骤都做完了（只剩面板加的收尾，或整份收起）：「计划进度」照样在，不会被当成作废的规则
+  applyPlan(h.task, {
+    steps: [
+      { id: '1', title: '改页面', status: 'done' },
+      { id: '2', title: '收尾', status: 'done' },
+    ],
+    partial: true,
+  })
+  await say(h, '都做完了')
+  assert.doesNotMatch(calls[3].prompt, /## 不再适用的规则/)
 })
