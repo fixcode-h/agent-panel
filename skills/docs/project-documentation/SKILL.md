@@ -28,19 +28,20 @@ user-invocable: true
 1. 项目设置或工作流参数里给了文档根，就用它。
 2. 项目里已有文档目录（`docs/`、`doc/`、`Docs/` 或配置里指定的位置）时用它，不另起一套。
 3. 没有时普通项目用 `PROJECT_ROOT/docs`。
-4. 项目由 P4 管理、文档和代码要分开提交时，`DOC_ROOT = <共同外层目录>/ProjectDoc/doc/<项目文件夹名>`，文档不写回 `PROJECT_ROOT`。
+4. 项目由 P4 或 SVN 管理时按「文档」角色的文档位置：默认 `DOC_ROOT = <PROJECT_ROOT 的上一级目录>/docs`（和项目文件夹同级），可设成 `PROJECT_ROOT/docs`。面板在提示里给了「文档根」一段时以它为准。
+   - `DOC_ROOT` 在 `PROJECT_ROOT` 外面时，文档只落盘：不 `p4 add` / `p4 edit` / `p4 reconcile`、不放进任何 changelist，SVN 不 `svn add`；交接和总结里单独列成「项目外文档（不纳入版本管理）」。在项目里面时随项目正常纳管。
 5. 仓库只读、或者项目根下不宜放文档时，问用户要一个位置，不要猜。
 
 代码、构建和测试命令在 `PROJECT_ROOT` 执行；文档和变更状态在 `DOC_ROOT` 管理。
 
 ## AGENTS.md 和 DOC_ROOT 的分工
 
-| 文件 | 给谁看 | 写什么 | 不写什么 |
-| --- | --- | --- | --- |
+| 文件                     | 给谁看                   | 写什么                                                                  | 不写什么                     |
+| ------------------------ | ------------------------ | ----------------------------------------------------------------------- | ---------------------------- |
 | `PROJECT_ROOT/AGENTS.md` | 每次对话都会读它的 Agent | 一句话项目说明、硬规则、常用命令、目录速览、文档地图（指向 `DOC_ROOT`） | 模块细节、架构长文、历史记录 |
-| `PROJECT_ROOT/CLAUDE.md` | Claude Code | 只有一行 `@AGENTS.md`，规则只维护 AGENTS.md 一份 | 和 AGENTS.md 重复的内容 |
-| `DOC_ROOT/README.md` | 人和 Agent | 项目是什么、怎么开始、文档索引 | 完整架构、任务清单 |
-| `DOC_ROOT/MODULE-MAP.md` | 人和 Agent | 模块路径、职责、入口、关联文档 | 模块内部实现 |
+| `PROJECT_ROOT/CLAUDE.md` | Claude Code              | 只有一行 `@AGENTS.md`，规则只维护 AGENTS.md 一份                        | 和 AGENTS.md 重复的内容      |
+| `DOC_ROOT/README.md`     | 人和 Agent               | 项目是什么、怎么开始、文档索引                                          | 完整架构、任务清单           |
+| `DOC_ROOT/MODULE-MAP.md` | 人和 Agent               | 模块路径、职责、入口、关联文档                                          | 模块内部实现                 |
 
 AGENTS.md 每次对话都占上下文，保持在 150 行以内；超出的细节挪进 `DOC_ROOT` 的专题文档，AGENTS.md 里只留一行指针。P4 项目的 AGENTS.md 仍在 `PROJECT_ROOT`（随代码提交），文档地图指向外部的 `DOC_ROOT`。
 
@@ -155,19 +156,19 @@ DOC_ROOT/
 
 只更新受影响的文档：
 
-| 变化 | 必须检查 |
-| --- | --- |
-| 新的硬规则、常用命令、目录或文档位置变化 | `AGENTS.md` |
-| 新增或修改领域术语 | `CONTEXT.md`，必要时 `CONTEXT-MAP.md` |
-| 对外行为变化 | 当前 change 的 `specs/`；交付后更新 `openspec/specs/` |
-| 模块职责、入口、依赖或数据流变化 | `modules/<模块名>/README.md`（同步状态）、`MODULE-MAP.md`，必要时 `architecture.md` |
-| 用户报的 Bug 修复后：根因、修复路径或防复发规则 | 新增或改写 `modules/<模块名>/bugs/<bug-id>.md`，再重新生成同目录 `bugs.md` |
-| 难以逆转的技术取舍 | `adr/` |
-| API、资源格式或持久化变化 | 对应 `tech/` 契约 |
-| 构建、部署、迁移或排障变化 | 对应 `runbooks/` |
-| 人类协作方式变化 | `contributing.md` |
-| 用户可感知的发布变化 | `CHANGELOG.md` |
-| P4 文件纳入、编辑、shelve、编译或 pending 变化 | `p4change/<任务标识>.p4change.md` |
+| 变化                                            | 必须检查                                                                            |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 新的硬规则、常用命令、目录或文档位置变化        | `AGENTS.md`                                                                         |
+| 新增或修改领域术语                              | `CONTEXT.md`，必要时 `CONTEXT-MAP.md`                                               |
+| 对外行为变化                                    | 当前 change 的 `specs/`；交付后更新 `openspec/specs/`                               |
+| 模块职责、入口、依赖或数据流变化                | `modules/<模块名>/README.md`（同步状态）、`MODULE-MAP.md`，必要时 `architecture.md` |
+| 用户报的 Bug 修复后：根因、修复路径或防复发规则 | 新增或改写 `modules/<模块名>/bugs/<bug-id>.md`，再重新生成同目录 `bugs.md`          |
+| 难以逆转的技术取舍                              | `adr/`                                                                              |
+| API、资源格式或持久化变化                       | 对应 `tech/` 契约                                                                   |
+| 构建、部署、迁移或排障变化                      | 对应 `runbooks/`                                                                    |
+| 人类协作方式变化                                | `contributing.md`                                                                   |
+| 用户可感知的发布变化                            | `CHANGELOG.md`                                                                      |
+| P4 文件纳入、编辑、shelve、编译或 pending 变化  | `p4change/<任务标识>.p4change.md`                                                   |
 
 没涉及的文档不强制修改；涉及但没同步更新时，验收记录里写明原因或判定为缺项。
 
@@ -186,7 +187,7 @@ DOC_ROOT/
 明确要「初始化文档结构」或「初始化项目」时执行。先读项目，后写文档；不对整个源码树做全文搜索。
 
 1. **确定两个根**：按路径模型确定 `PROJECT_ROOT` 和 `DOC_ROOT`；P4 项目的文档不写回项目目录。
-2. **读项目**：已有的 AGENTS.md / CLAUDE.md / README / 文档目录；依赖清单和构建配置（package.json、Cargo.toml、go.mod、*.uproject、*.sln、CMakeLists.txt 等）；scripts、Makefile、CI 配置；格式和检查配置（.editorconfig、Prettier、ESLint、clang-format 等）；一级和二级目录；Git 项目再看最近 20 条提交说明，了解提交约定。
+2. **读项目**：已有的 AGENTS.md / CLAUDE.md / README / 文档目录；依赖清单和构建配置（package.json、Cargo.toml、go.mod、_.uproject、_.sln、CMakeLists.txt 等）；scripts、Makefile、CI 配置；格式和检查配置（.editorconfig、Prettier、ESLint、clang-format 等）；一级和二级目录；Git 项目再看最近 20 条提交说明，了解提交约定。
 3. **AGENTS.md**：不存在就按 `templates.md` 的骨架新建；已存在就保留原有内容和结构，只补缺的段落（常用命令、目录速览、文档地图等），修正和项目实际不符的命令和路径。命令必须是项目里真实存在的，不编 `npm run xxx`。
 4. **CLAUDE.md**：不存在时新建，只写一行 `@AGENTS.md`；已存在但没引用 AGENTS.md 时在末尾追加一行 `@AGENTS.md`；已有内容不删。
 5. **DOC_ROOT/README.md 和 MODULE-MAP.md**：按 `templates.md` 写；已有的人工文档不覆盖，只补缺的段落和模块行。

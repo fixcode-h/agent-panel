@@ -87,6 +87,7 @@ import { clip } from './text.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
+import { docRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
 import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
@@ -555,6 +556,8 @@ export interface Orchestra {
   }
   /** P4 工作区：按文件类型把改动分进各自的 pending（面板执行，不是 P4 项目时没有） */
   p4Split?: EngineHost['p4Split']
+  /** 项目设了 cherry-pick 目标：由面板核对后搬（只收这个对话自己的提交 / 改动，见 server/cherry-pick.ts） */
+  cherryPick?: EngineHost['cherryPick']
 }
 
 /** p4_split_changelists 的参数：从哪个 changelist 分、只分哪些文件、每类一句描述 */
@@ -585,6 +588,7 @@ export interface EngineHost {
     tools: string[]
     /** 项目设置的 cherry-pick 目标（见 Project.cherryPick）：vcs 是项目目录的版本管理，按它说清怎么搬 */
     cherryPick?: { vcs: 'git' | 'p4'; target: string }
+    docs?: DocRootInfo
   }
   /** 这一轮是「继续流程」，不是新的要求：停在某个节点结论上的流程从那个节点重新检查后接着走 */
   resume?: boolean
@@ -826,6 +830,7 @@ export interface EngineHost {
   }
   /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
   p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
+  cherryPick?: (input: { commits?: string[]; changelist?: string }) => Promise<{ ok: boolean; info: string }>
 }
 
 /** Agent 用 record_lesson 记的一条教训 */
@@ -1334,7 +1339,7 @@ function p4Rules(host: EngineHost) {
 - [XLSX]（表格）：.xlsx / .xlsm / .xlsb / .xls / .csv
 - [Lua]：.lua（只提交源码，不编译成 .luac，也不提交 .luac）
 - [Other]：其余要提交的代码、资源和配置
-`
+${p4DocsSkip(host.policy?.docs)}`
   if (host.p4Split)
     return `${head}调用 p4_split_changelists 分：面板按上面的类型建 pending 并挪文件，你只在 descriptions 里给这次有文件的每一类写一句中文描述（25 字以内，只说改了什么，不带标签；超长会被退回）。default 里有不属于这次任务的文件时用 files 只列本次的；已经混在一个 pending 里的用 from 写它的编号拆开。本来就在你已有 pending 里的文件留在原处。看它返回的编号和回读结果，`
   return `${head}只建这次真的有文件的类型；本来就在你（当前用户、当前 client）已有 pending 里的文件留在原 changelist，不挪别人的。新建用 p4 change -i 读 UTF-8 临时文件，再 p4 reopen -c <编号> <文件>；描述只写一行「[类型] 中文短句」（25 字以内，只说改了什么）。用 p4 opened -c <编号> 核对每个文件、p4 describe -s 回读确认描述没有乱码，`
@@ -1519,7 +1524,7 @@ function commonPart(host: EngineHost, w?: Workflow, chat = false, helper = false
     // 对话（含它派出的子任务）用不到共享状态：对话里跑过 start_plan 后 task.runs 会留着上一次运行，
     // 注入旧状态会让模型去调根本没注册的 read_state / write_state
     chat ? '' : statePart(host.task),
-    helper ? HELPER_POLICY : policyPart(host),
+    [helper ? HELPER_POLICY : policyPart(host), docRootText(host.policy?.docs)].filter(Boolean).join('\n\n'),
     goalPart(host),
     rulesPart(host),
     searchPart(host),
@@ -3350,6 +3355,7 @@ function makeOrchestra(
         }
       : undefined,
     p4Split: host.p4Split,
+    cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
     status: () => statusTree(host, self.id),
     spawn(tasks, step, opts) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }
@@ -4070,7 +4076,7 @@ async function conversationPrompt(
   const parts = [
     `## 用户这次的消息\n${host.prompt}`,
     promptLangRules(),
-    policyPart(host),
+    [policyPart(host), docRootText(host.policy?.docs)].filter(Boolean).join('\n\n'),
     cherryPickPart(host),
     goalPart(host),
     rulesPart(host),

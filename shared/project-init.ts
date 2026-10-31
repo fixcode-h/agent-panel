@@ -280,7 +280,7 @@ export function buildProjectInitPrompt(opts: {
 读已有的 AGENTS.md / CLAUDE.md / README / 文档目录；依赖清单和构建配置（package.json、Cargo.toml、go.mod、*.uproject、*.sln、CMakeLists.txt 等）；scripts、Makefile、CI 配置；格式和检查配置（.editorconfig、Prettier、ESLint、clang-format 等）；一级和二级目录。Git 项目看一下最近 20 条提交说明。不要对整个源码树全文搜索。`,
     `## 第二步：写文档
 有 project-documentation 技能时按它的「初始化」一节和 templates.md 的骨架做；没有时按下面的要求：
-1. **确定文档根 DOC_ROOT**：项目里已有 docs/、doc/ 就用它；没有用 <项目>/docs；P4 项目（目录或上层有 .p4config / .p4ignore）放到 <共同外层目录>/ProjectDoc/doc/<项目文件夹名>，不写回项目目录。
+1. **确定文档根 DOC_ROOT**：项目里已有 docs/、doc/ 就用它；没有用 <项目>/docs；P4 / SVN 项目（目录或上层有 .p4config / .p4ignore / .svn）按「文档」角色的文档位置：默认放到和项目文件夹同级的 docs（项目上一级目录下的 docs），那里的文档不做 P4 / SVN 操作；设成项目内 docs 时用 <项目>/docs。提示里有「文档根」一段时以它为准。
 2. **AGENTS.md**（项目根）：不存在就新建，包含一句话项目说明、技术栈和目录速览、硬规则（从现有约定和检查配置里读出来的）、常用命令（只写项目里真实存在的命令）、文档地图（指向 DOC_ROOT 的 README 和 MODULE-MAP）、提交前要过的检查。已存在就保留原有内容和结构，只补缺的段落、修正和项目实际不符的命令和路径。整份控制在 150 行以内。
 3. **CLAUDE.md**：不存在时新建，只写一行 \`@AGENTS.md\`；已存在但没引用 AGENTS.md 时在末尾加一行 \`@AGENTS.md\`，原有内容不删。
 4. **DOC_ROOT/README.md**：项目是什么、快速开始、文档索引。**DOC_ROOT/MODULE-MAP.md**：模块表（模块、路径、职责、入口、文档链接、状态）。已有的人工文档不覆盖，只补缺的。

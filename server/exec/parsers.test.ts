@@ -470,6 +470,41 @@ test('Pi：面板工具是裸名字，记成 MCP 调用，不当成子 Agent', (
   assert.equal(tool.tool.label, 'panel · wait_agents')
 })
 
+test('加载工具定义（ToolSearch / tool_search）显示成「查询 MCP 工具」，不按参数里的面板工具名显示', () => {
+  const parse = claudeParser(CWD)
+  const ev = parse({
+    type: 'assistant',
+    message: {
+      id: 'm-ts',
+      content: [
+        {
+          type: 'tool_use',
+          id: 'ts1',
+          name: 'ToolSearch',
+          input: { query: 'select:mcp__panel__finish_child', max_results: 3 },
+        },
+      ],
+    },
+  })
+  const tool = ev.find((e) => e.type === 'tool')
+  assert.ok(tool && tool.type === 'tool')
+  assert.equal(tool.tool.kind, 'search')
+  assert.equal(tool.tool.name, '查询 MCP 工具')
+  assert.equal(tool.tool.label, 'finish_child')
+
+  const pi = parserFor('pi', CWD)
+  const pev = pi({
+    type: 'tool_execution_start',
+    toolName: 'tool_search',
+    toolCallId: 't1',
+    args: { query: 'slack send' },
+  })
+  const ptool = pev.find((e) => e.type === 'tool')
+  assert.ok(ptool && ptool.type === 'tool')
+  assert.equal(ptool.tool.name, '查询 MCP 工具')
+  assert.equal(ptool.tool.label, 'slack send')
+})
+
 test('带服务名前缀的面板工具也认得出：run_background 不能因为名字里有 run 被当成 CLI 自己的命令', () => {
   const parse = parserFor('pi', CWD)
   for (const name of ['panel_run_background', 'mcp__panel-1a2b__run_background', 'mcp_panel-1a2b_run_background']) {

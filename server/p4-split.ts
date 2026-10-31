@@ -1,4 +1,5 @@
 import { childEnv, runProcess } from './exec/process.ts'
+import { isInside } from '../shared/doc-root.ts'
 
 /**
  * P4 按文件类型分 changelist：C++、表格、Lua、其他各放一个 pending。
@@ -105,18 +106,53 @@ export interface P4SplitInput {
   descriptions: Partial<Record<P4Bucket, string>>
 }
 
+export interface P4SplitOptions {
+  /**
+   * 项目外的文档根（见 shared/doc-root.ts）：这里面的文件不分、不挪，原样留着并列出来。
+   * 提示词已经要求不纳管项目外的文档，这里再兜一层：Agent 照习惯 p4 add 了，也不会被分进 [Other] 一起交
+   */
+  skipUnder?: string
+}
+
+/** 按本地路径挑出 skipUnder 下面的文件；p4 where 失败时一个也不挑（不能因为查不到就把正常文件漏分） */
+async function filesUnder(run: P4Run, depotFiles: string[], dir: string) {
+  const r = await run(['-ztag', 'where', ...depotFiles])
+  const out = new Set<string>()
+  for (const x of parseZtag(r.out)) if (x.depotFile && x.path && isInside(x.path, dir)) out.add(x.depotFile)
+  return out
+}
+
 /**
  * 按类型把文件分进各自的新 pending。缺哪类的描述就先不动，列出各类文件让 Agent 补上再调；
  * 从编号的 changelist 分时，挪空了就删掉它（空的 pending 留着只会让人以为还有东西没交）
  */
-export async function splitChangelists(run: P4Run, input: P4SplitInput): Promise<{ ok: boolean; info: string }> {
+export async function splitChangelists(
+  run: P4Run,
+  input: P4SplitInput,
+  opts: P4SplitOptions = {},
+): Promise<{ ok: boolean; info: string }> {
   const from = (input.from ?? '').trim() || 'default'
   if (from !== 'default' && !/^\d+$/.test(from))
     return { ok: false, info: `from 写 default 或 pending changelist 的编号，不是「${from}」` }
   const files = (input.files ?? []).map((f) => f.trim()).filter(Boolean)
   const opened = await run(['-ztag', 'opened', '-c', from, ...files])
   // 没有打开的文件时 p4 把「file(s) not opened」写在 stderr、退出码不一定是 0
-  const recs = parseZtag(opened.out).filter((r) => r.depotFile)
+  const all = parseZtag(opened.out).filter((r) => r.depotFile)
+  const skipped =
+    opts.skipUnder && all.length
+      ? await filesUnder(
+          run,
+          all.map((r) => r.depotFile),
+          opts.skipUnder,
+        )
+      : new Set<string>()
+  const recs = all.filter((r) => !skipped.has(r.depotFile))
+  // 项目外文档没被分：告诉 Agent 它们不该纳管，交给用户决定要不要撤（Agent 自己不 revert）
+  const skipNote = skipped.size
+    ? `\n项目外文档根 ${opts.skipUnder} 里的 ${skipped.size} 个文件没分、原样留着：${[...skipped].join('、')}。项目外的文档不纳入 P4，这些是之前误 add / edit 的，你不 revert，把这句原样告诉用户，由用户决定要不要撤出 changelist。`
+    : ''
+  if (!recs.length && skipped.size)
+    return { ok: false, info: `changelist ${from} 里除了项目外的文档没有要分的文件。${skipNote}` }
   if (!recs.length)
     return {
       ok: false,
@@ -187,7 +223,7 @@ export async function splitChangelists(run: P4Run, input: P4SplitInput): Promise
   }
 
   let tail = ''
-  if (from !== 'default' && !files.length) {
+  if (from !== 'default' && !files.length && !skipped.size) {
     const del = await run(['change', '-d', from])
     tail = del.ok
       ? `\n原来的 ${from} 已经挪空，已删除。`
@@ -197,7 +233,7 @@ export async function splitChangelists(run: P4Run, input: P4SplitInput): Promise
     run,
     recs.map((r) => r.depotFile),
   )
-  return { ok: true, info: `已按类型分好（没有 submit）：\n${done.join('\n')}${tail}${stale}` }
+  return { ok: true, info: `已按类型分好（没有 submit）：\n${done.join('\n')}${tail}${stale}${skipNote}` }
 }
 
 /**

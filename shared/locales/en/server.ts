@@ -79,6 +79,7 @@ export const EN_SERVER: Record<string, string> = {
   失败: 'Failed',
   工具: 'Tool',
   网页搜索: 'Web search',
+  '查询 MCP 工具': 'Look up MCP tools',
   查看图片: 'View image',
   查找文件: 'Find files',
   打开网页: 'Open web page',

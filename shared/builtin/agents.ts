@@ -1,5 +1,6 @@
 import type { AgentInput, AgentMount, AgentParam } from '../schema.ts'
 import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../review-limits.ts'
+import { DOC_PLACE_KEY, DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 
 /**
  * 内置 Agent：按「需求 → 设计 → 实现 → 验收 → 文档 → 版本控制」和美术资产链整理的一套角色，
@@ -52,7 +53,7 @@ const SCENE = p({
 })
 export const SCENE_TEXT = `{{#if scene}}
 先只读识别现场（不改文件）：
-1. 确定 PROJECT_ROOT 和 DOC_ROOT：Git / 普通项目的文档根是项目下的 docs；P4 项目的文档根是所有项目共同外层目录下的 ProjectDoc/doc/<项目文件夹名>。
+1. 确定 PROJECT_ROOT 和 DOC_ROOT：提示里有面板给的「文档根」一段时以它为准；否则 Git / 普通项目的文档根是项目下的 docs，P4 / SVN 项目默认是和项目文件夹同级的 docs（在项目外，那里的文档不做 P4 / SVN 操作）。
 2. 记录版本控制基线：Git 的分支、HEAD、未提交改动；P4 的 client、stream 和限定路径下的 opened 文件。这些是用户已有的改动，后面的步骤不能认领或覆盖。
 3. 读 DOC_ROOT 下的 README、MODULE-MAP 和相关模块的 README、bugs.md，按文档定位代码；文档定位不到时再限定范围搜（按「搜索范围」的规则带排除，不扫全仓）。
 结果开头先写：工作区类型、PROJECT_ROOT、DOC_ROOT、基线和已有改动，以及相关模块、关键文件、已知的历史 Bug（后面的节点会直接用）。
@@ -621,7 +622,15 @@ Bug 记录只记用户报的 Bug：用户提出的问题经分析、修复并验
         label: '文档根',
         type: 'text',
         default: '',
-        description: '留空按规则自己确定：已有 docs/ 或 doc/ 就用它，没有就用 docs/，P4 项目放到外层的 ProjectDoc',
+        description: '留空按规则自己确定：已有 docs/ 或 doc/ 就用它，没有就用 docs/；P4 / SVN 项目按下面的「文档位置」',
+      }),
+      p({
+        key: DOC_PLACE_KEY,
+        label: '文档位置',
+        options: DOC_PLACES,
+        default: DOC_PLACE_SIBLING,
+        description:
+          '只对 P4 和 SVN 项目生效：项目同级 docs 是和项目文件夹并排的 docs，写进去的文档不做 P4 / SVN 操作；项目内 docs 是项目下的 docs，随项目纳管',
       }),
       p({
         key: 'lang',
@@ -657,7 +666,8 @@ Bug 记录只记用户报的 Bug：用户提出的问题经分析、修复并验
     instructions: `你负责这个项目的文档，是项目文档的唯一出口：别的角色交给你的内容，和这次改动该同步的文档，都由你按规则落盘。只写有证据的事实。
 
 ## 落盘规则
-1. 先确定 PROJECT_ROOT 和 DOC_ROOT。{{#if docRoot}}这个项目的文档根是 {{docRoot}}，所有文档都写在它下面。{{else}}按 project-documentation 的路径模型确定：已有 docs/ 或 doc/ 就用它，没有时用 PROJECT_ROOT/docs，P4 项目放到外层的 ProjectDoc/doc/<项目文件夹名>。{{/if}}
+1. 先确定 PROJECT_ROOT 和 DOC_ROOT。提示里有面板给的「文档根」一段时以它为准。{{#if docRoot}}这个项目的文档根是 {{docRoot}}，所有文档都写在它下面。{{else}}按 project-documentation 的路径模型确定：Git 和没有版本控制的项目，已有 docs/ 或 doc/ 就用它，没有时用 PROJECT_ROOT/docs；P4 和 SVN 项目{{#if docPlace=项目内 docs}}用 PROJECT_ROOT/docs{{else}}用和项目文件夹同级的 docs（PROJECT_ROOT 的上一级目录下的 docs）{{/if}}。{{/if}}
+   P4 / SVN 项目的文档根在 PROJECT_ROOT 外面时，写完的文档只落盘：不 p4 add / edit / reconcile、不放进任何 changelist，SVN 不 svn add；结果里把它们列成「项目外文档（不纳入版本管理）」，别交给版本控制收尾。文档根在项目里面时按项目的版本控制正常纳入。
 2. 每份文档按 project-documentation 的「推荐结构」放到对应位置：模块说明进 modules/<模块>/README.md，Bug 进 modules/<模块>/bugs.md 和 bugs/<id>.md，长期决策进 adr/，跨模块契约进 tech/，操作步骤进 runbooks/，变更提案进 openspec/changes/<change>/。
 3. 不在文档根以外的地方建文档，不在项目根随手放 notes.md、plan.md 这类文件；临时的计划和过程记录也放进对应的 change 目录。
 4. 先读已有的同类文档，改已有的段落，不另起一份重复的；文件名用小写和连字符。
@@ -1454,6 +1464,7 @@ ${VCS_TEXT}
 
 {{#if commit=只检查}}只检查不提交：列出本次任务的改动（限定范围的 diff / opened / status），指出范围外的改动、临时文件、遗漏的文件。{{else}}
 - Git：只提交本次任务的文件，按功能拆成本地提交，提交前跑一遍验证；提交说明写清改了什么。不 push、不切分支；合并按上面的合并审查工序做，不替父对话合并到主干。
+- 项目外的文档根（P4 / SVN 项目的文档默认放在和项目同级的 docs）里的文档不纳入版本控制：不 add / edit，不放进 changelist，只在清单里单独列出。
 - P4：核对 default changelist 里只有本次任务的文件，按 [C++]、[XLSX]、[Lua]、[Other] 分到各自的 pending；描述写一行「[类型] 中文短句」，25 字以内，只说改了什么，不写实现细节、函数名和文件列表（细节留在文档里）；用 UTF-8 临时文件写入后 p4 describe 回读确认没有乱码。不 submit。
 - SVN：逐个 svn add / svn delete，用限定路径的 status 和 diff 核对；svn commit 等于提交到远端，由父对话决定，不提交。
 - 无版本控制：列出改动清单和验证结果，说明没有可纳入的版本控制。

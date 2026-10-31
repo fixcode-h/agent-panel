@@ -40,7 +40,7 @@ user-invocable: true
 
 ## 阶段 2 · 落规范
 
-1. `/opsx-propose` 将 proposal.md、specs/、design.md、tasks.md 写入 `DOC_ROOT/openspec/changes/<change>/`。普通项目 `DOC_ROOT` 是 `PROJECT_ROOT/docs`；P4 项目是外部 `ProjectDoc/doc/<实际项目文件夹名>`，不得写回 P4 项目目录。`grilling.md` 作为 design.md 的决策依据保留。
+1. `/opsx-propose` 将 proposal.md、specs/、design.md、tasks.md 写入 `DOC_ROOT/openspec/changes/<change>/`。普通项目 `DOC_ROOT` 是 `PROJECT_ROOT/docs`；P4 / SVN 项目按「文档」角色的文档位置，默认是和项目文件夹同级的 `docs`（在项目外，不做 P4 / SVN 操作）。`grilling.md` 作为 design.md 的决策依据保留。
 2. proposal 必须写明**非目标**和**可核对的验收标准**；specs 的每条需求都要能被验收步骤逐条对上。
 3. `tasks.md` 的形状：按可验收能力分组，保持 3–7 组；每条 task 写明验证方式（命令或检查步骤）和对应的 spec 需求。勾选的含义是「验证已通过」，不是「代码已写完」。
 4. 建立 `acceptance.md` 骨架：逐条列出 spec 需求、对应验证方式、状态（待验证），并留出「本轮成本观察」三项（非必要用户打断次数、重复探索、验证失败及修复）。阶段 3、4 往里填证据。

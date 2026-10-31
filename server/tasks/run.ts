@@ -59,6 +59,8 @@ import { markChildWrapUp } from '../../shared/plan.ts'
 import { childFilesInfo, collisionNotice, normClaimPath, scopeOverlaps } from '../claims.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { p4Runner, splitChangelists } from '../p4-split.ts'
+import { projectDocRoot } from '../doc-root.ts'
+import { cherryPickFor } from '../cherry-pick.ts'
 import { TaskBusyError, isolated, parentRunRole, isP4, planWrapUp } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 
@@ -363,7 +365,16 @@ export function createRun(sc: TasksScope) {
         // P4 项目里的对话和节点都能用：分 changelist 由面板照类型执行，不靠 Agent 自己记得分（见 p4-split.ts）
         p4Split:
           dir && project?.path && (await isP4(project.path))
-            ? (input) => splitChangelists(p4Runner(dir), input)
+            ? async (input) => {
+                // 项目外的文档根里的文件不分（见 shared/doc-root.ts）：分之前现算，项目设置改了下一次就按新的
+                const docs = await projectDocRoot(project.path, agents, 'p4')
+                return splitChangelists(p4Runner(dir), input, docs?.outside ? { skipUnder: docs.root } : {})
+              }
+            : undefined,
+        // 项目设了 cherry-pick 目标的顶层对话：由面板核对后搬，只收这个对话自己的提交 / 改动（用户 2026-10-31 定的强制要求）
+        cherryPick:
+          !task.parentTaskId && dir && project?.path && project.cherryPick?.trim()
+            ? await cherryPickFor(dir, project.path, project.cherryPick.trim(), () => entry.task)
             : undefined,
         // 不管用哪种版本管理，子对话都要请父对话收尾：评审、测试、交接和父对话验收挂在这一步上（独立分支还要合回）
         submitMerge:

@@ -103,3 +103,34 @@ test('拆一个混在一起的 pending：挪空后删掉原来的；只有一类
   assert.equal(r2.ok, true)
   assert.ok(!one.calls.some((c) => c.args[0] === 'change'))
 })
+
+test('项目外文档根里的文件不分、不挪，原样留着并告诉 Agent', async () => {
+  const p4 = fakeP4(['//g/Client/Source/Slot.cpp', '//g/docs/modules/ui/README.md'])
+  const where = p4.run
+  const run: P4Run = async (args, stdin) => {
+    if (args[1] === 'where') {
+      await where(args, stdin)
+      return {
+        ok: true,
+        out: '... depotFile //g/Client/Source/Slot.cpp\n... path D:\\G\\Client\\Source\\Slot.cpp\n\n... depotFile //g/docs/modules/ui/README.md\n... path D:\\G\\docs\\modules\\ui\\README.md\n',
+        err: '',
+      }
+    }
+    return where(args, stdin)
+  }
+  const r = await splitChangelists(run, { descriptions: { 'C++': '插槽描边' } }, { skipUnder: 'D:\\G\\docs' })
+  assert.equal(r.ok, true, r.info)
+  const moved = p4.calls.filter((c) => c.args[0] === 'reopen').flatMap((c) => c.args)
+  assert.ok(moved.includes('//g/Client/Source/Slot.cpp'))
+  assert.ok(!moved.includes('//g/docs/modules/ui/README.md'))
+  assert.match(r.info, /项目外文档根 D:\\G\\docs 里的 1 个文件没分/)
+  // 只有项目外的文档：不建 changelist
+  const only = fakeP4(['//g/docs/a.md'])
+  const run2: P4Run = async (args, stdin) =>
+    args[1] === 'where'
+      ? { ok: true, out: '... depotFile //g/docs/a.md\n... path /g/docs/a.md\n', err: '' }
+      : only.run(args, stdin)
+  const r2 = await splitChangelists(run2, { descriptions: {} }, { skipUnder: '/g/docs' })
+  assert.equal(r2.ok, false)
+  assert.ok(!only.calls.some((c) => c.args[0] === 'change'))
+})
