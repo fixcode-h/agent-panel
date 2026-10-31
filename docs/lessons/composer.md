@@ -21,4 +21,4 @@ paths: web/src/components/chat/**, web/src/components/tasks/TaskComposer.tsx, we
 
 - 规则：文件拖进输入框用左键长按（`fileDrag.ts` 的 `longPressed`，约 300ms），右键留给菜单；拖完压掉补发的 click。
 - 起因：拖引用原为右键按住拖动，用户要求改成长按。
-- 防线：`scripts/ui-check.mjs` 的「任务-长按拖入引用」（`scripts/ui/02-task.mjs`）。
+- 防线：`scripts/ui/02c-element-pick.mjs` 的「任务-长按拖入引用」。

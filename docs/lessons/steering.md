@@ -1,5 +1,5 @@
 ---
-paths: server/exec/redirect.ts, server/exec/runner.ts, server/exec/rpc/spec.ts, server/designs.ts, web/src/components/design/DesignChat.tsx, server/tasks.ts
+paths: server/exec/redirect.ts, server/exec/runner.ts, server/exec/rpc/spec.ts, server/designs.ts, web/src/components/design/DesignChat.tsx, server/tasks/**
 ---
 
 # 插话和运行中发来的消息
@@ -14,4 +14,4 @@ paths: server/exec/redirect.ts, server/exec/runner.ts, server/exec/rpc/spec.ts, 
 
 - 规则：会话运行中发消息走服务端的补充接口（设计对话是 `POST /designs/:id/steer`，输入复用 `DesignChatInput`，带附件、标注、引用、风格）：能插话就交给正在跑的这一轮，收不下就记进对话并在这一轮结束后自动开下一轮（`pendingTurns` + `drainTurns`），`delivery` 记清 `steer` / `held` / `next` / 停止后 `lost`，界面用共享的 `deliveryText` 显示，不要一直停在「结束后自动处理」；前端不要造本地 queue 冒充已送达。停止要连「准备新一轮」（`starting`）的窗口一起取消，取消后还得把停止期间登记进 `pendingTurns` 的消息接上，否则它们会一直停在「结束后自动处理」。
 - 起因：2026-10-24 设计对话原来只把纯文字交给 `/steer`，带附件、引用、风格的消息塞进页面本地 queue（「排队中，这一轮结束后发送」），用户要求改成和 Chat 模式一致。
-- 防线：`scripts/e2e/06-assist.mjs` 的「设计补充 / 接续 / 停止测试」；`npm run typecheck` 的漏翻检查。
+- 防线：`scripts/e2e/06-assist.mjs` 的「设计补充测试」「设计接续测试」「设计停止测试」；`npm run typecheck` 的漏翻检查。

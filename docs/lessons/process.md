@@ -1,5 +1,5 @@
 ---
-paths: server/exec/process.ts, server/exec/orphans.ts, server/exec/proc-stats.ts, server/presence.ts, server/tasks.ts, shared/task.ts
+paths: server/exec/process.ts, server/exec/orphans.ts, server/exec/proc-stats.ts, server/presence.ts, server/tasks/**, shared/task.ts
 ---
 
 # CLI 进程：停止、保活和回收
