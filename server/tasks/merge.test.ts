@@ -138,6 +138,9 @@ async function setup(over: Record<string, unknown> = {}) {
 const handoff = { files: 'b.txt — 新加的文件' }
 const tests = 'npm run test:unit 通过'
 
+/** 读文件内容、换行统一成 LF：Windows 上 Git 默认 core.autocrlf=true，合并后检出到原目录的是 CRLF */
+const readText = (f: string) => readFileSync(f, 'utf8').replace(/\r\n/g, '\n')
+
 test('submit_merge：不是子对话、没写 tests、后台命令没跑完、计划没做完时都不收', async () => {
   const x = await setup()
   try {
@@ -224,7 +227,7 @@ test('finish_child：合回成功时改动进了原目录，收尾步骤标完�
     const r = await x.m.finishChild(x.parent, x.kid.id)
     assert.equal(r.ok, true, r.info)
     assert.match(r.info, /已把子对话「子对话」合回/)
-    assert.equal(readFileSync(path.join(x.repo, 'b.txt'), 'utf8'), 'b\n')
+    assert.equal(readText(path.join(x.repo, 'b.txt')), 'b\n')
     const kid = x.map.get(x.kid.id)!
     assert.equal(kid.wrapRequest, undefined)
     assert.equal(kid.plans.at(-1)!.steps.at(-1)!.status, 'done')
@@ -253,7 +256,7 @@ test('finish_child：和原分支冲突时退回子对话，分支和目录都�
     assert.match(r.info, /README\.md/)
     // 原目录还在合并前的提交上、没有留下合了一半的状态
     assert.equal(git(x.repo, 'rev-parse', 'HEAD').toString().trim(), head)
-    assert.equal(readFileSync(path.join(x.repo, 'README.md'), 'utf8'), '# 父对话改的\n')
+    assert.equal(readText(path.join(x.repo, 'README.md')), '# 父对话改的\n')
     assert.equal(git(x.repo, 'status', '--porcelain').toString().trim(), '')
     const kid = x.map.get(x.kid.id)!
     assert.equal(kid.wrapRequest?.state, 'failed')
