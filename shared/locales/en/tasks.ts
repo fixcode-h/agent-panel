@@ -1395,8 +1395,6 @@ export const EN_TASKS: Record<string, string> = {
   按需: 'Deferred',
   '本机 · 独立分支': 'This computer · separate branch',
   本机: 'This computer',
-  没有项目目录: 'No project folder',
-  '不是 git 仓库': 'Not a git repository',
   'Agent 回复后显示上下文占用': 'Context usage appears after the agent replies',
   显示会话栏: 'Show session bar',
   隐藏会话栏: 'Hide session bar',
