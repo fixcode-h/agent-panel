@@ -99,6 +99,7 @@ function childHost(calls: AgentCall[]) {
     messages: [],
   })
   let session = 'sess-1'
+  let compactNext = false
   const h = {
     task,
     agents: [agent('exec', { canPlan: true })],
@@ -110,13 +111,20 @@ function childHost(calls: AgentCall[]) {
     runAgent: async (c: AgentCall) => {
       calls.push(c)
       task.sessions[c.sessionKey] = session
+      // 这一轮里会话被压缩了（手动压缩、CLI 自己压缩）：runner 会通知调用方
+      if (compactNext) {
+        compactNext = false
+        delete task.promptSent
+        c.onCompacted?.()
+      }
       return { ok: true, text: '好' }
     },
     runBackground: async () => ({ ok: true, info: '' }),
     messageParent: async () => ({ ok: true, info: '' }),
     newSession: (s: string) => (session = s),
+    compactNext: () => (compactNext = true),
   }
-  return h as unknown as EngineHost & { newSession: (s: string) => void }
+  return h as unknown as EngineHost & { newSession: (s: string) => void; compactNext: () => void }
 }
 
 const sentOf = (h: EngineHost) => h.task.promptSent
@@ -153,6 +161,13 @@ test('续接只发增量：段落按变化发、子对话第二轮起只发增�
   delete h.task.promptSent
   await say(h, '第四轮')
   assert.match(calls[3].prompt, /## 计划怎么维护/)
+  // 压缩发生在这一轮里（用户实测：压缩后父对话不再派子对话）：这一轮结束不能把压缩前的记录写回去，下一轮整份重发
+  h.compactNext()
+  await say(h, '压缩这一轮')
+  assert.equal(sentOf(h)?.exec, undefined)
+  await say(h, '压缩后第一轮')
+  assert.match(calls[5].prompt, /## 计划怎么维护/)
+  calls.splice(4, 2)
   // runner 续不上、开了新会话时用的是 fresh（完整的）：记在新会话名下，之后接着省
   h.newSession('sess-2')
   await say(h, '第五轮')
