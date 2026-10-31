@@ -1425,6 +1425,7 @@ export const EN_SETTINGS: Record<string, string> = {
   标题下分隔线: 'Header divider',
   '「要你处理」底色': '“Needs you” background',
   类型标签圆角: 'Type label radius',
+  未完成部分底色: 'Unfilled track color',
   面板色: 'Panel',
   页面底色: 'Page background',
   默认浅底: 'Default tint',

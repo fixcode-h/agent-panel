@@ -142,6 +142,8 @@ export const EN_ALERTS: Record<string, string> = {
   '这个子对话卡住了，换新的子对话接手时出错':
     'This subconversation got stuck, and handing it over to a new subconversation failed',
   这个子对话没能开始执行: 'This subconversation could not start',
+  收尾后没能接着处理排着的消息: 'Could not continue with the queued message after wrap-up',
+  收尾子对话失败: 'Wrapping up the subconversation failed',
   父对话的编译结果没能交给这个对话: "The parent's build result couldn't be handed to this conversation",
   '后台命令的结果两次都没能交给 Agent，已经记在对话里，下一轮会处理':
     "The background command's result couldn't reach the agent after two tries. It is saved in the conversation for the next turn",

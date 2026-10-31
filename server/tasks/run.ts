@@ -493,7 +493,8 @@ export function createRun(sc: TasksScope) {
               // 状态用对话的 8 个状态说（见 ConvState），和子对话栏、状态上报是同一个结论
               status: convStateText(convState(childFacts(cur, { background: sc.pendingJobs(cur.id) }))),
               state: convState(childFacts(cur, { background: sc.pendingJobs(cur.id) })),
-              busy: cur.working || sc.startQueue.has(cur.id),
+              // 收尾中也算忙：只看 working 时父对话会把收尾中的子对话当成空闲、反复重发
+              busy: cur.working || sc.startQueue.has(cur.id) || sc.completing.has(cur.id),
               // 已完成的报关键文件：父对话按它判断新问题该交给谁，比最后一句回复准
               summary:
                 cur.resolved && cur.handoff?.files
@@ -621,10 +622,18 @@ export function createRun(sc: TasksScope) {
           // 这一轮跑着的时候对话被删了（进了回收站或彻底删掉）：排着的消息没有对话可接，直接丢掉，不当成故障报
           const cur = await sc.store.peek(task.id)
           if (!cur || taskDeleted(cur)) dropHeld(task.id)
-          else
-            await followUp(task.id).catch((e) =>
-              log.error('task', '接着处理执行中收到的消息失败', { task: task.id, error: (e as Error).message }),
-            )
+          else {
+            const next = followUp(task.id).catch((e) => {
+              // 并发进来的另一条已经开了新的一轮：排着的这条由那一轮接着处理，不是故障
+              if (e instanceof TaskBusyError) return
+              log.error('task', '接着处理执行中收到的消息失败', { task: task.id, error: (e as Error).message })
+              sc.alertOn(task.id, 'delivery', t('收尾后没能接着处理排着的消息'))(e)
+            })
+            // 正在收尾（completeChild 在等这一份执行收完）：followUp 要先等收尾结束，收尾又在等这里结束，
+            // 在这里 await 就互相等死——子对话永远停在「收尾那一刻」，父对话交代的任务也永远开不起来。
+            // 这时不等，让这一份执行先收完，收尾结束后 followUp 再开新一轮
+            if (!sc.completing.has(task.id)) await next
+          }
         } else if (!endedOk) {
           // 这一轮没能正常结束（失败、被停止）：排着的消息不会再被自动处理了。
           // 在对话里把它们改成「没送出去」，用户才知道要重新发一次，而不是一直等着

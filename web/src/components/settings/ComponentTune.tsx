@@ -68,6 +68,7 @@ const propLabel = (c: CompName, prop: string) => {
       divider: t('标题下分隔线'),
       needs: t('「要你处理」底色'),
       kindRadius: t('类型标签圆角'),
+      track: t('未完成部分底色'),
     } as Record<string, string>
   )[prop]
 }
