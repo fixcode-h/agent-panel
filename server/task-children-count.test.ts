@@ -16,6 +16,7 @@ const { createTaskStore } = await import('./task-store.ts')
 const { tasksApi } = await import('./tasks.ts')
 const { newTask } = await import('../shared/task.ts')
 const { setLang } = await import('../shared/i18n.ts')
+const { resetCaches } = await import('./store.ts')
 
 setLang('zh')
 
@@ -50,8 +51,13 @@ test('名下没有在跑的子对话时是 0（子对话只是做完了）', asy
 })
 
 test('子对话在跑时算进 childrenWorking；同一秒内再次请求（命中缓存）结果一致', async () => {
-  await make('count-running', { status: 'running', working: true }, 'count-parent')
+  // 先等 api 启动时的迁移做完，再写入「执行中」的子对话：迁移会把盘上执行中、内存里没有进程的任务落成已停止，
+  // 以前先写再建 api，请求和迁移抢先后，CI 上偶发算成 0（出包的抖动报告拦过）。
+  // 写完让各集合重新从文件读（和导入数据后同一个入口），api 才看得到迁移之后写的这一条
   const t = api()
+  await t.ready()
+  await make('count-running', { status: 'running', working: true }, 'count-parent')
+  resetCaches()
   const first = await task(t, 'count-parent')
   assert.equal(first.childrenWorking, 1)
   const second = await task(t, 'count-parent')
