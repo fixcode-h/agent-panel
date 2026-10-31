@@ -93,7 +93,7 @@ export function SettingsSearchResults({
   if (!groups.length)
     return (
       <div className="flex flex-col items-center gap-2 px-6 pt-20 text-center">
-        <Search className="mb-1 h-5 w-5 text-subtle" strokeWidth={1.6} />
+        <Search className="mb-1 h-5 w-5 text-subtle" strokeWidth={2} />
         <p className="text-[0.875rem] font-medium">{t('没有找到「{q}」相关的设置', { q: query.trim() })}</p>
         <p className="text-[0.8125rem] text-subtle">{t('换个说法试试，或者用空格分开几个关键词')}</p>
       </div>

@@ -63,7 +63,7 @@ export function SidebarModeTabs({
           )}
         >
           {/* 和图标栏同一套线性图标，小一号：模式是次一级的切换 */}
-          <m.icon className="h-4 w-4" strokeWidth={1.7} />
+          <m.icon className="h-4 w-4" strokeWidth={2.1} />
         </button>
       ))}
     </div>
@@ -229,7 +229,7 @@ export const SidebarProjectRow = forwardRef<
           !canToggle && 'invisible',
         )}
       >
-        <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} strokeWidth={2} />
+        <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} strokeWidth={2.3} />
       </button>
       <div className={cn(PROJECT_CARD, on ? PROJECT_CARD_ON : PROJECT_CARD_OFF)}>
         {name}
@@ -253,7 +253,7 @@ export const SidebarProjectRow = forwardRef<
 export function SidebarProjectName({ on, name }: { open?: boolean; on?: boolean; name: ReactNode }) {
   return (
     <>
-      <Folder className={cn('h-[15px] w-[15px] shrink-0', on ? 'text-proj-ico' : 'text-subtle')} strokeWidth={1.8} />
+      <Folder className={cn('h-[15px] w-[15px] shrink-0', on ? 'text-proj-ico' : 'text-subtle')} strokeWidth={2.2} />
       <span className="min-w-0 flex-1 truncate">{name}</span>
     </>
   )

@@ -478,7 +478,7 @@ export function AgentDetail({
                           draft.icon === id ? 'bg-accent-soft text-accent-text' : 'chip-idle text-muted hover:text-fg',
                         )}
                       >
-                        <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                        <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
                       </button>
                     ))}
                   </div>

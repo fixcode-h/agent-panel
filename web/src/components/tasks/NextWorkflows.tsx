@@ -77,7 +77,7 @@ export function NextWorkflows({ task }: { task: Task }) {
               )}
             >
               <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[8px] bg-accent-soft text-accent-text">
-                <WorkflowIcon className="h-4 w-4" strokeWidth={1.8} />
+                <WorkflowIcon className="h-4 w-4" strokeWidth={2.2} />
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="truncate text-[0.8125rem] font-medium">{w.name}</span>

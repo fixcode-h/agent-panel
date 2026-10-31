@@ -20,7 +20,7 @@ export function DemoBanner() {
   }
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b bg-accent-soft px-4 py-2 text-[0.8125rem] text-fg">
-      <FlaskConical className="h-4 w-4 shrink-0 text-accent-text" strokeWidth={1.8} />
+      <FlaskConical className="h-4 w-4 shrink-0 text-accent-text" strokeWidth={2.2} />
       <span className="min-w-0 flex-1">
         <b className="font-medium">{t('在线演示')}</b>
         <span className="text-subtle">{t('：数据只存在你的浏览器里，Agent 和本机目录是模拟的。')}</span>

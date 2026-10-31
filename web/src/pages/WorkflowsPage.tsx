@@ -183,7 +183,7 @@ export function WorkflowsPage() {
                 onClick={() => go({ page: 'workflows', id: w.id })}
                 leading={
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-accent-soft text-accent-text">
-                    <WorkflowIcon className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                    <WorkflowIcon className="h-[18px] w-[18px]" strokeWidth={2.2} />
                   </span>
                 }
                 title={w.name}
