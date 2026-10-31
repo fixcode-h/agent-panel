@@ -1,0 +1,126 @@
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import test from 'node:test'
+import { setLang } from '../shared/i18n.ts'
+import type { TurnChanges } from '../shared/schema.ts'
+import { spansFileDiff, undoSpans } from './exec/git.ts'
+import { aroundMerge, beginTurnChanges, endTurnChanges } from './turn-changes.ts'
+
+setLang('zh')
+delete process.env.GIT_DIR
+delete process.env.GIT_WORK_TREE
+delete process.env.GIT_INDEX_FILE
+
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, stdio: 'pipe' }).toString()
+
+function repo() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ap-turn-'))
+  git(dir, 'init', '-q')
+  writeFileSync(path.join(dir, 'a.txt'), 'one\ntwo\nthree\nfour\nfive\n')
+  writeFileSync(path.join(dir, 'b.txt'), 'keep\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-qm', 'init')
+  return dir
+}
+
+const read = (dir: string, f: string) => readFileSync(path.join(dir, f), 'utf8')
+
+/** 一轮：开始、跑 work、结束，返回记下的改动 */
+async function turn(id: string, dir: string, work: () => void | Promise<void>, carry = false) {
+  let got: TurnChanges | undefined
+  await beginTurnChanges(id, dir, [], carry)
+  await work()
+  await endTurnChanges(id, (c) => (got = c))
+  return got
+}
+
+test('一轮的改动：只算这一轮开始以后的，撤销后回到开始时的样子', async () => {
+  const dir = repo()
+  // 上一轮之前用户自己改的不算
+  writeFileSync(path.join(dir, 'b.txt'), 'user edit\n')
+  const c = await turn('t1', dir, () => {
+    writeFileSync(path.join(dir, 'a.txt'), 'one\nTWO\nthree\nfour\nfive\n')
+    writeFileSync(path.join(dir, 'new.txt'), 'n1\nn2\n')
+  })
+  assert.ok(c)
+  assert.deepEqual(c.files.map((f) => `${f.path} +${f.add} -${f.del}`).sort(), ['a.txt +1 -1', 'new.txt +2 -0'])
+  assert.match(await spansFileDiff(dir, c.spans, 'a.txt'), /\+TWO/)
+  const r = await undoSpans(
+    dir,
+    c.spans,
+    c.files.map((f) => f.path),
+  )
+  assert.equal(r.ok, true)
+  assert.equal(read(dir, 'a.txt'), 'one\ntwo\nthree\nfour\nfive\n')
+  assert.equal(existsSync(path.join(dir, 'new.txt')), false, '这一轮新建的文件删掉')
+  assert.equal(read(dir, 'b.txt'), 'user edit\n', '这一轮之前的改动不动')
+})
+
+test('撤销：之后又改了别的地方的保留，改到同一处的算冲突、一个都不写', async () => {
+  const dir = repo()
+  const c = (await turn('t2', dir, () => {
+    writeFileSync(path.join(dir, 'a.txt'), 'one\nTWO\nthree\nfour\nfive\n')
+  }))!
+  // 之后用户改了另一行：撤销只撤 TWO，用户的 FIVE 留着
+  writeFileSync(path.join(dir, 'a.txt'), 'one\nTWO\nthree\nfour\nFIVE\n')
+  const ok = await undoSpans(dir, c.spans, ['a.txt'])
+  assert.equal(ok.ok, true)
+  assert.equal(read(dir, 'a.txt'), 'one\ntwo\nthree\nfour\nFIVE\n')
+
+  const c2 = (await turn('t2b', dir, () => {
+    writeFileSync(path.join(dir, 'a.txt'), 'one\ntwo\nthree\nFOUR\nFIVE\n')
+    writeFileSync(path.join(dir, 'x.txt'), 'x\n')
+  }))!
+  // 同一行后来又被改：冲突，x.txt 也不能先删
+  writeFileSync(path.join(dir, 'a.txt'), 'one\ntwo\nthree\nfour!!\nFIVE\n')
+  const bad = await undoSpans(
+    dir,
+    c2.spans,
+    c2.files.map((f) => f.path),
+  )
+  assert.equal(bad.ok, false)
+  assert.deepEqual(bad.ok ? [] : bad.conflicts.map((x) => x.path), ['a.txt'])
+  assert.equal(existsSync(path.join(dir, 'x.txt')), true, '有冲突时一个文件都不动')
+  assert.equal(read(dir, 'a.txt'), 'one\ntwo\nthree\nfour!!\nFIVE\n')
+})
+
+test('接着做的一轮（子任务、工作流交回）接着上一轮的终点算；用户的新一轮重新拍起点', async () => {
+  const dir = repo()
+  await turn('t3', dir, () => writeFileSync(path.join(dir, 'a.txt'), 'first\n'))
+  // 空档里子任务改的文件
+  writeFileSync(path.join(dir, 'helper.txt'), 'h\n')
+  const carried = (await turn('t3', dir, () => writeFileSync(path.join(dir, 'b.txt'), 'b2\n'), true))!
+  assert.deepEqual(carried.files.map((f) => f.path).sort(), ['b.txt', 'helper.txt'])
+  // 空档里用户自己改的，新一轮不算
+  writeFileSync(path.join(dir, 'user.txt'), 'u\n')
+  const fresh = (await turn('t3', dir, () => writeFileSync(path.join(dir, 'c.txt'), 'c\n')))!
+  assert.deepEqual(
+    fresh.files.map((f) => f.path),
+    ['c.txt'],
+  )
+})
+
+test('子对话合进来的那一下不算进父对话这一轮', async () => {
+  const dir = repo()
+  const c = (await turn('t4', dir, async () => {
+    writeFileSync(path.join(dir, 'mine.txt'), 'm\n')
+    await aroundMerge(dir, async () => {
+      writeFileSync(path.join(dir, 'child.txt'), 'from child\n')
+    })
+    writeFileSync(path.join(dir, 'mine2.txt'), 'm2\n')
+  }))!
+  assert.deepEqual(c.files.map((f) => f.path).sort(), ['mine.txt', 'mine2.txt'])
+  assert.equal(c.spans.length, 2)
+  const r = await undoSpans(
+    dir,
+    c.spans,
+    c.files.map((f) => f.path),
+  )
+  assert.equal(r.ok, true)
+  assert.equal(read(dir, 'child.txt'), 'from child\n', '撤销不碰子对话的改动')
+  assert.equal(existsSync(path.join(dir, 'mine.txt')), false)
+})

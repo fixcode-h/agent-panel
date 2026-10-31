@@ -35,6 +35,7 @@ import {
 } from '../exec/worktree.ts'
 import { reapLostJobs } from '../background.ts'
 import { log } from '../log.ts'
+import { aroundMerge } from '../turn-changes.ts'
 import { t } from '../../shared/i18n.ts'
 import { activePlan, holdWait, needsFix, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
@@ -358,28 +359,31 @@ export function createChildren(sc: TasksScope) {
     const sides = await mergeSides(target, wt.branch).catch(() => null)
     const overlap = sides?.overlap ?? []
     const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
-    const m = await trialMerge(target, wt.branch)
-    if (!m.ok)
-      return {
-        ok: false,
-        info: m.dirty
-          ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边处理后再合。\n${m.error}${about}`
-          : `和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}${about}`,
+    // 父对话总结下面的改动卡片不含子对话的改动：合并的那一下从父对话这一轮里切掉
+    return aroundMerge(target, async () => {
+      const m = await trialMerge(target, wt.branch)
+      if (!m.ok)
+        return {
+          ok: false,
+          info: m.dirty
+            ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边处理后再合。\n${m.error}${about}`
+            : `和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}${about}`,
+        }
+      if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
+      try {
+        const sha = await commitMerge(target, `Agent 面板：合并「${tk.title}」`)
+        const both = overlap.length
+          ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过：必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论（见 project-vcs 技能 git.md 的「合并审查」）。`
+          : ''
+        return {
+          ok: true,
+          info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${both}`,
+        }
+      } catch (e) {
+        await abortMerge(target)
+        return { ok: false, info: `合并后提交失败，已撤回：${(e as Error).message}` }
       }
-    if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
-    try {
-      const sha = await commitMerge(target, `Agent 面板：合并「${tk.title}」`)
-      const both = overlap.length
-        ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过：必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论（见 project-vcs 技能 git.md 的「合并审查」）。`
-        : ''
-      return {
-        ok: true,
-        info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${both}`,
-      }
-    } catch (e) {
-      await abortMerge(target)
-      return { ok: false, info: `合并后提交失败，已撤回：${(e as Error).message}` }
-    }
+    })
   }
 
   async function closeChildren(parentId: string) {

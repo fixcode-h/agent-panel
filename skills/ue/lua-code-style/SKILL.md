@@ -1,6 +1,6 @@
 ---
 name: lua-code-style
-description: 编写或修改 Lua 代码时使用；规范日志输出格式（必须包含「类名=>函数名」或「模块名=>函数名」定位，格式为 `[模块名称] 类名/模块名=>函数名  具体日志内容`，不额外添加日志级别前缀）与代码排版（布尔表达式不无故换行，缩进、命名、引号等遵循项目既有约定）。触发：写 Lua 日志、Lua 代码格式、Lua 日志定位、Lua 排版。不用于 C++/UE 或 C#。
+description: 编写或修改 Lua 代码时使用；规定换行（一条语句写一行，条件表达式、return 表达式、函数调用不按列宽拆成续行）、常用写法（local、`:` 与 `.`、拼接）、校验与防御（什么时候判空、什么时候做类型校验，避免过度防御）和日志（格式 `[模块名称] 类名/模块名=>函数名  具体日志内容`，避免高频日志），缩进、命名、引号沿用项目既有约定。触发：写或改 Lua 代码、Lua 排版、Lua 日志。不用于 C++/UE 或 C#。
 user-invocable: true
 ---
 
@@ -8,34 +8,115 @@ user-invocable: true
 
 ## 使用边界
 
-只约束新增或修改的 Lua 代码的日志输出与排版；默认不批量重写未涉及的旧日志，不改变现有日志接口、过滤或级别语义。Lua 的模块与状态、元表、生命周期、协程、热重载、序列化和性能等架构规则不属于本技能范围。
+只约束新增或修改的 Lua 代码的排版与日志；不批量重排或重写未涉及的旧代码和旧日志，不改变现有日志接口、过滤或级别语义。缩进、命名、引号等本技能没写的格式沿用所在文件的写法。模块与状态、元表、生命周期、协程、热重载、序列化和性能等架构规则不属于本技能范围。
 
-## 日志输出格式
+## 换行
 
-Lua 代码新增或修改的日志消息必须使用以下格式，并复用项目已有日志接口：
+**一条语句写一行，不按列宽换行。** `if` / `elseif` / `while` 的条件、`return` 后的表达式、赋值右边、函数调用和参数列表，都写在同一行，不管有多少个 `and` / `or`、这一行有多长。不要自己设一个 80 或 120 列的上限去折行。
+
+```lua
+-- 错：条件被拆成续行
+return CurrentState == ZoneState.EntryPreparing or CurrentState == ZoneState.Underground
+    or CurrentState == ZoneState.ExitPreparing
+
+if CurrentState == ZoneState.EntryPreparing or CurrentState == ZoneState.Underground
+    or CurrentState == ZoneState.ExitPreparing then
+
+-- 对：整条写在一行
+return CurrentState == ZoneState.EntryPreparing or CurrentState == ZoneState.Underground or CurrentState == ZoneState.ExitPreparing
+
+if CurrentState == ZoneState.EntryPreparing or CurrentState == ZoneState.Underground or CurrentState == ZoneState.ExitPreparing then
+```
+
+- 唯一例外：项目里有格式化配置明确规定了列宽（如 `.stylua.toml` 的 `column_width`、`.editorconfig` 的 `max_line_length`），按配置来；没有配置就不折行。
+- 条件真的复杂到一行看不懂（多层括号混着 `and` / `or`），把其中一部分提成命名清楚的局部变量或函数，不要拆成续行。像上面这样几个同类比较连起来的，照样写一行，不提取。
+- 多行 table 构造、多行字符串、函数体本身照常分行；这一条只管「一个表达式被拆到几行」。
+- 改已有代码时，原来就折了行的不顺手合并，除非就是这次要改的那一句。
+
+## 写法
+
+- 变量和函数默认加 `local`，不制造全局变量；模块对外的内容放进模块 table 返回。
+- 类 / 对象方法用 `:` 定义和调用（`function Foo:Bar()`、`obj:Bar()`），模块函数用 `.`，两者不混。
+- 判空写 `if not value then`；要区分 `false` 和 `nil` 时写 `value == nil`。不等用 `~=`。
+- 字符串里拼可能为 `nil` 或非字符串的值先包 `tostring()`，`..` 遇到 `nil` 会直接报错；循环里拼大量字符串用 `table.concat`。
+- 提前 `return` 处理异常分支，少套 `if` 层级；一行只写一条语句，不用 `;` 把几条挤在一行。
+- 命名、缩进、引号跟所在文件；注释写「为什么」，不复述代码。
+
+## 校验与防御：不过度
+
+先问一句：**这个值从哪来，会不会真的是 nil 或别的类型？** 只有答案是「会」时才写检查。
+
+**不加检查：**
+
+- 调用方都在项目里、传什么很清楚的参数：内部函数、私有方法、同模块里互相调用的函数。不对这类参数做 `type()` 判断，也不逐个判空。
+- 刚创建、刚赋值、刚检查过的值；上一层已经判过空的，下一层不再判。
+- 生命周期有保证的成员：在 `Init` / 构造里一定赋值的字段，后面的方法直接用。
+- 不写 `x = x or {}`、`if type(cb) == "function" then cb() end` 这种「以防万一」的兜底，除非这个参数本来就是可选的。
+
+**可以判空（nil 是正常结果时）：**
+
+- 查找类结果：`table[key]`、`FindXxx` / `GetXxx` 可能找不到，配置表里可能没这一行。
+- 可选参数：文档或调用处明确允许不传，判空后给默认值。
+- 异步回调、定时器、事件回调里用到的对象：回调到来时对象可能已销毁，用项目已有的有效性检查（如 `IsValid`）判一次。
+- 宿主（C++ / UE）传进来、可能为空的对象。
+
+**才做类型校验（来源不可控时）：**
+
+- 外部数据：网络协议、存档、服务器下发、读进来的 JSON / 配置、玩家输入、GM 命令。
+- 对外公开、调用方很多且不受控的通用接口（工具库、框架层 API），在入口校验一次即可。
+- 函数本来就接受多种类型（如参数可以是 id 或 table），用 `type()` 分支处理。
+
+**检查失败时：**
+
+- 不能悄悄 `return` 把 bug 吞掉。nil 是正常情况就按正常流程处理（不打日志或给默认值）；nil 本不该出现就用 `LogError` 打一条或直接 `error` / `assert`，让问题暴露出来。
+- 一个值只在进入可信区域的那一处检查，不在调用链每层都检查一遍。
+
+```lua
+-- 错：内部方法，参数来源明确，却逐个做类型判断和判空
+function ZoneMgr:SetState(state, reason)
+    if state == nil or type(state) ~= "number" then return end
+    if reason ~= nil and type(reason) ~= "string" then return end
+    self.CurrentState = state
+end
+
+-- 对：直接用；只在真的可能找不到的地方判空
+function ZoneMgr:SetState(state)
+    self.CurrentState = state
+end
+
+function ZoneMgr:EnterZone(zoneId)
+    local cfg = ZoneConfig[zoneId]
+    if not cfg then
+        LogError("[区域] ZoneMgr=>EnterZone  缺少区域配置 zoneId=" .. tostring(zoneId))
+        return
+    end
+    self:SetState(cfg.InitState)
+end
+```
+
+## 日志
+
+格式不变：
 
 ```text
-[模块名称] 函数标识符  具体日志内容
-
 类/对象方法：  [模块名称] 类名=>函数名  具体日志内容
 模块函数：     [模块名称] 模块名=>函数名  具体日志内容
 ```
 
-- 模块名称使用当前功能模块的明确名称。函数标识符必须携带定位：类/对象方法使用“类名=>函数名”，模块函数使用“模块名=>函数名”；不得只写函数名。
-- 日志级别由项目已有日志接口表达，例如 `LogError`、`LogWarn`；消息正文不额外添加 `Error=>`、`Warn=>`、`Info=>` 等级别前缀。
-- 生成或修改 Lua 代码时，必须先确认日志所在的类/对象和函数上下文；不得根据文件名、日志前缀或日志内容猜测。无法确认上下文时，必须先补充上下文，不得生成缺少定位信息的日志。
-- `[模块名称]` 后固定一个空格，直接接函数标识符；函数标识符与具体日志内容之间固定两个空格，不得省略模块或函数标识符。
-- 具体日志内容描述当前行为、结果或失败原因，并按需包含定位所需的关键参数；不得用无上下文的消息替代完整格式。
-- 示例：`[家园装饰] HomeDecoration=>ApplyMaterial  材质应用成功 materialId=1001`。日志级别使用项目既有日志接口。
-- 必须调用项目已有日志接口；不得为本规则新增日志函数、包装器，也不得替换或改写现有接口、过滤和级别语义。
-- 本规则不要求批量重写未涉及的旧日志，也不改变现有日志接口、过滤或级别语义。
-
-调用形态示例（接口名、级别名和拼接方式仅为结构演示，实际替换为项目已有日志接口）：
+- 函数标识必须带定位，不能只写函数名；`[模块名称]` 后一个空格，函数标识和内容之间固定**两个**空格。
+- 先确认日志所在的类 / 对象和函数，不根据文件名或日志内容去猜。
+- 级别由已有日志接口表达（如 `LogError`、`LogWarn`），消息里不加 `Error=>` 之类的前缀；不新增日志函数或包装器。
+- **避免高频日志，只在必要路径加必要的日志**：必要路径指失败 / 异常分支、重要状态切换、关键流程的结果。Tick、每帧回调、循环体、频繁调用的函数里一律不打；不给每一步打「开始 / 结束」；成功的常规路径默认不打；排查用的临时日志改完删掉。一条日志写清一件事，只带定位需要的关键参数。
 
 ```lua
--- 类/对象方法：类名=>函数名
+-- 类/对象方法：类名=>函数名（接口名仅为示意，换成项目已有的）；只在失败分支打
 function HomeDecoration:ApplyMaterial(materialId)
-    LogInfo("[家园装饰] HomeDecoration=>ApplyMaterial  材质应用成功 materialId=" .. tostring(materialId))
+    local material = self:FindMaterial(materialId)
+    if not material then
+        LogError("[家园装饰] HomeDecoration=>ApplyMaterial  找不到材质 materialId=" .. tostring(materialId))
+        return false
+    end
+    return self:SetMaterial(material)
 end
 
 -- 模块函数：模块名=>函数名
@@ -44,10 +125,12 @@ local function RefreshList()
 end
 ```
 
-## 代码排版
-
-- 简单的布尔表达式只要保持可读且未超过项目行宽限制，应保持单行显示；不得仅因包含 `and` 或 `or` 就自动换行。项目未约定行宽时按 120 列判断，项目已有约定以项目为准。
-
 ## 自检
 
-写完或改完后检查：新增/修改日志使用 `[模块名称] 类名/模块名=>函数名  具体日志内容`，定位标识完整、未只写函数名、函数标识符与内容之间固定两个空格、未省略模块；消息正文未额外添加日志级别前缀，调用的是项目已有日志接口，未新增包装器；布尔表达式未被无谓换行。日志接口、过滤和级别语义未被改动。
+写完或改完逐条看：
+
+1. 没有过度防御：来源明确的参数没做类型判断和判空，只在找不到 / 可选 / 异步 / 外部数据处检查，检查失败没有悄悄吞掉。
+2. 新变量和函数都是 `local`，`:` / `.` 没混用，拼接的值不会是 `nil`。
+3. 新写的条件、`return`、赋值、函数调用没有被拆成续行（项目格式化配置规定了列宽的除外）。
+4. 日志是 `[模块名称] 类名/模块名=>函数名  具体日志内容`，定位完整、两个空格、没有级别前缀，只打在必要路径、没有高频日志。
+5. 用的是项目已有日志接口，没有新增包装器；没动范围外的旧代码。

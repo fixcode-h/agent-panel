@@ -89,7 +89,7 @@ import { fixRoutePart } from './fix-route.ts'
 import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
-import { summaryCardRules } from './summary-card.ts'
+import { summaryCardRules, summaryDetailRules } from './summary-card.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyBlock } from './test-steps.ts'
@@ -207,6 +207,11 @@ export interface AgentCall {
   onInput?: (info: { setup: number; rules: number; fresh: boolean }) => void
   /** 只停这一次调用（终止单个子任务）；整个任务停止仍走宿主的信号 */
   signal?: AbortSignal
+  /**
+   * 这一圈接着上一圈做（子任务、计划交回的结果），不是用户的新要求：
+   * 总结下面的改动卡片接着上一圈的终点算，子任务和工作流在空档里改的文件才算得进来
+   */
+  carry?: boolean
 }
 
 /** 交给评审的改动：snapshot 是这一刻的工作区快照（下一轮复看和它比），diff 太长时 diff 为空、完整内容在 file */
@@ -4087,8 +4092,8 @@ async function conversationPrompt(
     ...planPart(host, coordinator),
     wrapUpPart(host),
     p4Part(host),
-    // 每轮结束写给人看的总结卡：父对话、子对话、用户自建的角色都一样（类型和字段见 shared/summary-card.ts）
-    summaryCardRules(),
+    // 每轮的总结（shared/summary-card.ts）：子对话写详细 Markdown，其余写卡片，父对话的卡片标题链到子对话
+    kind === 'sub' ? summaryDetailRules() : summaryCardRules(undefined, coordinator),
     // 对话模式没有共享状态工具：这里不注入（跑过 start_plan 时 task.runs 里是上一次运行的旧状态）
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt
@@ -4349,6 +4354,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
           // 只发了增量时带上完整的：runner 续不上会话、开了新会话时改用它
           ...(first && delta ? { fresh: full } : {}),
           ...(first && !host.prewarm ? { nextPrompt, onInput } : {}),
+          ...(first ? {} : { carry: true }),
           // 会话键就是 Agent id；选了「无」时用空字符串，runner 仍然按对话处理
           sessionKey: who,
           ...(host.prewarm ? { prewarm: true } : {}),

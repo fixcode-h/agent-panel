@@ -1723,14 +1723,73 @@ body,
 .chat-md .md-card-title > p {
   @apply m-0 inline;
 }
+/* 父对话里子对话结果卡片的标题：点了打开子对话、滚到它的详细总结。平时和普通标题一样，悬停才露出能点 */
+.chat-md .md-card-link {
+  @apply cursor-pointer border-0 bg-transparent p-0 text-left text-inherit;
+  font: inherit;
+  font-weight: 600;
+}
+.chat-md .md-card-link:hover {
+  @apply underline underline-offset-2;
+  text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
+}
+.chat-md .md-card-link:focus-visible {
+  @apply rounded-sm outline-2 outline-offset-2 outline-accent;
+}
+.chat-md .md-card-go {
+  @apply ml-1 inline-block text-subtle transition-transform;
+}
+.chat-md .md-card-link:hover .md-card-go {
+  @apply translate-x-0.5 text-muted;
+}
+/* 只有标题行的卡片（父对话简短汇报）：没有字段，标题下面不画分隔线 */
+.chat-md .md-card[data-bare] .md-card-head {
+  border-bottom-width: 0;
+}
 .chat-md .md-card-rows {
   @apply m-0 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 py-1.5 pr-3.5 pl-4;
 }
 .chat-md .md-card-row {
-  @apply col-span-2 grid grid-cols-subgrid py-1;
+  @apply col-span-2 grid grid-cols-subgrid py-1.5;
 }
 .chat-md .md-card-row > dt {
-  @apply text-[0.8125rem] text-muted;
+  @apply text-[0.8125rem] font-medium text-muted;
+  color: var(--row-tone, var(--muted));
+}
+/* 字段之间一条细分割线，和标题下面那条同粗细（设置 → 组件里调） */
+.chat-md .md-card-row + .md-card-row {
+  border-top: var(--c-summary-divider) solid var(--line);
+}
+/* 字段名按含义配色，扫一眼就分得出哪行是问题、哪行是原因、哪行是怎么改的：
+   问题红、原因紫、修法和效果绿、做了什么强调色、改动和验证青；遗留、未确认保持灰，「要你处理」见下面 */
+.chat-md .md-card-row:is([data-key='symptom'], [data-key='problem'], [data-key='blocker']) {
+  --row-tone: var(--danger);
+}
+.chat-md .md-card-row:is([data-key='cause'], [data-key='evidence'], [data-key='safe']) {
+  --row-tone: var(--peer);
+}
+.chat-md
+  .md-card-row:is(
+    [data-key='fix'],
+    [data-key='solution'],
+    [data-key='effect'],
+    [data-key='advice'],
+    [data-key='done']
+  ) {
+  --row-tone: var(--success);
+}
+.chat-md
+  .md-card-row:is(
+    [data-key='what'],
+    [data-key='changed'],
+    [data-key='goal'],
+    [data-key='conclusion'],
+    [data-key='usage']
+  ) {
+  --row-tone: var(--accent-text);
+}
+.chat-md .md-card-row:is([data-key='changes'], [data-key='verified']) {
+  --row-tone: var(--run);
 }
 .chat-md .md-card-row > dd {
   @apply m-0 min-w-0;
@@ -1930,6 +1989,11 @@ body,
 }
 /* 设置搜索跳到某一项时闪一下底色（section-nav.tsx 的 revealSetting）。
    设置行左右没有内边距，底色贴着文字不好看：用同色的 box-shadow 往外扩 12px 当留白，不改布局 */
+/* 从父对话的结果卡片跳到子对话的总结时，总结标题闪一下（TaskView 的 jumpSummary） */
+.chat-md [data-summary-flash] {
+  border-radius: 4px;
+  animation: setting-flash 1.8s ease-out;
+}
 [data-setting-flash] {
   border-radius: 6px;
   animation: setting-flash 1.8s ease-out;

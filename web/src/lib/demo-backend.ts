@@ -4,6 +4,7 @@
  */
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
+import { demoChildSummary, demoParentCard } from './demo-child-summary'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
 import {
@@ -3703,6 +3704,19 @@ function tasksRoute(
       ''
     return { path: file, dir: '', diff, git: false, before: false }
   }
+  // 一轮改动的差异和撤销：演示里没有仓库，差异用写好的样例，撤销只记一笔「已撤销」
+  if (sub === 'turn-diff') {
+    const file = query.get('path') ?? ''
+    return { path: file, diff: DEMO_DIFFS[file] ?? '' }
+  }
+  if (sub === 'turn-revert' && method === 'POST') {
+    if (live.has(task.id)) fail('对话正在执行，等这一轮结束后再撤销', 409)
+    const m = task.messages.find((x) => x.id === (body as { msg?: string } | undefined)?.msg)
+    const ch = m?.turnChanges ?? fail('这一轮没有记下改动', 404)
+    m!.turnChanges = { ...ch, revertedAt: new Date().toISOString() }
+    persist()
+    return { ok: true, task, files: ch.files.map((f) => f.path) }
+  }
   if (sub === 'resume') {
     if (live.has(task.id)) fail('任务正在执行', 409)
     const blocked = !!blockedStep(task, taskFlow(task, taskWorkflows(task, d.workflows).workflow))
@@ -4037,6 +4051,15 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       children: [],
     })),
   })
+  const demoReply = (id: string, agentId: string, text: string) => ({
+    id,
+    role: 'agent' as const,
+    agentId,
+    step: '',
+    text,
+    tools: [],
+    at: new Date().toISOString(),
+  })
   const make = async (
     title: string,
     how: {
@@ -4052,6 +4075,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       worktree?: { branch: string; state?: 'active' | 'merged' | 'discarded'; at?: number }
       /** 这一轮做完了、用户还没点开看过：父对话里它的行上有未读点（和侧栏橙点同一份口径） */
       unread?: boolean
+      /** 子对话写了详细总结，父对话收到汇报后回一张链到它的卡片（demo-child-summary.ts） */
+      summary?: boolean
     } = {},
   ) => {
     const { task, done } = createTask(
@@ -4128,7 +4153,9 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
         },
         at: new Date().toISOString(),
       }
+      if (how.summary) it.messages.push(demoReply(`${it.id}-summary`, agent.id, demoChildSummary()))
       parent.messages.push(report)
+      if (how.summary) parent.messages.push(demoReply(`${it.id}-card`, agent.id, demoParentCard(it.id)))
       // 旧数据里同一份汇报曾被写两遍（runner 一轮结束回调发了两次，见 peer-dedupe.ts）：
       // 演示里留一条这样的样本，界面上应该只显示一行
       if (title === '核对通知时序')
@@ -4214,6 +4241,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   // 已经合回 main 的那条：列表里保留，点行仍能打开它的对话
   await make('修侧栏时间显示', {
     resolved: true,
+    summary: true,
     worktree: { branch: 'agent-panel/sidebar-time', state: 'merged', at: 50 },
   })
   await make('核对通知时序', { resolved: true })
@@ -4504,6 +4532,17 @@ async function seedTasks(d: Db) {
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
       { path: 'src/components/RestockButton.tsx', add: 9, del: 0 },
     ]
+    // 这一轮的总结下面挂「已更改 N 个文件」：超过 3 个文件，卡片上才有「查看全部」可点
+    const summary = [...task.messages].reverse().find((m) => m.role === 'agent' && !m.step && m.text.trim())
+    if (summary)
+      summary.turnChanges = {
+        spans: [{ from: 'demo-before', to: 'demo-after' }],
+        files: [
+          ...task.changes,
+          { path: 'src/store/cart.ts', add: 12, del: 4 },
+          { path: 'tests/cart.test.ts', add: 18, del: 0 },
+        ],
+      }
     // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
     // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
     // 上下文浮层里的「上一次压缩」：和真实执行一样是回复里的一次工具调用，

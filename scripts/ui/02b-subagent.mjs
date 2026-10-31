@@ -16,6 +16,37 @@ await runShard(import.meta.filename, async (api) => {
   const p = await openCartTask(api)
   const { backToTask } = taskPageHelpers(p, api)
 
+  // 父对话里子对话结果的卡片：标题链到子对话，点了在右栏打开它并滚到它的详细总结；
+  // 子对话里的总结照普通 Markdown 显示（标题、分段），不画成卡片
+  {
+    const link = p.locator('.md-card-link').first()
+    if (!(await link.count())) errors.push('子对话结果卡片：父对话里没有链到子对话的卡片标题')
+    else {
+      await link.click()
+      const head = childView(p).locator('[data-summary-flash]')
+      await head.waitFor({ timeout: 5000 }).catch(() => errors.push('子对话结果卡片：点标题后没有定位到子对话的总结'))
+      // 跳转在面板打开后的几帧里对齐，等它停下再量
+      await p.waitForTimeout(600)
+      const r = await p.evaluate(() => {
+        const v = document.querySelector('[data-child-view]')
+        const sc = v?.querySelector('[data-conversation-scroll]')
+        const h = v?.querySelector('[data-summary-flash]')
+        if (!sc || !h) return null
+        const cover = sc.querySelector('[data-reply-head="sticky"]')?.offsetHeight ?? 0
+        return {
+          tag: h.tagName,
+          off: Math.round(h.getBoundingClientRect().top - sc.getBoundingClientRect().top - cover),
+          cards: v.querySelectorAll('.md-card').length,
+        }
+      })
+      if (r && r.tag !== 'H2') errors.push(`子对话结果卡片：子对话的总结标题应是普通的二级标题，实际是 ${r.tag}`)
+      if (r && (r.off < 0 || r.off > 24)) errors.push(`子对话结果卡片：总结标题没停在面板顶上（离顶 ${r.off}px）`)
+      if (r?.cards) errors.push('子对话结果卡片：子对话里的总结不该画成卡片')
+      await check(p, '子对话结果卡片-跳到总结', ['问题', '修改方案'])
+      await closeChildTab(p).click()
+    }
+  }
+
   // 环境弹窗里的「独立分支」：父对话在最前、其余按创建时间从早到晚（演示数据的创建顺序和时间故意不一致）；
   // 点中间那行在右栏打开对应子对话，合并/删除按钮各管各的，父对话自己那行点不了
   {

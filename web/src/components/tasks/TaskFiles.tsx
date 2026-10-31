@@ -100,7 +100,14 @@ export function TaskFiles({
   /** 压缩、审查之后把新的任务状态交回页面 */
   onTask?: (task: Task) => void
   /** 右栏开着的子对话：多一个可关的页签，内容是子对话自己的面板 */
-  child?: { id: string; task?: ChildSummary; view: ReactNode; onClose: () => void }
+  child?: {
+    id: string
+    task?: ChildSummary
+    view: ReactNode
+    onClose: () => void
+    /** 父对话里点结果卡片要看这个子对话的总结：已经开着但切到了别的页签时也切回来 */
+    focus?: number
+  }
 }) {
   const { upsertTask } = useData()
   // 模型设计对话（ADR 0025）默认看「模型」页签：建模时要盯的是模型，不是文件
@@ -108,11 +115,12 @@ export function TaskFiles({
   const [tab, setTab] = useState<'files' | 'changes' | 'child' | 'model'>(child ? 'child' : home)
   // 新开（或换了）子对话就切到它的页签；关掉后回默认页签
   const childId = child?.id ?? ''
+  const childFocus = child?.focus
   useEffect(() => {
     setTab((cur) => (childId ? 'child' : cur === 'child' ? home : cur))
     // home 只跟着对话变，不用单独跟
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [childId])
+  }, [childId, childFocus])
   const onChild = tab === 'child' && !!child
   const onModel = tab === 'model' && !!task.modelDesign
   const [diffPath, setDiffPath] = useState<string | null>(null)

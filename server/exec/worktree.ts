@@ -22,6 +22,7 @@ import { t } from '../../shared/i18n.ts'
 import { DATA_DIR } from '../store.ts'
 import { capture } from './process.ts'
 import { log } from '../log.ts'
+import { aroundMerge } from '../turn-changes.ts'
 
 /** 任务的独立工作目录放在数据目录里，不放进项目目录，免得被项目自己的 git 和工具扫到 */
 export const WORKTREES_DIR = path.join(DATA_DIR, 'worktrees')
@@ -752,18 +753,23 @@ export async function mergeWorktree(repo: string, wt: TaskWorktree, message: str
   // 冲突时把双方的提交记录一起交回：只给冲突文件的话，接手的人看不到对方为什么这么改
   const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
   const args = [...(await identity(target)), 'merge', '--no-ff', '--no-edit', '-m', message, wt.branch]
-  let m = await git(target, ...args)
-  // 别的 git 进程（Agent 自己的 git add / commit、面板的状态查询）正好占着 index.lock：合并根本没开始，
-  // 不是冲突，等一下重试；直接报「有冲突」会让父对话、子对话去处理一个不存在的冲突
-  // 写索引那一步才撞上锁时 git 已经留下了 MERGE_HEAD：先撤掉这次没合成的，再重来（撤也撞锁就下一圈再撤）
-  for (let i = 1; m.code !== 0 && i <= 5 && (await lockBusy(target, m.stderr)); i++) {
-    await new Promise((r) => setTimeout(r, 200 * i))
-    const head = (await git(target, 'rev-parse', '--git-path', 'MERGE_HEAD')).stdout.trim()
-    if (head && existsSync(path.resolve(target, head)) && (await git(target, 'merge', '--abort')).code !== 0) continue
-    m = await git(target, ...args)
-  }
+  // 合并的那一下（连同冲突时的撤回）从正在这个目录里记改动的对话中切掉（见 server/turn-changes.ts）：
+  // 总结下面的卡片不含子对话的改动
+  const m = await aroundMerge(target, async () => {
+    let r = await git(target, ...args)
+    // 别的 git 进程（Agent 自己的 git add / commit、面板的状态查询）正好占着 index.lock：合并根本没开始，
+    // 不是冲突，等一下重试；直接报「有冲突」会让父对话、子对话去处理一个不存在的冲突
+    // 写索引那一步才撞上锁时 git 已经留下了 MERGE_HEAD：先撤掉这次没合成的，再重来（撤也撞锁就下一圈再撤）
+    for (let i = 1; r.code !== 0 && i <= 5 && (await lockBusy(target, r.stderr)); i++) {
+      await new Promise((ok) => setTimeout(ok, 200 * i))
+      const head = (await git(target, 'rev-parse', '--git-path', 'MERGE_HEAD')).stdout.trim()
+      if (head && existsSync(path.resolve(target, head)) && (await git(target, 'merge', '--abort')).code !== 0) continue
+      r = await git(target, ...args)
+    }
+    if (r.code !== 0) await git(target, 'merge', '--abort')
+    return r
+  })
   if (m.code !== 0) {
-    await git(target, 'merge', '--abort')
     throw Object.assign(
       new Error(
         t('合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。', {

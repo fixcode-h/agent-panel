@@ -62,7 +62,7 @@ function splitPath(p: string) {
  * 顶部一行是文件路径、增删统计和文件导航；下面一行是视图切换、折行和「更多」操作；
  * 正文单独滚动，长 diff 分批渲染，滚到底再加载下一批。
  */
-function DiffShell({
+export function DiffShell({
   path,
   diff,
   stats,

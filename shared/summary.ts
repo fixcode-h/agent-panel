@@ -17,7 +17,7 @@ import type { Agent, Task } from './schema.ts'
 import { BUILTIN_AGENTS } from './builtin/agents.ts'
 import { dayKey, isoWeek, periodLabel, usagePeriod } from './usage.ts'
 import { clip as clipText } from './text.ts'
-import { splitSummaryCards } from './summary-card.ts'
+import { summariesOf } from './summary-card.ts'
 
 /**
  * 数据目录里最多留多少份报告：左侧树要列出全部报告，这里只是防止数据文件无限长大的保险，
@@ -401,7 +401,8 @@ export function rangeTask(task: Task, win: Pick<SummaryWindow, 'start' | 'end'>)
     else if (m.role === 'agent') {
       const one = firstLine(m.text)
       if (one) outcomes.push(one)
-      const found = splitSummaryCards(m.text).flatMap((x) => ('card' in x ? [x.card] : []))
+      // 卡片和子对话的详细总结都收：子对话不写卡片，按段落取出同样的字段
+      const found = summariesOf(m.text)
       for (const c of found)
         cards.push({
           kind: c.label,

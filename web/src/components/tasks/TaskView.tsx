@@ -13,6 +13,7 @@ import {
 import { createPortal } from 'react-dom'
 import { t } from '@shared/i18n'
 import { ANCHOR_RETRY_MS, ANCHOR_TRIES, jumpToMessage } from '@/lib/message-anchor'
+import { useSummaryJump } from './summary-jump'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from '@/lib/toast'
 import { RouteCard } from './RouteCard'
@@ -148,7 +149,7 @@ import { SessionBar } from '@/components/session/SessionBar'
 import { ConversationTabs } from './ConversationTabs'
 import { ChatRail, useChatRail } from './ChatRail'
 import { FileDialog, FileOpenCtx } from './FileDialog'
-import { HandleNeedsCtx } from './Markdown'
+import { HandleNeedsCtx, SummaryCardsCtx } from './Markdown'
 import { AiLookCtx } from '@/lib/ai-look'
 import { JobDialog, type JobTarget } from './JobDialog'
 import { ChildListCtx, ChildMailProvider, PaneNavCtx, type PeerMail } from './child-open'
@@ -456,6 +457,7 @@ export function TaskView({
   embed,
   pane,
   onClose,
+  jumpSummary,
 }: {
   taskId: string
   project?: Project
@@ -472,6 +474,8 @@ export function TaskView({
   /** 放在对话页右侧的子对话栏里：不画自己的右栏，标题栏加上关闭按钮 */
   pane?: boolean
   onClose?: () => void
+  /** 子对话面板：父对话里点了它的结果卡片（时间戳），打开后滚到最后一份总结 */
+  jumpSummary?: number
 }) {
   const { agents: localAgents, workflows, settings, upsertTask, removeTask, tasks } = useData()
   const nav = useNav()
@@ -694,6 +698,8 @@ export function TaskView({
   // 用户往上翻时不打扰，回到底部附近再接着跟。切到流程图视图时这个容器不放对话，停止跟随
   const scroller = useConversationScroll(taskId, view === 'chat')
   const { el: scrollerEl, pin: stickToBottom, unpin: stayPut } = scroller
+  // 父对话点了结果卡片：滚到最后一份总结的标题（见 summary-jump.ts）
+  useSummaryJump(scroller, jumpSummary, task?.id, task?.messages.length)
   // 拖文件的接收范围：对话页的主区域（消息流、状态行、子对话、输入框），右栏不在里面。
   // 用 state 存元素：ref 在首帧还是空的，effect 拿不到要监听的节点
   const [dropArea, setDropArea] = useState<HTMLElement | null>(null)
@@ -966,6 +972,17 @@ export function TaskView({
   // 消息里「新建子对话」「交给子对话」那一行点开右栏的子对话；引用保持不变，消息行不用跟着重画
   // oxlint-disable-next-line react-hooks/exhaustive-deps
   const openChildRow = useCallback((id: string) => openChildIn(id), [taskId, pane])
+  // 父对话里点子对话结果卡片的标题：同样在右栏打开它，再让它滚到自己的详细总结（见 jumpSummary）
+  const [childSummaryAt, setChildSummaryAt] = useState(0)
+  const openChildSummary = useCallback(
+    (id: string) => {
+      openChildIn(id)
+      setChildSummaryAt(Date.now())
+    },
+    // 和 openChildRow 一样只按对话换：引用不变，回复里的卡片不用跟着重画
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [taskId, pane],
+  )
   const openRunIn = (run: number) => {
     // 子对话自己的面板没有再分一栏：就地换成那次运行的视图，返回后还是这个子对话
     if (pane) {
@@ -2137,15 +2154,16 @@ export function TaskView({
     </header>
   )
 
+  const needs = task.imported ? null : handleNeeds
   return (
     <WithAgents agents={agents}>
-      <TaskViewCtx openFile={openFile} aiLook={aiLook} handleNeeds={task.imported ? null : handleNeeds}>
+      <TaskViewCtx openFile={openFile} aiLook={aiLook} handleNeeds={needs} cards={!task.parentTaskId}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider
           value={
             pane || task.parentTaskId
               ? { runTool: openPaneRun, ...runNav, openChild, job: openJob }
-              : { child: openChildRow, ...runNav, openChild, job: openJob }
+              : { child: openChildRow, childSummary: openChildSummary, ...runNav, openChild, job: openJob }
           }
         >
           <ChildMailProvider kids={children} mail={peerMail}>
@@ -2576,6 +2594,7 @@ export function TaskView({
                               id: openChild,
                               task: children.find((c) => c.id === openChild),
                               onClose: () => openChildIn(''),
+                              focus: childSummaryAt,
                               // 切到别的页签时不卸载，回来滚动位置、输入框里的字都还在
                               view: (
                                 <TaskView
@@ -2584,6 +2603,7 @@ export function TaskView({
                                   project={project}
                                   pane
                                   onClose={() => openChildIn('')}
+                                  jumpSummary={childSummaryAt}
                                 />
                               ),
                             }
@@ -3106,17 +3126,22 @@ function TaskViewCtx({
   openFile,
   aiLook,
   handleNeeds,
+  cards,
   children,
 }: {
   openFile: (path: string, line?: number) => void
   aiLook: boolean
   handleNeeds: ((text: string) => Promise<void>) | null
+  /** 子对话里总结照普通 Markdown 显示，不画卡片（见 Markdown 的 SummaryCardsCtx） */
+  cards: boolean
   children: React.ReactNode
 }) {
   return (
     <FileOpenCtx.Provider value={openFile}>
       <AiLookCtx.Provider value={aiLook}>
-        <HandleNeedsCtx.Provider value={handleNeeds}>{children}</HandleNeedsCtx.Provider>
+        <HandleNeedsCtx.Provider value={handleNeeds}>
+          <SummaryCardsCtx.Provider value={cards}>{children}</SummaryCardsCtx.Provider>
+        </HandleNeedsCtx.Provider>
       </AiLookCtx.Provider>
     </FileOpenCtx.Provider>
   )

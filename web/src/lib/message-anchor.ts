@@ -1,3 +1,5 @@
+import { isSummaryTitle } from '@shared/summary-card'
+
 /**
  * 跳到某条消息：命令面板和侧栏的对话内容搜索点到一条命中时用。
  *
@@ -28,4 +30,15 @@ export function jumpToMessage(id: string, root: ParentNode = document): boolean 
   // 不能盲点前面几段——那会把用户没要看的「过程」全部摊开，而且找不到目标时会把整篇对话摊平
   root.querySelector<HTMLElement>(`[${FOLD_ATTR}~="${CSS.escape(id)}"]`)?.click()
   return false
+}
+
+/**
+ * 子对话里最后一份总结的标题（「修复｜……」，见 shared/summary-card.ts 的 summaryDetailRules）：
+ * 父对话里点子对话结果卡片的标题时滚到这里。按渲染出来的标题文字认，旧对话里的写法也认得
+ */
+export function lastSummaryHead(root: ParentNode): HTMLElement | null {
+  const heads = root.querySelectorAll<HTMLElement>('.chat-md h2, .chat-md h3, .chat-md h4')
+  // 从后往前找（目标库没有 findLast）
+  for (let i = heads.length - 1; i >= 0; i--) if (isSummaryTitle(heads[i].textContent ?? '')) return heads[i]
+  return null
 }

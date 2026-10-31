@@ -20,8 +20,8 @@
 |                  | `ue-project-structure`             | `project-structure` 的 UE 特化，只补引擎部分：模块与插件、UHT/UBT、自动化测试、Gameplay 框架、Cook、资产规则；用到它时面板自动带上 `project-structure`                   |
 |                  | `project-testing`                  | 测试先行（红-绿-重构）、怎么写好测试、按改动选测试、找项目自己的验证命令、写验收证据                                                                                     |
 | 版本控制 `vcs/`  | `project-vcs`                      | 版本控制与交付的唯一入口：识别 Git / P4 / SVN，保护既有改动；Git 的分支、worktree 与合并方向、P4 的 pending 分桶、SVN 的本地纳管分在技能内的 `git.md`、`p4.md`、`svn.md` |
-| UE `ue/`         | `cpp-code-style`                   | C++ / UE C++ 格式、日志格式、模块导出规则                                                                                                                                |
-|                  | `lua-code-style`                   | Lua 日志格式与排版                                                                                                                                                       |
+| UE `ue/`         | `cpp-code-style`                   | C++ / UE C++ 换行与格式、日志、模块导出                                                                                                                                  |
+|                  | `lua-code-style`                   | Lua 换行、写法、日志                                                                                                                                                     |
 | 美术 `art/`      | `blender-model-animation-workflow` | Blender 建模与动画的阶段和交付约定                                                                                                                                       |
 |                  | `blender`                          | 无头 Blender 建模、体检、多视角截图与 UE FBX 导出                                                                                                                        |
 
