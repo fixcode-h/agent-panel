@@ -463,6 +463,7 @@ export const EN_DESIGN: Record<string, string> = {
     'Entries are created from data at runtime; the designer only shows a preview',
   未选条目: 'No entry',
   拖动调整宽度: 'Drag to resize',
+  拖动调整对话和预览的宽度: 'Drag to resize the conversation and preview',
   '拖动调整宽度，双击恢复默认': 'Drag to resize, double-click to reset',
   拖动调整高度: 'Drag to resize',
   '拖动调整高度，双击恢复默认': 'Drag to resize, double-click to reset',

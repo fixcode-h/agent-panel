@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import * as D from '@radix-ui/react-dialog'
 import { toast, toastError } from '@/lib/toast'
 import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Terminal, Wand2, X } from 'lucide-react'
@@ -807,6 +808,9 @@ export function AssistDialog({
   const running = !!job
   // 最小化：窗口收成右下角的悬浮按钮，生成照常进行，点按钮再展开
   const [minimized, setMinimized] = useState(false)
+  // 左边对话、右边预览之间可以拖：宽度记在本机。两边各至少留 360，预览窄了看不清差异
+  const split = useRef<HTMLDivElement>(null)
+  const chatPane = usePaneWidth('assist-chat', 540, 360, () => (split.current?.clientWidth ?? 1100) - 360)
   // 最小化期间生成完了：悬浮按钮上提示一下
   const [unseen, setUnseen] = useState(false)
   useEffect(() => {
@@ -986,9 +990,21 @@ export function AssistDialog({
           }
         />
 
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          {/* 对话 */}
-          <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[540px] md:border-r md:border-b-0">
+        <div ref={split} className="flex min-h-0 flex-1 flex-col md:flex-row">
+          {/* 对话：窄屏上下排，宽屏左右排、宽度跟着拖动条 */}
+          <section
+            style={{ '--chat-w': `${chatPane.width}px` } as React.CSSProperties}
+            className={cn(
+              'relative flex min-h-0 flex-1 flex-col border-b md:w-(--chat-w) md:flex-none md:border-r md:border-b-0',
+              !chatPane.dragging && 'transition-[width] duration-(--dur-fast)',
+            )}
+          >
+            <ResizeHandle
+              pane={chatPane}
+              side="right"
+              label={t('拖动调整对话和预览的宽度')}
+              className="hidden md:block"
+            />
             <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
               <span className="mr-1 text-xs text-subtle">{t('使用')}</span>
               <ChipGroup
