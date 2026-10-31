@@ -44,3 +44,14 @@ test('限时内收完就返回，不等满时限', async () => {
   assert.ok(Date.now() - t0 < 1000)
   assert.equal(r.stops(), 1)
 })
+
+test('强制停止后执行仍收不完：再等一段就返回，不把收尾一起拖住', async () => {
+  const r = rig(99)
+  // 第一次停下（没有等下一句的 CLI 可取消）也不结束：模拟这一份执行的收尾卡在别处
+  const hold = setTimeout(() => {}, 5000)
+  const t0 = Date.now()
+  await r.endLive('kid', r.entry, 'finish', 30)
+  clearTimeout(hold)
+  assert.ok(Date.now() - t0 < 2000)
+  assert.equal(r.stops(), 2)
+})

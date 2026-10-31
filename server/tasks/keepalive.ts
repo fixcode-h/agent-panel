@@ -216,10 +216,22 @@ export function createKeepAlive(s: TasksScope) {
       }),
     ])
     clearTimeout(timer)
-    if (late) {
-      taskLog(id, '取消等待后进程没在限时内结束，强制停止', { reason, graceMs })
-      stopTask(id, reason)
-      await done
+    if (!late) return
+    taskLog(id, '取消等待后进程没在限时内结束，强制停止', { reason, graceMs })
+    stopTask(id, reason)
+    // 强制停止后也只再等一段：这一份执行的收尾卡在别处（等落盘、等别的对话）时不能把调用方一起拖住，
+    // 收尾（completeChild）拖住就永远落不到「已完成」，completing 也永远不删
+    const stuck = await Promise.race([
+      done.then(() => false),
+      new Promise<boolean>((r) => {
+        timer = setTimeout(() => r(true), graceMs)
+        timer.unref?.()
+      }),
+    ])
+    clearTimeout(timer)
+    if (stuck) {
+      taskLog(id, '强制停止后执行仍没收完，不再等它', { reason, graceMs })
+      log.warn('task', '强制停止后执行仍没收完，不再等它', { task: id, reason })
     }
   }
 
