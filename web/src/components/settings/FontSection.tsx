@@ -135,9 +135,9 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
       <Group title={t('字体')}>
         <Row
           title={t('英文字体')}
-          desc={t('默认跟随系统，和 Claude Code 一样')}
+          desc={t('字母、数字和符号用的字体')}
           hint={t(
-            '默认是系统界面字体（Segoe UI / 苹方）；也可以换内置的 Inter，喜欢等宽可以换 Maple Mono NL（不带符号连字）。',
+            '默认是内置的等宽 Maple Mono NL（不带符号连字）；也可以换系统界面字体（Segoe UI / 苹方）、内置的 Inter 或 IBM Plex Sans。',
           )}
         >
           <Select
@@ -150,9 +150,9 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
               update({ ...value, uiFont: f, wordSpacing: ws })
             }}
             options={[
-              { value: 'system', label: t('系统字体（默认）') },
-              { value: 'inter', label: t('Inter（内置）') },
               { value: 'maple', label: t('Maple Mono NL（内置）') },
+              { value: 'system', label: t('系统字体') },
+              { value: 'inter', label: t('Inter（内置）') },
               { value: 'plex', label: t('IBM Plex Sans（内置）') },
             ]}
           />
@@ -160,7 +160,9 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         <Row
           title={t('中文字体')}
           desc={t('汉字用的字体')}
-          hint={t('英文字体里没有汉字，汉字用这里选的字体。思源黑体和 Maple Mono 中文版是同一套字形。')}
+          hint={t(
+            '英文字体里没有汉字，汉字用这里选的字体。Maple Mono CN 是 Maple Mono 的中文版：一个汉字正好占两个英文字母宽，和 Maple Mono 英文上下对齐，但汉字之间比思源黑体疏；它只有常规和中粗两档，标题由浏览器加粗。',
+          )}
         >
           <Select
             aria-label={t('中文字体')}
@@ -168,6 +170,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             onChange={(e) => set('cjkFont', e.target.value as Appearance['cjkFont'])}
             options={[
               { value: 'noto', label: t('思源黑体 Noto Sans SC（内置）') },
+              { value: 'maple', label: t('Maple Mono CN（内置）') },
               { value: 'system', label: t('系统字体（苹方 / 微软雅黑）') },
             ]}
           />

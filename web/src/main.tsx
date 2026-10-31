@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { LucideProvider } from 'lucide-react'
 import { App } from './App'
 import './index.css'
 import './maple-mono.css'
@@ -12,7 +13,7 @@ document.documentElement.lang = getLang() === 'zh' ? 'zh-CN' : 'en'
 installCaretAutoScroll()
 
 if (!import.meta.env.VITE_DEMO) {
-  // 中文字体按设置要用到思源黑体时才下载（默认走系统字体）
+  // 中文字体按设置选的内置字体（默认思源黑体）先下载，选系统字体时不下载
   primeCjkFont()
   void import('./fonts.css')
 } else {
@@ -26,6 +27,9 @@ if (!import.meta.env.VITE_DEMO) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* 没写线宽的 lucide 图标默认 2.3（lucide 自带 2 偏细）；写了的各处已按同样比例加粗 */}
+    <LucideProvider strokeWidth={2.3}>
+      <App />
+    </LucideProvider>
   </StrictMode>,
 )

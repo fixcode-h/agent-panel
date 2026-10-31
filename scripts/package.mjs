@@ -104,6 +104,11 @@ run(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build'
 cpSync(path.join(root, 'dist'), path.join(out, 'dist'), { recursive: true })
 // 内置的 Maple Mono 是 SIL OFL 字体，许可证要跟着字体一起发
 cpSync(path.join(root, 'web/src/assets/fonts/maple-mono-nl/OFL.txt'), path.join(out, 'dist/assets/MapleMono-OFL.txt'))
+// Maple Mono CN（中文字体可选，来自 @automann/maple-mono-cn）同样是 SIL OFL
+cpSync(
+  path.join(root, 'node_modules/@automann/maple-mono-cn/dist/OFL.txt'),
+  path.join(out, 'dist/assets/MapleMonoCN-OFL.txt'),
+)
 const files = (p) => (statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => files(path.join(p, f))) : [p])
 // 2. 服务端打成一个文件，依赖全部内联
 await build({

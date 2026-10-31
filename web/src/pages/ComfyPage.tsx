@@ -1053,7 +1053,7 @@ function Tool({
         tone === 'peer' ? 'text-peer' : 'text-muted hover:text-fg',
       )}
     >
-      <Icon className={cn('h-[15px] w-[15px]', spin && 'animate-spin')} strokeWidth={1.9} />
+      <Icon className={cn('h-[15px] w-[15px]', spin && 'animate-spin')} strokeWidth={2.2} />
       <span className={cn('hidden', wide ? '@[1000px]:inline' : '@[740px]:inline')}>{label}</span>
       {dot && <span aria-hidden className={cn('h-1.5 w-1.5 rounded-full', dot)} />}
     </button>
@@ -1087,7 +1087,7 @@ function WorkflowRow({ w, on, ready, onPick }: { w: ComfyWorkflow; on: boolean; 
         className="relative grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] text-white"
         style={{ background: look.color }}
       >
-        <Icon className="h-4 w-4 opacity-90" strokeWidth={1.8} />
+        <Icon className="h-4 w-4 opacity-90" strokeWidth={2.2} />
         <span
           title={ready ? t('模型已下载，可以用') : t('模型还没下载')}
           className={cn(

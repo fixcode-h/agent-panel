@@ -129,7 +129,7 @@ export function WorkflowDetail({
           <DetailHeader
             leading={
               <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent text-on-accent">
-                <WorkflowIcon className="h-6 w-6" strokeWidth={1.8} />
+                <WorkflowIcon className="h-6 w-6" strokeWidth={2.2} />
               </span>
             }
             title={draft.name || t('未命名工作流')}

@@ -29,7 +29,7 @@ export function AgentAvatar({
       className={cn('grid shrink-0 place-items-center text-white', sizes[size], dim && 'opacity-50 grayscale')}
       style={{ background: cliColor(cliOf({ cli })) }}
     >
-      <Icon strokeWidth={1.8} />
+      <Icon strokeWidth={2.2} />
     </span>
   )
 }

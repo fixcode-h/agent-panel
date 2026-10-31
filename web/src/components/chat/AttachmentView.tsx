@@ -190,7 +190,7 @@ export function MessageChip({
           className="h-[1.25em] w-[1.25em] shrink-0 rounded-sm object-cover"
         />
       ) : (
-        <Icon className={cn('h-[1.05em] w-[1.05em] shrink-0', tone.icon)} strokeWidth={2} />
+        <Icon className={cn('h-[1.05em] w-[1.05em] shrink-0', tone.icon)} strokeWidth={2.3} />
       )}
       <span className="truncate">{label}</span>
     </button>

@@ -1,6 +1,13 @@
 import { t } from './i18n.ts'
 import { CLIS, getCli, MODEL_TIERS, type CliDefinition, type ModelTier } from './clis.ts'
-import { AUTO_COMPACT_DEFAULT, CliSettings, SETTINGS_DEFAULTS_VERSION, Settings } from './schema.ts'
+import {
+  AUTO_COMPACT_DEFAULT,
+  CliSettings,
+  LETTER_SPACING_DEFAULT,
+  SETTINGS_DEFAULTS_VERSION,
+  Settings,
+  WORD_SPACING,
+} from './schema.ts'
 import {
   apiFits,
   apiInjection,
@@ -83,6 +90,17 @@ export function migrateSettingsDefaults(s: Settings): boolean {
   if (s.defaultsVersion < 2) {
     if (s.appearance.palette === 'claude') s.appearance.palette = 'code'
     if (s.appearance.uiFont === 'inter') s.appearance.uiFont = 'system'
+  }
+  // 版本 3：默认字体换成英文 Maple Mono NL、中文思源黑体（代码字体本来就是 Maple Mono NL）。
+  // 还是系统字体的升级一次，字间距、空格宽度还是系统字体的默认值（0）就跟着换成 Maple 的默认值
+  if (s.defaultsVersion < 3) {
+    const a = s.appearance
+    if (a.uiFont === 'system') {
+      a.uiFont = 'maple'
+      if (a.letterSpacing === 0) a.letterSpacing = LETTER_SPACING_DEFAULT
+      if (a.wordSpacing === WORD_SPACING.system) a.wordSpacing = WORD_SPACING.maple
+    }
+    if (a.cjkFont === 'system') a.cjkFont = 'noto'
   }
   if (s.defaultsVersion < SETTINGS_DEFAULTS_VERSION) {
     s.defaultsVersion = SETTINGS_DEFAULTS_VERSION

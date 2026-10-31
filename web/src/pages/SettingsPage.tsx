@@ -437,9 +437,9 @@ function SettingsBody({
     s.cli ? (
       <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ background: cliColor(s.cli.id) }} />
     ) : s.id === 'models' ? (
-      <SquareTerminal className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+      <SquareTerminal className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
     ) : (
-      s.icon && <s.icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+      s.icon && <s.icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
     )
   const defName = CLIS.find((c) => c.id === defCli)?.name ?? defCli
   // 索引存的是中文原文：翻成当前语言再搜；各个 CLI 共用的那页（@cli）落到默认 CLI 上
@@ -574,10 +574,10 @@ function SettingsBody({
                   )}
                   icon={
                     s.id === 'models' ? (
-                      <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
+                      <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
                     ) : (
                       s.icon && (
-                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
+                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
                       )
                     )
                   }
@@ -674,7 +674,7 @@ function SettingsBody({
                       <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(s.cli.id) }} />
                     ) : (
                       s.icon && (
-                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
+                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
                       )
                     )
                   }
