@@ -1385,7 +1385,15 @@ await runShard('子对话与计划', async (api) => {
           }
         },
       })
-      const old = await call('GET', `/tasks/${dead.id}`)
+      // 接手的子对话先建出来，原子对话里的警告随后才写（replace 里 spawnChildOf 在 panelAlert 前）：等警告落下再断言，
+      // 不然列表里刚出现「（接手）」就读，偶尔还没写到
+      const old = await waitFor(
+        async () => {
+          const t = await call('GET', `/tasks/${dead.id}`)
+          return t.messages.some((m) => m.alert?.kind === 'no_response') ? t : undefined
+        },
+        { label: '原子对话里记了换人接手的警告', timeout: 10000 },
+      )
       assert.equal(old.status, 'stopped', '卡住的子对话停下了')
       assert.equal(old.stopReason, 'replaced', '停下原因是换人接手，父对话继续时不会再拉起它')
       assert.ok(
