@@ -25,12 +25,12 @@
   --sel: #ebe8df;
   --sel-line: #d5d1c4;
   --content-w: 1000px;
-  /* 默认字体：系统界面字体（Segoe UI / SF）配系统中文（苹方 / 微软雅黑），和 Claude Code 一样；思源黑体按需加载，见 fonts-cjk.css */
+  /* 默认字体：内置的 Maple Mono NL 配思源黑体（中文按需加载，见 fonts-cjk.css）；设置取回来前也按这个画 */
   --app-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui,
-    sans-serif;
+    'Maple Mono NL', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
   --app-mono:
-    'Maple Mono NL', 'JetBrains Mono Variable', 'PingFang SC', 'Microsoft YaHei', ui-monospace, Consolas, monospace;
+    'Maple Mono NL', 'JetBrains Mono Variable', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    ui-monospace, Consolas, monospace;
   --accent: #c6613f;
   --accent-soft: rgb(198 97 63 / 0.11);
   /* 文字用的强调色：比 --accent 深一号，小字在米色底上也够 4.5:1；色块、图标、描边仍用 --accent */
@@ -490,9 +490,11 @@
   --font-sans: var(--app-sans);
   --font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
   --font-mono: var(--app-mono);
-  /* 正文字重：Maple Mono 的 400 笔画偏细，整站常规字提到 450（可变字重能画出来；系统中文字体没有 450 时按 400 画）。
-     主次靠颜色和字号分，不靠更细的字；500 / 600 留给名字、标题 */
-  --font-weight-normal: 450;
+  /* 字重整体比常规粗一档（用户要求）：常规字 500、font-medium 550，600 / 700 不变。
+     Maple Mono 是可变字重，550 能画出来；思源黑体打了 400 / 500 / 600 三档，550 落到 600。
+     主次靠颜色和字号分，不靠更细的字 */
+  --font-weight-normal: 500;
+  --font-weight-medium: 550;
   /* 间距固定用像素：设置里调字号改的是根字号，界面字号都写 rem，这样只有字变大、布局不跟着撑开 */
   --spacing: 4px;
 }

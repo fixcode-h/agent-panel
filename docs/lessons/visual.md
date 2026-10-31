@@ -8,7 +8,7 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 
 - 规则：分区、选中、次要按钮、小标签靠底色深浅区分，不描边、不加阴影；只有输入框、工具行、弹窗这类必须看出边界的地方留一圈细线。差异照 Claude Code 只用底色（`web/src/components/ui/diff-tone.ts`）。
 - 例外：插在文字里的行内卡片（图片、文件、Skill、引用）按类型着色加同色细内框，统一用 `web/src/components/ui/chip-tone.ts` 的 `CHIP_TONE`；只靠中性浅底时它们在用户气泡（同为 `bg-sel`）里看不出来，用户说「太不明显了」。
-- 规则：常规字重 450（`--font-weight-normal`，Maple Mono 的 400 偏细），不用 `font-light` / `font-thin`；主次用颜色（fg / muted / subtle）和字号分，500 / 600 只给名字和标题。
+- 规则：常规字重 500、`font-medium` 550（`--font-weight-normal` / `--font-weight-medium`；用户 2026-10-31 要求「字体都用加粗一点的版本」，450 时中文落到 400 显得细），不用 `font-light` / `font-thin`；主次用颜色（fg / muted / subtle）和字号分，600 只给名字和标题。思源黑体因此打 400 / 500 / 600 三档。
 - 规则：页面只用 `components/ui` 的部件拼，新加或改了部件在设置 → 组件（`ComponentsSection.tsx`）里加一格，换配色时一眼能看全。
 - 起因：界面重设计时用户指出「不要加乱七八糟的描边」「字体不要太细」。
 - 防线：`scripts/rules-check.mjs` 拦细字重；`scripts/ui/05-settings.mjs` 检查组件页。

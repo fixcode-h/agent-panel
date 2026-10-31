@@ -1,0 +1,6 @@
+/* Maple Mono CN（中文字体选「Maple Mono CN」时才加载，见 web/src/lib/appearance.ts 的 ensureCjkFont）。
+   Maple Mono 的中文版：一个汉字正好两个英文宽，和 Maple Mono 英文对齐，SIL OFL 1.1。
+   来自 @automann/maple-mono-cn（官方 MapleMono-CN-unhinted 按 unicode-range 切成 woff2，浏览器只下载页面用到的分片）。
+   只有 400、500 两档：正文是 500，600 以上的标题用 500 由浏览器加粗 */
+@import '@automann/maple-mono-cn/400.css';
+@import '@automann/maple-mono-cn/500.css';

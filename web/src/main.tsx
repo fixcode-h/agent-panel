@@ -12,7 +12,7 @@ document.documentElement.lang = getLang() === 'zh' ? 'zh-CN' : 'en'
 installCaretAutoScroll()
 
 if (!import.meta.env.VITE_DEMO) {
-  // 中文字体按设置要用到思源黑体时才下载（默认走系统字体）
+  // 中文字体按设置选的内置字体（默认思源黑体）先下载，选系统字体时不下载
   primeCjkFont()
   void import('./fonts.css')
 } else {

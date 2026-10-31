@@ -3,7 +3,9 @@ import { applyMarkdownStyle } from './markdown-style'
 
 const CJK = {
   noto: ["'Noto Sans SC'", "'PingFang SC'", "'Microsoft YaHei UI'", "'Microsoft YaHei'"],
-  // 系统字体不列思源黑体：它的 @font-face 只在选了 noto 时才加载（见 ensureCjkFont），
+  // Maple Mono CN 只打了 400、500 两档（没有更粗的），600 以上的标题浏览器拿 500 加粗画；缺字再落到系统中文
+  maple: ["'Maple Mono CN'", "'PingFang SC'", "'Microsoft YaHei UI'", "'Microsoft YaHei'"],
+  // 系统字体不列内置中文字体：它们的 @font-face 只在选中时才加载（见 ensureCjkFont），
   // 列在这里只会让浏览器去匹配一个没加载的字体；本机真没有中文字体时交给 system-ui 兜底
   // 雅黑 UI 放在雅黑前：同一套字形，但行距更紧、小字号在低分辨率屏上的 hinting 更清楚
   system: ["'PingFang SC'", "'Microsoft YaHei UI'", "'Microsoft YaHei'", "'Hiragino Sans GB'"],
@@ -44,20 +46,23 @@ export function appearanceVars(a: Appearance): Record<string, string> {
   }
 }
 
-let cjkLoad: Promise<unknown> | null = null
+const cjkLoad: Partial<Record<Appearance['cjkFont'], Promise<unknown>>> = {}
 
-/** 中文字体选的是思源黑体时，才需要它的 @font-face */
-export const needsCjkFont = (cjkFont: Appearance['cjkFont']) => cjkFont === 'noto'
+/** 中文字体选的是内置字体（思源黑体 / Maple Mono CN）时，才需要它的 @font-face */
+export const needsCjkFont = (cjkFont: Appearance['cjkFont']) => cjkFont !== 'system'
 
 /**
- * 思源黑体的 @font-face 在 fonts-cjk.css 里（每档 101 个 unicode-range 分片）：只有中文字体选了它才加载。
+ * 内置中文字体的 @font-face 各在一个 CSS 里（按 unicode-range 分片）：选了哪个才加载哪个。
+ * 思源黑体在 fonts-cjk.css，Maple Mono CN 在 fonts-cjk-maple.css。
  * 判定看设置里的 cjkFont 字段，**不从生成的字体列表里搜字体名**：
- * 那样会在选「系统字体」时也命中（不加载就等于白下载 202 条声明）。
+ * 那样会在选「系统字体」时也命中（不加载就等于白下载几百条声明）。
  */
 export function ensureCjkFont(cjkFont: Appearance['cjkFont']) {
-  if (cjkLoad || !needsCjkFont(cjkFont)) return
+  if (cjkLoad[cjkFont] || !needsCjkFont(cjkFont)) return
   // 加载失败（产物里少了这个 CSS）就退回字体列表里的系统中文，不报错：这是纯性能优化，退化只影响字形
-  cjkLoad = import('../fonts-cjk.css').catch(() => null)
+  cjkLoad[cjkFont] = (cjkFont === 'maple' ? import('../fonts-cjk-maple.css') : import('../fonts-cjk.css')).catch(
+    () => null,
+  )
 }
 
 /** 记下的配色：index.html 加载时先套上，免得设置取回来前闪一下默认配色 */
@@ -79,8 +84,9 @@ const CJK_KEY = 'appearance-cjk'
 /** 设置还没取回来时先按上次的选择判一次，免得设置回来才换字体、闪一下 */
 export function primeCjkFont() {
   try {
-    const cjk = localStorage.getItem(CJK_KEY)
-    if (cjk === 'noto' || cjk === 'system') ensureCjkFont(cjk)
+    // 没记过（新装）就按默认的思源黑体先加载
+    const cjk = localStorage.getItem(CJK_KEY) ?? Appearance.parse({}).cjkFont
+    if (cjk === 'noto' || cjk === 'maple' || cjk === 'system') ensureCjkFont(cjk)
   } catch {
     // 浏览器不让读就算了，设置取回来后 applyAppearance 会再判一次
   }
@@ -90,7 +96,7 @@ export function primeCjkFont() {
 export function applyAppearance(a: Appearance | undefined) {
   const parsed = Appearance.parse(a ?? {})
   const vars = appearanceVars(parsed)
-  // 中文字体选了思源黑体时才去加载它的分片
+  // 中文字体选了内置字体时才去加载它的分片
   ensureCjkFont(parsed.cjkFont)
   const root = document.documentElement.style
   for (const [k, v] of Object.entries(vars)) root.setProperty(k, v)
