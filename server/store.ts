@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, cpSync } from 'node:fs'
-import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -153,6 +153,60 @@ export async function writeJsonAtomic(file: string, data: unknown, compact = fal
     }
   }
   await fsyncDir(path.dirname(file))
+}
+
+/**
+ * 写一份按内容起名的文件（文件名就是内容的哈希）：已经有了就不写。
+ * 几个 Agent 同时启动会同时写同一个名字：临时文件名带随机后缀，不互相覆盖、也不会被别人改名拿走；
+ * 改名失败但目标已经在了（别人先写好了，Windows 上覆盖已有文件还会报 EPERM）就算成功——内容一样
+ */
+export async function writeFileOnce(file: string, body: string) {
+  if (existsSync(file)) return
+  await mkdir(path.dirname(file), { recursive: true })
+  const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+  await writeFile(tmp, body)
+  try {
+    await rename(tmp, file)
+  } catch (e) {
+    await unlink(tmp).catch(() => {})
+    if (!existsSync(file)) throw e
+  }
+}
+
+/** writeJsonAtomic 的临时文件名：`<原文件>.<pid>.<8 位十六进制>.tmp`，只认这个形状，不碰别人的 .tmp */
+const ATOMIC_TMP = /\.\d+\.[0-9a-f]{8}\.tmp$/
+
+/**
+ * 启动时删掉崩溃、强杀留下的 writeJsonAtomic 临时文件（改名前进程就没了，之后没人清）。
+ * 只删 maxAgeMs 以前的：另一个进程（导出、测试）可能正在写。chats/ 是 Agent 的工作目录，里面的文件不归面板管，跳过；
+ * 返回删掉的路径，删不掉的不中断扫描
+ */
+export async function sweepStaleTmp(root = DATA_DIR, maxAgeMs = 60 * 60_000, now = Date.now()): Promise<string[]> {
+  const removed: string[] = []
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const e of entries) {
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) {
+        if (depth === 0 && e.name === 'chats') continue
+        // 数据目录的 JSON 最深是 tasks/<项目>/<id>.json 这一层，再深的不是面板写的
+        if (depth < 4) await walk(full, depth + 1)
+        continue
+      }
+      if (!e.isFile() || !ATOMIC_TMP.test(e.name)) continue
+      const st = await stat(full).catch(() => null)
+      if (!st || now - st.mtimeMs < maxAgeMs) continue
+      if (
+        await unlink(full).then(
+          () => true,
+          () => false,
+        )
+      )
+        removed.push(full)
+    }
+  }
+  await walk(root, 0)
+  return removed
 }
 
 /** 读 JSON 时文件坏了的说明 */

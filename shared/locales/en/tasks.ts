@@ -108,8 +108,8 @@ export const EN_TASKS: Record<string, string> = {
   全部引用: 'Quote all',
   '引用没有加上：{error}': 'Could not add the quote: {error}',
   '点击查看，按退格键删除': 'Click to view, press Backspace to remove',
-  '这是可执行文件，不直接运行，已在文件夹中显示':
-    'This is an executable, so it was shown in its folder instead of being run',
+  '这类文件不直接打开，已在文件夹中显示':
+    'This file type is not opened directly, so it was shown in its folder instead',
   用默认程序打开: 'Open with default app',
   在文件夹中显示: 'Show in folder',
   '找不到这个文件，可能已经被移动或删除。': 'This file could not be found. It may have been moved or deleted.',

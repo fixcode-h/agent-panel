@@ -236,6 +236,10 @@ export function runProcess(o: {
         if (settled) return
         log.warn('exec', '进程树 5 秒内没退出，先结束等待', { pid: child.pid, why })
         stderr += `\n[${t('进程树未在 5 秒内退出，先结束等待')}]`
+        // 只撤「这个对话的 CLI 还活着」的登记（taskCliAlive）：不撤的话杀不掉的进程会让对话永远显示 CLI 存活、
+        // 接不上下一轮。live 表和遗留进程清单故意留着：进程可能真的还在跑，进程面板要能看到并手动结束它，
+        // 面板退出时（killAllProcesses）和下次启动时也还会再杀一次；真的退出了 close / exit 会照常全部撤掉
+        if (child.pid) owned.delete(child.pid)
         done({ code: null })
       }, 5000)
       killerTimer.unref?.()

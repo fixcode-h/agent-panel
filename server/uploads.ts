@@ -52,8 +52,11 @@ const UploadInput = z.object({
 // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
 const safeName = (n: string) => path.basename(n).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_') || 'file'
 
-/** dirs：找大文件原路径时额外翻的目录（各个项目的目录） */
-export function uploadsApi(opts: { dirs?: () => Promise<string[]> } = {}) {
+/**
+ * dirs：找大文件原路径时额外翻的目录（各个项目的目录）。
+ * known：这个本机路径是不是某个对话里用户发过的附件（/open 用：重启后 confirmed 清空了，旧消息里的附件照样要能打开）
+ */
+export function uploadsApi(opts: { dirs?: () => Promise<string[]>; known?: (file: string) => Promise<boolean> } = {}) {
   const routes = new Hono()
   routes.post('/', async (c) => {
     const p = UploadInput.safeParse(await c.req.json().catch(() => null))
@@ -211,13 +214,19 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]> } = {}) {
     }
     return c.json({ ok: true })
   })
-  /** 点开附件卡片后：用系统默认程序打开，或在文件管理器里显示（可执行文件只显示，不运行） */
+  /**
+   * 点开附件卡片后：用系统默认程序打开，或在文件管理器里显示（不在白名单里的类型只显示，不运行，见 safeToOpen）。
+   * 只认附件：附件目录里的、面板确认过的（pick / resolve / locate / copy）、对话里发过的附件路径。
+   * 本机服务谁都能往 127.0.0.1 发请求，不能凭一段任意路径就让系统去打开本机的文件
+   */
   routes.post('/open', async (c) => {
     const p = z
       .object({ path: z.string().min(1).max(4096), reveal: z.boolean().default(false) })
       .safeParse(await c.req.json().catch(() => null))
     if (!p.success || !path.isAbsolute(p.data.path)) return c.json({ error: t('不是附件') }, 400)
     const file = path.resolve(p.data.path)
+    const allowed = !!uploadDirOf(file) || isConfirmed(file) || !!(await opts.known?.(file).catch(() => false))
+    if (!allowed) return c.json({ error: t('只能打开对话里的附件：这个路径不是面板记录过的附件') }, 403)
     if (!(await stat(file).catch(() => null))) return c.json({ error: t('附件已经不在了') }, 404)
     if (p.data.reveal) {
       try {

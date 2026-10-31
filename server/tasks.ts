@@ -749,6 +749,8 @@ export function tasksApi(deps: {
       const head = await store.peek(id)
       return head ? idle(head) : null
     },
+    /** 退出前把还在合并窗口里的对话消息写盘（见 task-store 的 flushAll） */
+    flush: () => store.flushAll(),
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
     async stopAll() {
       shuttingDown = true
@@ -789,6 +791,15 @@ export function tasksApi(deps: {
         return !!tk && taskSettled(tk)
       }
       return reapSettledTaskClis({ settled, kill: killTree, graceMs: REAP_GRACE_MS })
+    },
+    /** 这个本机路径是不是某个对话里用户发过的附件（/uploads/open 只打开这些）；列表里带着全部用户消息，不用读对话文件 */
+    async hasAttachment(file: string) {
+      const want = path.resolve(file)
+      return (await store.list()).some((t) =>
+        t.messages.some((m) =>
+          (m.attachments ?? []).some((a) => path.isAbsolute(a.path) && path.resolve(a.path) === want),
+        ),
+      )
     },
     /** 启动时清理没有任务在用的附件 */
     async cleanupUploads() {

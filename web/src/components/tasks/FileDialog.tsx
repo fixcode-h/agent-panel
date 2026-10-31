@@ -72,7 +72,7 @@ export function FileDialog({
     target &&
     api
       .openLocalFile(target.path, reveal)
-      .then((r) => !reveal && r.revealed && toast(t('这是可执行文件，不直接运行，已在文件夹中显示')))
+      .then((r) => !reveal && r.revealed && toast(t('这类文件不直接打开，已在文件夹中显示')))
       .catch((e) => toast.error((e as Error).message))
   // 内容出来后滚到提到的那一行
   useEffect(() => {

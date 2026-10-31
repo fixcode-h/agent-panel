@@ -503,6 +503,12 @@ export function createTaskStore() {
       drop(old)
       // 对话已经不在内存里了，它的指纹缓存也一起丢：下次真的写它的时候重算一次（指纹值不变，不会多写一次盘）
       stamps.forget(old)
+      // 「上次写入的指纹」也跟着丢，不然对话越开越多这张表只增不减。丢了最多是下次落盘多写一次（没有指纹就照写），
+      // 不会少写；重新 get 时会按读到的内容重新记上。窗口里还排着写的不动：msgAt 管着它的节流窗口
+      if (!msgTimers.has(old)) {
+        written.delete(old)
+        msgAt.delete(old)
+      }
     }
   }
 
@@ -528,8 +534,27 @@ export function createTaskStore() {
     return out
   }
 
+  /**
+   * 把 400ms 合并窗口里还没写的对话消息立即写掉，并等所有排着的写入结束。
+   * 退出前调用：不然 process.exit 会丢掉最后不到一秒的输出（往往正是 Agent 的最后一段回复）
+   */
+  async function flushAll() {
+    for (const [id, timer] of msgTimers) {
+      clearTimeout(timer)
+      msgTimers.delete(id)
+      const last = msgPending.get(id)
+      msgPending.delete(id)
+      if (last) void queueWrite(last, writeMessages)
+    }
+    // 写失败照样要让调用方知道：逐个收集，不吞掉
+    const res = await Promise.allSettled([...writing.values()])
+    const bad = res.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (bad.length) throw new Error(bad.map((r) => String((r.reason as Error)?.message ?? r.reason)).join('; '))
+  }
+
   return {
     diskSizes,
+    flushAll,
     /** 所有任务，只带用户发的消息（列表、摘要、附件清理用）；要完整对话用 get */
     async list(): Promise<Task[]> {
       return [...(await all()).values()]

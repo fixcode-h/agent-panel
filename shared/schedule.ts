@@ -198,6 +198,16 @@ export const Schedule = ScheduleInput.extend({
   lastDelivery: ScheduleDelivery.nullable().default(null),
   /** 最近几次运行（新的在前，最多 SCHEDULE_RUN_HISTORY 条）；旧数据没有这个字段，读盘时补空数组 */
   runs: z.array(ScheduleRun).default([]),
+  /**
+   * 用户定的本地时分（HH:MM），保存时按 at 记下（见 scheduleClock）。重复计划往后推时按它重新设时分：
+   * 只靠 at 的话，夏令时跳过的那一天 02:30 会变成 03:30，之后每天都跟着变成 03:30。
+   * 旧数据没有，没有时按 at 的时分
+   */
+  clock: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional()
+    .catch(undefined),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -345,7 +355,10 @@ export function scheduleTimingError(s: Pick<ScheduleInput, 'repeat' | 'at' | 'we
  * 单次直接返回 at（由调用方决定不再执行）；weekly / workdays 即使首次执行时间还没到，
  * 也只返回符合星期的日子（保存时已用 `alignScheduleAt` 对齐，这里再兵一道）。
  */
-export function nextRunAt(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays'>, now: number): string {
+export function nextRunAt(
+  s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays'> & { clock?: string },
+  now: number,
+): string {
   // 过了结束日期也照样往后推：存下来的 at 越过结束日期就是「已结束」（scheduleEnded），
   // 到点判定、周视图、「接下来」都按它不再排；用户把结束日期往后改时从这里接着跑
   const at = new Date(s.at)
@@ -353,22 +366,38 @@ export function nextRunAt(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays'>, 
   if (s.repeat === 'once') return at.toISOString()
   const days = repeatDays(s)
   const d = new Date(at)
+  // 每挪一天都按用户定的时分重设：setDate 落进夏令时跳过的那一小时会被顺延（02:30 → 03:30），
+  // 不重设的话这一小时的偏差会带到之后每一天（at 存的就是上一次算出来的时刻）
+  const m = /^(\d{2}):(\d{2})$/.exec(s.clock ?? '')
+  const hh = m ? Number(m[1]) : at.getHours()
+  const mm = m ? Number(m[2]) : at.getMinutes()
+  const addDays = (n: number) => {
+    d.setDate(d.getDate() + n)
+    d.setHours(hh, mm, at.getSeconds(), at.getMilliseconds())
+  }
   if (days) {
     // 每周 / 工作日：先按整天数快进到 now 附近（at 可能很多年以前），再逐天找符合星期的。
     // at 在未到且符合星期时不会跳（jump 为负），直接返回 at；不符合时从 at 往后数几天
     const jump = Math.floor((now - at.getTime()) / DAY_MS) - 1
-    if (jump > 0) d.setDate(d.getDate() + Math.min(jump, MAX_DAYS))
+    if (jump > 0) addDays(Math.min(jump, MAX_DAYS))
     for (let i = 0; i < MAX_DAYS; i++) {
       if (d.getTime() > now && days.has(isoWeekday(d))) return d.toISOString()
-      d.setDate(d.getDate() + 1)
+      addDays(1)
     }
     return at.toISOString()
   }
   // 每天：还没到就直接返回，到了先按整天数跳（at 可能是很久以前），剩下的零头再逐天补
   if (at.getTime() > now) return at.toISOString()
-  d.setDate(d.getDate() + Math.min(Math.floor((now - d.getTime()) / DAY_MS), MAX_DAYS))
-  for (let i = 0; d.getTime() <= now && i < MAX_DAYS; i++) d.setDate(d.getDate() + 1)
+  addDays(Math.min(Math.floor((now - d.getTime()) / DAY_MS), MAX_DAYS))
+  for (let i = 0; d.getTime() <= now && i < MAX_DAYS; i++) addDays(1)
   return d.toISOString()
+}
+
+/** 执行时间的本地时分（HH:MM）：保存计划时记进 clock，往后推时按它重设，不被夏令时带偏 */
+export function scheduleClock(at: string): string {
+  const d = new Date(at)
+  if (!Number.isFinite(d.getTime())) return ''
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 /** 某天所在那周的周一 0 点（本地时间）：计划页的周视图按它翻周 */

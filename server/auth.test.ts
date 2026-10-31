@@ -11,7 +11,7 @@ mkdirSync(dir, { recursive: true })
 writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ requireToken: true }), 'utf8')
 
 const { Hono } = await import('hono')
-const { tokenGuard } = await import('./auth.ts')
+const { accessToken, tokenGuard, tokenMatches } = await import('./auth.ts')
 
 test('打开访问令牌后，CLI 调的面板工具地址照样能用，其他接口要令牌', async () => {
   const app = new Hono()
@@ -24,4 +24,25 @@ test('打开访问令牌后，CLI 调的面板工具地址照样能用，其他�
   assert.equal((await call('/api/mcp/design/some-token')).status, 200)
   assert.equal((await call('/api/mcp/blender/some-token')).status, 200, 'Blender 工具也是 CLI 拿随机地址调')
   assert.equal((await call('/api/tasks')).status, 401)
+})
+
+test('令牌核对：完全一致才通过，长度不同、空的、差一位的都不通过', () => {
+  const tk = accessToken()
+  assert.equal(tokenMatches(tk), true)
+  assert.equal(tokenMatches(undefined), false)
+  assert.equal(tokenMatches(''), false)
+  assert.equal(tokenMatches(tk.slice(0, -1)), false)
+  assert.equal(tokenMatches(`${tk.slice(0, -1)}${tk.endsWith('0') ? '1' : '0'}`), false)
+})
+
+test('Cookie 里带对的令牌放行，错的令牌拒绝', async () => {
+  const app = new Hono()
+  app.use('*', tokenGuard)
+  app.all('*', (c) => c.text('ok'))
+  const call = (cookie: string) =>
+    app.request('http://127.0.0.1:8787/api/tasks', {
+      headers: { host: '127.0.0.1:8787', cookie: `agent_panel_token=${cookie}` },
+    })
+  assert.equal((await call(accessToken())).status, 200)
+  assert.equal((await call('wrong')).status, 401)
 })

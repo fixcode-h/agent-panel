@@ -20,6 +20,9 @@ export function createTrash(s: TasksScope) {
    */
   async function purgeTask(tk: Task) {
     await s.store.remove(tk.id)
+    // 上报去重的记录只增不减：对话都删了不会再上报，跟着丢掉（还在的对话不能丢，丢了会把同一状态再报一遍）
+    s.reportedState.delete(tk.id)
+    s.reportedDone.delete(tk.id)
     forgetPresence(tk.id)
     s.background.forget(tk.id)
     await s.dropWorktree(tk)

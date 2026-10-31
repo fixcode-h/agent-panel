@@ -362,6 +362,14 @@ export function updateApi(deps: {
     await mkdir(path.join(CACHE_DIR, 'updates'), { recursive: true })
     const work = await mkdtemp(path.join(CACHE_DIR, 'updates', 'update-'))
     try {
+      // 没有 SHA256SUMS 就不装：没法确认下载的包完整、没被改过，装上就是把来路不明的程序替换进来。
+      // 以前对早期的包跳过校验，现在发布流程每次都带这个文件，缺了多半是发布出了问题，下载之前就停
+      if (!rel.sumsUrl)
+        throw new Error(
+          t(
+            '这个版本的发布里没有校验文件（SHA256SUMS），无法确认安装包完整、没被改过，已取消更新。可以到 GitHub Releases 手动下载',
+          ),
+        )
       // 1. 下载
       job.phase = t('下载中')
       job.total = rel.size
@@ -380,8 +388,8 @@ export function updateApi(deps: {
         },
       })
 
-      // 校验：和 Release 里的 SHA256SUMS 对一下，下载不完整或被改过就不装。早期的包没有这个文件，跳过
-      if (rel.sumsUrl) {
+      // 校验：和 Release 里的 SHA256SUMS 对一下，下载不完整或被改过就不装（没有这个文件的上面已经拒绝了）
+      {
         job.phase = t('校验中')
         const sums = await netFetch(rel.sumsUrl, { headers: { 'User-Agent': 'agent-panel' }, timeoutMs: 15_000 })
         if (!sums.ok) throw new Error(t('下载校验文件失败：{status}', { status: sums.status }))

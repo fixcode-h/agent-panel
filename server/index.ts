@@ -31,7 +31,15 @@ import { SummaryConfig, SummaryRecord, type SummaryReport } from '../shared/summ
 import { LessonDraftRecord, LessonDraftInput } from '../shared/lesson-draft.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
-import { createCollection, DATA_DIR, dataPath, migrateDataDir, readJson, writeJsonAtomic } from './store.ts'
+import {
+  createCollection,
+  DATA_DIR,
+  dataPath,
+  migrateDataDir,
+  readJson,
+  sweepStaleTmp,
+  writeJsonAtomic,
+} from './store.ts'
 import { serveDist, serveIndex } from './static.ts'
 import { dataApi } from './data.ts'
 import { cleanupApi, sweepTaskInfoOf } from './cleanup.ts'
@@ -1022,7 +1030,13 @@ app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----
 app.route('/uploads/raw', uploadsRawApi())
-app.route('/uploads', uploadsApi({ dirs: async () => (await projects.list()).map((p) => p.path).filter(Boolean) }))
+app.route(
+  '/uploads',
+  uploadsApi({
+    dirs: async () => (await projects.list()).map((p) => p.path).filter(Boolean),
+    known: (file) => tasks.hasAttachment(file),
+  }),
+)
 // 文件浏览页：项目里的文件树、内容搜索、看单个文件
 app.route('/project-files', filesApi({ projects }))
 app.get('/projects/:id/files', async (c) => {
@@ -1231,6 +1245,11 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   setInterval(runCleanup, 60 * 60_000).unref()
   // 上次关掉、崩溃时没来得及删的面板 MCP 条目（项目 .mcp.json 里的 agent-panel、panel-xxxx）：启动时清一遍
   void sweepProjectsPanelMcp()
+  // 上次崩溃时写到一半的 JSON 临时文件：不清的话数据目录里会越积越多
+  void sweepStaleTmp().then(
+    (files) => files.length && log.info('server', '清掉了上次留下的临时文件', { files: files.length }),
+    (e) => log.warn('server', `清理临时文件失败：${(e as Error).message}`),
+  )
   void applyRemote()
   void getSettings().then(applyPresenceReclaim)
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
@@ -1261,6 +1280,11 @@ async function shutdown(code = 0) {
   await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
   // 不在任务里的 CLI（AI 创建、设计、文档、模型补全、检测命令）也要一起结束
   killAllProcesses()
+  // 停任务时写进对话的最后几条还可能在 400ms 合并窗口里：等它们落盘再退出，最多等 3 秒（盘卡住也要能退）
+  await Promise.race([
+    tasks.flush().catch((e) => log.error('server', `退出前写对话记录失败：${(e as Error).message}`)),
+    new Promise((r) => setTimeout(r, 3000)),
+  ])
   process.exit(code)
 }
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => void shutdown())

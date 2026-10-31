@@ -257,6 +257,19 @@ test('合并窗口里紧接着的立即落盘不会被窗口吞掉，也不会�
   assert.deepEqual(ids(), ['a', 'b', 'c'], '窗口里排着的旧内容作废')
 })
 
+test('flushAll：退出前把合并窗口里排着的对话立即写盘，不等窗口到点', async () => {
+  const store = createTaskStore()
+  const task = await store.create(
+    TaskData.parse({ projectId: '', title: '退出', mode: 'chat', status: 'running', messages: [msg('a', '一')] }),
+  )
+  const file = path.join(dir, 'tasks', 'chats', `${task.id}.messages.json`)
+  const ids = () => (JSON.parse(readFileSync(file, 'utf8')) as { id: string }[]).map((x) => x.id)
+  await store.update(task.id, { ...task, messages: [msg('a', '一'), msg('b', '最后一段')] })
+  assert.deepEqual(ids(), ['a'], '窗口内先不写')
+  await store.flushAll()
+  assert.deepEqual(ids(), ['a', 'b'], 'flushAll 返回时已经落盘')
+})
+
 test('同时在跑的对话超过内存里留的份数：落盘带着完整对话时照样写对，peek 只给任务本身', async () => {
   const store = createTaskStore()
   const make = (title: string) =>

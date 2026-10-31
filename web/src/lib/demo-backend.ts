@@ -71,6 +71,7 @@ import {
 } from '@shared/data'
 import {
   alignScheduleAt,
+  scheduleClock,
   appendRun,
   nextRunAt,
   sameMinute,
@@ -2050,6 +2051,7 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
         ...input,
         // 和正式后端一样：每周 / 工作日的首次执行落在选中的星期上
         at: alignScheduleAt(input),
+        clock: scheduleClock(input.at),
         status: 'pending',
         lastRunAt: '',
         lastTaskId: '',
@@ -2082,11 +2084,12 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
     const input = { ...parsed, at: alignScheduleAt(parsed) }
     // 和正式后端一样：已结束的计划把结束日期往后改时，过期的 at 推到现在之后，不先记一次错过
     if (scheduleEnded(cur) && !scheduleEnded(input) && Date.parse(input.at) < Date.now() - SCHEDULE_MISS_MS)
-      input.at = nextRunAt(input, Date.now())
+      input.at = nextRunAt({ ...input, clock: cur.clock }, Date.now())
     // 和正式后端一样：改了时间就重新回到待执行，还没跑的计划按钮变回「待执行」
     const next = {
       ...cur,
       ...input,
+      clock: sameMinute(input.at, cur.at) && cur.clock ? cur.clock : scheduleClock(input.at),
       // 和正式后端同一个口径：只改名字、时间还在同一分钟时不算换了排期
       ...(!sameMinute(input.at, cur.at)
         ? { status: 'pending' as const, missedAt: '', lastError: '', blockedAt: '', blockedReason: '' }
