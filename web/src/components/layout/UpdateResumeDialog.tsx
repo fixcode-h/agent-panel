@@ -76,8 +76,29 @@ export function UpdateResumeDialog() {
     go(x.projectId ? { page: 'projects', id: x.projectId, sub: x.id } : { page: 'chat', id: x.id })
   }
 
+  // 按模式、再按项目分组（用户要求）：Agent 模式的任务按项目各成一组，Chat（不属于项目）单独一组放最后。
+  // 任务多的时候一眼看出是哪个项目的，也能整组勾掉
+  const groups = useMemo(() => {
+    const by = new Map<string, { key: string; mode: string; name: string; items: InterruptedTask[] }>()
+    for (const x of tasks) {
+      const key = x.projectId ? `agent:${x.projectId}` : 'chat'
+      const g = by.get(key) ?? {
+        key,
+        mode: x.projectId ? 'Agent' : 'Chat',
+        name: x.projectId ? (projectNames.get(x.projectId) ?? x.projectName) || t('未命名项目') : '',
+        items: [],
+      }
+      g.items.push(x)
+      by.set(key, g)
+    }
+    return [...by.values()].sort(
+      (a, b) => Number(a.mode === 'Chat') - Number(b.mode === 'Chat') || a.name.localeCompare(b.name),
+    )
+  }, [tasks, projectNames])
+
   if (!open) return null
-  const project = (x: InterruptedTask) => projectNames.get(x.projectId) ?? x.projectName
+  const setAll = (items: InterruptedTask[], v: boolean) =>
+    setChecked((c) => ({ ...c, ...Object.fromEntries(items.map((x) => [x.id, v])) }))
 
   return (
     <Modal
@@ -99,29 +120,45 @@ export function UpdateResumeDialog() {
       <p className="text-[0.8125rem] leading-relaxed text-muted">
         {t('强制更新停掉了这些任务正在做的事。勾选的任务会接着往下执行，没勾选的不处理。')}
       </p>
-      <ul className="flex flex-col gap-2">
-        {tasks.map((x) => (
-          <li key={x.id} className="rounded-lg bg-field px-3 py-2.5">
-            <div className="flex items-start gap-2.5">
-              <Checkbox
-                checked={!!checked[x.id]}
-                onChange={(v) => setChecked((c) => ({ ...c, [x.id]: v }))}
-                label={<span className="font-medium">{x.title}</span>}
-                hint={
-                  <>
-                    {project(x) ? `${project(x)} · ` : ''}
-                    {x.doing ? t('被打断时：{doing}', { doing: x.doing }) : ''}
-                  </>
-                }
-                className="min-w-0 flex-1"
-              />
-              <Button variant="link" tone="muted" onClick={() => openTask(x)} className="shrink-0 text-xs">
-                {t('打开')}
-              </Button>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <div className="flex flex-col gap-4">
+        {groups.map((g) => {
+          const on = g.items.filter((x) => checked[x.id]).length
+          return (
+            <section key={g.key} className="flex flex-col gap-2" data-resume-group={g.key}>
+              <div className="flex items-center gap-2 px-1">
+                <Checkbox
+                  checked={on === g.items.length}
+                  onChange={(v) => setAll(g.items, v)}
+                  ariaLabel={t('整组勾选：{name}', { name: g.name || g.mode })}
+                />
+                <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted">
+                  {g.mode}
+                  {g.name && <span className="text-fg"> · {g.name}</span>}
+                </span>
+                <span className="shrink-0 text-xs text-subtle">{t('{on}/{n} 个', { on, n: g.items.length })}</span>
+              </div>
+              <ul className="flex flex-col gap-2">
+                {g.items.map((x) => (
+                  <li key={x.id} className="rounded-lg bg-field px-3 py-2.5">
+                    <div className="flex items-start gap-2.5">
+                      <Checkbox
+                        checked={!!checked[x.id]}
+                        onChange={(v) => setChecked((c) => ({ ...c, [x.id]: v }))}
+                        label={<span className="font-medium">{x.title}</span>}
+                        hint={x.doing ? t('被打断时：{doing}', { doing: x.doing }) : undefined}
+                        className="min-w-0 flex-1"
+                      />
+                      <Button variant="link" tone="muted" onClick={() => openTask(x)} className="shrink-0 text-xs">
+                        {t('打开')}
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        })}
+      </div>
     </Modal>
   )
 }

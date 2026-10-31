@@ -462,7 +462,8 @@ function Todos({ todos, byAgent }: { todos: TaskTodo[]; byAgent?: Map<string, { 
                 <span
                   className={cn(
                     'min-w-0 flex-1 [overflow-wrap:anywhere]',
-                    td.status === 'done' ? 'text-subtle line-through decoration-line-strong' : 'text-fg',
+                    // 完成的只调灰、不加删除线（和计划面板一致）
+                    td.status === 'done' ? 'text-subtle' : 'text-fg',
                     td.status === 'running' && 'font-medium',
                   )}
                 >
