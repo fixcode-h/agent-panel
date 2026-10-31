@@ -256,8 +256,9 @@ export function TaskComposer({
         ref={chips.dropRef}
         {...drop.container}
         className={cn(
-          'composer-shell relative rounded-[20px] border border-line-strong bg-card shadow-card transition-[border-color,box-shadow] focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
-          (drop.over || chips.refOver) && 'border-accent ring-2 ring-accent/25',
+          // 照 Claude Code 的输入框：一圈细线 + 很淡的大半径投影微微浮起，聚焦时投影加深、边线提一档，不套彩色光圈
+          'composer-shell relative rounded-[20px] border border-pop-edge bg-card shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-snap) focus-within:border-line-strong focus-within:shadow-(--composer-shadow-focus) dark:focus-within:border-focus/70',
+          (drop.over || chips.refOver) && 'drop-ring',
         )}
       >
         {mention.menu}

@@ -48,8 +48,10 @@ export function Sheet({
           className={cn(
             'fixed inset-y-0 z-50 flex max-w-full flex-col overflow-hidden bg-(--c-sheet-bg) shadow-pop focus:outline-none md:inset-y-2 md:rounded-(--c-sheet-radius)',
             side === 'right'
-              ? 'right-0 animate-[sheet-in-right_180ms_ease-out] md:right-2'
-              : 'left-0 animate-[sheet-in-left_180ms_ease-out] md:left-2',
+              ? 'right-0 animate-[sheet-in-right_var(--dur-sheet)_var(--ease-snap)] md:right-2'
+              : 'left-0 animate-[sheet-in-left_var(--dur-sheet)_var(--ease-snap)] md:left-2',
+            // 关闭时淡出（Radix 等动画放完才卸载）
+            'data-[state=closed]:animate-[fade-out_var(--dur-snap)_var(--ease-snap)_forwards]',
             className,
           )}
         >
@@ -66,7 +68,7 @@ export function Sheet({
                 <D.Close
                   aria-label={t('关闭')}
                   title={t('关闭')}
-                  className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+                  className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle hover:bg-hover hover:text-fg"
                 >
                   <X className="h-4 w-4" />
                 </D.Close>

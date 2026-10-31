@@ -92,6 +92,29 @@
   /* 弹窗遮罩：Modal、Sheet 共用一个透明度，深浅色一样 */
   --scrim: rgb(0 0 0 / 0.45);
   /*
+   * 动效节奏（照 Claude Code 网页版的 cds 令牌）：出现慢一点、消失快一点。
+   * fast 给悬停和所有退场，snap 给菜单、提示的进场，base 给开关、输入框，sheet 给弹窗、抽屉。
+   * snap 曲线前快后慢、尾巴很长；overshoot 到位时略微过冲；spring 是按钮松手的回弹（不支持 linear() 时用 overshoot）
+   */
+  --dur-fast: 60ms;
+  --dur-snap: 120ms;
+  --dur-base: 200ms;
+  --dur-sheet: 300ms;
+  --ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-overshoot: cubic-bezier(0.34, 1.3, 0.64, 1);
+  --ease-spring: var(--ease-overshoot);
+  /*
+   * 悬停 / 按下（展开）的底色：前景色的半透明叠加，不用不透明的 --sel。
+   * 同一个 --sel 放在页面底和浮层底上深浅差很多（深色下浮层上几乎看不出），叠加层放在哪层底上都是「深一档」
+   */
+  --hover: color-mix(in oklab, var(--fg) 6%, transparent);
+  --active: color-mix(in oklab, var(--fg) 10%, transparent);
+  /* 弹出菜单、下拉面板外面那圈细线：前景色 10%，比 line-strong 轻，靠投影浮起来 */
+  --pop-edge: color-mix(in oklab, var(--fg) 10%, transparent);
+  /* 对话输入框外壳：平时一层很淡的大半径投影微微浮起，聚焦时加深，不换颜色 */
+  --composer-shadow: 0 0.25rem 1.25rem rgb(0 0 0 / 0.035);
+  --composer-shadow-focus: 0 0.25rem 1.25rem rgb(0 0 0 / 0.075);
+  /*
    * 弹窗外壳（照 Claude Code 网页版的方案弹窗）：浅色是卡片白；深色比页面亮一档（#191919 上是 #1f1f1f），
    * 外圈和标题栏下沿是一道前景色 7% 的细线，深浅色、各配色都跟着前景色走
    */
@@ -195,6 +218,8 @@
   --ask-line: rgb(232 182 90 / 0.22);
   --ask-sel: rgb(232 182 90 / 0.1);
   --shadow-pop: 0 12px 36px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.06);
+  --composer-shadow: 0 0.25rem 1.25rem rgb(0 0 0 / 0.2);
+  --composer-shadow-focus: 0 0.25rem 1.25rem rgb(0 0 0 / 0.35);
   --code-bg: #1f1f1d;
   --code-chip: #353532;
   --code-chip-fg: #f0a08a;
@@ -385,7 +410,7 @@
   --shadow: 0 1px 2px rgb(0 0 0 / 0.05);
   --panel-shadow: none;
   --panel-edge: var(--line);
-  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);
   --code-bg: #f7f7f7;
   --code-chip: #f0f0f0;
   --scroll-thumb: #c9c9c9;
@@ -436,7 +461,42 @@
   --scroll-thumb-hover: #7a7a7a;
 }
 
+/* 按钮松手的弹簧（照 Claude Code 的 --cds-btn-spring），浏览器支持 linear() 才换上 */
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: linear(
+      0,
+      0.2459,
+      0.6526,
+      0.9468,
+      1.0764,
+      1.0915,
+      1.0585,
+      1.0219,
+      0.9993,
+      0.9914,
+      0.9921,
+      0.9957,
+      0.9988,
+      1.0004,
+      1
+    );
+  }
+}
+/* 系统设了「减少动态效果」：所有用动效令牌的进出场、按压都变成瞬间完成 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-snap: 1ms;
+    --dur-base: 1ms;
+    --dur-sheet: 1ms;
+  }
+}
+
 @theme inline {
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-pop-edge: var(--pop-edge);
   --color-bg: var(--bg);
   --color-rail: var(--rail);
   --color-panel: var(--panel);
@@ -614,24 +674,24 @@ body,
 }
 /*
  * 「Claude Code」配色下的输入框（对话、聊天两处的输入框外壳 .composer-shell）：只换外观，布局不动。
- * 照 Claude Code 是一块比主区亮一档的实底（--pop）、一道细边、12px 圆角，平时不浮起；聚焦时边框提亮一点，
- * 不套蓝色焦点环。放在 utilities 层，靠多一级属性选择器盖过外壳上写死的圆角、底色和聚焦样式；
- * 拖文件进来时的强调色边框（border-accent）不在这里改，照常显示
+ * 照 Claude Code 是一块比主区亮一档的实底（--pop）、一道细边、12px 圆角，平时一层很淡的投影微微浮起；聚焦时边框提亮一点、
+ * 投影加深，不套蓝色焦点环。放在 utilities 层，靠多一级属性选择器盖过外壳上写死的圆角、底色和聚焦样式；
+ * 拖文件进来时的强调色内环（drop-ring）带 !important，照常显示
  */
 @layer utilities {
   [data-palette='code'] .composer-shell {
     border-radius: 12px;
     /* Claude Code 的输入框是浮层色（surface-popover：深色 #303030、浅色白） */
     background-color: var(--pop);
-    box-shadow: none;
+    border-color: var(--pop-edge);
+    box-shadow: var(--composer-shadow);
   }
   [data-palette='code'] .composer-shell:focus-within {
     border-color: #c4c4c2;
-    box-shadow: 0 2px 10px -4px rgb(0 0 0 / 0.1);
+    box-shadow: var(--composer-shadow-focus);
   }
   [data-palette='code'].dark .composer-shell:focus-within {
     border-color: #4f4f4f;
-    box-shadow: none;
   }
 }
 /*
@@ -684,9 +744,25 @@ body,
     background-color: var(--card);
     color: var(--fg);
   }
+  /*
+   * 键盘焦点（照 Claude Code 的 focus-shadow）：1px 焦点色细环，和控件之间隔 1px 底色，按钮类再加一圈柔光。
+   * 原来 2px 实线 + 2px 间隔在密集的工具栏里会压到相邻按钮。写了 outline-none 的控件自己管焦点样式，不加柔光
+   */
   :focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
+    outline: 1px solid var(--focus);
+    outline-offset: 1px;
+  }
+  :where(
+      button,
+      a,
+      summary,
+      [role='button'],
+      [role='tab'],
+      [role='radio'],
+      [role='switch'],
+      [role='checkbox']
+    ):focus-visible:not(.outline-none) {
+    box-shadow: 0 0 6px 1px var(--focus-soft);
   }
 }
 ::selection {
@@ -796,7 +872,7 @@ body,
   --c-input-radius: 8px;
   --c-input-border: 1px;
   --c-input-bg: var(--field);
-  --c-input-ring: 3px;
+  --c-input-ring: 6px;
   --c-checkbox-radius: 4px;
   --c-switch-on: var(--primary);
   --c-segmented-radius: 8px;
@@ -806,8 +882,8 @@ body,
   --c-row-radius: 8px;
   --c-row-bg: color-mix(in oklab, var(--fg) 3.5%, transparent);
   --c-nav-radius: 8px;
-  --c-menu-radius: 12px;
-  --c-menu-itemRadius: 8px;
+  --c-menu-radius: 10px;
+  --c-menu-itemRadius: 6px;
   --c-menu-bg: var(--pop);
   --c-menu-border: 1px;
   --c-modal-radius: 8px;
@@ -2088,6 +2164,84 @@ body,
     transform: none;
   }
 }
+/*
+ * 弹出菜单、下拉、浮层的进出场（anim-pop）：从触发点（Radix 给的 transform-origin）缩放出来，120ms snap；
+ * 关闭时 Radix 先把 data-state 设成 closed、等动画放完再卸载，所以退场写在 closed 上，统一 60ms。
+ * 不是 Radix 的浮层（输入框上方的弹层）用 --pop-origin 指定从哪边长出来
+ */
+@keyframes pop-open {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes pop-close {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@utility anim-pop {
+  transform-origin: var(
+    --pop-origin,
+    var(
+      --radix-dropdown-menu-content-transform-origin,
+      var(
+        --radix-popover-content-transform-origin,
+        var(--radix-context-menu-content-transform-origin, var(--radix-select-content-transform-origin, top))
+      )
+    )
+  );
+  animation: pop-open var(--dur-snap) var(--ease-snap);
+  &[data-state='closed'] {
+    animation: pop-close var(--dur-fast) linear forwards;
+  }
+}
+/* 弹窗遮罩：200ms 淡入，关闭 120ms 淡出 */
+@utility anim-scrim {
+  animation: fade-in var(--dur-base) var(--ease-snap);
+  &[data-state='closed'] {
+    animation: fade-out var(--dur-snap) var(--ease-snap) forwards;
+  }
+}
+/* 弹窗本体：300ms 轻微过冲放大到位，关闭 120ms 收回；居中靠 translate 属性，这里只动 transform */
+@utility anim-dialog {
+  animation: pop-open var(--dur-sheet) var(--ease-overshoot);
+  &[data-state='closed'] {
+    animation: pop-close var(--dur-snap) var(--ease-snap) forwards;
+  }
+}
+/*
+ * 按钮的按压反馈：按下缩到 96%（60ms），松手用弹簧曲线回弹；底色、文字色照常 120ms 过渡。
+ * 列表行、菜单项不用它，只变底色
+ */
+@utility press {
+  transition-property: background-color, border-color, color, opacity, box-shadow, transform;
+  transition-duration:
+    var(--dur-snap), var(--dur-snap), var(--dur-snap), var(--dur-snap), var(--dur-snap), var(--dur-base);
+  transition-timing-function:
+    var(--ease-snap), var(--ease-snap), var(--ease-snap), var(--ease-snap), var(--ease-snap), var(--ease-spring);
+  &:active:not(:disabled) {
+    transform: scale(0.96);
+    transition-duration: var(--dur-fast);
+    transition-timing-function: var(--ease-snap);
+  }
+}
+/*
+ * 拖文件进来（输入框、附件区）：内侧 2px 强调色环 + 一圈内发光（照 Claude Code 的 drop-ring / drop-glow），
+ * 不改尺寸；带 !important 盖过外壳自己的投影和配色覆盖
+ */
+@utility drop-ring {
+  border-color: transparent !important;
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    inset 0 0 24px -2px color-mix(in oklab, var(--accent) 25%, transparent) !important;
+}
 /* 轮次导航的预览卡片（TurnRail）：从横杠那边往左轻轻滑出 */
 @keyframes turn-peek-in {
   from {
@@ -2270,19 +2424,21 @@ body,
 
 /* 「正在思考」文字上的流光 */
 .thinking-shimmer {
-  background: linear-gradient(90deg, var(--subtle) 0%, var(--fg) 50%, var(--subtle) 100%);
-  background-size: 200% 100%;
+  background: linear-gradient(100deg, var(--subtle) 0% 40%, var(--fg) 50%, var(--subtle) 60% 100%);
+  background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: shimmer 1.6s linear infinite;
+  animation: shimmer 2.4s var(--ease-snap) infinite;
 }
+/* 照 Claude Code 的 shimmer：一道窄光带扫过去，到 60% 就停住，等下一轮再来，长任务里不一直晃 */
 @keyframes shimmer {
   from {
     background-position: 100% 0;
   }
+  60%,
   to {
-    background-position: -100% 0;
+    background-position: 0% 0;
   }
 }
 
@@ -2304,12 +2460,14 @@ body,
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: cli-alive-flow 2.6s linear infinite;
+  animation: cli-alive-flow 2.6s var(--ease-snap) infinite;
 }
+/* 和「正在思考」同一个节奏：扫过去之后停一拍 */
 @keyframes cli-alive-flow {
   from {
     background-position: 100% 0;
   }
+  60%,
   to {
     background-position: -150% 0;
   }

@@ -8,7 +8,7 @@ import { t } from '@shared/i18n'
  * 弹窗遮罩：Modal、Sheet 和各处手写的 D.Overlay 用同一个，透明度只在 index.css 的 --scrim 定义。
  * z-40 压在页面上、弹窗本体是 z-50
  */
-export const MODAL_OVERLAY = 'fixed inset-0 z-40 bg-scrim animate-[fade-in_150ms_ease-out]'
+export const MODAL_OVERLAY = 'fixed inset-0 z-40 bg-scrim anim-scrim'
 
 /**
  * 弹窗宽度档：sm 确认类小表单，md 常规表单（默认），lg 宽表单（原来的 wide），xl 带侧栏的编辑器，full 几乎铺满（查看器）；
@@ -35,7 +35,7 @@ export const MODAL_SURFACE =
 
 /** 标题栏右侧管窗口的按钮：24px 见方、16px 图标、前景灰，悬停出浅底（方案弹窗右上角那一排） */
 export const MODAL_BTN =
-  'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted transition-colors hover:bg-sel hover:text-fg disabled:pointer-events-none disabled:opacity-40 aria-pressed:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg [&>svg]:h-4 [&>svg]:w-4'
+  'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-40 aria-pressed:text-fg data-[state=open]:bg-active data-[state=open]:text-fg [&>svg]:h-4 [&>svg]:w-4'
 
 /** 标题栏的外框（ModalHeader 用的同一份）：标题栏里内容太特殊、只能自己排的弹窗直接套这个 class */
 export const MODAL_HEADER =
@@ -185,7 +185,7 @@ export function Modal({
           onOpenAutoFocus={onOpenAutoFocus}
           onEscapeKeyDown={onEscapeKeyDown}
           className={cn(
-            'fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-3.75rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 animate-[pop-in_160ms_ease-out] focus:outline-none',
+            'fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-3.75rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 anim-dialog focus:outline-none',
             MODAL_SURFACE,
             SIZES[size ?? (wide ? 'lg' : 'md')],
             stacked && 'z-[70]',

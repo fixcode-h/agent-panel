@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils'
  */
 const variants = {
   primary: 'bg-primary text-on-primary hover:opacity-90 active:opacity-80',
-  secondary: 'bg-sel/70 text-fg hover:bg-sel',
-  ghost: 'text-muted hover:text-fg hover:bg-sel',
+  secondary: 'bg-hover text-fg hover:bg-active',
+  ghost: 'text-muted hover:text-fg hover:bg-hover',
   danger: 'bg-danger text-on-danger hover:opacity-90 active:opacity-80',
   'danger-outline': 'bg-danger/10 text-danger hover:bg-danger/15',
   /** 文字链接样式的按钮（「打开这次执行」「重新生成」）：没有底色和高度，颜色看 tone，悬停加下划线 */
@@ -47,7 +47,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         // 链接按钮嵌在句子或说明里，字号、字重跟着上下文，不套按钮的高度和留白
         variant === 'link'
           ? 'inline-flex w-fit max-w-full cursor-pointer items-center gap-1 text-left underline-offset-2 transition-colors hover:underline'
-          : 'inline-flex shrink-0 cursor-pointer items-center rounded-(--c-button-radius) font-(weight:--c-button-weight) transition-[background-color,opacity,color] select-none',
+          : 'inline-flex shrink-0 cursor-pointer items-center rounded-(--c-button-radius) font-(weight:--c-button-weight) press select-none',
         'disabled:pointer-events-none disabled:opacity-50',
         variants[variant],
         variant === 'link' ? linkTones[tone] : sizes[size],

@@ -15,6 +15,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByText('从内置工作流添加').first().click()
   await check(p, '工作流-内置列表', ['通用项目', '依赖升级与安全', '发布与回滚', '代码评审'])
   await p.keyboard.press('Escape')
+  // 弹窗有 120ms 退场动画，放完才卸载；卸载前 Radix 还把页面其余部分标成 aria-hidden，按角色找不到工具条
+  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 })
   // 流程图的撤销 / 重做（左上面包屑旁边）：刚打开时不能撤销；改一下（自动排列）能撤销，Ctrl+Z 撤销后能重做，
   // Ctrl+Shift+Z 重做回来，最后按钮撤销回原样（工作流是自动保存的，别把演示数据改乱）
   {
@@ -300,6 +302,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         await check(p, 'AI分析-功能面板宽度', ['工作流优化'])
         // 窗口收起再展开：TaskView 重新挂载，宽度从 localStorage 恢复（不用新建分析对话，后面的归属断言还能用）
         await p.getByRole('dialog').getByRole('button', { name: '最小化' }).click()
+        // 等弹窗放完退场动画卸载：退场期间对话里的「展开」（折叠正文）还在，和浮条的「展开」重名
+        await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 })
         await p
           .getByRole('button', { name: '展开' })
           .waitFor({ timeout: 5000 })

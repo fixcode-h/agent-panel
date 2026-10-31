@@ -5,10 +5,10 @@ import { Check, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export const popoverPanel =
-  'z-50 min-w-[220px] overflow-hidden rounded-(--c-menu-radius) border-(length:--c-menu-border) border-line-strong bg-(--c-menu-bg) p-1 shadow-pop animate-[fade-in_120ms_ease-out]'
+  'z-50 min-w-[220px] overflow-hidden rounded-(--c-menu-radius) border-(length:--c-menu-border) border-pop-edge bg-(--c-menu-bg) p-1 shadow-pop anim-pop'
 export const menuItem =
   'flex w-full cursor-pointer items-center gap-2.5 rounded-(--c-menu-itemRadius) px-2.5 py-2 text-left text-[0.8125rem] outline-none ' +
-  'data-[highlighted]:bg-sel data-[disabled]:pointer-events-none data-[disabled]:opacity-50 hover:bg-sel'
+  'data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 hover:bg-hover'
 
 export const Menu = M.Root
 export const MenuTrigger = M.Trigger
@@ -147,7 +147,7 @@ export function MenuShortcut({ children }: { children: React.ReactNode }) {
 export const ContextMenuSub = C.Sub
 export function ContextMenuSubTrigger({ className, children, ...props }: C.ContextMenuSubTriggerProps) {
   return (
-    <C.SubTrigger className={cn(menuItem, 'data-[state=open]:bg-sel', className)} {...props}>
+    <C.SubTrigger className={cn(menuItem, 'data-[state=open]:bg-active', className)} {...props}>
       {children}
       <ChevronRight className="ml-auto h-3.5 w-3.5 text-subtle" />
     </C.SubTrigger>

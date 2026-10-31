@@ -54,7 +54,7 @@ export function ConfirmDialog({
         <D.Content
           className={cn(
             MODAL_SURFACE,
-            'fixed top-1/2 left-1/2 z-50 block w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 p-6 animate-[pop-in_160ms_ease-out] focus:outline-none',
+            'fixed top-1/2 left-1/2 z-50 block w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 p-6 anim-dialog focus:outline-none',
           )}
         >
           <D.Title className="text-[0.9375rem] font-semibold">{title}</D.Title>

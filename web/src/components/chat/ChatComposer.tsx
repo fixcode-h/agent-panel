@@ -211,13 +211,13 @@ export function ChatComposer({
       ref={chips.dropRef}
       {...drop.container}
       className={cn(
-        'composer-shell relative border border-line-strong shadow-card transition-[border-color,box-shadow]',
+        'composer-shell relative border border-line-strong shadow-card transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-snap)',
         sm
           ? 'rounded-2xl bg-field focus-within:border-focus/60 dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft'
-          : // 组件库「输入框」：白底、一圈细线、圆角 14，平时不浮起阴影，聚焦时才浮起来
-            'mx-auto max-w-(--content-w) rounded-[14px] border-line bg-card shadow-none focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
-        drop.over && !dropScope && 'border-accent ring-2 ring-accent/25',
-        chips.refOver && 'border-accent ring-2 ring-accent/25',
+          : // 组件库「输入框」：白底、一圈细线、圆角 14，平时一层很淡的投影微微浮起，聚焦时投影加深（照 Claude Code）
+            'mx-auto max-w-(--content-w) rounded-[14px] border-pop-edge bg-card shadow-(--composer-shadow) focus-within:border-line-strong focus-within:shadow-(--composer-shadow-focus) dark:focus-within:border-focus/70',
+        drop.over && !dropScope && 'drop-ring',
+        chips.refOver && 'drop-ring',
         className,
       )}
     >

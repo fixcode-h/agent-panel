@@ -79,7 +79,7 @@ export const COMP_SPEC = {
     radius: px(8, 0, 16),
     border: BORDER,
     bg: color('field'),
-    ring: bool(true, '3px', '0px'),
+    ring: bool(true, '6px', '0px'),
   },
   checkbox: { radius: px(4, 0, 9) },
   switch: { on: pick('primary', { primary: 'var(--primary)', accent: 'var(--accent)', success: 'var(--success)' }) },
@@ -87,7 +87,7 @@ export const COMP_SPEC = {
   chip: { radius: px(6, 0, 12), ring: bool(true, '1px', '0px') },
   row: { radius: px(8, 0, 16), bg: color('default', { default: tint(3.5), ...BG }) },
   nav: { radius: px(8, 0, 16) },
-  menu: { radius: px(12, 0, 20), itemRadius: px(8, 0, 14), bg: color('pop'), border: BORDER },
+  menu: { radius: px(10, 0, 20), itemRadius: px(6, 0, 14), bg: color('pop'), border: BORDER },
   // 弹窗照 Claude Code 网页版的方案弹窗：圆角 8、深色下比页面亮一档的窗口色（--window）
   modal: { radius: px(8, 0, 28), bg: color('window', { window: 'var(--window)', ...BG }), border: BORDER },
   sheet: { radius: px(12, 0, 24), bg: color('bg') },

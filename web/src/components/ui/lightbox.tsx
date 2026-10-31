@@ -33,7 +33,7 @@ export function Lightbox({
   return (
     <D.Root open={index !== undefined && !!cur} onOpenChange={(o) => !o && onClose()}>
       <D.Portal>
-        <D.Overlay className="fixed inset-0 z-[60] bg-black/80 animate-[fade-in_120ms_ease-out]" />
+        <D.Overlay className="fixed inset-0 z-[60] bg-black/80 anim-scrim" />
         <D.Content
           aria-describedby={undefined}
           onKeyDown={(e) => {
@@ -43,7 +43,7 @@ export function Lightbox({
           }}
           // 点图片以外的地方关掉
           onClick={(e) => e.target === e.currentTarget && onClose()}
-          className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 p-6 outline-none animate-[pop-in_140ms_ease-out]"
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 p-6 outline-none anim-dialog"
         >
           <D.Title className="sr-only">{cur?.name}</D.Title>
           {cur && (

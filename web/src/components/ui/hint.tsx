@@ -119,6 +119,9 @@ function HintSurface({
   className?: string
 }) {
   const [placement, setPlacement] = useState<Placement | null>(null)
+  // 只有一段文字的简短提示（图标按钮的名字、接管来的 title）照 Claude Code 用反色小块：比菜单小一号、
+  // 不带边框和大投影，不和弹出菜单抢眼；带标题、多行说明的富提示仍用浮层样式
+  const simple = typeof content === 'string'
 
   // 先渲染出来量尺寸再定位：位置依赖浮层自己的宽高（长文字会换行）
   useLayoutEffect(() => {
@@ -142,8 +145,12 @@ function HintSurface({
       className={cn(
         // 量尺寸时先藏起来，避免在算好位置前闪一下
         // 底色用浮层色（--pop）：默认就是卡片色，「Claude Code」配色深色下和弹出菜单一样亮一档
-        'hint-surface pointer-events-none fixed z-50 max-w-[320px] rounded-lg border border-line-strong bg-(--pop) px-3 py-2 text-xs leading-relaxed break-words text-muted shadow-pop',
+        'pointer-events-none fixed z-50 max-w-[320px] text-xs leading-relaxed break-words',
+        simple
+          ? 'hint-simple rounded-md bg-fg px-2 py-1 text-bg shadow-[0_2px_8px_rgb(0_0_0/0.16)]'
+          : 'hint-surface rounded-lg border border-line-strong bg-(--pop) px-3 py-2 text-muted shadow-pop',
         !placement && 'invisible',
+        placement && 'animate-[fade-in_var(--dur-snap)_var(--ease-snap)]',
         className,
       )}
       style={
