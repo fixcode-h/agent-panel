@@ -2570,11 +2570,6 @@ export const Settings = z.object({
   userName: z.string().trim().max(20).default(''),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
-  /**
-   * 新建父对话时它的「子对话也提问」初始值，只在父对话上没存过时用（见 shared/child-ask.ts）。
-   * 右键菜单改过之后以父对话上存的值为准，这里再改不回填已建的父对话
-   */
-  childAskUserDefault: z.boolean().default(true),
   /** 开发者模式：输入框上显示「抓取界面元素」按钮，点选面板界面上的元素引用进对话，让 AI 改面板自己的代码 */
   developerMode: z.boolean().catch(false).default(false),
   /** 抓取元素时用的快捷键和鼠标按键（设置 →「快捷键」里改） */

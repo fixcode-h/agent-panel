@@ -119,7 +119,7 @@ await runShard(import.meta.filename, async (api) => {
     await d.close()
   }
 
-  // 「提问」的右键菜单：关掉父对话的提问时已创建的子对话一起关；右键勾上「子对话也提问」时
+  // 「提问」的右键菜单：父对话的提问按钮只管自己，已创建的子对话不跟着开关；右键勾上「子对话也提问」时
   // 先问已有子对话要不要一起开，默认只对之后新建的生效
   {
     const d = await page({ width: 1440, height: 900 })
@@ -178,15 +178,17 @@ await runShard(import.meta.filename, async (api) => {
       errors.push('提问菜单：默认应该勾选「子对话也提问」')
     await check(d, '任务-提问右键菜单', ['只对之后新建的子对话生效'])
     await d.keyboard.press('Escape')
-    // 关掉父对话的提问：已创建的子对话一起关
+    // 关掉父对话的提问：只关自己，已创建的子对话保持开着（提问按钮只影响自己的提问设置）
     await parentAsk.click()
     await reopenChild()
-    if (await childAskOn()) errors.push('提问联动：父对话关掉提问后，已创建的子对话没有一起关')
-    // 再打开父对话的提问：只开自己，之前被关掉的子对话不该自动打开
-    await closeChild()
+    if (!(await childAskOn())) errors.push('提问联动：父对话关掉提问后，已创建的子对话不该跟着关')
+    // 再打开父对话的提问；子对话自己点按钮关掉，后面用它测「应用到已创建」
+    await toParent()
     await parentAsk.click()
     await reopenChild()
-    if (await childAskOn()) errors.push('提问联动：重新打开父对话后，已创建的子对话不该自动打开')
+    await pane().getByRole('button', { name: 'AI 有问题时问我' }).first().click()
+    await reopenChild()
+    if (await childAskOn()) errors.push('提问联动：子对话自己关掉提问没有生效')
     // 右键取消勾选：只影响之后新建的子对话，不弹窗
     await closeChild()
     await parentAsk.click({ button: 'right' })

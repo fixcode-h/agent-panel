@@ -1,8 +1,8 @@
 /**
- * 父对话的「提问」和它名下子对话的提问怎么联动：
- * - 父对话关掉提问：已有子对话一起关（引擎按各自任务的 askUser 判断，只改界面看着关是不够的）；
- * - 父对话重新打开：只开自己，已有子对话保持各自的选择；
- * - 右键菜单「子对话也提问」改的是「之后新建的子对话默认开不开」，勾上时再让用户选已有的要不要一起开。
+ * 父对话的「提问」和它名下子对话的提问怎么联动（用户 2026-10-31 定的：提问按钮只影响自己的提问设置）：
+ * - 父对话按钮开 / 关：只改父对话自己，已有子对话保持各自的选择；
+ * - 右键菜单「子对话也提问」改的是「之后新建的子对话默认开不开」，和父对话自己开没开无关；
+ *   勾上时再让用户选已有的要不要一起开。
  *
  * 服务端 PATCH 和界面共用这一份结论，避免两边各写一套规则后对不上。
  */
@@ -34,42 +34,26 @@ export interface ChildAskEffect {
   existingChildren?: boolean
 }
 
-/** 右键菜单里「子对话也提问」勾没勾：父对话自己关着时跟着显示未勾选，重新打开后回到原来的值 */
+/** 右键菜单里「子对话也提问」勾没勾：只看 childAskUser，父对话自己开没开不影响它 */
 export function childAskChecked(state: ChildAskState): boolean {
-  return state.askUser && state.childAskUser
+  return state.childAskUser
 }
 
-/**
- * 这次改动要落到哪里。
- *
- * 菜单项优先于按钮：它的语义就是「子对话也提问」，勾上时父对话自己也得开着，否则勾了显示不出来。
- */
+/** 这次改动要落到哪里：按钮只改父对话自己，菜单只改「之后新建的子对话」（用户选了才动已有的） */
 export function childAskEffect(patch: ChildAskPatch): ChildAskEffect {
   if (patch.childAskUser !== undefined) {
     // 取消勾选只影响之后新建的子对话，已有子对话保持不动（用户按一下就该停，不弹窗）
     if (!patch.childAskUser) return { childAskUser: false }
-    return {
-      childAskUser: true,
-      askUser: true,
-      // 只有用户明确选了「应用到已创建的子对话」才动已有的
-      existingChildren: patch.applyExisting ? true : undefined,
-    }
+    // 只有用户明确选了「应用到已创建的子对话」才动已有的
+    return { childAskUser: true, existingChildren: patch.applyExisting ? true : undefined }
   }
   if (patch.askUser === undefined) return {}
-  // 从开变关：已有子对话一起关，立即生效
-  if (!patch.askUser) return { askUser: false, existingChildren: false }
-  // 从关变开：只开自己；childAskUser 没被改过，菜单项自然回到勾选
-  return { askUser: true }
+  return { askUser: patch.askUser }
 }
 
 /** 新建子对话时它的「提问」初始值：跟着父对话上存的「子对话也提问」走，老任务没有记录时按默认 */
 export function childAskInitial(parent: Partial<ChildAskState>): boolean {
   return parent.childAskUser ?? CHILD_ASK_DEFAULT
-}
-
-/** 新建父对话时它的「子对话也提问」初始值：设置里的全局默认，用户没改过设置时按默认 */
-export function childAskDefaultOf(settings?: { childAskUserDefault?: boolean }): boolean {
-  return settings?.childAskUserDefault ?? CHILD_ASK_DEFAULT
 }
 
 /**

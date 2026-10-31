@@ -6,6 +6,7 @@ import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../shared/review-limi
 import {
   BUG_METHOD,
   BUG_REPORT_TEXT,
+  LOG_TIMELINE_TEXT,
   BUILTIN_AGENTS,
   CODING_TEXT,
   DESIGN_BRIEF_TEXT,
@@ -214,6 +215,20 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.match(BUG_METHOD, /先有能复现的失败测试（改前失败、改后通过）/)
   assert.match(BUG_METHOD, /把报错 try\/catch 掉、加判空绕过、加重试让它「不报了」都不算修/)
   assert.match(BUG_METHOD, /同类隐患/)
+  // 用户 2026-10-31：日志只看本次问题的时间段（对比实验除外、要标来源），排事件时间线，涉及状态必须排状态流转时间线；
+  // 维护排查记录（事实 / 已排除 / 待验证），排除过的不重查，避免返工
+  for (const text of [BUG_METHOD, analyzer]) {
+    assert.ok(text.includes(LOG_TIMELINE_TEXT), '执行、开发和分析共用看日志的方法')
+  }
+  assert.match(LOG_TIMELINE_TEXT, /先定这次问题的时间段，只分析这一段/)
+  assert.match(LOG_TIMELINE_TEXT, /这一段以外的日志.*不进分析/)
+  assert.match(LOG_TIMELINE_TEXT, /对比实验例外/)
+  assert.match(LOG_TIMELINE_TEXT, /排事件时间线/)
+  assert.match(LOG_TIMELINE_TEXT, /涉及状态的一定要梳理状态流转时间线/)
+  assert.match(BUG_METHOD, /### 排查记录：不重复返工/)
+  assert.match(BUG_METHOD, /排除过的不再重查，试过的修法不再重试/)
+  assert.match(BUG_METHOD, /先确认跑的是这次的代码和配置/)
+  assert.match(orch, /写清这段日志对应的时间段/)
   assert.match(orch, /Bug 派单的「现象」按现象卡写/)
   assert.match(orch, /修复能写自动化测试却没有「改前失败、改后通过」的回归用例，也交回补/)
 })
@@ -482,7 +497,7 @@ test('交付契约：方案摘要、实现计划、排查报告、自测清单�
   assert.match(SELF_CHECK_TEXT, /复现用例改前失败、改后通过的输出都要有/)
   assert.match(SELF_CHECK_TEXT, /`\[排查-…\]` 临时日志/)
   // 排查报告：交回按固定小节，主理按同一张表核对
-  for (const s of ['现象', '复现', '调用栈', '证据链', '根因', '修复', '验证', '回归与隐患', '文档'])
+  for (const s of ['现象', '复现', '范围', '时间线', '调用栈', '证据链', '根因', '修复', '验证', '回归与隐患', '文档'])
     assert.ok(BUG_REPORT_TEXT.includes(`${s}：`), `排查报告缺「${s}」`)
   assert.ok(BUG_METHOD.includes(BUG_REPORT_TEXT), 'Bug 方法的交回按排查报告写')
   assert.match(role('orchestrator'), /按「排查报告」的小节核对/)
