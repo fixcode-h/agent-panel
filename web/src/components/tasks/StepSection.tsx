@@ -8,6 +8,7 @@ import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { DeliveryLine, FoldedRun, SystemNote } from './Messages'
+import { deliveryActive } from '@shared/task'
 import { UserMessage } from '@/components/chat/ChatMessage'
 import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
@@ -133,7 +134,9 @@ function StepSectionBase({
                     at={m.at}
                     attachments={m.attachments}
                     // 执行中补发的要求也写清去了哪里（插进当前轮 / 排到下一轮）：和工作流里的节点无关，用户看得到
-                    extra={m.delivery && <DeliveryLine delivery={m.delivery} />}
+                    status={
+                      m.delivery && <DeliveryLine delivery={m.delivery} active={deliveryActive(m.delivery.at, task)} />
+                    }
                   />
                 ))}
               </div>

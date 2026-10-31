@@ -23,14 +23,12 @@ import {
   CheckCircle2,
   FlaskConical,
   GitBranch,
-  GitFork,
   GitMerge,
   Loader2,
   MessageSquareText,
   MoreHorizontal,
   PanelRight,
   SquareChartGantt,
-  Undo2,
   Pencil,
   RotateCw,
   Trash2,
@@ -42,7 +40,6 @@ import {
   FileInput,
   Sparkles,
   Settings2,
-  GraduationCap,
   CircleStop,
   Copy,
   ClipboardList,
@@ -84,6 +81,7 @@ import {
   taskWaitText,
   taskSummary,
   withTaskModel,
+  deliveryActive,
   TRASH_RETENTION_DAYS,
   type ChildWait,
 } from '@shared/task'
@@ -166,6 +164,7 @@ import type { RichInputHandle } from '@/components/chat/RichInput'
 import { dropChip, forSend, pathText } from '@shared/composer'
 import { ImportedBar, ResolvedBar } from './InputBars'
 import { UserMessage } from '@/components/chat/ChatMessage'
+import { UserMessageMenu } from './UserMessageMenu'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 import {
   OPEN_CHILD_EVENT,
@@ -1449,6 +1448,15 @@ export function TaskView({
       toast.error((e as Error).message)
     }
   }
+  // 没送出去的那条：原文和附件照原样再发一次，不用用户自己复制粘贴（不碰输入框里正在写的草稿）
+  const resend = async (m: TaskMessage) => {
+    try {
+      stickToBottom()
+      apply(await api.sendMessage(task.id, m.text, m.attachments ?? [], false))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
   const stop = async () => {
     try {
       await api.stopTask(task.id)
@@ -2349,41 +2357,25 @@ export function TaskView({
                               text={b.m.text}
                               at={b.m.at}
                               attachments={b.m.attachments}
-                              extra={b.m.delivery && <DeliveryLine delivery={b.m.delivery} />}
+                              status={
+                                b.m.delivery && (
+                                  <DeliveryLine
+                                    delivery={b.m.delivery}
+                                    active={deliveryActive(b.m.delivery.at, task)}
+                                    onResend={task.imported ? undefined : () => void resend(b.m)}
+                                  />
+                                )
+                              }
                               actions={
-                                <>
-                                  {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
-                                  {project && !task.imported && (
-                                    <IconButton
-                                      size="sm"
-                                      icon={GraduationCap}
-                                      label={t('记成项目教训')}
-                                      title={t('记成项目教训：以后这个项目里的角色都会照着做')}
-                                      onClick={() => setLessonOf(b.m.text)}
-                                    />
-                                  )}
-                                  {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
-                                  {task.mode === 'chat' && !running && !task.imported && (
-                                    <>
-                                      <IconButton
-                                        size="sm"
-                                        icon={GitFork}
-                                        label={t('从这里分叉')}
-                                        title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
-                                        onClick={() => fork(b.m.id)}
-                                      />
-                                      {b.m.id !== firstUser && (
-                                        <IconButton
-                                          size="sm"
-                                          icon={Undo2}
-                                          label={t('撤回到这里')}
-                                          title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
-                                          onClick={() => setRewindAsk(b.m.id)}
-                                        />
-                                      )}
-                                    </>
-                                  )}
-                                </>
+                                <UserMessageMenu
+                                  chat={task.mode === 'chat' && !task.imported}
+                                  canRewind={b.m.id !== firstUser}
+                                  canLesson={!!project && !task.imported}
+                                  running={running}
+                                  onRewind={() => setRewindAsk(b.m.id)}
+                                  onFork={() => fork(b.m.id)}
+                                  onLesson={() => setLessonOf(b.m.text)}
+                                />
                               }
                             />
                             {/* 主理把这条消息分到了哪里：分诊卡，不同意可以一键改派 */}

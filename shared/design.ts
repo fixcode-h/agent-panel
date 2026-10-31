@@ -205,7 +205,7 @@ export const DesignMessage = z.object({
   /**
    * AI 正在跑的时候发的消息去了哪里：插进当前这一轮，记下来在这一轮结束后自动接着处理，
    * 已经按新的一轮开始处理，或者这一轮被停止时没送出去（用户要重新发一次）。
-   * 和任务的 DeliveryHow 一样记的是事实，界面按 deliveryText 显示（旧数据没有）
+   * 和任务的 DeliveryHow 一样记的是事实，界面按 deliveryStatus 显示（旧数据没有）
    */
   delivery: z.object({ how: z.enum(['steer', 'held', 'next', 'lost']), at: z.string() }).optional(),
 })

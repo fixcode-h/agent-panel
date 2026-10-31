@@ -579,12 +579,7 @@ export const EN_TASKS: Record<string, string> = {
     'Have the agent review uncommitted changes. It only lists issues and changes no files',
   审查改动: 'Review changes',
   已分叉成新的对话: 'Forked into a new chat',
-  '从这里分叉：新建一个对话，带着到这条为止的内容':
-    'Fork from here: start a new chat with everything up to this message',
   从这里分叉: 'Fork from here',
-  '撤回到这里：去掉这条和之后的对话，改了再发':
-    'Rewind to here: remove this message and everything after, then edit and resend',
-  撤回到这里: 'Rewind to here',
   '思考中…': 'Thinking…',
   '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',
@@ -1154,15 +1149,8 @@ export const EN_TASKS: Record<string, string> = {
   上传中: 'Uploading',
   '上一条还在发送，稍等一下': 'The previous message is still sending, one moment',
   先写点要求再发送: 'Write something before sending',
-  '已交给 Agent，这一轮接着处理': 'Handed to the agent, it keeps working on this turn',
   已插进当前这一轮: 'Inserted into the current turn',
-  '已交给正在执行的 Agent，它会在这一轮里读取': 'Handed to the running agent, it reads it during this turn',
   已交给工作流里下一个开始的节点: 'Handed to the next node that starts in the workflow',
-  这一轮结束后自动处理: 'Handled automatically when this turn ends',
-  '没送出去：这一轮停下了，重新发一次': 'Not delivered: this turn stopped, send it again',
-  '这一轮已结束，按新的一轮处理': 'This turn already ended, handled as a new turn',
-  'Agent 没有响应，已重启并按新的一轮处理': 'The agent did not respond; restarted and handled as a new turn',
-  待认领: 'Waiting to be picked up',
   // 停下的子对话：独立分支里没提交的改动
   '【子对话停止】「{title}」（id {id}）已停下，独立分支「{branch}」里还有 {n} 个文件没有提交，目录：{path}。这些改动都还在：可以让它继续接着做，或者合并、删除这个独立分支。':
     '【Child stopped】"{title}" (id {id}) stopped. The isolated branch "{branch}" still has {n} uncommitted files in {path}. The changes are still there: let it keep working, or merge/delete this branch.',
@@ -1593,4 +1581,15 @@ export const EN_TASKS: Record<string, string> = {
   按目录: 'By folder',
   '这一轮里这个文件没有文字差异（可能是二进制文件）。':
     'No text differences for this file in this turn (it may be a binary file).',
+  // 用户消息气泡：送达状态和「⋯」菜单（2026-10-31）
+  重新发送: 'Resend',
+  编辑并重发: 'Edit and resend',
+  '撤回这条和之后的对话，原文放回输入框':
+    'Remove this message and everything after it; the text goes back into the input box',
+  '对话执行中，停下后才能撤回': 'The conversation is running; stop it before rolling back',
+  '新开一个对话，带着到这条为止的内容': 'Start a new conversation with everything up to this message',
+  '对话执行中，停下后才能分叉': 'The conversation is running; stop it before forking',
+  以后这个项目里的角色都照着做: 'Every role in this project will follow it from now on',
+  '没送出去，这一轮停下了': 'Not delivered — this turn stopped',
+  这一轮结束后处理: 'Handled after this turn',
 }

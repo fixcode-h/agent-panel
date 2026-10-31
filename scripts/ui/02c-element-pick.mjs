@@ -942,8 +942,29 @@ await runShard(import.meta.filename, async (api) => {
     if (leftInBox.includes('顺手看看测试配置')) errors.push('执行中发消息：消息已经在对话里了，输入框里的字还在')
     if (await p.getByText('排队', { exact: false }).count()) errors.push('执行中发消息：还能看到「排队」')
     if (await p.getByText('下一条', { exact: true }).count()) errors.push('执行中发消息：还能看到「下一条」的排队卡片')
-    // 交付方式要回传给用户看：演示里这一轮收不下，消息上要写明「结束后自动处理」，不是只存个内部枚举
-    await check(p, '任务-执行中发消息', ['这一轮结束后自动处理'])
+    // 交付方式要回传给用户看：演示里这一轮收不下，气泡外要写明「这一轮结束后处理」，不是只存个内部枚举
+    await check(p, '任务-执行中发消息', ['这一轮结束后处理'])
+    // 送达状态在气泡外面，不挤进气泡里和正文抢注意力
+    if (await p.locator('[data-user] .bg-sel [data-delivery]').count())
+      errors.push('执行中发消息：送达状态还画在气泡里面')
+    // 用户消息下面的时间和操作平时不显示，鼠标移上去才出来；撤回重发、分叉、记成教训收在「⋯」里，每项带一行说明
+    {
+      const bubble = p.locator('[data-user]', { hasText: '顺手看看测试配置' }).last()
+      const meta = bubble.locator('time').first()
+      await p.mouse.move(2, 2)
+      await p.waitForTimeout(200)
+      const restOpacity = await meta.evaluate((el) => getComputedStyle(el.parentElement).opacity).catch(() => '1')
+      if (restOpacity !== '0') errors.push(`用户消息：鼠标没移上去时操作行就显示了（opacity ${restOpacity}）`)
+      await bubble.hover()
+      await bubble.getByRole('button', { name: '更多操作' }).click()
+      const items = p.getByRole('menuitem')
+      await items
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('用户消息：「⋯」菜单没有打开'))
+      await check(p, '用户消息-更多操作')
+      await p.keyboard.press('Escape')
+    }
   }
   // 上一条还在发送时再按回车：只发出一条，而且要说明为什么没发出去（以前是静默什么都不做，看着像卡住了）
   {
@@ -958,12 +979,12 @@ await runShard(import.meta.filename, async (api) => {
     // 旧实现这会儿输入框里还满是字
     const leftover = (await p.locator('#follow-up').textContent()) ?? ''
     if (leftover.includes(text)) errors.push('输入框-连按两次回车：消息已经发出了，输入框里的字还在')
-    // 面板接收之前那条消息标「待认领」，服务端记下后换成实际的交付方式（下面断言）
+    // 面板接收之前那条消息标「发送中」，服务端记下后换成实际的交付方式（下面断言）
     await p
-      .getByText('待认领', { exact: true })
+      .locator('[data-delivery="pending"]', { hasText: '发送中' })
       .first()
       .waitFor({ timeout: 5000 })
-      .catch(() => errors.push('发送时序：接口返回前那条消息没有标成「待认领」'))
+      .catch(() => errors.push('发送时序：接口返回前那条消息没有标成「发送中」'))
     const hint = await p
       .getByText('上一条还在发送，稍等一下')
       .first()
@@ -987,11 +1008,11 @@ await runShard(import.meta.filename, async (api) => {
       .catch(() => {})
     const n = await p.locator('.ml-auto', { hasText: text }).count()
     if (n !== 1) errors.push(`连按两次回车：发出了 ${n} 条（应该只有 1 条）`)
-    // 等这一条真的交出去（本地那条「待认领」被服务端那份替掉）再往下走：sending 要等接口返回才放开，
+    // 等这一条真的交出去（本地那条「发送中」被服务端那份替掉）再往下走：sending 要等接口返回才放开，
     // 急着进下一条用例（输入法回车）会被「上一条还在发送」拦住
     await p
-      .waitForFunction(() => !document.body.innerText.includes('待认领'), undefined, { timeout: 15000 })
-      .catch(() => errors.push('发送时序：消息一直停在「待认领」'))
+      .waitForFunction(() => !document.querySelector('[data-delivery="pending"]'), undefined, { timeout: 15000 })
+      .catch(() => errors.push('发送时序：消息一直停在「发送中」'))
     await p.evaluate(() => localStorage.removeItem('demo-slow-messages'))
     await check(p, '输入框-连按两次回车')
   }
