@@ -3704,6 +3704,19 @@ function tasksRoute(
       ''
     return { path: file, dir: '', diff, git: false, before: false }
   }
+  // 一轮改动的差异和撤销：演示里没有仓库，差异用写好的样例，撤销只记一笔「已撤销」
+  if (sub === 'turn-diff') {
+    const file = query.get('path') ?? ''
+    return { path: file, diff: DEMO_DIFFS[file] ?? '' }
+  }
+  if (sub === 'turn-revert' && method === 'POST') {
+    if (live.has(task.id)) fail('对话正在执行，等这一轮结束后再撤销', 409)
+    const m = task.messages.find((x) => x.id === (body as { msg?: string } | undefined)?.msg)
+    const ch = m?.turnChanges ?? fail('这一轮没有记下改动', 404)
+    m!.turnChanges = { ...ch, revertedAt: new Date().toISOString() }
+    persist()
+    return { ok: true, task, files: ch.files.map((f) => f.path) }
+  }
   if (sub === 'resume') {
     if (live.has(task.id)) fail('任务正在执行', 409)
     const blocked = !!blockedStep(task, taskFlow(task, taskWorkflows(task, d.workflows).workflow))
@@ -4519,6 +4532,17 @@ async function seedTasks(d: Db) {
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
       { path: 'src/components/RestockButton.tsx', add: 9, del: 0 },
     ]
+    // 这一轮的总结下面挂「已更改 N 个文件」：超过 3 个文件，卡片上才有「查看全部」可点
+    const summary = [...task.messages].reverse().find((m) => m.role === 'agent' && !m.step && m.text.trim())
+    if (summary)
+      summary.turnChanges = {
+        spans: [{ from: 'demo-before', to: 'demo-after' }],
+        files: [
+          ...task.changes,
+          { path: 'src/store/cart.ts', add: 12, del: 4 },
+          { path: 'tests/cart.test.ts', add: 18, del: 0 },
+        ],
+      }
     // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
     // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
     // 上下文浮层里的「上一次压缩」：和真实执行一样是回复里的一次工具调用，

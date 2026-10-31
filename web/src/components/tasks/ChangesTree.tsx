@@ -19,6 +19,7 @@ export function ChangesTree({
   scoped,
   collapsed,
   onToggle,
+  selected,
 }: {
   changes: FileChange[]
   onDiff: (path: string) => void
@@ -27,6 +28,8 @@ export function ChangesTree({
   /** 收起的目录；默认全展开，所以空集合就是全展开 */
   collapsed: Set<string>
   onToggle: (path: string) => void
+  /** 正在看的文件：高亮这一行（差异窗口左边的列表用） */
+  selected?: string
 }) {
   const [shown, setShown] = useState(PAGE)
   const tree = useMemo(() => buildChangeTree(changes), [changes])
@@ -51,7 +54,11 @@ export function ChangesTree({
             style={{ paddingLeft: `${depth * 12 + 6}px` }}
             title={node.dir ? node.path : t('查看「{path}」的改动', { path: node.path })}
             aria-expanded={node.dir ? open : undefined}
-            className="flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-lg pr-2 text-left font-mono text-xs outline-none hover:bg-sel"
+            aria-current={!node.dir && node.path === selected ? 'true' : undefined}
+            className={cn(
+              'flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-lg pr-2 text-left font-mono text-xs outline-none hover:bg-sel',
+              !node.dir && node.path === selected && 'bg-sel',
+            )}
           >
             {node.dir ? (
               open ? (
