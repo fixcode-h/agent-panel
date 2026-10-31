@@ -342,77 +342,91 @@
 }
 
 /*
- * 配色「Claude Code」（默认）：照 Claude 桌面版 / Claude Code 的界面取色，纯中性灰、不带暖色相；
- * 侧栏比主区亮一档（深色）、主区是最深的一层，面板之间只靠一道 1px 细线分开，选中行是一块圆角浅灰底，
- * 链接、提及块用蓝，主按钮深色下反白。强调色不用陶土橙，橙色只留在产品图标上
+ * 配色「Claude Code」（默认）：取值直接来自 claude.ai/code 网页端样式表（cds 设计系统 fizzy-lake 配色，2026-10-31 由用户从浏览器导出），
+ * 不从截图取色。半透明的 token 按「叠在页面底色上」折成不透明值，因为这里的变量还要拿去 color-mix：
+ *   页面 surface-1、侧栏 fizzy-lake-color-sidebar、面板 / 卡片 surface-panel / surface-2、浮层 surface-popover；
+ *   分隔线 seam（前景 10%）、粗线 border-strong（前景 20%）、输入框底 fill-field（前景 5%）、选中 fill-ghost-selected（前景 15%）；
+ *   文字 primary / secondary（75%）/ muted（57%）；强调色 fill-accent #257de0，链接 text-accent；主按钮 fill-primary；
+ *   状态文字 text-danger / success / warning；遮罩 backdrop；浮层投影 shadow-popover
  */
 [data-palette='code']:not(.dark) {
   --bg: #ffffff;
-  --rail: #f8f8f7;
-  --panel: #fbfbfa;
+  --rail: #fafafa;
+  --panel: #ffffff;
   --card: #ffffff;
-  --field: #ffffff;
-  --line: #ebebea;
-  --line-strong: #dcdcda;
-  --fg: #1a1a1a;
-  --muted: #4b4b4b;
-  --subtle: #6e6e6e;
-  --sel: #ededec;
-  --sel-line: #dcdcda;
-  --accent: #2b6cd4;
-  --accent-soft: rgb(43 108 212 / 0.1);
-  --accent-text: #2160c4;
+  --field: #f2f2f2;
+  --window: #ffffff;
+  --line: #e6e6e6;
+  --line-strong: #cccccc;
+  --fg: #000000;
+  --muted: #404040;
+  --subtle: #666666;
+  --sel: #e1e1e1;
+  --sel-line: #cccccc;
+  --accent: #257de0;
+  --accent-soft: rgb(37 125 224 / 0.12);
+  --accent-text: #1757ac;
+  /* 强调色底上的字：Claude Code 是白字（on-accent），深色下主按钮反白但蓝底仍是白字 */
+  --on-accent: #ffffff;
   --proj-bg: var(--sel);
   --proj-line: transparent;
   --proj-fg: var(--fg);
   --proj-ico: var(--fg);
   --conv-sel: var(--sel);
   --conv-shadow: none;
-  --primary: #1a1a1a;
+  --primary: #191919;
   --on-primary: #ffffff;
-  --focus: #3b82f6;
-  --focus-soft: rgb(59 130 246 / 0.18);
-  --warning: #8a5a00;
+  --focus: #257de0;
+  --focus-soft: rgb(37 125 224 / 0.2);
+  --success: #006c10;
+  --warning: #794c02;
+  --danger: #a42528;
+  --scrim: rgb(0 0 0 / 0.4);
   --shadow: 0 1px 2px rgb(0 0 0 / 0.05);
   --panel-shadow: none;
   --panel-edge: var(--line);
-  --shadow-pop: 0 8px 28px -8px rgb(0 0 0 / 0.18), 0 0 0 0.5px rgb(0 0 0 / 0.08);
-  --code-bg: #f7f7f6;
-  --code-chip: #f0f0ef;
-  --scroll-thumb: #c9c9c7;
-  --scroll-thumb-hover: #a8a8a6;
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2);
+  --code-bg: #f7f7f7;
+  --code-chip: #f0f0f0;
+  --scroll-thumb: #c9c9c9;
+  --scroll-thumb-hover: #a8a8a8;
 }
 [data-palette='code'].dark {
   --bg: #191919;
   --rail: #1f1f1f;
-  --panel: #1c1c1c;
-  --card: #262626;
-  --field: #303030;
+  --panel: #1f1f1f;
+  --card: #1f1f1f;
+  --field: #252525;
+  --window: #1f1f1f;
   --line: #303030;
-  --line-strong: #3a3a3a;
-  --fg: #efefef;
-  --muted: #c4c4c4;
+  --line-strong: #474747;
+  --fg: #ffffff;
+  --muted: #c6c6c6;
   --subtle: #9c9c9c;
   --sel: #404040;
-  --sel-line: #4a4a4a;
-  --accent: #6aabf1;
-  --accent-soft: rgb(106 171 241 / 0.12);
-  --accent-text: #7db6f3;
+  --sel-line: #474747;
+  --accent: #257de0;
+  --accent-soft: rgb(37 125 224 / 0.12);
+  --accent-text: #6aabf1;
+  --on-accent: #ffffff;
   --proj-bg: var(--sel);
   --proj-line: transparent;
   --proj-fg: var(--fg);
   --proj-ico: var(--fg);
   --conv-sel: var(--sel);
   --conv-shadow: none;
-  --primary: #ececec;
+  --primary: #efefef;
   --on-primary: #191919;
-  --focus: #5a9fe8;
-  --focus-soft: rgb(90 159 232 / 0.25);
+  --focus: #257de0;
+  --focus-soft: rgb(37 125 224 / 0.3);
+  --success: #53c556;
   --warning: #e49c06;
+  --danger: #f17778;
+  --scrim: rgb(0 0 0 / 0.5);
   --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
   --panel-shadow: none;
   --panel-edge: var(--line);
-  --shadow-pop: 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 0 0 1px #383838;
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2), 0 0 0 1px #303030;
   --code-bg: #141414;
   --code-chip: #2a2a2a;
   --code-chip-fg: #e8a48c;
@@ -448,7 +462,7 @@
   --color-on-primary: var(--on-primary);
   --color-on-danger: var(--on-danger);
   /* 强调色底上的字：各配色里主操作和强调色同色时取值一样，所以直接借 --on-primary（中性配色也成立：浅色白字、深色深字） */
-  --color-on-accent: var(--on-primary);
+  --color-on-accent: var(--on-accent, var(--on-primary));
   --color-run: var(--run);
   --color-run-soft: var(--run-soft);
   --color-ask: var(--ask-bg);
@@ -585,14 +599,15 @@ body,
 }
 /*
  * 「Claude Code」配色下的输入框（对话、聊天两处的输入框外壳 .composer-shell）：只换外观，布局不动。
- * 照参考图是一块比主区亮一档的实底（--field）、一道细边、12px 圆角，平时不浮起；聚焦时边框提亮一点，
+ * 照 Claude Code 是一块比主区亮一档的实底（--pop）、一道细边、12px 圆角，平时不浮起；聚焦时边框提亮一点，
  * 不套蓝色焦点环。放在 utilities 层，靠多一级属性选择器盖过外壳上写死的圆角、底色和聚焦样式；
  * 拖文件进来时的强调色边框（border-accent）不在这里改，照常显示
  */
 @layer utilities {
   [data-palette='code'] .composer-shell {
     border-radius: 12px;
-    background-color: var(--field);
+    /* Claude Code 的输入框是浮层色（surface-popover：深色 #303030、浅色白） */
+    background-color: var(--pop);
     box-shadow: none;
   }
   [data-palette='code'] .composer-shell:focus-within {
