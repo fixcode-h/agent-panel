@@ -94,15 +94,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('button', { name: '全局教训', exact: true }).click()
   await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
   await p.getByRole('button', { name: '外观', exact: true }).click()
-  await check(p, '设置-外观', ['配色', 'Claude（默认）', '中性', 'Maple Mono NL', '字间距', '空格宽度'])
-  // 换配色：html 上挂 data-palette，主按钮颜色跟着变；换回默认配色时属性去掉
+  await check(p, '设置-外观', ['配色', 'Claude Code（默认）', 'Claude', '中性', 'Maple Mono NL', '字间距', '空格宽度'])
+  // 换配色：html 上挂 data-palette，主按钮颜色跟着变；默认的「Claude Code」挂 code，只有「Claude」配色不挂属性
   await p.getByRole('radio', { name: '中性' }).click()
   if ((await p.evaluate(() => document.documentElement.dataset.palette)) !== 'neutral')
     errors.push('设置-外观：选「中性」后 html 上应该挂 data-palette="neutral"')
   await check(p, '设置-外观-中性配色')
-  await p.getByRole('radio', { name: 'Claude（默认）' }).click()
+  await p.getByRole('radio', { name: 'Claude', exact: true }).click()
   if ((await p.evaluate(() => document.documentElement.dataset.palette)) !== undefined)
-    errors.push('设置-外观：换回默认配色后 html 上不应该再有 data-palette')
+    errors.push('设置-外观：选「Claude」配色后 html 上不应该再有 data-palette')
+  await p.getByRole('radio', { name: 'Claude Code（默认）' }).click()
+  if ((await p.evaluate(() => document.documentElement.dataset.palette)) !== 'code')
+    errors.push('设置-外观：换回默认的「Claude Code」配色后 html 上应该挂 data-palette="code"')
   // Markdown 样式：顶部预览是真的 Markdown 组件；改一项立刻写进 #md-style，恢复默认后清空
   await p.getByRole('button', { name: 'Markdown 样式', exact: true }).click()
   await check(p, '设置-Markdown样式', ['一级标题', '表格斑马纹', '代码块自动换行', '标题字号'])

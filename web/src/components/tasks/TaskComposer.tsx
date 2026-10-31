@@ -259,7 +259,7 @@ export function TaskComposer({
         ref={chips.dropRef}
         {...drop.container}
         className={cn(
-          'relative rounded-[20px] border border-line-strong bg-card shadow-card transition-[border-color,box-shadow] focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
+          'composer-shell relative rounded-[20px] border border-line-strong bg-card shadow-card transition-[border-color,box-shadow] focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
           (drop.over || chips.refOver) && 'border-accent ring-2 ring-accent/25',
         )}
       >

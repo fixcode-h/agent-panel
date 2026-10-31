@@ -211,7 +211,7 @@ export function ChatComposer({
       ref={chips.dropRef}
       {...drop.container}
       className={cn(
-        'relative border border-line-strong shadow-card transition-[border-color,box-shadow]',
+        'composer-shell relative border border-line-strong shadow-card transition-[border-color,box-shadow]',
         sm
           ? 'rounded-2xl bg-field focus-within:border-focus/60 dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft'
           : // 组件库「输入框」：白底、一圈细线、圆角 14，平时不浮起阴影，聚焦时才浮起来

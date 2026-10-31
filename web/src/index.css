@@ -3,8 +3,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * 设计 token：改主题只需要改这里。默认配色「Claude」：暖灰底色、陶土橙强调色。
- * 设置 → 外观 → 配色 可以换成别的几套：html 上的 data-palette 选中下面对应的覆盖块（深浅各一份）。
+ * 设计 token：改主题只需要改这里。这里的基础值是「Claude」配色：暖灰底色、陶土橙强调色。
+ * 默认配色「Claude Code」和别的几套都是覆盖块：html 上的 data-palette 选中下面对应的块（深浅各一份），
+ * 覆盖块没写的变量沿用这里的基础值。
  * 新加一套配色：在这里加两块覆盖，再在 shared/schema.ts 的 Appearance.palette 和 FontSection 的列表里加一项。
  * --primary 是主操作（主按钮、开关、勾选）的颜色；--run / --peer 是「运行中」「对话之间的消息」两种状态色。
  * 部件都在 components/ui，设置 → 组件 里能看到全部样子
@@ -24,8 +25,10 @@
   --sel: #ebe8df;
   --sel-line: #d5d1c4;
   --content-w: 1000px;
-  /* 默认字体：内置的 Inter 配系统中文（苹方 / 微软雅黑）；思源黑体按需加载，见 fonts-cjk.css */
-  --app-sans: 'Inter Variable', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
+  /* 默认字体：系统界面字体（Segoe UI / SF）配系统中文（苹方 / 微软雅黑），和 Claude Code 一样；思源黑体按需加载，见 fonts-cjk.css */
+  --app-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui,
+    sans-serif;
   --app-mono:
     'Maple Mono NL', 'JetBrains Mono Variable', 'PingFang SC', 'Microsoft YaHei', ui-monospace, Consolas, monospace;
   --accent: #c6613f;
@@ -40,6 +43,8 @@
   --proj-ico: #3b82f6;
   /* 侧栏项目下选中的对话：一张卡片底 + 极淡投影，不描边（深色在 .dark 里比 card 再亮一档） */
   --conv-sel: var(--card);
+  /* 浮层（弹出菜单、输入框上方的弹层）的底色：默认就是卡片色，「Claude Code」配色深色下比卡片亮一档 */
+  --pop: var(--card);
   --conv-shadow: 0 1px 2px rgb(24 24 27 / 0.06), 0 0 0 0.5px rgb(24 24 27 / 0.04);
   /* 左上角的产品图标：陶土橙渐变，是品牌色，不跟配色变 */
   --logo-bg: linear-gradient(135deg, #e59a78 0%, #d97757 45%, #b9532f 100%);
@@ -81,6 +86,9 @@
   --hl-type: #a06a00;
   --hl-attr: #b0412f;
   --hl-tag: #c2412d;
+  /* 滚动条滑块和悬停时的颜色：平时和粗分界线同色，按住 / 悬停加深 */
+  --scroll-thumb: var(--line-strong);
+  --scroll-thumb-hover: var(--subtle);
   /* 弹窗遮罩：Modal、Sheet 共用一个透明度，深浅色一样 */
   --scrim: rgb(0 0 0 / 0.45);
   /*
@@ -324,6 +332,87 @@
   --code-chip-fg: #a3d8b5;
 }
 
+/*
+ * 配色「Claude Code」（默认）：照 Claude 桌面版 / Claude Code 的界面取色，纯中性灰、不带暖色相；
+ * 侧栏比主区亮一档（深色）、主区是最深的一层，面板之间只靠一道 1px 细线分开，选中行是一块圆角浅灰底，
+ * 链接、提及块用蓝，主按钮深色下反白。强调色不用陶土橙，橙色只留在产品图标上
+ */
+[data-palette='code']:not(.dark) {
+  --bg: #ffffff;
+  --rail: #f8f8f7;
+  --panel: #fbfbfa;
+  --card: #ffffff;
+  --field: #ffffff;
+  --line: #ebebea;
+  --line-strong: #dcdcda;
+  --fg: #1a1a1a;
+  --muted: #4b4b4b;
+  --subtle: #6e6e6e;
+  --sel: #ededec;
+  --sel-line: #dcdcda;
+  --accent: #2b6cd4;
+  --accent-soft: rgb(43 108 212 / 0.1);
+  --accent-text: #2160c4;
+  --proj-bg: var(--sel);
+  --proj-line: transparent;
+  --proj-fg: var(--fg);
+  --proj-ico: var(--fg);
+  --conv-sel: var(--sel);
+  --conv-shadow: none;
+  --primary: #1a1a1a;
+  --on-primary: #ffffff;
+  --focus: #3b82f6;
+  --focus-soft: rgb(59 130 246 / 0.18);
+  --warning: #8a5a00;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  --panel-shadow: none;
+  --panel-edge: var(--line);
+  --shadow-pop: 0 8px 28px -8px rgb(0 0 0 / 0.18), 0 0 0 0.5px rgb(0 0 0 / 0.08);
+  --code-bg: #f7f7f6;
+  --code-chip: #f0f0ef;
+  --scroll-thumb: #c9c9c7;
+  --scroll-thumb-hover: #a8a8a6;
+}
+[data-palette='code'].dark {
+  --bg: #191919;
+  --rail: #1f1f1f;
+  --panel: #1c1c1c;
+  --card: #262626;
+  --field: #303030;
+  --line: #303030;
+  --line-strong: #3a3a3a;
+  --fg: #efefef;
+  --muted: #c4c4c4;
+  --subtle: #9c9c9c;
+  --sel: #404040;
+  --sel-line: #4a4a4a;
+  --accent: #6aabf1;
+  --accent-soft: rgb(106 171 241 / 0.12);
+  --accent-text: #7db6f3;
+  --proj-bg: var(--sel);
+  --proj-line: transparent;
+  --proj-fg: var(--fg);
+  --proj-ico: var(--fg);
+  --conv-sel: var(--sel);
+  --conv-shadow: none;
+  --primary: #ececec;
+  --on-primary: #191919;
+  --focus: #5a9fe8;
+  --focus-soft: rgb(90 159 232 / 0.25);
+  --warning: #e49c06;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  --panel-shadow: none;
+  --panel-edge: var(--line);
+  --shadow-pop: 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 0 0 1px #383838;
+  --code-bg: #141414;
+  --code-chip: #2a2a2a;
+  --code-chip-fg: #e8a48c;
+  --canvas: #121212;
+  --pop: #303030;
+  --scroll-thumb: #5e5e5e;
+  --scroll-thumb-hover: #7a7a7a;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-rail: var(--rail);
@@ -486,6 +575,52 @@ body,
     background-color: color-mix(in oklab, var(--card) 90%, white);
   }
 }
+/*
+ * 「Claude Code」配色下的输入框（对话、聊天两处的输入框外壳 .composer-shell）：只换外观，布局不动。
+ * 照参考图是一块比主区亮一档的实底（--field）、一道细边、12px 圆角，平时不浮起；聚焦时边框提亮一点，
+ * 不套蓝色焦点环。放在 utilities 层，靠多一级属性选择器盖过外壳上写死的圆角、底色和聚焦样式；
+ * 拖文件进来时的强调色边框（border-accent）不在这里改，照常显示
+ */
+@layer utilities {
+  [data-palette='code'] .composer-shell {
+    border-radius: 12px;
+    background-color: var(--field);
+    box-shadow: none;
+  }
+  [data-palette='code'] .composer-shell:focus-within {
+    border-color: #c4c4c2;
+    box-shadow: 0 2px 10px -4px rgb(0 0 0 / 0.1);
+  }
+  [data-palette='code'].dark .composer-shell:focus-within {
+    border-color: #4f4f4f;
+    box-shadow: none;
+  }
+}
+/*
+ * 「Claude Code」配色下的只有图标的按钮（IconButton，页签条右端那排、行尾操作）：照参考图，
+ * 悬停和选中（按下、展开、菜单开着）都是一块淡淡的圆角方底、图标提到前景色，不用强调色给图标上色；
+ * 危险按钮保留自己的红色悬停。悬停提示（.hint-surface）标题用前景色，内边距收紧一点
+ */
+@layer utilities {
+  [data-palette='code'] .icon-btn:not(.icon-btn-danger):hover,
+  [data-palette='code'] .icon-btn:not(.icon-btn-danger)[aria-pressed='true'],
+  [data-palette='code'] .icon-btn:not(.icon-btn-danger)[aria-expanded='true'],
+  [data-palette='code'] .icon-btn:not(.icon-btn-danger)[data-state='open'] {
+    background-color: color-mix(in oklab, var(--fg) 8%, transparent);
+    color: var(--fg);
+  }
+  /* 分段切换（对话 / 流程图这类）：深色下轨道不往下压黑，和侧栏的模式切换一样是比底色亮一层的浅底，选中块用选中底色 */
+  [data-palette='code'].dark .seg-track {
+    background-color: color-mix(in oklab, var(--fg) 5%, transparent);
+  }
+  [data-palette='code'].dark .seg-thumb {
+    background-color: var(--sel);
+  }
+  [data-palette='code'] .hint-surface {
+    color: var(--fg);
+    padding: 0.375rem 0.625rem;
+  }
+}
 /* 放进 base 层，组件上的工具类（边框色、outline）才能覆盖它们 */
 @layer base {
   body {
@@ -524,7 +659,7 @@ body,
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--line-strong);
+  background: var(--scroll-thumb);
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: content-box;
@@ -549,10 +684,10 @@ body,
   min-height: 40px;
 }
 .thin-scroll:hover::-webkit-scrollbar-thumb {
-  background-color: var(--line-strong);
+  background-color: var(--scroll-thumb);
 }
 .thin-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: var(--subtle);
+  background-color: var(--scroll-thumb-hover);
 }
 /* 没有 webkit 滚动条伪元素的浏览器（Firefox）：用标准属性画细条，同样悬停才显色 */
 @supports not selector(::-webkit-scrollbar) {
@@ -561,8 +696,23 @@ body,
     scrollbar-color: transparent transparent;
   }
   .thin-scroll:hover {
-    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-color: var(--scroll-thumb) transparent;
   }
+}
+/*
+ * 「Claude Code」配色的滚动条（照参考图）：轨道透明，滑块是 6px 宽的圆头灰条，比分界线亮一档、一直看得见；
+ * 只把滑块两边的透明边收窄（滑块变宽），轨道宽度不变，滚动区的排版不跟着动
+ */
+[data-palette='code'] ::-webkit-scrollbar-thumb {
+  border-width: 2px;
+}
+[data-palette='code'] .thin-scroll::-webkit-scrollbar-thumb {
+  border-width: 3px;
+  background-color: var(--scroll-thumb);
+}
+[data-palette='code'] .thin-scroll::-webkit-scrollbar-thumb:hover,
+[data-palette='code'] ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-thumb-hover);
 }
 /* 滚动区顶部 16px 渐隐：第一行滚上去时淡出，不被上面的页签栏生硬截断（设计稿 `.fade-top`） */
 .fade-top {
@@ -623,7 +773,7 @@ body,
   --c-nav-radius: 8px;
   --c-menu-radius: 12px;
   --c-menu-itemRadius: 8px;
-  --c-menu-bg: var(--card);
+  --c-menu-bg: var(--pop);
   --c-menu-border: 1px;
   --c-modal-radius: 16px;
   --c-modal-bg: var(--card);
@@ -631,7 +781,7 @@ body,
   --c-sheet-radius: 12px;
   --c-sheet-bg: var(--bg);
   --c-popover-radius: 12px;
-  --c-popover-bg: var(--card);
+  --c-popover-bg: var(--pop);
   --c-empty-radius: 12px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;
@@ -1599,13 +1749,13 @@ html [data-sonner-toast][data-styled='true'] {
 }
 [data-sidebar]::-webkit-scrollbar-thumb,
 [data-sidebar] *::-webkit-scrollbar-thumb {
-  background: var(--line-strong);
+  background: var(--scroll-thumb);
   border: 2px solid transparent;
   background-clip: content-box;
 }
 [data-sidebar]::-webkit-scrollbar-thumb:hover,
 [data-sidebar] *::-webkit-scrollbar-thumb:hover {
-  background-color: var(--muted);
+  background-color: var(--scroll-thumb-hover);
 }
 
 /* 设置弹窗里的滚动条比全局细一号：弹窗里左栏和内容区各有一条，10px 的轨道挤占列表宽度。

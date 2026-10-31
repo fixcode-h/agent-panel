@@ -14,6 +14,7 @@ const DEFAULTS = Appearance.parse({})
  * 依次是侧栏、内容、强调色、主按钮；和 index.css 里对应配色的值保持一致
  */
 const PALETTE_SAMPLES: Record<Palette, { light: string[]; dark: string[] }> = {
+  code: { light: ['#f8f8f7', '#ffffff', '#2b6cd4', '#1a1a1a'], dark: ['#1f1f1f', '#191919', '#6aabf1', '#ececec'] },
   claude: { light: ['#f3f1ea', '#faf9f5', '#c6613f', '#c6613f'], dark: ['#1f1e1d', '#262624', '#d97757', '#d97757'] },
   neutral: { light: ['#f4f4f2', '#ffffff', '#c6613f', '#18181b'], dark: ['#151517', '#1d1d20', '#d97757', '#ededef'] },
   ocean: { light: ['#eef3f7', '#f7fafc', '#2f6fb3', '#2f6fb3'], dark: ['#0e151d', '#121a24', '#5b9be0', '#5b9be0'] },
@@ -23,7 +24,8 @@ const PALETTE_SAMPLES: Record<Palette, { light: string[]; dark: string[] }> = {
 /** 一张配色卡：浅色、深色两块小样并排，选中描一圈主色 */
 function PaletteCard({ id, on, onPick }: { id: Palette; on: boolean; onPick: () => void }) {
   const names: Record<Palette, string> = {
-    claude: t('Claude（默认）'),
+    code: t('Claude Code（默认）'),
+    claude: 'Claude',
     neutral: t('中性'),
     ocean: t('海蓝'),
     forest: t('森绿'),
@@ -114,7 +116,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         <p className="pb-3 text-[0.8125rem] leading-relaxed text-subtle">
           {t('只换颜色，按钮、列表、对话这些部件的形状和间距不变。深浅色跟随侧栏里的主题开关。')}
         </p>
-        <div role="radiogroup" aria-label={t('配色')} className="grid grid-cols-2 gap-3 pb-4 sm:grid-cols-4">
+        <div role="radiogroup" aria-label={t('配色')} className="grid grid-cols-2 gap-3 pb-4 sm:grid-cols-3">
           {PALETTES.map((p) => (
             <PaletteCard key={p} id={p} on={value.palette === p} onPick={() => set('palette', p)} />
           ))}
@@ -133,7 +135,12 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         </Row>
       </Group>
       <Group title={t('字体')}>
-        <Row title={t('英文字体')} desc={t('默认是内置的 Inter；喜欢等宽可以换内置的 Maple Mono NL（不带符号连字）。')}>
+        <Row
+          title={t('英文字体')}
+          desc={t(
+            '默认是系统界面字体（Segoe UI / 苹方），和 Claude Code 一样；也可以换内置的 Inter，喜欢等宽可以换 Maple Mono NL（不带符号连字）。',
+          )}
+        >
           <Select
             aria-label={t('英文字体')}
             value={value.uiFont}
@@ -144,10 +151,10 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
               update({ ...value, uiFont: f, wordSpacing: ws })
             }}
             options={[
-              { value: 'inter', label: t('Inter（内置，默认）') },
+              { value: 'system', label: t('系统字体（默认）') },
+              { value: 'inter', label: t('Inter（内置）') },
               { value: 'maple', label: t('Maple Mono NL（内置）') },
               { value: 'plex', label: t('IBM Plex Sans（内置）') },
-              { value: 'system', label: t('系统字体') },
             ]}
           />
         </Row>

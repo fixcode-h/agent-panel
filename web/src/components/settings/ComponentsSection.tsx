@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import {
+  Code2,
   Diff,
   FileText,
   ImageIcon,
   Lock,
   MessageSquare,
+  MessagesSquare,
   Monitor,
   MoreHorizontal,
+  Palette,
   Pencil,
   Plus,
   Search,
@@ -431,9 +434,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
             <div className="mb-2 flex">
               <SidebarModeTabs
                 modes={[
-                  { id: 'agent', name: 'Agent', on: true },
-                  { id: 'chat', name: 'Chat', on: false },
-                  { id: 'design', name: t('设计'), on: false },
+                  { id: 'agent', name: 'Agent', icon: Code2, on: true },
+                  { id: 'chat', name: 'Chat', icon: MessagesSquare, on: false },
+                  { id: 'design', name: t('设计'), icon: Palette, on: false },
                 ]}
                 onPick={() => {}}
               />

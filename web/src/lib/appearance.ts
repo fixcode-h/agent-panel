@@ -12,7 +12,8 @@ const UI = {
   inter: ["'Inter Variable'", "'Inter'"],
   maple: ["'Maple Mono NL'"],
   plex: ["'IBM Plex Sans'"],
-  system: ['-apple-system', "'Segoe UI'"],
+  // 和 Claude Code 桌面版一样用系统界面字体：Windows 是 Segoe UI，macOS 是苹方配 SF
+  system: ['-apple-system', 'BlinkMacSystemFont', "'Segoe UI'"],
 }
 const MONO = {
   maple: ["'Maple Mono NL'", "'JetBrains Mono Variable'"],
@@ -62,7 +63,10 @@ export function ensureCjkFont(cjkFont: Appearance['cjkFont']) {
 /** 记下的配色：index.html 加载时先套上，免得设置取回来前闪一下默认配色 */
 const PALETTE_KEY = 'appearance-palette'
 
-/** 配色挂在 html 的 data-palette 上，index.css 按它选覆盖块；默认配色不挂属性 */
+/**
+ * 配色挂在 html 的 data-palette 上，index.css 按它选覆盖块。「Claude」配色是 index.css 里 :root 的基础值，不挂属性；
+ * 默认的「Claude Code」和其他几套都挂
+ */
 export function applyPalette(p: Palette) {
   const el = document.documentElement
   if (p === 'claude') delete el.dataset.palette

@@ -75,8 +75,16 @@ export function migrateSettingsDefaults(s: Settings): boolean {
   }
   // 自动压缩的默认值从「按 Agent 自己的规则」（0）改成 70%：0 是界面上也有的选项，不能按值判断，
   // 只对没升过版本的设置迁一次；升过版本之后用户显式选回 0 不会被反复改掉
-  if (s.defaultsVersion < SETTINGS_DEFAULTS_VERSION) {
+  if (s.defaultsVersion < 1) {
     for (const c of Object.values(s.clis)) if (c.autoCompact === 0) c.autoCompact = AUTO_COMPACT_DEFAULT
+  }
+  // 版本 2：默认配色从「Claude」换成「Claude Code」、界面英文字体从 Inter 换成系统字体（和 Claude Code 一样）。
+  // 存着旧默认值的升级一次；之后用户再选回 Claude / Inter 不会被改掉
+  if (s.defaultsVersion < 2) {
+    if (s.appearance.palette === 'claude') s.appearance.palette = 'code'
+    if (s.appearance.uiFont === 'inter') s.appearance.uiFont = 'system'
+  }
+  if (s.defaultsVersion < SETTINGS_DEFAULTS_VERSION) {
     s.defaultsVersion = SETTINGS_DEFAULTS_VERSION
     dirty = true
   }

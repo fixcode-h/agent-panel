@@ -62,7 +62,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       aria-label={label}
       title={label}
       className={cn(
-        'grid shrink-0 cursor-pointer place-items-center transition-[background-color,color,opacity] outline-none',
+        // icon-btn / icon-btn-<tone>：给配色覆盖用的钩子（index.css 里「Claude Code」配色的悬停、选中底色）
+        'icon-btn grid shrink-0 cursor-pointer place-items-center transition-[background-color,color,opacity] outline-none',
+        `icon-btn-${tone}`,
         'focus-visible:ring-2 focus-visible:ring-focus-soft disabled:pointer-events-none disabled:opacity-40',
         sizes[size].box,
         tones[tone],

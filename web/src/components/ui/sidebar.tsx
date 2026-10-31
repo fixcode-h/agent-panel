@@ -1,5 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
-import { ChevronRight, Folder, Workflow } from 'lucide-react'
+import { ChevronRight, Folder, Workflow, type LucideIcon } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Spinner, StatusPill } from './status-pill'
@@ -30,23 +30,23 @@ export const NAV_ROW =
   'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--c-nav-radius) border px-2 text-[0.875rem] font-medium transition-colors'
 
 /**
- * 侧栏顶部的模式切换（照设计稿）：三段并排 tab 占满一行，点哪段切到哪个模式。
- * 选中项用 seg-thumb-strong（比通用分段控件的选中块更显眼：描边 + 投影 + 加重字重），
- * 深色下也一眼看得出选的是哪个。跳转由调用方在 onPick 里做；功能页不属于任何模式，三段都不亮
+ * 侧栏顶部的模式切换（照 Claude 桌面版左上角）：一组小图标按钮靠左排，点哪个切到哪个模式，名字放在悬停提示里。
+ * 轨道是比侧栏亮一层的浅底，选中项用 seg-thumb-strong（描边 + 投影），深色下也一眼看得出选的是哪个。
+ * 跳转由调用方在 onPick 里做；功能页不属于任何模式，几个都不亮
  */
 export function SidebarModeTabs({
   modes,
   onPick,
 }: {
-  /** label 是完整说明，当作 tab 的可访问名称（界面检查按「Agent 模式」这样的前缀定位） */
-  modes: { id: string; name: string; label?: string; on: boolean }[]
+  /** label 是完整说明，当作按钮的可访问名称和悬停提示（界面检查按「Agent 模式」这样的前缀定位） */
+  modes: { id: string; name: string; label?: string; icon: LucideIcon; on: boolean }[]
   onPick: (id: string) => void
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={t('模式')}
-      className="seg-track flex w-full min-w-0 rounded-[calc(var(--c-nav-radius)+2px)] p-0.5"
+      className="flex shrink-0 gap-0.5 rounded-[calc(var(--c-nav-radius)+2px)] bg-fg/[0.05] p-0.5"
     >
       {modes.map((m) => (
         <button
@@ -54,16 +54,16 @@ export function SidebarModeTabs({
           type="button"
           role="radio"
           aria-checked={m.on}
-          aria-label={m.label}
-          title={m.label}
+          aria-label={m.label ?? m.name}
+          title={m.label ?? m.name}
           onClick={() => !m.on && onPick(m.id)}
           className={cn(
-            'h-8 min-w-0 flex-1 cursor-pointer truncate rounded-(--c-nav-radius) px-1.5 transition-colors',
-            'text-[0.8125rem]',
-            m.on ? 'seg-thumb-strong font-semibold' : 'text-muted hover:text-fg',
+            'grid h-7 w-9 cursor-pointer place-items-center rounded-(--c-nav-radius) transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
+            m.on ? 'seg-thumb-strong' : 'text-muted hover:bg-fg/[0.06] hover:text-fg',
           )}
         >
-          {m.name}
+          {/* 和图标栏同一套线性图标，小一号：模式是次一级的切换 */}
+          <m.icon className="h-4 w-4" strokeWidth={1.7} />
         </button>
       ))}
     </div>

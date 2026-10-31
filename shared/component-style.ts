@@ -29,6 +29,8 @@ const color = (def: string, options: Record<string, string> = BG): ColorField =>
 /** 底色能选的主题色；部件原来的底色不在里面的（半透明的浅底）单独加一项 default */
 export const BG: Record<string, string> = {
   card: 'var(--card)',
+  /** 浮层色：弹出菜单、输入框上方弹层的底色，默认和卡片一样，有的配色单独提亮一档（--pop） */
+  pop: 'var(--pop)',
   panel: 'var(--panel)',
   bg: 'var(--bg)',
   field: 'var(--field)',
@@ -85,10 +87,10 @@ export const COMP_SPEC = {
   chip: { radius: px(6, 0, 12), ring: bool(true, '1px', '0px') },
   row: { radius: px(8, 0, 16), bg: color('default', { default: tint(3.5), ...BG }) },
   nav: { radius: px(8, 0, 16) },
-  menu: { radius: px(12, 0, 20), itemRadius: px(8, 0, 14), bg: color('card'), border: BORDER },
+  menu: { radius: px(12, 0, 20), itemRadius: px(8, 0, 14), bg: color('pop'), border: BORDER },
   modal: { radius: px(16, 0, 28), bg: color('card'), border: BORDER },
   sheet: { radius: px(12, 0, 24), bg: color('bg') },
-  popover: { radius: px(12, 0, 24), bg: color('card') },
+  popover: { radius: px(12, 0, 24), bg: color('pop') },
   empty: {
     radius: px(12, 0, 24),
     bg: color('none'),

@@ -33,6 +33,7 @@ export const EN_MARKDOWN_STYLE: Record<string, string> = {
   强边框色: 'Strong border',
   自定义: 'Custom',
   卡片色: 'Card',
+  浮层色: 'Popover',
   输入框色: 'Field',
   代码底色: 'Code background',
   代码标签底色: 'Code chip background',
