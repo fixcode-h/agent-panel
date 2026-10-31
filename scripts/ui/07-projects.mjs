@@ -169,6 +169,44 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ state: 'detached', timeout: 3000 })
         .catch(() => {})
     }
+    // 点开 Markdown 文件：标题栏的「预览 / 源码」切换要排成一行、和 24px 的标题栏按钮一样高，
+    // 不能被挤成一个字一行（「预 / 览」竖着叠、撑出标题栏）
+    {
+      await row('README.md').click()
+      const seg = p.getByRole('dialog').getByRole('radiogroup', { name: '预览或源码' })
+      await seg.waitFor({ timeout: 8000 }).catch(() => errors.push('文件窗口：Markdown 文件没有「预览 / 源码」切换'))
+      const m = await seg
+        .evaluate((el) => {
+          const btn = el.closest('[role="dialog"]')?.querySelector('button[aria-label="复制路径"]')
+          return {
+            h: el.getBoundingClientRect().height,
+            btnH: btn?.getBoundingClientRect().height ?? 0,
+            items: [...el.querySelectorAll('[role="radio"]')].map((b) => ({
+              text: (b.textContent ?? '').trim(),
+              h: b.getBoundingClientRect().height,
+              lineH: parseFloat(getComputedStyle(b).lineHeight) || parseFloat(getComputedStyle(b).fontSize) * 1.5,
+              textH: (() => {
+                const r = document.createRange()
+                r.selectNodeContents(b)
+                return r.getBoundingClientRect().height
+              })(),
+            })),
+          }
+        })
+        .catch(() => null)
+      if (m) {
+        if (Math.abs(m.h - m.btnH) > 1)
+          errors.push(`文件窗口：「预览 / 源码」切换高 ${m.h}px，和标题栏按钮（${m.btnH}px）不一样高`)
+        for (const it of m.items)
+          if (it.textH > it.lineH * 1.5) errors.push(`文件窗口：「${it.text}」折成了多行（文字高 ${it.textH}px）`)
+      }
+      await check(p, '文件窗口-Markdown标题栏', ['预览', '源码'])
+      await p.keyboard.press('Escape')
+      await p
+        .getByRole('dialog')
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => {})
+    }
     // 文件行右键：出现菜单项，但文件没有被打开（没有弹出文件窗口）
     await row('package.json').click({ button: 'right' })
     await menu()
