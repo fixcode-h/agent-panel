@@ -84,8 +84,9 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
-import { helperKey, helperStops, planSignal, planStops, stoppedPlanText, stopHelper, stopPlan } from './run-stops.ts'
+import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
+import { cherryPickPart } from './cherry-pick.ts'
 import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
@@ -582,6 +583,8 @@ export interface EngineHost {
     answered?: 'allowed' | 'denied'
     /** 已安装并登录的外部工具 */
     tools: string[]
+    /** 项目设置的 cherry-pick 目标（见 Project.cherryPick）：vcs 是项目目录的版本管理，按它说清怎么搬 */
+    cherryPick?: { vcs: 'git' | 'p4'; target: string }
   }
   /** 这一轮是「继续流程」，不是新的要求：停在某个节点结论上的流程从那个节点重新检查后接着走 */
   resume?: boolean
@@ -1784,7 +1787,7 @@ async function runNodeSingle(
         tier: node.tier,
         params: node.params,
         orch,
-        signal: planSignal(host),
+        signal: rs.planSignal(host),
       })
     let r = await call((extra || cont || full) + tail)
     // 失败自动重试（CLI 断线、偶发错误）：续接同一个会话，让它检查做到哪了接着做
@@ -2187,7 +2190,7 @@ async function runNodeSteps(
         tier: unit.tier,
         params: unit.params,
         orch: makeOrchestra(host, { workflow: inv.workflow, main: inv.main, tier: unit.tier }, r),
-        signal: planSignal(host),
+        signal: rs.planSignal(host),
       })
     let res = await call((extra || cont || full) + tail)
     // 失败自动重试（CLI 断线、偶发错误）：续接这一步自己的会话
@@ -2600,7 +2603,7 @@ function mainTurn(
       tier: main.workflow.mainTier ?? '',
       dispatching: kind,
       orch: makeOrchestra(host, { workflow: main.workflow, main, tier: main.workflow.mainTier ?? '' }, main.step),
-      signal: planSignal(host),
+      signal: rs.planSignal(host),
     })
   }
   const p = main.chain.then(go, go)
@@ -3185,17 +3188,8 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
     },
-    stopConversationWorkflow(id, why) {
-      if (!coordinator) return { ok: false, info: '这个对话不能管理子对话' }
-      const cur = planStops.get(id.trim())
-      if (!cur || cur.host.task.parentTaskId !== task.id)
-        return { ok: false, info: `子对话 ${id} 现在没有在跑的工作流` }
-      if (!stopPlan(id.trim(), why)) return { ok: false, info: `子对话 ${id} 的工作流已经结束了` }
-      return {
-        ok: true,
-        info: `已终止子对话 ${id} 的工作流。它会收到「工作流被终止」和这次运行改了哪些文件，由它决定保留还是清理，处理完照常报状态。`,
-      }
-    },
+    stopConversationWorkflow: (id, why) =>
+      coordinator ? rs.stopChildPlan(task.id, id, why) : { ok: false, info: '这个对话不能管理子对话' },
     // 挂了能力的高级角色就地用能力：取能力的完整做法（子任务只做派给它的那件事，不加载别的能力）
     capabilities: !helper && !!selfAgent && mountedAgents(selfAgent, host.agents).length > 0,
     loadCapability(name, params) {
@@ -3645,7 +3639,7 @@ function makeOrchestra(
       const over: string[] = []
       for (const s of want) {
         if (!s) continue
-        if (stopHelper(task.id, s.id, why)) done.push(`${s.id}｜${s.title}`)
+        if (rs.stopHelper(task.id, s.id, why)) done.push(`${s.id}｜${s.title}`)
         else over.push(`${s.id}｜${s.title}`)
       }
       if (!done.length && !over.length && !missing.length) return { ok: false, info: '没有还在执行或排队的子任务' }
@@ -3769,8 +3763,8 @@ async function runHelper(
 ) {
   const st = orchState(host)
   const ac = new AbortController()
-  const key = helperKey(host.task.id, step.id)
-  helperStops.set(key, ac)
+  const key = rs.helperKey(host.task.id, step.id)
+  rs.helperStops.set(key, ac)
   /** 被终止了：记成跳过，原因交回给派它的对话（见 settleHelpers） */
   const stopped = () => {
     step.status = 'skipped'
@@ -3875,7 +3869,7 @@ async function runHelper(
     step.endedAt = now()
     host.changed(true)
   } finally {
-    helperStops.delete(key)
+    rs.helperStops.delete(key)
   }
 }
 
@@ -4019,7 +4013,7 @@ async function startPlan(
   }
   // 先登记终止开关再拍快照：大仓库拍快照要几百毫秒，这段时间里点终止也要停得下来，不能回「已经结束了」
   const ac = new AbortController()
-  planStops.set(host.task.id, { ac, host })
+  rs.planStops.set(host.task.id, { ac, host })
   let snapshot: string | undefined
   /** 节点开始跑了没有：快照期间就被终止的，没有这次运行的改动可交 */
   let ran = false
@@ -4032,7 +4026,7 @@ async function startPlan(
     ran = !ac.signal.aborted
     r = ran ? await runFlow(host, inv) : { ok: false, halted: true, error: '' }
   } finally {
-    if (planStops.get(host.task.id)?.ac === ac) planStops.delete(host.task.id)
+    if (rs.planStops.get(host.task.id)?.ac === ac) rs.planStops.delete(host.task.id)
   }
   // 被终止（界面上的终止、父对话的 stop_workflow）：整个对话停止时 ac 没被触发，照旧按 r 收尾
   const cut = ac.signal.aborted && !host.signal?.aborted
@@ -4077,6 +4071,7 @@ async function conversationPrompt(
     `## 用户这次的消息\n${host.prompt}`,
     promptLangRules(),
     policyPart(host),
+    cherryPickPart(host),
     goalPart(host),
     rulesPart(host),
     searchPart(host),
@@ -4399,7 +4394,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
           out.ok
             ? `### 计划执行完成\n${clip(out.text || '（没有文字输出）', 12000)}`
             : out.stopped
-              ? stoppedPlanText(out.stopped)
+              ? rs.stoppedPlanText(out.stopped)
               : `### 计划执行失败\n${clip(out.error || '执行失败', 4000)}`,
         )
       }

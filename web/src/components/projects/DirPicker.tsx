@@ -302,24 +302,27 @@ export function DirPicker({
   onChange,
   info,
   hint,
+  label = t('本地目录'),
 }: {
   value: string
   onChange: (p: string) => void
   info: DirInfo | null | undefined
   /** 没填路径时的说明 */
   hint?: string
+  /** 输入框上面的标题（项目设置里 P4 的 cherry-pick 目标路径也用这个选择器） */
+  label?: string
 }) {
   const [browsing, setBrowsing] = useState(false)
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted">{t('本地目录')}</span>
+      <span className="text-xs text-muted">{label}</span>
       <div className="flex gap-2">
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={t('例如 ~/code/my-app')}
           className="font-mono text-[0.8125rem]"
-          aria-label={t('本地目录')}
+          aria-label={label}
         />
         <Button variant="secondary" className="h-10" onClick={() => setBrowsing(true)}>
           <FolderOpen className="h-4 w-4" />

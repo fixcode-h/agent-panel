@@ -59,6 +59,7 @@ import type { ProjectProposal, Proposal } from '@shared/assist'
 import { readProjectProposal } from '@shared/project-init'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { DirPicker, useDirInfo } from './DirPicker'
+import { CherryPickTarget } from './CherryPickTarget'
 import { t } from '@shared/i18n'
 import { resolveParams } from '@shared/agent-role'
 import { CLIS } from '@shared/clis'
@@ -304,18 +305,20 @@ function Body({
   )
   // 「禁止子对话执行」只对 Git 项目生效（ADR 0018）：路径变了重新判断，判断不出来按不是 Git 处理（置灰）。
   // 输入路径时每敲一个字都会变，等 300ms 再问，避免连续请求
-  const [gitRepo, setGitRepo] = useState(false)
+  // cherry-pick 目标也按这个判断：Git 下拉选分支，P4 填目标路径
+  const [vcs, setVcs] = useState<'git' | 'p4' | 'svn' | 'none'>('none')
+  const gitRepo = vcs === 'git'
   useEffect(() => {
     const p = draft.path.trim()
     if (!p) {
-      setGitRepo(false)
+      setVcs('none')
       return
     }
     const timer = setTimeout(() => {
       api
         .dirVcs(p)
-        .then((r) => setGitRepo(r.vcs === 'git'))
-        .catch(() => setGitRepo(false))
+        .then((r) => setVcs(r.vcs))
+        .catch(() => setVcs('none'))
     }, 300)
     return () => clearTimeout(timer)
   }, [draft.path])
@@ -1166,6 +1169,15 @@ function Body({
                       </Button>
                     </div>
                   )}
+                </FormSection>
+
+                <FormSection title={t('Cherry-pick 目标')}>
+                  <CherryPickTarget
+                    vcs={vcs}
+                    path={draft.path.trim()}
+                    value={draft.cherryPick ?? ''}
+                    onChange={(v) => set('cherryPick', v)}
+                  />
                 </FormSection>
 
                 <FormSection title={t('文件格式')}>

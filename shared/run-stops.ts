@@ -41,6 +41,17 @@ export function stopPlan(taskId: string, why: string) {
   return true
 }
 
+/** 父对话终止名下子对话的工作流（stop_workflow）：只认自己的子对话 */
+export function stopChildPlan(parentId: string, id: string, why: string) {
+  const cur = planStops.get(id.trim())
+  if (!cur || cur.host.task.parentTaskId !== parentId) return { ok: false, info: `子对话 ${id} 现在没有在跑的工作流` }
+  if (!stopPlan(id.trim(), why)) return { ok: false, info: `子对话 ${id} 的工作流已经结束了` }
+  return {
+    ok: true,
+    info: `已终止子对话 ${id} 的工作流。它会收到「工作流被终止」和这次运行改了哪些文件，由它决定保留还是清理，处理完照常报状态。`,
+  }
+}
+
 /** 工作流节点调用 CLI 时带上的信号：终止这次运行时结束正在跑的节点 */
 export const planSignal = (host: EngineHost) => planStops.get(host.task.id)?.ac.signal
 

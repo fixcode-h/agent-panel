@@ -164,6 +164,18 @@ export const EN_APP: Record<string, string> = {
     'This project was changed elsewhere. It has been refreshed — click "Confirm" again to save.',
   '项目在别处被修改过，请刷新页面后再保存': 'This project was changed elsewhere. Refresh the page, then save again.',
   '项目设置 · {name}': 'Project settings · {name}',
+  'Cherry-pick 目标': 'Cherry-pick target',
+  目标项目路径: 'Target project path',
+  'P4 项目：填要 cherry-pick 过去的那条分支在本机的项目目录（目标工作区里的同一个项目）。':
+    'P4 project: the local folder of the same project in the target branch’s workspace, where changes get cherry-picked to.',
+  '项目目录不是 Git 仓库或 P4 工作区，不能设置。':
+    'The project folder is not a Git repository or P4 workspace, so this can’t be set.',
+  '先选好本地目录。': 'Pick a local folder first.',
+  不设置: 'Not set',
+  '{name}（本地没有这个分支）': '{name} (no such local branch)',
+  目标分支: 'Target branch',
+  'Git 项目：让 Agent cherry-pick 时提交到这个本地分支（当前所在的分支不列出）。':
+    'Git project: when asked to cherry-pick, the agent commits to this local branch (the current branch isn’t listed).',
   基本信息: 'Basics',
   '例如：官网前端': 'e.g. Website frontend',
   分类: 'Category',
