@@ -453,7 +453,9 @@ const NESTED_EDGE_SCAN = () => {
       左: Math.abs(r.left - ar.left - parseFloat(as.borderLeftWidth)),
       右: Math.abs(ar.right - parseFloat(as.borderRightWidth) - r.right),
     }
-    const touch = Object.keys(edge).filter((k) => edge[k] < 1.5)
+    // 外层自己就是在滚的区域：上下边贴不贴看滚到哪，只看左右
+    const rolling = scrolls(a) && a.scrollHeight > a.clientHeight + 1
+    const touch = Object.keys(edge).filter((k) => edge[k] < 1.5 && !(rolling && (k === '上' || k === '下')))
     // 一两条边重合才是问题：三条边重合是铺满的标题栏 / 底栏，四条是包裹层
     if (!touch.length || touch.length > 2) continue
     out.push(`${touch.join('')}边，「${(el.textContent ?? '').trim().slice(0, 16)}」${where(el)} 在 ${where(a)} 里`)
