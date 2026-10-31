@@ -1211,18 +1211,24 @@ await runShard('工作流条件与失败', async (api) => {
     }
     step('合并审查：冲突和自动合上的重叠文件都把双方提交记录交回，要求逐文件核对')
   }
-  // Agent 输出里提到的文件可以点开看：只能读项目目录里的
+  // Agent 输出里提到的文件可以点开看：只读查看哪里都能看（交接文件、对话目录这类项目外的文件也要能点开）
   const rd = await call('GET', `/tasks/${tCommit.id}/file?path=README.md`)
   assert.equal(rd.content, '# demo\n')
   assert.equal((await call('GET', `/tasks/${tCommit.id}/file?path=nope.ts`)).exists, false)
-  assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file?path=../../etc/passwd`)).status, 400)
-  // 读到的文件是图片时按原图查看，同样只能读项目目录里的
+  const outsideFile = path.join(path.dirname(projectDir), `outside-${Date.now()}.md`)
+  writeFileSync(outsideFile, '# 项目外\n')
+  assert.equal(
+    (await call('GET', `/tasks/${tCommit.id}/file?path=${encodeURIComponent(outsideFile)}`)).content,
+    '# 项目外\n',
+    '项目外的绝对路径也能看',
+  )
+  // 读到的文件是图片时按原图查看
   writeFileSync(path.join(projectDir, 'shot.png'), PNG_1PX)
   const img = await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=shot.png`)
   assert.equal(img.headers.get('content-type'), 'image/png')
   assert.deepEqual(Buffer.from(await img.arrayBuffer()), PNG_1PX)
   assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=README.md`)).status, 400, '不是图片不能当图片读')
-  assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=../../etc/passwd`)).status, 400)
+  assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=../../etc/passwd`)).status, 400, '不是图片')
   // 删除先进回收站：附件也留着（恢复后还要用）；永久删除时才一起删掉
   const attDir = path.dirname(att.path)
   await call('DELETE', `/tasks/${tAtt.id}`)
