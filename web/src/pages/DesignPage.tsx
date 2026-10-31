@@ -1099,7 +1099,7 @@ function Designer({ id }: { id: string }) {
   return (
     // 对话 / 画板 / 检查器三块圆角面板并排，中间露出 8px 底色（照设计稿 Design.dc.html）；
     // App 里把打开的设计算作 splitPage，外面不再套一整块面板
-    <div className="flex min-h-0 min-w-0 flex-1 md:gap-2">
+    <div className="flex min-h-0 min-w-0 flex-1">
       {chatOpen && (
         <aside
           aria-label={t('AI 对话')}

@@ -2399,7 +2399,8 @@ export const Appearance = z.object({
   /** 对话和文档正文的行高 */
   lineHeight: z.number().min(1.3).max(2.2).catch(1.75).default(1.75),
   /** 主区、右栏这些面板的圆角（像素）；0 是直角 */
-  panelRadius: z.number().min(0).max(24).catch(12).default(12),
+  // 默认 0：照 Claude Code，主区、右栏贴着排、只用细线分隔，不做圆角面板（2026-10-31 用户要求）
+  panelRadius: z.number().min(0).max(24).catch(0).default(0),
   /** 对话、文档里 Markdown 每种元素的样式，只存改过的项（定义和默认值见 shared/markdown-style.ts） */
   markdown: MarkdownStyle,
   /** 设置 → 组件里各部件的微调（圆角、底色、边框……），只存改过的项（定义和默认值见 shared/component-style.ts） */

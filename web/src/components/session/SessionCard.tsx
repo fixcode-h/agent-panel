@@ -21,7 +21,7 @@ function writeFolded(id: string, folded: boolean) {
 }
 
 /**
- * 会话栏的一块（照 Claude Code 的会话栏）：细描边的圆角卡片，标题后面跟一个小箭头，点标题收起展开。
+ * 会话栏的一块（照 Claude Code 的会话栏）：不做卡片，块和块之间一道 1px 细线（--line）分开，标题后面跟一个小箭头，点标题收起展开。
  * id 用来记住收起状态；trailing 放在标题行右端（数量、操作按钮）
  */
 export function SessionCard({
@@ -39,11 +39,7 @@ export function SessionCard({
 }) {
   const [open, setOpen] = useState(() => !readFolded(id))
   return (
-    <section
-      aria-label={title}
-      data-session-card={id}
-      className={cn('rounded-xl border border-line bg-bg px-3.5 py-3', className)}
-    >
+    <section aria-label={title} data-session-card={id} className={cn('border-b border-line px-4 py-3', className)}>
       <div className="flex items-center gap-2">
         <button
           type="button"

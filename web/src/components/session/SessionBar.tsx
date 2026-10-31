@@ -38,7 +38,7 @@ export function SessionBar({
 
   const worktree = task.worktree
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overscroll-contain p-3" data-session-bar>
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-session-bar>
       <SessionCard id="env" title={t('环境')} trailing={env}>
         <SessionRow
           icon={worktree ? <Split /> : <Monitor />}

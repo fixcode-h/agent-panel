@@ -466,7 +466,13 @@ await runShard(import.meta.filename, async (api) => {
       const aside = p.locator('[data-task-panel]')
       const open = p.getByRole('button', { name: '显示文件', exact: true })
       const fold = p.getByRole('button', { name: '收起文件面板', exact: true })
-      if (!(await aside.isVisible().catch(() => false))) errors.push('文件面板：默认没有展开')
+      // 等对话加载完再看右栏：非开发者模式下加载时只有一个转圈（无限动画），settle 不会替我们等到加载结束
+      // （以前分步加载日志的淡入淡出是有限动画，碰巧把这段时间等过去了）
+      const asideShown = await aside.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!asideShown) errors.push('文件面板：默认没有展开')
       else if (!(await fold.count())) errors.push('文件面板：展开时没有「收起文件面板」')
       else {
         await check(p, '文件面板-默认展开', ['src'])
