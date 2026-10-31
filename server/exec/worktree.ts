@@ -980,6 +980,24 @@ async function commonGitDir(dir: string): Promise<string> {
   return out ? path.resolve(dir, out) : ''
 }
 
+/**
+ * 独立目录的 .git 是不是确实断了：返回残留原因，没断（或判断不了）返回空串。
+ * 只认两种：.git 文件里的 gitdir 指向的目录已经不在了；.git 根本不是 gitdir 链接也不是目录
+ */
+async function brokenGitLink(dir: string): Promise<string> {
+  const dotGit = path.join(dir, '.git')
+  const st = await lstat(dotGit).catch(() => null)
+  if (!st) return ''
+  if (st.isDirectory()) return ''
+  const text = await readFile(dotGit, 'utf8').catch(() => null)
+  if (text === null) return ''
+  const m = /^gitdir:\s*(.+)$/m.exec(text)
+  if (!m) return '.git 不是有效的 worktree 链接（测试或手动残留）'
+  const target = path.resolve(dir, m[1].trim())
+  const alive = await lstat(target).catch((e: NodeJS.ErrnoException) => (e.code === 'ENOENT' ? null : 'unknown'))
+  return alive === null ? '.git 指向的注册目录已经不在了（主仓库挪走或注册被清）' : ''
+}
+
 /** git 登记的工作区：路径 → 分支名（分离 HEAD 时为空）；读不出来时返回 null */
 async function worktreeRegistry(repo: string, common: string): Promise<Map<string, string> | null> {
   const r = await git(repo, 'worktree', 'list', '--porcelain')
@@ -1088,9 +1106,21 @@ export async function sweepWorktrees(opts: SweepOptions = {}): Promise<SweepResu
       return
     }
     const common = await commonGitDir(dir)
-    // 数据目录里的任务目录都是 git 工作目录：连 git 都不是的，是测试或手动留下的
+    // git 读不出来不等于残留：git 不在 PATH、超时、dubious ownership 时 rev-parse 也返回空。
+    // 只有 .git 指向的注册目录确实不在了，才当残留清；其余一律按在用保留，免得连未提交的改动一起删掉
     if (!common) {
-      await drop({ taskId, dir, branch: '', kind: 'orphan', reason: '不是 git 工作目录（测试或手动残留）' }, '')
+      const why = await brokenGitLink(dir)
+      if (!why) {
+        log.warn('worktree', '读不出独立目录的 git 信息，这次不清扫', { dir })
+        result.kept.push({ dir, taskId, why: '读不出 git 信息（git 不可用或出错），按在用处理' })
+        return
+      }
+      const info = opts.taskInfo ? await opts.taskInfo(taskId).catch(() => 'unreadable' as const) : undefined
+      if (info === 'unreadable' || info?.working) {
+        result.kept.push({ dir, taskId, why: info === 'unreadable' ? '读不到任务记录，按在用处理' : '任务还在执行' })
+        return
+      }
+      await drop({ taskId, dir, branch: '', kind: 'orphan', reason: why }, '')
       return
     }
     const owner = path.dirname(common)
@@ -1116,6 +1146,11 @@ export async function sweepWorktrees(opts: SweepOptions = {}): Promise<SweepResu
       }
       if (st.ahead > 0) {
         result.kept.push({ dir, taskId, why: `分支上还有 ${st.ahead} 个没合回原分支的提交` })
+        return
+      }
+      const live = opts.taskInfo ? await opts.taskInfo(taskId).catch(() => 'unreadable' as const) : undefined
+      if (live === 'unreadable' || live?.working) {
+        result.kept.push({ dir, taskId, why: live === 'unreadable' ? '读不到任务记录，按在用处理' : '任务还在执行' })
         return
       }
       await drop(
@@ -1198,7 +1233,9 @@ export async function currentBranch(dir: string) {
 /** 独立目录里还没提交的改动提交到任务分支；没有改动返回 false */
 export async function commitWorktree(wt: TaskWorktree, message: string) {
   if (!existsSync(wt.path)) return false
-  await git(wt.path, 'add', '-A')
+  // add 失败（index.lock、权限、非法路径）时暂存区是空的，后面会被当成「没有改动」，合并却报成功
+  const add = await git(wt.path, 'add', '-A')
+  if (add.code !== 0) throw fail(add, t('暂存改动失败'))
   if ((await git(wt.path, 'diff', '--cached', '--quiet')).code === 0) return false
   const c = await git(wt.path, ...(await identity(wt.path)), 'commit', '-q', '-m', message)
   if (c.code !== 0) throw fail(c, t('提交改动失败'))

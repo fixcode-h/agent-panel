@@ -125,11 +125,25 @@ import { existsSync } from 'node:fs'
 import { detectShells, currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
 import { staleProjectWrite } from './project-lock.ts'
+import { acquireInstanceLock } from './instance-lock.ts'
 import { LESSON_REVIEW_LANG, parseLessonReview } from '../shared/lesson-review.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
 installLogging()
+
+// 单实例：同一个数据目录只能有一个面板，必须在任何迁移、读数据之前拿到（见 instance-lock.ts）。
+// 更新后重启的新进程要等旧进程退出，多等一会儿
+const instanceLock = acquireInstanceLock(DATA_DIR, { waitMs: process.env.AGENT_PANEL_RESTARTED ? 30_000 : 2_000 })
+if (!instanceLock.ok) {
+  console.error(
+    `数据目录 ${DATA_DIR} 已经有一个 Agent 面板在运行（进程 ${instanceLock.holder.pid}，启动于 ${instanceLock.holder.startedAt}）。` +
+      '\n请直接打开已经在运行的那个；要同时开两个，用环境变量 AGENT_PANEL_DATA 指定另一个数据目录。' +
+      `\n确认没有在运行（例如进程号被别的程序占用）时，删掉 ${path.join(DATA_DIR, 'panel.lock')} 再启动。`,
+  )
+  process.exit(1)
+}
+process.on('exit', () => instanceLock.release())
 
 // 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
 migrateDataDir()

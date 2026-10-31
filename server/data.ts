@@ -59,19 +59,42 @@ export async function readBackupFiles(rels: string[], read: (full: string) => Pr
   return { files, skipped }
 }
 
-/** 导出时去掉隧道 token：它相当于让别人接管这条隧道，不该跟着备份文件传出去 */
-function withoutTunnelToken(b64: string) {
+/**
+ * 导出时去掉密钥：隧道 token、API 的 key、搜索源的 key、CLI 的环境变量值。
+ * 备份文件常被拿去分享或换机器，密钥跟着出去就等于泄露；导入时由 withLocalSecrets 沿用本机的值。
+ * 解析不了时整份不导出设置（返回 null），不能因为解析失败就把原文连密钥一起带出去
+ */
+export function withoutSecrets(b64: string): string | null {
   try {
     const raw = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'))
-    // 旧设置里的 Gemini 协议先清掉，否则解析失败会跳过清理，隧道 token 跟着备份导出
+    // 旧设置里的 Gemini 协议先清掉，否则解析失败
     migrateRemovedClis(raw)
     const s = Settings.parse(raw)
-    if (!s.remoteAccess.tunnelToken) return b64
     s.remoteAccess.tunnelToken = ''
+    for (const a of s.apis) a.apiKey = ''
+    s.webSearch.key = ''
+    for (const cli of Object.values(s.clis)) for (const e of cli.env) e.value = ''
     return Buffer.from(JSON.stringify(s)).toString('base64')
   } catch {
-    return b64
+    return null
   }
+}
+
+/** 导入备份时，备份里被清空的密钥沿用本机现有的值（按 API id、CLI id + 变量名对上） */
+export function withLocalSecrets(backup: Settings, current: Settings): Settings {
+  if (!backup.remoteAccess.tunnelToken) backup.remoteAccess.tunnelToken = current.remoteAccess.tunnelToken
+  for (const a of backup.apis) {
+    if (a.apiKey) continue
+    a.apiKey = current.apis.find((x) => x.id === a.id)?.apiKey ?? '' // secret-check-ok：从本机设置取值，不是写死的密钥
+  }
+  if (!backup.webSearch.key && backup.webSearch.provider === current.webSearch.provider)
+    backup.webSearch.key = current.webSearch.key
+  for (const [id, cli] of Object.entries(backup.clis))
+    for (const e of cli.env) {
+      if (e.value) continue
+      e.value = current.clis[id]?.env.find((x) => x.key === e.key)?.value ?? ''
+    }
+  return backup
 }
 
 /** 导出的备份文件：一个 JSON，里面是各个文件的 base64 内容 */
@@ -87,6 +110,9 @@ const Backup = z.object({
 
 /** 备份里的路径只能落在对应类别的目录里，不能用 .. 写到数据目录外面 */
 function allowed(rel: string, kinds: DataKind[]) {
+  // 反斜杠和冒号一律拒：posix 规范化不认 \，Windows 落盘时 path.join 却认，`config/..\..\x` 会写出数据目录；
+  // 冒号挡盘符和 NTFS 备用数据流（a.json:stream）
+  if (/[\\:]/.test(rel)) return false
   const norm = path.posix.normalize(rel)
   if (norm.startsWith('..') || path.posix.isAbsolute(norm) || norm.includes('\0')) return false
   return kinds.some((k) => PATHS[k].some((p) => norm === p || norm.startsWith(p + '/')))
@@ -169,7 +195,14 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
     const { files: out, skipped } = await readBackupFiles(
       (await Promise.all(kinds.map(kindFiles))).flat().map((f) => f.rel),
     )
-    if (out['settings.json']) out['settings.json'] = withoutTunnelToken(out['settings.json'])
+    if (out['settings.json']) {
+      const clean = withoutSecrets(out['settings.json'])
+      if (clean) out['settings.json'] = clean
+      else {
+        delete out['settings.json']
+        skipped.push('settings.json')
+      }
+    }
     const backup: z.infer<typeof Backup> = {
       app: 'agent-panel',
       version: 1,
@@ -200,19 +233,20 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
         const raw = JSON.parse(Buffer.from(fs['settings.json'], 'base64').toString('utf8'))
         // 旧备份里可能还有已经移除的 Gemini 协议：先清掉，导入时才能正常解析
         migrateRemovedClis(raw)
-        const backup = Settings.parse(raw)
-        const current = await getSettings()
-        if (!backup.remoteAccess.tunnelToken && current.remoteAccess.tunnelToken) {
-          backup.remoteAccess.tunnelToken = current.remoteAccess.tunnelToken
-          fs['settings.json'] = Buffer.from(JSON.stringify(backup)).toString('base64')
-        }
+        const backup = withLocalSecrets(Settings.parse(raw), await getSettings())
+        fs['settings.json'] = Buffer.from(JSON.stringify(backup)).toString('base64')
       } catch {}
     }
     for (const k of kinds) for (const r of PATHS[k]) await rm(path.join(DATA_DIR, r), { recursive: true, force: true })
+    const root = path.resolve(DATA_DIR)
     for (const [rel, b64] of Object.entries(fs)) {
-      const full = path.join(DATA_DIR, ...rel.split('/'))
+      const full = path.resolve(root, ...rel.split('/'))
+      // 第二道：不管上面的路径校验漏了什么写法，落盘位置必须在数据目录里
+      if (!full.startsWith(root + path.sep))
+        return c.json({ error: t('数据文件里有不认识的路径：{path}', { path: rel }) }, 400)
       await mkdir(path.dirname(full), { recursive: true })
-      await writeFile(full, Buffer.from(b64, 'base64'))
+      // 设置里有密钥：和平时一样只给本人读写（0600），导入不能把权限放宽
+      await writeFile(full, Buffer.from(b64, 'base64'), rel === 'settings.json' ? { mode: 0o600 } : undefined)
     }
     resetCaches()
     return c.json({ ok: true, kinds, files: Object.keys(fs).length })

@@ -1331,7 +1331,8 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
       env: {
         ...process.env,
         LANG: 'zh_CN.UTF-8',
-        AGENT_PANEL_DATA: dataDir,
+        // 单独的数据目录：同一个数据目录只允许一个面板（server/instance-lock.ts），分片自己的服务还开着
+        AGENT_PANEL_DATA: path.join(tmp, 'tray-data'),
         PORT: String(trayPort),
         AGENT_PANEL_TRAY: '1',
         FAKE_CLI_LOG: log,

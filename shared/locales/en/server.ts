@@ -329,6 +329,7 @@ export const EN_SERVER: Record<string, string> = {
   切换分支失败: 'Failed to switch branches',
   '切换分支失败：{error}': 'Failed to switch branches: {error}',
   提交改动失败: 'Failed to commit the changes',
+  暂存改动失败: 'Failed to stage the changes',
   '合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。':
     'Merging into "{branch}" hit a conflict or was blocked by uncommitted changes in that directory; the directory was not changed. You can merge branch {name} manually there.',
   '算不出两个分支的共同基点，给不出双方的提交记录':
