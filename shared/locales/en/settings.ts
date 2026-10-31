@@ -869,13 +869,13 @@ export const EN_SETTINGS: Record<string, string> = {
   // 字体
   字体: 'Fonts',
   英文字体: 'Latin font',
-  '默认是内置的 Inter；喜欢等宽可以换内置的 Maple Mono NL（不带符号连字）。':
-    'Defaults to the bundled Inter; for a monospaced look, switch to the bundled Maple Mono NL (no ligatures).',
-  'Inter（内置，默认）': 'Inter (bundled, default)',
+  '默认是系统界面字体（Segoe UI / 苹方），和 Claude Code 一样；也可以换内置的 Inter，喜欢等宽可以换 Maple Mono NL（不带符号连字）。':
+    'Defaults to the system UI font (Segoe UI / PingFang), the same as Claude Code; you can switch to the bundled Inter, or Maple Mono NL (no ligatures) for a monospaced look.',
+  'Inter（内置）': 'Inter (bundled)',
   'Maple Mono NL（内置）': 'Maple Mono NL (bundled)',
   'IBM Plex Sans（内置）': 'IBM Plex Sans (bundled)',
   'JetBrains Mono（内置）': 'JetBrains Mono (bundled)',
-  系统字体: 'System font',
+  '系统字体（默认）': 'System font (default)',
   中文字体: 'Chinese font',
   '英文字体里没有汉字，汉字用这里选的字体。思源黑体和 Maple Mono 中文版是同一套字形。':
     'The Latin font has no Chinese characters, so they use this font. Noto Sans SC shares its glyphs with the Chinese build of Maple Mono.',
@@ -1505,7 +1505,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '填 0 到 3650 之间的整数，单位是天': 'Enter a whole number of days from 0 to 3650',
   // 设置 → 外观 → 配色、设置 → 组件
   配色: 'Color palette',
-  'Claude（默认）': 'Claude (default)',
+  'Claude Code（默认）': 'Claude Code (default)',
   中性: 'Neutral',
   海蓝: 'Ocean',
   森绿: 'Forest',

@@ -75,6 +75,7 @@ const propLabel = (c: CompName, prop: string) => {
 const optionLabel = (v: string) =>
   ({
     card: t('卡片色'),
+    pop: t('浮层色'),
     panel: t('面板色'),
     bg: t('页面底色'),
     field: t('输入框色'),

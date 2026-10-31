@@ -141,7 +141,8 @@ function HintSurface({
       // 原生 title 从不拦点击，换成浮层后如果吃指针事件，鼠标后面的按钮就点不到了。
       className={cn(
         // 量尺寸时先藏起来，避免在算好位置前闪一下
-        'pointer-events-none fixed z-50 max-w-[320px] rounded-lg border border-line-strong bg-card px-3 py-2 text-xs leading-relaxed break-words text-muted shadow-pop',
+        // 底色用浮层色（--pop）：默认就是卡片色，「Claude Code」配色深色下和弹出菜单一样亮一档
+        'hint-surface pointer-events-none fixed z-50 max-w-[320px] rounded-lg border border-line-strong bg-(--pop) px-3 py-2 text-xs leading-relaxed break-words text-muted shadow-pop',
         !placement && 'invisible',
         className,
       )}

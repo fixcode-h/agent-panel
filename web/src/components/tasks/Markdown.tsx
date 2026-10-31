@@ -7,6 +7,7 @@ import { splitSummaryCards, type SummaryCard } from '@shared/summary-card'
 import { linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
 import { toast } from '@/lib/toast'
+import { enhanceMermaid, mermaidAction, mermaidErrorHtml, mermaidHtml, mermaidThemeVars } from '@/lib/mermaid-fx'
 
 /**
  * 任务页提供：总结卡「要你处理」那一行的「处理」按钮把这些事交给当前对话的 Agent（新的一轮，不新建对话）。
@@ -31,9 +32,7 @@ async function getMermaid() {
   const mermaid = await mermaidLoad
   const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light'
   if (theme !== mermaidTheme) {
-    // 用面板自己的配色画图：节点是卡片色、线是次要文字色，和代码块的底色融在一起
-    const css = getComputedStyle(document.documentElement)
-    const v = (k: string) => css.getPropertyValue(k).trim()
+    // 用面板自己的配色画图：节点、连线、饼图、甘特都取 Markdown 那组色相（mermaid-fx.ts 的 mermaidThemeVars）
     mermaid.initialize({
       startOnLoad: false,
       // 语法错误时不要在页面最底下画一张「Syntax error」的图（会把页面撑出一大截空白）
@@ -41,21 +40,11 @@ async function getMermaid() {
       securityLevel: 'strict',
       theme: 'base',
       fontFamily: getComputedStyle(document.body).fontFamily,
-      themeVariables: {
-        darkMode: theme === 'dark',
-        background: v('--code-bg'),
-        primaryColor: v('--card'),
-        primaryTextColor: v('--fg'),
-        primaryBorderColor: v('--line-strong'),
-        secondaryColor: v('--field'),
-        tertiaryColor: v('--panel'),
-        lineColor: v('--subtle'),
-        textColor: v('--fg'),
-        edgeLabelBackground: v('--code-bg'),
-        clusterBkg: v('--panel'),
-        clusterBorder: v('--line'),
-        fontSize: '13px',
-      },
+      themeVariables: mermaidThemeVars(theme === 'dark'),
+      flowchart: { curve: 'basis', padding: 16, nodeSpacing: 46, rankSpacing: 52 },
+      // 时序图、甘特图按自然宽度画，不撑满容器（撑满时字会被放大或缩得很小）
+      sequence: { mirrorActors: false, useMaxWidth: false, messageFontSize: 13, actorFontSize: 13, noteFontSize: 13 },
+      gantt: { fontSize: 12, sectionFontSize: 12, barHeight: 22, barGap: 6, leftPadding: 56, useWidth: 760 },
     })
     mermaidTheme = theme
   }
@@ -151,12 +140,13 @@ export function Markdown({
           const { svg } = await mermaid.render(id, src)
           if (cancelled) return
           box.dataset.done = '1'
-          box.innerHTML = `<div class="md-mermaid-svg">${svg}</div><details><summary>${t('源码')}</summary><pre><code>${escape(src)}</code></pre></details>`
+          box.innerHTML = mermaidHtml(svg, src)
+          enhanceMermaid(box)
         } catch (e) {
           // 语法不对的图按普通代码块显示源码，标出画不出来的原因
           box.dataset.done = 'error'
           const why = String((e as Error)?.message ?? '').split('\n')[0]
-          box.innerHTML = `<div class="md-code"><div class="md-code-bar"><span>mermaid · ${escape(t('图的语法有误，显示源码'))}</span><button type="button" class="md-copy" data-copy>${t('复制')}</button></div><pre><code title="${escape(why)}">${escape(src)}</code></pre></div>`
+          box.innerHTML = mermaidErrorHtml(src, why)
         } finally {
           // 出错时 mermaid 会把临时节点留在 body 末尾，清掉；画好的图也用这个 id，只清 body 下面的
           for (const tmp of [`d${id}`, `i${id}`, id]) {
@@ -193,6 +183,17 @@ export function Markdown({
           toast.error(err.message)
         },
       )
+      return
+    }
+    const mmd = (e.target as HTMLElement).closest<HTMLElement>('[data-mmd]')
+    if (mmd) return mermaidAction(mmd)
+    // 折行：只切这一个代码块，不改设置
+    const wrap = (e.target as HTMLElement).closest<HTMLElement>('[data-wrap]')
+    if (wrap) {
+      const box = wrap.closest<HTMLElement>('.md-code')
+      if (!box) return
+      if (box.toggleAttribute('data-wrap')) wrap.dataset.on = ''
+      else delete wrap.dataset.on
       return
     }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]')

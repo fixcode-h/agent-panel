@@ -2344,13 +2344,19 @@ export const WORD_SPACING: Record<'inter' | 'maple' | 'plex' | 'system', number>
 }
 /** 字体：界面（英文）、中文、代码各选一种，字号、字间距、空格宽度、行高可调 */
 /** 可选的配色：每套在 web/src/index.css 里有浅色、深色两块覆盖（html 上的 data-palette） */
-export const PALETTES = ['claude', 'neutral', 'ocean', 'forest'] as const
+export const PALETTES = ['code', 'claude', 'neutral', 'ocean', 'forest'] as const
 export type Palette = (typeof PALETTES)[number]
 export const Appearance = z.object({
-  /** 配色：默认 Claude（暖灰底、陶土橙），换配色只换颜色，部件的形状和间距不变 */
-  palette: z.enum(PALETTES).catch('claude').default('claude'),
-  /** 界面的英文字体：默认内置的 Inter（比例字体，比等宽字体读起来松快）；Maple Mono NL 等宽，喜欢等宽的可以换 */
-  uiFont: z.enum(['inter', 'maple', 'plex', 'system']).catch('inter').default('inter'),
+  /**
+   * 配色：默认「Claude Code」（中性灰底、蓝色链接，照 Claude Code 桌面版取色），原来的默认「Claude」（暖灰底、陶土橙）保留可选。
+   * 换配色只换颜色和部件的外观，布局不变
+   */
+  palette: z.enum(PALETTES).catch('code').default('code'),
+  /**
+   * 界面的英文字体：默认系统界面字体（Segoe UI / 苹方），和 Claude Code 桌面版一样；
+   * 内置的 Inter、等宽的 Maple Mono NL 喜欢的可以换
+   */
+  uiFont: z.enum(['inter', 'maple', 'plex', 'system']).catch('system').default('system'),
   /**
    * 中文字体：默认走系统字体（苹方 / 微软雅黑），不下载任何中文字体文件；
    * 选内置的思源黑体时才加载它的分片（web/src/lib/appearance.ts 的 ensureCjkFont）
@@ -2417,7 +2423,7 @@ export type RemoteAccess = z.infer<typeof RemoteAccess>
  * 不用「值正好等于旧默认值」判断，是因为有的项旧默认值本身就是界面上的一个选项（例如自动压缩的 0），
  * 用户显式选回它之后不能再被反复改掉。用户保存过一次设置就视为已迁移（见 server/settings.ts 的 saveSettings）
  */
-export const SETTINGS_DEFAULTS_VERSION = 1
+export const SETTINGS_DEFAULTS_VERSION = 2
 
 export const Settings = z.object({
   /** 见 SETTINGS_DEFAULTS_VERSION */

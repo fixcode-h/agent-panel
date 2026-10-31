@@ -119,4 +119,75 @@ await runShard(import.meta.filename, async (api) => {
       await settle(p)
     }
   }
+
+  // 阶段确认（节点完成后等你确认）改成审阅弹窗：输入框上方只有一条入口，弹窗里按 Markdown 渲染结果，
+  // 选中文字标注、右栏列标注，「修改」把标注整理成意见退回。只改这一种请求，其他提问照旧
+  {
+    const KEY = 'agent-panel-demo-v3'
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      const task = (db.tasks ?? []).find((x) => x.title.startsWith('购物车右上角'))
+      if (!task) return
+      const step = task.steps[0]
+      task.requests = [
+        {
+          id: 'ui-review',
+          step: step?.id ?? '',
+          agentId: step?.agentId,
+          kind: 'confirm',
+          title: '「设计与压测」完成了，看一下结果再继续',
+          detail: '## 方案\n\n1. 列表行加上模型标签\n2. 新增按 CLI 筛选\n\n> 风险：窄屏放不下',
+          options: [],
+          at: new Date().toISOString(),
+        },
+      ]
+      localStorage.setItem(k, JSON.stringify(db))
+    }, KEY)
+    await p.reload()
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    const entry = p.getByRole('button', { name: '查看结果', exact: true })
+    if (
+      !(await entry.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('阶段确认：输入框上方没有「查看结果」入口')
+    else {
+      await entry.click()
+      const dlg = p.getByRole('dialog')
+      await dlg.waitFor()
+      await settle(p)
+      const line = dlg.getByText('列表行加上模型标签').first()
+      const b = await line.boundingBox()
+      await p.mouse.move(b.x + 2, b.y + b.height / 2)
+      await p.mouse.down()
+      await p.mouse.move(b.x + b.width - 2, b.y + b.height / 2, { steps: 5 })
+      await p.mouse.up()
+      const mark = p.getByRole('button', { name: '标注', exact: true })
+      if (
+        !(await mark.waitFor({ timeout: 3000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        errors.push('阶段确认：选中文字后没有出现「标注」按钮')
+      else {
+        await mark.click()
+        await p.keyboard.type('标签放到名字右边')
+        await check(p, '阶段确认-审阅弹窗', ['标注', '修改', '确认'])
+        await dlg.getByRole('button', { name: '修改', exact: true }).click()
+        await dlg
+          .waitFor({ state: 'detached', timeout: 5000 })
+          .catch(() => errors.push('阶段确认：点「修改」后弹窗没关'))
+        const sent = await p.evaluate((k) => {
+          const task = JSON.parse(localStorage.getItem(k) ?? '{}').tasks.find((x) => x.title.startsWith('购物车右上角'))
+          return { left: task.requests.length, text: task.messages.at(-1)?.text ?? '' }
+        }, KEY)
+        if (sent.left) errors.push('阶段确认：点「修改」后请求还在')
+        else if (!sent.text.includes('原文：「列表行加上模型标签」') || !sent.text.includes('意见：标签放到名字右边'))
+          errors.push(`阶段确认：退回的意见没带上标注：${sent.text}`)
+      }
+    }
+  }
 })

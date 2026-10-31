@@ -14,7 +14,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/input'
+import { ReviewDialog } from './ReviewDialog'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { QuestionPanel, type PanelQuestion } from '@/components/chat/QuestionPanel'
 import { t } from '@shared/i18n'
@@ -72,7 +72,6 @@ export function RequestCard({
 }) {
   const req = requests[0]
   const [busy, setBusy] = useState('')
-  const [answer, setAnswer] = useState('')
   if (!req) return null
   const a = agent
   const Icon = ICONS[req.kind]
@@ -81,7 +80,6 @@ export function RequestCard({
     setBusy(key)
     try {
       await onAnswer(req.id, { allow, answer: text })
-      setAnswer('')
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -132,6 +130,18 @@ export function RequestCard({
       />
     )
 
+  // 工作流节点完成后等你确认：输入框上方只留一条入口，点开审阅弹窗看结果、做标注，再决定修改还是确认
+  if (req.kind === 'confirm')
+    return (
+      <ConfirmEntry
+        req={req}
+        agent={a}
+        more={requests.length - 1}
+        answer={(allow, text) => onAnswer(req.id, { allow, answer: text })}
+        className={className}
+      />
+    )
+
   return (
     <div
       role="alertdialog"
@@ -167,50 +177,11 @@ export function RequestCard({
           </span>
         </div>
         {req.detail && (
-          <pre
-            className={cn(
-              'overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap text-muted',
-              req.kind === 'confirm' ? 'max-h-72' : 'max-h-40',
-            )}
-          >
+          <pre className="max-h-40 overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap text-muted">
             {req.detail}
           </pre>
         )}
-        {req.kind === 'confirm' ? (
-          // 工作流节点完成后等你确认：通过就往下走，退回时写上要改的地方，节点按意见继续完善
-          <form
-            className="flex flex-col gap-2"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void send('allow', true)
-            }}
-          >
-            <Textarea
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              rows={2}
-              placeholder={t('要退回修改时，写上要改的地方')}
-              aria-label={t('退回意见')}
-              className="min-w-0 resize-none py-2 text-[0.8125rem]"
-            />
-            <div className="flex justify-end gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!!busy || !answer.trim()}
-                title={answer.trim() ? undefined : t('先写上要改的地方')}
-                onClick={() => send('deny', false, answer.trim())}
-              >
-                {spin('deny')}
-                {t('退回修改')}
-              </Button>
-              <Button size="sm" type="submit" disabled={!!busy}>
-                {spin('allow')}
-                {t('通过，继续')}
-              </Button>
-            </div>
-          </form>
-        ) : (
+        {
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="secondary" disabled={!!busy} onClick={() => send('deny', false)}>
               {spin('deny')}
@@ -221,8 +192,60 @@ export function RequestCard({
               {t('允许')}
             </Button>
           </div>
-        )}
+        }
       </div>
     </div>
+  )
+}
+
+/**
+ * 节点完成后等你确认的入口：只这一种请求换成弹窗审阅（其他确认、提问照旧）。
+ * 结果在弹窗里按 Markdown 渲染，可以选中标注；修改把标注交回 Agent 返工，确认就往下走
+ */
+function ConfirmEntry({
+  req,
+  agent,
+  more,
+  answer,
+  className,
+}: {
+  req: TaskRequest
+  agent?: { name: string; icon: string; cli: string }
+  more: number
+  /** 出错时抛出：弹窗留着、提示错误，标注不会白写 */
+  answer: (allow: boolean, text?: string) => Promise<void>
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <div
+        role="alertdialog"
+        aria-label={t('Agent 请求确认')}
+        className={cn(
+          'mx-auto mb-2 flex max-w-(--content-w) items-center gap-2.5 rounded-2xl border border-warning/50 bg-card px-4 py-2.5 shadow-card animate-[pop-in_160ms_ease-out]',
+          className,
+        )}
+      >
+        <ClipboardCheck className="h-4 w-4 shrink-0 text-warning" />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-[0.8125rem] font-medium">{req.title}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
+            <span className="shrink-0 text-warning">{t('需要你确认')}</span>
+            {agent && (
+              <>
+                <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
+                <span className="truncate">{agent.name}</span>
+              </>
+            )}
+            {more > 0 && <span className="shrink-0 text-subtle">· {t('还有 {n} 个', { n: more })}</span>}
+          </span>
+        </div>
+        <Button size="sm" className="shrink-0" onClick={() => setOpen(true)}>
+          {t('查看结果')}
+        </Button>
+      </div>
+      <ReviewDialog req={req} agent={agent} open={open} onOpenChange={setOpen} onAnswer={answer} />
+    </>
   )
 }

@@ -2856,7 +2856,8 @@ export async function runRealTurn(ctx: RealContext) {
           agentId: step.agentId,
           kind: 'confirm',
           title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
-          detail: clip(text, 6000),
+          // 审阅弹窗按文档渲染整段结果、还要在上面标注，截得太短看不全
+          detail: clip(text, 40000),
           options: [],
           at: new Date().toISOString(),
         })

@@ -18,8 +18,9 @@
         var a = JSON.parse(localStorage.getItem('appearance') || '{}')
         for (var k in a) document.documentElement.style.setProperty(k, a[k])
         // 配色：同样先用上次记下的（web/src/lib/appearance.ts 的 applyPalette）
-        var p = localStorage.getItem('appearance-palette')
-        if (p && p !== 'claude') document.documentElement.dataset.palette = p
+        // 没记过就是默认的「Claude Code」；「Claude」配色是 index.css 里的基础值，不挂属性
+        var p = localStorage.getItem('appearance-palette') || 'code'
+        if (p !== 'claude') document.documentElement.dataset.palette = p
         // Markdown 样式里改过的项（web/src/lib/markdown-style.ts 的 applyMarkdownStyle）
         var m = localStorage.getItem('appearance-md')
         if (m) {
