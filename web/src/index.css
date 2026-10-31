@@ -644,101 +644,199 @@ body,
  * 尺寸变量是相对正文字号（--md-base）的倍数，间距再乘 --md-k：窄面板（.chat-md-compact）只改这两个就整体收一档。
  */
 :root {
+  /* Markdown 色相（设置里的「金 / 蓝 / 紫 / 青 / 珊瑚 / 灰 / 亮白 / 沙色」），浅色压暗保证对比度，深色在下面的 .dark */
+  --md-gold: #a86b0c;
+  --md-blue: #1f6fd1;
+  --md-violet: #6a4fc4;
+  --md-teal: #13866d;
+  --md-coral: #c4532f;
+  --md-gray: #6b6b6b;
+  --md-bright: #0f0f12;
+  --md-sand: #8a5a10;
+  --md-dot: rgb(0 0 0 / 0.07);
+  /* mermaid 节点：普通 / 判断 / 起止 / 注释 / 关键，每种是渐变上沿、下沿和描边 */
+  --mmd-node-a: #f2f7fe;
+  --mmd-node-b: #e1ecfb;
+  --mmd-node-line: #7fa6d9;
+  --mmd-pick-a: #f5f1fe;
+  --mmd-pick-b: #e9e2fa;
+  --mmd-pick-line: #a593dc;
+  --mmd-end-a: #eefaf6;
+  --mmd-end-b: #dcf2ea;
+  --mmd-end-line: #6fb9a6;
+  --mmd-note: #fbf1de;
+  --mmd-note-line: #d1a75a;
+  --mmd-crit: #fbe9e3;
+  --mmd-crit-line: #df9a83;
+  --mmd-edge: #8a8a92;
   --md-body-size: 1;
-  --md-body-gap: 0.57;
+  --md-body-gap: 0.6;
   --md-body-color: var(--fg);
-  --md-h1-size: 1.29;
-  --md-h1-weight: 600;
-  --md-h1-color: var(--fg);
-  --md-h1-mt: 1.43;
-  --md-h1-mb: 0.57;
+  --md-h1-size: 1.5;
+  --md-h1-weight: 700;
+  --md-h1-color: var(--md-gold);
+  --md-h1-deco-display: none;
+  --md-h1-deco-w: 0;
+  --md-h1-deco-h: 0;
+  --md-h1-deco-rot: 0deg;
+  --md-h1-deco-r: 0;
+  --md-h1-deco-ul: 2px;
+  --md-h1-mt: 1.6;
+  --md-h1-mb: 0.7;
   --md-h1-rule: 0px;
   --md-h1-font: var(--font-sans);
-  --md-h2-size: 1.14;
+  --md-h2-size: 1.28;
   --md-h2-weight: 600;
-  --md-h2-color: var(--fg);
-  --md-h2-mt: 1.43;
-  --md-h2-mb: 0.57;
+  --md-h2-color: var(--md-blue);
+  --md-h2-deco-display: inline-block;
+  --md-h2-deco-w: 3px;
+  --md-h2-deco-h: 0.9em;
+  --md-h2-deco-rot: 0deg;
+  --md-h2-deco-r: 3px;
+  --md-h2-deco-ul: 0px;
+  --md-h2-mt: 1.5;
+  --md-h2-mb: 0.6;
   --md-h2-rule: 0px;
   --md-h2-font: var(--font-sans);
-  --md-h3-size: 1;
+  --md-h3-size: 1.12;
   --md-h3-weight: 600;
-  --md-h3-color: var(--fg);
-  --md-h3-mt: 1.14;
-  --md-h3-mb: 0.43;
+  --md-h3-color: var(--md-violet);
+  --md-h3-deco-display: inline-block;
+  --md-h3-deco-w: 0.42em;
+  --md-h3-deco-h: 0.42em;
+  --md-h3-deco-rot: 45deg;
+  --md-h3-deco-r: 1px;
+  --md-h3-deco-ul: 0px;
+  --md-h3-mt: 1.3;
+  --md-h3-mb: 0.5;
   --md-h3-rule: 0px;
   --md-h3-font: var(--font-sans);
   --md-h4-size: 1;
   --md-h4-weight: 600;
-  --md-h4-color: var(--muted);
-  --md-h4-mt: 0.86;
-  --md-h4-mb: 0.29;
+  --md-h4-color: var(--md-teal);
+  --md-h4-deco-display: inline-block;
+  --md-h4-deco-w: 0.7em;
+  --md-h4-deco-h: 2px;
+  --md-h4-deco-rot: 0deg;
+  --md-h4-deco-r: 2px;
+  --md-h4-deco-ul: 0px;
+  --md-h4-mt: 1.1;
+  --md-h4-mb: 0.4;
   --md-h4-rule: 0px;
   --md-h4-font: var(--font-sans);
-  --md-h5-size: 1;
+  --md-h5-size: 0.95;
   --md-h5-weight: 600;
-  --md-h5-color: var(--muted);
-  --md-h5-mt: 0.86;
-  --md-h5-mb: 0.29;
+  --md-h5-color: var(--md-coral);
+  --md-h5-deco-display: none;
+  --md-h5-deco-w: 0;
+  --md-h5-deco-h: 0;
+  --md-h5-deco-rot: 0deg;
+  --md-h5-deco-r: 0;
+  --md-h5-deco-ul: 0px;
+  --md-h5-mt: 1;
+  --md-h5-mb: 0.35;
   --md-h5-rule: 0px;
   --md-h5-font: var(--font-sans);
-  --md-h6-size: 1;
+  --md-h6-size: 0.82;
   --md-h6-weight: 600;
-  --md-h6-color: var(--muted);
-  --md-h6-mt: 0.86;
-  --md-h6-mb: 0.29;
+  --md-h6-color: var(--md-gray);
+  --md-h6-deco-display: none;
+  --md-h6-deco-w: 0;
+  --md-h6-deco-h: 0;
+  --md-h6-deco-rot: 0deg;
+  --md-h6-deco-r: 0;
+  --md-h6-deco-ul: 0px;
+  --md-h6-mt: 1;
+  --md-h6-mb: 0.3;
   --md-h6-rule: 0px;
   --md-h6-font: var(--font-sans);
   --md-strong-weight: 600;
-  --md-strong-color: currentColor;
-  --md-em-color: currentColor;
-  --md-del-color: currentColor;
-  --md-link-color: var(--accent-text);
+  --md-strong-color: var(--md-bright);
+  --md-em-color: var(--md-sand);
+  --md-del-color: var(--subtle);
+  --md-link-color: var(--md-blue);
   --md-link-underline-rest: underline;
   --md-link-underline-hover: underline;
   --md-code-size: 0.86;
   --md-code-color: var(--code-chip-fg);
-  --md-code-bg: var(--code-chip);
+  --md-code-bg: color-mix(in srgb, var(--code-chip-fg) 9%, transparent);
   --md-code-border: 1px;
-  --md-code-radius: 4px;
+  --md-code-radius: 5px;
   --md-pre-size: 0.86;
-  --md-pre-leading: 1.65;
+  --md-pre-leading: 1.7;
   --md-pre-bg: var(--code-bg);
-  --md-pre-radius: 12px;
+  --md-pre-radius: 10px;
   --md-pre-border: 1px;
   --md-pre-bar: flex;
   --md-pre-wrap: pre;
-  --md-quote-line: var(--line-strong);
+  --md-pre-lineNumbers: inline-block;
+  --md-quote-line: var(--md-blue);
   --md-quote-lineWidth: 3px;
   --md-quote-color: var(--muted);
-  --md-quote-bg: transparent;
+  --md-quote-bg: color-mix(in srgb, var(--md-blue) 11%, transparent);
+  --md-quote-radius: 8px;
   --md-quote-italic: normal;
+  --md-alert-tint: 7%;
+  --md-alert-radius: 8px;
   --md-ul-marker: disc;
-  --md-ul-markerColor: var(--subtle);
-  --md-ul-indent: 1.43;
-  --md-ul-gap: 0.29;
-  --md-ol-markerColor: var(--subtle);
-  --md-ol-markerWeight: 450;
-  --md-ol-indent: 1.43;
-  --md-ol-gap: 0.29;
-  --md-task-color: var(--accent-text);
-  --md-task-doneFade: 1;
+  --md-ul-markerColor: var(--md-blue);
+  --md-ul-indent: 1.5;
+  --md-ul-gap: 0.28;
+  --md-ol-markerColor: var(--md-gold);
+  --md-ol-markerWeight: 700;
+  --md-ol-indent: 1.5;
+  --md-ol-gap: 0.28;
+  --md-task-color: var(--md-teal);
+  --md-task-doneFade: 0.55;
   --md-table-size: 0.93;
   --md-table-border-row: 1px;
   --md-table-border-col: 0px;
-  --md-table-headerBg: transparent;
+  --md-table-outer: 1px;
+  --md-table-radius: 8px;
+  --md-table-headerBg: color-mix(in srgb, var(--fg) 4%, transparent);
   --md-table-headerWeight: 600;
-  --md-table-zebra: transparent;
+  --md-table-zebra: color-mix(in srgb, var(--fg) 2.5%, transparent);
   --md-table-pad: 1;
-  --md-hr-style: solid;
+  --md-hr-style: none;
+  --md-hr-style-fade: linear-gradient(90deg, transparent, var(--md-hr-color) 20%, var(--md-hr-color) 80%, transparent);
   --md-hr-width: 1px;
-  --md-hr-color: var(--line);
-  --md-hr-space: 1.14;
+  --md-hr-color: var(--line-strong);
+  --md-hr-space: 1.6;
   --md-img-radius: 8px;
   --md-img-maxWidth: 100%;
-  --md-img-border: 0px;
-  --md-mention-color: var(--accent-text);
-  --md-mention-bg: var(--accent-soft);
+  --md-img-border: 1px;
+  --md-img-caption: block;
+  --md-mention-color: var(--md-blue);
+  --md-mention-bg: color-mix(in srgb, var(--md-blue) 11%, transparent);
+  --md-mermaid-motion: 1;
+  --md-mermaid-hover: 1;
+  --md-mermaid-grid: radial-gradient(var(--md-dot) 1px, transparent 1px);
+  --md-mermaid-gradient: 1;
+}
+.dark {
+  --md-gold: #f2c46d;
+  --md-blue: #6aabf1;
+  --md-violet: #b7a1ff;
+  --md-teal: #6fd6bd;
+  --md-coral: #f0937a;
+  --md-gray: #8b8b8b;
+  --md-bright: #ffffff;
+  --md-sand: #e9cf9f;
+  --md-dot: rgb(255 255 255 / 0.05);
+  --mmd-node-a: #24324a;
+  --mmd-node-b: #1a2230;
+  --mmd-node-line: #46699a;
+  --mmd-pick-a: #2e2742;
+  --mmd-pick-b: #211c30;
+  --mmd-pick-line: #6b5aa0;
+  --mmd-end-a: #1f3a33;
+  --mmd-end-b: #17271f;
+  --mmd-end-line: #3f8a75;
+  --mmd-note: #2a2418;
+  --mmd-note-line: #7a6232;
+  --mmd-crit: #2e1f1b;
+  --mmd-crit-line: #8a4a3a;
+  --mmd-edge: #7a7a7a;
 }
 .chat-md {
   --md-base: calc(var(--md-body-size) * 0.875rem);
@@ -770,47 +868,109 @@ body,
 .chat-md :is(h1, h2, h3, h4, h5, h6) {
   border-bottom: 0 solid var(--line);
 }
+/* 标题装饰（竖条、菱形、短横、圆点）画在 ::before，渐隐底线是一段渐变底；颜色都跟标题文字走 */
+.chat-md :is(h1, h2, h3, h4, h5, h6) {
+  background: linear-gradient(90deg, currentColor, transparent 70%) left bottom / 100% 0 no-repeat;
+}
+.chat-md :is(h1, h2, h3, h4, h5, h6)::before {
+  content: '';
+  margin-right: 0.55em;
+  vertical-align: middle;
+  translate: 0 -0.08em;
+  background: currentColor;
+}
+.chat-md h6 {
+  letter-spacing: 0.06em;
+}
 .chat-md h1 {
   font: var(--md-h1-weight) calc(var(--md-h1-size) * var(--md-base)) / 1.375 var(--md-h1-font);
   color: var(--md-h1-color);
   margin: calc(var(--md-h1-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h1-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h1-rule);
-  padding-bottom: calc(var(--md-h1-rule) * 4);
+  padding-bottom: max(calc(var(--md-h1-rule) * 4), calc(var(--md-h1-deco-ul) * 3));
+  background-size: 100% var(--md-h1-deco-ul);
+}
+.chat-md h1::before {
+  display: var(--md-h1-deco-display);
+  width: var(--md-h1-deco-w);
+  height: var(--md-h1-deco-h);
+  rotate: var(--md-h1-deco-rot);
+  border-radius: var(--md-h1-deco-r);
 }
 .chat-md h2 {
   font: var(--md-h2-weight) calc(var(--md-h2-size) * var(--md-base)) / 1.375 var(--md-h2-font);
   color: var(--md-h2-color);
   margin: calc(var(--md-h2-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h2-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h2-rule);
-  padding-bottom: calc(var(--md-h2-rule) * 4);
+  padding-bottom: max(calc(var(--md-h2-rule) * 4), calc(var(--md-h2-deco-ul) * 3));
+  background-size: 100% var(--md-h2-deco-ul);
+}
+.chat-md h2::before {
+  display: var(--md-h2-deco-display);
+  width: var(--md-h2-deco-w);
+  height: var(--md-h2-deco-h);
+  rotate: var(--md-h2-deco-rot);
+  border-radius: var(--md-h2-deco-r);
 }
 .chat-md h3 {
   font: var(--md-h3-weight) calc(var(--md-h3-size) * var(--md-base)) / 1.375 var(--md-h3-font);
   color: var(--md-h3-color);
   margin: calc(var(--md-h3-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h3-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h3-rule);
-  padding-bottom: calc(var(--md-h3-rule) * 4);
+  padding-bottom: max(calc(var(--md-h3-rule) * 4), calc(var(--md-h3-deco-ul) * 3));
+  background-size: 100% var(--md-h3-deco-ul);
+}
+.chat-md h3::before {
+  display: var(--md-h3-deco-display);
+  width: var(--md-h3-deco-w);
+  height: var(--md-h3-deco-h);
+  rotate: var(--md-h3-deco-rot);
+  border-radius: var(--md-h3-deco-r);
 }
 .chat-md h4 {
   font: var(--md-h4-weight) calc(var(--md-h4-size) * var(--md-base)) / 1.375 var(--md-h4-font);
   color: var(--md-h4-color);
   margin: calc(var(--md-h4-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h4-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h4-rule);
-  padding-bottom: calc(var(--md-h4-rule) * 4);
+  padding-bottom: max(calc(var(--md-h4-rule) * 4), calc(var(--md-h4-deco-ul) * 3));
+  background-size: 100% var(--md-h4-deco-ul);
+}
+.chat-md h4::before {
+  display: var(--md-h4-deco-display);
+  width: var(--md-h4-deco-w);
+  height: var(--md-h4-deco-h);
+  rotate: var(--md-h4-deco-rot);
+  border-radius: var(--md-h4-deco-r);
 }
 .chat-md h5 {
   font: var(--md-h5-weight) calc(var(--md-h5-size) * var(--md-base)) / 1.375 var(--md-h5-font);
   color: var(--md-h5-color);
   margin: calc(var(--md-h5-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h5-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h5-rule);
-  padding-bottom: calc(var(--md-h5-rule) * 4);
+  padding-bottom: max(calc(var(--md-h5-rule) * 4), calc(var(--md-h5-deco-ul) * 3));
+  background-size: 100% var(--md-h5-deco-ul);
+}
+.chat-md h5::before {
+  display: var(--md-h5-deco-display);
+  width: var(--md-h5-deco-w);
+  height: var(--md-h5-deco-h);
+  rotate: var(--md-h5-deco-rot);
+  border-radius: var(--md-h5-deco-r);
 }
 .chat-md h6 {
   font: var(--md-h6-weight) calc(var(--md-h6-size) * var(--md-base)) / 1.375 var(--md-h6-font);
   color: var(--md-h6-color);
   margin: calc(var(--md-h6-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h6-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h6-rule);
-  padding-bottom: calc(var(--md-h6-rule) * 4);
+  padding-bottom: max(calc(var(--md-h6-rule) * 4), calc(var(--md-h6-deco-ul) * 3));
+  background-size: 100% var(--md-h6-deco-ul);
+}
+.chat-md h6::before {
+  display: var(--md-h6-deco-display);
+  width: var(--md-h6-deco-w);
+  height: var(--md-h6-deco-h);
+  rotate: var(--md-h6-deco-rot);
+  border-radius: var(--md-h6-deco-r);
 }
 .chat-md > :is(h1, h2, h3, h4, h5, h6):first-child {
   margin-top: 0;
@@ -880,6 +1040,9 @@ body,
 .chat-md hr {
   border: 0;
   border-top: var(--md-hr-width) var(--md-hr-style) var(--md-hr-color);
+  /* 渐隐线型：一段两头透明的渐变底，高度就是线宽；其他线型时这里是 none */
+  height: var(--md-hr-width);
+  background: var(--md-hr-style-fade);
   margin-block: calc(var(--md-hr-space) * var(--md-base) * var(--md-k));
 }
 .chat-md blockquote {
@@ -887,7 +1050,50 @@ body,
   color: var(--md-quote-color);
   background: var(--md-quote-bg);
   font-style: var(--md-quote-italic);
-  padding: 0.125em 0 0.125em 1em;
+  border-radius: 0 var(--md-quote-radius) var(--md-quote-radius) 0;
+  padding: 0.55em 1em;
+}
+.chat-md blockquote > :first-child {
+  margin-top: 0;
+}
+.chat-md blockquote > :last-child {
+  margin-bottom: 0;
+}
+/* 引用里再引用：换成紫色，一眼分出是哪一层 */
+.chat-md blockquote blockquote {
+  border-left-color: var(--md-violet);
+  background: color-mix(in srgb, var(--md-violet) 6%, transparent);
+}
+/* 提示块（> [!NOTE] 等，见 workflow-doc.ts 的 renderer.blockquote）：标题、左线、浅底按类型着色 */
+.chat-md .md-alert {
+  --alert: var(--md-blue);
+  border: 1px solid color-mix(in srgb, var(--alert) 28%, transparent);
+  border-left: 3px solid var(--alert);
+  background: color-mix(in srgb, var(--alert) var(--md-alert-tint), transparent);
+  border-radius: 0 var(--md-alert-radius) var(--md-alert-radius) 0;
+  padding: 0.6em 1em;
+}
+.chat-md .md-alert[data-kind='tip'] {
+  --alert: var(--md-teal);
+}
+.chat-md .md-alert[data-kind='important'] {
+  --alert: var(--md-violet);
+}
+.chat-md .md-alert[data-kind='warning'] {
+  --alert: var(--md-gold);
+}
+.chat-md .md-alert[data-kind='caution'] {
+  --alert: var(--md-coral);
+}
+.chat-md .md-alert > .md-alert-title {
+  @apply mb-0.5 flex items-center gap-1.5 font-semibold;
+  margin-top: 0;
+  color: var(--alert);
+  font-size: calc(0.86 * var(--md-base));
+  letter-spacing: 0.04em;
+}
+.chat-md .md-alert > :last-child {
+  margin-bottom: 0;
 }
 .chat-md img {
   @apply h-auto;
@@ -895,23 +1101,44 @@ body,
   border-radius: var(--md-img-radius);
   border: var(--md-img-border) solid var(--line);
 }
-/* 行内代码：和 Claude Code 一样是带细边框的小标签 */
+/* 有替代文字的图片：文字放在图下面当图注 */
+.chat-md .md-fig {
+  @apply block;
+}
+.chat-md .md-cap {
+  @apply mt-1.5 text-center font-sans text-[0.75rem] text-subtle;
+  display: var(--md-img-caption);
+  max-width: var(--md-img-maxWidth);
+}
+/* 行内代码：和 Claude Code 一样是带细边框的小标签，边框带一点文字色 */
 .chat-md :not(pre) > code {
   @apply px-[5px] py-px font-mono;
   font-size: calc(var(--md-code-size) * var(--md-base));
   background: var(--md-code-bg);
   color: var(--md-code-color);
-  border: var(--md-code-border) solid var(--line);
+  border: var(--md-code-border) solid color-mix(in srgb, var(--md-code-color) 18%, var(--line));
   border-radius: var(--md-code-radius);
 }
-/* 能点开的文件路径：鼠标移上去带下划线，像链接一样 */
+/* 能点开的文件路径：和普通行内代码分开，透明底 + 描边 + 前面一个小文件图标，移上去像链接 */
 .chat-md code.md-path {
   @apply cursor-pointer transition-colors;
+  color: var(--fg);
+  background: transparent;
+  border-color: var(--line-strong);
+}
+.chat-md code.md-path::before {
+  content: '';
+  @apply mr-1.5 inline-block rounded-[2px] align-[-0.05em];
+  width: 0.55em;
+  height: 0.7em;
+  border: 1.5px solid var(--subtle);
 }
 .chat-md code.md-path:hover {
-  @apply border-accent/50 text-accent-text underline decoration-accent/40 underline-offset-2;
+  @apply underline underline-offset-2;
+  color: var(--md-link-color);
+  border-color: var(--md-link-color);
 }
-/* 代码块：一张卡片，顶部语言名和复制按钮 */
+/* 代码块：一张卡片，顶部语言名、行数、折行和复制按钮 */
 .chat-md .md-code,
 .chat-md > pre,
 .chat-md .md-mermaid {
@@ -922,11 +1149,32 @@ body,
   border-radius: var(--md-pre-radius);
 }
 .chat-md .md-code-bar {
-  @apply items-center justify-between border-b px-3.5 py-1.5 font-sans text-[0.6875rem] text-subtle;
+  @apply items-center justify-between gap-2 border-b py-1.5 pr-2 pl-3.5 font-sans text-[0.6875rem] text-subtle;
   display: var(--md-pre-bar);
+  background: color-mix(in srgb, var(--fg) 2%, transparent);
+}
+.chat-md .md-code-lang {
+  @apply flex min-w-0 items-center gap-1.5;
+}
+.chat-md .md-code-lang::before {
+  content: '';
+  @apply size-1.5 shrink-0 rounded-full;
+  background: var(--md-teal);
+}
+.chat-md .md-mermaid .md-code-lang::before {
+  background: var(--md-violet);
+}
+.chat-md .md-code-lang small {
+  @apply text-[0.6875rem] opacity-80;
+}
+.chat-md .md-code-acts {
+  @apply flex shrink-0 items-center gap-0.5;
 }
 .chat-md .md-copy {
-  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.6875rem] text-subtle hover:bg-sel hover:text-fg;
+  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.6875rem] text-subtle transition-colors hover:bg-sel hover:text-fg;
+}
+.chat-md .md-copy[data-on] {
+  color: var(--md-teal);
 }
 .chat-md pre {
   @apply m-0 overflow-x-auto px-3.5 py-3 font-mono;
@@ -939,29 +1187,350 @@ body,
 .chat-md pre code {
   @apply [overflow-wrap:normal];
   white-space: var(--md-pre-wrap);
+  counter-reset: md-ln;
 }
-/* mermaid：图居中，源码收在下面 */
-/* 画不出来时里面就是一个普通代码块，外面这层不再加边框 */
-.chat-md .md-mermaid[data-done='error'] {
-  @apply overflow-visible rounded-none border-0 bg-transparent;
+.chat-md .md-code[data-wrap] pre code {
+  white-space: pre-wrap;
 }
-.chat-md .md-mermaid[data-done='error'] > .md-code {
-  @apply my-0;
+/* 每行一个 .md-ln（workflow-doc.ts 的 lineSpans）：行号是 ::before，选中复制时不会带上；只有一行的代码块不画行号 */
+.chat-md .md-ln {
+  @apply inline-block min-w-full;
+}
+.chat-md .md-ln::before {
+  counter-increment: md-ln;
+  content: counter(md-ln);
+  display: var(--md-pre-lineNumbers);
+  @apply mr-3 w-[2.2em] border-r pr-3 text-right select-none;
+  color: color-mix(in srgb, var(--subtle) 65%, transparent);
+  border-color: color-mix(in srgb, var(--line) 70%, transparent);
+}
+.chat-md .md-code[data-lines='1'] .md-ln::before {
+  display: none;
+}
+.chat-md .md-ln:hover {
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+/* diff：增删的行整行着色，只用底色（docs/lessons/visual.md） */
+.chat-md .md-ln.md-add {
+  background: color-mix(in srgb, var(--md-teal) 11%, transparent);
+}
+.chat-md .md-ln.md-del {
+  background: color-mix(in srgb, var(--md-coral) 11%, transparent);
+}
+.chat-md .md-ln.md-add::before {
+  color: var(--md-teal);
+}
+.chat-md .md-ln.md-del::before {
+  color: var(--md-coral);
+}
+
+/*
+ * mermaid（Markdown.tsx 画图、web/src/lib/mermaid-fx.ts 加动效和缩放）：顶栏 + 画布 + 收起的源码。
+ * 画布带一层淡紫光晕和点阵底（设置里可关），图可以拖动、Ctrl+滚轮缩放、全屏看
+ */
+.chat-md .md-mermaid {
+  @apply relative;
+}
+/* 还没画（流式输出中或正在加载）：源码变淡，上面扫过一道光 */
+.chat-md .md-mermaid:not([data-done]) {
+  @apply relative;
+}
+.chat-md .md-mermaid:not([data-done]) pre {
+  @apply opacity-50;
+}
+.chat-md .md-mermaid:not([data-done])::after {
+  content: '';
+  @apply pointer-events-none absolute inset-0;
+  background: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in srgb, var(--md-violet) 10%, transparent) 50%,
+      transparent 70%
+    )
+    0 0 / 200% 100%;
+  animation: md-shine 1.4s linear infinite;
+}
+@keyframes md-shine {
+  to {
+    background-position: -200% 0;
+  }
+}
+.chat-md .md-mmd-canvas {
+  @apply relative cursor-grab overflow-hidden;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 0%, color-mix(in srgb, var(--md-violet) 7%, transparent), transparent 70%),
+    var(--md-mermaid-grid) 0 0 / 16px 16px;
+}
+.chat-md .md-mmd-canvas[data-drag] {
+  @apply cursor-grabbing;
 }
 .chat-md .md-mermaid-svg {
-  @apply flex justify-center overflow-x-auto p-4;
+  @apply flex justify-center overflow-visible p-5;
+  transform: translate(var(--mx, 0px), var(--my, 0px)) scale(var(--mz, 1));
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.chat-md .md-mmd-canvas[data-drag] .md-mermaid-svg {
+  transition: none;
 }
 .chat-md .md-mermaid-svg svg {
-  @apply h-auto max-w-full;
+  @apply h-auto max-w-full overflow-visible;
+}
+/* 缩放按钮：鼠标移到图上才浮出来 */
+.chat-md .md-mmd-zoom {
+  @apply absolute right-2 bottom-2 flex items-center gap-0.5 rounded-lg border p-0.5 font-sans text-[0.6875rem] text-muted opacity-0 backdrop-blur-sm transition-[opacity,translate] duration-200;
+  translate: 0 4px;
+  background: color-mix(in srgb, var(--md-pre-bg) 88%, transparent);
+}
+.chat-md .md-mmd-canvas:hover .md-mmd-zoom,
+.md-mmd-full .md-mmd-zoom {
+  @apply opacity-100;
+  translate: 0 0;
+}
+.chat-md .md-mmd-zoom button {
+  @apply min-w-6 cursor-pointer rounded-md px-1 py-0.5 hover:bg-sel hover:text-fg;
+}
+.chat-md .md-mmd-zoom span {
+  @apply min-w-10 text-center tabular-nums;
 }
 .chat-md .md-mermaid details {
   @apply border-t;
 }
 .chat-md .md-mermaid summary {
-  @apply cursor-pointer px-3.5 py-1.5 text-[0.75rem] text-subtle select-none hover:text-fg;
+  @apply flex cursor-pointer list-none items-center gap-1.5 px-3.5 py-1.5 font-sans text-[0.75rem] text-subtle select-none hover:text-fg;
+}
+.chat-md .md-mermaid summary::-webkit-details-marker {
+  display: none;
+}
+.chat-md .md-mermaid summary::before {
+  content: '›';
+  @apply inline-block text-[0.9375rem] leading-none transition-[rotate] duration-200;
+}
+.chat-md .md-mermaid details[open] summary::before {
+  rotate: 90deg;
 }
 .chat-md .md-mermaid details pre {
   @apply border-t;
+}
+.chat-md .md-mermaid details[open] pre {
+  animation: md-slide 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes md-slide {
+  from {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+}
+/* 画不出来时：顶栏和原因标成危险色，下面是带行号的源码 */
+.chat-md .md-mermaid[data-done='error'] .md-code-lang {
+  color: var(--md-coral);
+}
+.chat-md .md-mermaid[data-done='error'] .md-code-lang::before {
+  background: var(--md-coral);
+}
+.chat-md .md-mmd-why {
+  @apply border-b px-3.5 py-1.5 font-sans text-[0.75rem];
+  color: var(--md-coral);
+  background: color-mix(in srgb, var(--md-coral) 8%, transparent);
+  animation: md-slide 0.3s both;
+}
+/* 图里的元素：圆角、细描边，字号跟面板 */
+.md-mermaid svg .node rect.basic,
+.md-mermaid svg rect.actor {
+  rx: 8px;
+  ry: 8px;
+}
+.md-mermaid svg rect.note {
+  rx: 6px;
+  ry: 6px;
+}
+.md-mermaid svg rect.task {
+  rx: 4px;
+  ry: 4px;
+}
+.md-mermaid svg .node polygon {
+  stroke-linejoin: round;
+}
+.md-mermaid svg .cluster rect {
+  rx: 12px !important;
+  ry: 12px !important;
+  stroke-dasharray: 4 4;
+  fill: color-mix(in srgb, var(--md-gold) 3%, transparent) !important;
+  stroke: color-mix(in srgb, var(--md-gold) 35%, transparent) !important;
+}
+.md-mermaid svg .cluster-label :is(span, p) {
+  color: var(--md-gold) !important;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.md-mermaid svg .labelBkg {
+  background: var(--md-pre-bg) !important;
+  border-radius: 4px;
+}
+.md-mermaid svg span.edgeLabel {
+  background: transparent !important;
+  color: var(--muted) !important;
+}
+.md-mermaid svg .edgeLabel rect {
+  opacity: 0 !important;
+}
+.md-mermaid svg :is(.messageText, .noteText, text.actor > tspan) {
+  font-size: 0.8125rem !important;
+}
+.md-mermaid svg .messageText {
+  fill: var(--fg) !important;
+}
+.md-mermaid svg .grid .tick line {
+  stroke: var(--line) !important;
+  opacity: 1 !important;
+}
+.md-mermaid svg .grid .tick text {
+  fill: var(--subtle) !important;
+}
+.md-mermaid svg .grid path.domain {
+  stroke: none !important;
+}
+.md-mermaid svg :is(.node rect, .node polygon, .node circle, .node path, rect.actor, rect.task, .commit) {
+  transition:
+    filter 0.2s,
+    stroke 0.2s,
+    opacity 0.25s;
+}
+.md-mermaid svg :is(.edgePaths path, .edgeLabel) {
+  transition:
+    stroke 0.2s,
+    opacity 0.25s,
+    stroke-width 0.2s;
+}
+/* 悬停一个节点：它和相连的节点、线高亮，线上跑虚线，其余变淡（设置里可关） */
+.md-mermaid svg.mx-focus :is(.mx-node, .mx-edge, .mx-label):not(.hot) {
+  opacity: 0.28;
+}
+.md-mermaid svg .mx-node.hot :is(rect, polygon, circle, path) {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--md-blue) 55%, transparent));
+  stroke: var(--md-blue) !important;
+}
+.md-mermaid svg .mx-edge.hot {
+  stroke: var(--md-blue) !important;
+  stroke-width: 2px !important;
+  stroke-dasharray: 7 5 !important;
+  animation: mx-flow 0.8s linear infinite !important;
+}
+.md-mermaid svg :is(rect.task, .commit, rect.actor):hover {
+  filter: brightness(1.2) drop-shadow(0 0 6px color-mix(in srgb, var(--md-blue) 45%, transparent));
+}
+.md-mermaid svg .pieCircle {
+  @apply cursor-pointer;
+  transition:
+    translate 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.3s;
+}
+.md-mermaid svg .pieCircle:hover {
+  translate: var(--dx, 0) var(--dy, 0);
+  filter: brightness(1.12) drop-shadow(0 4px 10px rgb(0 0 0 / 0.3));
+}
+/* 出场：节点依次浮现、线从头画到尾、饼图扇开、甘特条从左长出、时序消息一条条出现（设置里可关） */
+.md-mermaid.mx-in svg .mx-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mx-pop 0.55s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
+  animation-delay: calc(min(var(--i), 24) * 45ms);
+}
+.md-mermaid.mx-in svg .mx-edge {
+  stroke-dasharray: var(--len) var(--len);
+  animation: mx-draw 0.7s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: calc(180ms + min(var(--i), 24) * 45ms);
+}
+.md-mermaid.mx-in svg .mx-edge.dash {
+  stroke-dasharray: 3 3;
+  animation-name: mx-fade;
+}
+.md-mermaid.mx-in svg .mx-label {
+  animation: mx-fade 0.4s both;
+  animation-delay: calc(450ms + min(var(--i), 24) * 45ms);
+}
+.md-mermaid.mx-in svg .pieCircle {
+  transform-box: view-box;
+  animation: mx-pie 0.7s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
+  animation-delay: calc(var(--i) * 70ms);
+}
+.md-mermaid.mx-in svg rect.task {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: mx-grow 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i) * 90ms);
+}
+.md-mermaid.mx-in svg .mx-seq {
+  animation: mx-fade 0.45s both;
+  animation-delay: calc(var(--i) * 140ms);
+}
+@keyframes mx-pop {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+    scale: 0.9;
+  }
+}
+@keyframes mx-draw {
+  from {
+    stroke-dashoffset: var(--len);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes mx-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mx-pie {
+  from {
+    opacity: 0;
+    scale: 0.6;
+    rotate: -25deg;
+  }
+}
+@keyframes mx-grow {
+  from {
+    scale: 0 1;
+    opacity: 0.3;
+  }
+}
+@keyframes mx-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+/* 全屏看图：遮罩淡入、面板放大弹出，图可以拖动和滚轮缩放 */
+.md-mmd-full {
+  @apply fixed inset-0 z-50 grid place-items-center bg-black/55 backdrop-blur-sm;
+  animation: mx-fade 0.2s both;
+}
+.md-mmd-full > .chat-md {
+  @apply flex h-[86vh] w-[min(92vw,1400px)] flex-col;
+  animation: mx-zoom-in 0.3s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
+}
+.md-mmd-full .md-mermaid {
+  @apply my-0 flex h-full flex-col;
+}
+.md-mmd-full .md-mmd-canvas {
+  @apply flex-1;
+}
+.md-mmd-full .md-mermaid-svg {
+  @apply h-full items-center;
+}
+@keyframes mx-zoom-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-mermaid *,
+  .md-mmd-full * {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 /* 总结卡（shared/summary-card.ts）：类型标签 + 一句话结论，字段名一列对齐。
    类型色只用在小标签和左边一条细线上，正文保持主文字色，不抢内容 */
@@ -989,6 +1558,8 @@ body,
 .chat-md .md-card-head {
   @apply flex items-baseline gap-2 border-solid py-2 pr-3.5 pl-4;
   border-bottom-width: var(--c-summary-divider);
+  /* 类型色从左往右淡出，一眼认出是哪类卡片 */
+  background: linear-gradient(90deg, color-mix(in oklab, var(--card-tone) 9%, transparent), transparent 60%);
 }
 .chat-md .md-card-kind {
   @apply shrink-0 px-1.5 py-px text-[0.6875rem] leading-[1.25rem] font-semibold;
@@ -1053,21 +1624,35 @@ body,
     @apply col-span-1 grid-cols-1;
   }
 }
-/* 表格：默认细横线、表头加粗，太宽时横向滚动 */
+/*
+ * 表格：圆角外框、表头浅底、细横线，太宽时横向滚动。外框和全边框共存时，外圈只画一份：
+ * 表格自己画外框（取外框和竖线里粗的那个），最右一列和最后一行的单元格不再重复画
+ */
 .chat-md table {
-  @apply block w-max max-w-full overflow-x-auto border-collapse;
+  @apply block w-max max-w-full overflow-x-auto;
+  border-collapse: separate;
+  border-spacing: 0;
   margin-block: calc(0.86 * var(--md-base) * var(--md-k));
   font-size: calc(var(--md-table-size) * var(--md-base));
+  border-style: solid;
+  border-color: var(--line);
+  border-width: max(var(--md-table-outer), var(--md-table-border-col)) var(--md-table-outer) var(--md-table-outer)
+    max(var(--md-table-outer), var(--md-table-border-col));
+  border-radius: var(--md-table-radius);
 }
 .chat-md :is(th, td) {
   padding: calc(0.43 * var(--md-base) * var(--md-table-pad) * var(--md-k))
     calc(0.86 * var(--md-base) * var(--md-table-pad));
   border-style: solid;
   border-color: var(--line);
-  border-width: 0 var(--md-table-border-col) var(--md-table-border-row);
+  border-width: 0 var(--md-table-border-col) var(--md-table-border-row) 0;
+}
+.chat-md :is(th, td):last-child {
+  border-right-width: max(0px, calc(var(--md-table-border-col) - var(--md-table-outer)));
 }
 .chat-md th {
-  @apply text-left;
+  @apply text-left whitespace-nowrap;
+  color: var(--md-bright);
   font-weight: var(--md-table-headerWeight);
   background: var(--md-table-headerBg);
   border-bottom-color: var(--line-strong);
@@ -1075,14 +1660,22 @@ body,
 .chat-md td {
   @apply align-top;
 }
-/* 横线样式时最后一行不画底线（全边框时要画） */
-.chat-md tr:last-child td {
-  border-bottom-width: var(--md-table-border-col);
+/* | :-: | --: | 写的对齐：marked 写在 align 属性上，要盖过上面表头的左对齐 */
+.chat-md :is(th, td)[align='center'] {
+  @apply text-center;
 }
-/* 全边框时表格外圈也要有线 */
-.chat-md table {
-  border-top: var(--md-table-border-col) solid var(--line);
-  border-left: var(--md-table-border-col) solid var(--line);
+.chat-md :is(th, td)[align='right'] {
+  @apply text-right tabular-nums;
+}
+/* 最后一行：横线样式不画底线，全边框时画（有外框时由外框画） */
+.chat-md tr:last-child td {
+  border-bottom-width: max(0px, calc(var(--md-table-border-col) - var(--md-table-outer)));
+}
+.chat-md tbody tr {
+  @apply transition-colors;
+}
+.chat-md tbody tr:hover {
+  background: color-mix(in srgb, var(--fg) 3%, transparent) !important;
 }
 .chat-md tbody tr:nth-child(even) {
   background: var(--md-table-zebra);

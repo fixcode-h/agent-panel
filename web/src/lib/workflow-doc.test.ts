@@ -1,10 +1,10 @@
 /**
  * 渲染结果缓存：同样的输入不重复解析、流式那段不占缓存、key 带上影响输出的输入、超过上限按 LRU 淘汰。
- * 缓存是模块级的，每个用例先清干净。
+ * 缓存是模块级的，每个用例先清干净。末尾几条是代码块按行切开（行号）和提示块。
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clearDocCache, docCacheSize, renderDoc } from '@/lib/workflow-doc'
+import { clearDocCache, docCacheSize, lineSpans, renderDoc } from '@/lib/workflow-doc'
 
 const NONE = new Set<string>()
 
@@ -39,4 +39,26 @@ test('超过上限时丢掉最久没用的一条', () => {
   renderDoc('新的一段', NONE)
   assert.equal(docCacheSize(), 300)
   assert.equal(renderDoc('第 0 段', NONE), first)
+})
+
+test('代码块按行切开：跨行的高亮 span 在行尾关上、下一行重新打开', () => {
+  const { html, count } = lineSpans('<span class="c">/* a\nb */</span>\nx\n')
+  assert.equal(count, 3)
+  assert.equal(
+    html,
+    '<span class="md-ln"><span class="c">/* a</span></span>\n<span class="md-ln"><span class="c">b */</span></span>\n<span class="md-ln">x</span>',
+  )
+})
+
+test('diff 代码块：加的行、删的行分别标上', () => {
+  const { html } = lineSpans('@@ -1 +1 @@\n-old\n+new\n same', true)
+  assert.match(html, /<span class="md-ln md-del">-old<\/span>/)
+  assert.match(html, /<span class="md-ln md-add">\+new<\/span>/)
+  assert.match(html, /<span class="md-ln"> same<\/span>/)
+})
+
+test('> [!WARNING] 画成提示块，普通引用不变', () => {
+  const html = renderDoc('> [!WARNING]\n> 小心\n\n> 普通引用', new Set())
+  assert.match(html, /<div class="md-alert" data-kind="warning"><p class="md-alert-title">[^<]+<\/p><p>小心<\/p>/)
+  assert.match(html, /<blockquote>\n<p>普通引用<\/p>/)
 })

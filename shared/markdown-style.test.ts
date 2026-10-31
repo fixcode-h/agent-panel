@@ -17,18 +17,18 @@ test('index.css 的 :root 默认变量和 MD_SPEC 一致', () => {
 test('没设置过的旧数据读进来是空对象，全部用默认值', () => {
   const a = Appearance.parse({ fontSize: 15 })
   assert.deepEqual(a.markdown, {})
-  assert.equal(mdValue(a.markdown, 'h2', 'size'), 1.14)
+  assert.equal(mdValue(a.markdown, 'h2', 'size'), 1.28)
   assert.equal(markdownCss(a.markdown), '')
 })
 
 test('越界、不认识、等于默认值的项都丢掉', () => {
   const s = cleanMarkdownStyle({
-    h1: { size: 9, weight: '700', color: 'rainbow' },
-    table: { zebra: true, border: 'rows' },
+    h1: { size: 9, weight: '500', color: 'rainbow' },
+    table: { zebra: false, border: 'rows' },
     nope: { x: 1 },
     code: { bg: { light: '#ffffff', dark: 'red' } },
   })
-  assert.deepEqual(s, { h1: { weight: '700' }, table: { zebra: true } })
+  assert.deepEqual(s, { h1: { weight: '500' }, table: { zebra: false } })
 })
 
 test('改回默认值时删掉这一项，整组没改过时删掉元素', () => {
@@ -43,4 +43,10 @@ test('自定义颜色浅色写在 :root、深色写在 :root.dark', () => {
   assert.match(css, /^:root\{[^}]*--md-link-color:#112233/)
   assert.match(css, /--md-table-border-row:1px;--md-table-border-col:1px/)
   assert.match(css, /:root\.dark\{--md-link-color:#ddeeff\}$/)
+})
+
+test('标题装饰、渐隐分隔线一项落成几个变量', () => {
+  const css = markdownCss({ h5: { deco: 'dot' }, hr: { style: 'dashed' } })
+  assert.match(css, /--md-h5-deco-display:inline-block;--md-h5-deco-w:0\.45em;--md-h5-deco-h:0\.45em/)
+  assert.match(css, /--md-hr-style:dashed;--md-hr-style-fade:none/)
 })

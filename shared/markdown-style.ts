@@ -22,11 +22,20 @@ export const MD_COLORS = [
   'code',
   'line',
   'border',
+  // Markdown 自己的一组色相（标题分级、列表符号、提示块、Mermaid 共用），深浅色各一套，见 index.css 的 --md-gold…
+  'gold',
+  'blue',
+  'violet',
+  'teal',
+  'coral',
+  'gray',
+  'bright',
+  'sand',
 ] as const
 export type MdColorRole = (typeof MD_COLORS)[number]
 
 /** 底色同理 */
-export const MD_BGS = ['none', 'card', 'field', 'code', 'chip', 'sel', 'accent'] as const
+export const MD_BGS = ['none', 'card', 'field', 'code', 'chip', 'sel', 'accent', 'blue', 'warm', 'head'] as const
 export type MdBgRole = (typeof MD_BGS)[number]
 
 const HEX = /^#[0-9a-f]{6}$/i
@@ -63,85 +72,108 @@ const bool = (def: boolean): BoolField => ({ kind: 'bool', def })
 const pick = <T extends string>(def: T, options: readonly T[]): EnumField => ({ kind: 'enum', def, options })
 
 const WEIGHTS = ['450', '500', '600', '700'] as const
-const heading = (size: number, mt: number, mb: number, c: MdColorRole) => ({
+/** 标题前的装饰：竖条、菱形、短横、圆点，或标题下一条渐隐的线；颜色跟标题走 */
+const DECOS = ['none', 'bar', 'diamond', 'dash', 'dot', 'underline'] as const
+type Deco = (typeof DECOS)[number]
+const heading = (
+  size: number,
+  mt: number,
+  mb: number,
+  c: MdColorRole,
+  weight: (typeof WEIGHTS)[number],
+  deco: Deco,
+) => ({
   size: em(size, 0.8, 2.4),
-  weight: pick('600', WEIGHTS),
+  weight: pick(weight, WEIGHTS),
   color: color(c),
+  deco: pick(deco, DECOS),
   mt: em(mt, 0, 3),
   mb: em(mb, 0, 2),
   rule: bool(false),
   font: pick('sans', ['sans', 'serif'] as const),
 })
 
-/** 元素 → 可调项。默认值照抄统一前对话回复（.chat-md）的样子：正文 14px 时 h1 18px、行内代码 12px…… */
+/**
+ * 元素 → 可调项。默认值是 2026-10 定下的那套：六级标题各一个色相 + 装饰（金 / 蓝 / 紫 / 青 / 珊瑚 / 灰），
+ * 链接和 @提及用蓝色，行内代码暖橙，代码块带行号，表格圆角外框、隔行底色，分隔线两头渐隐
+ */
 export const MD_SPEC = {
-  body: { size: num(1, 0.85, 1.3, 0.01), gap: em(0.57, 0, 1.5), color: color('fg') },
-  h1: heading(1.29, 1.43, 0.57, 'fg'),
-  h2: heading(1.14, 1.43, 0.57, 'fg'),
-  h3: heading(1, 1.14, 0.43, 'fg'),
-  h4: heading(1, 0.86, 0.29, 'muted'),
-  h5: heading(1, 0.86, 0.29, 'muted'),
-  h6: heading(1, 0.86, 0.29, 'muted'),
-  strong: { weight: pick('600', WEIGHTS), color: color('inherit') },
-  em: { color: color('inherit') },
-  del: { color: color('inherit') },
-  link: { color: color('accent'), underline: pick('always', ['always', 'hover', 'none'] as const) },
+  body: { size: num(1, 0.85, 1.3, 0.01), gap: em(0.6, 0, 1.5), color: color('fg') },
+  h1: heading(1.5, 1.6, 0.7, 'gold', '700', 'underline'),
+  h2: heading(1.28, 1.5, 0.6, 'blue', '600', 'bar'),
+  h3: heading(1.12, 1.3, 0.5, 'violet', '600', 'diamond'),
+  h4: heading(1, 1.1, 0.4, 'teal', '600', 'dash'),
+  h5: heading(0.95, 1, 0.35, 'coral', '600', 'none'),
+  h6: heading(0.82, 1, 0.3, 'gray', '600', 'none'),
+  strong: { weight: pick('600', WEIGHTS), color: color('bright') },
+  em: { color: color('sand') },
+  del: { color: color('subtle') },
+  link: { color: color('blue'), underline: pick('always', ['always', 'hover', 'none'] as const) },
   code: {
     size: em(0.86, 0.7, 1.2),
     color: color('code'),
-    bg: bg('chip'),
+    bg: bg('warm'),
     border: bool(true),
-    radius: px(4, 0, 12),
+    radius: px(5, 0, 12),
   },
   pre: {
     size: em(0.86, 0.7, 1.2),
-    leading: num(1.65, 1.2, 2.2, 0.05),
+    leading: num(1.7, 1.2, 2.2, 0.05),
     bg: bg('code'),
-    radius: px(12, 0, 20),
+    radius: px(10, 0, 20),
     border: bool(true),
     bar: bool(true),
     wrap: bool(false),
+    lineNumbers: bool(true),
   },
   quote: {
-    line: color('border'),
+    line: color('blue'),
     lineWidth: px(3, 0, 8),
     color: color('muted'),
-    bg: bg('none'),
+    bg: bg('blue'),
+    radius: px(8, 0, 16),
     italic: bool(false),
   },
+  /** > [!NOTE] 这类提示块：标题和左线按类型着色，tint 是同色浅底 */
+  alert: { tint: bool(true), radius: px(8, 0, 16) },
   ul: {
     marker: pick('disc', ['disc', 'circle', 'square', 'dash'] as const),
-    markerColor: color('subtle'),
-    indent: em(1.43, 0.8, 3),
-    gap: em(0.29, 0, 1),
+    markerColor: color('blue'),
+    indent: em(1.5, 0.8, 3),
+    gap: em(0.28, 0, 1),
   },
   ol: {
-    markerColor: color('subtle'),
-    markerWeight: pick('450', WEIGHTS),
-    indent: em(1.43, 0.8, 3),
-    gap: em(0.29, 0, 1),
+    markerColor: color('gold'),
+    markerWeight: pick('700', WEIGHTS),
+    indent: em(1.5, 0.8, 3),
+    gap: em(0.28, 0, 1),
   },
-  task: { color: color('accent'), doneFade: bool(false) },
+  task: { color: color('teal'), doneFade: bool(true) },
   table: {
     size: em(0.93, 0.75, 1.15),
     border: pick('rows', ['rows', 'grid', 'none'] as const),
-    headerBg: bg('none'),
+    outer: bool(true),
+    radius: px(8, 0, 16),
+    headerBg: bg('head'),
     headerWeight: pick('600', WEIGHTS),
-    zebra: bool(false),
+    zebra: bool(true),
     pad: num(1, 0.5, 2, 0.05),
   },
   hr: {
-    style: pick('solid', ['solid', 'dashed', 'dotted'] as const),
+    style: pick('fade', ['fade', 'solid', 'dashed', 'dotted'] as const),
     width: px(1, 1, 4),
-    color: color('line'),
-    space: em(1.14, 0.3, 3),
+    color: color('border'),
+    space: em(1.6, 0.3, 3),
   },
   img: {
     radius: px(8, 0, 24),
     maxWidth: pick('100', ['100', '75', '50'] as const),
-    border: bool(false),
+    border: bool(true),
+    caption: bool(true),
   },
-  mention: { color: color('accent'), bg: bg('accent') },
+  mention: { color: color('blue'), bg: bg('blue') },
+  /** mermaid 图：出场动画、悬停高亮相连的线、画布点阵底、节点渐变底 */
+  mermaid: { motion: bool(true), hover: bool(true), grid: bool(true), gradient: bool(true) },
 } as const satisfies Record<string, Record<string, MdField>>
 
 export type MdElement = keyof typeof MD_SPEC
@@ -235,6 +267,14 @@ const COLOR_VAR: Record<MdColorRole, string> = {
   code: 'var(--code-chip-fg)',
   line: 'var(--line)',
   border: 'var(--line-strong)',
+  gold: 'var(--md-gold)',
+  blue: 'var(--md-blue)',
+  violet: 'var(--md-violet)',
+  teal: 'var(--md-teal)',
+  coral: 'var(--md-coral)',
+  gray: 'var(--md-gray)',
+  bright: 'var(--md-bright)',
+  sand: 'var(--md-sand)',
 }
 const BG_VAR: Record<MdBgRole, string> = {
   none: 'transparent',
@@ -244,6 +284,9 @@ const BG_VAR: Record<MdBgRole, string> = {
   chip: 'var(--code-chip)',
   sel: 'var(--sel)',
   accent: 'var(--accent-soft)',
+  blue: 'color-mix(in srgb, var(--md-blue) 11%, transparent)',
+  warm: 'color-mix(in srgb, var(--code-chip-fg) 9%, transparent)',
+  head: 'color-mix(in srgb, var(--fg) 4%, transparent)',
 }
 /** 开关在 CSS 里没法当条件用，直接换成开 / 关时的取值 */
 const BOOL_CSS: Record<string, [on: string, off: string]> = {
@@ -253,7 +296,21 @@ const BOOL_CSS: Record<string, [on: string, off: string]> = {
   wrap: ['pre-wrap', 'pre'],
   italic: ['italic', 'normal'],
   doneFade: ['0.55', '1'],
-  zebra: ['color-mix(in srgb, var(--fg) 4%, transparent)', 'transparent'],
+  zebra: ['color-mix(in srgb, var(--fg) 2.5%, transparent)', 'transparent'],
+  lineNumbers: ['inline-block', 'none'],
+  outer: ['1px', '0px'],
+  caption: ['block', 'none'],
+  tint: ['7%', '0%'],
+  grid: ['radial-gradient(var(--md-dot) 1px, transparent 1px)', 'none'],
+}
+/** 标题装饰落成 ::before 的显示、宽高、旋转、圆角，和渐隐底线的高度 */
+const DECO_CSS: Record<Deco, { display: string; w: string; h: string; rot: string; r: string; ul: string }> = {
+  none: { display: 'none', w: '0', h: '0', rot: '0deg', r: '0', ul: '0px' },
+  bar: { display: 'inline-block', w: '3px', h: '0.9em', rot: '0deg', r: '3px', ul: '0px' },
+  diamond: { display: 'inline-block', w: '0.42em', h: '0.42em', rot: '45deg', r: '1px', ul: '0px' },
+  dash: { display: 'inline-block', w: '0.7em', h: '2px', rot: '0deg', r: '2px', ul: '0px' },
+  dot: { display: 'inline-block', w: '0.45em', h: '0.45em', rot: '0deg', r: '50%', ul: '0px' },
+  underline: { display: 'none', w: '0', h: '0', rot: '0deg', r: '0', ul: '2px' },
 }
 const UL_MARKER: Record<string, string> = { disc: 'disc', circle: 'circle', square: 'square', dash: "'– '" }
 
@@ -315,6 +372,23 @@ function derived(el: MdElement, prop: string, f: MdField, v: MdValue, dark: bool
     return [
       [`${name}-row`, row],
       [`${name}-col`, col],
+    ]
+  }
+  if (prop === 'deco') {
+    const d = DECO_CSS[v as Deco] ?? DECO_CSS.none
+    return Object.entries(d).map(([k, val]) => [`${name}-${k}`, val])
+  }
+  if (el === 'hr' && prop === 'style') {
+    // 渐隐线是一段渐变底（两头透明），其余线型还是 border-top
+    const fade = v === 'fade'
+    return [
+      [name, fade ? 'none' : String(v)],
+      [
+        `${name}-fade`,
+        fade
+          ? 'linear-gradient(90deg, transparent, var(--md-hr-color) 20%, var(--md-hr-color) 80%, transparent)'
+          : 'none',
+      ],
     ]
   }
   if (el === 'link' && prop === 'underline') {
