@@ -165,6 +165,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (box && (await tooltip.count())) {
         // 直接点触发元素自己的位置：浮层如果吃指针事件，点到的就是浮层
         await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+        // 项目设置弹窗是第一次打开时才加载的（App.tsx 里 lazy）：等它出来，不能只等一次渲染
+        await p
+          .getByRole('dialog')
+          .first()
+          .waitFor({ timeout: 5000 })
+          .catch(() => {})
         await settle(p)
         if (!(await p.getByRole('dialog').count()))
           errors.push('提示-不吃点击：浮层挡住时点按钮没反应（浮层拦截了鼠标事件）')
@@ -285,8 +291,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .first()
         .click()
         .catch(() => errors.push('提示-弹窗内对齐：打不开项目设置'))
-      await settle(p)
+      // 项目设置弹窗第一次打开时才加载：等弹窗里的内容出来
       const help = p.getByRole('img', { name: '说明' }).first()
+      await help.waitFor({ timeout: 5000 }).catch(() => {})
+      await settle(p)
       if (!(await help.count())) errors.push('提示-弹窗内对齐：弹窗里没有帮助问号')
       else {
         await help.scrollIntoViewIfNeeded()

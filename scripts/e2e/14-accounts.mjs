@@ -137,6 +137,7 @@ await runShard('账号和 API', async (api) => {
     assert.equal(j.error, undefined)
     assert.equal(readFileSync(ccAuth, 'utf8'), ccBefore, '这条路径 CLI 不改凭据文件')
     assert.match(j.output, /Already logged in/)
+    // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
     assert.doesNotMatch(j.output, /\u001b|\[32m|\[1m|\[22m|\[39m/, '登录输出里没有 ANSI 残码')
     assert.equal((await list('commandcode')).live.loggedIn, true, '仍是原来那个账号')
 

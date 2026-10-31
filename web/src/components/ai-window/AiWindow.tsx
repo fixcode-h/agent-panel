@@ -12,7 +12,7 @@ import {
   useAiWindow,
 } from '@/lib/ai-window'
 import { timingMs } from '@/lib/analysis-report'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { IconButton } from '@/components/ui/icon-button'
 import { Spinner, type StatusTone } from '@/components/ui/status-pill'
 import { MinimizedChat, type ChatDockState } from '@/components/ui/minimized-chat'
@@ -34,7 +34,8 @@ export function AiWindow() {
   // 标题栏留给嵌入对话的状态和操作按钮的位置：对话自己的页签行不再画，免得和窗口标题重复
   const [slot, setSlot] = useState<HTMLSpanElement | null>(null)
   const { go } = useNav()
-  const { projects, tasks } = useData()
+  const { projects } = useData()
+  const { tasks } = useTasks()
   // 项目里的分析对话要带上项目：分析结果里「开子对话去修」这类操作要知道项目
   const project = projects.find((p) => p.id === s.projectId)
   // 标题栏的「来源」只用列表里已有的数据：分析对话本身（看是不是排查）、它所属的父对话；

@@ -29,7 +29,7 @@ import { PROXY_ENV_EXAMPLE } from '@shared/proxy'
 import { accountModelId, cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
 import { autoLimits, fmtTokens, limitSupport, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
-import { useData } from '@/lib/data'
+import { useData, useTasks } from '@/lib/data'
 import { cliColor, cliDefaultModel, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'
 import { useCliDef, useCliModels } from '@/lib/cli-models'
 import { lookupModel, refreshModelCatalog, useModelCatalog } from '@/lib/model-catalog'
@@ -72,7 +72,8 @@ export interface CliDraft extends Omit<CliSettings, 'extraArgs' | 'env'> {
  * 失败时给出原因和命令，用户可以复制到终端自己运行（例如需要 sudo）。
  */
 function useCliInstaller(def: CliDefinition) {
-  const { tasks, agents, settings } = useData()
+  const { agents, settings } = useData()
+  const { tasks } = useTasks()
   const job = useInstallJob(def.id)
   const running = job?.status === 'running'
   const start = async (action: CliInstallJob['action']) => {

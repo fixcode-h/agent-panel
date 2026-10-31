@@ -112,7 +112,7 @@ function ReportFields({ r, convState, big }: { r: PeerReport; convState?: string
   if (r.child || r.reason)
     rows.push([
       t('状态'),
-      <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <span key="state" className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
         {r.state && (
           <span className={cn('rounded-sm px-1.5 py-px text-footnote leading-4 font-medium', stateTone(convState))}>
             {r.state}
@@ -121,11 +121,17 @@ function ReportFields({ r, convState, big }: { r: PeerReport; convState?: string
         <span>{r.reason}</span>
       </span>,
     ])
-  if (r.child) rows.push([t('子对话'), <span className="font-medium">{r.child}</span>])
+  if (r.child)
+    rows.push([
+      t('子对话'),
+      <span key="child" className="font-medium">
+        {r.child}
+      </span>,
+    ])
   if (r.steps.length)
     rows.push([
       t('计划步骤'),
-      <ul className="flex flex-col gap-1">
+      <ul key="steps" className="flex flex-col gap-1">
         {r.steps.map((s) => (
           <li key={s} className="flex items-baseline gap-2">
             <span>{s}</span>
@@ -142,7 +148,7 @@ function ReportFields({ r, convState, big }: { r: PeerReport; convState?: string
   if (r.next.length)
     rows.push([
       t('下一步'),
-      <div className="flex flex-col gap-1">
+      <div key="next" className="flex flex-col gap-1">
         {r.next.map((n) => (
           <p key={n}>{n}</p>
         ))}

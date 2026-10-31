@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { listableAgents } from '@shared/builtin/core'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
 import { byAskedAt } from '@shared/task'
@@ -46,7 +46,8 @@ type Item = {
  * 方向键选择，Enter 打开，Esc 关闭。
  */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { projects, tasks, agents, workflows } = useData()
+  const { projects, agents, workflows } = useData()
+  const { tasks } = useTasks()
   const { go, openSettings } = useNav()
   const [query, setQuery] = useState('')
   // 对话正文的命中：标题里的字由下面的 items 按名称过滤，正文命中按标题匹配不到它们

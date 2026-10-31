@@ -48,9 +48,6 @@ interface Data {
   projects: Project[]
   projectCategories: ProjectCategory[]
   settings: Settings | null
-  /** 所有项目的任务（侧栏的最近任务、项目工作区共用） */
-  tasks: Task[]
-  tasksLoaded: boolean
   /** UI 设计（和任务分开） */
   designs: DesignMeta[]
   setDesigns: React.Dispatch<React.SetStateAction<DesignMeta[]>>
@@ -75,6 +72,16 @@ interface Data {
 }
 
 const Ctx = createContext<Data | null>(null)
+/**
+ * 任务列表单独一个上下文：有任务在执行时它每 2.5 秒、流式输出时更勤地变，
+ * 和别的数据放在一起的话，只用到角色、设置的一百多个组件也会跟着一起重渲染
+ */
+interface TasksData {
+  /** 所有项目的任务（侧栏的最近任务、项目工作区共用） */
+  tasks: Task[]
+  tasksLoaded: boolean
+}
+const TasksCtx = createContext<TasksData | null>(null)
 
 /**
  * 任务摘要里列表和侧栏会用到的字段：流式推送每个增量都会重发整个摘要，
@@ -291,8 +298,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       projects,
       projectCategories,
       settings,
-      tasks,
-      tasksLoaded,
       designs,
       setDesigns,
       designProjects,
@@ -321,8 +326,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       projects,
       projectCategories,
       settings,
-      tasks,
-      tasksLoaded,
       designs,
       designProjects,
       designProjectsLoaded,
@@ -334,7 +337,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     ],
   )
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  const tasksValue = useMemo(() => ({ tasks, tasksLoaded }), [tasks, tasksLoaded])
+  return (
+    <Ctx.Provider value={value}>
+      <TasksCtx.Provider value={tasksValue}>{children}</TasksCtx.Provider>
+    </Ctx.Provider>
+  )
 }
 
 /** 导入的任务里用到了本机没有的 Agent：任务页里换成带上它们的列表，名字、图标照常显示 */
@@ -347,6 +355,13 @@ export function WithAgents({ agents, children }: { agents: Agent[]; children: Re
 export function useData() {
   const d = useContext(Ctx)
   if (!d) throw new Error('useData 必须在 DataProvider 内使用')
+  return d
+}
+
+/** 任务列表：只有真用到任务的组件订阅它（见 TasksCtx） */
+export function useTasks() {
+  const d = useContext(TasksCtx)
+  if (!d) throw new Error('useTasks 必须在 DataProvider 内使用')
   return d
 }
 

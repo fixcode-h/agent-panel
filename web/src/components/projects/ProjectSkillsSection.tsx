@@ -27,7 +27,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { CliSkills } from '@/components/settings/CliSkills'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 
 /** 一个技能的内容和随内容一起读出来的附带文件 */
 type Opening = { skill: ProjectSkill; content: string; files: string[] }

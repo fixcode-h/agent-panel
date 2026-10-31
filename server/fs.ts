@@ -83,6 +83,7 @@ async function roots() {
 export async function makeDir(parent: string, name: string) {
   const n = name.trim()
   if (!n) throw new Error(t('请输入文件夹名'))
+  // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
   if (n === '.' || n === '..' || /[<>:"/\\|?*\x00-\x1f]/.test(n) || /[. ]$/.test(n))
     throw new Error(t('文件夹名不能包含 \\ / : * ? " < > |，也不能以点或空格结尾'))
   const dir = resolvePath(parent)

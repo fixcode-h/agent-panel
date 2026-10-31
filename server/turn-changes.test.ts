@@ -173,3 +173,22 @@ test('这一轮里拉代码带进来的文件不算，自己的提交和没提�
   const all = await taskChanges(dir, tk)
   assert.deepEqual(all?.map((f) => f.path).sort(), ['a.txt', 'b.txt'])
 })
+
+test('撤销：Windows 的 autocrlf 下，只差换行符不算「之后又改过」，写回时沿用文件自己的换行符', async () => {
+  const dir = repo()
+  // Windows 上 git 默认 autocrlf=true：检出是 CRLF，Agent 写文件多半直接写 LF
+  git(dir, 'config', 'core.autocrlf', 'true')
+  const c = (await turn('t-eol', dir, () => {
+    writeFileSync(path.join(dir, 'a.txt'), 'one\nTWO\nthree\nfour\nfive\n')
+  }))!
+  const lf = await undoSpans(dir, c.spans, ['a.txt'])
+  assert.equal(lf.ok, true, '换行符不同不能报冲突')
+  assert.equal(read(dir, 'a.txt'), 'one\ntwo\nthree\nfour\nfive\n', '文件原来是 LF，写回也是 LF')
+  // 文件现在是 CRLF（编辑器按检出的样子保存）：撤销后保持 CRLF
+  const c2 = (await turn('t-eol2', dir, () => {
+    writeFileSync(path.join(dir, 'a.txt'), 'one\r\nTWO\r\nthree\r\nfour\r\nfive\r\n')
+  }))!
+  const crlf = await undoSpans(dir, c2.spans, ['a.txt'])
+  assert.equal(crlf.ok, true)
+  assert.equal(read(dir, 'a.txt'), 'one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n')
+})

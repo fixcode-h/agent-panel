@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Box, Plus } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { useData } from '@/lib/data'
+import { useTasks } from '@/lib/data'
 import { TaskView } from '@/components/tasks/TaskView'
 import { Button } from '@/components/ui/button'
 import { NewModelDesignDialog } from '@/components/design/NewModelDesignDialog'
@@ -12,7 +12,7 @@ import { NewModelDesignDialog } from '@/components/design/NewModelDesignDialog'
  * 不列进 Agent 模式的项目对话、打开时不切到 Agent 模式（#/model/<对话 id>）
  */
 export function ModelPage({ id }: { id?: string }) {
-  const { tasks, tasksLoaded } = useData()
+  const { tasks, tasksLoaded } = useTasks()
   const [creating, setCreating] = useState(false)
   const task = id ? tasks.find((x) => x.id === id) : undefined
   if (id && (task || !tasksLoaded)) return <TaskView key={id} taskId={id} />

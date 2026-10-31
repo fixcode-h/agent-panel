@@ -212,7 +212,7 @@ function itemLine(x: PlanItem, kids?: WaitChild[]) {
  * 输入框上方的计划按钮：「计划 2/5 · 正在做的那一步」，点开是实时更新的计划窗口。
  * 只有对话列过计划才显示
  */
-export function PlanButton({ task, children }: { task: Task; children?: WaitChild[] }) {
+export function PlanButton({ task, kids }: { task: Task; kids?: WaitChild[] }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEscape(open, () => setOpen(false))
@@ -304,13 +304,13 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
         {/* 空间够时再显示「多久前更新」：窄窗口里前面的进度已经说明了状态 */}
         {!finished && <UpdatedAt at={updatedAt} stale={stale} className="hidden text-xs sm:inline" />}
       </button>
-      {open && <PlanWindow task={task} plan={plan} children={children} />}
+      {open && <PlanWindow task={task} plan={plan} kids={kids} />}
     </div>
   )
 }
 
 /** 计划窗口：当前计划的步骤（进行中的展开子步骤）；下面能翻以前的计划 */
-function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; children?: WaitChild[] }) {
+function PlanWindow({ task, plan, kids }: { task: Task; plan: TaskPlan; kids?: WaitChild[] }) {
   const p = planProgress(task, plan)
   const live = !plan.doneAt
   // 计划已经结束（全部做完或提前结束）：还没做完的步骤不再画成等待中 / 进行中
@@ -378,7 +378,7 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
               task={task}
               step={s}
               now={now}
-              waitingKids={children}
+              waitingKids={kids}
               settled={settled}
               last={i === plan.steps.length - 1}
             />

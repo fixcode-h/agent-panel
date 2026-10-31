@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { ProjectWorkspace } from '@/components/tasks/ProjectWorkspace'
 
 /**
@@ -7,7 +7,8 @@ import { ProjectWorkspace } from '@/components/tasks/ProjectWorkspace'
  * 没有指定项目（或项目已删除）时回到首页。
  */
 export function ProjectsPage() {
-  const { loading, projects, tasks } = useData()
+  const { loading, projects } = useData()
+  const { tasks } = useTasks()
   const { route, go, openProject } = useNav()
   const selected = projects.find((p) => p.id === route.id)
 

@@ -29,7 +29,7 @@ import {
   waitDuration,
 } from '@shared/task'
 import { importTaskFile } from '@/lib/task-transfer'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
@@ -53,7 +53,8 @@ import { t } from '@shared/i18n'
 
 /** 项目首页：参考 Claude Code，上面是这个项目的任务，输入框贴在底部，和对话页的输入框在同一个位置 */
 function ProjectHome({ project }: { project: Project }) {
-  const { tasks, tasksLoaded, workflows, projectCategories, upsertTask } = useData()
+  const { workflows, projectCategories, upsertTask } = useData()
+  const { tasks, tasksLoaded } = useTasks()
   const { go, openProject } = useNav()
   const dir = useDirInfo(project.path)
   const [filesOpen, setFilesOpen] = useState(false)

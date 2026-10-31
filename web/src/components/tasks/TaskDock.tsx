@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
-import { useData, useNav } from '@/lib/data'
+import { useNav, useTasks } from '@/lib/data'
 import { closeMiniTask, dockStateOf, miniTaskState, shownInPage, subscribeMiniTask, taskRoute } from '@/lib/mini-task'
 import { MinimizedChat } from '@/components/ui/minimized-chat'
 
@@ -22,7 +22,7 @@ const LABEL_MAX = 80
 export function TaskDock() {
   const [mini, setMini] = useState(miniTaskState)
   useEffect(() => subscribeMiniTask(() => setMini(miniTaskState())), [])
-  const { tasks } = useData()
+  const { tasks } = useTasks()
   const { go, route } = useNav()
   const current = mini.task
   const task = current ? tasks.find((x) => x.id === current.id) : undefined

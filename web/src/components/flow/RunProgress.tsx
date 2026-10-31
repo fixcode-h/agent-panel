@@ -3,7 +3,7 @@ import { ArrowUpRight } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { runRunning, taskGone } from '@shared/task'
-import { useData, useNav } from '@/lib/data'
+import { useNav, useTasks } from '@/lib/data'
 import { fmtClock, statusLabel, stepDuration } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -21,7 +21,7 @@ const usesWorkflow = (tk: Task, id: string) =>
  * 「在项目里运行」只建顶层对话，子对话是父对话派出去的，重新运行它没有意义
  */
 export function useFlowRuns(workflowId: string, projectId: string) {
-  const { tasks } = useData()
+  const { tasks } = useTasks()
   const list = projectId
     ? tasks
         .filter((tk) => tk.projectId === projectId && !tk.parentTaskId && !taskGone(tk) && usesWorkflow(tk, workflowId))

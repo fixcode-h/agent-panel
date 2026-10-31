@@ -142,6 +142,7 @@ export function parseCommandCodeModels(out: string): CliModel[] {
   const models: CliModel[] = []
   let group = ''
   for (const raw of out.split('\n')) {
+    // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
     const line = raw.replace(/\x1b\[[0-9;]*m/g, '').trimEnd()
     // 后面是用法说明和只能在无界面模式用的模型，不是可选的编码模型
     if (/^Pass the full id/i.test(line) || /^Decision models/i.test(line)) break
@@ -212,6 +213,7 @@ export function parsePiModels(
   const models: CliModel[] = []
   for (const raw of out.split('\n')) {
     const cells = raw
+      // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
       .replace(/\x1b\[[0-9;]*m/g, '')
       .trim()
       .split(/\s+/)

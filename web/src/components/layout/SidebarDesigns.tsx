@@ -21,7 +21,7 @@ import type { Task } from '@shared/schema'
 import { DesignProjectDialog, type DesignProjectSection } from '@/components/design/DesignProjectDialog'
 import { NewModelDesignDialog } from '@/components/design/NewModelDesignDialog'
 import { api } from '@/lib/api'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { DESIGN_HOME, designHomeRoute, designKind, kindFoldKey, kindLabel, toggleFoldKey } from '@/lib/design-projects'
 import {
@@ -171,7 +171,8 @@ function DesignModeSwitch({ value, onChange }: { value: DesignMode; onChange: (m
  * 点项目名打开那个 Agent 项目，点对话进对话页；对话自己的右键菜单（重命名、删除…）沿用 TaskRow
  */
 function ModelDesignList() {
-  const { projects, tasks } = useData()
+  const { projects } = useData()
+  const { tasks } = useTasks()
   const { route, go } = useNav()
   const [folded, setFolded] = useState<Set<string>>(new Set())
   const unread = useUnreadTasks()

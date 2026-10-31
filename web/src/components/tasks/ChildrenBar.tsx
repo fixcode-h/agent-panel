@@ -29,14 +29,14 @@ export const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-body'
  * 排序：正在执行的在上，其余按最近一条消息的时间倒序。
  */
 export function ChildrenBar({
-  children,
+  kids,
   helpers,
   openChild,
   onOpen,
   onClose,
   onResume,
 }: {
-  children: ChildSummary[]
+  kids: ChildSummary[]
   /** 派出的子任务：单独占子任务那一行，点开看它的实时对话流 */
   helpers?: { task: Task; ids: string[]; teamNames: Set<string> }
   openChild: string
@@ -52,7 +52,7 @@ export function ChildrenBar({
   // 每个子对话和父对话之间的信、还没被父对话读到的汇报（ADR 0034）：面板按子对话分组，展开才列往来
   const mail = usePeerMail()
   const unreadOf = (id: string) => mail?.unread.get(id) ?? 0
-  const unread = children.reduce((n, c) => n + unreadOf(c.id), 0)
+  const unread = kids.reduce((n, c) => n + unreadOf(c.id), 0)
   // 展开了哪几个子对话的往来：没手动点过的，有未读汇报的默认展开
   const [fold, setFold] = useState<Record<string, boolean>>({})
   const expanded = (id: string) => fold[id] ?? unreadOf(id) > 0
@@ -69,14 +69,14 @@ export function ChildrenBar({
 
   // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决、已经收起（归档 / 独立分支被删掉）的
   // 不再算你要处理的事——用户已经把它删了，不能还在状态栏上催他回答
-  const asking = children.filter((c) => c.asking && !c.resolved && !c.gone)
+  const asking = kids.filter((c) => c.asking && !c.resolved && !c.gone)
   // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、运行区的子对话是同一套判定（见 visibleChildren）
-  const busy = visibleChildren(children)
+  const busy = visibleChildren(kids)
   // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍
-  const { running: working, total } = childCounts(children)
+  const { running: working, total } = childCounts(kids)
   // 「运行中」列转圈的那些：计划没做完、后台命令还没回、已解决但还在跑的子对话也算（见 visibleChildren）
-  const shown = all ? sortChildren(children) : visibleChildren(children)
-  const current = children.find((c) => c.id === openChild)
+  const shown = all ? sortChildren(kids) : visibleChildren(kids)
+  const current = kids.find((c) => c.id === openChild)
 
   // 小块的个数按这一行实际能用的宽度算：放不下的收成「+N」，不折到下一行去挤子任务，
   // 窗口拉宽 / 缩窄时跟着变（不再是写死的 slice(0, 3)）。
@@ -101,7 +101,7 @@ export function ChildrenBar({
     fitAll >= busy.length ? busy.length : Math.max(0, Math.floor(Math.max(0, box.room - box.more) / cardSlot))
   const hiddenCards = busy.length - shownCards
   // CLI 还活着的子对话数：「子对话」入口流光、悬浮说明用
-  const cliKids = children.filter((c) => c.cliAlive).length
+  const cliKids = kids.filter((c) => c.cliAlive).length
 
   return (
     <div ref={ref} className="shrink-0 px-3 md:px-6">
@@ -114,7 +114,7 @@ export function ChildrenBar({
             <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />
           </div>
         )}
-        {children.length > 0 && (
+        {kids.length > 0 && (
           <div data-status-row="children" className={cn(plainRow, 'mb-1 flex-nowrap')}>
             <button
               type="button"
@@ -241,9 +241,7 @@ export function ChildrenBar({
             <div className="flex items-center gap-2 border-b px-3 py-2">
               <span className="text-body font-medium">{t('子对话')}</span>
               <span data-child-summary className="min-w-0 truncate text-xs text-subtle">
-                {unread > 0
-                  ? t('{n} 个 · {m} 封未读', { n: children.length, m: unread })
-                  : t('{n} 个', { n: children.length })}
+                {unread > 0 ? t('{n} 个 · {m} 封未读', { n: kids.length, m: unread }) : t('{n} 个', { n: kids.length })}
               </span>
               {/* 样子和 Segmented 一样，但界面检查按「按钮 + aria-pressed」找「全部」，这里不换成单选组 */}
               <div className="seg-track ml-auto flex shrink-0 rounded-md p-0.5">

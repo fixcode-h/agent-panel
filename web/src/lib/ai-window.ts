@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { toast } from '@/lib/toast'
 import { type AnalysisKind, type Attachment, type Task } from '@shared/schema'
 import { analysisHome, analyzerId, rootIdOf, type AnalysisScope } from '@shared/analysis-home'
@@ -54,6 +54,7 @@ const set = (p: Partial<State>) => {
 }
 
 const running = (s?: Task['status']) => s === 'running'
+const sameTiming = (a?: AnalysisTiming, b?: AnalysisTiming) => a?.ms === b?.ms && a?.since === b?.since
 /** 还在跑时多久看一次状态：浮条和结束提醒都要跟得上 */
 const RUNNING_POLL_MS = 1500
 /** 结束后多久再看一眼：只看对话还在不在（删了要标「对话已关闭」），不用那么勤 */
@@ -85,9 +86,12 @@ function watch(id: string) {
   const tick = async () => {
     if (state.taskId !== id) return
     try {
-      const task = await api.task(id)
+      // 轮询只看状态和用时：只取最后一条消息，不把整段对话（可能几 MB）每 1.5 秒拉一遍
+      const task = await api.task(id, { limit: 1 })
       if (state.taskId !== id) return
-      set({ status: task.status, timing: analysisTiming(task) })
+      const timing = analysisTiming(task)
+      // 状态和用时都没变就不通知：每次 set 都会让订阅的组件重渲染
+      if (task.status !== state.status || !sameTiming(timing, state.timing)) set({ status: task.status, timing })
       // 结束后又被接着问了：这一轮结束时还要再提醒、再交回结果
       if (running(task.status)) {
         finished = false
@@ -96,7 +100,13 @@ function watch(id: string) {
       }
       if (!finished) {
         finished = true
-        state.job?.onDone?.(task)
+        // 结束时交回结果要完整的对话：这时才拉一次全量
+        const job = state.job
+        if (job?.onDone)
+          void api.task(id).then(
+            (full) => state.taskId === id && job.onDone?.(full),
+            () => job.onDone?.(task),
+          )
         if (!state.open || state.minimized)
           toast(t('{label}结束：{title}', { label: state.job?.label ?? '', title: state.job?.title ?? '' }), {
             action: { label: t('查看'), onClick: () => set({ open: true, minimized: false }) },
@@ -202,6 +212,20 @@ export const resetAiWindow = () => {
   // 否则旧轮询会和测试里新建的 watch 同时跑（两个用例都用 'task-1'，光换 state 拦不住）
   state = { open: false, minimized: false, gone: false, starting: false }
   listeners.forEach((f) => f())
+}
+
+/**
+ * 只订阅窗口状态里的一个值：App 根部只关心「有没有分析任务」，用 useAiWindow 的话
+ * 每次状态变化整个 App（侧栏、当前页面、对话页）都跟着重渲染
+ */
+export function useAiWindowValue<T>(pick: (s: Readonly<State>) => T): T {
+  return useSyncExternalStore(
+    (f) => {
+      listeners.add(f)
+      return () => void listeners.delete(f)
+    },
+    () => pick(state),
+  )
 }
 
 export function useAiWindow() {

@@ -1,14 +1,13 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePageSignals } from '@/lib/page-signal'
 import { Toaster } from 'sonner'
 import { TOAST_VISIBLE_LIMIT } from '@/lib/toast-queue'
-import { DataProvider, NavCtx, useData, useNav, type Route } from '@/lib/data'
+import { DataProvider, NavCtx, useData, useNav, type Route, useTasks } from '@/lib/data'
 import { useTaskNotifications } from '@/lib/notify'
 import { useTaskDoneUnread } from '@/lib/task-unread'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { HomePage } from '@/pages/HomePage'
 import { ChatPage } from '@/pages/ChatPage'
-import { ProjectSettingsDialog } from '@/components/projects/ProjectSettingsDialog'
 import { DemoBanner } from '@/components/layout/DemoBanner'
 import { NoCliBanner } from '@/components/layout/NoCliBanner'
 import { ConnectionBanner } from '@/components/layout/ConnectionBanner'
@@ -20,7 +19,7 @@ import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { GlobalHintHost } from '@/components/ui/hint'
 import { TaskDock } from '@/components/tasks/TaskDock'
-import { useAiWindow } from '@/lib/ai-window'
+import { useAiWindowValue } from '@/lib/ai-window'
 import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -39,6 +38,10 @@ const ModelPage = lazy(() => import('@/pages/ModelPage').then((m) => ({ default:
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
 const AiWindow = lazy(() => import('@/components/ai-window/AiWindow').then((m) => ({ default: m.AiWindow })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
+// 项目设置弹窗带着 AI 助手和流程图画布（@xyflow/react），静态引入会把它们整个带进首屏：第一次打开项目设置时才加载
+const ProjectSettingsDialog = lazy(() =>
+  import('@/components/projects/ProjectSettingsDialog').then((m) => ({ default: m.ProjectSettingsDialog })),
+)
 
 /** 页面登记；新增页面在这里加一项，并在 Sidebar 的 NAV 里加入口 */
 const PAGES: Record<Route['page'], () => React.ReactNode> = {
@@ -110,20 +113,24 @@ function useHashRoute() {
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)
   }, [])
-  const go = (r: Route) => {
-    const h = toHash(r)
-    if (h === location.hash) return
-    // 页面自动选中第一项这类跳转不该多出一条历史记录
-    const replace = r.page === route.page && !route.id
-    history[replace ? 'replaceState' : 'pushState'](null, '', h)
-    setRoute(r)
-  }
+  // 只在路由变了时换一个函数：它进了导航上下文的 value，每次都新建会让所有用 useNav 的组件重渲染
+  const go = useCallback(
+    (r: Route) => {
+      const h = toHash(r)
+      if (h === location.hash) return
+      // 页面自动选中第一项这类跳转不该多出一条历史记录
+      const replace = r.page === route.page && !route.id
+      history[replace ? 'replaceState' : 'pushState'](null, '', h)
+      setRoute(r)
+    },
+    [route],
+  )
   return [route, go] as const
 }
 
 /** 任务完成通知和标签页标题 */
 function TaskWatcher() {
-  const { tasks } = useData()
+  const { tasks } = useTasks()
   const { route, go } = useNav()
   // 正在看的对话：项目里的任务或 Chat 里的聊天
   const viewing = route.page === 'projects' && route.sub ? route.sub : route.page === 'chat' ? (route.id ?? '') : ''
@@ -206,24 +213,31 @@ function ProjectDialog({
 export function App() {
   const [route, setRoute] = useHashRoute()
   const [settings, setSettings] = useState<{ open: boolean; section?: string; loaded?: boolean }>({ open: false })
-  const aiWindow = useAiWindow()
+  const aiJob = useAiWindowValue((s) => !!s.job)
   const [project, setProject] = useState<{ open: boolean; id?: string; section?: string; item?: string }>({
     open: false,
   })
+  // 项目设置弹窗打开过一次就一直挂着（关闭动画要它在）；打开前不加载
+  const projectLoaded = useRef(false)
+  if (project.open) projectLoaded.current = true
   const [dark, toggleTheme] = useTheme()
   // 托盘右键「设置」：切到这个页面后打开设置
   usePageSignals((view) => view === 'settings' && setSettings({ open: true, loaded: true }))
 
+  // 导航上下文有 37 个文件在用：每次渲染都新建对象会让它们全部跟着重渲染，只在路由变了时换
+  const nav = useMemo(
+    () => ({
+      route,
+      go: setRoute,
+      openSettings: (section?: string) => setSettings({ open: true, section, loaded: true }),
+      openProject: (id?: string, section?: string, item?: string) => setProject({ open: true, id, section, item }),
+    }),
+    [route, setRoute],
+  )
+
   return (
     <DataProvider>
-      <NavCtx.Provider
-        value={{
-          route,
-          go: setRoute,
-          openSettings: (section) => setSettings({ open: true, section, loaded: true }),
-          openProject: (id, section, item) => setProject({ open: true, id, section, item }),
-        }}
-      >
+      <NavCtx.Provider value={nav}>
         <div className="flex min-h-full flex-col bg-rail md:h-full">
           {/* 全界面的悬停提示：接住所有原生 title，换成统一样式的浮层（全页只挂这一份） */}
           <GlobalHintHost />
@@ -270,14 +284,19 @@ export function App() {
           </Suspense>
         )}
         {/* 统一的 AI 分析窗口：第一次点「AI 处理」「AI 分析」时才加载 */}
-        {aiWindow.job && (
+        {aiJob && (
           <Suspense fallback={null}>
             <AiWindow />
           </Suspense>
         )}
         {/* 「转成弹窗」收起来的对话：和 AI 窗口同在最外层，切走页面也还在（状态在 lib/mini-task） */}
         <TaskDock />
-        <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />
+        {/* 第一次打开项目设置时才加载；之后一直挂着，关闭动画照常 */}
+        {projectLoaded.current && (
+          <Suspense fallback={null}>
+            <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />
+          </Suspense>
+        )}
         {/* 上次「强制更新」打断的任务：只挂一次，启动后问要不要接着跑 */}
         <UpdateResumeDialog />
         {/* 提示统一走 web/src/lib/toast.ts（自己排队，同屏上限见 lib/toast-queue.ts 的 TOAST_VISIBLE_LIMIT）：

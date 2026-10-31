@@ -70,7 +70,7 @@ test('glob 匹配：** 跨目录、**/ 也认根目录下的文件、目录写�
   assert.ok(matchesGlob('web/src', 'web/src'))
   assert.ok(!matchesGlob('web/srcs/a.ts', 'web/src'), '按完整目录名算，不能前缀糊到 web/srcs')
   // Windows 传来的反斜杠也认
-  assert.ok(matchesGlob('Source\Game\Foo.cpp', '**/*.cpp'))
+  assert.ok(matchesGlob('Source\\Game\\Foo.cpp', '**/*.cpp'))
 })
 
 test('老步骤没有 appliesTo 时总是执行，不会因为升级漏跑', () => {

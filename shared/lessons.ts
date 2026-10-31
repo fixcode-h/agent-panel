@@ -31,6 +31,7 @@ export function globToRegExp(g: string) {
     .replace(/\*\*\/?/g, '\u0000')
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '[^/]')
+    // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
     .replace(/\u0000/g, '.*')
   return new RegExp(/[*?]/.test(g) ? `^${body}$` : `^${body}(/.*)?$`)
 }

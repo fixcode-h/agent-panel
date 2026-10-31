@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import {
   copyFile,
   mkdir,
@@ -967,8 +967,18 @@ export interface SweepOptions {
 }
 
 const normPath = (p: string) => {
-  const abs = path.resolve(p)
-  return process.platform === 'win32' ? abs.toLowerCase() : abs
+  let abs = path.resolve(p)
+  // Windows 上同一个目录可能有两种写法：8.3 短名（C:\Users\RUNNER~1，os.tmpdir() 常给这种）和长名
+  // （git worktree list 报的）。不展开的话注册表里查不到，在用的独立目录会被当成残留清掉：用 realpath 展开
+  if (process.platform === 'win32') {
+    try {
+      abs = realpathSync.native(abs)
+    } catch {
+      // 目录已经不在了：按原样比
+    }
+    return abs.toLowerCase()
+  }
+  return abs
 }
 
 /** 目录所在主仓库的 .git 目录；不是 git 工作目录时返回空 */

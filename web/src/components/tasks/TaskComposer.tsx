@@ -18,7 +18,7 @@ import { resolveParams } from '@shared/agent-role'
 import { relatedTasks } from '@shared/related'
 import { defaultCli, defaultSettings } from '@shared/settings'
 import { api } from '@/lib/api'
-import { useData } from '@/lib/data'
+import { useData, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { IconButton } from '@/components/ui/icon-button'
@@ -61,7 +61,8 @@ export function TaskComposer({
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
 }) {
-  const { workflows, agents, projects, tasks, loading, settings } = useData()
+  const { workflows, agents, projects, loading, settings } = useData()
+  const { tasks } = useTasks()
   const [projectId, setProjectId] = useState(() => {
     try {
       return fixed?.id ?? localStorage.getItem('last-project') ?? ''

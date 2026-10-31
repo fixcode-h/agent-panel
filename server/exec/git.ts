@@ -368,6 +368,15 @@ async function blobAt(cwd: string, tree: string, file: string): Promise<Buffer |
 
 const same = (a: Buffer | null, b: Buffer | null) => (a === null || b === null ? a === b : a.equals(b))
 
+/**
+ * 换行符统一成 LF 再比：Windows 上 autocrlf 时检出是 CRLF，但 Agent 写文件不一定（多半直接写 LF），
+ * 逐字节比会把「只差换行符」当成「之后又被改过」，撤销一律报冲突。二进制（含 0 字节）原样不动
+ */
+const binary = (b: Buffer) => b.includes(0)
+const toLf = (b: Buffer | null) =>
+  b === null || binary(b) ? b : Buffer.from(b.toString('utf8').replace(/\r\n/g, '\n'))
+const toCrlf = (b: Buffer) => (binary(b) ? b : Buffer.from(b.toString('utf8').replace(/\r?\n/g, '\r\n')))
+
 /** 三方合并一个文件：在 mine 上撤掉 base → other 的改动。有冲突或是二进制文件时返回 null */
 async function mergeText(cwd: string, mine: Buffer, base: Buffer, other: Buffer): Promise<Buffer | null> {
   const dir = await mkdtemp(path.join(tmpdir(), 'ap-undo-'))
@@ -410,14 +419,17 @@ export async function undoSpans(
       conflicts.push({ path: file, reason: t('文件不在项目目录里') })
       continue
     }
-    let cur: Buffer | null = await readFile(full).catch((e) => {
+    const raw: Buffer | null = await readFile(full).catch((e) => {
       if (e?.code === 'ENOENT') return null
       throw e
     })
+    // 写回时沿用文件现在的换行符：比较和合并都在 LF 上做
+    const crlf = !!raw && !binary(raw) && raw.includes('\r\n')
+    let cur = toLf(raw)
     let bad = ''
     for (const s of [...spans].reverse()) {
       if (s.from === s.to) continue
-      const [before, after] = await Promise.all([blobAt(cwd, s.from, file), blobAt(cwd, s.to, file)])
+      const [before, after] = (await Promise.all([blobAt(cwd, s.from, file), blobAt(cwd, s.to, file)])).map(toLf)
       if (same(before, after)) continue
       if (same(cur, after)) {
         cur = before
@@ -445,7 +457,7 @@ export async function undoSpans(
       cur = merged
     }
     if (bad) conflicts.push({ path: file, reason: bad })
-    else plan.set(file, cur)
+    else plan.set(file, cur && crlf ? toCrlf(cur) : cur)
   }
   if (conflicts.length) return { ok: false, conflicts }
   const done: string[] = []

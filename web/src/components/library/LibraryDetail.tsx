@@ -13,7 +13,7 @@ import { MenuItem } from '@/components/ui/menu'
 import { DetailHeader } from '@/components/layout/Detail'
 import { cliColor } from '@/lib/cli-style'
 import { SkillFiles, type FilesApi } from '@/components/library/SkillFiles'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 
 /** 主文件编辑框的 id：文件树里的 SKILL.md 点一下滚到这里 */
 const MAIN_EDITOR_ID = 'library-main-editor'

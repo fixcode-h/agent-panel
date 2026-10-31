@@ -26,7 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { Project, Task } from '@shared/schema'
-import { useData, useNav, type PageId, type Route } from '@/lib/data'
+import { useData, useNav, type PageId, type Route, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
@@ -394,7 +394,8 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
  */
 export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
   const { route, go, openSettings, openProject } = useNav()
-  const { tasks, projects, setProjects, reloadTasks, removeTask, upsertTask } = useData()
+  const { projects, setProjects, reloadTasks, removeTask, upsertTask } = useData()
+  const { tasks } = useTasks()
   const unread = useUnreadTasks()
   // 橙点以服务端的 turnDoneAt / turnSeenAt 为准：本地缓存只用来补刚完成、列表还没刷新的那一小段时间
   const isUnread = (tk: Task) => isTaskUnread(tk) || unread.includes(tk.id)

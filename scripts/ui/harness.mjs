@@ -227,6 +227,7 @@ export async function runShard(file, fn) {
           .filter((l) => l.trim() && !/^Call log/.test(l))
           .slice(0, 2)
           .join(' ')
+          // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
           .replace(/\x1b\[[0-9;]*m/g, '')}`,
       )
     console.error(e)

@@ -12,7 +12,7 @@ import {
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -61,7 +61,8 @@ const monthStartOf = (ms: number) => {
 }
 
 export function SchedulesPage() {
-  const { projects, agents, tasks } = useData()
+  const { projects, agents } = useData()
+  const { tasks } = useTasks()
   const { go } = useNav()
   const [list, setList] = useState<Schedule[] | null>(null)
   const [error, setError] = useState('')
