@@ -369,6 +369,44 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (n > 1) errors.push(`提示-同屏：同时出现了 ${n} 个提示浮层`)
       await check(p, '提示-同屏只有一个')
     }
+
+    // 滚动时悬停提示要关掉：滚轮滚动没有 pointermove，指针已不在元素上，浮层不能挂着（原生 title 一滚就没）。
+    // 别的容器滚动（另一栏对话自动往下滚）不能把这边的提示关掉。
+    {
+      await moveAway()
+      await p.evaluate(() => {
+        const box = (id, top) => {
+          const el = document.createElement('div')
+          el.id = id
+          el.style.cssText = `position:fixed;left:600px;top:${top}px;width:240px;height:160px;overflow:auto;z-index:60;background:var(--bg)`
+          el.innerHTML = `<button title="${id}-提示" style="margin:40px">${id}</button><div style="height:1200px"></div>`
+          document.body.append(el)
+        }
+        box('hint-scroll-a', 120)
+        box('hint-scroll-b', 320)
+      })
+      const target = p.locator('#hint-scroll-a button')
+      // 别处的容器滚了：提示还在
+      await hoverCenter(target)
+      await tooltip
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('提示-滚动：滚动用例里的按钮悬停没出提示'))
+      await p.evaluate(() => (document.getElementById('hint-scroll-b').scrollTop = 200))
+      await p.waitForTimeout(300)
+      if (!(await tooltip.count())) errors.push('提示-滚动：别的容器滚动也把这边的提示关掉了')
+      // 指针所在的容器滚了：提示关掉
+      await p.mouse.wheel(0, 300)
+      await tooltip
+        .first()
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => errors.push('提示-滚动：滚动外层容器后悬停提示没有消失'))
+      await check(p, '提示-滚动后关闭')
+      await p.evaluate(() => {
+        document.getElementById('hint-scroll-a')?.remove()
+        document.getElementById('hint-scroll-b')?.remove()
+      })
+    }
   }
 
   // ---- 计划面板 ----
