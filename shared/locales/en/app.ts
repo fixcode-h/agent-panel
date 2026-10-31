@@ -258,10 +258,6 @@ export const EN_APP: Record<string, string> = {
   '检测到 AGENT.md，但各个 Agent 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。':
     "Found AGENT.md, but the agents only read AGENTS.md (with an s), so this file isn't being read.",
   '复制到 AGENTS.md': 'Copy to AGENTS.md',
-  'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。':
-    "Claude Code reads CLAUDE.md and .claude/CLAUDE.md on every start; CLAUDE.local.md holds personal notes and usually isn't committed. To share AGENTS.md with the other agents, add a line @AGENTS.md to CLAUDE.md.",
-  'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。':
-    'Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.',
   '{n} 个说明文件有改动': '{n} notes files changed',
   '还没有启用 Agent': 'No agent enabled yet',
   '：检测到本机已安装 {name}，启用后就能运行角色和工作流。':

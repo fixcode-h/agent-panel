@@ -1,0 +1,340 @@
+{
+  "id": "claude",
+  "name": "Claude Code",
+  "command": "claude",
+  "npmPackage": "@anthropic-ai/claude-code",
+  "brew": ["--cask", "claude-code"],
+  "docsUrl": "https://code.claude.com/docs",
+  "color": "#c96442",
+  "models": [
+    {
+      "id": "claude-fable-5-1",
+      "label": "Claude Fable 5.1"
+    },
+    {
+      "id": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "label": "Claude Sonnet 5.5"
+    },
+    {
+      "id": "claude-haiku-5-5",
+      "label": "Claude Haiku 5.5"
+    }
+  ],
+  "efforts": [
+    {
+      "id": "low",
+      "label": "低"
+    },
+    {
+      "id": "medium",
+      "label": "中"
+    },
+    {
+      "id": "high",
+      "label": "高"
+    },
+    {
+      "id": "xhigh",
+      "label": "很高"
+    },
+    {
+      "id": "max",
+      "label": "最高"
+    }
+  ],
+  "tiers": {
+    "high": {
+      "model": "claude-opus-5-5",
+      "effort": "high"
+    },
+    "medium": {
+      "model": "claude-sonnet-5-5",
+      "effort": "medium"
+    },
+    "low": {
+      "model": "claude-haiku-5-5",
+      "effort": "low"
+    }
+  },
+  "permissions": [
+    {
+      "id": "acceptEdits",
+      "label": "自动接受改文件",
+      "hint": "可以直接读写文件；需要审批的命令会在任务页上请你确认"
+    },
+    {
+      "id": "bypassPermissions",
+      "label": "跳过所有确认",
+      "hint": "可以执行任意命令，只在信任的项目里用"
+    },
+    {
+      "id": "plan",
+      "label": "只读规划",
+      "hint": "只分析和出方案，不改文件"
+    },
+    {
+      "id": "default",
+      "label": "逐项确认",
+      "hint": "改文件和需要审批的命令都会在任务页上请你确认"
+    }
+  ],
+  "defaultPermission": "acceptEdits",
+  "modelsFrom": "claude",
+  "readOnlyPermission": "default",
+  "systemPromptFlag": "--append-system-prompt",
+  "systemPromptFileFlag": "--append-system-prompt-file",
+  "protocol": "rpc",
+  "args": [
+    {
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--input-format",
+        "stream-json",
+        "--permission-prompt-tool",
+        "stdio"
+      ],
+      "why": "任务描述走 stdin 上的 JSON，执行中还能插话、中断；需要审批的操作通过 stdin / stdout 上的控制消息发给面板。--permission-prompt-tool stdio 在跳过确认时也要传：不传 Claude Code 不把 AskUserQuestion 放进工具列表，模型的提问只能变成纯文本，提问卡片弹不出来"
+    },
+    {
+      "if": "model",
+      "args": ["--model", "{model}"]
+    },
+    {
+      "if": "effort",
+      "args": ["--effort", "{effort}"]
+    },
+    {
+      "if": "permission=bypassPermissions",
+      "args": ["--dangerously-skip-permissions"]
+    },
+    {
+      "if": ["permission", "permission!=bypassPermissions"],
+      "args": ["--permission-mode", "{permission}"],
+      "why": "「逐项确认」也要明确传 default，否则会沿用 ~/.claude/settings.json 里的 defaultMode"
+    },
+    {
+      "if": "resume",
+      "args": ["--resume", "{resume}"]
+    },
+    {
+      "if": ["resume", "fork"],
+      "args": ["--fork-session"]
+    },
+    {
+      "if": ["resume", "forkEnd"],
+      "args": ["--resume-session-at", "{forkEnd}"]
+    },
+    {
+      "if": ["systemPrompt", "systemPromptFile"],
+      "args": ["--append-system-prompt-file", "{systemPrompt}"],
+      "why": "角色说明动辄上万字，直接放参数里会超过 Windows 命令行 8191 字的上限，能写成文件时传文件路径"
+    },
+    {
+      "if": ["systemPrompt", "!systemPromptFile"],
+      "args": ["--append-system-prompt", "{systemPrompt}"]
+    },
+    {
+      "if": "maxTurns",
+      "args": ["--max-turns", "{maxTurns}"]
+    },
+    {
+      "each": "addDirs",
+      "args": ["--add-dir", "{item}"]
+    },
+    {
+      "if": "!noEdit",
+      "args": ["--disallowedTools", "Task,Agent,Monitor"],
+      "why": "关掉 Claude 自带的子 Agent 和 Monitor：拆出去的活都走面板的 spawn_agents，进度、并发和结果才看得见"
+    },
+    {
+      "if": "noEdit",
+      "args": ["--disallowedTools", "Task,Agent,Monitor,Edit,Write,MultiEdit,NotebookEdit"],
+      "why": "还没开独立分支的对话连改文件的工具一起关掉，免得直接改到原目录"
+    }
+  ],
+  "rpc": {
+    "kind": "claude",
+    "nativeAsk": true,
+    "pluginSkills": true
+  },
+  "output": "claude",
+  "features": {
+    "steer": true,
+    "notes": false,
+    "keepAlive": true,
+    "compact": "slash",
+    "review": "prompt",
+    "fork": "end",
+    "autoCompact": "env",
+    "autoCompactEnv": "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
+    "limitEnv": {
+      "context": "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+      "maxOutput": "CLAUDE_CODE_MAX_OUTPUT_TOKENS"
+    },
+    "slash": true,
+    "nativeCommands": ["init", "security-review"],
+    "limits": "push"
+  },
+  "docs": ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"],
+  "globalDoc": "${CLAUDE_CONFIG_DIR:-~/.claude}/CLAUDE.md",
+  "context": {
+    "systemPrompt": 3000,
+    "systemTools": 12000,
+    "compactReserve": 33000,
+    "docsMode": "all",
+    "docsImports": true
+  },
+  "docsNote": "Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。",
+  "skills": {
+    "user": ["~/.claude/skills"],
+    "repo": [".claude/skills"]
+  },
+  "commands": {
+    "user": ["~/.claude/commands"],
+    "repo": [".claude/commands"],
+    "format": "md",
+    "prefix": ""
+  },
+  "envExample": "ANTHROPIC_API_KEY=sk-ant-...",
+  "env": {
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"
+  },
+  "auth": {
+    "login": ["auth", "login"],
+    "home": "${CLAUDE_CONFIG_DIR:-~/.claude}",
+    "files": [".credentials.json"],
+    "fields": [
+      {
+        "file": "${CLAUDE_CONFIG_DIR:-~}/.claude.json",
+        "keys": ["oauthAccount"]
+      }
+    ],
+    "keychain": "Claude Code-credentials",
+    "identity": "claude",
+    "loginEdits": [],
+    "loginStdin": "",
+    "loginAlreadyLoggedIn": false,
+    "accountNote": "",
+    "api": {
+      "protocols": ["anthropic"],
+      "defaultProvider": "agentpanel",
+      "modelSource": "api",
+      "modelPrefix": "",
+      "env": {},
+      "args": [],
+      "edits": [
+        {
+          "file": "${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json",
+          "format": "json",
+          "merge": false,
+          "set": {
+            "env.ANTHROPIC_BASE_URL": "{baseUrl}",
+            "env.{keyEnv}": "{apiKey}"
+          },
+          "unset": []
+        }
+      ],
+      "accountEdits": [
+        {
+          "file": "${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json",
+          "format": "json",
+          "merge": false,
+          "set": {},
+          "unset": ["env.ANTHROPIC_BASE_URL", "env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_API_KEY"]
+        }
+      ],
+      "wire": {},
+      "baseUrl": {
+        "anthropic": "{root}"
+      },
+      "thinkArgs": []
+    },
+    "apiSources": [
+      {
+        "file": "",
+        "format": "json",
+        "at": "",
+        "each": false,
+        "protocol": "anthropic",
+        "wire": {},
+        "baseUrl": ["ANTHROPIC_BASE_URL"],
+        "defaultBaseUrl": "https://api.anthropic.com",
+        "apiKey": ["ANTHROPIC_API_KEY"],
+        "bearerKey": ["ANTHROPIC_AUTH_TOKEN"],
+        "keyEnv": [],
+        "models": [
+          "ANTHROPIC_MODEL",
+          "ANTHROPIC_DEFAULT_OPUS_MODEL",
+          "ANTHROPIC_DEFAULT_SONNET_MODEL",
+          "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+        ],
+        "wireKey": [],
+        "name": []
+      },
+      {
+        "file": "${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json",
+        "format": "json",
+        "at": "env",
+        "each": false,
+        "protocol": "anthropic",
+        "wire": {},
+        "baseUrl": ["ANTHROPIC_BASE_URL"],
+        "defaultBaseUrl": "https://api.anthropic.com",
+        "apiKey": ["ANTHROPIC_API_KEY"],
+        "bearerKey": ["ANTHROPIC_AUTH_TOKEN"],
+        "keyEnv": [],
+        "models": [
+          "ANTHROPIC_MODEL",
+          "ANTHROPIC_DEFAULT_OPUS_MODEL",
+          "ANTHROPIC_DEFAULT_SONNET_MODEL",
+          "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+        ],
+        "wireKey": [],
+        "name": []
+      }
+    ]
+  },
+  "mcp": {
+    "args": [
+      "--mcp-config",
+      "{\"mcpServers\":{\"{name}\":{\"type\":\"http\",\"url\":\"{url}\"}}}",
+      "--allowedTools",
+      "mcp__{name}"
+    ],
+    "files": {},
+    "vars": {},
+    "extras": []
+  },
+  "mcpStore": {
+    "file": "${CLAUDE_CONFIG_DIR:-~}/.claude.json",
+    "format": "json",
+    "key": "mcpServers",
+    "urlKey": "url",
+    "remoteType": "http",
+    "stdioType": true,
+    "headersKey": "headers"
+  },
+  "i18n": {
+    "en": {
+      "很高": "Extra high",
+      "最高": "Max",
+      "Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。": "Claude Code reads CLAUDE.md and .claude/CLAUDE.md on every start; CLAUDE.local.md holds personal notes and usually isn't committed. To share AGENTS.md with the other agents, add a line @AGENTS.md to CLAUDE.md.",
+      "自动接受改文件": "Auto-accept edits",
+      "可以直接读写文件；需要审批的命令会在任务页上请你确认": "Reads and writes files directly; commands that need approval are confirmed on the task page",
+      "跳过所有确认": "Skip all confirmations",
+      "可以执行任意命令，只在信任的项目里用": "Can run any command. Use only in trusted projects",
+      "只读规划": "Read-only planning",
+      "只分析和出方案，不改文件": "Only analyzes and proposes a plan; does not edit files",
+      "逐项确认": "Confirm each action",
+      "改文件和需要审批的命令都会在任务页上请你确认": "File edits and commands that need approval are confirmed on the task page"
+    }
+  }
+}
