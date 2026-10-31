@@ -127,6 +127,10 @@ test('通用约束：等待要有死的数字上限，超时判阻塞，不靠�
   assert.match(rules, /不要自己写 `sleep` 循环轮询/)
   // 自己验证过的结论不要再等子任务重复验证（那次空等 307 秒就属于这类）
   assert.match(rules, /已经自己验证过结论时，不要再等子任务重复验证/)
+  // 2026-10-31 AI 分析：主理把 send_to_conversation 的「已交给」当成子对话已接手，直接汇报给用户
+  assert.match(rules, /工具回「成功」只说明请求被接下，不等于已经生效/)
+  assert.match(rules, /异步的等推回的结果，同步的回读一次/)
+  assert.match(rules, /不为此轮询/)
 })
 
 test('通用约束：已授权的操作照做；统筹不再另立一份授权规则', () => {
@@ -142,6 +146,13 @@ test('派单纪律：事务性动作合并派一次、纯执行给低档、标�
   const orch = BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions
   assert.match(orch, /## 派单的粒度/)
   assert.match(orch, /事务性小动作攒到一起/, '删临时文件、提交几个文件不需要各开一次会话')
+  // 2026-10-31 AI 分析：主理交回后四次误判（还在跑 / working=false / 状态仍是 done / 已交给）
+  assert.match(orch, /## 交回子对话之后怎么确认它接到了/)
+  assert.match(orch, /不要拿 busy、状态是不是「已完成」去猜/)
+  assert.match(orch, /上一轮还在收尾…收尾完会自动开始处理」：排上队了，不用重发/)
+  assert.match(orch, /已收尾（resolved）的子对话照样用 send_to_conversation 交回：面板会在原会话里重新打开它（resume）/)
+  assert.match(orch, /给用户只说「已交回，等它的结果」/)
+  assert.match(orch, /lastActivityAt 比你交回的时间新/)
   // 角色分层后主理能就地做护栏内的微改动：小动作要么自己做完、要么攒成一次派单，不一个动作开一个子对话
   assert.match(orch, /够得上就地微改动的就自己做/, '微改动就地做，不为它开子对话')
   assert.match(orch, /Bug 不走就地微改动/, '就地改动不是父对话自己排查修 Bug 的口子')
@@ -213,7 +224,9 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.match(BUG_METHOD, /「以前好过」的是回归：先看最近的改动/)
   assert.match(BUG_METHOD, /差异法/)
   assert.match(BUG_METHOD, /先有能复现的失败测试（改前失败、改后通过）/)
-  assert.match(BUG_METHOD, /把报错 try\/catch 掉、加判空绕过、加重试让它「不报了」都不算修/)
+  assert.match(BUG_METHOD, /把报错 try\/catch 掉、加判空绕过、加重试、在原逻辑外面再兜底一层.*让它「不报了」都不算修/)
+  // 2026-10-31：叠加兜底（再扫一遍、多一条降级分支）也算修症状，主理交回核对时同样退回
+  assert.match(orch, /在原逻辑外面再兜底一层.*交回让它说明为什么这是根因，说不清就退回/)
   assert.match(BUG_METHOD, /同类隐患/)
   // 用户 2026-10-31：日志只看本次问题的时间段（对比实验除外、要标来源），排事件时间线，涉及状态必须排状态流转时间线；
   // 维护排查记录（事实 / 已排除 / 待验证），排除过的不重查，避免返工
