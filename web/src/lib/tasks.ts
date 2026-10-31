@@ -5,7 +5,14 @@ import { stepMs, timeAgo } from '@shared/task'
 import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/task-export'
 import { tokenCount, type RunUsage } from '@shared/run-usage'
-import { PANEL_TOOL_RE, bgJobIds, bgPendingIds, unwrapMoreTools } from '@shared/panel-tools'
+import {
+  PANEL_TOOL_RE,
+  bgJobIds,
+  bgPendingIds,
+  isToolLookup,
+  toolLookupLabel,
+  unwrapMoreTools,
+} from '@shared/panel-tools'
 import { peerOfMessage, subjectLine } from '@shared/peer-message'
 
 export const statusLabel: Record<TaskStatus, string> = {
@@ -147,6 +154,8 @@ const OLD_WAIT = /^(做完 \d+ 个|还在执行 \d+ 个|你还没有派出子任
 
 /** 面板工具的名字：认不出来时是空的 */
 function panelName(tool: ToolUse) {
+  // 加载工具定义的那一步（新记录是 kind search，旧记录名字还是 ToolSearch）：参数里写着面板工具名，但不是在调用它
+  if (tool.kind === 'search' || isToolLookup(tool.name ?? '')) return ''
   const hit = PANEL_TOOL_RE.exec(`${tool.name ?? ''} ${tool.label}`)
   if (hit) return hit[1]
   // 旧数据：带服务名前缀的后台命令被解析成了 CLI 自己的「运行命令」，按面板给的回复认回来
@@ -249,6 +258,9 @@ function sendOf(name: string, tool: ToolUse): ToolView['send'] {
  * 服务名淡色放在旁边，不再是一串「MCP 服务名 · 工具名」。返回 null 表示不用显示（派出的子任务另有自己的一行）
  */
 export function toolView(tool: ToolUse): ToolView | null {
+  // 旧记录：ToolSearch 原样记成了工具名、标题是「select:mcp__panel__finish_child」，按新记录的样子显示
+  if (isToolLookup(tool.name ?? ''))
+    return { tool: { ...tool, kind: 'search', name: t('查询 MCP 工具'), label: toolLookupLabel(toolArgs(tool).query) } }
   const panel = panelTool(tool)
   if (panel === null) return null
   if (panel) {
