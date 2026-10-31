@@ -9,7 +9,11 @@ import test from 'node:test'
 import {
   CHANGED_FILES_RULE,
   TEST_TIME_SUMMARY_RULE,
+  UE_CPP_GLOBS,
   appliesToText,
+  buildSkipText,
+  buildStepsFor,
+  commandGlobs,
   currentTestSteps,
   defaultTestSteps,
   matchTestStep,
@@ -20,6 +24,7 @@ import {
   parseGlobs,
   pickSteps,
   pickStepsText,
+  stepGlobs,
   stepApplies,
   testRunLines,
   testRunSummary,
@@ -404,7 +409,7 @@ test('子对话提示词只跑增量：不跑全量、定位命中的部分、�
   assert.match(shared, /全量（当前没有父对话代跑，你自己跑）/)
 })
 
-test('pickSteps：总是执行的照跑、命中适用改动的跑、parent 也按改动筛，不命中要提示跑全部', () => {
+test('pickSteps：总是执行的照跑、命中适用改动的跑、parent 也按改动筛，一条都不命中就不跑', () => {
   const always = step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck', scope: 'always' })
   const ui = step(['web/src/**'], { id: 'ui', name: '界面检查', command: 'node scripts/ui-check.mjs' })
   const e2e = step(['web/src/**'], { id: 'e2e', name: '端到端测试', command: 'npm run test:e2e', scope: 'parent' })
@@ -416,7 +421,6 @@ test('pickSteps：总是执行的照跑、命中适用改动的跑、parent 也�
     ['tc', 'ui', 'e2e'],
   )
   assert.deepEqual(pages.skipped, [])
-  assert.equal(pages.nothingMatched, false)
   // 只碰 scripts/：两条按改动筛的都不命中，总是执行和停用的处理各不相同
   const scripts = pickSteps([always, ui, e2e, off], ['scripts/a.mjs'])
   assert.deepEqual(
@@ -427,27 +431,28 @@ test('pickSteps：总是执行的照跑、命中适用改动的跑、parent 也�
     scripts.skipped.map((s) => s.id),
     ['ui', 'e2e'],
   )
-  // 一条都没命中：pickSteps 自己不替调用方决定跑全部，但要标记出来让调用方明确提示
+  // 一条都没命中：这批改动不涉及任何步骤，不再退回「全部跑」
   const none = pickSteps([ui], ['scripts/a.mjs'])
   assert.deepEqual(none.run, [])
-  assert.equal(none.nothingMatched, true)
+  assert.deepEqual(
+    none.skipped.map((s) => s.id),
+    ['ui'],
+  )
   // 取不到改动清单：全部按总是执行，不能静默少跑，也不算「没命中」
   const unknown = pickSteps([always, ui, e2e], [])
   assert.deepEqual(
     unknown.run.map((s) => s.id),
     ['tc', 'ui', 'e2e'],
   )
-  assert.equal(unknown.nothingMatched, false)
-  // parent 没写适用改动时照常跑，但不算「命中」
+  // parent 没写适用改动时照常跑
   const parentNoGlobs = pickSteps([step([], { id: 'e2e', scope: 'parent' })], ['docs/a.md'])
   assert.deepEqual(
     parentNoGlobs.run.map((s) => s.id),
     ['e2e'],
   )
-  assert.equal(parentNoGlobs.nothingMatched, false)
 })
 
-test('pickStepsText：给提示词的是本轮该跑的步骤 + 具体命令，不命中时明确建议跑全部', () => {
+test('pickStepsText：给提示词的是本轮该跑的步骤 + 具体命令，不命中时明确说不用跑', () => {
   const steps = [
     step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck', scope: 'always', quick: true }),
     step(['web/src/**'], {
@@ -472,20 +477,20 @@ test('pickStepsText：给提示词的是本轮该跑的步骤 + 具体命令，�
     { platform: 'win32', wslDistro: 'Ubuntu-24.04', changedFiles: ['a.ts'] },
   )
   assert.match(wsl, /wsl\.exe -d Ubuntu-24\.04 -- bash -lc "npm run test:e2e"/)
-  // 不命中：只给一个结论（跑全部），不能再同时列「跳过（不用跑）」，否则 Agent 不知道听哪句
+  // 不命中：明确说这批改动不用跑，并列出跳过的步骤，不能让 Agent 为了保险全跑
   const none = pickStepsText(pickSteps([steps[1]], ['scripts/a.mjs']), {
     platform: 'win32',
     changedFiles: ['scripts/a.mjs'],
   })
-  assert.match(none, /改动映射不到任何步骤/)
-  assert.match(none, /跑全部启用的步骤/)
-  assert.doesNotMatch(none, /按改动跳过/, '一条都没命中时不能又说跳过又说跑全部')
+  assert.match(none, /本轮该跑：没有（这批改动不涉及任何步骤的文件类型/)
+  assert.match(none, /按改动跳过（不用跑）：界面检查/)
+  assert.doesNotMatch(none, /跑全部启用的步骤/)
   // 命中一部分时：该跑的列出来，跳过的说清为什么
   const some = pickStepsText(pickSteps(steps, ['web/src/pages/home.tsx']), {
     platform: 'win32',
     changedFiles: ['web/src/pages/home.tsx'],
   })
-  assert.doesNotMatch(some, /改动映射不到任何步骤/)
+  assert.doesNotMatch(some, /本轮该跑：没有/)
   // 开着「按改动大小定范围」：每条标出小改动是否也跑，注入结论和同段的小改动规则一致
   const hinted = pickStepsText(pickSteps(steps, ['web/src/pages/home.tsx']), {
     platform: 'win32',
@@ -604,4 +609,55 @@ test('testRunSummary：一行一步，字段是界面要的那几项；没有记
   const ok = testRunSummary([runs[0]])
   assert.equal(ok.allPassed, true)
   assert.deepEqual(testRunSummary([]).rows, [], '没有记录时给空结果，界面不显示这一块')
+})
+
+test('改了什么才编译什么：只改 Lua 只跑 luac，只改配置、表格不编 C++，改了 C++ 才编（所有项目通用）', () => {
+  const ue = defaultTestSteps('ue', { windows: true })
+  const ids = (files: string[]) => pickSteps(ue, files).run.map((s) => s.id)
+  assert.deepEqual(ids(['Content/Script/UI/Main.lua']), ['ue-lua'])
+  assert.deepEqual(ids(['Config/DefaultGame.ini', 'Data/Item.csv', 'Data/Item.xlsx', 'Data/a.json']), [])
+  assert.deepEqual(ids(['Source/G/A.cpp']), ['ue-build'])
+  assert.deepEqual(ids(['Source/G/A.h', 'Content/Script/a.lua']), ['ue-build', 'ue-lua'])
+  // 取不到改动清单时仍按全部跑：那是「不知道」，不是「没改」
+  assert.deepEqual(ids([]), ['ue-build', 'ue-lua'])
+
+  // 用户自己建的编译、luac 步骤没填适用改动、甚至范围写成「总是跑」，也按命令认出的文件类型筛
+  const own = [
+    step([], { id: 'b', name: '编译', command: 'Build.bat GameEditor Win64 Development', scope: 'always' }),
+    step([], { id: 'l', name: 'Lua', command: 'luac5.3 -p a.lua', scope: 'always' }),
+    step([], { id: 'r', name: 'Rust 构建', command: 'cargo build', scope: 'changed' }),
+    step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck', scope: 'always' }),
+  ]
+  assert.deepEqual(
+    pickSteps(own, ['Script/a.lua']).run.map((s) => s.id),
+    ['l', 'tc'],
+  )
+  assert.deepEqual(
+    pickSteps(own, ['Config/a.ini']).run.map((s) => s.id),
+    ['tc'],
+  )
+  assert.deepEqual(
+    pickSteps(own, ['src/main.rs']).run.map((s) => s.id),
+    ['r', 'tc'],
+  )
+  assert.deepEqual(stepGlobs(own[0]), UE_CPP_GLOBS)
+  assert.match(appliesToText(own[1]), /\*\*\/\*\.lua/)
+  // 认不出的命令不猜，按用户写的范围走
+  assert.deepEqual(commandGlobs('npm run build'), [])
+
+  // 编译申请：只改 Lua、配置的不编，改了 C++ 才编，清单取不到时照常编
+  assert.deepEqual(buildStepsFor(ue, ['Content/Script/a.lua', 'Config/a.ini']), [])
+  assert.deepEqual(
+    buildStepsFor(ue, ['Source/G/A.cpp']).map((s) => s.id),
+    ['ue-build'],
+  )
+  assert.deepEqual(
+    buildStepsFor(ue, []).map((s) => s.id),
+    ['ue-build'],
+  )
+  assert.match(buildSkipText(ue, ['Content/Script/a.lua']), /不用编译：改的是 Content\/Script\/a\.lua/)
+  // 提示词写同一条规则
+  assert.match(CHANGED_FILES_RULE, /改了 C\+\+.*才编译 C\+\+/)
+  assert.match(CHANGED_FILES_RULE, /只改 Lua 只用 `luac -p/)
+  assert.match(CHANGED_FILES_RULE, /只改配置、表格.*不编译/)
 })

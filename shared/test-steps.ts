@@ -61,24 +61,62 @@ export function matchesGlob(file: string, glob: string) {
   return !!re?.test(f)
 }
 
-/** 这条步骤写了的适用范围（去掉空项）；空数组表示没写，总是执行 */
-export function stepGlobs(step: Pick<TestStep, 'appliesTo'>) {
-  return (step.appliesTo ?? []).map((g) => g.trim()).filter(Boolean)
+/**
+ * 各类编译 / 语法检查真正会读的文件：默认步骤的 appliesTo 和「没写适用范围时按命令推断」共用这一份。
+ * 只改了别的东西（文档、配置、表格、资源）时这类步骤不跑——改 Lua 不编译 C++，改配置也不编译 C++
+ */
+export const UE_CPP_GLOBS = ['**/*.cpp', '**/*.h', '**/*.inl', '**/*.cs', '**/*.uproject', '**/*.uplugin']
+export const LUA_GLOBS = ['**/*.lua']
+const RUST_SRC = ['**/*.rs', '**/Cargo.toml', '**/Cargo.lock']
+const GO_SRC = ['**/*.go', '**/go.mod', '**/go.sum']
+const NET_SRC = ['**/*.cs', '**/*.csproj', '**/*.sln', '**/*.props', '**/*.targets']
+const CMAKE_SRC = ['**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/CMakeLists.txt', '**/*.cmake']
+
+/**
+ * 认得出是哪类编译 / 语法检查的命令 → 它只关心的文件类型。用户自己建的「编译」步骤常常没填适用改动，
+ * 老项目升级上来的也是空的；按「总是执行」处理就会出现只改了 Lua、配置也去编 UE C++ 的情况（用户明确反对）。
+ * 认不出的命令（npm 脚本、自定义脚本）不猜，仍按用户写的范围走
+ */
+const COMMAND_KINDS: [RegExp, string[]][] = [
+  [/(^|[\s"'\\/&|;(])luac(\d[\d.]*)?(\.exe)?(?=$|[\s"'])/i, LUA_GLOBS],
+  [/\bcargo\s+(build|check|test|clippy|fmt)\b/i, RUST_SRC],
+  [/\bgo\s+(build|test|vet)\b/i, GO_SRC],
+  [/\b(dotnet\s+(build|test)|msbuild)\b/i, NET_SRC],
+  [/\b(cmake\s+--build|ctest)\b/i, CMAKE_SRC],
+]
+
+/** 这条命令按类型只关心哪些文件；认不出返回空数组 */
+export function commandGlobs(command: string) {
+  const c = command ?? ''
+  if (isUeBuildCommand(c)) return UE_CPP_GLOBS
+  return COMMAND_KINDS.find(([re]) => re.test(c))?.[1] ?? []
 }
+
+/**
+ * 这条步骤的适用范围（去掉空项）：写了就用写的；没写时按命令推断（编译 UE、luac、cargo、go、dotnet、cmake）；
+ * 都没有才是空数组，表示总是执行
+ */
+export function stepGlobs(step: Pick<TestStep, 'appliesTo'> & { command?: string }) {
+  const own = (step.appliesTo ?? []).map((g) => g.trim()).filter(Boolean)
+  return own.length ? own : commandGlobs(step.command ?? '')
+}
+
+/** 编译 / 语法检查这类按文件类型才有意义的步骤：就算范围写成「总是跑」，改动不涉及它的文件类型也不跑 */
+const typedStep = (step: Pick<TestStep, 'command'>) => commandGlobs(step.command ?? '').length > 0
 
 /**
  * 这条步骤对这批改动适不适用——匹配判定的唯一实现，单测和执行流程都走它。
  * 口径是「这次任务实际波及的改动」：自己改的、从远端拉取或合并进来的都算。
  * 三种范围：
- * - always：不看改动清单，每次都跑（类型检查、lint）。
+ * - always：不看改动清单，每次都跑（类型检查、lint）；编译 / 语法检查这类认得出文件类型的命令例外，照样按文件类型筛。
  * - changed：改动命中 appliesTo 才跑；没写 appliesTo 时按总是执行——老步骤的写法不能因为升级变成从不跑。
  * - parent：子对话侧由 parentRunSteps 整条跳过；父对话合并后跑它时也按子对话的改动筛（调用方传子对话的清单），
  *   和「改动没命中的步骤不跑」同一个口径；父对话自己验证时也按自己的改动筛（见 CHANGED_FILES_RULE）。
- * 两种情况按总是执行：没写适用范围；改动清单为空——空清单意味着取不到（没有版本控制、命令失败、
+ * 两种情况按总是执行：没写适用范围、命令也认不出类型；改动清单为空——空清单意味着取不到（没有版本控制、命令失败、
  * 不知道基线），未知不等于不相关，宁可多跑不能漏跑。
  */
-export function stepApplies(step: Pick<TestStep, 'appliesTo' | 'scope'>, changedFiles: string[]) {
-  if (step.scope === 'always') return true
+export function stepApplies(step: Pick<TestStep, 'appliesTo' | 'scope' | 'command'>, changedFiles: string[]) {
+  if (step.scope === 'always' && !typedStep(step)) return true
   const globs = stepGlobs(step)
   if (!globs.length || !changedFiles.length) return true
   return changedFiles.some((f) => globs.some((g) => matchesGlob(f, g)))
@@ -106,7 +144,7 @@ export function parseGlobs(text: string) {
 }
 
 /** 交给 Agent 的「适用改动」一行：没写范围时说明总是执行，免得 Agent 当成条件缺失 */
-export function appliesToText(step: Pick<TestStep, 'appliesTo'>) {
+export function appliesToText(step: Pick<TestStep, 'appliesTo'> & { command?: string }) {
   const globs = stepGlobs(step)
   return globs.length ? globs.join('、') : '未设置，总是执行'
 }
@@ -143,42 +181,20 @@ export interface StepPick {
   run: TestStep[]
   /** 启用了但按改动跳过、这轮不用跑的步骤 */
   skipped: TestStep[]
-  /**
-   * 有改动清单，但一条「按改动筛」的步骤都没命中。这时不能少跑：调用方要把全部启用的步骤跑一遍
-   * （父对话测试队列就是这么做的），并在提示词里明确说出来
-   */
-  nothingMatched: boolean
 }
 
 /**
- * 按改动清单算出这轮该跑的步骤：总是执行的照跑，其余按 appliesTo 筛。
+ * 按改动清单算出这轮该跑的步骤：总是执行的照跑，其余按适用范围（写的或按命令推断的）筛。
  * 只会返回启用的步骤；停用的既不算该跑也不算跳过。
- * 一条都没命中时不替调用方决定跑什么，只把 `nothingMatched` 标出来——
- * 提示词里要建议跑全部，静默少跑比多跑危险得多
+ * 一条都没命中就是这批改动不涉及任何步骤的文件类型，不跑——以前这时退回「全部跑」，
+ * 结果只改了配置、表格也去编 C++（用户明确反对：改了什么才测什么）。
+ * 改动清单取不到（空）时仍按全部跑，那是「不知道」，不是「没改」
  */
 export function pickSteps(steps: TestStep[], changedFiles: string[]): StepPick {
-  const enabled = steps.filter((s) => s.enabled)
   const run: TestStep[] = []
   const skipped: TestStep[] = []
-  let filtered = 0
-  let hit = false
-  for (const s of enabled) {
-    if (s.scope === 'always') {
-      run.push(s)
-      continue
-    }
-    // 没写适用范围的步骤按总是执行，不参与「有没有命中」的判定
-    if (!stepGlobs(s).length) {
-      run.push(s)
-      continue
-    }
-    filtered++
-    if (stepApplies(s, changedFiles)) {
-      hit = true
-      run.push(s)
-    } else skipped.push(s)
-  }
-  return { run, skipped, nothingMatched: !!changedFiles.length && filtered > 0 && !hit }
+  for (const s of steps.filter((x) => x.enabled)) (stepApplies(s, changedFiles) ? run : skipped).push(s)
+  return { run, skipped }
 }
 
 /** 提示词里最多列多少个改动文件：够 Agent 判断这批改动是干什么的，又不把提示词撑大 */
@@ -225,10 +241,8 @@ export function pickStepsText(
         `${i + 1}. ${s.name}${owner}${merge}${hint}（${ENV_LABEL[s.env]}）：${stepCommand(s, o.platform, o.wslDistro ?? '')}`,
       )
     })
-  } else lines.push('- 本轮该跑：没有')
-  // 一条都没命中时只能给一个结论：先别再列「跳过（不用跑）」，否则和「建议跑全部」互相矛盾
-  if (pick.nothingMatched) lines.push('- 改动映射不到任何步骤：照上面的完整列表跑全部启用的步骤，不要当成可以少跑。')
-  else if (pick.skipped.length)
+  } else lines.push('- 本轮该跑：没有（这批改动不涉及任何步骤的文件类型，不编译、不测试，结论里写明改的是什么）')
+  if (pick.skipped.length)
     lines.push(
       `- 按改动跳过（不用跑）：${pick.skipped.map((s) => `${s.name}（不涉及 ${appliesToText(s)}）`).join('、')}`,
     )
@@ -454,16 +468,18 @@ export function testStepsText(
  * 改动清单怎么取、怎么筛步骤：提示词里唯一的一份，testStepsBlock 和 verifyBlock 都用它。
  * 口径是「这次任务实际波及的改动」——自己改的、从远端拉取或合并进来的都算；
  * 只按自己的提交判断的话，合并进来的 C++ 改动会被漏掉，编译该跑却没跑。
+ * 反过来也一样：改了什么才测什么，只改 Lua 不编译 C++、只改配置不编译（用户 2026-10-31 定的，所有项目通用）。
  */
-export const CHANGED_FILES_RULE = `先取本次实际改了什么，再决定跑哪几条（不要为了保险全部跑一遍）：
+export const CHANGED_FILES_RULE = `先取本次实际改了什么，再按改动的文件类型决定跑哪几条（改了什么才编译、测试什么，不要为了保险全部跑一遍）：
 0. 先看这次要跑的范围：范围是「整体」，或者任务说明要求「全跑一遍」「发布前验证」「整体验收」「依赖升级后确认步骤」时，**不按改动清单筛**——按步骤顺序全部执行，跳过的只能因为环境跑不了（比如需要 Editor、需要别的系统），不能写「本次没改 X」当理由；发布前验证、整体验收这类节点存在的意义就是不筛。范围是「本次改动」时才按下面的清单筛。
 1. 改动清单是「任务起点 → 当前 HEAD」的完整变更，不是只看自己的那几个提交：Git 用「git diff --name-only <任务基线>...HEAD」（三点比较，含合并进来的内容），再补上「git status --short」里的工作区改动。任务基线就是任务开始时的 HEAD（开工时记下的 git rev-parse HEAD）；拿不到就退回「git diff --name-only $(git merge-base HEAD <主分支>)..HEAD」。Perforce 用「p4 opened」加上「p4 diff」里本次涉及的文件；其它版本控制按项目自己的约定。
 2. 拉取或合并远端更新后，按合并后的改动清单重新判断：合并进来的文件也算本次改动，涉及的步骤要正常执行，不能以「这部分不是我改的」为理由跳过。
    例：自己只改了文档、但从远端合并进来 C++ 改动 → 编译照跑；自己改了 C++、合并进来的是文档 → 编译照跑；两边都只有文档 → 才可以跳过并写原因。
 3. 取不到改动清单时（项目没有版本控制、命令失败、不知道任务基线）按总是执行：清单未知不等于不相关，这种情况宁可多跑也不能漏跑，并在结论里说明这次为什么没筛。
 4. 一条步骤的「适用改动」和这份清单完全不匹配才跳过；跳过的写一行：「跳过：<步骤名> — 本次及合并进来的改动都没有 <这类文件>（实际改的是 <改了什么>）」。所有步骤都跳过时写「本次改动不涉及配置的测试步骤 — 本次改的是 …」，不能不吭声。
-5. 没写「适用改动」的步骤表示总是执行（老项目升级上来的步骤）。
-6. 名字后面标了「合并时编译」的步骤被选中时，同一时间仍然只编译一次：等它结束再跑下一条。`
+5. 编译和语法检查按文件类型来，所有项目都一样：改了 C++（.cpp / .h / .inl、Build.cs / Target.cs、.uproject / .uplugin）才编译 C++；只改 Lua 只用 \`luac -p <改动的文件>\` 检查语法，不编译 C++，也不生成 .luac；只改配置、表格（.ini / .json / .csv / .xlsx 这类）、资源、文档时不编译。其他语言同理（Rust、Go、C#、C/C++ 的构建只在它们的源码或工程文件变了才跑）。没写「适用改动」的编译、luac、cargo、go、dotnet、cmake 步骤也按这个文件类型判断；其余没写「适用改动」的步骤总是执行（老项目升级上来的步骤）。
+6. 一条都没匹配上就是这批改动不涉及任何步骤，不要为了保险把编译、测试全跑一遍，按第 4 条写明原因。
+7. 名字后面标了「合并时编译」的步骤被选中时，同一时间仍然只编译一次：等它结束再跑下一条。`
 
 /**
  * 单测里计时类用例偶发失败怎么办：只在同一个文件上重跑，最多 3 次，不重跑整套。
@@ -602,11 +618,11 @@ export function defaultTestSteps(
   })
   // 各技术栈真正会进构建 / 测试的文件：源码加上清单文件（清单变了编译单元和依赖就变了）。
   // 只改文档、资源、脚本这些不进编译的东西时，对应的编译和测试步骤不跑
-  const rustSrc = ['**/*.rs', '**/Cargo.toml', '**/Cargo.lock']
-  const goSrc = ['**/*.go', '**/go.mod', '**/go.sum']
+  const rustSrc = [...RUST_SRC]
+  const goSrc = [...GO_SRC]
   const pySrc = ['**/*.py', '**/pyproject.toml', '**/setup.cfg', '**/pytest.ini', '**/requirements*.txt']
-  const netSrc = ['**/*.cs', '**/*.csproj', '**/*.sln', '**/*.props', '**/*.targets']
-  const cmakeSrc = ['**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/CMakeLists.txt', '**/*.cmake']
+  const netSrc = [...NET_SRC]
+  const cmakeSrc = [...CMAKE_SRC]
   if (kind === 'ue')
     return [
       step('ue-build', t('编译'), 'Build.bat <Target> Win64 Development -Project=<项目>.uproject -WaitMutex', {
@@ -616,14 +632,14 @@ export function defaultTestSteps(
         // UBT 按这些文件算编译规则：C++ 源码；Build.cs / Target.cs 这类 *.cs 脚本（改了它 UBT 会重新生成
         // 编译规则，不重编就还在用旧的）；.uproject / .uplugin（模块和插件列表）。只改资源（.uasset /
         // .umap）、配置（.ini）或文档时不用重编，这也正是最常见的「改了点东西要不要编」的分界
-        appliesTo: ['**/*.cpp', '**/*.h', '**/*.inl', '**/*.cs', '**/*.uproject', '**/*.uplugin'],
+        appliesTo: [...UE_CPP_GLOBS],
         note: t('同一时间只编译一次；把 <Target> 和 <.uproject> 换成项目里的实际名字'),
       }),
       step('ue-lua', t('Lua 语法检查'), 'luac -p <文件>', {
         quick: true,
         scope: 'changed',
         // luac 只解析 Lua 源文件，改了 Lua 才需要跑
-        appliesTo: ['**/*.lua'],
+        appliesTo: [...LUA_GLOBS],
         note: t('有 Lua 改动时执行；只做语法检查，不生成 .luac；按项目实际用的 Lua 版本换命令'),
       }),
       step(
@@ -764,6 +780,21 @@ export function buildSteps(steps: TestStep[]) {
   const on = steps.filter((s) => s.enabled && s.command.trim())
   const merge = on.filter((s) => s.merge)
   return merge.length ? merge : on.filter((s) => s.id === 'ue-build' || /编译|build|compile/i.test(s.name))
+}
+
+/**
+ * 这批改动要跑的编译步骤：在 buildSteps 的基础上按改动的文件类型筛（stepApplies，没写适用范围的 UE 编译按 C++ 文件算）。
+ * 只改了 Lua、配置、表格、资源、文档时返回空数组——不编译。改动清单取不到（空）时不筛，按全部编译步骤
+ */
+export function buildStepsFor(steps: TestStep[], changedFiles: string[]) {
+  return buildSteps(steps).filter((s) => stepApplies(s, changedFiles))
+}
+
+/** 编译被跳过时怎么跟 Agent 说：改的是什么、编译步骤管哪些文件 */
+export function buildSkipText(steps: TestStep[], changedFiles: string[]) {
+  const files = changedFiles.slice(0, 8).join('、') + (changedFiles.length > 8 ? ` 等 ${changedFiles.length} 个` : '')
+  const kinds = [...new Set(buildSteps(steps).flatMap((s) => stepGlobs(s)))].join('、')
+  return `这批改动不涉及编译的文件类型（编译只看 ${kinds}），不用编译：改的是 ${files}。Lua 改动用 luac -p 检查语法即可。`
 }
 
 /** 会占用 UE 编译资源的命令（UBT、UHT、Build.bat、RunUAT、Editor）：子对话里不跑，交给父对话申请 */

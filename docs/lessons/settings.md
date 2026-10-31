@@ -21,3 +21,9 @@ paths: server/tasks/**, shared/test-steps.ts, shared/test-steps.test.ts, web/src
 - 规则：关掉弹窗还在跑的 AI 会话（项目设置的 `AiSession`）要记下途中建好的对象（`projectId`），应用时打开那个对象；没保存的新建草稿暂存在弹窗外壳。不能靠重开空白的新建弹窗来应用，保存时会多建一个同名项目。
 - 起因：新建项目时 AI 初始化 → 关掉设置 → 点「查看推荐并应用」，多出同名项目、目录也丢了（0e1df58 修复）。
 - 防线：人工（`scripts/ui/07-projects.mjs` 的「AI初始化」截图只覆盖已有项目，新建项目时关掉设置再应用这条要手动点一遍）。
+
+## 改了什么才编译、测试什么，不要「没命中就全跑」
+
+- 规则：步骤按改动的文件类型筛，所有项目通用：改 C++ 才编 C++，只改 Lua 只跑 `luac -p`，只改配置、表格、资源、文档不编译。认得出类型的编译 / 语法检查命令没填 `appliesTo` 时按命令推断（`shared/test-steps.ts` 的 `commandGlobs`），`always` 也不例外；有改动清单但一条都没命中就不跑，只有清单取不到时才全跑。UE 编译申请（`submit_merge` 的 `build`、`request_build`）走同一份 `buildStepsFor`。
+- 起因：用户 2026-10-31 纠正「只改了 Lua、配置也去编 UE 的 C++」——默认的 `nothingMatched → 跑全部` 兜底、没填适用改动的自建编译步骤、`build` 默认 true 三处都会触发。
+- 防线：`shared/test-steps.test.ts` 的「改了什么才编译什么」。

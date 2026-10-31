@@ -173,24 +173,14 @@ export function createTestRuns(sc: TasksScope) {
 
   /**
    * 父对话合并后真正要排进队列的步骤：在 parentRunSteps 的基础上按子对话的实际改动筛（stepApplies）。
-   * 一条都没命中就照旧跑全部——静默少跑比多跑危险，和测试步骤规则里「映射不出来跑全部」同一个口径。
-   * 子对话的改动清单取不到（空）时 pickSteps 会返回全部，正好也是保守的那一侧
+   * 一条都没命中就是这批改动不涉及这些步骤，不跑；子对话的改动清单取不到（空）时 pickSteps 会返回全部，
+   * 那是「不知道改了什么」，保守地跑
    */
-  const parentTestStepsOf = async (tk: Task) => {
-    const steps = await parentStepsOf(tk)
-    const pick = pickSteps(
-      steps,
+  const parentTestStepsOf = async (tk: Task) =>
+    pickSteps(
+      await parentStepsOf(tk),
       tk.changes.map((c) => c.path),
-    )
-    if (pick.nothingMatched) {
-      log.info('task', '父对话测试：改动映射不到任何适用步骤，按全部跑', {
-        task: tk.id,
-        changes: tk.changes.length,
-      })
-      return steps
-    }
-    return pick.run
-  }
+    ).run
 
   /** 这个子对话是否在等父对话测试：任务上的状态（重启后还在）+ 内存里的队列 */
   const parentTesting = (childId: string, tk: Pick<Task, 'wrapRequest'>) =>
