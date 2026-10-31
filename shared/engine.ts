@@ -89,7 +89,7 @@ import { fixRoutePart } from './fix-route.ts'
 import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
-import { summaryCardRules } from './summary-card.ts'
+import { summaryCardRules, summaryDetailRules } from './summary-card.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyBlock } from './test-steps.ts'
@@ -4087,8 +4087,9 @@ async function conversationPrompt(
     ...planPart(host, coordinator),
     wrapUpPart(host),
     p4Part(host),
-    // 每轮结束写给人看的总结卡：父对话、子对话、用户自建的角色都一样（类型和字段见 shared/summary-card.ts）
-    summaryCardRules(),
+    // 每轮结束写给人看的总结（类型和字段见 shared/summary-card.ts）：子对话写详细的 Markdown 总结，
+    // 其余写卡片；能分派的父对话写子对话结果时卡片标题链到那个子对话
+    kind === 'sub' ? summaryDetailRules() : summaryCardRules(undefined, coordinator),
     // 对话模式没有共享状态工具：这里不注入（跑过 start_plan 时 task.runs 里是上一次运行的旧状态）
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt

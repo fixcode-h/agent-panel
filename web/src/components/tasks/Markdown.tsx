@@ -3,9 +3,10 @@ import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
-import { splitSummaryCards, type SummaryCard } from '@shared/summary-card'
+import { splitSummaryCards, unfenceSummaries, type SummaryCard } from '@shared/summary-card'
 import { linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
+import { useChildSummaryOpen } from './child-open'
 import { toast } from '@/lib/toast'
 import { enhanceMermaid, mermaidAction, mermaidErrorHtml, mermaidHtml, mermaidThemeVars } from '@/lib/mermaid-fx'
 
@@ -14,6 +15,12 @@ import { enhanceMermaid, mermaidAction, mermaidErrorHtml, mermaidHtml, mermaidTh
  * 没有提供时（设置预览、导出、只读的导入对话）不画按钮
  */
 export const HandleNeedsCtx = createContext<((text: string) => Promise<void>) | null>(null)
+
+/**
+ * 回复里的总结要不要画成卡片：子对话的任务页给 false。子对话写的是详细总结（shared/summary-card.ts 的
+ * summaryDetailRules），用户要它照普通 Markdown 显示；旧的子对话里写过的卡片也一样不画
+ */
+export const SummaryCardsCtx = createContext(true)
 
 /** 「处理」按钮发给 Agent 的话：卡片标题说清是哪件事，原文照搬，要用户拍板的地方让它先给建议再问 */
 export const handleNeedsText = (title: string, needs: string) =>
@@ -57,7 +64,7 @@ const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)}
  * 总结卡（shared/summary-card.ts）：类型标签 + 一句话结论在顶上，字段名一列对齐、内容一列，
  * 一眼扫下来就是「原因 / 修复 / 验证」。字段内容仍按 Markdown 渲染（行内代码、路径、链接照常可点）
  */
-function cardHtml(card: SummaryCard, teamNames: Set<string>, live?: boolean, act?: boolean) {
+function cardHtml(card: SummaryCard, teamNames: Set<string>, live?: boolean, act?: boolean, jump?: boolean) {
   const rows = card.fields
     .map((f) => {
       const empty = /^(无|没有|none|n\/a)[。.]?$/i.test(f.text.trim())
@@ -69,15 +76,21 @@ function cardHtml(card: SummaryCard, teamNames: Set<string>, live?: boolean, act
       return `<div class="md-card-row"${f.key ? ` data-key="${f.key}"` : ''}${empty ? ' data-empty' : ''}><dt>${escape(f.label)}${handle}</dt><dd>${renderDoc(f.text, teamNames, live)}</dd></div>`
     })
     .join('')
-  return `<section class="md-card" data-kind="${card.kind}"><header class="md-card-head"><span class="md-card-kind">${escape(card.label)}</span><span class="md-card-title">${renderDoc(card.title, teamNames, live)}</span></header><dl class="md-card-rows">${rows}</dl></section>`
+  const title = renderDoc(card.title, teamNames, live)
+  // 父对话写子对话的结果：标题点了在右栏打开那个子对话、滚到它的详细总结。不在父对话页里（导出、预览）就只是文字
+  const head =
+    card.child && jump
+      ? `<button type="button" class="md-card-title md-card-link" data-child-summary="${escape(card.child)}" title="${escape(t('打开子对话，看详细总结'))}">${title}<span class="md-card-go" aria-hidden="true">›</span></button>`
+      : `<span class="md-card-title">${title}</span>`
+  return `<section class="md-card" data-kind="${card.kind}"${rows ? '' : ' data-bare'}><header class="md-card-head"><span class="md-card-kind">${escape(card.label)}</span>${head}</header>${rows ? `<dl class="md-card-rows">${rows}</dl>` : ''}</section>`
 }
 
 /** 回复里有总结卡时分段渲染：卡片画成卡片，其余照常 */
-function renderReply(text: string, teamNames: Set<string>, live?: boolean, act?: boolean) {
+function renderReply(text: string, teamNames: Set<string>, live?: boolean, act?: boolean, jump?: boolean) {
   const segs = splitSummaryCards(text)
   if (segs.length === 1 && 'md' in segs[0]) return renderDoc(text, teamNames, live)
   return segs
-    .map((s) => ('md' in s ? renderDoc(s.md, teamNames, live) : cardHtml(s.card, teamNames, live, act)))
+    .map((s) => ('md' in s ? renderDoc(s.md, teamNames, live) : cardHtml(s.card, teamNames, live, act, jump)))
     .join('')
 }
 
@@ -105,6 +118,9 @@ export function Markdown({
   const canOpen = !!openFile
   const handleNeeds = useContext(HandleNeedsCtx)
   const canAct = !!handleNeeds
+  const cards = useContext(SummaryCardsCtx)
+  const openSummary = useChildSummaryOpen()
+  const canJump = !!openSummary
   // 流式输出每 200ms 换一次文字：解析放到低优先级，输入和滚动不被长回复卡住
   const deferred = useDeferredValue(text)
   const [ready, setReady] = useState(() => hljsReady())
@@ -119,9 +135,11 @@ export function Markdown({
   const html = useMemo(() => {
     // 高亮库加载完（ready 变了）要重算一次，否则代码块一直是没有颜色的原文
     void ready
-    const h = renderReply(deferred, teamNames, live, canAct)
+    const h = cards
+      ? renderReply(deferred, teamNames, live, canAct, canJump)
+      : renderDoc(unfenceSummaries(deferred), teamNames, live)
     return canOpen ? linkPaths(h) : h
-  }, [deferred, teamNames, canOpen, live, ready, canAct])
+  }, [deferred, teamNames, canOpen, live, ready, canAct, cards, canJump])
 
   useEffect(() => {
     const root = ref.current
@@ -169,6 +187,8 @@ export function Markdown({
       openFile(el.dataset.path ?? '', el.dataset.mdLine ? Number(el.dataset.mdLine) : undefined)
       return
     }
+    const go = (e.target as HTMLElement).closest<HTMLElement>('[data-child-summary]')
+    if (go && openSummary) return openSummary(go.dataset.childSummary ?? '')
     const act = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-needs]')
     if (act && handleNeeds) {
       if (act.disabled) return

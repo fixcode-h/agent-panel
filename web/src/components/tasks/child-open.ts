@@ -14,6 +14,8 @@ import type { Letter } from '@/lib/tasks'
  */
 export interface PaneNav {
   child?: (id: string) => void
+  /** 父对话里点子对话结果卡片的标题：在右栏打开那个子对话，滚到它的详细总结 */
+  childSummary?: (id: string) => void
   /** 右栏当前打开的子对话：切换下拉用它标出当前项 */
   openChild?: string
   /** 点「启动工作流」那条工具调用：认回它启动的是第几次运行，打开那次运行的视图 */
@@ -32,6 +34,7 @@ export interface PaneNav {
 export const PaneNavCtx = createContext<PaneNav | null>(null)
 
 export const useChildOpen = () => useContext(PaneNavCtx)?.child ?? null
+export const useChildSummaryOpen = () => useContext(PaneNavCtx)?.childSummary ?? null
 export const useRunToolOpen = () => useContext(PaneNavCtx)?.runTool ?? null
 export const useRunViewOpen = () => useContext(PaneNavCtx)?.runView ?? null
 export const useRunViewTip = () => useContext(PaneNavCtx)?.runTip

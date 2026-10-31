@@ -1545,6 +1545,7 @@ export const EN_TASKS: Record<string, string> = {
   '请直接处理总结卡「{title}」里原本要我处理的事：\n\n{needs}\n\n能自己做的直接做完并验证；必须由我决定的，给出建议后再问我。处理完从刚才停下的地方接着往下做。':
     'Please handle the items the summary card "{title}" left for me:\n\n{needs}\n\nDo whatever you can yourself and verify it; for anything only I can decide, give your recommendation and then ask me. When done, carry on from where you stopped.',
   '交给当前对话的 Agent 处理': 'Hand these to the agent in this conversation',
+  '打开子对话，看详细总结': 'Open the sub-conversation at its detailed summary',
   处理: 'Handle',
   发送中: 'Sending',
   '已交给 Agent': 'Handed to the agent',

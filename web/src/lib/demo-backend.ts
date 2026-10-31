@@ -4,6 +4,7 @@
  */
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
+import { demoChildSummary, demoParentCard } from './demo-child-summary'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
 import {
@@ -4037,6 +4038,15 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       children: [],
     })),
   })
+  const demoReply = (id: string, agentId: string, text: string) => ({
+    id,
+    role: 'agent' as const,
+    agentId,
+    step: '',
+    text,
+    tools: [],
+    at: new Date().toISOString(),
+  })
   const make = async (
     title: string,
     how: {
@@ -4052,6 +4062,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       worktree?: { branch: string; state?: 'active' | 'merged' | 'discarded'; at?: number }
       /** 这一轮做完了、用户还没点开看过：父对话里它的行上有未读点（和侧栏橙点同一份口径） */
       unread?: boolean
+      /** 子对话写了详细总结，父对话收到汇报后回一张链到它的卡片（demo-child-summary.ts） */
+      summary?: boolean
     } = {},
   ) => {
     const { task, done } = createTask(
@@ -4128,7 +4140,9 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
         },
         at: new Date().toISOString(),
       }
+      if (how.summary) it.messages.push(demoReply(`${it.id}-summary`, agent.id, demoChildSummary()))
       parent.messages.push(report)
+      if (how.summary) parent.messages.push(demoReply(`${it.id}-card`, agent.id, demoParentCard(it.id)))
       // 旧数据里同一份汇报曾被写两遍（runner 一轮结束回调发了两次，见 peer-dedupe.ts）：
       // 演示里留一条这样的样本，界面上应该只显示一行
       if (title === '核对通知时序')
@@ -4214,6 +4228,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   // 已经合回 main 的那条：列表里保留，点行仍能打开它的对话
   await make('修侧栏时间显示', {
     resolved: true,
+    summary: true,
     worktree: { branch: 'agent-panel/sidebar-time', state: 'merged', at: 50 },
   })
   await make('核对通知时序', { resolved: true })
