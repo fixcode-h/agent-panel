@@ -72,7 +72,8 @@ test('内存曲线接口只返回采样这块，不遍历数据目录', async ()
 test('数据页接口带上内存采样和各类占用', async () => {
   const res = await app().request('/data')
   assert.equal(res.status, 200)
-  const body = await res.json()
+  // 服务端只带 Node 类型，Response.json() 是 unknown（DOM 里是 any）；测试按接口约定直接读字段，放宽成 any
+  const body: any = await res.json()
   assert.deepEqual(body.memory, SAMPLE)
   assert.equal(body.samples.length, 1)
   assert.equal(body.sampling.intervalMs, 30_000)
@@ -95,7 +96,7 @@ test('导出跳过半截的 .tmp：备份里只有正常文件', async () => {
   writeFileSync(path.join(tasks, 'keep.json.123.abcd.tmp'), '{')
   const res = await app().request('/data/export?kinds=tasks')
   assert.equal(res.status, 200)
-  const body = await res.json()
+  const body: any = await res.json()
   assert.deepEqual(Object.keys(body.files), ['tasks/keep.json'])
   assert.equal(body.skipped, undefined, '没跳过文件时不带 skipped')
 })

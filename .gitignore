@@ -56,4 +56,8 @@ id_ed25519
 .tmp-*
 # 临时工作目录：Agent 的临时文件统一放这里（见 AGENTS.md 硬规则）
 .tmp/
+# 面板写给浏览器扩展的配对令牌（server/bridge.ts），只在本机
 extension/pairing.json
+
+# tsc -b 的增量记录（各层 tsconfig 已指到 .tmp/tsc/，这里兜底）
+*.tsbuildinfo

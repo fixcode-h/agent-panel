@@ -28,7 +28,7 @@ import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
-import { projectFormat, writeTextFile } from '../shared/file-format.ts'
+import { projectFormat, writeTextFile } from './file-format.ts'
 import { t } from '../shared/i18n.ts'
 
 const TIMEOUT = 10 * 60_000

@@ -1,0 +1,11 @@
+// shared 和 web 的单测：用 tsx --test 跑在 Node 里，要 node:test、node:assert，
+// 前端的测试还会碰到 DOM 类型，所以这里 DOM 和 Node 都带。业务代码的运行环境由各层自己的 tsconfig 把关。
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"],
+    "tsBuildInfoFile": "./.tmp/tsc/test.tsbuildinfo"
+  },
+  "include": ["shared/**/*.test.ts", "web/src/**/*.test.ts", "web/src/**/*.test.tsx", "web/src/settings-index.d.ts"]
+}

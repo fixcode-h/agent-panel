@@ -178,7 +178,8 @@ async function rpc(url: string, msg: unknown) {
     body: JSON.stringify(msg),
     headers: { 'content-type': 'application/json' },
   })
-  return res.json()
+  // 服务端只带 Node 类型，Response.json() 是 unknown（DOM 里是 any）；测试按接口约定直接读字段，放宽成 any
+  return res.json() as Promise<any>
 }
 
 test('MCP：对话的调用多两个工具（收在 more_tools 里，按名字也能直接调），app_do 以调用者身份执行；没给 app 时没有这两个工具', async () => {

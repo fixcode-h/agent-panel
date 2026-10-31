@@ -1,21 +1,20 @@
+// 只是入口：类型检查按运行环境分层，每层一个 tsconfig，共用选项在 tsconfig.base.json。
+//   shared/   浏览器和 Node 都跑：没有 DOM、没有 Node 类型（两边都有的全局见 shared/runtime.d.ts）
+//   web/      浏览器：DOM + Vite，没有 Node 类型
+//   server/   Node：没有 DOM（含服务端测试）
+//   tsconfig.test.json  shared 和 web 的单测（跑在 Node 里）
+//   tsconfig.node.json  vite.config.ts
+// `npm run typecheck` 跑 `tsc -b`，逐个检查下面的项目；编辑器也按 references 找到文件所属的那一层。
+// 仍然继承共用选项：tsx（单测、npm run dev、npm start）只读根目录的 tsconfig.json，不跟 references，
+// 少了这里的 paths 就解析不了 @shared/、@/ 这些别名。
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
-    "allowImportingTsExtensions": true,
-    "types": ["node", "vite/client"],
-    "paths": {
-      "@/*": ["./web/src/*"],
-      "@shared/*": ["./shared/*"]
-    }
-  },
-  "include": ["web/src", "server", "shared", "vite.config.ts"]
+  "extends": "./tsconfig.base.json",
+  "files": [],
+  "references": [
+    { "path": "./shared" },
+    { "path": "./web" },
+    { "path": "./server" },
+    { "path": "./tsconfig.test.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
 }

@@ -70,7 +70,7 @@ import {
   type AgentResult,
   type EngineHost,
 } from '../../shared/engine.ts'
-import { projectFormat } from '../../shared/file-format.ts'
+import { projectFormat } from '../file-format.ts'
 import { searchExcludeOf, searchExcludeRgConfig } from '../../shared/search-exclude.ts'
 import { clip } from '../../shared/text.ts'
 import {

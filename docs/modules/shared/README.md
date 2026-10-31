@@ -118,6 +118,8 @@
 
 只依赖 `zod`，不引用 `server/` 和 `web/`。前端通过 Vite 别名 `@shared` 引用（见 `vite.config.ts`）。
 
+运行环境：shared 的代码浏览器（前端、在线演示）和 Node（服务端）都会跑，`shared/tsconfig.json` 既不带 DOM 也不带 `@types/node`，两边都有的 Web 标准全局只按用到的成员声明在 `shared/runtime.d.ts`。只在 Node 里能跑的（`node:*`、`Buffer`、`process`）放 `server/`（例如写文件的 `server/file-format.ts`），只在浏览器里能跑的（`document`、`Element`）放 `web/`；确实要跨两边的（`shared/anim.ts` 的播放代码要被服务端原样写进导出的网页），按结构声明用到的成员、运行时再判断有没有。
+
 ## 回归验证
 
 - `npm run typecheck`（包含漏翻检查，改了文案必须同时补英文）

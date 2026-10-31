@@ -23,7 +23,7 @@ export function resolveLang(setting: string | undefined, fallback?: string): Lan
 
 function detect(): Lang {
   try {
-    const ls = (globalThis as { localStorage?: Storage }).localStorage
+    const ls = (globalThis as { localStorage?: { getItem(key: string): string | null } }).localStorage
     const nav = (globalThis as { navigator?: { language?: string } }).navigator
     if (ls) return resolveLang(ls.getItem('lang') ?? 'auto', nav?.language)
   } catch {}

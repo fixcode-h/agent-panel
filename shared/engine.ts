@@ -3764,7 +3764,7 @@ async function runHelper(
     const wrap = reviewing
       ? setTimeout(() => void host.steer?.(step.id, REVIEW_WRAP_NOTE).catch(() => false), REVIEW_SOFT_LIMIT_MS)
       : undefined
-    wrap?.unref?.()
+    ;(wrap as { unref?: () => void } | undefined)?.unref?.() // 只有 Node 的定时器有 unref，在线演示（浏览器）里是数字
     // 这次调用里会话压缩过：规则只剩摘要，不记已发段落，下次接着做时发完整的
     let compacted = false
     const r = await host

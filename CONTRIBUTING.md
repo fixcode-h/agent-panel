@@ -32,7 +32,7 @@ npm run dev     # 前端 :5173 + 后端 :8787
 提交前在本地只跑受影响的部分，全量交给 CI（推到 `dev` 和开 PR 时都会跑全量单测、端到端测试和界面检查）：
 
 ```bash
-npm run typecheck      # tsc --noEmit + 漏翻检查（scripts/i18n-check.mjs）
+npm run typecheck      # tsc -b（shared / web / server 分层检查，见根目录 tsconfig.json）+ 漏翻检查（scripts/i18n-check.mjs）
 npm run lint           # oxlint + Prettier 格式检查 + 规则检查 + 密钥扫描
 npm run test:affected  # 只跑受改动影响的单测；动到高风险区或影响面过宽时自动改跑全量
 ```

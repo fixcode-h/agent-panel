@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DEFAULT_FILE_FORMAT, Settings } from '../shared/schema.ts'
-import { encodeText, projectFormat } from '../shared/file-format.ts'
+import { encodeText, projectFormat } from './file-format.ts'
 
 /**
  * 文件格式：默认 UTF-8 无 BOM + LF；项目设置优先，没设时跟随全局。
@@ -18,6 +18,8 @@ test('默认是 UTF-8 无 BOM、LF：shebang 在 Linux 里能直接执行', () =
 test('选 CRLF 时换行写成 \\r\\n，CR 不会重复叠加', () => {
   const bytes = encodeText('a\r\nb\nc', { encoding: 'utf8', eol: 'crlf' })
   assert.equal(bytes.toString('utf8'), 'a\r\nb\r\nc')
+  // 单独的 CR（老 Mac 换行）也算一个换行，LF 格式下统一成 \n
+  assert.equal(encodeText('a\r\nb\rc\n', DEFAULT_FILE_FORMAT).toString('utf8'), 'a\nb\nc\n')
 })
 
 test('选带 BOM 时开头是 EF BB BF，读完去掉不影响内容', () => {
