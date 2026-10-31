@@ -286,22 +286,26 @@ function Preview({ md, remount }: { md: string; remount?: string }) {
   )
 }
 
-/** 小节右上角：这一组有改过的项才出现「恢复本组」 */
+/**
+ * 小节顶部固定高度的一行，专门放「恢复本组」：这一组有改过的项才显示按钮，
+ * 没改过时按钮隐藏但行还在，改动前后下面的预览和设置项不跳动。
+ */
 function GroupReset({ els }: { els: MdElement[] }) {
   const { style, set } = useStyle()
   const changed = els.filter((el) => style[el])
-  if (!changed.length) return null
   return (
-    <div className="-mt-7 flex justify-end pb-1">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          for (const el of changed) for (const prop of Object.keys(style[el] as object)) set(el, prop, undefined)
-        }}
-      >
-        {t('恢复本组')}
-      </Button>
+    <div className="settings-card-head">
+      {changed.length > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            for (const el of changed) for (const prop of Object.keys(style[el] as object)) set(el, prop, undefined)
+          }}
+        >
+          {t('恢复本组')}
+        </Button>
+      )}
     </div>
   )
 }
