@@ -151,7 +151,7 @@ export function DeliveryLine({ delivery }: { delivery: NonNullable<TaskMessage['
   return (
     <span
       className={cn(
-        'mt-1.5 flex items-center gap-1 text-[0.75rem]',
+        'mt-1.5 flex items-center gap-1 text-footnote',
         // 没送出去的需要用户重发：和其他交付状态一样的灰色会被滑过去
         delivery.how === 'lost' ? 'text-warning' : 'text-subtle',
       )}
@@ -196,7 +196,7 @@ function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean;
         <div
           ref={box}
           className={cn(
-            'border-l-2 border-line-strong pl-3 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]',
+            'border-l-2 border-line-strong pl-3 text-body leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]',
             live && 'max-h-40 overflow-y-auto',
           )}
         >
@@ -511,7 +511,7 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
       detail={
         wt ? (
           <>
-            <span className="shrink-0 text-[0.6875rem] text-warning" title={wt.path}>
+            <span className="shrink-0 text-caption text-warning" title={wt.path}>
               {t('{n} 个文件未提交', { n: wt.dirty })}
             </span>
             {m.child?.id && <ResumeChild id={m.child.id} />}
@@ -524,7 +524,7 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
       openTip={m.child ? t('打开子对话') : undefined}
       failed={failed}
     >
-      <div className="max-h-[min(50vh,420px)] overflow-y-auto border-t px-3 py-2.5 text-[0.8125rem]">
+      <div className="max-h-[min(50vh,420px)] overflow-y-auto border-t px-3 py-2.5 text-body">
         <Markdown text={body} teamNames={teamNames} />
       </div>
     </RowShell>
@@ -556,7 +556,7 @@ function ResumeChild({ id }: { id: string }) {
           .finally(() => setBusy(false))
       }}
       title={t('让它接着做：重新占执行位，从停下的地方继续')}
-      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[0.6875rem] text-accent-text hover:bg-sel disabled:opacity-50"
+      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-caption text-accent-text hover:bg-sel disabled:opacity-50"
     >
       {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
       {t('继续')}
@@ -741,7 +741,7 @@ function RunRow({ info }: { info: WorkflowRun }) {
       open={open}
       failed={info.status === 'failed'}
     >
-      <div className="flex flex-col gap-0.5 border-t px-3 py-2 text-[0.8125rem]">
+      <div className="flex flex-col gap-0.5 border-t px-3 py-2 text-body">
         {info.failed.map((s) => (
           <span key={s.id} className="truncate text-danger">
             {s.title}

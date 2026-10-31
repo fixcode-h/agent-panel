@@ -50,7 +50,7 @@ export function CapabilityFields({
           )}
         </p>
         {locked ? (
-          <p className="text-[0.8125rem]">{kind === 'advanced' ? t('高级角色') : t('基本角色')}</p>
+          <p className="text-body">{kind === 'advanced' ? t('高级角色') : t('基本角色')}</p>
         ) : (
           <Segmented
             label={t('角色层')}
@@ -107,7 +107,7 @@ export function CapabilityFields({
       )}
       {kind === 'basic' && locked && (draft.when || draft.independent) && (
         <FormSection title={t('被使用时')}>
-          {draft.when && <p className="text-[0.8125rem] leading-relaxed text-muted">{draft.when}</p>}
+          {draft.when && <p className="text-body leading-relaxed text-muted">{draft.when}</p>}
           {draft.independent && <p className="text-xs text-subtle">{t('必须独立执行：只能派成子任务，不能就地用')}</p>}
         </FormSection>
       )}

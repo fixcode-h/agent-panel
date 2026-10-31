@@ -147,7 +147,7 @@ export function NewModelDesignDialog({ open, onOpenChange }: { open: boolean; on
             }
           }}
           placeholder={t('例如：低多边形风格的宝箱，带开合的盖子，导出 GLB')}
-          className="text-[0.8125rem]"
+          className="text-body"
         />
       </Field>
     </Modal>

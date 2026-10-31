@@ -213,9 +213,9 @@ export function SkillFiles({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-[0.8125rem] font-medium">{t('文件结构')}</h3>
+        <h3 className="text-body font-medium">{t('文件结构')}</h3>
         {rows.length > 0 && (
-          <span className="text-[0.75rem] text-subtle">{t('另有 {n} 个文件', { n: countFiles(rows) })}</span>
+          <span className="text-footnote text-subtle">{t('另有 {n} 个文件', { n: countFiles(rows) })}</span>
         )}
         {!readOnly && (
           <div className="ml-auto flex items-center gap-1.5">
@@ -251,12 +251,12 @@ export function SkillFiles({
               document.getElementById(mainEditorId)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
             }
             title={mainPath}
-            className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-muted hover:bg-sel/60"
+            className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-body text-muted hover:bg-sel/60"
           >
             <span className="h-3.5 w-3.5 shrink-0" />
             <FileTextMain />
             <span className="truncate font-mono">SKILL.md</span>
-            {mainDirty && <span className="ml-auto text-[0.6875rem] text-warning">{t('未保存')}</span>}
+            {mainDirty && <span className="ml-auto text-caption text-warning">{t('未保存')}</span>}
           </button>
           {visibleRows(rows, folded).map((r) => {
             const Icon = r.type === 'dir' ? (folded.has(r.path) ? ChevronRight : ChevronDown) : fileIcon(r.path)
@@ -268,7 +268,7 @@ export function SkillFiles({
                 title={r.path}
                 style={{ paddingLeft: 8 + r.depth * 14 }}
                 className={cn(
-                  'flex w-full cursor-pointer items-center gap-2 rounded-lg py-1.5 pr-2 text-left text-[0.8125rem]',
+                  'flex w-full cursor-pointer items-center gap-2 rounded-lg py-1.5 pr-2 text-left text-body',
                   picked === r.path ? 'bg-sel text-fg' : 'hover:bg-sel/60',
                 )}
               >
@@ -291,7 +291,7 @@ export function SkillFiles({
               </ContextMenu>
             )
           })}
-          {truncated && <p className="px-2 py-2 text-[0.75rem] text-subtle">{t('文件太多，只显示了前面一部分。')}</p>}
+          {truncated && <p className="px-2 py-2 text-footnote text-subtle">{t('文件太多，只显示了前面一部分。')}</p>}
         </Card>
 
         {/* 附加文件的内容：没选中时给引导，选中了才显示编辑框 */}
@@ -305,8 +305,8 @@ export function SkillFiles({
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="truncate font-mono text-[0.75rem] text-subtle">{file.path}</span>
-                <span className="text-[0.75rem] text-subtle">{sizeText(file.size)}</span>
+                <span className="truncate font-mono text-footnote text-subtle">{file.path}</span>
+                <span className="text-footnote text-subtle">{sizeText(file.size)}</span>
                 <div className="ml-auto flex items-center gap-1.5">
                   {dirty && (
                     <Button size="sm" variant="secondary" onClick={() => setText(file.content)}>
@@ -346,11 +346,11 @@ export function SkillFiles({
                   onChange={(e) => setText(e.target.value)}
                   readOnly={readOnly}
                   spellCheck={false}
-                  className="h-[min(40vh,360px)] resize-none font-mono text-[0.75rem] leading-relaxed"
+                  className="h-[min(40vh,360px)] resize-none font-mono text-footnote leading-relaxed"
                   aria-label={t('文件内容')}
                 />
               )}
-              {tooBig && <p className="text-[0.75rem] text-warning">{t('文件超过 1 MB，保存不了，请精简后再试。')}</p>}
+              {tooBig && <p className="text-footnote text-warning">{t('文件超过 1 MB，保存不了，请精简后再试。')}</p>}
             </>
           )}
         </div>

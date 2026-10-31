@@ -38,7 +38,7 @@ export function SessionBar({
 
   const worktree = task.worktree
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-session-bar>
+    <div className="scroll-fade flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-session-bar>
       <SessionCard id="env" title={t('环境')} trailing={env}>
         <SessionRow
           icon={worktree ? <Split /> : <Monitor />}
@@ -60,7 +60,7 @@ export function SessionBar({
                 ·
               </span>
               <GitBranch className="!h-3.5 !w-3.5 shrink-0 text-muted" />
-              <span className="max-w-[50%] min-w-0 shrink-0 truncate font-mono text-[0.8125rem]">
+              <span className="max-w-[50%] min-w-0 shrink-0 truncate font-mono text-body">
                 {worktree?.branch || info?.branch || '…'}
               </span>
             </span>

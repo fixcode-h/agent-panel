@@ -186,19 +186,19 @@ export function AiWindow() {
                   <span className="mx-auto grid h-9 w-9 place-items-center rounded-full bg-sel text-subtle">
                     <MessageSquareOff className="h-4 w-4" />
                   </span>
-                  <p className="mt-3 text-[0.875rem] font-medium">{t('这个对话已经关闭了')}</p>
-                  <p className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
+                  <p className="mt-3 text-prose font-medium">{t('这个对话已经关闭了')}</p>
+                  <p className="mt-1.5 text-body leading-relaxed text-muted">
                     {t('它已经从对话列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。')}
                   </p>
                 </div>
               ) : starting ? (
-                <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                <p className="flex items-center gap-2 text-body text-muted">
                   <Spinner className="h-3.5 w-3.5 text-run" />
                   {t('正在新建分析对话…')}
                 </p>
               ) : (
                 error && (
-                  <p className="flex max-w-lg items-start gap-2 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-danger">
+                  <p className="flex max-w-lg items-start gap-2 text-body leading-relaxed whitespace-pre-wrap text-danger">
                     <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
                     {error}
                   </p>

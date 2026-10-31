@@ -1,5 +1,9 @@
+import { useLayoutEffect, useRef } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+/** 选中块滑动的时长：和 index.css 的 --dur-base 一致，动画结束后把选中底交还给按钮本身 */
+const SLIDE_MS = 200
 
 /** 分段单选：选项少、想一眼看全时用，比下拉框直观 */
 export function Segmented<T extends string>({
@@ -31,20 +35,58 @@ export function Segmented<T extends string>({
   iconOnly?: boolean
 }) {
   const canvas = tone === 'canvas'
+  const groupRef = useRef<HTMLDivElement>(null)
+  const slideRef = useRef<HTMLSpanElement>(null)
+  const prev = useRef(value)
+  // 切换时选中块从旧位置滑到新位置（照 Claude Code 的分段切换）。平时选中底画在按钮自己身上（界面检查按它量对比度），
+  // 只在滑动的 200ms 里藏起按钮的底、由一块独立的滑块代画，结束后交还；关了动效就直接跳
+  useLayoutEffect(() => {
+    const from = prev.current
+    prev.current = value
+    const g = groupRef.current
+    const el = slideRef.current
+    if (from === value || !g || !el || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    const a = g.querySelector<HTMLElement>(`[data-seg-id="${CSS.escape(from)}"]`)
+    const b = g.querySelector<HTMLElement>(`[data-seg-id="${CSS.escape(value)}"]`)
+    if (!a || !b) return
+    const box = (n: HTMLElement) => `translate(${n.offsetLeft}px, ${n.offsetTop}px)`
+    el.style.transition = 'none'
+    el.style.width = `${a.offsetWidth}px`
+    el.style.height = `${a.offsetHeight}px`
+    el.style.transform = box(a)
+    g.dataset.sliding = ''
+    void el.offsetWidth
+    el.style.transition = ''
+    el.style.width = `${b.offsetWidth}px`
+    el.style.height = `${b.offsetHeight}px`
+    el.style.transform = box(b)
+    const done = window.setTimeout(() => delete g.dataset.sliding, SLIDE_MS)
+    return () => window.clearTimeout(done)
+  }, [value])
   return (
     <div
+      ref={groupRef}
       role="radiogroup"
       aria-label={label}
       className={cn(
-        'inline-flex max-w-full flex-wrap rounded-(--c-segmented-radius) p-0.5',
+        'group/seg relative inline-flex max-w-full flex-wrap rounded-(--c-segmented-radius) p-0.5',
         canvas ? 'bg-canvas-bar text-canvas-fg' : 'seg-track',
         fill && 'flex w-full',
         className,
       )}
     >
+      <span
+        ref={slideRef}
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute top-0 left-0 hidden rounded-(--c-segmented-itemRadius) transition-[transform,width,height] duration-(--dur-base) ease-(--ease-snap) group-data-[sliding]/seg:block',
+          canvas ? 'bg-canvas-sel' : 'seg-thumb',
+        )}
+      />
       {options.map((o) => (
         <button
           key={o.id}
+          data-seg-id={o.id}
           role="radio"
           aria-checked={value === o.id}
           disabled={o.disabled}
@@ -52,10 +94,12 @@ export function Segmented<T extends string>({
           aria-label={iconOnly ? o.label : undefined}
           title={o.dot ?? (iconOnly ? o.label : undefined)}
           className={cn(
-            'inline-flex cursor-pointer items-center gap-1.5 rounded-(--c-segmented-itemRadius) px-3 transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+            'relative inline-flex cursor-pointer items-center gap-1.5 rounded-(--c-segmented-itemRadius) px-3 transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+            // 滑动期间选中底由滑块代画，按钮自己的底先藏起来
+            'group-data-[sliding]/seg:bg-transparent! group-data-[sliding]/seg:shadow-none!',
             fill && 'flex-1 justify-center px-2 whitespace-nowrap',
             iconOnly && (size === 'sm' ? 'w-7 justify-center px-0' : 'w-8 justify-center px-0'),
-            size === 'sm' ? 'h-7 text-[0.75rem]' : 'h-8 text-[0.8125rem]',
+            size === 'sm' ? 'h-7 text-footnote' : 'h-8 text-body',
             value === o.id
               ? canvas
                 ? 'bg-canvas-sel font-medium text-canvas-strong'

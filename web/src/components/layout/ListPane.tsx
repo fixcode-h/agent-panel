@@ -82,14 +82,14 @@ export function ListPane({
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             placeholder={placeholder}
-            className={cn('pr-3 pl-9 text-[0.8125rem]', compact ? 'h-[34px]' : 'h-[38px]')}
+            className={cn('pr-3 pl-9 text-body', compact ? 'h-[34px]' : 'h-[38px]')}
           />
         </label>
         {tabs}
       </div>
       <div
         className={cn(
-          'flex max-h-[50vh] flex-1 flex-col gap-0.5 overflow-y-auto px-2 md:max-h-none',
+          'scroll-fade flex max-h-[50vh] flex-1 flex-col gap-0.5 overflow-y-auto px-2 md:max-h-none',
           compact ? 'pb-2' : 'pb-3',
         )}
       >
@@ -160,7 +160,7 @@ export function GroupHeader({
       className={cn(
         'flex items-center gap-1.5 px-2 text-subtle',
         // 紧凑档要装得下 h-7 的图标按钮（分类视图的「新建」「分类操作」）：28 + pt-1 正好是 h-8
-        compact ? 'h-8 pt-1 text-[0.6875rem]' : 'h-9 pt-2 text-xs',
+        compact ? 'h-8 pt-1 text-caption' : 'h-9 pt-2 text-xs',
       )}
     >
       {onToggle ? (
@@ -169,7 +169,7 @@ export function GroupHeader({
           type="button"
           onClick={onToggle}
           aria-expanded={!collapsed}
-          className="-mx-1 flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded px-1 text-left hover:text-fg"
+          className="-mx-1 flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-sm px-1 text-left hover:text-fg"
         >
           {head}
         </button>
@@ -217,17 +217,17 @@ export function ListItem({
       aria-current={selected || undefined}
       className={cn(
         'flex w-full cursor-pointer items-center border border-transparent text-left transition-colors',
-        compact ? 'gap-2 rounded-lg px-2.5 py-[5px]' : 'gap-3 rounded-[10px] p-2.5',
+        compact ? 'gap-2 rounded-lg px-2.5 py-[5px]' : 'gap-3 rounded-xl p-2.5',
         selected ? (compact ? 'bg-sel' : 'border-sel-line bg-sel shadow-card') : 'hover:bg-sel/60',
       )}
     >
       {leading}
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className={cn('truncate font-medium', compact && 'text-[0.8125rem] leading-tight')}>{title}</span>
+        <span className={cn('truncate font-medium', compact && 'text-body leading-tight')}>{title}</span>
         <span
           className={cn(
             'truncate text-muted',
-            compact ? 'text-[0.6875rem] leading-tight' : 'text-xs',
+            compact ? 'text-caption leading-tight' : 'text-xs',
             monoSubtitle && 'font-mono',
           )}
         >
@@ -248,5 +248,5 @@ export function ListItem({
 }
 
 export function ListEmpty({ children }: { children: React.ReactNode }) {
-  return <div className="px-2 py-8 text-center text-[0.8125rem] text-subtle">{children}</div>
+  return <div className="px-2 py-8 text-center text-body text-subtle">{children}</div>
 }

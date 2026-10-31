@@ -76,9 +76,9 @@ type EditorProps = {
 }
 
 /** 左上浮动面板里的图标按钮（撤销 / 重做）：30px，和 40px 高的面板留出上下边距（照设计稿） */
-const barBtn = 'h-[30px] w-[30px] rounded-[7px]'
+const barBtn = 'h-[30px] w-[30px] rounded-lg'
 /** 底部画布工具条的图标按钮：36px、圆角 9px，图标 17px（照设计稿） */
-const toolBtn = 'h-9 w-9 rounded-[9px] [&_svg]:h-[17px] [&_svg]:w-[17px]'
+const toolBtn = 'h-9 w-9 rounded-xl [&_svg]:h-[17px] [&_svg]:w-[17px]'
 /** 属性栏顶部页签：选中的页签是和下面内容连成一体的白卡（照设计稿），其余只是灰字 */
 const tabOn =
   'rounded-t-lg bg-card font-medium text-fg shadow-[0_0_0_1px_var(--line)] [clip-path:inset(-1px_-1px_0_-1px)]'
@@ -280,14 +280,12 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
               底部中间是画布工具条；容器本身不吃点击，空白处照常拖画布 */}
           <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-wrap items-start justify-between gap-2 md:inset-x-4 md:top-4">
             <div className="flex min-w-0 flex-wrap items-start gap-2">
-              <div className="pointer-events-auto flex h-10 max-w-full min-w-0 items-center gap-1 rounded-[10px] bg-card py-1 pr-1 pl-3 shadow-pop">
+              <div className="pointer-events-auto flex h-10 max-w-full min-w-0 items-center gap-1 rounded-xl bg-card py-1 pr-1 pl-3 shadow-pop">
                 <WorkflowIcon className="h-[15px] w-[15px] shrink-0 text-subtle" aria-hidden />
                 {/* 画布窄时（属性栏拉宽、小屏）省掉「工作流 ›」，几块浮动面板尽量排在一行 */}
-                <span className="ml-1 hidden shrink-0 text-[0.8125rem] text-subtle @4xl:inline">{t('工作流')}</span>
+                <span className="ml-1 hidden shrink-0 text-body text-subtle @4xl:inline">{t('工作流')}</span>
                 <ChevronRight className="hidden h-3 w-3 shrink-0 text-subtle @4xl:block" aria-hidden />
-                <span className="mr-1.5 min-w-0 truncate text-[0.8125rem] font-semibold">
-                  {w.name || t('未命名工作流')}
-                </span>
+                <span className="mr-1.5 min-w-0 truncate text-body font-semibold">{w.name || t('未命名工作流')}</span>
                 <span aria-hidden className="h-5 w-px shrink-0 bg-line" />
                 <IconButton
                   icon={Undo2}
@@ -311,7 +309,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
               <div
                 role="tablist"
                 aria-label={t('流程')}
-                className="pointer-events-auto flex min-h-10 max-w-full min-w-0 flex-wrap items-center gap-0.5 rounded-[10px] bg-card p-1 shadow-pop"
+                className="pointer-events-auto flex min-h-10 max-w-full min-w-0 flex-wrap items-center gap-0.5 rounded-xl bg-card p-1 shadow-pop"
               >
                 <WorkflowIcon className="mx-1.5 h-[15px] w-[15px] shrink-0 text-subtle" aria-hidden />
                 {w.flows.map((f) => {
@@ -324,13 +322,13 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                       aria-selected={on}
                       onClick={() => switchFlow(f.id)}
                       className={cn(
-                        'inline-flex h-8 max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2.5 text-[0.8125rem] transition-colors',
+                        'inline-flex h-8 max-w-[200px] cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-body transition-colors',
                         on ? 'bg-sel font-semibold text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
                       )}
                     >
                       {entry && <Crown className="h-3.5 w-3.5 shrink-0 text-accent-text" />}
                       <span className="truncate">{flowLabel(f, w)}</span>
-                      <span className="font-mono text-[0.6875rem] font-normal text-subtle">{f.nodes.length}</span>
+                      <span className="font-mono text-caption font-normal text-subtle">{f.nodes.length}</span>
                     </button>
                   )
                 })}
@@ -338,7 +336,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                 <button
                   onClick={addFlow}
                   disabled={w.flows.length >= 20}
-                  className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-[7px] px-2 text-[0.8125rem] text-muted hover:bg-sel/70 hover:text-fg disabled:opacity-40"
+                  className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 text-body text-muted hover:bg-sel/70 hover:text-fg disabled:opacity-40"
                   title={t('新建子流程，可以挂到节点的开始、验收、结束上')}
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -348,7 +346,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
             </div>
             <div className="ml-auto flex items-center gap-2">
               {/* 工作流是自动保存的，这里只显示状态，不放假的「保存」按钮 */}
-              <div className="pointer-events-auto hidden h-8 items-center rounded-[8px] bg-card px-2.5 shadow-pop @3xl:flex">
+              <div className="pointer-events-auto hidden h-8 items-center rounded-lg bg-card px-2.5 shadow-pop @3xl:flex">
                 <SaveIndicator {...save} />
               </div>
               <Button size="sm" className="pointer-events-auto shadow-pop" onClick={() => setRunning(true)}>
@@ -361,7 +359,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
           <div
             role="toolbar"
             aria-label={t('画布工具')}
-            className="absolute bottom-3 left-16 z-10 flex h-12 items-center gap-1 rounded-[14px] bg-card px-2 shadow-pop md:bottom-4 @3xl:left-1/2 @3xl:-translate-x-1/2"
+            className="absolute bottom-3 left-16 z-10 flex h-12 items-center gap-1 rounded-2xl bg-card px-2 shadow-pop md:bottom-4 @3xl:left-1/2 @3xl:-translate-x-1/2"
           >
             <IconButton
               icon={Hand}
@@ -436,7 +434,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
             <span aria-hidden className="mx-1 h-5 w-px bg-line" />
             <Button
               size="icon-sm"
-              className="h-9 w-10 rounded-[9px]"
+              className="h-9 w-10 rounded-xl"
               onClick={() => setRunning(true)}
               aria-label={t('运行')}
               title={t('在项目里运行')}
@@ -467,7 +465,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                   value={projectId}
                   onChange={(e) => setProject(e.target.value)}
                   options={projects.map((p) => ({ value: p.id, label: p.name }))}
-                  className="h-9 w-[130px] rounded-[9px]"
+                  className="h-9 w-[130px] rounded-xl"
                 />
               </div>
             )}
@@ -476,7 +474,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                 type="button"
                 onClick={() => openTask(runs.running[0])}
                 title={t('打开正在运行的执行：{title}', { title: runs.running[0].title })}
-                className="ml-1 inline-flex h-[26px] shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-run/30 bg-run-soft px-2.5 text-[0.75rem] font-medium whitespace-nowrap text-run hover:border-run/60"
+                className="ml-1 inline-flex h-[26px] shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-run/30 bg-run-soft px-2.5 text-footnote font-medium whitespace-nowrap text-run hover:border-run/60"
               >
                 <Spinner className="h-2 w-2 border-[1.5px]" />
                 {runs.running.length > 1 ? t('运行中 {n}', { n: runs.running.length }) : t('运行中')}
@@ -492,7 +490,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                 className="absolute flex max-h-[320px] w-[240px] flex-col overflow-y-auto rounded-xl bg-card p-1 shadow-pop animate-[fade-in_120ms_ease-out]"
                 style={{ left: Math.max(8, drop.x), top: Math.max(8, drop.y) }}
               >
-                <span className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">
+                <span className="px-2.5 pt-1.5 pb-1 text-caption text-subtle">
                   {drop.reverse
                     ? t('新建节点，连到「{name}」前面', { name: name(drop.from) })
                     : t('新建节点，接在「{name}」后面', { name: name(drop.from) })}
@@ -519,7 +517,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                 ))}
                 {refOptions(w, workflows, flow.id).filter((o) => o.value).length > 0 && (
                   <>
-                    <span className="mt-1 border-t px-2.5 pt-2 pb-1 text-[0.6875rem] text-subtle">{t('调用流程')}</span>
+                    <span className="mt-1 border-t px-2.5 pt-2 pb-1 text-caption text-subtle">{t('调用流程')}</span>
                     {refOptions(w, workflows, flow.id)
                       .filter((o) => o.value)
                       .map((o) => (
@@ -551,10 +549,10 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
           {flow.nodes.length === 0 && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center p-6">
               <div className="pointer-events-auto flex max-w-[360px] flex-col items-center gap-3 rounded-2xl bg-card p-5 text-center shadow-pop">
-                <p className="font-serif text-[1rem] font-semibold">
+                <p className="font-serif text-subtitle font-semibold">
                   {isEntry ? t('从这里设计工作流') : t('这个子流程还是空的')}
                 </p>
-                <p className="text-[0.8125rem] leading-relaxed text-subtle">
+                <p className="text-body leading-relaxed text-subtle">
                   {t(
                     '添加节点后，从「开始」拖一条线到第一个节点。节点可以随意摆放，连线决定先后，没有先后关系的节点会同时执行。',
                   )}
@@ -604,7 +602,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
               onClick={() => setTab('object')}
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setTab('object')}
               className={cn(
-                'flex h-[34px] max-w-full min-w-0 cursor-pointer items-center gap-1.5 pr-1 pl-2.5 text-[0.78125rem]',
+                'flex h-[34px] max-w-full min-w-0 cursor-pointer items-center gap-1.5 pr-1 pl-2.5 text-body',
                 tab === 'object' ? tabOn : tabOff,
               )}
             >
@@ -642,7 +640,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
               onClick={() => setTab('doc')}
               title={t('工作流说明：每个节点执行时都会带上')}
               className={cn(
-                'flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 px-2.5 text-[0.78125rem]',
+                'flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 px-2.5 text-body',
                 tab === 'doc' ? tabOn : tabOff,
               )}
             >
@@ -655,7 +653,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
               onClick={() => setTab('progress')}
               title={project ? t('「{name}」里最近一次执行的进度', { name: project.name }) : undefined}
               className={cn(
-                'flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 px-2.5 text-[0.78125rem]',
+                'flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 px-2.5 text-body',
                 tab === 'progress' ? tabOn : tabOff,
               )}
             >
@@ -666,7 +664,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
           <div className="min-h-0 flex-1 overflow-y-auto">
             {tab === 'doc' ? (
               <div className="flex flex-col gap-2 p-4">
-                <p className="text-[0.6875rem] leading-relaxed text-subtle">
+                <p className="text-caption leading-relaxed text-subtle">
                   {t('写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给角色。')}
                 </p>
                 <DocEditor
@@ -707,7 +705,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
               />
             ) : selEdge ? (
               <div className="flex flex-col gap-4 p-4">
-                <p className="text-[0.8125rem] leading-relaxed text-muted">
+                <p className="text-body leading-relaxed text-muted">
                   {t('「{from}」完成后才会开始「{to}」。', { from: name(selEdge.from), to: name(selEdge.to) })}
                 </p>
                 {selEdge.from !== START && flow.nodes.find((n) => n.id === selEdge.from)?.kind === 'agent' && (

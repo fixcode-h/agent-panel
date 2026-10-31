@@ -221,8 +221,10 @@ export function Markdown({
     const code = btn.closest('.md-code')?.querySelector('code')?.textContent ?? ''
     void copyText(code, { fail: false }).then((ok) => {
       if (!ok) return
-      btn.textContent = t('已复制')
-      setTimeout(() => (btn.textContent = t('复制')), 1500)
+      // 「复制」「已复制」两个字样叠在按钮里（workflow-doc.ts 的 codeBar），切 data-done 交叉切换，按钮宽度不跳
+      const swap = btn.querySelector<HTMLElement>('.swap')
+      swap?.setAttribute('data-done', '')
+      setTimeout(() => swap?.removeAttribute('data-done'), 1500)
     })
   }
 

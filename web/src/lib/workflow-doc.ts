@@ -114,7 +114,7 @@ export function lineSpans(html: string, diff = false) {
 /** 代码块顶栏：语言名 + 行数，右边折行和复制 */
 export function codeBar(name: string, count: number, extra = '') {
   const n = count > 1 ? ` <small>· ${escape(t('{n} 行', { n: count }))}</small>` : ''
-  return `<div class="md-code-bar"><span class="md-code-lang">${escape(name)}${n}</span><span class="md-code-acts">${extra}<button type="button" class="md-copy" data-wrap>${t('折行')}</button><button type="button" class="md-copy" data-copy>${t('复制')}</button></span></div>`
+  return `<div class="md-code-bar"><span class="md-code-lang">${escape(name)}${n}</span><span class="md-code-acts">${extra}<button type="button" class="md-copy" data-wrap>${t('折行')}</button><button type="button" class="md-copy" data-copy><span class="swap"><span>${t('复制')}</span><span>${t('已复制')}</span></span></button></span></div>`
 }
 // 代码块参照 Claude Code：顶部一条语言名和复制按钮，内容按语言高亮；mermaid 先显示源码，渲染组件再换成图
 renderer.code = ({ text, lang }) => {

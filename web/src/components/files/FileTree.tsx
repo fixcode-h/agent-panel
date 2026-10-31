@@ -566,7 +566,7 @@ export function FileExplorer({
               }
             }}
             placeholder={mode === 'name' ? t('查找文件') : t('搜索文件内容')}
-            className={cn('pl-8.5', compact ? 'h-7 text-[0.75rem]' : 'h-9')}
+            className={cn('pl-8.5', compact ? 'h-7 text-footnote' : 'h-9')}
             aria-label={mode === 'name' ? t('查找文件') : t('搜索文件内容')}
           />
           {query && (
@@ -594,7 +594,7 @@ export function FileExplorer({
             ]}
           />
           {/* 结果条数报给读屏：搜索是异步的，条数变化用户看不见 */}
-          <span aria-live="polite" aria-atomic="true" className="ml-auto truncate text-[0.75rem] text-subtle">
+          <span aria-live="polite" aria-atomic="true" className="ml-auto truncate text-footnote text-subtle">
             {summary}
           </span>
         </div>
@@ -622,7 +622,7 @@ export function FileExplorer({
           <ContextMenuTrigger asChild>
             <div className="min-h-full">
               {browser.error && !browser.info ? (
-                <p className="p-4 text-[0.8125rem] text-danger">{browser.error}</p>
+                <p className="p-4 text-body text-danger">{browser.error}</p>
               ) : browser.loading && !browser.info ? (
                 <div className="flex justify-center p-8 text-subtle">
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -662,7 +662,7 @@ export function FileExplorer({
                     />
                   )}
                   {(expanding || expandNote) && (
-                    <div className="flex items-center gap-1.5 px-2 py-1 text-[0.6875rem] text-subtle">
+                    <div className="flex items-center gap-1.5 px-2 py-1 text-caption text-subtle">
                       {expanding && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
                       <span className="min-w-0 flex-1 truncate">{expanding ? t('正在展开…') : expandNote}</span>
                     </div>
@@ -674,7 +674,7 @@ export function FileExplorer({
                     aria-label={t('文件树')}
                     tabIndex={0}
                     onKeyDown={onTreeKey}
-                    className="min-h-full rounded outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent/50"
+                    className="min-h-full rounded-sm outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent/50"
                   >
                     <LevelRows
                       path=""
@@ -739,7 +739,7 @@ export function FileExplorer({
         title={request?.kind === 'rename' ? t('重命名') : request?.kind === 'new-dir' ? t('新建文件夹') : t('新建文件')}
         footer={
           <>
-            <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem] text-subtle">
+            <span className="min-w-0 flex-1 truncate font-mono text-footnote text-subtle">
               {request?.path || t('根目录')}
             </span>
             <Button variant="secondary" onClick={closeName}>
@@ -831,13 +831,13 @@ function PathBar({
           }}
           placeholder={t('粘贴相对路径后回车定位')}
           aria-label={t('定位路径')}
-          className="h-7 font-mono text-[0.75rem]"
+          className="h-7 font-mono text-footnote"
         />
         <IconButton icon={X} size="sm" label={t('取消')} onClick={() => setTyped(null)} />
       </div>
     )
   return (
-    <div className="flex min-w-0 items-center gap-0.5 text-[0.75rem]">
+    <div className="flex min-w-0 items-center gap-0.5 text-footnote">
       {crumbs.map((c, i) => (
         <Fragment key={c.path || '_root'}>
           {i > 0 && <ChevronRight className="h-3 w-3 shrink-0 text-subtle" />}
@@ -846,7 +846,7 @@ function PathBar({
             onClick={() => onPick(c.path)}
             title={c.path || rootName || t('根目录')}
             className={cn(
-              'min-w-0 max-w-[10rem] cursor-pointer truncate rounded px-1 py-0.5 hover:bg-sel',
+              'min-w-0 max-w-[10rem] cursor-pointer truncate rounded-sm px-1 py-0.5 hover:bg-sel',
               i === crumbs.length - 1 ? 'text-fg' : 'text-muted',
             )}
           >
@@ -912,7 +912,7 @@ function LevelRows({
         style={{ paddingLeft: `${indent(depth, compact)}px` }}
       >
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        <span className="text-[0.75rem]">{t('读取中…')}</span>
+        <span className="text-footnote">{t('读取中…')}</span>
       </div>
     )
   }
@@ -921,7 +921,7 @@ function LevelRows({
     <div role="group">
       {state.error && <LevelError path={path} depth={depth} error={state.error} browser={browser} compact={compact} />}
       {level.statusSkipped && depth === 0 && (
-        <p className="px-2 py-1 text-[0.6875rem] text-subtle">{t('这次没拿到 git 状态，文件照常列出。')}</p>
+        <p className="px-2 py-1 text-caption text-subtle">{t('这次没拿到 git 状态，文件照常列出。')}</p>
       )}
       {entries.slice(0, shown).map((e) => {
         const isOpen = e.kind === 'dir' && open.has(e.path)
@@ -956,14 +956,14 @@ function LevelRows({
                     compact
                       ? // 任务右栏（设计稿）：28px 行、8px 圆角、正文字体；选中只用底色加粗，不描边
                         cn(
-                          'h-7 rounded-lg text-[0.8125rem] transition-colors hover:bg-sel/60 focus-visible:bg-sel/60',
+                          'h-7 rounded-lg text-body transition-colors hover:bg-sel/60 focus-visible:bg-sel/60',
                           // 只有文件标选中（就是刚在中间打开的那个），目录点了只是展开收起
                           e.kind === 'dir'
                             ? 'font-medium text-muted'
                             : 'text-fg aria-selected:bg-sel aria-selected:font-semibold',
                         )
                       : cn(
-                          'h-7 rounded text-[0.8125rem] hover:bg-sel focus:bg-sel aria-selected:bg-sel/70',
+                          'h-7 rounded-sm text-body hover:bg-sel focus:bg-sel aria-selected:bg-sel/70',
                           e.kind === 'dir' ? 'text-fg' : 'text-muted hover:text-fg',
                         ),
                   )}
@@ -990,13 +990,13 @@ function LevelRows({
                           : 'text-subtle',
                     )}
                   />
-                  <span className={cn('min-w-0 truncate', compact ? 'flex-1' : 'font-mono text-[0.75rem]')}>
+                  <span className={cn('min-w-0 truncate', compact ? 'flex-1' : 'font-mono text-footnote')}>
                     {e.name}
                   </span>
                   {status && (
                     <span
                       className={cn(
-                        'ml-auto shrink-0 font-mono text-[0.6875rem]',
+                        'ml-auto shrink-0 font-mono text-caption',
                         compact && 'font-semibold',
                         status.className,
                       )}
@@ -1082,16 +1082,14 @@ function LevelRows({
           onClick={() => setShown((n) => n + PAGE)}
           style={{ paddingLeft: `${indent(depth, compact)}px` }}
           className={cn(
-            'flex w-full cursor-pointer items-center rounded pr-2 text-left text-[0.75rem] text-accent-text hover:bg-sel',
+            'flex w-full cursor-pointer items-center rounded-sm pr-2 text-left text-footnote text-accent-text hover:bg-sel',
             compact ? 'h-6' : 'h-7',
           )}
         >
           {t('显示更多（还有 {n} 项）', { n: entries.length - shown })}
         </button>
       )}
-      {!entries.length && depth === 0 && (
-        <p className="p-4 text-[0.8125rem] text-subtle">{t('这个目录里没有文件。')}</p>
-      )}
+      {!entries.length && depth === 0 && <p className="p-4 text-body text-subtle">{t('这个目录里没有文件。')}</p>}
     </div>
   )
 }
@@ -1115,11 +1113,11 @@ function LevelError({
 }) {
   return (
     <div className="flex items-center gap-2 px-2 py-1" style={{ paddingLeft: `${indent(depth, compact)}px` }}>
-      <span className="min-w-0 flex-1 truncate text-[0.75rem] text-danger">{error}</span>
+      <span className="min-w-0 flex-1 truncate text-footnote text-danger">{error}</span>
       <button
         type="button"
         onClick={onRetry ?? (() => void browser.load(path))}
-        className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[0.75rem] text-accent-text hover:bg-sel"
+        className="shrink-0 cursor-pointer rounded-sm px-1.5 py-0.5 text-footnote text-accent-text hover:bg-sel"
       >
         {t('重试')}
       </button>
@@ -1226,8 +1224,8 @@ function NameResults({
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
-  if (error) return <p className="p-4 text-[0.8125rem] text-danger">{error}</p>
-  if (!files.length) return <p className="p-4 text-[0.8125rem] text-subtle">{t('没有匹配的文件。')}</p>
+  if (error) return <p className="p-4 text-body text-danger">{error}</p>
+  if (!files.length) return <p className="p-4 text-body text-subtle">{t('没有匹配的文件。')}</p>
   const needle = query.toLowerCase()
   return (
     // 焦点留在列表上，↑↓ 换选中项，Enter 打开；读屏靠 aria-activedescendant 知道选中了哪一条
@@ -1238,7 +1236,7 @@ function NameResults({
       tabIndex={0}
       onKeyDown={onKeyDown}
       aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined}
-      className="flex flex-col rounded outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent/50"
+      className="flex flex-col rounded-sm outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent/50"
     >
       {files.map((f, i) => {
         const Icon = fileIcon(f.path)
@@ -1253,21 +1251,17 @@ function NameResults({
             onOpen={onOpen}
             option={{ id: `${id}-${i}`, selected: i === active, onHover: () => setActive(i) }}
             className={cn(
-              'flex w-full cursor-pointer items-center gap-1.5 rounded px-2 text-left outline-none hover:bg-sel aria-selected:bg-sel',
+              'flex w-full cursor-pointer items-center gap-1.5 rounded-sm px-2 text-left outline-none hover:bg-sel aria-selected:bg-sel',
               compact ? 'h-6' : 'h-7',
             )}
           >
             <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <span
-              className={cn('min-w-0 truncate font-mono text-muted', compact ? 'text-[0.75rem]' : 'text-[0.75rem]')}
-            >
+            <span className={cn('min-w-0 truncate font-mono text-muted', compact ? 'text-footnote' : 'text-footnote')}>
               <Highlight text={name} needle={needle} />
             </span>
-            {dir && <span className="min-w-0 truncate font-mono text-[0.6875rem] text-subtle">{dir.slice(0, -1)}</span>}
+            {dir && <span className="min-w-0 truncate font-mono text-caption text-subtle">{dir.slice(0, -1)}</span>}
             {status && (
-              <span className={cn('ml-auto shrink-0 font-mono text-[0.6875rem]', status.className)}>
-                {status.label}
-              </span>
+              <span className={cn('ml-auto shrink-0 font-mono text-caption', status.className)}>{status.label}</span>
             )}
           </FileRow>
         )
@@ -1323,16 +1317,16 @@ function ContentResults({
   }
   const { id, active, setActive, onKeyDown } = useResultNav(rows.length, open, query)
 
-  if (!query.trim()) return <p className="p-4 text-[0.8125rem] text-subtle">{t('输入关键词，搜索文件里的内容。')}</p>
+  if (!query.trim()) return <p className="p-4 text-body text-subtle">{t('输入关键词，搜索文件里的内容。')}</p>
   if (error)
     // 内容搜索失败：说清是搜索失败，并给一个重试，不能让用户以为是「没有匹配」
     return (
       <div className="flex items-start gap-2 p-4">
-        <p className="min-w-0 flex-1 text-[0.8125rem] text-danger">{error}</p>
+        <p className="min-w-0 flex-1 text-body text-danger">{error}</p>
         <button
           type="button"
           onClick={onRetry}
-          className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[0.75rem] text-accent-text hover:bg-sel"
+          className="shrink-0 cursor-pointer rounded-sm px-1.5 py-0.5 text-footnote text-accent-text hover:bg-sel"
         >
           {t('重试')}
         </button>
@@ -1344,7 +1338,7 @@ function ContentResults({
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
-  if (!hits.length) return <p className="p-4 text-[0.8125rem] text-subtle">{t('没有匹配的内容。')}</p>
+  if (!hits.length) return <p className="p-4 text-body text-subtle">{t('没有匹配的内容。')}</p>
   const needle = query.trim().toLowerCase()
   return (
     <div
@@ -1354,7 +1348,7 @@ function ContentResults({
       tabIndex={0}
       onKeyDown={onKeyDown}
       aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined}
-      className="flex flex-col gap-1 rounded outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent/50"
+      className="flex flex-col gap-1 rounded-sm outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent/50"
     >
       {rows.map((row, i) => {
         const option = { id: `${id}-${i}`, selected: i === active, onHover: () => setActive(i) }
@@ -1368,12 +1362,12 @@ function ContentResults({
               aria-selected={option.selected}
               onMouseEnter={option.onHover}
               onClick={() => open(i)}
-              className="ml-5 flex cursor-pointer items-baseline gap-2 rounded py-0.5 pr-2 pl-1 text-left outline-none hover:bg-sel aria-selected:bg-sel"
+              className="ml-5 flex cursor-pointer items-baseline gap-2 rounded-sm py-0.5 pr-2 pl-1 text-left outline-none hover:bg-sel aria-selected:bg-sel"
             >
-              <span className="w-8 shrink-0 text-right font-mono text-[0.6875rem] text-subtle/70 tabular-nums">
+              <span className="w-8 shrink-0 text-right font-mono text-caption text-subtle/70 tabular-nums">
                 {row.line}
               </span>
-              <span className="min-w-0 truncate font-mono text-[0.75rem] text-muted">
+              <span className="min-w-0 truncate font-mono text-footnote text-muted">
                 <Highlight text={row.text} needle={needle} />
               </span>
             </button>
@@ -1388,7 +1382,7 @@ function ContentResults({
               aria-selected={option.selected}
               onMouseEnter={option.onHover}
               onClick={() => open(i)}
-              className="ml-5 cursor-pointer rounded py-0.5 pr-2 pl-1 text-left text-[0.6875rem] text-subtle outline-none hover:text-fg aria-selected:bg-sel"
+              className="ml-5 cursor-pointer rounded-sm py-0.5 pr-2 pl-1 text-left text-caption text-subtle outline-none hover:text-fg aria-selected:bg-sel"
             >
               {t('还有 {n} 处匹配', { n: row.rest })}
             </button>
@@ -1402,13 +1396,13 @@ function ContentResults({
             browser={browser}
             onOpen={onOpen}
             option={option}
-            className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded px-2 text-left outline-none hover:bg-sel aria-selected:bg-sel"
+            className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm px-2 text-left outline-none hover:bg-sel aria-selected:bg-sel"
           >
             <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <span className={cn('min-w-0 truncate font-mono', compact ? 'text-[0.75rem]' : 'text-[0.75rem]')}>
+            <span className={cn('min-w-0 truncate font-mono', compact ? 'text-footnote' : 'text-footnote')}>
               {row.file.path}
             </span>
-            <span className="ml-auto shrink-0 text-[0.6875rem] text-subtle">{row.file.hits.length}</span>
+            <span className="ml-auto shrink-0 text-caption text-subtle">{row.file.hits.length}</span>
           </FileRow>
         )
       })}

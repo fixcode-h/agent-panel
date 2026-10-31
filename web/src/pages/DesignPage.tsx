@@ -202,8 +202,8 @@ function NewDesign({ projectId }: { projectId?: string }) {
         <span className="mb-4 grid h-11 w-11 place-items-center rounded-xl bg-accent-soft text-accent-text">
           <PaletteIcon className="h-5 w-5" />
         </span>
-        <h1 className="font-serif text-[1.625rem] font-semibold tracking-tight">{t('UI 设计')}</h1>
-        <p className="mt-2 text-[0.8125rem] leading-relaxed text-muted">
+        <h1 className="font-serif text-display font-semibold tracking-tight">{t('UI 设计')}</h1>
+        <p className="mt-2 text-body leading-relaxed text-muted">
           {kind === 'web'
             ? t(
                 '用对话设计网页界面：AI 用自动布局搭好页面、生成插图和图标，最后导出成 HTML / CSS 和图片，直接用浏览器打开。',
@@ -214,7 +214,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
         </p>
         <DesignProjectDialog open={creatingProject} onOpenChange={setCreatingProject} onSaved={(p) => setPid(p.id)} />
         {!projects.length ? (
-          <div className="mt-8 rounded-xl bg-panel p-5 text-[0.8125rem] text-muted">
+          <div className="mt-8 rounded-xl bg-panel p-5 text-body text-muted">
             {t('设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。')}
             <Button className="mt-3" onClick={() => setCreatingProject(true)}>
               <Plus className="h-4 w-4" />
@@ -224,7 +224,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
         ) : (
           <div className="mt-8 flex flex-col gap-5 rounded-2xl bg-card p-6 shadow-card">
             <label className="flex flex-col gap-1.5">
-              <span className="text-[0.8125rem] font-medium">{t('名称')}</span>
+              <span className="text-body font-medium">{t('名称')}</span>
               <Input
                 autoFocus
                 value={title}
@@ -234,7 +234,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
               />
             </label>
             <div className="flex flex-col gap-1.5">
-              <span className="text-[0.8125rem] font-medium">{t('类型')}</span>
+              <span className="text-body font-medium">{t('类型')}</span>
               <Segmented
                 label={t('类型')}
                 value={kind}
@@ -250,7 +250,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <span className="text-[0.8125rem] font-medium">{t('项目')}</span>
+                <span className="text-body font-medium">{t('项目')}</span>
                 <Select
                   aria-label={t('项目')}
                   value={pid}
@@ -262,7 +262,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <span className="text-[0.8125rem] font-medium">{t('设计尺寸')}</span>
+                <span className="text-body font-medium">{t('设计尺寸')}</span>
                 <Select
                   aria-label={t('设计尺寸')}
                   value={size}
@@ -803,7 +803,7 @@ function Designer({ id }: { id: string }) {
   if (ed.error)
     return (
       // 打开的设计是 splitPage，外面没有面板：出错和加载中的占位自己是一块面板
-      <div className="panel grid flex-1 place-items-center p-8 text-center text-[0.8125rem] text-muted">
+      <div className="panel grid flex-1 place-items-center p-8 text-center text-body text-muted">
         <div>
           <p>{ed.error}</p>
           <Button variant="ghost" className="mt-3" onClick={() => go({ page: 'design' })}>
@@ -1090,7 +1090,7 @@ function Designer({ id }: { id: string }) {
         aria-label={t('设计名称')}
         value={doc.title}
         onChange={(e) => ed.change((d) => ({ ...d, title: e.target.value }), 'title')}
-        className="h-8 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-[0.8125rem] font-semibold outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-focus"
+        className="h-8 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-body font-semibold outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-focus"
       />
       <SaveIndicator status={ed.save.status} error={ed.save.error} />
     </>
@@ -1109,7 +1109,7 @@ function Designer({ id }: { id: string }) {
           <ResizeHandle pane={chatPane} side="right" label={t('拖动调整 AI 对话的宽度')} />
           <div className="flex h-[46px] shrink-0 items-center gap-1.5 border-b pr-2 pl-2">
             {titleField}
-            <span className="shrink-0 text-[0.6875rem] text-subtle">{t('AI 对话')}</span>
+            <span className="shrink-0 text-caption text-subtle">{t('AI 对话')}</span>
             {/* 收起按钮放在对话栏自己的标题行：画板标题行夹在两栏中间，位置要留给阶段条和导出 */}
             <Button
               size="icon-sm"
@@ -1174,7 +1174,7 @@ function Designer({ id }: { id: string }) {
               >
                 <MessageSquare className="h-4 w-4" />
               </Button>
-              {project && <span className="shrink-0 truncate text-[0.75rem] text-subtle">{project.name} /</span>}
+              {project && <span className="shrink-0 truncate text-footnote text-subtle">{project.name} /</span>}
               {titleField}
             </div>
           )}
@@ -1247,7 +1247,7 @@ function Designer({ id }: { id: string }) {
                 <Clapperboard className="h-4 w-4" />
                 <span className="flex-1">{animOpen ? t('收起动画面板') : t('动画')}</span>
                 {(doc.animations?.length ?? 0) > 0 && (
-                  <span className="text-[0.6875rem] text-subtle tabular-nums">{doc.animations!.length}</span>
+                  <span className="text-caption text-subtle tabular-nums">{doc.animations!.length}</span>
                 )}
               </MenuItem>
               <MenuSeparator />
@@ -1646,7 +1646,7 @@ function Designer({ id }: { id: string }) {
                 { value: '', label: t('主界面') },
                 ...doc.components.map((c) => ({ value: c.Name, label: c.Name, group: t('子控件') })),
               ]}
-              className="h-7 rounded-md px-2 text-[0.75rem]"
+              className="h-7 rounded-md px-2 text-footnote"
             />
             {target && (
               <Button
@@ -1668,7 +1668,7 @@ function Designer({ id }: { id: string }) {
           {tab === 'tree' ? (
             <>
               {live && (
-                <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-[0.6875rem] text-accent-text">
+                <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-caption text-accent-text">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   {t('AI 正在修改，已经改了 {n} 处', { n: live.applied })}
                 </p>
@@ -1780,7 +1780,7 @@ function Designer({ id }: { id: string }) {
               }}
             />
           ) : (
-            <p className="px-4 py-6 text-center text-[0.75rem] leading-relaxed text-subtle">
+            <p className="px-4 py-6 text-center text-footnote leading-relaxed text-subtle">
               {tab === 'tree' ? t('选中一个控件查看和修改它的属性') : t('选中一张图片查看它的每一版和生成设置')}
             </p>
           )}
@@ -1834,7 +1834,7 @@ function StageSteps({
               aria-current={on ? 'step' : undefined}
               onClick={() => onChange(s.id)}
               className={cn(
-                'flex h-8 cursor-pointer items-center gap-[7px] rounded-[9px] px-2.5 text-[0.8125rem] font-semibold whitespace-nowrap transition-colors',
+                'flex h-8 cursor-pointer items-center gap-[7px] rounded-xl px-2.5 text-body font-semibold whitespace-nowrap transition-colors',
                 // 当前这一步：比面板低一档的底色 + 一点内阴影，像按下去的样子
                 on
                   ? 'bg-panel text-fg shadow-[inset_0_1px_2px_rgb(0_0_0/0.08)]'
@@ -1844,7 +1844,7 @@ function StageSteps({
               <span
                 className={cn(
                   // 标题行窄的时候（@container）圆点先让位，只留步骤名
-                  'hidden h-5 w-5 shrink-0 place-items-center rounded-full text-[0.6875rem] tabular-nums @min-[600px]:grid',
+                  'hidden h-5 w-5 shrink-0 place-items-center rounded-full text-caption tabular-nums @min-[600px]:grid',
                   done
                     ? 'bg-success text-on-primary'
                     : on
@@ -1870,12 +1870,12 @@ function SizeButton({ doc, onChange }: { doc: DesignDoc; onChange: (s: { X: numb
   return (
     <Popover onOpenChange={(o) => o && (setW(String(doc.designSize.X)), setH(String(doc.designSize.Y)))}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="px-2 font-mono text-[0.75rem] font-normal" title={t('设计尺寸')}>
+        <Button variant="ghost" size="sm" className="px-2 font-mono text-footnote font-normal" title={t('设计尺寸')}>
           {doc.designSize.X}×{doc.designSize.Y}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[240px] p-3">
-        <p className="mb-2 text-[0.75rem] font-medium">{t('设计尺寸')}</p>
+        <p className="mb-2 text-footnote font-medium">{t('设计尺寸')}</p>
         <div className="flex items-center gap-2">
           <Input
             value={w}
@@ -1953,7 +1953,7 @@ function StyleButton({
           variant="ghost"
           size="sm"
           aria-label={t('美术风格')}
-          className="max-w-[220px] px-2 text-[0.75rem] font-normal"
+          className="max-w-[220px] px-2 text-footnote font-normal"
           title={value || t('美术风格')}
         >
           <PaletteIcon className="h-3.5 w-3.5 shrink-0" />
@@ -1966,8 +1966,8 @@ function StyleButton({
       <PopoverContent align="end" className="w-[340px] p-3">
         <div className="mb-3 flex items-start gap-2 rounded-lg bg-panel px-2.5 py-2">
           <div className="min-w-0 flex-1">
-            <p className="text-[0.75rem] font-medium">{t('项目美术提示词')}</p>
-            <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-subtle">
+            <p className="text-footnote font-medium">{t('项目美术提示词')}</p>
+            <p className="mt-0.5 text-caption leading-relaxed text-subtle">
               {prompts
                 ? t('{n} 条启用中，项目里所有界面共用', { n: prompts })
                 : t('还没有设置。设置后项目里所有界面风格统一')}
@@ -1977,8 +1977,8 @@ function StyleButton({
             {prompts ? t('管理') : t('设置')}
           </Button>
         </div>
-        <p className="mb-1 text-[0.75rem] font-medium">{t('这个界面的补充风格')}</p>
-        <p className="mb-2 text-[0.6875rem] leading-relaxed text-subtle">
+        <p className="mb-1 text-footnote font-medium">{t('这个界面的补充风格')}</p>
+        <p className="mb-2 text-caption leading-relaxed text-subtle">
           {t('只对这个界面生效，加在项目提示词后面。AI 对话时也会帮你定。')}
         </p>
         <Textarea
@@ -1986,10 +1986,10 @@ function StyleButton({
           onChange={(e) => setText(e.target.value)}
           rows={4}
           placeholder="dark fantasy, carved stone with gold trim, glowing runes"
-          className="text-[0.75rem]"
+          className="text-footnote"
         />
         <div className="mt-3 border-t pt-3">
-          <p className="mb-1.5 text-[0.75rem] font-medium">{t('从风格库套用')}</p>
+          <p className="mb-1.5 text-footnote font-medium">{t('从风格库套用')}</p>
           <StyleLibraryList
             kind={kind}
             active={open}

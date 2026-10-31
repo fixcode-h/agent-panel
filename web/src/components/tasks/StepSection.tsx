@@ -95,7 +95,7 @@ function StepSectionBase({
         >
           {sticky && <FrostBarBg />}
           <StepIcon status={root.status} />
-          <span className="min-w-0 truncate text-[0.875rem] font-semibold">{root.title}</span>
+          <span className="min-w-0 truncate text-prose font-semibold">{root.title}</span>
           <span className="flex items-center gap-1.5 text-xs text-subtle">
             {root.kind === 'main' && <Crown className="h-3.5 w-3.5 text-accent-text" />}
             {root.kind === 'flow' ? (
@@ -114,7 +114,7 @@ function StepSectionBase({
           </span>
           {vt && <Badge tone={root.verdict === 'fail' ? 'warning' : 'success'}>{vt}</Badge>}
           <span className="ml-auto flex items-center gap-1.5">
-            {time && <span className="font-mono text-[0.6875rem] text-subtle">{time}</span>}
+            {time && <span className="font-mono text-caption text-subtle">{time}</span>}
             <StepCommand argv={root.command} />
           </span>
         </header>

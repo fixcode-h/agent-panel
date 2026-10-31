@@ -127,11 +127,11 @@ export function DataPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
       <div className="flex min-h-10 items-center gap-3 border-b px-4 py-1.5">
-        <span className="inline-flex items-center gap-1.5 text-[0.8125rem] font-medium">
+        <span className="inline-flex items-center gap-1.5 text-body font-medium">
           <Database className="h-3.5 w-3.5 text-accent-text" />
           {t('运行时假数据')}
         </span>
-        <span className="hidden text-[0.75rem] text-subtle sm:inline">{t('只影响画板预览，导出时剔除')}</span>
+        <span className="hidden text-footnote text-subtle sm:inline">{t('只影响画板预览，导出时剔除')}</span>
         <div className="ml-auto">
           <Button size="sm" variant="ghost" onClick={addSet}>
             <Plus className="h-3.5 w-3.5" />
@@ -141,7 +141,7 @@ export function DataPanel({
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {issues.length > 0 && (
-          <div className="mx-auto mb-4 flex max-w-[980px] gap-2 rounded-xl bg-danger/8 px-3 py-2 text-[0.75rem] text-danger">
+          <div className="mx-auto mb-4 flex max-w-[980px] gap-2 rounded-xl bg-danger/8 px-3 py-2 text-footnote text-danger">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div className="min-w-0">
               <p className="font-medium">{t('数据绑定有问题')}</p>
@@ -156,8 +156,8 @@ export function DataPanel({
         {!data.sets.length ? (
           <EmptyPanel as="div" size="square" className="mx-auto mt-12 max-w-[420px]">
             <Database className="mx-auto h-6 w-6 text-subtle" />
-            <p className="mt-3 text-[0.8125rem] font-medium text-fg">{t('还没有运行时数据')}</p>
-            <p className="mt-1.5 text-[0.75rem] leading-relaxed text-muted">
+            <p className="mt-3 text-body font-medium text-fg">{t('还没有运行时数据')}</p>
+            <p className="mt-1.5 text-footnote leading-relaxed text-muted">
               {t(
                 '让 AI 搭界面时会一起给出这个界面需要的数据结构；有了集合以后，列表控件按行渲染，格子里就能看到物品、选中和锁定状态。也可以先手动新建一个集合。',
               )}
@@ -294,11 +294,11 @@ function SetCard({
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => onRename(e.target.value)}
         />
-        <span className="rounded bg-field px-1.5 py-0.5 font-mono text-[0.6875rem] text-subtle">{set.id}</span>
-        <span className="min-w-0 truncate text-[0.6875rem] text-subtle">
+        <span className="rounded-sm bg-field px-1.5 py-0.5 font-mono text-caption text-subtle">{set.id}</span>
+        <span className="min-w-0 truncate text-caption text-subtle">
           {where.length ? t('用在 {where}', { where: where.join('、') }) : t('还没有控件绑定这个集合')}
         </span>
-        <span className="ml-auto shrink-0 text-[0.6875rem] text-subtle">{t('{n} 行', { n: set.rows.length })}</span>
+        <span className="ml-auto shrink-0 text-caption text-subtle">{t('{n} 行', { n: set.rows.length })}</span>
         <IconButton
           icon={Trash2}
           tone="danger"
@@ -312,11 +312,11 @@ function SetCard({
       {!collapsed && (
         <>
           <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5">
-            <span className="text-[0.6875rem] text-subtle">{t('绑定到列表控件')}</span>
+            <span className="text-caption text-subtle">{t('绑定到列表控件')}</span>
             {bound.map((w) => (
               <span
                 key={w.id}
-                className="inline-flex items-center gap-1 rounded bg-field py-0.5 pr-0.5 pl-1.5 text-[0.6875rem]"
+                className="inline-flex items-center gap-1 rounded-sm bg-field py-0.5 pr-0.5 pl-1.5 text-caption"
               >
                 {w.label}
                 <IconButton
@@ -343,11 +343,11 @@ function SetCard({
                 }}
               />
             ) : (
-              <span className="ml-auto text-[0.6875rem] text-subtle">{t('没有可绑定的列表控件')}</span>
+              <span className="ml-auto text-caption text-subtle">{t('没有可绑定的列表控件')}</span>
             )}
           </div>
           {!set.fields.length ? (
-            <div className="px-3 py-4 text-[0.75rem] text-muted">
+            <div className="px-3 py-4 text-footnote text-muted">
               {t('这个集合还没有字段：加上字段以后，行里的值才能绑定到控件。')}
               <Button className="ml-2" size="sm" variant="ghost" onClick={addField}>
                 <Plus className="h-3.5 w-3.5" />
@@ -357,7 +357,7 @@ function SetCard({
           ) : (
             <>
               <div className="grid items-center gap-1.5 border-b px-3 py-1.5" style={{ gridTemplateColumns: cols }}>
-                <span className="text-[0.6875rem] text-subtle">#</span>
+                <span className="text-caption text-subtle">#</span>
                 {set.fields.map((f) => (
                   <FieldHead
                     key={f.key}
@@ -377,7 +377,7 @@ function SetCard({
                     className="grid items-center gap-1.5 border-b px-3 py-1 last:border-b-0"
                     style={{ gridTemplateColumns: cols }}
                   >
-                    <span className="text-[0.6875rem] text-subtle">{i + 1}</span>
+                    <span className="text-caption text-subtle">{i + 1}</span>
                     {set.fields.map((f) => (
                       <Cell
                         key={f.key}
@@ -398,7 +398,7 @@ function SetCard({
                   {t('添加一行')}
                 </Button>
                 {!set.rows.length && (
-                  <span className="text-[0.6875rem] text-subtle">{t('没有行时，绑定的列表在画板里是空的')}</span>
+                  <span className="text-caption text-subtle">{t('没有行时，绑定的列表在画板里是空的')}</span>
                 )}
               </footer>
             </>
@@ -423,14 +423,14 @@ function FieldHead({
       {/* 字段名是控件绑定用的 key，改名会让绑定断开：这里只显示，由 AI 或重新生成调整 */}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span
-          className="truncate font-mono text-[0.6875rem] text-muted"
+          className="truncate font-mono text-caption text-muted"
           title={[field.label, field.widget].filter(Boolean).join(' · ') || field.key}
         >
           {field.key}
         </span>
         <Select
           aria-label={t('字段类型')}
-          className="h-6 min-w-0 text-[0.625rem]"
+          className="h-6 min-w-0 text-micro"
           value={field.type}
           onChange={(e) => onEdit({ type: e.target.value as DataType })}
           options={DATA_TYPES.map((x) => ({ value: x, label: typeLabel(x) }))}
@@ -461,7 +461,7 @@ function Cell({
         checked={value === true || value === 'true'}
         onChange={onChange}
         label={
-          <span className="text-[0.75rem] text-muted">{value === true || value === 'true' ? t('是') : t('否')}</span>
+          <span className="text-footnote text-muted">{value === true || value === 'true' ? t('是') : t('否')}</span>
         }
         className="h-7 items-center gap-1.5"
       />

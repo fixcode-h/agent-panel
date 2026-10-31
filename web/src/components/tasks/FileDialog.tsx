@@ -134,13 +134,13 @@ export function FileDialog({
         />
         <div ref={box} className="min-h-0 flex-1 overflow-auto">
           {error ? (
-            <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+            <p className="p-6 text-body text-danger">{error}</p>
           ) : !file ? (
             <div className="flex h-full items-center justify-center text-subtle">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
           ) : !file.exists ? (
-            <p className="p-6 text-[0.8125rem] text-subtle">
+            <p className="p-6 text-body text-subtle">
               {local
                 ? t('找不到这个文件，可能已经被移动或删除。')
                 : import.meta.env.VITE_DEMO
@@ -148,13 +148,13 @@ export function FileDialog({
                   : t('项目目录里找不到这个文件，可能已经被移动或删除。')}
             </p>
           ) : file.binary ? (
-            <p className="p-6 text-[0.8125rem] text-subtle">
+            <p className="p-6 text-body text-subtle">
               {local
                 ? t('这个文件不是文字，这里显示不了。可以用默认程序打开，或在文件夹中找到它。')
                 : t('这是二进制文件，不显示内容。')}
             </p>
           ) : (
-            <pre className="min-w-max py-2 font-mono text-[0.75rem] leading-[1.6]">
+            <pre className="min-w-max py-2 font-mono text-footnote leading-[1.6]">
               {lines.map((l, i) => (
                 <div
                   key={i}

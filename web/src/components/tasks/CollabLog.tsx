@@ -79,9 +79,9 @@ function CollabRow({ x, rootId, onClick }: { x: CollabEvent; rootId: string; onC
           {timeAgo(x.at)}
         </span>
       </span>
-      <span className="flex min-w-0 items-center gap-1.5 text-[0.8125rem] text-fg">
+      <span className="flex min-w-0 items-center gap-1.5 text-body text-fg">
         <span
-          className={cn('shrink-0 rounded px-1.5 py-px text-[0.6875rem] leading-4', SOURCE_TONE[x.source])}
+          className={cn('shrink-0 rounded-sm px-1.5 py-px text-caption leading-4', SOURCE_TONE[x.source])}
           title={x.source === 'panel' ? t('面板发的') : x.source === 'user' ? t('你发的') : t('模型发的')}
         >
           {x.label}

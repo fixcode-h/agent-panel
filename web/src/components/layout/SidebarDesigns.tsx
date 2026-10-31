@@ -129,12 +129,12 @@ function DesignModeSwitch({ value, onChange }: { value: DesignMode; onChange: (m
             aria-label={t('切换设计类型')}
             data-design-mode={value}
             // 下拉按钮要看得出是一个可点的框：白底 + 一圈细线（输入框同一类），按下时底色加深一档
-            className="group/kind flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-[10px] bg-card px-2.5 text-left shadow-[0_0_0_1px_var(--line-strong)] transition-colors outline-none hover:bg-panel focus-visible:ring-2 focus-visible:ring-focus-soft data-[state=open]:bg-sel"
+            className="group/kind flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl bg-card px-2.5 text-left shadow-[0_0_0_1px_var(--line-strong)] transition-colors outline-none hover:bg-panel focus-visible:ring-2 focus-visible:ring-focus-soft data-[state=open]:bg-sel"
           >
             {tile(cur, 'h-[26px] w-[26px]')}
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-[0.8125rem] font-semibold">{cur.name}</span>
-              <span className="truncate text-[0.6875rem] text-subtle">{cur.desc}</span>
+              <span className="truncate text-body font-semibold">{cur.name}</span>
+              <span className="truncate text-caption text-subtle">{cur.desc}</span>
             </span>
             <ChevronDown
               aria-hidden
@@ -150,12 +150,12 @@ function DesignModeSwitch({ value, onChange }: { value: DesignMode; onChange: (m
                 key={m.id}
                 value={m.id}
                 onSelect={() => m.id !== value && onChange(m.id)}
-                className="h-auto gap-2.5 rounded-[9px] p-2"
+                className="h-auto gap-2.5 rounded-xl p-2"
               >
                 {tile(m, 'h-7 w-7')}
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-[0.8125rem] font-semibold">{m.name}</span>
-                  <span className="truncate text-[0.6875rem] text-subtle">{m.desc}</span>
+                  <span className="truncate text-body font-semibold">{m.name}</span>
+                  <span className="truncate text-caption text-subtle">{m.desc}</span>
                 </span>
               </MenuRadioItem>
             ))}
@@ -181,7 +181,7 @@ function ModelDesignList() {
     .map((p) => ({ p, ts: models.filter((x) => x.projectId === p.id).sort(byAskedAt) }))
     .filter((g) => g.ts.length)
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+    <div className="scroll-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
       <div className="mb-1.5 flex h-6 shrink-0 items-center pr-1 pl-2">
         <p className={cn('flex-1 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
         <IconButton icon={Plus} label={t('新建模型设计')} size="sm" onClick={() => setCreating(true)} />
@@ -352,7 +352,7 @@ function UiDesignList() {
             // 整行都能点：以前只有文字能点，点到图标或空白处没反应，像是要点两次
             onClick={() => renaming !== d.id && go({ page: 'design', id: d.id })}
             className={cn(
-              'ml-1 flex h-[31px] cursor-pointer items-center gap-2 rounded-lg border pr-2 pl-[11px] text-[0.8125rem] transition-colors',
+              'ml-1 flex h-[31px] cursor-pointer items-center gap-2 rounded-lg border pr-2 pl-[11px] text-body transition-colors',
               // 设计行和 Agent 项目下的对话行一样：平时无底、悬停浅底，选中是一张白卡片 + 极淡投影
               on ? SIDEBAR_BLOCK_ROW_ON : SIDEBAR_BLOCK_ROW_OFF,
             )}
@@ -417,7 +417,7 @@ function UiDesignList() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+    <div className="scroll-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
       <div className="mb-1.5 flex h-6 shrink-0 items-center pr-1 pl-2">
         {/* 上面的下拉已经写了是 UI 设计，分组标题只写「项目」（照设计稿） */}
         <p className={cn('flex-1 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
@@ -519,12 +519,12 @@ function UiDesignList() {
                         data-kind={k.id}
                         onClick={() => toggleFold(key)}
                         aria-expanded={kOpen}
-                        className="ml-1 flex h-7 cursor-pointer items-center gap-1.5 rounded-lg pr-2 pl-[9px] text-[0.75rem] text-subtle transition-colors hover:bg-sel hover:text-fg"
+                        className="ml-1 flex h-7 cursor-pointer items-center gap-1.5 rounded-lg pr-2 pl-[9px] text-footnote text-subtle transition-colors hover:bg-sel hover:text-fg"
                       >
                         <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', kOpen && 'rotate-90')} />
                         <k.icon className="h-3.5 w-3.5 shrink-0" />
                         <span className="min-w-0 flex-1 truncate text-left">{kindLabel(k.id)}</span>
-                        <span className="shrink-0 text-[0.6875rem] tabular-nums">{list.length}</span>
+                        <span className="shrink-0 text-caption tabular-nums">{list.length}</span>
                       </button>
                       {kOpen && <div className="ml-2 flex flex-col gap-px">{list.map(designRow)}</div>}
                     </div>

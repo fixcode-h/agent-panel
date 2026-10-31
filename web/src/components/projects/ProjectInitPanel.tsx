@@ -162,11 +162,11 @@ export function buildGroups(
               {p.steps.map((s) => (
                 <li key={s.id} className="rounded-lg bg-sel/40 px-2.5 py-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[0.75rem] font-medium">{s.name}</span>
+                    <span className="text-footnote font-medium">{s.name}</span>
                     <Badge>{ENV_LABEL[s.env]}</Badge>
-                    {s.quick && <span className="text-[0.6875rem] text-subtle">{t('小改动也跑')}</span>}
+                    {s.quick && <span className="text-caption text-subtle">{t('小改动也跑')}</span>}
                   </div>
-                  <code className="mt-0.5 block font-mono text-[0.6875rem] break-all whitespace-pre-wrap text-muted">
+                  <code className="mt-0.5 block font-mono text-caption break-all whitespace-pre-wrap text-muted">
                     {s.command}
                   </code>
                 </li>
@@ -253,7 +253,7 @@ export function RecGroups({
         return (
           <section key={g.id} className="overflow-hidden rounded-xl bg-card shadow-card">
             <header className="flex items-center gap-2 border-b bg-panel/60 px-3.5 py-2">
-              <span className="text-[0.8125rem] font-medium">{g.title}</span>
+              <span className="text-body font-medium">{g.title}</span>
               <span className="text-xs text-subtle">{left ? t('{n} 项待应用', { n: left }) : t('已一致')}</span>
               {left > 0 && g.recs.length > 1 && (
                 <Button size="sm" variant="ghost" className="ml-auto" onClick={() => apply(g.recs)}>
@@ -266,10 +266,10 @@ export function RecGroups({
                 <li key={r.id} className="flex flex-col gap-2 px-3.5 py-3">
                   <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
                     <div className="flex min-w-[180px] flex-[1_1_200px] flex-col gap-0.5">
-                      <span className="text-[0.8125rem] font-medium">{r.label}</span>
-                      {r.reason && <span className="text-[0.75rem] leading-relaxed text-subtle">{r.reason}</span>}
+                      <span className="text-body font-medium">{r.label}</span>
+                      {r.reason && <span className="text-footnote leading-relaxed text-subtle">{r.reason}</span>}
                     </div>
-                    <div className="flex min-w-0 flex-[2_1_260px] items-start gap-2 text-[0.75rem]">
+                    <div className="flex min-w-0 flex-[2_1_260px] items-start gap-2 text-footnote">
                       {!r.same && (
                         <>
                           <span className="min-w-0 flex-1 break-words text-subtle line-through decoration-subtle/50">
@@ -343,8 +343,8 @@ export function InitFileList({ files }: { files: ProjectProposal['files'] }) {
           <li key={f.path} className="flex items-start gap-2.5 px-3 py-2">
             <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-subtle" />
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <code className="truncate font-mono text-[0.75rem]">{f.path}</code>
-              {f.summary && <span className="text-[0.6875rem] text-subtle">{f.summary}</span>}
+              <code className="truncate font-mono text-footnote">{f.path}</code>
+              {f.summary && <span className="text-caption text-subtle">{f.summary}</span>}
             </span>
             <Badge tone={f.action === 'created' ? 'success' : f.action === 'updated' ? 'accent' : 'neutral'}>
               {fileLabel(f.action)}
@@ -432,8 +432,8 @@ export function ProjectInitPanel({
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-5 [&>*]:shrink-0">
       <div className="flex flex-col gap-1 pb-1">
-        <h3 className="text-[0.9375rem] font-semibold">{t('AI 初始化项目')}</h3>
-        <p className="text-[0.75rem] leading-relaxed text-subtle">
+        <h3 className="text-heading font-semibold">{t('AI 初始化项目')}</h3>
+        <p className="text-footnote leading-relaxed text-subtle">
           {t(
             '本机 Agent 读一遍项目，写好 AGENTS.md 和项目文档框架，再评估哪些工作流可用、项目设置该怎么配。推荐项可以逐项应用，也可以整组或全部应用；每个项目初始化一次，完成后才能保存项目设置。',
           )}
@@ -457,14 +457,14 @@ export function ProjectInitPanel({
               {draft.initializedAt ? <Check className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="text-[0.875rem] font-medium">
+              <span className="text-prose font-medium">
                 {fromDir
                   ? t('目录已经初始化过')
                   : draft.initializedAt
                     ? t('已于 {date} 初始化', { date: new Date(draft.initializedAt).toLocaleString() })
                     : t('这个项目还没有初始化')}
               </span>
-              <span className="text-[0.75rem] text-subtle">
+              <span className="text-footnote text-subtle">
                 {fromDir
                   ? t('目录里已有初始化写好的 AGENTS.md 和文档，可以直接保存；想要推荐的设置可以重新初始化。')
                   : draft.initializedAt
@@ -494,7 +494,7 @@ export function ProjectInitPanel({
             </div>
           </div>
           {draft.initializedAt && !fromDir && !saved && (
-            <span className="rounded-lg bg-field px-3 py-2 text-[0.75rem] leading-relaxed text-subtle">
+            <span className="rounded-lg bg-field px-3 py-2 text-footnote leading-relaxed text-subtle">
               {t('这次初始化没有留下分析报告，重新初始化后可以在这里对照推荐值。')}
             </span>
           )}
@@ -507,12 +507,12 @@ export function ProjectInitPanel({
                 [t('推荐设置'), t('测试步骤、子对话隔离、推送、编码换行、搜索排除等，每项附依据')],
               ].map(([title, desc], i) => (
                 <li key={title} className="flex gap-2.5 rounded-lg bg-card shadow-card px-3 py-2.5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field text-[0.6875rem] text-muted">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field text-caption text-muted">
                     {i + 1}
                   </span>
                   <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="text-[0.8125rem] font-medium">{title}</span>
-                    <span className="text-[0.75rem] leading-relaxed text-subtle">{desc}</span>
+                    <span className="text-body font-medium">{title}</span>
+                    <span className="text-footnote leading-relaxed text-subtle">{desc}</span>
                   </span>
                 </li>
               ))}
@@ -531,7 +531,7 @@ export function ProjectInitPanel({
       {!result && draft.initializedAt && saved && savedPending.length > 0 && (
         <>
           <div className="flex flex-col">
-            <span className="text-[0.875rem] font-semibold">
+            <span className="text-prose font-semibold">
               {t('和推荐值不同的设置（{n} 项）', { n: savedPending.length })}
             </span>
             <span className="text-xs text-subtle">
@@ -549,7 +549,7 @@ export function ProjectInitPanel({
               <span className="grid h-6 w-6 place-items-center rounded-md bg-success/12 text-success">
                 <Check className="h-3.5 w-3.5" />
               </span>
-              <span className="text-[0.8125rem] font-medium">{t('初始化完成')}</span>
+              <span className="text-body font-medium">{t('初始化完成')}</span>
               {result.docRoot && (
                 <span className="text-xs text-subtle">{t('文档根：{dir}', { dir: result.docRoot })}</span>
               )}
@@ -560,7 +560,7 @@ export function ProjectInitPanel({
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex min-w-0 flex-1 flex-col">
-              <span className="text-[0.875rem] font-semibold">{t('推荐设置')}</span>
+              <span className="text-prose font-semibold">{t('推荐设置')}</span>
               <span className="text-xs text-subtle">
                 {all.length
                   ? pending.length

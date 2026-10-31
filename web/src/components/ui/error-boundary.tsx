@@ -38,8 +38,7 @@ export class ErrorBoundary extends Component<Props, { error: Error | null; key?:
       <div
         role="alert"
         className={
-          this.props.className ??
-          'flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-[0.8125rem]'
+          this.props.className ?? 'flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-body'
         }
       >
         <AlertTriangle className="h-6 w-6 text-warning" />

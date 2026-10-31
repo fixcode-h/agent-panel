@@ -1754,4 +1754,9 @@ export const EN_SETTINGS: Record<string, string> = {
   加进创建角色的提示词: 'Added to the prompt when creating roles',
   工作流规则: 'Workflow rules',
   加进创建工作流的提示词: 'Added to the prompt when creating workflows',
+  '读取 web/src/cart.ts 第 1 到 48 行': 'Read web/src/cart.ts lines 1–48',
+  深色文字亮度: 'Dark text brightness',
+  深色主题下主文字有多白: 'How bright primary text is in dark theme',
+  '默认 93%，和 Claude Code 深色的主文字一样；100% 是纯白，调低更柔和。浅色主题不受影响。':
+    'Default 93%, matching Claude Code dark primary text; 100% is pure white, lower is softer. Light theme is unaffected.',
 }

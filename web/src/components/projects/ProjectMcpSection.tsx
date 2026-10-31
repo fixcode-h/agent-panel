@@ -186,9 +186,9 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
         }
       />
       {error ? (
-        <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
+        <p className="text-body text-warning">{t('读取失败：{error}', { error })}</p>
       ) : !data ? (
-        <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+        <p className="text-body text-subtle">{t('读取中…')}</p>
       ) : (
         <>
           {!project.path ? (
@@ -198,8 +198,8 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
           ) : (
             <section className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-[0.8125rem] font-medium">{t('项目里识别到的配置')}</h3>
-                <span className="text-[0.75rem] text-subtle">
+                <h3 className="text-body font-medium">{t('项目里识别到的配置')}</h3>
+                <span className="text-footnote text-subtle">
                   {data.detected.length ? t('共 {n} 条', { n: data.detected.length }) : t('没有找到')}
                 </span>
                 {todo.length > 0 && (
@@ -214,7 +214,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                 )}
               </div>
               {!data.detected.length ? (
-                <EmptyPanel size="md" className="text-[0.75rem] leading-relaxed">
+                <EmptyPanel size="md" className="text-footnote leading-relaxed">
                   {t(
                     '没找到项目里的 MCP 配置。支持 .mcp.json、.claude/settings*.json、.cursor/mcp.json、.vscode/mcp.json、.codex/config.toml。',
                   )}
@@ -229,14 +229,14 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                         <Terminal className="h-4 w-4 shrink-0 text-accent-text" />
                       )}
                       <div className="min-w-0 flex-[1_1_240px]">
-                        <p className="flex items-center gap-2 font-mono text-[0.8125rem]">
+                        <p className="flex items-center gap-2 font-mono text-body">
                           <span className="truncate">{d.name}</span>
                           <StatusBadge status={d.status} />
                         </p>
-                        <p className="truncate font-mono text-[0.75rem] text-muted" title={summary(d.server)}>
+                        <p className="truncate font-mono text-footnote text-muted" title={summary(d.server)}>
                           {summary(d.server) || t('（没有填命令或地址）')}
                         </p>
-                        <p className="truncate text-[0.6875rem] text-subtle" title={d.file}>
+                        <p className="truncate text-caption text-subtle" title={d.file}>
                           {d.file} · {d.source}
                         </p>
                       </div>
@@ -269,7 +269,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                 </ul>
               )}
               {!!data.errors.length && (
-                <ul className="flex flex-col gap-1 rounded-lg bg-warning/10 px-3 py-2 text-[0.75rem]">
+                <ul className="flex flex-col gap-1 rounded-lg bg-warning/10 px-3 py-2 text-footnote">
                   {data.errors.map((e) => (
                     <li key={e.file} className="flex gap-2">
                       <span className="shrink-0 font-mono">{e.file}</span>
@@ -283,8 +283,8 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
 
           <section className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-[0.8125rem] font-medium">{t('面板管理的工具')}</h3>
-              <span className="text-[0.75rem] text-subtle">
+              <h3 className="text-body font-medium">{t('面板管理的工具')}</h3>
+              <span className="text-footnote text-subtle">
                 {data.servers.length ? t('共 {n} 条', { n: data.servers.length }) : ''}
               </span>
               <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void diagnose()}>
@@ -306,14 +306,14 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                       <Terminal className="h-4 w-4 shrink-0 text-accent-text" />
                     )}
                     <div className="min-w-0 flex-[1_1_240px]">
-                      <p className="truncate font-mono text-[0.8125rem]">{s.name}</p>
-                      <p className="truncate font-mono text-[0.75rem] text-muted" title={summary(s)}>
+                      <p className="truncate font-mono text-body">{s.name}</p>
+                      <p className="truncate font-mono text-footnote text-muted" title={summary(s)}>
                         {summary(s)}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                       {data.clis.map((c) => (
-                        <label key={c.id} className="flex cursor-pointer items-center gap-2 text-[0.75rem] text-muted">
+                        <label key={c.id} className="flex cursor-pointer items-center gap-2 text-footnote text-muted">
                           <Switch
                             checked={s.clis.includes(c.id)}
                             onCheckedChange={(on) => void toggle(s, c.id, on)}
@@ -331,7 +331,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                 ))}
               </ul>
             )}
-            <p className="text-[0.75rem] leading-relaxed text-subtle">
+            <p className="text-footnote leading-relaxed text-subtle">
               {t('配置文件：')}
               {data.clis.map((c) => `${c.name} ${c.file}`).join(t('；'))}
             </p>
@@ -401,8 +401,8 @@ function Intro({ action }: { action?: React.ReactNode }) {
   return (
     <div className="flex flex-wrap items-start gap-3 pb-1">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <h3 className="text-[0.9375rem] font-semibold">{t('MCP 工具')}</h3>
-        <p className="text-[0.75rem] leading-relaxed text-subtle">
+        <h3 className="text-heading font-semibold">{t('MCP 工具')}</h3>
+        <p className="text-footnote leading-relaxed text-subtle">
           {t(
             'MCP 工具让 Agent 连上外部的服务和数据。这里管当前项目用的 MCP：面板写进各 Agent 的全局配置文件（和「MCP 工具」页是同一份），项目目录里已有的配置只读识别出来、可以一键导入。这里的改动立即生效，不用下面的按钮保存。',
           )}
@@ -421,7 +421,7 @@ const STATUS = {
 
 function StatusBadge({ status }: { status: ProjectMcpDetected['status'] }) {
   return (
-    <span className={`shrink-0 rounded-full px-1.5 py-px text-[0.6875rem] ${STATUS[status].cls}`}>
+    <span className={`shrink-0 rounded-full px-1.5 py-px text-caption ${STATUS[status].cls}`}>
       {STATUS[status].label}
     </span>
   )
@@ -520,7 +520,7 @@ function EditDialog({
     >
       <McpJsonFill onFill={fillFrom} />
       <label className="flex flex-col gap-1.5">
-        <span className="text-[0.8125rem] font-medium">{t('名字')}</span>
+        <span className="text-body font-medium">{t('名字')}</span>
         <Input
           value={name}
           disabled={!!entry}
@@ -528,7 +528,7 @@ function EditDialog({
           placeholder="github"
           className="font-mono"
         />
-        <span className="text-[0.75rem] text-subtle">
+        <span className="text-footnote text-subtle">
           {name && !/^[A-Za-z0-9][\w-]*$/.test(name) ? t('工具名只能用字母、数字、- 和 _') : t('创建后不能改名')}
         </span>
       </label>
@@ -547,7 +547,7 @@ function EditDialog({
       {transport === 'stdio' ? (
         <>
           <label className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('启动命令')}</span>
+            <span className="text-body font-medium">{t('启动命令')}</span>
             <Input
               value={command}
               onChange={(e) => setCommand(e.target.value)}
@@ -556,32 +556,32 @@ function EditDialog({
             />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('参数')}</span>
+            <span className="text-body font-medium">{t('参数')}</span>
             <Input
               value={args}
               onChange={(e) => setArgs(e.target.value)}
               placeholder="-y @modelcontextprotocol/server-filesystem ~/projects"
               className="font-mono"
             />
-            <span className="text-[0.75rem] text-subtle">{t('用空格分开，含空格的参数加引号')}</span>
+            <span className="text-footnote text-subtle">{t('用空格分开，含空格的参数加引号')}</span>
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('环境变量')}</span>
+            <span className="text-body font-medium">{t('环境变量')}</span>
             <Textarea
               rows={3}
               value={env}
               onChange={(e) => setEnv(e.target.value)}
               placeholder="API_KEY=..."
               spellCheck={false}
-              className="font-mono text-[0.75rem]"
+              className="font-mono text-footnote"
             />
-            <span className="text-[0.75rem] text-subtle">{t('一行一个，写成 名字=值')}</span>
+            <span className="text-footnote text-subtle">{t('一行一个，写成 名字=值')}</span>
           </label>
         </>
       ) : (
         <>
           <label className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('地址')}</span>
+            <span className="text-body font-medium">{t('地址')}</span>
             <Input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
@@ -590,21 +590,21 @@ function EditDialog({
             />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('请求头')}</span>
+            <span className="text-body font-medium">{t('请求头')}</span>
             <Textarea
               rows={3}
               value={headers}
               onChange={(e) => setHeaders(e.target.value)}
               placeholder="Authorization: Bearer ..."
               spellCheck={false}
-              className="font-mono text-[0.75rem]"
+              className="font-mono text-footnote"
             />
-            <span className="text-[0.75rem] text-subtle">{t('一行一个，写成 名字: 值')}</span>
+            <span className="text-footnote text-subtle">{t('一行一个，写成 名字: 值')}</span>
           </label>
         </>
       )}
       <div className="flex flex-col gap-2">
-        <span className="text-[0.8125rem] font-medium">{t('装进哪些 Agent')}</span>
+        <span className="text-body font-medium">{t('装进哪些 Agent')}</span>
         <div className="flex flex-wrap gap-x-5 gap-y-2">
           {clis.map((c) => (
             <Checkbox
@@ -618,7 +618,7 @@ function EditDialog({
       </div>
       {test && test !== 'running' && (
         <div
-          className={`rounded-lg border px-3 py-2.5 text-[0.75rem] ${test.ok ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'}`}
+          className={`rounded-lg border px-3 py-2.5 text-footnote ${test.ok ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'}`}
         >
           <p className="flex items-center gap-1.5 font-medium">
             {test.ok ? (

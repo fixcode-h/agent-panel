@@ -142,10 +142,10 @@ export function ReviewDialog({
   }
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="full">
+    <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="xl">
       <ModalHeader icon={ClipboardCheck} iconClass="text-warning" title={req.title}>
         {agent && (
-          <span className="hidden min-w-0 items-center gap-1.5 text-[0.75rem] text-subtle sm:flex">
+          <span className="hidden min-w-0 items-center gap-1.5 text-footnote text-subtle sm:flex">
             <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
             <span className="truncate">{agent.name}</span>
           </span>
@@ -163,7 +163,7 @@ export function ReviewDialog({
             {req.detail ? (
               <Markdown text={req.detail} teamNames={teamNames} />
             ) : (
-              <p className="text-[0.8125rem] text-subtle">{t('这一步没有输出内容')}</p>
+              <p className="text-body text-subtle">{t('这一步没有输出内容')}</p>
             )}
           </div>
           {pick && (
@@ -206,7 +206,7 @@ export function ReviewDialog({
                 )}
               >
                 <div className="flex items-start gap-2">
-                  <span className="mt-px grid h-4.5 w-4.5 shrink-0 place-items-center rounded-full bg-warning/15 text-[0.6875rem] font-semibold text-warning">
+                  <span className="mt-px grid h-4.5 w-4.5 shrink-0 place-items-center rounded-full bg-warning/15 text-caption font-semibold text-warning">
                     {i + 1}
                   </span>
                   <span className="line-clamp-3 min-w-0 flex-1 border-l-2 border-warning/40 pl-2 text-xs leading-relaxed text-muted [overflow-wrap:anywhere]">
@@ -239,7 +239,7 @@ export function ReviewDialog({
                   rows={2}
                   placeholder={t('这里要怎么改')}
                   aria-label={t('标注 {n} 的意见', { n: i + 1 })}
-                  className="min-w-0 resize-none py-1.5 text-[0.8125rem]"
+                  className="min-w-0 resize-none py-1.5 text-body"
                 />
               </div>
             ))}
@@ -251,7 +251,7 @@ export function ReviewDialog({
               rows={2}
               placeholder={t('整体意见（可选）')}
               aria-label={t('整体意见')}
-              className="min-w-0 resize-none py-1.5 text-[0.8125rem]"
+              className="min-w-0 resize-none py-1.5 text-body"
             />
           </div>
         </aside>

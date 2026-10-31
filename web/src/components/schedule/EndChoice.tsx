@@ -35,7 +35,7 @@ export function EndChoice({
       onClick={pick}
       className={cn(
         fieldClass,
-        'flex flex-1 cursor-pointer items-center gap-2 text-left text-[0.8125rem]',
+        'flex flex-1 cursor-pointer items-center gap-2 text-left text-body',
         compact ? 'h-8' : 'h-10',
         !on && 'text-subtle hover:text-fg',
       )}

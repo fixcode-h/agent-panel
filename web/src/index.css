@@ -92,6 +92,29 @@
   /* 弹窗遮罩：Modal、Sheet 共用一个透明度，深浅色一样 */
   --scrim: rgb(0 0 0 / 0.45);
   /*
+   * 动效节奏（照 Claude Code 网页版的 cds 令牌）：出现慢一点、消失快一点。
+   * fast 给悬停和所有退场，snap 给菜单、提示的进场，base 给开关、输入框，sheet 给弹窗、抽屉。
+   * snap 曲线前快后慢、尾巴很长；overshoot 到位时略微过冲；spring 是按钮松手的回弹（不支持 linear() 时用 overshoot）
+   */
+  --dur-fast: 60ms;
+  --dur-snap: 120ms;
+  --dur-base: 200ms;
+  --dur-sheet: 300ms;
+  --ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-overshoot: cubic-bezier(0.34, 1.3, 0.64, 1);
+  --ease-spring: var(--ease-overshoot);
+  /*
+   * 悬停 / 按下（展开）的底色：前景色的半透明叠加，不用不透明的 --sel。
+   * 同一个 --sel 放在页面底和浮层底上深浅差很多（深色下浮层上几乎看不出），叠加层放在哪层底上都是「深一档」
+   */
+  --hover: color-mix(in oklab, var(--fg) 6%, transparent);
+  --active: color-mix(in oklab, var(--fg) 10%, transparent);
+  /* 弹出菜单、下拉面板外面那圈细线：前景色 10%，比 line-strong 轻，靠投影浮起来 */
+  --pop-edge: color-mix(in oklab, var(--fg) 10%, transparent);
+  /* 对话输入框外壳：平时一层很淡的大半径投影微微浮起，聚焦时加深，不换颜色 */
+  --composer-shadow: 0 0.25rem 1.25rem rgb(0 0 0 / 0.035);
+  --composer-shadow-focus: 0 0.25rem 1.25rem rgb(0 0 0 / 0.075);
+  /*
    * 弹窗外壳（照 Claude Code 网页版的方案弹窗）：浅色是卡片白；深色比页面亮一档（#191919 上是 #1f1f1f），
    * 外圈和标题栏下沿是一道前景色 7% 的细线，深浅色、各配色都跟着前景色走
    */
@@ -157,7 +180,7 @@
   --field: #2b2b29;
   --line: #3b3a37;
   --line-strong: #4a4945;
-  --fg: #f5f4ef;
+  --fg-raw: #f5f4ef;
   --muted: #c3c1b8;
   --subtle: #a09e95;
   --sel: #353532;
@@ -195,6 +218,8 @@
   --ask-line: rgb(232 182 90 / 0.22);
   --ask-sel: rgb(232 182 90 / 0.1);
   --shadow-pop: 0 12px 36px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.06);
+  --composer-shadow: 0 0.25rem 1.25rem rgb(0 0 0 / 0.2);
+  --composer-shadow-focus: 0 0.25rem 1.25rem rgb(0 0 0 / 0.35);
   --code-bg: #1f1f1d;
   --code-chip: #353532;
   --code-chip-fg: #f0a08a;
@@ -244,7 +269,7 @@
   --field: #202023;
   --line: #2c2c30;
   --line-strong: #3b3b40;
-  --fg: #ededef;
+  --fg-raw: #ededef;
   --muted: #bdbdc4;
   --subtle: #95959d;
   --sel: #2c2c30;
@@ -286,7 +311,7 @@
   --field: #151e29;
   --line: #233040;
   --line-strong: #2f3e50;
-  --fg: #e6edf5;
+  --fg-raw: #e6edf5;
   --muted: #b4c2d2;
   --subtle: #8696a8;
   --sel: #1e2a38;
@@ -327,7 +352,7 @@
   --field: #191e1a;
   --line: #283029;
   --line-strong: #364038;
-  --fg: #e8eee7;
+  --fg-raw: #e8eee7;
   --muted: #bac5b8;
   --subtle: #8e9a8c;
   --sel: #232a24;
@@ -385,7 +410,7 @@
   --shadow: 0 1px 2px rgb(0 0 0 / 0.05);
   --panel-shadow: none;
   --panel-edge: var(--line);
-  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);
   --code-bg: #f7f7f7;
   --code-chip: #f0f0f0;
   --scroll-thumb: #c9c9c9;
@@ -400,7 +425,7 @@
   --window: #1f1f1f;
   --line: #303030;
   --line-strong: #474747;
-  --fg: #ffffff;
+  --fg-raw: #ffffff;
   --muted: #c6c6c6;
   --subtle: #9c9c9c;
   --sel: #404040;
@@ -436,7 +461,51 @@
   --scroll-thumb-hover: #7a7a7a;
 }
 
+/* 按钮松手的弹簧（照 Claude Code 的 --cds-btn-spring），浏览器支持 linear() 才换上 */
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: linear(
+      0,
+      0.2459,
+      0.6526,
+      0.9468,
+      1.0764,
+      1.0915,
+      1.0585,
+      1.0219,
+      0.9993,
+      0.9914,
+      0.9921,
+      0.9957,
+      0.9988,
+      1.0004,
+      1
+    );
+  }
+}
+/* 系统设了「减少动态效果」：所有用动效令牌的进出场、按压都变成瞬间完成 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-snap: 1ms;
+    --dur-base: 1ms;
+    --dur-sheet: 1ms;
+  }
+}
+
+/*
+ * 深色下的主文字亮度（设置 → 外观 →「深色文字亮度」，html 上的 --fg-level，默认 93%）：
+ * 各配色深色块只写原色 --fg-raw，这里按亮度往页面底色里混成不透明的 --fg。
+ * 照 Claude Code 深色的主文字（白色 93%）；纯白在深底上太刺眼。混成不透明色，别处 color-mix 拿 --fg 算浅底时不会叠出透明
+ */
+.dark {
+  --fg: color-mix(in srgb, var(--fg-raw) var(--fg-level, 93%), var(--bg));
+}
+
 @theme inline {
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-pop-edge: var(--pop-edge);
   --color-bg: var(--bg);
   --color-rail: var(--rail);
   --color-panel: var(--panel);
@@ -518,6 +587,34 @@
      主次靠颜色和字号分，不靠更细的字 */
   --font-weight-normal: 500;
   --font-weight-medium: 550;
+  /*
+   * 字号角色（照 Claude Code 网页版的 cds 字号表收拢，原来散着 20 多种 text-[…rem]，相邻差半像素）：
+   * 写 text-body、text-caption 这些名字，不再手写 text-[…rem]（scripts/rules-check.mjs 会拦）。
+   * 不带行高：原来的手写字号也不带，带上会让上千处行高一起变、布局跟着挪；要行高单独写 leading-*。
+   * 都是 rem，设置里调字号时一起缩放
+   */
+  --text-micro: 0.625rem; /* 10px：角标数字、图表刻度 */
+  --text-caption: 0.6875rem; /* 11px：状态标签、耗时、次要说明 */
+  --text-footnote: 0.75rem; /* 12px：路径、分支、元信息 */
+  --text-body: 0.8125rem; /* 13px：界面正文（列表行、按钮、菜单） */
+  --text-prose: 0.875rem; /* 14px：对话正文、输入框 */
+  --text-heading: 0.9375rem; /* 15px：卡片和分组标题 */
+  --text-subtitle: 1.0625rem; /* 17px：面板标题 */
+  --text-title: 1.25rem; /* 20px：页面标题、大数字 */
+  --text-display: 1.75rem; /* 28px：首页问候 */
+  --text-hero: 2.125rem; /* 34px：宽屏首页问候 */
+  /*
+   * 圆角阶梯（照 cds 的 radius--xs / lg / composer）：5 / 7 / 10 / 14 四级加全圆，原来有十几种手写值。
+   * 嵌套时外层比里层大一级（卡片 10 里的按钮 7）。Tailwind 的名字沿用，只改取值：
+   * sm 5（标签、行内代码）、md / lg 7（按钮、列表行、菜单项）、xl 10（卡片、菜单、浮层）、2xl 14（弹窗、气泡）；
+   * 输入框外壳 20（rounded-3xl）。8px 以下的小色块（图例、CLI 色点）按自身大小写，不在阶梯里
+   */
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 7px;
+  --radius-xl: 10px;
+  --radius-2xl: 14px;
+  --radius-3xl: 20px;
   /* 间距固定用像素：设置里调字号改的是根字号，界面字号都写 rem，这样只有字变大、布局不跟着撑开 */
   --spacing: 4px;
 }
@@ -536,6 +633,111 @@ body,
   background-color: color-mix(in oklab, var(--bg) 72%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
   backdrop-filter: blur(16px) saturate(1.6);
+}
+/*
+ * 滚动边缘渐隐（照 Claude Code 的 scroll-fade）：列表滚到一半时，还能往哪个方向滚，哪个边缘就淡出 16px，
+ * 不再被容器边缘硬切。用滚动驱动动画改 --sf-top / --sf-bot：滚到顶时上边不淡、滚到底时下边不淡，
+ * 内容不够滚时动画不生效，两边都不淡。不支持 animation-timeline 的浏览器保持原样（不加遮罩）
+ */
+@property --sf-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --sf-bot {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes sf-y {
+  0% {
+    --sf-top: 0px;
+    --sf-bot: 16px;
+  }
+  4%,
+  96% {
+    --sf-top: 16px;
+    --sf-bot: 16px;
+  }
+  100% {
+    --sf-top: 16px;
+    --sf-bot: 0px;
+  }
+}
+@utility scroll-fade {
+  @supports (animation-timeline: scroll()) {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--sf-top),
+      #000 calc(100% - var(--sf-bot)),
+      transparent
+    );
+    animation: sf-y linear both;
+    animation-timeline: scroll(self);
+  }
+}
+/* 展开收起（ui/collapse.tsx）：高度 200ms，内容晚 40ms 淡入；收起时内容先 60ms 淡出 */
+.collapse-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-base) var(--ease-snap);
+}
+.collapse-grid > div {
+  opacity: 0;
+  transition: opacity var(--dur-fast) linear;
+}
+.collapse-grid[data-collapse='open'] {
+  grid-template-rows: 1fr;
+}
+.collapse-grid[data-collapse='open'] > div {
+  opacity: 1;
+  transition: opacity var(--dur-base) var(--ease-snap) 40ms;
+}
+/* 新插进列表的一行（侧栏新对话、子对话列表新的一项）：从上方 4px 处淡入，底色先亮一下强调色再褪掉 */
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes row-flash {
+  from {
+    background-color: var(--accent-soft);
+  }
+}
+.row-enter {
+  animation:
+    row-in var(--dur-sheet) var(--ease-snap) both,
+    row-flash 1.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-enter {
+    animation: none;
+  }
+}
+/*
+ * 原地换内容（复制 → 对勾、「复制」→「已复制」）：两样叠在同一格里交叉缩放，按钮宽度按宽的那个算、不跳。
+ * 出现 120ms，缩放用 300ms 的 snap 曲线收尾
+ */
+.swap {
+  display: inline-grid;
+  place-items: center;
+}
+.swap > * {
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--dur-snap) var(--ease-snap),
+    transform var(--dur-sheet) var(--ease-snap);
+}
+.swap > :last-child,
+.swap[data-done] > :first-child {
+  opacity: 0;
+  transform: scale(0.5);
+}
+.swap[data-done] > :last-child {
+  opacity: 1;
+  transform: none;
 }
 @utility frost-card {
   background-color: color-mix(in oklab, var(--card) 78%, transparent);
@@ -614,24 +816,24 @@ body,
 }
 /*
  * 「Claude Code」配色下的输入框（对话、聊天两处的输入框外壳 .composer-shell）：只换外观，布局不动。
- * 照 Claude Code 是一块比主区亮一档的实底（--pop）、一道细边、12px 圆角，平时不浮起；聚焦时边框提亮一点，
- * 不套蓝色焦点环。放在 utilities 层，靠多一级属性选择器盖过外壳上写死的圆角、底色和聚焦样式；
- * 拖文件进来时的强调色边框（border-accent）不在这里改，照常显示
+ * 照 Claude Code 是一块比主区亮一档的实底（--pop）、一道细边、12px 圆角，平时一层很淡的投影微微浮起；聚焦时边框提亮一点、
+ * 投影加深，不套蓝色焦点环。放在 utilities 层，靠多一级属性选择器盖过外壳上写死的圆角、底色和聚焦样式；
+ * 拖文件进来时的强调色内环（drop-ring）带 !important，照常显示
  */
 @layer utilities {
   [data-palette='code'] .composer-shell {
     border-radius: 12px;
     /* Claude Code 的输入框是浮层色（surface-popover：深色 #303030、浅色白） */
     background-color: var(--pop);
-    box-shadow: none;
+    border-color: var(--pop-edge);
+    box-shadow: var(--composer-shadow);
   }
   [data-palette='code'] .composer-shell:focus-within {
     border-color: #c4c4c2;
-    box-shadow: 0 2px 10px -4px rgb(0 0 0 / 0.1);
+    box-shadow: var(--composer-shadow-focus);
   }
   [data-palette='code'].dark .composer-shell:focus-within {
     border-color: #4f4f4f;
-    box-shadow: none;
   }
 }
 /*
@@ -666,14 +868,35 @@ body,
     font-weight: var(--font-weight-normal);
     letter-spacing: var(--app-tracking, -0.02em);
     word-spacing: var(--app-word-spacing, -0.2em);
+    /*
+     * 中文排版：连续的全角标点（「」）。这类）挤掉半个字的空白；汉字和英文、数字之间自动留 1/8 字宽，
+     * Agent 回复里大量的「用Claude Code跑了3个」不用手打空格也分得开（已经有空格的地方不再加）。
+     * 浏览器不支持时保持原样
+     */
+    text-spacing-trim: normal;
+    text-autospace: normal;
   }
-  /* 代码要按空格对齐，不跟着收窄空格 */
+  /* 段落最后一行不只剩一两个字；标题、对话框标题各行长度尽量均匀 */
+  p,
+  li,
+  blockquote,
+  .chat-md td {
+    text-wrap: pretty;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+  /* 代码要按空格对齐，不跟着收窄空格，也不在中英文之间插空隙 */
   pre,
   code,
   kbd,
   textarea,
   .font-mono {
     word-spacing: normal;
+    text-autospace: no-autospace;
   }
   * {
     @apply border-line;
@@ -684,9 +907,25 @@ body,
     background-color: var(--card);
     color: var(--fg);
   }
+  /*
+   * 键盘焦点（照 Claude Code 的 focus-shadow）：1px 焦点色细环，和控件之间隔 1px 底色，按钮类再加一圈柔光。
+   * 原来 2px 实线 + 2px 间隔在密集的工具栏里会压到相邻按钮。写了 outline-none 的控件自己管焦点样式，不加柔光
+   */
   :focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
+    outline: 1px solid var(--focus);
+    outline-offset: 1px;
+  }
+  :where(
+      button,
+      a,
+      summary,
+      [role='button'],
+      [role='tab'],
+      [role='radio'],
+      [role='switch'],
+      [role='checkbox']
+    ):focus-visible:not(.outline-none) {
+    box-shadow: 0 0 6px 1px var(--focus-soft);
   }
 }
 ::selection {
@@ -776,48 +1015,48 @@ body,
   --c-summary-border: 1px;
   --c-summary-divider: 1px;
   --c-summary-needs: color-mix(in oklab, var(--warning) 12%, transparent);
-  --c-summary-kindRadius: 6px;
-  --c-card-radius: 12px;
+  --c-summary-kindRadius: 5px;
+  --c-card-radius: 10px;
   --c-card-bg: var(--card);
   --c-card-shadow: var(--shadow-card);
   --c-card-border: 0px;
-  --c-button-radius: 8px;
+  --c-button-radius: 7px;
   --c-button-weight: 500;
-  --c-iconButton-radius: 6px;
+  --c-iconButton-radius: 7px;
   --c-statusPill-radius: 12px;
   --c-statusPill-weight: 500;
   --c-badge-radius: 12px;
-  --c-kbd-radius: 4px;
+  --c-kbd-radius: 5px;
   --c-kbd-bg: var(--sel);
   --c-progress-height: 6px;
   --c-progress-radius: 12px;
   /* 进度条未完成段：前景色淡淡一层，深浅色下都看得见（原来深色下是压暗的 sunken，和行底一样黑） */
   --c-progress-track: color-mix(in oklab, var(--fg) 14%, transparent);
-  --c-input-radius: 8px;
+  --c-input-radius: 7px;
   --c-input-border: 1px;
   --c-input-bg: var(--field);
-  --c-input-ring: 3px;
-  --c-checkbox-radius: 4px;
+  --c-input-ring: 6px;
+  --c-checkbox-radius: 5px;
   --c-switch-on: var(--primary);
-  --c-segmented-radius: 8px;
-  --c-segmented-itemRadius: 6px;
-  --c-chip-radius: 6px;
+  --c-segmented-radius: 7px;
+  --c-segmented-itemRadius: 5px;
+  --c-chip-radius: 5px;
   --c-chip-ring: 1px;
-  --c-row-radius: 8px;
+  --c-row-radius: 7px;
   --c-row-bg: color-mix(in oklab, var(--fg) 3.5%, transparent);
-  --c-nav-radius: 8px;
-  --c-menu-radius: 12px;
-  --c-menu-itemRadius: 8px;
+  --c-nav-radius: 7px;
+  --c-menu-radius: 10px;
+  --c-menu-itemRadius: 7px;
   --c-menu-bg: var(--pop);
   --c-menu-border: 1px;
-  --c-modal-radius: 8px;
+  --c-modal-radius: 14px;
   --c-modal-bg: var(--window);
   --c-modal-border: 1px;
-  --c-sheet-radius: 12px;
+  --c-sheet-radius: 14px;
   --c-sheet-bg: var(--bg);
-  --c-popover-radius: 12px;
+  --c-popover-radius: 10px;
   --c-popover-bg: var(--pop);
-  --c-empty-radius: 12px;
+  --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;
 }
@@ -855,7 +1094,7 @@ body,
   --mmd-crit-line: #df9a83;
   --mmd-edge: #8a8a92;
   --md-body-size: 1;
-  --md-body-gap: 0.6;
+  --md-body-gap: 0.75;
   --md-body-color: var(--fg);
   --md-h1-size: 1.5;
   --md-h1-weight: 700;
@@ -1028,7 +1267,7 @@ body,
   --md-k: 1;
   font-size: var(--md-base);
   color: var(--md-body-color);
-  line-height: var(--app-leading, 1.75);
+  line-height: var(--app-leading, 1.65);
 }
 /* 提问面板、助手简报这类窄面板：字号小一档、间距收到六成，不另写一套元素样式 */
 .chat-md-compact {
@@ -1291,7 +1530,7 @@ body,
   @apply block;
 }
 .chat-md .md-cap {
-  @apply mt-1.5 text-center font-sans text-[0.75rem] text-subtle;
+  @apply mt-1.5 text-center font-sans text-footnote text-subtle;
   display: var(--md-img-caption);
   max-width: var(--md-img-maxWidth);
 }
@@ -1327,7 +1566,7 @@ body,
   border-radius: var(--md-pre-radius);
 }
 .chat-md .md-code-bar {
-  @apply items-center justify-between gap-2 border-b py-1.5 pr-2 pl-3.5 font-sans text-[0.6875rem] text-subtle;
+  @apply items-center justify-between gap-2 border-b py-1.5 pr-2 pl-3.5 font-sans text-caption text-subtle;
   display: var(--md-pre-bar);
   background: color-mix(in srgb, var(--fg) 2%, transparent);
 }
@@ -1343,13 +1582,13 @@ body,
   background: var(--md-violet);
 }
 .chat-md .md-code-lang small {
-  @apply text-[0.6875rem] opacity-80;
+  @apply text-caption opacity-80;
 }
 .chat-md .md-code-acts {
   @apply flex shrink-0 items-center gap-0.5;
 }
 .chat-md .md-copy {
-  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.6875rem] text-subtle transition-colors hover:bg-sel hover:text-fg;
+  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-caption text-subtle transition-colors hover:bg-sel hover:text-fg;
 }
 .chat-md .md-copy[data-on] {
   color: var(--md-teal);
@@ -1455,7 +1694,7 @@ body,
 }
 /* 缩放按钮：鼠标移到图上才浮出来 */
 .chat-md .md-mmd-zoom {
-  @apply absolute right-2 bottom-2 flex items-center gap-0.5 rounded-lg border p-0.5 font-sans text-[0.6875rem] text-muted opacity-0 backdrop-blur-sm transition-[opacity,translate] duration-200;
+  @apply absolute right-2 bottom-2 flex items-center gap-0.5 rounded-lg border p-0.5 font-sans text-caption text-muted opacity-0 backdrop-blur-sm transition-[opacity,translate] duration-200;
   translate: 0 4px;
   background: color-mix(in srgb, var(--md-pre-bg) 88%, transparent);
 }
@@ -1474,14 +1713,14 @@ body,
   @apply border-t;
 }
 .chat-md .md-mermaid summary {
-  @apply flex cursor-pointer list-none items-center gap-1.5 px-3.5 py-1.5 font-sans text-[0.75rem] text-subtle select-none hover:text-fg;
+  @apply flex cursor-pointer list-none items-center gap-1.5 px-3.5 py-1.5 font-sans text-footnote text-subtle select-none hover:text-fg;
 }
 .chat-md .md-mermaid summary::-webkit-details-marker {
   display: none;
 }
 .chat-md .md-mermaid summary::before {
   content: '›';
-  @apply inline-block text-[0.9375rem] leading-none transition-[rotate] duration-200;
+  @apply inline-block text-heading leading-none transition-[rotate] duration-200;
 }
 .chat-md .md-mermaid details[open] summary::before {
   rotate: 90deg;
@@ -1506,7 +1745,7 @@ body,
   background: var(--md-coral);
 }
 .chat-md .md-mmd-why {
-  @apply border-b px-3.5 py-1.5 font-sans text-[0.75rem];
+  @apply border-b px-3.5 py-1.5 font-sans text-footnote;
   color: var(--md-coral);
   background: color-mix(in srgb, var(--md-coral) 8%, transparent);
   animation: md-slide 0.3s both;
@@ -1740,7 +1979,7 @@ body,
   background: linear-gradient(90deg, color-mix(in oklab, var(--card-tone) 9%, transparent), transparent 60%);
 }
 .chat-md .md-card-kind {
-  @apply shrink-0 px-1.5 py-px text-[0.6875rem] leading-[1.25rem] font-semibold;
+  @apply shrink-0 px-1.5 py-px text-caption leading-[1.25rem] font-semibold;
   border-radius: var(--c-summary-kindRadius);
   color: var(--card-tone);
   background: color-mix(in oklab, var(--card-tone) 13%, transparent);
@@ -1781,7 +2020,7 @@ body,
   @apply col-span-2 grid grid-cols-subgrid py-1.5;
 }
 .chat-md .md-card-row > dt {
-  @apply text-[0.8125rem] font-medium text-muted;
+  @apply text-body font-medium text-muted;
   color: var(--row-tone, var(--muted));
 }
 /* 字段之间一条细分割线，和标题下面那条同粗细（设置 → 组件里调） */
@@ -1842,7 +2081,7 @@ body,
 }
 /* 「处理」：把要你处理的事交给当前对话的 Agent，放在字段名下面，不占内容那一列 */
 .chat-md .md-card-act {
-  @apply cursor-pointer rounded-md border px-2 py-px text-[0.75rem] leading-[1.25rem] font-medium whitespace-nowrap text-warning;
+  @apply cursor-pointer rounded-md border px-2 py-px text-footnote leading-[1.25rem] font-medium whitespace-nowrap text-warning;
   border-color: color-mix(in oklab, var(--warning) 45%, transparent);
   background: color-mix(in oklab, var(--warning) 10%, transparent);
 }
@@ -2018,19 +2257,33 @@ body,
 /* 设置页的分组卡片（settings/parts.tsx 的 Group）：边界靠底色分、不描边（docs/lessons/visual.md），
    底色从当前配色的 fg 混出来，各套配色、深浅色都跟着走；卡片里直接放的行、折叠和自定义内容之间一道细线 */
 /* 设置页的分组卡片跟外观里的「圆角」走（--panel-radius，默认 0 直角），不再写死 12px */
+/* 背景块和外层背景之间的边距（用户 2026-10-31：背景块不能和外层背景的边重合）：
+   有底色的块（Card 和标了 data-surface 的块）放进另一块有底色的区域里，四周都要离外层的边留出这么多。
+   界面检查每一步都会扫一遍（scripts/ui/harness.mjs 的 nestedEdgeProblems） */
+:root {
+  --surface-inset: 16px;
+}
 .settings-card {
   display: flex;
   flex-direction: column;
   border-radius: var(--panel-radius, 0);
-  padding-inline: 16px;
+  padding-inline: var(--surface-inset);
   background: color-mix(in srgb, var(--color-fg) 3.5%, transparent);
 }
-.settings-card > * + *,
+/* 分隔线只画在两段文字内容之间；有底色的块本身就和上下分开了，不再压一道线 */
+.settings-card > :where(:not([data-surface])) + :where(:not([data-surface])),
 .settings-advanced[open] > .settings-row {
   border-top: 1px solid color-mix(in srgb, var(--color-line) 80%, transparent);
 }
-.settings-card > :not(.settings-row):not(.settings-advanced):not(section):not(.settings-card-head) {
+.settings-card > :not(.settings-row):not(.settings-advanced):not(section):not(.settings-card-head):not([data-surface]) {
   padding-block: 14px;
+}
+/* 卡片里直接放的有底色的块（预览框、列表卡片、编辑器）：上下也留和左右一样的边距，底边不贴着卡片底边 */
+.settings-card > [data-surface] {
+  margin-block: var(--surface-inset);
+}
+.settings-card > [data-surface] + [data-surface] {
+  margin-top: 0;
 }
 /* 卡片顶部放「恢复本组」的固定高度行：没东西可恢复时按钮隐藏、行照样占位，布局不跳 */
 .settings-card > .settings-card-head {
@@ -2087,6 +2340,84 @@ body,
     opacity: 1;
     transform: none;
   }
+}
+/*
+ * 弹出菜单、下拉、浮层的进出场（anim-pop）：从触发点（Radix 给的 transform-origin）缩放出来，120ms snap；
+ * 关闭时 Radix 先把 data-state 设成 closed、等动画放完再卸载，所以退场写在 closed 上，统一 60ms。
+ * 不是 Radix 的浮层（输入框上方的弹层）用 --pop-origin 指定从哪边长出来
+ */
+@keyframes pop-open {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes pop-close {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@utility anim-pop {
+  transform-origin: var(
+    --pop-origin,
+    var(
+      --radix-dropdown-menu-content-transform-origin,
+      var(
+        --radix-popover-content-transform-origin,
+        var(--radix-context-menu-content-transform-origin, var(--radix-select-content-transform-origin, top))
+      )
+    )
+  );
+  animation: pop-open var(--dur-snap) var(--ease-snap);
+  &[data-state='closed'] {
+    animation: pop-close var(--dur-fast) linear forwards;
+  }
+}
+/* 弹窗遮罩：200ms 淡入，关闭 120ms 淡出 */
+@utility anim-scrim {
+  animation: fade-in var(--dur-base) var(--ease-snap);
+  &[data-state='closed'] {
+    animation: fade-out var(--dur-snap) var(--ease-snap) forwards;
+  }
+}
+/* 弹窗本体：300ms 轻微过冲放大到位，关闭 120ms 收回；居中靠 translate 属性，这里只动 transform */
+@utility anim-dialog {
+  animation: pop-open var(--dur-sheet) var(--ease-overshoot);
+  &[data-state='closed'] {
+    animation: pop-close var(--dur-snap) var(--ease-snap) forwards;
+  }
+}
+/*
+ * 按钮的按压反馈：按下缩到 96%（60ms），松手用弹簧曲线回弹；底色、文字色照常 120ms 过渡。
+ * 列表行、菜单项不用它，只变底色
+ */
+@utility press {
+  transition-property: background-color, border-color, color, opacity, box-shadow, transform;
+  transition-duration:
+    var(--dur-snap), var(--dur-snap), var(--dur-snap), var(--dur-snap), var(--dur-snap), var(--dur-base);
+  transition-timing-function:
+    var(--ease-snap), var(--ease-snap), var(--ease-snap), var(--ease-snap), var(--ease-snap), var(--ease-spring);
+  &:active:not(:disabled) {
+    transform: scale(0.96);
+    transition-duration: var(--dur-fast);
+    transition-timing-function: var(--ease-snap);
+  }
+}
+/*
+ * 拖文件进来（输入框、附件区）：内侧 2px 强调色环 + 一圈内发光（照 Claude Code 的 drop-ring / drop-glow），
+ * 不改尺寸；带 !important 盖过外壳自己的投影和配色覆盖
+ */
+@utility drop-ring {
+  border-color: transparent !important;
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    inset 0 0 24px -2px color-mix(in oklab, var(--accent) 25%, transparent) !important;
 }
 /* 轮次导航的预览卡片（TurnRail）：从横杠那边往左轻轻滑出 */
 @keyframes turn-peek-in {
@@ -2270,19 +2601,21 @@ body,
 
 /* 「正在思考」文字上的流光 */
 .thinking-shimmer {
-  background: linear-gradient(90deg, var(--subtle) 0%, var(--fg) 50%, var(--subtle) 100%);
-  background-size: 200% 100%;
+  background: linear-gradient(100deg, var(--subtle) 0% 40%, var(--fg) 50%, var(--subtle) 60% 100%);
+  background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: shimmer 1.6s linear infinite;
+  animation: shimmer 2.4s var(--ease-snap) infinite;
 }
+/* 照 Claude Code 的 shimmer：一道窄光带扫过去，到 60% 就停住，等下一轮再来，长任务里不一直晃 */
 @keyframes shimmer {
   from {
     background-position: 100% 0;
   }
+  60%,
   to {
-    background-position: -100% 0;
+    background-position: 0% 0;
   }
 }
 
@@ -2304,12 +2637,14 @@ body,
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: cli-alive-flow 2.6s linear infinite;
+  animation: cli-alive-flow 2.6s var(--ease-snap) infinite;
 }
+/* 和「正在思考」同一个节奏：扫过去之后停一拍 */
 @keyframes cli-alive-flow {
   from {
     background-position: 100% 0;
   }
+  60%,
   to {
     background-position: -150% 0;
   }
@@ -2356,11 +2691,11 @@ body,
 
 /* 设置里的版本更新说明：标题小一号，和正文拉开 */
 .release-notes h1 {
-  @apply mb-1 text-[0.875rem] font-semibold;
+  @apply mb-1 text-prose font-semibold;
 }
 .release-notes h2,
 .release-notes h3 {
-  @apply mt-3 mb-1 text-[0.8125rem] font-semibold text-fg first:mt-0;
+  @apply mt-3 mb-1 text-body font-semibold text-fg first:mt-0;
 }
 .release-notes ul {
   @apply my-1;
@@ -2552,13 +2887,16 @@ html [data-sonner-toast][data-styled='true'] {
 .activity-sep {
   background-color: color-mix(in oklab, var(--fg) 14%, transparent);
 }
-/* 角标圆点描一圈图标栏底色：选中格是 bg-sel，描边跟着换，不会露出一圈错色 */
+/* 角标圆点描一圈图标栏底色：选中、悬停的格子底色不同，描边跟着换，不会露出一圈错色 */
 .activity-dot {
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--rail) 95%, var(--fg));
 }
-.rail-item:hover .activity-dot,
+/* 悬停 / 选中的格子是半透明叠加（bg-hover 6% / bg-active 10%），描边按同样比例从图标栏底色混出来 */
+.rail-item:hover .activity-dot {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--rail) 94%, var(--fg));
+}
 .rail-item[aria-current='page'] .activity-dot {
-  box-shadow: 0 0 0 2px var(--sel);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--rail) 90%, var(--fg));
 }
 /* 自绘导航图标（rail-icons.tsx）的主体层：平时透明，选中时填一层浅色 */
 .rail-fill {

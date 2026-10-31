@@ -60,7 +60,7 @@ export function AgentPicker({
                   <AgentAvatar icon={a.icon} cli={a.cli} size="sm" dim={!a.enabled} />
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{a.name}</span>
-                    <span className="truncate font-mono text-[0.6875rem] text-subtle">{modelOf(a)}</span>
+                    <span className="truncate font-mono text-caption text-subtle">{modelOf(a)}</span>
                   </span>
                 </PopoverClose>
               ))}

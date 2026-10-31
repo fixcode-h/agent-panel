@@ -61,7 +61,7 @@ export function Palette({
       <PopoverContent align="end" className="w-[260px] p-1.5">
         {groupsFor(kind).map((g) => (
           <div key={g.id} className="mb-1">
-            <p className="px-2 pt-1.5 pb-1 text-[0.6875rem] text-subtle">{g.label}</p>
+            <p className="px-2 pt-1.5 pb-1 text-caption text-subtle">{g.label}</p>
             <div className="grid grid-cols-2 gap-px">
               {typesFor(kind)
                 .filter((x) => WIDGETS[x].group === g.id)
@@ -72,7 +72,7 @@ export function Palette({
                       key={x}
                       onClick={() => add(x)}
                       title={WIDGETS[x].hint}
-                      className="flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
+                      className="flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-footnote text-muted hover:bg-sel hover:text-fg"
                     >
                       <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
                       <span className="truncate">{x}</span>
@@ -84,12 +84,12 @@ export function Palette({
         ))}
         {components.length > 0 && (
           <div>
-            <p className="px-2 pt-1.5 pb-1 text-[0.6875rem] text-subtle">{t('子控件')}</p>
+            <p className="px-2 pt-1.5 pb-1 text-caption text-subtle">{t('子控件')}</p>
             {components.map((c) => (
               <button
                 key={c}
                 onClick={() => add('UserWidget', c)}
-                className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
+                className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-footnote text-muted hover:bg-sel hover:text-fg"
               >
                 <Puzzle className="h-3.5 w-3.5 shrink-0 text-subtle" />
                 <span className="truncate">{c}</span>
@@ -250,7 +250,7 @@ export function Hierarchy({
                 onDoubleClick={() => setRenaming(w.id)}
                 style={{ paddingLeft: 6 + depth * 14 }}
                 className={cn(
-                  'group relative flex h-7 cursor-pointer items-center gap-1 pr-1.5 text-[0.75rem] select-none',
+                  'group relative flex h-7 cursor-pointer items-center gap-1 pr-1.5 text-footnote select-none',
                   on
                     ? 'bg-accent-soft text-fg'
                     : extra.includes(w.id)
@@ -260,8 +260,8 @@ export function Hierarchy({
                   drag === w.id && 'opacity-40',
                 )}
               >
-                {d === 'before' && <span className="absolute inset-x-1 top-0 h-0.5 rounded bg-accent" />}
-                {d === 'after' && <span className="absolute inset-x-1 bottom-0 h-0.5 rounded bg-accent" />}
+                {d === 'before' && <span className="absolute inset-x-1 top-0 h-0.5 rounded-sm bg-accent" />}
+                {d === 'after' && <span className="absolute inset-x-1 bottom-0 h-0.5 rounded-sm bg-accent" />}
                 <button
                   tabIndex={-1}
                   onClick={(e) => {
@@ -292,17 +292,17 @@ export function Hierarchy({
                     }}
                     onCancel={() => setRenaming('')}
                     // 控件树的行很矮，改名框跟着压到行高
-                    className="h-5 flex-1 rounded px-1 font-mono text-[0.75rem]"
+                    className="h-5 flex-1 rounded-sm px-1 font-mono text-footnote"
                   />
                 ) : (
                   <span className={cn('min-w-0 flex-1 truncate', hidden && 'opacity-50')}>
                     {w.Name}
                     {w.Type === 'UserWidget' && w.Class && (
-                      <span className="ml-1.5 text-[0.6875rem] text-subtle">{w.Class}</span>
+                      <span className="ml-1.5 text-caption text-subtle">{w.Class}</span>
                     )}
                     {WIDGETS[w.Type]?.entries && (
                       <span
-                        className="ml-1.5 text-[0.6875rem] text-subtle"
+                        className="ml-1.5 text-caption text-subtle"
                         title={
                           w.Type === 'UniformGridPanel'
                             ? t('格子在属性里设置，导出到 UE 时展开成子控件')

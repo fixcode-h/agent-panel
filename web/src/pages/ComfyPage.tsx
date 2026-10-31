@@ -366,16 +366,12 @@ export function ComfyPage() {
         className="flex max-h-[46vh] shrink-0 flex-col gap-2.5 lg:max-h-none lg:w-[268px] lg:py-1"
       >
         <div className="flex flex-wrap items-center gap-1.5 px-1.5">
-          <h1 className="min-w-[110px] flex-1 truncate text-[0.96875rem] font-semibold">{t('ComfyUI 工作流')}</h1>
+          <h1 className="min-w-[110px] flex-1 truncate text-heading font-semibold">{t('ComfyUI 工作流')}</h1>
           {/* 照设计稿：标题和两个小按钮挤在一行（28px 高、12px 字），放不下才折行 */}
-          <Button size="sm" variant="secondary" className="h-7 px-2 text-[0.75rem]" onClick={() => setImporting(true)}>
+          <Button size="sm" variant="secondary" className="h-7 px-2 text-footnote" onClick={() => setImporting(true)}>
             {t('导入')}
           </Button>
-          <Button
-            size="sm"
-            className="h-7 px-2 text-[0.75rem] font-semibold"
-            onClick={() => setAsk({ mode: 'create' })}
-          >
+          <Button size="sm" className="h-7 px-2 text-footnote font-semibold" onClick={() => setAsk({ mode: 'create' })}>
             <Sparkles className="h-3.5 w-3.5" />
             {t('AI 生成')}
           </Button>
@@ -396,7 +392,7 @@ export function ComfyPage() {
         />
         <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
           {!data ? (
-            <p className="p-3 text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+            <p className="p-3 text-body text-subtle">{t('读取中…')}</p>
           ) : (
             <>
               {draftIsNew && (
@@ -417,14 +413,14 @@ export function ComfyPage() {
                 )
               })}
               {!shown.length && (
-                <p className="px-2 py-4 text-[0.75rem] leading-relaxed text-subtle">
+                <p className="px-2 py-4 text-footnote leading-relaxed text-subtle">
                   {t('还没有，可以导入或让 AI 生成')}
                 </p>
               )}
               <button
                 type="button"
                 onClick={() => setStore(true)}
-                className="mt-2 flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-[11px] border border-dashed border-line-strong text-[0.8125rem] text-muted transition-colors hover:bg-sel/60 hover:text-fg"
+                className="mt-2 flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong text-body text-muted transition-colors hover:bg-sel/60 hover:text-fg"
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
                 {t('模板商店')}
@@ -444,9 +440,9 @@ export function ComfyPage() {
             )}
           />
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-[0.78125rem] font-semibold">{comfyState}</span>
+            <span className="truncate text-body font-semibold">{comfyState}</span>
             {st && (
-              <span className="truncate font-mono text-[0.6875rem] text-subtle">
+              <span className="truncate font-mono text-caption text-subtle">
                 {[st.url.replace(/^https?:\/\//, ''), st.gpuName].filter(Boolean).join(' · ')}
               </span>
             )}
@@ -460,7 +456,7 @@ export function ComfyPage() {
       {/* 中：整块节点图画布，标题和工具条浮在上面，试生成浮在下面（照设计稿） */}
       <section aria-label={t('节点图')} className="panel relative min-h-[70vh] min-w-0 flex-1 @container lg:min-h-0">
         {!draft ? (
-          <p className="p-8 text-center text-[0.8125rem] text-subtle">{t('选一个工作流查看和修改')}</p>
+          <p className="p-8 text-center text-body text-subtle">{t('选一个工作流查看和修改')}</p>
         ) : (
           <>
             <div className="absolute inset-0">
@@ -486,7 +482,7 @@ export function ComfyPage() {
                     setDirty(true)
                   }}
                   style={{ top: inset.top, bottom: inset.bottom }}
-                  className="absolute right-4 left-4 h-auto resize-none font-mono text-[0.75rem] leading-[1.5]"
+                  className="absolute right-4 left-4 h-auto resize-none font-mono text-footnote leading-[1.5]"
                 />
               )}
             </div>
@@ -497,10 +493,10 @@ export function ComfyPage() {
             >
               <div className="pointer-events-auto flex min-w-[160px] flex-1 basis-[160px] flex-col gap-0.5 pt-0.5 pl-1">
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="truncate text-[0.9375rem] font-semibold">{draft.name}</span>
-                  {dirty && <span className="shrink-0 text-[0.6875rem] text-warning">{t('未保存')}</span>}
+                  <span className="truncate text-heading font-semibold">{draft.name}</span>
+                  {dirty && <span className="shrink-0 text-caption text-warning">{t('未保存')}</span>}
                 </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[0.75rem] text-subtle">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-footnote text-subtle">
                   {readOnly && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-sel px-1.5 py-px text-muted">
                       <Lock className="h-3 w-3" />
@@ -530,7 +526,7 @@ export function ComfyPage() {
               <div
                 role="toolbar"
                 aria-label={t('工作流工具')}
-                className="pointer-events-auto flex shrink-0 items-center gap-0.5 rounded-[13px] bg-card p-1 shadow-pop"
+                className="pointer-events-auto flex shrink-0 items-center gap-0.5 rounded-2xl bg-card p-1 shadow-pop"
               >
                 <Tool icon={Wand2} label={t('AI 优化')} tone="peer" onClick={() => setAsk({ mode: 'optimize' })} />
                 <Tool
@@ -576,7 +572,7 @@ export function ComfyPage() {
                       type="button"
                       aria-label={t('更多')}
                       title={t('更多')}
-                      className="grid h-8 w-8 cursor-pointer place-items-center rounded-[9px] text-muted transition-colors hover:bg-sel hover:text-fg"
+                      className="grid h-8 w-8 cursor-pointer place-items-center rounded-xl text-muted transition-colors hover:bg-sel hover:text-fg"
                     >
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
@@ -601,14 +597,14 @@ export function ComfyPage() {
                 <Sep />
                 {readOnly ? (
                   // 内置的只读：主按钮换成复制（字短，工具条才放得下标题），说明放在悬停提示里
-                  <Button size="sm" className="rounded-[9px]" onClick={duplicate} title={t('复制后修改')}>
+                  <Button size="sm" className="rounded-xl" onClick={duplicate} title={t('复制后修改')}>
                     <Copy className="h-3.5 w-3.5" />
                     {t('复制')}
                   </Button>
                 ) : (
                   <Button
                     size="sm"
-                    className="rounded-[9px] font-semibold"
+                    className="rounded-xl font-semibold"
                     onClick={() => void save()}
                     disabled={!dirty || saving || problems.length > 0}
                   >
@@ -622,7 +618,7 @@ export function ComfyPage() {
             {note && (
               <div
                 style={{ top: inset.top - 8 }}
-                className="absolute left-4 z-[5] flex max-w-md items-start gap-2 rounded-xl bg-accent-soft px-3 py-2 text-[0.8125rem] leading-relaxed shadow-pop"
+                className="absolute left-4 z-[5] flex max-w-md items-start gap-2 rounded-xl bg-accent-soft px-3 py-2 text-body leading-relaxed shadow-pop"
               >
                 <p className="min-w-0 flex-1 whitespace-pre-wrap">{note}</p>
                 <button
@@ -641,17 +637,15 @@ export function ComfyPage() {
                 e.preventDefault()
                 void tryRun()
               }}
-              className="absolute bottom-4 left-1/2 z-[5] flex w-[min(620px,calc(100%-2rem))] -translate-x-1/2 items-center gap-2 rounded-[14px] bg-card py-1.5 pr-1.5 pl-3.5 shadow-pop"
+              className="absolute bottom-4 left-1/2 z-[5] flex w-[min(620px,calc(100%-2rem))] -translate-x-1/2 items-center gap-2 rounded-2xl bg-card py-1.5 pr-1.5 pl-3.5 shadow-pop"
             >
-              <span className="shrink-0 text-[0.6875rem] font-semibold tracking-[0.06em] text-subtle">
-                {t('试生成')}
-              </span>
+              <span className="shrink-0 text-caption font-semibold tracking-[0.06em] text-subtle">{t('试生成')}</span>
               <input
                 aria-label={t('试生成的描述')}
                 value={tryText}
                 onChange={(e) => setTryText(e.target.value)}
                 placeholder={tryBlock || t('写一句描述，用这个工作流出一张图看看')}
-                className="min-w-0 flex-1 border-0 bg-transparent text-[0.84375rem] outline-none placeholder:text-subtle"
+                className="min-w-0 flex-1 border-0 bg-transparent text-prose outline-none placeholder:text-subtle"
               />
               <TryPick
                 label={t('试生成的尺寸')}
@@ -668,7 +662,7 @@ export function ComfyPage() {
               <Button
                 type="submit"
                 size="sm"
-                className="rounded-[9px] font-semibold"
+                className="rounded-xl font-semibold"
                 disabled={!!tryBlock}
                 title={tryBlock}
               >
@@ -719,10 +713,10 @@ export function ComfyPage() {
               <ComfyChainPanel kind={kind} />
             </div>
           ) : !draft ? (
-            <p className="py-6 text-center text-[0.8125rem] text-subtle">{t('选一个工作流查看和修改')}</p>
+            <p className="py-6 text-center text-body text-subtle">{t('选一个工作流查看和修改')}</p>
           ) : side === 'node' ? (
             !picked ? (
-              <p className="py-6 text-center text-[0.8125rem] leading-relaxed text-subtle">
+              <p className="py-6 text-center text-body leading-relaxed text-subtle">
                 {t('在画布上点一个节点，这里显示它的参数')}
               </p>
             ) : (
@@ -733,10 +727,10 @@ export function ComfyPage() {
                     className="h-3 w-3 shrink-0 rounded-full"
                     style={{ background: nodeTone(picked.class_type) }}
                   />
-                  <span className="min-w-0 flex-1 truncate text-[0.875rem] font-semibold">
+                  <span className="min-w-0 flex-1 truncate text-prose font-semibold">
                     {String((picked as { _meta?: { title?: string } })._meta?.title ?? '') || picked.class_type}
                   </span>
-                  <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">
+                  <span className="shrink-0 font-mono text-caption text-subtle">
                     {picked.class_type} · #{picked.id}
                   </span>
                 </div>
@@ -750,7 +744,7 @@ export function ComfyPage() {
                         <button
                           type="button"
                           onClick={() => setNode(link[0])}
-                          className="flex h-8 cursor-pointer items-center gap-2 rounded-lg bg-field px-2.5 text-left font-mono text-[0.75rem] text-muted hover:text-fg"
+                          className="flex h-8 cursor-pointer items-center gap-2 rounded-lg bg-field px-2.5 text-left font-mono text-footnote text-muted hover:text-fg"
                         >
                           <span
                             aria-hidden
@@ -765,7 +759,7 @@ export function ComfyPage() {
                           label={key}
                           value={v}
                           readOnly={readOnly}
-                          className="h-8 rounded-lg px-2.5 text-[0.75rem]"
+                          className="h-8 rounded-lg px-2.5 text-footnote"
                           onChange={(nv) =>
                             graph &&
                             onGraph({
@@ -778,7 +772,7 @@ export function ComfyPage() {
                     </div>
                   )
                 })}
-                <span className="text-[0.75rem] leading-relaxed text-subtle">
+                <span className="text-footnote leading-relaxed text-subtle">
                   {readOnly
                     ? t('内置工作流只读，复制后再改。')
                     : t('改了参数会标「未保存」；保存后导入到 ComfyUI、试生成才用新的。')}
@@ -801,7 +795,7 @@ export function ComfyPage() {
                   onChange={(u) => !readOnly && edit({ use: u })}
                   options={WORKFLOW_USES.map((u) => ({ id: u, label: WORKFLOW_USE_LABEL[u], disabled: readOnly }))}
                 />
-                <span className="text-[0.75rem] leading-relaxed text-subtle">
+                <span className="text-footnote leading-relaxed text-subtle">
                   {t('UI 设计选「本机」出图时，按图片用途自动挑工作流。')}
                 </span>
               </div>
@@ -833,13 +827,13 @@ export function ComfyPage() {
                   onChange={(e) => edit({ extra: e.target.value })}
                 />
               </Field>
-              <span className="text-[0.75rem] leading-relaxed text-subtle">
+              <span className="text-footnote leading-relaxed text-subtle">
                 {t(
                   '占位符：{{prompt}} 描述、{{negative}} 反向描述、{{width}} {{height}} 尺寸、{{count}} 张数、{{seed}} 随机种子',
                 )}
               </span>
               {problems.length > 0 && (
-                <ul className="flex flex-col gap-1 text-[0.75rem] text-danger">
+                <ul className="flex flex-col gap-1 text-footnote text-danger">
                   {problems.map((p) => (
                     <li key={p}>{p}</li>
                   ))}
@@ -852,7 +846,7 @@ export function ComfyPage() {
                     key={tip}
                     type="button"
                     onClick={() => setAsk({ mode: 'optimize', text: tip })}
-                    className="flex cursor-pointer items-center gap-2 rounded-[10px] bg-card px-2.5 py-2 text-left text-[0.78125rem] shadow-[0_0_0_1px_var(--line-strong)] transition-colors hover:bg-sel/50"
+                    className="flex cursor-pointer items-center gap-2 rounded-xl bg-card px-2.5 py-2 text-left text-body shadow-[0_0_0_1px_var(--line-strong)] transition-colors hover:bg-sel/50"
                   >
                     <Sparkles className="h-3.5 w-3.5 shrink-0 text-peer" />
                     <span className="min-w-0 flex-1">{tip}</span>
@@ -967,7 +961,7 @@ function TryPick({
           type="button"
           aria-label={label}
           title={label}
-          className="h-[30px] shrink-0 cursor-pointer rounded-lg bg-card px-2.5 text-[0.75rem] shadow-[0_0_0_1px_var(--line-strong)] transition-colors hover:bg-sel/50"
+          className="h-[30px] shrink-0 cursor-pointer rounded-lg bg-card px-2.5 text-footnote shadow-[0_0_0_1px_var(--line-strong)] transition-colors hover:bg-sel/50"
         >
           {options.find((o) => o.id === value)?.label ?? value}
         </button>
@@ -993,7 +987,7 @@ const OPTIMIZE_TIPS = () => [
 ]
 
 function Label({ children }: { children: ReactNode }) {
-  return <span className="text-[0.6875rem] font-semibold tracking-[0.06em] text-subtle">{children}</span>
+  return <span className="text-caption font-semibold tracking-[0.06em] text-subtle">{children}</span>
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -1007,7 +1001,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function Count({ n }: { n: number }) {
   return (
-    <span className="ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-sel px-1.5 text-[0.6875rem] font-normal">
+    <span className="ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-sel px-1.5 text-caption font-normal">
       {n}
     </span>
   )
@@ -1049,7 +1043,7 @@ function Tool({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-[9px] px-2 text-[0.78125rem] whitespace-nowrap transition-colors hover:bg-sel disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent @[740px]:px-2.5',
+        'flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-2 text-body whitespace-nowrap transition-colors hover:bg-sel disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent @[740px]:px-2.5',
         tone === 'peer' ? 'text-peer' : 'text-muted hover:text-fg',
       )}
     >
@@ -1063,7 +1057,7 @@ function Tool({
 function ListGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-0.5">
-      <h2 className="px-1.5 pt-2.5 pb-1 text-[0.6875rem] font-semibold tracking-[0.06em] text-subtle">{title}</h2>
+      <h2 className="px-1.5 pt-2.5 pb-1 text-caption font-semibold tracking-[0.06em] text-subtle">{title}</h2>
       {children}
     </section>
   )
@@ -1079,12 +1073,12 @@ function WorkflowRow({ w, on, ready, onPick }: { w: ComfyWorkflow; on: boolean; 
       onClick={onPick}
       aria-current={on}
       className={cn(
-        'flex w-full cursor-pointer items-center gap-2.5 rounded-[11px] px-2 py-[7px] text-left transition-colors',
+        'flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2 py-[7px] text-left transition-colors',
         on ? 'bg-card shadow-[0_0_0_1px_var(--line-strong)]' : 'hover:bg-sel/60',
       )}
     >
       <span
-        className="relative grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] text-white"
+        className="relative grid h-[34px] w-[34px] shrink-0 place-items-center rounded-xl text-white"
         style={{ background: look.color }}
       >
         <Icon className="h-4 w-4 opacity-90" strokeWidth={2.2} />
@@ -1097,13 +1091,13 @@ function WorkflowRow({ w, on, ready, onPick }: { w: ComfyWorkflow; on: boolean; 
         />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-[0.8125rem] font-semibold">{w.name}</span>
-        <span className="truncate text-[0.6875rem] text-subtle">
+        <span className="truncate text-body font-semibold">{w.name}</span>
+        <span className="truncate text-caption text-subtle">
           {WORKFLOW_USE_LABEL[w.use]}
           {w.model ? ` · ${localModel(w.model)?.name ?? w.model}` : ''}
         </span>
       </span>
-      <span className={cn('shrink-0 text-[0.65625rem]', w.builtin ? 'text-subtle' : 'text-peer')}>
+      <span className={cn('shrink-0 text-caption', w.builtin ? 'text-subtle' : 'text-peer')}>
         {w.builtin ? t('内置') : importedWorkflow(w) ? t('导入的') : t('我的')}
       </span>
     </button>
@@ -1114,27 +1108,27 @@ function WorkflowRow({ w, on, ready, onPick }: { w: ComfyWorkflow; on: boolean; 
 function TryCard({ run }: { run: TryRun }) {
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-card px-3 py-2.5 shadow-[0_0_0_1px_var(--line),0_2px_6px_-4px_rgb(0_0_0/0.15)]">
-      <div className="flex min-w-0 items-center gap-2 text-[0.8125rem]">
+      <div className="flex min-w-0 items-center gap-2 text-body">
         {run.status === 'running' ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
         ) : run.status === 'done' ? (
-          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-success/15 text-[0.625rem] font-bold text-success">
+          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-success/15 text-micro font-bold text-success">
             ✓
           </span>
         ) : (
-          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-danger/15 text-[0.625rem] font-bold text-danger">
+          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-danger/15 text-micro font-bold text-danger">
             !
           </span>
         )}
         <span className="min-w-0 flex-1 truncate font-medium" title={run.prompt}>
           {run.prompt || run.workflow}
         </span>
-        <span className="shrink-0 text-[0.6875rem] text-subtle">
+        <span className="shrink-0 text-caption text-subtle">
           {run.status === 'running' ? t('生成中') : t('{s} 秒', { s: Math.max(1, Math.round((run.ms ?? 0) / 1000)) })}
         </span>
       </div>
       {run.status === 'running' && <Progress label={t('试生成进度')} value={0} indeterminate />}
-      {run.status === 'failed' && <p className="text-[0.75rem] leading-relaxed text-danger">{run.error}</p>}
+      {run.status === 'failed' && <p className="text-footnote leading-relaxed text-danger">{run.error}</p>}
       {run.images.length > 0 && (
         <div className="grid grid-cols-4 gap-1">
           {run.images.map((src, i) => (
@@ -1166,7 +1160,7 @@ function ModelsTab({
   const job = st?.job?.status === 'running' && st.job.kind === 'download' ? st.job : undefined
   if (st?.external)
     return (
-      <p className="py-6 text-center text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="py-6 text-center text-body leading-relaxed text-subtle">
         {t('用的是已有的 ComfyUI，模型由它自己管，这里不检查下载。')}
       </p>
     )
@@ -1175,13 +1169,13 @@ function ModelsTab({
       <div className="flex flex-col gap-2">
         <Label>{t('依赖的模型文件')}</Label>
         {draft.assets.map((a) => (
-          <span key={a} className="truncate rounded-lg bg-field px-2.5 py-1.5 font-mono text-[0.75rem]" title={a}>
+          <span key={a} className="truncate rounded-lg bg-field px-2.5 py-1.5 font-mono text-footnote" title={a}>
             {a}
           </span>
         ))}
       </div>
     ) : (
-      <p className="py-6 text-center text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="py-6 text-center text-body leading-relaxed text-subtle">
         {t('这个工作流用自己的模型，不检查下载。')}
       </p>
     )
@@ -1196,8 +1190,8 @@ function ModelsTab({
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate text-[0.875rem] font-semibold">{model.name}</span>
-        <span className="shrink-0 text-[0.6875rem] text-subtle">{t('建议显存 {n} GB', { n: model.vram })}</span>
+        <span className="min-w-0 flex-1 truncate text-prose font-semibold">{model.name}</span>
+        <span className="shrink-0 text-caption text-subtle">{t('建议显存 {n} GB', { n: model.vram })}</span>
       </div>
       {files.map(({ id, f, have }) => (
         <div
@@ -1205,12 +1199,12 @@ function ModelsTab({
           className="flex flex-col gap-2 rounded-xl bg-card px-3 py-2.5 shadow-[0_0_0_1px_var(--line),0_2px_6px_-4px_rgb(0_0_0/0.15)]"
         >
           <div className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem]" title={f?.file ?? id}>
+            <span className="min-w-0 flex-1 truncate font-mono text-footnote" title={f?.file ?? id}>
               {f?.file ?? id}
             </span>
             <span
               className={cn(
-                'shrink-0 rounded-full px-2 py-px text-[0.65625rem] font-semibold whitespace-nowrap',
+                'shrink-0 rounded-full px-2 py-px text-caption font-semibold whitespace-nowrap',
                 have
                   ? 'bg-success/10 text-success'
                   : job
@@ -1221,7 +1215,7 @@ function ModelsTab({
               {have ? t('已下载') : job ? t('下载中') : t('还没下载')}
             </span>
           </div>
-          {f && <span className="text-[0.6875rem] text-subtle">{t('约 {n} GB', { n: f.gb })}</span>}
+          {f && <span className="text-caption text-subtle">{t('约 {n} GB', { n: f.gb })}</span>}
           {!have && job?.progress && (
             <Progress label={t('下载进度')} value={job.progress.done} max={job.progress.total} />
           )}
@@ -1233,7 +1227,7 @@ function ModelsTab({
           {t('下载 · 约 {n} GB', { n: Math.round(missingGb * 10) / 10 })}
         </Button>
       )}
-      {job && <span className="text-[0.75rem] text-subtle">{job.step}</span>}
+      {job && <span className="text-footnote text-subtle">{job.step}</span>}
     </div>
   )
 }
@@ -1288,7 +1282,7 @@ function AssistModal({
       title={mode === 'create' ? t('AI 生成工作流') : t('AI 优化「{name}」', { name: base?.name ?? '' })}
       footer={
         <>
-          <span className="flex-1 text-[0.75rem] text-subtle">
+          <span className="flex-1 text-footnote text-subtle">
             {t('用「AI 创建」里设置的 Agent；ComfyUI 在运行时会按它装的节点来写')}
           </span>
           <Button onClick={() => void run()} disabled={busy || !text.trim()}>
@@ -1311,7 +1305,7 @@ function AssistModal({
           <button
             key={x}
             onClick={() => setText(x)}
-            className="chip-idle cursor-pointer rounded-full px-2.5 py-1 text-[0.75rem] text-muted transition-colors hover:text-accent-text"
+            className="chip-idle cursor-pointer rounded-full px-2.5 py-1 text-footnote text-muted transition-colors hover:text-accent-text"
           >
             {x}
           </button>
@@ -1366,7 +1360,7 @@ function ImportModal({
       title={t('从 ComfyUI 导入工作流')}
       footer={
         <>
-          <span className="flex-1 text-[0.75rem] text-danger">{error}</span>
+          <span className="flex-1 text-footnote text-danger">{error}</span>
           <Button onClick={go} disabled={!text.trim()}>
             <Plus className="h-3.5 w-3.5" />
             {t('导入')}
@@ -1374,7 +1368,7 @@ function ImportModal({
         </>
       }
     >
-      <p className="text-[0.75rem] leading-relaxed text-subtle">
+      <p className="text-footnote leading-relaxed text-subtle">
         {t(
           '在 ComfyUI 里打开工作流，菜单「工作流 → 导出（API）」，把得到的 JSON 贴在下面。描述、尺寸、种子会自动换成占位符。',
         )}
@@ -1389,7 +1383,7 @@ function ImportModal({
           setText(e.target.value)
           setError('')
         }}
-        className="font-mono text-[0.75rem]"
+        className="font-mono text-footnote"
         placeholder='{ "3": { "class_type": "KSampler", "inputs": { ... } } }'
       />
     </Modal>

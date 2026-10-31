@@ -20,6 +20,9 @@ test('默认字体：英文 Maple Mono NL、中文思源黑体、代码 Maple Mo
   // 等宽字体默认收紧字距和空格
   assert.equal(vars['--app-tracking'], '-0.02em')
   assert.equal(vars['--app-word-spacing'], '-0.2em')
+  // 深色主文字默认亮度照 Claude Code（白色 93%），设置里能调
+  assert.equal(vars['--fg-level'], '93%')
+  assert.equal(appearanceVars(Appearance.parse({ darkTextLevel: 100 }))['--fg-level'], '100%')
 })
 
 test('选系统中文字体时字体列表里不带内置中文字体', () => {

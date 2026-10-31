@@ -57,7 +57,7 @@ const dateTime = (iso: string) => {
 
 function Channel({ pre }: { pre: boolean }) {
   return (
-    <Badge tone={pre ? 'warning' : 'success'} className="shrink-0 px-1.5 text-[0.6875rem]">
+    <Badge tone={pre ? 'warning' : 'success'} className="shrink-0 px-1.5 text-caption">
       {pre ? t('预览版') : t('正式版')}
     </Badge>
   )
@@ -90,11 +90,11 @@ function ReleaseRow({
           title={t('查看更新说明')}
         >
           <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-90')} />
-          <span className="truncate font-mono text-[0.8125rem] font-medium">{r.tag}</span>
+          <span className="truncate font-mono text-body font-medium">{r.tag}</span>
         </button>
         <Channel pre={r.prerelease} />
         {isCur && (
-          <Badge tone="accent" className="px-1.5 text-[0.6875rem]">
+          <Badge tone="accent" className="px-1.5 text-caption">
             {t('当前')}
           </Badge>
         )}
@@ -105,7 +105,7 @@ function ReleaseRow({
             target="_blank"
             rel="noreferrer"
             title={r.size ? t('下载 zip 包（约 {size}）', { size: mb(r.size) }) : t('下载 zip 包')}
-            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[0.8125rem] text-muted hover:bg-sel hover:text-fg"
+            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-body text-muted hover:bg-sel hover:text-fg"
           >
             <Download className="h-3.5 w-3.5" />
             {t('下载')}
@@ -181,12 +181,12 @@ export function UpdateSection() {
     <div className="flex flex-col gap-5">
       <Card as="section" padding="md" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-[0.8125rem] text-subtle">{t('当前版本')}</span>
-          <span className="font-mono text-[0.9375rem] font-semibold">
+          <span className="text-body text-subtle">{t('当前版本')}</span>
+          <span className="font-mono text-heading font-semibold">
             {current ? `v${current.replace(/^v/, '')}` : '—'}
           </span>
           {cur ? <Channel pre={cur.prerelease} /> : current.includes('-dev') && <Channel pre />}
-          {data && !data.packaged && !demo && <Badge className="px-1.5 text-[0.6875rem]">{t('从源码运行')}</Badge>}
+          {data && !data.packaged && !demo && <Badge className="px-1.5 text-caption">{t('从源码运行')}</Badge>}
           {data?.checkedAt && (
             <span className="ml-auto text-xs text-subtle">
               {t('上次检查 {time}', { time: checkedTime(data.checkedAt) })}
@@ -237,7 +237,7 @@ export function UpdateSection() {
             )}
           </div>
         ) : data?.error ? (
-          <p className="text-[0.8125rem] leading-relaxed text-warning">
+          <p className="text-body leading-relaxed text-warning">
             {data.error}
             {t('。可以稍后再试，或到')}{' '}
             <a href={RELEASES_URL} target="_blank" rel="noreferrer" className="underline">
@@ -255,7 +255,7 @@ export function UpdateSection() {
             />
           </p>
         ) : !data ? (
-          <p className="flex items-center gap-1.5 text-[0.8125rem] text-subtle">
+          <p className="flex items-center gap-1.5 text-body text-subtle">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             {t('正在检查…')}
           </p>
@@ -263,7 +263,7 @@ export function UpdateSection() {
           <>
             {/* 限流时服务端回退到上次的结果：这不是检查失败，提示要温和，别用失败的颜色 */}
             {data.limitedUntil && (
-              <p className="flex flex-wrap items-center gap-1 text-[0.8125rem] leading-relaxed text-subtle">
+              <p className="flex flex-wrap items-center gap-1 text-body leading-relaxed text-subtle">
                 <Info className="h-3.5 w-3.5 shrink-0" />
                 {t('GitHub 暂时限制了访问，这里显示的是上次检查的结果；约 {minutes} 分钟后恢复，也可以到', {
                   minutes: minutesUntil(data.limitedUntil),
@@ -277,7 +277,7 @@ export function UpdateSection() {
             {data.update ? (
               <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-3.5 py-2.5">
                 <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent-text" />
-                <span className="min-w-0 flex-1 text-[0.8125rem]">
+                <span className="min-w-0 flex-1 text-body">
                   {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
                   <span className="text-subtle"> · {dateTime(data.update.publishedAt)}</span>
                 </span>
@@ -288,7 +288,7 @@ export function UpdateSection() {
                 )}
               </div>
             ) : (
-              <p className="flex items-center gap-1.5 text-[0.8125rem] text-success">
+              <p className="flex items-center gap-1.5 text-body text-success">
                 <CircleCheck className="h-4 w-4" />
                 {t('已是最新版本')}
               </p>
@@ -331,7 +331,7 @@ export function UpdateSection() {
             ))}
           </ul>
         ) : (
-          <p className="py-3 text-[0.8125rem] text-subtle">{loading ? t('正在读取…') : t('暂时没有读到发布的包。')}</p>
+          <p className="py-3 text-body text-subtle">{loading ? t('正在读取…') : t('暂时没有读到发布的包。')}</p>
         )}
       </section>
 

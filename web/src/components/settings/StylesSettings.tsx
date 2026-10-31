@@ -51,7 +51,7 @@ export function StylesSettings() {
 
   if (!list)
     return (
-      <div className="flex items-center gap-2 py-6 text-[0.8125rem] text-subtle">
+      <div className="flex items-center gap-2 py-6 text-body text-subtle">
         <Loader2 className="h-4 w-4 animate-spin" />
         {t('加载中…')}
       </div>
@@ -79,7 +79,7 @@ export function StylesSettings() {
 
   return (
     <div className="flex flex-col gap-6 pt-2">
-      <p className="text-[0.8125rem] leading-relaxed text-muted">
+      <p className="text-body leading-relaxed text-muted">
         {t(
           '整体美术风格库。新的设计还没定风格时，AI 会把同类的风格作为选项问你；在设计的风格设置里能直接套用，AI 输入框的「+」里能引入，项目的美术提示词也能从这里导入。程序内置了一批常用风格（只读，可以复制成自己的再改），也能把自己设计里的风格存进来。',
         )}
@@ -90,24 +90,24 @@ export function StylesSettings() {
         const builtin = list.filter((x) => x.kind === kind && x.builtin)
         return (
           <section key={kind} className="flex flex-col gap-3" aria-label={title}>
-            <h3 className="flex items-center gap-2 border-b pb-2 text-[0.875rem] font-medium">
+            <h3 className="flex items-center gap-2 border-b pb-2 text-prose font-medium">
               <Icon className="h-4 w-4 text-accent-text" />
               {title}
-              <span className="text-[0.75rem] font-normal text-subtle">
+              <span className="text-footnote font-normal text-subtle">
                 {t('{n} 个', { n: mine.length + builtin.length })}
               </span>
             </h3>
-            <h4 className="text-[0.75rem] font-medium text-subtle">{t('我的风格')}</h4>
+            <h4 className="text-footnote font-medium text-subtle">{t('我的风格')}</h4>
             {mine.length ? (
               mine.map((s) => (
                 <StyleCard key={s.id} s={s} onPatch={(p) => void patch(s, p)} onRemove={() => setRemoving(s)} />
               ))
             ) : (
-              <EmptyPanel size="sm" className="text-[0.75rem] leading-relaxed">
+              <EmptyPanel size="sm" className="text-footnote leading-relaxed">
                 {t('还没有自己的风格：在 UI 设计的风格设置里点「存到风格库」，或复制一个内置的来改。')}
               </EmptyPanel>
             )}
-            <h4 className="pt-2 text-[0.75rem] font-medium text-subtle">{t('内置风格')}</h4>
+            <h4 className="pt-2 text-footnote font-medium text-subtle">{t('内置风格')}</h4>
             {builtin.map((s) => (
               <StyleCard key={s.id} s={s} readOnly onCopy={() => void copy(s)} />
             ))}
@@ -169,11 +169,11 @@ function StyleCard({
               }}
               onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               className={cn(
-                'h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-[0.875rem] font-medium outline-none',
+                'h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-prose font-medium outline-none',
                 !readOnly && 'hover:border-line focus:border-focus focus:bg-field',
               )}
             />
-            <Badge className="shrink-0 py-0.5 text-[0.6875rem]">
+            <Badge className="shrink-0 py-0.5 text-caption">
               <Icon className="h-3 w-3" />
               {s.kind === 'web' ? t('网页 UI') : t('游戏 UI')}
             </Badge>
@@ -182,7 +182,7 @@ function StyleCard({
                 onClick={onCopy}
                 aria-label={t('复制到我的风格')}
                 title={t('复制到我的风格，再自己改')}
-                className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
+                className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-footnote text-muted hover:bg-sel hover:text-fg"
               >
                 <Copy className="h-3.5 w-3.5" />
                 {t('复制')}
@@ -198,12 +198,12 @@ function StyleCard({
             rows={2}
             onBlur={(e) => e.target.value.trim() !== s.summary && onPatch?.({ summary: e.target.value.trim() })}
             placeholder={t('一两句话说明这个风格')}
-            className="min-h-0 resize-none border-transparent bg-transparent px-1.5 py-1 text-[0.75rem] leading-relaxed text-muted hover:border-line focus:bg-field"
+            className="min-h-0 resize-none border-transparent bg-transparent px-1.5 py-1 text-footnote leading-relaxed text-muted hover:border-line focus:bg-field"
           />
           {s.prompts.length > 0 && (
             <div className="flex flex-wrap gap-1 px-1.5 pb-1">
               {s.prompts.map((p, i) => (
-                <span key={i} title={p.en} className="rounded-md bg-field px-1.5 py-0.5 text-[0.6875rem] text-muted">
+                <span key={i} title={p.en} className="rounded-md bg-field px-1.5 py-0.5 text-caption text-muted">
                   <span className="text-subtle">{catLabel(p.category)} · </span>
                   {p.zh}
                 </span>
@@ -215,7 +215,7 @@ function StyleCard({
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-center gap-1 px-4 pt-1 pb-3 pl-[58px] text-left text-[0.75rem] text-subtle hover:text-fg"
+        className="flex w-full cursor-pointer items-center gap-1 px-4 pt-1 pb-3 pl-[58px] text-left text-footnote text-subtle hover:text-fg"
       >
         <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
         {t('发给 AI 的英文描述')}
@@ -228,7 +228,7 @@ function StyleCard({
             aria-label={t('英文风格描述')}
             rows={4}
             onBlur={(e) => e.target.value.trim() !== s.en && onPatch?.({ en: e.target.value.trim() })}
-            className="font-mono text-[0.75rem] leading-relaxed"
+            className="font-mono text-footnote leading-relaxed"
           />
         </div>
       )}

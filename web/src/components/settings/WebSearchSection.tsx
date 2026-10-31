@@ -39,7 +39,7 @@ export function WebSearchSection({
         onChange={(e) => onChange({ ...value, endpoint: e.target.value, endpointProvider: provider.id })}
         placeholder={provider.endpoint || 'https://searxng.example.com'}
         spellCheck={false}
-        className="font-mono text-[0.8125rem]"
+        className="font-mono text-body"
       />
     </Row>
   )
@@ -80,14 +80,14 @@ export function WebSearchSection({
               placeholder="sk-xxxx"
               spellCheck={false}
               autoComplete="off"
-              className="font-mono text-[0.8125rem]"
+              className="font-mono text-body"
             />
           </Row>
         )}
         {provider.endpoint ? <Advanced label={t('自定义地址')}>{endpointRow}</Advanced> : endpointRow}
       </Group>
       <Group title={t('怎么打开')}>
-        <p className="text-[0.8125rem] text-subtle">
+        <p className="text-body text-subtle">
           {t('模型要用 web_search / web_fetch，还要在对应 Agent 的设置里打开「联网搜索」开关（默认关闭）。')}
         </p>
       </Group>

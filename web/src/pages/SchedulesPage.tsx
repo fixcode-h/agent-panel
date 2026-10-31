@@ -33,9 +33,9 @@ const DEMO = !!import.meta.env.VITE_DEMO
 /** 分组标题：组名 + 数量 */
 function GroupHeading({ group, count }: { group: string; count: number }) {
   return (
-    <h2 className="flex items-center gap-2 text-[0.8125rem] font-semibold text-muted">
+    <h2 className="flex items-center gap-2 text-body font-semibold text-muted">
       {group}
-      <Badge className="px-1.5 py-0 text-[0.6875rem] font-normal tabular-nums">{count}</Badge>
+      <Badge className="px-1.5 py-0 text-caption font-normal tabular-nums">{count}</Badge>
     </h2>
   )
 }
@@ -259,9 +259,9 @@ export function SchedulesPage() {
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-              <span className="text-[0.8125rem] font-semibold tabular-nums">{range}</span>
+              <span className="text-body font-semibold tabular-nums">{range}</span>
               {view === 'week' && (
-                <span className="text-[0.75rem] text-subtle">{t('第 {n} 周', { n: isoWeek(week) })}</span>
+                <span className="text-footnote text-subtle">{t('第 {n} 周', { n: isoWeek(week) })}</span>
               )}
             </div>
           )}
@@ -285,7 +285,7 @@ export function SchedulesPage() {
 
         {/* 日历的用法写一行：右键 / 双击、拖动这些操作光看界面猜不到 */}
         {calendar && list && !error && (
-          <p className="shrink-0 border-b px-4 py-1.5 text-[0.75rem] text-subtle">
+          <p className="shrink-0 border-b px-4 py-1.5 text-footnote text-subtle">
             {!list.length && <span className="font-medium text-muted">{t('还没有计划。')}</span>}
             {view === 'week'
               ? t('右键或双击空白格在那个时间新建；拖动计划改时间，拖底边改时长，半小时一格。')
@@ -296,14 +296,14 @@ export function SchedulesPage() {
           {error || !list || view === 'list' ? (
             <div className="mx-auto flex w-full max-w-[900px] flex-col gap-5 px-4 pt-6 pb-12 md:px-8">
               {error ? (
-                <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
+                <p className="text-body text-warning">{t('读取失败：{error}', { error })}</p>
               ) : !list ? (
-                <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+                <p className="text-body text-subtle">{t('读取中…')}</p>
               ) : !list.length ? (
                 <ScheduleEmpty onCreateTemplate={() => setEdit('new')} onCreateBlank={() => setEdit('blank')} />
               ) : (
                 <>
-                  <p className="max-w-[620px] text-[0.8125rem] leading-relaxed text-muted">
+                  <p className="max-w-[620px] text-body leading-relaxed text-muted">
                     {t(
                       '到点自动新建一个对话去执行。面板进程在跑时才会触发；面板关着期间错过的计划不会补跑，会在列表里标出来。',
                     )}

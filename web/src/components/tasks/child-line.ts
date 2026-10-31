@@ -150,9 +150,9 @@ export function childClosedHint(c: ChildSummary) {
 
 /** 标签样式：小胶囊带底色的是「状态」，纯文字是「说明」，和列表里的层级一致 */
 export const childLabelClass: Record<ChildLabelTone, string> = {
-  success: 'flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-[0.6875rem] text-success',
-  warning: 'shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning',
-  accent: 'shrink-0 text-[0.6875rem] text-accent-text',
-  subtle: 'shrink-0 text-[0.6875rem] text-subtle',
-  plain: 'shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle',
+  success: 'flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-caption text-success',
+  warning: 'shrink-0 rounded-full bg-warning/15 px-1.5 text-caption text-warning',
+  accent: 'shrink-0 text-caption text-accent-text',
+  subtle: 'shrink-0 text-caption text-subtle',
+  plain: 'shrink-0 rounded-full bg-field px-1.5 text-caption text-subtle',
 }

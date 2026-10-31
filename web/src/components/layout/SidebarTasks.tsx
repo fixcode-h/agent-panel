@@ -68,6 +68,9 @@ export function shortTime(iso: string, timeOnly = false) {
 
 /** 每个项目默认显示的任务数，多的点「更多」展开 */
 
+/** 建好多久以内算「刚建的」，插进列表时播入场动画 */
+const FRESH_MS = 3000
+
 export function TaskRow({
   task,
   active,
@@ -101,6 +104,9 @@ export function TaskRow({
 }) {
   const menu = useTaskRowMenu(task, onDeleted)
   const { agents } = useData()
+  // 刚建好的对话（不到 3 秒）插进列表时播一次入场（index.css 的 row-enter），一眼看出是哪一行新加的；
+  // 只在挂载时判定一次，首次加载、切换项目时列出来的老对话不播
+  const [fresh] = useState(() => Date.now() - Date.parse(task.createdAt) < FRESH_MS)
   if (menu.renaming)
     return <TaskRenameInput task={task} onCommit={menu.rename} onCancel={() => menu.setRenaming(false)} />
   // 状态只从 taskState 来（和标题栏、项目首页同一个判定）：自己在执行、在等子对话 / 子任务 / 后台命令 / 工作流
@@ -132,11 +138,12 @@ export function TaskRow({
             className={
               plain
                 ? cn(
-                    'group/row flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border text-left text-[0.8125rem] transition-colors',
+                    'group/row flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border text-left text-body transition-colors',
                     active ? (plain ? SIDEBAR_CHAT_ON : SIDEBAR_ROW_ON) : SIDEBAR_ROW_OFF,
+                    fresh && 'row-enter',
                     className,
                   )
-                : cn(sidebarTaskRowClass(active, !!inBlock), className)
+                : cn(sidebarTaskRowClass(active, !!inBlock), fresh && 'row-enter', className)
             }
           >
             {/* Chat 列表（plain）的行由 Chat 页那边定；项目列表和搜索结果是组件库的 TaskRow：行尾一个状态胶囊 */}
@@ -179,12 +186,12 @@ export function TaskRow({
                   >
                     {task.title}
                   </span>
-                  {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
+                  {hint && <span className="max-w-[40%] shrink truncate text-caption text-subtle">{hint}</span>}
                   {/* 时间格自己留一段左间距（在 gap-2 之外再加 6px）：标题再长，截断后和时间之间也有明显间隔 */}
                   {!plain && (
                     <span
                       className={cn(
-                        'shrink-0 pl-1.5 text-[0.6875rem] tabular-nums transition-colors',
+                        'shrink-0 pl-1.5 text-caption tabular-nums transition-colors',
                         active ? 'text-muted' : 'text-subtle group-hover/row:text-muted',
                       )}
                     >
@@ -270,7 +277,7 @@ export function TaskSearch({
   return (
     <div className="flex shrink-0 items-center gap-1 px-0.5 pb-1.5">
       {/* 边框平时很淡、悬停加深、聚焦时换成焦点色并带一圈柔光，和中间列表的搜索框一致 */}
-      <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-line/80 bg-field/50 px-2 text-[0.8125rem] transition-colors hover:border-line-strong/80 hover:bg-field/80 focus-within:border-focus/70 focus-within:bg-field focus-within:ring-[3px] focus-within:ring-focus-soft/60">
+      <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-line/80 bg-field/50 px-2 text-body transition-colors hover:border-line-strong/80 hover:bg-field/80 focus-within:border-focus/70 focus-within:bg-field focus-within:ring-[3px] focus-within:ring-focus-soft/60">
         <Search className="h-3.5 w-3.5 shrink-0 text-subtle" />
         <input
           id="sidebar-search"
@@ -364,7 +371,7 @@ export function ContentHits({
           key={`${h.taskId}:${h.messageId}`}
           onClick={() => onOpen(h)}
           title={h.snippet}
-          className="flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-md border border-transparent px-2.5 py-1.5 text-left text-[0.8125rem] text-muted transition-colors hover:bg-sel/60 hover:text-fg"
+          className="flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-md border border-transparent px-2.5 py-1.5 text-left text-body text-muted transition-colors hover:bg-sel/60 hover:text-fg"
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <MessagesSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
@@ -421,7 +428,7 @@ export function ChatList() {
   const chatHits = content.hits.filter((h) => !tasks.find((x) => x.id === h.taskId)?.projectId)
   const days = chatBuckets(chats)
   return (
-    <div data-chat-list className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+    <div data-chat-list className="scroll-fade mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
       <TaskSearch query={query} onQuery={setQuery} filter={filter} onFilter={setFilter} placeholder={t('搜索聊天')} />
       {/* 不筛选时分段标题本身就说明了时间，不再多一行「最近」 */}
       {filtering && (

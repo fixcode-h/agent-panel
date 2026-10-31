@@ -19,7 +19,7 @@ export function DemoBanner() {
     location.reload()
   }
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b bg-accent-soft px-4 py-2 text-[0.8125rem] text-fg">
+    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b bg-accent-soft px-4 py-2 text-body text-fg">
       <FlaskConical className="h-4 w-4 shrink-0 text-accent-text" strokeWidth={2.2} />
       <span className="min-w-0 flex-1">
         <b className="font-medium">{t('在线演示')}</b>

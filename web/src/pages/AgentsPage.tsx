@@ -327,7 +327,7 @@ export function AgentsPage() {
             </div>
             {/* 只列默认 CLI：Agent 不指定 CLI 时用它，工作流节点也固定用它；完整列表和切换默认在设置里 */}
             {defStatus ? (
-              <div className="flex items-center gap-2 text-[0.8125rem]" title={defStatus.version}>
+              <div className="flex items-center gap-2 text-body" title={defStatus.version}>
                 <span className="h-2 w-2 rounded-[2px]" style={{ background: cliColor(defStatus.id) }} />
                 {defStatus.name}
                 <span className={cn('ml-auto text-xs', defStatus.installed ? 'text-success' : 'text-subtle')}>
@@ -341,7 +341,7 @@ export function AgentsPage() {
                 <Button
                   variant="link"
                   onClick={() => openSettings(`cli:${cliToEnable(clis, settings).id}`)}
-                  className="text-[0.8125rem]"
+                  className="text-body"
                 >
                   {t('还没有启用 Agent，去设置里启用')}
                 </Button>

@@ -8,20 +8,26 @@ import { t } from '@shared/i18n'
  * 弹窗遮罩：Modal、Sheet 和各处手写的 D.Overlay 用同一个，透明度只在 index.css 的 --scrim 定义。
  * z-40 压在页面上、弹窗本体是 z-50
  */
-export const MODAL_OVERLAY = 'fixed inset-0 z-40 bg-scrim animate-[fade-in_150ms_ease-out]'
+export const MODAL_OVERLAY = 'fixed inset-0 z-40 bg-scrim anim-scrim'
 
 /**
- * 弹窗宽度档：sm 确认类小表单，md 常规表单（默认），lg 宽表单（原来的 wide），xl 带侧栏的编辑器，full 几乎铺满（查看器）；
- * fit 是跟着内容高的查看器：内容少时矮，多了才拉高，最高到 full 的四分之三（一次编辑的差异通常就几行，铺满太空）
+ * 弹窗尺寸档：每档宽度固定（窄屏才缩到屏宽减边距），并有一个最小高度，内容少时也按这个高度画，
+ * 不会一会儿矮一会儿高（用户要求「宽度固定、不同弹窗宽度不同、定个最小高度」）。最小高度不超过视口能放下的高度。
+ * - sm 420：确认、改名这类一两行的小表单，不设最小高度
+ * - md 520：常规表单（默认），最小高 320
+ * - lg 800：宽表单、命令行 / 工具输出这类文本查看窗口，最小高 480
+ * - xl 1100：差异、文件、工作流运行、审阅这类大块查看器和带侧栏的编辑器，最小高 640
+ * - full：几乎铺满，只给本身就是一个应用的窗口（Chat、ComfyUI、AI 处理）
+ * - fit：一次编辑的差异：xl 的宽度，跟着内容高，最高到 full 的四分之三（通常就几行，铺满太空）
  */
 const SIZES = {
   sm: 'max-w-[420px]',
-  md: 'max-w-[520px]',
-  lg: 'max-w-[760px]',
-  xl: 'max-w-[1100px]',
+  md: 'max-w-[520px] min-h-[min(320px,calc(100dvh-3.75rem))]',
+  lg: 'max-w-[800px] min-h-[min(480px,calc(100dvh-3.75rem))]',
+  xl: 'max-w-[1100px] min-h-[min(640px,calc(100dvh-3.75rem))]',
   // 照 Claude Code 网页版的方案弹窗：四周各留 30px 露出背后的页面，不设最大宽度，大屏上也铺满
   full: 'h-[calc(100dvh-3.75rem)] max-h-none w-[calc(100%-3.75rem)] max-w-none',
-  fit: 'max-h-[calc((100dvh-3.75rem)*0.75)] w-[calc(100%-3.75rem)] max-w-none',
+  fit: 'max-h-[calc((100dvh-3.75rem)*0.75)] max-w-[1100px] min-h-[min(320px,calc(100dvh-3.75rem))]',
 } as const
 
 export type ModalSize = keyof typeof SIZES
@@ -35,14 +41,14 @@ export const MODAL_SURFACE =
 
 /** 标题栏右侧管窗口的按钮：24px 见方、16px 图标、前景灰，悬停出浅底（方案弹窗右上角那一排） */
 export const MODAL_BTN =
-  'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted transition-colors hover:bg-sel hover:text-fg disabled:pointer-events-none disabled:opacity-40 aria-pressed:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg [&>svg]:h-4 [&>svg]:w-4'
+  'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-40 aria-pressed:text-fg data-[state=open]:bg-active data-[state=open]:text-fg [&>svg]:h-4 [&>svg]:w-4'
 
 /** 标题栏的外框（ModalHeader 用的同一份）：标题栏里内容太特殊、只能自己排的弹窗直接套这个 class */
 export const MODAL_HEADER =
   'flex h-[2.0625rem] shrink-0 items-center gap-2 border-b border-(color:--modal-edge) pr-1.5 pl-2.5'
 
 /** 标题栏标题文字：13px、中等字重、前景色 */
-export const MODAL_TITLE = 'min-w-0 shrink truncate text-[0.8125rem] font-medium text-fg'
+export const MODAL_TITLE = 'min-w-0 shrink truncate text-body font-medium text-fg'
 
 /** 已经用 IconButton（size="sm"）写的标题栏按钮叠这个 class，就和 ModalButton 一样大 */
 export const MODAL_ICON_BTN = 'h-6 w-6 rounded-md text-muted hover:text-fg'
@@ -118,7 +124,7 @@ export function ModalHeader({
           {title}
         </D.Title>
       )}
-      {meta && <span className="min-w-0 shrink-[2] truncate text-[0.75rem] text-subtle">{meta}</span>}
+      {meta && <span className="min-w-0 shrink-[2] truncate text-footnote text-subtle">{meta}</span>}
       {children}
       <span className="flex-1" />
       {aside}
@@ -185,7 +191,7 @@ export function Modal({
           onOpenAutoFocus={onOpenAutoFocus}
           onEscapeKeyDown={onEscapeKeyDown}
           className={cn(
-            'fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-3.75rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 animate-[pop-in_160ms_ease-out] focus:outline-none',
+            'fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-3.75rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 anim-dialog focus:outline-none',
             MODAL_SURFACE,
             SIZES[size ?? (wide ? 'lg' : 'md')],
             stacked && 'z-[70]',

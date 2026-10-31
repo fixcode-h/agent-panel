@@ -513,6 +513,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     if (!big || !big.src || big.width === 0) errors.push('路径可点：图片路径点开后没有显示图片')
     await check(p, '对话-路径-图片大图')
     await p.keyboard.press('Escape')
+    // 图片浮层有退场动画，放完才卸载：不等的话下面的文件弹窗和它同时在，[role=dialog] 会匹配到两个
+    await p.locator('[role="dialog"]').waitFor({ state: 'detached', timeout: 3000 })
     // 点文件路径：弹窗里显示文件内容并停在提到的那一行
     await mdPath
       .filter({ hasText: 'src/App.tsx:7' })

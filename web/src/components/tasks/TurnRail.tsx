@@ -57,6 +57,8 @@ export function TurnRail({
   const turns = useMemo(() => toTurns(msgs), [msgs])
   const [current, setCurrent] = useState(-1)
   const [hover, setHover] = useState<{ i: number; top: number } | null>(null)
+  // 正贴在顶上的毛玻璃吸顶栏（回复头、工作流节点标题）有多高：横杠从它下沿往下排，不压在毛玻璃上（用户要求）
+  const [barGap, setBarGap] = useState(0)
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const railRef = useRef<HTMLDivElement>(null)
 
@@ -76,6 +78,12 @@ export function TurnRail({
       })
       // 一轮都没越过（停在最上面）时算第一轮
       setCurrent(at < 0 ? 0 : at)
+      let gap = 0
+      for (const bar of el.querySelectorAll<HTMLElement>('.frost-bar')) {
+        const r = bar.getBoundingClientRect()
+        if (r.top <= box.top + 2 && r.bottom > box.top) gap = Math.max(gap, r.bottom - box.top)
+      }
+      setBarGap(Math.round(gap))
     }
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(measure)
@@ -112,8 +120,8 @@ export function TurnRail({
     <div
       ref={railRef}
       data-turn-rail
-      className="absolute top-3 z-20"
-      style={{ right }}
+      className="absolute z-20 transition-[top] duration-(--dur-base) ease-(--ease-snap)"
+      style={{ right, top: barGap + 12 }}
       onMouseLeave={leave}
       onMouseEnter={keep}
     >
@@ -161,15 +169,15 @@ export function TurnRail({
             onClick={() => onJump(shown.id)}
             className="block w-full cursor-pointer rounded-xl border border-line-strong bg-card p-3 text-left shadow-pop animate-[turn-peek-in_160ms_ease-out]"
           >
-            <div className="mb-1 flex items-center gap-2 text-[0.6875rem] text-subtle">
+            <div className="mb-1 flex items-center gap-2 text-caption text-subtle">
               <span className="font-medium">{t('第 {n} 轮', { n: hover.i + 1 })}</span>
               <span className="ml-auto tabular-nums">{shown.at.slice(5, 16).replace('T', ' ')}</span>
             </div>
-            <p className="line-clamp-4 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
+            <p className="line-clamp-4 text-body leading-relaxed whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
               {shown.ask}
             </p>
             {shown.reply && (
-              <p className="mt-2 line-clamp-3 border-t border-line pt-2 text-[0.75rem] leading-relaxed text-muted [overflow-wrap:anywhere]">
+              <p className="mt-2 line-clamp-3 border-t border-line pt-2 text-footnote leading-relaxed text-muted [overflow-wrap:anywhere]">
                 {shown.reply}
               </p>
             )}

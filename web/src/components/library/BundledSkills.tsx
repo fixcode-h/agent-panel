@@ -38,8 +38,8 @@ export function BundledSkills({
       .filter((g) => g.items.length)
   }, [items, query])
 
-  if (error) return <p className="px-2 py-6 text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
-  if (!items) return <p className="px-2 py-6 text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+  if (error) return <p className="px-2 py-6 text-body text-warning">{t('读取失败：{error}', { error })}</p>
+  if (!items) return <p className="px-2 py-6 text-body text-subtle">{t('读取中…')}</p>
   if (!groups.length)
     return <ListEmpty>{query ? t('没有符合的{kind}。', { kind: 'Skill' }) : t('还没有自带 Skill。')}</ListEmpty>
   return (
@@ -56,7 +56,7 @@ export function BundledSkills({
                 <>
                   {i.name}
                   {i.files > 0 && (
-                    <span className="ml-2 font-sans text-[0.6875rem] font-normal text-subtle">
+                    <span className="ml-2 font-sans text-caption font-normal text-subtle">
                       {t('另有 {n} 个文件', { n: i.files })}
                     </span>
                   )}
@@ -65,7 +65,7 @@ export function BundledSkills({
               subtitle={i.description || t('没有说明')}
               monoSubtitle={false}
               trailing={
-                <span className="shrink-0 text-[0.6875rem] text-subtle">{BUNDLED_STATUS_LABEL[i.status.shared]}</span>
+                <span className="shrink-0 text-caption text-subtle">{BUNDLED_STATUS_LABEL[i.status.shared]}</span>
               }
             />
           ))}
@@ -96,7 +96,7 @@ export function BundledBulkBar({
   const waitTitle = (key: string) => (busy && busy !== key ? t('等当前操作完成') : undefined)
   return (
     <div className="flex flex-col gap-2">
-      <p className="flex flex-wrap items-center gap-x-1.5 text-[0.6875rem] text-subtle">
+      <p className="flex flex-wrap items-center gap-x-1.5 text-caption text-subtle">
         {t('装到')}
         <span className="font-mono">~/.agents/skills</span>
         {t('，所有 Agent 共用')}

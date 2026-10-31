@@ -1,7 +1,8 @@
 // 通用的对话消息：用户的气泡、AI 回复下面的时间和操作。
 // 除了工作流的节点输出，所有 AI 对话（任务对话、UI 设计）都用这一套，各自通过 actions 加自己的按钮
 import { useLayoutEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Copy, Quote } from 'lucide-react'
+import { ChevronDown, Quote } from 'lucide-react'
+import { CopyIcon } from '@/components/ui/copy-icon'
 import { toast } from '@/lib/toast'
 import { copyText as clipboardCopy } from '@/lib/copy-text'
 import { quoteFrom } from '@/lib/quote'
@@ -89,7 +90,7 @@ export function CopyButton({
         })
       }}
     >
-      {done ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+      <CopyIcon done={done} className="h-4 w-4" />
     </IconButton>
   )
 }
@@ -129,7 +130,7 @@ export function MessageMeta({
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 text-[0.6875rem] text-subtle transition-opacity',
+        'flex items-center gap-0.5 text-caption text-subtle transition-opacity',
         align === 'end' && 'flex-row-reverse',
       )}
     >
@@ -177,14 +178,14 @@ export function UserMessage({
   const ai = useAiLook()
   if (subject)
     return (
-      <div data-msg={anchorId} data-user="" className="group/msg overflow-hidden rounded-[0.625rem] border">
-        <div className="flex h-[2.125rem] items-center gap-2 bg-sel/60 pr-1.5 pl-3 text-[0.75rem]">
-          <span className="text-[0.6875rem] font-semibold tracking-[0.06em] text-subtle">{subject.label}</span>
+      <div data-msg={anchorId} data-user="" className="group/msg overflow-hidden rounded-xl border">
+        <div className="flex h-[2.125rem] items-center gap-2 bg-sel/60 pr-1.5 pl-3 text-footnote">
+          <span className="text-caption font-semibold tracking-[0.06em] text-subtle">{subject.label}</span>
           {subject.hint && <span className="min-w-0 truncate text-muted">{subject.hint}</span>}
           <span className="ml-auto" />
           <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} />
         </div>
-        <div className="bg-panel px-3 py-2.5 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]">
+        <div className="bg-panel px-3 py-2.5 text-body leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]">
           <FoldBody>
             <MessageBody text={text} attachments={attachments} />
           </FoldBody>
@@ -204,11 +205,11 @@ export function UserMessage({
           className={cn(
             'max-w-full min-w-0 rounded-2xl bg-sel whitespace-pre-wrap [overflow-wrap:anywhere]',
             size === 'sm'
-              ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
+              ? 'rounded-br-md px-3.5 py-2 text-body leading-relaxed'
               : ai
                 ? // AI 分析窗口的追问气泡（设计稿 AiWindow）：浅一档的底、圆角 12、14px 字
-                  'rounded-xl bg-sel/70 px-3.5 py-2.5 text-[0.875rem] leading-relaxed'
-                : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
+                  'rounded-xl bg-sel/70 px-3.5 py-2.5 text-prose leading-relaxed'
+                : 'px-4 py-2.5 text-heading leading-relaxed',
           )}
         >
           <FoldBody>
@@ -261,7 +262,7 @@ function FoldBody({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="mt-1 inline-flex cursor-pointer items-center gap-1 text-[0.75rem] text-muted transition-colors hover:text-fg"
+          className="mt-1 inline-flex cursor-pointer items-center gap-1 text-footnote text-muted transition-colors hover:text-fg"
         >
           <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
           {open ? t('收起') : t('展开')}
@@ -315,15 +316,13 @@ export function AnswerMessage({
         className={cn(
           'flex max-w-full min-w-0 flex-col gap-2 rounded-2xl bg-sel [overflow-wrap:anywhere]',
           size === 'sm'
-            ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
-            : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
+            ? 'rounded-br-md px-3.5 py-2 text-body leading-relaxed'
+            : 'px-4 py-2.5 text-heading leading-relaxed',
         )}
       >
         {answers.map((a, i) => (
           <div key={i} className="flex min-w-0 flex-col">
-            <span className={cn('text-muted', size === 'sm' ? 'text-[0.6875rem]' : 'text-[0.75rem]')}>
-              {a.question}
-            </span>
+            <span className={cn('text-muted', size === 'sm' ? 'text-caption' : 'text-footnote')}>{a.question}</span>
             <span className="whitespace-pre-wrap">{a.answer}</span>
           </div>
         ))}

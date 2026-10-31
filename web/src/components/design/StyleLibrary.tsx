@@ -42,9 +42,7 @@ export function StyleLibraryList({
   if (!list) return <Loader2 className="mx-auto my-2 h-4 w-4 animate-spin text-subtle" />
   if (!list.length)
     return (
-      <p className="text-[0.6875rem] leading-relaxed text-subtle">
-        {t('风格库还是空的，可以把这个设计的风格存进去。')}
-      </p>
+      <p className="text-caption leading-relaxed text-subtle">{t('风格库还是空的，可以把这个设计的风格存进去。')}</p>
     )
   return (
     <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
@@ -57,13 +55,13 @@ export function StyleLibraryList({
         >
           <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
           <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1.5 text-[0.75rem]">
+            <span className="flex items-center gap-1.5 text-footnote">
               <span className="truncate">{s.name}</span>
               {s.builtin && (
-                <span className="shrink-0 rounded bg-field px-1 text-[0.625rem] text-subtle">{t('内置')}</span>
+                <span className="shrink-0 rounded-sm bg-field px-1 text-micro text-subtle">{t('内置')}</span>
               )}
             </span>
-            {s.summary && <span className="line-clamp-2 text-[0.6875rem] leading-snug text-subtle">{s.summary}</span>}
+            {s.summary && <span className="line-clamp-2 text-caption leading-snug text-subtle">{s.summary}</span>}
           </span>
           {current.trim() === s.en.trim() && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />}
         </button>
@@ -141,16 +139,16 @@ export function SaveStyleButton({
           </>
         }
       >
-        <p className="-mt-1 text-[0.75rem] leading-relaxed text-muted">
+        <p className="-mt-1 text-footnote leading-relaxed text-muted">
           {t('AI 从这个设计里总结出了下面的风格，可以改一改再存。')}
         </p>
         {draft && (
           <>
-            <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
+            <label className="flex flex-col gap-1 text-footnote text-muted">
               {t('名字')}
               <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
             </label>
-            <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
+            <label className="flex flex-col gap-1 text-footnote text-muted">
               {t('说明')}
               <Textarea
                 rows={2}
@@ -158,19 +156,19 @@ export function SaveStyleButton({
                 onChange={(e) => setDraft({ ...draft, summary: e.target.value })}
               />
             </label>
-            <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
+            <label className="flex flex-col gap-1 text-footnote text-muted">
               {t('发给 AI 的英文描述')}
               <Textarea
                 rows={4}
                 value={draft.en ?? ''}
                 onChange={(e) => setDraft({ ...draft, en: e.target.value })}
-                className="font-mono text-[0.75rem]"
+                className="font-mono text-footnote"
               />
             </label>
             {!!draft.prompts?.length && (
               <div className="flex flex-wrap gap-1">
                 {draft.prompts.map((p, i) => (
-                  <span key={i} title={p.en} className="rounded-md bg-field px-1.5 py-0.5 text-[0.6875rem] text-muted">
+                  <span key={i} title={p.en} className="rounded-md bg-field px-1.5 py-0.5 text-caption text-muted">
                     {p.zh}
                   </span>
                 ))}

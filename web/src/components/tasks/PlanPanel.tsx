@@ -166,7 +166,7 @@ function ItemTime({ item, now }: { item: PlanItem; now: number }) {
       title={label}
       aria-label={label}
       // 定宽右对齐：各步的用时上下对成一列
-      className="min-w-[3.25rem] shrink-0 text-right font-mono text-[0.6875rem] text-subtle tabular-nums"
+      className="min-w-[3.25rem] shrink-0 text-right font-mono text-caption text-subtle tabular-nums"
     >
       {time}
     </span>
@@ -254,7 +254,7 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
         aria-label={t('执行计划')}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg',
+          'flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-body text-muted transition-colors hover:bg-sel hover:text-fg',
           open && 'bg-sel text-fg',
         )}
       >
@@ -338,7 +338,7 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
       <div className="flex shrink-0 flex-col gap-2 border-b px-4 pt-3.5 pb-3">
         <div className="flex min-w-0 items-center gap-2">
           <ListChecks className="h-4 w-4 shrink-0 text-muted" />
-          <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold text-fg" title={plan.title}>
+          <span className="min-w-0 flex-1 truncate text-body font-semibold text-fg" title={plan.title}>
             {plan.title || t('执行计划')}
           </span>
           <span className="shrink-0 font-mono text-xs text-muted tabular-nums">
@@ -346,7 +346,7 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
           </span>
         </div>
         <PlanBar done={p.done} total={p.total} className="h-1" />
-        <div className="flex min-w-0 items-center gap-1.5 text-[0.6875rem] text-subtle">
+        <div className="flex min-w-0 items-center gap-1.5 text-caption text-subtle">
           {total !== undefined && (
             <span
               data-plan-total=""
@@ -362,7 +362,7 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
           {planRebuilt(task) && (
             <span
               data-plan-rebuilt=""
-              className="ml-auto shrink-0 rounded bg-sel px-1.5 py-px"
+              className="ml-auto shrink-0 rounded-sm bg-sel px-1.5 py-px"
               title={t('上一份计划没做完就结束了，这是新开的一份')}
             >
               {t('重建')}
@@ -461,7 +461,7 @@ function PlanStepRow({
           <span className="flex min-w-0 items-baseline gap-2">
             <span
               className={cn(
-                'min-w-0 flex-1 truncate text-[0.8125rem] leading-5',
+                'min-w-0 flex-1 truncate text-body leading-5',
                 // 完成的只调灰、不加删除线（用户要求）：左边的完成图标已经说明了状态，划掉反而看不清做了什么
                 step.status === 'pending' || step.status === 'skipped' || step.status === 'done'
                   ? 'text-muted'
@@ -472,7 +472,7 @@ function PlanStepRow({
               {step.title}
             </span>
             {kids.length > 0 && (
-              <span className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums">
+              <span className="shrink-0 font-mono text-caption text-subtle tabular-nums">
                 {doneKids}/{kids.length}
               </span>
             )}
@@ -515,7 +515,7 @@ function PlanStepRow({
                   <span className="flex min-w-0 items-baseline gap-2">
                     <span
                       className={cn(
-                        'min-w-0 flex-1 truncate text-[0.8125rem] leading-[1.125rem]',
+                        'min-w-0 flex-1 truncate text-body leading-[1.125rem]',
                         c.status === 'pending' ? 'text-subtle' : c.status === 'running' ? 'text-fg' : 'text-muted',
                       )}
                     >
@@ -527,7 +527,7 @@ function PlanStepRow({
                   {m && (
                     <span
                       className={cn(
-                        'truncate text-[0.6875rem]',
+                        'truncate text-caption',
                         needsFix(c) && !settled
                           ? 'text-danger'
                           : c.status === 'waiting' && !settled
@@ -564,7 +564,7 @@ function OldPlan({ plan }: { plan: TaskPlan }) {
       >
         <PlanIcon status={head === 'done' ? 'done' : 'pending'} small />
         <span className="min-w-0 flex-1 truncate text-xs text-fg">{plan.title || t('未命名的计划')}</span>
-        <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">
+        <span className="shrink-0 text-caption text-subtle tabular-nums">
           {t('{done}/{total} 步', { done, total: plan.steps.length })}
           {at &&
             ` · ${at.toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}

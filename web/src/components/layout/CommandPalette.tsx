@@ -208,19 +208,19 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           aria-expanded
           aria-controls="palette-list"
           aria-activedescendant={shown[cur] ? `palette-${cur}` : undefined}
-          className="h-12 min-w-0 flex-1 bg-transparent text-[0.9375rem] outline-none placeholder:text-subtle"
+          className="h-12 min-w-0 flex-1 bg-transparent text-heading outline-none placeholder:text-subtle"
         />
       </label>
       <div ref={list} id="palette-list" role="listbox" className="min-h-0 flex-1 overflow-y-auto p-1.5">
         {shown.length === 0 && (
-          <p className="px-3 py-6 text-center text-[0.8125rem] text-subtle">
+          <p className="px-3 py-6 text-center text-body text-subtle">
             {content.loading ? t('搜索中…') : t('没有找到')}
           </p>
         )}
         {shown.map((x, i) => (
           <div key={x.id}>
             {(i === 0 || shown[i - 1].group !== x.group) && (
-              <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">{x.group}</p>
+              <p className="px-2.5 pt-2 pb-1 text-caption font-medium text-subtle">{x.group}</p>
             )}
             <div
               id={`palette-${i}`}
@@ -230,7 +230,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               onMouseMove={() => i !== cur && setIndex(i)}
               onClick={() => pick(x)}
               className={cn(
-                'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem]',
+                'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-body',
                 i === cur ? 'bg-sel text-fg' : 'text-muted',
               )}
             >
@@ -242,7 +242,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           </div>
         ))}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 bg-panel/60 px-4 py-2 text-[0.6875rem] text-subtle">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 bg-panel/60 px-4 py-2 text-caption text-subtle">
         <span>{t('↑↓ 选择 · Enter 打开')}</span>
         <span>{t('{mod}K 命令面板', { mod: MOD })}</span>
         <span>{t('{mod}Enter 打断并发送', { mod: MOD })}</span>

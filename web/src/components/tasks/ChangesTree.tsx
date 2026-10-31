@@ -36,9 +36,7 @@ export function ChangesTree({
   const rows = useMemo(() => visibleChangeRows(tree, collapsed), [tree, collapsed])
 
   if (!changes.length)
-    return (
-      <p className="p-4 text-[0.8125rem] text-subtle">{scoped ? t('这个节点没有改动文件。') : t('还没有改动文件。')}</p>
-    )
+    return <p className="p-4 text-body text-subtle">{scoped ? t('这个节点没有改动文件。') : t('还没有改动文件。')}</p>
 
   return (
     <div className="flex flex-col">
@@ -80,7 +78,7 @@ export function ChangesTree({
         <button
           type="button"
           onClick={() => setShown((n) => n + PAGE)}
-          className="flex h-7 cursor-pointer items-center rounded px-2 text-left text-[0.75rem] text-accent-text hover:bg-sel"
+          className="flex h-7 cursor-pointer items-center rounded-sm px-2 text-left text-footnote text-accent-text hover:bg-sel"
         >
           {t('显示更多（还有 {n} 项）', { n: rows.length - shown })}
         </button>

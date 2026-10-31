@@ -60,7 +60,7 @@ export function NextWorkflows({ task }: { task: Task }) {
 
   return (
     <section aria-label={t('推荐的下一步')} className="flex flex-col gap-2">
-      <h3 className="px-1 text-[0.75rem] font-medium text-muted">{t('推荐的下一步')}</h3>
+      <h3 className="px-1 text-footnote font-medium text-muted">{t('推荐的下一步')}</h3>
       <div className="flex flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-card">
         {recs.map((r, i) => {
           const w = workflows.find((x) => x.id === r.id)!
@@ -76,16 +76,16 @@ export function NextWorkflows({ task }: { task: Task }) {
                 i > 0 && 'border-t border-line',
               )}
             >
-              <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[8px] bg-accent-soft text-accent-text">
+              <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-text">
                 <WorkflowIcon className="h-4 w-4" strokeWidth={2.2} />
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-[0.8125rem] font-medium">{w.name}</span>
+                <span className="truncate text-body font-medium">{w.name}</span>
                 {(r.reason || w.description) && (
-                  <span className="line-clamp-2 text-[0.75rem] text-muted">{r.reason || w.description}</span>
+                  <span className="line-clamp-2 text-footnote text-muted">{r.reason || w.description}</span>
                 )}
               </span>
-              <span className="mt-1 flex shrink-0 items-center gap-1 text-[0.75rem] text-subtle transition-colors group-hover:text-accent-text">
+              <span className="mt-1 flex shrink-0 items-center gap-1 text-footnote text-subtle transition-colors group-hover:text-accent-text">
                 {busy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t('执行')}
                 {busy !== r.id && <ArrowRight className="h-3.5 w-3.5" />}
               </span>

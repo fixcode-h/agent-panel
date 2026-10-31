@@ -169,15 +169,15 @@ export function RequestCard({
           <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
           <span
             className={cn(
-              'min-w-0 text-[0.8125rem] leading-relaxed [overflow-wrap:anywhere]',
-              req.kind === 'command' && 'font-mono text-[0.8125rem]',
+              'min-w-0 text-body leading-relaxed [overflow-wrap:anywhere]',
+              req.kind === 'command' && 'font-mono text-body',
             )}
           >
             {req.title}
           </span>
         </div>
         {req.detail && (
-          <pre className="max-h-40 overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap text-muted">
+          <pre className="max-h-40 overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-footnote leading-relaxed whitespace-pre-wrap text-muted">
             {req.detail}
           </pre>
         )}
@@ -229,7 +229,7 @@ function ConfirmEntry({
       >
         <ClipboardCheck className="h-4 w-4 shrink-0 text-warning" />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[0.8125rem] font-medium">{req.title}</span>
+          <span className="truncate text-body font-medium">{req.title}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
             <span className="shrink-0 text-warning">{t('需要你确认')}</span>
             {agent && (

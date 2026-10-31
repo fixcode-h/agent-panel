@@ -5,6 +5,7 @@
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 4b. 文本文件里不能有裸 NUL 字节：写成 `` `\0` `` 的文本被误存成 0x00 时 grep / rg 会整份跳过、搜不到
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
+// 6c. 字号、圆角不手写，用阶梯里的名字
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
 // 7b. `docs/modules/<模块>/bugs.md` 由 `bugs/<bug-id>.md` 生成：手改索引、改了详情忘了重生成都会被拦下
 // 9. 共享仓库的 config 里不能有 core.worktree
@@ -218,6 +219,22 @@ for (const f of files) {
     .forEach((l, i) => {
       if (/\bfont-(?:thin|extralight|light)\b|font-weight:\s*[1-3]00\s*;/.test(l))
         errors.push(`${f}:${i + 1} 用了细字重，界面常规字最细 450，主次用颜色或字号分：${l.trim()}`)
+    })
+}
+
+// 6c. 字号和圆角走阶梯（见 docs/lessons/ui.md「文案、命名和控件的写法」）：
+// 不手写 text-[…rem] / text-[…px]，用 index.css @theme 里的 text-caption、text-body 这些角色；
+// 圆角不手写 5px 以上的 rounded-[…]，用 rounded-sm / lg / xl / 2xl / 3xl。4px 以下的小色块按自身大小写，不拦
+for (const f of files) {
+  if (!/^web\/src\/.+\.(tsx?|css)$/.test(f) || /\.test\.tsx?$/.test(f)) continue
+  read(f)
+    .split('\n')
+    .forEach((l, i) => {
+      if (/\btext-\[[0-9.]+(?:rem|px|em)\]/.test(l))
+        errors.push(`${f}:${i + 1} 手写了字号，改用 text-caption / text-body 这类字号角色：${l.trim()}`)
+      const r = l.match(/\brounded(?:-[a-z]{1,2})?-\[([0-9.]+)(px|rem)\]/)
+      if (r && (r[2] === 'rem' || Number(r[1]) > 4))
+        errors.push(`${f}:${i + 1} 手写了圆角，改用 rounded-sm / lg / xl / 2xl / 3xl：${l.trim()}`)
     })
 }
 

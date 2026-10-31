@@ -43,7 +43,7 @@ import { Textarea } from '@/components/ui/input'
 function DiffView({ before, after }: { before: string; after: string }) {
   const rows = useMemo(() => lineDiff(before, after), [before, after])
   return (
-    <pre className="max-h-80 overflow-auto rounded-lg border bg-field py-1.5 font-mono text-[0.75rem] leading-[1.6]">
+    <pre className="max-h-80 overflow-auto rounded-lg border bg-field py-1.5 font-mono text-footnote leading-[1.6]">
       {rows.map((r, i) => (
         <div
           key={i}
@@ -239,13 +239,13 @@ function ChangeRow({
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[0.8125rem] font-medium">{r.field}</span>
+            <span className="text-body font-medium">{r.field}</span>
             <span className="inline-flex min-w-0 items-center gap-1 text-xs text-subtle">
               <Icon className="h-3 w-3 shrink-0" aria-label={targetName(r.change.target)} />
               <span className="truncate">{r.scope}</span>
             </span>
           </span>
-          {r.change.reason && <span className="text-[0.75rem] leading-relaxed text-muted">{r.change.reason}</span>}
+          {r.change.reason && <span className="text-footnote leading-relaxed text-muted">{r.change.reason}</span>}
           {!same && !r.error && (
             <button
               type="button"
@@ -484,7 +484,7 @@ export function EvolutionReport({
           <span className="flex-1" />
           <ItemActions text={() => resultText(evo, rows)} />
         </div>
-        {evo.summary && <p className="text-[0.8125rem] leading-relaxed text-muted">{evo.summary}</p>}
+        {evo.summary && <p className="text-body leading-relaxed text-muted">{evo.summary}</p>}
       </div>
       {evo.issues.length > 0 && (
         <div className="mt-2 border-t">
@@ -501,7 +501,7 @@ export function EvolutionReport({
             issueGroups(evo.issues).map((g) => (
               <div key={`${g.scope}:${g.name}`} className="pb-1">
                 <div className="flex items-center gap-2 px-4 pt-2 pb-1">
-                  <span className="text-[0.75rem] font-medium">{g.name}</span>
+                  <span className="text-footnote font-medium">{g.name}</span>
                   {g.scope === 'panel' && <Badge>{t('面板框架')}</Badge>}
                   <span className="text-xs text-subtle tabular-nums">{g.items.length}</span>
                 </div>
@@ -585,16 +585,14 @@ function IssueRow({ f, action }: { f: CodeIssue; action?: React.ReactNode }) {
       <div className="flex items-start gap-2.5">
         <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          {f.title && <span className="text-[0.8125rem] font-medium">{f.title}</span>}
-          {f.detail && (
-            <span className="text-[0.75rem] leading-relaxed whitespace-pre-wrap text-muted">{f.detail}</span>
-          )}
+          {f.title && <span className="text-body font-medium">{f.title}</span>}
+          {f.detail && <span className="text-footnote leading-relaxed whitespace-pre-wrap text-muted">{f.detail}</span>}
           {f.files.length > 0 && (
             <span className="mt-0.5 flex flex-wrap gap-1.5">
               {f.files.map((x) => (
                 <code
                   key={x}
-                  className="rounded-md border bg-field px-1.5 py-0.5 font-mono text-[0.6875rem] break-all text-subtle"
+                  className="rounded-md border bg-field px-1.5 py-0.5 font-mono text-caption break-all text-subtle"
                 >
                   {x}
                 </code>
@@ -675,13 +673,13 @@ export function AnalyzeDialog({
         </>
       }
     >
-      <p className="text-[0.8125rem] leading-relaxed text-muted">
+      <p className="text-body leading-relaxed text-muted">
         {intro ??
           t(
             'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。',
           )}
       </p>
-      <label className="flex flex-col gap-1.5 text-[0.8125rem]">
+      <label className="flex flex-col gap-1.5 text-body">
         <span className="font-medium">{t('要问的具体问题（可选）')}</span>
         <Textarea
           value={focus}
@@ -689,7 +687,7 @@ export function AnalyzeDialog({
           maxLength={1000}
           rows={3}
           placeholder={placeholder ?? t('例如：为什么验收总是不通过、哪些节点最费 token')}
-          className="resize-none py-2 text-[0.8125rem]"
+          className="resize-none py-2 text-body"
         />
         <span className="text-xs text-subtle">
           {t('写了问题就只分析这个问题、找出原因，不做整体分析；不写时按上面说的整体分析')}

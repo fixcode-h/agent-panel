@@ -296,7 +296,7 @@ export function AgentDetail({
             actions={
               <>
                 {!core && (
-                  <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-[0.8125rem] text-muted">
+                  <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-body text-muted">
                     <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
                     {t('启用')}
                   </label>
@@ -381,7 +381,7 @@ export function AgentDetail({
             {tab === 'basic' && core && (
               <section className="flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3">
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
-                <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
+                <div className="flex min-w-0 flex-col gap-1 text-body leading-relaxed">
                   <span className="font-medium">{t('必备角色 · {use}', { use: coreUse(core) })}</span>
                   <span className="text-muted">
                     {t(
@@ -395,7 +395,7 @@ export function AgentDetail({
               <>
                 <section className="flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3">
                   <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
-                  <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
+                  <div className="flex min-w-0 flex-col gap-1 text-body leading-relaxed">
                     <span className="font-medium">{t('内置角色 · 随版本更新')}</span>
                     <span className="text-muted">
                       {t(
@@ -527,7 +527,7 @@ export function AgentDetail({
                         value={draft.model}
                         onChange={(e) => set('model', e.target.value)}
                         options={tierOptions}
-                        className="font-mono text-[0.8125rem]"
+                        className="font-mono text-body"
                       />
                     </Field>
                   </div>
@@ -606,7 +606,7 @@ export function AgentDetail({
                     value={args}
                     onChange={(e) => setArgs(e.target.value)}
                     placeholder={t('例如：--add-dir ../shared')}
-                    className="font-mono text-[0.8125rem]"
+                    className="font-mono text-body"
                   />
                 </Field>
               </FormSection>
@@ -616,7 +616,7 @@ export function AgentDetail({
                 <p className="-mt-2 text-xs leading-relaxed text-subtle">
                   {t('由面板维护，只读。Skill：{list}', { list: draft.skills.join(t('、')) || t('无') })}
                 </p>
-                <pre className="max-h-[420px] overflow-auto rounded-lg border bg-field p-3 font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap text-muted">
+                <pre className="max-h-[420px] overflow-auto rounded-lg border bg-field p-3 font-mono text-footnote leading-relaxed whitespace-pre-wrap text-muted">
                   {draft.instructions}
                 </pre>
               </FormSection>
@@ -656,7 +656,7 @@ export function AgentDetail({
                                 className={cn(menuItem, 'min-w-0 flex-1')}
                                 onClick={() => insert(`{{${p.key}}}`)}
                               >
-                                <code className="font-mono text-[0.75rem] text-accent-text">{`{{${p.key}}}`}</code>
+                                <code className="font-mono text-footnote text-accent-text">{`{{${p.key}}}`}</code>
                                 <span className="truncate text-subtle">{p.label}</span>
                               </PopoverClose>
                               <PopoverClose
@@ -677,7 +677,7 @@ export function AgentDetail({
                     )}
                   />
                   {unknownRefs.length > 0 && (
-                    <p className="flex items-start gap-1.5 text-[0.6875rem] leading-relaxed text-warning">
+                    <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       {t(
                         '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「参数」页添加，或者改成已有的参数名。',
@@ -689,7 +689,7 @@ export function AgentDetail({
                   )}
                   <div className="flex flex-col gap-2">
                     <span className="text-xs text-muted">{t('引入的角色')}</span>
-                    <p className="-mt-1 text-[0.6875rem] leading-relaxed text-subtle">
+                    <p className="-mt-1 text-caption leading-relaxed text-subtle">
                       {t('引入的角色的角色设定会一起交给这个角色，可以把通用的规范、领域知识做成单独的角色复用。')}
                     </p>
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -702,7 +702,7 @@ export function AgentDetail({
                             tabIndex={0}
                             title={t('拖动调整顺序（也可以按 Alt + 方向键），越靠前的设定越先交给它')}
                             className={cn(
-                              'group inline-flex h-8 cursor-grab items-center gap-1 rounded-lg bg-card shadow-card pr-1 pl-1 text-[0.8125rem] outline-none select-none focus-visible:border-focus active:cursor-grabbing',
+                              'group inline-flex h-8 cursor-grab items-center gap-1 rounded-lg bg-card shadow-card pr-1 pl-1 text-body outline-none select-none focus-visible:border-focus active:cursor-grabbing',
                               sortIncludes.drag === i && 'opacity-40',
                               sortIncludes.over === i &&
                                 sortIncludes.drag !== null &&
@@ -750,7 +750,7 @@ export function AgentDetail({
                       </AgentPicker>
                     </div>
                     {cycle.length > 0 && (
-                      <div className="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-[0.75rem] leading-relaxed text-danger">
+                      <div className="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-footnote leading-relaxed text-danger">
                         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         <span className="min-w-0 flex-1">
                           {t(
@@ -775,7 +775,7 @@ export function AgentDetail({
                       </div>
                     )}
                     {(tooDeep.length > 0 || deepParents.length > 0) && (
-                      <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[0.75rem] leading-relaxed text-warning">
+                      <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-footnote leading-relaxed text-warning">
                         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         <div className="flex min-w-0 flex-col gap-0.5">
                           {tooDeep.length > 0 && (
@@ -806,7 +806,7 @@ export function AgentDetail({
                     )}
                     {depth > 1 && (
                       <div className="flex flex-col gap-1 rounded-lg border bg-field px-3 py-2">
-                        <span className="text-[0.6875rem] text-subtle">
+                        <span className="text-caption text-subtle">
                           {t('引入层级 · 共 {n} 层（最多展开 {max} 层）', { n: depth, max: MAX_INCLUDE_DEPTH })}
                         </span>
                         <ul className="flex flex-col">
@@ -815,12 +815,12 @@ export function AgentDetail({
                             return (
                               <li
                                 key={i}
-                                className="flex h-7 items-center gap-2 text-[0.75rem]"
+                                className="flex h-7 items-center gap-2 text-footnote"
                                 style={{ paddingLeft: (r.depth - 1) * 18 }}
                               >
                                 <span
                                   className={cn(
-                                    'grid h-5 min-w-5 shrink-0 place-items-center rounded-md px-1 font-mono text-[0.6875rem] tabular-nums',
+                                    'grid h-5 min-w-5 shrink-0 place-items-center rounded-md px-1 font-mono text-caption tabular-nums',
                                     r.cycle
                                       ? 'bg-danger/12 text-danger'
                                       : over
@@ -847,13 +847,11 @@ export function AgentDetail({
                                   <span className="text-subtle">{t('（已删除）')}</span>
                                 )}
                                 {r.cycle ? (
-                                  <span className="shrink-0 text-[0.6875rem] text-danger">
-                                    {t('绕回上层，形成循环')}
-                                  </span>
+                                  <span className="shrink-0 text-caption text-danger">{t('绕回上层，形成循环')}</span>
                                 ) : over ? (
-                                  <span className="shrink-0 text-[0.6875rem] text-warning">{t('太深，不会展开')}</span>
+                                  <span className="shrink-0 text-caption text-warning">{t('太深，不会展开')}</span>
                                 ) : r.agent && !r.agent.enabled ? (
-                                  <span className="shrink-0 text-[0.6875rem] text-subtle">{t('已停用')}</span>
+                                  <span className="shrink-0 text-caption text-subtle">{t('已停用')}</span>
                                 ) : null}
                               </li>
                             )
@@ -900,7 +898,7 @@ export function AgentDetail({
                     value={args}
                     onChange={(e) => setArgs(e.target.value)}
                     placeholder={t('例如：--add-dir ../shared')}
-                    className="font-mono text-[0.8125rem]"
+                    className="font-mono text-body"
                   />
                 </Field>
               </FormSection>
@@ -924,28 +922,28 @@ export function AgentDetail({
                 open={tab === 'role'}
                 className="group rounded-xl bg-card shadow-card p-4"
               >
-                <summary className="cursor-pointer text-[0.8125rem] font-semibold">{t('实际交给它的设定')}</summary>
+                <summary className="cursor-pointer text-body font-semibold">{t('实际交给它的设定')}</summary>
                 <div className="mt-2 flex items-center gap-2">
-                  <p className="min-w-0 flex-1 text-[0.6875rem] text-subtle">
+                  <p className="min-w-0 flex-1 text-caption text-subtle">
                     {Object.keys(trial).length
                       ? t('按试的参数展开（不保存），包含引入的角色和 Skill 提示。')
                       : t('按参数默认值展开，包含引入的角色和 Skill 提示。')}
                   </p>
                   {draft.params.length > 0 && <ParamsChip params={draft.params} values={trial} onChange={setTrial} />}
                 </div>
-                <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-field p-2.5 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap">
+                <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-field p-2.5 font-mono text-caption leading-relaxed whitespace-pre-wrap">
                   {preview}
                 </pre>
               </details>
             )}
             {includedBy.length > 0 && (
               <section className="flex flex-col gap-2 rounded-xl bg-card shadow-card p-4">
-                <h3 className="text-[0.8125rem] font-semibold">{t('被这些角色引入')}</h3>
+                <h3 className="text-body font-semibold">{t('被这些角色引入')}</h3>
                 {includedBy.map((a) => (
                   <button
                     key={a.id}
                     onClick={() => go({ page: 'agents', id: a.id })}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] hover:bg-sel"
+                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-body hover:bg-sel"
                   >
                     <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
                     <span className="flex-1 truncate">{a.name}</span>
@@ -954,13 +952,13 @@ export function AgentDetail({
               </section>
             )}
             <section className="flex flex-col gap-2 rounded-xl bg-card shadow-card p-4">
-              <h3 className="text-[0.8125rem] font-semibold">{t('所在工作流')}</h3>
+              <h3 className="text-body font-semibold">{t('所在工作流')}</h3>
               {usedIn.length === 0 && <p className="text-xs text-subtle">{t('还没有工作流使用它。')}</p>}
               {usedIn.map(({ w, role }) => (
                 <button
                   key={w.id}
                   onClick={() => go({ page: 'workflows', id: w.id })}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] hover:bg-sel"
+                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-body hover:bg-sel"
                 >
                   <WorkflowIcon className="h-4 w-4 text-subtle" />
                   <span className="flex-1 truncate">{w.name}</span>
@@ -998,5 +996,5 @@ function branchSnippet(p: AgentParam) {
 
 /** 标签上的数量 */
 function TabCount({ n }: { n: number }) {
-  return <span className="rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle tabular-nums">{n}</span>
+  return <span className="rounded-full bg-field px-1.5 text-caption text-subtle tabular-nums">{n}</span>
 }

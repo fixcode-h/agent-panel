@@ -44,7 +44,7 @@ export function CustomClis({ demo }: { demo?: boolean }) {
   return (
     <Group title={t('添加其他 Agent')}>
       <div className="flex flex-col gap-3 py-3">
-        <p className="text-[0.8125rem] leading-relaxed text-muted">
+        <p className="text-body leading-relaxed text-muted">
           {t(
             '面板按配置文件调用 Agent：命令和参数怎么拼、输出怎么解析、Skill 和说明文件在哪。按格式写一份 JSON 放进下面的目录，点「重新读取」就能用，不用改代码。',
           )}{' '}
@@ -59,7 +59,7 @@ export function CustomClis({ demo }: { demo?: boolean }) {
           </a>
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-md bg-field px-2.5 py-1.5 font-mono text-[0.75rem] text-muted">
+          <code className="min-w-0 flex-1 truncate rounded-md bg-field px-2.5 py-1.5 font-mono text-footnote text-muted">
             {info?.dir ?? '…'}
           </code>
           {!demo && (
@@ -85,16 +85,16 @@ export function CustomClis({ demo }: { demo?: boolean }) {
         {user.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {user.map((c) => (
-              <Badge key={c.id} className="gap-1.5 px-2.5 py-1 text-[0.75rem] text-fg">
+              <Badge key={c.id} className="gap-1.5 px-2.5 py-1 text-footnote text-fg">
                 <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: cliColor(c.id) }} />
                 {c.name}
-                <span className="font-mono text-[0.6875rem] text-subtle">{c.id}</span>
+                <span className="font-mono text-caption text-subtle">{c.id}</span>
               </Badge>
             ))}
           </div>
         )}
         {!!info?.errors.length && (
-          <div className="flex gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[0.75rem] leading-relaxed text-warning">
+          <div className="flex gap-2 rounded-lg bg-warning/10 px-3 py-2 text-footnote leading-relaxed text-warning">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div className="flex min-w-0 flex-col gap-0.5">
               {info.errors.map((e) => (

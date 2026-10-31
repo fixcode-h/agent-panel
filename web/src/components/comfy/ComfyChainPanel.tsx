@@ -159,8 +159,8 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
   return (
     <Card as="section" padding="sm" aria-label={t('工作流链')} className={cn('flex flex-col gap-3', className)}>
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-[0.8125rem] font-medium">{t('工作流链')}</h2>
-        <span className="min-w-0 flex-1 text-[0.75rem] text-subtle">
+        <h2 className="text-body font-medium">{t('工作流链')}</h2>
+        <span className="min-w-0 flex-1 text-footnote text-subtle">
           {t('把几个工作流按顺序串起来：前一段的输出图直接给后一段用，例如「图生图 → 去背景」')}
         </span>
         <Button size="sm" variant="ghost" onClick={create}>
@@ -170,7 +170,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
       </div>
 
       {!chains.length && !draft && (
-        <p className="text-[0.75rem] leading-relaxed text-subtle">
+        <p className="text-footnote leading-relaxed text-subtle">
           {t('还没有链。新建一条，选两段就能试：例如先「图生图」重画，再「去背景」抠成透明底。')}
         </p>
       )}
@@ -183,7 +183,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
               onClick={() => pick(c)}
               aria-current={current?.id === c.id}
               className={cn(
-                'cursor-pointer rounded-lg px-2 py-1 text-[0.75rem]',
+                'cursor-pointer rounded-lg px-2 py-1 text-footnote',
                 current?.id === c.id ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60',
               )}
             >
@@ -198,7 +198,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex min-w-0 flex-1 flex-col gap-1">
-              <span className="text-[0.75rem] font-medium text-muted">{t('名称')}</span>
+              <span className="text-footnote font-medium text-muted">{t('名称')}</span>
               <Input value={current.name} onChange={(e) => edit({ name: e.target.value })} />
             </label>
             <Button size="sm" onClick={() => void save()} disabled={!draft}>
@@ -233,7 +233,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
               const w = byId.get(step.workflowId)
               return (
                 <li key={`${step.workflowId}-${i}`} className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-5 shrink-0 text-right font-mono text-[0.6875rem] text-subtle">{i + 1}</span>
+                  <span className="w-5 shrink-0 text-right font-mono text-caption text-subtle">{i + 1}</span>
                   <Select
                     aria-label={t('第 {n} 段的工作流', { n: i + 1 })}
                     value={step.workflowId}
@@ -299,14 +299,14 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
           )}
 
           {problems.length > 0 && (
-            <ul className="flex flex-col gap-1 text-[0.75rem] text-danger">
+            <ul className="flex flex-col gap-1 text-footnote text-danger">
               {problems.map((p) => (
                 <li key={p}>{p}</li>
               ))}
             </ul>
           )}
           {notes.map((n) => (
-            <p key={n} className="rounded-lg bg-warning/10 px-2 py-1 text-[0.75rem] leading-relaxed text-warning">
+            <p key={n} className="rounded-lg bg-warning/10 px-2 py-1 text-footnote leading-relaxed text-warning">
               {n}
             </p>
           ))}
@@ -334,7 +334,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
               {image ? t('换一张原图') : t('选原图')}
             </Button>
             {needsImage && !image && (
-              <span className="text-[0.75rem] text-warning">{t('这条链的第一段要一张原图')}</span>
+              <span className="text-footnote text-warning">{t('这条链的第一段要一张原图')}</span>
             )}
             <Input
               aria-label={t('描述')}
@@ -355,7 +355,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
               {image && (
                 <figure className="flex flex-col gap-1">
                   <img src={image} alt={t('原图')} className="h-24 w-24 rounded-lg bg-sel object-contain" />
-                  <figcaption className="text-[0.6875rem] text-subtle">{t('原图')}</figcaption>
+                  <figcaption className="text-caption text-subtle">{t('原图')}</figcaption>
                 </figure>
               )}
               {output.map((src, i) => (
@@ -365,7 +365,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
                     alt={t('输出图 {n}', { n: i + 1 })}
                     className="h-24 w-24 rounded-lg bg-sel object-contain"
                   />
-                  <figcaption className="text-[0.6875rem] text-subtle">{t('输出图 {n}', { n: i + 1 })}</figcaption>
+                  <figcaption className="text-caption text-subtle">{t('输出图 {n}', { n: i + 1 })}</figcaption>
                 </figure>
               ))}
             </div>

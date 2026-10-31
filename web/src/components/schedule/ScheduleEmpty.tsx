@@ -25,8 +25,8 @@ export function ScheduleEmpty({
   return (
     <EmptyPanel as="div" size="xl" className="flex flex-col items-center gap-6 text-fg">
       <div>
-        <h2 className="text-[0.9375rem] font-semibold">{t('还没有计划')}</h2>
-        <p className="mt-1 max-w-[420px] text-[0.8125rem] leading-relaxed text-subtle">
+        <h2 className="text-heading font-semibold">{t('还没有计划')}</h2>
+        <p className="mt-1 max-w-[420px] text-body leading-relaxed text-subtle">
           {t('计划到点会自动新建一个对话去执行，过程和结果都留在对话里。')}
         </p>
       </div>
@@ -34,11 +34,11 @@ export function ScheduleEmpty({
       <ol className="grid w-full max-w-[620px] gap-2 text-left sm:grid-cols-3">
         {steps.map((step, i) => (
           <Card key={step.title} as="li" className="flex gap-2 px-3 py-2.5">
-            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field text-[0.6875rem] font-semibold text-muted tabular-nums">
+            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field text-caption font-semibold text-muted tabular-nums">
               {i + 1}
             </span>
             <div className="min-w-0">
-              <p className="text-[0.8125rem] font-medium">{step.title}</p>
+              <p className="text-body font-medium">{step.title}</p>
               <p className="mt-0.5 text-xs leading-relaxed text-subtle">{step.detail}</p>
             </div>
           </Card>
@@ -47,7 +47,7 @@ export function ScheduleEmpty({
 
       <Card padding="md" className="flex w-full max-w-[420px] flex-col gap-3 text-left">
         <div>
-          <p className="flex items-center gap-1.5 text-[0.8125rem] font-semibold">
+          <p className="flex items-center gap-1.5 text-body font-semibold">
             <Sparkles className="h-3.5 w-3.5 text-accent-text" />
             {WORKDAY_PLAN.name}
           </p>

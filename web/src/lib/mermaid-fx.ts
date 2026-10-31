@@ -12,12 +12,31 @@ const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)}
 const css = () => getComputedStyle(document.documentElement)
 const on = (name: string) => css().getPropertyValue(`--md-mermaid-${name}`).trim() !== '0'
 
+/**
+ * mermaid 只认 hex / rgb 这类颜色，深色下的 --fg 是 color-mix（设置里的「深色文字亮度」往底色里混）：
+ * 交给浏览器算出颜色，再画到 1px 画布上读回 rgb
+ */
+function plainColor(value: string) {
+  if (!/^(color-mix|color)\(/.test(value)) return value
+  const probe = document.createElement('span')
+  probe.style.color = value
+  document.body.appendChild(probe)
+  const computed = getComputedStyle(probe).color
+  probe.remove()
+  const ctx = document.createElement('canvas').getContext('2d')
+  if (!ctx) return computed
+  ctx.fillStyle = computed
+  ctx.fillRect(0, 0, 1, 1)
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+  return `rgb(${r}, ${g}, ${b})`
+}
+
 /** mermaid 的主题变量：颜色都从 index.css 的 --md-* / --mmd-* 读，深浅色、配色跟着面板走 */
 export function mermaidThemeVars(dark: boolean): Record<string, string | boolean> {
   const c = css()
   const v = (k: string) => c.getPropertyValue(k).trim()
   const bg = v('--code-bg')
-  const fg = v('--fg')
+  const fg = plainColor(v('--fg'))
   const line = v('--line')
   const hue = ['--md-blue', '--md-violet', '--md-teal', '--md-gold', '--md-coral', '--md-gray'].map(v)
   const tint = ['--mmd-node-b', '--mmd-pick-b', '--mmd-end-b', '--mmd-note', '--mmd-crit', '--mmd-node-b'].map(v)

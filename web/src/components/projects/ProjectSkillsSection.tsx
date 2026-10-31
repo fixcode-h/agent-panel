@@ -123,8 +123,8 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
     <div className="flex min-w-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <h3 className="text-[0.9375rem] font-semibold">Skill</h3>
-          <p className="text-[0.75rem] leading-relaxed text-subtle">
+          <h3 className="text-heading font-semibold">Skill</h3>
+          <p className="text-footnote leading-relaxed text-subtle">
             {t(
               '这个项目里的技能，放在项目目录下的技能目录里，跟着项目一起提交。Agent 按 SKILL.md 里的 description 判断什么时候用；改了这里的内容，新开的对话就会读到。',
             )}
@@ -143,18 +143,18 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
       </div>
 
       {error ? (
-        <p className="rounded-xl bg-warning/10 px-3.5 py-2.5 text-[0.8125rem] text-warning">
+        <p className="rounded-xl bg-warning/10 px-3.5 py-2.5 text-body text-warning">
           {t('读取失败：{error}', { error })}
         </p>
       ) : !view ? (
-        <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+        <p className="text-body text-subtle">{t('读取中…')}</p>
       ) : !view.path ? (
-        <p className="rounded-xl border px-3.5 py-2.5 text-[0.8125rem] text-subtle">
+        <p className="rounded-xl border px-3.5 py-2.5 text-body text-subtle">
           {t('先在「常规」里填好项目目录，再管理这里的技能。')}
         </p>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-subtle">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-subtle">
             <span className="truncate font-mono">{view.path}</span>
             <span className="shrink-0">
               {view.repos.map((r) => (
@@ -167,14 +167,14 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
           </div>
 
           {!view.skills.length ? (
-            <p className="rounded-xl border px-3.5 py-2.5 text-[0.8125rem] text-subtle">
+            <p className="rounded-xl border px-3.5 py-2.5 text-body text-subtle">
               {t('还没有项目技能。点「新建 Skill」写一个，或者把已有的技能文件夹放进上面的目录。')}
             </p>
           ) : (
             <div className="flex flex-col gap-3">
               {groups.map(([source, items]) => (
                 <div key={source} className="flex flex-col gap-1.5">
-                  <p className="flex items-center gap-2 text-[0.6875rem] text-subtle">
+                  <p className="flex items-center gap-2 text-caption text-subtle">
                     <span className="truncate font-mono">{source}</span>
                     <span className="shrink-0">{items.length}</span>
                     <span className="truncate">{t('{clis} 会读这里', { clis: cliNames(items[0].clis) })}</span>
@@ -193,21 +193,21 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
                           onClick={() => void open(s)}
                           className="min-w-0 flex-1 cursor-pointer text-left"
                         >
-                          <p className="flex items-center gap-2 text-[0.8125rem]">
+                          <p className="flex items-center gap-2 text-body">
                             <span className="truncate font-mono">{s.name}</span>
                             {s.issues.length > 0 && (
-                              <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-px text-[0.6875rem] text-warning">
+                              <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-px text-caption text-warning">
                                 {t('{n} 个问题', { n: s.issues.length })}
                               </span>
                             )}
                           </p>
                           <p
-                            className={cn('line-clamp-2 text-[0.75rem]', s.description ? 'text-muted' : 'text-warning')}
+                            className={cn('line-clamp-2 text-footnote', s.description ? 'text-muted' : 'text-warning')}
                           >
                             {s.description || t('没写 description：Agent 不知道什么时候该用它')}
                           </p>
                           {s.issues.length > 0 && (
-                            <p className="mt-0.5 flex items-start gap-1 text-[0.6875rem] text-warning">
+                            <p className="mt-0.5 flex items-start gap-1 text-caption text-warning">
                               <CircleAlert className="mt-0.5 h-3 w-3 shrink-0" />
                               <span className="line-clamp-2">{s.issues.join('；')}</span>
                             </p>
@@ -268,8 +268,8 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
 
           {readers.length > 0 && (
             <div className="flex flex-col gap-1.5 pt-2">
-              <h4 className="text-[0.8125rem] font-medium">{t('各 Agent 还能看到的用户级技能')}</h4>
-              <p className="text-[0.75rem] text-muted">
+              <h4 className="text-body font-medium">{t('各 Agent 还能看到的用户级技能')}</h4>
+              <p className="text-footnote text-muted">
                 {t('用户目录里的技能不在这个项目里，改它们去 Skills 页；这里只是看清项目里的 Agent 一共能用哪些。')}
               </p>
               {readers.map((c) => (
@@ -278,7 +278,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
                     type="button"
                     onClick={() => setExpanded((e) => (e.includes(c.id) ? e.filter((x) => x !== c.id) : [...e, c.id]))}
                     aria-expanded={expanded.includes(c.id)}
-                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[0.8125rem] hover:bg-sel/50"
+                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-body hover:bg-sel/50"
                   >
                     <ChevronRight
                       className={cn('h-3.5 w-3.5 shrink-0 text-subtle', expanded.includes(c.id) && 'rotate-90')}
@@ -414,7 +414,7 @@ function CreateSkillDialog({
       title={t('新建 Skill')}
       footer={
         <>
-          <span className="flex-1 text-[0.75rem] text-warning">{dup ? t('这个目录里已经有同名的了') : ''}</span>
+          <span className="flex-1 text-footnote text-warning">{dup ? t('这个目录里已经有同名的了') : ''}</span>
           <Button variant="secondary" onClick={onClose}>
             {t('取消')}
           </Button>
@@ -426,7 +426,7 @@ function CreateSkillDialog({
       }
     >
       <label className="flex flex-col gap-1.5">
-        <span className="text-[0.8125rem] font-medium">{t('名字')}</span>
+        <span className="text-body font-medium">{t('名字')}</span>
         <Input
           autoFocus
           value={name}
@@ -434,29 +434,29 @@ function CreateSkillDialog({
           placeholder="release-notes"
           className="font-mono"
         />
-        <span className="text-[0.75rem] text-subtle">
+        <span className="text-footnote text-subtle">
           {name && !valid ? t('只能用字母、数字、. _ -，以字母或数字开头') : t('也是文件夹名，建好后不能改')}
         </span>
       </label>
       <label className="flex flex-col gap-1.5">
-        <span className="text-[0.8125rem] font-medium">{t('放在哪个目录')}</span>
+        <span className="text-body font-medium">{t('放在哪个目录')}</span>
         <Select
           value={repo}
           onChange={(e) => setRepo(e.target.value)}
           options={repos.map((r) => ({ value: r.dir, label: r.dir }))}
         />
-        <span className="text-[0.75rem] text-subtle">
+        <span className="text-footnote text-subtle">
           {t('{clis} 会读这个目录', { clis: cliNames(repos.find((r) => r.dir === repo)?.clis ?? []) })}
         </span>
       </label>
       <label className="flex flex-col gap-1.5">
-        <span className="text-[0.8125rem] font-medium">{t('一句话说明什么时候用它')}</span>
+        <span className="text-body font-medium">{t('一句话说明什么时候用它')}</span>
         <Input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder={t('例如：按团队约定写提交说明，先看改动再写')}
         />
-        <span className="text-[0.75rem] text-subtle">
+        <span className="text-footnote text-subtle">
           {t('写在 SKILL.md 的 description 里，Agent 靠它判断什么时候该用；之后也可以让 AI 改写')}
         </span>
       </label>
@@ -529,9 +529,9 @@ function EditSkillDialog({
       }
     >
       <div className="flex min-w-0 flex-col gap-1">
-        <p className="truncate font-mono text-[0.6875rem] text-subtle">{skill.path}</p>
+        <p className="truncate font-mono text-caption text-subtle">{skill.path}</p>
         {opening.files.length > 0 && (
-          <p className="truncate text-[0.6875rem] text-subtle">
+          <p className="truncate text-caption text-subtle">
             {t('文件夹里还有：{files}', { files: opening.files.join('、') })}
           </p>
         )}
@@ -542,10 +542,10 @@ function EditSkillDialog({
         onChange={(e) => setContent(e.target.value)}
         spellCheck={false}
         rows={18}
-        className="min-h-[18rem] font-mono text-[0.75rem] leading-relaxed"
+        className="min-h-[18rem] font-mono text-footnote leading-relaxed"
       />
       {issues.length > 0 ? (
-        <div className="flex flex-col gap-1 rounded-lg bg-warning/10 px-3 py-2 text-[0.75rem] text-warning">
+        <div className="flex flex-col gap-1 rounded-lg bg-warning/10 px-3 py-2 text-footnote text-warning">
           {issues.map((x) => (
             <p key={x} className="flex items-start gap-1.5">
               <CircleAlert className="mt-0.5 h-3 w-3 shrink-0" />
@@ -554,7 +554,7 @@ function EditSkillDialog({
           ))}
         </div>
       ) : (
-        <p className="text-[0.75rem] text-subtle">{t('格式没问题：name、description 和正文都齐了。')}</p>
+        <p className="text-footnote text-subtle">{t('格式没问题：name、description 和正文都齐了。')}</p>
       )}
     </Modal>
   )

@@ -53,14 +53,14 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
   if (!project) return null
   if (!res)
     return (
-      <p className="flex items-center gap-2 px-4 py-4 text-[0.8125rem] text-muted">
+      <p className="flex items-center gap-2 px-4 py-4 text-body text-muted">
         <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
         {t('正在读取推荐的设置…')}
       </p>
     )
   if (!res.proposal)
     return (
-      <p className="m-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2.5 text-[0.75rem] leading-relaxed text-muted">
+      <p className="m-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2.5 text-footnote leading-relaxed text-muted">
         <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
         {t('这份结果的格式不对，读不出推荐的设置：{error}。可以在对话里让它重新输出。', { error: res.error ?? '' })}
       </p>
@@ -130,7 +130,7 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
       </div>
       <div className="flex flex-wrap items-center gap-3 px-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="text-[0.8125rem] font-semibold">{t('推荐设置')}</span>
+          <span className="text-body font-semibold">{t('推荐设置')}</span>
           <span className="text-xs text-subtle">
             {all.length
               ? pending.length

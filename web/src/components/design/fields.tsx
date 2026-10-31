@@ -46,7 +46,7 @@ export function FieldRow({
     <div data-field={label} className="flex min-h-8 items-center gap-2 px-3 py-0.5">
       {leading}
       {/* 固定宽度让右侧控件上下对齐，名字长时换行显示完整，不截断 */}
-      <span title={title ?? label} className="w-[104px] shrink-0 text-[0.75rem] leading-tight break-words text-subtle">
+      <span title={title ?? label} className="w-[104px] shrink-0 text-footnote leading-tight break-words text-subtle">
         {label}
       </span>
       <div className="flex min-w-0 flex-1 items-center gap-1">{children}</div>
@@ -84,7 +84,7 @@ export function NumInput({
   return (
     <label className="relative flex min-w-0 flex-1 items-center">
       {prefix && (
-        <span className="pointer-events-none absolute left-1.5 font-mono text-[0.625rem] text-subtle/80">{prefix}</span>
+        <span className="pointer-events-none absolute left-1.5 font-mono text-micro text-subtle/80">{prefix}</span>
       )}
       <Input
         size="xs"
@@ -152,7 +152,7 @@ export function TextInput({
       rows={2}
       {...common}
       // 和 xs 输入框同一个字号和圆角，高度由上面的 fit 跟着内容算
-      className="min-w-0 resize-none overflow-y-auto rounded-md px-1.5 py-1 text-[0.75rem] leading-snug"
+      className="min-w-0 resize-none overflow-y-auto rounded-md px-1.5 py-1 text-footnote leading-snug"
     />
   ) : (
     <Input ref={ref} size="xs" {...common} className="min-w-0" />
@@ -351,7 +351,7 @@ export function ImagePick({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md border border-line bg-field px-1 text-left text-[0.75rem] hover:border-line-strong">
+        <button className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md border border-line bg-field px-1 text-left text-footnote hover:border-line-strong">
           <Thumb src={src} className="h-6 w-6" />
           <span className={cn('min-w-0 flex-1 truncate', !cur && 'text-subtle')}>
             {cur ? cur.name : id ? t('图片不存在') : t('无图片（纯色）')}
@@ -361,9 +361,9 @@ export function ImagePick({
       <PopoverContent align="end" className="max-h-[320px] w-[240px] overflow-y-auto p-1">
         <button
           onClick={() => (onChange(''), setOpen(false))}
-          className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[0.75rem] hover:bg-sel"
+          className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-footnote hover:bg-sel"
         >
-          <span className="grid h-7 w-7 place-items-center rounded border border-dashed border-line-strong">
+          <span className="grid h-7 w-7 place-items-center rounded-sm border border-dashed border-line-strong">
             <ImageOff className="h-3.5 w-3.5 text-subtle" />
           </span>
           {t('无图片（纯色）')}
@@ -373,13 +373,13 @@ export function ImagePick({
             key={i.id}
             onClick={() => (onChange(`img:${i.id}`), setOpen(false))}
             className={cn(
-              'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[0.75rem] hover:bg-sel',
+              'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-footnote hover:bg-sel',
               i.id === id && 'bg-accent-soft',
             )}
           >
             <Thumb src={url(i)} className="h-7 w-7" />
             <span className="min-w-0 flex-1 truncate">{i.name}</span>
-            <span className="font-mono text-[0.6875rem] text-subtle">
+            <span className="font-mono text-caption text-subtle">
               {i.width}×{i.height}
             </span>
           </button>
@@ -397,7 +397,7 @@ export function Thumb({ src, className }: { src?: string; className?: string }) 
   return (
     <span
       className={cn(
-        'grid shrink-0 place-items-center overflow-hidden rounded border border-line',
+        'grid shrink-0 place-items-center overflow-hidden rounded-sm border border-line',
         src
           ? 'bg-[#fff] bg-[length:12px_12px] [background-image:conic-gradient(#ccc_25%,#fff_0_50%,#ccc_0_75%,#fff_0)]'
           : 'bg-sel',
@@ -446,7 +446,7 @@ export function BrushInput({
         />
       </div>
       <div className="flex items-center gap-1">
-        <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">DrawAs</span>
+        <span className="w-12 shrink-0 text-caption text-subtle">DrawAs</span>
         <EnumInput
           label="DrawAs"
           value={b.DrawAs ?? 'Image'}
@@ -462,7 +462,7 @@ export function BrushInput({
       {/* 旧数据不写 DrawAs，按 Image 算，和上面的下拉显示保持一致 */}
       {(b.DrawAs ?? 'Image') === 'Image' && (
         <div className="flex items-center gap-1">
-          <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">Fit</span>
+          <span className="w-12 shrink-0 text-caption text-subtle">Fit</span>
           <EnumInput
             label="ImageFit"
             value={b.ImageFit ?? 'Fill'}
@@ -478,17 +478,17 @@ export function BrushInput({
         </div>
       )}
       <div className="flex items-center gap-1">
-        <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">Size</span>
+        <span className="w-12 shrink-0 text-caption text-subtle">Size</span>
         <Vec2Input value={b.ImageSize} onChange={(ImageSize) => set({ ImageSize })} />
       </div>
       {showMargin && (
         <div className="flex items-center gap-1">
-          <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">Margin</span>
+          <span className="w-12 shrink-0 text-caption text-subtle">Margin</span>
           <MarginInput step={0.05} value={b.Margin} onChange={(Margin) => set({ Margin })} />
         </div>
       )}
       <div className="flex items-center gap-1">
-        <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">Tint</span>
+        <span className="w-12 shrink-0 text-caption text-subtle">Tint</span>
         <ColorInput value={b.TintColor} onChange={(TintColor) => set({ TintColor })} />
       </div>
     </div>

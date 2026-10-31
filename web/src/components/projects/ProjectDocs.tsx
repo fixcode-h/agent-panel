@@ -56,8 +56,8 @@ export function DocPage({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div>
-        <h2 className="text-[0.9375rem] font-semibold">{title}</h2>
-        <p className="mt-1 text-[0.8125rem] leading-relaxed text-subtle">{desc}</p>
+        <h2 className="text-heading font-semibold">{title}</h2>
+        <p className="mt-1 text-body leading-relaxed text-subtle">{desc}</p>
       </div>
       {note}
 
@@ -73,14 +73,12 @@ export function DocPage({
                 aria-selected={f === active}
                 onClick={() => setActive(f)}
                 className={cn(
-                  'flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[0.75rem] transition-colors',
+                  'flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 font-mono text-footnote transition-colors',
                   f === active ? 'border-accent bg-accent-soft text-fg' : 'text-muted hover:bg-sel hover:text-fg',
                 )}
               >
                 {f}
-                {!d?.exists && !changed && (
-                  <span className="font-sans text-[0.6875rem] text-subtle">{t('未创建')}</span>
-                )}
+                {!d?.exists && !changed && <span className="font-sans text-caption text-subtle">{t('未创建')}</span>}
                 {changed && <span className="h-1.5 w-1.5 rounded-full bg-accent" title={t('有未保存的改动')} />}
               </button>
             )
@@ -90,7 +88,7 @@ export function DocPage({
 
       <div className="flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-xl bg-sel/40">
         <div className="flex flex-wrap items-center gap-2 border-b bg-panel/60 px-3 py-2">
-          <span className="font-mono text-[0.75rem]">{active}</span>
+          <span className="font-mono text-footnote">{active}</span>
           <span className="text-xs text-subtle">
             {doc?.tooLarge
               ? t('文件太大（{size}），不在这里编辑', { size: size(doc.bytes) })
@@ -153,14 +151,14 @@ export function DocPage({
             spellCheck={false}
             aria-label={active}
             placeholder={t('# 项目约定\n\n写给编码助手看的项目说明：常用命令、目录结构、代码风格、注意事项…')}
-            className="min-h-[280px] flex-1 resize-none rounded-none border-0 bg-transparent px-4 py-3 font-mono text-[0.8125rem] leading-[1.65] focus:ring-0"
+            className="min-h-[280px] flex-1 resize-none rounded-none border-0 bg-transparent px-4 py-3 font-mono text-body leading-[1.65] focus:ring-0"
           />
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             {value.trim() ? (
               <Markdown text={value} teamNames={NO_TEAM} />
             ) : (
-              <p className="text-[0.8125rem] text-subtle">{t('还没有内容')}</p>
+              <p className="text-body text-subtle">{t('还没有内容')}</p>
             )}
           </div>
         )}
@@ -245,7 +243,7 @@ export function Optimizer({
     <div className="flex flex-col gap-3 border-b bg-accent-soft/40 px-4 py-3">
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-accent-text" />
-        <span className="text-[0.8125rem] font-medium">{title}</span>
+        <span className="text-body font-medium">{title}</span>
         <IconButton
           icon={X}
           label={t('关闭')}
@@ -311,8 +309,8 @@ export function Optimizer({
         </>
       ) : (
         <>
-          {job.text && <p className="text-[0.8125rem] leading-relaxed">{job.text}</p>}
-          <pre className="max-h-72 overflow-auto rounded-lg border bg-[var(--code-bg)] px-3 py-2.5 font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap">
+          {job.text && <p className="text-body leading-relaxed">{job.text}</p>}
+          <pre className="max-h-72 overflow-auto rounded-lg border bg-[var(--code-bg)] px-3 py-2.5 font-mono text-footnote leading-[1.6] whitespace-pre-wrap">
             {job.result}
           </pre>
           <div className="flex items-center gap-2">

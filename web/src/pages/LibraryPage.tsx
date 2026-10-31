@@ -197,7 +197,7 @@ export function LibraryPage() {
           tab === 'bundled' ? (
             <BundledBulkBar items={bundled.items} busy={bundled.busy} onInstall={bundled.install} />
           ) : (
-            <p className="text-[0.75rem] leading-relaxed text-subtle">{t('放在各个 Agent 的用户目录里。')}</p>
+            <p className="text-footnote leading-relaxed text-subtle">{t('放在各个 Agent 的用户目录里。')}</p>
           )
         }
       >
@@ -210,9 +210,9 @@ export function LibraryPage() {
             onPick={(name) => go({ page: 'library', id: name })}
           />
         ) : error ? (
-          <p className="px-2 py-6 text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
+          <p className="px-2 py-6 text-body text-warning">{t('读取失败：{error}', { error })}</p>
         ) : !data ? (
-          <p className="px-2 py-6 text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+          <p className="px-2 py-6 text-body text-subtle">{t('读取中…')}</p>
         ) : !hits.length ? (
           <ListEmpty>
             {query ? t('没有符合的{kind}。', { kind: 'Skill' }) : t('还没有，点右上角的 ＋ 新建。')}
@@ -364,7 +364,7 @@ function CreateDialog({
       title={t('新建 Skill')}
       footer={
         <>
-          <span className="flex-1 text-[0.75rem] text-warning">
+          <span className="flex-1 text-footnote text-warning">
             {dup.length ? t('{cli} 里已经有同名的了', { cli: dup.map((i) => i.cli).join(t('、')) }) : ''}
           </span>
           <Button variant="secondary" onClick={onClose}>
@@ -378,7 +378,7 @@ function CreateDialog({
       }
     >
       <label className="flex flex-col gap-1.5">
-        <span className="text-[0.8125rem] font-medium">{t('名字')}</span>
+        <span className="text-body font-medium">{t('名字')}</span>
         <Input
           autoFocus
           value={name}
@@ -386,12 +386,12 @@ function CreateDialog({
           placeholder="commit-message"
           className="font-mono"
         />
-        <span className="text-[0.75rem] text-subtle">
+        <span className="text-footnote text-subtle">
           {name && !valid ? t('只能用字母、数字、. _ -，以字母或数字开头') : t('用来调用它的名字，创建后不能改')}
         </span>
       </label>
       <div className="flex flex-col gap-2">
-        <span className="text-[0.8125rem] font-medium">{t('放进哪些 Agent')}</span>
+        <span className="text-body font-medium">{t('放进哪些 Agent')}</span>
         {ok.map((c) => (
           <Checkbox
             key={c.id}

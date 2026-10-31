@@ -179,11 +179,11 @@ export function DataSection() {
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
-        <p className="text-[0.8125rem] leading-relaxed text-subtle">
+        <p className="text-body leading-relaxed text-subtle">
           {t('面板的配置、项目、任务记录都保存在用户目录下，和 ~/.codex、~/.claude 一样，升级或换安装位置都不受影响。')}
         </p>
         <div className="flex items-center gap-2 rounded-xl bg-sel/40 px-3.5 py-2.5">
-          <span className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]" title={usage?.dir}>
+          <span className="min-w-0 flex-1 truncate font-mono text-body" title={usage?.dir}>
             {usage?.dir ?? '…'}
           </span>
           {!demo && (
@@ -208,21 +208,18 @@ export function DataSection() {
         // 运行日志：出了问题把这个文件夹里最新的文件发出来
         <section className="flex flex-col gap-2">
           <div className="flex items-center">
-            <h3 className="text-[0.8125rem] font-semibold">{t('运行日志')}</h3>
+            <h3 className="text-body font-semibold">{t('运行日志')}</h3>
             <span className="ml-2 text-xs text-subtle">
               {t('{n} 个文件 · {size}', { n: usage.logs.files, size: size(usage.logs.bytes) })}
             </span>
           </div>
-          <p className="text-[0.8125rem] leading-relaxed text-subtle">
+          <p className="text-body leading-relaxed text-subtle">
             {t(
               '报错和关键操作都记在这里。每次启动写一个新文件，单个文件超过 5 MB 换下一个，只保留最近 30 个。遇到问题时把最新的日志文件发出来就能查原因。',
             )}
           </p>
           <div className="flex items-center gap-2 rounded-xl bg-sel/40 px-3.5 py-2.5">
-            <span
-              className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]"
-              title={usage.logs.current || usage.logs.dir}
-            >
+            <span className="min-w-0 flex-1 truncate font-mono text-body" title={usage.logs.current || usage.logs.dir}>
               {usage.logs.current || usage.logs.dir}
             </span>
             <Button
@@ -244,7 +241,7 @@ export function DataSection() {
 
       <section className="flex flex-col">
         <div className="flex items-center pb-2">
-          <h3 className="text-[0.8125rem] font-semibold">{t('占用')}</h3>
+          <h3 className="text-body font-semibold">{t('占用')}</h3>
           <span className="ml-2 text-xs text-subtle">{t('共 {size}', { size: size(total) })}</span>
           <Button
             variant="ghost"
@@ -263,12 +260,12 @@ export function DataSection() {
             return (
               <div key={k.id} className="flex items-center gap-3 border-b px-3.5 py-3 last:border-b-0">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-[0.8125rem]">{k.label}</span>
+                  <span className="text-body">{k.label}</span>
                   <span className="text-xs leading-relaxed text-subtle">{k.hint}</span>
                 </span>
-                <span className="shrink-0 text-right font-mono text-[0.75rem] text-muted">
+                <span className="shrink-0 text-right font-mono text-footnote text-muted">
                   {u ? size(u.bytes) : '…'}
-                  <span className="block text-[0.6875rem] text-subtle">{u ? t('{n} 个文件', { n: u.files }) : ''}</span>
+                  <span className="block text-caption text-subtle">{u ? t('{n} 个文件', { n: u.files }) : ''}</span>
                 </span>
                 {k.clearable ? (
                   <Button
@@ -306,7 +303,7 @@ export function DataSection() {
       {/* 内存：面板自己的进程 + 它拉起的 CLI 子进程，按采样间隔画曲线；AI 分析把这份采样交给本机 CLI 体检 */}
       <section className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-[0.8125rem] font-semibold">{t('内存')}</h3>
+          <h3 className="text-body font-semibold">{t('内存')}</h3>
           {usage && (
             <span className="text-xs text-subtle">
               {t('合计 {total} · 面板 {panel} · 进程 {child}', {
@@ -359,9 +356,9 @@ export function DataSection() {
             )}
           </>
         ) : (
-          <p className="text-[0.8125rem] leading-relaxed text-subtle">{t('正在读取内存…')}</p>
+          <p className="text-body leading-relaxed text-subtle">{t('正在读取内存…')}</p>
         )}
-        <p className="text-[0.8125rem] leading-relaxed text-subtle">
+        <p className="text-body leading-relaxed text-subtle">
           {t(
             '「面板」是面板服务这个本机 Node 进程自己的内存，「进程」是它拉起的编码 Agent（运行中的任务）合计占用；读不到时显示「未采集」，不会当成 0。曲线按上面的间隔记点、保留最近两小时，在曲线上按住右键左右拖动可以往前看，拖到最右边回到最新。',
           )}
@@ -370,8 +367,8 @@ export function DataSection() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h3 className="text-[0.8125rem] font-semibold">{t('迁移')}</h3>
-        <p className="text-[0.8125rem] leading-relaxed text-subtle">
+        <h3 className="text-body font-semibold">{t('迁移')}</h3>
+        <p className="text-body leading-relaxed text-subtle">
           {t('导出成一个文件，在另一台电脑的设置里导入。导入时，文件里包含的每类数据会整体替换掉这里现有的。')}
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-2.5">

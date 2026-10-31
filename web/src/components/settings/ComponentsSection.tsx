@@ -44,6 +44,8 @@ import { InlineChip } from '@/components/ui/inline-chip'
 import { MessageChip } from '@/components/chat/AttachmentView'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
+import { Collapse } from '@/components/ui/collapse'
+import { CopyIcon } from '@/components/ui/copy-icon'
 import { ReplyHeader } from '@/components/ui/reply-header'
 import { Segmented } from '@/components/ui/segmented'
 import { STATUS_TONES, StatusPill, type StatusTone } from '@/components/ui/status-pill'
@@ -77,11 +79,43 @@ const SUMMARY_SAMPLE = `### 未完成｜前置检查不通过，两项环境问�
 const NO_TEAM = new Set<string>()
 
 /** 一格展示：左边部件名（代码里的名字），右边实物；能微调的部件下面多一个「微调」，展开就地调 */
+/** 字号角色（index.css @theme 的 --text-*）：写死成完整类名，Tailwind 才扫得到 */
+const TYPE_ROLES = ['micro', 'caption', 'footnote', 'body', 'prose', 'heading', 'subtitle', 'title'] as const
+// text-micro text-caption text-footnote text-body text-prose text-heading text-subtitle text-title
+
+/** 展开收起的高度过渡和复制成功的图标切换，点一下看动效 */
+function MotionDemo() {
+  const [open, setOpen] = useState(false)
+  const [done, setDone] = useState(false)
+  return (
+    <div className="flex w-full max-w-sm flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="secondary" onClick={() => setOpen((v) => !v)}>
+          {open ? t('收起') : t('展开')}
+        </Button>
+        <IconButton
+          size="sm"
+          label={t('复制')}
+          onClick={() => {
+            setDone(true)
+            setTimeout(() => setDone(false), 1500)
+          }}
+        >
+          <CopyIcon done={done} className="h-4 w-4" />
+        </IconButton>
+      </div>
+      <Collapse open={open} className="rounded-lg border px-3 py-2 text-footnote text-muted">
+        {t('读取 web/src/cart.ts 第 1 到 48 行')}
+      </Collapse>
+    </div>
+  )
+}
+
 function Specimen({ name, tune, children }: { name: string; tune?: CompName[]; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-2.5 border-b border-line/80 py-4 last:border-b-0">
       <div className="flex flex-col gap-2.5 sm:flex-row sm:gap-6">
-        <span className="w-40 shrink-0 pt-1 font-mono text-[0.75rem] text-subtle">{name}</span>
+        <span className="w-40 shrink-0 pt-1 font-mono text-footnote text-subtle">{name}</span>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">{children}</div>
       </div>
       {tune && (
@@ -124,7 +158,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
   }
   return (
     <TuneProvider value={tune}>
-      <p className="pt-2 text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="pt-2 text-body leading-relaxed text-subtle">
         {t(
           '界面里用到的通用部件都在这里，按当前配色画出来。页面只用这些部件拼，改一处全站跟着变：点部件下面的「微调」调圆角、底色、边框这些，改了立刻生效。',
         )}
@@ -175,6 +209,19 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
           <UnreadDot />
           <Kbd>⌘K</Kbd>
           <Kbd>Esc</Kbd>
+        </Specimen>
+        <Specimen name="text-* 字号角色">
+          <div className="flex flex-col gap-1">
+            {TYPE_ROLES.map((r) => (
+              <span key={r} className={`text-${r}`}>
+                <span className="mr-2 font-mono text-caption text-subtle">{r}</span>
+                {t('子对话执行中')}
+              </span>
+            ))}
+          </div>
+        </Specimen>
+        <Specimen name="Collapse · CopyIcon">
+          <MotionDemo />
         </Specimen>
         <Specimen name="ContextRing">
           <ContextRing percent={23} label={t('上下文已用 {n}%', { n: 23 })} />
@@ -333,7 +380,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               model="deepseek-v4.1-flash"
               effort="high"
             />
-            <p className="text-[0.875rem] leading-relaxed text-fg">{t('先看一下现有的实现，再按设计稿改。')}</p>
+            <p className="text-prose leading-relaxed text-fg">{t('先看一下现有的实现，再按设计稿改。')}</p>
           </div>
         </Specimen>
         <Specimen name="RowShell" tune={['row']}>
@@ -355,7 +402,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               open={open}
               onToggle={() => setOpen((o) => !o)}
             >
-              <pre className="px-3 py-2 font-mono text-[0.75rem] text-muted">
+              <pre className="px-3 py-2 font-mono text-footnote text-muted">
                 {'- <header className="sticky top-0">'}
               </pre>
             </RowShell>
@@ -371,7 +418,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
           </div>
         </Specimen>
         <Specimen name="InlineChip" tune={['chip']}>
-          <p className="text-[0.875rem] leading-7">
+          <p className="text-prose leading-7">
             {t('按这张')}
             <InlineChip
               tone="image"
@@ -393,7 +440,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         </Specimen>
         <Specimen name="MessageChip">
           {/* 用户气泡里的卡片：气泡本身是 bg-sel，卡片要靠自己的颜色从气泡里跳出来 */}
-          <div className="rounded-2xl bg-sel px-4 py-2.5 text-[0.9375rem] leading-relaxed">
+          <div className="rounded-2xl bg-sel px-4 py-2.5 text-heading leading-relaxed">
             <MessageChip kind="quote" name="关于「截图」这一段" />
             {t('这里再改改，和')}
             <MessageChip kind="image" name="截图-081218.png" />
@@ -532,7 +579,7 @@ function MoreButtonSpecimens() {
         {/* tone="bare"：页签条右端、输入框工具条这类一排图标，悬停也不出底，只变前景色 */}
         <IconButton size="sm" tone="bare" icon={MoreHorizontal} label={t('更多操作')} />
         {/* reveal="hover"：行尾操作平时不出现，悬停这一行才出来 */}
-        <div className="group flex h-8 items-center gap-2 rounded-lg bg-sel/50 pr-1 pl-2.5 text-[0.8125rem]">
+        <div className="group flex h-8 items-center gap-2 rounded-lg bg-sel/50 pr-1 pl-2.5 text-body">
           {t('悬停这一行')}
           <IconButton reveal="hover" icon={X} label={t('移除')} />
         </div>
@@ -604,7 +651,7 @@ function MoreInputSpecimens() {
             className="w-64"
           />
         ) : (
-          <span className="flex h-8 items-center gap-1.5 text-[0.8125rem] font-medium">
+          <span className="flex h-8 items-center gap-1.5 text-body font-medium">
             {name}
             <IconButton icon={Pencil} label={t('重命名')} onClick={() => setRenaming(true)} />
           </span>
@@ -678,9 +725,9 @@ function OverlaySpecimens() {
           }
         >
           {bare ? (
-            <p className="p-6 text-[0.8125rem] text-muted">{t('只有外壳：标题栏和留白由调用方自己画，点外面就关。')}</p>
+            <p className="p-6 text-body text-muted">{t('只有外壳：标题栏和留白由调用方自己画，点外面就关。')}</p>
           ) : (
-            <p className="text-[0.8125rem] text-muted">{t('宽度按档位取；不传 size 时和原来一样。')}</p>
+            <p className="text-body text-muted">{t('宽度按档位取；不传 size 时和原来一样。')}</p>
           )}
         </Modal>
       </Specimen>
@@ -699,17 +746,17 @@ function OverlaySpecimens() {
           </Button>
         ))}
         <Sheet open={sheet !== null} onOpenChange={(o) => !o && setSheet(null)} side={side} title={t('示例抽屉')}>
-          <p className="text-[0.8125rem] leading-relaxed text-muted">
+          <p className="text-body leading-relaxed text-muted">
             {t('抽屉是浮起的一整列，靠底色和投影和页面分开，不描边。')}
           </p>
         </Sheet>
       </Specimen>
       <Specimen name="ComposerPopover" tune={['popover']}>
         {/* 输入框外壳要是 relative，弹层贴在它顶上往上长 */}
-        <div className="relative mt-24 w-full max-w-md rounded-xl bg-field px-3 py-2.5 text-[0.8125rem] text-subtle shadow-card">
+        <div className="relative mt-24 w-full max-w-md rounded-xl bg-field px-3 py-2.5 text-body text-subtle shadow-card">
           <ComposerPopover stretch scroll>
             {['/commit', '/review'].map((c) => (
-              <div key={c} className={cn(menuItem, 'font-mono text-[0.75rem]')}>
+              <div key={c} className={cn(menuItem, 'font-mono text-footnote')}>
                 {c}
               </div>
             ))}
@@ -728,7 +775,7 @@ function CardCanvasSpecimens() {
     <>
       <Group title={t('卡片')}>
         <Specimen name="Card · padding · interactive" tune={['card']}>
-          <Card padding="md" className="flex w-56 flex-col gap-1 text-[0.8125rem]">
+          <Card padding="md" className="flex w-56 flex-col gap-1 text-body">
             <span className="font-medium">{t('代码审查')}</span>
             <span className="text-subtle">padding="md"</span>
           </Card>
@@ -737,7 +784,7 @@ function CardCanvasSpecimens() {
             interactive
             padding="md"
             onClick={() => setClicks((n) => n + 1)}
-            className="flex w-56 flex-col gap-1 text-[0.8125rem]"
+            className="flex w-56 flex-col gap-1 text-body"
           >
             <span className="font-medium">{t('整张可点')}</span>
             <span className="text-subtle">{t('点了 {n} 次', { n: clicks })}</span>

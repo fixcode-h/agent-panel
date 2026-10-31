@@ -33,7 +33,7 @@ export function Lightbox({
   return (
     <D.Root open={index !== undefined && !!cur} onOpenChange={(o) => !o && onClose()}>
       <D.Portal>
-        <D.Overlay className="fixed inset-0 z-[60] bg-black/80 animate-[fade-in_120ms_ease-out]" />
+        <D.Overlay className="fixed inset-0 z-[60] bg-black/80 anim-scrim" />
         <D.Content
           aria-describedby={undefined}
           onKeyDown={(e) => {
@@ -43,7 +43,7 @@ export function Lightbox({
           }}
           // 点图片以外的地方关掉
           onClick={(e) => e.target === e.currentTarget && onClose()}
-          className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 p-6 outline-none animate-[pop-in_140ms_ease-out]"
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 p-6 outline-none anim-dialog"
         >
           <D.Title className="sr-only">{cur?.name}</D.Title>
           {cur && (
@@ -54,7 +54,7 @@ export function Lightbox({
               className="max-h-[calc(100vh-120px)] max-w-[calc(100vw-48px)] rounded-lg object-contain shadow-2xl md:max-w-[calc(100vw-160px)]"
             />
           )}
-          <div className="flex max-w-full items-center gap-3 text-[0.75rem] text-white/75">
+          <div className="flex max-w-full items-center gap-3 text-footnote text-white/75">
             <span className="min-w-0 truncate">{cur?.name}</span>
             {n > 1 && (
               <span className="shrink-0 font-mono text-white/50 tabular-nums">

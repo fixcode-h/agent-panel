@@ -215,7 +215,7 @@ export function useComposerChips({
           </MenuItem>
           {/* 禁用时把原因写出来，用户才知道为什么点不动 */}
           {imageCopyBlocked() && (
-            <div className="px-2.5 pb-1.5 text-[0.6875rem] leading-snug text-subtle">{imageCopyBlocked()}</div>
+            <div className="px-2.5 pb-1.5 text-caption leading-snug text-subtle">{imageCopyBlocked()}</div>
           )}
           <MenuSeparator />
         </>

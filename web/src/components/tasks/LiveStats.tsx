@@ -23,7 +23,7 @@ export function LiveStats({
   // 只显示正在输出的速度：没在输出（跑工具、思考、还在等结果）时写「等待中 / 空闲」，
   // 不拿上一次的速度冒充实时
   return (
-    <span className={cn('flex items-center gap-2 font-mono text-[0.6875rem] text-subtle tabular-nums', className)}>
+    <span className={cn('flex items-center gap-2 font-mono text-caption text-subtle tabular-nums', className)}>
       <span
         className={cn(
           'flex shrink-0 items-center gap-1 whitespace-nowrap',

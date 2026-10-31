@@ -353,7 +353,7 @@ export function AnimationPanel({
   const triggers = ANIM_TRIGGERS.filter((x) => web || x !== 'scroll' || anim?.trigger === 'scroll')
 
   return (
-    <section aria-label={t('动画')} className="flex h-[260px] shrink-0 flex-col border-t bg-card text-[0.75rem]">
+    <section aria-label={t('动画')} className="flex h-[260px] shrink-0 flex-col border-t bg-card text-footnote">
       <div className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b px-2">
         <Clapperboard className="ml-1 h-4 w-4 shrink-0 text-subtle" />
         {mine.length > 0 && anim ? (
@@ -375,7 +375,7 @@ export function AnimationPanel({
         <IconButton icon={Plus} size="sm" label={t('新建动画')} onClick={() => create()} />
         <Menu>
           <MenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-[0.75rem] font-normal">
+            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-footnote font-normal">
               <Sparkles className="h-3.5 w-3.5" />
               {t('预设')}
             </Button>
@@ -385,7 +385,7 @@ export function AnimationPanel({
               {presetGroups.map((g, gi) => (
                 <div key={g}>
                   {gi > 0 && <MenuSeparator />}
-                  <div className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">{groupLabel(g)}</div>
+                  <div className="px-2.5 pt-1.5 pb-1 text-caption text-subtle">{groupLabel(g)}</div>
                   {Object.entries(ANIM_PRESETS)
                     .filter(([, p]) => p.group === g)
                     .map(([k]) => (
@@ -417,7 +417,7 @@ export function AnimationPanel({
                 setCur(v)
               }}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              className="w-[120px] shrink-0 font-mono text-[0.6875rem]"
+              className="w-[120px] shrink-0 font-mono text-caption"
             />
             <Select
               aria-label={t('触发方式')}
@@ -499,7 +499,7 @@ export function AnimationPanel({
               }}
               className="text-fg"
             />
-            <span className="w-14 shrink-0 text-right font-mono text-[0.6875rem] text-subtle tabular-nums">
+            <span className="w-14 shrink-0 text-right font-mono text-caption text-subtle tabular-nums">
               {time.toFixed(2)}s
             </span>
           </>
@@ -508,9 +508,9 @@ export function AnimationPanel({
       </div>
 
       {!anim ? (
-        <div className="grid flex-1 place-items-center px-6 text-center text-[0.75rem] leading-relaxed text-subtle">
+        <div className="grid flex-1 place-items-center px-6 text-center text-footnote leading-relaxed text-subtle">
           <div className="max-w-[460px]">
-            <p className="mb-1 text-[0.8125rem] font-medium text-fg">
+            <p className="mb-1 text-body font-medium text-fg">
               {web ? t('给网页加上动效') : t('给界面加动画（UE 的 Widget Animation）')}
             </p>
             {t(
@@ -522,7 +522,7 @@ export function AnimationPanel({
         <div className="flex min-h-0 flex-1">
           {/* 轨道列表 */}
           <div className="flex w-[200px] shrink-0 flex-col border-r">
-            <div className="flex h-7 shrink-0 items-center border-b px-2 text-[0.6875rem] text-subtle">{t('轨道')}</div>
+            <div className="flex h-7 shrink-0 items-center border-b px-2 text-caption text-subtle">{t('轨道')}</div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {anim.tracks.map((tr, i) => (
                 <div
@@ -597,7 +597,7 @@ export function AnimationPanel({
                         style={{ left: `${(x / span) * 100}%` }}
                       >
                         {major && (
-                          <span className="absolute -top-3.5 left-1 font-mono text-[0.625rem] text-subtle tabular-nums">
+                          <span className="absolute -top-3.5 left-1 font-mono text-micro text-subtle tabular-nums">
                             {x.toFixed(1)}
                           </span>
                         )}
@@ -654,7 +654,7 @@ export function AnimationPanel({
                 </div>
               </div>
               {!anim.tracks.length && (
-                <p className="py-4 text-center text-[0.75rem] text-subtle">
+                <p className="py-4 text-center text-footnote text-subtle">
                   {t('选中控件，用左边的「加轨道」或上面的「预设」开始')}
                 </p>
               )}

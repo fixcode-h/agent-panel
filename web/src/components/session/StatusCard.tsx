@@ -63,7 +63,7 @@ export function StatusCard({ task, kids = [] }: { task: Task; kids?: (ChildEntry
         <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
           <HeadIcon state={d.state} task={task} />
         </span>
-        <p className="min-w-0 flex-1 text-[0.8125rem] leading-5 break-words text-fg">{d.headline}</p>
+        <p className="min-w-0 flex-1 text-body leading-5 break-words text-fg">{d.headline}</p>
       </div>
       {items.length > 0 && (
         <div className="mt-1 flex flex-col">

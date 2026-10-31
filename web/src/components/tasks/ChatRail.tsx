@@ -107,7 +107,7 @@ function CodeTab({ list }: { list: ChatCode[] }) {
             />
           </SelectLook.Provider>
         ) : (
-          <span className="min-w-0 flex-1 truncate px-1.5 text-[0.8125rem] font-semibold">{codeFileName(cur, at)}</span>
+          <span className="min-w-0 flex-1 truncate px-1.5 text-body font-semibold">{codeFileName(cur, at)}</span>
         )}
         <Button
           variant="secondary"
@@ -205,13 +205,13 @@ function SaveToProject({ code, index, onClose }: { code: ChatCode; index: number
               value={path}
               onChange={(e) => setPath(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && void submit()}
-              className="h-9 font-mono text-[0.8125rem]"
+              className="h-9 font-mono text-body"
             />
           </Field>
           <Checkbox checked={overwrite} onChange={setOverwrite} label={t('已有同名文件时覆盖')} />
         </>
       ) : (
-        <p className="text-[0.8125rem] text-subtle">{t('还没有设置了目录的项目，先在「项目」里添加一个。')}</p>
+        <p className="text-body text-subtle">{t('还没有设置了目录的项目，先在「项目」里添加一个。')}</p>
       )}
     </Modal>
   )
@@ -231,14 +231,14 @@ function FilesTab({ list, onOpen }: { list: Attachment[]; onOpen: (path: string)
             title={a.path}
             onClick={() => onOpen(a.path)}
             className={cn(
-              'flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[0.8125rem] transition-colors hover:bg-sel/60',
+              'flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-body transition-colors hover:bg-sel/60',
             )}
           >
             <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-sel text-muted">
               <Icon className="h-3.5 w-3.5" />
             </span>
             <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
-            <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">{fmtSize(a.size)}</span>
+            <span className="shrink-0 text-caption text-subtle tabular-nums">{fmtSize(a.size)}</span>
           </button>
         )
       })}

@@ -179,10 +179,8 @@ export function OverviewPage() {
                     onChange={() => toggleAll(ids)}
                     ariaLabel={t('选择「{title}」里的全部对话', { title: GROUP_LABEL[g] })}
                   />
-                  <h2 className="text-[0.8125rem] font-medium text-fg">{GROUP_LABEL[g]}</h2>
-                  <span className="rounded-full bg-sel px-1.5 text-[0.6875rem] text-muted tabular-nums">
-                    {list.length}
-                  </span>
+                  <h2 className="text-body font-medium text-fg">{GROUP_LABEL[g]}</h2>
+                  <span className="rounded-full bg-sel px-1.5 text-caption text-muted tabular-nums">{list.length}</span>
                   <span className="hidden min-w-0 truncate text-xs text-subtle sm:block">{GROUP_HINT[g]}</span>
                 </header>
                 <ul className="flex flex-col gap-0.5 px-1.5">
@@ -215,7 +213,7 @@ export function OverviewPage() {
           className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 self-center rounded-xl border border-line frost-card py-2 pr-2 pl-4 shadow-card"
           data-overview-batch
         >
-          <span className="mr-2 text-[0.8125rem] text-fg tabular-nums">{t('已选 {n} 个', { n: picked.size })}</span>
+          <span className="mr-2 text-body text-fg tabular-nums">{t('已选 {n} 个', { n: picked.size })}</span>
           <Button
             size="sm"
             variant="secondary"
@@ -342,7 +340,7 @@ function Row({
         />
       </span>
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 text-left">
-        <span className="truncate text-[0.875rem] text-fg">{task.title}</span>
+        <span className="truncate text-prose text-fg">{task.title}</span>
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
           <span className="truncate">{project}</span>
           {note && (
@@ -356,7 +354,7 @@ function Row({
       <span className="hidden w-28 shrink-0 flex-col gap-1 md:flex">
         {plan && (
           <>
-            <span className="text-[0.6875rem] text-subtle tabular-nums">
+            <span className="text-caption text-subtle tabular-nums">
               {t('计划 {done}/{total}', { done: plan.done, total: plan.total })}
             </span>
             <Progress
