@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { ProjectSuggestion } from '../shared/project-scan.ts'
 import { defaultTestSteps } from '../shared/test-steps.ts'
 import { resolvePath } from './fs.ts'
+import { runProcess } from './exec/process.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -138,19 +139,65 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
   }
 }
 
-/** 版本控制：目录里有 .git / .p4config / .svn，或者上层目录里有（P4 的工作区根常常在上面） */
+/**
+ * 版本控制：目录里有 .git / .p4config / .svn，或者上层目录里有（P4 的工作区根常常在上面）。
+ * P4 的连接也常常不写文件：用 p4 set（Windows 注册表）或环境变量配，P4CONFIG 也可能叫别的名字。
+ * 这些情况下按文件认不出来（用户报过「明明是 P4 项目」却被当成没有版本控制），最后问一次 p4 本身（见 p4Mapped）
+ */
 export async function detectVcs(dir: string) {
+  // P4 的配置文件：常见的几种名字，加上环境变量 P4CONFIG 指定的。用户的工作区里是 p4config.txt，
+  // P4CONFIG 设在 p4 set（Windows 注册表）里，面板进程的环境变量读不到，所以常见名字直接认
+  const p4Names = [
+    '.p4config',
+    '.p4ignore',
+    'p4config.txt',
+    '.p4config.txt',
+    'p4config',
+    'P4CONFIG',
+    process.env.P4CONFIG?.trim(),
+  ].filter((x): x is string => !!x)
   let cur = dir
   for (let i = 0; i < 6; i++) {
     if (await exists(path.join(cur, '.git'))) return { vcs: 'git' as const, root: cur }
-    if ((await exists(path.join(cur, '.p4config'))) || (await exists(path.join(cur, '.p4ignore'))))
-      return { vcs: 'p4' as const, root: cur }
+    for (const name of p4Names) if (await exists(path.join(cur, name))) return { vcs: 'p4' as const, root: cur }
     if (await exists(path.join(cur, '.svn'))) return { vcs: 'svn' as const, root: cur }
     const up = path.dirname(cur)
     if (up === cur) break
     cur = up
   }
+  if (await p4Mapped(dir)) return { vcs: 'p4' as const, root: dir }
   return { vcs: 'none' as const, root: dir }
+}
+
+/** p4 的问询结果缓存一分钟：每轮对话都要判断一次版本控制，不能每次都起一个 p4 进程 */
+const P4_PROBE_MS = 60_000
+const p4Probes = new Map<string, { at: number; got: Promise<boolean> }>()
+
+/**
+ * 这个目录在当前 P4 client 的映射里：在目录里跑 p4 where（PWD 跟着改，p4 按它找配置）。
+ * 没装 p4、连不上、不在映射里都算不是；目录不存在时不问
+ */
+function p4Mapped(dir: string): Promise<boolean> {
+  const hit = p4Probes.get(dir)
+  if (hit && Date.now() - hit.at < P4_PROBE_MS) return hit.got
+  const got = (async () => {
+    if (!(await exists(dir))) return false
+    // 问整个子目录（dir/...）：「不在 client 映射里」时 p4 照样退出 0、只在 stderr 里说，所以按有没有映射出本地路径判断
+    let mapped = false
+    await runProcess({
+      command: 'p4',
+      args: ['-ztag', 'where', path.join(dir, '...')],
+      cwd: dir,
+      env: { ...process.env, PWD: dir },
+      timeoutMs: 5000,
+      onLine: (l) => {
+        if (l.startsWith('... path ')) mapped = true
+      },
+    }).catch(() => null)
+    return mapped
+  })()
+  p4Probes.set(dir, { at: Date.now(), got })
+  return got
 }
 
 /** 文档目录：已有的 docs / doc / documentation 优先 */

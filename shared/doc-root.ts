@@ -1,15 +1,17 @@
 import type { AgentParam } from './schema.ts'
 
 /**
- * P4 / SVN 项目的文档根放哪（用户 2026-10-31 定的）：默认放在和项目文件夹同级的 docs，
- * 也可以在「文档」角色的参数里改成项目里的 docs。Git 和没有版本管理的项目不受影响，仍按已有 docs/ 或项目下的 docs。
+ * P4 / SVN 项目的文档根放哪（用户 2026-10-31 定的）：项目设置里「文档」角色的「文档根」是下拉选择，只在 P4 项目里显示，
+ * 两个选项：项目外层同级 ProjectDoc 下的 docs（默认），或项目目录下的 docs。
+ * Git 和没有版本管理的项目不受影响，仍按已有 docs/ 或项目下的 docs，也不能设置。
  *
  * 文档根在项目目录外时，写进去的文档只落盘：不 p4 add / edit、不放进任何 changelist，SVN 也不 svn add。
  * 外面的 docs 常常和项目在同一个 P4 工作区里，Agent 照「修改前先 p4 edit / add」的习惯会把文档也纳进来，
  * 混进按类型分的 [Other] changelist（用户反馈过）。
  */
-export const DOC_PLACE_KEY = 'docPlace'
-export const DOC_PLACE_SIBLING = '项目同级 docs'
+/** 「文档」角色上的「文档根」下拉（原来是手填的文本参数，同一个 key 直接改成下拉） */
+export const DOC_PLACE_KEY = 'docRoot'
+export const DOC_PLACE_SIBLING = '项目外层同级 ProjectDoc/docs'
 export const DOC_PLACE_INSIDE = '项目内 docs'
 export const DOC_PLACES = [DOC_PLACE_SIBLING, DOC_PLACE_INSIDE]
 
@@ -24,8 +26,6 @@ export interface DocRootInfo {
   root: string
   /** 在项目目录外：写进去的文档不做版本管理操作 */
   outside: boolean
-  /** 文档角色上填了「文档根」：按填的走，「文档位置」不起作用 */
-  custom: boolean
   place: string
 }
 
@@ -83,37 +83,50 @@ export function isInside(child: string, dir: string) {
   return c === d || c.startsWith(d.endsWith('/') ? d : `${d}/`)
 }
 
-/** 按「文档位置」算 P4 / SVN 项目的文档根：项目同级就是 <项目上一级>/docs，项目内就是 <项目>/docs */
+/**
+ * 按下拉选的文档根算 P4 / SVN 项目的文档根：项目外就是 <项目上一级>/ProjectDoc/docs，项目内就是 <项目>/docs。
+ * 以前的选项「项目同级 docs」也按项目外算（选项改名后旧设置不用重选）
+ */
 export function vcsDocRoot(projectPath: string, place: string) {
-  return place === DOC_PLACE_INSIDE ? joinPath(projectPath, 'docs') : joinPath(parentDir(projectPath), 'docs')
+  return place === DOC_PLACE_INSIDE
+    ? joinPath(projectPath, 'docs')
+    : joinPath(parentDir(projectPath), 'ProjectDoc/docs')
 }
 
-/** 文档角色的参数（文档根、文档位置）加上项目目录和版本管理，算出这个项目的文档根；Git / 没有版本管理时不算 */
+/**
+ * 文档角色的「文档根」下拉加上项目目录和版本管理，算出这个项目的文档根；Git / 没有版本管理时不算。
+ * 下拉以外的旧值（以前手填的路径）按默认的项目外算；旧版另一个参数 docPlace 选了项目内的也认
+ */
 export function resolveDocRoot(
   projectPath: string,
   vcs: string | undefined,
   values: { docRoot?: unknown; docPlace?: unknown },
 ): DocRootInfo | undefined {
   if (!projectPath.trim() || !isDocVcs(vcs)) return undefined
-  const given = typeof values.docRoot === 'string' ? values.docRoot.trim() : ''
-  const place = values.docPlace === DOC_PLACE_INSIDE ? DOC_PLACE_INSIDE : DOC_PLACE_SIBLING
-  const root = given ? joinPath(projectPath, given) : vcsDocRoot(projectPath, place)
-  return { vcs, root, outside: !isInside(root, projectPath), custom: !!given, place }
+  const inside = values.docRoot === DOC_PLACE_INSIDE || values.docPlace === DOC_PLACE_INSIDE
+  const place = inside ? DOC_PLACE_INSIDE : DOC_PLACE_SIBLING
+  const root = vcsDocRoot(projectPath, place)
+  return { vcs, root, outside: !isInside(root, projectPath), place }
 }
 
-/** 文档角色上只对某些版本管理生效的参数：项目设置里按项目的版本管理决定显不显示 */
-const VCS_ONLY: Record<string, DocVcs[]> = { [DOC_PLACE_KEY]: ['p4', 'svn'] }
+/** 只对某些版本管理显示的参数：「文档根」下拉只在 P4 项目里显示（用户定的：P4 项目才可以设置） */
+const VCS_ONLY: Record<string, string[]> = { [DOC_PLACE_KEY]: ['p4'] }
 
-/** 项目设置里这个项目该显示的角色参数：「文档位置」只在 P4 / SVN 项目里显示 */
+/** 项目设置里这个项目该显示的角色参数（工作流暴露项按它指向的参数判断，见 exposesForVcs） */
 export function paramsForVcs(params: AgentParam[], vcs: string) {
-  return params.filter((p) => !VCS_ONLY[p.key] || (VCS_ONLY[p.key] as string[]).includes(vcs))
+  return params.filter((p) => !VCS_ONLY[p.key] || VCS_ONLY[p.key].includes(vcs))
+}
+
+/** 工作流暴露项里指向「文档根」的那一项：同样只在 P4 项目里显示 */
+export function exposesForVcs<T extends { target: string; targetId: string }>(exposes: T[], vcs: string) {
+  return exposes.filter((e) => e.target !== 'agent' || !VCS_ONLY[e.targetId] || VCS_ONLY[e.targetId].includes(vcs))
 }
 
 /** 写进提示词的一段：文档根在哪，在项目外时不做版本管理操作 */
 export function docRootText(d: DocRootInfo | undefined) {
   if (!d) return ''
   const name = d.vcs === 'p4' ? 'P4' : 'SVN'
-  const why = d.custom ? '「文档」角色里填的文档根' : `「文档」角色的文档位置：${d.place}`
+  const why = `项目设置里「文档」角色的文档根：${d.place}`
   const ops =
     d.vcs === 'p4'
       ? '不 p4 add / edit / reconcile，不放进任何 changelist（default 和按类型分的 pending 都不放），分 changelist 时也不列它们'

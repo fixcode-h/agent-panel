@@ -1,5 +1,6 @@
 import type { WorkflowExpose } from '../schema.ts'
 import { END, START } from '../flow.ts'
+import { DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 import {
   GENERAL_KEY,
   GENERAL_NAME,
@@ -53,16 +54,16 @@ const STRUCTURE: WorkflowExpose = {
   description: '编排器用来了解这个项目的目录、构建、测试和运行方式',
 }
 
-/** 文档根：填了就直接用，留空按 project-documentation 的规则自己确定 */
+/** 文档根：P4 项目在项目设置里下拉选（项目外层同级 ProjectDoc/docs 或项目内 docs），见 shared/doc-root.ts */
 const DOC_ROOT: WorkflowExpose = {
   key: 'docRoot',
   label: '文档根',
-  type: 'text',
-  options: [],
-  default: '',
+  type: 'select',
+  options: DOC_PLACES,
+  default: DOC_PLACE_SIBLING,
   target: 'agent',
   targetId: 'docRoot',
-  description: '项目文档放在哪；P4 项目的文档一般在项目目录外面',
+  description: '只在 P4 项目里设置：项目外层同级 ProjectDoc/docs 里的文档不做 P4 操作，项目内 docs 随项目纳管',
 }
 
 /** 提交方式：本地提交 / 只检查 */

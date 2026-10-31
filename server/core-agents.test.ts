@@ -374,7 +374,8 @@ test('必备角色：改了设定会被同步回内置定义，参数取值和�
     canDelegate: true,
     enabled: false,
     model: '@high',
-    params: docs.params.map((p) => (p.key === 'docRoot' ? { ...p, default: 'doc/' } : p)),
+    // 「文档根」是下拉：取下拉里的另一项（项目内 docs）验证用户选的值保留
+    params: docs.params.map((p) => (p.key === 'docRoot' ? { ...p, default: '项目内 docs' } : p)),
   }
   const r = await ensureProjectAgents(m.state(), m.ops)
   assert.equal(r.synced.length, 1)
@@ -385,7 +386,7 @@ test('必备角色：改了设定会被同步回内置定义，参数取值和�
   assert.equal(now.canDelegate, false)
   assert.equal(now.enabled, true, '必备角色不能停用')
   assert.equal(now.model, '@high', '模型是运行配置，保留')
-  assert.equal(now.params.find((p) => p.key === 'docRoot')?.default, 'doc/', '参数取值保留')
+  assert.equal(now.params.find((p) => p.key === 'docRoot')?.default, '项目内 docs', '参数取值保留')
 })
 
 test('「子任务」是派子任务时的默认角色：不作为可选角色展示，也停用不了、删不掉', async () => {
