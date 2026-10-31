@@ -10,7 +10,7 @@ const tones = {
 }
 
 /**
- * 进度条：凹下去的轨道（深色下压暗，见 index.css 的 sunken）+ 实心的已完成段，圆头、不描边。
+ * 进度条：淡色轨道（--c-progress-track，前景色 14%，深浅色都看得见）+ 实心的已完成段，圆头、不描边。
  * value 按 max 折成百分比，超出 0–max 的值夹回范围内，不会画出轨道
  */
 export function Progress({
@@ -46,7 +46,7 @@ export function Progress({
       aria-valuemax={raw ? max : 100}
       aria-valuenow={indeterminate ? undefined : raw ? Math.min(max, Math.max(0, value)) : Math.round(pct)}
       className={cn(
-        'sunken w-full overflow-hidden rounded-(--c-progress-radius)',
+        'w-full overflow-hidden bg-(--c-progress-track) rounded-(--c-progress-radius)',
         size === 'xs' ? 'h-0.5' : 'h-(--c-progress-height)',
         className,
       )}
