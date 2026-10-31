@@ -51,9 +51,3 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 
 - 规则：吸顶栏、浮在内容上的操作条和按钮用 `frost`（bg 底）/ `frost-card`（card 底），不再写 `bg-bg`、`bg-card/95 backdrop-blur`；对话里吸顶的回复头、工作流节点标题是通栏：加 `frost-bar` 类、第一个孩子放 `<FrostBarBg />`，所在滚动区要 `overflow-x-hidden`（底左右各伸出一屏宽，靠它裁掉）。
 - 起因：用户 2026-10-31 要求照 Claude Code 网页版顶栏复刻毛玻璃、回复头拉满整个横向空间，并在其他能用的地方都用上。
-
-## 背景块不能和外层背景的边重合
-
-- 规则：有底色的块（Card、预览框、编辑器、浮在底部的操作条）放进另一块有底色的区域里，四周都要离外层的边留 `--surface-inset`（16px）。`Card` 自带 `data-surface`，设置卡（`.settings-card`）会给它上下补边距；自己写的有底色块要标 `data-surface=""`。吸底浮条用 `bottom-4` 这类偏移，不贴窗口底边；行内卡片宽度不超过所在行（`max-w-[min(…,100%)]`）。
-- 检查：界面检查每一步都会跑 `scripts/ui/harness.mjs` 的 `nestedEdgeProblems`，一两条边重合就报（三条边是铺满的标题栏，四条是包裹层，页签、画布节点不算）。
-- 起因：用户 2026-10-31 指出外观→字体的预览卡贴着设置卡底边，要求所有背景统一留边距。
