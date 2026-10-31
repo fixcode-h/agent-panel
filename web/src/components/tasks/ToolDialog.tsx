@@ -49,7 +49,7 @@ export function OutputDialog({
   const text = output ?? ''
   return (
     // 只看不填：点到外面就关（和原来手写外壳的默认行为一致）
-    <Modal open={open} onOpenChange={onOpenChange} title={null} size="lg" bare closeOnOutside>
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="term" bare closeOnOutside>
       <ModalHeader
         icon={Wrench}
         title={title}
@@ -162,8 +162,8 @@ export function CommandDialog({
   const stick = useStickToBottom(command)
 
   return (
-    // 命令行窗口：lg 档固定宽 800、最小高 480，输出多了才长到上限、在窗口里滚动
-    <Modal open={open} onOpenChange={onOpenChange} title={null} size="lg" bare closeOnOutside>
+    // 命令行窗口：term 档固定宽 1600（窄屏缩到屏宽）、最小高 560，输出多了才长到上限、在窗口里滚动
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="term" bare closeOnOutside>
       {/* 标题就是命令本身（悬停看全文），右边是状态和用时，不再是空的「命令」两个字 */}
       <ModalHeader
         icon={Terminal}

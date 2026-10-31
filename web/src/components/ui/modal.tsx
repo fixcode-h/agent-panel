@@ -15,7 +15,8 @@ export const MODAL_OVERLAY = 'fixed inset-0 z-40 bg-scrim anim-scrim'
  * 不会一会儿矮一会儿高（用户要求「宽度固定、不同弹窗宽度不同、定个最小高度」）。最小高度不超过视口能放下的高度。
  * - sm 420：确认、改名这类一两行的小表单，不设最小高度
  * - md 520：常规表单（默认），最小高 320
- * - lg 800：宽表单、命令行 / 工具输出这类文本查看窗口，最小高 480
+ * - lg 800：宽表单，最小高 480
+ * - term 1600：命令行 / 工具输出这类文本查看窗口（长命令、长路径一行放得下；用户嫌 800 太窄要宽一倍），最小高 560
  * - xl 1100：差异、文件、工作流运行、审阅这类大块查看器和带侧栏的编辑器，最小高 640
  * - full：几乎铺满，只给本身就是一个应用的窗口（Chat、ComfyUI、AI 处理）
  * - fit：一次编辑的差异：xl 的宽度，跟着内容高，最高到 full 的四分之三（通常就几行，铺满太空）
@@ -25,6 +26,7 @@ const SIZES = {
   md: 'max-w-[520px] min-h-[min(320px,calc(100dvh-3.75rem))]',
   lg: 'max-w-[800px] min-h-[min(480px,calc(100dvh-3.75rem))]',
   xl: 'max-w-[1100px] min-h-[min(640px,calc(100dvh-3.75rem))]',
+  term: 'max-w-[1600px] min-h-[min(560px,calc(100dvh-3.75rem))]',
   // 照 Claude Code 网页版的方案弹窗：四周各留 30px 露出背后的页面，不设最大宽度，大屏上也铺满
   full: 'h-[calc(100dvh-3.75rem)] max-h-none w-[calc(100%-3.75rem)] max-w-none',
   fit: 'max-h-[calc((100dvh-3.75rem)*0.75)] max-w-[1100px] min-h-[min(320px,calc(100dvh-3.75rem))]',

@@ -14,7 +14,7 @@ import {
   type MdValue,
 } from '@shared/markdown-style'
 import { t } from '@shared/i18n'
-import { applyAppearance } from '@/lib/appearance'
+import { applyLocalAppearance } from '@/lib/appearance'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
@@ -314,7 +314,7 @@ const HEADINGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
 
 /**
  * 设置 → Markdown 样式：对话回复、文档预览、总结报告共用的那套样式，按元素逐项调。
- * 顶部预览就是真的 Markdown 组件，改动立刻生效到整个面板（applyAppearance），保存交给设置页的自动保存。
+ * 顶部预览就是真的 Markdown 组件，改动立刻生效到整个面板（applyLocalAppearance），保存交给设置页的自动保存。
  */
 export function MarkdownSection({ value, onChange }: { value: Appearance; onChange: (a: Appearance) => void }) {
   const [compact, setCompact] = useState<'normal' | 'compact'>('normal')
@@ -324,7 +324,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
   const update = (markdown: MarkdownStyle) => {
     const next = { ...value, markdown }
     onChange(next)
-    applyAppearance(next)
+    applyLocalAppearance(next)
   }
   // 连续改同一组时以最新的为准：恢复本组会一口气调用好几次
   let latest = style

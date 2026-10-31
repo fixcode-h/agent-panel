@@ -1,6 +1,7 @@
+import { useEffect, useRef, useState } from 'react'
 import { Appearance, PALETTES, WORD_SPACING, type Palette } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { applyAppearance } from '@/lib/appearance'
+import { applyLocalAppearance } from '@/lib/appearance'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -60,7 +61,11 @@ function PaletteCard({ id, on, onPick }: { id: Palette; on: boolean; onPick: () 
   )
 }
 
-/** 滑块一行：拖动时立即生效（applyAppearance），保存交给设置页的自动保存 */
+/**
+ * 滑块一行：拖动时立即生效（applyLocalAppearance），保存交给设置页的自动保存。
+ * 滑块和数值读自己的状态，跟手；往上交给设置页每帧最多一次，拖一下不会每一格都重渲染整个设置页。
+ * 「恢复默认」一直占着位置（在默认值时隐藏）：按钮出现、消失时滑块不会被挤着左右跳（用户反馈调的时候闪一下）
+ */
 function Slider({
   label,
   value,
@@ -80,6 +85,23 @@ function Slider({
   format: (v: number) => string
   onChange: (v: number) => void
 }) {
+  const [local, setLocal] = useState(value)
+  // 外面改了值（恢复本组默认、切了配置）时跟上
+  useEffect(() => setLocal(value), [value])
+  const frame = useRef(0)
+  const next = useRef(value)
+  const send = useRef(onChange)
+  send.current = onChange
+  useEffect(() => () => cancelAnimationFrame(frame.current), [])
+  const change = (v: number) => {
+    setLocal(v)
+    next.current = v
+    if (frame.current) return
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0
+      send.current(next.current)
+    })
+  }
   return (
     <div className="flex items-center gap-3">
       <input
@@ -87,17 +109,22 @@ function Slider({
         min={min}
         max={max}
         step={step}
-        value={value}
+        value={local}
         aria-label={label}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => change(Number(e.target.value))}
         className="w-40 cursor-pointer accent-[var(--color-accent)]"
       />
-      <span className="w-16 font-mono text-body text-muted tabular-nums">{format(value)}</span>
-      {value !== def && (
-        <Button variant="ghost" size="sm" onClick={() => onChange(def)}>
-          {t('恢复默认')}
-        </Button>
-      )}
+      <span className="w-16 font-mono text-body text-muted tabular-nums">{format(local)}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => change(def)}
+        aria-hidden={local === def}
+        tabIndex={local === def ? -1 : undefined}
+        className={cn(local === def && 'invisible')}
+      >
+        {t('恢复默认')}
+      </Button>
     </div>
   )
 }
@@ -105,7 +132,7 @@ function Slider({
 export function FontSection({ value, onChange }: { value: Appearance; onChange: (a: Appearance) => void }) {
   const update = (next: Appearance) => {
     onChange(next)
-    applyAppearance(next)
+    applyLocalAppearance(next)
   }
   const set = <K extends keyof Appearance>(k: K, v: Appearance[K]) => update({ ...value, [k]: v })
   // 浮点步进会出现 -0.019999 这样的值，显示和保存前都取整
@@ -134,7 +161,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         <Row
           title={t('深色文字亮度')}
           desc={t('深色主题下主文字有多白')}
-          hint={t('默认 93%，和 Claude Code 深色的主文字一样；100% 是纯白，调低更柔和。浅色主题不受影响。')}
+          hint={t('默认 90%，比 Claude Code 深色的主文字（93%）略柔和；100% 是纯白，调低更柔和。浅色主题不受影响。')}
         >
           <Slider
             label={t('深色文字亮度')}

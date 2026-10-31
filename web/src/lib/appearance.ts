@@ -93,21 +93,59 @@ export function primeCjkFont() {
   }
 }
 
+/** 上一次真正写到页面上的各部分：没变的部分不重写（拖滑块时每一格都会调用，重写 Markdown 样式表很贵） */
+let applied = { vars: '', palette: '', md: '', all: '' }
+/** 设置页里最近一次本地改外观的时间：拖动期间自动保存回来的旧值不能把页面拉回去 */
+let localAt = 0
+
 /** 应用到页面，并记在浏览器里：index.html 加载时先用记下的，免得设置取回来前闪一下默认字体 */
 export function applyAppearance(a: Appearance | undefined) {
   const parsed = Appearance.parse(a ?? {})
+  const all = JSON.stringify(parsed)
+  if (all === applied.all) return
+  applied.all = all
   const vars = appearanceVars(parsed)
   // 中文字体选了内置字体时才去加载它的分片
   ensureCjkFont(parsed.cjkFont)
-  const root = document.documentElement.style
-  for (const [k, v] of Object.entries(vars)) root.setProperty(k, v)
-  applyPalette(parsed.palette)
-  applyMarkdownStyle(parsed.markdown, parsed.components)
+  const varsKey = JSON.stringify(vars)
+  if (varsKey !== applied.vars) {
+    applied.vars = varsKey
+    const root = document.documentElement.style
+    for (const [k, v] of Object.entries(vars)) root.setProperty(k, v)
+  }
+  if (parsed.palette !== applied.palette) {
+    applied.palette = parsed.palette
+    applyPalette(parsed.palette)
+  }
+  const mdKey = JSON.stringify([parsed.markdown, parsed.components])
+  if (mdKey !== applied.md) {
+    applied.md = mdKey
+    applyMarkdownStyle(parsed.markdown, parsed.components)
+  }
   try {
-    localStorage.setItem('appearance', JSON.stringify(vars))
+    localStorage.setItem('appearance', varsKey)
     localStorage.setItem(PALETTE_KEY, parsed.palette)
     localStorage.setItem(CJK_KEY, parsed.cjkFont)
   } catch {
     // 浏览器不让存就算了，只是加载时会闪一下
   }
+}
+
+/**
+ * 设置页里改外观（拖滑块、选配色、开关）：立即应用，并记下时间，见 applySavedAppearance。
+ * 拖滑块时的节流在滑块自己那里做（每帧最多交一次），这里不再延后，开关、按钮点完马上就能看到
+ */
+export function applyLocalAppearance(a: Appearance) {
+  localAt = Date.now()
+  applyAppearance(a)
+}
+
+/**
+ * 设置取回来、自动保存返回时应用外观。设置页刚在本地改过（3 秒内）就跳过：拖滑块中途停顿一下会触发自动保存，
+ * 保存返回的是那一刻的旧值，套上去页面会先跳回旧值、下一格再跳回来，看着就是闪一下（用户反馈）；
+ * 本地最新的值稍后自己会被保存，返回时和页面上的一样，也就不用再套
+ */
+export function applySavedAppearance(a: Appearance | undefined) {
+  if (Date.now() - localAt < 3000) return
+  applyAppearance(a)
 }
