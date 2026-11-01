@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setLang, t } from '@shared/i18n'
 import type { ChildWait } from '@shared/task'
-import { childClosedHint, childLabels, type ChildSummary } from './child-line'
+import { childClosedHint, childLabels, childNote, type ChildSummary } from './child-line'
 
 // 整个文件断言的都是文案：固定成中文，不跟着 CI 的 LANG 变（见 docs/lessons 的测试教训）
 setLang('zh')
@@ -134,4 +134,21 @@ test('页面宽限回收后计划没做完的静止行：行上直接写「继�
     plan: undefined,
   })
   assert.ok(!texts(finished).includes(t('Agent 进程已回收，继续会重新拉起')))
+})
+
+test('一轮结束、停在等下一句的子对话不写「正在思考…」：只在服务端说还在想（thinking）时写', () => {
+  // 实测报告问题 12：行上同时出现「正在思考… · 等下一句」，它其实已经空闲了十几分钟
+  const idle = closedWaiting({
+    cliAlive: true,
+    background: 0,
+    waiting: { kind: 'next' },
+    // 没在跑时服务端的 activity 只剩计划进度（shared/task.ts 的 childActivity）
+    activity: { plan: { title: '合回', done: 3, total: 4 } },
+    plan: { done: 3, total: 4, step: '合回' },
+  })
+  const line = childNote(idle, true)
+  assert.ok(!line.includes(t('正在思考…')), line)
+  assert.equal(line, [t('等下一句'), '合回'].join(' · '))
+  const thinking = closedWaiting({ working: true, waiting: undefined, activity: { thinking: true } })
+  assert.ok(childNote(thinking, true).startsWith(t('正在思考…')))
 })
