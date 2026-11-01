@@ -19,6 +19,7 @@ import {
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
 import { t, uiLocale } from './i18n.ts'
+import { canPickRun } from './task-run.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
 import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
@@ -105,8 +106,8 @@ export function newTask(
     inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
-    // 默认 Agent 和不用 Agent 角色的对话（agentId 为空）都能在对话时选 CLI 和模型；其他 Agent 用自己配置的
-    cli: input.mode === 'chat' && canPickRun(input.agentId) ? (input.cli ?? '') : '',
+    // 不用角色的对话（agentId 为空）能选 CLI 和模型；用角色的只记 CLI：跟随默认 CLI 的角色按它跑（见 withTaskModel）
+    cli: input.mode === 'chat' ? (input.cli ?? '') : '',
     model: input.mode === 'chat' && canPickRun(input.agentId) ? (input.model ?? '') : '',
     effort: input.mode === 'chat' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
@@ -400,25 +401,7 @@ export function taskDuration(
   return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
 }
 
-/** 对话里能不能临时选 CLI、模型和思考强度：不用角色（空 id）时可以 */
-export const canPickRun = (agentId: string) => !agentId
-
-/** 不用角色的对话任务选的 CLI、模型和思考强度 */
-export function withTaskModel<A extends { id: string; cli: string; model: string; effort: string }>(
-  agent: A,
-  task: { mode: string; agentId: string; cli?: string; model?: string; effort?: string },
-): A {
-  if (task.mode !== 'chat' || task.agentId !== agent.id || !canPickRun(agent.id)) return agent
-  // 换了 CLI 时不能沿用原来的模型（那是另一个 CLI 的）
-  const cli = task.cli || agent.cli
-  const same = cli === agent.cli
-  return {
-    ...agent,
-    cli,
-    model: task.model || (same ? agent.model : ''),
-    effort: task.effort || (same ? agent.effort : ''),
-  }
-}
+export { canPickRun, withTaskModel } from './task-run.ts'
 
 /**
  * 两个目录是不是同一个（Windows 路径大小写、分隔符、末尾斜杠不敏感）。

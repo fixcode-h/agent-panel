@@ -492,7 +492,7 @@ export function EnvChip({
     task.mode === 'workflow'
       ? workflowName
       : byCli
-        ? getCli(task.cli || defaultCli(s))?.name
+        ? getCli(task.cli || task.sessionCli || defaultCli(s))?.name
         : (found?.name ?? t('已删除的角色'))
   // 用到的 CLI 里打开了「显示额度」的，每个显示一组
   const ids = new Set<string>()

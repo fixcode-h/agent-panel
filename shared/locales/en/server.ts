@@ -596,4 +596,6 @@ export const EN_SERVER: Record<string, string> = {
   回收站里没有这一项: 'This item is not in the recycle bin',
   '「{name}」已经存在，不需要恢复': '"{name}" already exists; nothing to restore',
   读不到系统进程信息: 'Could not read system process information',
+  '已从 {from} 换成 {to}，之前的会话不再续用，之前的对话会带给新会话。':
+    'Switched from {from} to {to}. The previous session won’t be resumed; the conversation so far is carried over to the new session.',
 }

@@ -85,6 +85,7 @@ import {
 export { clippedTranscript, contextFallbackKind, estTokens, restartCarry }
 import {
   SESSION_NOT_FOUND,
+  cliSwitchedText,
   firstNoEffortTell,
   noEffortRetryText,
   noEffortSkippedText,
@@ -1085,8 +1086,8 @@ async function runAgent(
    * 面板换了做法自动重跑（丢会话重开、去掉思考强度）前在对话里留一行：只写日志就是悄悄重试。不设 transient：
    * 继续执行时不能当状态说明弹掉。预热轮用户还没发话不记（思考强度那条由 tellNoEffort 在第一句到了后补）
    */
-  const recoveryNote = (text: string) => {
-    if (prewarmMode) return
+  const recoveryNote = (text: string, evenPrewarm = false) => {
+    if (prewarmMode && !evenPrewarm) return
     task.messages.push({
       id: ctx.newId(),
       role: 'system',
@@ -1105,6 +1106,10 @@ async function runAgent(
     if (firstNoEffortTell(noEffortKey)) recoveryNote(noEffortSkippedText(model, requested))
   }
   tellNoEffort()
+  // 会话是另一个 CLI 的（对话里换了 CLI、角色改了 CLI）：说一声旧会话不再续用。换了以后空闲的对话马上按新 CLI 预热，
+  // 预热轮里也要记，不然这一轮记下新会话后就再没机会说
+  if (chat && task.sessions[sessionKey] && task.sessionCli && task.sessionCli !== cliId)
+    recoveryNote(cliSwitchedText(task.sessionCli, cliId), true)
   // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
   // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
   // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次

@@ -1536,14 +1536,14 @@ export function TaskView({
   const chatCli = chatAgent
     ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli
     : task.mode === 'chat'
-      ? // 不用角色的对话：服务端按对话自己选的 CLI 跑，没选才用默认 CLI，这里要跟它一致
-        task.cli || defaultCli(settings ?? defaultSettings())
+      ? // 不用角色的对话：服务端按对话自己选的 CLI 跑，没选按会话所在的 CLI，都没有才用默认 CLI（见 withTaskModel）
+        task.cli || task.sessionCli || defaultCli(settings ?? defaultSettings())
       : ''
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
   const canSteer = working && (task.mode === 'workflow' || steerable(chatCli))
   // 不用角色的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换
   const byCli = task.mode === 'chat' && !task.agentId
-  const chatRun = { cli: task.cli, model: task.model, effort: task.effort }
+  const chatRun = { cli: task.cli || task.sessionCli || '', model: task.model, effort: task.effort }
   const chatLabel = (byCli ? getCli(chatCli)?.name : chatAgent?.name) || t('无角色')
   const changeRun = async (v: ChatRun) => {
     setTask({ ...task, ...v })

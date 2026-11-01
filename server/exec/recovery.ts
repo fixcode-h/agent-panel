@@ -1,6 +1,7 @@
 import type { TaskMessage } from '../../shared/schema.ts'
 import { t } from '../../shared/i18n.ts'
 import { clip } from '../../shared/text.ts'
+import { getCli } from '../../shared/clis.ts'
 
 // 面板自己换做法重跑（丢会话重开、去掉思考强度、断流续接）时写进对话的说明和收口。
 // 从 runner.ts 拆出来：纯文字和判断，不碰进程和会话，单测直接测
@@ -57,6 +58,13 @@ export const noEffortSkippedText = (model: string, effort: string) =>
   t('模型 {model} 之前报过不支持设置思考强度，这一轮没有传思考强度（{effort}）；面板重启前这个模型都不再传。', {
     model,
     effort,
+  })
+
+/** 对话换了 CLI 那一行：旧会话是另一个 CLI 的，接不上，新会话带上之前的对话。不说的话看起来像悄悄换了人 */
+export const cliSwitchedText = (from: string, to: string) =>
+  t('已从 {from} 换成 {to}，之前的会话不再续用，之前的对话会带给新会话。', {
+    from: getCli(from)?.name ?? from,
+    to: getCli(to)?.name ?? to,
   })
 
 /** 自动续接前写进对话的报错：续接成功后要收回成普通说明 */
