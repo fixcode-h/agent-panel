@@ -1,6 +1,7 @@
 import type { AgentInput, AgentMount, AgentParam } from '../schema.ts'
 import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../review-limits.ts'
 import { DOC_PLACE_KEY, DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
+import { CHAT_AGENTS } from './chat-agents.ts'
 
 /**
  * 内置 Agent：按「需求 → 设计 → 实现 → 验收 → 文档 → 版本控制」和美术资产链整理的一套角色，
@@ -1603,6 +1604,8 @@ ${VCS_TEXT}
 
 每步都要有截图或体检结果作为证据，不能只凭单个视角下结论。`,
   }),
+  // Chat 类（只在 Chat 页用）的「聊天约束」和必备的「助手」：正文在 ./chat-agents.ts（ADR 0038）
+  ...CHAT_AGENTS,
 ]
 
 /** 通用 Agent 的 key：添加任何内置工作流时一起建出来，节点执行时可以直接派 */

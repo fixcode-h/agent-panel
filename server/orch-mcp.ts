@@ -6,6 +6,8 @@ import { overrideInput, triageInput } from '../shared/review-gate.ts'
 import type { HelperReport, HelperSpec, Orchestra, RouteInput } from '../shared/engine.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
 import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
+// 用法说明搬到了单独的文件（这个文件到了行数上限），调用方照旧从这里取
+export { orchHint } from './orch-hint.ts'
 
 /**
  * 编排工具：工作流节点和对话每次调用 CLI 时，绑定在调用它的节点上（执行引擎的 Orchestra）。
@@ -186,23 +188,21 @@ const shellHint = () => {
   return sh ? shellNote(sh) : ''
 }
 
-/** Chat 页的对话（Orchestra.plain）只留这几个：长命令放后台跑，不派子任务、不互相传话 */
-const PLAIN_TOOLS = new Set(['run_background', 'check_background', 'stop_background'])
-
+/** 按能力给工具（ADR 0038）：team 管查状态和传话，canSpawn 管派子任务，其余按各自的能力和宿主的客观条件 */
 export function orchTools(o: Orchestra) {
-  const all = allOrchTools(o)
-  return o.plain ? all.filter((x) => PLAIN_TOOLS.has(x.name)) : all
-}
-
-function allOrchTools(o: Orchestra) {
   const main = o.self.endsWith('@main')
   return [
-    {
-      name: 'get_status',
-      title: '查看节点状态',
-      description: '查看这次运行里各节点和派出的子 Agent 的状态、结果摘要，按层级缩进。传话、等结果前先用它找节点 id。',
-      inputSchema: { type: 'object', properties: {} },
-    },
+    ...(o.team
+      ? [
+          {
+            name: 'get_status',
+            title: '查看节点状态',
+            description:
+              '查看这次运行里各节点和派出的子 Agent 的状态、结果摘要，按层级缩进。传话、等结果前先用它找节点 id。',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ]
+      : []),
     ...(o.canBeginEdit
       ? [
           {
@@ -884,8 +884,8 @@ function allOrchTools(o: Orchestra) {
           },
         ]
       : []),
-    // 子任务不能再派子任务
-    ...(o.helper
+    // 子任务不能再派子任务，Chat 模式不派子任务（canSpawn 为 false）
+    ...(!o.canSpawn
       ? []
       : [
           {
@@ -963,6 +963,13 @@ function allOrchTools(o: Orchestra) {
           },
         ]
       : []),
+    ...(o.team ? teamTools(o, main) : []),
+  ]
+}
+
+/** 传话、看消息：有并行的节点或子任务时才有 */
+function teamTools(o: Orchestra, main: boolean) {
+  return [
     {
       name: 'send_message',
       title: '传话',
@@ -1308,41 +1315,4 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
     default:
       return text(`没有这个工具：${name}`, true)
   }
-}
-
-/** 交给 CLI 的一句用法说明：工具列表模型自己看得到，这里说什么时候用 */
-export function orchHint(o: Orchestra) {
-  // Chat 页的对话：只有后台命令；没有时什么都不提
-  if (o.plain)
-    return o.canBackground
-      ? '（你有面板工具 panel：run_background 把要跑很久的命令放到后台（跑完结果自动推回），check_background / stop_background 查看、停止它们。不要用 CLI 自带的后台命令。）'
-      : ''
-  // 子任务只做派给它的那件事：不提派子任务、工作流、子对话这些它用不了的工具
-  if (o.helper)
-    return `（你有面板工具 panel：get_status 查看其他节点和子任务的状态；${o.sharedState ? 'read_state / write_state 读写共享状态；' : ''}send_message 给同时执行的节点传话、read_messages 看别人发给你的。你不能再派子任务、不能启动工作流或子对话。不要用 CLI 自带的子 Agent（Task / agent 这类工具）。）`
-  // 通用 Agent 写进说明里：不写的话模型很少想到去派别的 Agent
-  const common = o.common.length
-    ? `；可以派的通用 Agent：${o.common.map((a) => `「${a.name}」`).join('、')}（spawn_agents 的 agent 写名字）`
-    : ''
-  // 对话模式没有共享状态（没有 task.runs），说明里也不提，免得模型去调一个不存在的工具
-  const state = o.sharedState ? 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；' : ''
-  // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
-  const bg =
-    (o.plans ? 'set_plan 列执行计划、随时更新进度；' : '') +
-    (o.canBeginEdit ? '改文件前先调用 begin_edit 开独立分支，开好后结束这一轮；' : '') +
-    (o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : '')
-  const child =
-    bg +
-    (o.child
-      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.ueBuild === 'child' && !o.isolated ? 'request_build 向父对话申请编译（UE 不在子对话里编译，结果会推回来）、' : ''}${o.canSubmit ? (o.ueBuild === 'child' && o.isolated ? 'submit_merge 检查完请父对话收尾（合回原分支后由父对话申请编译，UE 不在子对话里编译）、' : o.isolated ? 'submit_merge 测试跑通、只剩合回时请父对话收尾（结果会推回来）、' : 'submit_merge 评审处置完、测试跑通、只剩收尾时请父对话验收（结果会推回来）、') : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
-      : '')
-  // 对话里派完子任务结束这一轮就行，结果自动交回；工作流节点要自己用 wait_agents 取
-  const collect = o.autoReturn ? '派完结束这一轮，结果会自动交回' : '再用 wait_agents 取结果'
-  if (o.planning)
-    return `（你有面板工具 panel：${o.parentOf ? 'finish_child 收到子对话的收尾请求时合回并结束它；' : ''}${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话（用户的一条消息只交给关联最紧密的一个子对话）、stop_workflow 终止子对话正在跑的工作流；` : ''}${o.ueBuild === 'parent' ? 'request_build 收到编译申请时向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
-  if (o.coordinator)
-    return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它（用户的一条消息只交给关联最紧密的一个子对话），需要新建就用 create_conversation；${o.parentOf ? 'finish_child 收到子对话的收尾请求时合回并结束它；' : ''}${o.ueBuild === 'parent' ? '收到编译申请时用 request_build 向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}${bg}get_status 查看节点状态；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
-  return o.self.endsWith('@main')
-    ? `（你有面板工具 panel：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；${state}send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子任务，${collect}${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
-    : `（你有面板工具 panel：${child}能拆成互不相关的几块时用 spawn_agents 派子任务同时做，${collect}；get_status 查看其他 Agent 的状态；${state}${o.hasMain ? '拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜；' : ''}send_message 传话，read_messages 看别人发给你的${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
 }

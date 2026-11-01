@@ -32,6 +32,7 @@ import { killTree } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
 import type { TasksScope } from './scope.ts'
 import { PREWARM_PROMPT, RULE_CMD, TaskBusyError } from './helpers.ts'
+import { scopeError } from '../../shared/conv-mode.ts'
 
 /**
  * 新建对话、发消息、预热、激活与关闭 Agent、在看 / 已读、结束流程、继续执行（连带拉起一起被打断的子对话）。
@@ -77,6 +78,12 @@ export function registerConversationRoutes(s: TasksScope) {
         input.agentId = project.defaultAgentId
       if (input.agentId && !agents.some((a) => a.id === input.agentId))
         return { error: t('请选择对话的角色'), status: 400 }
+      // 角色分两类，各自只在对应模式里用（ADR 0038）：Chat 页只用 Chat 角色，项目里只用 Agent 角色
+      const wrongScope = scopeError(
+        input,
+        agents.find((a) => a.id === input.agentId),
+      )
+      if (wrongScope) return { error: wrongScope, status: 400 }
     }
     const lack = chatMissingParams(input, agents)
     if (lack) return { error: lack, status: 400 }

@@ -2,10 +2,11 @@
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
+import { demoSpeech, demoTts } from './demo-speech'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
-import { demoChildSummary, demoParentCard } from './demo-child-summary'
+import { demoChatTodos, demoChildSummary, demoParentCard } from './demo-child-summary'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
 import {
@@ -839,11 +840,11 @@ function ensureDemoCore(d: Db) {
     cat = { id: 'demo-core', name: CORE_CATEGORY, scope: 'agent', createdAt: at, updatedAt: at }
     d.categories.push(cat)
   }
-  for (const key of ['rules', ...CORE_AGENTS.map((c) => c.key)]) {
+  for (const key of ['rules', 'chat-rules', ...CORE_AGENTS.map((c) => c.key)]) {
     if (d.agents.some((a) => a.origin === `builtin:${key}`)) continue
     const def = BUILTIN_AGENTS.find((b) => b.key === key)!
     d.agents.push({
-      ...AgentInput.parse({ ...def.agent, origin: `builtin:${key}`, categoryId: key === 'rules' ? '' : cat.id }),
+      ...AgentInput.parse({ ...def.agent, origin: `builtin:${key}`, categoryId: key.endsWith('rules') ? '' : cat.id }),
       id: `demo-${key}`,
       createdAt: at,
       updatedAt: at,
@@ -1714,22 +1715,6 @@ const demoCatalog = () => ({
 let demoWorkflows: ComfyWorkflow[] = []
 /** 演示里存下来的工作流链 */
 let demoChains: ComfyChain[] = []
-/** 语音输入：演示里没有麦克风识别，下载一点就好，识别回一句示例 */
-const demoSpeechModels = new Set<string>()
-function demoSpeech(method: string, seg: string[]): unknown {
-  const [, a, id, b] = seg
-  if (a === 'transcribe') return { text: '（在线演示）把登录页的报错提示改得更清楚一些' }
-  if (a === 'models' && id && method === 'POST' && b === 'download') demoSpeechModels.add(id)
-  if (a === 'models' && id && method === 'DELETE') demoSpeechModels.delete(id)
-  return {
-    supported: true,
-    platform: 'demo',
-    runtime: demoSpeechModels.size > 0,
-    models: [...demoSpeechModels],
-    dir: '~/.agent-panel/speech',
-  }
-}
-
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
   // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
@@ -2156,6 +2141,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
+  if (res === 'tts') return demoTts(method, seg)
   // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
   if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
   // 演示里没有 Blender 建出来的模型：预览一直是「还没有模型」
@@ -4686,9 +4672,9 @@ async function seedTasks(d: Db) {
       )
       await done
       if (c.minutes > 60 * 24) demoAlerts(task)
+      else task.todos = demoChatTodos()
       back(task, c.minutes)
-      // 真的停在等下一句（没有子任务、也没有后台命令在跑）的对照：状态行写「等待你的下一条消息」才是对的。
-      // 和上面那条一样不写 live 登记：那样会被当成「有一轮在跑」，接着发消息只会 held 在队列里
+      // 真的停在等下一句的对照：状态行写「等待你的下一条消息」才对；不写 live 登记（会被当成有一轮在跑、消息只会 held）
       if (c.waiting) {
         task.status = 'running'
         task.working = false

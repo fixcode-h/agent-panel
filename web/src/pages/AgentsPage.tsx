@@ -4,6 +4,7 @@ import { Bot, Copy, Download, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2,
 import { isCoreAgent, isHelperAgent, listableAgents } from '@shared/builtin/core'
 import { type Agent, type AgentInput, type Category, roleLayerDefaults } from '@shared/schema'
 import { roleKind } from '@shared/agent-role'
+import { scopeOf } from '@shared/conv-mode'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cliColor, shortVersion } from '@/lib/cli-style'
@@ -23,7 +24,7 @@ import { useShareImport } from '@/lib/useShareImport'
 import { ImportConflictDialog } from '@/components/share/ImportConflictDialog'
 import { BuiltinAgentsDialog } from '@/components/agents/BuiltinAgentsDialog'
 import { useAgentView } from '@/lib/agent-view'
-import { RoleLayerTabs, type RoleLayer } from '@/components/agents/RoleLayerTabs'
+import { layerOf, ROLE_LAYERS, RoleLayerTabs, type RoleLayer } from '@/components/agents/RoleLayerTabs'
 import { defaultCli } from '@shared/settings'
 import { cliToEnable } from '@/components/layout/NoCliBanner'
 import { t } from '@shared/i18n'
@@ -74,12 +75,12 @@ export function AgentsPage() {
   const listed = listableAgents(agents)
   const helperId = agents.find(isHelperAgent)?.id
 
-  // 高级角色、基本角色分两页：打开某个角色时停在它那一页，没指定时先看高级角色
+  // 高级角色、基本角色、Chat 角色分三页：打开某个角色时停在它那一页，没指定时先看高级角色
   const routed = listed.find((a) => a.id === route.id)
-  const [layer, setLayer] = useState<RoleLayer>(() => (routed ? roleKind(routed) : 'advanced'))
-  const inLayer = (a: Agent, l: RoleLayer = layer) => roleKind(a) === l
+  const [layer, setLayer] = useState<RoleLayer>(() => (routed ? layerOf(routed) : 'advanced'))
+  const inLayer = (a: Agent, l: RoleLayer = layer) => layerOf(a) === l
   const selected = routed ?? listed.find((a) => inLayer(a)) ?? listed[0]
-  const selectedLayer = selected ? roleKind(selected) : undefined
+  const selectedLayer = selected ? layerOf(selected) : undefined
   // 选中的角色换了层（跳转过来的、新建的、在详情里改了角色层的）：分页跟过去，不然列表里看不到它
   useEffect(() => {
     if (selectedLayer) setLayer(selectedLayer)
@@ -105,15 +106,14 @@ export function AgentsPage() {
   const match = (a: Agent) =>
     (!tag || a.tags.includes(tag)) &&
     (!q || `${a.name}${a.description}${modelOf(a)}${tagNames(a.tags)}`.toLowerCase().includes(q))
-  // 两页的条数按筛选后的算：搜索时一眼看出另一页有没有命中
-  const counts: Record<RoleLayer, number> = {
-    advanced: listed.filter((a) => inLayer(a, 'advanced') && match(a)).length,
-    basic: listed.filter((a) => inLayer(a, 'basic') && match(a)).length,
-  }
+  // 每页的条数按筛选后的算：搜索时一眼看出别的页有没有命中
+  const counts = Object.fromEntries(
+    ROLE_LAYERS.map((l) => [l, listed.filter((a) => inLayer(a, l) && match(a)).length]),
+  ) as Record<RoleLayer, number>
   const shown = listed.filter((a) => inLayer(a) && match(a))
-  // 搜索、按标签筛选时这一页一个都没命中、另一页有：直接翻过去，别让人以为没搜到
-  const other: RoleLayer = layer === 'advanced' ? 'basic' : 'advanced'
-  const flip = (!!q || !!tag) && !counts[layer] && counts[other] > 0
+  // 搜索、按标签筛选时这一页一个都没命中、别的页有：直接翻过去，别让人以为没搜到
+  const other = ROLE_LAYERS.find((l) => l !== layer && counts[l] > 0) ?? layer
+  const flip = (!!q || !!tag) && !counts[layer] && other !== layer
   useEffect(() => {
     if (flip) setLayer(other)
   }, [flip, other])
@@ -150,12 +150,16 @@ export function AgentsPage() {
     }
   }, [collapsed])
 
+  // Chat 角色默认引入「聊天约束」、Agent 角色默认引入「通用约束」（内置角色的同一套常驻规则，ADR 0038）
+  const rulesOf = (scope: 'agent' | 'chat') =>
+    agents.filter((a) => a.origin === (scope === 'chat' ? 'builtin:chat-rules' : 'builtin:rules')).map((a) => a.id)
   const create = async (input: Partial<AgentInput> = {}) => {
     try {
       const a = await api.createAgent({
         name: t('新角色'),
-        // 在哪一页点的新建就建哪一层：高级角色页新建的直接能挂能力
-        kind: layer,
+        // 在哪一页点的新建就建哪一层、哪一类：高级角色页新建的直接能挂能力，Chat 角色页新建的是 Chat 角色（建好不能改类别）
+        kind: layer === 'chat' ? 'advanced' : layer,
+        scope: layer === 'chat' ? 'chat' : 'agent',
         description: '',
         cli: '',
         model: '@medium',
@@ -172,7 +176,7 @@ export function AgentsPage() {
         runIn: 'any',
         ...roleLayerDefaults(),
         capsSet: true,
-        includes: [],
+        includes: layer === 'chat' ? rulesOf('chat') : [],
         params: [],
         skills: [],
         starters: [],
@@ -193,6 +197,13 @@ export function AgentsPage() {
     // 复制出来的是自己的，不再算内置的（不然再加内置工作流时会被当成已有的复用）
     const { id, createdAt, updatedAt, origin, ...rest } = a
     create({ ...rest, name: t('{name} 副本', { name: a.name }) })
+  }
+  // 类别建好不能改：要换就复制一份成另一类（Agent 角色可能已经被挂载、写进工作流、设成项目默认，直接改会让这些引用失效）。
+  // Chat 角色的能力字段（挂载、分派、通用）由服务端归零，引入换成另一类的常驻规则
+  const duplicateAs = (a: Agent) => {
+    const { id, createdAt, updatedAt, origin, ...rest } = a
+    const scope = scopeOf(a) === 'chat' ? 'agent' : 'chat'
+    create({ ...rest, scope, kind: scope === 'chat' ? 'advanced' : roleKind(a), includes: rulesOf(scope), mounts: [] })
   }
 
   const recheck = async () => {
@@ -230,6 +241,10 @@ export function AgentsPage() {
           <ContextMenuItem onSelect={() => duplicate(a)}>
             <Copy className="h-4 w-4" />
             {t('复制一份')}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => duplicateAs(a)}>
+            <Copy className="h-4 w-4" />
+            {scopeOf(a) === 'chat' ? t('复制为 Agent 角色') : t('复制为 Chat 角色')}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => exportAgent(a)}>
             <Download className="h-4 w-4" />
@@ -374,7 +389,13 @@ export function AgentsPage() {
         })}
         {!loading && listed.length > 0 && categoryGroups.length === 0 && (
           <ListEmpty>
-            {filtering ? t('没有匹配的角色') : layer === 'advanced' ? t('还没有高级角色') : t('还没有基本角色')}
+            {filtering
+              ? t('没有匹配的角色')
+              : layer === 'advanced'
+                ? t('还没有高级角色')
+                : layer === 'basic'
+                  ? t('还没有基本角色')
+                  : t('还没有 Chat 角色')}
           </ListEmpty>
         )}
         {/* 只有必备角色时（自带工作流和它们的角色都被删掉了）提示可以添加内置的 */}
@@ -395,6 +416,7 @@ export function AgentsPage() {
           agent={selected}
           onOptimized={() => setRev((r) => r + 1)}
           onDuplicate={() => duplicate(selected)}
+          onDuplicateAs={() => duplicateAs(selected)}
           deleteSignal={delReq?.id === selected.id ? delReq.at : 0}
           onDeleted={() => go({ page: 'agents' })}
         />
@@ -414,6 +436,7 @@ export function AgentsPage() {
         open={assist}
         onOpenChange={setAssist}
         kind="agent"
+        subject={layer === 'chat' ? { scope: 'chat' } : undefined}
         onApplied={({ agent }) => {
           setQuery('')
           if (agent) go({ page: 'agents', id: agent.id })

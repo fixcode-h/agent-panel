@@ -3,6 +3,7 @@
  * 子对话写 `## 类型｜结论` + 一段段 `### 段名`，照普通 Markdown 显示；父对话的卡片标题写成 `[结论](child:<id>)`，
  * 点了在右栏打开子对话、滚到这份总结
  */
+import type { TaskTodo } from '@shared/schema'
 
 /** 子对话的最后一条回复：按 summaryDetailRules 的「修复」段落写 */
 export const demoChildSummary = () =>
@@ -49,3 +50,10 @@ export const demoParentCard = (childId: string) =>
     '- **验证**：两条新单测改前失败、改后通过；演示页放 3 分钟时间按分钟走',
     '- **遗留**：无',
   ].join('\n')
+
+/** Chat 页演示的待办：Chat 模式用 CLI 自带的待办（ADR 0038），显示在输入框上方 */
+export const demoChatTodos = (): TaskTodo[] => [
+  { text: '列出两边的命令行参数', status: 'done', agentId: '' },
+  { text: '对照提问、计划和子 Agent 能力', status: 'running', agentId: '' },
+  { text: '整理成表格', status: 'pending', agentId: '' },
+]

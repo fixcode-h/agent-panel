@@ -40,6 +40,8 @@ import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
 import { ElementPickButton } from '@/components/chat/ElementPicker'
 import { SpeechButton } from '@/components/chat/SpeechButton'
 import { ParamsChip } from '@/components/agents/ParamFields'
+import { AgentPicker } from '@/components/agents/AgentPicker'
+import { CHAT_ORIGIN, scopeOf } from '@shared/conv-mode'
 import { t } from '@shared/i18n'
 
 export const chip =
@@ -74,9 +76,12 @@ export function TaskComposer({
   // 项目里新建的对话默认用项目设置的 Agent。勾选「用项目 Agent」时按项目设置解析：
   // 没有设置、或那个 Agent 已删除/停用时不用角色，直接跟随 CLI；不勾选时一律不用 Agent 角色
   const [useAgent, setUseAgent] = useState(true)
-  // Chat 页的聊天不属于任何项目，不用角色、直接选 CLI，不显示这个开关
-  const wanted = standalone ? '' : useAgent ? (project?.defaultAgentId ?? '') : ''
-  const agent = agents.find((a) => a.id === wanted && a.enabled)
+  // Chat 页的聊天不属于任何项目：默认是内置「助手」（存空 id，运行时按它跑，CLI 和模型照旧在这里选），
+  // 有自建的 Chat 角色时可以换成它们；只列 Chat 角色，项目里只用 Agent 角色（ADR 0038）
+  const [chatRole, setChatRole] = useState('')
+  const chatRoles = agents.filter((a) => a.enabled && scopeOf(a) === 'chat' && a.origin !== CHAT_ORIGIN)
+  const wanted = standalone ? chatRole : useAgent ? (project?.defaultAgentId ?? '') : ''
+  const agent = agents.find((a) => a.id === wanted && a.enabled && scopeOf(a) === (standalone ? 'chat' : 'agent'))
   const agentId = agent ? wanted : ''
   const byCli = !agentId
   // Agent 的参数在新建时选好，对话开始后不能再改。换 Agent 时把上一个 Agent 的值清掉
@@ -354,6 +359,21 @@ export function TaskComposer({
                   >
                     <Bot className="h-4 w-4 shrink-0" />
                   </button>
+                )}
+                {standalone && chatRoles.length > 0 && (
+                  <AgentPicker
+                    scope="chat"
+                    exclude={agents.filter((a) => a.origin === CHAT_ORIGIN).map((a) => a.id)}
+                    onPick={(a) => setChatRole(a.id)}
+                    onNone={() => setChatRole('')}
+                    noneLabel={t('助手（默认）')}
+                  >
+                    <button type="button" className={chip} title={t('这个对话用的 Chat 角色，开始后不能再改')}>
+                      <Bot className="h-4 w-4 shrink-0" />
+                      <span className="max-w-32 truncate">{agent?.name ?? t('助手')}</span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    </button>
+                  </AgentPicker>
                 )}
                 {isolateSwitch}
                 {byCli ? (

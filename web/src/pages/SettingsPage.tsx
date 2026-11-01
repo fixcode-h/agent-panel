@@ -24,6 +24,7 @@ import {
   Gauge,
   Keyboard,
   Mic,
+  Volume2,
   Component,
   Box,
   Heading,
@@ -101,6 +102,9 @@ const RemoteSection = lazy(() =>
 const SpeechSection = lazy(() =>
   import('@/components/settings/SpeechSection').then((m) => ({ default: m.SpeechSection })),
 )
+const ReadAloudSection = lazy(() =>
+  import('@/components/settings/ReadAloudSection').then((m) => ({ default: m.ReadAloudSection })),
+)
 const IntegrationsSection = lazy(() =>
   import('@/components/settings/IntegrationsSection').then((m) => ({ default: m.IntegrationsSection })),
 )
@@ -131,6 +135,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
   { id: 'speech', label: t('语音输入'), icon: Mic, group: t('通用') },
+  { id: 'read-aloud', label: t('语音朗读'), icon: Volume2, group: t('通用') },
   { id: 'fonts', label: t('外观'), icon: Type, group: t('通用') },
   { id: 'markdown', label: t('Markdown 样式'), icon: Heading, group: t('通用') },
   { id: 'components', label: t('组件'), icon: Component, group: t('通用') },
@@ -190,6 +195,7 @@ function SettingsBody({
   const [proxy, setProxy] = useState(initial.proxy)
   const [proxyOn, setProxyOn] = useState(initial.networkProxyEnabled)
   const [speech, setSpeech] = useState(initial.speech)
+  const [readAloud, setReadAloud] = useState(initial.readAloud)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [fileFormat, setFileFormat] = useState(initial.fileFormat)
   const [language, setLanguage] = useState(initial.language)
@@ -357,6 +363,7 @@ function SettingsBody({
     // 只存设置，地址属外部配置：没填就存空字符串，不发请求；投递规则见 server/webhook.ts
     webhook: { enabled: webhookOn, url: webhookValid ? webhookUrlTrimmed : initial.webhook.url },
     speech,
+    readAloud,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
@@ -783,6 +790,7 @@ function SettingsBody({
               )}
               {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
               {cur.id === 'speech' && <SpeechSection value={speech} onChange={setSpeech} />}
+              {cur.id === 'read-aloud' && <ReadAloudSection value={readAloud} onChange={setReadAloud} />}
               {cur.id === 'integrations' && <IntegrationsSection />}
               {cur.id === 'general' && (
                 <>
