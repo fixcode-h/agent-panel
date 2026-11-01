@@ -2194,6 +2194,8 @@ export const TaskData = z.object({
    * 有子对话在跑时父对话在侧栏也显示执行中；它不是父对话自己的执行状态，不参与完成通知
    */
   childrenWorking: z.number().int().min(0).optional(),
+  /** 后代对话里在等用户确认、回答的个数（服务端按 descendantNeeds 算好，不存盘）：有它时这个对话也是「等你处理」 */
+  childrenNeeds: z.number().int().min(0).optional(),
   /**
    * 这个对话现在有活着的 CLI 进程（服务端按真实进程登记算，不存盘）：
    * 「等待你的下一条消息」、标题流光、侧栏提示只认它，CLI 关了就绝不显示

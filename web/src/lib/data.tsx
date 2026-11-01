@@ -96,6 +96,7 @@ function sameTask(a: Task, b: Task) {
     a.turnSeenAt === b.turnSeenAt &&
     a.working === b.working &&
     a.childrenWorking === b.childrenWorking &&
+    a.childrenNeeds === b.childrenNeeds &&
     a.cliAlive === b.cliAlive &&
     a.childrenCli === b.childrenCli &&
     (a.jobs?.length ?? 0) === (b.jobs?.length ?? 0) &&

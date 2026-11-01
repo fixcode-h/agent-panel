@@ -400,6 +400,15 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     let d = await waitJob(design.id)
     assert.equal(d.job.status, 'done', JSON.stringify(d.job))
     assert.equal(d.rev, 1)
+    // 回复上记下这一轮改了哪些控件，以及「撤销这一轮」要恢复的版本
+    const reply = d.messages.findLast((m) => m.role === 'agent')
+    assert.ok(reply.changes?.total > 0, '回复上记下了改了哪些控件')
+    assert.ok(reply.changes.list.some((c) => c.kind === 'add' && c.name === 'Bg'))
+    assert.ok(reply.undoVersion, '回复上带着这一轮开始前的版本')
+    assert.ok(
+      (await call('GET', `/designs/${design.id}/versions`)).some((v) => v.id === reply.undoVersion),
+      '这个版本真的存在',
+    )
     assert.equal(d.style, 'dark fantasy')
     assert.deepEqual(
       d.root.Children.map((w) => [w.Type, w.Name, !!w.Slot?.LayoutData]),
@@ -650,9 +659,24 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     assert.equal(d.concept.approved, tpl)
     await call('POST', `/designs/${sketch.id}/chat`, {
       text: `照着模板做 FAKE_MCP:${JSON.stringify([
+        // 模板模式里 AI 顺手出了一张原画：只进候选，不能把模板作废（同轮的切图还要拿模板当参考）
+        ['generate_concepts', { prompt: 'alternative layout', count: 1 }],
         [
           'add_images',
-          { images: [{ id: 'gem', name: 'Gem', prompt: 'a red gem', negative: 'frame', width: 64, height: 64 }] },
+          {
+            images: [
+              {
+                id: 'gem',
+                name: 'Gem',
+                prompt: 'a red gem',
+                negative: 'frame',
+                width: 64,
+                height: 64,
+                // 它在模板里的位置：出图时从模板裁下这一块做参考
+                ref: { x: 100, y: 100, w: 64, h: 64 },
+              },
+            ],
+          },
         ],
         [
           'add_widgets',
@@ -680,9 +704,12 @@ await runShard('AI 创建与 UI 设计', async (api) => {
       .filter((c) => /a red gem/.test(c.stdin ?? c.input ?? ''))
       .at(-1)
     assert.match(gemGen.stdin ?? gemGen.input, /approved concept art/, '切图带着模板作为参考')
+    assert.deepEqual(d.images.find((i) => i.id === 'gem').ref, { x: 100, y: 100, w: 64, h: 64 }, '位置存进设计')
+    assert.equal(d.concept.approved, tpl, '模板模式里出的原画不把模板作废')
+    assert.equal(d.concept.images.length, 3, '新出的原画进了候选')
     assert.match(gemGen.stdin ?? gemGen.input, /Negative prompt.*frame/)
     d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'remove', id: tpl })
-    assert.deepEqual([d.concept.images.length, d.concept.approved], [1, ''], '删掉模板就回到挑图')
+    assert.deepEqual([d.concept.images.length, d.concept.approved], [2, ''], '删掉模板就回到挑图')
     step('先出原画：不能先搭界面，出候选、确认模板后照着模板出切图')
     // 检查没通过：不再自动重跑一轮，改好的照样存下，问题写成带「让 AI 修」的系统消息；用户发了才再跑
     const fixProject = await call('POST', '/designs/projects', { name: 'Fix Probe', path: projectDir })

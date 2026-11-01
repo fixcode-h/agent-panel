@@ -506,7 +506,7 @@ function Cell({
         />
         <Input
           size="xs"
-          aria-label={`${field.label || field.key} 颜色值`}
+          aria-label={t('{name} 颜色值', { name: field.label || field.key })}
           className="min-w-0 font-mono"
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}

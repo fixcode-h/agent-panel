@@ -75,14 +75,19 @@ function useRunningTitle(tasks: Task[]) {
  * 跑很久的工作流不用一直盯着页面。
  */
 export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) {
-  const prev = useRef(new Map<string, { status: Task['status']; done: string }>())
+  const prev = useRef(new Map<string, { status: Task['status']; done: string; needs: number }>())
   const asked = useRef(new Set<string>())
   const openRef = useRef(open)
   openRef.current = open
   useRunningTitle(tasks)
   useEffect(() => {
     const before = prev.current
-    const next = new Map(tasks.map((task) => [task.id, { status: task.status, done: task.turnDoneAt ?? '' }]))
+    const next = new Map(
+      tasks.map((task) => [
+        task.id,
+        { status: task.status, done: task.turnDoneAt ?? '', needs: task.childrenNeeds ?? 0 },
+      ]),
+    )
     prev.current = next
     // 新出现的确认请求：页面不在前台时也通知
     const reqs = new Set(tasks.flatMap((task) => (task.requests ?? []).map((r) => r.id)))
@@ -106,6 +111,17 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
     for (const task of tasks) {
       const was = before.get(task.id)
       if (!was) continue
+      // 子对话的确认请求不在这份列表里（列表只有顶层对话）：按父对话上「后代在等你」的个数变多来通知，
+      // 不然子对话卡在权限确认上、页面又在后台时，用户一点提示都收不到（实测报告问题 1）
+      if ((task.childrenNeeds ?? 0) > was.needs)
+        try {
+          const n = new Notification(t('子对话需要你确认'), { body: task.title, tag: `child-ask:${task.id}` })
+          n.onclick = () => {
+            window.focus()
+            openRef.current(task)
+            n.close()
+          }
+        } catch {}
       // 完成以 CLI 完成一轮为准：预热、等下一句、切走后进程退出都不算
       const doneTurn = !!task.turnDoneAt && task.turnDoneAt !== was.done
       const ended = was.status === 'running' && (task.status === 'failed' || task.status === 'stopped')

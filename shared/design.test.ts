@@ -13,6 +13,11 @@ import {
   sendsMaskOnly,
   maskBox,
   widgetCitationText,
+  applyVersion,
+  emptyRoot,
+  nextConceptId,
+  versionSnapshot,
+  type Design,
 } from './design.ts'
 
 const mask = (strokes: { erase?: boolean; w?: number; points: number[] }[]): Annotation => {
@@ -148,4 +153,54 @@ test('发给 AI 的引用说明写明路径、尺寸、用到的图片和文字'
   assert.match(text, /img_slot/)
   assert.match(text, /背包/)
   assert.match(text, /1920×1080/)
+})
+
+test('标注按各自的坐标空间描述：子控件、平板视图里画的不再说成设计稿尺寸', () => {
+  const base = {
+    kind: 'change' as const,
+    shape: 'rect' as const,
+    points: [10, 20, 30, 40],
+    strokes: [],
+    note: '',
+    widgets: [],
+  }
+  const text = annotationText(
+    [
+      { ...base, id: 'a', target: '' },
+      { ...base, id: 'b', target: 'WBP_Slot', space: { X: 96, Y: 96 } },
+      { ...base, id: 'c', target: '', device: 'tablet', space: { X: 768, Y: 1024 } },
+    ],
+    { X: 1920, Y: 1080 },
+  )
+  assert.match(text, /没有注明的按设计稿 1920×1080/)
+  assert.match(text, /1\.【修改】框选，范围 x=10/)
+  assert.match(text, /在子控件 WBP_Slot 里（坐标按子控件自己的 96×96）/)
+  assert.match(text, /在平板视图里（坐标按 768×1024 算）/)
+})
+
+test('nextConceptId：同一轮里删掉一张后接着出图，不和还在的那张重号', () => {
+  assert.equal(nextConceptId([], 2), 'c2_1')
+  // c2_1 被删了、只剩 c2_2：按张数 + 1 会算出 c2_2，重号
+  assert.equal(nextConceptId([{ id: 'c1_3' }, { id: 'c2_2' }], 2), 'c2_3')
+  assert.equal(nextConceptId([{ id: 'c12_5' }], 1), 'c1_1')
+})
+
+test('版本快照带上画板数据，恢复时一起还原；旧版本没存数据时保留现在的', () => {
+  const d = {
+    root: emptyRoot('game'),
+    components: [],
+    designSize: { X: 1920, Y: 1080 },
+    style: '',
+    images: [],
+    animations: [],
+    data: { sets: [{ id: 'items', name: 'Items', label: '', fields: [], rows: [{ a: 1 }] }] },
+  } as unknown as Design
+  const snap = versionSnapshot(d)
+  assert.deepEqual(snap.data, d.data)
+  d.data = { sets: [] }
+  applyVersion(d, snap)
+  assert.equal(d.data?.sets[0]?.name, 'Items')
+  const { data: _, ...old } = snap
+  applyVersion(d, old)
+  assert.equal(d.data?.sets[0]?.name, 'Items')
 })

@@ -16,6 +16,7 @@ import {
   type ChildActivity,
   type ChildEntry,
 } from '@shared/task'
+import type { ChildRequest } from '@shared/child-needs'
 import { plainLine, toolVerb, toolView } from '@/lib/tasks'
 
 /** 父对话里的子对话入口：/children 返回的完整摘要（字段和正式后端一致，演示后端也要补齐） */
@@ -27,6 +28,8 @@ export interface ChildSummary extends ChildEntry {
   branch?: string
   /** 正在执行时这会儿在做什么 */
   activity?: ChildActivity
+  /** 第一条待确认的请求：父对话页直接写出确认什么、给「允许 / 拒绝」（见 ChildRequestBar） */
+  request?: ChildRequest
 }
 
 /** 子对话那一行下面的说明：执行中写正在做什么，其余写它在等什么或最近结果 */
@@ -130,7 +133,12 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
   const out: ChildLabel[] = []
   if (convGone(c) === 'closed') out.push({ text: t('已关闭'), tone: 'plain' })
   if (c.resolved && icon === 'done') out.push({ text: t('已解决'), tone: 'success', icon: 'check' })
-  if (icon === 'waiting') out.push({ text: t('等{who}选择', { who }), tone: 'warning' })
+  // 等的是权限确认（或它下面的子对话在等）时写「等你确认」：说成「选择」用户会去找提问卡
+  if (icon === 'waiting')
+    out.push({
+      text: c.asking || !(c.requests || c.childNeeds) ? t('等{who}选择', { who }) : t('等{who}确认', { who }),
+      tone: 'warning',
+    })
   if (icon === 'running' && c.plan)
     out.push({ text: t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total }), tone: 'warning' })
   if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })

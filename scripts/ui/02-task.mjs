@@ -1361,9 +1361,9 @@ await runShard(import.meta.filename, async (api) => {
     errors.push('标题栏：页签条左边还有项目名入口')
 
   // 「转成弹窗」：标题栏把当前对话收成右下角的浮条，页面回到上一级；浮条能展开回那个对话。
-  // 同时只能有一个对话浮条（再收另一个对话就换掉它）。演示数据里这个对话名下还有子对话在跑，
-  // 浮条写「进行中…」（和正式后端一致：父对话的子对话在跑时父对话也算在忙；以前演示版没补 childrenWorking，
-  // 这里会被前者写成「已完成」）
+  // 同时只能有一个对话浮条（再收另一个对话就换掉它）。演示数据里这个对话名下有子对话在跑、
+  // 还有一个子对话（购物车缓存方案）在等用户选择：后代在等用户时父对话也是「等你处理」，取最紧急的
+  // （实测报告问题 1；以前这里写「进行中…」，子对话卡在确认上用户看不出来）
   {
     // 两个对话的真实标题（taskTitle 取要求的第一行、超过 32 字截断）
     const CART = '购物车右上角的数量角标偶尔不刷新，帮我看看原因'
@@ -1387,8 +1387,8 @@ await runShard(import.meta.filename, async (api) => {
         errors.push('转成弹窗：收起后对话页还开着')
       await check(p, '任务-转成弹窗', [`对话：${CART}`])
       // 浮条自己的状态文字（限定在浮条里找，页面上别处也有「进行中」这类词）
-      if (!(await first.getByText('进行中…', { exact: true }).count()))
-        errors.push('转成弹窗：父对话名下还有子对话在跑，浮条上应写「进行中…」')
+      if (!(await first.getByText('等你处理', { exact: true }).count()))
+        errors.push('转成弹窗：父对话名下有子对话在等用户选择，浮条上应写「等你处理」')
       // 浮条上的关闭按钮只在悬停时出现、位置在右上角；浮条上不能挂原生 title
       // （那个「展开」提示一悬停就弹灰框，用户嫌烦）。opacity-0 仍算 visible，所以看 opacity
       const dockClose = first.locator('[data-dock="close"]')

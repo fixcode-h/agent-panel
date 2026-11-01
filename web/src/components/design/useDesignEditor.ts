@@ -111,11 +111,21 @@ export function useDesignEditor(id: string) {
   const running = server?.job?.status === 'running' || !!server?.images.some((i) => i.status === 'generating')
   useEffect(() => {
     if (!running) return
+    // 轮询失败不能一直默默转圈：连续失败 3 次提示一次「连不上」，连上后再提示一次
+    let fails = 0
     const timer = setInterval(() => {
       api
         .design(id)
-        .then(absorb)
-        .catch(() => {})
+        .then((d) => {
+          if (fails >= 3) toast.success(t('已重新连上面板服务'))
+          fails = 0
+          absorb(d)
+        })
+        .catch((e) => {
+          fails++
+          if (fails === 3)
+            toast.error(t('连不上面板服务，正在重试：{error}', { error: (e as Error).message || t('未知错误') }))
+        })
     }, 1200)
     return () => clearInterval(timer)
   }, [running, id, absorb])
@@ -182,7 +192,13 @@ export function useDesignEditor(id: string) {
       saved.current = json
       // 带上这份编辑基于的版本：AI 已经改过（服务端版本更新）时服务端不收结构，页面换成新的
       const res = await api.saveDesign(id, v, rev.current)
-      if (id === current.current) absorb(res)
+      // 删掉的图已经存上去了，服务端不会再给回来：不用再挡。不清掉的话恢复版本、撤销删除时加回来的图会被这里过滤掉
+      if (id === current.current) {
+        // 只放掉服务端已经没有的；保存途中刚删的图服务端这份里还有，继续挡着
+        for (const gone of [...deleted.current])
+          if (!res.images.some((x) => x.id === gone)) deleted.current.delete(gone)
+        absorb(res)
+      }
       if (res.rejected === 'stale') toast.warning(t('AI 刚改过这个设计，你刚才的修改没有存上；按撤销可以找回'))
       else if (res.rejected === 'ai') toast.warning(t('AI 正在修改这个设计，这一轮结束后再编辑'))
       setSave({ status: 'saved', error: '' })
@@ -245,6 +261,8 @@ export function useDesignEditor(id: string) {
     if (!prev || !doc) return
     future.current.push(doc)
     lastKey.current = { key: '', at: 0 }
+    // 撤销把删掉的图带回来：不再当成「本地刚删的」挡着
+    for (const i of prev.images) deleted.current.delete(i.id)
     setDoc({ ...prev, images: mergeImages(prev.images, server?.images ?? [], deleted.current) })
     bump((n) => n + 1)
   }

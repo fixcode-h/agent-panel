@@ -17,6 +17,7 @@ import { openPlan } from '../../shared/plan.ts'
 import { createGate } from '../slots.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import type { TasksScope } from './scope.ts'
+import { descendantNeeds, pendingRequest } from '../../shared/child-needs.ts'
 
 /**
  * 子对话列表：独立分支状态的缓存（git 慢时不挡列表）、/children、停止全部子对话。
@@ -96,11 +97,15 @@ export function registerChildrenRoutes(s: TasksScope) {
     const parent = await s.current(c.req.param('id'))
     if (!parent) return s.bad(c, t('任务不存在'), 404)
     const project = parent.projectId ? await s.deps.projects.get(parent.projectId) : null
-    const kids = (await s.store.list()).filter((t) => t.parentTaskId === parent.id && !taskDeleted(t))
+    const all = (await s.store.list()).map((t) => s.live.get(t.id)?.task ?? t)
+    const kids = all.filter((t) => t.parentTaskId === parent.id && !taskDeleted(t))
+    // 子对话下面的孙对话在等用户处理：这一行也要显示「等你处理」（见 shared/child-needs.ts）
+    const needs = descendantNeeds(all)
     let checking = 0
     const items = await Promise.all(
       kids.map(async (t) => {
-        const liveTask = s.live.get(t.id)?.task ?? t
+        const liveTask = t
+        const childNeeds = needs.get(liveTask.id) ?? 0
         // 子对话栏、超时判定、计划面板都读这两份：同一处算出「在做什么」和「在等什么」
         // 不在内存里的子对话只有摘要（store.list 只留用户消息），算不出准确的「在做什么」
         const doing = s.live.has(liveTask.id) ? childActivity(liveTask) : undefined
@@ -124,6 +129,9 @@ export function registerChildrenRoutes(s: TasksScope) {
           startedAt: childStartedAt(liveTask),
           // 总览分组用：等用户确认的请求数、还在跑的后台命令数、独立 worktree 的分支
           requests: liveTask.requests.length,
+          // 第一条待确认的请求：父对话页的子对话行上直接写出确认什么、给「允许 / 拒绝」，不用点进子对话
+          request: pendingRequest(liveTask),
+          childNeeds,
           // 后台命令跑在服务端，CLI 只是在等结果：有这个就还当执行中，不能显示成已完成
           background: pending,
           // start_plan 启动的工作流运行还没跑完：「启动工作流」那一行工具调用早就返回了，不能凭它当结束
@@ -157,7 +165,7 @@ export function registerChildrenRoutes(s: TasksScope) {
           // 面板以父对话的名义自动问过它状态：之后还没有新输出时行上写「已自动询问，等回复」
           autoAsk: liveTask.autoAsk,
           // 在等什么（等用户回答、等后台命令、等子任务、等工作流、等下一句）：不是在跑也不是卡住
-          waiting: childWait(liveTask, { background: pending, cliAlive: taskCliAlive(liveTask.id) }),
+          waiting: childWait(liveTask, { background: pending, cliAlive: taskCliAlive(liveTask.id), childNeeds }),
           // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
           resolved: liveTask.resolved === true,
           // AI 分析开出的子对话：列表里标题单独标出来

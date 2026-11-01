@@ -2,6 +2,7 @@
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
+import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
 import { demoChildSummary, demoParentCard } from './demo-child-summary'
@@ -3245,12 +3246,21 @@ function tasksRoute(
         if (!k.parentTaskId || !demoChildActive(k)) continue
         kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
       }
+      // 和正式版一样：子对话在等你确认时父对话也是「等你处理」（见 shared/child-needs.ts）
+      const needs = descendantNeeds(tasks)
       // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
       return (
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
           .filter((t) => !t.parentTaskId && !t.deletedAt)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
-          .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t), childrenWorking: kids.get(t.id) ?? 0 }))
+          .map((t) =>
+            taskSummary({
+              ...t,
+              cliAlive: demoCliAlive(t),
+              childrenWorking: kids.get(t.id) ?? 0,
+              childrenNeeds: needs.get(t.id) ?? 0,
+            }),
+          )
       )
     }
     return createTask(d, parse(NewTaskInput, body)).task
@@ -3454,6 +3464,7 @@ function tasksRoute(
           startedAt: childStartedAt(x),
           // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
           requests: (x.requests ?? []).length,
+          request: pendingRequest(x),
           asking: x.parentAsks?.length ?? 0,
           // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成；带上正在做的那一步
           plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,

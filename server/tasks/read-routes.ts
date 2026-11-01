@@ -87,7 +87,7 @@ export function registerReadRoutes(s: TasksScope) {
         // 后台命令开始、结束、子对话开始做完都不一定改任务本身（对话空闲时），单独算进去
         const jobs = t.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
         // # 后面是不在执行时的比较键（只用任务本身的更新时间），上面那一步不读对话就能比
-        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}|${t.childrenWorking ?? 0}|${t.cliAlive ? 1 : 0}|${t.childrenCli ?? 0}`
+        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}|${t.childrenWorking ?? 0}|${t.childrenNeeds ?? 0}|${t.cliAlive ? 1 : 0}|${t.childrenCli ?? 0}`
         if (key === seen && meta) {
           if (Date.now() - beat > 15_000) {
             await stream.writeSSE({ event: 'ping', data: '' })

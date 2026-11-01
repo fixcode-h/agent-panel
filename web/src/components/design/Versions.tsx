@@ -38,11 +38,18 @@ export function VersionsButton({
   const [list, setList] = useState<DesignVersionMeta[]>()
   const [name, setName] = useState('')
   const [busy, setBusy] = useState('')
-  const load = () =>
-    api
+  // 取不到版本列表时显示原因和「重试」：以前当成空列表，显示「还没有版本」，像是版本都没了
+  const [loadError, setLoadError] = useState('')
+  const load = () => {
+    setLoadError('')
+    return api
       .designVersions(designId)
       .then(setList)
-      .catch(() => setList([]))
+      .catch((e) => {
+        setList(undefined)
+        setLoadError((e as Error).message || t('未知错误'))
+      })
+  }
   useEffect(() => {
     if (open) void load()
     // 每次打开时重新取
@@ -88,7 +95,14 @@ export function VersionsButton({
           </Button>
         </div>
         <div className="max-h-[360px] overflow-y-auto p-1">
-          {!list ? (
+          {loadError ? (
+            <div className="flex flex-col items-center gap-2 px-3 py-5 text-center text-footnote text-danger">
+              <span>{t('版本列表没有取到：{error}', { error: loadError })}</span>
+              <Button size="sm" variant="secondary" onClick={() => void load()}>
+                {t('重试')}
+              </Button>
+            </div>
+          ) : !list ? (
             <Loader2 className="mx-auto my-4 h-4 w-4 animate-spin text-subtle" />
           ) : !list.length ? (
             <p className="px-3 py-5 text-center text-footnote leading-relaxed text-subtle">

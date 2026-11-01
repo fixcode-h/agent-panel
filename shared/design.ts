@@ -15,7 +15,6 @@ import {
   type Widget,
 } from './umg.ts'
 import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
-import { t } from './i18n.ts'
 import { promptLangWord } from './prompt-lang.ts'
 import { applyOps } from './design-ops.ts'
 import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
@@ -60,6 +59,8 @@ export const DesignImage = z.object({
   selected: z.number().int().default(0),
   status: z.enum(['idle', 'pending', 'generating', 'failed']).default('idle'),
   error: z.string().optional(),
+  /** 这张切图在确认的模板里的位置（设计稿像素）：生成时从模板裁下这一块做参考，画风和模板一致 */
+  ref: z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }).optional(),
 })
 export type DesignImage = z.infer<typeof DesignImage>
 
@@ -92,6 +93,13 @@ export const Annotation = z.object({
   target: z.string().default(''),
   /** 标注范围里的控件名，给 AI 定位用 */
   widgets: z.array(z.string()).max(20).default([]),
+  /**
+   * 画标注时的坐标空间（宽高）：子控件按它自己的设计尺寸、网页的平板 / 手机视图按那个宽度记坐标，
+   * 交给 AI 时要按这个说，不能都说成设计稿尺寸。旧数据没有
+   */
+  space: z.object({ X: z.number(), Y: z.number() }).optional(),
+  /** 网页设计在哪个宽度下画的：只在同一个视图里显示，切到别的设备时不错位 */
+  device: z.enum(['desktop', 'tablet', 'mobile']).optional(),
 })
 export type Annotation = z.infer<typeof Annotation>
 
@@ -171,6 +179,16 @@ export const emptyConcept = (): ConceptState => ({ images: [], selected: '', app
 export const MAX_CONCEPTS = 4
 /** 图上的标注（target）指的是哪张原画 */
 export const conceptTarget = (id: string) => `concept:${id}`
+/**
+ * 这一轮下一张原画的 id（c<轮>_<n>）：取这一轮已有编号的最大值 + 1。
+ * 不能按张数 + 1：出图中途用户删掉同一轮的一张，张数变少，新图就和还在的那张重号
+ */
+export function nextConceptId(images: readonly { id: string }[], round: number) {
+  const prefix = `c${round}_`
+  let max = 0
+  for (const i of images) if (i.id.startsWith(prefix)) max = Math.max(max, Number(i.id.slice(prefix.length)) || 0)
+  return `${prefix}${max + 1}`
+}
 
 export const DesignMessage = z.object({
   id: z.string(),
@@ -183,6 +201,24 @@ export const DesignMessage = z.object({
   error: z.boolean().optional(),
   /** 检查没通过的问题：页面在下面放「让 AI 修」按钮 */
   fixable: z.boolean().optional(),
+  /** AI 这一轮改了哪些控件（design-diff.ts 的 treeChanges）：回复下面列出来，点一条选中那个控件 */
+  changes: z
+    .object({
+      list: z.array(
+        z.object({
+          kind: z.enum(['add', 'remove', 'change', 'rename']),
+          tree: z.string(),
+          name: z.string(),
+          type: z.string(),
+          keys: z.array(z.string()).optional(),
+          from: z.string().optional(),
+        }),
+      ),
+      total: z.number(),
+    })
+    .optional(),
+  /** 这一轮开始前自动存的版本：「撤销这一轮」恢复它 */
+  undoVersion: z.string().optional(),
   /** 用户这条消息带的标注 */
   annotations: z.array(Annotation).optional(),
   /** 用户这条消息带的附件（参考图、文档） */
@@ -688,6 +724,8 @@ export const AiImage = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]{1,40}$/, 'sheet 只能用字母、数字、下划线和连字符')
     .optional(),
+  /** 这张切图在模板里的位置（设计稿像素 {x,y,w,h}）：照着模板出切图时写，面板从模板裁下这一块做参考 */
+  ref: z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }).optional(),
 })
 export const AiDesignResult = z.object({
   reply: z.string().default(''),
@@ -932,8 +970,8 @@ function conceptSection(c: ConceptContext, d: Design) {
 照着它搭界面、出切图，界面要和模板一致：
 1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
 2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。
-3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
-4. 搭完调 screenshot 截一张当前画布，和模板对比（用 view_image 看截图文件和模板的同一块），位置、比例、层次不对的接着改，直到和模板一致；check 只是辅助，完成条件同下面「用 design 工具改设计」的最后一条（全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致）。
+3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。每张切图写 ref（它在模板里的位置，设计稿像素 {"x","y","w","h"}，用 inspect_image / view_image 量准）：生成时面板从模板裁下这一块做参考（图片 CLI 当参考图，本机 ComfyUI 从这一块图生图），形状、材质、配色和模板一致；没写 ref 的只带整张模板参考。
+4. 每搭完一个区域就调 compare_template（region 写这个区域的设计稿坐标）和模板逐像素对比：按它给的偏移和差异热力图改位置、大小，再对比一次确认；全部搭完再整体对比一次（不写 region），最后 screenshot 截全图。位置、比例、层次不对的接着改，直到和模板一致；check 只是辅助，完成条件同下面「用 design 工具改设计」的最后一条（全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致）。
 - 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。
 
 `
@@ -1153,8 +1191,17 @@ export function annotationText(list: Annotation[], size: { X: number; Y: number 
     const b = annotationBox(a)
     const r = (n: number) => Math.round(n)
     const where = b.w || b.h ? `范围 x=${r(b.x)} y=${r(b.y)} 宽=${r(b.w)} 高=${r(b.h)}` : `位置 x=${r(b.x)} y=${r(b.y)}`
+    // 坐标空间：主界面的桌面视图是设计稿像素；子控件、平板 / 手机视图里画的按画的时候那块的尺寸
+    const sp = a.space && (a.space.X !== size.X || a.space.Y !== size.Y) ? `${a.space.X}×${a.space.Y}` : ''
+    const space = a.target
+      ? `在子控件 ${a.target} 里（坐标按子控件自己的${sp ? ` ${sp}` : '设计尺寸'}），`
+      : a.device && a.device !== 'desktop'
+        ? `在${a.device === 'tablet' ? '平板' : '手机'}视图里（坐标按 ${sp || '那个宽度'} 算），`
+        : sp
+          ? `（坐标按 ${sp} 算），`
+          : ''
     return [
-      `${i + 1}.【${ANNOTATION_LABEL[a.kind]}】${shape[a.shape]}，${a.target ? `在子控件 ${a.target} 里，` : ''}${where}`,
+      `${i + 1}.【${ANNOTATION_LABEL[a.kind]}】${shape[a.shape]}，${space}${where}`,
       a.shape === 'mask' ? '   只重绘蒙版覆盖的区域，蒙版外面保持不变' : '',
       a.widgets.length ? `   涉及的控件：${a.widgets.join('、')}` : '',
       a.note.trim() ? `   说明：${a.note.trim()}` : '',
@@ -1163,7 +1210,7 @@ export function annotationText(list: Annotation[], size: { X: number; Y: number 
       .join('\n')
   })
   return `## 用户在效果图上的标注
-坐标是设计稿像素（左上角为原点，设计稿 ${size.X}×${size.Y}）。「修改」是要改这里，「新增」是在这里加东西，「删除」是去掉这里的内容，「保持不变」是这部分不要动、可以作为参考。按编号逐条处理，回复里简单说明每条怎么改的。
+坐标是像素，左上角为原点：没有注明的按设计稿 ${size.X}×${size.Y}，在子控件或平板 / 手机视图里画的按各条注明的尺寸。「修改」是要改这里，「新增」是在这里加东西，「删除」是去掉这里的内容，「保持不变」是这部分不要动、可以作为参考。按编号逐条处理，回复里简单说明每条怎么改的。
 ${lines.join('\n')}`
 }
 
@@ -1401,94 +1448,49 @@ function aspect(w: number, h: number) {
 
 export type { Margin }
 
-// ---- 项目里已有的子控件 ----
-
-/** 项目里一个设计的子控件，给「控件」列表用：带上它们用到的图片（选中的那一版），页面能直接画出来 */
-export interface ProjectComponents {
-  designId: string
-  /** 游戏 UI 和网页 UI 的控件不能混用，列表只列同一种的 */
-  kind: DesignKind
-  title: string
-  components: Component[]
-  images: { id: string; file: string; width: number; height: number }[]
-}
-
-/** 子控件引用的其他子控件（UserWidget 的 Class、列表和网格的 EntryWidgetClass），连同间接引用的 */
-export function componentDeps(name: string, all: Component[]): string[] {
-  const out: string[] = []
-  const visit = (n: string) => {
-    if (out.includes(n)) return
-    const c = all.find((x) => x.Name === n)
-    if (!c) return
-    out.push(n)
-    walk(c.Root, (w) => {
-      if (w.Type === 'UserWidget' && w.Class) visit(w.Class)
-      const entry = w.Properties?.EntryWidgetClass
-      if (typeof entry === 'string' && entry) visit(entry)
-    })
-  }
-  visit(name)
-  return out
-}
-
-/**
- * 把别的设计里的子控件（连同它引用的子控件和图片）加进这个设计。
- * 同名的子控件已经有了就不重复加（引用的子控件按名字共用）；图片 id 冲突时换个 id，引用跟着改。
- * 返回新的子控件和图片列表，copyFiles 是要从来源设计复制过来的图片文件
- */
-export function importComponent(
-  target: { components: Component[]; images: DesignImage[]; animations?: UiAnimation[] },
-  source: { components: Component[]; images: DesignImage[]; animations?: UiAnimation[] },
-  name: string,
-):
-  | { error: string }
-  | { components: Component[]; images: DesignImage[]; animations: UiAnimation[]; copyFiles: string[] } {
-  if (!source.components.some((c) => c.Name === name)) return { error: t('没有找到子控件 {name}', { name }) }
-  if (target.components.some((c) => c.Name === name))
-    return { error: t('这个设计里已经有叫 {name} 的子控件了', { name }) }
-  const add = componentDeps(name, source.components)
-    .filter((n) => !target.components.some((c) => c.Name === n))
-    .map((n) => structuredClone(source.components.find((c) => c.Name === n)!))
-  const used = usedImages(add.map((c) => c.Root))
-  const ids = new Set(target.images.map((i) => i.id))
-  const rename = new Map<string, string>()
-  const images = [...target.images]
-  const copyFiles: string[] = []
-  for (const img of source.images) {
-    if (!used.has(img.id)) continue
-    let id = img.id
-    for (let k = 2; ids.has(id); k++) id = `${img.id}_${k}`
-    ids.add(id)
-    if (id !== img.id) rename.set(img.id, id)
-    images.push({ ...structuredClone(img), id, status: 'idle', error: undefined })
-    copyFiles.push(...img.variants.map((v) => v.file))
-  }
-  // 图片换了 id 的，子控件里的 "img:<id>" 引用跟着换
-  const fix = (v: any): any =>
-    typeof v === 'string' && v.startsWith('img:') && rename.has(v.slice(4))
-      ? `img:${rename.get(v.slice(4))}`
-      : Array.isArray(v)
-        ? v.map(fix)
-        : v && typeof v === 'object'
-          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x)]))
-          : v
-  // 子控件自己的动画一起带过来
-  const added = new Set(add.map((c) => c.Name))
-  const animations = [
-    ...(target.animations ?? []),
-    ...structuredClone((source.animations ?? []).filter((a) => added.has(a.in))),
-  ]
-  return { components: [...target.components, ...add.map(fix)], images, animations, copyFiles }
-}
+// 项目里已有的子控件（「控件」列表、把别的设计里的子控件加进来）拆到 design-components.ts
+export { componentDeps, importComponent, type ProjectComponents } from './design-components.ts'
 
 // ---- 设计版本 ----
 
-/** 一个版本：控件树、子控件、尺寸、风格和图片清单的快照；auto 是自动存的（AI 改之前、恢复之前） */
+/** 一个版本：控件树、子控件、尺寸、风格、动画、画板数据和图片清单的快照；auto 是自动存的（AI 改之前、恢复之前） */
 export interface DesignVersion {
   id: string
   name: string
   at: string
   auto: boolean
-  snapshot: Pick<Design, 'designSize' | 'style' | 'root' | 'components' | 'images'> & { animations?: UiAnimation[] }
+  snapshot: Pick<Design, 'designSize' | 'style' | 'root' | 'components' | 'images'> & {
+    animations?: UiAnimation[]
+    /** 旧版本没有 */
+    data?: DesignData
+  }
 }
 export type DesignVersionMeta = Omit<DesignVersion, 'snapshot'> & { widgets: number }
+
+/** 版本快照：服务端和演示版同一份口径，加字段时两边一起带上 */
+export const versionSnapshot = (d: Design): DesignVersion['snapshot'] =>
+  structuredClone({
+    designSize: d.designSize,
+    style: d.style,
+    root: d.root,
+    components: d.components,
+    images: d.images,
+    animations: d.animations ?? [],
+    data: d.data ?? { sets: [] },
+  })
+
+/** 把设计恢复成某个版本（原地改 d，rev 由调用方加） */
+export function applyVersion(d: Design, snap: DesignVersion['snapshot']) {
+  const s = structuredClone(snap)
+  d.root = s.root
+  d.components = s.components
+  d.designSize = s.designSize
+  d.style = s.style
+  // 旧版本没有动画：恢复后就没有动画
+  d.animations = s.animations ?? []
+  // 旧版本没存画板数据：不知道当时是什么样，保留现在的（清空就找不回来了）
+  if (s.data) d.data = s.data
+  // 版本里有、现在已经删掉的图片加回来（文件还在时）
+  for (const img of s.images)
+    if (!d.images.some((i) => i.id === img.id)) d.images.push({ ...img, status: 'idle', error: undefined })
+}

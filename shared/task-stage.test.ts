@@ -480,7 +480,12 @@ test('childWait：等用户 > 等确认 > 等后台命令 > 等子任务 > 等�
   assert.deepEqual(childWait(ask, { background: 2, cliAlive: true }), { kind: 'answer', n: 1 })
 
   const confirm = kidTask({ requests: [{}] as never })
-  assert.deepEqual(childWait(confirm, { background: 2, cliAlive: true }), { kind: 'confirm', n: 1 })
+  assert.deepEqual(childWait(confirm, { background: 2, cliAlive: true }), {
+    kind: 'confirm',
+    n: 1,
+    title: undefined,
+    question: false,
+  })
 
   // 后台命令在服务端跑，任务里只有编号：数量由调用方传
   assert.deepEqual(childWait(kidTask({ working: true }), { background: 2 }), { kind: 'background', n: 2 })

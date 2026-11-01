@@ -54,6 +54,17 @@ export function FieldRow({
   )
 }
 
+/**
+ * 输入框改了值、还没按回车也没失焦就被卸载时，把这个值提交一次。
+ * 点画布上别的控件时选中马上换掉，属性面板按控件 id 整个重建，blur 根本来不及触发，输入的值就丢了
+ * （点控件树会先失焦，两种操作结果不一样）。提交给的是原来那个控件的 onChange，改到的是对的控件
+ */
+function useCommitOnUnmount(commit: () => void) {
+  const ref = useRef(commit)
+  ref.current = commit
+  useEffect(() => () => ref.current(), [])
+}
+
 /** 数字：失去焦点或回车时提交，支持上下键微调 */
 export function NumInput({
   value,
@@ -81,6 +92,9 @@ export function NumInput({
     if (c !== value) onChange(c)
     else setText(String(c))
   }
+  useCommitOnUnmount(() => {
+    if (text !== String(+(value ?? 0).toFixed(4))) commit(text)
+  })
   return (
     <label className="relative flex min-w-0 flex-1 items-center">
       {prefix && (
@@ -136,6 +150,9 @@ export function TextInput({
     ro.observe(el)
     return () => ro.disconnect()
   }, [multiline, text])
+  useCommitOnUnmount(() => {
+    if (text !== value) onChange(text)
+  })
   const common = {
     'aria-label': label,
     placeholder,
@@ -217,6 +234,17 @@ export function ColorInput({ value, onChange }: { value: string; onChange: (v: s
   const rgb = `#${hex2(r)}${hex2(g)}${hex2(b)}`
   const [text, setText] = useState(String(value ?? ''))
   useEffect(() => setText(String(value ?? '')), [value])
+  const commitColor = () => {
+    const v = text.trim().toUpperCase()
+    const ok = /^#?[0-9A-F]{6}([0-9A-F]{2})?$/.test(v)
+    if (!ok) return setText(value)
+    const h = v.startsWith('#') ? v : `#${v}`
+    const next = h.length === 7 ? `${h}FF` : h
+    if (next !== value) onChange(next)
+  }
+  useCommitOnUnmount(() => {
+    if (text !== String(value ?? '')) commitColor()
+  })
   return (
     <>
       <label
@@ -237,13 +265,7 @@ export function ColorInput({ value, onChange }: { value: string; onChange: (v: s
         aria-label={t('颜色')}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        onBlur={() => {
-          const v = text.trim().toUpperCase()
-          const ok = /^#?[0-9A-F]{6}([0-9A-F]{2})?$/.test(v)
-          if (!ok) return setText(value)
-          const h = v.startsWith('#') ? v : `#${v}`
-          onChange(h.length === 7 ? `${h}FF` : h)
-        }}
+        onBlur={commitColor}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         className="min-w-0 flex-1 font-mono uppercase"
       />
