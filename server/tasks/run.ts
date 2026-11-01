@@ -58,7 +58,18 @@ import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { markChildWrapUp } from '../../shared/plan.ts'
-import { childFilesInfo, collisionNotice, normClaimPath, scopeOverlaps } from '../claims.ts'
+import { statSync } from 'node:fs'
+import path from 'node:path'
+import {
+  childFilesInfo,
+  hitList,
+  holdTurn,
+  holderState,
+  normClaimPath,
+  ownP4Files,
+  releaseUnchanged,
+  scopeOverlaps,
+} from '../claims.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { p4Runner, splitChangelists } from '../p4-split.ts'
 import { projectDocRoot } from '../doc-root.ts'
@@ -70,29 +81,46 @@ import type { TasksScope } from './scope.ts'
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
  */
 export function createRun(sc: TasksScope) {
+  /** 每个子对话已经报给父对话的撞车（路径 + 对方 id），见 checkCollisions */
+  const collided = new Map<string, Set<string>>()
   /**
-   * 子对话一轮结束后：这一轮改过的文件和其他还在执行的兄弟子对话改过的撞了，
-   * 在子对话里留一条提醒（只在这些对话真的共用一个工作目录时：后写的会覆盖先写的）。
-   * 走独立分支的子对话各改各的，撞了是合并时的事，由 git merge 处理，不提醒也不汇报父对话。
+   * 子对话一轮结束：认领不放（共用目录里改动要等父对话验收才算交出去），这一轮真改过的文件记到它名下（见 claims.ts 的 holdTurn）。
+   * 已经归别的还没交出去的兄弟的就是撞了：子对话里留一行给用户看，给父对话写信并叫醒（过 holdWake）——能拍板的是父对话。
+   * 不叫醒子对话：它这一轮刚结束，开新一轮会清掉它可能刚交的收尾请求，还会在父对话没决定时自己去「修」别人的文件。
+   * 走独立分支的子对话各改各的，撞了是合并时的事，不提醒也不汇报父对话
    */
   async function checkCollisions(child: Task) {
-    const list = collisionNotice(
-      child,
-      [...sc.live.values()].map((e) => e.task),
-    )
-    if (!list) return
+    // changes 是累计的：同一处撞车下一轮结束还会再查出来，只报新的，别每轮都叫醒父对话
+    const told = collided.get(child.id) ?? collided.set(child.id, new Set()).get(child.id)!
+    const hit = holdTurn(sc.claims, child).filter((h) => !told.has(`${h.path}\n${h.byId}`))
+    hit.forEach((h) => told.add(`${h.path}\n${h.byId}`))
+    if (!hit.length) return
+    const list = hitList(hit)
     child.messages.push({
       id: randomUUID(),
       role: 'system',
       agentId: '',
       step: '',
       text: t(
-        '这些文件同时被别的子对话改过：{list}。这些对话和你在同一个工作目录里改文件，后写的会覆盖先写的，先约定先后或各自改哪些文件。',
+        '这些文件已经归别的子对话、它的改动还没被父对话验收，你这一轮也改了：{list}。同一个目录里后写的会覆盖先写的，已经交给父对话安排先后。',
         { list },
       ),
       tools: [],
       at: new Date().toISOString(),
     })
+    await sc.noteParent(
+      child.parentTaskId,
+      child,
+      `【文件撞了】子对话「${child.title}」（id ${child.id}）这一轮改了已经归别的子对话、改动还没被你验收的文件：${list}。` +
+        `它们和你共用一个目录，后写的会覆盖先写的（P4 里一个文件也分不进两个 changelist）。验收前先定谁的版本算数：` +
+        `用 send_to_conversation 让一方撤回，或等另一方被你验收后再改，必要时自己核对文件内容；不要同时收下两边。`,
+      undefined,
+      undefined,
+      undefined,
+      await sc.peerOf(child, 'child', 'report', '和兄弟子对话改了同一批文件'),
+      undefined,
+      true,
+    )
   }
 
   /**
@@ -412,7 +440,12 @@ export function createRun(sc: TasksScope) {
             ? async (input) => {
                 // 项目外的文档根里的文件不分（见 shared/doc-root.ts）：分之前现算，项目设置改了下一次就按新的
                 const docs = await projectDocRoot(project.path, agents, 'p4')
-                return splitChangelists(p4Runner(dir), input, docs?.outside ? { skipUnder: docs.root } : {})
+                // 共用目录的子对话和兄弟在同一个 workspace、同一个 default changelist：没写 files 时只分它名下的认领和改过的文件，
+                // 否则会把兄弟打开的文件一起分进它的 changelist
+                const isDir = (p: string) => !!statSync(path.join(dir, p), { throwIfNoEntry: false })?.isDirectory()
+                const own = input.files?.length ? [] : ownP4Files(sc.claims, entry.task, isDir)
+                const opts = docs?.outside ? { skipUnder: docs.root } : {}
+                return splitChangelists(p4Runner(dir), own.length ? { ...input, files: own } : input, opts)
               }
             : undefined,
         // 项目设了 cherry-pick 目标的顶层对话：由面板核对后搬，只收这个对话自己的提交 / 改动（用户 2026-10-31 定的强制要求）
@@ -520,7 +553,12 @@ export function createRun(sc: TasksScope) {
         // 独立分支里的子对话改不到别人的文件，不用认领；要改时才开分支的也一样
         claimFiles:
           task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
-            ? (paths) => sc.claims.claim(rootId, { taskId: task.id, title: entry.task.title }, paths)
+            ? (paths) => {
+                const r = sc.claims.claim(rootId, { taskId: task.id, title: entry.task.title }, paths)
+                // 被拒时写明对方现在怎样：停下等验收的要找父对话协调，不是「过一会儿再认领」
+                const held = r.held.map((h) => ({ ...h, state: holderState(sc.live.get(h.byId)?.task) }))
+                return { ...r, held }
+              }
             : undefined,
         // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；Agent 记的标上来源，用户在项目设置里复查
         lessons: task.projectId
@@ -535,7 +573,7 @@ export function createRun(sc: TasksScope) {
           : undefined,
         releaseFiles:
           task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
-            ? (paths) => sc.claims.release(rootId, task.id, paths.length ? paths : undefined)
+            ? (paths) => releaseUnchanged(sc.claims, entry.task, paths)
             : undefined,
         listConversations: async () => {
           const kids = (await sc.store.list()).filter((x) => x.parentTaskId === entry.task.id)
@@ -657,11 +695,8 @@ export function createRun(sc: TasksScope) {
         endRun(entry.task)
         // 工作流跑完（成功或失败）才有结果可看，这时起标题
         if (!prewarm) sc.nameOnce(entry.task, startedRun?.cli ?? '')
-        // 子对话这一轮结束了：释放认领的文件，查一下和同时在改的兄弟子对话有没有改到同一个文件
-        if (entry.task.parentTaskId) {
-          sc.claims.release(entry.task.parentTaskId, task.id)
-          if (!prewarm) await checkCollisions(entry.task).catch(() => {})
-        }
+        // 子对话这一轮结束：认领不放、改过的文件记到它名下，撞了交给父对话（见 checkCollisions）。预热的一轮什么都不动
+        if (entry.task.parentTaskId && !prewarm) await checkCollisions(entry.task).catch(() => {})
         // 更新摘要并回报父对话（父对话卡片和消息流据此显示进度）
         if (!prewarm && entry.task.parentTaskId) {
           entry.task.summary = sc.lastReply(entry.task)

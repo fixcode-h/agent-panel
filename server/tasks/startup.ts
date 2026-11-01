@@ -3,6 +3,7 @@ import { t } from '../../shared/i18n.ts'
 import { restartInterrupted, taskDeleted } from '../../shared/task.ts'
 import { settleStopped } from '../../shared/task-settle.ts'
 import type { createTaskStore } from '../task-store.ts'
+import { rebuildClaims, type createClaims } from '../claims.ts'
 
 type Store = Pick<ReturnType<typeof createTaskStore>, 'list' | 'get' | 'update'>
 
@@ -10,7 +11,7 @@ type Store = Pick<ReturnType<typeof createTaskStore>, 'list' | 'get' | 'update'>
  * 服务重启时的迁移：之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话。
  * tasksApi 把它的结果暴露成 ready：读取「被更新打断的任务」时要等这一步做完，否则还会读到 running。
  */
-export async function migrateOnStart(store: Store) {
+export async function migrateOnStart(store: Store, claims?: ReturnType<typeof createClaims>) {
   const all = await store.list()
   // 除了重启前在跑的，还有「这一轮说完了但计划没做完 / 独立分支还没合回」的任务：进程已经回收，
   // 界面却还会画成转圈（childIcon 对 unfinished 也返回 running），一直算进「N 个执行中」。
@@ -59,6 +60,8 @@ export async function migrateOnStart(store: Store) {
   // 父子两边都卡住。退回「已请求收尾」，并告诉父对话重新 finish_child
   for (const meta of all.filter((x) => x.wrapRequest?.state === 'merging' && !taskDeleted(x)))
     await reopenMerge(store, meta.id, '合回父对话分支时面板重启了')
+  // 认领只在内存里：还没交出去的共用目录子对话按记录里改过的文件补回（列表里带 changes，不用读全量）
+  if (claims) rebuildClaims(claims, await store.list())
 }
 
 /**

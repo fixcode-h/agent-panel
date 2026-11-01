@@ -838,7 +838,7 @@ export interface EngineHost {
   onOrchestra?: (orch: Orchestra | undefined) => void
   /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */ claimFiles?: (paths: string[]) => {
     granted: string[]
-    held: { path: string; by: string }[]
+    held: { path: string; by: string; state?: string }[]
   }
   releaseFiles?: (paths: string[]) => number
   /** 项目教训：按要改的文件查，Agent 被纠正后自己记一条（只有项目里的对话和节点有） */
@@ -3266,7 +3266,7 @@ function makeOrchestra(
       const lines = [
         r.granted.length ? `已认领：${r.granted.join('、')}` : '',
         r.held.length
-          ? `被其他子对话占着（不要改）：${r.held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。先做别的部分，过一会儿再认领；绕不开就用 message_parent（question 设为 true）请父对话协调。`
+          ? `被其他子对话占着（不要改）：${r.held.map((h) => `${h.path}（「${h.by}」${h.state ? `，${h.state}` : ''}）`).join('、')}。认领留到对方的改动被父对话验收才释放：先做别的部分；对方已停下或在等验收、你又绕不开时，用 message_parent（question 设为 true）请父对话协调。`
           : '',
       ]
       return { ok: !r.held.length, info: lines.filter(Boolean).join('\n') }
@@ -3274,7 +3274,7 @@ function makeOrchestra(
     release(paths) {
       if (!host.releaseFiles) return { ok: false, info: '这个对话不需要认领文件' }
       const n = host.releaseFiles(paths.map((p) => p.trim()).filter(Boolean))
-      return { ok: true, info: n ? `已释放 ${n} 条认领` : '没有要释放的认领' }
+      return { ok: true, info: n ? `已释放 ${n} 条认领` : '没有可释放的认领（改过的文件等父对话验收后释放）' }
     },
     readState() {
       const entries = Object.entries(runState(task))
@@ -4239,7 +4239,7 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
         host.claimFiles
           ? `## 和父对话、其他子对话的协作
 你是项目对话分出来的子对话，和其他子对话在同一个目录里同时工作（没有独立分支）：
-- 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent（question 设为 true）请父对话协调。做完一部分可以用 release_files 释放。
+- 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent（question 设为 true）请父对话协调。没改过的部分可以用 release_files 提前让出；改过的文件留到父对话验收你的改动后由面板释放（一轮结束、停下都不释放）。
 - 不要切换分支、不要 reset / checkout 别人的文件、不要格式化整个仓库，只动自己负责的范围。
 - 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；提交时只 git add 你自己改的文件，不用 -A。
 - 需要父对话决定或协调时用 message_parent 并把 question 设为 true（options 列出可选的做法）；阶段进展不用单独发，一轮结束面板会把你的汇报和状态合成一封交给父对话。你不能直接联系其他子对话。`

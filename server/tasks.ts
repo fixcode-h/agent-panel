@@ -47,7 +47,7 @@ import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
 import { subjectLine } from '../shared/peer-message.ts'
 import type { AlertKind } from '../shared/schema.ts'
-import { createClaims } from './claims.ts'
+import { createClaims, forgetClaims } from './claims.ts'
 import { releaseIfSame, reserveOnce } from './slots.ts'
 import { killTree } from './exec/process.ts'
 import { reapSettledTaskClis } from './exec/orphans.ts'
@@ -309,7 +309,7 @@ export function tasksApi(deps: {
 
   // 服务重启时，之前没跑完的任务标记为已停止（见 server/tasks/startup.ts）。
   // 对外暴露成 ready：读取「被更新打断的任务」时要等这一步做完，否则还会读到 running
-  const ready = migrateOnStart(store)
+  const ready = migrateOnStart(store, claims)
 
   /**
    * 自动归档（设置里的 autoArchiveDays，默认关）：启动一分钟后看一次，之后每小时一次。
@@ -326,6 +326,8 @@ export function tasksApi(deps: {
       // 和手动归档一样：归档的对话不再接收结果，后台命令一起停掉。只改任务本身，不读写对话文件
       await endBackground(id)
       await store.updateMeta(id, { archived: true }, { keepUpdatedAt: true })
+      const tk = all.find((x) => x.id === id)
+      if (tk) forgetClaims(claims, tk)
     }
     if (ids.length) log.info('task', '自动归档很久没动的对话', { 天数: autoArchiveDays, 对话: ids.length })
   }

@@ -22,7 +22,7 @@ import {
   syncKids,
   type PlanKid,
 } from '../../shared/plan.ts'
-import { normClaimPath, overlaps } from '../claims.ts'
+import { normClaimPath, overlaps, shrinkClaims } from '../claims.ts'
 import { inlineEditBlocker, inlineEditOverrun, inlineEditOverrunText } from '../../shared/inline-edit.ts'
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
@@ -191,6 +191,8 @@ export function createMerge(sc: TasksScope) {
     tk.updatedAt = at
     if (entry) entry.rev++
     await sc.store.update(tk.id, tk)
+    // 共用目录：交了就不再改，声明了没碰的让出来；改过的留到父对话验收（completeChild 释放）
+    if (!wt) shrinkClaims(sc.claims, tk)
     // 这次请求本身就是一次状态上报：一轮结束时不再报一遍「待收尾」
     sc.reportedState.set(childId, sc.reportKey(tk, 'wrapup'))
     const child = { id: tk.id, title: tk.title, state: 'wrapup' as const }

@@ -20,6 +20,7 @@ import type { TasksScope } from './scope.ts'
 // 下面这些模块（日志、附件等）加载时会读数据目录：必须在上面的工具包设好 AGENT_PANEL_DATA 之后再加载
 const { Task, TaskStep, PlanStep, TaskPlan } = await import('../../shared/schema.ts')
 const { createMerge } = await import('./merge.ts')
+const { createClaims } = await import('../claims.ts')
 const { trialMerge, commitMerge } = await import('../exec/worktree.ts')
 
 const REVIEWER = 'a-reviewer'
@@ -65,8 +66,10 @@ function rig(repo: string, tasks: TaskT[]) {
   const toChild: { id: string; text: string }[] = []
   const advanced: string[] = []
   const integrated: string[] = []
+  const claims = createClaims()
   const s = {
     live: new Map(),
+    claims,
     store: {
       get: async (id: string) => map.get(id) ?? null,
       list: async () => [...map.values()],
@@ -110,7 +113,7 @@ function rig(repo: string, tasks: TaskT[]) {
     childUnmerged: async () => false,
     taskDir: async () => repo,
   } as unknown as TasksScope
-  return { m: createMerge(s), map, jobs, woke, toChild, advanced, integrated }
+  return { m: createMerge(s), map, jobs, woke, toChild, advanced, integrated, claims }
 }
 
 /** 一个在独立分支里干活的子对话和它的父对话；分支开在真实的临时仓库上 */
@@ -324,7 +327,7 @@ test('合并途中、父对话测试中、已经完成时都不重复收尾；�
   }
 })
 
-test('共用目录的子对话：改了文件但没请求收尾时不收；请求过后验收标完成，不做 git 合并', async () => {
+test('共用目录的子对话：改了文件但没请求收尾时不收；请求过后验收标完成，不做 git 合并，认领收缩到改过的文件', async () => {
   const repo = project()
   const parent = task({ id: 'root', title: '父对话' })
   const kid = task({
@@ -336,6 +339,7 @@ test('共用目录的子对话：改了文件但没请求收尾时不收；请�
     changes: [{ path: 'b.txt', add: 1, del: 0 }],
   })
   const x = rig(repo, [parent, kid])
+  x.claims.claim('root', { taskId: kid.id, title: kid.title }, ['b.txt', 'c.txt'])
   const r = await x.m.finishChild(parent, kid.id)
   assert.equal(r.ok, false)
   assert.match(r.info, /改了 1 个文件，还没请求收尾/)
@@ -344,6 +348,11 @@ test('共用目录的子对话：改了文件但没请求收尾时不收；请�
   const sub = await x.m.submitMerge(kid.id, '', tests, false, handoff)
   assert.equal(sub.ok, true, sub.info)
   assert.match(sub.info, /已请父对话验收/)
+  // 交了就不再改：声明了没碰的 c.txt 让出来，改过的 b.txt 留到父对话验收（completeChild 才放）
+  assert.deepEqual(
+    x.claims.list('root').map((c) => `${c.path}:${c.taskId}`),
+    ['b.txt:shared-kid'],
+  )
   assert.match(x.woke[0].text, /共用目录/)
   const ok = await x.m.finishChild(parent, kid.id)
   assert.equal(ok.ok, true, ok.info)

@@ -719,7 +719,7 @@ function allOrchTools(o: Orchestra) {
                   name: 'claim_files',
                   title: '认领文件',
                   description:
-                    '改文件前认领要改的文件或目录（相对项目根）。子对话共用一个目录，被别的子对话占着的会列出来，那些不要改。这一轮结束时自动释放。',
+                    '改文件前认领要改的文件或目录（相对项目根）。子对话共用一个目录，被别的子对话占着的会列出来，那些不要改。认领留到你的改动被父对话验收（或你被删除、归档）才释放，一轮结束不释放；这一轮改过的文件即使没认领也会记到你名下。',
                   inputSchema: {
                     type: 'object',
                     properties: { paths: { type: 'array', items: { type: 'string' } } },
@@ -729,7 +729,8 @@ function allOrchTools(o: Orchestra) {
                 {
                   name: 'release_files',
                   title: '释放文件',
-                  description: '提前释放认领的文件（做完一部分、让给别的子对话时用）；不写 paths 释放全部。',
+                  description:
+                    '提前让出认领了却没改的文件（让给别的子对话时用）；不写 paths 让出全部没改过的。改过的文件不能提前释放，等父对话验收后由面板释放。',
                   inputSchema: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' } } } },
                 },
               ]

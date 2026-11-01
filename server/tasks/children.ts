@@ -216,6 +216,8 @@ export function createChildren(sc: TasksScope) {
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await sc.store.update(tk.id, tk)
+    // 改动交出去了：共用目录里它名下的认领到这里才放（finish_child、用户点解决、一轮结束收口都经这一步）
+    sc.claims.release(tk.parentTaskId!, childId)
     // 落到 resolved 之后再核对一次：上面只停得到本进程 live 里的那一轮，
     // 重启前留下的、或某条路径漏停的 CLI 还挂在登记里（任务已经完成了，进程留着没人要）。
     // 日志由 killTaskClis 写，里面带任务和 pid

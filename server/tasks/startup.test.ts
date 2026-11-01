@@ -8,6 +8,7 @@ import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
 import { Task } from '../../shared/schema.ts'
 import { migrateOnStart } from './startup.ts'
+import { createClaims } from '../claims.ts'
 
 setLang('zh')
 const at = '2026-10-01T00:00:00.000Z'
@@ -27,14 +28,25 @@ function memStore(list: Task[]) {
   }
 }
 
-test('migrateOnStart：没在跑的对话上残留的 working / awaitingUser / prewarming 全部清掉，不动状态', async () => {
+test('migrateOnStart：没在跑的对话上残留的 working / awaitingUser / prewarming 全部清掉，不动状态；共用目录子对话的认领按改过的文件补回', async () => {
   const store = memStore([
     task('a', { awaitingUser: true }),
+    task('kid', {
+      parentTaskId: 'a',
+      status: 'stopped',
+      stopReason: 'user',
+      changes: [{ path: 'x.ts', add: 1, del: 0 }],
+    }),
     task('w', { working: true }),
     task('p', { prewarming: true, status: 'stopped' }),
     task('clean'),
   ])
-  await migrateOnStart(store)
+  const claims = createClaims()
+  await migrateOnStart(store, claims)
+  assert.deepEqual(
+    claims.list('a').map((c) => `${c.path}:${c.taskId}`),
+    ['x.ts:kid'],
+  )
   for (const id of ['a', 'w', 'p']) {
     const tk = store.map.get(id)!
     assert.equal(tk.working, false, id)

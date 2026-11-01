@@ -767,8 +767,8 @@ export const EN_TASKS: Record<string, string> = {
   '已删除全局规则：{text}': 'Global rule removed: {text}',
   '已发布全局规则：{text}。这个对话下的所有子对话都会遵守，不写进项目的 AGENTS.md。':
     "Global rule published: {text}. Every sub-conversation of this conversation will follow it; it is not written to the project's AGENTS.md.",
-  '这些文件同时被别的子对话改过：{list}。这些对话和你在同一个工作目录里改文件，后写的会覆盖先写的，先约定先后或各自改哪些文件。':
-    'These files were also changed by other sub-conversations: {list}. They share the same working directory, so later writes overwrite earlier ones; agree on an order or on who changes which files.',
+  '这些文件已经归别的子对话、它的改动还没被父对话验收，你这一轮也改了：{list}。同一个目录里后写的会覆盖先写的，已经交给父对话安排先后。':
+    'These files belong to another sub-conversation whose changes the parent has not accepted yet, and this turn changed them too: {list}. In a shared directory later writes overwrite earlier ones; the parent conversation has been asked to decide the order.',
   '这次合并里两边都改了这些文件：{list}。git 已经自动合并，但必须逐文件核对有没有盖掉对方的改动，把核对结论写进合并结论（对方为什么这么改见下面的提交记录）。':
     'Both sides changed these files in this merge: {list}. Git merged them automatically, but you must check each file to be sure no change was overwritten and write the result into the merge conclusion (see the commits below for why the other side changed them).',
   '对话正在执行，等这一轮结束或停止后再归档':
