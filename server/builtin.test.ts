@@ -95,8 +95,14 @@ test('内置 Agent：引用的 Skill 都是自带的，引入的 Agent 存在，
       if (p.type === 'select')
         assert.ok(p.options.includes(String(p.default)), `${b.agent.name} 的参数 ${p.key} 默认值不在选项里`)
   }
-  // 除了「通用约束」自己，都引入了它
-  for (const a of agents.filter((x) => x.id !== 'rules')) assert.ok(a.includes.includes('rules'), a.name)
+  // 除了「通用约束」自己，Agent 角色都引入了它；Chat 角色（ADR 0038）只引入 Chat 角色，能力全关
+  for (const a of agents.filter((x) => x.id !== 'rules' && x.scope !== 'chat'))
+    assert.ok(a.includes.includes('rules'), a.name)
+  for (const b of BUILTIN_AGENTS.filter((x) => x.agent.scope === 'chat')) {
+    const { common, canDelegate, canPlan } = b.agent
+    assert.deepEqual([common, canDelegate, canPlan, b.mounts.length], [false, false, false, 0], b.agent.name)
+    for (const k of b.includes) assert.equal(BUILTIN_AGENTS.find((x) => x.key === k)?.agent.scope, 'chat', k)
+  }
 })
 
 test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开，工作总结页也用它', () => {
@@ -400,10 +406,11 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
   const r = await seedBuiltins({ agents: [mine], categories: [], tags: [], workflows: [] }, ops)
   assert.equal(r.workflows.length, BUILTIN_WORKFLOWS.length)
   const built = r.agents.filter((a) => a.origin.startsWith('builtin:'))
-  // 必备角色「子任务」「分析」不在任何工作流里，由启动时的必备角色检查装上
+  // 必备角色「子任务」「分析」「助手」（连同它引入的「聊天约束」）不在任何工作流里，由启动时的必备角色检查装上
+  const notInFlows = ['helper', 'analyzer', 'chat', 'chat-rules']
   assert.equal(
     built.length,
-    BUILTIN_AGENTS.filter((b) => b.key !== 'helper' && b.key !== 'analyzer').length,
+    BUILTIN_AGENTS.filter((b) => !notInFlows.includes(b.key)).length,
     '每个内置 Agent 只建一份',
   )
   // 和用户自己的 Agent 重名时加后缀，两个都在

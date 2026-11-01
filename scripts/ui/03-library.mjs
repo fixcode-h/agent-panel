@@ -404,7 +404,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 高级角色、基本角色分两页（列表栏顶上的分段）：默认先看高级角色，必备组里是主理、执行、分析
   const layers = rolePane.getByRole('radiogroup', { name: '角色层' })
   const core = p.locator('[data-group-id="#core"]')
-  if (!(await layers.count())) errors.push('角色页：没有「高级角色 / 基本角色」分页')
+  if (!(await layers.count())) errors.push('角色页：没有「高级 / 基本 / Chat」分页')
   else {
     const adv =
       (await core
@@ -414,7 +414,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (!/必备\s*·\s*3/.test(adv)) errors.push(`角色页：高级角色页的必备分组计数不是 3（读到「${adv.slice(0, 20)}」）`)
     if (!(await core.getByRole('button', { name: /^主理/ }).count())) errors.push('角色页：高级角色页没有「主理」')
     await check(p, 'Agent-高级角色', ['主理', '执行'])
-    await layers.getByRole('radio', { name: /^基本角色/ }).click()
+    await layers.getByRole('radio', { name: /^基本/ }).click()
   }
   // 用 data-group-id / role=group 定位：分类名和标签、角色名可能同名，按文字找会指错组
   if (!(await core.count())) errors.push('角色页：没有「必备」分组')
@@ -434,6 +434,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       errors.push('角色页：「质量」分类默认没有展开')
   }
   await check(p, 'Agent-按分类', ['必备', '质量'])
+  // 第三页是 Chat 角色（ADR 0038）：必备的「助手」和基础分类里的「聊天约束」；详情头写类别，没有「能力」页签
+  if (await layers.count()) {
+    await layers.getByRole('radio', { name: /^Chat/ }).click()
+    if (!(await core.getByRole('button', { name: /^助手/ }).count())) errors.push('角色页：Chat 角色页没有「助手」')
+    await core.getByRole('button', { name: /^助手/ }).first().click()
+    const head = p.locator('main')
+    if (!(await head.getByText('Chat 角色', { exact: true }).count()))
+      errors.push('角色页：助手的详情没有「Chat 角色」徽标')
+    if (await p.getByRole('tab', { name: /^能力/ }).count()) errors.push('角色页：Chat 角色不该有「能力」页签')
+    await check(p, 'Agent-Chat角色', ['助手', '聊天约束'])
+    await layers.getByRole('radio', { name: /^基本/ }).click()
+  }
 
   // 分类可以折叠：点组头收起，角色行不再渲染；再点一下展开回来
   const qualityToggle = quality.getByRole('button', { name: /^质量/ }).first()

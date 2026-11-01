@@ -12,7 +12,6 @@ import {
   type ScheduleRun,
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
-import { listableAgents } from '@shared/builtin/core'
 import { openAiFix } from '@/lib/ai-fix'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -23,7 +22,7 @@ import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
 import { EndChoice } from './EndChoice'
 import { dayTimeLabel, scheduleDot, upcomingRuns } from './occurrences'
-import { durationOptions, REPEAT_OPTIONS, useScheduleForm } from './use-schedule-form'
+import { durationOptions, REPEAT_OPTIONS, schedulePickable, useScheduleForm } from './use-schedule-form'
 
 /** 字段名：小号、加粗、淡色，和设计稿的分组标签一致 */
 function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
@@ -86,7 +85,7 @@ export function ScheduleDetail({
   onDirtyChange: (dirty: boolean) => void
 }) {
   const { projects, agents } = useData()
-  const { form, set, setRepeat, setAtLocal, toggleWeekday, dirty, saving, save } = useScheduleForm({
+  const { form, set, setProject, setRepeat, setAtLocal, toggleWeekday, dirty, saving, save } = useScheduleForm({
     schedule: s,
     schedules,
     onSaved,
@@ -102,7 +101,7 @@ export function ScheduleDetail({
   const date = form.atLocal.slice(0, 10)
   const time = form.atLocal.slice(11, 16)
   // 「子任务」不再作为可选角色展示，但老计划可能已经选过它：补一项显示名字（和编辑弹窗同一口径）
-  const pickable = listableAgents(agents)
+  const pickable = schedulePickable(agents, form.projectId)
   const unpickable =
     form.agentId && !pickable.some((a) => a.id === form.agentId) ? agents.find((a) => a.id === form.agentId) : undefined
   const projectName = projects.find((p) => p.id === s.projectId)?.name ?? ''
@@ -189,7 +188,7 @@ export function ScheduleDetail({
             value={form.agentId}
             aria-label={t('用哪个角色')}
             options={[
-              { value: '', label: t('不用角色（跟随默认 CLI）') },
+              { value: '', label: form.projectId ? t('不用角色（跟随默认 CLI）') : t('助手（默认）') },
               ...pickable.map((a) => ({
                 value: a.id,
                 label: a.enabled ? a.name : t('{name}（已停用）', { name: a.name }),
@@ -210,7 +209,7 @@ export function ScheduleDetail({
               { value: '', label: t('聊天（不属于项目）') },
               ...projects.map((p) => ({ value: p.id, label: p.name })),
             ]}
-            onChange={(e) => set('projectId', e.target.value)}
+            onChange={(e) => setProject(e.target.value, agents)}
           />
         </Field>
         <div className="grid grid-cols-2 gap-2.5">

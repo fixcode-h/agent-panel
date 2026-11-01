@@ -735,6 +735,8 @@ test('Pi 桥接扩展：两轮并发启动都拿到整批面板工具，不是�
     self: '@chat',
     hasMain: false,
     child: true,
+    canSpawn: true,
+    team: true,
     plans: true,
     canSubmit: true,
     canBackground: true,

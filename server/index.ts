@@ -106,6 +106,7 @@ import { filesApi } from './files.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
+import { agentOnlyError, normalizeScope, workflowAgentIds } from '../shared/conv-mode.ts'
 import {
   builtinDefinition,
   builtinKey,
@@ -415,14 +416,20 @@ async function parseAgent(body: unknown, selfId = '') {
   if (p.data.cli && !getCli(p.data.cli)) return { error: t('未知的 Agent：{cli}', { cli: p.data.cli }) }
   if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: t('分类不存在') }
   p.data.tags = await knownTags(p.data.tags)
-  return { data: p.data }
+  // 类别建好不能改（ADR 0038）：修改时按原来的；Chat 角色的能力字段归零，引入只留同类、挂载只能是 Agent 角色
+  const all = await agents.list()
+  if (selfId) p.data.scope = all.find((a) => a.id === selfId)?.scope
+  const scoped = normalizeScope(p.data, all)
+  return scoped ? { error: scoped } : { data: p.data }
 }
 
 async function parseWorkflow(body: unknown, selfId = '') {
   const p = WorkflowInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
-  const ids = new Set((await agents.list()).map((a) => a.id))
-  const error = checkWorkflow(p.data, ids, await workflows.list(), selfId)
+  const list = await agents.list()
+  const ids = new Set(list.map((a) => a.id))
+  const error =
+    checkWorkflow(p.data, ids, await workflows.list(), selfId) || agentOnlyError(workflowAgentIds(p.data), list)
   if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: t('分类不存在') }
   p.data.tags = await knownTags(p.data.tags)
   return error ? { error } : { data: p.data }
@@ -733,6 +740,7 @@ async function parseProject(body: unknown) {
   if (!p.success) return { error: z.prettifyError(p.error) }
   if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: t('项目分类不存在') }
   if (p.data.defaultAgentId && !(await agents.get(p.data.defaultAgentId))) return { error: t('默认对话角色不存在') }
+  if (agentOnlyError([p.data.defaultAgentId], await agents.list())) return { error: t('默认对话角色必须是 Agent 角色') }
   if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: t('工作流不存在') }
   const cat = p.data.categoryId ? await projectCategories.get(p.data.categoryId) : null
   if (!p.data.workflowId && !cat?.workflowId) return { error: t('请为项目选择子对话默认工作流') }
@@ -954,6 +962,7 @@ const schedules = schedulesApi({
   projectName: async (id) => (await projects.get(id))?.name ?? '',
   // 启动出来的对话跑完没有：只读任务元数据，运行记录据此补耗时
   peekTask: (id) => tasks.peek(id),
+  agents: () => agents.list(),
 })
 app.route('/schedules', schedules.routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算

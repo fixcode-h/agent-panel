@@ -5,7 +5,7 @@ import { BUILTIN_AGENTS, type BuiltinAgent } from './agents.ts'
 import type { AgentMount } from '../schema.ts'
 
 /**
- * 必备角色：项目对话离不开的八个能力块。启动时自动装好、不能删除，也不能改成别的角色：
+ * 必备角色：项目对话离不开的八个能力块，加上 Chat 页的「助手」。启动时自动装好、不能删除，也不能改成别的角色：
  * 名称、角色设定、Skill、能力开关、参数的定义都由面板维护，每次启动按内置定义同步；
  * 用户能改的只有运行配置（CLI、模型、思考强度、权限、额外参数、开场要求、标签）和参数的取值。
  * 这样「主理把文档交给文档角色」「执行派测试验收去跑」「收尾前派评审、交付前交版本控制收尾」这类约定才靠得住，
@@ -20,6 +20,8 @@ export const CORE_AGENTS = [
   { key: 'vcs' },
   { key: 'helper' },
   { key: 'analyzer' },
+  // Chat 页的对话默认用（ADR 0038）：Chat 类，不进项目的必备角色参数区，运行配置由 Chat 页输入框选
+  { key: 'chat' },
 ] as const
 
 export type CoreKey = (typeof CORE_AGENTS)[number]['key']
@@ -51,6 +53,8 @@ export function coreUse(key: CoreKey) {
       return t('派出的并行子任务默认使用')
     case 'analyzer':
       return t('所有 AI 分析、AI 排查的对话默认使用')
+    case 'chat':
+      return t('Chat 页的对话默认使用')
   }
 }
 
@@ -199,6 +203,8 @@ export function syncCore(
   return {
     ...cur,
     kind: a.kind,
+    // 类别跟内置定义（建好就不能改，ADR 0038）
+    scope: a.scope,
     when: a.when,
     modes: a.modes,
     independent: a.independent,
@@ -241,6 +247,7 @@ export function sameCore(a: AgentInput, b: AgentInput) {
       x.canPlan,
       x.runIn,
       x.kind,
+      x.scope ?? 'agent',
       x.when,
       x.modes,
       x.independent,

@@ -236,7 +236,13 @@ export function NodeInspector({
                               .filter((m) => m.agent.id !== main?.id)
                               .map((m) => ({ value: m.agent.id, label: m.agent.name, group: t('这个工作流用到的') })),
                             ...agents
-                              .filter((a) => a.id !== main?.id && a.enabled && (!used.has(a.id) || a.id === u.agentId))
+                              .filter(
+                                (a) =>
+                                  a.id !== main?.id &&
+                                  a.enabled &&
+                                  a.scope !== 'chat' &&
+                                  (!used.has(a.id) || a.id === u.agentId),
+                              )
                               .map((a) => ({ value: a.id, label: a.name, group: t('其他角色') })),
                           ]}
                         />

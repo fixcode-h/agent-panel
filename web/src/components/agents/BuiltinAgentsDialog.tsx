@@ -34,10 +34,15 @@ export function BuiltinAgentsDialog({
   const { agents, categories, tags, workflows, setAgents, setCategories, setTags } = useData()
   const [busy, setBusy] = useState('')
   const [removing, setRemoving] = useState<Agent | null>(null)
-  const groups = [...new Set(LISTABLE_BUILTIN.map((b) => b.category))].map((c) => ({
-    name: c,
-    items: LISTABLE_BUILTIN.filter((b) => b.category === c),
-  }))
+  // 先按类别分（Agent 角色在前，Chat 角色在后，ADR 0038），类别里再按分类分组
+  const groups = (['agent', 'chat'] as const).flatMap((scope) => {
+    const list = LISTABLE_BUILTIN.filter((b) => (b.agent.scope ?? 'agent') === scope)
+    return [...new Set(list.map((b) => b.category))].map((c) => ({
+      key: `${scope}:${c}`,
+      name: scope === 'chat' ? t('Chat 角色 · {name}', { name: c }) : c,
+      items: list.filter((b) => b.category === c),
+    }))
+  })
   const missing = LISTABLE_BUILTIN.filter((b) => !addedBuiltin(agents, b.key))
 
   const add = async (keys: string[], key: string) => {
@@ -82,7 +87,7 @@ export function BuiltinAgentsDialog({
           </Button>
         </div>
         {groups.map((g) => (
-          <section key={g.name} className="flex flex-col gap-2">
+          <section key={g.key} className="flex flex-col gap-2">
             <h3 className="text-footnote font-medium text-subtle">{g.name}</h3>
             <ul className="flex flex-col divide-y overflow-hidden rounded-xl border">
               {g.items.map((b) => {

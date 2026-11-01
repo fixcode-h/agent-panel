@@ -9,9 +9,12 @@ import type { AskReply, CliEvent } from './exec/parsers.ts'
 import type { Orchestra } from '../shared/engine.ts'
 import { callOrchTool, orchTools } from './orch-mcp.ts'
 import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
-import { MORE_TOOLS, moreTools, splitDeferred } from '../shared/panel-tools.ts'
+import { MORE_TOOLS, moreTools, ORCH_CORE_TOOLS, splitDeferred } from '../shared/panel-tools.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
 import { log } from './log.ts'
+
+/** 这一轮的清单里三件核心编排工具都在：Pi 桥接据此核对清单完整 */
+export const orchCore = (orch: { name: string }[]) => ORCH_CORE_TOOLS.every((n) => orch.some((x) => x.name === n))
 
 /**
  * 给没有「向用户提问」通道的 CLI（无界面运行的 Command Code）一个提问工具：
@@ -218,9 +221,9 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
         // 不声明这一项的话扩展只能按服务名猜，会把这种正常情况报成「工具清单不完整」（见 shared/clis/pi.json 的扩展）。
         // 值必须是对象：MCP 的 capabilities.experimental 是 Record<string, object>，写成布尔值
         // Claude Code（2.1.226 起按 zod 校验）会判整个握手失败、一个工具都不注册。
-        // Chat 页对话（plain）也算没有编排工具：它只挂后台命令三件（ADR 0037），没有扩展核对的
-        // get_status / send_message / read_messages，声明成有的话 Pi 会报「工具清单不完整」
-        capabilities: { tools: {}, experimental: { orchestration: { enabled: !!s.orch && !s.orch.plain } } },
+        // 按这一轮真实的清单现算、不认身份（ADR 0038）：Chat 模式没有扩展核对的三件核心工具，声明成有的话
+        // Pi 会报「工具清单不完整」；以后哪个身份少给了核心工具，握手也自动跟着变
+        capabilities: { tools: {}, experimental: { orchestration: { enabled: orchCore(orch) } } },
         serverInfo: { name: 'agent-panel', version: '1.0.0' },
       })
     case 'ping':

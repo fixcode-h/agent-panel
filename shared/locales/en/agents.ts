@@ -362,4 +362,29 @@ export const EN_AGENTS: Record<string, string> = {
   '使用哪个 Agent': 'Which agent to use',
   '删除后放进回收站，{days} 天内可以在「设置 → 数据」里恢复。':
     'It goes to the recycle bin and can be restored from Settings → Data within {days} days.',
+  // Chat 角色和 Agent 角色（ADR 0038）
+  '建好后不能改；要换类别就在「⋯」里复制为另一类':
+    'Can’t be changed after creation; to switch, duplicate it as the other kind from “⋯”',
+  'Chat 角色': 'Chat role',
+  'Agent 角色': 'Agent role',
+  基本: 'Basic',
+  '复制为 Agent 角色': 'Duplicate as an Agent role',
+  '复制为 Chat 角色': 'Duplicate as a Chat role',
+  'Chat 页在输入框里选 CLI、模型和思考强度，这个角色的运行配置不生效。':
+    'On the Chat page you pick the CLI, model and reasoning effort in the input box; this role’s run settings don’t apply.',
+  'Chat 角色 · {name}': 'Chat roles · {name}',
+  '助手（默认）': 'Assistant (default)',
+  '这个对话用的 Chat 角色，开始后不能再改': 'The Chat role for this conversation; it can’t be changed once started',
+  助手: 'Assistant',
+  待办已完成: 'Todos done',
+  '待办 {done}/{total}': 'Todos {done}/{total}',
+  '待办进度 {done}/{total}': 'Todo progress {done}/{total}',
+  '由 Agent 自己列出': 'Listed by the agent itself',
+  '还没有 Chat 角色': 'No Chat roles yet',
+  'Chat 页的对话默认使用': 'Default for conversations on the Chat page',
+  '「{name}」是 Agent 角色，只能在项目里用；Chat 页请用 Chat 角色':
+    '“{name}” is an Agent role and can only be used in projects; use a Chat role on the Chat page',
+  '「{name}」是 Chat 角色，只能在 Chat 页用': '“{name}” is a Chat role and can only be used on the Chat page',
+  '「{name}」是 Chat 角色，不能挂载': '“{name}” is a Chat role and can’t be mounted',
+  '默认对话角色必须是 Agent 角色': 'The default conversation role must be an Agent role',
 }
