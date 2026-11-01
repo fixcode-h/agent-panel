@@ -102,8 +102,8 @@ export const EN_DESIGN: Record<string, string> = {
 
   // 图片
   上传图片: 'Upload images',
-  '还没有图片。在右边告诉 AI 想要什么界面，它会列出需要的图片并生成。':
-    'No images yet. Tell the AI on the right what UI you want and it will list and generate the images it needs.',
+  '还没有图片。在左边告诉 AI 想要什么界面，它会列出需要的图片并生成。':
+    'No images yet. Tell the AI on the left what UI you want and it will list and generate the images it needs.',
   设计里没有用到这张图: 'This image isn’t used in the design',
   未用: 'Unused',
   删除图片: 'Delete image',
@@ -185,6 +185,11 @@ export const EN_DESIGN: Record<string, string> = {
   '外观（{device}）': 'Appearance ({device})',
   平板: 'Tablet',
   手机: 'Phone',
+  手机横屏: 'Phone landscape',
+  竖屏: 'Portrait',
+  笔记本: 'Laptop',
+  大屏: 'Large screen',
+  '{name} 颜色值': '{name} color value',
   '正在改{device}宽度下的样式，只影响这个宽度，桌面不变': 'Editing the {device} width only; desktop stays the same',
   还原: 'Reset',
   悬停: 'Hover',
@@ -426,8 +431,8 @@ export const EN_DESIGN: Record<string, string> = {
   '描述界面，或者说要改哪里…（也可以在效果图上标注）': 'Describe the UI or what to change… (or annotate the preview)',
   按标注修改: 'Apply the annotations',
   还是空白界面: 'Still a blank screen',
-  '在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。':
-    'Tell the AI on the right what screen you want, or add widgets with + in the widget tree.',
+  '在左边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。':
+    'Tell the AI on the left what screen you want, or add widgets with + in the widget tree.',
   移到项目: 'Move to project',
   AI: 'AI',
   '正在生成图片 {i}/{n}': 'Generating images {i}/{n}',

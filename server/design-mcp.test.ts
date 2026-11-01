@@ -492,3 +492,17 @@ test('插槽写错当场报错；子控件尺寸存成数字；replace 的半个
   assert.deepEqual(row.Slot!.LayoutData.Offsets, { Left: 20, Top: 0, Right: 300, Bottom: 300 })
   close()
 })
+
+test('set_data 不合法时整批不改，并告诉 AI 是哪个集合、哪一行、哪个字段', async () => {
+  const { call, session, close } = open()
+  const r = await call('set_data', {
+    sets: [{ name: 'Items', fields: [{ key: 'count', type: 'number' }], rows: [{ count: 1 }, { count: [2] }] }],
+  })
+  assert.ok(r.error)
+  assert.match(r.text, /第 1 个集合（Items） 第 2 行 的 count/)
+  assert.equal(session.data, undefined, '有一项不合法就都不改')
+  const ok = await call('set_data', { sets: [{ name: 'Items', fields: [{ key: 'count' }], rows: [{ count: 1 }] }] })
+  assert.ok(!ok.error)
+  assert.equal((session.data as Design['data'])?.sets[0]?.rows.length, 1)
+  close()
+})

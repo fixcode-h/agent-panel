@@ -15,7 +15,7 @@ import {
   type Design,
 } from '../shared/design.ts'
 import { applyOp, type OpsState } from '../shared/design-ops.ts'
-import { DATA_TYPES, normalizeData, type DesignData } from '../shared/design-data.ts'
+import { DATA_TYPES, dataIssues, normalizeData, type DesignData } from '../shared/design-data.ts'
 import { ANIM_PROPS, ANIM_TRIGGERS, EASES, animationsBrief, presetCatalogText } from '../shared/anim.ts'
 import { compactTree, walk, type Widget } from '../shared/umg.ts'
 import { rectLine } from '../shared/umg-layout.ts'
@@ -1004,9 +1004,15 @@ async function callTool(s: Session, raw: string, args: any) {
     case 'set_data': {
       const list = Array.isArray(a.sets) ? a.sets : a.name ? [a] : []
       if (!list.length) return text('sets 要写数据集合的数组，每项有 name、fields、rows', true)
+      // 整批校验：有一项不合法就都不改，但要逐条说清楚是哪个集合、哪一行、哪个字段
+      const issues = dataIssues({ sets: list })
+      if (issues.length)
+        return text(
+          `数据集合的格式不对，这次没有改动（改好下面这些再整批重发）：\n${issues.map((x) => `- ${x}`).join('\n')}\n` +
+            '每项至少要有 name，fields 里每项要有 key，rows 里每项是 { 字段名: 字符串 | 数字 | 布尔 }',
+          true,
+        )
       const norm = normalizeData({ sets: list })
-      if (!norm.sets.length)
-        return text('数据集合的格式不对：每项至少要有 name，fields 里每项要有 key，rows 里每项是 { 字段名: 值 }', true)
       const existing = (s.data ?? s.design.data)?.sets ?? []
       const sets = [...existing.filter((x) => !norm.sets.some((n) => n.name === x.name || n.id === x.id)), ...norm.sets]
       s.history.push({ state: s.state, images: s.images, data: s.data })

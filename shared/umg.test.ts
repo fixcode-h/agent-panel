@@ -16,6 +16,7 @@ import {
   exportWidget,
   imageFitStyle,
   isHiddenVisibility,
+  linearColor,
   nineSliceRatios,
   normalizeTree,
   rectToCanvasSlot,
@@ -333,4 +334,28 @@ test('applyVisibility：按 id 叠到子控件上，已经不在树上的 id 跳
   assert.equal(applyVisibility(root, { gone: 'Visible' }), root)
   // 没有改动时原样返回
   assert.equal(applyVisibility(root, {}), root)
+})
+
+test('exportWidget：只转换颜色和图片字段，文字里的 "#123456"、"img:abc" 原样保留；颜色短写也转', () => {
+  const w: Widget = {
+    id: 't1',
+    Type: 'TextBlock',
+    Name: 'Label',
+    Properties: {
+      Text: '#123456',
+      ToolTipText: 'img:abc',
+      ColorAndOpacity: '#fff',
+      ShadowColorAndOpacity: '#0008',
+      Font: { OutlineSettings: { OutlineColor: '#FF0000' } },
+    },
+  }
+  const out = exportWidget(w, new Map([['abc', 'T_Abc']]))
+  assert.equal(out.Properties.Text, '#123456')
+  assert.equal(out.Properties.ToolTipText, 'img:abc')
+  assert.deepEqual(out.Properties.ColorAndOpacity, linearColor('#FFFFFFFF'))
+  assert.equal(out.Properties.ShadowColorAndOpacity.Hex, '#00000088')
+  assert.equal(out.Properties.Font.OutlineSettings.OutlineColor.Hex, '#FF0000FF')
+  // 7 位这种半截的不是颜色：不转，原样交给 UE 由导入端报错
+  const bad = exportWidget({ ...w, Properties: { ColorAndOpacity: '#1234567' } }, new Map())
+  assert.equal(bad.Properties.ColorAndOpacity, '#1234567')
 })

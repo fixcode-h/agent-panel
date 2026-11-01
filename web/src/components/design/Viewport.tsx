@@ -815,7 +815,7 @@ export function Viewport({
                   <div className="pointer-events-none absolute inset-0 grid place-items-center p-6 text-center">
                     <div className="max-w-[320px] text-footnote leading-relaxed text-canvas-subtle">
                       <p className="mb-1 text-body font-medium text-canvas-fg">{t('还是空白界面')}</p>
-                      {t('在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。')}
+                      {t('在左边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。')}
                     </div>
                   </div>
                 )}

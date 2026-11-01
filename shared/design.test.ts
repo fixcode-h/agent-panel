@@ -13,6 +13,11 @@ import {
   sendsMaskOnly,
   maskBox,
   widgetCitationText,
+  applyVersion,
+  emptyRoot,
+  nextConceptId,
+  versionSnapshot,
+  type Design,
 } from './design.ts'
 
 const mask = (strokes: { erase?: boolean; w?: number; points: number[] }[]): Annotation => {
@@ -148,4 +153,31 @@ test('发给 AI 的引用说明写明路径、尺寸、用到的图片和文字'
   assert.match(text, /img_slot/)
   assert.match(text, /背包/)
   assert.match(text, /1920×1080/)
+})
+
+test('nextConceptId：同一轮里删掉一张后接着出图，不和还在的那张重号', () => {
+  assert.equal(nextConceptId([], 2), 'c2_1')
+  // c2_1 被删了、只剩 c2_2：按张数 + 1 会算出 c2_2，重号
+  assert.equal(nextConceptId([{ id: 'c1_3' }, { id: 'c2_2' }], 2), 'c2_3')
+  assert.equal(nextConceptId([{ id: 'c12_5' }], 1), 'c1_1')
+})
+
+test('版本快照带上画板数据，恢复时一起还原；旧版本没存数据时保留现在的', () => {
+  const d = {
+    root: emptyRoot('game'),
+    components: [],
+    designSize: { X: 1920, Y: 1080 },
+    style: '',
+    images: [],
+    animations: [],
+    data: { sets: [{ id: 'items', name: 'Items', label: '', fields: [], rows: [{ a: 1 }] }] },
+  } as unknown as Design
+  const snap = versionSnapshot(d)
+  assert.deepEqual(snap.data, d.data)
+  d.data = { sets: [] }
+  applyVersion(d, snap)
+  assert.equal(d.data?.sets[0]?.name, 'Items')
+  const { data: _, ...old } = snap
+  applyVersion(d, old)
+  assert.equal(d.data?.sets[0]?.name, 'Items')
 })

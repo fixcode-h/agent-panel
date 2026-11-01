@@ -171,6 +171,16 @@ export const emptyConcept = (): ConceptState => ({ images: [], selected: '', app
 export const MAX_CONCEPTS = 4
 /** 图上的标注（target）指的是哪张原画 */
 export const conceptTarget = (id: string) => `concept:${id}`
+/**
+ * 这一轮下一张原画的 id（c<轮>_<n>）：取这一轮已有编号的最大值 + 1。
+ * 不能按张数 + 1：出图中途用户删掉同一轮的一张，张数变少，新图就和还在的那张重号
+ */
+export function nextConceptId(images: readonly { id: string }[], round: number) {
+  const prefix = `c${round}_`
+  let max = 0
+  for (const i of images) if (i.id.startsWith(prefix)) max = Math.max(max, Number(i.id.slice(prefix.length)) || 0)
+  return `${prefix}${max + 1}`
+}
 
 export const DesignMessage = z.object({
   id: z.string(),
@@ -1483,12 +1493,44 @@ export function importComponent(
 
 // ---- 设计版本 ----
 
-/** 一个版本：控件树、子控件、尺寸、风格和图片清单的快照；auto 是自动存的（AI 改之前、恢复之前） */
+/** 一个版本：控件树、子控件、尺寸、风格、动画、画板数据和图片清单的快照；auto 是自动存的（AI 改之前、恢复之前） */
 export interface DesignVersion {
   id: string
   name: string
   at: string
   auto: boolean
-  snapshot: Pick<Design, 'designSize' | 'style' | 'root' | 'components' | 'images'> & { animations?: UiAnimation[] }
+  snapshot: Pick<Design, 'designSize' | 'style' | 'root' | 'components' | 'images'> & {
+    animations?: UiAnimation[]
+    /** 旧版本没有 */
+    data?: DesignData
+  }
 }
 export type DesignVersionMeta = Omit<DesignVersion, 'snapshot'> & { widgets: number }
+
+/** 版本快照：服务端和演示版同一份口径，加字段时两边一起带上 */
+export const versionSnapshot = (d: Design): DesignVersion['snapshot'] =>
+  structuredClone({
+    designSize: d.designSize,
+    style: d.style,
+    root: d.root,
+    components: d.components,
+    images: d.images,
+    animations: d.animations ?? [],
+    data: d.data ?? { sets: [] },
+  })
+
+/** 把设计恢复成某个版本（原地改 d，rev 由调用方加） */
+export function applyVersion(d: Design, snap: DesignVersion['snapshot']) {
+  const s = structuredClone(snap)
+  d.root = s.root
+  d.components = s.components
+  d.designSize = s.designSize
+  d.style = s.style
+  // 旧版本没有动画：恢复后就没有动画
+  d.animations = s.animations ?? []
+  // 旧版本没存画板数据：不知道当时是什么样，保留现在的（清空就找不回来了）
+  if (s.data) d.data = s.data
+  // 版本里有、现在已经删掉的图片加回来（文件还在时）
+  for (const img of s.images)
+    if (!d.images.some((i) => i.id === img.id)) d.images.push({ ...img, status: 'idle', error: undefined })
+}
