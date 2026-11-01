@@ -37,7 +37,8 @@
   "efforts": [
     {
       "id": "off",
-      "label": "关闭"
+      "label": "关闭",
+      "off": true
     },
     {
       "id": "minimal",

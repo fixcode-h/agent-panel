@@ -28,6 +28,11 @@
   ],
   "efforts": [
     {
+      "id": "none",
+      "label": "关闭",
+      "off": true
+    },
+    {
       "id": "low",
       "label": "低"
     },
@@ -302,6 +307,7 @@
   },
   "i18n": {
     "en": {
+      "关闭": "Off",
       "很高": "Extra high",
       "最高": "Max",
       "Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。": "Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.",

@@ -600,7 +600,7 @@ async function writeModelEfforts(
     })
   // 每档强度的取值表：CLI 的每一档（关闭除外）模型支持就发同名值，不支持写 null，CLI 才不会把 xhigh / max 当成不支持
   if (reasoning?.levelsKey) {
-    const levels = def.efforts.map((e) => e.id).filter((id) => id !== 'off')
+    const levels = def.efforts.filter((e) => !e.off).map((e) => e.id)
     writes.push({
       file: reasoning.file,
       at: reasoning.at,
