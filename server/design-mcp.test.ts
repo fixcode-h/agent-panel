@@ -403,14 +403,24 @@ test('get_layout 不开页面算出整棵树的位置，文字标估算；页面
   close()
 })
 
-test('网页设计不算位置，交给截图', async () => {
+test('网页设计也直接算位置：改完回读、get_layout 都按画布的 flex 规则', async () => {
   const d = design()
   d.kind = 'web'
   d.root = emptyRoot('web')
   const { call, close } = open({}, {}, d)
-  const r = await call('get_layout', {})
-  assert.ok(r.error)
-  assert.match(r.text, /screenshot/)
+  const add = await call('add_widgets', {
+    items: [
+      { parent: d.root.Name, widget: { Type: 'Frame', Name: 'Header', Height: 64, Direction: 'row' } },
+      { parent: d.root.Name, widget: { Type: 'Frame', Name: 'Body', Height: 200 } },
+    ],
+  })
+  assert.ok(!add.error, add.text)
+  assert.match(add.text, /位置或大小变了的控件/)
+  // 竖排的页面：Header 在最上面、横向撑满；Body 排在它下面
+  const r = await call('get_layout', { names: ['Header', 'Body'] })
+  assert.ok(!r.error, r.text)
+  assert.match(r.text, /Header（Frame）0,0 1920×64/)
+  assert.match(r.text, /Body（Frame）0,64 1920×200/)
   close()
 })
 

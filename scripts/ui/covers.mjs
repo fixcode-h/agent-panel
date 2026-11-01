@@ -132,6 +132,9 @@ export const UI_SHARD_COVERS = {
   '11-umg-layout': [
     'shared/umg-layout.ts',
     'shared/umg-layout.fixtures.ts',
+    'shared/web-layout.ts',
+    'shared/web-layout.fixtures.ts',
+    'web/src/components/design/web-render.tsx',
     'web/src/components/design/umg-render.tsx',
     'scripts/ui/umg-layout/',
   ],

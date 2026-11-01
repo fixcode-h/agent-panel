@@ -2,7 +2,7 @@
  * 界面检查分片：算出来的控件位置（shared/umg-layout.ts）和画布真正画出来的一致。
  *
  * 设计 AI 改完控件后拿算出来的位置回读（不用开页面截图），算错了它就会按错的数字改设计。
- * 这里把 shared/umg-layout.fixtures.ts 的样例树交给画布组件 UmgNode（和设计页、截图同一个组件）
+ * 这里把 shared/umg-layout.fixtures.ts、shared/web-layout.fixtures.ts 的样例树交给画布组件 UmgNode / WebNode（和设计页、截图同一个组件）
  * 在真浏览器里画出来，按截图量位置表的方法（控件本体的 getBoundingClientRect）逐个比对：
  * - 不带 est 的位置必须逐像素一致（误差 ≤ 0.6px）
  * - 带 est 的（按字宽估的文字）允许差几个像素：浏览器里的字体和估算的字宽表本来就对不上
@@ -41,8 +41,14 @@ await runShard(import.meta.filename, async ({ page, check, errors }) => {
   )
   const count = await p.evaluate(() => window.__count)
   if (!(count > 0)) errors.push('画布排版对照：样例页没有加载起来')
-  for (let i = 0; i < count; i++) {
-    const res = await p.evaluate((i) => window.__measure(i), i)
+  const webCount = await p.evaluate(() => window.__countWeb)
+  // 游戏 UI（UmgNode）和网页（WebNode）两组样例，同一套比对规则
+  const runs = [
+    ...Array.from({ length: count }, (_, i) => ['__measure', i]),
+    ...Array.from({ length: webCount }, (_, i) => ['__measureWeb', i]),
+  ]
+  for (const [fn, i] of runs) {
+    const res = await p.evaluate(([fn, i]) => window[fn](i), [fn, i])
     const tag = `画布排版对照「${res.name}」`
     if (res.dom.length !== res.calc.length)
       errors.push(`${tag}：画布量出 ${res.dom.length} 个控件，算出来 ${res.calc.length} 个`)
