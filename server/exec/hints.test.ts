@@ -18,6 +18,8 @@ import {
   envStallTimeout,
   estTokens,
   failureHints,
+  restartCarry,
+  SESSION_NOT_FOUND,
   settleContextNotes,
   silentTurn,
   settleEnvStallNotes,
@@ -26,6 +28,7 @@ import {
   shouldRetryEnvStall,
 } from './runner.ts'
 import { CompactTracker, describeCompaction, settleCompactRow } from './compaction.ts'
+import { restartNoteText } from './recovery.ts'
 import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -69,6 +72,53 @@ test('自动续接成功后，断开时的报错不再显示成错误', () => {
   assert.match(msg.text, /Failed to process successful response/, '断开的原因留着，方便查')
   assert.match(msg.text, /已自动续接会话（第 1 次）/)
   assert.doesNotMatch(msg.text, /正在自动续接/)
+  // 续接时原会话没了、开新会话重新执行：收口文案不能说「从中断的地方继续了」
+  const again: TaskMessage = { ...msg, text: '', error: true, alert: makeAlert('warn', 'x', 'network') }
+  settleNetNotes([{ msg: again, base: 'Command Code 执行失败', n: 1 }], true)
+  assert.equal(again.error, undefined)
+  assert.match(again.text, /已开新会话重新执行/)
+  assert.doesNotMatch(again.text, /从中断的地方继续/)
+  assert.equal(again.alert?.resolved, t('续接不上，已开新会话重新执行'))
+})
+
+test('会话找不到：只认各 CLI 续接失败的真实报错，cannot / Unknown / Rust panic 之类不算', () => {
+  // 命中就丢会话重开、之后算重试过，断流续接和上下文降级都不再走：误中的代价是把一次普通失败变成「模型全忘了」
+  const hits = [
+    'No conversation found with session ID: 3f2a8c1e-6b7d-4e0f-9a1b-2c3d4e5f6a7b', // Claude Code --resume
+    '无法续接之前的会话（thread not found）：no rollout found for thread id 019a2b3c', // codex.ts 包装
+    'Couldn’t resume the previous session (thread not found): no rollout found for thread id 019a',
+    'no rollout found for thread id 019a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8', // Codex 原文
+    'thread not found: 019a2b3c',
+    "No session found matching '0a1b2c3d-4e5f-6789-abcd-ef0123456789'", // Pi --session
+    'No session "3f2a8c1e-6b7d-4e0f-9a1b-2c3d4e5f6a7b" found to resume.', // Command Code --resume
+    'No session named "my-run" found.',
+    'Session not found',
+  ]
+  for (const s of hits) assert.match(s, SESSION_NOT_FOUND)
+  const misses = [
+    'Error: Claude Code cannot be launched inside another Claude Code session.',
+    "Error: Cannot find module '/usr/lib/node_modules/command-code/dist/session-store.js'",
+    'Error: Unknown error in worker thread',
+    `400 Bad Request: {"error":{"message":"Unknown parameter: 'conversation'."}}`,
+    'Failed to load session: Unknown error. Starting fresh session.',
+    "thread 'main' panicked at 'config file not found', codex-rs/core/src/config.rs:12:5",
+    "thread 'tokio-runtime-worker' panicked at codex-rs/core/src/codex.rs:120:9:\nnote: run with `RUST_BACKTRACE=1`",
+    'No session yet, nothing to compact',
+    'No API key found for provider "anthropic". Use /login or set ANTHROPIC_API_KEY',
+    'Error: 404 {"error":{"message":"model gpt-5.1 not found"}} in this conversation',
+    'API Error: 400 thinking is not supported for this conversation',
+    'stream disconnected before completion: http2 error: stream error received: not a result of an error',
+    // Codex 的 thread/resume 超时是环境问题，codex.ts 不再包成 thread not found
+    'thread/resume 没有响应（已等 1 分钟）\n进程还在运行\nstderr 没有输出',
+  ]
+  for (const s of misses) assert.doesNotMatch(s, SESSION_NOT_FOUND)
+  // 重开那一行：没带上之前的对话就不能说「带上了」；原始报错附在后面，面板猜错了用户也看得出真正出了什么事
+  const detail = hits[0]
+  const carried = restartNoteText('找不到原来的会话', { chat: true, carried: true, detail })
+  const bare = restartNoteText('找不到原来的会话', { chat: true, carried: false, detail })
+  assert.match(carried, /一起带上了/)
+  assert.doesNotMatch(bare, /带上/)
+  for (const note of [carried, bare]) assert.ok(note.endsWith(`${t('原始输出：')}\n${detail}`), note)
 })
 
 test('模型接口拒绝聊天记录：说明换模型后旧会话接不上', () => {
@@ -205,7 +255,7 @@ const chatMsg = (id: string, role: 'user' | 'agent', text: string): TaskMessage 
 })
 const asTask = (messages: TaskMessage[]) => ({ messages }) as unknown as Task
 
-test('上下文超长：按预算裁剪对话，保留最近的消息、更早的长正文省略', () => {
+test('上下文超长 / 丢会话重开：按预算裁剪对话，保留最近的消息、更早的长正文省略', () => {
   const task = asTask([
     chatMsg('m1', 'user', '很早的要求' + '甲'.repeat(4000)),
     chatMsg('m2', 'agent', '中间结论'),
@@ -220,6 +270,12 @@ test('上下文超长：按预算裁剪对话，保留最近的消息、更早�
   assert.ok(estTokens(out) < 200, `裁剪后的文字自己要在预算内，实际 ${estTokens(out)} token`)
   // 预算够时一条都不丢
   assert.match(clippedTranscript(task, 3, 100_000), /很早的要求/)
+  // 丢会话重开带的是同一份裁剪，加一行标题；这一轮之前没有对话（只有系统说明）时什么都不带，不带空标题——
+  // runner 据此决定说明里写不写「之前的对话一起带上了」
+  const carried = restartCarry(task, 3, 100)
+  assert.equal(carried, `## 之前的对话（已按长度裁剪）\n${out}`)
+  assert.equal(restartCarry(task, 0, 100), '')
+  assert.equal(restartCarry(asTask([{ ...chatMsg('s', 'agent', '说明'), role: 'system' }]), 1, 100), '')
 })
 
 test('上下文超长：工具调用不能被省掉，正文放不下就让它让位', () => {
@@ -427,8 +483,22 @@ function runAgentCalls(src: string) {
   return out
 }
 
-test('环境性重试的计数和留痕要在每个 runAgent 调用点上都带上（漏传会清零、红卡收不掉）', () => {
+test('自动重跑的每个 runAgent 调用点：环境性重试的计数和留痕都带上，丢会话 / 换参数重跑前先在对话里留痕', () => {
   const src = readFileSync(new URL('./runner.ts', import.meta.url), 'utf8')
+  // 丢掉会话、去掉思考强度后 return runAgent 重跑的分支：return 之前必须往对话写一行（restartNote / recoveryNote /
+  // 直接 push），只写 log.warn 就是悄悄重试（AGENTS.md「Agent 执行出的错误一律显示给用户」）
+  const starts = [...src.matchAll(/delete task\.sessions\[sessionKey\]|markNoEffort\(cliId, model\)/g)]
+  assert.ok(starts.length >= 5, `丢会话 / 换参数的分支：${starts.length}`)
+  for (const m of starts) {
+    const ret = src.indexOf('return ', m.index)
+    if (!src.startsWith('return runAgent(', ret)) continue
+    const block = src.slice(m.index, ret)
+    assert.match(
+      block,
+      /restartNote\(|recoveryNote\(|task\.messages\.push\(/,
+      `重跑前没在对话里留痕：${block.replace(/\s+/g, ' ').slice(0, 120)}`,
+    )
+  }
   // 除首次进入这一轮的 `runAgent(ctx, call)` 外，其余每个调用都是重跑或又一次完整调用：
   // 缺 envStalls 会让「只重试一次」失效，缺 envStallNotes 会让重试成功后那张红卡收不掉（评审 R2 就是这么漏的）。
   // 压缩轮那种 `await runAgent(...)` 也算在内——它同样会走到环境性失败的重试分支

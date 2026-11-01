@@ -688,6 +688,8 @@ async function knownCatalog(id: string): Promise<Map<string, CatalogInfo>> {
 const noEffort = new Set<string>()
 const noEffortKey = (cli: string, model: string) => `${cli}\n${model}`
 export const markNoEffort = (cli: string, model: string) => noEffort.add(noEffortKey(cli, model))
+/** 这个模型是不是被 markNoEffort 记过：执行时据此在对话里说明「选的思考强度这次没传」，不让它悄悄失效 */
+export const effortRejected = (cli: string, model: string) => noEffort.has(noEffortKey(cli, model))
 
 /**
  * 执行前挡一下模型不认的思考强度：CLI 会启动即报错退出（退出码 1），整个任务就白跑了。

@@ -114,6 +114,7 @@ export const EN_ALERTS: Record<string, string> = {
   'Agent 没有响应，面板重启了它': 'The agent stopped responding, so the panel restarted it',
   '卡住了，已由新的子对话接手': 'Got stuck; a new sub-conversation took over',
   '已自动续接，从中断的地方继续了': 'Resumed automatically from where it stopped',
+  '续接不上，已开新会话重新执行': 'Couldn’t resume; reran in a new session',
   '已自动重试，继续做完了': 'Retried automatically and it finished',
   '{s} 秒后有输出了，接着在处理': 'Output resumed after {s}s and it is working again',
   '{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。':

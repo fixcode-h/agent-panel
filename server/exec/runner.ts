@@ -58,7 +58,7 @@ import { noPushEnv } from './no-push.ts'
 
 export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
 import { expandSlash } from '../slash.ts'
-import { cachedModels, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
+import { cachedModels, effortRejected, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
 import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
@@ -80,9 +80,19 @@ import {
   clippedTranscript,
   contextFallbackKind,
   estTokens,
-  transcript,
+  restartCarry,
 } from './transcript.ts'
-export { clippedTranscript, contextFallbackKind, estTokens }
+export { clippedTranscript, contextFallbackKind, estTokens, restartCarry }
+import {
+  SESSION_NOT_FOUND,
+  firstNoEffortTell,
+  noEffortRetryText,
+  noEffortSkippedText,
+  restartNoteText,
+  settleNetNotes,
+  type NetNote,
+} from './recovery.ts'
+export { SESSION_NOT_FOUND, settleNetNotes, type NetNote }
 import { CompactTracker, settleCompactRow } from './compaction.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
@@ -678,13 +688,6 @@ export function silentTurn(o: {
   return !o.tools && !o.changed && !o.texts.some((x) => x.trim())
 }
 
-/** 自动续接前写进对话的报错：续接成功后要收回成普通说明 */
-export interface NetNote {
-  msg: TaskMessage
-  base: string
-  n: number
-}
-
 /** 环境性失败重试前写进对话的提示：重试成功要收成普通说明 */
 export interface EnvStallNote {
   msg: TaskMessage
@@ -701,19 +704,6 @@ export function settleEnvStallNotes(notes: EnvStallNote[]) {
     msg.transient = true
     msg.text = [base, '', t('已自动重试 {n} 次，这一轮继续做完了。', { n: MAX_ENV_RETRIES })].join('\n')
     if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动重试，继续做完了') }
-  }
-}
-
-/**
- * 续接成功了：之前那次断开的报错已经不成立，收成普通说明。
- * 不收的话对话里会一直挂着一张红色的「执行失败」卡片，用户以为这一轮失败了。
- */
-export function settleNetNotes(notes: NetNote[]) {
-  for (const { msg, base, n } of notes) {
-    msg.error = undefined
-    msg.transient = true
-    msg.text = [base, '', t('已自动续接会话（第 {n} 次），从中断的地方继续了。', { n })].join('\n')
-    if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动续接，从中断的地方继续了') }
   }
 }
 
@@ -1079,6 +1069,36 @@ async function runAgent(
   const role = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim()
   /** 上下文超长降级时留给旧对话的 token 预算：剩下的给角色设定、提示词和这一轮的要求 */
   const carryBudget = () => Math.max(MIN_CLIP_TOKENS * 2, Math.floor(windowFor(model) * CONTEXT_CARRY_SHARE))
+  /**
+   * 丢会话重开带给新会话的之前的对话，只有对话的普通一轮带：节点用完整提示就够；压缩、审查不带（/compact 前面多了历史
+   * 就不再是斜杠命令）。截到哪：用户发起的一轮截在要求之前（要求在提示里）；接着上一圈做的（call.carry）提示里没有用户的要求，带到最新
+   */
+  const carryUpto = () => (asker && !call.carry ? task.messages.indexOf(asker) : task.messages.length)
+  const carryForRestart = () => (chat && !op ? restartCarry(task, carryUpto(), carryBudget()) : '')
+  /**
+   * 面板换了做法自动重跑（丢会话重开、去掉思考强度）前在对话里留一行：只写日志就是悄悄重试。不设 transient：
+   * 继续执行时不能当状态说明弹掉。预热轮用户还没发话不记（思考强度那条由 tellNoEffort 在第一句到了后补）
+   */
+  const recoveryNote = (text: string) => {
+    if (prewarmMode) return
+    task.messages.push({
+      id: ctx.newId(),
+      role: 'system',
+      agentId,
+      step,
+      text,
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    ctx.changed(true)
+  }
+  const noEffortKey = `${task.id}\n${cliId}\n${model}`
+  // 选了思考强度、这个模型却因为之前（别的对话、预热轮里）被拒过而不传了：每个对话第一次碰到时说一次
+  const tellNoEffort = () => {
+    if (prewarmMode || !requested || effort || !effortRejected(cliId, model)) return
+    if (firstNoEffortTell(noEffortKey)) recoveryNote(noEffortSkippedText(model, requested))
+  }
+  tellNoEffort()
   // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
   // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
   // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次
@@ -1981,6 +2001,8 @@ async function runAgent(
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
             if (!recorded) task.messages.push(msg)
+            // 预热轮里撞上「强度被拒」时没法说（用户还没发话）：第一句到了再补
+            tellNoEffort()
             // 继续执行：等待到此结束，从这一刻重新算执行时间
             resumeRun(task)
             // 收到用户消息，CLI 开始处理这一轮
@@ -2287,6 +2309,9 @@ async function runAgent(
         step,
         detail: detail.slice(0, 500),
       })
+      recoveryNote(noEffortRetryText(model, effort, detail))
+      // 说过了，重跑那次不再补「这一轮没有传」；预热轮没说，留给第一句到了再补
+      if (!prewarmMode) firstNoEffortTell(noEffortKey)
       return runAgent(
         ctx,
         call,
@@ -2300,24 +2325,29 @@ async function runAgent(
         envStallNotes,
       )
     }
+    // 丢会话重开前留一行（原因、带没带上之前的对话、原始报错）。之前断流续接写的红卡也在这里收口：
+    // 会话都没了，后面是新会话重新执行，不能等成功后写成「从中断的地方继续了」
+    const restartNote = (why: string, carried: boolean) => {
+      settleNetNotes(netNotes, true)
+      recoveryNote(restartNoteText(why, { chat, carried, detail }))
+    }
     // 会话找不到时（例如 CLI 清理了历史），丢掉会话重新开始一次
-    if (
-      resume &&
-      !prewarm &&
-      !retried &&
-      /(no|not).{0,40}(session|conversation|thread)|(session|conversation|thread).{0,40}not found/i.test(detail)
-    ) {
+    if (resume && !prewarm && !retried && SESSION_NOT_FOUND.test(detail)) {
       delete task.sessions[sessionKey]
       delete task.sessionDirs[sessionKey]
-      // 新会话没有之前的上下文，要用完整提示
+      const carry = carryForRestart()
+      log.warn('agent', `${def.name} 的会话找不到了，丢掉后重开`, { task: task.id, step, detail: detail.slice(0, 500) })
+      restartNote(t('{cli} 找不到原来的会话（可能被 CLI 清理了）', { cli: def.name }), !!carry)
+      // 新会话没有之前的上下文：节点用完整提示，对话把之前的对话裁剪后带上，不然模型突然全忘了。
+      // 断流续接写的红卡已经在 restartNote 里收口，不再往下传（netRetries 照传：续接次数前后合计）
       return runAgent(
         ctx,
         { ...call, prompt: call.fresh ?? call.prompt },
         true,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
+        netRetries,
+        carry,
+        [],
+        contextNotes,
         envStalls,
         envStallNotes,
       )
@@ -2333,14 +2363,19 @@ async function runAgent(
         cwd,
         detail: detail.slice(0, 500),
       })
+      const carry = carryForRestart()
+      restartNote(
+        t('{cli} 的会话存在别的项目目录里，面板没法回答它「要不要分叉到当前目录」', { cli: def.name }),
+        !!carry,
+      )
       return runAgent(
         ctx,
         { ...call, prompt: call.fresh ?? call.prompt },
         true,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
+        netRetries,
+        carry,
+        [],
+        contextNotes,
         envStalls,
         envStallNotes,
       )
@@ -2356,22 +2391,22 @@ async function runAgent(
     ) {
       delete task.sessions[sessionKey]
       delete task.sessionDirs[sessionKey]
-      const carry = chat
-        ? `## 之前的对话\n${transcript(task, asker ? task.messages.indexOf(asker) : task.messages.length)}`
-        : ''
+      // 按预算裁剪：原来带的是不设上限的整段，重开那次已经算重试过，历史超窗口时不会再降级，直接失败
+      const carry = carryForRestart()
       log.warn('agent', `${def.name} 的会话和当前模型不兼容，丢掉旧会话重开`, {
         task: task.id,
         step,
         detail: detail.slice(0, 500),
       })
+      restartNote(t('模型接口拒绝了 {cli} 这个会话的历史（常见于中途换了模型或网关）', { cli: def.name }), !!carry)
       return runAgent(
         ctx,
         chat ? call : { ...call, prompt: call.fresh ?? call.prompt },
         true,
         netRetries,
         carry,
-        undefined,
-        undefined,
+        [],
+        contextNotes,
         envStalls,
         envStallNotes,
       )
@@ -2447,6 +2482,9 @@ async function runAgent(
         ctx,
         {
           ...call,
+          // 原来的提示存进 fresh：续接时原会话没了（会话找不到等）会改用 fresh 开新会话，
+          // 不存的话发进空会话的是这句「从中断的地方继续」，新会话根本不知道要做什么
+          fresh: call.fresh ?? call.prompt,
           prompt:
             '刚才和模型服务的连接中断了，请从中断的地方继续完成之前的任务，已经做完的不用重做。' +
             '如果是在一次写入很长的文件时断开的，请分几次写：先写前一部分，再分段追加，每次不要太长。',
@@ -2505,8 +2543,8 @@ async function runAgent(
       if (fallback === 'restart') {
         delete task.sessions[sessionKey]
         delete task.sessionDirs[sessionKey]
-        const upto = asker ? task.messages.indexOf(asker) : task.messages.length
-        const carry = `## 之前的对话（已按长度裁剪）\n${clippedTranscript(task, upto, carryBudget())}`
+        // 和丢会话重开同一份裁剪（审查操作也走这里，所以不用 carryForRestart 的「操作不带」）
+        const carry = restartCarry(task, carryUpto(), carryBudget())
         const note: TaskMessage = {
           id: ctx.newId(),
           role: 'system',
