@@ -76,7 +76,7 @@ test('settleStopped：结掉轮次、步骤和计时，记下原因，不动消�
 
 test('定时核对：连着两次看到同一个矛盾才收口，中间被写过就重新计', async () => {
   const store = memStore([task('a', { status: 'running' }), task('b', { status: 'running' })])
-  const sweep = createStateSweep({ store, live: () => idle, reportChild: () => {} })
+  const sweep = createStateSweep({ store, live: () => idle, reportChild: () => {}, remindParent: async () => false })
   assert.deepEqual(await sweep.sweep(), [], '第一次只记下')
   // b 在两次之间被写过（比如这一轮刚收尾）：重新计
   store.map.get('b')!.updatedAt = '2026-10-01T00:00:01.000Z'
@@ -99,6 +99,7 @@ test('定时核对：第二次之前被拉起来的不收；合并中没人在�
     store,
     live: (id) => ({ ...idle, live: id === 'r' && liveR }),
     reportChild: () => {},
+    remindParent: async () => false,
   })
   await sweep.sweep()
   liveR = true
@@ -116,7 +117,12 @@ test('定时核对：子对话落成已中断后交给父对话上报（只报�
     task('m', { parentTaskId: 'p', wrapRequest: { state: 'merging', note: '', tests: '', at } }),
   ])
   const reported: Task[] = []
-  const sweep = createStateSweep({ store, live: () => idle, reportChild: (tk) => void reported.push(tk) })
+  const sweep = createStateSweep({
+    store,
+    live: () => idle,
+    reportChild: (tk) => void reported.push(tk),
+    remindParent: async () => false,
+  })
   await sweep.sweep()
   await sweep.sweep()
   assert.deepEqual(
@@ -133,8 +139,54 @@ test('定时核对：子对话落成已中断后交给父对话上报（只报�
     reportChild: () => {
       throw new Error('boom')
     },
+    remindParent: async () => false,
   })
   await failing.sweep()
   assert.deepEqual(await failing.sweep(), [{ id: 'k', kind: 'orphan' }])
   assert.equal(store2.map.get('k')!.stopReason, 'lost')
+})
+
+test('定时核对：子对话挂着「等父对话安排修复」、父对话连着两次空闲才提醒，同一条等待只提醒一次；父对话在跑、被挡住时不算', async () => {
+  const plan = (state: 'waiting' | 'ok') => [
+    {
+      id: 'pl',
+      status: 'active',
+      createdAt: at,
+      updatedAt: at,
+      steps: [{ id: '1', title: '跑测试', status: 'waiting', waits: [{ kind: 'parent', ref: 'fix', state, at }] }],
+    },
+  ]
+  const store = memStore([
+    task('p'),
+    task('k', { parentTaskId: 'p', plans: plan('waiting') }),
+    task('k2', { parentTaskId: 'p', plans: plan('ok') }),
+  ])
+  let parentLive = true
+  let allow = false
+  const asked: string[] = []
+  const sweep = createStateSweep({
+    store,
+    live: (id) => ({ ...idle, live: id === 'p' && parentLive }),
+    reportChild: () => {},
+    remindParent: async (kid) => {
+      asked.push(kid.id)
+      return allow
+    },
+  })
+  await sweep.sweep()
+  await sweep.sweep()
+  assert.deepEqual(asked, [], '父对话在执行位上：它这一轮还能回')
+  parentLive = false
+  await sweep.sweep()
+  assert.deepEqual(asked, [], '第一次只记下')
+  await sweep.sweep()
+  assert.deepEqual(asked, ['k'], '已经回过的（等待不是 waiting）不提醒')
+  // 被 holdWake 挡住（用户停下父对话、超限）：没提醒，之后再连看两次再试
+  allow = true
+  await sweep.sweep()
+  await sweep.sweep()
+  assert.deepEqual(asked, ['k', 'k'])
+  await sweep.sweep()
+  await sweep.sweep()
+  assert.deepEqual(asked, ['k', 'k'], '提醒过一次就不再提醒')
 })

@@ -8,6 +8,24 @@ import type { RpcAdapter, RpcContext } from './types.ts'
 const START_TIMEOUT_MS = 60_000
 
 /**
+ * 模型又在出内容了（新条目开始、回复或推理的 delta）：之前的自动重试算成功。
+ * 不看 item/completed 和命令输出：Codex 边读流边执行工具，出错前就在跑的命令会在重试期间继续输出、结束，
+ * 说明不了模型请求接上了
+ */
+const PROGRESS = new Set([
+  'item/started',
+  'item/agentMessage/delta',
+  'item/reasoning/summaryTextDelta',
+  'item/reasoning/textDelta',
+])
+
+/**
+ * thread/resume 的报错像「会话没了」：Codex 原文是「no rollout found for thread id …」或「thread not found: …」。
+ * 只看第一行：面板自己的超时报错后面附着 stderr，里面的 not found 和会话无关
+ */
+const THREAD_GONE = /no rollout found|\b(?:thread|session|rollout)\b[^\n]{0,40}\b(?:not found|does not exist)\b/i
+
+/**
  * Codex 用 `codex app-server`（stdin / stdout 上的 JSON-RPC）执行。
  * 流程：initialize → thread/start（续接时 thread/resume，分叉时 thread/fork）→ turn/start
  * （压缩时 thread/compact/start，审查时 review/start）→ 收通知直到 turn/completed。
@@ -28,6 +46,8 @@ export function codexAdapter(
   let thinkingSeen = false
   // 用量按累计值做差，重复推送不会算两遍
   let prevTotal: Record<string, number> | undefined
+  // Codex 自己在重试（error 通知带 willRetry）：第几次。之后模型又出内容就算重试成功，发 retry_ok 把「正在重试」收掉
+  let retrying = 0
   const sandbox = o.permission === 'danger-full-access' ? 'danger-full-access' : o.permission || 'workspace-write'
   const overrides = {
     cwd: o.cwd,
@@ -73,10 +93,12 @@ export function codexAdapter(
     const r = await ctx.request({ method, params }, { timeoutMs: START_TIMEOUT_MS })
     if (r?.error) {
       const msg = String(r.error.message ?? t('启动会话失败'))
-      // 续接失败多半是会话被清理了；带上 thread not found 让上层丢掉旧会话重来
+      // 报错像「会话被清理了」时带上 thread not found，让上层丢掉旧会话重来。
+      // 别的失败（thread/resume 超时、进程崩了）不能包：那是环境问题，丢掉会话只会让对话白白重开
+      const gone = o.resume && THREAD_GONE.test(msg.split('\n')[0])
       ctx.emit({
         type: 'error',
-        message: o.resume ? t('无法续接之前的会话（thread not found）：{error}', { error: msg }) : msg,
+        message: gone ? t('无法续接之前的会话（thread not found）：{error}', { error: msg }) : msg,
       })
       ctx.finish(false)
       return
@@ -321,8 +343,16 @@ export function codexAdapter(
     return s
   }
 
+  /** 重试接上了：发 retry_ok，runner 把这一轮的「正在重试」收成已恢复 */
+  const retried = (ctx: RpcContext) => {
+    ctx.emit({ type: 'retry_ok', text: t('第 {n} 次重试成功了，接着做。', { n: retrying }), attempt: retrying })
+    retrying = 0
+  }
+
   const onNotification = (ctx: RpcContext, m: any) => {
     const p = m.params ?? {}
+    // Codex 没有「重试成功」的通知：重试后模型又出内容了，就是这次请求接上了
+    if (retrying && PROGRESS.has(m.method)) retried(ctx)
     switch (m.method) {
       case 'windowsSandbox/setupCompleted':
         if (thread || ctx.finished) return
@@ -402,12 +432,33 @@ export function codexAdapter(
       case 'model/rerouted':
         if (p.toModel) ctx.emit({ type: 'usage', model: String(p.toModel) })
         return
-      case 'error':
-        // 会自动重试的错误不算失败
-        if (!p.willRetry) ctx.emit({ type: 'error', message: String(p.error?.message ?? t('执行出错')) })
+      case 'error': {
+        const msg = String(p.error?.message ?? t('执行出错'))
+        if (!p.willRetry) {
+          ctx.emit({ type: 'error', message: msg })
+          return
+        }
+        // 会自动重试的错误不算失败，但要让用户看到（不悄悄重试）：画成「正在重试」，接上后收成已恢复。
+        // 断流重连时 message 是「Reconnecting... 2/5」，真正的原因在 additionalDetails
+        const why = oneLine(String(p.error?.additionalDetails || msg), 300)
+        const nm = /reconnecting\D{0,8}(\d+)\s*\/\s*(\d+)/i.exec(msg)
+        retrying = nm ? Number(nm[1]) : retrying + 1
+        ctx.emit({
+          type: 'notice',
+          text: nm
+            ? t('模型请求失败，正在自动重试（第 {n}/{max} 次）：{error}', { n: retrying, max: nm[2], error: why })
+            : t('模型请求失败，正在自动重试：{error}', { error: why }),
+          kind: 'retry',
+          attempt: retrying,
+          ...(nm ? { maxAttempts: Number(nm[2]) } : {}),
+          error: why,
+        })
         return
+      }
       case 'turn/completed': {
         const turn = p.turn ?? {}
+        // 重试后没再出内容就直接成功结束了（比如重试的正好是最后一次请求）：同样算接上了
+        if (turn.status === 'completed' && retrying) retried(ctx)
         if (turn.status === 'completed') return ctx.finish(true)
         ctx.finish(false, turn.error?.message ?? (turn.status === 'interrupted' ? t('已中断') : t('执行失败')))
         return
@@ -454,6 +505,8 @@ export function codexAdapter(
       // 同一 thread 开下一轮：上一轮的 turn id、工具记录和用量累计（按累计值做差）都不能带过去
       if (!thread) return void ctx.finish(false, t('启动会话失败'))
       turnId = ''
+      // 上一轮没收口的重试计数不能串到这一轮：否则这一轮第一条输出会被当成「重试成功」
+      retrying = 0
       startedCmds.clear()
       itemStart.clear()
       streamed.clear()

@@ -88,7 +88,7 @@ import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
 import { docRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
-import { currentAskIndex, sentToOther } from './peer-message.ts'
+import { handedToOther, noteHandOff, type HandOffs } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { summaryCardRules, summaryDetailRules } from './summary-card.ts'
@@ -132,10 +132,10 @@ import {
 export { stopHelper, stopPlan } from './run-stops.ts'
 
 /**
- * 每个父对话在这条用户消息（ask 是它的 id）里交给子对话的话 → 交给了哪个子对话（见 sendToConversation：
- * 用户的一条消息只交给一个子对话）。用户发了新消息就换一份，和 sentToOther 的范围一致
+ * 每个父对话交给子对话的话 → 交给了哪个子对话、当时是哪条用户消息（见 sendToConversation：
+ * 用户的一条消息只交给一个子对话）。范围和 sentToOther 一致（见 shared/peer-message.ts 的 handedToOther）
  */
-const handedOff = new WeakMap<object, { ask: string; sent: Map<string, string> }>()
+const handedOff = new WeakMap<object, HandOffs>()
 
 /**
  * 这个对话名下的子对话（计划按它对上等待、收口）：set_plan、finish_plan 都按这一份算。
@@ -3133,19 +3133,17 @@ function makeOrchestra(
       // 一条消息只交给一个子对话（用户 2026-10-24 定的）：同一段话逐个转给几个子对话，
       // 父对话里刷出一排一模一样的「发送消息」，几个子对话还会各改各的同一处
       // 并行发出的几次调用可能还没记进对话：这一轮已经交出去的也记在内存里一起查
-      const ask = task.messages[currentAskIndex(task.messages)]?.id ?? ''
       let handed = handedOff.get(task)
-      if (handed?.ask !== ask) handedOff.set(task, (handed = { ask, sent: new Map<string, string>() }))
-      const prev = handed.sent.get(message.trim())
-      const other = (prev !== id.trim() ? prev : undefined) ?? sentToOther(task, id.trim(), message)
+      if (!handed) handedOff.set(task, (handed = new Map()))
+      const other = handedToOther(task.messages, handed, id.trim(), message)
       if (other)
         return {
           ok: false,
           info: `这段话已经交给了子对话 ${other}，一条消息只交给一个子对话：选最相关的那一个交，别的子对话不用重复发。`,
         }
-      handed.sent.set(message.trim(), id.trim())
+      noteHandOff(task.messages, handed, id.trim(), message)
       const r = await host.sendToConversation(id.trim(), message)
-      if (!r.ok) handed.sent.delete(message.trim())
+      if (!r.ok) handed.delete(message.trim())
       // 标题从子对话列表里取：补步骤时用它当标题（只看 id 的话计划里会出现「子对话：c1」这种没信息量的标题）
       const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''
       const at = r.ok ? step?.trim() || ensureChildStep(task, id.trim(), kidTitle) : ''

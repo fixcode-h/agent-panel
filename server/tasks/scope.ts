@@ -160,6 +160,11 @@ export interface TasksScope {
   chatWorkspace: (id: string) => Promise<Project>
   /** 一轮结束后按整棵对话树核用量上限；true 表示到了上限、已经停下（见 tasks/budget.ts） */
   checkBudget: (tk: Task) => Promise<boolean>
+  /** 面板替别人叫醒一个对话之前的唯一判断，返回不叫的原因（规则见 shared/wake.ts） */
+  holdWake: (
+    target: Task,
+    opts?: { from?: string; fromAbove?: boolean },
+  ) => Promise<import('../../shared/wake.ts').WakeHold | undefined>
   childActive: (tk: Task) => boolean
   /** 子对话卡住了、面板正在重启它或找人接手（见 server/tasks/stuck-child.ts）：这段时间不往父对话报中断 / 失败 */
   childRecovering: (id: string) => boolean

@@ -404,6 +404,27 @@ export const EN_SERVER: Record<string, string> = {
   '已自动续接会话（第 {n} 次），从中断的地方继续了。':
     'Automatically resumed the session (attempt {n}) and continued from where it broke off.',
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
+  '连接中断后续接不上原来的会话，已开新会话重新执行。':
+    'After the connection dropped, the original session could not be resumed, so the turn was rerun in a new session.',
+  '{why}。已丢掉旧会话、开新会话用完整提示重新执行这一步。':
+    '{why}. Dropped the old session and started a new one to rerun this step with the full prompt.',
+  '{why}。已丢掉旧会话、开新会话重新执行这一轮，之前的对话按长度裁剪后一起带上了。':
+    '{why}. Dropped the old session and started a new one to rerun this turn, carrying over the earlier conversation (clipped to fit).',
+  '{why}。已丢掉旧会话、开新会话重新执行这一轮。':
+    '{why}. Dropped the old session and started a new one to rerun this turn.',
+  '{cli} 找不到原来的会话（可能被 CLI 清理了）':
+    '{cli} couldn’t find the original session (the CLI may have cleaned it up)',
+  '{cli} 的会话存在别的项目目录里，面板没法回答它「要不要分叉到当前目录」':
+    '{cli}’s session lives in another project directory, and the panel can’t answer its “fork into the current directory?” prompt',
+  '模型接口拒绝了 {cli} 这个会话的历史（常见于中途换了模型或网关）':
+    'The model API rejected this {cli} session’s history (common after switching models or gateways mid-conversation)',
+  '模型 {model} 不支持设置思考强度（{effort}），已去掉思考强度重新执行；面板重启前这个模型都不再传思考强度。':
+    'Model {model} doesn’t support setting the reasoning effort ({effort}), so it was rerun without it; until the panel restarts, no effort will be passed for this model.',
+  '模型 {model} 之前报过不支持设置思考强度，这一轮没有传思考强度（{effort}）；面板重启前这个模型都不再传。':
+    'Model {model} reported earlier that it doesn’t support setting the reasoning effort, so this turn ran without it ({effort}); until the panel restarts, no effort will be passed for this model.',
+  '模型请求失败，正在自动重试（第 {n}/{max} 次）：{error}':
+    'Model request failed; retrying automatically ({n}/{max}): {error}',
+  '模型请求失败，正在自动重试：{error}': 'Model request failed; retrying automatically: {error}',
   '这一轮没有响应，已自动重试 {n} 次（等待放宽到 {wait}）…':
     'This turn got no response. Retried {n} time(s) automatically (waiting up to {wait})…',
   '已自动重试 {n} 次，仍然没有响应。': 'Still no response after {n} automatic retries.',
