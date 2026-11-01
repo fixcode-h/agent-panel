@@ -59,6 +59,8 @@ export const DesignImage = z.object({
   selected: z.number().int().default(0),
   status: z.enum(['idle', 'pending', 'generating', 'failed']).default('idle'),
   error: z.string().optional(),
+  /** 这张切图在确认的模板里的位置（设计稿像素）：生成时从模板裁下这一块做参考，画风和模板一致 */
+  ref: z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }).optional(),
 })
 export type DesignImage = z.infer<typeof DesignImage>
 
@@ -722,6 +724,8 @@ export const AiImage = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]{1,40}$/, 'sheet 只能用字母、数字、下划线和连字符')
     .optional(),
+  /** 这张切图在模板里的位置（设计稿像素 {x,y,w,h}）：照着模板出切图时写，面板从模板裁下这一块做参考 */
+  ref: z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }).optional(),
 })
 export const AiDesignResult = z.object({
   reply: z.string().default(''),
@@ -966,7 +970,7 @@ function conceptSection(c: ConceptContext, d: Design) {
 照着它搭界面、出切图，界面要和模板一致：
 1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
 2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。
-3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
+3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。每张切图写 ref（它在模板里的位置，设计稿像素 {"x","y","w","h"}，用 inspect_image / view_image 量准）：生成时面板从模板裁下这一块做参考（图片 CLI 当参考图，本机 ComfyUI 从这一块图生图），形状、材质、配色和模板一致；没写 ref 的只带整张模板参考。
 4. 每搭完一个区域就调 compare_template（region 写这个区域的设计稿坐标）和模板逐像素对比：按它给的偏移和差异热力图改位置、大小，再对比一次确认；全部搭完再整体对比一次（不写 region），最后 screenshot 截全图。位置、比例、层次不对的接着改，直到和模板一致；check 只是辅助，完成条件同下面「用 design 工具改设计」的最后一条（全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致）。
 - 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。
 

@@ -1,6 +1,8 @@
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { Design, DesignImage, ReplyPart } from '../shared/design.ts'
+import { crop, decodePng, encodePng, resize } from './image.ts'
+import { localGenerateChain } from './comfy.ts'
 import { nineSliceRatios, syncBrushSlices, type SliceImage } from '../shared/umg.ts'
 import { t } from '../shared/i18n.ts'
 
@@ -75,4 +77,66 @@ export function finalParts(parts: ReplyPart[]): ReplyPart[] | undefined {
     .map((p) => ({ ...p, tools: p.tools.map((x) => ({ ...x, running: false })) }))
     .filter((p) => p.text || p.thinking?.trim() || p.tools.length)
   return list.length ? list : undefined
+}
+
+/**
+ * 从确认的模板里裁出一张切图对应的那一块（模板先缩放到设计稿尺寸，ref 是设计稿像素），存成 PNG。
+ * 生成切图时拿它做参考：只给整张模板时，模型常把别处的花纹、文字一起画进来，形状也对不上。
+ * 模板不是 PNG、或者区域落在图外时返回 undefined，调用方退回只带整张模板
+ */
+export async function templateCrop(
+  file: string,
+  designSize: { X: number; Y: number },
+  ref: { x: number; y: number; w: number; h: number },
+): Promise<Buffer | undefined> {
+  const img = decodePng(await readFile(file).catch(() => Buffer.alloc(0)))
+  if (!img) return undefined
+  const full = resize(img, designSize.X, designSize.Y)
+  const x = Math.max(0, Math.min(Math.round(ref.x), designSize.X - 1))
+  const y = Math.max(0, Math.min(Math.round(ref.y), designSize.Y - 1))
+  const w = Math.min(Math.round(ref.w), designSize.X - x)
+  const h = Math.min(Math.round(ref.h), designSize.Y - y)
+  if (w < 4 || h < 4) return undefined
+  return encodePng(crop(full, x, y, w, h))
+}
+
+/** 内置的「图生图 · 风格复刻」工作流：从模板裁下的那一块出发生成切图 */
+const IMG2IMG_WORKFLOW = 'game-img2img'
+
+/**
+ * 本机 ComfyUI 从模板的局部图生图：降噪 0.55，保留模板里的形状和配色、重新画干净（去掉压在上面的文字、背景）。
+ * 走工作流链（一段的链），进度、取消、队列都和别的本机出图一样
+ */
+export async function templateImg2Img(
+  o: {
+    crop: Buffer
+    prompt: string
+    negative: string
+    width: number
+    height: number
+    count: number
+    onImage: (b: Buffer) => void
+    onProgress: (text: string) => void
+  },
+  signal: AbortSignal,
+) {
+  await localGenerateChain(
+    {
+      chain: {
+        id: 'design-template-ref',
+        name: '',
+        steps: [{ workflowId: IMG2IMG_WORKFLOW, prompt: '', denoise: 0.55 }],
+        updatedAt: new Date().toISOString(),
+      },
+      image: o.crop,
+      prompt: o.prompt,
+      negative: o.negative,
+      width: o.width,
+      height: o.height,
+      count: o.count,
+      onImage: o.onImage,
+      onProgress: o.onProgress,
+    },
+    signal,
+  )
 }

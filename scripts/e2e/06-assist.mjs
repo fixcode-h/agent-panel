@@ -663,7 +663,20 @@ await runShard('AI 创建与 UI 设计', async (api) => {
         ['generate_concepts', { prompt: 'alternative layout', count: 1 }],
         [
           'add_images',
-          { images: [{ id: 'gem', name: 'Gem', prompt: 'a red gem', negative: 'frame', width: 64, height: 64 }] },
+          {
+            images: [
+              {
+                id: 'gem',
+                name: 'Gem',
+                prompt: 'a red gem',
+                negative: 'frame',
+                width: 64,
+                height: 64,
+                // 它在模板里的位置：出图时从模板裁下这一块做参考
+                ref: { x: 100, y: 100, w: 64, h: 64 },
+              },
+            ],
+          },
         ],
         [
           'add_widgets',
@@ -691,6 +704,7 @@ await runShard('AI 创建与 UI 设计', async (api) => {
       .filter((c) => /a red gem/.test(c.stdin ?? c.input ?? ''))
       .at(-1)
     assert.match(gemGen.stdin ?? gemGen.input, /approved concept art/, '切图带着模板作为参考')
+    assert.deepEqual(d.images.find((i) => i.id === 'gem').ref, { x: 100, y: 100, w: 64, h: 64 }, '位置存进设计')
     assert.equal(d.concept.approved, tpl, '模板模式里出的原画不把模板作废')
     assert.equal(d.concept.images.length, 3, '新出的原画进了候选')
     assert.match(gemGen.stdin ?? gemGen.input, /Negative prompt.*frame/)

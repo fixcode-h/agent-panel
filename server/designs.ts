@@ -8,7 +8,14 @@ import { extractJson } from '../shared/assist.ts'
 import { openDesignSession, type ConceptRequest } from './design-mcp.ts'
 import { DesignCaptures } from './design-capture.ts'
 import { HeadlessPages } from './headless.ts'
-import { finalParts, normalizeSlices, resetStuckImages, restoredVariants } from './design-images.ts'
+import {
+  finalParts,
+  normalizeSlices,
+  resetStuckImages,
+  restoredVariants,
+  templateCrop,
+  templateImg2Img,
+} from './design-images.ts'
 import { treeChanges } from '../shared/design-diff.ts'
 import { EXPORT_MARK, pickExportDir } from './design-export-dir.ts'
 import { versionMeta, versionStore } from './design-versions.ts'
@@ -339,11 +346,50 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const ref = templateRef(d, source)
     // 九宫格图按透明处理：四周的圆角/花纹外面必须能抠掉，白底会被边距放大出来
     const transparent = img.transparent || !!img.nineSlice
+    // 写了它在模板里的位置：从确认的模板裁下这一块做参考（图片 CLI 当参考图，本机 ComfyUI 从它图生图）
+    const tplId = conceptOf(cache.get(d.id) ?? d).approved
+    const approvedFile = tplId ? conceptFile(cache.get(d.id) ?? d, tplId) : undefined
+    const crop =
+      img.ref && approvedFile ? await templateCrop(approvedFile, cache.get(d.id)!.designSize, img.ref) : undefined
+    const cropFile = crop && source.kind === 'cli' ? path.join(tmpdir(), `agent-panel-ref-${randomUUID()}.png`) : ''
+    if (cropFile) await writeFile(cropFile, crop!)
+    const local = source.kind === 'local' ? source : undefined
     try {
-      const rest =
-        source.kind === 'local'
+      // 本机：先试从模板局部图生图；图生图模型没下载、工作流出错时在对话里说明，改回按描述生成
+      const fromTemplate =
+        local && crop
+          ? await templateImg2Img(
+              {
+                crop,
+                prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
+                negative: img.negative,
+                width: img.width,
+                height: img.height,
+                count,
+                onImage: (b) => sink.add(b),
+                onProgress: (text) => (item.text = text),
+              },
+              job.abort.signal,
+            ).then(
+              () => true,
+              (e) => {
+                if (job.abort.signal.aborted) throw e
+                systemNote(
+                  d.id,
+                  t('{name} 没能从模板局部图生图：{error}。改成按描述生成', {
+                    name: img.name,
+                    error: (e as Error).message,
+                  }),
+                )
+                return false
+              },
+            )
+          : false
+      const rest = fromTemplate
+        ? []
+        : local
           ? await localRun(
-              source,
+              local,
               withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
               {
                 subject: withRevision(img.prompt, revision),
@@ -376,11 +422,15 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               )
             : await cliGenerate(
                 // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
-                withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind, !!ref), revision),
+                withRevision(
+                  imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind, !!ref || !!cropFile),
+                  revision,
+                ),
                 count,
                 job,
                 (b) => sink.add(b),
-                ref ? [ref] : [],
+                // 裁下来的那一块放在前面：模型主要照它画，整张模板只看风格
+                [...(cropFile ? [cropFile] : []), ...(ref ? [ref] : [])],
               )
       for (const b of rest) sink.add(b)
       await sink.done()
@@ -396,6 +446,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       item.status = 'failed'
       item.text = msg
       throw e
+    } finally {
+      // 裁下来的模板局部是这一张临时用的
+      if (cropFile) await rm(cropFile, { force: true }).catch(() => {})
     }
   }
 
@@ -1071,6 +1124,7 @@ ${prompt}`,
             height: im.height,
             transparent: im.transparent,
             nineSlice: im.nineSlice,
+            ref: im.ref,
             status: input.source.kind === 'none' ? ('idle' as const) : ('pending' as const),
             error: undefined,
           }
