@@ -46,6 +46,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   }
   await p.getByRole('button', { name: '全局教训', exact: true }).click()
   await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
+  // 语音朗读和语音输入分开：引擎、音色、语速、试听，下面列开源的 Kokoro 模型可以下载
+  await p.getByRole('button', { name: '语音朗读', exact: true }).first().click()
+  await check(p, '设置-语音朗读', ['朗读引擎', '语速', 'Kokoro v1.1 中文（int8）'])
+  await p
+    .getByRole('radio', { name: '本机模型' })
+    .click()
+    .catch(() => {})
+  await check(p, '设置-语音朗读-本机模型', ['音色', '还没下载模型'])
   await p.getByRole('button', { name: '外观', exact: true }).click()
   await check(p, '设置-外观', ['配色', 'Claude Code（默认）', 'Claude', '中性', 'Maple Mono NL', '字间距', '空格宽度'])
   // 换配色：html 上挂 data-palette，主按钮颜色跟着变；默认的「Claude Code」挂 code，只有「Claude」配色不挂属性

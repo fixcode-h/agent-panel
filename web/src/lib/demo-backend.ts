@@ -2,6 +2,7 @@
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
+import { demoSpeech, demoTts } from './demo-speech'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
@@ -1714,37 +1715,6 @@ const demoCatalog = () => ({
 let demoWorkflows: ComfyWorkflow[] = []
 /** 演示里存下来的工作流链 */
 let demoChains: ComfyChain[] = []
-/** 语音输入：演示里没有麦克风识别，下载一点就好，识别回一句示例 */
-const demoSpeechModels = new Set<string>()
-function demoSpeech(method: string, seg: string[]): unknown {
-  const [, a, id, b] = seg
-  if (a === 'transcribe') return { text: '（在线演示）把登录页的报错提示改得更清楚一些' }
-  if (a === 'models' && id && method === 'POST' && b === 'download') demoSpeechModels.add(id)
-  if (a === 'models' && id && method === 'DELETE') demoSpeechModels.delete(id)
-  return {
-    supported: true,
-    platform: 'demo',
-    runtime: demoSpeechModels.size > 0,
-    models: [...demoSpeechModels],
-    dir: '~/.agent-panel/speech',
-  }
-}
-
-/** 语音朗读：演示里模型下载一下就好；真的念用浏览器语音（演示里没有本机模型可以生成） */
-const demoTtsModels = new Set<string>()
-function demoTts(method: string, seg: string[]): unknown {
-  const [, a, id, b] = seg
-  if (a === 'models' && id && method === 'POST' && b === 'download') demoTtsModels.add(id)
-  if (a === 'models' && id && method === 'DELETE') demoTtsModels.delete(id)
-  return {
-    supported: true,
-    platform: 'demo',
-    runtime: demoTtsModels.size > 0,
-    models: [...demoTtsModels],
-    dir: '~/.agent-panel/speech/tts',
-  }
-}
-
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
   // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
