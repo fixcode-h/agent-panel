@@ -119,7 +119,8 @@ export const EN_SERVER: Record<string, string> = {
   '超过 {n} 分钟没有完成，已停止': 'Stopped after not finishing within {n} minutes',
   '{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。':
     '{error}. Make sure {cli} is installed ({hint}), or set the full path to its executable in Settings.',
-  '{cli} 执行失败（退出码 {code}）：': '{cli} failed (exit code {code}):',
+  '{cli} 执行失败（{reason}）：': '{cli} failed ({reason}):',
+  '进程被外部结束，信号 {signal}': 'process was killed externally, signal {signal}',
   '{cli} 执行失败：': '{cli} failed:',
   '原始输出：': 'Raw output:',
 

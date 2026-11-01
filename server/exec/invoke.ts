@@ -3,7 +3,7 @@ import { apiModelIdFor } from '../../shared/accounts.ts'
 import { cliSettings } from '../../shared/settings.ts'
 import { rpcSessionFor } from './rpc/index.ts'
 import { parserFor, type CliEvent } from './parsers.ts'
-import { runProcess, type ProcessResult } from './process.ts'
+import { earlyExitError, runProcess, stderrTail, type ProcessResult } from './process.ts'
 import type { TrackedOwner } from './orphans.ts'
 import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
@@ -334,7 +334,7 @@ async function invoke(
     // 各家发什么、怎么判断结束由定义里的 rpc 配置或 codex / claude 适配器决定
     // 请求超时时把进程状态和 stderr 带进错误里：用户能自己看出是启动卡住、还是进程已经崩了
     let exited = false
-    let stderrTail = ''
+    let stderrBuf = ''
     /**
      * 保活结束、输入已经关了，CLI 却一直不退出（还挂着自己的后台任务、卡在收尾）：这一份执行永远收不完，
      * 执行位一直占着，之后交给这个对话的消息（父对话交代任务、用户再发一句）全都卡住。限时后直接结束进程
@@ -371,7 +371,7 @@ async function invoke(
         return text
       },
       waited: o.waited,
-      diagnose: { alive: () => !exited, stderr: () => stderrTail },
+      diagnose: { alive: () => !exited, stderr: () => stderrTail(stderrBuf, 40, def.stderrNoise) },
       requestTimeoutMs: o.requestTimeoutMs,
     })
     setControl({
@@ -399,7 +399,7 @@ async function invoke(
             end: () => io.end(),
           }),
         onStderr: (text) => {
-          stderrTail = (stderrTail + text).slice(-4000)
+          stderrBuf = (stderrBuf + text).slice(-4000)
         },
         onLine: (line) => session.line(line),
       })
@@ -407,16 +407,9 @@ async function invoke(
       clearTimeout(exitTimer)
       // 这一轮已经报完结果、只是关输入后不退出被结束：按正常退出交回，别显示成「已停止」
       if (forcedExit && session.finished && r.killed) return { ...r, killed: null, code: 0 }
-      // 没等到这一轮结束就退出了（崩溃、配置错误、登录过期），算失败；stderr 的尾巴一起给用户
-      if (!session.finished && !r.killed && !r.spawnError) {
-        const tail = stderrTail.trim().split('\n').slice(-3).join('\n')
-        o.onEvent({
-          type: 'result',
-          ok: false,
-          error:
-            t('{cli} 没有完成这一轮就退出了', { cli: def.name }) + (tail ? `\n${t('stderr 最后几行：')}\n${tail}` : ''),
-        })
-      }
+      // 没等到这一轮结束就退出了（崩溃、配置错误、登录过期、被外部杀掉），算失败；原因怎么写见 earlyExitError
+      if (!session.finished && !r.killed && !r.spawnError)
+        o.onEvent({ type: 'result', ok: false, error: earlyExitError(def, r, stderrBuf) })
       return r
     } finally {
       clearTimeout(exitTimer)

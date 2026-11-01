@@ -103,7 +103,7 @@ import { invokeCli, type CliControl } from './invoke.ts'
 import { setLimits } from '../cli-extras.ts'
 import type { BuildOptions } from '../../shared/clis.ts'
 import type { AskReply, CliEvent } from './parsers.ts'
-import { childEnv } from './process.ts'
+import { childEnv, exitReason, stderrTail } from './process.ts'
 import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 import { redirectWait } from './redirect.ts'
 import { t, getLang } from '../../shared/i18n.ts'
@@ -2258,6 +2258,7 @@ async function runAgent(
       task: task.id,
       step,
       code: r.code,
+      signal: r.exitSignal,
       killed: r.killed,
       spawnError: r.spawnError,
       result: result?.error,
@@ -2291,7 +2292,7 @@ async function runAgent(
         }
       : { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: cap.minutes }) }
   if (r.killed === 'idle') {
-    const detail = [...errors, r.stderr.trim().split('\n').slice(-6).join('\n')].filter(Boolean).join('\n')
+    const detail = [...errors, stderrTail(r.stderr, 6, def.stderrNoise)].filter(Boolean).join('\n')
     return {
       ok: false,
       error: [
@@ -2305,9 +2306,7 @@ async function runAgent(
   }
   const failed = result ? !result.ok : r.code !== 0
   if (failed) {
-    const detail = [result?.error, ...errors, r.stderr.trim().split('\n').slice(-6).join('\n')]
-      .filter(Boolean)
-      .join('\n')
+    const detail = [result?.error, ...errors, stderrTail(r.stderr, 6, def.stderrNoise)].filter(Boolean).join('\n')
     // 自定义接口的模型不支持调整思考强度：记住，去掉强度再跑一次（CLI 启动时就退出，没有实际输出）
     if (effort && !retried && EFFORT_REJECTED.test(detail)) {
       markNoEffort(cliId, model)
@@ -2419,10 +2418,11 @@ async function runAgent(
       )
     }
     const hints = failureHints(detail, def)
-    const head =
-      r.code !== null && r.code !== 0
-        ? t('{cli} 执行失败（退出码 {code}）：', { cli: def.name, code: r.code })
-        : t('{cli} 执行失败：', { cli: def.name })
+    // 先写进程怎么结束的（退出码、被外部杀掉时的信号）：被 kill -9 时退出码是 null，只看 stderr 会误判原因
+    const how = exitReason(r)
+    const head = how
+      ? t('{cli} 执行失败（{reason}）：', { cli: def.name, reason: how })
+      : t('{cli} 执行失败：', { cli: def.name })
     const raw = clip(detail || t('没有更多信息'), 1500)
     const message = [head, ...hints, hints.length ? `\n${t('原始输出：')}\n${raw}` : raw].join('\n')
     // 环境性卡住（请求超时，但进程还活着、一个字都没输出）：面板这边没等够，不是用户的要求有问题。

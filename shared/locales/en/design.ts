@@ -583,6 +583,7 @@ export const EN_DESIGN: Record<string, string> = {
   '{f} 已跳过：{why}': '{f} skipped: {why}',
   'CLI 配置有问题': 'Some CLI config files have problems',
   '{cli} 没有完成这一轮就退出了': '{cli} exited before finishing this turn',
+  '{cli} 没有完成这一轮就退出了（{reason}）': '{cli} exited before finishing this turn ({reason})',
   '{cli} 用不了设计工具，请换一个 Agent': '{cli} cannot use the design tools. Please switch to another agent',
   '{cli} 连不上设计工具，请升级到最新版：{detail}':
     '{cli} could not connect to the design tools. Please update it to the latest version: {detail}',
