@@ -36,6 +36,18 @@ test('取消等待后 CLI 不退出：限时到了按收尾原因强制停掉，
   assert.equal(r.entry.stopReason, 'finish' satisfies StopReason)
 })
 
+test('用户已经停下的子对话再被父对话连带停：停止原因还是用户，不改成 parent（实测报告问题 3）', () => {
+  const r = rig(99)
+  r.stopTask('kid', 'user')
+  r.stopTask('kid', 'parent')
+  assert.equal(r.entry.stopReason, 'user' satisfies StopReason)
+  // 不是连带停的照旧以后来的为准（卡住重开后换人接手）
+  const s = rig(99)
+  s.stopTask('kid', 'stalled')
+  s.stopTask('kid', 'replaced')
+  assert.equal(s.entry.stopReason, 'replaced' satisfies StopReason)
+})
+
 test('限时内收完就返回，不等满时限', async () => {
   const r = rig(99)
   setTimeout(() => r.release(), 5)
