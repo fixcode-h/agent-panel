@@ -17,6 +17,8 @@ import {
   type DesignMeta,
   type DesignProject,
   type DesignVersion,
+  applyVersion,
+  versionSnapshot,
   type ImageSource,
 } from '@shared/design'
 import { normalizeTree, walk, type Widget } from '@shared/umg'
@@ -1806,14 +1808,7 @@ function addVersion(d: Full, name: string, auto: boolean) {
     name,
     at: now(),
     auto,
-    snapshot: structuredClone({
-      designSize: d.designSize,
-      style: d.style,
-      root: d.root,
-      components: d.components,
-      images: d.images,
-      animations: d.animations ?? [],
-    }),
+    snapshot: versionSnapshot(d),
   }
   versions.set(d.id, [v, ...(versions.get(d.id) ?? [])].slice(0, 40))
   return v
@@ -1846,16 +1841,7 @@ export function demoVersions(
   }
   if (action === 'restore') {
     addVersion(d, `恢复「${v.name}」之前`, true)
-    Object.assign(
-      d,
-      structuredClone({
-        root: v.snapshot.root,
-        components: v.snapshot.components,
-        designSize: v.snapshot.designSize,
-        style: v.snapshot.style,
-        animations: v.snapshot.animations ?? [],
-      }),
-    )
+    applyVersion(d, v.snapshot)
     d.rev++
     return d
   }

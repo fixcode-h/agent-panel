@@ -11,6 +11,7 @@ import {
   dataRows,
   dataUsage,
   checkData,
+  dataIssues,
   emptyData,
   findDataSet,
   listWidgets,
@@ -282,4 +283,17 @@ test('webExport：状态和数据绑定也不出现在网页导出里', () => {
   })
   for (const p of [...DATA_PROPS, 'selected']) assert.ok(!html.includes(p), `网页导出里不该有 ${p}`)
   assert.ok(html.includes('示例标题'))
+})
+
+test('dataIssues：逐条写明哪个集合、哪一行、哪个字段不合法', () => {
+  const issues = dataIssues({
+    sets: [
+      { name: 'Items', fields: [{ key: 'icon' }], rows: [{ icon: 'img:a' }, { icon: { bad: 1 } }] },
+      { name: 'Tabs', fields: [{ label: '没有 key' }] },
+    ],
+  })
+  assert.equal(issues.length, 2)
+  assert.match(issues[0], /^第 1 个集合（Items） 第 2 行 的 icon：/)
+  assert.match(issues[1], /^第 2 个集合（Tabs） fields 第 1 项 的 key：/)
+  assert.deepEqual(dataIssues({ sets: [{ name: 'Ok', fields: [], rows: [{ a: 1 }] }] }), [])
 })

@@ -575,3 +575,17 @@ test('inspect_image 坐标写错时返回说明，不再 500；region 夹到图�
   assert.deepEqual(JSON.parse(out.text).region, { x: 15, y: 15, w: 5, h: 5 })
   close()
 })
+
+test('set_data 不合法时整批不改，并告诉 AI 是哪个集合、哪一行、哪个字段', async () => {
+  const { call, session, close } = open()
+  const r = await call('set_data', {
+    sets: [{ name: 'Items', fields: [{ key: 'count', type: 'number' }], rows: [{ count: 1 }, { count: [2] }] }],
+  })
+  assert.ok(r.error)
+  assert.match(r.text, /第 1 个集合（Items） 第 2 行 的 count/)
+  assert.equal(session.data, undefined, '有一项不合法就都不改')
+  const ok = await call('set_data', { sets: [{ name: 'Items', fields: [{ key: 'count' }], rows: [{ count: 1 }] }] })
+  assert.ok(!ok.error)
+  assert.equal((session.data as Design['data'])?.sets[0]?.rows.length, 1)
+  close()
+})
