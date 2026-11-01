@@ -83,7 +83,7 @@ jobs:
         run: npx playwright install chromium
       - run: npm run test:e2e
       # 各分片耗时写进 e2e-timings.json，改了测试可以下载对比
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: e2e-timings
@@ -124,14 +124,14 @@ jobs:
         run: npx playwright install chromium
       - run: npx vite build --mode demo
       - run: node scripts/ui-check.mjs --group ${{ matrix.group }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: ui-shots-${{ matrix.group }}
           path: ui-shots/
           retention-days: 7
       # 各分片每一步的耗时写进 ui-timings.json，改了检查可以下载对比
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: ui-timings-${{ matrix.group }}
@@ -155,7 +155,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:unit
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: unit-windows-logs
@@ -246,7 +246,7 @@ jobs:
           Start-Sleep 3
           if (& $server) { Write-Output '::error::托盘程序结束后服务还在运行'; exit 1 }
           Write-Output '托盘程序试运行通过'
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tray
           path: build/tray/AgentPanel.exe
