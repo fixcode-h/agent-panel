@@ -9,3 +9,9 @@ paths: server/auth.ts, server/index.ts, server/ask-mcp.ts, server/orch-mcp.ts
 - 规则：CLI 调的接口（`/api/mcp/*`）没有 Cookie，在 `tokenGuard` 放行、由接口自己核对地址里的随机令牌；桥接（Pi 扩展）连不上面板时报给面板显示，不能只写 stderr。
 - 起因：打开「访问令牌」后 `/api/mcp/ask` 一律 401，Pi 一个面板工具都没有，只有模型自己说「没挂上」。
 - 防线：`server/auth.test.ts`。
+
+## 把外部程序的报错翻成提示时，按原因分，不按前缀分
+
+- 规则：把 frpc、cloudflared 这类外部程序的日志翻成「该去查什么」的提示时，按错误原因细分（超时、拒绝连接、连上后被断开、本机服务连不上），不能见到同一个前缀（如 `connect to server error`）就套同一句；分不清的原因照原文显示，不猜。每种原因配一条日志样本进测试。
+- 起因：8cb7330 把 `connect to server error: session shutdown`（端口已经通了、被对方断开）也提示成「去安全组放行端口」，用户放行后还是这句，排查方向全错。
+- 防线：`server/remote.test.ts` 里 `frpcEvent` 的各类日志样本。

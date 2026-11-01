@@ -1,4 +1,6 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import { pipeline } from 'node:stream/promises'
 import { execFile } from 'node:child_process'
 import { access, chmod, copyFile, mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -30,6 +32,29 @@ export const FRPC_CONFIG = path.join(DATA_DIR, 'frp', 'frpc.toml')
 const REMOTE_BIN = '/usr/local/bin/agent-panel-frps'
 const REMOTE_DIR = '/etc/agent-panel-frp'
 const SERVICE = 'agent-panel-frps'
+
+/**
+ * 官方发布页 frp_sha256_checksums.txt 里各平台包的哈希（版本固定，直接写死比再下一次校验文件更可靠）。
+ * 下载后逐一核对，防止被网络中间人或镜像换掉；升级 FRP_VERSION 时一起更新
+ */
+export const FRP_SHA256: Record<string, string> = {
+  'frp_0.61.1_linux_amd64.tar.gz': 'bff260b68ca7b1461182a46c4f34e9709ba32764eed30a15dd94ac97f50a2c40',
+  'frp_0.61.1_linux_arm64.tar.gz': 'af6366f2b43920ebfe6235dba6060770399ed1fb18601e5818552bd46a7621f8',
+  'frp_0.61.1_darwin_amd64.tar.gz': '403a0ee5e92f083a863d984b7af1e9d70ba2aaa28e87f42f1fe085adf76b8491',
+  'frp_0.61.1_darwin_arm64.tar.gz': '3e65f13a17a284bd6013e6bb6856bc2720074cea6094cc446c1f4c3932154c2d',
+  'frp_0.61.1_windows_amd64.zip': 'e0094cd0baf03d5ff9ce9739199406871ad8788cf51e766f00ad3a9e7a836f3a',
+  'frp_0.61.1_windows_arm64.zip': '099914b6f66b1d983a9402e3a9a116bccc683c877f6dbfbbb5c0f171b584675f',
+}
+
+/** 文件的 SHA256（十六进制） */
+async function sha256File(file: string) {
+  const h = createHash('sha256')
+  await pipeline(createReadStream(file), h)
+  return h.digest('hex')
+}
+
+/** frpc 所在的目录：被安全软件隔离时要把它加进信任区 */
+export const FRP_BIN_DIR = BIN
 
 export const newFrpToken = () => randomBytes(24).toString('hex')
 
@@ -158,6 +183,12 @@ export function deployScript(f: ServerSide, uploaded: string) {
     '[Install]',
     'WantedBy=multi-user.target',
     'AGENT_PANEL_EOF',
+    // 端口被别的程序占着时 frps 起不来，或者 frpc 连上的是那个程序（握手时被断开、报 session shutdown）：
+    // 先查清楚是谁占着，直接告诉用户。进程名在 ss 里最多 15 个字符，agent-panel-frps 显示成 agent-panel-frp
+    `for p in ${f.bindPort} ${f.remotePort}; do`,
+    '  owner=$(ss -ltnpH "sport = :$p" 2>/dev/null | grep -o \'users:(("[^"]*"\' | head -1 | cut -d\'"\' -f2)',
+    '  case "$owner" in ""|agent-panel-frp*) ;; *) echo "AGENT_PANEL_ERR port-busy $p $owner"; exit 5 ;; esac',
+    'done',
     'systemctl daemon-reload',
     `systemctl enable ${SERVICE} >/dev/null 2>&1 || true`,
     `systemctl restart ${SERVICE}`,
@@ -204,6 +235,17 @@ async function fetchFrpBinary(
     },
     signal: AbortSignal.timeout(10 * 60_000),
   })
+  const want = FRP_SHA256[a.name]
+  const got256 = await sha256File(archive)
+  if (!want || got256 !== want) {
+    await rm(archive, { force: true })
+    throw new Error(
+      t('下载的 {name} 校验不通过（SHA256 {got}），已删除。可能被网络或镜像篡改，请换个网络再试。', {
+        name: a.name,
+        got: got256,
+      }),
+    )
+  }
   await rm(work, { recursive: true, force: true })
   await mkdir(work, { recursive: true })
   try {
@@ -347,6 +389,14 @@ export async function deployFrps(i: DeployInput, onStep: (s: DeployStep, percent
     const r = root ? await run(c, 'bash -s', script) : await run(c, "sudo -S -p '' bash -s", `${i.password}\n${script}`)
     if (r.code !== 0 || !r.out.includes('AGENT_PANEL_OK')) {
       if (r.out.includes('no-systemd')) throw new Error(t('服务器上没有 systemd，暂不支持自动配置'))
+      const busy = r.out.match(/AGENT_PANEL_ERR port-busy (\d+) (\S+)/)
+      if (busy)
+        throw new Error(
+          t('服务器上的端口 {port} 已经被 {name} 占用：停掉它，或在「高级 · 端口」里换一个端口后重新配置。', {
+            port: busy[1],
+            name: busy[2],
+          }),
+        )
       throw new Error(
         t('在服务器上安装 frps 失败（退出码 {code}）：{log}', { code: String(r.code), log: r.out.trim() }),
       )
@@ -371,11 +421,22 @@ export function frpcProxyOf(line: string) {
 }
 
 /** frpc 的输出：连上并开好端口、连不上服务器、令牌被拒 */
-export function frpcEvent(line: string): 'ok' | 'unreachable' | 'auth' | 'port' | '' {
+export type FrpcEvent = 'ok' | 'auth' | 'port' | 'local' | 'closed' | 'refused' | 'unreachable' | ''
+
+/**
+ * frpc 的输出归类。「connect to server error」后面跟的原因决定该让用户查什么，不能一律当成端口没放行：
+ * - local：映射连不上本机服务（本机没开 SSH 之类）
+ * - closed：TCP 已经连上 frp 端口，但对方握手阶段就断开（端口被别的程序占着、不是这版 frps）
+ * - refused：服务器上这个端口没有程序在听（frps 没在运行）
+ * - unreachable：超时、路由不通（安全组 / 防火墙没放行）
+ */
+export function frpcEvent(line: string): FrpcEvent {
   if (/start proxy success/i.test(line)) return 'ok'
   if (/token in login doesn't match|authorization failed|authentication/i.test(line)) return 'auth'
   if (/port not allowed|port already used|port unavailable/i.test(line)) return 'port'
-  if (/connect to server error|login to the server failed|i\/o timeout|connection refused|no route to host/i.test(line))
-    return 'unreachable'
-  return ''
+  if (/connect to local service/i.test(line)) return 'local'
+  if (!/connect to server error|login to the server failed|dial tcp|i\/o timeout/i.test(line)) return ''
+  if (/session shutdown|\bEOF\b|connection reset|broken pipe/i.test(line)) return 'closed'
+  if (/connection refused|actively refused|积极拒绝/i.test(line)) return 'refused'
+  return 'unreachable'
 }

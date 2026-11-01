@@ -1,10 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
-import { chmod, mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
 import type { Server } from 'node:http'
 import path from 'node:path'
 import { userInfo } from 'node:os'
+import { connect } from 'node:net'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { execFile } from 'node:child_process'
@@ -27,6 +28,8 @@ import {
   frpcLine,
   frpcProxyOf,
   newFrpToken,
+  FRP_BIN_DIR,
+  type FrpcEvent,
 } from './frp.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { resolveCommand } from './cli-source.ts'
@@ -344,13 +347,21 @@ async function startFrpc(s: RemoteAccess, ext: number) {
       const ev = frpcEvent(line)
       const proxy = frpcProxyOf(line)
       // 端口映射各管各的：某一条开不出来不影响面板本身
-      if (proxy.startsWith('agent-panel-m-') && (ev === 'ok' || ev === 'port')) {
+      if (proxy.startsWith('agent-panel-m-') && (ev === 'ok' || ev === 'port' || ev === 'local')) {
+        const m = f.mappings.find((x) => proxy === `agent-panel-m-${x.id}`)
         mappingStates[proxy.slice('agent-panel-m-'.length)] = {
           ok: ev === 'ok',
-          error: ev === 'ok' ? '' : frpcLine(line),
+          error:
+            ev === 'ok'
+              ? ''
+              : ev === 'local' && m
+                ? localServiceHint(m.localIP || '127.0.0.1', m.localPort, frpcLine(line))
+                : frpcLine(line),
         }
         continue
       }
+      // 本机服务连不上只影响那一条映射，不改面板自己的连接状态
+      if (ev === 'local') continue
       if (ev === 'ok') {
         state = 'running'
         error = ''
@@ -366,24 +377,66 @@ async function startFrpc(s: RemoteAccess, ext: number) {
   cp.stderr?.on('data', onData)
   cp.on('error', (e) => {
     if (child !== cp) return
-    fail(e.message)
+    void quarantined(bin, e as NodeJS.ErrnoException).then((q) => fail(q || e.message))
   })
   cp.on('exit', (code) => {
     if (child !== cp) return
     child = null
     state = 'error'
     error = t('frpc 已退出（退出码 {code}）：{log}', { code: String(code), log: lastLines(output) })
+    // 没有任何输出就退出、或者程序文件没了：多半是被安全软件拦下 / 隔离
+    void quarantined(bin, null, !output.trim()).then((q) => {
+      if (q && child === null && state === 'error') error = q
+    })
     log.error('remote', 'frpc 已退出', { code, error })
   })
 }
 
-function frpHint(ev: ReturnType<typeof frpcEvent>, bindPort: number, remotePort: number, line: string) {
+/**
+ * frpc 是不是被安全软件拦了：程序文件不见了（被隔离 / 删除）、没有权限执行，或者一启动就没有任何输出地退出。
+ * 是的话返回给用户看的处理办法（信任区要加的目录），否则返回空
+ */
+async function quarantined(bin: string, e: NodeJS.ErrnoException | null, silentExit = false) {
+  const gone = await access(bin).then(
+    () => false,
+    () => true,
+  )
+  const blocked = !!e && ['ENOENT', 'EPERM', 'EACCES', 'UNKNOWN'].includes(e.code ?? '')
+  if (!gone && !blocked && !silentExit) return ''
+  return t(
+    'frpc 被安全软件拦截或隔离了（frp 是开源的内网穿透工具，常被电脑管家、360、Windows 安全中心误报）。请在安全软件的隔离区恢复它，并把 {dir} 加进信任区，然后点「重新连接」；文件已经被删时会自动重新下载。',
+    { dir: FRP_BIN_DIR },
+  )
+}
+
+/** 映射连不上本机服务：SSH 最常见的是 Windows 没装 / 没启动 OpenSSH 服务器 */
+function localServiceHint(ip: string, port: number, line: string) {
+  const addr = `${ip}:${port}`
+  if (port === 22)
+    return t(
+      '本机 {addr} 没有 SSH 服务在运行：Windows 要在「可选功能」里添加「OpenSSH 服务器」并启动 sshd，macOS 在「共享」里打开「远程登录」。{log}',
+      { addr, log: line },
+    )
+  return t('本机 {addr} 没有服务在运行，外部连上后会被立刻断开。{log}', { addr, log: line })
+}
+
+function frpHint(ev: FrpcEvent, bindPort: number, remotePort: number, line: string) {
   if (ev === 'auth') return t('frp 令牌不匹配：请重新点「一键配置」。{log}', { log: line })
   if (ev === 'port')
     return t('服务器上的端口 {port} 不能用（被占用或不在允许范围）：换一个面板端口后重新一键配置。{log}', {
       port: String(remotePort),
       log: line,
     })
+  if (ev === 'closed')
+    return t(
+      '已经连上云服务器的 {port} 端口，但对方马上断开了：这个端口可能被别的程序（例如以前装的 frp）占着。在服务器上执行 sudo ss -ltnp | grep :{port}，看监听的是不是 agent-panel-frps；不是的话停掉那个程序，或在「高级 · 端口」里换一个 frp 端口后重新一键配置。{log}',
+      { port: String(bindPort), log: line },
+    )
+  if (ev === 'refused')
+    return t(
+      '云服务器的 {port} 端口没有程序在监听：frps 没在运行。在服务器上执行 sudo systemctl status agent-panel-frps 查看原因，或重新点「一键配置」。{log}',
+      { port: String(bindPort), log: line },
+    )
   return t('连不上云服务器的 frp 端口 {port}：请在阿里云控制台「安全组 → 入方向」放行 TCP {port} 和 {remote}。{log}', {
     port: String(bindPort),
     remote: String(remotePort),
@@ -550,8 +603,42 @@ async function status(link: (url: string) => string): Promise<RemoteAccessStatus
     cloudflared: await probe(s.command),
     download,
     deploy,
-    mappings: mappingStates,
+    mappings: s.mode === 'frp' && s.enabled ? await withLocalProbe(s) : mappingStates,
   }
+}
+
+/** 本机端口有没有服务在监听：连得上就算有（只连本机或局域网，600ms 就够） */
+export function localListening(host: string, port: number, timeoutMs = 600) {
+  return new Promise<boolean>((resolve) => {
+    const sock = connect({ host, port })
+    const done = (ok: boolean) => {
+      sock.destroy()
+      resolve(ok)
+    }
+    sock.setTimeout(timeoutMs, () => done(false))
+    sock.once('connect', () => done(true))
+    sock.once('error', () => done(false))
+  })
+}
+
+/**
+ * 映射的状态里补上本机服务的检查：frpc 只有在外面真有人连进来时才会报「连不上本机服务」，
+ * 等用户连不上再查太晚了，设置页每次刷新时主动探一下（文件共享由 frpc 自己出文件，不用探）
+ */
+async function withLocalProbe(s: RemoteAccess) {
+  const out = { ...mappingStates }
+  await Promise.all(
+    s.frp.mappings
+      .filter((m) => m.enabled && m.type !== 'files')
+      .map(async (m) => {
+        const ip = m.localIP || '127.0.0.1'
+        if (await localListening(ip, m.localPort)) return
+        // UDP 探不出来：只对 TCP 类（tcp / xtcp）下结论
+        if (m.type === 'udp') return
+        out[m.id] = { ok: false, error: localServiceHint(ip, m.localPort, '') }
+      }),
+  )
+  return out
 }
 
 const DeployBody = z.object({
@@ -641,6 +728,11 @@ export function remoteApi(deps: { link: (url: string) => string }) {
     cache = null
     const info = await probe(s.command, true)
     return c.json({ ...(await status(deps.link)), cloudflared: info } satisfies RemoteAccessStatus)
+  })
+  // 「重新连接」：按当前设置重启隧道（frpc / cloudflared），不用把外部访问关掉再打开
+  routes.post('/restart', async (c) => {
+    await applyRemote()
+    return c.json(await status(deps.link))
   })
   routes.post('/install', async (c) => {
     void installCloudflared()

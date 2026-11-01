@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
 import type { RemoteAccess } from '@shared/schema'
@@ -57,6 +58,19 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
       toast.error((e as Error).message)
     } finally {
       setChecking(false)
+    }
+  }
+
+  // 「重新连接」：立刻重启隧道，不用等 frpc / cloudflared 自己的重试间隔
+  const [restarting, setRestarting] = useState(false)
+  const restart = async () => {
+    setRestarting(true)
+    try {
+      setStatus(await api.remoteRestart())
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setRestarting(false)
     }
   }
 
@@ -253,6 +267,10 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                 <div className="flex items-center gap-2 text-body">
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} />
                   <span>{status ? STATE_TEXT[status.state] : t('检测中…')}</span>
+                  <Button size="sm" variant="ghost" onClick={restart} disabled={restarting} className="ml-auto">
+                    <RefreshCw className={`h-3.5 w-3.5 ${restarting ? 'animate-spin' : ''}`} />
+                    {restarting ? t('正在重新连接…') : t('重新连接')}
+                  </Button>
                   {value.mode === 'frp' && status?.download?.running && (
                     <span className="text-muted">
                       {status.download.percent >= 0
