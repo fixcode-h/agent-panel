@@ -1096,4 +1096,45 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .catch(() => errors.push('轮次导航：鼠标移开后预览没收起'))
     }
   }
+
+  // ---- 面板重启后首页问要不要全部继续（实测报告问题 18）----
+  // 演示不会真的重启：把一条顶层对话、一条子对话改成「面板重启时中断」，首页只列顶层那条（子对话由父对话继续时连带拉起）
+  {
+    const p = await page({ width: 1440, height: 900 })
+    await p.goto(base + '#/')
+    await settle(p)
+    const made = await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      const list = db.tasks ?? []
+      const top = list.find((x) => !x.parentTaskId && x.mode === 'chat' && !x.archived && !x.deletedAt)
+      const kid = list.find((x) => x.parentTaskId)
+      if (!top) return null
+      for (const x of [top, kid].filter(Boolean))
+        Object.assign(x, { status: 'stopped', stopReason: 'restart', resolved: false })
+      localStorage.setItem(k, JSON.stringify(db))
+      return { title: top.title, kid: kid?.title ?? '' }
+    }, KEY)
+    if (!made) errors.push('重启后继续：演示数据里找不到顶层对话')
+    else {
+      await p.reload()
+      const bar = p.getByRole('region', { name: '被面板重启打断的对话' })
+      // 名单是页面加载后另取的（演示后端还带固定延迟），机器忙时会超过 check 默认等的 5 秒
+      await bar.waitFor({ timeout: 15000 }).catch(() => errors.push('重启后继续：首页没有出现提示'))
+      await check(p, '首页-重启后全部继续', ['上次面板关闭时有 1 个对话在运行，已经中断', '全部继续', '逐个看'])
+      await bar.getByRole('button', { name: '逐个看', exact: true }).click()
+      await check(p, '首页-重启后逐个看', [made.title])
+      if (made.kid && made.kid !== made.title && (await bar.getByText(made.kid, { exact: true }).count()))
+        errors.push('重启后继续：子对话不该出现在首页的名单里')
+      await bar.getByRole('button', { name: '全部继续', exact: true }).click()
+      await p
+        .getByText('已继续 1 个对话')
+        .first()
+        .waitFor({ timeout: 8000 })
+        .catch(() => errors.push('重启后继续：点「全部继续」后没有提示继续了几个'))
+      await bar
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('重启后继续：全部继续后提示没收起'))
+      await check(p, '首页-全部继续之后')
+    }
+  }
 })
