@@ -5,6 +5,7 @@ import { contextBreakdown } from '@shared/context-breakdown'
 import { t } from '@shared/i18n'
 import type { AgentUsage, SessionInfo, Task } from '@shared/schema'
 import { agentRun, cliSettings, defaultCli } from '@shared/settings'
+import { withTaskModel } from '@shared/task-run'
 import { api } from '@/lib/api'
 import { fmtTokens } from '@/lib/tasks'
 import { toast } from '@/lib/toast'
@@ -42,7 +43,7 @@ export function useSessionContext(task: Task) {
   const agent = cur ? agents.find((a) => a.id === cur.agentId) : undefined
   const cli =
     cur?.usage.parts?.cli ||
-    (agent && settings ? agentRun(agent, settings).cli : '') ||
+    (agent && settings ? agentRun(withTaskModel(agent, task), settings).cli : '') ||
     task.sessionCli ||
     (settings ? defaultCli(settings) : '')
   const def = getCli(cli)

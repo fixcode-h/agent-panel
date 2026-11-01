@@ -104,6 +104,10 @@ await runShard('工作流条件与失败', async (api) => {
     assert.ok(!next.args.includes('--resume'), '换了 CLI 开新会话')
     assert.match(next.input, /之前的对话[\s\S]*蓝鲸/, '把之前的对话带给新会话')
     assert.equal(c.messages.findLast((m) => m.role === 'agent').run?.cli, 'claude')
+    assert.ok(
+      c.messages.some((m) => m.role === 'system' && m.text.includes('已从 Codex 换成 Claude Code，之前的会话不再续用')),
+      '换了 CLI 在对话里说一声',
+    )
     const bad = await fetch(`${base}/tasks/${t.id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -836,6 +840,11 @@ await runShard('工作流条件与失败', async (api) => {
   // 提醒在提示词后半段（invoke 还会在这之后追加 read_user_notes / wait_user_message 的用法）
   const remindAt = kf.input.indexOf('回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。')
   assert.ok(remindAt > kf.input.lastIndexOf('## 执行方式'), '提示词后半段带语言提醒')
+  // 已有对话不跟着默认 CLI 换：t3 开始时默认是 Codex，默认改成 Command Code 后接着发消息仍用 Codex，不插换 CLI 的提示
+  await call('POST', `/tasks/${t3.id}/messages`, { text: '接着' })
+  const kept = await waitDone(t3.id)
+  assert.equal(kept.messages.findLast((m) => m.role === 'agent').run?.cli, 'codex', '已有对话不跟着默认 CLI 换')
+  assert.ok(!kept.messages.some((m) => m.role === 'system' && /已从 .* 换成/.test(m.text)), '没换 CLI 就不提示')
   // 设置了具体的默认模型后，没填的档位跟随默认模型
   await call('PUT', '/agents/' + D.id, { ...D, model: '@medium', effort: '' })
   await call('PUT', '/settings', {

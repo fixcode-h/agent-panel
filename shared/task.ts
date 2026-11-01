@@ -19,6 +19,7 @@ import {
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
 import { t, uiLocale } from './i18n.ts'
+import { canPickRun } from './task-run.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
 import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
@@ -105,8 +106,8 @@ export function newTask(
     inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
-    // 默认 Agent 和不用 Agent 角色的对话（agentId 为空）都能在对话时选 CLI 和模型；其他 Agent 用自己配置的
-    cli: input.mode === 'chat' && canPickRun(input.agentId) ? (input.cli ?? '') : '',
+    // 不用角色的对话（agentId 为空）能选 CLI 和模型；用角色的只记 CLI：跟随默认 CLI 的角色按它跑（见 withTaskModel）
+    cli: input.mode === 'chat' ? (input.cli ?? '') : '',
     model: input.mode === 'chat' && canPickRun(input.agentId) ? (input.model ?? '') : '',
     effort: input.mode === 'chat' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
@@ -400,25 +401,7 @@ export function taskDuration(
   return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
 }
 
-/** 对话里能不能临时选 CLI、模型和思考强度：不用角色（空 id）时可以 */
-export const canPickRun = (agentId: string) => !agentId
-
-/** 不用角色的对话任务选的 CLI、模型和思考强度 */
-export function withTaskModel<A extends { id: string; cli: string; model: string; effort: string }>(
-  agent: A,
-  task: { mode: string; agentId: string; cli?: string; model?: string; effort?: string },
-): A {
-  if (task.mode !== 'chat' || task.agentId !== agent.id || !canPickRun(agent.id)) return agent
-  // 换了 CLI 时不能沿用原来的模型（那是另一个 CLI 的）
-  const cli = task.cli || agent.cli
-  const same = cli === agent.cli
-  return {
-    ...agent,
-    cli,
-    model: task.model || (same ? agent.model : ''),
-    effort: task.effort || (same ? agent.effort : ''),
-  }
-}
+export { canPickRun, withTaskModel } from './task-run.ts'
 
 /**
  * 两个目录是不是同一个（Windows 路径大小写、分隔符、末尾斜杠不敏感）。
@@ -1323,11 +1306,17 @@ export function announcedOnly(tk: Pick<Task, 'messages'>): string {
       .filter(Boolean)
       .at(-1) ?? ''
   if (/[?？]/.test(tail) || /[?？]\s*$/.test(text)) return ''
-  return INTENT.test(tail) ? tail : ''
+  if (INTENT.test(tail)) return tail
+  // 省掉「我」的打算（「接着读 design4.md」「现在检查配置」）：Codex 接第三方模型时常这样收尾就结束这一轮（实测报告问题 8）。
+  // 「现在改好了」「已经检查过」「然后运行成功」这类是结论，不算
+  return BARE_INTENT.test(tail) && !/了(?!解)|已|完|成功|通过|好[。！!.]?$/.test(tail) ? tail : ''
 }
 /** 第一人称说接下来要做的事：「我再…」「我先…」「让我…」「接下来…」「现在去…」 */
 const INTENT =
   /^(好的?[，,]\s*)?((我|咱们|我们)(再|先|来|去|要|会|现在|接下来|马上|继续|这就|顺便)|让我|接下来|下一步|现在(我)?(去|来|开始|要)|然后(我)?(再|去))|\b(let me|i'll|i will|next,? i|now i'?ll)\b/i
+/** 「接着 / 继续 / 先 / 然后 / 现在」直接跟一个动手的动词；「现在看来」「先这样」这类不是打算 */
+const BARE_INTENT =
+  /^(好的?[，,]\s*)?(接着|继续|先|然后|现在)(来|去|就)?(读|看(?!来|起来|上去)|查|跑|运行|执行|改|修|写|检查|确认|处理|实现|打开|搜|整理|补|分析|验证|编译|构建|更新|添加|删|列|生成|定位|核对|对比|梳理|调用|安装)|^(now|next|then),?\s+(read|check|run|open|inspect|search|edit|fix|verif|review)\w*\b/i
 
 /**
  * 这一轮已经说完、计划却没做完，也没有在等任何东西：对话停在等下一句，没人推就不会往下走。
