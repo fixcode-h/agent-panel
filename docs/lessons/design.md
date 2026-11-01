@@ -36,6 +36,6 @@ paths: server/design-mcp.ts, shared/design.ts, shared/design-analysis.ts, shared
 
 ## 画板上「看不见的元素」不只是隐藏的控件
 
-- 规则：数控件隐藏状态（`visibility: hidden`）时排除 `aria-hidden` 的元素：`umg-render.tsx` 的 `Sizer` 和列表条目、子控件撑满时的占位块也是 `visibility: hidden`，只用来撑出设计尺寸；新加这类占位时一律带 `aria-hidden`。
-- 起因：5959b1f2 加了占位块后，`scripts/ui/04-design.mjs`「第一格没有锁定图标」数出 4 个隐藏元素（期望 1）。
+- 规则：数控件隐藏状态（`visibility: hidden`）时跳过带 `data-sizer` 的元素：`umg-render.tsx` 的 `Sizer` 和列表条目、子控件撑满时的占位块也是 `visibility: hidden`，只用来撑出设计尺寸；新加这类占位时一律标上 `data-sizer`。
+- 起因：5959b1f2 加了占位块后，`scripts/ui/04-design.mjs`「第一格没有锁定图标」数出 4 个隐藏元素（期望 1），e2cadcaf 补上标记。
 - 防线：`scripts/ui/04-design.mjs` 的 `hiddenInFirstSlot`。
