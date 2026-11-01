@@ -73,7 +73,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `compactThrash`                   | CLI 自动压缩「抖动」时的报错 `{ "pattern", "why" }`（`pattern` 不分大小写的正则）：认出来时面板不直接判失败，先在对话里写一行警告、在原会话里续一轮让模型分段读取，再失败才报失败（Claude Code 的 `Autocompact is thrashing`）。不写表示没有这种报错                                                                                        |
 | `mcp`                             | 怎么把面板的工具（MCP）交给 CLI，见下面；不写时用不了 UI 设计的 AI                                                                                                                                                                                                                                                                          |
 | `options`                         | 设置里给用户的开关 `[{ "id", "label", "hint", "default", "env" }]`：打开时加上 `env`，参数规则里用条件 `opt.<id>` 判断（Pi 的「离线运行」「codemode」，Claude Code 的「不用 Claude Code 自带的记忆」）                                                                                                                                      |
-| `packages`                        | CLI 自己的扩展包，设置里能装、删、更新，见下面「扩展包」                                                                                                                                                                                                                                                                                    |
+| `packages`                        | CLI 自己的插件（扩展包），设置里能装、删、更新，推荐的一键安装，见下面「插件」                                                                                                                                                                                                                                                              |
 | `i18n`                            | 界面文案的翻译 `{ "en": { "中文": "English" } }`                                                                                                                                                                                                                                                                                            |
 
 目录里的 `~` 是用户目录，`${ENV:-默认值}` 先取环境变量。
@@ -285,7 +285,7 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 
 `extras` 是按设置开关注入的额外扩展：每一项写 `option`（设置里那个开关的 id，条件是 `opt.<id>`）、`args` 和 `files`，
 只有开关打开时才写文件、加参数；关着时文件根本不写，CLI 里也就不会注册这些工具。
-不传 `options` 的调用（例如 UI 设计那一轮）按关着处理。Pi 的联网搜索就是这样接的（见下面「联网搜索」）。
+不传 `options` 的调用（例如 UI 设计那一轮）按关着处理。内置 CLI 现在没有用到它（Pi 以前的面板自建联网搜索是这样接的，已经删掉）。
 
 提问要一直等到用户回答，可能很久（用户不在电脑前）。这条请求面板用 SSE 流式响应，等待期间定期发心跳，
 HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请求超时还要在配置里放宽，否则等不到用户回答。
@@ -326,23 +326,12 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 出现在「MCP 工具」页、写进 Pi 自己的 `mcp.json`。面板的工具仍然走扩展：Pi 的 MCP 工具默认是 `codemode` 暴露（不直接声明给模型），
 而项目里的配置受「项目信任」管控，print / json / rpc 模式不会弹信任提示；`-e` 显式加载的扩展不受这两点影响。
 
-### 联网搜索 `web_search` / `web_fetch`
+### 联网搜索
 
-Pi 的「联网搜索」开关（`shared/clis/pi.json` 的 `options` 里 id 为 `webSearch`，默认关闭）打开后，这一轮的临时目录里多写一个
-扩展 `{dir}/agent-panel-{name}-websearch.ts` 并用 `-e` 加载，注册 `web_search` / `web_fetch` 两个工具；关着时这两步都不做。
-扩展本身不含密钥：请求打到面板的 `/api/web-search/<这一轮的随机地址>/search` 和 `/fetch`（和提问桥接共用同一个随机地址），
-面板按「设置 · 联网搜索」里的搜索源、密钥和地址代发。地址里的随机地址在路由里核对（`server/ask-mcp.ts` 的 `hasAskSession`），
-访问令牌打开时也能用，别的程序猜不到。地址守卫、参数规范化、各搜索源的请求和解析在 `shared/web-search.ts`
-（注册表 `SEARCH_PROVIDERS`：deepseek 默认（DeepSeek 官方 Search API，要 DeepSeek 的 API key，按次计费，没填密钥时直接报错不回退）、searxng、brave、tavily，新增一个源只加一条），路由在 `server/web-search.ts`。
-`web_fetch` 不分搜索源，始终由面板自己抓网页（不调 DeepSeek 的 fetch 接口）。
-
-参数和限制对齐 Command Code 的 Web 工具：`query`（至少 2 个字）/ `numResults`（默认 5、最多 10）/ `allowed_domains` / `blocked_domains`
-（两者互斥，过滤在面板这一侧做，不受各搜索源支持与否影响；deepseek 另外把它们拼成 `site:` / `-site:` 写进 query，拼完最多 128 字），`url` / `format`（markdown 默认、text、html）/ `startIndex` /
-`timeout`（默认 60 秒、最多 120）。抓取前挡掉带用户名密码的地址、内网 / 回环 / 链路本地地址和单标签主机名，
-域名解析出来的地址再查一次；重定向手动跟着走（最多 5 跳），每一跳都重新过一遍守卫，跳转过程里写在结果里。
-正文一次返回 100000 字符，用返回里的 `startIndex` 续读；同一地址 15 分钟内的抓取直接用缓存。
-缺密钥、搜索源返回非 2xx、返回的不是 JSON 时，错误原文原样交给模型和用户，不换成一句「搜索失败」。
-单测：`shared/web-search.test.ts`（守卫、解析、窗口）、`server/web-search.test.ts`（路由和扩展注册，网络和 DNS 都是桩）。
+面板不自己做联网搜索，各 CLI 用自己的：Claude Code 的 `WebSearch` / `WebFetch`、Codex 的 `web_search`、Command Code 的 Web 工具都照常开着
+（Claude Code 的 `--disallowedTools` 里不能出现这两个）。Pi 本身没有联网搜索，靠插件：设置里 Pi 的「插件管理」默认列出
+`npm:pi-web-access`（`web_search` / `fetch_content`，不填密钥也能搜），用户点一下就装，见下面「插件」。
+输出解析按工具名认出搜索和打开网页（`server/exec/parsers.ts` 的 `genericTool`），插件一次搜几个词、开几个网址（`queries` / `urls`）时都写进标签。
 
 ## 能力 `features`
 
@@ -370,9 +359,9 @@ Pi 本身没有审批，权限用 `--tools +grep,+find,+ls`（在默认工具上
 不用 `--tools` 白名单，白名单会把面板桥接的工具（提问、编排）一起挡掉。用户装了带确认框的 Pi 扩展（例如 permission-gate）时，
 确认框通过 `rpc.asks` 交给页面。
 
-## 扩展包 `packages`
+## 插件 `packages`
 
-CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多一组「扩展包」：
+CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多一组「插件管理」（Pi 叫扩展包）：
 
 | 字段                   | 说明                                                                                                     |
 | ---------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -380,8 +369,18 @@ CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多�
 | `install` / `remove`   | 装、删的参数，`{source}` 是包的来源                                                                      |
 | `update` / `updateAll` | 更新一个、全部更新的参数，不写就不显示按钮                                                               |
 | `placeholder`          | 来源输入框的示例                                                                                         |
+| `env`                  | 装、删、更新时额外的环境变量，排在最后盖过设置开关带的（Pi 写 `PI_OFFLINE: ""`，见下）                   |
+| `recommended`          | 推荐的包，列在最前面一键安装：`source`、`name`、`desc`，可选 `note`（装完还要做什么）、`url`（介绍页）   |
 
 配置里相对路径的来源是相对配置文件写的，面板交给命令前换成绝对路径（Pi 从别的目录跑 `pi remove ../x` 会找不到）。命令的输出原样显示，失败时用户能看到原因。
+
+Pi 的「离线运行」开关默认开着、带 `PI_OFFLINE=1`：Pi 在离线模式下 `pi update` 直接跳过、照样退出码 0，用户看到「成功」其实没更新。
+所以 `packages.env` 把它清成空串（Pi 只认 `1` / `true` / `yes` 是离线），执行对话时照旧离线（`server/cli-packages.ts` 的 `packageCommandEnv`）。
+
+推荐的包装没装按来源去掉版本号比（`shared/cli-spec.ts` 的 `packageIdentity`，和 Pi 自己认包的方式一致：`npm:<包名>`、`git:<主机>/<路径>`），
+装的是 `npm:x@1.2.0` 也算装了推荐里的 `npm:x`。推荐的 `name` / `desc` / `note` 是界面文案，英文写进同一个定义的 `i18n.en`（`shared/cli-spec.test.ts` 会查）。
+挑推荐的标准：在面板的 RPC 模式下能用（不靠终端界面）、和面板自己的机制不重复（子 Agent、提问、计划、MCP 都由面板管，不推荐这类插件）、装完不用改配置就能用或在 `note` 里写清楚要做什么。
+Pi 现在推荐四个：`pi-web-access`（联网搜索，第一个）、`pi-web-search`（用模型服务商自带的搜索，和前者二选一）、`cc-safety-net`（拦截危险命令和读机密文件）、`@narumitw/pi-lsp`（语言服务器诊断）。
 
 ## 账号登录 `auth`
 

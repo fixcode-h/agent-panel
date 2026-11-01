@@ -11,7 +11,7 @@ import { capture, childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
 
 /**
- * CLI 自己的扩展包（定义里的 packages）：列表直接读 CLI 的配置文件，装、删、更新跑 CLI 自己的命令，
+ * CLI 自己的插件（扩展包，定义里的 packages）：列表直接读 CLI 的配置文件，装、删、更新跑 CLI 自己的命令，
  * 面板不另存一份，在终端里装的也能看到。
  */
 
@@ -36,11 +36,20 @@ export async function listPackages(def: Def): Promise<InstalledPackage[]> {
   })
 }
 
+/**
+ * 装、删、更新时交给命令的环境变量：CLI 平时的（含设置开关带的）在前，定义里装包专用的排在最后盖过它们。
+ * Pi 的「离线运行」默认开着、带 PI_OFFLINE=1，pi update 在离线模式下什么都不做还照样退出码 0，
+ * 用户点了「更新」看到成功、其实没更新
+ */
+export function packageCommandEnv(def: Def, env: { key: string; value: string }[]) {
+  return [...env, ...Object.entries(def.packages.env).map(([key, value]) => ({ key, value }))]
+}
+
 export function packagesApi() {
   const app = new Hono()
   const need = (id: string) => {
     const def = getCli(id)
-    if (!def?.packages) throw new Error(t('这个 Agent 不支持扩展包'))
+    if (!def?.packages) throw new Error(t('这个 Agent 不支持插件'))
     return def as Def
   }
   app.get('/:id/packages', async (c) => {
@@ -71,7 +80,7 @@ export function packagesApi() {
       cs.command,
       args.map((a) => a.replaceAll('{source}', source)),
       homedir(),
-      childEnv(cs.env),
+      childEnv(packageCommandEnv(def, cs.env)),
       // npm、git 装包可能很久
       10 * 60_000,
     )

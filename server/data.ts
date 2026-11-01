@@ -72,7 +72,6 @@ export function withoutSecrets(b64: string): string | null {
     const s = Settings.parse(raw)
     s.remoteAccess.tunnelToken = ''
     for (const a of s.apis) a.apiKey = ''
-    s.webSearch.key = ''
     for (const cli of Object.values(s.clis)) for (const e of cli.env) e.value = ''
     return Buffer.from(JSON.stringify(s)).toString('base64')
   } catch {
@@ -87,8 +86,6 @@ export function withLocalSecrets(backup: Settings, current: Settings): Settings 
     if (a.apiKey) continue
     a.apiKey = current.apis.find((x) => x.id === a.id)?.apiKey ?? '' // secret-check-ok：从本机设置取值，不是写死的密钥
   }
-  if (!backup.webSearch.key && backup.webSearch.provider === current.webSearch.provider)
-    backup.webSearch.key = current.webSearch.key
   for (const [id, cli] of Object.entries(backup.clis))
     for (const e of cli.env) {
       if (e.value) continue

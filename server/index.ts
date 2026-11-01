@@ -54,7 +54,6 @@ import { designMcpApi } from './design-mcp.ts'
 import { blenderMcpApi } from './blender-mcp.ts'
 import { blenderApi } from './blender.ts'
 import { askMcpApi } from './ask-mcp.ts'
-import { webSearchApi } from './web-search.ts'
 import {
   askExtensionReload,
   bridgeApi,
@@ -1018,8 +1017,6 @@ app.route('/mcp', designMcpApi())
 app.route('/mcp', blenderMcpApi())
 app.route('/blender', blenderApi())
 app.route('/mcp', askMcpApi())
-// 联网搜索代理：CLI 里的 web_search / web_fetch 打到面板，地址里带本轮 CLI 的随机地址
-app.route('/web-search', webSearchApi())
 const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)

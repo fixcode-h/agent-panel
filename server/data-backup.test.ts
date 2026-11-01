@@ -41,7 +41,6 @@ test('导入：带反斜杠、冒号的路径一律拒，不会在 Windows 上�
 test('导出去掉全部密钥，导入时沿用本机的值', () => {
   const s = Settings.parse({
     apis: [{ id: 'a1', name: 'x', apiKey: 'sk-xxxx' }],
-    webSearch: { key: 'your-api-key' },
     clis: { claude: { env: [{ key: 'TOKEN', value: 'your-api-key' }] } },
     remoteAccess: { tunnelToken: 'tok' },
   })
@@ -49,15 +48,21 @@ test('导出去掉全部密钥，导入时沿用本机的值', () => {
   assert.ok(b64)
   const out = Settings.parse(JSON.parse(Buffer.from(b64, 'base64').toString('utf8')))
   assert.equal(out.apis[0].apiKey, '')
-  assert.equal(out.webSearch.key, '')
   assert.equal(out.clis.claude.env[0].value, '')
   assert.equal(out.clis.claude.env[0].key, 'TOKEN', '变量名保留，值清空')
   assert.equal(out.remoteAccess.tunnelToken, '')
   const back = withLocalSecrets(out, s)
   assert.equal(back.apis[0].apiKey, 'sk-xxxx')
-  assert.equal(back.webSearch.key, 'your-api-key')
   assert.equal(back.clis.claude.env[0].value, 'your-api-key')
   assert.equal(back.remoteAccess.tunnelToken, 'tok')
+})
+
+test('老设置里还留着已去掉的联网搜索密钥：导出时整段丢掉，不跟着备份带出去', () => {
+  const raw = { webSearch: { provider: 'deepseek', key: 'your-api-key' } }
+  const b64 = withoutSecrets(Buffer.from(JSON.stringify(raw)).toString('base64'))
+  assert.ok(b64)
+  const text = Buffer.from(b64, 'base64').toString('utf8')
+  assert.ok(!text.includes('webSearch') && !text.includes('your-api-key'), text)
 })
 
 test('导出时设置解析不了：整份不导出，不把原文连密钥带出去', () => {

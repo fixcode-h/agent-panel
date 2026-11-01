@@ -979,12 +979,15 @@ export function CliSection({
       )}
 
       {ok && def.packages && (
-        <Group title={t('扩展包')}>
+        <Group title={t('插件管理')}>
           <p className="pb-2 text-footnote text-muted">
-            {t('包里可以有扩展、Skill、提示词模板和主题，装在 {file} 里。扩展会在本机执行代码，只装信得过的来源', {
-              // ${ENV:-默认值} 只显示默认值，用户一般没设这个环境变量
-              file: def.packages.file.replace(/\$\{\w+:-([^}]*)\}/g, '$1'),
-            })}
+            {t(
+              '插件（扩展包）里可以有工具、Skill、提示词模板和主题，装在 {file} 里，装完下一轮对话生效。插件会在本机执行代码，只装信得过的来源',
+              {
+                // ${ENV:-默认值} 只显示默认值，用户一般没设这个环境变量
+                file: def.packages.file.replace(/\$\{\w+:-([^}]*)\}/g, '$1'),
+              },
+            )}
           </p>
           <CliPackages def={def} />
         </Group>
