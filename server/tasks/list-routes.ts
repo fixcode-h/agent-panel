@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { taskDeleted, trashLeftDays, taskSummary } from '../../shared/task.ts'
+import { descendantNeeds } from '../../shared/child-needs.ts'
 import { isViewing } from '../presence.ts'
 import { messageChars } from '../task-store.ts'
 import {
@@ -101,11 +102,18 @@ export function registerListRoutes(s: TasksScope) {
       if (!s.childActive(k)) continue
       kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
     }
+    // 后代对话在等用户确认、回答：父对话（以及更上层）在侧栏也是「等你处理」，不能还是「执行中」（实测报告问题 1）
+    const needs = descendantNeeds(all)
     let list = all.map((t) => {
       const n = kids.get(t.id) ?? 0
+      const childrenNeeds = needs.get(t.id) ?? 0
       // 带上还在跑的后台命令：交出去的命令没跑完，列表里这个对话就还在「等结果」，不能显示成做完了
       return taskSummary(
-        s.withJobs(t.parentTaskId ? t : { ...t, childrenWorking: n, childrenCli: kidsCli.get(t.id) ?? 0 }),
+        s.withJobs(
+          t.parentTaskId
+            ? { ...t, childrenNeeds }
+            : { ...t, childrenWorking: n, childrenCli: kidsCli.get(t.id) ?? 0, childrenNeeds },
+        ),
       )
     })
     // 子对话不进入项目列表：按 parentId 查询时才返回它们

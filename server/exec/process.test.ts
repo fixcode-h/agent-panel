@@ -7,7 +7,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { killAllProcesses, runProcess, taskCliAlive } from './process.ts'
+import { getCli } from '../../shared/clis.ts'
+import { t } from '../../shared/i18n.ts'
+import { earlyExitError, exitReason, killAllProcesses, runProcess, stderrTail, taskCliAlive } from './process.ts'
 
 test('统一清理还在跑的 CLI 进程，runProcess 能正常收尾', async () => {
   let spawned!: () => void
@@ -81,4 +83,38 @@ test('taskCliAlive：只在这个对话的 CLI 进程真的活着时为真，进
   // 这条用例验的是「进程退出后撤掉登记」，不是「几毫秒内退出」：等它退完再断言，别把「还没退」误判成「没撤登记」
   for (let i = 0; i < 100 && taskCliAlive('cli-alive-t'); i++) await sleep(100)
   assert.equal(taskCliAlive('cli-alive-t'), false)
+})
+
+// 实测：kill -9 子对话的 Claude Code，失败原因只剩 stderr 里每次都有的 unrecognized_model 提示，
+// 父对话据此说成「模型识别问题」。原因要先写信号，常驻提示行不算原因
+const NOISE = '[claude-code:unrecognized_model] {"model":"deepseek-v4.1-flash"}'
+
+test('进程被信号结束：结果里带上信号，失败原因先写它', { skip: process.platform === 'win32' }, async () => {
+  const r = await runProcess({
+    command: process.execPath,
+    args: ['-e', `process.stderr.write(${JSON.stringify(NOISE + '\n')}, () => process.kill(process.pid, 'SIGKILL'))`],
+    cwd: process.cwd(),
+    env: process.env,
+    timeoutMs: 30_000,
+  })
+  assert.equal(r.killed, null)
+  assert.equal(r.code, null)
+  assert.equal(r.exitSignal, 'SIGKILL')
+  const claude = getCli('claude')!
+  const msg = earlyExitError(claude, r, r.stderr)
+  assert.ok(msg.includes(t('进程被外部结束，信号 {signal}', { signal: 'SIGKILL' })), msg)
+  assert.ok(!msg.includes('unrecognized_model'), `无害提示行不进失败原因：${msg}`)
+  assert.ok(!msg.includes(t('stderr 最后几行：')), `只有提示行时不附 stderr 尾巴：${msg}`)
+})
+
+test('stderr 尾巴去掉 CLI 定义里登记的无害提示行，真的报错照样保留', () => {
+  const noise = getCli('claude')!.stderrNoise
+  assert.ok(noise?.length, 'Claude Code 的定义里登记了 unrecognized_model 提示')
+  assert.equal(stderrTail(`${NOISE}\nError: boom\n  ${NOISE}\n`, 3, noise), 'Error: boom')
+  // 没登记的 CLI 原样保留
+  assert.equal(stderrTail(`${NOISE}\nError: boom`, 3), `${NOISE}\nError: boom`)
+  assert.equal(exitReason({ code: 2, exitSignal: null }), t('退出码 {code}', { code: 2 }))
+  assert.equal(exitReason({ code: 0, exitSignal: null }), '')
+  const msg = earlyExitError({ name: 'X' }, { code: 1, exitSignal: null }, 'Error: boom')
+  assert.ok(msg.includes(t('退出码 {code}', { code: 1 })) && msg.includes('Error: boom'), msg)
 })

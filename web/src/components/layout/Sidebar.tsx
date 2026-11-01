@@ -88,7 +88,7 @@ import {
   type NavIcon,
 } from './rail-icons'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
-import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount } from '@shared/task'
+import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
 
@@ -785,7 +785,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                         }
                         alert={
                           !open &&
-                          ts.some((t) => t.requests?.length) && (
+                          // 和对话行同一个判定（taskState）：子对话在等你确认时父对话也是「等你处理」
+                          ts.some((t) => taskState(t) === 'needs') && (
                             <CircleAlert
                               aria-label={t('有对话需要你处理')}
                               className="h-3.5 w-3.5 shrink-0 text-warning"

@@ -87,6 +87,12 @@
   "readOnlyPermission": "default",
   "systemPromptFlag": "--append-system-prompt",
   "systemPromptFileFlag": "--append-system-prompt-file",
+  "stderrNoise": [
+    {
+      "pattern": "^\\[claude-code:unrecognized_model\\]",
+      "why": "接第三方模型（不在 Claude Code 自己的模型表里）时每次启动都打这一行，只是提示、不影响运行；留在失败原因里会被误读成「模型识别问题」"
+    }
+  ],
   "protocol": "rpc",
   "args": [
     {

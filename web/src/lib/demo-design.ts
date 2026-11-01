@@ -3,6 +3,7 @@
  * AI 对话按关键词套用示例界面（主菜单 / 背包），图片用 canvas 画出示意图，模拟「生成」的过程。
  */
 const randomId = () => crypto.randomUUID()
+import { treeChanges } from '@shared/design-diff'
 import {
   DesignImage,
   addToParts,
@@ -16,6 +17,8 @@ import {
   type DesignMeta,
   type DesignProject,
   type DesignVersion,
+  applyVersion,
+  versionSnapshot,
   type ImageSource,
 } from '@shared/design'
 import { normalizeTree, walk, type Widget } from '@shared/umg'
@@ -1271,6 +1274,8 @@ async function runChat(
     job.text += ch
     job.outChars += 4
   }
+  // 和真实的一样记下这一轮改了哪些控件，回复下面列出来
+  const startTrees = { root: d.root, components: d.components }
   d.root = normalizeTree(tpl.root)
   d.components = tpl.components.map((c) => ({ ...c, Root: normalizeTree(c.Root) }))
   d.data = DesignData.parse(tpl.data)
@@ -1290,6 +1295,7 @@ async function runChat(
     images: tpl.images.map((i) => i.id),
     run,
     parts,
+    changes: treeChanges(startTrees, { root: d.root, components: d.components }),
   })
   d.updatedAt = now()
   if (source.kind !== 'none')
@@ -1802,14 +1808,7 @@ function addVersion(d: Full, name: string, auto: boolean) {
     name,
     at: now(),
     auto,
-    snapshot: structuredClone({
-      designSize: d.designSize,
-      style: d.style,
-      root: d.root,
-      components: d.components,
-      images: d.images,
-      animations: d.animations ?? [],
-    }),
+    snapshot: versionSnapshot(d),
   }
   versions.set(d.id, [v, ...(versions.get(d.id) ?? [])].slice(0, 40))
   return v
@@ -1842,16 +1841,7 @@ export function demoVersions(
   }
   if (action === 'restore') {
     addVersion(d, `恢复「${v.name}」之前`, true)
-    Object.assign(
-      d,
-      structuredClone({
-        root: v.snapshot.root,
-        components: v.snapshot.components,
-        designSize: v.snapshot.designSize,
-        style: v.snapshot.style,
-        animations: v.snapshot.animations ?? [],
-      }),
-    )
+    applyVersion(d, v.snapshot)
     d.rev++
     return d
   }

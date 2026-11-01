@@ -161,4 +161,10 @@ export const EN_SHARED: Record<string, string> = {
   '，范围：{scope}': ', scope: {scope}',
   自己: 'self',
   '（第 {n} 次，按最后一次算）': ' (attempt {n}, last one counts)',
+  '等用户回答：{title}': 'Waiting for the user to answer: {title}',
+  '等用户确认：{title}': 'Waiting for the user to approve: {title}',
+  '（共 {n} 项）': ' ({n} in total)',
+  '它的 {n} 个子对话等用户处理': '{n} of its sub-conversations are waiting for the user',
+  '它的子对话在等用户处理（确认请求或回答提问）':
+    'Its sub-conversation is waiting for the user (an approval or an answer)',
 }

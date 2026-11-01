@@ -8,7 +8,17 @@ import { extractJson } from '../shared/assist.ts'
 import { openDesignSession, type ConceptRequest } from './design-mcp.ts'
 import { DesignCaptures } from './design-capture.ts'
 import { HeadlessPages } from './headless.ts'
-import { resetStuckImages } from './design-images.ts'
+import {
+  finalParts,
+  normalizeSlices,
+  resetStuckImages,
+  restoredVariants,
+  templateCrop,
+  templateImg2Img,
+} from './design-images.ts'
+import { treeChanges } from '../shared/design-diff.ts'
+import { EXPORT_MARK, pickExportDir } from './design-export-dir.ts'
+import { versionMeta, versionStore } from './design-versions.ts'
 import { withToken } from './auth.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
 
@@ -38,6 +48,7 @@ import {
   conceptPrompt,
   conceptTarget,
   emptyConcept,
+  nextConceptId,
   emptyRoot,
   hasMask,
   imagePrompt,
@@ -51,8 +62,7 @@ import {
   sheetGrid,
   sheetPrompt,
   importComponent,
-  type DesignVersion,
-  type DesignVersionMeta,
+  applyVersion,
   type ProjectComponents,
   projectPromptText,
   AiDesignResult,
@@ -65,17 +75,7 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import {
-  exportDesign,
-  migrateGrids,
-  nineSliceRatios,
-  normalizeTree,
-  syncBrushSlices,
-  uniqueName,
-  usedImages,
-  walk,
-  type SliceImage,
-} from '../shared/umg.ts'
+import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages } from '../shared/umg.ts'
 import { reactAnimFile, webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
@@ -107,9 +107,6 @@ const fileOf = (id: string) => path.join(DIR, `${id}.json`)
 const imagesDir = (id: string) => path.join(DIR, id, 'images')
 /** 版本单独存一个文件：设计文件页面每秒都要取，不能带着所有历史版本 */
 const versionsFile = (id: string) => path.join(DIR, id, 'versions.json')
-/** 自动存的版本最多留这么多，手动存的最多 50 个 */
-const MAX_AUTO_VERSIONS = 20
-const MAX_VERSIONS = 50
 // 下划线开头，和设计文件（<id>.json）区分开
 const PROJECTS_FILE = path.join(DIR, '_projects.json')
 /** 风格库：设置里管理，所有 UI 项目共用 */
@@ -118,14 +115,6 @@ const STYLES_FILE = path.join(DIR, '_styles.json')
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
 const isImageFile = (x: { mime: string; name: string }) =>
   /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name)
-
-/** 存进消息的分段：工具都已结束，去掉空的段 */
-function finalParts(parts: ReplyPart[]): ReplyPart[] | undefined {
-  const list = parts
-    .map((p) => ({ ...p, tools: p.tools.map((x) => ({ ...x, running: false })) }))
-    .filter((p) => p.text || p.thinking?.trim() || p.tools.length)
-  return list.length ? list : undefined
-}
 
 type Job = DesignJob & {
   abort: AbortController
@@ -137,27 +126,6 @@ type Job = DesignJob & {
   control?: CliControl
   /** 这一轮列出的图标表：图片 id → sheet，生成图片时同一个 sheet 的图标一起生成 */
   sheets?: Map<string, string>
-}
-
-/**
- * 图片的九宫格和画刷的九宫格参数对齐：图片的 nineSlice 统一成 0~1 的比例（老数据把像素直接写进去过），
- * 引用它的 Box/Border 画刷的 Margin 用同一组比例、ImageSize 用图片实际尺寸。
- * 加载、保存和 AI 改完都跑一遍，渲染和导出拿到的就是同一组数，不会切到边框花纹。
- */
-function normalizeSlices(d: Design): Design {
-  const imgs = new Map<string, SliceImage>()
-  for (const i of d.images) {
-    const v = i.variants[Math.min(Math.max(0, i.selected), i.variants.length - 1)]
-    const width = v?.width || i.width
-    const height = v?.height || i.height
-    const nine = nineSliceRatios(i.nineSlice, width, height)
-    const slice = nine && (nine.Left || nine.Top || nine.Right || nine.Bottom) ? nine : undefined
-    imgs.set(i.id, { id: i.id, width, height, transparent: i.transparent, nineSlice: slice })
-    i.nineSlice = slice
-  }
-  d.root = syncBrushSlices(d.root, imgs)
-  d.components = d.components.map((c) => ({ ...c, Root: syncBrushSlices(c.Root, imgs) }))
-  return d
 }
 
 const now = () => new Date().toISOString()
@@ -195,6 +163,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       return `${withToken(base.replace(/\/+$/, ''))}#/capture/${encodeURIComponent(id)}`
     },
   })
+  const versions = versionStore(versionsFile, now)
+  const addVersion = versions.add
   const captures = new DesignCaptures({ onNoPage: (id) => headless.ensure(id) })
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
@@ -376,11 +346,50 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const ref = templateRef(d, source)
     // 九宫格图按透明处理：四周的圆角/花纹外面必须能抠掉，白底会被边距放大出来
     const transparent = img.transparent || !!img.nineSlice
+    // 写了它在模板里的位置：从确认的模板裁下这一块做参考（图片 CLI 当参考图，本机 ComfyUI 从它图生图）
+    const tplId = conceptOf(cache.get(d.id) ?? d).approved
+    const approvedFile = tplId ? conceptFile(cache.get(d.id) ?? d, tplId) : undefined
+    const crop =
+      img.ref && approvedFile ? await templateCrop(approvedFile, cache.get(d.id)!.designSize, img.ref) : undefined
+    const cropFile = crop && source.kind === 'cli' ? path.join(tmpdir(), `agent-panel-ref-${randomUUID()}.png`) : ''
+    if (cropFile) await writeFile(cropFile, crop!)
+    const local = source.kind === 'local' ? source : undefined
     try {
-      const rest =
-        source.kind === 'local'
+      // 本机：先试从模板局部图生图；图生图模型没下载、工作流出错时在对话里说明，改回按描述生成
+      const fromTemplate =
+        local && crop
+          ? await templateImg2Img(
+              {
+                crop,
+                prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
+                negative: img.negative,
+                width: img.width,
+                height: img.height,
+                count,
+                onImage: (b) => sink.add(b),
+                onProgress: (text) => (item.text = text),
+              },
+              job.abort.signal,
+            ).then(
+              () => true,
+              (e) => {
+                if (job.abort.signal.aborted) throw e
+                systemNote(
+                  d.id,
+                  t('{name} 没能从模板局部图生图：{error}。改成按描述生成', {
+                    name: img.name,
+                    error: (e as Error).message,
+                  }),
+                )
+                return false
+              },
+            )
+          : false
+      const rest = fromTemplate
+        ? []
+        : local
           ? await localRun(
-              source,
+              local,
               withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
               {
                 subject: withRevision(img.prompt, revision),
@@ -413,11 +422,15 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               )
             : await cliGenerate(
                 // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
-                withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind, !!ref), revision),
+                withRevision(
+                  imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind, !!ref || !!cropFile),
+                  revision,
+                ),
                 count,
                 job,
                 (b) => sink.add(b),
-                ref ? [ref] : [],
+                // 裁下来的那一块放在前面：模型主要照它画，整张模板只看风格
+                [...(cropFile ? [cropFile] : []), ...(ref ? [ref] : [])],
               )
       for (const b of rest) sink.add(b)
       await sink.done()
@@ -433,6 +446,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       item.status = 'failed'
       item.text = msg
       throw e
+    } finally {
+      // 裁下来的模板局部是这一张临时用的
+      if (cropFile) await rm(cropFile, { force: true }).catch(() => {})
     }
   }
 
@@ -770,7 +786,16 @@ ${prompt}`,
     return { prompts: p?.prompts ?? [], images }
   }
 
-  async function chat(d: Design, input: z.infer<typeof DesignChatInput>, job: Job, msgId?: string) {
+  async function chat(
+    d: Design,
+    input: z.infer<typeof DesignChatInput>,
+    job: Job,
+    msgId?: string,
+    /** 这一轮开始前自动存的版本：回复上的「撤销这一轮」恢复它 */
+    undoVersion?: string,
+  ) {
+    // 这一轮开始时的树：结束时和它对比，列出 AI 改了哪些控件
+    const startTrees = { root: cache.get(d.id)!.root, components: cache.get(d.id)!.components }
     const settings = await getSettings()
     const run = chatRun(settings, input.run)
     const cliId = run.cli
@@ -1099,6 +1124,7 @@ ${prompt}`,
             height: im.height,
             transparent: im.transparent,
             nineSlice: im.nineSlice,
+            ref: im.ref,
             status: input.source.kind === 'none' ? ('idle' as const) : ('pending' as const),
             error: undefined,
           }
@@ -1107,6 +1133,7 @@ ${prompt}`,
         }
         normalizeSlices(cur)
         if (changed) cur.rev++
+        const diff = treeChanges(startTrees, { root: cur.root, components: cur.components })
         cur.messages.push({
           id: randomUUID(),
           role: 'agent',
@@ -1114,6 +1141,8 @@ ${prompt}`,
           at: now(),
           images: ids.length ? ids : undefined,
           run,
+          ...(diff.total ? { changes: diff } : {}),
+          ...(changed && undoVersion ? { undoVersion } : {}),
           // 过程按顺序存下：思考、工具调用和说明，和 Agent 的对话一样显示
           parts: finalParts(parts),
           ...(r2.questions?.length ? { questions: r2.questions } : {}),
@@ -1244,7 +1273,10 @@ ${prompt}`,
     try {
       await save(d)
       // AI 改之前自动存一个版本，改坏了可以回去；分析不改设计，不用存版本
-      if (input.mode !== 'analyze') await addVersion(d, t('AI 修改前：{text}', { text: input.text.slice(0, 24) }), true)
+      const before =
+        input.mode !== 'analyze'
+          ? await addVersion(d, t('AI 修改前：{text}', { text: input.text.slice(0, 24) }), true)
+          : undefined
       // 准备期间用户点了停止：这一轮不启动，消息标明没送出去
       if (cancelled.has(d.id)) {
         setDelivery(d, id, 'lost')
@@ -1252,12 +1284,14 @@ ${prompt}`,
         return d
       }
       startJob(d, async (job) => {
-        const { ids, concepts } = await chat(d, input, job, id)
+        // 这一轮开始时已经确认了模板（照着模板搭界面）：AI 顺手出的原画不能把模板作废，同轮的切图还要拿它当参考
+        const hadTemplate = !!conceptOf(cache.get(d.id) ?? d).approved
+        const { ids, concepts } = await chat(d, input, job, id, before?.id)
         // 分析只出结论，不出原画和切图
         if (input.mode === 'analyze') return
         if (concepts.length) {
           if (input.source.kind === 'none') throw new Error(t('出原画要先在对话框下面选生成图片的方式'))
-          await generateConcepts(d, concepts, input.source, job)
+          await generateConcepts(d, concepts, input.source, job, hadTemplate)
         }
         if (!ids.length || input.source.kind === 'none') return
         const failed = await generateImages(d, ids, input.source, input.count, job)
@@ -1306,7 +1340,14 @@ ${prompt}`,
    * 出原画：每个请求出 count 张整屏效果图，存进设计的候选里；第一张到了就选中它。
    * 在某张的基础上改（base）时，用图片 CLI 把那张一起交给模型参考
    */
-  async function generateConcepts(d: Design, reqs: ConceptRequest[], source: ImageSource, job: Job) {
+  async function generateConcepts(
+    d: Design,
+    reqs: ConceptRequest[],
+    source: ImageSource,
+    job: Job,
+    /** 保留已确认的模板（模板模式里出的原画只进候选，不回到挑图） */
+    keepApproved = false,
+  ) {
     job.phase = 'concepts'
     job.preview = undefined
     job.text = ''
@@ -1341,7 +1382,7 @@ ${prompt}`,
             const stored = await storeImage(dd, normalizeGenerated(buf, want))
             const c = conceptOf(dd)
             const img: ConceptImage = {
-              id: `c${round}_${c.images.filter((i) => i.round === round).length + 1}`,
+              id: nextConceptId(c.images, round),
               ...stored,
               prompt: req.prompt,
               negative: req.negative,
@@ -1350,11 +1391,11 @@ ${prompt}`,
               source: source.kind === 'browser' || source.kind === 'local' ? source.kind : 'cli',
               at: now(),
             }
-            // 出了新的候选就回到挑图：之前确认的模板作废
+            // 出了新的候选就回到挑图：之前确认的模板作废；模板模式里出的只进候选，模板保留
             dd.concept = {
               images: [...c.images, img],
-              selected: first ? img.id : c.selected,
-              approved: '',
+              selected: first && !keepApproved ? img.id : c.selected,
+              approved: keepApproved ? c.approved : '',
             }
             first = false
             progress.got++
@@ -1405,45 +1446,6 @@ ${prompt}`,
       throw new Error(t('原画没有生成出来：{error}', { error: errors.join('\n') || t('没有取到图片') }))
     // 有的组出了图、有的组失败了：失败的也要告诉用户（以前只要出了一张，其余的错误就丢掉了）
     if (errors.length) systemNote(d.id, t('有几组原画没有生成出来：{error}', { error: errors.join('\n') }))
-  }
-
-  async function readVersions(id: string): Promise<DesignVersion[]> {
-    const raw = await readJson(versionsFile(id))
-    return Array.isArray(raw) ? (raw as DesignVersion[]) : []
-  }
-  async function writeVersions(id: string, list: DesignVersion[]) {
-    await mkdir(path.dirname(versionsFile(id)), { recursive: true })
-    await writeJsonAtomic(versionsFile(id), list)
-  }
-  const versionMeta = ({ snapshot, ...rest }: DesignVersion): DesignVersionMeta => {
-    let widgets = 0
-    for (const r of [snapshot.root, ...snapshot.components.map((c) => c.Root)]) walk(r, () => widgets++)
-    return { ...rest, widgets }
-  }
-  /** 存一个版本（最新的在最前面）；自动存的超过上限时删掉最老的自动版本 */
-  async function addVersion(d: Design, name: string, auto: boolean) {
-    const v: DesignVersion = {
-      id: randomUUID(),
-      name,
-      at: now(),
-      auto,
-      snapshot: structuredClone({
-        designSize: d.designSize,
-        style: d.style,
-        root: d.root,
-        components: d.components,
-        images: d.images,
-        animations: d.animations ?? [],
-      }),
-    }
-    let list = [v, ...(await readVersions(d.id))]
-    const autos = list.filter((x) => x.auto)
-    if (autos.length > MAX_AUTO_VERSIONS) {
-      const drop = new Set(autos.slice(MAX_AUTO_VERSIONS).map((x) => x.id))
-      list = list.filter((x) => !drop.has(x.id))
-    }
-    await writeVersions(d.id, list.slice(0, MAX_VERSIONS + MAX_AUTO_VERSIONS))
-    return v
   }
 
   /** 用默认 CLI 生成或翻译项目提示词；格式不对时让它改一次 */
@@ -1740,9 +1742,19 @@ ${prompt}`,
       const stale = baseRev !== undefined && baseRev < d.rev
       const keepStructure = aiEditing || stale
       const byId = new Map(d.images.map((i) => [i.id, i]))
+      // 服务端没有的图（页面撤销了删除）：文件还在就保留各版，见 restoredVariants
+      const restored = await restoredVariants(doc.images, byId, imagesDir(d.id))
       const images: DesignImage[] = doc.images.map((i) => {
         const old = byId.get(i.id)
-        if (!old) return DesignImage.parse({ ...i, variants: [], status: 'idle' })
+        if (!old) {
+          const variants = restored.get(i.id) ?? []
+          return DesignImage.parse({
+            ...i,
+            variants,
+            selected: Math.max(0, Math.min(i.selected ?? 0, variants.length - 1)),
+            status: 'idle',
+          })
+        }
         return {
           ...old,
           name: i.name,
@@ -1947,10 +1959,10 @@ ${prompt}`,
     .get('/:id/versions', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      return c.json((await readVersions(d.id)).map(versionMeta))
+      return c.json((await versions.read(d.id)).map(versionMeta))
     })
     .get('/:id/versions/:vid', async (c) => {
-      const v = (await readVersions(c.req.param('id'))).find((x) => x.id === c.req.param('vid'))
+      const v = (await versions.read(c.req.param('id'))).find((x) => x.id === c.req.param('vid'))
       return v ? c.json(v) : bad(c, t('版本不存在'), 404)
     })
     .post('/:id/versions', async (c) => {
@@ -1971,29 +1983,16 @@ ${prompt}`,
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
       if (jobs.get(d.id)?.status === 'running') return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
-      const v = (await readVersions(d.id)).find((x) => x.id === c.req.param('vid'))
+      const v = (await versions.read(d.id)).find((x) => x.id === c.req.param('vid'))
       if (!v) return bad(c, t('版本不存在'), 404)
       await addVersion(d, t('恢复「{name}」之前', { name: v.name }), true)
-      d.root = v.snapshot.root
-      d.components = v.snapshot.components
-      d.designSize = v.snapshot.designSize
-      d.style = v.snapshot.style
-      // 旧版本没有动画：恢复后就没有动画
-      d.animations = v.snapshot.animations ?? []
-      // 版本里有、现在已经删掉的图片加回来（文件还在时）
-      for (const img of v.snapshot.images)
-        if (!d.images.some((i) => i.id === img.id)) d.images.push({ ...img, status: 'idle', error: undefined })
+      applyVersion(d, v.snapshot)
       d.rev++
       await save(d)
       return c.json({ ...d, job: view(jobs.get(d.id)) })
     })
     .delete('/:id/versions/:vid', async (c) => {
-      const id = c.req.param('id')
-      const list = await readVersions(id)
-      await writeVersions(
-        id,
-        list.filter((x) => x.id !== c.req.param('vid')),
-      )
+      await versions.remove(c.req.param('id'), c.req.param('vid'))
       return c.body(null, 204)
     })
     // 原画：选中一张看、确认作为模板（approve，空字符串是取消确认）、删掉一张
@@ -2035,7 +2034,7 @@ ${prompt}`,
         const cur = conceptOf(d)
         const round = Math.max(0, ...cur.images.map((i) => i.round)) + 1
         const img: ConceptImage = {
-          id: `c${round}_1`,
+          id: nextConceptId(cur.images, round),
           ...stored,
           prompt: '',
           negative: '',
@@ -2098,7 +2097,7 @@ ${prompt}`,
               const stored = await storeImage(dd, normalizeGenerated(buf, want))
               const c0 = conceptOf(dd)
               const out: ConceptImage = {
-                id: `c${round}_${c0.images.filter((i) => i.round === round).length + 1}`,
+                id: nextConceptId(c0.images, round),
                 ...stored,
                 prompt: promptText,
                 negative: img.negative,
@@ -2313,11 +2312,15 @@ ${prompt}`,
       const p = (await loadProjects()).find((x) => x.id === d.projectId)
       if (!p?.path) return bad(c, t('这个项目还没有选择目录'))
       const files = await exportFiles(d)
-      const dir = path.join(p.path, 'UI', files.name)
+      const { dir, clean } = await pickExportDir(path.join(p.path, 'UI'), files.name, d.id)
+      // 同一个设计再导出：先清掉上次的贴图和图片目录，删掉的不残留
+      if (clean)
+        for (const sub of ['Textures', 'images']) await rm(path.join(dir, sub), { recursive: true, force: true })
       for (const f of files.files) {
         await mkdir(path.dirname(path.join(dir, f.name)), { recursive: true })
         await writeFile(path.join(dir, f.name), f.data)
       }
+      await writeFile(path.join(dir, EXPORT_MARK), JSON.stringify({ designId: d.id, title: d.title }, null, 2))
       return c.json({ dir })
     })
 

@@ -405,12 +405,12 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
   // 还在跑：不能当成完成
   assert.equal(childReport(child({ working: true })).settle, 'hold')
 
-  // 有没答的提问：子对话是停下来等用户，不收口，步骤继续挂着等（提问卡片另有一条路，不重复发状态）
-  const request = [{}] as unknown as Task['requests']
+  // 有等用户确认的请求：子对话是停下来等用户，不收口，步骤继续挂着等（说明里写出确认的是什么）
+  const request = [{ kind: 'command', title: '运行命令：npm test' }] as unknown as Task['requests']
   const ask = childReport(child({ requests: request }), { background: ['不该看到这个'] })
   assert.equal(ask.state, 'needs')
   assert.equal(ask.settle, 'hold')
-  assert.match(ask.why, /没答的提问/)
+  assert.match(ask.why, /等用户确认：运行命令：npm test/)
   const askTask = waiting()
   holdWait(askTask, 'child', 'kid', ask.why)
   assert.equal(activePlan(askTask)!.steps[0].status, 'waiting')

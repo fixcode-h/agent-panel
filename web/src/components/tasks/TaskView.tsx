@@ -1040,7 +1040,8 @@ export function TaskView({
           .filter((m) => m.panel === 'ask' && m.ask?.answer === undefined && !m.ask?.delegated)
           .map((m) => m.id),
       ].join(',')
-  const childScan = `${task?.childrenWorking ?? 0}|${task?.childrenCli ?? 0}`
+  // 后代在等你确认的个数也算：子对话弹出权限确认时它不一定推新消息，靠这个数把列表（和确认行）拉回来
+  const childScan = `${task?.childrenWorking ?? 0}|${task?.childrenCli ?? 0}|${task?.childrenNeeds ?? 0}`
   const childSignalSeen = useRef({ taskId: '', key: '' })
   useEffect(() => {
     if (!task?.id || task.parentTaskId) return
@@ -1479,6 +1480,17 @@ export function TaskView({
   }
   // 父对话页上给停下的子对话一键继续：走和它自己页面同一个接口（重新占执行位），不另造一套。
   // 只刷新子对话栏，不往全局任务列表里塞摘要：它会和父对话的 childrenWorking 重复计数（侧栏「N 个执行中」会闪一下）
+  // 在父对话页直接允许 / 拒绝子对话的请求：回答后马上读回子对话列表，那一行跟着消失；出错照实提示
+  const answerChild = async (childId: string, rid: string, allow: boolean) => {
+    try {
+      await api.answerRequest(childId, rid, { allow })
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+    void loadChildren(taskId)
+      .then(setChildren)
+      .catch(() => {})
+  }
   const resumeChild = async (id: string) => {
     try {
       await api.resumeTask(id)
@@ -1777,6 +1789,7 @@ export function TaskView({
             onOpen={openChildIn}
             onClose={() => openChildIn('')}
             onResume={(id) => void resumeChild(id)}
+            onAnswer={answerChild}
           />
         )
       })()}
