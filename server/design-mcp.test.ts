@@ -39,7 +39,11 @@ const design = (): Design => ({
 })
 
 /** 开一个会话，返回调工具的函数 */
-function open(opts: { conceptOnly?: boolean } = {}, files: Partial<DesignFiles> = {}, d: Design = design()) {
+function open(
+  opts: { conceptOnly?: boolean; layoutOnly?: boolean } = {},
+  files: Partial<DesignFiles> = {},
+  d: Design = design(),
+) {
   const m = openDesignSession(
     d,
     () => {},
@@ -627,5 +631,40 @@ test('compare_template：截图和确认的模板比同一块，返回相似度�
   const files = [...r.text.matchAll(/(\S+compare-\d+-(?:heat|side)\.png)/g)].map((m) => m[1])
   assert.equal(files.length, 2)
   assert.ok(files.every((f) => existsSync(f)))
+  close()
+})
+
+test('拆区块阶段只能 propose_layout：区块按设计稿裁到范围里，名字不合法、重名时说清楚', async () => {
+  const { call, session, close } = open({ layoutOnly: true })
+  const blocked = await call('add_widgets', {
+    items: [{ parent: 'RootCanvas', widget: { Type: 'Image', Name: 'X', Slot: { x: 0, y: 0, w: 10, h: 10 } } }],
+  })
+  assert.ok(blocked.error)
+  assert.match(blocked.text, /拆区块/)
+  const bad = await call('propose_layout', {
+    regions: [
+      { name: 'top bar', x: 0, y: 0, w: 100, h: 50 },
+      { name: 'Grid', x: 0, y: 0, w: 100, h: 50 },
+      { name: 'Grid', x: 0, y: 0, w: 100, h: 50 },
+    ],
+  })
+  assert.ok(bad.error)
+  assert.match(bad.text, /PascalCase/)
+  assert.match(bad.text, /Grid 重复/)
+  const ok = await call('propose_layout', {
+    regions: [
+      { name: 'TopBar', x: 0, y: 0, w: 1920, h: 120, note: '标题' },
+      { name: 'Grid', x: 1800, y: 200, w: 400, h: 300 },
+    ],
+  })
+  assert.ok(!ok.error, ok.text)
+  assert.deepEqual(
+    session.layout?.map((g) => [g.name, g.x, g.y, g.w, g.h]),
+    [
+      ['TopBar', 0, 0, 1920, 120],
+      ['Grid', 1800, 200, 120, 300],
+    ],
+    '越出设计稿的部分裁掉',
+  )
   close()
 })

@@ -51,6 +51,17 @@
 | `web/src/components/design/DesignChat.tsx` | 对话、发送、附件、控件引用、提问面板                                                          |
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
 
+## 第 3 批：步骤和界面（2026-11-01）
+
+- 流程条（`web/src/components/design/StageSteps.tsx` + `web/src/lib/design-stages.ts`）：风格 → 原画 → 模板 → 界面 → 切图 → 导出，按设计里已有的东西推出完成 / 跳过 / 当前 / 进行中；点一步跳到对应面板，悬停看下一步做什么。以前只有「原画—界面」两步、没原画时不显示。
+- AI 改动列表与撤销（`shared/design-diff.ts` 的 `treeChanges`、`web/src/components/design/ChangeList.tsx`）：一轮结束时按控件 id 对比这一轮开始和结束的树，记在回复的 `changes` 上，点一条选中控件；回复还记下这一轮开始前自动存的版本 `undoVersion`，最后一条可以「撤销这一轮」（走恢复版本，恢复前又存一个版本）。
+- 窄屏：画布窄于 300px 时自动收起 AI 对话并提示一次（停稳 300ms 再判断，宽回 480 以上才重新生效）；动画面板高度 `min(260px, 36%)`；AI 改树时画布上显示「画布暂时只读」。
+- 画布：拖动 / 缩放时控件下面显示 x、y、宽 × 高；网格吸附（8px，右下角按钮，记在本机 `design-grid`，按住 Alt 不吸附）。
+- 逐块对比（`server/design-compare.ts`，工具 `compare_template`）：截一张当前画布，和确认的模板的同一块缩放到设计稿坐标后比亮度，返回相似度、对齐偏移（边缘图上先粗后细地搜，范围按区域大小 24～160px）、左右对照图和差异热力图；模板模式的提示词改成每搭完一块就对比一次。
+- 切图参考模板局部：`add_images` 每张可以写 `ref`（在模板里的位置，设计稿像素，存在 `DesignImage.ref`）；出图时从模板裁下这一块（`server/design-images.ts` 的 `templateCrop`）——图片 CLI 放在参考图最前面，本机 ComfyUI 用内置图生图工作流走一段的链（`templateImg2Img`，降噪 0.55），失败时在对话里说明并改回按描述生成。
+- 版式拆解：模板确认了、这张模板的区块还没确认（`layoutConfirmed`）时，这一轮是「拆区块」阶段：设计工具只能 `propose_layout`（其余改设计的工具挡下），区块存进设计的 `layout`（`concept`、`regions`、`confirmed`）。原画面板在模板图上画区块（`RegionEditor.tsx`：拖动、拖右下角缩放、改名、删除、新增），「确认区块，开始搭界面」后回到画布开下一轮，提示词带上区块坐标、要求骨架照抄；也可以「跳过，直接搭界面」（空区块直接确认）。确认模板后页面留在原画面板（`layoutDone` 才切回界面），进入拆区块时标注工具切回选择。演示版模拟拆出 4 个区块。
+- 回归：`web/src/lib/design-stages.test.ts`、`shared/design-diff.test.ts`、`server/design-compare.test.ts`、`server/design-images.test.ts`（templateCrop）、`server/design-mcp.test.ts`（compare_template、拆区块阶段）、`shared/design.test.ts`（拆区块 / 照区块搭的提示词）、`scripts/e2e/06-assist.mjs`（改动列表和撤销版本、模板流程先拆区块再搭）、`scripts/ui/04-design.mjs`（拆区块：区块画在模板上、能拖动、确认后回到画布）。
+
 ## 剩余 P1（2026-11-01，审查第三批）
 
 - 属性面板的数字、文字、颜色输入框改了值还没提交就被卸载（点画布换了选中，`Details` 按控件 id 重建）时，卸载时提交一次（`fields.tsx` 的 `useCommitOnUnmount`）。
