@@ -507,6 +507,23 @@ export const CliSpec = z.object({
     )
     .default([]),
   /**
+   * CLI 自动压缩「抖动」时的报错（压缩完马上又被一次工具输出填满，CLI 放弃这一轮）：pattern 是正则，why 写它是什么。
+   * 认出来时面板不直接判失败，先在原会话里续一轮、让模型分段读取；不写表示这个 CLI 没有这种报错
+   */
+  compactThrash: z
+    .object({
+      pattern: z.string().refine((p) => {
+        try {
+          new RegExp(p)
+          return true
+        } catch {
+          return false
+        }
+      }, '不是有效的正则表达式'),
+      why: z.string().default(''),
+    })
+    .optional(),
+  /**
    * 怎么把面板提供的工具（MCP，例如 UI 设计的设计工具）交给 CLI：args 是加的参数，files 是写进工作目录的配置文件
    * （路径 → JSON 内容；内容是字符串时原样写成文本文件，例如 Pi 的扩展脚本）。里面的 {url} 换成工具地址，{name} 换成工具名。
    * 不写表示这个 CLI 用不了面板的工具
@@ -690,6 +707,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     envExample: spec.envExample,
     env: spec.env,
     stderrNoise: spec.stderrNoise.map((x) => new RegExp(x.pattern)),
+    compactThrash: spec.compactThrash && new RegExp(spec.compactThrash.pattern, 'i'),
     options: spec.options.map((x) => ({ ...x, label: tr(x.label), hint: tr(x.hint) })),
     mcp: spec.mcp,
     mcpStore: spec.mcpStore,
