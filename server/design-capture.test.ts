@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { CaptureRequest } from '../shared/design.ts'
 import { emptyRoot } from '../shared/design.ts'
-import { DesignCaptures, captureNoPage, captureNoShot } from './design-capture.ts'
+import { DesignCaptures, captureNoHeadless, captureNoPage, captureNoShot } from './design-capture.ts'
 
 const view = (id: string): CaptureRequest => ({
   id,
@@ -74,4 +74,51 @@ test('页面离开后请求按「页面没有打开」处理', async () => {
 test('没有截图请求时长轮询到期返回空，页面据此重连', async () => {
   const c = new DesignCaptures({ askMs: 20 })
   assert.equal(await c.wait('d1'), null)
+})
+
+test('没有页面时先拉起无头浏览器里的截图页，它连上来就照常交图', async () => {
+  const launched: string[] = []
+  const c = new DesignCaptures({
+    graceMs: 10,
+    launchGraceMs: 2_000,
+    timeoutMs: 500,
+    onNoPage: (id) => {
+      launched.push(id)
+      return true
+    },
+  })
+  const shot = c.request('d1', view('c1'))
+  assert.deepEqual(launched, ['d1'])
+  // 无头页面过一会儿才连上：普通宽限早就过了，但拉起后的宽限还没到
+  await new Promise((r) => setTimeout(r, 50))
+  const got = await c.wait('d1')
+  assert.equal(got?.id, 'c1')
+  c.deliver('d1', 'c1', { png: Buffer.from('x'), rects: [] })
+  assert.equal((await shot).rects.length, 0)
+})
+
+test('有页面挂着时不拉无头浏览器；拉起来也没连上就说清楚', async () => {
+  let launches = 0
+  const c = new DesignCaptures({
+    graceMs: 10,
+    launchGraceMs: 30,
+    timeoutMs: 500,
+    onNoPage: () => {
+      launches++
+      return true
+    },
+  })
+  const wait = c.wait('d1')
+  const ok = c.request('d1', view('c1'))
+  await wait
+  c.deliver('d1', 'c1', { png: Buffer.from('x'), rects: [] })
+  await ok
+  assert.equal(launches, 0)
+  await assert.rejects(c.request('d1', view('c2')), { message: captureNoHeadless().message })
+  assert.equal(launches, 1)
+})
+
+test('找不到浏览器时和以前一样快速报「页面没有打开」', async () => {
+  const c = new DesignCaptures({ graceMs: 10, timeoutMs: 5_000, onNoPage: () => false })
+  await assert.rejects(c.request('d1', view('c1')), { message: captureNoPage().message })
 })

@@ -43,10 +43,24 @@
 | `shared/design-ops.ts`                     | 控件树的操作和校验                                                                            |
 | `shared/anim.ts`、`shared/design-data.ts`  | 动画、画板预览数据                                                                            |
 | `shared/umg.ts`                            | 导出 UE 的控件树格式                                                                          |
+| `shared/umg-layout.ts`                     | 不开页面算出 UMG 控件在画布上的位置（和 `umg-render.tsx` 同一套排版规则），给 AI 回读用       |
+| `server/design-layout.ts`                  | 设计工具里的位置回读：改完自动列出变了的控件、`get_layout`、截图失败时的位置表                |
+| `server/headless.ts`                       | 设计页没打开时用本机 Edge / Chrome 无头模式打开截图页（`#/capture/<id>`）                     |
 | `shared/moss.ts`                           | 从设计稿控件树取布局项，换算成 MOSS-Image 的布局 JSON（中心原点、像素、yxyx）                 |
 | `web/src/pages/DesignPage.tsx`             | 页面、`send()`、生成参数、导出                                                                |
 | `web/src/components/design/DesignChat.tsx` | 对话、发送、附件、控件引用、提问面板                                                          |
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
+
+## 位置回读与无头截图（2026-11-01）
+
+- 目的：AI 改完控件要回读 x / y / 宽 / 高，以前只能调 `screenshot`，而截图要用户开着设计页（画布是浏览器画的），页面没开就一个数字都拿不到。
+- 算位置（`shared/umg-layout.ts` 的 `layoutTree`）：照 `web/src/components/design/umg-render.tsx` 的排版一条条算（CanvasPanel 锚点 / 偏移 / 对齐点、横竖排 Auto / Fill、Overlay、SizeBox、WrapBox、ScrollBox、UniformGrid、列表、RenderTransform 的包围盒），口径和截图的控件位置表一样（控件本体外框、树的先序）。文字靠字宽表估，标 `est`，被它推着走的控件也标；工具结果里写成「≈」。网页设计（Frame 等）不算，返回 `undefined`，交给截图。
+- 用在哪（`server/design-layout.ts`）：改控件的工具（`apply`）结果里直接附「位置或大小变了的控件」和「跑出画面」；新工具 `get_layout`（`in`、`names`）；`screenshot` 失败时把算出来的位置表一起交给 AI。提示词和 `update_widgets` 的说明改成拿这些回读。
+- 无头截图（`server/headless.ts` + `server/design-capture.ts` 的 `onNoPage`）：截图请求来时没有页面挂着长轮询，就用本机已装的 Edge / Chrome（`findBrowser`，`AGENT_PANEL_BROWSER` 可指定，`AGENT_PANEL_HEADLESS=0` 关掉）无头打开 `<面板地址>/?token=…#/capture/<设计 id>`，宽限从 2 秒放到 15 秒；拉不起来照旧报「页面没打开」，拉起来没连上报 `captureNoHeadless`。一个设计一个进程，2 分钟没有截图请求自动关，删设计、面板退出时一起结束。开发时页面在 Vite（5173），`AGENT_PANEL_WEB_URL` 可改。
+- 截图页（`web/src/components/design/CaptureHost.tsx`，`web/src/main.tsx` 按 `#/capture/` 分流）：只挂截图组件，长轮询领请求、每次重新取设计拿最新图片，用和设计页同一个 `CanvasCapture` / `UmgNode` 画，所以图和画布一致。
+- 画布修正（对照时发现）：Fill 对齐的 Image、ProgressBar、Slider、UserWidget、竖排 ListView 的条目在按内容排版的地方（Automatic 的横竖排、WrapBox、ScrollBox、自动大小的画布插槽）以前宽或高是 0、画布上看不见，UE 里是按期望尺寸显示的。现在放一个看不见的占位块给出期望尺寸（`Sizer`，UserWidget / 列表条目用单格网格），撑满、固定尺寸时照样拉伸或收缩。
+- 回归：`shared/umg-layout.test.ts`（期望值和浏览器量的一致）、`scripts/ui/11-umg-layout.mjs`（`shared/umg-layout.fixtures.ts` 的样例树交给 `UmgNode` 在真浏览器里画，逐个控件比对：非估算 ≤ 0.6px）、`server/design-mcp.test.ts`（改完回读、`get_layout`、截图失败退回位置表）、`server/design-capture.test.ts`、`server/headless.test.ts`。真实验证：起真服务 + 假 CLI，不开设计页调 `screenshot`，服务端拉起无头 Chromium，2.5 秒内交回截图和位置表，退出后没有残留进程。
+- 改 `umg-render.tsx` 的排版时同步改 `umg-layout.ts`，并在 fixtures 里加一棵树；界面检查分片会先报出来。
 
 ## MOSS-Image 布局出图（2026-10-24）
 

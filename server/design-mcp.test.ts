@@ -342,3 +342,70 @@ test('画布位置的简写：大小写、别名、写在控件上都认，只�
   assert.deepEqual(slot('A').Offsets, { Left: 40, Top: 32, Right: 500, Bottom: 72 })
   close()
 })
+
+test('改控件的结果里直接列出位置变了的控件，不用截图回读', async () => {
+  const { call, close } = open()
+  const add = await call('add_widgets', {
+    items: [
+      {
+        parent: 'RootCanvas',
+        widget: {
+          Type: 'Image',
+          Name: 'Panel',
+          Slot: { anchor: 'center', x: 0, y: 0, w: 400, h: 200 },
+          Brush: { ImageSize: { X: 400, Y: 200 } },
+        },
+      },
+    ],
+  })
+  assert.ok(!add.error, add.text)
+  // 居中锚点 + 居中对齐：左上角在 (1920-400)/2, (1080-200)/2
+  assert.match(add.text, /位置或大小变了的控件/)
+  assert.match(add.text, /Panel（Image）760,440 400×200/)
+  const moved = await call('update_widgets', { items: [{ name: 'Panel', slot: { x: 100 } }] })
+  assert.match(moved.text, /Panel（Image）860,440 400×200/)
+  // 只改不影响位置的属性：不列
+  const tint = await call('update_widgets', { items: [{ name: 'Panel', properties: { RenderOpacity: 0.5 } }] })
+  assert.doesNotMatch(tint.text, /位置或大小变了/)
+  // 跑出画面的直接点名
+  const off = await call('update_widgets', { items: [{ name: 'Panel', slot: { x: 1000 } }] })
+  assert.match(off.text, /跑出画面：Panel/)
+  close()
+})
+
+test('get_layout 不开页面算出整棵树的位置，文字标估算；页面没开时截图退回位置表', async () => {
+  const { call, close } = open({}, { capture: async () => Promise.reject(new Error('截图失败：设计页面没有打开')) })
+  await call('add_widgets', {
+    items: [
+      {
+        parent: 'RootCanvas',
+        widget: { Type: 'TextBlock', Name: 'Title', Text: '背包', Slot: { x: 40, y: 32, w: 0, h: 0 } },
+      },
+      { parent: 'RootCanvas', widget: { Type: 'Image', Name: 'Icon', Slot: { x: 10, y: 10, w: 64, h: 64 } } },
+    ],
+  })
+  await call('update_widgets', { items: [{ name: 'Title', slot: { bAutoSize: true } }] })
+  const all = await call('get_layout', {})
+  assert.ok(!all.error, all.text)
+  assert.match(all.text, /Icon（Image）10,10 64×64/)
+  assert.match(all.text, /Title（TextBlock）≈40,32/)
+  const one = await call('get_layout', { names: ['Icon', 'Nope'] })
+  assert.doesNotMatch(one.text, /Title/)
+  assert.match(one.text, /没找到.*Nope/)
+  const shot = await call('screenshot', {})
+  assert.ok(shot.error)
+  assert.match(shot.text, /^截图失败：设计页面没有打开/)
+  assert.match(shot.text, /Icon（Image）10,10 64×64/)
+  close()
+})
+
+test('网页设计不算位置，交给截图', async () => {
+  const d = design()
+  d.kind = 'web'
+  d.root = emptyRoot('web')
+  const { call, close } = open({}, {}, d)
+  const r = await call('get_layout', {})
+  assert.ok(r.error)
+  assert.match(r.text, /screenshot/)
+  close()
+})
