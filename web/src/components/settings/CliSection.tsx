@@ -12,6 +12,7 @@ import {
   Sparkles,
   SquareTerminal,
   Trash2,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 import { CLIS, MODEL_TIERS, getCli, type CliDefinition, type ModelTier } from '@shared/clis'
@@ -27,7 +28,7 @@ import {
 import { t } from '@shared/i18n'
 import { PROXY_ENV_EXAMPLE } from '@shared/proxy'
 import { accountModelId, cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
-import { autoLimits, fmtTokens, limitSupport, parseTokens } from '@shared/model-limits'
+import { autoLimits, fmtTokens, limitSupport, MIN_AGENT_CONTEXT, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
 import { useData, useTasks } from '@/lib/data'
 import { cliColor, cliDefaultModel, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'
@@ -392,6 +393,18 @@ export function TierTable({
                 </span>
                 {mapTo && <span className="text-accent-text">{t('映射 {model}', { model: mapTo })}</span>}
               </button>
+              {/* 收起时也要看得到：上限太小时 CLI 压缩完马上又满，对话直接失败（实测 80K 时出现） */}
+              {context > 0 && context < MIN_AGENT_CONTEXT && (
+                <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning">
+                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {t(
+                      '上下文低于 {min}：Agent 模式光系统提示词和工具定义就约 44K，一次读几个大文件就可能刚压缩完又满（压缩抖动），这一轮会失败。',
+                      { min: fmtTokens(MIN_AGENT_CONTEXT) },
+                    )}
+                  </span>
+                </p>
+              )}
               {open && (
                 <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-2.5">
                   {mapTo && (

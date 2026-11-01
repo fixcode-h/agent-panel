@@ -773,6 +773,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 Agent 联网查上下文窗口、最大输出、默认和可选的思考强度。':
     'For models missing from the catalog, click “AI fill in” next to the tiers. It uses the agent set under “Create with AI” to look up the context window, max output, and default/available reasoning efforts online.',
   补充目录: 'Supplement file',
+  '上下文低于 {min}：Agent 模式光系统提示词和工具定义就约 44K，一次读几个大文件就可能刚压缩完又满（压缩抖动），这一轮会失败。':
+    'Context is below {min}: in Agent mode the system prompt and tool definitions alone take about 44K, so reading a few large files at once can refill the context right after compaction (autocompact thrashing) and fail the turn.',
   '模型配置里没有 {model}，按 {context} / {maxOutput} 估算':
     '{model} isn’t in the model catalog; estimating {context} / {maxOutput}',
   'AI 补全': 'AI fill in',

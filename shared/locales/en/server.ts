@@ -119,7 +119,8 @@ export const EN_SERVER: Record<string, string> = {
   '超过 {n} 分钟没有完成，已停止': 'Stopped after not finishing within {n} minutes',
   '{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。':
     '{error}. Make sure {cli} is installed ({hint}), or set the full path to its executable in Settings.',
-  '{cli} 执行失败（退出码 {code}）：': '{cli} failed (exit code {code}):',
+  '{cli} 执行失败（{reason}）：': '{cli} failed ({reason}):',
+  '进程被外部结束，信号 {signal}': 'process was killed externally, signal {signal}',
   '{cli} 执行失败：': '{cli} failed:',
   '原始输出：': 'Raw output:',
 
@@ -475,6 +476,17 @@ export const EN_SERVER: Record<string, string> = {
   '已丢掉旧会话，把对话裁剪后开新会话接着做了。':
     'Dropped the old session and continued in a new one with the conversation trimmed down.',
   '已裁剪对话，新会话接上了': 'Conversation trimmed, the new session took over',
+  '压缩没有生效（{before} → {after}）': 'Compaction had no effect ({before} → {after})',
+  '压缩后的上下文没有比压缩前小，这次压缩没有起作用。':
+    'The context is not smaller after compaction; this compaction had no effect.',
+  '已在原会话里续了一轮，让模型分段读取，这一轮继续做完了。':
+    'Continued one more turn in the same session, asking the model to read in smaller pieces; the turn finished.',
+  '续了一轮，继续做完了': 'Continued one more turn and finished',
+  '上下文刚压缩完就又满了。正在原会话里续一轮，提醒模型分段读取、只看需要的部分…':
+    'The context filled up again right after compaction. Continuing one more turn in the same session and asking the model to read in smaller pieces and only what it needs…',
+  '已在原会话里续过一轮，仍然失败。': 'Still failing after continuing one more turn in the same session.',
+  '· {cli} 刚压缩完上下文就又被填满（自动压缩抖动），常见于档位的上下文上限设得太小、一次读进来的内容又太多。请在设置里把这个档位的上下文调大（Agent 模式建议不低于 {min}），或者让角色分段读取大文件。':
+    "· {cli} filled its context again right after compacting (autocompact thrashing). This usually means the tier's context limit is too small and too much was read at once. Raise this tier's context in Settings (at least {min} is recommended in Agent mode), or have the agent read large files in pieces.",
   '（原始对话已经超过模型上限，连压缩请求也被拒绝，以下是面板裁剪后保留的记录）':
     '(The original conversation exceeded the context limit and even the compact request was rejected; below is the record the panel kept after trimming.)',
   '已压缩上下文：对话本身太长，模型连压缩请求都拒绝了，已改为裁剪后开新会话带上（保留最近的内容）':
@@ -595,4 +607,6 @@ export const EN_SERVER: Record<string, string> = {
   回收站里没有这一项: 'This item is not in the recycle bin',
   '「{name}」已经存在，不需要恢复': '"{name}" already exists; nothing to restore',
   读不到系统进程信息: 'Could not read system process information',
+  '已从 {from} 换成 {to}，之前的会话不再续用，之前的对话会带给新会话。':
+    'Switched from {from} to {to}. The previous session won’t be resumed; the conversation so far is carried over to the new session.',
 }

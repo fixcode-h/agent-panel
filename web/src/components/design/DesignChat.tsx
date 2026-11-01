@@ -54,6 +54,7 @@ import { AnswerMessage, UserMessage, msgAction } from '@/components/chat/ChatMes
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
+import { ChangeList } from './ChangeList'
 import { Modal } from '@/components/ui/modal'
 import { IconButton } from '@/components/ui/icon-button'
 import { AnnotationChips, markColor, markLabel } from './Annotations'
@@ -620,6 +621,8 @@ export function DesignChat({
   hasTemplate,
   request,
   onRequestDone,
+  onPickWidget,
+  onUndoRound,
   inpaint = false,
   onInpaint,
   conceptDefault = false,
@@ -658,6 +661,10 @@ export function DesignChat({
   request?: { id: string; text?: string; kind?: 'send' }
   /** 页面替用户发的话已经发出去了：页面清掉它，对话栏收起再打开（重新挂载）时不会再发一遍 */
   onRequestDone?: () => void
+  /** 回复下「改了 N 处」里点了一个控件：在画布上选中它 */
+  onPickWidget?: (tree: string, name: string) => void
+  /** 「撤销这一轮」：恢复这一轮开始前自动存的版本 */
+  onUndoRound?: (versionId: string) => void
   /** 只重绘原画上蒙版涂过的区域（在工具栏里勾选）：状态在页面上，原画面板的发送按钮也要读它 */
   inpaint?: boolean
   onInpaint?: (v: boolean) => void
@@ -839,6 +846,8 @@ export function DesignChat({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.id])
 
+  // 最后一条带改动的 AI 回复：只有它能「撤销这一轮」，在跑时不给
+  const lastChanged = running ? -1 : messages.map((m) => m.role === 'agent' && !!m.undoVersion).lastIndexOf(true)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ConversationShell scroller={scroller}>
@@ -895,6 +904,11 @@ export function DesignChat({
               // 插进去、排队的状态只在它那一轮还在跑时显示：设计对话没有轮次完成时间，按「在跑、后面还没有回复」算
               deliveryActive={running && messages.slice(i + 1).every((m) => m.role === 'user')}
               onApplyAnalysis={(v) => void applyAnalysis(v)}
+              onPickWidget={onPickWidget}
+              // 撤销只给最后一条带改动的回复（再往前撤用「版本」）
+              onUndoRound={
+                onUndoRound && msg.undoVersion && i === lastChanged ? () => onUndoRound(msg.undoVersion!) : undefined
+              }
               onResend={
                 running
                   ? undefined
@@ -1124,6 +1138,8 @@ function ChatMessage({
   deliveryActive,
   onApplyAnalysis,
   onResend,
+  onPickWidget,
+  onUndoRound,
 }: {
   /** 用户消息的送达状态那一轮还在跑（DeliveryLine 的 active） */
   deliveryActive?: boolean
@@ -1138,6 +1154,8 @@ function ChatMessage({
   disabled?: boolean
   /** 分析卡片里点了「按建议修改」：把要求交给对话 */
   onApplyAnalysis?: (text: string) => void
+  onPickWidget?: (tree: string, name: string) => void
+  onUndoRound?: () => void
   /** 把这条要求放回输入框重新编辑 */
   onResend?: (text: string) => void
 }) {
@@ -1236,6 +1254,9 @@ function ChatMessage({
         <div className="pl-[38px]">
           <DesignAnalysisCard analysis={msg.analysis} disabled={disabled} onApply={onApplyAnalysis} />
         </div>
+      )}
+      {!!msg.changes?.total && (
+        <ChangeList changes={msg.changes} onPick={onPickWidget} onUndo={onUndoRound} disabled={disabled} />
       )}
     </ChatReply>
   )

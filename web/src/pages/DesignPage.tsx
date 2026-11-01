@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { toast } from '@/lib/toast'
 import {
-  Check,
   ChevronDown,
   Clapperboard,
   Database,
@@ -36,10 +35,12 @@ import {
   emptyConcept,
   hasMask,
   imageRevisionText,
+  layoutConfirmed,
   type Annotation,
   type ConceptImage,
   type DesignVersion,
   type DesignDoc,
+  type DesignLayout,
   type DesignImage,
   type ImageSource,
   type DesignKind,
@@ -103,6 +104,8 @@ import { Hierarchy, Palette } from '@/components/design/Hierarchy'
 import type { WidgetLayer, WidgetMenuActions } from '@/components/design/WidgetMenu'
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagePreview, ImagesPanel, readFile, type WidgetRef } from '@/components/design/ImagesPanel'
+import { designStages } from '@/lib/design-stages'
+import { StageSteps } from '@/components/design/StageSteps'
 import { ComponentsPanel } from '@/components/design/ComponentsPanel'
 import { VersionCompare, VersionsButton } from '@/components/design/Versions'
 import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/web'
@@ -139,16 +142,16 @@ const SIZES = [
   { v: '1920x1080', label: '1920 × 1080（16:9）' },
   { v: '2560x1440', label: '2560 × 1440（16:9）' },
   { v: '1280x720', label: '1280 × 720（16:9）' },
-  { v: '2340x1080', label: '2340 × 1080（手机横屏）' },
-  { v: '1080x1920', label: '1080 × 1920（竖屏）' },
+  { v: '2340x1080', label: `2340 × 1080（${t('手机横屏')}）` },
+  { v: '1080x1920', label: `1080 × 1920（${t('竖屏')}）` },
 ]
 /** 网页的常用尺寸：桌面、笔记本、平板、手机 */
 const WEB_SIZES = [
-  { v: '1440x900', label: '1440 × 900（桌面）' },
-  { v: '1280x800', label: '1280 × 800（笔记本）' },
-  { v: '1920x1080', label: '1920 × 1080（大屏）' },
-  { v: '768x1024', label: '768 × 1024（平板）' },
-  { v: '390x844', label: '390 × 844（手机）' },
+  { v: '1440x900', label: `1440 × 900（${t('桌面')}）` },
+  { v: '1280x800', label: `1280 × 800（${t('笔记本')}）` },
+  { v: '1920x1080', label: `1920 × 1080（${t('大屏')}）` },
+  { v: '768x1024', label: `768 × 1024（${t('平板')}）` },
+  { v: '390x844', label: `390 × 844（${t('手机')}）` },
 ]
 
 function NewDesign({ projectId }: { projectId?: string }) {
@@ -406,6 +409,38 @@ function Designer({ id }: { id: string }) {
   // 控件树和对话栏可以拖动调整宽度，效果区占剩下的
   // 检查器默认 280：左边多了一条图标栏，比设计稿（300）收一点，把宽度留给夹在中间的画板
   const treePane = usePaneWidth('design-tree', 280, 220, 560)
+  // 窗口窄、两边面板都开着时画布会被挤到只剩一条（1024 宽时约 100px）：画布窄于 300 时先收起 AI 对话，并提示一次。
+  // 用户自己再打开就不再自动收，等画布宽回 480 以上才重新生效
+  const mainRef = useRef<HTMLElement>(null)
+  const autoFold = useRef(true)
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el) return
+    // 页面刚挂上、两边面板的宽度还没定下来时会短暂地很窄：停稳 300ms 再判断，免得一打开就把对话栏收掉
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const check = () => {
+      const w = el.clientWidth
+      if (w >= 480) autoFold.current = true
+      else if (w < 300 && autoFold.current) {
+        autoFold.current = false
+        setChatOpen((open) => {
+          if (open) toast(t('画布太窄，先收起了 AI 对话；点左上角的对话按钮可以再打开'))
+          return false
+        })
+      }
+    }
+    const ro = new ResizeObserver(() => {
+      clearTimeout(timer)
+      timer = setTimeout(check, 300)
+    })
+    ro.observe(el)
+    return () => {
+      clearTimeout(timer)
+      ro.disconnect()
+    }
+    // 主区域在加载完设计后才出现：设计换了重新挂
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, !!ed.doc])
   // 对话栏在画板左边，默认 320（照设计稿）；画板夹在两栏中间，对话栏太宽会把画板挤得很窄
   const chatPane = usePaneWidth('design-chat', 320, 280, 720)
 
@@ -460,9 +495,11 @@ function Designer({ id }: { id: string }) {
     // 只在数量、阶段变化时自动切换，用户自己切了不打扰
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [conceptCount, conceptsRunning])
+  // 确认了模板：区块也确认了（或跳过了）才切回界面；还在拆区块、等用户调整时留在原画面板上，区块画在模板图上
+  const layoutDone = !!concept.approved && layoutConfirmed(doc?.layout, concept.approved)
   useEffect(() => {
-    if (concept.approved) setView('ui')
-  }, [concept.approved])
+    if (concept.approved) setView(layoutDone ? 'ui' : 'concept')
+  }, [concept.approved, layoutDone])
   // 原画上的蒙版被清掉了（发出去了、涂完了又撤销）：「只重绘蒙版」就失效，不能留着
   const conceptMaskReady = !!doc?.annotations.some((a) => hasMask(a) && a.target.startsWith('concept:'))
   useEffect(() => {
@@ -1062,11 +1099,21 @@ function Designer({ id }: { id: string }) {
     if (!(await conceptAction('approve', cid)) || !cid) return
     // 原画上的标注用不上了；确认后马上让 AI 照着模板搭界面
     ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => !a.target.startsWith('concept:')) }), 'ann:sent')
-    setView('ui')
     setOverlay(false)
     // 对话栏收起时没人接这个请求：先打开，不然要等用户自己打开对话栏才发出去
     setChatOpen(true)
-    setRequest({ id: crypto.randomUUID(), text: t('按确认的原画模板搭界面，并生成切图') })
+    // 先拆区块：这一轮 AI 只把模板拆成区块，停在原画面板上让用户调整、确认（服务端按区块确认了没有决定这一轮做什么）
+    setRequest({ id: crypto.randomUUID(), text: t('把确认的模板拆成区块') })
+  }
+  /** 区块确认了（或者跳过）：回到画布，让 AI 照区块搭界面、出切图 */
+  const buildFromLayout = (layout: DesignLayout) => {
+    ed.change((d) => ({ ...d, layout: { ...layout, confirmed: true } }), 'layout:confirm')
+    setView('ui')
+    setChatOpen(true)
+    setRequest({
+      id: crypto.randomUUID(),
+      text: layout.regions.length ? t('按确认的区块搭界面，并生成切图') : t('按确认的原画模板搭界面，并生成切图'),
+    })
   }
 
   const exportFile = async (format: 'zip' | 'json' | 'react') => {
@@ -1143,7 +1190,13 @@ function Designer({ id }: { id: string }) {
             onCount={setCount}
             onSend={send}
             onAnalyze={analyze}
-            onStop={() => void api.stopDesign(id).then(() => ed.reload())}
+            onStop={() =>
+              void api
+                .stopDesign(id)
+                .then(() => ed.reload())
+                // 停不下来要说清楚，不能点了没反应
+                .catch((e) => toast.error(t('停止失败：{error}', { error: (e as Error).message })))
+            }
             kind={server.kind}
             designId={id}
             dir={project?.path}
@@ -1164,6 +1217,23 @@ function Designer({ id }: { id: string }) {
             hasTemplate={!!concept.approved}
             request={request}
             onRequestDone={() => setRequest(undefined)}
+            onPickWidget={(tree, name) => {
+              const root = tree ? doc.components.find((c) => c.Name === tree)?.Root : doc.root
+              let hit: Widget | undefined
+              if (root) walk(root, (w) => !hit && w.Name === name && (hit = w))
+              if (!hit) return toast(t('{name} 已经不在了', { name }))
+              setView('ui')
+              jumpTo({ target: tree, id: hit.id, name: hit.Name, type: hit.Type })
+            }}
+            onUndoRound={(vid) =>
+              void api
+                .restoreDesignVersion(id, vid)
+                .then((d) => {
+                  ed.absorb(d)
+                  toast.success(t('已撤销这一轮的修改；撤销前的样子存在「版本」里'))
+                })
+                .catch((e) => toast.error(t('撤销失败：{error}', { error: (e as Error).message })))
+            }
             inpaint={inpaint}
             onInpaint={setInpaint}
             conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}
@@ -1171,7 +1241,7 @@ function Designer({ id }: { id: string }) {
         </aside>
       )}
 
-      <main className="panel flex min-w-0 flex-1 flex-col">
+      <main ref={mainRef} className="panel flex min-w-0 flex-1 flex-col">
         {/* 画板标题行：@container 让它窄的时候（两边面板都开着）把次要按钮上的字收起来只留图标；
             实在放不下时横向滚动兜底，不把按钮挤成两行 */}
         <header className="@container flex h-[46px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2 [scrollbar-width:none]">
@@ -1191,9 +1261,32 @@ function Designer({ id }: { id: string }) {
               {titleField}
             </div>
           )}
-          {(conceptCount > 0 || conceptsRunning) && (
-            <StageSteps value={view} onChange={setView} conceptDone={!!approvedConcept} />
-          )}
+          <StageSteps
+            stages={designStages({
+              style: doc.style,
+              concepts: conceptCount,
+              approved: !!approvedConcept,
+              hasTree: !!(doc.root.Children?.length || doc.components.length),
+              images: doc.images.map((i) => ({ status: i.status, variants: i.variants.length })),
+              running: conceptsRunning
+                ? 'concepts'
+                : ed.aiEditing
+                  ? 'design'
+                  : server.job?.status === 'running' && server.job.phase === 'images'
+                    ? 'images'
+                    : undefined,
+            })}
+            onPick={(id) => {
+              if (id === 'concept' || id === 'template') {
+                if (conceptCount || conceptsRunning) setView('concept')
+                else setChatOpen(true)
+              } else if (id === 'ui' || id === 'export') setView('ui')
+              else if (id === 'slices') {
+                setView('ui')
+                setTab('images')
+              } else if (id === 'style') setChatOpen(true)
+            }}
+          />
           {chatOpen && <span className="flex-1" />}
           <SizeButton doc={doc} onChange={(designSize) => ed.change((d) => ({ ...d, designSize }), 'size')} />
           <StyleButton
@@ -1336,6 +1429,16 @@ function Designer({ id }: { id: string }) {
             // 12px 是切换按钮离左边的距离（left-3），再留 8px 空隙
             style={{ '--board-switch-w': switchW ? `${switchW + 20}px` : '0px' } as React.CSSProperties}
           >
+            {/* AI 正在改树时画布只读（结构修改会被挡下）：在画布上说清楚，不让人以为拖不动是坏了 */}
+            {ed.aiEditing && (
+              <div
+                role="status"
+                className="pointer-events-none absolute bottom-14 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-canvas-bar px-3 py-1 text-footnote whitespace-nowrap text-canvas-fg shadow-pop"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t('AI 正在修改，画布暂时只读')}
+              </div>
+            )}
             <Viewport
               actions={actions}
               onRename={(wid) => {
@@ -1443,6 +1546,13 @@ function Designer({ id }: { id: string }) {
                 }}
                 progress={conceptsRunning ? server.job?.concepts : undefined}
                 busy={ed.running}
+                layout={doc.layout}
+                designSize={doc.designSize}
+                onLayout={(layout, key) => ed.change((d) => ({ ...d, layout }), key)}
+                onConfirmLayout={() => doc.layout && buildFromLayout(doc.layout)}
+                onSkipLayout={() =>
+                  approvedConcept && buildFromLayout({ concept: approvedConcept.id, regions: [], confirmed: true })
+                }
               />
             )}
             <div ref={setBoardSwitch} className="absolute top-3 left-3 z-50 flex items-center gap-2">
@@ -1807,72 +1917,6 @@ function Designer({ id }: { id: string }) {
         onConfirm={() => void removeDesign()}
       />
     </div>
-  )
-}
-
-/**
- * 画板标题行左边的阶段条（照设计稿）：原画 → 界面两步，带序号圆点和连线。
- * 只是「显示原画还是界面」的切换，步骤顺序不强制：任何时候都能点回原画；
- * 确认了模板、停在界面时原画那一步打勾
- */
-function StageSteps({
-  value,
-  onChange,
-  conceptDone,
-}: {
-  value: 'concept' | 'ui'
-  onChange: (v: 'concept' | 'ui') => void
-  conceptDone: boolean
-}) {
-  const steps = [
-    { id: 'concept' as const, label: t('原画') },
-    { id: 'ui' as const, label: t('界面') },
-  ]
-  const cur = steps.findIndex((s) => s.id === value)
-  return (
-    <nav aria-label={t('阶段')} className="flex shrink-0 items-center gap-0.5">
-      {steps.map((s, i) => {
-        const on = i === cur
-        const done = i < cur && conceptDone
-        return (
-          <div key={s.id} className="flex items-center gap-0.5">
-            {i > 0 && (
-              <span
-                aria-hidden
-                className={cn('h-[1.5px] w-3.5', i <= cur && conceptDone ? 'bg-success' : 'bg-line-strong')}
-              />
-            )}
-            <button
-              type="button"
-              aria-current={on ? 'step' : undefined}
-              onClick={() => onChange(s.id)}
-              className={cn(
-                'flex h-8 cursor-pointer items-center gap-[7px] rounded-xl px-2.5 text-body font-semibold whitespace-nowrap transition-colors',
-                // 当前这一步：比面板低一档的底色 + 一点内阴影，像按下去的样子
-                on
-                  ? 'bg-panel text-fg shadow-[inset_0_1px_2px_rgb(0_0_0/0.08)]'
-                  : cn('hover:bg-sel', done ? 'text-fg' : 'text-subtle'),
-              )}
-            >
-              <span
-                className={cn(
-                  // 标题行窄的时候（@container）圆点先让位，只留步骤名
-                  'hidden h-5 w-5 shrink-0 place-items-center rounded-full text-caption tabular-nums @min-[600px]:grid',
-                  done
-                    ? 'bg-success text-on-primary'
-                    : on
-                      ? 'bg-fg text-bg'
-                      : 'text-subtle shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
-                )}
-              >
-                {done ? <Check className="h-3 w-3" strokeWidth={2.6} /> : i + 1}
-              </span>
-              {s.label}
-            </button>
-          </div>
-        )
-      })}
-    </nav>
   )
 }
 

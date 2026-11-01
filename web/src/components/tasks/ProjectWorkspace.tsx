@@ -318,7 +318,7 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                 )}
               >
                 {state === 'needs'
-                  ? t('等你处理')
+                  ? taskWaitText(task) || t('等你处理')
                   : state === 'waiting'
                     ? taskWaitText(task)
                     : state === 'running'

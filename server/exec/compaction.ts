@@ -1,7 +1,9 @@
 import type { AgentResult } from '../../shared/engine.ts'
 import type { ContextSnapshot } from '../../shared/context-breakdown.ts'
-import type { ToolUse } from '../../shared/schema.ts'
+import type { TaskMessage, ToolUse } from '../../shared/schema.ts'
+import { makeAlert } from '../../shared/alerts.ts'
 import { t } from '../../shared/i18n.ts'
+import { fmtTokens, MIN_AGENT_CONTEXT } from '../../shared/model-limits.ts'
 
 /** 压缩上下文那一行工具调用：压缩一开始就显示、转圈（像后台命令），压缩完成换成前后大小 */
 
@@ -55,13 +57,18 @@ export function describeCompaction(tool: ToolUse, before?: number, after?: numbe
   // 前后大小单独存一份结构化字段：界面要显示「压缩前 / 压缩后」，不解析下面的中文 label
   if (before !== undefined || after !== undefined) tool.compact = { before, after }
   const pct = after !== undefined && window ? Math.round((after / window) * 100) : undefined
+  // 压缩后不比压缩前小：这次压缩没起作用（实测上限设小时常见，随后 CLI 多半报压缩抖动），
+  // 不能写成「压缩了 0 token」让人以为压缩正常，标成警告行
+  const noEffect = before !== undefined && after !== undefined && after >= before
   tool.label =
     before !== undefined && after !== undefined
-      ? t('压缩了 {freed} token（{before} → {after}）', {
-          freed: fmtTok(Math.max(0, before - after)),
-          before: fmtTok(before),
-          after: fmtTok(after),
-        })
+      ? noEffect
+        ? t('压缩没有生效（{before} → {after}）', { before: fmtTok(before), after: fmtTok(after) })
+        : t('压缩了 {freed} token（{before} → {after}）', {
+            freed: fmtTok(before - after),
+            before: fmtTok(before),
+            after: fmtTok(after),
+          })
       : before !== undefined
         ? t('压缩前 {before} token', { before: fmtTok(before) })
         : t('已压缩上下文')
@@ -74,6 +81,29 @@ export function describeCompaction(tool: ToolUse, before?: number, after?: numbe
   ]
     .filter(Boolean)
     .join('\n')
+  // 后来补上的真实大小可能变成生效了：警告跟着去掉
+  if (noEffect)
+    tool.alert = makeAlert(
+      'warn',
+      [t('压缩后的上下文没有比压缩前小，这次压缩没有起作用。'), tool.output].join('\n'),
+      'context',
+    )
+  else delete tool.alert
+}
+
+/**
+ * 这个角色最近一次压缩那一行还在等压缩后的大小（awaitAfter）时返回它：
+ * 有的 CLI 压缩完不报用量（Codex 的手动压缩），要等下一轮第一次报用量才知道压缩后多大
+ */
+export function awaitingCompact(messages: TaskMessage[], agentId: string, step: string) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.agentId !== agentId || (m.step ?? '') !== step) continue
+    const tool = [...m.tools].reverse().find((x) => x.kind === 'compact')
+    // 只看最近的那一次压缩：更早的没等到就算了，拿后来的用量补会张冠李戴
+    if (tool) return tool.compact?.awaitAfter ? tool : undefined
+  }
+  return undefined
 }
 
 interface Usage {
@@ -92,11 +122,20 @@ export class CompactTracker {
   private cli = false
   /** 刚压缩完、还不知道压缩后多大：下一次报告上下文用量或细分时补上 */
   private pending?: { tool: ToolUse; before?: number }
-  constructor(private endTool: (x: ToolUse) => void) {}
+  constructor(
+    private endTool: (x: ToolUse) => void,
+    /** 上一轮压缩完还不知道多大的那一行（见 awaitingCompact）：这一轮第一次报用量时补上 */
+    earlier?: ToolUse,
+  ) {
+    if (earlier) this.pending = { tool: earlier, before: earlier.compact?.before }
+  }
 
   /** 面板发起的压缩开始：第一次新建一行（返回它，runner 放进新消息），重试时接着转圈 */
   startOp(op: object & { reason?: string }, before: number | undefined, toolStart: Map<ToolUse, number>) {
     let fresh: ToolUse | undefined
+    // 上一次压缩还没等到压缩后的大小又压缩了：那一行不再等（之后的用量是这次压缩的）
+    if (this.pending?.tool.compact?.awaitAfter) delete this.pending.tool.compact.awaitAfter
+    this.pending = undefined
     this.row = compactRows.get(op)
     if (!this.row) {
       fresh = compactingTool(before, op.reason)
@@ -184,5 +223,60 @@ export class CompactTracker {
     const after = u.context && u.context !== row.before ? u.context : undefined
     this.endTool(row.tool)
     describeCompaction(row.tool, row.before, after, u.window)
+    // 压缩完 CLI 没报新的用量（Codex 手动压缩就是这样）：记下来，下一轮第一次报用量时补上压缩后的大小
+    if (after === undefined && row.before !== undefined) row.tool.compact = { before: row.before, awaitAfter: true }
+  }
+}
+
+/**
+ * CLI 报自动压缩抖动（压缩完马上又被一次工具输出填满，CLI 放弃了这一轮）时要不要在原会话里续一轮：
+ * 多半是一次读进来太多（并行读几个大文件、cat 大文件），换成分段读取常常就过去了。
+ * 只续一次（tried）：再抖动说明上下文上限确实太小，如实报失败；压缩请求本身抖动不续（续了也是同一段历史）；
+ * 没有会话可接、预热、用户已经停了都不续
+ */
+export function shouldRetryThrash(x: {
+  detail: string
+  pattern?: RegExp
+  session: boolean
+  prewarm: boolean
+  compact: boolean
+  aborted: boolean
+  tried: boolean
+}) {
+  return !!x.pattern?.test(x.detail) && x.session && !x.prewarm && !x.compact && !x.aborted && !x.tried
+}
+
+/** 压缩抖动后在原会话里续一轮时发给模型的话（提示词，不翻译） */
+export const THRASH_RETRY_PROMPT =
+  '刚才上下文刚压缩完就又被填满了（一次读进来的内容太多），这一轮被中断了。请从中断的地方继续完成之前的任务，已经做完的不用重做。' +
+  '接下来读文件请分段读取（指定行范围，一次只读需要的部分），不要一次并行读多个大文件；命令输出用 head、tail、grep 只看需要的部分，不要 cat 整个大文件。'
+
+/** 压缩抖动最后还是失败时的说明：根子多半是档位的上下文上限比固定开销（系统提示词、工具定义）大不了多少 */
+export const thrashHint = (cli: string) =>
+  t(
+    '· {cli} 刚压缩完上下文就又被填满（自动压缩抖动），常见于档位的上下文上限设得太小、一次读进来的内容又太多。请在设置里把这个档位的上下文调大（Agent 模式建议不低于 {min}），或者让角色分段读取大文件。',
+    { cli, min: fmtTokens(MIN_AGENT_CONTEXT) },
+  )
+
+/** 压缩抖动、在原会话里续一轮之前写进对话的警告行（不悄悄重试）：续上了由 settleContextNotes 收成已恢复 */
+export function thrashNote(x: {
+  id: string
+  agentId: string
+  step: string
+  message: string
+  raw: string
+}): TaskMessage {
+  return {
+    id: x.id,
+    role: 'system',
+    agentId: x.agentId,
+    step: x.step,
+    text: [x.message, '', t('上下文刚压缩完就又满了。正在原会话里续一轮，提醒模型分段读取、只看需要的部分…')].join(
+      '\n',
+    ),
+    tools: [],
+    error: true,
+    alert: makeAlert('warn', x.raw, 'context'),
+    at: new Date().toISOString(),
   }
 }

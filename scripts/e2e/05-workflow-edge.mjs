@@ -104,6 +104,10 @@ await runShard('工作流条件与失败', async (api) => {
     assert.ok(!next.args.includes('--resume'), '换了 CLI 开新会话')
     assert.match(next.input, /之前的对话[\s\S]*蓝鲸/, '把之前的对话带给新会话')
     assert.equal(c.messages.findLast((m) => m.role === 'agent').run?.cli, 'claude')
+    assert.ok(
+      c.messages.some((m) => m.role === 'system' && m.text.includes('已从 Codex 换成 Claude Code，之前的会话不再续用')),
+      '换了 CLI 在对话里说一声',
+    )
     const bad = await fetch(`${base}/tasks/${t.id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -561,6 +565,20 @@ await runShard('工作流条件与失败', async (api) => {
   assert.match(logText, /\[agent\] 启动 Command Code[\s\S]*command: /)
   assert.match(logText, /WARN  \[agent\] Command Code 连接中断，自动续接第 1 次/)
   assert.match(logText, /ERROR \[agent\] Command Code 执行失败/)
+  // Claude Code 自动压缩抖动：不直接判失败，先写一行警告、在原会话里续一轮让模型分段读取
+  let thrash = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'THRASH 读几个大文件',
+  })
+  thrash = await waitDone(thrash.id)
+  assert.equal(thrash.status, 'done', '压缩抖动后续一轮做完了')
+  const tc = calls().at(-1)
+  assert.ok(tc.args.includes('--resume') && /分段读取/.test(tc.input), '在原会话里续一轮，提示分段读取')
+  const warned = thrash.messages.find((m) => m.role === 'system' && /Autocompact is thrashing/.test(m.text))
+  assert.ok(warned?.alert && /续了一轮/.test(warned.text), '续之前的警告留着，续上后收成已恢复')
+  assert.ok(!warned.error, '续上后不再显示成错误')
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
   // 卡住的 CLI：没有输出先提醒一次，再过同样的时间自动停止；输出里看出是没登录，给出登录的方法
   await call('PUT', '/settings', { ...settings, idleTimeoutMinutes: 1 })
@@ -822,6 +840,11 @@ await runShard('工作流条件与失败', async (api) => {
   // 提醒在提示词后半段（invoke 还会在这之后追加 read_user_notes / wait_user_message 的用法）
   const remindAt = kf.input.indexOf('回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。')
   assert.ok(remindAt > kf.input.lastIndexOf('## 执行方式'), '提示词后半段带语言提醒')
+  // 已有对话不跟着默认 CLI 换：t3 开始时默认是 Codex，默认改成 Command Code 后接着发消息仍用 Codex，不插换 CLI 的提示
+  await call('POST', `/tasks/${t3.id}/messages`, { text: '接着' })
+  const kept = await waitDone(t3.id)
+  assert.equal(kept.messages.findLast((m) => m.role === 'agent').run?.cli, 'codex', '已有对话不跟着默认 CLI 换')
+  assert.ok(!kept.messages.some((m) => m.role === 'system' && /已从 .* 换成/.test(m.text)), '没换 CLI 就不提示')
   // 设置了具体的默认模型后，没填的档位跟随默认模型
   await call('PUT', '/agents/' + D.id, { ...D, model: '@medium', effort: '' })
   await call('PUT', '/settings', {

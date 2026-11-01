@@ -373,11 +373,51 @@ const subtreeNames = (w: any, out: string[] = []) => {
   return out
 }
 
+const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+/** 提交的子树里自己重名的名字：以前交给 normalizeTree 悄悄改成 Label_1，AI 之后改 Label 改到的不是它想的那个 */
+const dupInside = (w: any) => {
+  const seen = new Set<string>()
+  const dup = new Set<string>()
+  for (const n of subtreeNames(w)) (seen.has(n) ? dup : seen).add(n)
+  return [...dup]
+}
+/** 只能放一个子控件、而且已经有了：当场报错（以前回「好了」，到一轮结束检查才报出来） */
+const fullOne = (p: Widget, except?: string) =>
+  WIDGETS[p.Type]?.children === 'one' && (p.Children ?? []).some((c) => c.id !== except)
+    ? `${p.Name}（${p.Type}）只能放一个子控件，里面已经有了：要换掉用 replace_widget，要多放几个先用 wrap_widget 在外面套一层 Overlay / VerticalBox`
+    : ''
+
+/** 删掉的控件被动画轨道引用着：轨道跟着删（只剩空壳的动画整个删掉），返回给 AI 的说明 */
+function dropTracks(list: UiAnimation[] | undefined, tree: string, gone: Set<string>) {
+  if (!list?.length) return { list, note: '' }
+  const notes: string[] = []
+  const next: UiAnimation[] = []
+  for (const a of list) {
+    if (a.in !== tree) {
+      next.push(a)
+      continue
+    }
+    const tracks = a.tracks.filter((t) => !gone.has(t.widget))
+    const lost = a.tracks.length - tracks.length
+    const source = a.source && gone.has(a.source) ? '' : a.source
+    if (!lost && source === a.source) {
+      next.push(a)
+      continue
+    }
+    if (!tracks.length) notes.push(`动画 ${a.name} 的轨道都引用了删掉的控件，整个删了`)
+    else {
+      notes.push(`动画 ${a.name} 里删了 ${lost} 条引用它的轨道${source !== a.source ? '，触发控件也清掉了' : ''}`)
+      next.push({ ...a, tracks, source })
+    }
+  }
+  return { list: notes.length ? next : list, note: notes.join('；') }
+}
+
 /**
  * 应用一个操作；不合法时返回错误（写给 AI 看的），状态不变。
  * 加进来的控件用 normalizeTree 补齐默认属性和插槽，名字不能和树里已有的重复
  */
-export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { error: string } {
+export function applyOp(s: OpsState, raw: unknown): { state: OpsState; note?: string } | { error: string } {
   try {
     return applyOpInner(s, raw)
   } catch (e) {
@@ -387,7 +427,7 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
   }
 }
 
-function applyOpInner(s: OpsState, raw: unknown): { state: OpsState } | { error: string } {
+function applyOpInner(s: OpsState, raw: unknown): { state: OpsState; note?: string } | { error: string } {
   const op = { ...(raw as any) } as DesignOp
   if (!op || typeof op !== 'object' || typeof (op as any).op !== 'string') return { error: '操作要写成 {"op": …}' }
   const comps = s.components
@@ -397,6 +437,9 @@ function applyOpInner(s: OpsState, raw: unknown): { state: OpsState } | { error:
   if (op.op === 'addComponent') {
     const c = op.component
     if (!c?.Name) return { error: 'addComponent 要写 component.Name' }
+    if (!NAME_RE.test(c.Name)) return { error: `子控件名要用英文、数字和下划线：${c.Name}` }
+    const dupC = dupInside(c.Root)
+    if (dupC.length) return { error: `子控件 ${c.Name} 里有重名的控件：${dupC.join('、')}，每个控件起不同的名字` }
     if (comps.some((x) => x.Name === c.Name))
       return { error: `已经有子控件 ${c.Name}，要改它的内容用 "in":"${c.Name}"` }
     return {
@@ -503,9 +546,13 @@ function applyOpInner(s: OpsState, raw: unknown): { state: OpsState } | { error:
       if (typeof p === 'string') return { error: p }
       const def = WIDGETS[p.Type]
       if (!def?.slot) return { error: `${p.Type} 不能放子控件（${p.Name}）` }
+      const full = fullOne(p)
+      if (full) return { error: full }
       const widget = looseWidget(op.widget, def.slot)
       const wrong = badWidgets(widget)
       if (wrong.length) return { error: wrong.join('；') }
+      const inner = dupInside(widget)
+      if (inner.length) return { error: `提交的控件里有重名的：${inner.join('、')}，每个控件起不同的名字` }
       const names = allNames(root)
       const dup = subtreeNames(widget).find((n) => names.has(n))
       if (dup) return { error: `${inTree}已经有叫 ${dup} 的控件，换个名字` }
@@ -516,7 +563,12 @@ function applyOpInner(s: OpsState, raw: unknown): { state: OpsState } | { error:
       const w = need(op.target)
       if (typeof w === 'string') return { error: w }
       if (w.id === root.id) return { error: '不能删根控件，要换掉整个界面用 replace' }
-      return done(removeWidget(root, w.id))
+      const gone = new Set<string>()
+      walk(w, (x) => gone.add(x.Name))
+      const r = done(removeWidget(root, w.id))
+      const t = dropTracks(s.animations, where, gone)
+      if (t.list !== s.animations) r.state.animations = t.list
+      return t.note ? { ...r, note: t.note } : r
     }
     case 'move': {
       const w = need(op.target)
@@ -526,13 +578,15 @@ function applyOpInner(s: OpsState, raw: unknown): { state: OpsState } | { error:
       if (w.id === root.id || pathTo(root, p.id).some((x) => x.id === w.id))
         return { error: `不能把 ${w.Name} 移到它自己里面` }
       if (!WIDGETS[p.Type]?.slot) return { error: `${p.Type} 不能放子控件（${p.Name}）` }
+      const full = fullOne(p, w.id)
+      if (full) return { error: full }
       return done(moveWidget(root, w.id, p.id, typeof op.index === 'number' ? op.index : undefined))
     }
     case 'rename': {
       const w = need(op.target)
       if (typeof w === 'string') return { error: w }
       const name = String(op.name ?? '')
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return { error: `控件名要用英文、数字和下划线：${name}` }
+      if (!NAME_RE.test(name)) return { error: `控件名要用英文、数字和下划线：${name}` }
       if (name !== w.Name && allNames(root).has(name)) return { error: `${inTree}已经有叫 ${name} 的控件` }
       const r = done(mapWidget(root, w.id, (x) => ({ ...x, Name: name })))
       // 动画里引用这个控件的轨道跟着改名
@@ -546,6 +600,8 @@ function applyOpInner(s: OpsState, raw: unknown): { state: OpsState } | { error:
       // 只写了一部分插槽（例如 Slot:{"x":20}）：和原来的插槽合并，没写的沿用
       const raw = looseWidget(op.widget, parent ? WIDGETS[parent.Type].slot : undefined, w.Slot)
       if (raw?.Slot && w.Slot) raw.Slot = { ...w.Slot, ...raw.Slot }
+      const innerDup = dupInside(raw)
+      if (innerDup.length) return { error: `提交的控件里有重名的：${innerDup.join('、')}，每个控件起不同的名字` }
       const wrong = badWidgets(raw)
       if (wrong.length) return { error: wrong.join('；') }
       const names = allNames(root)
@@ -570,8 +626,7 @@ function applyOpInner(s: OpsState, raw: unknown): { state: OpsState } | { error:
       if (!p || !WIDGETS[p.Type]?.slot) return { error: `${p?.Name ?? ''} 不能放子控件` }
       if (WIDGETS[p.Type].children === 'one' && p.Children?.length) return { error: `${p.Name} 只能放一个子控件` }
       const names = allNames(root)
-      if (op.name && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(op.name))
-        return { error: `控件名要用英文、数字和下划线：${op.name}` }
+      if (op.name && !NAME_RE.test(op.name)) return { error: `控件名要用英文、数字和下划线：${op.name}` }
       if (op.name && names.has(op.name)) return { error: `${inTree}已经有叫 ${op.name} 的控件` }
       const c = cloneWidget(w, names)
       if (op.name) c.Name = op.name
@@ -591,6 +646,7 @@ function applyOpInner(s: OpsState, raw: unknown): { state: OpsState } | { error:
       if (!WIDGETS[type]?.slot)
         return { error: `wrap 的 type 要是能放子控件的面板（例如 Overlay、SizeBox、Border），不能是 ${type}` }
       const names = allNames(root)
+      if (op.name && !NAME_RE.test(op.name)) return { error: `控件名要用英文、数字和下划线：${op.name}` }
       if (op.name && names.has(op.name)) return { error: `${inTree}已经有叫 ${op.name} 的控件` }
       const r = wrapWidget(root, w.id, type, names)
       if (r.root === root) return { error: `${type} 不能用来包裹控件` }

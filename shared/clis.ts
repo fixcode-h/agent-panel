@@ -203,6 +203,10 @@ export interface CliDefinition {
   envExample: string
   /** 每次运行都加的环境变量，用户在设置里写的同名变量优先 */
   env?: Record<string, string>
+  /** stderr 里和失败无关的提示行（见 cli-spec.ts 的 stderrNoise）：失败原因里的 stderr 尾巴去掉这些行 */
+  stderrNoise?: RegExp[]
+  /** 自动压缩抖动的报错（见 cli-spec.ts 的 compactThrash）：认出来时在原会话里续一轮，再失败才报失败 */
+  compactThrash?: RegExp
   /** 设置里给用户的开关（见 cli-spec.ts 的 options）：打开时加上 env，参数规则用「opt.<id>」判断 */
   options?: { id: string; label: string; hint: string; default: boolean; env: Record<string, string> }[]
   /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、pi（pi --list-models）、claude（配置和环境变量）；为空时只用 models 里写的 */

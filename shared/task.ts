@@ -19,8 +19,10 @@ import {
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
 import { t, uiLocale } from './i18n.ts'
+import { canPickRun } from './task-run.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
+import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文
@@ -104,8 +106,8 @@ export function newTask(
     inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
-    // 默认 Agent 和不用 Agent 角色的对话（agentId 为空）都能在对话时选 CLI 和模型；其他 Agent 用自己配置的
-    cli: input.mode === 'chat' && canPickRun(input.agentId) ? (input.cli ?? '') : '',
+    // 不用角色的对话（agentId 为空）能选 CLI 和模型；用角色的只记 CLI：跟随默认 CLI 的角色按它跑（见 withTaskModel）
+    cli: input.mode === 'chat' ? (input.cli ?? '') : '',
     model: input.mode === 'chat' && canPickRun(input.agentId) ? (input.model ?? '') : '',
     effort: input.mode === 'chat' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
@@ -399,25 +401,7 @@ export function taskDuration(
   return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
 }
 
-/** 对话里能不能临时选 CLI、模型和思考强度：不用角色（空 id）时可以 */
-export const canPickRun = (agentId: string) => !agentId
-
-/** 不用角色的对话任务选的 CLI、模型和思考强度 */
-export function withTaskModel<A extends { id: string; cli: string; model: string; effort: string }>(
-  agent: A,
-  task: { mode: string; agentId: string; cli?: string; model?: string; effort?: string },
-): A {
-  if (task.mode !== 'chat' || task.agentId !== agent.id || !canPickRun(agent.id)) return agent
-  // 换了 CLI 时不能沿用原来的模型（那是另一个 CLI 的）
-  const cli = task.cli || agent.cli
-  const same = cli === agent.cli
-  return {
-    ...agent,
-    cli,
-    model: task.model || (same ? agent.model : ''),
-    effort: task.effort || (same ? agent.effort : ''),
-  }
-}
+export { canPickRun, withTaskModel } from './task-run.ts'
 
 /**
  * 两个目录是不是同一个（Windows 路径大小写、分隔符、末尾斜杠不敏感）。
@@ -514,6 +498,7 @@ export interface ConvFacts {
   helpers?: boolean
   /** 名下还在动的子对话数（它们的 convState 是执行中、等结果、等你处理，见 convActive） */
   children?: number
+  childNeeds?: number // 后代对话里在等用户确认、回答的个数（见 shared/child-needs.ts）：有它自己也是「等你处理」
   /** 计划还没做完 */
   unfinished?: boolean
   /** 独立分支还没合回父对话的分支 */
@@ -569,7 +554,7 @@ export function convState(x: ConvFacts): ConvState {
   // 或者在等后台命令 / 子对话的结果——这些照旧如实显示，和「已置完成」是同一条规矩。
   // 这也是侧栏「N 个执行中」、标题 (n)、保活回收判定的入口（见 convActive）
   if (x.gone && !x.working && !pending) return 'done'
-  if (x.requests || x.asking) return 'needs'
+  if (x.requests || x.asking || x.childNeeds) return 'needs'
   // 这一轮失败了但还有结果会推回来时不算失败：结果回来会接着开一轮，
   // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
   if (x.status === 'failed' && !pending) return 'failed'
@@ -621,7 +606,7 @@ export function childFacts(
     deletedAt?: Task['deletedAt']
     worktree?: Task['worktree']
   },
-  x: { background?: number; unmerged?: boolean } = {},
+  x: { background?: number; unmerged?: boolean; childNeeds?: number } = {},
 ): ConvFacts {
   return {
     status: task.status,
@@ -629,6 +614,7 @@ export function childFacts(
     resolved: task.resolved === true,
     requests: task.requests.length,
     asking: task.parentAsks?.length ?? 0,
+    childNeeds: x.childNeeds,
     background: x.background,
     workflow: runRunning(task),
     helpers: helpersWorking(task),
@@ -683,9 +669,9 @@ export function lastFailureNote(messages: TaskMessage[] = []): string {
  */
 export function childReport(
   task: Parameters<typeof childFacts>[0] & { messages?: TaskMessage[] },
-  x: { background?: string[]; more?: boolean; unmerged?: boolean } = {},
+  x: { background?: string[]; more?: boolean; unmerged?: boolean; childNeeds?: number } = {},
 ): ChildReport {
-  const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged })
+  const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged, childNeeds: x.childNeeds })
   let state = convState(facts)
   if (x.more && state !== 'needs' && state !== 'failed') state = 'running'
   const plan = activePlan(task)
@@ -708,14 +694,14 @@ export function childReport(
         if (x.background?.length) return t('后台命令还在跑：{list}', { list: names(x.background) })
         return facts.workflow ? t('工作流还没跑完') : t('派出的子任务还没跑完')
       case 'needs':
-        return t('有没答的提问，在等用户回答')
+        return needsReason(task, x.childNeeds)
       case 'failed': {
         // 只说「执行失败了」时用户/父对话都看不出是重试耗尽、工具没接上还是进程被回收，把根因带上
         const note = lastFailureNote(task.messages)
         return note ? t('执行失败了（{note}）', { note }) : t('执行失败了')
       }
       case 'stopped':
-        return stopReasonText(task.stopReason)
+        return task.stopReason === 'user' ? t('用户停掉了它，等用户决定要不要继续') : stopReasonText(task.stopReason)
       case 'unfinished':
         if (work.length)
           return t('计划还没做完：{list}', {
@@ -736,7 +722,13 @@ export function childReport(
   })()
   return {
     state,
-    settle: state === 'done' ? 'ok' : state === 'failed' || state === 'stopped' ? 'fail' : 'hold',
+    // 用户亲手停的不是失败：那一步继续等（用户继续它时结果照常推回），不退回「需要修复」引着父对话去重派
+    settle:
+      state === 'done'
+        ? 'ok'
+        : state === 'failed' || (state === 'stopped' && task.stopReason !== 'user')
+          ? 'fail'
+          : 'hold',
     why: [convStateText(state), reason].filter(Boolean).join(t('：')),
     notify: state !== 'running' && state !== 'waiting' && state !== 'needs',
   }
@@ -1078,6 +1070,7 @@ export interface ChildEntry {
   /** 正在等用户确认的请求数、没回答的提问数：都算「需要你处理」 */
   requests?: number
   asking?: number
+  childNeeds?: number // 它的后代对话里在等用户处理的个数（见 descendantNeeds）：行上同样是「等你处理」
   /** 用户标记的「解决」：算已完成 */
   resolved?: boolean
   /** AI 分析开出的子对话（见 Task.analysis）：列表里标题和别的子对话区分开 */
@@ -1131,7 +1124,8 @@ export interface ChildActivity {
  */
 export type ChildWait =
   | { kind: 'answer'; n: number }
-  | { kind: 'confirm'; n: number }
+  | { kind: 'confirm'; n: number; title?: string; question?: boolean }
+  | { kind: 'children'; n: number }
   | { kind: 'background'; n: number }
   | { kind: 'helpers'; list: string[] }
   | { kind: 'workflow' }
@@ -1143,7 +1137,8 @@ export function childWaitText(w: ChildWait | undefined): string {
     case 'answer':
       return t('等用户回答 {n} 个提问', { n: w.n })
     case 'confirm':
-      return t('等用户确认 {n} 项', { n: w.n })
+    case 'children':
+      return confirmWaitText(w)
     case 'background':
       return t('等 {n} 个后台命令', { n: w.n })
     case 'helpers':
@@ -1164,12 +1159,13 @@ export function childWaitText(w: ChildWait | undefined): string {
  */
 export function childWait(
   tk: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'steps'> & { runs?: Task['runs'] },
-  x: { background?: number; cliAlive?: boolean } = {},
+  x: { background?: number; cliAlive?: boolean; childNeeds?: number } = {},
 ): ChildWait | undefined {
   const asking = tk.parentAsks?.length ?? 0
   if (asking) return { kind: 'answer', n: asking }
   const requests = tk.requests?.length ?? 0
-  if (requests) return { kind: 'confirm', n: requests }
+  if (requests) return confirmWait(tk.requests)
+  if (x.childNeeds) return { kind: 'children', n: x.childNeeds }
   if (x.background) return { kind: 'background', n: x.background }
   const helpers = tk.steps.filter(helperRunning).map((s) => s.title)
   if (helpers.length) return { kind: 'helpers', list: helpers }
@@ -1310,11 +1306,17 @@ export function announcedOnly(tk: Pick<Task, 'messages'>): string {
       .filter(Boolean)
       .at(-1) ?? ''
   if (/[?？]/.test(tail) || /[?？]\s*$/.test(text)) return ''
-  return INTENT.test(tail) ? tail : ''
+  if (INTENT.test(tail)) return tail
+  // 省掉「我」的打算（「接着读 design4.md」「现在检查配置」）：Codex 接第三方模型时常这样收尾就结束这一轮（实测报告问题 8）。
+  // 「现在改好了」「已经检查过」「然后运行成功」这类是结论，不算
+  return BARE_INTENT.test(tail) && !/了(?!解)|已|完|成功|通过|好[。！!.]?$/.test(tail) ? tail : ''
 }
 /** 第一人称说接下来要做的事：「我再…」「我先…」「让我…」「接下来…」「现在去…」 */
 const INTENT =
   /^(好的?[，,]\s*)?((我|咱们|我们)(再|先|来|去|要|会|现在|接下来|马上|继续|这就|顺便)|让我|接下来|下一步|现在(我)?(去|来|开始|要)|然后(我)?(再|去))|\b(let me|i'll|i will|next,? i|now i'?ll)\b/i
+/** 「接着 / 继续 / 先 / 然后 / 现在」直接跟一个动手的动词；「现在看来」「先这样」这类不是打算 */
+const BARE_INTENT =
+  /^(好的?[，,]\s*)?(接着|继续|先|然后|现在)(来|去|就)?(读|看(?!来|起来|上去)|查|跑|运行|执行|改|修|写|检查|确认|处理|实现|打开|搜|整理|补|分析|验证|编译|构建|更新|添加|删|列|生成|定位|核对|对比|梳理|调用|安装)|^(now|next|then),?\s+(read|check|run|open|inspect|search|edit|fix|verif|review)\w*\b/i
 
 /**
  * 这一轮已经说完、计划却没做完，也没有在等任何东西：对话停在等下一句，没人推就不会往下走。
@@ -1404,48 +1406,6 @@ export const childStage = (x: ChildEntry) => stageOf(childState(x))
  * 等用户处理（提问、待确认）不转：那是在等你，转圈会把「等你选择」说成「还在跑」
  */
 /** 停下原因的文案：只有用户按的暂停才说「已暂停」，别的一律说清是谁结束的 */
-/**
- * 对话被打断后点「继续执行」：交给 CLI 的那句话前面写清这是续接、中断时还有哪些没跑完。
- * 以前只把最后一条要求原样再发一遍：模型不知道自己被打断过，要么从头重做，要么不知道还有子任务、工作流没跑完；
- * 父对话也不知道面板已经把子对话拉起来了，又另建一个子对话重做（用户报过）。
- * resumed：面板这次连带拉起来的子对话标题；failed：没能拉起来的（父对话据此另建子对话接手，ADR 0032）
- */
-export function resumeNote(
-  task: Pick<Task, 'stopReason' | 'steps' | 'runs'> & { plans?: Task['plans']; stoppedJobs?: Task['stoppedJobs'] },
-  resumed: string[] = [],
-  failed: { id: string; title: string; error: string }[] = [],
-): string {
-  const lines = [
-    `（面板说明：上一轮${task.stopReason ? `${stopReasonText(task.stopReason)}` : '被中断了'}，现在在原来的会话里接着做。` +
-      '先看计划里没做完的步骤接着做，已经完成的不要重做。）',
-  ]
-  if (resumed.length)
-    lines.push(
-      `- 一起中断的子对话已经由面板拉起来接着做：${resumed.map((x) => `「${x}」`).join('、')}。不用另建子对话重做，等它们的结果；要补充就 send_to_conversation 交给它们。`,
-    )
-  if (failed.length)
-    lines.push(
-      `- 没能拉起来的子对话：${failed.map((k) => `「${k.title}」（id ${k.id}，${k.error.split('\n')[0].slice(0, 120)}）`).join('、')}。` +
-        '计划里等它的那一步已退回进行中；需要的话另建子对话接手（它原来的改动还在它的目录 / 分支里），不要干等它的结果。',
-    )
-  const helpers = task.steps.filter((s) => s.slot === 'sub' && s.interrupted && s.status !== 'done')
-  if (helpers.length)
-    lines.push(
-      `- 中断时没跑完的子任务：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。还需要就用 spawn_agents 带 resume: <id> 在原来的会话里接着跑，不要重新派一个。`,
-    )
-  const runs = (task.runs ?? []).filter((r) => r.status === 'stopped' || r.status === 'running')
-  if (runs.length)
-    lines.push(
-      `- 中断时没跑完的工作流：${runs.map((r) => `「${r.workflowName || r.workflowId}」`).join('、')}。计划里绑着它的那一步已退回进行中（需要修复），还要跑就用 start_plan 重新启动那一步。`,
-    )
-  const jobs = task.stoppedJobs ?? []
-  if (jobs.length)
-    lines.push(
-      `- 中断时一起停掉的后台命令：${jobs.map((j) => `「${j.name}」（${j.command.split('\n')[0].slice(0, 120)}）`).join('、')}。它们不会再推回结果，不要等；还需要结果就用 run_background 重新启动，不需要了就在计划里把等它的那一步改掉。`,
-    )
-  return lines.join('\n')
-}
-
 export function stopReasonText(reason: StopReason | undefined): string {
   switch (reason) {
     case 'parent':
@@ -1903,6 +1863,7 @@ export function helpersWorking(t: Pick<Task, 'status' | 'steps'>) {
 /** 判定任务对外状态要读的字段：列表摘要和完整任务都有（childrenWorking、jobs 由服务端补） */
 export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
   Partial<Pick<Task, 'childrenWorking' | 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
+    childrenNeeds?: Task['childrenNeeds']
     runs?: Task['runs']
     jobs?: Task['jobs']
     archived?: Task['archived']
@@ -1924,6 +1885,7 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
     workflow: runRunning(x),
     helpers: helpersWorking(x),
     children: x.childrenWorking ?? 0,
+    childNeeds: x.childrenNeeds ?? 0,
     stopReason: x.stopReason,
     gone: taskGone(x),
   }
@@ -1994,6 +1956,7 @@ export function taskBusy(x: TaskFactsInput) {
 /** 「等结果」时在等什么：项目首页、标题栏悬停写这一句，和 convState 用同一份事实 */
 export function taskWaitText(x: TaskFactsInput): string {
   const f = taskFacts(x)
+  if (f.childNeeds && !f.requests && !f.asking) return t('子对话等你处理')
   if (f.children) return t('子对话执行中')
   if (f.helpers) return t('子任务执行中')
   if (f.background) return t('后台命令执行中')

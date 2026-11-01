@@ -102,8 +102,8 @@ export const EN_DESIGN: Record<string, string> = {
 
   // 图片
   上传图片: 'Upload images',
-  '还没有图片。在右边告诉 AI 想要什么界面，它会列出需要的图片并生成。':
-    'No images yet. Tell the AI on the right what UI you want and it will list and generate the images it needs.',
+  '还没有图片。在左边告诉 AI 想要什么界面，它会列出需要的图片并生成。':
+    'No images yet. Tell the AI on the left what UI you want and it will list and generate the images it needs.',
   设计里没有用到这张图: 'This image isn’t used in the design',
   未用: 'Unused',
   删除图片: 'Delete image',
@@ -185,6 +185,11 @@ export const EN_DESIGN: Record<string, string> = {
   '外观（{device}）': 'Appearance ({device})',
   平板: 'Tablet',
   手机: 'Phone',
+  手机横屏: 'Phone landscape',
+  竖屏: 'Portrait',
+  笔记本: 'Laptop',
+  大屏: 'Large screen',
+  '{name} 颜色值': '{name} color value',
   '正在改{device}宽度下的样式，只影响这个宽度，桌面不变': 'Editing the {device} width only; desktop stays the same',
   还原: 'Reset',
   悬停: 'Hover',
@@ -320,7 +325,6 @@ export const EN_DESIGN: Record<string, string> = {
   'Blender 建模 · 按项目对话': 'Blender modeling · per-project chats',
   切换设计类型: 'Switch design type',
   设计类型: 'Design type',
-  阶段: 'Stage',
   '这个 UI 项目已经不在了。': 'This UI project no longer exists.',
   '{n} 个界面': '{n} screens',
   '游戏 UI {n} 个': 'Game UI {n}',
@@ -426,8 +430,8 @@ export const EN_DESIGN: Record<string, string> = {
   '描述界面，或者说要改哪里…（也可以在效果图上标注）': 'Describe the UI or what to change… (or annotate the preview)',
   按标注修改: 'Apply the annotations',
   还是空白界面: 'Still a blank screen',
-  '在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。':
-    'Tell the AI on the right what screen you want, or add widgets with + in the widget tree.',
+  '在左边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。':
+    'Tell the AI on the left what screen you want, or add widgets with + in the widget tree.',
   移到项目: 'Move to project',
   AI: 'AI',
   '正在生成图片 {i}/{n}': 'Generating images {i}/{n}',
@@ -583,6 +587,7 @@ export const EN_DESIGN: Record<string, string> = {
   '{f} 已跳过：{why}': '{f} skipped: {why}',
   'CLI 配置有问题': 'Some CLI config files have problems',
   '{cli} 没有完成这一轮就退出了': '{cli} exited before finishing this turn',
+  '{cli} 没有完成这一轮就退出了（{reason}）': '{cli} exited before finishing this turn ({reason})',
   '{cli} 用不了设计工具，请换一个 Agent': '{cli} cannot use the design tools. Please switch to another agent',
   '{cli} 连不上设计工具，请升级到最新版：{detail}':
     '{cli} could not connect to the design tools. Please update it to the latest version: {detail}',
@@ -764,6 +769,55 @@ export const EN_DESIGN: Record<string, string> = {
   '图集生成失败，改成单独生成': 'Icon sheet failed, generating separately',
   '这条消息没能开始处理：{error}。请重新发送': 'This message could not be processed: {error}. Please send it again',
   '有几组原画没有生成出来：{error}': 'Some concept images could not be generated: {error}',
+  '版本列表没有取到：{error}': 'Could not load the version list: {error}',
+  已重新连上面板服务: 'Reconnected to the panel service',
+  '连不上面板服务，正在重试：{error}': 'Cannot reach the panel service, retrying: {error}',
+  '停止失败：{error}': 'Failed to stop: {error}',
+  风格: 'Style',
+  模板: 'Template',
+  切图: 'Slices',
+  '告诉 AI 想要什么风格，或者在风格按钮里选一个': 'Tell the AI the style you want, or pick one from the Style button',
+  '在输入框打开「原画」再描述界面，AI 先画几张整屏原画给你挑':
+    'Turn on "Concept" in the input box and describe the screen; the AI draws a few full-screen concepts for you to pick from',
+  '在原画里挑一张，标注要改的地方或点「用这张做模板」':
+    'Pick a concept, mark what to change, or click "Use as template"',
+  '让 AI 照着模板或描述搭界面': 'Ask the AI to build the UI from the template or your description',
+  '在「图片」页签生成、重试或替换切图': 'Generate, retry or replace slices in the Images tab',
+  '让 AI 列出要生成的切图': 'Ask the AI to list the slices to generate',
+  '点右上角的导出，给 UE 或网页用': 'Use Export at the top right for UE or the web',
+  '{name}：跳过了': '{name}: skipped',
+  '下一步：{hint}': 'Next: {hint}',
+  引用的子控件: 'Referenced widget',
+  改名: 'Renamed',
+  '改了 {n} 处': '{n} changes',
+  '恢复到这一轮开始之前；恢复前会自动存一个版本，可以在「版本」里找回':
+    'Go back to before this round. A version is saved first, so you can get it back from Versions',
+  撤销这一轮: 'Undo this round',
+  在画布上选中它: 'Select it on the canvas',
+  '还有 {n} 处': '{n} more',
+  '{name} 已经不在了': '{name} no longer exists',
+  '已撤销这一轮的修改；撤销前的样子存在「版本」里': 'Undid this round. The state before undo is saved in Versions',
+  'AI 正在修改，画布暂时只读': 'The AI is editing. The canvas is read-only for now',
+  '画布太窄，先收起了 AI 对话；点左上角的对话按钮可以再打开':
+    'The canvas got too narrow, so the AI chat was collapsed. Use the chat button at the top left to open it again',
+  '关闭网格吸附（现在 {n} 像素）': 'Turn off grid snapping (now {n} px)',
+  '网格吸附：拖动和缩放落在 8 像素的网格上': 'Grid snapping: moves and resizes land on an 8 px grid',
+  '{name} 没能从模板局部图生图：{error}。改成按描述生成':
+    '{name} could not be generated from the template region: {error}. Generating from the description instead',
+  '区块已确认：搭界面时骨架照这些区块摆放': 'Regions confirmed: the layout will be built from these regions',
+  '调整区块：拖动移动，拖右下角改大小，点一下改名或删除；没问题就确认':
+    'Adjust the regions: drag to move, drag the bottom-right corner to resize, click to rename or delete; confirm when ready',
+  'AI 正在把模板拆成区块…': 'The AI is splitting the template into regions…',
+  '先把模板拆成区块再搭界面，位置更准；也可以跳过':
+    'Split the template into regions before building for more accurate positions, or skip this step',
+  新增区块: 'Add region',
+  '确认区块，开始搭界面': 'Confirm regions and build',
+  重新调整区块: 'Adjust regions again',
+  '跳过，直接搭界面': 'Skip and build directly',
+  区块名: 'Region name',
+  '删除区块 {name}': 'Delete region {name}',
+  把确认的模板拆成区块: 'Split the approved template into regions',
+  '按确认的区块搭界面，并生成切图': 'Build the UI from the confirmed regions and generate the slices',
   未命名设计: 'Untitled design',
   'AI 刚改过这个设计，你刚才的修改没有存上；按撤销可以找回':
     'The AI just changed this design, so your latest edits were not saved. Press Undo to get them back',

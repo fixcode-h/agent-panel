@@ -1145,6 +1145,13 @@ export function comfyQueueLists(raw: unknown): { running: unknown[]; pending: un
   return { running: list(r.Running ?? r.queue_running), pending: list(r.Pending ?? r.queue_pending) }
 }
 
+/** ComfyUI 正在执行的是不是这个 prompt（停止时只在是自己的时候才 interrupt，免得打断别人的任务） */
+export function comfyIsRunning(raw: unknown, id: string): boolean {
+  return comfyQueueLists(raw).running.some((x) =>
+    Array.isArray(x) ? String(x[1] ?? '') === id : String(asRecord(x)?.prompt_id ?? '') === id,
+  )
+}
+
 /** 队列项里出图节点的文件名前缀（面板提交时写的是 agent-panel/工作流名） */
 export function comfySavePrefix(graph: ComfyWorkflow['graph']): string | undefined {
   for (const n of Object.values(graph))

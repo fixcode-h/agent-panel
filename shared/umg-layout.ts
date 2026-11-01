@@ -69,7 +69,7 @@ const LINE_HEIGHT = 1.2
 /** 文字的宽高：wrap 时按 width 折行（中文任意处断开，英文在空格处断，太长的词硬断） */
 export function measureText(
   text: string,
-  o: { px: number; letterSpacingEm?: number; wrap?: boolean; width?: number },
+  o: { px: number; letterSpacingEm?: number; wrap?: boolean; width?: number; lineHeight?: number },
 ): { w: number; h: number; lines: number } {
   const ls = (o.letterSpacingEm ?? 0) * o.px
   const cw = (c: string) => charEm(c) * o.px + ls
@@ -102,7 +102,7 @@ export function measureText(
     }
     lines.push(cur)
   }
-  return { w: Math.max(0, ...lines), h: lines.length * o.px * LINE_HEIGHT, lines: lines.length }
+  return { w: Math.max(0, ...lines), h: lines.length * o.px * (o.lineHeight ?? LINE_HEIGHT), lines: lines.length }
 }
 
 // ---------- 控件本体的尺寸规则（和 umg-render 的 UmgBody 一致） ----------

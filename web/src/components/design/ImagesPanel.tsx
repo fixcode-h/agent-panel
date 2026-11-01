@@ -119,7 +119,7 @@ export function ImagesPanel({
       )}
       {!images.length && (
         <p className="px-1 py-4 text-center text-footnote leading-relaxed text-subtle">
-          {t('还没有图片。在右边告诉 AI 想要什么界面，它会列出需要的图片并生成。')}
+          {t('还没有图片。在左边告诉 AI 想要什么界面，它会列出需要的图片并生成。')}
         </p>
       )}
       <div className="grid grid-cols-2 gap-2">

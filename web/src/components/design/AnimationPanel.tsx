@@ -353,7 +353,11 @@ export function AnimationPanel({
   const triggers = ANIM_TRIGGERS.filter((x) => web || x !== 'scroll' || anim?.trigger === 'scroll')
 
   return (
-    <section aria-label={t('动画')} className="flex h-[260px] shrink-0 flex-col border-t bg-card text-footnote">
+    // 高度最多占画板的 36%：矮的窗口（1280×720）里固定 260px 会占掉一半，画布只剩一小条
+    <section
+      aria-label={t('动画')}
+      className="flex h-[min(260px,36%)] min-h-[140px] shrink-0 flex-col border-t bg-card text-footnote"
+    >
       <div className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b px-2">
         <Clapperboard className="ml-1 h-4 w-4 shrink-0 text-subtle" />
         {mine.length > 0 && anim ? (

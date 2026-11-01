@@ -12,6 +12,7 @@ import {
   convState,
   type ConvState,
   helperRunning,
+  helpersWorking,
   runRunning,
   announcedOnly,
   taskDeleted,
@@ -20,6 +21,7 @@ import {
   type ChildHold,
 } from '../../shared/task.ts'
 import { nextNudge, nudgeMax } from '../../shared/conv-mode.ts'
+import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled, type MergeStall } from '../../shared/merge-stall.ts'
 import { cancelWait, steerTask } from '../exec/runner.ts'
 import { stopHelper } from '../../shared/engine.ts'
 import { hasHeld } from '../exec/delivery.ts'
@@ -28,6 +30,7 @@ import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrat
 import { reapLostJobs } from '../background.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
+import { descendantNeeds } from '../../shared/child-needs.ts'
 import { activePlan, holdWait, needsFix, panelWrap, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
@@ -82,21 +85,30 @@ export function createChildren(sc: TasksScope) {
    * 不缓存的话父对话开得越多，每秒扫整份任务列表的次数越多（每个父对话 2 次）
    */
   const CHILD_COUNT_TTL = 1000
-  let childScan: { at: number; byParent: Map<string, { working: number; cli: number }> } | null = null
+  let childScan: {
+    at: number
+    byParent: Map<string, { working: number; cli: number }>
+    needs: Map<string, number>
+  } | null = null
   async function childCountsOf(parentId: string) {
     const now = Date.now()
     if (!childScan || now - childScan.at >= CHILD_COUNT_TTL) {
       const byParent = new Map<string, { working: number; cli: number }>()
-      for (const k of await sc.store.list()) {
+      // 执行中的对话以内存里那份为准：请求刚弹出来还没落盘时，父对话也要马上变成「等你处理」
+      const all = (await sc.store.list()).map((k) => sc.live.get(k.id)?.task ?? k)
+      for (const k of all) {
         if (!k.parentTaskId) continue
         const c = byParent.get(k.parentTaskId) ?? { working: 0, cli: 0 }
         if (taskCliAlive(k.id)) c.cli++
-        if (childActive(sc.live.get(k.id)?.task ?? k)) c.working++
+        if (childActive(k)) c.working++
         byParent.set(k.parentTaskId, c)
       }
-      childScan = { at: now, byParent }
+      childScan = { at: now, byParent, needs: descendantNeeds(all) }
     }
-    return childScan.byParent.get(parentId) ?? { working: 0, cli: 0 }
+    return {
+      ...(childScan.byParent.get(parentId) ?? { working: 0, cli: 0 }),
+      needs: childScan.needs.get(parentId) ?? 0,
+    }
   }
 
   /** 名下还在运行的子对话数（见 childActive） */
@@ -123,10 +135,11 @@ export function createChildren(sc: TasksScope) {
         )
     }
     const t = sc.withJobs(task)
-    if (task.parentTaskId) return t
-    // 0 也写上：理由同 withJobs
     const kids = await childCountsOf(task.id)
-    return { ...t, childrenWorking: kids.working, childrenCli: kids.cli }
+    // 后代在等用户处理：子对话页（它下面还有孙对话）也要冒泡成「等你处理」，所以子对话也带
+    if (task.parentTaskId) return { ...t, childrenNeeds: kids.needs }
+    // 0 也写上：理由同 withJobs
+    return { ...t, childrenWorking: kids.working, childrenCli: kids.cli, childrenNeeds: kids.needs }
   }
 
   /**
@@ -137,6 +150,8 @@ export function createChildren(sc: TasksScope) {
 
   /** 上次交给父对话的状态（见 reportChild）：同一个状态不重复报 */
   const reportedState = new Map<string, string>()
+  /** 子对话停在「只剩合回、没请收尾」的次数（见 nextMergeStall）：离开这个状态就清掉 */
+  const mergeStalls = new Map<string, MergeStall>()
   /** 上报去重的键：收尾请求按请求的时间，别的状态按这一轮结束的时间（每轮结束各报一次） */
   // 不带 status：CLI 报完这一轮（result）时 status 还是 running，进程退出、整次执行收尾时变成 done，
   // 同一轮、同一状态会因为这一个字段不同被当成两次上报，父对话里出现两条一样的「子对话状态」
@@ -397,7 +412,13 @@ export function createChildren(sc: TasksScope) {
     // 这一轮结束后还要接着做：排队的要求、面板交过来的消息、刚开好独立分支马上在分支目录里接着做的
     const more = sc.startQueue.has(childId) || hasHeld(childId)
     const project = isolated(tk) ? await sc.deps.projects.get(tk.projectId) : null
-    const r = childReport(tk, { background: jobs, more, unmerged: await sc.childUnmerged(tk, project ?? null) })
+    const r = childReport(tk, {
+      background: jobs,
+      more,
+      unmerged: await sc.childUnmerged(tk, project ?? null),
+      // 它下面的孙对话在等用户：报「等你处理」并说清是它的子对话，父对话不会当成它卡住了去催
+      childNeeds: (await childCountsOf(tk.id)).needs,
+    })
     if (r.settle === 'hold') {
       await holdChildWait(tk, r.why).catch((e) =>
         log.warn('task', '更新父对话计划的等待说明失败', { task: tk.id, error: (e as Error).message }),
@@ -411,7 +432,21 @@ export function createChildren(sc: TasksScope) {
     if (r.state === 'stopped' && tk.stopReason === 'restart') return
     // 已经换新的子对话接手：换人那封信说过了，不再报「已中断」
     if (r.state === 'stopped' && tk.stopReason === 'replaced') return
-    const key = reportKey(tk, r.state)
+    // 只剩合回却没请收尾：每停一次都要让父对话知道（带第几次），不能按「状态没变」吞掉，见 nextMergeStall
+    const mergeOnly = r.state === 'unfinished' && !openWork(tk).length
+    let stall: MergeStall | undefined
+    if (mergeOnly) {
+      const plan = activePlan(tk)
+      stall = nextMergeStall(
+        mergeStalls.get(childId),
+        plan ? `${plan.id}:${planProgress(tk, plan).done}` : '',
+        tk.turnDoneAt ?? '',
+      )
+      mergeStalls.set(childId, stall)
+      // 报满了：父对话已经被告知最后一次、按那封信去问用户了，不再叫起它来回催
+      if (stall.n > MERGE_STALL_REPORTS) return
+    } else mergeStalls.delete(childId)
+    const key = reportKey(tk, r.state) + (stall ? `|${stall.n}` : '')
     if (reportedState.get(childId) === key) return
     reportedState.set(childId, key)
     // 先取最新的回复：task.summary 要等整次执行收尾才更新，这一轮刚报完成（进程还在、或保活等下一句）时
@@ -421,11 +456,19 @@ export function createChildren(sc: TasksScope) {
     // 用户直接在子对话里交代过新要求：不再单独发消息，这封汇报里带上原话
     const direct = tk.userDirect ? `\n用户在这个子对话里直接交代过：${tk.userDirect}` : ''
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
-    const next =
-      r.state === 'unfinished' && !openWork(tk).length
-        ? `\n下一步：用 send_to_conversation 让它${isolated(tk) ? '在自己的分支里' : ''}评审处置完、跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。`
-        : r.state === 'unfinished'
-          ? `\n下一步：面板已经推过它一次接着做，它仍停在这里。用 send_to_conversation 交回这个子对话（id ${tk.id}），写清下一步要做什么；不要另建一个子对话重做。`
+    // 停了几次：面板自己提醒过一次 submit_merge 的也算上，父对话据此判断要不要换个说法或去问用户
+    const stops = stall ? stall.n + (sc.mergeNudged.has(tk.id) ? 1 : 0) : 0
+    const next = mergeOnly
+      ? `\n这是它第 ${stops} 次停在这里没请收尾${sc.mergeNudged.has(tk.id) ? '（面板已经提醒过它一次）' : ''}。` +
+        `下一步：用 send_to_conversation 让它${isolated(tk) ? '在自己的分支里' : ''}评审处置完、跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。` +
+        (stall!.n >= MERGE_STALL_REPORTS
+          ? '这是面板最后一次转告：交回后它仍不调用 submit_merge，就停下来告诉用户它卡在合回前、卡在哪，由用户决定，不要再来回催。'
+          : '')
+      : r.state === 'unfinished'
+        ? `\n下一步：面板已经推过它一次接着做，它仍停在这里。用 send_to_conversation 交回这个子对话（id ${tk.id}），写清下一步要做什么；不要另建一个子对话重做。`
+        : r.state === 'stopped' && tk.stopReason === 'user'
+          ? // 用户亲手停的是「先别动」，不是失败：实测里父对话把它当成中断去交回重试，用户停它的意思就没了
+            '\n下一步：这是用户自己停掉的，不是失败。不要自动交回、重派或另建子对话重做；计划里等它的那一步继续等，用户要它接着做时会自己继续，或者交代你再交给它。'
           : r.state === 'failed' || r.state === 'stopped'
             ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
             : ''
@@ -625,7 +668,10 @@ export function createChildren(sc: TasksScope) {
    */
   async function nudgeMerge(child: Task): Promise<boolean> {
     if (!child.parentTaskId || sc.mergeNudged.has(child.id) || child.wrapRequest) return false
-    if (child.status !== 'done' || child.working) return false
+    // 这一轮说完了就提醒（见 turnSettled）：保活的 CLI 一轮结束后 status 还是 running，只认 done 永远提醒不到
+    if (!turnSettled(child)) return false
+    // 进程还挂着时派出的子任务、工作流可能还没跑完（done 时不会有）：那是在等结果，不是停在合回前
+    if (helpersWorking(child) || runRunning(child)) return false
     // 用户停下、父对话收尾、归档删除这类被叫停的：不能再推它开新一轮，停止键按下去对话又自己跑起来（e2e 保活子对话那段撞到过）。
     // 页面切走、闲置回收只是收掉等下一句的进程，这一轮是正常做完的，照常提醒
     const live = sc.live.get(child.id)
