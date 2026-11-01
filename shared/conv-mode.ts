@@ -56,6 +56,39 @@ export const emptyRole = (task: ModeOf & Pick<Task, 'agentId'>, agents: Agent[])
   chatRoleFor(task, agents) ?? { ...defaultAgent(), id: '', name: '', description: '' }
 
 /**
+ * 这一轮按 id 用的角色。Chat 模式里选的角色被删了（自建的 Chat 角色）：回退到内置「助手」接着聊，
+ * 不报「找不到角色」——Chat 页没有别的东西依赖这个角色，换一个就能聊下去（运行时回退，不改对话；调用方记日志）。
+ * 项目里的对话照旧返回 undefined，由调用方报错：项目对话的角色关系到分派、计划和工作流，不能悄悄换
+ */
+export function turnRole(task: ModeOf & Pick<Task, 'agentId'>, agents: Agent[], id: string): Agent | undefined {
+  if (!id) return emptyRole(task, agents)
+  return (
+    agents.find((a) => a.id === id) ?? (isChatMode(task) ? chatRoleFor({ ...task, agentId: '' }, agents) : undefined)
+  )
+}
+
+/**
+ * 按 id 或名字找角色（spawn_agents 的 agent、create_conversation 的 role）：同名时先找这一类的。
+ * Chat 角色和 Agent 角色可以同名（例如复制成另一类后又改回原名），只按名字找会先撞上另一类、报「是 Chat 角色」
+ */
+export function findRole<T extends Pick<Agent, 'id' | 'name' | 'scope'>>(
+  agents: T[],
+  want: string,
+  scope: RoleScope,
+  ok: (a: T) => boolean = () => true,
+): T | undefined {
+  const hit = (a: T) => ok(a) && (a.id === want || a.name === want)
+  return agents.find((a) => hit(a) && scopeOf(a) === scope) ?? agents.find(hit)
+}
+
+/**
+ * CLI 自带的待办（task.todos）什么时候收起：上一轮已经全部做完的，用户发下一条消息时清掉，
+ * 不然「待办已完成」会一直挂在对话上（面板计划做完就收起，这里同一个口径）。没做完的留着，CLI 下一轮会接着更新
+ */
+export const settledTodos = <T extends { status: string }>(todos: T[] | undefined): T[] =>
+  todos?.length && todos.every((x) => x.status === 'done') ? [] : (todos ?? [])
+
+/**
  * 新建对话、换角色时的类别校验：Chat 模式只能用 Chat 角色，项目里的对话只能用 Agent 角色。
  * 例外只有面板开的「AI 分析」：归不到项目时开在 Chat，用必备角色「分析」（面板专用，受 Chat 模式的能力上限管）
  */

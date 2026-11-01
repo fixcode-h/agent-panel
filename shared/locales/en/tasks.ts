@@ -1611,4 +1611,13 @@ export const EN_TASKS: Record<string, string> = {
   去处理: 'Handle',
   子对话需要你确认: 'A sub-conversation needs your approval',
   子对话等你处理: 'A sub-conversation needs you',
+  // 首页：面板重启后问要不要全部继续（RestartResumeBar）
+  被面板重启打断的对话: 'Conversations interrupted by panel restart',
+  '上次面板关闭时有 {n} 个对话在运行，已经中断':
+    '{n} conversations were running when the panel last closed and were interrupted',
+  逐个看: 'Review each',
+  全部继续: 'Resume all',
+  不用了: 'Dismiss',
+  '已继续 {n} 个对话': 'Resumed {n} conversations',
+  '没能继续：{error}': 'Could not resume: {error}',
 }

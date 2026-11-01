@@ -104,6 +104,8 @@ export const EN_SERVER: Record<string, string> = {
   '你回答了「{title}」：{answer}': 'You answered “{title}”: {answer}',
   '你允许了：{title}': 'You allowed: {title}',
   '你拒绝了：{title}': 'You denied: {title}',
+  '你拒绝了：{title}（第 {n} 次，已让它停下来问你）':
+    'You denied: {title} (time {n}; told the agent to stop and ask you)',
   ' 或 ': ' or ',
   '· 模型「{model}」走的是 Command Code 官方服务，不是你在 providers.json 里接的接口。想用自己的接口，请把模型换成「{alt}」（模型下拉的「配置文件」分组里）。':
     '· Model “{model}” is routed through Command Code’s own service, not the provider you set up in providers.json. To use your own provider, switch the model to “{alt}” (under the “Config file” group in the model dropdown).',
@@ -539,8 +541,35 @@ export const EN_SERVER: Record<string, string> = {
   '请填写 Cloudflare Tunnel 的 token': 'Enter the Cloudflare Tunnel token',
   '请填写隧道的域名，例如 https://panel.example.com': 'Enter the tunnel domain, e.g. https://panel.example.com',
   'cloudflared 已退出（退出码 {code}）：{log}': 'cloudflared exited (code {code}): {log}',
-  'cloudflared 已经启动，但 30 秒内没有拿到外网地址。请检查网络，或在设置里填写代理。':
-    'cloudflared started but no public address arrived within 30 seconds. Check the network or set a proxy in settings.',
+  '不支持这个系统：{os} {arch}': 'Unsupported system: {os} {arch}',
+  'frp 安装包里没有 {name}': '{name} is missing from the frp package',
+  'SSH 登录失败：用户名或密码不对（{msg}）': 'SSH sign-in failed: wrong user name or password ({msg})',
+  '连不上 {server}:{port}：请确认 IP 正确，并在阿里云安全组里放行 SSH 端口（{msg}）':
+    'Cannot reach {server}:{port}. Check the IP and allow the SSH port in the Alibaba Cloud security group ({msg})',
+  '{server}:{port} 拒绝连接：SSH 端口不对或 sshd 没开（{msg}）':
+    '{server}:{port} refused the connection: wrong SSH port or sshd is not running ({msg})',
+  '目前只支持 Linux 服务器（检测到 {sys}）': 'Only Linux servers are supported for now (found {sys})',
+  '服务器上没有 systemd，暂不支持自动配置': 'The server has no systemd, so automatic setup is not supported',
+  '在服务器上安装 frps 失败（退出码 {code}）：{log}': 'Installing frps on the server failed (code {code}): {log}',
+  面板服务还没启动: 'The panel server has not started yet',
+  '外网专用端口 {port} 已被占用，请在设置里换一个': 'Remote-only port {port} is in use; pick another one in settings',
+  '还没配置云服务器：填好服务器信息后点「一键配置」':
+    'No cloud server yet: fill in the server details and click "One-click setup"',
+  '下载 frpc 失败：{msg}': 'Downloading frpc failed: {msg}',
+  'frpc 已退出（退出码 {code}）：{log}': 'frpc exited (code {code}): {log}',
+  'frp 令牌不匹配：请重新点「一键配置」。{log}': 'frp token mismatch: click "One-click setup" again. {log}',
+  '服务器上的端口 {port} 不能用（被占用或不在允许范围）：换一个面板端口后重新一键配置。{log}':
+    'Port {port} on the server is unavailable (in use or not allowed): pick another panel port and run setup again. {log}',
+  '连不上云服务器的 frp 端口 {port}：请在阿里云控制台「安全组 → 入方向」放行 TCP {port} 和 {remote}。{log}':
+    'Cannot reach frp port {port} on the cloud server: allow inbound TCP {port} and {remote} in the Alibaba Cloud console (Security group → Inbound). {log}',
+  '端口映射范围不对：起始不能大于结束，最多 1000 个端口':
+    'Invalid port mapping range: the start must not exceed the end, and at most 1000 ports are allowed',
+  'frp 端口和面板端口不能落在端口映射范围里': 'The frp port and the panel port must be outside the port mapping range',
+  '正在配置，请稍候': 'Setup is in progress, please wait',
+  'frp 端口和面板端口不能相同': 'The frp port and the panel port must differ',
+  '服务器信息不完整：{msg}': 'Server details are incomplete: {msg}',
+  'cloudflared 已经启动，但 30 秒内没有拿到外网地址。国内网络经常连不上 Cloudflare，建议改用「云服务器（frp）」。':
+    'cloudflared started but no public address arrived within 30 seconds. Networks in mainland China often cannot reach Cloudflare; consider "Cloud server (frp)" instead.',
   '这个系统不支持自动下载，请手动安装 cloudflared。':
     'Automatic download is not supported on this system. Install cloudflared manually.',
   下载到数据目录: 'Download to the data folder',

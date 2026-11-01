@@ -2,7 +2,16 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
 import { AgentInput, type Agent } from './schema.ts'
-import { agentOnlyError, chatRoleFor, emptyRole, normalizeScope, scopeError, scopeOf } from './conv-mode.ts'
+import {
+  agentOnlyError,
+  chatRoleFor,
+  emptyRole,
+  normalizeScope,
+  scopeError,
+  scopeOf,
+  settledTodos,
+  turnRole,
+} from './conv-mode.ts'
 
 setLang('zh')
 const mk = (id: string, extra: Partial<AgentInput> = {}): Agent => ({
@@ -37,6 +46,13 @@ test('Chat 页没选角色的对话按内置「助手」跑：取设定和引入
   assert.equal(chatRoleFor(chat, [worker]), undefined)
   assert.equal(emptyRole(chat, [worker]).instructions, '')
   assert.equal(emptyRole(chat, [helper]).instructions, '你是助手')
+  // Chat 页选的自建 Chat 角色被删了：回退到助手接着聊；项目里的照旧找不到（由 runner 报错）
+  assert.equal(turnRole({ ...chat, agentId: 'gone' }, [helper], 'gone')?.instructions, '你是助手')
+  assert.equal(turnRole({ ...chat, projectId: 'p', agentId: 'gone' }, [helper], 'gone'), undefined)
+  // CLI 自带待办：全部做完的在下一条消息时收起，没做完的留着
+  const done = { text: 'a', status: 'done' as const }
+  assert.deepEqual(settledTodos([done, done]), [])
+  assert.deepEqual(settledTodos([done, { text: 'b', status: 'running' as const }]).length, 2)
 })
 
 test('角色分两类：各入口的类别校验、Chat 角色保存时归零能力字段、旧数据按 Agent 角色算', () => {

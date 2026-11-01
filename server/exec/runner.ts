@@ -26,8 +26,11 @@ import {
   addNoteTaker,
   hasHeld,
   holdForNextTurn,
+  heldMessage,
+  markHeld,
   noteTakersOf,
   removeNoteTaker,
+  returnHeld,
   takeHeld,
   type NoteTaker,
 } from './delivery.ts'
@@ -129,8 +132,9 @@ import { AUTO_ANSWER } from '../asks.ts'
 import { dropAsked } from '../../shared/task-settle.ts'
 import { askViaParent } from './child-question.ts'
 import { askPushRequest, dropOwnRequests, noteAnswer, panelRequest, replies } from './panel-requests.ts'
+import { denyAdvice } from './deny-advice.ts'
 import { orchHint } from '../orch-mcp.ts'
-import { emptyRole } from '../../shared/conv-mode.ts'
+import { turnRole } from '../../shared/conv-mode.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
 import { MODEL_HINT } from '../../shared/blender.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
@@ -215,6 +219,7 @@ export interface RealContext {
   beginEdit?: EngineHost['beginEdit']
   inlineEdit?: EngineHost['inlineEdit']
   runBackground?: EngineHost['runBackground']
+  cliTodos?: EngineHost['cliTodos']
   checkBackground?: EngineHost['checkBackground']
   stopBackground?: EngineHost['stopBackground']
   lessons?: EngineHost['lessons']
@@ -309,17 +314,11 @@ export function deliverWait(
 function flushHeld(task: Task) {
   if (!hasHeld(task.id)) return
   const q = takeHeld(task.id)!
-  const msg = task.messages.find((m) => m.id === q.id)
-  if (msg?.role === 'user') msg.delivery = { how: 'wait', at: new Date().toISOString() }
-  const got = deliverWait(
-    task,
-    msg ?? { id: q.id, role: 'system', agentId: '', step: '', text: q.text, tools: [], at: new Date().toISOString() },
-    q.attachments,
-    !!msg,
-  )
-  // 交不出去（进程已经换了一套 CLI）：放回去，由整次执行结束后接着处理
-  if (got !== 'ok')
-    holdForNextTurn(task.id, msg ?? ({ id: q.id, text: q.text, attachments: q.attachments } as TaskMessage))
+  markHeld(task.messages, [q], 'wait')
+  const { msg, recorded } = heldMessage(task.messages, q)
+  const got = deliverWait(task, msg, q.attachments, recorded)
+  // 交不出去（进程已经换了一套 CLI）：原样放回去，由整次执行结束后接着处理
+  if (got !== 'ok') returnHeld(task.id, q)
 }
 
 /** 对话派出的子任务（不是工作流节点） */
@@ -520,6 +519,7 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   if (!fn || !req) return false
   replies.delete(id)
   task.requests = task.requests.filter((x) => x.id !== id)
+  const deny = denyAdvice(task, req, r)
   const what =
     req.kind === 'confirm'
       ? r.allow
@@ -535,7 +535,7 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
             : t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answers?.[0] ?? r.answer ?? '' })
         : r.allow
           ? t('你允许了：{title}', { title: req.title })
-          : t('你拒绝了：{title}', { title: req.title })
+          : (deny.what ?? t('你拒绝了：{title}', { title: req.title }))
   // 回答了问题：问题和答案在对话正文里显示，不再是一行灰色的说明
   const answers = req.kind === 'question' ? questionAnswers(req, r) : undefined
   // 请求处理完就继续执行：等待结算进 waitMs，从这一刻重新算执行时间
@@ -551,7 +551,7 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
     at: new Date().toISOString(),
     ...(answers ? { answers } : {}),
   })
-  fn(r)
+  fn(deny.reply)
   return true
 }
 
@@ -813,7 +813,7 @@ const inToolWait = new Set<string>()
 /** 这次调用要用的 API：CLI 的登录方式是 API 时才有；账号登录不受并发上限管 */
 function callApi(ctx: RealContext, call: AgentCall) {
   const id = ctx.agents.some((a) => a.id === call.agentId) ? call.agentId : aliasAgent(call.agentId)
-  const found = id ? ctx.agents.find((a) => a.id === id) : emptyRole(ctx.task, ctx.agents)
+  const found = turnRole(ctx.task, ctx.agents, id)
   // 找不到角色时由 runAgent 报错
   if (!found) return undefined
   const agent =
@@ -925,10 +925,11 @@ async function runAgent(
   // 本轮开始的索引：重试成功时只收这一轮以后的卡（用户插话会往同一轮里再 push user，不能按 role 猜边界）
   const turnStart = task.messages.length
   // agentId 为空表示这个对话不用 Agent 角色：直接用默认 CLI，不注入角色设定
-  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）
+  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）；Chat 页选的角色被删了按内置助手跑（turnRole）
   const id = ctx.agents.some((a) => a.id === agentId) ? agentId : aliasAgent(agentId)
-  const found = id ? ctx.agents.find((a) => a.id === id) : emptyRole(ctx.task, ctx.agents)
+  const found = turnRole(ctx.task, ctx.agents, id)
   if (!found) return { ok: false, error: t('找不到执行这一步的角色，可能已被删除') }
+  if (id && found.id !== id) log.info('agent', 'Chat 对话的角色已被删除，按内置助手跑', { task: task.id, agentId: id })
   // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
   const agent =
     call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(settings)) : withTaskModel(found, task)
@@ -1001,9 +1002,9 @@ async function runAgent(
   const rewind = chat ? task.rewind : undefined
   // 对话中途换了 CLI、（不能中途换模型的 CLI 换了）模型或（不支持中途换强度的 CLI 换了）思考强度：
   // 原来的会话接不上，开新会话把之前的对话带过去。
-  // 会话开在别的目录里（中途开了独立分支）也接不上：CLI 的会话按目录存，换了目录 --resume 找不到。
-  // 子任务一样要查：父对话开了独立分支后，子任务的会话还留在原目录
-  const moved = sessionMoved(task, sessionKey, cwd, chat)
+  // 会话开在别的目录里（中途开了独立分支）也接不上：多数 CLI 的会话按目录存，换了目录 --resume 找不到。
+  // 子任务一样要查：父对话开了独立分支后，子任务的会话还留在原目录。能跨目录续接的（resumeAnyDir）照样续接
+  const moved = sessionMoved(task, sessionKey, cwd, chat, def.resumeAnyDir)
   const switched =
     chat && (sessionChanged(task, cliId, model, effort, def.effortBoundSession, def.modelSwitch) || moved)
   if (switched) resume = undefined
@@ -2819,6 +2820,7 @@ export async function runRealTurn(ctx: RealContext) {
     beginEdit: ctx.beginEdit,
     inlineEdit: ctx.inlineEdit,
     runBackground: ctx.runBackground,
+    cliTodos: ctx.cliTodos,
     checkBackground: ctx.checkBackground,
     stopBackground: ctx.stopBackground,
     forwardSpawn: ctx.forwardSpawn,

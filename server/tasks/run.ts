@@ -8,7 +8,6 @@ import {
   type Project,
   type DeliveryHow,
   type TaskMessage,
-  defaultAgent,
 } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
@@ -31,8 +30,9 @@ import {
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
-import { isChatMode } from '../../shared/conv-mode.ts'
+import { isChatMode, settledTodos, turnRole } from '../../shared/conv-mode.ts'
 import { agentRun, defaultCli } from '../../shared/settings.ts'
+import { getCli } from '../../shared/clis.ts'
 import { expandSlash } from '../slash.ts'
 import { childAskInitial } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
@@ -48,7 +48,7 @@ import {
   type RealContext,
 } from '../exec/runner.ts'
 import { makeAlert } from '../../shared/alerts.ts'
-import { dropHeld, hasHeld, holdForNextTurn, takeHeld } from '../exec/delivery.ts'
+import { dropHeld, hasHeld, holdForNextTurn, markHeld, takeHeld } from '../exec/delivery.ts'
 import { resetIdleCountdown } from '../presence.ts'
 import type { Live } from './types.ts'
 import { placedFiles } from '../attachments.ts'
@@ -283,7 +283,8 @@ export function createRun(sc: TasksScope) {
       })
     // 这一轮启动时的选择，用来判断执行中用户有没有换 CLI/模型/强度。
     // 不用 Agent 角色的对话（agentId 为空）按默认 Agent 的配置算，CLI、模型取任务里选的那一套
-    const startAgent = task.agentId ? agents.find((a) => a.id === task.agentId) : { ...defaultAgent(), id: '' }
+    // Chat 页选的角色被删了也按内置助手的配置算（和 runner 的 turnRole 同一个口径）
+    const startAgent = turnRole(task, agents, task.agentId)
     const startedRun = startAgent ? agentRun(withTaskModel(startAgent, task), settings) : undefined
     // 项目里用分派角色（主理）的顶层对话就是父对话：分诊、派单，只做护栏内的就地微改动
     const coordinatorRole = !task.parentTaskId && !!task.projectId && !!startAgent?.canDelegate
@@ -527,6 +528,8 @@ export function createRun(sc: TasksScope) {
             ? () => sc.beginEdit(entry, changed)
             : undefined,
         branch: coordinatorRole && dir ? await currentBranch(dir).catch(() => '') : undefined,
+        // 这一轮的 CLI 自带待办会不会被面板显示：Chat 模式的提示词据此决定怎么说计划（CLI 定义的 todos）
+        cliTodos: !!startedRun && !!getCli(startedRun.cli)?.todos,
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
           task.mode === 'chat' && dir
@@ -732,10 +735,7 @@ export function createRun(sc: TasksScope) {
           // 在对话里把它们改成「没送出去」，用户才知道要重新发一次，而不是一直等着
           const lost = dropHeld(task.id)
           if (lost.length) {
-            const at = new Date().toISOString()
-            for (const m of lost)
-              for (const x of entry.task.messages)
-                if (x.id === m.id && x.role === 'user') x.delivery = { how: 'lost', at }
+            markHeld(entry.task.messages, lost, 'lost')
             await sc.store
               .update(task.id, entry.task)
               .catch((e) => log.warn('task', '标记没送出去的消息失败', { task: task.id, error: (e as Error).message }))
@@ -814,14 +814,16 @@ export function createRun(sc: TasksScope) {
       taskLog(id, '接着处理排着的消息', { messageId: q.id })
       m = { text: q.text, attachments: q.attachments, recorded: true }
       // 这一轮已经结束、马上按新的一轮交给 CLI：把消息上的交付状态从将来的「结束后自动处理」改成实际发生的事
-      const was = next.messages.find((x) => x.id === q.id && x.role === 'user')
-      if (was) was.delivery = { how: 'next', at: new Date().toISOString() }
+      // 合进来的几封信一起改（见 holdForNextTurn）
+      markHeld(next.messages, [q], 'next')
       // 排着的消息只记了正文：面板替别人说的（后台结果、子对话上报、面板说明）要按对话里记下的那条认出来，
       // 不然会被当成用户的新要求，计划提醒追着它要改计划
       const rec = next.messages.find((x) => x.id === q.id)
       if (rec && (rec.role !== 'user' || rec.panel || rec.child)) m = { ...m, panel: rec.panel ?? 'note' }
     }
     sc.notePlanInput(next, !!m.panel || !!m.child)
+    // 用户发了新消息：上一轮已经全部做完的 CLI 待办收起，不再一直挂着「待办已完成」
+    if (!m.panel && !m.child && !m.peer) next.todos = settledTodos(next.todos)
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
@@ -968,6 +970,8 @@ export function createRun(sc: TasksScope) {
       working: task.working,
     })
     if (wait === 'ok') {
+      // CLI 停在等下一句（上一轮已结束）：用户的新消息同样收起全部做完的待办
+      if (msg.role === 'user' && !msg.panel && !msg.child && !msg.peer) task.todos = settledTodos(task.todos)
       task.updatedAt = new Date().toISOString()
       markDelivery(task, msg, 'wait')
       await sc.store.update(task.id, task)

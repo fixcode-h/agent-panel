@@ -27,9 +27,31 @@ export function setSendWaitMs(ms: number) {
 }
 
 /**
+ * 父对话给同一个正在执行的子对话接连写信的最短间隔：间隔内再写，信照样交（内容不丢），
+ * 回话里提醒它别连着催、等汇报。测试里可以改小
+ */
+export let LETTER_GAP_MS = 90_000
+export function setLetterGapMs(ms: number) {
+  LETTER_GAP_MS = ms
+}
+
+/**
  * 父子之间的通知：子对话状态变化写进父计划 / 收件箱（noteParent）、用户直接对子对话说的要求、新要求进计划、父对话交给子对话（sendToChild）。
  */
 export function createChildMessages(sc: TasksScope) {
+  /** 子对话 id → 父对话上一次给它交代任务的时间（见 LETTER_GAP_MS）。只在内存里，重启后从头算 */
+  const lastLetter = new Map<string, number>()
+  /**
+   * 子对话正在执行、父对话刚给它写过信又写：实测父对话 2 分钟给同一个子对话写了 5 封，子对话每封都要停下来回。
+   * 不拦下这封（可能真有新要求），只在回话里说清它在处理、别催；排到这一轮之后的会和前一封合成一轮（holdForNextTurn）
+   */
+  const letterGap = (id: string, running: boolean) => {
+    const now = Date.now()
+    const prev = lastLetter.get(id)
+    lastLetter.set(id, now)
+    if (!running || prev === undefined || now - prev >= LETTER_GAP_MS) return ''
+    return `。你 ${Math.max(1, Math.round((now - prev) / 1000))} 秒前刚给它写过信，它正在处理：不要连着催，等它汇报（做完、提问、出错或停下面板都会推给你）；有新要求就攒成一封再发`
+  }
   /**
    * 父对话的聊天里记一条系统消息并放进收件箱：它正在执行就实时交给它。
    * settle：父对话计划里有步骤在等这个子对话时，按结果标完成或退回进行中，并马上让父对话处理（空闲就开一轮），不放进收件箱干等
@@ -266,13 +288,14 @@ export function createChildMessages(sc: TasksScope) {
               : r.how === 'next-node'
                 ? '子对话正在执行，已实时送达，它接下来的步骤会带上'
                 : '子对话正在执行，这一轮结束后会自动处理这条'
-      return { ok: true, info: `「${child.title}」${how}` }
+      return { ok: true, info: `「${child.title}」${how}${kind === 'task' ? letterGap(id, true) : ''}` }
     }
     // 等它真的开起来再回话：起不来（CLI 没装、独立分支重建失败……）要把错误交回给发消息的一方。
     // 以前是发出去就不管、先回「已交给」，父对话以为它在做，它其实没起来（用户要求起不来必须报错）。
     // 上一轮刚结束、还在收尾时执行位还占着：wakeConv 记进对话排到下一轮，收尾过了那一步就由它补开，消息不能丢
     // 限时：子对话上一轮收尾慢（等 CLI 退出、删独立分支）时不能让父对话的工具调用一直挂着——
     // CLI 的工具调用一分钟就超时，父对话以为没送到又重发一遍。过了时限先回话，后面起不来照样在子对话里报警告
+    if (kind === 'task') letterGap(id, false)
     const woke = sc.wakeConv(id, message, { ...(panel ? { panel } : {}), ...(peer && { peer }) })
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<'late'>((r) => {

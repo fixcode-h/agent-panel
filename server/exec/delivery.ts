@@ -34,18 +34,66 @@ export function removeNoteTaker(taskId: string, taker: NoteTaker) {
 /** 这个任务正在跑、能用面板工具取补充的调用；没有时为空 */
 export const noteTakersOf = (taskId: string) => takers.get(taskId)
 
-interface HeldMessage {
+export interface HeldMessage {
   id: string
   text: string
   attachments: Attachment[]
+  /** 合进这一条的其他消息（父对话接连交代的几封信）：开新一轮时它们的交付状态一起改 */
+  merged?: string[]
+  /** 父对话交代任务的信：排在它后面的同类信合进来 */
+  letter?: boolean
 }
 
 const held = new Map<string, HeldMessage[]>()
 
+/** 父对话交代任务的信（不是回答、收尾结果、面板消息） */
+const isLetter = (msg: TaskMessage) => msg.peer?.rel === 'parent' && msg.peer.kind === 'task'
+
 export function holdForNextTurn(taskId: string, msg: TaskMessage) {
   const list = held.get(taskId) ?? []
-  list.push({ id: msg.id, text: msg.text, attachments: msg.attachments ?? [] })
+  const last = list.at(-1)
+  // 子对话正在执行时父对话又接连写了几封：排在一起的合成一轮处理，不按封数一轮轮开（实测 2 分钟 5 封）。
+  // 只合紧挨着的，中间夹着用户消息就不合，顺序不变；每封信在对话里还是各自一行
+  if (last?.letter && isLetter(msg)) {
+    last.text += `\n\n（父对话接着又发来一封：）\n${msg.text}`
+    last.attachments = [...last.attachments, ...(msg.attachments ?? [])]
+    last.merged = [...(last.merged ?? []), msg.id]
+    return
+  }
+  list.push({ id: msg.id, text: msg.text, attachments: msg.attachments ?? [], ...(isLetter(msg) && { letter: true }) })
   held.set(taskId, list)
+}
+
+/** 这一条排着的消息对应对话里的哪几条（合进来的信也算），改交付状态时一起改 */
+export const heldIds = (q: Pick<HeldMessage, 'id' | 'merged'>) => [q.id, ...(q.merged ?? [])]
+
+/** 把这几条排着的消息（含合进来的信）在对话里的交付状态改成 how */
+export function markHeld(
+  messages: TaskMessage[],
+  list: Pick<HeldMessage, 'id' | 'merged'>[],
+  how: 'wait' | 'next' | 'lost',
+) {
+  const ids = new Set(list.flatMap(heldIds))
+  const at = new Date().toISOString()
+  for (const m of messages) if (ids.has(m.id) && m.role === 'user') m.delivery = { how, at }
+}
+
+/**
+ * 排着的这条交给 CLI 时用的消息：对话里记着的那条（recorded）换上排队时的正文，没记的当面板消息。
+ * 父对话接连几封信合成了一条（holdForNextTurn），只交第一封的原文会丢掉后面几封
+ */
+export function heldMessage(messages: TaskMessage[], q: HeldMessage): { msg: TaskMessage; recorded: boolean } {
+  const rec = messages.find((m) => m.id === q.id)
+  if (rec) return { msg: { ...rec, text: q.text }, recorded: true }
+  return {
+    msg: { id: q.id, role: 'system', agentId: '', step: '', text: q.text, tools: [], at: new Date().toISOString() },
+    recorded: false,
+  }
+}
+
+/** 取出来交不出去：原样放回队首（合并过的不拆开），顺序不变 */
+export function returnHeld(taskId: string, q: HeldMessage) {
+  held.set(taskId, [q, ...(held.get(taskId) ?? [])])
 }
 
 /** 取这一轮结束后要处理的下一条；没有时返回空 */

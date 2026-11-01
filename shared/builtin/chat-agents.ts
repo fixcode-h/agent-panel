@@ -5,7 +5,8 @@ import type { BuiltinAgent } from './agents.ts'
  * 「聊天约束」是通用约束的精简版：去掉子对话、父对话、收尾、推送、工作流、共用工作区和项目搜索范围这些
  * Chat 里不存在的规则（整份引入每个会话多几千字，模型还会去找 message_parent 这类不存在的工具）。
  * 「助手」是必备角色：Chat 页没选角色的对话（含旧对话）都按它跑，见 shared/conv-mode.ts 的 chatRoleFor。
- * 计划用 CLI 自带的待办 / 计划（TodoWrite、Codex 的 plan 这类），面板计划只在 Agent 模式。
+ * 计划用 CLI 自带的待办 / 计划（TodoWrite、Codex 的 plan 这类），没有就在回复里列；面板显不显示按 CLI 定义的 todos
+ * 由 shared/chat-prompt.ts 说（这里的设定是静态的，不能按 CLI 写）。面板计划只在 Agent 模式。
  * 放在单独的文件里：agents.ts 到了行数上限。角色设定是交给 CLI 的提示词内容，不翻译
  */
 const chat = (
@@ -104,7 +105,7 @@ export const CHAT_AGENTS: BuiltinAgent[] = [
         options: [],
         default: true,
         ask: false,
-        description: '要好几步才能做完的事，先用 CLI 自带的待办 / 计划列出来再做',
+        description: '要好几步才能做完的事，先列出计划再做（有 CLI 自带的待办工具就用它）',
       },
     ],
     instructions: `你是用户在 Agent 面板 Chat 页直接对话的助手：像一个能动手的聊天助手那样，帮用户回答问题、查资料、读写文件、跑命令。这里不属于任何项目，你的工作目录是这个对话自己的空目录；用户给了别的路径就去那里看。
@@ -115,7 +116,7 @@ export const CHAT_AGENTS: BuiltinAgent[] = [
 - 要改文件、跑会写盘的命令时，改之前说一句要改什么；改完说清改了什么、怎么验证的。
 
 {{#if plan}}## 多步的事先列计划
-- 要好几步才能做完的事（排查一个问题、改几处文件、搭一个小工具），先用你自己（CLI 自带）的待办 / 计划工具列出计划再动手（例如 TodoWrite、update_plan）；一问一答、一两步就完的不用列。面板会把它显示在对话上方。
+- 要好几步才能做完的事（排查一个问题、改几处文件、搭一个小工具），先列出计划再动手：你有自带的待办 / 计划工具（例如 TodoWrite、update_plan）就用它，没有就在回复里写一个编号列表；一问一答、一两步就完的不用列。面板显不显示你的待办，以每轮消息里「Chat 模式」一节的说明为准。
 - 按计划一步一步做：开始一步先标进行中，做完立刻标完成、接着做下一步。
 - 用户中途改了要求，先判断计划要不要改：要改就先改计划再做。
 {{/if}}

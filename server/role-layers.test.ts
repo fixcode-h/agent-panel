@@ -216,6 +216,8 @@ test('父对话：角色没开就地改动、或宿主没给护栏时不能就�
   await runEngineTurn(h)
 })
 
+const chatTwin = (id: string, name: string) => agent(id, name, { scope: 'chat', kind: 'advanced' })
+
 test('父对话派子对话：role 只能是启用的高级角色；新开、交回都记分诊', async () => {
   const task = parentTask()
   const worker = agent('wk', '执行', { canPlan: true })
@@ -227,6 +229,8 @@ test('父对话派子对话：role 只能是启用的高级角色；新开、交
       const bad = await o.createConversation('导出 PNG', '做导出', [], undefined, { role: '评审' })
       assert.equal(bad.ok, false)
       assert.match(bad.info, /不是可用的高级角色：可以写 「执行」/)
+      // 点名 Chat 角色被拒；和 Agent 角色同名的 Chat 角色（「执行」）不挡路，下面照样找到 Agent 角色那个（ADR 0038）
+      assert.equal((await o.createConversation('润色', '改', [], undefined, { role: '写作' })).ok, false)
       const good = await o.createConversation('导出 PNG', '做导出', [], undefined, {
         role: '执行',
         route: { reason: '要改代码', assumptions: '导出整张画布' },
@@ -236,7 +240,7 @@ test('父对话派子对话：role 只能是启用的高级角色；新开、交
       return { ok: true, text: '已分派。' }
     },
     {
-      agents: [...all, worker],
+      agents: [chatTwin('cx', '执行'), ...all, worker, chatTwin('cw', '写作')],
       createConversation: async (input) => {
         made.push({ agentId: input.agentId })
         return { ok: true, id: 'c9', info: '已新建' }

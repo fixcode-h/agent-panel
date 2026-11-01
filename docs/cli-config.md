@@ -24,6 +24,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 接新 CLI（或给已有 CLI 加一种能力）时逐项过一遍，漏掉的项以前都返工过（见 [lessons/cli.md](./lessons/cli.md)）：
 
 1. **思考强度**：CLI 支持哪几档写进 `efforts`；强度由模型决定的写 `effortsFromModel`；会话中途不能换的写 `effortBoundSession`；
+   能真正关掉思考的那一档标 `"off": true`（Pi 的 `off`、Codex 的 `none`、Claude Code 的 `off`），没有参数、要靠环境变量的写在这一档的 `env`；只是「不带思考参数」、接口照样会思考的不算，不要列；
    `tiers` 三档各配好默认的模型和强度。不要在代码里按 CLI 名字补档位。
 2. **模型**：模型从哪读（`modelsFrom` 或内置列表），上下文和最大输出能不能从 CLI 拿到，拿不到的补进[模型目录](./model-catalog.md)。
 3. **写回 CLI 自己的配置**（`auth.api.edits`）：CLI 靠模型条目判断能力时，配上 `modelEfforts` / `modelReasoning` / `modelDefaultEffort` / `modelLimits` / `modelInput`，
@@ -45,10 +46,11 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `npmRenameFrom`                   | 改名前用过的 npm 包名：安装新包前先卸掉旧的，否则两个包提供同一个命令时 npm 会报 `EEXIST`                                                                                                                                                                                                                                                   |
 | `color`                           | 界面上的标识色                                                                                                                                                                                                                                                                                                                              |
 | `images`                          | CLI 内置了生成图片的工具（UI 设计里用，例如 Codex）                                                                                                                                                                                                                                                                                         |
+| `todos`                           | CLI 自带的待办 / 计划会被面板解析成 `task.todos`（Claude Code 的 `TodoWrite`、Codex 的计划）：Chat 模式的提示词据此才说「面板会显示你的待办」，没写的 CLI 让模型在回复里列计划                                                                                                                                                              |
 | `modelsRead`                      | 模型列表是运行 CLI 读出来的（例如 Codex 的 app-server）：界面上这组叫「{cli} 读取」，否则叫「{cli} 内置」                                                                                                                                                                                                                                   |
 | `extraArgsKeep`                   | 设置里的「额外参数」只保留这些参数（每个带一个值，长参数也认 `--x=值`），其余丢掉；例如 Codex 的 app-server 只认 `-c`、`--enable`、`--disable`。不写时全部保留                                                                                                                                                                              |
 | `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填；上下文窗口、最大输出和思考强度按[模型目录](./model-catalog.md)识别                                                                                                                                                                                                             |
-| `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                                                                                                                                                                                                                                                                |
+| `efforts`                         | 思考强度 `[{ "id", "label", "off", "env" }]`，不支持就不写；`off: true` 标出「关掉思考」那一档，`env` 是选了这一档时加的环境变量（值是 JSON 对象时和已有的同名变量合并），见下文「关掉思考」                                                                                                                                                |
 | `effortsFromModel`                | 思考强度跟着模型走：模型目录/配置里这个模型支持哪些就能选哪些；为 `true` 时不用 `efforts` 过滤                                                                                                                                                                                                                                              |
 | `effortBoundSession`              | 会话不支持中途换思考强度：换了强度也开新会话，把之前的对话带过去                                                                                                                                                                                                                                                                            |
 | `tiers`                           | 高、中、低三档默认的 `{ "model", "effort" }`                                                                                                                                                                                                                                                                                                |
@@ -98,7 +100,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 
 - 条件：`model` 有值、`!resume` 没值、`permission=yolo` 等于、`permission!=yolo` 不等于、`opt.codemode` 设置里这个开关开着；写成数组时全部满足才加。
   同一个参数只认最后一次的 CLI（例如 Pi 的 `--tools`），开关要和权限组合成几条规则，并进同一个值里。
-- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`forkEnd`（`features.fork` 为 `end` 时截到的那条回复，Claude Code 的 `--resume-session-at`）、`systemPrompt`、`systemPromptFile`（`systemPrompt` 已经写成文件、值是路径）、`systemPromptModPath`（面板生成的语言 mod 路径）、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）、`noEdit`（这一轮不许改文件）、`autoCompactTokens`（`features.autoCompact` 为 `config` 时的 token 数）、`contextWindow` / `maxOutput`（设置里手动改的上限，见 `features.limitArgs`）。
+- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`forkEnd`（`features.fork` 为 `end` 时截到的那条回复，Claude Code 的 `--resume-session-at`）、`systemPrompt`、`systemPromptFile`（`systemPrompt` 已经写成文件、值是路径）、`systemPromptModPath`（面板生成的语言 mod 路径）、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）、`noEdit`（这一轮不许改文件）、`textOnly`（只要一段文字的一次性小活，例如起对话标题：能关掉全部工具、换极简系统提示的 CLI 写一条规则，Claude Code 是 `--tools "" --system-prompt …`；没写规则的照常跑）、`autoCompactTokens`（`features.autoCompact` 为 `config` 时的 token 数）、`contextWindow` / `maxOutput`（设置里手动改的上限，见 `features.limitArgs`）。
 - 规则里自己写了 `{systemPrompt}` 时（例如按 `systemPromptFile` 选参数），面板不再在末尾自动补系统提示词那一条。
 - 每条规则可以带一个 `why` 写为什么这样传（JSON 里没法写注释），面板不读。
 - 占位：`{model}`；`{addDirs|,}` 把数组用逗号连起来；`{maxTurns:200}` 没值时用 200；`each` 对数组每一项加一次，`{item}` 是那一项。
@@ -339,6 +341,7 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `compact`        | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                                                                                                                                  |
 | `modelSwitch`    | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                                                                                                                                           |
+| `resumeAnyDir`   | 会话能在别的目录里续接：中途开了独立分支（`begin_edit`）、换了工作目录仍然续接原来的会话，之前读过的代码和调研都留在会话里、前缀缓存也大多命中；默认按「会话按目录存」处理，换了目录就开新会话带上对话记录。Claude Code 开（2.1.316 实测按会话 id 全局找）；Pi 换了目录会停下来问要不要分叉，不能开                                                                                         |
 | `fork`           | 分叉、撤回对话：`before` 能从任意一轮分叉（每轮记下自己的 id，见 `rpc.turnId`；续接原会话后按 `rpc.fork` 里带 `if: forkBefore` 的动作分叉到那一轮之前，Pi 是 `fork` 命令的 `entryId`）；`turn` 能截到某一轮（Codex，内置适配器用轮次 id）；`end` 能截到某条回复（Claude Code，参数里用 `{forkEnd}`）；`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话 |
 | `autoCompact`    | 自动压缩：`config` 把 token 数写进参数（规则里用 `{autoCompactTokens}`，Codex）；`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                                                                     |
 | `review`         | 审查改动：`native` 走 CLI 自己的审查模式（Codex，内置适配器）；`prompt`（默认）按审查要求跑一轮                                                                                                                                                                                                                                                                                             |
@@ -387,6 +390,7 @@ Pi 现在推荐四个：`pi-web-access`（联网搜索，第一个）、`pi-web-
 面板跑 `auth.login` 打开浏览器登录，成功后把 `auth.home` 下的 `auth.files`、`auth.fields` 和 `auth.keychain` 存成一个账号。
 判断登录成功默认看**凭据有没有变**（登录前后各读一次，变了就算成功；登录后不自己退出的 CLI 也能判对），
 进程结束时再比一次，没变就报「没有完成登录」；标了 `loginAlreadyLoggedIn` 的 CLI 已登录时不改凭据文件，另按下面那行判。
+面板写 CLI 自己的配置文件（账号字段、API 注入、模型表、全局 MCP 工具）一律走 `server/cli-config-write.ts`，新建和覆盖都收到 `600`（里面常有 API key；Windows 跳过）。
 
 | 字段                   | 说明                                                                                                                                                                                                     |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -424,7 +428,7 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 | `accountEdits`             | 切回账号时还原的配置文件                                                                                                                                                                                                    |
 | `wire`                     | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                                                                                                                   |
 | `baseUrl`                  | 协议 → 这个 CLI 要的接口地址写法，`{root}` 是去掉末尾 `/v1`、`/v1beta` 的地址：Anthropic SDK 自己拼 `/v1/messages`（Claude Code、Pi 写 `{root}`）；没写的协议原样用                                                         |
-| `thinkArgs`                | API 方式下这一轮带了思考强度（不是 off）时加的参数；Codex 对不认识的第三方模型默认不发 reasoning，靠 `model_supports_reasoning_summaries=true` 打开                                                                         |
+| `thinkArgs`                | API 方式下这一轮带了思考强度（不是 `off: true` 那一档）时加的参数；Codex 对不认识的第三方模型默认不发 reasoning，靠 `model_supports_reasoning_summaries=true` 打开                                                          |
 | `pruneProviders`           | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                                                                                                               |
 | `pruneModels`              | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                                                                                                                 |
 | `modelEfforts`             | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动                                                                                                          |
@@ -457,3 +461,18 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 | `models` / `name`      | 模型（字符串、数组、`[{ "id" }]` 或以模型名为键的对象都认）和名字的键                         |
 
 键都按顺序取第一个有值的；值写成 `$NAME`、`${NAME}`，或正好是一个设置了的环境变量名时取那个环境变量。面板自己写进去的 `agentpanel` 不算。
+
+## 关掉思考
+
+强度下拉里的「关」只给能真正让接口不思考的 CLI，定义里标 `"off": true`：
+
+- **Codex**：`none`，传 `-c model_reasoning_effort="none"`，turn/start 也带 `effort: "none"`。0.166 用 `codex exec` 用本机假接口抓过，发给 Responses 接口的是 `reasoning: {"effort": "none", ...}`；
+  这一档不加 `thinkArgs`（不打开思考摘要）。
+- **Pi**：`off`，传 `--thinking off`。
+- **Claude Code**：`off`，没有命令行参数，这一档不传 `--effort`，靠 `env`：`MAX_THINKING_TOKENS=0`（不带思考、也不加 clear_thinking 的上下文编辑）
+  加 `CLAUDE_CODE_EXTRA_BODY={"thinking":{"type":"disabled"}}`（2.1.316 把这个变量的 JSON 展开在请求体最后，盖过它自己算的 `thinking`）。
+  只设 `MAX_THINKING_TOKENS=0` 不够：请求里不带 `thinking` 字段，有的网关不带时默认会思考。用本机假接口抓过请求体，确认带的是 `thinking: {"type": "disabled"}`。
+  用户自己在环境变量里写了 `CLAUDE_CODE_EXTRA_BODY` 时合并进去，不覆盖。
+
+模型目录只记思考的各档、不记「关」：目录认识的模型只要能思考（`efforts` 不空），CLI 有 `off` 档时就补上这一档（`catalogEfforts`，`shared/clis.ts`），
+否则选了「关」执行前会被换成最近的思考档。CLI 自己报了模型能选哪几档时（Codex 账号方式的 `supportedReasoningEfforts`）按 CLI 报的来。

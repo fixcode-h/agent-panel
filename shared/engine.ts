@@ -102,7 +102,7 @@ import { parseVerdict } from './verdict.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
-import { chatRoleFor, isChatMode, scopeOf } from './conv-mode.ts'
+import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
 import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
@@ -785,10 +785,12 @@ export interface EngineHost {
     changedFiles?: string[]
   }
   /**
-   * 要改文件时才开独立分支、现在还没开：面板从当前目录建 worktree，这一轮结束后在里面开新会话接着做。
+   * 要改文件时才开独立分支、现在还没开：面板从当前目录建 worktree，这一轮结束后在里面接着做（能跨目录续接的 CLI 带着原会话过去）。
    * 只有对话有（工作流在创建时就建好了）
    */
   beginEdit?: () => Promise<{ ok: boolean; info: string }>
+  /** 这一轮的 CLI 自带待办会被面板解析显示（CLI 定义的 todos）：Chat 模式据此决定怎么说计划（shared/chat-prompt.ts） */
+  cliTodos?: boolean
   /**
    * 后台命令：面板在这个对话的目录里跑，马上返回编号；跑完把结果推回对话（正在执行就插话，空闲就开新的一轮）。
    * exclusive 的（编译这类）按项目排队，同一时间只跑一个
@@ -1392,7 +1394,7 @@ function editPart(host: EngineHost) {
   return `## 改文件前先开独立分支
 这个对话设成了在独立分支里改文件，现在你还在原目录里：看代码、回答问题、跑只读的命令都可以直接做，但不要在这里改、新建或删除任何文件，也不要跑会写文件的命令。
 - 确定要改文件时先调用 begin_edit，面板从当前目录开一个独立分支。
-- 调用成功后用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮；面板会在独立分支的目录里开新会话，带上这段对话接着改。
+- 调用成功后用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮；面板会切到独立分支的目录里，带上这段对话接着改。
 - 只是回答问题、出方案时不用调用。`
 }
 
@@ -3053,9 +3055,7 @@ function makeOrchestra(
         }
       // 子对话的角色：点名的必须是启用的高级角色（子对话是负责人，要能调度能力），不写由宿主用「执行」
       const roleName = extra?.role?.trim()
-      const role = roleName
-        ? host.agents.find((a) => a.enabled && (a.name === roleName || a.id === roleName))
-        : undefined
+      const role = roleName ? findRole(host.agents, roleName, modeScope(task), (a) => a.enabled) : undefined
       if (roleName && (!role || roleKind(role) !== 'advanced' || scopeOf(role) === 'chat')) {
         const names = host.agents
           .filter((a) => a.enabled && roleKind(a) === 'advanced' && !a.canDelegate && scopeOf(a) === 'agent')
@@ -3318,7 +3318,7 @@ function makeOrchestra(
         .join('、')
       for (const spec of list) {
         const want = spec.agent?.trim()
-        const named = want ? host.agents.find((a) => a.id === want || a.name === want) : undefined
+        const named = want ? findRole(host.agents, want, modeScope(host.task)) : undefined
         if (named && scopeOf(named) === 'chat')
           return {
             ids: [],
@@ -3349,7 +3349,7 @@ function makeOrchestra(
         if (opts?.local || !host.task.parentTaskId) return true
         const want = spec.agent?.trim()
         if (mountOf(want)?.mode === 'parent') return false
-        return !want || host.agents.find((a) => a.id === want || a.name === want)?.runIn !== 'parent'
+        return !want || findRole(host.agents, want, modeScope(host.task))?.runIn !== 'parent'
       })
       // 转交出去的不占这个节点的名额，也不给这个对话的收尾添等待：结果在父对话那边
       // 对话会一直聊下去：上限只算还没结束的，做完的不占名额
@@ -3448,7 +3448,7 @@ function makeOrchestra(
         const want = spec.agent?.trim()
         return (
           (prev && host.agents.find((a) => a.id === prev.agentId)) ||
-          (want && host.agents.find((a) => a.id === want || a.name === want)) ||
+          (want && findRole(host.agents, want, modeScope(host.task))) ||
           helperRole ||
           host.agents.find((a) => a.id === self.agentId)
         )
@@ -3468,7 +3468,7 @@ function makeOrchestra(
       for (const spec of local) {
         if (resumed.has(spec)) continue
         const want = spec.agent?.trim()
-        const role = want ? host.agents.find((a) => a.id === want || a.name === want) : undefined
+        const role = want ? findRole(host.agents, want, modeScope(host.task)) : undefined
         if (!reviewsCode(role, paramsOf.get(spec))) continue
         const lack = briefMissing(spec)
         if (lack)
@@ -3495,7 +3495,7 @@ function makeOrchestra(
           prev.endedAt = ''
           prev.reruns = (prev.reruns ?? 0) + 1
           // 原角色被删掉、这次显式点了名：换到点名那个角色上重试（它现在跑的就是这个角色）
-          const repl = want ? host.agents.find((a) => a.id === want || a.name === want) : undefined
+          const repl = want ? findRole(host.agents, want, modeScope(host.task)) : undefined
           if (repl && repl.id !== prev.agentId) prev.agentId = repl.id
           prev.params = paramsOf.get(spec)
           const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
@@ -4259,8 +4259,8 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
 export async function runConversationTurn(host: EngineHost, who: string) {
   const { task } = host
   const kind = task.parentTaskId ? 'sub' : 'top'
-  // 能不能分派子对话由 Agent 自己的能力开关决定；子对话本身永远不能再分派。Chat 模式没选角色的按内置「助手」跑
-  const agent = who ? host.agents.find((a) => a.id === who) : chatRoleFor(task, host.agents)
+  // 能不能分派子对话由 Agent 自己的能力开关决定；子对话本身永远不能再分派。Chat 模式没选角色、选的角色被删了都按内置「助手」跑
+  const agent = who ? turnRole(task, host.agents, who) : chatRoleFor(task, host.agents)
   // Chat 模式没有子对话（子对话要项目），create_conversation 一定失败：不按分派对话去提示
   const coordinator = kind === 'top' && !!agent?.canDelegate && !!task.projectId
   const planning = !!agent?.canPlan && !isChatMode(task)

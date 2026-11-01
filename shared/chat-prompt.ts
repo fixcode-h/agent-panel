@@ -1,9 +1,10 @@
 /**
  * Chat 模式（Chat 页没有项目的顶层对话）一轮的提示词（ADR 0038）。
  * 不套项目对话那一整套：没有授权情况（没有项目就没有推送策略）、搜索排除、工作流、执行方式、子对话、
- * 面板计划、收尾和总结卡。以前共用一套时 Chat 页读到「调用面板工具 ask_push」「你是项目对话」，可这些工具和身份都不存在。
- * 计划用 CLI 自带的待办 / 计划（TodoWrite、Codex 的 plan 这类），面板解析后显示在 Chat 页；面板计划只在 Agent 模式。
- * 放在单独的文件里：engine.ts 到了行数上限
+ * 面板计划、收尾和总结卡（用户 2026-11-01 定：Chat 页不要总结卡）。以前共用一套时 Chat 页读到「调用面板工具 ask_push」
+ * 「你是项目对话」，可这些工具和身份都不存在。
+ * 计划用 CLI 自带的待办 / 计划（TodoWrite、Codex 的 plan 这类）：只有 CLI 定义写了 todos 的才会被面板解析显示，
+ * 其余的让模型在回复里列；面板计划只在 Agent 模式。放在单独的文件里：engine.ts 到了行数上限
  */
 import type { EngineHost } from './engine.ts'
 import { promptLangRules } from './prompt-lang.ts'
@@ -21,16 +22,24 @@ export function backgroundPart(host: Pick<EngineHost, 'runBackground'>) {
 - 几秒就能跑完的命令照常直接执行。`
 }
 
-export const CHAT_MODE_PART = `## Chat 模式
-这是 Chat 页的对话：不属于任何项目，没有子对话、子任务和工作流。多步的事用你自己（CLI 自带）的待办 / 计划工具列出来，面板会把它显示给用户。要拆给多个 Agent 并行、要按项目流程（评审、测试验收、版本控制）做的事，请用户到项目里开对话。`
+/** todos：这一轮的 CLI 自带待办会不会被面板显示（CLI 定义的 todos 字段，见 EngineHost.cliTodos） */
+export const chatModePart = (todos: boolean) => `## Chat 模式
+这是 Chat 页的对话：不属于任何项目，没有子对话、子任务和工作流。${
+  todos
+    ? '多步的事用你自己（CLI 自带）的待办 / 计划工具列出来，面板会把它显示给用户。'
+    : '多步的事先把计划列出来再做：面板不显示这个 CLI 的待办，所以计划和做到哪一步都写在回复里（编号列表）。'
+}要拆给多个 Agent 并行、要按项目流程（评审、测试验收、版本控制）做的事，请用户到项目里开对话。`
 
 /** extra：对话里用 /rule 发布的规则、对话目标这类随对话变的段落（由 engine 拼好传进来，没有时是空串） */
-export function chatConversationPrompt(host: Pick<EngineHost, 'prompt' | 'runBackground'>, extra: string[]) {
+export function chatConversationPrompt(
+  host: Pick<EngineHost, 'prompt' | 'runBackground' | 'cliTodos'>,
+  extra: string[],
+) {
   return [
     `## 用户这次的消息\n${host.prompt}`,
     promptLangRules(),
     ...extra,
     backgroundPart(host),
-    CHAT_MODE_PART,
+    chatModePart(!!host.cliTodos),
   ].filter(Boolean)
 }

@@ -1,5 +1,5 @@
 import type { StopReason, Task } from './schema.ts'
-import { stopReasonText } from './task.ts'
+import { stopReasonText, taskDeleted } from './task.ts'
 
 // 放在单独的文件里：shared/task.ts、shared/plan.ts 都快到行数上限（scripts/file-caps.json）
 
@@ -39,6 +39,19 @@ export function sortStoppedKids<K extends ResumeKid>(parent: Pick<Task, 'plans'>
     else out.resume.push(k)
   }
   return out
+}
+
+/**
+ * 首页「全部继续」（面板重启后，实测报告问题 18）能拉起哪些对话：只拉顶层的。
+ * 子对话由父对话继续时连带拉起（上面的 sortStoppedKids 跳过用户停掉的、已交付的），这里再拉一遍就会重复拉起，
+ * 用户单独停掉的子对话也会被推翻。只认停止原因是「面板重启」的：重启后用户继续过、又自己停掉的，
+ * 或者已经做完的都不再列
+ */
+export function restartResumable(
+  task: Pick<Task, 'parentTaskId' | 'imported' | 'archived' | 'resolved' | 'status' | 'stopReason' | 'deletedAt'>,
+): boolean {
+  if (task.parentTaskId || task.imported || task.archived || task.resolved || taskDeleted(task)) return false
+  return (task.status === 'stopped' || task.status === 'failed') && task.stopReason === 'restart'
 }
 
 /** 已经请父对话收尾、在等父对话合并或跑测试：子对话这边没有活了。测试没通过退回修的（test-failed）还要它接着改，不算 */
