@@ -452,6 +452,9 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       const label = commits || (a.changelist ? `#${firstLine(a.changelist)}` : '')
       return as(t('cherry-pick 改动'), label, 'other', tool.output || undefined)
     }
+    // 请用户授权推送（项目设置「第一次需要推送时问一次」）：标题写分支，展开看用户的决定
+    case 'ask_push':
+      return as(t('请用户授权推送'), firstLine(a.branch), 'other', tool.output || undefined)
     case 'record_lesson':
       return as(a.id ? t('改写教训') : t('记下教训'), firstLine(a.title), 'other', text(a.rule))
     case 'project_lessons':

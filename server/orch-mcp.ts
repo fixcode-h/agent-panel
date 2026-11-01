@@ -5,6 +5,7 @@ import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
 import { overrideInput, triageInput } from '../shared/review-gate.ts'
 import type { HelperReport, HelperSpec, Orchestra, RouteInput } from '../shared/engine.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
+import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
 
 /**
  * 编排工具：工作流节点和对话每次调用 CLI 时，绑定在调用它的节点上（执行引擎的 Orchestra）。
@@ -789,6 +790,7 @@ function allOrchTools(o: Orchestra) {
           },
         ]
       : []),
+    ...(o.askPush ? [ASK_PUSH_TOOL] : []),
     ...(o.lessons
       ? [
           {
@@ -1190,6 +1192,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const r = await o.cherryPick({ commits, changelist: str(a?.changelist) || undefined })
       return text(r.info, !r.ok)
     }
+    case 'ask_push':
+      return callAskPush(o, a)
     case 'claim_files': {
       const paths = Array.isArray(a?.paths) ? a.paths.map(String) : []
       const r = o.claim(paths)

@@ -87,6 +87,7 @@ import { clip } from './text.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
+import { orchAskPush, pushPolicyText } from './push-auth.ts'
 import { docRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
 import { handedToOther, noteHandOff, type HandOffs } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
@@ -569,6 +570,8 @@ export interface Orchestra {
   p4Split?: EngineHost['p4Split']
   /** 项目设了 cherry-pick 目标：由面板核对后搬（只收这个对话自己的提交 / 改动，见 server/cherry-pick.ts） */
   cherryPick?: EngineHost['cherryPick']
+  /** 推送授权（ask_push，见 shared/push-auth.ts）：只有项目推送策略为「问一次」的顶层对话有 */
+  askPush?: (input: { branch?: string; summary?: string }) => Promise<{ ok: boolean; info: string }>
 }
 
 /** p4_split_changelists 的参数：从哪个 changelist 分、只分哪些文件、每类一句描述 */
@@ -842,6 +845,8 @@ export interface EngineHost {
   /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
   p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
   cherryPick?: (input: { commits?: string[]; changelist?: string }) => Promise<{ ok: boolean; info: string }>
+  /** 弹推送授权卡等用户点（回答由宿主记进 task.remotePush，不受「提问」开关影响）；停止时 null */
+  askPush?: (info: { branch?: string; summary?: string }) => Promise<{ allow: boolean; message?: string } | null>
 }
 
 /** Agent 用 record_lesson 记的一条教训 */
@@ -1213,21 +1218,13 @@ function policyPart(host: EngineHost) {
   // 只写一句「可以推送」时模型照样只做本地提交，三个选项的效果就没有区别了
   const wt =
     host.task.worktree?.state === 'active' ? '（在独立分支里工作时按下面「执行目录」那段：独立分支本身不推）' : ''
-  const done = '任务做完、验证通过并在本地提交之后'
   // 推送这一步已经由面板列进计划（push 收尾，见 plan.ts 的 wrapUpKind），所以这里不写「你可以推」，
   // 只写「按计划最后那一步做」：另写一遍时模型会自己再补一条「推送到远端」步骤，和面板的收尾撞在一起
   const kind = wrapKind(host)
   const planned = kind
     ? `，会列计划的任务：${WRAP_UP[kind].title}已经在计划的最后一步（面板已经列好，刷新也不会变），照着它做，不要自己再写一条`
     : ''
-  const push =
-    p.push === 'deny'
-      ? '推送：项目设置是「不推送，只做本地提交」。不 push、不建 PR、不合并主干、不 P4 submit，也不问用户要不要推；用户在对话里要求推送时，告诉用户先到项目设置把「推送到远端」改掉（这个项目的 git push 已经被面板拦下）。'
-      : p.answered === 'denied'
-        ? '推送：这个对话里用户已经拒绝过推送，这次不要再问，也不要推、不建 PR、不合并主干。'
-        : p.answered === 'allowed' || p.push === 'allow'
-          ? `推送：${p.answered === 'allowed' ? '这个对话里用户已经同意推送' : '项目设置是「允许直接推送」，这就是用户的授权'}，不用再问。${done}${wt}就把当前分支推到它跟踪的远端分支（没有跟踪分支时推到 origin 的同名分支并设上跟踪）${planned}，推完回读确认（git status -sb），结论里写清推到了哪个远端分支。推送成功后用 GitHub CLI 把该分支普通合并到主干：先用 gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 取主干分支名（不同项目可能是 main / master / trunk），已有对应 PR 就复用，没有就 gh pr create --base <主干> --head <当前分支>，gh pr checks <PR> --watch 等检查通过后 gh pr merge <PR> --merge，合并后回读 PR 状态确认。只做普通推送和普通合并：不强推、不 --admin、不绕过检查；被拒（远端有新提交）、PR 冲突、检查失败、分支保护拦截就停下来报告，不自己 pull / rebase，也不直接往主干推。本机没有可用的 gh 时只推送，结论里说明没能合并主干。P4 submit 不在这个授权里，用户要求时才做。`
-          : `推送：项目设置是「第一次需要推送时问一次」。${done}，用提问工具问用户一次要不要推送并合并主干（推荐「允许这次推送并合并主干」和「只做本地提交」），按回答做${wt}；这个对话里之后都按这次的回答，不再重复问。`
+  const push = pushPolicyText(p, wt, planned)
   return `## 授权情况\n${push}\n这条是用户在项目设置里定的，比角色设定、技能里「不推送 / 本地先行 / 创建 PR 和合并主干要用户明确授权」的默认写法优先。\n${tools}`
 }
 
@@ -3314,6 +3311,7 @@ function makeOrchestra(
       : undefined,
     p4Split: host.p4Split,
     cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
+    askPush: orchAskPush(host, !!ctx.chat, helper),
     status: () => statusTree(host, self.id),
     spawn(tasks, step, opts) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }

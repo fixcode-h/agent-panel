@@ -2,7 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '../shared/schema.ts'
 import { newTask, stopReasonText } from '../shared/task.ts'
-import { retryBase, runEngineTurn, stopHelper, type AgentCall, type EngineHost } from '../shared/engine.ts'
+import {
+  retryBase,
+  runEngineTurn,
+  stopHelper,
+  type AgentCall,
+  type EngineHost,
+  type Orchestra,
+} from '../shared/engine.ts'
 import { t } from '../shared/i18n.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
 import { composeRole } from '../shared/agent-role.ts'
@@ -318,6 +325,10 @@ test('终止或抛异常的子任务只收它自己：终止的按「已终止�
 })
 
 test('推送由父对话决定：子对话的提示词不问用户要不要推送，父对话侧仍按授权流程问一次', async () => {
+  /** 每次调用拿到的推送授权工具（ask_push）：只有项目推送策略为「问一次」的顶层对话本身有 */
+  let pushTool: Orchestra['askPush']
+  // 经函数读：assert.equal 会把变量收窄成 undefined，之后 runAgent 里的赋值 TS 看不见
+  const pushOf = () => pushTool
   /** 跑一轮对话，拿回这次交给 CLI 的提示词 */
   const promptsOf = async (
     chat: Record<string, unknown>,
@@ -344,8 +355,10 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
       newId: () => 'x',
       runAgent: async (call) => {
         prompts.push(call.prompt)
+        pushTool = call.orch?.askPush
         return { ok: true, text: '好了' }
       },
+      askPush: async () => ({ allow: true }),
       ...extra,
     })
     return prompts
@@ -377,7 +390,8 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   const shared = await promptsOf({ parentTaskId: 'parent' })
   assert.doesNotMatch(shared[0], /## 收尾：计划的最后一步/)
   assert.match(child[0], /不要写「等推送 \/ 等合入其他分支 \/ 同步远端」/, '计划步骤里也不许写等推送')
-  assert.doesNotMatch(child[0], /用提问工具问用户一次要不要推送/, '子对话不再问用户要不要推送')
+  assert.doesNotMatch(child[0], /ask_push/, '子对话不再问用户要不要推送')
+  assert.equal(pushOf(), undefined, '子对话拿不到 ask_push')
   // 收尾建议的工具说明也写清了：只能写本地动作、remote 必须写 none
   assert.match(child[0], /remote 必须写/)
   assert.match(child[0], /问题会交给父对话（父对话开着「提问」时再转给用户）/)
@@ -391,9 +405,25 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   assert.equal(main.length, 1)
   assert.match(
     main[0],
-    /第一次需要推送时问一次」。任务做完、验证通过并在本地提交之后，用提问工具问用户一次要不要推送并合并主干/,
-    '父对话的授权规则：问一次时把合并主干也算进这次授权',
+    /第一次需要推送时问一次」。任务做完、验证通过并在本地提交之后，调用面板工具 ask_push 请用户授权推送并合并主干/,
+    '父对话的授权规则：问一次时把合并主干也算进这次授权，用面板的授权卡问（回答才记得下）',
   )
+  assert.match(main[0], /不要用 ask_user \/ AskUserQuestion 这类提问工具问要不要推送/)
+  // ask_push 的三种情况（c5e5c5d8 起回答从没被记下）：已同意不弹卡；拒绝过再调照样弹卡（用户改口以亲手点的为准）
+  assert.ok(pushOf(), '问一次的顶层对话有 ask_push')
+  let cards = 0
+  const card = { askPush: async () => (cards++, { allow: false }) }
+  await promptsOf({}, card, { remotePush: 'allowed' })
+  assert.match((await pushOf()!({})).info, /已经同意推送/)
+  const denied = await promptsOf({}, { ...card, policy: { push: 'ask', answered: 'denied', tools: [] } })
+  assert.match(denied[0], /已经拒绝过推送[^\n]*明确要求推送时，调用 ask_push 请用户在授权卡上确认一次，不要直接推/)
+  assert.match((await pushOf()!({ branch: 'dev' })).info, /用户不推送/)
+  assert.equal(cards, 1, '同意过的不弹卡，拒绝过的再弹一次')
+  await promptsOf({}, { askPush: async () => null })
+  assert.match((await pushOf()!({})).info, /对话被停止了/)
+  // Chat 页的对话（没有项目）、项目设置允许 / 禁止推送时都没有这个工具
+  await promptsOf({ projectId: '' })
+  assert.equal(pushOf(), undefined, 'Chat 页的对话没有 ask_push')
   // 通用约束里的「安全边界」是所有角色都有的；这里只看授权情况那一段不会被子对话的写法盖掉
   assert.doesNotMatch(
     main[0],
@@ -454,7 +484,8 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   const deny = await promptsOf({}, { policy: { push: 'deny', tools: [] } })
   assert.match(deny[0], /不推送，只做本地提交」。不 push/)
   assert.match(deny[0], /不建 PR、不合并主干/)
-  assert.doesNotMatch(deny[0], /用提问工具问用户一次要不要推送/)
+  assert.doesNotMatch(deny[0], /ask_push/)
+  assert.equal(pushOf(), undefined, '不推送的项目没有 ask_push')
   assert.doesNotMatch(deny[0], /gh pr create/)
   // cherry-pick 目标：只搬这个对话自己的提交 / 改动，不按两条分支的差异同步（用户 2026-10-31 定的）
   const pick = await promptsOf(

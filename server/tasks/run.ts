@@ -63,7 +63,7 @@ import { taskCliAlive } from '../exec/process.ts'
 import { p4Runner, splitChangelists } from '../p4-split.ts'
 import { projectDocRoot } from '../doc-root.ts'
 import { cherryPickFor } from '../cherry-pick.ts'
-import { TaskBusyError, isolated, parentRunRole, isP4, planWrapUp } from './helpers.ts'
+import { TaskBusyError, isolated, parentRunRole, isP4, wrapUpFrom, wrapUpProbe } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
@@ -326,6 +326,8 @@ export function createRun(sc: TasksScope) {
       if (first) entry.task.baseRef = await gitHead(project.path).catch(() => '')
       const snapshot = await gitNumstat(project.path, entry.task.baseRef, placedFiles(entry.task)).catch(() => null)
       if (first) entry.task.baseline = snapshot ?? {}
+      // 收尾要的工作区探测只做一次；收尾种类本身按现在的推送授权现算（见下面的 wrapUp getter）
+      const wrapProbe = await wrapUpProbe(entry.task, project.path, project.gitPolicy)
       await runRealTurn({
         task: entry.task,
         agents,
@@ -399,7 +401,11 @@ export function createRun(sc: TasksScope) {
         onOrchestra: (orch) => sc.attachOrchestra(task.id, orch),
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await sc.worktreeHome(entry.task, found) : undefined,
-        wrapUp: await planWrapUp(entry.task, project?.path, project?.gitPolicy),
+        // getter：保活中用户在推送授权卡上点了「允许」，下一条消息的提示词和计划就带上推送收尾
+        //（取一次的快照要等下次重开进程才看得到，见 docs/lessons/prompts.md「拼的时候读现值」）
+        get wrapUp() {
+          return wrapUpFrom(entry.task, wrapProbe, project?.gitPolicy)
+        },
         // P4 项目里的对话和节点都能用：分 changelist 由面板照类型执行，不靠 Agent 自己记得分（见 p4-split.ts）
         p4Split:
           dir && project?.path && (await isP4(project.path))

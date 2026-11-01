@@ -747,6 +747,7 @@ const OFF = {
   lessons: undefined,
   p4Split: undefined,
   cherryPick: undefined,
+  askPush: undefined,
 }
 const LESSONS = { find: async () => '', record: okCb }
 // 子任务只查教训不记（makeOrchestra 给子任务的 lessons 没有 record）
@@ -781,7 +782,7 @@ const IDENTITIES: [string, object, string[]][] = [
     ],
   ],
   [
-    '项目顶层·主理 全开（canPlan + 就地改动 + 挂能力 + UE + P4 + cherry-pick）',
+    '项目顶层·主理 全开（canPlan + 就地改动 + 挂能力 + UE + P4 + cherry-pick + 推送问一次）',
     {
       ...TOP,
       coordinator: true,
@@ -792,6 +793,7 @@ const IDENTITIES: [string, object, string[]][] = [
       ueBuild: 'parent',
       p4Split: okCb,
       cherryPick: okCb,
+      askPush: okCb,
     },
     [
       'get_status',
@@ -809,14 +811,15 @@ const IDENTITIES: [string, object, string[]][] = [
       'finish_child',
       'p4_split_changelists',
       'cherry_pick',
+      'ask_push',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
   ],
   ['项目顶层·非统筹', TOP, ['get_status', ...BG, 'set_plan', 'finish_plan', 'finish_child', ...LESSON_TOOLS, ...TAIL]],
   [
-    '项目顶层·非统筹 全开（按需开分支 + canPlan + 挂能力 + P4 + cherry-pick）',
-    { ...TOP, canBeginEdit: true, planning: true, capabilities: true, p4Split: okCb, cherryPick: okCb },
+    '项目顶层·非统筹 全开（按需开分支 + canPlan + 挂能力 + P4 + cherry-pick + 推送问一次）',
+    { ...TOP, canBeginEdit: true, planning: true, capabilities: true, p4Split: okCb, cherryPick: okCb, askPush: okCb },
     [
       'get_status',
       'begin_edit',
@@ -828,6 +831,7 @@ const IDENTITIES: [string, object, string[]][] = [
       'finish_child',
       'p4_split_changelists',
       'cherry_pick',
+      'ask_push',
       ...LESSON_TOOLS,
       ...TAIL,
     ],

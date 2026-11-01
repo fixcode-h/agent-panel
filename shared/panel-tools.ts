@@ -33,6 +33,7 @@ export const PANEL_TOOL_NAMES = [
   'release_files',
   'p4_split_changelists',
   'cherry_pick',
+  'ask_push',
   'use_capability',
   'begin_inline_edit',
   'end_inline_edit',
