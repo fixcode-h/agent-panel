@@ -437,6 +437,11 @@ export const CliSpec = z.object({
       /** 会话中途能换模型（换了模型续接同一个会话，不用开新会话带上对话记录） */
       modelSwitch: z.boolean().default(false),
       /**
+       * 会话能在别的目录里续接：中途开了独立分支、换了工作目录也照样续接原来的会话，不用丢掉重开再带对话记录。
+       * Claude Code 按会话 id 全局找（2.1.316 实测，续接后工作目录是这次启动的目录）；Pi 会停下来问要不要分叉，不能开
+       */
+      resumeAnyDir: z.boolean().default(false),
+      /**
        * 会话能分叉到哪：before 能分叉到任意一轮之前（rpc.turnId 记下每轮的位置，分叉时 {forkBefore} 是要丢掉的第一轮），
        * turn 能截到某一轮（Codex，内置适配器用轮次 id），end 能截到某条回复（Claude Code，参数里用 {forkEnd}），
        * latest 只能从最后分叉（要有分叉参数，见 args 里的 fork 条件），none 不能分叉（带上对话记录开新会话）
@@ -486,6 +491,7 @@ export const CliSpec = z.object({
       nativeCommands: [],
       limitEnv: {},
       modelSwitch: false,
+      resumeAnyDir: false,
       review: 'prompt',
       limits: 'none',
       limitArgs: [],
@@ -733,6 +739,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     limitFile: f.limitFile,
     limitArgs: f.limitArgs.length ? f.limitArgs : undefined,
     modelSwitch: f.modelSwitch,
+    resumeAnyDir: f.resumeAnyDir,
     limits: f.limits,
     docs: spec.docs,
     docsNote: tr(spec.docsNote),

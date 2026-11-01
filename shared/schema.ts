@@ -2058,7 +2058,7 @@ export const TaskData = z.object({
   sessionDirs: z.record(z.string(), z.string()).default({}),
   /**
    * 要改文件时才开独立分支：对话先在原目录里看代码、回答问题，
-   * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面开新会话接着做
+   * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面接着做（能跨目录续接的 CLI 续接原会话，其余开新会话）
    */
   wantsWorktree: z.boolean().default(false),
   /**

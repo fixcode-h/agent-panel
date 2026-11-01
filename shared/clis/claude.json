@@ -195,6 +195,7 @@
     "compact": "slash",
     "review": "prompt",
     "fork": "end",
+    "resumeAnyDir": true,
     "autoCompact": "env",
     "autoCompactEnv": "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
     "limitEnv": {
