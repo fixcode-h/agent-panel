@@ -77,6 +77,7 @@ import { integrationsApi } from './integrations.ts'
 import { installApi } from './install.ts'
 import { comfyApi } from './comfy.ts'
 import { speechApi } from './speech.ts'
+import { ttsApi } from './tts.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
 import { projectMcpApi } from './project-mcp.ts'
@@ -491,6 +492,7 @@ app.route('/project-mcp', projectMcpApi({ projectPath: async (id) => (await proj
 app.route('/clis', installApi())
 app.route('/local-image', comfyApi())
 app.route('/speech', speechApi())
+app.route('/tts', ttsApi())
 app.route('/clis', modelsApi())
 app.route('/clis', packagesApi())
 app.route('/model-catalog', modelCatalogApi())

@@ -1730,6 +1730,21 @@ function demoSpeech(method: string, seg: string[]): unknown {
   }
 }
 
+/** 语音朗读：演示里模型下载一下就好；真的念用浏览器语音（演示里没有本机模型可以生成） */
+const demoTtsModels = new Set<string>()
+function demoTts(method: string, seg: string[]): unknown {
+  const [, a, id, b] = seg
+  if (a === 'models' && id && method === 'POST' && b === 'download') demoTtsModels.add(id)
+  if (a === 'models' && id && method === 'DELETE') demoTtsModels.delete(id)
+  return {
+    supported: true,
+    platform: 'demo',
+    runtime: demoTtsModels.size > 0,
+    models: [...demoTtsModels],
+    dir: '~/.agent-panel/speech/tts',
+  }
+}
+
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
   // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
@@ -2156,6 +2171,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
+  if (res === 'tts') return demoTts(method, seg)
   // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
   if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
   // 演示里没有 Blender 建出来的模型：预览一直是「还没有模型」

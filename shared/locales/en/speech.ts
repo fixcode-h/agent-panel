@@ -54,4 +54,53 @@ export const EN_SPEECH: Record<string, string> = {
   '还没有下载 {name}，请到设置 → 语音输入里下载': "{name} isn't downloaded yet. Download it in Settings → Voice input",
   没有收到录音: 'No recording received',
   '录音太长了，一次最多两分钟': 'The recording is too long; two minutes at most',
+  // 语音朗读：回复下面的朗读按钮、设置 → 语音朗读、服务端的朗读接口
+  停止朗读: 'Stop reading',
+  朗读: 'Read aloud',
+  朗读总结: 'Read the summary aloud',
+  '朗读失败：{error}': 'Read aloud failed: {error}',
+  '回复下面的朗读按钮念没折叠的总结。本机模型在这台电脑上生成语音，文字不上传。':
+    'The read-aloud button under a reply reads the summary that is not folded away. The local model generates speech on this computer; text is never uploaded.',
+  语音朗读: 'Read aloud',
+  朗读引擎: 'Engine',
+  '开源的 Kokoro 模型，在本机生成语音': 'Open-source Kokoro model, generating speech on this computer',
+  '还没下载模型，在下面的列表里下载': 'No model downloaded yet; download one from the list below',
+  '浏览器自带的语音，不用下载；音质看系统，Edge 里的「自然」语音最好':
+    "The browser's built-in voices, nothing to download. Quality depends on the system; Edge's “Natural” voices sound best",
+  浏览器语音: 'Browser voice',
+  本机模型: 'Local model',
+  音色: 'Voice',
+  'Kokoro 中文版的音色，名字是模型里的编号；挑一个试听看看':
+    'Voices of the Kokoro Chinese model, named by their IDs in the model; try a few with Preview',
+  朗读音色: 'Read-aloud voice',
+  语音: 'Voice',
+  系统和浏览器装了哪些语音就列哪些: 'Lists whatever voices the system and browser have installed',
+  '自动（优先「自然」语音）': 'Auto (prefers “Natural” voices)',
+  语速: 'Speed',
+  '1 倍是正常语速': '1× is normal speed',
+  朗读语速: 'Read-aloud speed',
+  试听: 'Preview',
+  用上面的设置念一句示例: 'Reads a sample sentence with the settings above',
+  '开源的 Kokoro 中文版，中英混读。下载好后自动换成本机模型。第一次下载还会带上识别库（约 30 MB，和语音输入共用，已经下过就不再下）。':
+    'Open-source Kokoro Chinese model that reads mixed Chinese and English. Switches to the local model once downloaded. The first download also fetches the speech runtime (about 30 MB, shared with voice input; skipped if already there).',
+  '语音识别库没有这台电脑（{platform}）的版本，只能用浏览器语音':
+    'The speech runtime has no build for this computer ({platform}); only browser voices are available',
+  '删掉后要用需要重新下载。识别库保留，语音输入不受影响。':
+    "You'll need to download it again to use it. The speech runtime stays; voice input is not affected.",
+  '在线演示没有本机朗读模型，请在设置 → 语音朗读里改用浏览器语音':
+    'The online demo has no local read-aloud model; switch to browser voice in Settings → Read aloud',
+  '开源的 Kokoro 中文版：中英混读，55 个中文女声、45 个中文男声；体积小、普通 CPU 上也念得动':
+    'Open-source Kokoro Chinese model: reads mixed Chinese and English, with 55 female and 45 male Chinese voices. Small enough to run on an ordinary CPU',
+  '和上面是同一个模型的完整精度版：音质略好一点，体积大一倍多、也慢一些':
+    'Full-precision version of the model above: slightly better audio, more than twice the size and slower',
+  中文女声: 'Chinese female',
+  中文男声: 'Chinese male',
+  英文: 'English',
+  没有这个朗读模型: 'No such read-aloud model',
+  '解压 {name}': 'Extracting {name}',
+  '解压朗读模型失败：{error}': 'Failed to extract the read-aloud model: {error}',
+  '模型包里缺文件，解压后没有 {file}': 'The model archive is missing files: no {file} after extracting',
+  '还没有下载 {name}，请到设置 → 语音朗读里下载': '{name} is not downloaded yet; download it in Settings → Read aloud',
+  没有要朗读的文字: 'Nothing to read',
+  '一次最多朗读 {n} 个字': 'At most {n} characters per request',
 }

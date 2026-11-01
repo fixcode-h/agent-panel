@@ -7,6 +7,15 @@ import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
 import { DEFAULT_SPEECH_MODEL, SPEECH_MODEL_IDS } from './speech.ts'
+import {
+  DEFAULT_TTS_MODEL,
+  DEFAULT_TTS_VOICE,
+  TTS_ENGINES,
+  TTS_MODEL_IDS,
+  TTS_SPEED_MAX,
+  TTS_SPEED_MIN,
+  TTS_VOICE_COUNT,
+} from './tts.ts'
 import type { ProjectProposal } from './project-init.ts'
 import { AskQuestion, TaskRequest } from './task-request.ts'
 
@@ -2530,6 +2539,28 @@ export const Settings = z.object({
       model: z.enum(SPEECH_MODEL_IDS).catch(DEFAULT_SPEECH_MODEL).default(DEFAULT_SPEECH_MODEL),
       /** 模型从 hf-mirror.com、识别库从 npmmirror 下载 */
       mirror: z.boolean().catch(false).default(false),
+    })
+    .prefault({}),
+  /**
+   * 语音朗读（见 shared/tts.ts），和语音输入分开设置：回复下面的朗读按钮念没折叠的总结。
+   * 默认用浏览器自带的语音，开箱就能念；在设置里下载开源的 Kokoro 模型后自动换成本机模型
+   */
+  readAloud: z
+    .object({
+      engine: z.enum(TTS_ENGINES).catch('browser').default('browser'),
+      model: z.enum(TTS_MODEL_IDS).catch(DEFAULT_TTS_MODEL).default(DEFAULT_TTS_MODEL),
+      /** 本机模型的音色（模型里的 speaker id） */
+      voice: z
+        .number()
+        .int()
+        .min(0)
+        .max(TTS_VOICE_COUNT - 1)
+        .catch(DEFAULT_TTS_VOICE)
+        .default(DEFAULT_TTS_VOICE),
+      /** 语速，1 是正常 */
+      speed: z.number().min(TTS_SPEED_MIN).max(TTS_SPEED_MAX).catch(1).default(1),
+      /** 浏览器语音的名字；空串是自动挑（优先系统的「自然」语音） */
+      browserVoice: z.string().max(200).catch('').default(''),
     })
     .prefault({}),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */

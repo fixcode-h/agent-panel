@@ -6,6 +6,7 @@ import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@sha
 import type { ComfyChain } from '@shared/comfy-chain'
 import type { ModelMeta } from '@shared/blender'
 import type { SpeechStatus } from '@shared/speech'
+import type { TtsStatus } from '@shared/tts'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -311,6 +312,29 @@ export const api = {
     }),
   /** 一段 16kHz 单声道 16 位 PCM（base64）转成文字 */
   transcribe: (audio: string) => request<{ text: string }>('/speech/transcribe', json('POST', { audio })),
+
+  /** 本机语音朗读：开源 Kokoro 模型的下载状态（shared/tts.ts），和语音输入分开 */
+  tts: () => request<TtsStatus>('/tts/status'),
+  ttsCancel: () => request<TtsStatus>('/tts/cancel', { method: 'POST' }),
+  ttsModel: (id: string, action: 'download' | 'remove') =>
+    request<TtsStatus>(`/tts/models/${id}${action === 'download' ? '/download' : ''}`, {
+      method: action === 'download' ? 'POST' : 'DELETE',
+    }),
+  /** 把一段文字念成 WAV；音色、语速不传用设置里的（试听传还没保存的值）。演示版没有本机模型 */
+  ttsSpeak: async (
+    body: { text: string; voice?: number; speed?: number; model?: string },
+    signal?: AbortSignal,
+  ): Promise<Blob> => {
+    if (import.meta.env.VITE_DEMO) throw new Error(t('在线演示没有本机朗读模型，请在设置 → 语音朗读里改用浏览器语音'))
+    const res = await fetch('/api/tts/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    })
+    if (!res.ok) await failure(res)
+    return res.blob()
+  },
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
   /** 工作流链：存下来的链 + 可用的工作流（面板里选段要用） */
