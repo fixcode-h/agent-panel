@@ -7,8 +7,9 @@
  * 这里收成一个纯函数，调用方只决定「什么时候收、原因是什么」；另外由 server/tasks/state-sweep.ts
  * 定时找出没人收的矛盾，按同一个写法收口并告诉用户（见 ADR 0033）。
  */
-import type { StopReason, Task } from './schema.ts'
+import type { StopReason, Task, TaskMessage } from './schema.ts'
 import { endRun as endPlanRun } from './plan.ts'
+import { t } from './i18n.ts'
 import { idleWaitDuration, pauseStep, stopReasonText, waitDuration } from './task.ts'
 
 /**
@@ -55,6 +56,32 @@ export function settleStopped(tk: Task, reason: StopReason): Task {
       endPlanRun(next, r.id, false, stopReasonText(reason))
     }
   return next
+}
+
+/**
+ * 收口时作废的提问 / 确认：回答的回调跟着 CLI 进程没了，留着也答不上；但卡片没了要告诉用户为什么。
+ * 工作流节点的确认（confirm）不算：继续执行时会重新确认。调用方把它拼在收口那句说明后面，没有就是空串
+ */
+export function droppedAsksNote(tk: Pick<Task, 'requests'>): string {
+  const gone = tk.requests.filter((x) => x.kind !== 'confirm')
+  if (!gone.length) return ''
+  const list =
+    gone
+      .slice(0, 3)
+      .map((x) => t('「{name}」', { name: x.title }))
+      .join(t('、')) + (gone.length > 3 ? t(' 等 {n} 项', { n: gone.length }) : '')
+  return t('中断时还有没处理的提问 / 确认：{list}，已经作废；继续执行后 AI 需要的话会重新问。', { list })
+}
+
+/**
+ * CLI 进程结束时这个进程问的、还没回答的请求（ids）作废：从 requests 去掉，并写一句说明（面板优雅重启、
+ * 超时、崩溃都走这里）。用户自己关掉提问、停止对话走 dropRequests，到这里已经清空，不会重复说。返回写没写
+ */
+export function dropAsked(tk: Task, ids: string[], msg: Pick<TaskMessage, 'id' | 'agentId' | 'step'>) {
+  const text = droppedAsksNote({ requests: tk.requests.filter((x) => ids.includes(x.id)) })
+  tk.requests = tk.requests.filter((x) => !ids.includes(x.id))
+  if (text) tk.messages.push({ ...msg, role: 'system', text, tools: [], transient: true, at: new Date().toISOString() })
+  return !!text
 }
 
 /**

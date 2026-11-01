@@ -745,7 +745,7 @@ test('子对话的未读点：做完了没看才画，当前打开的和没做�
   assert.equal(childSeenLocally(child({ background: 1 }), turnDoneAt), false)
 })
 
-test('继续执行的续接说明：写清被打断的原因、连带拉起的子对话、没跑完的子任务和工作流', () => {
+test('继续执行的续接说明：写清被打断的原因、连带拉起 / 没能拉起的子对话、没跑完的子任务和工作流', () => {
   const note = resumeNote(
     {
       stopReason: 'restart',
@@ -757,8 +757,12 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起的�
       stoppedJobs: [{ name: 'e2e', command: 'npm run test:e2e' }],
     },
     ['改侧栏'],
+    [{ id: 'k9', title: '修登录', error: '项目目录不存在：/repo/wt\nstack…' }],
   )
   assert.match(note, /面板重启时中断/)
+  // 没能拉起来的子对话：点名 id 和报错第一行，让父对话另建子对话接手、不要干等
+  assert.match(note, /没能拉起来的子对话：「修登录」（id k9，项目目录不存在：\/repo\/wt）[\s\S]*另建子对话接手/)
+  assert.doesNotMatch(note, /stack…/, '报错只取第一行')
   assert.match(note, /已经完成的不要重做/)
   assert.match(note, /「改侧栏」[\s\S]*不用另建子对话重做/)
   assert.match(note, /「查日志」（id h1）[\s\S]*resume/)

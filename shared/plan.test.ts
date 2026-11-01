@@ -1,6 +1,7 @@
 import { childReport } from './task.ts'
 import { makeAlert } from './alerts.ts'
 import { test } from 'node:test'
+import { failLostWaits } from './plan-lost.ts'
 import assert from 'node:assert/strict'
 import type { PlanStep, Task, TaskMessage, TaskPlan } from './schema.ts'
 import { PlanStatus } from './schema.ts'
@@ -274,6 +275,25 @@ test('等待：挂上后台命令，成功自动完成；没成功退回进行�
   assert.equal(activePlan(task)!.steps[2].status, 'running')
   assert.match(activePlan(task)!.steps[2].note, /重跑/)
   assert.deepEqual(releaseParentWait(task), [], '没在等父对话时什么都不动')
+  // 结果不会再来的等待（面板崩溃后不认识的后台命令）按没成功收口；还认得的不动
+  bindWait(task, '3', { kind: 'background', ref: 'gone', label: '构建' })
+  bindWait(task, '3', { kind: 'background', ref: 'alive', label: 'lint' })
+  assert.equal(
+    failLostWaits(task, 'background', (ref) => ref === 'alive'),
+    1,
+  )
+  assert.equal(activePlan(task)!.steps[2].status, 'waiting', '还在等认得的那条')
+  assert.equal(
+    failLostWaits(task, 'child', () => false),
+    0,
+    '只收指定种类',
+  )
+  assert.equal(
+    failLostWaits(task, 'background', () => false),
+    1,
+  )
+  assert.equal(activePlan(task)!.steps[2].status, 'running')
+  assert.match(activePlan(task)!.steps[2].note, /^需要修复：.*构建、lint/)
 })
 
 test('子步骤在等子对话：结果回来子步骤完成，主步骤跟着收', () => {

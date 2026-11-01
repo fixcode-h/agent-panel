@@ -7,6 +7,7 @@ import { log } from './log.ts'
 import { createSlotPool } from './slots.ts'
 import { bgJobIds, bgPendingIds, bgResultHead, opensWindow } from '../shared/panel-tools.ts'
 import { fmtDuration } from '../shared/duration.ts'
+import { failLostWaits } from '../shared/plan-lost.ts'
 import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
 
 /**
@@ -596,7 +597,8 @@ export function settleJobRow(task: Task, id: string, text: string, ok: boolean, 
 
 /**
  * 对话里还在等结果、但面板已经不认识的后台命令（面板被强杀、崩溃后重启，记录只在内存里）：
- * 收口成「结果丢失」的失败，不让那一行永远转圈，也不让它看着像做完了
+ * 收口成「结果丢失」的失败，不让那一行永远转圈，也不让它看着像做完了；计划里等这些命令的步骤一起收口
+ * （只收那一行的话，那一步永远「等待中」）。返回收了几处
  */
 export function reapLostJobs(task: Task, known: (id: string) => boolean) {
   let n = 0
@@ -615,5 +617,5 @@ export function reapLostJobs(task: Task, known: (id: string) => boolean) {
           )
         )
           n++
-  return n
+  return n + failLostWaits(task, 'background', known)
 }

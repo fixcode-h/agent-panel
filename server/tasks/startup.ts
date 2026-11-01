@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { t } from '../../shared/i18n.ts'
+import type { Task, TaskMessage } from '../../shared/schema.ts'
+import { failLostWaits } from '../../shared/plan-lost.ts'
 import { restartInterrupted, taskDeleted } from '../../shared/task.ts'
-import { settleStopped } from '../../shared/task-settle.ts'
+import { droppedAsksNote, settleStopped } from '../../shared/task-settle.ts'
 import type { createTaskStore } from '../task-store.ts'
 import { rebuildClaims, type createClaims } from '../claims.ts'
 
@@ -13,6 +15,13 @@ type Store = Pick<ReturnType<typeof createTaskStore>, 'list' | 'get' | 'update'>
  */
 export async function migrateOnStart(store: Store, claims?: ReturnType<typeof createClaims>) {
   const all = await store.list()
+  // 刚启动时内存里一条排队的消息都没有：落盘里还写着「这一轮结束后处理」的已经没人处理了（界面又按 working
+  // 把它画成正常送达）。和这一轮被停下时（run.ts 的 dropHeld）一样改成「没送出去」，用户才知道要重发。
+  // notes 不动：它可能已经被 read_user_notes 取走（取走时不改 delivery），分不出来
+  const lostHeld = (m: TaskMessage) => m.role === 'user' && m.delivery?.how === 'held'
+  const stamp = new Date().toISOString()
+  const markLost = (list: TaskMessage[]) =>
+    list.map((m) => (lostHeld(m) ? { ...m, delivery: { how: 'lost' as const, at: stamp } } : m))
   // 除了重启前在跑的，还有「这一轮说完了但计划没做完 / 独立分支还没合回」的任务：进程已经回收，
   // 界面却还会画成转圈（childIcon 对 unfinished 也返回 running），一直算进「N 个执行中」。
   // 两种都落成已停止，重启后没人接着做的事不再显示成在执行（见 restartInterrupted）
@@ -24,18 +33,23 @@ export async function migrateOnStart(store: Store, claims?: ReturnType<typeof cr
     // 面板重启、服务退出打断的，不是用户按的暂停：界面要说清原因。结算口径见 settleStopped
     const next = settleStopped(task, 'restart')
     next.messages = [
-      ...task.messages,
+      ...markLost(task.messages),
       {
         id: randomUUID(),
         role: 'system',
         agentId: '',
         step: '',
-        text:
+        text: [
           task.status === 'running'
             ? t(
                 '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。',
               )
             : t('面板重启时这件事还没收尾，已经不在执行。接着做就发消息，会重新拉起 CLI 接着做。'),
+          // 提问 / 确认被 settleStopped 清掉了（回调跟着进程没了）：卡片没了要说为什么
+          droppedAsksNote(task),
+        ]
+          .filter(Boolean)
+          .join('\n'),
         tools: [],
         transient: true,
         at: new Date().toISOString(),
@@ -56,6 +70,18 @@ export async function migrateOnStart(store: Store, claims?: ReturnType<typeof cr
         { keepUpdatedAt: true },
       )
     }
+  // 还写着「这一轮结束后处理」的消息（上面没碰的旧数据）和计划里等后台命令的步骤：后台命令的记录只在内存里，
+  // 刚启动时一条都不认识（createJobs 在这之后才建），结果不会再来。计划在列表元数据里，先在副本上试一次，
+  // 有要收的才读完整记录；不等用户打开（子对话被父对话的 resumeKids 拉起时不经过 withLive 的 reapLostJobs）
+  const lostWaits = (x: Pick<Task, 'plans' | 'steps'>) => failLostWaits(x, 'background', () => false)
+  for (const meta of await store.list()) {
+    if (taskDeleted(meta)) continue
+    if (!meta.messages.some(lostHeld) && !lostWaits({ plans: structuredClone(meta.plans), steps: meta.steps })) continue
+    const task = await store.get(meta.id)
+    if (!task) continue
+    lostWaits(task)
+    await store.update(task.id, { ...task, messages: markLost(task.messages) }, { keepUpdatedAt: true })
+  }
   // 合并到一半面板退出的子对话：「合并中」只在内存里有效，重启后没人在合，finish_child 和 submit_merge 却都按它拒绝，
   // 父子两边都卡住。退回「已请求收尾」，并告诉父对话重新 finish_child
   for (const meta of all.filter((x) => x.wrapRequest?.state === 'merging' && !taskDeleted(x)))

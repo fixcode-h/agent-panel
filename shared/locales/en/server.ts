@@ -226,6 +226,8 @@ export const EN_SERVER: Record<string, string> = {
     'The task was interrupted because the panel closed or restarted while it was running. Click “Resume” to pick up from the interrupted step (its agent session will be resumed).',
   '面板重启时这件事还没收尾，已经不在执行。接着做就发消息，会重新拉起 CLI 接着做。':
     'This work was not finished before the panel restarted and is no longer running. Send a message to continue; the CLI will be started again.',
+  '中断时还有没处理的提问 / 确认：{list}，已经作废；继续执行后 AI 需要的话会重新问。':
+    'Unanswered questions / approvals at the time of the interruption were discarded: {list}. After you resume, the AI will ask again if it still needs them.',
   聊天: 'Chat',
   任务所属的项目已经不存在: 'The task’s project no longer exists',
   '执行出错：{error}': 'Execution error: {error}',

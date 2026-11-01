@@ -1408,11 +1408,12 @@ export const childStage = (x: ChildEntry) => stageOf(childState(x))
  * 对话被打断后点「继续执行」：交给 CLI 的那句话前面写清这是续接、中断时还有哪些没跑完。
  * 以前只把最后一条要求原样再发一遍：模型不知道自己被打断过，要么从头重做，要么不知道还有子任务、工作流没跑完；
  * 父对话也不知道面板已经把子对话拉起来了，又另建一个子对话重做（用户报过）。
- * resumed：面板这次连带拉起来的子对话标题
+ * resumed：面板这次连带拉起来的子对话标题；failed：没能拉起来的（父对话据此另建子对话接手，ADR 0032）
  */
 export function resumeNote(
   task: Pick<Task, 'stopReason' | 'steps' | 'runs'> & { plans?: Task['plans']; stoppedJobs?: Task['stoppedJobs'] },
   resumed: string[] = [],
+  failed: { id: string; title: string; error: string }[] = [],
 ): string {
   const lines = [
     `（面板说明：上一轮${task.stopReason ? `${stopReasonText(task.stopReason)}` : '被中断了'}，现在在原来的会话里接着做。` +
@@ -1421,6 +1422,11 @@ export function resumeNote(
   if (resumed.length)
     lines.push(
       `- 一起中断的子对话已经由面板拉起来接着做：${resumed.map((x) => `「${x}」`).join('、')}。不用另建子对话重做，等它们的结果；要补充就 send_to_conversation 交给它们。`,
+    )
+  if (failed.length)
+    lines.push(
+      `- 没能拉起来的子对话：${failed.map((k) => `「${k.title}」（id ${k.id}，${k.error.split('\n')[0].slice(0, 120)}）`).join('、')}。` +
+        '计划里等它的那一步已退回进行中；需要的话另建子对话接手（它原来的改动还在它的目录 / 分支里），不要干等它的结果。',
     )
   const helpers = task.steps.filter((s) => s.slot === 'sub' && s.interrupted && s.status !== 'done')
   if (helpers.length)

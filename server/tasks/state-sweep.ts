@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { t } from '../../shared/i18n.ts'
 import type { Task } from '../../shared/schema.ts'
-import { settleStopped, stateBreaks, type StateBreak, type StateLive } from '../../shared/task-settle.ts'
+import {
+  droppedAsksNote,
+  settleStopped,
+  stateBreaks,
+  type StateBreak,
+  type StateLive,
+} from '../../shared/task-settle.ts'
 import { taskGone } from '../../shared/task.ts'
 import { parentFixWait } from '../../shared/wake.ts'
 import { log } from '../log.ts'
@@ -58,9 +64,13 @@ export function createStateSweep(d: {
         role: 'system',
         agentId: '',
         step: '',
-        text: t(
-          '面板核对时发现这一轮已经没有在执行（记录还写着执行中），已落成「已中断」。发消息或点「继续执行」接着做。',
-        ),
+        text: [
+          t('面板核对时发现这一轮已经没有在执行（记录还写着执行中），已落成「已中断」。发消息或点「继续执行」接着做。'),
+          // 提问 / 确认被 settleStopped 清掉了：卡片没了要说为什么
+          droppedAsksNote(tk),
+        ]
+          .filter(Boolean)
+          .join('\n'),
         tools: [],
         at: new Date().toISOString(),
       },

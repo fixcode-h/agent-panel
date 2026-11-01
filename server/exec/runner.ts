@@ -114,6 +114,7 @@ import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
+import { dropAsked } from '../../shared/task-settle.ts'
 import { askViaParent } from './child-question.ts'
 import { askPushRequest, dropOwnRequests, noteAnswer, panelRequest, replies } from './panel-requests.ts'
 import { orchHint } from '../orch-mcp.ts'
@@ -2224,9 +2225,8 @@ async function runAgent(
       for (const m of steered) holdForNextTurn(task.id, m)
     steered.clear()
     meter.stop()
-    // 进程结束了（完成、停止、超时），还没回答的请求作废
-    for (const id of asked) replies.delete(id)
-    task.requests = task.requests.filter((x) => !asked.includes(x.id))
+    for (const id of asked) replies.delete(id) // 进程结束了（完成、停止、超时）：还没回答的请求作废，并写明作废了哪些
+    if (dropAsked(task, asked, { id: ctx.newId(), agentId, step })) ctx.changed(true)
     if (task.usage.agents[agentId]) task.usage.agents[agentId].tps = 0
   })
 
