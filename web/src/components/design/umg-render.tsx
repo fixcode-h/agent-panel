@@ -241,7 +241,11 @@ function commonStyle(p: Record<string, any>): CSSProperties {
 function Sizer({ x, y, on }: { x: number; y: number; on: boolean }) {
   if (!on) return null
   return (
-    <span aria-hidden style={{ display: 'block', width: x, height: y, visibility: 'hidden', pointerEvents: 'none' }} />
+    <span
+      aria-hidden
+      data-sizer
+      style={{ display: 'block', width: x, height: y, visibility: 'hidden', pointerEvents: 'none' }}
+    />
   )
 }
 
@@ -752,6 +756,7 @@ function UmgBody({
                 <>
                   <span
                     aria-hidden
+                    data-sizer
                     style={{
                       gridArea: '1 / 1',
                       width: comp.DesignSize.X,
@@ -804,6 +809,7 @@ function UmgBody({
           <>
             <span
               aria-hidden
+              data-sizer
               style={{
                 gridArea: '1 / 1',
                 width: comp.DesignSize.X,
