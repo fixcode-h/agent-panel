@@ -709,6 +709,15 @@ test('Pi：离线运行、codemode 默认开着，联网搜索默认关（打开
   assert.deepEqual(cliSettings(Settings.parse({}), 'pi').options, { offline: true, codemode: true, webSearch: false })
 })
 
+test('Claude Code：默认关掉自带的自动记忆（按目录存，同一项目的对话会互相串），设置里关掉开关就不加', () => {
+  const env = (options: Record<string, boolean>) =>
+    cliSettings(Settings.parse({ clis: { claude: { options } } }), 'claude').env.filter(
+      (e) => e.key === 'CLAUDE_CODE_DISABLE_AUTO_MEMORY',
+    )
+  assert.deepEqual(env({}), [{ key: 'CLAUDE_CODE_DISABLE_AUTO_MEMORY', value: '1' }])
+  assert.deepEqual(env({ noAutoMemory: false }), [])
+})
+
 test('Pi 的重试事件：带上次数和原因，重试成功后算恢复而不是失败', () => {
   const parse = parserFor('pi', CWD)
   // 每次重试都要能看出第几次、总共几次、因为什么失败（事后统计「总是失败」靠这几个字段）
