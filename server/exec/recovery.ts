@@ -67,6 +67,17 @@ export const cliSwitchedText = (from: string, to: string) =>
     to: getCli(to)?.name ?? to,
   })
 
+/** 面板写进对话的一行说明（不设 transient：继续执行时不能当状态说明弹掉） */
+export const systemNote = (id: string, agentId: string, step: string, text: string): TaskMessage => ({
+  id,
+  role: 'system',
+  agentId,
+  step,
+  text,
+  tools: [],
+  at: new Date().toISOString(),
+})
+
 /** 自动续接前写进对话的报错：续接成功后要收回成普通说明 */
 export interface NetNote {
   msg: TaskMessage

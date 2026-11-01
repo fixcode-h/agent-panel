@@ -86,6 +86,7 @@ export { clippedTranscript, contextFallbackKind, estTokens, restartCarry }
 import {
   SESSION_NOT_FOUND,
   cliSwitchedText,
+  systemNote,
   firstNoEffortTell,
   noEffortRetryText,
   noEffortSkippedText,
@@ -1062,15 +1063,7 @@ async function runAgent(
    */
   const recoveryNote = (text: string, evenPrewarm = false) => {
     if (prewarmMode && !evenPrewarm) return
-    task.messages.push({
-      id: ctx.newId(),
-      role: 'system',
-      agentId,
-      step,
-      text,
-      tools: [],
-      at: new Date().toISOString(),
-    })
+    task.messages.push(systemNote(ctx.newId(), agentId, step, text))
     ctx.changed(true)
   }
   const noEffortKey = `${task.id}\n${cliId}\n${model}`
@@ -1080,8 +1073,7 @@ async function runAgent(
     if (firstNoEffortTell(noEffortKey)) recoveryNote(noEffortSkippedText(model, requested))
   }
   tellNoEffort()
-  // 会话是另一个 CLI 的（对话里换了 CLI、角色改了 CLI）：说一声旧会话不再续用。换了以后空闲的对话马上按新 CLI 预热，
-  // 预热轮里也要记，不然这一轮记下新会话后就再没机会说
+  // 会话是另一个 CLI 的（对话里换了、角色改了）：说一声旧会话不再续用。换了后空闲的对话马上预热，预热轮也要记，不然之后没机会说
   if (chat && task.sessions[sessionKey] && task.sessionCli && task.sessionCli !== cliId)
     recoveryNote(cliSwitchedText(task.sessionCli, cliId), true)
   // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
