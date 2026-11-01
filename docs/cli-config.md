@@ -99,7 +99,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 
 - 条件：`model` 有值、`!resume` 没值、`permission=yolo` 等于、`permission!=yolo` 不等于、`opt.codemode` 设置里这个开关开着；写成数组时全部满足才加。
   同一个参数只认最后一次的 CLI（例如 Pi 的 `--tools`），开关要和权限组合成几条规则，并进同一个值里。
-- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`forkEnd`（`features.fork` 为 `end` 时截到的那条回复，Claude Code 的 `--resume-session-at`）、`systemPrompt`、`systemPromptFile`（`systemPrompt` 已经写成文件、值是路径）、`systemPromptModPath`（面板生成的语言 mod 路径）、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）、`noEdit`（这一轮不许改文件）、`autoCompactTokens`（`features.autoCompact` 为 `config` 时的 token 数）、`contextWindow` / `maxOutput`（设置里手动改的上限，见 `features.limitArgs`）。
+- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`forkEnd`（`features.fork` 为 `end` 时截到的那条回复，Claude Code 的 `--resume-session-at`）、`systemPrompt`、`systemPromptFile`（`systemPrompt` 已经写成文件、值是路径）、`systemPromptModPath`（面板生成的语言 mod 路径）、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）、`noEdit`（这一轮不许改文件）、`textOnly`（只要一段文字的一次性小活，例如起对话标题：能关掉全部工具、换极简系统提示的 CLI 写一条规则，Claude Code 是 `--tools "" --system-prompt …`；没写规则的照常跑）、`autoCompactTokens`（`features.autoCompact` 为 `config` 时的 token 数）、`contextWindow` / `maxOutput`（设置里手动改的上限，见 `features.limitArgs`）。
 - 规则里自己写了 `{systemPrompt}` 时（例如按 `systemPromptFile` 选参数），面板不再在末尾自动补系统提示词那一条。
 - 每条规则可以带一个 `why` 写为什么这样传（JSON 里没法写注释），面板不读。
 - 占位：`{model}`；`{addDirs|,}` 把数组用逗号连起来；`{maxTurns:200}` 没值时用 200；`each` 对数组每一项加一次，`{item}` 是那一项。
@@ -340,6 +340,7 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `compact`        | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                                                                                                                                  |
 | `modelSwitch`    | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                                                                                                                                           |
+| `resumeAnyDir`   | 会话能在别的目录里续接：中途开了独立分支（`begin_edit`）、换了工作目录仍然续接原来的会话，之前读过的代码和调研都留在会话里、前缀缓存也大多命中；默认按「会话按目录存」处理，换了目录就开新会话带上对话记录。Claude Code 开（2.1.316 实测按会话 id 全局找）；Pi 换了目录会停下来问要不要分叉，不能开                                                                                         |
 | `fork`           | 分叉、撤回对话：`before` 能从任意一轮分叉（每轮记下自己的 id，见 `rpc.turnId`；续接原会话后按 `rpc.fork` 里带 `if: forkBefore` 的动作分叉到那一轮之前，Pi 是 `fork` 命令的 `entryId`）；`turn` 能截到某一轮（Codex，内置适配器用轮次 id）；`end` 能截到某条回复（Claude Code，参数里用 `{forkEnd}`）；`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话 |
 | `autoCompact`    | 自动压缩：`config` 把 token 数写进参数（规则里用 `{autoCompactTokens}`，Codex）；`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                                                                     |
 | `review`         | 审查改动：`native` 走 CLI 自己的审查模式（Codex，内置适配器）；`prompt`（默认）按审查要求跑一轮                                                                                                                                                                                                                                                                                             |
@@ -388,6 +389,7 @@ Pi 现在推荐四个：`pi-web-access`（联网搜索，第一个）、`pi-web-
 面板跑 `auth.login` 打开浏览器登录，成功后把 `auth.home` 下的 `auth.files`、`auth.fields` 和 `auth.keychain` 存成一个账号。
 判断登录成功默认看**凭据有没有变**（登录前后各读一次，变了就算成功；登录后不自己退出的 CLI 也能判对），
 进程结束时再比一次，没变就报「没有完成登录」；标了 `loginAlreadyLoggedIn` 的 CLI 已登录时不改凭据文件，另按下面那行判。
+面板写 CLI 自己的配置文件（账号字段、API 注入、模型表、全局 MCP 工具）一律走 `server/cli-config-write.ts`，新建和覆盖都收到 `600`（里面常有 API key；Windows 跳过）。
 
 | 字段                   | 说明                                                                                                                                                                                                     |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -51,3 +51,14 @@
 **判定和名单都在纯函数里**（`shared/task.ts`），服务端只负责取任务列表：`store.list()` 不带完整对话（只保留用户消息），但 `plans` / `steps` / `stopReason` / `wrapRequest` 都在，判「计划没做完」够用；在跑的任务用 `live` 里那份（比落盘的新）。**不要在这里改用 `store.get` 逐个读完整任务**：那是完整对话文件（长的几 MB），强制更新停 CLI 前同步读上百 MB 会卡在磁盘上（评审 R1）。`workingTasks()` 仍然保留，给清扫独立目录（`sweepStaleWorktrees`）用。
 
 回归：`server/task-restart.test.ts` 8 条（本轮新增 3 条：`restartUnfinished` 的判定、`interruptedTaskIds` 的名单、`tasksApi().interruptedTasks()` 里父对话的 `doing` 写成「计划 6/8」）。反向验证：把 `interruptedTasks` 的名单临时退回「只看 `working`」后，该用例失败（`parent` 不在名单里），恢复后 8/8 通过。
+
+## 面板退出 / 重启后：首页「全部继续」
+
+以前只有强制更新会记名单；普通的关面板（SIGTERM）、崩溃之后，所有对话都停在「面板重启时中断」，只能逐个点「继续」（实测报告问题 18）。现在：
+
+- **记录**：`tasksApi().stopAll()` 停 CLI 之前调同一个 `interruptedTasks()`，写进 `cache/interrupted-by-restart.json`（`server/restart-interrupted.ts` 的 `recordRestart`：空名单也写，把上次没处理的冲掉）。强制更新走 `stopAll({ forUpdate: true })` 写空名单，被打断的任务交给上面的弹窗，不在首页再问一遍。没正常退出（崩溃、被杀）来不及记名单：`migrateOnStart` 返回迁移时 `restartUnfinished` 成立的任务 id（`tasksApi` 的 `ready` 就是它），读名单时并进来。
+- **接口**：`GET /app/restart-interrupted`、`POST /app/restart-interrupted/ack`（`restartRoutes`，挂在 `interruptedApi` 里，同一组依赖）。强制更新的记录还没处理时，它列过的 id 不在这里出现。读取时只留 `shared/resume-kids.ts` 的 `restartResumable` 成立的：顶层（子对话由父对话继续时 `resumeKids` 连带拉起，用户停掉的、已交付的子对话那边按 `sortStoppedKids` 跳过）、还停着、停止原因还是 `restart`（重启后用户继续过又自己停了、已经做完的都不列）、没归档 / 导入 / 删除。
+- **界面**：`web/src/components/tasks/RestartResumeBar.tsx`，首页输入框下面一条「上次面板关闭时有 N 个对话在运行，已经中断：逐个看 / 全部继续 / ×」。全部继续逐个调 `POST /tasks/:id/resume`，没能继续的留在列表里写明原因；全部成功或点 × 才确认。
+- **不做「重启后自动继续」**：继续会花钱、会接着改项目，用户可能正是因为它跑偏了才关的面板。
+
+回归：`server/restart-interrupted.test.ts`、`server/tasks/startup.test.ts` 的「返回上次没正常退出时还在执行的对话」、界面检查 `scripts/ui/08-misc.mjs` 的「首页-重启后全部继续」。

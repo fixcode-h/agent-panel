@@ -153,6 +153,11 @@
       "args": ["--append-system-prompt", "{systemPrompt}"]
     },
     {
+      "if": "textOnly",
+      "args": ["--tools", "", "--system-prompt", "Reply with plain text only. Do not use any tools."],
+      "why": "起标题这类一次性小活只要一行文字：--tools \"\" 关掉全部内置工具，--system-prompt 换掉自带的长系统提示。不这样时每次都带十几个工具定义和自带系统提示，用户实测每次约 10.6k 输入 token；Claude Code 2.1.316 上对比同一句提示，输入从约 27k 降到约 4.7k（剩下的是用户全局配置、插件带进来的内容）。不用 --bare：它不读 OAuth 和钥匙串，订阅账号会登录不上"
+    },
+    {
       "if": "maxTurns",
       "args": ["--max-turns", "{maxTurns}"]
     },
@@ -190,6 +195,7 @@
     "compact": "slash",
     "review": "prompt",
     "fork": "end",
+    "resumeAnyDir": true,
     "autoCompact": "env",
     "autoCompactEnv": "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
     "limitEnv": {

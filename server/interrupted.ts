@@ -5,6 +5,7 @@ import type { Task } from '../shared/schema.ts'
 import { t } from '../shared/i18n.ts'
 import { openPlan } from '../shared/plan.ts'
 import { CACHE_DIR, readJson, writeJsonAtomic } from './store.ts'
+import { restartRoutes } from './restart-interrupted.ts'
 
 /**
  * 被「强制更新」打断的任务：停 CLI 之前记下 id，新版本启动后弹窗问用户要不要继续。
@@ -34,9 +35,9 @@ export async function recordInterrupted(tasks: InterruptedEntry[]) {
   await writeJsonAtomic(FILE(), record)
 }
 
-/** 读记录；文件不在或格式不对时当作没有 */
-export async function readInterrupted(): Promise<InterruptedRecord> {
-  const raw = await readJson(FILE())
+/** 读记录；文件不在或格式不对时当作没有。file：被重启打断的记录也是这个格式（见 restart-interrupted.ts） */
+export async function readInterrupted(file = FILE()): Promise<InterruptedRecord> {
+  const raw = await readJson(file)
   if (!raw || typeof raw !== 'object') return EMPTY
   const r = raw as Partial<InterruptedRecord>
   if (!Array.isArray(r.tasks)) return EMPTY
@@ -86,8 +87,8 @@ export async function resolveInterrupted(
  * 读取时顺便把记录里的任务过滤一遍，已删除、归档、导入、又跑起来的都不再列出。
  */
 export function interruptedApi(deps: {
-  /** 等启动时的迁移做完 */
-  ready: () => Promise<unknown>
+  /** 等启动时的迁移做完（结果是迁移时发现还在执行的对话 id，被重启打断的名单要用） */
+  ready: () => Promise<string[] | unknown>
   getTask: (id: string) => Promise<Task | null>
   projectName: (id: string) => Promise<string>
 }) {
@@ -108,6 +109,8 @@ export function interruptedApi(deps: {
         await acknowledgeInterrupted()
         return c.json(await body())
       })
+      // 被面板退出 / 重启打断的（首页的「全部继续」）：同一组依赖，一起挂上
+      .route('/', restartRoutes(deps))
   )
 }
 

@@ -3,6 +3,7 @@ import { useData, useNav } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { TaskComposer } from '@/components/tasks/TaskComposer'
+import { RestartResumeBar } from '@/components/tasks/RestartResumeBar'
 import { Logo } from '@/components/layout/Sidebar'
 import { t } from '@shared/i18n'
 
@@ -42,6 +43,8 @@ export function HomePage() {
             }}
           />
         )}
+        {/* 上次面板退出时还在运行的对话：问一次要不要全部继续，放在输入框下面，不挤开问候和输入框 */}
+        <RestartResumeBar />
       </div>
     </main>
   )

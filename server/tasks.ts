@@ -14,6 +14,7 @@ import {
 } from '../shared/schema.ts'
 import { type LessonDraft } from './lessons.ts'
 import { restartDoing } from './interrupted.ts'
+import { recordRestart } from './restart-interrupted.ts'
 import { entryFlow, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
@@ -310,6 +311,27 @@ export function tasksApi(deps: {
   // 服务重启时，之前没跑完的任务标记为已停止（见 server/tasks/startup.ts）。
   // 对外暴露成 ready：读取「被更新打断的任务」时要等这一步做完，否则还会读到 running
   const ready = migrateOnStart(store, claims)
+
+  /**
+   * 强制更新、面板退出要记下哪些任务（重启后问用户要不要继续）：正在执行的，以及被打断后还有活要自己干的（`restartUnfinished`：
+   * 这一轮被打断、计划没做完），再加上名下还有子对话在跑的父对话——子对话的结果要交回它，
+   * 它不在名单里就没人接。只按 working 记会把停在等下一句、计划 12/17 的父对话漏掉：
+   * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+   * 清扫独立目录（`sweepStaleWorktrees`）仍然只看真正在跑的，用 `workingTasks`。
+   */
+  async function interruptedTasks() {
+    const liveTasks = new Map([...live.values()].map((e) => [e.task.id, e.task]))
+    const working = [...liveTasks.values()]
+      .filter((tk) => tk.working)
+      .map((tk) => ({ id: tk.id, parentTaskId: tk.parentTaskId }))
+    // 列表不带完整对话（`store.list()` 只保留用户消息），但 `plans` / `steps` / `stopReason` 都在，
+    // 判「计划没做完」不用再 `store.get` 逐个读完整对话文件（长对话几 MB，强制更新时会卡在磁盘上）。
+    // 在跑的任务用 live 那份，它比落盘的新
+    const all = (await store.list()).map((tk) => liveTasks.get(tk.id) ?? tk)
+    // 进了回收站的对话不能再进恢复名单：用户已经把它删了，重启后不能自己跑起来
+    const want = new Set(interruptedTaskIds(all, working))
+    return all.filter((tk) => want.has(tk.id) && !taskDeleted(tk)).map((tk) => ({ id: tk.id, doing: restartDoing(tk) }))
+  }
 
   /**
    * 自动归档（设置里的 autoArchiveDays，默认关）：启动一分钟后看一次，之后每小时一次。
@@ -721,28 +743,7 @@ export function tasksApi(deps: {
               .split('\n')[0]
               .slice(0, 60),
         })),
-    /**
-     * 强制更新要记下哪些任务：正在执行的，以及被打断后还有活要自己干的（`restartUnfinished`：
-     * 这一轮被打断、计划没做完），再加上名下还有子对话在跑的父对话——子对话的结果要交回它，
-     * 它不在名单里就没人接。只按 working 记会把停在等下一句、计划 12/17 的父对话漏掉：
-     * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
-     * 清扫独立目录（`sweepStaleWorktrees`）仍然只看真正在跑的，用 `workingTasks`。
-     */
-    interruptedTasks: async () => {
-      const liveTasks = new Map([...live.values()].map((e) => [e.task.id, e.task]))
-      const working = [...liveTasks.values()]
-        .filter((tk) => tk.working)
-        .map((tk) => ({ id: tk.id, parentTaskId: tk.parentTaskId }))
-      // 列表不带完整对话（`store.list()` 只保留用户消息），但 `plans` / `steps` / `stopReason` 都在，
-      // 判「计划没做完」不用再 `store.get` 逐个读完整对话文件（长对话几 MB，强制更新时会卡在磁盘上）。
-      // 在跑的任务用 live 那份，它比落盘的新
-      const all = (await store.list()).map((tk) => liveTasks.get(tk.id) ?? tk)
-      // 进了回收站的对话不能再进恢复名单：用户已经把它删了，重启后不能自己跑起来
-      const want = new Set(interruptedTaskIds(all, working))
-      return all
-        .filter((tk) => want.has(tk.id) && !taskDeleted(tk))
-        .map((tk) => ({ id: tk.id, doing: restartDoing(tk) }))
-    },
+    interruptedTasks,
     /** 立刻核对一次对话状态（见 createStateSweep）：测试用它，不用等定时器 */
     sweepState: () => stateSweep.sweep(),
     /** 启动时的迁移做完没有：读「被更新打断的任务」前等它，免得看到还没改过来的 running */
@@ -764,7 +765,12 @@ export function tasksApi(deps: {
     /** 退出前把还在合并窗口里的对话消息写盘（见 task-store 的 flushAll） */
     flush: () => store.flushAll(),
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
-    async stopAll() {
+    async stopAll(opts: { forUpdate?: boolean } = {}) {
+      // 先记下这次退出打断了哪些对话（停掉之后就分不出来了）：重启后首页问要不要全部继续。
+      // 强制更新另有自己的名单和弹窗（stopForUpdate），这里写空，免得重启后两处都问
+      await recordRestart(opts.forUpdate ? [] : await interruptedTasks()).catch((e) =>
+        log.warn('task', '记录被重启打断的对话失败', e),
+      )
       shuttingDown = true
       disarmIdleAsk()
       clearInterval(sweepTimer)

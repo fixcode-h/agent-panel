@@ -136,7 +136,10 @@ export function createEditWorktree(s: TasksScope) {
       .filter((x) => x.working || s.startQueue.has(x.id))
   }
 
-  /** 对话要改文件了：从它现在的目录开独立分支，这一轮结束后在新目录里开新会话接着做 */
+  /**
+   * 对话要改文件了：从它现在的目录开独立分支，这一轮结束后在新目录里接着做。
+   * 能跨目录续接会话的 CLI（resumeAnyDir）带着原会话过去，其余开新会话、带上之前的对话
+   */
   async function beginEdit(entry: Live, changed: (f?: boolean) => void): Promise<{ ok: boolean; info: string }> {
     const tk = entry.task
     if (isolated(tk)) return { ok: true, info: `已经在独立分支 ${tk.worktree!.branch} 里，直接改` }
@@ -147,6 +150,7 @@ export function createEditWorktree(s: TasksScope) {
         ok: false,
         info: `现在有子对话在执行（${busy.map((k) => `「${k.title}」`).join('、')}），你不能自己改文件：用 send_to_conversation 交给相关的子对话，或者 create_conversation 新建一个。`,
       }
+    const base = await s.taskDir({ ...tk, worktree: null })
     const err = await openWorktree(tk)
     if (err) return { ok: false, info: `开独立分支失败：${err}\n先不要改文件，把情况告诉用户。` }
     const wt = tk.worktree!
@@ -157,7 +161,15 @@ export function createEditWorktree(s: TasksScope) {
       role: 'user',
       agentId: '',
       step: '',
-      text: `（面板）已经开好独立分支 ${wt.branch}，你现在在它的目录里。接着刚才的任务开始修改；已经查清楚的不用重查。`,
+      // 说清新旧两个目录：续接原会话时上下文里全是原目录的路径，不点明的话容易照着旧路径改回原目录。
+      // 要改的文件得重读：分支是从提交检出的（原目录没提交的改动不在这里），CLI 改文件前也要求在这个路径上读过；
+      // 只说「不用重查」的话，模型分不清哪些该读，干脆全部重读
+      text: [
+        `（面板）已经开好独立分支 ${wt.branch}，你现在在它的目录 ${wt.path} 里（原目录 ${base}）。接着刚才的任务开始修改：`,
+        `- 之后读文件、改文件、跑命令都用这个目录里的路径，不要再改原目录里的文件。`,
+        `- 这个目录是从原分支最新的提交检出的，原目录里没提交的改动不在这里。改哪个文件之前先在这里读一遍那个文件。`,
+        `- 已经查清楚的（没打算改的文件、搜过的代码、项目结构和配置）不用再查一遍，确实要看具体内容时再读。`,
+      ].join('\n'),
       tools: [],
       at: new Date().toISOString(),
     })
@@ -165,7 +177,7 @@ export function createEditWorktree(s: TasksScope) {
     log.info('task', '对话开了独立分支', { task: tk.id, branch: wt.branch })
     return {
       ok: true,
-      info: `已开独立分支 ${wt.branch}（目录 ${wt.path}）。现在用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮，不要在当前目录改任何文件；面板会在独立分支的目录里开新会话，带上这段对话接着做。`,
+      info: `已开独立分支 ${wt.branch}（目录 ${wt.path}）。现在用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮，不要在当前目录改任何文件；面板会切到独立分支的目录里，带上这段对话接着做。`,
     }
   }
 

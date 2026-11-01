@@ -49,6 +49,11 @@ export interface BuildOptions {
   /** 还没开独立分支、现在不能改文件：能按名字关掉工具的 CLI 把改文件的工具关掉 */
   noEdit?: boolean
   /**
+   * 只要一段文字的一次性小活（例如起对话标题）：能关掉全部工具、换成极简系统提示的 CLI 就这样跑，
+   * 省掉每次上万 token 的工具定义和 CLI 自带的长系统提示
+   */
+  textOnly?: boolean
+  /**
    * 从 resume 的会话分叉出一个新会话（原会话不动）；给了 turn 时只保留到那一轮（含）：
    * Codex 用 turn id，Claude Code 用那一轮最后一条回复的 uuid；
    * before 是要丢掉的第一轮的 id，分叉到它之前（Pi 用那一轮用户消息的 entryId）
@@ -149,6 +154,12 @@ export interface CliDefinition {
   effortBoundSession?: boolean
   /** 会话中途能换模型：换了模型仍然续接原来的会话（例如 Pi，模型是每次启动的参数，会话里可以混用） */
   modelSwitch?: boolean
+  /**
+   * 会话能在别的目录里续接：中途开了独立分支、换了目录也照样 --resume 原来的会话，不用丢掉重开。
+   * 例如 Claude Code（2.1.316 实测：会话按 id 全局找，续接后工作目录是这次启动的目录）。
+   * 不写时按「会话按目录存」处理，换了目录就开新会话、带上之前的对话（Pi 会停下来问要不要分叉）
+   */
+  resumeAnyDir?: boolean
   /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、rpc 时用） */
   parser: string | import('./cli-spec.ts').OutputSpec
   /** 执行中能插话 */

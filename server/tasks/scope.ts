@@ -461,7 +461,7 @@ export interface TasksScope {
   }>
   projectWorkflow: (p: Project) => Promise<Workflow | undefined>
   readableDir: (id: string | undefined) => Promise<string>
-  ready: Promise<void>
+  ready: Promise<unknown>
   recordSelfTestRun: (job: import('../background.ts').BgJob) => Promise<void>
   recordWorktreeError: (tk: Task, error: string) => void
   recoverParentTests: () => Promise<void>
