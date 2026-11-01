@@ -118,9 +118,9 @@ import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv, exitReason, stderrTail } from './process.ts'
 import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 import { redirectWait } from './redirect.ts'
-import { t, getLang } from '../../shared/i18n.ts'
+import { t } from '../../shared/i18n.ts'
 import { fmtDuration } from '../../shared/duration.ts'
-import { promptLangReminder, promptLangRules, promptUserNameRules } from '../../shared/prompt-lang.ts'
+import { promptLangReminder, promptLangRules, promptUserNameRules, replyLang } from '../../shared/prompt-lang.ts'
 import { compactedSilently } from '../../shared/prompt-delta.ts'
 import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
@@ -979,7 +979,7 @@ async function runAgent(
   const prewarm = chat && !!call.prewarm
   // 启动这一轮时的选择；执行中换了 CLI/模型/强度，或者面板语言变了（系统提示词和 mod 的环境变量固定在
   // 这个进程里，新消息的提醒却是新语言），结束时都不能还停在旧进程上等下一句
-  const startPick = { cli: task.cli, model: task.model, effort: task.effort, lang: getLang() }
+  const startPick = { cli: task.cli, model: task.model, effort: task.effort, lang: replyLang() }
   const stillCurrent = () => {
     const now = agentRun(withTaskModel(found, task), settings)
     // 这一轮里开了独立分支：进程还在原目录里，不能再等下一句，结束后在新目录里重开
@@ -988,7 +988,7 @@ async function runAgent(
       now.cli === cliId &&
       now.model === model &&
       task.effort === startPick.effort &&
-      getLang() === startPick.lang &&
+      replyLang() === startPick.lang &&
       (!wt || wt === cwd)
     )
   }
@@ -1198,7 +1198,7 @@ async function runAgent(
   const env = childEnv([
     ...cs.env,
     // mod 按它选语言规则（见 prompt-lang-mod.ts）
-    ...(systemPromptModPath ? [{ key: PROMPT_LANG_ENV, value: getLang() }] : []),
+    ...(systemPromptModPath ? [{ key: PROMPT_LANG_ENV, value: replyLang() }] : []),
     ...(pct && def.autoCompact === 'env' && def.autoCompactEnv
       ? [{ key: def.autoCompactEnv, value: String(pct) }]
       : []),

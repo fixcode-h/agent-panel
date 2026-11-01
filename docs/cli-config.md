@@ -115,7 +115,8 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 **能力边界**：
 
 - 模型的原生 reasoning 由它自己的系统提示词和训练决定，提示词只能影响、不能强制。实测 Command Code + DeepSeek 会把任务描述里的中文规则忽略掉（思考输出英文），追加到系统提示词后才稳定；只有任务描述通道的 CLI 仍可能不遵守。
-- 设置是 `auto` 时，界面语言按浏览器的 `navigator.language` 解析，服务端（`server/lang.ts`）按 `process.env.LANG` / 系统 locale 解析，两边可能不一致（浏览器中文、系统英文）：这时界面是中文，提示词却会按服务端解析出的英文写。要让两边一致，把设置改成固定语言，不要用 `auto`。
+- 设置是 `auto` 时，界面语言按浏览器的 `navigator.language` 解析，服务端（`server/lang.ts`）按 `process.env.LANG` / 系统 locale 解析；**回复语言不跟界面语言走**，规则改成「用用户这条消息（或交给它的任务说明）的语言」（`ReplyLang` 的 `auto-zh` / `auto-en`，后缀只是看不出语言时的兜底和规则本身的语言）。以前按解析出的语言写死，系统语言是 `C.UTF-8` 时中文提问收到英文回复。设置成中文 / 英文时仍固定用那种语言。
+- `auto` 时总结卡的类型和字段名仍按服务端解析出的界面语言列表（`shared/summary-card.ts`），回复语言和它不同时可能混写；界面两种字段名都认得。
 - 不要为了让思考语言变过来去改用户的全局配置。
 
 ## 常驻 RPC `protocol` / `rpc`

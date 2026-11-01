@@ -838,7 +838,7 @@ await runShard('工作流条件与失败', async (api) => {
   const modFile = kf.args[kf.args.indexOf('--mod') + 1]
   assert.match(readFileSync(modFile, 'utf8'), /## 回复语言/)
   // 提醒在提示词后半段（invoke 还会在这之后追加 read_user_notes / wait_user_message 的用法）
-  const remindAt = kf.input.indexOf('回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。')
+  const remindAt = kf.input.indexOf('回复正文和思考过程用用户这条消息所用的语言；代码、命令、日志和报错原文不翻译。')
   assert.ok(remindAt > kf.input.lastIndexOf('## 执行方式'), '提示词后半段带语言提醒')
   // 已有对话不跟着默认 CLI 换：t3 开始时默认是 Codex，默认改成 Command Code 后接着发消息仍用 Codex，不插换 CLI 的提示
   await call('POST', `/tasks/${t3.id}/messages`, { text: '接着' })

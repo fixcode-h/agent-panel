@@ -9,7 +9,10 @@ import { resolveLang, setLang } from '../shared/i18n.ts'
  * 不经过 store.ts，免得把用到文案的模块提前加载。
  */
 export function applyServerLang(setting?: string) {
-  setLang(resolveLang(setting, process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale))
+  setLang(
+    resolveLang(setting, process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale),
+    setting !== 'zh' && setting !== 'en',
+  )
 }
 
 const dir = process.env.AGENT_PANEL_DATA ?? path.join(homedir(), '.agent-panel')
