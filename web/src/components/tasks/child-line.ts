@@ -66,7 +66,10 @@ export function activityText(a: ChildActivity | undefined) {
   }
   if (a.helpers?.length) return t('等待子任务：{list}', { list: a.helpers.join(t('、')) })
   if (a.text) return plainLine(a.text)
-  return t('正在思考…')
+  // 只有服务端说「还没有输出、在想」（thinking，只在 working 时给）才写正在思考。
+  // 一轮结束后 activity 只剩计划进度（见 shared/task.ts 的 childActivity），以前落到这里也写「正在思考…」，
+  // 和「等下一句」同屏、子对话明明空闲了十几分钟还像在跑（实测报告问题 12）
+  return a.thinking ? t('正在思考…') : ''
 }
 
 /**
