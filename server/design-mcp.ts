@@ -23,7 +23,7 @@ import { layoutNote, layoutReport, sessionLayout } from './design-layout.ts'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { inspect } from './design-inspect.ts'
-import { compareTool } from './design-compare.ts'
+import { compareTool, proposeLayout } from './design-compare.ts'
 
 /**
  * 给 CLI 用的设计工具（MCP，Streamable HTTP）：AI 像在控件树和属性面板里操作一样调用工具改设计。
@@ -55,6 +55,10 @@ export interface Session {
   views: number
   /** 「先出原画」阶段：只能出原画、提问、看图，不能改控件树和列切图 */
   conceptOnly: boolean
+  /** 「拆区块」阶段：模板确认了、区块还没确认，这一轮只能 propose_layout，不能搭界面、列切图 */
+  layoutOnly: boolean
+  /** 这一轮提交的区块（propose_layout），这一轮结束后存进设计 */
+  layout?: { name: string; x: number; y: number; w: number; h: number; note: string }[]
   /** 「AI 分析」：只读，不能改设计、出原画或提问，只能用检查类的工具 */
   readOnly: boolean
   /** 这一轮要出的原画（generate_concepts），这一轮结束后生成 */
@@ -113,7 +117,7 @@ export function openDesignSession(
   design: Design,
   onChange: (s: Session) => void,
   files: DesignFiles,
-  opts: { conceptOnly?: boolean; conceptCount?: number; readOnly?: boolean } = {},
+  opts: { conceptOnly?: boolean; conceptCount?: number; readOnly?: boolean; layoutOnly?: boolean } = {},
 ) {
   const token = randomUUID()
   const s: Session = {
@@ -125,6 +129,7 @@ export function openDesignSession(
     files,
     views: 0,
     conceptOnly: !!opts.conceptOnly,
+    layoutOnly: !!opts.layoutOnly,
     readOnly: !!opts.readOnly,
     concepts: [],
     conceptCount: opts.conceptCount,
@@ -431,6 +436,31 @@ const TOOLS = [
     ),
   },
   {
+    name: 'propose_layout',
+    description:
+      '确认模板后先拆区块：把模板界面拆成 4~12 个矩形区块一次提交（regions 里每项 name 英文 PascalCase、x/y/w/h 设计稿像素、note 一句话写这块放什么）。' +
+      '用户在原画面板里调整、确认后，搭界面时骨架照这些区块搭。再调用会整体替换上一次提交的。',
+    inputSchema: obj(
+      {
+        regions: {
+          type: 'array',
+          items: obj(
+            {
+              name: { type: 'string' },
+              x: { type: 'number' },
+              y: { type: 'number' },
+              w: { type: 'number' },
+              h: { type: 'number' },
+              note: { type: 'string' },
+            },
+            ['name', 'x', 'y', 'w', 'h'],
+          ),
+        },
+      },
+      ['regions'],
+    ),
+  },
+  {
     name: 'compare_template',
     description:
       '照着确认的效果图模板搭界面时用：截一张当前画布，和模板的同一块逐像素对比，返回相似度、截图要往哪边挪几像素才和模板对齐，以及左右对照图和差异热力图（文件，用读图的能力看）。' +
@@ -490,7 +520,7 @@ function tooBig(items: number, widgets: number) {
 }
 
 /** 只读分析时也要挡掉：会改设计、出原画或让用户回答的工具 */
-const READONLY_BLOCKED = new Set(['set_design', 'ask_user', 'generate_concepts', 'undo'])
+const READONLY_BLOCKED = new Set(['set_design', 'ask_user', 'generate_concepts', 'undo', 'propose_layout'])
 
 const MUTATING = new Set([
   'add_widgets',
@@ -737,6 +767,11 @@ async function callTool(s: Session, raw: string, args: any) {
       true,
     )
   // 「先出原画」：用户确认模板之前不搭界面、不列切图
+  if (s.layoutOnly && MUTATING.has(name))
+    return text(
+      '现在是「拆区块」阶段：用户确认区块之前不能搭界面、不能列切图。用 propose_layout 提交区块，回复一两句后结束这一轮。',
+      true,
+    )
   if (s.conceptOnly && MUTATING.has(name))
     return text(
       '现在是「先出原画」阶段：用户确认效果图模板之前不能搭界面、不能列切图。用 generate_concepts 出原画，回复一两句后结束这一轮。',
@@ -1035,6 +1070,10 @@ async function callTool(s: Session, raw: string, args: any) {
     case 'inspect_image':
     case 'view_image':
       return inspect(s, name === 'view_image', a)
+    case 'propose_layout': {
+      const r = proposeLayout(s, a)
+      return text(r.text, !!r.isError)
+    }
     case 'compare_template': {
       const r = await compareTool(s, a)
       return text(r.text, !!r.isError)

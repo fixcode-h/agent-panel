@@ -804,6 +804,20 @@ export const EN_DESIGN: Record<string, string> = {
   '网格吸附：拖动和缩放落在 8 像素的网格上': 'Grid snapping: moves and resizes land on an 8 px grid',
   '{name} 没能从模板局部图生图：{error}。改成按描述生成':
     '{name} could not be generated from the template region: {error}. Generating from the description instead',
+  '区块已确认：搭界面时骨架照这些区块摆放': 'Regions confirmed: the layout will be built from these regions',
+  '调整区块：拖动移动，拖右下角改大小，点一下改名或删除；没问题就确认':
+    'Adjust the regions: drag to move, drag the bottom-right corner to resize, click to rename or delete; confirm when ready',
+  'AI 正在把模板拆成区块…': 'The AI is splitting the template into regions…',
+  '先把模板拆成区块再搭界面，位置更准；也可以跳过':
+    'Split the template into regions before building for more accurate positions, or skip this step',
+  新增区块: 'Add region',
+  '确认区块，开始搭界面': 'Confirm regions and build',
+  重新调整区块: 'Adjust regions again',
+  '跳过，直接搭界面': 'Skip and build directly',
+  区块名: 'Region name',
+  '删除区块 {name}': 'Delete region {name}',
+  把确认的模板拆成区块: 'Split the approved template into regions',
+  '按确认的区块搭界面，并生成切图': 'Build the UI from the confirmed regions and generate the slices',
   未命名设计: 'Untitled design',
   'AI 刚改过这个设计，你刚才的修改没有存上；按撤销可以找回':
     'The AI just changed this design, so your latest edits were not saved. Press Undo to get them back',

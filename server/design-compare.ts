@@ -187,3 +187,39 @@ export async function compareTool(
     ].join('\n'),
   }
 }
+
+// ---- 设计工具 propose_layout ----
+
+/** propose_layout：校验区块（名字、范围、不重名）后记进这一轮，结束时存进设计；越出设计稿的部分裁掉 */
+export function proposeLayout(s: Session, a: { regions?: unknown }): { text: string; isError?: boolean } {
+  const list = Array.isArray(a.regions) ? a.regions : []
+  if (!list.length || list.length > 40) return { text: 'regions 要写 1~40 个区块', isError: true }
+  const size = s.designSize ?? s.design.designSize
+  const n = (v: unknown) => (typeof v === 'string' ? parseFloat(v) : Number(v))
+  const out: NonNullable<Session['layout']> = []
+  const problems: string[] = []
+  list.forEach((raw: any, i: number) => {
+    const name = String(raw?.name ?? '').trim()
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name))
+      return problems.push(`第 ${i + 1} 个区块的 name 要用英文 PascalCase：${name}`)
+    if (out.some((x) => x.name === name)) return problems.push(`区块名 ${name} 重复了`)
+    const r = { x: n(raw?.x), y: n(raw?.y), w: n(raw?.w), h: n(raw?.h) }
+    if (![r.x, r.y, r.w, r.h].every(Number.isFinite) || r.w < 8 || r.h < 8)
+      return problems.push(`${name} 的 x/y/w/h 要是数字，宽高至少 8（设计稿像素）`)
+    const x = Math.max(0, Math.min(Math.round(r.x), size.X - 8))
+    const y = Math.max(0, Math.min(Math.round(r.y), size.Y - 8))
+    out.push({
+      name,
+      x,
+      y,
+      w: Math.min(Math.round(r.w), size.X - x),
+      h: Math.min(Math.round(r.h), size.Y - y),
+      note: String(raw?.note ?? '').slice(0, 400),
+    })
+  })
+  if (problems.length) return { text: `没有记下：\n${problems.join('\n')}`, isError: true }
+  s.layout = out
+  return {
+    text: `已记下 ${out.length} 个区块：${out.map((g) => `${g.name}（${g.x},${g.y} ${g.w}×${g.h}）`).join('、')}。这一轮结束后用户会在原画面板里调整、确认，确认之后再搭界面。`,
+  }
+}

@@ -254,6 +254,31 @@ export type DesignKind = (typeof DESIGN_KINDS)[number]
 
 export const ComponentSchema = z.object({ Name: z.string(), DesignSize: Vec2Schema, Root: z.any() })
 
+/**
+ * 版式拆解的一个区块（设计稿像素）：确认模板后 AI 先把模板拆成几块（顶栏、格子区、按钮区…），
+ * 用户在原画面板里拖动、改名、增删，确认后搭界面的骨架照这些矩形搭，位置不再靠 AI 目测
+ */
+export const LayoutRegion = z.object({
+  id: z.string(),
+  name: z.string().min(1).max(60),
+  x: z.number(),
+  y: z.number(),
+  w: z.number().positive(),
+  h: z.number().positive(),
+  note: z.string().max(400).default(''),
+})
+export type LayoutRegion = z.infer<typeof LayoutRegion>
+/** 版式拆解：针对哪张模板（concept）、区块列表、用户确认了没有 */
+export const DesignLayout = z.object({
+  concept: z.string(),
+  regions: z.array(LayoutRegion).max(40),
+  confirmed: z.boolean().default(false),
+})
+export type DesignLayout = z.infer<typeof DesignLayout>
+/** 这张模板的区块已经确认了：搭界面的那一轮照它搭；没确认时这一轮先拆区块 */
+export const layoutConfirmed = (layout: DesignLayout | undefined, concept: string) =>
+  !!layout && layout.confirmed && layout.concept === concept
+
 export const DesignDoc = z.object({
   title: z.string().trim().min(1).max(100),
   /**
@@ -272,6 +297,8 @@ export const DesignDoc = z.object({
   annotations: z.array(Annotation).max(200).default([]),
   /** 动画（UE 的 Widget Animation；网页是动效），见 anim.ts */
   animations: z.array(UiAnimation).max(300).default([]),
+  /** 版式拆解的区块（确认模板后先拆区块，见 LayoutRegion） */
+  layout: DesignLayout.optional(),
 })
 export type DesignDoc = Omit<z.infer<typeof DesignDoc>, 'root' | 'components' | 'animations' | 'data'> & {
   root: Widget
@@ -957,6 +984,8 @@ export interface ConceptContext {
   marks: Annotation[]
   /** 用户在输入框选的这一轮出几张 */
   count?: number
+  /** 模板的版式拆解：没确认时这一轮只拆区块，确认了照区块搭 */
+  layout?: DesignLayout
 }
 
 function conceptSection(c: ConceptContext, d: Design) {
@@ -965,11 +994,25 @@ function conceptSection(c: ConceptContext, d: Design) {
     `- ${i.id}（第 ${i.round} 轮，${i.width}×${i.height}${i.base ? `，在 ${i.base} 上改的` : ''}）：${i.prompt.slice(0, 400)}${i.negative ? `\n  negative：${i.negative.slice(0, 200)}` : ''}`
   if (c.mode === 'template') {
     const tpl = c.state.images.find((i) => i.id === c.state.approved)!
+    const r = (n: number) => Math.round(n)
+    const regionLines = (c.layout?.regions ?? [])
+      .map((g) => `- ${g.name}：x=${r(g.x)} y=${r(g.y)} 宽=${r(g.w)} 高=${r(g.h)}${g.note ? ` — ${g.note}` : ''}`)
+      .join('\n')
+    // 这张模板的区块还没确认：这一轮只拆区块，等用户在原画面板里调整、确认后再搭界面
+    if (!layoutConfirmed(c.layout, tpl.id))
+      return `## 已确认的效果图模板：先拆区块
+用户已经确认这张效果图作为最终模板：${tpl.id}（${tpl.width}×${tpl.height}，看图时 source 写 "concept:${tpl.id}"）。它的描述：${tpl.prompt.slice(0, 600)}
+这一轮**只做版式拆解，不要搭控件树、不要列切图**：
+1. 用 view_image 整体看一遍模板，再用 region 放大，用 inspect_image 量准，把界面拆成 4~12 个区块（例如顶栏、角色区、物品格子区、详情区、底部按钮区），每块是设计稿 ${size} 里的一个矩形。
+2. 调用 propose_layout 一次提交全部区块：name 用英文 PascalCase（之后就是骨架里这个容器的控件名），x、y、w、h 是设计稿像素，note 用一句话写这块里放什么。
+3. 回复一两句：拆成了哪几块。用户会在原画面板里拖动、改名、增删区块，确认后再开始搭界面。
+${regionLines ? `\n之前拆过、用户还没确认的区块（用户说了要怎么改就在这个基础上改，再用 propose_layout 整体提交一次）：\n${regionLines}\n` : ''}
+`
     return `## 已确认的效果图模板
 用户已经确认这张效果图作为最终模板：${tpl.id}（${tpl.width}×${tpl.height}，看图时 source 写 "concept:${tpl.id}"）。它的描述：${tpl.prompt.slice(0, 600)}
 照着它搭界面、出切图，界面要和模板一致：
 1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
-2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。
+2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。${regionLines ? `\n   骨架照用户确认过的区块搭：每个区块一个容器（控件名就用区块名），位置、大小照抄下面的设计稿坐标，不要自己再量一遍挪动：\n${regionLines.replace(/^/gm, '   ')}` : ''}
 3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。每张切图写 ref（它在模板里的位置，设计稿像素 {"x","y","w","h"}，用 inspect_image / view_image 量准）：生成时面板从模板裁下这一块做参考（图片 CLI 当参考图，本机 ComfyUI 从这一块图生图），形状、材质、配色和模板一致；没写 ref 的只带整张模板参考。
 4. 每搭完一个区域就调 compare_template（region 写这个区域的设计稿坐标）和模板逐像素对比：按它给的偏移和差异热力图改位置、大小，再对比一次确认；全部搭完再整体对比一次（不写 region），最后 screenshot 截全图。位置、比例、层次不对的接着改，直到和模板一致；check 只是辅助，完成条件同下面「用 design 工具改设计」的最后一条（全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致）。
 - 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。

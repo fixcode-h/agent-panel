@@ -8,6 +8,7 @@ import {
   DesignImage,
   addToParts,
   emptyConcept,
+  layoutConfirmed,
   type ReplyPart,
   emptyRoot,
   importComponent,
@@ -1179,6 +1180,43 @@ async function runChat(
     run,
   }
   d.job = job
+  // 确认了模板、区块还没确认：和真实的一样这一轮只拆区块，停在原画面板上等用户调整
+  const tplId = d.concept?.approved ?? ''
+  if (tplId && !layoutConfirmed(d.layout, tplId)) {
+    await sleep(700)
+    const { X, Y } = d.designSize
+    const box = (name: string, x: number, y: number, w: number, h: number, note: string) => ({
+      id: randomId(),
+      name,
+      x: Math.round(x * X),
+      y: Math.round(y * Y),
+      w: Math.round(w * X),
+      h: Math.round(h * Y),
+      note,
+    })
+    d.layout = {
+      concept: tplId,
+      confirmed: false,
+      regions: [
+        box('TopBar', 0, 0, 1, 0.12, '标题和资源栏'),
+        box('MainPanel', 0.08, 0.16, 0.56, 0.72, '主要内容区'),
+        box('SidePanel', 0.68, 0.16, 0.26, 0.72, '详情和说明'),
+        box('BottomBar', 0, 0.9, 1, 0.1, '底部按钮'),
+      ],
+    }
+    d.rev++
+    d.messages.push({
+      id: randomId(),
+      role: 'agent',
+      text: '先把模板拆成了 4 个区块：顶栏、主内容区、右侧详情和底部按钮。在原画面板里拖动调整，确认后我照着区块搭界面。',
+      at: now(),
+      run,
+    })
+    d.updatedAt = now()
+    job.status = 'done'
+    flushPending(d)
+    return
+  }
   // 整体风格还没定、这次也没说：和真实的一样先问风格
   if (!d.style.trim() && !/风格|style|参考|截图/i.test(text)) {
     await sleep(600)
@@ -1616,6 +1654,8 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       root: body.root as Widget,
       components: body.components,
       animations: body.animations ?? d.animations ?? [],
+      // 用户在原画面板里调整、确认的区块
+      layout: body.layout ?? d.layout,
     })
     d.updatedAt = now()
     return d

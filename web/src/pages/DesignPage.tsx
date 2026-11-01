@@ -35,10 +35,12 @@ import {
   emptyConcept,
   hasMask,
   imageRevisionText,
+  layoutConfirmed,
   type Annotation,
   type ConceptImage,
   type DesignVersion,
   type DesignDoc,
+  type DesignLayout,
   type DesignImage,
   type ImageSource,
   type DesignKind,
@@ -493,9 +495,11 @@ function Designer({ id }: { id: string }) {
     // 只在数量、阶段变化时自动切换，用户自己切了不打扰
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [conceptCount, conceptsRunning])
+  // 确认了模板：区块也确认了（或跳过了）才切回界面；还在拆区块、等用户调整时留在原画面板上，区块画在模板图上
+  const layoutDone = !!concept.approved && layoutConfirmed(doc?.layout, concept.approved)
   useEffect(() => {
-    if (concept.approved) setView('ui')
-  }, [concept.approved])
+    if (concept.approved) setView(layoutDone ? 'ui' : 'concept')
+  }, [concept.approved, layoutDone])
   // 原画上的蒙版被清掉了（发出去了、涂完了又撤销）：「只重绘蒙版」就失效，不能留着
   const conceptMaskReady = !!doc?.annotations.some((a) => hasMask(a) && a.target.startsWith('concept:'))
   useEffect(() => {
@@ -1095,11 +1099,21 @@ function Designer({ id }: { id: string }) {
     if (!(await conceptAction('approve', cid)) || !cid) return
     // 原画上的标注用不上了；确认后马上让 AI 照着模板搭界面
     ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => !a.target.startsWith('concept:')) }), 'ann:sent')
-    setView('ui')
     setOverlay(false)
     // 对话栏收起时没人接这个请求：先打开，不然要等用户自己打开对话栏才发出去
     setChatOpen(true)
-    setRequest({ id: crypto.randomUUID(), text: t('按确认的原画模板搭界面，并生成切图') })
+    // 先拆区块：这一轮 AI 只把模板拆成区块，停在原画面板上让用户调整、确认（服务端按区块确认了没有决定这一轮做什么）
+    setRequest({ id: crypto.randomUUID(), text: t('把确认的模板拆成区块') })
+  }
+  /** 区块确认了（或者跳过）：回到画布，让 AI 照区块搭界面、出切图 */
+  const buildFromLayout = (layout: DesignLayout) => {
+    ed.change((d) => ({ ...d, layout: { ...layout, confirmed: true } }), 'layout:confirm')
+    setView('ui')
+    setChatOpen(true)
+    setRequest({
+      id: crypto.randomUUID(),
+      text: layout.regions.length ? t('按确认的区块搭界面，并生成切图') : t('按确认的原画模板搭界面，并生成切图'),
+    })
   }
 
   const exportFile = async (format: 'zip' | 'json' | 'react') => {
@@ -1532,6 +1546,13 @@ function Designer({ id }: { id: string }) {
                 }}
                 progress={conceptsRunning ? server.job?.concepts : undefined}
                 busy={ed.running}
+                layout={doc.layout}
+                designSize={doc.designSize}
+                onLayout={(layout, key) => ed.change((d) => ({ ...d, layout }), key)}
+                onConfirmLayout={() => doc.layout && buildFromLayout(doc.layout)}
+                onSkipLayout={() =>
+                  approvedConcept && buildFromLayout({ concept: approvedConcept.id, regions: [], confirmed: true })
+                }
               />
             )}
             <div ref={setBoardSwitch} className="absolute top-3 left-3 z-50 flex items-center gap-2">
