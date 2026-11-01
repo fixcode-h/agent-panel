@@ -8,6 +8,7 @@ import { extractJson } from '../shared/assist.ts'
 import { openDesignSession, type ConceptRequest } from './design-mcp.ts'
 import { DesignCaptures } from './design-capture.ts'
 import { HeadlessPages } from './headless.ts'
+import { resetStuckImages } from './design-images.ts'
 import { withToken } from './auth.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
 
@@ -212,6 +213,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
             ...d,
             root: migrateGrids(d.root),
             components: d.components.map((c) => ({ ...c, Root: migrateGrids(c.Root) })),
+            images: resetStuckImages(d.images),
           }),
         )
       } else log.warn('designs', `设计文件格式不对，跳过：${f}`)
@@ -295,6 +297,13 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     revision.trim() ? `${prompt}\n\n${revision.trim()}` : prompt
 
   const conceptOf = (d: Design): ConceptState => d.concept ?? emptyConcept()
+  /** 往对话里记一条系统提示（出错、改了做法）：Agent 执行里的错误都要让用户看到，不能只写日志 */
+  function systemNote(id: string, text: string, error = true) {
+    const dd = cache.get(id)
+    if (!dd) return
+    dd.messages.push({ id: randomUUID(), role: 'system', text, at: now(), ...(error ? { error: true } : {}) })
+    void save(dd)
+  }
   const conceptFile = (d: Design, id: string) => {
     const c = conceptOf(d).images.find((i) => i.id === id)
     return c ? path.join(imagesDir(d.id), c.file) : undefined
@@ -328,6 +337,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     }
     let first = -1
     let chain = Promise.resolve()
+    // 存图失败的原因：取到了图却存不下时，报给用户的是这个，不是笼统的「没有取到图片」
+    let saveError = ''
     const kind = source.kind === 'browser' || source.kind === 'local' ? source.kind : ('cli' as const)
     const add = (buf: Buffer, exact = false) => {
       chain = chain
@@ -339,9 +350,12 @@ export function designsApi(deps: { projects: Lister<Project> }) {
           set({ variants, selected: first })
           item.got++
         })
-        .catch((e) => log.warn('designs', '保存生成的图片失败', { error: (e as Error).message }))
+        .catch((e) => {
+          saveError = t('保存生成的图片失败：{error}', { error: (e as Error).message })
+          log.warn('designs', '保存生成的图片失败', { error: (e as Error).message })
+        })
     }
-    return { set, add, done: () => chain }
+    return { set, add, done: () => chain, error: () => saveError }
   }
 
   /** 生成一张图 */
@@ -407,7 +421,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               )
       for (const b of rest) sink.add(b)
       await sink.done()
-      if (!item.got) throw new Error(t('没有取到图片'))
+      if (!item.got) throw new Error(sink.error() || t('没有取到图片'))
       sink.set({ status: 'idle' })
       item.status = 'done'
       item.text = undefined
@@ -476,9 +490,12 @@ export function designsApi(deps: { projects: Lister<Project> }) {
           : await cliGenerate(prompt, count, job, onSheet, ref ? [ref] : [])
       for (const b of rest) onSheet(b)
     } catch (e) {
-      // 整张图都没出来：全部改成一张张生成，下面统一处理
+      // 整张图都没出来：全部改成一张张生成，下面统一处理。改做法要让用户知道原因，不能只写日志
       if (job.abort.signal.aborted) throw e
-      log.warn('designs', '图标表生成失败，改成一张张生成', { error: (e as Error).message })
+      const msg = (e as Error).message
+      log.warn('designs', '图标表生成失败，改成一张张生成', { error: msg })
+      systemNote(d.id, t('图集（{n} 个图标）生成失败：{error}。改成一张张生成', { n: imgs.length, error: msg }))
+      items.forEach((it) => (it.text = t('图集生成失败，改成单独生成')))
     }
     await Promise.all(sinks.map((x) => x.done()))
     const failed: string[] = []
@@ -494,7 +511,15 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       }
     }
     for (let i = 0; i < imgs.length; i++) {
-      if (missed.has(i)) continue
+      if (missed.has(i)) {
+        // 停止时还没轮到单独生成的图标：不能停在「生成中」，否则页面一直轮询
+        if (items[i].status === 'generating' || items[i].status === 'waiting') {
+          sinks[i].set({ status: 'failed', error: t('已停止') })
+          items[i].status = 'failed'
+          items[i].text = t('已停止')
+        }
+        continue
+      }
       sinks[i].set({ status: 'idle' })
       items[i].status = 'done'
       items[i].text = undefined
@@ -789,7 +814,6 @@ ${prompt}`,
       ? d.messages.filter((m) => m.id !== msgId && m.delivery?.how !== 'held')
       : d.messages.slice(0, -1)
     const project = await projectContext(d)
-    let extra = ''
     // 原画：有确认的模板就照着它做；没有模板、打开了「先出原画」时这一轮只出原画
     const concept = conceptOf(cache.get(d.id)!)
     const approved = concept.images.find((i) => i.id === concept.approved)
@@ -876,7 +900,8 @@ ${prompt}`,
     }
     const sess = mcp.session
     try {
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      // 只跑一次：检查不通过时不自动重跑（见下面 problems）
+      for (let attempt = 1; attempt <= 1; attempt++) {
         job.attempt = attempt
         job.text = ''
         job.parts = undefined
@@ -909,7 +934,7 @@ ${prompt}`,
           input:
             input.mode === 'analyze'
               ? // 分析：只读，提示词里已经带上控件树、图片、原画和最近的工具调用
-                buildDesignAnalysisPrompt(cache.get(d.id)!, history) + extra
+                buildDesignAnalysisPrompt(cache.get(d.id)!, history)
               : buildDesignPrompt(
                   cache.get(d.id)!,
                   history,
@@ -926,7 +951,7 @@ ${prompt}`,
                   [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
                   // 提示词里的原画张数要和 MCP 实际出图用的 conceptCount 一致（count 只是每张图几版）
                   mode ? { mode, state: concept, marks: conceptMarks, count: input.conceptCount } : undefined,
-                ) + extra,
+                ),
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
           timeoutMs: 0,
@@ -1031,12 +1056,8 @@ ${prompt}`,
         })
         let problems = ''
         if ('error' in res) {
-          // 检查没通过：让它接着用工具改一次（改过的都保留）
-          if (attempt === 1) {
-            extra = `\n\n## 你上一次的回复\n${text}\n\n用工具改完的设计还有问题：${res.error}\n请用 design 工具接着改（改过的已经保留），改好后再回复说明。`
-            continue
-          }
-          // 两次都没通过：改好的部分不丢，照样存下，把问题告诉用户
+          // 检查没通过：改好的部分不丢，照样存下，把问题告诉用户，由用户点「让 AI 修」决定要不要再跑一轮。
+          // 以前这里自动再调一次 CLI：多跑一整轮、用户没得选，而且第二次给的还是改之前的树（违反「不悄悄重试」）
           problems = res.error
           const ok = AiDesignResult.safeParse({ ...raw, ops: undefined })
           if (!ok.success) throw new Error(z.prettifyError(ok.error))
@@ -1104,6 +1125,8 @@ ${prompt}`,
             text: `${t('检查还有这些问题：')}\n${problems}`,
             at: now(),
             error: true,
+            // 页面在这条下面放「让 AI 修」按钮，点了才发一轮新的对话
+            fixable: true,
           })
         await save(cur)
         // 存下来了，页面改用正式的设计
@@ -1264,10 +1287,18 @@ ${prompt}`,
     // 这条消息真的开始处理了：从「这一轮结束后自动处理」改成「按新的一轮处理」
     setDelivery(cur, next.id, 'next')
     void beginChat(cur, next.input, true, next.id).catch((e) => {
-      // 没能开始（刚好又有别的请求占了位）：放回队首，交付状态改回去，等这一轮结束时再接着处理
-      pendingTurns.set(d.id, [next, ...(pendingTurns.get(d.id) ?? [])])
-      setDelivery(cur, next.id, 'held')
-      log.warn('designs', '接着处理这一轮收不下的消息失败', { id: d.id, error: (e as Error).message })
+      const msg = (e as Error).message
+      log.warn('designs', '接着处理这一轮收不下的消息失败', { id: d.id, error: msg })
+      // 刚好又有别的请求占了位：放回队首，交付状态改回去，等那一轮结束时再接着处理
+      if (jobs.get(d.id)?.status === 'running' || starting.has(d.id)) {
+        pendingTurns.set(d.id, [next, ...(pendingTurns.get(d.id) ?? [])])
+        setDelivery(cur, next.id, 'held')
+        return
+      }
+      // 真的开始不了（存文件、存版本出错）：没有正在跑的一轮会再来接它，放回去只会一直停在「结束后自动处理」。
+      // 标成没送出去，把原因写进对话，用户可以重新发
+      setDelivery(cur, next.id, 'lost')
+      systemNote(d.id, t('这条消息没能开始处理：{error}。请重新发送', { error: msg }))
     })
   }
 
@@ -1372,6 +1403,8 @@ ${prompt}`,
     progress.text = undefined
     if (!progress.got)
       throw new Error(t('原画没有生成出来：{error}', { error: errors.join('\n') || t('没有取到图片') }))
+    // 有的组出了图、有的组失败了：失败的也要告诉用户（以前只要出了一张，其余的错误就丢掉了）
+    if (errors.length) systemNote(d.id, t('有几组原画没有生成出来：{error}', { error: errors.join('\n') }))
   }
 
   async function readVersions(id: string): Promise<DesignVersion[]> {

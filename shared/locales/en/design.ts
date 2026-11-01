@@ -583,7 +583,6 @@ export const EN_DESIGN: Record<string, string> = {
   '{f} 已跳过：{why}': '{f} skipped: {why}',
   'CLI 配置有问题': 'Some CLI config files have problems',
   '{cli} 没有完成这一轮就退出了': '{cli} exited before finishing this turn',
-  '检查还有问题，正在接着改': 'The check found issues, still fixing',
   '{cli} 用不了设计工具，请换一个 Agent': '{cli} cannot use the design tools. Please switch to another agent',
   '{cli} 连不上设计工具，请升级到最新版：{detail}':
     '{cli} could not connect to the design tools. Please update it to the latest version: {detail}',
@@ -755,6 +754,16 @@ export const EN_DESIGN: Record<string, string> = {
   // AI 截图（screenshot 工具）
   '截图失败：设计页面没有打开。先打开这个设计页（浏览器标签页在后台也可以），再让我截图':
     'Screenshot failed: the design page is not open. Open this design page first (it can be in a background tab), then ask for the screenshot again',
+  '修好检查发现的这些问题：': 'Fix these issues found by the check:',
+  '让 AI 修': 'Let AI fix these',
+  '面板重启，出图中断了，可以重新生成':
+    'The panel restarted and image generation was interrupted. You can generate it again',
+  '保存生成的图片失败：{error}': 'Failed to save the generated image: {error}',
+  '图集（{n} 个图标）生成失败：{error}。改成一张张生成':
+    'The icon sheet ({n} icons) failed to generate: {error}. Generating them one by one instead',
+  '图集生成失败，改成单独生成': 'Icon sheet failed, generating separately',
+  '这条消息没能开始处理：{error}。请重新发送': 'This message could not be processed: {error}. Please send it again',
+  '有几组原画没有生成出来：{error}': 'Some concept images could not be generated: {error}',
   未命名设计: 'Untitled design',
   'AI 刚改过这个设计，你刚才的修改没有存上；按撤销可以找回':
     'The AI just changed this design, so your latest edits were not saved. Press Undo to get them back',

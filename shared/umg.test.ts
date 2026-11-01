@@ -128,6 +128,18 @@ test('assignImage：没有九宫格的图不写 Margin', () => {
   assert.deepEqual(b.ImageSize, { X: 96, Y: 96 })
 })
 
+test('assignImage：纯色画刷第一次套图时着色改回白色，已经有图的保留用户的着色', () => {
+  // 按钮默认的纯色画刷是 #3A3A3A：套图后不改回白色，UE 里图片乘上它几乎是黑的
+  const w = assignImage(border({ ...brush(), TintColor: '#3A3A3AFF' }), { id: 'frame', width: 64, height: 64 })
+  assert.equal((w.Properties.Background as any).TintColor, '#FFFFFFFF')
+  const tinted = assignImage(border({ ...brush(), ResourceObject: 'img:old', TintColor: '#FF0000FF' }), {
+    id: 'frame',
+    width: 64,
+    height: 64,
+  })
+  assert.equal((tinted.Properties.Background as any).TintColor, '#FF0000FF')
+})
+
 test('clampWidgetSize：宽高不小于最小尺寸，非法值也按最小尺寸算', () => {
   assert.equal(MIN_WIDGET_SIZE, 8)
   assert.equal(clampWidgetSize(0), MIN_WIDGET_SIZE)

@@ -39,6 +39,8 @@ interface Ctx {
   comps: Map<string, Component>
   data?: DesignData
   out: LayoutRect[]
+  /** ScaleBox 给子控件加的缩放：套在子控件的位置上（applyTransforms 里和 RenderTransform 一起算） */
+  childTf: Map<Widget, Mat>
 }
 
 // ---------- 文字 ----------
@@ -224,6 +226,12 @@ function placeholderText(w: Widget, ctx: Ctx): Size {
   return { w: m.w, h: m.h, est: true }
 }
 
+/**
+ * 开了自动换行、但不横向撑满的文字：按插槽宽度收窄再折行（umg-render 里是 flex 0 1 auto），
+ * UE 里也是按槽位宽度换行。以前是 0 0 auto，放进窄的竖排里永远一行、溢出去
+ */
+const wrapShrink = (w: Widget, s: Spec) => w.Type === 'TextBlock' && !!w.Properties?.AutoWrapText && !s.growX
+
 const clampW = (s: Spec, v: number) => Math.min(s.maxW ?? Infinity, Math.max(s.minW ?? 0, v))
 const clampH = (s: Spec, v: number) => Math.min(s.maxH ?? Infinity, Math.max(s.minH ?? 0, v))
 
@@ -242,8 +250,8 @@ function outerContent(c: Widget, parent: Widget, ctx: Ctx, width?: number): Size
   const p = slotPad(st, c.Slot, parent)
   const { fillX, fillY } = fills(st, c.Slot)
   const spec = specOf(c, fillX, fillY, ctx)
-  // 不横向撑满的本体（左 / 中 / 右对齐）宽度就是内容宽，文字不按外壳宽度折行（umg-render 里是 0 0 auto）
-  const inner = width === undefined || !spec.growX ? undefined : Math.max(0, width - p.l - p.r)
+  // 不横向撑满的本体（左 / 中 / 右对齐）宽度就是内容宽；只有开了自动换行的文字能收窄到外壳宽度再折行（wrapShrink）
+  const inner = width === undefined || !(spec.growX || wrapShrink(c, spec)) ? undefined : Math.max(0, width - p.l - p.r)
   const b = bodyContent(c, spec, ctx, inner)
   return { w: b.w + p.l + p.r, h: b.h + p.t + p.b, est: b.est }
 }
@@ -391,8 +399,16 @@ function contentOf(w: Widget, ctx: Ctx, width?: number): Size {
       // 换行的列表（TileView、Wrap）按一行 / 一列排开估，实际会按宽度折
       return e.vertical ? { w: cross, h: main, est: e.wrap } : { w: main, h: cross, est: e.wrap }
     }
+    case 'ScaleBox': {
+      // ScaleBox 的期望尺寸：ScaleToFit 等按子控件的期望尺寸（缩放 1 倍）；UserSpecified 乘上指定的倍数
+      const c = list[0]
+      if (!c) return { w: 0, h: 0 }
+      const o = outerContent(c, w, ctx)
+      const k = p.Stretch === 'UserSpecified' ? Number(p.UserSpecifiedScale ?? 1) || 1 : 1
+      return { w: o.w * k, h: o.h * k, est: o.est }
+    }
     default: {
-      // Overlay、Border、Button、SizeBox、ScaleBox、WidgetSwitcher 以及只有一个子控件的容器：取最大的那个
+      // Overlay、Border、Button、SizeBox、WidgetSwitcher 以及只有一个子控件的容器：取最大的那个
       const shown = w.Type === 'WidgetSwitcher' ? switcherChild(w) : list
       let mw = 0
       let mh = 0
@@ -476,7 +492,11 @@ function placeIn(
   const cw = Math.max(0, area.w - pad.l - pad.r)
   const ch = Math.max(0, area.h - pad.t - pad.b)
   const s = specOf(w, fillX, fillY, ctx)
-  const wd = s.growX ? clampW(s, cw) : bodyContent(w, s, ctx).w
+  const wd = s.growX
+    ? clampW(s, cw)
+    : wrapShrink(w, s)
+      ? Math.min(bodyContent(w, s, ctx).w, cw)
+      : bodyContent(w, s, ctx).w
   const content = bodyContent(w, s, ctx, wd)
   const ht = s.stretchY && s.fh === undefined ? clampH(s, ch) : content.h
   const canvas = slotType === 'CanvasPanelSlot' || !slotType
@@ -560,6 +580,27 @@ function arrange(w: Widget, box: Box, ctx: Ctx, depth: number) {
           ctx,
           depth + 1,
         )
+      return
+    }
+    case 'ScaleBox': {
+      // 子控件按期望尺寸摆在中间，再整体缩放（和 umg-render 的 ScaleBox 一致）
+      const c = list[0]
+      if (!c) return
+      const o = outerContent(c, w, ctx)
+      const [sx, sy] = scaleBoxFactor(w, inner, o)
+      const area: Box = {
+        x: inner.x + (inner.w - o.w) / 2,
+        y: inner.y + (inner.h - o.h) / 2,
+        w: o.w,
+        h: o.h,
+        est: inner.est || o.est,
+      }
+      if (sx !== 1 || sy !== 1) {
+        const cx = inner.x + inner.w / 2
+        const cy = inner.y + inner.h / 2
+        ctx.childTf.set(w, [sx, 0, 0, sy, cx - sx * cx, cy - sy * cy])
+      }
+      placeIn(c, st, w, area, ctx, depth + 1)
       return
     }
     case 'ListView':
@@ -686,6 +727,58 @@ function flowLayout(w: Widget, list: Widget[], B: Box, ctx: Ctx, depth: number) 
   }
 }
 
+/**
+ * ScaleBox 的缩放倍数：Stretch（ScaleToFit 取小、ScaleToFill 取大、ScaleToFitX / Y 单轴、Fill 两轴各自、None 不缩放、
+ * UserSpecified 按 UserSpecifiedScale），StretchDirection 的 DownOnly / UpOnly 只缩小 / 只放大。umg-render 用同一个函数
+ */
+export function scaleBoxFactor(
+  w: Widget,
+  box: { w: number; h: number },
+  child: { w: number; h: number },
+): [number, number] {
+  const p = w.Properties ?? {}
+  const fx = child.w > 0 ? box.w / child.w : 1
+  const fy = child.h > 0 ? box.h / child.h : 1
+  let k: [number, number]
+  switch (p.Stretch ?? 'ScaleToFit') {
+    case 'None':
+      k = [1, 1]
+      break
+    case 'Fill':
+      k = [fx, fy]
+      break
+    case 'ScaleToFill':
+      k = [Math.max(fx, fy), Math.max(fx, fy)]
+      break
+    case 'ScaleToFitX':
+      k = [fx, fx]
+      break
+    case 'ScaleToFitY':
+      k = [fy, fy]
+      break
+    case 'UserSpecified': {
+      const u = Number(p.UserSpecifiedScale ?? 1) || 1
+      k = [u, u]
+      break
+    }
+    default:
+      k = [Math.min(fx, fy), Math.min(fx, fy)]
+  }
+  const dir = p.StretchDirection ?? 'Both'
+  if (dir === 'DownOnly') k = [Math.min(1, k[0]), Math.min(1, k[1])]
+  else if (dir === 'UpOnly') k = [Math.max(1, k[0]), Math.max(1, k[1])]
+  return k.map((v) => (Number.isFinite(v) && v > 0 ? v : 1)) as [number, number]
+}
+
+/** 一个控件按内容的尺寸（期望尺寸，不含插槽）：umg-render 给 ScaleBox 定子控件大小时用 */
+export function desiredSize(
+  w: Widget,
+  o: { components: Component[]; data?: DesignData; parent?: Widget },
+): { w: number; h: number } {
+  const ctx: Ctx = { comps: new Map(o.components.map((c) => [c.Name, c])), data: o.data, out: [], childTf: new Map() }
+  return o.parent ? outerContent(w, o.parent, ctx) : bodyContent(w, specOf(w, false, false, ctx), ctx)
+}
+
 // ---------- 变换 ----------
 
 type Mat = [number, number, number, number, number, number]
@@ -734,7 +827,7 @@ function bounds(m: Mat, r: LayoutRect): LayoutRect {
 }
 
 /** 布局算完后按树的顺序套上各层的变换：父控件的变换也带着子控件走 */
-function applyTransforms(root: Widget, rects: LayoutRect[]) {
+function applyTransforms(root: Widget, rects: LayoutRect[], childTf: Map<Widget, Mat>) {
   let i = 0
   const visit = (w: Widget, m: Mat, depth: number) => {
     const r = rects[i++]
@@ -743,8 +836,9 @@ function applyTransforms(root: Widget, rects: LayoutRect[]) {
     const mm = own ? mul(m, own) : m
     if (mm !== ID) rects[i - 1] = bounds(mm, r)
     if (depth > 40 || ['ListView', 'TileView', 'DynamicEntryBox', 'UserWidget'].includes(w.Type)) return
-    const shown = w.Type === 'WidgetSwitcher' ? switcherChild(w) : kids(w)
-    for (const c of shown) visit(c, mm, depth + 1)
+    const shown = w.Type === 'WidgetSwitcher' ? switcherChild(w) : w.Type === 'ScaleBox' ? kids(w).slice(0, 1) : kids(w)
+    const inner = childTf.get(w)
+    for (const c of shown) visit(c, inner ? mul(mm, inner) : mm, depth + 1)
   }
   visit(root, ID, 0)
 }
@@ -767,9 +861,9 @@ export function layoutTree(
   scan(root)
   if (web) return undefined
   if (!visible(root)) return []
-  const ctx: Ctx = { comps: new Map(o.components.map((c) => [c.Name, c])), data: o.data, out: [] }
+  const ctx: Ctx = { comps: new Map(o.components.map((c) => [c.Name, c])), data: o.data, out: [], childTf: new Map() }
   placeIn(root, undefined, undefined, { x: 0, y: 0, w: o.size.X, h: o.size.Y }, ctx, 0)
-  applyTransforms(root, ctx.out)
+  applyTransforms(root, ctx.out, ctx.childTf)
   return ctx.out
 }
 

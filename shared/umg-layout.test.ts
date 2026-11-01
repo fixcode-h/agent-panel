@@ -115,3 +115,16 @@ test('横排里 flex-grow 合计不到 1 时只分走对应比例的剩余空间
   const out = layoutTree(root, { size: { X: 100, Y: 10 }, components: [] })!
   assert.equal(out.find((x) => x.name === 'Half')!.w, 50)
 })
+
+test('ScaleBox 按比例缩放子控件；自动换行的文字按插槽宽度折行', () => {
+  const at = rects('缩放和换行')
+  // 100×50 放进 400×400 的 ScaleToFit：放大 4 倍成 400×200，上下居中
+  assert.deepEqual(at('FitImg'), [20, 120, 400, 200])
+  // DownOnly 只缩小不放大：保持 100×50 居中
+  assert.deepEqual(at('DownImg'), [600, 195, 100, 50])
+  // Fill：两个方向各自拉伸
+  assert.deepEqual(at('StretchImg'), [20, 440, 200, 100])
+  // 左对齐的长文字在 200 宽的竖排里折成两行，后面的控件跟着往下排
+  assert.deepEqual(at('Wrapped').slice(2), [200, 38.4])
+  assert.equal(at('Below')[1], 478.4)
+})

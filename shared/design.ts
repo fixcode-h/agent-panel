@@ -181,6 +181,8 @@ export const DesignMessage = z.object({
   images: z.array(z.string()).optional(),
   run: z.object({ cli: z.string(), model: z.string(), effort: z.string() }).optional(),
   error: z.boolean().optional(),
+  /** 检查没通过的问题：页面在下面放「让 AI 修」按钮 */
+  fixable: z.boolean().optional(),
   /** 用户这条消息带的标注 */
   annotations: z.array(Annotation).optional(),
   /** 用户这条消息带的附件（参考图、文档） */

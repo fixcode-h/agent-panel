@@ -293,7 +293,23 @@ export function webExport(d: {
   const hover = new Map<string, Css>()
   const tablet = new Map<string, Css>()
   const mobile = new Map<string, Css>()
-  const html = (n: Node, indent: string): string => {
+  // 同一个类名可能对应几种样式：子控件用在好几个地方时，根控件的插槽（绝对定位、对齐、撑满）每处不同。
+  // 以前按类名只记第一处的样式，其余实例都用它（一个绝对定位、一个在流里，导出后两个叠在一起）；
+  // 现在样式不同的实例各自一个带编号的类名（Card__Root--2），样式相同的照旧共用
+  const variants = new Map<string, string[]>()
+  const classOf = (n: Node) => {
+    const sig = JSON.stringify(n.styles)
+    const list = variants.get(n.cls) ?? []
+    let i = list.indexOf(sig)
+    if (i < 0) {
+      list.push(sig)
+      variants.set(n.cls, list)
+      i = list.length - 1
+    }
+    return i ? `${n.cls}--${i + 1}` : n.cls
+  }
+  const html = (node: Node, indent: string): string => {
+    const n = { ...node, cls: classOf(node) }
     if (!base.has(n.cls)) {
       base.set(n.cls, n.styles.base)
       if (n.styles.hover && Object.keys(n.styles.hover).length) hover.set(n.cls, n.styles.hover)
@@ -432,14 +448,8 @@ export function webReactExport(d: {
   const nodes = buildNodes({ ...d, file: (id) => (d.file(id) ? `__img:${id}` : undefined) })
   const used = new Map<string, Node>()
   const str = (v: unknown) => JSON.stringify(String(v ?? ''))
-  const jsx = (n: Node, indent: string, inComponent?: string): string => {
-    // 子控件展开的地方换成组件
-    if (n.component && n.component !== inComponent) {
-      if (!used.has(n.component)) used.set(n.component, n)
-      return `${indent}<${pascal(n.component)} />`
-    }
-    const { w, p } = n
-    const className = [
+  const classNameOf = (n: Node) =>
+    [
       tw(n.styles.base),
       tw(n.styles.tablet, 'max-lg:'),
       tw(n.styles.mobile, 'max-md:'),
@@ -447,9 +457,24 @@ export function webReactExport(d: {
     ]
       .filter(Boolean)
       .join(' ')
+  /** 每个子控件组件根控件的默认类名（第一处用到时的样子） */
+  const rootClass = new Map<string, string>()
+  const jsx = (n: Node, indent: string, inComponent?: string, asRoot = false): string => {
+    // 子控件展开的地方换成组件；这一处根控件的样式（插槽决定的定位、对齐）和组件默认的不一样时，用 className 传进去
+    if (n.component && n.component !== inComponent) {
+      const mine = classNameOf(n)
+      if (!used.has(n.component)) {
+        used.set(n.component, n)
+        rootClass.set(n.component, mine)
+      }
+      const own = rootClass.get(n.component) === mine ? '' : ` className=${str(mine)}`
+      return `${indent}<${pascal(n.component)}${own} />`
+    }
+    const { w, p } = n
+    const className = classNameOf(n)
     const bg = imgId(p.BackgroundImage) && imgVar(imgId(p.BackgroundImage))
     const marks = runs.length ? ` data-an=${str(n.an)}${n.component ? ` data-ac=${str(n.component)}` : ''}` : ''
-    const attrs = `className=${str(className)}${marks}${bg ? ` style={{ backgroundImage: \`url(\${${bg}})\` }}` : ''}${p.Href ? ` href=${str(p.Href)}` : ''}`
+    const attrs = `className=${asRoot ? '{className}' : str(className)}${marks}${bg ? ` style={{ backgroundImage: \`url(\${${bg}})\` }}` : ''}${p.Href ? ` href=${str(p.Href)}` : ''}`
     const kids = n.kids.map((c) => jsx(c, indent + '  ', inComponent)).join('\n')
     switch (w.Type) {
       case 'Frame': {
@@ -484,7 +509,10 @@ export function webReactExport(d: {
   const parts: string[] = []
   for (let i = 0; i < used.size; i++) {
     const [name, n] = [...used][i]
-    parts.push(`export function ${pascal(name)}() {\n  return (\n${jsx(n, '    ', name)}\n  )\n}`)
+    // 根控件的类名可以由用到它的地方传进来（各处的插槽不同），不传就用默认的
+    parts.push(
+      `export function ${pascal(name)}({ className = ${str(rootClass.get(name) ?? classNameOf(n))} } = {}) {\n  return (\n${jsx(n, '    ', name, true)}\n  )\n}`,
+    )
   }
   const head = [
     ...(runs.length ? ["import { useEffect } from 'react'", "import { animRuntime } from './ui-anim'"] : []),

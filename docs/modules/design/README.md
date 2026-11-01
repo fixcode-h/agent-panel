@@ -51,6 +51,17 @@
 | `web/src/components/design/DesignChat.tsx` | 对话、发送、附件、控件引用、提问面板                                                          |
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
 
+## 画布保真、网页导出与错误显示（2026-11-01，审查第二批）
+
+- 画刷改成控件里的一层（`umg-render.tsx` 的 `BrushLayer`，`z-index:-1`，控件本体 `isolation:isolate`）：画刷的透明度只作用在这一层，半透明面板里的文字不再跟着变淡；九宫格用 border-image 画纹理、再叠一层 `mix-blend-mode:multiply` 的颜色（`-webkit-mask-box-image` 同样的切片当遮罩），着色和 UE 一样是图片 × 颜色；非白色着色的 alpha 作为整层的不透明度。`assignImage` 给纯色画刷第一次套图时着色改回白色（按钮默认 #3A3A3A，套图后在 UE 里几乎是黑的），原来就有图的保留着色。
+- ScaleBox 真缩放：子控件按期望尺寸（`umg-layout.ts` 的 `desiredSize`）画在中间，再按 `scaleBoxFactor`（Stretch、StretchDirection）整体缩放；ScaleBox 自己的大小在 `useLayoutEffect` 里量（绘制前，截图拿到的是缩放好的）。`umg-layout.ts` 用同一个函数，子控件的位置把缩放算进去（`childTf`）。
+- 开了自动换行、不横向撑满的 TextBlock 按插槽宽度收窄再折行（`flex: 0 1 auto`，layout 里是 `wrapShrink`）；以前永远一行、溢出去。
+- RenderTransform 的平移、旋转、缩放写成 CSS 单独的 `translate` / `rotate` / `scale`（斜切留在 `transform`）：动画（`anim.ts` 的 `cssProp`）写同样的属性，播放时替换静态值，和 UE 的 WidgetAnimation 一样是绝对值；`RenderTransformPivot` 写了就生效，不再要求先有静态变换。
+- 网页导出（`shared/web.ts`）：同一个子控件用在几处、插槽不同（一个绝对定位、一个在流里）时，HTML 每种样式一个类名（`Card__Root--2`）；React 的组件根控件类名由 `className` 传入，和默认不同的那一处才传。
+- 检查没通过不再自动重跑一轮 CLI：改好的照样存下，问题写成 `fixable` 的系统消息，对话里在它下面放「让 AI 修」，点了才发一轮新的对话。
+- 不再只写日志的错误：启动时把上次没出完的图（generating / pending）改成失败并写明原因（`server/design-images.ts`）；图集整张失败、改成一张张出时在对话里说明；停止时没轮到的图标标「已停止」；存图失败报真正的原因；有几组原画失败时也提示；排队消息真的开始不了时标成没送出去并写进对话（`systemNote`）。
+- 回归：`shared/umg-layout.test.ts` 和对照分片的「缩放和换行」样例、`shared/umg.test.ts` 的套图着色、`shared/web.test.ts`、`server/design-images.test.ts`、`scripts/e2e/06-assist.mjs`「检查没通过：不自动重跑」。
+
 ## 保存冲突、插槽简写与快捷键（2026-11-01，审查第一批）
 
 - 保存冲突：`PUT /designs/:id` 在 AI 正在改树（`starting` 或 job 在 `design` 阶段）、或页面带的 `baseRev` 比服务端 `rev` 旧时，**不收结构**（控件树、子控件、动画、画板数据、尺寸、风格），标题、图片、标注照常存，响应带 `rejected: 'ai' | 'stale'`。页面（`useDesignEditor.ts`）自动保存带 `baseRev`，被拒时提示并换成服务端的设计（自己的改动在撤销栈里）；AI 改树期间 `change` 直接挡下结构修改并提示。以前两边会整棵互相覆盖。
