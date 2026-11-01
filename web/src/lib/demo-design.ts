@@ -3,6 +3,7 @@
  * AI 对话按关键词套用示例界面（主菜单 / 背包），图片用 canvas 画出示意图，模拟「生成」的过程。
  */
 const randomId = () => crypto.randomUUID()
+import { treeChanges } from '@shared/design-diff'
 import {
   DesignImage,
   addToParts,
@@ -1271,6 +1272,8 @@ async function runChat(
     job.text += ch
     job.outChars += 4
   }
+  // 和真实的一样记下这一轮改了哪些控件，回复下面列出来
+  const startTrees = { root: d.root, components: d.components }
   d.root = normalizeTree(tpl.root)
   d.components = tpl.components.map((c) => ({ ...c, Root: normalizeTree(c.Root) }))
   d.data = DesignData.parse(tpl.data)
@@ -1290,6 +1293,7 @@ async function runChat(
     images: tpl.images.map((i) => i.id),
     run,
     parts,
+    changes: treeChanges(startTrees, { root: d.root, components: d.components }),
   })
   d.updatedAt = now()
   if (source.kind !== 'none')

@@ -190,6 +190,24 @@ export const DesignMessage = z.object({
   error: z.boolean().optional(),
   /** 检查没通过的问题：页面在下面放「让 AI 修」按钮 */
   fixable: z.boolean().optional(),
+  /** AI 这一轮改了哪些控件（design-diff.ts 的 treeChanges）：回复下面列出来，点一条选中那个控件 */
+  changes: z
+    .object({
+      list: z.array(
+        z.object({
+          kind: z.enum(['add', 'remove', 'change', 'rename']),
+          tree: z.string(),
+          name: z.string(),
+          type: z.string(),
+          keys: z.array(z.string()).optional(),
+          from: z.string().optional(),
+        }),
+      ),
+      total: z.number(),
+    })
+    .optional(),
+  /** 这一轮开始前自动存的版本：「撤销这一轮」恢复它 */
+  undoVersion: z.string().optional(),
   /** 用户这条消息带的标注 */
   annotations: z.array(Annotation).optional(),
   /** 用户这条消息带的附件（参考图、文档） */

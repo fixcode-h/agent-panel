@@ -103,6 +103,7 @@ import { Hierarchy, Palette } from '@/components/design/Hierarchy'
 import type { WidgetLayer, WidgetMenuActions } from '@/components/design/WidgetMenu'
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagePreview, ImagesPanel, readFile, type WidgetRef } from '@/components/design/ImagesPanel'
+import { designStages, type Stage, type StageId } from '@/lib/design-stages'
 import { ComponentsPanel } from '@/components/design/ComponentsPanel'
 import { VersionCompare, VersionsButton } from '@/components/design/Versions'
 import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/web'
@@ -1170,6 +1171,23 @@ function Designer({ id }: { id: string }) {
             hasTemplate={!!concept.approved}
             request={request}
             onRequestDone={() => setRequest(undefined)}
+            onPickWidget={(tree, name) => {
+              const root = tree ? doc.components.find((c) => c.Name === tree)?.Root : doc.root
+              let hit: Widget | undefined
+              if (root) walk(root, (w) => !hit && w.Name === name && (hit = w))
+              if (!hit) return toast(t('{name} 已经不在了', { name }))
+              setView('ui')
+              jumpTo({ target: tree, id: hit.id, name: hit.Name, type: hit.Type })
+            }}
+            onUndoRound={(vid) =>
+              void api
+                .restoreDesignVersion(id, vid)
+                .then((d) => {
+                  ed.absorb(d)
+                  toast.success(t('已撤销这一轮的修改；撤销前的样子存在「版本」里'))
+                })
+                .catch((e) => toast.error(t('撤销失败：{error}', { error: (e as Error).message })))
+            }
             inpaint={inpaint}
             onInpaint={setInpaint}
             conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}
@@ -1197,9 +1215,32 @@ function Designer({ id }: { id: string }) {
               {titleField}
             </div>
           )}
-          {(conceptCount > 0 || conceptsRunning) && (
-            <StageSteps value={view} onChange={setView} conceptDone={!!approvedConcept} />
-          )}
+          <StageSteps
+            stages={designStages({
+              style: doc.style,
+              concepts: conceptCount,
+              approved: !!approvedConcept,
+              hasTree: !!(doc.root.Children?.length || doc.components.length),
+              images: doc.images.map((i) => ({ status: i.status, variants: i.variants.length })),
+              running: conceptsRunning
+                ? 'concepts'
+                : ed.aiEditing
+                  ? 'design'
+                  : server.job?.status === 'running' && server.job.phase === 'images'
+                    ? 'images'
+                    : undefined,
+            })}
+            onPick={(id) => {
+              if (id === 'concept' || id === 'template') {
+                if (conceptCount || conceptsRunning) setView('concept')
+                else setChatOpen(true)
+              } else if (id === 'ui' || id === 'export') setView('ui')
+              else if (id === 'slices') {
+                setView('ui')
+                setTab('images')
+              } else if (id === 'style') setChatOpen(true)
+            }}
+          />
           {chatOpen && <span className="flex-1" />}
           <SizeButton doc={doc} onChange={(designSize) => ed.change((d) => ({ ...d, designSize }), 'size')} />
           <StyleButton
@@ -1817,44 +1858,36 @@ function Designer({ id }: { id: string }) {
 }
 
 /**
- * 画板标题行左边的阶段条（照设计稿）：原画 → 界面两步，带序号圆点和连线。
- * 只是「显示原画还是界面」的切换，步骤顺序不强制：任何时候都能点回原画；
- * 确认了模板、停在界面时原画那一步打勾
+ * 画板标题行左边的流程条：风格 → 原画 → 模板 → 界面 → 切图 → 导出（状态由 design-stages.ts 推出来）。
+ * 以前只有「原画—界面」两步，而且没出过原画时整条都不显示，用户看不到完整流程。
+ * 顺序不强制：点原画 / 模板切到原画面板，点界面 / 切图回到画布（切图再打开「图片」页签）；
+ * 当前这一步高亮，悬停看下一步做什么；窄的时候（@container）只留当前这一步的名字，其余只剩圆点
  */
-function StageSteps({
-  value,
-  onChange,
-  conceptDone,
-}: {
-  value: 'concept' | 'ui'
-  onChange: (v: 'concept' | 'ui') => void
-  conceptDone: boolean
-}) {
-  const steps = [
-    { id: 'concept' as const, label: t('原画') },
-    { id: 'ui' as const, label: t('界面') },
-  ]
-  const cur = steps.findIndex((s) => s.id === value)
+function StageSteps({ stages, onPick }: { stages: Stage[]; onPick: (id: StageId) => void }) {
+  const cur = stages.find((s) => s.state === 'current' || s.state === 'busy')
   return (
-    <nav aria-label={t('阶段')} className="flex shrink-0 items-center gap-0.5">
-      {steps.map((s, i) => {
-        const on = i === cur
-        const done = i < cur && conceptDone
+    <nav aria-label={t('流程')} className="flex shrink-0 items-center gap-0.5">
+      {stages.map((s, i) => {
+        const on = s === cur
+        const done = s.state === 'done'
         return (
           <div key={s.id} className="flex items-center gap-0.5">
-            {i > 0 && (
-              <span
-                aria-hidden
-                className={cn('h-[1.5px] w-3.5', i <= cur && conceptDone ? 'bg-success' : 'bg-line-strong')}
-              />
-            )}
+            {i > 0 && <span aria-hidden className={cn('h-[1.5px] w-2.5', done ? 'bg-success' : 'bg-line-strong')} />}
             <button
               type="button"
               aria-current={on ? 'step' : undefined}
-              onClick={() => onChange(s.id)}
+              data-stage={s.id}
+              data-state={s.state}
+              title={
+                s.state === 'skipped'
+                  ? t('{name}：跳过了', { name: s.label })
+                  : on
+                    ? t('下一步：{hint}', { hint: s.hint })
+                    : s.label
+              }
+              onClick={() => onPick(s.id)}
               className={cn(
-                'flex h-8 cursor-pointer items-center gap-[7px] rounded-xl px-2.5 text-body font-semibold whitespace-nowrap transition-colors',
-                // 当前这一步：比面板低一档的底色 + 一点内阴影，像按下去的样子
+                'flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] px-2 text-[0.8125rem] font-semibold whitespace-nowrap transition-colors',
                 on
                   ? 'bg-panel text-fg shadow-[inset_0_1px_2px_rgb(0_0_0/0.08)]'
                   : cn('hover:bg-sel', done ? 'text-fg' : 'text-subtle'),
@@ -1862,18 +1895,28 @@ function StageSteps({
             >
               <span
                 className={cn(
-                  // 标题行窄的时候（@container）圆点先让位，只留步骤名
-                  'hidden h-5 w-5 shrink-0 place-items-center rounded-full text-caption tabular-nums @min-[600px]:grid',
+                  'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[0.625rem] tabular-nums',
                   done
                     ? 'bg-success text-on-primary'
                     : on
                       ? 'bg-fg text-bg'
-                      : 'text-subtle shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
+                      : s.state === 'skipped'
+                        ? 'text-subtle/70 shadow-[inset_0_0_0_1.5px_var(--line)]'
+                        : 'text-subtle shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
                 )}
               >
-                {done ? <Check className="h-3 w-3" strokeWidth={2.6} /> : i + 1}
+                {done ? (
+                  <Check className="h-3 w-3" strokeWidth={2.6} />
+                ) : s.state === 'busy' ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : s.state === 'skipped' ? (
+                  '–'
+                ) : (
+                  i + 1
+                )}
               </span>
-              {s.label}
+              {/* 窄的时候只留当前这一步的名字 */}
+              <span className={cn(on ? '' : 'hidden @min-[760px]:inline')}>{s.label}</span>
             </button>
           </div>
         )

@@ -400,6 +400,15 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     let d = await waitJob(design.id)
     assert.equal(d.job.status, 'done', JSON.stringify(d.job))
     assert.equal(d.rev, 1)
+    // 回复上记下这一轮改了哪些控件，以及「撤销这一轮」要恢复的版本
+    const reply = d.messages.findLast((m) => m.role === 'agent')
+    assert.ok(reply.changes?.total > 0, '回复上记下了改了哪些控件')
+    assert.ok(reply.changes.list.some((c) => c.kind === 'add' && c.name === 'Bg'))
+    assert.ok(reply.undoVersion, '回复上带着这一轮开始前的版本')
+    assert.ok(
+      (await call('GET', `/designs/${design.id}/versions`)).some((v) => v.id === reply.undoVersion),
+      '这个版本真的存在',
+    )
     assert.equal(d.style, 'dark fantasy')
     assert.deepEqual(
       d.root.Children.map((w) => [w.Type, w.Name, !!w.Slot?.LayoutData]),

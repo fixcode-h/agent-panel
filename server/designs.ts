@@ -9,6 +9,7 @@ import { openDesignSession, type ConceptRequest } from './design-mcp.ts'
 import { DesignCaptures } from './design-capture.ts'
 import { HeadlessPages } from './headless.ts'
 import { finalParts, normalizeSlices, resetStuckImages, restoredVariants } from './design-images.ts'
+import { treeChanges } from '../shared/design-diff.ts'
 import { EXPORT_MARK, pickExportDir } from './design-export-dir.ts'
 import { withToken } from './auth.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
@@ -732,7 +733,16 @@ ${prompt}`,
     return { prompts: p?.prompts ?? [], images }
   }
 
-  async function chat(d: Design, input: z.infer<typeof DesignChatInput>, job: Job, msgId?: string) {
+  async function chat(
+    d: Design,
+    input: z.infer<typeof DesignChatInput>,
+    job: Job,
+    msgId?: string,
+    /** 这一轮开始前自动存的版本：回复上的「撤销这一轮」恢复它 */
+    undoVersion?: string,
+  ) {
+    // 这一轮开始时的树：结束时和它对比，列出 AI 改了哪些控件
+    const startTrees = { root: cache.get(d.id)!.root, components: cache.get(d.id)!.components }
     const settings = await getSettings()
     const run = chatRun(settings, input.run)
     const cliId = run.cli
@@ -1069,6 +1079,7 @@ ${prompt}`,
         }
         normalizeSlices(cur)
         if (changed) cur.rev++
+        const diff = treeChanges(startTrees, { root: cur.root, components: cur.components })
         cur.messages.push({
           id: randomUUID(),
           role: 'agent',
@@ -1076,6 +1087,8 @@ ${prompt}`,
           at: now(),
           images: ids.length ? ids : undefined,
           run,
+          ...(diff.total ? { changes: diff } : {}),
+          ...(changed && undoVersion ? { undoVersion } : {}),
           // 过程按顺序存下：思考、工具调用和说明，和 Agent 的对话一样显示
           parts: finalParts(parts),
           ...(r2.questions?.length ? { questions: r2.questions } : {}),
@@ -1206,7 +1219,10 @@ ${prompt}`,
     try {
       await save(d)
       // AI 改之前自动存一个版本，改坏了可以回去；分析不改设计，不用存版本
-      if (input.mode !== 'analyze') await addVersion(d, t('AI 修改前：{text}', { text: input.text.slice(0, 24) }), true)
+      const before =
+        input.mode !== 'analyze'
+          ? await addVersion(d, t('AI 修改前：{text}', { text: input.text.slice(0, 24) }), true)
+          : undefined
       // 准备期间用户点了停止：这一轮不启动，消息标明没送出去
       if (cancelled.has(d.id)) {
         setDelivery(d, id, 'lost')
@@ -1216,7 +1232,7 @@ ${prompt}`,
       startJob(d, async (job) => {
         // 这一轮开始时已经确认了模板（照着模板搭界面）：AI 顺手出的原画不能把模板作废，同轮的切图还要拿它当参考
         const hadTemplate = !!conceptOf(cache.get(d.id) ?? d).approved
-        const { ids, concepts } = await chat(d, input, job, id)
+        const { ids, concepts } = await chat(d, input, job, id, before?.id)
         // 分析只出结论，不出原画和切图
         if (input.mode === 'analyze') return
         if (concepts.length) {
