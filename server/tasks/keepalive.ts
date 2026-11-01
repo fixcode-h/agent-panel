@@ -36,8 +36,10 @@ export function createKeepAlive(s: TasksScope) {
     // 已经在停了（停止按钮连点、closeChildren 先停一次再补一次）：别再推一条一模一样的提示
     const firstStop = !e.stop
     e.stop = true
-    // 只有用户按的暂停才标成 'user'，其余调用点必须传清是谁结束的，界面才能不把它说成「已暂停」
-    e.stopReason = reason
+    // 只有用户按的暂停才标成 'user'，其余调用点必须传清是谁结束的，界面才能不把它说成「已暂停」。
+    // 连带停（父对话停了、整棵树超了用量）不改已经在停的原因：用户刚单独停掉的子对话还没收完时父对话也停了，
+    // closeChildren 再补一次 parent，覆盖掉的话「用户停的」就变成「随父对话停的」，父对话继续时又被拉起来（实测报告问题 3）
+    if (firstStop || (reason !== 'parent' && reason !== 'budget')) e.stopReason = reason
     // CLI 卡住了（没有响应、换人接手）：不理会中断，直接结束进程，别让用户的新消息再等上几秒
     e.abort.abort(reason === 'stalled' || reason === 'replaced' ? HARD_STOP : undefined)
     // 用户按的暂停、父对话收尾、打断并重发：独立分支里没提交的改动会留在那儿，

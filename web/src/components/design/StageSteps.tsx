@@ -33,7 +33,7 @@ export function StageSteps({ stages, onPick }: { stages: Stage[]; onPick: (id: S
               }
               onClick={() => onPick(s.id)}
               className={cn(
-                'flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] px-2 text-[0.8125rem] font-semibold whitespace-nowrap transition-colors',
+                'flex h-8 cursor-pointer items-center gap-1.5 rounded-xl px-2 text-body font-semibold whitespace-nowrap transition-colors',
                 on
                   ? 'bg-panel text-fg shadow-[inset_0_1px_2px_rgb(0_0_0/0.08)]'
                   : cn('hover:bg-sel', done ? 'text-fg' : 'text-subtle'),
@@ -41,7 +41,7 @@ export function StageSteps({ stages, onPick }: { stages: Stage[]; onPick: (id: S
             >
               <span
                 className={cn(
-                  'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[0.625rem] tabular-nums',
+                  'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-micro tabular-nums',
                   done
                     ? 'bg-success text-on-primary'
                     : on

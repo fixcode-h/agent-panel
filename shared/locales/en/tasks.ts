@@ -400,6 +400,7 @@ export const EN_TASKS: Record<string, string> = {
   未完成: 'Unfinished',
   已暂停: 'Paused',
   父对话结束时一起结束: 'Ended together with the parent chat',
+  '用户停掉了它，等用户决定要不要继续': 'Stopped by the user; waiting for the user to decide whether to continue',
   '换 Agent / 模型时中断': 'Interrupted when switching agent / model',
   归档时结束: 'Ended on archive',
   删除时结束: 'Ended when deleted',
