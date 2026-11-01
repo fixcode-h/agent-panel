@@ -29,6 +29,14 @@ export function captureNoPage() {
   return new Error(t('截图失败：设计页面没有打开。先打开这个设计页（浏览器标签页在后台也可以），再让我截图'))
 }
 
+export function captureNoHeadless() {
+  return new Error(
+    t(
+      '截图失败：设计页面没有打开，自动启动的无头浏览器也没能连上面板。先打开这个设计页（浏览器标签页在后台也可以），再让我截图',
+    ),
+  )
+}
+
 export function captureNoShot() {
   return new Error(t('截图失败：设计页面收到了请求，但没有交出截图（页面可能已经切走，或者渲染卡住了），请重试'))
 }
@@ -49,15 +57,39 @@ export class DesignCaptures {
   private timeoutMs: number
   /** 一次长轮询最长挂多久，到期由页面立刻重连 */
   private askMs: number
+  /** 没有页面时拉起一个看不见的截图页（无头浏览器）；返回 false 表示拉不起来 */
+  private onNoPage?: (designId: string) => boolean
+  /** 拉起无头浏览器后多等一会儿：浏览器启动、页面加载、连上长轮询要几秒 */
+  private launchGraceMs: number
 
-  constructor(opts: { graceMs?: number; timeoutMs?: number; askMs?: number } = {}) {
+  constructor(
+    opts: {
+      graceMs?: number
+      timeoutMs?: number
+      askMs?: number
+      onNoPage?: (designId: string) => boolean
+      launchGraceMs?: number
+    } = {},
+  ) {
     this.graceMs = opts.graceMs ?? 2_000
     this.timeoutMs = opts.timeoutMs ?? 20_000
     this.askMs = opts.askMs ?? 25_000
+    this.onNoPage = opts.onNoPage
+    this.launchGraceMs = opts.launchGraceMs ?? 15_000
   }
 
-  /** AI 要一张截图：交给正在盯着这个设计的页面；没有页面时宽限结束就报「页面没打开」 */
+  /** 这个设计现在有没有页面挂着长轮询 */
+  hasPage(designId: string) {
+    return !!this.pages.get(designId)?.size
+  }
+
+  /**
+   * AI 要一张截图：交给正在盯着这个设计的页面；没有页面时先试着拉起无头浏览器里的截图页，
+   * 拉不起来（或者拉起来也没连上）宽限结束就报「页面没打开」
+   */
   request(designId: string, view: CaptureRequest): Promise<CaptureShot> {
+    const launched = !this.hasPage(designId) && !!this.onNoPage?.(designId)
+    const grace = launched ? this.launchGraceMs : this.graceMs
     return new Promise<CaptureShot>((resolve, reject) => {
       const p = {
         designId,
@@ -67,11 +99,14 @@ export class DesignCaptures {
         delivered: false,
         grace: setTimeout(() => {
           if (!this.isCurrent(designId, view.id) || p.delivered) return
-          this.settle(p, captureNoPage())
-        }, this.graceMs),
-        timeout: setTimeout(() => {
-          this.settle(p, p.delivered ? captureNoShot() : captureNoPage())
-        }, this.timeoutMs),
+          this.settle(p, launched ? captureNoHeadless() : captureNoPage())
+        }, grace),
+        timeout: setTimeout(
+          () => {
+            this.settle(p, p.delivered ? captureNoShot() : launched ? captureNoHeadless() : captureNoPage())
+          },
+          launched ? this.launchGraceMs + this.timeoutMs : this.timeoutMs,
+        ),
       }
       this.pending.set(view.id, p)
       this.flush(designId)

@@ -18,6 +18,8 @@ import { applyOp, type OpsState } from '../shared/design-ops.ts'
 import { DATA_TYPES, normalizeData, type DesignData } from '../shared/design-data.ts'
 import { ANIM_PROPS, ANIM_TRIGGERS, EASES, animationsBrief, presetCatalogText } from '../shared/anim.ts'
 import { compactTree, walk, type Widget } from '../shared/umg.ts'
+import { rectLine } from '../shared/umg-layout.ts'
+import { layoutNote, layoutReport, sessionLayout } from './design-layout.ts'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
@@ -47,7 +49,7 @@ import { imageSize } from './zip.ts'
  * 每轮 AI 对话开一个会话，地址里带随机令牌，只在这一轮有效；面板只监听本机。
  */
 
-interface Session {
+export interface Session {
   design: Design
   state: OpsState
   images: z.infer<typeof AiImage>[]
@@ -193,7 +195,7 @@ const TOOLS = [
     name: 'update_widgets',
     description:
       '改控件的属性和插槽，一次可以改很多个：properties、slot 只写要改的字段，和原来的合并（例如 {"Text":"背包"}、{"padding":[0,24,0,0]}）。UserWidget 换引用的子控件写 class。' +
-      'items 原样传 JSON 数组，不要写成字符串。改完立刻回读：位置、大小用 screenshot 返回的控件位置表，字号等属性用 get_tree 读（它只列和默认值不同的属性，读不到就是默认值），确认 x/y/宽/高和字号等于你要汇报的值；一致才写进总结，不一致就当场重改，并在回复里说明「上一轮没生效」。',
+      'items 原样传 JSON 数组，不要写成字符串。改完的结果里直接列出位置或大小变了的控件（游戏 UI，按画布的排版规则算出来，不用开页面），拿它回读 x/y/宽/高；字号等属性用 get_tree 读（它只列和默认值不同的属性，读不到就是默认值）。回读值等于你要汇报的值才写进总结，不一致就当场重改，并在回复里说明「上一轮没生效」。',
     inputSchema: batch(
       {
         name: { type: 'string' },
@@ -401,6 +403,13 @@ const TOOLS = [
     inputSchema: obj({ in: IN }),
   },
   {
+    name: 'get_layout',
+    description:
+      '不截图、直接算出控件在画布上的位置和大小（设计稿像素，x,y 是左上角，含 RenderTransform），和 screenshot 的控件位置表同一个口径，页面没打开也能用。in 写子控件名看子控件，names 只看这几个控件。' +
+      '带「≈」的是按字宽估出来的（文字、由文字撑开的容器，以及被它们推着走的控件），可能差几个像素，要精确时再用 screenshot 核对。只支持游戏 UI（UMG），网页设计用 screenshot。',
+    inputSchema: obj({ in: IN, names: { type: 'array', items: { type: 'string' } } }),
+  },
+  {
     name: 'inspect_image',
     description:
       '量一张图：精确的像素尺寸、宽高比、是否透明、内容范围、主要颜色（十六进制）。region 只量图里的一块，points 取指定位置的颜色。照着参考图做界面时用它取准确的尺寸和颜色，不要目测。' +
@@ -518,14 +527,23 @@ function apply(s: Session, ops: unknown[]) {
     if (s.history.length > 50) s.history.shift()
     s.onChange(s)
   }
-  if (ops.length === 1) return ok ? text('好了') : text(lines[0], true)
+  // 算位置出错不能影响已经生效的改动，只是少一段回读
+  let note = ''
+  if (ok)
+    try {
+      note = layoutNote(s, before.state, ops)
+    } catch {}
+  if (ops.length === 1) return ok ? text(note ? `好了\n${note}` : '好了') : text(lines[0], true)
   return text(
     [
       ok === ops.length
         ? `${ok} 条全部成功`
         : `成功 ${ok} 条，失败 ${ops.length - ok} 条（成功的已经生效，只要改失败的）`,
       ...lines,
-    ].join('\n'),
+      note,
+    ]
+      .filter(Boolean)
+      .join('\n'),
     ok === 0,
   )
 }
@@ -706,8 +724,21 @@ async function screenshot(s: Session, target: string) {
   try {
     shot = await s.files.capture(s, target)
   } catch (e) {
-    // 页面没打开、画布为空、渲染失败各自有准确原因，直接交给 AI，别盖成一句笼统的提示
-    return text((e as Error).message, true)
+    // 页面没打开、画布为空、渲染失败各自有准确原因，直接交给 AI，别盖成一句笼统的提示；
+    // 游戏 UI 还能把算出来的位置表一起给它，位置和大小照样能回读，只是没有图
+    const rects = sessionLayout(s, target)
+    return text(
+      [
+        (e as Error).message,
+        // 只有根控件时没什么可列的
+        rects && rects.length > 1
+          ? `没有图，但控件的位置可以直接算（和截图的位置表同一个口径，≈ 是按字宽估的，只列前 80 个）：\n${rects.slice(0, 80).map(rectLine).join('\n')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      true,
+    )
   }
   await mkdir(path.join(s.files.dir, 'views'), { recursive: true })
   const file = path.join(s.files.dir, 'views', `screenshot-${s.shots.length + 1}.png`)
@@ -822,6 +853,8 @@ async function callTool(s: Session, raw: string, args: any) {
     if (big) return big
   }
   switch (name) {
+    case 'get_layout':
+      return text(...layoutReport(s, str(a.in), a.names))
     case 'get_tree': {
       if (a.all)
         return text(

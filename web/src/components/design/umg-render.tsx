@@ -231,6 +231,20 @@ function commonStyle(p: Record<string, any>): CSSProperties {
   return st
 }
 
+/**
+ * 有自身尺寸的控件（Image 的 ImageSize、进度条、滑条）在 Fill 对齐时：
+ * UE 里槽位按控件的期望尺寸分配，Fill 只是撑满槽位；CSS 里不写宽高就没有内容尺寸，
+ * 放在 Automatic 的横竖排、WrapBox、ScrollBox 或自动大小的画布插槽里会被压成 0（画布上看不见）。
+ * 塞一个看不见的占位块给出期望尺寸：外层按内容排版时用它，撑满 / 固定尺寸时照样拉伸或收缩。
+ * shared/umg-layout.ts 按同样的规则算位置
+ */
+function Sizer({ x, y, on }: { x: number; y: number; on: boolean }) {
+  if (!on) return null
+  return (
+    <span aria-hidden style={{ display: 'block', width: x, height: y, visibility: 'hidden', pointerEvents: 'none' }} />
+  )
+}
+
 /** 一个控件连同它的插槽外壳 */
 export function UmgNode({
   w,
@@ -498,11 +512,16 @@ function UmgBody({
       return el({ width: p.Size?.X ?? 0, height: p.Size?.Y ?? 0, flex: base.flex === '1 1 auto' ? base.flex : 'none' })
     case 'Image': {
       const b: Brush = p.Brush
-      return el({
-        width: fillX ? undefined : (b?.ImageSize?.X ?? 32),
-        height: fillY ? undefined : (b?.ImageSize?.Y ?? 32),
-        ...brushStyle(b, ctx, p.ColorAndOpacity),
-      })
+      const x = b?.ImageSize?.X ?? 32
+      const y = b?.ImageSize?.Y ?? 32
+      return el(
+        {
+          width: fillX ? undefined : x,
+          height: fillY ? undefined : y,
+          ...brushStyle(b, ctx, p.ColorAndOpacity),
+        },
+        <Sizer x={x} y={y} on={fillX || fillY} />,
+      )
     }
     case 'TextBlock': {
       const f = p.Font ?? {}
@@ -547,13 +566,18 @@ function UmgBody({
         Object.assign(fill, { top: 0, bottom: 0, left: `${(1 - pct) * 50}%`, width: `${pct * 100}%` })
       else Object.assign(fill, { top: 0, bottom: 0, left: 0, width: `${pct * 100}%` })
       const bg: Brush | undefined = ws.BackgroundImage
+      const bx = bg?.ImageSize?.X ?? 200
+      const by = bg?.ImageSize?.Y ?? 16
       return el(
         {
-          width: fillX ? undefined : (bg?.ImageSize?.X ?? 200),
-          height: fillY ? undefined : (bg?.ImageSize?.Y ?? 16),
+          width: fillX ? undefined : bx,
+          height: fillY ? undefined : by,
           ...brushStyle(bg, ctx),
         },
-        <span style={fill} />,
+        <>
+          <Sizer x={bx} y={by} on={fillX || fillY} />
+          <span style={fill} />
+        </>,
       )
     }
     case 'Slider': {
@@ -569,14 +593,17 @@ function UmgBody({
         const k = vert ? 1 - (e.clientY - r.top) / r.height : (e.clientX - r.left) / r.width
         setLive((l) => ({ ...l, value: Math.max(0, Math.min(1, k)) }))
       }
+      const sx = vert ? (th?.ImageSize?.X ?? 16) : 160
+      const sy = vert ? 160 : (th?.ImageSize?.Y ?? 16)
       return el(
         {
-          width: fillX ? undefined : vert ? (th?.ImageSize?.X ?? 16) : 160,
-          height: fillY ? undefined : vert ? 160 : (th?.ImageSize?.Y ?? 16),
+          width: fillX ? undefined : sx,
+          height: fillY ? undefined : sy,
           cursor: play ? 'pointer' : undefined,
           touchAction: play ? 'none' : undefined,
         },
         <>
+          <Sizer x={sx} y={sy} on={fillX || fillY} />
           <span
             style={{
               position: 'absolute',
@@ -701,21 +728,46 @@ function UmgBody({
           // 运行模式里列表能滚动
           overflow: w.Type === 'DynamicEntryBox' ? 'visible' : play ? 'auto' : 'hidden',
         },
-        Array.from({ length: n }, (_, i) => (
-          <div
-            key={i}
-            data-ac={comp.Name}
-            style={{
-              display: 'flex',
-              flex: '0 0 auto',
-              width: tile ? p.EntryWidth : vertical && w.Type === 'ListView' ? '100%' : comp.DesignSize.X,
-              height: tile ? p.EntryHeight : !vertical && w.Type === 'ListView' ? '100%' : comp.DesignSize.Y,
-              gridArea: p.EntryBoxType === 'Overlay' ? '1 / 1' : undefined,
-            }}
-          >
-            <UmgNode w={comp.Root} ctx={rows ? { ...sub, row: rows[i] } : sub} />
-          </div>
-        )),
+        Array.from({ length: n }, (_, i) => {
+          // ListView 的条目在交叉方向上撑满列表；列表本身按内容排版时（自动大小的插槽、Automatic 的横竖排）
+          // 写 100% 会被压成 0，改成拉伸 + 看不见的占位块给出条目的设计尺寸（和 UserWidget 撑满时同一个办法）
+          const stretchW = !tile && vertical && w.Type === 'ListView'
+          const stretchH = !tile && !vertical && w.Type === 'ListView'
+          const node = <UmgNode w={comp.Root} ctx={rows ? { ...sub, row: rows[i] } : sub} />
+          return (
+            <div
+              key={i}
+              data-ac={comp.Name}
+              style={{
+                display: stretchW || stretchH ? 'grid' : 'flex',
+                gridTemplate: stretchW || stretchH ? 'minmax(0, 1fr) / minmax(0, 1fr)' : undefined,
+                flex: '0 0 auto',
+                alignSelf: stretchW || stretchH ? 'stretch' : undefined,
+                width: tile ? p.EntryWidth : stretchW ? undefined : comp.DesignSize.X,
+                height: tile ? p.EntryHeight : stretchH ? undefined : comp.DesignSize.Y,
+                gridArea: p.EntryBoxType === 'Overlay' ? '1 / 1' : undefined,
+              }}
+            >
+              {stretchW || stretchH ? (
+                <>
+                  <span
+                    aria-hidden
+                    style={{
+                      gridArea: '1 / 1',
+                      width: comp.DesignSize.X,
+                      height: comp.DesignSize.Y,
+                      visibility: 'hidden',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                  <div style={{ gridArea: '1 / 1', display: 'flex', minWidth: 0, minHeight: 0 }}>{node}</div>
+                </>
+              ) : (
+                node
+              )}
+            </div>
+          )
+        }),
       )
     }
     case 'UserWidget': {
@@ -733,14 +785,38 @@ function UmgBody({
           },
           w.Class || 'UserWidget',
         )
-      // 子控件按自己的设计尺寸显示（放在 CanvasPanel 里时由插槽决定大小）
+      // 子控件按自己的设计尺寸显示（放在 CanvasPanel 里时由插槽决定大小）。
+      // 撑满时用单格网格：占位块给出设计尺寸（按内容排版时不会被压成 0），子控件的根铺满这一格
+      const fill = fillX || fillY
+      const inner = (
+        <UmgNode w={comp.Root} ctx={{ ...ctx, interactive: false, depth: ctx.depth + 1, tree: comp.Name }} />
+      )
       return el(
-        {
-          display: 'flex',
-          width: fillX ? undefined : comp.DesignSize.X,
-          height: fillY ? undefined : comp.DesignSize.Y,
-        },
-        <UmgNode w={comp.Root} ctx={{ ...ctx, interactive: false, depth: ctx.depth + 1, tree: comp.Name }} />,
+        fill
+          ? {
+              display: 'grid',
+              gridTemplate: 'minmax(0, 1fr) / minmax(0, 1fr)',
+              width: fillX ? undefined : comp.DesignSize.X,
+              height: fillY ? undefined : comp.DesignSize.Y,
+            }
+          : { display: 'flex', width: comp.DesignSize.X, height: comp.DesignSize.Y },
+        fill ? (
+          <>
+            <span
+              aria-hidden
+              style={{
+                gridArea: '1 / 1',
+                width: comp.DesignSize.X,
+                height: comp.DesignSize.Y,
+                visibility: 'hidden',
+                pointerEvents: 'none',
+              }}
+            />
+            <div style={{ gridArea: '1 / 1', display: 'flex', minWidth: 0, minHeight: 0 }}>{inner}</div>
+          </>
+        ) : (
+          inner
+        ),
         { 'data-ac': comp.Name },
       )
     }

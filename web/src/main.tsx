@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { LucideProvider } from 'lucide-react'
 import { App } from './App'
@@ -7,6 +7,8 @@ import './maple-mono.css'
 import { getLang } from '@shared/i18n'
 import { primeCjkFont } from './lib/appearance'
 import { installCaretAutoScroll } from './lib/caret'
+
+const CaptureHost = lazy(() => import('./components/design/CaptureHost').then((m) => ({ default: m.CaptureHost })))
 
 document.documentElement.lang = getLang() === 'zh' ? 'zh-CN' : 'en'
 // 所有输入框统一：光标跑到可视区外时把输入框滚过去
@@ -41,11 +43,20 @@ if (!import.meta.env.VITE_DEMO) {
   document.head.appendChild(link)
 }
 
+// 无头浏览器打开的截图页（server/headless.ts）：只挂截图组件，不加载面板的其他部分
+const captureId = /^#\/capture\/([^/?#]+)/.exec(location.hash)?.[1]
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {/* 没写线宽的 lucide 图标默认 2.3（lucide 自带 2 偏细）；写了的各处已按同样比例加粗 */}
-    <LucideProvider strokeWidth={2.3}>
-      <App />
-    </LucideProvider>
+    {captureId ? (
+      <Suspense fallback={null}>
+        <CaptureHost id={decodeURIComponent(captureId)} />
+      </Suspense>
+    ) : (
+      // 没写线宽的 lucide 图标默认 2.3（lucide 自带 2 偏细）；写了的各处已按同样比例加粗
+      <LucideProvider strokeWidth={2.3}>
+        <App />
+      </LucideProvider>
+    )}
   </StrictMode>,
 )

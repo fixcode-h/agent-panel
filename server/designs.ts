@@ -7,6 +7,8 @@ import { z } from 'zod'
 import { extractJson } from '../shared/assist.ts'
 import { openDesignSession, type ConceptRequest } from './design-mcp.ts'
 import { DesignCaptures } from './design-capture.ts'
+import { HeadlessPages } from './headless.ts'
+import { withToken } from './auth.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
 
 import { getCli } from '../shared/clis.ts'
@@ -181,7 +183,18 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   const cancelled = new Set<string>()
   /** 这一轮结束后要接着处理的要求：运行中收不下的消息，按顺序各开一轮；带上对话里那条消息的 id */
   const pendingTurns = new Map<string, { id: string; input: z.infer<typeof DesignChatInput> }[]>()
-  const captures = new DesignCaptures()
+  // 设计页没打开时，截图交给无头浏览器里的截图页（同一个画布组件）；
+  // 正式版前端由面板自己托管，开发时由 Vite（5173）服务，AGENT_PANEL_WEB_URL 可以改
+  const headless = new HeadlessPages({
+    url: (id) => {
+      const prod = process.env.NODE_ENV === 'production' || process.argv.includes('--prod')
+      const base =
+        process.env.AGENT_PANEL_WEB_URL ||
+        (prod ? `http://127.0.0.1:${process.env.PORT ?? 8787}` : 'http://localhost:5173')
+      return `${withToken(base.replace(/\/+$/, ''))}#/capture/${encodeURIComponent(id)}`
+    },
+  })
+  const captures = new DesignCaptures({ onNoPage: (id) => headless.ensure(id) })
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
   async function loadAll() {
@@ -1714,6 +1727,7 @@ ${prompt}`,
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
       await removeDesign(d)
+      headless.close(d.id)
       return c.body(null, 204)
     })
     .get('/:id/files/:file', async (c) => {
