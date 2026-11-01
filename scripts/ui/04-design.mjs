@@ -393,8 +393,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (!slot) return -1
       // 列表条目里的控件没有 data-wid（不能单独选中），按计算样式找隐藏的那个
       // 画布给有自身尺寸的控件塞的占位块（data-sizer）本来就看不见，不算
+      // 只数最外层隐藏的那个：隐藏控件里面的画刷层（BrushLayer）、占位块跟着一起隐藏，不另算
+      const hidden = (n) => !!n && getComputedStyle(n).visibility === 'hidden'
       return [...slot.querySelectorAll('*')].filter(
-        (n) => !n.hasAttribute('data-sizer') && getComputedStyle(n).visibility === 'hidden',
+        (n) => !n.hasAttribute('data-sizer') && hidden(n) && !hidden(n.parentElement),
       ).length
     })
   assert.equal(await hiddenInFirstSlot(), 1, '第一格有选中高亮、没有锁定图标')

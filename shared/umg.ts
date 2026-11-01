@@ -1021,9 +1021,14 @@ export function assignImage(w: Widget, img: { id: string; width: number; height:
   // 网页控件的图片属性就是一个 "img:<id>" 字符串
   if (WIDGETS[w.Type]?.group === 'web') return { ...w, Properties: { ...props, [last]: `img:${img.id}` } }
   const nine = nineSliceRatios(img.nineSlice, img.width, img.height)
+  const prev = cur[last] ?? {}
+  // 纯色画刷第一次套上图片：原来的 TintColor 是那块纯色本身（按钮默认 #3A3A3A），套图后 UE 会把图片乘上它，
+  // 几乎变成黑的；这时改回白色。原来就有图（用户在图片上设过着色）的照常保留
+  const hadImage = typeof prev.ResourceObject === 'string' && prev.ResourceObject.startsWith('img:')
   cur[last] = {
     ...brush(),
-    ...(cur[last] ?? {}),
+    ...prev,
+    ...(hadImage ? {} : { TintColor: '#FFFFFFFF' }),
     ResourceObject: `img:${img.id}`,
     ImageSize: { X: img.width, Y: img.height },
     ...(nine && hasSlice(nine) ? { DrawAs: 'Box', Margin: nine } : {}),
