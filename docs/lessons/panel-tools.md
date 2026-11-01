@@ -10,6 +10,12 @@ paths: server/orch-mcp.ts, shared/panel-tools.ts, server/ask-mcp.ts
 - 起因：审计发现（df820f2 起）README 五组工具数全和代码不符；`stop_workflow`、`cherry_pick` 没登记、对话里露原始名字；186443c 加 Chat 页身份后 Pi 误报「工具清单不完整」。
 - 防线：`server/orch-mcp.test.ts`「面板工具按身份裁剪」、`server/ask-mcp.test.ts` 的握手用例。
 
+## 给某一类对话裁工具按能力和客观条件，不加「是不是某个页面」的身份开关
+
+- 规则：一类对话少给哪些工具，在 `shared/engine.ts` 的 `makeOrchestra` 算成能力字段（`canSpawn`、`team`、`plans`）或宿主的客观条件（有没有项目、有没有并行节点），`orchTools` / `orchHint` / 握手只读这些字段；握手 `orchestration.enabled` 按清单里核心三件（`ORCH_CORE_TOOLS`）现算，不认身份。新字段别和 `Orchestra` 已有的方法同名（`spawn` 是派子任务的方法，布尔字段叫 `canSpawn`）。
+- 起因：186443c6 加 `Orchestra.plain` 一刀切 Chat 页，连计划、提示词都跟着漏改（Chat 页读到 `ask_push`、「你是项目对话」），ADR 0038 改成按能力给。
+- 防线：`scripts/rules-check.mjs` 第 18 条；`server/ask-mcp.test.ts` 握手用例（含和 `pi.json` 的 `CORE_TOOLS` 一致）。
+
 ## 等待类工具一次等到底，回包只交没交过的
 
 - 规则：`wait_agents` 这类等待工具一直等到结果齐了或有人传话才返回，不按秒数切成让模型反复调用的短等待（各 CLI 的 MCP 工具超时都够长，Codex 在 `shared/clis/codex.json` 里放宽）；回包只交这次新做完的，取过的不再重交，没做完的只列 id。长等待要走 SSE 心跳，等待期间不算空闲。

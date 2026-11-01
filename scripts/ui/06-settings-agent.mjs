@@ -236,11 +236,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .click()
   await p.getByRole('button', { name: '角色', exact: true }).first().click()
   // 「评审」要随内置工作流添加，这个分片里没有；用演示自带的角色。
-  // 角色页分「高级角色 / 基本角色」两页，代码审查在基本角色里，先切过去
-  await p
-    .getByRole('radiogroup', { name: '角色层' })
-    .getByRole('radio', { name: /^基本角色/ })
-    .click()
+  // 角色页分「高级 / 基本 / Chat」三页（分段只写短名），代码审查在基本角色里，先切过去
+  await p.getByRole('radiogroup', { name: '角色层' }).getByRole('radio', { name: /^基本/ }).click()
   await p.getByText('代码审查', { exact: true }).first().click()
   // 角色详情头部只留「对话」，AI 优化收在「⋯」菜单里
   await p.locator('main header').getByRole('button', { name: '更多操作', exact: true }).click()

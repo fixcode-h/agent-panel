@@ -102,7 +102,9 @@ test('编译按目录占位：同一目录排队、能查到谁占着，各自 w
   }
 })
 
-const orch = (x: Partial<Orchestra>) => ({ self: 'chat', hasMain: false, common: [], ...x }) as unknown as Orchestra
+// 项目里的对话：能派子任务、有并行的子任务可查可传话
+const orch = (x: Partial<Orchestra>) =>
+  ({ self: 'chat', hasMain: false, common: [], canSpawn: true, team: true, ...x }) as unknown as Orchestra
 const names = (o: Orchestra) => (orchTools(o) as { name: string }[]).map((x) => x.name)
 
 test('子对话：有独立分支的用 submit_merge 带 build 申请，没有的用 request_build；不是 UE 项目时都没有', async () => {

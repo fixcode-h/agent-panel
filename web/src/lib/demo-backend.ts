@@ -6,7 +6,7 @@ import { demoSpeech, demoTts } from './demo-speech'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
-import { demoChildSummary, demoParentCard } from './demo-child-summary'
+import { demoChatTodos, demoChildSummary, demoParentCard } from './demo-child-summary'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
 import {
@@ -840,11 +840,11 @@ function ensureDemoCore(d: Db) {
     cat = { id: 'demo-core', name: CORE_CATEGORY, scope: 'agent', createdAt: at, updatedAt: at }
     d.categories.push(cat)
   }
-  for (const key of ['rules', ...CORE_AGENTS.map((c) => c.key)]) {
+  for (const key of ['rules', 'chat-rules', ...CORE_AGENTS.map((c) => c.key)]) {
     if (d.agents.some((a) => a.origin === `builtin:${key}`)) continue
     const def = BUILTIN_AGENTS.find((b) => b.key === key)!
     d.agents.push({
-      ...AgentInput.parse({ ...def.agent, origin: `builtin:${key}`, categoryId: key === 'rules' ? '' : cat.id }),
+      ...AgentInput.parse({ ...def.agent, origin: `builtin:${key}`, categoryId: key.endsWith('rules') ? '' : cat.id }),
       id: `demo-${key}`,
       createdAt: at,
       updatedAt: at,
@@ -4672,9 +4672,9 @@ async function seedTasks(d: Db) {
       )
       await done
       if (c.minutes > 60 * 24) demoAlerts(task)
+      else task.todos = demoChatTodos()
       back(task, c.minutes)
-      // 真的停在等下一句（没有子任务、也没有后台命令在跑）的对照：状态行写「等待你的下一条消息」才是对的。
-      // 和上面那条一样不写 live 登记：那样会被当成「有一轮在跑」，接着发消息只会 held 在队列里
+      // 真的停在等下一句的对照：状态行写「等待你的下一条消息」才对；不写 live 登记（会被当成有一轮在跑、消息只会 held）
       if (c.waiting) {
         task.status = 'running'
         task.working = false

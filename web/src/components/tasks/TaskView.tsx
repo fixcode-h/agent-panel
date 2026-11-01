@@ -113,6 +113,8 @@ import { RunCard, RunPanel } from './RunCard'
 import { RunView } from './RunView'
 import { TaskPanel } from './TaskPanel'
 import { PlanButton } from './PlanPanel'
+import { TodoButton } from './TodoButton'
+import { isChatMode } from '@shared/conv-mode'
 import { EnvChip, TaskContextRing, TaskMeta } from './TaskMeta'
 import { DeleteTaskDialog } from './Worktrees'
 import { TaskFiles } from './TaskFiles'
@@ -1765,6 +1767,16 @@ export function TaskView({
           <div className="mx-auto max-w-(--content-w)">
             <div data-status-row="plan" className={cn(plainRow, 'mb-1 w-fit max-w-full flex-nowrap')}>
               <PlanButton task={task} kids={children} />
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Chat 模式没有面板计划，用 CLI 自带的待办（ADR 0038）：同一个位置显示 */}
+      {isChatMode(task) && !task.plans?.length && task.todos?.length > 0 && (
+        <div className="shrink-0 px-3 md:px-6">
+          <div className="mx-auto max-w-(--content-w)">
+            <div data-status-row="todos" className={cn(plainRow, 'mb-1 w-fit max-w-full flex-nowrap')}>
+              <TodoButton task={task} />
             </div>
           </div>
         </div>

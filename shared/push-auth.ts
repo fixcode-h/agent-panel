@@ -6,7 +6,6 @@
  * 回答只对这一个顶层对话有效（新对话重新问一次）；子对话不碰远端，拿不到这个工具。
  * 放在单独的文件里：engine.ts、schema.ts、runner.ts 都到了行数上限
  */
-import { isPlainChat } from './conv-mode.ts'
 import type { EngineHost, Orchestra } from './engine.ts'
 import type { Task } from './schema.ts'
 
@@ -27,11 +26,11 @@ export function pushPolicyText(p: NonNullable<EngineHost['policy']>, wt: string,
 
 /**
  * 给这次调用的 Orchestra 接上 ask_push：只给项目里的顶层对话本身（不给子对话、子任务、工作流节点、Chat 页的对话），
- * 并且项目推送策略是「问一次」。已经同意过直接返回、不弹卡；拒绝过再调照样弹卡（用户改口要推，以用户亲手点的为准）
+ * 并且项目推送策略是「问一次」；没有项目（Chat 页）就没有推送策略。已经同意过直接返回、不弹卡；拒绝过再调照样弹卡（用户改口要推，以用户亲手点的为准）
  */
 export function orchAskPush(host: EngineHost, chat: boolean, helper: boolean): Orchestra['askPush'] {
   const { task } = host
-  if (helper || !chat || task.parentTaskId || isPlainChat(task) || host.policy?.push !== 'ask' || !host.askPush)
+  if (helper || !chat || task.parentTaskId || !task.projectId || host.policy?.push !== 'ask' || !host.askPush)
     return undefined
   const ask = host.askPush
   return async (info) => {

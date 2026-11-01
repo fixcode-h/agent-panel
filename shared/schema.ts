@@ -143,6 +143,11 @@ export const AgentInput = z.object({
    * 旧数据没有这个字段：按 roleKind（shared/agent-role.ts）从能力开关和挂载推导，不迁移
    */
   kind: z.enum(['basic', 'advanced']).optional().catch(undefined),
+  /**
+   * 用在哪种对话：agent 项目里的对话、子对话、工作流节点、子任务；chat 只在 Chat 页（没有项目的顶层对话）。
+   * 建好不能改（换类别就复制一份）；没写（旧数据）按 agent 算，用 scopeOf 读（ADR 0038）
+   */
+  scope: z.enum(['agent', 'chat']).optional().catch(undefined),
   /** 基本角色：一句话说明什么时候该用它（进高级角色的能力索引，模型据此决定调不调） */
   when: z.string().trim().max(200).default(''),
   /** 基本角色允许的用法：inline 就地（use_capability 加载进当前对话）、subtask 派成子任务 */

@@ -83,6 +83,7 @@ import { ParamsChip, ParamsEditor, ParamsForm } from './ParamFields'
 import { builtinDefinition, builtinKey, coreKey, coreUse, defaultMounts, listableAgents } from '@shared/builtin/core'
 import { SkillsPicker, StartersEditor } from './AgentExtras'
 import { CapabilityFields } from './CapabilityFields'
+import { CHAT_ORIGIN, scopeOf } from '@shared/conv-mode'
 
 /** 角色设定的模板 */
 const ROLE_TEMPLATE = `# 角色
@@ -112,12 +113,15 @@ const toInput = ({ id, createdAt, updatedAt, ...rest }: Agent): AgentInput => re
 export function AgentDetail({
   agent,
   onDuplicate,
+  onDuplicateAs,
   onDeleted,
   deleteSignal = 0,
   onOptimized,
 }: {
   agent: Agent
   onDuplicate: () => void
+  /** 复制一份成另一类（Agent 角色 ↔ Chat 角色）：类别建好不能改（ADR 0038） */
+  onDuplicateAs: () => void
   onDeleted: () => void
   /** 列表右键「删除」时变化，打开删除确认 */
   deleteSignal?: number
@@ -135,7 +139,11 @@ export function AgentDetail({
   const [assist, setAssist] = useState(false)
   // 表单按「设定 / 能力 / 运行 / 预览」分页：一页只看一类设置，不用在长表单里来回滚。
   // 看到哪一页记在本地，切到别的角色还停在同一页
-  const [tab, setTabState] = useState<RoleTab>(() => {
+  // Chat 角色（ADR 0038）不挂能力、不分派、不跑工作流：没有「能力」页，也不显示这几个开关和对话范围；
+  // 内置「助手」的运行配置不生效（Chat 页在输入框里选 CLI 和模型）
+  const chatScope = scopeOf(agent) === 'chat'
+  const assistant = agent.origin === CHAT_ORIGIN
+  const [tabRaw, setTabState] = useState<RoleTab>(() => {
     try {
       const v = localStorage.getItem('role-tab') ?? ''
       return ROLE_TABS.includes(v as RoleTab) ? (v as RoleTab) : (OLD_TABS[v] ?? 'role')
@@ -143,6 +151,7 @@ export function AgentDetail({
       return 'role'
     }
   })
+  const tab: RoleTab = chatScope && tabRaw === 'caps' ? 'role' : tabRaw
   const setTab = (v: RoleTab) => {
     setTabState(v)
     try {
@@ -236,8 +245,13 @@ export function AgentDetail({
   ]
   const live = { ...agent, ...value }
   // 可以引入的：不是自己、还没引入、引入后不会绕回自己（「子任务」不作为可选角色，不允许其它角色引入它）
+  // 只能引入同一类的（Chat 角色引入 Chat 角色，ADR 0038）
   const includable = listableAgents(agents).filter(
-    (a) => a.id !== agent.id && !draft.includes.includes(a.id) && !wouldCycle(agent.id, a.id, agents),
+    (a) =>
+      scopeOf(a) === scopeOf(agent) &&
+      a.id !== agent.id &&
+      !draft.includes.includes(a.id) &&
+      !wouldCycle(agent.id, a.id, agents),
   )
   const include = (id: string) =>
     !draft.includes.includes(id) && !wouldCycle(agent.id, id, agents) && set('includes', [...draft.includes, id])
@@ -308,6 +322,10 @@ export function AgentDetail({
               meta={
                 <>
                   {core ? <Badge tone="accent">{t('必备')}</Badge> : <Badge>{category?.name ?? t('未分类')}</Badge>}
+                  {/* 类别建好不能改（要换就「复制为另一类」）：只读徽标 */}
+                  <Badge title={t('建好后不能改；要换类别就在「⋯」里复制为另一类')}>
+                    {chatScope ? t('Chat 角色') : t('Agent 角色')}
+                  </Badge>
                   {locked && !core && <Badge tone="accent">{t('内置')}</Badge>}
                   {draft.common && <Badge tone="accent">{t('通用')}</Badge>}
                   {/* 就绪不标：一切正常不占位置，有问题由下面的提示条说 */}
@@ -342,6 +360,10 @@ export function AgentDetail({
                     <Copy className="h-4 w-4 text-subtle" />
                     {t('复制一份')}
                   </MenuItem>
+                  <MenuItem onSelect={onDuplicateAs}>
+                    <Copy className="h-4 w-4 text-subtle" />
+                    {chatScope ? t('复制为 Agent 角色') : t('复制为 Chat 角色')}
+                  </MenuItem>
                   <MenuItem onSelect={() => exportAgent(agent)}>
                     <Download className="h-4 w-4 text-subtle" />
                     {t('导出分享包')}
@@ -372,12 +394,16 @@ export function AgentDetail({
                 icon: ScrollText,
                 extra: draft.includes.length ? <TabCount n={draft.includes.length} /> : undefined,
               },
-              {
-                id: 'caps',
-                label: t('能力'),
-                icon: Blocks,
-                extra: draft.mounts.length ? <TabCount n={draft.mounts.length} /> : undefined,
-              },
+              ...(chatScope
+                ? []
+                : [
+                    {
+                      id: 'caps' as const,
+                      label: t('能力'),
+                      icon: Blocks,
+                      extra: draft.mounts.length ? <TabCount n={draft.mounts.length} /> : undefined,
+                    },
+                  ]),
               {
                 id: 'run',
                 label: t('运行'),
@@ -439,24 +465,28 @@ export function AgentDetail({
                     placeholder={t('一句话说明它擅长什么')}
                   />
                 </Field>
-                <Checkbox
-                  checked={draft.common}
-                  onChange={(v) => set('common', v)}
-                  label={t('通用角色')}
-                  hint={t('工作流里任何角色执行时都可以把子任务派给它，不用写进工作流。')}
-                />
-                <Checkbox
-                  checked={draft.canDelegate}
-                  onChange={(v) => set('canDelegate', v)}
-                  label={t('能开启子对话')}
-                  hint={t('项目顶层的对话里可以把消息交给子对话，或者新建子对话；子对话本身不能再分派。')}
-                />
-                <Checkbox
-                  checked={draft.canPlan}
-                  onChange={(v) => set('canPlan', v)}
-                  label={t('能启动计划')}
-                  hint={t('需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。')}
-                />
+                {!chatScope && (
+                  <>
+                    <Checkbox
+                      checked={draft.common}
+                      onChange={(v) => set('common', v)}
+                      label={t('通用角色')}
+                      hint={t('工作流里任何角色执行时都可以把子任务派给它，不用写进工作流。')}
+                    />
+                    <Checkbox
+                      checked={draft.canDelegate}
+                      onChange={(v) => set('canDelegate', v)}
+                      label={t('能开启子对话')}
+                      hint={t('项目顶层的对话里可以把消息交给子对话，或者新建子对话；子对话本身不能再分派。')}
+                    />
+                    <Checkbox
+                      checked={draft.canPlan}
+                      onChange={(v) => set('canPlan', v)}
+                      label={t('能启动计划')}
+                      hint={t('需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。')}
+                    />
+                  </>
+                )}
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted">{t('标签')}</span>
                   <TagPicker value={draft.tags} onChange={(v) => set('tags', v)} />
@@ -613,6 +643,7 @@ export function AgentDetail({
                         )
                       })}
                       <AgentPicker
+                        scope={scopeOf(agent)}
                         onPick={(a) => include(a.id)}
                         exclude={agents.filter((a) => !includable.includes(a)).map((a) => a.id)}
                       >
@@ -762,7 +793,14 @@ export function AgentDetail({
                 set={set}
               />
             )}
-            {tab === 'run' && (
+            {tab === 'run' && assistant && (
+              <FormSection title={t('运行环境')}>
+                <p className="text-body leading-relaxed text-muted">
+                  {t('Chat 页在输入框里选 CLI、模型和思考强度，这个角色的运行配置不生效。')}
+                </p>
+              </FormSection>
+            )}
+            {tab === 'run' && !assistant && (
               <FormSection title={t('运行环境')}>
                 <>
                   <Checkbox
@@ -889,7 +927,7 @@ export function AgentDetail({
                 </FormSection>
               </>
             )}
-            {tab === 'run' && <FormSection title={t('对话范围')}>{runInField}</FormSection>}
+            {tab === 'run' && !chatScope && <FormSection title={t('对话范围')}>{runInField}</FormSection>}
 
             {tab === 'preview' && (
               <>

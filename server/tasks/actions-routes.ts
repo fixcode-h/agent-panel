@@ -16,6 +16,7 @@ import { FixApplyInput } from '../../shared/diagnosis.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
 import { forgetClaims } from '../claims.ts'
+import { scopeError } from '../../shared/conv-mode.ts'
 
 /**
  * 对话上的操作：应用排查结论的修复、撤销改动、回答子对话提问和权限确认、改对话设置、倒回、分叉、压缩、评审、停止。
@@ -185,6 +186,14 @@ export function registerActionRoutes(s: TasksScope) {
     const settings = touchesRun ? await getSettings() : undefined
     const agents = touchesRun ? await s.deps.agents.list() : undefined
     if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId)) return s.bad(c, t('找不到这个角色'))
+    // 换角色也要同一类（ADR 0038）：Chat 页的对话换不成 Agent 角色，项目里的换不成 Chat 角色
+    const wrongScope = p.data.agentId
+      ? scopeError(
+          cur,
+          agents?.find((a) => a.id === p.data.agentId),
+        )
+      : ''
+    if (wrongScope) return s.bad(c, wrongScope)
     const runOf = (t: Task) => {
       const agent = t.agentId ? agents?.find((a) => a.id === t.agentId) : { ...defaultAgent(), id: '' }
       return agent && settings ? agentRun(withTaskModel(agent, t), settings) : undefined

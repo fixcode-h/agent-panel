@@ -31,7 +31,7 @@ import {
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
-import { isPlainChat } from '../../shared/conv-mode.ts'
+import { isChatMode } from '../../shared/conv-mode.ts'
 import { agentRun, defaultCli } from '../../shared/settings.ts'
 import { expandSlash } from '../slash.ts'
 import { childAskInitial } from '../../shared/child-ask.ts'
@@ -389,7 +389,7 @@ export function createRun(sc: TasksScope) {
           : (turn) =>
               void sc.checkBudget(entry.task).then((over) => {
                 if (over || task.mode !== 'chat') return
-                if (turn.tools <= 0 && (isPlainChat(entry.task) || !announcedOnly(entry.task))) return
+                if (turn.tools <= 0 && (isChatMode(entry.task) || !announcedOnly(entry.task))) return
                 return sc
                   .nudgePlan(entry.task)
                   .catch((e) =>

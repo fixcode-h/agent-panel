@@ -110,7 +110,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       ...listableAgents(agents).map((a) => ({
         id: `a:${a.id}`,
         group: t('角色'),
-        label: a.name,
+        // 名字后面标类别（ADR 0038）：Chat 角色只在 Chat 页用，跳过去之前就能看出来
+        label: a.scope === 'chat' ? `${a.name} · ${t('Chat 角色')}` : a.name,
         sub: a.description,
         icon: Bot,
         run: () => go({ page: 'agents', id: a.id }),

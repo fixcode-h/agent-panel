@@ -19,6 +19,7 @@
 // 15. 大文件只许变小：超过 scripts/file-caps.json 里的上限就失败
 // 16. 界面上的中文要走 t()：JSX 文字节点里直接写中文会在英文界面里露出来
 // 17. 不给 process.env 整个赋值：换成普通对象后再设 HOME 等变量，os.homedir() 和子进程都读不到
+// 18. 面板工具不按「是不是 Chat 页」裁：server/orch-mcp.ts、orch-hint.ts、ask-mcp.ts 里不出现 isChatMode / isPlainChat / .plain
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -475,6 +476,20 @@ else {
         )
     })
   }
+}
+
+// 18. 面板工具按能力给，不按「是不是某个页面」的身份开关（ADR 0038，见 docs/lessons/panel-tools.md）：
+// 模式上限只在 shared/engine.ts 的 makeOrchestra 取一次，算成 canSpawn / team 这类能力字段，工具清单、说明、握手只读能力
+for (const f of ['server/orch-mcp.ts', 'server/orch-hint.ts', 'server/ask-mcp.ts']) {
+  if (!existsSync(path.join(root, f))) continue
+  read(f)
+    .split('\n')
+    .forEach((line, i) => {
+      if (/\bisChatMode\b|\bisPlainChat\b|\bo\.plain\b|orch\.plain\b/.test(line))
+        errors.push(
+          `${f}:${i + 1}：面板工具不按「是不是 Chat 页」裁，读 Orchestra 的能力字段（canSpawn / team / plans），见 ADR 0038`,
+        )
+    })
 }
 
 if (errors.length) {

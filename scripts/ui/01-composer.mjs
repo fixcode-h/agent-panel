@@ -1047,6 +1047,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .and(c.locator('[disabled]'))
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('Chat 右栏：什么都没有的聊天右栏开关没有禁用'))
+    // Chat 模式用 CLI 自带的待办（ADR 0038）：输入框上方一行「待办 1/3 · 当前步骤」，点开看全部步骤
+    await list.getByTitle('整理一份 Claude Code 和 Codex 的能力对照', { exact: true }).click()
+    const todoRow = c.locator('[data-status-row="todos"]')
+    await todoRow.waitFor({ timeout: 5000 }).catch(() => errors.push('Chat 待办：有 CLI 待办的聊天没有显示待办行'))
+    await todoRow.getByRole('button', { name: '待办' }).click()
+    await check(c, 'Chat-待办', ['待办 1/3', '整理成表格'])
     await c.close()
   }
 

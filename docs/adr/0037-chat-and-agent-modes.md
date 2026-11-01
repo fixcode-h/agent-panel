@@ -1,6 +1,6 @@
 # ADR 0037：Chat 页的对话一问一答，项目里的对话（Agent 模式）由面板推着做完
 
-状态：已接受 · 2026-10-31
+状态：已接受 · 2026-10-31 · 部分被 [ADR 0038](./0038-chat-roles.md) 取代（编排工具一行、`Orchestra.plain`、风险最后一条）
 
 ## 背景
 
@@ -27,7 +27,7 @@
 
 |              | Chat 页的对话                                                                                                                                                                     | Agent 模式（项目里的顶层对话）                                                                                   | 子对话                               |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| 编排工具     | 只留 `run_background` / `check_background` / `stop_background`，说明只讲这三个                                                                                                    | 不变                                                                                                             | 不变                                 |
+| 编排工具     | 只留 `run_background` / `check_background` / `stop_background`，说明只讲这三个（已被 ADR 0038 改成按能力给）                                                                      | 不变                                                                                                             | 不变                                 |
 | 一轮结束推进 | 只在这一轮调过工具、最后一句是「我先…」才推，每条用户消息一次（和原来一样，防 [chat-ends-turn-after-announcing](../modules/server/bugs/chat-ends-turn-after-announcing.md) 复发） | 调过工具，或没调工具但最后一句是要动手的话，都看；同一进度（或同一条用户消息）最多推 3 次，第 3 次要求说明卡在哪 | 不变：同一进度一次，推不动上报父对话 |
 
 所有对话都适用的两处提示词：
@@ -48,7 +48,7 @@ Command Code 不再提示「每轮回复完成后调用 wait_user_message」；�
 | 改动                                                                                                                                                                                                    | 位置                                                              |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `isPlainChat(task)`                                                                                                                                                                                     | `shared/conv-mode.ts`                                             |
-| `Orchestra.plain`；`orchTools` 只留后台命令三件，`orchHint` 只讲后台命令（没有时返回空，runner 不拼空行）                                                                                               | `shared/engine.ts`、`server/orch-mcp.ts`、`server/exec/runner.ts` |
+| `Orchestra.plain`（ADR 0038 删掉，改成 `canSpawn` / `team`）；`orchTools` 只留后台命令三件，`orchHint` 只讲后台命令（没有时返回空，runner 不拼空行）                                                    | `shared/engine.ts`、`server/orch-mcp.ts`、`server/exec/runner.ts` |
 | `AGENT_NUDGE_MAX = 3` / `nudgeMax` / `nextNudge`（推进计数的纯逻辑）；`takeNudge` / `lastNudge` 取代 `planNudged` 的「同一 key 只推一次」判断（`planNudged` 仍记最后一个 key，给 `stuckAfterNudge` 用） | `shared/conv-mode.ts`、`server/tasks/children.ts`                 |
 | `onTurnEnd`：Agent 模式没调工具但 `announcedOnly` 命中也推                                                                                                                                              | `server/tasks/run.ts`                                             |
 | `DEFAULT_CHAT_PROGRESS` 补「回合怎么推进」                                                                                                                                                              | `shared/agent-role.ts`                                            |
@@ -71,7 +71,7 @@ Command Code 不再提示「每轮回复完成后调用 wait_user_message」；�
 
 - Agent 模式最多多推 2 次，每次是一轮模型调用的 token；用量上限（`checkBudget`）照旧先判，到了上限不推。
 - 模型真做完了却以「接下来……」这类话收尾时，Agent 模式会被多推一次；它回一句「已经做完」就不再命中 `announcedOnly`。
-- Chat 页的对话拿不到 `spawn_agents`：要并行拆活的需求请到项目里开对话。
+- Chat 页的对话拿不到 `spawn_agents`：要并行拆活的需求请到项目里开对话。（ADR 0038：Chat 模式按设计不派子任务）
 
 ## 开放问题
 

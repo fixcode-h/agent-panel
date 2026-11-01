@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { whenLabel, workdayTimeLabel, SCHEDULE_WEEKDAYS, type Schedule } from '@shared/schedule'
 import { t } from '@shared/i18n'
-import { listableAgents } from '@shared/builtin/core'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/segmented'
@@ -10,7 +9,13 @@ import { Modal } from '@/components/ui/modal'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { Card } from '@/components/ui/card'
 import { EndChoice } from './EndChoice'
-import { durationOptions, REPEAT_OPTIONS, useScheduleForm, type SchedulePreset } from './use-schedule-form'
+import {
+  durationOptions,
+  REPEAT_OPTIONS,
+  schedulePickable,
+  useScheduleForm,
+  type SchedulePreset,
+} from './use-schedule-form'
 
 /** 表单里的一段：什么时候跑 / 跑什么 / 在哪跑；分组让长表单读起来有层次 */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -45,6 +50,7 @@ export function ScheduleDialog({
   const {
     form,
     set,
+    setProject,
     setRepeat,
     setAtLocal,
     toggleWeekday,
@@ -63,7 +69,7 @@ export function ScheduleDialog({
   const others = schedules.filter((x) => x.id !== schedule?.id)
   // 「子任务」不再作为可选角色展示，但老计划可能已经选过它：补一项显示名字，
   // 不然 Select 找不到当前项时会把角色 id 直接显示出来，看着像坏数据。保存仍按原值走，用户主动改了才换
-  const pickable = listableAgents(agents)
+  const pickable = schedulePickable(agents, form.projectId)
   const unpickable =
     form.agentId && !pickable.some((a) => a.id === form.agentId) ? agents.find((a) => a.id === form.agentId) : undefined
 
@@ -194,7 +200,7 @@ export function ScheduleDialog({
                 { value: '', label: t('聊天（不属于项目）') },
                 ...projects.map((p) => ({ value: p.id, label: p.name })),
               ]}
-              onChange={(e) => set('projectId', e.target.value)}
+              onChange={(e) => setProject(e.target.value, agents)}
             />
           </label>
           <label className="flex flex-col gap-1.5">
@@ -203,7 +209,7 @@ export function ScheduleDialog({
               value={form.agentId}
               aria-label={t('用哪个角色')}
               options={[
-                { value: '', label: t('不用角色（跟随默认 CLI）') },
+                { value: '', label: form.projectId ? t('不用角色（跟随默认 CLI）') : t('助手（默认）') },
                 ...pickable.map((a) => ({
                   value: a.id,
                   label: a.enabled ? a.name : t('{name}（已停用）', { name: a.name }),

@@ -358,8 +358,8 @@ export function includeCycles(agents: Agent[]): string[][] {
 export const cycleText = (chain: string[], agents: Agent[]) =>
   chain.map((id) => agents.find((a) => a.id === id)?.name ?? id).join(' → ')
 
-/** 通用 Agent：工作流里任何 Agent 都可以把子任务派给它们（停用的不算） */
-export const commonAgents = (agents: Agent[]) => agents.filter((a) => a.common && a.enabled)
+/** 通用 Agent：工作流里任何 Agent 都可以把子任务派给它们（停用的、Chat 角色不算，ADR 0038） */
+export const commonAgents = (agents: Agent[]) => agents.filter((a) => a.common && a.enabled && a.scope !== 'chat')
 
 /**
  * 角色的层：写了 kind 的按它；旧数据和没写的按能力推导——能开子对话、能启动工作流、挂了能力的是高级角色
@@ -489,8 +489,9 @@ export const DEFAULT_CHAT_PROGRESS =
   '## 可见进度\n连续做两次以上工具操作前先用一句话说明当前目标，完成一组工具后先用一句话报告阶段结果再继续；不要让一整轮只剩工具调用。模型没有返回思考内容时不要编造内部思考，至少给出简短的可见进度。' +
   '\n\n## 回合怎么推进\n说了要做什么就在这一回合做完：不要只回一句「我先看一下」就结束回合，紧接着调用工具去做。读文件、查代码、跑命令、改文件这些这一回合能做完的，就做完再收尾；报告阶段结果之后接着做下一步，不要停下等用户催。只在做完了、需要用户拿主意、或者确实卡住时才结束回合，并说清楚是哪一种。'
 
-export function defaultChatPrompt(input: string, agentId: string, chat: boolean, operation: boolean) {
-  return chat && !agentId && !operation ? `${input}\n\n${DEFAULT_CHAT_PROGRESS}` : input
+/** hasRole：这一轮有角色（选了角色，或 Chat 模式空 id 按内置「助手」跑，规则由聊天约束给）；只有项目里的「无角色」对话补这两条 */
+export function defaultChatPrompt(input: string, hasRole: boolean, chat: boolean, operation: boolean) {
+  return chat && !hasRole && !operation ? `${input}\n\n${DEFAULT_CHAT_PROGRESS}` : input
 }
 
 /**
