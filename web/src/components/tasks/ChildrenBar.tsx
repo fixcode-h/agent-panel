@@ -15,6 +15,7 @@ import { ChildLetters } from './ChildMail'
 import { HelperBar } from './HelperCards'
 import { usePeerMail } from './child-open'
 import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } from './child-line'
+import { ChildRequestBar } from './ChildRequestBar'
 
 /**
  * 输入框上方的状态栏（计划、子任务、子对话各一行）：不套框，当作轻量信息。
@@ -35,8 +36,11 @@ export function ChildrenBar({
   onOpen,
   onClose,
   onResume,
+  onAnswer,
 }: {
   kids: ChildSummary[]
+  /** 在父对话页直接允许 / 拒绝子对话的请求（见 ChildRequestBar） */
+  onAnswer?: (childId: string, requestId: string, allow: boolean) => Promise<void>
   /** 派出的子任务：单独占子任务那一行，点开看它的实时对话流 */
   helpers?: { task: Task; ids: string[]; teamNames: Set<string> }
   openChild: string
@@ -109,6 +113,8 @@ export function ChildrenBar({
       <div className="relative mx-auto max-w-(--content-w)">
         {/* 状态栏的后两行（计划在调用处单独一行）：子任务在上、子对话在下，各自只占一行、不换行。
             子对话行左边是计数入口、右边是关闭按钮，中间的小块放不下就收成「+N」 */}
+        {/* 子对话在等你确认：最要紧，放在最上面（子任务、子对话两行之前） */}
+        <ChildRequestBar kids={kids} onOpen={onOpen} onAnswer={onAnswer} />
         {helpers && (
           <div data-status-row="helpers" className={cn(plainRow, 'mb-1 flex-nowrap')}>
             <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />

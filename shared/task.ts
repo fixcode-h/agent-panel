@@ -21,6 +21,7 @@ import { currentRun, inRun, planTask } from './flow.ts'
 import { t, uiLocale } from './i18n.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
+import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文
@@ -514,6 +515,7 @@ export interface ConvFacts {
   helpers?: boolean
   /** 名下还在动的子对话数（它们的 convState 是执行中、等结果、等你处理，见 convActive） */
   children?: number
+  childNeeds?: number // 后代对话里在等用户确认、回答的个数（见 shared/child-needs.ts）：有它自己也是「等你处理」
   /** 计划还没做完 */
   unfinished?: boolean
   /** 独立分支还没合回父对话的分支 */
@@ -569,7 +571,7 @@ export function convState(x: ConvFacts): ConvState {
   // 或者在等后台命令 / 子对话的结果——这些照旧如实显示，和「已置完成」是同一条规矩。
   // 这也是侧栏「N 个执行中」、标题 (n)、保活回收判定的入口（见 convActive）
   if (x.gone && !x.working && !pending) return 'done'
-  if (x.requests || x.asking) return 'needs'
+  if (x.requests || x.asking || x.childNeeds) return 'needs'
   // 这一轮失败了但还有结果会推回来时不算失败：结果回来会接着开一轮，
   // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
   if (x.status === 'failed' && !pending) return 'failed'
@@ -621,7 +623,7 @@ export function childFacts(
     deletedAt?: Task['deletedAt']
     worktree?: Task['worktree']
   },
-  x: { background?: number; unmerged?: boolean } = {},
+  x: { background?: number; unmerged?: boolean; childNeeds?: number } = {},
 ): ConvFacts {
   return {
     status: task.status,
@@ -629,6 +631,7 @@ export function childFacts(
     resolved: task.resolved === true,
     requests: task.requests.length,
     asking: task.parentAsks?.length ?? 0,
+    childNeeds: x.childNeeds,
     background: x.background,
     workflow: runRunning(task),
     helpers: helpersWorking(task),
@@ -683,9 +686,9 @@ export function lastFailureNote(messages: TaskMessage[] = []): string {
  */
 export function childReport(
   task: Parameters<typeof childFacts>[0] & { messages?: TaskMessage[] },
-  x: { background?: string[]; more?: boolean; unmerged?: boolean } = {},
+  x: { background?: string[]; more?: boolean; unmerged?: boolean; childNeeds?: number } = {},
 ): ChildReport {
-  const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged })
+  const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged, childNeeds: x.childNeeds })
   let state = convState(facts)
   if (x.more && state !== 'needs' && state !== 'failed') state = 'running'
   const plan = activePlan(task)
@@ -708,7 +711,7 @@ export function childReport(
         if (x.background?.length) return t('后台命令还在跑：{list}', { list: names(x.background) })
         return facts.workflow ? t('工作流还没跑完') : t('派出的子任务还没跑完')
       case 'needs':
-        return t('有没答的提问，在等用户回答')
+        return needsReason(task, x.childNeeds)
       case 'failed': {
         // 只说「执行失败了」时用户/父对话都看不出是重试耗尽、工具没接上还是进程被回收，把根因带上
         const note = lastFailureNote(task.messages)
@@ -1078,6 +1081,7 @@ export interface ChildEntry {
   /** 正在等用户确认的请求数、没回答的提问数：都算「需要你处理」 */
   requests?: number
   asking?: number
+  childNeeds?: number // 它的后代对话里在等用户处理的个数（见 descendantNeeds）：行上同样是「等你处理」
   /** 用户标记的「解决」：算已完成 */
   resolved?: boolean
   /** AI 分析开出的子对话（见 Task.analysis）：列表里标题和别的子对话区分开 */
@@ -1131,7 +1135,8 @@ export interface ChildActivity {
  */
 export type ChildWait =
   | { kind: 'answer'; n: number }
-  | { kind: 'confirm'; n: number }
+  | { kind: 'confirm'; n: number; title?: string; question?: boolean }
+  | { kind: 'children'; n: number }
   | { kind: 'background'; n: number }
   | { kind: 'helpers'; list: string[] }
   | { kind: 'workflow' }
@@ -1143,7 +1148,8 @@ export function childWaitText(w: ChildWait | undefined): string {
     case 'answer':
       return t('等用户回答 {n} 个提问', { n: w.n })
     case 'confirm':
-      return t('等用户确认 {n} 项', { n: w.n })
+    case 'children':
+      return confirmWaitText(w)
     case 'background':
       return t('等 {n} 个后台命令', { n: w.n })
     case 'helpers':
@@ -1164,12 +1170,13 @@ export function childWaitText(w: ChildWait | undefined): string {
  */
 export function childWait(
   tk: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'steps'> & { runs?: Task['runs'] },
-  x: { background?: number; cliAlive?: boolean } = {},
+  x: { background?: number; cliAlive?: boolean; childNeeds?: number } = {},
 ): ChildWait | undefined {
   const asking = tk.parentAsks?.length ?? 0
   if (asking) return { kind: 'answer', n: asking }
   const requests = tk.requests?.length ?? 0
-  if (requests) return { kind: 'confirm', n: requests }
+  if (requests) return confirmWait(tk.requests)
+  if (x.childNeeds) return { kind: 'children', n: x.childNeeds }
   if (x.background) return { kind: 'background', n: x.background }
   const helpers = tk.steps.filter(helperRunning).map((s) => s.title)
   if (helpers.length) return { kind: 'helpers', list: helpers }
@@ -1903,6 +1910,7 @@ export function helpersWorking(t: Pick<Task, 'status' | 'steps'>) {
 /** 判定任务对外状态要读的字段：列表摘要和完整任务都有（childrenWorking、jobs 由服务端补） */
 export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
   Partial<Pick<Task, 'childrenWorking' | 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
+    childrenNeeds?: Task['childrenNeeds']
     runs?: Task['runs']
     jobs?: Task['jobs']
     archived?: Task['archived']
@@ -1924,6 +1932,7 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
     workflow: runRunning(x),
     helpers: helpersWorking(x),
     children: x.childrenWorking ?? 0,
+    childNeeds: x.childrenNeeds ?? 0,
     stopReason: x.stopReason,
     gone: taskGone(x),
   }
@@ -1994,6 +2003,7 @@ export function taskBusy(x: TaskFactsInput) {
 /** 「等结果」时在等什么：项目首页、标题栏悬停写这一句，和 convState 用同一份事实 */
 export function taskWaitText(x: TaskFactsInput): string {
   const f = taskFacts(x)
+  if (f.childNeeds && !f.requests && !f.asking) return t('子对话等你处理')
   if (f.children) return t('子对话执行中')
   if (f.helpers) return t('子任务执行中')
   if (f.background) return t('后台命令执行中')

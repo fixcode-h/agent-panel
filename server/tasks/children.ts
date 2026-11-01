@@ -28,6 +28,7 @@ import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrat
 import { reapLostJobs } from '../background.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
+import { descendantNeeds } from '../../shared/child-needs.ts'
 import { activePlan, holdWait, needsFix, panelWrap, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
@@ -82,21 +83,30 @@ export function createChildren(sc: TasksScope) {
    * 不缓存的话父对话开得越多，每秒扫整份任务列表的次数越多（每个父对话 2 次）
    */
   const CHILD_COUNT_TTL = 1000
-  let childScan: { at: number; byParent: Map<string, { working: number; cli: number }> } | null = null
+  let childScan: {
+    at: number
+    byParent: Map<string, { working: number; cli: number }>
+    needs: Map<string, number>
+  } | null = null
   async function childCountsOf(parentId: string) {
     const now = Date.now()
     if (!childScan || now - childScan.at >= CHILD_COUNT_TTL) {
       const byParent = new Map<string, { working: number; cli: number }>()
-      for (const k of await sc.store.list()) {
+      // 执行中的对话以内存里那份为准：请求刚弹出来还没落盘时，父对话也要马上变成「等你处理」
+      const all = (await sc.store.list()).map((k) => sc.live.get(k.id)?.task ?? k)
+      for (const k of all) {
         if (!k.parentTaskId) continue
         const c = byParent.get(k.parentTaskId) ?? { working: 0, cli: 0 }
         if (taskCliAlive(k.id)) c.cli++
-        if (childActive(sc.live.get(k.id)?.task ?? k)) c.working++
+        if (childActive(k)) c.working++
         byParent.set(k.parentTaskId, c)
       }
-      childScan = { at: now, byParent }
+      childScan = { at: now, byParent, needs: descendantNeeds(all) }
     }
-    return childScan.byParent.get(parentId) ?? { working: 0, cli: 0 }
+    return {
+      ...(childScan.byParent.get(parentId) ?? { working: 0, cli: 0 }),
+      needs: childScan.needs.get(parentId) ?? 0,
+    }
   }
 
   /** 名下还在运行的子对话数（见 childActive） */
@@ -123,10 +133,11 @@ export function createChildren(sc: TasksScope) {
         )
     }
     const t = sc.withJobs(task)
-    if (task.parentTaskId) return t
-    // 0 也写上：理由同 withJobs
     const kids = await childCountsOf(task.id)
-    return { ...t, childrenWorking: kids.working, childrenCli: kids.cli }
+    // 后代在等用户处理：子对话页（它下面还有孙对话）也要冒泡成「等你处理」，所以子对话也带
+    if (task.parentTaskId) return { ...t, childrenNeeds: kids.needs }
+    // 0 也写上：理由同 withJobs
+    return { ...t, childrenWorking: kids.working, childrenCli: kids.cli, childrenNeeds: kids.needs }
   }
 
   /**
@@ -397,7 +408,13 @@ export function createChildren(sc: TasksScope) {
     // 这一轮结束后还要接着做：排队的要求、面板交过来的消息、刚开好独立分支马上在分支目录里接着做的
     const more = sc.startQueue.has(childId) || hasHeld(childId)
     const project = isolated(tk) ? await sc.deps.projects.get(tk.projectId) : null
-    const r = childReport(tk, { background: jobs, more, unmerged: await sc.childUnmerged(tk, project ?? null) })
+    const r = childReport(tk, {
+      background: jobs,
+      more,
+      unmerged: await sc.childUnmerged(tk, project ?? null),
+      // 它下面的孙对话在等用户：报「等你处理」并说清是它的子对话，父对话不会当成它卡住了去催
+      childNeeds: (await childCountsOf(tk.id)).needs,
+    })
     if (r.settle === 'hold') {
       await holdChildWait(tk, r.why).catch((e) =>
         log.warn('task', '更新父对话计划的等待说明失败', { task: tk.id, error: (e as Error).message }),

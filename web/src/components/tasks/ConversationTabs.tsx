@@ -156,7 +156,8 @@ function HeadStatus({ task }: { task: Task }) {
   if (state === 'needs')
     return (
       <StatusPill tone="wait" className="hidden md:inline-flex">
-        {t('等你回复')}
+        {/* 只是子对话在等你确认时写「子对话等你处理」：这一页没有确认卡，用户要知道该去哪儿 */}
+        {taskWaitText(task) || t('等你回复')}
       </StatusPill>
     )
   return null

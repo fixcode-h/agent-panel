@@ -13,9 +13,17 @@ export function keepLiveFields(prev: Task | undefined | null, next: Task): Task 
   // CLI 存活（cliAlive / childrenCli）同理：只有带运行时字段的那几份接口给，别的沿用
   const alive = next.cliAlive === undefined ? prev.cliAlive : next.cliAlive
   const kidsCli = next.childrenCli === undefined ? prev.childrenCli : next.childrenCli
-  if (jobs === next.jobs && kids === next.childrenWorking && alive === next.cliAlive && kidsCli === next.childrenCli)
+  // 后代在等你确认的个数同理：没带就沿用，不然父对话的「等你处理」会闪掉一下
+  const needs = next.childrenNeeds === undefined ? prev.childrenNeeds : next.childrenNeeds
+  if (
+    jobs === next.jobs &&
+    kids === next.childrenWorking &&
+    alive === next.cliAlive &&
+    kidsCli === next.childrenCli &&
+    needs === next.childrenNeeds
+  )
     return next
-  return { ...next, jobs, childrenWorking: kids, cliAlive: alive, childrenCli: kidsCli }
+  return { ...next, jobs, childrenWorking: kids, cliAlive: alive, childrenCli: kidsCli, childrenNeeds: needs }
 }
 
 /**
