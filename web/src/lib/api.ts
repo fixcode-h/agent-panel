@@ -542,6 +542,9 @@ export const api = {
   appInterrupted: () => request<InterruptedTasks>('/app/interrupted'),
   /** 处理过了：保留记录，但不再自动弹 */
   appInterruptedAck: () => request<InterruptedTasks>('/app/interrupted/ack', json('POST', {})),
+  /** 被上次面板退出 / 重启打断的顶层对话：首页问一次要不要全部继续 */
+  appRestartInterrupted: () => request<InterruptedTasks>('/app/restart-interrupted'),
+  appRestartInterruptedAck: () => request<InterruptedTasks>('/app/restart-interrupted/ack', json('POST', {})),
 
   categories: () => request<Category[]>('/categories'),
   createCategory: (name: string, scope: Category['scope'] = 'agent') =>

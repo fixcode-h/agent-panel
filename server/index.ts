@@ -1145,7 +1145,7 @@ const updater = updateApi({
   restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
   // 强制更新：先让任务里的 CLI 收尾；设计、文档、模型补全这些不在任务里的也一起结束
   stopAll: async () => {
-    await tasks.stopAll()
+    await tasks.stopAll({ forUpdate: true })
     killAllProcesses()
   },
   interrupted: () => tasks.interruptedTasks(),
