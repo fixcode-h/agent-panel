@@ -274,7 +274,8 @@ await runShard('本机请求与设置', async (api) => {
   assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n')
   assert.ok(existsSync(path.join(appDir, 'dist/old.html')), '前端也换回来')
   // 有任务在执行：先下载，任务结束前不替换程序
-  const busyTask = await call('POST', '/tasks', { mode: 'chat', agentId: B.id, prompt: 'SLOW 更新等待' })
+  // Chat 页只能用 Chat 角色（ADR 0038）：不选角色、直接用乙的 CLI
+  const busyTask = await call('POST', '/tasks', { mode: 'chat', agentId: '', cli: B.cli, prompt: 'SLOW 更新等待' })
   let wj = await call('POST', '/app/install', { tag: 'v0.11.9-dev' })
   assert.equal(wj.status, 'running', '任务执行中也能开始下载')
   for (let i = 0; i < 100 && !/等待任务结束/.test(wj.phase); i++) {
@@ -381,9 +382,31 @@ await runShard('本机请求与设置', async (api) => {
       (await call('GET', '/tasks')).some((x) => x.id === task.id),
       '排查的对话留在聊天列表里',
     )
+    // Chat 页没选角色的对话按内置「助手」跑（ADR 0038）：带助手的设定和聊天约束，提示词是 Chat 模式那套，
+    // 没有项目对话的授权、工作流、执行方式这些段落
+    const sent = calls().at(-1)
+    const all = `${sent.args.join('\n')}\n${sent.input}`
+    assert.match(all, /Chat 页直接对话的助手/, '按内置助手的设定跑')
+    assert.match(all, /## 安全边界/, '带上聊天约束')
+    assert.match(sent.input, /## Chat 模式/)
+    assert.doesNotMatch(sent.input, /## 授权情况|ask_push|## 执行方式|start_plan/)
+    assert.doesNotMatch(sent.input, /## 总结格式/, 'Chat 页不写总结卡')
+    // 角色分两类：Chat 页不能用 Agent 角色（面板开的「AI 分析」除外）
+    const worker = (await call('GET', '/agents')).find((a) => a.origin === 'builtin:worker')
+    await assert.rejects(
+      call('POST', '/tasks', { projectId: '', mode: 'chat', agentId: worker.id, prompt: '用执行聊' }),
+      /是 Agent 角色/,
+    )
+    // 类别建好不能改：PUT 带上另一类也按原来的存（server/index.ts 的 parseAgent）。用自建角色测：内置的另有 syncCore 兜底
+    const mine = await call('POST', '/agents', { name: '类别测试角色', instructions: '测试' })
+    const locked = await call('PUT', `/agents/${mine.id}`, { ...mine, scope: 'chat' })
+    assert.notEqual(locked.scope, 'chat', '角色的类别改不了')
+    await call('DELETE', `/agents/${mine.id}`)
     await call('DELETE', `/tasks/${task.id}`)
     await call('PUT', '/settings', base)
-    step('AI 处理报错：整理报错、命令、输出和相关的安装情况，在聊天里新建对话排查')
+    step(
+      'AI 处理报错：整理报错、命令、输出和相关的安装情况，在聊天里新建对话排查；Chat 页按内置「助手」跑，不能用 Agent 角色',
+    )
   }
 
   // ---- 只接受本机页面的请求 ----

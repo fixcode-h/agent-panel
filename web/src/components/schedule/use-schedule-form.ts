@@ -18,6 +18,16 @@ import {
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import type { Agent } from '@shared/schema'
+import { listableAgents } from '@shared/builtin/core'
+import { CHAT_ORIGIN, scopeOf } from '@shared/conv-mode'
+
+/**
+ * 计划可选的角色（ADR 0038）：选了项目的只列 Agent 角色，聊天（不属于项目）只列自建的 Chat 角色，
+ * 空值在聊天里就是内置「助手」。「子任务」不作为可选角色
+ */
+export const schedulePickable = (agents: Agent[], projectId: string) =>
+  listableAgents(agents).filter((a) => scopeOf(a) === (projectId ? 'agent' : 'chat') && a.origin !== CHAT_ORIGIN)
 
 /**
  * 计划的编辑表单：编辑弹窗（新建、从列表编辑）和详情面板（直接改）共用这一份——
@@ -183,6 +193,12 @@ export function useScheduleForm({
   }, [schedule?.id, schedule?.updatedAt])
 
   const set = <K extends keyof ScheduleForm>(key: K, value: ScheduleForm[K]) => setForm((f) => ({ ...f, [key]: value }))
+  /** 换项目：角色的类别跟着变（项目里用 Agent 角色、聊天用 Chat 角色），选着的那个类别不对就清掉 */
+  const setProject = (projectId: string, agents: Agent[]) =>
+    setForm((f) => {
+      const a = agents.find((x) => x.id === f.agentId)
+      return { ...f, projectId, agentId: a && scopeOf(a) !== (projectId ? 'agent' : 'chat') ? '' : f.agentId }
+    })
   /**
    * 切重复规则：切到「每周」时先把执行时间那天的星期选上，用户能直接看到以后哪天执行；
    * 切到别的规则时清掉残留的星期，下次回到「每周」不会被上一次的选择干扰。
@@ -313,6 +329,7 @@ export function useScheduleForm({
   return {
     form,
     set,
+    setProject,
     setRepeat,
     setAtLocal,
     toggleWeekday,

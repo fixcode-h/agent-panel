@@ -81,6 +81,8 @@ export async function suggestTitle(task: Task, cli: string): Promise<string> {
       effort: run.effort,
       permission: def.readOnly || cs.permission,
       extraArgs: safeArgs(cs.extraArgs),
+      // 只要一行标题：CLI 能关工具、换极简系统提示的就这样跑（见 CLI 定义里的 textOnly 规则），不然每次起标题都要上万 token
+      textOnly: true,
     },
     cwd,
     env: childEnv(cs.env),

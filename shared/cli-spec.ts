@@ -104,12 +104,46 @@ export const CliPackages = z.object({
   updateAll: z.array(z.string()).optional(),
   /** 输入框的示例 */
   placeholder: z.string().default(''),
+  /**
+   * 装、删、更新时额外的环境变量，盖过设置开关带的：开关管的是执行时的行为，装包是用户自己点的。
+   * 例如 Pi 的「离线运行」带 PI_OFFLINE=1，pi update 在离线模式下什么都不做、照样退出码 0，这里清掉它
+   */
+  env: z.record(z.string(), z.string()).default({}),
+  /**
+   * 设置页列出来的推荐包，一键安装；第一项是最该装的（Pi 是联网搜索）。
+   * name、desc 是界面文案，按 i18n 翻译；note 写装完还要做什么（要密钥、要在终端里配置），没有就不写
+   */
+  recommended: z
+    .array(
+      z.object({
+        source: z.string(),
+        name: z.string(),
+        desc: z.string(),
+        note: z.string().default(''),
+        /** 介绍页（npm / GitHub），界面上点名字打开 */
+        url: z.string().default(''),
+      }),
+    )
+    .default([]),
 })
 export type CliPackages = z.infer<typeof CliPackages>
 /** 已装的一个包：source 是配置里写的，target 是交给命令用的（相对路径换成了绝对路径） */
 export interface InstalledPackage {
   source: string
   target: string
+}
+
+/**
+ * 包的来源去掉版本号后的样子，用来判断推荐的包装没装：用户可能装的是 npm:x@1.2.0 或 git:…@v1，
+ * 和推荐里写的 npm:x 是同一个包。npm 的作用域包名自己带 @（npm:@scope/x），只去掉名字后面那段
+ */
+export function packageIdentity(source: string): string {
+  const s = source.trim()
+  const npm = /^npm:(@[^/@\s]+\/[^@\s]+|[^@\s]+)(@.*)?$/.exec(s)
+  if (npm) return `npm:${npm[1].toLowerCase()}`
+  const git = /^(git:|https?:\/\/)(.+?)(\.git)?(@[^/@]*)?\/?$/i.exec(s)
+  if (git) return `git:${git[2].toLowerCase()}`
+  return s
 }
 
 /**
@@ -285,8 +319,8 @@ export function mcpConfig(
 }
 
 /**
- * 只在设置开关打开时才注入的扩展（McpSpec.extras）：Pi 的联网搜索就是这样接的，
- * 关着时文件不写、参数不加，CLI 里根本不会注册这两个工具。
+ * 只在设置开关打开时才注入的扩展（McpSpec.extras）：开关关着时文件不写、参数不加，
+ * CLI 里根本不会注册这些工具。
  * options 是 build options（含默认值），按「opt.<id>」判断；不传时一个都不注入
  */
 export function mcpExtras(
@@ -328,6 +362,11 @@ export const CliSpec = z.object({
   color: z.string().default('#64748b'),
   /** 内置了生成图片的工具（UI 设计里用，例如 Codex） */
   images: z.boolean().default(false),
+  /**
+   * CLI 自带的待办 / 计划会被面板解析显示（Claude Code 的 TodoWrite、Codex 的 turn/plan/updated → task.todos）。
+   * Chat 模式的提示词按它决定说不说「面板会显示你的待办」：没解析的 CLI（Pi 没有待办工具、Command Code 的不解析）不这么说
+   */
+  todos: z.boolean().default(false),
   /**
    * 模型列表是运行 CLI 读出来的（例如 Codex 的 app-server 列模型）：界面上这组叫「{cli} 读取」；
    * 否则是配置里写的或从安装包、配置文件里取的，叫「{cli} 内置」
@@ -412,6 +451,11 @@ export const CliSpec = z.object({
       /** 会话中途能换模型（换了模型续接同一个会话，不用开新会话带上对话记录） */
       modelSwitch: z.boolean().default(false),
       /**
+       * 会话能在别的目录里续接：中途开了独立分支、换了工作目录也照样续接原来的会话，不用丢掉重开再带对话记录。
+       * Claude Code 按会话 id 全局找（2.1.316 实测，续接后工作目录是这次启动的目录）；Pi 会停下来问要不要分叉，不能开
+       */
+      resumeAnyDir: z.boolean().default(false),
+      /**
        * 会话能分叉到哪：before 能分叉到任意一轮之前（rpc.turnId 记下每轮的位置，分叉时 {forkBefore} 是要丢掉的第一轮），
        * turn 能截到某一轮（Codex，内置适配器用轮次 id），end 能截到某条回复（Claude Code，参数里用 {forkEnd}），
        * latest 只能从最后分叉（要有分叉参数，见 args 里的 fork 条件），none 不能分叉（带上对话记录开新会话）
@@ -461,6 +505,7 @@ export const CliSpec = z.object({
       nativeCommands: [],
       limitEnv: {},
       modelSwitch: false,
+      resumeAnyDir: false,
       review: 'prompt',
       limits: 'none',
       limitArgs: [],
@@ -591,6 +636,8 @@ function value(o: BuildOptions, key: string): unknown {
       return o.title
     case 'noEdit':
       return o.noEdit
+    case 'textOnly':
+      return o.textOnly
     default:
       // opt.<id>：设置里这个开关开着
       return key.startsWith('opt.') ? o.options?.[key.slice(4)] || undefined : undefined
@@ -711,6 +758,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     limitFile: f.limitFile,
     limitArgs: f.limitArgs.length ? f.limitArgs : undefined,
     modelSwitch: f.modelSwitch,
+    resumeAnyDir: f.resumeAnyDir,
     limits: f.limits,
     docs: spec.docs,
     docsNote: tr(spec.docsNote),
@@ -722,6 +770,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     readOnly: spec.readOnlyPermission,
     color: spec.color,
     images: spec.images || undefined,
+    todos: spec.todos || undefined,
     modelsRead: spec.modelsRead || undefined,
     envExample: spec.envExample,
     env: spec.env,
@@ -730,7 +779,16 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     options: spec.options.map((x) => ({ ...x, label: tr(x.label), hint: tr(x.hint) })),
     mcp: spec.mcp,
     mcpStore: spec.mcpStore,
-    packages: spec.packages && { ...spec.packages, placeholder: tr(spec.packages.placeholder) },
+    packages: spec.packages && {
+      ...spec.packages,
+      placeholder: tr(spec.packages.placeholder),
+      recommended: spec.packages.recommended.map((r) => ({
+        ...r,
+        name: tr(r.name),
+        desc: tr(r.desc),
+        note: tr(r.note),
+      })),
+    },
     auth: spec.auth && { ...spec.auth, accountNote: tr(spec.auth.accountNote) },
     spec: true,
   }

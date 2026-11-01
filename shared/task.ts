@@ -426,7 +426,10 @@ export function sessionMoved(
   cwd: string,
   /** 对话以外的节点没有 sessionDir 可用 */
   chat = false,
+  /** CLI 能在别的目录里续接会话（CliSpec.resumeAnyDir）：换了目录也不算搬过，接着续接 */
+  anyDir = false,
 ) {
+  if (anyDir) return false
   const at = task.sessionDirs?.[sessionKey] || (chat ? (task.sessionDir ?? '') : '')
   return !!at && !sameDir(at, cwd)
 }

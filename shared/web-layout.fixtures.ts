@@ -168,7 +168,8 @@ export function webLayoutFixtures(): WebLayoutFixture[] {
           Children: [
             w('Text', 'Title', { Text: 'Welcome to the shop', FontSize: 32, Tag: 'h1' }),
             w('Text', 'Body', {
-              Text: '这是一段比较长的介绍文字，放在固定宽度的容器里会自动换行，后面的控件跟着往下排。',
+              // 用英文：CI 机器没装中文字体，中文字宽会变，折行数跟着变；这句估算约 1.3 倍宽，字宽窄两成或宽五成以内都还是两行
+              Text: 'Long text in a narrow box wraps, so later rows move.',
               FontSize: 16,
               Width: 300,
             }),

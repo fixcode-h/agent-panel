@@ -19,6 +19,7 @@ import {
   splitFolds,
   summaryStart,
   toggleSegOpen,
+  unfoldedText,
 } from './fold.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -236,4 +237,17 @@ test('summaryStart：总结后面只跟着收尾动作和一句补充时，整�
   const work = [agent('n1', '我先看看代码'), agent('n2', '改好了', { tools: [tool('read', 'a.ts')] })]
   assert.equal(summaryStart(work, 1), 1)
   assert.deepEqual(foldStats(work).parts, [t('查看 {n} 个文件', { n: 1 }), t('{n} 段说明', { n: 1 })])
+})
+
+test('unfoldedText：朗读只念收尾后留在外面的总结，中间的说明和思考不念', () => {
+  const msgs = [
+    agent('m1', '我先看看登录页', { thinking: '想想' }),
+    agent('m2', '改好了，三个文件', { tools: [tool('edit', 'a.ts')] }),
+    agent('m3', '总结：登录页的报错改清楚了'),
+  ]
+  // 口径和界面一致（summaryStart）：m3 前面紧挨着的 m2 文字在工具后面，也算总结；
+  // m1 隔着 m2 的改文件工具，是中间的说明，收在折叠里不念
+  assert.equal(unfoldedText(msgs), '改好了，三个文件\n\n总结：登录页的报错改清楚了')
+  // 还没有带正文的回复（只有思考）时没东西可念
+  assert.equal(unfoldedText([agent('m1', '', { thinking: '想' })]), '')
 })

@@ -7,6 +7,7 @@
   "docsUrl": "https://github.com/openai/codex",
   "color": "#0e8a6b",
   "images": true,
+  "todos": true,
   "modelsRead": true,
   "models": [
     {

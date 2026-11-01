@@ -6,8 +6,16 @@ import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
-import { DEFAULT_SEARCH_PROVIDER, SEARCH_PROVIDER_IDS } from './web-search.ts'
 import { DEFAULT_SPEECH_MODEL, SPEECH_MODEL_IDS } from './speech.ts'
+import {
+  DEFAULT_TTS_MODEL,
+  DEFAULT_TTS_VOICE,
+  TTS_ENGINES,
+  TTS_MODEL_IDS,
+  TTS_SPEED_MAX,
+  TTS_SPEED_MIN,
+  TTS_VOICE_COUNT,
+} from './tts.ts'
 import type { ProjectProposal } from './project-init.ts'
 import { AskQuestion, TaskRequest } from './task-request.ts'
 
@@ -135,6 +143,11 @@ export const AgentInput = z.object({
    * 旧数据没有这个字段：按 roleKind（shared/agent-role.ts）从能力开关和挂载推导，不迁移
    */
   kind: z.enum(['basic', 'advanced']).optional().catch(undefined),
+  /**
+   * 用在哪种对话：agent 项目里的对话、子对话、工作流节点、子任务；chat 只在 Chat 页（没有项目的顶层对话）。
+   * 建好不能改（换类别就复制一份）；没写（旧数据）按 agent 算，用 scopeOf 读（ADR 0038）
+   */
+  scope: z.enum(['agent', 'chat']).optional().catch(undefined),
   /** 基本角色：一句话说明什么时候该用它（进高级角色的能力索引，模型据此决定调不调） */
   when: z.string().trim().max(200).default(''),
   /** 基本角色允许的用法：inline 就地（use_capability 加载进当前对话）、subtask 派成子任务 */
@@ -2045,7 +2058,7 @@ export const TaskData = z.object({
   sessionDirs: z.record(z.string(), z.string()).default({}),
   /**
    * 要改文件时才开独立分支：对话先在原目录里看代码、回答问题，
-   * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面开新会话接着做
+   * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面接着做（能跨目录续接的 CLI 续接原会话，其余开新会话）
    */
   wantsWorktree: z.boolean().default(false),
   /**
@@ -2521,30 +2534,6 @@ export const Settings = z.object({
     })
     .prefault({}),
   /**
-   * 联网搜索：CLI 的 web_search / web_fetch 由面板代发请求（见 server/web-search.ts），
-   * 所以密钥只存在这里的设置文件（本机数据目录）里，扩展脚本和模型都拿不到。
-   * 搜索源有哪些、要不要密钥、默认地址在 shared/web-search.ts 的 SEARCH_PROVIDERS 里
-   */
-  webSearch: z
-    .object({
-      /** 搜索源 id；设置文件里写成不认识的值时回退到默认源 */
-      provider: z.enum(SEARCH_PROVIDER_IDS).catch(DEFAULT_SEARCH_PROVIDER).default(DEFAULT_SEARCH_PROVIDER),
-      /** 搜索源的密钥（需要密钥的源才用） */
-      key: z.string().trim().max(500).default(''),
-      /** 自定义地址（自建 searxng、公司网关）；留空用搜索源自己的默认地址 */
-      endpoint: z.string().trim().max(500).default(''),
-      /**
-       * endpoint 属于哪个源：地址是所有源共用的一个字段，切源时留下的旧值会被当成新源的基址。
-       * 记住归属后只在它属于当前源时采信（见 shared/web-search.ts 的 resolveSearchEndpoint）；
-       * 旧设置里没有这个字段，读出来是空串，照旧采信地址
-       */
-      endpointProvider: z
-        .union([z.enum(SEARCH_PROVIDER_IDS), z.literal('')])
-        .catch('')
-        .default(''),
-    })
-    .prefault({}),
-  /**
    * 本机语音输入（见 shared/speech.ts）：默认关，关着时输入框上不显示麦克风按钮，也不下载任何东西。
    * 模型和识别库要用户在设置里自己挑了才下载
    */
@@ -2555,6 +2544,28 @@ export const Settings = z.object({
       model: z.enum(SPEECH_MODEL_IDS).catch(DEFAULT_SPEECH_MODEL).default(DEFAULT_SPEECH_MODEL),
       /** 模型从 hf-mirror.com、识别库从 npmmirror 下载 */
       mirror: z.boolean().catch(false).default(false),
+    })
+    .prefault({}),
+  /**
+   * 语音朗读（见 shared/tts.ts），和语音输入分开设置：回复下面的朗读按钮念没折叠的总结。
+   * 默认用浏览器自带的语音，开箱就能念；在设置里下载开源的 Kokoro 模型后自动换成本机模型
+   */
+  readAloud: z
+    .object({
+      engine: z.enum(TTS_ENGINES).catch('browser').default('browser'),
+      model: z.enum(TTS_MODEL_IDS).catch(DEFAULT_TTS_MODEL).default(DEFAULT_TTS_MODEL),
+      /** 本机模型的音色（模型里的 speaker id） */
+      voice: z
+        .number()
+        .int()
+        .min(0)
+        .max(TTS_VOICE_COUNT - 1)
+        .catch(DEFAULT_TTS_VOICE)
+        .default(DEFAULT_TTS_VOICE),
+      /** 语速，1 是正常 */
+      speed: z.number().min(TTS_SPEED_MIN).max(TTS_SPEED_MAX).catch(1).default(1),
+      /** 浏览器语音的名字；空串是自动挑（优先系统的「自然」语音） */
+      browserVoice: z.string().max(200).catch('').default(''),
     })
     .prefault({}),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */

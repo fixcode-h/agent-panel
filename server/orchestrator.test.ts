@@ -477,10 +477,11 @@ test('分派角色用在不能分派的地方：明说角色设定里的分派�
   assert.equal(sub.orch?.coordinator, false)
   assert.match(sub.prompt, /没有创建子对话/)
   assert.match(sub.prompt, /分派子对话的规则这次不适用/)
-  // 独立聊天没有项目：create_conversation 一定失败，也不按分派对话提示
+  // Chat 模式（没有项目）：不按分派对话提示，提示词另起一套（ADR 0038），根本不提子对话的工具
   const free = await run(mk('s2', { projectId: '' }))
   assert.equal(free.orch?.coordinator, false)
-  assert.match(free.prompt, /分派子对话的规则这次不适用/)
+  assert.match(free.prompt, /## Chat 模式/)
+  assert.doesNotMatch(free.prompt, /create_conversation|## 执行方式/)
   // 项目里的父对话：能分派，不加这句
   const top = await run(mk('s3'))
   assert.equal(top.orch?.coordinator, true)

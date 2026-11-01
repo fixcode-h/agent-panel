@@ -93,8 +93,6 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
   if (c.req.path.startsWith('/api/mcp/ask/')) return next()
   // Blender 建模工具同理：地址里是这一轮的随机令牌，接口自己核对（以前漏了，开令牌后 Blender 工具一律 401）
   if (c.req.path.startsWith('/api/mcp/blender/')) return next()
-  // 联网搜索同理：地址里是本轮 CLI 的随机令牌，由接口自己核对；令牌不对时回 404
-  if (c.req.path.startsWith('/api/web-search/')) return next()
   // 浏览器扩展拿不到面板的 Cookie：它带的是配对令牌（index.ts 里再核对来源、本机和令牌）
   if (c.req.path.startsWith('/api/bridge/') && /^(chrome|moz)-extension:\/\//.test(c.req.header('origin') ?? ''))
     return next()

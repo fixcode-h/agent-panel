@@ -4,7 +4,7 @@ import { setLang } from './i18n.ts'
 import { resumeNote } from './resume-kids.ts'
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { TaskIcon } from './task.ts'
-import { isPlainChat, nextNudge, nudgeMax } from './conv-mode.ts'
+import { isChatMode, nextNudge, nudgeMax } from './conv-mode.ts'
 import {
   announcedOnly,
   convActive,
@@ -810,10 +810,10 @@ test('Chat 页和 Agent 模式分开：Chat 页、子对话只推一次，项目
   const plain = { mode: 'chat' as const, projectId: '', parentTaskId: '' }
   const agentConv = { mode: 'chat' as const, projectId: 'p1', parentTaskId: '' }
   const child = { mode: 'chat' as const, projectId: 'p1', parentTaskId: 'parent' }
-  assert.equal(isPlainChat(plain), true)
-  assert.equal(isPlainChat(agentConv), false)
-  assert.equal(isPlainChat(child), false)
-  assert.equal(isPlainChat({ ...plain, mode: 'workflow' }), false)
+  assert.equal(isChatMode(plain), true)
+  assert.equal(isChatMode(agentConv), false)
+  assert.equal(isChatMode(child), false)
+  assert.equal(isChatMode({ ...plain, mode: 'workflow' }), false)
   assert.equal(nudgeMax(plain), 1)
   assert.equal(nudgeMax(child), 1)
   assert.equal(nudgeMax(agentConv), 3)

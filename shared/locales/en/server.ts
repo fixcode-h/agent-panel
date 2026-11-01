@@ -563,7 +563,7 @@ export const EN_SERVER: Record<string, string> = {
     "Panel tools didn't connect ({error}). The missing ones aren't available this turn; edit files and run plain commands only, or start a new turn to get them back",
   原因未知: 'unknown reason',
   提示: 'Notice',
-  '这个 Agent 不支持扩展包': "This agent doesn't support packages",
+  '这个 Agent 不支持插件': "This agent doesn't support plugins",
   不支持这个操作: 'Unsupported action',
   先填包的来源: 'Enter a package source first',
   '命令超过 10 分钟没结束，已停止': 'The command ran for more than 10 minutes and was stopped',

@@ -701,12 +701,33 @@ test('Pi：按配置文件拼参数（默认走 RPC）', () => {
   )
 })
 
-test('Pi：离线运行、codemode 默认开着，联网搜索默认关（打开后会联网），关掉离线就不加 PI_OFFLINE', () => {
+test('Pi：离线运行、codemode 默认开着，关掉离线就不加 PI_OFFLINE；去掉的联网搜索开关老设置里有也不再生效', () => {
   const env = (options: Record<string, boolean>) =>
     cliSettings(Settings.parse({ clis: { pi: { options } } }), 'pi').env.filter((e) => e.key === 'PI_OFFLINE')
   assert.deepEqual(env({}), [{ key: 'PI_OFFLINE', value: '1' }])
   assert.deepEqual(env({ offline: false }), [])
-  assert.deepEqual(cliSettings(Settings.parse({}), 'pi').options, { offline: true, codemode: true, webSearch: false })
+  assert.deepEqual(cliSettings(Settings.parse({}), 'pi').options, { offline: true, codemode: true })
+  // 面板不再自己做联网搜索（Pi 靠插件联网）：老设置里打开过的 webSearch 开关读出来直接忽略
+  const old = cliSettings(Settings.parse({ clis: { pi: { options: { webSearch: true } } } }), 'pi')
+  assert.deepEqual(old.options, { offline: true, codemode: true })
+})
+
+test('Pi：联网搜索插件的批量搜索、批量抓取也显示成网页搜索 / 打开网页，带上搜索词和网址', () => {
+  const parse = parserFor('pi', CWD)
+  const tool = (toolName: string, args: unknown) => {
+    const ev = parse({ type: 'tool_execution_start', toolName, toolCallId: toolName, args })
+    const t = ev.find((e) => e.type === 'tool')
+    assert.ok(t && t.type === 'tool')
+    return t.tool
+  }
+  assert.deepEqual(
+    [tool('web_search', { query: 'vite 7' }).label, tool('web_search', { queries: ['vite 7', 'react 19'] }).label],
+    ['vite 7', 'vite 7 · react 19'],
+  )
+  const fetched = tool('fetch_content', { urls: ['https://a.example/x', 'https://b.example/y'] })
+  assert.equal(fetched.kind, 'web')
+  assert.equal(fetched.label, 'https://a.example/x https://b.example/y')
+  assert.equal(tool('fetch_content', { url: 'https://a.example/x' }).label, 'https://a.example/x')
 })
 
 test('Claude Code：默认关掉自带的自动记忆（按目录存，同一项目的对话会互相串），设置里关掉开关就不加', () => {

@@ -31,9 +31,13 @@ export function CapabilityFields({
   set: <K extends keyof AgentInput>(key: K, value: AgentInput[K]) => void
 }) {
   const kind = roleKind(draft)
-  // 能挂的：启用的基本角色，不是自己、还没挂（「子任务」是兜底角色，不作为可选能力）
+  // 能挂的：启用的基本角色，不是自己、还没挂（「子任务」是兜底角色，不作为可选能力；Chat 角色不能挂）
   const mountable = listableAgents(agents).filter(
-    (a) => a.id !== self.id && roleKind(a) === 'basic' && !draft.mounts.some((m) => m.agentId === a.id),
+    (a) =>
+      a.id !== self.id &&
+      roleKind(a) === 'basic' &&
+      a.scope !== 'chat' &&
+      !draft.mounts.some((m) => m.agentId === a.id),
   )
   // 内置高级角色改了挂载就算接管：之后启动同步不再按内置定义改写它的挂载（AgentInput.mountsCustom）
   const setMounts = (mounts: AgentMount[]) => {

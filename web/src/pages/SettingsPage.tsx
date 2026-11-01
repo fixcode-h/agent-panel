@@ -24,7 +24,7 @@ import {
   Gauge,
   Keyboard,
   Mic,
-  Search,
+  Volume2,
   Component,
   Box,
   Heading,
@@ -99,11 +99,11 @@ const BlenderSection = lazy(() =>
 const RemoteSection = lazy(() =>
   import('@/components/settings/RemoteSection').then((m) => ({ default: m.RemoteSection })),
 )
-const WebSearchSection = lazy(() =>
-  import('@/components/settings/WebSearchSection').then((m) => ({ default: m.WebSearchSection })),
-)
 const SpeechSection = lazy(() =>
   import('@/components/settings/SpeechSection').then((m) => ({ default: m.SpeechSection })),
+)
+const ReadAloudSection = lazy(() =>
+  import('@/components/settings/ReadAloudSection').then((m) => ({ default: m.ReadAloudSection })),
 )
 const IntegrationsSection = lazy(() =>
   import('@/components/settings/IntegrationsSection').then((m) => ({ default: m.IntegrationsSection })),
@@ -135,6 +135,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
   { id: 'speech', label: t('语音输入'), icon: Mic, group: t('通用') },
+  { id: 'read-aloud', label: t('语音朗读'), icon: Volume2, group: t('通用') },
   { id: 'fonts', label: t('外观'), icon: Type, group: t('通用') },
   { id: 'markdown', label: t('Markdown 样式'), icon: Heading, group: t('通用') },
   { id: 'components', label: t('组件'), icon: Component, group: t('通用') },
@@ -151,7 +152,6 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'integrations', label: t('授权'), icon: ShieldCheck, group: t('连接') },
   { id: 'remote', label: t('外部访问'), icon: Globe, group: t('连接') },
   { id: 'network', label: t('网络与代理'), icon: Network, group: t('连接') },
-  { id: 'web-search', label: t('联网搜索'), icon: Search, group: t('连接') },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
   { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
   { id: 'blender', label: 'Blender', icon: Box, group: t('建模') },
@@ -194,8 +194,8 @@ function SettingsBody({
   const [shell, setShell] = useState(initial.shell)
   const [proxy, setProxy] = useState(initial.proxy)
   const [proxyOn, setProxyOn] = useState(initial.networkProxyEnabled)
-  const [webSearch, setWebSearch] = useState(initial.webSearch)
   const [speech, setSpeech] = useState(initial.speech)
+  const [readAloud, setReadAloud] = useState(initial.readAloud)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [fileFormat, setFileFormat] = useState(initial.fileFormat)
   const [language, setLanguage] = useState(initial.language)
@@ -362,9 +362,8 @@ function SettingsBody({
     childIdleAskMinutes: childAskValid ? childAskMin : initial.childIdleAskMinutes,
     // 只存设置，地址属外部配置：没填就存空字符串，不发请求；投递规则见 server/webhook.ts
     webhook: { enabled: webhookOn, url: webhookValid ? webhookUrlTrimmed : initial.webhook.url },
-    // 联网搜索：搜索源和密钥（开关在 CLI 自己的设置里，不在这份全局设置里）
-    webSearch,
     speech,
+    readAloud,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
@@ -790,8 +789,8 @@ function SettingsBody({
                 />
               )}
               {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
-              {cur.id === 'web-search' && <WebSearchSection value={webSearch} onChange={setWebSearch} />}
               {cur.id === 'speech' && <SpeechSection value={speech} onChange={setSpeech} />}
+              {cur.id === 'read-aloud' && <ReadAloudSection value={readAloud} onChange={setReadAloud} />}
               {cur.id === 'integrations' && <IntegrationsSection />}
               {cur.id === 'general' && (
                 <>

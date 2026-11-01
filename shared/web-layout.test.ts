@@ -41,8 +41,8 @@ test('网页：换行按宽度分行、容器高度算上所有行；绝对定�
 test('网页：文字按字宽估、固定宽度里折行，后面的控件跟着往下排', () => {
   const at = rects('网页文字和控件')
   assert.deepEqual(at('Title'), [24, 24, 752, 48])
-  assert.deepEqual(at('Body'), [24, 84, 300, 72])
-  assert.deepEqual(at('After'), [24, 228, 752, 40])
+  assert.deepEqual(at('Body'), [24, 84, 300, 48])
+  assert.deepEqual(at('After'), [24, 204, 752, 40])
 })
 
 test('网页：平板 / 手机用断点里的属性，Collapsed 的不画也不占位置', () => {

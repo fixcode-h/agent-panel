@@ -25,7 +25,17 @@ import { cn } from '@/lib/utils'
 import { RowShell, ToolRows } from './ToolRow'
 import { useAiLook } from '@/lib/ai-look'
 import { fmtDuration } from '@/lib/tasks'
-import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
+import {
+  addFoldCut,
+  foldCuts,
+  foldStats,
+  keptOut,
+  replyText,
+  segOpenOf,
+  splitFolds,
+  toggleSegOpen,
+  unfoldedText,
+} from '@/lib/fold'
 import { dedupePeerReports } from '@/lib/peer-dedupe'
 import { ChildAskCard } from './ChildAskCard'
 import { ReceivedRow } from './PeerMessage'
@@ -1132,8 +1142,11 @@ export function ChatReply({
   // 正文比回复头缩进一格（reply-body）：图标在最左，名字、正文、下面的复制按钮在同一条竖线上
   if (live) return <div className="reply-body flex flex-col gap-2">{body}</div>
   const replies = list.map(replyText).filter((x, i) => list[i].role === 'agent' && x.trim())
+  const text = replies.map((x) => x.trim()).join('\n\n')
+  // 朗读只念没折叠的部分：每一段收尾后留在外面的总结；不折叠的对话整轮都在外面，念全部
+  const spoken = fold ? parts.map(unfoldedText).filter(Boolean).join('\n\n') : text
   return (
-    <ReplyFrame text={replies.map((x) => x.trim()).join('\n\n')} at={list.at(-1)?.at} actions={actions} always={last}>
+    <ReplyFrame text={text} at={list.at(-1)?.at} actions={actions} always={last} speak={{ id: key, text: spoken }}>
       <div className="reply-body flex flex-col gap-2">{body}</div>
     </ReplyFrame>
   )

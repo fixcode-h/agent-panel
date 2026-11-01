@@ -8,7 +8,6 @@ import {
   type Project,
   type DeliveryHow,
   type TaskMessage,
-  defaultAgent,
 } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
@@ -31,8 +30,9 @@ import {
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
-import { isPlainChat } from '../../shared/conv-mode.ts'
+import { isChatMode, settledTodos, turnRole } from '../../shared/conv-mode.ts'
 import { agentRun, defaultCli } from '../../shared/settings.ts'
+import { getCli } from '../../shared/clis.ts'
 import { expandSlash } from '../slash.ts'
 import { childAskInitial } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
@@ -283,7 +283,8 @@ export function createRun(sc: TasksScope) {
       })
     // 这一轮启动时的选择，用来判断执行中用户有没有换 CLI/模型/强度。
     // 不用 Agent 角色的对话（agentId 为空）按默认 Agent 的配置算，CLI、模型取任务里选的那一套
-    const startAgent = task.agentId ? agents.find((a) => a.id === task.agentId) : { ...defaultAgent(), id: '' }
+    // Chat 页选的角色被删了也按内置助手的配置算（和 runner 的 turnRole 同一个口径）
+    const startAgent = turnRole(task, agents, task.agentId)
     const startedRun = startAgent ? agentRun(withTaskModel(startAgent, task), settings) : undefined
     // 项目里用分派角色（主理）的顶层对话就是父对话：分诊、派单，只做护栏内的就地微改动
     const coordinatorRole = !task.parentTaskId && !!task.projectId && !!startAgent?.canDelegate
@@ -389,7 +390,7 @@ export function createRun(sc: TasksScope) {
           : (turn) =>
               void sc.checkBudget(entry.task).then((over) => {
                 if (over || task.mode !== 'chat') return
-                if (turn.tools <= 0 && (isPlainChat(entry.task) || !announcedOnly(entry.task))) return
+                if (turn.tools <= 0 && (isChatMode(entry.task) || !announcedOnly(entry.task))) return
                 return sc
                   .nudgePlan(entry.task)
                   .catch((e) =>
@@ -527,6 +528,8 @@ export function createRun(sc: TasksScope) {
             ? () => sc.beginEdit(entry, changed)
             : undefined,
         branch: coordinatorRole && dir ? await currentBranch(dir).catch(() => '') : undefined,
+        // 这一轮的 CLI 自带待办会不会被面板显示：Chat 模式的提示词据此决定怎么说计划（CLI 定义的 todos）
+        cliTodos: !!startedRun && !!getCli(startedRun.cli)?.todos,
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
           task.mode === 'chat' && dir
@@ -822,6 +825,8 @@ export function createRun(sc: TasksScope) {
       if (rec && (rec.role !== 'user' || rec.panel || rec.child)) m = { ...m, panel: rec.panel ?? 'note' }
     }
     sc.notePlanInput(next, !!m.panel || !!m.child)
+    // 用户发了新消息：上一轮已经全部做完的 CLI 待办收起，不再一直挂着「待办已完成」
+    if (!m.panel && !m.child && !m.peer) next.todos = settledTodos(next.todos)
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
@@ -968,6 +973,8 @@ export function createRun(sc: TasksScope) {
       working: task.working,
     })
     if (wait === 'ok') {
+      // CLI 停在等下一句（上一轮已结束）：用户的新消息同样收起全部做完的待办
+      if (msg.role === 'user' && !msg.panel && !msg.child && !msg.peer) task.todos = settledTodos(task.todos)
       task.updatedAt = new Date().toISOString()
       markDelivery(task, msg, 'wait')
       await sc.store.update(task.id, task)

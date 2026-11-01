@@ -209,3 +209,18 @@ export function splitFolds<T>(msgs: T[], cuts: number[]): T[][] {
   parts.push(msgs.slice(from))
   return parts
 }
+
+/**
+ * 这一段收尾后留在折叠外面的回复文字（总结那几段），朗读只念这些：
+ * 折叠起来的思考、工具调用和中间的说明不念。还没有带正文的回复时是空串
+ */
+export function unfoldedText(msgs: TaskMessage[]) {
+  const { last, first } = foldStats(msgs)
+  if (last < 0) return ''
+  return msgs
+    .slice(first, last + 1)
+    .filter((m) => m.role === 'agent')
+    .map((m) => replyText(m).trim())
+    .filter(Boolean)
+    .join('\n\n')
+}

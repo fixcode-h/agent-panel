@@ -36,12 +36,13 @@ import { capture } from './exec/process.ts'
 import { getSettings } from './settings.ts'
 import { log } from './log.ts'
 
-const speechDir = () => path.join(DATA_DIR, 'speech')
+// 识别库（sherpa-onnx）语音输入和语音朗读共用一份，朗读那边（server/tts.ts）用下面导出的几个函数
+export const speechDir = () => path.join(DATA_DIR, 'speech')
 const runtimeDir = () => path.join(speechDir(), `sherpa-onnx-${SHERPA_VERSION}`)
 const modelDir = (id: string) => path.join(speechDir(), 'models', id)
-const platformPackage = () => sherpaPlatformPackage(platform(), arch())
+export const platformPackage = () => sherpaPlatformPackage(platform(), arch())
 
-function runtimeReady() {
+export function runtimeReady() {
   const pkg = platformPackage()
   const mods = path.join(runtimeDir(), 'node_modules')
   return (
@@ -66,8 +67,32 @@ export function speechStatus(): SpeechStatus {
   }
 }
 
+/** 下载任务里装识别库要用到的几项（语音输入、语音朗读的下载任务都有） */
+export interface RuntimeJob {
+  step: string
+  progress?: { done: number; total: number }
+  abort: AbortController
+}
+
+/** 识别库还没有时装上：sherpa-onnx-node 和这台电脑对应的原生包 */
+export async function installRuntime(mirror: boolean, j: RuntimeJob) {
+  if (runtimeReady()) return
+  await installPackage('sherpa-onnx-node', SHERPA_VERSION, mirror, j)
+  await installPackage(platformPackage(), SHERPA_VERSION, mirror, j)
+}
+
+/** 加载识别库：从数据目录里装好的那份 require，打不进单文件 server.mjs */
+export function sherpaLib<T>(): T {
+  const require = createRequire(path.join(runtimeDir(), 'node_modules', 'sherpa-onnx-node', 'package.json'))
+  try {
+    return require('sherpa-onnx-node') as T
+  } catch (e) {
+    throw new Error(t('加载语音识别库失败：{error}', { error: (e as Error).message }))
+  }
+}
+
 /** 解一个 npm 包的 tgz 到 node_modules/<名字>：tgz 里的内容都在 package/ 下面 */
-async function installPackage(name: string, version: string, mirror: boolean, j: NonNullable<typeof job>) {
+async function installPackage(name: string, version: string, mirror: boolean, j: RuntimeJob) {
   const work = path.join(speechDir(), '.download')
   const file = path.join(work, `${name}-${version}.tgz`)
   const url = npmTarball(name, version, mirror)
@@ -110,10 +135,7 @@ export function downloadSpeechModel(id: string) {
   job = j
   void (async () => {
     const { mirror } = (await getSettings()).speech
-    if (!runtimeReady()) {
-      await installPackage('sherpa-onnx-node', SHERPA_VERSION, mirror, j)
-      await installPackage(platformPackage(), SHERPA_VERSION, mirror, j)
-    }
+    await installRuntime(mirror, j)
     for (const f of m.files) {
       const to = path.join(modelDir(m.id), f.name)
       if (existsSync(to)) continue
@@ -162,13 +184,7 @@ let loaded: { id: string; rec: Promise<Recognizer> } | undefined
 function recognizer(m: SpeechModel) {
   if (loaded?.id === m.id) return loaded.rec
   const rec = (async () => {
-    const require = createRequire(path.join(runtimeDir(), 'node_modules', 'sherpa-onnx-node', 'package.json'))
-    let lib: { OfflineRecognizer: { createAsync(config: unknown): Promise<Recognizer> } }
-    try {
-      lib = require('sherpa-onnx-node')
-    } catch (e) {
-      throw new Error(t('加载语音识别库失败：{error}', { error: (e as Error).message }))
-    }
+    const lib = sherpaLib<{ OfflineRecognizer: { createAsync(config: unknown): Promise<Recognizer> } }>()
     const threads = Math.max(1, Math.min(4, availableParallelism() - 1))
     return lib.OfflineRecognizer.createAsync(recognizerConfig(m, (f) => path.join(modelDir(m.id), f), threads))
   })()

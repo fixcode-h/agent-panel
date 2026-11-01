@@ -1,7 +1,7 @@
 // 通用的对话消息：用户的气泡、AI 回复下面的时间和操作。
 // 除了工作流的节点输出，所有 AI 对话（任务对话、UI 设计）都用这一套，各自通过 actions 加自己的按钮
 import { useLayoutEffect, useRef, useState } from 'react'
-import { ChevronDown, MoreHorizontal, Quote, type LucideIcon } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, Quote, Square, Volume2, type LucideIcon } from 'lucide-react'
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu'
 import { CopyIcon } from '@/components/ui/copy-icon'
 import { toast } from '@/lib/toast'
@@ -14,6 +14,8 @@ import { t, uiLocale } from '@shared/i18n'
 import { copyText } from '@shared/composer'
 import { MessageBody } from './AttachmentView'
 import { IconButton } from '@/components/ui/icon-button'
+import { useData } from '@/lib/data'
+import { readAloud, readAloudSupported, stopReading, useReadAloud } from '@/lib/read-aloud'
 
 /** 时间格式化器按语言、选项复用：每次渲染都新建 Intl 实例很贵（消息多时一次推送要格式化几十条） */
 const formats = new Map<string, Intl.DateTimeFormat>()
@@ -96,6 +98,27 @@ export function CopyButton({
   )
 }
 
+/**
+ * 朗读：念这段回复里没折叠的部分（总结），念的时候换成「停止」。
+ * 用本机模型还是浏览器语音、音色、语速都在设置 → 语音朗读；用浏览器语音而浏览器又不支持时不显示
+ */
+export function SpeakButton({ id, text }: { id: string; text: string }) {
+  const playing = useReadAloud(id)
+  const opts = useData().settings?.readAloud
+  if (!opts || (opts.engine === 'browser' && !readAloudSupported())) return null
+  return (
+    <IconButton
+      size="sm"
+      icon={playing ? Square : Volume2}
+      label={playing ? t('停止朗读') : t('朗读')}
+      title={playing ? t('停止朗读') : t('朗读总结')}
+      onClick={() =>
+        playing ? stopReading() : readAloud(id, text, opts, (error) => toast.error(t('朗读失败：{error}', { error })))
+      }
+    />
+  )
+}
+
 /** 引用：把这段内容作为引用块放进当前对话的输入框 */
 export function QuoteButton({ text }: { text: string }) {
   return (
@@ -159,6 +182,7 @@ export function MessageMeta({
   at,
   attachments,
   actions,
+  speak,
   align = 'start',
 }: {
   text: string
@@ -166,6 +190,8 @@ export function MessageMeta({
   /** 用户消息：复制、引用时卡片换成文件路径 */
   attachments?: Attachment[]
   actions?: React.ReactNode
+  /** AI 回复：朗读念的文字（没折叠的总结）和这段回复的 id；不传就没有朗读按钮 */
+  speak?: { id: string; text: string }
   align?: 'start' | 'end'
   always?: boolean
 }) {
@@ -179,6 +205,7 @@ export function MessageMeta({
     >
       {text && <CopyButton text={text} attachments={attachments} />}
       {text && <QuoteButton text={attachments ? copyText(text, attachments) : text} />}
+      {speak?.text && <SpeakButton id={speak.id} text={speak.text} />}
       {actions}
       {time?.short && (
         <time dateTime={at} title={time.full} className="px-1.5 tabular-nums">
@@ -325,11 +352,14 @@ export function ReplyFrame({
   text,
   at,
   actions,
+  speak,
   children,
 }: {
   text: string
   at?: string
   actions?: React.ReactNode
+  /** 朗读的文字和 id，见 MessageMeta */
+  speak?: { id: string; text: string }
   /** 兼容调用方：操作一直显示，不再需要这个开关 */
   always?: boolean
   children: React.ReactNode
@@ -339,7 +369,7 @@ export function ReplyFrame({
       {children}
       {/* 复制图标和缩进的回复正文（32px）对齐：减去按钮自己的内边距 6px */}
       <div className="pl-[26px]">
-        <MessageMeta text={text} at={at} actions={actions} />
+        <MessageMeta text={text} at={at} actions={actions} speak={speak} />
       </div>
     </div>
   )

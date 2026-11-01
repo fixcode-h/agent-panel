@@ -6,7 +6,6 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import {
   aliasAgent,
-  defaultAgent,
   type Agent,
   type AgentUsage,
   type Attachment,
@@ -131,6 +130,7 @@ import { dropAsked } from '../../shared/task-settle.ts'
 import { askViaParent } from './child-question.ts'
 import { askPushRequest, dropOwnRequests, noteAnswer, panelRequest, replies } from './panel-requests.ts'
 import { orchHint } from '../orch-mcp.ts'
+import { turnRole } from '../../shared/conv-mode.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
 import { MODEL_HINT } from '../../shared/blender.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
@@ -215,6 +215,7 @@ export interface RealContext {
   beginEdit?: EngineHost['beginEdit']
   inlineEdit?: EngineHost['inlineEdit']
   runBackground?: EngineHost['runBackground']
+  cliTodos?: EngineHost['cliTodos']
   checkBackground?: EngineHost['checkBackground']
   stopBackground?: EngineHost['stopBackground']
   lessons?: EngineHost['lessons']
@@ -813,7 +814,7 @@ const inToolWait = new Set<string>()
 /** 这次调用要用的 API：CLI 的登录方式是 API 时才有；账号登录不受并发上限管 */
 function callApi(ctx: RealContext, call: AgentCall) {
   const id = ctx.agents.some((a) => a.id === call.agentId) ? call.agentId : aliasAgent(call.agentId)
-  const found = id ? ctx.agents.find((a) => a.id === id) : { ...defaultAgent(), id: '', name: '', description: '' }
+  const found = turnRole(ctx.task, ctx.agents, id)
   // 找不到角色时由 runAgent 报错
   if (!found) return undefined
   const agent =
@@ -925,10 +926,11 @@ async function runAgent(
   // 本轮开始的索引：重试成功时只收这一轮以后的卡（用户插话会往同一轮里再 push user，不能按 role 猜边界）
   const turnStart = task.messages.length
   // agentId 为空表示这个对话不用 Agent 角色：直接用默认 CLI，不注入角色设定
-  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）
+  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）；Chat 页选的角色被删了按内置助手跑（turnRole）
   const id = ctx.agents.some((a) => a.id === agentId) ? agentId : aliasAgent(agentId)
-  const found = id ? ctx.agents.find((a) => a.id === id) : { ...defaultAgent(), id: '', name: '', description: '' }
+  const found = turnRole(ctx.task, ctx.agents, id)
   if (!found) return { ok: false, error: t('找不到执行这一步的角色，可能已被删除') }
+  if (id && found.id !== id) log.info('agent', 'Chat 对话的角色已被删除，按内置助手跑', { task: task.id, agentId: id })
   // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
   const agent =
     call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(settings)) : withTaskModel(found, task)
@@ -1001,9 +1003,9 @@ async function runAgent(
   const rewind = chat ? task.rewind : undefined
   // 对话中途换了 CLI、（不能中途换模型的 CLI 换了）模型或（不支持中途换强度的 CLI 换了）思考强度：
   // 原来的会话接不上，开新会话把之前的对话带过去。
-  // 会话开在别的目录里（中途开了独立分支）也接不上：CLI 的会话按目录存，换了目录 --resume 找不到。
-  // 子任务一样要查：父对话开了独立分支后，子任务的会话还留在原目录
-  const moved = sessionMoved(task, sessionKey, cwd, chat)
+  // 会话开在别的目录里（中途开了独立分支）也接不上：多数 CLI 的会话按目录存，换了目录 --resume 找不到。
+  // 子任务一样要查：父对话开了独立分支后，子任务的会话还留在原目录。能跨目录续接的（resumeAnyDir）照样续接
+  const moved = sessionMoved(task, sessionKey, cwd, chat, def.resumeAnyDir)
   const switched =
     chat && (sessionChanged(task, cliId, model, effort, def.effortBoundSession, def.modelSwitch) || moved)
   if (switched) resume = undefined
@@ -1101,7 +1103,7 @@ async function runAgent(
   // 新会话里什么都没有，改用完整的提示
   const base = !resume && call.fresh ? call.fresh : prompt
   let input = op?.kind === 'review' && def.review !== 'native' ? reviewPrompt(op.target) : base
-  input = defaultChatPrompt(input, agentId, chat, !!op)
+  input = defaultChatPrompt(input, !!(agentId || found.instructions), chat, !!op)
   // 之前的节点收不了的补充，交给这个节点
   const pending = step ? notes.get(task.id) : undefined
   if (pending?.length) {
@@ -1121,7 +1123,7 @@ async function runAgent(
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? call.orch : undefined
-  // Chat 页的对话没有后台命令时说明是空的，不拼空行
+  // Chat 模式没有后台命令时说明是空的，不拼空行
   const hint = orch && !resume ? orchHint(orch) : ''
   if (hint) input = `${input}\n\n${hint}`
   // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取；
@@ -2819,6 +2821,7 @@ export async function runRealTurn(ctx: RealContext) {
     beginEdit: ctx.beginEdit,
     inlineEdit: ctx.inlineEdit,
     runBackground: ctx.runBackground,
+    cliTodos: ctx.cliTodos,
     checkBackground: ctx.checkBackground,
     stopBackground: ctx.stopBackground,
     forwardSpawn: ctx.forwardSpawn,

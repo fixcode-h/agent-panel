@@ -10,7 +10,7 @@
 - 本机 HTTP API：Hono + `@hono/node-server`，只监听 `127.0.0.1`（因为会启动本机 CLI、读写项目目录），同时提供前端静态文件（生产模式由 `server/static.ts` 托管构建产物：gzip + 缓存头 + ETag，见 [performance.md](performance.md)）。
 - 数据存储：用户数据是数据目录（默认 `~/.agent-panel`）下的 JSON 文件，读写集中在 `server/store.ts`，任务单独存在 `server/task-store.ts`。
 - 项目与任务：项目扫描和分类（配合 `shared/project-scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks.ts`、`server/task-store.ts`）。
-- CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/install.ts`）。
+- CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载，CLI 自己的插件（Pi 的扩展包，装删更新跑 CLI 的命令）（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/install.ts`）。
 - 面板能力给 Agent 用：进程内 MCP 工具，编排（`server/orch-mcp.ts`）、向用户提问（`server/ask-mcp.ts`）、UI 设计（`server/design-mcp.ts`）。`spawn_agents` 顶层的 `agent` / `tier` / `resume` 是整批默认值，顶层写错字段直接报错（以前只读 `tasks[i]`、顶层 `resume` 被静默丢掉，复看会退回默认「子任务」角色，见 [bugs/helper-resume-lost-role.md](bugs/helper-resume-lost-role.md)）；resume 命中时角色怎么定、`tier` 跟谁，规则在 [shared 模块 README 里「对话的执行计划」那一条](../shared/README.md)。
 - 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训、导出、版本更新。
 - Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见 [library.md](library.md)「技能库的多文件管理」。
@@ -21,7 +21,7 @@
 | 子页面                                     | 内容                                                                                                         |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | [子对话、提问与计划推进](children.md)      | 子对话分派和完成流转、`/children` 摘要、删除独立分支、提问开关联动、合回后的父对话测试、计划推进、转交父对话 |
-| [定时计划、设置与其他接口](features.md)    | 定时计划、设置的默认值迁移、后台命令和进程路由、回收站、对话搜索、工作总结、联网搜索代理、教训草稿、项目更新 |
+| [定时计划、设置与其他接口](features.md)    | 定时计划、设置的默认值迁移、后台命令和进程路由、回收站、对话搜索、工作总结、教训草稿、项目更新               |
 | [打开对话页的服务端开销](performance.md)   | 打开一个对话页时服务端重复付的代价和两轮优化的实测                                                           |
 | [数据落盘、对话日志与附件](storage.md)     | 原子写入与损坏恢复、对话专属日志、附件落盘                                                                   |
 | [状态回收与强制更新后的恢复](lifecycle.md) | 面板重启和页面宽限到期后的状态回收、强制更新后的恢复名单                                                     |
