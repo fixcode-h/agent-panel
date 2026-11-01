@@ -373,7 +373,21 @@ export const CliSpec = z.object({
    */
   modelsRead: z.boolean().default(false),
   models: z.array(z.object({ id: z.string(), label: z.string(), isDefault: z.boolean().optional() })).default([]),
-  efforts: z.array(z.object({ id: z.string(), label: z.string() })).default([]),
+  /**
+   * off：这一档是「关掉思考」（Pi 的 off、Codex 的 none）。模型目录只记思考的各档，不记关；
+   * 目录认识的模型只要能思考，就照样给这一档。CLI 没有能真正关掉思考的写法时不要列这一档。
+   * env：选了这一档时加的环境变量（Claude Code 关思考没有命令行参数，靠环境变量）；值是 JSON 对象时和已有的同名变量合并
+   */
+  efforts: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        off: z.boolean().optional(),
+        env: z.record(z.string(), z.string()).optional(),
+      }),
+    )
+    .default([]),
   /** 思考强度跟着模型走，不用 efforts 的全局列表过滤 */
   effortsFromModel: z.boolean().default(false),
   /** 会话不支持中途换思考强度：换了强度也开新会话 */
@@ -437,6 +451,11 @@ export const CliSpec = z.object({
       /** 会话中途能换模型（换了模型续接同一个会话，不用开新会话带上对话记录） */
       modelSwitch: z.boolean().default(false),
       /**
+       * 会话能在别的目录里续接：中途开了独立分支、换了工作目录也照样续接原来的会话，不用丢掉重开再带对话记录。
+       * Claude Code 按会话 id 全局找（2.1.316 实测，续接后工作目录是这次启动的目录）；Pi 会停下来问要不要分叉，不能开
+       */
+      resumeAnyDir: z.boolean().default(false),
+      /**
        * 会话能分叉到哪：before 能分叉到任意一轮之前（rpc.turnId 记下每轮的位置，分叉时 {forkBefore} 是要丢掉的第一轮），
        * turn 能截到某一轮（Codex，内置适配器用轮次 id），end 能截到某条回复（Claude Code，参数里用 {forkEnd}），
        * latest 只能从最后分叉（要有分叉参数，见 args 里的 fork 条件），none 不能分叉（带上对话记录开新会话）
@@ -486,6 +505,7 @@ export const CliSpec = z.object({
       nativeCommands: [],
       limitEnv: {},
       modelSwitch: false,
+      resumeAnyDir: false,
       review: 'prompt',
       limits: 'none',
       limitArgs: [],
@@ -616,6 +636,8 @@ function value(o: BuildOptions, key: string): unknown {
       return o.title
     case 'noEdit':
       return o.noEdit
+    case 'textOnly':
+      return o.textOnly
     default:
       // opt.<id>：设置里这个开关开着
       return key.startsWith('opt.') ? o.options?.[key.slice(4)] || undefined : undefined
@@ -687,7 +709,12 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     command: spec.command,
     versionArgs: spec.versionArgs,
     models: spec.models.map((m) => ({ ...m, label: tr(m.label) })),
-    efforts: spec.efforts.map((e) => ({ id: e.id, label: tr(e.label) })),
+    efforts: spec.efforts.map((e) => ({
+      id: e.id,
+      label: tr(e.label),
+      ...(e.off ? { off: true } : {}),
+      ...(e.env ? { env: e.env } : {}),
+    })),
     effortsFromModel: spec.effortsFromModel,
     effortBoundSession: spec.effortBoundSession,
     tiers: { high: tier('high'), medium: tier('medium'), low: tier('low') },
@@ -731,6 +758,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     limitFile: f.limitFile,
     limitArgs: f.limitArgs.length ? f.limitArgs : undefined,
     modelSwitch: f.modelSwitch,
+    resumeAnyDir: f.resumeAnyDir,
     limits: f.limits,
     docs: spec.docs,
     docsNote: tr(spec.docsNote),

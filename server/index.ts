@@ -135,7 +135,7 @@ import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-
 import { analyzeProject, detectVcs } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
 import { grantCookie, tokenGuard, viaProxy, withToken } from './auth.ts'
-import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
+import { isAllowedHost, isExternalRequest, isLocalHost, originAllowed } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
 import { sweepPanelMcp } from './panel-mcp-files.ts'
@@ -360,8 +360,9 @@ const app = new Hono().basePath('/api')
  */
 app.use('*', async (c, next) => {
   const host = c.req.header('host') ?? ''
-  // 本机地址，或者当前开着的外网访问地址（见 remote.ts）
-  if (!isAllowedHost(host)) return c.json({ error: t('只接受来自本机的访问') }, 403)
+  const external = isExternalRequest(c.env)
+  // 本机地址、当前外网访问地址，或外网专用端口（Host 不限，令牌由 tokenGuard 强制，Origin 要和 Host 同源，见 remote.ts）
+  if (!external && !isAllowedHost(host)) return c.json({ error: t('只接受来自本机的访问') }, 403)
   const origin = c.req.header('origin')
   // 浏览器扩展只能调 /bridge 下面的接口（报标签页、取指令、交图片），别的一律不行
   if (/^(chrome|moz)-extension:\/\//.test(origin ?? '')) {
@@ -379,13 +380,7 @@ app.use('*', async (c, next) => {
     return next()
   }
   if (origin !== undefined) {
-    let ok = false
-    try {
-      const from = new URL(origin)
-      // 外网页面：Origin 必须是本机、当前外网地址，或者和请求的 Host 同源
-      ok = isLocalHost(from.hostname) || from.hostname.toLowerCase() === hostOf(host) || isAllowedHost(from.hostname)
-    } catch {}
-    if (!ok) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
+    if (!originAllowed(origin, host, external)) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   }
   if (c.req.header('sec-fetch-site') === 'cross-site') return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   if (
@@ -1145,7 +1140,7 @@ const updater = updateApi({
   restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
   // 强制更新：先让任务里的 CLI 收尾；设计、文档、模型补全这些不在任务里的也一起结束
   stopAll: async () => {
-    await tasks.stopAll()
+    await tasks.stopAll({ forUpdate: true })
     killAllProcesses()
   },
   interrupted: () => tasks.interruptedTasks(),
@@ -1202,7 +1197,7 @@ const tray = !!process.env.AGENT_PANEL_TRAY
 delete process.env.AGENT_PANEL_RESTARTED
 // 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网。
 // 要从外网访问时，由 cloudflared（或用户自己的反向代理）把请求转到 127.0.0.1，见 remote.ts
-configureRemote(port)
+configureRemote(root.fetch)
 const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
   // 把实际端口打出来（一行给工具解析）：PORT=0 时端口由系统分配，端到端测试照着它连，
   // 不用「先探测空闲端口再传给服务」——探测（listen 后立刻 close）和真正监听之间有窗口，
@@ -1210,10 +1205,9 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   const addr = server.address()
   const actualPort = typeof addr === 'object' && addr ? addr.port : port
   console.log(`AGENT_PANEL_PORT ${actualPort}`)
-  // 其它模块按 PORT 环境变量拼面板地址（ask-mcp、design-mcp、remote）：模块加载时读到的是 0，
+  // 其它模块按 PORT 环境变量拼面板地址（ask-mcp、design-mcp）：模块加载时读到的是 0，
   // 这里把实际端口写回去，否则交给 CLI 的面板 MCP 地址是 127.0.0.1:0，CLI 连不上就直接退出了
   process.env.PORT = String(actualPort)
-  configureRemote(actualPort)
   // 地址带上访问令牌：设置里打开令牌后，只有从这里打开的浏览器能访问
   const url = withToken(`http://127.0.0.1:${actualPort}`)
   console.log(`Agent 面板服务已启动: ${url}`)

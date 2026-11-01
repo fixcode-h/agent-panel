@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type { BuildOptions } from '../../../shared/clis.ts'
 import { t } from '../../../shared/i18n.ts'
-import { clipDetail, codexLimits, codexUsage, oneLine, toolText, type CliEvent } from '../parsers.ts'
+import { clipDetail, codexLimits, codexUsage, oneLine, toolText, type AskReply, type CliEvent } from '../parsers.ts'
 import { createRpcSession, type RpcSession } from './session.ts'
 import type { RpcAdapter, RpcContext } from './types.ts'
 
@@ -138,6 +138,23 @@ export function codexAdapter(
     ctx.finish(false)
   }
 
+  const steerTurn = async (ctx: RpcContext, text: string) => {
+    if (ctx.finished || !thread || !turnId || review || o.op) return false
+    const r = await ctx.request({
+      method: 'turn/steer',
+      params: { threadId: thread, input: [{ type: 'text', text, text_elements: [] }], expectedTurnId: turnId },
+    })
+    return !r?.error
+  }
+  /**
+   * 审批的回答只有 decline，带不了原话：用户拒绝后的提醒（别原样重试、被拒多次停下来问，见 deny-advice.ts）
+   * 先回 decline，再插话交给还在跑的这一轮，模型下一次请求就能看到。这一轮已经结束时 turn/steer 会被拒，不开新的一轮
+   */
+  const decided = (ctx: RpcContext, r: AskReply, send: () => void) => {
+    send()
+    if (!r.allow && r.advice) void steerTurn(ctx, r.advice).catch(() => false)
+  }
+
   const onRequest = (ctx: RpcContext, m: any) => {
     const p = m.params ?? {}
     const answer = (result: unknown) => ctx.send({ id: m.id, result })
@@ -151,7 +168,10 @@ export function codexAdapter(
         detail: [p.reason, cmd && clipDetail(cmd), p.cwd && t('目录：{dir}', { dir: p.cwd })]
           .filter(Boolean)
           .join('\n\n'),
-        reply: (r) => answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
+        reply: (r) =>
+          decided(ctx, r, () =>
+            answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
+          ),
       })
       return
     }
@@ -162,7 +182,10 @@ export function codexAdapter(
         kind: 'file',
         title: p.grantRoot ? t('允许写入目录：{dir}', { dir: p.grantRoot }) : t('修改沙箱以外的文件'),
         detail: String(p.reason ?? ''),
-        reply: (r) => answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
+        reply: (r) =>
+          decided(ctx, r, () =>
+            answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
+          ),
       })
       return
     }
@@ -179,7 +202,8 @@ export function codexAdapter(
         kind: 'command',
         title: t('需要额外权限：{what}', { what: what.join(t('，')) || t('越过沙箱') }),
         detail: String(p.reason ?? ''),
-        reply: (r) => answer(r.allow ? { permissions: want, scope: 'turn' } : { permissions: {} }),
+        reply: (r) =>
+          decided(ctx, r, () => answer(r.allow ? { permissions: want, scope: 'turn' } : { permissions: {} })),
       })
       return
     }
@@ -515,14 +539,7 @@ export function codexAdapter(
       prevTotal = undefined
       await startTurn(ctx, text)
     },
-    async steer(ctx, text) {
-      if (ctx.finished || !thread || !turnId || review || o.op) return false
-      const r = await ctx.request({
-        method: 'turn/steer',
-        params: { threadId: thread, input: [{ type: 'text', text, text_elements: [] }], expectedTurnId: turnId },
-      })
-      return !r?.error
-    },
+    steer: steerTurn,
     interrupt(ctx) {
       if (ctx.finished || !thread || !turnId) return false
       void ctx.request({ method: 'turn/interrupt', params: { threadId: thread, turnId } })

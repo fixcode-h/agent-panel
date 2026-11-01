@@ -107,3 +107,13 @@ test('migrateOnStart：崩溃前排着的消息改成没送出去，作废的提
   assert.equal(store.map.get('old')!.updatedAt, at)
   assert.deepEqual(how(store.map.get('gone')!), { d1: 'held' }, '回收站里的不动')
 })
+
+test('migrateOnStart：返回上次没正常退出时还在执行的对话（首页「全部继续」用），停在等下一句的不算', async () => {
+  const store = memStore([
+    task('run', { status: 'running' }),
+    task('idle', { status: 'running', awaitingUser: true }),
+    task('done'),
+  ])
+  assert.deepEqual(await migrateOnStart(store), ['run'])
+  assert.equal(store.map.get('run')!.stopReason, 'restart')
+})

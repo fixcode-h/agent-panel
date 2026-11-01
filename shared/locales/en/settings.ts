@@ -820,8 +820,8 @@ export const EN_SETTINGS: Record<string, string> = {
   // 外部访问
   外部访问: 'Remote access',
   允许外部访问: 'Allow remote access',
-  '默认关闭。打开后，服务仍然只监听 127.0.0.1，由隧道或反向代理把外网的请求转进来；本机和其他电脑打开的是同一个面板，数据、任务进度和对话实时同步。外网访问一律要求访问令牌。':
-    'Off by default. When on, the server still listens only on 127.0.0.1 and a tunnel or reverse proxy forwards outside requests. This computer and other computers open the same panel, with data, task progress and conversations syncing in real time. Remote requests always require the access token.',
+  '默认关闭。打开后，服务仍然只监听 127.0.0.1，由隧道、frp 或反向代理把外网的请求转到一个专用端口；本机和其他电脑打开的是同一个面板，数据、任务进度和对话实时同步。外网访问一律要求访问令牌。':
+    'Off by default. When on, the server still listens only on 127.0.0.1 and a tunnel, frp or reverse proxy forwards outside requests to a dedicated port. This computer and other computers open the same panel, with data, task progress and conversations syncing in real time. Remote requests always require the access token.',
   访问方式: 'Connection method',
   方式: 'Method',
   临时地址: 'Temporary address',
@@ -1601,12 +1601,12 @@ export const EN_SETTINGS: Record<string, string> = {
   '不用账号，重启后地址会变': 'No account needed; the URL changes on restart',
   'Cloudflare Tunnel，地址固定': 'Cloudflare Tunnel with a fixed URL',
   '已用 frp、nginx 等转到外网': 'Already forwarded with frp, nginx, etc.',
-  '用 cloudflared 生成一个临时地址，适合临时给别的电脑看。':
-    'Uses cloudflared to create a temporary URL, good for a quick look from another computer.',
+  '用 cloudflared 生成一个临时地址，适合临时给别的电脑看；国内网络经常连不上 Cloudflare。':
+    'Uses cloudflared to create a temporary URL, good for a quick look from another computer. Networks in mainland China often cannot reach Cloudflare.',
   '在 Cloudflare 后台建好 Tunnel，把 token 和域名填进来。':
     'Create a Tunnel in the Cloudflare dashboard and enter its token and domain.',
-  '已经把 127.0.0.1:8787 转到了外网时选这个，面板只负责校验地址。':
-    'Pick this when 127.0.0.1:8787 is already exposed; the panel only checks the URL.',
+  '把反向代理转到下面的「外网专用端口」，从这个端口进来的请求一律要求访问令牌。':
+    'Point your reverse proxy at the "Remote-only port" below; every request on that port requires the access token.',
   只存在本机: 'Stored only on this computer',
   访问地址: 'Public URL',
   'Tunnel 对外的域名': "The Tunnel's public domain",
@@ -1617,6 +1617,95 @@ export const EN_SETTINGS: Record<string, string> = {
   自动找到的不用填: 'Leave empty if it was found automatically',
   '装在别处时填可执行文件的完整路径。': 'Enter the full path to the executable if it lives elsewhere.',
   '在其他电脑打开，链接里已带令牌': 'Open it on another computer; the link carries the token',
+  正在登录服务器: 'Signing in to the server',
+  '正在下载 frps': 'Downloading frps',
+  正在上传到服务器: 'Uploading to the server',
+  正在安装服务: 'Installing the service',
+  配置完成: 'Setup complete',
+  云服务器: 'Cloud server',
+  '服务器 IP': 'Server IP',
+  '阿里云 ECS 的公网 IP': 'Public IP of the Alibaba Cloud ECS instance',
+  '面板通过 SSH 登录这台服务器，装好 frps 并注册成系统服务；本机自动运行 frpc。目前支持装了 systemd 的 Linux。':
+    'The panel signs in to this server over SSH, installs frps as a system service, and runs frpc on this computer. Linux with systemd is supported for now.',
+  'SSH 用户': 'SSH user',
+  '一般是 root': 'Usually root',
+  'SSH 端口': 'SSH port',
+  'SSH 密码': 'SSH password',
+  '只用这一次，不保存': 'Used once, never saved',
+  '非 root 用户需要有 sudo 权限，sudo 也用这个密码。':
+    'A non-root user needs sudo rights; sudo uses the same password.',
+  'frp 端口': 'frp port',
+  'frpc 连服务器用': 'Used by frpc to reach the server',
+  面板端口: 'Panel port',
+  '外网用 http://IP:端口 打开面板': 'Open the panel from outside at http://IP:port',
+  一键配置: 'One-click setup',
+  '浏览器到服务器这一段是 http，令牌在网络上是明文；对安全要求高时请用「固定域名」配 HTTPS。系统防火墙（firewalld、ufw）会自动放行，阿里云的安全组需要你在控制台里放行。':
+    'The browser-to-server leg is plain HTTP, so the token travels unencrypted; use "Fixed domain" with HTTPS when security matters. The system firewall (firewalld, ufw) is opened automatically; the Alibaba Cloud security group must be opened in the console.',
+  '配置中…': 'Setting up…',
+  重新配置: 'Set up again',
+  '一键配置阿里云服务器，国内访问稳定': 'One-click Alibaba Cloud server setup, stable in mainland China',
+  '填云服务器的 IP、SSH 用户和密码，面板自动在服务器上装好 frps，本机运行 frpc。':
+    "Enter the cloud server's IP, SSH user and password; the panel installs frps on the server and runs frpc here.",
+  '云服务器（frp）': 'Cloud server (frp)',
+  '先在阿里云控制台「安全组 → 入方向」放行 TCP {ssh}、{bind}、{remote}，用端口映射时再放行 {range}':
+    'First allow inbound TCP {ssh}, {bind} and {remote} in the Alibaba Cloud console (Security group → Inbound); also allow {range} if you use port mappings',
+  端口映射范围: 'Port mapping range',
+  'SSH、远程桌面等映射用的服务器端口': 'Server ports used by SSH, remote desktop and other mappings',
+  '一键配置时放行这一段，之后增删映射不用再登录服务器。改了范围要重新配置。':
+    'Setup opens this range, so adding or removing mappings later needs no server sign-in. Changing the range requires running setup again.',
+  起始端口: 'Start port',
+  结束端口: 'End port',
+  'Windows 远程桌面': 'Windows Remote Desktop',
+  'VNC / macOS 屏幕共享': 'VNC / macOS Screen Sharing',
+  '在「远程桌面连接」（mstsc）里填这个地址；本机要先在系统设置里打开远程桌面':
+    "Enter this address in Remote Desktop Connection (mstsc); enable Remote Desktop in this computer's system settings first",
+  '用 VNC 客户端或 macOS 的「屏幕共享」打开': 'Open it with a VNC client or macOS Screen Sharing',
+  端口映射: 'Port mappings',
+  添加映射: 'Add mapping',
+  未命名映射: 'Unnamed mapping',
+  本机地址: 'Local address',
+  本机端口: 'Local port',
+  服务器端口: 'Server port',
+  删除映射: 'Delete mapping',
+  '服务器端口要在 {start}–{end} 之间': 'The server port must be between {start} and {end}',
+  '服务器端口和面板或 frp 端口重复': 'The server port clashes with the panel or frp port',
+  服务器端口和另一条映射重复: 'The server port clashes with another mapping',
+  'P2P 直连': 'P2P direct',
+  文件共享: 'File sharing',
+  '在浏览器打开，用户名 {user}': 'Open in a browser; user name {user}',
+  '（在访问端电脑上，先运行访问端配置）': ' (on the visitor computer, after starting the visitor config)',
+  复制到终端里执行: 'Copy and run it in a terminal',
+  '外部打开时只能看到这个目录里的文件，只能下载，不能上传和修改。':
+    'Visitors see only the files in this folder; they can download but not upload or change anything.',
+  共享的目录: 'Shared folder',
+  '复制后保存成 visitor.toml，在访问端电脑上运行 frpc -c visitor.toml':
+    'Save it as visitor.toml and run frpc -c visitor.toml on the visitor computer',
+  复制访问端配置: 'Copy visitor config',
+  '通过云服务器访问本机的 SSH、远程桌面、文件等':
+    'Reach SSH, remote desktop, files and more on this computer through the cloud server',
+  'SSH、远程桌面直接暴露在公网上会被不停地扫描和猜密码：务必用强密码，最好在阿里云安全组里只允许自己的 IP 访问这些端口。P2P 直连不在服务器上开端口，更安全。':
+    'SSH and remote desktop exposed to the internet get scanned and brute-forced constantly: use strong passwords, and ideally allow only your own IP on these ports in the Alibaba Cloud security group. P2P direct opens no server port and is safer.',
+  访问端端口: 'Visitor port',
+  用户名: 'User name',
+  密码: 'Password',
+  复制密码: 'Copy password',
+  'P2P 直连怎么用': 'Using P2P direct',
+  '在访问端电脑上下载 frpc，把访问端配置保存成 visitor.toml，运行 frpc -c visitor.toml':
+    'On the visitor computer, download frpc, save the visitor config as visitor.toml and run frpc -c visitor.toml',
+  '两边先尝试打洞直连，流量不经过云服务器；打不通时自动改走服务器中转。访问端配置里带着 frp 令牌，只放在自己的电脑上。':
+    'Both ends first try to punch through NAT and connect directly, so traffic skips the cloud server; if that fails it relays through the server automatically. The visitor config contains the frp token, so keep it on your own computers only.',
+  '下载 frpc': 'Download frpc',
+  '缺少 P2P 密钥：删掉这条重新添加': 'Missing P2P secret: delete this mapping and add it again',
+  请选择要共享的目录: 'Choose a folder to share',
+  文件共享要设置用户名和密码: 'File sharing needs a user name and password',
+  '正在重新连接…': 'Reconnecting…',
+  重新连接: 'Reconnect',
+  外网专用端口: 'Remote-only port',
+  '反向代理转到 127.0.0.1 的这个端口': 'Point the reverse proxy at this port on 127.0.0.1',
+  '只监听本机。以前转到 8787 的请求仍按访问地址校验，改转到这里更安全：Host 被反代改写也不会被当成本机请求。':
+    'Listens on this computer only. Requests forwarded to 8787 are still checked against the public URL, but this port is safer: a rewritten Host header is never mistaken for a local request.',
+  '正在下载 frpc {n}%': 'Downloading frpc {n}%',
+  '正在下载 frpc…': 'Downloading frpc…',
   '命令行 Shell': 'Command shell',
   '后台命令和测试步骤用的 shell': 'Shell used for background commands and test steps',
   '开发者模式下抓取界面元素用的按键。': 'Keys used to pick UI elements in developer mode.',

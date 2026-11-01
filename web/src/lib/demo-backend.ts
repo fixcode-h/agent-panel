@@ -3,6 +3,7 @@
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { demoSpeech, demoTts } from './demo-speech'
+import { demoRestart } from './demo-restart'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
@@ -2729,6 +2730,7 @@ export async function handle(method: string, url: string, body: unknown) {
     await seedTasks(d)
     persist()
   }
+  if (url.startsWith('/app/restart-interrupted')) return demoRestart(d, url)
   if (url.startsWith('/app/')) return demoApp(url)
   const result = await route(method, url, body)
   // 返回副本：执行中的任务会被原地修改，页面需要拿到新对象才会刷新

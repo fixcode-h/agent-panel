@@ -49,6 +49,11 @@ export interface BuildOptions {
   /** 还没开独立分支、现在不能改文件：能按名字关掉工具的 CLI 把改文件的工具关掉 */
   noEdit?: boolean
   /**
+   * 只要一段文字的一次性小活（例如起对话标题）：能关掉全部工具、换成极简系统提示的 CLI 就这样跑，
+   * 省掉每次上万 token 的工具定义和 CLI 自带的长系统提示
+   */
+  textOnly?: boolean
+  /**
    * 从 resume 的会话分叉出一个新会话（原会话不动）；给了 turn 时只保留到那一轮（含）：
    * Codex 用 turn id，Claude Code 用那一轮最后一条回复的 uuid；
    * before 是要丢掉的第一轮的 id，分叉到它之前（Pi 用那一轮用户消息的 entryId）
@@ -98,8 +103,8 @@ export interface CliDefinition {
     efforts?: string[]
     origin?: 'cli' | 'config'
   }[]
-  /** 支持的思考强度（从低到高）；为空表示不支持 */
-  efforts: { id: string; label: string }[]
+  /** 支持的思考强度（从低到高）；为空表示不支持。off 是「关掉思考」那一档，见 cli-spec.ts */
+  efforts: { id: string; label: string; off?: boolean; env?: Record<string, string> }[]
   /** 思考强度跟着模型走（模型目录/配置里这个模型有哪些就能选哪些），不按上面的全局列表过滤 */
   effortsFromModel?: boolean
   /** 高 / 中 / 低三档默认对应的模型和思考强度，设置里可以改 */
@@ -149,6 +154,12 @@ export interface CliDefinition {
   effortBoundSession?: boolean
   /** 会话中途能换模型：换了模型仍然续接原来的会话（例如 Pi，模型是每次启动的参数，会话里可以混用） */
   modelSwitch?: boolean
+  /**
+   * 会话能在别的目录里续接：中途开了独立分支、换了目录也照样 --resume 原来的会话，不用丢掉重开。
+   * 例如 Claude Code（2.1.316 实测：会话按 id 全局找，续接后工作目录是这次启动的目录）。
+   * 不写时按「会话按目录存」处理，换了目录就开新会话、带上之前的对话（Pi 会停下来问要不要分叉）
+   */
+  resumeAnyDir?: boolean
   /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、rpc 时用） */
   parser: string | import('./cli-spec.ts').OutputSpec
   /** 执行中能插话 */
@@ -233,6 +244,53 @@ export interface CliDefinition {
 export const CLIS: CliDefinition[] = BUILTIN_SPECS.map((s) => specToDefinition(s as CliSpecInput))
 
 export const getCli = (id: string) => CLIS.find((c) => c.id === id)
+
+/** CLI 里「关掉思考」那一档的 id；没有这一档时是 undefined */
+export const offEffort = (def: Pick<CliDefinition, 'efforts'> | undefined) => def?.efforts.find((e) => e.off)?.id
+
+/** 是不是「关掉思考」那一档；按 CLI 定义判断，不按档位名字 */
+export const isOffEffort = (def: Pick<CliDefinition, 'efforts'> | undefined, effort: string | undefined) =>
+  !!effort && effort === offEffort(def)
+
+type Env = Record<string, string | undefined>
+
+/**
+ * 这一轮的强度要加的环境变量（定义里那一档的 env，例如 Claude Code 关思考）。
+ * 两边都是 JSON 对象时合并（用户自己在 CLAUDE_CODE_EXTRA_BODY 里写的别的字段不能被整个顶掉），否则这一档的值为准
+ */
+export function effortEnv(def: Pick<CliDefinition, 'efforts'> | undefined, effort: string | undefined, env: Env): Env {
+  const add = effort ? def?.efforts.find((e) => e.id === effort)?.env : undefined
+  if (!add) return env
+  const out: Env = { ...env }
+  for (const [k, v] of Object.entries(add)) out[k] = mergeJson(out[k], v)
+  return out
+}
+
+const asObject = (s: string | undefined) => {
+  try {
+    const v: unknown = s ? JSON.parse(s) : undefined
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function mergeJson(old: string | undefined, add: string) {
+  const a = asObject(old)
+  const b = asObject(add)
+  return a && b ? JSON.stringify({ ...a, ...b }) : add
+}
+
+/**
+ * 模型目录里的可选强度换成这个 CLI 能选的：只留 CLI 认识的 id；
+ * 目录只记思考的各档，模型能思考（列了档位）且 CLI 有「关」这一档时补上，不然选了「关」也会被换成最近的思考档
+ */
+export function catalogEfforts(def: Pick<CliDefinition, 'efforts'> | undefined, efforts: string[]) {
+  const allowed = def?.efforts.map((e) => e.id) ?? []
+  const list = allowed.length ? efforts.filter((e) => allowed.includes(e)) : efforts
+  const off = offEffort(def)
+  return off && list.length && !list.includes(off) ? [off, ...list] : list
+}
 
 /** 执行中的补充能不能交给正在跑的 CLI：有插话协议，或者没有协议但能用面板的 MCP 工具取（见 notes） */
 export const steerable = (cli: string | undefined) => {

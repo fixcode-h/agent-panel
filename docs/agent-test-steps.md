@@ -476,8 +476,8 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 项目设置「常规 → 子对话」选隔离方式，默认「独立 worktree」：
 
 - worktree 要改文件时才建：子对话第一次执行时只记下 `wantsWorktree`，先在父对话所在的目录里看代码；
-  要改文件时调用 `begin_edit`，面板这时从那个目录建 worktree，这一轮结束后在 worktree 里开新会话、带上之前的对话接着做
-  （`task.sessionDir` 和当前目录不一样就不续接旧会话）。还没建时 Claude Code 关掉改文件的工具（`BuildOptions.noEdit`）。
+  要改文件时调用 `begin_edit`，面板这时从那个目录建 worktree，这一轮结束后在 worktree 里接着做：CLI 定义开了 `resumeAnyDir`（Claude Code）就带着原会话过去，否则开新会话、带上之前的对话
+  （没开 `resumeAnyDir` 时 `task.sessionDirs` 记的目录和当前目录不一样就不续接旧会话）。还没建时 Claude Code 关掉改文件的工具（`BuildOptions.noEdit`）。
 - 顶层对话勾了「独立分支」也一样（项目设置「独立分支」可以设成默认勾上）；工作流任务创建时就建好。
 - worktree 完整检出，只有目录里有 `.uproject` 的大项目跳过 LFS 内容。只用来隔离文件编辑。
 - 子对话改完调用 `submit_build`：面板提交它的分支，排队试合回**建 worktree 的那个目录、那个分支**（不限定 dev），

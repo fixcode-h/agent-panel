@@ -55,7 +55,10 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
               ? { behavior: 'allow', updatedInput: claudeAnswer(name, input, r.answer, r.answers) }
               : {
                   behavior: 'deny',
-                  message: r.message ?? (r.answer ? `用户拒绝了：${r.answer}` : '用户拒绝了这个操作'),
+                  // 提醒（别原样重试、被拒多次停下来问）跟在拒绝的话后面，CLI 把整段作为工具结果交给模型，这一轮里就能看到
+                  message: [r.message ?? (r.answer ? `用户拒绝了：${r.answer}` : '用户拒绝了这个操作'), r.advice]
+                    .filter(Boolean)
+                    .join('\n'),
                 },
           ),
       })

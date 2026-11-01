@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DATA_DIR } from './store.ts'
 import { getSettings } from './settings.ts'
-import { isAllowedHost, isLocalHost } from './hosts.ts'
+import { isAllowedHost, isExternalRequest, isLocalHost } from './hosts.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -70,9 +70,11 @@ export const viaProxy = (header: (name: string) => string | undefined) => PROXY_
 
 export const tokenGuard: MiddlewareHandler = async (c, next) => {
   const host = c.req.header('host') ?? ''
-  const local = isLocalHost(host) && !viaProxy((h) => c.req.header(h))
+  // 外网专用端口进来的一律当外网，Host 是什么都不信（隧道、frp、反代的地址各不相同）
+  const external = isExternalRequest(c.env)
+  const local = !external && isLocalHost(host) && !viaProxy((h) => c.req.header(h))
   // 外网访问关着的时候只认本机地址；开着时也只认当前隧道 / 反代地址
-  if (!local && !isAllowedHost(host)) return c.text(t('这个地址不能访问面板'), 403)
+  if (!external && !local && !isAllowedHost(host)) return c.text(t('这个地址不能访问面板'), 403)
   const q = c.req.query('token')
   // 带令牌的地址：发 Cookie，再跳到去掉令牌的地址，免得令牌留在地址栏和历史记录里
   if (q && tokenMatches(q) && c.req.method === 'GET' && !c.req.path.startsWith('/api/')) {

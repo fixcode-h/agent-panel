@@ -1,4 +1,4 @@
-import { getCli, type BuildOptions } from '../../shared/clis.ts'
+import { effortEnv, getCli, isOffEffort, type BuildOptions } from '../../shared/clis.ts'
 import { apiModelIdFor } from '../../shared/accounts.ts'
 import { cliSettings } from '../../shared/settings.ts'
 import { rpcSessionFor } from './rpc/index.ts'
@@ -137,11 +137,13 @@ export async function invokeCli(o: {
       cli: o.cliId,
     })
   // API 方式下这一轮要思考：加上 CLI 定义里打开思考的参数（Codex 对第三方接口的模型默认不要思考摘要）
-  const thinkArgs = cs.api && effort && effort !== 'off' ? (def.auth?.api?.thinkArgs ?? []) : []
+  const thinkArgs = cs.api && effort && !isOffEffort(def, effort) ? (def.auth?.api?.thinkArgs ?? []) : []
   const picked =
     effort === req.effort && !thinkArgs.length
       ? req
       : { ...req, effort, extraArgs: [...(req.extraArgs ?? []), ...thinkArgs] }
+  // 这一档要靠环境变量生效的（Claude Code 关思考），按最终用的强度加上
+  const env = effortEnv(def, effort, o.env)
   // 设置里的开关（参数规则按 opt.<id> 判断）：调用方没给时用这个 CLI 现在的设置
   let build = picked.options ? picked : { ...picked, options: cs.options }
   // 角色说明（多行）不走参数：能传文件的 CLI 写进这一轮的临时目录，参数里只放路径。
@@ -175,7 +177,7 @@ export async function invokeCli(o: {
   let restore: (() => Promise<void>) | undefined
   let bridge: ReturnType<typeof openAskBridge> | undefined
   let slot: ReturnType<typeof claimPanelName> | undefined
-  let run = { ...o, build }
+  let run = { ...o, build, env }
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
   let input = o.input
   const askable = !!o.askUser && !o.noAskTool
