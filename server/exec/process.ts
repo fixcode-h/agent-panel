@@ -37,7 +37,54 @@ export interface ProcessResult {
   killed: 'stopped' | 'timeout' | 'idle' | null
   /** 启动失败（例如找不到命令） */
   spawnError?: string
+  /**
+   * 结束进程的信号（SIGKILL、SIGTERM 等）：被外部杀掉时退出码是 null，只有它能说明发生了什么。
+   * 失败原因要先写它，不能只拿 stderr 的尾巴猜（尾巴可能只是 CLI 每次都打的无害提示）
+   */
+  exitSignal?: NodeJS.Signals | null
   stderr: string
+}
+
+/**
+ * 进程是怎么结束的，写给用户看：被信号结束写信号，否则写非 0 的退出码；正常退出返回空串
+ */
+export function exitReason(r: Pick<ProcessResult, 'code' | 'exitSignal'>) {
+  if (r.exitSignal) return t('进程被外部结束，信号 {signal}', { signal: r.exitSignal })
+  if (r.code !== null && r.code !== 0) return t('退出码 {code}', { code: r.code })
+  return ''
+}
+
+/**
+ * stderr 最后 n 行，去掉 CLI 定义里登记的无害提示行（stderrNoise）：
+ * 这些行每次运行都有，留着会被当成失败原因（例如 Claude Code 对第三方模型名的提示被误读成「模型识别问题」）
+ */
+export function stderrTail(stderr: string, n: number, noise: readonly RegExp[] = []) {
+  return stderr
+    .trim()
+    .split('\n')
+    .filter((line) => !noise.some((re) => re.test(line.trim())))
+    .slice(-n)
+    .join('\n')
+    .trim()
+}
+
+/**
+ * 常驻协议的 CLI 没等这一轮结束就退出了（崩溃、配置错误、登录过期、被外部杀掉）时给用户和父对话看的原因：
+ * 先写进程怎么结束的（信号 / 退出码），再附上去掉无害提示行的 stderr 尾巴。
+ * 被 kill -9 时 stderr 里往往只剩 CLI 每次都打的提示，只给尾巴的话父对话会把那行提示当成原因
+ */
+export function earlyExitError(
+  cli: { name: string; stderrNoise?: readonly RegExp[] },
+  r: Pick<ProcessResult, 'code' | 'exitSignal'>,
+  stderr: string,
+) {
+  const tail = stderrTail(stderr, 3, cli.stderrNoise)
+  const how = exitReason(r)
+  return (
+    (how
+      ? t('{cli} 没有完成这一轮就退出了（{reason}）', { cli: cli.name, reason: how })
+      : t('{cli} 没有完成这一轮就退出了', { cli: cli.name })) + (tail ? `\n${t('stderr 最后几行：')}\n${tail}` : '')
+  )
 }
 
 /** 还在跑的子进程：程序退出时按这上面的 pid 统一清理 */
@@ -314,15 +361,15 @@ export function runProcess(o: {
         stderr += `\n[${t('解析输出出错')}] ${(e as Error).message}`
       }
     })
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       forget()
       clearTimeout(exitTimer)
       rl.close()
-      done({ code })
+      done({ code, exitSignal: signal })
     })
     // 进程已经退出，但输出流还被别人（孙进程继承了 stdout）握着时，close 可能永远不来：
     // 已经读不到更多输出了，等 3 秒给它收尾，别让等结果的调用方（后台命令、任务）挂死
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       if (settled) return
       // 进程已经退出，先撤掉「还活着」的登记（taskCliAlive、live 表、遗留进程清单）：
       // 下面只是等输出流收尾，等 close 不来也会走 3 秒兜底；不在 exit 时撤的话，
@@ -331,8 +378,8 @@ export function runProcess(o: {
       if (exitTimer) return
       exitTimer = setTimeout(() => {
         if (settled) return
-        log.warn('exec', '进程已退出但输出流没关，先结束等待', { pid: child.pid, code })
-        done({ code })
+        log.warn('exec', '进程已退出但输出流没关，先结束等待', { pid: child.pid, code, signal })
+        done({ code, exitSignal: signal })
       }, 3000)
       exitTimer.unref?.()
     })
