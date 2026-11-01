@@ -715,7 +715,7 @@ export function childReport(
         return note ? t('执行失败了（{note}）', { note }) : t('执行失败了')
       }
       case 'stopped':
-        return stopReasonText(task.stopReason)
+        return task.stopReason === 'user' ? t('用户停掉了它，等用户决定要不要继续') : stopReasonText(task.stopReason)
       case 'unfinished':
         if (work.length)
           return t('计划还没做完：{list}', {
@@ -736,7 +736,13 @@ export function childReport(
   })()
   return {
     state,
-    settle: state === 'done' ? 'ok' : state === 'failed' || state === 'stopped' ? 'fail' : 'hold',
+    // 用户亲手停的不是失败：那一步继续等（用户继续它时结果照常推回），不退回「需要修复」引着父对话去重派
+    settle:
+      state === 'done'
+        ? 'ok'
+        : state === 'failed' || (state === 'stopped' && task.stopReason !== 'user')
+          ? 'fail'
+          : 'hold',
     why: [convStateText(state), reason].filter(Boolean).join(t('：')),
     notify: state !== 'running' && state !== 'waiting' && state !== 'needs',
   }

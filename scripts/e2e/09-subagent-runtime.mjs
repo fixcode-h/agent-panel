@@ -566,6 +566,39 @@ await runShard('子对话运行与监管', async (api) => {
       prompt: 'SLOW 父对话中断后继续',
     })
     await waitFor(() => calls().some((c) => c.input.includes('SLOW 父对话中断后继续')), { label: '父对话开始执行' })
+    // 已经交付的子对话（停在等下一句）和用户单独停掉的子对话：父对话停止时不改它们的状态，继续时也不拉（实测报告问题 3）
+    const doneKid = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      parentTaskId: rp.id,
+      prompt: 'A 交付完的子对话',
+    })
+    await waitFor(
+      async () => {
+        const k = await call('GET', `/tasks/${doneKid.id}`)
+        return k.status === 'done' && !k.working
+      },
+      { label: '先交付完的子对话这一轮做完', timeout: 20000 },
+    )
+    const pausedKid = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      parentTaskId: rp.id,
+      prompt: 'SLOW 被用户叫停的子对话',
+    })
+    await waitFor(() => calls().some((c) => c.input.includes('SLOW 被用户叫停的子对话')), {
+      label: '要被用户单独停掉的子对话开始执行',
+    })
+    await call('POST', `/tasks/${pausedKid.id}/stop`)
+    await waitFor(
+      async () => {
+        const k = await call('GET', `/tasks/${pausedKid.id}`)
+        return k.status === 'stopped' && k.stopReason === 'user'
+      },
+      { label: '用户单独停掉子对话', timeout: 20000 },
+    )
     const rk = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
@@ -586,6 +619,10 @@ await runShard('子对话运行与监管', async (api) => {
       label: '父对话停下',
       timeout: 20000,
     })
+    const doneAfter = await call('GET', `/tasks/${doneKid.id}`)
+    assert.notEqual(doneAfter.status, 'stopped', '已交付的子对话不被父对话的停止改成「已中断」')
+    assert.notEqual(doneAfter.stopReason, 'parent', '已交付的子对话的停止原因不被改成父对话')
+    assert.equal((await call('GET', `/tasks/${pausedKid.id}`)).stopReason, 'user', '用户停掉的子对话原因还是用户')
     const before = calls().length
     await call('POST', `/tasks/${rp.id}/resume`, {})
     const kidCall = await waitFor(
@@ -604,6 +641,20 @@ await runShard('子对话运行与监管', async (api) => {
       { label: '父对话的续接提示点名已经拉起来的子对话', timeout: 20000 },
     )
     assert.match(parentCall.input, /被连带中断的子对话/, '续接提示写明拉起来的是哪个子对话')
+    assert.match(parentCall.input, /用户单独停掉的子对话：「[^」]*」（id [^）]+）/, '续接提示列出用户单独停掉的子对话')
+    assert.ok(parentCall.input.includes(pausedKid.id), '列出的是用户停掉的那个')
+    assert.match(parentCall.input, /不要自动交回、重派/, '写明不要自动重派')
+    // 子对话是在父对话之前拉起的：父对话这一轮已经开始，就不会再有子对话被拉起
+    const relaunched = calls()
+      .slice(before)
+      .filter(
+        (c) =>
+          c.input.includes('面板说明：上一轮') &&
+          (c.input.includes('原来的要求：\nA 交付完的子对话') ||
+            c.input.includes('原来的要求：\nSLOW 被用户叫停的子对话')),
+      )
+    assert.equal(relaunched.length, 0, '已交付的、用户单独停掉的子对话都不被拉起来')
+    assert.equal((await call('GET', `/tasks/${pausedKid.id}`)).status, 'stopped', '用户停掉的子对话还停着')
     await call('POST', `/tasks/${rp.id}/stop`).catch(() => {})
     await call('POST', `/tasks/${rk.id}/stop`).catch(() => {})
     await call('DELETE', `/tasks/${rp.id}`)

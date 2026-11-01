@@ -420,7 +420,7 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
 
   // 执行失败、被停止：退回进行中，note 里看得出是等谁失败了；有未完成计划也算结束
   for (const status of ['failed', 'stopped'] as const) {
-    const r = childReport(child({ status, stopReason: 'user', plans: childPlan(false) }))
+    const r = childReport(child({ status, stopReason: 'parent', plans: childPlan(false) }))
     assert.equal(r.settle, 'fail')
     assert.match(r.why, status === 'failed' ? /执行失败/ : /已中断/)
     const badTask = waiting()
@@ -429,6 +429,11 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
     assert.equal(item.status, 'running')
     assert.match(item.note, /需要修复：.*改文件/)
   }
+  // 用户亲手停的不是失败：那一步继续等，说法写明是用户停的，父对话不会当成要修复的去重派（实测报告问题 3）
+  const paused = childReport(child({ status: 'stopped', stopReason: 'user', plans: childPlan(false) }))
+  assert.equal(paused.state, 'stopped')
+  assert.equal(paused.settle, 'hold')
+  assert.match(paused.why, /用户停掉了它/)
 
   // 彻底完成后面板结束等下一句的进程（stopReason 为 finish）：是完成，不是中断
   const finished = childReport(child({ status: 'stopped', stopReason: 'finish', resolved: true }))
