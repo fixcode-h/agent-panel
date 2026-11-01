@@ -589,3 +589,43 @@ test('set_data 不合法时整批不改，并告诉 AI 是哪个集合、哪一�
   assert.equal((session.data as Design['data'])?.sets[0]?.rows.length, 1)
   close()
 })
+
+test('compare_template：截图和确认的模板比同一块，返回相似度、偏移和对照图文件', async () => {
+  const { encodePng } = await import('./image.ts')
+  const { mkdtempSync, writeFileSync, existsSync } = await import('node:fs')
+  const path = await import('node:path')
+  const dir = mkdtempSync(path.join(tmpdir(), 'compare-'))
+  const img = (x: number) => {
+    const w = 192
+    const h = 108
+    const data = new Uint8Array(w * h * 4)
+    for (let i = 0; i < w * h; i++) {
+      const px = i % w
+      const py = Math.floor(i / w)
+      const on = px >= x && px < x + 40 && py >= 30 && py < 60
+      data.set([on ? 255 : 0, on ? 255 : 0, on ? 255 : 0, 255], i * 4)
+    }
+    return encodePng({ width: w, height: h, data })
+  }
+  const tplFile = path.join(dir, 'tpl.png')
+  writeFileSync(tplFile, img(50))
+  const d = design()
+  d.concept = { ...d.concept!, approved: 'c1_1' }
+  const none = open({}, {}, design())
+  assert.match((await none.call('compare_template', {})).text, /还没有确认的效果图模板/)
+  none.close()
+  const { call, close } = open(
+    {},
+    { dir, conceptPath: () => tplFile, capture: async () => ({ png: img(60), rects: [] }) },
+    d,
+  )
+  const r = await call('compare_template', { region: { x: 0, y: 0, w: 1920, h: 1080 } })
+  assert.ok(!r.error, r.text)
+  assert.match(r.text, /和模板 c1_1 对比/)
+  assert.match(r.text, /相似度 \d+\/100/)
+  assert.match(r.text, /往左挪 \d+/)
+  const files = [...r.text.matchAll(/(\S+compare-\d+-(?:heat|side)\.png)/g)].map((m) => m[1])
+  assert.equal(files.length, 2)
+  assert.ok(files.every((f) => existsSync(f)))
+  close()
+})

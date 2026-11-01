@@ -23,6 +23,7 @@ import { layoutNote, layoutReport, sessionLayout } from './design-layout.ts'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { inspect } from './design-inspect.ts'
+import { compareTool } from './design-compare.ts'
 
 /**
  * 给 CLI 用的设计工具（MCP，Streamable HTTP）：AI 像在控件树和属性面板里操作一样调用工具改设计。
@@ -428,6 +429,13 @@ const TOOLS = [
       { source: { type: 'string' }, region: REGION, grid: { type: 'boolean' }, zoom: { type: 'number' } },
       ['source'],
     ),
+  },
+  {
+    name: 'compare_template',
+    description:
+      '照着确认的效果图模板搭界面时用：截一张当前画布，和模板的同一块逐像素对比，返回相似度、截图要往哪边挪几像素才和模板对齐，以及左右对照图和差异热力图（文件，用读图的能力看）。' +
+      '每搭完一个区域就用 region 写这个区域（设计稿像素）对比一次，按偏移和热力图里的红边改位置和大小，再对比确认；不写 region 是整个画布。concept 写原画 id 可以和别的原画比，不写就是已确认的模板。',
+    inputSchema: obj({ region: REGION, concept: { type: 'string' } }),
   },
   {
     name: 'check',
@@ -1027,6 +1035,10 @@ async function callTool(s: Session, raw: string, args: any) {
     case 'inspect_image':
     case 'view_image':
       return inspect(s, name === 'view_image', a)
+    case 'compare_template': {
+      const r = await compareTool(s, a)
+      return text(r.text, !!r.isError)
+    }
     case 'check': {
       const r = checkSession(s)
       const warn = warnings(s)

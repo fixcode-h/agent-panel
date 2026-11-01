@@ -15,7 +15,6 @@ import {
   type Widget,
 } from './umg.ts'
 import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
-import { t } from './i18n.ts'
 import { promptLangWord } from './prompt-lang.ts'
 import { applyOps } from './design-ops.ts'
 import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
@@ -968,7 +967,7 @@ function conceptSection(c: ConceptContext, d: Design) {
 1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
 2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。
 3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
-4. 搭完调 screenshot 截一张当前画布，和模板对比（用 view_image 看截图文件和模板的同一块），位置、比例、层次不对的接着改，直到和模板一致；check 只是辅助，完成条件同下面「用 design 工具改设计」的最后一条（全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致）。
+4. 每搭完一个区域就调 compare_template（region 写这个区域的设计稿坐标）和模板逐像素对比：按它给的偏移和差异热力图改位置、大小，再对比一次确认；全部搭完再整体对比一次（不写 region），最后 screenshot 截全图。位置、比例、层次不对的接着改，直到和模板一致；check 只是辅助，完成条件同下面「用 design 工具改设计」的最后一条（全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致）。
 - 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。
 
 `
@@ -1445,85 +1444,8 @@ function aspect(w: number, h: number) {
 
 export type { Margin }
 
-// ---- 项目里已有的子控件 ----
-
-/** 项目里一个设计的子控件，给「控件」列表用：带上它们用到的图片（选中的那一版），页面能直接画出来 */
-export interface ProjectComponents {
-  designId: string
-  /** 游戏 UI 和网页 UI 的控件不能混用，列表只列同一种的 */
-  kind: DesignKind
-  title: string
-  components: Component[]
-  images: { id: string; file: string; width: number; height: number }[]
-}
-
-/** 子控件引用的其他子控件（UserWidget 的 Class、列表和网格的 EntryWidgetClass），连同间接引用的 */
-export function componentDeps(name: string, all: Component[]): string[] {
-  const out: string[] = []
-  const visit = (n: string) => {
-    if (out.includes(n)) return
-    const c = all.find((x) => x.Name === n)
-    if (!c) return
-    out.push(n)
-    walk(c.Root, (w) => {
-      if (w.Type === 'UserWidget' && w.Class) visit(w.Class)
-      const entry = w.Properties?.EntryWidgetClass
-      if (typeof entry === 'string' && entry) visit(entry)
-    })
-  }
-  visit(name)
-  return out
-}
-
-/**
- * 把别的设计里的子控件（连同它引用的子控件和图片）加进这个设计。
- * 同名的子控件已经有了就不重复加（引用的子控件按名字共用）；图片 id 冲突时换个 id，引用跟着改。
- * 返回新的子控件和图片列表，copyFiles 是要从来源设计复制过来的图片文件
- */
-export function importComponent(
-  target: { components: Component[]; images: DesignImage[]; animations?: UiAnimation[] },
-  source: { components: Component[]; images: DesignImage[]; animations?: UiAnimation[] },
-  name: string,
-):
-  | { error: string }
-  | { components: Component[]; images: DesignImage[]; animations: UiAnimation[]; copyFiles: string[] } {
-  if (!source.components.some((c) => c.Name === name)) return { error: t('没有找到子控件 {name}', { name }) }
-  if (target.components.some((c) => c.Name === name))
-    return { error: t('这个设计里已经有叫 {name} 的子控件了', { name }) }
-  const add = componentDeps(name, source.components)
-    .filter((n) => !target.components.some((c) => c.Name === n))
-    .map((n) => structuredClone(source.components.find((c) => c.Name === n)!))
-  const used = usedImages(add.map((c) => c.Root))
-  const ids = new Set(target.images.map((i) => i.id))
-  const rename = new Map<string, string>()
-  const images = [...target.images]
-  const copyFiles: string[] = []
-  for (const img of source.images) {
-    if (!used.has(img.id)) continue
-    let id = img.id
-    for (let k = 2; ids.has(id); k++) id = `${img.id}_${k}`
-    ids.add(id)
-    if (id !== img.id) rename.set(img.id, id)
-    images.push({ ...structuredClone(img), id, status: 'idle', error: undefined })
-    copyFiles.push(...img.variants.map((v) => v.file))
-  }
-  // 图片换了 id 的，子控件里的 "img:<id>" 引用跟着换
-  const fix = (v: any): any =>
-    typeof v === 'string' && v.startsWith('img:') && rename.has(v.slice(4))
-      ? `img:${rename.get(v.slice(4))}`
-      : Array.isArray(v)
-        ? v.map(fix)
-        : v && typeof v === 'object'
-          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x)]))
-          : v
-  // 子控件自己的动画一起带过来
-  const added = new Set(add.map((c) => c.Name))
-  const animations = [
-    ...(target.animations ?? []),
-    ...structuredClone((source.animations ?? []).filter((a) => added.has(a.in))),
-  ]
-  return { components: [...target.components, ...add.map(fix)], images, animations, copyFiles }
-}
+// 项目里已有的子控件（「控件」列表、把别的设计里的子控件加进来）拆到 design-components.ts
+export { componentDeps, importComponent, type ProjectComponents } from './design-components.ts'
 
 // ---- 设计版本 ----
 
