@@ -745,7 +745,7 @@ ${prompt}`,
     return { prompts: p?.prompts ?? [], images }
   }
 
-  async function chat(d: Design, input: z.infer<typeof DesignChatInput>, job: Job) {
+  async function chat(d: Design, input: z.infer<typeof DesignChatInput>, job: Job, msgId?: string) {
     const settings = await getSettings()
     const run = chatRun(settings, input.run)
     const cliId = run.cli
@@ -782,7 +782,12 @@ ${prompt}`,
         }),
       )
     ).filter(Boolean)
-    const history = d.messages.slice(0, -1)
+    // 之前的对话：去掉这一轮自己的这条和还排着队没处理的（held）。
+    // 排队的消息是上一轮进行中记下的，上一轮的回复排在它后面：以前按「去掉最后一条」切，切掉的是上一轮的回复，
+    // 这条请求反而留在历史里，后面排着的请求也提前出现在历史里
+    const history = msgId
+      ? d.messages.filter((m) => m.id !== msgId && m.delivery?.how !== 'held')
+      : d.messages.slice(0, -1)
     const project = await projectContext(d)
     let extra = ''
     // 原画：有确认的模板就照着它做；没有模板、打开了「先出原画」时这一轮只出原画
@@ -1224,7 +1229,7 @@ ${prompt}`,
         return d
       }
       startJob(d, async (job) => {
-        const { ids, concepts } = await chat(d, input, job)
+        const { ids, concepts } = await chat(d, input, job, id)
         // 分析只出结论，不出原画和切图
         if (input.mode === 'analyze') return
         if (concepts.length) {
@@ -1687,9 +1692,20 @@ ${prompt}`,
     .put('/:id', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      const p = DesignDoc.safeParse(await c.req.json())
+      const body = await c.req.json().catch(() => ({}))
+      const p = DesignDoc.safeParse(body)
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const doc = p.data
+      // 结构（控件树、子控件、动画、画板数据、尺寸、风格）只在两种情况下收页面的：
+      // - AI 正在改这个设计（准备新一轮或在改树）时不收：这一轮结束会用它自己的树整棵写回，页面这时存的会被盖掉，
+      //   反过来页面存的旧树也可能盖掉 AI 刚改好的
+      // - 页面编辑时基于的版本（baseRev）比服务端旧：AI 已经改过了，页面这份是旧的。
+      // 不收时其余的（标题、图片、标注）照常存，响应里带上服务端的设计，页面据此换成新的、把自己的改动放进撤销栈
+      const job = jobs.get(d.id)
+      const aiEditing = starting.has(d.id) || (job?.status === 'running' && job.phase === 'design')
+      const baseRev = typeof body?.baseRev === 'number' ? body.baseRev : undefined
+      const stale = baseRev !== undefined && baseRev < d.rev
+      const keepStructure = aiEditing || stale
       const byId = new Map(d.images.map((i) => [i.id, i]))
       const images: DesignImage[] = doc.images.map((i) => {
         const old = byId.get(i.id)
@@ -1710,18 +1726,27 @@ ${prompt}`,
       for (const old of d.images) if (old.status !== 'idle' && !images.some((i) => i.id === old.id)) images.push(old)
       Object.assign(d, {
         title: doc.title,
-        designSize: doc.designSize,
-        style: doc.style,
-        data: doc.data,
-        root: normalizeTree(doc.root),
-        components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
         images,
         annotations: doc.annotations,
-        animations: doc.animations,
+        ...(keepStructure
+          ? {}
+          : {
+              designSize: doc.designSize,
+              style: doc.style,
+              data: doc.data,
+              root: normalizeTree(doc.root),
+              components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
+              animations: doc.animations,
+            }),
       })
       normalizeSlices(d)
       await save(d)
-      return c.json({ ...d, job: view(jobs.get(d.id)) })
+      return c.json({
+        ...d,
+        job: view(jobs.get(d.id)),
+        // 页面据此提示「这几处修改没有存上」，并换成服务端的设计
+        ...(keepStructure ? { rejected: aiEditing ? 'ai' : 'stale' } : {}),
+      })
     })
     .delete('/:id', async (c) => {
       const d = await get(c.req.param('id'))

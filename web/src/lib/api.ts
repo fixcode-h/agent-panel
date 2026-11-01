@@ -1015,7 +1015,9 @@ export const api = {
   deleteDesignProject: (id: string) => request<void>(`/designs/projects/${id}`, { method: 'DELETE' }),
   design: (id: string) => request<DesignFull>(`/designs/${id}`),
   createDesign: (input: NewDesignInput) => request<Design>('/designs', json('POST', input)),
-  saveDesign: (id: string, doc: DesignDoc) => request<DesignFull>(`/designs/${id}`, json('PUT', doc)),
+  /** baseRev：页面这份编辑基于服务端的哪个版本；比服务端旧时结构不收（AI 已经改过了） */
+  saveDesign: (id: string, doc: DesignDoc, baseRev?: number) =>
+    request<DesignFull & { rejected?: 'ai' | 'stale' }>(`/designs/${id}`, json('PUT', { ...doc, baseRev })),
   copyDesign: (id: string, projectId?: string) => request<Design>(`/designs/${id}/copy`, json('POST', { projectId })),
   moveDesign: (id: string, projectId: string) =>
     request<DesignMeta>(`/designs/${id}/move`, json('POST', { projectId })),

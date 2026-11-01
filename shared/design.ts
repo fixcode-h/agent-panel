@@ -884,7 +884,8 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 ### 控件的写法（宽松，少写错）
 - {"Type":"TextBlock","Name":"Txt_Title","Text":"背包","Slot":{…}}：Type、Name、Slot、Children、Class 以外的键都是属性，也可以写在 Properties 里
 - 画布（CanvasPanel）里的位置用简写：{"anchor":"top-left","x":40,"y":32,"w":320,"h":72}，anchor 取 top-left / top / top-right / left / center / right / bottom-left / bottom / bottom-right，
-  锚点和控件自身的对齐点是同一个角，x、y 是离那个点的距离（例如 bottom-right 写 x:-24,y:-24 就是离右下角各 24 像素），w、h 是宽高；铺满写 {"anchor":"stretch","margin":[左,上,右,下]}
+  锚点和控件自身的对齐点是同一个角，x、y 是离那个点的距离（例如 bottom-right 写 x:-24,y:-24 就是离右下角各 24 像素），w、h 是宽高；铺满写 {"anchor":"stretch","margin":[左,上,右,下]}；只横向拉伸（顶栏、底栏）写 {"anchor":"top-stretch","y":0,"h":80,"margin":[左,0,右,0]}，只纵向拉伸（侧栏）写 {"anchor":"left-stretch","x":0,"w":320,"margin":[0,上,0,下]}。
+  改位置时只写要改的（例如只写 h），锚点和对齐点保持原样；拉伸方向上不能写宽高，写了会报错
 - 横排、竖排等的插槽：{"padding":8 或 [左,上,右,下],"fill":1,"h":"center","v":"center"}
 - 尺寸按设计稿 ${d.designSize.X}×${d.designSize.Y} 的像素写准；照着参考图做时先量准再换算：参考图的宽高比和设计稿一致时，参考图像素坐标 × (${d.designSize.X} ÷ 参考图宽) 就是设计稿坐标
 - 图片控件的显示尺寸和图片自己的宽高比要一致（add_images 的 width、height 就按它在界面上的显示尺寸写），否则会被拉伸变形；check 会提醒

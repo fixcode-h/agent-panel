@@ -51,6 +51,17 @@
 | `web/src/components/design/DesignChat.tsx` | 对话、发送、附件、控件引用、提问面板                                                          |
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
 
+## 保存冲突、插槽简写与快捷键（2026-11-01，审查第一批）
+
+- 保存冲突：`PUT /designs/:id` 在 AI 正在改树（`starting` 或 job 在 `design` 阶段）、或页面带的 `baseRev` 比服务端 `rev` 旧时，**不收结构**（控件树、子控件、动画、画板数据、尺寸、风格），标题、图片、标注照常存，响应带 `rejected: 'ai' | 'stale'`。页面（`useDesignEditor.ts`）自动保存带 `baseRev`，被拒时提示并换成服务端的设计（自己的改动在撤销栈里）；AI 改树期间 `change` 直接挡下结构修改并提示。以前两边会整棵互相覆盖。
+- 标题清空时自动保存用上一次的标题存（以前整个不存，一直「保存中」，离开页面改动全丢）。
+- 页面替用户发的话（确认模板、发送标注）发完由 `onRequestDone` 清掉：对话栏收起再打开不会再发一遍；确认模板时自动打开对话栏。
+- 编辑快捷键（删除、方向键微调、复制粘贴）只在焦点在画布（`data-design-canvas`）、控件树或页面本身时生效；`defaultPrevented`、开着弹窗、数据面板盖着画布时不生效。撤销 / 重做照旧全局。
+- 画布插槽简写（`shared/design-ops.ts` 的 `canvasLayout`）两个方向分开算、只改写到的：对齐点只在写了 `anchor` 时跟锚点走；单轴拉伸（`top-stretch`、`stretch-x`、`left-stretch`、`stretch-y`）部分更新后保持；拉伸方向写宽高报错；`top-center`、`center-left` 这类写法都认，认不出的报错并列出可用值；只换锚点时贴到新锚点上；写了宽高自动关掉 `bAutoSize`。横竖排等插槽的 h / v 只认 left / center / right / fill（和 top / bottom），写了 x / y / w 报错；`fill` 的 false / 0 / "auto" 是 Automatic。写错统一抛 `SlotError`，由 `applyOp` 转成给 AI 的错误。
+- `resize_components` / `create_components` 的尺寸转成数字（以前存成字符串，重启后整个设计校验不过、从列表里消失）；`replace_widget` 只写一半的 Slot 和原来的合并。
+- 排队消息接着跑时，交给 AI 的历史去掉这一轮自己的这条和还排着的 `held`（以前按「去掉最后一条」切，切掉的是上一轮的回复）。
+- 回归：`server/design-mcp.test.ts` 的两条插槽用例、`scripts/e2e/06-assist.mjs`「设计补充测试」里的保存冲突断言。
+
 ## 位置回读与无头截图（2026-11-01）
 
 - 目的：AI 改完控件要回读 x / y / 宽 / 高，以前只能调 `screenshot`，而截图要用户开着设计页（画布是浏览器画的），页面没开就一个数字都拿不到。

@@ -636,7 +636,8 @@ export function Viewport({
   }, [play, runs, target, root, components, device, animCommand])
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
+    // data-design-canvas：页面的编辑快捷键（删除、方向键微调、复制粘贴）只在焦点在画布或控件树上时生效
+    <div data-design-canvas className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
       {dragImage && !play && onDropImage && (
         <div
           // 在标注工具栏下面；工具栏让到切换按钮下一行时跟着往下挪（见下面工具栏的说明）
