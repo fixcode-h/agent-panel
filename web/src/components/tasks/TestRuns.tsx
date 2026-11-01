@@ -58,7 +58,7 @@ function TestRunLine({ row }: { row: TestRunRow }) {
         </span>
         <span className="whitespace-nowrap font-mono text-subtle tabular-nums">{row.durationText}</span>
       </div>
-      <span className="flex flex-wrap gap-x-2 pl-5 text-[0.6875rem] text-subtle">
+      <span className="flex flex-wrap gap-x-2 pl-5 text-caption text-subtle">
         <span className={row.state === 'failed' ? 'text-danger' : row.state === 'passed' ? 'text-success' : undefined}>
           {row.resultText}
         </span>

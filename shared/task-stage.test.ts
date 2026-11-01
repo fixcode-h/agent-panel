@@ -1,10 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
+import { resumeNote } from './resume-kids.ts'
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { TaskIcon } from './task.ts'
+import { isChatMode, nextNudge, nudgeMax } from './conv-mode.ts'
 import {
-  resumeNote,
   announcedOnly,
   convActive,
   convState,
@@ -479,7 +480,12 @@ test('childWait：等用户 > 等确认 > 等后台命令 > 等子任务 > 等�
   assert.deepEqual(childWait(ask, { background: 2, cliAlive: true }), { kind: 'answer', n: 1 })
 
   const confirm = kidTask({ requests: [{}] as never })
-  assert.deepEqual(childWait(confirm, { background: 2, cliAlive: true }), { kind: 'confirm', n: 1 })
+  assert.deepEqual(childWait(confirm, { background: 2, cliAlive: true }), {
+    kind: 'confirm',
+    n: 1,
+    title: undefined,
+    question: false,
+  })
 
   // 后台命令在服务端跑，任务里只有编号：数量由调用方传
   assert.deepEqual(childWait(kidTask({ working: true }), { background: 2 }), { kind: 'background', n: 2 })
@@ -744,7 +750,7 @@ test('子对话的未读点：做完了没看才画，当前打开的和没做�
   assert.equal(childSeenLocally(child({ background: 1 }), turnDoneAt), false)
 })
 
-test('继续执行的续接说明：写清被打断的原因、连带拉起的子对话、没跑完的子任务和工作流', () => {
+test('继续执行的续接说明：写清被打断的原因、连带拉起 / 没能拉起的子对话、没跑完的子任务和工作流', () => {
   const note = resumeNote(
     {
       stopReason: 'restart',
@@ -756,8 +762,12 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起的�
       stoppedJobs: [{ name: 'e2e', command: 'npm run test:e2e' }],
     },
     ['改侧栏'],
+    [{ id: 'k9', title: '修登录', error: '项目目录不存在：/repo/wt\nstack…' }],
   )
   assert.match(note, /面板重启时中断/)
+  // 没能拉起来的子对话：点名 id 和报错第一行，让父对话另建子对话接手、不要干等
+  assert.match(note, /没能拉起来的子对话：「修登录」（id k9，项目目录不存在：\/repo\/wt）[\s\S]*另建子对话接手/)
+  assert.doesNotMatch(note, /stack…/, '报错只取第一行')
   assert.match(note, /已经完成的不要重做/)
   assert.match(note, /「改侧栏」[\s\S]*不用另建子对话重做/)
   assert.match(note, /「查日志」（id h1）[\s\S]*resume/)
@@ -782,4 +792,39 @@ test('说完打算就收尾：最后一句是要动手的话、之后没调工�
   assert.equal(of(m('user', 'x'), m('agent', '改好了，测试都通过。')), '', '给了结论')
   assert.equal(of(m('user', 'x'), m('agent', '我再看看。', [{}])), '', '说完接着调了工具')
   assert.equal(of(m('agent', '我再看看。'), m('user', '继续')), '', '最后是用户消息')
+  // 省掉「我」的打算（实测报告问题 8：Codex + 第三方模型说完「接着读 design4.md」就结束这一轮）
+  assert.equal(
+    of(m('user', 'x'), m('agent', '', [{}]), m('agent', 'design3.md 读完。接着读 design4.md')),
+    '接着读 design4.md',
+  )
+  assert.match(of(m('user', 'x'), m('agent', '现在检查配置文件。')), /^现在检查/)
+  assert.match(of(m('user', 'x'), m('agent', '先跑类型检查。')), /^先跑/)
+  assert.match(of(m('user', 'x'), m('agent', 'Now reading design4.md.')), /^Now reading/)
+  assert.equal(of(m('user', 'x'), m('agent', '现在看来没有问题。')), '', '「现在看来」是结论')
+  assert.equal(of(m('user', 'x'), m('agent', '现在改好了。')), '', '带「了」的是结论')
+  assert.equal(of(m('user', 'x'), m('agent', '然后运行成功。')), '', '说的是结果')
+  assert.equal(of(m('user', 'x'), m('agent', '先这样。')), '', '没有动手的动词')
+})
+
+test('Chat 页和 Agent 模式分开：Chat 页、子对话只推一次，项目里的顶层对话同一进度最多推 3 次，进度变了重新数', () => {
+  const plain = { mode: 'chat' as const, projectId: '', parentTaskId: '' }
+  const agentConv = { mode: 'chat' as const, projectId: 'p1', parentTaskId: '' }
+  const child = { mode: 'chat' as const, projectId: 'p1', parentTaskId: 'parent' }
+  assert.equal(isChatMode(plain), true)
+  assert.equal(isChatMode(agentConv), false)
+  assert.equal(isChatMode(child), false)
+  assert.equal(isChatMode({ ...plain, mode: 'workflow' }), false)
+  assert.equal(nudgeMax(plain), 1)
+  assert.equal(nudgeMax(child), 1)
+  assert.equal(nudgeMax(agentConv), 3)
+  // 同一进度：第 1、2、3 次能推，第 4 次推满；进度变了从 1 重新数
+  let r = nextNudge(undefined, 'plan:1', 3)
+  assert.deepEqual(r, { key: 'plan:1', n: 1 })
+  r = nextNudge(r!, 'plan:1', 3)
+  r = nextNudge(r!, 'plan:1', 3)
+  assert.deepEqual(r, { key: 'plan:1', n: 3 })
+  assert.equal(nextNudge(r!, 'plan:1', 3), null)
+  assert.deepEqual(nextNudge(r!, 'plan:2', 3), { key: 'plan:2', n: 1 })
+  // 只推一次的：同一进度第二次就推满
+  assert.equal(nextNudge({ key: 'said:m1', n: 1 }, 'said:m1', 1), null)
 })

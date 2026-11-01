@@ -87,7 +87,7 @@ export function AskToggle({
           >
             {t('子对话也提问')}
           </ContextMenuCheckboxItem>
-          <p className="px-2.5 pb-1.5 text-[0.6875rem] leading-relaxed text-subtle">
+          <p className="px-2.5 pb-1.5 text-caption leading-relaxed text-subtle">
             {t('只对之后新建的子对话生效，已创建的子对话保持各自的选择。')}
           </p>
         </ContextMenuContent>
@@ -136,8 +136,8 @@ function ChildAskDialog({
         defaultRef.current?.focus()
       }}
     >
-      <D.Title className="text-[0.9375rem] font-semibold">{t('子对话也提问')}</D.Title>
-      <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
+      <D.Title className="text-heading font-semibold">{t('子对话也提问')}</D.Title>
+      <D.Description className="mt-1.5 text-body leading-relaxed text-muted">
         {t('已创建的子对话要不要也打开「提问」？之后新建的子对话都会向你提问。')}
       </D.Description>
       <div className="mt-6 flex flex-wrap justify-end gap-2">

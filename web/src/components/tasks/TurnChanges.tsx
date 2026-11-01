@@ -57,7 +57,7 @@ export function TurnChangesCard({ task, msg }: { task: Pick<Task, 'id' | 'workin
   }
 
   return (
-    <div className="turn-changes my-1 overflow-hidden rounded-xl border bg-card text-[0.8125rem]">
+    <div className="turn-changes my-1 overflow-hidden rounded-xl border bg-card text-body">
       <div className="flex h-9 items-center gap-2 border-b px-3.5">
         <span className={cn('min-w-0 flex-1 truncate', reverted ? 'text-subtle' : 'text-fg')}>
           {t('已更改 {n} 个文件', { n: files.length })}
@@ -182,12 +182,12 @@ function TurnDiffDialog({
       return next
     })
   return (
-    <Modal open={!!path} onOpenChange={(o) => !o && onPath(null)} title={null} size="full" bare closeOnOutside>
+    <Modal open={!!path} onOpenChange={(o) => !o && onPath(null)} title={null} size="xl" bare closeOnOutside>
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-64 shrink-0 flex-col border-r bg-card md:flex" aria-label={t('这一轮的改动')}>
           {/* 和右边差异的标题栏（ModalHeader）同高，横线连成一条 */}
           <div className="flex h-[2.0625rem] shrink-0 items-center gap-2 border-b border-(color:--modal-edge) px-3">
-            <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">
+            <span className="min-w-0 flex-1 truncate text-body font-medium">
               {t('已更改 {n} 个文件', { n: changes.files.length })}
             </span>
             <Segmented
@@ -247,16 +247,14 @@ function TurnDiffDialog({
             close={<ModalClose />}
             empty={
               error ? (
-                <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+                <p className="p-6 text-body text-danger">{error}</p>
               ) : !ready ? (
-                <div className="flex h-full min-h-32 items-center justify-center gap-2 text-[0.8125rem] text-subtle">
+                <div className="flex h-full min-h-32 items-center justify-center gap-2 text-body text-subtle">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   {t('正在读取差异…')}
                 </div>
               ) : (
-                <p className="p-6 text-[0.8125rem] text-subtle">
-                  {t('这一轮里这个文件没有文字差异（可能是二进制文件）。')}
-                </p>
+                <p className="p-6 text-body text-subtle">{t('这一轮里这个文件没有文字差异（可能是二进制文件）。')}</p>
               )
             }
           />

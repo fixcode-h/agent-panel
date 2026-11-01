@@ -1,0 +1,9 @@
+// 构建配置（vite.config.ts）跑在 Node 里
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "tsBuildInfoFile": "./.tmp/tsc/node.tsbuildinfo"
+  },
+  "include": ["vite.config.ts"]
+}

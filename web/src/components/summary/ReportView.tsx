@@ -14,7 +14,7 @@ import {
   windowLabel,
   type SummaryRecord,
 } from '@shared/summary'
-import { t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useAutosave } from '@/lib/useAutosave'
 import type { ReportMode } from '@/lib/summary-page'
@@ -70,7 +70,7 @@ export function ReportView({
           .join(' · '),
     t('{n} 字', { n: reportChars(md) }),
     duration && t('提炼耗时 {time}', { time: duration }),
-    new Date(report.createdAt).toLocaleString(),
+    new Date(report.createdAt).toLocaleString(uiLocale()),
   ]
     .filter(Boolean)
     .join(' · ')
@@ -123,7 +123,7 @@ export function ReportView({
               aria-label={t('报告正文')}
               value={md}
               onChange={(e) => setMd(e.target.value)}
-              className="min-h-[480px] rounded-none border-0 bg-transparent px-5 py-4 font-mono text-[0.8125rem] leading-relaxed focus:ring-0"
+              className="min-h-[480px] rounded-none border-0 bg-transparent px-5 py-4 font-mono text-body leading-relaxed focus:ring-0"
             />
           ) : (
             // 正文限宽：一行太长不好读；左缘和卡片内边距对齐，不居中

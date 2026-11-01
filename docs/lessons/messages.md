@@ -1,5 +1,5 @@
 ---
-paths: web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.tsx, web/src/components/tasks/PeerMessage.tsx, web/src/components/tasks/RunningNow.tsx, web/src/lib/tasks.ts, web/src/lib/file-path.ts, web/src/lib/useStickToBottom.ts, server/orch-mcp.ts
+paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.tsx, web/src/components/tasks/PeerMessage.tsx, web/src/components/tasks/RunningNow.tsx, web/src/lib/tasks.ts, web/src/lib/file-path.ts, web/src/lib/useStickToBottom.ts, server/orch-mcp.ts
 ---
 
 # 对话里的消息和条目
@@ -33,3 +33,9 @@ paths: web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.t
 - 规则：一轮回复收尾折叠时，总结整段留在外面，父对话、子对话都一样。AI 写完总结常再调收尾动作（`suggest_next_step`、`submit_merge`、`set_plan` 这类）再补一句「已提交」，`summaryStart`（`web/src/lib/fold.ts`）把中间只隔着这些动作的几段话都算作总结；新的收尾类面板工具要加进 `WRAP_TOOLS`。
 - 起因：用户 2026-10-30 要求「对话的总结不要折叠，父对话、子对话都要记住」；之前只留最后一条带正文的消息，真正的总结被算成「n 段说明」收了进去。
 - 防线：`web/src/lib/fold.test.ts` 的 summaryStart 用例。
+
+## 消息下面的时间和操作一直显示，不做悬停才出现
+
+- 规则：用户消息、AI 回复下面的时间、复制、引用、「⋯」都常显（`MessageMeta` 不加透明度、不按 hover 显隐）；嫌图标多就把次要操作收进「⋯」，不用藏起来减负。
+- 起因：4135aa1 按用户要求改成常显；0752fae 按设计稿又改成用户消息悬停才出现，用户要求「下面的工具和时间一直显示不用隐藏」。
+- 防线：`scripts/ui/02c-element-pick.mjs` 的「用户消息-更多操作」断言鼠标不在消息上时操作行 opacity 为 1。

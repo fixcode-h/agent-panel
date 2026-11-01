@@ -48,7 +48,7 @@ export function SessionCard({
             setOpen(!open)
             writeFolded(id, open)
           }}
-          className="-mx-1 flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-[0.8125rem] font-medium text-fg hover:bg-sel"
+          className="-mx-1 flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-body font-medium text-fg hover:bg-sel"
         >
           {title}
           <ChevronDown className={cn('h-3.5 w-3.5 text-subtle transition-transform', !open && '-rotate-90')} />
@@ -89,7 +89,7 @@ export function SessionRow({
       </span>
     </>
   )
-  const cls = cn('flex min-h-8 items-center gap-2.5 rounded-md px-1 text-[0.8125rem] text-fg', className)
+  const cls = cn('flex min-h-8 items-center gap-2.5 rounded-md px-1 text-body text-fg', className)
   return (
     <div className="-mx-1 flex items-center gap-1">
       {onClick ? (
@@ -117,7 +117,7 @@ export function SessionDisclosure({ label, count, children }: { label: string; c
         aria-expanded={open}
         disabled={!count}
         onClick={() => setOpen(!open)}
-        className="-mx-1 flex h-7 items-center gap-1.5 rounded-md px-1 text-[0.8125rem] text-muted enabled:cursor-pointer enabled:hover:bg-sel enabled:hover:text-fg"
+        className="-mx-1 flex h-7 items-center gap-1.5 rounded-md px-1 text-body text-muted enabled:cursor-pointer enabled:hover:bg-sel enabled:hover:text-fg"
       >
         <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-90')} />
         <span className="min-w-0 flex-1 truncate text-left">{label}</span>

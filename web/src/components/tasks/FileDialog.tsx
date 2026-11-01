@@ -27,7 +27,7 @@ function demoImg() {
   return (
     'data:image/svg+xml,' +
     encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="${bg}"/><text x="320" y="210" fill="${fg}" font-size="24" text-anchor="middle" font-family="sans-serif">在线演示没有真实的项目目录</text></svg>`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="${bg}"/><text x="320" y="210" fill="${fg}" font-size="24" text-anchor="middle" font-family="sans-serif">在线演示没有真实的项目目录</text></svg>`, // i18n-ok：演示版的占位图（演示内容不翻译）
     )
   )
 }
@@ -72,7 +72,7 @@ export function FileDialog({
     target &&
     api
       .openLocalFile(target.path, reveal)
-      .then((r) => !reveal && r.revealed && toast(t('这是可执行文件，不直接运行，已在文件夹中显示')))
+      .then((r) => !reveal && r.revealed && toast(t('这类文件不直接打开，已在文件夹中显示')))
       .catch((e) => toast.error((e as Error).message))
   // 内容出来后滚到提到的那一行
   useEffect(() => {
@@ -132,15 +132,15 @@ export function FileDialog({
             </>
           }
         />
-        <div ref={box} className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
+        <div ref={box} className="min-h-0 flex-1 overflow-auto">
           {error ? (
-            <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+            <p className="p-6 text-body text-danger">{error}</p>
           ) : !file ? (
             <div className="flex h-full items-center justify-center text-subtle">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
           ) : !file.exists ? (
-            <p className="p-6 text-[0.8125rem] text-subtle">
+            <p className="p-6 text-body text-subtle">
               {local
                 ? t('找不到这个文件，可能已经被移动或删除。')
                 : import.meta.env.VITE_DEMO
@@ -148,24 +148,22 @@ export function FileDialog({
                   : t('项目目录里找不到这个文件，可能已经被移动或删除。')}
             </p>
           ) : file.binary ? (
-            <p className="p-6 text-[0.8125rem] text-subtle">
+            <p className="p-6 text-body text-subtle">
               {local
                 ? t('这个文件不是文字，这里显示不了。可以用默认程序打开，或在文件夹中找到它。')
                 : t('这是二进制文件，不显示内容。')}
             </p>
           ) : (
-            <pre className="min-w-max py-2 font-mono text-[0.75rem] leading-[1.6]">
+            <pre className="min-w-max py-2 font-mono text-footnote leading-[1.6]">
               {lines.map((l, i) => (
                 <div
                   key={i}
                   data-line={i + 1}
-                  // 奇偶行隔一层浅底（照设计稿），长文件横着看不串行；跳到的那一行高亮盖过它
-                  className={cn(
-                    'flex whitespace-pre',
-                    target?.line === i + 1 ? 'bg-accent/12' : i % 2 === 1 && 'bg-sel/35',
-                  )}
+                  // 不画斑马纹：深色下底色和隔行浅底明暗差太大，看久了累眼（用户 2026-10-31 反馈）。
+                  // 改成悬停那一行淡淡高亮帮着横向对行；跳到的那一行用强调色盖过悬停
+                  className={cn('flex whitespace-pre', target?.line === i + 1 ? 'bg-accent/12' : 'hover:bg-fg/4')}
                 >
-                  <span className="w-14 shrink-0 pr-3 text-right text-subtle/70 select-none">{i + 1}</span>
+                  <span className="w-14 shrink-0 pr-3 text-right text-subtle/55 select-none">{i + 1}</span>
                   <span className="pr-4 text-fg/90">{l || ' '}</span>
                 </div>
               ))}

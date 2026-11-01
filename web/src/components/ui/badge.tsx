@@ -45,9 +45,7 @@ export function StatusDot({
     muted: 'bg-subtle text-subtle',
   }[tone]
   return (
-    <span
-      className={cn('inline-flex items-center gap-1.5', compact ? 'text-[0.6875rem]' : 'text-xs', color.split(' ')[1])}
-    >
+    <span className={cn('inline-flex items-center gap-1.5', compact ? 'text-caption' : 'text-xs', color.split(' ')[1])}>
       <span className={cn('h-1.5 w-1.5 rounded-full', color.split(' ')[0])} />
       {label}
     </span>

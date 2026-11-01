@@ -95,8 +95,14 @@ test('内置 Agent：引用的 Skill 都是自带的，引入的 Agent 存在，
       if (p.type === 'select')
         assert.ok(p.options.includes(String(p.default)), `${b.agent.name} 的参数 ${p.key} 默认值不在选项里`)
   }
-  // 除了「通用约束」自己，都引入了它
-  for (const a of agents.filter((x) => x.id !== 'rules')) assert.ok(a.includes.includes('rules'), a.name)
+  // 除了「通用约束」自己，Agent 角色都引入了它；Chat 角色（ADR 0038）只引入 Chat 角色，能力全关
+  for (const a of agents.filter((x) => x.id !== 'rules' && x.scope !== 'chat'))
+    assert.ok(a.includes.includes('rules'), a.name)
+  for (const b of BUILTIN_AGENTS.filter((x) => x.agent.scope === 'chat')) {
+    const { common, canDelegate, canPlan } = b.agent
+    assert.deepEqual([common, canDelegate, canPlan, b.mounts.length], [false, false, false, 0], b.agent.name)
+    for (const k of b.includes) assert.equal(BUILTIN_AGENTS.find((x) => x.key === k)?.agent.scope, 'chat', k)
+  }
 })
 
 test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开，工作总结页也用它', () => {
@@ -110,7 +116,10 @@ test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开�
   assert.deepEqual(b.agent.skills, [])
   // 挂进「通用项目」：启动时 ensureProjectAgents 会补建，老用户的角色列表里也能看到
   assert.ok(builtinAgentKeys(GENERAL).includes('worklog'), '挂在「通用项目」上才会在启动时建出来')
-  const role = composeRole(agents.find((a) => a.id === 'worklog')!, agents)
+  const role = composeRole(
+    agents.find((a) => a.id === 'worklog')!,
+    agents,
+  )
   assert.doesNotMatch(role, /\{\{/, '模板都能展开')
   // 范围：只写这段时间里的事，范围外的不写（工作总结页的硬要求）
   assert.match(role, /只算范围内的/)
@@ -136,7 +145,11 @@ test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开�
   assert.match(role, /## 二、Bug/)
   assert.match(role, /只输出报告本身/)
   // 工作总结页调用时选「面板提供」：材料由面板给，不再去读数据目录
-  const panel = composeRole(agents.find((a) => a.id === 'worklog')!, agents, { material: '面板提供' })
+  const panel = composeRole(
+    agents.find((a) => a.id === 'worklog')!,
+    agents,
+    { material: '面板提供' },
+  )
   assert.match(panel, /材料和范围由面板在下面给出/)
   assert.doesNotMatch(panel, /tasks\/projects\//)
 })
@@ -340,7 +353,9 @@ test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行
     assert.deepEqual(added, ['grilling'])
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '用户的')
   } finally {
-    process.env = old
+    // 按键还原：process.env = old 会换成普通对象，之后再设 HOME，os.homedir() 读不到（rules-check 第 17 条）
+    for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]
+    Object.assign(process.env, old)
     rmSync(home, { recursive: true, force: true })
   }
 })
@@ -391,10 +406,11 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
   const r = await seedBuiltins({ agents: [mine], categories: [], tags: [], workflows: [] }, ops)
   assert.equal(r.workflows.length, BUILTIN_WORKFLOWS.length)
   const built = r.agents.filter((a) => a.origin.startsWith('builtin:'))
-  // 必备角色「子任务」「分析」不在任何工作流里，由启动时的必备角色检查装上
+  // 必备角色「子任务」「分析」「助手」（连同它引入的「聊天约束」）不在任何工作流里，由启动时的必备角色检查装上
+  const notInFlows = ['helper', 'analyzer', 'chat', 'chat-rules']
   assert.equal(
     built.length,
-    BUILTIN_AGENTS.filter((b) => b.key !== 'helper' && b.key !== 'analyzer').length,
+    BUILTIN_AGENTS.filter((b) => !notInFlows.includes(b.key)).length,
     '每个内置 Agent 只建一份',
   )
   // 和用户自己的 Agent 重名时加后缀，两个都在
@@ -727,7 +743,7 @@ test('上一版的「通用约束」「执行」「版本控制」副本升级�
     '允许推送时默认收尾包含合并主干，失败就停',
   )
   const worker = updated.find((a) => a.name === '执行')!
-  assert.match(worker.instructions, /推送远端、创建 PR、P4 submit、合并到主干由父对话决定/)
+  assert.match(worker.instructions, /推送远端、创建 PR、P4 submit、合并到主干按提示词里的「授权情况」/)
   const vcs = updated.find((a) => a.name === '版本控制')!
   assert.match(vcs.instructions, /不改文档/)
   assert.equal(

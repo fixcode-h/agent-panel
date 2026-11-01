@@ -121,7 +121,7 @@ export function ConversationSettingsDialog({
           {rules.length > 0 && (
             <ol className="flex flex-col gap-1.5">
               {rules.map((r, i) => (
-                <li key={r.id} className="flex items-start gap-2 rounded-lg border bg-field px-3 py-2 text-[0.8125rem]">
+                <li key={r.id} className="flex items-start gap-2 rounded-lg border bg-field px-3 py-2 text-body">
                   <span className="mt-px shrink-0 font-mono text-xs text-subtle tabular-nums">{i + 1}.</span>
                   <span className="min-w-0 flex-1 leading-relaxed break-words whitespace-pre-wrap">{r.text}</span>
                   <IconButton

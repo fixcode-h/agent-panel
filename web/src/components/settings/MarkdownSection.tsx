@@ -14,7 +14,7 @@ import {
   type MdValue,
 } from '@shared/markdown-style'
 import { t } from '@shared/i18n'
-import { applyAppearance } from '@/lib/appearance'
+import { applyLocalAppearance } from '@/lib/appearance'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
@@ -176,7 +176,7 @@ function F({ el, prop, label }: { el: MdElement; prop: string; label: string }) 
           onChange={(e) => set(el, prop, round(Number(e.target.value)))}
           className="min-w-0 flex-1 cursor-pointer accent-[var(--color-accent)]"
         />
-        <span className="w-14 text-right font-mono text-[0.8125rem] text-muted tabular-nums">{shown}</span>
+        <span className="w-14 text-right font-mono text-body text-muted tabular-nums">{shown}</span>
       </div>
     )
   } else if (f.kind === 'bool') {
@@ -237,7 +237,7 @@ function ColorPick({
             title={t('浅色')}
             value={custom.light}
             onChange={(e) => set(el, prop, { ...custom, light: e.target.value })}
-            className="h-7 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+            className="h-7 w-7 cursor-pointer rounded-sm border-0 bg-transparent p-0"
           />
           <input
             type="color"
@@ -245,7 +245,7 @@ function ColorPick({
             title={t('深色')}
             value={custom.dark}
             onChange={(e) => set(el, prop, { ...custom, dark: e.target.value })}
-            className="h-7 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+            className="h-7 w-7 cursor-pointer rounded-sm border-0 bg-transparent p-0"
           />
         </>
       )}
@@ -314,7 +314,7 @@ const HEADINGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
 
 /**
  * 设置 → Markdown 样式：对话回复、文档预览、总结报告共用的那套样式，按元素逐项调。
- * 顶部预览就是真的 Markdown 组件，改动立刻生效到整个面板（applyAppearance），保存交给设置页的自动保存。
+ * 顶部预览就是真的 Markdown 组件，改动立刻生效到整个面板（applyLocalAppearance），保存交给设置页的自动保存。
  */
 export function MarkdownSection({ value, onChange }: { value: Appearance; onChange: (a: Appearance) => void }) {
   const [compact, setCompact] = useState<'normal' | 'compact'>('normal')
@@ -324,7 +324,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
   const update = (markdown: MarkdownStyle) => {
     const next = { ...value, markdown }
     onChange(next)
-    applyAppearance(next)
+    applyLocalAppearance(next)
   }
   // 连续改同一组时以最新的为准：恢复本组会一口气调用好几次
   let latest = style
@@ -341,7 +341,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
     <StyleCtx.Provider value={{ style, set, basePx, compact: compact === 'compact' }}>
       <div className="frost-card sticky top-0 z-10 -mx-1 px-1 pt-4 pb-1">
         <div className="flex items-center gap-2">
-          <p className="flex-1 text-[0.8125rem] text-subtle">
+          <p className="flex-1 text-body text-subtle">
             {t('对话回复、工作流说明、项目文档、总结报告都用这一套。每组上面的预览会跟着这一组的设置变。')}
           </p>
           <Segmented

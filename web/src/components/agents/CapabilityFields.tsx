@@ -31,9 +31,13 @@ export function CapabilityFields({
   set: <K extends keyof AgentInput>(key: K, value: AgentInput[K]) => void
 }) {
   const kind = roleKind(draft)
-  // 能挂的：启用的基本角色，不是自己、还没挂（「子任务」是兜底角色，不作为可选能力）
+  // 能挂的：启用的基本角色，不是自己、还没挂（「子任务」是兜底角色，不作为可选能力；Chat 角色不能挂）
   const mountable = listableAgents(agents).filter(
-    (a) => a.id !== self.id && roleKind(a) === 'basic' && !draft.mounts.some((m) => m.agentId === a.id),
+    (a) =>
+      a.id !== self.id &&
+      roleKind(a) === 'basic' &&
+      a.scope !== 'chat' &&
+      !draft.mounts.some((m) => m.agentId === a.id),
   )
   // 内置高级角色改了挂载就算接管：之后启动同步不再按内置定义改写它的挂载（AgentInput.mountsCustom）
   const setMounts = (mounts: AgentMount[]) => {
@@ -50,7 +54,7 @@ export function CapabilityFields({
           )}
         </p>
         {locked ? (
-          <p className="text-[0.8125rem]">{kind === 'advanced' ? t('高级角色') : t('基本角色')}</p>
+          <p className="text-body">{kind === 'advanced' ? t('高级角色') : t('基本角色')}</p>
         ) : (
           <Segmented
             label={t('角色层')}
@@ -107,7 +111,7 @@ export function CapabilityFields({
       )}
       {kind === 'basic' && locked && (draft.when || draft.independent) && (
         <FormSection title={t('被使用时')}>
-          {draft.when && <p className="text-[0.8125rem] leading-relaxed text-muted">{draft.when}</p>}
+          {draft.when && <p className="text-body leading-relaxed text-muted">{draft.when}</p>}
           {draft.independent && <p className="text-xs text-subtle">{t('必须独立执行：只能派成子任务，不能就地用')}</p>}
         </FormSection>
       )}

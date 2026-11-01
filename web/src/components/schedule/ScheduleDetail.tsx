@@ -12,7 +12,6 @@ import {
   type ScheduleRun,
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
-import { listableAgents } from '@shared/builtin/core'
 import { openAiFix } from '@/lib/ai-fix'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -23,12 +22,12 @@ import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
 import { EndChoice } from './EndChoice'
 import { dayTimeLabel, scheduleDot, upcomingRuns } from './occurrences'
-import { durationOptions, REPEAT_OPTIONS, useScheduleForm } from './use-schedule-form'
+import { durationOptions, REPEAT_OPTIONS, schedulePickable, useScheduleForm } from './use-schedule-form'
 
 /** 字段名：小号、加粗、淡色，和设计稿的分组标签一致 */
 function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
   return (
-    <label htmlFor={htmlFor} className="text-[0.6875rem] font-semibold tracking-wide text-subtle">
+    <label htmlFor={htmlFor} className="text-caption font-semibold tracking-wide text-subtle">
       {children}
     </label>
   )
@@ -86,7 +85,7 @@ export function ScheduleDetail({
   onDirtyChange: (dirty: boolean) => void
 }) {
   const { projects, agents } = useData()
-  const { form, set, setRepeat, setAtLocal, toggleWeekday, dirty, saving, save } = useScheduleForm({
+  const { form, set, setProject, setRepeat, setAtLocal, toggleWeekday, dirty, saving, save } = useScheduleForm({
     schedule: s,
     schedules,
     onSaved,
@@ -102,7 +101,7 @@ export function ScheduleDetail({
   const date = form.atLocal.slice(0, 10)
   const time = form.atLocal.slice(11, 16)
   // 「子任务」不再作为可选角色展示，但老计划可能已经选过它：补一项显示名字（和编辑弹窗同一口径）
-  const pickable = listableAgents(agents)
+  const pickable = schedulePickable(agents, form.projectId)
   const unpickable =
     form.agentId && !pickable.some((a) => a.id === form.agentId) ? agents.find((a) => a.id === form.agentId) : undefined
   const projectName = projects.find((p) => p.id === s.projectId)?.name ?? ''
@@ -135,7 +134,7 @@ export function ScheduleDetail({
           value={form.name}
           onChange={(e) => set('name', e.target.value)}
           className={cn(
-            'h-8 min-w-0 flex-1 truncate rounded-md bg-transparent px-1 -ml-1 text-[0.9375rem] font-semibold outline-none hover:bg-field focus:bg-field',
+            'h-8 min-w-0 flex-1 truncate rounded-md bg-transparent px-1 -ml-1 text-heading font-semibold outline-none hover:bg-field focus:bg-field',
             !form.enabled && 'text-muted',
           )}
         />
@@ -179,17 +178,17 @@ export function ScheduleDetail({
           <Textarea
             id="schedule-detail-prompt"
             rows={3}
-            className="text-[0.8125rem]"
+            className="text-body"
             value={form.prompt}
             placeholder={t('交给 Agent 的一句话目标，例如：总结今天做的工作')}
             onChange={(e) => set('prompt', e.target.value)}
           />
           <Select
-            className="h-8 text-[0.8125rem]"
+            className="h-8 text-body"
             value={form.agentId}
             aria-label={t('用哪个角色')}
             options={[
-              { value: '', label: t('不用角色（跟随默认 CLI）') },
+              { value: '', label: form.projectId ? t('不用角色（跟随默认 CLI）') : t('助手（默认）') },
               ...pickable.map((a) => ({
                 value: a.id,
                 label: a.enabled ? a.name : t('{name}（已停用）', { name: a.name }),
@@ -203,14 +202,14 @@ export function ScheduleDetail({
         </Field>
         <Field label={t('项目')}>
           <Select
-            className="h-8 text-[0.8125rem]"
+            className="h-8 text-body"
             value={form.projectId}
             aria-label={t('项目')}
             options={[
               { value: '', label: t('聊天（不属于项目）') },
               ...projects.map((p) => ({ value: p.id, label: p.name })),
             ]}
-            onChange={(e) => set('projectId', e.target.value)}
+            onChange={(e) => setProject(e.target.value, agents)}
           />
         </Field>
         <div className="grid grid-cols-2 gap-2.5">
@@ -218,7 +217,7 @@ export function ScheduleDetail({
             <Input
               id="schedule-detail-date"
               type="date"
-              className="h-8 text-[0.8125rem] tabular-nums dark:[color-scheme:dark]"
+              className="h-8 text-body tabular-nums dark:[color-scheme:dark]"
               value={date}
               onChange={(e) => e.target.value && setAtLocal(`${e.target.value}T${time || '09:00'}`)}
             />
@@ -227,7 +226,7 @@ export function ScheduleDetail({
             <Input
               id="schedule-detail-time"
               type="time"
-              className="h-8 font-mono text-[0.8125rem] tabular-nums dark:[color-scheme:dark]"
+              className="h-8 font-mono text-body tabular-nums dark:[color-scheme:dark]"
               value={time}
               onChange={(e) => e.target.value && date && setAtLocal(`${date}T${e.target.value}`)}
             />
@@ -260,7 +259,7 @@ export function ScheduleDetail({
                     title={d.label}
                     onClick={() => toggleWeekday(d.id)}
                     className={cn(
-                      'grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[0.75rem] transition-colors',
+                      'grid h-8 w-8 cursor-pointer place-items-center rounded-full text-footnote transition-colors',
                       on ? 'bg-fg font-semibold text-bg' : 'bg-sel text-muted hover:text-fg',
                     )}
                   >
@@ -283,7 +282,7 @@ export function ScheduleDetail({
               type="button"
               onClick={onEdit}
               title={t('更多设置')}
-              className="flex min-h-8 cursor-pointer items-center rounded-lg bg-field px-2.5 text-left text-[0.8125rem] transition-colors hover:bg-sel"
+              className="flex min-h-8 cursor-pointer items-center rounded-lg bg-field px-2.5 text-left text-body transition-colors hover:bg-sel"
             >
               <span className="truncate">{upstreams.join(t('、'))}</span>
             </button>
@@ -292,17 +291,17 @@ export function ScheduleDetail({
 
         {/* 接下来几次：按已保存的排期推出来（和服务端同一套规则）；过了结束日期写「已结束」 */}
         <section className="flex flex-col gap-1.5 rounded-xl bg-panel p-3">
-          <span className="text-[0.6875rem] font-semibold tracking-wide text-subtle">{t('接下来')}</span>
+          <span className="text-caption font-semibold tracking-wide text-subtle">{t('接下来')}</span>
           {next.length ? (
             next.map((ms) => (
-              <div key={ms} className="flex items-center gap-2 text-[0.75rem]">
+              <div key={ms} className="flex items-center gap-2 text-footnote">
                 <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
                 <span className="flex-1 tabular-nums">{dayTimeLabel(ms)}</span>
-                <span className="text-[0.6875rem] text-subtle">{relativeFuture(new Date(ms).toISOString(), now)}</span>
+                <span className="text-caption text-subtle">{relativeFuture(new Date(ms).toISOString(), now)}</span>
               </div>
             ))
           ) : (
-            <span className="text-[0.75rem] text-subtle">
+            <span className="text-footnote text-subtle">
               {ended && s.enabled ? t('已结束（{date}）', { date: s.endDate }) : t('不会再次执行')}
             </span>
           )}
@@ -316,7 +315,7 @@ export function ScheduleDetail({
         )}
 
         <section className="flex flex-col gap-0.5">
-          <span className="text-[0.6875rem] font-semibold tracking-wide text-subtle">{t('运行记录')}</span>
+          <span className="text-caption font-semibold tracking-wide text-subtle">{t('运行记录')}</span>
           {s.runs.length ? (
             <ul className="flex flex-col">
               {s.runs.map((run, i) => {
@@ -324,7 +323,7 @@ export function ScheduleDetail({
                 const ok = run.event === 'run' && !failed
                 return (
                   <li key={`${run.happenedAt}-${i}`} className="flex flex-col gap-0.5 py-1.5">
-                    <div className="flex items-center gap-2 text-[0.75rem]">
+                    <div className="flex items-center gap-2 text-footnote">
                       <span
                         aria-hidden
                         className={cn(
@@ -344,10 +343,7 @@ export function ScheduleDetail({
                       </span>
                       {/* 跑完的写耗时（旧记录、还没跑完的没有就不写）；没跑成的给「AI 分析」 */}
                       {!!run.durationMs && !failed && (
-                        <span
-                          className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
-                          title={t('耗时')}
-                        >
+                        <span className="shrink-0 font-mono text-caption text-subtle tabular-nums" title={t('耗时')}>
                           {durationLabel(run.durationMs)}
                         </span>
                       )}
@@ -356,7 +352,7 @@ export function ScheduleDetail({
                           variant="link"
                           tone="danger"
                           onClick={() => analyze(run)}
-                          className="shrink-0 gap-0.5 text-[0.6875rem]"
+                          className="shrink-0 gap-0.5 text-caption"
                         >
                           {t('失败 · AI 分析')}
                           <ChevronRight className="h-3 w-3" />
@@ -366,28 +362,26 @@ export function ScheduleDetail({
                           variant="link"
                           tone="muted"
                           onClick={() => onOpenTask(run.taskId)}
-                          className="max-w-[45%] min-w-0 gap-0.5 text-[0.6875rem]"
+                          className="max-w-[45%] min-w-0 gap-0.5 text-caption"
                         >
                           <span className="truncate">{taskTitle(run.taskId) || t('打开对话')}</span>
                           <ChevronRight className="h-3 w-3 shrink-0" />
                         </Button>
                       ) : (
-                        <span className={cn('text-[0.6875rem]', ok ? 'text-subtle' : 'text-danger')}>
-                          {runLabel(run)}
-                        </span>
+                        <span className={cn('text-caption', ok ? 'text-subtle' : 'text-danger')}>{runLabel(run)}</span>
                       )}
                     </div>
                     {run.error ? (
-                      <p className="pl-6 text-[0.6875rem] break-words whitespace-pre-wrap text-warning">{run.error}</p>
+                      <p className="pl-6 text-caption break-words whitespace-pre-wrap text-warning">{run.error}</p>
                     ) : run.event === 'miss' ? (
-                      <p className="pl-6 text-[0.6875rem] text-subtle">{t('面板当时没在跑，不补跑')}</p>
+                      <p className="pl-6 text-caption text-subtle">{t('面板当时没在跑，不补跑')}</p>
                     ) : null}
                   </li>
                 )
               })}
             </ul>
           ) : (
-            <span className="py-1.5 text-[0.75rem] text-subtle">{t('还没执行')}</span>
+            <span className="py-1.5 text-footnote text-subtle">{t('还没执行')}</span>
           )}
         </section>
       </div>
@@ -398,7 +392,7 @@ export function ScheduleDetail({
           <Play className="h-3.5 w-3.5" />
           {t('现在运行一次')}
         </Button>
-        {dirty && <span className="ml-auto text-[0.6875rem] text-subtle">{t('有未保存的改动')}</span>}
+        {dirty && <span className="ml-auto text-caption text-subtle">{t('有未保存的改动')}</span>}
         <Button size="sm" className={cn(!dirty && 'ml-auto')} disabled={!dirty || saving} onClick={() => void save()}>
           {t('保存')}
         </Button>

@@ -377,9 +377,9 @@ function AnchorPick({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-field px-1.5 text-[0.75rem] transition-colors hover:border-subtle">
+        <button className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-field px-1.5 text-footnote transition-colors hover:border-subtle">
           <AnchorIcon min={[a.Minimum.X, a.Minimum.Y]} max={[a.Maximum.X, a.Maximum.Y]} />
-          <span className="font-mono text-[0.6875rem] text-muted">
+          <span className="font-mono text-caption text-muted">
             ({a.Minimum.X},{a.Minimum.Y}) ({a.Maximum.X},{a.Maximum.Y})
           </span>
           <ChevronDown className="h-3 w-3 text-subtle" />
@@ -403,18 +403,18 @@ function AnchorPick({
             </button>
           ))}
         </div>
-        <div className="mt-2 flex flex-col gap-1 border-t pt-2 text-[0.6875rem] text-muted">
+        <div className="mt-2 flex flex-col gap-1 border-t pt-2 text-caption text-muted">
           {/* 弹层里的字比表单小一号：label 里再包一层把 Checkbox 默认的字号压下来 */}
           <Checkbox
             checked={move}
             onChange={setMove}
-            label={<span className="text-[0.6875rem] text-muted">{t('同时移到锚点（Ctrl）')}</span>}
+            label={<span className="text-caption text-muted">{t('同时移到锚点（Ctrl）')}</span>}
             className="items-center gap-1.5"
           />
           <Checkbox
             checked={pivot}
             onChange={setPivot}
-            label={<span className="text-[0.6875rem] text-muted">{t('同时设对齐点（Shift）')}</span>}
+            label={<span className="text-caption text-muted">{t('同时设对齐点（Shift）')}</span>}
             className="items-center gap-1.5"
           />
         </div>
@@ -457,7 +457,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="flex h-8 w-full cursor-pointer items-center gap-1 bg-panel px-2 text-[0.6875rem] font-medium tracking-wide text-muted hover:text-fg"
+        className="flex h-8 w-full cursor-pointer items-center gap-1 bg-panel px-2 text-caption font-medium tracking-wide text-muted hover:text-fg"
       >
         <ChevronDown className={cn('h-3 w-3 transition-transform', !open && '-rotate-90')} />
         {title}
@@ -492,7 +492,7 @@ function AnimKeyButton({ state, time, onClick }: { state: AnimKeyState; time: nu
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'grid h-5 w-4 shrink-0 place-items-center rounded',
+        'grid h-5 w-4 shrink-0 place-items-center rounded-sm',
         disabled ? 'cursor-default text-subtle/40' : 'cursor-pointer hover:bg-sel hover:text-fg',
         !disabled && (hasTrack ? 'text-accent-text' : 'text-subtle'),
       )}
@@ -655,7 +655,7 @@ export function Details({
       case 'brush':
         return (
           <div key={s.path} className="border-t border-line/60 px-3 py-1.5 first:border-t-0">
-            <p className="mb-1 text-[0.75rem] text-subtle">{s.path.replace(/^WidgetStyle\./, '')}</p>
+            <p className="mb-1 text-footnote text-subtle">{s.path.replace(/^WidgetStyle\./, '')}</p>
             <BrushInput value={v} images={images} url={url} onChange={(x) => set(s.path, x)} />
           </div>
         )
@@ -701,12 +701,12 @@ export function Details({
   }
 
   return (
-    <div className="text-[0.75rem]">
+    <div className="text-footnote">
       {/* 名字和类型固定在属性面板顶上，往下翻属性时一直能看到选的是哪个控件 */}
       <div className="frost-card sticky top-0 z-10 flex items-center gap-2 border-b px-3 py-2">
         {Icon && <Icon className="h-4 w-4 shrink-0 text-accent-text" />}
-        <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem] font-medium">{widget.Name}</span>
-        <span className="shrink-0 rounded bg-sel px-1.5 py-px text-[0.6875rem] text-subtle">{widget.Type}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-footnote font-medium">{widget.Name}</span>
+        <span className="shrink-0 rounded-sm bg-sel px-1.5 py-px text-caption text-subtle">{widget.Type}</span>
       </div>
       {widget.Type === 'UserWidget' && (
         <Section title={t('子控件')}>
@@ -794,7 +794,7 @@ export function Details({
                   variant="secondary"
                   size="sm"
                   onClick={() => applyRect({ x: 0, y: 0, w: parentSize().w, h: parentSize().h })}
-                  className="h-7 px-2 text-[0.6875rem] font-normal whitespace-nowrap"
+                  className="h-7 px-2 text-caption font-normal whitespace-nowrap"
                 >
                   {t('填满父控件')}
                 </Button>
@@ -820,7 +820,7 @@ export function Details({
                     onChange={(n) => setSlot('LayoutData.Offsets.Left', n)}
                   />
                   {autoSize ? (
-                    <span className="flex-1 text-[0.6875rem] leading-tight text-subtle">{t('宽度由内容决定')}</span>
+                    <span className="flex-1 text-caption leading-tight text-subtle">{t('宽度由内容决定')}</span>
                   ) : (
                     <NumInput
                       prefix="W"
@@ -851,7 +851,7 @@ export function Details({
                     onChange={(n) => setSlot('LayoutData.Offsets.Top', n)}
                   />
                   {autoSize ? (
-                    <span className="flex-1 text-[0.6875rem] leading-tight text-subtle">{t('高度由内容决定')}</span>
+                    <span className="flex-1 text-caption leading-tight text-subtle">{t('高度由内容决定')}</span>
                   ) : (
                     <NumInput
                       prefix="H"
@@ -883,7 +883,7 @@ export function Details({
                 </FieldRow>
               )}
               {slotType === 'BorderSlot' && Object.values(slot.Padding ?? {}).some((v) => Number(v)) && (
-                <div className="flex items-start gap-2 px-3 pb-1 text-[0.6875rem] leading-relaxed text-subtle">
+                <div className="flex items-start gap-2 px-3 pb-1 text-caption leading-relaxed text-subtle">
                   <span className="flex-1">
                     {t('Border 的子控件默认留 4px 内边距，槽位图和底图会错开；要对齐就把内边距清零')}
                   </span>
@@ -952,7 +952,7 @@ export function Details({
           title={bp ? t('外观（{device}）', { device: device === 'tablet' ? t('平板') : t('手机') }) : t('外观')}
         >
           {bp && (
-            <div className="mx-3 my-1.5 flex items-center gap-2 rounded-md bg-accent-soft/50 px-2 py-1.5 text-[0.6875rem] leading-relaxed text-accent-text">
+            <div className="mx-3 my-1.5 flex items-center gap-2 rounded-md bg-accent-soft/50 px-2 py-1.5 text-caption leading-relaxed text-accent-text">
               <span className="flex-1">
                 {t('正在改{device}宽度下的样式，只影响这个宽度，桌面不变', {
                   device: device === 'tablet' ? t('平板') : t('手机'),
@@ -985,7 +985,7 @@ export function Details({
         {/* 平板、手机上也能单独隐藏（Visibility 选 Collapsed） */}
         {(web ? COMMON.slice(0, 2) : COMMON).map((s) => field(s, getLook, setLook))}
       </Section>
-      <p className="px-3 py-3 text-[0.6875rem] leading-relaxed text-subtle">{WIDGETS[widget.Type]?.hint}</p>
+      <p className="px-3 py-3 text-caption leading-relaxed text-subtle">{WIDGETS[widget.Type]?.hint}</p>
     </div>
   )
 }

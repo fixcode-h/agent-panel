@@ -12,6 +12,7 @@ import {
   Sparkles,
   SquareTerminal,
   Trash2,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 import { CLIS, MODEL_TIERS, getCli, type CliDefinition, type ModelTier } from '@shared/clis'
@@ -27,9 +28,9 @@ import {
 import { t } from '@shared/i18n'
 import { PROXY_ENV_EXAMPLE } from '@shared/proxy'
 import { accountModelId, cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
-import { autoLimits, fmtTokens, limitSupport, parseTokens } from '@shared/model-limits'
+import { autoLimits, fmtTokens, limitSupport, MIN_AGENT_CONTEXT, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
-import { useData } from '@/lib/data'
+import { useData, useTasks } from '@/lib/data'
 import { cliColor, cliDefaultModel, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'
 import { useCliDef, useCliModels } from '@/lib/cli-models'
 import { lookupModel, refreshModelCatalog, useModelCatalog } from '@/lib/model-catalog'
@@ -72,7 +73,8 @@ export interface CliDraft extends Omit<CliSettings, 'extraArgs' | 'env'> {
  * 失败时给出原因和命令，用户可以复制到终端自己运行（例如需要 sudo）。
  */
 function useCliInstaller(def: CliDefinition) {
-  const { tasks, agents, settings } = useData()
+  const { agents, settings } = useData()
+  const { tasks } = useTasks()
   const job = useInstallJob(def.id)
   const running = job?.status === 'running'
   const start = async (action: CliInstallJob['action']) => {
@@ -127,7 +129,7 @@ function InstallLog({
         job.status === 'failed' ? 'border-danger/40 bg-danger/5' : job.status === 'done' ? 'border-success/30' : '',
       )}
     >
-      <div className="flex items-center gap-2 px-3.5 py-2.5 text-[0.8125rem]">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 text-body">
         {job.status === 'running' ? (
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent-text" />
         ) : job.status === 'done' ? (
@@ -158,8 +160,8 @@ function InstallLog({
         </button>
         {job.status !== 'running' && <IconButton icon={X} label={t('关闭')} onClick={onClose} />}
       </div>
-      {job.error && <p className="px-3.5 pb-2 text-[0.8125rem] leading-relaxed text-danger">{job.error}</p>}
-      {job.note && <p className="px-3.5 pb-2 text-[0.8125rem] leading-relaxed text-muted">{job.note}</p>}
+      {job.error && <p className="px-3.5 pb-2 text-body leading-relaxed text-danger">{job.error}</p>}
+      {job.note && <p className="px-3.5 pb-2 text-body leading-relaxed text-muted">{job.note}</p>}
       {job.status === 'failed' && (
         <p className="flex flex-wrap items-center gap-2 px-3.5 pb-2.5 text-xs text-muted">
           {t('在终端里运行')} <CopyText text={job.command} />
@@ -168,7 +170,7 @@ function InstallLog({
       {open && (
         <pre
           ref={pre}
-          className="max-h-56 overflow-auto border-t bg-field/60 px-3.5 py-2.5 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-muted"
+          className="max-h-56 overflow-auto border-t bg-field/60 px-3.5 py-2.5 font-mono text-caption leading-relaxed whitespace-pre-wrap text-muted"
         >
           <span className="text-subtle">$ {job.command}</span>
           {'\n'}
@@ -213,14 +215,12 @@ function TokenField({
     <label className="flex min-w-0 items-center gap-2 text-xs text-subtle" title={title}>
       <span className="shrink-0">{label}</span>
       {readOnly ? (
-        <span className="truncate font-mono text-[0.8125rem] text-fg">
-          {value ? fmtTokens(value) : autoText || '—'}
-        </span>
+        <span className="truncate font-mono text-body text-fg">{value ? fmtTokens(value) : autoText || '—'}</span>
       ) : (
         <span className="relative min-w-0 flex-1">
           <Input
             aria-label={label}
-            className="h-8 pr-8 font-mono text-[0.8125rem]"
+            className="h-8 pr-8 font-mono text-body"
             value={disabled ? '' : text}
             placeholder={autoText}
             disabled={disabled}
@@ -348,14 +348,14 @@ export function TierTable({
                 {tr.label}
               </span>
               <span className="flex min-w-0 flex-col">
-                <span className="text-[0.8125rem]">{t('{tier}档', { tier: tr.label })}</span>
-                <span className="truncate text-[0.6875rem] text-subtle">{tr.hint}</span>
+                <span className="text-body">{t('{tier}档', { tier: tr.label })}</span>
+                <span className="truncate text-caption text-subtle">{tr.hint}</span>
               </span>
             </span>
             {readOnly ? (
               <>
-                <span className="truncate font-mono text-[0.8125rem]">{model}</span>
-                <span className="truncate text-[0.8125rem] text-muted">{value[tr.id].effort || defaultEffort}</span>
+                <span className="truncate font-mono text-body">{model}</span>
+                <span className="truncate text-body text-muted">{value[tr.id].effort || defaultEffort}</span>
               </>
             ) : (
               <>
@@ -381,22 +381,34 @@ export function TierTable({
                 type="button"
                 onClick={() => toggle(tr.id)}
                 aria-expanded={open}
-                className="flex w-fit cursor-pointer flex-wrap items-center gap-x-1.5 gap-y-1 text-[0.6875rem] text-subtle hover:text-fg"
+                className="flex w-fit cursor-pointer flex-wrap items-center gap-x-1.5 gap-y-1 text-caption text-subtle hover:text-fg"
               >
                 <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
                 <span>
-                  {t('上下文')} <span className="font-mono text-[0.75rem] text-muted">{fmtTokens(context)}</span>
+                  {t('上下文')} <span className="font-mono text-footnote text-muted">{fmtTokens(context)}</span>
                 </span>
                 <span aria-hidden>·</span>
                 <span>
-                  {t('最大输出')} <span className="font-mono text-[0.75rem] text-muted">{fmtTokens(maxOutput)}</span>
+                  {t('最大输出')} <span className="font-mono text-footnote text-muted">{fmtTokens(maxOutput)}</span>
                 </span>
                 {mapTo && <span className="text-accent-text">{t('映射 {model}', { model: mapTo })}</span>}
               </button>
+              {/* 收起时也要看得到：上限太小时 CLI 压缩完马上又满，对话直接失败（实测 80K 时出现） */}
+              {context > 0 && context < MIN_AGENT_CONTEXT && (
+                <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning">
+                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {t(
+                      '上下文低于 {min}：Agent 模式光系统提示词和工具定义就约 44K，一次读几个大文件就可能刚压缩完又满（压缩抖动），这一轮会失败。',
+                      { min: fmtTokens(MIN_AGENT_CONTEXT) },
+                    )}
+                  </span>
+                </p>
+              )}
               {open && (
                 <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-2.5">
                   {mapTo && (
-                    <p className="text-[0.6875rem] leading-relaxed text-subtle">
+                    <p className="text-caption leading-relaxed text-subtle">
                       {t('这个模型在 API 配置里映射到了 {model}：上下文和最大输出按它的配置估算。', { model: mapTo })}
                     </p>
                   )}
@@ -425,7 +437,7 @@ export function TierTable({
               )}
             </div>
             {!readOnly && model && !auto.matched && !mapTo && aiLookup && (
-              <div className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-subtle sm:col-span-2 sm:col-start-2">
+              <div className="flex flex-wrap items-center gap-2 text-caption text-subtle sm:col-span-2 sm:col-start-2">
                 <span>
                   {t('模型配置里没有 {model}，按 {context} / {maxOutput} 估算', {
                     model,
@@ -436,7 +448,7 @@ export function TierTable({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 px-1.5 text-[0.6875rem]"
+                  className="h-6 px-1.5 text-caption"
                   disabled={!!looking}
                   onClick={() => void lookup(model)}
                 >
@@ -449,7 +461,7 @@ export function TierTable({
         )
       })}
       {(!can.context || !can.maxOutput) && (
-        <p className="border-t bg-field/40 px-3.5 py-2 text-[0.6875rem] leading-relaxed text-subtle">
+        <p className="border-t bg-field/40 px-3.5 py-2 text-caption leading-relaxed text-subtle">
           {!can.context && !can.maxOutput
             ? t('{cli} 没有设置上下文窗口和最大输出的参数，上下文只用于面板估算占用和压缩时机。', { cli: def.name })
             : !can.maxOutput
@@ -650,7 +662,7 @@ export function CliSection({
     <>
       <div className="flex flex-wrap items-center gap-3 rounded-xl bg-sel/40 p-3.5">
         <span
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] text-white"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white"
           style={{ background: cliColor(def.id) }}
         >
           <SquareTerminal className="h-5 w-5" strokeWidth={2.2} />
@@ -659,7 +671,7 @@ export function CliSection({
           <p className="flex items-center gap-2 font-medium">
             {def.name}
             {isDefault && (
-              <Badge tone="accent" className="text-[0.6875rem] font-normal">
+              <Badge tone="accent" className="text-caption font-normal">
                 {t('系统默认')}
               </Badge>
             )}
@@ -765,7 +777,7 @@ export function CliSection({
         title={t('卸载 {cli}？', { cli: def.name })}
         description={
           <>
-            {t('会运行')} <code className="font-mono text-[0.75rem]">npm uninstall -g {def.npmPackage}</code>
+            {t('会运行')} <code className="font-mono text-footnote">npm uninstall -g {def.npmPackage}</code>
             {t('。用这个 Agent 的角色之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。')}
           </>
         }
@@ -858,7 +870,7 @@ export function CliSection({
             value={draft.maxTurns || ''}
             onChange={(e) => set('maxTurns', Math.min(1000, Math.max(0, Math.trunc(Number(e.target.value) || 0))))}
             placeholder="1000"
-            className="ml-auto block h-9 w-28 text-right font-mono text-[0.8125rem]"
+            className="ml-auto block h-9 w-28 text-right font-mono text-body"
           />
         </Row>
         {(def.options ?? []).map((o) => (
@@ -899,7 +911,7 @@ export function CliSection({
               value={draft.command}
               onChange={(e) => set('command', e.target.value)}
               placeholder={def.command}
-              className="h-9 font-mono text-[0.8125rem]"
+              className="h-9 font-mono text-body"
               spellCheck={false}
             />
           </Row>
@@ -908,7 +920,7 @@ export function CliSection({
               value={draft.args}
               onChange={(e) => set('args', e.target.value)}
               placeholder={t('例如 --add-dir ../shared')}
-              className="h-9 font-mono text-[0.8125rem]"
+              className="h-9 font-mono text-body"
               spellCheck={false}
             />
           </Row>
@@ -918,7 +930,7 @@ export function CliSection({
               value={draft.envText}
               onChange={(e) => set('envText', e.target.value)}
               placeholder={def.envExample || PROXY_ENV_EXAMPLE}
-              className="font-mono text-[0.8125rem]"
+              className="font-mono text-body"
               spellCheck={false}
             />
           </Row>
@@ -967,12 +979,15 @@ export function CliSection({
       )}
 
       {ok && def.packages && (
-        <Group title={t('扩展包')}>
-          <p className="pb-2 text-[0.75rem] text-muted">
-            {t('包里可以有扩展、Skill、提示词模板和主题，装在 {file} 里。扩展会在本机执行代码，只装信得过的来源', {
-              // ${ENV:-默认值} 只显示默认值，用户一般没设这个环境变量
-              file: def.packages.file.replace(/\$\{\w+:-([^}]*)\}/g, '$1'),
-            })}
+        <Group title={t('插件管理')}>
+          <p className="pb-2 text-footnote text-muted">
+            {t(
+              '插件（扩展包）里可以有工具、Skill、提示词模板和主题，装在 {file} 里，装完下一轮对话生效。插件会在本机执行代码，只装信得过的来源',
+              {
+                // ${ENV:-默认值} 只显示默认值，用户一般没设这个环境变量
+                file: def.packages.file.replace(/\$\{\w+:-([^}]*)\}/g, '$1'),
+              },
+            )}
           </p>
           <CliPackages def={def} />
         </Group>
@@ -980,7 +995,7 @@ export function CliSection({
 
       {ok && (
         <Group title="Skills">
-          <p className="pb-2 text-[0.75rem] text-muted">
+          <p className="pb-2 text-footnote text-muted">
             {def.rpc?.skillsQuery
               ? t('{cli} 自己的 Skill（用户目录、系统自带和插件里的）；~/.agents/skills 里共用的不在这里列', {
                   cli: def.name,

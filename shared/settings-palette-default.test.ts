@@ -25,7 +25,7 @@ test('版本 1 的老设置：Claude 配色和 Inter 升级成新默认，别的
   // 版本 2 把 Inter 换成系统字体，版本 3 再把系统字体换成 Maple Mono NL
   assert.equal(s.appearance.uiFont, 'maple')
   assert.equal(s.clis.claude.autoCompact, 0, '版本 1 之后用户选的 0 不再迁移')
-  assert.equal(s.defaultsVersion, 3)
+  assert.equal(s.defaultsVersion, 4)
 
   const other = Settings.parse({ defaultsVersion: 1, appearance: { palette: 'ocean', uiFont: 'maple' } })
   migrateSettingsDefaults(other)
@@ -34,7 +34,7 @@ test('版本 1 的老设置：Claude 配色和 Inter 升级成新默认，别的
 })
 
 test('升过版本之后再选回 Claude 配色和 Inter，不会被改掉', () => {
-  const s = Settings.parse({ defaultsVersion: 3, appearance: { palette: 'claude', uiFont: 'inter' } })
+  const s = Settings.parse({ defaultsVersion: 4, appearance: { palette: 'claude', uiFont: 'inter' } })
   assert.equal(migrateSettingsDefaults(s), false)
   assert.equal(s.appearance.palette, 'claude')
   assert.equal(s.appearance.uiFont, 'inter')
@@ -51,7 +51,7 @@ test('版本 2 的老设置：系统字体升级成 Maple Mono NL 和思源黑�
   assert.equal(s.appearance.cjkFont, 'noto')
   assert.equal(s.appearance.letterSpacing, -0.02)
   assert.equal(s.appearance.wordSpacing, -0.2)
-  assert.equal(s.defaultsVersion, 3)
+  assert.equal(s.defaultsVersion, 4)
 })
 
 test('版本 2 里显式选的其他字体和调过的字距不动', () => {
@@ -72,8 +72,28 @@ test('版本 2 里显式选的其他字体和调过的字距不动', () => {
 })
 
 test('升过版本 3 之后再选回系统字体，不会被改掉', () => {
-  const s = Settings.parse({ defaultsVersion: 3, appearance: { uiFont: 'system', cjkFont: 'system' } })
+  const s = Settings.parse({ defaultsVersion: 4, appearance: { uiFont: 'system', cjkFont: 'system' } })
   assert.equal(migrateSettingsDefaults(s), false)
   assert.equal(s.appearance.uiFont, 'system')
   assert.equal(s.appearance.cjkFont, 'system')
+})
+
+// 正文行高默认值 1.75 → 1.65（defaultsVersion 4）
+test('版本 3 的老设置：行高还是旧默认 1.75 的升到 1.65，调过的不动', () => {
+  const s = Settings.parse({ defaultsVersion: 3, appearance: { lineHeight: 1.75 } })
+  assert.equal(migrateSettingsDefaults(s), true)
+  assert.equal(s.appearance.lineHeight, 1.65)
+  assert.equal(s.defaultsVersion, 4)
+
+  const custom = Settings.parse({ defaultsVersion: 3, appearance: { lineHeight: 1.9 } })
+  migrateSettingsDefaults(custom)
+  assert.equal(custom.appearance.lineHeight, 1.9)
+
+  assert.equal(Settings.parse({}).appearance.lineHeight, 1.65, '新装的默认就是 1.65')
+})
+
+test('升过版本 4 之后再调回 1.75，不会被改掉', () => {
+  const s = Settings.parse({ defaultsVersion: 4, appearance: { lineHeight: 1.75 } })
+  assert.equal(migrateSettingsDefaults(s), false)
+  assert.equal(s.appearance.lineHeight, 1.75)
 })

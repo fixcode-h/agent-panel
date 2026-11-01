@@ -68,17 +68,6 @@ function setPath(obj: any, path: string[], value: unknown): any {
   return { ...base, [k]: setPath(base[k], rest, value) }
 }
 
-const ANCHORS: Record<string, [number, number]> = {
-  'top-left': [0, 0],
-  top: [0.5, 0],
-  'top-right': [1, 0],
-  left: [0, 0.5],
-  center: [0.5, 0.5],
-  right: [1, 0.5],
-  'bottom-left': [0, 1],
-  bottom: [0.5, 1],
-  'bottom-right': [1, 1],
-}
 // AI 有时把数字写成字符串（"40"、"40px"），也认
 const num = (v: unknown, d = 0) => {
   const n = typeof v === 'string' ? parseFloat(v) : v
@@ -92,8 +81,158 @@ const box = (v: unknown) =>
         ? { Left: num(v[0]), Top: num(v[1]), Right: num(v[0]), Bottom: num(v[1]) }
         : { Left: num(v[0]), Top: num(v[1]), Right: num(v[2]), Bottom: num(v[3]) }
       : v
-const ALIGN = (prefix: 'HAlign' | 'VAlign', v: unknown) =>
-  typeof v === 'string' && !v.includes('_') ? `${prefix}_${v[0].toUpperCase()}${v.slice(1).toLowerCase()}` : v
+/** 插槽写错了：当场退回给 AI，写明可用的值（以前会悄悄换成默认值，AI 以为改好了） */
+export class SlotError extends Error {}
+
+const H_WORDS: Record<string, string> = {
+  left: 'Left',
+  center: 'Center',
+  centre: 'Center',
+  middle: 'Center',
+  right: 'Right',
+  fill: 'Fill',
+  stretch: 'Fill',
+}
+const V_WORDS: Record<string, string> = {
+  top: 'Top',
+  center: 'Center',
+  centre: 'Center',
+  middle: 'Center',
+  bottom: 'Bottom',
+  fill: 'Fill',
+  stretch: 'Fill',
+}
+/** 横排、竖排等插槽的对齐：left / center / right / fill（或 UE 的 HAlign_Left），认不出来直接报错 */
+function alignValue(prefix: 'HAlign' | 'VAlign', v: unknown): string {
+  const words = prefix === 'HAlign' ? H_WORDS : V_WORDS
+  const raw = String(v ?? '').trim()
+  const word = raw.replace(/^[HV]Align_/i, '').toLowerCase()
+  const hit = words[word]
+  if (!hit)
+    throw new SlotError(
+      `${prefix === 'HAlign' ? '水平对齐 h' : '垂直对齐 v'} 写的是 ${JSON.stringify(v)}，只能是 ${Object.keys(words)
+        .filter((k) => !['centre', 'middle', 'stretch'].includes(k))
+        .join(' / ')}`,
+    )
+  return `${prefix}_${hit}`
+}
+
+interface AxisSpec {
+  /** 锚点：拉伸时两个值不同 */
+  min: number
+  max: number
+}
+/**
+ * anchor 的写法拆成两个方向：top / bottom / left / right / center 组合（顺序随意，top-center、center-left 都认），
+ * stretch 单独写是两个方向都拉伸；stretch-x / top-stretch / bottom-stretch 只横向拉伸，stretch-y / left-stretch / right-stretch 只纵向拉伸。
+ * 没提到的方向沿用原来的锚点
+ */
+function parseAnchor(raw: unknown, prev: { x: AxisSpec; y: AxisSpec }): { x: AxisSpec; y: AxisSpec } {
+  const text = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+  const words = text.split(/[\s_-]+/).filter(Boolean)
+  const point = (v: number): AxisSpec => ({ min: v, max: v })
+  const STRETCH: AxisSpec = { min: 0, max: 1 }
+  let x: AxisSpec | undefined
+  let y: AxisSpec | undefined
+  let stretch = false
+  let axis: 'x' | 'y' | undefined
+  let center = 0
+  for (const w of words) {
+    if (w === 'stretch' || w === 'fill') stretch = true
+    else if (w === 'x' || w === 'h' || w === 'horizontal') axis = 'x'
+    else if (w === 'y' || w === 'v' || w === 'vertical') axis = 'y'
+    else if (w === 'top') y = point(0)
+    else if (w === 'bottom') y = point(1)
+    else if (w === 'left') x = point(0)
+    else if (w === 'right') x = point(1)
+    else if (w === 'center' || w === 'centre' || w === 'middle') center++
+    else
+      throw new SlotError(
+        `anchor 写的是 ${JSON.stringify(raw)}，认不出「${w}」。可以写 top-left、top、top-right、left、center、right、bottom-left、bottom、bottom-right，` +
+          'stretch（铺满），stretch-x / top-stretch / bottom-stretch（只横向拉伸），stretch-y / left-stretch / right-stretch（只纵向拉伸）',
+      )
+  }
+  if (stretch) {
+    // 只拉伸一个方向：stretch-x、或者另一个方向写了位置（top-stretch 横向拉伸、left-stretch 纵向拉伸）
+    const only = axis ?? (y && !x ? 'x' : x && !y ? 'y' : undefined)
+    if (only === 'x') return { x: STRETCH, y: y ?? (prev.y.min === prev.y.max ? prev.y : point(0)) }
+    if (only === 'y') return { x: x ?? (prev.x.min === prev.x.max ? prev.x : point(0)), y: STRETCH }
+    return { x: STRETCH, y: STRETCH }
+  }
+  // center 填没写的方向：单写 center 是两个方向都居中，top-center 是横向居中
+  if (center) {
+    x ??= point(0.5)
+    y ??= point(0.5)
+  }
+  if (!x && !y) throw new SlotError(`anchor 是空的`)
+  return { x: x ?? prev.x, y: y ?? prev.y }
+}
+
+/**
+ * 画布插槽的简写换成 LayoutData。两个方向分开算，只改写到的：
+ * - 不拉伸的方向：x / y 是离锚点的距离，w / h 是宽高；写了 anchor 时对齐点跟锚点走（右下角写 x:-24 就是离右下角 24），
+ *   没写 anchor 时对齐点保持原样（以前会被重置成锚点那个角，控件挪半个身位）
+ * - 拉伸的方向：x / y 改起始边距，margin 改两边的边距；w / h 在拉伸方向上没有意义，报错让 AI 先换锚点
+ * - 只换锚点没写位置：贴到新锚点上（位置清零），宽高沿用
+ */
+function canvasLayout(out: any, was: any) {
+  const wMin = was?.Anchors?.Minimum ?? { X: 0, Y: 0 }
+  const wMax = was?.Anchors?.Maximum ?? wMin
+  const wAl = was?.Alignment ?? { X: 0, Y: 0 }
+  const o = was?.Offsets ?? {}
+  const fresh = !was
+  const prev = {
+    x: { min: num(wMin.X), max: num(wMax.X) },
+    y: { min: num(wMin.Y), max: num(wMax.Y) },
+  }
+  const anchored = out.anchor !== undefined
+  const next = anchored ? parseAnchor(out.anchor, prev) : prev
+  const m = out.margin !== undefined ? (box(out.margin) as any) : undefined
+  const axis = (k: 'X' | 'Y') => {
+    const lo = k === 'X' ? 'Left' : 'Top'
+    const hi = k === 'X' ? 'Right' : 'Bottom'
+    const pos = k === 'X' ? 'x' : 'y'
+    const len = k === 'X' ? 'w' : 'h'
+    const spec = k === 'X' ? next.x : next.y
+    const old = k === 'X' ? prev.x : prev.y
+    const wasStretch = old.min !== old.max
+    const changed = anchored && (spec.min !== old.min || spec.max !== old.max)
+    if (spec.min !== spec.max) {
+      if (len in out)
+        throw new SlotError(
+          `${k === 'X' ? '横' : '纵'}向是拉伸的，${len === 'w' ? '宽' : '高'}度由两边的边距决定：要固定${len === 'w' ? '宽' : '高'}度先把 anchor 换成不拉伸的（例如 ${k === 'X' ? 'top-left' : 'top-left'}），要改边距写 margin`,
+        )
+      const keep = wasStretch && !changed
+      return {
+        min: spec.min,
+        max: spec.max,
+        al: 0,
+        start: m ? num(m[lo]) : pos in out ? num(out[pos]) : keep ? num(o[lo]) : 0,
+        end: m ? num(m[hi]) : keep ? num(o[hi]) : 0,
+      }
+    }
+    // 不拉伸：对齐点写了 anchor 时跟锚点走，否则沿用
+    const al = anchored ? spec.min : fresh ? 0 : num(wAl[k])
+    const keepPos = !changed && !wasStretch && !fresh
+    const keepLen = !wasStretch && !fresh
+    return {
+      min: spec.min,
+      max: spec.max,
+      al,
+      start: pos in out ? num(out[pos]) : keepPos ? num(o[lo]) : 0,
+      end: len in out ? num(out[len]) : keepLen ? num(o[hi], k === 'X' ? 100 : 40) : k === 'X' ? 100 : 40,
+    }
+  }
+  const x = axis('X')
+  const y = axis('Y')
+  return {
+    Anchors: { Minimum: { X: x.min, Y: y.min }, Maximum: { X: x.max, Y: y.max } },
+    Alignment: { X: x.al, Y: y.al },
+    Offsets: { Left: x.start, Top: y.start, Right: x.end, Bottom: y.end },
+  }
+}
 
 /** 画布插槽简写的键：大小写和常见别名都认 */
 const CANVAS_KEYS: Record<string, string> = {
@@ -145,51 +284,33 @@ function looseSlot(slot: any, parentSlot: SlotType | undefined, prev?: any): any
     }
   }
   if (parentSlot === 'CanvasPanelSlot' && SHORT.some((k) => k in out)) {
-    // 只改了一部分（例如只写 x、y 挪位置）：没写的沿用原来的锚点、位置和大小，不要重置成默认值
-    const was = prev?.LayoutData
-    const wasMin = was?.Anchors?.Minimum
-    const wasMax = was?.Anchors?.Maximum
-    const wasStretch = !!wasMin && !!wasMax && (wasMin.X !== wasMax.X || wasMin.Y !== wasMax.Y)
-    const wasAnchor =
-      wasMin && !wasStretch
-        ? Object.keys(ANCHORS).find((k) => ANCHORS[k][0] === wasMin.X && ANCHORS[k][1] === wasMin.Y)
-        : undefined
-    const o = was?.Offsets ?? {}
-    const a = String(
-      out.anchor ?? (wasStretch && !('x' in out || 'w' in out) ? 'stretch' : wasAnchor) ?? 'top-left',
-    ).toLowerCase()
-    if (a === 'stretch' || a === 'fill') {
-      const m = box(out.margin ?? (wasStretch ? [o.Left, o.Top, o.Right, o.Bottom] : 0)) as any
-      out.LayoutData = {
-        Anchors: { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 1 } },
-        Alignment: { X: 0, Y: 0 },
-        Offsets: { Left: num(m?.Left), Top: num(m?.Top), Right: num(m?.Right), Bottom: num(m?.Bottom) },
-      }
-    } else {
-      const [ax, ay] = ANCHORS[a] ?? [0, 0]
-      const keep = !wasStretch && !!was
-      out.LayoutData = {
-        Anchors: { Minimum: { X: ax, Y: ay }, Maximum: { X: ax, Y: ay } },
-        Alignment: { X: ax, Y: ay },
-        Offsets: {
-          Left: num(out.x, keep ? num(o.Left) : 0),
-          Top: num(out.y, keep ? num(o.Top) : 0),
-          Right: num(out.w, keep ? num(o.Right, 100) : 100),
-          Bottom: num(out.h, keep ? num(o.Bottom, 40) : 40),
-        },
-      }
-    }
+    out.LayoutData = canvasLayout(out, prev?.LayoutData)
+    // 写了宽高就是固定大小：原来是 Size To Content 的要关掉，否则宽高写进去也不生效
+    if (('w' in out || 'h' in out) && prev?.bAutoSize && !('bAutoSize' in slot)) out.bAutoSize = false
     if ('z' in out) out.ZOrder = num(out.z)
     for (const k of SHORT) delete out[k]
     return out
   }
+  // 画布以外的插槽没有位置和宽高：w、x、y 写进来不会生效，h 还会被当成水平对齐
+  if (parentSlot && parentSlot !== 'CanvasPanelSlot') {
+    const pos = ['x', 'y', 'w', 'width', 'height', 'anchor', 'margin'].filter((k) => k in out)
+    if (pos.length || (typeof out.h === 'number' && 'h' in out))
+      throw new SlotError(
+        `${parentSlot} 里的控件没有位置和宽高（${[...pos, ...(typeof out.h === 'number' ? ['h'] : [])].join('、')}）：大小由内容决定，固定大小外面套 SizeBox；插槽只写 padding、fill、h（水平对齐 left/center/right/fill）、v（垂直对齐 top/center/bottom/fill）`,
+      )
+  }
   if ('padding' in out) out.Padding = box(out.padding)
   if ('Padding' in out) out.Padding = box(out.Padding)
-  if ('fill' in out) out.Size = { SizeRule: out.fill === false ? 'Automatic' : 'Fill', Value: num(out.fill, 1) }
+  if ('fill' in out) {
+    const f = out.fill
+    // fill: true / 正数是按比例撑满；false、0、"auto" 是按内容（Automatic）
+    const auto = f === false || f === 0 || f === '0' || (typeof f === 'string' && /^auto/i.test(f))
+    out.Size = auto ? { SizeRule: 'Automatic', Value: 1 } : { SizeRule: 'Fill', Value: f === true ? 1 : num(f, 1) || 1 }
+  }
   if ('h' in out) out.HorizontalAlignment = out.h
   if ('v' in out) out.VerticalAlignment = out.v
-  if (out.HorizontalAlignment) out.HorizontalAlignment = ALIGN('HAlign', out.HorizontalAlignment)
-  if (out.VerticalAlignment) out.VerticalAlignment = ALIGN('VAlign', out.VerticalAlignment)
+  if (out.HorizontalAlignment !== undefined) out.HorizontalAlignment = alignValue('HAlign', out.HorizontalAlignment)
+  if (out.VerticalAlignment !== undefined) out.VerticalAlignment = alignValue('VAlign', out.VerticalAlignment)
   for (const k of ['padding', 'fill', 'h', 'v']) delete out[k]
   return out
 }
@@ -208,7 +329,7 @@ const KEYS: Record<string, string> = {
  * AI 写的控件宽松一点也认：键名大小写随意（type、children…），Type、Name、Slot、Children、Class 以外的键都当作属性
  * （{"Type":"TextBlock","Name":"Txt_Title","Text":"背包"}），插槽可以用简写（见 looseSlot）。少写错、少返工
  */
-export function looseWidget(w: any, parentSlot?: SlotType): any {
+export function looseWidget(w: any, parentSlot?: SlotType, prevSlot?: any): any {
   if (!w || typeof w !== 'object' || Array.isArray(w)) return w
   const out: any = { Properties: {} }
   for (const [k, v] of Object.entries(w)) {
@@ -226,7 +347,7 @@ export function looseWidget(w: any, parentSlot?: SlotType): any {
       delete out.Properties[k]
     }
   }
-  out.Slot = looseSlot(out.Slot, parentSlot)
+  out.Slot = looseSlot(out.Slot, parentSlot, prevSlot)
   if (Array.isArray(out.Children)) out.Children = out.Children.map((c: any) => looseWidget(c, def?.slot))
   return out
 }
@@ -252,11 +373,61 @@ const subtreeNames = (w: any, out: string[] = []) => {
   return out
 }
 
+const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+/** 提交的子树里自己重名的名字：以前交给 normalizeTree 悄悄改成 Label_1，AI 之后改 Label 改到的不是它想的那个 */
+const dupInside = (w: any) => {
+  const seen = new Set<string>()
+  const dup = new Set<string>()
+  for (const n of subtreeNames(w)) (seen.has(n) ? dup : seen).add(n)
+  return [...dup]
+}
+/** 只能放一个子控件、而且已经有了：当场报错（以前回「好了」，到一轮结束检查才报出来） */
+const fullOne = (p: Widget, except?: string) =>
+  WIDGETS[p.Type]?.children === 'one' && (p.Children ?? []).some((c) => c.id !== except)
+    ? `${p.Name}（${p.Type}）只能放一个子控件，里面已经有了：要换掉用 replace_widget，要多放几个先用 wrap_widget 在外面套一层 Overlay / VerticalBox`
+    : ''
+
+/** 删掉的控件被动画轨道引用着：轨道跟着删（只剩空壳的动画整个删掉），返回给 AI 的说明 */
+function dropTracks(list: UiAnimation[] | undefined, tree: string, gone: Set<string>) {
+  if (!list?.length) return { list, note: '' }
+  const notes: string[] = []
+  const next: UiAnimation[] = []
+  for (const a of list) {
+    if (a.in !== tree) {
+      next.push(a)
+      continue
+    }
+    const tracks = a.tracks.filter((t) => !gone.has(t.widget))
+    const lost = a.tracks.length - tracks.length
+    const source = a.source && gone.has(a.source) ? '' : a.source
+    if (!lost && source === a.source) {
+      next.push(a)
+      continue
+    }
+    if (!tracks.length) notes.push(`动画 ${a.name} 的轨道都引用了删掉的控件，整个删了`)
+    else {
+      notes.push(`动画 ${a.name} 里删了 ${lost} 条引用它的轨道${source !== a.source ? '，触发控件也清掉了' : ''}`)
+      next.push({ ...a, tracks, source })
+    }
+  }
+  return { list: notes.length ? next : list, note: notes.join('；') }
+}
+
 /**
  * 应用一个操作；不合法时返回错误（写给 AI 看的），状态不变。
  * 加进来的控件用 normalizeTree 补齐默认属性和插槽，名字不能和树里已有的重复
  */
-export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { error: string } {
+export function applyOp(s: OpsState, raw: unknown): { state: OpsState; note?: string } | { error: string } {
+  try {
+    return applyOpInner(s, raw)
+  } catch (e) {
+    // 插槽写错（认不出的锚点、对齐、拉伸方向写了宽高……）：当场退回，不再悄悄换成默认值
+    if (e instanceof SlotError) return { error: e.message }
+    throw e
+  }
+}
+
+function applyOpInner(s: OpsState, raw: unknown): { state: OpsState; note?: string } | { error: string } {
   const op = { ...(raw as any) } as DesignOp
   if (!op || typeof op !== 'object' || typeof (op as any).op !== 'string') return { error: '操作要写成 {"op": …}' }
   const comps = s.components
@@ -266,6 +437,9 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
   if (op.op === 'addComponent') {
     const c = op.component
     if (!c?.Name) return { error: 'addComponent 要写 component.Name' }
+    if (!NAME_RE.test(c.Name)) return { error: `子控件名要用英文、数字和下划线：${c.Name}` }
+    const dupC = dupInside(c.Root)
+    if (dupC.length) return { error: `子控件 ${c.Name} 里有重名的控件：${dupC.join('、')}，每个控件起不同的名字` }
     if (comps.some((x) => x.Name === c.Name))
       return { error: `已经有子控件 ${c.Name}，要改它的内容用 "in":"${c.Name}"` }
     return {
@@ -273,7 +447,14 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
         ...s,
         components: [
           ...comps,
-          { Name: c.Name, DesignSize: c.DesignSize ?? { X: 128, Y: 128 }, Root: normalizeTree(c.Root) },
+          {
+            Name: c.Name,
+            DesignSize:
+              Number(c.DesignSize?.X) > 0 && Number(c.DesignSize?.Y) > 0
+                ? { X: Number(c.DesignSize!.X), Y: Number(c.DesignSize!.Y) }
+                : { X: 128, Y: 128 },
+            Root: normalizeTree(c.Root),
+          },
         ],
       },
     }
@@ -314,9 +495,11 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
   }
   if (op.op === 'resizeComponent') {
     if (!comps.some((x) => x.Name === op.name)) return { error: `没有子控件 ${op.name}` }
-    if (!(op.size?.X > 0 && op.size?.Y > 0)) return { error: 'resizeComponent 的 size 要写 {"X","Y"}' }
+    // 数字可能写成字符串（"200"）：存成字符串的话下次启动整个设计校验不过、从列表里消失
+    const size = { X: Number(op.size?.X), Y: Number(op.size?.Y) }
+    if (!(size.X > 0 && size.Y > 0)) return { error: 'resizeComponent 的 size 要写 {"X":宽,"Y":高}，都是正数' }
     return {
-      state: { ...s, components: comps.map((x) => (x.Name === op.name ? { ...x, DesignSize: op.size } : x)) },
+      state: { ...s, components: comps.map((x) => (x.Name === op.name ? { ...x, DesignSize: size } : x)) },
     }
   }
 
@@ -363,9 +546,13 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       if (typeof p === 'string') return { error: p }
       const def = WIDGETS[p.Type]
       if (!def?.slot) return { error: `${p.Type} 不能放子控件（${p.Name}）` }
+      const full = fullOne(p)
+      if (full) return { error: full }
       const widget = looseWidget(op.widget, def.slot)
       const wrong = badWidgets(widget)
       if (wrong.length) return { error: wrong.join('；') }
+      const inner = dupInside(widget)
+      if (inner.length) return { error: `提交的控件里有重名的：${inner.join('、')}，每个控件起不同的名字` }
       const names = allNames(root)
       const dup = subtreeNames(widget).find((n) => names.has(n))
       if (dup) return { error: `${inTree}已经有叫 ${dup} 的控件，换个名字` }
@@ -376,7 +563,12 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       const w = need(op.target)
       if (typeof w === 'string') return { error: w }
       if (w.id === root.id) return { error: '不能删根控件，要换掉整个界面用 replace' }
-      return done(removeWidget(root, w.id))
+      const gone = new Set<string>()
+      walk(w, (x) => gone.add(x.Name))
+      const r = done(removeWidget(root, w.id))
+      const t = dropTracks(s.animations, where, gone)
+      if (t.list !== s.animations) r.state.animations = t.list
+      return t.note ? { ...r, note: t.note } : r
     }
     case 'move': {
       const w = need(op.target)
@@ -386,13 +578,15 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       if (w.id === root.id || pathTo(root, p.id).some((x) => x.id === w.id))
         return { error: `不能把 ${w.Name} 移到它自己里面` }
       if (!WIDGETS[p.Type]?.slot) return { error: `${p.Type} 不能放子控件（${p.Name}）` }
+      const full = fullOne(p, w.id)
+      if (full) return { error: full }
       return done(moveWidget(root, w.id, p.id, typeof op.index === 'number' ? op.index : undefined))
     }
     case 'rename': {
       const w = need(op.target)
       if (typeof w === 'string') return { error: w }
       const name = String(op.name ?? '')
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return { error: `控件名要用英文、数字和下划线：${name}` }
+      if (!NAME_RE.test(name)) return { error: `控件名要用英文、数字和下划线：${name}` }
       if (name !== w.Name && allNames(root).has(name)) return { error: `${inTree}已经有叫 ${name} 的控件` }
       const r = done(mapWidget(root, w.id, (x) => ({ ...x, Name: name })))
       // 动画里引用这个控件的轨道跟着改名
@@ -403,7 +597,11 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       const w = need(op.target)
       if (typeof w === 'string') return { error: w }
       const parent = findParent(root, w.id)
-      const raw = looseWidget(op.widget, parent ? WIDGETS[parent.Type].slot : undefined)
+      // 只写了一部分插槽（例如 Slot:{"x":20}）：和原来的插槽合并，没写的沿用
+      const raw = looseWidget(op.widget, parent ? WIDGETS[parent.Type].slot : undefined, w.Slot)
+      if (raw?.Slot && w.Slot) raw.Slot = { ...w.Slot, ...raw.Slot }
+      const innerDup = dupInside(raw)
+      if (innerDup.length) return { error: `提交的控件里有重名的：${innerDup.join('、')}，每个控件起不同的名字` }
       const wrong = badWidgets(raw)
       if (wrong.length) return { error: wrong.join('；') }
       const names = allNames(root)
@@ -428,8 +626,7 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       if (!p || !WIDGETS[p.Type]?.slot) return { error: `${p?.Name ?? ''} 不能放子控件` }
       if (WIDGETS[p.Type].children === 'one' && p.Children?.length) return { error: `${p.Name} 只能放一个子控件` }
       const names = allNames(root)
-      if (op.name && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(op.name))
-        return { error: `控件名要用英文、数字和下划线：${op.name}` }
+      if (op.name && !NAME_RE.test(op.name)) return { error: `控件名要用英文、数字和下划线：${op.name}` }
       if (op.name && names.has(op.name)) return { error: `${inTree}已经有叫 ${op.name} 的控件` }
       const c = cloneWidget(w, names)
       if (op.name) c.Name = op.name
@@ -449,6 +646,7 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       if (!WIDGETS[type]?.slot)
         return { error: `wrap 的 type 要是能放子控件的面板（例如 Overlay、SizeBox、Border），不能是 ${type}` }
       const names = allNames(root)
+      if (op.name && !NAME_RE.test(op.name)) return { error: `控件名要用英文、数字和下划线：${op.name}` }
       if (op.name && names.has(op.name)) return { error: `${inTree}已经有叫 ${op.name} 的控件` }
       const r = wrapWidget(root, w.id, type, names)
       if (r.root === root) return { error: `${type} 不能用来包裹控件` }

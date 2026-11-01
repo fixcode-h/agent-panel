@@ -32,7 +32,7 @@ export function ProjectCategoryList() {
   }
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="text-body leading-relaxed text-subtle">
         {t('项目选了分类后默认使用分类的工作流；项目也可以在项目设置里单独指定。')}
       </p>
       {/* 内置分类按固定 id 认，改名不影响；说清楚为什么没有删除按钮 */}
@@ -86,10 +86,10 @@ function CategoryRow({ category }: { category: ProjectCategory }) {
     <section className="flex flex-col gap-3 rounded-xl bg-card shadow-card p-4">
       <div className="flex items-center gap-2">
         <Layers className="h-4 w-4 shrink-0 text-subtle" strokeWidth={2.2} />
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">{draft.name || t('未命名分类')}</span>
+        <span className="min-w-0 flex-1 truncate text-body font-medium">{draft.name || t('未命名分类')}</span>
         {builtin && (
           <span
-            className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text"
+            className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-caption text-accent-text"
             title={t('内置分类不能删除')}
           >
             {t('内置')}

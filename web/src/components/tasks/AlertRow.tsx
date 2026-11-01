@@ -62,7 +62,7 @@ export function AlertRow({
           {body.split('\n')[0]}
         </span>
         {done && (
-          <span className="shrink-0 rounded bg-sel px-1.5 py-px text-[0.6875rem] text-subtle">{t('已恢复')}</span>
+          <span className="shrink-0 rounded-sm bg-sel px-1.5 py-px text-caption text-subtle">{t('已恢复')}</span>
         )}
         <ChevronRight
           className={cn(
@@ -80,7 +80,7 @@ export function AlertRow({
           {detail && detail !== body && (
             <div className="flex flex-col gap-1">
               <span className="font-medium text-muted">{t('原始信息')}</span>
-              <pre className="max-h-60 overflow-auto rounded-md bg-field px-2.5 py-2 font-mono text-[0.6875rem] whitespace-pre-wrap text-fg/80 [overflow-wrap:anywhere]">
+              <pre className="max-h-60 overflow-auto rounded-md bg-field px-2.5 py-2 font-mono text-caption whitespace-pre-wrap text-fg/80 [overflow-wrap:anywhere]">
                 {detail}
               </pre>
             </div>

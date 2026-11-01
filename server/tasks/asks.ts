@@ -302,7 +302,7 @@ export function createAsks(s: TasksScope) {
     // 先记成「已交给父对话决定」并落盘：叫父对话时它会重新读这份任务，不先写下去这一步会被新副本盖掉
     ask.delegated = true
     if (found) found.rev++
-    await s.store.update(parent.id, parent).catch(() => {})
+    await s.store.update(parent.id, parent)
     await dropChildAsks(ask.from, [m.id])
     // 问题全文一起交过去：父对话续上等下一句的那次调用时，收件箱不会重新读，只写「在收件箱里」它拿不到内容
     const nudge = await nudgeParent(parent, delegatePrompt(ask))
@@ -327,7 +327,7 @@ export function createAsks(s: TasksScope) {
     }
     const live2 = s.live.get(parent.id)
     if (live2) live2.rev++
-    await s.store.update(parent.id, cur).catch(() => {})
+    await s.store.update(parent.id, cur)
     return { task: cur, nudge }
   }
 

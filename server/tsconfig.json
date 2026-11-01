@@ -1,0 +1,9 @@
+// 服务端：只有 Node 类型，没有 DOM。服务端的测试也跑在 Node 里，一起检查。
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "tsBuildInfoFile": "../.tmp/tsc/server.tsbuildinfo"
+  },
+  "include": ["."]
+}

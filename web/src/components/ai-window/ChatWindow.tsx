@@ -71,19 +71,17 @@ export function ChatWindow({
           </>
         }
       >
-        <span aria-hidden className="shrink-0 text-[0.8125rem] font-medium text-fg">
+        <span aria-hidden className="shrink-0 text-body font-medium text-fg">
           {label}
         </span>
         <span
           aria-hidden
           title={subject}
-          className={cn('min-w-0 shrink truncate text-[0.8125rem]', danger ? 'text-danger' : 'text-muted')}
+          className={cn('min-w-0 shrink truncate text-body', danger ? 'text-danger' : 'text-muted')}
         >
           {subject}
         </span>
-        {meta && (
-          <span className="hidden min-w-0 shrink-[2] truncate text-[0.75rem] text-subtle md:inline">{meta}</span>
-        )}
+        {meta && <span className="hidden min-w-0 shrink-[2] truncate text-footnote text-subtle md:inline">{meta}</span>}
       </ModalHeader>
       {children}
     </Modal>

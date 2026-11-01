@@ -12,6 +12,7 @@ import {
   convState,
   type ConvState,
   helperRunning,
+  helpersWorking,
   runRunning,
   announcedOnly,
   taskDeleted,
@@ -19,34 +20,48 @@ import {
   type ChildFlowStop,
   type ChildHold,
 } from '../../shared/task.ts'
+import { nextNudge, nudgeMax } from '../../shared/conv-mode.ts'
+import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled, type MergeStall } from '../../shared/merge-stall.ts'
 import { cancelWait, steerTask } from '../exec/runner.ts'
 import { stopHelper } from '../../shared/engine.ts'
 import { hasHeld } from '../exec/delivery.ts'
-import {
-  abortMerge,
-  commitMerge,
-  mergeBlocker,
-  currentBranch,
-  mergeSides,
-  mergeSidesText,
-  releaseWorktree,
-  worktreeStatus,
-  trialMerge,
-} from '../exec/worktree.ts'
+import { releaseWorktree, worktreeStatus } from '../exec/worktree.ts'
+import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrate.ts'
 import { reapLostJobs } from '../background.ts'
 import { log } from '../log.ts'
-import { aroundMerge } from '../turn-changes.ts'
 import { t } from '../../shared/i18n.ts'
+import { descendantNeeds } from '../../shared/child-needs.ts'
 import { activePlan, holdWait, needsFix, panelWrap, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
 import { RULE_CMD, isolated, HELPER_STOP_TIMEOUT_MS, HELPER_STOP_POLL_MS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { letterResult } from '../../shared/child-letter.ts'
 
 /**
  * 子对话的生命周期：在跑的计数、彻底完成的判定和推进（advanceChildTo，ADR 0003）、合回、上报父对话、一轮结束时推进计划（nudgePlan，ADR 0032）、规则命令、启动子对话。
  */
 export function createChildren(sc: TasksScope) {
+  /**
+   * 推对话「接着做」的次数：Agent 模式的顶层对话（项目里的对话）同一个进度最多推 3 次，推了还原地不动就停下，
+   * 最后一次要它说明卡在哪；子对话、Chat 页的对话仍只推一次（见 shared/conv-mode.ts 的 nudgeMax、ADR 0037）。
+   * 原来同一进度一律只推一次，用户反馈「走一步就停，催一下又走一步」
+   */
+  const nudgeCount = new Map<string, { key: string; n: number }>()
+  /** 这个进度（key）还能不能再推：能推时记一次、返回这是第几次（从 1 开始），推满了返回 0 */
+  const takeNudge = (conv: Task, key: string): number => {
+    const next = nextNudge(nudgeCount.get(conv.id), key, nudgeMax(conv))
+    if (!next) return 0
+    nudgeCount.set(conv.id, next)
+    // 子对话「推过还停在原地」的判定（merge.ts 的 stuckAfterNudge）读这个
+    sc.planNudged.set(conv.id, key)
+    return next.n
+  }
+  /** 推满之前的最后一次：要它说明卡在哪，不再只说打算 */
+  const lastNudge = (conv: Task, nth: number) =>
+    nudgeMax(conv) > 1 && nth >= nudgeMax(conv)
+      ? `这是第 ${nth} 次提醒：如果做不下去，就停下来说明卡在哪一步、需要什么才能继续，不要再只说打算。`
+      : ''
   /**
    * 子对话还在运行（见 convActive）：在跑、等结果、等回答、正在启动，或者还有交过来的消息要接着处理。
    * 父对话的「子对话在跑」计数、标题和侧栏的转圈、能不能回收都读它
@@ -71,21 +86,30 @@ export function createChildren(sc: TasksScope) {
    * 不缓存的话父对话开得越多，每秒扫整份任务列表的次数越多（每个父对话 2 次）
    */
   const CHILD_COUNT_TTL = 1000
-  let childScan: { at: number; byParent: Map<string, { working: number; cli: number }> } | null = null
+  let childScan: {
+    at: number
+    byParent: Map<string, { working: number; cli: number }>
+    needs: Map<string, number>
+  } | null = null
   async function childCountsOf(parentId: string) {
     const now = Date.now()
     if (!childScan || now - childScan.at >= CHILD_COUNT_TTL) {
       const byParent = new Map<string, { working: number; cli: number }>()
-      for (const k of await sc.store.list()) {
+      // 执行中的对话以内存里那份为准：请求刚弹出来还没落盘时，父对话也要马上变成「等你处理」
+      const all = (await sc.store.list()).map((k) => sc.live.get(k.id)?.task ?? k)
+      for (const k of all) {
         if (!k.parentTaskId) continue
         const c = byParent.get(k.parentTaskId) ?? { working: 0, cli: 0 }
         if (taskCliAlive(k.id)) c.cli++
-        if (childActive(sc.live.get(k.id)?.task ?? k)) c.working++
+        if (childActive(k)) c.working++
         byParent.set(k.parentTaskId, c)
       }
-      childScan = { at: now, byParent }
+      childScan = { at: now, byParent, needs: descendantNeeds(all) }
     }
-    return childScan.byParent.get(parentId) ?? { working: 0, cli: 0 }
+    return {
+      ...(childScan.byParent.get(parentId) ?? { working: 0, cli: 0 }),
+      needs: childScan.needs.get(parentId) ?? 0,
+    }
   }
 
   /** 名下还在运行的子对话数（见 childActive） */
@@ -112,10 +136,11 @@ export function createChildren(sc: TasksScope) {
         )
     }
     const t = sc.withJobs(task)
-    if (task.parentTaskId) return t
-    // 0 也写上：理由同 withJobs
     const kids = await childCountsOf(task.id)
-    return { ...t, childrenWorking: kids.working, childrenCli: kids.cli }
+    // 后代在等用户处理：子对话页（它下面还有孙对话）也要冒泡成「等你处理」，所以子对话也带
+    if (task.parentTaskId) return { ...t, childrenNeeds: kids.needs }
+    // 0 也写上：理由同 withJobs
+    return { ...t, childrenWorking: kids.working, childrenCli: kids.cli, childrenNeeds: kids.needs }
   }
 
   /**
@@ -126,6 +151,8 @@ export function createChildren(sc: TasksScope) {
 
   /** 上次交给父对话的状态（见 reportChild）：同一个状态不重复报 */
   const reportedState = new Map<string, string>()
+  /** 子对话停在「只剩合回、没请收尾」的次数（见 nextMergeStall）：离开这个状态就清掉 */
+  const mergeStalls = new Map<string, MergeStall>()
   /** 上报去重的键：收尾请求按请求的时间，别的状态按这一轮结束的时间（每轮结束各报一次） */
   // 不带 status：CLI 报完这一轮（result）时 status 还是 running，进程退出、整次执行收尾时变成 done，
   // 同一轮、同一状态会因为这一个字段不同被当成两次上报，父对话里出现两条一样的「子对话状态」
@@ -195,6 +222,8 @@ export function createChildren(sc: TasksScope) {
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await sc.store.update(tk.id, tk)
+    // 改动交出去了：共用目录里它名下的认领到这里才放（finish_child、用户点解决、一轮结束收口都经这一步）
+    sc.claims.release(tk.parentTaskId!, childId)
     // 落到 resolved 之后再核对一次：上面只停得到本进程 live 里的那一轮，
     // 重启前留下的、或某条路径漏停的 CLI 还挂在登记里（任务已经完成了，进程留着没人要）。
     // 日志由 killTaskClis 写，里面带任务和 pid
@@ -338,50 +367,9 @@ export function createChildren(sc: TasksScope) {
     return { holds: run.holds, info: run.info }
   }
 
-  /** 一次合并：试合并 → 提交；冲突或原目录状态不对就撤回，原目录不变 */
-  async function integrate(tk: Task, parent: Task): Promise<{ ok: boolean; info: string }> {
-    const wt = tk.worktree!
-    const target = await sc.taskDir(parent)
-    // 从哪开的分支就合回哪：原目录后来换了分支就不合，免得合到别的分支上
-    const now = await currentBranch(target)
-    if (wt.baseBranch && now !== wt.baseBranch)
-      return {
-        ok: false,
-        info: `原目录现在在「${now || '分离的 HEAD'}」，不是开分支时的「${wt.baseBranch}」，没有合并。切回「${wt.baseBranch}」后再合。`,
-      }
-    const blocked = await mergeBlocker(target)
-    if (blocked) return { ok: false, info: `${blocked}，没有合并。这不是你的问题，等父对话或用户处理好后再合。` }
-    // 两边都改过的文件：git 只在同一处改动上报冲突，同一个文件改不同位置会静默合上。
-    // 合并前连同双方的提交记录一起记下来：合进去时一并告诉子对话和父对话「这个文件两边都动过」，
-    // 并且让他们能按提交说明和文档看懂各自为什么这么改，而不是只看 diff 拿主意（见 project-vcs 的「合并审查」）
-    const sides = await mergeSides(target, wt.branch).catch(() => null)
-    const overlap = sides?.overlap ?? []
-    const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
-    // 父对话总结下面的改动卡片不含子对话的改动：合并的那一下从父对话这一轮里切掉
-    return aroundMerge(target, async () => {
-      const m = await trialMerge(target, wt.branch)
-      if (!m.ok)
-        return {
-          ok: false,
-          info: m.dirty
-            ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边处理后再合。\n${m.error}${about}`
-            : `和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}${about}`,
-        }
-      if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
-      try {
-        const sha = await commitMerge(target, `Agent 面板：合并「${tk.title}」`)
-        const both = overlap.length
-          ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过：必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论（见 project-vcs 技能 git.md 的「合并审查」）。`
-          : ''
-        return {
-          ok: true,
-          info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${both}`,
-        }
-      } catch (e) {
-        await abortMerge(target)
-        return { ok: false, info: `合并后提交失败，已撤回：${(e as Error).message}` }
-      }
-    })
+  /** 一次合并（git 部分在 worktree-integrate.ts）：失败按谁能修分类，冲突写给子对话，挡路写给父对话 */
+  async function integrate(tk: Task, parent: Task): Promise<IntegrateResult> {
+    return integrateBranch(await sc.taskDir(parent), tk.worktree!, tk.title)
   }
 
   async function closeChildren(parentId: string) {
@@ -425,7 +413,13 @@ export function createChildren(sc: TasksScope) {
     // 这一轮结束后还要接着做：排队的要求、面板交过来的消息、刚开好独立分支马上在分支目录里接着做的
     const more = sc.startQueue.has(childId) || hasHeld(childId)
     const project = isolated(tk) ? await sc.deps.projects.get(tk.projectId) : null
-    const r = childReport(tk, { background: jobs, more, unmerged: await sc.childUnmerged(tk, project ?? null) })
+    const r = childReport(tk, {
+      background: jobs,
+      more,
+      unmerged: await sc.childUnmerged(tk, project ?? null),
+      // 它下面的孙对话在等用户：报「等你处理」并说清是它的子对话，父对话不会当成它卡住了去催
+      childNeeds: (await childCountsOf(tk.id)).needs,
+    })
     if (r.settle === 'hold') {
       await holdChildWait(tk, r.why).catch((e) =>
         log.warn('task', '更新父对话计划的等待说明失败', { task: tk.id, error: (e as Error).message }),
@@ -439,25 +433,50 @@ export function createChildren(sc: TasksScope) {
     if (r.state === 'stopped' && tk.stopReason === 'restart') return
     // 已经换新的子对话接手：换人那封信说过了，不再报「已中断」
     if (r.state === 'stopped' && tk.stopReason === 'replaced') return
-    const key = reportKey(tk, r.state)
+    // 只剩合回却没请收尾：每停一次都要让父对话知道（带第几次），不能按「状态没变」吞掉，见 nextMergeStall
+    const mergeOnly = r.state === 'unfinished' && !openWork(tk).length
+    let stall: MergeStall | undefined
+    if (mergeOnly) {
+      const plan = activePlan(tk)
+      stall = nextMergeStall(
+        mergeStalls.get(childId),
+        plan ? `${plan.id}:${planProgress(tk, plan).done}` : '',
+        tk.turnDoneAt ?? '',
+      )
+      mergeStalls.set(childId, stall)
+      // 报满了：父对话已经被告知最后一次、按那封信去问用户了，不再叫起它来回催
+      if (stall.n > MERGE_STALL_REPORTS) return
+    } else mergeStalls.delete(childId)
+    const key = reportKey(tk, r.state) + (stall ? `|${stall.n}` : '')
     if (reportedState.get(childId) === key) return
     reportedState.set(childId, key)
     // 先取最新的回复：task.summary 要等整次执行收尾才更新，这一轮刚报完成（进程还在、或保活等下一句）时
     // 它还是上一轮的，上报会带着上一轮的结果
     // 这一轮 AI 自己用 message_parent 写的汇报并进这一封当「结果」（ADR 0034：一轮只交一封），没写才取最后一条回复
-    const summary = tk.pendingReport?.trim() || sc.lastReply(tk) || tk.summary
+    // 只带要点（shared/child-letter.ts）：最后一条回复取全文从里面认总结，lastReply 只有开头 300 字、认不出末尾的总结
+    const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())?.text
+    const brief = letterResult(tk.pendingReport?.trim() || last || tk.summary || '')
+    const summary = brief.text
     // 用户直接在子对话里交代过新要求：不再单独发消息，这封汇报里带上原话
     const direct = tk.userDirect ? `\n用户在这个子对话里直接交代过：${tk.userDirect}` : ''
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
-    const next =
-      r.state === 'unfinished' && !openWork(tk).length
-        ? `\n下一步：用 send_to_conversation 让它${isolated(tk) ? '在自己的分支里' : ''}评审处置完、跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。`
-        : r.state === 'unfinished'
-          ? `\n下一步：面板已经推过它一次接着做，它仍停在这里。用 send_to_conversation 交回这个子对话（id ${tk.id}），写清下一步要做什么；不要另建一个子对话重做。`
+    // 停了几次：面板自己提醒过一次 submit_merge 的也算上，父对话据此判断要不要换个说法或去问用户
+    const stops = stall ? stall.n + (sc.mergeNudged.has(tk.id) ? 1 : 0) : 0
+    const next = mergeOnly
+      ? `\n这是它第 ${stops} 次停在这里没请收尾${sc.mergeNudged.has(tk.id) ? '（面板已经提醒过它一次）' : ''}。` +
+        `下一步：用 send_to_conversation 让它${isolated(tk) ? '在自己的分支里' : ''}评审处置完、跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。` +
+        (stall!.n >= MERGE_STALL_REPORTS
+          ? '这是面板最后一次转告：交回后它仍不调用 submit_merge，就停下来告诉用户它卡在合回前、卡在哪，由用户决定，不要再来回催。'
+          : '')
+      : r.state === 'unfinished'
+        ? `\n下一步：面板已经推过它一次接着做，它仍停在这里。用 send_to_conversation 交回这个子对话（id ${tk.id}），写清下一步要做什么；不要另建一个子对话重做。`
+        : r.state === 'stopped' && tk.stopReason === 'user'
+          ? // 用户亲手停的是「先别动」，不是失败：实测里父对话把它当成中断去交回重试，用户停它的意思就没了
+            '\n下一步：这是用户自己停掉的，不是失败。不要自动交回、重派或另建子对话重做；计划里等它的那一步继续等，用户要它接着做时会自己继续，或者交代你再交给它。'
           : r.state === 'failed' || r.state === 'stopped'
             ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
             : ''
-    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
+    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要，详细总结在子对话「${tk.title}」里：写它的卡片时标题链到它，不用转述细节）` : ''}` : ''}`
     await sc.noteParent(
       tk.parentTaskId,
       tk,
@@ -471,15 +490,20 @@ export function createChildren(sc: TasksScope) {
       !!next && r.state === 'unfinished',
     )
     // 并进去的阶段汇报、用户的原话已经交出去了，下一封不再重复带。
-    // 随父对话停下的那次 noteParent 只改计划、不发（见 noteParent 的 cascaded），留到继续后的那一封
-    const sent = !(r.state === 'stopped' && tk.stopReason === 'parent')
+    // 随父对话（或用量上限）停下的那次 noteParent 只改计划、不发（见 noteParent 的 cascaded），留到继续后的那一封
+    const sent = !(r.state === 'stopped' && (tk.stopReason === 'parent' || tk.stopReason === 'budget'))
     if (sent && (tk.pendingReport || tk.userDirect)) {
       const ce = sc.live.get(tk.id)
       const cur = ce?.task ?? tk
       cur.pendingReport = undefined
       cur.userDirect = undefined
       if (ce) ce.rev++
-      else await sc.store.update(tk.id, cur).catch(() => {})
+      else
+        await sc.store
+          .update(tk.id, cur)
+          .catch((e) =>
+            log.error('task', '清掉已交出的阶段汇报时写盘失败', { task: tk.id, error: (e as Error).message }),
+          )
     }
   }
 
@@ -531,7 +555,8 @@ export function createChildren(sc: TasksScope) {
    * 对话这一轮说完了，计划却没做完、也没在等任何结果（见 planStalled）：常见于模型只回了一句
    * 「先跑类型检查」「我跑 test:failed」就收尾，那次回应里没有任何工具调用，CLI 照常报这一轮结束（用户报过多次）。
    * 子对话这时父对话只会收到一条状态，它在忙别的就没人推；顶层对话就一直停在等下一句。这里由面板马上推它接着做下一步。
-   * 同一个进度只推一次（见 planNudged），推了没动静：子对话照常上报父对话，顶层对话就停在那里等用户。
+   * 同一个进度推几次见 takeNudge（Agent 模式的顶层对话最多 3 次，其余 1 次），推满了还没动静：
+   * 子对话照常上报父对话，顶层对话就停在那里等用户。
    * 推出去了（或者已经排好稍后推）返回 true
    */
   async function nudgePlan(conv: Task): Promise<boolean> {
@@ -541,6 +566,9 @@ export function createChildren(sc: TasksScope) {
     const stalled = async (settled: boolean) => {
       const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
       if (!tk || tk.imported || taskDeleted(tk) || !planStalled(tk)) return undefined
+      // 已经停下、失败的从来不推（下面 settled 那项也会挡）：刚结束那一下就返回，不白记一次推进（takeNudge）。
+      // 白记的话用户之后继续它、停在同一进度时不会再推，上报还会说「面板已经推过它一次」，其实没推过（复核 C3-b）
+      if (tk.status === 'stopped' || tk.status === 'failed') return undefined
       // 正常说完的一轮：进程结束了（done），或者还停在保活上等下一句（这时 status 仍是 running）。
       // 失败、被停下的不推：那是出错了或用户让它停，要让用户看到再决定
       if (settled && !(tk.status === 'done' || (tk.status === 'running' && tk.awaitingUser))) return undefined
@@ -553,8 +581,8 @@ export function createChildren(sc: TasksScope) {
     const now = await stalled(false)
     if (!now) return false
     const key = `${now.plan.id}:${now.p.done}`
-    if (sc.planNudged.get(conv.id) === key) return false
-    sc.planNudged.set(conv.id, key)
+    const nth = takeNudge(conv, key)
+    if (!nth) return false
     // 稍等一下再推：这一轮刚结束时 CLI 还没停到「等下一句」上；等它停稳了再看一次，还停着才推
     setTimeout(() => {
       void (async () => {
@@ -575,7 +603,8 @@ export function createChildren(sc: TasksScope) {
               ? `接着做「${next.title}」：`
               : '接着做下一步：') +
           '直接调用工具去做，不要只回一句打算就结束；做完一步就用 set_plan 标完成，再做下一步，直到计划做完。' +
-          '确实卡住了就说明卡在哪一步、需要什么才能继续。'
+          '确实卡住了就说明卡在哪一步、需要什么才能继续。' +
+          lastNudge(conv, nth)
         const ok = again.tk.parentTaskId
           ? (await sc.sendToChild(again.tk.parentTaskId, again.tk.id, text, 'build')).ok
           : await sc.wakeConv(again.tk.id, text, { panel: 'build' }).then(
@@ -596,7 +625,7 @@ export function createChildren(sc: TasksScope) {
 
   /**
    * 没有计划的对话这一轮以一句打算收尾（「我再确认…」，见 announcedOnly）、之后没调用任何工具：
-   * 等 CLI 停稳后推一次「接着做你刚说的」。每条用户消息只推一次，推了还停着就留给用户。
+   * 等 CLI 停稳后推「接着做你刚说的」。每条用户消息推几次见 takeNudge，推满了还停着就留给用户。
    * 用户报过：Chat 模式的对话说完「我再确认这些连接的状态」就停住，要用户说「继续啊」才接着做
    */
   async function nudgeAnnounced(conv: Task): Promise<boolean> {
@@ -606,8 +635,8 @@ export function createChildren(sc: TasksScope) {
     // 面板自己推的那条不算新消息（panel），所以按最后一条不是面板发的消息记
     const asked = [...conv.messages].reverse().find((m) => m.role === 'user' && !m.panel)
     const key = `said:${asked?.id ?? ''}`
-    if (sc.planNudged.get(conv.id) === key) return false
-    sc.planNudged.set(conv.id, key)
+    const nth = takeNudge(conv, key)
+    if (!nth) return false
     setTimeout(() => {
       void (async () => {
         const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
@@ -622,7 +651,8 @@ export function createChildren(sc: TasksScope) {
         if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return
         const text =
           `【面板】你说了「${intent}」，但这一轮没有调用工具就结束了。直接接着做：调用工具去做这件事，做完给出结论；` +
-          '确实做不了就说明卡在哪里、需要什么。'
+          '确实做不了就说明卡在哪里、需要什么。' +
+          lastNudge(conv, nth)
         const ok = tk.parentTaskId
           ? (await sc.sendToChild(tk.parentTaskId, tk.id, text, 'build')).ok
           : await sc.wakeConv(tk.id, text, { panel: 'build' }).then(
@@ -642,7 +672,10 @@ export function createChildren(sc: TasksScope) {
    */
   async function nudgeMerge(child: Task): Promise<boolean> {
     if (!child.parentTaskId || sc.mergeNudged.has(child.id) || child.wrapRequest) return false
-    if (child.status !== 'done' || child.working) return false
+    // 这一轮说完了就提醒（见 turnSettled）：保活的 CLI 一轮结束后 status 还是 running，只认 done 永远提醒不到
+    if (!turnSettled(child)) return false
+    // 进程还挂着时派出的子任务、工作流可能还没跑完（done 时不会有）：那是在等结果，不是停在合回前
+    if (helpersWorking(child) || runRunning(child)) return false
     // 用户停下、父对话收尾、归档删除这类被叫停的：不能再推它开新一轮，停止键按下去对话又自己跑起来（e2e 保活子对话那段撞到过）。
     // 页面切走、闲置回收只是收掉等下一句的进程，这一轮是正常做完的，照常提醒
     const live = sc.live.get(child.id)

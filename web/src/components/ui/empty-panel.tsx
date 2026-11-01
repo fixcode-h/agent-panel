@@ -32,7 +32,7 @@ export function EmptyPanel({
   children: ReactNode
 }) {
   const cls = cn(
-    'rounded-(--c-empty-radius) border border-(--c-empty-border) bg-(--c-empty-bg) text-center text-[0.8125rem] text-subtle',
+    'rounded-(--c-empty-radius) border border-(--c-empty-border) bg-(--c-empty-bg) text-center text-body text-subtle',
     PADDING[size],
     className,
   )

@@ -1,6 +1,7 @@
 import { childReport } from './task.ts'
 import { makeAlert } from './alerts.ts'
 import { test } from 'node:test'
+import { failLostWaits } from './plan-lost.ts'
 import assert from 'node:assert/strict'
 import type { PlanStep, Task, TaskMessage, TaskPlan } from './schema.ts'
 import { PlanStatus } from './schema.ts'
@@ -274,6 +275,25 @@ test('等待：挂上后台命令，成功自动完成；没成功退回进行�
   assert.equal(activePlan(task)!.steps[2].status, 'running')
   assert.match(activePlan(task)!.steps[2].note, /重跑/)
   assert.deepEqual(releaseParentWait(task), [], '没在等父对话时什么都不动')
+  // 结果不会再来的等待（面板崩溃后不认识的后台命令）按没成功收口；还认得的不动
+  bindWait(task, '3', { kind: 'background', ref: 'gone', label: '构建' })
+  bindWait(task, '3', { kind: 'background', ref: 'alive', label: 'lint' })
+  assert.equal(
+    failLostWaits(task, 'background', (ref) => ref === 'alive'),
+    1,
+  )
+  assert.equal(activePlan(task)!.steps[2].status, 'waiting', '还在等认得的那条')
+  assert.equal(
+    failLostWaits(task, 'child', () => false),
+    0,
+    '只收指定种类',
+  )
+  assert.equal(
+    failLostWaits(task, 'background', () => false),
+    1,
+  )
+  assert.equal(activePlan(task)!.steps[2].status, 'running')
+  assert.match(activePlan(task)!.steps[2].note, /^需要修复：.*构建、lint/)
 })
 
 test('子步骤在等子对话：结果回来子步骤完成，主步骤跟着收', () => {
@@ -385,12 +405,12 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
   // 还在跑：不能当成完成
   assert.equal(childReport(child({ working: true })).settle, 'hold')
 
-  // 有没答的提问：子对话是停下来等用户，不收口，步骤继续挂着等（提问卡片另有一条路，不重复发状态）
-  const request = [{}] as unknown as Task['requests']
+  // 有等用户确认的请求：子对话是停下来等用户，不收口，步骤继续挂着等（说明里写出确认的是什么）
+  const request = [{ kind: 'command', title: '运行命令：npm test' }] as unknown as Task['requests']
   const ask = childReport(child({ requests: request }), { background: ['不该看到这个'] })
   assert.equal(ask.state, 'needs')
   assert.equal(ask.settle, 'hold')
-  assert.match(ask.why, /没答的提问/)
+  assert.match(ask.why, /等用户确认：运行命令：npm test/)
   const askTask = waiting()
   holdWait(askTask, 'child', 'kid', ask.why)
   assert.equal(activePlan(askTask)!.steps[0].status, 'waiting')
@@ -400,7 +420,7 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
 
   // 执行失败、被停止：退回进行中，note 里看得出是等谁失败了；有未完成计划也算结束
   for (const status of ['failed', 'stopped'] as const) {
-    const r = childReport(child({ status, stopReason: 'user', plans: childPlan(false) }))
+    const r = childReport(child({ status, stopReason: 'parent', plans: childPlan(false) }))
     assert.equal(r.settle, 'fail')
     assert.match(r.why, status === 'failed' ? /执行失败/ : /已中断/)
     const badTask = waiting()
@@ -409,6 +429,11 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
     assert.equal(item.status, 'running')
     assert.match(item.note, /需要修复：.*改文件/)
   }
+  // 用户亲手停的不是失败：那一步继续等，说法写明是用户停的，父对话不会当成要修复的去重派（实测报告问题 3）
+  const paused = childReport(child({ status: 'stopped', stopReason: 'user', plans: childPlan(false) }))
+  assert.equal(paused.state, 'stopped')
+  assert.equal(paused.settle, 'hold')
+  assert.match(paused.why, /用户停掉了它/)
 
   // 彻底完成后面板结束等下一句的进程（stopReason 为 finish）：是完成，不是中断
   const finished = childReport(child({ status: 'stopped', stopReason: 'finish', resolved: true }))
@@ -1145,6 +1170,99 @@ test('换了一份计划：上一份里还在等的子对话跟着同名步骤�
   assert.equal(plan.steps[0].status, 'done')
 })
 
+// 审计发现：按「标题里含着子对话标题」挂等待，会把另一件事的步骤挂上，子对话已完成时当场标完成
+test('按标题认子对话：只认标题一致或 Agent 写成等待中的；已完成的子对话不把只是同名字眼的新步骤标完成', () => {
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const base = Date.parse('2026-10-25T01:00:00.000Z')
+  // 已完成的「类型检查」：后加的「合并后跑全量类型检查」是另一件事，不挂、不标完成
+  const a = fresh()
+  applyPlan(a, { steps: [{ title: '修类型错误', status: 'running' }] }, iso(base))
+  const at = ensureChildStep(a, 'kid-1', '类型检查', iso(base))
+  bindWait(a, at, { kind: 'child', ref: 'kid-1', label: '类型检查' }, iso(base))
+  const done = [{ id: 'kid-1', title: '类型检查', createdAt: iso(base), done: true, endedAt: iso(base + 60_000) }]
+  syncKids(a, done, iso(base + 70_000))
+  applyPlan(a, { partial: true, steps: [{ title: '合并后跑全量类型检查' }] }, iso(base + 120_000), undefined, done)
+  const later = activePlan(a)!.steps.find((x) => x.title === '合并后跑全量类型检查')!
+  assert.equal(later.status, 'pending')
+  assert.equal(later.waits.length, 0)
+  // 备注里写了已完成子对话的 id，但没写成等待中：是要去复查它，不是在等它
+  applyPlan(
+    a,
+    { partial: true, steps: [{ title: '复查改动', note: 'kid-1 的改动再看一遍' }] },
+    iso(base + 130_000),
+    undefined,
+    [{ ...done[0], id: 'abcdef12-kid' }],
+  )
+  assert.equal(activePlan(a)!.steps.find((x) => x.title === '复查改动')!.status, 'pending')
+
+  // 还在跑的「类型检查」已经挂在第一步上：后面含同样字眼的步骤不跟着挂，子对话完成时只收第一步
+  const b = fresh()
+  applyPlan(b, { steps: [{ title: '类型检查', status: 'running' }, { title: '合并后跑全量类型检查' }] }, iso(base))
+  bindWait(b, '1', { kind: 'child', ref: 'kid-1', label: '类型检查' }, iso(base))
+  const kids = [{ id: 'kid-1', title: '类型检查', createdAt: iso(base), done: false }]
+  syncKids(b, kids, iso(base + 1000))
+  assert.equal(activePlan(b)!.steps[1].waits.length, 0)
+  syncKids(b, [{ ...kids[0], done: true, endedAt: iso(base + 60_000) }], iso(base + 70_000))
+  assert.deepEqual(
+    activePlan(b)!.steps.map((x) => x.status),
+    ['done', 'pending'],
+  )
+
+  // 回归：标题带「子对话：」前缀、Agent 写成等待中并在备注里写了标题的，照样挂上
+  const c = fresh()
+  const ks = [
+    { id: 'k-ai', title: '子任务弹窗加 AI 分析', createdAt: iso(base), done: false },
+    { id: 'k-login', title: '修复登录误报', createdAt: iso(base), done: false },
+  ]
+  applyPlan(
+    c,
+    {
+      steps: [
+        { title: '子对话：子任务弹窗加 AI 分析' },
+        { title: '等登录修复合回', status: 'waiting', note: '等「修复登录误报」合回' },
+        { title: '登录误报的回归测试' },
+      ],
+    },
+    iso(base),
+    undefined,
+    ks,
+  )
+  const st = activePlan(c)!.steps
+  assert.equal(st[0].waits[0]?.ref, 'k-ai')
+  assert.equal(st[1].waits[0]?.ref, 'k-login')
+  assert.equal(st[2].waits.length, 0, '没写成等待中、只是提到同样字眼的不挂')
+
+  // 子对话都已完成时并排看三种认法（别当成笔误「改齐」）：写了 id 的等待中认、只含标题的等待中不认、完全同名的认，认了就当场收口
+  const d = fresh()
+  const finished = [
+    { id: 'abcdef12-log', title: '整理日志模块', createdAt: iso(base), done: true, endedAt: iso(base + 60_000) },
+    { id: 'k-test', title: '补登录测试', createdAt: iso(base), done: true, endedAt: iso(base + 60_000) },
+    { id: 'k-api', title: '实现登录接口', createdAt: iso(base), done: true, endedAt: iso(base + 60_000) },
+  ]
+  applyPlan(
+    d,
+    {
+      steps: [
+        { title: '等日志整理', status: 'waiting', note: '等 abcdef12 合回' },
+        { title: '等补测试合回', status: 'waiting', note: '等「补登录测试」合回' },
+        { title: '子对话：实现登录接口' },
+      ],
+    },
+    iso(base + 120_000),
+    undefined,
+    finished,
+  )
+  const ds = activePlan(d)!.steps
+  assert.deepEqual(
+    ds.map((x) => [x.status, x.waits.map((w) => w.ref).join()]),
+    [
+      ['done', 'abcdef12-log'],
+      ['running', ''],
+      ['done', 'k-api'],
+    ],
+  )
+})
+
 /**
  * 回归：父对话把一件事先写成一条步骤、后来又把标题改写了一遍（6 与 8 就是同一件事的两条），
  * 或者只交变更步骤却漏带了 id。以前按标题精确匹配对不上就新建一条，旧步永远停在原状态，
@@ -1185,7 +1303,8 @@ test('改写过的标题对回原来那一步：不新建重复步骤，旧步�
   assert.equal(activePlan(t3)!.steps.length, 2, '归一化后一样的标题算同一步骤，不新建')
   // 这条被归一化匹配更新过，不能说它「没交上来」；真没交上来的「写文档」照常点名
   assert.doesNotMatch(r3.info, /没交上来[\s\S]*跑 e2e/)
-  assert.match(r3.info, /没交上来[\s\S]*写文档/)
+  // 排在这次交上来的步骤后面、还没轮到的「写文档」不点名（每次都点名会随步数平方增长）
+  assert.doesNotMatch(r3.info, /没交上来[\s\S]*写文档/)
   assert.equal(other.status, 'running', '没交上来的步骤状态不动，并在回复里点名')
   // 还在等结果的步骤不算「没交上来」：它由面板在结果回来后标完成，让模型去「标完成」只会被 held 退回，
   // 同一个回复里就出现「做完了就标完成」和「还在等结果不能自己标」两句互相矛盾的话
@@ -1218,7 +1337,7 @@ test('改写过的标题对回原来那一步：不新建重复步骤，旧步�
   const r4 = applyPlan(t4, { partial: true, steps: [{ id: '1', note: '跑了一遍', status: 'running' }] })
   assert.equal(activePlan(t4)!.steps[0].note, '跑了一遍', '按 id 更新的内容生效')
   assert.doesNotMatch(r4.info, /没交上来[\s\S]*修 e2e/, '按 id 更新的步骤不算没交上来')
-  assert.match(r4.info, /没交上来[\s\S]*写文档/)
+  assert.doesNotMatch(r4.info, /没交上来/, '排在后面还没轮到的「写文档」也不点名')
   // 真的改写成另一件事：宁可新加一步，也不能张冠李戴把别的步骤标完成
   const other2 = fresh()
   applyPlan(other2, { steps: [{ title: '跑端到端测试', status: 'running' }] })
@@ -1940,4 +2059,28 @@ test('子对话执行失败：上报带上这次失败的原因，父对话不�
 
   // 没有任何报错时只说失败，不编原因
   assert.equal(childReport(child([])).why, '失败：执行失败了')
+})
+
+// 审计发现：partial 更新每次回整份计划、把所有没轮到的步骤点名，20 步计划逐步更新下来约 4 万字
+test('set_plan partial 只回变了的行 + 进度 + 下一步；新开 / 整份 / id 对不上时回整份', () => {
+  const task = fresh() as any
+  const r0 = applyPlan(task, {
+    title: 'T',
+    steps: [{ title: '改代码', children: [{ title: '改接口' }] }, { title: '跑测试' }, { title: '写文档' }],
+  })
+  assert.match(r0.info, /^计划已更新：\n「T」\n\[ \] 1 改代码[\s\S]*\[ \] 3 写文档/, '新开回整份')
+  const r1 = applyPlan(task, { partial: true, steps: [{ id: '1', status: 'running' }] })
+  assert.match(r1.info, /变了的步骤：\n\[>\] 1 改代码（进行中）/)
+  assert.doesNotMatch(r1.info, /跑测试（待做）\n|写文档（待做）/, '没变的行不回')
+  assert.match(r1.info, /进度：0\/3 个主步骤已结束。现在：第 1 步「改代码」进行中/)
+  assert.doesNotMatch(r1.info, /没交上来/, '排在后面还没轮到的步骤不点名')
+  const r2 = applyPlan(task, { partial: true, steps: [{ title: '补单测' }] })
+  assert.match(r2.info, /\[ \] 4 补单测（待做）/, '新加的步骤带上 id')
+  const r3 = applyPlan(task, { partial: true, steps: [{ id: '9', status: 'done' }] })
+  assert.match(r3.info, /^计划已更新：\n「T」\n/, 'id 对不上时回整份，让模型重新对上')
+  const r4 = applyPlan(task, { partial: true, steps: [{ id: '3', status: 'running' }] })
+  assert.match(r4.info, /没交上来[\s\S]*跑测试/, '被跳过去的步骤照样点名')
+  assert.doesNotMatch(r4.info, /没交上来[^\n]*补单测/, '排在后面的不点名')
+  const r5 = applyPlan(task, { steps: [{ id: '1' }, { id: '2' }, { id: '3' }] })
+  assert.match(r5.info, /^计划已更新：\n「T」/, '整份提交回整份')
 })

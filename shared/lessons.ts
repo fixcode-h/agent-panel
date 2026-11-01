@@ -31,6 +31,7 @@ export function globToRegExp(g: string) {
     .replace(/\*\*\/?/g, '\u0000')
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '[^/]')
+    // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
     .replace(/\u0000/g, '.*')
   return new RegExp(/[*?]/.test(g) ? `^${body}$` : `^${body}(/.*)?$`)
 }
@@ -223,14 +224,20 @@ function pick<T extends ProjectLesson | GlobalLesson>(pool: T[], budget: number,
 }
 
 /**
- * 新会话开头的「项目教训」：tools 表示这次调用挂了面板工具，能按文件查和自己记。
+ * 新会话开头的「项目教训」：tools 表示这次调用挂了面板工具，能按文件查；canRecord 表示还能自己记
+ * （子任务只查不记，见 shared/engine.ts 的 Orchestra.lessons），不能记时不带记教训的说明，省下这段提示。
  * globals 是全局教训：所有项目共用，排在项目教训后面、优先级也更低。
  * 没有启用的条目时返回空串，不占提示
  */
-export function lessonsPrompt(lessons: ProjectLesson[], tools: boolean, globals: GlobalLesson[] = []) {
+export function lessonsPrompt(
+  lessons: ProjectLesson[],
+  tools: boolean,
+  globals: GlobalLesson[] = [],
+  canRecord = tools,
+) {
   const on = lessons.filter((l) => l.enabled)
   const gs = globals.filter((l) => l.enabled)
-  if (!on.length && !gs.length) return tools ? `## 项目教训\n${RECORD_HINT}` : ''
+  if (!on.length && !gs.length) return canRecord ? `## 项目教训\n${RECORD_HINT}` : ''
   // 有工具时「所有改动都适用」的条目给全文、按文件的只给标题；没工具时 Agent 没法再查，按预算尽量给全文
   const pool = tools ? on.filter((l) => !l.paths.length) : on
   const full = pick(pool, tools ? FULL_BUDGET : FULL_BUDGET_NO_TOOL, tools)
@@ -250,8 +257,8 @@ export function lessonsPrompt(lessons: ProjectLesson[], tools: boolean, globals:
     gs.length ? '### 全局教训（所有项目共用，只有用户能改）' : '',
     gfull.map((l) => lessonText(l)).join('\n\n'),
     grest.length ? `${restHint}：\n${titles(grest)}` : '',
-    tools && tagCounts(on).length ? `${tagLine(tagCounts(on))}。记教训时优先用这些标签，不另造近义词` : '',
-    tools ? RECORD_HINT : '',
+    canRecord && tagCounts(on).length ? `${tagLine(tagCounts(on))}。记教训时优先用这些标签，不另造近义词` : '',
+    canRecord ? RECORD_HINT : '',
   ]
     .filter(Boolean)
     .join('\n\n')

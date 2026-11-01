@@ -257,6 +257,19 @@ test('合并窗口里紧接着的立即落盘不会被窗口吞掉，也不会�
   assert.deepEqual(ids(), ['a', 'b', 'c'], '窗口里排着的旧内容作废')
 })
 
+test('flushAll：退出前把合并窗口里排着的对话立即写盘，不等窗口到点', async () => {
+  const store = createTaskStore()
+  const task = await store.create(
+    TaskData.parse({ projectId: '', title: '退出', mode: 'chat', status: 'running', messages: [msg('a', '一')] }),
+  )
+  const file = path.join(dir, 'tasks', 'chats', `${task.id}.messages.json`)
+  const ids = () => (JSON.parse(readFileSync(file, 'utf8')) as { id: string }[]).map((x) => x.id)
+  await store.update(task.id, { ...task, messages: [msg('a', '一'), msg('b', '最后一段')] })
+  assert.deepEqual(ids(), ['a'], '窗口内先不写')
+  await store.flushAll()
+  assert.deepEqual(ids(), ['a', 'b'], 'flushAll 返回时已经落盘')
+})
+
 test('同时在跑的对话超过内存里留的份数：落盘带着完整对话时照样写对，peek 只给任务本身', async () => {
   const store = createTaskStore()
   const make = (title: string) =>
@@ -398,7 +411,7 @@ test('任务记录损坏（全 0 的空洞文件）：从对话重建，坏文�
   assert.ok(task, '任务记录坏了也要出现在列表里')
   assert.equal(task.title, '帮我看一下这个问题')
   // 坏的任务记录挪进了缓存目录留档，不是删掉
-  const cacheDir = path.join(dir, 'cache', 'broken')
+  const cacheDir = path.join(dir, 'broken')
   const backups = readdirSync(cacheDir).filter((f) => f.startsWith(`${id}.json.broken-`) && !f.endsWith('.broken.json'))
   assert.equal(backups.length, 1, '坏的任务记录被留档')
   assert.equal(readFileSync(path.join(cacheDir, backups[0])).length, 2048, '原样保留原始字节')
@@ -422,7 +435,7 @@ test('对话文件也是全 0：不重建、不伪造，留档后不抛错也不
   )
   assert.equal(existsSync(path.join(dirOfProject, `${id}.json`)), false, '绝不写半截任务记录')
   // 坏对话文件挪进缓存目录留档：下次启动看不到它，不会反复重试
-  const cacheDir = path.join(dir, 'cache', 'broken')
+  const cacheDir = path.join(dir, 'broken')
   const backups = readdirSync(cacheDir).filter(
     (f) => f.startsWith(`${id}.messages.json.broken-`) && !f.endsWith('.broken.json'),
   )
@@ -508,8 +521,8 @@ test('任务记录过不了 schema 且没能留档：本次可见但不覆盖原
   const metaFile = path.join(dirOfProject, `${id}.json`)
   const before = readFileSync(metaFile, 'utf8')
 
-  // 让归档必然失败：把 cache/broken 本身换成一个普通文件，mkdir 和 rename 到它下面都会失败
-  const brokenDir = path.join(dir, 'cache', 'broken')
+  // 让归档必然失败：把 broken/ 本身换成一个普通文件，mkdir 和 rename 到它下面都会失败
+  const brokenDir = path.join(dir, 'broken')
   rmSync(brokenDir, { recursive: true, force: true })
   mkdirSync(path.dirname(brokenDir), { recursive: true })
   writeFileSync(brokenDir, '占位，不是目录', 'utf8')

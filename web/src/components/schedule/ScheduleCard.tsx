@@ -104,7 +104,7 @@ export function ScheduleCard({
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span aria-hidden className={cn('h-2 w-2 shrink-0 rounded-full', GROUP_TONE[groupOf(s)])} />
-              <h3 className={cn('min-w-0 truncate text-[0.9375rem] font-semibold', !s.enabled && 'text-muted')}>
+              <h3 className={cn('min-w-0 truncate text-heading font-semibold', !s.enabled && 'text-muted')}>
                 {s.name}
               </h3>
               <Badge>{repeatLabel(s.repeat)}</Badge>
@@ -170,7 +170,7 @@ export function ScheduleCard({
               </span>
             </>
           ) : (
-            <span className="text-[0.9375rem] font-medium text-subtle">
+            <span className="text-heading font-medium text-subtle">
               {/* 过了结束日期是用户定好的到此为止，和单次跑完、停用分开说 */}
               {s.enabled && scheduleEnded(s) ? t('已结束（{date}）', { date: s.endDate }) : t('不会再次执行')}
             </span>

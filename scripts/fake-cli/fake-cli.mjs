@@ -682,6 +682,8 @@ if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
   if (process.env.FAKE_CLI_LOG)
     appendFileSync(process.env.FAKE_CLI_LOG + '.edit', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
 }
+// 推送授权：任务里有 ASK_PUSH 时像真的 Agent 做完本地提交后那样调 ask_push（结果记在 .panel 里，用例看是否弹卡、是否直接返回）
+if (input.includes('ASK_PUSH')) await panelCall('ask_push', { branch: 'dev', summary: '端到端测试的改动' })
 // 子对话请父对话决定：任务里有 ASK_PARENT、面板给了 message_parent 时，带两个选项提问
 if (input.includes('ASK_PARENT') && input.includes('message_parent') && !input.includes('用户的决定')) {
   await panelCall('message_parent', { text: '用 A 方案还是 B 方案？', question: true, options: ['A 方案', 'B 方案'] })
@@ -732,6 +734,12 @@ if (
 // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结。
 // 续接的会话只重发变了的段落（ADR 0027）：计划规则和没变的计划状态这一轮都不一定在，只按场景标记开新计划
 if (input.includes('PLAN_NEXT')) await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
+// 共用目录的认领：CLAIM:<路径> 调 claim_files，结果记进 .claim，用例据此看是拿到了还是被谁占着
+for (const [, p] of input.matchAll(/CLAIM:(\S+)/g)) {
+  const got = await panelCall('claim_files', { paths: [p] })
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(process.env.FAKE_CLI_LOG + '.claim', JSON.stringify({ kind, path: p, got }) + '\n')
+}
 // 子对话自己跑项目测试步骤（ADR 0018 / 0020）：命令和项目里一条 scope 不是 parent 的步骤完全一致，
 // 面板按命令认出是哪条步骤、记下 by='self' 的真实耗时。命令跑完后歇一会儿再往下走，
 // 否则同一条指令后面的 SUBMIT_MERGE 会撞上「后台还有命令没跑完」被拒绝
@@ -1742,6 +1750,21 @@ if (kind === 'claude') {
       },
     },
   })
+  // THRASH：像上下文上限设小时的真 Claude Code 一样报自动压缩抖动、退出码 1；
+  // 面板在原会话里续的那一轮（提示里有「分段读取」）照常完成
+  if (input.includes('THRASH') && !input.includes('分段读取')) {
+    out({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      result:
+        'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row',
+      session_id: session,
+      usage: {},
+      total_cost_usd: 0,
+    })
+    process.exit(1)
+  }
   if (fail) {
     out({
       type: 'result',

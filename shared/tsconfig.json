@@ -1,0 +1,12 @@
+// shared 的代码浏览器和 Node 都会跑：不带 DOM 也不带 @types/node，
+// 两边都有的 Web 标准全局（fetch 的 Response、AbortController、URL、setTimeout 等）只按用到的声明在 runtime.d.ts。
+// 这样 shared 里一旦用了 node:fs、Buffer、process 或 document、window，这里就会报错。
+// 测试跑在 Node 里，放在根目录的 tsconfig.test.json 检查。
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../.tmp/tsc/shared.tsbuildinfo"
+  },
+  "include": ["."],
+  "exclude": ["**/*.test.ts"]
+}

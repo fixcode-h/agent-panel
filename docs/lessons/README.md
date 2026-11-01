@@ -71,6 +71,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [background.md](./background.md)                 | 后台命令                         |
 | [builtin.md](./builtin.md)                       | 内置角色、工作流和 Skill         |
 | [child-idle-ask.md](./child-idle-ask.md)         | 子对话没有输出时自动询问         |
+| [child-merge-fail.md](./child-merge-fail.md)     | 子对话合回失败退回给谁           |
 | [child-wrapup.md](./child-wrapup.md)             | 子对话收尾和独立分支             |
 | [cli-process.md](./cli-process.md)               | 启动 CLI 进程和解析输出          |
 | [cli.md](./cli.md)                               | CLI 定义、模型和思考强度         |
@@ -87,6 +88,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [process.md](./process.md)                       | CLI 进程：停止、保活和回收       |
 | [project-files.md](./project-files.md)           | 面板往用户项目里临时写的文件     |
 | [prompts.md](./prompts.md)                       | 给 Agent 的提示词                |
+| [prompt-delta.md](./prompt-delta.md)             | 续接只发增量的提示词             |
 | [retry.md](./retry.md)                           | 报错后的重试                     |
 | [review.md](./review.md)                         | 收尾评审                         |
 | [rpc-steer.md](./rpc-steer.md)                   | 常驻协议的插话                   |

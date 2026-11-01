@@ -15,6 +15,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByText('从内置工作流添加').first().click()
   await check(p, '工作流-内置列表', ['通用项目', '依赖升级与安全', '发布与回滚', '代码评审'])
   await p.keyboard.press('Escape')
+  // 弹窗有 120ms 退场动画，放完才卸载；卸载前 Radix 还把页面其余部分标成 aria-hidden，按角色找不到工具条
+  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 })
   // 流程图的撤销 / 重做（左上面包屑旁边）：刚打开时不能撤销；改一下（自动排列）能撤销，Ctrl+Z 撤销后能重做，
   // Ctrl+Shift+Z 重做回来，最后按钮撤销回原样（工作流是自动保存的，别把演示数据改乱）
   {
@@ -175,7 +177,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 工作流任务从项目首页的任务列表点进去
   await p.goto(base)
   await p.getByText('商品详情页增加', { exact: false }).first().click()
-  await p.getByRole('button', { name: '更多操作' }).click()
+  await p.getByRole('button', { name: '更多操作', exact: true }).click()
   await p.getByRole('menuitem', { name: 'AI 分析执行结果' }).click()
   await p.getByRole('dialog').getByRole('button', { name: '开始分析' }).click()
   await p.getByText('工作流优化', { exact: true }).waitFor({ timeout: 20000 })
@@ -300,6 +302,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         await check(p, 'AI分析-功能面板宽度', ['工作流优化'])
         // 窗口收起再展开：TaskView 重新挂载，宽度从 localStorage 恢复（不用新建分析对话，后面的归属断言还能用）
         await p.getByRole('dialog').getByRole('button', { name: '最小化' }).click()
+        // 等弹窗放完退场动画卸载：退场期间对话里的「展开」（折叠正文）还在，和浮条的「展开」重名
+        await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 })
         await p
           .getByRole('button', { name: '展开' })
           .waitFor({ timeout: 5000 })
@@ -379,7 +383,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => {})
   await p.goto(base + '#/agents')
-  await check(p, 'Agent', ['命令预览', '主理'])
+  await check(p, 'Agent', ['设定', '主理'])
   // 列表栏标题不能被头部按钮挤得截断（用户报过：「角色」被压成半个字）：工作流页同一个列表栏，一起查
   for (const [hash, pane] of [
     ['#/agents', '角色列表'],
@@ -400,7 +404,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 高级角色、基本角色分两页（列表栏顶上的分段）：默认先看高级角色，必备组里是主理、执行、分析
   const layers = rolePane.getByRole('radiogroup', { name: '角色层' })
   const core = p.locator('[data-group-id="#core"]')
-  if (!(await layers.count())) errors.push('角色页：没有「高级角色 / 基本角色」分页')
+  if (!(await layers.count())) errors.push('角色页：没有「高级 / 基本 / Chat」分页')
   else {
     const adv =
       (await core
@@ -410,7 +414,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (!/必备\s*·\s*3/.test(adv)) errors.push(`角色页：高级角色页的必备分组计数不是 3（读到「${adv.slice(0, 20)}」）`)
     if (!(await core.getByRole('button', { name: /^主理/ }).count())) errors.push('角色页：高级角色页没有「主理」')
     await check(p, 'Agent-高级角色', ['主理', '执行'])
-    await layers.getByRole('radio', { name: /^基本角色/ }).click()
+    await layers.getByRole('radio', { name: /^基本/ }).click()
   }
   // 用 data-group-id / role=group 定位：分类名和标签、角色名可能同名，按文字找会指错组
   if (!(await core.count())) errors.push('角色页：没有「必备」分组')
@@ -430,6 +434,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       errors.push('角色页：「质量」分类默认没有展开')
   }
   await check(p, 'Agent-按分类', ['必备', '质量'])
+  // 第三页是 Chat 角色（ADR 0038）：必备的「助手」和基础分类里的「聊天约束」；详情头写类别，没有「能力」页签
+  if (await layers.count()) {
+    await layers.getByRole('radio', { name: /^Chat/ }).click()
+    if (!(await core.getByRole('button', { name: /^助手/ }).count())) errors.push('角色页：Chat 角色页没有「助手」')
+    await core.getByRole('button', { name: /^助手/ }).first().click()
+    const head = p.locator('main')
+    if (!(await head.getByText('Chat 角色', { exact: true }).count()))
+      errors.push('角色页：助手的详情没有「Chat 角色」徽标')
+    if (await p.getByRole('tab', { name: /^能力/ }).count()) errors.push('角色页：Chat 角色不该有「能力」页签')
+    await check(p, 'Agent-Chat角色', ['助手', '聊天约束'])
+    await layers.getByRole('radio', { name: /^基本/ }).click()
+  }
 
   // 分类可以折叠：点组头收起，角色行不再渲染；再点一下展开回来
   const qualityToggle = quality.getByRole('button', { name: /^质量/ }).first()
@@ -486,24 +502,37 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (await rolePane.getByRole('button', { name: /^子任务/ }).count())
     errors.push('角色页：搜索「子任务」还能搜到这个默认子任务角色')
   await search.fill('')
-  // 内置 Agent：手动添加，已经随工作流建好的标成已添加
-  await p.getByRole('button', { name: '添加内置角色' }).first().click()
+  // 内置 Agent：手动添加，已经随工作流建好的标成已添加。入口在列表头的「＋」菜单里（新建、AI 创建、内置、导入收在一起）
+  await rolePane.getByRole('button', { name: '新建', exact: true }).click()
+  for (const item of ['新建角色', 'AI 创建角色', '添加内置角色', '导入角色文件'])
+    if (!(await p.getByRole('menuitem', { name: item }).count())) errors.push(`角色页：「＋」菜单里没有「${item}」`)
+  await p.getByRole('menuitem', { name: '添加内置角色' }).click()
   await check(p, '内置Agent', ['通用约束', '调研', '方案设计', '已添加'])
   // 「子任务」是子任务机制默认用的角色，启动时自动建好：用户不需要也不能手动添加，不能列在弹窗里。
   // 用 data-builtin-key 定位：角色名和「已添加」在同一个 <p> 里，按文字精确匹配找不到它
   if (await p.getByRole('dialog').locator('[data-builtin-key="helper"]').count())
     errors.push('内置Agent：弹窗里列出了「子任务」，用户不需要手动添加它')
   await p.keyboard.press('Escape')
-  // 评审是必备角色：参数定义和角色设定由面板维护，参数页只改取值、角色设定只读
+  // 评审是必备角色：参数定义和角色设定由面板维护，「运行」页只改参数取值、「设定」页的角色设定只读
   await search.fill('评审')
   await p.getByText('评审', { exact: true }).first().click()
-  await p.getByRole('tab', { name: /^参数/ }).click()
-  await check(p, 'Agent-必备参数', ['这里改的是所有项目的默认取值'])
-  await p.getByRole('tab', { name: /^角色设定/ }).click()
+  // 页签按「设定 / 能力 / 运行 / 预览」分；以前的「概览」「参数」「Skill 与开场白」已经并进去了
+  for (const name of ['设定', '能力', '运行', '预览'])
+    if (!(await p.getByRole('tab', { name: new RegExp(`^${name}`) }).count()))
+      errors.push(`角色详情：没有「${name}」页签`)
+  if (await p.getByRole('tab', { name: /^概览/ }).count()) errors.push('角色详情：还留着「概览」页签')
+  await p.getByRole('tab', { name: /^运行/ }).click()
+  await check(p, 'Agent-必备参数', ['这里改的是所有项目的默认取值', '运行环境'])
+  await p.getByRole('tab', { name: /^设定/ }).click()
   await check(p, 'Agent-必备角色设定', ['由面板维护，只读'])
-  // 复制一份就是普通 Agent（参数定义可以改）：在副本上检查参数的选项编辑、联动
-  await p.getByRole('button', { name: '复制一份' }).click()
-  await p.getByRole('tab', { name: /^参数/ }).click()
+  // 一切正常时不显示「已自动保存」和就绪检查：问题条只在有问题时出现
+  if (await p.getByText('已自动保存').count()) errors.push('角色详情：没有改动时还常驻「已自动保存」')
+  if (await p.getByText('就绪检查').count()) errors.push('角色详情：还留着常驻的「就绪检查」卡片')
+  // 复制一份就是普通 Agent（参数定义可以改）：入口在头部的「⋯」菜单里
+  await p.locator('main header').getByRole('button', { name: '更多操作', exact: true }).click()
+  await check(p, '角色-更多操作', ['复制一份', '导出分享包'])
+  await p.getByRole('menuitem', { name: '复制一份' }).click()
+  await p.getByRole('tab', { name: /^运行/ }).click()
   await p.getByRole('button', { name: /\{\{vcs\}\}/ }).click()
   await p.getByRole('textbox', { name: '新选项' }).fill('svn')
   await p.getByRole('textbox', { name: '新选项' }).press('Enter')
@@ -514,8 +543,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('option', { name: /（target）/ }).click()
   await p.getByRole('group', { name: '条件取值' }).scrollIntoViewIfNeeded()
   await check(p, 'Agent-参数联动', ['选了其中一个时', '选项跟随', '联动'])
-  await p.getByRole('tab', { name: /^角色设定/ }).click()
-  await check(p, '角色-角色设定', ['通用约束', '实际交给它的设定'])
+  await p.getByRole('tab', { name: /^设定/ }).click()
+  await check(p, '角色-角色设定', ['通用约束', 'Skill 与开场白'])
+  // 命令预览、实际交给它的设定都在「预览」页：原来常驻右栏，窄屏时掉到正文下面
+  await p.getByRole('tab', { name: /^预览/ }).click()
+  await check(p, '角色-预览', ['命令预览', '实际交给它的设定', '所在工作流'])
   // 参数面板里的说明浮层：面板一打开 Radix 就把焦点挪到第一个问号，说明不该跟着自己弹出来
   // （以前会出现一个盖住面板的说明），只有 hover 或点问号才出现，而且同时只留一个
   await p.getByRole('button', { name: /^参数 · / }).click()
@@ -552,8 +584,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => errors.push('Agent-参数说明：按 Esc 后说明浮层没消失'))
   await check(p, 'Agent-参数说明')
-  await p.getByRole('tab', { name: /^概览/ }).click()
-  await check(p, '角色-概览', ['能开启子对话', '能启动计划', '运行环境'])
+  await p.getByRole('tab', { name: /^设定/ }).click()
+  await check(p, '角色-设定', ['能开启子对话', '能启动计划', '基本信息'])
+  await p.getByRole('tab', { name: /^运行/ }).click()
+  await check(p, '角色-运行', ['运行环境', '额外参数', '对话范围'])
   // 角色分层：必备的「主理」是高级角色，「能力」页列出挂载的基本角色和各自的用法，评审只能派出
   await search.fill('主理')
   await p.getByText('主理', { exact: true }).first().click()
@@ -569,7 +603,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const box = await pane.boundingBox()
     if (!box) errors.push('Skills-不溢出：找不到左栏')
     else {
-      for (const name of ['新建', 'AI 创建 Skill']) {
+      // 新建、AI 创建收进同一个「＋」菜单，头部只剩这一个按钮
+      for (const name of ['新建']) {
         const b = await p.getByRole('button', { name, exact: true }).first().boundingBox()
         if (!b) errors.push(`Skills-不溢出：找不到「${name}」按钮`)
         else if (b.x + b.width > box.x + box.width + 1)
@@ -580,7 +615,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       // 标题也要完整放下（被按钮挤出去时它会溢出左栏）
       const h = await pane.locator('h1').first().boundingBox()
       if (h && h.x + h.width > box.x + box.width + 1) errors.push('Skills-不溢出：标题超出左栏')
-      if (!(await p.getByRole('combobox', { name: '种类' }).count())) errors.push('Skills-不溢出：分页不是下拉')
+      if (!(await p.getByRole('radiogroup', { name: '种类' }).count()))
+        errors.push('Skills-不溢出：没有「我的 / 自带」分段切换')
       await check(p, 'Skills-不溢出')
     }
   }
@@ -602,7 +638,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (!(await p.getByLabel('内容', { exact: true }).count()))
     errors.push('Skills-搜索：清空搜索后详情页没有回到原来那一项')
   await check(p, 'Skills-搜索')
-  await check(p, 'Skill详情', ['复制给别的 Agent', '保存', 'SKILL.md'])
+  // 同名的 Skill 在列表里只出现一次（演示数据里 commit-message 装在 Claude Code 和 Codex 两处）
+  if (
+    (await p
+      .locator('section[aria-label="Skills列表"]')
+      .getByRole('button', { name: /^commit-message/ })
+      .count()) !== 1
+  )
+    errors.push('Skills：同名的 Skill 在列表里出现了不止一次')
+  // 装在哪些 Agent 是一排开关，SKILL.md 在文件树里默认选中、右边就是它的编辑器
+  await check(p, 'Skill详情', ['装在', 'SKILL.md', 'Claude Code', 'Codex'])
+  if (!(await p.getByRole('switch', { name: 'Codex' }).count())) errors.push('Skill详情：「装在」没有每个 Agent 的开关')
+  if (await p.getByRole('button', { name: '保存', exact: true }).count())
+    errors.push('Skill详情：没有改动时不该出现「保存」按钮')
   // 详情页里直接编辑主文件并保存：保存按钮只在有改动时可点
   const editor = p.getByLabel('内容', { exact: true }).first()
   const mainBefore = await editor.inputValue()
@@ -634,7 +682,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, 'Skill详情-附加文件')
   // 改一个附加文件再保存，重开还在
   await p.getByLabel('文件内容').fill('# references/pitfalls.md\n\n改过的内容。\n')
-  // 顶部主文件也有「保存」，此时是灰的：按可点击的那个定位附加文件的保存
   await p.getByRole('button', { name: '保存', exact: true, disabled: false }).first().click()
   await p
     .getByText('已保存')
@@ -649,13 +696,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => '')
   if (!again.includes('改过的内容')) errors.push('Skill详情-附加文件：保存后重开没有读到改过的内容')
   await check(p, 'Skill详情-附加文件保存')
-  // 有未保存的改动时，外面刷新一次（改附加文件会触发）不能把编辑器里的内容冲掉（评审 R3）
+  // 有未保存的改动时，外面刷新一次（改附加文件会触发）不能把编辑器里的内容冲掉（评审 R3）。
+  // 主文件和附加文件共用一个编辑区：写好草稿，切去附加文件改一下保存（触发刷新），再切回主文件看草稿还在
+  await p.getByRole('button', { name: 'SKILL.md' }).click()
   const draft = `${await p.getByLabel('内容', { exact: true }).inputValue()}
 
 没保存的草稿。`
   await p.getByLabel('内容', { exact: true }).fill(draft)
   await p.getByRole('button', { name: 'pitfalls.md' }).click()
   await p.getByLabel('文件内容').waitFor({ timeout: 5000 })
+  await p.getByLabel('文件内容').fill('# references/pitfalls.md\n\n再改一次，触发刷新。\n')
+  await p.getByRole('button', { name: '保存', exact: true, disabled: false }).first().click()
+  await p.waitForTimeout(300)
+  await p.getByRole('button', { name: 'SKILL.md' }).click()
   if ((await p.getByLabel('内容', { exact: true }).inputValue()) !== draft)
     errors.push('Skill详情：刷新后主文件里没保存的改动被冲掉了')
   await check(p, 'Skill详情-未保存不被刷新冲掉')
@@ -678,17 +731,39 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('步骤写得再具体一些')
   await p.keyboard.press('Enter')
   await check(p, 'Skill-AI优化', ['格式校验通过', 'SKILL.md'])
+  // 对话和预览之间能拖：往右拖 120，左边对话跟着变宽
+  {
+    const handle = p.getByRole('dialog').getByRole('separator', { name: '拖动调整对话和预览的宽度' })
+    const chat = p.getByRole('dialog').locator('section').first()
+    const before = (await chat.boundingBox())?.width ?? 0
+    const hb = await handle.boundingBox()
+    if (!hb) errors.push('AI优化：对话和预览之间没有拖动条')
+    else {
+      await p.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+      await p.mouse.down()
+      await p.mouse.move(hb.x + hb.width / 2 + 120, hb.y + hb.height / 2, { steps: 5 })
+      await p.mouse.up()
+      await p.waitForTimeout(200)
+      const after = (await chat.boundingBox())?.width ?? 0
+      if (Math.abs(after - before - 120) > 8) errors.push(`AI优化：拖动条拖了 120，对话宽度从 ${before} 变到 ${after}`)
+      await check(p, 'Skill-AI优化-拖宽对话')
+      // 双击恢复默认，别把拖宽的宽度带给后面的用例
+      await handle.dblclick()
+    }
+  }
   await p.getByRole('button', { name: '应用修改' }).click()
   await p
     .getByRole('button', { name: '应用修改' })
     .waitFor({ state: 'detached', timeout: 10000 })
     .catch(() => errors.push('Skill-AI优化：点了「应用修改」窗口没有关上'))
-  // 分页是下拉（用户要求「改成下拉」）：用现成的 Select，选项文字里带「可更新」的条数
-  await p.getByRole('combobox', { name: '种类' }).click()
-  await check(p, 'Skills-分页下拉', ['Skill', '自带 Skill'])
-  // 命令分页按用户要求去掉了：下拉里只有 Skill 和自带 Skill
-  if (await p.getByRole('option', { name: '命令', exact: true }).count()) errors.push('Skills：分页里不该再有「命令」')
-  await p.getByRole('option', { name: /自带 Skill/ }).click()
+  // 分页是「我的 Skill / 自带 Skill」分段切换（2026-10-31 按设计文档从下拉换回分段：下拉里看不出还有另一页），
+  // 有可更新的自带技能时「自带 Skill」上挂一个点
+  const kinds = p.getByRole('radiogroup', { name: '种类' })
+  await check(p, 'Skills-分页', ['我的 Skill', '自带 Skill'])
+  // 命令分页按用户要求去掉了：只有我的 Skill 和自带 Skill
+  if (await kinds.getByRole('radio', { name: '命令', exact: true }).count())
+    errors.push('Skills：分页里不该再有「命令」')
+  await kinds.getByRole('radio', { name: /^自带 Skill/ }).click()
   await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
   // 自带 Skill 分页没有可新建的东西：「新建」按钮不该出现（以前点了没反应）
   if (await p.getByRole('button', { name: '新建', exact: true }).count())
@@ -704,7 +779,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (!(await p.evaluate(() => location.hash)).includes('#/library/coding-standards'))
     errors.push('自带Skill-详情：点卡片后地址里没有记下选中项')
   await check(p, '自带Skill-详情', ['编码', '文件结构', '~/.agents/skills'])
-  if (!(await p.getByText('由面板随版本提供', { exact: false }).count()))
+  if (!(await p.getByText('随面板版本提供', { exact: false }).count()))
     errors.push('自带Skill-详情：没有说明这里不能编辑')
   if (await p.getByLabel('内容', { exact: true }).count()) errors.push('自带Skill-详情：自带技能不该有可编辑的正文框')
   // 文件树里能点开一个附件看内容（只读）：coding-standards 带 design-patterns.md
@@ -761,7 +836,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.waitForFunction(() => location.hash.includes('#/library/coding-standards'), { timeout: 5000 }).catch(() => {})
   await p.reload()
   await p
-    .getByRole('combobox', { name: '种类' })
+    .getByRole('radiogroup', { name: '种类' })
     .waitFor({ timeout: 10000 })
     .catch(() => errors.push('自带Skill-刷新：刷新后页面没起来'))
   const afterReload = await p.evaluate(() => location.hash)
@@ -769,14 +844,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     errors.push(`自带Skill-刷新：刷新后地址里的选中项被改成了「${afterReload}」`)
   // 刷新后列表要重新读一遍：等详情真的渲染出来再断言，不要 reload 完立刻查（读到的是「读取中…」）
   await p
-    .getByText('由面板随版本提供', { exact: false })
+    .getByText('随面板版本提供', { exact: false })
     .waitFor({ timeout: 10000 })
     .catch(() => errors.push('自带Skill-刷新：刷新后右侧不是原来那个技能的详情'))
   await check(p, '自带Skill-刷新后选中项还在')
 
   // 一键更新：演示版预置了两条「和自带的不同」，点一下全部换回自带版本
-  await p.getByRole('combobox', { name: '种类' }).click()
-  await p.getByRole('option', { name: /自带 Skill/ }).click()
+  await p
+    .getByRole('radiogroup', { name: '种类' })
+    .getByRole('radio', { name: /^自带 Skill/ })
+    .click()
   if (!(await p.getByText('和自带的不同').count())) errors.push('自带Skill：没有可更新的项，「更新全部」没法验证')
   await p.getByRole('button', { name: '更新全部' }).click()
   await p
@@ -785,7 +862,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => {})
   if (await p.getByText('和自带的不同').count()) errors.push('自带Skill-一键更新：更新后还留着「和自带的不同」')
-  await check(p, '自带Skill-一键更新', ['已安装'])
+  // 列表里装好的只画一个对勾（读屏名「已安装」），不再每行写字
+  if (!(await p.locator('section[aria-label="Skills列表"]').getByRole('img', { name: '已安装' }).count()))
+    errors.push('自带Skill-一键更新：更新后列表里没有标成已安装')
+  await check(p, '自带Skill-一键更新')
   await p.goto(base + '#/mcp')
   await check(p, 'MCP工具', ['github', 'filesystem'])
   await p.getByLabel('编辑').first().click()

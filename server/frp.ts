@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import ssh2 from 'ssh2'
 import type { RemoteFrp } from '../shared/schema.ts'
 import { frpMappingError } from '../shared/remote.ts'
+import { stripAnsi } from '../shared/ansi.ts'
 import { t } from '../shared/i18n.ts'
 import { DATA_DIR } from './store.ts'
 import { downloadFile } from './download.ts'
@@ -325,8 +326,7 @@ export async function deployFrps(i: DeployInput, onStep: (s: DeployStep, percent
 
 /** frpc 的一行日志去掉颜色控制符和「时间 [级别] [源文件]」前缀，只留给人看的部分 */
 export function frpcLine(line: string) {
-  return line
-    .replace(/\x1b\[[0-9;]*m/g, '')
+  return stripAnsi(line)
     .replace(/^\s*\d{4}-\d{2}-\d{2} [\d:.]+ \[\w\] (\[[^\]]*\.go:\d+\] )?/, '')
     .trim()
 }

@@ -240,16 +240,45 @@ export function dataUsage(root: Widget, components: Component[], data: DesignDat
 
 const slug = (v: unknown) => String(v ?? '').replace(/[^A-Za-z0-9_-]/g, '_')
 
-/** 把 AI 或面板写的数据集补齐 id、字段默认值；id 冲突时加序号 */
-export function normalizeData(input: unknown, existing: DesignData = emptyData()): DesignData {
-  // AI 常常只写 name 不写 id：先按 name 补上再校验
+/** AI 常常只写 name 不写 id：先按 name 补上再校验 */
+function parseSets(input: unknown) {
   const raw = Array.isArray((input as any)?.sets) ? (input as any).sets : undefined
-  if (!raw) return existing
-  const p = DesignData.safeParse({
+  if (!raw) return undefined
+  return DesignData.safeParse({
     ...(input as object),
     sets: raw.map((s: any) => ({ ...s, id: slug(s?.id) || slug(s?.name) || 'data' })),
   })
-  if (!p.success) return existing
+}
+
+/**
+ * 数据集合哪里不合法，逐条写明是哪个集合、哪一行、哪个字段（给 AI 看，不翻译）。
+ * 只说「格式不对」的话 AI 不知道改哪里，往往原样再交一次
+ */
+export function dataIssues(input: unknown, max = 12): string[] {
+  const p = parseSets(input)
+  if (!p) return ['sets 要写数据集合的数组']
+  if (p.success) return []
+  const sets: any[] = (input as any).sets
+  const out = p.error.issues.slice(0, max).map((iss) => {
+    const [, i, part, j, ...rest] = iss.path
+    if (typeof i !== 'number') return `${iss.path.join('.') || 'sets'}：${iss.message}`
+    const name = String(sets[i]?.name ?? '').trim()
+    let where = `第 ${i + 1} 个集合${name ? `（${name}）` : ''}`
+    if (part === 'rows' && typeof j === 'number') where += ` 第 ${j + 1} 行`
+    else if (part === 'fields' && typeof j === 'number')
+      where += ` fields 第 ${j + 1} 项${sets[i]?.fields?.[j]?.key ? `（${sets[i].fields[j].key}）` : ''}`
+    else if (part !== undefined) where += ` 的 ${String(part)}`
+    if (rest.length) where += ` 的 ${rest.join('.')}`
+    return `${where}：${iss.message}`
+  })
+  if (p.error.issues.length > max) out.push(`……还有 ${p.error.issues.length - max} 处`)
+  return out
+}
+
+/** 把 AI 或面板写的数据集补齐 id、字段默认值；id 冲突时加序号 */
+export function normalizeData(input: unknown, existing: DesignData = emptyData()): DesignData {
+  const p = parseSets(input)
+  if (!p?.success) return existing
   const ids = new Set<string>()
   const sets = p.data.sets.map((s) => {
     let id = s.id || 'data'

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import * as D from '@radix-ui/react-dialog'
-import { toast } from '@/lib/toast'
+import { toast, toastError } from '@/lib/toast'
 import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Terminal, Wand2, X } from 'lucide-react'
 import {
   applyProposal,
@@ -109,7 +110,7 @@ function SkillPreview({
         ) : (
           <Sparkles className="h-4 w-4 text-accent-text" />
         )}
-        <span className="font-mono text-[0.9375rem] font-semibold">
+        <span className="font-mono text-heading font-semibold">
           {command ? '/' : ''}
           {name}
         </span>
@@ -156,11 +157,11 @@ function McpPreview({ server, before }: { server: McpServer; before?: McpServer 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[0.9375rem] font-semibold">{server.name}</span>
+        <span className="font-mono text-heading font-semibold">{server.name}</span>
         <Badge>{server.transport === 'stdio' ? t('本地命令') : t('远程地址')}</Badge>
         {before && before.transport !== server.transport && <Badge tone="accent">{t('已修改')}</Badge>}
       </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-[0.8125rem]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-body">
         {rows.map(([label, key, value]) => (
           <div key={key} className="contents">
             <dt className="text-subtle">{label}</dt>
@@ -187,15 +188,15 @@ function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; befor
         <AgentAvatar icon={agent.icon} cli={agent.cli} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-[1rem] font-semibold">{agent.name}</span>
+            <span className="truncate text-subtitle font-semibold">{agent.name}</span>
             {tag('name')}
           </div>
-          <p className="text-[0.8125rem] text-muted">
+          <p className="text-body text-muted">
             {agent.description || t('没有简介')} {tag('description')}
           </p>
         </div>
       </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[0.8125rem]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-body">
         <dt className="text-subtle">Agent</dt>
         <dd className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full" style={{ background: cliColor(cliOf(agent)) }} />
@@ -241,8 +242,8 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <div className="text-[1rem] font-semibold">{w.name}</div>
-        <p className="text-[0.8125rem] text-muted">{w.description || t('没有简介')}</p>
+        <div className="text-subtitle font-semibold">{w.name}</div>
+        <p className="text-body text-muted">{w.description || t('没有简介')}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {[
@@ -262,7 +263,7 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
               <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
               {a.name}
               {i === 0 && <Crown className="h-3 w-3 text-accent-text" />}
-              {a.isNew && <span className="text-[0.6875rem] text-accent-text">{t('新建')}</span>}
+              {a.isNew && <span className="text-caption text-accent-text">{t('新建')}</span>}
             </span>
           ))}
       </div>
@@ -345,7 +346,7 @@ function JobProgress({
             ? t('正在思考')
             : t('{cli} 正在生成', { cli: cliName })
   return (
-    <div className="flex flex-col gap-2 text-[0.8125rem] leading-relaxed">
+    <div className="flex flex-col gap-2 text-body leading-relaxed">
       {/* 和任务页同一套消息流：思考可以折叠，工具调用点开看详情 */}
       {!!job.messages?.length && <FoldedRun msgs={job.messages} teamNames={teamNames} live author={author} />}
       <span className="flex items-center gap-2 text-xs text-subtle">
@@ -394,7 +395,7 @@ function RunPicker({
   // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
   const effortOpts = defaultEffortOptions(def, defaultEffort, modelEfforts(def, usedModel))
   const compact =
-    'h-7 w-auto min-w-0 gap-1 rounded-md border-transparent bg-transparent px-2 text-[0.75rem] text-muted shadow-none hover:bg-sel hover:text-fg'
+    'h-7 w-auto min-w-0 gap-1 rounded-md border-transparent bg-transparent px-2 text-footnote text-muted shadow-none hover:bg-sel hover:text-fg'
   return (
     <div
       className="flex min-w-0 items-center gap-0.5"
@@ -423,7 +424,7 @@ function RunPicker({
           options={effortOpts}
         />
       )}
-      {!cs.enabled && <span className="text-[0.6875rem] text-warning">{t('已停用')}</span>}
+      {!cs.enabled && <span className="text-caption text-warning">{t('已停用')}</span>}
     </div>
   )
 }
@@ -435,14 +436,14 @@ function ParamPreview({ values, spec }: { values: ParamValues; spec: DerivedPara
     <div className="flex flex-col gap-3">
       <span className="text-xs text-muted">{t('这些值只会填进表单，保存项目设置后才生效')}</span>
       {rows.length === 0 ? (
-        <span className="text-[0.8125rem] text-subtle">{t('没有给出可用的值')}</span>
+        <span className="text-body text-subtle">{t('没有给出可用的值')}</span>
       ) : (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[0.8125rem]">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-body">
           {rows.map((d) => (
             <div key={d.key} className="contents">
               <dt className="text-subtle">
                 {d.label}
-                <span className="ml-1 font-mono text-[0.6875rem]">{d.key}</span>
+                <span className="ml-1 font-mono text-caption">{d.key}</span>
               </dt>
               <dd className="font-mono text-xs break-all">{JSON.stringify(values[d.key])?.replace(/^"|"$/g, '')}</dd>
             </div>
@@ -469,7 +470,7 @@ function LessonChangesPreview({
   onPick: (i: number, on: boolean) => void
 }) {
   if (!changes.length)
-    return <p className="text-[0.8125rem] text-subtle">{t('没有适合提取成全局教训的条目，原因见左边的说明。')}</p>
+    return <p className="text-body text-subtle">{t('没有适合提取成全局教训的条目，原因见左边的说明。')}</p>
   return (
     <div className="flex flex-col gap-3">
       <span className="text-xs text-muted">{t('全局教训会带进所有项目的对话。勾选要采用的，确认后才会写进去。')}</span>
@@ -486,7 +487,7 @@ function LessonChangesPreview({
                   <span className="flex min-w-0 flex-1 flex-col gap-1">
                     <span className="flex flex-wrap items-center gap-2">
                       <Badge tone={old ? 'accent' : 'neutral'}>{old ? t('改写') : t('新加')}</Badge>
-                      <span className="text-[0.8125rem] font-medium">{c.title}</span>
+                      <span className="text-body font-medium">{c.title}</span>
                     </span>
                     {c.rule && <span className="text-xs leading-relaxed text-muted">{c.rule}</span>}
                     {c.cause && <span className="text-xs text-subtle">{t('起因：{text}', { text: c.cause })}</span>}
@@ -515,7 +516,7 @@ function TestStepsPreview({ steps }: { steps: TestStep[] }) {
         {steps.map((s) => (
           <li key={s.id} className="rounded-lg bg-sel/40 p-2.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[0.8125rem] font-medium">{s.name}</span>
+              <span className="text-body font-medium">{s.name}</span>
               <Badge>{ENV_LABEL[s.env]}</Badge>
               {s.when && <span className="text-xs text-subtle">{s.when}</span>}
               {!s.enabled && <span className="text-xs text-subtle">{t('停用')}</span>}
@@ -540,10 +541,10 @@ function ProjectPreview({ p }: { p: ProjectProposal }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <span className="text-[0.9375rem] font-semibold">{p.name}</span>
+          <span className="text-heading font-semibold">{p.name}</span>
           <Badge>{p.type === 'ue' ? t('UE 项目') : t('一般项目')}</Badge>
         </div>
-        {p.description && <p className="text-[0.8125rem] leading-relaxed text-muted">{p.description}</p>}
+        {p.description && <p className="text-body leading-relaxed text-muted">{p.description}</p>}
       </div>
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-muted">{t('写入的文件')}</span>
@@ -562,7 +563,7 @@ function ProjectPreview({ p }: { p: ProjectProposal }) {
           <span className="text-xs text-subtle">{t('没有报告写入的文件')}</span>
         )}
       </div>
-      <p className="rounded-lg bg-sel/40 px-3 py-2.5 text-[0.8125rem] leading-relaxed">
+      <p className="rounded-lg bg-sel/40 px-3 py-2.5 text-body leading-relaxed">
         {t(
           '推荐了 {n} 项设置（工作流、测试步骤、子对话、文件格式等）。点「查看推荐并应用」回到项目设置，逐项或整体应用。',
           {
@@ -807,6 +808,9 @@ export function AssistDialog({
   const running = !!job
   // 最小化：窗口收成右下角的悬浮按钮，生成照常进行，点按钮再展开
   const [minimized, setMinimized] = useState(false)
+  // 左边对话、右边预览之间可以拖：宽度记在本机。两边各至少留 360，预览窄了看不清差异
+  const split = useRef<HTMLDivElement>(null)
+  const chatPane = usePaneWidth('assist-chat', 540, 360, () => (split.current?.clientWidth ?? 1100) - 360)
   // 最小化期间生成完了：悬浮按钮上提示一下
   const [unseen, setUnseen] = useState(false)
   useEffect(() => {
@@ -864,7 +868,7 @@ export function AssistDialog({
   }
 
   const stop = async () => {
-    if (job) await api.stopAssist(job.id).catch(() => {})
+    if (job) await api.stopAssist(job.id).catch(toastError)
   }
   // 生成中说的话：AI 创建一次生成完一份配置，不能中途补充，排队等这一轮结束再发
   const [queue, setQueue] = useState<string[]>([])
@@ -915,7 +919,13 @@ export function AssistDialog({
       if (r.categories.length) setCategories((cs) => [...cs, ...r.categories])
       if (r.created.length) setAgents((as) => [...as, ...r.created])
       if (r.agent) {
-        const a = target ? await api.updateAgent(target.id, r.agent) : await api.createAgent(r.agent)
+        // 在角色页的「Chat 角色」页起草的：建成 Chat 角色（subject.scope，ADR 0038），和手动新建一样默认引入「聊天约束」
+        const chatRules = agents.filter((x) => x.origin === 'builtin:chat-rules').map((x) => x.id)
+        const scope =
+          subject?.scope === 'chat'
+            ? { scope: 'chat' as const, includes: [...new Set([...chatRules, ...r.agent.includes])] }
+            : {}
+        const a = target ? await api.updateAgent(target.id, r.agent) : await api.createAgent({ ...r.agent, ...scope })
         setAgents((as) => (target ? as.map((x) => (x.id === a.id ? a : x)) : [...as, a]))
         toast.success(target ? t('已更新「{name}」', { name: a.name }) : t('已创建「{name}」', { name: a.name }))
         onApplied?.({ agent: a })
@@ -961,10 +971,12 @@ export function AssistDialog({
         }}
         // 标题跟着优化对象变，D.Title 和说明放在下面自己画的标题栏里
         title={null}
-        size="full"
+        // 不铺满屏幕（用户嫌太宽）：用 xl 档 1100，和差异、文件查看器一样宽；左边对话 540、右边预览 560，
+        // 整篇 SKILL.md、角色设定都放得下。高度固定，生成过程中窗口不跟着内容一会儿高一会儿矮
+        size="xl"
         bare
         closeOnOutside
-        className="max-h-[min(960px,calc(100dvh-3.75rem))]"
+        className="h-[min(860px,calc(100dvh-3.75rem))]"
       >
         <ModalHeader
           icon={shown ? Wand2 : Sparkles}
@@ -984,9 +996,21 @@ export function AssistDialog({
           }
         />
 
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          {/* 对话 */}
-          <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[540px] md:border-r md:border-b-0">
+        <div ref={split} className="flex min-h-0 flex-1 flex-col md:flex-row">
+          {/* 对话：窄屏上下排，宽屏左右排、宽度跟着拖动条 */}
+          <section
+            style={{ '--chat-w': `${chatPane.width}px` } as React.CSSProperties}
+            className={cn(
+              'relative flex min-h-0 flex-1 flex-col border-b md:w-(--chat-w) md:flex-none md:border-r md:border-b-0',
+              !chatPane.dragging && 'transition-[width] duration-(--dur-fast)',
+            )}
+          >
+            <ResizeHandle
+              pane={chatPane}
+              side="right"
+              label={t('拖动调整对话和预览的宽度')}
+              className="hidden md:block"
+            />
             <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
               <span className="mr-1 text-xs text-subtle">{t('使用')}</span>
               <ChipGroup
@@ -1021,7 +1045,7 @@ export function AssistDialog({
             >
               {turns.length === 0 && !running && (
                 <div className="flex flex-col gap-2">
-                  <p className="text-[0.8125rem] text-muted">
+                  <p className="text-body text-muted">
                     {shown
                       ? kind === 'skill'
                         ? t('说说想怎么改，例如「步骤再具体一些」「description 写清楚什么时候用」。')
@@ -1037,7 +1061,7 @@ export function AssistDialog({
                       <button
                         key={e}
                         onClick={() => send(e)}
-                        className="cursor-pointer rounded-lg bg-card px-3 py-2 text-left text-[0.8125rem] text-muted shadow-card transition-colors hover:bg-sel/60 hover:text-fg"
+                        className="cursor-pointer rounded-lg bg-card px-3 py-2 text-left text-body text-muted shadow-card transition-colors hover:bg-sel/60 hover:text-fg"
                       >
                         {e}
                       </button>
@@ -1048,7 +1072,7 @@ export function AssistDialog({
                 turn.role === 'user' ? (
                   <UserMessage key={i} size="sm" text={turn.text} />
                 ) : (
-                  <div key={i} className="flex flex-col gap-2 text-[0.8125rem] leading-relaxed">
+                  <div key={i} className="flex flex-col gap-2 text-body leading-relaxed">
                     {turn.msgs?.length ? (
                       <ChatReply msgs={turn.msgs} teamNames={teamNames} author={author} />
                     ) : (
@@ -1081,7 +1105,7 @@ export function AssistDialog({
             <div className="p-3">
               {job && <ScopeRequests scope={`assist:${job.id}`} active={running} />}
               {queue.length > 0 && (
-                <p className="mb-2 truncate rounded-lg bg-field px-3 py-1.5 text-[0.75rem] text-muted">
+                <p className="mb-2 truncate rounded-lg bg-field px-3 py-1.5 text-footnote text-muted">
                   {t('排队中，这一轮结束后发送：{text}', { text: queue.join(' / ') })}
                 </p>
               )}
@@ -1104,7 +1128,7 @@ export function AssistDialog({
                       value={askUser}
                       onChange={(v) => {
                         setAskUser(v)
-                        if (job) void api.setAskUser(`assist:${job.id}`, v).catch(() => {})
+                        if (job) void api.setAskUser(`assist:${job.id}`, v).catch(toastError)
                       }}
                     />
                     {settings && cliDef && (
@@ -1169,7 +1193,7 @@ export function AssistDialog({
               ) : (
                 <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center text-subtle">
                   <Sparkles className="h-6 w-6" />
-                  <p className="text-[0.8125rem]">{L.empty}</p>
+                  <p className="text-body">{L.empty}</p>
                 </div>
               )}
             </div>

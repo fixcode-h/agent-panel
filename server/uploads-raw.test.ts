@@ -48,14 +48,15 @@ test('相对路径不当地址用：不带 attachments/、带 .. 或层级的一
   for (const bad of ['截图-071747.png', 'attachments/../需求.md', 'attachments/a/../../需求.md', '../../etc/passwd']) {
     const res = await raw(bad)
     assert.equal(res.status, 400, bad)
-    assert.equal((await res.json()).error, '不是附件', bad)
+    // 服务端只带 Node 类型，Response.json() 是 unknown（DOM 里是 any）；测试按接口约定直接读字段，放宽成 any
+    assert.equal(((await res.json()) as any).error, '不是附件', bad)
   }
 })
 
 test('附件已经被清理时返回「附件已经不在了」，不是破图', async () => {
   const res = await raw('attachments/没有了.png')
   assert.equal(res.status, 404)
-  assert.equal((await res.json()).error, '附件已经不在了')
+  assert.equal(((await res.json()) as any).error, '附件已经不在了')
 })
 
 test('附件目录以外的文件不能借这个接口读', async () => {
@@ -76,8 +77,8 @@ test('附件目录以外的文件不能借这个接口读', async () => {
 test('点文件卡片看内容：相对路径也能找到，找不到时说附件已经不在了', async () => {
   const hit = await view('attachments/需求.md')
   assert.equal(hit.status, 200)
-  assert.equal((await hit.json()).content, '# 需求\n')
+  assert.equal(((await hit.json()) as any).content, '# 需求\n')
   const gone = await view('attachments/没有.md')
   assert.equal(gone.status, 404)
-  assert.equal((await gone.json()).error, '附件已经不在了')
+  assert.equal(((await gone.json()) as any).error, '附件已经不在了')
 })

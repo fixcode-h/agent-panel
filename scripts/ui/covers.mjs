@@ -128,6 +128,16 @@ export const UI_SHARD_COVERS = {
     'shared/summary.ts',
   ],
   '10-toast': ['web/src/lib/toast.ts', 'web/src/lib/toast-queue.ts'],
+  // 画布排版对照：算出来的控件位置和画布组件画出来的逐个比对
+  '11-umg-layout': [
+    'shared/umg-layout.ts',
+    'shared/umg-layout.fixtures.ts',
+    'shared/web-layout.ts',
+    'shared/web-layout.fixtures.ts',
+    'web/src/components/design/web-render.tsx',
+    'web/src/components/design/umg-render.tsx',
+    'scripts/ui/umg-layout/',
+  ],
 }
 
 /**

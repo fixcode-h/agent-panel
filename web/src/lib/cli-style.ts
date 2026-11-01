@@ -8,10 +8,10 @@ export const cliColor = (id: string) => getCli(id)?.color ?? '#64748b'
 export const modelGroup = (def: CliDefinition, m: { origin?: 'cli' | 'config' }) =>
   m.origin === 'config'
     ? CONFIG_GROUP()
-    : // cli-id-ok: Claude Code 没有列模型的命令，模型是面板内置的；以后有字段表达「模型来源」时换掉
-      def.id === 'claude' || def.spec
-      ? t('{cli} 内置', { cli: def.name })
-      : t('{cli} 读取', { cli: def.name })
+    : // 模型是运行 CLI 读出来的（CLI 定义里的 modelsRead，例如 Codex）叫「读取」，其余是配置里写的或从安装包取的，叫「内置」
+      def.modelsRead
+      ? t('{cli} 读取', { cli: def.name })
+      : t('{cli} 内置', { cli: def.name })
 /** 配置文件里第三方 API 模型的组名；排序时按它认组，不按中文前缀 */
 export const CONFIG_GROUP = () => t('配置文件 · 第三方 API')
 /** CLI 自己的默认模型和它的默认思考强度 */

@@ -42,7 +42,7 @@ export function ProjectShelf({
           <span
             key={p.id}
             data-summary-project
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-line bg-card pr-1 pl-2.5 text-[0.8125rem]"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-line bg-card pr-1 pl-2.5 text-body"
           >
             <FolderKanban className="h-3.5 w-3.5 text-subtle" />
             <span className="max-w-[200px] truncate">{p.name}</span>

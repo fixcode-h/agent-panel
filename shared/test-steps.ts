@@ -228,7 +228,7 @@ export function pickStepsText(
     files.length ? `- 改动文件：${files.join('、')}${more}` : '- 改动清单为空（取不到改动）：按全部启用的步骤跑',
   )
   if (o.quickHint)
-    lines.push('- 小改动只跑标「快速」的步骤，其余步骤判定为大改动再跑（判定规则见下面「验证按改动大小定」）。')
+    lines.push('- 小改动只跑标「快速」的步骤，其余步骤判定为大改动再跑（判定规则见「验证按改动大小定」）。')
   if (pick.run.length) {
     lines.push('- 本轮该跑：')
     pick.run.forEach((s, i) => {
@@ -527,7 +527,17 @@ export function testStepsBlock(steps: TestStep[], platform: string, wslDistro = 
  * 对话里怎么验证：按改动大小定范围（参照 Claude Code 的做法，小改动跑完快速检查就收尾）。
  * 只给对话用，工作流里的测试验收节点照常跑完整步骤：走工作流本身就说明改动不小
  */
-export function verifyBlock(
+export function verifyBlock(...a: Parameters<typeof verifyParts>) {
+  return verifyParts(...a)
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/**
+ * 验证段拆成两段：[规则, 本轮结论]。规则只随项目设置变；结论随改动清单变（每改一个新文件就变）。
+ * 续接会话按段落指纹只重发变了的（shared/prompt-delta.ts），拼在一段里时改一个文件整段 2–4 千字都要重发
+ */
+export function verifyParts(
   steps: TestStep[],
   o: {
     platform: string
@@ -547,7 +557,7 @@ export function verifyBlock(
     ? o.parentRun === 'child'
       ? `\n这些步骤的范围是「全量，合并后由父对话跑」：${inParent.map((s) => `「${s.name}」`).join('、')}。你不要跑它们的全量命令（跑了也不算数，父对话会重新跑），也不要在结果里写跑过；但单测和界面检查仍要用增量命令覆盖命中的单测文件 / 界面分片（见上面的增量规则），e2e 没有增量替代、直接交给父对话。合并后面板由父对话跑全量，结果回传给你。你的完成条件是「改动已合回父对话所在的分支 + 父对话测试通过」；父对话测试失败时面板会把报错原文推回来，按它修好再调用 submit_merge。`
       : o.parentRun === 'parent'
-        ? `\n这些步骤的范围是「全量，合并后由父对话跑」（只对子对话生效）：${inParent.map((s) => `「${s.name}」`).join('、')}。子对话不跑它们；子对话合并成功后由面板在你的目录里自动跑（后台命令名里带子对话的名字），结果直接回传给对应的子对话，你不用转述。但**你自己改代码时没人替你跑**（没有子对话合并这一步）：这些步骤照常由你自己按改动清单筛完执行（见上面「本轮该跑的测试步骤」，如果有的话）。跑完之前，你计划里等那个子对话的步骤保持等待。`
+        ? `\n这些步骤的范围是「全量，合并后由父对话跑」（只对子对话生效）：${inParent.map((s) => `「${s.name}」`).join('、')}。子对话不跑它们；子对话合并成功后由面板在你的目录里自动跑（后台命令名里带子对话的名字），结果直接回传给对应的子对话，你不用转述。但**你自己改代码时没人替你跑**（没有子对话合并这一步）：这些步骤照常由你自己按改动清单筛完执行（见「本轮该跑的测试步骤」，如果有的话）。跑完之前，你计划里等那个子对话的步骤保持等待。`
         : ''
     : ''
   // 子对话带完整的增量规则（含抖动怎么重跑）；其它对话只补抖动重跑那条，不改它们的全量口径
@@ -558,17 +568,16 @@ ${testStepsText(shown, o.platform, o.wslDistro, o.parentRun ?? '')}`
     : '项目还没有配置测试步骤：从 package.json 的 scripts、Makefile、CI 配置里找命令，找不到就说明缺口，不要编命令。'
   // 按改动清单算好的结论：有了它 Agent 不用自己再筛，也不会“为了保险全跑一遍”
   const picked = o.changedFiles
-    ? `\n\n${pickStepsText(pickSteps(active, o.changedFiles), {
+    ? pickStepsText(pickSteps(active, o.changedFiles), {
         platform: o.platform,
         wslDistro: o.wslDistro,
         changedFiles: o.changedFiles,
         parentRun: o.parentRun,
         // 开着「按改动大小定范围」时，注入段要自己标清哪条是小改动也跑的，不能和同段规则各说一套
         quickHint: o.scaled,
-      })}`
+      })
     : ''
-  if (!o.scaled)
-    return `## 验证
+  const rules = `## 验证
 ${
   o.parentRun === 'child'
     ? '这个项目要求每次改动都把适用的步骤跑完：范围是「总是跑」的照常跑，范围是「命中适用改动才跑」的只跑命中的部分，范围是「全量，合并后由父对话跑」的用增量命令覆盖命中的单测文件和界面分片，全量由父对话合并后跑。'
@@ -577,11 +586,13 @@ ${
 ${CHANGED_FILES_RULE}
 ${incremental}
 
-${list}${picked}${parentNote}`
+${list}${parentNote}`
+  if (!o.scaled) return [rules, picked]
   const fast = quick.length
     ? `只跑标「快速」的步骤（${quick.map((s) => s.name).join('、')}）`
     : '挑一个最快的检查跑（类型检查、lint 或改动文件的语法检查，几十秒内跑完的）'
-  return `## 验证按改动大小定
+  return [
+    `## 验证按改动大小定
 改完先判断这次改动的大小，再决定验证范围；两种大小都先按改动清单筛出适用的步骤：
 ${CHANGED_FILES_RULE}
 ${incremental}
@@ -590,7 +601,9 @@ ${incremental}
 - 其他都算大改动：按筛选后的步骤完整跑一遍（太长的放到后台），不要为了保险全部跑一遍。
 - 拿不准就按大改动；快速检查没过、或者报错不在你改的地方，也改按大改动处理。
 - 回复里用一句话写明按哪种验证的、跑了什么，跳过的步骤写清原因。
-${list}${picked}${parentNote}`
+${list}${parentNote}`,
+    picked,
+  ]
 }
 
 /** 新建项目时的默认步骤：按技术栈给一份够用的，用户确认后保存才生效 */

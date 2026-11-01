@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { whenLabel, workdayTimeLabel, SCHEDULE_WEEKDAYS, type Schedule } from '@shared/schedule'
 import { t } from '@shared/i18n'
-import { listableAgents } from '@shared/builtin/core'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/segmented'
@@ -10,13 +9,19 @@ import { Modal } from '@/components/ui/modal'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { Card } from '@/components/ui/card'
 import { EndChoice } from './EndChoice'
-import { durationOptions, REPEAT_OPTIONS, useScheduleForm, type SchedulePreset } from './use-schedule-form'
+import {
+  durationOptions,
+  REPEAT_OPTIONS,
+  schedulePickable,
+  useScheduleForm,
+  type SchedulePreset,
+} from './use-schedule-form'
 
 /** 表单里的一段：什么时候跑 / 跑什么 / 在哪跑；分组让长表单读起来有层次 */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Card as="section" className="flex flex-col gap-3 p-3.5">
-      <h3 className="text-[0.8125rem] font-semibold text-muted">{title}</h3>
+      <h3 className="text-body font-semibold text-muted">{title}</h3>
       {children}
     </Card>
   )
@@ -45,6 +50,7 @@ export function ScheduleDialog({
   const {
     form,
     set,
+    setProject,
     setRepeat,
     setAtLocal,
     toggleWeekday,
@@ -63,7 +69,7 @@ export function ScheduleDialog({
   const others = schedules.filter((x) => x.id !== schedule?.id)
   // 「子任务」不再作为可选角色展示，但老计划可能已经选过它：补一项显示名字，
   // 不然 Select 找不到当前项时会把角色 id 直接显示出来，看着像坏数据。保存仍按原值走，用户主动改了才换
-  const pickable = listableAgents(agents)
+  const pickable = schedulePickable(agents, form.projectId)
   const unpickable =
     form.agentId && !pickable.some((a) => a.id === form.agentId) ? agents.find((a) => a.id === form.agentId) : undefined
 
@@ -88,7 +94,7 @@ export function ScheduleDialog({
     >
       {/* 新建默认已按模板填好；改乱了可以一键填回来 */}
       <div className="flex flex-wrap items-center gap-2">
-        <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-muted">
+        <p className="min-w-0 flex-1 text-body leading-relaxed text-muted">
           {schedule
             ? t('改完保存，计划按新的设置执行。')
             : blank
@@ -102,12 +108,12 @@ export function ScheduleDialog({
 
       <Section title={t('什么时候跑')}>
         <div className="flex flex-col gap-1.5">
-          <span className="text-[0.8125rem] font-medium">{t('重复')}</span>
+          <span className="text-body font-medium">{t('重复')}</span>
           <Segmented label={t('重复')} value={form.repeat} onChange={setRepeat} options={REPEAT_OPTIONS} />
         </div>
         <div className="flex flex-wrap items-end gap-4">
           <label className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('执行时间')}</span>
+            <span className="text-body font-medium">{t('执行时间')}</span>
             <Input
               type="datetime-local"
               className="h-10 dark:[color-scheme:dark]"
@@ -117,7 +123,7 @@ export function ScheduleDialog({
           </label>
           {/* 日历上占多长：只是排日程用，执行时长的上限在「更多设置」里 */}
           <label className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('时长')}</span>
+            <span className="text-body font-medium">{t('时长')}</span>
             <Select
               aria-label={t('时长')}
               className="h-10 w-32"
@@ -129,7 +135,7 @@ export function ScheduleDialog({
         </div>
         {form.repeat === 'weekly' && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('每周哪几天')}</span>
+            <span className="text-body font-medium">{t('每周哪几天')}</span>
             <ChipGroup
               multiple
               label={t('每周哪几天')}
@@ -145,7 +151,7 @@ export function ScheduleDialog({
         )}
         {form.repeat !== 'once' && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('结束')}</span>
+            <span className="text-body font-medium">{t('结束')}</span>
             <EndChoice value={form.endDate} onChange={(v) => set('endDate', v)} />
           </div>
         )}
@@ -164,7 +170,7 @@ export function ScheduleDialog({
 
       <Section title={t('跑什么')}>
         <label className="flex flex-col gap-1.5">
-          <span className="text-[0.8125rem] font-medium">{t('名称')}</span>
+          <span className="text-body font-medium">{t('名称')}</span>
           <Input
             autoFocus
             value={form.name}
@@ -173,7 +179,7 @@ export function ScheduleDialog({
           />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className="text-[0.8125rem] font-medium">{t('到点后执行的对话内容')}</span>
+          <span className="text-body font-medium">{t('到点后执行的对话内容')}</span>
           <Textarea
             rows={5}
             value={form.prompt}
@@ -186,7 +192,7 @@ export function ScheduleDialog({
       <Section title={t('在哪跑')}>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('在哪个项目里执行')}</span>
+            <span className="text-body font-medium">{t('在哪个项目里执行')}</span>
             <Select
               value={form.projectId}
               aria-label={t('在哪个项目里执行')}
@@ -194,16 +200,16 @@ export function ScheduleDialog({
                 { value: '', label: t('聊天（不属于项目）') },
                 ...projects.map((p) => ({ value: p.id, label: p.name })),
               ]}
-              onChange={(e) => set('projectId', e.target.value)}
+              onChange={(e) => setProject(e.target.value, agents)}
             />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] font-medium">{t('用哪个角色')}</span>
+            <span className="text-body font-medium">{t('用哪个角色')}</span>
             <Select
               value={form.agentId}
               aria-label={t('用哪个角色')}
               options={[
-                { value: '', label: t('不用角色（跟随默认 CLI）') },
+                { value: '', label: form.projectId ? t('不用角色（跟随默认 CLI）') : t('助手（默认）') },
                 ...pickable.map((a) => ({
                   value: a.id,
                   label: a.enabled ? a.name : t('{name}（已停用）', { name: a.name }),
@@ -221,12 +227,12 @@ export function ScheduleDialog({
       {/* 和上面几段同一种卡片底；details 不能直接当 Card 的标签（open / onToggle 属性对不上），套一层 */}
       <Card>
         <details open={advancedOpen} onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}>
-          <summary className="cursor-pointer px-3.5 py-2.5 text-[0.8125rem] font-semibold text-muted select-none">
+          <summary className="cursor-pointer px-3.5 py-2.5 text-body font-semibold text-muted select-none">
             {t('更多设置')}
           </summary>
           <div className="flex flex-col gap-3 border-t px-3.5 py-3">
             <div className="flex flex-col gap-1.5">
-              <span className="text-[0.8125rem] font-medium">{t('上游计划')}</span>
+              <span className="text-body font-medium">{t('上游计划')}</span>
               <span className="text-xs text-subtle">
                 {t('这些计划这一轮成功启动之后，本计划到点才会启动；留空表示不依赖。')}
               </span>
@@ -249,7 +255,7 @@ export function ScheduleDialog({
             {/* 执行上限：超了就停，已经产出的内容留着；空着表示不限 */}
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8125rem] font-medium">{t('token 上限')}</span>
+                <span className="text-body font-medium">{t('token 上限')}</span>
                 <Input
                   inputMode="numeric"
                   value={form.budgetTokens}
@@ -259,7 +265,7 @@ export function ScheduleDialog({
                 />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8125rem] font-medium">{t('时长上限（分钟）')}</span>
+                <span className="text-body font-medium">{t('时长上限（分钟）')}</span>
                 <Input
                   inputMode="numeric"
                   value={form.budgetMinutes}

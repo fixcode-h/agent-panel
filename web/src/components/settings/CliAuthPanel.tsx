@@ -100,13 +100,13 @@ export function CliAuthPanel({
               </Button>
             </div>
             {cur ? (
-              <p className="text-[0.75rem] leading-relaxed text-subtle">
+              <p className="text-footnote leading-relaxed text-subtle">
                 <span className="font-mono">{apiBaseUrl(cur) || t('默认地址')}</span>
                 {' · '}
                 {cur.models.length ? t('{n} 个模型', { n: cur.models.length }) : t('还没有填模型，去 API 配置里添加')}
               </p>
             ) : (
-              <p className="text-[0.75rem] leading-relaxed text-warning">
+              <p className="text-footnote leading-relaxed text-warning">
                 {fitting.length
                   ? t('还没选 API，现在会按 Agent 自己的登录运行')
                   : t('还没有适用的 API：到 API 配置里添加一个 {protocols} 协议的', {
@@ -205,8 +205,8 @@ function AccountList({ def }: { def: CliDefinition }) {
       <div className="flex flex-wrap items-center gap-2 rounded-xl bg-sel/40 p-3">
         <User className="h-4 w-4 shrink-0 text-subtle" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[0.8125rem] font-medium">{label}</p>
-          <p className="text-[0.75rem] text-subtle">
+          <p className="truncate text-body font-medium">{label}</p>
+          <p className="text-footnote text-subtle">
             {data.live.loggedIn
               ? data.unsaved
                 ? t('这个账号还没保存，保存后才能切换回来')
@@ -252,7 +252,7 @@ function AccountList({ def }: { def: CliDefinition }) {
         <ProviderChecks def={def} stamp={`${data.live.label}|${data.accounts.find((a) => a.active)?.id ?? ''}`} />
       )}
       {def.auth?.accountNote && (
-        <p className="rounded-xl bg-warning/8 px-3 py-2.5 text-[0.75rem] leading-relaxed">{def.auth.accountNote}</p>
+        <p className="rounded-xl bg-warning/8 px-3 py-2.5 text-footnote leading-relaxed">{def.auth.accountNote}</p>
       )}
       {login && <LoginProgress cli={def.id} job={login} onClose={() => setLogin(null)} />}
       {data.accounts.length > 0 && (
@@ -289,7 +289,7 @@ function AccountList({ def }: { def: CliDefinition }) {
                     maxLength={60}
                     onChange={(e) => setRenaming({ id: a.id, name: e.target.value })}
                     aria-label={t('账号名称')}
-                    className="h-8 min-w-0 flex-1 text-[0.8125rem]"
+                    className="h-8 min-w-0 flex-1 text-body"
                   />
                   <Button size="icon-sm" type="submit" aria-label={t('保存名称')}>
                     <Check className="h-3.5 w-3.5" />
@@ -307,9 +307,9 @@ function AccountList({ def }: { def: CliDefinition }) {
               ) : (
                 <>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[0.8125rem] font-medium">{a.name}</span>
+                    <span className="block truncate text-body font-medium">{a.name}</span>
                     {a.email && a.email !== a.name && (
-                      <span className="block truncate text-[0.75rem] text-subtle">{a.email}</span>
+                      <span className="block truncate text-footnote text-subtle">{a.email}</span>
                     )}
                   </span>
                   {!a.active && (
@@ -352,7 +352,7 @@ function AccountList({ def }: { def: CliDefinition }) {
           ))}
         </ul>
       )}
-      <p className="text-[0.75rem] leading-relaxed text-subtle">
+      <p className="text-footnote leading-relaxed text-subtle">
         {t('账号的登录凭据只保存在本机的数据目录里。切换账号只替换凭据，{cli} 的其他配置、Skill 和会话都不变。', {
           cli: def.name,
         })}
@@ -391,7 +391,7 @@ function ProviderChecks({ def, stamp }: { def: CliDefinition; stamp: string }) {
   return (
     <Card className="px-3 py-2.5">
       <div className="mb-1.5 flex items-center gap-2">
-        <p className="flex-1 text-[0.75rem] font-medium">{t('设置里用到的提供方')}</p>
+        <p className="flex-1 text-footnote font-medium">{t('设置里用到的提供方')}</p>
         <Button size="sm" variant="ghost" disabled={loading} onClick={load} aria-label={t('重新检查凭据')}>
           <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
         </Button>
@@ -401,7 +401,7 @@ function ProviderChecks({ def, stamp }: { def: CliDefinition; stamp: string }) {
       ) : (
         <ul className="flex flex-col gap-1" aria-label={t('提供方凭据')}>
           {list.map((p) => (
-            <li key={p.provider} className="flex items-center gap-2 text-[0.75rem]">
+            <li key={p.provider} className="flex items-center gap-2 text-footnote">
               {p.ready ? (
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
               ) : (
@@ -434,7 +434,7 @@ function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onCl
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 rounded-xl bg-sel/50 p-3 text-[0.8125rem]',
+        'flex flex-col gap-2 rounded-xl bg-sel/50 p-3 text-body',
         job.status === 'failed' && 'bg-danger/8',
         job.status === 'done' && 'bg-success/8',
       )}
@@ -502,18 +502,18 @@ function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onCl
             onChange={(e) => setCode(e.target.value)}
             placeholder={t('粘贴浏览器里显示的授权码')}
             aria-label={t('授权码')}
-            className="h-8 min-w-0 flex-1 font-mono text-[0.75rem]"
+            className="h-8 min-w-0 flex-1 font-mono text-footnote"
           />
           <Button size="sm" type="submit" disabled={!code.trim()}>
             {t('提交')}
           </Button>
         </form>
       )}
-      {job.error && <p className="text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>}
+      {job.error && <p className="text-footnote leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>}
       {job.output.trim() && (
         <pre
           ref={box}
-          className="max-h-28 overflow-auto rounded-lg bg-field px-2.5 py-2 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]"
+          className="max-h-28 overflow-auto rounded-lg bg-field px-2.5 py-2 font-mono text-caption leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]"
         >
           {job.output.trim()}
         </pre>

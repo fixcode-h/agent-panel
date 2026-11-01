@@ -1,5 +1,6 @@
 import { Task, type StopReason } from '../../shared/schema.ts'
 import { taskDeleted } from '../../shared/task.ts'
+import { forgetClaims } from '../claims.ts'
 import { forgetNotes } from '../exec/runner.ts'
 import { forgetPresence } from '../presence.ts'
 import type { TasksScope } from './scope.ts'
@@ -20,6 +21,9 @@ export function createTrash(s: TasksScope) {
    */
   async function purgeTask(tk: Task) {
     await s.store.remove(tk.id)
+    // 上报去重的记录只增不减：对话都删了不会再上报，跟着丢掉（还在的对话不能丢，丢了会把同一状态再报一遍）
+    s.reportedState.delete(tk.id)
+    s.reportedDone.delete(tk.id)
     forgetPresence(tk.id)
     s.background.forget(tk.id)
     await s.dropWorktree(tk)
@@ -48,6 +52,8 @@ export function createTrash(s: TasksScope) {
     // 等后台命令的进程真正退出：进程还占着目录时，过期清理在 Windows 上删不掉
     await s.endBackground(tk.id)
     await s.store.updateMeta(tk.id, { deletedAt: new Date().toISOString() })
+    // 认领跟着放：从回收站恢复不补，它下一轮结束时按改过的文件自然记回去
+    forgetClaims(s.claims, tk)
   }
 
   // 删除 = 进回收站（物理删除只能从回收站里做，见 DELETE /:id/permanent）
@@ -100,5 +106,13 @@ export function createTrash(s: TasksScope) {
     return c.json({ worktreeCleared: cleared })
   })
 
-  return { purgeTasks }
+  /** 恢复一组对话（删项目时一起进回收站的那些）：只清删除标记，和单条恢复一样 */
+  async function restoreTasks(ids: string[]) {
+    for (const id of ids) {
+      const tk = await s.store.peek(id)
+      if (tk && taskDeleted(tk)) await s.store.updateMeta(id, { deletedAt: undefined, stopReason: 'delete' as const })
+    }
+  }
+
+  return { purgeTasks, enterTrash, restoreTasks }
 }

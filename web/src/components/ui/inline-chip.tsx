@@ -31,7 +31,7 @@ export function InlineChip({
 }) {
   const c = CHIP_TONE[tone]
   const cls = cn(
-    'mx-0.5 my-0.5 inline-flex h-6 max-w-full items-center gap-1.5 rounded-(--c-chip-radius) px-1.5 align-top text-[0.75rem] leading-none whitespace-nowrap ring-(length:--c-chip-ring) ring-inset',
+    'mx-0.5 my-0.5 inline-flex h-6 max-w-full items-center gap-1.5 rounded-(--c-chip-radius) px-1.5 align-top text-footnote leading-none whitespace-nowrap ring-(length:--c-chip-ring) ring-inset',
     c.box,
     onClick && cn('cursor-pointer transition-colors', c.hover),
     className,
@@ -39,8 +39,8 @@ export function InlineChip({
   const body = (
     <>
       {icon && <span className={cn('flex shrink-0 items-center', c.icon)}>{icon}</span>}
-      <span className={cn('min-w-0 truncate', mono && 'font-mono text-[0.75rem]')}>{label}</span>
-      {status && <span className={cn('shrink-0 text-[0.6875rem]', c.status)}>{status}</span>}
+      <span className={cn('min-w-0 truncate', mono && 'font-mono text-footnote')}>{label}</span>
+      {status && <span className={cn('shrink-0 text-caption', c.status)}>{status}</span>}
     </>
   )
   return onClick ? (

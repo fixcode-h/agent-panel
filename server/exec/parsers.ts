@@ -125,6 +125,11 @@ export type AskReply = {
   answers?: string[]
   /** 拒绝时交给 CLI 的原话；不给时按 answer 拼一句「用户拒绝了」 */
   message?: string
+  /**
+   * 拒绝权限请求时追加给模型的提醒（不要原样重试、被拒多次就停下来问，见 deny-advice.ts）。
+   * 协议的拒绝能带原话的接在 message 后面；带不了的（Codex 只有 decline）由适配器插话交给这一轮
+   */
+  advice?: string
 }
 
 export type Parser = (obj: any) => CliEvent[]
@@ -564,10 +569,20 @@ function genericTool(name: string, input: any, cwd: string): CliEvent {
         detail: oneLine(String(input?.arguments ?? input?.args ?? ''), 60),
       },
     }
+  // 联网搜索插件（例如 Pi 的 pi-web-access）一次能搜几个词、开几个网址（queries / urls）：都列出来，
+  // 右栏的「来源」从 label 里取网址，只取第一个会漏掉
+  const many = (one: unknown, list: unknown, sep: string) =>
+    String(one ?? (Array.isArray(list) ? list.map(String).join(sep) : ''))
   if (/web_?search/.test(n))
-    return { type: 'tool', tool: { kind: 'web', name: t('网页搜索'), label: String(input?.query ?? ''), detail: '' } }
+    return {
+      type: 'tool',
+      tool: { kind: 'web', name: t('网页搜索'), label: many(input?.query, input?.queries, ' · '), detail: '' },
+    }
   if (/fetch|url|browse/.test(n))
-    return { type: 'tool', tool: { kind: 'web', name: t('打开网页'), label: String(input?.url ?? ''), detail: '' } }
+    return {
+      type: 'tool',
+      tool: { kind: 'web', name: t('打开网页'), label: many(input?.url, input?.urls, ' '), detail: '' },
+    }
   if (/write|edit|patch|replace|create_file/.test(n)) {
     // 一次改多处（edits 数组）时把每处的行数加起来
     const edits: any[] = Array.isArray(input?.edits) ? input.edits : [input]

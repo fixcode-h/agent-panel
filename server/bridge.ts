@@ -104,7 +104,51 @@ export function bundledExtensionVersion() {
  * 扩展所在的目录。包里带的文件缺失或版本不对时，用打进 server.mjs 的文件重新写出来：
  * 优先写到程序目录，写不进去（装在只读位置）就写到数据目录
  */
+/**
+ * 扩展和面板之间的配对令牌。以前 /bridge 只看请求的 Origin 是不是 chrome-extension://，
+ * Origin 谁都能伪造：开着外网隧道时公网任何人、本机其它扩展都能取生图指令、往设计里塞图。
+ * 令牌存在数据目录里（只给本人读写），面板每次写出扩展文件时一起写进扩展目录的 pairing.json：
+ * 只有从这个目录加载的扩展读得到，别的扩展读不到其它扩展的文件
+ */
+const TOKEN_FILE = path.join(DATA_DIR, 'bridge-token')
+let token = ''
+export function bridgeToken() {
+  if (token) return token
+  try {
+    token = readFileSync(TOKEN_FILE, 'utf8').trim()
+  } catch {}
+  if (!token) {
+    token = randomUUID()
+    try {
+      mkdirSync(DATA_DIR, { recursive: true })
+      writeFileSync(TOKEN_FILE, token, { mode: 0o600 })
+    } catch (e) {
+      log.warn('bridge', '写配对令牌失败，这次运行期间有效', { error: (e as Error).message })
+    }
+  }
+  return token
+}
+export const PAIRING_HEADER = 'x-panel-bridge'
+/** 请求带的配对令牌对不对 */
+export const bridgePaired = (header: string | undefined) => !!header && header === bridgeToken()
+
+function writePairing(dir: string) {
+  if (!dir) return dir
+  const f = path.join(dir, 'pairing.json')
+  const body = JSON.stringify({ token: bridgeToken() })
+  try {
+    if (!existsSync(f) || readFileSync(f, 'utf8') !== body) writeFileSync(f, body, { mode: 0o600 })
+  } catch (e) {
+    log.warn('bridge', '写扩展配对文件失败：扩展会连不上面板', { dir, error: (e as Error).message })
+  }
+  return dir
+}
+
 export function extensionDir() {
+  return writePairing(findExtensionDir())
+}
+
+function findExtensionDir() {
   const dir = path.join(appDir(), 'extension')
   if (!EMBEDDED) return existsSync(dir) ? dir : ''
   const want = bundledExtensionVersion()

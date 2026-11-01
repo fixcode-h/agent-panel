@@ -1,14 +1,14 @@
 ---
-paths: shared/builtin/**, shared/engine.ts, shared/assist.ts, shared/agent-*.ts, shared/test-steps.ts, server/agent-params*.ts, docs/agent-test-steps.md
+paths: shared/builtin/**, shared/engine.ts, server/tasks/run.ts, shared/assist.ts, shared/agent-*.ts, shared/test-steps.ts, server/agent-params*.ts, docs/agent-test-steps.md
 ---
 
 # 给 Agent 的提示词
 
 ## 改提示词或文案前先搜断言
 
-- 规则：改给 Agent 的提示词、角色设定、界面文案前，先 `grep` 一下 `scripts/e2e.mjs` 和 `server/*.test.ts` 里有没有断言原句，一起改。
-- 起因：baffddd、875a11b、ab95653 都是改了提示词、测试还断言旧写法。
-- 防线：`npm run test:e2e`。
+- 规则：改给 Agent 的提示词、角色设定、界面文案前，先 `grep` 一下 `scripts/e2e/`、`scripts/ui/` 和 `server/*.test.ts` 里有没有断言原句（界面检查常按按钮、分段的名字找元素），一起改；改了界面文字要把用到它的界面分片都复跑，不只跑自己加断言的那片。
+- 起因：baffddd、875a11b、ab95653 都是改了提示词、测试还断言旧写法；86dc598c 把角色页分段缩成「基本 · N」，`scripts/ui/06-settings-agent.mjs` 还按 `/^基本角色/` 找，CI 界面检查失败。
+- 防线：`npm run test:e2e`、`node scripts/ui-check.mjs`。
 
 ## 提示词要求 Agent 在一个回合里做完
 
@@ -33,9 +33,3 @@ paths: shared/builtin/**, shared/engine.ts, shared/assist.ts, shared/agent-*.ts,
 - 规则：AI 配参数这类「让 CLI 按项目定值」的提示词，每个选项要附上它实际改变什么（`paramEffect` 按取值渲染角色设定取差异）和节点上已有的预设，写明判断顺序「项目事实 → 选项差别 → 默认值」，并告诉它结果要用户确认才生效、不要把取舍拿去问用户。只给标签和一句说明时，CLI 只能把开关原样问回来。
 - 起因：c3678e9 的参数提示词只列标签，还要求写「哪些参数需要用户确认」；用户在「通用项目」上看到 AI 把 TDD / 任务记录 / 先识别现场 / 串行全部问回来。
 - 防线：`server/agent-params.test.ts`（提示词带取值差异和节点预设）。
-
-## 会话压缩过，「已发过的规则」记录必须作废，不能在这一轮结束后写回去
-
-- 规则：续接只发增量（ADR 0027）的前提是会话里真有那些段落。手动压缩、CLI 自己压缩、上下文骤降都要走 runner 的 `compacted()`：清 `task.promptSent` 和 `task.roleHashes`，并调 `AgentCall.onCompacted` 让调用方清掉手里的记录（`runConversationTurn` 的 `live`、子任务的已发段落）。调用方在一轮结束时写 `promptSent` 之前必须先看这一轮压缩过没有。手动压缩那一轮只发了压缩命令、规则根本没发，同样不能记成已发。
-- 起因：压缩后主理不再派子对话、自己动手改：engine 在压缩那一轮结束后把压缩前的 `live` 写回 `promptSent`，下一轮只发增量，委派规则只剩摘要。
-- 防线：`shared/prompt-delta.test.ts`（压缩发生在这一轮里，下一轮必须整份重发）。

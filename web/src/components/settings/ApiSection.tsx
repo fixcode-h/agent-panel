@@ -85,7 +85,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
     })
   return (
     <Group>
-      <p className="pb-3 text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="pb-3 text-body leading-relaxed text-subtle">
         {t(
           '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Command Code 三种都能用。',
         )}
@@ -107,7 +107,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
           <Plus className="h-3.5 w-3.5" />
           {t('添加 API')}
         </Button>
-        <span className="text-[0.75rem] text-subtle">{t('从常用的开始：')}</span>
+        <span className="text-footnote text-subtle">{t('从常用的开始：')}</span>
         {PRESETS.map((p) => (
           <Button key={p.label} variant="ghost" size="sm" onClick={() => add(p)}>
             {p.label}
@@ -368,7 +368,7 @@ function ApiCard({
             className="flex min-w-0 flex-1 items-baseline gap-2 truncate rounded-md py-1 text-left"
           >
             <span className="truncate font-medium">{a.name}</span>
-            <span className="truncate text-[0.75rem] text-subtle">
+            <span className="truncate text-footnote text-subtle">
               {[
                 API_PROTOCOL_LABEL[a.protocol],
                 a.models.length ? t('{n} 个模型', { n: a.models.length }) : t('还没有模型'),
@@ -379,10 +379,10 @@ function ApiCard({
           // 绑定了内置厂家：名称不给直接改（改了就相当于换厂家），要改就先用右上角的按钮回到自定义 API
           <div className="flex h-9 min-w-0 flex-1 items-center gap-2">
             <span className="truncate font-medium">{a.name}</span>
-            <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[0.625rem] text-accent-text">
+            <span className="shrink-0 rounded-sm bg-accent-soft px-1.5 py-0.5 text-micro text-accent-text">
               {t('内置厂家')}
             </span>
-            <span className="truncate text-[0.6875rem] text-subtle">{t('名称固定，点右上角的按钮改成自定义 API')}</span>
+            <span className="truncate text-caption text-subtle">{t('名称固定，点右上角的按钮改成自定义 API')}</span>
           </div>
         ) : (
           <div className="min-w-0 flex-1">
@@ -430,7 +430,7 @@ function ApiCard({
       {open && (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
+            <label className="flex flex-col gap-1 text-footnote text-subtle">
               {t('协议')}
               <Select
                 aria-label={t('协议')}
@@ -439,7 +439,7 @@ function ApiCard({
                 options={API_PROTOCOLS.map((p) => ({ value: p, label: API_PROTOCOL_LABEL[p] }))}
               />
             </label>
-            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
+            <label className="flex flex-col gap-1 text-footnote text-subtle">
               {t('接口地址')}
               <Input
                 value={a.baseUrl}
@@ -447,15 +447,15 @@ function ApiCard({
                 placeholder={vendorUrl || 'https://api.example.com/v1'}
                 spellCheck={false}
                 aria-label={t('接口地址')}
-                className="h-9 font-mono text-[0.8125rem]"
+                className="h-9 font-mono text-body"
               />
               {vendorUrl && !a.baseUrl.trim() && (
-                <span className="text-[0.6875rem] text-subtle">
+                <span className="text-caption text-subtle">
                   {t('留空时用 {vendor} 的默认地址：{url}', { vendor: a.name, url: vendorUrl })}
                 </span>
               )}
             </label>
-            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
+            <label className="flex flex-col gap-1 text-footnote text-subtle sm:col-span-2">
               {t('提供方 ID')}
               <Input
                 value={a.provider}
@@ -463,9 +463,9 @@ function ApiCard({
                 placeholder={t('留空时用 API 名称生成')}
                 spellCheck={false}
                 aria-label={t('提供方 ID')}
-                className="h-9 font-mono text-[0.8125rem]"
+                className="h-9 font-mono text-body"
               />
-              <span className="text-[0.6875rem] text-subtle">
+              <span className="text-caption text-subtle">
                 {t(
                   '写进 Agent 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 Agent 也用它拼模型 ID。',
                   {
@@ -474,7 +474,7 @@ function ApiCard({
                 )}
               </span>
             </label>
-            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
+            <label className="flex flex-col gap-1 text-footnote text-subtle sm:col-span-2">
               {t('密钥')}
               <span className="flex gap-1.5">
                 <Input
@@ -485,7 +485,7 @@ function ApiCard({
                   spellCheck={false}
                   autoComplete="off"
                   aria-label={t('密钥')}
-                  className="h-9 min-w-0 flex-1 font-mono text-[0.8125rem]"
+                  className="h-9 min-w-0 flex-1 font-mono text-body"
                 />
                 <Button
                   type="button"
@@ -500,7 +500,7 @@ function ApiCard({
               </span>
             </label>
             {a.protocol === 'anthropic' && (
-              <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
+              <label className="flex flex-col gap-1 text-footnote text-subtle">
                 {t('密钥的发送方式')}
                 <Select
                   aria-label={t('密钥的发送方式')}
@@ -513,7 +513,7 @@ function ApiCard({
                 />
               </label>
             )}
-            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
+            <label className="flex flex-col gap-1 text-footnote text-subtle sm:col-span-2">
               {t('并发上限')}
               <Input
                 type="number"
@@ -527,9 +527,9 @@ function ApiCard({
                   onChange({ maxConcurrent: Number.isFinite(n) ? Math.min(999, Math.max(0, n)) : 0 })
                 }}
                 aria-label={t('并发上限')}
-                className="h-9 w-28 font-mono text-[0.8125rem]"
+                className="h-9 w-28 font-mono text-body"
               />
-              <span className="text-[0.6875rem] text-subtle">
+              <span className="text-caption text-subtle">
                 {t(
                   '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。',
                 )}
@@ -539,13 +539,13 @@ function ApiCard({
           <ApiBalanceRow a={a} />
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <span className="text-[0.75rem] text-subtle">{t('可用的模型')}</span>
+              <span className="text-footnote text-subtle">{t('可用的模型')}</span>
               <span className="flex-1" />
               {/* 用哪个模型测联通：默认是模型列表里的第一个（默认模型），没有模型时提示先获取 */}
               <Select
                 aria-label={t('测试连接用的模型')}
                 title={t('选中哪个模型，点「测试连接」就用它真的发一次请求')}
-                className="h-8 w-44 font-mono text-[0.75rem]"
+                className="h-8 w-44 font-mono text-footnote"
                 value={probeTarget(modelsForProtocol(a.models, a.protocol), probeModel)}
                 options={probeOptions}
                 disabled={busy || !probeOptions.some((o) => o.value)}
@@ -563,7 +563,7 @@ function ApiCard({
             {probe && (
               <div
                 className={cn(
-                  'flex items-start gap-2 rounded-lg px-2.5 py-2 text-[0.75rem]',
+                  'flex items-start gap-2 rounded-lg px-2.5 py-2 text-footnote',
                   probe.ok ? 'bg-success/8 text-success' : 'bg-danger/8 text-danger',
                 )}
               >
@@ -603,29 +603,29 @@ function ApiCard({
                 title={i === 0 ? t('第一个是默认模型') : undefined}
               >
                 {/* 模型名按自己的长度占位，映射模型的下拉填满剩下的；窄的时候两边一起收，模型名至少留几个字 */}
-                <span className="min-w-[6rem] max-w-[45%] shrink truncate font-mono text-[0.75rem]">
+                <span className="min-w-[6rem] max-w-[45%] shrink truncate font-mono text-footnote">
                   {m}
                   {i === 0 && (
-                    <span className="ml-1.5 rounded bg-accent-soft px-1 text-[0.625rem] text-accent-text">
+                    <span className="ml-1.5 rounded-sm bg-accent-soft px-1 text-micro text-accent-text">
                       {t('默认')}
                     </span>
                   )}
                 </span>
-                <label className="flex shrink-0 items-center gap-1.5 text-[0.75rem] text-subtle">
+                <label className="flex shrink-0 items-center gap-1.5 text-footnote text-subtle">
                   {t('默认思考强度')}
                   <Select
                     aria-label={t('{model} 的默认思考强度', { model: m })}
-                    className="h-7 w-24 text-[0.75rem]"
+                    className="h-7 w-24 text-footnote"
                     value={a.modelEfforts[m] ?? ''}
                     options={effortOptions(m)}
                     onChange={(e) => setEffort(m, e.target.value)}
                   />
                 </label>
-                <label className="flex min-w-[9rem] flex-1 items-center gap-1.5 text-[0.75rem] text-subtle">
+                <label className="flex min-w-[9rem] flex-1 items-center gap-1.5 text-footnote text-subtle">
                   <span className="shrink-0">{t('映射模型')}</span>
                   <Select
                     aria-label={t('{model} 的映射模型', { model: m })}
-                    className="h-7 min-w-0 flex-1 font-mono text-[0.75rem]"
+                    className="h-7 min-w-0 flex-1 font-mono text-footnote"
                     value={a.modelMap[m] ?? ''}
                     options={mapOptions(m, a.modelMap[m])}
                     onChange={(e) => setMap(m, e.target.value)}
@@ -648,9 +648,9 @@ function ApiCard({
                 placeholder={t('自己输入模型名，回车添加')}
                 aria-label={t('添加模型')}
                 spellCheck={false}
-                className="h-8 w-56 font-mono text-[0.75rem]"
+                className="h-8 w-56 font-mono text-footnote"
               />
-              <span className="text-[0.6875rem] text-subtle">
+              <span className="text-caption text-subtle">
                 {t('映射模型默认按模型名自动识别，改过就以你选的为准；发给 Agent 的仍然是这里的模型名。')}
               </span>
             </form>
@@ -662,7 +662,7 @@ function ApiCard({
                     onChange={(e) => setFilter(e.target.value)}
                     placeholder={t('在 {n} 个模型里搜索', { n: found.length })}
                     aria-label={t('搜索模型')}
-                    className="h-8 min-w-0 flex-1 text-[0.75rem]"
+                    className="h-8 min-w-0 flex-1 text-footnote"
                   />
                   <Button
                     size="sm"
@@ -694,13 +694,13 @@ function ApiCard({
                     }}
                   />
                 ) : (
-                  <span className="text-[0.75rem] text-subtle">{t('没有匹配的模型')}</span>
+                  <span className="text-footnote text-subtle">{t('没有匹配的模型')}</span>
                 )}
               </Card>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="min-w-0 flex-1 text-[0.75rem] text-subtle">
+            <p className="min-w-0 flex-1 text-footnote text-subtle">
               {t('可以用在：{clis}', { clis: usedBy(a.protocol).join('、') || '—' })}
             </p>
             {/* 绑定了厂家时右上角是「清空绑定」，整卡删除放在这里，两个动作分得开 */}
@@ -765,7 +765,7 @@ function ApiBalanceRow({ a }: { a: ApiConfig }) {
   // 自定义 API 没有厂家，也就没有余额接口可查：不显示这一行
   if (!findVendor(a.name)) return null
   return (
-    <Card className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg px-2.5 py-1.5 text-[0.75rem]">
+    <Card className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg px-2.5 py-1.5 text-footnote">
       <span className="flex shrink-0 items-center gap-1.5 text-subtle">
         <Wallet className="h-3.5 w-3.5" />
         {t('账户余额')}

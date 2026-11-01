@@ -342,6 +342,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 新建模型设计：选项目、写要建的模型；演示版没有 Blender，弹窗里要说清楚并给去设置的入口
   await side().getByRole('button', { name: '新建模型设计' }).first().click()
   await check(p, 'UI设计-新建模型设计', ['要建什么模型', '在线演示不能运行 Blender', '开始建模'])
+  // 项目可以选已有的，也可以指定一个本机文件夹新建项目（文件夹不存在就建出来，项目名默认取文件夹名）
+  {
+    const dlg = p.getByRole('dialog')
+    await dlg.getByRole('radio', { name: '新建项目 / 指定文件夹' }).click()
+    await dlg.getByLabel('文件夹').fill('~/models/treasure-chest')
+    await dlg
+      .getByLabel('项目名')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('新建模型设计：填了文件夹后没有项目名输入框'))
+    if (
+      (await dlg
+        .getByLabel('项目名')
+        .inputValue()
+        .catch(() => '')) !== 'treasure-chest'
+    )
+      errors.push('新建模型设计：项目名没有默认取文件夹名')
+    await check(p, 'UI设计-新建模型设计-指定文件夹', ['项目名'])
+    // 后面的用例按已有项目走：切回去
+    await dlg.getByRole('radio', { name: '已有项目' }).click()
+  }
   // 建好跳进对话：右栏默认是「模型」页签，演示版给一只示例宝箱，列出场景里的物体（预览本身要 WebGL，这里只断言物体列表）
   await p.getByLabel('要建什么模型').fill('低多边形宝箱')
   await p.getByRole('button', { name: '开始建模' }).click()
@@ -372,7 +392,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       const slot = document.querySelector('[data-ac="WBP_ItemSlot"]')
       if (!slot) return -1
       // 列表条目里的控件没有 data-wid（不能单独选中），按计算样式找隐藏的那个
-      return [...slot.querySelectorAll('*')].filter((n) => getComputedStyle(n).visibility === 'hidden').length
+      // 画布给有自身尺寸的控件塞的占位块（data-sizer）本来就看不见，不算
+      // 只数最外层隐藏的那个：隐藏控件里面的画刷层（BrushLayer）、占位块跟着一起隐藏，不另算
+      const hidden = (n) => !!n && getComputedStyle(n).visibility === 'hidden'
+      return [...slot.querySelectorAll('*')].filter(
+        (n) => !n.hasAttribute('data-sizer') && hidden(n) && !hidden(n.parentElement),
+      ).length
     })
   assert.equal(await hiddenInFirstSlot(), 1, '第一格有选中高亮、没有锁定图标')
   await p.getByRole('radio', { name: '数据' }).click()
@@ -567,6 +592,22 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.mouse.up()
   await check(p, 'UI设计-蒙版', ['只重绘蒙版', '蒙版'])
   await p.getByRole('button', { name: '用这张做模板' }).click()
+  // 确认模板后先拆区块：区块画在模板图上，留在原画面板等用户调整，确认后才回到画布搭界面
+  await p.getByRole('button', { name: '确认区块，开始搭界面' }).waitFor({ timeout: 15000 })
+  assert.ok((await p.locator('[data-region]').count()) > 0, '模板图上画出了区块')
+  await check(p, 'UI设计-拆区块', ['新增区块', '确认区块，开始搭界面'])
+  // 拖动一个区块：位置跟着变（区块是设计稿坐标，确认后搭界面照它摆）
+  const region = p.locator('[data-region]').first()
+  const regionBefore = await region.boundingBox()
+  await p.mouse.move(regionBefore.x + regionBefore.width / 2, regionBefore.y + regionBefore.height / 2)
+  await p.mouse.down()
+  await p.mouse.move(regionBefore.x + regionBefore.width / 2 + 20, regionBefore.y + regionBefore.height / 2 + 10, {
+    steps: 5,
+  })
+  await p.mouse.up()
+  const regionMoved = await region.boundingBox()
+  assert.ok(Math.abs(regionMoved.x - regionBefore.x) > 5 || Math.abs(regionMoved.y - regionBefore.y) > 5, '区块能拖动')
+  await p.getByRole('button', { name: '确认区块，开始搭界面' }).click()
   await p.getByRole('button', { name: '对照模板' }).waitFor({ timeout: 15000 })
   await p.goto(base + '#/design/new')
   // 网页 UI：新建一个网页设计，让 AI 搭首页，看自动布局画出来的样子

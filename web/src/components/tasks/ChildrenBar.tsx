@@ -15,13 +15,14 @@ import { ChildLetters } from './ChildMail'
 import { HelperBar } from './HelperCards'
 import { usePeerMail } from './child-open'
 import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } from './child-line'
+import { ChildRequestBar } from './ChildRequestBar'
 
 /**
  * 输入框上方的状态栏（计划、子任务、子对话各一行）：不套框，当作轻量信息。
  * 每行各自 flex-nowrap、只占一行；左内边距 2.5 加上行内按钮自己的 px-1.5，
  * 正好和输入框文字（外层 px-3/md:px-6 + 文字 px-4）左对齐
  */
-export const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-[0.8125rem]'
+export const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-body'
 
 /**
  * 子对话入口：贴在输入框上方的一条状态栏，点开是悬浮窗列表。
@@ -29,14 +30,17 @@ export const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-[0.8125rem]
  * 排序：正在执行的在上，其余按最近一条消息的时间倒序。
  */
 export function ChildrenBar({
-  children,
+  kids,
   helpers,
   openChild,
   onOpen,
   onClose,
   onResume,
+  onAnswer,
 }: {
-  children: ChildSummary[]
+  kids: ChildSummary[]
+  /** 在父对话页直接允许 / 拒绝子对话的请求（见 ChildRequestBar） */
+  onAnswer?: (childId: string, requestId: string, allow: boolean) => Promise<void>
   /** 派出的子任务：单独占子任务那一行，点开看它的实时对话流 */
   helpers?: { task: Task; ids: string[]; teamNames: Set<string> }
   openChild: string
@@ -52,7 +56,7 @@ export function ChildrenBar({
   // 每个子对话和父对话之间的信、还没被父对话读到的汇报（ADR 0034）：面板按子对话分组，展开才列往来
   const mail = usePeerMail()
   const unreadOf = (id: string) => mail?.unread.get(id) ?? 0
-  const unread = children.reduce((n, c) => n + unreadOf(c.id), 0)
+  const unread = kids.reduce((n, c) => n + unreadOf(c.id), 0)
   // 展开了哪几个子对话的往来：没手动点过的，有未读汇报的默认展开
   const [fold, setFold] = useState<Record<string, boolean>>({})
   const expanded = (id: string) => fold[id] ?? unreadOf(id) > 0
@@ -69,14 +73,14 @@ export function ChildrenBar({
 
   // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决、已经收起（归档 / 独立分支被删掉）的
   // 不再算你要处理的事——用户已经把它删了，不能还在状态栏上催他回答
-  const asking = children.filter((c) => c.asking && !c.resolved && !c.gone)
+  const asking = kids.filter((c) => c.asking && !c.resolved && !c.gone)
   // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、运行区的子对话是同一套判定（见 visibleChildren）
-  const busy = visibleChildren(children)
+  const busy = visibleChildren(kids)
   // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍
-  const { running: working, total } = childCounts(children)
+  const { running: working, total } = childCounts(kids)
   // 「运行中」列转圈的那些：计划没做完、后台命令还没回、已解决但还在跑的子对话也算（见 visibleChildren）
-  const shown = all ? sortChildren(children) : visibleChildren(children)
-  const current = children.find((c) => c.id === openChild)
+  const shown = all ? sortChildren(kids) : visibleChildren(kids)
+  const current = kids.find((c) => c.id === openChild)
 
   // 小块的个数按这一行实际能用的宽度算：放不下的收成「+N」，不折到下一行去挤子任务，
   // 窗口拉宽 / 缩窄时跟着变（不再是写死的 slice(0, 3)）。
@@ -101,7 +105,7 @@ export function ChildrenBar({
     fitAll >= busy.length ? busy.length : Math.max(0, Math.floor(Math.max(0, box.room - box.more) / cardSlot))
   const hiddenCards = busy.length - shownCards
   // CLI 还活着的子对话数：「子对话」入口流光、悬浮说明用
-  const cliKids = children.filter((c) => c.cliAlive).length
+  const cliKids = kids.filter((c) => c.cliAlive).length
 
   return (
     <div ref={ref} className="shrink-0 px-3 md:px-6">
@@ -109,12 +113,14 @@ export function ChildrenBar({
       <div className="relative mx-auto max-w-(--content-w)">
         {/* 状态栏的后两行（计划在调用处单独一行）：子任务在上、子对话在下，各自只占一行、不换行。
             子对话行左边是计数入口、右边是关闭按钮，中间的小块放不下就收成「+N」 */}
+        {/* 子对话在等你确认：最要紧，放在最上面（子任务、子对话两行之前） */}
+        <ChildRequestBar kids={kids} onOpen={onOpen} onAnswer={onAnswer} />
         {helpers && (
           <div data-status-row="helpers" className={cn(plainRow, 'mb-1 flex-nowrap')}>
             <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />
           </div>
         )}
-        {children.length > 0 && (
+        {kids.length > 0 && (
           <div data-status-row="children" className={cn(plainRow, 'mb-1 flex-nowrap')}>
             <button
               type="button"
@@ -126,7 +132,7 @@ export function ChildrenBar({
               }
               onClick={() => setOpen((v) => !v)}
               title={cliKids ? t('Agent 存活：{n} 个子对话', { n: cliKids }) : undefined}
-              className="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
+              className="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-body text-muted transition-colors hover:bg-sel hover:text-fg"
             >
               <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
               {/* 有子对话的 CLI 还活着：「子对话」三个字流光，和标题、侧栏一致 */}
@@ -239,11 +245,9 @@ export function ChildrenBar({
         {open && (
           <ComposerPopover width="min(480px, calc(100% - 1.5rem))">
             <div className="flex items-center gap-2 border-b px-3 py-2">
-              <span className="text-[0.8125rem] font-medium">{t('子对话')}</span>
+              <span className="text-body font-medium">{t('子对话')}</span>
               <span data-child-summary className="min-w-0 truncate text-xs text-subtle">
-                {unread > 0
-                  ? t('{n} 个 · {m} 封未读', { n: children.length, m: unread })
-                  : t('{n} 个', { n: children.length })}
+                {unread > 0 ? t('{n} 个 · {m} 封未读', { n: kids.length, m: unread }) : t('{n} 个', { n: kids.length })}
               </span>
               {/* 样子和 Segmented 一样，但界面检查按「按钮 + aria-pressed」找「全部」，这里不换成单选组 */}
               <div className="seg-track ml-auto flex shrink-0 rounded-md p-0.5">
@@ -259,7 +263,7 @@ export function ChildrenBar({
                     aria-pressed={all === v}
                     onClick={() => setAll(v)}
                     className={cn(
-                      'cursor-pointer rounded px-2 py-0.5 text-xs',
+                      'cursor-pointer rounded-sm px-2 py-0.5 text-xs',
                       all === v ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
                     )}
                   >
@@ -272,7 +276,7 @@ export function ChildrenBar({
               {childGroups(shown, all).map((g) => (
                 <Fragment key={g.key}>
                   {g.label && (
-                    <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">
+                    <p className="px-2.5 pt-2 pb-1 text-caption font-medium text-subtle">
                       {g.label} · {g.items.length}
                     </p>
                   )}
@@ -308,7 +312,7 @@ export function ChildrenBar({
                             aria-label={t('「{title}」的往来', { title: c.title })}
                             title={t('看它和父对话之间的信')}
                             onClick={() => setFold((f) => ({ ...f, [c.id]: !exp }))}
-                            className="absolute top-1.5 right-1.5 flex h-6 cursor-pointer items-center gap-0.5 rounded-md px-1 text-[0.6875rem] text-subtle tabular-nums hover:bg-sel hover:text-fg"
+                            className="absolute top-1.5 right-1.5 flex h-6 cursor-pointer items-center gap-0.5 rounded-md px-1 text-caption text-subtle tabular-nums hover:bg-sel hover:text-fg"
                           >
                             {letters.length > 0 && letters.length}
                             <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', exp && 'rotate-90')} />
@@ -319,19 +323,17 @@ export function ChildrenBar({
                           // 没提交的改动还在分支目录里：写清几个文件、哪个目录，并给一键继续
                           <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
                             <CircleAlert className="h-3 w-3 shrink-0 text-warning" />
-                            <span className="shrink-0 text-[0.6875rem] text-warning" title={dirty.dir || undefined}>
+                            <span className="shrink-0 text-caption text-warning" title={dirty.dir || undefined}>
                               {dirty.text}
                             </span>
                             {dirty.dir && (
-                              <span className="min-w-0 truncate font-mono text-[0.6875rem] text-subtle">
-                                {dirty.dir}
-                              </span>
+                              <span className="min-w-0 truncate font-mono text-caption text-subtle">{dirty.dir}</span>
                             )}
                             <button
                               type="button"
                               onClick={() => onResume(c.id)}
                               title={t('让它接着做：重新占执行位，从停下的地方继续')}
-                              className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6875rem] text-accent-text hover:bg-sel"
+                              className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-caption text-accent-text hover:bg-sel"
                             >
                               <RotateCw className="h-3 w-3" />
                               {t('继续')}

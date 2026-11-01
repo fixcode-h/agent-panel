@@ -18,13 +18,13 @@ import { startAnalysis } from '@/lib/task-transfer'
 import { isDefaultWorkflow } from '@shared/builtin/default'
 import { nodeSteps } from '@shared/flow'
 import { api } from '@/lib/api'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
 import { docTemplate } from '@/lib/workflow-doc'
 import { StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -56,7 +56,8 @@ export function WorkflowDetail({
   /** AI 优化写回后让页面重新加载草稿 */
   onOptimized: () => void
 }) {
-  const { agents, clis, workflows, setWorkflows, projects, projectCategories, tasks } = useData()
+  const { agents, clis, workflows, setWorkflows, projects, projectCategories } = useData()
+  const { tasks } = useTasks()
   // 这个工作流最近几次跑完（含失败、停止）的执行，「分析执行」交给 AI 看
   const runs = tasks
     .filter((tk) => tk.mode === 'workflow' && tk.workflowId === workflow.id && tk.status !== 'running')
@@ -320,14 +321,14 @@ export function WorkflowDetail({
         aside={
           <>
             <Card as="section" padding="md">
-              <h3 className="mb-3 text-[0.8125rem] font-semibold">{t('团队结构')}</h3>
+              <h3 className="mb-3 text-body font-semibold">{t('团队结构')}</h3>
               {main ? (
                 <button
                   onClick={() => go({ page: 'agents', id: main.id })}
                   className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg bg-accent-soft p-2 text-left"
                 >
                   <AgentAvatar icon={main.icon} cli={main.cli} size="sm" dim={!main.enabled} />
-                  <span className="flex-1 truncate text-[0.8125rem] font-medium">{main.name}</span>
+                  <span className="flex-1 truncate text-body font-medium">{main.name}</span>
                   <Crown className="h-3.5 w-3.5 text-accent-text" />
                 </button>
               ) : (
@@ -339,7 +340,7 @@ export function WorkflowDetail({
                     key={a.id}
                     title={responsibility || undefined}
                     onClick={() => go({ page: 'agents', id: a.id })}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-muted hover:bg-sel hover:text-fg"
+                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-body text-muted hover:bg-sel hover:text-fg"
                   >
                     <AgentAvatar icon={a.icon} cli={a.cli} size="xs" dim={!a.enabled} />
                     <span className="truncate">{a.name}</span>

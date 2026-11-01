@@ -191,6 +191,7 @@ appliesTo 为空的老步骤仍然是「总是跑」，升级不会让原来会�
   静默少跑比多跑危险，和提示词里「映射不出来跑全部」同一个口径。
 - **提示词里直接给结论**：对话的验证段（`verifyBlock`）在拿到 `EngineHost.verify.changedFiles`（任务的实际改动）时，
   附上 `pickStepsText` 的「本轮该跑的测试步骤」：改动文件、每条要跑的步骤和按环境拼好的命令行、按改动跳过的步骤。
+  它和规则段是两段（`verifyParts` 返回 `[规则, 本轮结论]`）：续接会话按段落指纹只重发变了的，改动清单一变只重发结论这段。
   不再是只写一条规则让 Agent 自己判断；父对话的 `parent` 步骤在子对话侧仍标「父对话跑，你不要跑」。
   回传消息和收尾总结的写法是 `testRunLines` / `TEST_TIME_SUMMARY_RULE`：步骤名、谁跑的、结果、耗时，一行一步，没记录的写「未记录」。
 - **重启后重新排队**：批次记在任务上（`wrapRequest.state = 'testing'`），内存队列随进程消失；面板启动时 `recoverParentTests`
@@ -322,7 +323,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 ### 按改动大小决定验证范围
 
 参照 Claude Code：小改动跑完快速检查就收尾，不跑全量测试。`Project.scaledVerify`（默认开）控制，
-项目里的对话（父对话、子对话）提示里带「验证按改动大小定」一段（`verifyBlock`，`EngineHost.verify`）：
+项目里的对话（父对话、子对话）提示里带「验证按改动大小定」一段（`verifyParts` 的规则段，`EngineHost.verify`；`verifyBlock` 是把两段拼起来的包装，测试和别处整段用）：
 
 - 小改动（文案、样式、注释、文档、配置值，一两个文件几十行内的局部修改，不动接口 / 数据结构 / 执行流程 / 构建配置 / 依赖）
   只跑 `quick` 的步骤；一条都没标就让 Agent 挑一个最快的检查。拿不准、快速检查没过都按大改动。
@@ -475,8 +476,8 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 项目设置「常规 → 子对话」选隔离方式，默认「独立 worktree」：
 
 - worktree 要改文件时才建：子对话第一次执行时只记下 `wantsWorktree`，先在父对话所在的目录里看代码；
-  要改文件时调用 `begin_edit`，面板这时从那个目录建 worktree，这一轮结束后在 worktree 里开新会话、带上之前的对话接着做
-  （`task.sessionDir` 和当前目录不一样就不续接旧会话）。还没建时 Claude Code 关掉改文件的工具（`BuildOptions.noEdit`）。
+  要改文件时调用 `begin_edit`，面板这时从那个目录建 worktree，这一轮结束后在 worktree 里接着做：CLI 定义开了 `resumeAnyDir`（Claude Code）就带着原会话过去，否则开新会话、带上之前的对话
+  （没开 `resumeAnyDir` 时 `task.sessionDirs` 记的目录和当前目录不一样就不续接旧会话）。还没建时 Claude Code 关掉改文件的工具（`BuildOptions.noEdit`）。
 - 顶层对话勾了「独立分支」也一样（项目设置「独立分支」可以设成默认勾上）；工作流任务创建时就建好。
 - worktree 完整检出，只有目录里有 `.uproject` 的大项目跳过 LFS 内容。只用来隔离文件编辑。
 - 子对话改完调用 `submit_build`：面板提交它的分支，排队试合回**建 worktree 的那个目录、那个分支**（不限定 dev），

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { toast } from '@/lib/toast'
 import {
-  Check,
   ChevronDown,
   Clapperboard,
   Database,
@@ -36,10 +35,12 @@ import {
   emptyConcept,
   hasMask,
   imageRevisionText,
+  layoutConfirmed,
   type Annotation,
   type ConceptImage,
   type DesignVersion,
   type DesignDoc,
+  type DesignLayout,
   type DesignImage,
   type ImageSource,
   type DesignKind,
@@ -103,6 +104,8 @@ import { Hierarchy, Palette } from '@/components/design/Hierarchy'
 import type { WidgetLayer, WidgetMenuActions } from '@/components/design/WidgetMenu'
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagePreview, ImagesPanel, readFile, type WidgetRef } from '@/components/design/ImagesPanel'
+import { designStages } from '@/lib/design-stages'
+import { StageSteps } from '@/components/design/StageSteps'
 import { ComponentsPanel } from '@/components/design/ComponentsPanel'
 import { VersionCompare, VersionsButton } from '@/components/design/Versions'
 import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/web'
@@ -139,16 +142,16 @@ const SIZES = [
   { v: '1920x1080', label: '1920 × 1080（16:9）' },
   { v: '2560x1440', label: '2560 × 1440（16:9）' },
   { v: '1280x720', label: '1280 × 720（16:9）' },
-  { v: '2340x1080', label: '2340 × 1080（手机横屏）' },
-  { v: '1080x1920', label: '1080 × 1920（竖屏）' },
+  { v: '2340x1080', label: `2340 × 1080（${t('手机横屏')}）` },
+  { v: '1080x1920', label: `1080 × 1920（${t('竖屏')}）` },
 ]
 /** 网页的常用尺寸：桌面、笔记本、平板、手机 */
 const WEB_SIZES = [
-  { v: '1440x900', label: '1440 × 900（桌面）' },
-  { v: '1280x800', label: '1280 × 800（笔记本）' },
-  { v: '1920x1080', label: '1920 × 1080（大屏）' },
-  { v: '768x1024', label: '768 × 1024（平板）' },
-  { v: '390x844', label: '390 × 844（手机）' },
+  { v: '1440x900', label: `1440 × 900（${t('桌面')}）` },
+  { v: '1280x800', label: `1280 × 800（${t('笔记本')}）` },
+  { v: '1920x1080', label: `1920 × 1080（${t('大屏')}）` },
+  { v: '768x1024', label: `768 × 1024（${t('平板')}）` },
+  { v: '390x844', label: `390 × 844（${t('手机')}）` },
 ]
 
 function NewDesign({ projectId }: { projectId?: string }) {
@@ -202,8 +205,8 @@ function NewDesign({ projectId }: { projectId?: string }) {
         <span className="mb-4 grid h-11 w-11 place-items-center rounded-xl bg-accent-soft text-accent-text">
           <PaletteIcon className="h-5 w-5" />
         </span>
-        <h1 className="font-serif text-[1.625rem] font-semibold tracking-tight">{t('UI 设计')}</h1>
-        <p className="mt-2 text-[0.8125rem] leading-relaxed text-muted">
+        <h1 className="font-serif text-display font-semibold tracking-tight">{t('UI 设计')}</h1>
+        <p className="mt-2 text-body leading-relaxed text-muted">
           {kind === 'web'
             ? t(
                 '用对话设计网页界面：AI 用自动布局搭好页面、生成插图和图标，最后导出成 HTML / CSS 和图片，直接用浏览器打开。',
@@ -214,7 +217,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
         </p>
         <DesignProjectDialog open={creatingProject} onOpenChange={setCreatingProject} onSaved={(p) => setPid(p.id)} />
         {!projects.length ? (
-          <div className="mt-8 rounded-xl bg-panel p-5 text-[0.8125rem] text-muted">
+          <div className="mt-8 rounded-xl bg-panel p-5 text-body text-muted">
             {t('设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。')}
             <Button className="mt-3" onClick={() => setCreatingProject(true)}>
               <Plus className="h-4 w-4" />
@@ -224,7 +227,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
         ) : (
           <div className="mt-8 flex flex-col gap-5 rounded-2xl bg-card p-6 shadow-card">
             <label className="flex flex-col gap-1.5">
-              <span className="text-[0.8125rem] font-medium">{t('名称')}</span>
+              <span className="text-body font-medium">{t('名称')}</span>
               <Input
                 autoFocus
                 value={title}
@@ -234,7 +237,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
               />
             </label>
             <div className="flex flex-col gap-1.5">
-              <span className="text-[0.8125rem] font-medium">{t('类型')}</span>
+              <span className="text-body font-medium">{t('类型')}</span>
               <Segmented
                 label={t('类型')}
                 value={kind}
@@ -250,7 +253,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <span className="text-[0.8125rem] font-medium">{t('项目')}</span>
+                <span className="text-body font-medium">{t('项目')}</span>
                 <Select
                   aria-label={t('项目')}
                   value={pid}
@@ -262,7 +265,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <span className="text-[0.8125rem] font-medium">{t('设计尺寸')}</span>
+                <span className="text-body font-medium">{t('设计尺寸')}</span>
                 <Select
                   aria-label={t('设计尺寸')}
                   value={size}
@@ -406,6 +409,38 @@ function Designer({ id }: { id: string }) {
   // 控件树和对话栏可以拖动调整宽度，效果区占剩下的
   // 检查器默认 280：左边多了一条图标栏，比设计稿（300）收一点，把宽度留给夹在中间的画板
   const treePane = usePaneWidth('design-tree', 280, 220, 560)
+  // 窗口窄、两边面板都开着时画布会被挤到只剩一条（1024 宽时约 100px）：画布窄于 300 时先收起 AI 对话，并提示一次。
+  // 用户自己再打开就不再自动收，等画布宽回 480 以上才重新生效
+  const mainRef = useRef<HTMLElement>(null)
+  const autoFold = useRef(true)
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el) return
+    // 页面刚挂上、两边面板的宽度还没定下来时会短暂地很窄：停稳 300ms 再判断，免得一打开就把对话栏收掉
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const check = () => {
+      const w = el.clientWidth
+      if (w >= 480) autoFold.current = true
+      else if (w < 300 && autoFold.current) {
+        autoFold.current = false
+        setChatOpen((open) => {
+          if (open) toast(t('画布太窄，先收起了 AI 对话；点左上角的对话按钮可以再打开'))
+          return false
+        })
+      }
+    }
+    const ro = new ResizeObserver(() => {
+      clearTimeout(timer)
+      timer = setTimeout(check, 300)
+    })
+    ro.observe(el)
+    return () => {
+      clearTimeout(timer)
+      ro.disconnect()
+    }
+    // 主区域在加载完设计后才出现：设计换了重新挂
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, !!ed.doc])
   // 对话栏在画板左边，默认 320（照设计稿）；画板夹在两栏中间，对话栏太宽会把画板挤得很窄
   const chatPane = usePaneWidth('design-chat', 320, 280, 720)
 
@@ -460,9 +495,11 @@ function Designer({ id }: { id: string }) {
     // 只在数量、阶段变化时自动切换，用户自己切了不打扰
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [conceptCount, conceptsRunning])
+  // 确认了模板：区块也确认了（或跳过了）才切回界面；还在拆区块、等用户调整时留在原画面板上，区块画在模板图上
+  const layoutDone = !!concept.approved && layoutConfirmed(doc?.layout, concept.approved)
   useEffect(() => {
-    if (concept.approved) setView('ui')
-  }, [concept.approved])
+    if (concept.approved) setView(layoutDone ? 'ui' : 'concept')
+  }, [concept.approved, layoutDone])
   // 原画上的蒙版被清掉了（发出去了、涂完了又撤销）：「只重绘蒙版」就失效，不能留着
   const conceptMaskReady = !!doc?.annotations.some((a) => hasMask(a) && a.target.startsWith('concept:'))
   useEffect(() => {
@@ -755,8 +792,16 @@ function Designer({ id }: { id: string }) {
   // 键盘：删除、撤销 / 重做、复制
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
+      // 下拉列表、菜单这类控件自己处理了方向键（defaultPrevented），不要再挪控件
+      if (e.defaultPrevented) return
       const el = e.target as HTMLElement
-      if (el.closest('input, textarea, [contenteditable="true"], [role="dialog"]')) return
+      if (el.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
+      // 开着弹窗（图片预览、版本对比）时焦点可能不在弹窗里：不碰底下的控件
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      // 编辑类快捷键只在焦点在画布、控件树或页面本身（没有聚焦任何控件）时生效：
+      // 焦点在页签、下拉框、按钮上时按方向键 / Backspace 不该挪动或删掉画布上的控件；数据面板盖着画布时也不生效
+      const onCanvas =
+        board === 'canvas' && (el === document.body || !!el.closest('[data-design-canvas], [role="tree"]'))
       const mod = e.ctrlKey || e.metaKey
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault()
@@ -765,6 +810,8 @@ function Designer({ id }: { id: string }) {
       } else if (mod && e.key.toLowerCase() === 'y') {
         e.preventDefault()
         ed.redo()
+      } else if (!onCanvas) {
+        return
       } else if (mod && e.key.toLowerCase() === 'd' && selected) {
         e.preventDefault()
         actions.duplicate(selected)
@@ -803,7 +850,7 @@ function Designer({ id }: { id: string }) {
   if (ed.error)
     return (
       // 打开的设计是 splitPage，外面没有面板：出错和加载中的占位自己是一块面板
-      <div className="panel grid flex-1 place-items-center p-8 text-center text-[0.8125rem] text-muted">
+      <div className="panel grid flex-1 place-items-center p-8 text-center text-body text-muted">
         <div>
           <p>{ed.error}</p>
           <Button variant="ghost" className="mt-3" onClick={() => go({ page: 'design' })}>
@@ -1052,9 +1099,21 @@ function Designer({ id }: { id: string }) {
     if (!(await conceptAction('approve', cid)) || !cid) return
     // 原画上的标注用不上了；确认后马上让 AI 照着模板搭界面
     ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => !a.target.startsWith('concept:')) }), 'ann:sent')
-    setView('ui')
     setOverlay(false)
-    setRequest({ id: crypto.randomUUID(), text: t('按确认的原画模板搭界面，并生成切图') })
+    // 对话栏收起时没人接这个请求：先打开，不然要等用户自己打开对话栏才发出去
+    setChatOpen(true)
+    // 先拆区块：这一轮 AI 只把模板拆成区块，停在原画面板上让用户调整、确认（服务端按区块确认了没有决定这一轮做什么）
+    setRequest({ id: crypto.randomUUID(), text: t('把确认的模板拆成区块') })
+  }
+  /** 区块确认了（或者跳过）：回到画布，让 AI 照区块搭界面、出切图 */
+  const buildFromLayout = (layout: DesignLayout) => {
+    ed.change((d) => ({ ...d, layout: { ...layout, confirmed: true } }), 'layout:confirm')
+    setView('ui')
+    setChatOpen(true)
+    setRequest({
+      id: crypto.randomUUID(),
+      text: layout.regions.length ? t('按确认的区块搭界面，并生成切图') : t('按确认的原画模板搭界面，并生成切图'),
+    })
   }
 
   const exportFile = async (format: 'zip' | 'json' | 'react') => {
@@ -1090,7 +1149,7 @@ function Designer({ id }: { id: string }) {
         aria-label={t('设计名称')}
         value={doc.title}
         onChange={(e) => ed.change((d) => ({ ...d, title: e.target.value }), 'title')}
-        className="h-8 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-[0.8125rem] font-semibold outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-focus"
+        className="h-8 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-body font-semibold outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-focus"
       />
       <SaveIndicator status={ed.save.status} error={ed.save.error} />
     </>
@@ -1109,7 +1168,7 @@ function Designer({ id }: { id: string }) {
           <ResizeHandle pane={chatPane} side="right" label={t('拖动调整 AI 对话的宽度')} />
           <div className="flex h-[46px] shrink-0 items-center gap-1.5 border-b pr-2 pl-2">
             {titleField}
-            <span className="shrink-0 text-[0.6875rem] text-subtle">{t('AI 对话')}</span>
+            <span className="shrink-0 text-caption text-subtle">{t('AI 对话')}</span>
             {/* 收起按钮放在对话栏自己的标题行：画板标题行夹在两栏中间，位置要留给阶段条和导出 */}
             <Button
               size="icon-sm"
@@ -1131,7 +1190,13 @@ function Designer({ id }: { id: string }) {
             onCount={setCount}
             onSend={send}
             onAnalyze={analyze}
-            onStop={() => void api.stopDesign(id).then(() => ed.reload())}
+            onStop={() =>
+              void api
+                .stopDesign(id)
+                .then(() => ed.reload())
+                // 停不下来要说清楚，不能点了没反应
+                .catch((e) => toast.error(t('停止失败：{error}', { error: (e as Error).message })))
+            }
             kind={server.kind}
             designId={id}
             dir={project?.path}
@@ -1151,6 +1216,24 @@ function Designer({ id }: { id: string }) {
             onClearCites={() => setCites([])}
             hasTemplate={!!concept.approved}
             request={request}
+            onRequestDone={() => setRequest(undefined)}
+            onPickWidget={(tree, name) => {
+              const root = tree ? doc.components.find((c) => c.Name === tree)?.Root : doc.root
+              let hit: Widget | undefined
+              if (root) walk(root, (w) => !hit && w.Name === name && (hit = w))
+              if (!hit) return toast(t('{name} 已经不在了', { name }))
+              setView('ui')
+              jumpTo({ target: tree, id: hit.id, name: hit.Name, type: hit.Type })
+            }}
+            onUndoRound={(vid) =>
+              void api
+                .restoreDesignVersion(id, vid)
+                .then((d) => {
+                  ed.absorb(d)
+                  toast.success(t('已撤销这一轮的修改；撤销前的样子存在「版本」里'))
+                })
+                .catch((e) => toast.error(t('撤销失败：{error}', { error: (e as Error).message })))
+            }
             inpaint={inpaint}
             onInpaint={setInpaint}
             conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}
@@ -1158,7 +1241,7 @@ function Designer({ id }: { id: string }) {
         </aside>
       )}
 
-      <main className="panel flex min-w-0 flex-1 flex-col">
+      <main ref={mainRef} className="panel flex min-w-0 flex-1 flex-col">
         {/* 画板标题行：@container 让它窄的时候（两边面板都开着）把次要按钮上的字收起来只留图标；
             实在放不下时横向滚动兜底，不把按钮挤成两行 */}
         <header className="@container flex h-[46px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2 [scrollbar-width:none]">
@@ -1174,13 +1257,36 @@ function Designer({ id }: { id: string }) {
               >
                 <MessageSquare className="h-4 w-4" />
               </Button>
-              {project && <span className="shrink-0 truncate text-[0.75rem] text-subtle">{project.name} /</span>}
+              {project && <span className="shrink-0 truncate text-footnote text-subtle">{project.name} /</span>}
               {titleField}
             </div>
           )}
-          {(conceptCount > 0 || conceptsRunning) && (
-            <StageSteps value={view} onChange={setView} conceptDone={!!approvedConcept} />
-          )}
+          <StageSteps
+            stages={designStages({
+              style: doc.style,
+              concepts: conceptCount,
+              approved: !!approvedConcept,
+              hasTree: !!(doc.root.Children?.length || doc.components.length),
+              images: doc.images.map((i) => ({ status: i.status, variants: i.variants.length })),
+              running: conceptsRunning
+                ? 'concepts'
+                : ed.aiEditing
+                  ? 'design'
+                  : server.job?.status === 'running' && server.job.phase === 'images'
+                    ? 'images'
+                    : undefined,
+            })}
+            onPick={(id) => {
+              if (id === 'concept' || id === 'template') {
+                if (conceptCount || conceptsRunning) setView('concept')
+                else setChatOpen(true)
+              } else if (id === 'ui' || id === 'export') setView('ui')
+              else if (id === 'slices') {
+                setView('ui')
+                setTab('images')
+              } else if (id === 'style') setChatOpen(true)
+            }}
+          />
           {chatOpen && <span className="flex-1" />}
           <SizeButton doc={doc} onChange={(designSize) => ed.change((d) => ({ ...d, designSize }), 'size')} />
           <StyleButton
@@ -1247,7 +1353,7 @@ function Designer({ id }: { id: string }) {
                 <Clapperboard className="h-4 w-4" />
                 <span className="flex-1">{animOpen ? t('收起动画面板') : t('动画')}</span>
                 {(doc.animations?.length ?? 0) > 0 && (
-                  <span className="text-[0.6875rem] text-subtle tabular-nums">{doc.animations!.length}</span>
+                  <span className="text-caption text-subtle tabular-nums">{doc.animations!.length}</span>
                 )}
               </MenuItem>
               <MenuSeparator />
@@ -1323,6 +1429,16 @@ function Designer({ id }: { id: string }) {
             // 12px 是切换按钮离左边的距离（left-3），再留 8px 空隙
             style={{ '--board-switch-w': switchW ? `${switchW + 20}px` : '0px' } as React.CSSProperties}
           >
+            {/* AI 正在改树时画布只读（结构修改会被挡下）：在画布上说清楚，不让人以为拖不动是坏了 */}
+            {ed.aiEditing && (
+              <div
+                role="status"
+                className="pointer-events-none absolute bottom-14 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-canvas-bar px-3 py-1 text-footnote whitespace-nowrap text-canvas-fg shadow-pop"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t('AI 正在修改，画布暂时只读')}
+              </div>
+            )}
             <Viewport
               actions={actions}
               onRename={(wid) => {
@@ -1430,6 +1546,13 @@ function Designer({ id }: { id: string }) {
                 }}
                 progress={conceptsRunning ? server.job?.concepts : undefined}
                 busy={ed.running}
+                layout={doc.layout}
+                designSize={doc.designSize}
+                onLayout={(layout, key) => ed.change((d) => ({ ...d, layout }), key)}
+                onConfirmLayout={() => doc.layout && buildFromLayout(doc.layout)}
+                onSkipLayout={() =>
+                  approvedConcept && buildFromLayout({ concept: approvedConcept.id, regions: [], confirmed: true })
+                }
               />
             )}
             <div ref={setBoardSwitch} className="absolute top-3 left-3 z-50 flex items-center gap-2">
@@ -1646,7 +1769,7 @@ function Designer({ id }: { id: string }) {
                 { value: '', label: t('主界面') },
                 ...doc.components.map((c) => ({ value: c.Name, label: c.Name, group: t('子控件') })),
               ]}
-              className="h-7 rounded-md px-2 text-[0.75rem]"
+              className="h-7 rounded-md px-2 text-footnote"
             />
             {target && (
               <Button
@@ -1668,7 +1791,7 @@ function Designer({ id }: { id: string }) {
           {tab === 'tree' ? (
             <>
               {live && (
-                <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-[0.6875rem] text-accent-text">
+                <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-caption text-accent-text">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   {t('AI 正在修改，已经改了 {n} 处', { n: live.applied })}
                 </p>
@@ -1780,7 +1903,7 @@ function Designer({ id }: { id: string }) {
               }}
             />
           ) : (
-            <p className="px-4 py-6 text-center text-[0.75rem] leading-relaxed text-subtle">
+            <p className="px-4 py-6 text-center text-footnote leading-relaxed text-subtle">
               {tab === 'tree' ? t('选中一个控件查看和修改它的属性') : t('选中一张图片查看它的每一版和生成设置')}
             </p>
           )}
@@ -1797,72 +1920,6 @@ function Designer({ id }: { id: string }) {
   )
 }
 
-/**
- * 画板标题行左边的阶段条（照设计稿）：原画 → 界面两步，带序号圆点和连线。
- * 只是「显示原画还是界面」的切换，步骤顺序不强制：任何时候都能点回原画；
- * 确认了模板、停在界面时原画那一步打勾
- */
-function StageSteps({
-  value,
-  onChange,
-  conceptDone,
-}: {
-  value: 'concept' | 'ui'
-  onChange: (v: 'concept' | 'ui') => void
-  conceptDone: boolean
-}) {
-  const steps = [
-    { id: 'concept' as const, label: t('原画') },
-    { id: 'ui' as const, label: t('界面') },
-  ]
-  const cur = steps.findIndex((s) => s.id === value)
-  return (
-    <nav aria-label={t('阶段')} className="flex shrink-0 items-center gap-0.5">
-      {steps.map((s, i) => {
-        const on = i === cur
-        const done = i < cur && conceptDone
-        return (
-          <div key={s.id} className="flex items-center gap-0.5">
-            {i > 0 && (
-              <span
-                aria-hidden
-                className={cn('h-[1.5px] w-3.5', i <= cur && conceptDone ? 'bg-success' : 'bg-line-strong')}
-              />
-            )}
-            <button
-              type="button"
-              aria-current={on ? 'step' : undefined}
-              onClick={() => onChange(s.id)}
-              className={cn(
-                'flex h-8 cursor-pointer items-center gap-[7px] rounded-[9px] px-2.5 text-[0.8125rem] font-semibold whitespace-nowrap transition-colors',
-                // 当前这一步：比面板低一档的底色 + 一点内阴影，像按下去的样子
-                on
-                  ? 'bg-panel text-fg shadow-[inset_0_1px_2px_rgb(0_0_0/0.08)]'
-                  : cn('hover:bg-sel', done ? 'text-fg' : 'text-subtle'),
-              )}
-            >
-              <span
-                className={cn(
-                  // 标题行窄的时候（@container）圆点先让位，只留步骤名
-                  'hidden h-5 w-5 shrink-0 place-items-center rounded-full text-[0.6875rem] tabular-nums @min-[600px]:grid',
-                  done
-                    ? 'bg-success text-on-primary'
-                    : on
-                      ? 'bg-fg text-bg'
-                      : 'text-subtle shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
-                )}
-              >
-                {done ? <Check className="h-3 w-3" strokeWidth={2.6} /> : i + 1}
-              </span>
-              {s.label}
-            </button>
-          </div>
-        )
-      })}
-    </nav>
-  )
-}
-
 /** 设计稿尺寸 */
 function SizeButton({ doc, onChange }: { doc: DesignDoc; onChange: (s: { X: number; Y: number }) => void }) {
   const [w, setW] = useState(String(doc.designSize.X))
@@ -1870,12 +1927,12 @@ function SizeButton({ doc, onChange }: { doc: DesignDoc; onChange: (s: { X: numb
   return (
     <Popover onOpenChange={(o) => o && (setW(String(doc.designSize.X)), setH(String(doc.designSize.Y)))}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="px-2 font-mono text-[0.75rem] font-normal" title={t('设计尺寸')}>
+        <Button variant="ghost" size="sm" className="px-2 font-mono text-footnote font-normal" title={t('设计尺寸')}>
           {doc.designSize.X}×{doc.designSize.Y}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[240px] p-3">
-        <p className="mb-2 text-[0.75rem] font-medium">{t('设计尺寸')}</p>
+        <p className="mb-2 text-footnote font-medium">{t('设计尺寸')}</p>
         <div className="flex items-center gap-2">
           <Input
             value={w}
@@ -1953,7 +2010,7 @@ function StyleButton({
           variant="ghost"
           size="sm"
           aria-label={t('美术风格')}
-          className="max-w-[220px] px-2 text-[0.75rem] font-normal"
+          className="max-w-[220px] px-2 text-footnote font-normal"
           title={value || t('美术风格')}
         >
           <PaletteIcon className="h-3.5 w-3.5 shrink-0" />
@@ -1966,8 +2023,8 @@ function StyleButton({
       <PopoverContent align="end" className="w-[340px] p-3">
         <div className="mb-3 flex items-start gap-2 rounded-lg bg-panel px-2.5 py-2">
           <div className="min-w-0 flex-1">
-            <p className="text-[0.75rem] font-medium">{t('项目美术提示词')}</p>
-            <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-subtle">
+            <p className="text-footnote font-medium">{t('项目美术提示词')}</p>
+            <p className="mt-0.5 text-caption leading-relaxed text-subtle">
               {prompts
                 ? t('{n} 条启用中，项目里所有界面共用', { n: prompts })
                 : t('还没有设置。设置后项目里所有界面风格统一')}
@@ -1977,8 +2034,8 @@ function StyleButton({
             {prompts ? t('管理') : t('设置')}
           </Button>
         </div>
-        <p className="mb-1 text-[0.75rem] font-medium">{t('这个界面的补充风格')}</p>
-        <p className="mb-2 text-[0.6875rem] leading-relaxed text-subtle">
+        <p className="mb-1 text-footnote font-medium">{t('这个界面的补充风格')}</p>
+        <p className="mb-2 text-caption leading-relaxed text-subtle">
           {t('只对这个界面生效，加在项目提示词后面。AI 对话时也会帮你定。')}
         </p>
         <Textarea
@@ -1986,10 +2043,10 @@ function StyleButton({
           onChange={(e) => setText(e.target.value)}
           rows={4}
           placeholder="dark fantasy, carved stone with gold trim, glowing runes"
-          className="text-[0.75rem]"
+          className="text-footnote"
         />
         <div className="mt-3 border-t pt-3">
-          <p className="mb-1.5 text-[0.75rem] font-medium">{t('从风格库套用')}</p>
+          <p className="mb-1.5 text-footnote font-medium">{t('从风格库套用')}</p>
           <StyleLibraryList
             kind={kind}
             active={open}

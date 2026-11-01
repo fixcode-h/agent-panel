@@ -54,7 +54,7 @@ export function TeamEditor({
           <span className="text-subtle">· {t('节点没有单独指定角色时用它；节点按连线并发执行，不再由它调度')}</span>
         </span>
         {main ? (
-          <div className="flex items-center gap-3 rounded-[10px] border border-accent/50 bg-accent-soft p-3">
+          <div className="flex items-center gap-3 rounded-xl border border-accent/50 bg-accent-soft p-3">
             <AgentLine agent={main} />
             <AgentPicker exclude={[mainAgentId]} onPick={(a) => onMainChange(a.id)} align="end">
               <Button variant="secondary" size="sm" className="ml-auto">
@@ -65,7 +65,7 @@ export function TeamEditor({
           </div>
         ) : (
           <AgentPicker exclude={[]} onPick={(a) => onMainChange(a.id)}>
-            <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-accent/60 text-[0.8125rem] text-accent-text hover:bg-accent-soft">
+            <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-accent/60 text-body text-accent-text hover:bg-accent-soft">
               <Plus className="h-4 w-4" />
               {t('选择默认执行角色')}
             </button>
@@ -83,7 +83,7 @@ export function TeamEditor({
             {subs.map((m) => (
               <Card key={m.agent.id} as="li" className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
                 <AgentAvatar icon={m.agent.icon} cli={m.agent.cli} size="xs" dim={!m.agent.enabled} />
-                <span className="text-[0.8125rem]">{m.agent.name}</span>
+                <span className="text-body">{m.agent.name}</span>
               </Card>
             ))}
           </ul>

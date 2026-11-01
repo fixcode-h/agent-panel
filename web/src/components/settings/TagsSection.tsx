@@ -68,7 +68,7 @@ export function TagsSection() {
 
   return (
     <div className="flex max-w-[720px] flex-col gap-4">
-      <p className="text-[0.8125rem] leading-relaxed text-muted">
+      <p className="text-body leading-relaxed text-muted">
         {t('标签是全局的，角色和工作流共用。列表上方可以按标签筛选，搜索时也会匹配标签名。')}
       </p>
       <div className="flex gap-2">
@@ -126,7 +126,7 @@ export function TagsSection() {
             </div>
           )
         })}
-        {!tags.length && <p className="px-4 py-6 text-center text-[0.8125rem] text-subtle">{t('还没有标签')}</p>}
+        {!tags.length && <p className="px-4 py-6 text-center text-body text-subtle">{t('还没有标签')}</p>}
       </Card>
       <ConfirmDialog
         open={!!deleting}
@@ -155,7 +155,7 @@ function TagName({ tag, onSave }: { tag: Tag; onSave: (name: string) => void }) 
       onChange={(e) => setV(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && commit()}
-      className="h-8 w-40 text-[0.8125rem]"
+      className="h-8 w-40 text-body"
     />
   )
 }

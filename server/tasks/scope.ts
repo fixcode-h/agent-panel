@@ -14,6 +14,7 @@ import type { LessonDraft } from '../lessons.ts'
 import type { Lister, Live } from './types.ts'
 import type { createTaskStore } from '../task-store.ts'
 import type { worktreeStatus } from '../exec/worktree.ts'
+import type { IntegrateKind, IntegrateResult } from '../exec/worktree-integrate.ts'
 import type { AlertKind } from '../../shared/schema.ts'
 import type { createClaims } from '../claims.ts'
 
@@ -160,6 +161,11 @@ export interface TasksScope {
   chatWorkspace: (id: string) => Promise<Project>
   /** 一轮结束后按整棵对话树核用量上限；true 表示到了上限、已经停下（见 tasks/budget.ts） */
   checkBudget: (tk: Task) => Promise<boolean>
+  /** 面板替别人叫醒一个对话之前的唯一判断，返回不叫的原因（规则见 shared/wake.ts） */
+  holdWake: (
+    target: Task,
+    opts?: { from?: string; fromAbove?: boolean },
+  ) => Promise<import('../../shared/wake.ts').WakeHold | undefined>
   childActive: (tk: Task) => boolean
   /** 子对话卡住了、面板正在重启它或找人接手（见 server/tasks/stuck-child.ts）：这段时间不往父对话报中断 / 失败 */
   childRecovering: (id: string) => boolean
@@ -239,6 +245,10 @@ export interface TasksScope {
   ) => Promise<{
     ok: boolean
     info: string
+    /** 没合进去的类别（见 worktree-integrate.ts）：只有 conflict 是子对话要修的 */
+    kind?: IntegrateKind
+    /** 一行的原因，界面提示用 */
+    why?: string
   }>
   followUp: (
     id: string,
@@ -267,13 +277,7 @@ export interface TasksScope {
   getMeta: (id: string) => Promise<Task | null>
   gitGate: <T>(run: () => Promise<T>) => Promise<T>
   idle: (task: Task) => Task
-  integrate: (
-    tk: Task,
-    parent: Task,
-  ) => Promise<{
-    ok: boolean
-    info: string
-  }>
+  integrate: (tk: Task, parent: Task) => Promise<IntegrateResult>
   lastReply: (task: Task) => string
   live: Map<string, Live>
   liveAgents: {
@@ -457,7 +461,7 @@ export interface TasksScope {
   }>
   projectWorkflow: (p: Project) => Promise<Workflow | undefined>
   readableDir: (id: string | undefined) => Promise<string>
-  ready: Promise<void>
+  ready: Promise<unknown>
   recordSelfTestRun: (job: import('../background.ts').BgJob) => Promise<void>
   recordWorktreeError: (tk: Task, error: string) => void
   recoverParentTests: () => Promise<void>

@@ -75,3 +75,11 @@ export const toast = Object.assign(publish(sonner), {
 })
 
 export type { ExternalToast }
+
+/**
+ * 用户主动点的操作失败时用：把错误如实弹出来（`.catch(toastError)`）。
+ * 不要写 `.catch(() => {})`：按钮按了没反应、也不说为什么，用户只会以为面板坏了
+ */
+export const toastError = (e: unknown) => {
+  toast.error(e instanceof Error ? e.message : String(e))
+}

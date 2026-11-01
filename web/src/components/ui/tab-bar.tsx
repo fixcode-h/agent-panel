@@ -105,7 +105,7 @@ export function TabItem({
         fit
           ? // 按内容宽度：不留左右内边距，指示条和内容同宽；没选中灰字、悬停变深，不出底色
             cn(
-              'shrink-0 text-[0.8125rem]',
+              'shrink-0 text-body',
               active
                 ? 'font-medium text-fg after:absolute after:inset-x-0 after:-bottom-px after:h-[3px] after:bg-fg'
                 : 'text-subtle hover:text-fg',
@@ -113,19 +113,19 @@ export function TabItem({
           : underline
             ? // 页内切换：字号和正文一样、按文字宽度排；选中只有一条细下划线，没选中灰字、悬停变深，不出底色
               cn(
-                'shrink-0 text-[0.8125rem] font-medium',
+                'shrink-0 text-body font-medium',
                 fill && 'flex-1 basis-0',
                 active
                   ? 'text-fg after:absolute after:inset-x-1 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent'
                   : 'text-muted hover:text-fg',
               )
             : cn(
-                'text-[0.75rem]',
+                'text-footnote',
                 fill ? 'flex-1 basis-0' : 'max-w-60 shrink-0 basis-[8.25rem]',
                 // 选中只画底部指示条：左右各缩进 6px，盖住页签条的底线
                 active
                   ? 'font-medium text-fg after:absolute after:inset-x-1.5 after:-bottom-px after:h-[3px] after:bg-primary'
-                  : 'text-subtle hover:bg-sel/60 hover:text-fg',
+                  : 'text-subtle hover:bg-hover hover:text-fg',
               ),
         className,
       )}
@@ -150,7 +150,7 @@ export function TabItem({
         {tag && (
           <span
             className={cn(
-              'shrink-0 rounded-full bg-sel px-1.5 text-[0.6875rem] leading-4 font-normal text-muted',
+              'shrink-0 rounded-full bg-sel px-1.5 text-caption leading-4 font-normal text-muted',
               // 右栏的计数是 18px 的圆角小块（设计稿），一位数时是正圆
               fit && 'grid h-[1.125rem] min-w-[1.125rem] place-items-center px-[0.3125rem] leading-none',
             )}
@@ -166,7 +166,7 @@ export function TabItem({
           title={closeLabel ?? t('关闭页签')}
           onClick={onClose}
           className={cn(
-            'mr-2 flex h-[1.125rem] w-[1.125rem] shrink-0 cursor-pointer items-center justify-center rounded transition-opacity hover:bg-sel',
+            'mr-2 flex h-[1.125rem] w-[1.125rem] shrink-0 cursor-pointer items-center justify-center rounded-sm transition-opacity hover:bg-hover',
             active ? 'opacity-60 hover:opacity-100' : 'opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100',
           )}
         >

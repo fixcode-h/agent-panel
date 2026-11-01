@@ -51,7 +51,7 @@ export function CliSkills({ cli, projectId = '', own = false }: { cli: string; p
   }, [cli, projectId, own])
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center text-[0.75rem] text-subtle">
+      <div className="flex items-center text-footnote text-subtle">
         {list && t('共 {n} 个', { n: list.length })}
         <button
           onClick={load}
@@ -63,17 +63,17 @@ export function CliSkills({ cli, projectId = '', own = false }: { cli: string; p
         </button>
       </div>
       {error ? (
-        <p className="text-[0.75rem] text-warning">{t('读取失败：{error}', { error })}</p>
+        <p className="text-footnote text-warning">{t('读取失败：{error}', { error })}</p>
       ) : !list ? (
-        <p className="text-[0.75rem] text-subtle">{t('读取中…')}</p>
+        <p className="text-footnote text-subtle">{t('读取中…')}</p>
       ) : !list.length ? (
-        <p className="text-[0.75rem] text-subtle">{t('还没有装 Skill')}</p>
+        <p className="text-footnote text-subtle">{t('还没有装 Skill')}</p>
       ) : (
         // 按目录分组：.agents 下共用的和 CLI 自己目录下的分开列
         <div className="flex flex-col gap-3">
           {groups(list).map(([source, items]) => (
             <div key={source} className="flex flex-col gap-1.5">
-              <p className="flex items-center gap-2 text-[0.6875rem] text-subtle">
+              <p className="flex items-center gap-2 text-caption text-subtle">
                 <span className="truncate font-mono">{source || t('插件')}</span>
                 <span className="shrink-0">{items.length}</span>
               </p>
@@ -84,13 +84,13 @@ export function CliSkills({ cli, projectId = '', own = false }: { cli: string; p
                       className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', s.enabled ? 'text-accent-text' : 'text-subtle')}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-2 text-[0.8125rem]">
+                      <p className="flex items-center gap-2 text-body">
                         <span className={cn('truncate font-mono', !s.enabled && 'text-subtle line-through')}>
                           {s.name}
                         </span>
-                        {s.scope && <Badge className="shrink-0 px-1.5 text-[0.6875rem]">{scopeName(s.scope)}</Badge>}
+                        {s.scope && <Badge className="shrink-0 px-1.5 text-caption">{scopeName(s.scope)}</Badge>}
                       </p>
-                      {s.description && <p className="line-clamp-2 text-[0.75rem] text-muted">{s.description}</p>}
+                      {s.description && <p className="line-clamp-2 text-footnote text-muted">{s.description}</p>}
                     </div>
                   </li>
                 ))}

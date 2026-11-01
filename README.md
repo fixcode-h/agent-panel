@@ -1,5 +1,7 @@
 # Agent 面板
 
+中文 | [English](README.en.md)
+
 一个跑在本机的网页控制台：按项目分类，调度本机的编码 Agent（Claude Code、Codex、Command Code、Pi），
 由主 Agent 和子 Agent 按工作流的流程图执行：连线决定先后，没有先后关系的节点同时执行，节点里的每一步可以挂载验收流程，不通过就退回修改。
 界面参考 Claude Code。
@@ -7,7 +9,7 @@
 **在线预览**在仓库主页 About 里的网址（GitHub Pages：https://fixcode-h.github.io/agent-panel/ ），内容是 dev 分支的最新版；
 预览版在浏览器里模拟执行，不调用 CLI。
 
-**下载：[Releases](https://github.com/fixcode-h/agent-panel/releases)** 。包只从 main 发布；解压后只需要 Node.js 20+，Windows 双击 `AgentPanel.exe`（不弹命令行窗口，图标在任务栏通知区，启动后自动打开浏览器，右键图标退出），macOS / Linux 运行 `./start.sh`，想开机自动在后台运行就执行一次 `./install-service.sh`。Windows 第一次运行如果提示「Windows 已保护你的电脑」，是因为托盘程序没有代码签名，点「更多信息」→「仍要运行」即可。
+**下载：[Releases](https://github.com/fixcode-h/agent-panel/releases)** 。包只从 main 发布；解压后只需要 Node.js 22+，Windows 双击 `AgentPanel.exe`（不弹命令行窗口，图标在任务栏通知区，启动后自动打开浏览器，右键图标退出），macOS / Linux 运行 `./start.sh`，想开机自动在后台运行就执行一次 `./install-service.sh`。Windows 第一次运行如果提示「Windows 已保护你的电脑」，是因为托盘程序没有代码签名，点「更多信息」→「仍要运行」即可。
 
 - **Agent**：每个 Agent 是「CLI + 模型 + 角色设定」的组合，按分类管理；自动检测本机 CLI，预览实际执行的命令。
   CLI 可以选「系统默认」，模型可以只选高 / 中 / 低档，执行时按设置换成具体的 CLI、模型和思考强度，改设置就能整体切换；
@@ -58,7 +60,7 @@
 
 ## 快速开始
 
-需要 Node.js 20+、git，以及至少安装一个 CLI：
+需要 Node.js 22+、git，以及至少安装一个 CLI：
 
 | CLI          | 安装                                             | 设置里的默认命令 |
 | ------------ | ------------------------------------------------ | ---------------- |
@@ -70,7 +72,7 @@
 CLI 需要先在终端里登录一次（或在设置的「环境变量」里填 API Key）。
 
 ```bash
-npm install
+npm ci             # 按 package-lock.json 装依赖，不改锁文件
 npm run dev        # 前端 http://localhost:5173 ，后端 http://127.0.0.1:8787
 ```
 
@@ -124,6 +126,8 @@ npm run test:unit  # 执行引擎、CLI 输出解析、内置模板、前端纯�
 npm run test:e2e   # 用 scripts/fake-cli 模拟各个 CLI 的输出，走完整流程（需要 macOS / Linux 和 git）
 node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo（产物和源码对不上会直接失败），分片并行跑，截图在 ui-shots/
 ```
+
+界面检查用 Playwright 驱动 chromium，第一次跑之前装一次浏览器：`npx playwright install chromium`（CI 里也是这一步）。
 
 单元测试覆盖多步骤节点的顺序执行、步骤间交接、失败即停、每步确认 / 验收、中断续跑和子 Agent 归属，
 以及内置「通用项目」旧副本的迁移。

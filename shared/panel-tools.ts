@@ -7,6 +7,7 @@ export const PANEL_TOOL_NAMES = [
   'create_conversation',
   'send_to_conversation',
   'list_conversations',
+  'stop_workflow',
   'spawn_agents',
   'wait_agents',
   'stop_subtask',
@@ -31,6 +32,8 @@ export const PANEL_TOOL_NAMES = [
   'claim_files',
   'release_files',
   'p4_split_changelists',
+  'cherry_pick',
+  'ask_push',
   'use_capability',
   'begin_inline_edit',
   'end_inline_edit',
@@ -211,3 +214,10 @@ export function toolLookupLabel(query: unknown): string {
     .filter(Boolean)
     .join(', ')
 }
+
+/**
+ * 身份无关的三件核心编排工具：有并行的节点或子任务的对话都有（Orchestra.team）。Pi 的桥接扩展据握手里的
+ * orchestration.enabled 核对清单里有没有它们（shared/clis/pi.json 的 CORE_TOOLS，单测核对两边一致）；
+ * Chat 模式没有这三件，握手按清单现算成 false（ADR 0038）
+ */
+export const ORCH_CORE_TOOLS = ['get_status', 'send_message', 'read_messages'] as const

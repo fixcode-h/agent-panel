@@ -180,6 +180,40 @@ test('守护清理：git 注册表外的残留目录被清（面板重启、prun
   assert.deepEqual(res.failed, [])
 })
 
+test('守护清理：git 不可用时一律保留，不把在用的目录当残留删掉', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir } = worktreeAt(root, repo, 'nogit1')
+  writeFileSync(path.join(dir, 'work.txt'), '没提交的改动\n')
+  // PATH 清空模拟托盘启动时找不到 git、或 git 起不来：rev-parse 返回空，但 .git 链接是好的
+  const oldPath = process.env.PATH
+  process.env.PATH = mkdtempSync(path.join(tmp, 'empty-path-'))
+  let res
+  try {
+    res = await sweepWorktrees({ root, minAgeMs: 0, taskInfo: async () => doneInfo() })
+  } finally {
+    process.env.PATH = oldPath
+  }
+  assert.deepEqual(res.removed, [], '一个都没删')
+  assert.ok(existsSync(path.join(dir, 'work.txt')), '未提交的改动还在')
+  assert.ok(
+    res.kept.some((k) => k.taskId === 'nogit1'),
+    '记成保留并写明原因',
+  )
+})
+
+test('守护清理：注册表外的残留，任务还在执行时也不清', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir } = worktreeAt(root, repo, 'orphanlive')
+  git(repo, 'worktree', 'remove', '--force', dir)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(path.join(dir, '.git'), `gitdir: ${path.join(repo, '.git', 'worktrees', 'orphanlive')}\n`)
+  const res = await sweepWorktrees({ root, minAgeMs: 0, taskInfo: async () => doneInfo({ working: true }) })
+  assert.deepEqual(res.removed, [])
+  assert.ok(existsSync(dir), '执行中的目录保留')
+})
+
 test('守护清理：已合并且任务已收口的被清掉目录和分支', async () => {
   const repo = project()
   const root = mkdtempSync(path.join(tmp, 'sweep-'))

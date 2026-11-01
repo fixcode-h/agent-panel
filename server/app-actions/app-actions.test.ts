@@ -4,7 +4,8 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { appActions, runAppAction, setActionHost } from './index.ts'
 import { callApi, catalogText, createRegistry, defineAction, type ActionCaller } from './registry.ts'
-import { mergePatch } from './settings.ts'
+import { mergePatch, VISIBLE_SETTINGS } from './settings.ts'
+import { Settings } from '../../shared/schema.ts'
 import { askMcpApi, openAskBridge } from '../ask-mcp.ts'
 
 /** 假宿主：记下调了哪些接口、推了哪些界面操作；pages 是开着几个页面 */
@@ -114,6 +115,20 @@ test('读设置不带密钥类字段', async () => {
   assert.deepEqual(r.ok && r.result, { backgroundLimit: 5 })
 })
 
+test('设置是白名单：新加的字段、密钥、可执行路径、网络地址默认 AI 看不到也改不了', async () => {
+  const cur = Settings.parse({})
+  fakeHost({ 'GET /settings': cur, 'PUT /settings': cur })
+  const seen = (await runAppAction('settings.get', {}, child)) as { ok: true; result: Record<string, unknown> }
+  for (const k of ['blender', 'shell', 'proxy', 'webhook', 'imageGen', 'apis', 'clis', 'remoteAccess'])
+    assert.ok(!(k in seen.result), `${k} 不该给 AI 看`)
+  for (const patch of [{ blender: { path: '/tmp/x' } }, { imageGen: { key: 'k' } }, { proxy: 'http://evil' }]) {
+    const r = await runAppAction('settings.set', { patch }, child)
+    assert.match((r as { error: string }).error, /不能由 AI 改/)
+  }
+  // 白名单里的每一项都是真实存在的设置字段（字段改名时这里会提醒同步）
+  for (const k of VISIBLE_SETTINGS) assert.ok(k in cur, `${k} 不是设置字段`)
+})
+
 test('界面操作：推给页面；没有页面开着时说清楚', async () => {
   const { ui } = fakeHost()
   assert.equal((await runAppAction('ui.open_settings', { section: 'models' }, child)).ok, true)
@@ -163,7 +178,8 @@ async function rpc(url: string, msg: unknown) {
     body: JSON.stringify(msg),
     headers: { 'content-type': 'application/json' },
   })
-  return res.json()
+  // 服务端只带 Node 类型，Response.json() 是 unknown（DOM 里是 any）；测试按接口约定直接读字段，放宽成 any
+  return res.json() as Promise<any>
 }
 
 test('MCP：对话的调用多两个工具（收在 more_tools 里，按名字也能直接调），app_do 以调用者身份执行；没给 app 时没有这两个工具', async () => {

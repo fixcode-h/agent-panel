@@ -37,7 +37,8 @@ test('GET /usage：按粒度和桶数返回报表，合计就是各桶之和', a
   const tasks = [taskWith('a', [turn(60_000, 100, 20), turn(120_000, 50, 5)])]
   const res = await app(tasks).request('/usage?grain=week&count=3')
   assert.equal(res.status, 200)
-  const report = await res.json()
+  // 服务端只带 Node 类型，Response.json() 是 unknown（DOM 里是 any）；测试按接口约定直接读字段，放宽成 any
+  const report: any = await res.json()
   assert.equal(report.grain, 'week')
   assert.equal(report.buckets.length, 3)
   assert.equal(report.total.inputTokens, 150)
@@ -51,14 +52,14 @@ test('GET /usage：按粒度和桶数返回报表，合计就是各桶之和', a
 
 test('GET /usage：没有任务时返回全是 0 的空报表', async () => {
   const res = await app([]).request('/usage?grain=month&count=2')
-  const report = await res.json()
+  const report: any = await res.json()
   assert.equal(report.grain, 'month')
   assert.equal(report.total.turns, 0)
   assert.equal(report.buckets.length, 2)
 })
 
 test('GET /usage：认不出来的粒度和桶数用默认值', async () => {
-  const report = await (await app([]).request('/usage?grain=year&count=abc')).json()
+  const report: any = await (await app([]).request('/usage?grain=year&count=abc')).json()
   assert.equal(report.grain, 'day')
   assert.equal(report.buckets.length, 14)
 })

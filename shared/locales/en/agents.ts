@@ -41,7 +41,6 @@ export const EN_AGENTS: Record<string, string> = {
   子角色: 'Sub-roles',
   '已删除「{name}」': 'Deleted “{name}”',
   未命名角色: 'Untitled role',
-  'Agent 未安装': 'Agent not installed',
   还没有简介: 'No description yet',
   '名称为空，未保存': 'Name is empty, not saved',
   '让本机 Agent 按你的要求优化': 'Have a local agent refine it to your requirements',
@@ -66,7 +65,6 @@ export const EN_AGENTS: Record<string, string> = {
   所在工作流: 'Used in workflows',
   '还没有工作流使用它。': 'No workflow uses it yet.',
   '删除「{name}」？': 'Delete “{name}”?',
-  '删除后无法恢复。': 'This can’t be undone.',
   '它正在被工作流 {names} 使用，需要先从这些工作流中移除才能删除。':
     'It’s used by the workflows {names}. Remove it from them before deleting.',
 
@@ -99,8 +97,6 @@ export const EN_AGENTS: Record<string, string> = {
   低: 'Low',
   中: 'Medium',
   高: 'High',
-  很高: 'Extra high',
-  最高: 'Max',
 
   // AI 创建 / 优化
   '一个专门写 Playwright 端到端测试的角色，用 Claude Code':
@@ -253,14 +249,10 @@ export const EN_AGENTS: Record<string, string> = {
   关闭并终止生成: 'Close and stop generating',
   必备: 'Core',
   '必备角色 · {use}': 'Core role · {use}',
-  '项目对话离不开的必备角色之一，不能删除，也不能改成别的角色。名称、角色设定、能力和 Skill 由面板维护并随版本更新；你可以改下面的参数和运行环境，每个项目还能在项目设置里单独调参数。':
-    "One of the core roles every project conversation relies on. It can't be deleted or turned into a different role. Its name, instructions, abilities and skills are maintained by the panel and updated with each release; you can change the parameters and runtime below, and each project can tune the parameters in its settings.",
   '这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。':
     "These are the defaults for all projects. To use different values in one project, change them under Core roles in that project's settings.",
   '由面板维护，只读。Skill：{list}': 'Maintained by the panel, read-only. Skills: {list}',
   '内置角色 · 随版本更新': 'Built-in role · updated with each release',
-  '名称、角色设定、能力和 Skill 由面板维护，每次更新都换成最新版本，用到它的对话下一轮就用新版。你可以改参数、运行环境、分类和标签；想改设定就「复制一份」，改复制出来的角色。':
-    'Its name, instructions, abilities and skills are maintained by the panel and replaced with the latest version on every update; conversations using it pick up the new version on their next turn. You can change the parameters, runtime, category and tags. To change the instructions, duplicate it and edit the copy.',
   分类与标签: 'Category and tags',
   '这里改的是默认取值，工作流节点上还能单独改；参数本身随内置定义更新。':
     'These are the default values; workflow nodes can still override them. The parameters themselves follow the built-in definition.',
@@ -280,8 +272,6 @@ export const EN_AGENTS: Record<string, string> = {
   概览: 'Overview',
   '插入按「{name}」走不同做法的分支': 'Insert a branch on “{name}”',
   分支: 'Branch',
-  '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「参数」页添加，或者改成已有的参数名。':
-    "The role references parameters that don't exist: {list}. They stay in the prompt as-is. Add them on the Parameters tab or use an existing name.",
   '按试的参数展开（不保存），包含引入的角色和 Skill 提示。':
     'Expanded with the trial values (not saved), including included roles and Skill hints.',
   联动: 'Linked',
@@ -370,4 +360,34 @@ export const EN_AGENTS: Record<string, string> = {
   'AI 创建角色': 'Create a role with AI',
   'AI 创建工作流': 'Create a workflow with AI',
   '使用哪个 Agent': 'Which agent to use',
+  '删除后放进回收站，{days} 天内可以在「设置 → 数据」里恢复。':
+    'It goes to the recycle bin and can be restored from Settings → Data within {days} days.',
+  // Chat 角色和 Agent 角色（ADR 0038）
+  '建好后不能改；要换类别就在「⋯」里复制为另一类':
+    'Can’t be changed after creation; to switch, duplicate it as the other kind from “⋯”',
+  'Chat 角色': 'Chat role',
+  'Agent 角色': 'Agent role',
+  基本: 'Basic',
+  '复制为 Agent 角色': 'Duplicate as an Agent role',
+  '复制为 Chat 角色': 'Duplicate as a Chat role',
+  'Chat 页在输入框里选 CLI、模型和思考强度，这个角色的运行配置不生效。':
+    'On the Chat page you pick the CLI, model and reasoning effort in the input box; this role’s run settings don’t apply.',
+  'Chat 角色 · {name}': 'Chat roles · {name}',
+  '助手（默认）': 'Assistant (default)',
+  '这个对话用的 Chat 角色，开始后不能再改': 'The Chat role for this conversation; it can’t be changed once started',
+  助手: 'Assistant',
+  待办已完成: 'Todos done',
+  '待办 {done}/{total}': 'Todos {done}/{total}',
+  '待办进度 {done}/{total}': 'Todo progress {done}/{total}',
+  '由 Agent 自己列出': 'Listed by the agent itself',
+  '还没有 Chat 角色': 'No Chat roles yet',
+  'Chat 页的对话默认使用': 'Default for conversations on the Chat page',
+  '「{name}」是 Agent 角色，只能在项目里用；Chat 页请用 Chat 角色':
+    '“{name}” is an Agent role and can only be used in projects; use a Chat role on the Chat page',
+  '「{name}」是 Chat 角色，只能在 Chat 页用': '“{name}” is a Chat role and can only be used on the Chat page',
+  '「{name}」是 Chat 角色，不能挂载': '“{name}” is a Chat role and can’t be mounted',
+  '默认对话角色必须是 Agent 角色': 'The default conversation role must be an Agent role',
+  Chat: 'Chat',
+  '{name}（Chat）': '{name} (Chat)',
+  '{name}（Agent）': '{name} (Agent)',
 }

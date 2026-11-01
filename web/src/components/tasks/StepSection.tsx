@@ -8,6 +8,7 @@ import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { DeliveryLine, FoldedRun, SystemNote } from './Messages'
+import { deliveryActive } from '@shared/task'
 import { UserMessage } from '@/components/chat/ChatMessage'
 import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
@@ -95,7 +96,7 @@ function StepSectionBase({
         >
           {sticky && <FrostBarBg />}
           <StepIcon status={root.status} />
-          <span className="min-w-0 truncate text-[0.875rem] font-semibold">{root.title}</span>
+          <span className="min-w-0 truncate text-prose font-semibold">{root.title}</span>
           <span className="flex items-center gap-1.5 text-xs text-subtle">
             {root.kind === 'main' && <Crown className="h-3.5 w-3.5 text-accent-text" />}
             {root.kind === 'flow' ? (
@@ -114,7 +115,7 @@ function StepSectionBase({
           </span>
           {vt && <Badge tone={root.verdict === 'fail' ? 'warning' : 'success'}>{vt}</Badge>}
           <span className="ml-auto flex items-center gap-1.5">
-            {time && <span className="font-mono text-[0.6875rem] text-subtle">{time}</span>}
+            {time && <span className="font-mono text-caption text-subtle">{time}</span>}
             <StepCommand argv={root.command} />
           </span>
         </header>
@@ -133,7 +134,9 @@ function StepSectionBase({
                     at={m.at}
                     attachments={m.attachments}
                     // 执行中补发的要求也写清去了哪里（插进当前轮 / 排到下一轮）：和工作流里的节点无关，用户看得到
-                    extra={m.delivery && <DeliveryLine delivery={m.delivery} />}
+                    status={
+                      m.delivery && <DeliveryLine delivery={m.delivery} active={deliveryActive(m.delivery.at, task)} />
+                    }
                   />
                 ))}
               </div>

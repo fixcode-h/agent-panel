@@ -88,7 +88,7 @@ export function FrpCloudGroup({
           onChange={(e) => set({ server: e.target.value.trim() })}
           placeholder="47.100.1.2"
           spellCheck={false}
-          className="w-[220px] font-mono text-[0.8125rem]"
+          className="w-[220px] font-mono text-body"
           aria-label={t('服务器 IP')}
         />
       </Row>
@@ -99,14 +99,14 @@ export function FrpCloudGroup({
             onChange={(e) => set({ sshUser: e.target.value.trim() })}
             placeholder="root"
             spellCheck={false}
-            className="w-[140px] font-mono text-[0.8125rem]"
+            className="w-[140px] font-mono text-body"
             aria-label={t('SSH 用户')}
           />
           <Input
             value={String(f.sshPort)}
             onChange={(e) => set({ sshPort: port(e.target.value, f.sshPort) })}
             inputMode="numeric"
-            className="w-[72px] font-mono text-[0.8125rem]"
+            className="w-[72px] font-mono text-body"
             aria-label={t('SSH 端口')}
           />
         </div>
@@ -121,7 +121,7 @@ export function FrpCloudGroup({
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="off"
-          className="w-[220px] font-mono text-[0.8125rem]"
+          className="w-[220px] font-mono text-body"
           aria-label={t('SSH 密码')}
         />
       </Row>
@@ -131,7 +131,7 @@ export function FrpCloudGroup({
             value={String(f.bindPort)}
             onChange={(e) => set({ bindPort: port(e.target.value, f.bindPort) })}
             inputMode="numeric"
-            className="w-[96px] font-mono text-[0.8125rem]"
+            className="w-[96px] font-mono text-body"
             aria-label={t('frp 端口')}
           />
         </Row>
@@ -140,7 +140,7 @@ export function FrpCloudGroup({
             value={String(f.remotePort)}
             onChange={(e) => set({ remotePort: port(e.target.value, f.remotePort) })}
             inputMode="numeric"
-            className="w-[96px] font-mono text-[0.8125rem]"
+            className="w-[96px] font-mono text-body"
             aria-label={t('面板端口')}
           />
         </Row>
@@ -149,12 +149,12 @@ export function FrpCloudGroup({
           desc={t('SSH、远程桌面等映射用的服务器端口')}
           hint={t('一键配置时放行这一段，之后增删映射不用再登录服务器。改了范围要重新配置。')}
         >
-          <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+          <div className="flex items-center gap-2 text-body text-muted">
             <Input
               value={String(f.rangeStart)}
               onChange={(e) => set({ rangeStart: port(e.target.value, f.rangeStart) })}
               inputMode="numeric"
-              className="w-[84px] font-mono text-[0.8125rem]"
+              className="w-[84px] font-mono text-body"
               aria-label={t('起始端口')}
             />
             –
@@ -162,7 +162,7 @@ export function FrpCloudGroup({
               value={String(f.rangeEnd)}
               onChange={(e) => set({ rangeEnd: port(e.target.value, f.rangeEnd) })}
               inputMode="numeric"
-              className="w-[84px] font-mono text-[0.8125rem]"
+              className="w-[84px] font-mono text-body"
               aria-label={t('结束端口')}
             />
           </div>
@@ -186,13 +186,13 @@ export function FrpCloudGroup({
             <Button size="sm" onClick={run} disabled={running || !f.server || !f.sshUser || !password}>
               {running ? t('配置中…') : f.token ? t('重新配置') : t('一键配置')}
             </Button>
-            {progress && <span className="text-[0.8125rem] text-muted">{progress}</span>}
+            {progress && <span className="text-body text-muted">{progress}</span>}
             {!running && deploy?.step === 'done' && !error && (
-              <span className="text-[0.8125rem] text-success">{STEP_TEXT.done}</span>
+              <span className="text-body text-success">{STEP_TEXT.done}</span>
             )}
           </div>
           {(error || deploy?.error) && (
-            <p className="text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">{error || deploy?.error}</p>
+            <p className="text-footnote leading-relaxed whitespace-pre-wrap text-danger">{error || deploy?.error}</p>
           )}
         </div>
       </Row>

@@ -30,7 +30,15 @@ import { SummaryConfig, SummaryRecord, type SummaryReport } from '../shared/summ
 import { LessonDraftRecord, LessonDraftInput } from '../shared/lesson-draft.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
-import { createCollection, DATA_DIR, dataPath, migrateDataDir, readJson, writeJsonAtomic } from './store.ts'
+import {
+  createCollection,
+  DATA_DIR,
+  dataPath,
+  migrateDataDir,
+  readJson,
+  sweepStaleTmp,
+  writeJsonAtomic,
+} from './store.ts'
 import { serveDist, serveIndex } from './static.ts'
 import { dataApi } from './data.ts'
 import { cleanupApi, sweepTaskInfoOf } from './cleanup.ts'
@@ -46,8 +54,16 @@ import { designMcpApi } from './design-mcp.ts'
 import { blenderMcpApi } from './blender-mcp.ts'
 import { blenderApi } from './blender.ts'
 import { askMcpApi } from './ask-mcp.ts'
-import { webSearchApi } from './web-search.ts'
-import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
+import {
+  askExtensionReload,
+  bridgeApi,
+  bridgePaired,
+  browserStatus,
+  bundledExtensionVersion,
+  extensionDir,
+  openExtensionsPage,
+  PAIRING_HEADER,
+} from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { summaryApi } from './summary.ts'
 import { lessonDraftsApi } from './lesson-drafts.ts'
@@ -61,6 +77,7 @@ import { integrationsApi } from './integrations.ts'
 import { installApi } from './install.ts'
 import { comfyApi } from './comfy.ts'
 import { speechApi } from './speech.ts'
+import { ttsApi } from './tts.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
 import { projectMcpApi } from './project-mcp.ts'
@@ -90,6 +107,7 @@ import { filesApi } from './files.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
+import { agentOnlyError, normalizeScope, workflowAgentIds } from '../shared/conv-mode.ts'
 import {
   builtinDefinition,
   builtinKey,
@@ -116,8 +134,8 @@ import { loadSeededWorkflows, saveSeededWorkflows } from './builtin-seeded.ts'
 import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-aliases.ts'
 import { analyzeProject, detectVcs } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
-import { grantCookie, tokenGuard, withToken } from './auth.ts'
-import { hostOf, isAllowedHost, isExternalRequest, isLocalHost } from './hosts.ts'
+import { grantCookie, tokenGuard, viaProxy, withToken } from './auth.ts'
+import { isAllowedHost, isExternalRequest, isLocalHost, originAllowed } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
 import { sweepPanelMcp } from './panel-mcp-files.ts'
@@ -125,11 +143,27 @@ import { existsSync } from 'node:fs'
 import { detectShells, currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
 import { staleProjectWrite } from './project-lock.ts'
+import { acquireInstanceLock } from './instance-lock.ts'
+import { installHttpGuards } from './http-guards.ts'
+import { cleanupItemTrash, itemTrashRoutes, trashItem } from './item-trash.ts'
 import { LESSON_REVIEW_LANG, parseLessonReview } from '../shared/lesson-review.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
 installLogging()
+
+// 单实例：同一个数据目录只能有一个面板，必须在任何迁移、读数据之前拿到（见 instance-lock.ts）。
+// 更新后重启的新进程要等旧进程退出，多等一会儿
+const instanceLock = acquireInstanceLock(DATA_DIR, { waitMs: process.env.AGENT_PANEL_RESTARTED ? 30_000 : 2_000 })
+if (!instanceLock.ok) {
+  console.error(
+    `数据目录 ${DATA_DIR} 已经有一个 Agent 面板在运行（进程 ${instanceLock.holder.pid}，启动于 ${instanceLock.holder.startedAt}）。` +
+      '\n请直接打开已经在运行的那个；要同时开两个，用环境变量 AGENT_PANEL_DATA 指定另一个数据目录。' +
+      `\n确认没有在运行（例如进程号被别的程序占用）时，删掉 ${path.join(DATA_DIR, 'panel.lock')} 再启动。`,
+  )
+  process.exit(1)
+}
+process.on('exit', () => instanceLock.release())
 
 // 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
 migrateDataDir()
@@ -326,26 +360,27 @@ const app = new Hono().basePath('/api')
  */
 app.use('*', async (c, next) => {
   const host = c.req.header('host') ?? ''
-  // 外网专用端口（见 remote.ts）：Host 不限，令牌由 tokenGuard 强制检查，下面的 Origin 必须和 Host 同源
   const external = isExternalRequest(c.env)
-  // 本机地址，或者当前开着的外网访问地址（见 remote.ts）
+  // 本机地址、当前外网访问地址，或外网专用端口（Host 不限，令牌由 tokenGuard 强制，Origin 要和 Host 同源，见 remote.ts）
   if (!external && !isAllowedHost(host)) return c.json({ error: t('只接受来自本机的访问') }, 403)
   const origin = c.req.header('origin')
   // 浏览器扩展只能调 /bridge 下面的接口（报标签页、取指令、交图片），别的一律不行
   if (/^(chrome|moz)-extension:\/\//.test(origin ?? '')) {
     if (!c.req.path.startsWith('/api/bridge/')) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
+    // 扩展只会从本机连：经过隧道、反代来的一律不认（Origin 谁都能伪造）
+    if (!isLocalHost(host) || viaProxy((h) => c.req.header(h)))
+      return c.json({ error: t('浏览器扩展只能从本机连接') }, 403)
+    // 没配对的旧扩展（1.4 及以前）：只回「重新加载」让它换上新文件（新文件里带着配对令牌），别的什么都不做。
+    // 回 200：旧扩展遇到非 2xx 直接当连不上，读不到 reload
+    if (!bridgePaired(c.req.header(PAIRING_HEADER))) {
+      if (c.req.path === '/api/bridge/hello')
+        return c.json({ ok: false, paired: false, latestVersion: bundledExtensionVersion(), reload: true })
+      return c.json({ error: t('浏览器扩展没有配对：请在面板里重新加载扩展') }, 401)
+    }
     return next()
   }
   if (origin !== undefined) {
-    let ok = false
-    try {
-      const from = new URL(origin)
-      // 外网页面：Origin 必须是本机、当前外网地址，或者和请求的 Host 同源
-      ok = external
-        ? from.host.toLowerCase() === host.trim().toLowerCase()
-        : isLocalHost(from.hostname) || from.hostname.toLowerCase() === hostOf(host) || isAllowedHost(from.hostname)
-    } catch {}
-    if (!ok) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
+    if (!originAllowed(origin, host, external)) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   }
   if (c.req.header('sec-fetch-site') === 'cross-site') return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   if (
@@ -377,14 +412,20 @@ async function parseAgent(body: unknown, selfId = '') {
   if (p.data.cli && !getCli(p.data.cli)) return { error: t('未知的 Agent：{cli}', { cli: p.data.cli }) }
   if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: t('分类不存在') }
   p.data.tags = await knownTags(p.data.tags)
-  return { data: p.data }
+  // 类别建好不能改（ADR 0038）：修改时按原来的；Chat 角色的能力字段归零，引入只留同类、挂载只能是 Agent 角色
+  const all = await agents.list()
+  if (selfId) p.data.scope = all.find((a) => a.id === selfId)?.scope
+  const scoped = normalizeScope(p.data, all)
+  return scoped ? { error: scoped } : { data: p.data }
 }
 
 async function parseWorkflow(body: unknown, selfId = '') {
   const p = WorkflowInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
-  const ids = new Set((await agents.list()).map((a) => a.id))
-  const error = checkWorkflow(p.data, ids, await workflows.list(), selfId)
+  const list = await agents.list()
+  const ids = new Set(list.map((a) => a.id))
+  const error =
+    checkWorkflow(p.data, ids, await workflows.list(), selfId) || agentOnlyError(workflowAgentIds(p.data), list)
   if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: t('分类不存在') }
   p.data.tags = await knownTags(p.data.tags)
   return error ? { error } : { data: p.data }
@@ -411,7 +452,8 @@ app.put('/settings', async (c) => {
   if (!p.success) return bad(c, z.prettifyError(p.error))
   for (const id of Object.keys(p.data.clis)) if (!getCli(id)) delete p.data.clis[id]
   // 打开访问令牌的是这个浏览器：先给它发 Cookie，免得刚打开就把自己关在外面
-  if (p.data.requireToken) grantCookie(c)
+  // 打开外网访问后本机也要令牌（见 auth.ts），同样先给这个浏览器发上
+  if (p.data.requireToken || p.data.remoteAccess.enabled) grantCookie(c)
   const prev = await getSettings()
   const before = JSON.stringify(prev.remoteAccess)
   const saved = await saveSettings(p.data)
@@ -452,6 +494,7 @@ app.route('/project-mcp', projectMcpApi({ projectPath: async (id) => (await proj
 app.route('/clis', installApi())
 app.route('/local-image', comfyApi())
 app.route('/speech', speechApi())
+app.route('/tts', ttsApi())
 app.route('/clis', modelsApi())
 app.route('/clis', packagesApi())
 app.route('/model-catalog', modelCatalogApi())
@@ -606,7 +649,10 @@ app.delete('/agents/:id', async (c) => {
   if (isCoreAgent((await agents.get(id)) ?? undefined)) return bad(c, t('必备角色不能删除'), 409)
   const err = agentDeleteError(id, await workflows.list())
   if (err) return bad(c, err, 409)
-  if (!(await agents.remove(id))) return bad(c, t('角色不存在'), 404)
+  const agent = await agents.get(id)
+  if (!agent) return bad(c, t('角色不存在'), 404)
+  await trashItem('agent', agent)
+  await agents.remove(id)
   // 引入了它的 Agent 去掉这条引入
   for (const a of await agents.list())
     if (a.includes.includes(id)) await agents.update(a.id, { ...a, includes: a.includes.filter((x) => x !== id) })
@@ -632,7 +678,11 @@ app.delete('/workflows/:id', async (c) => {
   const id = c.req.param('id')
   const err = workflowDeleteError(id, await projectCategories.list(), await projects.list())
   if (err) return bad(c, err, 409)
-  return (await workflows.remove(id)) ? c.body(null, 204) : bad(c, t('工作流不存在'), 404)
+  const wf = await workflows.get(id)
+  if (!wf) return bad(c, t('工作流不存在'), 404)
+  await trashItem('workflow', wf)
+  await workflows.remove(id)
+  return c.body(null, 204)
 })
 
 // ---- 项目分类 ----
@@ -687,6 +737,7 @@ async function parseProject(body: unknown) {
   if (!p.success) return { error: z.prettifyError(p.error) }
   if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: t('项目分类不存在') }
   if (p.data.defaultAgentId && !(await agents.get(p.data.defaultAgentId))) return { error: t('默认对话角色不存在') }
+  if (agentOnlyError([p.data.defaultAgentId], await agents.list())) return { error: t('默认对话角色必须是 Agent 角色') }
   if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: t('工作流不存在') }
   const cat = p.data.categoryId ? await projectCategories.get(p.data.categoryId) : null
   if (!p.data.workflowId && !cat?.workflowId) return { error: t('请为项目选择子对话默认工作流') }
@@ -827,11 +878,20 @@ app.get('/projects/:id/panel-source', async (c) => {
 
 app.delete('/projects/:id', async (c) => {
   const id = c.req.param('id')
-  const repo = (await projects.get(id))?.path
-  if (!(await projects.remove(id))) return bad(c, t('项目不存在'), 404)
-  await tasks.removeByProject(id, repo)
+  const project = await projects.get(id)
+  if (!project) return bad(c, t('项目不存在'), 404)
+  // 项目和它的对话一起进回收站：保留期内能整个恢复（以前对话直接物理删除，删错项目就全没了）
+  const taskIds = await tasks.trashByProject(id)
+  await trashItem('project', project, taskIds)
+  await projects.remove(id)
   return c.body(null, 204)
 })
+
+// 角色、工作流、项目的回收站（对话的回收站在 /tasks/trash）
+app.route(
+  '/trash/items',
+  itemTrashRoutes({ agents, workflows, projects, restoreTasks: (ids) => tasks.restoreTasks(ids) }),
+)
 
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
@@ -843,6 +903,9 @@ const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordL
  */
 function runCleanup() {
   void tasks.cleanupTrash().catch((e: Error) => log.error('tasks', '回收站清理出错', { error: e.message }))
+  void cleanupItemTrash().catch((e: Error) =>
+    log.error('trash', '角色 / 工作流 / 项目回收站清理出错', { error: e.message }),
+  )
   void tasks
     .reapSettledClis()
     .catch((e: Error) => log.warn('exec', '兜底回收已收口任务的 CLI 出错', { error: e.message }))
@@ -896,6 +959,7 @@ const schedules = schedulesApi({
   projectName: async (id) => (await projects.get(id))?.name ?? '',
   // 启动出来的对话跑完没有：只读任务元数据，运行记录据此补耗时
   peekTask: (id) => tasks.peek(id),
+  agents: () => agents.list(),
 })
 app.route('/schedules', schedules.routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
@@ -959,8 +1023,6 @@ app.route('/mcp', designMcpApi())
 app.route('/mcp', blenderMcpApi())
 app.route('/blender', blenderApi())
 app.route('/mcp', askMcpApi())
-// 联网搜索代理：CLI 里的 web_search / web_fetch 打到面板，地址里带本轮 CLI 的随机地址
-app.route('/web-search', webSearchApi())
 const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)
@@ -971,7 +1033,13 @@ app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----
 app.route('/uploads/raw', uploadsRawApi())
-app.route('/uploads', uploadsApi({ dirs: async () => (await projects.list()).map((p) => p.path).filter(Boolean) }))
+app.route(
+  '/uploads',
+  uploadsApi({
+    dirs: async () => (await projects.list()).map((p) => p.path).filter(Boolean),
+    known: (file) => tasks.hasAttachment(file),
+  }),
+)
 // 文件浏览页：项目里的文件树、内容搜索、看单个文件
 app.route('/project-files', filesApi({ projects }))
 app.get('/projects/:id/files', async (c) => {
@@ -1072,7 +1140,7 @@ const updater = updateApi({
   restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
   // 强制更新：先让任务里的 CLI 收尾；设计、文档、模型补全这些不在任务里的也一起结束
   stopAll: async () => {
-    await tasks.stopAll()
+    await tasks.stopAll({ forUpdate: true })
     killAllProcesses()
   },
   interrupted: () => tasks.interruptedTasks(),
@@ -1107,6 +1175,7 @@ root.onError((e, c) => {
   log.error('http', `${c.req.method} ${c.req.path} 出错`, e)
   return c.json({ error: e.message || t('服务出错') }, 500)
 })
+installHttpGuards(root)
 root.use('*', tokenGuard)
 root.route('/', app)
 // 生产模式下直接托管前端构建产物
@@ -1154,6 +1223,11 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   setInterval(runCleanup, 60 * 60_000).unref()
   // 上次关掉、崩溃时没来得及删的面板 MCP 条目（项目 .mcp.json 里的 agent-panel、panel-xxxx）：启动时清一遍
   void sweepProjectsPanelMcp()
+  // 上次崩溃时写到一半的 JSON 临时文件：不清的话数据目录里会越积越多
+  void sweepStaleTmp().then(
+    (files) => files.length && log.info('server', '清掉了上次留下的临时文件', { files: files.length }),
+    (e) => log.warn('server', `清理临时文件失败：${(e as Error).message}`),
+  )
   void applyRemote()
   void getSettings().then(applyPresenceReclaim)
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
@@ -1184,6 +1258,11 @@ async function shutdown(code = 0) {
   await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
   // 不在任务里的 CLI（AI 创建、设计、文档、模型补全、检测命令）也要一起结束
   killAllProcesses()
+  // 停任务时写进对话的最后几条还可能在 400ms 合并窗口里：等它们落盘再退出，最多等 3 秒（盘卡住也要能退）
+  await Promise.race([
+    tasks.flush().catch((e) => log.error('server', `退出前写对话记录失败：${(e as Error).message}`)),
+    new Promise((r) => setTimeout(r, 3000)),
+  ])
   process.exit(code)
 }
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => void shutdown())

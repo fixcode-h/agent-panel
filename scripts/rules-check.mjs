@@ -5,13 +5,21 @@
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 4b. 文本文件里不能有裸 NUL 字节：写成 `` `\0` `` 的文本被误存成 0x00 时 grep / rg 会整份跳过、搜不到
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
+// 6b. 界面不用细字重（font-thin / extralight / light、font-weight 100–300）：主次靠颜色和字号分
+// 6c. 字号、圆角不手写，用阶梯里的名字
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
 // 7b. `docs/modules/<模块>/bugs.md` 由 `bugs/<bug-id>.md` 生成：手改索引、改了详情忘了重生成都会被拦下
+// 8. 一轮结束只发一次回调：server/exec/runner.ts 里 markTurnDone 和 ctx.onTurnEnd 只能从 endTurn() 一处发出
 // 9. 共享仓库的 config 里不能有 core.worktree
 // 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
+// 11. 界面检查用例必须写在 runShard 的回调里：`scripts/ui/` 分片里 runShard 调用之后的代码永远不执行
+// 12. 提示只能从 web/src/lib/toast.ts 取 toast：直接从 sonner 引会绕过排队（例外写 `sonner-toast-ok: 原因`）
 // 13. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
 // 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
 // 15. 大文件只许变小：超过 scripts/file-caps.json 里的上限就失败
+// 16. 界面上的中文要走 t()：JSX 文字节点里直接写中文会在英文界面里露出来
+// 17. 不给 process.env 整个赋值：换成普通对象后再设 HOME 等变量，os.homedir() 和子进程都读不到
+// 18. 面板工具不按「是不是 Chat 页」裁：server/orch-mcp.ts、orch-hint.ts、ask-mcp.ts 里不出现 isChatMode / isPlainChat / .plain
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -221,6 +229,22 @@ for (const f of files) {
     })
 }
 
+// 6c. 字号和圆角走阶梯（见 docs/lessons/ui.md「文案、命名和控件的写法」）：
+// 不手写 text-[…rem] / text-[…px]，用 index.css @theme 里的 text-caption、text-body 这些角色；
+// 圆角不手写 5px 以上的 rounded-[…]，用 rounded-sm / lg / xl / 2xl / 3xl。4px 以下的小色块按自身大小写，不拦
+for (const f of files) {
+  if (!/^web\/src\/.+\.(tsx?|css)$/.test(f) || /\.test\.tsx?$/.test(f)) continue
+  read(f)
+    .split('\n')
+    .forEach((l, i) => {
+      if (/\btext-\[[0-9.]+(?:rem|px|em)\]/.test(l))
+        errors.push(`${f}:${i + 1} 手写了字号，改用 text-caption / text-body 这类字号角色：${l.trim()}`)
+      const r = l.match(/\brounded(?:-[a-z]{1,2})?-\[([0-9.]+)(px|rem)\]/)
+      if (r && (r[2] === 'rem' || Number(r[1]) > 4))
+        errors.push(`${f}:${i + 1} 手写了圆角，改用 rounded-sm / lg / xl / 2xl / 3xl：${l.trim()}`)
+    })
+}
+
 // 7. 模块文档和模块地图双向对得上（见 skills/docs/project-documentation「模块文档」）；root 必须是仓库根，传错会因为找不到 docs/MODULE-MAP.md 而静默通过
 errors.push(...checkModuleDocsInRoot(root))
 
@@ -390,7 +414,7 @@ else {
       errors.push(`${f}：不能被 scripts/ui-check.mjs 的 SHARD_FILE 收录，这个分片会被静默跳过`)
   }
 }
-const shotPrefixSrc = read('scripts/ui/harness.mjs').match(/path\.basename\(file\)\.match\(\/\^\((.+?)\)\-\/\)/)?.[1]
+const shotPrefixSrc = read('scripts/ui/harness.mjs').match(/path\.basename\(file\)\.match\(\/\^\((.+?)\)-\/\)/)?.[1]
 if (!shotPrefixSrc) errors.push('scripts/ui/harness.mjs：读不到截图前缀正则（path.basename(file).match(...)）')
 else {
   const shotPrefix = new RegExp(`^(${shotPrefixSrc})-`)
@@ -414,6 +438,58 @@ else {
         `${f}：${lines} 行，超过上限 ${cap}（scripts/file-caps.json）。把新加的部分拆到独立模块里；文件变小了跑 node scripts/file-caps.mjs --update 把上限降下来`,
       )
   }
+}
+
+// 16. 界面上的中文要走 t()：i18n-check 只查 t() 里的文案有没有英文，没包 t() 直接写在 JSX 里的中文查不出来，
+// 英文界面就会冒出中文（设计项目的风格预设就这样漏过）。只看 JSX 的文字节点（>中文<），演示数据和测试不管；
+// 确实要原样显示中文的行在结尾加 i18n-ok 并写明原因
+{
+  const cjk = /[\u4e00-\u9fff]/
+  const jsxText = />([^<>{}\n]*)</g
+  for (const f of files.filter((x) => x.startsWith('web/src/') && x.endsWith('.tsx') && !x.includes('.test.'))) {
+    const lines = readFileSync(path.join(root, f), 'utf8').split('\n')
+    lines.forEach((line, i) => {
+      if (line.includes('i18n-ok') || line.trimStart().startsWith('//') || line.trimStart().startsWith('*')) return
+      for (const m of line.matchAll(jsxText)) {
+        if (cjk.test(m[1]))
+          errors.push(
+            `${f}:${i + 1}：JSX 里直接写了中文「${m[1].trim().slice(0, 20)}」，界面文案要用 t('中文')（见 AGENTS.md）`,
+          )
+      }
+    })
+  }
+}
+
+// 17. 不给 process.env 整个赋值（测试里还原环境变量常写成 process.env = old）：换成普通对象后，
+// 再设 HOME / USERPROFILE，os.homedir() 读不到，后面的用例会写进前一条用例的临时目录甚至真实家目录。
+// 按键还原：删掉多出来的键，再 Object.assign(process.env, old)
+{
+  const assign = /\bprocess\.env\s*=(?!=)/
+  for (const f of files.filter((x) => /\.(ts|tsx|mjs|js)$/.test(x) && !x.startsWith('node_modules/'))) {
+    const lines = readFileSync(path.join(root, f), 'utf8').split('\n')
+    lines.forEach((line, i) => {
+      const code = line.trimStart()
+      if (code.startsWith('//') || code.startsWith('*')) return
+      if (assign.test(line))
+        errors.push(
+          `${f}:${i + 1}：不要给 process.env 整个赋值，按键还原（删掉多出来的键再 Object.assign(process.env, old)）`,
+        )
+    })
+  }
+}
+
+// 18. 面板工具按能力给，不按「是不是某个页面」的身份开关（ADR 0038，见 docs/lessons/panel-tools.md）：
+// 模式上限只在 shared/engine.ts 的 makeOrchestra 取一次，算成 canSpawn / team 这类能力字段，工具清单、说明、握手只读能力
+for (const f of ['server/orch-mcp.ts', 'server/orch-hint.ts', 'server/ask-mcp.ts']) {
+  if (!existsSync(path.join(root, f))) continue
+  read(f)
+    .split('\n')
+    .forEach((line, i) => {
+      if (/\bisChatMode\b|\bisPlainChat\b|\bo\.plain\b|orch\.plain\b/.test(line))
+        errors.push(
+          `${f}:${i + 1}：面板工具不按「是不是 Chat 页」裁，读 Orchestra 的能力字段（canSpawn / team / plans），见 ADR 0038`,
+        )
+    })
 }
 
 if (errors.length) {

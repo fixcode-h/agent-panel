@@ -130,9 +130,28 @@ test('默认值来自 AgentParam.default，没有默认值又要求填的标成�
   const list = derivedParams(w, [...agents, strict])
   assert.equal(list.find((d) => d.key === 'level')!.defaultValue, 2)
   assert.equal(list.find((d) => d.key === 'branch')!.required, true)
-  assert.equal(isDefaultValue(list.find((d) => d.key === 'level')!, 2), true, '和默认值相同时算没填过')
-  assert.equal(isDefaultValue(list.find((d) => d.key === 'level')!, 5), false)
-  assert.equal(isDefaultValue(list.find((d) => d.key === 'level')!, undefined), true)
+  assert.equal(
+    isDefaultValue(
+      list.find((d) => d.key === 'level')!,
+      2,
+    ),
+    true,
+    '和默认值相同时算没填过',
+  )
+  assert.equal(
+    isDefaultValue(
+      list.find((d) => d.key === 'level')!,
+      5,
+    ),
+    false,
+  )
+  assert.equal(
+    isDefaultValue(
+      list.find((d) => d.key === 'level')!,
+      undefined,
+    ),
+    true,
+  )
 })
 
 test('工作流 expose 已经管着的 key 不再派生，同一参数不会有两套配置源', () => {

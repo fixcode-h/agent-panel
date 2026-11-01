@@ -71,8 +71,8 @@ function Tokens({ value }: { value: number }) {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="min-w-0">
-      <div className="text-[0.6875rem] text-subtle">{label}</div>
-      <div className="truncate font-mono text-[0.8125rem] tabular-nums" title={num(value)}>
+      <div className="text-caption text-subtle">{label}</div>
+      <div className="truncate font-mono text-body tabular-nums" title={num(value)}>
         {formatTokens(value)}
       </div>
     </div>
@@ -107,9 +107,9 @@ function GroupedTable({
     return v === null ? <span className="text-subtle">{t('未配置单价')}</span> : formatMoney(v, currency)
   }
   return (
-    <table className="w-full text-[0.75rem] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+    <table className="w-full text-footnote [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
       <thead>
-        <tr className="sticky top-0 z-10 border-b bg-card text-left text-[0.6875rem] text-subtle">
+        <tr className="sticky top-0 z-10 border-b bg-card text-left text-caption text-subtle">
           <th className="px-2.5 py-2 font-medium">{nameLabel}</th>
           <th className="px-2.5 py-2 text-right font-medium">{t('输入')}</th>
           <th className="px-2.5 py-2 text-right font-medium">{t('输出')}</th>
@@ -436,7 +436,7 @@ export function UsageSection({
                   onClick={() => changeGrain(g.id)}
                   onKeyDown={(e) => onTabKey(e, i)}
                   className={cn(
-                    'h-7 cursor-pointer rounded-md px-2.5 text-[0.75rem] transition-colors',
+                    'h-7 cursor-pointer rounded-md px-2.5 text-footnote transition-colors',
                     grain === g.id ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
                   )}
                 >
@@ -484,7 +484,7 @@ export function UsageSection({
       </div>
 
       {/* 统计口径和快捷键一次说清，按钮上的 title 也带着 */}
-      <p className="text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="text-body leading-relaxed text-subtle">
         {group === 'time'
           ? t(
               '按本机本地时间统计每轮执行的 token，一轮算在它开始的那一天（周从周一起算）。输入含缓存命中和缓存写入的部分。',
@@ -497,7 +497,7 @@ export function UsageSection({
               },
             )}
       </p>
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-subtle">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-subtle">
         {group === 'time' && (
           <>
             <span>
@@ -516,13 +516,13 @@ export function UsageSection({
         </span>
       </p>
       {error && <p className="text-xs text-danger">{error}</p>}
-      {fellBack && <p className="text-[0.75rem] text-muted">{fallbackText}</p>}
+      {fellBack && <p className="text-footnote text-muted">{fallbackText}</p>}
 
       {/* 汇总：费用放最显眼的位置，其他指标一格一个，一屏内看全 */}
       <div className="rounded-xl bg-sel/40 px-3.5 py-3">
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
           <div className="min-w-[160px]">
-            <div className="flex items-center gap-1 text-[0.6875rem] text-subtle">
+            <div className="flex items-center gap-1 text-caption text-subtle">
               {t('费用')}
               <HelpTip>
                 <span className="block">
@@ -549,21 +549,21 @@ export function UsageSection({
                 )}
               </HelpTip>
             </div>
-            <div className="mt-0.5 font-mono text-[1.375rem] leading-tight font-semibold tabular-nums">
+            <div className="mt-0.5 font-mono text-title leading-tight font-semibold tabular-nums">
               {cost === null ? (
-                <span className="text-[0.9375rem] font-normal text-subtle">{t('未配置单价')}</span>
+                <span className="text-heading font-normal text-subtle">{t('未配置单价')}</span>
               ) : (
                 formatMoney(cost, currency)
               )}
             </div>
-            <div className="mt-0.5 text-[0.6875rem] text-subtle">
+            <div className="mt-0.5 text-caption text-subtle">
               {model ? t('按 {model} 单价估算', { model: model.label }) : t('未配置单价')}
               {total.turns > 0 && ` · ${t('共 {n} 轮', { n: num(total.turns) })}`}
             </div>
             {/* 峰谷明细：只占一行小字，不撑宽表格；分时段定价的模型才显示 */}
             {tiered && total.turns > 0 && (
               <div
-                className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.6875rem] text-subtle"
+                className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-caption text-subtle"
                 data-usage-tiers
               >
                 <span title={t('高峰时段：北京时间周一至周五 9:00-12:00、14:00-18:00')}>
@@ -601,13 +601,11 @@ export function UsageSection({
         className="max-h-[min(46vh,420px)] overflow-y-auto outline-none focus-visible:ring-[3px] focus-visible:ring-focus-soft"
       >
         {listEmpty ? (
-          <div className="px-3.5 py-8 text-center text-[0.8125rem] text-subtle">
-            {loading ? '…' : t('这段时间暂无用量')}
-          </div>
+          <div className="px-3.5 py-8 text-center text-body text-subtle">{loading ? '…' : t('这段时间暂无用量')}</div>
         ) : group === 'time' ? (
-          <table className="w-full text-[0.75rem] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+          <table className="w-full text-footnote [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
             <thead>
-              <tr className="sticky top-0 z-10 border-b bg-card text-left text-[0.6875rem] text-subtle">
+              <tr className="sticky top-0 z-10 border-b bg-card text-left text-caption text-subtle">
                 <th className="px-2.5 py-2 font-medium whitespace-nowrap">{t('时间')}</th>
                 <th className="px-2.5 py-2 text-right font-medium">{t('输入')}</th>
                 <th className="px-2.5 py-2 text-right font-medium">{t('输出')}</th>

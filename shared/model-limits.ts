@@ -96,6 +96,13 @@ export function parseTokens(s: string): number | undefined {
 }
 
 /** 显示成「1M」「128K」「1.05M」，不是整千的照原样 */
+/**
+ * Agent 模式下上下文上限低于这个值时，设置里提示「可能压缩抖动」，压缩抖动失败的说明里也写它：
+ * 光系统提示词 + 工具定义就约 44K，再留两次大的工具输出（Claude Code 单次读文件最多约 25K）≈ 94K，
+ * CLI 在 70%～80% 时自动压缩，折回上限约 128K。低于它时一次读几个大文件，压缩完马上又满
+ */
+export const MIN_AGENT_CONTEXT = 128_000
+
 export function fmtTokens(n: number) {
   if (n >= 1_000_000 && n % 10_000 === 0) return `${+(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000 && n % 1_000 === 0) return `${n / 1_000}K`

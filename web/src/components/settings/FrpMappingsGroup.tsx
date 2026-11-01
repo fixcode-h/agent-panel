@@ -110,13 +110,13 @@ export function FrpMappingsGroup({
             stack
           >
             <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2 text-[0.8125rem] text-muted">
+              <div className="flex flex-wrap items-center gap-2 text-body text-muted">
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} />
                 <Input
                   value={m.name}
                   onChange={(e) => update(m.id, { name: e.target.value })}
                   placeholder={t('名称')}
-                  className="w-[140px] text-[0.8125rem]"
+                  className="w-[140px] text-body"
                   aria-label={t('名称')}
                 />
                 <Select
@@ -134,7 +134,7 @@ export function FrpMappingsGroup({
                   onChange={(e) => update(m.id, { localIP: e.target.value.trim() })}
                   placeholder="127.0.0.1"
                   spellCheck={false}
-                  className="w-[124px] font-mono text-[0.8125rem]"
+                  className="w-[124px] font-mono text-body"
                   aria-label={t('本机地址')}
                 />
                 :
@@ -142,7 +142,7 @@ export function FrpMappingsGroup({
                   value={String(m.localPort)}
                   onChange={(e) => update(m.id, { localPort: num(e.target.value, m.localPort) })}
                   inputMode="numeric"
-                  className="w-[72px] font-mono text-[0.8125rem]"
+                  className="w-[72px] font-mono text-body"
                   aria-label={t('本机端口')}
                 />
                 →
@@ -150,7 +150,7 @@ export function FrpMappingsGroup({
                   value={String(m.remotePort)}
                   onChange={(e) => update(m.id, { remotePort: num(e.target.value, m.remotePort) })}
                   inputMode="numeric"
-                  className="w-[80px] font-mono text-[0.8125rem]"
+                  className="w-[80px] font-mono text-body"
                   aria-label={t('服务器端口')}
                 />
                 <Switch

@@ -196,7 +196,7 @@ export function MinimizedChat({
         // pointer-events-auto：弹窗打开时 Radix 会关掉外面区域的鼠标事件，浮条要能点
         // z-[60]：跟另一个窗口的最小化浮条一致，放到所有弹窗之上——进度得一直看得到、点得到
         // portal 到 body：弹窗里可能有 transform / overflow，fixed 会跟着它跑而不是跟着视口
-        'pointer-events-auto group fixed z-[60] flex h-11 touch-none items-center rounded-full border border-line-strong bg-bg text-[0.8125rem] shadow-pop select-none animate-[pop-in_160ms_ease-out]',
+        'pointer-events-auto group fixed z-[60] flex h-11 touch-none items-center rounded-full border border-line-strong bg-bg text-body shadow-pop select-none animate-[pop-in_160ms_ease-out]',
         dragging ? 'cursor-grabbing' : 'cursor-grab',
       )}
     >

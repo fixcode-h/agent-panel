@@ -1,6 +1,7 @@
+import { useEffect, useRef, useState } from 'react'
 import { Appearance, PALETTES, WORD_SPACING, type Palette } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { applyAppearance } from '@/lib/appearance'
+import { applyLocalAppearance } from '@/lib/appearance'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -55,12 +56,16 @@ function PaletteCard({ id, on, onPick }: { id: Palette; on: boolean; onPick: () 
         {sample(PALETTE_SAMPLES[id].light)}
         {sample(PALETTE_SAMPLES[id].dark)}
       </span>
-      <span className="px-0.5 text-[0.8125rem] font-medium">{names[id]}</span>
+      <span className="px-0.5 text-body font-medium">{names[id]}</span>
     </button>
   )
 }
 
-/** 滑块一行：拖动时立即生效（applyAppearance），保存交给设置页的自动保存 */
+/**
+ * 滑块一行：拖动时立即生效（applyLocalAppearance），保存交给设置页的自动保存。
+ * 滑块和数值读自己的状态，跟手；往上交给设置页每帧最多一次，拖一下不会每一格都重渲染整个设置页。
+ * 「恢复默认」一直占着位置（在默认值时隐藏）：按钮出现、消失时滑块不会被挤着左右跳（用户反馈调的时候闪一下）
+ */
 function Slider({
   label,
   value,
@@ -80,6 +85,23 @@ function Slider({
   format: (v: number) => string
   onChange: (v: number) => void
 }) {
+  const [local, setLocal] = useState(value)
+  // 外面改了值（恢复本组默认、切了配置）时跟上
+  useEffect(() => setLocal(value), [value])
+  const frame = useRef(0)
+  const next = useRef(value)
+  const send = useRef(onChange)
+  send.current = onChange
+  useEffect(() => () => cancelAnimationFrame(frame.current), [])
+  const change = (v: number) => {
+    setLocal(v)
+    next.current = v
+    if (frame.current) return
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0
+      send.current(next.current)
+    })
+  }
   return (
     <div className="flex items-center gap-3">
       <input
@@ -87,17 +109,22 @@ function Slider({
         min={min}
         max={max}
         step={step}
-        value={value}
+        value={local}
         aria-label={label}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => change(Number(e.target.value))}
         className="w-40 cursor-pointer accent-[var(--color-accent)]"
       />
-      <span className="w-16 font-mono text-[0.8125rem] text-muted tabular-nums">{format(value)}</span>
-      {value !== def && (
-        <Button variant="ghost" size="sm" onClick={() => onChange(def)}>
-          {t('恢复默认')}
-        </Button>
-      )}
+      <span className="w-16 font-mono text-body text-muted tabular-nums">{format(local)}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => change(def)}
+        aria-hidden={local === def}
+        tabIndex={local === def ? -1 : undefined}
+        className={cn(local === def && 'invisible')}
+      >
+        {t('恢复默认')}
+      </Button>
     </div>
   )
 }
@@ -105,7 +132,7 @@ function Slider({
 export function FontSection({ value, onChange }: { value: Appearance; onChange: (a: Appearance) => void }) {
   const update = (next: Appearance) => {
     onChange(next)
-    applyAppearance(next)
+    applyLocalAppearance(next)
   }
   const set = <K extends keyof Appearance>(k: K, v: Appearance[K]) => update({ ...value, [k]: v })
   // 浮点步进会出现 -0.019999 这样的值，显示和保存前都取整
@@ -113,7 +140,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
   return (
     <>
       <Group title={t('配色')}>
-        <p className="pb-3 text-[0.8125rem] text-subtle">{t('只换颜色，布局不变；深浅色跟随侧栏的主题开关。')}</p>
+        <p className="pb-3 text-body text-subtle">{t('只换颜色，布局不变；深浅色跟随侧栏的主题开关。')}</p>
         <div role="radiogroup" aria-label={t('配色')} className="grid grid-cols-2 gap-3 pb-4 sm:grid-cols-3">
           {PALETTES.map((p) => (
             <PaletteCard key={p} id={p} on={value.palette === p} onPick={() => set('palette', p)} />
@@ -129,6 +156,24 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             def={DEFAULTS.panelRadius}
             format={(v) => `${Math.round(v)}px`}
             onChange={(v) => set('panelRadius', Math.round(v))}
+          />
+        </Row>
+        <Row
+          title={t('深色文字亮度')}
+          desc={t('深色主题下主文字有多白')}
+          hint={t(
+            '默认 80%；100% 是纯白，调低更柔和。加粗、表头这类强调字跟着一起调，固定比正文亮一些好区分。浅色主题不受影响。',
+          )}
+        >
+          <Slider
+            label={t('深色文字亮度')}
+            value={value.darkTextLevel}
+            min={70}
+            max={100}
+            step={1}
+            def={DEFAULTS.darkTextLevel}
+            format={(v) => `${Math.round(v)}%`}
+            onChange={(v) => set('darkTextLevel', Math.round(v))}
           />
         </Row>
       </Group>
@@ -251,12 +296,12 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             onChange={(v) => set('lineHeight', round(v, 2))}
           />
         </Row>
-        <Card padding="md" className="mt-4">
-          <p className="text-[0.75rem] text-subtle">{t('预览')}</p>
-          <p className="mt-2 text-[0.875rem]">
+        <Card padding="md">
+          <p className="text-footnote text-subtle">{t('预览')}</p>
+          <p className="mt-2 text-prose">
             {t('Agent 面板按工作流调度本机的编码 Agent。')} The quick brown fox jumps over the lazy dog.
           </p>
-          <pre className="mt-2 rounded-md bg-field px-3 py-2 font-mono text-[0.75rem]">
+          <pre className="mt-2 rounded-md bg-field px-3 py-2 font-mono text-footnote">
             {'const ok = a => b !== c && x >= 0 // 0O 1lI 中文注释'}
           </pre>
         </Card>

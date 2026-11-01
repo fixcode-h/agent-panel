@@ -96,7 +96,7 @@ export function PeriodPicker({
             aria-label={t('选择时间范围（{range}）', { range: label })}
             title={t('选择时间范围（{range}）', { range: label })}
             data-usage-period-trigger
-            className="h-8 max-w-[260px] cursor-pointer truncate border-x px-2.5 text-[0.8125rem] font-medium whitespace-nowrap hover:bg-sel"
+            className="h-8 max-w-[260px] cursor-pointer truncate border-x px-2.5 text-body font-medium whitespace-nowrap hover:bg-sel"
           >
             {label}
           </button>
@@ -110,7 +110,7 @@ export function PeriodPicker({
               disabled={!canStep(-1)}
               onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
             />
-            <span className="flex-1 text-center text-[0.8125rem] font-medium">
+            <span className="flex-1 text-center text-body font-medium">
               {t('{y}年{m}月', { y: month.getFullYear(), m: month.getMonth() + 1 })}
             </span>
             <IconButton
@@ -121,7 +121,7 @@ export function PeriodPicker({
               onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
             />
           </div>
-          <div className="grid grid-cols-7 gap-0.5 text-center text-[0.6875rem] text-subtle">
+          <div className="grid grid-cols-7 gap-0.5 text-center text-caption text-subtle">
             {WEEKDAYS.map((w) => (
               <span key={w} className="py-1">
                 {w}
@@ -147,7 +147,7 @@ export function PeriodPicker({
                   aria-pressed={picked}
                   onClick={() => pick(day)}
                   className={cn(
-                    'relative grid h-8 cursor-pointer place-items-center rounded-lg text-[0.75rem] tabular-nums transition-colors',
+                    'relative grid h-8 cursor-pointer place-items-center rounded-lg text-footnote tabular-nums transition-colors',
                     !inMonth && 'opacity-40',
                     picked ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
                     isToday && !picked && 'ring-1 ring-accent/60',
@@ -172,7 +172,7 @@ export function PeriodPicker({
             <Button variant="ghost" size="sm" onClick={() => pick(today)}>
               {t('今天')}
             </Button>
-            <span className="ml-auto text-[0.6875rem] text-subtle">
+            <span className="ml-auto text-caption text-subtle">
               {hint ??
                 (grain === 'day'
                   ? t('点一天看那天的用量')

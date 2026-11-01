@@ -470,6 +470,10 @@ function buildAssistBody(kind: AssistKind, ctx: AssistContext, messages: AssistM
       : '',
     improving ? `## 当前的${what}（在它的基础上按用户要求修改）\n\`\`\`json\n${current}\n\`\`\`` : '',
     `## 创建规则\n${kind === 'agent' ? AGENT_RULES : WORKFLOW_RULES}`,
+    // Chat 角色（ADR 0038）只在 Chat 页用：写进去的子对话、工作流、派单规则在那里全都用不上
+    kind === 'agent' && (ctx.subject?.scope === 'chat' || (ctx.target as Agent | undefined)?.scope === 'chat')
+      ? '## 这是 Chat 角色\n它只在 Chat 页（不属于项目的聊天）里用：没有子对话、子任务、工作流和挂载能力，计划用 CLI 自带的待办。角色设定里不要写分派、派子任务、按工作流执行、推送收尾这类规则；canDelegate、canPlan、common 一律写 false。'
+      : '',
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式
 先用两三句${promptLangWord()}说明你的设计${improving ? '和改了哪些地方' : ''}；信息不够时可以说明你做的假设，但仍然要给出完整结果。
@@ -996,6 +1000,8 @@ const agentExtras = (a?: Agent) => ({
   // 角色分层、挂载、就地改动是用户的设计，AI 优化角色设定时原样保留
   ...(a && {
     kind: a.kind,
+    // 类别建好不能改（ADR 0038），优化时原样保留
+    scope: a.scope,
     when: a.when,
     modes: a.modes,
     independent: a.independent,

@@ -14,6 +14,7 @@ import {
   afterMiss,
   afterRun,
   alignScheduleAt,
+  scheduleClock,
   appendRun,
   dependencyBlocker,
   nextRunAt,
@@ -32,7 +33,8 @@ import {
   type RunTaskState,
   type ScheduleRun,
 } from '../shared/schedule.ts'
-import { NewTaskInput, type Task } from '../shared/schema.ts'
+import { NewTaskInput, type Agent, type Task } from '../shared/schema.ts'
+import { scopeError } from '../shared/conv-mode.ts'
 import type { ScheduleDelivery, ScheduleEvent } from '../shared/schedule.ts'
 import { t } from '../shared/i18n.ts'
 import { createCollection } from './store.ts'
@@ -85,6 +87,8 @@ export function schedulesApi(deps: {
    * 不传就不补，运行记录里不显示耗时
    */
   peekTask?: (id: string) => Promise<RunTaskState | null>
+  /** 本机的角色：保存时校验角色的类别（项目里用 Agent 角色、聊天用 Chat 角色，ADR 0038）；不传就不校验 */
+  agents?: () => Promise<Agent[]>
 }) {
   const store = createCollection('schedules.json', Schedule)
   const routes = new Hono()
@@ -327,6 +331,15 @@ export function schedulesApi(deps: {
     }
   }
 
+  /** 计划选的角色类别对不对：和新建对话同一个判据（shared/conv-mode.ts 的 scopeError） */
+  const scopeOfSchedule = async (s: { projectId: string; agentId: string }) =>
+    s.agentId && deps.agents
+      ? scopeError(
+          { mode: 'chat', projectId: s.projectId },
+          (await deps.agents()).find((a) => a.id === s.agentId),
+        )
+      : ''
+
   routes.get('/', async (c) => c.json(await store.list()))
 
   routes.post('/', async (c) => {
@@ -337,7 +350,7 @@ export function schedulesApi(deps: {
     // 新建的计划还没有 id，别的计划依赖不了它，不会成环，只校验上游是否存在
     const depError = await checkDependencies('', dependsOn)
     if (depError) return bad(c, depError)
-    const timing = scheduleTimingError(p.data)
+    const timing = scheduleTimingError(p.data) || (await scopeOfSchedule(p.data))
     if (timing) return bad(c, timing)
     const now = new Date().toISOString()
     // 每周 / 工作日的首次执行也要落在选中的星期：保存前对齐，到点判定（pickDue）和徽标才一致
@@ -345,6 +358,7 @@ export function schedulesApi(deps: {
       ...p.data,
       dependsOn,
       at: alignScheduleAt(p.data),
+      clock: scheduleClock(p.data.at),
       ...EMPTY_STATE,
       createdAt: now,
       updatedAt: now,
@@ -362,19 +376,21 @@ export function schedulesApi(deps: {
     const dependsOn = [...new Set(p.data.dependsOn)]
     const depError = await checkDependencies(id, dependsOn)
     if (depError) return bad(c, depError)
-    const timing = scheduleTimingError(p.data)
+    const timing = scheduleTimingError(p.data) || (await scopeOfSchedule(p.data))
     if (timing) return bad(c, timing)
     const input = { ...p.data, dependsOn, at: alignScheduleAt(p.data) }
     // 已经结束的计划把结束日期往后改（或改成永不）：存着的 at 是结束后那一次、早就过了，
     // 不推到现在之后的话下一轮会先记一次「错过」。推过去之后按重新排期处理
     const now = Date.now()
     if (scheduleEnded(old) && !scheduleEnded(input) && Date.parse(input.at) < now - SCHEDULE_MISS_MS)
-      input.at = nextRunAt(input, now)
+      input.at = nextRunAt({ ...input, clock: old.clock }, now)
     // 时间改了就是重新排期：已执行 / 已跳过的计划回到待执行，之前错过和没启动的记录也不再算数。
     // 按分钟比较：界面上的时间只到分钟，带秒的老数据在弹窗里编辑时不该被当成改了时间
     const rescheduled = !sameMinute(input.at, old.at)
     const item = await store.update(id, {
       ...input,
+      // 只改名字这类保存时 at 还是上次推出来的那个（可能正好是夏令时顺延过的），沿用原来记的时分
+      clock: !rescheduled && old.clock ? old.clock : scheduleClock(input.at),
       ...(rescheduled
         ? { status: 'pending' as const, missedAt: '', lastError: '', blockedAt: '', blockedReason: '' }
         : {

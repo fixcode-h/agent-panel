@@ -1,17 +1,21 @@
 // 通用的对话消息：用户的气泡、AI 回复下面的时间和操作。
 // 除了工作流的节点输出，所有 AI 对话（任务对话、UI 设计）都用这一套，各自通过 actions 加自己的按钮
 import { useLayoutEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Copy, Quote } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, Quote, Square, Volume2, type LucideIcon } from 'lucide-react'
+import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu'
+import { CopyIcon } from '@/components/ui/copy-icon'
 import { toast } from '@/lib/toast'
 import { copyText as clipboardCopy } from '@/lib/copy-text'
 import { quoteFrom } from '@/lib/quote'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { useAiLook } from '@/lib/ai-look'
-import { getLang, t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { copyText } from '@shared/composer'
 import { MessageBody } from './AttachmentView'
 import { IconButton } from '@/components/ui/icon-button'
+import { useData } from '@/lib/data'
+import { readAloud, readAloudSupported, stopReading, useReadAloud } from '@/lib/read-aloud'
 
 /** 时间格式化器按语言、选项复用：每次渲染都新建 Intl 实例很贵（消息多时一次推送要格式化几十条） */
 const formats = new Map<string, Intl.DateTimeFormat>()
@@ -31,7 +35,7 @@ function fmt(loc: string, opts: Intl.DateTimeFormatOptions) {
 export function formatAt(at: string) {
   const d = new Date(at)
   if (Number.isNaN(d.getTime())) return { short: '', full: '' }
-  const loc = getLang() === 'en' ? 'en-US' : 'zh-CN'
+  const loc = uiLocale()
   const now = new Date()
   const time = fmt(loc, { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
   const short =
@@ -89,8 +93,29 @@ export function CopyButton({
         })
       }}
     >
-      {done ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+      <CopyIcon done={done} className="h-4 w-4" />
     </IconButton>
+  )
+}
+
+/**
+ * 朗读：念这段回复里没折叠的部分（总结），念的时候换成「停止」。
+ * 用本机模型还是浏览器语音、音色、语速都在设置 → 语音朗读；用浏览器语音而浏览器又不支持时不显示
+ */
+export function SpeakButton({ id, text }: { id: string; text: string }) {
+  const playing = useReadAloud(id)
+  const opts = useData().settings?.readAloud
+  if (!opts || (opts.engine === 'browser' && !readAloudSupported())) return null
+  return (
+    <IconButton
+      size="sm"
+      icon={playing ? Square : Volume2}
+      label={playing ? t('停止朗读') : t('朗读')}
+      title={playing ? t('停止朗读') : t('朗读总结')}
+      onClick={() =>
+        playing ? stopReading() : readAloud(id, text, opts, (error) => toast.error(t('朗读失败：{error}', { error })))
+      }
+    />
   )
 }
 
@@ -109,12 +134,55 @@ export function QuoteButton({ text }: { text: string }) {
   )
 }
 
-/** 消息下面的一行：时间和操作按钮，一直显示（always 保留给调用方，不再控制显隐） */
+/** 「⋯」菜单里的一项：名字 + 一行说明（撤回、分叉这类会改对话走向的操作，光看图标猜不出来） */
+export interface MessageMenuItem {
+  label: string
+  hint: string
+  icon: LucideIcon
+  onSelect: () => void
+  /** 现在不能用时写原因（例如对话还在执行），项照样列着、灰掉，不让菜单忽长忽短 */
+  disabledReason?: string
+  /** 在这一项上面画一道分隔线 */
+  separated?: boolean
+}
+
+/**
+ * 消息的「⋯」菜单：复制、引用之外不常用、会改对话走向的操作（撤回重发、分叉、记成教训）收在这里，
+ * 每项写清楚是什么，消息下面不再摆一排看不懂的图标
+ */
+export function MessageMenu({ items }: { items: MessageMenuItem[] }) {
+  if (!items.length) return null
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        {/* 和页头的「更多操作」分开叫：读屏和界面检查都要分得清是哪一个「⋯」 */}
+        <IconButton size="sm" icon={MoreHorizontal} label={t('这条消息的更多操作')} title={t('更多操作')} />
+      </MenuTrigger>
+      <MenuContent className="w-[280px]">
+        {items.map((m) => (
+          <div key={m.label}>
+            {m.separated && <MenuSeparator />}
+            <MenuItem onSelect={m.onSelect} disabled={!!m.disabledReason} className="items-start">
+              <m.icon className="mt-0.5 h-4 w-4 shrink-0 text-subtle" />
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span>{m.label}</span>
+                <span className="text-caption leading-snug text-subtle">{m.disabledReason ?? m.hint}</span>
+              </span>
+            </MenuItem>
+          </div>
+        ))}
+      </MenuContent>
+    </Menu>
+  )
+}
+
+/** 消息下面的一行：时间和操作按钮，一直显示（用户要求：不做悬停才出现，见 docs/lessons/messages.md） */
 export function MessageMeta({
   text,
   at,
   attachments,
   actions,
+  speak,
   align = 'start',
 }: {
   text: string
@@ -122,6 +190,8 @@ export function MessageMeta({
   /** 用户消息：复制、引用时卡片换成文件路径 */
   attachments?: Attachment[]
   actions?: React.ReactNode
+  /** AI 回复：朗读念的文字（没折叠的总结）和这段回复的 id；不传就没有朗读按钮 */
+  speak?: { id: string; text: string }
   align?: 'start' | 'end'
   always?: boolean
 }) {
@@ -129,12 +199,13 @@ export function MessageMeta({
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 text-[0.6875rem] text-subtle transition-opacity',
+        'flex items-center gap-0.5 text-caption text-subtle transition-opacity',
         align === 'end' && 'flex-row-reverse',
       )}
     >
       {text && <CopyButton text={text} attachments={attachments} />}
       {text && <QuoteButton text={attachments ? copyText(text, attachments) : text} />}
+      {speak?.text && <SpeakButton id={speak.id} text={speak.text} />}
       {actions}
       {time?.short && (
         <time dateTime={at} title={time.full} className="px-1.5 tabular-nums">
@@ -154,6 +225,7 @@ export function UserMessage({
   at,
   attachments,
   extra,
+  status,
   actions,
   /** 这条消息在对话里对应的消息 id：搜索结果跳过来时按它定位（见 web/src/lib/message-anchor.ts） */
   anchorId,
@@ -165,6 +237,8 @@ export function UserMessage({
   attachments?: Attachment[]
   /** 气泡里文字下面的内容（例如 UI 设计的标注） */
   extra?: React.ReactNode
+  /** 气泡外右下的一行状态（送达状态 DeliveryLine）：不放进气泡，免得和正文抢注意力 */
+  status?: React.ReactNode
   actions?: React.ReactNode
   anchorId?: string
   size?: 'sm' | 'md'
@@ -177,19 +251,20 @@ export function UserMessage({
   const ai = useAiLook()
   if (subject)
     return (
-      <div data-msg={anchorId} data-user="" className="group/msg overflow-hidden rounded-[0.625rem] border">
-        <div className="flex h-[2.125rem] items-center gap-2 bg-sel/60 pr-1.5 pl-3 text-[0.75rem]">
-          <span className="text-[0.6875rem] font-semibold tracking-[0.06em] text-subtle">{subject.label}</span>
+      <div data-msg={anchorId} data-user="" className="group/msg overflow-hidden rounded-xl border">
+        <div className="flex h-[2.125rem] items-center gap-2 bg-sel/60 pr-1.5 pl-3 text-footnote">
+          <span className="text-caption font-semibold tracking-[0.06em] text-subtle">{subject.label}</span>
           {subject.hint && <span className="min-w-0 truncate text-muted">{subject.hint}</span>}
           <span className="ml-auto" />
           <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} />
         </div>
-        <div className="bg-panel px-3 py-2.5 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]">
+        <div className="bg-panel px-3 py-2.5 text-body leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]">
           <FoldBody>
             <MessageBody text={text} attachments={attachments} />
           </FoldBody>
           {extra}
         </div>
+        {status && <div className="flex justify-end bg-panel px-3 pb-2">{status}</div>}
       </div>
     )
   return (
@@ -204,11 +279,11 @@ export function UserMessage({
           className={cn(
             'max-w-full min-w-0 rounded-2xl bg-sel whitespace-pre-wrap [overflow-wrap:anywhere]',
             size === 'sm'
-              ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
+              ? 'rounded-br-md px-3.5 py-2 text-body leading-relaxed'
               : ai
                 ? // AI 分析窗口的追问气泡（设计稿 AiWindow）：浅一档的底、圆角 12、14px 字
-                  'rounded-xl bg-sel/70 px-3.5 py-2.5 text-[0.875rem] leading-relaxed'
-                : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
+                  'rounded-xl bg-sel/70 px-3.5 py-2.5 text-prose leading-relaxed'
+                : 'px-4 py-2.5 text-heading leading-relaxed',
           )}
         >
           <FoldBody>
@@ -217,6 +292,7 @@ export function UserMessage({
           {extra}
         </div>
       )}
+      {status}
       <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} align="end" />
     </div>
   )
@@ -261,7 +337,7 @@ function FoldBody({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="mt-1 inline-flex cursor-pointer items-center gap-1 text-[0.75rem] text-muted transition-colors hover:text-fg"
+          className="mt-1 inline-flex cursor-pointer items-center gap-1 text-footnote text-muted transition-colors hover:text-fg"
         >
           <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
           {open ? t('收起') : t('展开')}
@@ -276,11 +352,14 @@ export function ReplyFrame({
   text,
   at,
   actions,
+  speak,
   children,
 }: {
   text: string
   at?: string
   actions?: React.ReactNode
+  /** 朗读的文字和 id，见 MessageMeta */
+  speak?: { id: string; text: string }
   /** 兼容调用方：操作一直显示，不再需要这个开关 */
   always?: boolean
   children: React.ReactNode
@@ -290,7 +369,7 @@ export function ReplyFrame({
       {children}
       {/* 复制图标和缩进的回复正文（32px）对齐：减去按钮自己的内边距 6px */}
       <div className="pl-[26px]">
-        <MessageMeta text={text} at={at} actions={actions} />
+        <MessageMeta text={text} at={at} actions={actions} speak={speak} />
       </div>
     </div>
   )
@@ -315,15 +394,13 @@ export function AnswerMessage({
         className={cn(
           'flex max-w-full min-w-0 flex-col gap-2 rounded-2xl bg-sel [overflow-wrap:anywhere]',
           size === 'sm'
-            ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
-            : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
+            ? 'rounded-br-md px-3.5 py-2 text-body leading-relaxed'
+            : 'px-4 py-2.5 text-heading leading-relaxed',
         )}
       >
         {answers.map((a, i) => (
           <div key={i} className="flex min-w-0 flex-col">
-            <span className={cn('text-muted', size === 'sm' ? 'text-[0.6875rem]' : 'text-[0.75rem]')}>
-              {a.question}
-            </span>
+            <span className={cn('text-muted', size === 'sm' ? 'text-caption' : 'text-footnote')}>{a.question}</span>
             <span className="whitespace-pre-wrap">{a.answer}</span>
           </div>
         ))}

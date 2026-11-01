@@ -29,7 +29,7 @@ export const MenuSearch = forwardRef<
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       aria-label={props['aria-label'] ?? placeholder}
-      className="h-full min-w-0 flex-1 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-subtle"
+      className="h-full min-w-0 flex-1 bg-transparent text-body text-fg outline-none placeholder:text-subtle"
       {...props}
     />
   </label>

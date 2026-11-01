@@ -18,7 +18,7 @@ import { resolveParams } from '@shared/agent-role'
 import { relatedTasks } from '@shared/related'
 import { defaultCli, defaultSettings } from '@shared/settings'
 import { api } from '@/lib/api'
-import { useData } from '@/lib/data'
+import { useData, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { IconButton } from '@/components/ui/icon-button'
@@ -40,10 +40,12 @@ import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
 import { ElementPickButton } from '@/components/chat/ElementPicker'
 import { SpeechButton } from '@/components/chat/SpeechButton'
 import { ParamsChip } from '@/components/agents/ParamFields'
+import { AgentPicker } from '@/components/agents/AgentPicker'
+import { CHAT_ORIGIN, scopeOf } from '@shared/conv-mode'
 import { t } from '@shared/i18n'
 
 export const chip =
-  'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
+  'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-body text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
 /**
  * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、Agent，从「+」里可以改成按工作流执行。
@@ -61,7 +63,8 @@ export function TaskComposer({
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
 }) {
-  const { workflows, agents, projects, tasks, loading, settings } = useData()
+  const { workflows, agents, projects, loading, settings } = useData()
+  const { tasks } = useTasks()
   const [projectId, setProjectId] = useState(() => {
     try {
       return fixed?.id ?? localStorage.getItem('last-project') ?? ''
@@ -73,9 +76,12 @@ export function TaskComposer({
   // 项目里新建的对话默认用项目设置的 Agent。勾选「用项目 Agent」时按项目设置解析：
   // 没有设置、或那个 Agent 已删除/停用时不用角色，直接跟随 CLI；不勾选时一律不用 Agent 角色
   const [useAgent, setUseAgent] = useState(true)
-  // Chat 页的聊天不属于任何项目，不用角色、直接选 CLI，不显示这个开关
-  const wanted = standalone ? '' : useAgent ? (project?.defaultAgentId ?? '') : ''
-  const agent = agents.find((a) => a.id === wanted && a.enabled)
+  // Chat 页的聊天不属于任何项目：默认是内置「助手」（存空 id，运行时按它跑，CLI 和模型照旧在这里选），
+  // 有自建的 Chat 角色时可以换成它们；只列 Chat 角色，项目里只用 Agent 角色（ADR 0038）
+  const [chatRole, setChatRole] = useState('')
+  const chatRoles = agents.filter((a) => a.enabled && scopeOf(a) === 'chat' && a.origin !== CHAT_ORIGIN)
+  const wanted = standalone ? chatRole : useAgent ? (project?.defaultAgentId ?? '') : ''
+  const agent = agents.find((a) => a.id === wanted && a.enabled && scopeOf(a) === (standalone ? 'chat' : 'agent'))
   const agentId = agent ? wanted : ''
   const byCli = !agentId
   // Agent 的参数在新建时选好，对话开始后不能再改。换 Agent 时把上一个 Agent 的值清掉
@@ -240,7 +246,7 @@ export function TaskComposer({
               disabled={busy}
               onClick={() => sendTo(x.id)}
               title={t('把这条要求发到「{title}」', { title: x.title })}
-              className="group flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
+              className="group flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-body text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
             >
               <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
               <span className="min-w-0 flex-1 truncate">{x.title}</span>
@@ -256,8 +262,9 @@ export function TaskComposer({
         ref={chips.dropRef}
         {...drop.container}
         className={cn(
-          'composer-shell relative rounded-[20px] border border-line-strong bg-card shadow-card transition-[border-color,box-shadow] focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
-          (drop.over || chips.refOver) && 'border-accent ring-2 ring-accent/25',
+          // 照 Claude Code 的输入框：一圈细线 + 很淡的大半径投影微微浮起，聚焦时投影加深、边线提一档，不套彩色光圈
+          'composer-shell relative rounded-3xl border border-pop-edge bg-card shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-snap) focus-within:border-line-strong focus-within:shadow-(--composer-shadow-focus) dark:focus-within:border-focus/70',
+          (drop.over || chips.refOver) && 'drop-ring',
         )}
       >
         {mention.menu}
@@ -293,7 +300,7 @@ export function TaskComposer({
           info={chips.chipInfo}
           placeholder={workflow ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')}
           pad="px-4 pt-4"
-          className="max-h-80 min-h-[84px] text-[0.9375rem] leading-relaxed"
+          className="max-h-80 min-h-[84px] text-heading leading-relaxed"
         />
         {loading ? (
           // 数据还没到时先占位，不要闪一下「选择项目」「对话」再跳成别的
@@ -353,6 +360,21 @@ export function TaskComposer({
                     <Bot className="h-4 w-4 shrink-0" />
                   </button>
                 )}
+                {standalone && chatRoles.length > 0 && (
+                  <AgentPicker
+                    scope="chat"
+                    exclude={agents.filter((a) => a.origin === CHAT_ORIGIN).map((a) => a.id)}
+                    onPick={(a) => setChatRole(a.id)}
+                    onNone={() => setChatRole('')}
+                    noneLabel={t('助手（默认）')}
+                  >
+                    <button type="button" className={chip} title={t('这个对话用的 Chat 角色，开始后不能再改')}>
+                      <Bot className="h-4 w-4 shrink-0" />
+                      <span className="max-w-32 truncate">{agent?.name ?? t('助手')}</span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    </button>
+                  </AgentPicker>
+                )}
                 {isolateSwitch}
                 {byCli ? (
                   <ChatModelPicker value={chat} onChange={setChat} />
@@ -391,9 +413,7 @@ export function TaskComposer({
                       <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate">{p.name}</span>
-                        <span className="truncate font-mono text-[0.6875rem] text-subtle">
-                          {p.path || t('未选择目录')}
-                        </span>
+                        <span className="truncate font-mono text-caption text-subtle">{p.path || t('未选择目录')}</span>
                       </span>
                       {p.id === project?.id && <Check className="h-4 w-4 text-accent-text" />}
                     </PopoverClose>

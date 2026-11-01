@@ -7,6 +7,20 @@ import { z } from 'zod'
 import { extractJson } from '../shared/assist.ts'
 import { openDesignSession, type ConceptRequest } from './design-mcp.ts'
 import { DesignCaptures } from './design-capture.ts'
+import { HeadlessPages } from './headless.ts'
+import {
+  finalParts,
+  normalizeSlices,
+  resetStuckImages,
+  restoredVariants,
+  templateCrop,
+  templateImg2Img,
+} from './design-images.ts'
+import { treeChanges } from '../shared/design-diff.ts'
+import { EXPORT_MARK, pickExportDir } from './design-export-dir.ts'
+import { designExporter } from './design-export.ts'
+import { versionMeta, versionStore } from './design-versions.ts'
+import { withToken } from './auth.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
 
 import { getCli } from '../shared/clis.ts'
@@ -35,6 +49,7 @@ import {
   conceptPrompt,
   conceptTarget,
   emptyConcept,
+  nextConceptId,
   emptyRoot,
   hasMask,
   imagePrompt,
@@ -48,8 +63,8 @@ import {
   sheetGrid,
   sheetPrompt,
   importComponent,
-  type DesignVersion,
-  type DesignVersionMeta,
+  applyVersion,
+  layoutConfirmed,
   type ProjectComponents,
   projectPromptText,
   AiDesignResult,
@@ -62,18 +77,7 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import {
-  exportDesign,
-  migrateGrids,
-  nineSliceRatios,
-  normalizeTree,
-  syncBrushSlices,
-  uniqueName,
-  usedImages,
-  walk,
-  type SliceImage,
-} from '../shared/umg.ts'
-import { reactAnimFile, webExport, webReactExport } from '../shared/web.ts'
+import { migrateGrids, normalizeTree, uniqueName } from '../shared/umg.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
@@ -93,7 +97,7 @@ import { UPLOADS_DIR, clipTranscript, saveTextUpload } from './uploads.ts'
 import { expandSlash } from './slash.ts'
 import { stripToolMarkup, withAttachments } from '../shared/task.ts'
 import { buildDesignAnalysisPrompt, cleanAnalysisParts, parseDesignAnalysis } from '../shared/design-analysis.ts'
-import { imageSize, zip } from './zip.ts'
+import { imageSize } from './zip.ts'
 
 /**
  * UI 设计：每个设计一个 JSON（designs/<id>.json），生成和上传的图片放在 designs/<id>/images/。
@@ -104,9 +108,6 @@ const fileOf = (id: string) => path.join(DIR, `${id}.json`)
 const imagesDir = (id: string) => path.join(DIR, id, 'images')
 /** 版本单独存一个文件：设计文件页面每秒都要取，不能带着所有历史版本 */
 const versionsFile = (id: string) => path.join(DIR, id, 'versions.json')
-/** 自动存的版本最多留这么多，手动存的最多 50 个 */
-const MAX_AUTO_VERSIONS = 20
-const MAX_VERSIONS = 50
 // 下划线开头，和设计文件（<id>.json）区分开
 const PROJECTS_FILE = path.join(DIR, '_projects.json')
 /** 风格库：设置里管理，所有 UI 项目共用 */
@@ -115,14 +116,6 @@ const STYLES_FILE = path.join(DIR, '_styles.json')
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
 const isImageFile = (x: { mime: string; name: string }) =>
   /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name)
-
-/** 存进消息的分段：工具都已结束，去掉空的段 */
-function finalParts(parts: ReplyPart[]): ReplyPart[] | undefined {
-  const list = parts
-    .map((p) => ({ ...p, tools: p.tools.map((x) => ({ ...x, running: false })) }))
-    .filter((p) => p.text || p.thinking?.trim() || p.tools.length)
-  return list.length ? list : undefined
-}
 
 type Job = DesignJob & {
   abort: AbortController
@@ -134,27 +127,6 @@ type Job = DesignJob & {
   control?: CliControl
   /** 这一轮列出的图标表：图片 id → sheet，生成图片时同一个 sheet 的图标一起生成 */
   sheets?: Map<string, string>
-}
-
-/**
- * 图片的九宫格和画刷的九宫格参数对齐：图片的 nineSlice 统一成 0~1 的比例（老数据把像素直接写进去过），
- * 引用它的 Box/Border 画刷的 Margin 用同一组比例、ImageSize 用图片实际尺寸。
- * 加载、保存和 AI 改完都跑一遍，渲染和导出拿到的就是同一组数，不会切到边框花纹。
- */
-function normalizeSlices(d: Design): Design {
-  const imgs = new Map<string, SliceImage>()
-  for (const i of d.images) {
-    const v = i.variants[Math.min(Math.max(0, i.selected), i.variants.length - 1)]
-    const width = v?.width || i.width
-    const height = v?.height || i.height
-    const nine = nineSliceRatios(i.nineSlice, width, height)
-    const slice = nine && (nine.Left || nine.Top || nine.Right || nine.Bottom) ? nine : undefined
-    imgs.set(i.id, { id: i.id, width, height, transparent: i.transparent, nineSlice: slice })
-    i.nineSlice = slice
-  }
-  d.root = syncBrushSlices(d.root, imgs)
-  d.components = d.components.map((c) => ({ ...c, Root: syncBrushSlices(c.Root, imgs) }))
-  return d
 }
 
 const now = () => new Date().toISOString()
@@ -181,7 +153,22 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   const cancelled = new Set<string>()
   /** 这一轮结束后要接着处理的要求：运行中收不下的消息，按顺序各开一轮；带上对话里那条消息的 id */
   const pendingTurns = new Map<string, { id: string; input: z.infer<typeof DesignChatInput> }[]>()
-  const captures = new DesignCaptures()
+  // 设计页没打开时，截图交给无头浏览器里的截图页（同一个画布组件）；
+  // 正式版前端由面板自己托管，开发时由 Vite（5173）服务，AGENT_PANEL_WEB_URL 可以改
+  const headless = new HeadlessPages({
+    url: (id) => {
+      const prod = process.env.NODE_ENV === 'production' || process.argv.includes('--prod')
+      const base =
+        process.env.AGENT_PANEL_WEB_URL ||
+        (prod ? `http://127.0.0.1:${process.env.PORT ?? 8787}` : 'http://localhost:5173')
+      return `${withToken(base.replace(/\/+$/, ''))}#/capture/${encodeURIComponent(id)}`
+    },
+  })
+  const versions = versionStore(versionsFile, now)
+  const addVersion = versions.add
+  const captures = new DesignCaptures({ onNoPage: (id) => headless.ensure(id) })
+  // 导出 UE / 网页 / React 的打包，见 design-export.ts
+  const { exportFiles, reactExport, buildExport } = designExporter(imagesDir)
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
   async function loadAll() {
@@ -199,6 +186,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
             ...d,
             root: migrateGrids(d.root),
             components: d.components.map((c) => ({ ...c, Root: migrateGrids(c.Root) })),
+            images: resetStuckImages(d.images),
           }),
         )
       } else log.warn('designs', `设计文件格式不对，跳过：${f}`)
@@ -282,6 +270,13 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     revision.trim() ? `${prompt}\n\n${revision.trim()}` : prompt
 
   const conceptOf = (d: Design): ConceptState => d.concept ?? emptyConcept()
+  /** 往对话里记一条系统提示（出错、改了做法）：Agent 执行里的错误都要让用户看到，不能只写日志 */
+  function systemNote(id: string, text: string, error = true) {
+    const dd = cache.get(id)
+    if (!dd) return
+    dd.messages.push({ id: randomUUID(), role: 'system', text, at: now(), ...(error ? { error: true } : {}) })
+    void save(dd)
+  }
   const conceptFile = (d: Design, id: string) => {
     const c = conceptOf(d).images.find((i) => i.id === id)
     return c ? path.join(imagesDir(d.id), c.file) : undefined
@@ -315,6 +310,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     }
     let first = -1
     let chain = Promise.resolve()
+    // 存图失败的原因：取到了图却存不下时，报给用户的是这个，不是笼统的「没有取到图片」
+    let saveError = ''
     const kind = source.kind === 'browser' || source.kind === 'local' ? source.kind : ('cli' as const)
     const add = (buf: Buffer, exact = false) => {
       chain = chain
@@ -326,9 +323,12 @@ export function designsApi(deps: { projects: Lister<Project> }) {
           set({ variants, selected: first })
           item.got++
         })
-        .catch((e) => log.warn('designs', '保存生成的图片失败', { error: (e as Error).message }))
+        .catch((e) => {
+          saveError = t('保存生成的图片失败：{error}', { error: (e as Error).message })
+          log.warn('designs', '保存生成的图片失败', { error: (e as Error).message })
+        })
     }
-    return { set, add, done: () => chain }
+    return { set, add, done: () => chain, error: () => saveError }
   }
 
   /** 生成一张图 */
@@ -349,11 +349,50 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const ref = templateRef(d, source)
     // 九宫格图按透明处理：四周的圆角/花纹外面必须能抠掉，白底会被边距放大出来
     const transparent = img.transparent || !!img.nineSlice
+    // 写了它在模板里的位置：从确认的模板裁下这一块做参考（图片 CLI 当参考图，本机 ComfyUI 从它图生图）
+    const tplId = conceptOf(cache.get(d.id) ?? d).approved
+    const approvedFile = tplId ? conceptFile(cache.get(d.id) ?? d, tplId) : undefined
+    const crop =
+      img.ref && approvedFile ? await templateCrop(approvedFile, cache.get(d.id)!.designSize, img.ref) : undefined
+    const cropFile = crop && source.kind === 'cli' ? path.join(tmpdir(), `agent-panel-ref-${randomUUID()}.png`) : ''
+    if (cropFile) await writeFile(cropFile, crop!)
+    const local = source.kind === 'local' ? source : undefined
     try {
-      const rest =
-        source.kind === 'local'
+      // 本机：先试从模板局部图生图；图生图模型没下载、工作流出错时在对话里说明，改回按描述生成
+      const fromTemplate =
+        local && crop
+          ? await templateImg2Img(
+              {
+                crop,
+                prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
+                negative: img.negative,
+                width: img.width,
+                height: img.height,
+                count,
+                onImage: (b) => sink.add(b),
+                onProgress: (text) => (item.text = text),
+              },
+              job.abort.signal,
+            ).then(
+              () => true,
+              (e) => {
+                if (job.abort.signal.aborted) throw e
+                systemNote(
+                  d.id,
+                  t('{name} 没能从模板局部图生图：{error}。改成按描述生成', {
+                    name: img.name,
+                    error: (e as Error).message,
+                  }),
+                )
+                return false
+              },
+            )
+          : false
+      const rest = fromTemplate
+        ? []
+        : local
           ? await localRun(
-              source,
+              local,
               withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
               {
                 subject: withRevision(img.prompt, revision),
@@ -386,15 +425,19 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               )
             : await cliGenerate(
                 // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
-                withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind, !!ref), revision),
+                withRevision(
+                  imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind, !!ref || !!cropFile),
+                  revision,
+                ),
                 count,
                 job,
                 (b) => sink.add(b),
-                ref ? [ref] : [],
+                // 裁下来的那一块放在前面：模型主要照它画，整张模板只看风格
+                [...(cropFile ? [cropFile] : []), ...(ref ? [ref] : [])],
               )
       for (const b of rest) sink.add(b)
       await sink.done()
-      if (!item.got) throw new Error(t('没有取到图片'))
+      if (!item.got) throw new Error(sink.error() || t('没有取到图片'))
       sink.set({ status: 'idle' })
       item.status = 'done'
       item.text = undefined
@@ -406,6 +449,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       item.status = 'failed'
       item.text = msg
       throw e
+    } finally {
+      // 裁下来的模板局部是这一张临时用的
+      if (cropFile) await rm(cropFile, { force: true }).catch(() => {})
     }
   }
 
@@ -463,9 +509,12 @@ export function designsApi(deps: { projects: Lister<Project> }) {
           : await cliGenerate(prompt, count, job, onSheet, ref ? [ref] : [])
       for (const b of rest) onSheet(b)
     } catch (e) {
-      // 整张图都没出来：全部改成一张张生成，下面统一处理
+      // 整张图都没出来：全部改成一张张生成，下面统一处理。改做法要让用户知道原因，不能只写日志
       if (job.abort.signal.aborted) throw e
-      log.warn('designs', '图标表生成失败，改成一张张生成', { error: (e as Error).message })
+      const msg = (e as Error).message
+      log.warn('designs', '图标表生成失败，改成一张张生成', { error: msg })
+      systemNote(d.id, t('图集（{n} 个图标）生成失败：{error}。改成一张张生成', { n: imgs.length, error: msg }))
+      items.forEach((it) => (it.text = t('图集生成失败，改成单独生成')))
     }
     await Promise.all(sinks.map((x) => x.done()))
     const failed: string[] = []
@@ -481,7 +530,15 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       }
     }
     for (let i = 0; i < imgs.length; i++) {
-      if (missed.has(i)) continue
+      if (missed.has(i)) {
+        // 停止时还没轮到单独生成的图标：不能停在「生成中」，否则页面一直轮询
+        if (items[i].status === 'generating' || items[i].status === 'waiting') {
+          sinks[i].set({ status: 'failed', error: t('已停止') })
+          items[i].status = 'failed'
+          items[i].text = t('已停止')
+        }
+        continue
+      }
       sinks[i].set({ status: 'idle' })
       items[i].status = 'done'
       items[i].text = undefined
@@ -732,7 +789,16 @@ ${prompt}`,
     return { prompts: p?.prompts ?? [], images }
   }
 
-  async function chat(d: Design, input: z.infer<typeof DesignChatInput>, job: Job) {
+  async function chat(
+    d: Design,
+    input: z.infer<typeof DesignChatInput>,
+    job: Job,
+    msgId?: string,
+    /** 这一轮开始前自动存的版本：回复上的「撤销这一轮」恢复它 */
+    undoVersion?: string,
+  ) {
+    // 这一轮开始时的树：结束时和它对比，列出 AI 改了哪些控件
+    const startTrees = { root: cache.get(d.id)!.root, components: cache.get(d.id)!.components }
     const settings = await getSettings()
     const run = chatRun(settings, input.run)
     const cliId = run.cli
@@ -769,9 +835,13 @@ ${prompt}`,
         }),
       )
     ).filter(Boolean)
-    const history = d.messages.slice(0, -1)
+    // 之前的对话：去掉这一轮自己的这条和还排着队没处理的（held）。
+    // 排队的消息是上一轮进行中记下的，上一轮的回复排在它后面：以前按「去掉最后一条」切，切掉的是上一轮的回复，
+    // 这条请求反而留在历史里，后面排着的请求也提前出现在历史里
+    const history = msgId
+      ? d.messages.filter((m) => m.id !== msgId && m.delivery?.how !== 'held')
+      : d.messages.slice(0, -1)
     const project = await projectContext(d)
-    let extra = ''
     // 原画：有确认的模板就照着它做；没有模板、打开了「先出原画」时这一轮只出原画
     const concept = conceptOf(cache.get(d.id)!)
     const approved = concept.images.find((i) => i.id === concept.approved)
@@ -782,6 +852,8 @@ ${prompt}`,
       : input.concept || conceptMarks.length
         ? ('concept' as const)
         : undefined
+    // 模板确认了、这张模板的区块还没确认：这一轮只拆区块（propose_layout），确认后再照区块搭界面
+    const layoutStage = mode === 'template' && !layoutConfirmed(cache.get(d.id)!.layout, approved!.id)
     // 模板、正在看的原画直接给模型看：复制进工作目录，所有 CLI 都读得到
     const shown = [
       ...new Set(
@@ -842,6 +914,7 @@ ${prompt}`,
       },
       {
         conceptOnly: mode === 'concept',
+        layoutOnly: layoutStage,
         conceptCount: mode === 'concept' ? input.conceptCount : undefined,
         // 分析只读：工具的修改、出原画和提问都会被挡掉
         readOnly: input.mode === 'analyze',
@@ -858,7 +931,8 @@ ${prompt}`,
     }
     const sess = mcp.session
     try {
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      // 只跑一次：检查不通过时不自动重跑（见下面 problems）
+      for (let attempt = 1; attempt <= 1; attempt++) {
         job.attempt = attempt
         job.text = ''
         job.parts = undefined
@@ -891,7 +965,7 @@ ${prompt}`,
           input:
             input.mode === 'analyze'
               ? // 分析：只读，提示词里已经带上控件树、图片、原画和最近的工具调用
-                buildDesignAnalysisPrompt(cache.get(d.id)!, history) + extra
+                buildDesignAnalysisPrompt(cache.get(d.id)!, history)
               : buildDesignPrompt(
                   cache.get(d.id)!,
                   history,
@@ -907,8 +981,16 @@ ${prompt}`,
                   // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
                   [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
                   // 提示词里的原画张数要和 MCP 实际出图用的 conceptCount 一致（count 只是每张图几版）
-                  mode ? { mode, state: concept, marks: conceptMarks, count: input.conceptCount } : undefined,
-                ) + extra,
+                  mode
+                    ? {
+                        mode,
+                        state: concept,
+                        marks: conceptMarks,
+                        count: input.conceptCount,
+                        layout: cache.get(d.id)!.layout,
+                      }
+                    : undefined,
+                ),
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
           timeoutMs: 0,
@@ -1013,12 +1095,8 @@ ${prompt}`,
         })
         let problems = ''
         if ('error' in res) {
-          // 检查没通过：让它接着用工具改一次（改过的都保留）
-          if (attempt === 1) {
-            extra = `\n\n## 你上一次的回复\n${text}\n\n用工具改完的设计还有问题：${res.error}\n请用 design 工具接着改（改过的已经保留），改好后再回复说明。`
-            continue
-          }
-          // 两次都没通过：改好的部分不丢，照样存下，把问题告诉用户
+          // 检查没通过：改好的部分不丢，照样存下，把问题告诉用户，由用户点「让 AI 修」决定要不要再跑一轮。
+          // 以前这里自动再调一次 CLI：多跑一整轮、用户没得选，而且第二次给的还是改之前的树（违反「不悄悄重试」）
           problems = res.error
           const ok = AiDesignResult.safeParse({ ...raw, ops: undefined })
           if (!ok.success) throw new Error(z.prettifyError(ok.error))
@@ -1032,7 +1110,15 @@ ${prompt}`,
         }
         const cur = cache.get(d.id)!
         const r2 = res.result
+        // 这一轮拆出来的区块：存进设计，等用户在原画面板里调整、确认
+        if (sess.layout && approved)
+          cur.layout = {
+            concept: approved.id,
+            regions: sess.layout.map((g) => ({ id: randomUUID(), ...g })),
+            confirmed: false,
+          }
         const changed = !!(
+          sess.layout ||
           res.root ||
           res.components ||
           res.animations ||
@@ -1060,6 +1146,7 @@ ${prompt}`,
             height: im.height,
             transparent: im.transparent,
             nineSlice: im.nineSlice,
+            ref: im.ref,
             status: input.source.kind === 'none' ? ('idle' as const) : ('pending' as const),
             error: undefined,
           }
@@ -1068,6 +1155,7 @@ ${prompt}`,
         }
         normalizeSlices(cur)
         if (changed) cur.rev++
+        const diff = treeChanges(startTrees, { root: cur.root, components: cur.components })
         cur.messages.push({
           id: randomUUID(),
           role: 'agent',
@@ -1075,6 +1163,8 @@ ${prompt}`,
           at: now(),
           images: ids.length ? ids : undefined,
           run,
+          ...(diff.total ? { changes: diff } : {}),
+          ...(changed && undoVersion ? { undoVersion } : {}),
           // 过程按顺序存下：思考、工具调用和说明，和 Agent 的对话一样显示
           parts: finalParts(parts),
           ...(r2.questions?.length ? { questions: r2.questions } : {}),
@@ -1086,6 +1176,8 @@ ${prompt}`,
             text: `${t('检查还有这些问题：')}\n${problems}`,
             at: now(),
             error: true,
+            // 页面在这条下面放「让 AI 修」按钮，点了才发一轮新的对话
+            fixable: true,
           })
         await save(cur)
         // 存下来了，页面改用正式的设计
@@ -1203,7 +1295,10 @@ ${prompt}`,
     try {
       await save(d)
       // AI 改之前自动存一个版本，改坏了可以回去；分析不改设计，不用存版本
-      if (input.mode !== 'analyze') await addVersion(d, t('AI 修改前：{text}', { text: input.text.slice(0, 24) }), true)
+      const before =
+        input.mode !== 'analyze'
+          ? await addVersion(d, t('AI 修改前：{text}', { text: input.text.slice(0, 24) }), true)
+          : undefined
       // 准备期间用户点了停止：这一轮不启动，消息标明没送出去
       if (cancelled.has(d.id)) {
         setDelivery(d, id, 'lost')
@@ -1211,12 +1306,14 @@ ${prompt}`,
         return d
       }
       startJob(d, async (job) => {
-        const { ids, concepts } = await chat(d, input, job)
+        // 这一轮开始时已经确认了模板（照着模板搭界面）：AI 顺手出的原画不能把模板作废，同轮的切图还要拿它当参考
+        const hadTemplate = !!conceptOf(cache.get(d.id) ?? d).approved
+        const { ids, concepts } = await chat(d, input, job, id, before?.id)
         // 分析只出结论，不出原画和切图
         if (input.mode === 'analyze') return
         if (concepts.length) {
           if (input.source.kind === 'none') throw new Error(t('出原画要先在对话框下面选生成图片的方式'))
-          await generateConcepts(d, concepts, input.source, job)
+          await generateConcepts(d, concepts, input.source, job, hadTemplate)
         }
         if (!ids.length || input.source.kind === 'none') return
         const failed = await generateImages(d, ids, input.source, input.count, job)
@@ -1246,10 +1343,18 @@ ${prompt}`,
     // 这条消息真的开始处理了：从「这一轮结束后自动处理」改成「按新的一轮处理」
     setDelivery(cur, next.id, 'next')
     void beginChat(cur, next.input, true, next.id).catch((e) => {
-      // 没能开始（刚好又有别的请求占了位）：放回队首，交付状态改回去，等这一轮结束时再接着处理
-      pendingTurns.set(d.id, [next, ...(pendingTurns.get(d.id) ?? [])])
-      setDelivery(cur, next.id, 'held')
-      log.warn('designs', '接着处理这一轮收不下的消息失败', { id: d.id, error: (e as Error).message })
+      const msg = (e as Error).message
+      log.warn('designs', '接着处理这一轮收不下的消息失败', { id: d.id, error: msg })
+      // 刚好又有别的请求占了位：放回队首，交付状态改回去，等那一轮结束时再接着处理
+      if (jobs.get(d.id)?.status === 'running' || starting.has(d.id)) {
+        pendingTurns.set(d.id, [next, ...(pendingTurns.get(d.id) ?? [])])
+        setDelivery(cur, next.id, 'held')
+        return
+      }
+      // 真的开始不了（存文件、存版本出错）：没有正在跑的一轮会再来接它，放回去只会一直停在「结束后自动处理」。
+      // 标成没送出去，把原因写进对话，用户可以重新发
+      setDelivery(cur, next.id, 'lost')
+      systemNote(d.id, t('这条消息没能开始处理：{error}。请重新发送', { error: msg }))
     })
   }
 
@@ -1257,7 +1362,14 @@ ${prompt}`,
    * 出原画：每个请求出 count 张整屏效果图，存进设计的候选里；第一张到了就选中它。
    * 在某张的基础上改（base）时，用图片 CLI 把那张一起交给模型参考
    */
-  async function generateConcepts(d: Design, reqs: ConceptRequest[], source: ImageSource, job: Job) {
+  async function generateConcepts(
+    d: Design,
+    reqs: ConceptRequest[],
+    source: ImageSource,
+    job: Job,
+    /** 保留已确认的模板（模板模式里出的原画只进候选，不回到挑图） */
+    keepApproved = false,
+  ) {
     job.phase = 'concepts'
     job.preview = undefined
     job.text = ''
@@ -1292,7 +1404,7 @@ ${prompt}`,
             const stored = await storeImage(dd, normalizeGenerated(buf, want))
             const c = conceptOf(dd)
             const img: ConceptImage = {
-              id: `c${round}_${c.images.filter((i) => i.round === round).length + 1}`,
+              id: nextConceptId(c.images, round),
               ...stored,
               prompt: req.prompt,
               negative: req.negative,
@@ -1301,11 +1413,11 @@ ${prompt}`,
               source: source.kind === 'browser' || source.kind === 'local' ? source.kind : 'cli',
               at: now(),
             }
-            // 出了新的候选就回到挑图：之前确认的模板作废
+            // 出了新的候选就回到挑图：之前确认的模板作废；模板模式里出的只进候选，模板保留
             dd.concept = {
               images: [...c.images, img],
-              selected: first ? img.id : c.selected,
-              approved: '',
+              selected: first && !keepApproved ? img.id : c.selected,
+              approved: keepApproved ? c.approved : '',
             }
             first = false
             progress.got++
@@ -1354,45 +1466,8 @@ ${prompt}`,
     progress.text = undefined
     if (!progress.got)
       throw new Error(t('原画没有生成出来：{error}', { error: errors.join('\n') || t('没有取到图片') }))
-  }
-
-  async function readVersions(id: string): Promise<DesignVersion[]> {
-    const raw = await readJson(versionsFile(id))
-    return Array.isArray(raw) ? (raw as DesignVersion[]) : []
-  }
-  async function writeVersions(id: string, list: DesignVersion[]) {
-    await mkdir(path.dirname(versionsFile(id)), { recursive: true })
-    await writeJsonAtomic(versionsFile(id), list)
-  }
-  const versionMeta = ({ snapshot, ...rest }: DesignVersion): DesignVersionMeta => {
-    let widgets = 0
-    for (const r of [snapshot.root, ...snapshot.components.map((c) => c.Root)]) walk(r, () => widgets++)
-    return { ...rest, widgets }
-  }
-  /** 存一个版本（最新的在最前面）；自动存的超过上限时删掉最老的自动版本 */
-  async function addVersion(d: Design, name: string, auto: boolean) {
-    const v: DesignVersion = {
-      id: randomUUID(),
-      name,
-      at: now(),
-      auto,
-      snapshot: structuredClone({
-        designSize: d.designSize,
-        style: d.style,
-        root: d.root,
-        components: d.components,
-        images: d.images,
-        animations: d.animations ?? [],
-      }),
-    }
-    let list = [v, ...(await readVersions(d.id))]
-    const autos = list.filter((x) => x.auto)
-    if (autos.length > MAX_AUTO_VERSIONS) {
-      const drop = new Set(autos.slice(MAX_AUTO_VERSIONS).map((x) => x.id))
-      list = list.filter((x) => !drop.has(x.id))
-    }
-    await writeVersions(d.id, list.slice(0, MAX_VERSIONS + MAX_AUTO_VERSIONS))
-    return v
+    // 有的组出了图、有的组失败了：失败的也要告诉用户（以前只要出了一张，其余的错误就丢掉了）
+    if (errors.length) systemNote(d.id, t('有几组原画没有生成出来：{error}', { error: errors.join('\n') }))
   }
 
   /** 用默认 CLI 生成或翻译项目提示词；格式不对时让它改一次 */
@@ -1674,13 +1749,34 @@ ${prompt}`,
     .put('/:id', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      const p = DesignDoc.safeParse(await c.req.json())
+      const body = await c.req.json().catch(() => ({}))
+      const p = DesignDoc.safeParse(body)
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const doc = p.data
+      // 结构（控件树、子控件、动画、画板数据、尺寸、风格）只在两种情况下收页面的：
+      // - AI 正在改这个设计（准备新一轮或在改树）时不收：这一轮结束会用它自己的树整棵写回，页面这时存的会被盖掉，
+      //   反过来页面存的旧树也可能盖掉 AI 刚改好的
+      // - 页面编辑时基于的版本（baseRev）比服务端旧：AI 已经改过了，页面这份是旧的。
+      // 不收时其余的（标题、图片、标注）照常存，响应里带上服务端的设计，页面据此换成新的、把自己的改动放进撤销栈
+      const job = jobs.get(d.id)
+      const aiEditing = starting.has(d.id) || (job?.status === 'running' && job.phase === 'design')
+      const baseRev = typeof body?.baseRev === 'number' ? body.baseRev : undefined
+      const stale = baseRev !== undefined && baseRev < d.rev
+      const keepStructure = aiEditing || stale
       const byId = new Map(d.images.map((i) => [i.id, i]))
+      // 服务端没有的图（页面撤销了删除）：文件还在就保留各版，见 restoredVariants
+      const restored = await restoredVariants(doc.images, byId, imagesDir(d.id))
       const images: DesignImage[] = doc.images.map((i) => {
         const old = byId.get(i.id)
-        if (!old) return DesignImage.parse({ ...i, variants: [], status: 'idle' })
+        if (!old) {
+          const variants = restored.get(i.id) ?? []
+          return DesignImage.parse({
+            ...i,
+            variants,
+            selected: Math.max(0, Math.min(i.selected ?? 0, variants.length - 1)),
+            status: 'idle',
+          })
+        }
         return {
           ...old,
           name: i.name,
@@ -1697,23 +1793,35 @@ ${prompt}`,
       for (const old of d.images) if (old.status !== 'idle' && !images.some((i) => i.id === old.id)) images.push(old)
       Object.assign(d, {
         title: doc.title,
-        designSize: doc.designSize,
-        style: doc.style,
-        data: doc.data,
-        root: normalizeTree(doc.root),
-        components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
         images,
         annotations: doc.annotations,
-        animations: doc.animations,
+        ...(keepStructure
+          ? {}
+          : {
+              designSize: doc.designSize,
+              style: doc.style,
+              data: doc.data,
+              root: normalizeTree(doc.root),
+              components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
+              animations: doc.animations,
+              // 用户在原画面板里调整、确认的区块（和控件树一样：AI 改设计期间、版本旧了时不收）
+              layout: doc.layout,
+            }),
       })
       normalizeSlices(d)
       await save(d)
-      return c.json({ ...d, job: view(jobs.get(d.id)) })
+      return c.json({
+        ...d,
+        job: view(jobs.get(d.id)),
+        // 页面据此提示「这几处修改没有存上」，并换成服务端的设计
+        ...(keepStructure ? { rejected: aiEditing ? 'ai' : 'stale' } : {}),
+      })
     })
     .delete('/:id', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
       await removeDesign(d)
+      headless.close(d.id)
       return c.body(null, 204)
     })
     .get('/:id/files/:file', async (c) => {
@@ -1875,10 +1983,10 @@ ${prompt}`,
     .get('/:id/versions', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      return c.json((await readVersions(d.id)).map(versionMeta))
+      return c.json((await versions.read(d.id)).map(versionMeta))
     })
     .get('/:id/versions/:vid', async (c) => {
-      const v = (await readVersions(c.req.param('id'))).find((x) => x.id === c.req.param('vid'))
+      const v = (await versions.read(c.req.param('id'))).find((x) => x.id === c.req.param('vid'))
       return v ? c.json(v) : bad(c, t('版本不存在'), 404)
     })
     .post('/:id/versions', async (c) => {
@@ -1899,29 +2007,16 @@ ${prompt}`,
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
       if (jobs.get(d.id)?.status === 'running') return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
-      const v = (await readVersions(d.id)).find((x) => x.id === c.req.param('vid'))
+      const v = (await versions.read(d.id)).find((x) => x.id === c.req.param('vid'))
       if (!v) return bad(c, t('版本不存在'), 404)
       await addVersion(d, t('恢复「{name}」之前', { name: v.name }), true)
-      d.root = v.snapshot.root
-      d.components = v.snapshot.components
-      d.designSize = v.snapshot.designSize
-      d.style = v.snapshot.style
-      // 旧版本没有动画：恢复后就没有动画
-      d.animations = v.snapshot.animations ?? []
-      // 版本里有、现在已经删掉的图片加回来（文件还在时）
-      for (const img of v.snapshot.images)
-        if (!d.images.some((i) => i.id === img.id)) d.images.push({ ...img, status: 'idle', error: undefined })
+      applyVersion(d, v.snapshot)
       d.rev++
       await save(d)
       return c.json({ ...d, job: view(jobs.get(d.id)) })
     })
     .delete('/:id/versions/:vid', async (c) => {
-      const id = c.req.param('id')
-      const list = await readVersions(id)
-      await writeVersions(
-        id,
-        list.filter((x) => x.id !== c.req.param('vid')),
-      )
+      await versions.remove(c.req.param('id'), c.req.param('vid'))
       return c.body(null, 204)
     })
     // 原画：选中一张看、确认作为模板（approve，空字符串是取消确认）、删掉一张
@@ -1963,7 +2058,7 @@ ${prompt}`,
         const cur = conceptOf(d)
         const round = Math.max(0, ...cur.images.map((i) => i.round)) + 1
         const img: ConceptImage = {
-          id: `c${round}_1`,
+          id: nextConceptId(cur.images, round),
           ...stored,
           prompt: '',
           negative: '',
@@ -2026,7 +2121,7 @@ ${prompt}`,
               const stored = await storeImage(dd, normalizeGenerated(buf, want))
               const c0 = conceptOf(dd)
               const out: ConceptImage = {
-                id: `c${round}_${c0.images.filter((i) => i.round === round).length + 1}`,
+                id: nextConceptId(c0.images, round),
                 ...stored,
                 prompt: promptText,
                 negative: img.negative,
@@ -2241,131 +2336,17 @@ ${prompt}`,
       const p = (await loadProjects()).find((x) => x.id === d.projectId)
       if (!p?.path) return bad(c, t('这个项目还没有选择目录'))
       const files = await exportFiles(d)
-      const dir = path.join(p.path, 'UI', files.name)
+      const { dir, clean } = await pickExportDir(path.join(p.path, 'UI'), files.name, d.id)
+      // 同一个设计再导出：先清掉上次的贴图和图片目录，删掉的不残留
+      if (clean)
+        for (const sub of ['Textures', 'images']) await rm(path.join(dir, sub), { recursive: true, force: true })
       for (const f of files.files) {
         await mkdir(path.dirname(path.join(dir, f.name)), { recursive: true })
         await writeFile(path.join(dir, f.name), f.data)
       }
+      await writeFile(path.join(dir, EXPORT_MARK), JSON.stringify({ designId: d.id, title: d.title }, null, 2))
       return c.json({ dir })
     })
-
-  /**
-   * 网页 UI 导出：index.html + images/ 下的图片；inline 时只出一个 HTML，图片按 data URL 内嵌，
-   * 双击就能用浏览器打开
-   */
-  async function exportWebFiles(d: Design, inline: boolean) {
-    const used = usedImages([d.root, ...d.components.map((c) => c.Root)])
-    const names = new Set<string>()
-    const files: { name: string; data: Buffer }[] = []
-    const src = new Map<string, string>()
-    for (const i of d.images) {
-      const v = i.variants[i.selected] ?? i.variants.at(-1)
-      if (!v || !used.has(i.id)) continue
-      const buf = await readFile(path.join(imagesDir(d.id), v.file)).catch(() => null)
-      if (!buf) continue
-      const ext = v.file.split('.').pop()!
-      if (inline) {
-        src.set(i.id, `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${buf.toString('base64')}`)
-        continue
-      }
-      const base = uniqueName(i.name.replace(/[^A-Za-z0-9_-]/g, '_') || i.id, names)
-      names.add(base)
-      src.set(i.id, `images/${base}.${ext}`)
-      files.push({ name: `images/${base}.${ext}`, data: buf })
-    }
-    const html = webExport({
-      title: d.title,
-      designSize: d.designSize,
-      root: d.root,
-      components: d.components,
-      file: (id) => src.get(id),
-      animations: d.animations,
-    })
-    const ascii = (d.title.match(/[A-Za-z0-9]+/g) ?? []).join('-').toLowerCase()
-    return { name: ascii || 'page', files: [{ name: 'index.html', data: Buffer.from(html) }, ...files], src }
-  }
-
-  /** 导出的文件：<名字>.umg.json + Textures/T_xxx.png（网页 UI 是 index.html + images/） */
-  async function exportFiles(d: Design) {
-    if (d.kind === 'web') {
-      const f = await exportWebFiles(d, false)
-      return { name: f.name, files: f.files, json: undefined }
-    }
-    const images = []
-    const datas = new Map<string, Buffer>()
-    for (const i of d.images) {
-      const v = i.variants[i.selected] ?? i.variants.at(-1)
-      if (!v) continue
-      const buf = await readFile(path.join(imagesDir(d.id), v.file)).catch(() => null)
-      if (!buf) continue
-      datas.set(i.id, buf)
-      images.push({
-        id: i.id,
-        name: i.name,
-        ext: v.file.split('.').pop()!,
-        width: v.width || i.width,
-        height: v.height || i.height,
-        nineSlice: i.nineSlice,
-      })
-    }
-    const { json, files: tex } = exportDesign({
-      title: d.title,
-      designSize: d.designSize,
-      root: d.root,
-      components: d.components,
-      images,
-      animations: d.animations,
-    })
-    const files = [
-      { name: `${json.Name}.umg.json`, data: Buffer.from(JSON.stringify(json, null, 2)) },
-      ...tex.map((x) => ({ name: x.file, data: datas.get(x.id)! })),
-    ]
-    return { name: json.Name, json, files }
-  }
-
-  /** 网页 UI 导出成 React + Tailwind：<页面>.tsx + images/ */
-  async function reactExport(d: Design) {
-    const f = await exportWebFiles(d, false)
-    const tsx = webReactExport({
-      title: d.title,
-      root: d.root,
-      components: d.components,
-      file: (id) => f.src.get(id)?.replace(/^images\//, ''),
-      animations: d.animations,
-    })
-    const name = f.name.replace(/(^|-)(\w)/g, (_, _a, c: string) => c.toUpperCase()) || 'Page'
-    return {
-      name: `${f.name}-react.zip`,
-      type: 'application/zip',
-      data: zip([
-        { name: `${name}.tsx`, data: Buffer.from(tsx) },
-        // 有动画时一起带上播放代码
-        ...(d.animations?.length ? [{ name: 'ui-anim.ts', data: Buffer.from(reactAnimFile()) }] : []),
-        ...f.files.filter((x) => x.name !== 'index.html'),
-      ]),
-    }
-  }
-
-  async function buildExport(d: Design, single: boolean) {
-    if (d.kind === 'web') {
-      const f = await exportWebFiles(d, single)
-      if (single) return { name: `${f.name}.html`, type: 'text/html; charset=utf-8', data: f.files[0].data }
-      return { name: `${f.name}.zip`, type: 'application/zip', data: zip(f.files) }
-    }
-    const f = await exportFiles(d)
-    if (single && f.json) {
-      // 单个 JSON：图片按 base64 内嵌在 Textures[].Data 里
-      const data = {
-        ...f.json,
-        Textures: f.json.Textures.map((tx: { File: string }) => ({
-          ...tx,
-          Data: f.files.find((x) => x.name === tx.File)?.data.toString('base64') ?? '',
-        })),
-      }
-      return { name: `${f.name}.umg.json`, type: 'application/json', data: Buffer.from(JSON.stringify(data, null, 2)) }
-    }
-    return { name: `${f.name}.zip`, type: 'application/zip', data: zip(f.files) }
-  }
 
   return {
     routes,

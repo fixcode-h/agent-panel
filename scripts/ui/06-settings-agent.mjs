@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：设置：Agent 的上下文档位、Pi 安装卸载和「AI 处理」、API 配置、授权、部署、本机生图；最小化浮条
+ * 界面检查分片：设置：Agent 的上下文档位、Pi 安装卸载、插件和「AI 处理」、API 配置、授权、部署、本机生图；最小化浮条
  *
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
@@ -15,54 +15,10 @@ const DOWNLOAD_START_MS = 3000
  */
 const DOWNLOAD_DONE_MS = 10000
 
-/** 切源断言里填给 SearXNG 的地址：随便一个不是新源默认值的值，能看出地址栏有没有被清掉 */
-const SEARX_ADDRESS = 'https://searx.example.com'
-
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByRole('button', { name: '设置' }).first().click()
-  // 搜索源切走后，地址栏不能留着上一源的地址：地址是所有源共用的一个字段，
-  // 留着它就会被当成新源的基址，搜索请求打到旧主机（上游 404 / 不是 JSON）。
-  // 先验这一段，后面的大段流程都从 Agent 页开始
-  await p.getByRole('button', { name: '联网搜索', exact: true }).first().click()
-  const dialog = p.getByRole('dialog')
-  const providerSelect = dialog.getByRole('combobox', { name: '搜索源', exact: true }).first()
-  const addressInput = dialog.getByLabel('搜索源地址', { exact: true }).first()
-  await providerSelect.scrollIntoViewIfNeeded()
-  await providerSelect.click()
-  await p.getByRole('option', { name: /^SearXNG/ }).click()
-  await addressInput.fill(SEARX_ADDRESS)
-  // 输入到 state 是异步的：等值真的回显出来再切源，否则切源用的是旧 state
-  for (let i = 0; i < 30 && (await addressInput.inputValue()) !== SEARX_ADDRESS; i++) await p.waitForTimeout(100)
-  await providerSelect.click()
-  await p.getByRole('option', { name: /^Brave/ }).click()
-  // 值从 state 重新渲染：先 waitFor 等它变空再断言，不在点完立刻读地址栏
-  const waitAddressEmpty = () =>
-    p
-      .waitForFunction(
-        (label) => {
-          const el = [...document.querySelectorAll('input')].find((i) => i.getAttribute('aria-label') === label)
-          return !!el && el.value === ''
-        },
-        '搜索源地址',
-        { timeout: 5000 },
-      )
-      .then(
-        () => true,
-        () => false,
-      )
-  if (!(await waitAddressEmpty()))
-    errors.push(`联网搜索：切源后地址栏还是上一源的地址（${await addressInput.inputValue()}）`)
-  // Brave 有默认地址，地址收进「高级 · 自定义地址」折叠里
-  await check(p, '设置-联网搜索-切源后清地址', ['自定义地址'])
-  // 再切回 SearXNG，地址栏仍然是空的：清掉的是存下来的地址，不只是显示层把旧值遮住了
-  await providerSelect.click()
-  await p.getByRole('option', { name: /^SearXNG/ }).click()
-  if (!(await waitAddressEmpty()))
-    errors.push(`联网搜索：切回原源后地址栏又出现了上回填的地址（${await addressInput.inputValue()}）`)
-  // SearXNG 没有默认地址、必须填，地址行不折起来
-  await check(p, '设置-联网搜索-切回原源仍是空地址', ['填自己实例的主机地址'])
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   // 侧栏导航和分组标题都叫「添加其他 Agent」：定位要看正文那个标题，不看导航项
   await p.getByRole('heading', { name: '添加其他 Agent', exact: true }).first().scrollIntoViewIfNeeded()
@@ -96,14 +52,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.getByRole('dialog').getByText('Pi', { exact: true }).first().click()
   await p.getByRole('button', { name: '安装', exact: true }).first().click()
   await p.getByText('安装完成').first().waitFor({ timeout: 8000 })
-  // 装好后才有的：开关（离线运行默认开着、联网搜索默认关）和扩展包
-  await p.getByRole('list', { name: '已装的扩展包' }).scrollIntoViewIfNeeded()
-  await check(p, '设置-CLI-Pi扩展包', ['离线运行', '扩展包', 'npm:@example/pi-web-tools'])
-  // 新加的开关按 aria-label 找：左侧目录里也有同名的「联网搜索」分区，按文本会被它满足
+  // 装好后才有的：开关（离线运行默认开着）和插件。面板不自己做联网搜索，Pi 的联网靠插件：
+  // 推荐列表第一个就是联网搜索，没装时有「安装」；装的是带版本号的（演示里的 cc-safety-net@x）也算装了推荐里的那一个
+  const recommended = p.getByRole('list', { name: '推荐的插件' })
+  await recommended.scrollIntoViewIfNeeded()
+  await check(p, '设置-CLI-Pi插件', ['离线运行', '插件管理', 'npm:pi-web-access', '已安装'])
+  if (!/联网搜索/.test((await recommended.getByRole('listitem').first().textContent()) ?? ''))
+    errors.push('设置-CLI-Pi插件：推荐列表第一个不是联网搜索')
+  if (await p.getByRole('switch', { name: 'Pi 联网搜索' }).count())
+    errors.push('设置-CLI-Pi插件：面板自建的「联网搜索」开关还在')
+  await recommended.getByRole('button', { name: '安装 联网搜索', exact: true }).click()
   await p
-    .getByRole('switch', { name: 'Pi 联网搜索' })
+    .getByRole('list', { name: '已装的插件' })
+    .getByText('npm:pi-web-access', { exact: true })
     .waitFor({ timeout: 5000 })
-    .catch(() => errors.push('设置-CLI-Pi开关：没有「联网搜索」开关'))
+    .catch(() => errors.push('设置-CLI-Pi插件：点了推荐里的安装，已装列表里没有 npm:pi-web-access'))
+  if (await recommended.getByRole('button', { name: '安装 联网搜索', exact: true }).count())
+    errors.push('设置-CLI-Pi插件：装好后推荐里的联网搜索还显示「安装」')
+  await check(p, '设置-CLI-Pi插件-装好联网搜索', ['Installed npm:pi-web-access'])
   await p.getByRole('button', { name: '卸载', exact: true }).first().click()
   await p.getByRole('dialog').last().getByRole('button', { name: '卸载', exact: true }).click()
   await p.getByText('卸载没有成功').first().waitFor({ timeout: 8000 })
@@ -270,13 +236,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .click()
   await p.getByRole('button', { name: '角色', exact: true }).first().click()
   // 「评审」要随内置工作流添加，这个分片里没有；用演示自带的角色。
-  // 角色页分「高级角色 / 基本角色」两页，代码审查在基本角色里，先切过去
-  await p
-    .getByRole('radiogroup', { name: '角色层' })
-    .getByRole('radio', { name: /^基本角色/ })
-    .click()
+  // 角色页分「高级 / 基本 / Chat」三页（分段只写短名），代码审查在基本角色里，先切过去
+  await p.getByRole('radiogroup', { name: '角色层' }).getByRole('radio', { name: /^基本/ }).click()
   await p.getByText('代码审查', { exact: true }).first().click()
-  await p.getByRole('button', { name: 'AI 优化' }).first().click()
+  // 角色详情头部只留「对话」，AI 优化收在「⋯」菜单里
+  await p.locator('main header').getByRole('button', { name: '更多操作', exact: true }).click()
+  await p.getByRole('menuitem', { name: 'AI 优化' }).click()
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()
   const assistDock = dock('用 AI 优化「代码审查」')
   await assistDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：AI 优化最小化后没有浮条'))

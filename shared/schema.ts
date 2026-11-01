@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DARK_TEXT_LEVEL_DEFAULT, LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
 import { MarkdownStyle } from './markdown-style.ts'
 import { ComponentStyle } from './component-style.ts'
 import { ApiConfig } from './accounts.ts'
@@ -6,9 +7,18 @@ import { t } from './i18n.ts'
 import { RemoteAccess } from './remote-schema.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
-import { DEFAULT_SEARCH_PROVIDER, SEARCH_PROVIDER_IDS } from './web-search.ts'
 import { DEFAULT_SPEECH_MODEL, SPEECH_MODEL_IDS } from './speech.ts'
+import {
+  DEFAULT_TTS_MODEL,
+  DEFAULT_TTS_VOICE,
+  TTS_ENGINES,
+  TTS_MODEL_IDS,
+  TTS_SPEED_MAX,
+  TTS_SPEED_MIN,
+  TTS_VOICE_COUNT,
+} from './tts.ts'
 import type { ProjectProposal } from './project-init.ts'
+import { AskQuestion, TaskRequest } from './task-request.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -134,6 +144,11 @@ export const AgentInput = z.object({
    * 旧数据没有这个字段：按 roleKind（shared/agent-role.ts）从能力开关和挂载推导，不迁移
    */
   kind: z.enum(['basic', 'advanced']).optional().catch(undefined),
+  /**
+   * 用在哪种对话：agent 项目里的对话、子对话、工作流节点、子任务；chat 只在 Chat 页（没有项目的顶层对话）。
+   * 建好不能改（换类别就复制一份）；没写（旧数据）按 agent 算，用 scopeOf 读（ADR 0038）
+   */
+  scope: z.enum(['agent', 'chat']).optional().catch(undefined),
   /** 基本角色：一句话说明什么时候该用它（进高级角色的能力索引，模型据此决定调不调） */
   when: z.string().trim().max(200).default(''),
   /** 基本角色允许的用法：inline 就地（use_capability 加载进当前对话）、subtask 派成子任务 */
@@ -1258,6 +1273,8 @@ export const ToolUse = z.object({
       before: z.number().optional(),
       /** 压缩后上下文的大小 */
       after: z.number().optional(),
+      /** 压缩完 CLI 没报压缩后多大（Codex 手动压缩）：等下一轮第一次报用量时补上 after */
+      awaitAfter: z.boolean().optional(),
     })
     .optional(),
   /** 这一行是报错或警告（CLI 的重试提示、面板的提醒）：画成带底色的警告行 */
@@ -1531,11 +1548,11 @@ export const TaskStep = z.object({
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
   command: z.array(z.string()).default([]),
   /**
-   * 派这个子任务时交给它的要求原文（spawn_agents 的 instructions）。
-   * 父对话的那条系统消息里只有标题列表，AI 分析时判断「它有没有做到派给它的要求」只能靠这段；
-   * 旧记录没有这个字段，报告里如实说明看不到
+   * 派这个子任务时交给它的要求原文（spawn_agents 的 instructions）。父对话的那条系统消息里只有标题列表，AI 分析时判断「它有没有做到派给它的要求」只能靠这段；旧记录没有这个字段，报告里如实说明看不到
    */
   brief: z.string().default(''),
+  /** 派这个子任务时点的角色参数（spawn_agents 的 params），resume 接着做时沿用；旧记录没有，按角色默认值渲染 */
+  params: z.record(z.string(), ParamValue).optional(),
   /** 这个节点自己的用量（不含子节点）：右栏点了节点时只看它的 */
   usage: StepUsage.optional(),
   /** 这个节点执行期间改动的文件 */
@@ -1782,32 +1799,8 @@ export const TaskPlan = z.object({
 })
 export type TaskPlan = z.infer<typeof TaskPlan>
 
-/** CLI 一次提的一个问题（Claude Code 的 AskUserQuestion 一次可以问几个） */
-export const AskQuestion = z.object({
-  /** 很短的标签，多个问题时显示在页签上 */
-  header: z.string().default(''),
-  question: z.string(),
-  options: z.array(z.object({ label: z.string(), description: z.string().default('') })).default([]),
-  multiSelect: z.boolean().default(false),
-})
-export type AskQuestion = z.infer<typeof AskQuestion>
-
-/** Agent 等用户确认的操作（权限不够的命令、改文件）或问题；确认在输入框上方显示，问题换掉输入框 */
-export const TaskRequest = z.object({
-  id: z.string(),
-  step: z.string().default(''),
-  agentId: z.string().default(''),
-  /** confirm：工作流节点完成后等用户确认结果 */
-  kind: z.enum(['command', 'file', 'tool', 'question', 'confirm']),
-  title: z.string(),
-  detail: z.string().default(''),
-  /** 问题的选项；也可以自己填 */
-  options: z.array(z.string()).default([]),
-  /** 一次问了几个问题时的每一个（有它时 title、options 是第一个问题的） */
-  questions: z.array(AskQuestion).optional(),
-  at: z.string(),
-})
-export type TaskRequest = z.infer<typeof TaskRequest>
+// 请求和问题的结构拆到 task-request.ts（这个文件到了行数上限），从这里引用的地方不用改
+export { AskQuestion, TaskRequest }
 
 /** 运行级共享状态的一个键：并发节点都能读写，后写的覆盖先写的，版本号用来判断谁更新 */
 export const RunStateEntry = z.object({
@@ -1904,7 +1897,7 @@ export const TaskData = z.object({
   rootTaskId: z.string().default(''),
   /**
    * 子对话请父对话收尾的记录（见 ADR 0005）：子对话只剩合回时调用 submit_merge 写 requested，
-   * 父对话 finish_child 合并时是 merging，合并没成功退回子对话时是 failed（info 写原因）。
+   * 父对话 finish_child 合并时是 merging，和原分支冲突、退回子对话时是 failed（info 写原因；父对话目录挡路时留 requested）。
    * 收尾做完（resolved）或者子对话又开始干活时清掉
    */
   wrapRequest: z
@@ -2066,7 +2059,7 @@ export const TaskData = z.object({
   sessionDirs: z.record(z.string(), z.string()).default({}),
   /**
    * 要改文件时才开独立分支：对话先在原目录里看代码、回答问题，
-   * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面开新会话接着做
+   * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面接着做（能跨目录续接的 CLI 续接原会话，其余开新会话）
    */
   wantsWorktree: z.boolean().default(false),
   /**
@@ -2215,6 +2208,8 @@ export const TaskData = z.object({
    * 有子对话在跑时父对话在侧栏也显示执行中；它不是父对话自己的执行状态，不参与完成通知
    */
   childrenWorking: z.number().int().min(0).optional(),
+  /** 后代对话里在等用户确认、回答的个数（服务端按 descendantNeeds 算好，不存盘）：有它时这个对话也是「等你处理」 */
+  childrenNeeds: z.number().int().min(0).optional(),
   /**
    * 这个对话现在有活着的 CLI 进程（服务端按真实进程登记算，不存盘）：
    * 「等待你的下一条消息」、标题流光、侧栏提示只认它，CLI 关了就绝不显示
@@ -2241,8 +2236,12 @@ export const TaskData = z.object({
   askedAt: z.string().optional(),
   /** 用户结束了工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理 */
   flowClosed: z.boolean().optional(),
-  /** 这个对话里用户对推送的选择：问过一次就记住，不再重复问 */
+  /**
+   * 这个对话里用户对推送的授权：ask_push 弹的授权卡上点的（server/exec/panel-requests.ts 的 notePushAnswer 写入），
+   * 问过一次就记住、不再重复问；remotePushAt 是点的时间，分叉、撤回到它之前时清掉（见 shared/push-auth.ts）
+   */
   remotePush: z.enum(['allowed', 'denied']).optional(),
+  remotePushAt: z.string().optional(),
   /** 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离 */
   runSeq: z.number().int().default(0),
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
@@ -2367,7 +2366,6 @@ export const WORD_SPACING: Record<'inter' | 'maple' | 'plex' | 'system', number>
 }
 /** 默认字间距（em）：默认的 Maple Mono 是等宽字体，字母偏疏，稍微收紧 */
 export const LETTER_SPACING_DEFAULT = -0.02
-/** 字体：界面（英文）、中文、代码各选一种，字号、字间距、空格宽度、行高可调 */
 /** 可选的配色：每套在 web/src/index.css 里有浅色、深色两块覆盖（html 上的 data-palette） */
 export const PALETTES = ['code', 'claude', 'neutral', 'ocean', 'forest'] as const
 export type Palette = (typeof PALETTES)[number]
@@ -2398,7 +2396,9 @@ export const Appearance = z.object({
   /** 空格的宽度调整（em，CSS word-spacing）：等宽字体的空格有半个汉字宽，中英文混排时显得空，可以收窄（见 WORD_SPACING）。代码里不调 */
   wordSpacing: z.number().min(-0.4).max(0.3).catch(WORD_SPACING.maple).default(WORD_SPACING.maple),
   /** 对话和文档正文的行高 */
-  lineHeight: z.number().min(1.3).max(2.2).catch(1.75).default(1.75),
+  lineHeight: z.number().min(1.3).max(2.2).catch(LINE_HEIGHT_DEFAULT).default(LINE_HEIGHT_DEFAULT),
+  /** 深色主题下主文字的亮度（%）：主文字色往页面底色里混，100 是配色原来的颜色（多半是纯白） */
+  darkTextLevel: z.number().min(70).max(100).catch(DARK_TEXT_LEVEL_DEFAULT).default(DARK_TEXT_LEVEL_DEFAULT),
   /** 主区、右栏这些面板的圆角（像素）；0 是直角 */
   // 默认 0：照 Claude Code，主区、右栏贴着排、只用细线分隔，不做圆角面板（2026-10-31 用户要求）
   panelRadius: z.number().min(0).max(24).catch(0).default(0),
@@ -2439,7 +2439,7 @@ export { FrpMapping, RemoteAccess, RemoteFrp } from './remote-schema.ts'
  * 不用「值正好等于旧默认值」判断，是因为有的项旧默认值本身就是界面上的一个选项（例如自动压缩的 0），
  * 用户显式选回它之后不能再被反复改掉。用户保存过一次设置就视为已迁移（见 server/settings.ts 的 saveSettings）
  */
-export const SETTINGS_DEFAULTS_VERSION = 3
+export const SETTINGS_DEFAULTS_VERSION = 4
 
 export const Settings = z.object({
   /** 见 SETTINGS_DEFAULTS_VERSION */
@@ -2525,30 +2525,6 @@ export const Settings = z.object({
     })
     .prefault({}),
   /**
-   * 联网搜索：CLI 的 web_search / web_fetch 由面板代发请求（见 server/web-search.ts），
-   * 所以密钥只存在这里的设置文件（本机数据目录）里，扩展脚本和模型都拿不到。
-   * 搜索源有哪些、要不要密钥、默认地址在 shared/web-search.ts 的 SEARCH_PROVIDERS 里
-   */
-  webSearch: z
-    .object({
-      /** 搜索源 id；设置文件里写成不认识的值时回退到默认源 */
-      provider: z.enum(SEARCH_PROVIDER_IDS).catch(DEFAULT_SEARCH_PROVIDER).default(DEFAULT_SEARCH_PROVIDER),
-      /** 搜索源的密钥（需要密钥的源才用） */
-      key: z.string().trim().max(500).default(''),
-      /** 自定义地址（自建 searxng、公司网关）；留空用搜索源自己的默认地址 */
-      endpoint: z.string().trim().max(500).default(''),
-      /**
-       * endpoint 属于哪个源：地址是所有源共用的一个字段，切源时留下的旧值会被当成新源的基址。
-       * 记住归属后只在它属于当前源时采信（见 shared/web-search.ts 的 resolveSearchEndpoint）；
-       * 旧设置里没有这个字段，读出来是空串，照旧采信地址
-       */
-      endpointProvider: z
-        .union([z.enum(SEARCH_PROVIDER_IDS), z.literal('')])
-        .catch('')
-        .default(''),
-    })
-    .prefault({}),
-  /**
    * 本机语音输入（见 shared/speech.ts）：默认关，关着时输入框上不显示麦克风按钮，也不下载任何东西。
    * 模型和识别库要用户在设置里自己挑了才下载
    */
@@ -2559,6 +2535,28 @@ export const Settings = z.object({
       model: z.enum(SPEECH_MODEL_IDS).catch(DEFAULT_SPEECH_MODEL).default(DEFAULT_SPEECH_MODEL),
       /** 模型从 hf-mirror.com、识别库从 npmmirror 下载 */
       mirror: z.boolean().catch(false).default(false),
+    })
+    .prefault({}),
+  /**
+   * 语音朗读（见 shared/tts.ts），和语音输入分开设置：回复下面的朗读按钮念没折叠的总结。
+   * 默认用浏览器自带的语音，开箱就能念；在设置里下载开源的 Kokoro 模型后自动换成本机模型
+   */
+  readAloud: z
+    .object({
+      engine: z.enum(TTS_ENGINES).catch('browser').default('browser'),
+      model: z.enum(TTS_MODEL_IDS).catch(DEFAULT_TTS_MODEL).default(DEFAULT_TTS_MODEL),
+      /** 本机模型的音色（模型里的 speaker id） */
+      voice: z
+        .number()
+        .int()
+        .min(0)
+        .max(TTS_VOICE_COUNT - 1)
+        .catch(DEFAULT_TTS_VOICE)
+        .default(DEFAULT_TTS_VOICE),
+      /** 语速，1 是正常 */
+      speed: z.number().min(TTS_SPEED_MIN).max(TTS_SPEED_MAX).catch(1).default(1),
+      /** 浏览器语音的名字；空串是自动挑（优先系统的「自然」语音） */
+      browserVoice: z.string().max(200).catch('').default(''),
     })
     .prefault({}),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */

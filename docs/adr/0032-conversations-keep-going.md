@@ -1,6 +1,6 @@
 # ADR 0032：对话靠面板推着走完——收尾时推进、父子之间只发必要消息、继续时连带恢复
 
-状态：已接受 · 2026-10-30
+状态：已接受 · 2026-10-30 · 第一节「同一进度只推一次」「顶层对话只在调过工具时推」两条由 [ADR 0037](./0037-chat-and-agent-modes.md) 修改
 
 ## 背景
 
@@ -17,21 +17,21 @@
 
 证据来自用户导出的四份对话（父对话 + 三个子对话，模型 `deepseek-v4.1-flash` 经 Claude Code）和代码。
 
-| 现象 / 位置                                 | 现状（改动前）                                                                                                                                                                                                                                   |
+| 现象 / 位置 | 现状（改动前） |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 子对话停住的三次                            | 最后一句都是「先跑类型检查和 fold 单测。」「现在启动全量界面检查（后台），同时跑 lint。」这类打算；思考里已经想好要调什么，那次回应里没有任何工具调用，CLI 照常报这一轮结束（result 成功）。排除了插话打断、`wait_user_message`、排队等 API 名额 |
-| `server/tasks.ts` `reportKey`               | `state                                                                                                                                                                                                                                           | turnDoneAt`：同一状态每轮结束都换一个键。父对话 20 分钟里收到 13 条【子对话状态】，多数是「未完成：计划还没做完」，父对话在忙时被插进它正在跑的一轮 |
-| `server/tasks.ts` `reportChild` / `stopAll` | 面板退出时每个对话被停下，子对话上报「已中断：面板重启时中断」，`noteParent` 不看 `shuttingDown`，还会把父对话叫起来                                                                                                                             |
-| `server/tasks.ts` `noteParent`              | 计划里有步骤在等子对话时 `wakeConv` 叫起父对话，不看父对话是不是用户亲手停的                                                                                                                                                                     |
-| `server/tasks.ts` `/:id/resume`             | 只把最后一条用户消息原样再交一遍；不碰名下子对话、子任务、工作流运行。导出里的【被中断后恢复】是父对话模型自己手写转发的，面板没有这条                                                                                                           |
-| `server/tasks.ts` 启动迁移 `ready`          | 不碰 `task.runs`：硬崩后运行一直是 `running`，对话一直显示「等工作流跑完」；`wrapRequest.state === 'merging'` 落盘后没人清，`finish_child` 和 `submit_merge` 都按它拒绝                                                                          |
-| `server/tasks.ts` `sendToChild`             | 子对话没在跑时 `void wakeConv(...)` 发出去就回「已交给」，起不来时父对话不知道                                                                                                                                                                   |
-| `server/background.ts` `run`                | `void run(j)`：跑命令之前抛错（读 shell 设置、拼命令行）时记录一直「运行中」，结果永远不推回                                                                                                                                                     |
-| `server/exec/delivery.ts` held 队列         | 交不出去的消息排到「这一轮结束后」；保活的进程不结束这一轮，排着的消息一直不送                                                                                                                                                                   |
-| `server/tasks.ts` 后台结果重试              | `wakeConv` 先记消息再等这一轮结束；重试和兜底各再记一遍，对话里出现两三条一样的结果                                                                                                                                                              |
-| `shared/plan.ts` `inputUnhandled`           | 「新要求进来后计划改没改」看 `plan.updatedAt`；派子对话挂等待、结果回来标完成都会刷新它，新要求看起来「处理过了」                                                                                                                                |
-| `server/tasks.ts` `followUp` 取 held        | 排着的消息只留正文，面板消息被当成用户新要求                                                                                                                                                                                                     |
-| `server/exec/parsers.ts` `claudeParser`     | 上下文只取 `message_start` 的 `usage`；DeepSeek 等网关开头报 0、结尾 `message_delta` 才报真实输入，于是每次回应开头把上下文改回 0                                                                                                                |
+| 子对话停住的三次 | 最后一句都是「先跑类型检查和 fold 单测。」「现在启动全量界面检查（后台），同时跑 lint。」这类打算；思考里已经想好要调什么，那次回应里没有任何工具调用，CLI 照常报这一轮结束（result 成功）。排除了插话打断、`wait_user_message`、排队等 API 名额 |
+| `server/tasks.ts` `reportKey` | `state                                                                                                                                                                                                                                           | turnDoneAt`：同一状态每轮结束都换一个键。父对话 20 分钟里收到 13 条【子对话状态】，多数是「未完成：计划还没做完」，父对话在忙时被插进它正在跑的一轮 |
+| `server/tasks.ts` `reportChild` / `stopAll` | 面板退出时每个对话被停下，子对话上报「已中断：面板重启时中断」，`noteParent` 不看 `shuttingDown`，还会把父对话叫起来 |
+| `server/tasks.ts` `noteParent` | 计划里有步骤在等子对话时 `wakeConv` 叫起父对话，不看父对话是不是用户亲手停的 |
+| `server/tasks.ts` `/:id/resume` | 只把最后一条用户消息原样再交一遍；不碰名下子对话、子任务、工作流运行。导出里的【被中断后恢复】是父对话模型自己手写转发的，面板没有这条 |
+| `server/tasks.ts` 启动迁移 `ready` | 不碰 `task.runs`：硬崩后运行一直是 `running`，对话一直显示「等工作流跑完」；`wrapRequest.state === 'merging'` 落盘后没人清，`finish_child` 和 `submit_merge` 都按它拒绝 |
+| `server/tasks.ts` `sendToChild` | 子对话没在跑时 `void wakeConv(...)` 发出去就回「已交给」，起不来时父对话不知道 |
+| `server/background.ts` `run` | `void run(j)`：跑命令之前抛错（读 shell 设置、拼命令行）时记录一直「运行中」，结果永远不推回 |
+| `server/exec/delivery.ts` held 队列 | 交不出去的消息排到「这一轮结束后」；保活的进程不结束这一轮，排着的消息一直不送 |
+| `server/tasks.ts` 后台结果重试 | `wakeConv` 先记消息再等这一轮结束；重试和兜底各再记一遍，对话里出现两三条一样的结果 |
+| `shared/plan.ts` `inputUnhandled` | 「新要求进来后计划改没改」看 `plan.updatedAt`；派子对话挂等待、结果回来标完成都会刷新它，新要求看起来「处理过了」 |
+| `server/tasks.ts` `followUp` 取 held | 排着的消息只留正文，面板消息被当成用户新要求 |
+| `server/exec/parsers.ts` `claudeParser` | 上下文只取 `message_start` 的 `usage`；DeepSeek 等网关开头报 0、结尾 `message_delta` 才报真实输入，于是每次回应开头把上下文改回 0 |
 
 ## 决策
 
@@ -58,7 +58,7 @@
 | 已中断，原因是面板重启   | 不发（重启后由恢复流程接着做）；面板退出过程中一律不报                                                             |
 
 - 去重键：「未完成」按计划进度，其余按这一轮。
-- 用户亲手停下的父对话（`stopReason === 'user'`）不被子对话的结果叫起，记进收件箱，继续执行时一起处理。
+- 用户亲手停下的父对话（`stopReason === 'user'`）不被子对话的结果叫起，记进收件箱，继续执行时一起处理。因用量上限停下（`budget`）、被定时核对收成「已中断」（`lost`）的、整棵树已超限的同样不叫；判断只在 `shared/wake.ts` 的 `wakeHold`（2026-11-01 统一，见 `docs/lessons/wake.md`）。
 
 ### 三、继续执行时连带恢复
 
@@ -117,7 +117,7 @@
 
 ## 分期
 
-一次做完。出口：类型检查、lint、全量单测、全量 e2e（`04-subagents` 新增「计划做一半就收尾」「父对话被停下后继续」两步）通过；界面检查交给 CI。
+一次做完。出口：类型检查、lint、全量单测、全量 e2e（`09-subagent-runtime` 新增「计划做一半就收尾」「父对话被停下后继续」两步）通过；界面检查交给 CI。
 
 ## 风险与代价
 

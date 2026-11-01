@@ -12,7 +12,7 @@ export const DIFF_TONE = {
 } as const
 
 /** 段头 / 折叠行：一条浅底的窄行，不加上下边线 */
-export const DIFF_HUNK = 'bg-field/70 px-3 py-1 text-[0.6875rem] text-subtle'
+export const DIFF_HUNK = 'bg-field/70 px-3 py-1 text-caption text-subtle'
 
 /** 行号槽：固定宽度、右对齐，选文字时不带上行号 */
 export const DIFF_GUTTER = 'w-11 shrink-0 select-none pr-2 text-right tabular-nums'

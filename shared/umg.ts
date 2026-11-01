@@ -880,10 +880,13 @@ export function uniqueName(base: string, names: Set<string>) {
 
 // ---- 颜色 ----
 
-/** "#RGB" "#RRGGBB" "#RRGGBBAA" → [r, g, b, a]（0~1，sRGB） */
+/** "#RGB" "#RGBA" "#RRGGBB" "#RRGGBBAA" 这四种写法（不认 7 位这类半截的） */
+export const isHexColor = (v: unknown): v is string =>
+  typeof v === 'string' && /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v)
+/** "#RGB" "#RGBA" "#RRGGBB" "#RRGGBBAA" → [r, g, b, a]（0~1，sRGB） */
 export function parseColor(hex: unknown): [number, number, number, number] {
   let h = String(hex ?? '').replace('#', '')
-  if (h.length === 3) h = h.replace(/./g, '$&$&')
+  if (h.length === 3 || h.length === 4) h = h.replace(/./g, '$&$&')
   if (h.length === 6) h += 'FF'
   if (!/^[0-9a-f]{8}$/i.test(h)) return [1, 1, 1, 1]
   return [0, 2, 4, 6].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as [number, number, number, number]
@@ -897,8 +900,13 @@ const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055)
 export function linearColor(hex: unknown) {
   const [r, g, b, a] = parseColor(hex)
   const f = (n: number) => +n.toFixed(5)
-  const h = String(hex ?? '#FFFFFFFF').toUpperCase()
-  return { R: f(toLinear(r)), G: f(toLinear(g)), B: f(toLinear(b)), A: f(a), Hex: h.length === 7 ? h + 'FF' : h }
+  let h = String(hex ?? '#FFFFFFFF').toUpperCase()
+  // 短写也展开成 #RRGGBBAA：UE 那边 FColor::FromHex 认这一种最稳
+  if (isHexColor(hex)) {
+    const s = h.slice(1)
+    h = '#' + (s.length <= 4 ? s.replace(/./g, '$&$&') : s).padEnd(8, 'F')
+  }
+  return { R: f(toLinear(r)), G: f(toLinear(g)), B: f(toLinear(b)), A: f(a), Hex: h }
 }
 
 /** 字号：UE 的 Size 是 96 DPI 下的磅值，屏幕像素 = Size × 4 / 3 */
@@ -1021,9 +1029,14 @@ export function assignImage(w: Widget, img: { id: string; width: number; height:
   // 网页控件的图片属性就是一个 "img:<id>" 字符串
   if (WIDGETS[w.Type]?.group === 'web') return { ...w, Properties: { ...props, [last]: `img:${img.id}` } }
   const nine = nineSliceRatios(img.nineSlice, img.width, img.height)
+  const prev = cur[last] ?? {}
+  // 纯色画刷第一次套上图片：原来的 TintColor 是那块纯色本身（按钮默认 #3A3A3A），套图后 UE 会把图片乘上它，
+  // 几乎变成黑的；这时改回白色。原来就有图（用户在图片上设过着色）的照常保留
+  const hadImage = typeof prev.ResourceObject === 'string' && prev.ResourceObject.startsWith('img:')
   cur[last] = {
     ...brush(),
-    ...(cur[last] ?? {}),
+    ...prev,
+    ...(hadImage ? {} : { TintColor: '#FFFFFFFF' }),
     ResourceObject: `img:${img.id}`,
     ImageSize: { X: img.width, Y: img.height },
     ...(nine && hasSlice(nine) ? { DrawAs: 'Box', Margin: nine } : {}),
@@ -1146,6 +1159,11 @@ export const textureName = (name: string) => {
   return /^T_/i.test(n) ? n : `T_${n}`
 }
 
+/** 存颜色的字段（TintColor、ColorAndOpacity、BorderColor、网页的 Background……） */
+const COLOR_KEY = /(?:Colou?r|ColorAndOpacity|^Background)$/
+/** 存图片引用（"img:<id>"）的字段：画刷的 ResourceObject、网页的 Src / BackgroundImage */
+const IMAGE_KEYS = new Set(['ResourceObject', 'Src', 'BackgroundImage'])
+
 /**
  * 导出一个控件：去掉 id，颜色换成 LinearColor，图片换成贴图名，SizeBox 补上 bOverride_ 开关，
  * UniformGridPanel 的格子展开成 UE 里真正的子控件。names 是这棵树里已有的控件名，展开的格子不和它们重名
@@ -1156,16 +1174,18 @@ export function exportWidget(
   slotType?: SlotType,
   names: Set<string> = allNames(w),
 ): any {
-  const conv = (v: any): any => {
-    if (typeof v === 'string' && /^#[0-9a-f]{6,8}$/i.test(v)) return linearColor(v)
-    if (typeof v === 'string' && v.startsWith('img:')) return tex.get(v.slice(4)) ?? ''
-    if (Array.isArray(v)) return v.map(conv)
+  // 只按字段名转换：颜色字段里的 "#..." 换成 LinearColor，图片字段里的 "img:" 换成贴图名。
+  // 以前所有字符串都试着转，文字写 "#123456" 会变成颜色对象、写 "img:abc" 会变成空串
+  const conv = (v: any, key = ''): any => {
+    if (typeof v === 'string' && COLOR_KEY.test(key) && isHexColor(v)) return linearColor(v)
+    if (typeof v === 'string' && IMAGE_KEYS.has(key) && v.startsWith('img:')) return tex.get(v.slice(4)) ?? ''
+    if (Array.isArray(v)) return v.map((x) => conv(x, key))
     // ImageFit 是面板里的图片适配方式，UE 里没有这个属性，导出时和 Locked 一样去掉
     if (v && typeof v === 'object')
       return Object.fromEntries(
         Object.entries(v)
           .filter(([k]) => k !== 'ImageFit')
-          .map(([k, x]) => [k, conv(x)]),
+          .map(([k, x]) => [k, conv(x, k)]),
       )
     return v
   }

@@ -40,8 +40,13 @@ ${team.length ? team.join('\n') : '- 在上面的「团队」里选择主 Agent 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 // Agent 输出也走这里：只放行 http(s)、mailto 和相对链接，javascript: 之类的链接当普通文字显示
-const safe = (href: string) =>
-  /^(https?:|mailto:|#|\/|\.{0,2}\/)/i.test(href.trim()) || !/^[a-z][\w+.-]*:/i.test(href.trim())
+// 判断前先去掉所有空白和控制字符：浏览器解析地址时会把它们删掉，`java\tscript:` 照样是 javascript:，
+// 只 trim 的话正则匹配不上协议、反而被当成相对链接放行
+const safe = (href: string) => {
+  // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（浏览器解析 URL 时会删掉它们）
+  const h = href.replace(/[\u0000-\u0020\u007f-\u009f]/g, '')
+  return /^(https?:|mailto:|#|\/|\.{0,2}\/)/i.test(h) || !/^[a-z][\w+.-]*:/i.test(h)
+}
 
 // 渲染器提到模块级：每次渲染都新建一个，长对话里每个增量都做一遍没有意义
 const renderer = new marked.Renderer()
@@ -114,7 +119,7 @@ export function lineSpans(html: string, diff = false) {
 /** 代码块顶栏：语言名 + 行数，右边折行和复制 */
 export function codeBar(name: string, count: number, extra = '') {
   const n = count > 1 ? ` <small>· ${escape(t('{n} 行', { n: count }))}</small>` : ''
-  return `<div class="md-code-bar"><span class="md-code-lang">${escape(name)}${n}</span><span class="md-code-acts">${extra}<button type="button" class="md-copy" data-wrap>${t('折行')}</button><button type="button" class="md-copy" data-copy>${t('复制')}</button></span></div>`
+  return `<div class="md-code-bar"><span class="md-code-lang">${escape(name)}${n}</span><span class="md-code-acts">${extra}<button type="button" class="md-copy" data-wrap>${t('折行')}</button><button type="button" class="md-copy" data-copy><span class="swap"><span>${t('复制')}</span><span>${t('已复制')}</span></span></button></span></div>`
 }
 // 代码块参照 Claude Code：顶部一条语言名和复制按钮，内容按语言高亮；mermaid 先显示源码，渲染组件再换成图
 renderer.code = ({ text, lang }) => {
@@ -213,7 +218,7 @@ function mention(html: string, teamNames: Set<string>) {
     (_, lead: string, text: string) =>
       lead +
       text.replace(
-        /@([^\s@#，。、,.;；:：()（）\[\]【】<>&]+)/g,
+        /@([^\s@#，。、,.;；:：()（）[\]【】<>&]+)/g,
         (_m, name: string) => `<span class="mention${teamNames.has(name) ? '' : ' unknown'}">@${name}</span>`,
       ),
   )

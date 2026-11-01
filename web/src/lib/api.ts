@@ -1,10 +1,12 @@
 import type { ShellReport } from '@shared/shells'
+import { trackedFetch } from './connection'
 import type { CollabEvent } from '@shared/collab-timeline'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
 import type { ComfyChain } from '@shared/comfy-chain'
 import type { ModelMeta } from '@shared/blender'
 import type { SpeechStatus } from '@shared/speech'
+import type { TtsStatus } from '@shared/tts'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -167,7 +169,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const { handle } = await import('./demo-backend')
     return handle(init?.method ?? 'GET', url, init?.body ? JSON.parse(init.body as string) : undefined) as Promise<T>
   }
-  const res = await fetch(`/api${url}`, {
+  const res = await trackedFetch(`/api${url}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
@@ -185,7 +187,7 @@ let tasksEtag = ''
 const allTasks = async (): Promise<Task[] | null> => {
   // 演示版没有后端，也没有 ETag，直接回全量
   if (import.meta.env.VITE_DEMO) return request<Task[]>('/tasks')
-  const res = await fetch('/api/tasks', { headers: tasksEtag ? { 'If-None-Match': tasksEtag } : {} })
+  const res = await trackedFetch('/api/tasks', { headers: tasksEtag ? { 'If-None-Match': tasksEtag } : {} })
   if (res.status === 304) return null
   if (!res.ok) await failure(res)
   const tag = res.headers.get('ETag')
@@ -325,6 +327,29 @@ export const api = {
     }),
   /** 一段 16kHz 单声道 16 位 PCM（base64）转成文字 */
   transcribe: (audio: string) => request<{ text: string }>('/speech/transcribe', json('POST', { audio })),
+
+  /** 本机语音朗读：开源 Kokoro 模型的下载状态（shared/tts.ts），和语音输入分开 */
+  tts: () => request<TtsStatus>('/tts/status'),
+  ttsCancel: () => request<TtsStatus>('/tts/cancel', { method: 'POST' }),
+  ttsModel: (id: string, action: 'download' | 'remove') =>
+    request<TtsStatus>(`/tts/models/${id}${action === 'download' ? '/download' : ''}`, {
+      method: action === 'download' ? 'POST' : 'DELETE',
+    }),
+  /** 把一段文字念成 WAV；音色、语速不传用设置里的（试听传还没保存的值）。演示版没有本机模型 */
+  ttsSpeak: async (
+    body: { text: string; voice?: number; speed?: number; model?: string },
+    signal?: AbortSignal,
+  ): Promise<Blob> => {
+    if (import.meta.env.VITE_DEMO) throw new Error(t('在线演示没有本机朗读模型，请在设置 → 语音朗读里改用浏览器语音'))
+    const res = await fetch('/api/tts/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    })
+    if (!res.ok) await failure(res)
+    return res.blob()
+  },
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
   /** 工作流链：存下来的链 + 可用的工作流（面板里选段要用） */
@@ -532,6 +557,9 @@ export const api = {
   appInterrupted: () => request<InterruptedTasks>('/app/interrupted'),
   /** 处理过了：保留记录，但不再自动弹 */
   appInterruptedAck: () => request<InterruptedTasks>('/app/interrupted/ack', json('POST', {})),
+  /** 被上次面板退出 / 重启打断的顶层对话：首页问一次要不要全部继续 */
+  appRestartInterrupted: () => request<InterruptedTasks>('/app/restart-interrupted'),
+  appRestartInterruptedAck: () => request<InterruptedTasks>('/app/restart-interrupted/ack', json('POST', {})),
 
   categories: () => request<Category[]>('/categories'),
   createCategory: (name: string, scope: Category['scope'] = 'agent') =>
@@ -631,6 +659,21 @@ export const api = {
   /** 清理无效进程：pids 是用户在确认列表里勾选的，空表示清这个对话的全部残留 */
   cleanTaskProcesses: (id: string, pids: number[]) =>
     request<CleanProcessesResult>(`/tasks/${id}/processes/clean`, json('POST', { pids })),
+  /** 所有对话里留下的 CLI 进程（任务不在跑、进程还活着）：设置里一处看全 */
+  staleProcesses: () =>
+    request<{
+      processes: {
+        pid: number
+        command: string
+        ownerTaskId: string
+        ownerTitle: string
+        startedAt: number
+        rss: number | null
+      }[]
+      unavailable: string
+    }>('/tasks/stale-processes'),
+  cleanStaleProcesses: (pids: number[]) =>
+    request<CleanProcessesResult>('/tasks/stale-processes/clean', json('POST', { pids })),
   /** AI 清理建议：只给建议，确认后前端再调 cleanTaskProcesses */
   suggestTaskProcesses: (id: string) =>
     request<ProcessSuggestResult>(`/tasks/${id}/processes/suggest`, json('POST', {})),
@@ -926,6 +969,22 @@ export const api = {
   trash: () => request<TrashRow[]>('/tasks/trash'),
   /** 从回收站恢复；worktreeCleared 表示独立分支目录已经没了，恢复后要重新执行 */
   restoreTask: (id: string) => request<{ worktreeCleared: boolean }>(`/tasks/${id}/restore`, { method: 'POST' }),
+  /** 删掉的角色、工作流、项目（对话的回收站在上面）：保留期和对话一样 */
+  itemTrash: () =>
+    request<
+      {
+        kind: 'agent' | 'workflow' | 'project'
+        id: string
+        name: string
+        deletedAt: string
+        tasks: number
+        leftDays: number
+      }[]
+    >('/trash/items'),
+  restoreItem: (kind: string, id: string) =>
+    request<{ ok: true; tasks: number }>(`/trash/items/${kind}/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
+  purgeItem: (kind: string, id: string) =>
+    request<void>(`/trash/items/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   /** 永久删除：不进回收站，内容直接清掉（界面先让用户二次确认） */
   permanentDeleteTask: (id: string) => request<void>(`/tasks/${id}/permanent`, { method: 'DELETE' }),
   /** 搜对话正文：只回命中片段和定位信息，不回整条消息（口径见 shared/task-search.ts） */
@@ -998,7 +1057,9 @@ export const api = {
   deleteDesignProject: (id: string) => request<void>(`/designs/projects/${id}`, { method: 'DELETE' }),
   design: (id: string) => request<DesignFull>(`/designs/${id}`),
   createDesign: (input: NewDesignInput) => request<Design>('/designs', json('POST', input)),
-  saveDesign: (id: string, doc: DesignDoc) => request<DesignFull>(`/designs/${id}`, json('PUT', doc)),
+  /** baseRev：页面这份编辑基于服务端的哪个版本；比服务端旧时结构不收（AI 已经改过了） */
+  saveDesign: (id: string, doc: DesignDoc, baseRev?: number) =>
+    request<DesignFull & { rejected?: 'ai' | 'stale' }>(`/designs/${id}`, json('PUT', { ...doc, baseRev })),
   copyDesign: (id: string, projectId?: string) => request<Design>(`/designs/${id}/copy`, json('POST', { projectId })),
   moveDesign: (id: string, projectId: string) =>
     request<DesignMeta>(`/designs/${id}/move`, json('POST', { projectId })),

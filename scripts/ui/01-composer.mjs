@@ -201,7 +201,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     }
     await check(p, '对话-图片气泡')
     // 右上角「⋯」里的「复制对话」：剪贴板里是转录文件的路径，粘贴回输入框变成一张会话卡片，不是一段文字
-    await p.getByRole('button', { name: '更多操作' }).first().click()
+    await p.getByRole('button', { name: '更多操作', exact: true }).first().click()
     // 导出菜单里除了 JSON 包还要有单文件 HTML 报告（不点：点了会下载文件）
     if (!(await p.getByRole('menuitem', { name: '导出 HTML 报告' }).count()))
       errors.push('导出：更多操作菜单里没有「导出 HTML 报告」')
@@ -513,6 +513,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     if (!big || !big.src || big.width === 0) errors.push('路径可点：图片路径点开后没有显示图片')
     await check(p, '对话-路径-图片大图')
     await p.keyboard.press('Escape')
+    // 图片浮层有退场动画，放完才卸载：不等的话下面的文件弹窗和它同时在，[role=dialog] 会匹配到两个
+    await p.locator('[role="dialog"]').waitFor({ state: 'detached', timeout: 3000 })
     // 点文件路径：弹窗里显示文件内容并停在提到的那一行
     await mdPath
       .filter({ hasText: 'src/App.tsx:7' })
@@ -1045,6 +1047,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .and(c.locator('[disabled]'))
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('Chat 右栏：什么都没有的聊天右栏开关没有禁用'))
+    // Chat 模式用 CLI 自带的待办（ADR 0038）：输入框上方一行「待办 1/3 · 当前步骤」，点开看全部步骤
+    await list.getByTitle('整理一份 Claude Code 和 Codex 的能力对照', { exact: true }).click()
+    const todoRow = c.locator('[data-status-row="todos"]')
+    await todoRow.waitFor({ timeout: 5000 }).catch(() => errors.push('Chat 待办：有 CLI 待办的聊天没有显示待办行'))
+    await todoRow.getByRole('button', { name: '待办' }).click()
+    await check(c, 'Chat-待办', ['待办 1/3', '整理成表格'])
     await c.close()
   }
 

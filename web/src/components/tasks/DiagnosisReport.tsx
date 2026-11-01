@@ -65,7 +65,7 @@ const CARD = 'rounded-xl border bg-card'
 function Card({ label, children, className }: { label?: string; children: ReactNode; className?: string }) {
   return (
     <section className={cn('flex flex-col gap-2 p-3.5', CARD, className)}>
-      {label && <span className="text-[0.6875rem] font-semibold tracking-[0.06em] text-subtle">{label}</span>}
+      {label && <span className="text-caption font-semibold tracking-[0.06em] text-subtle">{label}</span>}
       {children}
     </section>
   )
@@ -75,14 +75,14 @@ function Card({ label, children, className }: { label?: string; children: ReactN
 function FileLink({ file, line, className }: { file: string; line?: number; className?: string }) {
   const open = useFileOpen()
   const label = at(file, line)
-  if (!open) return <span className={cn('truncate font-mono text-[0.75rem]', className)}>{label}</span>
+  if (!open) return <span className={cn('truncate font-mono text-footnote', className)}>{label}</span>
   return (
     <button
       type="button"
       title={t('打开 {path}', { path: label })}
       onClick={() => open(file, line)}
       className={cn(
-        'min-w-0 cursor-pointer truncate text-left font-mono text-[0.75rem] hover:text-accent-text hover:underline',
+        'min-w-0 cursor-pointer truncate text-left font-mono text-footnote hover:text-accent-text hover:underline',
         className,
       )}
     >
@@ -95,12 +95,12 @@ function FileLink({ file, line, className }: { file: string; line?: number; clas
 export function DiagnosisError({ parse }: { parse: Extract<DiagnosisParse, { ok: false }> }) {
   return (
     <div className="flex flex-col gap-3 p-4">
-      <p className="flex items-start gap-2 text-[0.8125rem] leading-relaxed text-danger">
+      <p className="flex items-start gap-2 text-body leading-relaxed text-danger">
         <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
         <span>{t('结论块的格式不对，没能画成结论：{error}', { error: parse.error.split('\n')[0] ?? '' })}</span>
       </p>
-      <p className="text-[0.75rem] text-subtle">{t('下面是原文，可以在对话里让它重新输出')}</p>
-      <pre className="max-h-[60vh] overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap">
+      <p className="text-footnote text-subtle">{t('下面是原文，可以在对话里让它重新输出')}</p>
+      <pre className="max-h-[60vh] overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-footnote leading-[1.6] whitespace-pre-wrap">
         {parse.raw}
       </pre>
     </div>
@@ -222,7 +222,7 @@ export function DiagnosisReport({
 
   const fixButton = (
     <Button
-      className="h-[2.375rem] w-full justify-center rounded-[0.5625rem] font-semibold"
+      className="h-[2.375rem] w-full justify-center rounded-xl font-semibold"
       disabled={!!busy || selfState === 'working'}
       title={target ? t('把修复建议作为一条消息发回被分析的那个对话') : t('在这个分析对话里按修复建议动手改')}
       onClick={() => void fixHere()}
@@ -254,7 +254,7 @@ export function DiagnosisReport({
             全部应用完以后退回「在当前对话里修」，剩下只写了改法的交给 Agent */}
         {canApply && pending.length > 0 ? (
           <Button
-            className="h-[2.375rem] w-full justify-center rounded-[0.5625rem] font-semibold"
+            className="h-[2.375rem] w-full justify-center rounded-xl font-semibold"
             disabled={applying}
             title={t('把每处改前的原文在项目里原样换成改后的内容；原文找不到或不止一处的不改，并写明原因')}
             onClick={() => void applyFixes()}
@@ -286,10 +286,10 @@ export function DiagnosisReport({
   return (
     <div className="flex flex-col gap-3.5 p-[1.125rem]">
       <Card label={t('根因')}>
-        <span className="text-[0.875rem] leading-normal font-semibold">{d.rootCause.title}</span>
-        {d.rootCause.detail && <p className="text-[0.8125rem] leading-relaxed text-muted">{d.rootCause.detail}</p>}
+        <span className="text-prose leading-normal font-semibold">{d.rootCause.title}</span>
+        {d.rootCause.detail && <p className="text-body leading-relaxed text-muted">{d.rootCause.detail}</p>}
         {conf && (
-          <div className="mt-0.5 flex items-center gap-2.5 text-[0.75rem] text-subtle">
+          <div className="mt-0.5 flex items-center gap-2.5 text-footnote text-subtle">
             <span>{t('把握')}</span>
             <span
               role="meter"
@@ -307,7 +307,7 @@ export function DiagnosisReport({
         <Card label={t('影响')}>
           <ul className="flex flex-col gap-2">
             {d.impacts.map((x, i) => (
-              <li key={i} className="flex items-start gap-2 text-[0.8125rem] leading-relaxed">
+              <li key={i} className="flex items-start gap-2 text-body leading-relaxed">
                 <span className={cn('mt-[0.5rem] h-1.5 w-1.5 shrink-0 rounded-full', SEVERITY[x.severity])} />
                 {x.text}
               </li>
@@ -318,7 +318,7 @@ export function DiagnosisReport({
       <div className="flex flex-col gap-2">
         {fixButton}
         {(sentTo || selfState === 'done') && (
-          <p className="truncate text-center text-[0.75rem] text-subtle">
+          <p className="truncate text-center text-footnote text-subtle">
             {sentTo ? t('已发到「{title}」', { title: sentTo }) : t('已在这个对话里修过')}
           </p>
         )}
@@ -359,8 +359,7 @@ export function DiagnosisReport({
 }
 
 /** 结论页的两个次要按钮：照设计稿是白底 + 深一档的描边、高 34，和上面实心的主按钮分出主次 */
-const SECONDARY =
-  'h-[2.125rem] flex-1 justify-center rounded-[0.5625rem] border border-line-strong bg-card hover:bg-sel'
+const SECONDARY = 'h-[2.125rem] flex-1 justify-center rounded-xl border border-line-strong bg-card hover:bg-sel'
 
 /** 相关文件的一行：整行可点（设计稿是一行一个文件、右端写着点了会怎样），不在对话页里时只显示路径 */
 function FileRow({ file }: { file: string }) {
@@ -369,7 +368,7 @@ function FileRow({ file }: { file: string }) {
   if (!open)
     return (
       <div className={row}>
-        <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem]">{file}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-footnote">{file}</span>
       </div>
     )
   return (
@@ -379,14 +378,14 @@ function FileRow({ file }: { file: string }) {
       onClick={() => open(file)}
       className={cn(row, 'group/file cursor-pointer text-left transition-colors hover:bg-sel')}
     >
-      <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem]">{file}</span>
-      <span className="shrink-0 text-[0.6875rem] text-subtle group-hover/file:text-fg">{t('打开')}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-footnote">{file}</span>
+      <span className="shrink-0 text-caption text-subtle group-hover/file:text-fg">{t('打开')}</span>
     </button>
   )
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="px-1 py-6 text-center text-[0.8125rem] text-subtle">{text}</p>
+  return <p className="px-1 py-6 text-center text-body text-subtle">{text}</p>
 }
 
 /** 证据卡右上角的标签（设计稿「问题所在 / 正确口径」）：AI 在 evidence.kind 里标的角色 */
@@ -407,7 +406,7 @@ function EvidenceCard({ e }: { e: DiagnosisEvidence }) {
           {e.file ? (
             <FileLink file={e.file} line={e.line} className="flex-1" />
           ) : e.command ? (
-            <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[0.75rem] text-muted">
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-footnote text-muted">
               <Terminal className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{e.command}</span>
             </span>
@@ -415,18 +414,18 @@ function EvidenceCard({ e }: { e: DiagnosisEvidence }) {
             <span className="flex-1" />
           )}
           {kind && (
-            <span data-evidence-kind={e.kind} className={cn('shrink-0 text-[0.6875rem]', kind.tone)}>
+            <span data-evidence-kind={e.kind} className={cn('shrink-0 text-caption', kind.tone)}>
               {kind.label()}
             </span>
           )}
         </header>
       )}
       {e.excerpt && (
-        <pre className="max-h-48 overflow-auto bg-panel px-3 py-2 font-mono text-[0.75rem] leading-[1.7] whitespace-pre">
+        <pre className="max-h-48 overflow-auto bg-panel px-3 py-2 font-mono text-footnote leading-[1.7] whitespace-pre">
           {e.excerpt}
         </pre>
       )}
-      {e.note && <p className="px-3 py-2 text-[0.75rem] leading-relaxed text-muted">{e.note}</p>}
+      {e.note && <p className="px-3 py-2 text-footnote leading-relaxed text-muted">{e.note}</p>}
     </section>
   )
 }
@@ -445,32 +444,32 @@ function FixCard({ f, result }: { f: DiagnosisFix; result?: FixApplyResult }) {
         {f.file ? (
           <FileLink file={f.file} line={f.line} className="flex-1" />
         ) : (
-          <span className="flex-1 text-[0.75rem] text-subtle">{t('不针对具体文件')}</span>
+          <span className="flex-1 text-footnote text-subtle">{t('不针对具体文件')}</span>
         )}
         {result?.ok ? (
-          <span data-fix-applied="" className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-success">
+          <span data-fix-applied="" className="flex shrink-0 items-center gap-1 text-caption text-success">
             <Check className="h-3 w-3" />
             {t('已应用')}
           </span>
         ) : (
           <>
-            {adds > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-success">+{adds}</span>}
-            {dels > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-danger">−{dels}</span>}
+            {adds > 0 && <span className="shrink-0 font-mono text-caption text-success">+{adds}</span>}
+            {dels > 0 && <span className="shrink-0 font-mono text-caption text-danger">−{dels}</span>}
           </>
         )}
       </header>
       {result && !result.ok && (
         <p
           data-fix-error=""
-          className="flex items-start gap-1.5 border-b bg-danger/5 px-3 py-2 text-[0.75rem] leading-relaxed text-danger"
+          className="flex items-start gap-1.5 border-b bg-danger/5 px-3 py-2 text-footnote leading-relaxed text-danger"
         >
           <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>{t('没能应用：{error}', { error: result.error ?? '' })}</span>
         </p>
       )}
-      <p className="px-3 py-2.5 text-[0.8125rem] leading-relaxed">{f.change}</p>
+      <p className="px-3 py-2.5 text-body leading-relaxed">{f.change}</p>
       {rows.length > 0 && (
-        <div className="overflow-x-auto font-mono text-[0.75rem] leading-5 whitespace-pre">
+        <div className="overflow-x-auto font-mono text-footnote leading-5 whitespace-pre">
           {rows.map(([k, x], i) => (
             // 设计稿里删掉、加上的行连字一起染色，不只是行首的 -/+
             <div key={i} className={cn('px-3', DIFF_TONE[k].row, DIFF_TONE[k].sign)}>

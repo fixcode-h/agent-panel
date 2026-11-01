@@ -256,14 +256,14 @@ export function WorktreeRow({
   const removable = removeState(item, busy)
   const body = (
     <>
-      <span className="flex min-w-0 items-center gap-1 font-mono text-[0.75rem]">
+      <span className="flex min-w-0 items-center gap-1 font-mono text-footnote">
         <span className="shrink-0 text-subtle">{item.baseBranch || 'HEAD'}</span>
         <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
         <span className={cn('min-w-0 truncate', active ? 'text-fg' : 'text-subtle line-through')} title={item.branch}>
           {item.branch}
         </span>
       </span>
-      <span className="mt-0.5 block truncate text-[0.6875rem] text-subtle" title={item.path}>
+      <span className="mt-0.5 block truncate text-caption text-subtle" title={item.path}>
         {item.child && <span className="text-muted">{item.title} · </span>}
         {worktreeSummary(item)}
       </span>
@@ -301,7 +301,7 @@ export function WorktreeRow({
                   disabled={busy}
                   onClick={onMerge}
                   title={t('合并到「{branch}」', { branch: item.baseBranch || t('原分支') })}
-                  className="flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.6875rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-50"
+                  className="flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-caption text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-50"
                 >
                   <GitMerge className="h-3.5 w-3.5" />
                   {t('合并')}
@@ -414,7 +414,7 @@ export function WorktreeSection({
   const group = (key: 'live' | 'removed') => (
     <div data-worktree-group={key} className="flex flex-col gap-1">
       {/* 组标题带数量：两组都显示标题，一眼看出哪些删了、哪些还在 */}
-      <div className="flex items-center gap-2 pl-1 text-[0.6875rem] text-subtle">
+      <div className="flex items-center gap-2 pl-1 text-caption text-subtle">
         <span className="flex-1">{key === 'live' ? t('未删除') : t('已删除')}</span>
         <span className="tabular-nums">{groups[key].length}</span>
       </div>
@@ -491,20 +491,20 @@ export function DeleteTaskDialog({
   return (
     // 确认类小弹窗：和 ConfirmDialog 一样点到外面就关，标题和说明由这里自己排
     <Modal open={open} onOpenChange={onOpenChange} title={null} size="sm" bare closeOnOutside className="p-6">
-      <D.Title className="text-[0.9375rem] font-semibold">{title}</D.Title>
-      <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
+      <D.Title className="text-heading font-semibold">{title}</D.Title>
+      <D.Description className="mt-1.5 text-body leading-relaxed text-muted">
         {description}
         {kept > 0 && !left.length && ` ${t('它的独立分支已经合并，恢复后照常可用。')}`}
       </D.Description>
       {!items && (
-        <p className="mt-3 flex items-center gap-2 text-[0.8125rem] text-subtle">
+        <p className="mt-3 flex items-center gap-2 text-body text-subtle">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           {t('正在检查独立分支…')}
         </p>
       )}
       {left.length > 0 && (
         <div className="mt-3 rounded-lg bg-warning/10 px-3 py-2.5">
-          <p className="flex items-center gap-1.5 text-[0.8125rem] font-medium text-warning">
+          <p className="flex items-center gap-1.5 text-body font-medium text-warning">
             <CircleAlert className="h-3.5 w-3.5 shrink-0" />
             {t('有 {n} 个独立分支还没合并：删除后跟着对话进回收站，永久删除时才一起清掉', { n: left.length })}
           </p>

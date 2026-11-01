@@ -97,17 +97,14 @@ export function HelperBriefCard({
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="shrink-0 text-xs font-medium text-muted">{t('派给它的要求')}</span>
             {again > 0 && (
-              <Badge
-                className="shrink-0 px-1.5 text-[0.6875rem]"
-                title={t('派发之后又补充过 {n} 次要求', { n: again })}
-              >
+              <Badge className="shrink-0 px-1.5 text-caption" title={t('派发之后又补充过 {n} 次要求', { n: again })}>
                 <RefreshCw className="h-2.5 w-2.5" />
                 {t('补充过 {n} 次', { n: again })}
               </Badge>
             )}
           </span>
           {/* 摘要只在收起时显示：展开后正文里就有这段（「要做的事」第一节），两处一起写会重复一遍 */}
-          {!open && <span className="line-clamp-2 text-[0.8125rem] text-muted">{view.summary}</span>}
+          {!open && <span className="line-clamp-2 text-body text-muted">{view.summary}</span>}
         </span>
         <ChevronRight className={cn('mt-0.5 h-4 w-4 shrink-0 text-subtle transition-transform', open && 'rotate-90')} />
       </button>
@@ -121,7 +118,7 @@ export function HelperBriefCard({
                 className={cn('flex flex-col gap-1', b.title && `border-l-2 ${BAR_PAD} ${TONE_BAR[b.tone]}`)}
               >
                 {b.title && (
-                  <p className={cn('text-[0.6875rem] font-medium tracking-wide', TONE_CLASS[b.tone])}>{b.title}</p>
+                  <p className={cn('text-caption font-medium tracking-wide', TONE_CLASS[b.tone])}>{b.title}</p>
                 )}
                 <Markdown text={b.body} teamNames={teamNames} compact />
               </section>

@@ -4,6 +4,7 @@ import { Bot, Copy, Download, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2,
 import { isCoreAgent, isHelperAgent, listableAgents } from '@shared/builtin/core'
 import { type Agent, type AgentInput, type Category, roleLayerDefaults } from '@shared/schema'
 import { roleKind } from '@shared/agent-role'
+import { scopeOf } from '@shared/conv-mode'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cliColor, shortVersion } from '@/lib/cli-style'
@@ -17,13 +18,13 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentDetail } from '@/components/agents/AgentDetail'
 import { CategoryHeader } from '@/components/agents/CategoryHeader'
 import { TagFilter, TagList } from '@/components/tags/Tags'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { exportAgent } from '@/lib/transfer'
 import { useShareImport } from '@/lib/useShareImport'
 import { ImportConflictDialog } from '@/components/share/ImportConflictDialog'
 import { BuiltinAgentsDialog } from '@/components/agents/BuiltinAgentsDialog'
 import { useAgentView } from '@/lib/agent-view'
-import { RoleLayerTabs, type RoleLayer } from '@/components/agents/RoleLayerTabs'
+import { layerOf, ROLE_LAYERS, RoleLayerTabs, type RoleLayer } from '@/components/agents/RoleLayerTabs'
 import { defaultCli } from '@shared/settings'
 import { cliToEnable } from '@/components/layout/NoCliBanner'
 import { t } from '@shared/i18n'
@@ -74,12 +75,12 @@ export function AgentsPage() {
   const listed = listableAgents(agents)
   const helperId = agents.find(isHelperAgent)?.id
 
-  // 高级角色、基本角色分两页：打开某个角色时停在它那一页，没指定时先看高级角色
+  // 高级角色、基本角色、Chat 角色分三页：打开某个角色时停在它那一页，没指定时先看高级角色
   const routed = listed.find((a) => a.id === route.id)
-  const [layer, setLayer] = useState<RoleLayer>(() => (routed ? roleKind(routed) : 'advanced'))
-  const inLayer = (a: Agent, l: RoleLayer = layer) => roleKind(a) === l
+  const [layer, setLayer] = useState<RoleLayer>(() => (routed ? layerOf(routed) : 'advanced'))
+  const inLayer = (a: Agent, l: RoleLayer = layer) => layerOf(a) === l
   const selected = routed ?? listed.find((a) => inLayer(a)) ?? listed[0]
-  const selectedLayer = selected ? roleKind(selected) : undefined
+  const selectedLayer = selected ? layerOf(selected) : undefined
   // 选中的角色换了层（跳转过来的、新建的、在详情里改了角色层的）：分页跟过去，不然列表里看不到它
   useEffect(() => {
     if (selectedLayer) setLayer(selectedLayer)
@@ -105,15 +106,14 @@ export function AgentsPage() {
   const match = (a: Agent) =>
     (!tag || a.tags.includes(tag)) &&
     (!q || `${a.name}${a.description}${modelOf(a)}${tagNames(a.tags)}`.toLowerCase().includes(q))
-  // 两页的条数按筛选后的算：搜索时一眼看出另一页有没有命中
-  const counts: Record<RoleLayer, number> = {
-    advanced: listed.filter((a) => inLayer(a, 'advanced') && match(a)).length,
-    basic: listed.filter((a) => inLayer(a, 'basic') && match(a)).length,
-  }
+  // 每页的条数按筛选后的算：搜索时一眼看出别的页有没有命中
+  const counts = Object.fromEntries(
+    ROLE_LAYERS.map((l) => [l, listed.filter((a) => inLayer(a, l) && match(a)).length]),
+  ) as Record<RoleLayer, number>
   const shown = listed.filter((a) => inLayer(a) && match(a))
-  // 搜索、按标签筛选时这一页一个都没命中、另一页有：直接翻过去，别让人以为没搜到
-  const other: RoleLayer = layer === 'advanced' ? 'basic' : 'advanced'
-  const flip = (!!q || !!tag) && !counts[layer] && counts[other] > 0
+  // 搜索、按标签筛选时这一页一个都没命中、别的页有：直接翻过去，别让人以为没搜到
+  const other = ROLE_LAYERS.find((l) => l !== layer && counts[l] > 0) ?? layer
+  const flip = (!!q || !!tag) && !counts[layer] && other !== layer
   useEffect(() => {
     if (flip) setLayer(other)
   }, [flip, other])
@@ -150,12 +150,16 @@ export function AgentsPage() {
     }
   }, [collapsed])
 
+  // Chat 角色默认引入「聊天约束」、Agent 角色默认引入「通用约束」（内置角色的同一套常驻规则，ADR 0038）
+  const rulesOf = (scope: 'agent' | 'chat') =>
+    agents.filter((a) => a.origin === (scope === 'chat' ? 'builtin:chat-rules' : 'builtin:rules')).map((a) => a.id)
   const create = async (input: Partial<AgentInput> = {}) => {
     try {
       const a = await api.createAgent({
         name: t('新角色'),
-        // 在哪一页点的新建就建哪一层：高级角色页新建的直接能挂能力
-        kind: layer,
+        // 在哪一页点的新建就建哪一层、哪一类：高级角色页新建的直接能挂能力，Chat 角色页新建的是 Chat 角色（建好不能改类别）
+        kind: layer === 'chat' ? 'advanced' : layer,
+        scope: layer === 'chat' ? 'chat' : 'agent',
         description: '',
         cli: '',
         model: '@medium',
@@ -172,7 +176,7 @@ export function AgentsPage() {
         runIn: 'any',
         ...roleLayerDefaults(),
         capsSet: true,
-        includes: [],
+        includes: layer === 'chat' ? rulesOf('chat') : [],
         params: [],
         skills: [],
         starters: [],
@@ -194,6 +198,22 @@ export function AgentsPage() {
     const { id, createdAt, updatedAt, origin, ...rest } = a
     create({ ...rest, name: t('{name} 副本', { name: a.name }) })
   }
+  // 类别建好不能改：要换就复制一份成另一类（Agent 角色可能已经被挂载、写进工作流、设成项目默认，直接改会让这些引用失效）。
+  // Chat 角色的能力字段（挂载、分派、通用）由服务端归零，引入换成另一类的常驻规则
+  const duplicateAs = (a: Agent) => {
+    const { id, createdAt, updatedAt, origin, ...rest } = a
+    const scope = scopeOf(a) === 'chat' ? 'agent' : 'chat'
+    // 名字加上类别（和「复制一份」加「副本」一样）：同名的两类角色会让按名字点角色的地方（spawn_agents、create_conversation）认错
+    const name = scope === 'chat' ? t('{name}（Chat）', { name: a.name }) : t('{name}（Agent）', { name: a.name })
+    create({
+      ...rest,
+      name,
+      scope,
+      kind: scope === 'chat' ? 'advanced' : roleKind(a),
+      includes: rulesOf(scope),
+      mounts: [],
+    })
+  }
 
   const recheck = async () => {
     setChecking(true)
@@ -202,16 +222,12 @@ export function AgentsPage() {
       .finally(() => setChecking(false))
   }
 
-  // 列表右边的状态带文字：只有一个点时看不出是什么意思
+  // 列表右边只标不正常的状态（停用、Agent 不可用）：每行都挂「就绪」只是重复，反而看不出哪行有问题
   const status = (a: Agent) => {
-    const installed = clis.find((c) => c.id === cliOf(a))?.installed
-    return !a.enabled ? (
-      <StatusDot compact tone="muted" label={t('已停用')} />
-    ) : installed ? (
-      <StatusDot compact tone="success" label={t('就绪')} />
-    ) : (
-      <StatusDot compact tone="warning" label={t('Agent 未安装')} />
-    )
+    const c = clis.find((x) => x.id === cliOf(a))
+    if (!a.enabled) return <StatusDot compact tone="muted" label={t('已停用')} />
+    if (!c?.installed || !c.enabled) return <StatusDot compact tone="warning" label={t('Agent 不可用')} />
+    return null
   }
 
   // 列表的一行：分组只决定它在哪一节里出现
@@ -224,15 +240,20 @@ export function AgentsPage() {
       leading={<AgentAvatar icon={a.icon} cli={a.cli} size="sm" dim={!a.enabled} />}
       title={a.name}
       monoSubtitle={false}
-      // 角色层已经由分页区分，副标题只写运行配置
-      subtitle={`${cliName(a)} · ${modelOf(a)}`}
+      // 第二行写它干什么（简介）：运行配置的「Claude（默认）· 高档 · claude-op…」在窄栏里总被截断，看不出区别；
+      // 没写简介时才退回运行配置
+      subtitle={a.description || `${cliName(a)} · ${modelOf(a)}`}
       tags={a.tags.length ? <TagList ids={a.tags} /> : undefined}
-      trailing={<span className="shrink-0">{status(a)}</span>}
+      trailing={status(a) && <span className="shrink-0">{status(a)}</span>}
       menu={
         <>
           <ContextMenuItem onSelect={() => duplicate(a)}>
             <Copy className="h-4 w-4" />
             {t('复制一份')}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => duplicateAs(a)}>
+            <Copy className="h-4 w-4" />
+            {scopeOf(a) === 'chat' ? t('复制为 Agent 角色') : t('复制为 Chat 角色')}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => exportAgent(a)}>
             <Download className="h-4 w-4" />
@@ -261,42 +282,26 @@ export function AgentsPage() {
         title={t('角色')}
         count={listed.length}
         onNew={() => create()}
-        // 头部有四个按钮（内置、导入、AI 创建、新建）：窄栏里都收成图标，「角色」标题才不被挤成半个字
-        compactNew
+        // 新建、AI 创建、从内置添加、导入收进一个「＋」菜单：原来四个图标按钮并排，看不出各是什么
+        newMenu={[
+          { label: t('新建角色'), icon: Plus, onSelect: () => create() },
+          {
+            label: t('AI 创建角色'),
+            icon: Sparkles,
+            hint: t('描述需求，让本机 Agent 生成角色'),
+            onSelect: () => setAssist(true),
+          },
+          { label: t('添加内置角色'), icon: LayoutTemplate, onSelect: () => setBuiltin(true), separated: true },
+          {
+            label: t('导入角色文件'),
+            icon: Upload,
+            hint: t('导入角色文件（分享包）'),
+            onSelect: () => file.current?.click(),
+          },
+        ]}
         // 角色数量多、要一眼扫完：列表行比工作流 / 技能页更紧凑
         compact
-        extra={
-          <>
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              aria-label={t('添加内置角色')}
-              title={t('添加内置角色')}
-              onClick={() => setBuiltin(true)}
-            >
-              <LayoutTemplate className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              aria-label={t('导入角色文件')}
-              title={t('导入角色文件（分享包）')}
-              onClick={() => file.current?.click()}
-            >
-              <Upload className="h-4 w-4" />
-            </Button>
-            <input ref={file} type="file" accept=".json,application/json" hidden onChange={share.onFile} />
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              onClick={() => setAssist(true)}
-              aria-label={t('AI 创建角色')}
-              title={t('描述需求，让本机 Agent 生成角色')}
-            >
-              <Sparkles className="h-4 w-4 text-accent-text" />
-            </Button>
-          </>
-        }
+        extra={<input ref={file} type="file" accept=".json,application/json" hidden onChange={share.onFile} />}
         query={query}
         onQuery={setQuery}
         placeholder={t('搜索名称、简介、模型或标签')}
@@ -327,7 +332,7 @@ export function AgentsPage() {
             </div>
             {/* 只列默认 CLI：Agent 不指定 CLI 时用它，工作流节点也固定用它；完整列表和切换默认在设置里 */}
             {defStatus ? (
-              <div className="flex items-center gap-2 text-[0.8125rem]" title={defStatus.version}>
+              <div className="flex items-center gap-2 text-body" title={defStatus.version}>
                 <span className="h-2 w-2 rounded-[2px]" style={{ background: cliColor(defStatus.id) }} />
                 {defStatus.name}
                 <span className={cn('ml-auto text-xs', defStatus.installed ? 'text-success' : 'text-subtle')}>
@@ -341,7 +346,7 @@ export function AgentsPage() {
                 <Button
                   variant="link"
                   onClick={() => openSettings(`cli:${cliToEnable(clis, settings).id}`)}
-                  className="text-[0.8125rem]"
+                  className="text-body"
                 >
                   {t('还没有启用 Agent，去设置里启用')}
                 </Button>
@@ -393,7 +398,13 @@ export function AgentsPage() {
         })}
         {!loading && listed.length > 0 && categoryGroups.length === 0 && (
           <ListEmpty>
-            {filtering ? t('没有匹配的角色') : layer === 'advanced' ? t('还没有高级角色') : t('还没有基本角色')}
+            {filtering
+              ? t('没有匹配的角色')
+              : layer === 'advanced'
+                ? t('还没有高级角色')
+                : layer === 'basic'
+                  ? t('还没有基本角色')
+                  : t('还没有 Chat 角色')}
           </ListEmpty>
         )}
         {/* 只有必备角色时（自带工作流和它们的角色都被删掉了）提示可以添加内置的 */}
@@ -414,6 +425,7 @@ export function AgentsPage() {
           agent={selected}
           onOptimized={() => setRev((r) => r + 1)}
           onDuplicate={() => duplicate(selected)}
+          onDuplicateAs={() => duplicateAs(selected)}
           deleteSignal={delReq?.id === selected.id ? delReq.at : 0}
           onDeleted={() => go({ page: 'agents' })}
         />
@@ -433,6 +445,7 @@ export function AgentsPage() {
         open={assist}
         onOpenChange={setAssist}
         kind="agent"
+        subject={layer === 'chat' ? { scope: 'chat' } : undefined}
         onApplied={({ agent }) => {
           setQuery('')
           if (agent) go({ page: 'agents', id: agent.id })

@@ -15,24 +15,15 @@ import {
   type Design,
 } from '../shared/design.ts'
 import { applyOp, type OpsState } from '../shared/design-ops.ts'
-import { DATA_TYPES, normalizeData, type DesignData } from '../shared/design-data.ts'
+import { DATA_TYPES, dataIssues, normalizeData, type DesignData } from '../shared/design-data.ts'
 import { ANIM_PROPS, ANIM_TRIGGERS, EASES, animationsBrief, presetCatalogText } from '../shared/anim.ts'
 import { compactTree, walk, type Widget } from '../shared/umg.ts'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { rectLine } from '../shared/umg-layout.ts'
+import { layoutNote, layoutReport, sessionLayout } from './design-layout.ts'
+import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import {
-  contentBox,
-  crop,
-  decodePng,
-  drawGrid,
-  encodePng,
-  gridStep,
-  hasAlpha,
-  palette,
-  pixelAt,
-  resize,
-} from './image.ts'
-import { imageSize } from './zip.ts'
+import { inspect } from './design-inspect.ts'
+import { compareTool, proposeLayout } from './design-compare.ts'
 
 /**
  * 给 CLI 用的设计工具（MCP，Streamable HTTP）：AI 像在控件树和属性面板里操作一样调用工具改设计。
@@ -47,7 +38,7 @@ import { imageSize } from './zip.ts'
  * 每轮 AI 对话开一个会话，地址里带随机令牌，只在这一轮有效；面板只监听本机。
  */
 
-interface Session {
+export interface Session {
   design: Design
   state: OpsState
   images: z.infer<typeof AiImage>[]
@@ -64,6 +55,10 @@ interface Session {
   views: number
   /** 「先出原画」阶段：只能出原画、提问、看图，不能改控件树和列切图 */
   conceptOnly: boolean
+  /** 「拆区块」阶段：模板确认了、区块还没确认，这一轮只能 propose_layout，不能搭界面、列切图 */
+  layoutOnly: boolean
+  /** 这一轮提交的区块（propose_layout），这一轮结束后存进设计 */
+  layout?: { name: string; x: number; y: number; w: number; h: number; note: string }[]
   /** 「AI 分析」：只读，不能改设计、出原画或提问，只能用检查类的工具 */
   readOnly: boolean
   /** 这一轮要出的原画（generate_concepts），这一轮结束后生成 */
@@ -73,7 +68,14 @@ interface Session {
   /** 这一轮定下的画板假数据（见 design-data.ts），最后和设计一起存下 */
   data?: DesignData
   /** 每次改动前的样子，undo 用 */
-  history: { state: OpsState; images: Session['images']; data?: DesignData }[]
+  history: {
+    state: OpsState
+    images: Session['images']
+    data?: DesignData
+    /** set_design 改的风格和尺寸也能撤回（以前不进历史，undo 撤掉的其实是更早的一次控件修改） */
+    style?: string
+    designSize?: { X: number; Y: number }
+  }[]
   /** 截过的画布截图，view_image 里写 screenshot:<第几张> */
   shots: string[]
 }
@@ -115,7 +117,7 @@ export function openDesignSession(
   design: Design,
   onChange: (s: Session) => void,
   files: DesignFiles,
-  opts: { conceptOnly?: boolean; conceptCount?: number; readOnly?: boolean } = {},
+  opts: { conceptOnly?: boolean; conceptCount?: number; readOnly?: boolean; layoutOnly?: boolean } = {},
 ) {
   const token = randomUUID()
   const s: Session = {
@@ -127,6 +129,7 @@ export function openDesignSession(
     files,
     views: 0,
     conceptOnly: !!opts.conceptOnly,
+    layoutOnly: !!opts.layoutOnly,
     readOnly: !!opts.readOnly,
     concepts: [],
     conceptCount: opts.conceptCount,
@@ -193,7 +196,7 @@ const TOOLS = [
     name: 'update_widgets',
     description:
       '改控件的属性和插槽，一次可以改很多个：properties、slot 只写要改的字段，和原来的合并（例如 {"Text":"背包"}、{"padding":[0,24,0,0]}）。UserWidget 换引用的子控件写 class。' +
-      'items 原样传 JSON 数组，不要写成字符串。改完立刻回读：位置、大小用 screenshot 返回的控件位置表，字号等属性用 get_tree 读（它只列和默认值不同的属性，读不到就是默认值），确认 x/y/宽/高和字号等于你要汇报的值；一致才写进总结，不一致就当场重改，并在回复里说明「上一轮没生效」。',
+      'items 原样传 JSON 数组，不要写成字符串。改完的结果里直接列出位置或大小变了的控件（游戏 UI，按画布的排版规则算出来，不用开页面），拿它回读 x/y/宽/高；字号等属性用 get_tree 读（它只列和默认值不同的属性，读不到就是默认值）。回读值等于你要汇报的值才写进总结，不一致就当场重改，并在回复里说明「上一轮没生效」。',
     inputSchema: batch(
       {
         name: { type: 'string' },
@@ -401,6 +404,13 @@ const TOOLS = [
     inputSchema: obj({ in: IN }),
   },
   {
+    name: 'get_layout',
+    description:
+      '不截图、直接算出控件在画布上的位置和大小（设计稿像素，x,y 是左上角，含 RenderTransform），和 screenshot 的控件位置表同一个口径，页面没打开也能用。in 写子控件名看子控件，names 只看这几个控件。' +
+      '带「≈」的是按字宽估出来的（文字、由文字撑开的容器，以及被它们推着走的控件），可能差几个像素，要精确时再用 screenshot 核对。网页设计按桌面宽度算（平板、手机的位置用 screenshot 看）。',
+    inputSchema: obj({ in: IN, names: { type: 'array', items: { type: 'string' } } }),
+  },
+  {
     name: 'inspect_image',
     description:
       '量一张图：精确的像素尺寸、宽高比、是否透明、内容范围、主要颜色（十六进制）。region 只量图里的一块，points 取指定位置的颜色。照着参考图做界面时用它取准确的尺寸和颜色，不要目测。' +
@@ -424,6 +434,38 @@ const TOOLS = [
       { source: { type: 'string' }, region: REGION, grid: { type: 'boolean' }, zoom: { type: 'number' } },
       ['source'],
     ),
+  },
+  {
+    name: 'propose_layout',
+    description:
+      '确认模板后先拆区块：把模板界面拆成 4~12 个矩形区块一次提交（regions 里每项 name 英文 PascalCase、x/y/w/h 设计稿像素、note 一句话写这块放什么）。' +
+      '用户在原画面板里调整、确认后，搭界面时骨架照这些区块搭。再调用会整体替换上一次提交的。',
+    inputSchema: obj(
+      {
+        regions: {
+          type: 'array',
+          items: obj(
+            {
+              name: { type: 'string' },
+              x: { type: 'number' },
+              y: { type: 'number' },
+              w: { type: 'number' },
+              h: { type: 'number' },
+              note: { type: 'string' },
+            },
+            ['name', 'x', 'y', 'w', 'h'],
+          ),
+        },
+      },
+      ['regions'],
+    ),
+  },
+  {
+    name: 'compare_template',
+    description:
+      '照着确认的效果图模板搭界面时用：截一张当前画布，和模板的同一块逐像素对比，返回相似度、截图要往哪边挪几像素才和模板对齐，以及左右对照图和差异热力图（文件，用读图的能力看）。' +
+      '每搭完一个区域就用 region 写这个区域（设计稿像素）对比一次，按偏移和热力图里的红边改位置和大小，再对比确认；不写 region 是整个画布。concept 写原画 id 可以和别的原画比，不写就是已确认的模板。',
+    inputSchema: obj({ region: REGION, concept: { type: 'string' } }),
   },
   {
     name: 'check',
@@ -478,7 +520,7 @@ function tooBig(items: number, widgets: number) {
 }
 
 /** 只读分析时也要挡掉：会改设计、出原画或让用户回答的工具 */
-const READONLY_BLOCKED = new Set(['set_design', 'ask_user', 'generate_concepts', 'undo'])
+const READONLY_BLOCKED = new Set(['set_design', 'ask_user', 'generate_concepts', 'undo', 'propose_layout'])
 
 const MUTATING = new Set([
   'add_widgets',
@@ -499,16 +541,28 @@ const MUTATING = new Set([
   'edit',
 ])
 
+/** 改动前的样子，undo 按它还原 */
+const snapshot = (s: Session): Session['history'][number] => ({
+  state: s.state,
+  images: s.images,
+  data: s.data,
+  style: s.style,
+  designSize: s.designSize,
+})
+
 /** 应用几步操作，返回给 AI 看的结果；失败的不影响其他的 */
 function apply(s: Session, ops: unknown[]) {
   const lines: string[] = []
   let ok = 0
-  const before = { state: s.state, images: s.images, data: s.data }
+  const before = snapshot(s)
+  // 成功的操作顺手做了的事（例如删控件时清掉引用它的动画轨道）：写进结果，AI 才知道
+  const notes: string[] = []
   ops.forEach((op, i) => {
     const r = applyOp(s.state, op)
     if ('error' in r) lines.push(ops.length > 1 ? `第 ${i + 1} 条失败：${r.error}` : r.error)
     else {
       s.state = r.state
+      if (r.note) notes.push(r.note)
       ok++
     }
   })
@@ -518,14 +572,24 @@ function apply(s: Session, ops: unknown[]) {
     if (s.history.length > 50) s.history.shift()
     s.onChange(s)
   }
-  if (ops.length === 1) return ok ? text('好了') : text(lines[0], true)
+  // 算位置出错不能影响已经生效的改动，只是少一段回读
+  let note = ''
+  if (ok)
+    try {
+      note = layoutNote(s, before.state, ops)
+    } catch {}
+  if (notes.length) note = [notes.join('\n'), note].filter(Boolean).join('\n')
+  if (ops.length === 1) return ok ? text(note ? `好了\n${note}` : '好了') : text(lines[0], true)
   return text(
     [
       ok === ops.length
         ? `${ok} 条全部成功`
         : `成功 ${ok} 条，失败 ${ops.length - ok} 条（成功的已经生效，只要改失败的）`,
       ...lines,
-    ].join('\n'),
+      note,
+    ]
+      .filter(Boolean)
+      .join('\n'),
     ok === 0,
   )
 }
@@ -601,103 +665,6 @@ const toQuestion = (q: any): unknown => ({
   ),
 })
 
-/** 找 source 指的图：附件（从 1 数起，或写文件名）或设计里已有的图 */
-function sourceFile(s: Session, source: string): { file: string; name: string; error?: undefined } | { error: string } {
-  const m = /^(attachment|image|concept|screenshot):(.+)$/.exec(source.trim())
-  if (!m) return { error: 'source 要写 "attachment:1"、"image:<图片 id>"、"concept:<原画 id>" 或 "screenshot:1"' }
-  if (m[1] === 'image') {
-    const file = s.files.imagePath(m[2])
-    return file ? { file, name: m[2] } : { error: `设计里没有已经生成的图片 ${m[2]}` }
-  }
-  if (m[1] === 'concept') {
-    const file = s.files.conceptPath(m[2])
-    return file ? { file, name: m[2] } : { error: `没有原画 ${m[2]}` }
-  }
-  if (m[1] === 'screenshot') {
-    const n = m[2] === 'latest' ? s.shots.length : Number(m[2])
-    const file = s.shots[n - 1]
-    return file ? { file, name: `screenshot-${n}` } : { error: `没有第 ${m[2]} 张截图（截过 ${s.shots.length} 张）` }
-  }
-  const list = s.files.attachments
-  const at = /^\d+$/.test(m[2]) ? list[Number(m[2]) - 1] : list.find((x) => x.name === m[2])
-  return at ? { file: at.path, name: at.name } : { error: `没有这个附件（共 ${list.length} 个）` }
-}
-
-/** inspect_image：量；view_image：画格子、放大，存成文件 */
-async function inspect(s: Session, view: boolean, a: any) {
-  const src = sourceFile(s, str(a.source))
-  if (src.error !== undefined) return text(src.error, true)
-  const buf = await readFile(src.file).catch(() => undefined)
-  if (!buf) return text('读不到这张图', true)
-  const info = imageSize(buf)
-  const img = decodePng(buf)
-  if (!info) return text('不是能识别的图片', true)
-  // 不是 PNG：只能告诉尺寸，放大、画格子要自己用读图能力看原文件
-  if (!img)
-    return text(
-      `${src.name}：${info.width}×${info.height} 像素（${info.ext}，这个格式不能放大或取色，请直接读原文件 ${src.file}）`,
-    )
-  const r = a.region && a.region.w > 0 && a.region.h > 0 ? a.region : undefined
-  const rx = Math.max(0, Math.round(r?.x ?? 0))
-  const ry = Math.max(0, Math.round(r?.y ?? 0))
-  const part = r ? crop(img, rx, ry, r.w, r.h) : img
-  const d = s.design.designSize
-  // 参考图和设计稿的换算：宽高比不一致时提醒，免得按错的比例算
-  const fit =
-    Math.abs(info.width / info.height / (d.X / d.Y) - 1) < 0.02
-      ? `和设计稿 ${d.X}×${d.Y} 比例一致，原图坐标 × ${(d.X / info.width).toFixed(4)} 就是设计稿坐标`
-      : `和设计稿 ${d.X}×${d.Y} 的宽高比不同（${(info.width / info.height).toFixed(3)} 对 ${(d.X / d.Y).toFixed(3)}），换算时按内容要铺满的方式想清楚`
-  if (!view) {
-    const box = hasAlpha(part) ? contentBox(part) : null
-    const pts = (Array.isArray(a.points) ? a.points : []).slice(0, 40).map((p: any) => ({
-      x: Math.round(Number(p?.x)),
-      y: Math.round(Number(p?.y)),
-      color: pixelAt(img, Number(p?.x), Number(p?.y)),
-    }))
-    return text(
-      JSON.stringify({
-        name: src.name,
-        size: `${info.width}×${info.height}`,
-        ...(r ? { region: { x: rx, y: ry, w: part.width, h: part.height } } : {}),
-        aspect: Math.round((part.width / part.height) * 1000) / 1000,
-        transparent: hasAlpha(part),
-        ...(box ? { contentBox: { x: rx + box.x, y: ry + box.y, w: box.w, h: box.h } } : {}),
-        palette: palette(part, 8),
-        ...(pts.length ? { points: pts } : {}),
-        designSizeNote: fit,
-      }),
-    )
-  }
-  const long = Math.max(part.width, part.height)
-  // 放大到长边约 900 像素（小的块放大看细节，最多 6 倍），整张大图缩到 1600 以内
-  const zoom =
-    Number(a.zoom) > 0
-      ? Math.min(8, Number(a.zoom))
-      : r || long < 600
-        ? Math.min(6, 900 / long)
-        : long > 1800
-          ? 1600 / long
-          : 1
-  let out = zoom === 1 ? part : resize(part, part.width * zoom, part.height * zoom)
-  const step = gridStep(long)
-  if (a.grid !== false) out = drawGrid(out, { origin: { x: rx, y: ry }, zoom, step })
-  await mkdir(path.join(s.files.dir, 'views'), { recursive: true })
-  const file = path.join(s.files.dir, 'views', `view-${++s.views}.png`)
-  await writeFile(file, encodePng(out))
-  return text(
-    [
-      `已生成 ${file}，用读图的能力看这个文件。`,
-      `原图 ${info.width}×${info.height} 像素${r ? `，这张是其中 x ${rx}–${rx + part.width}、y ${ry}–${ry + part.height} 的一块` : ''}，放大 ${Math.round(zoom * 100) / 100} 倍。`,
-      a.grid !== false
-        ? `品红色格线每格 ${step} 像素，线边的黄色数字是原图像素坐标（横轴数字在上沿，纵轴数字在左沿）。`
-        : '',
-      fit,
-    ]
-      .filter(Boolean)
-      .join('\n'),
-  )
-}
-
 /** 截一张当前画布：页面画出来交回；列出每个控件的位置和明显的问题 */
 async function screenshot(s: Session, target: string) {
   if (target && !s.state.components.some((c) => c.Name === target)) return text(`没有子控件 ${target}`, true)
@@ -706,8 +673,21 @@ async function screenshot(s: Session, target: string) {
   try {
     shot = await s.files.capture(s, target)
   } catch (e) {
-    // 页面没打开、画布为空、渲染失败各自有准确原因，直接交给 AI，别盖成一句笼统的提示
-    return text((e as Error).message, true)
+    // 页面没打开、画布为空、渲染失败各自有准确原因，直接交给 AI，别盖成一句笼统的提示；
+    // 游戏 UI 还能把算出来的位置表一起给它，位置和大小照样能回读，只是没有图
+    const rects = sessionLayout(s, target)
+    return text(
+      [
+        (e as Error).message,
+        // 只有根控件时没什么可列的
+        rects && rects.length > 1
+          ? `没有图，但控件的位置可以直接算（和截图的位置表同一个口径，≈ 是按字宽估的，只列前 80 个）：\n${rects.slice(0, 80).map(rectLine).join('\n')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      true,
+    )
   }
   await mkdir(path.join(s.files.dir, 'views'), { recursive: true })
   const file = path.join(s.files.dir, 'views', `screenshot-${s.shots.length + 1}.png`)
@@ -787,6 +767,11 @@ async function callTool(s: Session, raw: string, args: any) {
       true,
     )
   // 「先出原画」：用户确认模板之前不搭界面、不列切图
+  if (s.layoutOnly && MUTATING.has(name))
+    return text(
+      '现在是「拆区块」阶段：用户确认区块之前不能搭界面、不能列切图。用 propose_layout 提交区块，回复一两句后结束这一轮。',
+      true,
+    )
   if (s.conceptOnly && MUTATING.has(name))
     return text(
       '现在是「先出原画」阶段：用户确认效果图模板之前不能搭界面、不能列切图。用 generate_concepts 出原画，回复一两句后结束这一轮。',
@@ -822,6 +807,8 @@ async function callTool(s: Session, raw: string, args: any) {
     if (big) return big
   }
   switch (name) {
+    case 'get_layout':
+      return text(...layoutReport(s, str(a.in), a.names))
     case 'get_tree': {
       if (a.all)
         return text(
@@ -964,19 +951,25 @@ async function callTool(s: Session, raw: string, args: any) {
       const merged = [...s.images.filter((x) => !p.data.some((y) => y.id === x.id)), ...p.data]
       const bad = sheetProblems(merged)
       if (bad.length) return text(`没有记下：\n${bad.join('\n')}`, true)
-      s.history.push({ state: s.state, images: s.images, data: s.data })
+      s.history.push(snapshot(s))
       for (const img of p.data) s.images = [...s.images.filter((x) => x.id !== img.id), img]
       return text(`已记下 ${p.data.length} 张图片：${p.data.map((i) => i.id).join('、')}`)
     }
     case 'set_data': {
       const list = Array.isArray(a.sets) ? a.sets : a.name ? [a] : []
       if (!list.length) return text('sets 要写数据集合的数组，每项有 name、fields、rows', true)
+      // 整批校验：有一项不合法就都不改，但要逐条说清楚是哪个集合、哪一行、哪个字段
+      const issues = dataIssues({ sets: list })
+      if (issues.length)
+        return text(
+          `数据集合的格式不对，这次没有改动（改好下面这些再整批重发）：\n${issues.map((x) => `- ${x}`).join('\n')}\n` +
+            '每项至少要有 name，fields 里每项要有 key，rows 里每项是 { 字段名: 字符串 | 数字 | 布尔 }',
+          true,
+        )
       const norm = normalizeData({ sets: list })
-      if (!norm.sets.length)
-        return text('数据集合的格式不对：每项至少要有 name，fields 里每项要有 key，rows 里每项是 { 字段名: 值 }', true)
       const existing = (s.data ?? s.design.data)?.sets ?? []
       const sets = [...existing.filter((x) => !norm.sets.some((n) => n.name === x.name || n.id === x.id)), ...norm.sets]
-      s.history.push({ state: s.state, images: s.images, data: s.data })
+      s.history.push(snapshot(s))
       s.data = { sets }
       s.applied++
       s.onChange(s)
@@ -988,9 +981,11 @@ async function callTool(s: Session, raw: string, args: any) {
     }
     case 'set_design': {
       // 旧的 set_style、set_design_size 的写法也认
-      if (typeof a.style === 'string') s.style = a.style
       const v = size(a.designSize ?? (a.X ? a : undefined))
       if (a.designSize && !v) return text('designSize 的 X、Y 要是正数', true)
+      if (typeof a.style !== 'string' && !v) return text('style、designSize 至少写一个', true)
+      s.history.push(snapshot(s))
+      if (typeof a.style === 'string') s.style = a.style
       if (v) s.designSize = v
       return text('好了')
     }
@@ -1044,6 +1039,8 @@ async function callTool(s: Session, raw: string, args: any) {
       s.state = back.state
       s.images = back.images
       s.data = back.data
+      s.style = back.style
+      s.designSize = back.designSize
       s.onChange(s)
       return text(`撤回了 ${steps} 次修改`)
     }
@@ -1073,6 +1070,14 @@ async function callTool(s: Session, raw: string, args: any) {
     case 'inspect_image':
     case 'view_image':
       return inspect(s, name === 'view_image', a)
+    case 'propose_layout': {
+      const r = proposeLayout(s, a)
+      return text(r.text, !!r.isError)
+    }
+    case 'compare_template': {
+      const r = await compareTool(s, a)
+      return text(r.text, !!r.isError)
+    }
     case 'check': {
       const r = checkSession(s)
       const warn = warnings(s)

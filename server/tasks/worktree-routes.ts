@@ -104,7 +104,18 @@ export function registerWorktreeRoutes(s: TasksScope) {
       const parent = await s.current(tk.parentTaskId)
       if (!parent) return s.bad(c, t('父对话已经不存在'))
       const r = await s.finishChild(parent, id)
-      if (!r.ok) return c.json({ error: r.info, conflict: true }, 409)
+      // 只有两个分支真冲突时才给「用 AI 合并」：目录挡路（暂存区、未提交改动、换了分支）交给 AI 合并也没用，
+      // 要用户先把原目录收拾好再点合并；r.info 是写给父对话 Agent 的，界面只说一行原因
+      if (!r.ok) {
+        const why = r.why ?? r.info.split('\n')[0]
+        const error =
+          r.kind === 'conflict' || !r.kind
+            ? r.info
+            : r.kind === 'error'
+              ? t('合并后提交失败，已撤回：{why}', { why })
+              : t('父对话的目录挡住了合并：{why}。处理后再点合并', { why })
+        return c.json({ error, conflict: r.kind === 'conflict' }, 409)
+      }
       return c.json({ task: await s.current(id), into: tk.worktree!.baseBranch, overlap: [] })
     }
     const wt = tk.worktree!

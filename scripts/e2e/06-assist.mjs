@@ -400,6 +400,15 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     let d = await waitJob(design.id)
     assert.equal(d.job.status, 'done', JSON.stringify(d.job))
     assert.equal(d.rev, 1)
+    // 回复上记下这一轮改了哪些控件，以及「撤销这一轮」要恢复的版本
+    const reply = d.messages.findLast((m) => m.role === 'agent')
+    assert.ok(reply.changes?.total > 0, '回复上记下了改了哪些控件')
+    assert.ok(reply.changes.list.some((c) => c.kind === 'add' && c.name === 'Bg'))
+    assert.ok(reply.undoVersion, '回复上带着这一轮开始前的版本')
+    assert.ok(
+      (await call('GET', `/designs/${design.id}/versions`)).some((v) => v.id === reply.undoVersion),
+      '这个版本真的存在',
+    )
     assert.equal(d.style, 'dark fantasy')
     assert.deepEqual(
       d.root.Children.map((w) => [w.Type, w.Name, !!w.Slot?.LayoutData]),
@@ -648,11 +657,56 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     const tpl = d.concept.images[1].id
     d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'approve', id: tpl })
     assert.equal(d.concept.approved, tpl)
+    // 确认模板后先拆区块：这一轮只能 propose_layout，搭界面的工具被挡下；区块存进设计等用户确认
+    await call('POST', `/designs/${sketch.id}/chat`, {
+      text: `拆区块 FAKE_MCP:${JSON.stringify([
+        [
+          'add_widgets',
+          {
+            items: [
+              { parent: 'RootCanvas', widget: { Type: 'Image', Name: 'Early', Slot: { x: 0, y: 0, w: 8, h: 8 } } },
+            ],
+          },
+        ],
+        ['propose_layout', { regions: [{ name: 'TopBar', x: 0, y: 0, w: 1920, h: 120, note: '标题' }] }],
+      ])}`,
+      source: { kind: 'cli' },
+    })
+    d = await waitJob(sketch.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    const splitInput = calls()
+      .filter((c) => /你是游戏 UI 设计助手/.test(c.stdin ?? c.input ?? ''))
+      .at(-1)
+    assert.match(splitInput.stdin ?? splitInput.input, /先拆区块/)
+    assert.ok(!d.root.Children?.some((w) => w.Name === 'Early'), '拆区块这一轮不能搭界面')
+    assert.deepEqual(
+      [d.layout.concept, d.layout.confirmed, d.layout.regions.map((g) => g.name)],
+      [tpl, false, ['TopBar']],
+      '区块存进设计，等用户确认',
+    )
+    // 用户确认区块（页面保存），下一轮照区块搭界面
+    d = await call('PUT', `/designs/${sketch.id}`, { ...d, layout: { ...d.layout, confirmed: true }, baseRev: d.rev })
+    assert.equal(d.layout.confirmed, true)
     await call('POST', `/designs/${sketch.id}/chat`, {
       text: `照着模板做 FAKE_MCP:${JSON.stringify([
+        // 模板模式里 AI 顺手出了一张原画：只进候选，不能把模板作废（同轮的切图还要拿模板当参考）
+        ['generate_concepts', { prompt: 'alternative layout', count: 1 }],
         [
           'add_images',
-          { images: [{ id: 'gem', name: 'Gem', prompt: 'a red gem', negative: 'frame', width: 64, height: 64 }] },
+          {
+            images: [
+              {
+                id: 'gem',
+                name: 'Gem',
+                prompt: 'a red gem',
+                negative: 'frame',
+                width: 64,
+                height: 64,
+                // 它在模板里的位置：出图时从模板裁下这一块做参考
+                ref: { x: 100, y: 100, w: 64, h: 64 },
+              },
+            ],
+          },
         ],
         [
           'add_widgets',
@@ -675,15 +729,41 @@ await runShard('AI 创建与 UI 设计', async (api) => {
       .filter((c) => /你是游戏 UI 设计助手/.test(c.stdin ?? c.input ?? ''))
       .at(-1)
     assert.match(tplInput.stdin ?? tplInput.input, new RegExp(`已确认的效果图模板[\\s\\S]*concept:${tpl}`))
+    assert.match(tplInput.stdin ?? tplInput.input, /骨架照用户确认过的区块搭[\s\S]*TopBar：x=0 y=0 宽=1920 高=120/)
     assert.equal(d.images.find((i) => i.id === 'gem').negative, 'frame')
     const gemGen = calls()
       .filter((c) => /a red gem/.test(c.stdin ?? c.input ?? ''))
       .at(-1)
     assert.match(gemGen.stdin ?? gemGen.input, /approved concept art/, '切图带着模板作为参考')
+    assert.deepEqual(d.images.find((i) => i.id === 'gem').ref, { x: 100, y: 100, w: 64, h: 64 }, '位置存进设计')
+    assert.equal(d.concept.approved, tpl, '模板模式里出的原画不把模板作废')
+    assert.equal(d.concept.images.length, 3, '新出的原画进了候选')
     assert.match(gemGen.stdin ?? gemGen.input, /Negative prompt.*frame/)
     d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'remove', id: tpl })
-    assert.deepEqual([d.concept.images.length, d.concept.approved], [1, ''], '删掉模板就回到挑图')
+    assert.deepEqual([d.concept.images.length, d.concept.approved], [2, ''], '删掉模板就回到挑图')
     step('先出原画：不能先搭界面，出候选、确认模板后照着模板出切图')
+    // 检查没通过：不再自动重跑一轮，改好的照样存下，问题写成带「让 AI 修」的系统消息；用户发了才再跑
+    const fixProject = await call('POST', '/designs/projects', { name: 'Fix Probe', path: projectDir })
+    const fix = await call('POST', '/designs', { projectId: fixProject.id, kind: 'game', title: '检查修复' })
+    const placeholder = {
+      root: { Type: 'CanvasPanel', Name: 'Root', Children: [{ Type: 'TextBlock', Name: 'Txt_Empty' }] },
+      reply: '搭好了',
+    }
+    const fixCallsBefore = calls().length
+    await call('POST', `/designs/${fix.id}/chat`, {
+      text: `搭一个 FAKE_DESIGN:${JSON.stringify(placeholder)}`,
+      source: { kind: 'none' },
+    })
+    let fixed = await waitJob(fix.id)
+    assert.equal(fixed.job.status, 'done', JSON.stringify(fixed.job.error))
+    assert.equal(calls().length - fixCallsBefore, 1, '检查没通过时只调了一次 CLI，不自动重跑')
+    const note = fixed.messages.at(-1)
+    assert.deepEqual([note.role, note.fixable], ['system', true], '问题写成可以「让 AI 修」的系统消息')
+    assert.match(note.text, /Txt_Empty/)
+    assert.equal(fixed.root.Children[0].Name, 'Txt_Empty', '改好的部分照样存下')
+    await call('DELETE', `/designs/${fix.id}`)
+    await call('DELETE', `/designs/projects/${fixProject.id}`)
+    step('检查没通过：不自动重跑，问题交给用户决定')
     // 没在改设计时发消息：直接开新一轮（以前只回 steered: false，由页面自己维护排队）。
     // 用一个空的 UI 项目：项目里其他设计已有的图片描述会进设计提示词，里面带 FAIL 会让假 CLI 判成失败
     const probeProject = await call('POST', '/designs/projects', { name: 'Steer Probe', path: projectDir })
@@ -714,7 +794,32 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     assert.equal(steered.steered, true, '正在跑时补充给这一轮')
     assert.equal(steered.messages.at(-1).delivery?.how, 'steer', '消息记下插进了这一轮')
     assert.ok(Date.parse(steered.messages.at(-1).delivery.at) > 0, '交付时间也记上')
+    // AI 正在改树时页面存的结构不收（这一轮结束会整棵写回，存了也会被盖掉），标题照常存
+    const during = await call('GET', `/designs/${probe.id}`)
+    const edited = await call('PUT', `/designs/${probe.id}`, {
+      ...during,
+      title: '运行中改的标题',
+      root: { ...during.root, Children: [] },
+      baseRev: during.rev,
+    })
+    assert.equal(edited.rejected, 'ai', 'AI 改树期间页面的结构修改不收，并告诉页面')
+    assert.equal(edited.title, '运行中改的标题', '标题照常存')
+    assert.deepEqual(edited.root, during.root, '控件树没被页面这份覆盖')
     probeNow = await waitJob(probe.id)
+    // 页面这份基于旧版本（AI 已经改过）：结构不收，返回服务端的设计
+    const staleSave = await call('PUT', `/designs/${probe.id}`, {
+      ...probeNow,
+      root: { ...probeNow.root, Children: [] },
+      baseRev: probeNow.rev - 1,
+    })
+    assert.equal(staleSave.rejected, 'stale', '基于旧版本的结构修改不收')
+    assert.deepEqual(staleSave.root, probeNow.root)
+    const fresh = await call('PUT', `/designs/${probe.id}`, {
+      ...probeNow,
+      title: '设计补充测试',
+      baseRev: probeNow.rev,
+    })
+    assert.equal(fresh.rejected, undefined, '基于最新版本的照常保存')
     assert.equal(probeNow.job.status, 'done', JSON.stringify(probeNow.job.error))
     await call('DELETE', `/designs/${probe.id}`)
     // 收不下的（CLI 没有插话通道）：消息进对话，这一轮结束后自动接着处理，不用用户再发一次
@@ -913,9 +1018,25 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     )
 
     // 浏览器扩展：只认 Gemini 和 ChatGPT 的标签页，只有扩展能调 /bridge
-    const ext = { 'content-type': 'application/json', origin: 'chrome-extension://abcdefghijklmnop' }
+    // 配对令牌：面板第一次用时才读数据目录里的 bridge-token，这里先写好一个已知值
+    writeFileSync(path.join(dataDir, 'bridge-token'), 'e2e-bridge-token')
+    const unpaired = { 'content-type': 'application/json', origin: 'chrome-extension://abcdefghijklmnop' }
+    const ext = { ...unpaired, 'x-panel-bridge': 'e2e-bridge-token' }
     const bridge = (method, url, body, headers = ext) =>
       fetch(`${base}/bridge${url}`, { method, headers, body: body && JSON.stringify(body) })
+    // 只凭 Origin 冒充扩展不行：没带配对令牌取不到指令，报到也只会被要求重新加载、不改任何状态
+    assert.equal((await bridge('GET', '/poll', undefined, unpaired)).status, 401, '没配对的扩展取不到指令')
+    const stale = await (
+      await bridge('POST', '/hello', { tabs: [{ id: 1, url: 'https://gemini.google.com/' }] }, unpaired)
+    ).json()
+    assert.equal(stale.reload, true, '旧扩展被要求重新加载')
+    assert.equal(stale.paired, false)
+    // 经过反代（带转发头）来的扩展请求一律不认
+    assert.equal(
+      (await bridge('POST', '/hello', { tabs: [] }, { ...ext, 'x-forwarded-for': '1.2.3.4' })).status,
+      403,
+      '扩展只能从本机连',
+    )
     assert.equal(
       (
         await bridge(

@@ -9,19 +9,22 @@
   界面文案的英文写进配置的 `i18n.en`（或 `shared/locales/en/`），再给 `scripts/fake-cli` 和 `server/exec/fixtures/` 补上样本和测试。
 
 前提：CLI 要有**结构化输出**。一次性执行的 CLI 用非交互模式（任务描述从 stdin 读，跑完就退出）；有常驻双向协议的 CLI 把 `protocol` 写成 `rpc`，
-按下面的 `rpc` 配置握手、开始一轮、插话和判断结束。Claude Code、Codex 的协议差别较大，走内置的 `codex` / `claude` 适配器（同样经过统一的 RPC 会话引擎），
-其余标准的 JSON-RPC 或按 `type` 区分的记录流只写配置就能接。Command Code、Pi 的配置可以直接参考
-[`shared/clis/commandcode.json`](../shared/clis/commandcode.json)、[`shared/clis/pi.json`](../shared/clis/pi.json)。
+按下面的 `rpc` 配置握手、开始一轮、插话和判断结束。四个内置 CLI 都是这样一份配置：
+[`claude.json`](../shared/clis/claude.json)、[`codex.json`](../shared/clis/codex.json)、
+[`commandcode.json`](../shared/clis/commandcode.json)、[`pi.json`](../shared/clis/pi.json)。
+Claude Code、Codex 的协议差别较大，配置里写 `rpc.kind` 为 `claude` / `codex`，由内置适配器处理审批和控制消息（同样经过统一的 RPC 会话引擎）；
+其余标准的 JSON-RPC 或按 `type` 区分的记录流只写配置就能接。
 
 Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-prompt-tool stdio` 让 CLI 把 `control_request(can_use_tool)` 交给面板，
 转成卡片后 `AskUserQuestion` 的回答写回 `updatedInput.answers`。**跳过确认（`--dangerously-skip-permissions`）时也要带这个参数**：
-不带它 Claude Code 不把 `AskUserQuestion` 放进工具列表，模型的提问只能变成纯文本，卡片弹不出来（参数见 [`shared/clis.ts`](../shared/clis.ts) 的 `buildArgs`，转换见 `server/exec/rpc/claude.ts`）。
+不带它 Claude Code 不把 `AskUserQuestion` 放进工具列表，模型的提问只能变成纯文本，卡片弹不出来（参数见 [`shared/clis/claude.json`](../shared/clis/claude.json) 的 `args`，转换见 `server/exec/rpc/claude.ts`）。
 
 ## 接入检查清单
 
 接新 CLI（或给已有 CLI 加一种能力）时逐项过一遍，漏掉的项以前都返工过（见 [lessons/cli.md](./lessons/cli.md)）：
 
 1. **思考强度**：CLI 支持哪几档写进 `efforts`；强度由模型决定的写 `effortsFromModel`；会话中途不能换的写 `effortBoundSession`；
+   能真正关掉思考的那一档标 `"off": true`（Pi 的 `off`、Codex 的 `none`、Claude Code 的 `off`），没有参数、要靠环境变量的写在这一档的 `env`；只是「不带思考参数」、接口照样会思考的不算，不要列；
    `tiers` 三档各配好默认的模型和强度。不要在代码里按 CLI 名字补档位。
 2. **模型**：模型从哪读（`modelsFrom` 或内置列表），上下文和最大输出能不能从 CLI 拿到，拿不到的补进[模型目录](./model-catalog.md)。
 3. **写回 CLI 自己的配置**（`auth.api.edits`）：CLI 靠模型条目判断能力时，配上 `modelEfforts` / `modelReasoning` / `modelDefaultEffort` / `modelLimits` / `modelInput`，
@@ -42,8 +45,12 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `npmPackage` / `brew` / `docsUrl` | 设置里的安装、卸载、更新和文档链接                                                                                                                                                                                                                                                                                                          |
 | `npmRenameFrom`                   | 改名前用过的 npm 包名：安装新包前先卸掉旧的，否则两个包提供同一个命令时 npm 会报 `EEXIST`                                                                                                                                                                                                                                                   |
 | `color`                           | 界面上的标识色                                                                                                                                                                                                                                                                                                                              |
+| `images`                          | CLI 内置了生成图片的工具（UI 设计里用，例如 Codex）                                                                                                                                                                                                                                                                                         |
+| `todos`                           | CLI 自带的待办 / 计划会被面板解析成 `task.todos`（Claude Code 的 `TodoWrite`、Codex 的计划）：Chat 模式的提示词据此才说「面板会显示你的待办」，没写的 CLI 让模型在回复里列计划                                                                                                                                                              |
+| `modelsRead`                      | 模型列表是运行 CLI 读出来的（例如 Codex 的 app-server）：界面上这组叫「{cli} 读取」，否则叫「{cli} 内置」                                                                                                                                                                                                                                   |
+| `extraArgsKeep`                   | 设置里的「额外参数」只保留这些参数（每个带一个值，长参数也认 `--x=值`），其余丢掉；例如 Codex 的 app-server 只认 `-c`、`--enable`、`--disable`。不写时全部保留                                                                                                                                                                              |
 | `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填；上下文窗口、最大输出和思考强度按[模型目录](./model-catalog.md)识别                                                                                                                                                                                                             |
-| `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                                                                                                                                                                                                                                                                |
+| `efforts`                         | 思考强度 `[{ "id", "label", "off", "env" }]`，不支持就不写；`off: true` 标出「关掉思考」那一档，`env` 是选了这一档时加的环境变量（值是 JSON 对象时和已有的同名变量合并），见下文「关掉思考」                                                                                                                                                |
 | `effortsFromModel`                | 思考强度跟着模型走：模型目录/配置里这个模型支持哪些就能选哪些；为 `true` 时不用 `efforts` 过滤                                                                                                                                                                                                                                              |
 | `effortBoundSession`              | 会话不支持中途换思考强度：换了强度也开新会话，把之前的对话带过去                                                                                                                                                                                                                                                                            |
 | `tiers`                           | 高、中、低三档默认的 `{ "model", "effort" }`                                                                                                                                                                                                                                                                                                |
@@ -52,7 +59,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `readOnlyPermission`              | 只分析、不改文件时用的权限（例如优化项目说明）                                                                                                                                                                                                                                                                                              |
 | `args`                            | 参数规则，见下面                                                                                                                                                                                                                                                                                                                            |
 | `output`                          | 输出解析，见下面                                                                                                                                                                                                                                                                                                                            |
-| `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；不写时角色说明拼进任务描述                                                                                                                                                                                                                                                             |
+| `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；写 `true` 表示 CLI 的协议里就能传、不加参数（Codex 的 `developerInstructions`）；不写时角色说明拼进任务描述                                                                                                                                                                            |
 | `systemPromptFileFlag`            | 系统提示词能传文件时用的参数（值写成文件路径，例如 Pi 的 `--append-system-prompt`）：填了就把角色说明写进临时目录传路径，参数里不带换行                                                                                                                                                                                                     |
 | `systemPromptMod`                 | 系统提示词只能靠 mod / 插件追加（Command Code 的 `--mod`）：面板生成一个只追加「回复语言」规则的 mod，参数里传路径（`{systemPromptModPath}`）                                                                                                                                                                                               |
 | `features`                        | 能力，见下面                                                                                                                                                                                                                                                                                                                                |
@@ -64,9 +71,11 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `commands`                        | 自定义命令目录 `{ "user", "repo", "format": "md" \| "toml", "prefix" }`，输入框打「/」时列出来                                                                                                                                                                                                                                              |
 | `envExample`                      | 设置里环境变量的示例                                                                                                                                                                                                                                                                                                                        |
 | `env`                             | 每次运行都加的环境变量 `{ "KEY": "VALUE" }`，用户在设置里写的同名变量优先（例如让无界面运行信任工作目录）                                                                                                                                                                                                                                   |
+| `stderrNoise`                     | stderr 里和失败无关的常驻提示行 `[{ "pattern", "why" }]`（`pattern` 按行匹配的正则）：进程中途退出时，失败原因里的「stderr 最后几行」去掉这些行，先写退出码 / 信号（Claude Code 接第三方模型时的 `[claude-code:unrecognized_model]`）                                                                                                       |
+| `compactThrash`                   | CLI 自动压缩「抖动」时的报错 `{ "pattern", "why" }`（`pattern` 不分大小写的正则）：认出来时面板不直接判失败，先在对话里写一行警告、在原会话里续一轮让模型分段读取，再失败才报失败（Claude Code 的 `Autocompact is thrashing`）。不写表示没有这种报错                                                                                        |
 | `mcp`                             | 怎么把面板的工具（MCP）交给 CLI，见下面；不写时用不了 UI 设计的 AI                                                                                                                                                                                                                                                                          |
-| `options`                         | 设置里给用户的开关 `[{ "id", "label", "hint", "default", "env" }]`：打开时加上 `env`，参数规则里用条件 `opt.<id>` 判断（Pi 的「离线运行」「codemode」）                                                                                                                                                                                     |
-| `packages`                        | CLI 自己的扩展包，设置里能装、删、更新，见下面「扩展包」                                                                                                                                                                                                                                                                                    |
+| `options`                         | 设置里给用户的开关 `[{ "id", "label", "hint", "default", "env" }]`：打开时加上 `env`，参数规则里用条件 `opt.<id>` 判断（Pi 的「离线运行」「codemode」，Claude Code 的「不用 Claude Code 自带的记忆」）                                                                                                                                      |
+| `packages`                        | CLI 自己的插件（扩展包），设置里能装、删、更新，推荐的一键安装，见下面「插件」                                                                                                                                                                                                                                                              |
 | `i18n`                            | 界面文案的翻译 `{ "en": { "中文": "English" } }`                                                                                                                                                                                                                                                                                            |
 
 目录里的 `~` 是用户目录，`${ENV:-默认值}` 先取环境变量。
@@ -91,7 +100,9 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 
 - 条件：`model` 有值、`!resume` 没值、`permission=yolo` 等于、`permission!=yolo` 不等于、`opt.codemode` 设置里这个开关开着；写成数组时全部满足才加。
   同一个参数只认最后一次的 CLI（例如 Pi 的 `--tools`），开关要和权限组合成几条规则，并进同一个值里。
-- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`systemPrompt`、`systemPromptModPath`（面板生成的语言 mod 路径）、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）。
+- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`forkEnd`（`features.fork` 为 `end` 时截到的那条回复，Claude Code 的 `--resume-session-at`）、`systemPrompt`、`systemPromptFile`（`systemPrompt` 已经写成文件、值是路径）、`systemPromptModPath`（面板生成的语言 mod 路径）、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）、`noEdit`（这一轮不许改文件）、`textOnly`（只要一段文字的一次性小活，例如起对话标题：能关掉全部工具、换极简系统提示的 CLI 写一条规则，Claude Code 是 `--tools "" --system-prompt …`；没写规则的照常跑）、`autoCompactTokens`（`features.autoCompact` 为 `config` 时的 token 数）、`contextWindow` / `maxOutput`（设置里手动改的上限，见 `features.limitArgs`）。
+- 规则里自己写了 `{systemPrompt}` 时（例如按 `systemPromptFile` 选参数），面板不再在末尾自动补系统提示词那一条。
+- 每条规则可以带一个 `why` 写为什么这样传（JSON 里没法写注释），面板不读。
 - 占位：`{model}`；`{addDirs|,}` 把数组用逗号连起来；`{maxTurns:200}` 没值时用 200；`each` 对数组每一项加一次，`{item}` 是那一项。
 
 ## 回复语言
@@ -246,7 +257,7 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 取用户在执行中补充的要求（`read_user_notes`，见 `features.notes`）。
 对话的保活由面板自己做，不靠模型调用工具：一轮回复结束、对话页还开着时面板先不关进程，用户再发消息时
 在同一个进程里开下一轮（Claude Code 再写一条不带 `priority` 的 user 消息，Codex 在同一个 thread 再发 `turn/start`，
-面板不用结束再 `--resume`）。能不能保活只看 `features.keepAlive`（内置 CLI 是 `shared/clis.ts` 的顶层 `keepAlive`）
+面板不用结束再 `--resume`）。能不能保活只看 `features.keepAlive`
 和是不是对话（压缩、审查这类操作除外）；`rpc.nativeAsk` 只决定提问、审批走 CLI 自己的协议还是面板的 MCP 工具，不影响保活。
 切走对话页后有宽限（设置里的「离开对话后保留多久」，默认 60 分钟；这一轮完成但还没打开看过的用「没看过的回复保留多久」，
 默认 30 分钟；环境变量 `AGENT_PANEL_PRESENCE_GRACE_MS`、`AGENT_PANEL_PRESENCE_UNREAD_GRACE_MS` 优先，测试用），
@@ -276,7 +287,7 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 
 `extras` 是按设置开关注入的额外扩展：每一项写 `option`（设置里那个开关的 id，条件是 `opt.<id>`）、`args` 和 `files`，
 只有开关打开时才写文件、加参数；关着时文件根本不写，CLI 里也就不会注册这些工具。
-不传 `options` 的调用（例如 UI 设计那一轮）按关着处理。Pi 的联网搜索就是这样接的（见下面「联网搜索」）。
+不传 `options` 的调用（例如 UI 设计那一轮）按关着处理。内置 CLI 现在没有用到它（Pi 以前的面板自建联网搜索是这样接的，已经删掉）。
 
 提问要一直等到用户回答，可能很久（用户不在电脑前）。这条请求面板用 SSE 流式响应，等待期间定期发心跳，
 HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请求超时还要在配置里放宽，否则等不到用户回答。
@@ -317,38 +328,31 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 出现在「MCP 工具」页、写进 Pi 自己的 `mcp.json`。面板的工具仍然走扩展：Pi 的 MCP 工具默认是 `codemode` 暴露（不直接声明给模型），
 而项目里的配置受「项目信任」管控，print / json / rpc 模式不会弹信任提示；`-e` 显式加载的扩展不受这两点影响。
 
-### 联网搜索 `web_search` / `web_fetch`
+### 联网搜索
 
-Pi 的「联网搜索」开关（`shared/clis/pi.json` 的 `options` 里 id 为 `webSearch`，默认关闭）打开后，这一轮的临时目录里多写一个
-扩展 `{dir}/agent-panel-{name}-websearch.ts` 并用 `-e` 加载，注册 `web_search` / `web_fetch` 两个工具；关着时这两步都不做。
-扩展本身不含密钥：请求打到面板的 `/api/web-search/<这一轮的随机地址>/search` 和 `/fetch`（和提问桥接共用同一个随机地址），
-面板按「设置 · 联网搜索」里的搜索源、密钥和地址代发。地址里的随机地址在路由里核对（`server/ask-mcp.ts` 的 `hasAskSession`），
-访问令牌打开时也能用，别的程序猜不到。地址守卫、参数规范化、各搜索源的请求和解析在 `shared/web-search.ts`
-（注册表 `SEARCH_PROVIDERS`：deepseek 默认（DeepSeek 官方 Search API，要 DeepSeek 的 API key，按次计费，没填密钥时直接报错不回退）、searxng、brave、tavily，新增一个源只加一条），路由在 `server/web-search.ts`。
-`web_fetch` 不分搜索源，始终由面板自己抓网页（不调 DeepSeek 的 fetch 接口）。
-
-参数和限制对齐 Command Code 的 Web 工具：`query`（至少 2 个字）/ `numResults`（默认 5、最多 10）/ `allowed_domains` / `blocked_domains`
-（两者互斥，过滤在面板这一侧做，不受各搜索源支持与否影响；deepseek 另外把它们拼成 `site:` / `-site:` 写进 query，拼完最多 128 字），`url` / `format`（markdown 默认、text、html）/ `startIndex` /
-`timeout`（默认 60 秒、最多 120）。抓取前挡掉带用户名密码的地址、内网 / 回环 / 链路本地地址和单标签主机名，
-域名解析出来的地址再查一次；重定向手动跟着走（最多 5 跳），每一跳都重新过一遍守卫，跳转过程里写在结果里。
-正文一次返回 100000 字符，用返回里的 `startIndex` 续读；同一地址 15 分钟内的抓取直接用缓存。
-缺密钥、搜索源返回非 2xx、返回的不是 JSON 时，错误原文原样交给模型和用户，不换成一句「搜索失败」。
-单测：`shared/web-search.test.ts`（守卫、解析、窗口）、`server/web-search.test.ts`（路由和扩展注册，网络和 DNS 都是桩）。
+面板不自己做联网搜索，各 CLI 用自己的：Claude Code 的 `WebSearch` / `WebFetch`、Codex 的 `web_search`、Command Code 的 Web 工具都照常开着
+（Claude Code 的 `--disallowedTools` 里不能出现这两个）。Pi 本身没有联网搜索，靠插件：设置里 Pi 的「插件管理」默认列出
+`npm:pi-web-access`（`web_search` / `fetch_content`，不填密钥也能搜），用户点一下就装，见下面「插件」。
+输出解析按工具名认出搜索和打开网页（`server/exec/parsers.ts` 的 `genericTool`），插件一次搜几个词、开几个网址（`queries` / `urls`）时都写进标签。
 
 ## 能力 `features`
 
-| 字段             | 说明                                                                                                                                                                                                                                                                          |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compact`        | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                    |
-| `modelSwitch`    | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                             |
-| `fork`           | 分叉、撤回对话：`before` 能从任意一轮分叉（每轮记下自己的 id，见 `rpc.turnId`；续接原会话后按 `rpc.fork` 里带 `if: forkBefore` 的动作分叉到那一轮之前，Pi 是 `fork` 命令的 `entryId`）；`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话 |
-| `autoCompact`    | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                              |
-| `slash`          | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                                           |
-| `nativeCommands` | 会话里自己就有的内置命令（例如 `init`）：面板的同名内置命令原样发过去，不再展开；其他内置命令和「所有 Agent」的命令都由面板展开                                                                                                                                               |
-| `steer`          | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                                             |
-| `notes`          | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句    |
-| `limitEnv`       | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                           |
-| `limitFile`      | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名    |
+| 字段             | 说明                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compact`        | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                                                                                                                                  |
+| `modelSwitch`    | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                                                                                                                                           |
+| `resumeAnyDir`   | 会话能在别的目录里续接：中途开了独立分支（`begin_edit`）、换了工作目录仍然续接原来的会话，之前读过的代码和调研都留在会话里、前缀缓存也大多命中；默认按「会话按目录存」处理，换了目录就开新会话带上对话记录。Claude Code 开（2.1.316 实测按会话 id 全局找）；Pi 换了目录会停下来问要不要分叉，不能开                                                                                         |
+| `fork`           | 分叉、撤回对话：`before` 能从任意一轮分叉（每轮记下自己的 id，见 `rpc.turnId`；续接原会话后按 `rpc.fork` 里带 `if: forkBefore` 的动作分叉到那一轮之前，Pi 是 `fork` 命令的 `entryId`）；`turn` 能截到某一轮（Codex，内置适配器用轮次 id）；`end` 能截到某条回复（Claude Code，参数里用 `{forkEnd}`）；`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话 |
+| `autoCompact`    | 自动压缩：`config` 把 token 数写进参数（规则里用 `{autoCompactTokens}`，Codex）；`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                                                                     |
+| `review`         | 审查改动：`native` 走 CLI 自己的审查模式（Codex，内置适配器）；`prompt`（默认）按审查要求跑一轮                                                                                                                                                                                                                                                                                             |
+| `limits`         | 账号额度：`query` 能主动查（配合 `rpc.limitsQuery`，Codex）；`push` 执行时 CLI 才报告（Claude Code）；`none`（默认）没有                                                                                                                                                                                                                                                                    |
+| `limitArgs`      | 设置里手动改的上限哪几项写成了参数（`context`、`maxOutput`，规则里用 `{contextWindow}`、`{maxOutput}`），例如 Codex 的 `model_context_window`                                                                                                                                                                                                                                               |
+| `slash`          | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                                                                                                                                                         |
+| `nativeCommands` | 会话里自己就有的内置命令（例如 `init`）：面板的同名内置命令原样发过去，不再展开；其他内置命令和「所有 Agent」的命令都由面板展开                                                                                                                                                                                                                                                             |
+| `steer`          | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                                                                                                                                                           |
+| `notes`          | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句                                                                                                                  |
+| `limitEnv`       | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                                                                                                                                         |
+| `limitFile`      | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名                                                                                                                  |
 
 设置里「自动压缩上下文」这一项的默认值是 70%（`shared/schema.ts` 的 `AUTO_COMPACT_DEFAULT`），0 表示按 CLI 自己的规则；
 老设置里存着的 0 在读取时迁成 70（按 `Settings.defaultsVersion` 只做一次，见 `server/settings.ts`）。
@@ -358,9 +362,9 @@ Pi 本身没有审批，权限用 `--tools +grep,+find,+ls`（在默认工具上
 不用 `--tools` 白名单，白名单会把面板桥接的工具（提问、编排）一起挡掉。用户装了带确认框的 Pi 扩展（例如 permission-gate）时，
 确认框通过 `rpc.asks` 交给页面。
 
-## 扩展包 `packages`
+## 插件 `packages`
 
-CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多一组「扩展包」：
+CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多一组「插件管理」（Pi 叫扩展包）：
 
 | 字段                   | 说明                                                                                                     |
 | ---------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -368,14 +372,25 @@ CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多�
 | `install` / `remove`   | 装、删的参数，`{source}` 是包的来源                                                                      |
 | `update` / `updateAll` | 更新一个、全部更新的参数，不写就不显示按钮                                                               |
 | `placeholder`          | 来源输入框的示例                                                                                         |
+| `env`                  | 装、删、更新时额外的环境变量，排在最后盖过设置开关带的（Pi 写 `PI_OFFLINE: ""`，见下）                   |
+| `recommended`          | 推荐的包，列在最前面一键安装：`source`、`name`、`desc`，可选 `note`（装完还要做什么）、`url`（介绍页）   |
 
 配置里相对路径的来源是相对配置文件写的，面板交给命令前换成绝对路径（Pi 从别的目录跑 `pi remove ../x` 会找不到）。命令的输出原样显示，失败时用户能看到原因。
+
+Pi 的「离线运行」开关默认开着、带 `PI_OFFLINE=1`：Pi 在离线模式下 `pi update` 直接跳过、照样退出码 0，用户看到「成功」其实没更新。
+所以 `packages.env` 把它清成空串（Pi 只认 `1` / `true` / `yes` 是离线），执行对话时照旧离线（`server/cli-packages.ts` 的 `packageCommandEnv`）。
+
+推荐的包装没装按来源去掉版本号比（`shared/cli-spec.ts` 的 `packageIdentity`，和 Pi 自己认包的方式一致：`npm:<包名>`、`git:<主机>/<路径>`），
+装的是 `npm:x@1.2.0` 也算装了推荐里的 `npm:x`。推荐的 `name` / `desc` / `note` 是界面文案，英文写进同一个定义的 `i18n.en`（`shared/cli-spec.test.ts` 会查）。
+挑推荐的标准：在面板的 RPC 模式下能用（不靠终端界面）、和面板自己的机制不重复（子 Agent、提问、计划、MCP 都由面板管，不推荐这类插件）、装完不用改配置就能用或在 `note` 里写清楚要做什么。
+Pi 现在推荐四个：`pi-web-access`（联网搜索，第一个）、`pi-web-search`（用模型服务商自带的搜索，和前者二选一）、`cc-safety-net`（拦截危险命令和读机密文件）、`@narumitw/pi-lsp`（语言服务器诊断）。
 
 ## 账号登录 `auth`
 
 面板跑 `auth.login` 打开浏览器登录，成功后把 `auth.home` 下的 `auth.files`、`auth.fields` 和 `auth.keychain` 存成一个账号。
 判断登录成功默认看**凭据有没有变**（登录前后各读一次，变了就算成功；登录后不自己退出的 CLI 也能判对），
 进程结束时再比一次，没变就报「没有完成登录」；标了 `loginAlreadyLoggedIn` 的 CLI 已登录时不改凭据文件，另按下面那行判。
+面板写 CLI 自己的配置文件（账号字段、API 注入、模型表、全局 MCP 工具）一律走 `server/cli-config-write.ts`，新建和覆盖都收到 `600`（里面常有 API key；Windows 跳过）。
 
 | 字段                   | 说明                                                                                                                                                                                                     |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -413,7 +428,7 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 | `accountEdits`             | 切回账号时还原的配置文件                                                                                                                                                                                                    |
 | `wire`                     | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                                                                                                                   |
 | `baseUrl`                  | 协议 → 这个 CLI 要的接口地址写法，`{root}` 是去掉末尾 `/v1`、`/v1beta` 的地址：Anthropic SDK 自己拼 `/v1/messages`（Claude Code、Pi 写 `{root}`）；没写的协议原样用                                                         |
-| `thinkArgs`                | API 方式下这一轮带了思考强度（不是 off）时加的参数；Codex 对不认识的第三方模型默认不发 reasoning，靠 `model_supports_reasoning_summaries=true` 打开                                                                         |
+| `thinkArgs`                | API 方式下这一轮带了思考强度（不是 `off: true` 那一档）时加的参数；Codex 对不认识的第三方模型默认不发 reasoning，靠 `model_supports_reasoning_summaries=true` 打开                                                          |
 | `pruneProviders`           | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                                                                                                               |
 | `pruneModels`              | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                                                                                                                 |
 | `modelEfforts`             | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动                                                                                                          |
@@ -446,3 +461,18 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 | `models` / `name`      | 模型（字符串、数组、`[{ "id" }]` 或以模型名为键的对象都认）和名字的键                         |
 
 键都按顺序取第一个有值的；值写成 `$NAME`、`${NAME}`，或正好是一个设置了的环境变量名时取那个环境变量。面板自己写进去的 `agentpanel` 不算。
+
+## 关掉思考
+
+强度下拉里的「关」只给能真正让接口不思考的 CLI，定义里标 `"off": true`：
+
+- **Codex**：`none`，传 `-c model_reasoning_effort="none"`，turn/start 也带 `effort: "none"`。0.166 用 `codex exec` 用本机假接口抓过，发给 Responses 接口的是 `reasoning: {"effort": "none", ...}`；
+  这一档不加 `thinkArgs`（不打开思考摘要）。
+- **Pi**：`off`，传 `--thinking off`。
+- **Claude Code**：`off`，没有命令行参数，这一档不传 `--effort`，靠 `env`：`MAX_THINKING_TOKENS=0`（不带思考、也不加 clear_thinking 的上下文编辑）
+  加 `CLAUDE_CODE_EXTRA_BODY={"thinking":{"type":"disabled"}}`（2.1.316 把这个变量的 JSON 展开在请求体最后，盖过它自己算的 `thinking`）。
+  只设 `MAX_THINKING_TOKENS=0` 不够：请求里不带 `thinking` 字段，有的网关不带时默认会思考。用本机假接口抓过请求体，确认带的是 `thinking: {"type": "disabled"}`。
+  用户自己在环境变量里写了 `CLAUDE_CODE_EXTRA_BODY` 时合并进去，不覆盖。
+
+模型目录只记思考的各档、不记「关」：目录认识的模型只要能思考（`efforts` 不空），CLI 有 `off` 档时就补上这一档（`catalogEfforts`，`shared/clis.ts`），
+否则选了「关」执行前会被换成最近的思考档。CLI 自己报了模型能选哪几档时（Codex 账号方式的 `supportedReasoningEfforts`）按 CLI 报的来。

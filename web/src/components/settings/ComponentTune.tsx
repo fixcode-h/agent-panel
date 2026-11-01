@@ -116,7 +116,7 @@ function Field({ c, prop }: { c: CompName; prop: string }) {
           onChange={(e) => set(c, prop, Number(e.target.value))}
           className="min-w-0 flex-1 cursor-pointer accent-[var(--color-accent)]"
         />
-        <span className="w-12 text-right font-mono text-[0.8125rem] text-muted tabular-nums">{v as number}px</span>
+        <span className="w-12 text-right font-mono text-body text-muted tabular-nums">{v as number}px</span>
       </div>
     )
   } else if (f.kind === 'bool') {
@@ -150,7 +150,7 @@ function Field({ c, prop }: { c: CompName; prop: string }) {
               title={t('浅色')}
               value={custom.light}
               onChange={(e) => set(c, prop, { ...custom, light: e.target.value })}
-              className="h-7 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+              className="h-7 w-7 cursor-pointer rounded-sm border-0 bg-transparent p-0"
             />
             <input
               type="color"
@@ -158,7 +158,7 @@ function Field({ c, prop }: { c: CompName; prop: string }) {
               title={t('深色')}
               value={custom.dark}
               onChange={(e) => set(c, prop, { ...custom, dark: e.target.value })}
-              className="h-7 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+              className="h-7 w-7 cursor-pointer rounded-sm border-0 bg-transparent p-0"
             />
           </>
         ) : (
@@ -183,7 +183,7 @@ function Field({ c, prop }: { c: CompName; prop: string }) {
   }
   return (
     <div className="flex items-center gap-3 py-1.5">
-      <span className="w-32 shrink-0 text-[0.8125rem] text-muted">{label}</span>
+      <span className="w-32 shrink-0 text-body text-muted">{label}</span>
       {control}
       {changed ? (
         <IconButton size="sm" icon={RotateCcw} label={t('恢复默认')} onClick={() => set(c, prop, undefined)} />
@@ -220,7 +220,7 @@ export function TuneToggle({ comps }: { comps: CompName[] }) {
             <div key={c} className="flex flex-col" aria-label={compLabel(c)}>
               {/* 固定高度的标题行，「恢复本组」不需要时隐藏但不改变行高 */}
               <div className="flex h-9 items-center pb-1">
-                <span className="flex-1 text-[0.75rem] font-semibold text-subtle">{compLabel(c)}</span>
+                <span className="flex-1 text-footnote font-semibold text-subtle">{compLabel(c)}</span>
                 {style[c] && (
                   <Button
                     variant="ghost"

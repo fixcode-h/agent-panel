@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { childAutoAskWaiting, childIdleAsk, CHILD_IDLE_ASK_MAX, planStalled } from './task.ts'
+import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled } from './merge-stall.ts'
 
 /** 一分钟按 1 秒算：阈值、上限这些判定不用真的等几分钟 */
 const unitMs = 1000
@@ -132,4 +133,25 @@ test('这一轮说完了、计划没做完也没在等别的：算停住了（�
     ),
     true,
   )
+})
+
+test('只剩合回时能不能提醒它 submit_merge：保活等下一句（status 仍是 running）也算这一轮说完了', () => {
+  // 实测报告问题 2：Claude Code 保活时一轮结束后 status 一直是 running，只认 done 时这条提醒永远发不出去
+  assert.equal(turnSettled({ status: 'running', working: false }), true)
+  assert.equal(turnSettled({ status: 'done', working: false }), true)
+  assert.equal(turnSettled({ status: 'running', working: true }), false)
+  // 失败、被停下的不推：要让用户看到再决定
+  assert.equal(turnSettled({ status: 'failed', working: false }), false)
+  assert.equal(turnSettled({ status: 'stopped', working: false }), false)
+})
+
+test('只剩合回又停下：每停一轮记一次，同一轮重复上报不多记，进度变了重新数', () => {
+  // 父对话交回一次、它又停在同一处：状态和上次一样，以前被去重吞掉，父子两边都停住
+  const a = nextMergeStall(undefined, 'p:3', 't1')
+  assert.equal(a.n, 1)
+  assert.equal(nextMergeStall(a, 'p:3', 't1').n, 1, '同一轮（收尾时又报一次）不多记')
+  const b = nextMergeStall(a, 'p:3', 't2')
+  assert.equal(b.n, 2)
+  assert.equal(nextMergeStall(b, 'p:4', 't3').n, 1, '进度变了从头数')
+  assert.ok(MERGE_STALL_REPORTS >= 2, '至少给父对话交回一次的机会')
 })

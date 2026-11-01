@@ -8,7 +8,6 @@ import {
   type Project,
   type DeliveryHow,
   type TaskMessage,
-  defaultAgent,
 } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
@@ -26,11 +25,14 @@ import {
   endRun,
   trackWait,
   newTask,
+  announcedOnly,
   taskDeleted,
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
+import { isChatMode, settledTodos, turnRole } from '../../shared/conv-mode.ts'
 import { agentRun, defaultCli } from '../../shared/settings.ts'
+import { getCli } from '../../shared/clis.ts'
 import { expandSlash } from '../slash.ts'
 import { childAskInitial } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
@@ -46,7 +48,7 @@ import {
   type RealContext,
 } from '../exec/runner.ts'
 import { makeAlert } from '../../shared/alerts.ts'
-import { dropHeld, hasHeld, holdForNextTurn, takeHeld } from '../exec/delivery.ts'
+import { dropHeld, hasHeld, holdForNextTurn, markHeld, takeHeld } from '../exec/delivery.ts'
 import { resetIdleCountdown } from '../presence.ts'
 import type { Live } from './types.ts'
 import { placedFiles } from '../attachments.ts'
@@ -56,41 +58,69 @@ import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { markChildWrapUp } from '../../shared/plan.ts'
-import { childFilesInfo, collisionNotice, normClaimPath, scopeOverlaps } from '../claims.ts'
+import { statSync } from 'node:fs'
+import path from 'node:path'
+import {
+  childFilesInfo,
+  hitList,
+  holdTurn,
+  holderState,
+  normClaimPath,
+  ownP4Files,
+  releaseUnchanged,
+  scopeOverlaps,
+} from '../claims.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { p4Runner, splitChangelists } from '../p4-split.ts'
 import { projectDocRoot } from '../doc-root.ts'
 import { cherryPickFor } from '../cherry-pick.ts'
-import { TaskBusyError, isolated, parentRunRole, isP4, planWrapUp } from './helpers.ts'
+import { TaskBusyError, isolated, parentRunRole, isP4, wrapUpFrom, wrapUpProbe } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
  */
 export function createRun(sc: TasksScope) {
+  /** 每个子对话已经报给父对话的撞车（路径 + 对方 id），见 checkCollisions */
+  const collided = new Map<string, Set<string>>()
   /**
-   * 子对话一轮结束后：这一轮改过的文件和其他还在执行的兄弟子对话改过的撞了，
-   * 在子对话里留一条提醒（只在这些对话真的共用一个工作目录时：后写的会覆盖先写的）。
-   * 走独立分支的子对话各改各的，撞了是合并时的事，由 git merge 处理，不提醒也不汇报父对话。
+   * 子对话一轮结束：认领不放（共用目录里改动要等父对话验收才算交出去），这一轮真改过的文件记到它名下（见 claims.ts 的 holdTurn）。
+   * 已经归别的还没交出去的兄弟的就是撞了：子对话里留一行给用户看，给父对话写信并叫醒（过 holdWake）——能拍板的是父对话。
+   * 不叫醒子对话：它这一轮刚结束，开新一轮会清掉它可能刚交的收尾请求，还会在父对话没决定时自己去「修」别人的文件。
+   * 走独立分支的子对话各改各的，撞了是合并时的事，不提醒也不汇报父对话
    */
   async function checkCollisions(child: Task) {
-    const list = collisionNotice(
-      child,
-      [...sc.live.values()].map((e) => e.task),
-    )
-    if (!list) return
+    // changes 是累计的：同一处撞车下一轮结束还会再查出来，只报新的，别每轮都叫醒父对话
+    const told = collided.get(child.id) ?? collided.set(child.id, new Set()).get(child.id)!
+    const hit = holdTurn(sc.claims, child).filter((h) => !told.has(`${h.path}\n${h.byId}`))
+    hit.forEach((h) => told.add(`${h.path}\n${h.byId}`))
+    if (!hit.length) return
+    const list = hitList(hit)
     child.messages.push({
       id: randomUUID(),
       role: 'system',
       agentId: '',
       step: '',
       text: t(
-        '这些文件同时被别的子对话改过：{list}。这些对话和你在同一个工作目录里改文件，后写的会覆盖先写的，先约定先后或各自改哪些文件。',
+        '这些文件已经归别的子对话、它的改动还没被父对话验收，你这一轮也改了：{list}。同一个目录里后写的会覆盖先写的，已经交给父对话安排先后。',
         { list },
       ),
       tools: [],
       at: new Date().toISOString(),
     })
+    await sc.noteParent(
+      child.parentTaskId,
+      child,
+      `【文件撞了】子对话「${child.title}」（id ${child.id}）这一轮改了已经归别的子对话、改动还没被你验收的文件：${list}。` +
+        `它们和你共用一个目录，后写的会覆盖先写的（P4 里一个文件也分不进两个 changelist）。验收前先定谁的版本算数：` +
+        `用 send_to_conversation 让一方撤回，或等另一方被你验收后再改，必要时自己核对文件内容；不要同时收下两边。`,
+      undefined,
+      undefined,
+      undefined,
+      await sc.peerOf(child, 'child', 'report', '和兄弟子对话改了同一批文件'),
+      undefined,
+      true,
+    )
   }
 
   /**
@@ -229,6 +259,12 @@ export function createRun(sc: TasksScope) {
     const parentTask = task.parentTaskId
       ? (sc.live.get(task.parentTaskId)?.task ?? (await sc.store.get(task.parentTaskId)) ?? undefined)
       : undefined
+    // 全局规则、目标存在谁身上：顶层对话是自己，子对话是父对话。父对话在执行位上时那份最新（落盘的可能还没写），
+    // 不在时取存储里已有的内存副本（/rule、改目标都会写回存储），都没有才用这一轮开始时读的
+    const ruleOwner = () =>
+      task.parentTaskId
+        ? (sc.live.get(task.parentTaskId)?.task ?? sc.store.known(task.parentTaskId) ?? parentTask)
+        : entry.task
     const rootId = task.parentTaskId || task.id
     // 父对话在对话设置里给子对话定了 CLI / 模型 / 思考强度：子对话的角色按它跑。
     // 换了 CLI 时角色原来的模型、强度是另一个 CLI 的，没另外指定就用新 CLI 的默认
@@ -247,7 +283,8 @@ export function createRun(sc: TasksScope) {
       })
     // 这一轮启动时的选择，用来判断执行中用户有没有换 CLI/模型/强度。
     // 不用 Agent 角色的对话（agentId 为空）按默认 Agent 的配置算，CLI、模型取任务里选的那一套
-    const startAgent = task.agentId ? agents.find((a) => a.id === task.agentId) : { ...defaultAgent(), id: '' }
+    // Chat 页选的角色被删了也按内置助手的配置算（和 runner 的 turnRole 同一个口径）
+    const startAgent = turnRole(task, agents, task.agentId)
     const startedRun = startAgent ? agentRun(withTaskModel(startAgent, task), settings) : undefined
     // 项目里用分派角色（主理）的顶层对话就是父对话：分诊、派单，只做护栏内的就地微改动
     const coordinatorRole = !task.parentTaskId && !!task.projectId && !!startAgent?.canDelegate
@@ -259,10 +296,32 @@ export function createRun(sc: TasksScope) {
      * 落盘。now：对话消息立即写，不等 400ms 合并窗口——关键节点（changed(true)、这一轮结束/失败/停止）
      * 用它，面板被强杀时不会丢最后一段。keepUpdatedAt：预热收尾要保留原来的列表时间
      */
+    /** 这一轮已经报过写盘失败：磁盘满时每次落盘都会失败，只在对话里报一次，恢复后再失败再报 */
+    let saveErrorShown = false
     const flush = (keepUpdatedAt = false, now = false) =>
-      sc.store
-        .update(task.id, entry.task, { keepUpdatedAt, now })
-        .catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
+      sc.store.update(task.id, entry.task, { keepUpdatedAt, now }).then(
+        () => {
+          saveErrorShown = false
+        },
+        (e) => {
+          log.error('task', '保存任务失败', { task: task.id, error: (e as Error).message })
+          if (saveErrorShown) return
+          saveErrorShown = true
+          // 写盘失败只写日志的话，对话在内存里照常跑，重启后这段全丢而用户毫不知情：在对话里如实报出来
+          entry.task.messages.push({
+            id: randomUUID(),
+            role: 'system',
+            agentId: '',
+            step: '',
+            text: t('保存对话失败，这之后的内容重启面板后可能丢失：{error}', { error: (e as Error).message }),
+            tools: [],
+            error: true,
+            alert: makeAlert('error', (e as Error).stack ?? (e as Error).message, 'panel'),
+            at: new Date().toISOString(),
+          })
+          entry.rev++
+        },
+      )
     const changed = (f?: boolean) => {
       entry.task.updatedAt = new Date().toISOString()
       trackWait(entry.task)
@@ -296,6 +355,8 @@ export function createRun(sc: TasksScope) {
       if (first) entry.task.baseRef = await gitHead(project.path).catch(() => '')
       const snapshot = await gitNumstat(project.path, entry.task.baseRef, placedFiles(entry.task)).catch(() => null)
       if (first) entry.task.baseline = snapshot ?? {}
+      // 收尾要的工作区探测只做一次；收尾种类本身按现在的推送授权现算（见下面的 wrapUp getter）
+      const wrapProbe = await wrapUpProbe(entry.task, project.path, project.gitPolicy)
       await runRealTurn({
         task: entry.task,
         agents,
@@ -318,7 +379,8 @@ export function createRun(sc: TasksScope) {
         newId: randomUUID,
         // 子对话这一轮真结束的地方收口父对话计划里等它的步骤（进程保活等下一句时 run 不返回，等不到收尾）
         // 顶层对话：做到一半（这一轮调过工具）就收尾、计划还没做完时，面板推它接着做（见 nudgePlan）。
-        // 只回答了一句话、没动手的那一轮不推：可能是用户问了个问题，或者让它先停下
+        // 只回答了一句话、没动手的那一轮不推：可能是用户问了个问题，或者让它先停下。
+        // Agent 模式（项目里的对话）例外：没动手但最后一句是「我先…」「接下来…」这种要动手的话，也推（ADR 0037）
         // 每一轮结束都按整棵对话树核一次用量上限（见 tasks/budget.ts）：到了上限就停下，也不再推它接着做
         onTurnEnd: task.parentTaskId
           ? () => {
@@ -327,7 +389,8 @@ export function createRun(sc: TasksScope) {
             }
           : (turn) =>
               void sc.checkBudget(entry.task).then((over) => {
-                if (over || task.mode !== 'chat' || turn.tools <= 0) return
+                if (over || task.mode !== 'chat') return
+                if (turn.tools <= 0 && (isChatMode(entry.task) || !announcedOnly(entry.task))) return
                 return sc
                   .nudgePlan(entry.task)
                   .catch((e) =>
@@ -342,9 +405,15 @@ export function createRun(sc: TasksScope) {
         prewarmTurnDoneAt: beforeTurnDoneAt,
         workflowCatalog: () => (defaultWf ? sc.workflowCatalog(project, allWorkflows, defaultWf) : []),
         resolveWorkflow: (id) => (project?.id ? sc.planWorkflow(project, allWorkflows, defaultWf, id) : undefined),
-        // 全局规则：父对话自己的，子对话用父对话的（这一轮开始时读一次，执行中新发的靠实时推送）
-        rules: (task.parentTaskId ? (parentTask?.rules ?? []) : entry.task.rules).map((r) => r.text),
-        goal: (task.parentTaskId ? parentTask?.goal : entry.task.goal) || '',
+        // 全局规则和目标：父对话自己的，子对话用父对话的。写成 getter 每次拼提示时现取：CLI 保活时下一条消息
+        // 由 engine 的 nextPrompt 按当前状态重拼，取一次的快照会让保活期间新发的规则、改的目标一直进不来
+        //（实时推送只送给正在执行的子对话，停在等下一句的收不到）
+        get rules() {
+          return (ruleOwner()?.rules ?? []).map((r) => r.text)
+        },
+        get goal() {
+          return ruleOwner()?.goal || ''
+        },
         takeInbox: task.parentTaskId
           ? undefined
           : () => {
@@ -361,14 +430,23 @@ export function createRun(sc: TasksScope) {
         onOrchestra: (orch) => sc.attachOrchestra(task.id, orch),
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await sc.worktreeHome(entry.task, found) : undefined,
-        wrapUp: await planWrapUp(entry.task, project?.path, project?.gitPolicy),
+        // getter：保活中用户在推送授权卡上点了「允许」，下一条消息的提示词和计划就带上推送收尾
+        //（取一次的快照要等下次重开进程才看得到，见 docs/lessons/prompts.md「拼的时候读现值」）
+        get wrapUp() {
+          return wrapUpFrom(entry.task, wrapProbe, project?.gitPolicy)
+        },
         // P4 项目里的对话和节点都能用：分 changelist 由面板照类型执行，不靠 Agent 自己记得分（见 p4-split.ts）
         p4Split:
           dir && project?.path && (await isP4(project.path))
             ? async (input) => {
                 // 项目外的文档根里的文件不分（见 shared/doc-root.ts）：分之前现算，项目设置改了下一次就按新的
                 const docs = await projectDocRoot(project.path, agents, 'p4')
-                return splitChangelists(p4Runner(dir), input, docs?.outside ? { skipUnder: docs.root } : {})
+                // 共用目录的子对话和兄弟在同一个 workspace、同一个 default changelist：没写 files 时只分它名下的认领和改过的文件，
+                // 否则会把兄弟打开的文件一起分进它的 changelist
+                const isDir = (p: string) => !!statSync(path.join(dir, p), { throwIfNoEntry: false })?.isDirectory()
+                const own = input.files?.length ? [] : ownP4Files(sc.claims, entry.task, isDir)
+                const opts = docs?.outside ? { skipUnder: docs.root } : {}
+                return splitChangelists(p4Runner(dir), own.length ? { ...input, files: own } : input, opts)
               }
             : undefined,
         // 项目设了 cherry-pick 目标的顶层对话：由面板核对后搬，只收这个对话自己的提交 / 改动（用户 2026-10-31 定的强制要求）
@@ -428,8 +506,11 @@ export function createRun(sc: TasksScope) {
                 platform: process.platform,
                 wslDistro: found.wslDistro,
                 scaled: found.scaledVerify,
-                // 这次任务实际改了哪些文件：服务端算好「本轮该跑哪几条 + 命令」再交给模型，不靠它自己筛
-                changedFiles: entry.task.changes.map((c) => c.path),
+                // 这次任务实际改了哪些文件：服务端算好「本轮该跑哪几条 + 命令」再交给模型，不靠它自己筛。
+                // getter 现取：runner 在这一轮里会刷新 task.changes，保活的下一条消息要按新的改动清单算
+                get changedFiles() {
+                  return entry.task.changes.map((c) => c.path)
+                },
                 ...(await parentRunRole(entry.task, found)),
               }
             : undefined,
@@ -447,6 +528,8 @@ export function createRun(sc: TasksScope) {
             ? () => sc.beginEdit(entry, changed)
             : undefined,
         branch: coordinatorRole && dir ? await currentBranch(dir).catch(() => '') : undefined,
+        // 这一轮的 CLI 自带待办会不会被面板显示：Chat 模式的提示词据此决定怎么说计划（CLI 定义的 todos）
+        cliTodos: !!startedRun && !!getCli(startedRun.cli)?.todos,
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
           task.mode === 'chat' && dir
@@ -473,7 +556,12 @@ export function createRun(sc: TasksScope) {
         // 独立分支里的子对话改不到别人的文件，不用认领；要改时才开分支的也一样
         claimFiles:
           task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
-            ? (paths) => sc.claims.claim(rootId, { taskId: task.id, title: entry.task.title }, paths)
+            ? (paths) => {
+                const r = sc.claims.claim(rootId, { taskId: task.id, title: entry.task.title }, paths)
+                // 被拒时写明对方现在怎样：停下等验收的要找父对话协调，不是「过一会儿再认领」
+                const held = r.held.map((h) => ({ ...h, state: holderState(sc.live.get(h.byId)?.task) }))
+                return { ...r, held }
+              }
             : undefined,
         // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；Agent 记的标上来源，用户在项目设置里复查
         lessons: task.projectId
@@ -488,7 +576,7 @@ export function createRun(sc: TasksScope) {
           : undefined,
         releaseFiles:
           task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
-            ? (paths) => sc.claims.release(rootId, task.id, paths.length ? paths : undefined)
+            ? (paths) => releaseUnchanged(sc.claims, entry.task, paths)
             : undefined,
         listConversations: async () => {
           const kids = (await sc.store.list()).filter((x) => x.parentTaskId === entry.task.id)
@@ -610,11 +698,8 @@ export function createRun(sc: TasksScope) {
         endRun(entry.task)
         // 工作流跑完（成功或失败）才有结果可看，这时起标题
         if (!prewarm) sc.nameOnce(entry.task, startedRun?.cli ?? '')
-        // 子对话这一轮结束了：释放认领的文件，查一下和同时在改的兄弟子对话有没有改到同一个文件
-        if (entry.task.parentTaskId) {
-          sc.claims.release(entry.task.parentTaskId, task.id)
-          if (!prewarm) await checkCollisions(entry.task).catch(() => {})
-        }
+        // 子对话这一轮结束：认领不放、改过的文件记到它名下，撞了交给父对话（见 checkCollisions）。预热的一轮什么都不动
+        if (entry.task.parentTaskId && !prewarm) await checkCollisions(entry.task).catch(() => {})
         // 更新摘要并回报父对话（父对话卡片和消息流据此显示进度）
         if (!prewarm && entry.task.parentTaskId) {
           entry.task.summary = sc.lastReply(entry.task)
@@ -650,10 +735,7 @@ export function createRun(sc: TasksScope) {
           // 在对话里把它们改成「没送出去」，用户才知道要重新发一次，而不是一直等着
           const lost = dropHeld(task.id)
           if (lost.length) {
-            const at = new Date().toISOString()
-            for (const m of lost)
-              for (const x of entry.task.messages)
-                if (x.id === m.id && x.role === 'user') x.delivery = { how: 'lost', at }
+            markHeld(entry.task.messages, lost, 'lost')
             await sc.store
               .update(task.id, entry.task)
               .catch((e) => log.warn('task', '标记没送出去的消息失败', { task: task.id, error: (e as Error).message }))
@@ -732,14 +814,16 @@ export function createRun(sc: TasksScope) {
       taskLog(id, '接着处理排着的消息', { messageId: q.id })
       m = { text: q.text, attachments: q.attachments, recorded: true }
       // 这一轮已经结束、马上按新的一轮交给 CLI：把消息上的交付状态从将来的「结束后自动处理」改成实际发生的事
-      const was = next.messages.find((x) => x.id === q.id && x.role === 'user')
-      if (was) was.delivery = { how: 'next', at: new Date().toISOString() }
+      // 合进来的几封信一起改（见 holdForNextTurn）
+      markHeld(next.messages, [q], 'next')
       // 排着的消息只记了正文：面板替别人说的（后台结果、子对话上报、面板说明）要按对话里记下的那条认出来，
       // 不然会被当成用户的新要求，计划提醒追着它要改计划
       const rec = next.messages.find((x) => x.id === q.id)
       if (rec && (rec.role !== 'user' || rec.panel || rec.child)) m = { ...m, panel: rec.panel ?? 'note' }
     }
     sc.notePlanInput(next, !!m.panel || !!m.child)
+    // 用户发了新消息：上一轮已经全部做完的 CLI 待办收起，不再一直挂着「待办已完成」
+    if (!m.panel && !m.child && !m.peer) next.todos = settledTodos(next.todos)
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
@@ -886,6 +970,8 @@ export function createRun(sc: TasksScope) {
       working: task.working,
     })
     if (wait === 'ok') {
+      // CLI 停在等下一句（上一轮已结束）：用户的新消息同样收起全部做完的待办
+      if (msg.role === 'user' && !msg.panel && !msg.child && !msg.peer) task.todos = settledTodos(task.todos)
       task.updatedAt = new Date().toISOString()
       markDelivery(task, msg, 'wait')
       await sc.store.update(task.id, task)

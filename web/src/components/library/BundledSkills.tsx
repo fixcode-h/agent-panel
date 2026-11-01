@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Download, Loader2, Package, RefreshCw } from 'lucide-react'
+import { Check, Download, Loader2, Package, RefreshCw } from 'lucide-react'
 import { BUNDLED_CATEGORIES, type BundledSkill } from '@shared/library'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
@@ -38,8 +38,8 @@ export function BundledSkills({
       .filter((g) => g.items.length)
   }, [items, query])
 
-  if (error) return <p className="px-2 py-6 text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
-  if (!items) return <p className="px-2 py-6 text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+  if (error) return <p className="px-2 py-6 text-body text-warning">{t('读取失败：{error}', { error })}</p>
+  if (!items) return <p className="px-2 py-6 text-body text-subtle">{t('读取中…')}</p>
   if (!groups.length)
     return <ListEmpty>{query ? t('没有符合的{kind}。', { kind: 'Skill' }) : t('还没有自带 Skill。')}</ListEmpty>
   return (
@@ -49,23 +49,22 @@ export function BundledSkills({
           {g.items.map((i) => (
             <ListItem
               key={i.name}
+              compact
               selected={picked === i.name}
               onClick={() => onPick(i.name)}
               leading={<Package className="h-4 w-4 shrink-0 text-accent-text" />}
-              title={
-                <>
-                  {i.name}
-                  {i.files > 0 && (
-                    <span className="ml-2 font-sans text-[0.6875rem] font-normal text-subtle">
-                      {t('另有 {n} 个文件', { n: i.files })}
-                    </span>
-                  )}
-                </>
-              }
+              title={i.name}
               subtitle={i.description || t('没有说明')}
               monoSubtitle={false}
+              // 只标装了的和改过的：没装是大多数，每行都写「未安装」只是噪音
               trailing={
-                <span className="shrink-0 text-[0.6875rem] text-subtle">{BUNDLED_STATUS_LABEL[i.status.shared]}</span>
+                i.status.shared === 'changed' ? (
+                  <span className="shrink-0 text-caption text-warning">{BUNDLED_STATUS_LABEL.changed}</span>
+                ) : i.status.shared === 'same' ? (
+                  <span role="img" aria-label={BUNDLED_STATUS_LABEL.same} title={BUNDLED_STATUS_LABEL.same}>
+                    <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+                  </span>
+                ) : undefined
               }
             />
           ))}
@@ -96,7 +95,7 @@ export function BundledBulkBar({
   const waitTitle = (key: string) => (busy && busy !== key ? t('等当前操作完成') : undefined)
   return (
     <div className="flex flex-col gap-2">
-      <p className="flex flex-wrap items-center gap-x-1.5 text-[0.6875rem] text-subtle">
+      <p className="flex flex-wrap items-center gap-x-1.5 text-caption text-subtle">
         {t('装到')}
         <span className="font-mono">~/.agents/skills</span>
         {t('，所有 Agent 共用')}

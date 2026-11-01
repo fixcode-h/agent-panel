@@ -108,8 +108,8 @@ export const EN_TASKS: Record<string, string> = {
   全部引用: 'Quote all',
   '引用没有加上：{error}': 'Could not add the quote: {error}',
   '点击查看，按退格键删除': 'Click to view, press Backspace to remove',
-  '这是可执行文件，不直接运行，已在文件夹中显示':
-    'This is an executable, so it was shown in its folder instead of being run',
+  '这类文件不直接打开，已在文件夹中显示':
+    'This file type is not opened directly, so it was shown in its folder instead',
   用默认程序打开: 'Open with default app',
   在文件夹中显示: 'Show in folder',
   '找不到这个文件，可能已经被移动或删除。': 'This file could not be found. It may have been moved or deleted.',
@@ -400,6 +400,7 @@ export const EN_TASKS: Record<string, string> = {
   未完成: 'Unfinished',
   已暂停: 'Paused',
   父对话结束时一起结束: 'Ended together with the parent chat',
+  '用户停掉了它，等用户决定要不要继续': 'Stopped by the user; waiting for the user to decide whether to continue',
   '换 Agent / 模型时中断': 'Interrupted when switching agent / model',
   归档时结束: 'Ended on archive',
   删除时结束: 'Ended when deleted',
@@ -579,12 +580,7 @@ export const EN_TASKS: Record<string, string> = {
     'Have the agent review uncommitted changes. It only lists issues and changes no files',
   审查改动: 'Review changes',
   已分叉成新的对话: 'Forked into a new chat',
-  '从这里分叉：新建一个对话，带着到这条为止的内容':
-    'Fork from here: start a new chat with everything up to this message',
   从这里分叉: 'Fork from here',
-  '撤回到这里：去掉这条和之后的对话，改了再发':
-    'Rewind to here: remove this message and everything after, then edit and resend',
-  撤回到这里: 'Rewind to here',
   '思考中…': 'Thinking…',
   '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',
@@ -772,8 +768,8 @@ export const EN_TASKS: Record<string, string> = {
   '已删除全局规则：{text}': 'Global rule removed: {text}',
   '已发布全局规则：{text}。这个对话下的所有子对话都会遵守，不写进项目的 AGENTS.md。':
     "Global rule published: {text}. Every sub-conversation of this conversation will follow it; it is not written to the project's AGENTS.md.",
-  '这些文件同时被别的子对话改过：{list}。这些对话和你在同一个工作目录里改文件，后写的会覆盖先写的，先约定先后或各自改哪些文件。':
-    'These files were also changed by other sub-conversations: {list}. They share the same working directory, so later writes overwrite earlier ones; agree on an order or on who changes which files.',
+  '这些文件已经归别的子对话、它的改动还没被父对话验收，你这一轮也改了：{list}。同一个目录里后写的会覆盖先写的，已经交给父对话安排先后。':
+    'These files belong to another sub-conversation whose changes the parent has not accepted yet, and this turn changed them too: {list}. In a shared directory later writes overwrite earlier ones; the parent conversation has been asked to decide the order.',
   '这次合并里两边都改了这些文件：{list}。git 已经自动合并，但必须逐文件核对有没有盖掉对方的改动，把核对结论写进合并结论（对方为什么这么改见下面的提交记录）。':
     'Both sides changed these files in this merge: {list}. Git merged them automatically, but you must check each file to be sure no change was overwritten and write the result into the merge conclusion (see the commits below for why the other side changed them).',
   '对话正在执行，等这一轮结束或停止后再归档':
@@ -883,6 +879,9 @@ export const EN_TASKS: Record<string, string> = {
   结束就地改动: 'Finish in-place edit',
   释放文件: 'Release files',
   '按类型分 changelist': 'Split changelists by type',
+  终止子对话的工作流: "Stop sub-conversation's workflow",
+  'cherry-pick 改动': 'Cherry-pick changes',
+  请用户授权推送: 'Ask to push',
   查看项目教训: 'Read project lessons',
   读取共享状态: 'Read shared state',
   写入共享状态: 'Write shared state',
@@ -1002,6 +1001,9 @@ export const EN_TASKS: Record<string, string> = {
   '原目录现在在「{now}」，不是开分支时的「{base}」，没有合并。切回「{base}」后再合并。':
     'The original folder is now on “{now}”, not “{base}” where the branch started, so nothing was merged. Switch back to “{base}” and merge again.',
   '对话正在执行，等这一轮结束后再合并': 'The chat is running. Merge after this turn ends',
+  '父对话的目录挡住了合并：{why}。处理后再点合并':
+    'The parent conversation’s folder blocked the merge: {why}. Sort it out and click Merge again',
+  '合并后提交失败，已撤回：{why}': 'Committing the merge failed and it was rolled back: {why}',
   '对话正在执行，等这一轮结束后再删除独立分支': 'The chat is running. Delete the separate branch after this turn ends',
   '父对话正在合并这个子对话，等结果出来再删除独立分支':
     'The parent conversation is merging this chat. Delete the separate branch after the merge finishes',
@@ -1154,15 +1156,8 @@ export const EN_TASKS: Record<string, string> = {
   上传中: 'Uploading',
   '上一条还在发送，稍等一下': 'The previous message is still sending, one moment',
   先写点要求再发送: 'Write something before sending',
-  '已交给 Agent，这一轮接着处理': 'Handed to the agent, it keeps working on this turn',
   已插进当前这一轮: 'Inserted into the current turn',
-  '已交给正在执行的 Agent，它会在这一轮里读取': 'Handed to the running agent, it reads it during this turn',
   已交给工作流里下一个开始的节点: 'Handed to the next node that starts in the workflow',
-  这一轮结束后自动处理: 'Handled automatically when this turn ends',
-  '没送出去：这一轮停下了，重新发一次': 'Not delivered: this turn stopped, send it again',
-  '这一轮已结束，按新的一轮处理': 'This turn already ended, handled as a new turn',
-  'Agent 没有响应，已重启并按新的一轮处理': 'The agent did not respond; restarted and handled as a new turn',
-  待认领: 'Waiting to be picked up',
   // 停下的子对话：独立分支里没提交的改动
   '【子对话停止】「{title}」（id {id}）已停下，独立分支「{branch}」里还有 {n} 个文件没有提交，目录：{path}。这些改动都还在：可以让它继续接着做，或者合并、删除这个独立分支。':
     '【Child stopped】"{title}" (id {id}) stopped. The isolated branch "{branch}" still has {n} uncommitted files in {path}. The changes are still there: let it keep working, or merge/delete this branch.',
@@ -1395,14 +1390,13 @@ export const EN_TASKS: Record<string, string> = {
   按需: 'Deferred',
   '本机 · 独立分支': 'This computer · separate branch',
   本机: 'This computer',
-  没有项目目录: 'No project folder',
-  '不是 git 仓库': 'Not a git repository',
   'Agent 回复后显示上下文占用': 'Context usage appears after the agent replies',
   显示会话栏: 'Show session bar',
   隐藏会话栏: 'Hide session bar',
   空闲空间: 'Free space',
   '需要{who}回答': 'Needs {who} to answer',
   '等{who}选择': 'Waiting for {who} to choose',
+  '等{who}确认': 'Waiting for {who} to approve',
   '子对话请{who}选择': 'Sub-chat asks {who} to choose',
   '需要{who}选择': 'Needs {who} to choose',
   '{n} 个子对话请{who}选择': '{n} sub-chats ask {who} to choose',
@@ -1595,4 +1589,35 @@ export const EN_TASKS: Record<string, string> = {
   按目录: 'By folder',
   '这一轮里这个文件没有文字差异（可能是二进制文件）。':
     'No text differences for this file in this turn (it may be a binary file).',
+  // 用户消息气泡：送达状态和「⋯」菜单（2026-10-31）
+  重新发送: 'Resend',
+  这条消息的更多操作: 'More actions for this message',
+  编辑并重发: 'Edit and resend',
+  '撤回这条和之后的对话，原文放回输入框':
+    'Remove this message and everything after it; the text goes back into the input box',
+  '对话执行中，停下后才能撤回': 'The conversation is running; stop it before rolling back',
+  '新开一个对话，带着到这条为止的内容': 'Start a new conversation with everything up to this message',
+  '对话执行中，停下后才能分叉': 'The conversation is running; stop it before forking',
+  以后这个项目里的角色都照着做: 'Every role in this project will follow it from now on',
+  '没送出去，这一轮停下了': 'Not delivered — this turn stopped',
+  这一轮结束后处理: 'Handled after this turn',
+  这一轮执行出错了: 'This turn failed',
+  这一轮执行完了: 'This turn finished',
+  '子对话「{title}」下面的子对话等你处理': 'A sub-conversation under “{title}” needs you',
+  '子对话「{title}」等你回答：{what}': '“{title}” is waiting for your answer: {what}',
+  '子对话「{title}」等你确认：{what}': '“{title}” is waiting for your approval: {what}',
+  子对话等你确认: 'Sub-conversations waiting for your approval',
+  '另有 {n} 个子对话在等': '{n} more sub-conversations waiting',
+  去处理: 'Handle',
+  子对话需要你确认: 'A sub-conversation needs your approval',
+  子对话等你处理: 'A sub-conversation needs you',
+  // 首页：面板重启后问要不要全部继续（RestartResumeBar）
+  被面板重启打断的对话: 'Conversations interrupted by panel restart',
+  '上次面板关闭时有 {n} 个对话在运行，已经中断':
+    '{n} conversations were running when the panel last closed and were interrupted',
+  逐个看: 'Review each',
+  全部继续: 'Resume all',
+  不用了: 'Dismiss',
+  '已继续 {n} 个对话': 'Resumed {n} conversations',
+  '没能继续：{error}': 'Could not resume: {error}',
 }

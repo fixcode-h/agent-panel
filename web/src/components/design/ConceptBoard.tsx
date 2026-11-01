@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { BadgeCheck, Check, ImagePlus, Loader2, Send, Trash2, Undo2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import {
@@ -10,11 +10,13 @@ import {
   type ConceptImage,
   type ConceptJob,
   type ConceptState,
+  type DesignLayout,
 } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { t } from '@shared/i18n'
 import { AnnotationLayer, AnnotationToolbar, isMarkTool, type Tool } from './Annotations'
+import { RegionEditor } from './RegionEditor'
 import { readFile } from './ImagesPanel'
 
 /**
@@ -37,6 +39,11 @@ export function ConceptBoard({
   inpaintSupported,
   progress,
   busy,
+  layout,
+  designSize,
+  onLayout,
+  onConfirmLayout,
+  onSkipLayout,
 }: {
   concept: ConceptState
   /** 原画的图片地址 */
@@ -60,6 +67,14 @@ export function ConceptBoard({
   progress?: ConceptJob
   /** AI 正在处理：不能确认模板 */
   busy?: boolean
+  /** 版式拆解的区块（确认模板后 AI 先拆区块，用户在这里调整、确认） */
+  layout?: DesignLayout
+  designSize: { X: number; Y: number }
+  onLayout?: (layout: DesignLayout, key: string) => void
+  /** 确认区块，开始照区块搭界面 */
+  onConfirmLayout?: () => void
+  /** 不拆区块，直接搭界面 */
+  onSkipLayout?: () => void
 }) {
   const [tool, setTool] = useState<Tool>('select')
   const [kind, setKind] = useState<AnnotationKind>('change')
@@ -70,9 +85,18 @@ export function ConceptBoard({
   const img = useRef<HTMLImageElement>(null)
   const file = useRef<HTMLInputElement>(null)
   const [scale, setScale] = useState(0)
+  const [activeRegion, setActiveRegion] = useState('')
   const cur = concept.images.find((i) => i.id === concept.selected) ?? concept.images.at(-1)
   const size = { X: cur?.width || 1, Y: cur?.height || 1 }
   const target = cur ? `concept:${cur.id}` : ''
+  // 正在看的就是确认的模板：显示它的区块（只认这张模板拆出来的）
+  const isTemplate = !!cur && concept.approved === cur.id
+  const regions = isTemplate && layout?.concept === cur.id ? layout : undefined
+  // 拆出区块、等用户调整时切回「选择」：标注工具开着时区块拖不动，用户会以为坏了
+  const editingRegions = !!regions && !regions.confirmed
+  useEffect(() => {
+    if (editingRegions) setTool('select')
+  }, [editingRegions])
   const mine = marks.filter((m) => m.target === target)
   // 一张原画只有一个蒙版：后续的涂抹和橡皮擦都并到这一条里，撤销就是去掉最后一笔
   const maskMark = mine.find((m) => m.shape === 'mask')
@@ -113,7 +137,7 @@ export function ConceptBoard({
   return (
     <div data-concept-board className="absolute inset-0 z-20 flex flex-col bg-canvas text-canvas-fg">
       {/* 左边让出浮在上面的「画板 / 数据」切换（--board-switch-w 由 DesignPage 量好） */}
-      <div className="flex h-11 shrink-0 items-center gap-2 pr-3 pl-[max(0.75rem,var(--board-switch-w,0px))] text-[0.75rem]">
+      <div className="flex h-11 shrink-0 items-center gap-2 pr-3 pl-[max(0.75rem,var(--board-switch-w,0px))] text-footnote">
         <span className="shrink-0 font-medium whitespace-nowrap text-canvas-strong">{t('原画')}</span>
         {cur && (
           <span className="min-w-0 truncate font-mono text-canvas-subtle">
@@ -121,7 +145,7 @@ export function ConceptBoard({
           </span>
         )}
         {concept.approved && (
-          <span className="inline-flex items-center gap-1 rounded-md bg-success/20 px-1.5 py-0.5 text-[0.6875rem] text-success">
+          <span className="inline-flex items-center gap-1 rounded-md bg-success/20 px-1.5 py-0.5 text-caption text-success">
             <BadgeCheck className="h-3.5 w-3.5" />
             {t('已确认模板：{id}', { id: concept.approved })}
           </span>
@@ -208,7 +232,9 @@ export function ConceptBoard({
           />
         </div>
       )}
-      <div className="grid min-h-0 flex-1 place-items-center overflow-hidden p-4">
+      {/* 图片按这块区域的实际大小缩放（container 查询单位）：以前按整个窗口高度减固定值算，
+          动画面板、区块提示行一多图片下半截就被裁掉 */}
+      <div className="grid min-h-0 flex-1 place-items-center overflow-hidden p-4 [container-type:size]">
         {cur ? (
           <div className="relative max-h-full max-w-full">
             <img
@@ -216,8 +242,20 @@ export function ConceptBoard({
               src={url(cur)}
               alt={cur.id}
               draggable={false}
-              className="block max-h-[calc(100dvh-260px)] max-w-full object-contain shadow-canvas"
+              className="block max-h-[calc(100cqh-2rem)] max-w-[calc(100cqw-2rem)] object-contain shadow-canvas"
             />
+            {scale > 0 && isTemplate && regions && (
+              <RegionEditor
+                regions={regions.regions}
+                // 区块是设计稿像素：屏幕上的一个设计稿像素 = 原画像素的缩放 × 原画宽 / 设计稿宽
+                k={(scale * size.X) / designSize.X}
+                designSize={designSize}
+                editable={!regions.confirmed && tool === 'select' && !busy}
+                active={activeRegion}
+                onActive={setActiveRegion}
+                onChange={(list, key) => onLayout?.({ ...regions, regions: list }, key)}
+              />
+            )}
             {scale > 0 && (
               <AnnotationLayer
                 size={size}
@@ -278,15 +316,82 @@ export function ConceptBoard({
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 text-[0.75rem] text-canvas-subtle">
+          <div className="flex flex-col items-center gap-2 text-footnote text-canvas-subtle">
             <Loader2 className="h-5 w-5 animate-spin" />
             {progress?.text ?? t('正在出原画…')}
           </div>
         )}
       </div>
+      {/* 确认了模板：先拆区块，用户在图上调整好再开始搭界面（位置照区块来，不靠 AI 目测） */}
+      {isTemplate && (
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-3 pb-1" data-layout-bar>
+          <p className="text-center text-caption text-canvas-subtle">
+            {regions?.confirmed
+              ? t('区块已确认：搭界面时骨架照这些区块摆放')
+              : regions
+                ? t('调整区块：拖动移动，拖右下角改大小，点一下改名或删除；没问题就确认')
+                : busy
+                  ? t('AI 正在把模板拆成区块…')
+                  : t('先把模板拆成区块再搭界面，位置更准；也可以跳过')}
+          </p>
+          {regions && !regions.confirmed && (
+            <Button
+              size="sm"
+              variant="on-canvas"
+              disabled={busy}
+              onClick={() => {
+                const id = crypto.randomUUID()
+                const w = Math.round(designSize.X / 4)
+                const h = Math.round(designSize.Y / 4)
+                onLayout?.(
+                  {
+                    ...regions,
+                    regions: [
+                      ...regions.regions,
+                      {
+                        id,
+                        name: `Region${regions.regions.length + 1}`,
+                        x: Math.round((designSize.X - w) / 2),
+                        y: Math.round((designSize.Y - h) / 2),
+                        w,
+                        h,
+                        note: '',
+                      },
+                    ],
+                  },
+                  `layout:add:${id}`,
+                )
+                setActiveRegion(id)
+              }}
+            >
+              {t('新增区块')}
+            </Button>
+          )}
+          {regions && !regions.confirmed && (
+            <Button size="sm" disabled={busy || !regions.regions.length} onClick={onConfirmLayout}>
+              {t('确认区块，开始搭界面')}
+            </Button>
+          )}
+          {regions?.confirmed && (
+            <Button
+              size="sm"
+              variant="on-canvas"
+              disabled={busy}
+              onClick={() => onLayout?.({ ...regions, confirmed: false }, 'layout:reopen')}
+            >
+              {t('重新调整区块')}
+            </Button>
+          )}
+          {!regions && !busy && onSkipLayout && (
+            <Button size="sm" variant="on-canvas" onClick={onSkipLayout}>
+              {t('跳过，直接搭界面')}
+            </Button>
+          )}
+        </div>
+      )}
       {/* 标注完直接在这里发（在底部提示行右侧）：用户不一定知道要去右边对话框点发送 */}
       <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-3 pb-1">
-        <p className="text-center text-[0.6875rem] text-canvas-subtle">
+        <p className="text-center text-caption text-canvas-subtle">
           {tool === 'mask'
             ? canUndoMask
               ? t('涂出要重绘的区域；在右边勾选「只重绘蒙版区域」再发送，就是局部重绘')
@@ -312,7 +417,7 @@ export function ConceptBoard({
       <div className="flex shrink-0 gap-3 overflow-x-auto bg-canvas-bar/60 px-3 py-2.5">
         {rounds.map((r) => (
           <div key={r} className="flex shrink-0 flex-col gap-1">
-            <span className="text-[0.6875rem] text-canvas-subtle">{t('第 {n} 轮', { n: r })}</span>
+            <span className="text-caption text-canvas-subtle">{t('第 {n} 轮', { n: r })}</span>
             <div className="flex gap-1.5">
               {concept.images
                 .filter((i) => i.round === r)
@@ -343,7 +448,7 @@ export function ConceptBoard({
         ))}
         {pending > 0 && (
           <div className="flex shrink-0 flex-col gap-1">
-            <span className="text-[0.6875rem] text-canvas-subtle">{t('正在出')}</span>
+            <span className="text-caption text-canvas-subtle">{t('正在出')}</span>
             <div className="flex gap-1.5">
               {Array.from({ length: pending }, (_, k) => (
                 <span

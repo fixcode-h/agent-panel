@@ -52,7 +52,7 @@ export function LessonDrafts({ reportId, day }: { reportId: string; day: string 
         className="flex w-full cursor-pointer flex-wrap items-center gap-2 px-4 py-2 text-left hover:bg-sel"
       >
         <Lightbulb className="h-4 w-4 text-warning" />
-        <span className="text-[0.8125rem] font-medium">{t('候选教训草稿')}</span>
+        <span className="text-body font-medium">{t('候选教训草稿')}</span>
         <span className="text-xs text-subtle">
           {drafts.length ? t('已提炼 {n} 条', { n: drafts.length }) : t('从报告里提炼返工过的做法')}
         </span>
@@ -75,7 +75,7 @@ export function LessonDrafts({ reportId, day }: { reportId: string; day: string 
             </Button>
           </div>
           {drafts.length === 0 ? (
-            <p className="px-4 py-3 text-[0.8125rem] text-subtle">
+            <p className="px-4 py-3 text-body text-subtle">
               {t('还没有草稿。报告里有用户报的 Bug 或返工过的条目时，点「从这份报告提炼」；没有就不生成，不硬造条目。')}
             </p>
           ) : (
@@ -173,7 +173,7 @@ function DraftCard({
       {draft.source && (
         <details className="text-xs text-subtle">
           <summary className="cursor-pointer">{t('提炼依据（报告里的原文）')}</summary>
-          <pre className="mt-1 whitespace-pre-wrap font-mono text-[0.6875rem]">{draft.source}</pre>
+          <pre className="mt-1 whitespace-pre-wrap font-mono text-caption">{draft.source}</pre>
         </details>
       )}
       {problems.length > 0 && (

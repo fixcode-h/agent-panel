@@ -1,7 +1,6 @@
 # ADR 0025：模型设计接入 Blender，对话驱动建模、网页实时预览
 
-- 状态：提议
-- 日期：2026-10-29
+状态：已接受（2026-10-31 由「提议」改：`server/blender.ts`、`server/blender-mcp.ts`、`server/blender/bridge.py` 和前端的模型对话已经落地） · 2026-10-29
 
 ## 背景
 

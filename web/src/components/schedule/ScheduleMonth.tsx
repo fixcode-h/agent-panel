@@ -52,7 +52,7 @@ export function ScheduleMonth({
     <section aria-label={t('月视图')} className="flex min-w-[44rem] flex-col">
       <div className="frost sticky top-0 z-20 grid grid-cols-7 border-b">
         {SCHEDULE_WEEKDAYS.map((w) => (
-          <span key={w.id} className="py-2 text-center text-[0.75rem] text-subtle">
+          <span key={w.id} className="py-2 text-center text-footnote text-subtle">
             {w.label}
           </span>
         ))}
@@ -79,7 +79,7 @@ export function ScheduleMonth({
                 onClick={() => onOpenDay(d.getTime())}
                 aria-label={t('看 {m} 月 {d} 日这一周', { m: d.getMonth() + 1, d: d.getDate() })}
                 className={cn(
-                  'mb-0.5 grid h-6 min-w-6 cursor-pointer place-items-center self-start rounded-full px-1 text-[0.75rem] font-semibold tabular-nums transition-colors',
+                  'mb-0.5 grid h-6 min-w-6 cursor-pointer place-items-center self-start rounded-full px-1 text-footnote font-semibold tabular-nums transition-colors',
                   today
                     ? 'bg-fg text-bg'
                     : cn('hover:bg-sel', d.getMonth() === thisMonth ? 'text-fg' : 'text-subtle/60'),
@@ -95,7 +95,7 @@ export function ScheduleMonth({
                   onClick={() => onSelect(e.s)}
                   title={`${e.s.name} · ${hhmm(new Date(e.at))}`}
                   className={cn(
-                    'flex w-full min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-left text-[0.6875rem] transition-colors',
+                    'flex w-full min-w-0 cursor-pointer items-center gap-1 rounded-sm px-1 py-0.5 text-left text-caption transition-colors',
                     OCC_TONE[e.tone],
                     e.s.id === selected && 'ring-1 ring-fg',
                   )}
@@ -109,7 +109,7 @@ export function ScheduleMonth({
                 <button
                   type="button"
                   onClick={() => onOpenDay(d.getTime())}
-                  className="cursor-pointer self-start rounded px-1 text-[0.6875rem] text-subtle hover:bg-sel hover:text-fg"
+                  className="cursor-pointer self-start rounded-sm px-1 text-caption text-subtle hover:bg-sel hover:text-fg"
                 >
                   {t('还有 {n} 条', { n: items.length - PER_DAY })}
                 </button>

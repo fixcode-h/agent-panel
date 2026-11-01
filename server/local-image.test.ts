@@ -130,9 +130,9 @@ test('Python 版本判定按共享的范围：3.10~3.14 可用，范围外和 3.
 })
 
 test('解析探测 Python 的输出：版本一行、解释器路径一行', () => {
-  assert.deepEqual(parsePythonProbe('3.14.0\r\nC:\Python314\python.exe\r\n'), {
+  assert.deepEqual(parsePythonProbe('3.14.0\r\nC:\\Python314\\python.exe\r\n'), {
     version: '3.14.0',
-    path: 'C:\Python314\python.exe',
+    path: 'C:\\Python314\\python.exe',
   })
   assert.deepEqual(parsePythonProbe('3.13.7\n/usr/bin/python3.13\n'), {
     version: '3.13.7',

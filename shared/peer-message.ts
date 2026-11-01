@@ -3,7 +3,7 @@
  * 收件方的消息带 TaskMessage.peer，发件方是一次工具调用（send_to_conversation、message_parent、message_peer）；
  * 两边都画成一行「发送消息 / 接收消息 + 类型 + 内容标题」，类型决定图标和小标签
  */
-import type { PeerFrom, PeerKind, Task, TaskMessage } from './schema.ts'
+import type { PeerFrom, PeerKind, TaskMessage } from './schema.ts'
 import { t } from './i18n.ts'
 
 /** 正文开头的【收尾请求】【子对话状态】这类标签是说给 AI 的，标题里不重复它 */
@@ -79,14 +79,51 @@ export function peerOfMessage(m: TaskMessage): PeerFrom | undefined {
 }
 
 /**
- * 同一段话之前已经交给了别的子对话：返回那个子对话的 id。一条消息只交给一个子对话（用户 2026-10-24 定的），
- * 父对话把用户的一句话逐个转给四五个子对话会被拒绝。按对话里记下的 send_to_conversation 调用查，
- * 跨轮次也认得出；失败的那次不算，再发给同一个子对话（补充、催）照常放行
+ * 这一轮在处理的那条用户消息在 messages 里的下标：最后一条用户亲自发的、已经交给 CLI 的消息；没有时 -1。
+ * 面板推的（panel）、子对话交回的（peer / child）不算，它们拉起的几轮还在处理同一条用户消息；
+ * 还排着没交出去的（held）、页面本地待认领（pending）、没送到（lost）的也不算，这一轮还没开始处理它们
  */
-export function sentToOther(task: Pick<Task, 'messages'>, id: string, message: string): string | undefined {
+export function currentAskIndex(messages: readonly TaskMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) if (isAsk(messages[i])) return i
+  return -1
+}
+
+/** 用户亲自发的、已经交给 CLI 的消息（currentAskIndex 的口径） */
+function isAsk(m: TaskMessage) {
+  if (m.role !== 'user' || m.panel || m.peer || m.child) return false
+  const how = m.delivery?.how
+  return how !== 'held' && how !== 'pending' && how !== 'lost'
+}
+
+/**
+ * 「一条用户消息只交给一个子对话」从哪条消息起算：一般是当前这条用户消息（currentAskIndex）。
+ * 要转发的正文就是某条更早的用户消息原文时，从那条起算：用户连着定几条规则时，第 2、3 条是在父对话转发第 1 条的途中
+ * 以插话（steer）或 read_user_notes 进来的，会成为新的「当前消息」；只按当前消息算的话，第 1 条规则交给 c1 后
+ * 再交给 c2 就被放过了——这正是 ADR 0008 那次事故的样子（复核 C5-a）。
+ * 当前这条本身就是这段话（用户又说了一遍「继续」）时仍按当前这条算：上一条交给 A 的「继续」不挡这次交给 B
+ */
+export function handOffFrom(messages: readonly TaskMessage[], message: string): number {
+  const cur = currentAskIndex(messages)
+  const body = message.trim()
+  if (!body || cur < 0 || messages[cur].text.trim() === body) return cur
+  for (let i = cur - 1; i >= 0; i--) if (isAsk(messages[i]) && messages[i].text.trim() === body) return i
+  return cur
+}
+
+/**
+ * 同一段话在这条用户消息里已经交给了别的子对话：返回那个子对话的 id。用户的一条消息只交给一个子对话（用户 2026-10-24 定的），
+ * 父对话把用户的一句话逐个转给四五个子对话会被拒绝。按对话里记下的 send_to_conversation 调用查，
+ * 子对话交回、面板推进拉起的几轮也认得出；用户发了新消息就重新算——「继续」「按你的方案做」这类短话
+ * 上一条消息交给过 A，这次交给 B 不算转发同一条消息。范围见 handOffFrom。失败的那次不算，再发给同一个子对话（补充、催）照常放行
+ */
+export function sentToOther(
+  task: { messages: readonly TaskMessage[] },
+  id: string,
+  message: string,
+): string | undefined {
   const body = message.trim()
   if (!body) return undefined
-  for (const m of task.messages)
+  for (const m of task.messages.slice(handOffFrom(task.messages, body) + 1))
     for (const tool of m.tools) {
       if (tool.failed || !/\bsend_to_conversation\b/.test(`${tool.name ?? ''} ${tool.label}`)) continue
       let a: { id?: unknown; message?: unknown }
@@ -99,6 +136,40 @@ export function sentToOther(task: Pick<Task, 'messages'>, id: string, message: s
       if (to && to !== id && typeof a.message === 'string' && a.message.trim() === body) return to
     }
   return undefined
+}
+
+/**
+ * 这一轮已经交出去、可能还没记进对话的 send_to_conversation（并行发出的几次调用）：正文 → 交给了谁、当时的用户消息 id。
+ * 不随「当前用户消息」换掉：插话进来的消息会成为新的当前消息，清掉就放过了上一条规则的重复转发（见 handOffFrom）
+ */
+export type HandOffs = Map<string, { to: string; ask: string }>
+
+/** 内存记录最多留这么多条：只为挡住还没记进对话的那几次，旧的对话里都查得到 */
+const HAND_OFF_KEEP = 200
+
+/** 这段话在去重范围里已经交给了别的子对话：先查内存记录，再查对话记录（sentToOther），返回那个子对话的 id */
+export function handedToOther(
+  messages: readonly TaskMessage[],
+  mem: HandOffs,
+  id: string,
+  message: string,
+): string | undefined {
+  const body = message.trim()
+  const prev = mem.get(body)
+  if (prev && prev.to !== id) {
+    // 记录时的那条用户消息还在去重范围里才算（被回退删掉的不算）
+    const at = messages.findIndex((m) => m.id === prev.ask)
+    const from = handOffFrom(messages, body)
+    if ((prev.ask === '' && from < 0) || (at >= 0 && at >= from)) return prev.to
+  }
+  return sentToOther({ messages }, id, body)
+}
+
+/** 记下这次交出去的（在当前用户消息名下） */
+export function noteHandOff(messages: readonly TaskMessage[], mem: HandOffs, id: string, message: string) {
+  mem.delete(message.trim())
+  mem.set(message.trim(), { to: id, ask: messages[currentAskIndex(messages)]?.id ?? '' })
+  if (mem.size > HAND_OFF_KEEP) mem.delete(mem.keys().next().value!)
 }
 
 /**
@@ -130,7 +201,11 @@ export interface PeerReport {
  * 旧数据里「下一步」没写前缀的重试说明也归到下一步
  */
 export function parseReport(text: string): PeerReport | null {
-  const lines = text.replace(/\n处理完这个结果后[^\n]*$/, '').split('\n')
+  // 末尾「这是摘要，详细总结在子对话里」是写给父对话 AI 的（见 shared/child-letter.ts），界面上点子对话就能看全文
+  const lines = text
+    .replace(/\n处理完这个结果后[^\n]*$/, '')
+    .replace(/\n（这是摘要，详细总结在子对话[^\n]*）$/, '')
+    .split('\n')
   const out: PeerReport = {
     steps: [],
     stepsDone: false,

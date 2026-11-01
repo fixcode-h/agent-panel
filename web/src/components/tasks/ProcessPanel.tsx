@@ -178,28 +178,26 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
       </div>
 
       {error && (
-        <p className="border-b border-line bg-danger/8 px-3 py-2 text-[0.75rem] leading-relaxed text-danger">{error}</p>
+        <p className="border-b border-line bg-danger/8 px-3 py-2 text-footnote leading-relaxed text-danger">{error}</p>
       )}
 
       {tab === 'processes' ? (
         <>
-          <div className="border-b border-line px-3 py-2 text-[0.75rem] leading-relaxed">
+          <div className="border-b border-line px-3 py-2 text-footnote leading-relaxed">
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-muted">
                 {t('内存合计')}
-                <span className="ml-1 text-[0.6875rem] text-subtle">
-                  {t('这个对话及附属（子对话、子任务）的进程合计')}
-                </span>
+                <span className="ml-1 text-caption text-subtle">{t('这个对话及附属（子对话、子任务）的进程合计')}</span>
               </span>
               <span className="font-medium tabular-nums">{fmtMem(data?.cliMemory ?? null)}</span>
             </div>
-            <p className="mt-0.5 text-[0.6875rem] text-subtle">
+            <p className="mt-0.5 text-caption text-subtle">
               {t('面板 {server}（不计入对话合计）', {
                 server: fmtMem(data?.serverMemory ?? null),
               })}
               {data?.unavailable ? ` · ${data.unavailable}` : ''}
             </p>
-            <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-subtle">
+            <p className="mt-0.5 text-caption leading-relaxed text-subtle">
               {t('下面按归属分组：每组只算它自己起的进程；读不到内存的显示为未采集，不平摊')}
             </p>
           </div>
@@ -219,16 +217,16 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
             <>
               <div className="max-h-[46vh] overflow-y-auto py-1">
                 {!data ? (
-                  <p className="px-3 py-6 text-center text-[0.75rem] text-subtle">{t('正在读取进程…')}</p>
+                  <p className="px-3 py-6 text-center text-footnote text-subtle">{t('正在读取进程…')}</p>
                 ) : data.processes.length === 0 ? (
-                  <p className="px-3 py-6 text-center text-[0.75rem] text-subtle">{t('这个对话现在没有在跑的进程')}</p>
+                  <p className="px-3 py-6 text-center text-footnote text-subtle">{t('这个对话现在没有在跑的进程')}</p>
                 ) : (
                   ownersOf(data.processes, taskId).map((g) => (
                     <div key={g.taskId || 'none'} className="border-b border-line/60 last:border-0">
                       {/* 组头就是这个归属自己的合计：子对话的行只算它起的进程，不把别的对话的算进来 */}
                       <div className="flex items-baseline justify-between gap-2 bg-sel/50 px-3 py-1">
                         <span
-                          className="min-w-0 truncate text-[0.6875rem] font-medium text-muted"
+                          className="min-w-0 truncate text-caption font-medium text-muted"
                           title={g.title || undefined}
                         >
                           <span className="text-subtle">
@@ -237,7 +235,7 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
                           {g.title && ` · ${g.title}`}
                         </span>
                         <span
-                          className="shrink-0 text-[0.6875rem] tabular-nums text-muted"
+                          className="shrink-0 text-caption tabular-nums text-muted"
                           title={
                             g.rss === null
                               ? t('{n} 个进程的内存都没读到，不是 0', { n: g.count })
@@ -283,7 +281,7 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
                 </Button>
               </div>
               {suggestText && (
-                <p className="max-h-24 overflow-y-auto border-t border-line px-3 py-2 text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-muted">
+                <p className="max-h-24 overflow-y-auto border-t border-line px-3 py-2 text-caption leading-relaxed whitespace-pre-wrap text-muted">
                   {suggestText}
                 </p>
               )}
@@ -308,10 +306,10 @@ function ProcessRow({ proc, disabled, onKill }: { proc: TaskProcess; disabled: b
         )}
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[0.75rem]" title={proc.command}>
+        <p className="truncate text-footnote" title={proc.command}>
           {proc.command || t('（没有命令行）')}
         </p>
-        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[0.6875rem] text-subtle">
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-caption text-subtle">
           {/* 归属已经在分组头上写了，这一行只说进程自己的事 */}
           <span>{proc.kind === 'child' ? t('子进程') : t('Agent')}</span>
           <span>·</span>
@@ -360,15 +358,15 @@ function ConfirmView({
   return (
     <div className="flex flex-col">
       <div className="px-3 py-2">
-        <p className="text-[0.8125rem] font-medium">{title}</p>
-        <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-muted">
+        <p className="text-body font-medium">{title}</p>
+        <p className="mt-0.5 text-caption leading-relaxed text-muted">
           {confirm.kind === 'kill'
             ? t('进程会被直接结束，它正在做的事会中断。')
             : t('只清理面板登记的、任务已经结束的进程；用户自己开的终端进程不在列表里。')}
         </p>
         <ul className="mt-1.5 max-h-[30vh] space-y-1 overflow-y-auto">
           {items.map((p) => (
-            <li key={p.pid} className="truncate text-[0.6875rem] text-muted" title={p.command}>
+            <li key={p.pid} className="truncate text-caption text-muted" title={p.command}>
               {p.pid} · {p.ownerTitle || t('面板')} · {p.command}
             </li>
           ))}

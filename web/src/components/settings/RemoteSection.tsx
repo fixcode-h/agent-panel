@@ -131,7 +131,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                   placeholder="eyJhIjoi..."
                   autoComplete="off"
                   spellCheck={false}
-                  className="font-mono text-[0.8125rem]"
+                  className="font-mono text-body"
                   aria-label={t('Tunnel Token')}
                 />
               </Row>
@@ -146,7 +146,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                   onChange={(e) => onChange({ ...value, publicUrl: e.target.value })}
                   placeholder="https://panel.example.com"
                   spellCheck={false}
-                  className="font-mono text-[0.8125rem]"
+                  className="font-mono text-body"
                   aria-label={t('外部访问地址')}
                 />
               </Row>
@@ -166,7 +166,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                     if (Number.isInteger(n) && n >= 1 && n <= 65535) onChange({ ...value, localPort: n })
                   }}
                   inputMode="numeric"
-                  className="w-[96px] font-mono text-[0.8125rem]"
+                  className="w-[96px] font-mono text-body"
                   aria-label={t('外网专用端口')}
                 />
               </Row>
@@ -189,7 +189,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                 hint={t('没有安装时可以直接下载到面板的数据目录；自己装好了（例如用 Homebrew、winget）就点重新检测。')}
               >
                 <div className="flex flex-col items-end gap-2">
-                  <div className="flex items-center gap-2 text-[0.8125rem]">
+                  <div className="flex items-center gap-2 text-body">
                     <Button size="sm" variant="ghost" onClick={check} disabled={checking}>
                       {checking ? t('检测中…') : t('重新检测')}
                     </Button>
@@ -214,15 +214,15 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                     </Button>
                   )}
                   {cf?.installed && cf.path && (
-                    <span className="max-w-[280px] truncate font-mono text-[0.6875rem] text-subtle" title={cf.path}>
+                    <span className="max-w-[280px] truncate font-mono text-caption text-subtle" title={cf.path}>
                       {cf.path}
                     </span>
                   )}
                   {!cf?.installed && cf?.error && (
-                    <span className="text-[0.75rem] leading-relaxed text-subtle">{cf.error}</span>
+                    <span className="text-footnote leading-relaxed text-subtle">{cf.error}</span>
                   )}
                   {status?.download?.error && (
-                    <span className="max-w-[280px] text-[0.75rem] leading-relaxed text-danger">
+                    <span className="max-w-[280px] text-footnote leading-relaxed text-danger">
                       {status.download.error}
                     </span>
                   )}
@@ -239,7 +239,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                     onChange={(e) => onChange({ ...value, command: e.target.value })}
                     placeholder="cloudflared"
                     spellCheck={false}
-                    className="font-mono text-[0.8125rem]"
+                    className="font-mono text-body"
                     aria-label={t('cloudflared 路径')}
                   />
                 </Row>
@@ -250,7 +250,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
           <Group title={t('连接状态')}>
             <Row title={t('状态')} stack>
               <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 text-[0.8125rem]">
+                <div className="flex items-center gap-2 text-body">
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} />
                   <span>{status ? STATE_TEXT[status.state] : t('检测中…')}</span>
                   {value.mode === 'frp' && status?.download?.running && (
@@ -262,7 +262,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                   )}
                 </div>
                 {status?.error && (
-                  <p className="text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">{status.error}</p>
+                  <p className="text-footnote leading-relaxed whitespace-pre-wrap text-danger">{status.error}</p>
                 )}
               </div>
             </Row>
@@ -274,7 +274,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                     href={status.link || status.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="shrink-0 text-[0.8125rem] text-accent-text hover:underline"
+                    className="shrink-0 text-body text-accent-text hover:underline"
                   >
                     {t('打开')}
                   </a>

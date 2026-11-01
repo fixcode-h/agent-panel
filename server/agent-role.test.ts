@@ -143,10 +143,11 @@ test('节点：固定用默认 CLI 的档位', () => {
 })
 
 test('默认对话：连续工具操作时注入可见进度要求', () => {
-  const prompt = defaultChatPrompt('用户要求', '', true, false)
+  const prompt = defaultChatPrompt('用户要求', false, true, false)
   assert.match(prompt, /用户要求[\s\S]*连续做两次以上工具操作前先用一句话说明当前目标/)
-  assert.equal(defaultChatPrompt('用户要求', 'agent-1', true, false), '用户要求')
-  assert.equal(defaultChatPrompt('用户要求', '', true, true), '用户要求')
+  // 有角色（含 Chat 模式空 id 按内置「助手」跑）时规则由角色给，不再补
+  assert.equal(defaultChatPrompt('用户要求', true, true, false), '用户要求')
+  assert.equal(defaultChatPrompt('用户要求', false, true, true), '用户要求')
 })
 
 test('引入：层级、太深和循环', () => {
@@ -185,7 +186,13 @@ test('引入：层级、太深和循环', () => {
 })
 
 test('通用 Agent：停用的不算', () => {
-  const list = [agent('a', { common: true }), agent('b', { common: true, enabled: false }), agent('c')]
+  // Chat 角色（ADR 0038）也不算：它只在 Chat 页用，不能被派出去
+  const list = [
+    agent('a', { common: true }),
+    agent('b', { common: true, enabled: false }),
+    agent('c'),
+    agent('d', { common: true, scope: 'chat' }),
+  ]
   assert.deepEqual(
     commonAgents(list).map((a) => a.id),
     ['a'],

@@ -10,6 +10,7 @@ import {
   lstat,
   readFile,
   readlink,
+  realpath,
   rename,
   stat,
   utimes,
@@ -971,6 +972,14 @@ const normPath = (p: string) => {
   return process.platform === 'win32' ? abs.toLowerCase() : abs
 }
 
+/**
+ * 比对 git 注册表用的路径：先解析成真实路径再 normPath。git 记的是真实长路径（C:/Users/runneradmin/...），
+ * 面板手里的可能是 8.3 短名（C:\Users\RUNNER~1\...）或经过符号链接（macOS 的 /var → /private/var）；
+ * 不解析的话在用的工作区会被当成「注册表外的残留」整个删掉（Windows CI 上清扫用例就是这样挂的）。
+ * 目录不在了 / 读不出来时退回原路径
+ */
+const realNorm = async (p: string) => normPath(await realpath(p).catch(() => p))
+
 /** 目录所在主仓库的 .git 目录；不是 git 工作目录时返回空 */
 async function commonGitDir(dir: string): Promise<string> {
   // --path-format=absolute 是 git 2.31 起的；旧版退回相对路径自己拼
@@ -980,10 +989,28 @@ async function commonGitDir(dir: string): Promise<string> {
   return out ? path.resolve(dir, out) : ''
 }
 
+/**
+ * 独立目录的 .git 是不是确实断了：返回残留原因，没断（或判断不了）返回空串。
+ * 只认两种：.git 文件里的 gitdir 指向的目录已经不在了；.git 根本不是 gitdir 链接也不是目录
+ */
+async function brokenGitLink(dir: string): Promise<string> {
+  const dotGit = path.join(dir, '.git')
+  const st = await lstat(dotGit).catch(() => null)
+  if (!st) return ''
+  if (st.isDirectory()) return ''
+  const text = await readFile(dotGit, 'utf8').catch(() => null)
+  if (text === null) return ''
+  const m = /^gitdir:\s*(.+)$/m.exec(text)
+  if (!m) return '.git 不是有效的 worktree 链接（测试或手动残留）'
+  const target = path.resolve(dir, m[1].trim())
+  const alive = await lstat(target).catch((e: NodeJS.ErrnoException) => (e.code === 'ENOENT' ? null : 'unknown'))
+  return alive === null ? '.git 指向的注册目录已经不在了（主仓库挪走或注册被清）' : ''
+}
+
 /** git 登记的工作区：路径 → 分支名（分离 HEAD 时为空）；读不出来时返回 null */
 async function worktreeRegistry(repo: string, common: string): Promise<Map<string, string> | null> {
   const r = await git(repo, 'worktree', 'list', '--porcelain')
-  if (r.code === 0) return parseRegistry(r.stdout)
+  if (r.code === 0) return realKeys(parseRegistry(r.stdout))
   // git 列不出来（.git/config 里的 core.worktree 指向别的平台路径、某条注册坏掉）时：
   // 直接读 .git/worktrees 下的注册文件，免得把整个仓的目录都当成「不在注册表里」误清
   const map = new Map<string, string>()
@@ -996,7 +1023,14 @@ async function worktreeRegistry(repo: string, common: string): Promise<Map<strin
     const branch = head.startsWith('ref: ') ? head.slice(5).replace(/^refs\/heads\//, '') : ''
     map.set(normPath(at.replace(/[\\/]\.git$/, '')), branch)
   }
-  return map.size ? map : null
+  return map.size ? realKeys(map) : null
+}
+
+/** 注册表的键也换成真实路径，和 realNorm(dir) 同一口径 */
+async function realKeys(map: Map<string, string>) {
+  const out = new Map<string, string>()
+  for (const [at, branch] of map) out.set(await realNorm(at), branch)
+  return out
 }
 
 /** 解析 git worktree list --porcelain 的输出 */
@@ -1088,9 +1122,21 @@ export async function sweepWorktrees(opts: SweepOptions = {}): Promise<SweepResu
       return
     }
     const common = await commonGitDir(dir)
-    // 数据目录里的任务目录都是 git 工作目录：连 git 都不是的，是测试或手动留下的
+    // git 读不出来不等于残留：git 不在 PATH、超时、dubious ownership 时 rev-parse 也返回空。
+    // 只有 .git 指向的注册目录确实不在了，才当残留清；其余一律按在用保留，免得连未提交的改动一起删掉
     if (!common) {
-      await drop({ taskId, dir, branch: '', kind: 'orphan', reason: '不是 git 工作目录（测试或手动残留）' }, '')
+      const why = await brokenGitLink(dir)
+      if (!why) {
+        log.warn('worktree', '读不出独立目录的 git 信息，这次不清扫', { dir })
+        result.kept.push({ dir, taskId, why: '读不出 git 信息（git 不可用或出错），按在用处理' })
+        return
+      }
+      const info = opts.taskInfo ? await opts.taskInfo(taskId).catch(() => 'unreadable' as const) : undefined
+      if (info === 'unreadable' || info?.working) {
+        result.kept.push({ dir, taskId, why: info === 'unreadable' ? '读不到任务记录，按在用处理' : '任务还在执行' })
+        return
+      }
+      await drop({ taskId, dir, branch: '', kind: 'orphan', reason: why }, '')
       return
     }
     const owner = path.dirname(common)
@@ -1103,7 +1149,8 @@ export async function sweepWorktrees(opts: SweepOptions = {}): Promise<SweepResu
       result.kept.push({ dir, taskId, why: '读不出 git 注册表，按在用处理' })
       return
     }
-    if (!registry.has(normPath(dir))) {
+    const key = await realNorm(dir)
+    if (!registry.has(key)) {
       // 注册表外的残留：prune 之后目录还在（面板重启、手动清过注册）
       const st = await worktreeFacts(owner, dir, named, '')
       if (!st) {
@@ -1116,6 +1163,11 @@ export async function sweepWorktrees(opts: SweepOptions = {}): Promise<SweepResu
       }
       if (st.ahead > 0) {
         result.kept.push({ dir, taskId, why: `分支上还有 ${st.ahead} 个没合回原分支的提交` })
+        return
+      }
+      const live = opts.taskInfo ? await opts.taskInfo(taskId).catch(() => 'unreadable' as const) : undefined
+      if (live === 'unreadable' || live?.working) {
+        result.kept.push({ dir, taskId, why: live === 'unreadable' ? '读不到任务记录，按在用处理' : '任务还在执行' })
         return
       }
       await drop(
@@ -1139,7 +1191,7 @@ export async function sweepWorktrees(opts: SweepOptions = {}): Promise<SweepResu
       result.kept.push({ dir, taskId, why: '任务还在执行' })
       return
     }
-    const branch = registry.get(normPath(dir)) || named
+    const branch = registry.get(key) || named
     const st = await worktreeFacts(owner, dir, branch, info?.baseBranch ?? '')
     if (!st) {
       result.kept.push({ dir, taskId, why: '读不出 git 状态，按在用处理' })
@@ -1198,7 +1250,9 @@ export async function currentBranch(dir: string) {
 /** 独立目录里还没提交的改动提交到任务分支；没有改动返回 false */
 export async function commitWorktree(wt: TaskWorktree, message: string) {
   if (!existsSync(wt.path)) return false
-  await git(wt.path, 'add', '-A')
+  // add 失败（index.lock、权限、非法路径）时暂存区是空的，后面会被当成「没有改动」，合并却报成功
+  const add = await git(wt.path, 'add', '-A')
+  if (add.code !== 0) throw fail(add, t('暂存改动失败'))
   if ((await git(wt.path, 'diff', '--cached', '--quiet')).code === 0) return false
   const c = await git(wt.path, ...(await identity(wt.path)), 'commit', '-q', '-m', message)
   if (c.code !== 0) throw fail(c, t('提交改动失败'))
@@ -1220,6 +1274,8 @@ export async function trialMerge(target: string, branch: string) {
     return {
       ok: false as const,
       dirty,
+      // 挡路的具体文件：写给父对话时要点名（报错只留最后几行，文件一多就被截掉）
+      blockers: dirty ? overwrittenFiles(m.stderr + m.stdout) : [],
       error:
         (conflicts ? `冲突的文件：\n${conflicts}\n\n` : '') +
         (m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n'),
@@ -1230,16 +1286,29 @@ export async function trialMerge(target: string, branch: string) {
   return { ok: true as const, nothing: !pending, files: files ? files.split('\n') : [] }
 }
 
+/** git merge 拒绝时列出的「会被覆盖」的文件：已跟踪的未提交改动、未跟踪文件两段都认（每段下面一行一个、带缩进） */
+export function overwrittenFiles(out: string) {
+  const files: string[] = []
+  let on = false
+  for (const line of out.split('\n')) {
+    if (/would be overwritten by merge|会被合并覆盖/.test(line)) on = true
+    else if (on && /^\s+\S/.test(line)) files.push(line.trim())
+    else on = false
+  }
+  return [...new Set(files)]
+}
+
 /**
  * 合并前看一眼目标目录：有没做完的合并，或者暂存区里有别人的改动时不能合——
- * 合并提交会把暂存区一起带进去，撤回时也可能连带清掉。返回不能合的原因，能合时返回空字符串
+ * 合并提交会把暂存区一起带进去，撤回时也可能连带清掉。返回挡路的是什么，能合时返回 null；
+ * 说法由调用方按收件人写（见 worktree-integrate.ts）
  */
-export async function mergeBlocker(target: string) {
-  if ((await git(target, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).code === 0)
-    return '原目录里有一次没做完的合并（MERGE_HEAD 还在）'
-  const staged = (await git(target, '-c', 'core.quotepath=off', 'diff', '--cached', '--name-only')).stdout.trim()
-  if (staged) return `原目录的暂存区里有还没提交的改动：\n${staged.split('\n').slice(0, 20).join('\n')}`
-  return ''
+export async function mergeBlocker(
+  target: string,
+): Promise<{ kind: 'merge-head' } | { kind: 'staged'; files: string[] } | null> {
+  if ((await git(target, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).code === 0) return { kind: 'merge-head' }
+  const staged = (await git(target, 'diff', '--cached', '--name-only')).stdout.trim()
+  return staged ? { kind: 'staged', files: staged.split('\n') } : null
 }
 
 /** 试合并通过后提交 */

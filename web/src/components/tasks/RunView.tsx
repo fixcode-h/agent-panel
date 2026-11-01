@@ -75,15 +75,15 @@ export function RunView({
         {/* 标题是这次运行的名字，下面一行面包屑说明它在哪个子对话里；窄窗口下两行都截断，不挤掉右边的按钮 */}
         <span className="flex min-w-0 flex-1 flex-col justify-center">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate text-[0.875rem] font-medium">{title}</span>
+            <span className="min-w-0 truncate text-prose font-medium">{title}</span>
             {state === 'running' && (
-              <span className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-accent-text">
+              <span className="flex shrink-0 items-center gap-1 text-caption text-accent-text">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 {t('执行中')}
               </span>
             )}
           </span>
-          <span className="flex min-w-0 items-center gap-1 text-[0.6875rem] text-subtle">
+          <span className="flex min-w-0 items-center gap-1 text-caption text-subtle">
             <span className="min-w-0 truncate">{task.title}</span>
             <span className="shrink-0">›</span>
             <span className="shrink-0">{run > 0 ? t('第 {n} 次运行', { n: run }) : t('启动工作流')}</span>
@@ -118,9 +118,9 @@ export function RunView({
         // 没有运行可看（调用失败、还没开始执行）：把原因和这次的输出照原样留着，和运行窗口里一致
         <div className="min-h-0 flex-1 overflow-auto">
           <div className="mx-auto w-full max-w-(--content-w) px-4 py-5 md:px-6">
-            <p className="mb-2 text-[0.8125rem] text-subtle">{t('这次调用没有启动运行。')}</p>
+            <p className="mb-2 text-body text-subtle">{t('这次调用没有启动运行。')}</p>
             {output && (
-              <pre className="font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+              <pre className="font-mono text-footnote leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
                 {output}
               </pre>
             )}

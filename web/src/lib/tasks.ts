@@ -1,6 +1,6 @@
 import type { PeerKind, Task, TaskJob, TaskMessage, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL, topSteps } from '@shared/flow'
-import { getLang, t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { stepMs, timeAgo } from '@shared/task'
 import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/task-export'
@@ -405,6 +405,9 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     // 父对话收尾子对话：标题写子对话的名字（结果里有），点它打开那个子对话
     case 'finish_child':
       return as(t('收尾子对话'), quoted || firstLine(a.id), 'agent')
+    // 父对话终止子对话里 start_plan 跑着的工作流：子对话本身不停，点它打开那个子对话，展开看终止原因
+    case 'stop_workflow':
+      return as(t('终止子对话的工作流'), quoted || firstLine(a.id), 'agent', text(a.reason))
     case 'request_build':
       return as(t('申请编译'), firstLine(a.note), 'other', text(a.note))
     case 'list_peers':
@@ -443,6 +446,15 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(t('释放文件'), list(a.paths))
     case 'p4_split_changelists':
       return as(t('按类型分 changelist'), a.from ? `#${firstLine(a.from)}` : 'default', 'other', '')
+    // 把这个对话的改动 cherry-pick 到项目设的目标：标题写哪几个提交（短哈希）或哪个 changelist，展开看面板的核对结果
+    case 'cherry_pick': {
+      const commits = Array.isArray(a.commits) ? a.commits.map((c) => String(c).trim().slice(0, 8)).join(', ') : ''
+      const label = commits || (a.changelist ? `#${firstLine(a.changelist)}` : '')
+      return as(t('cherry-pick 改动'), label, 'other', tool.output || undefined)
+    }
+    // 请用户授权推送（项目设置「第一次需要推送时问一次」）：标题写分支，展开看用户的决定
+    case 'ask_push':
+      return as(t('请用户授权推送'), firstLine(a.branch), 'other', tool.output || undefined)
     case 'record_lesson':
       return as(a.id ? t('改写教训') : t('记下教训'), firstLine(a.title), 'other', text(a.rule))
     case 'project_lessons':
@@ -493,11 +505,12 @@ function waitSummary(tool: ToolUse, a: Record<string, unknown>) {
   return ids ? t('{n} 个', { n: ids }) : t('全部')
 }
 
-/** 新建子对话、交给子对话这两次调用指向哪个子对话：新建的 id 在工具输出的「（id: …）」里，交给的在参数里 */
+/** 新建、交给、收尾子对话和终止它的工作流这几次调用指向哪个子对话：新建的 id 在工具输出的「（id: …）」里，其余在参数里 */
 export function panelChildId(tool: ToolUse) {
   const name = panelName(tool)
   if (name === 'create_conversation') return /（id: ([^）\s]+)）/.exec(tool.output ?? '')?.[1] ?? ''
-  if (name === 'send_to_conversation' || name === 'finish_child') return firstLine(toolArgs(tool).id)
+  if (name === 'send_to_conversation' || name === 'finish_child' || name === 'stop_workflow')
+    return firstLine(toolArgs(tool).id)
   return ''
 }
 
@@ -544,7 +557,7 @@ export function stepDuration(
 export function fmtClock(iso: string) {
   if (!iso) return ''
   const d = new Date(iso)
-  const locale = getLang() === 'en' ? 'en-US' : 'zh-CN'
+  const locale = uiLocale()
   const time = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
   return d.toDateString() === new Date().toDateString()
     ? time

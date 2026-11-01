@@ -191,7 +191,11 @@
       "Command Code 非交互执行时，改文件和跑命令仍会被拦下，只能读代码和分析；要让它动手请选「跳过所有确认」": "In non-interactive mode, Command Code still blocks file edits and commands, so it can only read and analyze code. To let it make changes, choose \"Skip all confirmations\"",
       "可以改文件、执行任意命令，只在信任的项目里用": "Can edit files and run any command. Use only in trusted projects",
       "标准": "Standard",
-      "非交互执行时改文件和跑命令都会被拦下": "File edits and commands are blocked in non-interactive mode"
+      "非交互执行时改文件和跑命令都会被拦下": "File edits and commands are blocked in non-interactive mode",
+      "自动接受改文件": "Auto-accept edits",
+      "跳过所有确认": "Skip all confirmations",
+      "只读规划": "Read-only planning",
+      "只分析和出方案，不改文件": "Only analyzes and proposes a plan; does not edit files"
     }
   },
   "env": {

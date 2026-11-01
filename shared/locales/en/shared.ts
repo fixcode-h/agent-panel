@@ -7,28 +7,10 @@ export const EN_SHARED: Record<string, string> = {
   高: 'High',
   中: 'Medium',
   低: 'Low',
-  很高: 'Extra high',
-  最高: 'Max',
   '复杂任务、架构设计': 'Complex tasks, architecture design',
   日常开发: 'Everyday development',
   '简单改动、速度优先': 'Simple changes, speed first',
-  自动接受改文件: 'Auto-accept edits',
-  '可以直接读写文件；需要审批的命令会在任务页上请你确认':
-    'Reads and writes files directly; commands that need approval are confirmed on the task page',
-  跳过所有确认: 'Skip all confirmations',
-  '可以执行任意命令，只在信任的项目里用': 'Can run any command. Use only in trusted projects',
-  只读规划: 'Read-only planning',
-  '只分析和出方案，不改文件': 'Only analyzes and proposes a plan; does not edit files',
-  逐项确认: 'Confirm each action',
-  改文件和需要审批的命令都会在任务页上请你确认:
-    'File edits and commands that need approval are confirmed on the task page',
-  可写项目目录: 'Workspace write',
-  '沙箱内运行，可以改项目目录里的文件；需要越过沙箱时在任务页上请你确认':
-    'Runs in a sandbox and can edit files in the project directory; leaving the sandbox is confirmed on the task page',
   只读: 'Read-only',
-  只能读文件和跑只读命令: 'Can only read files and run read-only commands',
-  完全访问: 'Full access',
-  '不使用沙箱、不确认，只在信任的项目里用': 'No sandbox, no confirmations. Use only in trusted projects',
   '<任务描述>': '<task>',
 
   // data.ts：数据分类
@@ -88,6 +70,9 @@ export const EN_SHARED: Record<string, string> = {
   '（流程已删除）': '(Flow deleted)',
   '（工作流已删除）': '(Workflow deleted)',
   '节点 {n}': 'Node {n}',
+  '节点「{title}」出错：{error}': 'Node "{title}" failed: {error}',
+  '工作流里有环，这些节点互相等待、一直没能开始：{nodes}。请在流程图里断开其中一条连线':
+    'The workflow has a cycle; these nodes wait on each other and never started: {nodes}. Remove one of the connections in the flow chart',
   开始: 'Start',
   结束: 'End',
   执行: 'Run',
@@ -176,4 +161,10 @@ export const EN_SHARED: Record<string, string> = {
   '，范围：{scope}': ', scope: {scope}',
   自己: 'self',
   '（第 {n} 次，按最后一次算）': ' (attempt {n}, last one counts)',
+  '等用户回答：{title}': 'Waiting for the user to answer: {title}',
+  '等用户确认：{title}': 'Waiting for the user to approve: {title}',
+  '（共 {n} 项）': ' ({n} in total)',
+  '它的 {n} 个子对话等用户处理': '{n} of its sub-conversations are waiting for the user',
+  '它的子对话在等用户处理（确认请求或回答提问）':
+    'Its sub-conversation is waiting for the user (an approval or an answer)',
 }

@@ -18,17 +18,17 @@
 
 ## 事实核对
 
-| 位置                                                       | 现状                                                                                                                                                                                                                  |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shared/schema.ts` `AgentInput`                            | 角色字段都在这里（`canPlan` / `canDelegate` / `capSet` 等能力开关）；本次新增 `runIn`                                                                                                                                |
-| `shared/engine.ts` `spawn()`                               | 所有派子任务的唯一出口：角色校验、`submitMerge` 时禁派「版本控制」、评审交接单校验、`MAX_HELPERS_PER_STEP` 名额、计划步骤 `bindWait` 都在这里                                                                           |
-| `server/orch-mcp.ts` `case 'spawn_agents'`                 | 工具参数处理（顶层字段白名单、`resume` 只能配一个任务），最后调 `o.spawn(list, step)`；自己也直接给 `o.common` 列可选角色                                                                                             |
-| `shared/runner.ts` 的演示分支                               | 演示对话 / 演示节点也会调 `orch.spawn`，没有点名角色；行为不变                                                                                                                                                        |
-| `server/tasks.ts` `Live` / `host` 构造                     | `live` 里有正在跑的对话；`host` 由 `runRealTurn` 转给引擎。本次给 `Live` 加 `orch`、给 host 加 `forwardSpawn` / `onOrchestra`                                                                                          |
-| `shared/engine.ts` `runConversationTurn`                   | 每轮 `makeOrchestra` 一次（循环里可能多轮）；本次在**开始调对话 AI 前**回调 `host.onOrchestra(orch)`、调完回调 `undefined`——等子任务结果、跑计划、执行工作流节点都在同一轮里，那些阶段不算「能接活」                                 |
-| `shared/plan.ts` `bindWait` / `settleWait`                 | 派本地子任务时把点名的步骤挂成等待，结果回来才收口；本次新增 `finishStepNow`（立即标完成）                                                                                                                             |
-| `shared/builtin/core.ts` `syncCore` / `sameCore`           | 内置角色每次启动按定义同步，`...cur` 保留用户可改的字段；`upgradeParamDefaults` 做一次性默认值升级。本次 `runIn` 走「保留用户值 + 一次性升级」                                                                            |
-| `shared/builtin/agents.ts` `docsync`                      | 「文档」是必备角色（`CORE_AGENTS`），启动时自动装、默认 `common: true`                                                                                                                                                 |
+| 位置                                             | 现状                                                                                                                                                                                                 |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/schema.ts` `AgentInput`                  | 角色字段都在这里（`canPlan` / `canDelegate` / `capSet` 等能力开关）；本次新增 `runIn`                                                                                                                |
+| `shared/engine.ts` `spawn()`                     | 所有派子任务的唯一出口：角色校验、`submitMerge` 时禁派「版本控制」、评审交接单校验、`MAX_HELPERS_PER_STEP` 名额、计划步骤 `bindWait` 都在这里                                                        |
+| `server/orch-mcp.ts` `case 'spawn_agents'`       | 工具参数处理（顶层字段白名单、`resume` 只能配一个任务），最后调 `o.spawn(list, step)`；自己也直接给 `o.common` 列可选角色                                                                            |
+| `shared/runner.ts` 的演示分支                    | 演示对话 / 演示节点也会调 `orch.spawn`，没有点名角色；行为不变                                                                                                                                       |
+| `server/tasks.ts` `Live` / `host` 构造           | `live` 里有正在跑的对话；`host` 由 `runRealTurn` 转给引擎。本次给 `Live` 加 `orch`、给 host 加 `forwardSpawn` / `onOrchestra`                                                                        |
+| `shared/engine.ts` `runConversationTurn`         | 每轮 `makeOrchestra` 一次（循环里可能多轮）；本次在**开始调对话 AI 前**回调 `host.onOrchestra(orch)`、调完回调 `undefined`——等子任务结果、跑计划、执行工作流节点都在同一轮里，那些阶段不算「能接活」 |
+| `shared/plan.ts` `bindWait` / `settleWait`       | 派本地子任务时把点名的步骤挂成等待，结果回来才收口；本次新增 `finishStepNow`（立即标完成）                                                                                                           |
+| `shared/builtin/core.ts` `syncCore` / `sameCore` | 内置角色每次启动按定义同步，`...cur` 保留用户可改的字段；`upgradeParamDefaults` 做一次性默认值升级。本次 `runIn` 走「保留用户值 + 一次性升级」                                                       |
+| `shared/builtin/agents.ts` `docsync`             | 「文档」是必备角色（`CORE_AGENTS`），启动时自动装、默认 `common: true`                                                                                                                               |
 
 ## 决策
 
@@ -59,7 +59,7 @@
   - 「版本控制」在独立分支的子对话里本来就禁止派（面板的收尾走 `submit_merge`），改成 `parent` 会让子对话更容易误派，反而添乱；
   - 「测试验收」的重活已经有 ADR 0018 的「测试步骤在父对话执行」兜住，它自己不是长活；
   - 「评审」必须在子对话里看本地 diff、结论交回子对话，不能在父对话里跑。
-  用户自己可以给任意角色打开这个开关（包括内置角色），下一次 `spawn_agents` 立即生效。
+    用户自己可以给任意角色打开这个开关（包括内置角色），下一次 `spawn_agents` 立即生效。
 
 没选的做法：
 
@@ -75,20 +75,20 @@
 
 ## 操作清单 / 契约
 
-| 对象                                                         | 约定                                                                                                                                                                    |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AgentInput.runIn`                                           | `'any' \| 'parent'`，默认 `any`；`catch('any')` 兜住旧数据和写坏的值                                                                                                    |
-| UI（`AgentDetail.tsx`）                                      | 复选框「禁止子对话执行」，说明写清只对子对话生效、转发后步骤立即完成；内置角色也能改                                                                                    |
-| `syncCore` / `sameCore`                                      | `runIn` 不在内置定义覆盖的字段里（`runIn: cur.runIn` 保留用户值），`sameCore` 把它算进比较                                                                                |
-| `upgradeRunIn(a, key)`                                       | 已装副本的一次性升级：`docsync` 从 `any` 改成 `parent`，升级记录写进 `AgentInput.upgrades`（id `docsync.run-in-parent`）；之后用户改回 `any` 不会被再改回来               |
-| `EngineHost.forwardSpawn(spec)`                              | 同步返回 `{ ok, info, id? }`：排队也算交出去了；接不了返回 `ok: false` + 原因。**不能改成异步**：`Orchestra.spawn` 是同步的（工具层、演示分支、测试都在同步用）           |
-| `Orchestra.spawn(tasks, step?, opts?)`                       | 新增 `opts.local`：这批就是给这个对话本地执行的，不再按 `runIn` 转发（父对话派出转交来的任务时用，避免转一圈又回来）                                                    |
-| `EngineHost.onOrchestra(orch \| undefined)`                  | 每次开始调对话 AI / 调完时回调（不是「每轮建立 Orchestra 时」）；服务端据此只在 AI 正在处理时直接派，在下一轮开始调 AI 时消费队列                                       |
-| `server/task-store.ts` `known(id)`                           | 同步读内存里的任务（正在跑的、读过的、启动时加载过摘要的），给必须同步判断的 `forwardSpawn` 用；不读盘、不改返回对象                                                     |
-| `shared/plan.ts` `finishStepNow(task, stepId, note)`         | 立即把一步标完成（找不到 / 已完成时不改计划，返回原因），供转交成功后收口                                                                                                |
-| `server/tasks.ts` `forwardSpawn` / `attachOrchestra`         | 父对话判定、直接派 / 排队、`wakeConv`、系统消息、父对话那一侧的失败说明                                                                                                 |
-| 系统消息                                                     | 父对话：`子对话「X」请求创建子任务「Y」（角色：Z）。这个角色禁止子对话执行，面板已经替你派出，结果会交回你，不用再调 spawn_agents。` + 要求原文（**只写一处**，排队唤醒时另发一句不含请求正文的短提示）；派出失败时补一条 `上面那条没能派出：<原因>。这件子任务需要另外安排`，明确更正上一条；子对话：「已转交父对话创建「Y」（id: …）」 |
-| `spawn_agents` 说明                                          | `agent` 字段在子对话里补一句「点名这类角色时不会在这里跑，会转交父对话创建，点名的步骤立即完成，不用等它的结果」                                                         |
+| 对象                                                 | 约定                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AgentInput.runIn`                                   | `'any' \| 'parent'`，默认 `any`；`catch('any')` 兜住旧数据和写坏的值                                                                                                                                                                                                                                                                     |
+| UI（`AgentDetail.tsx`）                              | 复选框「禁止子对话执行」，说明写清只对子对话生效、转发后步骤立即完成；内置角色也能改                                                                                                                                                                                                                                                     |
+| `syncCore` / `sameCore`                              | `runIn` 不在内置定义覆盖的字段里（`runIn: cur.runIn` 保留用户值），`sameCore` 把它算进比较                                                                                                                                                                                                                                               |
+| `upgradeRunIn(a, key)`                               | 已装副本的一次性升级：`docsync` 从 `any` 改成 `parent`，升级记录写进 `AgentInput.upgrades`（id `docsync.run-in-parent`）；之后用户改回 `any` 不会被再改回来                                                                                                                                                                              |
+| `EngineHost.forwardSpawn(spec)`                      | 同步返回 `{ ok, info, id? }`：排队也算交出去了；接不了返回 `ok: false` + 原因。**不能改成异步**：`Orchestra.spawn` 是同步的（工具层、演示分支、测试都在同步用）                                                                                                                                                                          |
+| `Orchestra.spawn(tasks, step?, opts?)`               | 新增 `opts.local`：这批就是给这个对话本地执行的，不再按 `runIn` 转发（父对话派出转交来的任务时用，避免转一圈又回来）                                                                                                                                                                                                                     |
+| `EngineHost.onOrchestra(orch \| undefined)`          | 每次开始调对话 AI / 调完时回调（不是「每轮建立 Orchestra 时」）；服务端据此只在 AI 正在处理时直接派，在下一轮开始调 AI 时消费队列                                                                                                                                                                                                        |
+| `server/task-store.ts` `known(id)`                   | 同步读内存里的任务（正在跑的、读过的、启动时加载过摘要的），给必须同步判断的 `forwardSpawn` 用；不读盘、不改返回对象                                                                                                                                                                                                                     |
+| `shared/plan.ts` `finishStepNow(task, stepId, note)` | 立即把一步标完成（找不到 / 已完成时不改计划，返回原因），供转交成功后收口                                                                                                                                                                                                                                                                |
+| `server/tasks.ts` `forwardSpawn` / `attachOrchestra` | 父对话判定、直接派 / 排队、`wakeConv`、系统消息、父对话那一侧的失败说明                                                                                                                                                                                                                                                                  |
+| 系统消息                                             | 父对话：`子对话「X」请求创建子任务「Y」（角色：Z）。这个角色禁止子对话执行，面板已经替你派出，结果会交回你，不用再调 spawn_agents。` + 要求原文（**只写一处**，排队唤醒时另发一句不含请求正文的短提示）；派出失败时补一条 `上面那条没能派出：<原因>。这件子任务需要另外安排`，明确更正上一条；子对话：「已转交父对话创建「Y」（id: …）」 |
+| `spawn_agents` 说明                                  | `agent` 字段在子对话里补一句「点名这类角色时不会在这里跑，会转交父对话创建，点名的步骤立即完成，不用等它的结果」                                                                                                                                                                                                                         |
 
 ## 与现有实现的关系
 

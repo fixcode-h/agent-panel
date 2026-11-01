@@ -27,9 +27,7 @@ export function StepCommand({ argv, className, showText }: { argv: string[]; cla
         aria-label={t('查看启动命令')}
         className={cn(
           'shrink-0 cursor-pointer items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg',
-          showText
-            ? 'flex min-w-0 gap-1.5 px-1.5 py-0.5 font-mono text-[0.6875rem]'
-            : 'grid h-6 w-6 place-items-center',
+          showText ? 'flex min-w-0 gap-1.5 px-1.5 py-0.5 font-mono text-caption' : 'grid h-6 w-6 place-items-center',
           className,
         )}
       >

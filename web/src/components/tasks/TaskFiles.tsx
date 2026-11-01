@@ -219,16 +219,16 @@ export function TaskFiles({
         </section>
       )}
       {onModel && (
-        <Suspense fallback={<p className="p-4 text-[0.8125rem] text-subtle">{t('读取中…')}</p>}>
+        <Suspense fallback={<p className="p-4 text-body text-subtle">{t('读取中…')}</p>}>
           <ModelPreview taskId={task.id} running={task.working} />
         </Suspense>
       )}
       {!onChild && !onModel && (
         <>
           {/* 项目信息行：分支 · 改动数；行尾是这一页的工具（查找、显示方式）和刷新 */}
-          <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-[0.75rem] text-subtle">
+          <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-footnote text-subtle">
             <GitBranch className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={2.2} />
-            <span className="min-w-0 truncate font-mono text-[0.71875rem] text-muted" title={files.info?.dir ?? dir}>
+            <span className="min-w-0 truncate font-mono text-footnote text-muted" title={files.info?.dir ?? dir}>
               {files.info?.branch ?? t('没有分支')}
             </span>
             <span aria-hidden>·</span>
@@ -268,7 +268,7 @@ export function TaskFiles({
                 onSearchOpenChange={setSearchOpen}
               />
               {/* 文件在中间的查看窗口里打开，右栏只放树；提示一行，免得以为点了没反应 */}
-              <p className="shrink-0 px-4 pt-2.5 pb-3 text-center text-[0.71875rem] text-subtle/80">
+              <p className="shrink-0 px-4 pt-2.5 pb-3 text-center text-footnote text-subtle/80">
                 {t('点文件在中间查看')}
               </p>
             </>
@@ -384,21 +384,21 @@ function ChangesList({
                 >
                   <span
                     className={cn(
-                      'grid h-[1.125rem] w-[1.125rem] shrink-0 place-items-center rounded-[5px] bg-field font-mono text-[0.6875rem] font-bold',
+                      'grid h-[1.125rem] w-[1.125rem] shrink-0 place-items-center rounded-sm bg-field font-mono text-caption font-bold',
                       MARK_TONE[m],
                     )}
                   >
                     {m}
                   </span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem]">{c.path}</span>
-                  {c.add > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-success">+{c.add}</span>}
-                  {c.del > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-danger">−{c.del}</span>}
+                  <span className="min-w-0 flex-1 truncate font-mono text-footnote">{c.path}</span>
+                  {c.add > 0 && <span className="shrink-0 font-mono text-caption text-success">+{c.add}</span>}
+                  {c.del > 0 && <span className="shrink-0 font-mono text-caption text-danger">−{c.del}</span>}
                 </button>
               )
             })}
           </div>
         ) : (
-          <p className="mx-2 my-3 rounded-xl border border-dashed border-line-strong p-6 text-center text-[0.8125rem] text-subtle">
+          <p className="mx-2 my-3 rounded-xl border border-dashed border-line-strong p-6 text-center text-body text-subtle">
             {scoped ? t('这个节点没有改动文件。') : t('还没有改动文件。')}
           </p>
         )}

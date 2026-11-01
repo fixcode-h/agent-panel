@@ -590,7 +590,6 @@ export const EN_SETTINGS: Record<string, string> = {
   没有说明: 'No description',
   '还没有{kind}': 'No {kind} yet',
   命令文件: 'Command file',
-  打开这一份: 'Open this copy',
   文件结构: 'Files',
   '另有 {n} 个文件': '{n} more files',
   在这里新建文件: 'New file here',
@@ -626,8 +625,6 @@ export const EN_SETTINGS: Record<string, string> = {
   覆盖: 'Overwrite',
   装在: 'Installed in',
   内容: 'Content',
-  '复制给别的 Agent': 'Copy to other agents',
-  先保存修改再复制: 'Save your changes before copying',
   '只删 {cli} 里的这一份，文件会从磁盘上删掉，不能撤销。':
     "Only the copy in {cli} is deleted. The file is removed from disk and can't be restored.",
   'MCP 工具让 Agent 能连上外部的服务和数据（文档、数据库、浏览器…）。这里直接读写各个 Agent 自己的配置文件，装在哪个 Agent 里由右边的开关决定；用 Agent 自己的命令装的也会列出来。':
@@ -663,13 +660,10 @@ export const EN_SETTINGS: Record<string, string> = {
     'A Skill for writing technical design docs, with background, option comparison, risks and schedule',
   没有变化: 'No change',
   'AI 创建 Skill': 'Create Skill with AI',
-  '自带 Skill（{n} 个可更新）': 'Bundled skills ({n} to update)',
   '还没有，点右上角的 ＋ 新建。': 'Nothing yet — click ＋ at the top right.',
   '还没有自带 Skill。': 'No bundled skills yet.',
   '，所有 Agent 共用': ', shared by all agents',
   '（所有 Agent 共用）': ' (shared by all agents)',
-  '自带技能的内容由面板随版本提供，不能在这里编辑；修改请复制一份放到自己的技能目录里。':
-    'Bundled skills ship with the panel and cannot be edited here. To customize one, copy it into your own skills directory.',
   '这个技能还有一份部署在「设置 → 部署」，那份要覆盖部署一次才会更新。':
     'This skill is also deployed from Settings → Deploy; redeploy there to update that copy.',
   '在左边的文件树里点一个文件，看它的内容。': 'Click a file in the tree to see its contents.',
@@ -731,8 +725,8 @@ export const EN_SETTINGS: Record<string, string> = {
   全不选: 'Select none',
   已部署: 'Deployed',
   覆盖本机改过的技能: 'Overwrite locally changed skills',
-  '不勾时保留本机的版本；面板更新后要勾上才能换成新版本':
-    'When unchecked, the local versions are kept; check it after a panel update to switch to the new versions',
+  '默认换成这一版自带的；不勾时保留本机改过的版本':
+    'Replaced with the bundled version by default; uncheck to keep your locally changed versions',
   部署: 'Deploy',
   // AI 处理报错
   'AI 处理': 'Handle with AI',
@@ -779,6 +773,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 Agent 联网查上下文窗口、最大输出、默认和可选的思考强度。':
     'For models missing from the catalog, click “AI fill in” next to the tiers. It uses the agent set under “Create with AI” to look up the context window, max output, and default/available reasoning efforts online.',
   补充目录: 'Supplement file',
+  '上下文低于 {min}：Agent 模式光系统提示词和工具定义就约 44K，一次读几个大文件就可能刚压缩完又满（压缩抖动），这一轮会失败。':
+    'Context is below {min}: in Agent mode the system prompt and tool definitions alone take about 44K, so reading a few large files at once can refill the context right after compaction (autocompact thrashing) and fail the turn.',
   '模型配置里没有 {model}，按 {context} / {maxOutput} 估算':
     '{model} isn’t in the model catalog; estimating {context} / {maxOutput}',
   'AI 补全': 'AI fill in',
@@ -977,8 +973,6 @@ export const EN_SETTINGS: Record<string, string> = {
   记下: 'Save',
   '{n} 条': '{n}',
   项目教训: 'Project lessons',
-  '记成项目教训：以后这个项目里的角色都会照着做':
-    'Save as project lesson: roles in this project will follow it from now on',
   规则不能为空: 'Rule cannot be empty',
   '项目教训已经有 {n} 条，先在项目设置里合并同类项再记':
     'There are already {n} project lessons; merge similar ones in project settings first',
@@ -993,13 +987,16 @@ export const EN_SETTINGS: Record<string, string> = {
   可以用: 'Ready',
   包的来源: 'Package source',
   全部更新: 'Update all',
-  还没有装扩展包: 'No packages installed',
-  已装的扩展包: 'Installed packages',
+  还没有装插件: 'No plugins installed',
+  已装的插件: 'Installed plugins',
+  '已装 {n} 个': '{n} installed',
+  推荐的插件: 'Recommended plugins',
+  '安装 {name}': 'Install {name}',
   '更新 {name}': 'Update {name}',
   '卸载 {name}': 'Uninstall {name}',
-  扩展包: 'Packages',
-  '包里可以有扩展、Skill、提示词模板和主题，装在 {file} 里。扩展会在本机执行代码，只装信得过的来源':
-    'Packages can bundle extensions, Skills, prompt templates and themes, and are recorded in {file}. Extensions run code on this machine, so only install sources you trust',
+  插件管理: 'Plugins',
+  '插件（扩展包）里可以有工具、Skill、提示词模板和主题，装在 {file} 里，装完下一轮对话生效。插件会在本机执行代码，只装信得过的来源':
+    'Plugins (packages) can bundle tools, Skills, prompt templates and themes, and are recorded in {file}. They take effect from the next chat turn. Plugins run code on this machine, so only install sources you trust',
   // 项目教训、全局教训
   '已选 {n} 条，可以继续对话让它改': '{n} selected. Keep chatting to have it revise them',
   把这个项目里换个项目也适用的教训提取出来:
@@ -1231,6 +1228,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。':
     '{n} skills differ from this version: {names}. Check "Overwrite locally changed skills" below, then click Deploy to update.',
   勾选覆盖: 'Check overwrite',
+  '{n} 个技能和这一版自带的不同：{names}。点「部署」即可更新。':
+    '{n} skills differ from this version: {names}. Click Deploy to update.',
   '和自带的不同，可更新': 'Differs from bundled, update available',
   '全部推荐都已和当前设置一致，点「确认」保存': 'All recommendations match the current settings; click Confirm to save',
   没有需要调整的设置: 'No settings need changing',
@@ -1704,21 +1703,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '还没下载，在下面的列表里下载': 'Not downloaded yet; download one from the list below',
   '模型从 hf-mirror.com 下载，识别库从 npmmirror 下载。':
     'Models download from hf-mirror.com, the recognizer from npmmirror.',
-  '留空用默认地址 {url}': 'Leave empty to use {url}',
-  填自己实例的主机地址: "Your instance's host address",
-  '也可以填自己的网关或代理。': 'You can also enter your own gateway or proxy.',
-  '公共实例一般不开放 JSON 接口。只填主机就行（例如 https://searxng.example.com），/search 路径会自动补上。':
-    "Public instances usually don't expose the JSON API. Just the host is enough (e.g. https://searxng.example.com); /search is added automatically.",
-  搜索服务: 'Search service',
-  服务: 'Service',
-  这个服务要填密钥: 'This service needs a key',
-  不用密钥: 'No key needed',
-  'Claude Code、Codex、Command Code 用它们自带的搜索，不走这里。默认是 DeepSeek 官方搜索，要填 DeepSeek 的 API key 才能用，没填时搜索会直接报错，不会换成别的源。也可以换成自建的 SearXNG，或 Brave、Tavily。':
-    "Claude Code, Codex and Command Code use their own search and don't go through here. The default is DeepSeek's official search, which needs a DeepSeek API key; without one, searches fail with an error and never fall back to another source. You can also use a self-hosted SearXNG, or Brave or Tavily.",
-  '只存在本机，模型拿不到': "Stored only on this computer; models can't read it",
-  自定义地址: 'Custom URL',
-  '模型要用 web_search / web_fetch，还要在对应 Agent 的设置里打开「联网搜索」开关（默认关闭）。':
-    "For models to use web_search / web_fetch, also turn on “Web search” in that agent's settings (off by default).",
   高级: 'Advanced',
   切换后页面会重新加载: 'The page reloads after switching',
   对话和任务列表的最大宽度: 'Max width of chats and task lists',
@@ -1819,4 +1803,47 @@ export const EN_SETTINGS: Record<string, string> = {
   加进创建角色的提示词: 'Added to the prompt when creating roles',
   工作流规则: 'Workflow rules',
   加进创建工作流的提示词: 'Added to the prompt when creating workflows',
+  '读取 web/src/cart.ts 第 1 到 48 行': 'Read web/src/cart.ts lines 1–48',
+  深色文字亮度: 'Dark text brightness',
+  深色主题下主文字有多白: 'How bright primary text is in dark theme',
+  '默认 80%；100% 是纯白，调低更柔和。加粗、表头这类强调字跟着一起调，固定比正文亮一些好区分。浅色主题不受影响。':
+    'Default 80%; 100% is pure white, lower is softer. Bold text and table headers follow along, staying a bit brighter than body text so they stand out. Light themes are unaffected.',
+  // 角色页、技能页重排（2026-10-31）
+  'Agent 不可用': 'Agent unavailable',
+  设定: 'Setup',
+  '名称、角色设定、能力和 Skill 由面板维护并随版本更新，参数和运行环境在「运行」页改。':
+    'The name, instructions, capabilities and skills are maintained by the panel and updated with each release. Change parameters and runtime on the “Run” tab.',
+  '想改设定就在「⋯」里复制一份。': ' To change the instructions, duplicate it from the “⋯” menu.',
+  '还没有参数，先在「运行」页里添加': 'No parameters yet. Add some on the “Run” tab',
+  '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「运行」页的参数里添加，或者改成已有的参数名。':
+    'The instructions reference parameters that don’t exist: {list}. They’ll be left as-is in the prompt. Add them under Parameters on the “Run” tab, or use an existing parameter name.',
+  '随面板版本提供，只读；要改请复制一份到自己的技能目录':
+    'Ships with the panel and is read-only; copy it into your own skills folder to change it',
+  '先保存修改再装到别的 Agent': 'Save your changes before installing to another agent',
+  '删除 {cli} 里的这一份': 'Delete the copy in {cli}',
+  '关掉会删除 {cli} 里的这一份': 'Turning this off deletes the copy in {cli}',
+  '打开会复制一份到 {cli}': 'Turning this on copies it to {cli}',
+  '删除 {cli} 里的「{name}」？': 'Delete “{name}” from {cli}?',
+  '这是最后一份，删掉后所有 Agent 都用不了它，文件会从磁盘上删掉，不能撤销。':
+    'This is the last copy. After deleting it no agent can use it. The files are removed from disk and this can’t be undone.',
+  '保存（Ctrl / ⌘ + S）': 'Save (Ctrl / ⌘ + S)',
+  '我的 Skill': 'My skills',
+  '装在 {cli}': 'Installed in {cli}',
+  '项目配置和它的所有对话一起放进回收站，{days} 天内可以在「设置 → 数据」里恢复；不会动本地目录里的文件。':
+    'The project settings and all its conversations go to the recycle bin and can be restored from Settings → Data within {days} days. Files in the local folder are not touched.',
+  '已恢复「{name}」和它的 {n} 个对话': 'Restored "{name}" and its {n} conversations',
+  '已恢复「{name}」': 'Restored "{name}"',
+  '已永久删除「{name}」': 'Permanently deleted "{name}"',
+  '删除的角色、工作流和项目': 'Deleted roles, workflows and projects',
+  '{days} 天内可以恢复；恢复项目时它的对话一起回来。':
+    'Can be restored within {days} days; restoring a project also brings back its conversations.',
+  ' · 含 {n} 个对话': ' · {n} conversations',
+  '结束了 {n} 个，{m} 个没能结束：{why}': 'Ended {n}; {m} could not be ended: {why}',
+  '已结束 {n} 个残留进程': 'Ended {n} leftover processes',
+  残留进程: 'Leftover processes',
+  重新检查: 'Check again',
+  全部结束: 'End all',
+  '没有残留进程：所有对话的 CLI 都在跑或已经结束。':
+    "No leftover processes: every conversation's CLI is either running or has exited.",
+  '（不属于任何对话）': '(not part of any conversation)',
 }

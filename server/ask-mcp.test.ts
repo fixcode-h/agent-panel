@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { askMcpApi, openAskBridge, toQuestions } from './ask-mcp.ts'
+import { readFile } from 'node:fs/promises'
+import { askMcpApi, openAskBridge, orchCore, toQuestions } from './ask-mcp.ts'
+import { ORCH_CORE_TOOLS } from '../shared/panel-tools.ts'
 import type { Orchestra } from '../shared/engine.ts'
 
 /** 直接调面板的 MCP 接口，返回这一条 JSON-RPC 的结果 */
@@ -10,7 +12,8 @@ async function rpc(token: string, msg: unknown) {
     body: JSON.stringify(msg),
     headers: { 'content-type': 'application/json' },
   })
-  return res.json()
+  // 服务端只带 Node 类型，Response.json() 是 unknown（DOM 里是 any）；测试按接口约定直接读字段，放宽成 any
+  return res.json() as Promise<any>
 }
 const tokenOf = (url: string) => new URL(url).pathname.split('/').pop()!
 
@@ -148,16 +151,33 @@ test('等下一句：用户离开时返回明确的结束说明', async () => {
   s.close()
 })
 
-test('握手告诉桥接扩展这一轮有没有编排工具：压缩轮、审查轮只挂提问工具时是 false', async () => {
+test('握手告诉桥接扩展这一轮有没有编排工具：压缩轮、审查轮只挂提问工具、Chat 模式时是 false', async () => {
   // 扩展靠这个标志决定要不要核对核心工具：没说清楚时它只能按服务名猜，压缩轮会被报成工具清单不完整
   const hello = (s: ReturnType<typeof openAskBridge>) =>
     rpc(tokenOf(s.url), { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } })
   const ask = openAskBridge({ ask: () => {} })
   assert.equal((await hello(ask)).result.capabilities.experimental.orchestration.enabled, false)
   ask.close()
-  const orch = openAskBridge({ orch: { self: 'a', hasMain: false, common: [] } as unknown as Orchestra })
+  const orch = openAskBridge({ orch: { self: 'a', hasMain: false, common: [], team: true } as unknown as Orchestra })
   assert.equal((await hello(orch)).result.capabilities.experimental.orchestration.enabled, true)
   orch.close()
+  // Chat 模式（ADR 0038）只挂后台命令，没有 get_status 这些核心工具：声明成有的话 Pi 报「工具清单不完整」（186443c 回归）
+  const chat = openAskBridge({
+    orch: { self: '@chat', hasMain: false, common: [], canBackground: true } as unknown as Orchestra,
+  })
+  assert.equal((await hello(chat)).result.capabilities.experimental.orchestration.enabled, false)
+  chat.close()
+  // 按清单现算、不认身份：三件缺一件就是 false
+  assert.equal(orchCore([{ name: 'get_status' }]), false)
+  assert.equal(orchCore(ORCH_CORE_TOOLS.map((name) => ({ name }))), true)
+  // Pi 桥接扩展核对的 CORE_TOOLS（shared/clis/pi.json 的扩展模板）必须和面板的 ORCH_CORE_TOOLS 一致
+  const pi = await readFile(new URL('../shared/clis/pi.json', import.meta.url), 'utf8')
+  const m = /const CORE_TOOLS = \[([^\]]*)\]/.exec(pi)
+  assert.ok(m, 'pi.json 的扩展模板里找不到 CORE_TOOLS')
+  assert.deepEqual(
+    [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]),
+    [...ORCH_CORE_TOOLS],
+  )
 })
 
 test('执行中补充的通道：没有新补充时说清楚，通道关掉后失效', async () => {

@@ -165,6 +165,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (box && (await tooltip.count())) {
         // 直接点触发元素自己的位置：浮层如果吃指针事件，点到的就是浮层
         await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+        // 项目设置弹窗是第一次打开时才加载的（App.tsx 里 lazy）：等它出来，不能只等一次渲染
+        await p
+          .getByRole('dialog')
+          .first()
+          .waitFor({ timeout: 5000 })
+          .catch(() => {})
         await settle(p)
         if (!(await p.getByRole('dialog').count()))
           errors.push('提示-不吃点击：浮层挡住时点按钮没反应（浮层拦截了鼠标事件）')
@@ -285,8 +291,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .first()
         .click()
         .catch(() => errors.push('提示-弹窗内对齐：打不开项目设置'))
-      await settle(p)
+      // 项目设置弹窗第一次打开时才加载：等弹窗里的内容出来
       const help = p.getByRole('img', { name: '说明' }).first()
+      await help.waitFor({ timeout: 5000 }).catch(() => {})
+      await settle(p)
       if (!(await help.count())) errors.push('提示-弹窗内对齐：弹窗里没有帮助问号')
       else {
         await help.scrollIntoViewIfNeeded()
@@ -368,6 +376,44 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       const n = await tooltip.count()
       if (n > 1) errors.push(`提示-同屏：同时出现了 ${n} 个提示浮层`)
       await check(p, '提示-同屏只有一个')
+    }
+
+    // 滚动时悬停提示要关掉：滚轮滚动没有 pointermove，指针已不在元素上，浮层不能挂着（原生 title 一滚就没）。
+    // 别的容器滚动（另一栏对话自动往下滚）不能把这边的提示关掉。
+    {
+      await moveAway()
+      await p.evaluate(() => {
+        const box = (id, top) => {
+          const el = document.createElement('div')
+          el.id = id
+          el.style.cssText = `position:fixed;left:600px;top:${top}px;width:240px;height:160px;overflow:auto;z-index:60;background:var(--bg)`
+          el.innerHTML = `<button title="${id}-提示" style="margin:40px">${id}</button><div style="height:1200px"></div>`
+          document.body.append(el)
+        }
+        box('hint-scroll-a', 120)
+        box('hint-scroll-b', 320)
+      })
+      const target = p.locator('#hint-scroll-a button')
+      // 别处的容器滚了：提示还在
+      await hoverCenter(target)
+      await tooltip
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('提示-滚动：滚动用例里的按钮悬停没出提示'))
+      await p.evaluate(() => (document.getElementById('hint-scroll-b').scrollTop = 200))
+      await p.waitForTimeout(300)
+      if (!(await tooltip.count())) errors.push('提示-滚动：别的容器滚动也把这边的提示关掉了')
+      // 指针所在的容器滚了：提示关掉
+      await p.mouse.wheel(0, 300)
+      await tooltip
+        .first()
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => errors.push('提示-滚动：滚动外层容器后悬停提示没有消失'))
+      await check(p, '提示-滚动后关闭')
+      await p.evaluate(() => {
+        document.getElementById('hint-scroll-a')?.remove()
+        document.getElementById('hint-scroll-b')?.remove()
+      })
     }
   }
 
@@ -1048,6 +1094,47 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await card
         .waitFor({ state: 'detached', timeout: 3000 })
         .catch(() => errors.push('轮次导航：鼠标移开后预览没收起'))
+    }
+  }
+
+  // ---- 面板重启后首页问要不要全部继续（实测报告问题 18）----
+  // 演示不会真的重启：把一条顶层对话、一条子对话改成「面板重启时中断」，首页只列顶层那条（子对话由父对话继续时连带拉起）
+  {
+    const p = await page({ width: 1440, height: 900 })
+    await p.goto(base + '#/')
+    await settle(p)
+    const made = await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      const list = db.tasks ?? []
+      const top = list.find((x) => !x.parentTaskId && x.mode === 'chat' && !x.archived && !x.deletedAt)
+      const kid = list.find((x) => x.parentTaskId)
+      if (!top) return null
+      for (const x of [top, kid].filter(Boolean))
+        Object.assign(x, { status: 'stopped', stopReason: 'restart', resolved: false })
+      localStorage.setItem(k, JSON.stringify(db))
+      return { title: top.title, kid: kid?.title ?? '' }
+    }, KEY)
+    if (!made) errors.push('重启后继续：演示数据里找不到顶层对话')
+    else {
+      await p.reload()
+      const bar = p.getByRole('region', { name: '被面板重启打断的对话' })
+      // 名单是页面加载后另取的（演示后端还带固定延迟），机器忙时会超过 check 默认等的 5 秒
+      await bar.waitFor({ timeout: 15000 }).catch(() => errors.push('重启后继续：首页没有出现提示'))
+      await check(p, '首页-重启后全部继续', ['上次面板关闭时有 1 个对话在运行，已经中断', '全部继续', '逐个看'])
+      await bar.getByRole('button', { name: '逐个看', exact: true }).click()
+      await check(p, '首页-重启后逐个看', [made.title])
+      if (made.kid && made.kid !== made.title && (await bar.getByText(made.kid, { exact: true }).count()))
+        errors.push('重启后继续：子对话不该出现在首页的名单里')
+      await bar.getByRole('button', { name: '全部继续', exact: true }).click()
+      await p
+        .getByText('已继续 1 个对话')
+        .first()
+        .waitFor({ timeout: 8000 })
+        .catch(() => errors.push('重启后继续：点「全部继续」后没有提示继续了几个'))
+      await bar
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('重启后继续：全部继续后提示没收起'))
+      await check(p, '首页-全部继续之后')
     }
   }
 })

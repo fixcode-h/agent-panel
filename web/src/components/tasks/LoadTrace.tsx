@@ -136,14 +136,14 @@ export function LoadTrace({
     >
       <div
         className={cn(
-          'w-full max-w-[520px] rounded-xl border border-line/70 bg-panel/85 px-4 py-3 font-mono text-[0.75rem] leading-5 shadow-card transition-opacity',
+          'w-full max-w-[520px] rounded-xl border border-line/70 bg-panel/85 px-4 py-3 font-mono text-footnote leading-5 shadow-card transition-opacity',
           // 失败时卡片上有「关闭」按钮，这一块要能点；其他时候不拦鼠标
           overlay && failed && 'pointer-events-auto',
           shown ? 'opacity-100 duration-150' : 'opacity-0 duration-200',
         )}
       >
         <div className="mb-1.5 flex items-center justify-between gap-2">
-          <span className={cn('text-[0.6875rem] tracking-wide', failed ? 'text-danger' : 'text-subtle')}>
+          <span className={cn('text-caption tracking-wide', failed ? 'text-danger' : 'text-subtle')}>
             {failed ? t('加载失败') : t('加载对话')}
           </span>
           {/* 失败时不自动淡出，给一个手动关的出口，关掉后下面的对话照常操作 */}
@@ -152,7 +152,7 @@ export function LoadTrace({
               type="button"
               onClick={() => setShown(false)}
               aria-label={t('关闭')}
-              className="shrink-0 rounded p-0.5 text-subtle transition-colors hover:bg-sel hover:text-fg"
+              className="shrink-0 rounded-sm p-0.5 text-subtle transition-colors hover:bg-sel hover:text-fg"
             >
               <X className="h-3 w-3" />
             </button>
@@ -214,12 +214,12 @@ export function LoadTracePill({ steps }: { steps: TraceStep[] }) {
           // 宽度按视口算：挂靠的是状态栏里的一小块，按父元素百分比会太窄
           <ComposerPopover role="dialog" aria-label={t('加载日志')} width="min(420px, calc(100vw - 2rem))">
             <div className="flex items-center gap-2 border-b px-3 py-2">
-              <span className="text-[0.8125rem] font-medium">{t('加载日志')}</span>
+              <span className="text-body font-medium">{t('加载日志')}</span>
               <span className="text-xs text-subtle">{t('后台步骤')}</span>
               <IconButton size="2xs" icon={X} label={t('关闭')} onClick={() => setOpen(false)} className="ml-auto" />
             </div>
             {/* 五步都列出来：哪几步结束了、哪几步还在后台，一眼看全 */}
-            <ul className="flex flex-col gap-0.5 px-3 py-2 font-mono text-[0.75rem] leading-5">
+            <ul className="flex flex-col gap-0.5 px-3 py-2 font-mono text-footnote leading-5">
               {steps.map((step, i) => (
                 <TraceLine key={step.id} step={step} now={now} delayMs={i * ROW_FADE_STEP_MS} />
               ))}
@@ -280,9 +280,9 @@ function TraceLine({ step, now, delayMs }: { step: TraceStep; now: number; delay
             {time ? `${state} · ${time}` : state}
           </span>
         </div>
-        {step.detail && <div className="text-[0.6875rem] break-words text-subtle">{step.detail}</div>}
+        {step.detail && <div className="text-caption break-words text-subtle">{step.detail}</div>}
         {/* 错误原文照原样显示，不吞掉 */}
-        {step.error && <div className="text-[0.6875rem] break-words whitespace-pre-wrap text-danger">{step.error}</div>}
+        {step.error && <div className="text-caption break-words whitespace-pre-wrap text-danger">{step.error}</div>}
       </div>
     </li>
   )

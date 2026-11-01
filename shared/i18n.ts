@@ -23,7 +23,7 @@ export function resolveLang(setting: string | undefined, fallback?: string): Lan
 
 function detect(): Lang {
   try {
-    const ls = (globalThis as { localStorage?: Storage }).localStorage
+    const ls = (globalThis as { localStorage?: { getItem(key: string): string | null } }).localStorage
     const nav = (globalThis as { navigator?: { language?: string } }).navigator
     if (ls) return resolveLang(ls.getItem('lang') ?? 'auto', nav?.language)
   } catch {}
@@ -32,6 +32,11 @@ function detect(): Lang {
 
 let lang: Lang = detect()
 export const getLang = () => lang
+/**
+ * 界面语言对应的日期 / 数字格式：所有 toLocale*、Intl.*Format 都传它。
+ * 不传的话跟着浏览器走，英文界面配中文系统时会混出两种格式
+ */
+export const uiLocale = () => (lang === 'en' ? 'en-US' : 'zh-CN')
 export function setLang(l: Lang) {
   lang = l
 }

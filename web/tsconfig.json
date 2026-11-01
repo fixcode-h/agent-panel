@@ -1,0 +1,12 @@
+// 前端：浏览器环境（DOM）+ Vite 的 import.meta.env / 资源导入，没有 Node 类型。
+// 测试用 node:test 跑，放在根目录的 tsconfig.test.json 检查。
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "tsBuildInfoFile": "../.tmp/tsc/web.tsbuildinfo"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

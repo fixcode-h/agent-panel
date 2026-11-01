@@ -180,7 +180,7 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
         aria-expanded={open}
         aria-label={t('子任务')}
         onClick={() => setOpen((v) => !v)}
-        className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
+        className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-body text-muted transition-colors hover:bg-sel hover:text-fg"
       >
         <ListTree className="h-3.5 w-3.5 shrink-0 text-subtle" />
         <span className="shrink-0 font-medium">{t('子任务')}</span>
@@ -194,7 +194,7 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
           <span className="shrink-0 text-xs text-subtle tabular-nums">{steps.length}</span>
         )}
         {failed.length > 0 && (
-          <Badge tone="danger" className="shrink-0 px-1.5 text-[0.6875rem]">
+          <Badge tone="danger" className="shrink-0 px-1.5 text-caption">
             {t('{n} 个失败', { n: failed.length })}
           </Badge>
         )}
@@ -203,7 +203,7 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
         // 以这一行状态栏为基准向上弹：和「子对话」的浮层对齐，不挤在按钮下面
         <ComposerPopover>
           <div className="flex items-center gap-2 border-b px-3 py-2">
-            <span className="text-[0.8125rem] font-medium">{t('子任务')}</span>
+            <span className="text-body font-medium">{t('子任务')}</span>
             <span className="text-xs text-subtle">
               {running.length ? t('{n} 个执行中', { n: running.length }) : t('共 {n} 个', { n: steps.length })}
             </span>
@@ -211,7 +211,7 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
           <div className="max-h-[min(46vh,320px)] overflow-y-auto p-1">
             {helperGroups(steps).map((g) => (
               <Fragment key={g.key}>
-                <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">
+                <p className="px-2.5 pt-2 pb-1 text-caption font-medium text-subtle">
                   {g.label} · {g.items.length}
                 </p>
                 {g.items.map((s) => {
@@ -235,18 +235,18 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
                         </span>
                         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span className="flex min-w-0 items-center gap-1.5">
-                            <span className="min-w-0 truncate text-[0.8125rem]">{s.title}</span>
+                            <span className="min-w-0 truncate text-body">{s.title}</span>
                             {agent && (
-                              <Badge className="shrink-0 px-1.5 text-[0.6875rem] text-subtle">
+                              <Badge className="shrink-0 px-1.5 text-caption text-subtle">
                                 <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
                                 {agent.name}
                               </Badge>
                             )}
                             {s.status === 'running' && (
-                              <span className="shrink-0 text-[0.6875rem] text-accent-text">{t('执行中')}</span>
+                              <span className="shrink-0 text-caption text-accent-text">{t('执行中')}</span>
                             )}
                             {s.status === 'failed' && (
-                              <span className="shrink-0 text-[0.6875rem] text-danger">{t('失败')}</span>
+                              <span className="shrink-0 text-caption text-danger">{t('失败')}</span>
                             )}
                           </span>
                           <span className="line-clamp-1 text-xs text-subtle">{helperBrief(task, s)}</span>
@@ -376,7 +376,7 @@ export function HelperWindow({
         </div>
         {/* AI 分析窗口放输入框的位置：子任务没有输入框，换成同样外形的只读说明 */}
         <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
-          <p className="mx-auto flex max-w-(--content-w) items-center gap-2 rounded-xl border border-line-strong bg-card px-4 py-3 text-[0.8125rem] text-subtle">
+          <p className="mx-auto flex max-w-(--content-w) items-center gap-2 rounded-xl border border-line-strong bg-card px-4 py-3 text-body text-subtle">
             <StepIcon status={step.status} />
             {live
               ? t('子任务执行中，做完后结果会自动交回给派它的对话')

@@ -176,9 +176,9 @@ export function ParamsForm({
             label={
               <>
                 <span className={cn('truncate font-medium', lack ? 'text-danger' : 'text-muted')}>{paramLabel(p)}</span>
-                {p.ask && <span className="shrink-0 text-[0.6875rem] text-subtle">{t('必填')}</span>}
+                {p.ask && <span className="shrink-0 text-caption text-subtle">{t('必填')}</span>}
                 {changed && !p.ask && (
-                  <Button variant="link" onClick={() => set(p.key, undefined)} className="shrink-0 text-[0.6875rem]">
+                  <Button variant="link" onClick={() => set(p.key, undefined)} className="shrink-0 text-caption">
                     {t('恢复默认')}
                   </Button>
                 )}
@@ -226,7 +226,7 @@ export function ParamsChip({
       <PopoverTrigger
         title={missing.length ? t('还有参数没选：{list}', { list: missing.map(paramLabel).join(t('、')) }) : summary}
         className={cn(
-          'inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] transition-colors hover:bg-sel data-[state=open]:bg-sel',
+          'inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-footnote transition-colors hover:bg-sel data-[state=open]:bg-sel',
           missing.length ? 'text-warning' : 'text-subtle hover:text-fg',
         )}
       >
@@ -312,14 +312,14 @@ export function ParamsEditor({
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                 aria-expanded={open}
               >
-                <code className={cn('shrink-0 font-mono text-[0.75rem]', badKey ? 'text-danger' : 'text-accent-text')}>
+                <code className={cn('shrink-0 font-mono text-footnote', badKey ? 'text-danger' : 'text-accent-text')}>
                   {`{{${p.key}}}`}
                 </code>
-                <span className="truncate text-[0.8125rem]">{p.label}</span>
+                <span className="truncate text-body">{p.label}</span>
                 {(p.when || p.optionsBy) && (
                   <span
                     className={cn(
-                      'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 text-[0.6875rem]',
+                      'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 text-caption',
                       brokenLink(value, i) ? 'bg-danger/10 text-danger' : 'bg-accent-soft text-accent-text',
                     )}
                     title={linkSummary(value, i)}
@@ -357,10 +357,10 @@ export function ParamsEditor({
                       value={p.key}
                       maxLength={40}
                       onChange={(e) => rename(i, e.target.value.trim())}
-                      className={cn('h-9 font-mono text-[0.8125rem]', badKey && 'border-danger')}
+                      className={cn('h-9 font-mono text-body', badKey && 'border-danger')}
                     />
                     {badKey && (
-                      <span className="text-[0.6875rem] text-danger">
+                      <span className="text-caption text-danger">
                         {dupKeys.has(p.key) ? t('参数名重复') : t('参数名只能用字母、数字、下划线、横线和中文')}
                       </span>
                     )}
@@ -471,13 +471,13 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
               tabIndex={0}
               title={t('拖动调整顺序（也可以按 Alt + 方向键）')}
               className={cn(
-                'group inline-flex h-8 max-w-full cursor-grab items-center gap-1 rounded-lg bg-card shadow-card pr-1 pl-1 text-[0.8125rem] transition-colors outline-none select-none focus-visible:border-focus active:cursor-grabbing',
+                'group inline-flex h-8 max-w-full cursor-grab items-center gap-1 rounded-lg bg-card shadow-card pr-1 pl-1 text-body transition-colors outline-none select-none focus-visible:border-focus active:cursor-grabbing',
                 drag === i && 'opacity-40',
                 over === i && drag !== null && drag !== i && 'border-accent bg-accent/10',
               )}
             >
               <GripVertical className="h-3.5 w-3.5 shrink-0 text-subtle opacity-60 group-hover:opacity-100" />
-              <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-md bg-sel px-1 font-mono text-[0.6875rem] text-muted tabular-nums">
+              <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-md bg-sel px-1 font-mono text-caption text-muted tabular-nums">
                 {i + 1}
               </span>
               <span className="truncate px-0.5">{o}</span>
@@ -519,10 +519,10 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
           e.preventDefault()
           add(s.split(/\r?\n/))
         }}
-        className={cn('h-9 text-[0.8125rem]', error && 'border-danger')}
+        className={cn('h-9 text-body', error && 'border-danger')}
         aria-label={t('新选项')}
       />
-      {error && <span className="text-[0.6875rem] text-danger">{error}</span>}
+      {error && <span className="text-caption text-danger">{error}</span>}
     </div>
   )
 }
@@ -631,7 +631,7 @@ function ParamLinks({
     return (
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted">{t('联动')}</span>
-        <p className="text-[0.6875rem] text-subtle">
+        <p className="text-caption text-subtle">
           {t('前面还没有单选、多选或开关参数。把它排在这类参数后面，就能按前面的选择决定显示它、或者换一组选项。')}
         </p>
       </div>
@@ -649,7 +649,7 @@ function ParamLinks({
         </HelpTip>
       </div>
       {broken && (
-        <p className="-mt-1 text-[0.6875rem] text-danger">
+        <p className="-mt-1 text-caption text-danger">
           {t('依赖的参数不在它前面了（删掉、改名或者排到了后面），规则暂不生效。重新选一下，或者把它挪回去。')}
         </p>
       )}
@@ -707,7 +707,7 @@ function ParamLinks({
                   onToggle={(v) => onChange({ when: { ...p.when!, values: toggle(p.when!.values, v) } })}
                 />
                 {!p.when.values.length && (
-                  <span className="text-[0.6875rem] text-subtle">
+                  <span className="text-caption text-subtle">
                     {p.when.not
                       ? t('没选取值：「{name}」为空时显示', { name: paramLabel(whenDep) })
                       : t('没选取值：「{name}」有值就显示', { name: paramLabel(whenDep) })}
@@ -740,7 +740,7 @@ function ParamLinks({
           </div>
           {p.optionsBy && byDep && (
             <div className="flex flex-col gap-2 pl-0.5">
-              <p className="text-[0.6875rem] text-subtle">
+              <p className="text-caption text-subtle">
                 {t('「{name}」选不同值时这里能选哪些；默认全部可选，一个都不选表示这时不显示这个参数。', {
                   name: paramLabel(byDep),
                 })}
@@ -757,7 +757,7 @@ function ParamLinks({
                 }
                 return (
                   <div key={c.value} className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2 text-[0.6875rem]">
+                    <div className="flex items-center gap-2 text-caption">
                       <span className="font-medium text-muted">{t('选「{v}」时', { v: c.label })}</span>
                       {limited ? (
                         <Button variant="link" onClick={() => setRow(undefined)}>

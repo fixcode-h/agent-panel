@@ -1,7 +1,6 @@
 import { CliSkills } from '@/components/settings/CliSkills'
 import { ProjectMcpSection } from './ProjectMcpSection'
 import { useEffect, useRef, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
 import { toast } from '@/lib/toast'
 import {
   ChevronDown,
@@ -41,13 +40,13 @@ import {
   type DerivedParam,
 } from '@shared/agent-params'
 import { ENV_LABEL, newTestStepId, parseGlobs } from '@shared/test-steps'
-import { AssistDialog } from '@/components/assist/AssistDialog'
+import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
-import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
+import { Modal, ModalHeader } from '@/components/ui/modal'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
@@ -71,6 +70,8 @@ import { cliSettings, orderClis } from '@shared/settings'
 import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
+import { NavItem } from '@/components/ui/dialog-nav'
+import { TRASH_RETENTION_DAYS } from '@shared/task'
 import { DocPage } from './ProjectDocs'
 import { ProjectSkillsSection } from './ProjectSkillsSection'
 import { runAssistInProject } from '@/lib/assist-conv'
@@ -141,15 +142,6 @@ const blank: ProjectInput = {
 
 const projectDialogTitle = (project?: Project) =>
   project ? t('项目设置 · {name}', { name: project.name }) : t('新建项目')
-
-/** 关闭按钮：设置类弹窗共用（Esc 也能关，悬停提示里写上） */
-export function DialogCloseButton({ label = t('关闭') }: { label?: string }) {
-  return (
-    <D.Close asChild>
-      <ModalButton icon={X} label={`${label}（Esc）`} className="[&>svg]:h-[1.125rem] [&>svg]:w-[1.125rem]" />
-    </D.Close>
-  )
-}
 
 /**
  * 项目设置弹窗：改完点「确认」才保存，「取消」放弃改动。
@@ -419,8 +411,10 @@ function Body({
   }
   const checks = projectChecks(draft, dir, own ?? inherited ?? general, agents, clis)
   const { settings, categories } = useData()
-  // 「子任务」不作为可选角色展示，也没有参数：跳去角色页的那个按钮只会跳开，不在这个列表里列
-  const coreAgents = CORE_AGENTS.map((c) => findCore(agents, c.key)).filter((a): a is Agent => !!a && !isHelperAgent(a))
+  // 「子任务」不作为可选角色展示，也没有参数：跳去角色页的那个按钮只会跳开，不在这个列表里列；Chat 页的「助手」不是项目里的角色
+  const coreAgents = CORE_AGENTS.map((c) => findCore(agents, c.key)).filter(
+    (a): a is Agent => !!a && !isHelperAgent(a) && a.scope !== 'chat',
+  )
   // 默认工作流只从「项目」分类里选：项目常驻流程按子对话的需要设计，别的流程放进可选工作流
   const projectCat = categories.find((c) => c.scope === 'workflow' && c.name === PROJECT_WF_CATEGORY)
   const inProjectCat = workflows.filter((w) => projectCat && w.categoryId === projectCat.id)
@@ -770,9 +764,7 @@ function Body({
             <FileText className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('项目说明')}
           </NavItem>
-          <span className="hidden px-2.5 pt-4 pb-1 text-[0.6875rem] text-subtle md:block">
-            {t('各个 Agent 读的说明')}
-          </span>
+          <span className="hidden px-2.5 pt-4 pb-1 text-caption text-subtle md:block">{t('各个 Agent 读的说明')}</span>
           {cliPages.map((c) => (
             <NavItem
               key={c.id}
@@ -789,11 +781,9 @@ function Body({
         {section === 'mcp' ? (
           <div className={dialogScrollClass}>
             {!project ? (
-              <p className="text-[0.8125rem] leading-relaxed text-subtle">
-                {t('先创建项目，再管这个项目的 MCP 配置。')}
-              </p>
+              <p className="text-body leading-relaxed text-subtle">{t('先创建项目，再管这个项目的 MCP 配置。')}</p>
             ) : !project.path || draft.path.trim() !== project.path ? (
-              <p className="text-[0.8125rem] leading-relaxed text-subtle">
+              <p className="text-body leading-relaxed text-subtle">
                 {t('本地目录改了，先点「确认」保存，再管新目录里的 MCP 配置。')}
               </p>
             ) : (
@@ -803,9 +793,9 @@ function Body({
         ) : section === 'skills' ? (
           <div className={dialogScrollClass}>
             {!project ? (
-              <p className="text-[0.8125rem] leading-relaxed text-subtle">{t('先创建项目，再管理项目里的技能。')}</p>
+              <p className="text-body leading-relaxed text-subtle">{t('先创建项目，再管理项目里的技能。')}</p>
             ) : !project.path || draft.path.trim() !== project.path ? (
-              <p className="text-[0.8125rem] leading-relaxed text-subtle">
+              <p className="text-body leading-relaxed text-subtle">
                 {t('本地目录改了，先点「确认」保存，再管理新目录里的技能。')}
               </p>
             ) : (
@@ -815,7 +805,7 @@ function Body({
         ) : section === 'doc' || section.startsWith('cli:') ? (
           <div className={dialogScrollClass}>
             {!docsReady || !docs ? (
-              <p className="text-[0.8125rem] leading-relaxed text-subtle">
+              <p className="text-body leading-relaxed text-subtle">
                 {!project
                   ? t('先创建项目，再编辑项目里的说明文件。')
                   : !project.path || draft.path.trim() !== project.path
@@ -837,7 +827,7 @@ function Body({
                 note={
                   docOf('AGENT.md')?.exists &&
                   !docOf(SHARED_DOC)?.exists && (
-                    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-warning/10 px-3.5 py-2.5 text-[0.8125rem]">
+                    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-warning/10 px-3.5 py-2.5 text-body">
                       <span className="min-w-0 flex-1">
                         {t('检测到 AGENT.md，但各个 Agent 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。')}
                       </span>
@@ -869,8 +859,8 @@ function Body({
                     onDraft={(f, c) => setDocDrafts((d) => ({ ...d, [f]: c }))}
                     extra={
                       <section className="flex flex-col gap-2 pt-6">
-                        <h3 className="text-[0.8125rem] font-medium">Skills</h3>
-                        <p className="text-[0.75rem] text-muted">
+                        <h3 className="text-body font-medium">Skills</h3>
+                        <p className="text-footnote text-muted">
                           {t('{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的', { cli: name })}
                         </p>
                         <CliSkills key={id} cli={id} projectId={project!.id} />
@@ -1036,7 +1026,7 @@ function Body({
                             <span className="flex min-w-0 flex-1 flex-col">
                               <span className="truncate">{w.name}</span>
                               {w.description && (
-                                <span className="truncate text-[0.6875rem] text-subtle">{w.description}</span>
+                                <span className="truncate text-caption text-subtle">{w.description}</span>
                               )}
                             </span>
                           </PopoverClose>
@@ -1156,7 +1146,7 @@ function Body({
                   {!draft.initializedAt && (
                     <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-accent-soft px-3.5 py-2.5">
                       <Sparkles className="h-4 w-4 shrink-0 text-accent-text" />
-                      <span className="min-w-0 flex-1 text-[0.8125rem]">
+                      <span className="min-w-0 flex-1 text-body">
                         {draft.path.trim()
                           ? t('选好目录后先 AI 初始化项目：写好 AGENTS.md 和文档框架，并推荐工作流和设置。')
                           : t('选好本地目录后，先 AI 初始化项目才能保存。')}
@@ -1334,7 +1324,10 @@ function Body({
           open={deleting}
           onOpenChange={setDeleting}
           title={t('删除「{name}」？', { name: project.name })}
-          description={t('会删除面板里的配置和这个项目的所有对话，不会动本地目录里的文件。')}
+          description={t(
+            '项目配置和它的所有对话一起放进回收站，{days} 天内可以在「设置 → 数据」里恢复；不会动本地目录里的文件。',
+            { days: TRASH_RETENTION_DAYS },
+          )}
           onConfirm={remove}
         />
       )}
@@ -1359,8 +1352,8 @@ function scanText(r: Awaited<ReturnType<typeof api.analyzeProject>>) {
 function PageIntro({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="flex flex-col gap-1 pb-1">
-      <h3 className="text-[0.9375rem] font-semibold">{title}</h3>
-      <p className="text-[0.75rem] leading-relaxed text-subtle">{desc}</p>
+      <h3 className="text-heading font-semibold">{title}</h3>
+      <p className="text-footnote leading-relaxed text-subtle">{desc}</p>
     </div>
   )
 }
@@ -1399,11 +1392,11 @@ function Collapsible({
           />
           {leading}
           <span className="flex min-w-0 flex-col">
-            <span className="truncate text-[0.8125rem] font-medium">{title}</span>
-            {subtitle && <span className="truncate text-[0.6875rem] text-subtle">{subtitle}</span>}
+            <span className="truncate text-body font-medium">{title}</span>
+            {subtitle && <span className="truncate text-caption text-subtle">{subtitle}</span>}
           </span>
           {badge && (
-            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text">
+            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-caption text-accent-text">
               {badge}
             </span>
           )}
@@ -1719,7 +1712,7 @@ function AgentParamsEditor({
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-sel/40 p-3">
       <div className="flex items-center gap-2">
-        <span className="truncate text-[0.8125rem] font-medium">{group.agentName}</span>
+        <span className="truncate text-body font-medium">{group.agentName}</span>
         <span className="text-xs text-subtle">{t('{n} 个参数', { n: mine.length })}</span>
         <Button size="sm" variant="ghost" className="ml-auto" onClick={onAi} disabled={aiRunning}>
           {aiRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
@@ -1772,8 +1765,8 @@ function DerivedParamField({
       label={
         <>
           <span className="truncate font-medium text-muted">{label}</span>
-          <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">{d.key}</span>
-          {d.required && <span className="shrink-0 text-[0.6875rem] text-warning">{t('必须填')}</span>}
+          <span className="shrink-0 font-mono text-caption text-subtle">{d.key}</span>
+          {d.required && <span className="shrink-0 text-caption text-warning">{t('必须填')}</span>}
         </>
       }
       hint={hint}
@@ -1895,7 +1888,7 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
       label={
         <>
           <span className="truncate font-medium text-muted">{t('搜索时跳过的目录')}</span>
-          <span className="shrink-0 text-[0.6875rem] text-subtle">{t('相对项目根')}</span>
+          <span className="shrink-0 text-caption text-subtle">{t('相对项目根')}</span>
         </>
       }
       hint={t(
@@ -1908,7 +1901,7 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
           {list.map((d) => (
             <span
               key={d}
-              className="flex h-7 items-center gap-1 rounded-md bg-sel/70 pr-1 pl-2 text-[0.75rem] text-muted"
+              className="flex h-7 items-center gap-1 rounded-md bg-sel/70 pr-1 pl-2 text-footnote text-muted"
             >
               <span className="font-mono">{d}</span>
               <IconButton
@@ -1952,47 +1945,6 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
         </span>
       </div>
     </ParamRow>
-  )
-}
-
-export function NavItem({
-  on,
-  onClick,
-  dot,
-  hint,
-  children,
-}: {
-  on: boolean
-  onClick: () => void
-  /** 有没保存的改动 */
-  dot?: boolean
-  /** 右边的小字：用的是哪个文件 */
-  hint?: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={on ? 'page' : undefined}
-      className={cn(
-        'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem] whitespace-nowrap transition-colors',
-        on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-      )}
-    >
-      {children}
-      {hint && (
-        <span className="ml-auto hidden truncate font-mono text-[0.6875rem] font-normal text-subtle md:inline">
-          {hint}
-        </span>
-      )}
-      {dot && (
-        <span
-          className={cn('h-1.5 w-1.5 shrink-0 rounded-full bg-accent', !hint && 'ml-auto')}
-          title={t('有未保存的改动')}
-        />
-      )}
-    </button>
   )
 }
 

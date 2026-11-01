@@ -9,8 +9,12 @@ import type { AskReply, CliEvent } from './exec/parsers.ts'
 import type { Orchestra } from '../shared/engine.ts'
 import { callOrchTool, orchTools } from './orch-mcp.ts'
 import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
-import { MORE_TOOLS, moreTools, splitDeferred } from '../shared/panel-tools.ts'
+import { MORE_TOOLS, moreTools, ORCH_CORE_TOOLS, splitDeferred } from '../shared/panel-tools.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
+import { log } from './log.ts'
+
+/** 这一轮的清单里三件核心编排工具都在：Pi 桥接据此核对清单完整 */
+export const orchCore = (orch: { name: string }[]) => ORCH_CORE_TOOLS.every((n) => orch.some((x) => x.name === n))
 
 /**
  * 给没有「向用户提问」通道的 CLI（无界面运行的 Command Code）一个提问工具：
@@ -33,6 +37,8 @@ export type Ask = (ev: AskEvent) => void
 
 /** 长等待（提问、等下一句）期间定期往流里写一行注释当心跳，免得 HTTP 客户端判定连接空闲 */
 const HEARTBEAT_MS = 20_000
+/** 会等很久的工具：走流式响应带心跳（wait_agents 一次可能等到子任务全部结束，见 orch-mcp.ts 的 WAIT_AGENTS_S） */
+const LONG_TOOLS = ['ask_user', 'wait_user_message', 'wait_agents']
 
 const sessions = new Map<
   string,
@@ -103,7 +109,8 @@ const NOTES_TOOL = {
 const WAIT_TOOL = {
   name: 'wait_user_message',
   description:
-    '等用户在这个对话里的下一条消息。每次回复结束后调用一次：用户发来消息时返回消息内容，接着处理；返回「用户已经离开了这个对话」时结束本轮，不要继续做别的事。',
+    '等用户在这个对话里的下一条消息。只在用户要的事已经全部做完、或者需要用户拿主意时调用；还有没做完的步骤就不要调用，直接接着做。' +
+    '用户发来消息时返回消息内容，接着处理；返回「用户已经离开了这个对话」时结束本轮，不要继续做别的事。',
   inputSchema: { type: 'object', properties: {} },
 }
 
@@ -180,7 +187,7 @@ const toolChars = (x: { name: string; title?: string; description?: string; inpu
     x.name.length + (x.title?.length ?? 0) + (x.description?.length ?? 0) + JSON.stringify(x.inputSchema ?? {}).length,
 })
 
-async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any) {
+async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any, signal?: AbortSignal) {
   if (msg?.id === undefined || msg?.id === null) return undefined
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
   const orch = s.orch ? orchTools(s.orch) : []
@@ -197,7 +204,7 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
   const call = async (name: string, args: any): Promise<unknown> => {
     if (name === TOOL.name && s.ask) return callAsk(s, args)
     if (name === NOTES_TOOL.name && s.notes) return callNotes(s)
-    if (s.orch && orch.some((x) => x.name === name)) return callOrchTool(s.orch, name, args)
+    if (s.orch && orch.some((x) => x.name === name)) return callOrchTool(s.orch, name, args, signal)
     if (s.app && APP_TOOLS.some((x) => x.name === name)) return callAppTool(s.app, name, args)
     if (name === WAIT_TOOL.name && s.wait) {
       const text = await s.wait()
@@ -213,8 +220,10 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
         // 压缩轮、原生审查轮只挂提问工具（见 runner 里 def.mcp && !op），清单里本来就没有核心编排工具，
         // 不声明这一项的话扩展只能按服务名猜，会把这种正常情况报成「工具清单不完整」（见 shared/clis/pi.json 的扩展）。
         // 值必须是对象：MCP 的 capabilities.experimental 是 Record<string, object>，写成布尔值
-        // Claude Code（2.1.226 起按 zod 校验）会判整个握手失败、一个工具都不注册
-        capabilities: { tools: {}, experimental: { orchestration: { enabled: !!s.orch } } },
+        // Claude Code（2.1.226 起按 zod 校验）会判整个握手失败、一个工具都不注册。
+        // 按这一轮真实的清单现算、不认身份（ADR 0038）：Chat 模式没有扩展核对的三件核心工具，声明成有的话
+        // Pi 会报「工具清单不完整」；以后哪个身份少给了核心工具，握手也自动跟着变
+        capabilities: { tools: {}, experimental: { orchestration: { enabled: orchCore(orch) } } },
         serverInfo: { name: 'agent-panel', version: '1.0.0' },
       })
     case 'ping':
@@ -226,12 +235,24 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
     case 'tools/call': {
       const name = String(msg.params?.name ?? '')
       const args = msg.params?.arguments ?? {}
+      // 工具里面板自己出错（写盘失败等）：如实告诉 Agent 这一步没做成，不能让它以为已经记下了
+      const safe = async (n: string, a: unknown) => {
+        try {
+          return await call(n, a)
+        } catch (e) {
+          log.error('mcp', '面板工具出错', { tool: n, error: (e as Error).message })
+          return {
+            content: [{ type: 'text', text: `面板出错，这一步没有做成：${(e as Error).message}` }],
+            isError: true,
+          }
+        }
+      }
       if (name === MORE_TOOLS && deferred.length) {
         const r = moreTools(deferred, args)
-        return reply('call' in r ? await call(r.call, r.args) : r)
+        return reply('call' in r ? await safe(r.call, r.args) : r)
       }
       // 收起来的工具直接按名字调也照样执行：保活的旧进程、记住了工具名的模型都会这么调
-      return reply(await call(name, args))
+      return reply(await safe(name, args))
     }
     default:
       return { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `不支持 ${msg.method}` } }
@@ -265,12 +286,6 @@ export function openAskBridge(o: {
   }
 }
 
-/**
- * 这个随机地址还有效吗：联网搜索的扩展复用同一份地址（见 server/web-search.ts），
- * 拿已经结束的地址来调时不能继续花用户的密钥额度
- */
-export const hasAskSession = (token: string) => sessions.has(token)
-
 export function askMcpApi() {
   return new Hono()
     .post('/ask/:token', async (c) => {
@@ -280,15 +295,18 @@ export function askMcpApi() {
       const msgs = Array.isArray(body) ? body : [body]
       // 提问、等下一句都可能很久：HTTP 客户端（undici 的 bodyTimeout、Node 的 http 客户端）会因为长时间没有数据
       // 断开请求，所以这些用流式响应，等待期间定期写心跳，有结果后再写回去
-      if (msgs.some((m) => m?.method === 'tools/call' && [TOOL.name, WAIT_TOOL.name].includes(m?.params?.name)))
+      if (msgs.some((m) => m?.method === 'tools/call' && LONG_TOOLS.includes(m?.params?.name)))
         return streamSSE(c, async (stream) => {
+          // CLI 断开（工具超时、进程被停）：wait_agents 不再把结果算成已取走，留给下一次或节点结束时交回
+          const ac = new AbortController()
+          stream.onAbort(() => ac.abort())
           const beat = setInterval(() => {
             try {
               stream.write(': ping\n\n').catch(() => {})
             } catch {}
           }, HEARTBEAT_MS)
           try {
-            const outs = (await Promise.all(msgs.map((m) => handle(s, m)))).filter(Boolean)
+            const outs = (await Promise.all(msgs.map((m) => handle(s, m, ac.signal)))).filter(Boolean)
             for (const out of outs) await stream.writeSSE({ data: JSON.stringify(out) })
           } finally {
             clearInterval(beat)

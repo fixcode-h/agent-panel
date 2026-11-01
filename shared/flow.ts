@@ -107,7 +107,11 @@ export function reachable(f: Flow): Set<string> {
   const stack = [START]
   while (stack.length) {
     const cur = stack.pop()!
-    for (const n of succs(f, cur)) if (n !== END && !seen.has(n)) (seen.add(n), stack.push(n))
+    for (const n of succs(f, cur))
+      if (n !== END && !seen.has(n)) {
+        seen.add(n)
+        stack.push(n)
+      }
   }
   return seen
 }
@@ -120,7 +124,11 @@ export function wouldCycle(f: Flow, from: string, to: string) {
   while (stack.length) {
     const cur = stack.pop()!
     if (cur === from) return true
-    for (const n of succs(f, cur)) if (!seen.has(n)) (seen.add(n), stack.push(n))
+    for (const n of succs(f, cur))
+      if (!seen.has(n)) {
+        seen.add(n)
+        stack.push(n)
+      }
   }
   return false
 }
@@ -152,7 +160,11 @@ function ancestors(f: Flow, id: string) {
   const seen = new Set<string>()
   const stack = [id]
   while (stack.length)
-    for (const p of preds(f, stack.pop()!)) if (p !== START && !seen.has(p)) (seen.add(p), stack.push(p))
+    for (const p of preds(f, stack.pop()!))
+      if (p !== START && !seen.has(p)) {
+        seen.add(p)
+        stack.push(p)
+      }
   return seen
 }
 
@@ -448,7 +460,10 @@ export const childSteps = (task: { steps: TaskStep[] }, id: string) => task.step
 export function stepTree(task: { steps: TaskStep[] }, id: string): TaskStep[] {
   const out: TaskStep[] = []
   const walk = (pid: string) => {
-    for (const c of childSteps(task, pid)) (out.push(c), walk(c.id))
+    for (const c of childSteps(task, pid)) {
+      out.push(c)
+      walk(c.id)
+    }
   }
   walk(id)
   return out

@@ -274,7 +274,8 @@ await runShard('本机请求与设置', async (api) => {
   assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n')
   assert.ok(existsSync(path.join(appDir, 'dist/old.html')), '前端也换回来')
   // 有任务在执行：先下载，任务结束前不替换程序
-  const busyTask = await call('POST', '/tasks', { mode: 'chat', agentId: B.id, prompt: 'SLOW 更新等待' })
+  // Chat 页只能用 Chat 角色（ADR 0038）：不选角色、直接用乙的 CLI
+  const busyTask = await call('POST', '/tasks', { mode: 'chat', agentId: '', cli: B.cli, prompt: 'SLOW 更新等待' })
   let wj = await call('POST', '/app/install', { tag: 'v0.11.9-dev' })
   assert.equal(wj.status, 'running', '任务执行中也能开始下载')
   for (let i = 0; i < 100 && !/等待任务结束/.test(wj.phase); i++) {
@@ -381,9 +382,31 @@ await runShard('本机请求与设置', async (api) => {
       (await call('GET', '/tasks')).some((x) => x.id === task.id),
       '排查的对话留在聊天列表里',
     )
+    // Chat 页没选角色的对话按内置「助手」跑（ADR 0038）：带助手的设定和聊天约束，提示词是 Chat 模式那套，
+    // 没有项目对话的授权、工作流、执行方式这些段落
+    const sent = calls().at(-1)
+    const all = `${sent.args.join('\n')}\n${sent.input}`
+    assert.match(all, /Chat 页直接对话的助手/, '按内置助手的设定跑')
+    assert.match(all, /## 安全边界/, '带上聊天约束')
+    assert.match(sent.input, /## Chat 模式/)
+    assert.doesNotMatch(sent.input, /## 授权情况|ask_push|## 执行方式|start_plan/)
+    assert.doesNotMatch(sent.input, /## 总结格式/, 'Chat 页不写总结卡')
+    // 角色分两类：Chat 页不能用 Agent 角色（面板开的「AI 分析」除外）
+    const worker = (await call('GET', '/agents')).find((a) => a.origin === 'builtin:worker')
+    await assert.rejects(
+      call('POST', '/tasks', { projectId: '', mode: 'chat', agentId: worker.id, prompt: '用执行聊' }),
+      /是 Agent 角色/,
+    )
+    // 类别建好不能改：PUT 带上另一类也按原来的存（server/index.ts 的 parseAgent）。用自建角色测：内置的另有 syncCore 兜底
+    const mine = await call('POST', '/agents', { name: '类别测试角色', instructions: '测试' })
+    const locked = await call('PUT', `/agents/${mine.id}`, { ...mine, scope: 'chat' })
+    assert.notEqual(locked.scope, 'chat', '角色的类别改不了')
+    await call('DELETE', `/agents/${mine.id}`)
     await call('DELETE', `/tasks/${task.id}`)
     await call('PUT', '/settings', base)
-    step('AI 处理报错：整理报错、命令、输出和相关的安装情况，在聊天里新建对话排查')
+    step(
+      'AI 处理报错：整理报错、命令、输出和相关的安装情况，在聊天里新建对话排查；Chat 页按内置「助手」跑，不能用 Agent 角色',
+    )
   }
 
   // ---- 只接受本机页面的请求 ----
@@ -502,6 +525,44 @@ await runShard('本机请求与设置', async (api) => {
   }
   step('没有提问通道的 CLI：临时接 ask_user 工具，回答后交回模型，开关关着时让模型自己选，项目里原有的配置还原')
 
+  // 推送授权（项目设置默认「第一次需要推送时问一次」）：ask_push 弹「允许 / 拒绝」卡，「提问」关着也不自动作答；
+  // 点了允许记进 task.remotePush（c5e5c5d8 起这个字段一直没有写入点），同一个对话里再调直接返回、不再弹卡
+  {
+    const panelLog = () => readLog(log + '.panel').filter((x) => x.name === 'ask_push')
+    const before = panelLog().length
+    const t = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: 'ASK_PUSH 改完了，推上去',
+    })
+    const req = await waitFor(async () => (await call('GET', `/tasks/${t.id}`)).requests[0], {
+      timeout: 20000,
+      label: '弹出推送授权卡',
+    })
+    assert.equal(req.purpose, 'push')
+    assert.equal(req.kind, 'tool', '「允许 / 拒绝」卡片，不是问题')
+    assert.match(req.detail, /分支：dev/)
+    await sleep(300)
+    assert.equal((await call('GET', `/tasks/${t.id}`)).requests.length, 1, '「提问」关着也不被自动作答')
+    const answered = await call('POST', `/tasks/${t.id}/requests/${req.id}`, { allow: true })
+    assert.equal(answered.remotePush, 'allowed')
+    assert.ok(answered.remotePushAt)
+    await waitDone(t.id)
+    assert.match(panelLog().at(-1).text, /用户同意推送并合并主干/)
+    const first = calls().find((c) => c.input?.includes('ASK_PUSH 改完了'))
+    assert.match(first.input, /调用面板工具 ask_push 请用户授权/, '提示词让模型用 ask_push 问，不用提问工具')
+    await call('POST', `/tasks/${t.id}/messages`, { text: 'ASK_PUSH 再推一次' })
+    const again = await waitDone(t.id)
+    assert.equal(again.requests.length, 0)
+    assert.equal(panelLog().length, before + 2)
+    assert.match(panelLog().at(-1).text, /已经同意推送/, '同意过的不再弹卡')
+    assert.match(calls().find((c) => c.input?.includes('ASK_PUSH 再推一次')).input, /这个对话里用户已经同意推送/)
+  }
+  step('推送授权：ask_push 弹卡不被「提问」开关自动作答，允许后记进对话，再调不弹卡')
+
   // 执行中补充：Command Code 走常驻 RPC 的 turn/steer，已经在「插话」那一节覆盖；
   // MCP 的 read_user_notes 拉取通道由 server/ask-mcp.test.ts 单独测试
 
@@ -537,8 +598,11 @@ await runShard('本机请求与设置', async (api) => {
     const rec = readLog(log + '.wait')
       .slice(before)
       .at(-1)
-    assert.match(rec.got, /接着看看测试/)
-    assert.ok(rec.hint, '提示里告诉模型可以等下一句')
+    // 模型自己调 wait_user_message 等到的下一句也按当前状态重拼（engine 的 nextPrompt），不再是原样的一句话
+    assert.match(rec.got, /## 用户这次的消息\n接着看看测试/)
+    // 不再提示「每轮回复完成后调用 wait_user_message」（ADR 0037）：那句提示让模型做完一步就把自己挂起；
+    // 保活由面板在这一轮结束时自己做，工具照样挂着（上面停在等下一句就是它）
+    assert.ok(!rec.hint, '提示里不再要求每轮回复完都调 wait_user_message')
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '接着看看测试')
     assert.ok(at > 0, '用户消息记进对话')
     assert.ok(
@@ -935,6 +999,8 @@ await runShard('本机请求与设置', async (api) => {
     w = await waitDone(w.id, 30000)
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '预热后直接问')
     assert.ok(at > 0, '用户消息记进对话')
+    // 预热后的第一句同样按当前状态补段落（engine 预热也传 nextPrompt），不是原样的一句话
+    assert.match(readLog(log + '.wait').at(-1).got, /## 用户这次的消息\n预热后直接问/)
     assert.ok(
       w.messages.slice(at + 1).some((m) => m.role === 'agent' && /等到的下一句/.test(m.text)),
       '模型在用户消息下面继续输出',
@@ -1331,7 +1397,8 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
       env: {
         ...process.env,
         LANG: 'zh_CN.UTF-8',
-        AGENT_PANEL_DATA: dataDir,
+        // 单独的数据目录：同一个数据目录只允许一个面板（server/instance-lock.ts），分片自己的服务还开着
+        AGENT_PANEL_DATA: path.join(tmp, 'tray-data'),
         PORT: String(trayPort),
         AGENT_PANEL_TRAY: '1',
         FAKE_CLI_LOG: log,
@@ -1477,4 +1544,50 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     for (const p of created) await call('DELETE', `/projects/${p.id}`)
   }
   step('项目分组：默认按添加时间排序，拖拽后的顺序持久化，重复 / 不存在 / 漏项的重排请求被拒绝')
+
+  // 角色、工作流、项目的回收站：删掉的能按原 id 找回来；项目连同它的对话一起恢复
+  {
+    const role = await call('POST', '/agents', { name: '回收站测试角色', instructions: '测试' })
+    await call('DELETE', `/agents/${role.id}`)
+    let items = await call('GET', '/trash/items')
+    assert.ok(
+      items.some((x) => x.kind === 'agent' && x.id === role.id),
+      '删掉的角色进了回收站',
+    )
+    await call('POST', `/trash/items/agent/${role.id}/restore`, {})
+    assert.ok(
+      (await call('GET', '/agents')).some((x) => x.id === role.id),
+      '按原 id 恢复',
+    )
+    await call('DELETE', `/agents/${role.id}`)
+
+    const dir = path.join(tmp, 'trash-project')
+    mkdirSync(dir, { recursive: true })
+    const proj = await call('POST', '/projects', {
+      name: '回收站测试项目',
+      description: '',
+      path: dir,
+      categoryId: '',
+      workflowId: wf.id,
+    })
+    const talk = await call('POST', '/tasks', { projectId: proj.id, mode: 'chat', agentId: C.id, prompt: '你好' })
+    await waitDone(talk.id)
+    await call('DELETE', `/projects/${proj.id}`)
+    assert.ok(
+      (await call('GET', '/tasks/trash')).some((x) => x.id === talk.id),
+      '项目里的对话进了对话回收站，不是直接删掉',
+    )
+    items = await call('GET', '/trash/items')
+    assert.equal(items.find((x) => x.kind === 'project' && x.id === proj.id)?.tasks, 1)
+    const r = await call('POST', `/trash/items/project/${proj.id}/restore`, {})
+    assert.equal(r.tasks, 1)
+    assert.ok(
+      (await call('GET', '/projects')).some((x) => x.id === proj.id),
+      '项目回来了',
+    )
+    const back = await call('GET', `/tasks/${talk.id}`)
+    assert.ok(!back.deletedAt, '对话跟着项目一起回来了')
+    await call('DELETE', `/projects/${proj.id}`)
+  }
+  step('回收站：删掉的角色、项目能按原 id 恢复，项目里的对话跟着一起回来')
 })

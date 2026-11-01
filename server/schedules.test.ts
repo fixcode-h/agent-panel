@@ -3,7 +3,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import type { NewTaskInput, Task } from '../shared/schema.ts'
+import type { Agent, NewTaskInput, Task } from '../shared/schema.ts'
 import { t } from '../shared/i18n.ts'
 import {
   afterBlocked,
@@ -33,6 +33,8 @@ function setup(
   fail?: string | ((input: NewTaskInput) => string | undefined),
   /** 投递 Webhook 的假实现：不真发网络请求，记下每次投递的内容 */
   deliver?: (event: ScheduleEvent, s: Schedule, at: string, projectName: string) => Promise<ScheduleDelivery | null>,
+  /** 本机的角色：给了才做角色类别校验（ADR 0038） */
+  agents?: () => Promise<Agent[]>,
 ) {
   const calls: NewTaskInput[] = []
   const api = schedulesApi({
@@ -46,6 +48,7 @@ function setup(
     projectName: async (id) => (id ? '构建项目' : ''),
     peekTask: async (id) => taskStates.get(id) ?? null,
     ...(deliver ? { deliver } : {}),
+    ...(agents ? { agents } : {}),
   })
   const create = async (body: Record<string, unknown>) => {
     const res = await api.routes.request('/', {
@@ -353,7 +356,11 @@ test('依赖：上游停用 / 从没跑过 / 被删掉都拦住下游', async ()
 })
 
 test('依赖：保存时拒绝不存在的上游、依赖自己和成环', async () => {
-  const { api, create } = setup()
+  const roles = [
+    { id: 'exec', name: '执行', scope: 'agent' },
+    { id: 'cw', name: '写作', scope: 'chat' },
+  ] as Agent[]
+  const { api, create } = setup(undefined, undefined, async () => roles)
   const now = Date.now()
   const a = await create(plan(unique(), { at: at(now + HOUR) }))
   const b = await create(plan(unique(), { at: at(now + HOUR), dependsOn: [a.id] }))
@@ -395,6 +402,16 @@ test('依赖：保存时拒绝不存在的上游、依赖自己和成环', async
   const ended = await put(a.id, plan(a.name, { at: a.at, repeat: 'daily', endDate }))
   assert.equal(ended.status, 400)
   assert.equal(((await ended.json()) as { error: string }).error, t('结束日期早于第一次执行，计划一次也不会执行'))
+
+  // 角色类别和新建对话同一个判据（ADR 0038）：聊天计划选 Agent 角色、项目计划选 Chat 角色，保存时都拦
+  const wrong = await put(a.id, plan(a.name, { at: a.at, agentId: 'exec' }))
+  assert.equal(wrong.status, 400)
+  assert.equal(
+    ((await wrong.json()) as { error: string }).error,
+    t('「{name}」是 Agent 角色，只能在项目里用；Chat 页请用 Chat 角色', { name: '执行' }),
+  )
+  assert.equal((await put(a.id, plan(a.name, { at: a.at, projectId: 'p', agentId: 'cw' }))).status, 400)
+  assert.equal((await put(a.id, plan(a.name, { at: a.at, agentId: 'cw' }))).status, 200)
 })
 
 test('Webhook：成功启动 / 启动失败 / 错过 / 上游没成功各投递一次，结果记进计划', async () => {

@@ -148,10 +148,10 @@ export function QuestionPanel({
         className,
       )}
     >
-      <div className="flex min-w-0 items-center gap-2 text-[0.8125rem]">
+      <div className="flex min-w-0 items-center gap-2 text-body">
         <span
           aria-hidden
-          className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-warning text-[0.625rem] font-bold text-card"
+          className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-warning text-micro font-bold text-card"
         >
           ?
         </span>
@@ -160,7 +160,7 @@ export function QuestionPanel({
         <span className="flex-1" />
         {/* 多选跟着标题行，不跟着正文滚走 */}
         {q.multiSelect && (
-          <span className="shrink-0 rounded-md bg-card px-1.5 py-0.5 text-[0.6875rem] text-subtle">{t('多选')}</span>
+          <span className="shrink-0 rounded-md bg-card px-1.5 py-0.5 text-caption text-subtle">{t('多选')}</span>
         )}
         {n > 1 && (
           <div role="tablist" className="flex min-w-0 gap-1 overflow-x-auto">
@@ -172,7 +172,7 @@ export function QuestionPanel({
                 aria-selected={i === at}
                 onClick={() => setAt(i)}
                 className={cn(
-                  'flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-[0.6875rem] font-medium transition-colors',
+                  'flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-caption font-medium transition-colors',
                   i === at ? 'bg-fg text-bg' : 'bg-card text-muted hover:text-fg',
                 )}
               >
@@ -207,7 +207,7 @@ export function QuestionPanel({
         )}
       </div>
       {/* 问题正文可能是 AI 写的 Markdown：渲染出来，长了在框里滚，选项和底部按钮始终留着 */}
-      <div className="px-0.5 text-[0.875rem] font-medium">
+      <div className="px-0.5 text-prose font-medium">
         <Markdown
           text={q.question}
           teamNames={teamNames ?? NO_NAMES}
@@ -228,23 +228,21 @@ export function QuestionPanel({
               onClick={() => pick(i)}
               aria-pressed={on}
               className={cn(
-                'group/opt flex min-h-[1.875rem] w-full cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 py-1 text-left transition-colors hover:bg-ask-sel',
+                'group/opt flex min-h-[1.875rem] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1 text-left transition-colors hover:bg-ask-sel',
                 on && 'bg-ask-sel',
               )}
             >
               <Mark on={on} multi={q.multiSelect} />
               <span className="min-w-0 flex-1">
-                <span className={cn('flex items-center gap-1.5 text-[0.84375rem]', on && 'font-medium')}>
+                <span className={cn('flex items-center gap-1.5 text-prose', on && 'font-medium')}>
                   <span className="min-w-0">{name}</span>
                   {rec && (
-                    <span className="shrink-0 rounded-full bg-success/12 px-1.5 text-[0.65625rem] leading-4 font-medium text-success">
+                    <span className="shrink-0 rounded-full bg-success/12 px-1.5 text-caption leading-4 font-medium text-success">
                       {t('推荐')}
                     </span>
                   )}
                 </span>
-                {o.description && (
-                  <span className="block text-[0.75rem] leading-snug text-subtle">{o.description}</span>
-                )}
+                {o.description && <span className="block text-footnote leading-snug text-subtle">{o.description}</span>}
               </span>
               <Num n={i + 1} />
             </button>
@@ -253,7 +251,7 @@ export function QuestionPanel({
         {/* 最后一项：自己输入 */}
         <label
           className={cn(
-            'group/opt flex min-h-[1.875rem] w-full cursor-text items-center gap-2.5 rounded-[7px] px-2.5 py-0.5 transition-colors hover:bg-ask-sel',
+            'group/opt flex min-h-[1.875rem] w-full cursor-text items-center gap-2.5 rounded-lg px-2.5 py-0.5 transition-colors hover:bg-ask-sel',
             a.own && 'bg-ask-sel',
           )}
         >
@@ -277,7 +275,7 @@ export function QuestionPanel({
             }}
             placeholder={q.options.length ? t('都不合适？自己输入…') : t('输入你的回答…')}
             aria-label={t('自己输入回答')}
-            className="h-7 min-w-0 flex-1 bg-transparent text-[0.8125rem] outline-none placeholder:text-subtle"
+            className="h-7 min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-subtle"
           />
           <Num n={q.options.length + 1} />
         </label>
@@ -286,7 +284,7 @@ export function QuestionPanel({
         <span className="flex-1" />
         {/* 多选：已经选了几个，提示可以接着选 */}
         {q.multiSelect && a.picked.length > 0 && (
-          <span className="text-[0.6875rem] text-subtle">{t('已选 {n} 个', { n: a.picked.length })}</span>
+          <span className="text-caption text-subtle">{t('已选 {n} 个', { n: a.picked.length })}</span>
         )}
         {at > 0 && (
           <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setAt(at - 1)}>
@@ -347,7 +345,7 @@ function Num({ n }: { n: number }) {
   return (
     <span
       aria-hidden
-      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-[4px] bg-sel/70 px-1 font-mono text-[0.625rem] text-subtle tabular-nums opacity-0 transition-opacity group-hover/opt:opacity-100"
+      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-[4px] bg-sel/70 px-1 font-mono text-micro text-subtle tabular-nums opacity-0 transition-opacity group-hover/opt:opacity-100"
     >
       {n}
     </span>

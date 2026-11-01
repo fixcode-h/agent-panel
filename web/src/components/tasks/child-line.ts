@@ -16,6 +16,7 @@ import {
   type ChildActivity,
   type ChildEntry,
 } from '@shared/task'
+import type { ChildRequest } from '@shared/child-needs'
 import { plainLine, toolVerb, toolView } from '@/lib/tasks'
 
 /** 父对话里的子对话入口：/children 返回的完整摘要（字段和正式后端一致，演示后端也要补齐） */
@@ -27,6 +28,8 @@ export interface ChildSummary extends ChildEntry {
   branch?: string
   /** 正在执行时这会儿在做什么 */
   activity?: ChildActivity
+  /** 第一条待确认的请求：父对话页直接写出确认什么、给「允许 / 拒绝」（见 ChildRequestBar） */
+  request?: ChildRequest
 }
 
 /** 子对话那一行下面的说明：执行中写正在做什么，其余写它在等什么或最近结果 */
@@ -66,7 +69,10 @@ export function activityText(a: ChildActivity | undefined) {
   }
   if (a.helpers?.length) return t('等待子任务：{list}', { list: a.helpers.join(t('、')) })
   if (a.text) return plainLine(a.text)
-  return t('正在思考…')
+  // 只有服务端说「还没有输出、在想」（thinking，只在 working 时给）才写正在思考。
+  // 一轮结束后 activity 只剩计划进度（见 shared/task.ts 的 childActivity），以前落到这里也写「正在思考…」，
+  // 和「等下一句」同屏、子对话明明空闲了十几分钟还像在跑（实测报告问题 12）
+  return a.thinking ? t('正在思考…') : ''
 }
 
 /**
@@ -127,7 +133,12 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
   const out: ChildLabel[] = []
   if (convGone(c) === 'closed') out.push({ text: t('已关闭'), tone: 'plain' })
   if (c.resolved && icon === 'done') out.push({ text: t('已解决'), tone: 'success', icon: 'check' })
-  if (icon === 'waiting') out.push({ text: t('等{who}选择', { who }), tone: 'warning' })
+  // 等的是权限确认（或它下面的子对话在等）时写「等你确认」：说成「选择」用户会去找提问卡
+  if (icon === 'waiting')
+    out.push({
+      text: c.asking || !(c.requests || c.childNeeds) ? t('等{who}选择', { who }) : t('等{who}确认', { who }),
+      tone: 'warning',
+    })
   if (icon === 'running' && c.plan)
     out.push({ text: t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total }), tone: 'warning' })
   if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })
@@ -150,9 +161,9 @@ export function childClosedHint(c: ChildSummary) {
 
 /** 标签样式：小胶囊带底色的是「状态」，纯文字是「说明」，和列表里的层级一致 */
 export const childLabelClass: Record<ChildLabelTone, string> = {
-  success: 'flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-[0.6875rem] text-success',
-  warning: 'shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning',
-  accent: 'shrink-0 text-[0.6875rem] text-accent-text',
-  subtle: 'shrink-0 text-[0.6875rem] text-subtle',
-  plain: 'shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle',
+  success: 'flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-caption text-success',
+  warning: 'shrink-0 rounded-full bg-warning/15 px-1.5 text-caption text-warning',
+  accent: 'shrink-0 text-caption text-accent-text',
+  subtle: 'shrink-0 text-caption text-subtle',
+  plain: 'shrink-0 rounded-full bg-field px-1.5 text-caption text-subtle',
 }

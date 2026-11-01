@@ -26,7 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { Project, Task } from '@shared/schema'
-import { useData, useNav, type PageId, type Route } from '@/lib/data'
+import { useData, useNav, type PageId, type Route, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
@@ -88,7 +88,7 @@ import {
   type NavIcon,
 } from './rail-icons'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
-import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount } from '@shared/task'
+import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
 
@@ -282,7 +282,7 @@ function Row({
           />
         )}
         {badge && !collapsed && (
-          <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent-text">
+          <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-caption text-accent-text">
             {badge}
           </span>
         )}
@@ -366,12 +366,12 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
             title={m.label}
             // 选中用 seg-thumb：深色下 bg-sel 贴着侧栏底色几乎看不出来；未选中用 muted，subtle 在深色下像禁用
             className={cn(
-              'grid h-9 w-9 cursor-pointer place-items-center rounded-[10px] transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
-              m.on ? 'seg-thumb' : 'text-muted hover:bg-sel/70 hover:text-fg',
+              'press grid h-9 w-9 cursor-pointer place-items-center rounded-xl',
+              m.on ? 'seg-thumb' : 'text-subtle hover:bg-hover hover:text-fg',
             )}
           >
-            {/* 和图标栏的导航图标同一套线宽，小一号（铺满大半个按钮）：模式是次一级的切换 */}
-            <m.icon className="h-7 w-7" strokeWidth={1.9} />
+            {/* 和图标栏的导航图标同一套线宽，小一号：模式是次一级的切换 */}
+            <m.icon className="h-5 w-5" strokeWidth={1.75} />
           </button>
         ))}
       </div>
@@ -394,7 +394,8 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
  */
 export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
   const { route, go, openSettings, openProject } = useNav()
-  const { tasks, projects, setProjects, reloadTasks, removeTask, upsertTask } = useData()
+  const { projects, setProjects, reloadTasks, removeTask, upsertTask } = useData()
+  const { tasks } = useTasks()
   const unread = useUnreadTasks()
   // 橙点以服务端的 turnDoneAt / turnSeenAt 为准：本地缓存只用来补刚完成、列表还没刷新的那一小段时间
   const isUnread = (tk: Task) => isTaskUnread(tk) || unread.includes(tk.id)
@@ -625,7 +626,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           <ChatList />
         )
       ) : !narrow && filtering ? (
-        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+        <div className="scroll-fade mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -669,7 +670,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           />
         </div>
       ) : !narrow ? (
-        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+        <div className="scroll-fade mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -784,7 +785,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                         }
                         alert={
                           !open &&
-                          ts.some((t) => t.requests?.length) && (
+                          // 和对话行同一个判定（taskState）：子对话在等你确认时父对话也是「等你处理」
+                          ts.some((t) => taskState(t) === 'needs') && (
                             <CircleAlert
                               aria-label={t('有对话需要你处理')}
                               className="h-3.5 w-3.5 shrink-0 text-warning"
@@ -808,7 +810,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                                 if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
                                 handle.onKeyDown(e)
                               }}
-                              className="grid h-6 w-0 shrink-0 cursor-grab place-items-center overflow-hidden rounded text-subtle opacity-0 group-hover/proj:w-4 group-hover/proj:opacity-60 hover:opacity-100 focus-visible:w-4 focus-visible:opacity-100 focus-visible:outline-none active:cursor-grabbing"
+                              className="grid h-6 w-0 shrink-0 cursor-grab place-items-center overflow-hidden rounded-sm text-subtle opacity-0 group-hover/proj:w-4 group-hover/proj:opacity-60 hover:opacity-100 focus-visible:w-4 focus-visible:opacity-100 focus-visible:outline-none active:cursor-grabbing"
                             >
                               <GripVertical className="h-3.5 w-3.5" />
                             </span>
@@ -941,7 +943,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       <div className="flex h-12 shrink-0 items-center gap-2 bg-rail px-3 md:hidden">
         <IconButton icon={MenuIcon} label={t('打开菜单')} size="sm" onClick={() => setMobileOpen(true)} />
         <Logo />
-        <span className="font-serif text-[0.9375rem] font-semibold">{t('Agent 面板')}</span>
+        <span className="font-serif text-heading font-semibold">{t('Agent 面板')}</span>
       </div>
       {/* 抽屉只在手机宽度用：窗口拉宽时侧栏本身就出来了，抽屉跟着藏起来 */}
       <Sheet

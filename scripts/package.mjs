@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 出包：把正式版前端和打成单文件的服务端放进 release/agent-panel-<版本>/，再压成 zip 和 tar.gz。
- * 包里只有正式版（不含在线演示的模拟后端），解压后只需要 Node.js 20+，不用 npm install。
+ * 包里只有正式版（不含在线演示的模拟后端），解压后只需要 Node.js 22+，不用 npm install。
  *
  * 用法：node scripts/package.mjs [版本号]   版本号默认取 package.json
  */
@@ -15,11 +15,13 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { build } from 'esbuild'
+import { build as viteBuild } from 'vite'
 
 const root = path.resolve(import.meta.dirname, '..')
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
@@ -98,9 +100,45 @@ mkdirSync(stage, { recursive: true })
 // 各平台包先从同一个暂存目录复制，最后再删掉暂存目录
 const out = stage
 
+/** 演示内容的源码位置：web/src/lib/demo-*.ts（模拟后端、模拟执行、示例数据） */
+const DEMO_SOURCE = /(^|\/)web\/src\/lib\/demo-[^/]*$/
+/** 模块 id 统一成正斜杠、去掉 ?query 和 \0 前缀（插件生成的虚拟模块），再和 DEMO_SOURCE 比 */
+const modulePath = (id) => id.replace(/^\0/, '').replace(/\?.*$/, '').split(path.sep).join('/')
+/**
+ * 打进包里的模块有没有演示源码：按打包器自己记下的模块清单判，不靠猜产物里会出现什么字符串。
+ * 清单是空的、或者连必然在的入口都没有，说明这道检查本身没跑起来（打包器换了、字段改名了），也直接失败
+ */
+function assertNoDemoModules(where, ids, mustHave) {
+  const list = [...ids].map(modulePath)
+  if (!list.length) throw new Error(`${where}：没拿到打包的模块清单，没法确认包里没有演示内容`)
+  if (!list.some((id) => id.endsWith(mustHave)))
+    throw new Error(`${where}：模块清单里没有 ${mustHave}，清单不可信，没法确认包里没有演示内容`)
+  const hit = list.filter((id) => DEMO_SOURCE.test(id))
+  if (hit.length)
+    throw new Error(
+      `包里混进了演示内容（${where} 打进了 ${hit.map((id) => path.relative(root, id).split(path.sep).join('/')).join('、')}）`,
+    )
+}
+
 // 1. 正式版前端（不带 --mode demo，演示用的模拟后端不会打进来）
-// 直接用 node 跑 vite：Windows 上 npx 是 .cmd，execFileSync 启动不了
-run(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build'])
+// 用 Vite 的 JS 接口构建（配置仍是 vite.config.ts）：Windows 上 npx 是 .cmd，execFileSync 启动不了；
+// 另外挂一个只在这里用的插件，记下每个产物 chunk 实际打进了哪些模块，下面按它查演示内容
+const webModules = new Set()
+await viteBuild({
+  configFile: path.join(root, 'vite.config.ts'),
+  mode: 'production',
+  plugins: [
+    {
+      name: 'release-module-list',
+      apply: 'build',
+      generateBundle(_, bundle) {
+        for (const f of Object.values(bundle))
+          if (f.type === 'chunk') for (const id of f.moduleIds ?? Object.keys(f.modules ?? {})) webModules.add(id)
+      },
+    },
+  ],
+})
+assertNoDemoModules('前端', webModules, 'web/src/main.tsx')
 cpSync(path.join(root, 'dist'), path.join(out, 'dist'), { recursive: true })
 // 内置的 Maple Mono 是 SIL OFL 字体，许可证要跟着字体一起发
 cpSync(path.join(root, 'web/src/assets/fonts/maple-mono-nl/OFL.txt'), path.join(out, 'dist/assets/MapleMono-OFL.txt'))
@@ -111,13 +149,13 @@ cpSync(
 )
 const files = (p) => (statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => files(path.join(p, f))) : [p])
 // 2. 服务端打成一个文件，依赖全部内联
-await build({
+const serverBuild = await build({
   entryPoints: [path.join(root, 'server/index.ts')],
   outfile: path.join(out, 'server.mjs'),
   bundle: true,
   platform: 'node',
   format: 'esm',
-  target: 'node20',
+  target: 'node22',
   minify: false,
   legalComments: 'none',
   // 版本号写进服务端，设置里的「版本更新」靠它判断有没有新包
@@ -140,10 +178,10 @@ await build({
     __BLENDER_BRIDGE__: JSON.stringify(readFileSync(path.join(root, 'server/blender/bridge.py'), 'utf8')),
     __EXTENSION_FILES__: JSON.stringify(
       Object.fromEntries(
-        readdirSync(path.join(root, 'extension')).map((f) => [
-          f,
-          readFileSync(path.join(root, 'extension', f)).toString('base64'),
-        ]),
+        // pairing.json 是本机面板写出来的配对令牌，绝不能跟着包发出去
+        readdirSync(path.join(root, 'extension'))
+          .filter((f) => f !== 'pairing.json')
+          .map((f) => [f, readFileSync(path.join(root, 'extension', f)).toString('base64')]),
       ),
     ),
   },
@@ -151,9 +189,17 @@ await build({
   external: ['*.node', 'cpu-features'],
   // 依赖里有 CommonJS 模块（cross-spawn），给它一个 require
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
+  // 记下打进 server.mjs 的源文件，和前端一样按模块清单查演示内容
+  metafile: true,
 })
+assertNoDemoModules(
+  '服务端',
+  Object.keys(serverBuild.metafile?.inputs ?? {}).map((f) => path.resolve(process.cwd(), f)),
+  'server/index.ts',
+)
 
-// 演示用的模拟后端和模拟执行（示例输出）都不能出现在包里
+// 演示用的模拟后端和模拟执行（示例输出）都不能出现在包里。上面已经按模块清单查过；这里是第二道：
+// 演示文案被复制进非 demo 文件时模块清单查不出来，按产物里的几句标志性字符串再扫一遍。
 // 不用系统的 grep：Windows 上没有，而且找不到命令时会被当成「没找到」
 const shipped = [...files(path.join(out, 'dist')), path.join(out, 'server.mjs')]
 const grep = (word) =>
@@ -176,7 +222,7 @@ writeFileSync(
       private: true,
       type: 'module',
       description: pkg.description,
-      engines: { node: '>=20' },
+      engines: { node: '>=22.12' },
       scripts: { start: 'node server.mjs --prod' },
     },
     null,
@@ -191,12 +237,12 @@ writeFileSync(
     'cd "$(dirname "$0")" || exit 1',
     // 没装 Node 或版本太旧时直接说清楚，不让用户对着一串报错猜
     'if ! command -v node >/dev/null 2>&1; then',
-    '  echo "没有找到 Node.js。Agent 面板需要 Node.js 20 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
+    '  echo "没有找到 Node.js。Agent 面板需要 Node.js 22 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
     '  exit 1',
     'fi',
     'major=$(node -p "process.versions.node.split(\'.\')[0]" 2>/dev/null || echo 0)',
-    'if [ "$major" -lt 20 ] 2>/dev/null; then',
-    '  echo "Node.js 版本太旧（$(node -v)），需要 20 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
+    'if [ "$major" -lt 22 ] 2>/dev/null; then',
+    '  echo "Node.js 版本太旧（$(node -v)），需要 22 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
     '  exit 1',
     'fi',
     'exec node server.mjs --prod "$@"',
@@ -215,7 +261,7 @@ writeFileSync(
   [
     `Agent 面板 v${version}`,
     '',
-    '1. 安装 Node.js 20 或更新版本：https://nodejs.org',
+    '1. 安装 Node.js 22 或更新版本：https://nodejs.org',
     '2. 至少安装并登录一个 CLI：Claude Code（claude）、Codex（codex）或 Command Code（cmdc）',
     '3. 启动：',
     '   Windows：双击 AgentPanel.exe，程序在任务栏右下角的通知区显示图标，不会打开命令行窗口，',
@@ -237,7 +283,10 @@ writeFileSync(
 )
 cpSync(path.join(root, 'README.md'), path.join(out, 'README.md'))
 // 浏览器扩展：UI 设计里用已登录的 Gemini / ChatGPT 网页生成图片，在浏览器里「加载已解压的扩展程序」选这个目录
-cpSync(path.join(root, 'extension'), path.join(out, 'extension'), { recursive: true })
+cpSync(path.join(root, 'extension'), path.join(out, 'extension'), {
+  recursive: true,
+  filter: (src) => path.basename(src) !== 'pairing.json',
+})
 
 // 打好的服务端要能直接加载（更新时新版本也是这样试跑的）
 run(process.execPath, [path.join(stage, 'server.mjs'), '--self-check'], stage)
@@ -286,8 +335,9 @@ if (process.argv.includes('--no-archive')) {
 }
 
 // 5. 压缩：Windows 用 zip（解压出来带目录，双击 AgentPanel.exe）；macOS / Linux 用 tar.gz。
-// macOS 也出 zip：.app 是目录，zip 能带上可执行权限，方便在 Finder 里直接解压
-// 用系统自带的 tar：Windows 10 起是 bsdtar，-a 按扩展名选格式，能直接写 zip；不依赖只有 Linux 才有的 zip 命令
+// macOS 也出 zip：.app 是目录，zip 能带上可执行权限，方便在 Finder 里直接解压。
+// zip 怎么写看本机的 tar：bsdtar（Windows 10 起自带、macOS）的 -a 按扩展名写 zip；GNU tar（Linux、CI）不认 -a 写 zip，
+// 会悄悄写成未压缩的 tar——发布过的 .zip 就是这样打不开的，所以 Linux 上用 zip 命令，最后再核对文件头
 const archives = {
   win: [`${base}.zip`],
   mac: [`${base}-mac.tar.gz`, `${base}-mac.zip`],
@@ -295,14 +345,52 @@ const archives = {
 }
 for (const list of Object.values(archives)) for (const f of list) rmRetry(path.join(outRoot, f))
 
+const gnuTar = (() => {
+  try {
+    return execFileSync('tar', ['--version'], { encoding: 'utf8' }).includes('GNU tar')
+  } catch {
+    return false
+  }
+})()
+// 同一份代码两次出包哈希要一样：文件时间统一成这次提交的时间，GNU tar 再固定排序和属主
+const stamp = (() => {
+  try {
+    return Number(execFileSync('git', ['log', '-1', '--format=%ct'], { cwd: root, encoding: 'utf8' }).trim()) || 0
+  } catch {
+    return 0
+  }
+})()
+function touchTree(dir) {
+  if (!stamp) return
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name)
+    if (e.isDirectory()) touchTree(p)
+    if (!e.isSymbolicLink()) utimesSync(p, stamp, stamp)
+  }
+  utimesSync(dir, stamp, stamp)
+}
+const reproducible = gnuTar ? ['--sort=name', '--owner=0', '--group=0', '--numeric-owner'] : []
 const archive = (file, dir) => {
-  if (file.endsWith('.tar.gz')) run('tar', ['-czf', file, dir], outRoot)
+  touchTree(path.join(outRoot, dir))
+  if (file.endsWith('.tar.gz')) {
+    // gzip 头里不写文件名和时间（-n），否则每次出包都不一样
+    if (gnuTar) run('tar', [...reproducible, '-I', 'gzip -n', '-cf', file, dir], outRoot)
+    else run('tar', ['-czf', file, dir], outRoot)
+  } else if (gnuTar) run('zip', ['-qrX', file, dir], outRoot)
   else run('tar', ['-a', '-cf', file, dir], outRoot)
 }
 for (const [platform, list] of Object.entries(archives)) for (const name of list) archive(name, nameOf(platform))
 
 const all = [...archives.win, ...archives.mac, ...archives.linux]
 for (const f of all) if (!existsSync(path.join(outRoot, f))) throw new Error(`压缩失败：${f}`)
+// 核对文件头：.zip 必须是真的 zip（PK\x03\x04），.tar.gz 必须是 gzip（1f 8b）
+for (const f of all) {
+  const head = readFileSync(path.join(outRoot, f)).subarray(0, 4)
+  const ok = f.endsWith('.zip')
+    ? head.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
+    : head[0] === 0x1f && head[1] === 0x8b
+  if (!ok) throw new Error(`压缩格式不对：${f} 的文件头是 ${head.toString('hex')}`)
+}
 // 校验文件和包一起发布：设置里更新时先对哈希，下载不完整就不装
 const sums = all.map(
   (f) =>

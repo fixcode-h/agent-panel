@@ -13,11 +13,11 @@ writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ stepTimeoutMinut
 
 const { getSettings } = await import('./settings.ts')
 
-test('设置字段不合法：备份到 cache/broken，按默认设置继续跑', async () => {
+test('设置字段不合法：备份到 broken/，按默认设置继续跑', async () => {
   const s = await getSettings()
   assert.equal(s.stepTimeoutMinutes, 0, '回退到默认设置')
 
-  const broken = path.join(dir, 'cache', 'broken')
+  const broken = path.join(dir, 'broken')
   assert.ok(existsSync(broken), '备份目录存在')
   assert.ok(
     readdirSync(broken).some((f) => f.startsWith('settings.json.broken-')),

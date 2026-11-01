@@ -32,3 +32,9 @@ paths: shared/schema.ts, shared/task.ts, shared/data.ts, shared/settings.ts, ser
 - 规则：要清掉 Task 上的可选字段（`wrapRequest`、`rewind` 这类）时写 `x.field = undefined`，不要 `delete x.field`：`store.update` 是把传入的字段盖到旧记录上（`{ ...old, ...input }`），删掉的键盖不掉旧值，落盘后还是原样。由 `scripts/rules-check.mjs` 拦（确实不是 Task 的对象在行尾写 `delete-ok: 原因`）。
 - 起因：2026-10-24 用户导出的对话里 7 个已完成的子对话都挂着 `wrapRequest: merging`；叫醒后 submit_merge 一直被拒「父对话正在合并你的分支」（真实 Pi 复现）。
 - 防线：`scripts/real-cli/pi-handoff.mjs` 的「叫醒后再请求收尾」；规则检查第 6 条。
+
+## 记住用户选择的字段：同一个提交里要有写入点和断言写入的测试
+
+- 规则：schema 里加「记住用户的选择 / 回答」这类状态字段时，同一个提交里要有非测试代码的写入点和断言写入的测试，只加读的地方等于功能没做；分步落地时在提交说明写清还差哪一半。写入落在用户真正做出选择的那一处（如 `answerRequest`），关掉、作废、自动作答都不写。
+- 起因：c5e5c5d8 加了 `Task.remotePush`（「对话记住用户的推送选择」）却一直没有写入点，之后几个提交只加了读，推送授权每轮都按「没回答」算。
+- 防线：`server/exec/panel-requests.test.ts`。

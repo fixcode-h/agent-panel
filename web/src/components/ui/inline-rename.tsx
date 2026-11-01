@@ -66,7 +66,7 @@ export function InlineRename({
       onClick={(e) => e.stopPropagation()}
       className={cn(
         'min-w-0 border border-focus bg-field text-fg outline-none',
-        size === 'sm' ? 'h-7 rounded-md px-1.5 text-[0.75rem]' : 'h-8 rounded-lg px-2 text-[0.8125rem]',
+        size === 'sm' ? 'h-7 rounded-md px-1.5 text-footnote' : 'h-8 rounded-lg px-2 text-body',
         className,
       )}
     />

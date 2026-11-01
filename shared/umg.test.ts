@@ -16,6 +16,7 @@ import {
   exportWidget,
   imageFitStyle,
   isHiddenVisibility,
+  linearColor,
   nineSliceRatios,
   normalizeTree,
   rectToCanvasSlot,
@@ -126,6 +127,18 @@ test('assignImage：没有九宫格的图不写 Margin', () => {
   assert.equal(b.DrawAs, 'Image')
   assert.deepEqual([b.Margin.Left, b.Margin.Top, b.Margin.Right, b.Margin.Bottom], [0, 0, 0, 0])
   assert.deepEqual(b.ImageSize, { X: 96, Y: 96 })
+})
+
+test('assignImage：纯色画刷第一次套图时着色改回白色，已经有图的保留用户的着色', () => {
+  // 按钮默认的纯色画刷是 #3A3A3A：套图后不改回白色，UE 里图片乘上它几乎是黑的
+  const w = assignImage(border({ ...brush(), TintColor: '#3A3A3AFF' }), { id: 'frame', width: 64, height: 64 })
+  assert.equal((w.Properties.Background as any).TintColor, '#FFFFFFFF')
+  const tinted = assignImage(border({ ...brush(), ResourceObject: 'img:old', TintColor: '#FF0000FF' }), {
+    id: 'frame',
+    width: 64,
+    height: 64,
+  })
+  assert.equal((tinted.Properties.Background as any).TintColor, '#FF0000FF')
 })
 
 test('clampWidgetSize：宽高不小于最小尺寸，非法值也按最小尺寸算', () => {
@@ -321,4 +334,28 @@ test('applyVisibility：按 id 叠到子控件上，已经不在树上的 id 跳
   assert.equal(applyVisibility(root, { gone: 'Visible' }), root)
   // 没有改动时原样返回
   assert.equal(applyVisibility(root, {}), root)
+})
+
+test('exportWidget：只转换颜色和图片字段，文字里的 "#123456"、"img:abc" 原样保留；颜色短写也转', () => {
+  const w: Widget = {
+    id: 't1',
+    Type: 'TextBlock',
+    Name: 'Label',
+    Properties: {
+      Text: '#123456',
+      ToolTipText: 'img:abc',
+      ColorAndOpacity: '#fff',
+      ShadowColorAndOpacity: '#0008',
+      Font: { OutlineSettings: { OutlineColor: '#FF0000' } },
+    },
+  }
+  const out = exportWidget(w, new Map([['abc', 'T_Abc']]))
+  assert.equal(out.Properties.Text, '#123456')
+  assert.equal(out.Properties.ToolTipText, 'img:abc')
+  assert.deepEqual(out.Properties.ColorAndOpacity, linearColor('#FFFFFFFF'))
+  assert.equal(out.Properties.ShadowColorAndOpacity.Hex, '#00000088')
+  assert.equal(out.Properties.Font.OutlineSettings.OutlineColor.Hex, '#FF0000FF')
+  // 7 位这种半截的不是颜色：不转，原样交给 UE 由导入端报错
+  const bad = exportWidget({ ...w, Properties: { ColorAndOpacity: '#1234567' } }, new Map())
+  assert.equal(bad.Properties.ColorAndOpacity, '#1234567')
 })

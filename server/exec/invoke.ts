@@ -1,9 +1,9 @@
-import { getCli, type BuildOptions } from '../../shared/clis.ts'
+import { effortEnv, getCli, isOffEffort, type BuildOptions } from '../../shared/clis.ts'
 import { apiModelIdFor } from '../../shared/accounts.ts'
 import { cliSettings } from '../../shared/settings.ts'
 import { rpcSessionFor } from './rpc/index.ts'
 import { parserFor, type CliEvent } from './parsers.ts'
-import { runProcess, type ProcessResult } from './process.ts'
+import { earlyExitError, runProcess, stderrTail, type ProcessResult } from './process.ts'
 import type { TrackedOwner } from './orphans.ts'
 import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
@@ -44,9 +44,6 @@ const ASK_HINT = '（需要向用户提问时，用工具 ask_user，不要把�
 const NOTES_HINT =
   '（重要：开始动手前先调用 read_user_notes；之后每完成 2~3 个工具调用、以及准备执行耗时操作前再调用一次。' +
   '用户可能在你执行中补充要求：相关的按它调整方向继续当前任务，无关的先做完手上的事再处理，不要从头重做。）'
-/** 对话页开着时：回复完停在进程里等下一句，不用结束进程再 --resume */
-const WAIT_HINT =
-  '（每轮回复完成后调用 wait_user_message 等用户的下一条消息：返回用户消息时接着处理，返回「用户已经离开了这个对话」时结束本轮。没有新要求时不要自己开始别的工作。）'
 
 /** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
 export interface CliControl {
@@ -140,11 +137,13 @@ export async function invokeCli(o: {
       cli: o.cliId,
     })
   // API 方式下这一轮要思考：加上 CLI 定义里打开思考的参数（Codex 对第三方接口的模型默认不要思考摘要）
-  const thinkArgs = cs.api && effort && effort !== 'off' ? (def.auth?.api?.thinkArgs ?? []) : []
+  const thinkArgs = cs.api && effort && !isOffEffort(def, effort) ? (def.auth?.api?.thinkArgs ?? []) : []
   const picked =
     effort === req.effort && !thinkArgs.length
       ? req
       : { ...req, effort, extraArgs: [...(req.extraArgs ?? []), ...thinkArgs] }
+  // 这一档要靠环境变量生效的（Claude Code 关思考），按最终用的强度加上
+  const env = effortEnv(def, effort, o.env)
   // 设置里的开关（参数规则按 opt.<id> 判断）：调用方没给时用这个 CLI 现在的设置
   let build = picked.options ? picked : { ...picked, options: cs.options }
   // 角色说明（多行）不走参数：能传文件的 CLI 写进这一轮的临时目录，参数里只放路径。
@@ -178,7 +177,7 @@ export async function invokeCli(o: {
   let restore: (() => Promise<void>) | undefined
   let bridge: ReturnType<typeof openAskBridge> | undefined
   let slot: ReturnType<typeof claimPanelName> | undefined
-  let run = { ...o, build }
+  let run = { ...o, build, env }
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
   let input = o.input
   const askable = !!o.askUser && !o.noAskTool
@@ -213,8 +212,9 @@ export async function invokeCli(o: {
       if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`
       // 没有插话协议的 CLI：补充登记给它，让模型中途自己取
       if (notes) input = `${input}\n\n${NOTES_HINT}`
-      // 对话页开着：回复完停在等下一句的工具上
-      if (wait) input = `${input}\n\n${WAIT_HINT}`
+      // 不再提示「每轮回复完成后调用 wait_user_message」：保活由面板在这一轮结束时自己做（见 keepAlive），
+      // 这句提示会让模型做完一步就调它把自己挂起，表现为「走一步就停，催一下又走一步」（用户报过，ADR 0037）。
+      // 工具照样挂着：打开对话页时的预热会明确让它调，模型真做完了也可以自己调
     }
   }
   // 语言提醒由 runner 追加在提示词末尾，上面这些用法说明接在了它后面：挪回最后，
@@ -336,7 +336,7 @@ async function invoke(
     // 各家发什么、怎么判断结束由定义里的 rpc 配置或 codex / claude 适配器决定
     // 请求超时时把进程状态和 stderr 带进错误里：用户能自己看出是启动卡住、还是进程已经崩了
     let exited = false
-    let stderrTail = ''
+    let stderrBuf = ''
     /**
      * 保活结束、输入已经关了，CLI 却一直不退出（还挂着自己的后台任务、卡在收尾）：这一份执行永远收不完，
      * 执行位一直占着，之后交给这个对话的消息（父对话交代任务、用户再发一句）全都卡住。限时后直接结束进程
@@ -373,7 +373,7 @@ async function invoke(
         return text
       },
       waited: o.waited,
-      diagnose: { alive: () => !exited, stderr: () => stderrTail },
+      diagnose: { alive: () => !exited, stderr: () => stderrTail(stderrBuf, 40, def.stderrNoise) },
       requestTimeoutMs: o.requestTimeoutMs,
     })
     setControl({
@@ -401,7 +401,7 @@ async function invoke(
             end: () => io.end(),
           }),
         onStderr: (text) => {
-          stderrTail = (stderrTail + text).slice(-4000)
+          stderrBuf = (stderrBuf + text).slice(-4000)
         },
         onLine: (line) => session.line(line),
       })
@@ -409,16 +409,9 @@ async function invoke(
       clearTimeout(exitTimer)
       // 这一轮已经报完结果、只是关输入后不退出被结束：按正常退出交回，别显示成「已停止」
       if (forcedExit && session.finished && r.killed) return { ...r, killed: null, code: 0 }
-      // 没等到这一轮结束就退出了（崩溃、配置错误、登录过期），算失败；stderr 的尾巴一起给用户
-      if (!session.finished && !r.killed && !r.spawnError) {
-        const tail = stderrTail.trim().split('\n').slice(-3).join('\n')
-        o.onEvent({
-          type: 'result',
-          ok: false,
-          error:
-            t('{cli} 没有完成这一轮就退出了', { cli: def.name }) + (tail ? `\n${t('stderr 最后几行：')}\n${tail}` : ''),
-        })
-      }
+      // 没等到这一轮结束就退出了（崩溃、配置错误、登录过期、被外部杀掉），算失败；原因怎么写见 earlyExitError
+      if (!session.finished && !r.killed && !r.spawnError)
+        o.onEvent({ type: 'result', ok: false, error: earlyExitError(def, r, stderrBuf) })
       return r
     } finally {
       clearTimeout(exitTimer)

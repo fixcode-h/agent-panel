@@ -2,21 +2,24 @@
  * 本机 CLI 注册表。CLI 的一切差异都写在定义里（怎么拼参数、怎么解析输出、支持哪些能力、Skill 和说明文件在哪），
  * 面板其他地方按定义里的能力走，不按 CLI 的名字分支。
  *
- * 新增一种 CLI：写一份 JSON 配置（格式见 shared/cli-spec.ts 和 docs/cli-config.md）。
+ * 所有 CLI（含 Claude Code、Codex）都是一份 JSON 配置（格式见 shared/cli-spec.ts 和 docs/cli-config.md）：
  * - 内置：放在 shared/clis/ 下，在下面的 BUILTIN_SPECS 里引入，再在 shared/locales/en/ 里补上文案的英文（也可以写在配置的 i18n 里）
  * - 用户自己加：放在数据目录的 config/clis/ 下，面板启动时读取，不用改代码
- * Claude Code 和 Codex 的协议差别较大，分别用 server/exec/rpc/ 下的 claude、codex 适配器；其余 CLI 的常驻协议写在配置里。
+ * Claude Code 和 Codex 的协议差别较大，配置里写 rpc.kind 为 claude、codex，由 server/exec/rpc/ 下的适配器处理；
+ * 其余 CLI 的常驻协议直接写在配置里。
  *
  * CLI 都用「非交互 + 结构化输出」模式运行；常驻协议的任务描述走协议，其余 CLI 从 stdin 传入，
  * 避免长文本、换行和引号在不同系统的命令行里转义出错。
  */
 import { t } from './i18n.ts'
 import { CliSpec, specToDefinition, type CliSpecInput, type RpcSpecInput } from './cli-spec.ts'
+import claude from './clis/claude.json'
+import codex from './clis/codex.json'
 import commandcode from './clis/commandcode.json'
 import pi from './clis/pi.json'
 
-/** 写成配置文件的内置 CLI，按这个顺序排在 Claude Code、Codex 后面 */
-const BUILTIN_SPECS = [commandcode, pi]
+/** 内置 CLI 的配置文件，界面上按这个顺序排 */
+const BUILTIN_SPECS = [claude, codex, commandcode, pi]
 export interface PermissionOption {
   id: string
   label: string
@@ -46,6 +49,11 @@ export interface BuildOptions {
   /** 还没开独立分支、现在不能改文件：能按名字关掉工具的 CLI 把改文件的工具关掉 */
   noEdit?: boolean
   /**
+   * 只要一段文字的一次性小活（例如起对话标题）：能关掉全部工具、换成极简系统提示的 CLI 就这样跑，
+   * 省掉每次上万 token 的工具定义和 CLI 自带的长系统提示
+   */
+  textOnly?: boolean
+  /**
    * 从 resume 的会话分叉出一个新会话（原会话不动）；给了 turn 时只保留到那一轮（含）：
    * Codex 用 turn id，Claude Code 用那一轮最后一条回复的 uuid；
    * before 是要丢掉的第一轮的 id，分叉到它之前（Pi 用那一轮用户消息的 entryId）
@@ -66,9 +74,7 @@ export interface BuildOptions {
 
 /** 审查什么：未提交的改动、和某个分支的差异，或者按说明审查 */
 export type ReviewTarget =
-  | { type: 'uncommitted' }
-  | { type: 'base'; branch: string }
-  | { type: 'custom'; instructions: string }
+  { type: 'uncommitted' } | { type: 'base'; branch: string } | { type: 'custom'; instructions: string }
 
 export type ModelTier = 'high' | 'medium' | 'low'
 
@@ -97,8 +103,8 @@ export interface CliDefinition {
     efforts?: string[]
     origin?: 'cli' | 'config'
   }[]
-  /** 支持的思考强度（从低到高）；为空表示不支持 */
-  efforts: { id: string; label: string }[]
+  /** 支持的思考强度（从低到高）；为空表示不支持。off 是「关掉思考」那一档，见 cli-spec.ts */
+  efforts: { id: string; label: string; off?: boolean; env?: Record<string, string> }[]
   /** 思考强度跟着模型走（模型目录/配置里这个模型有哪些就能选哪些），不按上面的全局列表过滤 */
   effortsFromModel?: boolean
   /** 高 / 中 / 低三档默认对应的模型和思考强度，设置里可以改 */
@@ -127,6 +133,10 @@ export interface CliDefinition {
   docsUrl: string
   /** 内置了生成图片的工具（UI 设计里用） */
   images?: boolean
+  /** 自带的待办 / 计划会被面板解析显示（见 CliSpec.todos） */
+  todos?: boolean
+  /** 模型列表是运行 CLI 读出来的（界面上叫「{cli} 读取」）；否则叫「{cli} 内置」 */
+  modelsRead?: boolean
   /** Homebrew 的包（brew install 的参数） */
   brew?: string[]
   /**
@@ -144,6 +154,12 @@ export interface CliDefinition {
   effortBoundSession?: boolean
   /** 会话中途能换模型：换了模型仍然续接原来的会话（例如 Pi，模型是每次启动的参数，会话里可以混用） */
   modelSwitch?: boolean
+  /**
+   * 会话能在别的目录里续接：中途开了独立分支、换了目录也照样 --resume 原来的会话，不用丢掉重开。
+   * 例如 Claude Code（2.1.316 实测：会话按 id 全局找，续接后工作目录是这次启动的目录）。
+   * 不写时按「会话按目录存」处理，换了目录就开新会话、带上之前的对话（Pi 会停下来问要不要分叉）
+   */
+  resumeAnyDir?: boolean
   /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、rpc 时用） */
   parser: string | import('./cli-spec.ts').OutputSpec
   /** 执行中能插话 */
@@ -200,6 +216,10 @@ export interface CliDefinition {
   envExample: string
   /** 每次运行都加的环境变量，用户在设置里写的同名变量优先 */
   env?: Record<string, string>
+  /** stderr 里和失败无关的提示行（见 cli-spec.ts 的 stderrNoise）：失败原因里的 stderr 尾巴去掉这些行 */
+  stderrNoise?: RegExp[]
+  /** 自动压缩抖动的报错（见 cli-spec.ts 的 compactThrash）：认出来时在原会话里续一轮，再失败才报失败 */
+  compactThrash?: RegExp
   /** 设置里给用户的开关（见 cli-spec.ts 的 options）：打开时加上 env，参数规则用「opt.<id>」判断 */
   options?: { id: string; label: string; hint: string; default: boolean; env: Record<string, string> }[]
   /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、pi（pi --list-models）、claude（配置和环境变量）；为空时只用 models 里写的 */
@@ -221,456 +241,56 @@ export interface CliDefinition {
   apiMode?: boolean
 }
 
-const opt = (cond: unknown, ...args: string[]) => (cond ? args : [])
+export const CLIS: CliDefinition[] = BUILTIN_SPECS.map((s) => specToDefinition(s as CliSpecInput))
 
-/** 设置里的额外参数是按 codex exec 写的；app-server 只认配置类参数（-c、--enable、--disable），其余丢掉免得启动失败 */
-function appServerArgs(args: string[]) {
-  const out: string[] = []
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i]
-    if (/^(-c|--config|--enable|--disable)$/.test(a) && i + 1 < args.length) out.push(a, args[++i])
-    else if (/^(--config|--enable|--disable)=/.test(a)) out.push(a)
-  }
+export const getCli = (id: string) => CLIS.find((c) => c.id === id)
+
+/** CLI 里「关掉思考」那一档的 id；没有这一档时是 undefined */
+export const offEffort = (def: Pick<CliDefinition, 'efforts'> | undefined) => def?.efforts.find((e) => e.off)?.id
+
+/** 是不是「关掉思考」那一档；按 CLI 定义判断，不按档位名字 */
+export const isOffEffort = (def: Pick<CliDefinition, 'efforts'> | undefined, effort: string | undefined) =>
+  !!effort && effort === offEffort(def)
+
+type Env = Record<string, string | undefined>
+
+/**
+ * 这一轮的强度要加的环境变量（定义里那一档的 env，例如 Claude Code 关思考）。
+ * 两边都是 JSON 对象时合并（用户自己在 CLAUDE_CODE_EXTRA_BODY 里写的别的字段不能被整个顶掉），否则这一档的值为准
+ */
+export function effortEnv(def: Pick<CliDefinition, 'efforts'> | undefined, effort: string | undefined, env: Env): Env {
+  const add = effort ? def?.efforts.find((e) => e.id === effort)?.env : undefined
+  if (!add) return env
+  const out: Env = { ...env }
+  for (const [k, v] of Object.entries(add)) out[k] = mergeJson(out[k], v)
   return out
 }
 
-export const CLIS: CliDefinition[] = [
-  {
-    id: 'claude',
-    name: 'Claude Code',
-    command: 'claude',
-    versionArgs: ['--version'],
-    models: [
-      { id: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
-      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
-      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
-      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
-    ],
-    permissions: [
-      {
-        id: 'acceptEdits',
-        label: t('自动接受改文件'),
-        hint: t('可以直接读写文件；需要审批的命令会在任务页上请你确认'),
-      },
-      { id: 'bypassPermissions', label: t('跳过所有确认'), hint: t('可以执行任意命令，只在信任的项目里用') },
-      { id: 'plan', label: t('只读规划'), hint: t('只分析和出方案，不改文件') },
-      { id: 'default', label: t('逐项确认'), hint: t('改文件和需要审批的命令都会在任务页上请你确认') },
-    ],
-    efforts: [
-      { id: 'low', label: t('低') },
-      { id: 'medium', label: t('中') },
-      { id: 'high', label: t('高') },
-      { id: 'xhigh', label: t('很高') },
-      { id: 'max', label: t('最高') },
-    ],
-    tiers: {
-      high: { model: 'claude-opus-5-5', effort: 'high' },
-      medium: { model: 'claude-sonnet-5-5', effort: 'medium' },
-      low: { model: 'claude-haiku-5-5', effort: 'low' },
-    },
-    defaultPermission: 'acceptEdits',
-    systemPromptFlag: true,
-    // 角色说明动辄上万字，直接放参数里会超过 Windows 命令行 8191 字的上限（cmd.exe 报 The command line is too long）
-    systemPromptFileFlag: '--append-system-prompt-file',
-    buildArgs: (o) => [
-      '-p',
-      '--output-format',
-      'stream-json',
-      '--verbose',
-      '--include-partial-messages',
-      // 任务描述走 stdin 上的 JSON，执行中还能插话、中断；需要审批的操作也通过 stdin / stdout 上的控制消息发给面板
-      '--input-format',
-      'stream-json',
-      // 跳过确认时也要传：不传这个参数，Claude Code 不把 AskUserQuestion 放进工具列表，模型的提问就只能变成纯文本，
-      // 提问卡片弹不出来；权限确认本身仍由下面的 --dangerously-skip-permissions 跳过
-      '--permission-prompt-tool',
-      'stdio',
-      ...opt(o.model, '--model', o.model),
-      ...opt(o.effort, '--effort', o.effort!),
-      ...(o.permission === 'bypassPermissions'
-        ? ['--dangerously-skip-permissions']
-        : // 「逐项确认」也要明确传 default，否则会沿用 ~/.claude/settings.json 里的 defaultMode
-          opt(o.permission, '--permission-mode', o.permission)),
-      ...opt(o.resume, '--resume', o.resume!),
-      ...opt(o.resume && o.fork, '--fork-session'),
-      ...opt(o.resume && o.fork?.end, '--resume-session-at', o.fork?.end ?? ''),
-      ...opt(
-        o.systemPrompt,
-        o.systemPromptFile ? '--append-system-prompt-file' : '--append-system-prompt',
-        o.systemPrompt!,
-      ),
-      ...opt(o.maxTurns, '--max-turns', String(o.maxTurns)),
-      ...(o.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
-      // 关掉 Claude 自带的子 Agent：拆出去的活都走面板的 spawn_agents，进度、并发和结果才看得见。
-      // 要改文件时才开独立分支的对话，开之前连改文件的工具一起关掉，免得直接改到原目录
-      '--disallowedTools',
-      // Monitor 也是 CLI 自己的后台监视，同样不受面板监管
-      ['Task', 'Agent', 'Monitor', ...(o.noEdit ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : [])].join(','),
-      ...o.extraArgs,
-    ],
-    installHint: 'npm install -g @anthropic-ai/claude-code',
-    npmPackage: '@anthropic-ai/claude-code',
-    brew: ['--cask', 'claude-code'],
-    docsUrl: 'https://code.claude.com/docs',
-    protocol: 'rpc',
-    rpc: { kind: 'claude', nativeAsk: true, pluginSkills: true },
-    parser: 'claude',
-    steer: true,
-    notes: false,
-    keepAlive: true,
-    compact: 'slash',
-    review: 'prompt',
-    fork: 'end',
-    autoCompact: 'env',
-    autoCompactEnv: 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
-    limitEnv: { context: 'CLAUDE_CODE_MAX_CONTEXT_TOKENS', maxOutput: 'CLAUDE_CODE_MAX_OUTPUT_TOKENS' },
-    slash: true,
-    nativeCommands: ['init', 'security-review'],
-    limits: 'push',
-    docs: ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md'],
-    globalDoc: '${CLAUDE_CONFIG_DIR:-~/.claude}/CLAUDE.md',
-    // 量级取自 Claude Code 2.x 的 /context：系统提示词约 3k、内置工具约 12k，自动压缩留约 33k
-    context: { systemPrompt: 3000, systemTools: 12000, compactReserve: 33000, docsMode: 'all', docsImports: true },
-    docsNote: t(
-      'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。',
-    ),
-    skills: { user: ['~/.claude/skills'], repo: ['.claude/skills'] },
-    commands: { user: ['~/.claude/commands'], repo: ['.claude/commands'], format: 'md', prefix: '' },
-    modelsFrom: 'claude',
-    readOnly: 'default',
-    auth: {
-      login: ['auth', 'login'],
-      home: '${CLAUDE_CONFIG_DIR:-~/.claude}',
-      files: ['.credentials.json'],
-      // 账号信息（邮箱）记在 .claude.json 里
-      fields: [{ file: '${CLAUDE_CONFIG_DIR:-~}/.claude.json', keys: ['oauthAccount'] }],
-      keychain: 'Claude Code-credentials',
-      identity: 'claude',
-      loginEdits: [],
-      loginStdin: '',
-      loginAlreadyLoggedIn: false,
-      accountNote: '',
-      api: {
-        protocols: ['anthropic'],
-        defaultProvider: 'agentpanel',
-        modelSource: 'api',
-        modelPrefix: '',
-        env: {},
-        args: [],
-        edits: [
-          {
-            file: '${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json',
-            format: 'json',
-            merge: false,
-            set: {
-              'env.ANTHROPIC_BASE_URL': '{baseUrl}',
-              'env.{keyEnv}': '{apiKey}',
-            },
-            unset: [],
-          },
-        ],
-        accountEdits: [
-          {
-            file: '${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json',
-            format: 'json',
-            merge: false,
-            set: {},
-            unset: ['env.ANTHROPIC_BASE_URL', 'env.ANTHROPIC_AUTH_TOKEN', 'env.ANTHROPIC_API_KEY'],
-          },
-        ],
-        wire: {},
-        // Claude Code 自己在地址后面拼 /v1/messages：设置里写成 …/v1 的中转地址要去掉 /v1
-        baseUrl: { anthropic: '{root}' },
-        thinkArgs: [],
-      },
-      // 环境变量和 settings.json 的 env 里配的网关、密钥
-      apiSources: [
-        {
-          file: '',
-          format: 'json',
-          at: '',
-          each: false,
-          protocol: 'anthropic',
-          wire: {},
-          baseUrl: ['ANTHROPIC_BASE_URL'],
-          defaultBaseUrl: 'https://api.anthropic.com',
-          apiKey: ['ANTHROPIC_API_KEY'],
-          bearerKey: ['ANTHROPIC_AUTH_TOKEN'],
-          keyEnv: [],
-          models: [
-            'ANTHROPIC_MODEL',
-            'ANTHROPIC_DEFAULT_OPUS_MODEL',
-            'ANTHROPIC_DEFAULT_SONNET_MODEL',
-            'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-          ],
-          wireKey: [],
-          name: [],
-        },
-        {
-          file: '${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json',
-          format: 'json',
-          at: 'env',
-          each: false,
-          protocol: 'anthropic',
-          wire: {},
-          baseUrl: ['ANTHROPIC_BASE_URL'],
-          defaultBaseUrl: 'https://api.anthropic.com',
-          apiKey: ['ANTHROPIC_API_KEY'],
-          bearerKey: ['ANTHROPIC_AUTH_TOKEN'],
-          keyEnv: [],
-          models: [
-            'ANTHROPIC_MODEL',
-            'ANTHROPIC_DEFAULT_OPUS_MODEL',
-            'ANTHROPIC_DEFAULT_SONNET_MODEL',
-            'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-          ],
-          wireKey: [],
-          name: [],
-        },
-      ],
-    },
-    // 只放行这个工具服务，不用逐个确认
-    mcp: {
-      args: [
-        '--mcp-config',
-        '{"mcpServers":{"{name}":{"type":"http","url":"{url}"}}}',
-        '--allowedTools',
-        'mcp__{name}',
-      ],
-      files: {},
-      vars: {},
-      extras: [],
-    },
-    mcpStore: {
-      file: '${CLAUDE_CONFIG_DIR:-~}/.claude.json',
-      format: 'json',
-      key: 'mcpServers',
-      urlKey: 'url',
-      remoteType: 'http',
-      stdioType: true,
-      headersKey: 'headers',
-    },
-    color: '#c96442',
-    envExample: 'ANTHROPIC_API_KEY=sk-ant-...',
-    // 关掉 Claude Code 自带的后台命令（Bash 的 run_in_background、超时自动转后台）：那些命令面板看不见、
-    // 不受对话监管，跑完的结果只在 CLI 进程里，进程被回收就丢了。长命令统一走面板的 run_background
-    env: { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' },
-  },
-  {
-    id: 'codex',
-    name: 'Codex',
-    images: true,
-    command: 'codex',
-    versionArgs: ['--version'],
-    // 读不到本机 Codex 时的建议；能读到时以 `codex app-server` 返回的为准
-    models: [
-      { id: 'gpt-6.1-sol', label: 'GPT-6.1-Sol' },
-      { id: 'gpt-6-astra', label: 'GPT-6-Astra' },
-      { id: 'gpt-6-sol', label: 'GPT-6-Sol' },
-      { id: 'gpt-6-luna', label: 'GPT-6-Luna' },
-    ],
-    permissions: [
-      {
-        id: 'workspace-write',
-        label: t('可写项目目录'),
-        hint: t('沙箱内运行，可以改项目目录里的文件；需要越过沙箱时在任务页上请你确认'),
-      },
-      { id: 'read-only', label: t('只读'), hint: t('只能读文件和跑只读命令') },
-      { id: 'danger-full-access', label: t('完全访问'), hint: t('不使用沙箱、不确认，只在信任的项目里用') },
-    ],
-    efforts: [
-      { id: 'low', label: t('低') },
-      { id: 'medium', label: t('中') },
-      { id: 'high', label: t('高') },
-      { id: 'xhigh', label: t('很高') },
-      { id: 'max', label: t('最高') },
-    ],
-    tiers: {
-      high: { model: 'gpt-6-astra', effort: 'high' },
-      medium: { model: 'gpt-6.1-sol', effort: 'medium' },
-      low: { model: 'gpt-6-luna', effort: 'low' },
-    },
-    defaultPermission: 'workspace-write',
-    // 角色说明通过 app-server 的 developerInstructions 传入
-    systemPromptFlag: true,
-    // 用 app-server 执行才能拿到流式输出；模型、思考强度、沙箱也会在 thread/start、turn/start 里再传一次，
-    // 写在参数里是为了让「环境」里显示的命令看得出用了什么。任务描述和续接的会话走协议，不在参数里
-    buildArgs: (o) => [
-      'app-server',
-      ...opt(o.model, '-c', `model="${o.model}"`),
-      ...opt(o.effort, '-c', `model_reasoning_effort="${o.effort}"`),
-      ...opt(o.autoCompactTokens, '-c', `model_auto_compact_token_limit=${o.autoCompactTokens}`),
-      // Codex 只有上下文窗口的配置（model_context_window），没有最大输出的
-      ...opt(o.contextWindow, '-c', `model_context_window=${o.contextWindow}`),
-      '-c',
-      `sandbox_mode="${o.permission === 'danger-full-access' ? 'danger-full-access' : o.permission || 'workspace-write'}"`,
-      // 和 thread/start 里传的一致：完全访问不确认，其余越过沙箱时请用户确认
-      '-c',
-      `approval_policy="${o.permission === 'danger-full-access' ? 'never' : 'on-request'}"`,
-      ...appServerArgs(o.extraArgs),
-    ],
-    installHint: 'npm install -g @openai/codex',
-    npmPackage: '@openai/codex',
-    brew: ['codex'],
-    docsUrl: 'https://github.com/openai/codex',
-    protocol: 'rpc',
-    rpc: {
-      kind: 'codex',
-      nativeAsk: true,
-      limitsQuery: true,
-      skillsQuery: true,
-      skillsDir: '${CODEX_HOME:-~/.codex}/skills',
-      queryArgs: ['app-server'],
-      handshake: [
-        { method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } },
-        { method: 'initialized', notify: true },
-      ],
-    },
-    // 线程里会留下模型自己的工具调用：换了模型之后不能接着用（现在所有 CLI 换模型都开新会话）
-    parser: '',
-    steer: true,
-    notes: false,
-    keepAlive: true,
-    compact: 'native',
-    review: 'native',
-    fork: 'turn',
-    autoCompact: 'config',
-    limitArgs: ['context'],
-    slash: false,
-    limits: 'query',
-    docs: ['AGENTS.md', 'AGENTS.override.md'],
-    globalDoc: '${CODEX_HOME:-~/.codex}/AGENTS.md',
-    // Codex 的基础指令约 5k token、内置工具约 1.5k；默认到窗口的九成自动压缩。同目录有 override 时用它代替，按 first 读
-    context: { systemPrompt: 5000, systemTools: 1500, compactReservePct: 10, docsMode: 'first' },
-    docsNote: t(
-      'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。',
-    ),
-    // Skill 由 app-server 的 skills/list 给出（含系统自带和插件的），这里不用列目录
-    skills: { user: [], repo: [] },
-    // 自定义提示在 $CODEX_HOME/prompts，界面里用「/prompts:名字」调用
-    commands: { user: ['${CODEX_HOME:-~/.codex}/prompts'], repo: [], format: 'md', prefix: 'prompts:' },
-    modelsFrom: 'codex',
-    readOnly: 'read-only',
-    auth: {
-      login: ['login'],
-      home: '${CODEX_HOME:-~/.codex}',
-      files: ['auth.json'],
-      fields: [],
-      keychain: '',
-      identity: 'codex',
-      loginEdits: [],
-      loginStdin: '',
-      loginAlreadyLoggedIn: false,
-      accountNote: '',
-      api: {
-        protocols: ['openai-responses'],
-        defaultProvider: 'agentpanel',
-        modelSource: 'api',
-        modelPrefix: '',
-        env: {},
-        args: [],
-        edits: [
-          {
-            file: '${CODEX_HOME:-~/.codex}/config.toml',
-            format: 'toml',
-            merge: true,
-            set: {
-              model_provider: '{provider}',
-              'model_providers.{provider}': {
-                name: '{name}',
-                base_url: '{baseUrl}',
-                wire_api: '{wire}',
-                experimental_bearer_token: '{apiKey}',
-              },
-            },
-            unset: [],
-          },
-        ],
-        accountEdits: [
-          {
-            file: '${CODEX_HOME:-~/.codex}/config.toml',
-            format: 'toml',
-            merge: false,
-            set: {},
-            unset: ['model_provider', 'model_providers.{provider}'],
-          },
-        ],
-        wire: { 'openai-responses': 'responses' },
-        baseUrl: {},
-        // 第三方接口的模型 Codex 不认识，默认既不发思考强度、也不要思考摘要；用户选了强度就打开
-        thinkArgs: ['-c', 'model_supports_reasoning_summaries=true'],
-      },
-      // config.toml 里自己接的 model_providers，环境变量和 auth.json 里的 OPENAI_API_KEY
-      apiSources: [
-        {
-          file: '${CODEX_HOME:-~/.codex}/config.toml',
-          format: 'toml',
-          at: 'model_providers',
-          each: true,
-          protocol: 'openai-responses',
-          wire: { responses: 'openai-responses', chat: 'openai-chat' },
-          baseUrl: ['base_url'],
-          defaultBaseUrl: '',
-          apiKey: ['experimental_bearer_token'],
-          bearerKey: [],
-          keyEnv: ['env_key'],
-          models: [],
-          wireKey: ['wire_api'],
-          name: ['name'],
-        },
-        {
-          file: '',
-          format: 'json',
-          at: '',
-          each: false,
-          protocol: 'openai-responses',
-          wire: {},
-          baseUrl: ['OPENAI_BASE_URL'],
-          defaultBaseUrl: 'https://api.openai.com/v1',
-          apiKey: ['OPENAI_API_KEY'],
-          bearerKey: [],
-          keyEnv: [],
-          models: [],
-          wireKey: [],
-          name: [],
-        },
-        {
-          file: '${CODEX_HOME:-~/.codex}/auth.json',
-          format: 'json',
-          at: '',
-          each: false,
-          protocol: 'openai-responses',
-          wire: {},
-          baseUrl: [],
-          defaultBaseUrl: 'https://api.openai.com/v1',
-          apiKey: ['OPENAI_API_KEY'],
-          bearerKey: [],
-          keyEnv: [],
-          models: [],
-          wireKey: [],
-          name: [],
-        },
-      ],
-    },
-    mcp: { args: ['-c', 'mcp_servers.{name}.url="{url}"'], files: {}, vars: {}, extras: [] },
-    mcpStore: {
-      file: '${CODEX_HOME:-~/.codex}/config.toml',
-      format: 'toml',
-      key: 'mcp_servers',
-      urlKey: 'url',
-      remoteType: '',
-      stdioType: false,
-      headersKey: 'http_headers',
-    },
-    color: '#0e8a6b',
-    envExample: 'OPENAI_API_KEY=sk-...',
-  },
-]
+const asObject = (s: string | undefined) => {
+  try {
+    const v: unknown = s ? JSON.parse(s) : undefined
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
 
-// 写成配置文件的内置 CLI
-CLIS.push(...BUILTIN_SPECS.map((s) => specToDefinition(s as CliSpecInput)))
+function mergeJson(old: string | undefined, add: string) {
+  const a = asObject(old)
+  const b = asObject(add)
+  return a && b ? JSON.stringify({ ...a, ...b }) : add
+}
 
-export const getCli = (id: string) => CLIS.find((c) => c.id === id)
+/**
+ * 模型目录里的可选强度换成这个 CLI 能选的：只留 CLI 认识的 id；
+ * 目录只记思考的各档，模型能思考（列了档位）且 CLI 有「关」这一档时补上，不然选了「关」也会被换成最近的思考档
+ */
+export function catalogEfforts(def: Pick<CliDefinition, 'efforts'> | undefined, efforts: string[]) {
+  const allowed = def?.efforts.map((e) => e.id) ?? []
+  const list = allowed.length ? efforts.filter((e) => allowed.includes(e)) : efforts
+  const off = offEffort(def)
+  return off && list.length && !list.includes(off) ? [off, ...list] : list
+}
 
 /** 执行中的补充能不能交给正在跑的 CLI：有插话协议，或者没有协议但能用面板的 MCP 工具取（见 notes） */
 export const steerable = (cli: string | undefined) => {

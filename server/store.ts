@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, cpSync } from 'node:fs'
-import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -20,6 +20,11 @@ import type { z } from 'zod'
  */
 export const DATA_DIR = process.env.AGENT_PANEL_DATA ?? path.join(homedir(), '.agent-panel')
 export const CACHE_DIR = path.join(DATA_DIR, 'cache')
+/**
+ * 坏数据的留档目录：放在数据目录里、不放缓存目录。
+ * 清理缓存会把缓存目录整个删掉，坏文件的原件是唯一能手工恢复的东西，不能跟着缓存一起没了
+ */
+export const BROKEN_DIR = path.join(DATA_DIR, 'broken')
 /** Chat 模式的聊天各自的工作目录（不属于任何项目） */
 export const CHATS_DIR = path.join(DATA_DIR, 'chats')
 /** 节点之间交接的完整结果（太长时提示里只放开头），按任务分目录 */
@@ -150,6 +155,60 @@ export async function writeJsonAtomic(file: string, data: unknown, compact = fal
   await fsyncDir(path.dirname(file))
 }
 
+/**
+ * 写一份按内容起名的文件（文件名就是内容的哈希）：已经有了就不写。
+ * 几个 Agent 同时启动会同时写同一个名字：临时文件名带随机后缀，不互相覆盖、也不会被别人改名拿走；
+ * 改名失败但目标已经在了（别人先写好了，Windows 上覆盖已有文件还会报 EPERM）就算成功——内容一样
+ */
+export async function writeFileOnce(file: string, body: string) {
+  if (existsSync(file)) return
+  await mkdir(path.dirname(file), { recursive: true })
+  const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+  await writeFile(tmp, body)
+  try {
+    await rename(tmp, file)
+  } catch (e) {
+    await unlink(tmp).catch(() => {})
+    if (!existsSync(file)) throw e
+  }
+}
+
+/** writeJsonAtomic 的临时文件名：`<原文件>.<pid>.<8 位十六进制>.tmp`，只认这个形状，不碰别人的 .tmp */
+const ATOMIC_TMP = /\.\d+\.[0-9a-f]{8}\.tmp$/
+
+/**
+ * 启动时删掉崩溃、强杀留下的 writeJsonAtomic 临时文件（改名前进程就没了，之后没人清）。
+ * 只删 maxAgeMs 以前的：另一个进程（导出、测试）可能正在写。chats/ 是 Agent 的工作目录，里面的文件不归面板管，跳过；
+ * 返回删掉的路径，删不掉的不中断扫描
+ */
+export async function sweepStaleTmp(root = DATA_DIR, maxAgeMs = 60 * 60_000, now = Date.now()): Promise<string[]> {
+  const removed: string[] = []
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const e of entries) {
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) {
+        if (depth === 0 && e.name === 'chats') continue
+        // 数据目录的 JSON 最深是 tasks/<项目>/<id>.json 这一层，再深的不是面板写的
+        if (depth < 4) await walk(full, depth + 1)
+        continue
+      }
+      if (!e.isFile() || !ATOMIC_TMP.test(e.name)) continue
+      const st = await stat(full).catch(() => null)
+      if (!st || now - st.mtimeMs < maxAgeMs) continue
+      if (
+        await unlink(full).then(
+          () => true,
+          () => false,
+        )
+      )
+        removed.push(full)
+    }
+  }
+  await walk(root, 0)
+  return removed
+}
+
 /** 读 JSON 时文件坏了的说明 */
 export type BrokenJson = {
   /** 原来的路径 */
@@ -182,7 +241,7 @@ async function freeBackupPath(dir: string, name: string, stamp: number) {
 }
 
 /**
- * 把损坏的文件挪进缓存目录留档，并写一份同名的 `.broken.json` 说明（原路径、时间、原因、字节数）。
+ * 把损坏的文件挪进留档目录（数据目录下的 broken/），并写一份同名的 `.broken.json` 说明（原路径、时间、原因、字节数）。
  * 只挪不改：坏文件的原始字节原样保留，需要时能手工恢复。
  *
  * 反序列化过了、但内容根本用不了的（例如不是一个消息数组）也走这里：先留档再报，
@@ -199,7 +258,7 @@ export async function archiveBrokenFile(
   size: number,
   stamp = Date.now(),
 ): Promise<BrokenJson> {
-  const dir = path.join(CACHE_DIR, 'broken')
+  const dir = BROKEN_DIR
   await mkdir(dir, { recursive: true }).catch(() => {})
   const backup = await freeBackupPath(dir, path.basename(file), stamp)
   let archived = true
@@ -211,7 +270,7 @@ export async function archiveBrokenFile(
   }
   const broken: BrokenJson = { file, backup, archived, reason, size }
   if (!archived) return broken
-  // 说明文件跟着备份一起放在缓存目录：清理缓存时会一起删掉，不会留在数据目录里
+  // 说明文件跟着备份一起放在留档目录，恢复时一眼能看到原路径和原因
   await writeJsonAtomic(`${backup}.broken.json`, { ...broken, at: new Date().toISOString(), stamp }).catch(() => {})
   return broken
 }
@@ -265,6 +324,11 @@ export function createCollection<I extends object, T extends I & Entity>(
   const FILE = dataPath(file)
   let cache: T[] | null = null
   /**
+   * 过不了校验的条目：原样留着，写盘时照样写回文件（不能因为这一版读不懂就把它删了，
+   * 升回能读懂的版本还要用），另存一份到留档目录并报错，用户能在日志里看到是哪个文件哪几条
+   */
+  let badItems: unknown[] = []
+  /**
    * 第一次从文件读的进行中任务。启动时的后台任务（安装内置工作流、迁移旧项目）和第一个请求
    * 会同时第一次用同一个集合，必须共用这一次：各自读一遍时，后返回的那次会拿读到的旧快照覆盖 cache
    */
@@ -277,6 +341,7 @@ export function createCollection<I extends object, T extends I & Entity>(
   onReset(() => {
     cache = null
     loading = null
+    badItems = []
     generation++
   })
 
@@ -293,10 +358,26 @@ export function createCollection<I extends object, T extends I & Entity>(
     // 读盘期间已经有 create / update 写进 cache：以内存里的为准。
     // 覆盖回去会丢掉刚创建的项目（表现为 POST /tasks 报 404「项目不存在」），任务记录也一样
     if (cache) return
-    const items = Array.isArray(raw) ? raw.map((r) => schema.parse(r)) : []
+    const items: T[] = []
+    const bad: unknown[] = []
+    // 逐条校验：一条不合法（降级版本、schema 收紧了枚举）不能让整个集合读不出来、所有接口都 500
+    for (const r of Array.isArray(raw) ? raw : []) {
+      const p = schema.safeParse(r)
+      if (p.success) items.push(p.data)
+      else bad.push(r)
+    }
+    if (bad.length) await keepBadItems(bad)
     const missing = builtin().filter((b) => !items.some((x) => x.id === b.id))
     cache = [...missing, ...items]
     if (missing.length) void persist(cache)
+  }
+
+  async function keepBadItems(bad: unknown[]) {
+    badItems = bad
+    const ids = bad.map((r) => (r && typeof r === 'object' && 'id' in r ? String((r as { id: unknown }).id) : '?'))
+    console.error(`${file} 里有 ${bad.length} 条数据这个版本读不懂，先跳过并原样保留：${ids.join('、')}`)
+    await mkdir(BROKEN_DIR, { recursive: true }).catch(() => {})
+    await writeJsonAtomic(path.join(BROKEN_DIR, `${path.basename(file)}.items-${Date.now()}.json`), bad).catch(() => {})
   }
 
   async function list(): Promise<T[]> {
@@ -313,9 +394,15 @@ export function createCollection<I extends object, T extends I & Entity>(
   }
 
   function persist(items: T[]) {
-    cache = items
-    // 前一次写失败不能拖垮后面的写入：每次都接在「无论成败」之后
-    const next = writing.catch(() => {}).then(() => writeJsonAtomic(FILE, items))
+    const gen = generation
+    // 前一次写失败不能拖垮后面的写入：每次都接在「无论成败」之后。
+    // 写成功才换缓存：写失败时接口报错，内存里也还是旧值，不会出现「重启前是新值、重启后变回旧值」
+    const next = writing
+      .catch(() => {})
+      .then(() => writeJsonAtomic(FILE, [...items, ...badItems]))
+      .then(() => {
+        if (gen === generation) cache = items
+      })
     writing = next
     return next
   }

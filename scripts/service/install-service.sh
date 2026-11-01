@@ -15,7 +15,7 @@ cd "$(dirname "$0")"
 DIR=$(pwd)
 NODE=$(command -v node || true)
 if [ -z "$NODE" ]; then
-  echo "没有找到 Node.js。Agent 面板需要 Node.js 20 或更新的版本：https://nodejs.org/zh-cn/download" >&2
+  echo "没有找到 Node.js。Agent 面板需要 Node.js 22 或更新的版本：https://nodejs.org/zh-cn/download" >&2
   exit 1
 fi
 LABEL=com.fixcode.agent-panel

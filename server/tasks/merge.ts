@@ -22,10 +22,11 @@ import {
   syncKids,
   type PlanKid,
 } from '../../shared/plan.ts'
-import { normClaimPath, overlaps } from '../claims.ts'
+import { normClaimPath, overlaps, shrinkClaims } from '../claims.ts'
 import { inlineEditBlocker, inlineEditOverrun, inlineEditOverrunText } from '../../shared/inline-edit.ts'
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import type { IntegrateResult } from '../exec/worktree-integrate.ts'
 
 /** finish_child 最多等多久再回话：CLI 的工具调用一分钟超时，要在那之前回（见 finishChild） */
 const FINISH_WAIT_MS = 45_000
@@ -191,6 +192,8 @@ export function createMerge(sc: TasksScope) {
     tk.updatedAt = at
     if (entry) entry.rev++
     await sc.store.update(tk.id, tk)
+    // 共用目录：交了就不再改，声明了没碰的让出来；改过的留到父对话验收（completeChild 释放）
+    if (!wt) shrinkClaims(sc.claims, tk)
     // 这次请求本身就是一次状态上报：一轮结束时不再报一遍「待收尾」
     sc.reportedState.set(childId, sc.reportKey(tk, 'wrapup'))
     const child = { id: tk.id, title: tk.title, state: 'wrapup' as const }
@@ -525,7 +528,10 @@ ${
         }
   }
 
-  async function finishChild(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
+  /** 收尾结果：没合进去时带上类别（只有 conflict 退回了子对话）和一行原因，界面按它决定给不给「用 AI 合并」 */
+  type FinishResult = Pick<IntegrateResult, 'ok' | 'info' | 'kind' | 'why'>
+
+  async function finishChild(parent: Task, childId: string): Promise<FinishResult> {
     const work = (async () => {
       const r = await finishChildStep(parent, childId)
       const plan = await syncParentPlan(parent.id, childId).catch((e) => {
@@ -533,7 +539,7 @@ ${
         sc.alertOn(parent.id, 'panel', t('收尾子对话后刷新计划失败'))(e)
         return ''
       })
-      return plan ? { ok: r.ok, info: `${r.info}\n\n${plan}` } : r
+      return plan ? { ...r, info: `${r.info}\n\n${plan}` } : r
     })()
     // 限时回话：收尾要等子对话的 CLI 退出、删独立分支，慢的时候会撞上 CLI 工具调用一分钟的超时，
     // 父对话只看到「The operation timed out」，不知道收尾到底成没成，又反复调用。过了时限先说清楚，收尾在后台接着做
@@ -611,10 +617,11 @@ ${
    * 收尾一个子对话的实际动作（finish_child，见 ADR 0005）：子对话已经请求收尾（submit_merge），
    * 面板按父对话排队把它的分支合回父对话所在的分支（git 操作是确定的，交给面板做，父对话只决定收不收），
    * 合进去后把它计划里的收尾步骤标完成、按 childFlowOf 收口（结束进程、删独立分支和分支、置完成），
-   * 父对话计划里等它的那一步由 finishChild 收尾后统一刷新。没合进去（冲突、原目录有挡路的改动）退回给子对话处理，它处理好会再请求。
+   * 父对话计划里等它的那一步由 finishChild 收尾后统一刷新。没合进去时按谁能修分：冲突退回给子对话处理，它处理好会再请求；
+   * 父对话目录挡路、提交出错留着收尾请求，告诉父对话动什么，处理完再 finish_child。
    * 合并就是验收：没请求收尾（没交验证结果）的不收
    */
-  async function finishChildStep(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
+  async function finishChildStep(parent: Task, childId: string): Promise<FinishResult> {
     const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
     if (!tk || tk.parentTaskId !== parent.id)
       return { ok: false, info: '找不到这个子对话：id 从 list_conversations 取，只能收尾你自己名下的子对话' }
@@ -646,13 +653,31 @@ ${
       return cur
     }
     await setReq({ ...req, state: 'merging' })
-    let r: { ok: boolean; info: string }
+    let r: IntegrateResult
     try {
       r = await sc.mergeLock(parent.id, async () => sc.integrate(tk, sc.live.get(parent.id)?.task ?? parent))
     } catch (e) {
-      r = { ok: false, info: `合并出错：${(e as Error).message}` }
+      // 面板自己合并时抛的错（git 起不来之类）：不是子对话分支的问题，按提交出错交给父对话
+      const msg = (e as Error).message
+      r = { ok: false, kind: 'error', why: `合并出错：${msg.split('\n')[0]}`, info: `合并出错：${msg}` }
     } finally {
       merging.delete(childId)
+    }
+    // 挡路的在父对话自己的目录（暂存区、没做完的合并、和分支重叠的未提交改动、换了分支）或提交本身出错：
+    // 子对话动不了父对话的目录，退回给它只会两边互相等或来回空转。收尾请求留着 requested，
+    // 把要动什么写给父对话，它处理完直接再 finish_child；要子对话改的由父对话 send_to_conversation 交回
+    if (!r.ok && r.kind && r.kind !== 'conflict') {
+      const cur = await setReq({ ...req, state: 'requested', info: r.info })
+      const what = r.kind === 'error' ? '合并后提交出错' : '父对话的目录挡住了合并'
+      markWrapUp(cur, 'merge', 'waiting', `${what}，等父对话处理：${r.why ?? r.info.split('\n')[0]}`)
+      await sc.store.update(cur.id, cur)
+      // 不 reportedState.delete、不 sendToChild：子对话这边什么都不用做，叫醒它开新一轮反而会清掉收尾请求（run.ts）
+      return {
+        ok: false,
+        kind: r.kind,
+        why: r.why,
+        info: `没能合回子对话「${tk.title}」，${r.kind === 'error' ? '提交这一步出错，已撤回' : '原因在你的目录，不在子对话'}：\n${r.info}\n收尾请求还留着，不用找子对话、它也不会再请求：处理完直接再调用 finish_child（id ${tk.id}）。`,
+      }
     }
     if (!r.ok) {
       const cur = await setReq({ ...req, state: 'failed', info: r.info })
@@ -669,7 +694,12 @@ ${
         'merge',
         true,
       )
-      return { ok: false, info: `没能合回子对话「${tk.title}」：${r.info}\n已经退回给它处理，它处理好会再请你收尾。` }
+      return {
+        ok: false,
+        kind: 'conflict',
+        why: r.why,
+        info: `没能合回子对话「${tk.title}」：${r.info}\n已经退回给它处理，它处理好会再请你收尾。`,
+      }
     }
     // 范围为 parent 的步骤（ADR 0018 / 0020）：合回后由面板在这儿跑，跑完才让子对话收尾。
     // 不能先 childMerged：那一步会标完成、清 wrapRequest、收口删分支，父对话测试还没跑就没得修了

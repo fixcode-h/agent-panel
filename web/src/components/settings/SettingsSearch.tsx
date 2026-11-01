@@ -38,7 +38,7 @@ export function SettingsSearchBox({
         placeholder={t('搜索设置')}
         spellCheck={false}
         autoComplete="off"
-        className={cn(fieldClass, 'peer h-8 pr-14 pl-8 text-[0.8125rem]')}
+        className={cn(fieldClass, 'peer h-8 pr-14 pl-8 text-body')}
       />
       {value ? (
         <button
@@ -48,7 +48,7 @@ export function SettingsSearchBox({
             inputRef.current?.focus()
           }}
           aria-label={t('清空搜索')}
-          className="absolute top-1/2 right-1.5 flex h-5 w-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-subtle transition-colors hover:bg-sel hover:text-fg"
+          className="absolute top-1/2 right-1.5 flex h-5 w-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm text-subtle transition-colors hover:bg-sel hover:text-fg"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -94,8 +94,8 @@ export function SettingsSearchResults({
     return (
       <div className="flex flex-col items-center gap-2 px-6 pt-20 text-center">
         <Search className="mb-1 h-5 w-5 text-subtle" strokeWidth={2} />
-        <p className="text-[0.875rem] font-medium">{t('没有找到「{q}」相关的设置', { q: query.trim() })}</p>
-        <p className="text-[0.8125rem] text-subtle">{t('换个说法试试，或者用空格分开几个关键词')}</p>
+        <p className="text-prose font-medium">{t('没有找到「{q}」相关的设置', { q: query.trim() })}</p>
+        <p className="text-body text-subtle">{t('换个说法试试，或者用空格分开几个关键词')}</p>
       </div>
     )
   let n = -1
@@ -105,7 +105,7 @@ export function SettingsSearchResults({
         <div key={g.section} role="group" aria-label={g.label} className="flex flex-col">
           <div
             className={cn(
-              'flex items-center gap-2 px-3 pb-1.5 text-[0.6875rem] font-medium tracking-wide text-subtle',
+              'flex items-center gap-2 px-3 pb-1.5 text-caption font-medium tracking-wide text-subtle',
               gi > 0 ? 'pt-5' : 'pt-1',
             )}
           >
@@ -132,10 +132,10 @@ export function SettingsSearchResults({
                 )}
               >
                 <span className="flex min-w-0 items-center gap-3">
-                  <span className="min-w-0 flex-1 truncate text-[0.875rem] font-medium">
+                  <span className="min-w-0 flex-1 truncate text-prose font-medium">
                     <Marked text={it.title} terms={terms} />
                   </span>
-                  <span className="flex shrink-0 items-center gap-2 text-[0.75rem] text-subtle">
+                  <span className="flex shrink-0 items-center gap-2 text-footnote text-subtle">
                     {it.isSection ? (
                       t('整页')
                     ) : it.isGroup ? (
@@ -149,7 +149,7 @@ export function SettingsSearchResults({
                   </span>
                 </span>
                 {desc && (
-                  <span className="line-clamp-2 text-[0.8125rem] leading-relaxed text-subtle">
+                  <span className="line-clamp-2 text-body leading-relaxed text-subtle">
                     <Marked text={desc} terms={terms} />
                   </span>
                 )}

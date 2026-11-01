@@ -38,7 +38,7 @@ export function MountCard({
     <div className="flex flex-col gap-2 rounded-lg bg-card p-3 shadow-card">
       <div className="flex items-center gap-2">
         {cap ? <AgentAvatar icon={cap.icon} cli={cap.cli} size="xs" /> : null}
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">{cap?.name ?? t('（角色已删除）')}</span>
+        <span className="min-w-0 flex-1 truncate text-body font-medium">{cap?.name ?? t('（角色已删除）')}</span>
         <Select
           aria-label={t('用法')}
           value={mount.mode}
@@ -54,7 +54,7 @@ export function MountCard({
         </Button>
       </div>
       {cap && (cap.when || cap.description) && (
-        <p className="text-[0.6875rem] leading-relaxed text-subtle">{cap.when || cap.description}</p>
+        <p className="text-caption leading-relaxed text-subtle">{cap.when || cap.description}</p>
       )}
       <Input
         aria-label={t('挂载说明')}

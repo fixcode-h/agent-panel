@@ -5,6 +5,7 @@ import { TaskPatch, Task, RequestAnswer, defaultAgent } from '../../shared/schem
 import { childHoldText, helpersWorking, trackWait, withTaskModel } from '../../shared/task.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { childAskEffect } from '../../shared/child-ask.ts'
+import { NO_PUSH_ANSWER, pushAnswerCut } from '../../shared/push-auth.ts'
 import { getSettings } from '../settings.ts'
 import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
 import { answerRequest, dropRequests, cancelWait, forgetNotes } from '../exec/runner.ts'
@@ -14,6 +15,8 @@ import { applyFixesInDir } from '../files.ts'
 import { FixApplyInput } from '../../shared/diagnosis.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
+import { forgetClaims } from '../claims.ts'
+import { scopeError } from '../../shared/conv-mode.ts'
 
 /**
  * 对话上的操作：应用排查结论的修复、撤销改动、回答子对话提问和权限确认、改对话设置、倒回、分叉、压缩、评审、停止。
@@ -170,7 +173,11 @@ export function registerActionRoutes(s: TasksScope) {
       else void s.closeChildren(id)
     }
     // 归档的对话不再接收结果：后台命令（连同名下子对话的）一起停掉
-    if (p.data.archived === true) await s.endBackground(id)
+    if (p.data.archived === true) {
+      await s.endBackground(id)
+      // 归档了就不会再交改动：它名下的认领（它是父对话时整组）放掉
+      forgetClaims(s.claims, cur)
+    }
     const beforeAgentId = cur.agentId
     const agentChanged = p.data.agentId !== undefined && p.data.agentId !== beforeAgentId
     const touchesRun =
@@ -178,7 +185,18 @@ export function registerActionRoutes(s: TasksScope) {
     if (touchesRun && cur.mode !== 'chat') return s.bad(c, t('只有对话任务可以这样做'))
     const settings = touchesRun ? await getSettings() : undefined
     const agents = touchesRun ? await s.deps.agents.list() : undefined
-    if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId)) return s.bad(c, t('找不到这个角色'))
+    if (agentChanged && p.data.agentId && !agents?.some((a) => a.id === p.data.agentId))
+      return s.bad(c, t('找不到这个角色'))
+    // 换角色也要同一类（ADR 0038）：Chat 页的对话换不成 Agent 角色，项目里的换不成 Chat 角色。
+    // 只在角色真的变了时校验：旧数据里 Chat 页用着 Agent 角色的对话，带上原来的 agentId 改别的字段不能被拒
+    const wrongScope =
+      agentChanged && p.data.agentId
+        ? scopeError(
+            cur,
+            agents?.find((a) => a.id === p.data.agentId),
+          )
+        : ''
+    if (wrongScope) return s.bad(c, wrongScope)
     const runOf = (t: Task) => {
       const agent = t.agentId ? agents?.find((a) => a.id === t.agentId) : { ...defaultAgent(), id: '' }
       return agent && settings ? agentRun(withTaskModel(agent, t), settings) : undefined
@@ -227,9 +245,11 @@ export function registerActionRoutes(s: TasksScope) {
     // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢。
     // 只改置顶时不动列表时间：置顶只是标记，不该让这条聊天在别处（最近活动、未读）显得「刚更新过」
     const onlyPin = Object.keys(p.data).every((k) => k === 'pinned')
+    const afterRun = touchesRun ? runOf(task) : undefined
+    // 换了 CLI：旧 CLI 列的待办不会再有人更新，清掉，不然一直显示上一个 CLI 的进度
+    if (beforeRun && afterRun && beforeRun.cli !== afterRun.cli) task.todos = []
     await s.store.update(id, task, onlyPin ? { keepUpdatedAt: true } : undefined)
     if (!touchesRun) return c.json(task)
-    const afterRun = runOf(task)
     const runChanged =
       agentChanged ||
       (!!beforeRun &&
@@ -299,6 +319,8 @@ export function registerActionRoutes(s: TasksScope) {
       rewind: { ...turnBefore(task, i), cut: removed.turn ?? null },
       status: 'done',
       todos: [],
+      // 推送授权是在被撤掉的那段对话里点的：跟着撤掉，下一轮需要推送时重新问
+      ...(pushAnswerCut(task, removed.at) ? NO_PUSH_ANSWER : {}),
     })
     return c.json({ task: updated, text: removed.text, attachments: removed.attachments ?? [] })
   })
@@ -333,6 +355,8 @@ export function registerActionRoutes(s: TasksScope) {
       todos: [],
       worktree: null,
       archived: undefined,
+      // 推送授权只对点它的那个对话有效：分叉出来的是新对话，需要推送时重新问一次
+      ...NO_PUSH_ANSWER,
       usage: { agents, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
     })
     return c.json(forked, 201)

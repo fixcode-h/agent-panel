@@ -12,7 +12,7 @@ import {
   useAiWindow,
 } from '@/lib/ai-window'
 import { timingMs } from '@/lib/analysis-report'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
 import { IconButton } from '@/components/ui/icon-button'
 import { Spinner, type StatusTone } from '@/components/ui/status-pill'
 import { MinimizedChat, type ChatDockState } from '@/components/ui/minimized-chat'
@@ -34,7 +34,8 @@ export function AiWindow() {
   // 标题栏留给嵌入对话的状态和操作按钮的位置：对话自己的页签行不再画，免得和窗口标题重复
   const [slot, setSlot] = useState<HTMLSpanElement | null>(null)
   const { go } = useNav()
-  const { projects, tasks } = useData()
+  const { projects } = useData()
+  const { tasks } = useTasks()
   // 项目里的分析对话要带上项目：分析结果里「开子对话去修」这类操作要知道项目
   const project = projects.find((p) => p.id === s.projectId)
   // 标题栏的「来源」只用列表里已有的数据：分析对话本身（看是不是排查）、它所属的父对话；
@@ -186,19 +187,19 @@ export function AiWindow() {
                   <span className="mx-auto grid h-9 w-9 place-items-center rounded-full bg-sel text-subtle">
                     <MessageSquareOff className="h-4 w-4" />
                   </span>
-                  <p className="mt-3 text-[0.875rem] font-medium">{t('这个对话已经关闭了')}</p>
-                  <p className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
+                  <p className="mt-3 text-prose font-medium">{t('这个对话已经关闭了')}</p>
+                  <p className="mt-1.5 text-body leading-relaxed text-muted">
                     {t('它已经从对话列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。')}
                   </p>
                 </div>
               ) : starting ? (
-                <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                <p className="flex items-center gap-2 text-body text-muted">
                   <Spinner className="h-3.5 w-3.5 text-run" />
                   {t('正在新建分析对话…')}
                 </p>
               ) : (
                 error && (
-                  <p className="flex max-w-lg items-start gap-2 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-danger">
+                  <p className="flex max-w-lg items-start gap-2 text-body leading-relaxed whitespace-pre-wrap text-danger">
                     <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
                     {error}
                   </p>

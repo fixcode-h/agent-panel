@@ -5,14 +5,16 @@ import {
   ChevronRight,
   Brain,
   CircleAlert,
+  Clock,
   GitMerge,
   Info,
   Loader2,
   RotateCw,
-  SendHorizontal,
   Terminal,
+  TriangleAlert,
   Workflow,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import type { Alert, Task, TaskMessage, ToolUse } from '@shared/schema'
 import { makeAlert } from '@shared/alerts'
 import { toast } from '@/lib/toast'
@@ -23,7 +25,17 @@ import { cn } from '@/lib/utils'
 import { RowShell, ToolRows } from './ToolRow'
 import { useAiLook } from '@/lib/ai-look'
 import { fmtDuration } from '@/lib/tasks'
-import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
+import {
+  addFoldCut,
+  foldCuts,
+  foldStats,
+  keptOut,
+  replyText,
+  segOpenOf,
+  splitFolds,
+  toggleSegOpen,
+  unfoldedText,
+} from '@/lib/fold'
 import { dedupePeerReports } from '@/lib/peer-dedupe'
 import { ChildAskCard } from './ChildAskCard'
 import { ReceivedRow } from './PeerMessage'
@@ -33,7 +45,7 @@ import { runRow, type WorkflowRun } from '@/lib/run-row'
 import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
-import { convStateText, deliveryText } from '@shared/task'
+import { convStateText, deliveryStatus } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { stripLessonReview } from '@shared/lesson-review'
@@ -142,22 +154,48 @@ export function NoteMessage({
 }
 
 /**
- * 执行中发的消息去了哪里：用户气泡底部一行小字，写的是用户能看懂的事实（插进当前轮 / 排到下一轮 / 结束后自动处理），
- * 不直接把内部枚举值摆出来（见 shared/task.ts 的 deliveryText）。对话页和工作流节点都读这一份
+ * 执行中发的消息去了哪里：用户气泡外右下的一行小字 + 状态色点（不放进气泡里抢正文的注意力）。
+ * 文案和什么时候显示都在 shared/task.ts 的 deliveryStatus：那一轮跑完就不再显示，只有「没送出去」一直留着，
+ * 并带「重新发送」。对话页、工作流节点、设计页都读这一份
  */
-export function DeliveryLine({ delivery }: { delivery: NonNullable<TaskMessage['delivery']> }) {
-  const text = deliveryText(delivery.how)
-  if (!text) return null
+export function DeliveryLine({
+  delivery,
+  active,
+  onResend,
+}: {
+  delivery: NonNullable<TaskMessage['delivery']>
+  /** 这条所在的那一轮还在跑（deliveryActive）：插进去、排队的只在这时显示 */
+  active: boolean
+  /** 没送出去时的「重新发送」：不传就只写原因 */
+  onResend?: () => void
+}) {
+  const s = deliveryStatus(delivery.how, active)
+  if (!s) return null
   return (
     <span
-      className={cn(
-        'mt-1.5 flex items-center gap-1 text-[0.75rem]',
-        // 没送出去的需要用户重发：和其他交付状态一样的灰色会被滑过去
-        delivery.how === 'lost' ? 'text-warning' : 'text-subtle',
-      )}
+      data-delivery={delivery.how}
+      className={cn('flex items-center gap-1.5 px-1 text-caption', s.tone === 'warn' ? 'text-warning' : 'text-subtle')}
     >
-      <SendHorizontal className="h-3 w-3 shrink-0" />
-      {text}
+      {s.tone === 'warn' ? (
+        <TriangleAlert className="h-3 w-3 shrink-0" />
+      ) : s.tone === 'wait' ? (
+        <Clock className="h-3 w-3 shrink-0" />
+      ) : (
+        <span
+          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', s.tone === 'run' ? 'bg-run' : 'animate-pulse bg-subtle')}
+        />
+      )}
+      {s.text}
+      {s.tone === 'warn' && onResend && (
+        <Button
+          size="sm"
+          variant="danger-outline"
+          className="ml-1 h-6 bg-warning/15 px-2 text-caption text-warning hover:bg-warning/25"
+          onClick={onResend}
+        >
+          {t('重新发送')}
+        </Button>
+      )}
     </span>
   )
 }
@@ -196,7 +234,7 @@ function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean;
         <div
           ref={box}
           className={cn(
-            'border-l-2 border-line-strong pl-3 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]',
+            'border-l-2 border-line-strong pl-3 text-body leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]',
             live && 'max-h-40 overflow-y-auto',
           )}
         >
@@ -511,7 +549,7 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
       detail={
         wt ? (
           <>
-            <span className="shrink-0 text-[0.6875rem] text-warning" title={wt.path}>
+            <span className="shrink-0 text-caption text-warning" title={wt.path}>
               {t('{n} 个文件未提交', { n: wt.dirty })}
             </span>
             {m.child?.id && <ResumeChild id={m.child.id} />}
@@ -524,7 +562,7 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
       openTip={m.child ? t('打开子对话') : undefined}
       failed={failed}
     >
-      <div className="max-h-[min(50vh,420px)] overflow-y-auto border-t px-3 py-2.5 text-[0.8125rem]">
+      <div className="max-h-[min(50vh,420px)] overflow-y-auto border-t px-3 py-2.5 text-body">
         <Markdown text={body} teamNames={teamNames} />
       </div>
     </RowShell>
@@ -556,7 +594,7 @@ function ResumeChild({ id }: { id: string }) {
           .finally(() => setBusy(false))
       }}
       title={t('让它接着做：重新占执行位，从停下的地方继续')}
-      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[0.6875rem] text-accent-text hover:bg-sel disabled:opacity-50"
+      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-caption text-accent-text hover:bg-sel disabled:opacity-50"
     >
       {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
       {t('继续')}
@@ -741,7 +779,7 @@ function RunRow({ info }: { info: WorkflowRun }) {
       open={open}
       failed={info.status === 'failed'}
     >
-      <div className="flex flex-col gap-0.5 border-t px-3 py-2 text-[0.8125rem]">
+      <div className="flex flex-col gap-0.5 border-t px-3 py-2 text-body">
         {info.failed.map((s) => (
           <span key={s.id} className="truncate text-danger">
             {s.title}
@@ -1104,8 +1142,11 @@ export function ChatReply({
   // 正文比回复头缩进一格（reply-body）：图标在最左，名字、正文、下面的复制按钮在同一条竖线上
   if (live) return <div className="reply-body flex flex-col gap-2">{body}</div>
   const replies = list.map(replyText).filter((x, i) => list[i].role === 'agent' && x.trim())
+  const text = replies.map((x) => x.trim()).join('\n\n')
+  // 朗读只念没折叠的部分：每一段收尾后留在外面的总结；不折叠的对话整轮都在外面，念全部
+  const spoken = fold ? parts.map(unfoldedText).filter(Boolean).join('\n\n') : text
   return (
-    <ReplyFrame text={replies.map((x) => x.trim()).join('\n\n')} at={list.at(-1)?.at} actions={actions} always={last}>
+    <ReplyFrame text={text} at={list.at(-1)?.at} actions={actions} always={last} speak={{ id: key, text: spoken }}>
       <div className="reply-body flex flex-col gap-2">{body}</div>
     </ReplyFrame>
   )

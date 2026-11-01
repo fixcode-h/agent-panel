@@ -104,6 +104,8 @@ export const EN_SERVER: Record<string, string> = {
   '你回答了「{title}」：{answer}': 'You answered “{title}”: {answer}',
   '你允许了：{title}': 'You allowed: {title}',
   '你拒绝了：{title}': 'You denied: {title}',
+  '你拒绝了：{title}（第 {n} 次，已让它停下来问你）':
+    'You denied: {title} (time {n}; told the agent to stop and ask you)',
   ' 或 ': ' or ',
   '· 模型「{model}」走的是 Command Code 官方服务，不是你在 providers.json 里接的接口。想用自己的接口，请把模型换成「{alt}」（模型下拉的「配置文件」分组里）。':
     '· Model “{model}” is routed through Command Code’s own service, not the provider you set up in providers.json. To use your own provider, switch the model to “{alt}” (under the “Config file” group in the model dropdown).',
@@ -119,7 +121,8 @@ export const EN_SERVER: Record<string, string> = {
   '超过 {n} 分钟没有完成，已停止': 'Stopped after not finishing within {n} minutes',
   '{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。':
     '{error}. Make sure {cli} is installed ({hint}), or set the full path to its executable in Settings.',
-  '{cli} 执行失败（退出码 {code}）：': '{cli} failed (exit code {code}):',
+  '{cli} 执行失败（{reason}）：': '{cli} failed ({reason}):',
+  '进程被外部结束，信号 {signal}': 'process was killed externally, signal {signal}',
   '{cli} 执行失败：': '{cli} failed:',
   '原始输出：': 'Raw output:',
 
@@ -128,6 +131,9 @@ export const EN_SERVER: Record<string, string> = {
 
   // 接口校验
   只接受来自本机的访问: 'Only local access is allowed',
+  浏览器扩展只能从本机连接: 'The browser extension can only connect from this computer',
+  '浏览器扩展没有配对：请在面板里重新加载扩展': 'The browser extension is not paired: reload it from the panel',
+  '请求太大，超过了 {mb} MB': 'Request too large: over {mb} MB',
   不接受其他网站发来的请求: 'Requests from other sites are not accepted',
   '请求必须是 JSON': 'Request body must be JSON',
   分类不存在: 'Category not found',
@@ -223,9 +229,13 @@ export const EN_SERVER: Record<string, string> = {
     'The task was interrupted because the panel closed or restarted while it was running. Click “Resume” to pick up from the interrupted step (its agent session will be resumed).',
   '面板重启时这件事还没收尾，已经不在执行。接着做就发消息，会重新拉起 CLI 接着做。':
     'This work was not finished before the panel restarted and is no longer running. Send a message to continue; the CLI will be started again.',
+  '中断时还有没处理的提问 / 确认：{list}，已经作废；继续执行后 AI 需要的话会重新问。':
+    'Unanswered questions / approvals at the time of the interruption were discarded: {list}. After you resume, the AI will ask again if it still needs them.',
   聊天: 'Chat',
   任务所属的项目已经不存在: 'The task’s project no longer exists',
   '执行出错：{error}': 'Execution error: {error}',
+  '保存对话失败，这之后的内容重启面板后可能丢失：{error}':
+    'Failed to save the conversation; anything after this may be lost when the panel restarts: {error}',
   任务不存在: 'Task not found',
   找不到这个子任务: 'Subtask not found',
   没有这条后台命令: 'Background command not found',
@@ -306,6 +316,8 @@ export const EN_SERVER: Record<string, string> = {
   '「{name}」超过 {size} MB': '“{name}” exceeds {size} MB',
   不是附件: 'Not an attachment',
   附件已经不在了: 'The attachment no longer exists',
+  '只能打开对话里的附件：这个路径不是面板记录过的附件':
+    'Only attachments from conversations can be opened: the panel has no record of this path as an attachment',
   '工作流已经被删除，只能按任务创建时的工作流继续':
     'The workflow was deleted; you can only resume with the workflow the task was created with',
   这个文件不在任务的改动里: "This file is not among the task's changes",
@@ -329,6 +341,7 @@ export const EN_SERVER: Record<string, string> = {
   切换分支失败: 'Failed to switch branches',
   '切换分支失败：{error}': 'Failed to switch branches: {error}',
   提交改动失败: 'Failed to commit the changes',
+  暂存改动失败: 'Failed to stage the changes',
   '合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。':
     'Merging into "{branch}" hit a conflict or was blocked by uncommitted changes in that directory; the directory was not changed. You can merge branch {name} manually there.',
   '算不出两个分支的共同基点，给不出双方的提交记录':
@@ -356,6 +369,9 @@ export const EN_SERVER: Record<string, string> = {
   '你确认了「{title}」的结果，接着往下执行': 'You approved the result of "{title}"; continuing',
   '你退回了「{title}」：{answer}': 'You sent "{title}" back: {answer}',
   '「{title}」完成了，看一下结果再继续': '"{title}" is done. Check the result before continuing',
+  推送到远端并合并主干: 'Push to remote and merge into the main branch',
+  '分支：{branch}': 'Branch: {branch}',
+  '这个对话里只问这一次，回答会记住。': 'Asked only once in this conversation; your answer is remembered.',
   缺少文件路径: 'Missing file path',
   参数不对: 'The request is not valid',
   '名字只能是单个文件名，不能带路径分隔符或 ..': 'The name must be a single file name without path separators or ..',
@@ -375,6 +391,8 @@ export const EN_SERVER: Record<string, string> = {
   校验中: 'Verifying',
   '下载校验文件失败：{status}': 'Failed to download the checksum file: {status}',
   '校验文件里没有 {name}': '{name} is missing from the checksum file',
+  '这个版本的发布里没有校验文件（SHA256SUMS），无法确认安装包完整、没被改过，已取消更新。可以到 GitHub Releases 手动下载':
+    'This release has no checksum file (SHA256SUMS), so the package cannot be verified as complete and untampered. The update was cancelled; you can download it manually from GitHub Releases',
   '下载的包校验不通过，可能下载不完整，请重试':
     'The downloaded package failed verification and may be incomplete. Please try again',
   检查新版本: 'Checking the new version',
@@ -394,6 +412,27 @@ export const EN_SERVER: Record<string, string> = {
   '已自动续接会话（第 {n} 次），从中断的地方继续了。':
     'Automatically resumed the session (attempt {n}) and continued from where it broke off.',
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
+  '连接中断后续接不上原来的会话，已开新会话重新执行。':
+    'After the connection dropped, the original session could not be resumed, so the turn was rerun in a new session.',
+  '{why}。已丢掉旧会话、开新会话用完整提示重新执行这一步。':
+    '{why}. Dropped the old session and started a new one to rerun this step with the full prompt.',
+  '{why}。已丢掉旧会话、开新会话重新执行这一轮，之前的对话按长度裁剪后一起带上了。':
+    '{why}. Dropped the old session and started a new one to rerun this turn, carrying over the earlier conversation (clipped to fit).',
+  '{why}。已丢掉旧会话、开新会话重新执行这一轮。':
+    '{why}. Dropped the old session and started a new one to rerun this turn.',
+  '{cli} 找不到原来的会话（可能被 CLI 清理了）':
+    '{cli} couldn’t find the original session (the CLI may have cleaned it up)',
+  '{cli} 的会话存在别的项目目录里，面板没法回答它「要不要分叉到当前目录」':
+    '{cli}’s session lives in another project directory, and the panel can’t answer its “fork into the current directory?” prompt',
+  '模型接口拒绝了 {cli} 这个会话的历史（常见于中途换了模型或网关）':
+    'The model API rejected this {cli} session’s history (common after switching models or gateways mid-conversation)',
+  '模型 {model} 不支持设置思考强度（{effort}），已去掉思考强度重新执行；面板重启前这个模型都不再传思考强度。':
+    'Model {model} doesn’t support setting the reasoning effort ({effort}), so it was rerun without it; until the panel restarts, no effort will be passed for this model.',
+  '模型 {model} 之前报过不支持设置思考强度，这一轮没有传思考强度（{effort}）；面板重启前这个模型都不再传。':
+    'Model {model} reported earlier that it doesn’t support setting the reasoning effort, so this turn ran without it ({effort}); until the panel restarts, no effort will be passed for this model.',
+  '模型请求失败，正在自动重试（第 {n}/{max} 次）：{error}':
+    'Model request failed; retrying automatically ({n}/{max}): {error}',
+  '模型请求失败，正在自动重试：{error}': 'Model request failed; retrying automatically: {error}',
   '这一轮没有响应，已自动重试 {n} 次（等待放宽到 {wait}）…':
     'This turn got no response. Retried {n} time(s) automatically (waiting up to {wait})…',
   '已自动重试 {n} 次，仍然没有响应。': 'Still no response after {n} automatic retries.',
@@ -439,6 +478,17 @@ export const EN_SERVER: Record<string, string> = {
   '已丢掉旧会话，把对话裁剪后开新会话接着做了。':
     'Dropped the old session and continued in a new one with the conversation trimmed down.',
   '已裁剪对话，新会话接上了': 'Conversation trimmed, the new session took over',
+  '压缩没有生效（{before} → {after}）': 'Compaction had no effect ({before} → {after})',
+  '压缩后的上下文没有比压缩前小，这次压缩没有起作用。':
+    'The context is not smaller after compaction; this compaction had no effect.',
+  '已在原会话里续了一轮，让模型分段读取，这一轮继续做完了。':
+    'Continued one more turn in the same session, asking the model to read in smaller pieces; the turn finished.',
+  '续了一轮，继续做完了': 'Continued one more turn and finished',
+  '上下文刚压缩完就又满了。正在原会话里续一轮，提醒模型分段读取、只看需要的部分…':
+    'The context filled up again right after compaction. Continuing one more turn in the same session and asking the model to read in smaller pieces and only what it needs…',
+  '已在原会话里续过一轮，仍然失败。': 'Still failing after continuing one more turn in the same session.',
+  '· {cli} 刚压缩完上下文就又被填满（自动压缩抖动），常见于档位的上下文上限设得太小、一次读进来的内容又太多。请在设置里把这个档位的上下文调大（Agent 模式建议不低于 {min}），或者让角色分段读取大文件。':
+    "· {cli} filled its context again right after compacting (autocompact thrashing). This usually means the tier's context limit is too small and too much was read at once. Raise this tier's context in Settings (at least {min} is recommended in Agent mode), or have the agent read large files in pieces.",
   '（原始对话已经超过模型上限，连压缩请求也被拒绝，以下是面板裁剪后保留的记录）':
     '(The original conversation exceeded the context limit and even the compact request was rejected; below is the record the panel kept after trimming.)',
   '已压缩上下文：对话本身太长，模型连压缩请求都拒绝了，已改为裁剪后开新会话带上（保留最近的内容）':
@@ -528,6 +578,10 @@ export const EN_SERVER: Record<string, string> = {
   '{method} 退出码 {code}': '{method} exited with code {code}',
   '{name} 没有装上': '{name} was not installed',
   '正在下载 cloudflared，稍后再试': 'cloudflared is already downloading, try again later',
+  '下载的 cloudflared 只有 {n} 字节，不是完整的程序':
+    'The downloaded cloudflared is only {n} bytes, not a complete program',
+  '下载的 cloudflared 不是这个系统能运行的程序（文件头 {magic}）':
+    'The downloaded cloudflared is not a program this system can run (file header {magic})',
   '没能接上面板的工具（{error}），这一轮不能向你提问、也收不到执行中的补充':
     "Couldn't attach the panel's tools ({error}), so this turn can't ask you questions or receive notes you add while it runs",
   '模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}': 'Model request failed; retry {n}/{max} in {s}s: {error}',
@@ -538,7 +592,7 @@ export const EN_SERVER: Record<string, string> = {
     "Panel tools didn't connect ({error}). The missing ones aren't available this turn; edit files and run plain commands only, or start a new turn to get them back",
   原因未知: 'unknown reason',
   提示: 'Notice',
-  '这个 Agent 不支持扩展包': "This agent doesn't support packages",
+  '这个 Agent 不支持插件': "This agent doesn't support plugins",
   不支持这个操作: 'Unsupported action',
   先填包的来源: 'Enter a package source first',
   '命令超过 10 分钟没结束，已停止': 'The command ran for more than 10 minutes and was stopped',
@@ -579,4 +633,9 @@ export const EN_SERVER: Record<string, string> = {
   这一轮没有记下改动: 'No changes were recorded for this turn',
   这一轮的改动已经撤销过了: 'The changes from this turn were already reverted',
   这个文件不在这一轮的改动里: 'This file is not among the changes from this turn',
+  回收站里没有这一项: 'This item is not in the recycle bin',
+  '「{name}」已经存在，不需要恢复': '"{name}" already exists; nothing to restore',
+  读不到系统进程信息: 'Could not read system process information',
+  '已从 {from} 换成 {to}，之前的会话不再续用，之前的对话会带给新会话。':
+    'Switched from {from} to {to}. The previous session won’t be resumed; the conversation so far is carried over to the new session.',
 }

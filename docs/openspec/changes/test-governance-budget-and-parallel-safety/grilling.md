@@ -92,7 +92,7 @@ change：`test-governance-budget-and-parallel-safety`
 - 演示后端与正式后端响应字段一致；界面检查不因字段差异失败。
 - 单测断言不写死中文（项目教训 `lmvq64pdbulcy`）。
 - 本阶段只写 `docs/openspec/` 与 `docs/modules/testing/`，不动测试代码、CI、`scripts/`；阶段 3 由父对话另行通知。
-- 不触碰 `server/web-search.test.ts`、`shared/web-search.ts`（另一条子对话在改）。
+- 不触碰联网搜索的代码和测试（另一条子对话在改；面板自建的这套联网搜索后来已经删掉）。
 
 ## 非目标
 

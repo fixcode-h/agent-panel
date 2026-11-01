@@ -16,6 +16,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .locator('[data-sidebar] section button[title^="打开项目「"]')
       .evaluateAll((els) => els.map((e) => (e.getAttribute('title') ?? '').match(/「(.+?)」/)?.[1] ?? ''))
   await p.goto(base + '#/projects')
+  // 侧栏是异步取数据画出来的：等第一个项目出现再读顺序，CI 上机器慢时直接读会拿到空列表
+  await p.locator('[data-sidebar] section button[title^="打开项目「"]').first().waitFor({ timeout: 10000 })
   const order0 = await projectRows()
   assert.deepEqual(
     order0.slice(0, 4),

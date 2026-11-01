@@ -19,6 +19,7 @@ import {
   checkWorkflow,
   comfyImportFile,
   comfyQueueEntry,
+  comfyIsRunning,
   comfyQueueLists,
   fillWorkflow,
   imageToImage,
@@ -874,10 +875,30 @@ async function uploadImage(url: string, data: Buffer, name: string, signal: Abor
 }
 
 /**
+ * 停掉自己提交的 prompt：ComfyUI 正在执行的就是它才 interrupt（带上 prompt_id，新版只打断这一个），
+ * 否则只从队列里删掉——无条件 interrupt 会打断 ComfyUI 当前在跑的别的任务（例如 ComfyUI 页的试生成）。
+ * 读不到队列时不知道在跑谁，只删不打断
+ */
+export async function cancelPrompt(url: string, id: string) {
+  const post = (p: string, body: unknown) =>
+    fetch(`${url}${p}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => undefined)
+  const queue = await fetch(`${url}/queue`, { signal: AbortSignal.timeout(5000) })
+    .then((r) => (r.ok ? r.json() : undefined))
+    .catch(() => undefined)
+  if (queue !== undefined && comfyIsRunning(queue, id)) await post('/interrupt', { prompt_id: id })
+  else await post('/queue', { delete: [id] })
+}
+
+/**
  * 把节点图提交给 ComfyUI，轮询到跑完，取回输出的图片交给 onImage。
  * 单工作流和链都走这里：提交、取消、进度、取图的逻辑只有一份
  */
-async function submitGraph(
+export async function submitGraph(
   o: {
     url: string
     graph: ComfyWorkflow['graph']
@@ -893,6 +914,9 @@ async function submitGraph(
   signal: AbortSignal,
 ) {
   const { url } = o
+  if (signal.aborted) throw new Error(t('已停止'))
+  // 提交不挂 signal：请求发出后才停止的话，ComfyUI 已经收下了，却拿不到 prompt_id 去删，
+  // 它会在队列里接着跑完。等拿到 id 再看有没有停止
   const res = await fetch(`${url}/prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -901,15 +925,17 @@ async function submitGraph(
       client_id: CLIENT_ID,
       extra_data: { agent_panel: o.meta },
     }),
-    signal,
+    signal: AbortSignal.timeout(60_000),
   })
   const body = (await res.json().catch(() => ({}))) as { prompt_id?: string; error?: unknown; node_errors?: unknown }
   if (!res.ok || !body.prompt_id)
     throw new Error(t('ComfyUI 拒绝了这次生成：{error}', { error: JSON.stringify(body.error ?? body).slice(0, 600) }))
   const id = body.prompt_id
-  const cancel = () => {
-    void fetch(`${url}/queue`, { method: 'POST', body: JSON.stringify({ delete: [id] }) }).catch(() => {})
-    void fetch(`${url}/interrupt`, { method: 'POST' }).catch(() => {})
+  const cancel = () => void cancelPrompt(url, id)
+  // 等 /prompt 返回期间已经停止了：后加的监听器不会再触发，这里补一次
+  if (signal.aborted) {
+    cancel()
+    throw new Error(t('已停止'))
   }
   signal.addEventListener('abort', cancel, { once: true })
   try {
@@ -931,8 +957,7 @@ async function submitGraph(
       }
       if (entry.status?.status_str === 'error') {
         const err = entry.status.messages?.find((x) => x[0] === 'execution_error')?.[1] as
-          | { exception_message?: string; node_type?: string }
-          | undefined
+          { exception_message?: string; node_type?: string } | undefined
         throw new Error(
           t('本机生成失败：{error}', { error: `${err?.node_type ?? ''} ${err?.exception_message ?? ''}`.trim() }),
         )

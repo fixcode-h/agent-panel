@@ -15,23 +15,23 @@ python blender_cli.py export_ue.py <scene.blend> --out <dir> [--name <base>] [--
 
 ## 预设参数（在 Blender 5.2.1 实测）
 
-| 参数 | 值 | 说明 |
-|---|---|---|
-| `apply_unit_scale` | `True` | 按场景单位换算，避免双倍缩放 |
-| `global_scale` | `1.0` | 不叠加额外缩放 |
-| `apply_scale_options` | `FBX_SCALE_NONE` | 不做批量缩放转换 |
-| `axis_forward` / `axis_up` | `-Z` / `Y` | Blender Z-up → FBX Y-up 标准转换，UE 导入保持默认即可 |
-| `add_leaf_bones` | `False` | 不生成叶骨（UE 重定向更干净） |
-| `primary_bone_axis` / `secondary_bone_axis` | `Y` / `X` | 骨骼轴向对齐 UE |
-| `bake_anim` | `True` | 烘焙动画，消除依赖 |
-| `bake_anim_use_nla_strips` | `False` | 见下方「动画模式」 |
-| `bake_anim_use_all_actions` | `True` | 每个 action 一个 take（推荐默认） |
-| `bake_anim_simplify_factor` | `0.0` | 不做关键帧简化，保证保真 |
-| `mesh_smooth_type` | `FACE` | 按面平滑，配合切线导出 |
-| `use_mesh_modifiers` | `True` | 应用修改器后导出 |
-| `use_tspace` | `True` | 导出切线，UE 法线贴图需要 |
-| `path_mode` | `AUTO` | 贴图路径处理；FBX 默认不内嵌贴图 |
-| `embed_textures` | `False` | 贴图独立交付，便于 UE 管线 |
+| 参数                                        | 值               | 说明                                                  |
+| ------------------------------------------- | ---------------- | ----------------------------------------------------- |
+| `apply_unit_scale`                          | `True`           | 按场景单位换算，避免双倍缩放                          |
+| `global_scale`                              | `1.0`            | 不叠加额外缩放                                        |
+| `apply_scale_options`                       | `FBX_SCALE_NONE` | 不做批量缩放转换                                      |
+| `axis_forward` / `axis_up`                  | `-Z` / `Y`       | Blender Z-up → FBX Y-up 标准转换，UE 导入保持默认即可 |
+| `add_leaf_bones`                            | `False`          | 不生成叶骨（UE 重定向更干净）                         |
+| `primary_bone_axis` / `secondary_bone_axis` | `Y` / `X`        | 骨骼轴向对齐 UE                                       |
+| `bake_anim`                                 | `True`           | 烘焙动画，消除依赖                                    |
+| `bake_anim_use_nla_strips`                  | `False`          | 见下方「动画模式」                                    |
+| `bake_anim_use_all_actions`                 | `True`           | 每个 action 一个 take（推荐默认）                     |
+| `bake_anim_simplify_factor`                 | `0.0`            | 不做关键帧简化，保证保真                              |
+| `mesh_smooth_type`                          | `FACE`           | 按面平滑，配合切线导出                                |
+| `use_mesh_modifiers`                        | `True`           | 应用修改器后导出                                      |
+| `use_tspace`                                | `True`           | 导出切线，UE 法线贴图需要                             |
+| `path_mode`                                 | `AUTO`           | 贴图路径处理；FBX 默认不内嵌贴图                      |
+| `embed_textures`                            | `False`          | 贴图独立交付，便于 UE 管线                            |
 
 ## 动画模式（实测结论）
 

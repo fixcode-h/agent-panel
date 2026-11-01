@@ -1,0 +1,23 @@
+// 各层 tsconfig 共用的编译选项。运行环境（lib / types）不放这里：
+// web 只有 DOM，server 只有 Node，shared 两边都要能跑所以两个都没有，各层自己的 tsconfig 里写。
+// paths 相对本文件所在的项目根解析，各层继承后不用再写。
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": [],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@/*": ["./web/src/*"],
+      "@shared/*": ["./shared/*"]
+    }
+  }
+}

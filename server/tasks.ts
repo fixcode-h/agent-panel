@@ -14,6 +14,7 @@ import {
 } from '../shared/schema.ts'
 import { type LessonDraft } from './lessons.ts'
 import { restartDoing } from './interrupted.ts'
+import { recordRestart } from './restart-interrupted.ts'
 import { entryFlow, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
@@ -29,17 +30,17 @@ import {
 import { getSettings } from './settings.ts'
 import { cancelWait } from './exec/runner.ts'
 import { makeAlert } from '../shared/alerts.ts'
-import { forgetPresence, setPresenceBusy, setPresenceIdleHandler, setPresenceUnreadKeeper } from './presence.ts'
+import { setPresenceBusy, setPresenceIdleHandler, setPresenceUnreadKeeper } from './presence.ts'
 import { settleReclaimed } from './exec/reclaim.ts'
 import { migrateOnStart } from './tasks/startup.ts'
 import { createStateSweep, STATE_SWEEP_MS } from './tasks/state-sweep.ts'
 import { lazyScope, type Lister, type Live } from './tasks/types.ts'
 import type { TasksScope } from './tasks/scope.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
-import { CHATS_DIR, HANDOFF_DIR, TASK_FILES_DIR } from './store.ts'
+import { CHATS_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { worktreeStatus } from './exec/worktree.ts'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { cleanupUploads, removeUploads, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
 import { log } from './log.ts'
@@ -47,7 +48,7 @@ import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
 import { subjectLine } from '../shared/peer-message.ts'
 import type { AlertKind } from '../shared/schema.ts'
-import { createClaims } from './claims.ts'
+import { createClaims, forgetClaims } from './claims.ts'
 import { releaseIfSame, reserveOnce } from './slots.ts'
 import { killTree } from './exec/process.ts'
 import { reapSettledTaskClis } from './exec/orphans.ts'
@@ -108,6 +109,7 @@ export function tasksApi(deps: {
     buildFor: () => buildFor,
     chatProject: () => chatProject,
     checkBudget: () => checkBudget,
+    holdWake: () => holdWake,
     chatWorkspace: () => chatWorkspace,
     childActive: () => childActive,
     childRecovering: () => childRecovering,
@@ -297,17 +299,39 @@ export function tasksApi(deps: {
    * 已经在执行时返回已有的那一份（fresh 为 false），由调用方决定复用还是返回 409，不能覆盖
    */
   const reserve = (task: Task) =>
-    reserveOnce(
-      live,
-      task.id,
-      (): Live => ({ task: structuredClone(task), stop: false, abort: new AbortController(), rev: 0 }),
-    )
+    reserveOnce(live, task.id, (): Live => ({
+      task: structuredClone(task),
+      stop: false,
+      abort: new AbortController(),
+      rev: 0,
+    }))
   /** 只释放自己的执行位：旧的一轮收尾时不能把新的一轮删掉 */
   const release = (entry: Live) => releaseIfSame(live, entry.task.id, entry)
 
   // 服务重启时，之前没跑完的任务标记为已停止（见 server/tasks/startup.ts）。
   // 对外暴露成 ready：读取「被更新打断的任务」时要等这一步做完，否则还会读到 running
-  const ready = migrateOnStart(store)
+  const ready = migrateOnStart(store, claims)
+
+  /**
+   * 强制更新、面板退出要记下哪些任务（重启后问用户要不要继续）：正在执行的，以及被打断后还有活要自己干的（`restartUnfinished`：
+   * 这一轮被打断、计划没做完），再加上名下还有子对话在跑的父对话——子对话的结果要交回它，
+   * 它不在名单里就没人接。只按 working 记会把停在等下一句、计划 12/17 的父对话漏掉：
+   * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+   * 清扫独立目录（`sweepStaleWorktrees`）仍然只看真正在跑的，用 `workingTasks`。
+   */
+  async function interruptedTasks() {
+    const liveTasks = new Map([...live.values()].map((e) => [e.task.id, e.task]))
+    const working = [...liveTasks.values()]
+      .filter((tk) => tk.working)
+      .map((tk) => ({ id: tk.id, parentTaskId: tk.parentTaskId }))
+    // 列表不带完整对话（`store.list()` 只保留用户消息），但 `plans` / `steps` / `stopReason` 都在，
+    // 判「计划没做完」不用再 `store.get` 逐个读完整对话文件（长对话几 MB，强制更新时会卡在磁盘上）。
+    // 在跑的任务用 live 那份，它比落盘的新
+    const all = (await store.list()).map((tk) => liveTasks.get(tk.id) ?? tk)
+    // 进了回收站的对话不能再进恢复名单：用户已经把它删了，重启后不能自己跑起来
+    const want = new Set(interruptedTaskIds(all, working))
+    return all.filter((tk) => want.has(tk.id) && !taskDeleted(tk)).map((tk) => ({ id: tk.id, doing: restartDoing(tk) }))
+  }
 
   /**
    * 自动归档（设置里的 autoArchiveDays，默认关）：启动一分钟后看一次，之后每小时一次。
@@ -324,6 +348,8 @@ export function tasksApi(deps: {
       // 和手动归档一样：归档的对话不再接收结果，后台命令一起停掉。只改任务本身，不读写对话文件
       await endBackground(id)
       await store.updateMeta(id, { archived: true }, { keepUpdatedAt: true })
+      const tk = all.find((x) => x.id === id)
+      if (tk) forgetClaims(claims, tk)
     }
     if (ids.length) log.info('task', '自动归档很久没动的对话', { 天数: autoArchiveDays, 对话: ids.length })
   }
@@ -579,6 +605,14 @@ export function tasksApi(deps: {
       jobs: pendingJobs(id),
       merging: merging.has(id),
     }),
+    // 落成「已中断」的子对话要交给父对话：计划里等它的那一步收口、父对话空闲时叫醒（叫不叫过 holdWake，见 noteParent）。
+    // 先清上报去重：「停下→继续→这一轮没跑完就丢了」时 turnDoneAt 没变，去重键和上次一样，这次上报会被吞掉
+    reportChild: (tk) => {
+      reportedState.delete(tk.id)
+      return reportToParent(tk)
+    },
+    // 写成箭头：createPeer 在下面才解构出来
+    remindParent: (tk) => remindParentFix(tk),
   })
   let sweepTimer: ReturnType<typeof setInterval> | undefined
   void ready.then(() => {
@@ -609,12 +643,12 @@ export function tasksApi(deps: {
     reportKey,
     integrate,
   } = createChildren(scope)
-  const { attachOrchestra, forwardSpawn, messageParent } = createPeer(scope)
+  const { attachOrchestra, forwardSpawn, messageParent, remindParentFix } = createPeer(scope)
   const { answerChildAsk, applyAskUser, applyChildAskUser, runningConv, settleAskFromChild, settleAsks, wakeConv } =
     createAsks(scope)
   const { deliver, expandForWorkflow, followUp, spawnChildOf, start } = createRun(scope)
   const { armIdleAsk, disarmIdleAsk, childRecovering } = createIdleAsk(scope)
-  const { checkBudget } = createBudget(scope)
+  const { checkBudget, holdWake } = createBudget(scope)
   const {
     allowedPids,
     processPanel,
@@ -653,7 +687,7 @@ export function tasksApi(deps: {
   const { dropWorktree, taskDir, worktreeHome } = registerWorktreeRoutes(scope)
   const { readableDir } = registerFileRoutes(scope)
   registerActionRoutes(scope)
-  const { purgeTasks } = createTrash(scope)
+  const { purgeTasks, enterTrash, restoreTasks } = createTrash(scope)
 
   // 子对话静默自动询问的扫描：数据准备好之后开始，退出时在 stopAll 里清掉
   void ready.then(() => armIdleAsk()).catch(() => {})
@@ -709,28 +743,7 @@ export function tasksApi(deps: {
               .split('\n')[0]
               .slice(0, 60),
         })),
-    /**
-     * 强制更新要记下哪些任务：正在执行的，以及被打断后还有活要自己干的（`restartUnfinished`：
-     * 这一轮被打断、计划没做完），再加上名下还有子对话在跑的父对话——子对话的结果要交回它，
-     * 它不在名单里就没人接。只按 working 记会把停在等下一句、计划 12/17 的父对话漏掉：
-     * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
-     * 清扫独立目录（`sweepStaleWorktrees`）仍然只看真正在跑的，用 `workingTasks`。
-     */
-    interruptedTasks: async () => {
-      const liveTasks = new Map([...live.values()].map((e) => [e.task.id, e.task]))
-      const working = [...liveTasks.values()]
-        .filter((tk) => tk.working)
-        .map((tk) => ({ id: tk.id, parentTaskId: tk.parentTaskId }))
-      // 列表不带完整对话（`store.list()` 只保留用户消息），但 `plans` / `steps` / `stopReason` 都在，
-      // 判「计划没做完」不用再 `store.get` 逐个读完整对话文件（长对话几 MB，强制更新时会卡在磁盘上）。
-      // 在跑的任务用 live 那份，它比落盘的新
-      const all = (await store.list()).map((tk) => liveTasks.get(tk.id) ?? tk)
-      // 进了回收站的对话不能再进恢复名单：用户已经把它删了，重启后不能自己跑起来
-      const want = new Set(interruptedTaskIds(all, working))
-      return all
-        .filter((tk) => want.has(tk.id) && !taskDeleted(tk))
-        .map((tk) => ({ id: tk.id, doing: restartDoing(tk) }))
-    },
+    interruptedTasks,
     /** 立刻核对一次对话状态（见 createStateSweep）：测试用它，不用等定时器 */
     sweepState: () => stateSweep.sweep(),
     /** 启动时的迁移做完没有：读「被更新打断的任务」前等它，免得看到还没改过来的 running */
@@ -749,8 +762,15 @@ export function tasksApi(deps: {
       const head = await store.peek(id)
       return head ? idle(head) : null
     },
+    /** 退出前把还在合并窗口里的对话消息写盘（见 task-store 的 flushAll） */
+    flush: () => store.flushAll(),
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
-    async stopAll() {
+    async stopAll(opts: { forUpdate?: boolean } = {}) {
+      // 先记下这次退出打断了哪些对话（停掉之后就分不出来了）：重启后首页问要不要全部继续。
+      // 强制更新另有自己的名单和弹窗（stopForUpdate），这里写空，免得重启后两处都问
+      await recordRestart(opts.forUpdate ? [] : await interruptedTasks()).catch((e) =>
+        log.warn('task', '记录被重启打断的对话失败', e),
+      )
       shuttingDown = true
       disarmIdleAsk()
       clearInterval(sweepTimer)
@@ -764,20 +784,16 @@ export function tasksApi(deps: {
       return Promise.allSettled([...[...live.values()].map((e) => e.done), jobsDone])
     },
     /** repo：项目目录。项目已经删掉了，要靠它清理任务的独立分支 */
-    async removeByProject(projectId: string, repo?: string) {
-      const removed = (await store.list()).filter((t) => t.projectId === projectId)
-      for (const t of removed) {
-        stopTask(t.id, 'archive')
-        await background.stop(t.id)
-        background.forget(t.id)
-        await store.remove(t.id)
-        forgetPresence(t.id)
-        await dropWorktree(t, repo)
-        await rm(path.join(HANDOFF_DIR, t.id), { recursive: true, force: true }).catch(() => {})
-        await rm(path.join(TASK_FILES_DIR, t.id), { recursive: true, force: true }).catch(() => {})
-      }
-      await dropUploads(removed)
+    /**
+     * 删项目时它的对话一起进回收站（以前直接物理删除，删错项目就连对话一起找不回来）。
+     * 返回进了回收站的对话 id：恢复项目时按它把这些对话一起找回来；过期后由 cleanupTrash 物理删除
+     */
+    async trashByProject(projectId: string) {
+      const list = (await store.list()).filter((t) => t.projectId === projectId && !t.deletedAt)
+      for (const t of list) await enterTrash(t, 'archive')
+      return list.map((t) => t.id)
     },
+    restoreTasks,
     /**
      * 兜底回收：任务已经收口（resolved / 这一轮做完 / 已停下），它登记的 CLI 进程却还活着。
      * 挂在启动后和每小时那一次清理上（见 server/index.ts 的 runCleanup），不另起定时器。
@@ -793,6 +809,15 @@ export function tasksApi(deps: {
         return !!tk && taskSettled(tk)
       }
       return reapSettledTaskClis({ settled, kill: killTree, graceMs: REAP_GRACE_MS })
+    },
+    /** 这个本机路径是不是某个对话里用户发过的附件（/uploads/open 只打开这些）；列表里带着全部用户消息，不用读对话文件 */
+    async hasAttachment(file: string) {
+      const want = path.resolve(file)
+      return (await store.list()).some((t) =>
+        t.messages.some((m) =>
+          (m.attachments ?? []).some((a) => path.isAbsolute(a.path) && path.resolve(a.path) === want),
+        ),
+      )
     },
     /** 启动时清理没有任务在用的附件 */
     async cleanupUploads() {

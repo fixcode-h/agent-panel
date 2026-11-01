@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
 import { openAiFix } from '@/lib/ai-fix'
 import { MB, fmtMem } from '@/lib/mem'
 import { cn } from '@/lib/utils'
-import { getLang, t } from '@shared/i18n'
+import { t, uiLocale } from '@shared/i18n'
 import { TASK_MEMORY_TOPIC } from '@shared/memory-analysis'
 import type { MemoryPoint } from '@shared/schema'
 
@@ -37,7 +37,7 @@ function readAnalysis(taskId: string): LastAnalysis | null {
 
 function timeLabel(t: number) {
   const d = new Date(t)
-  return d.toLocaleTimeString(getLang() === 'en' ? 'en-US' : 'zh-CN', {
+  return d.toLocaleTimeString(uiLocale(), {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -46,7 +46,7 @@ function timeLabel(t: number) {
 
 function dayLabel(t: number) {
   const d = new Date(t)
-  return d.toLocaleDateString(getLang() === 'en' ? 'en-US' : 'zh-CN', { month: 'numeric', day: 'numeric' })
+  return d.toLocaleDateString(uiLocale(), { month: 'numeric', day: 'numeric' })
 }
 
 /** 跨天的带上日期，不然「上次分析 09:12」看不出是哪天 */
@@ -208,18 +208,18 @@ export function MemoryChart({ taskId }: { taskId: string }) {
 
   return (
     <div className="px-3 py-2" ref={box}>
-      <div className="flex items-baseline justify-between gap-2 text-[0.75rem]">
+      <div className="flex items-baseline justify-between gap-2 text-footnote">
         <span className="text-muted">{t('内存合计')}</span>
         <span className="font-medium tabular-nums">{fmtMem(shown?.cli ?? null)}</span>
       </div>
-      <p className="mt-0.5 flex flex-wrap gap-x-2 text-[0.6875rem] text-subtle">
+      <p className="mt-0.5 flex flex-wrap gap-x-2 text-caption text-subtle">
         <span>{t('进程 {v}', { v: fmtMem(shown?.cli ?? null) })}</span>
         <span>{t('面板 {v}（不计入）', { v: fmtMem(shown?.server ?? null) })}</span>
         {shown && <span className="tabular-nums">{timeLabel(shown.t)}</span>}
       </p>
 
-      {error && <p className="mt-1 text-[0.6875rem] text-danger">{error}</p>}
-      {aiError && <p className="mt-1 text-[0.6875rem] text-danger">{t('内存分析没成功：{msg}', { msg: aiError })}</p>}
+      {error && <p className="mt-1 text-caption text-danger">{error}</p>}
+      {aiError && <p className="mt-1 text-caption text-danger">{t('内存分析没成功：{msg}', { msg: aiError })}</p>}
 
       <div className="relative mt-1">
         <svg
@@ -251,7 +251,7 @@ export function MemoryChart({ taskId }: { taskId: string }) {
             />
           ))}
           {[0.5, 1].map((r) => (
-            <text key={r} x={PAD.left + 2} y={PAD.top + plotH * (1 - r) - 3} className="fill-subtle text-[9px]">
+            <text key={r} x={PAD.left + 2} y={PAD.top + plotH * (1 - r) - 3} className="fill-subtle text-micro">
               {fmtMem(top * r)}
             </text>
           ))}
@@ -283,20 +283,20 @@ export function MemoryChart({ taskId }: { taskId: string }) {
           )}
 
           {tickIdx.map((i) => (
-            <text key={i} x={xOf(i)} y={HEIGHT - 6} textAnchor="middle" className="fill-subtle text-[9px]">
+            <text key={i} x={xOf(i)} y={HEIGHT - 6} textAnchor="middle" className="fill-subtle text-micro">
               {tick(i)}
             </text>
           ))}
         </svg>
 
         {loaded && !points.length && (
-          <p className="absolute inset-0 flex items-center justify-center text-[0.75rem] text-subtle">
+          <p className="absolute inset-0 flex items-center justify-center text-footnote text-subtle">
             {t('还没有内存采样，30 秒后开始记录')}
           </p>
         )}
       </div>
 
-      <div className="mt-0.5 flex items-center justify-between gap-2 text-[0.6875rem] text-subtle">
+      <div className="mt-0.5 flex items-center justify-between gap-2 text-caption text-subtle">
         <span className="flex flex-wrap items-center gap-x-2">
           <span>{t('每 {s} 秒采样一次', { s: 30 })}</span>
           {offset > 0 ? (
@@ -322,7 +322,7 @@ export function MemoryChart({ taskId }: { taskId: string }) {
       {analysis && (
         <button
           type="button"
-          className="mt-0.5 w-full cursor-pointer truncate text-left text-[0.6875rem] text-subtle hover:text-muted disabled:cursor-default"
+          className="mt-0.5 w-full cursor-pointer truncate text-left text-caption text-subtle hover:text-muted disabled:cursor-default"
           disabled={analyzing}
           title={t('重新分析并打开这次排查')}
           onClick={() => void analyze()}

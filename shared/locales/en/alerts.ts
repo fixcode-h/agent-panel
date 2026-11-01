@@ -114,6 +114,7 @@ export const EN_ALERTS: Record<string, string> = {
   'Agent 没有响应，面板重启了它': 'The agent stopped responding, so the panel restarted it',
   '卡住了，已由新的子对话接手': 'Got stuck; a new sub-conversation took over',
   '已自动续接，从中断的地方继续了': 'Resumed automatically from where it stopped',
+  '续接不上，已开新会话重新执行': 'Couldn’t resume; reran in a new session',
   '已自动重试，继续做完了': 'Retried automatically and it finished',
   '{s} 秒后有输出了，接着在处理': 'Output resumed after {s}s and it is working again',
   '{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。':
@@ -160,6 +161,10 @@ export const EN_ALERTS: Record<string, string> = {
   这个对话的状态没能报给父对话: "This conversation's status couldn't be reported to the parent",
   '子对话等你决定，但没能开一轮来处理，问题在收件箱里':
     "A subconversation needs a decision, but a turn couldn't be started to handle it. The question is in the inbox",
+  '子对话请你安排修复，但没能开一轮来处理，报错在收件箱里':
+    "A subconversation asked you to arrange a fix, but a turn couldn't be started to handle it. The error is in the inbox",
+  '子对话还在等你安排修复，面板提醒时没能开一轮来处理':
+    "A subconversation is still waiting for you to arrange a fix, but the panel couldn't start a turn to remind you",
   '关掉「提问」后没能开一轮去回答子对话的问题':
     "After Ask was turned off, a turn couldn't be started to answer the subconversation's question",
   '提前启动 Agent 失败：发消息时会再启动一次，仍然失败会在这里报错':

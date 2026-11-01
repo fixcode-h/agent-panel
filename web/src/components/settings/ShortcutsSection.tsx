@@ -52,7 +52,7 @@ function HotkeyField({ label, value, onChange }: { label: string; value: string;
       onClick={() => setRecording((v) => !v)}
       onPointerDown={(e) => e.stopPropagation()}
       className={cn(
-        'flex h-9 w-[240px] cursor-pointer items-center gap-2 rounded-lg border px-3 text-[0.8125rem] transition-colors',
+        'flex h-9 w-[240px] cursor-pointer items-center gap-2 rounded-lg border px-3 text-body transition-colors',
         recording ? 'border-accent bg-accent-soft text-accent-text' : 'border-line-strong bg-field hover:border-focus',
       )}
     >
@@ -73,7 +73,7 @@ export function ShortcutsSection({ value, onChange }: { value: ElementPicker; on
   const broken = !parseHotkey(value.hotkey)
   return (
     <>
-      <p className="text-[0.8125rem] text-subtle">{t('开发者模式下抓取界面元素用的按键。')}</p>
+      <p className="text-body text-subtle">{t('开发者模式下抓取界面元素用的按键。')}</p>
       <Group title={t('抓取元素')}>
         <Row
           title={t('快捷键')}
@@ -102,11 +102,11 @@ export function ShortcutsSection({ value, onChange }: { value: ElementPicker; on
           />
         </Row>
         <Row title={t('退出抓取')} desc={t('抓到一个元素后也会自动退出')}>
-          <div className="flex items-center justify-end gap-2 text-[0.8125rem] text-muted">
+          <div className="flex items-center justify-end gap-2 text-body text-muted">
             <MousePointerClick className="h-4 w-4 text-subtle" />
-            <Kbd className="h-auto px-1.5 py-0.5 text-[0.75rem]">Esc</Kbd>
+            <Kbd className="h-auto px-1.5 py-0.5 text-footnote">Esc</Kbd>
             <span>{t('或')}</span>
-            <Kbd className="h-auto px-1.5 py-0.5 text-[0.75rem]">{hotkeyLabel(value.hotkey)}</Kbd>
+            <Kbd className="h-auto px-1.5 py-0.5 text-footnote">{hotkeyLabel(value.hotkey)}</Kbd>
           </div>
         </Row>
         {!isDefault && (

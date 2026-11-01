@@ -2,9 +2,12 @@
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
+import { demoSpeech, demoTts } from './demo-speech'
+import { demoRestart } from './demo-restart'
+import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
-import { demoChildSummary, demoParentCard } from './demo-child-summary'
+import { demoChatTodos, demoChildSummary, demoParentCard } from './demo-child-summary'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
 import {
@@ -71,6 +74,7 @@ import {
 } from '@shared/data'
 import {
   alignScheduleAt,
+  scheduleClock,
   appendRun,
   nextRunAt,
   sameMinute,
@@ -837,11 +841,11 @@ function ensureDemoCore(d: Db) {
     cat = { id: 'demo-core', name: CORE_CATEGORY, scope: 'agent', createdAt: at, updatedAt: at }
     d.categories.push(cat)
   }
-  for (const key of ['rules', ...CORE_AGENTS.map((c) => c.key)]) {
+  for (const key of ['rules', 'chat-rules', ...CORE_AGENTS.map((c) => c.key)]) {
     if (d.agents.some((a) => a.origin === `builtin:${key}`)) continue
     const def = BUILTIN_AGENTS.find((b) => b.key === key)!
     d.agents.push({
-      ...AgentInput.parse({ ...def.agent, origin: `builtin:${key}`, categoryId: key === 'rules' ? '' : cat.id }),
+      ...AgentInput.parse({ ...def.agent, origin: `builtin:${key}`, categoryId: key.endsWith('rules') ? '' : cat.id }),
       id: `demo-${key}`,
       createdAt: at,
       updatedAt: at,
@@ -1499,7 +1503,8 @@ function demoProjectFiles(
 }
 
 /** 演示的 Skill 列表：用户级的总是有，选了项目时多一个项目里的 */
-const demoPackages = ['npm:@example/pi-web-tools', 'git:github.com/example/pi-review@v1']
+// 装了一个带版本号的推荐插件：设置页按去掉版本号的来源认出它已经装了
+const demoPackages = ['npm:cc-safety-net@2.7.1', 'git:github.com/example/pi-review@v1']
 
 const DEMO_SKILLS: CliSkill[] = [
   {
@@ -1711,22 +1716,6 @@ const demoCatalog = () => ({
 let demoWorkflows: ComfyWorkflow[] = []
 /** 演示里存下来的工作流链 */
 let demoChains: ComfyChain[] = []
-/** 语音输入：演示里没有麦克风识别，下载一点就好，识别回一句示例 */
-const demoSpeechModels = new Set<string>()
-function demoSpeech(method: string, seg: string[]): unknown {
-  const [, a, id, b] = seg
-  if (a === 'transcribe') return { text: '（在线演示）把登录页的报错提示改得更清楚一些' }
-  if (a === 'models' && id && method === 'POST' && b === 'download') demoSpeechModels.add(id)
-  if (a === 'models' && id && method === 'DELETE') demoSpeechModels.delete(id)
-  return {
-    supported: true,
-    platform: 'demo',
-    runtime: demoSpeechModels.size > 0,
-    models: [...demoSpeechModels],
-    dir: '~/.agent-panel/speech',
-  }
-}
-
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
   // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
@@ -2050,6 +2039,7 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
         ...input,
         // 和正式后端一样：每周 / 工作日的首次执行落在选中的星期上
         at: alignScheduleAt(input),
+        clock: scheduleClock(input.at),
         status: 'pending',
         lastRunAt: '',
         lastTaskId: '',
@@ -2082,11 +2072,12 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
     const input = { ...parsed, at: alignScheduleAt(parsed) }
     // 和正式后端一样：已结束的计划把结束日期往后改时，过期的 at 推到现在之后，不先记一次错过
     if (scheduleEnded(cur) && !scheduleEnded(input) && Date.parse(input.at) < Date.now() - SCHEDULE_MISS_MS)
-      input.at = nextRunAt(input, Date.now())
+      input.at = nextRunAt({ ...input, clock: cur.clock }, Date.now())
     // 和正式后端一样：改了时间就重新回到待执行，还没跑的计划按钮变回「待执行」
     const next = {
       ...cur,
       ...input,
+      clock: sameMinute(input.at, cur.at) && cur.clock ? cur.clock : scheduleClock(input.at),
       // 和正式后端同一个口径：只改名字、时间还在同一分钟时不算换了排期
       ...(!sameMinute(input.at, cur.at)
         ? { status: 'pending' as const, missedAt: '', lastError: '', blockedAt: '', blockedReason: '' }
@@ -2123,6 +2114,12 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   const seg = path.split('/').filter(Boolean)
   const [res, id, sub] = seg
 
+  // 残留进程：演示版没有真实进程
+  if (res === 'tasks' && id === 'stale-processes')
+    return method === 'GET' ? { processes: [], unavailable: '' } : { killed: [], skipped: [], gone: [] }
+  // 角色、工作流、项目的回收站：演示版里删掉就是删掉，列表一直是空的
+  if (res === 'trash' && id === 'items') return method === 'GET' ? [] : { ok: true, tasks: 0 }
+
   if (res === 'settings') {
     if (method === 'PUT') d.settings = parse(Settings, body)
     // 和正式后端同一套迁移（见 shared/settings.ts）：旧设置里的 Gemini 协议先清掉，再升到新默认值
@@ -2145,6 +2142,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
+  if (res === 'tts') return demoTts(method, seg)
   // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
   if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
   // 演示里没有 Blender 建出来的模型：预览一直是「还没有模型」
@@ -2732,6 +2730,7 @@ export async function handle(method: string, url: string, body: unknown) {
     await seedTasks(d)
     persist()
   }
+  if (url.startsWith('/app/restart-interrupted')) return demoRestart(d, url)
   if (url.startsWith('/app/')) return demoApp(url)
   const result = await route(method, url, body)
   // 返回副本：执行中的任务会被原地修改，页面需要拿到新对象才会刷新
@@ -3236,12 +3235,21 @@ function tasksRoute(
         if (!k.parentTaskId || !demoChildActive(k)) continue
         kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
       }
+      // 和正式版一样：子对话在等你确认时父对话也是「等你处理」（见 shared/child-needs.ts）
+      const needs = descendantNeeds(tasks)
       // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
       return (
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
           .filter((t) => !t.parentTaskId && !t.deletedAt)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
-          .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t), childrenWorking: kids.get(t.id) ?? 0 }))
+          .map((t) =>
+            taskSummary({
+              ...t,
+              cliAlive: demoCliAlive(t),
+              childrenWorking: kids.get(t.id) ?? 0,
+              childrenNeeds: needs.get(t.id) ?? 0,
+            }),
+          )
       )
     }
     return createTask(d, parse(NewTaskInput, body)).task
@@ -3445,6 +3453,7 @@ function tasksRoute(
           startedAt: childStartedAt(x),
           // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
           requests: (x.requests ?? []).length,
+          request: pendingRequest(x),
           asking: x.parentAsks?.length ?? 0,
           // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成；带上正在做的那一步
           plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
@@ -4665,9 +4674,9 @@ async function seedTasks(d: Db) {
       )
       await done
       if (c.minutes > 60 * 24) demoAlerts(task)
+      else task.todos = demoChatTodos()
       back(task, c.minutes)
-      // 真的停在等下一句（没有子任务、也没有后台命令在跑）的对照：状态行写「等待你的下一条消息」才是对的。
-      // 和上面那条一样不写 live 登记：那样会被当成「有一轮在跑」，接着发消息只会 held 在队列里
+      // 真的停在等下一句的对照：状态行写「等待你的下一条消息」才对；不写 live 登记（会被当成有一轮在跑、消息只会 held）
       if (c.waiting) {
         task.status = 'running'
         task.working = false

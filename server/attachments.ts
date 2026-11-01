@@ -54,6 +54,7 @@ export function relativeAttachName(p: string): string {
 }
 
 /** 文件名里去掉路径和系统不允许的字符（和上传时一致，名字对得上） */
+// oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
 const safeName = (n: string) => path.basename(n).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_') || 'file'
 
 /** 第 i 个候选名：第一个用原名，之后加序号（`note (2).png`） */

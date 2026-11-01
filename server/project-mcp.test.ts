@@ -108,6 +108,8 @@ test('项目 MCP：识别常见配置文件，导入只写 CLI 的全局配置',
     assert.equal(empty.path, '')
     assert.deepEqual(empty.detected, [])
   } finally {
-    process.env = old
+    // 按键还原：process.env = old 会换成普通对象，之后再设 HOME，os.homedir() 读不到（rules-check 第 17 条）
+    for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]
+    Object.assign(process.env, old)
   }
 })

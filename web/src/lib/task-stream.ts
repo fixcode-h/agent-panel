@@ -8,11 +8,18 @@ type Patch = { meta: Omit<Task, 'messages'>; messages: TaskMessage[]; total: num
 /** 把推送来的增量合到当前任务上：任务本身整体替换，消息按 id 替换或追加 */
 export function mergePatch(task: Task, p: Patch): Task {
   const messages = task.messages.slice()
-  const index = new Map(messages.map((m, i) => [m.id, i]))
+  // 流式输出时增量几乎都是最后一两条：先从尾部找，找不到再建全量索引。
+  // 以前每个增量（每 200ms 一次）都给全部消息建一次 Map，长对话里白白 O(全部消息)
+  const ix: { map?: Map<string, number> } = {}
+  const find = (id: string) => {
+    for (let i = messages.length - 1, n = 0; i >= 0 && n < 8; i--, n++) if (messages[i].id === id) return i
+    ix.map ??= new Map(messages.map((m, i) => [m.id, i]))
+    return ix.map.get(id)
+  }
   for (const m of p.messages) {
-    const i = index.get(m.id)
+    const i = find(m.id)
     if (i === undefined) {
-      index.set(m.id, messages.length)
+      ix.map?.set(m.id, messages.length)
       messages.push(m)
     } else messages[i] = m
   }

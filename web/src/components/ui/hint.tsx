@@ -56,6 +56,16 @@ function pointerOn(el: Element | null): boolean {
 }
 
 /**
+ * 这次滚动是不是带着这个元素一起动了：滚的是整页，或者是它外面的某个滚动容器。
+ * 别处的滚动（另一栏的对话在自动往下滚）和它无关，不能把这边的提示关掉。
+ */
+function scrollMoves(e: Event, el: Element): boolean {
+  const target = e.target
+  if (target === document || target === window) return true
+  return target instanceof Node && target.contains(el)
+}
+
+/**
  * 焦点是不是 Tab 走过来的。
  * 键盘操作要能看到提示，但弹窗、下拉、参数面板打开时会把焦点自动挪到第一个可聚焦元素上，
  * 那里正好有提示，于是浮层自己弹出来（用户并没碰过它）。
@@ -119,6 +129,9 @@ function HintSurface({
   className?: string
 }) {
   const [placement, setPlacement] = useState<Placement | null>(null)
+  // 只有一段文字的简短提示（图标按钮的名字、接管来的 title）照 Claude Code 用反色小块：比菜单小一号、
+  // 不带边框和大投影，不和弹出菜单抢眼；带标题、多行说明的富提示仍用浮层样式
+  const simple = typeof content === 'string'
 
   // 先渲染出来量尺寸再定位：位置依赖浮层自己的宽高（长文字会换行）
   useLayoutEffect(() => {
@@ -142,8 +155,12 @@ function HintSurface({
       className={cn(
         // 量尺寸时先藏起来，避免在算好位置前闪一下
         // 底色用浮层色（--pop）：默认就是卡片色，「Claude Code」配色深色下和弹出菜单一样亮一档
-        'hint-surface pointer-events-none fixed z-50 max-w-[320px] rounded-lg border border-line-strong bg-(--pop) px-3 py-2 text-xs leading-relaxed break-words text-muted shadow-pop',
+        'pointer-events-none fixed z-50 max-w-[320px] text-xs leading-relaxed break-words',
+        simple
+          ? 'hint-simple rounded-md bg-fg px-2 py-1 text-bg shadow-[0_2px_8px_rgb(0_0_0/0.16)]'
+          : 'hint-surface rounded-lg border border-line-strong bg-(--pop) px-3 py-2 text-muted shadow-pop',
         !placement && 'invisible',
+        placement && 'animate-[fade-in_var(--dur-snap)_var(--ease-snap)]',
         className,
       )}
       style={
@@ -187,6 +204,8 @@ export function Hint({ children, content, className }: HintProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const openTimer = useRef(0)
   const closeTimer = useRef(0)
+  /** 这次是不是悬停打开的：悬停的一滚动就关，键盘 / 点击打开的跟着元素走 */
+  const viaHover = useRef(false)
   useEffect(trackTabFocus, [])
   useEffect(trackPointer, [])
 
@@ -210,6 +229,7 @@ export function Hint({ children, content, className }: HintProps) {
       if (!byUser && performance.now() - pointerMovedAt > HOVER_DELAY_MS * 4) return
       const fire = () => {
         openTimer.current = 0
+        viaHover.current = !byUser
         const el = triggerRef.current
         if (el) setAnchor(el.getBoundingClientRect())
       }
@@ -241,7 +261,10 @@ export function Hint({ children, content, className }: HintProps) {
   // 所以这里自己在 capture 阶段处理，并且吃掉这次按键（不然底下的弹窗会跟着关）
   useHintEscape(!!anchor, dismiss)
 
-  // 滚动、改窗口大小时位置会漂：跟着重算，浮层不能停在原来的地方
+  // 滚动时：悬停打开的直接关掉 —— 滚轮滚动没有 pointermove，指针早已不在元素上，
+  // 跟着元素走的话浮层会一直挂着、甚至飘到滚动区外面（原生 title 一滚就没了）。
+  // 键盘 / 点击打开的跟着元素重算位置（Tab 过去时浏览器会把元素滚进视野，关掉就看不到了）。
+  // 改窗口大小只重算位置。
   useEffect(() => {
     if (!anchor) return
     const sync = () => {
@@ -249,13 +272,23 @@ export function Hint({ children, content, className }: HintProps) {
       if (!el?.isConnected) return setAnchor(null)
       setAnchor(el.getBoundingClientRect())
     }
-    window.addEventListener('scroll', sync, { capture: true, passive: true })
+    const onScroll = (e: Event) => {
+      const el = triggerRef.current
+      if (!el?.isConnected) return setAnchor(null)
+      if (!scrollMoves(e, el)) return
+      if (viaHover.current) {
+        clearTimers()
+        return setAnchor(null)
+      }
+      sync()
+    }
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true })
     window.addEventListener('resize', sync, { passive: true })
     return () => {
-      window.removeEventListener('scroll', sync, { capture: true })
+      window.removeEventListener('scroll', onScroll, { capture: true })
       window.removeEventListener('resize', sync)
     }
-  }, [anchor])
+  }, [anchor, clearTimers])
 
   const own = children.props
   const trigger = {
@@ -485,7 +518,18 @@ export function GlobalHintHost() {
       hoveredEl.current = null
       scheduleClose()
     }
-    // 滚动、改窗口大小时位置会漂：按元素当前位置重算，浮层不能停在原来的地方
+    // 滚动：这里的提示都是悬停出来的，滚轮滚动时指针已不在元素上（又没有 pointermove），直接关掉，
+    // 跟原生 title 一样；同时忘掉「正悬停的元素」，指针再动一下、还停在它上面就重新按悬停弹出。
+    // 别处容器的滚动（另一栏对话自动滚）不碰这边的提示。
+    const onScroll = (e: Event) => {
+      const cur = tipRef.current
+      const el = cur?.el ?? hoveredEl.current
+      if (!el || !scrollMoves(e, el)) return
+      clearTimers()
+      if (hoveredEl.current === el) hoveredEl.current = null
+      if (cur) closeTip()
+    }
+    // 改窗口大小时位置会漂：按元素当前位置重算，浮层不能停在原来的地方
     const reposition = () => {
       const cur = tipRef.current
       if (!cur) return
@@ -533,13 +577,40 @@ export function GlobalHintHost() {
       if (el) clickedEl.current = el
     }
     document.addEventListener('pointerdown', onDown, { passive: true, capture: true })
-    window.addEventListener('scroll', reposition, { capture: true, passive: true })
+    // 键盘用 Tab 聚焦到图标按钮时也弹提示：只认 :focus-visible（键盘聚焦），鼠标点出来的焦点不弹，
+    // 免得点开面板后提示盖在面板上。读屏不靠这个（按钮本来就有 aria-label）
+    // 只在用 Tab / 方向键移动焦点时弹：按 Esc 关掉提示、关掉弹窗后焦点回到按钮上也会算 :focus-visible，
+    // 这时再弹就成了「Esc 关不掉提示」
+    let navKey = false
+    const onKeyDown = (e: KeyboardEvent) => {
+      navKey = e.key === 'Tab' || e.key.startsWith('Arrow')
+    }
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target instanceof HTMLElement ? e.target : null
+      if (!navKey || !el || !el.matches(':focus-visible')) return
+      const text = el.getAttribute('title') ? hideTitle(el) : (el.dataset.hint ?? '')
+      if (!text) return
+      clearTimers()
+      if (tipRef.current && tipRef.current.el !== el) closeTip()
+      setTipState({ text, el, rect: el.getBoundingClientRect() })
+    }
+    const onFocusOut = (e: FocusEvent) => {
+      const cur = tipRef.current
+      if (cur && cur.el === e.target && hoveredEl.current !== cur.el) closeTip()
+    }
+    document.addEventListener('keydown', onKeyDown, { capture: true })
+    document.addEventListener('focusin', onFocusIn)
+    document.addEventListener('focusout', onFocusOut)
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true })
     window.addEventListener('resize', reposition, { passive: true })
     return () => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerleave', onLeaveWindow)
       document.removeEventListener('pointerdown', onDown, { capture: true })
-      window.removeEventListener('scroll', reposition, { capture: true })
+      document.removeEventListener('keydown', onKeyDown, { capture: true })
+      document.removeEventListener('focusin', onFocusIn)
+      document.removeEventListener('focusout', onFocusOut)
+      window.removeEventListener('scroll', onScroll, { capture: true })
       window.removeEventListener('resize', reposition)
       if (rafId.current) cancelAnimationFrame(rafId.current)
       observer.disconnect()

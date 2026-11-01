@@ -3,6 +3,7 @@ import { toast } from '@/lib/toast'
 import {
   CircleAlert,
   ClipboardCheck,
+  CloudUpload,
   FilePen,
   Loader2,
   MessageCircleQuestion,
@@ -74,7 +75,8 @@ export function RequestCard({
   const [busy, setBusy] = useState('')
   if (!req) return null
   const a = agent
-  const Icon = ICONS[req.kind]
+  // 推送授权（ask_push）也是「允许 / 拒绝」卡片，换个图标和工具权限请求区分开
+  const Icon = req.purpose === 'push' ? CloudUpload : ICONS[req.kind]
   const send = async (key: string, allow: boolean, text?: string) => {
     if (busy) return
     setBusy(key)
@@ -169,15 +171,15 @@ export function RequestCard({
           <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
           <span
             className={cn(
-              'min-w-0 text-[0.8125rem] leading-relaxed [overflow-wrap:anywhere]',
-              req.kind === 'command' && 'font-mono text-[0.8125rem]',
+              'min-w-0 text-body leading-relaxed [overflow-wrap:anywhere]',
+              req.kind === 'command' && 'font-mono text-body',
             )}
           >
             {req.title}
           </span>
         </div>
         {req.detail && (
-          <pre className="max-h-40 overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap text-muted">
+          <pre className="max-h-40 overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-footnote leading-relaxed whitespace-pre-wrap text-muted">
             {req.detail}
           </pre>
         )}
@@ -229,7 +231,7 @@ function ConfirmEntry({
       >
         <ClipboardCheck className="h-4 w-4 shrink-0 text-warning" />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[0.8125rem] font-medium">{req.title}</span>
+          <span className="truncate text-body font-medium">{req.title}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
             <span className="shrink-0 text-warning">{t('需要你确认')}</span>
             {agent && (

@@ -29,7 +29,7 @@
 | `shared/schema.ts` `PlanStatus` / `PlanItem` / `TaskPlan` | 状态只有 `pending` / `running` / `waiting` / `done`；`PlanItem` 有 `startedAt` / `endedAt`，没有「最后变化时间」；`TaskPlan` 有 `createdAt` / `reopenedAt` / `doneAt`，同样没有「最后变化时间」 |
 | `shared/plan.ts` `applyPlan`                              | `set_plan` 的合并入口：完成的锁死、漏写的未完成项在 `partial` 下保留、等结果的项被 `held` 退回 `waiting`；**没有**「同时只有一个 `running`」这条校验                                            |
 | `shared/plan.ts` `settleWait` / `holdWait`                | 等的结果回来时收口：成功标 `done`；失败时退回 `running` 并写 `等的结果没成功：` 备注；子对话这一轮没交付完写 `还在等它：` 继续 `waiting`                                                        |
-| `shared/plan.ts` `syncKids` / `linkKids`                  | 计划和名下的子对话对齐：提到它的步骤挂成 `waiting`，子对话已完成就按它的结束时间标 `done`                                                                                                       |
+| `shared/plan.ts` `syncKids` / `linkKids`                  | 计划和名下的子对话对齐：写了它的 id、标题和它一致、或写成等待中并提到它的步骤挂成 `waiting`，子对话已完成就按它的结束时间标 `done`（2026-10-31 收紧，见 `docs/lessons/plan.md`）                |
 | `shared/plan.ts` `markWrapUp` / `endRun` / `closeIfDone`  | 合回（`submit_merge` → `finish_child`）由面板推进收尾步骤；工作流运行结束推进它那一步；全部 `done` 时写 `doneAt` 收起                                                                           |
 | `shared/plan.ts` `runningStepId`                          | 派子对话时没点名步骤就挂「正在做的那一步」（`running`，其次 `waiting`）                                                                                                                         |
 | `shared/engine.ts` `planPart`                             | 每轮提示里只有计划文本（`planText`）和一段维护规则；没有「现在是第几步、多久没动、下一步是什么」，没有滞后提醒，也没有「新输入先判计划」                                                        |

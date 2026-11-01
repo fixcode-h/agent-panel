@@ -17,6 +17,7 @@ const docOf = (d: DesignFull): DesignDoc => ({
   images: d.images,
   annotations: d.annotations ?? [],
   animations: d.animations ?? [],
+  ...(d.layout ? { layout: d.layout } : {}),
 })
 
 /**
@@ -111,11 +112,21 @@ export function useDesignEditor(id: string) {
   const running = server?.job?.status === 'running' || !!server?.images.some((i) => i.status === 'generating')
   useEffect(() => {
     if (!running) return
+    // 轮询失败不能一直默默转圈：连续失败 3 次提示一次「连不上」，连上后再提示一次
+    let fails = 0
     const timer = setInterval(() => {
       api
         .design(id)
-        .then(absorb)
-        .catch(() => {})
+        .then((d) => {
+          if (fails >= 3) toast.success(t('已重新连上面板服务'))
+          fails = 0
+          absorb(d)
+        })
+        .catch((e) => {
+          fails++
+          if (fails === 3)
+            toast.error(t('连不上面板服务，正在重试：{error}', { error: (e as Error).message || t('未知错误') }))
+        })
     }, 1200)
     return () => clearInterval(timer)
   }, [running, id, absorb])
@@ -168,16 +179,29 @@ export function useDesignEditor(id: string) {
   // 自动保存：停下 500ms 后保存；离开页面时补存
   const latest = useRef(doc)
   latest.current = doc
+  // 标题清空时用上一次的标题存：以前标题为空就整个不存了，一直显示「保存中」，离开页面改动全丢
+  const lastTitle = useRef('')
+  if (doc?.title.trim()) lastTitle.current = doc.title
   const flush = useCallback(async () => {
-    const v = latest.current
-    if (!v || !v.title.trim()) return
-    const json = JSON.stringify(v)
+    const cur = latest.current
+    if (!cur) return
+    const v = cur.title.trim() ? cur : { ...cur, title: lastTitle.current || t('未命名设计') }
+    const json = JSON.stringify(cur)
     if (json === saved.current) return
     setSave({ status: 'saving', error: '' })
     try {
       saved.current = json
-      const res = await api.saveDesign(id, v)
-      if (id === current.current) absorb(res)
+      // 带上这份编辑基于的版本：AI 已经改过（服务端版本更新）时服务端不收结构，页面换成新的
+      const res = await api.saveDesign(id, v, rev.current)
+      // 删掉的图已经存上去了，服务端不会再给回来：不用再挡。不清掉的话恢复版本、撤销删除时加回来的图会被这里过滤掉
+      if (id === current.current) {
+        // 只放掉服务端已经没有的；保存途中刚删的图服务端这份里还有，继续挡着
+        for (const gone of [...deleted.current])
+          if (!res.images.some((x) => x.id === gone)) deleted.current.delete(gone)
+        absorb(res)
+      }
+      if (res.rejected === 'stale') toast.warning(t('AI 刚改过这个设计，你刚才的修改没有存上；按撤销可以找回'))
+      else if (res.rejected === 'ai') toast.warning(t('AI 正在修改这个设计，这一轮结束后再编辑'))
       setSave({ status: 'saved', error: '' })
     } catch (e) {
       saved.current = ''
@@ -192,12 +216,36 @@ export function useDesignEditor(id: string) {
   }, [doc, flush])
   useEffect(() => () => void flush(), [flush])
 
+  // AI 正在改树（准备新一轮或设计阶段）时画布只读：这一轮结束会用 AI 的树整棵写回，这时的手动修改存不上
+  const aiEditing = server?.job?.status === 'running' && server.job.phase === 'design'
+  const locked = useRef(false)
+  locked.current = aiEditing
+  const warned = useRef(0)
+
   /** 改设计：key 相同、间隔很短的连续修改（拖动、输入）合成一步撤销 */
   const change = useCallback((fn: (d: DesignDoc) => DesignDoc, key = '') => {
     setDoc((cur) => {
       if (!cur) return cur
       const next = fn(cur)
       if (next === cur) return cur
+      // 标题、标注、图片的名字和选哪一版不受影响；动了控件树、子控件、动画、数据、尺寸、风格的改动挡下来
+      if (
+        locked.current &&
+        (next.root !== cur.root ||
+          next.components !== cur.components ||
+          next.animations !== cur.animations ||
+          next.data !== cur.data ||
+          next.designSize !== cur.designSize ||
+          next.style !== cur.style ||
+          next.layout !== cur.layout)
+      ) {
+        if (Date.now() - warned.current > 3000) {
+          warned.current = Date.now()
+          // 放到渲染之外弹：setDoc 的更新函数里不做副作用以外的事
+          queueMicrotask(() => toast.warning(t('AI 正在修改这个设计，这一轮结束后再编辑')))
+        }
+        return cur
+      }
       const now = Date.now()
       if (!key || key !== lastKey.current.key || now - lastKey.current.at > 800) {
         past.current.push(cur)
@@ -215,6 +263,8 @@ export function useDesignEditor(id: string) {
     if (!prev || !doc) return
     future.current.push(doc)
     lastKey.current = { key: '', at: 0 }
+    // 撤销把删掉的图带回来：不再当成「本地刚删的」挡着
+    for (const i of prev.images) deleted.current.delete(i.id)
     setDoc({ ...prev, images: mergeImages(prev.images, server?.images ?? [], deleted.current) })
     bump((n) => n + 1)
   }
@@ -241,6 +291,8 @@ export function useDesignEditor(id: string) {
     canUndo: past.current.length > 0,
     canRedo: future.current.length > 0,
     running: server?.job?.status === 'running',
+    /** AI 正在改树：画布和属性只读 */
+    aiEditing,
     reload: () =>
       api
         .design(id)

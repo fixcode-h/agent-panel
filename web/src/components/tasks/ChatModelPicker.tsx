@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Brain, Check, ChevronDown, Sparkles } from 'lucide-react'
 import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
-import { getCli, type CliDefinition } from '@shared/clis'
+import { getCli, isOffEffort, type CliDefinition } from '@shared/clis'
 import { apiModelIdFor } from '@shared/accounts'
 import { apiModelKey } from '@shared/model-catalog'
 import { useData } from '@/lib/data'
@@ -43,7 +43,7 @@ function ChipSelect({
         title={title}
         aria-label={title}
         className={cn(
-          'inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel',
+          'inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-footnote text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel',
           !dot && 'font-mono',
           className,
         )}
@@ -59,12 +59,12 @@ function ChipSelect({
           {options.map((o, i) => (
             <div key={o.value + i}>
               {o.group && o.group !== options[i - 1]?.group && (
-                <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] text-subtle">{o.group}</p>
+                <p className="px-2.5 pt-2 pb-1 text-caption text-subtle">{o.group}</p>
               )}
               {/* 行距和设置里的下拉框一样 */}
               <PopoverClose className={cn(menuItem, 'gap-2 py-1.5')} onClick={() => onChange(o.value)}>
                 {dot && <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: dot(o.value) }} />}
-                <span className={cn('min-w-0 flex-1 truncate text-[0.75rem]', !dot && 'font-mono')}>{o.label}</span>
+                <span className={cn('min-w-0 flex-1 truncate text-footnote', !dot && 'font-mono')}>{o.label}</span>
                 {o.value === value && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
               </PopoverClose>
             </div>
@@ -129,7 +129,7 @@ export function useRunAuthor(run: ChatRun | undefined) {
 /** 对话时选 CLI、模型和思考强度；模型默认的那项标「（默认）」，强度只显示 CLI 的英文取值 */
 export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange: (v: ChatRun) => void }) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
-  if (!usable.length) return <span className="px-2 text-[0.75rem] text-subtle">{t('没有可用的 Agent')}</span>
+  if (!usable.length) return <span className="px-2 text-footnote text-subtle">{t('没有可用的 Agent')}</span>
   const clisOpts = usable.map((c) => ({
     value: c.id,
     label: c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name,
@@ -164,7 +164,7 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
           value={effortValue(def!, defEffort, modelEfforts(def!, run.model), run.effort)}
           options={efforts}
           onChange={(e) => onChange({ ...value, cli, effort: e })}
-          icon={(e) => <EffortIcon effort={e} />}
+          icon={(e) => <EffortIcon off={isOffEffort(def, e)} />}
           className="max-w-[160px]"
         />
       )}
@@ -184,25 +184,21 @@ export function useEffortOf() {
 }
 
 /** 思考强度前的大脑图标：关掉思考时变灰，开着的各档都用强调色（具体档位看旁边的字） */
-function EffortIcon({ effort }: { effort: string }) {
+function EffortIcon({ off }: { off: boolean }) {
   return (
-    <Brain
-      aria-hidden
-      className={cn('h-3.5 w-3.5 shrink-0', effort === 'off' ? 'text-subtle' : 'text-accent')}
-      strokeWidth={2.2}
-    />
+    <Brain aria-hidden className={cn('h-3.5 w-3.5 shrink-0', off ? 'text-subtle' : 'text-accent')} strokeWidth={2.2} />
   )
 }
 
 /** 模型按钮上的那一串：星芒图标 + 加粗模型名 + 大脑图标 + 强度字（输入框工具条、只读的角色模型共用） */
-function ModelFace({ model, effort }: { model: string; effort: string }) {
+function ModelFace({ model, effort, off }: { model: string; effort: string; off: boolean }) {
   return (
     <>
       <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2.2} />
       <span className="min-w-0 truncate font-semibold text-fg">{model}</span>
       {effort && (
         <>
-          <EffortIcon effort={effort} />
+          <EffortIcon off={off} />
           <span className="shrink-0 text-subtle">{effortShort(effort)}</span>
         </>
       )}
@@ -211,7 +207,7 @@ function ModelFace({ model, effort }: { model: string; effort: string }) {
 }
 
 const FACE =
-  'inline-flex h-[1.875rem] max-w-[220px] min-w-0 shrink items-center gap-[7px] rounded-lg pr-1.5 pl-2 text-[0.78125rem]'
+  'inline-flex h-[1.875rem] max-w-[220px] min-w-0 shrink items-center gap-[7px] rounded-lg pr-1.5 pl-2 text-body'
 
 /**
  * 输入框和角色徽标上显示的模型名：CLI 走 API 且这个模型在 API 设置里配了映射时显示映射到的模型
@@ -253,7 +249,7 @@ export function RoleModelBadge({ agent }: { agent: { cli: string; model: string;
       className={FACE}
       title={t('模型和思考强度跟着角色设置：{model}', { model: [r.model, effort].filter(Boolean).join(' · ') })}
     >
-      <ModelFace model={name} effort={effort} />
+      <ModelFace model={name} effort={effort} off={isOffEffort(def, effort)} />
     </span>
   )
 }

@@ -21,7 +21,7 @@ const LABEL: Record<ChipKind, string> = { image: '图片', file: '文件', skill
 const KIND: Record<string, ChipKind> = { 图片: 'image', 文件: 'file', 技能: 'skill', 命令: 'command', 引用: 'quote' }
 
 /** 标记是「[类型:名字]」，名字里不会再有方括号；没写全的（例如用户在讲数组）当普通文字 */
-const marker = () => /\[(图片|文件|技能|命令|引用):([^\[\]\n]+)\]/g
+const marker = () => /\[(图片|文件|技能|命令|引用):([^[\]\n]+)\]/g
 
 /** 卡片存进文字里的样子 */
 export const chipMarker = (kind: ChipKind, name: string) => `[${LABEL[kind]}:${name}]`

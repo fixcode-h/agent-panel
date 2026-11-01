@@ -1,7 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { TaskMessage } from './schema.ts'
-import { parseReport, peerOfMessage, sentToOther, subjectLine } from './peer-message.ts'
+import {
+  currentAskIndex,
+  handedToOther,
+  noteHandOff,
+  parseReport,
+  peerOfMessage,
+  sentToOther,
+  subjectLine,
+  type HandOffs,
+} from './peer-message.ts'
 
 const msg = (over: Partial<TaskMessage>): TaskMessage => ({
   id: 'm1',
@@ -54,6 +63,53 @@ test('sentToOther：同一段话已经交给了别的子对话时返回它；同
   assert.equal(sentToOther(task, 'c1', '硬规则 A'), undefined)
   assert.equal(sentToOther(task, 'c2', '硬规则 B'), undefined)
   assert.equal(sentToOther(task, 'c2', '别的事'), undefined)
+})
+
+test('sentToOther：只在这条用户消息里查，子对话交回拉起的几轮还算同一条，用户新发一条就重新算', () => {
+  const send = (id: string, message: string) => ({
+    kind: 'other' as const,
+    name: 'MCP',
+    label: 'panel · send_to_conversation',
+    detail: '',
+    input: JSON.stringify({ id, message }),
+  })
+  const u1 = msg({ id: 'u1', role: 'user', text: '先把 A 做完' })
+  const a1 = msg({ id: 'a1', role: 'agent', tools: [send('c1', '继续')] })
+  // 子对话交回（panel + peer）、面板推进（panel）拉起的一轮：还在处理 u1，再把「继续」交给 c2 仍被拒
+  const back = msg({
+    id: 's1',
+    role: 'system',
+    panel: 'child',
+    peer: { id: 'c1', title: 'A', name: 'A', rel: 'child', kind: 'report', subject: '' },
+  })
+  assert.equal(sentToOther({ messages: [u1, a1, back] }, 'c2', '继续'), 'c1')
+  // 用户新发的消息还排着、没交给 CLI：这一轮还在处理 u1
+  const held = msg({ id: 'u2', role: 'user', text: 'B 也继续', delivery: { how: 'held', at: '' } })
+  assert.equal(currentAskIndex([u1, a1, held]), 0)
+  assert.equal(sentToOther({ messages: [u1, a1, held] }, 'c2', '继续'), 'c1')
+  // 交给 CLI 之后就是新的一条：上一条交给 c1 的「继续」不再挡 c2
+  const u2 = { ...held, delivery: { how: 'next' as const, at: '' } }
+  assert.equal(currentAskIndex([u1, a1, back, u2]), 3)
+  assert.equal(sentToOther({ messages: [u1, a1, back, u2] }, 'c2', '继续'), undefined)
+  // 新的一条里又逐个转同一段话：照样拒绝
+  const a2 = msg({ id: 'a2', role: 'agent', tools: [send('c2', '继续')] })
+  assert.equal(sentToOther({ messages: [u1, a1, u2, a2] }, 'c3', '继续'), 'c2')
+
+  // 用户连着定规则：规则 1 交给 c1 途中，规则 2 以插话（steer）或 read_user_notes 进来成了当前消息。
+  // 再把规则 1 原文交给 c2 仍被拒（范围从规则 1 那条起算）；内存里还没记进对话的那次也不被插话清掉（复核 C5-a）
+  const r1 = msg({ id: 'r1', role: 'user', text: '规则 1：不许改 shared/' })
+  const g1 = msg({ id: 'g1', role: 'agent', tools: [send('c1', '规则 1：不许改 shared/')] })
+  for (const how of ['steer', 'notes'] as const) {
+    const r2 = msg({ id: 'r2', role: 'user', text: '规则 2：先跑测试', delivery: { how, at: '' } })
+    assert.equal(currentAskIndex([r1, g1, r2]), 2)
+    assert.equal(sentToOther({ messages: [r1, g1, r2] }, 'c2', ' 规则 1：不许改 shared/ '), 'c1', how)
+    // 父对话自己写的话（不是哪条用户消息原文）仍按当前这条算
+    assert.equal(sentToOther({ messages: [u1, a1, r2] }, 'c2', '继续'), undefined)
+    const mem: HandOffs = new Map()
+    noteHandOff([r1], mem, 'c1', '规则 1：不许改 shared/')
+    assert.equal(handedToOther([r1, r2], mem, 'c2', '规则 1：不许改 shared/'), 'c1', how)
+    assert.equal(handedToOther([r1, r2], mem, 'c1', '规则 1：不许改 shared/'), undefined)
+  }
 })
 
 test('parseReport：汇报拆成状态、子对话、计划步骤、下一步、最近的结果，旧数据和认不出的兜底', () => {

@@ -69,7 +69,7 @@ export function ToolStats({ task }: { task: Task }) {
       {probes > 0 && (
         <div className="flex flex-col gap-1">
           <span className="text-danger">{t('其中探路失败 {n} 次', { n: probes })}</span>
-          <span className="flex flex-wrap gap-x-2 text-[0.6875rem] text-subtle">
+          <span className="flex flex-wrap gap-x-2 text-caption text-subtle">
             {PROBE_KINDS.filter((k) => all.probeBy[k]).map((k) => (
               <span key={k}>
                 {PROBE_TEXT[k]} {all.probeBy[k]}
@@ -82,7 +82,7 @@ export function ToolStats({ task }: { task: Task }) {
         <div className="flex flex-col gap-1 border-t pt-2">
           <span>{t('返工 {n} 次', { n: reworks })}</span>
           {reworkParts.length > 0 && (
-            <span className="flex flex-wrap gap-x-2 text-[0.6875rem] text-subtle">
+            <span className="flex flex-wrap gap-x-2 text-caption text-subtle">
               {reworkParts.map((x) => (
                 <span key={x}>{x}</span>
               ))}
@@ -92,7 +92,7 @@ export function ToolStats({ task }: { task: Task }) {
       )}
       {(rows.length > 0 || outside.calls > 0) && (
         <ul className="flex flex-col gap-1.5 border-t pt-2">
-          <li className="text-[0.6875rem] text-subtle">{t('按节点')}</li>
+          <li className="text-caption text-subtle">{t('按节点')}</li>
           {rows.map(({ step, tools }) => (
             <li key={step.id} className="flex items-baseline gap-2">
               <span className="min-w-0 flex-1 truncate text-fg" title={step.title}>

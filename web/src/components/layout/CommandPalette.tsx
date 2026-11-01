@@ -14,10 +14,11 @@ import {
 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { listableAgents } from '@shared/builtin/core'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks, type Route } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
-import { byAskedAt } from '@shared/task'
+import { byAskedAt, taskDeleted } from '@shared/task'
+import type { Task } from '@shared/schema'
 import { Modal } from '@/components/ui/modal'
 import { Kbd } from '@/components/ui/kbd'
 import { useTaskSearch } from '@/lib/use-task-search'
@@ -46,7 +47,8 @@ type Item = {
  * 方向键选择，Enter 打开，Esc 关闭。
  */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { projects, tasks, agents, workflows } = useData()
+  const { projects, agents, workflows } = useData()
+  const { tasks } = useTasks()
   const { go, openSettings } = useNav()
   const [query, setQuery] = useState('')
   // 对话正文的命中：标题里的字由下面的 items 按名称过滤，正文命中按标题匹配不到它们
@@ -108,7 +110,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       ...listableAgents(agents).map((a) => ({
         id: `a:${a.id}`,
         group: t('角色'),
-        label: a.name,
+        // 名字后面标类别（ADR 0038）：Chat 角色只在 Chat 页用，跳过去之前就能看出来
+        label: a.scope === 'chat' ? `${a.name} · ${t('Chat 角色')}` : a.name,
         sub: a.description,
         icon: Bot,
         run: () => go({ page: 'agents', id: a.id }),
@@ -208,19 +211,19 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           aria-expanded
           aria-controls="palette-list"
           aria-activedescendant={shown[cur] ? `palette-${cur}` : undefined}
-          className="h-12 min-w-0 flex-1 bg-transparent text-[0.9375rem] outline-none placeholder:text-subtle"
+          className="h-12 min-w-0 flex-1 bg-transparent text-heading outline-none placeholder:text-subtle"
         />
       </label>
       <div ref={list} id="palette-list" role="listbox" className="min-h-0 flex-1 overflow-y-auto p-1.5">
         {shown.length === 0 && (
-          <p className="px-3 py-6 text-center text-[0.8125rem] text-subtle">
+          <p className="px-3 py-6 text-center text-body text-subtle">
             {content.loading ? t('搜索中…') : t('没有找到')}
           </p>
         )}
         {shown.map((x, i) => (
           <div key={x.id}>
             {(i === 0 || shown[i - 1].group !== x.group) && (
-              <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">{x.group}</p>
+              <p className="px-2.5 pt-2 pb-1 text-caption font-medium text-subtle">{x.group}</p>
             )}
             <div
               id={`palette-${i}`}
@@ -230,7 +233,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               onMouseMove={() => i !== cur && setIndex(i)}
               onClick={() => pick(x)}
               className={cn(
-                'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem]',
+                'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-body',
                 i === cur ? 'bg-sel text-fg' : 'text-muted',
               )}
             >
@@ -242,7 +245,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           </div>
         ))}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 bg-panel/60 px-4 py-2 text-[0.6875rem] text-subtle">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 bg-panel/60 px-4 py-2 text-caption text-subtle">
         <span>{t('↑↓ 选择 · Enter 打开')}</span>
         <span>{t('{mod}K 命令面板', { mod: MOD })}</span>
         <span>{t('{mod}Enter 打断并发送', { mod: MOD })}</span>
@@ -252,11 +255,45 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   )
 }
 
-/** 全局快捷键：⌘K 命令面板，⌘⇧O 新建任务，⌘B 收起侧栏 */
-export function useShortcuts(openPalette: () => void) {
-  const { go } = useNav()
+/** 焦点在可输入的地方（输入框、文本区、可编辑区域）：单键快捷键（?）不能抢用户打的字 */
+const typing = (el: Element | null) =>
+  !!el &&
+  (el.matches('input, textarea, select, [contenteditable=""], [contenteditable="true"]') ||
+    !!el.closest('[contenteditable="true"]'))
+
+/**
+ * 同一栏里的对话顺序：和侧栏一样，项目里的顶层对话、或聊天，按最近活动排。
+ * Alt+↑ / Alt+↓ 按这个顺序切换
+ */
+function siblingTasks(tasks: Task[], route: Route) {
+  const inProject = route.page === 'projects' && !!route.id
+  return tasks
+    .filter((x) => !taskDeleted(x) && !x.parentTaskId && (inProject ? x.projectId === route.id : !x.projectId))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+/** 全局快捷键：⌘K 命令面板，⌘⇧O 新建任务，⌘B 收起侧栏，Alt+↑/↓ 切对话，? 快捷键一览 */
+export function useShortcuts(openPalette: () => void, openHelp?: () => void) {
+  const { go, route } = useNav()
+  const { tasks } = useTasks()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && openHelp && !typing(document.activeElement)) {
+        e.preventDefault()
+        openHelp()
+        return
+      }
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        const cur = route.page === 'projects' ? route.sub : route.page === 'chat' ? route.id : undefined
+        if (!cur || (route.page !== 'projects' && route.page !== 'chat')) return
+        const list = siblingTasks(tasks, route)
+        const i = list.findIndex((x) => x.id === cur)
+        const next = list[i + (e.key === 'ArrowDown' ? 1 : -1)]
+        if (i < 0 || !next) return
+        e.preventDefault()
+        go(next.projectId ? { page: 'projects', id: next.projectId, sub: next.id } : { page: 'chat', id: next.id })
+        return
+      }
       const mod = isMac ? e.metaKey : e.ctrlKey
       if (!mod || e.altKey) return
       const k = e.key.toLowerCase()
@@ -274,5 +311,5 @@ export function useShortcuts(openPalette: () => void) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [go, openPalette])
+  }, [go, openPalette, openHelp, route, tasks])
 }

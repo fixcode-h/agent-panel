@@ -2,8 +2,17 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '../shared/schema.ts'
 import { newTask, stopReasonText } from '../shared/task.ts'
-import { retryBase, runEngineTurn, stopHelper, type AgentCall, type EngineHost } from '../shared/engine.ts'
+import {
+  retryBase,
+  runEngineTurn,
+  stopHelper,
+  type AgentCall,
+  type EngineHost,
+  type Orchestra,
+} from '../shared/engine.ts'
 import { t } from '../shared/i18n.ts'
+import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
+import { composeRole } from '../shared/agent-role.ts'
 
 /**
  * 多步骤节点：每一步一条 slot=step 的执行记录、一个独立会话，按顺序执行，
@@ -316,6 +325,10 @@ test('终止或抛异常的子任务只收它自己：终止的按「已终止�
 })
 
 test('推送由父对话决定：子对话的提示词不问用户要不要推送，父对话侧仍按授权流程问一次', async () => {
+  /** 每次调用拿到的推送授权工具（ask_push）：只有项目推送策略为「问一次」的顶层对话本身有 */
+  let pushTool: Orchestra['askPush']
+  // 经函数读：assert.equal 会把变量收窄成 undefined，之后 runAgent 里的赋值 TS 看不见
+  const pushOf = () => pushTool
   /** 跑一轮对话，拿回这次交给 CLI 的提示词 */
   const promptsOf = async (
     chat: Record<string, unknown>,
@@ -342,8 +355,10 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
       newId: () => 'x',
       runAgent: async (call) => {
         prompts.push(call.prompt)
+        pushTool = call.orch?.askPush
         return { ok: true, text: '好了' }
       },
+      askPush: async () => ({ allow: true }),
       ...extra,
     })
     return prompts
@@ -375,7 +390,8 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   const shared = await promptsOf({ parentTaskId: 'parent' })
   assert.doesNotMatch(shared[0], /## 收尾：计划的最后一步/)
   assert.match(child[0], /不要写「等推送 \/ 等合入其他分支 \/ 同步远端」/, '计划步骤里也不许写等推送')
-  assert.doesNotMatch(child[0], /用提问工具问用户一次要不要推送/, '子对话不再问用户要不要推送')
+  assert.doesNotMatch(child[0], /ask_push/, '子对话不再问用户要不要推送')
+  assert.equal(pushOf(), undefined, '子对话拿不到 ask_push')
   // 收尾建议的工具说明也写清了：只能写本地动作、remote 必须写 none
   assert.match(child[0], /remote 必须写/)
   assert.match(child[0], /问题会交给父对话（父对话开着「提问」时再转给用户）/)
@@ -389,9 +405,25 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   assert.equal(main.length, 1)
   assert.match(
     main[0],
-    /第一次需要推送时问一次」。任务做完、验证通过并在本地提交之后，用提问工具问用户一次要不要推送并合并主干/,
-    '父对话的授权规则：问一次时把合并主干也算进这次授权',
+    /第一次需要推送时问一次」。任务做完、验证通过并在本地提交之后，调用面板工具 ask_push 请用户授权推送并合并主干/,
+    '父对话的授权规则：问一次时把合并主干也算进这次授权，用面板的授权卡问（回答才记得下）',
   )
+  assert.match(main[0], /不要用 ask_user \/ AskUserQuestion 这类提问工具问要不要推送/)
+  // ask_push 的三种情况（c5e5c5d8 起回答从没被记下）：已同意不弹卡；拒绝过再调照样弹卡（用户改口以亲手点的为准）
+  assert.ok(pushOf(), '问一次的顶层对话有 ask_push')
+  let cards = 0
+  const card = { askPush: async () => (cards++, { allow: false }) }
+  await promptsOf({}, card, { remotePush: 'allowed' })
+  assert.match((await pushOf()!({})).info, /已经同意推送/)
+  const denied = await promptsOf({}, { ...card, policy: { push: 'ask', answered: 'denied', tools: [] } })
+  assert.match(denied[0], /已经拒绝过推送[^\n]*明确要求推送时，调用 ask_push 请用户在授权卡上确认一次，不要直接推/)
+  assert.match((await pushOf()!({ branch: 'dev' })).info, /用户不推送/)
+  assert.equal(cards, 1, '同意过的不弹卡，拒绝过的再弹一次')
+  await promptsOf({}, { askPush: async () => null })
+  assert.match((await pushOf()!({})).info, /对话被停止了/)
+  // Chat 页的对话（没有项目）、项目设置允许 / 禁止推送时都没有这个工具
+  await promptsOf({ projectId: '' })
+  assert.equal(pushOf(), undefined, 'Chat 页的对话没有 ask_push')
   // 通用约束里的「安全边界」是所有角色都有的；这里只看授权情况那一段不会被子对话的写法盖掉
   assert.doesNotMatch(
     main[0],
@@ -452,7 +484,8 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   const deny = await promptsOf({}, { policy: { push: 'deny', tools: [] } })
   assert.match(deny[0], /不推送，只做本地提交」。不 push/)
   assert.match(deny[0], /不建 PR、不合并主干/)
-  assert.doesNotMatch(deny[0], /用提问工具问用户一次要不要推送/)
+  assert.doesNotMatch(deny[0], /ask_push/)
+  assert.equal(pushOf(), undefined, '不推送的项目没有 ask_push')
   assert.doesNotMatch(deny[0], /gh pr create/)
   // cherry-pick 目标：只搬这个对话自己的提交 / 改动，不按两条分支的差异同步（用户 2026-10-31 定的）
   const pick = await promptsOf(
@@ -470,6 +503,96 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   )
   assert.match(pickP4[0], /「D:\/p4\/rel」[\s\S]*建一个对应的 pending，不 submit/)
   assert.doesNotMatch(deny[0], /## Cherry-pick/, '没设目标时不提')
+
+  // 不变量：用真实内置角色拼出各调用者的完整提示（角色设定按 runner 的取参方式 + engine 提示），推送授权只给
+  // 用户直接对话的顶层对话；子对话、派出的子任务（含「版本控制」）、工作流节点各拿写给自己的一段。
+  // 角色正文不按身份分支、只认这一段，所以这里错一处，「比角色设定优先」就会让它顺手推送并合并主干
+  const real: Agent[] = BUILTIN_AGENTS.map((b) => ({
+    ...AgentInput.parse({ ...b.agent, includes: b.includes, mounts: b.mounts.map((m) => ({ ...m, agentId: m.key })) }),
+    id: b.key,
+    origin: `builtin:${b.key}`,
+    createdAt: '',
+    updatedAt: '',
+  }))
+  const full = new Map<string, string>()
+  // 角色参数照 runner 取：子任务用派单带的 params，对话用任务里选的（这里都是空）
+  const keep = (who: string, call: AgentCall) => {
+    const role = real.find((a) => a.id === call.agentId)
+    full.set(who, `${role ? composeRole(role, real, call.params ?? {}) : ''}\n\n${call.prompt}`)
+  }
+  const allowAll = { agents: real, policy: { push: 'allow' as const, tools: [] } }
+  for (const [who, chat] of [
+    ['父对话', { agentId: 'orchestrator' }],
+    ['非统筹顶层对话', { agentId: 'worker' }],
+    ['子对话', { agentId: 'worker', parentTaskId: 'parent' }],
+  ] as const)
+    await promptsOf(chat, { ...allowAll, runAgent: async (call) => (keep(who, call), { ok: true, text: '好了' }) })
+  // 顶层、子对话派的子任务（主理、执行把「版本控制」挂成就地用，派它的是无角色的对话或自建角色）
+  for (const [who, chat] of [
+    ['顶层派', {}],
+    ['子对话派', { parentTaskId: 'parent' }],
+  ] as const) {
+    let spawned = false
+    await promptsOf(chat, {
+      ...allowAll,
+      runAgent: async (call) => {
+        if (call.step?.slot === 'sub') keep(`${who}的${call.agentId}`, call)
+        else if (!spawned) {
+          spawned = true
+          const ids = call.orch!.spawn([
+            { title: '提交', instructions: '本地提交', agent: '版本控制' },
+            { title: '清理', instructions: '清理用例', agent: '测试验收', params: { task: '清理用例' } },
+          ]).ids
+          await call.orch!.wait(ids, 1000)
+        }
+        return { ok: true, text: '好了' }
+      },
+    })
+  }
+  // 工作流节点：顶层工作流任务里的，和子对话里 start_plan 起的（后者照旧读子对话那份）
+  for (const [who, parentTaskId] of [
+    ['顶层工作流节点', undefined],
+    ['子对话里的节点', 'parent'],
+  ] as const) {
+    const w = Workflow.parse({
+      ...{ id: 'rel', createdAt: '', updatedAt: '', name: '发布', mainAgentId: 'orchestrator', dispatch: false },
+      flows: [
+        {
+          id: 'main',
+          name: '主流程',
+          nodes: [{ id: 'scope', title: '发布范围', agentId: 'vcs' }],
+          edges: [
+            { id: 'e1', from: 'start', to: 'scope' },
+            { id: 'e2', from: 'scope', to: 'end' },
+          ],
+        },
+      ],
+    })
+    const input = { projectId: 'p', mode: 'workflow', prompt: '发布', parentTaskId }
+    const task = { ...newTask(input as never, w, '', 'wf'), id: 'wf' } as Task
+    await runEngineTurn({
+      ...{ task, workflows: [w], workflow: w, prompt: '发布', changed: () => {}, newId: () => 'x' },
+      ...allowAll,
+      runAgent: async (call) => {
+        if (call.agentId === 'vcs') keep(who, call)
+        return { ok: true, text: '好了' }
+      },
+    })
+  }
+  const auth = /允许直接推送」，这就是用户的授权/
+  for (const who of ['父对话', '非统筹顶层对话']) assert.match(full.get(who)!, auth, who)
+  const others = ['子对话', '顶层派的vcs', '子对话派的vcs', '顶层派的tester', '顶层工作流节点', '子对话里的节点']
+  for (const who of others) assert.doesNotMatch(full.get(who)!, auth, who)
+  // 非统筹顶层对话的角色（「执行」）正文写给子对话：执行方式里明说这里没有父对话
+  assert.match(full.get('非统筹顶层对话')!, /没有父对话）：推送、PR、合并主干按上面「授权情况」做/)
+  assert.doesNotMatch(full.get('父对话')!, /没有父对话）/)
+  for (const who of ['顶层派的vcs', '子对话派的vcs'])
+    assert.match(full.get(who)!, /## 授权情况\n你是派出的「版本控制」子任务[^\n]*派单没写目标分支就不合并/, who)
+  assert.match(full.get('顶层工作流节点')!, /## 授权情况\n你在工作流里执行/)
+  assert.match(full.get('子对话里的节点')!, /## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定/)
+  assert.match(full.get('顶层派的tester')!, /## 授权情况\n推送、创建 PR、合并主干、P4 submit、合回原分支都不归子任务/)
+  // 派单带的 params 真的到了角色设定里：不带时这里是默认的「跑验收」那一套
+  assert.match(full.get('顶层派的tester')!, /中间必须停下来等用户确认/)
 })
 
 test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也用同一份 globs', async () => {
@@ -607,7 +730,12 @@ test('子任务：resume 接着之前那个子任务的会话，复看的评审�
   const { task, log, host } = makeHost(w, async (call) => {
     if (call.step?.id === 'a/step/s1') {
       const o = call.orch!
-      const first = o.spawn([{ title: '评审', instructions: '看全量 diff', agent: '验收' }]).ids
+      // 角色参数（「测试验收」的 task 这类）随派单走：只认角色声明过的 key 和选项，写错报错而不是按默认值渲染
+      errors.push(o.spawn([{ title: '评审', instructions: 'x', agent: '验收', params: { tsk: '清理用例' } }]).error)
+      errors.push(o.spawn([{ title: '评审', instructions: 'x', agent: '验收', params: { task: '清理' } }]).error)
+      const first = o.spawn([
+        { title: '评审', instructions: '看全量 diff', agent: '验收', params: { task: '清理用例' } },
+      ]).ids
       await o.wait(first, 1000)
       // 换了角色不能接；不存在的 id 也不能接
       errors.push(o.spawn([{ title: '复看', instructions: '增量', agent: '开发', resume: first[0] }]).error)
@@ -618,6 +746,8 @@ test('子任务：resume 接着之前那个子任务的会话，复看的评审�
     }
     return '验收结论：通过'
   })
+  const { params } = AgentInput.parse({ name: '验收', params: [{ key: 'task', options: ['跑验收', '清理用例'] }] })
+  host.agents = agents.map((a) => (a.id === 'v' ? { ...a, params } : a))
   await runEngineTurn(host)
   const subs = task.steps.filter((s) => s.slot === 'sub')
   assert.equal(subs.length, 2)
@@ -629,8 +759,15 @@ test('子任务：resume 接着之前那个子任务的会话，复看的评审�
     [subs[0].id, subs[0].id],
   )
   assert.match(calls[1].prompt, /之前那个会话的延续/)
-  assert.match(errors[0] ?? '', /另一个角色/)
-  assert.match(errors[1] ?? '', /不是你派过的子任务/)
+  // 参数交给 runner 渲染角色（不传就按默认的「跑验收」），resume 没写 params 时沿用上一次的
+  assert.deepEqual(
+    calls.map((c) => c.params?.task),
+    ['清理用例', '清理用例'],
+  )
+  assert.match(errors[0] ?? '', /「tsk」不是它的参数[\s\S]*task（跑验收 \/ 清理用例）/)
+  assert.match(errors[1] ?? '', /「task」只能写 跑验收 \/ 清理用例/)
+  assert.match(errors[2] ?? '', /另一个角色/)
+  assert.match(errors[3] ?? '', /不是你派过的子任务/)
 })
 
 test('子任务：resume 少写了前缀时按 id 结尾唯一匹配，接着原来的会话跑', async () => {
@@ -878,4 +1015,67 @@ test('子任务：派「评审」时面板把改动附进提示词，复看只�
     task.steps.filter((s) => s.slot === 'sub').map((s) => s.snapshot),
     ['tree1', 'tree2'],
   )
+})
+
+const graph = (nodes: string[], edges: [string, string][]): Workflow =>
+  Workflow.parse({
+    id: 'wf',
+    createdAt: '',
+    updatedAt: '',
+    name: '图',
+    mainAgentId: 'm',
+    dispatch: false,
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: nodes.map((id) => ({ id, title: id, agentId: 'w', instructions: `做 ${id}。` })),
+        edges: edges.map(([from, to], i) => ({ id: `e${i}`, from, to })),
+      },
+    ],
+  })
+
+test('流程图里有环：环上的节点互相等待，任务判失败并说出是哪些节点，不当成功', async () => {
+  // b 等 a 和 c，c 又等 b：b、c 永远开始不了
+  const w = graph(
+    ['a', 'b', 'c'],
+    [
+      ['start', 'a'],
+      ['a', 'b'],
+      ['c', 'b'],
+      ['b', 'c'],
+      ['b', 'end'],
+    ],
+  )
+  const { task, host } = makeHost(w, () => '完成')
+  await runEngineTurn(host)
+  assert.equal(task.status, 'failed')
+  assert.ok(
+    task.messages.some((m) => m.error && /环/.test(m.text) && /「b」/.test(m.text)),
+    '错误写明环上的节点',
+  )
+})
+
+test('节点里抛异常：按失败收口、叫停并行的另一支，不让异常把整轮直接抛出去', async () => {
+  const w = graph(
+    ['boom', 'slow'],
+    [
+      ['start', 'boom'],
+      ['start', 'slow'],
+      ['boom', 'end'],
+      ['slow', 'end'],
+    ],
+  )
+  let slowDone = false
+  const { task, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'boom') throw new Error('炸了')
+    await new Promise((r) => setTimeout(r, 30))
+    slowDone = true
+    return '慢的完成'
+  })
+  await runEngineTurn(host)
+  assert.equal(task.status, 'failed')
+  assert.ok(slowDone, '等并行的另一支结束才收口，不提前释放')
+  assert.equal(host.halted, true, '叫停了其余分支')
+  assert.ok(task.messages.some((m) => m.error && /炸了/.test(m.text)))
 })

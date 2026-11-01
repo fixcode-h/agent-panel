@@ -27,8 +27,15 @@ export const isExternalRequest = (env: unknown) =>
   !!env && typeof env === 'object' && (env as Record<string, unknown>)[EXTERNAL_ENV] === true
 
 /**
- * 主端口上带了转发头：说明前面有反向代理。nginx 默认把 Host 改成 127.0.0.1:8787，
- * 只看 Host 会把外网请求当成本机、绕过访问令牌，所以带这些头的一律不算本机
+ * 请求带的 Origin 能不能放行。外网页面：Origin 必须是本机、当前外网地址，或者和请求的 Host 同源；
+ * 外网专用端口进来的只认和 Host 完全同源（含端口），不认本机地址
  */
-export const isForwarded = (header: (name: string) => string | undefined) =>
-  ['x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'forwarded', 'cf-connecting-ip'].some((h) => !!header(h))
+export function originAllowed(origin: string, host: string, external: boolean) {
+  try {
+    const from = new URL(origin)
+    if (external) return from.host.toLowerCase() === host.trim().toLowerCase()
+    return isLocalHost(from.hostname) || from.hostname.toLowerCase() === hostOf(host) || isAllowedHost(from.hostname)
+  } catch {
+    return false
+  }
+}

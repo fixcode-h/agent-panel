@@ -33,7 +33,7 @@ export function TagChip({ tag, onRemove, className }: { tag: Tag; onRemove?: () 
     <span
       title={tag.description || undefined}
       style={tagStyle(tag.color)}
-      className={cn('inline-flex h-[22px] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.6875rem]', className)}
+      className={cn('inline-flex h-[22px] max-w-full items-center gap-1 rounded-md px-1.5 text-caption', className)}
     >
       <span className="truncate">{tag.name}</span>
       {onRemove && (
@@ -41,7 +41,7 @@ export function TagChip({ tag, onRemove, className }: { tag: Tag; onRemove?: () 
           type="button"
           aria-label={t('去掉标签「{name}」', { name: tag.name })}
           onClick={onRemove}
-          className="-mr-0.5 grid h-4 w-4 cursor-pointer place-items-center rounded opacity-70 hover:opacity-100"
+          className="-mr-0.5 grid h-4 w-4 cursor-pointer place-items-center rounded-sm opacity-70 hover:opacity-100"
         >
           <X className="h-3 w-3" />
         </button>
@@ -58,9 +58,9 @@ export function TagList({ ids, max = 3 }: { ids: string[]; max?: number }) {
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
       {list.slice(0, max).map((x) => (
-        <TagChip key={x.id} tag={x} className="h-[18px] px-1 text-[0.6875rem]" />
+        <TagChip key={x.id} tag={x} className="h-[18px] px-1 text-caption" />
       ))}
-      {list.length > max && <span className="text-[0.6875rem] text-subtle">+{list.length - max}</span>}
+      {list.length > max && <span className="text-caption text-subtle">+{list.length - max}</span>}
     </span>
   )
 }

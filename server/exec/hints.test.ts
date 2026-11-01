@@ -18,6 +18,8 @@ import {
   envStallTimeout,
   estTokens,
   failureHints,
+  restartCarry,
+  SESSION_NOT_FOUND,
   settleContextNotes,
   silentTurn,
   settleEnvStallNotes,
@@ -25,7 +27,15 @@ import {
   settleRetryNotes,
   shouldRetryEnvStall,
 } from './runner.ts'
-import { CompactTracker, describeCompaction, settleCompactRow } from './compaction.ts'
+import {
+  awaitingCompact,
+  CompactTracker,
+  describeCompaction,
+  settleCompactRow,
+  shouldRetryThrash,
+  THRASH_RETRY_PROMPT,
+} from './compaction.ts'
+import { restartNoteText } from './recovery.ts'
 import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -69,6 +79,53 @@ test('自动续接成功后，断开时的报错不再显示成错误', () => {
   assert.match(msg.text, /Failed to process successful response/, '断开的原因留着，方便查')
   assert.match(msg.text, /已自动续接会话（第 1 次）/)
   assert.doesNotMatch(msg.text, /正在自动续接/)
+  // 续接时原会话没了、开新会话重新执行：收口文案不能说「从中断的地方继续了」
+  const again: TaskMessage = { ...msg, text: '', error: true, alert: makeAlert('warn', 'x', 'network') }
+  settleNetNotes([{ msg: again, base: 'Command Code 执行失败', n: 1 }], true)
+  assert.equal(again.error, undefined)
+  assert.match(again.text, /已开新会话重新执行/)
+  assert.doesNotMatch(again.text, /从中断的地方继续/)
+  assert.equal(again.alert?.resolved, t('续接不上，已开新会话重新执行'))
+})
+
+test('会话找不到：只认各 CLI 续接失败的真实报错，cannot / Unknown / Rust panic 之类不算', () => {
+  // 命中就丢会话重开、之后算重试过，断流续接和上下文降级都不再走：误中的代价是把一次普通失败变成「模型全忘了」
+  const hits = [
+    'No conversation found with session ID: 3f2a8c1e-6b7d-4e0f-9a1b-2c3d4e5f6a7b', // Claude Code --resume
+    '无法续接之前的会话（thread not found）：no rollout found for thread id 019a2b3c', // codex.ts 包装
+    'Couldn’t resume the previous session (thread not found): no rollout found for thread id 019a',
+    'no rollout found for thread id 019a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8', // Codex 原文
+    'thread not found: 019a2b3c',
+    "No session found matching '0a1b2c3d-4e5f-6789-abcd-ef0123456789'", // Pi --session
+    'No session "3f2a8c1e-6b7d-4e0f-9a1b-2c3d4e5f6a7b" found to resume.', // Command Code --resume
+    'No session named "my-run" found.',
+    'Session not found',
+  ]
+  for (const s of hits) assert.match(s, SESSION_NOT_FOUND)
+  const misses = [
+    'Error: Claude Code cannot be launched inside another Claude Code session.',
+    "Error: Cannot find module '/usr/lib/node_modules/command-code/dist/session-store.js'",
+    'Error: Unknown error in worker thread',
+    `400 Bad Request: {"error":{"message":"Unknown parameter: 'conversation'."}}`,
+    'Failed to load session: Unknown error. Starting fresh session.',
+    "thread 'main' panicked at 'config file not found', codex-rs/core/src/config.rs:12:5",
+    "thread 'tokio-runtime-worker' panicked at codex-rs/core/src/codex.rs:120:9:\nnote: run with `RUST_BACKTRACE=1`",
+    'No session yet, nothing to compact',
+    'No API key found for provider "anthropic". Use /login or set ANTHROPIC_API_KEY',
+    'Error: 404 {"error":{"message":"model gpt-5.1 not found"}} in this conversation',
+    'API Error: 400 thinking is not supported for this conversation',
+    'stream disconnected before completion: http2 error: stream error received: not a result of an error',
+    // Codex 的 thread/resume 超时是环境问题，codex.ts 不再包成 thread not found
+    'thread/resume 没有响应（已等 1 分钟）\n进程还在运行\nstderr 没有输出',
+  ]
+  for (const s of misses) assert.doesNotMatch(s, SESSION_NOT_FOUND)
+  // 重开那一行：没带上之前的对话就不能说「带上了」；原始报错附在后面，面板猜错了用户也看得出真正出了什么事
+  const detail = hits[0]
+  const carried = restartNoteText('找不到原来的会话', { chat: true, carried: true, detail })
+  const bare = restartNoteText('找不到原来的会话', { chat: true, carried: false, detail })
+  assert.match(carried, /一起带上了/)
+  assert.doesNotMatch(bare, /带上/)
+  for (const note of [carried, bare]) assert.ok(note.endsWith(`${t('原始输出：')}\n${detail}`), note)
 })
 
 test('模型接口拒绝聊天记录：说明换模型后旧会话接不上', () => {
@@ -138,6 +195,73 @@ test('压缩上下文：写明压缩了多少、现在占上下文窗口多少',
   assert.equal(row.label as string, '压缩失败')
 })
 
+test('压缩没生效（压缩后不比压缩前小）：写成「压缩没有生效」并标成警告，不写「压缩了 0 token」', () => {
+  // 实测 80K 上限时 Claude Code 报的那次：111.9k → 153.3k，随后压缩抖动失败
+  const tool: ToolUse = { kind: 'compact', label: '', detail: '' }
+  describeCompaction(tool, 111_900, 153_300, 80_000)
+  assert.equal(tool.label, '压缩没有生效（111.9k → 153.3k）')
+  assert.equal(tool.alert?.level, 'warn')
+  assert.equal(tool.alert?.kind, 'context')
+  // 之后按真实细分改成了生效的大小：警告去掉，照常写压缩了多少
+  describeCompaction(tool, 111_900, 30_000, 80_000)
+  assert.equal(tool.label, '压缩了 81.9k token（111.9k → 30.0k）')
+  assert.equal(tool.alert, undefined)
+})
+
+test('Codex 手动压缩完没报用量：那一行记着等，下一轮第一次报用量时补上压缩后的大小', () => {
+  // 实测：工具行只写「压缩前 39.4k token」，实际降到 25.3k
+  const track = new CompactTracker((x) => delete x.running)
+  const op = { kind: 'compact' as const }
+  const row = track.startOp(op, 39_400, new Map())!
+  track.finishOp({ context: 39_400, window: 200_000 })
+  assert.equal(row.label, '压缩前 39.4k token')
+  assert.equal(row.compact?.awaitAfter, true)
+  const msg = (id: string, tools: ToolUse[], agentId = 'a'): TaskMessage =>
+    ({ id, role: 'agent', agentId, step: '', text: '', tools, at: '' }) as TaskMessage
+  const messages = [msg('m1', [row]), msg('m2', [], 'other')]
+  // 下一轮的 runAgent：找到那一行交给新的 tracker，第一次报用量就补上
+  const earlier = awaitingCompact(messages, 'a', '')
+  assert.equal(earlier, row)
+  const next = new CompactTracker(() => {}, earlier)
+  assert.ok(next.measured(25_300, 200_000))
+  assert.equal(row.label, '压缩了 14.1k token（39.4k → 25.3k）')
+  assert.equal(row.compact?.after, 25_300)
+  assert.equal(row.compact?.awaitAfter, undefined)
+  // 补过了就不再等：再下一轮找不到要补的
+  assert.equal(awaitingCompact(messages, 'a', ''), undefined)
+  // 只看最近一次压缩：更早那次没等到、后来又压缩过（生效的），不拿后来的用量去补
+  const old: ToolUse = { kind: 'compact', label: '', detail: '', compact: { before: 1, awaitAfter: true } }
+  assert.equal(awaitingCompact([msg('o', [old]), msg('n', [row])], 'a', ''), undefined)
+})
+
+test('压缩抖动：按 CLI 定义里的报错认，在原会话里只续一轮；压缩请求、没有会话、已经续过都不续', () => {
+  const detail =
+    'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row'
+  const pattern = getCli('claude')!.compactThrash
+  assert.ok(pattern, 'Claude Code 的定义里登记了压缩抖动的报错')
+  const base = { detail, pattern, session: true, prewarm: false, compact: false, aborted: false, tried: false }
+  assert.equal(shouldRetryThrash(base), true)
+  assert.equal(shouldRetryThrash({ ...base, tried: true }), false, '只续一次')
+  assert.equal(shouldRetryThrash({ ...base, session: false }), false)
+  assert.equal(shouldRetryThrash({ ...base, compact: true }), false)
+  assert.equal(shouldRetryThrash({ ...base, aborted: true }), false)
+  assert.equal(shouldRetryThrash({ ...base, detail: 'Connection error' }), false)
+  // 没登记这种报错的 CLI 不续
+  assert.equal(shouldRetryThrash({ ...base, pattern: getCli('codex')!.compactThrash }), false)
+  // 续那一轮的提示要让模型分段读取
+  assert.match(THRASH_RETRY_PROMPT, /分段读取/)
+  // 最后还是失败时，说明里写原因和怎么调
+  const hints = failureHints(detail, getCli('claude')!)
+  assert.ok(hints.some((h) => /自动压缩抖动/.test(h) && /128K/.test(h)))
+  // 续上了：那行警告收成已恢复，说明写的是「续了一轮」，不是「裁剪后开新会话」
+  const note = { id: 'n', role: 'system', text: '', tools: [], error: true, at: '' } as unknown as TaskMessage
+  note.alert = makeAlert('warn', detail, 'context')
+  settleContextNotes([{ msg: note, base: '失败了', thrash: true }])
+  assert.equal(note.error, undefined)
+  assert.match(note.text, /续了一轮/)
+  assert.equal(note.alert?.resolved, '续了一轮，继续做完了')
+})
+
 test('空回合：只有什么都没收到才算，回复里说了什么都照常收尾（不按文字猜）', () => {
   const silent = (texts: string[], tools = 0, changed = 0) => silentTurn({ texts, tools, changed })
   // CLI 报了一轮成功，正文、工具、改动全都没有：这条要求没被处理，要报错，不能保活收尾
@@ -205,7 +329,7 @@ const chatMsg = (id: string, role: 'user' | 'agent', text: string): TaskMessage 
 })
 const asTask = (messages: TaskMessage[]) => ({ messages }) as unknown as Task
 
-test('上下文超长：按预算裁剪对话，保留最近的消息、更早的长正文省略', () => {
+test('上下文超长 / 丢会话重开：按预算裁剪对话，保留最近的消息、更早的长正文省略', () => {
   const task = asTask([
     chatMsg('m1', 'user', '很早的要求' + '甲'.repeat(4000)),
     chatMsg('m2', 'agent', '中间结论'),
@@ -220,6 +344,12 @@ test('上下文超长：按预算裁剪对话，保留最近的消息、更早�
   assert.ok(estTokens(out) < 200, `裁剪后的文字自己要在预算内，实际 ${estTokens(out)} token`)
   // 预算够时一条都不丢
   assert.match(clippedTranscript(task, 3, 100_000), /很早的要求/)
+  // 丢会话重开带的是同一份裁剪，加一行标题；这一轮之前没有对话（只有系统说明）时什么都不带，不带空标题——
+  // runner 据此决定说明里写不写「之前的对话一起带上了」
+  const carried = restartCarry(task, 3, 100)
+  assert.equal(carried, `## 之前的对话（已按长度裁剪）\n${out}`)
+  assert.equal(restartCarry(task, 0, 100), '')
+  assert.equal(restartCarry(asTask([{ ...chatMsg('s', 'agent', '说明'), role: 'system' }]), 1, 100), '')
 })
 
 test('上下文超长：工具调用不能被省掉，正文放不下就让它让位', () => {
@@ -427,8 +557,22 @@ function runAgentCalls(src: string) {
   return out
 }
 
-test('环境性重试的计数和留痕要在每个 runAgent 调用点上都带上（漏传会清零、红卡收不掉）', () => {
+test('自动重跑的每个 runAgent 调用点：环境性重试的计数和留痕都带上，丢会话 / 换参数重跑前先在对话里留痕', () => {
   const src = readFileSync(new URL('./runner.ts', import.meta.url), 'utf8')
+  // 丢掉会话、去掉思考强度后 return runAgent 重跑的分支：return 之前必须往对话写一行（restartNote / recoveryNote /
+  // 直接 push），只写 log.warn 就是悄悄重试（AGENTS.md「Agent 执行出的错误一律显示给用户」）
+  const starts = [...src.matchAll(/delete task\.sessions\[sessionKey\]|markNoEffort\(cliId, model\)/g)]
+  assert.ok(starts.length >= 5, `丢会话 / 换参数的分支：${starts.length}`)
+  for (const m of starts) {
+    const ret = src.indexOf('return ', m.index)
+    if (!src.startsWith('return runAgent(', ret)) continue
+    const block = src.slice(m.index, ret)
+    assert.match(
+      block,
+      /restartNote\(|recoveryNote\(|task\.messages\.push\(/,
+      `重跑前没在对话里留痕：${block.replace(/\s+/g, ' ').slice(0, 120)}`,
+    )
+  }
   // 除首次进入这一轮的 `runAgent(ctx, call)` 外，其余每个调用都是重跑或又一次完整调用：
   // 缺 envStalls 会让「只重试一次」失效，缺 envStallNotes 会让重试成功后那张红卡收不掉（评审 R2 就是这么漏的）。
   // 压缩轮那种 `await runAgent(...)` 也算在内——它同样会走到环境性失败的重试分支
@@ -438,4 +582,20 @@ test('环境性重试的计数和留痕要在每个 runAgent 调用点上都带�
     assert.match(call, /envStalls/, `这处调用没传 envStalls：${call.replace(/\s+/g, ' ').slice(0, 120)}`)
     assert.match(call, /envStallNotes/, `这处调用没传 envStallNotes：${call.replace(/\s+/g, ' ').slice(0, 160)}`)
   }
+})
+
+test('上下文超长：截断后的整段（含「谁说的」前缀和省略标记）不超过预算；「等 N 项」按去重后的数算', () => {
+  const task = asTask([{ ...chatMsg('m1', 'agent', '结论：' + '丁'.repeat(5000)), tools: [] }])
+  for (const budget of [300, 600, 1500]) {
+    const out = clippedTranscript(task, 1, budget)
+    assert.match(out, /中间省略/)
+    assert.ok(estTokens(out) <= budget, `预算 ${budget}，实际 ${estTokens(out)}`)
+  }
+  // 同一个文件读 20 次只算一项：去重后 9 项，列 8 项 + 等 1 项
+  const tools: ToolUse[] = [
+    ...Array.from({ length: 20 }, () => ({ kind: 'read' as const, label: 'a.ts', detail: '' })),
+    ...Array.from({ length: 8 }, (_, i) => ({ kind: 'read' as const, label: `f${i}.ts`, detail: '' })),
+  ]
+  const many = clippedTranscript(asTask([{ ...chatMsg('m2', 'agent', '好'), tools }]), 1, 10_000)
+  assert.match(many, /等 1 项/)
 })

@@ -135,7 +135,7 @@ export function RunInProjectDialog({
             }
           }}
           placeholder={t('要在这个项目里做什么，例如：商品详情页增加「看了又看」推荐')}
-          className="text-[0.8125rem]"
+          className="text-body"
         />
       </Field>
     </Modal>

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { Hono } from 'hono'
 import { CLIS, type CliDefinition } from '../shared/clis.ts'
@@ -8,7 +8,7 @@ import { McpServer, type McpEntry, type McpOverview, type McpTestResult } from '
 import { t } from '../shared/i18n.ts'
 import { expandHome } from './cli-extras.ts'
 import { childEnv, runProcess } from './exec/process.ts'
-import { writeJsonAtomic } from './store.ts'
+import { writeCliConfigJson, writeCliConfigText } from './cli-config-write.ts'
 import { getSettings } from './settings.ts'
 import { cliSettings } from '../shared/settings.ts'
 
@@ -99,7 +99,7 @@ function unquoteKey(k: string) {
 function headerParts(h: string) {
   const out: string[] = []
   const re = /\s*("(?:[^"\\]|\\.)*"|'[^']*'|[^.\s"']+)\s*(?:\.|$)/y
-  for (let m; (m = re.exec(h)) && m[0]; ) out.push(unquoteKey(m[1]))
+  for (let m; (m = re.exec(h)) && m[0];) out.push(unquoteKey(m[1]))
   return out
 }
 
@@ -296,24 +296,24 @@ async function putServer(d: Def, sv: McpServer) {
   const file = fileOf(d)
   if (s.format === 'toml') {
     await mkdir(path.dirname(file), { recursive: true })
-    return writeFile(file, writeToml(await readText(file), s, sv, sv.name), 'utf8')
+    return writeCliConfigText(file, writeToml(await readText(file), s, sv, sv.name))
   }
   const root = await readJsonFile(file)
   const table = (root[s.key] && typeof root[s.key] === 'object' ? root[s.key] : {}) as Record<string, any>
   table[sv.name] = toObject(sv, s, table[sv.name])
   root[s.key] = table
-  await writeJsonAtomic(file, root)
+  await writeCliConfigJson(file, root)
 }
 
 async function dropServer(d: Def, name: string) {
   const s = d.mcpStore
   const file = fileOf(d)
   if (!existsSync(file)) return
-  if (s.format === 'toml') return writeFile(file, writeToml(await readText(file), s, null, name), 'utf8')
+  if (s.format === 'toml') return writeCliConfigText(file, writeToml(await readText(file), s, null, name))
   const root = await readJsonFile(file)
   if (!root[s.key] || !(name in root[s.key])) return
   delete root[s.key][name]
-  await writeJsonAtomic(file, root)
+  await writeCliConfigJson(file, root)
 }
 
 /** 按 CLI id 把工具写进它的配置文件（项目里的配置导入时用，和 mcp-tools 接口走同一套写入） */

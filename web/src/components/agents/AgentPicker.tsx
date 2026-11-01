@@ -7,9 +7,11 @@ import { AgentAvatar } from './AgentAvatar'
 import { useAgentView } from '@/lib/agent-view'
 import { t } from '@shared/i18n'
 import { listableAgents } from '@shared/builtin/core'
+import { scopeOf, type RoleScope } from '@shared/conv-mode'
 
-/** 从已有 Agent 中选一个，按分类分组，可搜索 */
+/** 从已有 Agent 中选一个，按分类分组，可搜索；只列一类角色（ADR 0038：Agent 角色和 Chat 角色各自只在对应模式用） */
 export function AgentPicker({
+  scope = 'agent',
   exclude = [],
   onPick,
   onNone,
@@ -17,6 +19,8 @@ export function AgentPicker({
   children,
   align,
 }: {
+  /** 列哪一类：工作流团队、挂载、项目里都是 Agent 角色（默认）；Chat 页、Chat 角色的引入是 Chat 角色 */
+  scope?: RoleScope
   exclude?: string[]
   onPick: (a: Agent) => void
   /** 选「无」：不用 Agent 角色，直接用 CLI */
@@ -29,7 +33,7 @@ export function AgentPicker({
   const { agents, categories } = useData()
   const [q, setQ] = useState('')
   const pool = listableAgents(agents).filter(
-    (a) => !exclude.includes(a.id) && a.name.toLowerCase().includes(q.trim().toLowerCase()),
+    (a) => scopeOf(a) === scope && !exclude.includes(a.id) && a.name.toLowerCase().includes(q.trim().toLowerCase()),
   )
   const groups = [
     ...categories.filter((c) => c.scope !== 'workflow').map((c) => ({ id: c.id, name: c.name })),
@@ -60,7 +64,7 @@ export function AgentPicker({
                   <AgentAvatar icon={a.icon} cli={a.cli} size="sm" dim={!a.enabled} />
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{a.name}</span>
-                    <span className="truncate font-mono text-[0.6875rem] text-subtle">{modelOf(a)}</span>
+                    <span className="truncate font-mono text-caption text-subtle">{modelOf(a)}</span>
                   </span>
                 </PopoverClose>
               ))}

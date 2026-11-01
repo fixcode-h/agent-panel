@@ -27,32 +27,32 @@ user-invocable: true
 
 ## 读取索引（何时读哪篇）
 
-| 场景 | 读 |
-|---|---|
-| 完整流程与阶段职责 | `references/workflow.md` |
-| 参考视频/图片 → 一比一复刻流程 | `references/reference-rebuild.md` |
-| 复杂模型：分件工坊（拆件/精修/装配） | `references/part-workshop.md` |
-| 模型与动画的模块、装配、控制器和证据契约 | `references/model-animation-contract.md` |
-| 指令/代码速查（什么时候用什么） | `references/commands.md` |
-| 指标定义与阈值 | `references/metrics.md` |
-| 多视角评估与审查清单 | `references/evaluation.md` |
-| FBX→UE 导出规则与导入清单 | `references/export-ue.md` |
-| 遇到具体问题（按症状查） | `references/pitfalls/README.md` → 对应主题篇 |
-| 规格 / 评估记录模板 | `references/templates/` |
+| 场景                                     | 读                                           |
+| ---------------------------------------- | -------------------------------------------- |
+| 完整流程与阶段职责                       | `references/workflow.md`                     |
+| 参考视频/图片 → 一比一复刻流程           | `references/reference-rebuild.md`            |
+| 复杂模型：分件工坊（拆件/精修/装配）     | `references/part-workshop.md`                |
+| 模型与动画的模块、装配、控制器和证据契约 | `references/model-animation-contract.md`     |
+| 指令/代码速查（什么时候用什么）          | `references/commands.md`                     |
+| 指标定义与阈值                           | `references/metrics.md`                      |
+| 多视角评估与审查清单                     | `references/evaluation.md`                   |
+| FBX→UE 导出规则与导入清单                | `references/export-ue.md`                    |
+| 遇到具体问题（按症状查）                 | `references/pitfalls/README.md` → 对应主题篇 |
+| 规格 / 评估记录模板                      | `references/templates/`                      |
 
 ## 脚本清单
 
-| 脚本 | 用途 |
-|---|---|
-| `blender_cli.py` | 定位 Blender 并无头/GUI 启动脚本（公共入口） |
-| `inspect_scene.py` | 场景体检 → 五组指标 JSON（退出码 1 表示有 FAIL）；默认 raw 网格，`--evaluated` 检查修改器/约束后的网格；相交报告支持 `--intersect-frames` / `--intersect-every` |
-| `diagnose_overlap.py` | 相交定位：输出两个对象相交三角的中心坐标（配合 `inspect_scene.py --intersect-report` 使用） |
-| `capture_views.py` | 多视角截图（双引擎 ≥6 视角 + `views.json`；大场景用 `--focus` 聚焦主体）；`--frames "1,16,31,46"` 逐帧对比动画（默认右侧视，`--frame-view` 可切 front/right/back/left/quarter/top，大场景务必配 `--focus`）；`--cam-frames "45,211"` 用场景自带相机核对交付镜头 |
-| `setup_viewport.py` | 视口展示（`--gui` 单视口 + 相机视角）/ 无 GUI 校验 |
-| `export_ue.py` | FBX（UE 标准）导出 + 重导入自检（可选步骤） |
-| `build_sample_scene.py` | 生成演示/自测场景（含建模与动画的最佳实践示例） |
-| `reference_frames.py` | 参考视频/图片预处理（系统 python 运行）：元数据、时间轴接触表、单帧、放大裁切、并排对照、多图拼表 |
-| `smoke_blender_tooling.py` | 脚本编译检查和 Blender 运行时 smoke；未安装 Blender 时以退出码 2 标记 N/A |
+| 脚本                       | 用途                                                                                                                                                                                                                                                            |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `blender_cli.py`           | 定位 Blender 并无头/GUI 启动脚本（公共入口）                                                                                                                                                                                                                    |
+| `inspect_scene.py`         | 场景体检 → 五组指标 JSON（退出码 1 表示有 FAIL）；默认 raw 网格，`--evaluated` 检查修改器/约束后的网格；相交报告支持 `--intersect-frames` / `--intersect-every`                                                                                                 |
+| `diagnose_overlap.py`      | 相交定位：输出两个对象相交三角的中心坐标（配合 `inspect_scene.py --intersect-report` 使用）                                                                                                                                                                     |
+| `capture_views.py`         | 多视角截图（双引擎 ≥6 视角 + `views.json`；大场景用 `--focus` 聚焦主体）；`--frames "1,16,31,46"` 逐帧对比动画（默认右侧视，`--frame-view` 可切 front/right/back/left/quarter/top，大场景务必配 `--focus`）；`--cam-frames "45,211"` 用场景自带相机核对交付镜头 |
+| `setup_viewport.py`        | 视口展示（`--gui` 单视口 + 相机视角）/ 无 GUI 校验                                                                                                                                                                                                              |
+| `export_ue.py`             | FBX（UE 标准）导出 + 重导入自检（可选步骤）                                                                                                                                                                                                                     |
+| `build_sample_scene.py`    | 生成演示/自测场景（含建模与动画的最佳实践示例）                                                                                                                                                                                                                 |
+| `reference_frames.py`      | 参考视频/图片预处理（系统 python 运行）：元数据、时间轴接触表、单帧、放大裁切、并排对照、多图拼表                                                                                                                                                               |
+| `smoke_blender_tooling.py` | 脚本编译检查和 Blender 运行时 smoke；未安装 Blender 时以退出码 2 标记 N/A                                                                                                                                                                                       |
 
 ## 现场经验回流
 

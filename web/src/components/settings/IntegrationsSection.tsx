@@ -165,12 +165,12 @@ export function IntegrationsSection() {
 
   const target = list?.find((v) => v.id === removing)
 
-  if (error) return <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
-  if (!list) return <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
+  if (error) return <p className="text-body text-warning">{t('读取失败：{error}', { error })}</p>
+  if (!list) return <p className="text-body text-subtle">{t('读取中…')}</p>
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[0.8125rem] leading-relaxed text-subtle">
+      <p className="text-body leading-relaxed text-subtle">
         {t(
           '给本机的命令行工具授权后，角色在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据。',
         )}
@@ -184,7 +184,7 @@ export function IntegrationsSection() {
         return (
           <Card key={v.id} as="section" padding="md">
             <div className="flex flex-wrap items-start gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-sel text-muted">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sel text-muted">
                 <SquareTerminal className="h-4 w-4" strokeWidth={2.2} />
               </span>
               <div className="min-w-0 flex-1">
@@ -192,29 +192,29 @@ export function IntegrationsSection() {
                   {v.name}
                   <Badge
                     tone={v.authed ? 'success' : v.installed ? 'warning' : 'neutral'}
-                    className="text-[0.6875rem] font-normal"
+                    className="text-caption font-normal"
                   >
                     {v.authed ? t('已授权') : v.installed ? t('未授权') : t('未安装')}
                   </Badge>
-                  {v.version && <span className="font-mono text-[0.6875rem] font-normal text-subtle">{v.version}</span>}
+                  {v.version && <span className="font-mono text-caption font-normal text-subtle">{v.version}</span>}
                   {v.docsUrl && (
                     <a
                       href={v.docsUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[0.6875rem] font-normal text-accent-text hover:underline"
+                      className="text-caption font-normal text-accent-text hover:underline"
                     >
                       {t('文档')}
                     </a>
                   )}
                 </p>
-                <p className="mt-0.5 text-[0.75rem] leading-relaxed text-subtle">{v.description}</p>
+                <p className="mt-0.5 text-footnote leading-relaxed text-subtle">{v.description}</p>
               </div>
             </div>
 
             {!v.installed ? (
               <div className="mt-3 flex flex-col gap-2">
-                <div className="flex flex-wrap items-center gap-2 text-[0.75rem] text-muted">
+                <div className="flex flex-wrap items-center gap-2 text-footnote text-muted">
                   <span>{t('没有检测到 {command}，先安装再授权。', { command: v.command })}</span>
                   {v.canInstall && (
                     <Button size="sm" onClick={() => void install(v.id)} disabled={settingUp}>
@@ -236,13 +236,13 @@ export function IntegrationsSection() {
               </div>
             ) : v.authed ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="flex items-center gap-1.5 text-[0.8125rem] text-success">
+                <span className="flex items-center gap-1.5 text-body text-success">
                   <ShieldCheck className="h-3.5 w-3.5" />
                   {t('已授权')}
                   {v.account && <span className="font-mono text-muted">· {v.account}</span>}
                 </span>
                 {!v.account && v.detail && (
-                  <span className="w-full text-[0.75rem] whitespace-pre-wrap text-subtle">{v.detail}</span>
+                  <span className="w-full text-footnote whitespace-pre-wrap text-subtle">{v.detail}</span>
                 )}
                 <span className="flex-1" />
                 <Button size="sm" variant="ghost" onClick={check} disabled={refreshing}>
@@ -258,10 +258,8 @@ export function IntegrationsSection() {
               </div>
             ) : (
               <div className="mt-3 flex flex-col gap-2">
-                {v.hint && <p className="text-[0.75rem] leading-relaxed text-muted">{v.hint}</p>}
-                {v.detail && (
-                  <p className="text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-subtle">{v.detail}</p>
-                )}
+                {v.hint && <p className="text-footnote leading-relaxed text-muted">{v.hint}</p>}
+                {v.detail && <p className="text-caption leading-relaxed whitespace-pre-wrap text-subtle">{v.detail}</p>}
                 <div className="flex flex-wrap items-center gap-2">
                   {v.browserAuth && (
                     <Button size="sm" onClick={() => void login(v.id)} disabled={!!busy || inProgress}>
@@ -294,7 +292,7 @@ export function IntegrationsSection() {
                 </div>
                 {tokenFor === v.id && (
                   <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-3">
-                    <p className="text-[0.75rem] leading-relaxed text-muted">
+                    <p className="text-footnote leading-relaxed text-muted">
                       {t('粘贴 Token，只传给本机的 {command}，面板不保存。', { command: v.command })}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
@@ -305,7 +303,7 @@ export function IntegrationsSection() {
                         onChange={(e) => setToken(e.target.value)}
                         placeholder="ghp_…"
                         aria-label={t('Token')}
-                        className="min-w-[180px] flex-1 font-mono text-[0.8125rem]"
+                        className="min-w-[180px] flex-1 font-mono text-body"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
@@ -352,25 +350,23 @@ function InstallBox({ job }: { job: IntegrationInstallJob }) {
   return (
     <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-3">
       {job.status === 'running' ? (
-        <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
+        <p className="flex items-center gap-2 text-body text-muted">
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
           <span className="min-w-0">
             {t('正在安装：')}
-            <span className="font-mono text-[0.75rem]">{job.method}</span>
+            <span className="font-mono text-footnote">{job.method}</span>
           </span>
         </p>
       ) : (
-        <p
-          className={cn('text-[0.8125rem] whitespace-pre-wrap', job.status === 'done' ? 'text-success' : 'text-danger')}
-        >
+        <p className={cn('text-body whitespace-pre-wrap', job.status === 'done' ? 'text-success' : 'text-danger')}>
           {job.status === 'done' ? t('安装完成') : job.error || t('安装没有完成')}
         </p>
       )}
       {job.status === 'running' && (
-        <p className="text-[0.6875rem] text-subtle">{t('Windows 上可能会弹出系统的权限确认，点「是」继续。')}</p>
+        <p className="text-caption text-subtle">{t('Windows 上可能会弹出系统的权限确认，点「是」继续。')}</p>
       )}
       {job.output && job.status !== 'done' && (
-        <pre className="max-h-32 overflow-auto text-[0.6875rem] whitespace-pre-wrap text-subtle">{job.output}</pre>
+        <pre className="max-h-32 overflow-auto text-caption whitespace-pre-wrap text-subtle">{job.output}</pre>
       )}
     </div>
   )
@@ -381,25 +377,23 @@ function LoginBox({ job, onCancel }: { job: IntegrationLoginJob; onCancel: () =>
   if (job.status !== 'running') {
     return (
       <div className="mt-3 rounded-lg bg-sel/40 p-3">
-        <p className={cn('text-[0.8125rem]', job.status === 'done' ? 'text-success' : 'text-danger')}>
+        <p className={cn('text-body', job.status === 'done' ? 'text-success' : 'text-danger')}>
           {job.status === 'done' ? t('授权完成') : job.error || t('授权没有完成')}
         </p>
         {job.status === 'failed' && job.output && (
-          <pre className="mt-2 max-h-32 overflow-auto text-[0.6875rem] whitespace-pre-wrap text-subtle">
-            {job.output}
-          </pre>
+          <pre className="mt-2 max-h-32 overflow-auto text-caption whitespace-pre-wrap text-subtle">{job.output}</pre>
         )}
       </div>
     )
   }
   return (
     <div className="mt-3 flex flex-col gap-2 rounded-lg bg-sel/40 p-3">
-      <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
+      <p className="flex items-center gap-2 text-body text-muted">
         <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
         {t('等待浏览器完成授权…')}
       </p>
       {job.code && (
-        <div className="flex flex-wrap items-center gap-2 text-[0.8125rem]">
+        <div className="flex flex-wrap items-center gap-2 text-body">
           <span className="text-subtle">{t('一次性授权码')}</span>
           <CopyText text={job.code} title={t('复制授权码')} />
           <span className="text-subtle">{t('在浏览器里输入这个码')}</span>
@@ -410,14 +404,14 @@ function LoginBox({ job, onCancel }: { job: IntegrationLoginJob; onCancel: () =>
           href={job.url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex w-fit items-center gap-1.5 text-[0.8125rem] text-accent-text hover:underline"
+          className="inline-flex w-fit items-center gap-1.5 text-body text-accent-text hover:underline"
         >
           <LogIn className="h-3.5 w-3.5" />
           {t('打开授权页面')}
         </a>
       )}
       {job.output && (
-        <pre className="max-h-32 overflow-auto text-[0.6875rem] whitespace-pre-wrap text-subtle">{job.output}</pre>
+        <pre className="max-h-32 overflow-auto text-caption whitespace-pre-wrap text-subtle">{job.output}</pre>
       )}
       <div>
         <Button size="sm" variant="ghost" onClick={onCancel}>

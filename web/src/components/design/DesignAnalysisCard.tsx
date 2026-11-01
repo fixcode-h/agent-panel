@@ -46,28 +46,28 @@ export function DesignAnalysisCard({
   }))
   return (
     <div className="mt-1.5 rounded-xl bg-card shadow-card/70 p-2.5 shadow-card">
-      <div className="flex items-center gap-1.5 px-0.5 text-[0.75rem] font-medium">
+      <div className="flex items-center gap-1.5 px-0.5 text-footnote font-medium">
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-text" />
         <span className="min-w-0 flex-1">{t('AI 分析结果')}</span>
-        <span className="shrink-0 text-[0.6875rem] font-normal text-subtle">
+        <span className="shrink-0 text-caption font-normal text-subtle">
           {t('{n} 条建议', { n: analysis.findings.length })}
         </span>
       </div>
       {!analysis.findings.length ? (
-        <p className="mt-2 px-0.5 text-[0.75rem] leading-relaxed text-muted">
+        <p className="mt-2 px-0.5 text-footnote leading-relaxed text-muted">
           {t('这次没有解析出结构化的检查项，可以先看上面的结论，或者再分析一次。')}
         </p>
       ) : (
         <div className="mt-2 flex flex-col gap-2.5">
           {groups.map(({ area, title, icon: Icon, list }) => (
             <section key={area} className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-1.5 px-0.5 text-[0.75rem] font-medium text-muted">
+              <div className="flex items-center gap-1.5 px-0.5 text-footnote font-medium text-muted">
                 <Icon className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 <span>{title}</span>
-                <span className="text-[0.6875rem] font-normal text-subtle">{list.length}</span>
+                <span className="text-caption font-normal text-subtle">{list.length}</span>
               </div>
               {!list.length ? (
-                <p className="px-0.5 text-[0.6875rem] text-subtle">{t('没有发现明显问题')}</p>
+                <p className="px-0.5 text-caption text-subtle">{t('没有发现明显问题')}</p>
               ) : (
                 list.map((f, i) => (
                   <Finding
@@ -84,7 +84,7 @@ export function DesignAnalysisCard({
         </div>
       )}
       {!!analysis.findings.some((f) => f.suggestion) && (
-        <p className="mt-2 border-t px-0.5 pt-2 text-[0.6875rem] leading-relaxed text-subtle">
+        <p className="mt-2 border-t px-0.5 pt-2 text-caption leading-relaxed text-subtle">
           {t('「按建议修改」会把这条要求作为一条新消息发给 AI；想改措辞可以先复制。')}
         </p>
       )}
@@ -107,23 +107,23 @@ function Finding({
   return (
     <div className="rounded-lg bg-bg/60 p-2">
       <div className="flex min-w-0 items-start gap-1.5">
-        <span className="min-w-0 flex-1 text-[0.75rem] leading-snug font-medium">{finding.title}</span>
+        <span className="min-w-0 flex-1 text-footnote leading-snug font-medium">{finding.title}</span>
         {showPriority && (
-          <span className={cn('shrink-0 rounded px-1 py-px text-[0.625rem] font-medium', p.className)}>{p.label}</span>
+          <span className={cn('shrink-0 rounded-sm px-1 py-px text-micro font-medium', p.className)}>{p.label}</span>
         )}
       </div>
       {finding.detail && (
-        <p className="mt-1 text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-muted">{finding.detail}</p>
+        <p className="mt-1 text-caption leading-relaxed whitespace-pre-wrap text-muted">{finding.detail}</p>
       )}
       {finding.evidence && (
-        <p className="mt-1 rounded bg-sel/60 px-1.5 py-1 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-subtle">
+        <p className="mt-1 rounded-sm bg-sel/60 px-1.5 py-1 font-mono text-caption leading-relaxed whitespace-pre-wrap text-subtle">
           {t('证据：')}
           {finding.evidence}
         </p>
       )}
       {finding.suggestion && (
         <div className="mt-1.5 flex items-start gap-1">
-          <p className="min-w-0 flex-1 text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-fg/85">
+          <p className="min-w-0 flex-1 text-caption leading-relaxed whitespace-pre-wrap text-fg/85">
             {finding.suggestion}
           </p>
           <div className="flex shrink-0 items-center gap-0.5">
@@ -134,7 +134,7 @@ function Finding({
                 disabled={disabled}
                 onClick={() => onApply(finding.suggestion)}
                 title={disabled ? t('等当前这一轮结束再修改') : t('把这条要求发给 AI')}
-                className="h-6 shrink-0 px-1.5 text-[0.6875rem]"
+                className="h-6 shrink-0 px-1.5 text-caption"
               >
                 <PenLine className="h-3 w-3" />
                 {t('按建议修改')}

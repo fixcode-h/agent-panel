@@ -31,7 +31,7 @@ const GRAIN_LABEL: Record<SummaryGrain, () => string> = { day: () => t('按天')
 function Row({ label, children, hint }: { label: string; children: React.ReactNode; hint?: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-2 border-b border-line px-5 py-3.5 last:border-b-0 sm:flex-row sm:items-start sm:gap-4">
-      <span className="w-14 shrink-0 pt-1.5 text-[0.8125rem] font-medium text-muted">{label}</span>
+      <span className="w-14 shrink-0 pt-1.5 text-body font-medium text-muted">{label}</span>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         {children}
         {hint && <p className="text-xs leading-relaxed text-subtle">{hint}</p>}
@@ -110,7 +110,7 @@ export function SummaryComposer({
         <header className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">{t('提炼工作总结')}</h2>
-            <p className="mt-1 max-w-[620px] text-[0.8125rem] leading-relaxed text-muted">
+            <p className="mt-1 max-w-[620px] text-body leading-relaxed text-muted">
               {t(
                 '选来源和日期，先提炼出一条条需求和 Bug，挑出要写进报告的点「采纳」，确认后才生成报告。只分析所选日期内的内容。',
               )}
@@ -197,7 +197,7 @@ export function SummaryComposer({
                       <button
                         type="button"
                         onClick={() => onOpenReport(r.id)}
-                        className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-card px-2.5 text-[0.8125rem] hover:border-line-strong"
+                        className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-card px-2.5 text-body hover:border-line-strong"
                       >
                         <span className="text-subtle tabular-nums">{(r.from || r.day).slice(5)}</span>
                         <span className="max-w-[200px] truncate">{reportName(r)}</span>
@@ -206,7 +206,7 @@ export function SummaryComposer({
                   ))}
                 </ul>
               ) : (
-                <span className="pt-1.5 text-[0.8125rem] text-subtle">{t('没有可用的报告')}</span>
+                <span className="pt-1.5 text-body text-subtle">{t('没有可用的报告')}</span>
               )}
             </Row>
           )}
@@ -284,7 +284,7 @@ export function SummaryComposer({
         {done && (
           <section aria-label={t('提炼结果')} className="flex flex-col gap-4">
             <div className="flex flex-wrap items-baseline gap-2">
-              <h2 className="text-[0.9375rem] font-semibold">{t('提炼结果')}</h2>
+              <h2 className="text-heading font-semibold">{t('提炼结果')}</h2>
               <span className="text-xs text-subtle">
                 {[
                   windowLabel(job.grain, job.from),
@@ -301,7 +301,7 @@ export function SummaryComposer({
                 <ConfirmBar entries={job.items} adopted={adopted} busy={confirming} onConfirm={onConfirm} />
               </>
             ) : (
-              <p className="rounded-xl border border-dashed border-line-strong px-4 py-6 text-center text-[0.8125rem] text-subtle">
+              <p className="rounded-xl border border-dashed border-line-strong px-4 py-6 text-center text-body text-subtle">
                 {job.taskCount || job.reportCount
                   ? t('这段时间的记录里没有可写进报告的需求或 Bug。')
                   : t('这段时间没有可提炼的内容。')}

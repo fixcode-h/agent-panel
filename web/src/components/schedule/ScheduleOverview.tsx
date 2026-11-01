@@ -27,7 +27,7 @@ export function ScheduleOverview({
     <Card aria-label={t('计划概览')} as="section" className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
       <div className="min-w-0 flex-1">
         <p className="text-xs text-subtle">{t('下一次执行')}</p>
-        <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[0.9375rem]">
+        <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-heading">
           {next ? (
             <>
               <span className="min-w-0 truncate font-semibold">{next.name}</span>

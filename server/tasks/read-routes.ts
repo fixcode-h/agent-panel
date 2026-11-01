@@ -39,6 +39,14 @@ export function registerReadRoutes(s: TasksScope) {
       let closed = false
       stream.onAbort(() => void (closed = true))
       let stamps = new Map<string, string>()
+      /**
+       * 每条消息的骨架（长度、工具数、状态，不含工具输出内容）。完整指纹要把每段工具输出过一遍哈希，
+       * 执行中每 200ms 对全部消息算一遍、再乘上开着的标签页数，长任务会一直占着事件循环：
+       * 骨架没变的旧消息沿用上次的结果，只有最后一条和骨架变了的才算完整指纹；
+       * 隔一会儿全量核对一次，兜住「长度不变、内容换了」的工具输出
+       */
+      const shapes = new Map<string, string>()
+      let verifiedAt = 0
       let meta = ''
       let beat = Date.now()
       let seen = ''
@@ -79,7 +87,7 @@ export function registerReadRoutes(s: TasksScope) {
         // 后台命令开始、结束、子对话开始做完都不一定改任务本身（对话空闲时），单独算进去
         const jobs = t.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
         // # 后面是不在执行时的比较键（只用任务本身的更新时间），上面那一步不读对话就能比
-        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}|${t.childrenWorking ?? 0}|${t.cliAlive ? 1 : 0}|${t.childrenCli ?? 0}`
+        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}|${t.childrenWorking ?? 0}|${t.childrenNeeds ?? 0}|${t.cliAlive ? 1 : 0}|${t.childrenCli ?? 0}`
         if (key === seen && meta) {
           if (Date.now() - beat > 15_000) {
             await stream.writeSSE({ event: 'ping', data: '' })
@@ -105,16 +113,29 @@ export function registerReadRoutes(s: TasksScope) {
             taskMessageRev(messages),
           )
           stamps = new Map(messages.map((x) => [x.id, messageStamp(x)]))
+          shapes.clear()
+          for (const x of messages) shapes.set(x.id, messageStamp(x, false))
           meta = m
           beat = Date.now()
         } else if (!meta || removed) {
           // 整份推送时更早的长工具输出只给开头，页面要看全文时再按 outputCut 去取（见 liteMessages）
           await send('full', { ...t, messages: liteMessages(messages) }, taskMessageRev(messages))
           stamps = new Map(messages.map((x) => [x.id, messageStamp(x)]))
+          shapes.clear()
+          for (const x of messages) shapes.set(x.id, messageStamp(x, false))
           meta = m
           beat = Date.now()
         } else {
-          const changed = messages.filter((x) => stamps.get(x.id) !== messageStamp(x))
+          const now = Date.now()
+          const verify = now - verifiedAt >= 2000
+          if (verify) verifiedAt = now
+          const last = messages.length - 1
+          const changed = messages.filter((x, i) => {
+            const shape = messageStamp(x, false)
+            if (!verify && i !== last && shapes.get(x.id) === shape) return false
+            shapes.set(x.id, shape)
+            return stamps.get(x.id) !== messageStamp(x)
+          })
           if (changed.length || m !== meta) {
             await send('patch', { meta: rest, messages: changed, total: messages.length }, taskMessageRev(messages))
             for (const x of changed) stamps.set(x.id, messageStamp(x))

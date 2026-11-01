@@ -9,6 +9,7 @@ import {
   AlignStartVertical,
   AlignVerticalSpaceAround,
   ClipboardPaste,
+  Grid3x3,
   Maximize,
   Minus,
   Plus,
@@ -142,7 +143,8 @@ export function Viewport({
   const [kind, setKind] = useState<AnnotationKind>('change')
   const [showMarks, setShowMarks] = useState(true)
   const [activeMark, setActiveMark] = useState('')
-  const marks = annotations.filter((a) => a.target === target)
+  // 网页设计在哪个宽度下画的标注就只在那个视图里显示：坐标是按那个宽度记的，换个宽度会错位（没记设备的旧标注照常显示）
+  const marks = annotations.filter((a) => a.target === target && (!device || !a.device || a.device === device))
   const setMarks = (fn: (l: Annotation[]) => Annotation[], key: string) => onAnnotations(fn(annotations), key)
 
   // 工具快捷键：V 选择、H 拖动、R 框选、A 箭头、P 画笔、T 打点；Esc 回到选择
@@ -345,6 +347,24 @@ export function Viewport({
   const menuWidget = menuId ? findWidget(root, menuId) : undefined
   // 拖动时的对齐参考线（设计稿像素）
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] })
+  // 拖动、缩放时控件现在的位置和大小（设计稿像素）：画在控件下面，不用松手再去属性面板看
+  const [dragInfo, setDragInfo] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  // 网格吸附（0 是关）：打开后拖动、缩放的边落在网格上；记在本机，下次打开还是这个设置
+  const [grid, setGridState] = useState(() => {
+    try {
+      return Number(localStorage.getItem('design-grid')) || 0
+    } catch {
+      return 0
+    }
+  })
+  const setGrid = (g: number) => {
+    setGridState(g)
+    try {
+      localStorage.setItem('design-grid', String(g))
+    } catch {
+      // 存不了就只在这次有效
+    }
+  }
 
   /** 控件在设计稿里的位置和大小（按页面上实际画出来的量） */
   const measure = (id: string) => {
@@ -586,12 +606,24 @@ export function Viewport({
           gy.push(by.at)
         }
       }
+      // 网格吸附：没吸到参考线的方向把边落到网格上（移动看左上角，缩放看右下角）；按住 Alt 不吸附
+      if (me && grid > 0 && !ev.altKey) {
+        const onGrid = (v: number) => Math.round(v / grid) * grid
+        if (!gx.length) dx = mode === 'move' ? onGrid(me.x + dx) - me.x : onGrid(me.x + me.w + dx) - (me.x + me.w)
+        if (!gy.length) dy = mode === 'move' ? onGrid(me.y + dy) - me.y : onGrid(me.y + me.h + dy) - (me.y + me.h)
+      }
       // 缩小到底就停住：再往左上拖也不再改大小，免得缩成 0 或翻转
       if (mode === 'resize' && me) {
         dx = Math.max(dx, -Math.max(0, Math.round(me.w - MIN_WIDGET_SIZE)))
         dy = Math.max(dy, -Math.max(0, Math.round(me.h - MIN_WIDGET_SIZE)))
       }
       setGuides({ x: gx, y: gy })
+      if (me)
+        setDragInfo(
+          mode === 'move'
+            ? { x: me.x + dx, y: me.y + dy, w: me.w, h: me.h }
+            : { x: me.x, y: me.y, w: me.w + dx, h: me.h + dy },
+        )
       if (dx === lx && dy === ly) return
       onMove(selected, { dx: dx - lx, dy: dy - ly, mode }, key)
       lx = dx
@@ -600,6 +632,8 @@ export function Viewport({
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      setGuides({ x: [], y: [] })
+      setDragInfo(null)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -636,12 +670,13 @@ export function Viewport({
   }, [play, runs, target, root, components, device, animCommand])
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
+    // data-design-canvas：页面的编辑快捷键（删除、方向键微调、复制粘贴）只在焦点在画布或控件树上时生效
+    <div data-design-canvas className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
       {dragImage && !play && onDropImage && (
         <div
           // 在标注工具栏下面；工具栏让到切换按钮下一行时跟着往下挪（见下面工具栏的说明）
           style={{ top: 'calc(3.5rem + min(var(--board-switch-w, 0px), 1px) * 44)' }}
-          className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 rounded-full bg-canvas-bar px-3 py-1 text-[0.75rem] whitespace-nowrap text-canvas-fg shadow-pop"
+          className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 rounded-full bg-canvas-bar px-3 py-1 text-footnote whitespace-nowrap text-canvas-fg shadow-pop"
         >
           {slots.some((r) => r.fits)
             ? t('拖到绿框的控件上松手即可用上；按住 Alt 显示所有能放图的控件')
@@ -779,7 +814,7 @@ export function Viewport({
                       style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }}
                     >
                       {r.id === hot && (
-                        <span className="absolute -top-5 left-0 rounded bg-canvas-drop px-1.5 py-px text-[0.6875rem] whitespace-nowrap text-black">
+                        <span className="absolute -top-5 left-0 rounded-sm bg-canvas-drop px-1.5 py-px text-caption whitespace-nowrap text-black">
                           {t('放到 {name}', { name: r.name })}
                         </span>
                       )}
@@ -795,6 +830,22 @@ export function Viewport({
                       height: Math.max(2, dropLine.h * scale),
                     }}
                   />
+                )}
+                {grid > 0 && grid * scale >= 5 && (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 opacity-40 [background-image:linear-gradient(to_right,var(--canvas-line)_1px,transparent_1px),linear-gradient(to_bottom,var(--canvas-line)_1px,transparent_1px)]"
+                    style={{ backgroundSize: `${grid * scale}px ${grid * scale}px` }}
+                  />
+                )}
+                {dragInfo && (
+                  <span
+                    className="pointer-events-none absolute z-10 rounded-sm bg-canvas-pick px-1.5 py-px font-mono text-caption whitespace-nowrap text-white tabular-nums"
+                    style={{ left: dragInfo.x * scale, top: (dragInfo.y + dragInfo.h) * scale + 6 }}
+                  >
+                    {Math.round(dragInfo.x)}, {Math.round(dragInfo.y)} · {Math.round(dragInfo.w)} ×{' '}
+                    {Math.round(dragInfo.h)}
+                  </span>
                 )}
                 {guides.x.map((x) => (
                   <div
@@ -812,9 +863,9 @@ export function Viewport({
                 ))}
                 {!root.Children?.length && (
                   <div className="pointer-events-none absolute inset-0 grid place-items-center p-6 text-center">
-                    <div className="max-w-[320px] text-[0.75rem] leading-relaxed text-canvas-subtle">
-                      <p className="mb-1 text-[0.8125rem] font-medium text-canvas-fg">{t('还是空白界面')}</p>
-                      {t('在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。')}
+                    <div className="max-w-[320px] text-footnote leading-relaxed text-canvas-subtle">
+                      <p className="mb-1 text-body font-medium text-canvas-fg">{t('还是空白界面')}</p>
+                      {t('在左边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。')}
                     </div>
                   </div>
                 )}
@@ -834,6 +885,9 @@ export function Viewport({
                       note: '',
                       target,
                       widgets: stage.current ? widgetsIn(stage.current, scale, root, a) : [],
+                      // 记下这是按多大的画布画的：子控件、平板 / 手机视图的坐标和设计稿不是一个尺寸
+                      space: { X: size.X, Y: size.Y },
+                      ...(device ? { device } : {}),
                     }
                     setMarks((l) => [...l, mark], `ann:add:${mark.id}`)
                     // 画完马上写说明
@@ -916,7 +970,7 @@ export function Viewport({
             aria-label={t('对齐')}
             className="pointer-events-auto flex items-center gap-0.5 rounded-xl bg-canvas-bar p-1 text-canvas-fg shadow-pop"
           >
-            <span className="px-2 text-[0.6875rem] text-canvas-subtle">{t('已选 {n} 个', { n: multi.length })}</span>
+            <span className="px-2 text-caption text-canvas-subtle">{t('已选 {n} 个', { n: multi.length })}</span>
             {(
               [
                 ['left', AlignStartVertical, t('左对齐')],
@@ -946,14 +1000,14 @@ export function Viewport({
       )}
       {play && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-          <span className="flex items-center gap-1.5 rounded-full bg-canvas-bar px-3 py-1 text-[0.6875rem] text-canvas-strong shadow-pop">
+          <span className="flex items-center gap-1.5 rounded-full bg-canvas-bar px-3 py-1 text-caption text-canvas-strong shadow-pop">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-canvas-drop" />
             {t('运行模式 · 按 Esc 退出')}
           </span>
         </div>
       )}
       <div className="pointer-events-none absolute right-3 bottom-3 flex items-center gap-2">
-        <span className="rounded-md bg-canvas-bar/80 px-2 py-1 font-mono text-[0.6875rem] text-canvas-subtle">
+        <span className="rounded-md bg-canvas-bar/80 px-2 py-1 font-mono text-caption text-canvas-subtle">
           {size.X} × {size.Y}
         </span>
         <div className="pointer-events-auto flex items-center rounded-lg bg-canvas-bar text-canvas-fg shadow-pop">
@@ -965,7 +1019,7 @@ export function Viewport({
             size="icon-sm"
             onClick={() => setZoom(1)}
             title={t('原始大小')}
-            className="w-12 font-mono text-[0.6875rem] font-normal tabular-nums"
+            className="w-12 font-mono text-caption font-normal tabular-nums"
           >
             {Math.round(scale * 100)}%
           </Button>
@@ -974,6 +1028,15 @@ export function Viewport({
           </ZoomButton>
           <ZoomButton label={t('适应窗口')} onClick={() => setZoom(0)} on={!zoom}>
             <Maximize className="h-3.5 w-3.5" />
+          </ZoomButton>
+          <ZoomButton
+            label={
+              grid ? t('关闭网格吸附（现在 {n} 像素）', { n: grid }) : t('网格吸附：拖动和缩放落在 8 像素的网格上')
+            }
+            onClick={() => setGrid(grid ? 0 : 8)}
+            on={!!grid}
+          >
+            <Grid3x3 className="h-3.5 w-3.5" />
           </ZoomButton>
         </div>
       </div>

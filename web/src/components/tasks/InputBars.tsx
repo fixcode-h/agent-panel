@@ -30,7 +30,7 @@ export function ResolvedBar({ taskId, onTask }: { taskId: string; onTask: (task:
   return (
     <div className="mx-auto flex max-w-(--content-w) items-center gap-3 rounded-2xl border border-line-strong bg-card px-4 py-2.5 shadow-card">
       <CheckCircle2 className="h-4 w-4 shrink-0 text-accent-text" />
-      <span className="min-w-0 flex-1 text-[0.8125rem]">
+      <span className="min-w-0 flex-1 text-body">
         <span className="font-medium text-fg">{t('此子对话已收尾。')}</span>{' '}
         <span className="text-subtle">{t('请重新打开以发送更多消息。')}</span>
       </span>
@@ -54,7 +54,7 @@ export function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => 
   return (
     <div className="mx-auto flex max-w-(--content-w) items-center gap-3 rounded-2xl border border-line-strong bg-card px-4 py-3 shadow-card">
       <FileInput className="h-4 w-4 shrink-0 text-accent-text" />
-      <span className="min-w-0 flex-1 text-[0.8125rem] text-muted">
+      <span className="min-w-0 flex-1 text-body text-muted">
         {t('这是从文件导入的任务（{at} 导出{app}），只能查看，不能继续执行。', {
           at: (info.exportedAt || info.at).slice(0, 16).replace('T', ' '),
           app: info.app ? t('，面板 {v}', { v: info.app }) : '',
