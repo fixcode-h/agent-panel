@@ -271,8 +271,8 @@ test('续接只发增量：改动清单变了只重发「本轮该跑的测试�
   await say(h, '都做完了')
   assert.doesNotMatch(calls[3].prompt, /## 不再适用的规则/)
 
-  // 保活期间改动清单、推送回答变了：下一条消息按现值重拼（服务端把这几项写成 getter，见 server/tasks/run.ts、runner.ts 的 taskPolicy）。
-  // 以前是建 host 时的快照：新对话开头没改动，之后保活的每一条都写着「改动清单为空」。
+  // 保活期间改动清单、推送回答变了：引擎每次重拼都读 host 的现值（这里只测引擎这一侧；服务端把这几项写成 getter，
+  // 见 server/tasks/run.ts、runner.ts 的 taskPolicy，那一侧由 e2e 07-local 等下一句、预热后第一句的断言兜着）。
   // 推送的回答只对父对话有意义（子对话不碰远端），这段按顶层对话拼
   h.task.parentTaskId = ''
   h.task.changes = []

@@ -4345,7 +4345,8 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       // 可能根本没交到 CLI，下一轮照旧补发。会话 id 取 runner 跑完后的（续不上开了新会话时，新会话收到的是 fresh）
       // 这一轮里压缩过（含手动压缩：那一轮只发了压缩命令，规则根本没发）：不记，下一轮发完整提示
       // 预热同样记：它发的是完整提示，之后在这个进程里收的消息也都按 live 补过段落，会话里有的就是 live 这份
-      if (first && live && task.sessions[who] && (r.ok || r.stopped))
+      // 预热被停下不记：CLI 可能还没把提示写进会话就被停了，记成收到会让下一轮只发增量、漏掉规则
+      if (first && live && task.sessions[who] && (r.ok || (r.stopped && !host.prewarm)))
         task.promptSent = rememberSent(task.promptSent, who, { ...live, session: task.sessions[who] })
       first = false
       if (!r.ok) {

@@ -1997,7 +1997,8 @@ async function runAgent(
         waiter = {
           deliver: (msg, placed, recorded) => {
             taskLog(task.id, '消息交给等下一句的 CLI', { messageId: msg.id, recorded: recorded || undefined })
-            fromUser = true
+            // 只有用户自己的话才按「用户这次的消息」补状态；面板推的（后台命令结果、父对话传话）原样交
+            fromUser = msg.role === 'user' && !msg.panel
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
             if (!recorded) task.messages.push(msg)

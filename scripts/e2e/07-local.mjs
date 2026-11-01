@@ -938,6 +938,8 @@ await runShard('本机请求与设置', async (api) => {
     w = await waitDone(w.id, 30000)
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '预热后直接问')
     assert.ok(at > 0, '用户消息记进对话')
+    // 预热后的第一句同样按当前状态补段落（engine 预热也传 nextPrompt），不是原样的一句话
+    assert.match(readLog(log + '.wait').at(-1).got, /## 用户这次的消息\n预热后直接问/)
     assert.ok(
       w.messages.slice(at + 1).some((m) => m.role === 'agent' && /等到的下一句/.test(m.text)),
       '模型在用户消息下面继续输出',
