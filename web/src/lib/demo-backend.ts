@@ -1501,7 +1501,8 @@ function demoProjectFiles(
 }
 
 /** 演示的 Skill 列表：用户级的总是有，选了项目时多一个项目里的 */
-const demoPackages = ['npm:@example/pi-web-tools', 'git:github.com/example/pi-review@v1']
+// 装了一个带版本号的推荐插件：设置页按去掉版本号的来源认出它已经装了
+const demoPackages = ['npm:cc-safety-net@2.7.1', 'git:github.com/example/pi-review@v1']
 
 const DEMO_SKILLS: CliSkill[] = [
   {

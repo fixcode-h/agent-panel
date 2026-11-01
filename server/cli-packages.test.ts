@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { getCli } from '../shared/clis.ts'
-import { listPackages } from './cli-packages.ts'
+import { Settings } from '../shared/schema.ts'
+import { cliSettings } from '../shared/settings.ts'
+import { listPackages, packageCommandEnv } from './cli-packages.ts'
+import { childEnv } from './exec/process.ts'
 
 test('扩展包：读 CLI 配置文件里的列表，相对路径按配置文件所在目录换成绝对路径', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'pi-pkg-'))
@@ -29,4 +32,19 @@ test('扩展包：读 CLI 配置文件里的列表，相对路径按配置文件
     if (old === undefined) delete process.env.PI_CODING_AGENT_DIR
     else process.env.PI_CODING_AGENT_DIR = old
   }
+})
+
+test('插件：装、删、更新不带「离线运行」的 PI_OFFLINE，不然 pi update 什么都不做还报成功', () => {
+  const def = getCli('pi') as Parameters<typeof listPackages>[0]
+  const cs = cliSettings(Settings.parse({}), 'pi')
+  // 执行时照旧离线：开关管的是对话里 Pi 自己联网
+  assert.equal(childEnv(cs.env).PI_OFFLINE, '1')
+  // Pi 只认 1 / true / yes 是离线，空串就是不离线
+  assert.equal(childEnv(packageCommandEnv(def, cs.env)).PI_OFFLINE, '')
+  // 用户自己的环境变量照样带上
+  const mine = cliSettings(
+    Settings.parse({ clis: { pi: { env: [{ key: 'NPM_CONFIG_REGISTRY', value: 'r' }] } } }),
+    'pi',
+  )
+  assert.equal(childEnv(packageCommandEnv(def, mine.env)).NPM_CONFIG_REGISTRY, 'r')
 })

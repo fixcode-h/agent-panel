@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Package, RefreshCw, Trash2 } from 'lucide-react'
-import type { InstalledPackage } from '@shared/cli-spec'
+import { packageIdentity, type InstalledPackage } from '@shared/cli-spec'
 import type { CliDefinition } from '@shared/clis'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -8,11 +8,13 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 
 type Action = 'install' | 'remove' | 'update' | 'updateAll'
 
 /**
- * CLI 自己的扩展包（例如 Pi 的 pi install）：列表读 CLI 的配置文件，装、删、更新跑 CLI 的命令。
+ * CLI 自己的插件（扩展包，例如 Pi 的 pi install）：列表读 CLI 的配置文件，装、删、更新跑 CLI 的命令。
+ * 定义里推荐的包排在最前面、一键安装（Pi 第一个是联网搜索：面板不另做搜索，Pi 靠插件联网）。
  * 命令的输出原样显示，失败时用户能看到原因
  */
 export function CliPackages({ def }: { def: CliDefinition }) {
@@ -53,8 +55,62 @@ export function CliPackages({ def }: { def: CliDefinition }) {
     }
   }
   const spin = (action: Action, target = '') => busy?.action === action && busy.target === target
+  // 推荐的包装没装按去掉版本号的来源比：用户可能装的是 npm:x@1.2.0
+  const installed = new Set((list ?? []).map((p) => packageIdentity(p.source)))
   return (
     <div className="flex flex-col gap-2">
+      {spec.recommended.length > 0 && (
+        <>
+          <p className="text-footnote text-subtle">{t('推荐')}</p>
+          <Card as="ul" className="mb-2 flex flex-col divide-y rounded-lg" aria-label={t('推荐的插件')}>
+            {spec.recommended.map((r) => {
+              const has = installed.has(packageIdentity(r.source))
+              return (
+                <li key={r.source} className="flex items-start gap-2.5 px-3 py-2.5">
+                  <Package className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-body font-medium">{r.name}</span>
+                      {r.url ? (
+                        <a
+                          href={r.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-caption text-subtle hover:text-accent-text hover:underline"
+                        >
+                          {r.source}
+                        </a>
+                      ) : (
+                        <span className="font-mono text-caption text-subtle">{r.source}</span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-footnote leading-relaxed text-muted">{r.desc}</p>
+                    {r.note && <p className="mt-0.5 text-footnote leading-relaxed text-subtle">{r.note}</p>}
+                  </div>
+                  {has ? (
+                    <Badge tone="success" className="mt-0.5 shrink-0">
+                      {t('已安装')}
+                    </Badge>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="shrink-0"
+                      // 列表还没读到时不知道装没装，先不让点，免得把已装的再装一遍
+                      disabled={!list || !!busy}
+                      onClick={() => void run('install', r.source)}
+                      aria-label={t('安装 {name}', { name: r.name })}
+                    >
+                      {spin('install', r.source) && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      {t('安装')}
+                    </Button>
+                  )}
+                </li>
+              )
+            })}
+          </Card>
+        </>
+      )}
       <form
         className="flex items-center gap-2"
         onSubmit={(e) => {
@@ -76,7 +132,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
         </Button>
       </form>
       <div className="flex items-center text-footnote text-subtle">
-        {list && t('共 {n} 个', { n: list.length })}
+        {list && t('已装 {n} 个', { n: list.length })}
         {spec.updateAll && !!list?.length && (
           <button
             onClick={() => void run('updateAll')}
@@ -93,9 +149,9 @@ export function CliPackages({ def }: { def: CliDefinition }) {
       ) : !list ? (
         <p className="text-footnote text-subtle">{t('读取中…')}</p>
       ) : !list.length ? (
-        <p className="text-footnote text-subtle">{t('还没有装扩展包')}</p>
+        <p className="text-footnote text-subtle">{t('还没有装插件')}</p>
       ) : (
-        <Card as="ul" className="flex flex-col divide-y rounded-lg" aria-label={t('已装的扩展包')}>
+        <Card as="ul" className="flex flex-col divide-y rounded-lg" aria-label={t('已装的插件')}>
           {list.map((p) => (
             <li key={p.source} className="group flex items-center gap-2.5 px-3 py-2" title={p.target}>
               <Package className="h-3.5 w-3.5 shrink-0 text-accent-text" />

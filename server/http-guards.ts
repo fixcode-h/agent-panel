@@ -19,7 +19,7 @@ export function installHttpGuards(app: Hono) {
       ? 2048 * MB
       : p.startsWith('/api/bridge/')
         ? 40 * MB
-        : p.startsWith('/api/mcp/') || p.startsWith('/api/web-search/')
+        : p.startsWith('/api/mcp/')
           ? 16 * MB
           : 100 * MB
   app.use('/api/*', (c, next) =>

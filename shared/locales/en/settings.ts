@@ -987,13 +987,16 @@ export const EN_SETTINGS: Record<string, string> = {
   可以用: 'Ready',
   包的来源: 'Package source',
   全部更新: 'Update all',
-  还没有装扩展包: 'No packages installed',
-  已装的扩展包: 'Installed packages',
+  还没有装插件: 'No plugins installed',
+  已装的插件: 'Installed plugins',
+  '已装 {n} 个': '{n} installed',
+  推荐的插件: 'Recommended plugins',
+  '安装 {name}': 'Install {name}',
   '更新 {name}': 'Update {name}',
   '卸载 {name}': 'Uninstall {name}',
-  扩展包: 'Packages',
-  '包里可以有扩展、Skill、提示词模板和主题，装在 {file} 里。扩展会在本机执行代码，只装信得过的来源':
-    'Packages can bundle extensions, Skills, prompt templates and themes, and are recorded in {file}. Extensions run code on this machine, so only install sources you trust',
+  插件管理: 'Plugins',
+  '插件（扩展包）里可以有工具、Skill、提示词模板和主题，装在 {file} 里，装完下一轮对话生效。插件会在本机执行代码，只装信得过的来源':
+    'Plugins (packages) can bundle tools, Skills, prompt templates and themes, and are recorded in {file}. They take effect from the next chat turn. Plugins run code on this machine, so only install sources you trust',
   // 项目教训、全局教训
   '已选 {n} 条，可以继续对话让它改': '{n} selected. Keep chatting to have it revise them',
   把这个项目里换个项目也适用的教训提取出来:
@@ -1635,21 +1638,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '还没下载，在下面的列表里下载': 'Not downloaded yet; download one from the list below',
   '模型从 hf-mirror.com 下载，识别库从 npmmirror 下载。':
     'Models download from hf-mirror.com, the recognizer from npmmirror.',
-  '留空用默认地址 {url}': 'Leave empty to use {url}',
-  填自己实例的主机地址: "Your instance's host address",
-  '也可以填自己的网关或代理。': 'You can also enter your own gateway or proxy.',
-  '公共实例一般不开放 JSON 接口。只填主机就行（例如 https://searxng.example.com），/search 路径会自动补上。':
-    "Public instances usually don't expose the JSON API. Just the host is enough (e.g. https://searxng.example.com); /search is added automatically.",
-  搜索服务: 'Search service',
-  服务: 'Service',
-  这个服务要填密钥: 'This service needs a key',
-  不用密钥: 'No key needed',
-  'Claude Code、Codex、Command Code 用它们自带的搜索，不走这里。默认是 DeepSeek 官方搜索，要填 DeepSeek 的 API key 才能用，没填时搜索会直接报错，不会换成别的源。也可以换成自建的 SearXNG，或 Brave、Tavily。':
-    "Claude Code, Codex and Command Code use their own search and don't go through here. The default is DeepSeek's official search, which needs a DeepSeek API key; without one, searches fail with an error and never fall back to another source. You can also use a self-hosted SearXNG, or Brave or Tavily.",
-  '只存在本机，模型拿不到': "Stored only on this computer; models can't read it",
-  自定义地址: 'Custom URL',
-  '模型要用 web_search / web_fetch，还要在对应 Agent 的设置里打开「联网搜索」开关（默认关闭）。':
-    "For models to use web_search / web_fetch, also turn on “Web search” in that agent's settings (off by default).",
   高级: 'Advanced',
   切换后页面会重新加载: 'The page reloads after switching',
   对话和任务列表的最大宽度: 'Max width of chats and task lists',

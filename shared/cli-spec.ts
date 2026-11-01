@@ -104,12 +104,46 @@ export const CliPackages = z.object({
   updateAll: z.array(z.string()).optional(),
   /** 输入框的示例 */
   placeholder: z.string().default(''),
+  /**
+   * 装、删、更新时额外的环境变量，盖过设置开关带的：开关管的是执行时的行为，装包是用户自己点的。
+   * 例如 Pi 的「离线运行」带 PI_OFFLINE=1，pi update 在离线模式下什么都不做、照样退出码 0，这里清掉它
+   */
+  env: z.record(z.string(), z.string()).default({}),
+  /**
+   * 设置页列出来的推荐包，一键安装；第一项是最该装的（Pi 是联网搜索）。
+   * name、desc 是界面文案，按 i18n 翻译；note 写装完还要做什么（要密钥、要在终端里配置），没有就不写
+   */
+  recommended: z
+    .array(
+      z.object({
+        source: z.string(),
+        name: z.string(),
+        desc: z.string(),
+        note: z.string().default(''),
+        /** 介绍页（npm / GitHub），界面上点名字打开 */
+        url: z.string().default(''),
+      }),
+    )
+    .default([]),
 })
 export type CliPackages = z.infer<typeof CliPackages>
 /** 已装的一个包：source 是配置里写的，target 是交给命令用的（相对路径换成了绝对路径） */
 export interface InstalledPackage {
   source: string
   target: string
+}
+
+/**
+ * 包的来源去掉版本号后的样子，用来判断推荐的包装没装：用户可能装的是 npm:x@1.2.0 或 git:…@v1，
+ * 和推荐里写的 npm:x 是同一个包。npm 的作用域包名自己带 @（npm:@scope/x），只去掉名字后面那段
+ */
+export function packageIdentity(source: string): string {
+  const s = source.trim()
+  const npm = /^npm:(@[^/@\s]+\/[^@\s]+|[^@\s]+)(@.*)?$/.exec(s)
+  if (npm) return `npm:${npm[1].toLowerCase()}`
+  const git = /^(git:|https?:\/\/)(.+?)(\.git)?(@[^/@]*)?\/?$/i.exec(s)
+  if (git) return `git:${git[2].toLowerCase()}`
+  return s
 }
 
 /**
@@ -285,8 +319,8 @@ export function mcpConfig(
 }
 
 /**
- * 只在设置开关打开时才注入的扩展（McpSpec.extras）：Pi 的联网搜索就是这样接的，
- * 关着时文件不写、参数不加，CLI 里根本不会注册这两个工具。
+ * 只在设置开关打开时才注入的扩展（McpSpec.extras）：开关关着时文件不写、参数不加，
+ * CLI 里根本不会注册这些工具。
  * options 是 build options（含默认值），按「opt.<id>」判断；不传时一个都不注入
  */
 export function mcpExtras(
@@ -711,7 +745,16 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     options: spec.options.map((x) => ({ ...x, label: tr(x.label), hint: tr(x.hint) })),
     mcp: spec.mcp,
     mcpStore: spec.mcpStore,
-    packages: spec.packages && { ...spec.packages, placeholder: tr(spec.packages.placeholder) },
+    packages: spec.packages && {
+      ...spec.packages,
+      placeholder: tr(spec.packages.placeholder),
+      recommended: spec.packages.recommended.map((r) => ({
+        ...r,
+        name: tr(r.name),
+        desc: tr(r.desc),
+        note: tr(r.note),
+      })),
+    },
     auth: spec.auth && { ...spec.auth, accountNote: tr(spec.auth.accountNote) },
     spec: true,
   }
