@@ -160,6 +160,10 @@ const serverBuild = await build({
   legalComments: 'none',
   // 版本号写进服务端，设置里的「版本更新」靠它判断有没有新包
   define: {
+    // 打成 ESM 单文件后没有 __dirname / __filename：CommonJS 依赖（ssh2 在 Windows 上加载时就要用）
+    // 读到的是下面 banner 里按 server.mjs 位置算出来的值；自己声明了同名变量的模块不受影响
+    __dirname: '__bundleDirname',
+    __filename: '__bundleFilename',
     'process.env.NODE_ENV': '"production"',
     __APP_VERSION__: JSON.stringify(version),
     // 浏览器扩展的文件打进 server.mjs：从旧版本在线更新过来时包里的 extension 目录可能没被复制
@@ -188,7 +192,16 @@ const serverBuild = await build({
   // ssh2 可选的本机加速模块（.node、cpu-features）不打包：它在 try 里加载，找不到就用纯 JS 实现
   external: ['*.node', 'cpu-features'],
   // 依赖里有 CommonJS 模块（cross-spawn），给它一个 require
-  banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
+  banner: {
+    js: [
+      "import { createRequire as __cr } from 'node:module';",
+      "import { fileURLToPath as __fu } from 'node:url';",
+      "import { dirname as __dn } from 'node:path';",
+      'const require = __cr(import.meta.url);',
+      'const __bundleFilename = __fu(import.meta.url);',
+      'const __bundleDirname = __dn(__bundleFilename);',
+    ].join(' '),
+  },
   // 记下打进 server.mjs 的源文件，和前端一样按模块清单查演示内容
   metafile: true,
 })

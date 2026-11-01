@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { access, chmod, copyFile, mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import ssh2 from 'ssh2'
+import type { Client } from 'ssh2'
 import type { RemoteFrp } from '../shared/schema.ts'
 import { frpMappingError } from '../shared/remote.ts'
 import { stripAnsi } from '../shared/ansi.ts'
@@ -215,9 +215,11 @@ export interface DeployInput {
 
 export type DeployStep = 'connect' | 'download' | 'upload' | 'install' | 'done'
 
-type Conn = InstanceType<typeof ssh2.Client>
+type Conn = Client
 
-function connect(i: DeployInput): Promise<Conn> {
+async function connect(i: DeployInput): Promise<Conn> {
+  // 用到时才加载 ssh2：它加载时会做平台相关的初始化，没必要拖慢面板启动、也不该让启动因它失败
+  const { default: ssh2 } = await import('ssh2')
   return new Promise((resolve, reject) => {
     const c = new ssh2.Client()
     c.on('ready', () => resolve(c))
