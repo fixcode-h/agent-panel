@@ -65,6 +65,11 @@ test('提示：有工具时按文件的只给标题，没有工具时按预算�
   // 没有教训：有工具时只提醒怎么记，没工具时不占提示
   assert.equal(lessonsPrompt([], false), '')
   assert.match(lessonsPrompt([], true), /record_lesson/)
+  // 子任务只查不记：照样按文件查（project_lessons），不带记教训的说明；没有教训时不占提示
+  const helper = lessonsPrompt(ls, true, [], false)
+  assert.match(helper, /先把文件路径传给 project_lessons/)
+  assert.doesNotMatch(helper, /record_lesson/)
+  assert.equal(lessonsPrompt([], true, [], false), '')
 })
 
 test('提示有预算：条目再多也只给一部分全文，其余列标题', () => {
@@ -172,6 +177,13 @@ test('面板工具：只有项目里的调用有 project_lessons / record_lesson
   assert.equal(empty.isError, true)
   await callOrchTool(o, 'record_lesson', { title: '写进配置', rule: '说明', paths: ['src/**', ' '], tags: ['配置'] })
   assert.deepEqual(got, [{ title: '写进配置', rule: '说明', cause: '', paths: ['src/**'], tags: ['配置'] }])
+  // 子任务（lessons 没有 record）：只列 project_lessons；凭名字直接调 record_lesson 报错并说明交回结果
+  const helper = { ...o, lessons: { find: o.lessons!.find } } as typeof o
+  assert.ok(!orchTools(helper).some((x) => x.name === 'record_lesson'))
+  const refused = await callOrchTool(helper, 'record_lesson', { title: '写进配置', rule: '说明' })
+  assert.equal(refused.isError, true)
+  assert.match(refused.content[0].text, /交回的结果/)
+  assert.equal(got.length, 1)
 })
 
 test('冲突改写：带 replaces 改写那一条，旧版本留进 history，没给的字段沿用', () => {

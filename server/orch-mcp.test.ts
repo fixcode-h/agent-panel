@@ -6,6 +6,7 @@ import { runEngineTurn, type AgentCall, type EngineHost, type HelperSpec, type O
 import { activePlan, applyPlan } from '../shared/plan.ts'
 import { callOrchTool, orchHint, orchTools } from './orch-mcp.ts'
 import { askMcpApi, openAskBridge } from './ask-mcp.ts'
+import { PANEL_TOOL_NAMES } from '../shared/panel-tools.ts'
 
 const agent = (id: string, name: string): Agent => ({
   ...AgentInput.parse({ name }),
@@ -699,35 +700,315 @@ test('点名的角色不存在：报错，不落到默认「子任务」', async
   assert.equal(task.steps.filter((s) => s.parentId === '@chat').length, 0, '不是落到默认「子任务」派出去')
 })
 
-test('子对话的工具清单：计划、后台命令、收尾合并都在；子任务只有查状态、后台命令和传话', () => {
-  const namesOf = (o: object) => (orchTools(o as unknown as Orchestra) as { name: string }[]).map((x) => x.name)
-  // 用户报过：子对话里 `set_plan`、`run_background`、`submit_merge` 不可见时，模型只能改用普通命令跑验证
-  const child = namesOf({
-    self: '@chat',
-    hasMain: false,
-    child: true,
-    plans: true,
-    canSubmit: true,
-    canBackground: true,
-    canBeginEdit: true,
-    common: [],
+/**
+ * 面板工具按身份裁剪的快照：docs/modules/server-exec/README.md「面板工具按身份裁剪」照这张表写（README 不写个数）。
+ * 字段和 shared/engine.ts 的 makeOrchestra 一一对应，默认全关，每个身份只开 makeOrchestra 会给它开的；
+ * 下面的用例再拿真实 makeOrchestra 造的 Orchestra 核对其中几项，免得表里的字段组合和引擎各说各的。
+ * 加 / 删一个工具会让这里失败：按新清单改表，同一个提交把 README 那一节一起改（以前 README 五组数字全对不上）
+ */
+const okCb = async () => ({ ok: true, info: '' })
+const OFF = {
+  self: '@chat',
+  hasMain: false,
+  planner: false,
+  common: [],
+  helper: false,
+  plain: false,
+  autoReturn: false,
+  sharedState: false,
+  planning: false,
+  plans: false,
+  coordinator: false,
+  capabilities: false,
+  inlineEdit: false,
+  child: false,
+  claims: false,
+  canBackground: false,
+  canSubmit: false,
+  isolated: false,
+  canBeginEdit: false,
+  ueBuild: '',
+  parentOf: false,
+  peers: false,
+  lessons: undefined,
+  p4Split: undefined,
+  cherryPick: undefined,
+}
+const LESSONS = { find: async () => '', record: okCb }
+// 子任务只查教训不记（makeOrchestra 给子任务的 lessons 没有 record）
+const READ_LESSONS = { find: async () => '' }
+const toolNames = (o: object) => orchTools({ ...OFF, ...o } as unknown as Orchestra).map((x) => x.name)
+// 项目里的对话（顶层、子对话）共有的：chat=true、不是子任务、在项目里
+const CONV = { autoReturn: true, plans: true, canBackground: true, lessons: LESSONS }
+const TOP = { ...CONV, parentOf: true }
+const CHILD = { ...CONV, child: true, canSubmit: true }
+const BG = ['run_background', 'check_background', 'stop_background']
+const LESSON_TOOLS = ['project_lessons', 'record_lesson']
+const TAIL = ['spawn_agents', 'stop_subtask', 'send_message', 'read_messages']
+const COORD = ['list_conversations', 'create_conversation', 'send_to_conversation', 'stop_workflow']
+const CHILD_TOOLS = ['message_parent', 'suggest_next_step', 'submit_merge']
+
+const IDENTITIES: [string, object, string[]][] = [
+  ['Chat 页对话（plain）', { plain: true, autoReturn: true, canBackground: true }, BG],
+  [
+    '项目顶层·主理（canDelegate）',
+    { ...TOP, coordinator: true, peers: true },
+    [
+      'get_status',
+      ...BG,
+      'set_plan',
+      'finish_plan',
+      ...COORD,
+      'list_peers',
+      'message_peer',
+      'finish_child',
+      ...LESSON_TOOLS,
+      ...TAIL,
+    ],
+  ],
+  [
+    '项目顶层·主理 全开（canPlan + 就地改动 + 挂能力 + UE + P4 + cherry-pick）',
+    {
+      ...TOP,
+      coordinator: true,
+      peers: true,
+      planning: true,
+      inlineEdit: true,
+      capabilities: true,
+      ueBuild: 'parent',
+      p4Split: okCb,
+      cherryPick: okCb,
+    },
+    [
+      'get_status',
+      ...BG,
+      'set_plan',
+      'finish_plan',
+      'start_plan',
+      ...COORD,
+      'begin_inline_edit',
+      'end_inline_edit',
+      'use_capability',
+      'request_build',
+      'list_peers',
+      'message_peer',
+      'finish_child',
+      'p4_split_changelists',
+      'cherry_pick',
+      ...LESSON_TOOLS,
+      ...TAIL,
+    ],
+  ],
+  ['项目顶层·非统筹', TOP, ['get_status', ...BG, 'set_plan', 'finish_plan', 'finish_child', ...LESSON_TOOLS, ...TAIL]],
+  [
+    '项目顶层·非统筹 全开（按需开分支 + canPlan + 挂能力 + P4 + cherry-pick）',
+    { ...TOP, canBeginEdit: true, planning: true, capabilities: true, p4Split: okCb, cherryPick: okCb },
+    [
+      'get_status',
+      'begin_edit',
+      ...BG,
+      'set_plan',
+      'finish_plan',
+      'start_plan',
+      'use_capability',
+      'finish_child',
+      'p4_split_changelists',
+      'cherry_pick',
+      ...LESSON_TOOLS,
+      ...TAIL,
+    ],
+  ],
+  // 用户报过：子对话里 set_plan、run_background、submit_merge 不可见时，模型只能改用普通命令跑验证
+  [
+    '子对话·共用目录',
+    { ...CHILD, claims: true },
+    [
+      'get_status',
+      ...BG,
+      'set_plan',
+      'finish_plan',
+      ...CHILD_TOOLS,
+      'claim_files',
+      'release_files',
+      ...LESSON_TOOLS,
+      ...TAIL,
+    ],
+  ],
+  [
+    '子对话·独立分支',
+    { ...CHILD, isolated: true },
+    ['get_status', ...BG, 'set_plan', 'finish_plan', ...CHILD_TOOLS, ...LESSON_TOOLS, ...TAIL],
+  ],
+  [
+    '子对话·要改时才开分支（还没开）',
+    { ...CHILD, canBeginEdit: true },
+    ['get_status', 'begin_edit', ...BG, 'set_plan', 'finish_plan', ...CHILD_TOOLS, ...LESSON_TOOLS, ...TAIL],
+  ],
+  [
+    '子对话·共用目录 全开（canPlan + 挂能力 + UE + P4）',
+    { ...CHILD, claims: true, planning: true, capabilities: true, ueBuild: 'child', p4Split: okCb },
+    [
+      'get_status',
+      ...BG,
+      'set_plan',
+      'finish_plan',
+      'start_plan',
+      'use_capability',
+      ...CHILD_TOOLS,
+      'request_build',
+      'claim_files',
+      'release_files',
+      'p4_split_changelists',
+      ...LESSON_TOOLS,
+      ...TAIL,
+    ],
+  ],
+  // 子任务只做派给它的那一件事：计划、收尾合并、开分支、找父对话、派子任务、记教训都不给它；后台命令的结果推回派它的对话
+  [
+    '子任务·对话派的',
+    { self: '@chat/sub/h1', helper: true, canBackground: true, lessons: READ_LESSONS },
+    ['get_status', ...BG, 'project_lessons', 'send_message', 'read_messages'],
+  ],
+  [
+    '子任务·工作流节点派的（工作流任务里）',
+    { self: 'a/sub/h1', helper: true, sharedState: true, lessons: READ_LESSONS },
+    ['get_status', 'project_lessons', 'read_state', 'write_state', 'send_message', 'read_messages'],
+  ],
+  [
+    '工作流节点（工作流任务里）',
+    { self: 'a', sharedState: true, lessons: LESSONS },
+    [
+      'get_status',
+      ...LESSON_TOOLS,
+      'read_state',
+      'write_state',
+      'spawn_agents',
+      'stop_subtask',
+      'wait_agents',
+      'send_message',
+      'read_messages',
+    ],
+  ],
+  [
+    '工作流节点（子对话 start_plan 跑的，共用目录）',
+    { self: 'a', sharedState: true, lessons: LESSONS, canBackground: true, child: true, canSubmit: true, claims: true },
+    [
+      'get_status',
+      ...BG,
+      ...CHILD_TOOLS,
+      'claim_files',
+      'release_files',
+      ...LESSON_TOOLS,
+      'read_state',
+      'write_state',
+      'spawn_agents',
+      'stop_subtask',
+      'wait_agents',
+      'send_message',
+      'read_messages',
+    ],
+  ],
+]
+
+/**
+ * 按 server/tasks/run.ts 的接线造宿主，只给这个身份 run.ts 会给的回调：coordinatorRole 才有 peers，
+ * 子对话才有 messageParent / submitMerge / claimFiles，顶层才有 finishChild，chat 任务才有 runBackground，
+ * 有项目才有 lessons。run.ts 改了接线这里不会自己失败，改那边时对照着改
+ */
+function identityHost(op: { parent?: boolean; delegate?: boolean; mode?: 'chat' | 'workflow'; plain?: boolean }) {
+  const seen = new Map<string, Orchestra>()
+  const mk = (id: string, name: string, extra: object = {}): Agent => ({
+    ...AgentInput.parse({ name, ...extra }),
+    id,
+    createdAt: '',
+    updatedAt: '',
   })
-  for (const n of [
-    'set_plan',
-    'finish_plan',
-    'run_background',
-    'submit_merge',
-    'begin_edit',
-    'message_parent',
-    'suggest_next_step',
-  ])
-    assert.ok(child.includes(n), `子对话能用 ${n}`)
-  // 子任务只做派给它的那一件事：计划、收尾合并、开分支、找父对话都不给它
-  const helper = namesOf({ self: '@chat/sub/h1', hasMain: false, helper: true, canBackground: true, common: [] })
-  for (const n of ['set_plan', 'finish_plan', 'submit_merge', 'begin_edit', 'message_parent', 'spawn_agents'])
-    assert.ok(!helper.includes(n), `子任务没有 ${n}`)
-  assert.ok(helper.includes('run_background'), '子任务也能用后台命令：结果推回派它的对话')
-  assert.ok(helper.includes('send_message'), '子任务能和其他节点传话')
+  const w = Workflow.parse({
+    id: 'wf1',
+    createdAt: '',
+    updatedAt: '',
+    name: '单节点',
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [{ id: 'a', title: '实现', agentId: 'w', instructions: '写代码。' }],
+        edges: [
+          { id: 'e1', from: 'start', to: 'a' },
+          { id: 'e2', from: 'a', to: 'end' },
+        ],
+      },
+    ],
+  })
+  const mode = op.mode ?? 'chat'
+  const flow = mode === 'workflow' ? w : undefined
+  const projectId = op.plain ? '' : 'p'
+  const task = {
+    ...newTask({ projectId, mode, prompt: '做', workflowId: flow ? 'wf1' : '' } as never, flow, '', 'T'),
+    id: 'T',
+    agentId: mode === 'chat' ? 'exec' : '',
+    parentTaskId: op.parent ? 'P' : undefined,
+  } as unknown as Task
+  const coordinatorRole = !op.parent && !!op.delegate && !!projectId
+  const host = {
+    task,
+    agents: [mk('exec', '执行', { canDelegate: !!op.delegate }), mk('w', '开发')],
+    workflows: [w],
+    workflow: flow,
+    prompt: '做',
+    changed: () => {},
+    newId: () => Math.random().toString(36).slice(2),
+    messageParent: op.parent ? okCb : undefined,
+    submitMerge: op.parent ? okCb : undefined,
+    finishChild: op.parent || !projectId ? undefined : okCb,
+    peers: coordinatorRole ? async () => [] : undefined,
+    messagePeer: coordinatorRole ? okCb : undefined,
+    runBackground: mode === 'chat' ? okCb : undefined,
+    claimFiles: op.parent ? () => ({ ok: true, info: '' }) : undefined,
+    releaseFiles: op.parent ? () => ({ ok: true, info: '' }) : undefined,
+    lessons: projectId ? { list: async () => [], globals: async () => [], record: okCb } : undefined,
+    listConversations: async () => [],
+    // 对话 / 节点第一次被调用时记下它的 Orchestra，再派一个子任务把子任务的也记下来
+    runAgent: async (call: AgentCall) => {
+      const o = call.orch!
+      const sub = call.step?.slot === 'sub'
+      const key = `${o.self.startsWith('@chat') ? 'chat' : 'node'}${sub ? '-helper' : ''}`
+      if (!seen.has(key)) {
+        seen.set(key, o)
+        if (!sub && !o.plain) await callOrchTool(o, 'spawn_agents', { tasks: [{ title: '查', instructions: '查' }] })
+        if (key === 'node') await callOrchTool(o, 'wait_agents', { seconds: 3 })
+      }
+      return { ok: true, text: '好' }
+    },
+  } as unknown as EngineHost
+  return { host, seen }
+}
+
+test('面板工具按身份裁剪：每个身份的完整清单，真实 makeOrchestra 造的和表一致，名字都登记过', async () => {
+  for (const [who, o, want] of IDENTITIES) assert.deepEqual(toolNames(o), want, who)
+  const want = new Map(IDENTITIES.map(([who, , list]) => [who, list]))
+  const real = async (op: Parameters<typeof identityHost>[0]) => {
+    const { host, seen } = identityHost(op)
+    await runEngineTurn(host)
+    return (k: string) => orchTools(seen.get(k)!).map((x) => x.name)
+  }
+  const top = await real({ delegate: true })
+  assert.deepEqual(top('chat'), want.get('项目顶层·主理（canDelegate）'))
+  assert.deepEqual(top('chat-helper'), want.get('子任务·对话派的'))
+  assert.deepEqual((await real({}))('chat'), want.get('项目顶层·非统筹'))
+  assert.deepEqual((await real({ parent: true }))('chat'), want.get('子对话·共用目录'))
+  assert.deepEqual((await real({ plain: true }))('chat'), want.get('Chat 页对话（plain）'))
+  const flow = await real({ mode: 'workflow' })
+  assert.deepEqual(flow('node'), want.get('工作流节点（工作流任务里）'))
+  assert.deepEqual(flow('node-helper'), want.get('子任务·工作流节点派的（工作流任务里）'))
+  // 新工具要登记进名字总表，不然对话里显示成 mcp__panel-xxxx__ 这串原始名字（docs/lessons/messages.md）。
+  // 已停用的 @main（主 Agent）和有主 Agent 的节点也一起查：run_workflow、close_run、ask_main 现在没有身份拿得到
+  const dead = [
+    { self: '@main', planner: true, sharedState: true },
+    { self: 'a', hasMain: true },
+  ]
+  const all = new Set([...IDENTITIES.map(([, o]) => o), ...dead].flatMap(toolNames))
+  for (const n of all) assert.ok((PANEL_TOOL_NAMES as readonly string[]).includes(n), `${n} 没登记进 PANEL_TOOL_NAMES`)
 })
 
 test('Chat 页的对话（plain）：只有后台命令三件，说明只讲后台命令；没有后台命令时说明为空', () => {

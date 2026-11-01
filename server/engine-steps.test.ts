@@ -470,6 +470,35 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   )
   assert.match(pickP4[0], /「D:\/p4\/rel」[\s\S]*建一个对应的 pending，不 submit/)
   assert.doesNotMatch(deny[0], /## Cherry-pick/, '没设目标时不提')
+
+  // 派出的「版本控制」子任务：顶层派的不读父对话的推送授权（「允许直接推送」+「比角色设定优先」会让它顺手推送），
+  // 子对话派的照旧读子对话那份；别的子任务仍是一行 HELPER_POLICY
+  const helperPrompts = async (chat: Record<string, unknown>) => {
+    const got = new Map<string, string>()
+    const roles = [...agents, { ...agent('vcs', '版本控制'), origin: 'builtin:vcs' }, agent('qa', '测试验收')]
+    await promptsOf(chat, {
+      agents: roles,
+      policy: { push: 'allow', tools: [] },
+      runAgent: async (call) => {
+        if (call.step?.slot === 'sub') got.set(call.agentId, call.prompt)
+        else if (!got.size) {
+          const ids = call.orch!.spawn([
+            { title: '提交', instructions: '本地提交', agent: '版本控制' },
+            { title: '清理', instructions: '清理用例', agent: '测试验收' },
+          ]).ids
+          await call.orch!.wait(ids, 1000)
+        }
+        return { ok: true, text: '好了' }
+      },
+    })
+    return got
+  }
+  const top = await helperPrompts({})
+  assert.match(top.get('vcs')!, /## 授权情况\n你是派出的「版本控制」子任务/)
+  assert.doesNotMatch(top.get('vcs')!, /允许直接推送」，这就是用户的授权|比角色设定、技能里/)
+  assert.match(top.get('qa')!, /## 授权情况\n推送、创建 PR、合并主干、P4 submit、合回原分支都不归子任务/)
+  const kidVcs = (await helperPrompts({ parentTaskId: 'parent' })).get('vcs')!
+  assert.match(kidVcs, /## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内/)
 })
 
 test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也用同一份 globs', async () => {

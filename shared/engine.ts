@@ -556,10 +556,11 @@ export interface Orchestra {
   /** 本次运行的共享状态：读快照 / 写一个键 */
   readState(): string
   writeState(key: string, value: string): { ok: boolean; info: string }
-  /** 项目教训：按文件 / 关键词 / 标签取全文、记一条；不在项目里时没有 */
+  /** 项目教训：按文件 / 关键词 / 标签取全文、记一条；不在项目里时没有。子任务只读不记（record 为空）：
+   * 它不和用户对话、常并行多只，值得记的交回派它的对话决定，免得各记一条重复、口径不一的 */
   lessons?: {
     find(files: string[], opts?: LessonQuery): Promise<string>
-    record(input: LessonInput): Promise<{ ok: boolean; info: string }>
+    record?(input: LessonInput): Promise<{ ok: boolean; info: string }>
   }
   /** P4 工作区：按文件类型把改动分进各自的 pending（面板执行，不是 P4 项目时没有） */
   p4Split?: EngineHost['p4Split']
@@ -1461,13 +1462,18 @@ ${
 /** 子任务（「版本控制」以外）读到的授权说明：推送和收尾都归派它的对话，整段授权和收尾流程不用给它 */
 const HELPER_POLICY =
   '## 授权情况\n推送、创建 PR、合并主干、P4 submit、合回原分支都不归子任务：不执行、不询问用户，做完交回结果即可。'
+/** 顶层派出的「版本控制」子任务：给整段父对话授权时「允许直接推送」加「比角色设定优先」会让它顺手推送并合并主干 */
+const VCS_HELPER_POLICY =
+  '## 授权情况\n你是派出的「版本控制」子任务：本地提交、pending 分桶和派单里交代的合并照常做；推送、创建 PR、合并主干、P4 submit 不归你，不执行、不询问用户，由派你的对话按它的授权做。'
 
 /**
  * 节点 / 子任务共用的开头。helper：派出的子任务（不含「版本控制」）——授权和收尾、合并流程是写给要交付的对话的，
  * 子任务拿到整段只会多读上千字，父对话允许推送时还会读到「做完就推送并合并主干」
  */
-function commonPart(host: EngineHost, w?: Workflow, chat = false, helper = false) {
+function commonPart(host: EngineHost, w?: Workflow, chat = false, helper = false, vcsHelper = false) {
   const req = requestParts(host.task)
+  // 子对话派的「版本控制」照旧读子对话那份授权（本来就不推）
+  const policy = helper ? HELPER_POLICY : vcsHelper && !host.task.parentTaskId ? VCS_HELPER_POLICY : policyPart(host)
   return [
     req.head,
     // 放在前面：同一个任务里各个节点提示词的开头都一样，按前缀匹配缓存的模型服务能多命中一段
@@ -1477,7 +1483,7 @@ function commonPart(host: EngineHost, w?: Workflow, chat = false, helper = false
     // 对话（含它派出的子任务）用不到共享状态：对话里跑过 start_plan 后 task.runs 会留着上一次运行，
     // 注入旧状态会让模型去调根本没注册的 read_state / write_state
     chat ? '' : statePart(host.task),
-    [helper ? HELPER_POLICY : policyPart(host), docRootText(host.policy?.docs)].filter(Boolean).join('\n\n'),
+    [policy, docRootText(host.policy?.docs)].filter(Boolean).join('\n\n'),
     goalPart(host),
     rulesPart(host),
     searchPart(host),
@@ -3306,7 +3312,7 @@ function makeOrchestra(
       ? {
           find: async (files, opts) =>
             findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? [], opts),
-          record: (input) => host.lessons!.record(input),
+          record: helper ? undefined : (input) => host.lessons!.record(input),
         }
       : undefined,
     p4Split: host.p4Split,
@@ -3743,12 +3749,13 @@ async function runHelper(
     step.startedAt = now()
     host.changed(true)
     const role = host.agents.find((a) => a.id === step.agentId)
+    const vcs = role?.origin === VCS_ORIGIN
     const reviewing = reviewsCode(role)
     const review = await reviewPart(host, step, spec)
     const parts = [
       // 评审代码只要需求和必须遵守的规则：搜索范围、编译和收尾、授权这些段落是写给要动手的角色的，
       // 给评审只会引着它去搜项目、跑检查（ADR 0013）
-      ...(reviewing ? reviewCommonPart(host) : commonPart(host, ctx.workflow, !!ctx.chat, role?.origin !== VCS_ORIGIN)),
+      ...(reviewing ? reviewCommonPart(host) : commonPart(host, ctx.workflow, !!ctx.chat, !vcs, vcs)),
       `${NODE_PART}\n你是「${isMainStep(parent) ? '主 Agent' : parent.title}」派出的子 Agent，负责其中一部分：${step.title}`,
       step.session
         ? `## 接着上一次做\n这是你之前那个会话的延续（上一次是「${host.task.steps.find((s: TaskStep) => s.id === step.session)?.title ?? step.session}」）：之前读过的文档和代码、给过的意见都还在上下文里，不用从头再读，只看这次交给你的增量和要确认的事。`
@@ -4323,7 +4330,9 @@ export async function runConversationTurn(host: EngineHost, who: string) {
           prompt,
           // 只发了增量时带上完整的：runner 续不上会话、开了新会话时改用它
           ...(first && delta ? { fresh: full } : {}),
-          ...(first && !host.prewarm ? { nextPrompt, onInput, onCompacted } : {}),
+          // 预热也给：预热那一轮发的是完整提示（live 就是它），用户的第一条消息经 wait_user_message 或保活交进来时
+          // 同样按当前状态只补变了的段落，不然原样交过去，没有「## 用户这次的消息」，计划、收件箱也停在预热那一刻
+          ...(first ? { nextPrompt, onInput, onCompacted } : {}),
           ...(first ? {} : { carry: true }),
           // 会话键就是 Agent id；选了「无」时用空字符串，runner 仍然按对话处理
           sessionKey: who,
@@ -4337,7 +4346,8 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       // 记下这个会话已经有了哪些段落：跑完或被停下的算收到了（停下时 CLI 已经读过这一轮）；报错的不记，
       // 可能根本没交到 CLI，下一轮照旧补发。会话 id 取 runner 跑完后的（续不上开了新会话时，新会话收到的是 fresh）
       // 这一轮里压缩过（含手动压缩：那一轮只发了压缩命令，规则根本没发）：不记，下一轮发完整提示
-      if (first && !host.prewarm && live && task.sessions[who] && (r.ok || r.stopped))
+      // 预热同样记：它发的是完整提示，之后在这个进程里收的消息也都按 live 补过段落，会话里有的就是 live 这份
+      if (first && live && task.sessions[who] && (r.ok || r.stopped))
         task.promptSent = rememberSent(task.promptSent, who, { ...live, session: task.sessions[who] })
       first = false
       if (!r.ok) {
