@@ -6,9 +6,9 @@ paths: shared/builtin/**, shared/engine.ts, server/tasks/run.ts, shared/assist.t
 
 ## 改提示词或文案前先搜断言
 
-- 规则：改给 Agent 的提示词、角色设定、界面文案前，先 `grep` 一下 `scripts/e2e.mjs` 和 `server/*.test.ts` 里有没有断言原句，一起改。
-- 起因：baffddd、875a11b、ab95653 都是改了提示词、测试还断言旧写法。
-- 防线：`npm run test:e2e`。
+- 规则：改给 Agent 的提示词、角色设定、界面文案前，先 `grep` 一下 `scripts/e2e/`、`scripts/ui/` 和 `server/*.test.ts` 里有没有断言原句（界面检查常按按钮、分段的名字找元素），一起改；改了界面文字要把用到它的界面分片都复跑，不只跑自己加断言的那片。
+- 起因：baffddd、875a11b、ab95653 都是改了提示词、测试还断言旧写法；86dc598c 把角色页分段缩成「基本 · N」，`scripts/ui/06-settings-agent.mjs` 还按 `/^基本角色/` 找，CI 界面检查失败。
+- 防线：`npm run test:e2e`、`node scripts/ui-check.mjs`。
 
 ## 提示词要求 Agent 在一个回合里做完
 
