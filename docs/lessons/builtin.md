@@ -29,3 +29,9 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 - 规则：角色参数的取值存在副本的 `default` 里，只改内置定义不会影响已装的副本（分不清用户关掉的和旧默认）。改必备角色的参数默认值时，在 `shared/builtin/core.ts` 的 `DEFAULT_CHANGES` 加一条，启动时只升级一次并记进 `upgrades`。
 - 起因：89dbf5a 把文档角色「写 Bug 记录」改成默认开，用户界面上还是关的。
 - 防线：`server/builtin.test.ts`。
+
+## 能力正文写禁令和「问用户」时按调用者分开写
+
+- 规则：能力和通用角色的正文会被父对话就地、子对话、派出的子 Agent、工作流节点同时读到，模板分不出调用者。写「不推送」「不执行」「用提问工具问用户」时按这几种调用者分开写：派出的子 Agent 不能问（「提问」关着时会被自动回答成直接继续），要确认的交回派它的一方；推送授权不写死在正文，由 engine 按调用者给（`policyPart` / `HELPER_POLICY` / `VCS_HELPER_POLICY`）。临时文件按「截图和临时文件放哪」放对话目录，不写死盘符或项目里的临时目录。
+- 起因：审计发现（df820f2 起）「版本控制」写死「你不执行」，父对话就地用时和授权段打架；顶层派出的版本控制子任务拿到整段「允许直接推送」会顺手推送；「清理用例」让子任务提问，被自动回答后可能直接删。
+- 防线：`server/core-agents.test.ts`（版本控制、清理用例、临时目录断言）、`server/engine-steps.test.ts`「推送由父对话决定」里的子任务授权段。

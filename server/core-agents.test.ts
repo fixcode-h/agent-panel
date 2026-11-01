@@ -139,6 +139,15 @@ test('通用约束：已授权的操作照做；统筹不再另立一份授权�
   assert.match(rules, /不要自行换成更保守的做法（改走 PR、只提交不推送）/)
   const orch = BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions
   assert.doesNotMatch(orch, /推送、PR、submit 要用户明确授权/, '授权规则只在通用约束里写一份')
+  // 「版本控制」正文父对话就地用、子对话 / 子任务 / 节点都会读到：推送禁令按调用者分开写，父对话按「授权情况」做
+  const vcs = BUILTIN_AGENTS.find((a) => a.key === 'vcs')!.agent.instructions
+  for (const commit of ['本地提交', '只检查']) {
+    const text = renderTemplate(vcs, { vcs: 'git', branch: '独立工作树', merge: '只提交不合并', commit })
+    assert.match(text, /你在子对话里、是派出的子 Agent 或工作流节点时：不执行、不询问用户.*不替父对话合并到主干/)
+    assert.match(text, /完成标准是「已合回父对话所在的分支」/)
+    assert.match(text, /父对话自己就地用这个能力时：推不推、要不要先问用户，按提示词里的「授权情况」做/)
+    assert.doesNotMatch(text, /不 push|你不合、不推|不 submit。/, '不再有不分调用者的推送禁令')
+  }
 })
 
 test('派单纪律：事务性动作合并派一次、纯执行给低档、标题与正文各写各的范围', () => {
@@ -176,6 +185,10 @@ test('调研、评审：可见进度压成一句话、同一批工具一起发�
   assert.match(role('explorer'), /每批工具发出前那一句目标照旧要说/)
   assert.match(role('explorer'), /同一批工具一起发出去/)
   assert.match(role('explorer'), /不要只回一句「我先读取…」就结束回合/)
+  // 临时文件跟「截图和临时文件放哪」（server/task-files.ts）走对话目录，不写死盘符或项目里的临时目录
+  assert.match(role('explorer'), /把临时脚本和数据写进对话目录（见「截图和临时文件放哪」/)
+  assert.match(role('uiqa'), /没有约定就放对话目录的 screenshots\//)
+  for (const b of BUILTIN_AGENTS) assert.doesNotMatch(b.agent.instructions, /C:\/tmp|项目根的 \.tmp\//, b.key)
   assert.doesNotMatch(role('reviewer'), /过程里不要逐条播报/)
   assert.match(role('reviewer'), /不要为一句「我先读一下」单独占一轮/)
 })
@@ -554,6 +567,10 @@ test('测试验收：多了「设计用例」「补测试」两种做法，默�
   assert.match(clean, /被更强的用例完全覆盖/)
   assert.match(clean, /用户报过的 Bug 的回归用例/)
   assert.doesNotMatch(clean, /## 先读项目配置的测试步骤/, '清理用例不跑整套验收')
+  // 派出的子 Agent 不能问用户（提问开关关着时还会被自动回答成「直接继续」）：交回候选表，确认结果由派它的一方 resume 交回
+  assert.match(clean, /你是派出的子 Agent（结果交回派你的 Agent）时不问用户：交回这张表就结束这一轮.*（resume）/)
+  assert.match(clean, /就地用、或者是工作流节点时，用提问工具问用户「全部删 \/ 只删其中几条 \/ 都不删」/)
+  assert.match(clean, /提问被自动回答（让你按自己的判断继续）时同样不删/)
   assert.match(BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions, /用「清理用例」：它先交候选表/)
   // 执行角色知道什么时候派它设计用例
   const worker = renderTemplate(BUILTIN_AGENTS.find((a) => a.key === 'worker')!.agent.instructions, { mode: '自动' })
