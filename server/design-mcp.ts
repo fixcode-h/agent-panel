@@ -407,7 +407,7 @@ const TOOLS = [
     name: 'get_layout',
     description:
       '不截图、直接算出控件在画布上的位置和大小（设计稿像素，x,y 是左上角，含 RenderTransform），和 screenshot 的控件位置表同一个口径，页面没打开也能用。in 写子控件名看子控件，names 只看这几个控件。' +
-      '带「≈」的是按字宽估出来的（文字、由文字撑开的容器，以及被它们推着走的控件），可能差几个像素，要精确时再用 screenshot 核对。只支持游戏 UI（UMG），网页设计用 screenshot。',
+      '带「≈」的是按字宽估出来的（文字、由文字撑开的容器，以及被它们推着走的控件），可能差几个像素，要精确时再用 screenshot 核对。网页设计按桌面宽度算（平板、手机的位置用 screenshot 看）。',
     inputSchema: obj({ in: IN, names: { type: 'array', items: { type: 'string' } } }),
   },
   {

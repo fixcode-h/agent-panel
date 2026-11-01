@@ -561,6 +561,20 @@ await runShard('工作流条件与失败', async (api) => {
   assert.match(logText, /\[agent\] 启动 Command Code[\s\S]*command: /)
   assert.match(logText, /WARN  \[agent\] Command Code 连接中断，自动续接第 1 次/)
   assert.match(logText, /ERROR \[agent\] Command Code 执行失败/)
+  // Claude Code 自动压缩抖动：不直接判失败，先写一行警告、在原会话里续一轮让模型分段读取
+  let thrash = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'THRASH 读几个大文件',
+  })
+  thrash = await waitDone(thrash.id)
+  assert.equal(thrash.status, 'done', '压缩抖动后续一轮做完了')
+  const tc = calls().at(-1)
+  assert.ok(tc.args.includes('--resume') && /分段读取/.test(tc.input), '在原会话里续一轮，提示分段读取')
+  const warned = thrash.messages.find((m) => m.role === 'system' && /Autocompact is thrashing/.test(m.text))
+  assert.ok(warned?.alert && /续了一轮/.test(warned.text), '续之前的警告留着，续上后收成已恢复')
+  assert.ok(!warned.error, '续上后不再显示成错误')
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
   // 卡住的 CLI：没有输出先提醒一次，再过同样的时间自动停止；输出里看出是没登录，给出登录的方法
   await call('PUT', '/settings', { ...settings, idleTimeoutMinutes: 1 })
