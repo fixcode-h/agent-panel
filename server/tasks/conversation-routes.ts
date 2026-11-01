@@ -14,16 +14,8 @@ import { blockedStep, taskFlow, taskWorkflows } from '../../shared/flow.ts'
 import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
 import { settleWait } from '../../shared/plan.ts'
-import { kidsSkipNote, sortStoppedKids } from '../../shared/resume-kids.ts'
-import {
-  closeFlow,
-  dropEndNotes,
-  resumeNote,
-  newTask,
-  taskDeleted,
-  withAttachments,
-  withTaskModel,
-} from '../../shared/task.ts'
+import { kidsSkipNote, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
+import { closeFlow, dropEndNotes, newTask, taskDeleted, withAttachments, withTaskModel } from '../../shared/task.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
