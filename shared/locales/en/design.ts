@@ -792,6 +792,9 @@ export const EN_DESIGN: Record<string, string> = {
   '还有 {n} 处': '{n} more',
   '{name} 已经不在了': '{name} no longer exists',
   '已撤销这一轮的修改；撤销前的样子存在「版本」里': 'Undid this round. The state before undo is saved in Versions',
+  'AI 正在修改，画布暂时只读': 'The AI is editing. The canvas is read-only for now',
+  '画布太窄，先收起了 AI 对话；点左上角的对话按钮可以再打开':
+    'The canvas got too narrow, so the AI chat was collapsed. Use the chat button at the top left to open it again',
   未命名设计: 'Untitled design',
   'AI 刚改过这个设计，你刚才的修改没有存上；按撤销可以找回':
     'The AI just changed this design, so your latest edits were not saved. Press Undo to get them back',

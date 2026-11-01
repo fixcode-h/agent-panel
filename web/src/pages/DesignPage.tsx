@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { toast } from '@/lib/toast'
 import {
-  Check,
   ChevronDown,
   Clapperboard,
   Database,
@@ -103,7 +102,8 @@ import { Hierarchy, Palette } from '@/components/design/Hierarchy'
 import type { WidgetLayer, WidgetMenuActions } from '@/components/design/WidgetMenu'
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagePreview, ImagesPanel, readFile, type WidgetRef } from '@/components/design/ImagesPanel'
-import { designStages, type Stage, type StageId } from '@/lib/design-stages'
+import { designStages } from '@/lib/design-stages'
+import { StageSteps } from '@/components/design/StageSteps'
 import { ComponentsPanel } from '@/components/design/ComponentsPanel'
 import { VersionCompare, VersionsButton } from '@/components/design/Versions'
 import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/web'
@@ -407,6 +407,38 @@ function Designer({ id }: { id: string }) {
   // 控件树和对话栏可以拖动调整宽度，效果区占剩下的
   // 检查器默认 280：左边多了一条图标栏，比设计稿（300）收一点，把宽度留给夹在中间的画板
   const treePane = usePaneWidth('design-tree', 280, 220, 560)
+  // 窗口窄、两边面板都开着时画布会被挤到只剩一条（1024 宽时约 100px）：画布窄于 300 时先收起 AI 对话，并提示一次。
+  // 用户自己再打开就不再自动收，等画布宽回 480 以上才重新生效
+  const mainRef = useRef<HTMLElement>(null)
+  const autoFold = useRef(true)
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el) return
+    // 页面刚挂上、两边面板的宽度还没定下来时会短暂地很窄：停稳 300ms 再判断，免得一打开就把对话栏收掉
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const check = () => {
+      const w = el.clientWidth
+      if (w >= 480) autoFold.current = true
+      else if (w < 300 && autoFold.current) {
+        autoFold.current = false
+        setChatOpen((open) => {
+          if (open) toast(t('画布太窄，先收起了 AI 对话；点左上角的对话按钮可以再打开'))
+          return false
+        })
+      }
+    }
+    const ro = new ResizeObserver(() => {
+      clearTimeout(timer)
+      timer = setTimeout(check, 300)
+    })
+    ro.observe(el)
+    return () => {
+      clearTimeout(timer)
+      ro.disconnect()
+    }
+    // 主区域在加载完设计后才出现：设计换了重新挂
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, !!ed.doc])
   // 对话栏在画板左边，默认 320（照设计稿）；画板夹在两栏中间，对话栏太宽会把画板挤得很窄
   const chatPane = usePaneWidth('design-chat', 320, 280, 720)
 
@@ -1195,7 +1227,7 @@ function Designer({ id }: { id: string }) {
         </aside>
       )}
 
-      <main className="panel flex min-w-0 flex-1 flex-col">
+      <main ref={mainRef} className="panel flex min-w-0 flex-1 flex-col">
         {/* 画板标题行：@container 让它窄的时候（两边面板都开着）把次要按钮上的字收起来只留图标；
             实在放不下时横向滚动兜底，不把按钮挤成两行 */}
         <header className="@container flex h-[46px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2 [scrollbar-width:none]">
@@ -1383,6 +1415,16 @@ function Designer({ id }: { id: string }) {
             // 12px 是切换按钮离左边的距离（left-3），再留 8px 空隙
             style={{ '--board-switch-w': switchW ? `${switchW + 20}px` : '0px' } as React.CSSProperties}
           >
+            {/* AI 正在改树时画布只读（结构修改会被挡下）：在画布上说清楚，不让人以为拖不动是坏了 */}
+            {ed.aiEditing && (
+              <div
+                role="status"
+                className="pointer-events-none absolute bottom-14 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-canvas-bar px-3 py-1 text-footnote whitespace-nowrap text-canvas-fg shadow-pop"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t('AI 正在修改，画布暂时只读')}
+              </div>
+            )}
             <Viewport
               actions={actions}
               onRename={(wid) => {
@@ -1854,74 +1896,6 @@ function Designer({ id }: { id: string }) {
         onConfirm={() => void removeDesign()}
       />
     </div>
-  )
-}
-
-/**
- * 画板标题行左边的流程条：风格 → 原画 → 模板 → 界面 → 切图 → 导出（状态由 design-stages.ts 推出来）。
- * 以前只有「原画—界面」两步，而且没出过原画时整条都不显示，用户看不到完整流程。
- * 顺序不强制：点原画 / 模板切到原画面板，点界面 / 切图回到画布（切图再打开「图片」页签）；
- * 当前这一步高亮，悬停看下一步做什么；窄的时候（@container）只留当前这一步的名字，其余只剩圆点
- */
-function StageSteps({ stages, onPick }: { stages: Stage[]; onPick: (id: StageId) => void }) {
-  const cur = stages.find((s) => s.state === 'current' || s.state === 'busy')
-  return (
-    <nav aria-label={t('流程')} className="flex shrink-0 items-center gap-0.5">
-      {stages.map((s, i) => {
-        const on = s === cur
-        const done = s.state === 'done'
-        return (
-          <div key={s.id} className="flex items-center gap-0.5">
-            {i > 0 && <span aria-hidden className={cn('h-[1.5px] w-2.5', done ? 'bg-success' : 'bg-line-strong')} />}
-            <button
-              type="button"
-              aria-current={on ? 'step' : undefined}
-              data-stage={s.id}
-              data-state={s.state}
-              title={
-                s.state === 'skipped'
-                  ? t('{name}：跳过了', { name: s.label })
-                  : on
-                    ? t('下一步：{hint}', { hint: s.hint })
-                    : s.label
-              }
-              onClick={() => onPick(s.id)}
-              className={cn(
-                'flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] px-2 text-[0.8125rem] font-semibold whitespace-nowrap transition-colors',
-                on
-                  ? 'bg-panel text-fg shadow-[inset_0_1px_2px_rgb(0_0_0/0.08)]'
-                  : cn('hover:bg-sel', done ? 'text-fg' : 'text-subtle'),
-              )}
-            >
-              <span
-                className={cn(
-                  'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[0.625rem] tabular-nums',
-                  done
-                    ? 'bg-success text-on-primary'
-                    : on
-                      ? 'bg-fg text-bg'
-                      : s.state === 'skipped'
-                        ? 'text-subtle/70 shadow-[inset_0_0_0_1.5px_var(--line)]'
-                        : 'text-subtle shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
-                )}
-              >
-                {done ? (
-                  <Check className="h-3 w-3" strokeWidth={2.6} />
-                ) : s.state === 'busy' ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : s.state === 'skipped' ? (
-                  '–'
-                ) : (
-                  i + 1
-                )}
-              </span>
-              {/* 窄的时候只留当前这一步的名字 */}
-              <span className={cn(on ? '' : 'hidden @min-[760px]:inline')}>{s.label}</span>
-            </button>
-          </div>
-        )
-      })}
-    </nav>
   )
 }
 
