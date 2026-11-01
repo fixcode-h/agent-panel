@@ -27,6 +27,15 @@
   ],
   "efforts": [
     {
+      "id": "off",
+      "label": "关闭",
+      "off": true,
+      "env": {
+        "MAX_THINKING_TOKENS": "0",
+        "CLAUDE_CODE_EXTRA_BODY": "{\"thinking\":{\"type\":\"disabled\"}}"
+      }
+    },
+    {
       "id": "low",
       "label": "低"
     },
@@ -119,8 +128,9 @@
       "args": ["--model", "{model}"]
     },
     {
-      "if": "effort",
-      "args": ["--effort", "{effort}"]
+      "if": ["effort", "effort!=off"],
+      "args": ["--effort", "{effort}"],
+      "why": "关思考没有 --effort 的取值，靠 efforts 里 off 那一档的环境变量"
     },
     {
       "if": "permission=bypassPermissions",
@@ -360,6 +370,7 @@
     "en": {
       "不用 Claude Code 自带的记忆": "Turn off Claude Code's built-in memory",
       "Claude Code 的自动记忆按项目目录存，面板在同一个项目里开的所有对话共用，一个对话里的临时约定会带进别的对话。打开时关掉它（CLAUDE_CODE_DISABLE_AUTO_MEMORY=1），要长期记住的写进面板的项目教训": "Claude Code stores its auto memory per project folder, so every conversation the panel opens in the same project shares it and a one-off agreement in one conversation leaks into others. When on, it is turned off (CLAUDE_CODE_DISABLE_AUTO_MEMORY=1) and anything worth keeping long term goes into the panel's project lessons",
+      "关闭": "Off",
       "很高": "Extra high",
       "最高": "Max",
       "Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。": "Claude Code reads CLAUDE.md and .claude/CLAUDE.md on every start; CLAUDE.local.md holds personal notes and usually isn't committed. To share AGENTS.md with the other agents, add a line @AGENTS.md to CLAUDE.md.",

@@ -27,21 +27,21 @@
 }
 ```
 
-| 字段            | 说明                                                                      |
-| --------------- | ------------------------------------------------------------------------- |
-| `vendor`        | 厂商：`anthropic`、`openai`、`google`、`deepseek`、`moonshot`、`zhipu`……  |
-| `id`            | 模型 id，不带 `provider/` 前缀                                            |
-| `label`         | 显示名                                                                    |
-| `type`          | 模型类型：`flash`、`pro`、`max`、`plus`、`opus`、`reasoning`、`general`…… |
-| `version`       | 版本：`4`、`5.5`、`k3`；没有版本时留空                                    |
-| `protocols`     | 支持的协议：`anthropic`、`openai-responses`、`openai-chat`                |
-| `context`       | 上下文窗口（token）                                                       |
-| `maxOutput`     | 最大输出（token）                                                         |
-| `efforts`       | 可选的思考强度，取值和 CLI 的 efforts 一致；模型不支持思考时是空数组      |
-| `defaultEffort` | 这个模型默认的思考强度                                                    |
-| `tier`          | 模型等级：`high` 旗舰、`medium` 日常、`low` 快速便宜                      |
-| `aliases`       | 其他也能匹配到这条记录的写法                                              |
-| `source`        | 信息来源（官方文档地址）；AI 补全时会写                                   |
+| 字段            | 说明                                                                                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vendor`        | 厂商：`anthropic`、`openai`、`google`、`deepseek`、`moonshot`、`zhipu`……                                                                                   |
+| `id`            | 模型 id，不带 `provider/` 前缀                                                                                                                             |
+| `label`         | 显示名                                                                                                                                                     |
+| `type`          | 模型类型：`flash`、`pro`、`max`、`plus`、`opus`、`reasoning`、`general`……                                                                                  |
+| `version`       | 版本：`4`、`5.5`、`k3`；没有版本时留空                                                                                                                     |
+| `protocols`     | 支持的协议：`anthropic`、`openai-responses`、`openai-chat`                                                                                                 |
+| `context`       | 上下文窗口（token）                                                                                                                                        |
+| `maxOutput`     | 最大输出（token）                                                                                                                                          |
+| `efforts`       | 可选的思考强度，取值和 CLI 的 efforts 一致；模型不支持思考时是空数组；不写「关」，CLI 能关思考时面板自己补（见 [cli-config.md](./cli-config.md#关掉思考)） |
+| `defaultEffort` | 这个模型默认的思考强度                                                                                                                                     |
+| `tier`          | 模型等级：`high` 旗舰、`medium` 日常、`low` 快速便宜                                                                                                       |
+| `aliases`       | 其他也能匹配到这条记录的写法                                                                                                                               |
+| `source`        | 信息来源（官方文档地址）；AI 补全时会写                                                                                                                    |
 
 ## 匹配规则
 

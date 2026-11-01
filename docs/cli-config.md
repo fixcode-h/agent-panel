@@ -24,6 +24,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 接新 CLI（或给已有 CLI 加一种能力）时逐项过一遍，漏掉的项以前都返工过（见 [lessons/cli.md](./lessons/cli.md)）：
 
 1. **思考强度**：CLI 支持哪几档写进 `efforts`；强度由模型决定的写 `effortsFromModel`；会话中途不能换的写 `effortBoundSession`；
+   能真正关掉思考的那一档标 `"off": true`（Pi 的 `off`、Codex 的 `none`、Claude Code 的 `off`），没有参数、要靠环境变量的写在这一档的 `env`；只是「不带思考参数」、接口照样会思考的不算，不要列；
    `tiers` 三档各配好默认的模型和强度。不要在代码里按 CLI 名字补档位。
 2. **模型**：模型从哪读（`modelsFrom` 或内置列表），上下文和最大输出能不能从 CLI 拿到，拿不到的补进[模型目录](./model-catalog.md)。
 3. **写回 CLI 自己的配置**（`auth.api.edits`）：CLI 靠模型条目判断能力时，配上 `modelEfforts` / `modelReasoning` / `modelDefaultEffort` / `modelLimits` / `modelInput`，
@@ -49,7 +50,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `modelsRead`                      | 模型列表是运行 CLI 读出来的（例如 Codex 的 app-server）：界面上这组叫「{cli} 读取」，否则叫「{cli} 内置」                                                                                                                                                                                                                                   |
 | `extraArgsKeep`                   | 设置里的「额外参数」只保留这些参数（每个带一个值，长参数也认 `--x=值`），其余丢掉；例如 Codex 的 app-server 只认 `-c`、`--enable`、`--disable`。不写时全部保留                                                                                                                                                                              |
 | `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填；上下文窗口、最大输出和思考强度按[模型目录](./model-catalog.md)识别                                                                                                                                                                                                             |
-| `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                                                                                                                                                                                                                                                                |
+| `efforts`                         | 思考强度 `[{ "id", "label", "off", "env" }]`，不支持就不写；`off: true` 标出「关掉思考」那一档，`env` 是选了这一档时加的环境变量（值是 JSON 对象时和已有的同名变量合并），见下文「关掉思考」                                                                                                                                                |
 | `effortsFromModel`                | 思考强度跟着模型走：模型目录/配置里这个模型支持哪些就能选哪些；为 `true` 时不用 `efforts` 过滤                                                                                                                                                                                                                                              |
 | `effortBoundSession`              | 会话不支持中途换思考强度：换了强度也开新会话，把之前的对话带过去                                                                                                                                                                                                                                                                            |
 | `tiers`                           | 高、中、低三档默认的 `{ "model", "effort" }`                                                                                                                                                                                                                                                                                                |
@@ -427,7 +428,7 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 | `accountEdits`             | 切回账号时还原的配置文件                                                                                                                                                                                                    |
 | `wire`                     | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                                                                                                                   |
 | `baseUrl`                  | 协议 → 这个 CLI 要的接口地址写法，`{root}` 是去掉末尾 `/v1`、`/v1beta` 的地址：Anthropic SDK 自己拼 `/v1/messages`（Claude Code、Pi 写 `{root}`）；没写的协议原样用                                                         |
-| `thinkArgs`                | API 方式下这一轮带了思考强度（不是 off）时加的参数；Codex 对不认识的第三方模型默认不发 reasoning，靠 `model_supports_reasoning_summaries=true` 打开                                                                         |
+| `thinkArgs`                | API 方式下这一轮带了思考强度（不是 `off: true` 那一档）时加的参数；Codex 对不认识的第三方模型默认不发 reasoning，靠 `model_supports_reasoning_summaries=true` 打开                                                          |
 | `pruneProviders`           | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                                                                                                               |
 | `pruneModels`              | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                                                                                                                 |
 | `modelEfforts`             | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动                                                                                                          |
@@ -460,3 +461,18 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 | `models` / `name`      | 模型（字符串、数组、`[{ "id" }]` 或以模型名为键的对象都认）和名字的键                         |
 
 键都按顺序取第一个有值的；值写成 `$NAME`、`${NAME}`，或正好是一个设置了的环境变量名时取那个环境变量。面板自己写进去的 `agentpanel` 不算。
+
+## 关掉思考
+
+强度下拉里的「关」只给能真正让接口不思考的 CLI，定义里标 `"off": true`：
+
+- **Codex**：`none`，传 `-c model_reasoning_effort="none"`，turn/start 也带 `effort: "none"`。0.166 用 `codex exec` 用本机假接口抓过，发给 Responses 接口的是 `reasoning: {"effort": "none", ...}`；
+  这一档不加 `thinkArgs`（不打开思考摘要）。
+- **Pi**：`off`，传 `--thinking off`。
+- **Claude Code**：`off`，没有命令行参数，这一档不传 `--effort`，靠 `env`：`MAX_THINKING_TOKENS=0`（不带思考、也不加 clear_thinking 的上下文编辑）
+  加 `CLAUDE_CODE_EXTRA_BODY={"thinking":{"type":"disabled"}}`（2.1.316 把这个变量的 JSON 展开在请求体最后，盖过它自己算的 `thinking`）。
+  只设 `MAX_THINKING_TOKENS=0` 不够：请求里不带 `thinking` 字段，有的网关不带时默认会思考。用本机假接口抓过请求体，确认带的是 `thinking: {"type": "disabled"}`。
+  用户自己在环境变量里写了 `CLAUDE_CODE_EXTRA_BODY` 时合并进去，不覆盖。
+
+模型目录只记思考的各档、不记「关」：目录认识的模型只要能思考（`efforts` 不空），CLI 有 `off` 档时就补上这一档（`catalogEfforts`，`shared/clis.ts`），
+否则选了「关」执行前会被换成最近的思考档。CLI 自己报了模型能选哪几档时（Codex 账号方式的 `supportedReasoningEfforts`）按 CLI 报的来。

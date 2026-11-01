@@ -103,8 +103,8 @@ export interface CliDefinition {
     efforts?: string[]
     origin?: 'cli' | 'config'
   }[]
-  /** 支持的思考强度（从低到高）；为空表示不支持 */
-  efforts: { id: string; label: string }[]
+  /** 支持的思考强度（从低到高）；为空表示不支持。off 是「关掉思考」那一档，见 cli-spec.ts */
+  efforts: { id: string; label: string; off?: boolean; env?: Record<string, string> }[]
   /** 思考强度跟着模型走（模型目录/配置里这个模型有哪些就能选哪些），不按上面的全局列表过滤 */
   effortsFromModel?: boolean
   /** 高 / 中 / 低三档默认对应的模型和思考强度，设置里可以改 */
@@ -244,6 +244,53 @@ export interface CliDefinition {
 export const CLIS: CliDefinition[] = BUILTIN_SPECS.map((s) => specToDefinition(s as CliSpecInput))
 
 export const getCli = (id: string) => CLIS.find((c) => c.id === id)
+
+/** CLI 里「关掉思考」那一档的 id；没有这一档时是 undefined */
+export const offEffort = (def: Pick<CliDefinition, 'efforts'> | undefined) => def?.efforts.find((e) => e.off)?.id
+
+/** 是不是「关掉思考」那一档；按 CLI 定义判断，不按档位名字 */
+export const isOffEffort = (def: Pick<CliDefinition, 'efforts'> | undefined, effort: string | undefined) =>
+  !!effort && effort === offEffort(def)
+
+type Env = Record<string, string | undefined>
+
+/**
+ * 这一轮的强度要加的环境变量（定义里那一档的 env，例如 Claude Code 关思考）。
+ * 两边都是 JSON 对象时合并（用户自己在 CLAUDE_CODE_EXTRA_BODY 里写的别的字段不能被整个顶掉），否则这一档的值为准
+ */
+export function effortEnv(def: Pick<CliDefinition, 'efforts'> | undefined, effort: string | undefined, env: Env): Env {
+  const add = effort ? def?.efforts.find((e) => e.id === effort)?.env : undefined
+  if (!add) return env
+  const out: Env = { ...env }
+  for (const [k, v] of Object.entries(add)) out[k] = mergeJson(out[k], v)
+  return out
+}
+
+const asObject = (s: string | undefined) => {
+  try {
+    const v: unknown = s ? JSON.parse(s) : undefined
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function mergeJson(old: string | undefined, add: string) {
+  const a = asObject(old)
+  const b = asObject(add)
+  return a && b ? JSON.stringify({ ...a, ...b }) : add
+}
+
+/**
+ * 模型目录里的可选强度换成这个 CLI 能选的：只留 CLI 认识的 id；
+ * 目录只记思考的各档，模型能思考（列了档位）且 CLI 有「关」这一档时补上，不然选了「关」也会被换成最近的思考档
+ */
+export function catalogEfforts(def: Pick<CliDefinition, 'efforts'> | undefined, efforts: string[]) {
+  const allowed = def?.efforts.map((e) => e.id) ?? []
+  const list = allowed.length ? efforts.filter((e) => allowed.includes(e)) : efforts
+  const off = offEffort(def)
+  return off && list.length && !list.includes(off) ? [off, ...list] : list
+}
 
 /** 执行中的补充能不能交给正在跑的 CLI：有插话协议，或者没有协议但能用面板的 MCP 工具取（见 notes） */
 export const steerable = (cli: string | undefined) => {

@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { Hono } from 'hono'
-import { CLIS, type CliDefinition } from '../shared/clis.ts'
+import { CLIS, catalogEfforts, offEffort, type CliDefinition } from '../shared/clis.ts'
 import { RpcSpec } from '../shared/cli-spec.ts'
 import type { CliModel, CliModels } from '../shared/schema.ts'
 import { clampEffort, cliSettings } from '../shared/settings.ts'
@@ -509,14 +509,23 @@ async function claudeAuth(command: string, env: NodeJS.ProcessEnv): Promise<'acc
  * 用模型目录补齐 CLI 没有报告的项：上下文窗口、最大输出、可选思考强度和默认强度。
  * 目录里没有的模型保持原样，执行时按 1M / 128K 估算，思考强度交给 CLI 自己判断。
  */
-function withCatalog(models: CliModel[], entries: ModelCatalogEntry[], allowed: string[], api?: ApiConfig): CliModel[] {
+function withCatalog(
+  models: CliModel[],
+  entries: ModelCatalogEntry[],
+  def: CliDefinition,
+  api?: ApiConfig,
+): CliModel[] {
+  const off = offEffort(def)
   return models.map((m) => {
     const info = apiModelInfo(m.id, api, entries)
     if (!info.matched || !info.entry) return m
     const entry = info.entry
-    // 只保留这个 CLI 认识的强度 id；目录里有、CLI 没有的不往下拉里放
-    const efforts = allowed.length ? entry.efforts.filter((e) => allowed.includes(e)) : entry.efforts
-    const defaultEffort = efforts.includes(entry.defaultEffort) ? entry.defaultEffort : (efforts[0] ?? '')
+    // 只保留这个 CLI 认识的强度 id；目录里有、CLI 没有的不往下拉里放；CLI 能关思考时补上「关」
+    const efforts = catalogEfforts(def, entry.efforts)
+    // 目录的默认档不在列表里时退到最低的思考档，不默认关掉思考
+    const defaultEffort = efforts.includes(entry.defaultEffort)
+      ? entry.defaultEffort
+      : (efforts.find((e) => e !== off) ?? '')
     return {
       ...m,
       contextWindow: m.contextWindow ?? entry.context,
@@ -611,12 +620,7 @@ export async function cliModels(id: string, refresh = false, mode?: ModelsMode):
   if (!refresh && !unresolved && hit && Date.now() - hit.at < TTL) return hit.data
   const entries = await mergedModelCatalog().catch(() => [])
   const applyCatalog = (data: CliModels) => {
-    data.models = withCatalog(
-      uniq(data.models),
-      entries,
-      def.efforts.map((e) => e.id),
-      cs.api,
-    )
+    data.models = withCatalog(uniq(data.models), entries, def, cs.api)
     data.efforts = [...new Set(data.models.flatMap((m) => m.efforts ?? []))]
     return data
   }
@@ -709,15 +713,13 @@ export async function supportedEffort(id: string, model: string, effort?: string
   const catalog = await mergedModelCatalog().catch(() => [])
   const cs = cliSettings(await getSettings(), id)
   const hit = apiModelInfo(model, cs.api, catalog)
-  if (hit.matched && hit.entry) {
-    const allowed = CLIS.find((c) => c.id === id)?.efforts.map((e) => e.id) ?? []
-    known.set(model, allowed.length ? hit.entry.efforts.filter((e) => allowed.includes(e)) : hit.entry.efforts)
-  }
+  const def = CLIS.find((c) => c.id === id)
+  if (hit.matched && hit.entry) known.set(model, catalogEfforts(def, hit.entry.efforts))
   if (!known.size) return effort
   // 模型名可能写成完整的 id，也可能只有后半段（providers.json 里自己接的）
   const list = known.get(model) ?? known.get(model.slice(model.lastIndexOf('/') + 1))
   // 模型不认的强度换成最接近的那档（和设置页下拉里显示的一致），一档都不支持时不传
-  return !list ? effort : clampEffort(CLIS.find((c) => c.id === id)?.efforts.map((e) => e.id) ?? [], list, effort)
+  return !list ? effort : clampEffort(def?.efforts.map((e) => e.id) ?? [], list, effort)
 }
 
 /** 已经读过的模型列表（不触发读取）：执行任务时查上下文窗口用，不能为此再去跑一次 CLI */

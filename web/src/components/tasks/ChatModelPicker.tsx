@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Brain, Check, ChevronDown, Sparkles } from 'lucide-react'
 import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
-import { getCli, type CliDefinition } from '@shared/clis'
+import { getCli, isOffEffort, type CliDefinition } from '@shared/clis'
 import { apiModelIdFor } from '@shared/accounts'
 import { apiModelKey } from '@shared/model-catalog'
 import { useData } from '@/lib/data'
@@ -164,7 +164,7 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
           value={effortValue(def!, defEffort, modelEfforts(def!, run.model), run.effort)}
           options={efforts}
           onChange={(e) => onChange({ ...value, cli, effort: e })}
-          icon={(e) => <EffortIcon effort={e} />}
+          icon={(e) => <EffortIcon off={isOffEffort(def, e)} />}
           className="max-w-[160px]"
         />
       )}
@@ -184,25 +184,21 @@ export function useEffortOf() {
 }
 
 /** 思考强度前的大脑图标：关掉思考时变灰，开着的各档都用强调色（具体档位看旁边的字） */
-function EffortIcon({ effort }: { effort: string }) {
+function EffortIcon({ off }: { off: boolean }) {
   return (
-    <Brain
-      aria-hidden
-      className={cn('h-3.5 w-3.5 shrink-0', effort === 'off' ? 'text-subtle' : 'text-accent')}
-      strokeWidth={2.2}
-    />
+    <Brain aria-hidden className={cn('h-3.5 w-3.5 shrink-0', off ? 'text-subtle' : 'text-accent')} strokeWidth={2.2} />
   )
 }
 
 /** 模型按钮上的那一串：星芒图标 + 加粗模型名 + 大脑图标 + 强度字（输入框工具条、只读的角色模型共用） */
-function ModelFace({ model, effort }: { model: string; effort: string }) {
+function ModelFace({ model, effort, off }: { model: string; effort: string; off: boolean }) {
   return (
     <>
       <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2.2} />
       <span className="min-w-0 truncate font-semibold text-fg">{model}</span>
       {effort && (
         <>
-          <EffortIcon effort={effort} />
+          <EffortIcon off={off} />
           <span className="shrink-0 text-subtle">{effortShort(effort)}</span>
         </>
       )}
@@ -253,7 +249,7 @@ export function RoleModelBadge({ agent }: { agent: { cli: string; model: string;
       className={FACE}
       title={t('模型和思考强度跟着角色设置：{model}', { model: [r.model, effort].filter(Boolean).join(' · ') })}
     >
-      <ModelFace model={name} effort={effort} />
+      <ModelFace model={name} effort={effort} off={isOffEffort(def, effort)} />
     </span>
   )
 }

@@ -373,7 +373,21 @@ export const CliSpec = z.object({
    */
   modelsRead: z.boolean().default(false),
   models: z.array(z.object({ id: z.string(), label: z.string(), isDefault: z.boolean().optional() })).default([]),
-  efforts: z.array(z.object({ id: z.string(), label: z.string() })).default([]),
+  /**
+   * off：这一档是「关掉思考」（Pi 的 off、Codex 的 none）。模型目录只记思考的各档，不记关；
+   * 目录认识的模型只要能思考，就照样给这一档。CLI 没有能真正关掉思考的写法时不要列这一档。
+   * env：选了这一档时加的环境变量（Claude Code 关思考没有命令行参数，靠环境变量）；值是 JSON 对象时和已有的同名变量合并
+   */
+  efforts: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        off: z.boolean().optional(),
+        env: z.record(z.string(), z.string()).optional(),
+      }),
+    )
+    .default([]),
   /** 思考强度跟着模型走，不用 efforts 的全局列表过滤 */
   effortsFromModel: z.boolean().default(false),
   /** 会话不支持中途换思考强度：换了强度也开新会话 */
@@ -695,7 +709,12 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     command: spec.command,
     versionArgs: spec.versionArgs,
     models: spec.models.map((m) => ({ ...m, label: tr(m.label) })),
-    efforts: spec.efforts.map((e) => ({ id: e.id, label: tr(e.label) })),
+    efforts: spec.efforts.map((e) => ({
+      id: e.id,
+      label: tr(e.label),
+      ...(e.off ? { off: true } : {}),
+      ...(e.env ? { env: e.env } : {}),
+    })),
     effortsFromModel: spec.effortsFromModel,
     effortBoundSession: spec.effortBoundSession,
     tiers: { high: tier('high'), medium: tier('medium'), low: tier('low') },
