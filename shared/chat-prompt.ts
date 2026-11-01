@@ -1,14 +1,13 @@
 /**
  * Chat 模式（Chat 页没有项目的顶层对话）一轮的提示词（ADR 0038）。
  * 不套项目对话那一整套：没有授权情况（没有项目就没有推送策略）、搜索排除、工作流、执行方式、子对话、
- * 面板计划和收尾。以前共用一套时 Chat 页读到「调用面板工具 ask_push」「你是项目对话」，可这些工具和身份都不存在。
- * 总结卡（7f2a4f86 给用户做的）照样要：去掉只对项目对话成立的「派单那一轮」。
+ * 面板计划、收尾和总结卡（用户 2026-11-01 定：Chat 页不要总结卡）。以前共用一套时 Chat 页读到「调用面板工具 ask_push」
+ * 「你是项目对话」，可这些工具和身份都不存在。
  * 计划用 CLI 自带的待办 / 计划（TodoWrite、Codex 的 plan 这类）：只有 CLI 定义写了 todos 的才会被面板解析显示，
  * 其余的让模型在回复里列；面板计划只在 Agent 模式。放在单独的文件里：engine.ts 到了行数上限
  */
 import type { EngineHost } from './engine.ts'
 import { promptLangRules } from './prompt-lang.ts'
-import { summaryCardRules } from './summary-card.ts'
 
 /** 能用后台命令时说清楚什么时候用：不说的话模型照样同步跑长命令，一直卡着（项目对话和 Chat 模式共用） */
 export function backgroundPart(host: Pick<EngineHost, 'runBackground'>) {
@@ -42,6 +41,5 @@ export function chatConversationPrompt(
     ...extra,
     backgroundPart(host),
     chatModePart(!!host.cliTodos),
-    summaryCardRules(undefined, false, true),
   ].filter(Boolean)
 }

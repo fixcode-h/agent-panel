@@ -390,7 +390,7 @@ await runShard('本机请求与设置', async (api) => {
     assert.match(all, /## 安全边界/, '带上聊天约束')
     assert.match(sent.input, /## Chat 模式/)
     assert.doesNotMatch(sent.input, /## 授权情况|ask_push|## 执行方式|start_plan/)
-    assert.match(sent.input, /## 总结格式/, 'Chat 也写总结卡')
+    assert.doesNotMatch(sent.input, /## 总结格式/, 'Chat 页不写总结卡')
     // 角色分两类：Chat 页不能用 Agent 角色（面板开的「AI 分析」除外）
     const worker = (await call('GET', '/agents')).find((a) => a.origin === 'builtin:worker')
     await assert.rejects(

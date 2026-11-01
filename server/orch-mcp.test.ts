@@ -1125,9 +1125,9 @@ test('Chat 模式的一轮：提示词另起一套，不带项目对话的授权
   assert.deepEqual(chat.names, BG)
   assert.match(chat.prompt, /## Chat 模式/)
   assert.match(chat.prompt, /## 长命令放到后台/)
-  // 总结卡照样要（去掉只对项目成立的「派单那一轮」）；这个宿主没说 CLI 的待办能显示，就不许诺面板会显示
-  assert.match(chat.prompt, /## 总结格式/)
-  assert.doesNotMatch(chat.prompt, /派单那一轮|面板会把它显示/)
+  // Chat 页不写总结卡（用户 2026-11-01 定）；这个宿主没说 CLI 的待办能显示，就不许诺面板会显示
+  assert.doesNotMatch(chat.prompt, /## 总结格式|总结卡/)
+  assert.doesNotMatch(chat.prompt, /面板会把它显示/)
   assert.match(chat.prompt, /写在回复里/)
   // CLI 定义写了 todos（Claude Code、Codex）的才说面板会显示
   assert.match(chatModePart(true), /面板会把它显示/)

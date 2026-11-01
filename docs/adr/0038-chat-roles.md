@@ -32,7 +32,7 @@
    - `team`（`get_status` / `send_message` / `read_messages`）：`!Chat 模式`；
    - 推送授权、教训、版本管理、worktree、子对话照旧按「有没有项目」这个客观条件给。Agent 模式 12 个身份的工具清单一个不变（`server/orch-mcp.test.ts` 的 IDENTITIES）。
 4. **计划的分工**：面板计划（`set_plan` / `finish_plan`、计划段、计划推进、收尾步骤）只在 Agent 模式；Chat 模式用各 CLI 自带的待办 / 计划（`TodoWrite`、Codex 的 plan），面板把 `task.todos` 显示在 Chat 页输入框上方（`TodoButton`，和面板计划同一个位置）。只有 CLI 定义写了 `todos: true` 的（Claude Code、Codex，面板真的解析它们的待办）才在提示词里说「面板会显示」，其余 CLI（Pi 没有待办工具、Command Code 的不解析）让模型在回复里用编号列表列计划（`chatModePart`，按 `EngineHost.cliTodos`）；助手设定是静态的，写成「有自带待办就用、没有就在回复里列」。待办全部做完后，用户发下一条消息时收起；对话换了 CLI 时清掉旧待办。Claude Code 的 `EnterPlanMode`（只读规划模式）仍关着，理由见 `shared/clis/claude.json` 的 `why`；放不放开等用户定。
-5. **Chat 模式提示词单独拼**（`shared/chat-prompt.ts` 的 `chatConversationPrompt`）：用户消息、回复语言、对话目标和规则、后台命令、「## Chat 模式」一段、总结格式（总结卡，去掉只对项目成立的「派单那一轮」）；不带授权情况、工作流、执行方式。
+5. **Chat 模式提示词单独拼**（`shared/chat-prompt.ts` 的 `chatConversationPrompt`）：用户消息、回复语言、对话目标和规则、后台命令、「## Chat 模式」一段；不带授权情况、工作流、执行方式，也不带总结格式（用户 2026-11-01 定：Chat 页不写总结卡）。
 6. **旧 Chat 对话（`agentId` 为空）运行时按内置助手跑，不迁移**（`chatRoleFor`；Chat 页选的自建 Chat 角色被删了也一样回退到助手，`turnRole`，记日志）：只取设定、引入、参数、Skill，id 仍是空字符串，所以「按 CLI 署名、输入框里随时换 CLI / 模型 / 强度」（`canPickRun`）都保住；新建时选内置助手也存空字符串。本机没有助手时退回无角色。`DEFAULT_CHAT_PROGRESS` 只给项目里的「无角色」对话。
 7. **各入口的类别兜底**：新建对话、换角色、定时任务保存（`scopeError`）；项目默认角色、工作流的主角色 / 成员 / 节点 / 步骤（`agentOnlyError`）；角色保存（`normalizeScope`：Chat 角色的通用、分派、计划、挂载、就地改动、对话范围归零，引入只留同类，Agent 角色不能挂 Chat 角色）；`create_conversation` 的 `role` 和 `spawn_agents` 的 `agent` 点名到 Chat 角色时拒绝，按名字找时先找本模式这一类的（`findRole`，两类可以同名）。前端选择器按类别过滤。
    - 换角色接口只在角色真的变了时才校验：旧对话带着原来的 `agentId` 改别的设置不会被拒。
