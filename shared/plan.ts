@@ -17,6 +17,7 @@
 import { topSteps } from './flow.ts'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan, TaskStep } from './schema.ts'
 import { panelWrap, type WrapUpKind } from './wrap-up.ts'
+import { STATUS_TEXT, planDelta, planRows } from './plan-text.ts'
 export { PANEL_WRAPS, panelWrap, wrapUpKind, type WrapUpInput, type WrapUpKind } from './wrap-up.ts'
 
 /** 一份计划最多多少个主步骤、每个主步骤最多多少个子步骤：再多就该拆成几份计划 */
@@ -52,13 +53,6 @@ export interface PlanItemInput {
 }
 
 const STATUSES: PlanStatus[] = ['pending', 'running', 'waiting', 'done', 'skipped']
-const STATUS_TEXT: Record<PlanStatus, string> = {
-  pending: '待做',
-  running: '进行中',
-  waiting: '等待中',
-  done: '完成',
-  skipped: '跳过',
-}
 
 /**
  * 终态：不再需要推进、也不算「没做完」。done 是做完了，skipped 是明确不做。
@@ -354,8 +348,7 @@ export function planSpan(plan: TaskPlan, now: number): number | undefined {
   const closedAt = Date.parse(plan.doneAt)
   const ends = times((x) => x.endedAt)
   const allDone = plan.steps.length > 0 && plan.steps.every((s) => isSettled(s.status))
-  // 全部完成：停在最晚一项的 endedAt；提前结束（finish_plan）还有没做完的步骤：停在 doneAt。
-  // 后者不能拿已完成项的 endedAt 当结束时间，否则总用时比未完成项的单项用时还短
+  // 全部完成停在最晚一项的 endedAt；提前结束（finish_plan）停在 doneAt，不拿已完成项的（否则总用时比单项还短）
   let end = Number.isFinite(closedAt) ? closedAt : now
   if (allDone && ends.length) end = Math.max(...ends)
   return Math.max(0, end - start)
@@ -759,6 +752,9 @@ export function applyPlan(
   if (!steps.length) return { ok: false, info: 'steps 是空的：至少写一个主步骤' }
   task.plans ??= []
   let plan = activePlan(task)
+  // partial 更新已有计划时只回变了的行：先记下合并前每一行的样子（新开的计划没有，回全文）
+  const rowsOf = (p: TaskPlan) => planRows(p, (s) => planChildren(task, s))
+  const rowsBefore = partial && plan ? new Map(rowsOf(plan).map((r) => [r.id, r.text])) : undefined
   if (!plan) {
     plan = {
       id: `p${task.plans.length + 1}`,
@@ -918,7 +914,20 @@ export function applyPlan(
   // 判定要和 held 的 waitingBefore 完全一致（都递归算子步骤），否则子步骤在等、主步骤却被点名一模一样又白跑一轮
   // 只看还没做完的主步骤；子步骤跟着主步骤走，不单独点名
   // 自动补的步骤不点名让 Agent 交：它不是 Agent 写的，点名只会让它把这一步写进计划当成自己的步骤
-  const left = partial ? before.filter((s) => !s.wrapUp && !s.auto && !waitingDeep(s) && !touched.has(s)) : []
+  // 排在这次交上来的最后一步后面、还没开工的步骤是正常的「还没轮到」：每次 partial 都把它们全列一遍，
+  // 计划越长提示越长（20 步的计划逐步更新一遍光这句就 6 千多字）。只点名可能对不上真相的：
+  // 还标着进行中的，和被跳过去的（排在这次交上来的步骤前面却没动过）
+  const reach = Math.max(-1, ...before.filter((s) => touched.has(s)).map((s) => target.steps.indexOf(s)))
+  const left = partial
+    ? before.filter(
+        (s) =>
+          !s.wrapUp &&
+          !s.auto &&
+          !waitingDeep(s) &&
+          !touched.has(s) &&
+          (s.status === 'running' || target.steps.indexOf(s) < reach),
+      )
+    : []
   // 子对话还没合回、后台命令还没跑完就标完成：父对话的计划会显示「已完成」，子对话却还卡着。
   // 退回等待中，等结果推回来面板再标；确实不等了用 finish_plan 结束计划
   const held: string[] = []
@@ -1000,7 +1009,21 @@ export function applyPlan(
   // 计划内容真变了才推进「最后变化时间」：Agent 把同一份计划原样重交一遍不该把「多久没更新」洗掉，
   // 但真正改了状态/标题/备注时必须记上（界面的「N 分钟前更新」和「新输入后计划有没有动」都读它）
   if (planDigest(plan) !== digestBefore) plan.updatedAt = now
-  return { ok: true, info: [`计划已更新：\n${planText(task, target)}`, ...notes].join('\n\n') }
+  // partial 每一步都要调一次（动手前标进行中、做完标完成）：每次回整份计划，计划越长回包越接近平方增长。
+  // 整份计划每轮提示词里都有（planPart），这里只回变了的行（新加的步骤带上 id）+ 进度 + 下一步
+  // 带的 id 在计划里对不上（模型记错了、上下文压缩后丢了计划）：这次回整份，让它重新对上
+  const stray =
+    !!rowsBefore &&
+    steps.some((x) => [x, ...(x.children ?? [])].some((y) => clean(y?.id, 40) && !rowsBefore.has(clean(y.id, 40))))
+  const body =
+    rowsBefore && !stray
+      ? planDelta(
+          rowsOf(target),
+          rowsBefore,
+          `进度：${planProgress(task, target).done}/${target.steps.length} 个主步骤已结束。${planNowText(task, Date.parse(now))}`,
+        )
+      : `计划已更新：\n${planText(task, target)}`
+  return { ok: true, info: [body, ...notes].join('\n\n') }
 }
 
 /** 这一项还在等的结果（子对话、后台命令）的名字 */
@@ -1621,17 +1644,6 @@ export function finishPlan(
 
 /** 计划的文字版：交给 Agent 看（工具结果、每轮提示），带 id 方便它引用 */
 export function planText(task: PlanTask, plan: TaskPlan) {
-  const mark = (s: PlanStatus) =>
-    s === 'done' ? '[x]' : s === 'running' ? '[>]' : s === 'waiting' ? '[~]' : s === 'skipped' ? '[-]' : '[ ]'
-  const line = (x: PlanItem, pad: string) => {
-    const wait = x.waits.filter((w) => w.state === 'waiting').map((w) => w.label || w.ref)
-    const extra = [x.note, wait.length ? `等：${wait.join('、')}` : ''].filter(Boolean).join('；')
-    return `${pad}${mark(x.status)} ${x.id} ${x.title}（${STATUS_TEXT[x.status]}）${extra ? `— ${extra}` : ''}`
-  }
-  const rows: string[] = []
-  for (const s of plan.steps) {
-    rows.push(line(s, '') + (s.run ? `（工作流第 ${s.run} 次运行）` : ''))
-    for (const c of planChildren(task, s)) rows.push(line(c, '  '))
-  }
+  const rows = planRows(plan, (s) => planChildren(task, s)).map((r) => r.text)
   return `${plan.title ? `「${plan.title}」\n` : ''}${rows.join('\n')}`
 }

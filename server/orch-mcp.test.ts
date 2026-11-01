@@ -383,7 +383,8 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
     assert.doesNotMatch(p, /## 共享状态/, '对话的 prompt 不注入上一次运行的共享状态')
     assert.doesNotMatch(p, /read_state/, '提示里不提没注册的工具')
   }
-  assert.match(text(await callOrchTool(orch!, 'wait_agents', {})), /做完 1 个/)
+  // 结果已经自动交回过：再调等待工具不重交（以前每调一次都把做完的全部再交一遍）
+  assert.match(text(await callOrchTool(orch!, 'wait_agents', {})), /都已经交回过了/)
   // 对话这一轮结束后停下等子任务，结果交回同一个会话接着做；对话里记成面板消息，不是用户消息
   assert.equal(prompts.length, 2)
   assert.match(prompts[1], /页面查好了/)
@@ -1041,4 +1042,83 @@ test('Chat 页的对话（plain）：只有后台命令三件，说明只讲后�
   assert.equal(orchHint({ ...plain, canBackground: false } as unknown as Orchestra), '')
   // 项目里的对话（不是 plain）照旧能派子任务
   assert.ok(namesOf({ ...plain, plain: false }).includes('spawn_agents'))
+})
+
+// 审计发现：wait_agents 每 50 秒返回一次让模型再调，每调一次把做完的结果全部重交（12 个子任务约 21 万字）
+const wAgent = (id: string, name: string) => ({ ...AgentInput.parse({ name }), id, createdAt: '', updatedAt: '' })
+const wAgents = [wAgent('w', '开发'), wAgent('q', '测试')]
+const wakeWf = () =>
+  Workflow.parse({
+    id: 'wf',
+    createdAt: '',
+    updatedAt: '',
+    name: 'x',
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [
+          { id: 'a', title: '实现', agentId: 'w', instructions: '写' },
+          { id: 'b', title: '测试', agentId: 'q', instructions: '测' },
+        ],
+        edges: [
+          { id: 'e1', from: 'start', to: 'a' },
+          { id: 'e2', from: 'start', to: 'b' },
+          { id: 'e3', from: 'a', to: 'end' },
+          { id: 'e4', from: 'b', to: 'end' },
+        ],
+      },
+    ],
+  })
+const nap = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+test('wait_agents：一直等到做完；有人传话时提前返回且只列 id；CLI 断开时不算取走；取过的不再交', async () => {
+  const w = wakeWf()
+  const task = { ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做' } as never, w, '', 'tw'), id: 'tw' } as any
+  let n = 0
+  const log: string[] = []
+  await runEngineTurn({
+    task,
+    agents: wAgents,
+    workflows: [w],
+    workflow: w,
+    prompt: '做',
+    changed: () => {},
+    newId: () => `id${++n}`,
+    runAgent: async (call: any) => {
+      const o = call.orch!
+      if (call.step?.slot === 'sub') {
+        await nap(call.step.title === '慢' ? 1500 : 100)
+        return { ok: true, text: `${call.step.title}的结论` }
+      }
+      if (call.step?.id === 'a') {
+        await callOrchTool(o, 'spawn_agents', {
+          tasks: [
+            { title: '快', instructions: 'x' },
+            { title: '慢', instructions: 'x' },
+          ],
+        })
+        // CLI 断开：不算取走
+        const ac = new AbortController()
+        ac.abort()
+        log.push('aborted:' + text(await callOrchTool(o, 'wait_agents', {}, ac.signal)))
+        const t0 = Date.now()
+        const first = text(await callOrchTool(o, 'wait_agents', {}))
+        log.push(`first(${Date.now() - t0}ms):` + first)
+        const t1 = Date.now()
+        const second = text(await callOrchTool(o, 'wait_agents', {}))
+        log.push(`second(${Date.now() - t1}ms):` + second)
+        log.push('third:' + text(await callOrchTool(o, 'wait_agents', {})))
+        return { ok: true, text: 'ok' }
+      }
+      await nap(300)
+      await callOrchTool(o, 'send_message', { to: '实现', text: '接口改名了' })
+      return { ok: true, text: 'ok' }
+    },
+  } as any)
+  assert.match(log[1], /做完 1 个[\s\S]*快的结论[\s\S]*还在执行：a\/sub\/\S+\n/)
+  assert.doesNotMatch(log[1], /慢的结论/)
+  assert.match(log[2], /做完 1 个[\s\S]*慢的结论/)
+  assert.doesNotMatch(log[2], /快的结论/, '取过的不再交')
+  assert.match(log[3], /都已经交回过了/)
 })
