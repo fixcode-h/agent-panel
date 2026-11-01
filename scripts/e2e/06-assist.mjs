@@ -714,7 +714,32 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     assert.equal(steered.steered, true, '正在跑时补充给这一轮')
     assert.equal(steered.messages.at(-1).delivery?.how, 'steer', '消息记下插进了这一轮')
     assert.ok(Date.parse(steered.messages.at(-1).delivery.at) > 0, '交付时间也记上')
+    // AI 正在改树时页面存的结构不收（这一轮结束会整棵写回，存了也会被盖掉），标题照常存
+    const during = await call('GET', `/designs/${probe.id}`)
+    const edited = await call('PUT', `/designs/${probe.id}`, {
+      ...during,
+      title: '运行中改的标题',
+      root: { ...during.root, Children: [] },
+      baseRev: during.rev,
+    })
+    assert.equal(edited.rejected, 'ai', 'AI 改树期间页面的结构修改不收，并告诉页面')
+    assert.equal(edited.title, '运行中改的标题', '标题照常存')
+    assert.deepEqual(edited.root, during.root, '控件树没被页面这份覆盖')
     probeNow = await waitJob(probe.id)
+    // 页面这份基于旧版本（AI 已经改过）：结构不收，返回服务端的设计
+    const staleSave = await call('PUT', `/designs/${probe.id}`, {
+      ...probeNow,
+      root: { ...probeNow.root, Children: [] },
+      baseRev: probeNow.rev - 1,
+    })
+    assert.equal(staleSave.rejected, 'stale', '基于旧版本的结构修改不收')
+    assert.deepEqual(staleSave.root, probeNow.root)
+    const fresh = await call('PUT', `/designs/${probe.id}`, {
+      ...probeNow,
+      title: '设计补充测试',
+      baseRev: probeNow.rev,
+    })
+    assert.equal(fresh.rejected, undefined, '基于最新版本的照常保存')
     assert.equal(probeNow.job.status, 'done', JSON.stringify(probeNow.job.error))
     await call('DELETE', `/designs/${probe.id}`)
     // 收不下的（CLI 没有插话通道）：消息进对话，这一轮结束后自动接着处理，不用用户再发一次
