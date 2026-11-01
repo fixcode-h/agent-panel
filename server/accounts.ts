@@ -48,6 +48,7 @@ import { detectApis } from './api-detect.ts'
 import { mergedModelCatalog } from './model-catalog-store.ts'
 import { parseToml } from './mcp-store.ts'
 import { dataPath, writeJsonAtomic, readJson } from './store.ts'
+import { writeCliConfigJson, writeCliConfigText } from './cli-config-write.ts'
 
 /**
  * CLI 的账号：登录最终就是在 CLI 的配置目录里写下凭据文件，所以
@@ -161,7 +162,7 @@ async function writeLive(def: CliDefinition, env: NodeJS.ProcessEnv, snap: Snaps
       else delete obj[k]
     }
     await mkdir(path.dirname(file), { recursive: true })
-    await writeJsonAtomic(file, obj)
+    await writeCliConfigJson(file, obj)
   }
   if (a.keychain && process.platform === 'darwin') {
     if (snap.keychain)
@@ -404,7 +405,7 @@ async function applyJsonEdit(e: JsonEdit, env: NodeJS.ProcessEnv) {
   for (const k of e.unset) unsetPath(next, k)
   if (JSON.stringify(next) === before && exists) return
   await mkdir(path.dirname(file), { recursive: true })
-  await writeJsonAtomic(file, next)
+  await writeCliConfigJson(file, next)
 }
 
 // ---- TOML：只改命中的顶层键和表，文件里别的段和注释原样保留 ----
@@ -517,7 +518,7 @@ async function applyTomlEdit(e: JsonEdit, env: NodeJS.ProcessEnv) {
   for (const k of e.unset) next = unsetToml(next, k)
   if (next === before && exists) return
   await mkdir(path.dirname(file), { recursive: true })
-  await writeFile(file, next, 'utf8')
+  await writeCliConfigText(file, next)
 }
 
 // ---- .env：只改命中的键，注释和别的变量原样保留 ----
@@ -546,7 +547,7 @@ async function applyEnvEdit(e: JsonEdit, env: NodeJS.ProcessEnv) {
   const next = lines.length ? lines.join('\n').trimEnd() + '\n' : ''
   if (next === before && exists) return
   await mkdir(path.dirname(file), { recursive: true })
-  await writeFile(file, next, 'utf8')
+  await writeCliConfigText(file, next)
 }
 
 async function applyEdits(edits: JsonEdit[], env: NodeJS.ProcessEnv) {
@@ -619,7 +620,7 @@ async function writeModelEfforts(
     if (!isObj(data)) continue
     if (!setModelEfforts(data, fillTemplate(w.at, vars), w.key, w.value)) continue
     await mkdir(path.dirname(file), { recursive: true })
-    await writeJsonAtomic(file, data)
+    await writeCliConfigJson(file, data)
   }
 }
 
@@ -660,7 +661,7 @@ async function writeModelDefaultEfforts(def: CliDefinition, api: ApiConfig, prov
   Object.assign(table, want)
   if (JSON.stringify(table) === before) return
   await mkdir(path.dirname(file), { recursive: true })
-  await writeJsonAtomic(file, data)
+  await writeCliConfigJson(file, data)
 }
 
 /**
@@ -689,7 +690,7 @@ async function writeModelLimits(def: CliDefinition, api: ApiConfig, provider: st
   )
   if (!changed) return
   await mkdir(path.dirname(file), { recursive: true })
-  await writeJsonAtomic(file, data)
+  await writeCliConfigJson(file, data)
 }
 
 /**
@@ -713,7 +714,7 @@ async function writeModelInput(def: CliDefinition, api: ApiConfig, provider: str
   })
   if (!changed) return
   await mkdir(path.dirname(file), { recursive: true })
-  await writeJsonAtomic(file, data)
+  await writeCliConfigJson(file, data)
 }
 
 /**
@@ -731,7 +732,7 @@ async function pruneApiProviders(def: CliDefinition, api: ApiConfig, provider: s
   const used = { ...api, baseUrl: apiBaseUrl(api) }
   if (!pruneProviderEntries(data, fillTemplate(spec.at, vars), provider, used, spec)) return
   await mkdir(path.dirname(file), { recursive: true })
-  await writeJsonAtomic(file, data)
+  await writeCliConfigJson(file, data)
 }
 
 /**
@@ -749,7 +750,7 @@ async function pruneApiModels(def: CliDefinition, api: ApiConfig, provider: stri
   const keep = modelsForProtocol(api.models, api.protocol).map((m) => nativeModelId(m, prefix))
   if (!pruneModelEntries(data, fillTemplate(spec.at, vars), keep)) return
   await mkdir(path.dirname(file), { recursive: true })
-  await writeJsonAtomic(file, data)
+  await writeCliConfigJson(file, data)
 }
 
 /**
