@@ -72,7 +72,14 @@ const BATCH_NOTE = '。也可以写在 spawn_agents 的顶层整批共用；单�
 const batchField = <T extends { description: string }>(f: T) => ({ ...f, description: `${f.description}${BATCH_NOTE}` })
 
 /** spawn_agents 顶层认得的字段：其余字段不静默丢掉（写错名字的 resume 一丢，复看就换了角色和会话） */
-const SPAWN_TOP_FIELDS = ['tasks', 'step', 'agent', 'tier', 'resume', 'route']
+const SPAWN_TOP_FIELDS = ['tasks', 'step', 'agent', 'tier', 'resume', 'params', 'route']
+
+/** 派出的角色参数：角色有几种做法（「测试验收」的 task）时靠它点名，不写按挂载上的或角色默认的 */
+const paramsField = () => ({
+  type: 'object',
+  description:
+    '角色参数（可选），例如派「测试验收」清理用例写 {"task": "清理用例"}：只认这个角色声明过的参数和选项，写错会被拒绝；不写按挂载上的或角色默认的，resume 时不写沿用上一次的',
+})
 
 /**
  * 分诊记录（父对话派单时写）：面板画成分诊卡，用户不同意可以一键改派。
@@ -116,6 +123,7 @@ const tasksField = (o: Orchestra) => ({
       agent: agentField(o),
       tier: tierField(),
       resume: resumeField(),
+      params: paramsField(),
       review: {
         type: 'object',
         description:
@@ -891,6 +899,7 @@ function allOrchTools(o: Orchestra) {
                 agent: batchField(agentField(o)),
                 tier: batchField(tierField()),
                 resume: resumeField(true),
+                params: batchField(paramsField()),
                 // 和 create_conversation / run_background 一样：这批子任务全部结束、结果交回时，
                 // 计划里这一步标完成；失败或被终止退回进行中并写清原因
                 ...(o.plans ? { step: stepField('这批子任务') } : {}),
@@ -1218,6 +1227,10 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         for (const k of ['agent', 'tier', 'resume']) if (notString(x[k])) wrongType.push(`tasks[${i}].${k}`)
       })
       if (wrongType.length) return text(`spawn_agents 的 ${wrongType.join('、')} 要写字符串`, true)
+      // params 要是对象：写成字符串（'{"task":"清理用例"}'）时静默丢掉，派出去的就是默认那套做法
+      const notObject = (v: unknown) => v !== undefined && v !== null && (typeof v !== 'object' || Array.isArray(v))
+      const badParams = [a?.params, ...tasks.map((x) => x.params)].some(notObject)
+      if (badParams) return text('spawn_agents 的 params 要写对象，例如 {"task": "清理用例"}', true)
       // 顶层 resume 是一批共用的一份：一个会话只能接着跑一轮，配多个任务就说不清谁接它
       const topResume = str(a?.resume) || undefined
       if (topResume && tasks.length > 1)
@@ -1230,6 +1243,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         agent: str(x.agent) || batch.agent,
         tier: str(x.tier) || batch.tier,
         resume: str(x.resume) || batch.resume,
+        params: x.params ?? a?.params ?? undefined,
         review: briefOf(x.review),
       }))
       // 点名的计划步骤由面板在子任务全部结束后收口（见 engine.ts 的 settleHelperWaits）

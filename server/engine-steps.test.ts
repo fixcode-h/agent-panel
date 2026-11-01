@@ -4,6 +4,8 @@ import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '..
 import { newTask, stopReasonText } from '../shared/task.ts'
 import { retryBase, runEngineTurn, stopHelper, type AgentCall, type EngineHost } from '../shared/engine.ts'
 import { t } from '../shared/i18n.ts'
+import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
+import { composeRole } from '../shared/agent-role.ts'
 
 /**
  * 多步骤节点：每一步一条 slot=step 的执行记录、一个独立会话，按顺序执行，
@@ -471,34 +473,95 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   assert.match(pickP4[0], /「D:\/p4\/rel」[\s\S]*建一个对应的 pending，不 submit/)
   assert.doesNotMatch(deny[0], /## Cherry-pick/, '没设目标时不提')
 
-  // 派出的「版本控制」子任务：顶层派的不读父对话的推送授权（「允许直接推送」+「比角色设定优先」会让它顺手推送），
-  // 子对话派的照旧读子对话那份；别的子任务仍是一行 HELPER_POLICY
-  const helperPrompts = async (chat: Record<string, unknown>) => {
-    const got = new Map<string, string>()
-    const roles = [...agents, { ...agent('vcs', '版本控制'), origin: 'builtin:vcs' }, agent('qa', '测试验收')]
+  // 不变量：用真实内置角色拼出各调用者的完整提示（角色设定按 runner 的取参方式 + engine 提示），推送授权只给
+  // 用户直接对话的顶层对话；子对话、派出的子任务（含「版本控制」）、工作流节点各拿写给自己的一段。
+  // 角色正文不按身份分支、只认这一段，所以这里错一处，「比角色设定优先」就会让它顺手推送并合并主干
+  const real: Agent[] = BUILTIN_AGENTS.map((b) => ({
+    ...AgentInput.parse({ ...b.agent, includes: b.includes, mounts: b.mounts.map((m) => ({ ...m, agentId: m.key })) }),
+    id: b.key,
+    origin: `builtin:${b.key}`,
+    createdAt: '',
+    updatedAt: '',
+  }))
+  const full = new Map<string, string>()
+  // 角色参数照 runner 取：子任务用派单带的 params，对话用任务里选的（这里都是空）
+  const keep = (who: string, call: AgentCall) => {
+    const role = real.find((a) => a.id === call.agentId)
+    full.set(who, `${role ? composeRole(role, real, call.params ?? {}) : ''}\n\n${call.prompt}`)
+  }
+  const allowAll = { agents: real, policy: { push: 'allow' as const, tools: [] } }
+  for (const [who, chat] of [
+    ['父对话', { agentId: 'orchestrator' }],
+    ['非统筹顶层对话', { agentId: 'worker' }],
+    ['子对话', { agentId: 'worker', parentTaskId: 'parent' }],
+  ] as const)
+    await promptsOf(chat, { ...allowAll, runAgent: async (call) => (keep(who, call), { ok: true, text: '好了' }) })
+  // 顶层、子对话派的子任务（主理、执行把「版本控制」挂成就地用，派它的是无角色的对话或自建角色）
+  for (const [who, chat] of [
+    ['顶层派', {}],
+    ['子对话派', { parentTaskId: 'parent' }],
+  ] as const) {
+    let spawned = false
     await promptsOf(chat, {
-      agents: roles,
-      policy: { push: 'allow', tools: [] },
+      ...allowAll,
       runAgent: async (call) => {
-        if (call.step?.slot === 'sub') got.set(call.agentId, call.prompt)
-        else if (!got.size) {
+        if (call.step?.slot === 'sub') keep(`${who}的${call.agentId}`, call)
+        else if (!spawned) {
+          spawned = true
           const ids = call.orch!.spawn([
             { title: '提交', instructions: '本地提交', agent: '版本控制' },
-            { title: '清理', instructions: '清理用例', agent: '测试验收' },
+            { title: '清理', instructions: '清理用例', agent: '测试验收', params: { task: '清理用例' } },
           ]).ids
           await call.orch!.wait(ids, 1000)
         }
         return { ok: true, text: '好了' }
       },
     })
-    return got
   }
-  const top = await helperPrompts({})
-  assert.match(top.get('vcs')!, /## 授权情况\n你是派出的「版本控制」子任务/)
-  assert.doesNotMatch(top.get('vcs')!, /允许直接推送」，这就是用户的授权|比角色设定、技能里/)
-  assert.match(top.get('qa')!, /## 授权情况\n推送、创建 PR、合并主干、P4 submit、合回原分支都不归子任务/)
-  const kidVcs = (await helperPrompts({ parentTaskId: 'parent' })).get('vcs')!
-  assert.match(kidVcs, /## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内/)
+  // 工作流节点：顶层工作流任务里的，和子对话里 start_plan 起的（后者照旧读子对话那份）
+  for (const [who, parentTaskId] of [
+    ['顶层工作流节点', undefined],
+    ['子对话里的节点', 'parent'],
+  ] as const) {
+    const w = Workflow.parse({
+      ...{ id: 'rel', createdAt: '', updatedAt: '', name: '发布', mainAgentId: 'orchestrator', dispatch: false },
+      flows: [
+        {
+          id: 'main',
+          name: '主流程',
+          nodes: [{ id: 'scope', title: '发布范围', agentId: 'vcs' }],
+          edges: [
+            { id: 'e1', from: 'start', to: 'scope' },
+            { id: 'e2', from: 'scope', to: 'end' },
+          ],
+        },
+      ],
+    })
+    const input = { projectId: 'p', mode: 'workflow', prompt: '发布', parentTaskId }
+    const task = { ...newTask(input as never, w, '', 'wf'), id: 'wf' } as Task
+    await runEngineTurn({
+      ...{ task, workflows: [w], workflow: w, prompt: '发布', changed: () => {}, newId: () => 'x' },
+      ...allowAll,
+      runAgent: async (call) => {
+        if (call.agentId === 'vcs') keep(who, call)
+        return { ok: true, text: '好了' }
+      },
+    })
+  }
+  const auth = /允许直接推送」，这就是用户的授权/
+  for (const who of ['父对话', '非统筹顶层对话']) assert.match(full.get(who)!, auth, who)
+  const others = ['子对话', '顶层派的vcs', '子对话派的vcs', '顶层派的tester', '顶层工作流节点', '子对话里的节点']
+  for (const who of others) assert.doesNotMatch(full.get(who)!, auth, who)
+  // 非统筹顶层对话的角色（「执行」）正文写给子对话：执行方式里明说这里没有父对话
+  assert.match(full.get('非统筹顶层对话')!, /没有父对话）：推送、PR、合并主干按上面「授权情况」做/)
+  assert.doesNotMatch(full.get('父对话')!, /没有父对话）/)
+  for (const who of ['顶层派的vcs', '子对话派的vcs'])
+    assert.match(full.get(who)!, /## 授权情况\n你是派出的「版本控制」子任务[^\n]*派单没写目标分支就不合并/, who)
+  assert.match(full.get('顶层工作流节点')!, /## 授权情况\n你在工作流里执行/)
+  assert.match(full.get('子对话里的节点')!, /## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定/)
+  assert.match(full.get('顶层派的tester')!, /## 授权情况\n推送、创建 PR、合并主干、P4 submit、合回原分支都不归子任务/)
+  // 派单带的 params 真的到了角色设定里：不带时这里是默认的「跑验收」那一套
+  assert.match(full.get('顶层派的tester')!, /中间必须停下来等用户确认/)
 })
 
 test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也用同一份 globs', async () => {
@@ -636,7 +699,12 @@ test('子任务：resume 接着之前那个子任务的会话，复看的评审�
   const { task, log, host } = makeHost(w, async (call) => {
     if (call.step?.id === 'a/step/s1') {
       const o = call.orch!
-      const first = o.spawn([{ title: '评审', instructions: '看全量 diff', agent: '验收' }]).ids
+      // 角色参数（「测试验收」的 task 这类）随派单走：只认角色声明过的 key 和选项，写错报错而不是按默认值渲染
+      errors.push(o.spawn([{ title: '评审', instructions: 'x', agent: '验收', params: { tsk: '清理用例' } }]).error)
+      errors.push(o.spawn([{ title: '评审', instructions: 'x', agent: '验收', params: { task: '清理' } }]).error)
+      const first = o.spawn([
+        { title: '评审', instructions: '看全量 diff', agent: '验收', params: { task: '清理用例' } },
+      ]).ids
       await o.wait(first, 1000)
       // 换了角色不能接；不存在的 id 也不能接
       errors.push(o.spawn([{ title: '复看', instructions: '增量', agent: '开发', resume: first[0] }]).error)
@@ -647,6 +715,8 @@ test('子任务：resume 接着之前那个子任务的会话，复看的评审�
     }
     return '验收结论：通过'
   })
+  const { params } = AgentInput.parse({ name: '验收', params: [{ key: 'task', options: ['跑验收', '清理用例'] }] })
+  host.agents = agents.map((a) => (a.id === 'v' ? { ...a, params } : a))
   await runEngineTurn(host)
   const subs = task.steps.filter((s) => s.slot === 'sub')
   assert.equal(subs.length, 2)
@@ -658,8 +728,15 @@ test('子任务：resume 接着之前那个子任务的会话，复看的评审�
     [subs[0].id, subs[0].id],
   )
   assert.match(calls[1].prompt, /之前那个会话的延续/)
-  assert.match(errors[0] ?? '', /另一个角色/)
-  assert.match(errors[1] ?? '', /不是你派过的子任务/)
+  // 参数交给 runner 渲染角色（不传就按默认的「跑验收」），resume 没写 params 时沿用上一次的
+  assert.deepEqual(
+    calls.map((c) => c.params?.task),
+    ['清理用例', '清理用例'],
+  )
+  assert.match(errors[0] ?? '', /「tsk」不是它的参数[\s\S]*task（跑验收 \/ 清理用例）/)
+  assert.match(errors[1] ?? '', /「task」只能写 跑验收 \/ 清理用例/)
+  assert.match(errors[2] ?? '', /另一个角色/)
+  assert.match(errors[3] ?? '', /不是你派过的子任务/)
 })
 
 test('子任务：resume 少写了前缀时按 id 结尾唯一匹配，接着原来的会话跑', async () => {

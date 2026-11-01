@@ -729,7 +729,7 @@ test('上一版的「通用约束」「执行」「版本控制」副本升级�
     '允许推送时默认收尾包含合并主干，失败就停',
   )
   const worker = updated.find((a) => a.name === '执行')!
-  assert.match(worker.instructions, /推送远端、创建 PR、P4 submit、合并到主干由父对话决定/)
+  assert.match(worker.instructions, /推送远端、创建 PR、P4 submit、合并到主干按提示词里的「授权情况」/)
   const vcs = updated.find((a) => a.name === '版本控制')!
   assert.match(vcs.instructions, /不改文档/)
   assert.equal(

@@ -521,6 +521,20 @@ test('spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写
   assert.equal(lists[1][0].tier, 'high')
   assert.equal(lists[1][1].agent, '测试')
   assert.equal(lists[1][1].tier, 'low')
+  // params 和 agent 一样：顶层是整批默认值，任务里写的优先；写成字符串不能静默丢掉（派出去就是默认那套做法）
+  await callOrchTool(o, 'spawn_agents', {
+    params: { task: '清理用例' },
+    tasks: [
+      { title: '甲', instructions: 'x' },
+      { title: '乙', instructions: 'y', params: { task: '设计用例' } },
+    ],
+  })
+  assert.deepEqual(
+    lists[2].map((s) => s.params),
+    [{ task: '清理用例' }, { task: '设计用例' }],
+  )
+  const strParams = await callOrchTool(o, 'spawn_agents', { tasks: [{ instructions: 'x', params: '{"task":1}' }] })
+  assert.match(text(strParams), /params 要写对象/)
   // 顶层 resume 只配一个任务：一个会话只能接着跑一轮，一批多个时说不清谁接它
   const many = await callOrchTool(o, 'spawn_agents', {
     resume: 'a/sub/h1',
@@ -541,7 +555,7 @@ test('spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写
     tasks: [{ title: '复看', instructions: '确认', resume: ['a/sub/h1'] }],
   })
   assert.match(text(wrongType), /tasks\[0\]\.resume 要写字符串/)
-  assert.equal(lists.length, 2, '被拒的调用不派子任务')
+  assert.equal(lists.length, 3, '被拒的调用不派子任务')
 })
 
 /**

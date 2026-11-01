@@ -16,7 +16,7 @@
  */
 import type { HandoffInput } from './handoff.ts'
 import type { ReviewTarget } from './clis.ts'
-import { commonAgents, includedAgents, mountedAgents, roleKind, loadCapability } from './agent-role.ts'
+import { commonAgents, includedAgents, mountedAgents, roleKind, loadCapability, paramsProblem } from './agent-role.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES, normInlinePaths } from './inline-edit.ts'
 import {
   END,
@@ -105,6 +105,7 @@ import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
 import { isHelperAgent } from './builtin/core.ts'
 import { childAskPrompt } from './child-ask.ts'
+import { subPolicy, topPush } from './sub-policy.ts'
 import { budgetLimit, overBudget } from './engine-budget.ts'
 import {
   activePlan,
@@ -283,6 +284,8 @@ export interface HelperSpec {
   tier?: string
   /** 接着之前哪个子任务（id）的会话做：复看的评审接着上一次评审，读过的文档和代码不用再读一遍 */
   resume?: string
+  /** 角色参数（例如「测试验收」的 task）：只认角色声明过的 key；resume 时不写沿用上一次的 */
+  params?: ParamValues
   /** 派「评审」时的交接单：派它的对话把评审要用的信息整理好交给它，评审不用自己去项目里找（ADR 0013） */
   review?: ReviewBrief
 }
@@ -1459,21 +1462,15 @@ ${
   ]
 }
 
-/** 子任务（「版本控制」以外）读到的授权说明：推送和收尾都归派它的对话，整段授权和收尾流程不用给它 */
-const HELPER_POLICY =
-  '## 授权情况\n推送、创建 PR、合并主干、P4 submit、合回原分支都不归子任务：不执行、不询问用户，做完交回结果即可。'
-/** 顶层派出的「版本控制」子任务：给整段父对话授权时「允许直接推送」加「比角色设定优先」会让它顺手推送并合并主干 */
-const VCS_HELPER_POLICY =
-  '## 授权情况\n你是派出的「版本控制」子任务：本地提交、pending 分桶和派单里交代的合并照常做；推送、创建 PR、合并主干、P4 submit 不归你，不执行、不询问用户，由派你的对话按它的授权做。'
-
 /**
  * 节点 / 子任务共用的开头。helper：派出的子任务（不含「版本控制」）——授权和收尾、合并流程是写给要交付的对话的，
  * 子任务拿到整段只会多读上千字，父对话允许推送时还会读到「做完就推送并合并主干」
  */
 function commonPart(host: EngineHost, w?: Workflow, chat = false, helper = false, vcsHelper = false) {
   const req = requestParts(host.task)
-  // 子对话派的「版本控制」照旧读子对话那份授权（本来就不推）
-  const policy = helper ? HELPER_POLICY : vcsHelper && !host.task.parentTaskId ? VCS_HELPER_POLICY : policyPart(host)
+  // 授权段按调用者给（shared/sub-policy.ts）：子任务、「版本控制」子任务、顶层的节点各一段，子对话里的节点读子对话那份
+  const sub = subPolicy({ helper, vcsHelper, child: !!host.task.parentTaskId, project: !!host.policy })
+  const policy = sub ?? policyPart(host)
   return [
     req.head,
     // 放在前面：同一个任务里各个节点提示词的开头都一样，按前缀匹配缓存的模型服务能多命中一段
@@ -2706,9 +2703,9 @@ const REVIEW_SOFT_LIMIT_MS = REVIEW_SOFT_LIMIT_MIN * 60_000
 const REVIEW_WRAP_NOTE = `【面板提醒】评审已经进行了 ${REVIEW_SOFT_LIMIT_MIN} 分钟：停止再读代码，按目前已确认的意见马上交卷（第一行验收结论、第二行必须处置）；没来得及确认的标「可能」，没看完的文件单列「没看完」。`
 
 /** 这个角色是不是在评审代码改动（必备角色「评审」、评审对象是代码改动）；评审方案或结论的不算 */
-function reviewsCode(agent: Agent | undefined) {
+function reviewsCode(agent: Agent | undefined, params?: ParamValues) {
   if (agent?.origin !== 'builtin:reviewer') return false
-  const target = agent.params.find((p) => p.key === 'target')?.default
+  const target = params?.target ?? agent.params.find((p) => p.key === 'target')?.default
   return !target || target === '代码改动'
 }
 
@@ -2815,9 +2812,11 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
   // 子任务被要求把结论写在开头，超出份额的只带开头 + 全文文件的位置；评审的意见要逐条处置，照旧整段交
   const share = Math.max(HELPER_SHARE_MIN, Math.floor(HELPER_BATCH_CHARS / Math.max(1, late.length)))
   const outputs = new Map<string, string>()
-  for (const k of late)
-    if (k.status === 'done' && k.output && !reviewsCode(host.agents.find((a) => a.id === k.agentId)))
+  for (const k of late) {
+    const role = host.agents.find((a) => a.id === k.agentId)
+    if (k.status === 'done' && k.output && !reviewsCode(role, k.params))
       outputs.set(k.id, await layeredOutput(host, k, k.output, share))
+  }
   return late
     .map((k) =>
       k.status === 'done'
@@ -3464,13 +3463,34 @@ function makeOrchestra(
           return { ids: [], error: `「${prev.title}」是另一个角色跑的，接着它的会话时 agent 不写或写同一个角色` }
         resumed.set(spec, prev)
       }
+      // 派出去的角色：接着的子任务原来的角色（被删了才落到点名的）→ 点名的 → 默认「子任务」→ 发起者自己
+      const roleOf = (spec: HelperSpec) => {
+        const prev = resumed.get(spec)
+        const want = spec.agent?.trim()
+        return (
+          (prev && host.agents.find((a) => a.id === prev.agentId)) ||
+          (want && host.agents.find((a) => a.id === want || a.name === want)) ||
+          helperRole ||
+          host.agents.find((a) => a.id === self.agentId)
+        )
+      }
+      // 角色参数：挂载上定的垫底，接着的子任务沿用上一次的，这次写的最优先；只认角色声明过的 key 和选项
+      const paramsOf = new Map<HelperSpec, ParamValues | undefined>()
+      for (const spec of local) {
+        const role = roleOf(spec)
+        const bad = role && spec.params ? paramsProblem(role.name, role.params, spec.params) : ''
+        if (bad) return { ids: [], error: bad }
+        const mount = mounts.find((m) => m.agent.id === role?.id)?.params
+        const merged = { ...mount, ...resumed.get(spec)?.params, ...spec.params }
+        paramsOf.set(spec, Object.keys(merged).length ? merged : undefined)
+      }
       // 第一次派评审代码改动：交接单必须带需求和跑过的检查（ADR 0013）。
       // 评审只看改动的代码，这些背景只有派它的对话有；不交，评审就会自己读文档、搜项目去还原，一次评审拖到二十多分钟
       for (const spec of local) {
         if (resumed.has(spec)) continue
         const want = spec.agent?.trim()
         const role = want ? host.agents.find((a) => a.id === want || a.name === want) : undefined
-        if (!reviewsCode(role)) continue
+        if (!reviewsCode(role, paramsOf.get(spec))) continue
         const lack = briefMissing(spec)
         if (lack)
           return {
@@ -3498,14 +3518,11 @@ function makeOrchestra(
           // 原角色被删掉、这次显式点了名：换到点名那个角色上重试（它现在跑的就是这个角色）
           const repl = want ? host.agents.find((a) => a.id === want || a.name === want) : undefined
           if (repl && repl.id !== prev.agentId) prev.agentId = repl.id
+          prev.params = paramsOf.get(spec)
           const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
           return { step: prev, spec, tier, again: again || '上次没有做完' }
         }
-        const agent =
-          (prev && host.agents.find((a) => a.id === prev.agentId)) ||
-          (want && host.agents.find((a) => a.id === want || a.name === want)) ||
-          helperRole ||
-          host.agents.find((a) => a.id === self.agentId)
+        const agent = roleOf(spec)
         const n = have + i + 1
         const step = blankStep({
           id: `${self.id}/sub/h${n}`,
@@ -3520,6 +3537,7 @@ function makeOrchestra(
           // 要求原文存到节点上：父对话那条系统消息里只有标题，报告和 AI 分析需要原文才能判断它有没有做到。
           // 评审的交接单也是要求的一部分，一起存
           brief: [spec.instructions.trim(), briefPart(spec.review)].filter(Boolean).join('\n\n'),
+          params: paramsOf.get(spec),
         })
         task.steps.push(step)
         const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
@@ -3748,7 +3766,7 @@ async function runHelper(
     host.changed(true)
     const role = host.agents.find((a) => a.id === step.agentId)
     const vcs = role?.origin === VCS_ORIGIN
-    const reviewing = reviewsCode(role)
+    const reviewing = reviewsCode(role, step.params)
     const review = await reviewPart(host, step, spec)
     const parts = [
       // 评审代码只要需求和必须遵守的规则：搜索范围、编译和收尾、授权这些段落是写给要动手的角色的，
@@ -3790,6 +3808,7 @@ async function runHelper(
         // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
         sessionKey,
         tier,
+        params: step.params, // 不传时 runner 按角色默认值渲染：「清理用例」会变回「跑验收」
         // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
         // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
         orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
@@ -4191,7 +4210,7 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
       }`,
     )
   } else if (kind === 'top') {
-    parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。${noDelegate}`)
+    parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。${topPush(host)}${noDelegate}`)
   } else {
     parts.push(
       planning

@@ -114,6 +114,25 @@ export function condText(c: ParamCond, params: AgentParam[]) {
 }
 
 /**
+ * 派子任务时点的参数（spawn_agents 的 params）对不对得上角色：不认得的 key、选项里没有的取值都报出来。
+ * 不报的话 resolveParams 会把它们静默丢掉、按默认值渲染，派出去的做法和调用方以为的不一样
+ * （派「测试验收」做「清理用例」，实际拿到的是「跑验收」那一套）。对得上返回空串
+ */
+export function paramsProblem(name: string, params: AgentParam[], given: ParamValues): string {
+  const bad = Object.entries(given).flatMap(([k, v]) => {
+    const p = params.find((x) => x.key === k)
+    if (!p) return [`「${k}」不是它的参数`]
+    const picked = Array.isArray(v) ? v : [String(v)]
+    const off =
+      (p.type === 'select' || p.type === 'multi') && p.options.length && picked.some((x) => !p.options.includes(x))
+    return off ? [`「${k}」只能写 ${p.options.join(' / ')}`] : []
+  })
+  if (!bad.length) return ''
+  const keys = params.map((p) => (p.options.length ? `${p.key}（${p.options.join(' / ')}）` : p.key)).join('；')
+  return `「${name}」的 params 对不上：${bad.join('；')}。${keys ? `它的参数有：${keys}` : '它没有可以设的参数，去掉 params'}`
+}
+
+/**
  * 参数实际用的值：给了就用给的，否则用默认值；要问用户（ask）又没给的列进 missing。
  * 只有一层：节点上的值 / 对话里选的值 覆盖 Agent 的默认值。
  *
