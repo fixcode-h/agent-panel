@@ -157,7 +157,7 @@ Codex 默认 60 秒工具超时，编译、测试、打包都不能在工具里�
 ### 明确不提供的操作
 
 `git push`、建 PR、发布、改远端、P4 submit、切换 client、同步整个工作区。
-理由不是「麻烦」，而是会和现有安全边界打架：这几件事要求用户明确授权，今天的机制是「这次对话里用户点过，记进 `task.remotePush`」+"项目 `gitPolicy`"（`shared/schema.ts:741`、`server/exec/runner.ts` 里的 `taskPolicy`），子对话的独立分支还被 `noPushEnv` 的 `pushInsteadOf` 直接拦死。MCP 工具如果能自己推，等于给模型开了一条绕开这两层的路。这些操作继续由对话里的 CLI 在用户授权后用 `gh` / `git` 做。
+理由不是「麻烦」，而是会和现有安全边界打架：这几件事要求用户明确授权，今天的机制是「这次对话里用户点过，记进 `task.remotePush`」（项目设置「问一次」时父对话调面板工具 `ask_push` 弹「允许 / 拒绝」授权卡，用户点的回答由 `server/exec/runner.ts` 的 `answerRequest` 写入；2026-11 之前这个字段没有写入点）+"项目 `gitPolicy`"（`shared/schema.ts:741`、`server/exec/runner.ts` 里的 `taskPolicy`），子对话的独立分支还被 `noPushEnv` 的 `pushInsteadOf` 直接拦死。MCP 工具如果能自己推，等于给模型开了一条绕开这两层的路。这些操作继续由对话里的 CLI 在用户授权后用 `gh` / `git` 做。
 
 ## 运行时
 

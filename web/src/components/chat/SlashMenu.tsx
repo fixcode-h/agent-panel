@@ -118,9 +118,13 @@ export function useSlashMenu({
   const own = new Set((cmds ?? []).map((c) => c.name))
   const all: Item[] = [
     ...builtins(scope).filter((x) => x.action || !own.has(x.name)),
-    ...(cmds ?? []).map(
-      (c): Item => ({ name: c.name, description: c.description, group: c.kind, hint: c.hint, source: c.source }),
-    ),
+    ...(cmds ?? []).map((c): Item => ({
+      name: c.name,
+      description: c.description,
+      group: c.kind,
+      hint: c.hint,
+      source: c.source,
+    })),
   ]
   const items = all
     .filter((x) => x.name.toLowerCase().includes(kw))

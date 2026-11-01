@@ -830,22 +830,20 @@ export function buildFlow(f: FlowSpec, agentId: (key: string) => string): Flow {
     startPos: { x: 0, y: 0 },
     endPos: { x: 600, y: 0 },
     nodes: f.nodes.map((n): FlowNode => {
-      const steps = (n.steps ?? []).map(
-        (s, i): NodeStep => ({
-          id: s.id || `st${i + 1}`,
-          title: s.title,
-          kind: 'agent',
-          agentId: agentId(s.agent),
-          flow: null,
-          tier: s.tier ?? '',
-          params: s.params ?? {},
-          instructions: s.instructions,
-          retries: s.retries ?? 0,
-          ...(s.confirm && { confirm: true }),
-          review: s.review ? { kind: 'sub', id: s.review } : null,
-          maxRounds: s.maxRounds ?? 3,
-        }),
-      )
+      const steps = (n.steps ?? []).map((s, i): NodeStep => ({
+        id: s.id || `st${i + 1}`,
+        title: s.title,
+        kind: 'agent',
+        agentId: agentId(s.agent),
+        flow: null,
+        tier: s.tier ?? '',
+        params: s.params ?? {},
+        instructions: s.instructions,
+        retries: s.retries ?? 0,
+        ...(s.confirm && { confirm: true }),
+        review: s.review ? { kind: 'sub', id: s.review } : null,
+        maxRounds: s.maxRounds ?? 3,
+      }))
       return {
         id: n.id,
         title: n.title,

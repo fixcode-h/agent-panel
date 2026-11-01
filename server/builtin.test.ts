@@ -110,7 +110,10 @@ test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开�
   assert.deepEqual(b.agent.skills, [])
   // 挂进「通用项目」：启动时 ensureProjectAgents 会补建，老用户的角色列表里也能看到
   assert.ok(builtinAgentKeys(GENERAL).includes('worklog'), '挂在「通用项目」上才会在启动时建出来')
-  const role = composeRole(agents.find((a) => a.id === 'worklog')!, agents)
+  const role = composeRole(
+    agents.find((a) => a.id === 'worklog')!,
+    agents,
+  )
   assert.doesNotMatch(role, /\{\{/, '模板都能展开')
   // 范围：只写这段时间里的事，范围外的不写（工作总结页的硬要求）
   assert.match(role, /只算范围内的/)
@@ -136,7 +139,11 @@ test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开�
   assert.match(role, /## 二、Bug/)
   assert.match(role, /只输出报告本身/)
   // 工作总结页调用时选「面板提供」：材料由面板给，不再去读数据目录
-  const panel = composeRole(agents.find((a) => a.id === 'worklog')!, agents, { material: '面板提供' })
+  const panel = composeRole(
+    agents.find((a) => a.id === 'worklog')!,
+    agents,
+    { material: '面板提供' },
+  )
   assert.match(panel, /材料和范围由面板在下面给出/)
   assert.doesNotMatch(panel, /tasks\/projects\//)
 })

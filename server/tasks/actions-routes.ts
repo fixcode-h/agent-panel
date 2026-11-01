@@ -5,6 +5,7 @@ import { TaskPatch, Task, RequestAnswer, defaultAgent } from '../../shared/schem
 import { childHoldText, helpersWorking, trackWait, withTaskModel } from '../../shared/task.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { childAskEffect } from '../../shared/child-ask.ts'
+import { NO_PUSH_ANSWER, pushAnswerCut } from '../../shared/push-auth.ts'
 import { getSettings } from '../settings.ts'
 import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
 import { answerRequest, dropRequests, cancelWait, forgetNotes } from '../exec/runner.ts'
@@ -299,6 +300,8 @@ export function registerActionRoutes(s: TasksScope) {
       rewind: { ...turnBefore(task, i), cut: removed.turn ?? null },
       status: 'done',
       todos: [],
+      // 推送授权是在被撤掉的那段对话里点的：跟着撤掉，下一轮需要推送时重新问
+      ...(pushAnswerCut(task, removed.at) ? NO_PUSH_ANSWER : {}),
     })
     return c.json({ task: updated, text: removed.text, attachments: removed.attachments ?? [] })
   })
@@ -333,6 +336,8 @@ export function registerActionRoutes(s: TasksScope) {
       todos: [],
       worktree: null,
       archived: undefined,
+      // 推送授权只对点它的那个对话有效：分叉出来的是新对话，需要推送时重新问一次
+      ...NO_PUSH_ANSWER,
       usage: { agents, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
     })
     return c.json(forked, 201)

@@ -43,6 +43,6 @@ paths: shared/builtin/**, shared/engine.ts, server/tasks/run.ts, shared/assist.t
 ## 按段落指纹省的提示词：会变的状态单独成段，同一份提示只用一个函数拼，拼的时候读现值
 
 - 规则：`promptDelta` 按 parts 的每个元素记指纹，元素里任何字变了整段重发。随时间或状态变的内容（「N 分钟前」「已 N 分钟」、按改动清单算的步骤）单独放一个元素、带自己的 `##` 标题，不拼进规则段；对父对话没用的逐分钟时间干脆不放，改成跨阈值才变的标记。同一份提示要在几处重拼时（第一轮、保活的 `nextPrompt`）用同一个闭包，可选的位置参数漏传不报错。
-- 规则：`nextPrompt` 重拼读的是 `EngineHost` 上的字段，服务端建 host 时会随状态变的字段（`verify.changedFiles`、`policy.answered`、`rules`、`goal`）写成 getter 现取，不在对象字面量里求值成快照；中间转一手的（runner 的 `runRealTurn` 把 ctx 抄进 host）也要写 getter，`x: ctx.x` 会在那一刻求值。子对话取父对话的值按「执行位上的 → `store.known` → 这一轮开始时读的」顺序。用户下一条消息不管走保活、模型自己调 `wait_user_message` 还是预热，都经 `nextPrompt`（runner 的 `withState`），不原样交给 CLI。
+- 规则：`nextPrompt` 重拼读的是 `EngineHost` 上的字段，服务端建 host 时会随状态变的字段（`verify.changedFiles`、`policy.answered`、`wrapUp`、`rules`、`goal`）写成 getter 现取，不在对象字面量里求值成快照；中间转一手的（runner 的 `runRealTurn` 把 ctx 抄进 host）也要写 getter，`x: ctx.x` 会在那一刻求值。子对话取父对话的值按「执行位上的 → `store.known` → 这一轮开始时读的」顺序。用户下一条消息不管走保活、模型自己调 `wait_user_message` 还是预热，都经 `nextPrompt`（runner 的 `withState`），不原样交给 CLI。
 - 起因：审计发现（df820f2 起）保活的 `nextPrompt` 漏传 `agent`，主理每条多发约 2 千字、子对话被告知「完成标准不再适用」；「现有子对话」带 `timeAgo`、验证段拼着本轮步骤，每轮整段重发。复核又发现 host 上的改动清单、规则、目标是建 host 时的快照，新对话开头没改动时保活的每一条都写着「改动清单为空」；`wait_user_message` 和预热交来的消息原样给模型，没有「## 用户这次的消息」，计划、收件箱停在预热那一刻。
 - 防线：`shared/prompt-delta.test.ts` 的保活两条、「改动清单变了只重发本轮步骤」用例（含保活期间改动清单 / 推送回答变了、预热后的第一句）、`server/orchestrator.test.ts` 的 list_conversations 用例。服务端建 host 时写成快照的回归没有单测拦，靠人工。

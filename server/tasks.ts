@@ -298,11 +298,12 @@ export function tasksApi(deps: {
    * 已经在执行时返回已有的那一份（fresh 为 false），由调用方决定复用还是返回 409，不能覆盖
    */
   const reserve = (task: Task) =>
-    reserveOnce(
-      live,
-      task.id,
-      (): Live => ({ task: structuredClone(task), stop: false, abort: new AbortController(), rev: 0 }),
-    )
+    reserveOnce(live, task.id, (): Live => ({
+      task: structuredClone(task),
+      stop: false,
+      abort: new AbortController(),
+      rev: 0,
+    }))
   /** 只释放自己的执行位：旧的一轮收尾时不能把新的一轮删掉 */
   const release = (entry: Live) => releaseIfSame(live, entry.task.id, entry)
 

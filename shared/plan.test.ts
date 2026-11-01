@@ -1278,7 +1278,8 @@ test('改写过的标题对回原来那一步：不新建重复步骤，旧步�
   assert.equal(activePlan(t3)!.steps.length, 2, '归一化后一样的标题算同一步骤，不新建')
   // 这条被归一化匹配更新过，不能说它「没交上来」；真没交上来的「写文档」照常点名
   assert.doesNotMatch(r3.info, /没交上来[\s\S]*跑 e2e/)
-  assert.match(r3.info, /没交上来[\s\S]*写文档/)
+  // 排在这次交上来的步骤后面、还没轮到的「写文档」不点名（每次都点名会随步数平方增长）
+  assert.doesNotMatch(r3.info, /没交上来[\s\S]*写文档/)
   assert.equal(other.status, 'running', '没交上来的步骤状态不动，并在回复里点名')
   // 还在等结果的步骤不算「没交上来」：它由面板在结果回来后标完成，让模型去「标完成」只会被 held 退回，
   // 同一个回复里就出现「做完了就标完成」和「还在等结果不能自己标」两句互相矛盾的话
@@ -1311,7 +1312,7 @@ test('改写过的标题对回原来那一步：不新建重复步骤，旧步�
   const r4 = applyPlan(t4, { partial: true, steps: [{ id: '1', note: '跑了一遍', status: 'running' }] })
   assert.equal(activePlan(t4)!.steps[0].note, '跑了一遍', '按 id 更新的内容生效')
   assert.doesNotMatch(r4.info, /没交上来[\s\S]*修 e2e/, '按 id 更新的步骤不算没交上来')
-  assert.match(r4.info, /没交上来[\s\S]*写文档/)
+  assert.doesNotMatch(r4.info, /没交上来/, '排在后面还没轮到的「写文档」也不点名')
   // 真的改写成另一件事：宁可新加一步，也不能张冠李戴把别的步骤标完成
   const other2 = fresh()
   applyPlan(other2, { steps: [{ title: '跑端到端测试', status: 'running' }] })
@@ -2033,4 +2034,28 @@ test('子对话执行失败：上报带上这次失败的原因，父对话不�
 
   // 没有任何报错时只说失败，不编原因
   assert.equal(childReport(child([])).why, '失败：执行失败了')
+})
+
+// 审计发现：partial 更新每次回整份计划、把所有没轮到的步骤点名，20 步计划逐步更新下来约 4 万字
+test('set_plan partial 只回变了的行 + 进度 + 下一步；新开 / 整份 / id 对不上时回整份', () => {
+  const task = fresh() as any
+  const r0 = applyPlan(task, {
+    title: 'T',
+    steps: [{ title: '改代码', children: [{ title: '改接口' }] }, { title: '跑测试' }, { title: '写文档' }],
+  })
+  assert.match(r0.info, /^计划已更新：\n「T」\n\[ \] 1 改代码[\s\S]*\[ \] 3 写文档/, '新开回整份')
+  const r1 = applyPlan(task, { partial: true, steps: [{ id: '1', status: 'running' }] })
+  assert.match(r1.info, /变了的步骤：\n\[>\] 1 改代码（进行中）/)
+  assert.doesNotMatch(r1.info, /跑测试（待做）\n|写文档（待做）/, '没变的行不回')
+  assert.match(r1.info, /进度：0\/3 个主步骤已结束。现在：第 1 步「改代码」进行中/)
+  assert.doesNotMatch(r1.info, /没交上来/, '排在后面还没轮到的步骤不点名')
+  const r2 = applyPlan(task, { partial: true, steps: [{ title: '补单测' }] })
+  assert.match(r2.info, /\[ \] 4 补单测（待做）/, '新加的步骤带上 id')
+  const r3 = applyPlan(task, { partial: true, steps: [{ id: '9', status: 'done' }] })
+  assert.match(r3.info, /^计划已更新：\n「T」\n/, 'id 对不上时回整份，让模型重新对上')
+  const r4 = applyPlan(task, { partial: true, steps: [{ id: '3', status: 'running' }] })
+  assert.match(r4.info, /没交上来[\s\S]*跑测试/, '被跳过去的步骤照样点名')
+  assert.doesNotMatch(r4.info, /没交上来[^\n]*补单测/, '排在后面的不点名')
+  const r5 = applyPlan(task, { steps: [{ id: '1' }, { id: '2' }, { id: '3' }] })
+  assert.match(r5.info, /^计划已更新：\n「T」/, '整份提交回整份')
 })

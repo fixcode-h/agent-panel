@@ -115,6 +115,7 @@ import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { askViaParent } from './child-question.ts'
+import { askPushRequest, dropOwnRequests, noteAnswer, panelRequest, replies } from './panel-requests.ts'
 import { orchHint } from '../orch-mcp.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
 import { MODEL_HINT } from '../../shared/blender.ts'
@@ -204,9 +205,6 @@ export interface RealContext {
   stopBackground?: EngineHost['stopBackground']
   lessons?: EngineHost['lessons']
 }
-
-/** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
-const replies = new Map<string, (r: AskReply) => void>()
 
 /** 正在跑的一次 CLI 调用里能接收补充的那个：step 为空是对话，否则是工作流节点 */
 interface Steerer {
@@ -528,6 +526,7 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   const answers = req.kind === 'question' ? questionAnswers(req, r) : undefined
   // 请求处理完就继续执行：等待结算进 waitMs，从这一刻重新算执行时间
   if (!task.requests.length) resumeRun(task)
+  noteAnswer(task, req, r)
   task.messages.push({
     id: newId(),
     role: 'system',
@@ -831,6 +830,8 @@ function anySignal(a: AbortSignal, b: AbortSignal) {
  */
 const apiSlots = new Map<string, ApiSlot>()
 const slotKey = (taskId: string, step: string) => `${taskId}\n${step}`
+/** 正停在 wait_agents / ask_main 里等别人的调用（slotKey）：见 yieldApiSlot */
+const inToolWait = new Set<string>()
 
 /** 这次调用要用的 API：CLI 的登录方式是 API 时才有；账号登录不受并发上限管 */
 function callApi(ctx: RealContext, call: AgentCall) {
@@ -909,12 +910,16 @@ async function runWithSlot(ctx: RealContext, call: AgentCall): Promise<AgentResu
 async function yieldApiSlot<T>(ctx: RealContext, stepId: string, wait: () => Promise<T>): Promise<T> {
   // 对话自己（@chat）不是一个节点，名额记在空的节点 id 下
   if (!ctx.task.steps.some((s) => s.id === stepId)) stepId = ''
-  const slot = apiSlots.get(slotKey(ctx.task.id, stepId))
-  if (!slot?.holding) return wait()
+  const key = slotKey(ctx.task.id, stepId)
+  const slot = apiSlots.get(key)
+  // 停在工具里等的这段 CLI 本来就没有输出（wait_agents 一次能等二十几分钟）：空闲检测不算它卡住
+  inToolWait.add(key)
+  if (!slot?.holding) return wait().finally(() => inToolWait.delete(key))
   slot.drop()
   try {
     return await wait()
   } finally {
+    inToolWait.delete(key)
     const step = stepId ? ctx.task.steps.find((s) => s.id === stepId) : undefined
     await takeApiSlot(ctx, step, slot, ctx.signal, 'yield')
   }
@@ -2121,13 +2126,14 @@ async function runAgent(
     idle: idleMs
       ? {
           ms: idleMs,
-          // 在等用户确认、回答或下一句时 CLI 本来就没有输出，不算卡住
+          // 在等用户确认、回答或下一句时 CLI 本来就没有输出，不算卡住（推送授权卡是面板替 ask_push 弹的，不在 asked 里）
           // 排队等 API 名额时也一样
           busy: () =>
             task.awaitingUser ||
             waitingHelpers ||
             !!(call.step ? call.step.apiWait : task.apiWait) ||
-            task.requests.some((x) => asked.includes(x.id)),
+            inToolWait.has(slotKey(task.id, step)) ||
+            task.requests.some((x) => asked.includes(x.id) || (!step && x.purpose === 'push')),
           onWarn: () => {
             task.messages.push({
               id: ctx.newId(),
@@ -2752,6 +2758,8 @@ export async function runRealTurn(ctx: RealContext) {
   const noticedInput = unhandled !== undefined ? plan?.lastInputAt : undefined
   const notice = planNotice(ctx.task)
   if (notice) log.warn('plan', '计划需要对话收口，已写进这一轮的提示词', { task: ctx.task.id, notice })
+  // 这一轮弹出的推送授权卡：这一轮结束时还没回答就作废（等着它的 CLI 已经不在了）
+  const ownAsks = new Set<string>()
   await runEngineTurn({
     task: ctx.task,
     agents: ctx.agents,
@@ -2789,7 +2797,10 @@ export async function runRealTurn(ctx: RealContext) {
     childIsolation: ctx.childIsolation,
     worktreeHome: ctx.worktreeHome,
     branch: ctx.branch,
-    wrapUp: ctx.wrapUp,
+    // 收尾种类在 run.ts 里是 getter（按现在的推送授权算）：保活中用户点了「允许」，下一条消息就带上推送收尾
+    get wrapUp() {
+      return ctx.wrapUp
+    },
     p4Split: ctx.p4Split,
     cherryPick: ctx.cherryPick,
     submitMerge: ctx.submitMerge,
@@ -2822,37 +2833,17 @@ export async function runRealTurn(ctx: RealContext) {
         }
       return false
     },
+    // 停止任务时不再等，节点停在这里，继续执行时重新确认
     confirm: (step, text) =>
-      new Promise((resolve) => {
-        const { task, signal } = ctx
-        if (signal.aborted) return resolve(null)
-        const id = ctx.newId()
-        const done = (r: { allow: boolean; answer?: string } | null) => {
-          signal.removeEventListener('abort', onAbort)
-          replies.delete(id)
-          task.requests = task.requests.filter((x) => x.id !== id)
-          resolve(r)
-        }
-        // 停止任务时不再等，节点停在这里，继续执行时重新确认
-        const onAbort = () => {
-          done(null)
-          ctx.changed(true)
-        }
-        signal.addEventListener('abort', onAbort)
-        replies.set(id, (r) => done(r))
-        task.requests.push({
-          id,
-          step: step.id,
-          agentId: step.agentId,
-          kind: 'confirm',
-          title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
-          // 审阅弹窗按文档渲染整段结果、还要在上面标注，截得太短看不全
-          detail: clip(text, 40000),
-          options: [],
-          at: new Date().toISOString(),
-        })
-        ctx.changed(true)
+      panelRequest(ctx, {
+        step: step.id,
+        agentId: step.agentId,
+        kind: 'confirm',
+        title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
+        // 审阅弹窗按文档渲染整段结果、还要在上面标注，截得太短看不全
+        detail: clip(text, 40000),
       }),
+    askPush: (info) => askPushRequest(ctx, info, ownAsks),
     reviewDiff: ctx.isGit
       ? async (since, files) => {
           // 没点名文件时只取这个对话改过的（和「更改」面板一致）：对话开始前就没提交的改动不算它的，不交给评审
@@ -2871,7 +2862,7 @@ export async function runRealTurn(ctx: RealContext) {
         }
       : undefined,
     saveHandoff: (step, text) => saveHandoffFile(ctx.task.id, step, text),
-  })
+  }).finally(() => dropOwnRequests(ctx.task, ownAsks))
   if (noticedInput && plan) {
     plan.inputNotedAt = noticedInput
     ctx.changed()

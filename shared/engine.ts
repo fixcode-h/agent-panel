@@ -84,9 +84,11 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
+import { clipToFile, layeredBatch } from './helper-batch.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
+import { orchAskPush, pushPolicyText } from './push-auth.ts'
 import { docRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
 import { handedToOther, noteHandOff, type HandOffs } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
@@ -445,7 +447,12 @@ export interface Orchestra {
   }
   /** 终止自己派出的子任务（不写 ids 就是全部还没结束的）；why 会写进交回的结果 */
   stopHelpers(ids: string[], why: string): { ok: boolean; info: string }
-  wait(ids: string[], ms: number): Promise<{ done: HelperReport[]; running: HelperReport[] }>
+  /** 只交回还没取过的结果；signal 是这次工具调用（CLI 断开 / 超时时不再算取走） */
+  wait(
+    ids: string[],
+    ms: number,
+    signal?: AbortSignal,
+  ): Promise<{ done: HelperReport[]; running: HelperReport[]; taken: number }>
   ask(question: string, ms: number): Promise<{ answer?: string; pending?: boolean; error?: string }>
   send(to: string, text: string): Promise<{ ok: boolean; info: string }>
   inbox(): string[]
@@ -569,6 +576,8 @@ export interface Orchestra {
   p4Split?: EngineHost['p4Split']
   /** 项目设了 cherry-pick 目标：由面板核对后搬（只收这个对话自己的提交 / 改动，见 server/cherry-pick.ts） */
   cherryPick?: EngineHost['cherryPick']
+  /** 推送授权（ask_push，见 shared/push-auth.ts）：只有项目推送策略为「问一次」的顶层对话有 */
+  askPush?: (input: { branch?: string; summary?: string }) => Promise<{ ok: boolean; info: string }>
 }
 
 /** p4_split_changelists 的参数：从哪个 changelist 分、只分哪些文件、每类一句描述 */
@@ -842,6 +851,8 @@ export interface EngineHost {
   /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
   p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
   cherryPick?: (input: { commits?: string[]; changelist?: string }) => Promise<{ ok: boolean; info: string }>
+  /** 弹推送授权卡等用户点（回答由宿主记进 task.remotePush，不受「提问」开关影响）；停止时 null */
+  askPush?: (info: { branch?: string; summary?: string }) => Promise<{ allow: boolean; message?: string } | null>
 }
 
 /** Agent 用 record_lesson 记的一条教训 */
@@ -945,19 +956,7 @@ function sendRunMessage(host: EngineHost, from: string, to: string, text: string
 
 /** 节点 / 步骤的输出：太长时另存文件，交给下游的结果里写明去哪读 */
 async function storeOutput(host: EngineHost, step: TaskStep, text: string) {
-  return clipToFile(host, step, text, MAX_OUTPUT, '开始之前请先读完。')
-}
-
-/**
- * 交回的结果超出上限：完整内容存成文件，只交开头 + 文件路径。
- * 截断就必须写明全文在哪：存不了文件（宿主不支持、写盘失败）时整段交回，不能悄悄丢掉后半段
- * （评审的意见在后半段被截掉，派它的对话既看不到也找不到全文）
- */
-async function clipToFile(host: EngineHost, step: TaskStep, text: string, limit: number, hint: string) {
-  if (text.length <= limit) return text
-  const file = host.saveHandoff ? await host.saveHandoff(step, text).catch(() => '') : ''
-  if (!file) return text
-  return `${clip(text, limit)}\n\n（完整结果有 ${text.length} 字，这里只附了开头。完整内容在文件 ${file}，${hint}）`
+  return clipToFile(host.saveHandoff, step, text, MAX_OUTPUT, '开始之前请先读完。')
 }
 
 /** 一次流程调用：在哪个工作流的哪个流程，挂在哪个节点的哪个入口下 */
@@ -1213,21 +1212,13 @@ function policyPart(host: EngineHost) {
   // 只写一句「可以推送」时模型照样只做本地提交，三个选项的效果就没有区别了
   const wt =
     host.task.worktree?.state === 'active' ? '（在独立分支里工作时按下面「执行目录」那段：独立分支本身不推）' : ''
-  const done = '任务做完、验证通过并在本地提交之后'
   // 推送这一步已经由面板列进计划（push 收尾，见 plan.ts 的 wrapUpKind），所以这里不写「你可以推」，
   // 只写「按计划最后那一步做」：另写一遍时模型会自己再补一条「推送到远端」步骤，和面板的收尾撞在一起
   const kind = wrapKind(host)
   const planned = kind
     ? `，会列计划的任务：${WRAP_UP[kind].title}已经在计划的最后一步（面板已经列好，刷新也不会变），照着它做，不要自己再写一条`
     : ''
-  const push =
-    p.push === 'deny'
-      ? '推送：项目设置是「不推送，只做本地提交」。不 push、不建 PR、不合并主干、不 P4 submit，也不问用户要不要推；用户在对话里要求推送时，告诉用户先到项目设置把「推送到远端」改掉（这个项目的 git push 已经被面板拦下）。'
-      : p.answered === 'denied'
-        ? '推送：这个对话里用户已经拒绝过推送，这次不要再问，也不要推、不建 PR、不合并主干。'
-        : p.answered === 'allowed' || p.push === 'allow'
-          ? `推送：${p.answered === 'allowed' ? '这个对话里用户已经同意推送' : '项目设置是「允许直接推送」，这就是用户的授权'}，不用再问。${done}${wt}就把当前分支推到它跟踪的远端分支（没有跟踪分支时推到 origin 的同名分支并设上跟踪）${planned}，推完回读确认（git status -sb），结论里写清推到了哪个远端分支。推送成功后用 GitHub CLI 把该分支普通合并到主干：先用 gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 取主干分支名（不同项目可能是 main / master / trunk），已有对应 PR 就复用，没有就 gh pr create --base <主干> --head <当前分支>，gh pr checks <PR> --watch 等检查通过后 gh pr merge <PR> --merge，合并后回读 PR 状态确认。只做普通推送和普通合并：不强推、不 --admin、不绕过检查；被拒（远端有新提交）、PR 冲突、检查失败、分支保护拦截就停下来报告，不自己 pull / rebase，也不直接往主干推。本机没有可用的 gh 时只推送，结论里说明没能合并主干。P4 submit 不在这个授权里，用户要求时才做。`
-          : `推送：项目设置是「第一次需要推送时问一次」。${done}，用提问工具问用户一次要不要推送并合并主干（推荐「允许这次推送并合并主干」和「只做本地提交」），按回答做${wt}；这个对话里之后都按这次的回答，不再重复问。`
+  const push = pushPolicyText(p, wt, planned)
   return `## 授权情况\n${push}\n这条是用户在项目设置里定的，比角色设定、技能里「不推送 / 本地先行 / 创建 PR 和合并主干要用户明确授权」的默认写法优先。\n${tools}`
 }
 
@@ -2644,6 +2635,8 @@ interface OrchState {
   delivered: Set<string>
   /** 对话 / 节点 id → 正在等的这一批子任务 */
   batches: Map<string, Promise<HelperBatch>>
+  /** 节点 id → 叫醒它的 wait_agents（有人给它传话时提前返回，不让话晚十几分钟才到） */
+  wakers: Map<string, () => void>
 }
 const orchStates = new WeakMap<EngineHost, OrchState>()
 
@@ -2659,6 +2652,7 @@ function orchState(host: EngineHost): OrchState {
       errors: new Map(),
       delivered: new Set(),
       batches: new Map(),
+      wakers: new Map(),
     }
     orchStates.set(host, st)
   }
@@ -2674,6 +2668,7 @@ function takeMail(host: EngineHost, id: string) {
 }
 function putMail(host: EngineHost, id: string, text: string) {
   // 新架构每次运行有自己的记录：写进去，重启后还在，界面上也能看到
+  orchState(host).wakers.get(id)?.()
   if (sendRunMessage(host, '', id, text)) return
   const st = orchState(host)
   st.mail.set(id, [...(st.mail.get(id) ?? []), text])
@@ -2708,6 +2703,13 @@ function reviewsCode(agent: Agent | undefined, params?: ParamValues) {
   const target = params?.target ?? agent.params.find((p) => p.key === 'target')?.default
   return !target || target === '代码改动'
 }
+
+/** 交回时不分份额、整段交的：评审代码的意见要逐条处置 */
+const wholeReport = (host: EngineHost) => (k: TaskStep) =>
+  reviewsCode(
+    host.agents.find((a) => a.id === k.agentId),
+    k.params,
+  )
 
 /** 派评审代码时交接单缺了必填的，返回要补什么；不缺返回空 */
 function briefMissing(spec: HelperSpec) {
@@ -2800,7 +2802,7 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
   const st = orchState(host)
   const kids = () => host.task.steps.filter((s) => s.parentId === step.id && s.slot === 'sub')
   // 等的这段时间里对话可能又派了几个（用户插进来聊的那一轮）：它们算进同一批，一起交回
-  for (let n = -1; n !== kids().length; ) {
+  for (let n = -1; n !== kids().length;) {
     n = kids().length
     await Promise.all(kids().map((k) => st.helpers.get(k.id) ?? Promise.resolve()))
   }
@@ -2808,15 +2810,7 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
   for (const k of late) st.delivered.add(k.id)
   // 计划里等这些子任务的步骤跟着收口：成功标完成，失败/被终止退回进行中
   settleHelperWaits(host)
-  // 一批交回的结果按总量分：一批十几个子任务时每个都交 4000 字，一次就是好几万字压进派它的对话。
-  // 子任务被要求把结论写在开头，超出份额的只带开头 + 全文文件的位置；评审的意见要逐条处置，照旧整段交
-  const share = Math.max(HELPER_SHARE_MIN, Math.floor(HELPER_BATCH_CHARS / Math.max(1, late.length)))
-  const outputs = new Map<string, string>()
-  for (const k of late) {
-    const role = host.agents.find((a) => a.id === k.agentId)
-    if (k.status === 'done' && k.output && !reviewsCode(role, k.params))
-      outputs.set(k.id, await layeredOutput(host, k, k.output, share))
-  }
+  const outputs = await layeredBatch(host.saveHandoff, late, wholeReport(host))
   return late
     .map((k) =>
       k.status === 'done'
@@ -2827,21 +2821,6 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
           `\n${RETRY_HINT(k.id)}`,
     )
     .join('\n\n')
-}
-
-/** 一批子任务交回结果的总字数，和每个至少留多少 */
-const HELPER_BATCH_CHARS = 12000
-const HELPER_SHARE_MIN = 1500
-const FULL_POINTER = /\n\n（完整结果有 \d+ 字，这里只附了开头。完整内容在文件 [^\n]+）$/
-
-/** 交回结果超出份额：只带开头（结论写在开头），后面写明全文在哪个文件；没存过文件的现存一份 */
-async function layeredOutput(host: EngineHost, step: TaskStep, output: string, share: number) {
-  const pointer = FULL_POINTER.exec(output)?.[0] ?? ''
-  const body = pointer ? output.slice(0, -pointer.length) : output
-  if (body.length <= share) return output
-  if (pointer) return `${clip(body, share)}${pointer}`
-  // 没存过文件的现存一份；存不了就整段交回，不截掉看不到的部分
-  return clipToFile(host, step, output, share, '需要细节时再读。')
 }
 
 /** 任务里各个 Agent 的状态，按层级缩进，给 get_status 用 */
@@ -3314,6 +3293,7 @@ function makeOrchestra(
       : undefined,
     p4Split: host.p4Split,
     cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
+    askPush: orchAskPush(host, !!ctx.chat, helper),
     status: () => statusTree(host, self.id),
     spawn(tasks, step, opts) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }
@@ -3637,23 +3617,39 @@ function makeOrchestra(
           .join('\n'),
       }
     },
-    async wait(ids, ms) {
+    async wait(ids, ms, signal) {
       const mine = ids.length
         ? ids
         : task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub').map((s) => s.id)
       const steps = mine.map((id) => task.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s)
+      // 上限的定时器等完要清掉：一次可能挂 25 分钟，留着会让进程（和测试）白等到点
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const cap = new Promise<void>((r) => (timer = setTimeout(r, ms)))
+      const woken = new Promise<void>((r) => {
+        st.wakers.set(self.id, r)
+        if (signal?.aborted) r()
+        else signal?.addEventListener('abort', () => r())
+      })
       const waiting = () =>
-        Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), sleep(ms)])
-      await (host.yieldSlot ? host.yieldSlot(self.id, waiting) : waiting())
+        Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), cap, woken])
+      await (host.yieldSlot ? host.yieldSlot(self.id, waiting) : waiting()).finally(() => {
+        clearTimeout(timer)
+        st.wakers.delete(self.id)
+      })
       const over = (s: TaskStep) => helperOver(host, s)
-      const done = steps.filter(over)
+      // 取过的不再交：以前每次都把做完的全部重交一遍，派 6 个分 4 次取完，交回的字数是结果本身的 2.5 倍。
+      // CLI 已经断开（工具超时、进程被停）时不算取走，留给下一次或节点结束时并进输出
+      const taken = steps.filter((s) => over(s) && st.delivered.has(s.id)).length
+      const done = signal?.aborted ? [] : steps.filter((s) => over(s) && !st.delivered.has(s.id))
       for (const s of done) st.delivered.add(s.id)
       // 手动取走结果的路径：helperBatch 的入口只看「还没取走的子任务」，取走后就轮不到 settleHelpers，
       // 计划里等它们的那一步会永远停在等待中。这里直接收口（成功标完成、失败退回进行中）
       if (done.length) settleHelperWaits(host)
+      const outputs = await layeredBatch(host.saveHandoff, done, wholeReport(host))
       return {
-        done: done.map((s) => helperReport(host, s)),
+        done: done.map((s) => ({ ...helperReport(host, s), ...(outputs.has(s.id) && { output: outputs.get(s.id) }) })),
         running: steps.filter((s) => !over(s)).map((s) => helperReport(host, s)),
+        taken,
       }
     },
     async ask(question, ms) {
@@ -3689,6 +3685,7 @@ function makeOrchestra(
       // 不再另 push 一条 system 消息：发件方已经有「发送消息」工具行（正文可展开），再铺一条居中块会把整段正文摊在对话流里
       const kept = sendRunMessage(host, where, target.id, body)
       host.changed(true)
+      st.wakers.get(target.id)?.()
       if (target.status === 'running' && host.steer && (await host.steer(target.id, body))) {
         const rec = runRecord(task)
         const last = rec?.messages.at(-1)

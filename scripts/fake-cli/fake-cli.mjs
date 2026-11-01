@@ -682,6 +682,8 @@ if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
   if (process.env.FAKE_CLI_LOG)
     appendFileSync(process.env.FAKE_CLI_LOG + '.edit', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
 }
+// 推送授权：任务里有 ASK_PUSH 时像真的 Agent 做完本地提交后那样调 ask_push（结果记在 .panel 里，用例看是否弹卡、是否直接返回）
+if (input.includes('ASK_PUSH')) await panelCall('ask_push', { branch: 'dev', summary: '端到端测试的改动' })
 // 子对话请父对话决定：任务里有 ASK_PARENT、面板给了 message_parent 时，带两个选项提问
 if (input.includes('ASK_PARENT') && input.includes('message_parent') && !input.includes('用户的决定')) {
   await panelCall('message_parent', { text: '用 A 方案还是 B 方案？', question: true, options: ['A 方案', 'B 方案'] })

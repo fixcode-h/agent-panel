@@ -289,16 +289,21 @@ test('续接只发增量：改动清单变了只重发「本轮该跑的测试�
       return h.task.remotePush
     },
   }
+  // 收尾种类同理（server/tasks/run.ts 按 wrapUpFrom 现算）：用户在授权卡上点了允许，推送收尾跟着出现
+  Object.defineProperty(h, 'wrapUp', { get: () => (h.task.remotePush === 'allowed' ? 'push' : undefined) })
   await say(h, '新的一轮')
   const live = calls[4]
   assert.match(live.fresh ?? live.prompt, /改动清单为空/)
+  assert.match(live.fresh ?? live.prompt, /调用面板工具 ask_push 请用户授权/)
   h.task.changes = [{ path: 'server/b.ts', add: 1, del: 0 }]
   h.task.remotePush = 'allowed'
   const next = await live.nextPrompt!('保活里接着改')
   assert.match(next, /## 用户这次的消息\n保活里接着改/)
   assert.match(next, /## 本轮该跑的测试步骤[\s\S]*server\/b\.ts/)
-  assert.match(next, /用户已经同意推送/)
-  assert.doesNotMatch(next, /## 验证按改动大小定|## 计划怎么维护/)
+  assert.match(next, /用户已经同意推送[^\n]*收尾：推送到远端并合并主干已经在计划的最后一步/)
+  assert.doesNotMatch(next, /## 验证按改动大小定/)
+  // 收尾变了，计划那段跟着重发：讲清推送收尾由面板加在最后
+  assert.match(next, /## 计划怎么维护[\s\S]*由面板加在最后/)
 
   // 预热也带 nextPrompt：预热发的是完整提示，用户第一条消息（经 wait_user_message 或保活交进来）只补消息和变了的段落，
   // 以前原样交给 CLI，没有「## 用户这次的消息」；预热结束也记下这个会话已有的段落
