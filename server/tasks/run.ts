@@ -48,7 +48,7 @@ import {
   type RealContext,
 } from '../exec/runner.ts'
 import { makeAlert } from '../../shared/alerts.ts'
-import { dropHeld, hasHeld, holdForNextTurn, takeHeld } from '../exec/delivery.ts'
+import { dropHeld, hasHeld, holdForNextTurn, markHeld, takeHeld } from '../exec/delivery.ts'
 import { resetIdleCountdown } from '../presence.ts'
 import type { Live } from './types.ts'
 import { placedFiles } from '../attachments.ts'
@@ -735,10 +735,7 @@ export function createRun(sc: TasksScope) {
           // 在对话里把它们改成「没送出去」，用户才知道要重新发一次，而不是一直等着
           const lost = dropHeld(task.id)
           if (lost.length) {
-            const at = new Date().toISOString()
-            for (const m of lost)
-              for (const x of entry.task.messages)
-                if (x.id === m.id && x.role === 'user') x.delivery = { how: 'lost', at }
+            markHeld(entry.task.messages, lost, 'lost')
             await sc.store
               .update(task.id, entry.task)
               .catch((e) => log.warn('task', '标记没送出去的消息失败', { task: task.id, error: (e as Error).message }))
@@ -817,8 +814,8 @@ export function createRun(sc: TasksScope) {
       taskLog(id, '接着处理排着的消息', { messageId: q.id })
       m = { text: q.text, attachments: q.attachments, recorded: true }
       // 这一轮已经结束、马上按新的一轮交给 CLI：把消息上的交付状态从将来的「结束后自动处理」改成实际发生的事
-      const was = next.messages.find((x) => x.id === q.id && x.role === 'user')
-      if (was) was.delivery = { how: 'next', at: new Date().toISOString() }
+      // 合进来的几封信一起改（见 holdForNextTurn）
+      markHeld(next.messages, [q], 'next')
       // 排着的消息只记了正文：面板替别人说的（后台结果、子对话上报、面板说明）要按对话里记下的那条认出来，
       // 不然会被当成用户的新要求，计划提醒追着它要改计划
       const rec = next.messages.find((x) => x.id === q.id)

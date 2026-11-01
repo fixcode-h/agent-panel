@@ -104,6 +104,8 @@ export const EN_SERVER: Record<string, string> = {
   '你回答了「{title}」：{answer}': 'You answered “{title}”: {answer}',
   '你允许了：{title}': 'You allowed: {title}',
   '你拒绝了：{title}': 'You denied: {title}',
+  '你拒绝了：{title}（第 {n} 次，已让它停下来问你）':
+    'You denied: {title} (time {n}; told the agent to stop and ask you)',
   ' 或 ': ' or ',
   '· 模型「{model}」走的是 Command Code 官方服务，不是你在 providers.json 里接的接口。想用自己的接口，请把模型换成「{alt}」（模型下拉的「配置文件」分组里）。':
     '· Model “{model}” is routed through Command Code’s own service, not the provider you set up in providers.json. To use your own provider, switch the model to “{alt}” (under the “Config file” group in the model dropdown).',

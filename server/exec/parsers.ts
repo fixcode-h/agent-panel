@@ -125,6 +125,11 @@ export type AskReply = {
   answers?: string[]
   /** 拒绝时交给 CLI 的原话；不给时按 answer 拼一句「用户拒绝了」 */
   message?: string
+  /**
+   * 拒绝权限请求时追加给模型的提醒（不要原样重试、被拒多次就停下来问，见 deny-advice.ts）。
+   * 协议的拒绝能带原话的接在 message 后面；带不了的（Codex 只有 decline）由适配器插话交给这一轮
+   */
+  advice?: string
 }
 
 export type Parser = (obj: any) => CliEvent[]
