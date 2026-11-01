@@ -4,7 +4,7 @@
 export const LINE_HEIGHT_DEFAULT = 1.65
 
 /**
- * 深色主题下主文字的亮度（%）：默认 90。原来照 Claude Code 深色的主文字（#ffffffed，白色 93%），
- * 用户觉得还是偏亮，要求默认 90；纯白在深底上太刺眼
+ * 深色主题下主文字的亮度（%）：默认 80。原来照 Claude Code 深色的主文字（#ffffffed，白色 93%），
+ * 用户先后觉得偏亮，要求 90、再到 80（2026-11-01）；纯白在深底上太刺眼。加粗字固定比它亮一档，见 index.css 的 --fg-bright
  */
-export const DARK_TEXT_LEVEL_DEFAULT = 90
+export const DARK_TEXT_LEVEL_DEFAULT = 80
