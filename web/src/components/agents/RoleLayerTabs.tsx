@@ -13,7 +13,7 @@ export type RoleLayer = 'advanced' | 'basic' | 'chat'
 export const ROLE_LAYERS: RoleLayer[] = ['advanced', 'basic', 'chat']
 
 /** 分页上的短名：300px 的列表栏放三段，写全「高级角色 · N」会折成两行；完整说法在详情头的徽标和能力页 */
-export const roleLayerLabel = (l: RoleLayer) => (l === 'advanced' ? t('高级') : l === 'basic' ? t('基本') : 'Chat')
+export const roleLayerLabel = (l: RoleLayer) => (l === 'advanced' ? t('高级') : l === 'basic' ? t('基本') : t('Chat'))
 
 /** 角色在哪一页：Chat 角色单独一页，Agent 角色按层分 */
 export const layerOf = (a: Pick<Agent, 'scope' | 'kind' | 'canDelegate' | 'canPlan' | 'mounts'>): RoleLayer =>

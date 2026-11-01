@@ -160,9 +160,10 @@ export const CHILD_LINK = 'child:'
 
 /**
  * 给 Agent 的「总结格式」一节：按当前回复语言写类型和字段名，界面两种语言都认。
- * parent：能分派子对话的父对话，写子对话的结果时卡片标题链到那个子对话（点了跳到子对话里的详细总结）
+ * parent：能分派子对话的父对话，写子对话的结果时卡片标题链到那个子对话（点了跳到子对话里的详细总结）。
+ * chat：Chat 模式（没有项目）：不派单，去掉「派单那一轮」
  */
-export function summaryCardRules(lang: Lang = getLang(), parent = false): string {
+export function summaryCardRules(lang: Lang = getLang(), parent = false, chat = false): string {
   const table = KIND_KEYS.map((k) => {
     const d = SUMMARY_KINDS[k]
     return `| ${d[lang]} | ${d.when} | ${d.fields.map((x) => x[lang]).join(' · ')} |`
@@ -179,7 +180,7 @@ export function summaryCardRules(lang: Lang = getLang(), parent = false): string
 - 每个字段一到两句，写事实不写过程：「原因」写到能解释现象为止并带 path:line；「验证」写本轮跑了什么、结果如何，没验证的写「未验证：原因」；「遗留」没有就写「无」，不省略。
 - 需要用户决定或动手的事，在卡片末尾加一行「${NEEDS_YOU[lang]}」；没有就不写这一行。
 - 一轮里做了几件互不相关的事就写几张卡，每张按自己的类型；卡片之外的说明、排查报告、表格放在卡片下面。
-- 问答、闲聊、派单那一轮、计划还没做完的中间进度不写卡片。
+- 问答、闲聊、${chat ? '' : '派单那一轮、'}计划还没做完的中间进度不写卡片。
 ${
   parent
     ? `- 写子对话交回的结果时一个子对话一张卡：标题里的结论写成指向它的链接「### 类型｜[一句话结论](${CHILD_LINK}<子对话 id>)」，用户点标题跳到子对话里的详细总结。每个字段一两句写清要点，问题和原因的来龙去脉、逐个文件的改动留在子对话的总结里，不要整段照搬。\n`

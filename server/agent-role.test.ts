@@ -186,7 +186,13 @@ test('引入：层级、太深和循环', () => {
 })
 
 test('通用 Agent：停用的不算', () => {
-  const list = [agent('a', { common: true }), agent('b', { common: true, enabled: false }), agent('c')]
+  // Chat 角色（ADR 0038）也不算：它只在 Chat 页用，不能被派出去
+  const list = [
+    agent('a', { common: true }),
+    agent('b', { common: true, enabled: false }),
+    agent('c'),
+    agent('d', { common: true, scope: 'chat' }),
+  ]
   assert.deepEqual(
     commonAgents(list).map((a) => a.id),
     ['a'],

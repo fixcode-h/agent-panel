@@ -185,14 +185,17 @@ export function registerActionRoutes(s: TasksScope) {
     if (touchesRun && cur.mode !== 'chat') return s.bad(c, t('只有对话任务可以这样做'))
     const settings = touchesRun ? await getSettings() : undefined
     const agents = touchesRun ? await s.deps.agents.list() : undefined
-    if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId)) return s.bad(c, t('找不到这个角色'))
-    // 换角色也要同一类（ADR 0038）：Chat 页的对话换不成 Agent 角色，项目里的换不成 Chat 角色
-    const wrongScope = p.data.agentId
-      ? scopeError(
-          cur,
-          agents?.find((a) => a.id === p.data.agentId),
-        )
-      : ''
+    if (agentChanged && p.data.agentId && !agents?.some((a) => a.id === p.data.agentId))
+      return s.bad(c, t('找不到这个角色'))
+    // 换角色也要同一类（ADR 0038）：Chat 页的对话换不成 Agent 角色，项目里的换不成 Chat 角色。
+    // 只在角色真的变了时校验：旧数据里 Chat 页用着 Agent 角色的对话，带上原来的 agentId 改别的字段不能被拒
+    const wrongScope =
+      agentChanged && p.data.agentId
+        ? scopeError(
+            cur,
+            agents?.find((a) => a.id === p.data.agentId),
+          )
+        : ''
     if (wrongScope) return s.bad(c, wrongScope)
     const runOf = (t: Task) => {
       const agent = t.agentId ? agents?.find((a) => a.id === t.agentId) : { ...defaultAgent(), id: '' }
@@ -242,9 +245,11 @@ export function registerActionRoutes(s: TasksScope) {
     // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢。
     // 只改置顶时不动列表时间：置顶只是标记，不该让这条聊天在别处（最近活动、未读）显得「刚更新过」
     const onlyPin = Object.keys(p.data).every((k) => k === 'pinned')
+    const afterRun = touchesRun ? runOf(task) : undefined
+    // 换了 CLI：旧 CLI 列的待办不会再有人更新，清掉，不然一直显示上一个 CLI 的进度
+    if (beforeRun && afterRun && beforeRun.cli !== afterRun.cli) task.todos = []
     await s.store.update(id, task, onlyPin ? { keepUpdatedAt: true } : undefined)
     if (!touchesRun) return c.json(task)
-    const afterRun = runOf(task)
     const runChanged =
       agentChanged ||
       (!!beforeRun &&

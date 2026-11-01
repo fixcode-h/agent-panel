@@ -387,4 +387,7 @@ export const EN_AGENTS: Record<string, string> = {
   '「{name}」是 Chat 角色，只能在 Chat 页用': '“{name}” is a Chat role and can only be used on the Chat page',
   '「{name}」是 Chat 角色，不能挂载': '“{name}” is a Chat role and can’t be mounted',
   '默认对话角色必须是 Agent 角色': 'The default conversation role must be an Agent role',
+  Chat: 'Chat',
+  '{name}（Chat）': '{name} (Chat)',
+  '{name}（Agent）': '{name} (Agent)',
 }

@@ -390,12 +390,18 @@ await runShard('本机请求与设置', async (api) => {
     assert.match(all, /## 安全边界/, '带上聊天约束')
     assert.match(sent.input, /## Chat 模式/)
     assert.doesNotMatch(sent.input, /## 授权情况|ask_push|## 执行方式|start_plan/)
+    assert.match(sent.input, /## 总结格式/, 'Chat 也写总结卡')
     // 角色分两类：Chat 页不能用 Agent 角色（面板开的「AI 分析」除外）
     const worker = (await call('GET', '/agents')).find((a) => a.origin === 'builtin:worker')
     await assert.rejects(
       call('POST', '/tasks', { projectId: '', mode: 'chat', agentId: worker.id, prompt: '用执行聊' }),
       /是 Agent 角色/,
     )
+    // 类别建好不能改：PUT 带上另一类也按原来的存（server/index.ts 的 parseAgent）。用自建角色测：内置的另有 syncCore 兜底
+    const mine = await call('POST', '/agents', { name: '类别测试角色', instructions: '测试' })
+    const locked = await call('PUT', `/agents/${mine.id}`, { ...mine, scope: 'chat' })
+    assert.notEqual(locked.scope, 'chat', '角色的类别改不了')
+    await call('DELETE', `/agents/${mine.id}`)
     await call('DELETE', `/tasks/${task.id}`)
     await call('PUT', '/settings', base)
     step(

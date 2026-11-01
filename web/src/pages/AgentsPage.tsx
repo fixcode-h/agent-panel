@@ -203,7 +203,16 @@ export function AgentsPage() {
   const duplicateAs = (a: Agent) => {
     const { id, createdAt, updatedAt, origin, ...rest } = a
     const scope = scopeOf(a) === 'chat' ? 'agent' : 'chat'
-    create({ ...rest, scope, kind: scope === 'chat' ? 'advanced' : roleKind(a), includes: rulesOf(scope), mounts: [] })
+    // 名字加上类别（和「复制一份」加「副本」一样）：同名的两类角色会让按名字点角色的地方（spawn_agents、create_conversation）认错
+    const name = scope === 'chat' ? t('{name}（Chat）', { name: a.name }) : t('{name}（Agent）', { name: a.name })
+    create({
+      ...rest,
+      name,
+      scope,
+      kind: scope === 'chat' ? 'advanced' : roleKind(a),
+      includes: rulesOf(scope),
+      mounts: [],
+    })
   }
 
   const recheck = async () => {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
+import { chatModePart } from '../shared/chat-prompt.ts'
 import { runEngineTurn, type AgentCall, type EngineHost, type HelperSpec, type Orchestra } from '../shared/engine.ts'
 import { activePlan, applyPlan } from '../shared/plan.ts'
 import { callOrchTool, orchHint, orchTools } from './orch-mcp.ts'
@@ -695,7 +696,7 @@ test('resume：原任务的角色已经不在了就报错，不悄悄退回默�
 
 test('点名的角色不存在：报错，不落到默认「子任务」', async () => {
   const helper = { ...agent('h', '子任务'), origin: 'builtin:helper' }
-  const team = [agent('m', '主管'), helper]
+  const team = [agent('m', '主管'), helper, { ...agent('c', '写作'), scope: 'chat' as const }]
   const task = {
     ...newTask({ projectId: 'p', mode: 'chat', prompt: '复看' } as never, undefined, '', 't8'),
     id: 't8',
@@ -716,10 +717,18 @@ test('点名的角色不存在：报错，不落到默认「子任务」', async
         tasks: [{ title: '复看', instructions: '确认' }],
       })
       error = text(r)
+      // 点名 Chat 角色（ADR 0038）：只能在 Chat 页用，同样拒绝，不派出去
+      const c = await callOrchTool(call.orch!, 'spawn_agents', {
+        agent: '写作',
+        tasks: [{ title: '润色', instructions: '改' }],
+      })
+      chatErr = text(c)
       return { ok: true, text: '好了' }
     },
   }
+  let chatErr = ''
   await runEngineTurn(h)
+  assert.match(chatErr, /「写作」是 Chat 角色/)
   assert.match(error, /agent 写的「评审」不是已有的角色/, '点名的角色不存在要报错')
   assert.match(error, /get_status/, '要告诉调用方去哪看现有角色')
   assert.equal(task.steps.filter((s) => s.parentId === '@chat').length, 0, '不是落到默认「子任务」派出去')
@@ -956,7 +965,14 @@ const IDENTITIES: [string, object, string[]][] = [
  * 子对话才有 messageParent / submitMerge / claimFiles，顶层才有 finishChild，chat 任务才有 runBackground，
  * 有项目才有 lessons。run.ts 改了接线这里不会自己失败，改那边时对照着改
  */
-function identityHost(op: { parent?: boolean; delegate?: boolean; mode?: 'chat' | 'workflow'; chat?: boolean }) {
+function identityHost(op: {
+  parent?: boolean
+  delegate?: boolean
+  mode?: 'chat' | 'workflow'
+  chat?: boolean
+  /** Chat 模式里用着旧的 Agent 角色（ADR 0038 以前的对话）：角色开着分派和计划，Chat 的能力上限照样管住它 */
+  legacy?: boolean
+}) {
   const seen = new Map<string, Orchestra>()
   const mk = (id: string, name: string, extra: object = {}): Agent => ({
     ...AgentInput.parse({ name, ...extra }),
@@ -988,14 +1004,14 @@ function identityHost(op: { parent?: boolean; delegate?: boolean; mode?: 'chat' 
     ...newTask({ projectId, mode, prompt: '做', workflowId: flow ? 'wf1' : '' } as never, flow, '', 'T'),
     id: 'T',
     // Chat 模式的对话不选角色（agentId 为空）：运行时按内置「助手」跑（chatRoleFor），这条路径一并测到
-    agentId: mode === 'chat' && !op.chat ? 'exec' : '',
+    agentId: (mode === 'chat' && !op.chat) || op.legacy ? 'exec' : '',
     parentTaskId: op.parent ? 'P' : undefined,
   } as unknown as Task
   const coordinatorRole = !op.parent && !!op.delegate && !!projectId
   const host = {
     task,
     agents: [
-      mk('exec', '执行', { canDelegate: !!op.delegate }),
+      mk('exec', '执行', { canDelegate: !!op.delegate || !!op.legacy, canPlan: !!op.legacy }),
       mk('w', '开发'),
       mk('chat', '助手', { origin: 'builtin:chat', scope: 'chat', kind: 'advanced' }),
     ],
@@ -1044,6 +1060,11 @@ test('面板工具按身份裁剪：每个身份的完整清单，真实 makeOrc
   assert.deepEqual((await real({}))('chat'), want.get('项目顶层·非统筹'))
   assert.deepEqual((await real({ parent: true }))('chat'), want.get('子对话·共用目录'))
   assert.deepEqual((await real({ chat: true }))('chat'), want.get('Chat 模式·助手（无项目，没有派单和传话）'))
+  // Chat 里用着旧 Agent 角色（canPlan、canDelegate）：清单和助手一样，拿不到 start_plan、create_conversation
+  assert.deepEqual(
+    (await real({ chat: true, legacy: true }))('chat'),
+    want.get('Chat 模式·助手（无项目，没有派单和传话）'),
+  )
   const flow = await real({ mode: 'workflow' })
   assert.deepEqual(flow('node'), want.get('工作流节点（工作流任务里）'))
   assert.deepEqual(flow('node-helper'), want.get('子任务·工作流节点派的（工作流任务里）'))
@@ -1104,6 +1125,12 @@ test('Chat 模式的一轮：提示词另起一套，不带项目对话的授权
   assert.deepEqual(chat.names, BG)
   assert.match(chat.prompt, /## Chat 模式/)
   assert.match(chat.prompt, /## 长命令放到后台/)
+  // 总结卡照样要（去掉只对项目成立的「派单那一轮」）；这个宿主没说 CLI 的待办能显示，就不许诺面板会显示
+  assert.match(chat.prompt, /## 总结格式/)
+  assert.doesNotMatch(chat.prompt, /派单那一轮|面板会把它显示/)
+  assert.match(chat.prompt, /写在回复里/)
+  // CLI 定义写了 todos（Claude Code、Codex）的才说面板会显示
+  assert.match(chatModePart(true), /面板会把它显示/)
   assert.doesNotMatch(
     chat.prompt,
     /## 授权情况|ask_push|项目对话|start_plan|create_conversation|## 执行方式|## 执行计划/,

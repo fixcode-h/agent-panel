@@ -363,6 +363,11 @@ export const CliSpec = z.object({
   /** 内置了生成图片的工具（UI 设计里用，例如 Codex） */
   images: z.boolean().default(false),
   /**
+   * CLI 自带的待办 / 计划会被面板解析显示（Claude Code 的 TodoWrite、Codex 的 turn/plan/updated → task.todos）。
+   * Chat 模式的提示词按它决定说不说「面板会显示你的待办」：没解析的 CLI（Pi 没有待办工具、Command Code 的不解析）不这么说
+   */
+  todos: z.boolean().default(false),
+  /**
    * 模型列表是运行 CLI 读出来的（例如 Codex 的 app-server 列模型）：界面上这组叫「{cli} 读取」；
    * 否则是配置里写的或从安装包、配置文件里取的，叫「{cli} 内置」
    */
@@ -737,6 +742,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     readOnly: spec.readOnlyPermission,
     color: spec.color,
     images: spec.images || undefined,
+    todos: spec.todos || undefined,
     modelsRead: spec.modelsRead || undefined,
     envExample: spec.envExample,
     env: spec.env,

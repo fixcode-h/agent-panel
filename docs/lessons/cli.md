@@ -12,6 +12,12 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 - 起因：强度先只给 Command Code 写死档位（3ab9c74、bc33580 才改成跟着模型走），接 Pi 时又各补一遍 max 档和 reasoning（1456578、deacb24）。fc8a32f 猜 Pi 的缓存口径。
 - 防线：`scripts/rules-check.mjs` 拦 `id === '<CLI 名>'` 这类分支；接新 CLI 走 `docs/cli-config.md` 的「接入检查清单」。
 
+## 提示词里说「用你自带的某工具、面板会显示」前，先查每个 CLI 有没有、面板解析没有
+
+- 规则：提示词或内置角色正文要求模型用 CLI 自带的工具（待办、计划、子 Agent），或许诺「面板会显示」，要按 CLI 定义的能力字段（如 `todos`）分别说；角色正文是静态的，写成「有就用、没有就……」，按 CLI 拼的那句放进 engine 拼的提示词。
+- 起因：86dc598c 让 Chat 页对所有 CLI 都说「用自带的待办，面板会显示」，Pi 没有待办工具、Command Code 的待办面板不解析。
+- 防线：`server/orch-mcp.test.ts`「Chat 模式的一轮」。
+
 ## 面板写回 CLI 自己的配置时，写全 CLI 判断能力要的字段
 
 - 规则：写 models.json / providers.json 这类文件，按模型目录原样写强度、上下文、是否支持思考，不按面板的档位过滤；写完用 CLI 自己的列表命令核对能选几档。先读 CLI 文档里模型条目和设置的全部字段，别只补报错的那一个。

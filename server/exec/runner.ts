@@ -130,7 +130,7 @@ import { dropAsked } from '../../shared/task-settle.ts'
 import { askViaParent } from './child-question.ts'
 import { askPushRequest, dropOwnRequests, noteAnswer, panelRequest, replies } from './panel-requests.ts'
 import { orchHint } from '../orch-mcp.ts'
-import { emptyRole } from '../../shared/conv-mode.ts'
+import { turnRole } from '../../shared/conv-mode.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
 import { MODEL_HINT } from '../../shared/blender.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
@@ -215,6 +215,7 @@ export interface RealContext {
   beginEdit?: EngineHost['beginEdit']
   inlineEdit?: EngineHost['inlineEdit']
   runBackground?: EngineHost['runBackground']
+  cliTodos?: EngineHost['cliTodos']
   checkBackground?: EngineHost['checkBackground']
   stopBackground?: EngineHost['stopBackground']
   lessons?: EngineHost['lessons']
@@ -813,7 +814,7 @@ const inToolWait = new Set<string>()
 /** 这次调用要用的 API：CLI 的登录方式是 API 时才有；账号登录不受并发上限管 */
 function callApi(ctx: RealContext, call: AgentCall) {
   const id = ctx.agents.some((a) => a.id === call.agentId) ? call.agentId : aliasAgent(call.agentId)
-  const found = id ? ctx.agents.find((a) => a.id === id) : emptyRole(ctx.task, ctx.agents)
+  const found = turnRole(ctx.task, ctx.agents, id)
   // 找不到角色时由 runAgent 报错
   if (!found) return undefined
   const agent =
@@ -925,10 +926,11 @@ async function runAgent(
   // 本轮开始的索引：重试成功时只收这一轮以后的卡（用户插话会往同一轮里再 push user，不能按 role 猜边界）
   const turnStart = task.messages.length
   // agentId 为空表示这个对话不用 Agent 角色：直接用默认 CLI，不注入角色设定
-  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）
+  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）；Chat 页选的角色被删了按内置助手跑（turnRole）
   const id = ctx.agents.some((a) => a.id === agentId) ? agentId : aliasAgent(agentId)
-  const found = id ? ctx.agents.find((a) => a.id === id) : emptyRole(ctx.task, ctx.agents)
+  const found = turnRole(ctx.task, ctx.agents, id)
   if (!found) return { ok: false, error: t('找不到执行这一步的角色，可能已被删除') }
+  if (id && found.id !== id) log.info('agent', 'Chat 对话的角色已被删除，按内置助手跑', { task: task.id, agentId: id })
   // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
   const agent =
     call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(settings)) : withTaskModel(found, task)
@@ -2819,6 +2821,7 @@ export async function runRealTurn(ctx: RealContext) {
     beginEdit: ctx.beginEdit,
     inlineEdit: ctx.inlineEdit,
     runBackground: ctx.runBackground,
+    cliTodos: ctx.cliTodos,
     checkBackground: ctx.checkBackground,
     stopBackground: ctx.stopBackground,
     forwardSpawn: ctx.forwardSpawn,

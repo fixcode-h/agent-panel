@@ -128,6 +128,8 @@ export interface CliDefinition {
   docsUrl: string
   /** 内置了生成图片的工具（UI 设计里用） */
   images?: boolean
+  /** 自带的待办 / 计划会被面板解析显示（见 CliSpec.todos） */
+  todos?: boolean
   /** 模型列表是运行 CLI 读出来的（界面上叫「{cli} 读取」）；否则叫「{cli} 内置」 */
   modelsRead?: boolean
   /** Homebrew 的包（brew install 的参数） */

@@ -31,10 +31,13 @@
    - `canSpawn`（`spawn_agents` / `stop_subtask` / `wait_agents`）：`!helper && !Chat 模式`；
    - `team`（`get_status` / `send_message` / `read_messages`）：`!Chat 模式`；
    - 推送授权、教训、版本管理、worktree、子对话照旧按「有没有项目」这个客观条件给。Agent 模式 12 个身份的工具清单一个不变（`server/orch-mcp.test.ts` 的 IDENTITIES）。
-4. **计划的分工**：面板计划（`set_plan` / `finish_plan`、计划段、计划推进、收尾步骤）只在 Agent 模式；Chat 模式用各 CLI 自带的待办 / 计划（`TodoWrite`、Codex 的 plan），面板把 `task.todos` 显示在 Chat 页输入框上方（`TodoButton`，和面板计划同一个位置）。Chat 的提示词不劝阻自带待办；Claude Code 的 `EnterPlanMode`（只读规划模式）仍关着，理由见 `shared/clis/claude.json` 的 `why`。
-5. **Chat 模式提示词单独拼**（`shared/chat-prompt.ts` 的 `chatConversationPrompt`）：用户消息、回复语言、对话目标和规则、后台命令、「## Chat 模式」一段；不带授权情况、工作流、执行方式、总结卡。
-6. **旧 Chat 对话（`agentId` 为空）运行时按内置助手跑，不迁移**（`chatRoleFor`）：只取设定、引入、参数、Skill，id 仍是空字符串，所以「按 CLI 署名、输入框里随时换 CLI / 模型 / 强度」（`canPickRun`）都保住；新建时选内置助手也存空字符串。本机没有助手时退回无角色。`DEFAULT_CHAT_PROGRESS` 只给项目里的「无角色」对话。
-7. **各入口的类别兜底**：新建对话、换角色、定时任务保存（`scopeError`）；项目默认角色、工作流的主角色 / 成员 / 节点 / 步骤（`agentOnlyError`）；角色保存（`normalizeScope`：Chat 角色的通用、分派、计划、挂载、就地改动、对话范围归零，引入只留同类，Agent 角色不能挂 Chat 角色）；`create_conversation` 的 `role` 和 `spawn_agents` 的 `agent` 点名到 Chat 角色时拒绝。前端选择器按类别过滤。运行时不拦（旧数据照常能打开）。
+4. **计划的分工**：面板计划（`set_plan` / `finish_plan`、计划段、计划推进、收尾步骤）只在 Agent 模式；Chat 模式用各 CLI 自带的待办 / 计划（`TodoWrite`、Codex 的 plan），面板把 `task.todos` 显示在 Chat 页输入框上方（`TodoButton`，和面板计划同一个位置）。只有 CLI 定义写了 `todos: true` 的（Claude Code、Codex，面板真的解析它们的待办）才在提示词里说「面板会显示」，其余 CLI（Pi 没有待办工具、Command Code 的不解析）让模型在回复里用编号列表列计划（`chatModePart`，按 `EngineHost.cliTodos`）；助手设定是静态的，写成「有自带待办就用、没有就在回复里列」。待办全部做完后，用户发下一条消息时收起；对话换了 CLI 时清掉旧待办。Claude Code 的 `EnterPlanMode`（只读规划模式）仍关着，理由见 `shared/clis/claude.json` 的 `why`；放不放开等用户定。
+5. **Chat 模式提示词单独拼**（`shared/chat-prompt.ts` 的 `chatConversationPrompt`）：用户消息、回复语言、对话目标和规则、后台命令、「## Chat 模式」一段、总结格式（总结卡，去掉只对项目成立的「派单那一轮」）；不带授权情况、工作流、执行方式。
+6. **旧 Chat 对话（`agentId` 为空）运行时按内置助手跑，不迁移**（`chatRoleFor`；Chat 页选的自建 Chat 角色被删了也一样回退到助手，`turnRole`，记日志）：只取设定、引入、参数、Skill，id 仍是空字符串，所以「按 CLI 署名、输入框里随时换 CLI / 模型 / 强度」（`canPickRun`）都保住；新建时选内置助手也存空字符串。本机没有助手时退回无角色。`DEFAULT_CHAT_PROGRESS` 只给项目里的「无角色」对话。
+7. **各入口的类别兜底**：新建对话、换角色、定时任务保存（`scopeError`）；项目默认角色、工作流的主角色 / 成员 / 节点 / 步骤（`agentOnlyError`）；角色保存（`normalizeScope`：Chat 角色的通用、分派、计划、挂载、就地改动、对话范围归零，引入只留同类，Agent 角色不能挂 Chat 角色）；`create_conversation` 的 `role` 和 `spawn_agents` 的 `agent` 点名到 Chat 角色时拒绝，按名字找时先找本模式这一类的（`findRole`，两类可以同名）。前端选择器按类别过滤。
+   - 换角色接口只在角色真的变了时才校验：旧对话带着原来的 `agentId` 改别的设置不会被拒。
+   - **定时任务的保存和启动都按类别校验，旧数据不做兼容**（用户 2026-11-01 定的）：改动前没有项目的计划可以选 Agent 角色，这种计划到点启动、「立即运行」会失败（原因记进运行记录），保存（包括启停开关的整份 PUT）也会被拒，要先把角色换成 Chat 角色。
+   - 已经存在的对话照常能打开；Chat 页对话选的自建 Chat 角色被删了，运行时回退到助手（`turnRole`）。
 8. **「分析」是唯一跨模式的面板专用角色**：归不到项目的 AI 分析开在 Chat，按 `analysis` 字段放行，受 Chat 模式上限管。
 9. **握手 `orchestration.enabled` 按清单现算**：三件核心工具（`ORCH_CORE_TOOLS`）都在才是 true，不认身份；单测核对它和 `shared/clis/pi.json` 扩展模板里的 `CORE_TOOLS` 一致。
 
@@ -53,6 +56,7 @@
 | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | `AgentInput.scope`                                                                                                              | `shared/schema.ts`                                      |
 | `isChatMode`（原 `isPlainChat` 改名）、`scopeOf`、`chatRoleFor` / `emptyRole`、`scopeError`、`normalizeScope`、`agentOnlyError` | `shared/conv-mode.ts`                                   |
+| `turnRole`（删掉的 Chat 角色回退助手）、`findRole`（同名先找本类）、`settledTodos`（做完的待办收起）；CLI 定义 `todos`          | `shared/conv-mode.ts`、`shared/cli-spec.ts`             |
 | `chatConversationPrompt`、`backgroundPart`（从 engine 搬来，两边共用）                                                          | `shared/chat-prompt.ts`                                 |
 | `Orchestra.plain` 删除，加 `canSpawn` / `team`；`planning` 加 `!isChatMode`；`commonAgents` 去掉 Chat 角色                      | `shared/engine.ts`、`shared/agent-role.ts`              |
 | `PLAIN_TOOLS` 删除，按 `team` / `canSpawn` 给工具；`orchHint` 搬到单独文件，`!o.team` 分支只讲后台命令                          | `server/orch-mcp.ts`、`server/orch-hint.ts`             |
@@ -73,11 +77,13 @@
 ## 风险与代价
 
 - 旧 Chat 会话下一轮拿到助手设定，回答风格可能和之前「无角色」略有不同；更新说明里写明。
-- 只有 Claude Code、Codex 的自带待办会被解析显示；Pi、Command Code 没有对应的待办事件，Chat 页不显示计划行。
+- 旧的「聊天」定时任务选着 Agent 角色的，到点启动失败、保存（含停用）也被拒，用户要先换成 Chat 角色；按用户的决定不做兼容。
+- 只有 Claude Code、Codex 的自带待办会被解析显示（CLI 定义的 `todos`）；Pi、Command Code 没有对应的待办事件，Chat 页不显示计划行，提示词让模型把计划写在回复里。
 - 自建 Chat 角色不能在对话里临时换模型（`canPickRun` 只认空 id）。等用户提出再做。
 - 导入一个 `scope: chat` 的角色后在项目里引用它，会在保存项目或工作流时被拒，界面显示原文。
 
 ## 开放问题
 
+- Claude Code 的 `EnterPlanMode` 要不要在 Chat 里放开（用户说的「Agent 自带的计划模式」可能指它）：放开要确认面板能显示并批准 `ExitPlanMode`，否则对话会停在只读里。
 - 「提问」开关关着时 Chat 的提问会被自动作答，要不要给 Chat 补一句「先把选项写在回复里」：倾向不补，和项目对话一致。
 - 以后面板还要在 Chat 开别的面板专用角色时，把 `analysis` 放行抽成「面板专用」标记，不按名字堆分支。

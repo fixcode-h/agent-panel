@@ -919,8 +919,12 @@ export function AssistDialog({
       if (r.categories.length) setCategories((cs) => [...cs, ...r.categories])
       if (r.created.length) setAgents((as) => [...as, ...r.created])
       if (r.agent) {
-        // 在角色页的「Chat 角色」页起草的：建成 Chat 角色（subject.scope，ADR 0038）
-        const scope = subject?.scope === 'chat' ? ({ scope: 'chat' } as const) : {}
+        // 在角色页的「Chat 角色」页起草的：建成 Chat 角色（subject.scope，ADR 0038），和手动新建一样默认引入「聊天约束」
+        const chatRules = agents.filter((x) => x.origin === 'builtin:chat-rules').map((x) => x.id)
+        const scope =
+          subject?.scope === 'chat'
+            ? { scope: 'chat' as const, includes: [...new Set([...chatRules, ...r.agent.includes])] }
+            : {}
         const a = target ? await api.updateAgent(target.id, r.agent) : await api.createAgent({ ...r.agent, ...scope })
         setAgents((as) => (target ? as.map((x) => (x.id === a.id ? a : x)) : [...as, a]))
         toast.success(target ? t('已更新「{name}」', { name: a.name }) : t('已创建「{name}」', { name: a.name }))
