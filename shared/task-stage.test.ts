@@ -1,11 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
+import { resumeNote } from './resume-kids.ts'
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { TaskIcon } from './task.ts'
 import { isPlainChat, nextNudge, nudgeMax } from './conv-mode.ts'
 import {
-  resumeNote,
   announcedOnly,
   convActive,
   convState,

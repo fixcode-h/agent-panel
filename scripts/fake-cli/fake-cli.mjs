@@ -1750,6 +1750,21 @@ if (kind === 'claude') {
       },
     },
   })
+  // THRASH：像上下文上限设小时的真 Claude Code 一样报自动压缩抖动、退出码 1；
+  // 面板在原会话里续的那一轮（提示里有「分段读取」）照常完成
+  if (input.includes('THRASH') && !input.includes('分段读取')) {
+    out({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      result:
+        'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row',
+      session_id: session,
+      usage: {},
+      total_cost_usd: 0,
+    })
+    process.exit(1)
+  }
   if (fail) {
     out({
       type: 'result',

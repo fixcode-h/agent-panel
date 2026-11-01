@@ -90,11 +90,22 @@ import {
   noEffortRetryText,
   noEffortSkippedText,
   restartNoteText,
+  settleContextNotes,
   settleNetNotes,
+  settleRetryNotes,
+  type ContextNote,
   type NetNote,
 } from './recovery.ts'
-export { SESSION_NOT_FOUND, settleNetNotes, type NetNote }
-import { CompactTracker, settleCompactRow } from './compaction.ts'
+export { SESSION_NOT_FOUND, settleContextNotes, settleNetNotes, settleRetryNotes, type ContextNote, type NetNote }
+import {
+  awaitingCompact,
+  CompactTracker,
+  settleCompactRow,
+  shouldRetryThrash,
+  thrashHint,
+  thrashNote,
+  THRASH_RETRY_PROMPT,
+} from './compaction.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -708,44 +719,6 @@ export function settleEnvStallNotes(notes: EnvStallNote[]) {
   }
 }
 
-/** 上下文超长、丢掉旧会话换成裁剪后的新会话时写进对话的提示：接上了要收回成普通说明 */
-export interface ContextNote {
-  msg: TaskMessage
-  base: string
-}
-
-/**
- * 裁剪后的新会话接上了：那张「执行失败」卡片要收成普通说明。
- * 不收的话后面每一轮都看着像失败了，而这轮其实已经继续做下去了。
- */
-export function settleContextNotes(notes: ContextNote[]) {
-  for (const { msg, base } of notes) {
-    msg.error = undefined
-    msg.transient = true
-    msg.text = [base, '', t('已丢掉旧会话，把对话裁剪后开新会话接着做了。')].join('\n')
-    if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已裁剪对话，新会话接上了') }
-  }
-}
-
-/**
- * 重试成功了：把本轮那张（或几张）「正在重试」收成已恢复（界面上变灰，不用再处理）。
- * from 是本轮在 messages 里的起点（runAgent 进来时的长度）：轮次由索引定，不按「最后一条用户消息」猜——
- * 执行中用户插话会往同一轮里再 push 一条 user，按 role 找边界会把它误当成新的一轮，卡就永远收不掉。
- * 返回是否真收到了一张：没有就不再多插一行「重试成功」。
- */
-export function settleRetryNotes(messages: TaskMessage[], note: string, from = 0): boolean {
-  let settled = false
-  for (let i = messages.length - 1; i >= from; i--) {
-    const tools = messages[i].tools
-    for (let j = tools.length - 1; j >= 0; j--) {
-      const alert = tools[j].alert
-      if (alert?.kind !== 'retry' || alert.resolved) continue
-      tools[j] = { ...tools[j], alert: { ...alert, resolved: note } }
-      settled = true
-    }
-  }
-  return settled
-}
 const NETWORK_ERROR =
   /Connection error|APIConnectionError|Unable to connect to the API|Failed to process successful response|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
@@ -775,8 +748,9 @@ const loginHow = (cli: string) =>
   })[cli] ?? t('运行它并按提示登录')
 
 /** 把常见的 CLI 报错翻译成能照着做的说明，原始输出另外附在后面 */
-export function failureHints(detail: string, cli?: { id: string; name: string }) {
+export function failureHints(detail: string, cli?: { id: string; name: string; compactThrash?: RegExp }) {
   const hints: string[] = []
+  if (cli?.compactThrash?.test(detail)) hints.push(thrashHint(cli.name))
   if (NOT_LOGGED_IN.test(detail))
     hints.push(
       t('· {cli} 好像没有登录，或者登录已经过期。请在终端里{how}，登录后回来点「继续执行」。', {
@@ -1350,7 +1324,7 @@ async function runAgent(
   let thinkingOf: { m: TaskMessage; at: number } | undefined
   // 刚压缩完、还不知道压缩后多大：下一次报告上下文用量时补到这次压缩的工具调用上
   // 压缩那一行：一开始就转圈，压缩完成换成前后大小；不知道压缩后多大时等用量或细分补上
-  const compaction = new CompactTracker(endTool)
+  const compaction = new CompactTracker(endTool, awaitingCompact(task.messages, agentId, step))
   /** 会话压缩过：作废已发的规则段落和角色记录，告诉调用方别把压缩前的记录写回去 */
   const compacted = () => {
     forgetPromptSent(task, sessionKey)
@@ -2510,6 +2484,40 @@ async function runAgent(
         envStallNotes,
       )
     }
+    // 自动压缩抖动：CLI 压缩完马上又被一次工具输出填满、放弃了这一轮。多半是一次读进来太多，
+    // 在原会话里续一轮、让模型分段读取常常就过去了；只续一次，续之前在对话里写一行警告（不悄悄重试）
+    if (
+      shouldRetryThrash({
+        detail,
+        pattern: def.compactThrash,
+        session: !!session,
+        prewarm,
+        compact: op?.kind === 'compact',
+        aborted: ctx.signal.aborted,
+        tried: contextNotes.some((n) => n.thrash),
+      })
+    ) {
+      const note = thrashNote({ id: ctx.newId(), agentId, step, message, raw })
+      task.messages.push(note)
+      log.warn('agent', `${def.name} 自动压缩抖动，在原会话里续一轮`, {
+        task: task.id,
+        step,
+        detail: detail.slice(0, 500),
+      })
+      ctx.changed(true)
+      return runAgent(
+        ctx,
+        // 原来的提示存进 fresh：续接时原会话没了会改用它开新会话（和断流续接一样）
+        { ...call, fresh: call.fresh ?? call.prompt, prompt: THRASH_RETRY_PROMPT },
+        retried,
+        netRetries,
+        '',
+        netNotes,
+        [...contextNotes, { msg: note, base: message, thrash: true }],
+        envStalls,
+        envStallNotes,
+      )
+    }
     // 上下文已经超过模型上限：同一段历史再发一次只会一样被拒，压缩也一样（它要把历史整段重发）。
     // 唯一能做的自救是丢掉会话、把对话裁剪到预算内换成新会话接着做；只降一次（retried）
     const fallback = contextFallbackKind({
@@ -2597,6 +2605,7 @@ async function runAgent(
     const tried = [
       netRetries ? t('已自动续接 {n} 次，仍然失败。', { n: netRetries }) : '',
       envStalls ? envStallFailure(envStalls) : '',
+      contextNotes.some((n) => n.thrash) ? t('已在原会话里续过一轮，仍然失败。') : '',
     ].filter(Boolean)
     return { ok: false, error: tried.length ? [message, '', ...tried].join('\n') : message }
   }

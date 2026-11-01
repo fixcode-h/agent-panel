@@ -1259,6 +1259,8 @@ export const ToolUse = z.object({
       before: z.number().optional(),
       /** 压缩后上下文的大小 */
       after: z.number().optional(),
+      /** 压缩完 CLI 没报压缩后多大（Codex 手动压缩）：等下一轮第一次报用量时补上 after */
+      awaitAfter: z.boolean().optional(),
     })
     .optional(),
   /** 这一行是报错或警告（CLI 的重试提示、面板的提醒）：画成带底色的警告行 */

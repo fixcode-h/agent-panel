@@ -18,6 +18,7 @@ import {
 } from './design-images.ts'
 import { treeChanges } from '../shared/design-diff.ts'
 import { EXPORT_MARK, pickExportDir } from './design-export-dir.ts'
+import { designExporter } from './design-export.ts'
 import { versionMeta, versionStore } from './design-versions.ts'
 import { withToken } from './auth.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
@@ -63,6 +64,7 @@ import {
   sheetPrompt,
   importComponent,
   applyVersion,
+  layoutConfirmed,
   type ProjectComponents,
   projectPromptText,
   AiDesignResult,
@@ -75,8 +77,7 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages } from '../shared/umg.ts'
-import { reactAnimFile, webExport, webReactExport } from '../shared/web.ts'
+import { migrateGrids, normalizeTree, uniqueName } from '../shared/umg.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
@@ -96,7 +97,7 @@ import { UPLOADS_DIR, clipTranscript, saveTextUpload } from './uploads.ts'
 import { expandSlash } from './slash.ts'
 import { stripToolMarkup, withAttachments } from '../shared/task.ts'
 import { buildDesignAnalysisPrompt, cleanAnalysisParts, parseDesignAnalysis } from '../shared/design-analysis.ts'
-import { imageSize, zip } from './zip.ts'
+import { imageSize } from './zip.ts'
 
 /**
  * UI 设计：每个设计一个 JSON（designs/<id>.json），生成和上传的图片放在 designs/<id>/images/。
@@ -166,6 +167,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   const versions = versionStore(versionsFile, now)
   const addVersion = versions.add
   const captures = new DesignCaptures({ onNoPage: (id) => headless.ensure(id) })
+  // 导出 UE / 网页 / React 的打包，见 design-export.ts
+  const { exportFiles, reactExport, buildExport } = designExporter(imagesDir)
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
   async function loadAll() {
@@ -849,6 +852,8 @@ ${prompt}`,
       : input.concept || conceptMarks.length
         ? ('concept' as const)
         : undefined
+    // 模板确认了、这张模板的区块还没确认：这一轮只拆区块（propose_layout），确认后再照区块搭界面
+    const layoutStage = mode === 'template' && !layoutConfirmed(cache.get(d.id)!.layout, approved!.id)
     // 模板、正在看的原画直接给模型看：复制进工作目录，所有 CLI 都读得到
     const shown = [
       ...new Set(
@@ -909,6 +914,7 @@ ${prompt}`,
       },
       {
         conceptOnly: mode === 'concept',
+        layoutOnly: layoutStage,
         conceptCount: mode === 'concept' ? input.conceptCount : undefined,
         // 分析只读：工具的修改、出原画和提问都会被挡掉
         readOnly: input.mode === 'analyze',
@@ -975,7 +981,15 @@ ${prompt}`,
                   // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
                   [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
                   // 提示词里的原画张数要和 MCP 实际出图用的 conceptCount 一致（count 只是每张图几版）
-                  mode ? { mode, state: concept, marks: conceptMarks, count: input.conceptCount } : undefined,
+                  mode
+                    ? {
+                        mode,
+                        state: concept,
+                        marks: conceptMarks,
+                        count: input.conceptCount,
+                        layout: cache.get(d.id)!.layout,
+                      }
+                    : undefined,
                 ),
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
@@ -1096,7 +1110,15 @@ ${prompt}`,
         }
         const cur = cache.get(d.id)!
         const r2 = res.result
+        // 这一轮拆出来的区块：存进设计，等用户在原画面板里调整、确认
+        if (sess.layout && approved)
+          cur.layout = {
+            concept: approved.id,
+            regions: sess.layout.map((g) => ({ id: randomUUID(), ...g })),
+            confirmed: false,
+          }
         const changed = !!(
+          sess.layout ||
           res.root ||
           res.components ||
           res.animations ||
@@ -1782,6 +1804,8 @@ ${prompt}`,
               root: normalizeTree(doc.root),
               components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
               animations: doc.animations,
+              // 用户在原画面板里调整、确认的区块（和控件树一样：AI 改设计期间、版本旧了时不收）
+              layout: doc.layout,
             }),
       })
       normalizeSlices(d)
@@ -2323,124 +2347,6 @@ ${prompt}`,
       await writeFile(path.join(dir, EXPORT_MARK), JSON.stringify({ designId: d.id, title: d.title }, null, 2))
       return c.json({ dir })
     })
-
-  /**
-   * 网页 UI 导出：index.html + images/ 下的图片；inline 时只出一个 HTML，图片按 data URL 内嵌，
-   * 双击就能用浏览器打开
-   */
-  async function exportWebFiles(d: Design, inline: boolean) {
-    const used = usedImages([d.root, ...d.components.map((c) => c.Root)])
-    const names = new Set<string>()
-    const files: { name: string; data: Buffer }[] = []
-    const src = new Map<string, string>()
-    for (const i of d.images) {
-      const v = i.variants[i.selected] ?? i.variants.at(-1)
-      if (!v || !used.has(i.id)) continue
-      const buf = await readFile(path.join(imagesDir(d.id), v.file)).catch(() => null)
-      if (!buf) continue
-      const ext = v.file.split('.').pop()!
-      if (inline) {
-        src.set(i.id, `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${buf.toString('base64')}`)
-        continue
-      }
-      const base = uniqueName(i.name.replace(/[^A-Za-z0-9_-]/g, '_') || i.id, names)
-      names.add(base)
-      src.set(i.id, `images/${base}.${ext}`)
-      files.push({ name: `images/${base}.${ext}`, data: buf })
-    }
-    const html = webExport({
-      title: d.title,
-      designSize: d.designSize,
-      root: d.root,
-      components: d.components,
-      file: (id) => src.get(id),
-      animations: d.animations,
-    })
-    const ascii = (d.title.match(/[A-Za-z0-9]+/g) ?? []).join('-').toLowerCase()
-    return { name: ascii || 'page', files: [{ name: 'index.html', data: Buffer.from(html) }, ...files], src }
-  }
-
-  /** 导出的文件：<名字>.umg.json + Textures/T_xxx.png（网页 UI 是 index.html + images/） */
-  async function exportFiles(d: Design) {
-    if (d.kind === 'web') {
-      const f = await exportWebFiles(d, false)
-      return { name: f.name, files: f.files, json: undefined }
-    }
-    const images = []
-    const datas = new Map<string, Buffer>()
-    for (const i of d.images) {
-      const v = i.variants[i.selected] ?? i.variants.at(-1)
-      if (!v) continue
-      const buf = await readFile(path.join(imagesDir(d.id), v.file)).catch(() => null)
-      if (!buf) continue
-      datas.set(i.id, buf)
-      images.push({
-        id: i.id,
-        name: i.name,
-        ext: v.file.split('.').pop()!,
-        width: v.width || i.width,
-        height: v.height || i.height,
-        nineSlice: i.nineSlice,
-      })
-    }
-    const { json, files: tex } = exportDesign({
-      title: d.title,
-      designSize: d.designSize,
-      root: d.root,
-      components: d.components,
-      images,
-      animations: d.animations,
-    })
-    const files = [
-      { name: `${json.Name}.umg.json`, data: Buffer.from(JSON.stringify(json, null, 2)) },
-      ...tex.map((x) => ({ name: x.file, data: datas.get(x.id)! })),
-    ]
-    return { name: json.Name, json, files }
-  }
-
-  /** 网页 UI 导出成 React + Tailwind：<页面>.tsx + images/ */
-  async function reactExport(d: Design) {
-    const f = await exportWebFiles(d, false)
-    const tsx = webReactExport({
-      title: d.title,
-      root: d.root,
-      components: d.components,
-      file: (id) => f.src.get(id)?.replace(/^images\//, ''),
-      animations: d.animations,
-    })
-    const name = f.name.replace(/(^|-)(\w)/g, (_, _a, c: string) => c.toUpperCase()) || 'Page'
-    return {
-      name: `${f.name}-react.zip`,
-      type: 'application/zip',
-      data: zip([
-        { name: `${name}.tsx`, data: Buffer.from(tsx) },
-        // 有动画时一起带上播放代码
-        ...(d.animations?.length ? [{ name: 'ui-anim.ts', data: Buffer.from(reactAnimFile()) }] : []),
-        ...f.files.filter((x) => x.name !== 'index.html'),
-      ]),
-    }
-  }
-
-  async function buildExport(d: Design, single: boolean) {
-    if (d.kind === 'web') {
-      const f = await exportWebFiles(d, single)
-      if (single) return { name: `${f.name}.html`, type: 'text/html; charset=utf-8', data: f.files[0].data }
-      return { name: `${f.name}.zip`, type: 'application/zip', data: zip(f.files) }
-    }
-    const f = await exportFiles(d)
-    if (single && f.json) {
-      // 单个 JSON：图片按 base64 内嵌在 Textures[].Data 里
-      const data = {
-        ...f.json,
-        Textures: f.json.Textures.map((tx: { File: string }) => ({
-          ...tx,
-          Data: f.files.find((x) => x.name === tx.File)?.data.toString('base64') ?? '',
-        })),
-      }
-      return { name: `${f.name}.umg.json`, type: 'application/json', data: Buffer.from(JSON.stringify(data, null, 2)) }
-    }
-    return { name: `${f.name}.zip`, type: 'application/zip', data: zip(f.files) }
-  }
 
   return {
     routes,

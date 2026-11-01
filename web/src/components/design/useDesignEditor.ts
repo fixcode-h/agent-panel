@@ -17,6 +17,7 @@ const docOf = (d: DesignFull): DesignDoc => ({
   images: d.images,
   annotations: d.annotations ?? [],
   animations: d.animations ?? [],
+  ...(d.layout ? { layout: d.layout } : {}),
 })
 
 /**
@@ -235,7 +236,8 @@ export function useDesignEditor(id: string) {
           next.animations !== cur.animations ||
           next.data !== cur.data ||
           next.designSize !== cur.designSize ||
-          next.style !== cur.style)
+          next.style !== cur.style ||
+          next.layout !== cur.layout)
       ) {
         if (Date.now() - warned.current > 3000) {
           warned.current = Date.now()

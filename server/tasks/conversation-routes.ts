@@ -5,7 +5,6 @@ import {
   PresenceInput,
   NewTaskInput,
   Task,
-  type StopReason,
   type TaskMessage,
   type Workflow,
   type TaskSeenResult,
@@ -15,15 +14,8 @@ import { blockedStep, taskFlow, taskWorkflows } from '../../shared/flow.ts'
 import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
 import { settleWait } from '../../shared/plan.ts'
-import {
-  closeFlow,
-  dropEndNotes,
-  resumeNote,
-  newTask,
-  taskDeleted,
-  withAttachments,
-  withTaskModel,
-} from '../../shared/task.ts'
+import { kidsSkipNote, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
+import { closeFlow, dropEndNotes, newTask, taskDeleted, withAttachments, withTaskModel } from '../../shared/task.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
@@ -452,7 +444,7 @@ export function registerConversationRoutes(s: TasksScope) {
       }
       // 对话：一起被中断的子对话由面板连带拉起来（先拉，父对话的续接提示里才写得清哪些已经在接着做）
       const kids = task.mode === 'chat' && !task.parentTaskId ? await resumeKids(entry.task) : undefined
-      const prompt = resumePrompt(task, users, kids?.resumed, kids?.failed)
+      const prompt = resumePrompt(task, users, kids?.resumed, kids?.failed, kids?.notes)
       const agents = await s.deps.agents.list()
       return c.json(await withoutStoppedJobs(entry.task, () => s.start(entry, prompt, false, agents, undefined, true)))
     } catch (e) {
@@ -465,23 +457,38 @@ export function registerConversationRoutes(s: TasksScope) {
    * 继续执行时交给 CLI 的话：最后一条要求原样再交一遍；对话模式前面写清这是续接、中断时还有什么没跑完（见 resumeNote）。
    * 工作流模式由引擎按节点续接，不加
    */
-  function resumePrompt(task: Task, users: TaskMessage[], resumed: string[] = [], failed: KidFailure[] = []) {
+  function resumePrompt(
+    task: Task,
+    users: TaskMessage[],
+    resumed: string[] = [],
+    failed: KidFailure[] = [],
+    notes: string[] = [],
+  ) {
     const last = users.at(-1)
     const text = withAttachments(last?.prompt || last?.text || '', last?.attachments)
     if (task.mode !== 'chat') return text
-    return `${resumeNote(task, resumed, failed)}\n\n原来的要求：\n${text}`
+    return `${[resumeNote(task, resumed, failed), ...notes].join('\n')}\n\n原来的要求：\n${text}`
   }
 
   /**
    * 父对话继续执行时，把和它一起被打断的子对话也拉起来接着做，返回拉起来的标题和没能拉起来的（写进续接说明）。
    * parent 是执行位里那份（s.start 用它落盘）：拉不起来的子对话，计划里等它的那一步在这份上收口
    * 只拉被连带打断的（父对话结束时一起停的、面板重启、卡住重开时停的），用户亲手停的、已经收尾的、在回收站的不拉。
+   * 待收尾、父对话已经收下结果的也不拉：实测里已交付的子对话被拉起后把做完的事又做了一遍（见 sortStoppedKids）。
+   * 用户单独停掉的写进续接说明，让父对话问用户，而不是当成失败去重派。
    * 以前继续父对话不管子对话：父对话看子对话没动静，就另建一个子对话重做（用户报过，要求尽量用原来的子对话）
    */
-  async function resumeKids(parent: Task): Promise<{ resumed: string[]; failed: KidFailure[] }> {
+  async function resumeKids(parent: Task): Promise<{ resumed: string[]; failed: KidFailure[]; notes: string[] }> {
     const parentId = parent.id
-    const again: StopReason[] = ['parent', 'restart', 'stalled', 'lost']
-    const kids = (await s.store.list()).filter(
+    // 停父对话后马上点继续：子对话已经落成「已中断」，但这一份执行还在收尾（写盘、上报）、执行位没放，
+    // 下面按「不在执行」筛就会漏掉它，既不拉起也不在续接说明里出现。先等在停的那些收完，最多等几秒
+    const settling = [...s.live.values()].filter((e) => e.task.parentTaskId === parentId && e.stop && e.done)
+    if (settling.length)
+      await Promise.race([
+        Promise.all(settling.map((e) => e.done!.catch(() => {}))),
+        new Promise((r) => setTimeout(r, 5000).unref?.()),
+      ])
+    const stopped = (await s.store.list()).filter(
       (k) =>
         k.parentTaskId === parentId &&
         !taskDeleted(k) &&
@@ -489,10 +496,11 @@ export function registerConversationRoutes(s: TasksScope) {
         !k.resolved &&
         !k.imported &&
         k.status === 'stopped' &&
-        !!k.stopReason &&
-        again.includes(k.stopReason) &&
         !s.live.has(k.id),
     )
+    const sorted = sortStoppedKids(parent, stopped)
+    const kids = sorted.resume
+    const notes = kidsSkipNote(sorted.userStopped, sorted.skipped)
     const agents = await s.deps.agents.list()
     const titles: string[] = []
     const failed: KidFailure[] = []
@@ -522,7 +530,7 @@ export function registerConversationRoutes(s: TasksScope) {
         settleWait(parent, 'child', kid.id, false)
       }
     }
-    return { resumed: titles, failed }
+    return { resumed: titles, failed, notes }
   }
 
   return { prewarmChat, createTask }

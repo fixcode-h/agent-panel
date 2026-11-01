@@ -27,7 +27,14 @@ import {
   settleRetryNotes,
   shouldRetryEnvStall,
 } from './runner.ts'
-import { CompactTracker, describeCompaction, settleCompactRow } from './compaction.ts'
+import {
+  awaitingCompact,
+  CompactTracker,
+  describeCompaction,
+  settleCompactRow,
+  shouldRetryThrash,
+  THRASH_RETRY_PROMPT,
+} from './compaction.ts'
 import { restartNoteText } from './recovery.ts'
 import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 
@@ -186,6 +193,73 @@ test('压缩上下文：写明压缩了多少、现在占上下文窗口多少',
   settleCompactRow(op, { ok: false, error: '断了' })
   assert.ok(row.failed)
   assert.equal(row.label as string, '压缩失败')
+})
+
+test('压缩没生效（压缩后不比压缩前小）：写成「压缩没有生效」并标成警告，不写「压缩了 0 token」', () => {
+  // 实测 80K 上限时 Claude Code 报的那次：111.9k → 153.3k，随后压缩抖动失败
+  const tool: ToolUse = { kind: 'compact', label: '', detail: '' }
+  describeCompaction(tool, 111_900, 153_300, 80_000)
+  assert.equal(tool.label, '压缩没有生效（111.9k → 153.3k）')
+  assert.equal(tool.alert?.level, 'warn')
+  assert.equal(tool.alert?.kind, 'context')
+  // 之后按真实细分改成了生效的大小：警告去掉，照常写压缩了多少
+  describeCompaction(tool, 111_900, 30_000, 80_000)
+  assert.equal(tool.label, '压缩了 81.9k token（111.9k → 30.0k）')
+  assert.equal(tool.alert, undefined)
+})
+
+test('Codex 手动压缩完没报用量：那一行记着等，下一轮第一次报用量时补上压缩后的大小', () => {
+  // 实测：工具行只写「压缩前 39.4k token」，实际降到 25.3k
+  const track = new CompactTracker((x) => delete x.running)
+  const op = { kind: 'compact' as const }
+  const row = track.startOp(op, 39_400, new Map())!
+  track.finishOp({ context: 39_400, window: 200_000 })
+  assert.equal(row.label, '压缩前 39.4k token')
+  assert.equal(row.compact?.awaitAfter, true)
+  const msg = (id: string, tools: ToolUse[], agentId = 'a'): TaskMessage =>
+    ({ id, role: 'agent', agentId, step: '', text: '', tools, at: '' }) as TaskMessage
+  const messages = [msg('m1', [row]), msg('m2', [], 'other')]
+  // 下一轮的 runAgent：找到那一行交给新的 tracker，第一次报用量就补上
+  const earlier = awaitingCompact(messages, 'a', '')
+  assert.equal(earlier, row)
+  const next = new CompactTracker(() => {}, earlier)
+  assert.ok(next.measured(25_300, 200_000))
+  assert.equal(row.label, '压缩了 14.1k token（39.4k → 25.3k）')
+  assert.equal(row.compact?.after, 25_300)
+  assert.equal(row.compact?.awaitAfter, undefined)
+  // 补过了就不再等：再下一轮找不到要补的
+  assert.equal(awaitingCompact(messages, 'a', ''), undefined)
+  // 只看最近一次压缩：更早那次没等到、后来又压缩过（生效的），不拿后来的用量去补
+  const old: ToolUse = { kind: 'compact', label: '', detail: '', compact: { before: 1, awaitAfter: true } }
+  assert.equal(awaitingCompact([msg('o', [old]), msg('n', [row])], 'a', ''), undefined)
+})
+
+test('压缩抖动：按 CLI 定义里的报错认，在原会话里只续一轮；压缩请求、没有会话、已经续过都不续', () => {
+  const detail =
+    'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row'
+  const pattern = getCli('claude')!.compactThrash
+  assert.ok(pattern, 'Claude Code 的定义里登记了压缩抖动的报错')
+  const base = { detail, pattern, session: true, prewarm: false, compact: false, aborted: false, tried: false }
+  assert.equal(shouldRetryThrash(base), true)
+  assert.equal(shouldRetryThrash({ ...base, tried: true }), false, '只续一次')
+  assert.equal(shouldRetryThrash({ ...base, session: false }), false)
+  assert.equal(shouldRetryThrash({ ...base, compact: true }), false)
+  assert.equal(shouldRetryThrash({ ...base, aborted: true }), false)
+  assert.equal(shouldRetryThrash({ ...base, detail: 'Connection error' }), false)
+  // 没登记这种报错的 CLI 不续
+  assert.equal(shouldRetryThrash({ ...base, pattern: getCli('codex')!.compactThrash }), false)
+  // 续那一轮的提示要让模型分段读取
+  assert.match(THRASH_RETRY_PROMPT, /分段读取/)
+  // 最后还是失败时，说明里写原因和怎么调
+  const hints = failureHints(detail, getCli('claude')!)
+  assert.ok(hints.some((h) => /自动压缩抖动/.test(h) && /128K/.test(h)))
+  // 续上了：那行警告收成已恢复，说明写的是「续了一轮」，不是「裁剪后开新会话」
+  const note = { id: 'n', role: 'system', text: '', tools: [], error: true, at: '' } as unknown as TaskMessage
+  note.alert = makeAlert('warn', detail, 'context')
+  settleContextNotes([{ msg: note, base: '失败了', thrash: true }])
+  assert.equal(note.error, undefined)
+  assert.match(note.text, /续了一轮/)
+  assert.equal(note.alert?.resolved, '续了一轮，继续做完了')
 })
 
 test('空回合：只有什么都没收到才算，回复里说了什么都照常收尾（不按文字猜）', () => {

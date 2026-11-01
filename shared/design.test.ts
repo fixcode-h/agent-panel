@@ -17,6 +17,7 @@ import {
   emptyRoot,
   nextConceptId,
   versionSnapshot,
+  buildDesignPrompt,
   type Design,
 } from './design.ts'
 
@@ -203,4 +204,61 @@ test('版本快照带上画板数据，恢复时一起还原；旧版本没存�
   const { data: _, ...old } = snap
   applyVersion(d, old)
   assert.equal(d.data?.sets[0]?.name, 'Items')
+})
+
+test('模板确认后先拆区块；区块确认了，搭界面的提示词带上区块坐标', () => {
+  const tpl = {
+    id: 'c1_1',
+    file: 'a.png',
+    width: 1920,
+    height: 1080,
+    prompt: 'p',
+    negative: '',
+    round: 1,
+    source: 'cli' as const,
+    at: '',
+  }
+  const d = {
+    id: 'd',
+    kind: 'game',
+    title: 'T',
+    designSize: { X: 1920, Y: 1080 },
+    style: 'dark',
+    root: emptyRoot('game'),
+    components: [],
+    images: [],
+    animations: [],
+    annotations: [],
+    messages: [],
+    concept: { images: [tpl], selected: 'c1_1', approved: 'c1_1' },
+  } as unknown as Design
+  const regions = [{ id: 'r', name: 'TopBar', x: 0, y: 0, w: 1920, h: 120, note: '标题' }]
+  const ctx = (layout?: Design['layout']) => ({ mode: 'template' as const, state: d.concept!, marks: [], layout })
+  const split = buildDesignPrompt(d, [], '做', [], [], undefined, [], ctx())
+  assert.match(split, /先拆区块/)
+  assert.match(split, /propose_layout/)
+  assert.doesNotMatch(split, /骨架照用户确认过的区块搭/)
+  // 拆过但没确认：把之前的区块给 AI，让它在这个基础上改
+  assert.match(
+    buildDesignPrompt(d, [], '做', [], [], undefined, [], ctx({ concept: 'c1_1', regions, confirmed: false })),
+    /TopBar：x=0 y=0 宽=1920 高=120 — 标题/,
+  )
+  const build = buildDesignPrompt(
+    d,
+    [],
+    '做',
+    [],
+    [],
+    undefined,
+    [],
+    ctx({ concept: 'c1_1', regions, confirmed: true }),
+  )
+  assert.doesNotMatch(build, /先拆区块/)
+  assert.match(build, /骨架照用户确认过的区块搭/)
+  assert.match(build, /TopBar：x=0 y=0 宽=1920 高=120/)
+  // 区块是别的模板的：当没确认处理，重新拆
+  assert.match(
+    buildDesignPrompt(d, [], '做', [], [], undefined, [], ctx({ concept: 'old', regions, confirmed: true })),
+    /先拆区块/,
+  )
 })

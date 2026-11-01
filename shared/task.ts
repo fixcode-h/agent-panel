@@ -701,7 +701,7 @@ export function childReport(
         return note ? t('执行失败了（{note}）', { note }) : t('执行失败了')
       }
       case 'stopped':
-        return stopReasonText(task.stopReason)
+        return task.stopReason === 'user' ? t('用户停掉了它，等用户决定要不要继续') : stopReasonText(task.stopReason)
       case 'unfinished':
         if (work.length)
           return t('计划还没做完：{list}', {
@@ -722,7 +722,13 @@ export function childReport(
   })()
   return {
     state,
-    settle: state === 'done' ? 'ok' : state === 'failed' || state === 'stopped' ? 'fail' : 'hold',
+    // 用户亲手停的不是失败：那一步继续等（用户继续它时结果照常推回），不退回「需要修复」引着父对话去重派
+    settle:
+      state === 'done'
+        ? 'ok'
+        : state === 'failed' || (state === 'stopped' && task.stopReason !== 'user')
+          ? 'fail'
+          : 'hold',
     why: [convStateText(state), reason].filter(Boolean).join(t('：')),
     notify: state !== 'running' && state !== 'waiting' && state !== 'needs',
   }
@@ -1394,48 +1400,6 @@ export const childStage = (x: ChildEntry) => stageOf(childState(x))
  * 等用户处理（提问、待确认）不转：那是在等你，转圈会把「等你选择」说成「还在跑」
  */
 /** 停下原因的文案：只有用户按的暂停才说「已暂停」，别的一律说清是谁结束的 */
-/**
- * 对话被打断后点「继续执行」：交给 CLI 的那句话前面写清这是续接、中断时还有哪些没跑完。
- * 以前只把最后一条要求原样再发一遍：模型不知道自己被打断过，要么从头重做，要么不知道还有子任务、工作流没跑完；
- * 父对话也不知道面板已经把子对话拉起来了，又另建一个子对话重做（用户报过）。
- * resumed：面板这次连带拉起来的子对话标题；failed：没能拉起来的（父对话据此另建子对话接手，ADR 0032）
- */
-export function resumeNote(
-  task: Pick<Task, 'stopReason' | 'steps' | 'runs'> & { plans?: Task['plans']; stoppedJobs?: Task['stoppedJobs'] },
-  resumed: string[] = [],
-  failed: { id: string; title: string; error: string }[] = [],
-): string {
-  const lines = [
-    `（面板说明：上一轮${task.stopReason ? `${stopReasonText(task.stopReason)}` : '被中断了'}，现在在原来的会话里接着做。` +
-      '先看计划里没做完的步骤接着做，已经完成的不要重做。）',
-  ]
-  if (resumed.length)
-    lines.push(
-      `- 一起中断的子对话已经由面板拉起来接着做：${resumed.map((x) => `「${x}」`).join('、')}。不用另建子对话重做，等它们的结果；要补充就 send_to_conversation 交给它们。`,
-    )
-  if (failed.length)
-    lines.push(
-      `- 没能拉起来的子对话：${failed.map((k) => `「${k.title}」（id ${k.id}，${k.error.split('\n')[0].slice(0, 120)}）`).join('、')}。` +
-        '计划里等它的那一步已退回进行中；需要的话另建子对话接手（它原来的改动还在它的目录 / 分支里），不要干等它的结果。',
-    )
-  const helpers = task.steps.filter((s) => s.slot === 'sub' && s.interrupted && s.status !== 'done')
-  if (helpers.length)
-    lines.push(
-      `- 中断时没跑完的子任务：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。还需要就用 spawn_agents 带 resume: <id> 在原来的会话里接着跑，不要重新派一个。`,
-    )
-  const runs = (task.runs ?? []).filter((r) => r.status === 'stopped' || r.status === 'running')
-  if (runs.length)
-    lines.push(
-      `- 中断时没跑完的工作流：${runs.map((r) => `「${r.workflowName || r.workflowId}」`).join('、')}。计划里绑着它的那一步已退回进行中（需要修复），还要跑就用 start_plan 重新启动那一步。`,
-    )
-  const jobs = task.stoppedJobs ?? []
-  if (jobs.length)
-    lines.push(
-      `- 中断时一起停掉的后台命令：${jobs.map((j) => `「${j.name}」（${j.command.split('\n')[0].slice(0, 120)}）`).join('、')}。它们不会再推回结果，不要等；还需要结果就用 run_background 重新启动，不需要了就在计划里把等它的那一步改掉。`,
-    )
-  return lines.join('\n')
-}
-
 export function stopReasonText(reason: StopReason | undefined): string {
   switch (reason) {
     case 'parent':

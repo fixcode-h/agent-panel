@@ -592,6 +592,22 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.mouse.up()
   await check(p, 'UI设计-蒙版', ['只重绘蒙版', '蒙版'])
   await p.getByRole('button', { name: '用这张做模板' }).click()
+  // 确认模板后先拆区块：区块画在模板图上，留在原画面板等用户调整，确认后才回到画布搭界面
+  await p.getByRole('button', { name: '确认区块，开始搭界面' }).waitFor({ timeout: 15000 })
+  assert.ok((await p.locator('[data-region]').count()) > 0, '模板图上画出了区块')
+  await check(p, 'UI设计-拆区块', ['新增区块', '确认区块，开始搭界面'])
+  // 拖动一个区块：位置跟着变（区块是设计稿坐标，确认后搭界面照它摆）
+  const region = p.locator('[data-region]').first()
+  const regionBefore = await region.boundingBox()
+  await p.mouse.move(regionBefore.x + regionBefore.width / 2, regionBefore.y + regionBefore.height / 2)
+  await p.mouse.down()
+  await p.mouse.move(regionBefore.x + regionBefore.width / 2 + 20, regionBefore.y + regionBefore.height / 2 + 10, {
+    steps: 5,
+  })
+  await p.mouse.up()
+  const regionMoved = await region.boundingBox()
+  assert.ok(Math.abs(regionMoved.x - regionBefore.x) > 5 || Math.abs(regionMoved.y - regionBefore.y) > 5, '区块能拖动')
+  await p.getByRole('button', { name: '确认区块，开始搭界面' }).click()
   await p.getByRole('button', { name: '对照模板' }).waitFor({ timeout: 15000 })
   await p.goto(base + '#/design/new')
   // 网页 UI：新建一个网页设计，让 AI 搭首页，看自动布局画出来的样子

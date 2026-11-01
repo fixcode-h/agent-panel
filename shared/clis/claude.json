@@ -93,6 +93,10 @@
       "why": "接第三方模型（不在 Claude Code 自己的模型表里）时每次启动都打这一行，只是提示、不影响运行；留在失败原因里会被误读成「模型识别问题」"
     }
   ],
+  "compactThrash": {
+    "pattern": "Autocompact is thrashing",
+    "why": "上下文上限设得小、一次工具输出（并行读几个大文件、cat 大文件）就把压缩后的上下文填满时，Claude Code 连续 3 次压缩完又满，报「Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row」并以退出码 1 结束这一轮"
+  },
   "protocol": "rpc",
   "args": [
     {

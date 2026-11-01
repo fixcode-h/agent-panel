@@ -657,6 +657,36 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     const tpl = d.concept.images[1].id
     d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'approve', id: tpl })
     assert.equal(d.concept.approved, tpl)
+    // 确认模板后先拆区块：这一轮只能 propose_layout，搭界面的工具被挡下；区块存进设计等用户确认
+    await call('POST', `/designs/${sketch.id}/chat`, {
+      text: `拆区块 FAKE_MCP:${JSON.stringify([
+        [
+          'add_widgets',
+          {
+            items: [
+              { parent: 'RootCanvas', widget: { Type: 'Image', Name: 'Early', Slot: { x: 0, y: 0, w: 8, h: 8 } } },
+            ],
+          },
+        ],
+        ['propose_layout', { regions: [{ name: 'TopBar', x: 0, y: 0, w: 1920, h: 120, note: '标题' }] }],
+      ])}`,
+      source: { kind: 'cli' },
+    })
+    d = await waitJob(sketch.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    const splitInput = calls()
+      .filter((c) => /你是游戏 UI 设计助手/.test(c.stdin ?? c.input ?? ''))
+      .at(-1)
+    assert.match(splitInput.stdin ?? splitInput.input, /先拆区块/)
+    assert.ok(!d.root.Children?.some((w) => w.Name === 'Early'), '拆区块这一轮不能搭界面')
+    assert.deepEqual(
+      [d.layout.concept, d.layout.confirmed, d.layout.regions.map((g) => g.name)],
+      [tpl, false, ['TopBar']],
+      '区块存进设计，等用户确认',
+    )
+    // 用户确认区块（页面保存），下一轮照区块搭界面
+    d = await call('PUT', `/designs/${sketch.id}`, { ...d, layout: { ...d.layout, confirmed: true }, baseRev: d.rev })
+    assert.equal(d.layout.confirmed, true)
     await call('POST', `/designs/${sketch.id}/chat`, {
       text: `照着模板做 FAKE_MCP:${JSON.stringify([
         // 模板模式里 AI 顺手出了一张原画：只进候选，不能把模板作废（同轮的切图还要拿模板当参考）
@@ -699,6 +729,7 @@ await runShard('AI 创建与 UI 设计', async (api) => {
       .filter((c) => /你是游戏 UI 设计助手/.test(c.stdin ?? c.input ?? ''))
       .at(-1)
     assert.match(tplInput.stdin ?? tplInput.input, new RegExp(`已确认的效果图模板[\\s\\S]*concept:${tpl}`))
+    assert.match(tplInput.stdin ?? tplInput.input, /骨架照用户确认过的区块搭[\s\S]*TopBar：x=0 y=0 宽=1920 高=120/)
     assert.equal(d.images.find((i) => i.id === 'gem').negative, 'frame')
     const gemGen = calls()
       .filter((c) => /a red gem/.test(c.stdin ?? c.input ?? ''))
