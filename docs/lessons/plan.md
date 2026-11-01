@@ -1,5 +1,5 @@
 ---
-paths: shared/plan.ts, shared/engine.ts, server/p4-split.ts, server/tasks/peer.ts
+paths: shared/plan.ts, shared/engine.ts, server/p4-split.ts
 ---
 
 # 执行计划
@@ -23,12 +23,6 @@ paths: shared/plan.ts, shared/engine.ts, server/p4-split.ts, server/tasks/peer.t
 
 ## 计划和子对话按标题对应时不按包含关系猜
 
-- 规则：`linkKids` 只认 id、或步骤标题和子对话标题一致（去掉「子对话：」前缀）；只是含着子对话标题的，要 Agent 自己写成等待中、子对话还没做完、也没挂在别的步骤上才认。已完成的子对话只给写成等待中的步骤收口，不把新加的同名字眼步骤当场标完成。
-- 起因：审计发现（df820f2 起）已完成的子对话「类型检查」把后加的「合并后跑全量类型检查」直接标完成，跳过了整体验证。
+- 规则：`linkKids` 只认 id、或步骤标题和子对话标题一致（去掉「子对话：」前缀）；只是含着子对话标题的，要 Agent 自己写成等待中、子对话还没做完、也没挂在别的步骤上才认。已完成的子对话只给写了 id 且等待中的、或完全同名又没被别的步骤认领的步骤收口，不把只含同样字眼的新步骤当场标完成。
+- 起因：审计发现（df820f2 起）已完成的子对话「类型检查」把后加的「合并后跑全量类型检查」直接标完成；2bb92363 收紧时连完全同名也不收口，步骤停在待做、推进时 Agent 会重做。
 - 防线：`shared/plan.test.ts`「按标题认子对话」。
-
-## 计划挂着等父对话的请求，交出时就要叫醒父对话
-
-- 规则：子对话给步骤挂上 kind `parent` 的等待后，`planStalled`、`reportChild`、idle-ask 都不会再替它推父对话，请求本身（`message_parent` 的 wait_fix）必须在父对话没在执行时 `wakeConv`；用户亲手停下的父对话不叫（落盘的 stopped/user、执行位上刚按停止、子对话跟着父对话停下途中发的）。新加「挂等待 + 发消息」的工具照这条检查。
-- 起因：审计发现（df820f2 起）父对话空闲时修复请求只进收件箱，父子互等到用户介入；带了提问标记的还会被并进阶段汇报、永远交不出去。
-- 防线：`server/tasks/peer.test.ts`。

@@ -163,6 +163,8 @@ export const EN_ALERTS: Record<string, string> = {
     "A subconversation needs a decision, but a turn couldn't be started to handle it. The question is in the inbox",
   '子对话请你安排修复，但没能开一轮来处理，报错在收件箱里':
     "A subconversation asked you to arrange a fix, but a turn couldn't be started to handle it. The error is in the inbox",
+  '子对话还在等你安排修复，面板提醒时没能开一轮来处理':
+    "A subconversation is still waiting for you to arrange a fix, but the panel couldn't start a turn to remind you",
   '关掉「提问」后没能开一轮去回答子对话的问题':
     "After Ask was turned off, a turn couldn't be started to answer the subconversation's question",
   '提前启动 Agent 失败：发消息时会再启动一次，仍然失败会在这里报错':

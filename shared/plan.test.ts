@@ -1206,6 +1206,36 @@ test('按标题认子对话：只认标题一致或 Agent 写成等待中的；�
   assert.equal(st[0].waits[0]?.ref, 'k-ai')
   assert.equal(st[1].waits[0]?.ref, 'k-login')
   assert.equal(st[2].waits.length, 0, '没写成等待中、只是提到同样字眼的不挂')
+
+  // 子对话都已完成时并排看三种认法（别当成笔误「改齐」）：写了 id 的等待中认、只含标题的等待中不认、完全同名的认，认了就当场收口
+  const d = fresh()
+  const finished = [
+    { id: 'abcdef12-log', title: '整理日志模块', createdAt: iso(base), done: true, endedAt: iso(base + 60_000) },
+    { id: 'k-test', title: '补登录测试', createdAt: iso(base), done: true, endedAt: iso(base + 60_000) },
+    { id: 'k-api', title: '实现登录接口', createdAt: iso(base), done: true, endedAt: iso(base + 60_000) },
+  ]
+  applyPlan(
+    d,
+    {
+      steps: [
+        { title: '等日志整理', status: 'waiting', note: '等 abcdef12 合回' },
+        { title: '等补测试合回', status: 'waiting', note: '等「补登录测试」合回' },
+        { title: '子对话：实现登录接口' },
+      ],
+    },
+    iso(base + 120_000),
+    undefined,
+    finished,
+  )
+  const ds = activePlan(d)!.steps
+  assert.deepEqual(
+    ds.map((x) => [x.status, x.waits.map((w) => w.ref).join()]),
+    [
+      ['done', 'abcdef12-log'],
+      ['running', ''],
+      ['done', 'k-api'],
+    ],
+  )
 })
 
 /**

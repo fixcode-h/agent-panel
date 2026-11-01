@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { Task, type AskKind, type TaskMessage } from '../../shared/schema.ts'
-import { askOptions } from '../../shared/task.ts'
+import { askOptions, taskGone } from '../../shared/task.ts'
+import { clip } from '../../shared/text.ts'
+import type { WakeHold } from '../../shared/wake.ts'
 import { steerTask } from '../exec/runner.ts'
 import { type HelperSpec, type Orchestra } from '../../shared/engine.ts'
 import { makeAlert } from '../../shared/alerts.ts'
@@ -19,6 +21,21 @@ const saveFailed = (e: unknown): never => {
 
 /** 子对话请父对话安排修复的报错（engine 的 toParent 带 wait_fix 时加的开头）：要父对话马上动手，不并进一轮结束的汇报 */
 const FIX_HEAD = /^【报错不是我改出来的/
+/** 叫醒文案里要去掉的那一行开头（叫醒文案自己说了是什么事） */
+const FIX_HEAD_LINE = /^【报错不是我改出来的[^】\n]*】/
+/** 父对话里那条修复请求的结尾（remindParentFix 按它找回当时的报错） */
+const FIX_TAIL = (id: string) => `（修好后用 send_to_conversation 通知这个子对话重跑验证，id: ${id}）`
+/** 叫醒父对话时直接带上的报错正文长度：只说「在收件箱里」的话，收件箱万一没写进去父对话就无从下手 */
+const FIX_WAKE_CHARS = 1500
+
+/** 不叫醒父对话时回给子对话的原因（见 shared/wake.ts 的 WakeHold） */
+const HELD_WHY: Record<WakeHold, string> = {
+  user: '父对话被用户停下了',
+  budget: '父对话因用量上限停下了',
+  lost: '父对话已经中断（面板核对时收口），等用户决定是否继续',
+  sender: '你正在被停下',
+  over: '这组对话已经用到用量上限，面板不再开新的一轮',
+}
 
 /**
  * 子对话和父对话之间的消息：子对话传话给父对话、转交子任务请求、把排着的转交接到父对话这一轮的 Orchestra 上。
@@ -122,7 +139,7 @@ export function createPeer(s: TasksScope) {
       role: 'system',
       agentId: '',
       step: '',
-      text: `${head}：\n${body}${question ? `\n\n（决定后用 send_to_conversation 交给这个子对话，id: ${child.id}）` : fix ? `\n\n（修好后用 send_to_conversation 通知这个子对话重跑验证，id: ${child.id}）` : ''}${why}`,
+      text: `${head}：\n${body}${question ? `\n\n（决定后用 send_to_conversation 交给这个子对话，id: ${child.id}）` : fix ? `\n\n${FIX_TAIL(child.id)}` : ''}${why}`,
       tools: [],
       panel: question && !auto ? 'ask' : 'child',
       ...(!(question && !auto) && { peer }),
@@ -149,40 +166,40 @@ export function createPeer(s: TasksScope) {
     }
     const entry = s.live.get(parent.id)
     const how = entry?.task.working ? await steerTask(entry.task, msg.text, msg).catch(() => false) : false
+    // 写进「现在」的那一份（和 noteParent 同一个坑）：开头读的可能是磁盘上的旧对象，中间 peerOf、写子对话时
+    // 父对话可能被别的子对话的上报拉起来（执行器拿的是一份拷贝），往旧对象里写、拿旧对象落盘，
+    // 收件箱这条会被执行器下一次落盘盖掉，父对话被叫醒后却在收件箱里找不到报错（复核 C1-a）
+    const target = s.live.get(parent.id)?.task ?? parent
     if (!how) {
-      parent.messages.push(msg)
-      parent.inbox.push({
+      target.messages.push(msg)
+      target.inbox.push({
         from: child.id,
         title: child.title,
         text: question ? `（提问）${body}` : fix ? `${text}\n（修好后通知它重跑验证，id: ${child.id}）` : text,
         at: msg.at,
       })
-    } else if (!parent.messages.some((x) => x.id === msg.id)) {
+    } else if (!target.messages.some((x) => x.id === msg.id)) {
       // 正在跑的父对话已经从插话里收到问题：也记一条（自动交出时 panel 是 child，界面不画），它下一轮还能看到
-      parent.messages.push(msg)
+      target.messages.push(msg)
     }
-    parent.updatedAt = msg.at
-    if (entry) entry.rev++
-    else await s.store.update(parent.id, parent).catch(saveFailed)
+    target.updatedAt = msg.at
+    const now = s.live.get(parent.id)
+    if (now) now.rev++
+    else await s.store.update(parent.id, target).catch(saveFailed)
     // 自动交给父对话的 AI 作答：已经从插话里收到的不再叫；其余的按实时交付叫起它（答案从收件箱里看全文）。
     // 不能只看 working：父对话停在等下一句、正在收尾、预热时 working 是 false 但执行位还占着，直接开新一轮会被拒
     // 请它安排修复的同样要叫：子对话那一步在等它，不叫就互等到用户介入。
-    // 用户亲手停下的父对话不叫（ADR 0032）：记在收件箱里，用户点「继续执行」时一起处理
-    // 子对话自己正跟着父对话一起停下（closeChildren 记成 parent）：这条是停下前在路上的，同样不叫
-    const kidLive = s.live.get(child.id)
-    const userStopped =
-      (entry
-        ? entry.stop && entry.stopReason === 'user'
-        : parent.status === 'stopped' && parent.stopReason === 'user') ||
-      (!!kidLive?.stop && kidLive.stopReason === 'parent')
+    // 叫不叫只走 holdWake（shared/wake.ts）：用户亲手停下、因用量上限停下、核对收成「已中断」、整棵树已超限、
+    // 子对话自己正跟着父对话 / 用户 / 用量上限停下（这条是停下前在路上的）都不叫，记在收件箱里，用户点「继续执行」时一起处理
+    const held = auto || fix ? await s.holdWake(target, { from: child.id }) : undefined
     if (auto || fix) {
-      await s.store.update(parent.id, parent).catch(saveFailed)
-      if (!how && !userStopped)
+      await s.store.update(parent.id, target).catch(saveFailed)
+      if (!how && !held)
         void s
           .wakeConv(
             parent.id,
             fix
-              ? `子对话「${child.title}」报了一个不是它改出来的报错，请你安排修复（报错原文在收件箱里）。按出错的文件找出改出它的子对话，用 send_to_conversation 交给它修；没有对应的子对话、或是你自己改出来的，就自己修或新建子对话修。修好后用 send_to_conversation 通知「${child.title}」（id: ${child.id}）重跑验证：它卡住的那一步在等你的通知。`
+              ? `子对话「${child.title}」（id: ${child.id}）报了一个不是它改出来的报错，请你安排修复：\n${clip(text.replace(FIX_HEAD_LINE, '').trim(), FIX_WAKE_CHARS)}\n\n按出错的文件找出改出它的子对话，用 send_to_conversation 交给它修；没有对应的子对话、或是你自己改出来的，就自己修或新建子对话修。修好后用 send_to_conversation 通知「${child.title}」（id: ${child.id}）重跑验证：它卡住的那一步在等你的通知。`
               : `子对话「${child.title}」${suggestion ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${child.id}）。`,
             { panel: 'child', peer },
           )
@@ -202,8 +219,8 @@ export function createPeer(s: TasksScope) {
     if (fix && !how)
       return {
         ok: true,
-        info: userStopped
-          ? '父对话被用户停下了：这条报错记在它的收件箱里，用户让它继续时会安排修复。先做计划里不依赖它的步骤，不要去改别人的文件。'
+        info: held
+          ? `${HELD_WHY[held]}：这条报错记在父对话的收件箱里，用户让它继续时会安排修复。先做计划里不依赖它的步骤，不要去改别人的文件。`
           : '父对话现在没在执行，面板已经叫起它安排修复（报错记在它的收件箱里）。',
       }
     if (auto)
@@ -222,6 +239,36 @@ export function createPeer(s: TasksScope) {
           : '父对话现在没在执行，问题已经记在父对话里，用户或父对话下一轮会回答。不要停下来等：先按最稳妥的做法继续，或者结束这一轮并写清需要决定的事。'
         : '已记在父对话里，它下一轮会看到',
     }
+  }
+
+  /**
+   * 子对话还挂着「等父对话安排修复」、父对话却空闲（定时核对发现的，见 state-sweep.ts）：叫起父对话提醒一次，带上当时的报错。
+   * messageParent 交出时的叫醒是发出去就不管的：面板重启时丢掉、父对话那一轮没回它，就成了父子互等。
+   * 叫不叫同样过 holdWake；没叫（被挡住、父对话没了）返回 false
+   */
+  async function remindParentFix(child: Task): Promise<boolean> {
+    const parent = s.live.get(child.parentTaskId)?.task ?? (await s.store.get(child.parentTaskId))
+    if (!parent || taskGone(parent) || (await s.holdWake(parent))) return false
+    // 当时那条请求（messageParent 写进父对话的那条，以 FIX_TAIL 结尾；叫醒那句不是）：收件箱可能已经被上一轮取走，正文从对话里找
+    const tail = FIX_TAIL(child.id)
+    const asked = [...parent.messages].reverse().find((m) => m.text.endsWith(tail))
+    const body = asked
+      ? asked.text
+          .slice(asked.text.indexOf('\n') + 1, -tail.length)
+          .trim()
+          .replace(FIX_HEAD_LINE, '')
+      : ''
+    await s
+      .wakeConv(
+        parent.id,
+        `【面板】子对话「${child.title}」（id: ${child.id}）还在等你安排修复：它报的错还没人回它，它那一步一直挂着等你的通知。${body ? `\n${clip(body.trim(), FIX_WAKE_CHARS)}\n` : ''}\n按出错的文件找出改出它的子对话，用 send_to_conversation 交给它修；没有对应的子对话、或是你自己改出来的，就自己修或新建子对话修。修好后用 send_to_conversation 通知「${child.title}」重跑验证；确实不用修了也用 send_to_conversation 告诉它，别让它一直等。`,
+        { panel: 'child' },
+      )
+      .catch((e) => {
+        s.alertOn(parent.id, 'delivery', t('子对话还在等你安排修复，面板提醒时没能开一轮来处理'))(e)
+        throw e
+      })
+    return true
   }
 
   /** 转交给父对话创建的一条子任务：记下是哪个子对话请求的，父对话那一侧要能看到来源 */
@@ -301,9 +348,11 @@ export function createPeer(s: TasksScope) {
     const queued = forwards.get(parentId) ?? []
     queued.push(held)
     forwards.set(parentId, queued)
-    // 唤醒只发一句短提示：请求正文由 attachOrchestra 写成正式记录，两处都发全文会让父对话里出现两条一模一样的请求
-    void s
-      .wakeConv(
+    // 唤醒只发一句短提示：请求正文由 attachOrchestra 写成正式记录，两处都发全文会让父对话里出现两条一模一样的请求。
+    // 叫不叫同样过 holdWake：用户停下、用量上限、已中断的父对话不叫，排着的转交等它下一轮开始时再派
+    void (async () => {
+      if (await s.holdWake(parent, { from: child.id })) return
+      await s.wakeConv(
         parentId,
         t(
           '子对话「{from}」把一件子任务交给你创建，面板已经安排派出，具体要求已经交给那个子任务，你不用再派；结果会交回你。',
@@ -313,10 +362,10 @@ export function createPeer(s: TasksScope) {
         ),
         { panel: 'child' },
       )
-      .catch((e) => {
-        log.warn('task', '转交的子任务没能交给父对话', { error: (e as Error).message })
-        s.alertOn(parentId, 'delivery', t('子对话转交来的子任务没能交给父对话，它下一轮会再派'))(e)
-      })
+    })().catch((e) => {
+      log.warn('task', '转交的子任务没能交给父对话', { error: (e as Error).message })
+      s.alertOn(parentId, 'delivery', t('子对话转交来的子任务没能交给父对话，它下一轮会再派'))(e)
+    })
     return { ok: true, info: `已转交父对话「${parent.title}」：它下一轮开始时创建这个子任务` }
   }
 
@@ -350,5 +399,5 @@ export function createPeer(s: TasksScope) {
     entry.rev++
   }
 
-  return { attachOrchestra, forwardSpawn, messageParent }
+  return { attachOrchestra, forwardSpawn, messageParent, remindParentFix }
 }

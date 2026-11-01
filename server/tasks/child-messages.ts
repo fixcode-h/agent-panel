@@ -66,8 +66,9 @@ export function createChildMessages(sc: TasksScope) {
     }
     if (settle?.onlyIfWaiting && !hit.length) return
     // 子对话是跟着父对话一起停下的（用户停止、归档父对话时 closeChildren 记成 parent）：这是父对话自己做的事，
-    // 告诉它没有用（ADR 0034）。只改计划那一步的状态，不写进对话流、不进收件箱；父对话继续时由面板连带拉起（ADR 0032）
-    const cascaded = child?.state === 'stopped' && from.stopReason === 'parent'
+    // 告诉它没有用（ADR 0034）。只改计划那一步的状态，不写进对话流、不进收件箱；父对话继续时由面板连带拉起（ADR 0032）。
+    // 用量上限停下整棵树（budget）同理：顶层对话里已经写了为什么停，逐个子对话再报一遍「已中断」只会把父对话叫起来超限多跑
+    const cascaded = child?.state === 'stopped' && (from.stopReason === 'parent' || from.stopReason === 'budget')
     if (cascaded) {
       if (hit.length) {
         parent.updatedAt = new Date().toISOString()
@@ -78,9 +79,9 @@ export function createChildMessages(sc: TasksScope) {
       return
     }
     const text = waitNote(hit) + body
-    // 用户亲手停下的父对话：子对话的结果不把它叫起来（用户让它停的），记进收件箱，用户点「继续执行」时一起处理
-    const userStopped = parent.status === 'stopped' && parent.stopReason === 'user' && !sc.runningConv(parent.id)
-    if ((hit.length || wake) && !userStopped) {
+    // 叫不叫只走 holdWake（shared/wake.ts）：用户亲手停下、因用量上限停下、核对收成「已中断」的父对话，
+    // 或者整棵树已经超限，都不叫起来，记进收件箱，用户点「继续执行」时一起处理
+    if ((hit.length || wake) && !(await sc.holdWake(parent))) {
       const entry = sc.live.get(parent.id)
       parent.updatedAt = new Date().toISOString()
       if (entry) entry.rev++
@@ -218,6 +219,17 @@ export function createChildMessages(sc: TasksScope) {
     const child = sc.live.get(id)?.task ?? (await sc.store.get(id))
     if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
     if (child.imported) return { ok: false, info: sc.READONLY }
+    // 要开新的一轮时先过 holdWake（shared/wake.ts）：整棵树已经超限就不开，免得「父对话被叫醒→交回子对话→子对话超限停下→
+    // 上报又叫醒父对话」一直转下去。子对话自己的停下原因不挡（交回被停下的子对话就是重试的做法）。
+    // 用户在父对话里回答子对话的提问（answer）是用户自己的操作，不挡
+    if (kind !== 'answer' && sc.runningConv(id)?.task.status !== 'running') {
+      const held = await sc.holdWake(child, { fromAbove: true })
+      if (held)
+        return {
+          ok: false,
+          info: `这组对话已经用到用量上限，没有让子对话「${child.title}」开新的一轮。告诉用户需要调高项目的用量上限（或由用户自己继续这个子对话），不要换别的子对话重做。`,
+        }
+    }
     // 父对话回话了：子对话计划里在等父对话安排修复的那一步退回进行中，让它重跑验证（见 releaseParentWait）。
     // 不在跑的子对话先落盘，下面 wakeConv 从盘上读
     if (kind && releaseParentWait(child).length) {

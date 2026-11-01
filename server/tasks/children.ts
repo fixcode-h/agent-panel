@@ -492,8 +492,8 @@ export function createChildren(sc: TasksScope) {
       !!next && r.state === 'unfinished',
     )
     // 并进去的阶段汇报、用户的原话已经交出去了，下一封不再重复带。
-    // 随父对话停下的那次 noteParent 只改计划、不发（见 noteParent 的 cascaded），留到继续后的那一封
-    const sent = !(r.state === 'stopped' && tk.stopReason === 'parent')
+    // 随父对话（或用量上限）停下的那次 noteParent 只改计划、不发（见 noteParent 的 cascaded），留到继续后的那一封
+    const sent = !(r.state === 'stopped' && (tk.stopReason === 'parent' || tk.stopReason === 'budget'))
     if (sent && (tk.pendingReport || tk.userDirect)) {
       const ce = sc.live.get(tk.id)
       const cur = ce?.task ?? tk
@@ -568,6 +568,9 @@ export function createChildren(sc: TasksScope) {
     const stalled = async (settled: boolean) => {
       const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
       if (!tk || tk.imported || taskDeleted(tk) || !planStalled(tk)) return undefined
+      // 已经停下、失败的从来不推（下面 settled 那项也会挡）：刚结束那一下就返回，不白记一次推进（takeNudge）。
+      // 白记的话用户之后继续它、停在同一进度时不会再推，上报还会说「面板已经推过它一次」，其实没推过（复核 C3-b）
+      if (tk.status === 'stopped' || tk.status === 'failed') return undefined
       // 正常说完的一轮：进程结束了（done），或者还停在保活上等下一句（这时 status 仍是 running）。
       // 失败、被停下的不推：那是出错了或用户让它停，要让用户看到再决定
       if (settled && !(tk.status === 'done' || (tk.status === 'running' && tk.awaitingUser))) return undefined
