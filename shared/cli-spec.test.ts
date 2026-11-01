@@ -121,6 +121,12 @@ test('Claude Code、Codex 的配置：权限映射、只留配置类额外参数
     assert.ok(!off.includes(x), x)
   // 面板不自己做联网搜索：Claude Code 自带的搜索、打开网页不管哪种对话都得留着
   for (const x of ['WebSearch', 'WebFetch']) assert.ok(!off.includes(x) && !noEdit.includes(x), x)
+  // 起标题这类只要文字的小活：关掉全部工具（空字符串不能被拼参数时丢掉）、换极简系统提示；
+  // 不用 --bare（不读 OAuth，订阅账号登录不上）。平时不带
+  const lite = claude.buildArgs(o({ textOnly: true }))
+  assert.equal(lite[lite.indexOf('--tools') + 1], '')
+  assert.match(lite[lite.indexOf('--system-prompt') + 1], /plain text/)
+  assert.ok(!lite.includes('--bare') && !d.includes('--tools') && !d.includes('--system-prompt'))
 })
 
 test('插件来源去掉版本号再比：装的是带版本的、带 ref 的，也认得是推荐里的那一个', () => {
