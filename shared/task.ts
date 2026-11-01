@@ -760,15 +760,7 @@ export function stageOf(s: ConvState): TaskStage {
  * 子对话离「彻底完成」还差哪几样（见 childHolds），空数组才算做完了
  */
 export type ChildHold =
-  | 'working'
-  | 'background'
-  | 'workflow'
-  | 'helpers'
-  | 'plan'
-  | 'asking'
-  | 'requests'
-  | 'unmerged'
-  | 'parentTest'
+  'working' | 'background' | 'workflow' | 'helpers' | 'plan' | 'asking' | 'requests' | 'unmerged' | 'parentTest'
 
 /**
  * 子对话的收尾建议没给可选做法时用这两个：第一个是推荐做法，最后一个是明确停下。

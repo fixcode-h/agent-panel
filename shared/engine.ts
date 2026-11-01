@@ -2797,7 +2797,7 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
   const st = orchState(host)
   const kids = () => host.task.steps.filter((s) => s.parentId === step.id && s.slot === 'sub')
   // 等的这段时间里对话可能又派了几个（用户插进来聊的那一轮）：它们算进同一批，一起交回
-  for (let n = -1; n !== kids().length; ) {
+  for (let n = -1; n !== kids().length;) {
     n = kids().length
     await Promise.all(kids().map((k) => st.helpers.get(k.id) ?? Promise.resolve()))
   }

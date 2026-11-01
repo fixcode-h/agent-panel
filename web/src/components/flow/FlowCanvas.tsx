@@ -487,14 +487,12 @@ export function FlowCanvas({
         deletable: false,
         data: { kind: 'start', label: t('开始'), sub: startSub, status: terms?.start } satisfies TermData,
       },
-      ...flow.nodes.map(
-        (n): Node => ({
-          id: n.id,
-          type: 'card',
-          position: { x: n.x, y: n.y },
-          data: { view: views[n.id] } satisfies CardData,
-        }),
-      ),
+      ...flow.nodes.map((n): Node => ({
+        id: n.id,
+        type: 'card',
+        position: { x: n.x, y: n.y },
+        data: { view: views[n.id] } satisfies CardData,
+      })),
       {
         id: END,
         type: 'term',

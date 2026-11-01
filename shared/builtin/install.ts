@@ -84,7 +84,7 @@ const mountIds = (b: BuiltinAgent, agents: Agent[]) => builtinMounts(b, (k) => f
 /** 这些内置 Agent，加上它们引入的、挂载的 */
 function withIncludes(start: string[]): BuiltinAgent[] {
   const keys = new Set(start)
-  for (let changed = true; changed; ) {
+  for (let changed = true; changed;) {
     changed = false
     for (const k of [...keys])
       for (const inc of depsOf(BUILTIN_AGENTS.find((a) => a.key === k) ?? { includes: [], mounts: [] }))

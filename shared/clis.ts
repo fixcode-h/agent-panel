@@ -69,9 +69,7 @@ export interface BuildOptions {
 
 /** 审查什么：未提交的改动、和某个分支的差异，或者按说明审查 */
 export type ReviewTarget =
-  | { type: 'uncommitted' }
-  | { type: 'base'; branch: string }
-  | { type: 'custom'; instructions: string }
+  { type: 'uncommitted' } | { type: 'base'; branch: string } | { type: 'custom'; instructions: string }
 
 export type ModelTier = 'high' | 'medium' | 'low'
 

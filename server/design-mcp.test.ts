@@ -409,3 +409,86 @@ test('网页设计不算位置，交给截图', async () => {
   assert.match(r.text, /screenshot/)
   close()
 })
+
+test('画布插槽的部分更新只改写到的字段：单轴拉伸、对齐点、锚点都保留', async () => {
+  const { call, session, close } = open()
+  const slotOf = (name: string) => {
+    let hit: any
+    const walk = (w: any) => {
+      if (w.Name === name) hit = w
+      for (const c of w.Children ?? []) walk(c)
+    }
+    walk(session.state.root)
+    return hit.Slot.LayoutData
+  }
+  const add = (widget: object) => call('add_widgets', { items: [{ parent: 'RootCanvas', widget }] })
+  // 顶栏：只横向拉伸，高 80；只改高度后仍然只横向拉伸
+  assert.ok(
+    !(await add({ Type: 'Border', Name: 'TopBar', Slot: { anchor: 'top-stretch', y: 0, h: 80, margin: [0, 0, 0, 0] } }))
+      .error,
+  )
+  assert.deepEqual(slotOf('TopBar').Anchors, { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 0 } })
+  await call('update_widgets', { items: [{ name: 'TopBar', slot: { h: 120 } }] })
+  assert.deepEqual(slotOf('TopBar').Anchors, { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 0 } })
+  assert.equal(slotOf('TopBar').Offsets.Bottom, 120)
+  // 铺满的控件改上边距：生效，不再被吞掉
+  await add({ Type: 'Border', Name: 'Bg', Slot: { anchor: 'stretch', margin: [10, 10, 10, 10] } })
+  await call('update_widgets', { items: [{ name: 'Bg', slot: { y: 50 } }] })
+  assert.deepEqual(slotOf('Bg').Offsets, { Left: 10, Top: 50, Right: 10, Bottom: 10 })
+  // 拉伸方向写宽度：报错说清楚，不悄悄变成 100×40
+  const bad = await call('update_widgets', { items: [{ name: 'Bg', slot: { w: 300 } }] })
+  assert.ok(bad.error)
+  assert.match(bad.text, /拉伸/)
+  // 对齐点 0.5 的控件只改宽度：对齐点不动
+  await add({ Type: 'Image', Name: 'Mid', Slot: { anchor: 'center', w: 200, h: 100 } })
+  await call('update_widgets', { items: [{ name: 'Mid', slot: { w: 300 } }] })
+  assert.deepEqual(slotOf('Mid').Alignment, { X: 0.5, Y: 0.5 })
+  assert.equal(slotOf('Mid').Offsets.Right, 300)
+  // top-center 这类写法都认；认不出的报错
+  await add({ Type: 'Image', Name: 'Tc', Slot: { anchor: 'top-center', y: 20, w: 50, h: 50 } })
+  assert.deepEqual(slotOf('Tc').Anchors.Minimum, { X: 0.5, Y: 0 })
+  const typo = await add({ Type: 'Image', Name: 'Typo', Slot: { anchor: 'upper-left' } })
+  assert.ok(typo.error)
+  assert.match(typo.text, /认不出「upper」/)
+  // 只换锚点：贴到新锚点上，宽高沿用
+  await call('update_widgets', { items: [{ name: 'Tc', slot: { anchor: 'bottom-right' } }] })
+  assert.deepEqual(slotOf('Tc').Offsets, { Left: 0, Top: 0, Right: 50, Bottom: 50 })
+  assert.deepEqual(slotOf('Tc').Alignment, { X: 1, Y: 1 })
+  close()
+})
+
+test('插槽写错当场报错；子控件尺寸存成数字；replace 的半个插槽和原来的合并', async () => {
+  const { call, session, close } = open()
+  await call('add_widgets', {
+    items: [
+      { parent: 'RootCanvas', widget: { Type: 'VerticalBox', Name: 'Col', Slot: { x: 0, y: 0, w: 300, h: 300 } } },
+    ],
+  })
+  const wh = await call('add_widgets', {
+    items: [{ parent: 'Col', widget: { Type: 'Image', Name: 'A', Slot: { w: 200, h: 40 } } }],
+  })
+  assert.ok(wh.error)
+  assert.match(wh.text, /没有位置和宽高/)
+  const mid = await call('add_widgets', {
+    items: [{ parent: 'Col', widget: { Type: 'Image', Name: 'B', Slot: { h: 'middle', v: 'centre', fill: 'auto' } } }],
+  })
+  assert.ok(!mid.error, mid.text)
+  const b = session.state.root.Children!.find((w) => w.Name === 'Col')!.Children![0]
+  assert.deepEqual(
+    [b.Slot!.HorizontalAlignment, b.Slot!.VerticalAlignment, b.Slot!.Size.SizeRule],
+    ['HAlign_Center', 'VAlign_Center', 'Automatic'],
+  )
+  const wrong = await call('update_widgets', { items: [{ name: 'B', slot: { h: 'leftish' } }] })
+  assert.ok(wrong.error)
+  await call('create_components', {
+    items: [{ name: 'WBP_X', size: { X: 64, Y: 64 }, root: { Type: 'Overlay', Name: 'R' } }],
+  })
+  await call('resize_components', { items: [{ name: 'WBP_X', size: { X: '200', Y: '100' } }] })
+  assert.deepEqual(session.state.components[0].DesignSize, { X: 200, Y: 100 })
+  await call('replace_widget', {
+    items: [{ name: 'Col', widget: { Type: 'HorizontalBox', Name: 'Row', Slot: { x: 20 } } }],
+  })
+  const row = session.state.root.Children!.find((w) => w.Name === 'Row')!
+  assert.deepEqual(row.Slot!.LayoutData.Offsets, { Left: 20, Top: 0, Right: 300, Bottom: 300 })
+  close()
+})
