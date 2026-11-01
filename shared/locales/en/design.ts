@@ -795,6 +795,8 @@ export const EN_DESIGN: Record<string, string> = {
   'AI 正在修改，画布暂时只读': 'The AI is editing. The canvas is read-only for now',
   '画布太窄，先收起了 AI 对话；点左上角的对话按钮可以再打开':
     'The canvas got too narrow, so the AI chat was collapsed. Use the chat button at the top left to open it again',
+  '关闭网格吸附（现在 {n} 像素）': 'Turn off grid snapping (now {n} px)',
+  '网格吸附：拖动和缩放落在 8 像素的网格上': 'Grid snapping: moves and resizes land on an 8 px grid',
   未命名设计: 'Untitled design',
   'AI 刚改过这个设计，你刚才的修改没有存上；按撤销可以找回':
     'The AI just changed this design, so your latest edits were not saved. Press Undo to get them back',
