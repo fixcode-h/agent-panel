@@ -765,6 +765,10 @@ export const EN_DESIGN: Record<string, string> = {
   '图集生成失败，改成单独生成': 'Icon sheet failed, generating separately',
   '这条消息没能开始处理：{error}。请重新发送': 'This message could not be processed: {error}. Please send it again',
   '有几组原画没有生成出来：{error}': 'Some concept images could not be generated: {error}',
+  '版本列表没有取到：{error}': 'Could not load the version list: {error}',
+  已重新连上面板服务: 'Reconnected to the panel service',
+  '连不上面板服务，正在重试：{error}': 'Cannot reach the panel service, retrying: {error}',
+  '停止失败：{error}': 'Failed to stop: {error}',
   未命名设计: 'Untitled design',
   'AI 刚改过这个设计，你刚才的修改没有存上；按撤销可以找回':
     'The AI just changed this design, so your latest edits were not saved. Press Undo to get them back',

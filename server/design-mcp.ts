@@ -20,21 +20,9 @@ import { ANIM_PROPS, ANIM_TRIGGERS, EASES, animationsBrief, presetCatalogText } 
 import { compactTree, walk, type Widget } from '../shared/umg.ts'
 import { rectLine } from '../shared/umg-layout.ts'
 import { layoutNote, layoutReport, sessionLayout } from './design-layout.ts'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import {
-  contentBox,
-  crop,
-  decodePng,
-  drawGrid,
-  encodePng,
-  gridStep,
-  hasAlpha,
-  palette,
-  pixelAt,
-  resize,
-} from './image.ts'
-import { imageSize } from './zip.ts'
+import { inspect } from './design-inspect.ts'
 
 /**
  * 给 CLI 用的设计工具（MCP，Streamable HTTP）：AI 像在控件树和属性面板里操作一样调用工具改设计。
@@ -75,7 +63,14 @@ export interface Session {
   /** 这一轮定下的画板假数据（见 design-data.ts），最后和设计一起存下 */
   data?: DesignData
   /** 每次改动前的样子，undo 用 */
-  history: { state: OpsState; images: Session['images']; data?: DesignData }[]
+  history: {
+    state: OpsState
+    images: Session['images']
+    data?: DesignData
+    /** set_design 改的风格和尺寸也能撤回（以前不进历史，undo 撤掉的其实是更早的一次控件修改） */
+    style?: string
+    designSize?: { X: number; Y: number }
+  }[]
   /** 截过的画布截图，view_image 里写 screenshot:<第几张> */
   shots: string[]
 }
@@ -508,16 +503,28 @@ const MUTATING = new Set([
   'edit',
 ])
 
+/** 改动前的样子，undo 按它还原 */
+const snapshot = (s: Session): Session['history'][number] => ({
+  state: s.state,
+  images: s.images,
+  data: s.data,
+  style: s.style,
+  designSize: s.designSize,
+})
+
 /** 应用几步操作，返回给 AI 看的结果；失败的不影响其他的 */
 function apply(s: Session, ops: unknown[]) {
   const lines: string[] = []
   let ok = 0
-  const before = { state: s.state, images: s.images, data: s.data }
+  const before = snapshot(s)
+  // 成功的操作顺手做了的事（例如删控件时清掉引用它的动画轨道）：写进结果，AI 才知道
+  const notes: string[] = []
   ops.forEach((op, i) => {
     const r = applyOp(s.state, op)
     if ('error' in r) lines.push(ops.length > 1 ? `第 ${i + 1} 条失败：${r.error}` : r.error)
     else {
       s.state = r.state
+      if (r.note) notes.push(r.note)
       ok++
     }
   })
@@ -533,6 +540,7 @@ function apply(s: Session, ops: unknown[]) {
     try {
       note = layoutNote(s, before.state, ops)
     } catch {}
+  if (notes.length) note = [notes.join('\n'), note].filter(Boolean).join('\n')
   if (ops.length === 1) return ok ? text(note ? `好了\n${note}` : '好了') : text(lines[0], true)
   return text(
     [
@@ -618,103 +626,6 @@ const toQuestion = (q: any): unknown => ({
       : { label: str(o?.label), desc: str(o?.desc ?? o?.description), style: str(o?.style) },
   ),
 })
-
-/** 找 source 指的图：附件（从 1 数起，或写文件名）或设计里已有的图 */
-function sourceFile(s: Session, source: string): { file: string; name: string; error?: undefined } | { error: string } {
-  const m = /^(attachment|image|concept|screenshot):(.+)$/.exec(source.trim())
-  if (!m) return { error: 'source 要写 "attachment:1"、"image:<图片 id>"、"concept:<原画 id>" 或 "screenshot:1"' }
-  if (m[1] === 'image') {
-    const file = s.files.imagePath(m[2])
-    return file ? { file, name: m[2] } : { error: `设计里没有已经生成的图片 ${m[2]}` }
-  }
-  if (m[1] === 'concept') {
-    const file = s.files.conceptPath(m[2])
-    return file ? { file, name: m[2] } : { error: `没有原画 ${m[2]}` }
-  }
-  if (m[1] === 'screenshot') {
-    const n = m[2] === 'latest' ? s.shots.length : Number(m[2])
-    const file = s.shots[n - 1]
-    return file ? { file, name: `screenshot-${n}` } : { error: `没有第 ${m[2]} 张截图（截过 ${s.shots.length} 张）` }
-  }
-  const list = s.files.attachments
-  const at = /^\d+$/.test(m[2]) ? list[Number(m[2]) - 1] : list.find((x) => x.name === m[2])
-  return at ? { file: at.path, name: at.name } : { error: `没有这个附件（共 ${list.length} 个）` }
-}
-
-/** inspect_image：量；view_image：画格子、放大，存成文件 */
-async function inspect(s: Session, view: boolean, a: any) {
-  const src = sourceFile(s, str(a.source))
-  if (src.error !== undefined) return text(src.error, true)
-  const buf = await readFile(src.file).catch(() => undefined)
-  if (!buf) return text('读不到这张图', true)
-  const info = imageSize(buf)
-  const img = decodePng(buf)
-  if (!info) return text('不是能识别的图片', true)
-  // 不是 PNG：只能告诉尺寸，放大、画格子要自己用读图能力看原文件
-  if (!img)
-    return text(
-      `${src.name}：${info.width}×${info.height} 像素（${info.ext}，这个格式不能放大或取色，请直接读原文件 ${src.file}）`,
-    )
-  const r = a.region && a.region.w > 0 && a.region.h > 0 ? a.region : undefined
-  const rx = Math.max(0, Math.round(r?.x ?? 0))
-  const ry = Math.max(0, Math.round(r?.y ?? 0))
-  const part = r ? crop(img, rx, ry, r.w, r.h) : img
-  const d = s.design.designSize
-  // 参考图和设计稿的换算：宽高比不一致时提醒，免得按错的比例算
-  const fit =
-    Math.abs(info.width / info.height / (d.X / d.Y) - 1) < 0.02
-      ? `和设计稿 ${d.X}×${d.Y} 比例一致，原图坐标 × ${(d.X / info.width).toFixed(4)} 就是设计稿坐标`
-      : `和设计稿 ${d.X}×${d.Y} 的宽高比不同（${(info.width / info.height).toFixed(3)} 对 ${(d.X / d.Y).toFixed(3)}），换算时按内容要铺满的方式想清楚`
-  if (!view) {
-    const box = hasAlpha(part) ? contentBox(part) : null
-    const pts = (Array.isArray(a.points) ? a.points : []).slice(0, 40).map((p: any) => ({
-      x: Math.round(Number(p?.x)),
-      y: Math.round(Number(p?.y)),
-      color: pixelAt(img, Number(p?.x), Number(p?.y)),
-    }))
-    return text(
-      JSON.stringify({
-        name: src.name,
-        size: `${info.width}×${info.height}`,
-        ...(r ? { region: { x: rx, y: ry, w: part.width, h: part.height } } : {}),
-        aspect: Math.round((part.width / part.height) * 1000) / 1000,
-        transparent: hasAlpha(part),
-        ...(box ? { contentBox: { x: rx + box.x, y: ry + box.y, w: box.w, h: box.h } } : {}),
-        palette: palette(part, 8),
-        ...(pts.length ? { points: pts } : {}),
-        designSizeNote: fit,
-      }),
-    )
-  }
-  const long = Math.max(part.width, part.height)
-  // 放大到长边约 900 像素（小的块放大看细节，最多 6 倍），整张大图缩到 1600 以内
-  const zoom =
-    Number(a.zoom) > 0
-      ? Math.min(8, Number(a.zoom))
-      : r || long < 600
-        ? Math.min(6, 900 / long)
-        : long > 1800
-          ? 1600 / long
-          : 1
-  let out = zoom === 1 ? part : resize(part, part.width * zoom, part.height * zoom)
-  const step = gridStep(long)
-  if (a.grid !== false) out = drawGrid(out, { origin: { x: rx, y: ry }, zoom, step })
-  await mkdir(path.join(s.files.dir, 'views'), { recursive: true })
-  const file = path.join(s.files.dir, 'views', `view-${++s.views}.png`)
-  await writeFile(file, encodePng(out))
-  return text(
-    [
-      `已生成 ${file}，用读图的能力看这个文件。`,
-      `原图 ${info.width}×${info.height} 像素${r ? `，这张是其中 x ${rx}–${rx + part.width}、y ${ry}–${ry + part.height} 的一块` : ''}，放大 ${Math.round(zoom * 100) / 100} 倍。`,
-      a.grid !== false
-        ? `品红色格线每格 ${step} 像素，线边的黄色数字是原图像素坐标（横轴数字在上沿，纵轴数字在左沿）。`
-        : '',
-      fit,
-    ]
-      .filter(Boolean)
-      .join('\n'),
-  )
-}
 
 /** 截一张当前画布：页面画出来交回；列出每个控件的位置和明显的问题 */
 async function screenshot(s: Session, target: string) {
@@ -997,7 +908,7 @@ async function callTool(s: Session, raw: string, args: any) {
       const merged = [...s.images.filter((x) => !p.data.some((y) => y.id === x.id)), ...p.data]
       const bad = sheetProblems(merged)
       if (bad.length) return text(`没有记下：\n${bad.join('\n')}`, true)
-      s.history.push({ state: s.state, images: s.images, data: s.data })
+      s.history.push(snapshot(s))
       for (const img of p.data) s.images = [...s.images.filter((x) => x.id !== img.id), img]
       return text(`已记下 ${p.data.length} 张图片：${p.data.map((i) => i.id).join('、')}`)
     }
@@ -1009,7 +920,7 @@ async function callTool(s: Session, raw: string, args: any) {
         return text('数据集合的格式不对：每项至少要有 name，fields 里每项要有 key，rows 里每项是 { 字段名: 值 }', true)
       const existing = (s.data ?? s.design.data)?.sets ?? []
       const sets = [...existing.filter((x) => !norm.sets.some((n) => n.name === x.name || n.id === x.id)), ...norm.sets]
-      s.history.push({ state: s.state, images: s.images, data: s.data })
+      s.history.push(snapshot(s))
       s.data = { sets }
       s.applied++
       s.onChange(s)
@@ -1021,9 +932,11 @@ async function callTool(s: Session, raw: string, args: any) {
     }
     case 'set_design': {
       // 旧的 set_style、set_design_size 的写法也认
-      if (typeof a.style === 'string') s.style = a.style
       const v = size(a.designSize ?? (a.X ? a : undefined))
       if (a.designSize && !v) return text('designSize 的 X、Y 要是正数', true)
+      if (typeof a.style !== 'string' && !v) return text('style、designSize 至少写一个', true)
+      s.history.push(snapshot(s))
+      if (typeof a.style === 'string') s.style = a.style
       if (v) s.designSize = v
       return text('好了')
     }
@@ -1077,6 +990,8 @@ async function callTool(s: Session, raw: string, args: any) {
       s.state = back.state
       s.images = back.images
       s.data = back.data
+      s.style = back.style
+      s.designSize = back.designSize
       s.onChange(s)
       return text(`撤回了 ${steps} 次修改`)
     }

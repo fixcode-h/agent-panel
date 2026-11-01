@@ -492,3 +492,86 @@ test('插槽写错当场报错；子控件尺寸存成数字；replace 的半个
   assert.deepEqual(row.Slot!.LayoutData.Offsets, { Left: 20, Top: 0, Right: 300, Bottom: 300 })
   close()
 })
+
+test('undo 也撤回 set_design 改的风格和尺寸，不再撤掉更早的控件修改', async () => {
+  const { call, session, close } = open()
+  await call('add_widgets', {
+    items: [{ parent: 'RootCanvas', widget: { Type: 'Image', Name: 'Keep', Slot: { x: 0, y: 0, w: 10, h: 10 } } }],
+  })
+  await call('set_design', { style: 'pixel art', designSize: { X: 1280, Y: 720 } })
+  const r = await call('undo', {})
+  assert.ok(!r.error, r.text)
+  assert.equal(session.style, undefined)
+  assert.equal(session.designSize, undefined)
+  assert.ok(
+    session.state.root.Children!.some((w) => w.Name === 'Keep'),
+    '更早加的控件还在',
+  )
+  close()
+})
+
+test('违反放法、子树重名、名字格式当场报错；删控件时清掉引用它的动画轨道并说明', async () => {
+  const { call, session, close } = open()
+  await call('add_widgets', {
+    items: [
+      {
+        parent: 'RootCanvas',
+        widget: {
+          Type: 'Border',
+          Name: 'Box',
+          Slot: { x: 0, y: 0, w: 100, h: 100 },
+          Children: [{ Type: 'Image', Name: 'Pic' }],
+        },
+      },
+    ],
+  })
+  const one = await call('add_widgets', { items: [{ parent: 'Box', widget: { Type: 'Image', Name: 'Second' } }] })
+  assert.ok(one.error)
+  assert.match(one.text, /只能放一个子控件/)
+  const dup = await call('add_widgets', {
+    items: [
+      {
+        parent: 'RootCanvas',
+        widget: {
+          Type: 'VerticalBox',
+          Name: 'Col',
+          Slot: { x: 0, y: 200, w: 100, h: 100 },
+          Children: [
+            { Type: 'TextBlock', Name: 'Label', Text: 'a' },
+            { Type: 'TextBlock', Name: 'Label', Text: 'b' },
+          ],
+        },
+      },
+    ],
+  })
+  assert.ok(dup.error)
+  assert.match(dup.text, /重名的：Label/)
+  const badName = await call('create_components', {
+    items: [{ name: 'Slot Item', size: { X: 10, Y: 10 }, root: { Type: 'Overlay', Name: 'R' } }],
+  })
+  assert.ok(badName.error)
+  await call('add_animations', { items: [{ name: 'Anim_Pop', presets: [{ preset: 'pop-in', widgets: ['Pic'] }] }] })
+  assert.equal(session.state.animations?.length, 1)
+  const rm = await call('remove_widgets', { names: ['Box'] })
+  assert.ok(!rm.error, rm.text)
+  assert.match(rm.text, /动画 Anim_Pop/)
+  assert.equal(session.state.animations?.length, 0)
+  close()
+})
+
+test('inspect_image 坐标写错时返回说明，不再 500；region 夹到图片范围里', async () => {
+  const { encodePng } = await import('./image.ts')
+  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const path = await import('node:path')
+  const dir = mkdtempSync(path.join(tmpdir(), 'inspect-'))
+  const file = path.join(dir, 'a.png')
+  writeFileSync(file, encodePng({ width: 20, height: 20, data: Buffer.alloc(20 * 20 * 4, 255) }))
+  const { call, close } = open({}, { attachments: [{ name: 'a.png', path: file }] })
+  const bad = await call('inspect_image', { source: 'attachment:1', points: [{ x: '10px' }] })
+  assert.ok(bad.error)
+  assert.match(bad.text, /points 的第 1 个点/)
+  const out = await call('inspect_image', { source: 'attachment:1', region: { x: 15, y: 15, w: 30, h: 30 } })
+  assert.ok(!out.error, out.text)
+  assert.deepEqual(JSON.parse(out.text).region, { x: 15, y: 15, w: 5, h: 5 })
+  close()
+})

@@ -650,6 +650,8 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     assert.equal(d.concept.approved, tpl)
     await call('POST', `/designs/${sketch.id}/chat`, {
       text: `照着模板做 FAKE_MCP:${JSON.stringify([
+        // 模板模式里 AI 顺手出了一张原画：只进候选，不能把模板作废（同轮的切图还要拿模板当参考）
+        ['generate_concepts', { prompt: 'alternative layout', count: 1 }],
         [
           'add_images',
           { images: [{ id: 'gem', name: 'Gem', prompt: 'a red gem', negative: 'frame', width: 64, height: 64 }] },
@@ -680,9 +682,11 @@ await runShard('AI 创建与 UI 设计', async (api) => {
       .filter((c) => /a red gem/.test(c.stdin ?? c.input ?? ''))
       .at(-1)
     assert.match(gemGen.stdin ?? gemGen.input, /approved concept art/, '切图带着模板作为参考')
+    assert.equal(d.concept.approved, tpl, '模板模式里出的原画不把模板作废')
+    assert.equal(d.concept.images.length, 3, '新出的原画进了候选')
     assert.match(gemGen.stdin ?? gemGen.input, /Negative prompt.*frame/)
     d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'remove', id: tpl })
-    assert.deepEqual([d.concept.images.length, d.concept.approved], [1, ''], '删掉模板就回到挑图')
+    assert.deepEqual([d.concept.images.length, d.concept.approved], [2, ''], '删掉模板就回到挑图')
     step('先出原画：不能先搭界面，出候选、确认模板后照着模板出切图')
     // 检查没通过：不再自动重跑一轮，改好的照样存下，问题写成带「让 AI 修」的系统消息；用户发了才再跑
     const fixProject = await call('POST', '/designs/projects', { name: 'Fix Probe', path: projectDir })

@@ -92,6 +92,13 @@ export const Annotation = z.object({
   target: z.string().default(''),
   /** 标注范围里的控件名，给 AI 定位用 */
   widgets: z.array(z.string()).max(20).default([]),
+  /**
+   * 画标注时的坐标空间（宽高）：子控件按它自己的设计尺寸、网页的平板 / 手机视图按那个宽度记坐标，
+   * 交给 AI 时要按这个说，不能都说成设计稿尺寸。旧数据没有
+   */
+  space: z.object({ X: z.number(), Y: z.number() }).optional(),
+  /** 网页设计在哪个宽度下画的：只在同一个视图里显示，切到别的设备时不错位 */
+  device: z.enum(['desktop', 'tablet', 'mobile']).optional(),
 })
 export type Annotation = z.infer<typeof Annotation>
 
@@ -1153,8 +1160,17 @@ export function annotationText(list: Annotation[], size: { X: number; Y: number 
     const b = annotationBox(a)
     const r = (n: number) => Math.round(n)
     const where = b.w || b.h ? `范围 x=${r(b.x)} y=${r(b.y)} 宽=${r(b.w)} 高=${r(b.h)}` : `位置 x=${r(b.x)} y=${r(b.y)}`
+    // 坐标空间：主界面的桌面视图是设计稿像素；子控件、平板 / 手机视图里画的按画的时候那块的尺寸
+    const sp = a.space && (a.space.X !== size.X || a.space.Y !== size.Y) ? `${a.space.X}×${a.space.Y}` : ''
+    const space = a.target
+      ? `在子控件 ${a.target} 里（坐标按子控件自己的${sp ? ` ${sp}` : '设计尺寸'}），`
+      : a.device && a.device !== 'desktop'
+        ? `在${a.device === 'tablet' ? '平板' : '手机'}视图里（坐标按 ${sp || '那个宽度'} 算），`
+        : sp
+          ? `（坐标按 ${sp} 算），`
+          : ''
     return [
-      `${i + 1}.【${ANNOTATION_LABEL[a.kind]}】${shape[a.shape]}，${a.target ? `在子控件 ${a.target} 里，` : ''}${where}`,
+      `${i + 1}.【${ANNOTATION_LABEL[a.kind]}】${shape[a.shape]}，${space}${where}`,
       a.shape === 'mask' ? '   只重绘蒙版覆盖的区域，蒙版外面保持不变' : '',
       a.widgets.length ? `   涉及的控件：${a.widgets.join('、')}` : '',
       a.note.trim() ? `   说明：${a.note.trim()}` : '',
@@ -1163,7 +1179,7 @@ export function annotationText(list: Annotation[], size: { X: number; Y: number 
       .join('\n')
   })
   return `## 用户在效果图上的标注
-坐标是设计稿像素（左上角为原点，设计稿 ${size.X}×${size.Y}）。「修改」是要改这里，「新增」是在这里加东西，「删除」是去掉这里的内容，「保持不变」是这部分不要动、可以作为参考。按编号逐条处理，回复里简单说明每条怎么改的。
+坐标是像素，左上角为原点：没有注明的按设计稿 ${size.X}×${size.Y}，在子控件或平板 / 手机视图里画的按各条注明的尺寸。「修改」是要改这里，「新增」是在这里加东西，「删除」是去掉这里的内容，「保持不变」是这部分不要动、可以作为参考。按编号逐条处理，回复里简单说明每条怎么改的。
 ${lines.join('\n')}`
 }
 

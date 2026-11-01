@@ -18,3 +18,30 @@ test('启动时把上次没出完的图改成失败并写明原因，其余的�
   const clean = [img('c', 'idle')]
   assert.equal(resetStuckImages(clean), clean)
 })
+
+test('撤销删图时带回来的各版：文件还在、名字合法的保留，其余丢掉', async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+  const path = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const { restoredVariants } = await import('./design-images.ts')
+  const dir = mkdtempSync(path.join(tmpdir(), 'restore-'))
+  try {
+    writeFileSync(path.join(dir, 'v1.png'), 'x')
+    const v = (file: string) => ({ file, width: 10, height: 10, source: 'cli' as const, at: '' })
+    const out = await restoredVariants(
+      [
+        { id: 'gone', variants: [v('v1.png'), v('missing.png'), v('../evil.png')] },
+        { id: 'known', variants: [v('v1.png')] },
+      ],
+      new Map([['known', {}]]),
+      dir,
+    )
+    assert.deepEqual(
+      out.get('gone')!.map((x) => x.file),
+      ['v1.png'],
+    )
+    assert.equal(out.has('known'), false, '服务端本来就有的图不在这里处理')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

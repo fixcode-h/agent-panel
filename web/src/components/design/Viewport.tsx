@@ -142,7 +142,8 @@ export function Viewport({
   const [kind, setKind] = useState<AnnotationKind>('change')
   const [showMarks, setShowMarks] = useState(true)
   const [activeMark, setActiveMark] = useState('')
-  const marks = annotations.filter((a) => a.target === target)
+  // 网页设计在哪个宽度下画的标注就只在那个视图里显示：坐标是按那个宽度记的，换个宽度会错位（没记设备的旧标注照常显示）
+  const marks = annotations.filter((a) => a.target === target && (!device || !a.device || a.device === device))
   const setMarks = (fn: (l: Annotation[]) => Annotation[], key: string) => onAnnotations(fn(annotations), key)
 
   // 工具快捷键：V 选择、H 拖动、R 框选、A 箭头、P 画笔、T 打点；Esc 回到选择
@@ -835,6 +836,9 @@ export function Viewport({
                       note: '',
                       target,
                       widgets: stage.current ? widgetsIn(stage.current, scale, root, a) : [],
+                      // 记下这是按多大的画布画的：子控件、平板 / 手机视图的坐标和设计稿不是一个尺寸
+                      space: { X: size.X, Y: size.Y },
+                      ...(device ? { device } : {}),
                     }
                     setMarks((l) => [...l, mark], `ann:add:${mark.id}`)
                     // 画完马上写说明

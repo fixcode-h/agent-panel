@@ -8,7 +8,8 @@ import { extractJson } from '../shared/assist.ts'
 import { openDesignSession, type ConceptRequest } from './design-mcp.ts'
 import { DesignCaptures } from './design-capture.ts'
 import { HeadlessPages } from './headless.ts'
-import { resetStuckImages } from './design-images.ts'
+import { finalParts, normalizeSlices, resetStuckImages, restoredVariants } from './design-images.ts'
+import { EXPORT_MARK, pickExportDir } from './design-export-dir.ts'
 import { withToken } from './auth.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
 
@@ -65,17 +66,7 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import {
-  exportDesign,
-  migrateGrids,
-  nineSliceRatios,
-  normalizeTree,
-  syncBrushSlices,
-  uniqueName,
-  usedImages,
-  walk,
-  type SliceImage,
-} from '../shared/umg.ts'
+import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages, walk } from '../shared/umg.ts'
 import { reactAnimFile, webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
@@ -119,14 +110,6 @@ type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
 const isImageFile = (x: { mime: string; name: string }) =>
   /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name)
 
-/** 存进消息的分段：工具都已结束，去掉空的段 */
-function finalParts(parts: ReplyPart[]): ReplyPart[] | undefined {
-  const list = parts
-    .map((p) => ({ ...p, tools: p.tools.map((x) => ({ ...x, running: false })) }))
-    .filter((p) => p.text || p.thinking?.trim() || p.tools.length)
-  return list.length ? list : undefined
-}
-
 type Job = DesignJob & {
   abort: AbortController
   /** 生成图片时：把一张图排进这一轮的队列（点了「重试」或「再生成」）；不在生成图片时没有 */
@@ -137,27 +120,6 @@ type Job = DesignJob & {
   control?: CliControl
   /** 这一轮列出的图标表：图片 id → sheet，生成图片时同一个 sheet 的图标一起生成 */
   sheets?: Map<string, string>
-}
-
-/**
- * 图片的九宫格和画刷的九宫格参数对齐：图片的 nineSlice 统一成 0~1 的比例（老数据把像素直接写进去过），
- * 引用它的 Box/Border 画刷的 Margin 用同一组比例、ImageSize 用图片实际尺寸。
- * 加载、保存和 AI 改完都跑一遍，渲染和导出拿到的就是同一组数，不会切到边框花纹。
- */
-function normalizeSlices(d: Design): Design {
-  const imgs = new Map<string, SliceImage>()
-  for (const i of d.images) {
-    const v = i.variants[Math.min(Math.max(0, i.selected), i.variants.length - 1)]
-    const width = v?.width || i.width
-    const height = v?.height || i.height
-    const nine = nineSliceRatios(i.nineSlice, width, height)
-    const slice = nine && (nine.Left || nine.Top || nine.Right || nine.Bottom) ? nine : undefined
-    imgs.set(i.id, { id: i.id, width, height, transparent: i.transparent, nineSlice: slice })
-    i.nineSlice = slice
-  }
-  d.root = syncBrushSlices(d.root, imgs)
-  d.components = d.components.map((c) => ({ ...c, Root: syncBrushSlices(c.Root, imgs) }))
-  return d
 }
 
 const now = () => new Date().toISOString()
@@ -1252,12 +1214,14 @@ ${prompt}`,
         return d
       }
       startJob(d, async (job) => {
+        // 这一轮开始时已经确认了模板（照着模板搭界面）：AI 顺手出的原画不能把模板作废，同轮的切图还要拿它当参考
+        const hadTemplate = !!conceptOf(cache.get(d.id) ?? d).approved
         const { ids, concepts } = await chat(d, input, job, id)
         // 分析只出结论，不出原画和切图
         if (input.mode === 'analyze') return
         if (concepts.length) {
           if (input.source.kind === 'none') throw new Error(t('出原画要先在对话框下面选生成图片的方式'))
-          await generateConcepts(d, concepts, input.source, job)
+          await generateConcepts(d, concepts, input.source, job, hadTemplate)
         }
         if (!ids.length || input.source.kind === 'none') return
         const failed = await generateImages(d, ids, input.source, input.count, job)
@@ -1306,7 +1270,14 @@ ${prompt}`,
    * 出原画：每个请求出 count 张整屏效果图，存进设计的候选里；第一张到了就选中它。
    * 在某张的基础上改（base）时，用图片 CLI 把那张一起交给模型参考
    */
-  async function generateConcepts(d: Design, reqs: ConceptRequest[], source: ImageSource, job: Job) {
+  async function generateConcepts(
+    d: Design,
+    reqs: ConceptRequest[],
+    source: ImageSource,
+    job: Job,
+    /** 保留已确认的模板（模板模式里出的原画只进候选，不回到挑图） */
+    keepApproved = false,
+  ) {
     job.phase = 'concepts'
     job.preview = undefined
     job.text = ''
@@ -1350,11 +1321,11 @@ ${prompt}`,
               source: source.kind === 'browser' || source.kind === 'local' ? source.kind : 'cli',
               at: now(),
             }
-            // 出了新的候选就回到挑图：之前确认的模板作废
+            // 出了新的候选就回到挑图：之前确认的模板作废；模板模式里出的只进候选，模板保留
             dd.concept = {
               images: [...c.images, img],
-              selected: first ? img.id : c.selected,
-              approved: '',
+              selected: first && !keepApproved ? img.id : c.selected,
+              approved: keepApproved ? c.approved : '',
             }
             first = false
             progress.got++
@@ -1740,9 +1711,19 @@ ${prompt}`,
       const stale = baseRev !== undefined && baseRev < d.rev
       const keepStructure = aiEditing || stale
       const byId = new Map(d.images.map((i) => [i.id, i]))
+      // 服务端没有的图（页面撤销了删除）：文件还在就保留各版，见 restoredVariants
+      const restored = await restoredVariants(doc.images, byId, imagesDir(d.id))
       const images: DesignImage[] = doc.images.map((i) => {
         const old = byId.get(i.id)
-        if (!old) return DesignImage.parse({ ...i, variants: [], status: 'idle' })
+        if (!old) {
+          const variants = restored.get(i.id) ?? []
+          return DesignImage.parse({
+            ...i,
+            variants,
+            selected: Math.max(0, Math.min(i.selected ?? 0, variants.length - 1)),
+            status: 'idle',
+          })
+        }
         return {
           ...old,
           name: i.name,
@@ -2313,11 +2294,15 @@ ${prompt}`,
       const p = (await loadProjects()).find((x) => x.id === d.projectId)
       if (!p?.path) return bad(c, t('这个项目还没有选择目录'))
       const files = await exportFiles(d)
-      const dir = path.join(p.path, 'UI', files.name)
+      const { dir, clean } = await pickExportDir(path.join(p.path, 'UI'), files.name, d.id)
+      // 同一个设计再导出：先清掉上次的贴图和图片目录，删掉的不残留
+      if (clean)
+        for (const sub of ['Textures', 'images']) await rm(path.join(dir, sub), { recursive: true, force: true })
       for (const f of files.files) {
         await mkdir(path.dirname(path.join(dir, f.name)), { recursive: true })
         await writeFile(path.join(dir, f.name), f.data)
       }
+      await writeFile(path.join(dir, EXPORT_MARK), JSON.stringify({ designId: d.id, title: d.title }, null, 2))
       return c.json({ dir })
     })
 

@@ -51,6 +51,17 @@
 | `web/src/components/design/DesignChat.tsx` | 对话、发送、附件、控件引用、提问面板                                                          |
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
 
+## 剩余 P1（2026-11-01，审查第三批）
+
+- 属性面板的数字、文字、颜色输入框改了值还没提交就被卸载（点画布换了选中，`Details` 按控件 id 重建）时，卸载时提交一次（`fields.tsx` 的 `useCommitOnUnmount`）。
+- 删图后的 `deleted` 集合：保存成功后放掉服务端已经没有的；撤销把图带回来时也放掉。`PUT /designs/:id` 遇到服务端没有的图，各版文件名合法、文件还在设计目录里就保留（`server/design-images.ts` 的 `restoredVariants`；删图时不删文件）。
+- 标注记下画的时候的坐标空间 `space` 和网页的 `device`：画布只显示当前设备下的标注；`annotationText` 按各条的坐标空间描述（子控件、平板 / 手机视图不再说成设计稿尺寸）。
+- 轮询连续失败 3 次提示「连不上面板服务」、恢复后提示一次；停止失败提示原因；版本列表取不到时显示原因和「重试」。
+- 模板模式（这一轮开始时已有确认的模板）里 AI 出的原画只进候选，`generateConcepts(..., keepApproved)` 不把模板作废，同轮切图照样带模板参考。
+- 导出到项目目录（`server/design-export-dir.ts` 的 `pickExportDir`）：目录里写 `.agent-panel.json` 标记是哪个设计；同名目录是别的设计的（或有别的东西）就加设计 id 前 6 位另起一个，是自己的就先清掉旧的 `Textures/`、`images/` 再写。
+- 设计工具：`set_design` 进 undo 历史（风格、尺寸一起撤回）；只能放一个子控件的父控件已经有子控件时、提交的子树里自己重名时当场报错；`create_components` 的名字、`wrap_widget` 的 `as` 校验格式；删控件时清掉引用它的动画轨道并在结果里说明（`applyOp` 返回 `note`）；inspect_image 的坐标写错返回说明不再 500，region 夹到图片范围里。inspect / view_image 拆到 `server/design-inspect.ts`。
+- 回归：`server/design-mcp.test.ts`（undo、放法 / 重名 / 名字、动画轨道、inspect_image）、`server/design-export-dir.test.ts`、`server/design-images.test.ts`、`shared/design.test.ts`（标注坐标空间）、`scripts/e2e/06-assist.mjs`「先出原画」里模板模式出原画不作废模板。
+
 ## 画布保真、网页导出与错误显示（2026-11-01，审查第二批）
 
 - 画刷改成控件里的一层（`umg-render.tsx` 的 `BrushLayer`，`z-index:-1`，控件本体 `isolation:isolate`）：画刷的透明度只作用在这一层，半透明面板里的文字不再跟着变淡；九宫格用 border-image 画纹理、再叠一层 `mix-blend-mode:multiply` 的颜色（`-webkit-mask-box-image` 同样的切片当遮罩），着色和 UE 一样是图片 × 颜色；非白色着色的 alpha 作为整层的不透明度。`assignImage` 给纯色画刷第一次套图时着色改回白色（按钮默认 #3A3A3A，套图后在 UE 里几乎是黑的），原来就有图的保留着色。

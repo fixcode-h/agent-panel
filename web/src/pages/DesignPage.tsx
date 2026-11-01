@@ -1143,7 +1143,13 @@ function Designer({ id }: { id: string }) {
             onCount={setCount}
             onSend={send}
             onAnalyze={analyze}
-            onStop={() => void api.stopDesign(id).then(() => ed.reload())}
+            onStop={() =>
+              void api
+                .stopDesign(id)
+                .then(() => ed.reload())
+                // 停不下来要说清楚，不能点了没反应
+                .catch((e) => toast.error(t('停止失败：{error}', { error: (e as Error).message })))
+            }
             kind={server.kind}
             designId={id}
             dir={project?.path}
