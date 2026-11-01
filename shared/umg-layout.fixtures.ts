@@ -300,7 +300,8 @@ export function layoutFixtures(): LayoutFixture[] {
             Children: [
               w('TextBlock', 'Wrapped', {
                 Slot: box({ h: 'HAlign_Left' }),
-                Text: 'A long line of text that must wrap inside the box',
+                // 两个词各自放得下一行、合起来放不下：不管机器上是什么字体都正好两行（原来一长句在 CI 字体下折成三行，和估算差一行）
+                Text: 'backpackinventory equippedweapons',
                 AutoWrapText: true,
                 Font: { Size: 12 },
               }),
