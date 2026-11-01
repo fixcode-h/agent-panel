@@ -1000,6 +1000,9 @@ export const EN_TASKS: Record<string, string> = {
   '原目录现在在「{now}」，不是开分支时的「{base}」，没有合并。切回「{base}」后再合并。':
     'The original folder is now on “{now}”, not “{base}” where the branch started, so nothing was merged. Switch back to “{base}” and merge again.',
   '对话正在执行，等这一轮结束后再合并': 'The chat is running. Merge after this turn ends',
+  '父对话的目录挡住了合并：{why}。处理后再点合并':
+    'The parent conversation’s folder blocked the merge: {why}. Sort it out and click Merge again',
+  '合并后提交失败，已撤回：{why}': 'Committing the merge failed and it was rolled back: {why}',
   '对话正在执行，等这一轮结束后再删除独立分支': 'The chat is running. Delete the separate branch after this turn ends',
   '父对话正在合并这个子对话，等结果出来再删除独立分支':
     'The parent conversation is merging this chat. Delete the separate branch after the merge finishes',

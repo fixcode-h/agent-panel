@@ -1,11 +1,12 @@
 /**
  * 子对话收尾（server/tasks/merge.ts）：submit_merge 的各道校验、finish_child 合回独立分支、
- * 冲突时退回子对话且保留分支、分支上没有新改动、合并途中 / 父对话测试中的重复收尾，以及共用目录没请求收尾就不收。
+ * 冲突时退回子对话且保留分支、父对话目录挡路时留给父对话处理、分支上没有新改动、合并途中 / 父对话测试中的重复收尾，
+ * 以及共用目录没请求收尾就不收。
  *
  * 为什么这样搭：merge.ts 只做编排（校验、先提交、记收尾请求、按结果改状态和通知），真正的 git 合并在
  * TasksScope.integrate（children.ts）里，它要整套 tasksApi 闭包才建得起来。这里给一个最小的假 scope，
- * integrate 用 worktree.ts 里同一组 trialMerge / commitMerge 在真实的临时仓库上合，
- * 这样「提交到分支 → 合进原目录 → 冲突撤回」走的是真实 git，断言的是 merge.ts 自己的状态流转。
+ * integrate 直接调 children.ts 用的同一个 integrateBranch（worktree-integrate.ts）在真实的临时仓库上合，
+ * 这样「提交到分支 → 合进原目录 → 冲突 / 挡路撤回」走的是真实 git 和真实文案，断言的是 merge.ts 自己的状态流转。
  * 运行：npx tsx --test server/tasks/merge.test.ts
  */
 import assert from 'node:assert/strict'
@@ -21,7 +22,7 @@ import type { TasksScope } from './scope.ts'
 const { Task, TaskStep, PlanStep, TaskPlan } = await import('../../shared/schema.ts')
 const { createMerge } = await import('./merge.ts')
 const { createClaims } = await import('../claims.ts')
-const { trialMerge, commitMerge } = await import('../exec/worktree.ts')
+const { integrateBranch } = await import('../exec/worktree-integrate.ts')
 
 const REVIEWER = 'a-reviewer'
 const at = '2026-10-31T00:00:00.000Z'
@@ -57,7 +58,7 @@ const task = (over: Record<string, unknown>) =>
 
 /**
  * 最小的 TasksScope：只放 merge.ts 用到的名字，调用都记下来供断言。
- * integrate 照 children.ts 的口径：试合并 → 冲突撤回 / 没有新改动 / 提交
+ * integrate 和 children.ts 一样调 integrateBranch：换分支 / 挡路检查 → 试合并 → 冲突撤回 / 没有新改动 / 提交
  */
 function rig(repo: string, tasks: TaskT[]) {
   const map = new Map(tasks.map((x) => [x.id, x]))
@@ -101,11 +102,7 @@ function rig(repo: string, tasks: TaskT[]) {
     mergeLock: async (_id: string, fn: () => Promise<unknown>) => fn(),
     integrate: async (tk: TaskT) => {
       integrated.push(tk.id)
-      const m = await trialMerge(repo, tk.worktree!.branch)
-      if (!m.ok) return { ok: false, info: `和原分支冲突，已撤回，原目录没有改动。\n${m.error}` }
-      if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
-      const sha = await commitMerge(repo, `Agent 面板：合并「${tk.title}」`)
-      return { ok: true, info: `已合进「${tk.worktree!.baseBranch}」（${sha}），改了 ${m.files.length} 个文件。` }
+      return integrateBranch(repo, tk.worktree!, tk.title)
     },
     sendToChild: async (_parent: string, id: string, text: string) => void toChild.push({ id, text }),
     parentTestStepsOf: async () => [],
@@ -255,7 +252,10 @@ test('finish_child：和原分支冲突时退回子对话，分支和目录都�
     const head = git(x.repo, 'rev-parse', 'HEAD').toString().trim()
     const r = await x.m.finishChild(x.parent, x.kid.id)
     assert.equal(r.ok, false)
+    // 只有真冲突算 conflict：界面的「用 AI 合并」按钮只在这时给
+    assert.equal(r.kind, 'conflict')
     assert.match(r.info, /没能合回子对话「子对话」/)
+    assert.match(r.info, /已经退回给它处理/)
     assert.match(r.info, /README\.md/)
     // 原目录还在合并前的提交上、没有留下合了一半的状态
     assert.equal(git(x.repo, 'rev-parse', 'HEAD').toString().trim(), head)
@@ -281,6 +281,79 @@ test('finish_child：和原分支冲突时退回子对话，分支和目录都�
     assert.match(again.info, /上次没合进去/)
   } finally {
     await x.cleanup()
+  }
+})
+
+// 父对话目录挡路（审计 F2）：以前和冲突一样退回并叫醒子对话，子对话动不了父对话的目录，两边互相等或来回空转
+test('finish_child：父对话目录挡路（暂存区、未提交改动 / 未跟踪文件重叠、换了分支、没做完的合并）时留给父对话，清掉后再收就合进去', async () => {
+  const scenes = ['staged', 'dirty', 'untracked', 'branch', 'merge-head'] as const
+  for (const scene of scenes) {
+    const x = await setup()
+    try {
+      writeFileSync(path.join(x.wt.path, 'README.md'), '# 子对话改的\n')
+      writeFileSync(path.join(x.wt.path, 'new.txt'), 'kid\n')
+      assert.equal((await x.m.submitMerge(x.kid.id, '', tests, false, handoff)).ok, true)
+      const base = x.wt.baseBranch!
+      // 每种挡路：怎么造出来、父对话看到的说法里要点名什么、父对话按说法怎么清掉
+      const how = {
+        staged: {
+          make: () => (writeFileSync(path.join(x.repo, 'staged.txt'), 'x\n'), git(x.repo, 'add', 'staged.txt')),
+          name: /staged\.txt/,
+          clear: () => git(x.repo, 'commit', '-qm', 'parent staged'),
+        },
+        dirty: {
+          make: () => writeFileSync(path.join(x.repo, 'README.md'), '# 父对话没提交的\n'),
+          name: /README\.md/,
+          clear: () => git(x.repo, 'stash', '-q'),
+        },
+        untracked: {
+          make: () => writeFileSync(path.join(x.repo, 'new.txt'), 'parent\n'),
+          name: /new\.txt/,
+          clear: () => git(x.repo, 'stash', '-q', '-u'),
+        },
+        branch: {
+          make: () => git(x.repo, 'switch', '-q', '-c', 'feature-x'),
+          name: new RegExp(`「feature-x」[\\s\\S]*git switch ${base}`),
+          clear: () => git(x.repo, 'switch', '-q', base),
+        },
+        'merge-head': {
+          make: () => {
+            git(x.repo, 'switch', '-q', '-c', 'side')
+            writeFileSync(path.join(x.repo, 's.txt'), 's\n')
+            git(x.repo, 'add', '.')
+            git(x.repo, 'commit', '-qm', 's')
+            git(x.repo, 'switch', '-q', base)
+            git(x.repo, 'merge', '--no-commit', '--no-ff', 'side')
+          },
+          name: /MERGE_HEAD/,
+          clear: () => git(x.repo, 'merge', '--abort'),
+        },
+      }[scene]
+      how.make()
+      const r = await x.m.finishChild(x.parent, x.kid.id)
+      assert.equal(r.ok, false, scene)
+      assert.equal(r.kind, scene === 'branch' ? 'branch' : 'blocked', scene)
+      assert.match(r.info, /原因在你的目录，不在子对话/, scene)
+      assert.match(r.info, how.name, scene)
+      assert.match(r.info, /再调用 finish_child/, scene)
+      // 一行原因带上具体文件（暂存区那条以前只剩冒号，文件名被截掉）
+      if (scene !== 'branch' && scene !== 'merge-head') assert.match(r.why ?? '', how.name, scene)
+      const kid = x.map.get(x.kid.id)!
+      assert.equal(kid.wrapRequest?.state, 'requested', `${scene}：收尾请求留着`)
+      const wrap = kid.plans.at(-1)!.steps.at(-1)!
+      assert.equal(wrap.status, 'waiting', scene)
+      assert.match(wrap.note, /父对话的目录挡住了合并/, scene)
+      assert.deepEqual(x.toChild, [], `${scene}：不叫醒子对话，叫醒会清掉收尾请求`)
+      assert.deepEqual(x.advanced, [], scene)
+      how.clear()
+      const again = await x.m.finishChild(x.parent, x.kid.id)
+      assert.equal(again.ok, true, `${scene}：${again.info}`)
+      assert.equal(readText(path.join(x.repo, 'README.md')), '# 子对话改的\n', scene)
+      assert.equal(x.map.get(x.kid.id)!.wrapRequest, undefined, scene)
+      assert.deepEqual(x.advanced, [x.kid.id], scene)
+    } finally {
+      await x.cleanup()
+    }
   }
 })
 

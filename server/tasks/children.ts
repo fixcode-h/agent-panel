@@ -23,20 +23,10 @@ import { nextNudge, nudgeMax } from '../../shared/conv-mode.ts'
 import { cancelWait, steerTask } from '../exec/runner.ts'
 import { stopHelper } from '../../shared/engine.ts'
 import { hasHeld } from '../exec/delivery.ts'
-import {
-  abortMerge,
-  commitMerge,
-  mergeBlocker,
-  currentBranch,
-  mergeSides,
-  mergeSidesText,
-  releaseWorktree,
-  worktreeStatus,
-  trialMerge,
-} from '../exec/worktree.ts'
+import { releaseWorktree, worktreeStatus } from '../exec/worktree.ts'
+import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrate.ts'
 import { reapLostJobs } from '../background.ts'
 import { log } from '../log.ts'
-import { aroundMerge } from '../turn-changes.ts'
 import { t } from '../../shared/i18n.ts'
 import { activePlan, holdWait, needsFix, panelWrap, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
@@ -361,50 +351,9 @@ export function createChildren(sc: TasksScope) {
     return { holds: run.holds, info: run.info }
   }
 
-  /** 一次合并：试合并 → 提交；冲突或原目录状态不对就撤回，原目录不变 */
-  async function integrate(tk: Task, parent: Task): Promise<{ ok: boolean; info: string }> {
-    const wt = tk.worktree!
-    const target = await sc.taskDir(parent)
-    // 从哪开的分支就合回哪：原目录后来换了分支就不合，免得合到别的分支上
-    const now = await currentBranch(target)
-    if (wt.baseBranch && now !== wt.baseBranch)
-      return {
-        ok: false,
-        info: `原目录现在在「${now || '分离的 HEAD'}」，不是开分支时的「${wt.baseBranch}」，没有合并。切回「${wt.baseBranch}」后再合。`,
-      }
-    const blocked = await mergeBlocker(target)
-    if (blocked) return { ok: false, info: `${blocked}，没有合并。这不是你的问题，等父对话或用户处理好后再合。` }
-    // 两边都改过的文件：git 只在同一处改动上报冲突，同一个文件改不同位置会静默合上。
-    // 合并前连同双方的提交记录一起记下来：合进去时一并告诉子对话和父对话「这个文件两边都动过」，
-    // 并且让他们能按提交说明和文档看懂各自为什么这么改，而不是只看 diff 拿主意（见 project-vcs 的「合并审查」）
-    const sides = await mergeSides(target, wt.branch).catch(() => null)
-    const overlap = sides?.overlap ?? []
-    const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
-    // 父对话总结下面的改动卡片不含子对话的改动：合并的那一下从父对话这一轮里切掉
-    return aroundMerge(target, async () => {
-      const m = await trialMerge(target, wt.branch)
-      if (!m.ok)
-        return {
-          ok: false,
-          info: m.dirty
-            ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边处理后再合。\n${m.error}${about}`
-            : `和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}${about}`,
-        }
-      if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
-      try {
-        const sha = await commitMerge(target, `Agent 面板：合并「${tk.title}」`)
-        const both = overlap.length
-          ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过：必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论（见 project-vcs 技能 git.md 的「合并审查」）。`
-          : ''
-        return {
-          ok: true,
-          info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${both}`,
-        }
-      } catch (e) {
-        await abortMerge(target)
-        return { ok: false, info: `合并后提交失败，已撤回：${(e as Error).message}` }
-      }
-    })
+  /** 一次合并（git 部分在 worktree-integrate.ts）：失败按谁能修分类，冲突写给子对话，挡路写给父对话 */
+  async function integrate(tk: Task, parent: Task): Promise<IntegrateResult> {
+    return integrateBranch(await sc.taskDir(parent), tk.worktree!, tk.title)
   }
 
   async function closeChildren(parentId: string) {

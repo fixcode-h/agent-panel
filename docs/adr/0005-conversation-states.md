@@ -75,7 +75,11 @@
        面板在 mergeLock 下合并：
        ├─ 成功 → childMerged：收尾步骤标完成、删 wrapRequest、advanceChildTo(quiet)
        │         （标完成、stop 'finish'、删 worktree 和分支）
-       ├─ 失败 → wrapRequest = failed、收尾步骤退回 running，把失败原因交回子对话
+       ├─ 冲突（子对话分支和原分支改了同一处，kind = conflict）→ wrapRequest = failed、收尾步骤退回 running，
+       │         把冲突交回子对话，它在自己的分支里合进原分支、解决后再 submit_merge
+       ├─ 父对话目录挡路 / 提交出错（kind = blocked | branch | error：暂存区、没做完的合并、和分支重叠的
+       │         未提交改动、换了分支、合并提交失败）→ wrapRequest 留在 requested、收尾步骤 waiting，
+       │         不叫醒子对话；说清目录、文件 / 分支和做法回给父对话，它处理完直接再 finish_child
        └─ 不论哪条路：syncParentPlan 按 childReport 刷新父计划里等它的那一步（done 才标完成，
                  其余继续等并写清在等什么），落盘推界面，刷新后的计划附在工具结果里
 ```
@@ -83,7 +87,8 @@
 - 每次 `finish_child` 结束都强制刷新父对话的计划（用户 2026-10-24 定的硬要求），共用目录的子对话也一样。合进去不等于做完：子对话还没收口时父计划那一步继续等，不能先标完成。
 
 - 合并就是验收：门槛里的测试必须在合并前、在子对话自己的分支里跑通。
-- 界面上子对话行的「合并」按钮遇到 `requested` 的请求时同样走 `finishChild`。
+- 界面上子对话行的「合并」按钮遇到 `requested` 的请求时同样走 `finishChild`；只有 `conflict` 才给「用 AI 合并」，挡路时提示用户先收拾原目录再点合并。
+- 退回给谁按失败原因定（2026-11 补）：只有子对话能修的（冲突）才交回它；父对话目录的状态问题子对话动不了，交回去只会两边互相等或来回空转（子对话被叫醒开新一轮还会清掉收尾请求）。git 部分在 `server/exec/worktree-integrate.ts` 的 `integrateBranch`。
 - 共用目录（没有独立分支）的子对话没有分支可合，`finish_child` 只做收口。
 
 没选的方案：子对话 `submit_merge` 后面板直接合并（[0002](./0002-child-merge-on-done.md) 的做法）。父对话事后才知道，没机会验收，也没法在合并前退回；用户明确要求收尾交给父对话。
@@ -121,7 +126,7 @@ UE 编译占位和排队仍按 [0004](./0004-ue-build-by-parent.md)。
 ## 运行时
 
 - 状态事实：任务字段（`status`、`working`、`requests`、`parentAsks`、计划、`runs`、`wrapRequest`、`stopReason`）+ 服务端补的后台命令数、是否未合回。
-- `Task.wrapRequest`：`requested | merging | failed`，子对话开新一轮时清掉 requested/failed，收尾步骤退回 running。
+- `Task.wrapRequest`：`requested | merging | failed`，`failed` 只指冲突（父对话目录挡路时留在 `requested`）；子对话开新一轮时清掉 requested/failed，收尾步骤退回 running。
 - 推送：消息和工具行的状态字段都进 `messageStamp`，服务端改了才会推到界面。
 
 ## 分期

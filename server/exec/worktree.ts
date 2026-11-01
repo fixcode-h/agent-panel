@@ -1274,6 +1274,8 @@ export async function trialMerge(target: string, branch: string) {
     return {
       ok: false as const,
       dirty,
+      // 挡路的具体文件：写给父对话时要点名（报错只留最后几行，文件一多就被截掉）
+      blockers: dirty ? overwrittenFiles(m.stderr + m.stdout) : [],
       error:
         (conflicts ? `冲突的文件：\n${conflicts}\n\n` : '') +
         (m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n'),
@@ -1284,16 +1286,29 @@ export async function trialMerge(target: string, branch: string) {
   return { ok: true as const, nothing: !pending, files: files ? files.split('\n') : [] }
 }
 
+/** git merge 拒绝时列出的「会被覆盖」的文件：已跟踪的未提交改动、未跟踪文件两段都认（每段下面一行一个、带缩进） */
+export function overwrittenFiles(out: string) {
+  const files: string[] = []
+  let on = false
+  for (const line of out.split('\n')) {
+    if (/would be overwritten by merge|会被合并覆盖/.test(line)) on = true
+    else if (on && /^\s+\S/.test(line)) files.push(line.trim())
+    else on = false
+  }
+  return [...new Set(files)]
+}
+
 /**
  * 合并前看一眼目标目录：有没做完的合并，或者暂存区里有别人的改动时不能合——
- * 合并提交会把暂存区一起带进去，撤回时也可能连带清掉。返回不能合的原因，能合时返回空字符串
+ * 合并提交会把暂存区一起带进去，撤回时也可能连带清掉。返回挡路的是什么，能合时返回 null；
+ * 说法由调用方按收件人写（见 worktree-integrate.ts）
  */
-export async function mergeBlocker(target: string) {
-  if ((await git(target, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).code === 0)
-    return '原目录里有一次没做完的合并（MERGE_HEAD 还在）'
-  const staged = (await git(target, '-c', 'core.quotepath=off', 'diff', '--cached', '--name-only')).stdout.trim()
-  if (staged) return `原目录的暂存区里有还没提交的改动：\n${staged.split('\n').slice(0, 20).join('\n')}`
-  return ''
+export async function mergeBlocker(
+  target: string,
+): Promise<{ kind: 'merge-head' } | { kind: 'staged'; files: string[] } | null> {
+  if ((await git(target, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).code === 0) return { kind: 'merge-head' }
+  const staged = (await git(target, 'diff', '--cached', '--name-only')).stdout.trim()
+  return staged ? { kind: 'staged', files: staged.split('\n') } : null
 }
 
 /** 试合并通过后提交 */

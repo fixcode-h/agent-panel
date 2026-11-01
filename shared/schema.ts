@@ -1881,7 +1881,7 @@ export const TaskData = z.object({
   rootTaskId: z.string().default(''),
   /**
    * 子对话请父对话收尾的记录（见 ADR 0005）：子对话只剩合回时调用 submit_merge 写 requested，
-   * 父对话 finish_child 合并时是 merging，合并没成功退回子对话时是 failed（info 写原因）。
+   * 父对话 finish_child 合并时是 merging，和原分支冲突、退回子对话时是 failed（info 写原因；父对话目录挡路时留 requested）。
    * 收尾做完（resolved）或者子对话又开始干活时清掉
    */
   wrapRequest: z
