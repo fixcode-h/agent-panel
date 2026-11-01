@@ -36,6 +36,7 @@ import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
 import { RULE_CMD, isolated, HELPER_STOP_TIMEOUT_MS, HELPER_STOP_POLL_MS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { letterResult } from '../../shared/child-letter.ts'
 
 /**
  * 子对话的生命周期：在跑的计数、彻底完成的判定和推进（advanceChildTo，ADR 0003）、合回、上报父对话、一轮结束时推进计划（nudgePlan，ADR 0032）、规则命令、启动子对话。
@@ -452,7 +453,10 @@ export function createChildren(sc: TasksScope) {
     // 先取最新的回复：task.summary 要等整次执行收尾才更新，这一轮刚报完成（进程还在、或保活等下一句）时
     // 它还是上一轮的，上报会带着上一轮的结果
     // 这一轮 AI 自己用 message_parent 写的汇报并进这一封当「结果」（ADR 0034：一轮只交一封），没写才取最后一条回复
-    const summary = tk.pendingReport?.trim() || sc.lastReply(tk) || tk.summary
+    // 只带要点（shared/child-letter.ts）：最后一条回复取全文从里面认总结，lastReply 只有开头 300 字、认不出末尾的总结
+    const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())?.text
+    const brief = letterResult(tk.pendingReport?.trim() || last || tk.summary || '')
+    const summary = brief.text
     // 用户直接在子对话里交代过新要求：不再单独发消息，这封汇报里带上原话
     const direct = tk.userDirect ? `\n用户在这个子对话里直接交代过：${tk.userDirect}` : ''
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
@@ -472,7 +476,7 @@ export function createChildren(sc: TasksScope) {
           : r.state === 'failed' || r.state === 'stopped'
             ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
             : ''
-    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
+    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要，详细总结在子对话「${tk.title}」里：写它的卡片时标题链到它，不用转述细节）` : ''}` : ''}`
     await sc.noteParent(
       tk.parentTaskId,
       tk,
