@@ -391,8 +391,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     p.evaluate(() => {
       const slot = document.querySelector('[data-ac="WBP_ItemSlot"]')
       if (!slot) return -1
-      // 列表条目里的控件没有 data-wid（不能单独选中），按计算样式找隐藏的那个
-      return [...slot.querySelectorAll('*')].filter((n) => getComputedStyle(n).visibility === 'hidden').length
+      // 列表条目里的控件没有 data-wid（不能单独选中），按计算样式找隐藏的那个；
+      // 撑出控件尺寸的占位块（umg-render.tsx 的 Sizer，aria-hidden）本来就看不见，不算
+      return [...slot.querySelectorAll('*')].filter(
+        (n) => getComputedStyle(n).visibility === 'hidden' && !n.closest('[aria-hidden="true"]'),
+      ).length
     })
   assert.equal(await hiddenInFirstSlot(), 1, '第一格有选中高亮、没有锁定图标')
   await p.getByRole('radio', { name: '数据' }).click()

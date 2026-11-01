@@ -33,3 +33,9 @@ paths: server/design-mcp.ts, shared/design.ts, shared/design-analysis.ts, shared
 - 规则：模型设计（`Task.modelDesign`）的对话在 `#/model/<对话>` 打开，Agent 模式的侧栏和项目首页不列它；按项目对话地址打开的（命令面板、通知、旧链接）由 `ProjectsPage` 转到 `#/model`。新增按任务列表筛项目对话的地方要排除 `modelDesign`。
 - 起因：用户 2026-10-30 指出建模对话跳进了 Agent 模式、混在 Agent 项目对话里。
 - 防线：`scripts/ui/04-design.mjs`（建好停在 `#/model/`、Agent 侧栏里没有它）。
+
+## 画板上「看不见的元素」不只是隐藏的控件
+
+- 规则：数控件隐藏状态（`visibility: hidden`）时排除 `aria-hidden` 的元素：`umg-render.tsx` 的 `Sizer` 和列表条目、子控件撑满时的占位块也是 `visibility: hidden`，只用来撑出设计尺寸；新加这类占位时一律带 `aria-hidden`。
+- 起因：5959b1f2 加了占位块后，`scripts/ui/04-design.mjs`「第一格没有锁定图标」数出 4 个隐藏元素（期望 1）。
+- 防线：`scripts/ui/04-design.mjs` 的 `hiddenInFirstSlot`。
