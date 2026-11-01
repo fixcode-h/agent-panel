@@ -72,5 +72,8 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - frpc 在本机由 `startFrpc` 运行（没有就下载到数据目录 `bin/`），配置每次按设置重写到 `frp/frpc.toml`；`loginFailExit = false` 一直重试，`frpcEvent` / `frpcProxyOf` 解析日志：面板代理 `agent-panel` 决定连接状态，端口映射 `agent-panel-m-<id>` 各自记进 `status.mappings`，开不出来不影响面板本身。
 - 端口映射（SSH、远程桌面、VNC、自定义 TCP/UDP）：服务器端口必须在一键配置时放行的范围内（`frpMappingError`，前后端共用），增删只改本机 frpc，不用再登录服务器。
 - 映射类型（`FrpMapping.type`）：`tcp` / `udp` 占服务器端口；`xtcp` 是 P2P 直连，不占服务器端口，frpc 同时注册一条同密钥的 `stcp`，访问端配置（`shared/remote.ts` 的 `frpVisitorConfig`，设置页一键复制）先打洞、1 秒打不通就退回 stcp 经服务器中转；`files` 用 frp 的 `static_file` 插件把一个目录做成只读的网页文件共享，必须有用户名和密码（新建时生成），`~` 开头的目录在写配置时展开。P2P 密钥和共享密码只存本机，导出时去掉、导入时按映射 id 沿用。
+- 排障提示（`frpcEvent` 归类，见 lessons/server.md「按原因分」）：`connect to server error` 按后面的原因分成超时（安全组）、拒绝连接（frps 没运行）、连上后被断开 `session shutdown`（端口被别的程序占着）；`connect to local service` 只记在那条映射上。设置页每次刷新状态时还会主动探一下每条 TCP / P2P 映射的本机端口（`withLocalProbe`），本机没开服务（最常见是 Windows 没装 OpenSSH 服务器）直接标红，不用等外面连不上再查。
+- frp 包下载后按写死的官方 SHA256（`FRP_SHA256`，升级 `FRP_VERSION` 时一起换）校验；frpc 启动报 ENOENT / EPERM、程序文件不见了或一声不吭就退出，按「被安全软件隔离」提示，并给出要加进信任区的目录。一键部署脚本先用 `ss` 查 frp 端口和面板端口有没有被别的程序占着，占着就直接报出程序名。
+- 「连接状态」里的「重新连接」（`POST /remote/restart`）按当前设置重启隧道，不用把外部访问关掉再打开。
 - 设置页给每条映射拼好可复制的连接方式（`FrpMappingsGroup.tsx` 的 `mappingUsage`）：SSH 用状态接口里的本机登录用户名（`status.localUser`）拼 `ssh -p <端口> <用户>@<服务器>`，P2P 的是访问端电脑上的 `127.0.0.1:<访问端端口>`。
 - 回归：`server/remote.test.ts`（frps / frpc 配置、映射校验、日志解析）、`server/remote-external.test.ts`（主端口带转发头要令牌、外网专用端口一律要令牌、停用后端口关闭）。

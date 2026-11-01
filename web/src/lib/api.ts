@@ -268,6 +268,7 @@ export const api = {
   remoteStatus: () => request<RemoteAccessStatus>('/remote/status'),
   remoteCheck: () => request<RemoteAccessStatus>('/remote/check', { method: 'POST' }),
   remoteInstall: () => request<RemoteAccessStatus>('/remote/install', { method: 'POST' }),
+  remoteRestart: () => request<RemoteAccessStatus>('/remote/restart', { method: 'POST' }),
   /** 一键配置云服务器（frp）：密码只随这次请求发给本机服务，不保存 */
   remoteDeploy: (body: {
     server: string

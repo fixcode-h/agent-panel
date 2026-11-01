@@ -1698,6 +1698,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '缺少 P2P 密钥：删掉这条重新添加': 'Missing P2P secret: delete this mapping and add it again',
   请选择要共享的目录: 'Choose a folder to share',
   文件共享要设置用户名和密码: 'File sharing needs a user name and password',
+  '正在重新连接…': 'Reconnecting…',
+  重新连接: 'Reconnect',
   外网专用端口: 'Remote-only port',
   '反向代理转到 127.0.0.1 的这个端口': 'Point the reverse proxy at this port on 127.0.0.1',
   '只监听本机。以前转到 8787 的请求仍按访问地址校验，改转到这里更安全：Host 被反代改写也不会被当成本机请求。':

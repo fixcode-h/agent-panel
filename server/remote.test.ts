@@ -81,12 +81,35 @@ test('frp：服务端只放行面板端口和映射范围，客户端只写合�
   assert.match(v, /bindPort = 6001/)
   assert.match(v, /fallbackTo = "agent-panel-m-p2p-visitor-stcp"/)
   assert.match(deployScript(f, '/tmp/x'), /systemctl restart agent-panel-frps/)
+  // 端口被别的程序占着时先报出来，不让 frpc 连上别人的程序
+  assert.match(deployScript(f, '/tmp/x'), /AGENT_PANEL_ERR port-busy/)
+  // 会自动下载的每个平台包都要有官方哈希，否则下载后校验必然失败
+  const { FRP_SHA256 } = await import('./frp.ts')
+  for (const [os, arch] of [
+    ['linux', 'x64'],
+    ['linux', 'arm64'],
+    ['darwin', 'x64'],
+    ['darwin', 'arm64'],
+    ['win32', 'x64'],
+    ['win32', 'arm64'],
+  ])
+    assert.match(FRP_SHA256[frpAsset(os, arch)!.name] ?? '', /^[0-9a-f]{64}$/, `${os} ${arch}`)
   assert.equal(frpAsset('linux', 'x86_64')?.name, 'frp_0.61.1_linux_amd64.tar.gz')
   assert.equal(frpAsset('win32', 'arm64')?.name, 'frp_0.61.1_windows_arm64.zip')
   assert.equal(frpAsset('linux', 'mips'), undefined)
   assert.equal(frpcEvent('[I] [agent-panel] start proxy success'), 'ok')
   assert.equal(frpcEvent('[W] login to the server failed: dial tcp 1.2.3.4:7000: i/o timeout'), 'unreachable')
   assert.equal(frpcEvent('[W] [agent-panel-m-ssh] start error: port not allowed'), 'port')
+  // 「connect to server error」按后面的原因分开：TCP 连上被断开、没人监听、超时各给不同的提示
+  assert.equal(frpcEvent('[W] connect to server error: session shutdown'), 'closed')
+  assert.equal(frpcEvent('[W] connect to server error: dial tcp 1.2.3.4:7000: connect: connection refused'), 'refused')
+  assert.equal(frpcEvent('[W] connect to server error: dial tcp 1.2.3.4:7000: i/o timeout'), 'unreachable')
+  assert.equal(
+    frpcEvent(
+      '[W] [agent-panel-m-ssh] connect to local service [127.0.0.1:22] error: dial tcp 127.0.0.1:22: connection refused',
+    ),
+    'local',
+  )
   assert.equal(frpcProxyOf('[W] [agent-panel-m-ssh] start error: port not allowed'), 'agent-panel-m-ssh')
   assert.equal(frpcProxyOf('[I] [agent-panel-m-p2p-stcp] start proxy success'), 'agent-panel-m-p2p')
   assert.equal(frpcProxyOf('[I] [abcd1234] [agent-panel] start proxy success'), 'agent-panel')

@@ -565,6 +565,20 @@ export const EN_SERVER: Record<string, string> = {
   '端口映射范围不对：起始不能大于结束，最多 1000 个端口':
     'Invalid port mapping range: the start must not exceed the end, and at most 1000 ports are allowed',
   'frp 端口和面板端口不能落在端口映射范围里': 'The frp port and the panel port must be outside the port mapping range',
+  '本机 {addr} 没有 SSH 服务在运行：Windows 要在「可选功能」里添加「OpenSSH 服务器」并启动 sshd，macOS 在「共享」里打开「远程登录」。{log}':
+    'No SSH service is running at {addr} on this computer: on Windows add "OpenSSH Server" under Optional features and start sshd; on macOS turn on "Remote Login" under Sharing. {log}',
+  '本机 {addr} 没有服务在运行，外部连上后会被立刻断开。{log}':
+    'No service is running at {addr} on this computer, so outside connections are dropped immediately. {log}',
+  '已经连上云服务器的 {port} 端口，但对方马上断开了：这个端口可能被别的程序（例如以前装的 frp）占着。在服务器上执行 sudo ss -ltnp | grep :{port}，看监听的是不是 agent-panel-frps；不是的话停掉那个程序，或在「高级 · 端口」里换一个 frp 端口后重新一键配置。{log}':
+    'Reached port {port} on the cloud server, but it closed the connection right away: another program (such as an older frp) may be using that port. Run sudo ss -ltnp | grep :{port} on the server and check that agent-panel-frps is the one listening; if not, stop that program, or pick another frp port under "Advanced · Ports" and run setup again. {log}',
+  '云服务器的 {port} 端口没有程序在监听：frps 没在运行。在服务器上执行 sudo systemctl status agent-panel-frps 查看原因，或重新点「一键配置」。{log}':
+    'Nothing is listening on port {port} on the cloud server: frps is not running. Run sudo systemctl status agent-panel-frps on the server to see why, or click "One-click setup" again. {log}',
+  '下载的 {name} 校验不通过（SHA256 {got}），已删除。可能被网络或镜像篡改，请换个网络再试。':
+    'The downloaded {name} failed verification (SHA256 {got}) and was deleted. It may have been altered by the network or a mirror; try another network.',
+  '服务器上的端口 {port} 已经被 {name} 占用：停掉它，或在「高级 · 端口」里换一个端口后重新配置。':
+    'Port {port} on the server is already used by {name}: stop it, or pick another port under "Advanced · Ports" and run setup again.',
+  'frpc 被安全软件拦截或隔离了（frp 是开源的内网穿透工具，常被电脑管家、360、Windows 安全中心误报）。请在安全软件的隔离区恢复它，并把 {dir} 加进信任区，然后点「重新连接」；文件已经被删时会自动重新下载。':
+    'frpc was blocked or quarantined by security software (frp is an open-source tunneling tool that antivirus products often flag by mistake). Restore it from the quarantine, add {dir} to the trusted list, then click "Reconnect"; if the file was deleted it will be downloaded again.',
   '正在配置，请稍候': 'Setup is in progress, please wait',
   'frp 端口和面板端口不能相同': 'The frp port and the panel port must differ',
   '服务器信息不完整：{msg}': 'Server details are incomplete: {msg}',
