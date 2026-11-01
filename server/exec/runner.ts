@@ -2021,8 +2021,27 @@ async function runAgent(
       }
     }
   }
-  // 模型主动调 wait_user_message 等下一句：这个工具是面板用 MCP 注进去的，只有能挂 MCP 的 CLI 才有
-  const waitUser = canTake ? () => waitNext(true) : undefined
+  /**
+   * 交给 CLI 的用户下一条消息（保活、模型自己调 wait_user_message 两条路一样）：以前原样交给 CLI，
+   * 计划进度、子对话发来的消息、改动清单、授权变化都带不进去，也没有「## 用户这次的消息」标题。
+   * 交给调用方按当前状态补上变了的段落（见 shared/prompt-delta.ts）；子任务结果、/命令照旧原样
+   */
+  const withState = async (text: string | null) => {
+    if (text === null || !fromUser || !call.nextPrompt || text.trim().startsWith('/')) return text
+    return call.nextPrompt(text).catch((e) => {
+      // 拼不出带状态的提示时退回原文照常交给 CLI（用户的话不能丢），但要留日志，不悄悄吞掉
+      log.warn('task', '下一条消息没能补上当前状态，按原文交给 CLI', { task: task.id, error: (e as Error).message })
+      return text
+    })
+  }
+  // 模型主动调 wait_user_message 等下一句：这个工具是面板用 MCP 注进去的，只有能挂 MCP 的 CLI 才有。
+  // 预热也走这里（预热提示让模型直接调它）：等到的用户消息同样按当前状态补段落
+  const waitUser = canTake
+    ? async () => {
+        fromUser = false
+        return withState(await waitNext(true))
+      }
+    : undefined
   // 面板保活：回复完这一轮不关进程，用户的下一条消息交给同一个进程开下一轮（不靠模型主动调等待工具）。
   // 只在对话页确实开着时这样做：没人看的时候留着一个 CLI 也没人会回来发消息
   const keepAlive = canWait
@@ -2034,18 +2053,7 @@ async function runAgent(
         const text = await waitNext(false)
         // 拿到下一句就是新一轮开始了：上一轮模型有没有等过，跟新一轮无关
         if (text !== null) toolWaited = false
-        // 保活进程里的下一条消息：以前原样交给 CLI，计划状态、子对话发来的消息、授权变化都带不进去。
-        // 交给调用方按当前状态补上变了的段落（见 shared/prompt-delta.ts）；子任务结果、/命令照旧原样
-        if (text !== null && fromUser && call.nextPrompt && !text.trim().startsWith('/'))
-          return await call.nextPrompt(text).catch((e) => {
-            // 拼不出带状态的提示时退回原文照常交给 CLI（用户的话不能丢），但要留日志，不悄悄吞掉
-            log.warn('task', '保活的下一条消息没能补上当前状态，按原文交给 CLI', {
-              task: task.id,
-              error: (e as Error).message,
-            })
-            return text
-          })
-        return text
+        return withState(text)
       }
     : undefined
 
@@ -2682,7 +2690,10 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
   const vcs = ctx.project.path ? (await detectVcs(ctx.project.path).catch(() => null))?.vcs : undefined
   return {
     push: ctx.project.gitPolicy ?? 'ask',
-    answered: ctx.task.remotePush,
+    // 用户对推送的回答（task.remotePush）不在这一刻定死：getter 现取，回答记上之后保活的下一条消息（nextPrompt 重拼）才看得到
+    get answered() {
+      return ctx.task.remotePush
+    },
     tools: views.filter((v) => v.installed && v.authed).map((v) => v.name),
     ...(target && (vcs === 'git' || vcs === 'p4') ? { cherryPick: { vcs, target } } : {}),
     docs: await projectDocRoot(ctx.project.path, ctx.agents, vcs ?? 'none'),
@@ -2725,8 +2736,13 @@ export async function runRealTurn(ctx: RealContext) {
     listConversations: ctx.listConversations,
     createConversation: ctx.createConversation,
     sendToConversation: ctx.sendToConversation,
-    rules: ctx.rules,
-    goal: ctx.goal,
+    // 全局规则、目标在 run.ts 里是 getter（现取父对话的）：这里也转成 getter，别在建 host 时求值成快照
+    get rules() {
+      return ctx.rules
+    },
+    get goal() {
+      return ctx.goal
+    },
     takeInbox: ctx.takeInbox,
     messageParent: ctx.messageParent,
     claimFiles: ctx.claimFiles,

@@ -537,7 +537,8 @@ await runShard('本机请求与设置', async (api) => {
     const rec = readLog(log + '.wait')
       .slice(before)
       .at(-1)
-    assert.match(rec.got, /接着看看测试/)
+    // 模型自己调 wait_user_message 等到的下一句也按当前状态重拼（engine 的 nextPrompt），不再是原样的一句话
+    assert.match(rec.got, /## 用户这次的消息\n接着看看测试/)
     // 不再提示「每轮回复完成后调用 wait_user_message」（ADR 0037）：那句提示让模型做完一步就把自己挂起；
     // 保活由面板在这一轮结束时自己做，工具照样挂着（上面停在等下一句就是它）
     assert.ok(!rec.hint, '提示里不再要求每轮回复完都调 wait_user_message')

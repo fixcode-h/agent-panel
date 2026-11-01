@@ -270,4 +270,47 @@ test('续接只发增量：改动清单变了只重发「本轮该跑的测试�
   })
   await say(h, '都做完了')
   assert.doesNotMatch(calls[3].prompt, /## 不再适用的规则/)
+
+  // 保活期间改动清单、推送回答变了：下一条消息按现值重拼（服务端把这几项写成 getter，见 server/tasks/run.ts、runner.ts 的 taskPolicy）。
+  // 以前是建 host 时的快照：新对话开头没改动，之后保活的每一条都写着「改动清单为空」。
+  // 推送的回答只对父对话有意义（子对话不碰远端），这段按顶层对话拼
+  h.task.parentTaskId = ''
+  h.task.changes = []
+  ;(h as { verify?: unknown }).verify = {
+    ...verify,
+    get changedFiles() {
+      return h.task.changes.map((c) => c.path)
+    },
+  }
+  h.policy = {
+    push: 'ask',
+    tools: [],
+    get answered() {
+      return h.task.remotePush
+    },
+  }
+  await say(h, '新的一轮')
+  const live = calls[4]
+  assert.match(live.fresh ?? live.prompt, /改动清单为空/)
+  h.task.changes = [{ path: 'server/b.ts', add: 1, del: 0 }]
+  h.task.remotePush = 'allowed'
+  const next = await live.nextPrompt!('保活里接着改')
+  assert.match(next, /## 用户这次的消息\n保活里接着改/)
+  assert.match(next, /## 本轮该跑的测试步骤[\s\S]*server\/b\.ts/)
+  assert.match(next, /用户已经同意推送/)
+  assert.doesNotMatch(next, /## 验证按改动大小定|## 计划怎么维护/)
+
+  // 预热也带 nextPrompt：预热发的是完整提示，用户第一条消息（经 wait_user_message 或保活交进来）只补消息和变了的段落，
+  // 以前原样交给 CLI，没有「## 用户这次的消息」；预热结束也记下这个会话已有的段落
+  h.prewarm = true
+  h.prompt = '（预热）'
+  delete h.task.promptSent
+  await runConversationTurn(h, 'exec')
+  h.prewarm = false
+  const warm = calls[5]
+  assert.match(warm.prompt, /## 计划怎么维护/)
+  const first = await warm.nextPrompt!('预热后的第一句')
+  assert.match(first, /^## 用户这次的消息\n预热后的第一句/)
+  assert.doesNotMatch(first, /## 计划怎么维护/)
+  assert.ok(sentOf(h)?.exec, '预热的会话记下了已发的段落')
 })

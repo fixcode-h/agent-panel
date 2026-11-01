@@ -4330,7 +4330,9 @@ export async function runConversationTurn(host: EngineHost, who: string) {
           prompt,
           // 只发了增量时带上完整的：runner 续不上会话、开了新会话时改用它
           ...(first && delta ? { fresh: full } : {}),
-          ...(first && !host.prewarm ? { nextPrompt, onInput, onCompacted } : {}),
+          // 预热也给：预热那一轮发的是完整提示（live 就是它），用户的第一条消息经 wait_user_message 或保活交进来时
+          // 同样按当前状态只补变了的段落，不然原样交过去，没有「## 用户这次的消息」，计划、收件箱也停在预热那一刻
+          ...(first ? { nextPrompt, onInput, onCompacted } : {}),
           ...(first ? {} : { carry: true }),
           // 会话键就是 Agent id；选了「无」时用空字符串，runner 仍然按对话处理
           sessionKey: who,
@@ -4344,7 +4346,8 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       // 记下这个会话已经有了哪些段落：跑完或被停下的算收到了（停下时 CLI 已经读过这一轮）；报错的不记，
       // 可能根本没交到 CLI，下一轮照旧补发。会话 id 取 runner 跑完后的（续不上开了新会话时，新会话收到的是 fresh）
       // 这一轮里压缩过（含手动压缩：那一轮只发了压缩命令，规则根本没发）：不记，下一轮发完整提示
-      if (first && !host.prewarm && live && task.sessions[who] && (r.ok || r.stopped))
+      // 预热同样记：它发的是完整提示，之后在这个进程里收的消息也都按 live 补过段落，会话里有的就是 live 这份
+      if (first && live && task.sessions[who] && (r.ok || r.stopped))
         task.promptSent = rememberSent(task.promptSent, who, { ...live, session: task.sessions[who] })
       first = false
       if (!r.ok) {

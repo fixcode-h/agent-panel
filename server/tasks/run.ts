@@ -231,6 +231,12 @@ export function createRun(sc: TasksScope) {
     const parentTask = task.parentTaskId
       ? (sc.live.get(task.parentTaskId)?.task ?? (await sc.store.get(task.parentTaskId)) ?? undefined)
       : undefined
+    // 全局规则、目标存在谁身上：顶层对话是自己，子对话是父对话。父对话在执行位上时那份最新（落盘的可能还没写），
+    // 不在时取存储里已有的内存副本（/rule、改目标都会写回存储），都没有才用这一轮开始时读的
+    const ruleOwner = () =>
+      task.parentTaskId
+        ? (sc.live.get(task.parentTaskId)?.task ?? sc.store.known(task.parentTaskId) ?? parentTask)
+        : entry.task
     const rootId = task.parentTaskId || task.id
     // 父对话在对话设置里给子对话定了 CLI / 模型 / 思考强度：子对话的角色按它跑。
     // 换了 CLI 时角色原来的模型、强度是另一个 CLI 的，没另外指定就用新 CLI 的默认
@@ -368,9 +374,15 @@ export function createRun(sc: TasksScope) {
         prewarmTurnDoneAt: beforeTurnDoneAt,
         workflowCatalog: () => (defaultWf ? sc.workflowCatalog(project, allWorkflows, defaultWf) : []),
         resolveWorkflow: (id) => (project?.id ? sc.planWorkflow(project, allWorkflows, defaultWf, id) : undefined),
-        // 全局规则：父对话自己的，子对话用父对话的（这一轮开始时读一次，执行中新发的靠实时推送）
-        rules: (task.parentTaskId ? (parentTask?.rules ?? []) : entry.task.rules).map((r) => r.text),
-        goal: (task.parentTaskId ? parentTask?.goal : entry.task.goal) || '',
+        // 全局规则和目标：父对话自己的，子对话用父对话的。写成 getter 每次拼提示时现取：CLI 保活时下一条消息
+        // 由 engine 的 nextPrompt 按当前状态重拼，取一次的快照会让保活期间新发的规则、改的目标一直进不来
+        //（实时推送只送给正在执行的子对话，停在等下一句的收不到）
+        get rules() {
+          return (ruleOwner()?.rules ?? []).map((r) => r.text)
+        },
+        get goal() {
+          return ruleOwner()?.goal || ''
+        },
         takeInbox: task.parentTaskId
           ? undefined
           : () => {
@@ -454,8 +466,11 @@ export function createRun(sc: TasksScope) {
                 platform: process.platform,
                 wslDistro: found.wslDistro,
                 scaled: found.scaledVerify,
-                // 这次任务实际改了哪些文件：服务端算好「本轮该跑哪几条 + 命令」再交给模型，不靠它自己筛
-                changedFiles: entry.task.changes.map((c) => c.path),
+                // 这次任务实际改了哪些文件：服务端算好「本轮该跑哪几条 + 命令」再交给模型，不靠它自己筛。
+                // getter 现取：runner 在这一轮里会刷新 task.changes，保活的下一条消息要按新的改动清单算
+                get changedFiles() {
+                  return entry.task.changes.map((c) => c.path)
+                },
                 ...(await parentRunRole(entry.task, found)),
               }
             : undefined,
