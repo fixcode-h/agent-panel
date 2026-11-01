@@ -15,6 +15,7 @@ import { applyFixesInDir } from '../files.ts'
 import { FixApplyInput } from '../../shared/diagnosis.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
+import { forgetClaims } from '../claims.ts'
 
 /**
  * 对话上的操作：应用排查结论的修复、撤销改动、回答子对话提问和权限确认、改对话设置、倒回、分叉、压缩、评审、停止。
@@ -171,7 +172,11 @@ export function registerActionRoutes(s: TasksScope) {
       else void s.closeChildren(id)
     }
     // 归档的对话不再接收结果：后台命令（连同名下子对话的）一起停掉
-    if (p.data.archived === true) await s.endBackground(id)
+    if (p.data.archived === true) {
+      await s.endBackground(id)
+      // 归档了就不会再交改动：它名下的认领（它是父对话时整组）放掉
+      forgetClaims(s.claims, cur)
+    }
     const beforeAgentId = cur.agentId
     const agentChanged = p.data.agentId !== undefined && p.data.agentId !== beforeAgentId
     const touchesRun =

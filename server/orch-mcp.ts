@@ -12,12 +12,13 @@ import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
  * 节点用它派子 Agent 并行处理、取回结果、查各 Agent 的状态、向主 Agent 提问、给别的 Agent 传话；
  * 项目对话用它分派子对话，子对话用它和父对话通讯、认领文件。
  * 它和提问、等下一句这些工具挂在同一个面板 MCP（ask-mcp.ts 的 panel）上：一次调用只连一个面板服务。
- * 工具调用不能等太久（Codex 默认 60 秒超时），等待都有上限
+ * 工具调用不能等太久（Codex 老版本默认 60 秒超时），等待都有上限；wait_agents 例外，见 WAIT_AGENTS_S
  */
 
-/** 一次工具调用里最多等多久（秒） */
-const MAX_WAIT_S = 50
 const DEFAULT_WAIT_S = 40
+// wait_agents 等到子任务全部结束或有人传话才回（每回一次 CLI 就带整份上下文再请求一次），这是兜底上限：
+// 要短于 CLI 一次工具调用的超时（Codex 的 tool_timeout_sec 在定义里放宽到 1 小时），等待期间写 SSE 心跳（ask-mcp.ts）
+export const WAIT_AGENTS_S = 1500
 
 /** 交给哪个 Agent：列出通用 Agent，模型不用猜名字 */
 function agentField(o: Orchestra) {
@@ -266,7 +267,7 @@ function allOrchTools(o: Orchestra) {
             name: 'set_plan',
             title: '更新计划',
             description:
-              '列出或更新这个对话的执行计划，每次交整份列表（已有的步骤带 id）。最多两层：主步骤和子步骤。一份计划里同时只能有一个步骤是「进行中」（同一层）；跑长命令、派子对话前用带 step 的参数把它变成等待中。同一件事的细化 / 插一步 / 调顺序用 partial 只交变更项；目标变了（换方向、大部分步骤作废）先 finish_plan 结束这份计划、再带新 title 开新的，不要在同一份里大换血。步骤一多（10 条以上）就分两批交：一批带 partial: true 只写要变的步骤，没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。完成的步骤不能再改，同样的内容要再做就新加一步；步骤全部完成后这份计划就结束，之后的新内容直接开新计划。返回合并后的计划和每一步的 id。',
+              '列出或更新这个对话的执行计划，每次交整份列表（已有的步骤带 id）。最多两层：主步骤和子步骤。一份计划里同时只能有一个步骤是「进行中」（同一层）；跑长命令、派子对话前用带 step 的参数把它变成等待中。同一件事的细化 / 插一步 / 调顺序用 partial 只交变更项；目标变了（换方向、大部分步骤作废）先 finish_plan 结束这份计划、再带新 title 开新的，不要在同一份里大换血。步骤一多（10 条以上）就分两批交：一批带 partial: true 只写要变的步骤，没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。完成的步骤不能再改，同样的内容要再做就新加一步；步骤全部完成后这份计划就结束，之后的新内容直接开新计划。新开计划、整份提交时返回合并后的计划和每一步的 id；partial 只返回变了的步骤（新步骤带 id）和进度、下一步，完整计划每轮提示里都有。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -718,7 +719,7 @@ function allOrchTools(o: Orchestra) {
                   name: 'claim_files',
                   title: '认领文件',
                   description:
-                    '改文件前认领要改的文件或目录（相对项目根）。子对话共用一个目录，被别的子对话占着的会列出来，那些不要改。这一轮结束时自动释放。',
+                    '改文件前认领要改的文件或目录（相对项目根）。子对话共用一个目录，被别的子对话占着的会列出来，那些不要改。认领留到你的改动被父对话验收（或你被删除、归档）才释放，一轮结束不释放；这一轮改过的文件即使没认领也会记到你名下。',
                   inputSchema: {
                     type: 'object',
                     properties: { paths: { type: 'array', items: { type: 'string' } } },
@@ -728,7 +729,8 @@ function allOrchTools(o: Orchestra) {
                 {
                   name: 'release_files',
                   title: '释放文件',
-                  description: '提前释放认领的文件（做完一部分、让给别的子对话时用）；不写 paths 释放全部。',
+                  description:
+                    '提前让出认领了却没改的文件（让给别的子对话时用）；不写 paths 让出全部没改过的。改过的文件不能提前释放，等父对话验收后由面板释放。',
                   inputSchema: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' } } } },
                 },
               ]
@@ -935,15 +937,12 @@ function allOrchTools(o: Orchestra) {
                 {
                   name: 'wait_agents',
                   title: '等待子任务',
-                  description: `等派出的子任务做完并取回结果。一次最多等 ${MAX_WAIT_S} 秒，没做完的会列出来，过一会儿再调用；做完前不要自己重复它们的工作。`,
+                  description:
+                    '等派出的子任务做完并取回结果：一直等到它们全部结束（或有人给你传话）才返回，等待期间不占 API 名额，调一次就够，不用轮询；只交回上次取过之后新做完的。做完前不要自己重复它们的工作。',
                   inputSchema: {
                     type: 'object',
                     properties: {
                       ids: { type: 'array', items: { type: 'string' }, description: '子任务的 id；不写等你派出的全部' },
-                      seconds: {
-                        type: 'number',
-                        description: `最多等几秒（默认 ${DEFAULT_WAIT_S}，最多 ${MAX_WAIT_S}）`,
-                      },
                     },
                   },
                 },
@@ -1000,7 +999,7 @@ function reportText(r: HelperReport) {
 }
 
 /** 执行一个工具调用 */
-export async function callOrchTool(o: Orchestra, name: string, a: any) {
+export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: AbortSignal) {
   switch (name) {
     case 'get_status':
       return text(o.status())
@@ -1269,19 +1268,19 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     }
     case 'wait_agents': {
       const ids = Array.isArray(a?.ids) ? a.ids.map(String) : []
-      // 对话里结果会自动交回：老会话里模型还记得这个工具时不陪它等，告诉它结束这一轮
-      const s = o.autoReturn ? 0 : Math.min(MAX_WAIT_S, Math.max(1, Number(a?.seconds) || DEFAULT_WAIT_S))
-      const r = await o.wait(ids, s * 1000)
-      if (!r.done.length && !r.running.length) return text('你还没有派出子任务')
+      // 对话里结果会自动交回：老会话里模型还记得这个工具时不陪它等，告诉它结束这一轮。
+      // 老会话的模型还会带 seconds：不再理它，短等待只会让它每隔几十秒带着整份上下文再请求一次
+      const r = await o.wait(ids, o.autoReturn ? 0 : WAIT_AGENTS_S * 1000, signal)
+      if (!r.done.length && !r.running.length)
+        return text(r.taken ? `派出的 ${r.taken} 个子任务都已经交回过了，结果在前面。` : '你还没有派出子任务')
+      // 没做完的只列 id：标题在派出时的返回里有，每次都重列一遍没有新信息
       const again = o.autoReturn
         ? '不用再查：结束这一轮回复，它们全部做完后结果会自动交回给你。'
-        : '过一会儿再调用 wait_agents。'
+        : '有人传话时会提前返回：先处理那条消息（收件箱里的用 read_messages 看），再调用 wait_agents 接着等。'
       return text(
         [
           r.done.length ? `做完 ${r.done.length} 个：\n\n${r.done.map(reportText).join('\n\n')}` : '',
-          r.running.length
-            ? `还在执行 ${r.running.length} 个：${r.running.map((x) => `${x.id}｜${x.title}`).join('、')}\n${again}`
-            : '',
+          r.running.length ? `还在执行：${r.running.map((x) => x.id).join('、')}\n${again}` : '',
         ]
           .filter(Boolean)
           .join('\n\n'),

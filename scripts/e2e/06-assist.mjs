@@ -684,6 +684,28 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'remove', id: tpl })
     assert.deepEqual([d.concept.images.length, d.concept.approved], [1, ''], '删掉模板就回到挑图')
     step('先出原画：不能先搭界面，出候选、确认模板后照着模板出切图')
+    // 检查没通过：不再自动重跑一轮，改好的照样存下，问题写成带「让 AI 修」的系统消息；用户发了才再跑
+    const fixProject = await call('POST', '/designs/projects', { name: 'Fix Probe', path: projectDir })
+    const fix = await call('POST', '/designs', { projectId: fixProject.id, kind: 'game', title: '检查修复' })
+    const placeholder = {
+      root: { Type: 'CanvasPanel', Name: 'Root', Children: [{ Type: 'TextBlock', Name: 'Txt_Empty' }] },
+      reply: '搭好了',
+    }
+    const fixCallsBefore = calls().length
+    await call('POST', `/designs/${fix.id}/chat`, {
+      text: `搭一个 FAKE_DESIGN:${JSON.stringify(placeholder)}`,
+      source: { kind: 'none' },
+    })
+    let fixed = await waitJob(fix.id)
+    assert.equal(fixed.job.status, 'done', JSON.stringify(fixed.job.error))
+    assert.equal(calls().length - fixCallsBefore, 1, '检查没通过时只调了一次 CLI，不自动重跑')
+    const note = fixed.messages.at(-1)
+    assert.deepEqual([note.role, note.fixable], ['system', true], '问题写成可以「让 AI 修」的系统消息')
+    assert.match(note.text, /Txt_Empty/)
+    assert.equal(fixed.root.Children[0].Name, 'Txt_Empty', '改好的部分照样存下')
+    await call('DELETE', `/designs/${fix.id}`)
+    await call('DELETE', `/designs/projects/${fixProject.id}`)
+    step('检查没通过：不自动重跑，问题交给用户决定')
     // 没在改设计时发消息：直接开新一轮（以前只回 steered: false，由页面自己维护排队）。
     // 用一个空的 UI 项目：项目里其他设计已有的图片描述会进设计提示词，里面带 FAIL 会让假 CLI 判成失败
     const probeProject = await call('POST', '/designs/projects', { name: 'Steer Probe', path: projectDir })

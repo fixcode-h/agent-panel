@@ -161,7 +161,9 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         <Row
           title={t('深色文字亮度')}
           desc={t('深色主题下主文字有多白')}
-          hint={t('默认 90%，比 Claude Code 深色的主文字（93%）略柔和；100% 是纯白，调低更柔和。浅色主题不受影响。')}
+          hint={t(
+            '默认 80%；100% 是纯白，调低更柔和。加粗、表头这类强调字跟着一起调，固定比正文亮一些好区分。浅色主题不受影响。',
+          )}
         >
           <Slider
             label={t('深色文字亮度')}

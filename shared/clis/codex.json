@@ -286,7 +286,7 @@
     ]
   },
   "mcp": {
-    "args": ["-c", "mcp_servers.{name}.url=\"{url}\""],
+    "args": ["-c", "mcp_servers.{name}.url=\"{url}\"", "-c", "mcp_servers.{name}.tool_timeout_sec=3600.0"],
     "files": {},
     "vars": {},
     "extras": []

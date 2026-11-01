@@ -151,6 +151,9 @@ export function createStuckChild(s: TasksScope) {
       log.warn('task', '卡住的子对话重启没恢复，新开子对话接手', { task: id, parent: parent.id, why })
       taskLog(id, '卡住：重启没恢复，换人接手', { why })
       const r = await s.spawnChildOf(parent.id, { title, message: takeoverBrief(old, why), agentId: old.agentId })
+      // 原子对话在共用目录里没交出去的改动由接手的继续：认领整份转过去；没建成就放掉，别占着没人管的文件
+      if (r.ok && r.id) s.claims.transfer(parent.id, id, { taskId: r.id, title })
+      else s.claims.release(parent.id, id)
       if (!r.ok || !r.id) {
         const text = t('子对话「{title}」卡住了，重启也没恢复（{why}），新开子对话接手也失败了', {
           title: old.title,

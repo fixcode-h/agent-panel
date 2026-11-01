@@ -1,5 +1,6 @@
 import { Task, type StopReason } from '../../shared/schema.ts'
 import { taskDeleted } from '../../shared/task.ts'
+import { forgetClaims } from '../claims.ts'
 import { forgetNotes } from '../exec/runner.ts'
 import { forgetPresence } from '../presence.ts'
 import type { TasksScope } from './scope.ts'
@@ -51,6 +52,8 @@ export function createTrash(s: TasksScope) {
     // 等后台命令的进程真正退出：进程还占着目录时，过期清理在 Windows 上删不掉
     await s.endBackground(tk.id)
     await s.store.updateMeta(tk.id, { deletedAt: new Date().toISOString() })
+    // 认领跟着放：从回收站恢复不补，它下一轮结束时按改过的文件自然记回去
+    forgetClaims(s.claims, tk)
   }
 
   // 删除 = 进回收站（物理删除只能从回收站里做，见 DELETE /:id/permanent）

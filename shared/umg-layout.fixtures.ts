@@ -274,5 +274,42 @@ export function layoutFixtures(): LayoutFixture[] {
         ],
       }),
     },
+    {
+      name: '缩放和换行',
+      size: { X: 900, Y: 600 },
+      root: w('CanvasPanel', 'Root', {
+        Children: [
+          w('ScaleBox', 'Fit', {
+            Slot: canvas(20, 20, 400, 400),
+            Stretch: 'ScaleToFit',
+            Children: [w('Image', 'FitImg', { ...img(100, 50) })],
+          }),
+          w('ScaleBox', 'Down', {
+            Slot: canvas(450, 20, 400, 400),
+            Stretch: 'ScaleToFit',
+            StretchDirection: 'DownOnly',
+            Children: [w('Image', 'DownImg', { ...img(100, 50) })],
+          }),
+          w('ScaleBox', 'Stretched', {
+            Slot: canvas(20, 440, 200, 100),
+            Stretch: 'Fill',
+            Children: [w('Image', 'StretchImg', { ...img(50, 50) })],
+          }),
+          w('VerticalBox', 'Narrow', {
+            Slot: canvas(450, 440, 200, 150),
+            Children: [
+              w('TextBlock', 'Wrapped', {
+                Slot: box({ h: 'HAlign_Left' }),
+                // 两个词各自放得下一行、合起来放不下：不管机器上是什么字体都正好两行（原来一长句在 CI 字体下折成三行，和估算差一行）
+                Text: 'backpackinventory equippedweapons',
+                AutoWrapText: true,
+                Font: { Size: 12 },
+              }),
+              w('Image', 'Below', { Slot: box({ h: 'HAlign_Left' }), ...img(40, 20) }),
+            ],
+          }),
+        ],
+      }),
+    },
   ]
 }

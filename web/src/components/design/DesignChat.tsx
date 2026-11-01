@@ -1194,12 +1194,27 @@ function ChatMessage({
     )
   if (msg.role === 'system')
     return (
-      <SystemNote
-        text={msg.text}
-        error={msg.error}
-        conversation={msg.error ? conversationAround(msgs, msgs.indexOf(msg)) : ''}
-        cwd={dir}
-      />
+      <>
+        <SystemNote
+          text={msg.text}
+          error={msg.error}
+          conversation={msg.error ? conversationAround(msgs, msgs.indexOf(msg)) : ''}
+          cwd={dir}
+        />
+        {/* 检查没通过：不再自动重跑一轮，由用户决定要不要让 AI 接着修（只在它还是最后一条时给按钮） */}
+        {msg.fixable && last && onApplyAnalysis && (
+          <div className="-mt-1 mb-2 flex">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={disabled}
+              onClick={() => onApplyAnalysis(`${t('修好检查发现的这些问题：')}\n${msg.text.replace(/^[^\n]*\n/, '')}`)}
+            >
+              {t('让 AI 修')}
+            </Button>
+          </div>
+        )}
+      </>
     )
   // 旧的消息没有分段：思考和工具调用放在回复前面
   const parts: ReplyPart[] = msg.parts ?? [
@@ -1288,9 +1303,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
                 ? t('正在出原画 {i}/{n}', { i: job.concepts?.got ?? 0, n: job.concepts?.want ?? 0 })
                 : job.mode === 'analyze'
                   ? t('正在分析设计')
-                  : job.attempt > 1
-                    ? t('检查还有问题，正在接着改')
-                    : t('正在设计')}
+                  : t('正在设计')}
         </span>
         {running && (
           <span className="ml-auto shrink-0 font-mono text-caption font-normal text-subtle tabular-nums">{sec}s</span>

@@ -473,6 +473,22 @@ test('那一行收口：CLI 在结果前面插了说明也认得出，结果到�
   assert.deepEqual(bgPendingIds(build.output), [])
   assert.equal((build as { failed?: boolean }).failed, true)
   assert.match(build.output, /结果没有拿到/)
+  // 计划里等着不认识的命令的那一步一起收口：退回进行中、写「需要修复」，不再永远「等待中」
+  const planned = {
+    messages: [{ tools: [{ ...build, output: '已放到后台（编号 9c8d7e6f）。' }] }],
+    plans: [
+      { id: 'p1', createdAt: '', steps: [{ id: 's1', title: '编译', status: 'waiting', children: [], note: '' }] },
+    ],
+  } as unknown as Parameters<typeof settleJobRow>[0]
+  const step = planned.plans![0].steps[0]
+  step.waits = [{ kind: 'background', ref: '9c8d7e6f', label: '编译', state: 'waiting', at: '' }]
+  assert.equal(
+    reapLostJobs(planned, (id) => id !== '9c8d7e6f'),
+    2,
+    '那一行和计划各算一处',
+  )
+  assert.equal(step.status, 'running')
+  assert.match(step.note, /^需要修复/)
   // 开窗口的写法被拦下
   assert.equal(opensWindow('npm run build && start cmd /k "npm test"'), true)
   assert.equal(opensWindow('npm start'), false)

@@ -14,6 +14,7 @@ import {
 import { blockedStep, taskFlow, taskWorkflows } from '../../shared/flow.ts'
 import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
+import { settleWait } from '../../shared/plan.ts'
 import {
   closeFlow,
   dropEndNotes,
@@ -450,8 +451,8 @@ export function registerConversationRoutes(s: TasksScope) {
         }
       }
       // 对话：一起被中断的子对话由面板连带拉起来（先拉，父对话的续接提示里才写得清哪些已经在接着做）
-      const resumed = task.mode === 'chat' && !task.parentTaskId ? await resumeKids(task.id) : []
-      const prompt = resumePrompt(task, users, resumed)
+      const kids = task.mode === 'chat' && !task.parentTaskId ? await resumeKids(entry.task) : undefined
+      const prompt = resumePrompt(task, users, kids?.resumed, kids?.failed)
       const agents = await s.deps.agents.list()
       return c.json(await withoutStoppedJobs(entry.task, () => s.start(entry, prompt, false, agents, undefined, true)))
     } catch (e) {
@@ -464,19 +465,21 @@ export function registerConversationRoutes(s: TasksScope) {
    * 继续执行时交给 CLI 的话：最后一条要求原样再交一遍；对话模式前面写清这是续接、中断时还有什么没跑完（见 resumeNote）。
    * 工作流模式由引擎按节点续接，不加
    */
-  function resumePrompt(task: Task, users: TaskMessage[], resumed: string[] = []) {
+  function resumePrompt(task: Task, users: TaskMessage[], resumed: string[] = [], failed: KidFailure[] = []) {
     const last = users.at(-1)
     const text = withAttachments(last?.prompt || last?.text || '', last?.attachments)
     if (task.mode !== 'chat') return text
-    return `${resumeNote(task, resumed)}\n\n原来的要求：\n${text}`
+    return `${resumeNote(task, resumed, failed)}\n\n原来的要求：\n${text}`
   }
 
   /**
-   * 父对话继续执行时，把和它一起被打断的子对话也拉起来接着做，返回拉起来的标题。
+   * 父对话继续执行时，把和它一起被打断的子对话也拉起来接着做，返回拉起来的标题和没能拉起来的（写进续接说明）。
+   * parent 是执行位里那份（s.start 用它落盘）：拉不起来的子对话，计划里等它的那一步在这份上收口
    * 只拉被连带打断的（父对话结束时一起停的、面板重启、卡住重开时停的），用户亲手停的、已经收尾的、在回收站的不拉。
    * 以前继续父对话不管子对话：父对话看子对话没动静，就另建一个子对话重做（用户报过，要求尽量用原来的子对话）
    */
-  async function resumeKids(parentId: string): Promise<string[]> {
+  async function resumeKids(parent: Task): Promise<{ resumed: string[]; failed: KidFailure[] }> {
+    const parentId = parent.id
     const again: StopReason[] = ['parent', 'restart', 'stalled', 'lost']
     const kids = (await s.store.list()).filter(
       (k) =>
@@ -492,6 +495,7 @@ export function registerConversationRoutes(s: TasksScope) {
     )
     const agents = await s.deps.agents.list()
     const titles: string[] = []
+    const failed: KidFailure[] = []
     for (const meta of kids) {
       const kid = await s.store.get(meta.id)
       if (!kid) continue
@@ -513,13 +517,19 @@ export function registerConversationRoutes(s: TasksScope) {
           error: (e as Error).message,
         })
         s.alertOn(kid.id, 'panel', t('这个子对话没能开始执行'), 'error')(e)
+        failed.push({ id: kid.id, title: kid.title, error: (e as Error).message })
+        // 计划里等它的那一步不会再等到结果：退回进行中、写「需要修复」，父对话才会处理（不然永远等待中、面板也不推）
+        settleWait(parent, 'child', kid.id, false)
       }
     }
-    return titles
+    return { resumed: titles, failed }
   }
 
   return { prewarmChat, createTask }
 }
+
+/** 父对话继续执行时没能拉起来的子对话（见 resumeNote） */
+type KidFailure = { id: string; title: string; error: string }
 
 /**
  * 被停掉的后台命令已经写进续接说明：交出去就清掉，下次中断只列那时候停的。

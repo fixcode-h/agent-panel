@@ -495,12 +495,18 @@
 }
 
 /*
- * 深色下的主文字亮度（设置 → 外观 →「深色文字亮度」，html 上的 --fg-level，默认 90%）：
+ * 深色下的主文字亮度（设置 → 外观 →「深色文字亮度」，html 上的 --fg-level，默认 80%）：
  * 各配色深色块只写原色 --fg-raw，这里按亮度往页面底色里混成不透明的 --fg。
  * 比 Claude Code 深色的主文字（白色 93%）再柔一点；纯白在深底上太刺眼。混成不透明色，别处 color-mix 拿 --fg 算浅底时不会叠出透明
  */
 .dark {
-  --fg: color-mix(in srgb, var(--fg-raw) var(--fg-level, 90%), var(--bg));
+  --fg: color-mix(in srgb, var(--fg-raw) var(--fg-level, 80%), var(--bg));
+  /*
+   * 加粗、表头这类「亮白」字（--md-bright）跟着同一个滑块走，但固定比正文亮 --fg-bright-boost，
+   * 不然调暗正文后加粗还是纯白、刺眼；调到顶也不超过纯白（min 封顶，color-mix 的百分比超 100% 整条失效）
+   */
+  --fg-bright-boost: 12%;
+  --fg-bright: color-mix(in srgb, #ffffff min(100%, var(--fg-level, 80%) + var(--fg-bright-boost)), var(--bg));
 }
 
 @theme inline {
@@ -1245,7 +1251,7 @@ body,
   --md-teal: #6fd6bd;
   --md-coral: #f0937a;
   --md-gray: #8b8b8b;
-  --md-bright: #ffffff;
+  --md-bright: var(--fg-bright);
   --md-sand: #e9cf9f;
   --md-dot: rgb(255 255 255 / 0.05);
   --mmd-node-a: #24324a;

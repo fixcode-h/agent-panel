@@ -734,6 +734,12 @@ if (
 // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结。
 // 续接的会话只重发变了的段落（ADR 0027）：计划规则和没变的计划状态这一轮都不一定在，只按场景标记开新计划
 if (input.includes('PLAN_NEXT')) await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
+// 共用目录的认领：CLAIM:<路径> 调 claim_files，结果记进 .claim，用例据此看是拿到了还是被谁占着
+for (const [, p] of input.matchAll(/CLAIM:(\S+)/g)) {
+  const got = await panelCall('claim_files', { paths: [p] })
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(process.env.FAKE_CLI_LOG + '.claim', JSON.stringify({ kind, path: p, got }) + '\n')
+}
 // 子对话自己跑项目测试步骤（ADR 0018 / 0020）：命令和项目里一条 scope 不是 parent 的步骤完全一致，
 // 面板按命令认出是哪条步骤、记下 by='self' 的真实耗时。命令跑完后歇一会儿再往下走，
 // 否则同一条指令后面的 SUBMIT_MERGE 会撞上「后台还有命令没跑完」被拒绝

@@ -1,4 +1,5 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { desiredSize, scaleBoxFactor } from '@shared/umg-layout'
 import {
   WIDGETS,
   cssColor,
@@ -77,73 +78,150 @@ const isWhite = (hex: string) =>
     .slice(0, 3)
     .every((v) => v > 0.995)
 
-/** 画刷 → CSS：有图片时贴图（九宫格用 border-image），没图片时按 UE 的白色画刷画成纯色 */
-export function brushStyle(b: Brush | undefined, ctx: RenderCtx, tint?: string): CSSProperties {
-  if (!b || b.DrawAs === 'NoDrawType') return {}
+/**
+ * 画刷画成控件里的一层（position:absolute、在内容下面），不直接写在控件元素上：
+ * - 画刷的透明度只作用在这一层：半透明的面板背景不会把里面的文字也一起变淡（以前写成控件的 opacity）
+ * - 着色是「图片 × 颜色」：九宫格先用 border-image 画纹理，再叠一层颜色做 multiply，
+ *   用同样的切片做遮罩只留图片形状（以前九宫格完全不吃着色，按钮在画布上正常、进 UE 几乎是黑的）
+ * - 非白色着色的 alpha 作为这一层的不透明度（以前 multiply 混合后整张变成不透明）
+ * 控件元素要加 isolation:isolate（见 el），这一层的 z-index:-1 才不会跑到父控件背景下面
+ */
+export function BrushLayer({
+  b,
+  ctx,
+  tint,
+  style,
+}: {
+  b: Brush | undefined
+  ctx: RenderCtx
+  tint?: string
+  /** 层自己的位置大小，不写就是铺满控件 */
+  style?: CSSProperties
+}) {
+  if (!b || b.DrawAs === 'NoDrawType') return null
   const color = mulColor(b.TintColor ?? '#FFFFFFFF', tint)
   const id =
     typeof b.ResourceObject === 'string' && b.ResourceObject.startsWith('img:') ? b.ResourceObject.slice(4) : ''
   const img = id ? ctx.images.get(id) : undefined
   const alpha = parseColor(b.TintColor ?? '#FFFFFFFF')[3] * (tint ? parseColor(tint)[3] : 1)
+  const base: CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    zIndex: -1,
+    pointerEvents: 'none',
+    ...style,
+  }
   if (!img) {
     if (id)
-      return {
-        // 图片还没生成：柔和的灰蓝斜纹，不抢眼（以前是品红色，一整片很晃眼）
-        background: 'repeating-linear-gradient(45deg,#94a3b81f 0 8px,#0000 8px 16px)',
-        outline: '1px dashed #94a3b855',
-      }
-    if (b.DrawAs === 'Border') return { boxShadow: `inset 0 0 0 1px ${color}` }
+      return (
+        <span
+          aria-hidden
+          style={{
+            ...base,
+            // 图片还没生成：柔和的灰蓝斜纹，不抢眼（以前是品红色，一整片很晃眼）
+            background: 'repeating-linear-gradient(45deg,#94a3b81f 0 8px,#0000 8px 16px)',
+            outline: '1px dashed #94a3b855',
+          }}
+        />
+      )
+    if (b.DrawAs === 'Border') return <span aria-hidden style={{ ...base, boxShadow: `inset 0 0 0 1px ${color}` }} />
     const r = b.OutlineSettings?.CornerRadii
-    return {
-      background: color,
-      ...(b.DrawAs === 'RoundedBox' && r ? { borderRadius: `${r.X}px ${r.Y}px ${r.Z}px ${r.W}px` } : {}),
-    }
+    return (
+      <span
+        aria-hidden
+        style={{
+          ...base,
+          background: color,
+          ...(b.DrawAs === 'RoundedBox' && r ? { borderRadius: `${r.X}px ${r.Y}px ${r.Z}px ${r.W}px` } : {}),
+        }}
+      />
+    )
   }
   const url = `url("${img.url}")`
+  const white = isWhite(b.TintColor ?? '#FFFFFFFF') && (!tint || isWhite(tint))
+  // 着色只乘 RGB；alpha 交给整层的不透明度
+  const tc = parseColor(b.TintColor ?? '#FFFFFFFF')
+  const tt = tint ? parseColor(tint) : [1, 1, 1, 1]
+  const ch = (i: number) => Math.round(tc[i] * tt[i] * 255)
+  const rgb = `rgb(${ch(0)},${ch(1)},${ch(2)})`
   const m = b.Margin ?? { Left: 0, Top: 0, Right: 0, Bottom: 0 }
   const box = (b.DrawAs === 'Box' || b.DrawAs === 'Border') && (m.Left || m.Top || m.Right || m.Bottom)
+  const group: CSSProperties = { ...base, isolation: 'isolate', opacity: alpha < 1 ? alpha : undefined }
   if (box) {
     // UE 的九宫格：Margin 是图片尺寸的比例，画出来的边宽 = Margin × ImageSize
     const sz = b.ImageSize ?? { X: img.width, Y: img.height }
-    return {
-      borderStyle: 'solid',
-      borderImageSource: url,
-      borderImageSlice: `${m.Top * img.height} ${m.Right * img.width} ${m.Bottom * img.height} ${m.Left * img.width}${b.DrawAs === 'Box' ? ' fill' : ''}`,
-      borderImageWidth: `${m.Top * sz.Y}px ${m.Right * sz.X}px ${m.Bottom * sz.Y}px ${m.Left * sz.X}px`,
-      borderImageRepeat: 'stretch',
-      borderWidth: 0,
-      opacity: alpha < 1 ? alpha : undefined,
-    }
+    const slice = `${m.Top * img.height} ${m.Right * img.width} ${m.Bottom * img.height} ${m.Left * img.width}`
+    const widths = `${m.Top * sz.Y}px ${m.Right * sz.X}px ${m.Bottom * sz.Y}px ${m.Left * sz.X}px`
+    const fill = b.DrawAs === 'Box'
+    return (
+      <span aria-hidden style={group}>
+        <span
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderStyle: 'solid',
+            borderImageSource: url,
+            borderImageSlice: `${slice}${fill ? ' fill' : ''}`,
+            borderImageWidth: widths,
+            borderImageRepeat: 'stretch',
+            borderWidth: 0,
+          }}
+        />
+        {!white && (
+          <span
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: rgb,
+              mixBlendMode: 'multiply',
+              // 和纹理同样的切片做遮罩：颜色只落在图片形状里
+              WebkitMaskBoxImage: `${url} ${slice} / ${widths} stretch`,
+            }}
+          />
+        )}
+      </span>
+    )
   }
   const tile = b.Tiling && b.Tiling !== 'NoTile'
   const fit = tile
     ? { size: `${b.ImageSize?.X ?? img.width}px ${b.ImageSize?.Y ?? img.height}px`, position: '0 0' }
     : imageFitStyle(b.ImageFit, img)
   const repeat = { Horizontal: 'repeat-x', Vertical: 'repeat-y', Both: 'repeat' }[b.Tiling as string] ?? 'no-repeat'
-  if (isWhite(b.TintColor ?? '#FFFFFFFF') && (!tint || isWhite(tint)))
-    return {
-      backgroundImage: url,
-      backgroundSize: fit.size,
-      backgroundPosition: fit.position,
-      backgroundRepeat: repeat,
-      opacity: alpha < 1 ? alpha : undefined,
-    }
+  if (white)
+    return (
+      <span
+        aria-hidden
+        style={{
+          ...group,
+          backgroundImage: url,
+          backgroundSize: fit.size,
+          backgroundPosition: fit.position,
+          backgroundRepeat: repeat,
+        }}
+      />
+    )
   // 着色：图片 × 颜色，再用图片本身做遮罩保住透明部分
-  return {
-    backgroundImage: url,
-    backgroundColor: color,
-    backgroundBlendMode: 'multiply',
-    backgroundSize: fit.size,
-    backgroundPosition: fit.position,
-    backgroundRepeat: repeat,
-    maskImage: url,
-    maskSize: fit.size,
-    maskPosition: fit.position,
-    maskRepeat: repeat,
-    WebkitMaskImage: url,
-    WebkitMaskSize: fit.size,
-    WebkitMaskPosition: fit.position,
-  }
+  return (
+    <span
+      aria-hidden
+      style={{
+        ...group,
+        backgroundImage: url,
+        backgroundColor: rgb,
+        backgroundBlendMode: 'multiply',
+        backgroundSize: fit.size,
+        backgroundPosition: fit.position,
+        backgroundRepeat: repeat,
+        maskImage: url,
+        maskSize: fit.size,
+        maskPosition: fit.position,
+        maskRepeat: repeat,
+        WebkitMaskImage: url,
+        WebkitMaskSize: fit.size,
+        WebkitMaskPosition: fit.position,
+      }}
+    />
+  )
 }
 
 /** 插槽 → 外层容器的样式；fillX / fillY 表示控件本身要撑满 */
@@ -215,19 +293,19 @@ function commonStyle(p: Record<string, any>): CSSProperties {
   const st: CSSProperties = {}
   if (p.Visibility === 'Hidden') st.visibility = 'hidden'
   if (p.RenderOpacity !== undefined && p.RenderOpacity !== 1) st.opacity = p.RenderOpacity
+  // 平移、旋转、缩放写成 CSS 单独的 translate / rotate / scale 属性（顺序和原来的 transform 一样：平移 → 旋转 → 缩放），
+  // 斜切留在 transform 里。动画（anim.ts 的 cssProp）写的也是这几个属性：播放时**替换**静态值，和 UE 的 WidgetAnimation
+  // 一样是绝对值（以前静态值写在 transform 里，动画再叠加上去，例如静态 Y=-20 的 fade-in-up 最后停在 -20）
   const tr = p.RenderTransform
   if (tr) {
-    const parts = []
-    if (tr.Translation?.X || tr.Translation?.Y) parts.push(`translate(${tr.Translation.X}px, ${tr.Translation.Y}px)`)
-    if (tr.Angle) parts.push(`rotate(${tr.Angle}deg)`)
-    if ((tr.Scale?.X ?? 1) !== 1 || (tr.Scale?.Y ?? 1) !== 1) parts.push(`scale(${tr.Scale.X}, ${tr.Scale.Y})`)
-    if (tr.Shear?.X || tr.Shear?.Y) parts.push(`skew(${tr.Shear.X}deg, ${tr.Shear.Y}deg)`)
-    if (parts.length) {
-      st.transform = parts.join(' ')
-      const pv = p.RenderTransformPivot ?? { X: 0.5, Y: 0.5 }
-      st.transformOrigin = `${pv.X * 100}% ${pv.Y * 100}%`
-    }
+    if (tr.Translation?.X || tr.Translation?.Y) st.translate = `${tr.Translation.X ?? 0}px ${tr.Translation.Y ?? 0}px`
+    if (tr.Angle) st.rotate = `${tr.Angle}deg`
+    if ((tr.Scale?.X ?? 1) !== 1 || (tr.Scale?.Y ?? 1) !== 1) st.scale = `${tr.Scale?.X ?? 1} ${tr.Scale?.Y ?? 1}`
+    if (tr.Shear?.X || tr.Shear?.Y) st.transform = `skew(${tr.Shear.X ?? 0}deg, ${tr.Shear.Y ?? 0}deg)`
   }
+  // 支点只要写了就生效：动画（例如血条从左边伸出来的 ScaleX）也绕它转，以前没有静态变换时支点被忽略
+  const pv = p.RenderTransformPivot
+  if (pv && (pv.X !== 0.5 || pv.Y !== 0.5)) st.transformOrigin = `${(pv.X ?? 0.5) * 100}% ${(pv.Y ?? 0.5) * 100}%`
   return st
 }
 
@@ -246,6 +324,59 @@ function Sizer({ x, y, on }: { x: number; y: number; on: boolean }) {
       data-sizer
       style={{ display: 'block', width: x, height: y, visibility: 'hidden', pointerEvents: 'none' }}
     />
+  )
+}
+
+/**
+ * ScaleBox 的内容：子控件按自己的期望尺寸画在中间，再整体缩放（ScaleToFit 等，倍数见 scaleBoxFactor）。
+ * 以前只是一个 flex 盒子，子控件被拉伸铺满、不按比例缩放，和 UE 不一样。
+ * ScaleBox 自己的大小要等画出来才知道：useLayoutEffect 里量一次（在绘制之前，截图拿到的也是缩放好的），尺寸变了再量。
+ * 看不见的占位块给出期望尺寸，按内容排版时 ScaleBox 不会被压成 0；shared/umg-layout.ts 按同样的规则算位置
+ */
+function ScaleBoxBody({ w, ctx }: { w: Widget; ctx: RenderCtx }) {
+  const box = useRef<HTMLSpanElement>(null)
+  const [size, setSize] = useState<{ w: number; h: number }>()
+  const c = (w.Children ?? []).find((x) => x.Properties?.Visibility !== 'Collapsed')
+  const comps = [...ctx.components.values()]
+  const want = c ? desiredSize(c, { components: comps, data: ctx.data, parent: w }) : { w: 0, h: 0 }
+  const self = desiredSize(w, { components: comps, data: ctx.data })
+  useLayoutEffect(() => {
+    const el = box.current?.parentElement
+    if (!el) return
+    const measure = () =>
+      setSize((s) =>
+        s && s.w === el.clientWidth && s.h === el.clientHeight ? s : { w: el.clientWidth, h: el.clientHeight },
+      )
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const [sx, sy] = size ? scaleBoxFactor(w, size, want) : [1, 1]
+  return (
+    <>
+      <span
+        ref={box}
+        aria-hidden
+        data-sizer
+        style={{ display: 'block', width: self.w, height: self.h, visibility: 'hidden', pointerEvents: 'none' }}
+      />
+      {c && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            width: want.w,
+            height: want.h,
+            display: 'flex',
+            transform: `translate(-50%, -50%) scale(${sx}, ${sy})`,
+          }}
+        >
+          <UmgNode w={c} slotType="ScaleBoxSlot" parent={w} ctx={ctx} />
+        </div>
+      )}
+    </>
   )
 }
 
@@ -322,6 +453,8 @@ function UmgBody({
     alignSelf: fillY ? 'stretch' : undefined,
     minWidth: 0,
     minHeight: 0,
+    // 画刷画在 z-index:-1 的一层里（BrushLayer）：每个控件自己是一个层叠上下文，那一层才不会跑到父控件背景下面
+    isolation: 'isolate',
     ...commonStyle(p),
   }
   const id = ctx.interactive ? w.id : undefined
@@ -470,10 +603,16 @@ function UmgBody({
         const c = w.Children?.[i]
         return el({ display: 'flex' }, c && <UmgNode w={c} slotType="WidgetSwitcherSlot" parent={w} ctx={ctx} />)
       }
-      return el({ display: 'flex' }, <Children w={w} ctx={ctx} />)
+      return el({ display: 'flex' }, <ScaleBoxBody w={w} ctx={ctx} />)
     }
     case 'Border':
-      return el({ display: 'flex', ...brushStyle(p.Background, ctx, p.BrushColor) }, <Children w={w} ctx={ctx} />)
+      return el(
+        { display: 'flex' },
+        <>
+          <BrushLayer b={p.Background} ctx={ctx} tint={p.BrushColor} />
+          <Children w={w} ctx={ctx} />
+        </>,
+      )
     case 'Button': {
       const ws = p.WidgetStyle ?? {}
       const state =
@@ -483,9 +622,11 @@ function UmgBody({
           display: 'flex',
           padding: pad(state === 'Pressed' ? ws.PressedPadding : ws.NormalPadding),
           cursor: play && p.bIsEnabled !== false ? 'pointer' : undefined,
-          ...brushStyle(ws[state], ctx, p.BackgroundColor),
         },
-        <Children w={w} ctx={ctx} />,
+        <>
+          <BrushLayer b={ws[state]} ctx={ctx} tint={p.BackgroundColor} />
+          <Children w={w} ctx={ctx} />
+        </>,
         {
           onPointerEnter: () => setHover(true),
           onPointerLeave: () => {
@@ -505,8 +646,16 @@ function UmgBody({
         { display: 'flex', alignItems: 'center', gap: 6, cursor: play ? 'pointer' : undefined },
         <>
           <span
-            style={{ width: b?.ImageSize?.X ?? 24, height: b?.ImageSize?.Y ?? 24, flex: 'none', ...brushStyle(b, ctx) }}
-          />
+            style={{
+              position: 'relative',
+              isolation: 'isolate',
+              width: b?.ImageSize?.X ?? 24,
+              height: b?.ImageSize?.Y ?? 24,
+              flex: 'none',
+            }}
+          >
+            <BrushLayer b={b} ctx={ctx} />
+          </span>
           <Children w={w} ctx={ctx} />
         </>,
         play && p.bIsEnabled !== false ? { onClick: () => setLive((l) => ({ ...l, checked: !on })) } : undefined,
@@ -522,9 +671,11 @@ function UmgBody({
         {
           width: fillX ? undefined : x,
           height: fillY ? undefined : y,
-          ...brushStyle(b, ctx, p.ColorAndOpacity),
         },
-        <Sizer x={x} y={y} on={fillX || fillY} />,
+        <>
+          <BrushLayer b={b} ctx={ctx} tint={p.ColorAndOpacity} />
+          <Sizer x={x} y={y} on={fillX || fillY} />
+        </>,
       )
     }
     case 'TextBlock': {
@@ -544,6 +695,8 @@ function UmgBody({
           letterSpacing: f.LetterSpacing ? `${f.LetterSpacing / 1000}em` : undefined,
           textAlign: ({ Left: 'left', Center: 'center', Right: 'right' } as const)[p.Justification as 'Left'] ?? 'left',
           whiteSpace: p.AutoWrapText ? 'pre-wrap' : 'pre',
+          // 自动换行、不横向撑满的文字按插槽宽度收窄再折行（UE 里按槽位宽度换行）；以前 0 0 auto 永远一行、溢出去
+          flex: p.AutoWrapText && !fillX ? '0 1 auto' : base.flex,
           // 固定尺寸时裁掉超出控件范围的文字，不再压到父控件的背景装饰上；长串（没有空格）也按控件宽度断行
           overflow: clip ? 'hidden' : undefined,
           overflowWrap: p.AutoWrapText ? 'anywhere' : undefined,
@@ -561,7 +714,8 @@ function UmgBody({
     case 'ProgressBar': {
       const ws = p.WidgetStyle ?? {}
       const pct = Math.max(0, Math.min(1, Number(p.Percent ?? 0)))
-      const fill: CSSProperties = { position: 'absolute', ...brushStyle(ws.FillImage, ctx, p.FillColorAndOpacity) }
+      // 填充条的位置大小（BrushLayer 默认铺满，先清掉 inset 再按方向摆）
+      const fill: CSSProperties = { inset: 'auto', zIndex: 0 }
       const dir = p.BarFillType ?? 'LeftToRight'
       if (dir === 'RightToLeft') Object.assign(fill, { top: 0, bottom: 0, right: 0, width: `${pct * 100}%` })
       else if (dir === 'TopToBottom') Object.assign(fill, { left: 0, right: 0, top: 0, height: `${pct * 100}%` })
@@ -576,11 +730,11 @@ function UmgBody({
         {
           width: fillX ? undefined : bx,
           height: fillY ? undefined : by,
-          ...brushStyle(bg, ctx),
         },
         <>
+          <BrushLayer b={bg} ctx={ctx} />
           <Sizer x={bx} y={by} on={fillX || fillY} />
-          <span style={fill} />
+          <BrushLayer b={ws.FillImage} ctx={ctx} tint={p.FillColorAndOpacity} style={fill} />
         </>,
       )
     }
@@ -608,9 +762,13 @@ function UmgBody({
         },
         <>
           <Sizer x={sx} y={sy} on={fillX || fillY} />
-          <span
+          <BrushLayer
+            b={ws.NormalBarImage}
+            ctx={ctx}
+            tint={p.SliderBarColor}
             style={{
-              position: 'absolute',
+              inset: 'auto',
+              zIndex: 0,
               ...(vert
                 ? {
                     left: '50%',
@@ -626,18 +784,20 @@ function UmgBody({
                     height: ws.NormalBarImage?.ImageSize?.Y ?? 4,
                     transform: 'translateY(-50%)',
                   }),
-              ...brushStyle(ws.NormalBarImage, ctx, p.SliderBarColor),
             }}
           />
-          <span
+          <BrushLayer
+            b={th}
+            ctx={ctx}
+            tint={p.SliderHandleColor}
             style={{
-              position: 'absolute',
+              inset: 'auto',
+              zIndex: 0,
               width: th?.ImageSize?.X ?? 16,
               height: th?.ImageSize?.Y ?? 16,
               ...(vert
                 ? { left: '50%', top: `${(1 - v) * 100}%`, transform: 'translate(-50%,-50%)' }
                 : { top: '50%', left: `${v * 100}%`, transform: 'translate(-50%,-50%)' }),
-              ...brushStyle(th, ctx, p.SliderHandleColor),
             }}
           />
         </>,
@@ -661,19 +821,21 @@ function UmgBody({
             alignItems: 'center',
             padding: '4px 8px',
             minWidth: fillX ? 0 : 160,
-            ...brushStyle(p.WidgetStyle?.BackgroundImageNormal, ctx),
           },
-          <input
-            value={live.text ?? String(p.Text ?? '')}
-            placeholder={String(p.HintText ?? '')}
-            onChange={(e) => setLive((l) => ({ ...l, text: e.target.value }))}
-            style={{
-              all: 'unset',
-              width: '100%',
-              color: cssColor(p.ForegroundColor),
-              fontSize: fontPx(f.Size ?? 18),
-            }}
-          />,
+          <>
+            <BrushLayer b={p.WidgetStyle?.BackgroundImageNormal} ctx={ctx} />
+            <input
+              value={live.text ?? String(p.Text ?? '')}
+              placeholder={String(p.HintText ?? '')}
+              onChange={(e) => setLive((l) => ({ ...l, text: e.target.value }))}
+              style={{
+                all: 'unset',
+                width: '100%',
+                color: cssColor(p.ForegroundColor),
+                fontSize: fontPx(f.Size ?? 18),
+              }}
+            />
+          </>,
         )
       return el(
         {
@@ -683,9 +845,11 @@ function UmgBody({
           minWidth: fillX ? 0 : 160,
           color: p.Text ? cssColor(p.ForegroundColor) : cssColor('#FFFFFF80'),
           fontSize: fontPx(f.Size ?? 18),
-          ...brushStyle(p.WidgetStyle?.BackgroundImageNormal, ctx),
         },
-        String(p.Text || p.HintText || ''),
+        <>
+          <BrushLayer b={p.WidgetStyle?.BackgroundImageNormal} ctx={ctx} />
+          {String(p.Text || p.HintText || '')}
+        </>,
       )
     }
     case 'ListView':

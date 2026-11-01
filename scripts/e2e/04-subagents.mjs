@@ -1073,6 +1073,40 @@ await runShard('子对话与计划', async (api) => {
       assert.ok(closed.handoff?.text, '交接要点照样留在任务上')
       step('共用目录的子对话：评审门禁照样拦、复看通过后请父对话验收，验收后才完成')
     }
+    // ---- 共用目录的认领留到改动交出去：以前一轮结束就放，父对话还没验收，兄弟就能认领同一个文件接着改 ----
+    {
+      const claimsBefore = readLog(log + '.claim').length
+      const claimsOf = (re) =>
+        readLog(log + '.claim')
+          .slice(claimsBefore)
+          .filter((x) => x.path === 'c7-claim.txt' && re.test(JSON.stringify(x.got)))
+      const claimParent = await waitDone(
+        (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '认领：父对话' }))
+          .id,
+        20000,
+      )
+      const mk = (prompt) =>
+        call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: B.id,
+          parentTaskId: claimParent.id,
+          prompt,
+        })
+      const kidA = await waitDone((await mk('CLAIM:c7-claim.txt 认领后这一轮就结束')).id, 20000)
+      assert.equal(claimsOf(/已认领/).length, 1, '前提：A 认领到了')
+      // A 这一轮已经结束、还没交出去：B 认领同一个文件被拒，并写明 A 现在怎样（该找父对话，不是等一会儿）
+      const kidB = await waitDone((await mk('CLAIM:c7-claim.txt 兄弟认领同一个文件')).id, 20000)
+      const refused = claimsOf(/占着/)
+      assert.equal(refused.length, 1, 'A 一轮结束不放认领，B 拿不到')
+      assert.ok(refused[0].got.isError, '被拒是错误结果')
+      assert.match(JSON.stringify(refused[0].got), /不在执行|已停下|正在改/, '拒绝里写明对方状态')
+      // A 彻底完成（用户点解决也走 completeChild）：认领放掉，B 再认领就拿到
+      assert.equal((await call('PATCH', `/tasks/${kidA.id}`, { resolved: true })).resolved, true)
+      await call('POST', `/tasks/${kidB.id}/messages`, { text: 'CLAIM:c7-claim.txt 再认领一次' })
+      await waitFor(() => claimsOf(/已认领/).length >= 2, { timeout: 20000, label: 'A 完成后 B 认领到' })
+      step('共用目录的认领留到子对话完成：一轮结束不放，兄弟被拒时写明对方状态，完成后才放')
+    }
     if (isoBefore !== 'claim')
       await call('PUT', `/projects/${project.id}`, { ...projPayload, childIsolation: isoBefore })
     // 不在这里删父对话：子对话刚被置完成时 CLI 还在收尾，那一轮结束时要处理手上的消息，

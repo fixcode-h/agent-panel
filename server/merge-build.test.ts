@@ -9,7 +9,7 @@ import { verifyBlock } from '../shared/test-steps.ts'
 
 // 独立分支目录建在数据目录里：测试用临时目录，不碰本机真实的数据
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'merge-build-data-'))
-const { abortMerge, commitMerge, commitWorktree, createWorktree, mergeBlocker, trialMerge } =
+const { abortMerge, commitMerge, commitWorktree, createWorktree, mergeBlocker, overwrittenFiles, trialMerge } =
   await import('./exec/worktree.ts')
 const { runShell, shellCommand } = await import('./merge-build.ts')
 
@@ -72,19 +72,28 @@ test('原目录暂存区有别人的改动时不合；没提交的改动和分�
   const wt = await createWorktree(dir, 'task-9abc0def', 'fix')
   writeFileSync(path.join(wt.path, 'a.txt'), 'child\n')
   await commitWorktree(wt, '子对话改 a')
-  assert.equal(await mergeBlocker(dir), '')
+  assert.equal(await mergeBlocker(dir), null)
 
   // 暂存区里的改动会被合并提交一起带走：先拦下
   writeFileSync(path.join(dir, 'c.txt'), 'parent\n')
   git(dir, 'add', 'c.txt')
-  assert.match(await mergeBlocker(dir), /暂存区.*\n.*c\.txt/s)
+  assert.deepEqual(await mergeBlocker(dir), { kind: 'staged', files: ['c.txt'] })
   git(dir, 'reset', '-q', 'c.txt')
 
   // 原目录里 a.txt 没提交的改动会被覆盖：git 拒绝，标成 dirty，原目录的改动还在
   writeFileSync(path.join(dir, 'a.txt'), 'parent edit\n')
   const m = await trialMerge(dir, wt.branch)
   assert.ok(!m.ok && m.dirty)
+  // 挡路的文件点名交给父对话（报错只留最后几行，文件多了会截掉）
+  assert.deepEqual(m.blockers, ['a.txt'])
   assert.equal(readText(path.join(dir, 'a.txt')), 'parent edit\n')
+  // git 的拒绝说法分已跟踪、未跟踪两段，两段的文件都要认出来
+  const out =
+    'error: Your local changes to the following files would be overwritten by merge:\n\ta.ts\n\tb/c.ts\n' +
+    'Please commit your changes or stash them before you merge.\n' +
+    'error: The following untracked working tree files would be overwritten by merge:\n\tnew.txt\n' +
+    'Please move or remove them before you merge.\nAborting'
+  assert.deepEqual(overwrittenFiles(out), ['a.ts', 'b/c.ts', 'new.txt'])
 })
 
 test('对话的验证说明：按改动大小分开，关掉时一律完整跑', () => {

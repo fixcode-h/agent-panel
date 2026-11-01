@@ -114,6 +114,7 @@ import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
+import { dropAsked } from '../../shared/task-settle.ts'
 import { askViaParent } from './child-question.ts'
 import { askPushRequest, dropOwnRequests, noteAnswer, panelRequest, replies } from './panel-requests.ts'
 import { orchHint } from '../orch-mcp.ts'
@@ -830,6 +831,8 @@ function anySignal(a: AbortSignal, b: AbortSignal) {
  */
 const apiSlots = new Map<string, ApiSlot>()
 const slotKey = (taskId: string, step: string) => `${taskId}\n${step}`
+/** 正停在 wait_agents / ask_main 里等别人的调用（slotKey）：见 yieldApiSlot */
+const inToolWait = new Set<string>()
 
 /** 这次调用要用的 API：CLI 的登录方式是 API 时才有；账号登录不受并发上限管 */
 function callApi(ctx: RealContext, call: AgentCall) {
@@ -908,12 +911,16 @@ async function runWithSlot(ctx: RealContext, call: AgentCall): Promise<AgentResu
 async function yieldApiSlot<T>(ctx: RealContext, stepId: string, wait: () => Promise<T>): Promise<T> {
   // 对话自己（@chat）不是一个节点，名额记在空的节点 id 下
   if (!ctx.task.steps.some((s) => s.id === stepId)) stepId = ''
-  const slot = apiSlots.get(slotKey(ctx.task.id, stepId))
-  if (!slot?.holding) return wait()
+  const key = slotKey(ctx.task.id, stepId)
+  const slot = apiSlots.get(key)
+  // 停在工具里等的这段 CLI 本来就没有输出（wait_agents 一次能等二十几分钟）：空闲检测不算它卡住
+  inToolWait.add(key)
+  if (!slot?.holding) return wait().finally(() => inToolWait.delete(key))
   slot.drop()
   try {
     return await wait()
   } finally {
+    inToolWait.delete(key)
     const step = stepId ? ctx.task.steps.find((s) => s.id === stepId) : undefined
     await takeApiSlot(ctx, step, slot, ctx.signal, 'yield')
   }
@@ -2126,6 +2133,7 @@ async function runAgent(
             task.awaitingUser ||
             waitingHelpers ||
             !!(call.step ? call.step.apiWait : task.apiWait) ||
+            inToolWait.has(slotKey(task.id, step)) ||
             task.requests.some((x) => asked.includes(x.id) || (!step && x.purpose === 'push')),
           onWarn: () => {
             task.messages.push({
@@ -2217,9 +2225,8 @@ async function runAgent(
       for (const m of steered) holdForNextTurn(task.id, m)
     steered.clear()
     meter.stop()
-    // 进程结束了（完成、停止、超时），还没回答的请求作废
-    for (const id of asked) replies.delete(id)
-    task.requests = task.requests.filter((x) => !asked.includes(x.id))
+    for (const id of asked) replies.delete(id) // 进程结束了（完成、停止、超时）：还没回答的请求作废，并写明作废了哪些
+    if (dropAsked(task, asked, { id: ctx.newId(), agentId, step })) ctx.changed(true)
     if (task.usage.agents[agentId]) task.usage.agents[agentId].tps = 0
   })
 
