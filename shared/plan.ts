@@ -1317,14 +1317,29 @@ export interface PlanKid {
   endedAt?: string
 }
 
-/** 一段文字点到的子对话：写了 id（至少前 6 位，Agent 常写缩写），或者写了它的完整标题 */
-function mentioned(text: string, kids: PlanKid[]) {
+/**
+ * 这一步点到的子对话：
+ * - 写了 id（至少前 6 位，Agent 常写缩写）：明确点名；子对话已做完时只认 Agent 写成等待中的（按它完成的时间收口）
+ * - 步骤标题就是它的标题（忽略空白、标点、全半角，「子对话：」前缀也算）：已经做完的也认、当场收口。
+ *   完全同名又没被别的步骤认领，这一步就是它的活；不认的话步骤停在待做，推进时 Agent 会把做完的事重做或重派一遍（复核 C6-a）
+ * - 标题、备注里只是含着它的标题：只在 Agent 自己把这一步写成等待中、子对话还没做完时才认。
+ *   「合并后跑全量类型检查」含着子对话「类型检查」的标题，却是另一件事，以前一律挂上等待，
+ *   子对话已完成就当场标完成（和 matchOld 不按相近标题猜同一个道理：错标完成比少挂一次等待更糟）
+ * 按标题认的都跳过已经挂在别的步骤上的子对话：一个子对话只算一步的结果
+ */
+function mentioned(x: PlanItem, kids: PlanKid[], claimed: Set<string>) {
+  const text = `${x.title} ${x.note}`
   const hex = text.toLowerCase().match(/[0-9a-f]{6,}/g) ?? []
-  return kids.filter(
-    (k) =>
-      hex.some((h) => k.id.toLowerCase().startsWith(h)) ||
-      (k.title.trim().length >= 4 && text.includes(k.title.trim())),
-  )
+  const own = normTitle(x.title.startsWith(AUTO_STEP_PREFIX) ? x.title.slice(AUTO_STEP_PREFIX.length) : x.title)
+  return kids.filter((k) => {
+    // 写了 id、子对话却已经做完：只有 Agent 自己写成等待中才认，「复查 abcdef12 的改动」这类新步骤不能当场标完成
+    if (hex.some((h) => k.id.toLowerCase().startsWith(h))) return !k.done || x.status === 'waiting'
+    const name = k.title.trim()
+    if (name.length < 4 || claimed.has(k.id)) return false
+    const key = normTitle(name)
+    if (key && key === own) return true
+    return !k.done && x.status === 'waiting' && text.includes(name)
+  })
 }
 
 /**
@@ -1346,11 +1361,16 @@ function linkKids(task: PlanTask, plan: TaskPlan, kids: PlanKid[], now: string) 
           for (const w of x.waits)
             if (w.kind === 'child' && w.state === 'waiting')
               carried.set(x.title, [...(carried.get(x.title) ?? []), w.ref])
+  // 已经挂在这份计划某一步上的子对话（不论结果回没回来）：按标题认时不再挂到别的步骤上
+  const holder = new Map<string, PlanItem>()
+  for (const y of plan.steps.flatMap((s) => [s, ...s.children]))
+    for (const w of y.waits) if (w.kind === 'child' && !holder.has(w.ref)) holder.set(w.ref, y)
   let changed = false
   const visit = (x: PlanItem, parent?: PlanStep) => {
     if (isSettled(x.status) || (parent ?? (x as PlanStep)).wrapUp || (parent ?? (x as PlanStep)).run) return
     if (x.status === 'pending' || x.status === 'waiting') {
-      const want = new Map(mentioned(`${x.title} ${x.note}`, kids).map((k) => [k.id, k]))
+      const claimed = new Set([...holder].filter(([, y]) => y !== x).map(([ref]) => ref))
+      const want = new Map(mentioned(x, kids, claimed).map((k) => [k.id, k]))
       for (const ref of carried.get(x.title) ?? []) {
         const k = byId.get(ref)
         if (k) want.set(k.id, k)

@@ -502,6 +502,44 @@ await runShard('本机请求与设置', async (api) => {
   }
   step('没有提问通道的 CLI：临时接 ask_user 工具，回答后交回模型，开关关着时让模型自己选，项目里原有的配置还原')
 
+  // 推送授权（项目设置默认「第一次需要推送时问一次」）：ask_push 弹「允许 / 拒绝」卡，「提问」关着也不自动作答；
+  // 点了允许记进 task.remotePush（c5e5c5d8 起这个字段一直没有写入点），同一个对话里再调直接返回、不再弹卡
+  {
+    const panelLog = () => readLog(log + '.panel').filter((x) => x.name === 'ask_push')
+    const before = panelLog().length
+    const t = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: 'ASK_PUSH 改完了，推上去',
+    })
+    const req = await waitFor(async () => (await call('GET', `/tasks/${t.id}`)).requests[0], {
+      timeout: 20000,
+      label: '弹出推送授权卡',
+    })
+    assert.equal(req.purpose, 'push')
+    assert.equal(req.kind, 'tool', '「允许 / 拒绝」卡片，不是问题')
+    assert.match(req.detail, /分支：dev/)
+    await sleep(300)
+    assert.equal((await call('GET', `/tasks/${t.id}`)).requests.length, 1, '「提问」关着也不被自动作答')
+    const answered = await call('POST', `/tasks/${t.id}/requests/${req.id}`, { allow: true })
+    assert.equal(answered.remotePush, 'allowed')
+    assert.ok(answered.remotePushAt)
+    await waitDone(t.id)
+    assert.match(panelLog().at(-1).text, /用户同意推送并合并主干/)
+    const first = calls().find((c) => c.input?.includes('ASK_PUSH 改完了'))
+    assert.match(first.input, /调用面板工具 ask_push 请用户授权/, '提示词让模型用 ask_push 问，不用提问工具')
+    await call('POST', `/tasks/${t.id}/messages`, { text: 'ASK_PUSH 再推一次' })
+    const again = await waitDone(t.id)
+    assert.equal(again.requests.length, 0)
+    assert.equal(panelLog().length, before + 2)
+    assert.match(panelLog().at(-1).text, /已经同意推送/, '同意过的不再弹卡')
+    assert.match(calls().find((c) => c.input?.includes('ASK_PUSH 再推一次')).input, /这个对话里用户已经同意推送/)
+  }
+  step('推送授权：ask_push 弹卡不被「提问」开关自动作答，允许后记进对话，再调不弹卡')
+
   // 执行中补充：Command Code 走常驻 RPC 的 turn/steer，已经在「插话」那一节覆盖；
   // MCP 的 read_user_notes 拉取通道由 server/ask-mcp.test.ts 单独测试
 
@@ -537,8 +575,11 @@ await runShard('本机请求与设置', async (api) => {
     const rec = readLog(log + '.wait')
       .slice(before)
       .at(-1)
-    assert.match(rec.got, /接着看看测试/)
-    assert.ok(rec.hint, '提示里告诉模型可以等下一句')
+    // 模型自己调 wait_user_message 等到的下一句也按当前状态重拼（engine 的 nextPrompt），不再是原样的一句话
+    assert.match(rec.got, /## 用户这次的消息\n接着看看测试/)
+    // 不再提示「每轮回复完成后调用 wait_user_message」（ADR 0037）：那句提示让模型做完一步就把自己挂起；
+    // 保活由面板在这一轮结束时自己做，工具照样挂着（上面停在等下一句就是它）
+    assert.ok(!rec.hint, '提示里不再要求每轮回复完都调 wait_user_message')
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '接着看看测试')
     assert.ok(at > 0, '用户消息记进对话')
     assert.ok(
@@ -935,6 +976,8 @@ await runShard('本机请求与设置', async (api) => {
     w = await waitDone(w.id, 30000)
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '预热后直接问')
     assert.ok(at > 0, '用户消息记进对话')
+    // 预热后的第一句同样按当前状态补段落（engine 预热也传 nextPrompt），不是原样的一句话
+    assert.match(readLog(log + '.wait').at(-1).got, /## 用户这次的消息\n预热后直接问/)
     assert.ok(
       w.messages.slice(at + 1).some((m) => m.role === 'agent' && /等到的下一句/.test(m.text)),
       '模型在用户消息下面继续输出',

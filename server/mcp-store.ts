@@ -99,7 +99,7 @@ function unquoteKey(k: string) {
 function headerParts(h: string) {
   const out: string[] = []
   const re = /\s*("(?:[^"\\]|\\.)*"|'[^']*'|[^.\s"']+)\s*(?:\.|$)/y
-  for (let m; (m = re.exec(h)) && m[0]; ) out.push(unquoteKey(m[1]))
+  for (let m; (m = re.exec(h)) && m[0];) out.push(unquoteKey(m[1]))
   return out
 }
 

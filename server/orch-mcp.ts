@@ -5,6 +5,7 @@ import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
 import { overrideInput, triageInput } from '../shared/review-gate.ts'
 import type { HelperReport, HelperSpec, Orchestra, RouteInput } from '../shared/engine.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
+import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
 
 /**
  * 编排工具：工作流节点和对话每次调用 CLI 时，绑定在调用它的节点上（执行引擎的 Orchestra）。
@@ -72,7 +73,14 @@ const BATCH_NOTE = '。也可以写在 spawn_agents 的顶层整批共用；单�
 const batchField = <T extends { description: string }>(f: T) => ({ ...f, description: `${f.description}${BATCH_NOTE}` })
 
 /** spawn_agents 顶层认得的字段：其余字段不静默丢掉（写错名字的 resume 一丢，复看就换了角色和会话） */
-const SPAWN_TOP_FIELDS = ['tasks', 'step', 'agent', 'tier', 'resume', 'route']
+const SPAWN_TOP_FIELDS = ['tasks', 'step', 'agent', 'tier', 'resume', 'params', 'route']
+
+/** 派出的角色参数：角色有几种做法（「测试验收」的 task）时靠它点名，不写按挂载上的或角色默认的 */
+const paramsField = () => ({
+  type: 'object',
+  description:
+    '角色参数（可选），例如派「测试验收」清理用例写 {"task": "清理用例"}：只认这个角色声明过的参数和选项，写错会被拒绝；不写按挂载上的或角色默认的，resume 时不写沿用上一次的',
+})
 
 /**
  * 分诊记录（父对话派单时写）：面板画成分诊卡，用户不同意可以一键改派。
@@ -116,6 +124,7 @@ const tasksField = (o: Orchestra) => ({
       agent: agentField(o),
       tier: tierField(),
       resume: resumeField(),
+      params: paramsField(),
       review: {
         type: 'object',
         description:
@@ -176,7 +185,15 @@ const shellHint = () => {
   return sh ? shellNote(sh) : ''
 }
 
+/** Chat 页的对话（Orchestra.plain）只留这几个：长命令放后台跑，不派子任务、不互相传话 */
+const PLAIN_TOOLS = new Set(['run_background', 'check_background', 'stop_background'])
+
 export function orchTools(o: Orchestra) {
+  const all = allOrchTools(o)
+  return o.plain ? all.filter((x) => PLAIN_TOOLS.has(x.name)) : all
+}
+
+function allOrchTools(o: Orchestra) {
   const main = o.self.endsWith('@main')
   return [
     {
@@ -773,6 +790,7 @@ export function orchTools(o: Orchestra) {
           },
         ]
       : []),
+    ...(o.askPush ? [ASK_PUSH_TOOL] : []),
     ...(o.lessons
       ? [
           {
@@ -793,45 +811,50 @@ export function orchTools(o: Orchestra) {
               },
             },
           },
-          {
-            name: 'record_lesson',
-            title: '记下教训',
-            description:
-              '记一条项目教训，或改写已有的一条，以后这个项目里的 Agent 改到相关文件时都会看到。用户纠正了你的做法、你发现自己的办法不对换了做法才成、或你在修之前改出来的问题时用；写成通用规则，同类的已经有了就带 id 改写那一条。用户的新要求和某条教训冲突且找到两全的做法时，也带 id 改写并在 change 里说明。全局教训只有用户能改。',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                title: {
-                  type: 'string',
+          // 子任务只读教训不记（makeOrchestra 给子任务的 lessons 没有 record）：值得记的交回派它的对话决定
+          ...(o.lessons.record
+            ? [
+                {
+                  name: 'record_lesson',
+                  title: '记下教训',
                   description:
-                    '一句话的规则：该怎么做（不是发生了什么），例如「CLI 才有的能力写进 CLI 的配置字段，代码按字段走」',
+                    '记一条项目教训，或改写已有的一条，以后这个项目里的 Agent 改到相关文件时都会看到。用户纠正了你的做法、你发现自己的办法不对换了做法才成、或你在修之前改出来的问题时用；写成通用规则，同类的已经有了就带 id 改写那一条。用户的新要求和某条教训冲突且找到两全的做法时，也带 id 改写并在 change 里说明。全局教训只有用户能改。',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      title: {
+                        type: 'string',
+                        description:
+                          '一句话的规则：该怎么做（不是发生了什么），例如「CLI 才有的能力写进 CLI 的配置字段，代码按字段走」',
+                      },
+                      rule: { type: 'string', description: '展开说明：具体到文件、字段、做法和不要做的事' },
+                      cause: { type: 'string', description: '起因：这次哪里返工、用户怎么纠正的，一两句' },
+                      paths: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: '它管哪些文件（相对项目根的 glob，** 跨目录，目录名也行）；所有改动都适用时不写',
+                      },
+                      tags: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description:
+                          '1～3 个主题标签（例如 并发、测试、界面），最多 5 个；先用提示或 project_lessons 列出的已有标签，不另造近义词',
+                      },
+                      id: {
+                        type: 'string',
+                        description:
+                          '改写已有的那条时填它的 id（project_lessons 或提示里列出的）：用户的新要求和它冲突、你找到两全的做法时用；新记一条不填',
+                      },
+                      change: {
+                        type: 'string',
+                        description: '改写时必填：用户的哪条新要求和原来的规则冲突、两全的做法是什么',
+                      },
+                    },
+                    required: ['title', 'rule'],
+                  },
                 },
-                rule: { type: 'string', description: '展开说明：具体到文件、字段、做法和不要做的事' },
-                cause: { type: 'string', description: '起因：这次哪里返工、用户怎么纠正的，一两句' },
-                paths: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: '它管哪些文件（相对项目根的 glob，** 跨目录，目录名也行）；所有改动都适用时不写',
-                },
-                tags: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description:
-                    '1～3 个主题标签（例如 并发、测试、界面），最多 5 个；先用提示或 project_lessons 列出的已有标签，不另造近义词',
-                },
-                id: {
-                  type: 'string',
-                  description:
-                    '改写已有的那条时填它的 id（project_lessons 或提示里列出的）：用户的新要求和它冲突、你找到两全的做法时用；新记一条不填',
-                },
-                change: {
-                  type: 'string',
-                  description: '改写时必填：用户的哪条新要求和原来的规则冲突、两全的做法是什么',
-                },
-              },
-              required: ['title', 'rule'],
-            },
-          },
+              ]
+            : []),
         ]
       : []),
     // 共享状态只存在于工作流运行的 task.runs 里，对话模式没有：注册了模型每次调都是「没有共享状态」
@@ -878,6 +901,7 @@ export function orchTools(o: Orchestra) {
                 agent: batchField(agentField(o)),
                 tier: batchField(tierField()),
                 resume: resumeField(true),
+                params: batchField(paramsField()),
                 // 和 create_conversation / run_background 一样：这批子任务全部结束、结果交回时，
                 // 计划里这一步标完成；失败或被终止退回进行中并写清原因
                 ...(o.plans ? { step: stepField('这批子任务') } : {}),
@@ -1008,6 +1032,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     }
     case 'record_lesson': {
       if (!o.lessons) return text('这个对话不在项目里，记不了项目教训', true)
+      // 子任务没注册这个工具，但模型可能凭别处看到的名字直接调：说清楚该怎么办，不悄悄吞掉
+      if (!o.lessons.record) return text('子任务不记项目教训：值得记的写进交回的结果，由派你的对话决定要不要记', true)
       const title = str(a?.title).trim()
       if (!title) return text('title 不能为空：写一句该怎么做的规则', true)
       const paths = Array.isArray(a?.paths) ? a.paths.map(String).filter((p: string) => p.trim()) : []
@@ -1166,6 +1192,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const r = await o.cherryPick({ commits, changelist: str(a?.changelist) || undefined })
       return text(r.info, !r.ok)
     }
+    case 'ask_push':
+      return callAskPush(o, a)
     case 'claim_files': {
       const paths = Array.isArray(a?.paths) ? a.paths.map(String) : []
       const r = o.claim(paths)
@@ -1203,6 +1231,10 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         for (const k of ['agent', 'tier', 'resume']) if (notString(x[k])) wrongType.push(`tasks[${i}].${k}`)
       })
       if (wrongType.length) return text(`spawn_agents 的 ${wrongType.join('、')} 要写字符串`, true)
+      // params 要是对象：写成字符串（'{"task":"清理用例"}'）时静默丢掉，派出去的就是默认那套做法
+      const notObject = (v: unknown) => v !== undefined && v !== null && (typeof v !== 'object' || Array.isArray(v))
+      const badParams = [a?.params, ...tasks.map((x) => x.params)].some(notObject)
+      if (badParams) return text('spawn_agents 的 params 要写对象，例如 {"task": "清理用例"}', true)
       // 顶层 resume 是一批共用的一份：一个会话只能接着跑一轮，配多个任务就说不清谁接它
       const topResume = str(a?.resume) || undefined
       if (topResume && tasks.length > 1)
@@ -1215,6 +1247,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         agent: str(x.agent) || batch.agent,
         tier: str(x.tier) || batch.tier,
         resume: str(x.resume) || batch.resume,
+        params: x.params ?? a?.params ?? undefined,
         review: briefOf(x.review),
       }))
       // 点名的计划步骤由面板在子任务全部结束后收口（见 engine.ts 的 settleHelperWaits）
@@ -1280,6 +1313,11 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
 
 /** 交给 CLI 的一句用法说明：工具列表模型自己看得到，这里说什么时候用 */
 export function orchHint(o: Orchestra) {
+  // Chat 页的对话：只有后台命令；没有时什么都不提
+  if (o.plain)
+    return o.canBackground
+      ? '（你有面板工具 panel：run_background 把要跑很久的命令放到后台（跑完结果自动推回），check_background / stop_background 查看、停止它们。不要用 CLI 自带的后台命令。）'
+      : ''
   // 子任务只做派给它的那件事：不提派子任务、工作流、子对话这些它用不了的工具
   if (o.helper)
     return `（你有面板工具 panel：get_status 查看其他节点和子任务的状态；${o.sharedState ? 'read_state / write_state 读写共享状态；' : ''}send_message 给同时执行的节点传话、read_messages 看别人发给你的。你不能再派子任务、不能启动工作流或子对话。不要用 CLI 自带的子 Agent（Task / agent 这类工具）。）`

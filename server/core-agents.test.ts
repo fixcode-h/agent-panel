@@ -15,7 +15,7 @@ import {
 } from '../shared/builtin/agents.ts'
 import { isTestAgent } from '../shared/test-steps.ts'
 import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE } from '../shared/builtin/legacy.ts'
-import { renderTemplate } from '../shared/agent-role.ts'
+import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
 import { ensureProjectAgents, upgradeBuiltinAgents } from '../shared/builtin/install.ts'
 import {
   CORE_AGENTS,
@@ -139,6 +139,19 @@ test('通用约束：已授权的操作照做；统筹不再另立一份授权�
   assert.match(rules, /不要自行换成更保守的做法（改走 PR、只提交不推送）/)
   const orch = BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions
   assert.doesNotMatch(orch, /推送、PR、submit 要用户明确授权/, '授权规则只在通用约束里写一份')
+  // 「版本控制」正文父对话就地用、子对话、子任务、节点都会读到，模板分不出调用者：推送规则只引用 engine 按调用者给的
+  // 「授权情况」，任何工作区 × 提交方式下都不留无条件的推送 / submit 禁令（它会和父对话授权段打架）
+  const vcs = BUILTIN_AGENTS.find((a) => a.key === 'vcs')!.agent
+  for (const ws of ['git', 'p4', 'svn', '自动'])
+    for (const commit of ['本地提交', '只检查']) {
+      const text = renderTemplate(vcs.instructions, resolveParams(vcs.params, { vcs: ws, commit }).values)
+      assert.match(text, /只看提示词里「授权情况」那段/, `${ws} / ${commit}`)
+      assert.doesNotMatch(
+        text,
+        /不 ?push|不 ?submit|你不合、不推|svn commit[^。]*不做|自己就地用这个能力时/,
+        `${ws} / ${commit}`,
+      )
+    }
 })
 
 test('派单纪律：事务性动作合并派一次、纯执行给低档、标题与正文各写各的范围', () => {
@@ -176,6 +189,10 @@ test('调研、评审：可见进度压成一句话、同一批工具一起发�
   assert.match(role('explorer'), /每批工具发出前那一句目标照旧要说/)
   assert.match(role('explorer'), /同一批工具一起发出去/)
   assert.match(role('explorer'), /不要只回一句「我先读取…」就结束回合/)
+  // 临时文件跟「截图和临时文件放哪」（server/task-files.ts）走对话目录，不写死盘符或项目里的临时目录
+  assert.match(role('explorer'), /把临时脚本和数据写进对话目录（见「截图和临时文件放哪」/)
+  assert.match(role('uiqa'), /没有约定就放对话目录的 screenshots\//)
+  for (const b of BUILTIN_AGENTS) assert.doesNotMatch(b.agent.instructions, /C:\/tmp|项目根的 \.tmp\//, b.key)
   assert.doesNotMatch(role('reviewer'), /过程里不要逐条播报/)
   assert.match(role('reviewer'), /不要为一句「我先读一下」单独占一轮/)
 })
@@ -554,10 +571,16 @@ test('测试验收：多了「设计用例」「补测试」两种做法，默�
   assert.match(clean, /被更强的用例完全覆盖/)
   assert.match(clean, /用户报过的 Bug 的回归用例/)
   assert.doesNotMatch(clean, /## 先读项目配置的测试步骤/, '清理用例不跑整套验收')
-  assert.match(BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions, /用「清理用例」：它先交候选表/)
-  // 执行角色知道什么时候派它设计用例
-  const worker = renderTemplate(BUILTIN_AGENTS.find((a) => a.key === 'worker')!.agent.instructions, { mode: '自动' })
-  assert.match(worker, /用「设计用例」独立列一遍测试矩阵/)
+  // 派出的子 Agent 不能问用户（提问开关关着时还会被自动回答成「直接继续」）：交回候选表，确认结果由派它的一方 resume 交回
+  assert.match(clean, /派出的子 Agent[^。]*不问用户：交回这张表/)
+  assert.match(clean, /自动回答[^。]*同样不删/)
+  // 派出的子任务只按 params 渲染做法（不写就是默认的「跑验收」）：派它的角色要写明 params，resume 时贴回确认的行
+  const orch = BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions
+  assert.match(orch, /params 写 \{"task": "清理用例"\}[^\n]*resume[^\n]*逐行贴上用户确认/)
+  const worker = BUILTIN_AGENTS.find((a) => a.key === 'worker')!
+  assert.match(renderTemplate(worker.agent.instructions, { mode: '自动' }), /params 写 \{"task": "设计用例"\}/)
+  const mount = worker.mounts.find((m) => m.key === 'tester')!
+  assert.match(mount.rule ?? '', /params 写 \{"task": "设计用例"\} 或 \{"task": "补测试"\}/)
 })
 
 test('OpenSpec 前置检查缺 CLI 或指令时自己装好接着走，不报「没有安装」就停', () => {

@@ -58,7 +58,7 @@ import { noPushEnv } from './no-push.ts'
 
 export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
 import { expandSlash } from '../slash.ts'
-import { cachedModels, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
+import { cachedModels, effortRejected, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
 import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
@@ -80,9 +80,19 @@ import {
   clippedTranscript,
   contextFallbackKind,
   estTokens,
-  transcript,
+  restartCarry,
 } from './transcript.ts'
-export { clippedTranscript, contextFallbackKind, estTokens }
+export { clippedTranscript, contextFallbackKind, estTokens, restartCarry }
+import {
+  SESSION_NOT_FOUND,
+  firstNoEffortTell,
+  noEffortRetryText,
+  noEffortSkippedText,
+  restartNoteText,
+  settleNetNotes,
+  type NetNote,
+} from './recovery.ts'
+export { SESSION_NOT_FOUND, settleNetNotes, type NetNote }
 import { CompactTracker, settleCompactRow } from './compaction.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
@@ -105,6 +115,7 @@ import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { askViaParent } from './child-question.ts'
+import { askPushRequest, dropOwnRequests, noteAnswer, panelRequest, replies } from './panel-requests.ts'
 import { orchHint } from '../orch-mcp.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
 import { MODEL_HINT } from '../../shared/blender.ts'
@@ -194,9 +205,6 @@ export interface RealContext {
   stopBackground?: EngineHost['stopBackground']
   lessons?: EngineHost['lessons']
 }
-
-/** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
-const replies = new Map<string, (r: AskReply) => void>()
 
 /** 正在跑的一次 CLI 调用里能接收补充的那个：step 为空是对话，否则是工作流节点 */
 interface Steerer {
@@ -518,6 +526,7 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   const answers = req.kind === 'question' ? questionAnswers(req, r) : undefined
   // 请求处理完就继续执行：等待结算进 waitMs，从这一刻重新算执行时间
   if (!task.requests.length) resumeRun(task)
+  noteAnswer(task, req, r)
   task.messages.push({
     id: newId(),
     role: 'system',
@@ -678,13 +687,6 @@ export function silentTurn(o: {
   return !o.tools && !o.changed && !o.texts.some((x) => x.trim())
 }
 
-/** 自动续接前写进对话的报错：续接成功后要收回成普通说明 */
-export interface NetNote {
-  msg: TaskMessage
-  base: string
-  n: number
-}
-
 /** 环境性失败重试前写进对话的提示：重试成功要收成普通说明 */
 export interface EnvStallNote {
   msg: TaskMessage
@@ -701,19 +703,6 @@ export function settleEnvStallNotes(notes: EnvStallNote[]) {
     msg.transient = true
     msg.text = [base, '', t('已自动重试 {n} 次，这一轮继续做完了。', { n: MAX_ENV_RETRIES })].join('\n')
     if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动重试，继续做完了') }
-  }
-}
-
-/**
- * 续接成功了：之前那次断开的报错已经不成立，收成普通说明。
- * 不收的话对话里会一直挂着一张红色的「执行失败」卡片，用户以为这一轮失败了。
- */
-export function settleNetNotes(notes: NetNote[]) {
-  for (const { msg, base, n } of notes) {
-    msg.error = undefined
-    msg.transient = true
-    msg.text = [base, '', t('已自动续接会话（第 {n} 次），从中断的地方继续了。', { n })].join('\n')
-    if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动续接，从中断的地方继续了') }
   }
 }
 
@@ -1079,6 +1068,36 @@ async function runAgent(
   const role = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim()
   /** 上下文超长降级时留给旧对话的 token 预算：剩下的给角色设定、提示词和这一轮的要求 */
   const carryBudget = () => Math.max(MIN_CLIP_TOKENS * 2, Math.floor(windowFor(model) * CONTEXT_CARRY_SHARE))
+  /**
+   * 丢会话重开带给新会话的之前的对话，只有对话的普通一轮带：节点用完整提示就够；压缩、审查不带（/compact 前面多了历史
+   * 就不再是斜杠命令）。截到哪：用户发起的一轮截在要求之前（要求在提示里）；接着上一圈做的（call.carry）提示里没有用户的要求，带到最新
+   */
+  const carryUpto = () => (asker && !call.carry ? task.messages.indexOf(asker) : task.messages.length)
+  const carryForRestart = () => (chat && !op ? restartCarry(task, carryUpto(), carryBudget()) : '')
+  /**
+   * 面板换了做法自动重跑（丢会话重开、去掉思考强度）前在对话里留一行：只写日志就是悄悄重试。不设 transient：
+   * 继续执行时不能当状态说明弹掉。预热轮用户还没发话不记（思考强度那条由 tellNoEffort 在第一句到了后补）
+   */
+  const recoveryNote = (text: string) => {
+    if (prewarmMode) return
+    task.messages.push({
+      id: ctx.newId(),
+      role: 'system',
+      agentId,
+      step,
+      text,
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    ctx.changed(true)
+  }
+  const noEffortKey = `${task.id}\n${cliId}\n${model}`
+  // 选了思考强度、这个模型却因为之前（别的对话、预热轮里）被拒过而不传了：每个对话第一次碰到时说一次
+  const tellNoEffort = () => {
+    if (prewarmMode || !requested || effort || !effortRejected(cliId, model)) return
+    if (firstNoEffortTell(noEffortKey)) recoveryNote(noEffortSkippedText(model, requested))
+  }
+  tellNoEffort()
   // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
   // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
   // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次
@@ -1124,10 +1143,14 @@ async function runAgent(
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? call.orch : undefined
-  if (orch && !resume) input = `${input}\n\n${orchHint(orch)}`
-  // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取
+  // Chat 页的对话没有后台命令时说明是空的，不拼空行
+  const hint = orch && !resume ? orchHint(orch) : ''
+  if (hint) input = `${input}\n\n${hint}`
+  // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取；
+  // 子任务只查不记，不带记教训的说明
   if (!resume && !op && task.projectId) {
-    const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, await readGlobalLessons())
+    const globals = await readGlobalLessons()
+    const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, globals, !!orch?.lessons?.record)
     if (lessons) input = `${input}\n\n${lessons}`
   }
   // 没有系统提示词参数的 CLI：对话目录的规则接在新会话的任务描述后面（有参数的已经放进系统提示词）
@@ -1973,10 +1996,13 @@ async function runAgent(
         waiter = {
           deliver: (msg, placed, recorded) => {
             taskLog(task.id, '消息交给等下一句的 CLI', { messageId: msg.id, recorded: recorded || undefined })
-            fromUser = true
+            // 只有用户自己的话才按「用户这次的消息」补状态；面板推的（后台命令结果、父对话传话）原样交
+            fromUser = msg.role === 'user' && !msg.panel
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
             if (!recorded) task.messages.push(msg)
+            // 预热轮里撞上「强度被拒」时没法说（用户还没发话）：第一句到了再补
+            tellNoEffort()
             // 继续执行：等待到此结束，从这一刻重新算执行时间
             resumeRun(task)
             // 收到用户消息，CLI 开始处理这一轮
@@ -2017,8 +2043,27 @@ async function runAgent(
       }
     }
   }
-  // 模型主动调 wait_user_message 等下一句：这个工具是面板用 MCP 注进去的，只有能挂 MCP 的 CLI 才有
-  const waitUser = canTake ? () => waitNext(true) : undefined
+  /**
+   * 交给 CLI 的用户下一条消息（保活、模型自己调 wait_user_message 两条路一样）：以前原样交给 CLI，
+   * 计划进度、子对话发来的消息、改动清单、授权变化都带不进去，也没有「## 用户这次的消息」标题。
+   * 交给调用方按当前状态补上变了的段落（见 shared/prompt-delta.ts）；子任务结果、/命令照旧原样
+   */
+  const withState = async (text: string | null) => {
+    if (text === null || !fromUser || !call.nextPrompt || text.trim().startsWith('/')) return text
+    return call.nextPrompt(text).catch((e) => {
+      // 拼不出带状态的提示时退回原文照常交给 CLI（用户的话不能丢），但要留日志，不悄悄吞掉
+      log.warn('task', '下一条消息没能补上当前状态，按原文交给 CLI', { task: task.id, error: (e as Error).message })
+      return text
+    })
+  }
+  // 模型主动调 wait_user_message 等下一句：这个工具是面板用 MCP 注进去的，只有能挂 MCP 的 CLI 才有。
+  // 预热也走这里（预热提示让模型直接调它）：等到的用户消息同样按当前状态补段落
+  const waitUser = canTake
+    ? async () => {
+        fromUser = false
+        return withState(await waitNext(true))
+      }
+    : undefined
   // 面板保活：回复完这一轮不关进程，用户的下一条消息交给同一个进程开下一轮（不靠模型主动调等待工具）。
   // 只在对话页确实开着时这样做：没人看的时候留着一个 CLI 也没人会回来发消息
   const keepAlive = canWait
@@ -2030,11 +2075,7 @@ async function runAgent(
         const text = await waitNext(false)
         // 拿到下一句就是新一轮开始了：上一轮模型有没有等过，跟新一轮无关
         if (text !== null) toolWaited = false
-        // 保活进程里的下一条消息：以前原样交给 CLI，计划状态、子对话发来的消息、授权变化都带不进去。
-        // 交给调用方按当前状态补上变了的段落（见 shared/prompt-delta.ts）；子任务结果、/命令照旧原样
-        if (text !== null && fromUser && call.nextPrompt && !text.trim().startsWith('/'))
-          return await call.nextPrompt(text).catch(() => text)
-        return text
+        return withState(text)
       }
     : undefined
 
@@ -2079,13 +2120,13 @@ async function runAgent(
     idle: idleMs
       ? {
           ms: idleMs,
-          // 在等用户确认、回答或下一句时 CLI 本来就没有输出，不算卡住
+          // 在等用户确认、回答或下一句时 CLI 本来就没有输出，不算卡住（推送授权卡是面板替 ask_push 弹的，不在 asked 里）
           // 排队等 API 名额时也一样
           busy: () =>
             task.awaitingUser ||
             waitingHelpers ||
             !!(call.step ? call.step.apiWait : task.apiWait) ||
-            task.requests.some((x) => asked.includes(x.id)),
+            task.requests.some((x) => asked.includes(x.id) || (!step && x.purpose === 'push')),
           onWarn: () => {
             task.messages.push({
               id: ctx.newId(),
@@ -2268,6 +2309,9 @@ async function runAgent(
         step,
         detail: detail.slice(0, 500),
       })
+      recoveryNote(noEffortRetryText(model, effort, detail))
+      // 说过了，重跑那次不再补「这一轮没有传」；预热轮没说，留给第一句到了再补
+      if (!prewarmMode) firstNoEffortTell(noEffortKey)
       return runAgent(
         ctx,
         call,
@@ -2281,24 +2325,29 @@ async function runAgent(
         envStallNotes,
       )
     }
+    // 丢会话重开前留一行（原因、带没带上之前的对话、原始报错）。之前断流续接写的红卡也在这里收口：
+    // 会话都没了，后面是新会话重新执行，不能等成功后写成「从中断的地方继续了」
+    const restartNote = (why: string, carried: boolean) => {
+      settleNetNotes(netNotes, true)
+      recoveryNote(restartNoteText(why, { chat, carried, detail }))
+    }
     // 会话找不到时（例如 CLI 清理了历史），丢掉会话重新开始一次
-    if (
-      resume &&
-      !prewarm &&
-      !retried &&
-      /(no|not).{0,40}(session|conversation|thread)|(session|conversation|thread).{0,40}not found/i.test(detail)
-    ) {
+    if (resume && !prewarm && !retried && SESSION_NOT_FOUND.test(detail)) {
       delete task.sessions[sessionKey]
       delete task.sessionDirs[sessionKey]
-      // 新会话没有之前的上下文，要用完整提示
+      const carry = carryForRestart()
+      log.warn('agent', `${def.name} 的会话找不到了，丢掉后重开`, { task: task.id, step, detail: detail.slice(0, 500) })
+      restartNote(t('{cli} 找不到原来的会话（可能被 CLI 清理了）', { cli: def.name }), !!carry)
+      // 新会话没有之前的上下文：节点用完整提示，对话把之前的对话裁剪后带上，不然模型突然全忘了。
+      // 断流续接写的红卡已经在 restartNote 里收口，不再往下传（netRetries 照传：续接次数前后合计）
       return runAgent(
         ctx,
         { ...call, prompt: call.fresh ?? call.prompt },
         true,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
+        netRetries,
+        carry,
+        [],
+        contextNotes,
         envStalls,
         envStallNotes,
       )
@@ -2314,14 +2363,19 @@ async function runAgent(
         cwd,
         detail: detail.slice(0, 500),
       })
+      const carry = carryForRestart()
+      restartNote(
+        t('{cli} 的会话存在别的项目目录里，面板没法回答它「要不要分叉到当前目录」', { cli: def.name }),
+        !!carry,
+      )
       return runAgent(
         ctx,
         { ...call, prompt: call.fresh ?? call.prompt },
         true,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
+        netRetries,
+        carry,
+        [],
+        contextNotes,
         envStalls,
         envStallNotes,
       )
@@ -2337,22 +2391,22 @@ async function runAgent(
     ) {
       delete task.sessions[sessionKey]
       delete task.sessionDirs[sessionKey]
-      const carry = chat
-        ? `## 之前的对话\n${transcript(task, asker ? task.messages.indexOf(asker) : task.messages.length)}`
-        : ''
+      // 按预算裁剪：原来带的是不设上限的整段，重开那次已经算重试过，历史超窗口时不会再降级，直接失败
+      const carry = carryForRestart()
       log.warn('agent', `${def.name} 的会话和当前模型不兼容，丢掉旧会话重开`, {
         task: task.id,
         step,
         detail: detail.slice(0, 500),
       })
+      restartNote(t('模型接口拒绝了 {cli} 这个会话的历史（常见于中途换了模型或网关）', { cli: def.name }), !!carry)
       return runAgent(
         ctx,
         chat ? call : { ...call, prompt: call.fresh ?? call.prompt },
         true,
         netRetries,
         carry,
-        undefined,
-        undefined,
+        [],
+        contextNotes,
         envStalls,
         envStallNotes,
       )
@@ -2428,6 +2482,9 @@ async function runAgent(
         ctx,
         {
           ...call,
+          // 原来的提示存进 fresh：续接时原会话没了（会话找不到等）会改用 fresh 开新会话，
+          // 不存的话发进空会话的是这句「从中断的地方继续」，新会话根本不知道要做什么
+          fresh: call.fresh ?? call.prompt,
           prompt:
             '刚才和模型服务的连接中断了，请从中断的地方继续完成之前的任务，已经做完的不用重做。' +
             '如果是在一次写入很长的文件时断开的，请分几次写：先写前一部分，再分段追加，每次不要太长。',
@@ -2486,8 +2543,8 @@ async function runAgent(
       if (fallback === 'restart') {
         delete task.sessions[sessionKey]
         delete task.sessionDirs[sessionKey]
-        const upto = asker ? task.messages.indexOf(asker) : task.messages.length
-        const carry = `## 之前的对话（已按长度裁剪）\n${clippedTranscript(task, upto, carryBudget())}`
+        // 和丢会话重开同一份裁剪（审查操作也走这里，所以不用 carryForRestart 的「操作不带」）
+        const carry = restartCarry(task, carryUpto(), carryBudget())
         const note: TaskMessage = {
           id: ctx.newId(),
           role: 'system',
@@ -2671,7 +2728,10 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
   const vcs = ctx.project.path ? (await detectVcs(ctx.project.path).catch(() => null))?.vcs : undefined
   return {
     push: ctx.project.gitPolicy ?? 'ask',
-    answered: ctx.task.remotePush,
+    // 用户对推送的回答（task.remotePush）不在这一刻定死：getter 现取，回答记上之后保活的下一条消息（nextPrompt 重拼）才看得到
+    get answered() {
+      return ctx.task.remotePush
+    },
     tools: views.filter((v) => v.installed && v.authed).map((v) => v.name),
     ...(target && (vcs === 'git' || vcs === 'p4') ? { cherryPick: { vcs, target } } : {}),
     docs: await projectDocRoot(ctx.project.path, ctx.agents, vcs ?? 'none'),
@@ -2691,6 +2751,8 @@ export async function runRealTurn(ctx: RealContext) {
   const noticedInput = unhandled !== undefined ? plan?.lastInputAt : undefined
   const notice = planNotice(ctx.task)
   if (notice) log.warn('plan', '计划需要对话收口，已写进这一轮的提示词', { task: ctx.task.id, notice })
+  // 这一轮弹出的推送授权卡：这一轮结束时还没回答就作废（等着它的 CLI 已经不在了）
+  const ownAsks = new Set<string>()
   await runEngineTurn({
     task: ctx.task,
     agents: ctx.agents,
@@ -2714,8 +2776,13 @@ export async function runRealTurn(ctx: RealContext) {
     listConversations: ctx.listConversations,
     createConversation: ctx.createConversation,
     sendToConversation: ctx.sendToConversation,
-    rules: ctx.rules,
-    goal: ctx.goal,
+    // 全局规则、目标在 run.ts 里是 getter（现取父对话的）：这里也转成 getter，别在建 host 时求值成快照
+    get rules() {
+      return ctx.rules
+    },
+    get goal() {
+      return ctx.goal
+    },
     takeInbox: ctx.takeInbox,
     messageParent: ctx.messageParent,
     claimFiles: ctx.claimFiles,
@@ -2723,7 +2790,10 @@ export async function runRealTurn(ctx: RealContext) {
     childIsolation: ctx.childIsolation,
     worktreeHome: ctx.worktreeHome,
     branch: ctx.branch,
-    wrapUp: ctx.wrapUp,
+    // 收尾种类在 run.ts 里是 getter（按现在的推送授权算）：保活中用户点了「允许」，下一条消息就带上推送收尾
+    get wrapUp() {
+      return ctx.wrapUp
+    },
     p4Split: ctx.p4Split,
     cherryPick: ctx.cherryPick,
     submitMerge: ctx.submitMerge,
@@ -2756,37 +2826,17 @@ export async function runRealTurn(ctx: RealContext) {
         }
       return false
     },
+    // 停止任务时不再等，节点停在这里，继续执行时重新确认
     confirm: (step, text) =>
-      new Promise((resolve) => {
-        const { task, signal } = ctx
-        if (signal.aborted) return resolve(null)
-        const id = ctx.newId()
-        const done = (r: { allow: boolean; answer?: string } | null) => {
-          signal.removeEventListener('abort', onAbort)
-          replies.delete(id)
-          task.requests = task.requests.filter((x) => x.id !== id)
-          resolve(r)
-        }
-        // 停止任务时不再等，节点停在这里，继续执行时重新确认
-        const onAbort = () => {
-          done(null)
-          ctx.changed(true)
-        }
-        signal.addEventListener('abort', onAbort)
-        replies.set(id, (r) => done(r))
-        task.requests.push({
-          id,
-          step: step.id,
-          agentId: step.agentId,
-          kind: 'confirm',
-          title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
-          // 审阅弹窗按文档渲染整段结果、还要在上面标注，截得太短看不全
-          detail: clip(text, 40000),
-          options: [],
-          at: new Date().toISOString(),
-        })
-        ctx.changed(true)
+      panelRequest(ctx, {
+        step: step.id,
+        agentId: step.agentId,
+        kind: 'confirm',
+        title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
+        // 审阅弹窗按文档渲染整段结果、还要在上面标注，截得太短看不全
+        detail: clip(text, 40000),
       }),
+    askPush: (info) => askPushRequest(ctx, info, ownAsks),
     reviewDiff: ctx.isGit
       ? async (since, files) => {
           // 没点名文件时只取这个对话改过的（和「更改」面板一致）：对话开始前就没提交的改动不算它的，不交给评审
@@ -2805,7 +2855,7 @@ export async function runRealTurn(ctx: RealContext) {
         }
       : undefined,
     saveHandoff: (step, text) => saveHandoffFile(ctx.task.id, step, text),
-  })
+  }).finally(() => dropOwnRequests(ctx.task, ownAsks))
   if (noticedInput && plan) {
     plan.inputNotedAt = noticedInput
     ctx.changed()

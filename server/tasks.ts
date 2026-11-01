@@ -108,6 +108,7 @@ export function tasksApi(deps: {
     buildFor: () => buildFor,
     chatProject: () => chatProject,
     checkBudget: () => checkBudget,
+    holdWake: () => holdWake,
     chatWorkspace: () => chatWorkspace,
     childActive: () => childActive,
     childRecovering: () => childRecovering,
@@ -297,11 +298,12 @@ export function tasksApi(deps: {
    * 已经在执行时返回已有的那一份（fresh 为 false），由调用方决定复用还是返回 409，不能覆盖
    */
   const reserve = (task: Task) =>
-    reserveOnce(
-      live,
-      task.id,
-      (): Live => ({ task: structuredClone(task), stop: false, abort: new AbortController(), rev: 0 }),
-    )
+    reserveOnce(live, task.id, (): Live => ({
+      task: structuredClone(task),
+      stop: false,
+      abort: new AbortController(),
+      rev: 0,
+    }))
   /** 只释放自己的执行位：旧的一轮收尾时不能把新的一轮删掉 */
   const release = (entry: Live) => releaseIfSame(live, entry.task.id, entry)
 
@@ -579,6 +581,14 @@ export function tasksApi(deps: {
       jobs: pendingJobs(id),
       merging: merging.has(id),
     }),
+    // 落成「已中断」的子对话要交给父对话：计划里等它的那一步收口、父对话空闲时叫醒（叫不叫过 holdWake，见 noteParent）。
+    // 先清上报去重：「停下→继续→这一轮没跑完就丢了」时 turnDoneAt 没变，去重键和上次一样，这次上报会被吞掉
+    reportChild: (tk) => {
+      reportedState.delete(tk.id)
+      return reportToParent(tk)
+    },
+    // 写成箭头：createPeer 在下面才解构出来
+    remindParent: (tk) => remindParentFix(tk),
   })
   let sweepTimer: ReturnType<typeof setInterval> | undefined
   void ready.then(() => {
@@ -609,12 +619,12 @@ export function tasksApi(deps: {
     reportKey,
     integrate,
   } = createChildren(scope)
-  const { attachOrchestra, forwardSpawn, messageParent } = createPeer(scope)
+  const { attachOrchestra, forwardSpawn, messageParent, remindParentFix } = createPeer(scope)
   const { answerChildAsk, applyAskUser, applyChildAskUser, runningConv, settleAskFromChild, settleAsks, wakeConv } =
     createAsks(scope)
   const { deliver, expandForWorkflow, followUp, spawnChildOf, start } = createRun(scope)
   const { armIdleAsk, disarmIdleAsk, childRecovering } = createIdleAsk(scope)
-  const { checkBudget } = createBudget(scope)
+  const { checkBudget, holdWake } = createBudget(scope)
   const {
     allowedPids,
     processPanel,

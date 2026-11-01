@@ -165,6 +165,16 @@ export function clippedTranscript(task: Task, upto: number, budget: number) {
   return [head, ...kept].filter(Boolean).join('\n\n')
 }
 
+/**
+ * 丢掉会话重开（会话找不到、在别的目录、接口拒绝历史、上下文超长）时带给新会话的之前的对话。
+ * 按预算裁剪：重开那次已经算重试过，带的东西再超长就不会再走上下文降级，只能直接失败；没超预算时原样带整段。
+ * 没有可带的（这一轮之前没对话、只有系统说明）返回空：不带一个空的标题，调用方也据此决定说明里写不写「带上了」
+ */
+export function restartCarry(task: Task, upto: number, budget: number) {
+  const body = clippedTranscript(task, upto, budget)
+  return body ? `## 之前的对话（已按长度裁剪）\n${body}` : ''
+}
+
 /** 新会话接手旧对话：先压缩上下文，再继续；已经做完的不要重做 */
 export function carryPrompt(task: Task, upto: number) {
   return [

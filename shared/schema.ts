@@ -9,6 +9,7 @@ import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
 import { DEFAULT_SEARCH_PROVIDER, SEARCH_PROVIDER_IDS } from './web-search.ts'
 import { DEFAULT_SPEECH_MODEL, SPEECH_MODEL_IDS } from './speech.ts'
 import type { ProjectProposal } from './project-init.ts'
+import { AskQuestion, TaskRequest } from './task-request.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -1531,11 +1532,11 @@ export const TaskStep = z.object({
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
   command: z.array(z.string()).default([]),
   /**
-   * 派这个子任务时交给它的要求原文（spawn_agents 的 instructions）。
-   * 父对话的那条系统消息里只有标题列表，AI 分析时判断「它有没有做到派给它的要求」只能靠这段；
-   * 旧记录没有这个字段，报告里如实说明看不到
+   * 派这个子任务时交给它的要求原文（spawn_agents 的 instructions）。父对话的那条系统消息里只有标题列表，AI 分析时判断「它有没有做到派给它的要求」只能靠这段；旧记录没有这个字段，报告里如实说明看不到
    */
   brief: z.string().default(''),
+  /** 派这个子任务时点的角色参数（spawn_agents 的 params），resume 接着做时沿用；旧记录没有，按角色默认值渲染 */
+  params: z.record(z.string(), ParamValue).optional(),
   /** 这个节点自己的用量（不含子节点）：右栏点了节点时只看它的 */
   usage: StepUsage.optional(),
   /** 这个节点执行期间改动的文件 */
@@ -1782,32 +1783,8 @@ export const TaskPlan = z.object({
 })
 export type TaskPlan = z.infer<typeof TaskPlan>
 
-/** CLI 一次提的一个问题（Claude Code 的 AskUserQuestion 一次可以问几个） */
-export const AskQuestion = z.object({
-  /** 很短的标签，多个问题时显示在页签上 */
-  header: z.string().default(''),
-  question: z.string(),
-  options: z.array(z.object({ label: z.string(), description: z.string().default('') })).default([]),
-  multiSelect: z.boolean().default(false),
-})
-export type AskQuestion = z.infer<typeof AskQuestion>
-
-/** Agent 等用户确认的操作（权限不够的命令、改文件）或问题；确认在输入框上方显示，问题换掉输入框 */
-export const TaskRequest = z.object({
-  id: z.string(),
-  step: z.string().default(''),
-  agentId: z.string().default(''),
-  /** confirm：工作流节点完成后等用户确认结果 */
-  kind: z.enum(['command', 'file', 'tool', 'question', 'confirm']),
-  title: z.string(),
-  detail: z.string().default(''),
-  /** 问题的选项；也可以自己填 */
-  options: z.array(z.string()).default([]),
-  /** 一次问了几个问题时的每一个（有它时 title、options 是第一个问题的） */
-  questions: z.array(AskQuestion).optional(),
-  at: z.string(),
-})
-export type TaskRequest = z.infer<typeof TaskRequest>
+// 请求和问题的结构拆到 task-request.ts（这个文件到了行数上限），从这里引用的地方不用改
+export { AskQuestion, TaskRequest }
 
 /** 运行级共享状态的一个键：并发节点都能读写，后写的覆盖先写的，版本号用来判断谁更新 */
 export const RunStateEntry = z.object({
@@ -2241,8 +2218,12 @@ export const TaskData = z.object({
   askedAt: z.string().optional(),
   /** 用户结束了工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理 */
   flowClosed: z.boolean().optional(),
-  /** 这个对话里用户对推送的选择：问过一次就记住，不再重复问 */
+  /**
+   * 这个对话里用户对推送的授权：ask_push 弹的授权卡上点的（server/exec/panel-requests.ts 的 notePushAnswer 写入），
+   * 问过一次就记住、不再重复问；remotePushAt 是点的时间，分叉、撤回到它之前时清掉（见 shared/push-auth.ts）
+   */
   remotePush: z.enum(['allowed', 'denied']).optional(),
+  remotePushAt: z.string().optional(),
   /** 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离 */
   runSeq: z.number().int().default(0),
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */

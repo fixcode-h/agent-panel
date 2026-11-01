@@ -755,6 +755,12 @@ export const EN_DESIGN: Record<string, string> = {
   // AI 截图（screenshot 工具）
   '截图失败：设计页面没有打开。先打开这个设计页（浏览器标签页在后台也可以），再让我截图':
     'Screenshot failed: the design page is not open. Open this design page first (it can be in a background tab), then ask for the screenshot again',
+  未命名设计: 'Untitled design',
+  'AI 刚改过这个设计，你刚才的修改没有存上；按撤销可以找回':
+    'The AI just changed this design, so your latest edits were not saved. Press Undo to get them back',
+  'AI 正在修改这个设计，这一轮结束后再编辑': 'The AI is editing this design. Edit again when this round finishes',
+  '截图失败：设计页面没有打开，自动启动的无头浏览器也没能连上面板。先打开这个设计页（浏览器标签页在后台也可以），再让我截图':
+    'Screenshot failed: the design page is not open, and the automatically started headless browser could not connect to the panel either. Open this design page first (it can be in a background tab), then ask for the screenshot again',
   '截图失败：设计页面收到了请求，但没有交出截图（页面可能已经切走，或者渲染卡住了），请重试':
     'Screenshot failed: the design page received the request but did not return a screenshot (the page may have been left, or rendering is stuck). Try again',
   '截图超时：设计页面在后台或者渲染卡住了，请重试':

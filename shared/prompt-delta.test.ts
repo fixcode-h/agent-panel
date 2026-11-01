@@ -10,6 +10,7 @@ import {
   rememberSent,
 } from './prompt-delta.ts'
 import { nodeRequests, runConversationTurn, type AgentCall, type EngineHost } from './engine.ts'
+import { applyPlan } from './plan.ts'
 import { Agent, Task } from './schema.ts'
 
 const rules = ['## 授权情况\n推送：先问一次', '## 计划怎么维护\n- 先列计划再动手', '## 执行方式\n直接做']
@@ -184,6 +185,14 @@ test('续接只发增量：段落按变化发、子对话第二轮起只发增�
   const full = calls[6].fresh ?? calls[6].prompt
   assert.doesNotMatch(full, /## 停下之前先提问|## 收尾建议要交给用户选/)
   assert.match(full, /## 子对话的完成标准/)
+  // 保活进程里用户接着发（runner 调 nextPrompt）：和第一轮用同一套参数拼，增量只剩用户消息。
+  // 以前这里漏传了角色，角色里写过的提问、收尾规则被发回去，还宣布「子对话的完成标准」不再适用
+  for (const text of ['保活第一条', '保活第二条']) {
+    const next = await calls[6].nextPrompt!(text)
+    assert.match(next, new RegExp(text))
+    assert.doesNotMatch(next, /## 停下之前先提问|## 收尾建议要交给用户选|## 不再适用的规则/)
+    assert.ok(next.length < 300, `保活的下一条只该有消息：${next.length} 字`)
+  }
 
   // 对话里派子任务、跑工作流：用户需求取最新的一条，更早的只留开头
   const long = '很长'.repeat(1000)
@@ -209,4 +218,104 @@ test('续接只发增量：段落按变化发、子对话第二轮起只发增�
   // 工作流任务照旧全带
   const wf = nodeRequests({ ...task, mode: 'workflow' } as Task)
   assert.equal(wf.extra.length, 21)
+})
+
+// 审计发现：会变的状态和不变的规则拼在同一段，指纹一变整段重发（验证规则 2–4 千字跟着改动清单、计划全文跟着「已 N 分钟」）
+test('续接只发增量：改动清单变了只重发「本轮该跑的测试步骤」，计划进度变了只重发「计划进度」', async () => {
+  const calls: AgentCall[] = []
+  const h = childHost(calls)
+  const step = (id: string, appliesTo: string[]) => ({
+    id,
+    name: id,
+    command: id,
+    env: 'auto' as const,
+    cwd: '',
+    when: '',
+    appliesTo,
+    timeoutSec: 0,
+    note: '',
+    enabled: true,
+    merge: false,
+    scope: 'changed' as const,
+    quick: false,
+  })
+  const verify = {
+    steps: [step('前端检查', ['web/**']), step('后端检查', ['server/**'])],
+    platform: 'linux',
+    wslDistro: '',
+    scaled: true,
+    changedFiles: ['web/a.ts'],
+  }
+  ;(h as { verify?: unknown }).verify = verify
+  applyPlan(h.task, { steps: [{ title: '改页面', status: 'running' }, { title: '收尾' }] })
+  await say(h, '改页面')
+  assert.match(calls[0].prompt, /## 验证按改动大小定[\s\S]*## 本轮该跑的测试步骤/)
+  verify.changedFiles = ['web/a.ts', 'server/b.ts']
+  await say(h, '再改后端')
+  assert.match(calls[1].prompt, /## 本轮该跑的测试步骤[\s\S]*后端检查/)
+  assert.doesNotMatch(calls[1].prompt, /## 验证按改动大小定/)
+  // 进行中那一步的开始时间往前挪：只重发进度一句，计划全文不跟着重发
+  const plan = h.task.plans.at(-1)!
+  plan.steps[0].startedAt = new Date(Date.now() - 6 * 60_000).toISOString()
+  await say(h, '接着改')
+  assert.match(calls[2].prompt, /## 计划进度/)
+  assert.doesNotMatch(calls[2].prompt, /## 执行计划|## 计划怎么维护|## 本轮该跑的测试步骤/)
+  // 计划里的步骤都做完了（只剩面板加的收尾，或整份收起）：「计划进度」照样在，不会被当成作废的规则
+  applyPlan(h.task, {
+    steps: [
+      { id: '1', title: '改页面', status: 'done' },
+      { id: '2', title: '收尾', status: 'done' },
+    ],
+    partial: true,
+  })
+  await say(h, '都做完了')
+  assert.doesNotMatch(calls[3].prompt, /## 不再适用的规则/)
+
+  // 保活期间改动清单、推送回答变了：引擎每次重拼都读 host 的现值（这里只测引擎这一侧；服务端把这几项写成 getter，
+  // 见 server/tasks/run.ts、runner.ts 的 taskPolicy，那一侧由 e2e 07-local 等下一句、预热后第一句的断言兜着）。
+  // 推送的回答只对父对话有意义（子对话不碰远端），这段按顶层对话拼
+  h.task.parentTaskId = ''
+  h.task.changes = []
+  ;(h as { verify?: unknown }).verify = {
+    ...verify,
+    get changedFiles() {
+      return h.task.changes.map((c) => c.path)
+    },
+  }
+  h.policy = {
+    push: 'ask',
+    tools: [],
+    get answered() {
+      return h.task.remotePush
+    },
+  }
+  // 收尾种类同理（server/tasks/run.ts 按 wrapUpFrom 现算）：用户在授权卡上点了允许，推送收尾跟着出现
+  Object.defineProperty(h, 'wrapUp', { get: () => (h.task.remotePush === 'allowed' ? 'push' : undefined) })
+  await say(h, '新的一轮')
+  const live = calls[4]
+  assert.match(live.fresh ?? live.prompt, /改动清单为空/)
+  assert.match(live.fresh ?? live.prompt, /调用面板工具 ask_push 请用户授权/)
+  h.task.changes = [{ path: 'server/b.ts', add: 1, del: 0 }]
+  h.task.remotePush = 'allowed'
+  const next = await live.nextPrompt!('保活里接着改')
+  assert.match(next, /## 用户这次的消息\n保活里接着改/)
+  assert.match(next, /## 本轮该跑的测试步骤[\s\S]*server\/b\.ts/)
+  assert.match(next, /用户已经同意推送[^\n]*收尾：推送到远端并合并主干已经在计划的最后一步/)
+  assert.doesNotMatch(next, /## 验证按改动大小定/)
+  // 收尾变了，计划那段跟着重发：讲清推送收尾由面板加在最后
+  assert.match(next, /## 计划怎么维护[\s\S]*由面板加在最后/)
+
+  // 预热也带 nextPrompt：预热发的是完整提示，用户第一条消息（经 wait_user_message 或保活交进来）只补消息和变了的段落，
+  // 以前原样交给 CLI，没有「## 用户这次的消息」；预热结束也记下这个会话已有的段落
+  h.prewarm = true
+  h.prompt = '（预热）'
+  delete h.task.promptSent
+  await runConversationTurn(h, 'exec')
+  h.prewarm = false
+  const warm = calls[5]
+  assert.match(warm.prompt, /## 计划怎么维护/)
+  const first = await warm.nextPrompt!('预热后的第一句')
+  assert.match(first, /^## 用户这次的消息\n预热后的第一句/)
+  assert.doesNotMatch(first, /## 计划怎么维护/)
+  assert.ok(sentOf(h)?.exec, '预热的会话记下了已发的段落')
 })

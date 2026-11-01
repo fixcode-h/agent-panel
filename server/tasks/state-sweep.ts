@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { t } from '../../shared/i18n.ts'
 import type { Task } from '../../shared/schema.ts'
 import { settleStopped, stateBreaks, type StateBreak, type StateLive } from '../../shared/task-settle.ts'
+import { taskGone } from '../../shared/task.ts'
+import { parentFixWait } from '../../shared/wake.ts'
 import { log } from '../log.ts'
 import type { createTaskStore } from '../task-store.ts'
 import { reopenMerge } from './startup.ts'
@@ -26,9 +28,23 @@ export function createStateSweep(d: {
   live(id: string): StateLive
   /** 收口后通知（日志之外，比如推一次列表刷新）；可选 */
   settled?(id: string, kind: StateBreak): void
+  /**
+   * 孤儿子对话落成「已中断」后交给父对话（计划里等它的那一步收口、父对话空闲时叫醒）。
+   * 必填：以前只留了可选的 settled 又没接，父对话一直停在「等子对话」
+   */
+  reportChild(task: Task): void | Promise<void>
+  /**
+   * 子对话还挂着「等父对话安排修复」、父对话却空闲：提醒父对话一次（叫醒前过 holdWake，被挡住返回 false，之后再试）。
+   * 修复请求交出时的叫醒是发出去就不管的：面板重启时丢掉、父对话被叫醒那一轮没回它，父子就互等到用户介入（复核 C1-c）
+   */
+  remindParent(child: Task): Promise<boolean>
 }) {
   /** 上一次看到的矛盾：id → 「矛盾种类 + updatedAt」 */
   const seen = new Map<string, string>()
+  /** 上一次看到的「子对话等父对话、父对话空闲」：子对话 id → 那条等待的键 */
+  const waitSeen = new Map<string, string>()
+  /** 已经提醒过的等待（子对话 id + 开始等的时间）：同一条等待只提醒一次，再不回就留给用户 */
+  const reminded = new Set<string>()
 
   async function settleOrphan(id: string) {
     const tk = await d.store.get(id)
@@ -50,6 +66,13 @@ export function createStateSweep(d: {
       },
     ]
     await d.store.update(id, next, { keepUpdatedAt: true })
+    // 上报失败不影响这次收口（子对话已经落盘了），只记日志；用 try/await 连同步抛错一起接住
+    if (next.parentTaskId)
+      try {
+        await d.reportChild(next)
+      } catch (err) {
+        log.warn('task', '定时核对：已中断的子对话没能上报父对话', { task: id, error: (err as Error).message })
+      }
     return true
   }
 
@@ -91,7 +114,43 @@ export function createStateSweep(d: {
     }
     // 矛盾已经消失的不再记着：下次再出现要重新连看两次
     for (const id of seen.keys()) if (!now.has(id)) seen.delete(id)
+    await remindIdleParents(all)
     return done
+  }
+
+  /**
+   * 子对话挂着 kind parent 的等待（父对话还没回它）、父对话不在执行位上：连着两次看到才提醒，
+   * 中间父对话可能刚被叫醒、还没占上执行位，或者正在两轮之间
+   */
+  async function remindIdleParents(all: Task[]) {
+    const waiting = new Set<string>()
+    for (const kid of all) {
+      if (!kid.parentTaskId || taskGone(kid) || kid.resolved) continue
+      const w = parentFixWait(kid)
+      if (!w) continue
+      const key = `${kid.id}@${w.at ?? ''}`
+      const parent = d.live(kid.parentTaskId)
+      if (reminded.has(key) || parent.live || parent.queued) continue
+      waiting.add(kid.id)
+      if (waitSeen.get(kid.id) !== key) {
+        waitSeen.set(kid.id, key)
+        continue
+      }
+      waitSeen.delete(kid.id)
+      try {
+        if (await d.remindParent(kid)) {
+          reminded.add(key)
+          log.info('task', '定时核对：子对话在等父对话安排修复、父对话空闲，已提醒父对话', {
+            task: kid.id,
+            parent: kid.parentTaskId,
+          })
+        }
+      } catch (e) {
+        // 提醒失败由 remindParent 自己在父对话里报警告；这里只记日志，下次核对再试
+        log.warn('task', '定时核对：提醒父对话安排修复失败', { task: kid.id, error: (e as Error).message })
+      }
+    }
+    for (const id of waitSeen.keys()) if (!waiting.has(id)) waitSeen.delete(id)
   }
 
   return { sweep }

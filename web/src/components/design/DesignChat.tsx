@@ -619,6 +619,7 @@ export function DesignChat({
   onClearCites,
   hasTemplate,
   request,
+  onRequestDone,
   inpaint = false,
   onInpaint,
   conceptDefault = false,
@@ -655,6 +656,8 @@ export function DesignChat({
   hasTemplate?: boolean
   /** 页面要替用户发的一句话（例如确认模板后让 AI 开始搭界面）：id 变了就发一次 */
   request?: { id: string; text?: string; kind?: 'send' }
+  /** 页面替用户发的话已经发出去了：页面清掉它，对话栏收起再打开（重新挂载）时不会再发一遍 */
+  onRequestDone?: () => void
   /** 只重绘原画上蒙版涂过的区域（在工具栏里勾选）：状态在页面上，原画面板的发送按钮也要读它 */
   inpaint?: boolean
   onInpaint?: (v: boolean) => void
@@ -831,6 +834,7 @@ export function DesignChat({
     scroller.pin()
     if (request.kind === 'send') void send()
     else void onSend(request.text ?? '', run, [], { askUser, concept, inpaint: false })
+    onRequestDone?.()
     // 每个请求只发一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.id])

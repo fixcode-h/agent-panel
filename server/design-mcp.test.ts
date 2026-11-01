@@ -342,3 +342,153 @@ test('画布位置的简写：大小写、别名、写在控件上都认，只�
   assert.deepEqual(slot('A').Offsets, { Left: 40, Top: 32, Right: 500, Bottom: 72 })
   close()
 })
+
+test('改控件的结果里直接列出位置变了的控件，不用截图回读', async () => {
+  const { call, close } = open()
+  const add = await call('add_widgets', {
+    items: [
+      {
+        parent: 'RootCanvas',
+        widget: {
+          Type: 'Image',
+          Name: 'Panel',
+          Slot: { anchor: 'center', x: 0, y: 0, w: 400, h: 200 },
+          Brush: { ImageSize: { X: 400, Y: 200 } },
+        },
+      },
+    ],
+  })
+  assert.ok(!add.error, add.text)
+  // 居中锚点 + 居中对齐：左上角在 (1920-400)/2, (1080-200)/2
+  assert.match(add.text, /位置或大小变了的控件/)
+  assert.match(add.text, /Panel（Image）760,440 400×200/)
+  const moved = await call('update_widgets', { items: [{ name: 'Panel', slot: { x: 100 } }] })
+  assert.match(moved.text, /Panel（Image）860,440 400×200/)
+  // 只改不影响位置的属性：不列
+  const tint = await call('update_widgets', { items: [{ name: 'Panel', properties: { RenderOpacity: 0.5 } }] })
+  assert.doesNotMatch(tint.text, /位置或大小变了/)
+  // 跑出画面的直接点名
+  const off = await call('update_widgets', { items: [{ name: 'Panel', slot: { x: 1000 } }] })
+  assert.match(off.text, /跑出画面：Panel/)
+  close()
+})
+
+test('get_layout 不开页面算出整棵树的位置，文字标估算；页面没开时截图退回位置表', async () => {
+  const { call, close } = open({}, { capture: async () => Promise.reject(new Error('截图失败：设计页面没有打开')) })
+  await call('add_widgets', {
+    items: [
+      {
+        parent: 'RootCanvas',
+        widget: { Type: 'TextBlock', Name: 'Title', Text: '背包', Slot: { x: 40, y: 32, w: 0, h: 0 } },
+      },
+      { parent: 'RootCanvas', widget: { Type: 'Image', Name: 'Icon', Slot: { x: 10, y: 10, w: 64, h: 64 } } },
+    ],
+  })
+  await call('update_widgets', { items: [{ name: 'Title', slot: { bAutoSize: true } }] })
+  const all = await call('get_layout', {})
+  assert.ok(!all.error, all.text)
+  assert.match(all.text, /Icon（Image）10,10 64×64/)
+  assert.match(all.text, /Title（TextBlock）≈40,32/)
+  const one = await call('get_layout', { names: ['Icon', 'Nope'] })
+  assert.doesNotMatch(one.text, /Title/)
+  assert.match(one.text, /没找到.*Nope/)
+  const shot = await call('screenshot', {})
+  assert.ok(shot.error)
+  assert.match(shot.text, /^截图失败：设计页面没有打开/)
+  assert.match(shot.text, /Icon（Image）10,10 64×64/)
+  close()
+})
+
+test('网页设计不算位置，交给截图', async () => {
+  const d = design()
+  d.kind = 'web'
+  d.root = emptyRoot('web')
+  const { call, close } = open({}, {}, d)
+  const r = await call('get_layout', {})
+  assert.ok(r.error)
+  assert.match(r.text, /screenshot/)
+  close()
+})
+
+test('画布插槽的部分更新只改写到的字段：单轴拉伸、对齐点、锚点都保留', async () => {
+  const { call, session, close } = open()
+  const slotOf = (name: string) => {
+    let hit: any
+    const walk = (w: any) => {
+      if (w.Name === name) hit = w
+      for (const c of w.Children ?? []) walk(c)
+    }
+    walk(session.state.root)
+    return hit.Slot.LayoutData
+  }
+  const add = (widget: object) => call('add_widgets', { items: [{ parent: 'RootCanvas', widget }] })
+  // 顶栏：只横向拉伸，高 80；只改高度后仍然只横向拉伸
+  assert.ok(
+    !(await add({ Type: 'Border', Name: 'TopBar', Slot: { anchor: 'top-stretch', y: 0, h: 80, margin: [0, 0, 0, 0] } }))
+      .error,
+  )
+  assert.deepEqual(slotOf('TopBar').Anchors, { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 0 } })
+  await call('update_widgets', { items: [{ name: 'TopBar', slot: { h: 120 } }] })
+  assert.deepEqual(slotOf('TopBar').Anchors, { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 0 } })
+  assert.equal(slotOf('TopBar').Offsets.Bottom, 120)
+  // 铺满的控件改上边距：生效，不再被吞掉
+  await add({ Type: 'Border', Name: 'Bg', Slot: { anchor: 'stretch', margin: [10, 10, 10, 10] } })
+  await call('update_widgets', { items: [{ name: 'Bg', slot: { y: 50 } }] })
+  assert.deepEqual(slotOf('Bg').Offsets, { Left: 10, Top: 50, Right: 10, Bottom: 10 })
+  // 拉伸方向写宽度：报错说清楚，不悄悄变成 100×40
+  const bad = await call('update_widgets', { items: [{ name: 'Bg', slot: { w: 300 } }] })
+  assert.ok(bad.error)
+  assert.match(bad.text, /拉伸/)
+  // 对齐点 0.5 的控件只改宽度：对齐点不动
+  await add({ Type: 'Image', Name: 'Mid', Slot: { anchor: 'center', w: 200, h: 100 } })
+  await call('update_widgets', { items: [{ name: 'Mid', slot: { w: 300 } }] })
+  assert.deepEqual(slotOf('Mid').Alignment, { X: 0.5, Y: 0.5 })
+  assert.equal(slotOf('Mid').Offsets.Right, 300)
+  // top-center 这类写法都认；认不出的报错
+  await add({ Type: 'Image', Name: 'Tc', Slot: { anchor: 'top-center', y: 20, w: 50, h: 50 } })
+  assert.deepEqual(slotOf('Tc').Anchors.Minimum, { X: 0.5, Y: 0 })
+  const typo = await add({ Type: 'Image', Name: 'Typo', Slot: { anchor: 'upper-left' } })
+  assert.ok(typo.error)
+  assert.match(typo.text, /认不出「upper」/)
+  // 只换锚点：贴到新锚点上，宽高沿用
+  await call('update_widgets', { items: [{ name: 'Tc', slot: { anchor: 'bottom-right' } }] })
+  assert.deepEqual(slotOf('Tc').Offsets, { Left: 0, Top: 0, Right: 50, Bottom: 50 })
+  assert.deepEqual(slotOf('Tc').Alignment, { X: 1, Y: 1 })
+  close()
+})
+
+test('插槽写错当场报错；子控件尺寸存成数字；replace 的半个插槽和原来的合并', async () => {
+  const { call, session, close } = open()
+  await call('add_widgets', {
+    items: [
+      { parent: 'RootCanvas', widget: { Type: 'VerticalBox', Name: 'Col', Slot: { x: 0, y: 0, w: 300, h: 300 } } },
+    ],
+  })
+  const wh = await call('add_widgets', {
+    items: [{ parent: 'Col', widget: { Type: 'Image', Name: 'A', Slot: { w: 200, h: 40 } } }],
+  })
+  assert.ok(wh.error)
+  assert.match(wh.text, /没有位置和宽高/)
+  const mid = await call('add_widgets', {
+    items: [{ parent: 'Col', widget: { Type: 'Image', Name: 'B', Slot: { h: 'middle', v: 'centre', fill: 'auto' } } }],
+  })
+  assert.ok(!mid.error, mid.text)
+  const b = session.state.root.Children!.find((w) => w.Name === 'Col')!.Children![0]
+  assert.deepEqual(
+    [b.Slot!.HorizontalAlignment, b.Slot!.VerticalAlignment, b.Slot!.Size.SizeRule],
+    ['HAlign_Center', 'VAlign_Center', 'Automatic'],
+  )
+  const wrong = await call('update_widgets', { items: [{ name: 'B', slot: { h: 'leftish' } }] })
+  assert.ok(wrong.error)
+  await call('create_components', {
+    items: [{ name: 'WBP_X', size: { X: 64, Y: 64 }, root: { Type: 'Overlay', Name: 'R' } }],
+  })
+  await call('resize_components', { items: [{ name: 'WBP_X', size: { X: '200', Y: '100' } }] })
+  assert.deepEqual(session.state.components[0].DesignSize, { X: 200, Y: 100 })
+  await call('replace_widget', {
+    items: [{ name: 'Col', widget: { Type: 'HorizontalBox', Name: 'Row', Slot: { x: 20 } } }],
+  })
+  const row = session.state.root.Children!.find((w) => w.Name === 'Row')!
+  assert.deepEqual(row.Slot!.LayoutData.Offsets, { Left: 20, Top: 0, Right: 300, Bottom: 300 })
+  close()
+})

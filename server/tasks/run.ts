@@ -26,10 +26,12 @@ import {
   endRun,
   trackWait,
   newTask,
+  announcedOnly,
   taskDeleted,
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
+import { isPlainChat } from '../../shared/conv-mode.ts'
 import { agentRun, defaultCli } from '../../shared/settings.ts'
 import { expandSlash } from '../slash.ts'
 import { childAskInitial } from '../../shared/child-ask.ts'
@@ -61,7 +63,7 @@ import { taskCliAlive } from '../exec/process.ts'
 import { p4Runner, splitChangelists } from '../p4-split.ts'
 import { projectDocRoot } from '../doc-root.ts'
 import { cherryPickFor } from '../cherry-pick.ts'
-import { TaskBusyError, isolated, parentRunRole, isP4, planWrapUp } from './helpers.ts'
+import { TaskBusyError, isolated, parentRunRole, isP4, wrapUpFrom, wrapUpProbe } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
@@ -229,6 +231,12 @@ export function createRun(sc: TasksScope) {
     const parentTask = task.parentTaskId
       ? (sc.live.get(task.parentTaskId)?.task ?? (await sc.store.get(task.parentTaskId)) ?? undefined)
       : undefined
+    // 全局规则、目标存在谁身上：顶层对话是自己，子对话是父对话。父对话在执行位上时那份最新（落盘的可能还没写），
+    // 不在时取存储里已有的内存副本（/rule、改目标都会写回存储），都没有才用这一轮开始时读的
+    const ruleOwner = () =>
+      task.parentTaskId
+        ? (sc.live.get(task.parentTaskId)?.task ?? sc.store.known(task.parentTaskId) ?? parentTask)
+        : entry.task
     const rootId = task.parentTaskId || task.id
     // 父对话在对话设置里给子对话定了 CLI / 模型 / 思考强度：子对话的角色按它跑。
     // 换了 CLI 时角色原来的模型、强度是另一个 CLI 的，没另外指定就用新 CLI 的默认
@@ -318,6 +326,8 @@ export function createRun(sc: TasksScope) {
       if (first) entry.task.baseRef = await gitHead(project.path).catch(() => '')
       const snapshot = await gitNumstat(project.path, entry.task.baseRef, placedFiles(entry.task)).catch(() => null)
       if (first) entry.task.baseline = snapshot ?? {}
+      // 收尾要的工作区探测只做一次；收尾种类本身按现在的推送授权现算（见下面的 wrapUp getter）
+      const wrapProbe = await wrapUpProbe(entry.task, project.path, project.gitPolicy)
       await runRealTurn({
         task: entry.task,
         agents,
@@ -340,7 +350,8 @@ export function createRun(sc: TasksScope) {
         newId: randomUUID,
         // 子对话这一轮真结束的地方收口父对话计划里等它的步骤（进程保活等下一句时 run 不返回，等不到收尾）
         // 顶层对话：做到一半（这一轮调过工具）就收尾、计划还没做完时，面板推它接着做（见 nudgePlan）。
-        // 只回答了一句话、没动手的那一轮不推：可能是用户问了个问题，或者让它先停下
+        // 只回答了一句话、没动手的那一轮不推：可能是用户问了个问题，或者让它先停下。
+        // Agent 模式（项目里的对话）例外：没动手但最后一句是「我先…」「接下来…」这种要动手的话，也推（ADR 0037）
         // 每一轮结束都按整棵对话树核一次用量上限（见 tasks/budget.ts）：到了上限就停下，也不再推它接着做
         onTurnEnd: task.parentTaskId
           ? () => {
@@ -349,7 +360,8 @@ export function createRun(sc: TasksScope) {
             }
           : (turn) =>
               void sc.checkBudget(entry.task).then((over) => {
-                if (over || task.mode !== 'chat' || turn.tools <= 0) return
+                if (over || task.mode !== 'chat') return
+                if (turn.tools <= 0 && (isPlainChat(entry.task) || !announcedOnly(entry.task))) return
                 return sc
                   .nudgePlan(entry.task)
                   .catch((e) =>
@@ -364,9 +376,15 @@ export function createRun(sc: TasksScope) {
         prewarmTurnDoneAt: beforeTurnDoneAt,
         workflowCatalog: () => (defaultWf ? sc.workflowCatalog(project, allWorkflows, defaultWf) : []),
         resolveWorkflow: (id) => (project?.id ? sc.planWorkflow(project, allWorkflows, defaultWf, id) : undefined),
-        // 全局规则：父对话自己的，子对话用父对话的（这一轮开始时读一次，执行中新发的靠实时推送）
-        rules: (task.parentTaskId ? (parentTask?.rules ?? []) : entry.task.rules).map((r) => r.text),
-        goal: (task.parentTaskId ? parentTask?.goal : entry.task.goal) || '',
+        // 全局规则和目标：父对话自己的，子对话用父对话的。写成 getter 每次拼提示时现取：CLI 保活时下一条消息
+        // 由 engine 的 nextPrompt 按当前状态重拼，取一次的快照会让保活期间新发的规则、改的目标一直进不来
+        //（实时推送只送给正在执行的子对话，停在等下一句的收不到）
+        get rules() {
+          return (ruleOwner()?.rules ?? []).map((r) => r.text)
+        },
+        get goal() {
+          return ruleOwner()?.goal || ''
+        },
         takeInbox: task.parentTaskId
           ? undefined
           : () => {
@@ -383,7 +401,11 @@ export function createRun(sc: TasksScope) {
         onOrchestra: (orch) => sc.attachOrchestra(task.id, orch),
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await sc.worktreeHome(entry.task, found) : undefined,
-        wrapUp: await planWrapUp(entry.task, project?.path, project?.gitPolicy),
+        // getter：保活中用户在推送授权卡上点了「允许」，下一条消息的提示词和计划就带上推送收尾
+        //（取一次的快照要等下次重开进程才看得到，见 docs/lessons/prompts.md「拼的时候读现值」）
+        get wrapUp() {
+          return wrapUpFrom(entry.task, wrapProbe, project?.gitPolicy)
+        },
         // P4 项目里的对话和节点都能用：分 changelist 由面板照类型执行，不靠 Agent 自己记得分（见 p4-split.ts）
         p4Split:
           dir && project?.path && (await isP4(project.path))
@@ -450,8 +472,11 @@ export function createRun(sc: TasksScope) {
                 platform: process.platform,
                 wslDistro: found.wslDistro,
                 scaled: found.scaledVerify,
-                // 这次任务实际改了哪些文件：服务端算好「本轮该跑哪几条 + 命令」再交给模型，不靠它自己筛
-                changedFiles: entry.task.changes.map((c) => c.path),
+                // 这次任务实际改了哪些文件：服务端算好「本轮该跑哪几条 + 命令」再交给模型，不靠它自己筛。
+                // getter 现取：runner 在这一轮里会刷新 task.changes，保活的下一条消息要按新的改动清单算
+                get changedFiles() {
+                  return entry.task.changes.map((c) => c.path)
+                },
                 ...(await parentRunRole(entry.task, found)),
               }
             : undefined,

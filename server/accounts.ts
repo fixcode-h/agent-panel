@@ -207,8 +207,7 @@ export function identityOf(def: CliDefinition, snap: Snapshot): { email: string;
     }
     case 'claude': {
       const acc = Object.values(snap.fields).find((f) => f.oauthAccount)?.oauthAccount as
-        | Record<string, any>
-        | undefined
+        Record<string, any> | undefined
       const email = String(acc?.emailAddress ?? '')
       return { email, label: [email, acc?.organizationName].filter(Boolean).join(' · ') }
     }

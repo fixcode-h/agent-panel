@@ -73,6 +73,14 @@ test('面板挂在同一个服务上的提问、补充工具也显示中文名',
   assert.equal(ask?.tool.name, '向用户提问')
   assert.equal(ask?.tool.label, '先做哪个？')
   assert.equal(toolView(tool('mcp__panel__wait_user_message', ''))?.tool.name, '等待用户消息')
+  // 后来加的两个编排工具：没登记进 PANEL_TOOL_NAMES 时同样露出原始名字
+  const stop = toolView(tool('mcp__panel__stop_workflow', '', { input: '{"id":"k1","reason":"方向错了"}' }))
+  assert.deepEqual(
+    [stop?.tool.name, stop?.tool.label, stop?.tool.input, stop?.child],
+    ['终止子对话的工作流', 'k1', '方向错了', 'k1'],
+  )
+  const pick = toolView(tool('mcp__panel-142a58__cherry_pick', '', { input: '{"commits":["0123456789abcdef"]}' }))
+  assert.deepEqual([pick?.tool.name, pick?.tool.label], ['cherry-pick 改动', '01234567'])
 })
 
 test('MCP 服务名的写法也认：panel-xxxx · record_lesson', () => {

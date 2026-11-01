@@ -755,8 +755,16 @@ function Designer({ id }: { id: string }) {
   // 键盘：删除、撤销 / 重做、复制
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
+      // 下拉列表、菜单这类控件自己处理了方向键（defaultPrevented），不要再挪控件
+      if (e.defaultPrevented) return
       const el = e.target as HTMLElement
-      if (el.closest('input, textarea, [contenteditable="true"], [role="dialog"]')) return
+      if (el.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
+      // 开着弹窗（图片预览、版本对比）时焦点可能不在弹窗里：不碰底下的控件
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      // 编辑类快捷键只在焦点在画布、控件树或页面本身（没有聚焦任何控件）时生效：
+      // 焦点在页签、下拉框、按钮上时按方向键 / Backspace 不该挪动或删掉画布上的控件；数据面板盖着画布时也不生效
+      const onCanvas =
+        board === 'canvas' && (el === document.body || !!el.closest('[data-design-canvas], [role="tree"]'))
       const mod = e.ctrlKey || e.metaKey
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault()
@@ -765,6 +773,8 @@ function Designer({ id }: { id: string }) {
       } else if (mod && e.key.toLowerCase() === 'y') {
         e.preventDefault()
         ed.redo()
+      } else if (!onCanvas) {
+        return
       } else if (mod && e.key.toLowerCase() === 'd' && selected) {
         e.preventDefault()
         actions.duplicate(selected)
@@ -1054,6 +1064,8 @@ function Designer({ id }: { id: string }) {
     ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => !a.target.startsWith('concept:')) }), 'ann:sent')
     setView('ui')
     setOverlay(false)
+    // 对话栏收起时没人接这个请求：先打开，不然要等用户自己打开对话栏才发出去
+    setChatOpen(true)
     setRequest({ id: crypto.randomUUID(), text: t('按确认的原画模板搭界面，并生成切图') })
   }
 
@@ -1151,6 +1163,7 @@ function Designer({ id }: { id: string }) {
             onClearCites={() => setCites([])}
             hasTemplate={!!concept.approved}
             request={request}
+            onRequestDone={() => setRequest(undefined)}
             inpaint={inpaint}
             onInpaint={setInpaint}
             conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}

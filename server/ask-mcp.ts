@@ -104,7 +104,8 @@ const NOTES_TOOL = {
 const WAIT_TOOL = {
   name: 'wait_user_message',
   description:
-    '等用户在这个对话里的下一条消息。每次回复结束后调用一次：用户发来消息时返回消息内容，接着处理；返回「用户已经离开了这个对话」时结束本轮，不要继续做别的事。',
+    '等用户在这个对话里的下一条消息。只在用户要的事已经全部做完、或者需要用户拿主意时调用；还有没做完的步骤就不要调用，直接接着做。' +
+    '用户发来消息时返回消息内容，接着处理；返回「用户已经离开了这个对话」时结束本轮，不要继续做别的事。',
   inputSchema: { type: 'object', properties: {} },
 }
 
@@ -214,8 +215,10 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
         // 压缩轮、原生审查轮只挂提问工具（见 runner 里 def.mcp && !op），清单里本来就没有核心编排工具，
         // 不声明这一项的话扩展只能按服务名猜，会把这种正常情况报成「工具清单不完整」（见 shared/clis/pi.json 的扩展）。
         // 值必须是对象：MCP 的 capabilities.experimental 是 Record<string, object>，写成布尔值
-        // Claude Code（2.1.226 起按 zod 校验）会判整个握手失败、一个工具都不注册
-        capabilities: { tools: {}, experimental: { orchestration: { enabled: !!s.orch } } },
+        // Claude Code（2.1.226 起按 zod 校验）会判整个握手失败、一个工具都不注册。
+        // Chat 页对话（plain）也算没有编排工具：它只挂后台命令三件（ADR 0037），没有扩展核对的
+        // get_status / send_message / read_messages，声明成有的话 Pi 会报「工具清单不完整」
+        capabilities: { tools: {}, experimental: { orchestration: { enabled: !!s.orch && !s.orch.plain } } },
         serverInfo: { name: 'agent-panel', version: '1.0.0' },
       })
     case 'ping':

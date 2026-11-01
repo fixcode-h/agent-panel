@@ -236,7 +236,13 @@ test('Claude Code：出错的结果、Bash 的退出码；每次模型回应开�
   assert.equal((edit as { exitCode?: number }).exitCode, undefined)
 })
 
-test('Codex app-server：推理摘要、命令、改文件、计划和累计用量', async () => {
+/** Codex 的 error 通知：willRetry 时 Codex 自己会重试（断流重连的 message 是「Reconnecting... n/m」，原因在 additionalDetails） */
+const codexError = (message: string, willRetry = true, additionalDetails?: string) => ({
+  method: 'error',
+  params: { threadId: 'thr_codex_1', turnId: 'turn_1', willRetry, error: { message, additionalDetails } },
+})
+
+test('Codex app-server：推理摘要、命令、改文件、计划和累计用量；自动重试画成「正在重试」，接上后收口', async () => {
   const sent: any[] = []
   const events: CliEvent[] = []
   const session = codexAppSession({
@@ -250,11 +256,36 @@ test('Codex app-server：推理摘要、命令、改文件、计划和累计用�
     onEvent: (e) => events.push(e),
   })
   session.start({ write: (s) => sent.push(JSON.parse(s)), end: () => {} })
-  // 握手和开一轮是异步的：每处理一条消息让出一次，等下一步的请求发出去
+  // 握手和开一轮是异步的：每处理一条消息让出一次，等下一步的请求发出去。
+  // 一轮开始后 Codex 断流重连两次（willRetry）：不算失败，但要让用户看到，之后模型又出内容才算接上
+  const why = 'stream disconnected before completion: 502 Bad Gateway'
   for (const m of fixture('codex-app.jsonl')) {
     session.handle(m)
     await tick()
+    if (m.method === 'turn/started')
+      for (const e of [codexError('Reconnecting... 1/5', true, why), codexError('Reconnecting... 2/5', true, why)]) {
+        session.handle(e)
+        await tick()
+      }
   }
+  const retries = events.filter((e) => e.type === 'notice' || e.type === 'retry_ok' || e.type === 'error')
+  assert.deepEqual(
+    retries.map((e) => [e.type, 'attempt' in e ? e.attempt : undefined]),
+    [
+      ['notice', 1],
+      ['notice', 2],
+      ['retry_ok', 2],
+    ],
+    '两次重试各一张卡，接上后只收口一次，不报错',
+  )
+  const notice = retries[1] as Extract<CliEvent, { type: 'notice' }>
+  assert.equal(notice.kind, 'retry')
+  assert.equal(notice.maxAttempts, 5)
+  assert.match(notice.text, /502 Bad Gateway/, '真正的原因在 additionalDetails')
+  assert.equal(retries[2].type === 'retry_ok' && retries[2].text, '第 2 次重试成功了，接着做。')
+  // 收口在模型又出内容（推理条目开始）的那一刻，排在推理输出前面
+  const okAt = events.indexOf(retries[2])
+  assert.equal(events[okAt + 1]?.type, 'thinking')
   const s = summarize(events)
   // 握手：initialize → initialized → thread/start → turn/start
   assert.deepEqual(
@@ -286,6 +317,79 @@ test('Codex app-server：推理摘要、命令、改文件、计划和累计用�
   assert.equal(s.usage.window, 272000)
   assert.deepEqual(s.results, [{ ok: true, error: undefined }])
   assert.equal(session.finished, true)
+})
+
+test('Codex 重试：出错前就在跑的命令继续输出不算接上；没有 n/m 时按次数数；不再重试的报错照旧失败；续接失败只在像会话没了时才标 thread not found', async () => {
+  const events: CliEvent[] = []
+  const session = codexAppSession({
+    cwd: CWD,
+    input: '跑测试',
+    model: '',
+    effort: '',
+    permission: '',
+    extraArgs: [],
+    platform: 'linux',
+    onEvent: (e) => events.push(e),
+  })
+  session.start({ write: () => {}, end: () => {} })
+  // 握手到 turn/started 用录下的样本，后面换成重试期间的通知
+  const head = fixture('codex-app.jsonl').slice(0, 4)
+  const cmd = { type: 'commandExecution', id: 'c1', command: 'npm test', status: 'inProgress' }
+  for (const m of [
+    ...head,
+    { method: 'item/started', params: { item: cmd } },
+    codexError('rate limited 429'),
+    // Codex 边读流边执行工具：重试期间这条命令还在输出、结束，模型请求并没有接上
+    { method: 'item/commandExecution/outputDelta', params: { itemId: 'c1', delta: 'ok\n' } },
+    {
+      method: 'item/completed',
+      params: { item: { ...cmd, aggregatedOutput: 'ok', exitCode: 0, status: 'completed' } },
+    },
+    codexError('rate limited 429'),
+    codexError('stream disconnected', false),
+    { method: 'turn/completed', params: { turn: { id: 'turn_1', status: 'failed', error: { message: 'x' } } } },
+  ]) {
+    session.handle(m)
+    await tick()
+  }
+  assert.deepEqual(
+    events
+      .filter((e) => e.type === 'notice' || e.type === 'retry_ok' || e.type === 'error')
+      .map((e) => [e.type, 'attempt' in e ? e.attempt : undefined]),
+    [
+      ['notice', 1],
+      ['notice', 2],
+      ['error', undefined],
+    ],
+  )
+  assert.deepEqual(summarize(events).results, [{ ok: false, error: 'x' }])
+  // thread/resume 失败：会话被清理了才带 thread not found（runner 据此丢会话重开），别的失败原样报，不能让对话白白重开
+  for (const [why, gone] of [
+    ['no rollout found for thread id thr_old', true],
+    ['failed to load config: invalid sandbox mode', false],
+  ] as const) {
+    const out: CliEvent[] = []
+    const resumed = codexAppSession({
+      cwd: CWD,
+      input: '接着做',
+      model: '',
+      effort: '',
+      permission: '',
+      extraArgs: [],
+      platform: 'linux',
+      resume: 'thr_old',
+      onEvent: (e) => out.push(e),
+    })
+    resumed.start({ write: () => {}, end: () => {} })
+    for (const m of [head[0], { id: 2, error: { message: why } }]) {
+      resumed.handle(m)
+      await tick()
+    }
+    const err = out.find((e) => e.type === 'error')
+    assert.ok(err?.type === 'error', why)
+    assert.equal(err.message.includes('thread not found'), gone, why)
+    assert.ok(err.message.includes(why), '原始报错要带着')
+  }
 })
 
 test('Codex：命令外面包着的 shell 去掉，只显示真正的命令', () => {

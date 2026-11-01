@@ -283,7 +283,7 @@ export function normalizeModelId(model: string, entries: ModelCatalogEntry[] = B
     .replace(/[-_]?(?:20\d{6}|\d{4}-\d{2}-\d{2})$/, '')
     .replace(/:[a-z0-9_-]+$/i, '')
   const protocols: ApiProtocol[] = []
-  for (let changed = true; changed; ) {
+  for (let changed = true; changed;) {
     changed = false
     for (const [re, p] of PROTOCOL_SUFFIXES) {
       if (re.test(rest)) {

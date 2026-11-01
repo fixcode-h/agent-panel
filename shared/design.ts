@@ -879,12 +879,13 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 - 看图量尺寸：inspect_image 量图的精确像素尺寸、主要颜色和任意位置的颜色；view_image 生成带坐标格的图或放大一块区域，再用读图的能力看这个文件。照着参考图做界面、或要看设计里已有的图时先用它们量准位置、大小和颜色，不要目测
 - 看效果：screenshot 截一张当前画布（就是用户左边看到的样子），返回图片文件和每个控件在画布上的位置；搭完一块或改完后截图看一眼，有重叠、跑出画面、比例不对的地方接着改
 - set_design：style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，designSize 改设计稿尺寸${styled ? '' : '；ask_user 先问用户（可以一次问几个问题）'}
-- 当前的控件树已经在上面，不用先 get_tree；check 通过不算完成：每次 update_widgets 之后立刻回读 x/y/宽/高和字号，完成条件是「改完后的全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致」，然后就用几句${promptLangWord()}回复你做了什么
+- 当前的控件树已经在上面，不用先 get_tree；check 通过不算完成：每次 update_widgets 之后立刻回读 x/y/宽/高和字号${web ? '（位置用 screenshot 的控件位置表）' : '（改控件的工具结果里会直接列出位置或大小变了的控件，按画布的排版规则算出来，不用截图；整棵树的位置用 get_layout，带 ≈ 的是按字宽估的）'}，完成条件是「改完后的全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致」，然后就用几句${promptLangWord()}回复你做了什么
 
 ### 控件的写法（宽松，少写错）
 - {"Type":"TextBlock","Name":"Txt_Title","Text":"背包","Slot":{…}}：Type、Name、Slot、Children、Class 以外的键都是属性，也可以写在 Properties 里
 - 画布（CanvasPanel）里的位置用简写：{"anchor":"top-left","x":40,"y":32,"w":320,"h":72}，anchor 取 top-left / top / top-right / left / center / right / bottom-left / bottom / bottom-right，
-  锚点和控件自身的对齐点是同一个角，x、y 是离那个点的距离（例如 bottom-right 写 x:-24,y:-24 就是离右下角各 24 像素），w、h 是宽高；铺满写 {"anchor":"stretch","margin":[左,上,右,下]}
+  锚点和控件自身的对齐点是同一个角，x、y 是离那个点的距离（例如 bottom-right 写 x:-24,y:-24 就是离右下角各 24 像素），w、h 是宽高；铺满写 {"anchor":"stretch","margin":[左,上,右,下]}；只横向拉伸（顶栏、底栏）写 {"anchor":"top-stretch","y":0,"h":80,"margin":[左,0,右,0]}，只纵向拉伸（侧栏）写 {"anchor":"left-stretch","x":0,"w":320,"margin":[0,上,0,下]}。
+  改位置时只写要改的（例如只写 h），锚点和对齐点保持原样；拉伸方向上不能写宽高，写了会报错
 - 横排、竖排等的插槽：{"padding":8 或 [左,上,右,下],"fill":1,"h":"center","v":"center"}
 - 尺寸按设计稿 ${d.designSize.X}×${d.designSize.Y} 的像素写准；照着参考图做时先量准再换算：参考图的宽高比和设计稿一致时，参考图像素坐标 × (${d.designSize.X} ÷ 参考图宽) 就是设计稿坐标
 - 图片控件的显示尺寸和图片自己的宽高比要一致（add_images 的 width、height 就按它在界面上的显示尺寸写），否则会被拉伸变形；check 会提醒

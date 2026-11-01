@@ -30,14 +30,10 @@ UI 设计页「导出」得到的数据，用来在 UE5 里生成 Widget Bluepri
     {
       "Name": "WBP_MenuButton",
       "DesignSize": { "X": 320, "Y": 72 },
-      "Root": {
-        /* 控件 */
-      },
+      "Root": {/* 控件 */},
     },
   ],
-  "Root": {
-    /* 控件 */
-  },
+  "Root": {/* 控件 */},
 }
 ```
 
@@ -51,12 +47,8 @@ UI 设计页「导出」得到的数据，用来在 UE5 里生成 Widget Bluepri
   "Name": "Btn_Start", // 控件名，同一棵树里不重复
   "Class": "WBP_MenuButton", // 只有 Type 为 UserWidget 时有：引用的子控件
   "Slot": { "Type": "VerticalBoxSlot" /* 插槽属性 */ }, // 根控件没有
-  "Properties": {
-    /* 控件属性 */
-  },
-  "Children": [
-    /* 子控件 */
-  ], // 只有面板类控件有
+  "Properties": {/* 控件属性 */},
+  "Children": [/* 子控件 */], // 只有面板类控件有
 }
 ```
 

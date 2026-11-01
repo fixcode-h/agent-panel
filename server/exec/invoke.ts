@@ -44,9 +44,6 @@ const ASK_HINT = '（需要向用户提问时，用工具 ask_user，不要把�
 const NOTES_HINT =
   '（重要：开始动手前先调用 read_user_notes；之后每完成 2~3 个工具调用、以及准备执行耗时操作前再调用一次。' +
   '用户可能在你执行中补充要求：相关的按它调整方向继续当前任务，无关的先做完手上的事再处理，不要从头重做。）'
-/** 对话页开着时：回复完停在进程里等下一句，不用结束进程再 --resume */
-const WAIT_HINT =
-  '（每轮回复完成后调用 wait_user_message 等用户的下一条消息：返回用户消息时接着处理，返回「用户已经离开了这个对话」时结束本轮。没有新要求时不要自己开始别的工作。）'
 
 /** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
 export interface CliControl {
@@ -213,8 +210,9 @@ export async function invokeCli(o: {
       if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`
       // 没有插话协议的 CLI：补充登记给它，让模型中途自己取
       if (notes) input = `${input}\n\n${NOTES_HINT}`
-      // 对话页开着：回复完停在等下一句的工具上
-      if (wait) input = `${input}\n\n${WAIT_HINT}`
+      // 不再提示「每轮回复完成后调用 wait_user_message」：保活由面板在这一轮结束时自己做（见 keepAlive），
+      // 这句提示会让模型做完一步就调它把自己挂起，表现为「走一步就停，催一下又走一步」（用户报过，ADR 0037）。
+      // 工具照样挂着：打开对话页时的预热会明确让它调，模型真做完了也可以自己调
     }
   }
   // 语言提醒由 runner 追加在提示词末尾，上面这些用法说明接在了它后面：挪回最后，

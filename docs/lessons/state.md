@@ -1,5 +1,5 @@
 ---
-paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**
+paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**, shared/peer-message.ts
 ---
 
 # 对话状态和父子对话之间的交付
@@ -22,3 +22,9 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**
 
 - 规则：在不在运行只用 `convActive`（`taskActive` / `childActive` / `keepAliveBusy`）；回收前先问它，子对话只随用户停止、归档、删除结束。见 ADR 0012。
 - 防线：`shared/task-stage.test.ts`「对外状态统一」；e2e `04-subagents`「父对话切走」。
+
+## 「一条消息只交给一个子对话」按用户消息算范围
+
+- 规则：`sentToOther` 和 `handedOff` 只在当前这条用户消息（`currentAskIndex`：用户亲自发的、已交给 CLI 的最后一条）里去重；子对话交回、面板推进拉起的几轮仍算同一条，用户发了新消息就重新算。例外（`handOffFrom`）：转发的正文就是某条更早的用户消息原文时从那条算起，内存记录也不随插话清空——插话、read_user_notes 进来的消息也会成为当前消息。
+- 起因：审计发现按整个对话历史去重，父对话对 A 说过「继续」，以后对 B 说「继续」永远被拒；收窄后（2bb92363）「规则 1 交给 c1、规则 2 插话进来、再把规则 1 交给 c2」被放过。
+- 防线：`shared/peer-message.test.ts`、`server/orchestrator.test.ts` 的去重用例。

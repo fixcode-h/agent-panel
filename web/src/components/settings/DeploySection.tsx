@@ -40,7 +40,8 @@ export function DeploySection() {
   const [error, setError] = useState('')
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const [optimizing, setOptimizing] = useState(false)
-  const [overwrite, setOverwrite] = useState(false)
+  // 默认覆盖（用户要求）：面板更新后点「部署」就换成新版本；想留本机改过的再取消勾选
+  const [overwrite, setOverwrite] = useState(true)
   const [busy, setBusy] = useState<'' | 'save' | 'run'>('')
 
   const apply = (s: DeployState) => {
@@ -238,10 +239,15 @@ export function DeploySection() {
           <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-accent-soft px-3 py-2.5">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
             <span className="min-w-0 flex-1 text-footnote leading-relaxed">
-              {t('{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。', {
-                n: outdated.length,
-                names: outdated.map((s) => s.name).join(t('、')),
-              })}
+              {overwrite
+                ? t('{n} 个技能和这一版自带的不同：{names}。点「部署」即可更新。', {
+                    n: outdated.length,
+                    names: outdated.map((s) => s.name).join(t('、')),
+                  })
+                : t('{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。', {
+                    n: outdated.length,
+                    names: outdated.map((s) => s.name).join(t('、')),
+                  })}
             </span>
             {!overwrite && (
               <Button size="sm" variant="secondary" onClick={() => setOverwrite(true)}>
@@ -317,7 +323,7 @@ export function DeploySection() {
             checked={overwrite}
             onChange={setOverwrite}
             label={t('覆盖本机改过的技能')}
-            hint={t('不勾时保留本机的版本；面板更新后要勾上才能换成新版本')}
+            hint={t('默认换成这一版自带的；不勾时保留本机改过的版本')}
           />
         )}
         <span className="ml-auto" />

@@ -69,16 +69,32 @@ export const isP4 = (dir: string) => {
   return got
 }
 
-/**
- * 这个对话计划最后一步的收尾（见 plan.ts 的 wrapUpKind 和 ensureWrapUp）：子对话是独立分支合回父对话所在的
- * 分支（P4 工作区按文件类型分 changelist，共用目录的 Git 子对话不用收尾），父对话是明确授权推送时把分支推到远端。
- * 返回 undefined 表示「这一轮算不出来」（项目目录或远端没探测到），此时计划里已有的收尾保持原样
- */
-export async function planWrapUp(
+/** 收尾判定要的工作区事实（是不是 P4、Git 有没有远端）：这一轮开始时探一次，之后按推送授权现算收尾 */
+export type WrapProbe = { p4: boolean; git: boolean } | undefined
+
+/** 探测工作区：不是对话、没有项目目录、父对话明确不推送时不用探（gitHasRemote 要起 git 进程） */
+export async function wrapUpProbe(
   tk: Task,
   projectPath: string | undefined,
   policy: Project['gitPolicy'] | undefined,
-): Promise<WrapUpAnswer | undefined> {
+): Promise<WrapProbe> {
+  if (tk.mode !== 'chat' || !projectPath || (!tk.parentTaskId && policy === 'deny')) return undefined
+  // 有没有远端、是不是 Git 都按真实工作区判断：SVN、没有远端的本地仓库加一步推送收尾，它永远做不了
+  const [p4, git] = await Promise.all([isP4(projectPath), gitHasRemote(projectPath)])
+  return { p4, git }
+}
+
+/**
+ * 这个对话计划最后一步的收尾（见 plan.ts 的 wrapUpKind 和 ensureWrapUp）：子对话是独立分支合回父对话所在的
+ * 分支（P4 工作区按文件类型分 changelist，共用目录的 Git 子对话不用收尾），父对话是明确授权推送时把分支推到远端。
+ * 同步现算：推送授权（task.remotePush）会在保活中途被用户点上，run.ts 把它写成 getter，每次拼提示、交计划时读现值。
+ * 返回 undefined 表示「这一轮算不出来」（项目目录或远端没探测到），此时计划里已有的收尾保持原样
+ */
+export function wrapUpFrom(
+  tk: Task,
+  probe: WrapProbe,
+  policy: Project['gitPolicy'] | undefined,
+): WrapUpAnswer | undefined {
   if (tk.mode !== 'chat') return undefined
   const child = !!tk.parentTaskId
   const isolatedChild = isolated(tk) || !!tk.wantsWorktree
@@ -86,10 +102,8 @@ export async function planWrapUp(
   // （只对父对话成立：子对话本来就不碰远端，它的收尾是合回分支 / 分 changelist，不推送也要照做）
   if (!child && (policy === 'deny' || tk.remotePush === 'denied')) return 'none'
   // 项目目录没取到（项目被删、读失败）时不知道有没有远端，先不算，别把已有的收尾删掉
-  if (!projectPath) return undefined
-  // 有没有远端、是不是 Git 都按真实工作区判断：SVN、没有远端的本地仓库加一步推送收尾，它永远做不了
-  const [p4, git] = await Promise.all([isP4(projectPath), gitHasRemote(projectPath)])
-  return wrapUpKind({ child, isolated: isolatedChild, p4, git, push: policy, answered: tk.remotePush })
+  if (!probe) return undefined
+  return wrapUpKind({ child, isolated: isolatedChild, ...probe, push: policy, answered: tk.remotePush })
 }
 
 /** 打开对话页时后台启动 CLI 用的提示：只让它停在等下一句上，不做任何事 */

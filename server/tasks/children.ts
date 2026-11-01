@@ -19,6 +19,7 @@ import {
   type ChildFlowStop,
   type ChildHold,
 } from '../../shared/task.ts'
+import { nextNudge, nudgeMax } from '../../shared/conv-mode.ts'
 import { cancelWait, steerTask } from '../exec/runner.ts'
 import { stopHelper } from '../../shared/engine.ts'
 import { hasHeld } from '../exec/delivery.ts'
@@ -47,6 +48,26 @@ import type { TasksScope } from './scope.ts'
  * 子对话的生命周期：在跑的计数、彻底完成的判定和推进（advanceChildTo，ADR 0003）、合回、上报父对话、一轮结束时推进计划（nudgePlan，ADR 0032）、规则命令、启动子对话。
  */
 export function createChildren(sc: TasksScope) {
+  /**
+   * 推对话「接着做」的次数：Agent 模式的顶层对话（项目里的对话）同一个进度最多推 3 次，推了还原地不动就停下，
+   * 最后一次要它说明卡在哪；子对话、Chat 页的对话仍只推一次（见 shared/conv-mode.ts 的 nudgeMax、ADR 0037）。
+   * 原来同一进度一律只推一次，用户反馈「走一步就停，催一下又走一步」
+   */
+  const nudgeCount = new Map<string, { key: string; n: number }>()
+  /** 这个进度（key）还能不能再推：能推时记一次、返回这是第几次（从 1 开始），推满了返回 0 */
+  const takeNudge = (conv: Task, key: string): number => {
+    const next = nextNudge(nudgeCount.get(conv.id), key, nudgeMax(conv))
+    if (!next) return 0
+    nudgeCount.set(conv.id, next)
+    // 子对话「推过还停在原地」的判定（merge.ts 的 stuckAfterNudge）读这个
+    sc.planNudged.set(conv.id, key)
+    return next.n
+  }
+  /** 推满之前的最后一次：要它说明卡在哪，不再只说打算 */
+  const lastNudge = (conv: Task, nth: number) =>
+    nudgeMax(conv) > 1 && nth >= nudgeMax(conv)
+      ? `这是第 ${nth} 次提醒：如果做不下去，就停下来说明卡在哪一步、需要什么才能继续，不要再只说打算。`
+      : ''
   /**
    * 子对话还在运行（见 convActive）：在跑、等结果、等回答、正在启动，或者还有交过来的消息要接着处理。
    * 父对话的「子对话在跑」计数、标题和侧栏的转圈、能不能回收都读它
@@ -471,8 +492,8 @@ export function createChildren(sc: TasksScope) {
       !!next && r.state === 'unfinished',
     )
     // 并进去的阶段汇报、用户的原话已经交出去了，下一封不再重复带。
-    // 随父对话停下的那次 noteParent 只改计划、不发（见 noteParent 的 cascaded），留到继续后的那一封
-    const sent = !(r.state === 'stopped' && tk.stopReason === 'parent')
+    // 随父对话（或用量上限）停下的那次 noteParent 只改计划、不发（见 noteParent 的 cascaded），留到继续后的那一封
+    const sent = !(r.state === 'stopped' && (tk.stopReason === 'parent' || tk.stopReason === 'budget'))
     if (sent && (tk.pendingReport || tk.userDirect)) {
       const ce = sc.live.get(tk.id)
       const cur = ce?.task ?? tk
@@ -536,7 +557,8 @@ export function createChildren(sc: TasksScope) {
    * 对话这一轮说完了，计划却没做完、也没在等任何结果（见 planStalled）：常见于模型只回了一句
    * 「先跑类型检查」「我跑 test:failed」就收尾，那次回应里没有任何工具调用，CLI 照常报这一轮结束（用户报过多次）。
    * 子对话这时父对话只会收到一条状态，它在忙别的就没人推；顶层对话就一直停在等下一句。这里由面板马上推它接着做下一步。
-   * 同一个进度只推一次（见 planNudged），推了没动静：子对话照常上报父对话，顶层对话就停在那里等用户。
+   * 同一个进度推几次见 takeNudge（Agent 模式的顶层对话最多 3 次，其余 1 次），推满了还没动静：
+   * 子对话照常上报父对话，顶层对话就停在那里等用户。
    * 推出去了（或者已经排好稍后推）返回 true
    */
   async function nudgePlan(conv: Task): Promise<boolean> {
@@ -546,6 +568,9 @@ export function createChildren(sc: TasksScope) {
     const stalled = async (settled: boolean) => {
       const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
       if (!tk || tk.imported || taskDeleted(tk) || !planStalled(tk)) return undefined
+      // 已经停下、失败的从来不推（下面 settled 那项也会挡）：刚结束那一下就返回，不白记一次推进（takeNudge）。
+      // 白记的话用户之后继续它、停在同一进度时不会再推，上报还会说「面板已经推过它一次」，其实没推过（复核 C3-b）
+      if (tk.status === 'stopped' || tk.status === 'failed') return undefined
       // 正常说完的一轮：进程结束了（done），或者还停在保活上等下一句（这时 status 仍是 running）。
       // 失败、被停下的不推：那是出错了或用户让它停，要让用户看到再决定
       if (settled && !(tk.status === 'done' || (tk.status === 'running' && tk.awaitingUser))) return undefined
@@ -558,8 +583,8 @@ export function createChildren(sc: TasksScope) {
     const now = await stalled(false)
     if (!now) return false
     const key = `${now.plan.id}:${now.p.done}`
-    if (sc.planNudged.get(conv.id) === key) return false
-    sc.planNudged.set(conv.id, key)
+    const nth = takeNudge(conv, key)
+    if (!nth) return false
     // 稍等一下再推：这一轮刚结束时 CLI 还没停到「等下一句」上；等它停稳了再看一次，还停着才推
     setTimeout(() => {
       void (async () => {
@@ -580,7 +605,8 @@ export function createChildren(sc: TasksScope) {
               ? `接着做「${next.title}」：`
               : '接着做下一步：') +
           '直接调用工具去做，不要只回一句打算就结束；做完一步就用 set_plan 标完成，再做下一步，直到计划做完。' +
-          '确实卡住了就说明卡在哪一步、需要什么才能继续。'
+          '确实卡住了就说明卡在哪一步、需要什么才能继续。' +
+          lastNudge(conv, nth)
         const ok = again.tk.parentTaskId
           ? (await sc.sendToChild(again.tk.parentTaskId, again.tk.id, text, 'build')).ok
           : await sc.wakeConv(again.tk.id, text, { panel: 'build' }).then(
@@ -601,7 +627,7 @@ export function createChildren(sc: TasksScope) {
 
   /**
    * 没有计划的对话这一轮以一句打算收尾（「我再确认…」，见 announcedOnly）、之后没调用任何工具：
-   * 等 CLI 停稳后推一次「接着做你刚说的」。每条用户消息只推一次，推了还停着就留给用户。
+   * 等 CLI 停稳后推「接着做你刚说的」。每条用户消息推几次见 takeNudge，推满了还停着就留给用户。
    * 用户报过：Chat 模式的对话说完「我再确认这些连接的状态」就停住，要用户说「继续啊」才接着做
    */
   async function nudgeAnnounced(conv: Task): Promise<boolean> {
@@ -611,8 +637,8 @@ export function createChildren(sc: TasksScope) {
     // 面板自己推的那条不算新消息（panel），所以按最后一条不是面板发的消息记
     const asked = [...conv.messages].reverse().find((m) => m.role === 'user' && !m.panel)
     const key = `said:${asked?.id ?? ''}`
-    if (sc.planNudged.get(conv.id) === key) return false
-    sc.planNudged.set(conv.id, key)
+    const nth = takeNudge(conv, key)
+    if (!nth) return false
     setTimeout(() => {
       void (async () => {
         const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
@@ -627,7 +653,8 @@ export function createChildren(sc: TasksScope) {
         if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return
         const text =
           `【面板】你说了「${intent}」，但这一轮没有调用工具就结束了。直接接着做：调用工具去做这件事，做完给出结论；` +
-          '确实做不了就说明卡在哪里、需要什么。'
+          '确实做不了就说明卡在哪里、需要什么。' +
+          lastNudge(conv, nth)
         const ok = tk.parentTaskId
           ? (await sc.sendToChild(tk.parentTaskId, tk.id, text, 'build')).ok
           : await sc.wakeConv(tk.id, text, { panel: 'build' }).then(
