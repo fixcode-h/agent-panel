@@ -98,5 +98,22 @@ test('Claude Code、Codex 的配置：权限映射、只留配置类额外参数
   assert.equal(b[b.indexOf('--append-system-prompt') + 1], '短说明')
   // 跳过确认时也要保留提问通道；还没开独立分支时连改文件的工具一起关掉
   assert.ok(b.includes('--dangerously-skip-permissions') && b.includes('--permission-prompt-tool'))
-  assert.equal(b[b.indexOf('--disallowedTools') + 1], 'Task,Agent,Monitor,Edit,Write,MultiEdit,NotebookEdit')
+  const noEdit = b[b.indexOf('--disallowedTools') + 1].split(',')
+  for (const x of ['Task', 'Agent', 'Monitor', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+    assert.ok(noEdit.includes(x), x)
+  // 和面板机制重复的内置工具不管哪种对话都关；编辑 ipynb、只读规划要退出时用的工具留着
+  const d = claude.buildArgs(o({}))
+  const off = d[d.indexOf('--disallowedTools') + 1].split(',')
+  for (const x of [
+    'Workflow',
+    'SendMessage',
+    'EnterWorktree',
+    'EnterPlanMode',
+    'CronCreate',
+    'ScheduleWakeup',
+    'ReportFindings',
+  ])
+    assert.ok(off.includes(x) && noEdit.includes(x), x)
+  for (const x of ['NotebookEdit', 'Edit', 'ExitPlanMode', 'AskUserQuestion', 'ToolSearch'])
+    assert.ok(!off.includes(x), x)
 })

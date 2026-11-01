@@ -161,12 +161,18 @@
     },
     {
       "if": "!noEdit",
-      "args": ["--disallowedTools", "Task,Agent,Monitor"],
-      "why": "关掉 Claude 自带的子 Agent 和 Monitor：拆出去的活都走面板的 spawn_agents，进度、并发和结果才看得见"
+      "args": [
+        "--disallowedTools",
+        "Task,Agent,Monitor,DesignSync,Workflow,SendMessage,ListAgents,EnterWorktree,ExitWorktree,EnterPlanMode,ScheduleWakeup,CronCreate,CronList,CronDelete,PushNotification,ReportFindings"
+      ],
+      "why": "关掉 Claude 自带的子 Agent 和 Monitor：拆出去的活都走面板的 spawn_agents，进度、并发和结果才看得见。其余几个和面板自己的机制重复、面板里用不上或显示不了，第三方接口下还会被一次全展开进每次请求（实测约 13k token）：Workflow / SendMessage / ListAgents 是 Claude 自己的多 Agent 编排；EnterWorktree / ExitWorktree 会把工作目录换到面板不知道的 worktree，和面板的独立分支冲突；EnterPlanMode 会让模型自己切进只读规划、卡住后面的改动（计划走面板的计划，只读规划在权限里选，所以 ExitPlanMode 保留）；ScheduleWakeup / Cron* 的定时挂在 CLI 进程上，进程一停就没了、面板也看不到，后台和定时走面板；PushNotification 发到手机，提醒走面板；DesignSync 同步到 Claude 的设计稿，界面设计走面板的设计页；ReportFindings 只给能渲染它的宿主用，有它时评审结论不再输出成文字，面板里就看不到。NotebookEdit 编辑 ipynb 有用，保留"
     },
     {
       "if": "noEdit",
-      "args": ["--disallowedTools", "Task,Agent,Monitor,Edit,Write,MultiEdit,NotebookEdit"],
+      "args": [
+        "--disallowedTools",
+        "Task,Agent,Monitor,DesignSync,Workflow,SendMessage,ListAgents,EnterWorktree,ExitWorktree,EnterPlanMode,ScheduleWakeup,CronCreate,CronList,CronDelete,PushNotification,ReportFindings,Edit,Write,MultiEdit,NotebookEdit"
+      ],
       "why": "还没开独立分支的对话连改文件的工具一起关掉，免得直接改到原目录"
     }
   ],
