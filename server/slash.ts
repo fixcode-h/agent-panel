@@ -125,15 +125,13 @@ async function all(cli: string, cwd: string): Promise<Found[]> {
       ...panel.map((c) => ({ ...c, panel: true })),
       ...skills
         .filter((s) => s.enabled && !seen.has(s.name) && seen.add(s.name))
-        .map(
-          (s): Found => ({
-            name: s.name,
-            description: s.description,
-            kind: 'skill',
-            source: s.source || s.scope,
-            path: s.path,
-          }),
-        ),
+        .map((s): Found => ({
+          name: s.name,
+          description: s.description,
+          kind: 'skill',
+          source: s.source || s.scope,
+          path: s.path,
+        })),
     ]
   })()
   cache.set(key, { at: Date.now(), list })

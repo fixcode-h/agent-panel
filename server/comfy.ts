@@ -931,8 +931,7 @@ async function submitGraph(
       }
       if (entry.status?.status_str === 'error') {
         const err = entry.status.messages?.find((x) => x[0] === 'execution_error')?.[1] as
-          | { exception_message?: string; node_type?: string }
-          | undefined
+          { exception_message?: string; node_type?: string } | undefined
         throw new Error(
           t('本机生成失败：{error}', { error: `${err?.node_type ?? ''} ${err?.exception_message ?? ''}`.trim() }),
         )

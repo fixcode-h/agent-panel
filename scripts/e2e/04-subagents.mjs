@@ -530,7 +530,7 @@ await runShard('子对话与计划', async (api) => {
     await waitTask(doneKid.id, (x) => x.resolved, 20000)
     await waitTask(wtParent.id, (p) => p.messages.some((m) => m.child?.id === doneKid.id && m.at > wokeAt), 20000)
     // 上报会再叫起父对话一轮（收尾请求）：等它跑完，别和下一段抢项目目录
-    for (let idle = 0; idle < 5; ) {
+    for (let idle = 0; idle < 5;) {
       idle = (await call('GET', `/tasks/${wtParent.id}`)).status === 'running' ? 0 : idle + 1
       await sleep(100)
     }
