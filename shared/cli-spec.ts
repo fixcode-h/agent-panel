@@ -622,6 +622,8 @@ function value(o: BuildOptions, key: string): unknown {
       return o.title
     case 'noEdit':
       return o.noEdit
+    case 'textOnly':
+      return o.textOnly
     default:
       // opt.<id>：设置里这个开关开着
       return key.startsWith('opt.') ? o.options?.[key.slice(4)] || undefined : undefined
