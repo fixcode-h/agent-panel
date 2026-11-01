@@ -556,10 +556,11 @@ export interface Orchestra {
   /** 本次运行的共享状态：读快照 / 写一个键 */
   readState(): string
   writeState(key: string, value: string): { ok: boolean; info: string }
-  /** 项目教训：按文件 / 关键词 / 标签取全文、记一条；不在项目里时没有 */
+  /** 项目教训：按文件 / 关键词 / 标签取全文、记一条；不在项目里时没有。子任务只读不记（record 为空）：
+   * 它不和用户对话、常并行多只，值得记的交回派它的对话决定，免得各记一条重复、口径不一的 */
   lessons?: {
     find(files: string[], opts?: LessonQuery): Promise<string>
-    record(input: LessonInput): Promise<{ ok: boolean; info: string }>
+    record?(input: LessonInput): Promise<{ ok: boolean; info: string }>
   }
   /** P4 工作区：按文件类型把改动分进各自的 pending（面板执行，不是 P4 项目时没有） */
   p4Split?: EngineHost['p4Split']
@@ -3311,7 +3312,7 @@ function makeOrchestra(
       ? {
           find: async (files, opts) =>
             findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? [], opts),
-          record: (input) => host.lessons!.record(input),
+          record: helper ? undefined : (input) => host.lessons!.record(input),
         }
       : undefined,
     p4Split: host.p4Split,
