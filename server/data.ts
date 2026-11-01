@@ -60,7 +60,7 @@ export async function readBackupFiles(rels: string[], read: (full: string) => Pr
 }
 
 /**
- * 导出时去掉密钥：隧道 token、frp 令牌、API 的 key、搜索源的 key、CLI 的环境变量值。
+ * 导出时去掉密钥：隧道 token、frp 令牌和映射的密钥 / 密码、API 的 key、搜索源的 key、CLI 的环境变量值。
  * 备份文件常被拿去分享或换机器，密钥跟着出去就等于泄露；导入时由 withLocalSecrets 沿用本机的值。
  * 解析不了时整份不导出设置（返回 null），不能因为解析失败就把原文连密钥一起带出去
  */
@@ -72,6 +72,10 @@ export function withoutSecrets(b64: string): string | null {
     const s = Settings.parse(raw)
     s.remoteAccess.tunnelToken = ''
     s.remoteAccess.frp.token = ''
+    for (const m of s.remoteAccess.frp.mappings) {
+      m.secretKey = ''
+      m.httpPassword = ''
+    }
     for (const a of s.apis) a.apiKey = ''
     for (const cli of Object.values(s.clis)) for (const e of cli.env) e.value = ''
     return Buffer.from(JSON.stringify(s)).toString('base64')
@@ -86,6 +90,12 @@ export function withLocalSecrets(backup: Settings, current: Settings): Settings 
   // frp 令牌只对同一台服务器有用：服务器一样才沿用本机的
   if (!backup.remoteAccess.frp.token && backup.remoteAccess.frp.server === current.remoteAccess.frp.server)
     backup.remoteAccess.frp.token = current.remoteAccess.frp.token
+  // 映射的 P2P 密钥、文件共享密码按映射 id 沿用本机的
+  for (const m of backup.remoteAccess.frp.mappings) {
+    const cur = current.remoteAccess.frp.mappings.find((x) => x.id === m.id)
+    if (!m.secretKey) m.secretKey = cur?.secretKey ?? ''
+    if (!m.httpPassword) m.httpPassword = cur?.httpPassword ?? ''
+  }
   for (const a of backup.apis) {
     if (a.apiKey) continue
     a.apiKey = current.apis.find((x) => x.id === a.id)?.apiKey ?? '' // secret-check-ok：从本机设置取值，不是写死的密钥

@@ -1657,17 +1657,11 @@ export const EN_SETTINGS: Record<string, string> = {
   结束端口: 'End port',
   'Windows 远程桌面': 'Windows Remote Desktop',
   'VNC / macOS 屏幕共享': 'VNC / macOS Screen Sharing',
-  '在终端里执行，<user> 换成本机的用户名':
-    'Run it in a terminal, replacing <user> with your user name on this computer',
   '在「远程桌面连接」（mstsc）里填这个地址；本机要先在系统设置里打开远程桌面':
     "Enter this address in Remote Desktop Connection (mstsc); enable Remote Desktop in this computer's system settings first",
   '用 VNC 客户端或 macOS 的「屏幕共享」打开': 'Open it with a VNC client or macOS Screen Sharing',
   端口映射: 'Port mappings',
   添加映射: 'Add mapping',
-  '通过云服务器访问本机的 SSH、远程桌面等服务':
-    'Reach SSH, remote desktop and other services on this computer through the cloud server',
-  'SSH、远程桌面直接暴露在公网上会被不停地扫描和猜密码：务必用强密码，最好在阿里云安全组里只允许自己的 IP 访问这些端口。':
-    'SSH and remote desktop exposed to the internet get scanned and brute-forced constantly: use strong passwords, and ideally allow only your own IP on these ports in the Alibaba Cloud security group.',
   未命名映射: 'Unnamed mapping',
   本机地址: 'Local address',
   本机端口: 'Local port',
@@ -1676,6 +1670,34 @@ export const EN_SETTINGS: Record<string, string> = {
   '服务器端口要在 {start}–{end} 之间': 'The server port must be between {start} and {end}',
   '服务器端口和面板或 frp 端口重复': 'The server port clashes with the panel or frp port',
   服务器端口和另一条映射重复: 'The server port clashes with another mapping',
+  'P2P 直连': 'P2P direct',
+  文件共享: 'File sharing',
+  '在浏览器打开，用户名 {user}': 'Open in a browser; user name {user}',
+  '（在访问端电脑上，先运行访问端配置）': ' (on the visitor computer, after starting the visitor config)',
+  复制到终端里执行: 'Copy and run it in a terminal',
+  '外部打开时只能看到这个目录里的文件，只能下载，不能上传和修改。':
+    'Visitors see only the files in this folder; they can download but not upload or change anything.',
+  共享的目录: 'Shared folder',
+  '复制后保存成 visitor.toml，在访问端电脑上运行 frpc -c visitor.toml':
+    'Save it as visitor.toml and run frpc -c visitor.toml on the visitor computer',
+  复制访问端配置: 'Copy visitor config',
+  '通过云服务器访问本机的 SSH、远程桌面、文件等':
+    'Reach SSH, remote desktop, files and more on this computer through the cloud server',
+  'SSH、远程桌面直接暴露在公网上会被不停地扫描和猜密码：务必用强密码，最好在阿里云安全组里只允许自己的 IP 访问这些端口。P2P 直连不在服务器上开端口，更安全。':
+    'SSH and remote desktop exposed to the internet get scanned and brute-forced constantly: use strong passwords, and ideally allow only your own IP on these ports in the Alibaba Cloud security group. P2P direct opens no server port and is safer.',
+  访问端端口: 'Visitor port',
+  用户名: 'User name',
+  密码: 'Password',
+  复制密码: 'Copy password',
+  'P2P 直连怎么用': 'Using P2P direct',
+  '在访问端电脑上下载 frpc，把访问端配置保存成 visitor.toml，运行 frpc -c visitor.toml':
+    'On the visitor computer, download frpc, save the visitor config as visitor.toml and run frpc -c visitor.toml',
+  '两边先尝试打洞直连，流量不经过云服务器；打不通时自动改走服务器中转。访问端配置里带着 frp 令牌，只放在自己的电脑上。':
+    'Both ends first try to punch through NAT and connect directly, so traffic skips the cloud server; if that fails it relays through the server automatically. The visitor config contains the frp token, so keep it on your own computers only.',
+  '下载 frpc': 'Download frpc',
+  '缺少 P2P 密钥：删掉这条重新添加': 'Missing P2P secret: delete this mapping and add it again',
+  请选择要共享的目录: 'Choose a folder to share',
+  文件共享要设置用户名和密码: 'File sharing needs a user name and password',
   外网专用端口: 'Remote-only port',
   '反向代理转到 127.0.0.1 的这个端口': 'Point the reverse proxy at this port on 127.0.0.1',
   '只监听本机。以前转到 8787 的请求仍按访问地址校验，改转到这里更安全：Host 被反代改写也不会被当成本机请求。':

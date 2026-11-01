@@ -4,6 +4,7 @@ import { createReadStream, createWriteStream } from 'node:fs'
 import { chmod, mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
 import type { Server } from 'node:http'
 import path from 'node:path'
+import { userInfo } from 'node:os'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { execFile } from 'node:child_process'
@@ -545,6 +546,7 @@ async function status(link: (url: string) => string): Promise<RemoteAccessStatus
     link: url ? link(url) : '',
     error,
     localPort: external?.port ?? 0,
+    localUser: localUser(),
     cloudflared: await probe(s.command),
     download,
     deploy,
@@ -619,6 +621,15 @@ async function deployCloud(body: z.infer<typeof DeployBody>) {
   deploy = { running: false, step: 'done', percent: 100, error: '' }
   await applyRemote()
   return saved.remoteAccess
+}
+
+/** 本机登录用户名：设置页拼 SSH 连接命令用；读不到（容器里没有 passwd 条目）时为空 */
+function localUser() {
+  try {
+    return userInfo().username
+  } catch {
+    return ''
+  }
 }
 
 /** 设置页用的接口：状态、检测、下载 */

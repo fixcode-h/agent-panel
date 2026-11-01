@@ -71,4 +71,6 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - **frp**：`POST /api/remote/frp/deploy` 收服务器 IP、SSH 端口 / 用户 / 密码和端口，用 `ssh2` 登录（密码只用这一次，不写盘不写日志），按 `uname -m` 在本机下载对应的 frps（`FRP_VERSION` 固定版本，GitHub 下载走 `downloadFile` 的代理回退，服务器不用访问 GitHub），SFTP 上传后用 `deployScript` 装成 systemd 服务 `agent-panel-frps`（名字和用户自己的 frps 分开），放行 firewalld / ufw；阿里云安全组只能用户在控制台放行，界面和报错都写明端口。frps 的 `allowPorts` 只放面板端口和端口映射范围。部署成功后服务端直接保存设置（frp 令牌只存本机，导出时和隧道 token 一样去掉），页面用返回值替换自己那份，免得自动保存用旧值盖回去。
 - frpc 在本机由 `startFrpc` 运行（没有就下载到数据目录 `bin/`），配置每次按设置重写到 `frp/frpc.toml`；`loginFailExit = false` 一直重试，`frpcEvent` / `frpcProxyOf` 解析日志：面板代理 `agent-panel` 决定连接状态，端口映射 `agent-panel-m-<id>` 各自记进 `status.mappings`，开不出来不影响面板本身。
 - 端口映射（SSH、远程桌面、VNC、自定义 TCP/UDP）：服务器端口必须在一键配置时放行的范围内（`frpMappingError`，前后端共用），增删只改本机 frpc，不用再登录服务器。
+- 映射类型（`FrpMapping.type`）：`tcp` / `udp` 占服务器端口；`xtcp` 是 P2P 直连，不占服务器端口，frpc 同时注册一条同密钥的 `stcp`，访问端配置（`shared/remote.ts` 的 `frpVisitorConfig`，设置页一键复制）先打洞、1 秒打不通就退回 stcp 经服务器中转；`files` 用 frp 的 `static_file` 插件把一个目录做成只读的网页文件共享，必须有用户名和密码（新建时生成），`~` 开头的目录在写配置时展开。P2P 密钥和共享密码只存本机，导出时去掉、导入时按映射 id 沿用。
+- 设置页给每条映射拼好可复制的连接方式（`FrpMappingsGroup.tsx` 的 `mappingUsage`）：SSH 用状态接口里的本机登录用户名（`status.localUser`）拼 `ssh -p <端口> <用户>@<服务器>`，P2P 的是访问端电脑上的 `127.0.0.1:<访问端端口>`。
 - 回归：`server/remote.test.ts`（frps / frpc 配置、映射校验、日志解析）、`server/remote-external.test.ts`（主端口带转发头要令牌、外网专用端口一律要令牌、停用后端口关闭）。

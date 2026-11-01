@@ -4,8 +4,9 @@ import { access, chmod, copyFile, mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import type { Client } from 'ssh2'
-import type { RemoteFrp } from '../shared/schema.ts'
-import { frpMappingError } from '../shared/remote.ts'
+import { homedir } from 'node:os'
+import type { FrpMapping, RemoteFrp } from '../shared/schema.ts'
+import { frpMappingError, mappingProxyName, tomlString } from '../shared/remote.ts'
 import { stripAnsi } from '../shared/ansi.ts'
 import { t } from '../shared/i18n.ts'
 import { DATA_DIR } from './store.ts'
@@ -42,8 +43,7 @@ export function frpAsset(os: string, arch: string) {
   return { dir, name, url: `https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${name}` }
 }
 
-/** TOML 字符串：令牌、地址都是自己生成或校验过的，这里只防引号和反斜杠 */
-const q = (s: string) => JSON.stringify(s)
+const q = tomlString
 
 type ServerSide = Pick<RemoteFrp, 'bindPort' | 'remotePort' | 'token' | 'rangeStart' | 'rangeEnd'>
 
@@ -58,8 +58,49 @@ export function frpsConfig(f: ServerSide) {
   ].join('\n')
 }
 
-/** frpc 里端口映射的名字：按映射的 id，日志里据此认出是哪一条 */
-export const mappingProxyName = (id: string) => `agent-panel-m-${id}`
+/** ~ 开头的目录按用户目录展开：frp 不认 ~ */
+const expandHome = (p: string) => (p === '~' || /^~[\\/]/.test(p) ? path.join(homedir(), p.slice(1)) : p)
+
+/** 一条映射在 frpc 配置里的代理段 */
+function mappingProxies(m: FrpMapping): string[] {
+  const name = mappingProxyName(m.id)
+  // frpc 和 frps 之间加密
+  const enc = 'transport.useEncryption = true'
+  if (m.type === 'files')
+    return [
+      '[[proxies]]',
+      `name = ${q(name)}`,
+      'type = "tcp"',
+      `remotePort = ${m.remotePort}`,
+      enc,
+      '[proxies.plugin]',
+      'type = "static_file"',
+      `localPath = ${q(expandHome(m.localPath))}`,
+      `httpUser = ${q(m.httpUser)}`,
+      `httpPassword = ${q(m.httpPassword)}`,
+      '',
+    ]
+  const local = [`localIP = ${q(m.localIP || '127.0.0.1')}`, `localPort = ${m.localPort}`]
+  if (m.type === 'xtcp')
+    // P2P：先打洞直连；打不通时访问端退回同密钥的 stcp，经服务器中转。两条都不占服务器端口
+    return [
+      '[[proxies]]',
+      `name = ${q(name)}`,
+      'type = "xtcp"',
+      `secretKey = ${q(m.secretKey)}`,
+      ...local,
+      enc,
+      '',
+      '[[proxies]]',
+      `name = ${q(`${name}-stcp`)}`,
+      'type = "stcp"',
+      `secretKey = ${q(m.secretKey)}`,
+      ...local,
+      enc,
+      '',
+    ]
+  return ['[[proxies]]', `name = ${q(name)}`, `type = ${q(m.type)}`, ...local, `remotePort = ${m.remotePort}`, enc, '']
+}
 
 export function frpcConfig(
   f: Pick<RemoteFrp, 'server' | 'bindPort' | 'remotePort' | 'token' | 'rangeStart' | 'rangeEnd' | 'mappings'>,
@@ -86,16 +127,7 @@ export function frpcConfig(
     // frpc 和 frps 之间加密；浏览器到服务器这一段仍是 http
     'transport.useEncryption = true',
     '',
-    ...maps.flatMap((m) => [
-      '[[proxies]]',
-      `name = ${q(mappingProxyName(m.id))}`,
-      `type = ${q(m.type)}`,
-      `localIP = ${q(m.localIP || '127.0.0.1')}`,
-      `localPort = ${m.localPort}`,
-      `remotePort = ${m.remotePort}`,
-      'transport.useEncryption = true',
-      '',
-    ]),
+    ...maps.flatMap(mappingProxies),
   ].join('\n')
 }
 
@@ -335,7 +367,7 @@ export function frpcLine(line: string) {
 
 /** frpc 日志里是哪一条代理：面板自己是 agent-panel，端口映射是 agent-panel-m-<id> */
 export function frpcProxyOf(line: string) {
-  return line.match(/\[(agent-panel(?:-m-[a-z0-9]+)?)\]/)?.[1] ?? ''
+  return line.match(/\[(agent-panel(?:-m-[a-z0-9]+)?)(?:-stcp)?\]/)?.[1] ?? ''
 }
 
 /** frpc 的输出：连上并开好端口、连不上服务器、令牌被拒 */

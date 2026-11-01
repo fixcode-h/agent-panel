@@ -2,15 +2,29 @@ import { z } from 'zod'
 
 /** 设置「外部访问」的结构：从 schema.ts 拆出来，由它转出 */
 
-/** frp 的一条端口映射：云服务器的 remotePort → 本机（或局域网）localIP:localPort */
+/**
+ * frp 的一条映射。type：
+ * - tcp / udp：云服务器的 remotePort → 本机（或局域网）localIP:localPort
+ * - xtcp：P2P 直连，不占服务器端口；另一台电脑用「访问端配置」跑 frpc 连过来，打洞失败时经服务器中转（stcp）
+ * - files：把本机一个目录做成网页文件共享（frp 的 static_file 插件），用 remotePort 访问，带用户名密码
+ */
 export const FrpMapping = z.object({
   id: z.string().regex(/^[a-z0-9]{1,16}$/),
   name: z.string().trim().max(40).default(''),
-  type: z.enum(['tcp', 'udp']).catch('tcp').default('tcp'),
+  type: z.enum(['tcp', 'udp', 'xtcp', 'files']).catch('tcp').default('tcp'),
   localIP: z.string().trim().max(255).default('127.0.0.1'),
-  localPort: z.number().int().min(1).max(65535),
+  localPort: z.number().int().min(1).max(65535).catch(22).default(22),
   remotePort: z.number().int().min(1).max(65535),
   enabled: z.boolean().default(true),
+  /** xtcp：访问端和本机共用的密钥（新建时生成，只存在本机） */
+  secretKey: z.string().trim().max(200).default(''),
+  /** xtcp：访问端那台电脑上监听的本机端口，连 127.0.0.1:visitorPort 就到了这里 */
+  visitorPort: z.number().int().min(1).max(65535).catch(6000).default(6000),
+  /** files：共享的目录（绝对路径，~ 开头按用户目录展开） */
+  localPath: z.string().trim().max(1000).default(''),
+  /** files：打开共享时要输的用户名和密码（新建时生成，只存在本机） */
+  httpUser: z.string().trim().max(64).default(''),
+  httpPassword: z.string().max(200).default(''),
 })
 export type FrpMapping = z.infer<typeof FrpMapping>
 
