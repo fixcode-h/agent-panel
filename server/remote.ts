@@ -1,17 +1,31 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { chmod, mkdir, rename, rm } from 'node:fs/promises'
+import { chmod, mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import type { Server } from 'node:http'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { Hono } from 'hono'
+import { serve } from '@hono/node-server'
+import { z } from 'zod'
 import type { RemoteAccess } from '../shared/schema.ts'
-import type { CloudflaredInfo, RemoteAccessStatus, RemoteState } from '../shared/remote.ts'
+import type { CloudflaredInfo, FrpDeployStatus, RemoteAccessStatus, RemoteState } from '../shared/remote.ts'
 import { t } from '../shared/i18n.ts'
 import { DATA_DIR } from './store.ts'
-import { getSettings } from './settings.ts'
+import { getSettings, saveSettings } from './settings.ts'
+import { EXTERNAL_ENV } from './hosts.ts'
+import {
+  FRPC_CONFIG,
+  deployFrps,
+  ensureFrpc,
+  frpcConfig,
+  frpcEvent,
+  frpcLine,
+  frpcProxyOf,
+  newFrpToken,
+} from './frp.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { resolveCommand } from './cli-source.ts'
 import { netFetch } from './net.ts'
@@ -24,7 +38,13 @@ const BIN = path.join(DATA_DIR, 'bin')
 const BIN_FILE = path.join(BIN, isWin ? 'cloudflared.exe' : 'cloudflared')
 const QUICK_URL = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i
 
-let port = Number(process.env.PORT ?? 8787)
+type FetchHandler = (req: Request, env?: unknown) => Response | Promise<Response>
+let handler: FetchHandler | undefined
+/** 外网专用端口：开着外网访问时才监听，见 shared/schema.ts 的 RemoteAccess.localPort */
+let external: { server: Server; port: number } | null = null
+let deploy: FrpDeployStatus | null = null
+/** 端口映射的状态（按映射 id），frpc 重启时清空 */
+let mappingStates: Record<string, { ok: boolean; error: string }> = {}
 let state: RemoteState = 'off'
 let url = ''
 let error = ''
@@ -49,8 +69,58 @@ const setActive = (enabled: boolean, hosts: string[]) =>
 /** 外部请求只接受当前隧道/反代地址；本机地址由调用方另外判断 */
 export const isRemoteHostAllowed = (host: string) => active.enabled && active.hosts.has(host.toLowerCase())
 
-export function configureRemote(p: number) {
-  port = p
+/** 交给外网专用端口的请求处理函数（和主端口同一个，见 server/index.ts） */
+export function configureRemote(fetch: FetchHandler) {
+  handler = fetch
+}
+
+/**
+ * 起外网专用端口（只监听 127.0.0.1）：隧道 / frpc / 反代转进来的请求在 env 上打标记，
+ * tokenGuard 据此一律当外网处理。fixed 为 false 时端口被占用就换一个系统分配的
+ */
+function startExternal(want: number, fixed: boolean): Promise<number> {
+  const fetch = handler
+  if (!fetch) return Promise.reject(new Error(t('面板服务还没启动')))
+  const listen = (p: number) =>
+    new Promise<{ server: Server; port: number }>((resolve, reject) => {
+      const server = serve(
+        {
+          fetch: (req: Request, env: Record<string, unknown>) => fetch(req, { ...env, [EXTERNAL_ENV]: true }),
+          port: p,
+          hostname: '127.0.0.1',
+        },
+        (info) => resolve({ server: server as Server, port: info.port }),
+      ) as Server
+      server.once('error', reject)
+    })
+  return listen(want)
+    .catch((e: NodeJS.ErrnoException) => {
+      if (e.code !== 'EADDRINUSE' || fixed) {
+        throw new Error(
+          e.code === 'EADDRINUSE'
+            ? t('外网专用端口 {port} 已被占用，请在设置里换一个', { port: String(want) })
+            : e.message,
+        )
+      }
+      return listen(0)
+    })
+    .then((x) => {
+      external = x
+      log.info('remote', '外网专用端口已监听', { port: x.port })
+      return x.port
+    })
+}
+
+function stopExternal() {
+  const x = external
+  external = null
+  if (!x) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    x.server.close(() => resolve())
+    // SSE 这类长连接不主动断开时 close 会一直等
+    ;(x.server as Server & { closeAllConnections?: () => void }).closeAllConnections?.()
+    setTimeout(resolve, 2000).unref()
+  })
 }
 
 /** 从 cloudflared 的输出里找临时地址（重启后域名会变） */
@@ -139,6 +209,9 @@ function fail(message: string) {
 }
 
 async function start(s: RemoteAccess) {
+  // 自建反代要指向固定端口；其它方式由面板自己接，端口被占用就换一个
+  const ext = await startExternal(s.localPort, s.mode === 'custom')
+  if (s.mode === 'frp') return startFrpc(s, ext)
   if (s.mode === 'custom') {
     const target = normalizePublicUrl(s.publicUrl)
     if (!target) return fail(t('请填写外部访问地址，例如 https://panel.example.com'))
@@ -165,10 +238,11 @@ async function start(s: RemoteAccess) {
     setActive(true, [hostOfUrl(target)])
   }
 
+  // 默认的 QUIC（UDP 7844）在国内常被干扰，固定用 http2 走 TCP
   const args =
     s.mode === 'token'
-      ? ['tunnel', '--no-autoupdate', 'run']
-      : ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${port}`]
+      ? ['tunnel', '--no-autoupdate', '--protocol', 'http2', 'run']
+      : ['tunnel', '--no-autoupdate', '--protocol', 'http2', '--url', `http://127.0.0.1:${ext}`]
   const env = childEnv([])
   // token 走环境变量，不出现在进程列表的参数里
   if (s.mode === 'token') env.TUNNEL_TOKEN = s.tunnelToken
@@ -216,7 +290,11 @@ async function start(s: RemoteAccess) {
     () => {
       if (child !== cp) return
       if (s.mode === 'quick' && state !== 'running') {
-        fail(t('cloudflared 已经启动，但 30 秒内没有拿到外网地址。请检查网络，或在设置里填写代理。'))
+        fail(
+          t(
+            'cloudflared 已经启动，但 30 秒内没有拿到外网地址。国内网络经常连不上 Cloudflare，建议改用「云服务器（frp）」。',
+          ),
+        )
         void stopChild()
         return
       }
@@ -227,8 +305,94 @@ async function start(s: RemoteAccess) {
   )
 }
 
+/** 跑 frpc：把云服务器上的 remotePort 转到外网专用端口 */
+async function startFrpc(s: RemoteAccess, ext: number) {
+  const f = s.frp
+  if (!f.server || !f.token) return fail(t('还没配置云服务器：填好服务器信息后点「一键配置」'))
+  url = `http://${f.server.includes(':') ? `[${f.server}]` : f.server}:${f.remotePort}`
+  state = 'starting'
+  error = ''
+  output = ''
+  let bin: string
+  try {
+    download = { running: true, percent: -1, error: '' }
+    bin = await ensureFrpc((n) => {
+      if (download) download.percent = n
+    })
+    download = null
+  } catch (e) {
+    download = { running: false, percent: -1, error: (e as Error).message }
+    return fail(t('下载 frpc 失败：{msg}', { msg: (e as Error).message }))
+  }
+  await mkdir(path.dirname(FRPC_CONFIG), { recursive: true })
+  await writeFile(FRPC_CONFIG, frpcConfig(f, ext), { mode: 0o600 })
+  log.info('remote', '正在启动 frpc', { server: f.server, remotePort: f.remotePort })
+  let cp: ChildProcess
+  try {
+    cp = spawn(bin, ['-c', FRPC_CONFIG], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: childEnv([]) })
+  } catch (e) {
+    return fail((e as Error).message)
+  }
+  child = cp
+  const onData = (b: Buffer) => {
+    if (child !== cp) return
+    const text = b.toString()
+    output = (output + text).slice(-8000)
+    for (const line of text.split('\n')) {
+      const ev = frpcEvent(line)
+      const proxy = frpcProxyOf(line)
+      // 端口映射各管各的：某一条开不出来不影响面板本身
+      if (proxy.startsWith('agent-panel-m-') && (ev === 'ok' || ev === 'port')) {
+        mappingStates[proxy.slice('agent-panel-m-'.length)] = {
+          ok: ev === 'ok',
+          error: ev === 'ok' ? '' : frpcLine(line),
+        }
+        continue
+      }
+      if (ev === 'ok') {
+        state = 'running'
+        error = ''
+        log.info('remote', '外部访问已启用（frp）', { url })
+      } else if (ev) {
+        // frpc 会自己重试，进程不停；把原因和原文一起显示
+        state = 'starting'
+        error = frpHint(ev, f.bindPort, f.remotePort, frpcLine(line))
+      }
+    }
+  }
+  cp.stdout?.on('data', onData)
+  cp.stderr?.on('data', onData)
+  cp.on('error', (e) => {
+    if (child !== cp) return
+    fail(e.message)
+  })
+  cp.on('exit', (code) => {
+    if (child !== cp) return
+    child = null
+    state = 'error'
+    error = t('frpc 已退出（退出码 {code}）：{log}', { code: String(code), log: lastLines(output) })
+    log.error('remote', 'frpc 已退出', { code, error })
+  })
+}
+
+function frpHint(ev: ReturnType<typeof frpcEvent>, bindPort: number, remotePort: number, line: string) {
+  if (ev === 'auth') return t('frp 令牌不匹配：请重新点「一键配置」。{log}', { log: line })
+  if (ev === 'port')
+    return t('服务器上的端口 {port} 不能用（被占用或不在允许范围）：换一个面板端口后重新一键配置。{log}', {
+      port: String(remotePort),
+      log: line,
+    })
+  return t('连不上云服务器的 frp 端口 {port}：请在阿里云控制台「安全组 → 入方向」放行 TCP {port} 和 {remote}。{log}', {
+    port: String(bindPort),
+    remote: String(remotePort),
+    log: line,
+  })
+}
+
 async function doApply() {
   await stopChild()
+  await stopExternal()
+  mappingStates = {}
   state = 'off'
   url = ''
   error = ''
@@ -250,7 +414,10 @@ export function applyRemote() {
   return p
 }
 
-export const stopRemote = stopChild
+export const stopRemote = async () => {
+  await stopChild()
+  await stopExternal()
+}
 
 /** 下载 cloudflared：Windows / Linux 下直接放二进制，macOS 下载后解压 */
 function asset() {
@@ -328,9 +495,81 @@ async function status(link: (url: string) => string): Promise<RemoteAccessStatus
     url,
     link: url ? link(url) : '',
     error,
+    localPort: external?.port ?? 0,
     cloudflared: await probe(s.command),
     download,
+    deploy,
+    mappings: mappingStates,
   }
+}
+
+const DeployBody = z.object({
+  server: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .regex(/^[\w.:-]+$/),
+  sshPort: z.number().int().min(1).max(65535),
+  sshUser: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[\w.-]+$/),
+  password: z.string().min(1).max(500),
+  bindPort: z.number().int().min(1).max(65535),
+  remotePort: z.number().int().min(1).max(65535),
+  rangeStart: z.number().int().min(1).max(65535),
+  rangeEnd: z.number().int().min(1).max(65535),
+})
+
+/** 一键配置云服务器：部署 frps，保存设置并切到 frp 方式，返回保存后的外部访问设置 */
+async function deployCloud(body: z.infer<typeof DeployBody>) {
+  if (deploy?.running) throw new Error(t('正在配置，请稍候'))
+  if (body.bindPort === body.remotePort) throw new Error(t('frp 端口和面板端口不能相同'))
+  if (body.rangeStart > body.rangeEnd || body.rangeEnd - body.rangeStart > 1000)
+    throw new Error(t('端口映射范围不对：起始不能大于结束，最多 1000 个端口'))
+  for (const p of [body.bindPort, body.remotePort])
+    if (p >= body.rangeStart && p <= body.rangeEnd) throw new Error(t('frp 端口和面板端口不能落在端口映射范围里'))
+  const cur = await getSettings()
+  // 同一台服务器重配时沿用旧令牌：别的电脑上的 frpc 不至于马上断开
+  const token =
+    cur.remoteAccess.frp.server === body.server && cur.remoteAccess.frp.token
+      ? cur.remoteAccess.frp.token
+      : newFrpToken()
+  deploy = { running: true, step: 'connect', percent: -1, error: '' }
+  try {
+    await deployFrps({ ...body, token }, (step, percent) => {
+      if (deploy) deploy = { ...deploy, step, percent: percent ?? -1 }
+    })
+  } catch (e) {
+    deploy = { running: false, step: deploy?.step ?? 'connect', percent: -1, error: (e as Error).message }
+    log.warn('remote', '一键配置云服务器失败', { error: (e as Error).message })
+    throw e
+  }
+  const next = await getSettings()
+  next.remoteAccess = {
+    ...next.remoteAccess,
+    enabled: true,
+    mode: 'frp',
+    frp: {
+      // 端口映射留着：重新配置服务器不该把用户加的映射清掉
+      ...next.remoteAccess.frp,
+      server: body.server,
+      sshPort: body.sshPort,
+      sshUser: body.sshUser,
+      bindPort: body.bindPort,
+      remotePort: body.remotePort,
+      rangeStart: body.rangeStart,
+      rangeEnd: body.rangeEnd,
+      token,
+    },
+  }
+  const saved = await saveSettings(next)
+  deploy = { running: false, step: 'done', percent: 100, error: '' }
+  await applyRemote()
+  return saved.remoteAccess
 }
 
 /** 设置页用的接口：状态、检测、下载 */
@@ -346,6 +585,16 @@ export function remoteApi(deps: { link: (url: string) => string }) {
   routes.post('/install', async (c) => {
     void installCloudflared()
     return c.json(await status(deps.link))
+  })
+  routes.post('/frp/deploy', async (c) => {
+    const p = DeployBody.safeParse(await c.req.json().catch(() => null))
+    if (!p.success) return c.json({ error: t('服务器信息不完整：{msg}', { msg: z.prettifyError(p.error) }) }, 400)
+    try {
+      const remoteAccess = await deployCloud(p.data)
+      return c.json({ remoteAccess, status: await status(deps.link) })
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 400)
+    }
   })
   return routes
 }

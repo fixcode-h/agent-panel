@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Advanced, CopyText, Group, Row } from './parts'
+import { FrpCloudGroup } from './FrpCloudGroup'
+import { FrpMappingsGroup } from './FrpMappingsGroup'
 
 const STATE_TEXT: Record<RemoteAccessStatus['state'], string> = {
   off: t('未启用'),
@@ -68,7 +70,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
           title={t('允许外部访问')}
           desc={t('让其他电脑也能打开这个面板')}
           hint={t(
-            '默认关闭。打开后，服务仍然只监听 127.0.0.1，由隧道或反向代理把外网的请求转进来；本机和其他电脑打开的是同一个面板，数据、任务进度和对话实时同步。外网访问一律要求访问令牌。',
+            '默认关闭。打开后，服务仍然只监听 127.0.0.1，由隧道、frp 或反向代理把外网的请求转到一个专用端口；本机和其他电脑打开的是同一个面板，数据、任务进度和对话实时同步。外网访问一律要求访问令牌。',
           )}
         >
           <Switch
@@ -89,14 +91,18 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                   ? t('不用账号，重启后地址会变')
                   : value.mode === 'token'
                     ? t('Cloudflare Tunnel，地址固定')
-                    : t('已用 frp、nginx 等转到外网')
+                    : value.mode === 'frp'
+                      ? t('一键配置阿里云服务器，国内访问稳定')
+                      : t('已用 frp、nginx 等转到外网')
               }
               hint={
                 value.mode === 'quick'
-                  ? t('用 cloudflared 生成一个临时地址，适合临时给别的电脑看。')
+                  ? t('用 cloudflared 生成一个临时地址，适合临时给别的电脑看；国内网络经常连不上 Cloudflare。')
                   : value.mode === 'token'
                     ? t('在 Cloudflare 后台建好 Tunnel，把 token 和域名填进来。')
-                    : t('已经把 127.0.0.1:8787 转到了外网时选这个，面板只负责校验地址。')
+                    : value.mode === 'frp'
+                      ? t('填云服务器的 IP、SSH 用户和密码，面板自动在服务器上装好 frps，本机运行 frpc。')
+                      : t('把反向代理转到下面的「外网专用端口」，从这个端口进来的请求一律要求访问令牌。')
               }
             >
               <Select
@@ -107,6 +113,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                 options={[
                   { value: 'quick', label: t('临时地址') },
                   { value: 'token', label: t('固定域名') },
+                  { value: 'frp', label: t('云服务器（frp）') },
                   { value: 'custom', label: t('自建反向代理') },
                 ]}
               />
@@ -129,7 +136,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                 />
               </Row>
             )}
-            {value.mode !== 'quick' && (
+            {(value.mode === 'token' || value.mode === 'custom') && (
               <Row
                 title={t('访问地址')}
                 desc={value.mode === 'token' ? t('Tunnel 对外的域名') : t('反向代理后的完整地址')}
@@ -144,9 +151,37 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                 />
               </Row>
             )}
+            {value.mode === 'custom' && (
+              <Row
+                title={t('外网专用端口')}
+                desc={t('反向代理转到 127.0.0.1 的这个端口')}
+                hint={t(
+                  '只监听本机。以前转到 8787 的请求仍按访问地址校验，改转到这里更安全：Host 被反代改写也不会被当成本机请求。',
+                )}
+              >
+                <Input
+                  value={String(value.localPort)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value)
+                    if (Number.isInteger(n) && n >= 1 && n <= 65535) onChange({ ...value, localPort: n })
+                  }}
+                  inputMode="numeric"
+                  className="w-[96px] font-mono text-[0.8125rem]"
+                  aria-label={t('外网专用端口')}
+                />
+              </Row>
+            )}
           </Group>
 
-          {value.mode !== 'custom' && (
+          {value.mode === 'frp' && (
+            <FrpCloudGroup value={value} onChange={onChange} status={status} onStatus={setStatus} />
+          )}
+
+          {value.mode === 'frp' && value.frp.token && (
+            <FrpMappingsGroup value={value} onChange={onChange} status={status} />
+          )}
+
+          {(value.mode === 'quick' || value.mode === 'token') && (
             <Group title={t('环境检测')}>
               <Row
                 title="cloudflared"
@@ -213,11 +248,18 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
           )}
 
           <Group title={t('连接状态')}>
-            <Row title={t('状态')} desc={status?.error || undefined} stack>
+            <Row title={t('状态')} stack>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2 text-[0.8125rem]">
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} />
                   <span>{status ? STATE_TEXT[status.state] : t('检测中…')}</span>
+                  {value.mode === 'frp' && status?.download?.running && (
+                    <span className="text-muted">
+                      {status.download.percent >= 0
+                        ? t('正在下载 frpc {n}%', { n: String(status.download.percent) })
+                        : t('正在下载 frpc…')}
+                    </span>
+                  )}
                 </div>
                 {status?.error && (
                   <p className="text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">{status.error}</p>

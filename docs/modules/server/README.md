@@ -346,6 +346,17 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - 撤销（`POST /tasks/:id/turn-revert`，`undoSpans`）：每个文件从现在的内容按从后往前撤每一段；现在就是改完的样子直接换回，之后又改过就用 `git merge-file` 三方合并只撤这段；改到同一处、二进制、新建后又改、删掉后又建回都算冲突，有冲突时一个文件都不写，把冲突交回页面。内容按 `cat-file --filters` 取，Windows 的 autocrlf 不会让每一行都对不上。对话正在回复、或有节点 / 子任务在跑时拒绝。快照树没有引用，过了 git 的清理期限（默认两周）就撤不了，会报「改动记录已经被 git 清理」。
 - 跟踪状态只在内存里：面板重启时进行中的那一轮没有卡片。
 
+## 外部访问（server/remote.ts、server/frp.ts，2026-11-01）
+
+- 四种方式（`RemoteAccess.mode`，结构在 `shared/remote-schema.ts`，`shared/schema.ts` 转出）：`quick` Cloudflare 临时地址、`token` Cloudflare Tunnel、`custom` 自建反代、`frp` 一键配置的云服务器。
+- **外网专用端口**：开着外网访问时 `applyRemote` 额外起一个只监听 127.0.0.1 的端口（`localPort`，默认 8788；quick / frp 被占用时换系统分配的，custom 要固定端口所以直接报错），请求在 env 上带 `EXTERNAL_ENV` 标记（`server/hosts.ts`）。`tokenGuard` 和 `/api` 的来源检查见到标记就一律当外网：不看 Host、必须带令牌，Origin 必须和 Host 同源。quick 的 cloudflared 和 frpc 都转到这个端口。原因：反代（nginx 默认 `proxy_set_header Host $proxy_host`）把 Host 改成 127.0.0.1 时，只按 Host 判断会把外网请求当成本机、绕过令牌。
+- 主端口仍兼容老的 custom / token 配置（按访问地址的主机名放行），但带 `X-Forwarded-For`、`X-Real-IP`、`Forwarded`、`X-Forwarded-Host`、`CF-Connecting-IP` 的请求不算本机（`isForwarded`）。
+- cloudflared 固定 `--protocol http2`：默认的 QUIC（UDP 7844）在国内常被干扰。
+- **frp**：`POST /api/remote/frp/deploy` 收服务器 IP、SSH 端口 / 用户 / 密码和端口，用 `ssh2` 登录（密码只用这一次，不写盘不写日志），按 `uname -m` 在本机下载对应的 frps（`FRP_VERSION` 固定版本，GitHub 下载走 `downloadFile` 的代理回退，服务器不用访问 GitHub），SFTP 上传后用 `deployScript` 装成 systemd 服务 `agent-panel-frps`（名字和用户自己的 frps 分开），放行 firewalld / ufw；阿里云安全组只能用户在控制台放行，界面和报错都写明端口。frps 的 `allowPorts` 只放面板端口和端口映射范围。部署成功后服务端直接保存设置（frp 令牌只存本机，导出时和隧道 token 一样去掉），页面用返回值替换自己那份，免得自动保存用旧值盖回去。
+- frpc 在本机由 `startFrpc` 运行（没有就下载到数据目录 `bin/`），配置每次按设置重写到 `frp/frpc.toml`；`loginFailExit = false` 一直重试，`frpcEvent` / `frpcProxyOf` 解析日志：面板代理 `agent-panel` 决定连接状态，端口映射 `agent-panel-m-<id>` 各自记进 `status.mappings`，开不出来不影响面板本身。
+- 端口映射（SSH、远程桌面、VNC、自定义 TCP/UDP）：服务器端口必须在一键配置时放行的范围内（`frpMappingError`，前后端共用），增删只改本机 frpc，不用再登录服务器。
+- 回归：`server/remote.test.ts`（frps / frpc 配置、映射校验、日志解析）、`server/remote-external.test.ts`（主端口带转发头要令牌、外网专用端口一律要令牌、停用后端口关闭）。
+
 ## 回归验证
 
 - `npm run typecheck`

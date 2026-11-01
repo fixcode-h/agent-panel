@@ -59,15 +59,16 @@ export async function readBackupFiles(rels: string[], read: (full: string) => Pr
   return { files, skipped }
 }
 
-/** 导出时去掉隧道 token：它相当于让别人接管这条隧道，不该跟着备份文件传出去 */
+/** 导出时去掉隧道 token 和 frp 令牌：它们相当于让别人接管这条隧道，不该跟着备份文件传出去 */
 function withoutTunnelToken(b64: string) {
   try {
     const raw = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'))
     // 旧设置里的 Gemini 协议先清掉，否则解析失败会跳过清理，隧道 token 跟着备份导出
     migrateRemovedClis(raw)
     const s = Settings.parse(raw)
-    if (!s.remoteAccess.tunnelToken) return b64
+    if (!s.remoteAccess.tunnelToken && !s.remoteAccess.frp.token) return b64
     s.remoteAccess.tunnelToken = ''
+    s.remoteAccess.frp.token = ''
     return Buffer.from(JSON.stringify(s)).toString('base64')
   } catch {
     return b64
@@ -202,10 +203,21 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
         migrateRemovedClis(raw)
         const backup = Settings.parse(raw)
         const current = await getSettings()
+        let changed = false
         if (!backup.remoteAccess.tunnelToken && current.remoteAccess.tunnelToken) {
           backup.remoteAccess.tunnelToken = current.remoteAccess.tunnelToken
-          fs['settings.json'] = Buffer.from(JSON.stringify(backup)).toString('base64')
+          changed = true
         }
+        // frp 令牌只对同一台服务器有用：服务器一样才沿用本机的
+        if (
+          !backup.remoteAccess.frp.token &&
+          current.remoteAccess.frp.token &&
+          backup.remoteAccess.frp.server === current.remoteAccess.frp.server
+        ) {
+          backup.remoteAccess.frp.token = current.remoteAccess.frp.token
+          changed = true
+        }
+        if (changed) fs['settings.json'] = Buffer.from(JSON.stringify(backup)).toString('base64')
       } catch {}
     }
     for (const k of kinds) for (const r of PATHS[k]) await rm(path.join(DATA_DIR, r), { recursive: true, force: true })

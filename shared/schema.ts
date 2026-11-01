@@ -3,6 +3,7 @@ import { MarkdownStyle } from './markdown-style.ts'
 import { ComponentStyle } from './component-style.ts'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
+import { RemoteAccess } from './remote-schema.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
 import { DEFAULT_SEARCH_PROVIDER, SEARCH_PROVIDER_IDS } from './web-search.ts'
@@ -2430,18 +2431,8 @@ export type ElementPicker = z.infer<typeof ElementPicker>
 /** 从外网访问面板：默认关闭，服务仍然只监听 127.0.0.1，由 cloudflared 或用户自己的反向代理把请求转进来。
  * 外网的请求一律要求访问令牌，和本机访问不同。
  */
-export const RemoteAccess = z.object({
-  enabled: z.boolean().default(false),
-  /** quick：Cloudflare 临时地址（重启后变）；token：Cloudflare Tunnel（固定域名）；custom：自己搭的反向代理 */
-  mode: z.enum(['quick', 'token', 'custom']).catch('quick').default('quick'),
-  /** Cloudflare Tunnel 的 token（mode=token 时用），也可以在 cloudflared 里预先配置好 */
-  tunnelToken: z.string().trim().max(4000).default(''),
-  /** 外网地址：token 模式填隧道的域名，custom 模式填反向代理后的地址；quick 模式自动生成 */
-  publicUrl: z.string().trim().max(300).default(''),
-  /** cloudflared 可执行文件；留空时依次找数据目录的 bin/ 和 PATH */
-  command: z.string().trim().max(500).default(''),
-})
-export type RemoteAccess = z.infer<typeof RemoteAccess>
+// 外部访问的设置拆在 remote-schema.ts（schema.ts 有行数上限），这里转出，调用方照旧从 schema 引
+export { FrpMapping, RemoteAccess, RemoteFrp } from './remote-schema.ts'
 
 /**
  * 设置里各项默认值的迁移版本：改过默认值的项按版本升级一次。

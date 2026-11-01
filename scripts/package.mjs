@@ -147,6 +147,8 @@ await build({
       ),
     ),
   },
+  // ssh2 可选的本机加速模块（.node、cpu-features）不打包：它在 try 里加载，找不到就用纯 JS 实现
+  external: ['*.node', 'cpu-features'],
   // 依赖里有 CommonJS 模块（cross-spawn），给它一个 require
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 })

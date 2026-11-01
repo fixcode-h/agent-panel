@@ -266,6 +266,21 @@ export const api = {
   remoteStatus: () => request<RemoteAccessStatus>('/remote/status'),
   remoteCheck: () => request<RemoteAccessStatus>('/remote/check', { method: 'POST' }),
   remoteInstall: () => request<RemoteAccessStatus>('/remote/install', { method: 'POST' }),
+  /** 一键配置云服务器（frp）：密码只随这次请求发给本机服务，不保存 */
+  remoteDeploy: (body: {
+    server: string
+    sshPort: number
+    sshUser: string
+    password: string
+    bindPort: number
+    remotePort: number
+    rangeStart: number
+    rangeEnd: number
+  }) =>
+    request<{ remoteAccess: Settings['remoteAccess']; status: RemoteAccessStatus }>(
+      '/remote/frp/deploy',
+      json('POST', body),
+    ),
 
   /** 外部 CLI 的授权：检测、浏览器授权、token 授权、退出 */
   integrations: (refresh = false) => request<IntegrationView[]>(`/integrations${refresh ? '?refresh=1' : ''}`),
