@@ -452,6 +452,43 @@ await runShard('子对话与计划', async (api) => {
     // 子对话计划收尾、标记完成，独立分支回收（ADR 0005）
     await waitDone(wtKid.id, 20000)
     clearCliOutputs(project.path)
+    // Claude Code 能跨目录续接会话（CLI 定义的 resumeAnyDir）：开分支后带着原会话切到分支目录，
+    // 不丢掉会话再把查过的东西重读一遍；上面乙（Codex）没开这个字段，照旧开新会话
+    {
+      // 单开一个父对话：子对话交回的汇报会叫醒父对话跑一轮，别让它挡住下面用 wtParent 的收尾用例
+      const ccParent = await waitDone(
+        (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '父对话' })).id,
+        20000,
+      )
+      const ccId = (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: A.id,
+          parentTaskId: ccParent.id,
+          prompt: 'BEGIN_EDIT Claude Code 子对话开分支后续接原会话',
+        })
+      ).id
+      // 开分支那一轮结束后面板才在分支目录里接着跑一轮：等这一轮真的起来，别在两轮之间的空档里判
+      const ccPath = (await waitTask(ccId, (x) => !!x.worktree?.path)).worktree.path
+      const moved = await waitFor(() => calls().find((c) => c.cwd === ccPath), {
+        label: '分支目录里接着跑一轮',
+        timeout: 20000,
+      })
+      const ccKid = await waitDone(ccId, 20000)
+      const first = calls().find(
+        (c) => c.cwd === project.path && (c.input ?? '').includes('Claude Code 子对话开分支后续接原会话'),
+      )
+      assert.ok(first, '开分支前先在原目录里查看')
+      const ri = moved.args.indexOf('--resume')
+      assert.ok(ri >= 0, '换到分支目录后续接原来的会话，不开新会话')
+      assert.equal(moved.args[ri + 1], ccKid.sessions[A.id], '续接的是同一个会话')
+      assert.ok(!(moved.input ?? '').includes('## 之前的对话'), '续接原会话时不再把之前的对话整段带过去')
+      assert.ok((moved.input ?? '').includes(`原目录 ${project.path}`), '说明里点明原目录，免得照着旧路径改回去')
+      await waitDone(ccParent.id, 20000)
+      await call('DELETE', `/tasks/${ccParent.id}`)
+      clearCliOutputs(project.path)
+    }
     const headBefore = gitIn(project.path, 'rev-parse', 'HEAD').toString().trim()
     const doneKid = await call('POST', '/tasks', {
       projectId: project.id,

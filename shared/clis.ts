@@ -149,6 +149,12 @@ export interface CliDefinition {
   effortBoundSession?: boolean
   /** 会话中途能换模型：换了模型仍然续接原来的会话（例如 Pi，模型是每次启动的参数，会话里可以混用） */
   modelSwitch?: boolean
+  /**
+   * 会话能在别的目录里续接：中途开了独立分支、换了目录也照样 --resume 原来的会话，不用丢掉重开。
+   * 例如 Claude Code（2.1.316 实测：会话按 id 全局找，续接后工作目录是这次启动的目录）。
+   * 不写时按「会话按目录存」处理，换了目录就开新会话、带上之前的对话（Pi 会停下来问要不要分叉）
+   */
+  resumeAnyDir?: boolean
   /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、rpc 时用） */
   parser: string | import('./cli-spec.ts').OutputSpec
   /** 执行中能插话 */

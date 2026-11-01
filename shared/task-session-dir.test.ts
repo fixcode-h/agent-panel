@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { sameDir, sessionMoved } from './task.ts'
+import { getCli } from './clis.ts'
 
 const worktree = 'C:\\Users\\17787\\.agent-panel\\worktrees\\55f6571a-c89b-4ce5-ac64-be0f87e6eefb'
 const project = 'E:\\Project\\agent-panel'
@@ -37,4 +38,17 @@ test('sessionMoved：对话在没有新字段时退回共用的 sessionDir', () 
 test('sessionMoved：新字段按会话分别记，优先于对话共用的 sessionDir', () => {
   const task = { sessionDirs: { '@chat/sub/h3': worktree }, sessionDir: project }
   assert.equal(sessionMoved(task, '@chat/sub/h3', worktree, true), false)
+})
+
+test('sessionMoved：能跨目录续接的 CLI 换了目录也接着续接，开独立分支后不用丢掉会话重读一遍', () => {
+  const task = { sessionDirs: { 'agent-1': project }, sessionDir: project }
+  assert.equal(sessionMoved(task, 'agent-1', worktree, true, true), false)
+  assert.equal(sessionMoved(task, 'agent-1', worktree, true, false), true)
+})
+
+test('resumeAnyDir：只有实测过能跨目录续接的 Claude Code 开，其余 CLI 换了目录照旧开新会话', () => {
+  // Claude Code 2.1.316 实测：在 a 目录开的会话，到 b 目录 --resume 照样接上、工作目录是 b
+  assert.equal(getCli('claude')?.resumeAnyDir, true)
+  // Pi 换了目录会停下来问要不要分叉（bugs/sub-session-other-project.md）；Codex、Command Code 没实测过
+  for (const id of ['pi', 'codex', 'commandcode']) assert.ok(!getCli(id)?.resumeAnyDir, id)
 })
