@@ -21,24 +21,36 @@ export function resolveLang(setting: string | undefined, fallback?: string): Lan
   return /^zh/i.test(fallback ?? 'zh') ? 'zh' : 'en'
 }
 
-function detect(): Lang {
+function detect(): { lang: Lang; auto: boolean } {
   try {
     const ls = (globalThis as { localStorage?: { getItem(key: string): string | null } }).localStorage
     const nav = (globalThis as { navigator?: { language?: string } }).navigator
-    if (ls) return resolveLang(ls.getItem('lang') ?? 'auto', nav?.language)
+    if (ls) {
+      const setting = ls.getItem('lang') ?? 'auto'
+      return { lang: resolveLang(setting, nav?.language), auto: setting !== 'zh' && setting !== 'en' }
+    }
   } catch {}
-  return 'zh'
+  return { lang: 'zh', auto: false }
 }
 
-let lang: Lang = detect()
+const detected = detect()
+let lang: Lang = detected.lang
+let auto = detected.auto
 export const getLang = () => lang
+/**
+ * 设置里选的是不是「自动」。界面按解析出来的 lang 显示，但交给 Agent 的回复语言在「自动」时
+ * 跟随用户消息（shared/prompt-lang.ts）：系统语言是 C.UTF-8 这类时「自动」会解析成英文，
+ * 用户用中文提问却收到英文回复（真实 API 实测报告问题 20）
+ */
+export const isLangAuto = () => auto
 /**
  * 界面语言对应的日期 / 数字格式：所有 toLocale*、Intl.*Format 都传它。
  * 不传的话跟着浏览器走，英文界面配中文系统时会混出两种格式
  */
 export const uiLocale = () => (lang === 'en' ? 'en-US' : 'zh-CN')
-export function setLang(l: Lang) {
+export function setLang(l: Lang, isAuto = false) {
   lang = l
+  auto = isAuto
 }
 
 /** 补充词典：只在某些构建里用到的文案（例如在线演示），不放进主词典 */

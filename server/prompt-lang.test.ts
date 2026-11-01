@@ -127,14 +127,29 @@ test('en：规则用英文写明 reply 和 reasoning / thinking，代码命令�
   assert.match(rules, /do not translate them/i)
 })
 
-test('auto：浏览器英文解析成 en、浏览器中文解析成 zh，生成的规则跟着走', () => {
+test('auto：界面按系统 / 浏览器语言解析，回复语言跟随用户消息，不强制成界面语言', async () => {
   assert.equal(resolveLang('auto', 'en-US'), 'en')
   assert.equal(resolveLang('auto', 'zh-CN'), 'zh')
   // 设置成固定值时不受浏览器语言影响
   assert.equal(resolveLang('zh', 'en-US'), 'zh')
   assert.equal(resolveLang('en', 'zh-CN'), 'en')
-  assert.match(promptLangRules(resolveLang('auto', 'en-GB')), /## Reply language/)
-  assert.match(promptLangRules(resolveLang('auto', 'zh-TW')), /## 回复语言/)
+  // 系统语言 C.UTF-8 时「自动」解析成英文界面；以前规则也跟着写成「全部用英文」，中文提问收到英文回复
+  const before = getLang()
+  setLang(resolveLang('auto', 'C.UTF-8'), true)
+  try {
+    assert.equal(getLang(), 'en')
+    const rules = promptLangRules()
+    assert.match(rules, /## Reply language/)
+    assert.match(rules, /in the language the user's message .* is written in/)
+    assert.doesNotMatch(rules, /reasoning \/ thinking in English/)
+    assert.match(promptLangReminder(), /language of the user's message/)
+    const prompt = await nodePrompt()
+    assert.match(prompt, /完成后用用户消息所用的语言按上面的「总结格式」写总结卡/)
+    assert.doesNotMatch(prompt, /完成后用英文/)
+  } finally {
+    setLang(before)
+  }
+  assert.match(promptLangRules('auto-zh'), /## 回复语言\n面板语言设成了「自动」.*用户用中文写就用中文/)
 })
 
 test('语言名和结论行：语言名跟着设置，结论行中文英文两种写法都能被识别', () => {
@@ -228,6 +243,8 @@ test('语言 mod：生成的源码可执行，按环境变量取规则（Command
   assert.match(hook!(), /思考过程（reasoning \/ thinking）都用中文/)
   process.env[PROMPT_LANG_ENV] = 'en'
   assert.match(hook!(), /## Reply language/)
+  process.env[PROMPT_LANG_ENV] = 'auto-en'
+  assert.match(hook!(), /language the user's message/)
   delete process.env[PROMPT_LANG_ENV]
   assert.equal(hook!(), '', '没有语言时不追加，避免把空规则塞进系统提示词')
 })
