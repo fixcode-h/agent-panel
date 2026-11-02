@@ -501,7 +501,7 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
     {},
     { policy: { push: 'ask', tools: [], cherryPick: { vcs: 'p4', target: 'D:/p4/rel' } } },
   )
-  assert.match(pickP4[0], /「D:\/p4\/rel」[\s\S]*建一个对应的 pending，不 submit/)
+  assert.match(pickP4[0], /「D:\/p4\/rel」[\s\S]*建一个对应的 pending。不要 p4 submit，除非用户明确要求/)
   assert.doesNotMatch(deny[0], /## Cherry-pick/, '没设目标时不提')
 
   // 不变量：用真实内置角色拼出各调用者的完整提示（角色设定按 runner 的取参方式 + engine 提示），推送授权只给
