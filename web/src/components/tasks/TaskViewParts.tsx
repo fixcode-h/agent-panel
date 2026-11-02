@@ -328,6 +328,8 @@ export function ChatTurnInner({
       last={last}
       latest={latest}
       fold
+      // 项目对话里吸顶署名由消息列表渲染到回复体外面，好让它跨过后面的用户消息一直保持
+      hoistSticky
       author={withCommand}
       command={withCommand ? undefined : command}
     />
