@@ -421,11 +421,12 @@ export function registerActionRoutes(s: TasksScope) {
 
   /** 用户停止这个对话：停止按钮、提问窗口的关闭都走这里 */
   async function userStop(id: string) {
-    // 用户点「暂停」是唯一标成 user 的路径：别处停任务必须写清是谁结束的（见 StopReason）
-    s.stopTask(id, 'user')
-    // 停止就是这棵对话树都别干了：名下子对话、子任务一起停，CLI 进程直接结束，不等各自收尾。
-    // 进程没了就算停下了（见 keepalive.ts 的 watchStop），点一次停止就够
-    await s.stopTree(id).catch((e) => log.warn('task', '停止整棵对话树失败', { task: id, error: (e as Error).message }))
+    // 停止就是这棵对话树都别干了：自下而上先停子对话（连同它们的子任务、工作流），最后停这个对话，
+    // CLI 进程直接结束，不等各自收尾。进程没了就算停下了（见 keepalive.ts 的 watchStop），点一次停止就够。
+    // 这个对话自己记成 user（用户点「暂停」是唯一标成 user 的路径），名下的记成 parent
+    await s
+      .stopTree(id, 'user')
+      .catch((e) => log.warn('task', '停止整棵对话树失败', { task: id, error: (e as Error).message }))
     // 还在等回答的提问、确认马上作废并落盘：不然返回的任务还带着它们，提问窗口关不掉。
     // 停止是停掉这个对话附属的一切：名下子对话的提问、确认、请用户决定的选择也一起作废
     const kids = (await s.store.list()).filter((x) => x.parentTaskId === id)
@@ -451,6 +452,9 @@ export function registerActionRoutes(s: TasksScope) {
     const id = c.req.param('id')
     taskLog(id, '用户停止', { force: c.req.query('force') ? true : undefined })
     await userStop(id)
+    // 等这个对话停稳再回：返回的就是停下后的状态，按钮马上从「停止」变回来，不用等下一次推送（用户报过）。
+    // 进程已经结束，一般几十毫秒；收不完的最迟由 watchStop 收口（settleBefore 有上限）
+    await settleBefore(s.live.get(id))
     // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
     // 进程不该再留着时（卡住、换机器前的清理）用这个
     if (c.req.query('force')) {

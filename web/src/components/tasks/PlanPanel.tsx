@@ -14,7 +14,7 @@ import {
   shownPlan,
   unfinishedSteps,
 } from '@shared/plan'
-import { childActivityText, childWaitText, timeAgo, type ChildActivity, type ChildWait } from '@shared/task'
+import { childActivityText, childWaitText, taskActive, timeAgo, type ChildActivity, type ChildWait } from '@shared/task'
 import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
@@ -58,6 +58,17 @@ function PlanBar({ done, total, className }: { done: number; total: number; clas
     />
   )
 }
+
+/**
+ * 计划没做完、对话却已经停下（停止或失败）且名下没有东西在跑：没人在推进这份计划。
+ * 这时步骤不画成进行中 / 等待中，用时停在停下那一刻（以前父对话停了，计划里等子对话的步骤还一直转圈计时，用户报过）
+ */
+function planPaused(task: Task) {
+  return (task.status === 'stopped' || task.status === 'failed') && !taskActive(task)
+}
+
+/** 停下那一刻：用时按它算，不再跟着当前时间走 */
+const pausedAt = (task: Task) => Date.parse(task.updatedAt)
 
 /** 「2 分钟前更新」：计划的最后变化时间；滞后时用警示色（和步骤行的小标记同一套判定） */
 function UpdatedAt({ at, stale, className }: { at?: string; stale?: boolean; className?: string }) {
@@ -230,8 +241,10 @@ export function PlanButton({ task, kids }: { task: Task; kids?: WaitChild[] }) {
   // 只看 doneAt 会把后者也说成已完成，而列表里那一步还是等待中 —— 用户看到的就是这个矛盾
   const head = plan ? planHeadline(plan) : 'open'
   const finished = head !== 'open'
-  // 进行中“正在做的那一步”的用时跟着当前步骤的时间走，每秒刷新；结束的计划不用再每秒重算
-  const now = useNow(!!plan && !finished)
+  const paused = !finished && planPaused(task)
+  // 进行中“正在做的那一步”的用时跟着当前步骤的时间走，每秒刷新；结束的计划、停下的对话不用再每秒重算
+  const tick = useNow(!!plan && !finished && !paused)
+  const now = paused && Number.isFinite(pausedAt(task)) ? pausedAt(task) : tick
   if (!plan) return null
   const p = planProgress(task, plan)
   // 只数主步骤：和窗内进度（p.total - p.done）同一套计数，同屏两个数字不会打架
@@ -312,13 +325,14 @@ export function PlanButton({ task, kids }: { task: Task; kids?: WaitChild[] }) {
 /** 计划窗口：当前计划的步骤（进行中的展开子步骤）；下面能翻以前的计划 */
 function PlanWindow({ task, plan, kids }: { task: Task; plan: TaskPlan; kids?: WaitChild[] }) {
   const p = planProgress(task, plan)
-  const live = !plan.doneAt
-  // 计划已经结束（全部做完或提前结束）：还没做完的步骤不再画成等待中 / 进行中
+  const paused = !plan.doneAt && planPaused(task)
+  const live = !plan.doneAt && !paused
+  // 计划已经结束（全部做完或提前结束），或对话停下了没人在推进：还没做完的步骤不再画成等待中 / 进行中
   const settled = !live
   const tick = useNow(live)
-  // 已经结束的计划把时间停在 doneAt：提前结束（finish_plan）时还有没做完的步骤，
+  // 已经结束的计划把时间停在 doneAt、停下的对话停在停下那一刻：提前结束（finish_plan）时还有没做完的步骤，
   // 不能每次打开窗口都按当前时间重算，否则单项用时会超过总用时
-  const closedAt = Date.parse(plan.doneAt)
+  const closedAt = paused ? pausedAt(task) : Date.parse(plan.doneAt)
   const now = live || !Number.isFinite(closedAt) ? tick : closedAt
   const total = planSpan(plan, now)
   const older = task.plans.slice(0, -1).reverse()

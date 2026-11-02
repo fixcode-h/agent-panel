@@ -32,7 +32,7 @@ export interface TasksScope {
   /** 已完成的子对话 CLI 还在保留期里 */
   keepingDone: (id: string) => boolean
   /** 停掉整棵对话树并直接结束名下全部 CLI 进程（用户停止、归档） */
-  stopTree: (id: string) => Promise<void>
+  stopTree: (id: string, reason?: import('../../shared/schema.ts').StopReason) => Promise<void>
   PLAN_NUDGE_MS: number
   READONLY: string
   activeChildren: (parentId: string) => Promise<number>

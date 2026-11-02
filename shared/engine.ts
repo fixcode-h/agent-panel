@@ -3443,6 +3443,8 @@ function makeOrchestra(
           return { ids: [], error: `「${prev.title}」是另一个角色跑的，接着它的会话时 agent 不写或写同一个角色` }
         resumed.set(spec, prev)
       }
+      const blocked = rs.interruptedBlock(mine, local.length - resumed.size, resumed)
+      if (blocked) return { ids: [], error: blocked }
       // 派出去的角色：接着的子任务原来的角色（被删了才落到点名的）→ 点名的 → 默认「子任务」→ 发起者自己
       const roleOf = (spec: HelperSpec) => {
         const prev = resumed.get(spec)
@@ -3598,13 +3600,13 @@ function makeOrchestra(
         ? ids.map((id) => mine.find((s) => s.id === id || s.title === id))
         : mine.filter((s) => s.status === 'running' || s.status === 'pending')
       const missing = ids.filter((_, i) => !want[i])
-      const done: string[] = []
-      const over: string[] = []
+      const [done, over]: string[][] = [[], []]
       for (const s of want) {
         if (!s) continue
-        if (rs.stopHelper(task.id, s.id, why)) done.push(`${s.id}｜${s.title}`)
+        if (rs.stopHelper(task.id, s.id, why) || rs.dropInterrupted(s, why)) done.push(`${s.id}｜${s.title}`)
         else over.push(`${s.id}｜${s.title}`)
       }
+      if (done.length) host.changed(true)
       if (!done.length && !over.length && !missing.length) return { ok: false, info: '没有还在执行或排队的子任务' }
       return {
         ok: done.length > 0,

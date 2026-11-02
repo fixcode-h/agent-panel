@@ -59,8 +59,8 @@ export function createKeepAlive(s: TasksScope) {
     if (WATCHED_STOPS.has(reason)) watchStop(id, e)
     // 用户按的暂停、父对话收尾、打断并重发：独立分支里没提交的改动会留在那儿，
     // 现在就在父对话里点明，不留到用户自己发现
-    if (firstStop && (reason === 'user' || reason === 'parent' || reason === 'supersede'))
-      void stopWorktreeNote(e.task, reason)
+    // 随父对话停（parent）的不说：停是父对话自己做的，再往它对话里发一条「子对话停止」只是噪音（用户报过）
+    if (firstStop && (reason === 'user' || reason === 'supersede')) void stopWorktreeNote(e.task, reason)
   }
 
   /** 正在盯着的停止：同一份执行只盯一次（停止按钮连点、closeChildren 补停） */
@@ -151,33 +151,46 @@ export function createKeepAlive(s: TasksScope) {
   }
 
   /**
-   * 停掉整棵对话树：名下所有子对话、孙对话（连同它们派出的子任务）都按「随父对话停」结束，
-   * 然后直接结束这些对话名下的全部 CLI 进程，不等各自收尾。进程没了引擎马上就收完，收不完的由 watchStop 收口。
-   * 用户停止、归档时用：以前要等每一层收尾，父对话要点好几次停止才能全部停下
+   * 停掉整棵对话树，自上而下一级一级停：先停发起的这个对话，再停它的子对话，再往下。每一层停的是对话本身，
+   * 它派出的子任务和跑着的工作流跟着它的中断信号一起停，记成「被打断」（继续时能接着做）；不另用它们各自的终止开关，
+   * 那样会记成「已终止」，工作流的计划会收口、子任务继续时也不会再接上。先停上面的，它就不会再处理下面停下时的消息、也不会重派新活
+   * （自下而上的话父对话还在跑，收到子对话停下又去重派，用户报过）。停止标记全打完后再一起结束各自名下的 CLI 进程，不等各自收尾。
+   * 子树里的都记成「随父对话停」（parent）：父对话继续时由面板拉起，也不再往父对话里发「已停止」——停是父对话自己做的。
+   * 进程没了引擎马上就收完，收不完的由 watchStop 收口。用户停止时用（reason user）
    */
-  async function stopTree(id: string) {
-    const tk = s.live.get(id)?.task ?? (await s.store.get(id))
-    if (!tk) return
-    const ids = await subtreeIdsOf(tk)
-    for (const kid of ids) {
-      if (kid === id || !s.live.has(kid)) continue
-      // 一律按「随父对话停」停：停在等下一句、等派出的子任务（helpers）的也一样。
-      // 以前这两种只取消等待：没记停下原因，收口时被当成用户亲手停的，父对话继续时不会把它拉起来；
-      // 等子任务的取消等待后引擎还在等子任务，并没有停（用户报过：子对话有子任务在跑，停了父对话再继续，子对话起不来）
-      // 这一轮已经正常说完、停在等下一句（awaitingUser）的除外：取消等待让它照常结束，状态还是完成，
-      // 标成停止的话父对话继续时会被白拉起来一轮
-      // （awaitingUser 和等下一句的等待者是 runner 的 listen 里一起设上的）
-      if (s.live.get(kid)?.task.awaitingUser) {
-        cancelWait(kid)
+  async function stopTree(id: string, reason: StopReason = 'user') {
+    const all = await s.store.list()
+    const root = s.live.get(id)?.task ?? all.find((x) => x.id === id)
+    if (!root) return
+    const ids = subtreeTaskIds(all, id)
+    const parentOf = new Map(all.map((x) => [x.id, x.parentTaskId]))
+    const depth = (x: string) => {
+      let d = 0
+      for (let p = parentOf.get(x); p && d < 64; p = parentOf.get(p)) d++
+      return d
+    }
+    // 发起的这个对话在最前，往下一层层排
+    const order = [...ids].sort((a, b) => depth(a) - depth(b))
+    for (const tid of order) {
+      if (tid === id) {
+        stopTask(id, reason)
         continue
       }
-      stopTask(kid, 'parent')
-      cancelWait(kid)
+      if (!s.live.has(tid)) continue
+      // 这一轮已经正常说完、停在等下一句（awaitingUser）的：取消等待让它照常结束，状态还是完成，
+      // 标成停止的话父对话继续时会被白拉起来一轮（awaitingUser 和等下一句的等待者是 runner 的 listen 里一起设上的）
+      if (s.live.get(tid)?.task.awaitingUser) {
+        cancelWait(tid)
+        continue
+      }
+      // 别的（在执行、在等子任务）一律按「随父对话停」：只取消等待的话等子任务的并没有停、也没记原因，
+      // 收口时会被当成用户亲手停的，父对话继续时不拉起（用户报过）
+      stopTask(tid, 'parent')
+      cancelWait(tid)
     }
-    const killed = (
-      await Promise.all([...ids].map((x) => killTaskClis(x, (pid) => void killTreeDeep(pid)).catch(() => [])))
-    ).flat()
-    taskLog(id, '停止整棵对话树', { tasks: ids.size, killed: killed.length || undefined })
+    let killed = 0
+    for (const tid of order) killed += (await killTaskClis(tid, (pid) => void killTreeDeep(pid)).catch(() => [])).length
+    taskLog(id, '停止整棵对话树', { tasks: ids.size, killed: killed || undefined })
   }
 
   /** 已完成、CLI 还留着的子对话：id → 保留期到了结束它的定时器（见 keepDoneChild） */

@@ -680,8 +680,9 @@ export function createRun(sc: TasksScope) {
         entry.task.awaitingUser = false
         entry.task.prewarming = false
         // 排队等 API 名额的标记在 runner 里拿到或停止时就去掉；这里兜底，免得停下的对话还显示在排队
-        delete entry.task.apiWait
-        for (const s of entry.task.steps) delete s.apiWait
+        // 写 undefined、不用 delete：落盘按字段合并，delete 掉的字段在盘上还留着，停止时排队标记已经落过盘就清不掉
+        entry.task.apiWait = undefined
+        for (const s of entry.task.steps) s.apiWait = undefined
         // 预热收尾要把原来的列表时间写回去，不能让它变成现在
         let keepTime = false
         // 预热只是把 CLI 启动好，没有处理新消息就退出时不要算完成，也不要把列表时间改成现在

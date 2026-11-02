@@ -1,4 +1,5 @@
 import type { EngineHost } from './engine.ts'
+import type { TaskStep } from './schema.ts'
 import { clip } from './text.ts'
 
 /*
@@ -64,4 +65,35 @@ export function stoppedPlanText(s: { why: string; changes: string }) {
 原因：${s.why}
 ${s.changes ? `这次运行改动了这些文件（和运行开始时比）：\n${clip(s.changes, 4000)}` : '这次运行没有留下文件改动（或这里不是 git 仓库，看不出改动）。'}
 由你决定这些改动怎么处理：还用得上就保留并说明接下来怎么接着做；不要了就只撤回这次运行改的文件（改过的 git checkout -- <文件>，新加的删掉），运行开始前已有的改动不要动。处理完告诉用户你保留了什么、清理了什么，并更新计划里这一步（不再跑就标跳过并写明原因）。`
+}
+
+/*
+ * 被打断的子任务（pending + interrupted）怎么接着做：从 engine.ts 拆出来的两条规则。
+ * 续接说明里写过「带 resume 接着跑」，模型照样另派一批「重派」，原来那批一直挂着「已打断」（用户 2026-11-02 报过），
+ * 所以由 spawn_agents 强制：要么 resume 它，要么 stop_subtask 终止后再派
+ */
+
+/**
+ * 这次要另派新的子任务时，还有被打断、没做完、这次也没 resume 的：返回拒绝的说法，没有就是空串。
+ * mine 是派出方名下的子任务，fresh 是这次新派的个数，resumed 是这次 resume 的（值是接着的那个子任务）
+ */
+export function interruptedBlock(mine: TaskStep[], fresh: number, resumed: Map<unknown, TaskStep>) {
+  const reused = new Set([...resumed.values()].map((s) => s.id))
+  const hanging = mine.filter((s) => s.status === 'pending' && s.interrupted && !reused.has(s.id))
+  if (!fresh || !hanging.length) return ''
+  const list = hanging.map((s) => `${s.id}｜${s.title}`).join('、')
+  return `这些子任务中断了还没做完：${list}。要接着做就在 spawn_agents 里带 resume: <id>，在原来的会话里接着跑，不要另派新的；确实不需要了先用 stop_subtask 终止它们，再派新的。`
+}
+
+/**
+ * stop_subtask 终止一个被打断、还没重新开始的子任务：它没有在跑的进程可停，直接记成已终止。
+ * 不收掉的话它一直挂着「已打断」，也挡着另派新的子任务。返回有没有收掉
+ */
+export function dropInterrupted(s: TaskStep, why: string) {
+  if (s.status !== 'pending' || !s.interrupted) return false
+  s.status = 'skipped'
+  s.interrupted = false
+  s.endedAt = new Date().toISOString()
+  if (!s.output) s.output = why
+  return true
 }
