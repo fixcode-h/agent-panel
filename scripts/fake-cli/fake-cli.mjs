@@ -1002,6 +1002,8 @@ const turnReply = () => {
   if (input.startsWith('你是「Agent 面板」里的配置助手')) return assistText()
   // FAKE_EMPTY：只回一句「我先…」就收尾（复现模型只报准备语、不调工具）。
   // 用来测面板照常收尾、不再按文字猜「没做完」去催；连工具都不发（emptyTurn），否则这条回复就不只是一句话。
+  // 面板的收尾自检（ADR 0041）：确认做完了，不再调工具；回复带标记，端到端测试据此确认自检交到了 CLI
+  if (input.includes('（收尾自检）')) return 'SELF_CHECK_GOT 这次的事已经做完了。'
   if (input.includes('FAKE_EMPTY')) return '我先把工作区更新到最新，顺便确认分支和本地改动的基线。'
   const verdict = input.includes('最后单独一行写「验收结论')
     ? input.includes('第 1 轮验收')
@@ -1058,7 +1060,7 @@ const turnReply = () => {
   const statusGot = input.includes('【状态询问】') ? '\nSTATUS_ASK_GOT' : ''
   // 面板推它「计划没做完，接着做」：回复带上标记，端到端测试据此确认推送真的交到了 CLI
   const planNudgeGot = input.includes('你的计划才做了') ? '\nPLAN_NUDGE_GOT' : ''
-  const noPlanGot = input.includes('没有计划就结束了') ? '\nNOPLAN_NUDGE_GOT' : ''
+  const noPlanGot = input.includes('（收尾自检）') ? '\nNOPLAN_NUDGE_GOT' : ''
   // 子任务做完要交以「## 总结」开头的总结（面板按它判定子任务做完）；SUB_NO_SUMMARY 模拟说完一句就结束，推了（续接只发那句话）才补总结
   const subSummary =
     (input.includes('派出的子 Agent') && !input.includes('SUB_NO_SUMMARY')) || input.includes('还没交最后的总结')
@@ -1114,7 +1116,7 @@ if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind 
 // 一次性执行（stdin 传一个任务、跑一轮就退出）用的回复；RPC 保活时每轮用 turnReply() 重算
 const reply = turnReply()
 // 空回合：这一轮只回一句准备语，连工具都不调（复现「只回一句话就结束」）
-const emptyTurn = input.includes('FAKE_EMPTY')
+const emptyTurn = input.includes('FAKE_EMPTY') || input.includes('（收尾自检）')
 // 一个字都不回、也不报用量的一轮：CLI 报这一轮「成功」，面板什么都没收到。
 // 复现「网关吞掉请求后空成功收尾」——面板要把它报成错误，不能当成已完成并保活。
 const silentTurn = () => input.includes('FAKE_SILENT')
@@ -1736,7 +1738,7 @@ if (kind === 'claude') {
     message: { id: 'm1', content: [{ type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'npm test' } }] },
   })
   // NOPLAN_ACTS：动了手（改文件加两条命令，三处动作）却没列计划就收尾（用户 2026-11-02 报的：删完本地分支说「现在删除远端」就停了）
-  if (input.includes('NOPLAN_ACTS') && !input.includes('没有计划就结束了'))
+  if (input.includes('NOPLAN_ACTS') && !input.includes('（收尾自检）'))
     out({
       type: 'assistant',
       message: {

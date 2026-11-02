@@ -144,9 +144,9 @@ await runShard('对话与续接', async (api) => {
   assert.ok(c.args.includes('--resume'), '仍然续接原会话')
   assert.match(c.input, /## 你的角色（已更新[^\n]*\n你是戊，新版设定。/, '角色变了：续接时补发新版')
   await call('DELETE', `/tasks/${gr.id}`)
-  // 只回一句「我先…」就收尾（零工具、零改动）：照常收尾，不挂提示、不自动接一轮。
-  // 用户 2026-10-29 要求去掉按回复文字猜的「这一轮没有产出」：寒暄、反问这类正常回复会被误判
-  step('只回一句就收尾的照常收尾：不挂提示、不自动接一轮')
+  // 只回一句「我先…」就收尾（零工具、零改动）：不挂空回合提示，面板补一次很短的收尾自检（ADR 0041，用户 2026-11-02 定），
+  // 自检那一轮没动手就算确认完成，不再推。判定只看动没动手，不按回复文字猜
+  step('只回一句就收尾：补一次收尾自检，确认完成后不再推')
   let emp = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -154,19 +154,29 @@ await runShard('对话与续接', async (api) => {
     cli: 'claude',
     prompt: 'FAKE_EMPTY 看一下这个项目',
   })
-  emp = await waitDone(emp.id)
-  assert.equal(emp.status, 'done', emp.messages.at(-1)?.text)
+  emp = await waitFor(
+    async () => {
+      const x = await call('GET', `/tasks/${emp.id}`)
+      return x.messages.some((m) => m.role === 'agent' && /SELF_CHECK_GOT/.test(m.text)) && !x.working ? x : null
+    },
+    { timeout: 20000, label: '收尾自检那一轮做完' },
+  )
+  await sleep(3000)
+  emp = await call('GET', `/tasks/${emp.id}`)
   assert.ok(
     !emp.messages.some((m) => m.alert?.kind === 'empty_turn'),
     `不能再挂空回合提示；现有消息：${JSON.stringify(emp.messages.map((x) => [x.role, x.error ?? false, x.text.slice(0, 30)]))}`,
   )
+  const empChecks = emp.messages.filter((m) => m.panel === 'nudge')
+  assert.equal(empChecks.length, 1, '只自检一次')
+  assert.match(empChecks[0].text, /收尾自检[\s\S]*不用列计划/)
   const empAgent = emp.messages.filter((m) => m.role === 'agent')
-  assert.equal(empAgent.length, 1, '只有模型自己那一轮，面板没有再推')
+  assert.equal(empAgent.length, 2, '模型那一轮加自检那一轮')
   assert.match(empAgent[0].text, /我先把工作区更新到最新/)
 
-  // 动了手（跑了两条命令）却没列计划就收尾：面板不看回复字眼，只按计划判断，推它一次把计划列出来接着做；
-  // 推过的那一轮只跑了一条命令，不再推（用户 2026-11-02 报：删完本地分支说「现在删除远端」就停了）
-  step('动了手却没列计划就收尾：面板推一次让它列计划，不来回推')
+  // 动了手（跑了几条命令）却没列计划就收尾：不硬要求列计划，补一次收尾自检；自检那一轮没动手就算完成，不来回推
+  // （用户 2026-11-02 报：删完本地分支说「现在删除远端」就停了；同日定：不需要计划的事处理完就算完成）
+  step('动了手却没列计划就收尾：收尾自检一次，不逼它列计划、不来回推')
   const np = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -177,17 +187,16 @@ await runShard('对话与续接', async (api) => {
   const npDone = await waitFor(
     async () => {
       const x = await call('GET', `/tasks/${np.id}`)
-      return x.status === 'done' && x.messages.some((m) => m.role === 'agent' && /NOPLAN_NUDGE_GOT/.test(m.text))
-        ? x
-        : null
+      return !x.working && x.messages.some((m) => m.role === 'agent' && /SELF_CHECK_GOT/.test(m.text)) ? x : null
     },
-    { timeout: 20000, label: '推它列计划的那一轮做完' },
+    { timeout: 20000, label: '收尾自检那一轮做完' },
   )
   await sleep(3000)
   const npNow = await call('GET', `/tasks/${np.id}`)
-  assert.equal(npNow.messages.filter((m) => m.panel === 'nudge').length, 1, '只推了一次')
-  assert.match(npNow.messages.find((m) => m.panel === 'nudge').text, /没有计划就结束了[\s\S]*set_plan/)
-  assert.equal(npDone.status, 'done')
+  assert.equal(npNow.messages.filter((m) => m.panel === 'nudge').length, 1, '只自检了一次')
+  assert.match(npNow.messages.find((m) => m.panel === 'nudge').text, /收尾自检/)
+  assert.doesNotMatch(npNow.messages.find((m) => m.panel === 'nudge').text, /set_plan/, '不逼它列计划')
+  assert.ok(!npDone.working)
   await call('DELETE', `/tasks/${np.id}`)
 
   // 回放真实 Claude Code 录下的输出（scripts/fake-cli/replay.mjs）：面板按原来的事件顺序解析出正文、工具调用和用量；

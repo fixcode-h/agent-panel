@@ -1634,7 +1634,8 @@ export function taskSettled(
     | 'worktree'
   > & { runs?: Task['runs'] },
 ): boolean {
-  if (tk.resolved === true) return true
+  // 已完成不能盖住还在跑的这一轮（ADR 0041 第 13 节）：working 时先看 running，不把在跑的 CLI 当成已收口回收掉
+  if (tk.resolved === true && !tk.working) return true
   if (tk.status === 'running') return false
   if (tk.status === 'stopped') return true
   // failed / test-failed 不算：那两种要它自己动手修，重启后还会拉起 CLI（见 restartUnfinished）

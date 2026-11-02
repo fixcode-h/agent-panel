@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { TaskMessage } from './schema.ts'
+import type { PeerKind, TaskMessage } from './schema.ts'
 import {
   currentAskIndex,
   handedToOther,
@@ -8,6 +8,7 @@ import {
   parseReport,
   peerOfMessage,
   sentToOther,
+  sourceHeader,
   subjectLine,
   type HandOffs,
 } from './peer-message.ts'
@@ -142,4 +143,15 @@ test('parseReport：旧数据下一步没写前缀也归到下一步；只有计
   const job = parseReport('（计划步骤「编译」等的结果到了，已标为完成：先看一眼结果。）\n命令输出\n\n第二段')
   assert.deepEqual([job?.steps, job?.stepsDone, job?.child, job?.rest], [['编译'], true, '', '命令输出\n\n第二段'])
   assert.equal(parseReport('普通的一段话'), null)
+})
+
+test('sourceHeader：父对话、其他对话发来的写明「不是用户说的」；转交的用户回答、面板消息、子对话汇报不加', () => {
+  const peer = (rel: 'parent' | 'child' | 'peer', kind: PeerKind = 'task') =>
+    ({ id: 'x', title: '主理', name: '统筹', rel, kind, subject: '' }) as const
+  assert.match(sourceHeader({ peer: peer('parent') }), /父对话「主理」发来的消息，不是用户说的/)
+  assert.match(sourceHeader({ peer: peer('peer') }), /同项目的对话「主理」发来的消息，不是用户说的/)
+  assert.equal(sourceHeader({ peer: peer('parent', 'answer') }), '')
+  assert.equal(sourceHeader({ peer: peer('child', 'report') }), '')
+  assert.equal(sourceHeader({ panel: 'nudge', peer: peer('parent') }), '')
+  assert.equal(sourceHeader({}), '')
 })

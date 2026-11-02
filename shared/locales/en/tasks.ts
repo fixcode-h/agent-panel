@@ -1694,6 +1694,12 @@ export const EN_TASKS: Record<string, string> = {
     '{n} messages are queued for "after this turn", but the turn has ended and nothing will pick them up',
   '已经不在执行，排队等 API 的标记却还留着': 'No longer running, but the "queued for API" marker is still there',
   '对话已经收口，它名下的 CLI 进程却还活着': 'The conversation has settled, but its CLI process is still alive',
+  '计划才做了 {done}/{total}，面板按这个进度推满了 {n} 次，停在这里':
+    'The plan is only {done}/{total} done; the panel nudged it {n} times at this progress and it stopped here',
+  '计划才做了 {done}/{total}，这一轮已经停下，也不在等任何结果':
+    'The plan is only {done}/{total} done; this turn has stopped and is not waiting for anything',
+  '上一轮因为 {why} 停下，这一轮没有调用工具：可能是输出被截断':
+    'The last turn stopped because of {why} without calling any tool: the output may have been cut off',
   '执行位占着，但既没在执行也没在等什么：发来的消息会排在「这一轮结束后」':
     'The execution slot is held but nothing is running or waiting: new messages will queue until "after this turn"',
   '等模型回复：CLI 启动 {s} 秒，还没有任何输出': 'Waiting for the model: CLI started {s}s ago, no output yet',
@@ -1733,4 +1739,7 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个 · {alive} 个进程活着': '{n} items · {alive} processes alive',
   '{n} 个异常': '{n} anomalies',
   模型在输出: 'Model is streaming',
+  正在停止: 'Stopping',
+  接着原来的会话继续执行: 'Continue the original session',
+  重启: 'Restart',
 }

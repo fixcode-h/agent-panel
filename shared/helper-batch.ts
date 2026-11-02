@@ -7,19 +7,31 @@ import { clip } from './text.ts'
  */
 
 /** 把交回的完整内容存成文件，返回路径；存不了返回空串（宿主不支持、写盘失败） */
-export type SaveHandoff = ((step: TaskStep, text: string) => Promise<string>) | undefined
+export type SaveHandoff = ((step: Pick<TaskStep, 'id' | 'title'>, text: string) => Promise<string>) | undefined
 
 /**
  * 交回的结果超出上限：完整内容存成文件，只交开头 + 文件路径。
  * 截断就必须写明全文在哪：存不了文件（宿主不支持、写盘失败）时整段交回，不能悄悄丢掉后半段
  * （评审的意见在后半段被截掉，派它的对话既看不到也找不到全文）
  */
-export async function clipToFile(save: SaveHandoff, step: TaskStep, text: string, limit: number, hint: string) {
+export async function clipToFile(
+  save: SaveHandoff,
+  step: Pick<TaskStep, 'id' | 'title'>,
+  text: string,
+  limit: number,
+  hint: string,
+) {
   if (text.length <= limit) return text
   const file = save ? await save(step, text).catch(() => '') : ''
   if (!file) return text
   return `${clip(text, limit)}\n\n（完整结果有 ${text.length} 字，这里只附了开头。完整内容在文件 ${file}，${hint}）`
 }
+
+/**
+ * 评审、测试验收这类要逐条处置的结果（whole）交回的上限：超出才存文件只交开头。
+ * 原来和普通结果一样 4000 字，评审意见后半截要另读文件，父对话常常读不到就让评审「原样重述」（ADR 0041 第 14 节）
+ */
+export const WHOLE_OUTPUT = 20000
 
 /** 一批子任务交回结果的总字数，和每个至少留多少 */
 const HELPER_BATCH_CHARS = 12000

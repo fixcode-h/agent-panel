@@ -157,6 +157,30 @@ test('不报「请求开始」的 CLI（Codex、Pi）：按 CLI 启动时间说�
   assert.deepEqual(codes(base({ trace: { requests: 0, startedAt: NOW - 200_000 } })), ['model-silent'])
 })
 
+test('计划没做完却停下：推满了说是推满了，没推满说推进没接上；上一轮被截断、没调工具也要说出来', () => {
+  const idle = { status: 'running' as const, state: 'done' as const, working: false, awaitingUser: true }
+  const plan = { title: '贴到最新', done: 3, total: 7, waiting: 0, open: 4, key: 'aaaa0000' }
+  const stalled = (x: Partial<LifeFacts>) => verdictOf(base({ ...idle, plan, ...x }), NOW).anomalies
+  assert.match(
+    stalled({ nudge: { key: 'aaaa0000', n: 3, max: 3 } }).find((a) => a.code === 'plan-stalled')!.text,
+    /推满了 3 次/,
+  )
+  assert.match(stalled({}).find((a) => a.code === 'plan-stalled')!.text, /也不在等任何结果/)
+  // 在等结果、计划已做完：不算停住
+  assert.ok(!codes(base({ ...idle, plan: { ...plan, waiting: 1 } })).includes('plan-stalled'))
+  assert.ok(!codes(base({ ...idle, plan: { ...plan, open: 0 } })).includes('plan-stalled'))
+  assert.deepEqual(
+    codes(
+      base({
+        ...idle,
+        trace: { requests: 3, lastTurn: { stopReason: 'max_tokens', endedOn: 'text_delta', tools: 0 } },
+      }),
+    ),
+    ['turn-cut'],
+  )
+  assert.deepEqual(codes(base({ ...idle, trace: { requests: 3, lastTurn: { stopReason: 'end_turn', tools: 0 } } })), [])
+})
+
 test('五类事件计数：按事件名归类，对话自己和子任务分开数，记下最近一次的时间和摘要', () => {
   assert.equal(eventKind('模型请求开始'), 'requests')
   assert.equal(eventKind('CLI 重试模型请求'), 'retries')

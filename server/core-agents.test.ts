@@ -14,6 +14,7 @@ import {
   SELF_CHECK_TEXT,
 } from '../shared/builtin/agents.ts'
 import { isTestAgent } from '../shared/test-steps.ts'
+import { TURN_PROGRESS_RULES } from '../shared/turn-rules.ts'
 import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE } from '../shared/builtin/legacy.ts'
 import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
 import { ensureProjectAgents, upgradeBuiltinAgents } from '../shared/builtin/install.ts'
@@ -112,10 +113,13 @@ test('必备角色：「评审」也是必备，老项目里的普通副本升�
   assert.equal(now.params.find((p) => p.key === 'target')?.default, '方案或结论', '用户填的参数值保留')
 })
 
-test('通用约束：连续工具操作时要报告可见进度', () => {
+test('通用约束：说明和工具调用写在同一条回复里，不单独发阶段说明', () => {
   const rules = BUILTIN_AGENTS.find((a) => a.key === 'rules')!.agent.instructions
-  assert.match(rules, /连续做两次以上工具操作前先用一句话说明当前目标/)
+  // 没有工具调用的回复会结束这一轮：要求「先报告阶段结果再继续」时模型说了要做却停下（用户 2026-11-02 报）
+  assert.ok(rules.includes(TURN_PROGRESS_RULES))
+  assert.match(rules, /要说明就和工具调用写在同一条回复里/)
   assert.match(rules, /模型没有返回思考内容时不要编造内部思考/)
+  assert.doesNotMatch(rules, /报告阶段结果|一整轮只剩工具调用/)
 })
 
 test('通用约束：等待要有死的数字上限，超时判阻塞，不靠轮询耗时间', () => {
@@ -180,13 +184,13 @@ test('派单纪律：事务性动作合并派一次、纯执行给低档、标�
   )
 })
 
-test('调研、评审：可见进度压成一句话、同一批工具一起发出，与全局约束一致', () => {
+test('调研、评审：说明压成一句话、同一批工具一起发出，与全局约束一致', () => {
   const role = (key: string) => BUILTIN_AGENTS.find((a) => a.key === key)!.agent.instructions
-  // 全局约束那条要留：它防的是「只回一句我先看一下就结束回合」和「一整轮只剩工具调用」
-  assert.match(role('rules'), /连续做两次以上工具操作前先用一句话说明当前目标/)
-  // 调研不能说「过程里不吭声」也不能一条进度一个回合：压成一句话、每批工具一起发
-  assert.match(role('explorer'), /可见进度压成一句话/)
-  assert.match(role('explorer'), /每批工具发出前那一句目标照旧要说/)
+  // 全局约束那条要留：它防的是「只回一句我先看一下就结束回合」
+  assert.match(role('rules'), /不要只回一句「我先看一下」「我先读取…」就结束回合/)
+  // 调研不能一条进度一个回合：说明压成一句话、和这批工具写在同一条回复里
+  assert.match(role('explorer'), /要说明就压成一句话/)
+  assert.match(role('explorer'), /和这批工具调用写在同一条回复里/)
   assert.match(role('explorer'), /同一批工具一起发出去/)
   assert.match(role('explorer'), /不要只回一句「我先读取…」就结束回合/)
   // 临时文件跟「截图和临时文件放哪」（server/task-files.ts）走对话目录，不写死盘符或项目里的临时目录

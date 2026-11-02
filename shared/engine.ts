@@ -84,8 +84,8 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
-import { clipToFile, layeredBatch } from './helper-batch.ts'
-import { SUMMARY_HEAD, runWithSummary } from './helper-summary.ts'
+import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
+import { STATE_LINE, SUMMARY_HEAD, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
@@ -636,7 +636,7 @@ export interface EngineHost {
    */
   confirm?: (step: TaskStep, text: string) => Promise<{ allow: boolean; answer?: string } | null>
   /** 节点结果太长时把完整内容存成文件，返回文件路径，下游节点自己去读；没有时只截断 */
-  saveHandoff?: (step: TaskStep, text: string) => Promise<string>
+  saveHandoff?: (step: Pick<TaskStep, 'id' | 'title'>, text: string) => Promise<string>
   /**
    * 交给评审的改动（git 仓库才有）：since 是上一轮评审记下的快照，给了就只取那之后的增量。
    * 派「评审」时面板一次把差异带进提示词，评审只看代码，不用自己一个回合一个回合地 git diff、读文件（ADR 0010）
@@ -960,9 +960,9 @@ function sendRunMessage(host: EngineHost, from: string, to: string, text: string
   return true
 }
 
-/** 节点 / 步骤的输出：太长时另存文件，交给下游的结果里写明去哪读 */
-async function storeOutput(host: EngineHost, step: TaskStep, text: string) {
-  return clipToFile(host.saveHandoff, step, text, MAX_OUTPUT, '开始之前请先读完。')
+/** 节点 / 步骤的输出：太长时另存文件，交给下游的结果里写明去哪读；评审、验收（whole）要逐条处置，上限放宽 */
+async function storeOutput(host: EngineHost, step: TaskStep, text: string, whole = false) {
+  return clipToFile(host.saveHandoff, step, text, whole ? WHOLE_OUTPUT : MAX_OUTPUT, '开始之前请先读完。')
 }
 
 /** 一次流程调用：在哪个工作流的哪个流程，挂在哪个节点的哪个入口下 */
@@ -1332,7 +1332,7 @@ function inboxPart(host: EngineHost) {
   const ask = host.task.askUser
     ? ''
     : '「提问」关着：子对话的提问和收尾建议都由你决定，用户不会回答。按已有信息选最合理的做法，写清「你替他决定了什么、依据、如果不对怎么改」，缺关键信息也选一个默认方案继续并在结论里标出；不要空着等用户。'
-  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 2000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。${ask}`
+  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 20000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。${ask}`
 }
 
 /**
@@ -1796,7 +1796,7 @@ async function runNodeSingle(
           error: t('「{title}」验收 {round} 轮仍未通过。最后一轮的意见：\n{feedback}', {
             title: step.title,
             round: n,
-            feedback: clip(rv.output, 1500),
+            feedback: await clipToFile(host.saveHandoff, step, rv.output, 1500, '先读完。'),
           }),
         }
       system(
@@ -1850,7 +1850,7 @@ async function runNodeSingle(
           title: step.title,
           agent: agentName,
           instructions: node.instructions,
-          result: clip(text, 8000),
+          result: await clipToFile(host.saveHandoff, step, text, 8000, '评估前先读完。'),
           round: n,
           reworksLeft: node.hooks.maxRounds - reworks,
           branches: branchy
@@ -1877,7 +1877,7 @@ async function runNodeSingle(
           error: t('主角色退回「{title}」{n} 次后仍不满意：{feedback}', {
             title: step.title,
             n: reworks,
-            feedback: clip(d.feedback, 1500),
+            feedback: await clipToFile(host.saveHandoff, step, d.feedback, 1500, '先读完。'),
           }),
         })
       if (d.action === 'delegate' && (delegations >= MAX_DELEGATIONS || n > node.hooks.maxRounds + MAX_DELEGATIONS + 2))
@@ -1910,7 +1910,7 @@ async function runNodeSingle(
           delegations,
           [
             d.input || `处理和节点「${step.title}」相关的事`,
-            `## 节点「${step.title}」的结果\n${clip(text, 6000)}`,
+            `## 节点「${step.title}」的结果\n${await clipToFile(host.saveHandoff, step, text, 6000, '先读完。')}`,
           ].join('\n\n'),
         )
         if (!r.ok)
@@ -1924,7 +1924,7 @@ async function runNodeSingle(
                   error: r.error,
                 }),
           })
-        extra = `### 委派给工作流「${target.name}」的结果\n${clip(r.output, 6000)}`
+        extra = `### 委派给工作流「${target.name}」的结果\n${await clipToFile(host.saveHandoff, step, r.output, 6000, '先读完。')}`
         continue
       }
       const ok = d.action === 'continue' ? d : undefined
@@ -2196,7 +2196,7 @@ async function runNodeSteps(
           error: t('「{title}」验收 {round} 轮仍未通过。最后一轮的意见：\n{feedback}', {
             title: r.title,
             round: n,
-            feedback: clip(rv.output, 1500),
+            feedback: await clipToFile(host.saveHandoff, step, rv.output, 1500, '先读完。'),
           }),
         }
       system(host, t('「{title}」第 {round} 轮验收未通过，已把意见交回节点继续完善。', { title: r.title, round }), r.id)
@@ -2277,7 +2277,7 @@ async function runNodeSteps(
           title: step.title,
           agent: agentName,
           instructions: units[last].instructions,
-          result: clip(text, 8000),
+          result: await clipToFile(host.saveHandoff, step, text, 8000, '评估前先读完。'),
           round: n,
           reworksLeft: units[last].maxRounds - reworks,
           branches: branchy
@@ -2306,7 +2306,7 @@ async function runNodeSteps(
             error: t('主角色退回「{title}」{n} 次后仍不满意：{feedback}', {
               title: step.title,
               n: reworks,
-              feedback: clip(d.feedback, 1500),
+              feedback: await clipToFile(host.saveHandoff, step, d.feedback, 1500, '先读完。'),
             }),
           },
           recordOf(last),
@@ -2355,7 +2355,7 @@ async function runNodeSteps(
             round: delegations,
             input: [
               d.input || `处理和节点「${step.title}」相关的事`,
-              `## 节点「${step.title}」的结果\n${clip(text, 6000)}`,
+              `## 节点「${step.title}」的结果\n${await clipToFile(host.saveHandoff, step, text, 6000, '先读完。')}`,
             ].join('\n\n'),
             owner: step.title,
           },
@@ -2374,7 +2374,7 @@ async function runNodeSteps(
             },
             recordOf(last),
           )
-        extra = `### 委派给工作流「${target.name}」的结果\n${clip(r.output, 6000)}`
+        extra = `### 委派给工作流「${target.name}」的结果\n${await clipToFile(host.saveHandoff, step, r.output, 6000, '先读完。')}`
         continue
       }
       const ok = d.action === 'continue' ? d : undefined
@@ -3783,7 +3783,7 @@ async function runHelper(
       siblings.length
         ? `## 同时进行的子 Agent\n下面这些和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings.map((x) => `- ${x}`).join('\n')}`
         : '',
-      `## 要求\n只完成上面这件事，不要做发起节点的其他工作。${reviewing ? `完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。` : `做完后用${promptLangWord()}写最后的总结，以「${SUMMARY_HEAD}」开头，交回给派你的 Agent；面板按这段总结判断子任务做完没有，没做完不要先写总结。`}\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
+      `## 要求\n只完成上面这件事，不要做发起节点的其他工作。${reviewing ? `完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。` : `做完后用${promptLangWord()}写最后的总结，以「${SUMMARY_HEAD}」开头、第一行写「${STATE_LINE}」，交回给派你的 Agent；面板按这段总结判断子任务做完没有，没做完不要先写总结，接着做；确实做不下去就写「状态：卡住：卡在哪、需要什么」。`}\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
     ].filter(Boolean)
     // 接着原来的子任务做（复看、重试）：会话里已经有需求和通用规则，只发新的和变了的段落（见 shared/prompt-delta.ts）
     const sessionKey = step.session || step.id
@@ -3826,7 +3826,7 @@ async function runHelper(
       const late = await settleHelpers(host, step)
       // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的意见整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
       // 完整内容和节点一样存成文件，交回的结果里写明去哪读
-      step.output = await storeOutput(host, step, late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text)
+      step.output = await storeOutput(host, step, late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text, reviewing)
       step.status = 'done'
     } else {
       step.status = r.stopped || r.halted ? 'pending' : 'failed'
@@ -4398,10 +4398,10 @@ export async function runConversationTurn(host: EngineHost, who: string) {
         const out = await startPlan(host, p)
         results.push(
           out.ok
-            ? `### 计划执行完成\n${clip(out.text || '（没有文字输出）', 12000)}`
+            ? `### 计划执行完成\n${await clipToFile(host.saveHandoff, { id: `plan-${host.newId()}`, title: '计划执行结果' }, out.text || '（没有文字输出）', 12000, '先读完。')}`
             : out.stopped
               ? rs.stoppedPlanText(out.stopped)
-              : `### 计划执行失败\n${clip(out.error || '执行失败', 4000)}`,
+              : `### 计划执行失败\n${await clipToFile(host.saveHandoff, { id: `plan-${host.newId()}`, title: '计划执行失败' }, out.error || '执行失败', 4000, '先读完。')}`,
         )
       }
       prompt = `## 计划执行结果\n${results.join('\n\n')}\n\n请根据结果继续：向用户说明完成了什么、有哪些改动和遗留问题；需要再启动一次计划就继续调用 start_plan。`
@@ -4466,7 +4466,7 @@ function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
     `## 任务的原始需求\n${original}`,
     host.workflow?.document.trim() ? `## 工作流说明\n${host.workflow.document.trim()}` : '',
     blocked
-      ? `工作流停在了节点「${blocked.title}」：它的结论是不通过，后面的节点还没有执行。它的结果：\n${clip(blocked.output, 3000)}\n\n` +
+      ? `工作流停在了节点「${blocked.title}」：它的结论是不通过，后面的节点还没有执行。它的结果：\n${clip(blocked.output, 6000) /* 存时已按 storeOutput 截过、带全文指针，留够长度不切掉指针 */}\n\n` +
         `请按追加要求处理（例如修好不通过的地方），必要时自己验证；${after}之后会重新执行「${blocked.title}」，通过后接着走后面的流程，后面节点的工作不用你做。`
       : host.task.flowClosed
         ? `用户已经结束了工作流，没完成的节点不再执行。请按追加要求直接修改，必要时自己验证；${after}`
@@ -4657,7 +4657,7 @@ export async function runEngineTurn(host: EngineHost) {
       return finish(host, r)
     }
     const d = parseDispatch(r.text) ?? { action: 'answer' as const }
-    main.step.output = clip(stripDispatch(r.text).trim(), MAX_OUTPUT)
+    main.step.output = await storeOutput(host, main.step, stripDispatch(r.text).trim())
     host.changed(true)
     // 编排器用工具直接要求的运行（run_workflow）优先，其次才是 dispatch 里的决定
     const asked = takePendingRun(host)
@@ -4689,7 +4689,7 @@ export async function runEngineTurn(host: EngineHost) {
       return finish(host, r)
     }
     const d = parseDispatch(r.text) ?? { action: 'answer' as const }
-    main.step.output = clip(stripDispatch(r.text).trim(), MAX_OUTPUT)
+    main.step.output = await storeOutput(host, main.step, stripDispatch(r.text).trim())
     system(host, dispatchText(d, t('这次要求')), main.step.id)
     host.changed(true)
     // 编排器用工具直接要求的运行（run_workflow）优先，其次才是 dispatch 里的决定

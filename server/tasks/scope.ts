@@ -270,6 +270,8 @@ export interface TasksScope {
       delivery?: import('../../shared/schema.ts').DeliveryHow
       messageId?: string
       worktree?: import('../../shared/schema.ts').TaskMessage['worktree']
+      /** 面板在父对话里自动画出的子对话总结卡（见 TaskMessage.summaryCards） */
+      summaryCards?: import('../../shared/schema.ts').TaskMessage['summaryCards']
     },
   ) => Promise<Task>
   forwardSpawn: (
@@ -381,9 +383,14 @@ export interface TasksScope {
     peer?: PeerFrom,
     worktree?: import('../../shared/schema.ts').TaskMessage['worktree'],
     wake?: boolean,
+    summaryCards?: import('../../shared/schema.ts').TaskMessage['summaryCards'],
   ) => Promise<void>
   notePlanInput: (tk: Task, skip?: boolean, now?: string) => boolean
   nudgePlan: (conv: Task, turn?: TurnInfo) => Promise<boolean>
+  /** 推进计数的现状（诊断用）：最后一个进度指纹和推了几次 */
+  nudgeState: (id: string) => { key: string; n: number } | undefined
+  /** 用户亲自发了新消息：推进次数清零（ADR 0041） */
+  resetNudge: (id: string) => void
   panelAlert: (taskId: string, kind: AlertKind, text: string, error: unknown, level?: 'warn' | 'error') => Promise<void>
   paramsOf: (p: Project, workflowId: string) => Record<string, string | number | boolean | string[]>
   parentRequestBuild: (
@@ -720,7 +727,10 @@ export interface TasksScope {
   wakeConv: (
     id: string,
     text: string,
-    extra?: Pick<import('../../shared/schema.ts').TaskMessage, 'panel' | 'peer' | 'child' | 'worktree'>,
+    extra?: Pick<
+      import('../../shared/schema.ts').TaskMessage,
+      'panel' | 'peer' | 'child' | 'worktree' | 'summaryCards'
+    >,
   ) => Promise<import('../../shared/schema.ts').DeliveryHow>
   wakeTask: (
     id: string,

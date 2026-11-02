@@ -58,6 +58,10 @@ test('重试提示按原因给出不同的下一步', () => {
   assert.match(limit.fix, /自动重试/)
   assert.match(context.what, /上下文/)
   assert.match(context.fix, /自动压缩/)
+  // CLI 只报了 unknown、没有状态码（Claude Code 的 api_retry）：说成连接中断或超时，不落到通用那句
+  const unknown = alertInfo('retry', '模型请求失败，3 秒后第 2/10 次重试：unknown')
+  assert.match(unknown.what, /没有返回任何状态码/)
+  assert.equal(alertInfo('retry', '模型请求失败，3 秒后第 2/10 次重试：').what, unknown.what)
   // 分类只看关键字，分不出「上游不稳」和「请求接近上限被断开」：不能写成确定性否定，
   // 否则用户会跳过真正有效的动作（看上下文占用、压缩）
   assert.doesNotMatch(gateway.what, /不属于上下文超长|不是你的网络/)

@@ -1,3 +1,4 @@
+import { sourceHeader } from '../../shared/peer-message.ts'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
@@ -113,8 +114,14 @@ export function registerConversationRoutes(s: TasksScope) {
       }
     }
     // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
-    const expanded = await s.expandForWorkflow(draft, input.prompt)
-    if (expanded && draft.messages[0]) draft.messages[0].prompt = expanded
+    const raw0 = await s.expandForWorkflow(draft, input.prompt)
+    // 别的对话替它建的（app 动作 task.create）：第一条记成「同项目对话发来」，交给 CLI 时写明不是用户说的（ADR 0041）
+    const sender = input.from && !parent ? await s.current(input.from) : undefined
+    const first = draft.messages[0]
+    if (sender && first) first.peer = await s.peerOf(sender, 'peer', 'task', input.prompt)
+    const head = first ? sourceHeader(first) : ''
+    const expanded = head ? head + (raw0 || input.prompt) : raw0
+    if (expanded && first) first.prompt = expanded
     // 附件：图片拷进这个对话的对话目录（tasks/files/<id>/attachments/），交给 Agent 的是那里的绝对路径；
     // 其它文件原样用绝对路径。对话里显示的仍是原来那份（缩略图从附件目录读）
     const placed = await s.placeInTask(draft, input.attachments ?? [])
@@ -137,14 +144,18 @@ export function registerConversationRoutes(s: TasksScope) {
     const id = c.req.param('id')
     const p = FollowUpInput.safeParse(await c.req.json())
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
-    const { text, attachments, interrupt, messageId } = p.data
+    const { text, attachments, interrupt, messageId, from } = p.data
     const cur = await s.current(id)
+    // 别的对话替它发的：按「同项目的其他对话」记来源；发件对话找不到（被删了）就当用户消息，不丢这条
+    const sender = from && from !== id ? await s.current(from) : undefined
+    const peer = sender ? await s.peerOf(sender, 'peer', 'task', text) : undefined
     const liveNow = s.live.get(id)
     taskLog(id, '收到消息', {
       messageId,
       interrupt: interrupt || undefined,
       attachments: attachments.length || undefined,
       text: text.trim().slice(0, 80),
+      from: from || undefined,
       live: !!liveNow,
       status: liveNow?.task.status ?? cur?.status,
       working: liveNow?.task.working,
@@ -166,12 +177,15 @@ export function registerConversationRoutes(s: TasksScope) {
       taskLog(id, '面板命令', { cmd: '/rule', error: 'error' in r ? r.error : undefined })
       return 'error' in r ? s.bad(c, r.error) : c.json(r.task)
     }
-    // 用户直接进子对话回复，就当作回答了它挂在父对话里的提问（不打断这次发送）
-    await s
-      .settleAskFromChild(id, text)
-      .catch((e) => log.warn('task', '回答子对话时没能收起父对话的提问卡片', { task: id, error: (e as Error).message }))
+    // 用户直接进子对话回复，就当作回答了它挂在父对话里的提问（不打断这次发送）；别的对话发来的不算用户的回答
+    if (!peer)
+      await s
+        .settleAskFromChild(id, text)
+        .catch((e) =>
+          log.warn('task', '回答子对话时没能收起父对话的提问卡片', { task: id, error: (e as Error).message }),
+        )
     // 用户直接给子对话发消息：父对话计划里挂上等它，做完的状态才会报到父对话并叫起它（不打断这次发送）
-    if (cur?.parentTaskId)
+    if (cur?.parentTaskId && !peer)
       await s.trackUserToChild(cur, text).catch((e) => {
         log.warn('task', '用户直接发给子对话的要求没能登记到父对话', { task: id, error: (e as Error).message })
         s.alertOn(id, 'delivery', t('这条消息没能登记到父对话的计划里，做完后父对话可能收不到状态'))(e)
@@ -194,6 +208,7 @@ export function registerConversationRoutes(s: TasksScope) {
           ...(expanded ? { prompt: expanded } : {}),
           tools: [],
           ...(attachments.length ? { attachments } : {}),
+          ...(peer && { peer }),
           at: new Date().toISOString(),
         }
         const r = await s.deliver(prev, msg, expanded || text, placed).catch((e: Error) => {
@@ -216,7 +231,7 @@ export function registerConversationRoutes(s: TasksScope) {
       return s.bad(c, t('任务正在执行，请等它完成或先停止'), 409)
     }
     try {
-      return c.json(replied('new-turn', await s.followUp(id, { text, attachments, messageId })))
+      return c.json(replied('new-turn', await s.followUp(id, { text, attachments, messageId, ...(peer && { peer }) })))
     } catch (e) {
       taskLog(id, '发消息失败', { messageId, error: e as Error })
       // 检查执行位和真正占到之间另一条请求先占了：按「正在执行」返回，不能冒成 500

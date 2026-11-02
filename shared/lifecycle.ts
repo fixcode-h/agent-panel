@@ -131,6 +131,8 @@ export interface TraceFacts {
   retry?: { attempt: number; error?: string; at: number }
   resultAt?: number
   resultOk?: boolean
+  /** 上一轮怎么停的：stop_reason、最后一段输出是什么、调了几次工具（见 cli-trace.ts 的 lastTurn） */
+  lastTurn?: { stopReason?: string; endedOn?: string; tools: number }
 }
 
 /** 一个节点（对话或子任务）的事实：服务端收集，诊断文件里原样保存 */
@@ -163,6 +165,10 @@ export interface LifeFacts {
   waitsOn: { id: string; title: string; state: ConvState }[]
   trace?: TraceFacts
   exit?: ProcessExit
+  /** 面板计划（没有就是 undefined）：做了几步、一共几步、在等几步、还剩几步要做、进度指纹（短） */
+  plan?: { title: string; done: number; total: number; waiting: number; open: number; key: string }
+  /** 面板推进（自驱）的计数：最后一个进度指纹（短）、这个进度推了几次、最多几次 */
+  nudge?: { key: string; n: number; max: number }
 }
 
 export type AnomalyLevel = 'danger' | 'warning' | 'info'
@@ -310,6 +316,25 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
     !f.live.prewarming
   )
     add('slot-idle', 'warning', t('执行位占着，但既没在执行也没在等什么：发来的消息会排在「这一轮结束后」'))
+
+  // 计划没做完，这一轮却已经停下、也不在等什么：推进推满了就是卡住，没推满说明推进没有接上
+  const pl = f.plan
+  const idle = !f.working && !f.helpers && !f.jobs && !f.waitsOn.length && (f.status !== 'running' || f.awaitingUser)
+  if (pl && pl.open && !pl.waiting && idle)
+    add(
+      'plan-stalled',
+      'warning',
+      f.nudge && f.nudge.key === pl.key && f.nudge.n >= f.nudge.max
+        ? t('计划才做了 {done}/{total}，面板按这个进度推满了 {n} 次，停在这里', {
+            done: pl.done,
+            total: pl.total,
+            n: f.nudge.n,
+          })
+        : t('计划才做了 {done}/{total}，这一轮已经停下，也不在等任何结果', { done: pl.done, total: pl.total }),
+    )
+  const lt = tr?.lastTurn
+  if (lt && !lt.tools && lt.stopReason && lt.stopReason !== 'end_turn')
+    add('turn-cut', 'warning', t('上一轮因为 {why} 停下，这一轮没有调用工具：可能是输出被截断', { why: lt.stopReason }))
 
   const why = f.cliAlive ? undefined : exitText(f)
   return { headline, why, anomalies: out }

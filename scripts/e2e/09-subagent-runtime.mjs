@@ -542,7 +542,7 @@ await runShard('子对话运行与监管', async (api) => {
     await call('DELETE', `/tasks/${stuckParent.id}`)
     step('子对话卡住：问过没回复就重启，重启没恢复就警告并新开子对话接手')
   }
-  // ---- 子对话计划做了一半就收尾（只回一句打算、不调工具）：面板马上推它接着做，同一进度只推一次 ----
+  // ---- 子对话计划做了一半就收尾（只回一句打算、不调工具）：子对话自己按计划推，同一进度最多 3 次，推满才报父对话（ADR 0041） ----
   {
     const stallParent = await waitDone(
       (
@@ -571,20 +571,29 @@ await runShard('子对话运行与监管', async (api) => {
       },
       { label: '面板推子对话接着做计划，并交到了 CLI', timeout: 20000 },
     )
-    assert.equal(pushes(pushed).length, 1, '计划停住时推了一次')
+    assert.ok(pushes(pushed).length >= 1, '计划停住时推了它')
     // 三步计划加上面板放在最后的收尾（共用目录也要请父对话验收）一共四步
     assert.match(pushes(pushed)[0].text, /1\/4[\s\S]*「跑检查」/, '推的时候写明进度和接下来做哪一步')
-    // 被推之后仍然原地不动：不再推第二次，改成照常上报父对话「未完成」
-    await waitFor(
+    // 被推之后仍然原地不动：同一进度推满 3 次（最后一次要它说明卡在哪），才上报父对话一次，并写明不要只发「继续」
+    const report = await waitFor(
       async () => {
         const p = await call('GET', `/tasks/${stallParent.id}`)
-        return p.messages.some((m) => m.child?.id === stallKid.id && m.text.includes('计划还没做完'))
+        return p.messages.find((m) => m.child?.id === stallKid.id && m.text.includes('计划还没做完'))
       },
-      { label: '推过一次仍没动：上报父对话未完成', timeout: 20000 },
+      { label: '推满 3 次仍没动：上报父对话', timeout: 30000 },
     )
-    assert.equal(pushes(await call('GET', `/tasks/${stallKid.id}`)).length, 1, '同一进度只推一次，不来回推')
+    assert.match(report.text, /推了 3 次仍停在这里[\s\S]*不要只发「继续」/)
+    const kidNow = await call('GET', `/tasks/${stallKid.id}`)
+    assert.equal(pushes(kidNow).length, 3, '同一进度推满 3 次就停，不来回推')
+    assert.match(pushes(kidNow)[2].text, /第 3 次提醒/)
+    const parentNow = await call('GET', `/tasks/${stallParent.id}`)
+    assert.equal(
+      parentNow.messages.filter((m) => m.child?.id === stallKid.id && m.text.includes('计划还没做完')).length,
+      1,
+      '推满之前不打扰父对话，推满后只报一次',
+    )
     await call('DELETE', `/tasks/${stallParent.id}`)
-    step('子对话计划做一半就收尾：面板马上推它接着做，推过仍不动就上报父对话，不来回推')
+    step('子对话计划做一半就收尾：子对话自己推满 3 次仍不动，才上报父对话一次')
   }
   // ---- 父对话被停下后继续：一起被打断的子对话由面板连带拉起来，续接的提示写清是续接、子对话已在接着做 ----
   {

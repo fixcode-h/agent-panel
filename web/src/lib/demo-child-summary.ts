@@ -1,8 +1,9 @@
 /**
- * 演示：子对话自己的详细总结和父对话里那张链到它的结果卡片（shared/summary-card.ts）。
- * 子对话写 `## 类型｜结论` + 一段段 `### 段名`，照普通 Markdown 显示；父对话的卡片标题写成 `[结论](child:<id>)`，
- * 点了在右栏打开子对话、滚到这份总结
+ * 演示：子对话自己的详细总结和面板在父对话里自动画出的卡片（shared/summary-card.ts）。
+ * 子对话写 `## 类型｜结论` + 一段段 `### 段名`，照普通 Markdown 显示；父对话不再自己写卡，
+ * 面板按子对话的总结自动画卡片（标题是「类型｜结论」，点标题在右栏打开子对话、滚到这份总结）
  */
+import { childSummaryCards } from '@shared/summary-card'
 import type { TaskTodo } from '@shared/schema'
 
 /** 子对话的最后一条回复：按 summaryDetailRules 的「修复」段落写 */
@@ -38,18 +39,8 @@ export const demoChildSummary = () =>
     '无',
   ].join('\n')
 
-/** 父对话收到汇报后的回复：一张简洁的卡片，标题链到子对话 */
-export const demoParentCard = (childId: string) =>
-  [
-    '侧栏时间的问题已经修好并合回 main。',
-    '',
-    `### 修复｜[侧栏的「x 分钟前」不再停在打开页面那一刻](child:${childId})`,
-    '- **现象**：页面开着不动，侧栏的相对时间一直停在打开时的值',
-    '- **原因**：时间在渲染时算一次，列表没变就不重画（`Sidebar.tsx:212`）',
-    '- **修复**：加按整分钟对齐的时钟，只让时间小组件订阅重画',
-    '- **验证**：两条新单测改前失败、改后通过；演示页放 3 分钟时间按分钟走',
-    '- **遗留**：无',
-  ].join('\n')
+/** 面板在父对话里自动画的卡片：由子对话的总结解析出来，和正式后端用的同一套 */
+export const demoChildCards = (childId: string) => childSummaryCards(demoChildSummary(), childId)
 
 /** Chat 页演示的待办：Chat 模式用 CLI 自带的待办（ADR 0038），显示在输入框上方 */
 export const demoChatTodos = (): TaskTodo[] => [

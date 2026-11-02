@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { turnInfo, type TurnInfo } from './turn-info.ts'
 import { detectVcs } from '../projects-analyze.ts'
 import { projectDocRoot } from '../doc-root.ts'
@@ -55,7 +54,7 @@ import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { attachmentAddDirs, placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
-import { CACHE_DIR, HANDOFF_DIR, writeFileOnce } from '../store.ts'
+import { CACHE_DIR, HANDOFF_DIR, handoffDirOf, writeFileOnce } from '../store.ts'
 import { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 
@@ -128,6 +127,7 @@ import { promptLangReminder, promptLangRules, promptUserNameRules, replyLang } f
 import { compactedSilently } from '../../shared/prompt-delta.ts'
 import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
+import { sourceHeader } from '../../shared/peer-message.ts'
 import { taskLog } from '../task-log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { dropAsked } from '../../shared/task-settle.ts'
@@ -1178,13 +1178,13 @@ async function runAgent(
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
     systemPromptModPath,
     // 图片附件拷在对话目录的 attachments/ 下（对话目录在下面一并放行）；其余按原来的绝对路径交给 Agent，
-    // 工作目录之外的那些要放行。节点交接的完整结果也在数据目录里
+    // 工作目录之外的那些要放行。交接的完整结果在数据目录里，启动前就建好目录并放行（见 handoffDirOf）
     addDirs: [
       ...attachmentAddDirs(
         task.messages.flatMap((m) => m.attachments ?? []),
         { cwd, uploadsRoot: UPLOADS_DIR },
       ),
-      ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
+      handoffDirOf(task.id),
       // 对话目录在工作目录外：放行，Agent 才能读到拷进来的图片、把截图和临时文件写进去
       taskDir.dir,
     ],
@@ -1977,7 +1977,7 @@ async function runAgent(
           deliver: (msg, placed, recorded) => {
             taskLog(task.id, '消息交给等下一句的 CLI', { messageId: msg.id, recorded: recorded || undefined })
             // 只有用户自己的话才按「用户这次的消息」补状态；面板推的（后台命令结果、父对话传话）原样交
-            fromUser = msg.role === 'user' && !msg.panel
+            fromUser = msg.role === 'user' && !msg.panel && !msg.peer
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
             if (!recorded) task.messages.push(msg)
@@ -1989,7 +1989,7 @@ async function runAgent(
             task.working = true
             // 之后的输出另起一条，排在用户消息后面
             cur = undefined
-            const text = withAttachments(msg.text, placed ?? msg.attachments ?? [])
+            const text = withAttachments(sourceHeader(msg) + msg.text, placed ?? msg.attachments ?? [])
             // 新的一轮从这里算起：空回合判定只看这条消息之后的输出
             turnMark = { from: mine.length, touched: touched.size, input: text }
             turnEnded = false

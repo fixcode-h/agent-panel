@@ -55,6 +55,8 @@ import { placedFiles } from '../attachments.ts'
 import { currentBranch, isBigProject } from '../exec/worktree.ts'
 import { currentTestSteps, isUeBuildCommand } from '../../shared/test-steps.ts'
 import { log } from '../log.ts'
+import { sourceHeader } from '../../shared/peer-message.ts'
+import { inboxWithFile } from './inbox-file.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { markChildWrapUp } from '../../shared/plan.ts'
@@ -80,6 +82,13 @@ import type { TasksScope } from './scope.ts'
 /**
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
  */
+/**
+ * 这条输入给对话一次新的推进机会（推进次数清零，ADR 0041）：用户亲自发的，或父对话交代的新任务（有新内容）。
+ * 其他对话、子对话汇报、面板消息、父对话的状态询问不算：外部输入只改计划，计划变了指纹自然会变
+ */
+const freshChance = (m: { panel?: unknown; child?: unknown; peer?: { rel: string; kind: string } }) =>
+  !m.panel && !m.child && (!m.peer || (m.peer.rel === 'parent' && m.peer.kind === 'task'))
+
 export function createRun(sc: TasksScope) {
   /** 每个子对话已经报给父对话的撞车（路径 + 对方 id），见 checkCollisions */
   const collided = new Map<string, Set<string>>()
@@ -425,7 +434,7 @@ export function createRun(sc: TasksScope) {
           : () => {
               const got = entry.task.inbox
               entry.task.inbox = []
-              return got
+              return got.map((m) => inboxWithFile(task.id, m))
             },
         messageParent: task.parentTaskId
           ? (text, question, options, kind) => sc.messageParent(entry.task, text, question, options, kind)
@@ -806,6 +815,8 @@ export function createRun(sc: TasksScope) {
       messageId?: string
       /** 停下时独立分支里还有没提交的改动（见 stopWorktreeNote）：父对话里那一行直接写几个文件、目录在哪 */
       worktree?: TaskMessage['worktree']
+      /** 面板在父对话里自动画出的子对话总结卡（见 TaskMessage.summaryCards） */
+      summaryCards?: TaskMessage['summaryCards']
     },
   ) {
     // 上一次收尾还在删独立分支的目录：等它结束再继续，不然它会在重建之后把新目录和同名分支删掉
@@ -841,7 +852,11 @@ export function createRun(sc: TasksScope) {
     sc.notePlanInput(next, !!m.panel || !!m.child)
     // 用户发了新消息：上一轮已经全部做完的 CLI 待办收起，不再一直挂着「待办已完成」
     if (!m.panel && !m.child && !m.peer) next.todos = settledTodos(next.todos)
-    const expanded = await expandForWorkflow(next, m.text)
+    if (freshChance(m)) sc.resetNudge(next.id)
+    // 父对话、其他对话发来的：交给 CLI 的那份前面写明来源（见 sourceHeader），对话里记的原文不变
+    const head = m.panel ? '' : sourceHeader({ peer: m.peer })
+    const raw = await expandForWorkflow(next, m.text)
+    const expanded = head ? head + (raw || m.text) : raw
     dropEndNotes(next)
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
     if (next.parentTaskId && next.resolved) {
@@ -877,6 +892,7 @@ export function createRun(sc: TasksScope) {
       ...(m.panel ? { panel: m.panel } : {}),
       ...(m.child ? { child: m.child } : {}),
       ...(m.peer ? { peer: m.peer } : {}),
+      ...(m.summaryCards?.length ? { summaryCards: m.summaryCards } : {}),
       ...(expanded ? { prompt: expanded } : {}),
       tools: [],
       ...(m.attachments.length ? { attachments: m.attachments } : {}),
@@ -989,6 +1005,7 @@ export function createRun(sc: TasksScope) {
     if (wait === 'ok') {
       // CLI 停在等下一句（上一轮已结束）：用户的新消息同样收起全部做完的待办
       if (msg.role === 'user' && !msg.panel && !msg.child && !msg.peer) task.todos = settledTodos(task.todos)
+      if (msg.role === 'user' && freshChance(msg)) sc.resetNudge(task.id)
       task.updatedAt = new Date().toISOString()
       markDelivery(task, msg, 'wait')
       await sc.store.update(task.id, task)

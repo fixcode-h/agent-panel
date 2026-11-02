@@ -135,8 +135,10 @@ export const EN_SHARED: Record<string, string> = {
   '主角色整理结果失败：{error}': 'Main role failed to write the final result: {error}',
   '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
   '子任务没能执行：{error}': 'Subtask could not run: {error}',
-  '子任务推了一次还是没交最后的总结，交回的结果可能没做完':
-    'The subtask was nudged once but still gave no final summary; its result may be unfinished',
+  '子任务推了 {n} 次还是没做完（{why}），交回的结果可能不完整':
+    'The subtask was nudged {n} times and still is not done ({why}); the result handed back may be incomplete',
+  没交最后的总结: 'no final summary',
+  总结写的是未完成: 'its summary says unfinished',
   '「{title}」在原来的子任务里重试：{list}': '"{title}" is retrying in the original subtasks: {list}',
   '「{title}」{note}': '{title}: {note}',
   '已转交父对话创建「{title}」{id}': 'Handed "{title}" to the parent conversation{id}',
@@ -169,4 +171,6 @@ export const EN_SHARED: Record<string, string> = {
   '它的 {n} 个子对话等用户处理': '{n} of its sub-conversations are waiting for the user',
   '它的子对话在等用户处理（确认请求或回答提问）':
     'Its sub-conversation is waiting for the user (an approval or an answer)',
+  // 弹窗四角拖动条（components/ui/modal-resize.tsx）：四边沿用「拖动调整宽度/高度」
+  拖动调整大小: 'Drag to resize',
 }

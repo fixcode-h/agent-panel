@@ -1093,11 +1093,9 @@ export const NewTaskInput = z.object({
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
-  /**
-   * 父对话的「子对话也提问」：之后新建的子对话默认是否开启提问（见 shared/child-ask.ts）。
-   * 只在创建父对话时用，之后走 PATCH /tasks/:id 改；不传时按设置里的默认值
-   */
+  /** 父对话的「子对话也提问」：之后新建子对话默认开不开提问（见 shared/child-ask.ts）；只在创建时用，不传按设置 */
   childAskUser: z.boolean().optional(),
+  from: z.string().optional(), // 别的对话替它建的（task.create）：发件对话 id，第一条记成 peer（ADR 0041）
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
   analysis: AnalysisKind.optional(),
   /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」把修复建议发回它）；和对话无关的分析不填 */
@@ -1166,11 +1164,9 @@ export const FollowUpInput = z.object({
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** 任务正在执行时：true 先停下当前这一轮再发送；否则直接交给正在跑的 CLI，交不出去就这一轮结束后接着处理 */
   interrupt: z.boolean().default(false),
-  /**
-   * 页面生成的消息 id：点发送时本地已经按这个 id 插进对话（待认领），服务端沿用它，
-   * 推送和响应到达后按 id 替换成真实的一份，不会出现两条。必须是 uuid，避免和已有消息撞 id
-   */
+  /** 页面生成的消息 id（待认领）：服务端沿用，推送到达后按 id 换成真实的一份、不出现两条；必须是 uuid，免得撞 id */
   messageId: z.uuid().optional(),
+  from: z.string().optional(), // 别的对话替它发的（task.send）：发件对话 id，记成 peer（ADR 0041）
 })
 /** 父对话发布的一条全局规则 */
 export const TaskRule = z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })
@@ -1408,6 +1404,14 @@ export const TaskMessage = z.object({
    * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示
    */
   child: z.object({ id: z.string(), title: z.string().default(''), state: z.string().default('') }).optional(),
+  /**
+   * 子对话交回结果时面板自动画在父对话里的总结卡（见 shared/summary-card.ts 的 childSummaryCards）：
+   * 标题就是子对话总结的「类型｜结论」，child 是点标题跳过去的子对话。父对话不再自己写这张卡。
+   * 子对话没写总结时为空（旧数据也没有这一项），按没有卡片显示
+   */
+  summaryCards: z
+    .array(z.object({ kind: z.string(), label: z.string(), title: z.string(), child: z.string() }))
+    .optional(),
   /**
    * 子对话停下时独立分支里还有没提交的改动（见 server 的 stopWorktreeNote）：父对话里那一行直接写
    * 「N 个文件未提交」并给「继续」，不用点开才知道改动在哪个目录、还有几个文件
