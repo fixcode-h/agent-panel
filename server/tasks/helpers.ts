@@ -4,12 +4,37 @@ import { gitHasRemote } from '../exec/git.ts'
 import { currentTestSteps, parentRunRoleOf, parentRunSteps } from '../../shared/test-steps.ts'
 import { wrapUpKind, type WrapUpAnswer } from '../../shared/plan.ts'
 import { detectVcs } from '../projects-analyze.ts'
+import type { Live } from './types.ts'
 
 /** 发布全局规则的命令：/rule 或 /rules */
 export const RULE_CMD = /^\/rules?(?=\s|$)/i
 
 /** 同一个任务已经有执行位时又要发消息：路由按 409 处理，不能当成 500 */
 export class TaskBusyError extends Error {}
+
+/** 停止后无论如何不再等它的上限：进程杀不掉、引擎卡住都按停止收口、让出执行位（见 keepalive.ts 的 watchStop） */
+export const STOP_GIVE_UP_MS = 30_000
+
+/**
+ * 「继续执行」这类要求对话空着的操作，先等执行位上那一份收完：
+ * 这一轮已经结束、还在落盘的照旧等它；正在停下的（停止刚点、进程已经杀了、引擎还没收完）也等，
+ * 不然停止后那一两秒里点「继续」会被当成「任务正在执行」拒掉。停下的最多等 STOP_GIVE_UP_MS：
+ * 用户停止到这时一定已经收口（watchStop），别的原因停的也不把请求一直挂着
+ */
+export async function settleBefore(prev: Live | undefined) {
+  if (!prev?.done) return
+  if (prev.task.status !== 'running') return void (await prev.done.catch(() => {}))
+  if (!prev.stop) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    prev.done.catch(() => {}),
+    new Promise<void>((r) => {
+      timer = setTimeout(r, STOP_GIVE_UP_MS)
+      timer.unref?.()
+    }),
+  ])
+  clearTimeout(timer)
+}
 
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
 export const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'

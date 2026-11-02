@@ -11,6 +11,7 @@ import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
 import { answerRequest, dropRequests, cancelWait, forgetNotes } from '../exec/runner.ts'
 import { taskLog } from '../task-log.ts'
 import { log } from '../log.ts'
+import { settleBefore } from './helpers.ts'
 import { taskChanges } from '../own-changes.ts'
 import { applyFixesInDir } from '../files.ts'
 import { FixApplyInput } from '../../shared/diagnosis.ts'
@@ -285,7 +286,7 @@ export function registerActionRoutes(s: TasksScope) {
   async function idleTask(c: Context, chatOnly = true) {
     const id = c.req.param('id')!
     const prev = s.live.get(id)
-    if (prev && prev.task.status !== 'running') await prev.done
+    await settleBefore(prev)
     if (s.live.has(id)) return s.bad(c, t('任务正在执行，请等它完成或先停止'), 409)
     const task = await s.store.get(id)
     if (!task) return s.bad(c, t('任务不存在'), 404)
