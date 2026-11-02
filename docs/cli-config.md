@@ -70,7 +70,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `skills`                          | Skill 目录 `{ "user": ["~/.x/skills"], "repo": [".x/skills"] }`，每个子目录一个 `SKILL.md`                                                                                                                                                                                                                                                  |
 | `commands`                        | 自定义命令目录 `{ "user", "repo", "format": "md" \| "toml", "prefix" }`，输入框打「/」时列出来                                                                                                                                                                                                                                              |
 | `envExample`                      | 设置里环境变量的示例                                                                                                                                                                                                                                                                                                                        |
-| `env`                             | 每次运行都加的环境变量 `{ "KEY": "VALUE" }`，用户在设置里写的同名变量优先（例如让无界面运行信任工作目录）                                                                                                                                                                                                                                   |
+| `env`                             | 每次运行都加的环境变量 `{ "KEY": "VALUE" }`，设置页的「默认环境变量」会逐项列出、可以改值和恢复默认；用户在设置里写的同名变量优先（例如让无界面运行信任工作目录）                                                                                                                                                                           |
 | `stderrNoise`                     | stderr 里和失败无关的常驻提示行 `[{ "pattern", "why" }]`（`pattern` 按行匹配的正则）：进程中途退出时，失败原因里的「stderr 最后几行」去掉这些行，先写退出码 / 信号（Claude Code 接第三方模型时的 `[claude-code:unrecognized_model]`）                                                                                                       |
 | `compactThrash`                   | CLI 自动压缩「抖动」时的报错 `{ "pattern", "why" }`（`pattern` 不分大小写的正则）：认出来时面板不直接判失败，先在对话里写一行警告、在原会话里续一轮让模型分段读取，再失败才报失败（Claude Code 的 `Autocompact is thrashing`）。不写表示没有这种报错                                                                                        |
 | `mcp`                             | 怎么把面板的工具（MCP）交给 CLI，见下面；不写时用不了 UI 设计的 AI                                                                                                                                                                                                                                                                          |
@@ -79,6 +79,25 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `i18n`                            | 界面文案的翻译 `{ "en": { "中文": "English" } }`                                                                                                                                                                                                                                                                                            |
 
 目录里的 `~` 是用户目录，`${ENV:-默认值}` 先取环境变量。
+
+## 设置页里能改什么
+
+内置和用户自己的 CLI 都在「设置 → Agent → <CLI>」里配置。定义里有一部分字段会直接生成界面，不用改 JSON：
+
+| 设置页里的项 | 来自定义                               | 存在哪                                           |
+| ------------ | -------------------------------------- | ------------------------------------------------ |
+| 权限         | `permissions` / `defaultPermission`    | `CliSettings.permission`                         |
+| 最大回合     | 面板统一项                             | `CliSettings.maxTurns`                           |
+| 开关         | `options`（打开时注入它带的 `env`）    | `CliSettings.options`                            |
+| 自动压缩     | `autoCompact` / `compact` 决定说明文字 | `CliSettings.autoCompact`                        |
+| 默认环境变量 | `env` 的每个键和默认值                 | `CliSettings.env` 里同名的键；值改回默认值时不留 |
+| 额外参数     | `extraArgsKeep` 决定哪些参数保留       | `CliSettings.extraArgs`                          |
+| 环境变量     | `envExample` 只作输入框示例            | `CliSettings.env` 里用户自己加的键               |
+| 可执行文件   | `command`                              | `CliSettings.command`                            |
+
+「默认环境变量」和「环境变量」共用一个保存字段：定义里已有的键只在「默认环境变量」里编辑，写进 `CliSettings.env` 的同名键覆盖定义值；点「恢复默认」删掉这条覆盖，回到定义里的值。启动 CLI 时 `cliSettings()` 按「定义 env → 开关 env → 用户 env → API 注入」合并，后面的同名键生效，所以界面显示的值就是实际传给 CLI 的值。`options` 开关带的 env 不放进自由编辑，由开关控制。
+
+只能改 JSON 的字段：`args` / `rpcArgs` 参数模板、`features`、`output` 输出解析、`rpc` 协议、`mcp`、`packages`、`models` 建议、`efforts`、`tiers` 默认值、`stderrNoise`、`compactThrash`、`i18n` 等。用户自己的配置放在 `config/clis/`，改完到「设置 → Agent」底部点「重新读取」；内置的改完要重新构建或升级面板。
 
 ## 参数规则 `args`
 

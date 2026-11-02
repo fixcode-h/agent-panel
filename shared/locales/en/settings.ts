@@ -187,6 +187,15 @@ export const EN_SETTINGS: Record<string, string> = {
   '例如 --add-dir ../shared': 'e.g. --add-dir ../shared',
   环境变量: 'Environment variables',
   '每行一个 KEY=VALUE，只传给这个 Agent': 'One KEY=VALUE per line, passed only to this agent',
+  '{cli} 环境变量': '{cli} environment variables',
+  默认环境变量: 'Default environment variables',
+  '每次运行都会带上，可以改值': 'Always passed at run time; you can change the values',
+  '这些是 {cli} 的 CLI 配置里自带的，每次运行都会传给 {cli}。改过的值存成同名覆盖，点右边的按钮恢复默认。':
+    "{cli}'s CLI config includes these and passes them at every run. Changed values are saved as same-name overrides; click the button on the right to reset to the default.",
+  '默认 {value}': 'Default {value}',
+  '{key} 的值': '{key} value',
+  '上面「默认环境变量」里已经有的键，在这里写会并到那一行；这里放自己追加的变量。':
+    'Keys already listed under "Default environment variables" are merged into that row if written here; add your own variables here.',
   '实际调用（任务描述从 stdin 传入）': 'Actual command (task description is passed via stdin)',
 
   // 模型列表来源
@@ -1534,7 +1543,6 @@ export const EN_SETTINGS: Record<string, string> = {
   上下文占到这个比例时压缩: 'Compact when context use reaches this share',
   '对话结束一轮后自动压缩：写一份摘要，下一轮开新会话带上。':
     'After a turn ends, compacts automatically: writes a summary and carries it into a new session next turn.',
-  '可执行文件、参数、环境变量': 'Executable, arguments, environment',
   每次调用都追加: 'Appended to every call',
   '角色自己的参数排在后面。': "The role's own arguments come after these.",
   '5 小时和每周额度用了多少': '5-hour and weekly quota used',
