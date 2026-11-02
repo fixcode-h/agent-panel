@@ -2409,7 +2409,8 @@ body,
 }
 /*
  * 拖拽调整弹窗尺寸期间（见 components/ui/modal-resize.tsx）：全局光标保持 resize 箭头，
- * 指针滑出拖动条、经过正文时也不会变成文本光标；同时禁止选中文字和背后的页面滚动。
+ * 指针滑出拖动条、经过正文时也不会变成文本光标；同时禁止选中文字
+ * （触摸时背后的页面滚动由手柄上的 touch-none 拦住，不靠这条规则）。
  * 用 !important 是因为子元素自己的 cursor / user-select 会盖过 body 上的设置。
  */
 html[data-modal-resizing] * {

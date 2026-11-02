@@ -53,8 +53,6 @@ export interface ModalResizeState {
   contentRef: React.RefObject<HTMLDivElement | null>
   /** 拖动过、或者恢复过记忆尺寸时才给：首次打开仍用尺寸档的原样式 */
   contentStyle: CSSProperties | undefined
-  /** 正在拖拽（内容区这时不再处理文字选择） */
-  dragging: boolean
   begin: (
     dirX: ResizeDirection,
     dirY: ResizeDirection,
@@ -128,6 +126,13 @@ export function useModalResize({
     return () => window.removeEventListener('resize', onResize)
   }, [open])
 
+  // 弹窗关掉时复位拖拽：D.Content 卸载后手柄收不到 pointerup，不清的话全局光标和禁止选中会一直挂着
+  useEffect(() => {
+    if (open) return
+    drag.current = null
+    setCursor(null)
+  }, [open])
+
   // 拖拽期间锁住全局光标和文字选中：指针滑出拖动条、经过内容文字也不变成文本光标
   useEffect(() => {
     if (!cursor) return
@@ -193,7 +198,7 @@ export function useModalResize({
         }
       : undefined
 
-  return { contentRef, contentStyle, dragging: cursor !== null, begin, move, end }
+  return { contentRef, contentStyle, begin, move, end }
 }
 
 interface HandleSpec {
@@ -296,6 +301,8 @@ export function ModalResizeHandles({ resize }: { resize: ModalResizeState }) {
           onPointerMove={resize.move}
           onPointerUp={resize.end}
           onPointerCancel={resize.end}
+          // 没被卸载但丢了指针捕获（浏览器打断、捕获被别处抢走）时也收尾
+          onLostPointerCapture={resize.end}
         />
       ))}
     </>

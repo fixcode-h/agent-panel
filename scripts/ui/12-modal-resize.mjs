@@ -119,6 +119,34 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     )
   await check(p, '弹窗调整大小-清空记忆回默认')
 
+  // 拖到一半按 Esc 关掉弹窗：D.Content 卸载后手柄收不到 pointerup，全局光标 / 禁止选中必须复位，
+  // 否则整个应用的光标会一直卡在 col-resize、文字选不中（评审 R1）
+  {
+    const handle = settings().locator('[data-modal-resize="e"]')
+    const h = await handle.boundingBox()
+    if (!h) errors.push('弹窗调整大小：找不到右边手柄，没法验证拖拽中关闭')
+    else {
+      const x = h.x + h.width / 2
+      const y = h.y + h.height / 2
+      await p.mouse.move(x, y)
+      await p.mouse.down()
+      await p.mouse.move(x + 20, y, { steps: 3 })
+      await p.keyboard.press('Escape')
+      await settings()
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('弹窗调整大小：拖拽中按 Esc 没有关掉设置弹窗'))
+      await p.mouse.up()
+      await settle(p)
+      const lock = await p.evaluate(() => ({
+        resizing: document.documentElement.hasAttribute('data-modal-resizing'),
+        cursor: getComputedStyle(document.body).cursor,
+      }))
+      if (lock.resizing) errors.push('弹窗调整大小：拖拽中关掉弹窗后仍挂着全局拖拽状态')
+      if (/resize/.test(lock.cursor)) errors.push(`弹窗调整大小：拖拽中关掉弹窗后光标卡在 ${lock.cursor}`)
+    }
+  }
+  await openSettings()
+
   // ---- ConfirmDialog：手柄、角落、记忆 ----
   // 用「抓网页快照」那行的清理按钮：05-settings 已经断言它是可点的，不依赖构建产物在不在
   await p.getByRole('button', { name: '数据', exact: true }).click()
