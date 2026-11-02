@@ -83,8 +83,8 @@ export const EN_SHARED: Record<string, string> = {
   '「{title}」没有可执行的角色，请先给工作流选择主角色':
     '"{title}" has no role to run it. Choose a main role for the workflow first',
   '「{title}」的验收流程失败：{error}': 'Review flow of "{title}" failed: {error}',
-  '「{title}」的验收流程没有写「验收结论」，按通过处理。':
-    'The review flow of "{title}" gave no verdict, so it was treated as passed.',
+  '「{title}」的验收流程没有用 submit_verdict 交结论，不能算通过':
+    '"{title}": the acceptance flow did not submit a verdict with submit_verdict, so it cannot count as passed',
   '「{title}」验收 {round} 轮仍未通过。最后一轮的意见：\n{feedback}':
     '"{title}" still failed review after {round} rounds. Feedback from the last round:\n{feedback}',
   '「{title}」第 {round} 轮验收未通过，已把意见交回节点继续完善。':
@@ -109,7 +109,8 @@ export const EN_SHARED: Record<string, string> = {
     'This run has spent ${used}, reaching the workflow limit of ${limit}, so it is paused. Click "Continue" to grant the same amount again.',
   '这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。':
     'This run has used {used} tokens, reaching the workflow limit of {limit}, so it is paused. Click "Continue" to grant the same amount again.',
-  '「{title}」没有写「结论」，按通过处理。': '"{title}" did not state a verdict; treating it as a pass.',
+  '「{title}」没有用 submit_verdict 交结论，不知道该走哪条分支':
+    '"{title}" did not submit a verdict with submit_verdict, so the branch to take is unknown',
   '主角色评估「{title}」：通过，走「{branch}」分支': 'Main role reviewed "{title}": pass, taking the "{branch}" branch',
   '主角色评估「{title}」：通过': 'Main role reviewed "{title}": pass',
   '。交代后续：{note}': '. Note for the next nodes: {note}',
@@ -128,17 +129,16 @@ export const EN_SHARED: Record<string, string> = {
   这次要求: 'This request',
   第一条要求: 'First request',
   '主角色评估「{title}」失败：{error}': 'Main role failed to review "{title}": {error}',
-  '主角色没有写调度决定，「{title}」按通过处理。': 'Main role did not write a decision; treating "{title}" as a pass.',
+  '主角色没有用 dispatch 交「{title}」的决定，流程停在这里':
+    'The main role did not submit a decision for "{title}" with dispatch; the flow stops here',
   '主角色退回「{title}」{n} 次后仍不满意：{feedback}':
     'Main role is still not satisfied after sending "{title}" back {n} times: {feedback}',
   '「{title}」委派的工作流「{name}」失败：{error}': 'The workflow "{name}" delegated from "{title}" failed: {error}',
   '主角色整理结果失败：{error}': 'Main role failed to write the final result: {error}',
   '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
   '子任务没能执行：{error}': 'Subtask could not run: {error}',
-  '子任务推了 {n} 次还是没做完（{why}），交回的结果可能不完整':
-    'The subtask was nudged {n} times and still is not done ({why}); the result handed back may be incomplete',
-  没交最后的总结: 'no final summary',
-  总结写的是未完成: 'its summary says unfinished',
+  '子任务补问了一次还是没有用 submit_result 交结果，做没做完不确定':
+    'The subtask was asked once more but still did not submit a result with submit_result; whether it finished is unknown',
   '「{title}」在原来的子任务里重试：{list}': '"{title}" is retrying in the original subtasks: {list}',
   '「{title}」{note}': '{title}: {note}',
   '已转交父对话创建「{title}」{id}': 'Handed "{title}" to the parent conversation{id}',
@@ -173,4 +173,9 @@ export const EN_SHARED: Record<string, string> = {
     'Its sub-conversation is waiting for the user (an approval or an answer)',
   // 弹窗四角拖动条（components/ui/modal-resize.tsx）：四边沿用「拖动调整宽度/高度」
   拖动调整大小: 'Drag to resize',
+  '计划没做完，面板推了几次还是停着，等你看一下':
+    'The plan is unfinished and it stopped again after several nudges; take a look',
+  '计划还没做完，这一轮停下了': 'The plan is not finished yet; this turn has stopped',
+  '卡住 {done}/{total}': 'Stuck {done}/{total}',
+  '未完成 {done}/{total}': 'Unfinished {done}/{total}',
 }

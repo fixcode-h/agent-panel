@@ -1742,4 +1742,11 @@ export const EN_TASKS: Record<string, string> = {
   正在停止: 'Stopping',
   接着原来的会话继续执行: 'Continue the original session',
   重启: 'Restart',
+  从标题栏取下: 'Unpin from title bar',
+  钉在标题栏: 'Pin to title bar',
+  '交结论：通过': 'Verdict: pass',
+  '交结论：不通过': 'Verdict: fail',
+  '交结果：做完': 'Result: done',
+  '交结果：卡住': 'Result: stuck',
+  '交结果：没做完': 'Result: unfinished',
 }

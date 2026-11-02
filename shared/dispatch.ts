@@ -1,8 +1,7 @@
 /**
  * 主 Agent 调度的提示词和结论格式。子 Agent 的节点完成后，执行引擎续接主 Agent 的会话把结果交给它，
- * 它在回复最后写一个 dispatch 代码块决定流程怎么走；流程结束时它整理最终结果。
- * 提示词正文用中文（和其他发给 Agent 的提示一样），回复语言跟随面板设置；
- * 决定靠 json 代码块里的 action 识别，和回复用什么语言无关。
+ * 它调用 dispatch 工具交决定（ADR 0041 第 16 节：只认工具，不看回复文字）；流程结束时它整理最终结果。
+ * 提示词正文用中文（和其他发给 Agent 的提示一样），回复语言跟随面板设置。
  */
 import { END, START, type Agent, type Flow, type Workflow } from './schema.ts'
 import { flowLabel, nodeAgent, nodeSteps, topoOrder } from './flow.ts'
@@ -28,18 +27,24 @@ export type Dispatch =
 const BLOCK = new RegExp('```' + DISPATCH_LANG + '\\b[^\\n{]*\\n?([\\s\\S]*?)```', 'g')
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 
-/** 读主 Agent 的决定（最后一个 dispatch 代码块）；没写或写坏了返回 null，调用方按「继续」处理并提示 */
+/**
+ * 旧格式：从回复里最后一个 dispatch 代码块读决定。**只给测试和旧数据显示用**：
+ * 引擎只认 dispatch 工具交的决定（toDispatch，ADR 0041 第 16 节），不再按回复文字判定流程怎么走
+ */
 export function parseDispatch(text: string): Dispatch | null {
   const last = [...text.matchAll(BLOCK)].at(-1)
   if (!last) return null
-  let o: Record<string, unknown>
   try {
     const raw = JSON.parse(last[1].trim())
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-    o = raw
+    return toDispatch(raw)
   } catch {
     return null
   }
+}
+
+/** dispatch 工具的参数转成决定；action 认不出、委派没写工作流返回 null */
+export function toDispatch(o: Record<string, unknown>): Dispatch | null {
   const action = str(o.action).toLowerCase()
   const branch = str(o.branch).toLowerCase()
   switch (action) {
@@ -138,7 +143,7 @@ export function mainDuties(
       '- 评估时回复要短：一两句评价，再写决定。',
     ].join('\n'),
     [
-      `## 决定的格式\n每次评估的回复最后写一个代码块，语言名写 ${DISPATCH_LANG}，内容是一个 JSON：`,
+      '## 怎么交决定\n每次评估最后调用 dispatch 工具交决定。面板只认这个工具，不看回复里写了什么；没交会补问一次，再不交按出错停下。参数：',
       '- `{"action": "continue"}`：通过，按流程继续。后面有条件连线时必须加 `"branch": "pass"` 或 `"branch": "fail"` 选路；可以加 `"note": "…"` 给后续节点交代要点。',
       '- `{"action": "rework", "feedback": "…"}`：退回给这个节点，按意见修改后再交给你评估。',
       can.length
@@ -179,7 +184,7 @@ export function evaluateEvent(o: {
       ? `### 后面的分支\n通过时走${o.branches.pass || '（没有）'}，不通过时走${o.branches.fail || '（没有）'}。dispatch 里必须写 branch。`
       : '',
     o.reworksLeft > 0 ? `还可以退回 ${o.reworksLeft} 次。` : '退回次数已经用完，这次只能继续或停下。',
-    `请评估，回复最后写 ${DISPATCH_LANG} 代码块。`,
+    '请评估，最后调用 dispatch 工具交决定。',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -202,7 +207,7 @@ export function planEvent(prompt: string, run: number, blocked?: { title: string
       '同一件事没做好要重做时，也起新的运行，把要做的事写清楚。',
       '只是问问题、解释、查一下情况，或者改动小到不值得走流程时，直接回答，不起运行。',
     ].join('\n'),
-    '回复最后写一个 dispatch 代码块说明决定，见上面的格式。',
+    '最后调用 dispatch 工具交决定，参数见上面。',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -223,7 +228,7 @@ export function firstPlanEvent(prompt: string, first = true) {
       '要按流程图做的事（需求、方案、实现、测试、文档、交付这些按流程图来）时，起一次运行：把这次要做的事写进 input，节点会按顺序执行。',
       '只是问问题、解释、查一下情况，或者改动小到不值得走流程时，直接回答，不起运行。',
     ].join('\n'),
-    '回复最后写一个 dispatch 代码块说明决定，见上面的格式。',
+    '最后调用 dispatch 工具交决定，参数见上面。',
   ].join('\n\n')
 }
 
@@ -241,13 +246,13 @@ export function summaryEvent(results: { title: string; text: string }[], nested:
     nested
       ? '请把结果整理成交回上一级流程的输出：结论、做了什么、改了哪些文件、怎么验证的、遗留问题。'
       : '请整理交给用户的最终结果：开头一两句直接给结论，再列做了什么、改了哪些文件、怎么验证的，最后写遗留问题和需要用户决定的事。',
-    `这一轮不用写 ${DISPATCH_LANG} 代码块。`,
+    '这一轮不用调 dispatch 工具。',
   ].join('\n\n')
 }
 
 /** 子 Agent 向主 Agent 提问 */
 export function questionEvent(from: string, question: string) {
-  return `## 事件：子 Agent 提问\n「${from}」问你：\n${question.trim()}\n\n请直接回答，回答会原样交给它。这一轮不用写 ${DISPATCH_LANG} 代码块。`
+  return `## 事件：子 Agent 提问\n「${from}」问你：\n${question.trim()}\n\n请直接回答，回答会原样交给它。这一轮不用调 dispatch 工具。`
 }
 
 /** 决定的一句话说明（任务里的系统消息，跟界面语言） */

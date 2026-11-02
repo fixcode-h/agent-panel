@@ -1,3 +1,4 @@
+import { callSubmitTool, submitTools } from './submit-tools.ts'
 import { shellNote } from '../shared/shells.ts'
 import { lastShell } from './shells.ts'
 import { askOptions } from '../shared/task.ts'
@@ -967,6 +968,7 @@ export function orchTools(o: Orchestra) {
         ]
       : []),
     ...(o.team ? teamTools(o, main) : []),
+    ...submitTools(o),
   ]
 }
 
@@ -1296,6 +1298,10 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
           .join('\n\n'),
       )
     }
+    case 'submit_verdict':
+    case 'submit_result':
+    case 'dispatch':
+      return callSubmitTool(o, name, a)
     case 'ask_main': {
       const q = str(a?.question).trim()
       if (!q) return text('question 是空的', true)

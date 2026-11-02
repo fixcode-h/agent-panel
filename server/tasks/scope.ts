@@ -359,6 +359,7 @@ export interface TasksScope {
     question: boolean,
     options?: string[],
     kind?: AskKind,
+    fix?: boolean,
   ) => Promise<{
     ok: boolean
     info: string
@@ -613,7 +614,7 @@ export interface TasksScope {
     prompt: string,
     first: boolean,
     agents: Agent[],
-    op?: import('../exec/runner.ts').RealContext['op'],
+    op?: import('../exec/real-context.ts').RealContext['op'],
     resume?: boolean,
     prewarm?: boolean,
   ) => Promise<Task>

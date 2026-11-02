@@ -565,6 +565,18 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               <div className={cn(sidebarTaskRowClass(false, true), 'pr-2 pl-2')}>
                 <SidebarTaskRowBody title={t('接入 Pi CLI 输出')} status={<TaskRowStatus needs />} />
               </div>
+              <div className={cn(sidebarTaskRowClass(false, true), 'pr-2 pl-2')}>
+                <SidebarTaskRowBody
+                  title={t('状态弹窗日志贴到最新')}
+                  status={<TaskRowStatus left={{ done: 3, total: 7, stuck: true }} />}
+                />
+              </div>
+              <div className={cn(sidebarTaskRowClass(false, true), 'pr-2 pl-2')}>
+                <SidebarTaskRowBody
+                  title={t('清理已合并的分支')}
+                  status={<TaskRowStatus left={{ done: 2, total: 4, stuck: false }} />}
+                />
+              </div>
             </SidebarTaskBlock>
             <SidebarProjectRow
               open={false}

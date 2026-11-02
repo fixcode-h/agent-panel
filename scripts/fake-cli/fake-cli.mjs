@@ -674,6 +674,55 @@ async function panelCall(name, params) {
     )
   return res.result
 }
+// 交结论（ADR 0041 第 16 节）：面板只认 submit_verdict 工具，不看回复里的字。提示词点名要结论时像真的 Agent 那样调一次：
+// 验收第 1 轮不通过、之后通过；条件分支有 BRANCHNO（没补 GATEFIXED）时不通过；子对话收尾前派的评审按 REVIEW_MARK 给。
+// 补问（「你还没有用 submit_verdict」）也照这个规则交。NO_VERDICT 模拟漏调工具（补问也不交）
+{
+  const roleAll = [input, ...args, systemText].join('\n')
+  const reviewer = roleAll.includes('你负责独立评审')
+  const asked =
+    input.includes('submit_verdict 工具交验收结论') ||
+    input.includes('submit_verdict 工具交结论') ||
+    input.includes('你还没有用 submit_verdict') ||
+    reviewer
+  if (asked && !input.includes('NO_VERDICT')) {
+    const mark = [...roleAll.matchAll(/REVIEW_MARK:(pass|fail)/g)].at(-1)?.[1] ?? 'pass'
+    const fail = reviewer
+      ? mark === 'fail'
+      : input.includes('submit_verdict 工具交验收结论')
+        ? input.includes('第 1 轮验收')
+        : input.includes('BRANCHNO') && !input.includes('GATEFIXED')
+    await panelCall('submit_verdict', {
+      verdict: fail ? 'fail' : 'pass',
+      blockers: fail ? [{ id: 'R1', text: 'child-done.txt 只写了一行，补上改了什么', must: true }] : [],
+    })
+  }
+}
+// 子任务交结果（ADR 0041 第 16 节）：面板只认 submit_result 工具。SUB_NO_SUMMARY 模拟说完一句就结束、没交，
+// 面板补问（「你还没有用 submit_result」）后才交
+if (
+  (input.includes('submit_result 工具交结果') && !input.includes('SUB_NO_SUMMARY')) ||
+  input.includes('你还没有用 submit_result')
+)
+  await panelCall('submit_result', { state: 'done', summary: '做完了。' })
+// 主 Agent 交决定（ADR 0041 第 16 节）：面板只认 dispatch 工具。对话的第一条要求起一次运行；评估节点时
+// 节点说明里有 MAINREWORK 时第一次评估退回，有 MAINDELEGATE:<工作流 id> 时第一次评估委派给它，有分支时按 BRANCHNO 选。
+// 补问（「你还没有用 dispatch」）也照这个规则交；NO_DISPATCH 模拟漏交
+function dispatchFor(text) {
+  const firstEval = text.includes('这是对它的第 1 次评估')
+  if (text.includes('## 事件：这个对话的第一条要求')) return { action: 'run', input: '按需求执行' }
+  if (!text.includes('## 事件：节点完成') && !text.includes('你还没有用 dispatch')) return null
+  if (text.includes('MAINREWORK') && firstEval) return { action: 'rework', feedback: '补上错误处理' }
+  const delegate = /MAINDELEGATE:(\S+)/.exec(text)?.[1]
+  if (delegate && firstEval) return { action: 'delegate', workflow: delegate, input: '帮忙检查一遍' }
+  if (text.includes('dispatch 里必须写 branch'))
+    return { action: 'continue', branch: text.includes('BRANCHNO') ? 'fail' : 'pass', note: '注意兼容旧数据' }
+  return { action: 'continue' }
+}
+{
+  const d = input.includes('NO_DISPATCH') ? null : dispatchFor(input)
+  if (d) await panelCall('dispatch', d)
+}
 // 操控软件的动作（ADR 0011）：任务里有 APP_DO:<一行 JSON>、面板也给了 app_do 时，像真的 Agent 那样按用户的指令调一次。
 // 只认用户这一条消息里的标记（附在后面的用法说明里也有 app_do 字样，所以要两个都在）
 const appDo = /APP_DO:(\{.*\})/.exec(input)?.[1]
@@ -766,7 +815,7 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
   })
-// 派一个说完一句就结束、没交总结的子任务（SUB_NO_SUMMARY 只出现在子任务的指令里，见 turnReply 的 subSummary）
+// 派一个说完一句就结束、没交结果的子任务（SUB_NO_SUMMARY 只出现在子任务的指令里，见模块顶层的 submit_result）
 if (input.includes('SPAWN_NO_SUMMARY') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '读操作原语', instructions: 'SUB_NO_SUMMARY 继续读操作原语与快照/选择器' }],
@@ -1005,7 +1054,7 @@ const turnReply = () => {
   // 面板的收尾自检（ADR 0041）：确认做完了，不再调工具；回复带标记，端到端测试据此确认自检交到了 CLI
   if (input.includes('（收尾自检）')) return 'SELF_CHECK_GOT 这次的事已经做完了。'
   if (input.includes('FAKE_EMPTY')) return '我先把工作区更新到最新，顺便确认分支和本地改动的基线。'
-  const verdict = input.includes('最后单独一行写「验收结论')
+  const verdict = input.includes('submit_verdict 工具交验收结论')
     ? input.includes('第 1 轮验收')
       ? '\n验收结论：不通过'
       : '\n验收结论：通过'
@@ -1014,31 +1063,17 @@ const turnReply = () => {
   const long =
     input.includes('LONGOUT') && !input.includes('上游节点的结果') ? `\n${'很长的方案。'.repeat(1000)}结尾` : ''
   // 后面有条件连线的节点要给出结论：任务里有 BRANCHNO 时给「不通过」，用户补充了 GATEFIXED（修好了）后给「通过」
-  const branch = input.includes('「结论：通过」或「结论：不通过」')
+  const branch = input.includes('submit_verdict 工具交结论')
     ? `\n结论：${input.includes('BRANCHNO') && !input.includes('GATEFIXED') ? '不通过' : '通过'}`
     : ''
   // 主 Agent 的调度轮：评估节点时写 dispatch 决定。节点说明里有 MAINREWORK 时第一次评估退回，
   // 有 MAINDELEGATE:<工作流 id> 时第一次评估委派给它，有分支时按 BRANCHNO 选；流程完成时给一段最终结果
-  const firstEval = input.includes('这是对它的第 1 次评估')
-  const dispatch = input.includes('## 事件：这个对话的第一条要求')
-    ? '\n```dispatch\n' + JSON.stringify({ action: 'run', input: '按需求执行' }) + '\n```'
-    : input.includes('## 事件：节点完成')
-      ? '\n```dispatch\n' +
-        JSON.stringify(
-          input.includes('MAINREWORK') && firstEval
-            ? { action: 'rework', feedback: '补上错误处理' }
-            : /MAINDELEGATE:(\S+)/.test(input) && firstEval
-              ? { action: 'delegate', workflow: /MAINDELEGATE:(\S+)/.exec(input)[1], input: '帮忙检查一遍' }
-              : input.includes('dispatch 里必须写 branch')
-                ? { action: 'continue', branch: input.includes('BRANCHNO') ? 'fail' : 'pass', note: '注意兼容旧数据' }
-                : { action: 'continue' },
-        ) +
-        '\n```'
-      : input.includes('## 事件：流程完成')
-        ? '\n最终结果：主 Agent 整理好了'
-        : input.includes('## 事件：子 Agent 提问')
-          ? '\n主 Agent 的回答：用方案一'
-          : ''
+  // 主 Agent 的决定走 dispatch 工具（见模块顶层的 dispatchFor），回复里只写给人看的话
+  const dispatch = input.includes('## 事件：流程完成')
+    ? '\n最终结果：主 Agent 整理好了'
+    : input.includes('## 事件：子 Agent 提问')
+      ? '\n主 Agent 的回答：用方案一'
+      : ''
   // 子对话收尾前派的评审（agent 写「评审」）：按分级给意见，最后一行给验收结论。
   // 结论由派它的子对话在 instructions 里用 REVIEW_MARK:pass / REVIEW_MARK:fail 指定（取最后一次），
   // 不能光看「input 里有没有 REVIEW_BLOCK」：评审的 input 里也带着子对话的原始需求。
@@ -1061,11 +1096,8 @@ const turnReply = () => {
   // 面板推它「计划没做完，接着做」：回复带上标记，端到端测试据此确认推送真的交到了 CLI
   const planNudgeGot = input.includes('你的计划才做了') ? '\nPLAN_NUDGE_GOT' : ''
   const noPlanGot = input.includes('（收尾自检）') ? '\nNOPLAN_NUDGE_GOT' : ''
-  // 子任务做完要交以「## 总结」开头的总结（面板按它判定子任务做完）；SUB_NO_SUMMARY 模拟说完一句就结束，推了（续接只发那句话）才补总结
-  const subSummary =
-    (input.includes('派出的子 Agent') && !input.includes('SUB_NO_SUMMARY')) || input.includes('还没交最后的总结')
-      ? '\n\n## 总结\n做完了。'
-      : ''
+  // 子任务交结果走 submit_result 工具（见模块顶层那段），回复里只写给人看的一句
+  const subSummary = input.includes('你还没有用 submit_result') ? '\n\nSUB_RESULT_GOT 补交了结果。' : ''
   return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}${planNudgeGot}${noPlanGot}${subSummary}`
 }
 // 写配置文件接的 CLI 同一目录里第一轮叫 agent-panel、同时在跑的另几轮带后缀，按参数和文件名找这一轮的那一项（最后写进去的）

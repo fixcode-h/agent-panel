@@ -18,6 +18,7 @@ import { toast } from '@/lib/toast'
 import type { Project, Task } from '@shared/schema'
 import {
   byAskedAt,
+  planLeft,
   stopReasonText,
   taskBusy,
   taskDoneDot,
@@ -229,6 +230,8 @@ function needsYou(tk: Task) {
   // 和橙点同口径：只有完成态才归「需要你处理」，自己停下的、别的原因结束的都归 stopped，stopReason 只影响图标文字
   const s = taskState(tk)
   if (s === 'needs' || s === 'failed') return true
+  // 计划推满了还停着（卡住）：要你看一下才能往下走
+  if (s === 'unfinished' && planLeft(tk)?.stuck) return true
   return taskDoneDot(tk, taskTurnUnread(tk))
 }
 

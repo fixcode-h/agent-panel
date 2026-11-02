@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as P from '@radix-ui/react-popover'
-import { Activity, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { Cpu, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { popoverPanel } from '@/components/ui/menu'
 import { Segmented } from '@/components/ui/segmented'
@@ -42,30 +42,49 @@ const statusText = (s: TaskProcess['status']) =>
   s === 'orphan' ? t('任务已结束') : s === 'idle' ? t('很久没输出') : t('运行中')
 
 /**
- * 标题旁的「对话进程」下拉：图标常驻，面板内容只在展开时挂载。
- * 收起时整块不渲染、不请求、不轮询（Popover 的内容加上 open 判断，DOM 里连节点都没有）
+ * 标题栏的「对话进程」下拉：面板内容只在展开时挂载。
+ * 收起时整块不渲染、不请求、不轮询（Popover 的内容加上 open 判断，DOM 里连节点都没有）。
+ * 开关由对话页管：没钉在标题栏时（hidden）按钮换成一个看不见的锚点，从「更多操作」菜单打开时面板贴着它弹出。
+ * 图标用 Cpu：「状态」（生命周期诊断）用的是 Activity，两个钉在一起时要分得开
  */
-export function ProcessMenu({ taskId }: { taskId: string }) {
-  const [open, setOpen] = useState(false)
+export function ProcessMenu({
+  taskId,
+  open,
+  onOpenChange,
+  hidden,
+}: {
+  taskId: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  hidden?: boolean
+}) {
   // 状态点是最后一次展开时算出来的结论：收起后不再发请求，只把颜色留在按钮上
   const [dot, setDot] = useState<Dot>('none')
   return (
-    <P.Root open={open} onOpenChange={setOpen}>
-      <P.Trigger asChild>
-        <IconButton size="sm" tone="bare" label={t('对话进程')} aria-expanded={open} className="relative shrink-0">
-          <Activity className="h-4 w-4" />
-          {dot !== 'none' && (
-            <span aria-hidden className={cn('absolute top-1 right-1 h-1.5 w-1.5 rounded-full', dotClass[dot])} />
-          )}
-        </IconButton>
-      </P.Trigger>
+    <P.Root open={open} onOpenChange={onOpenChange}>
+      {hidden ? (
+        <P.Anchor asChild>
+          <span aria-hidden className="h-7 w-0 shrink-0" />
+        </P.Anchor>
+      ) : (
+        <P.Trigger asChild>
+          <IconButton size="sm" tone="bare" label={t('对话进程')} aria-expanded={open} className="relative shrink-0">
+            <Cpu className="h-4 w-4" />
+            {dot !== 'none' && (
+              <span aria-hidden className={cn('absolute top-1 right-1 h-1.5 w-1.5 rounded-full', dotClass[dot])} />
+            )}
+          </IconButton>
+        </P.Trigger>
+      )}
       <P.Portal>
         <P.Content
-          align="start"
+          align={hidden ? 'end' : 'start'}
           sideOffset={6}
           collisionPadding={8}
           // 打开时不抢焦点：面板里第一下点击应该是用户要点的那个按钮
           onOpenAutoFocus={(e) => e.preventDefault()}
+          // 从菜单打开时，菜单收起会把焦点还给「更多操作」按钮：焦点移出不算关闭，点到外面才关
+          onFocusOutside={(e) => e.preventDefault()}
           className={cn(popoverPanel, 'w-[min(440px,calc(100vw-16px))] p-0')}
         >
           {open && <ProcessPanelBody taskId={taskId} onDot={setDot} />}

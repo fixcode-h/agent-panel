@@ -12,21 +12,23 @@ import { classifyError, makeAlert } from '../../shared/alerts.ts'
 import {
   clippedTranscript,
   contextFallbackKind,
+  estTokens,
+  restartCarry,
+  SESSION_NOT_FOUND,
+  settleContextNotes,
+  settleNetNotes,
+  settleRetryNotes,
+} from './runner.ts'
+import {
   envStallBudget,
   envStallFailure,
   envStallNote,
   envStallTimeout,
-  estTokens,
   failureHints,
-  restartCarry,
-  SESSION_NOT_FOUND,
-  settleContextNotes,
   silentTurn,
   settleEnvStallNotes,
-  settleNetNotes,
-  settleRetryNotes,
   shouldRetryEnvStall,
-} from './runner.ts'
+} from './retry-policy.ts'
 import {
   awaitingCompact,
   CompactTracker,

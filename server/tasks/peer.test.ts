@@ -51,12 +51,13 @@ function rig(
   return { ...createPeer(s), map, woke }
 }
 
+// 请父对话安排修复按 fix 字段判（ADR 0041 第 16 节），正文开头那句只是给父对话看的说明
 const FIX = '【报错不是我改出来的，请安排修复后通知我】\nsrc/a.ts(3): TS2322'
 
 test('请父对话安排修复：父对话空闲就叫醒它，消息和收件箱都带子对话 id；带了提问标记也不被并进阶段汇报', async () => {
   const kid = task('kid', 'root', 'running', undefined, { askUser: true })
   const r = rig(task('root', '', 'done', undefined, { askUser: true }), kid)
-  const out = await r.messageParent(kid, FIX, false)
+  const out = await r.messageParent(kid, FIX, false, [], 'question', true)
   assert.equal(r.woke.length, 1)
   // 叫醒那句直接带上报错正文：只说「在收件箱里」的话，收件箱没写进去父对话就无从下手
   assert.match(r.woke[0].text, /id: kid[\s\S]*TS2322/)
@@ -73,7 +74,7 @@ test('请父对话安排修复：父对话空闲就叫醒它，消息和收件�
   // 子对话自己的「提问」关着、调用时又带了 question：以前会被并进 pendingReport，永远交不出去
   const quiet = task('kid', 'root', 'running', undefined, { askUser: false })
   const r2 = rig(task('root', '', 'done', undefined, { askUser: true }), quiet)
-  await r2.messageParent(quiet, FIX, true, ['a', 'b'])
+  await r2.messageParent(quiet, FIX, true, ['a', 'b'], 'question', true)
   assert.equal(r2.woke.length, 1)
   assert.equal(quiet.pendingReport, undefined)
   assert.equal(quiet.parentAsks?.length ?? 0, 0)
@@ -81,7 +82,7 @@ test('请父对话安排修复：父对话空闲就叫醒它，消息和收件�
 
   // 闲置回收停下的父对话不是用户让它停的：照样叫
   const r3 = rig(task('root', '', 'stopped', 'idle' as StopReason), task('kid', 'root', 'running'))
-  await r3.messageParent(r3.map.get('kid')!, FIX, false)
+  await r3.messageParent(r3.map.get('kid')!, FIX, false, [], 'question', true)
   assert.equal(r3.woke.length, 1)
 
   // 交给父对话途中它被别的子对话的上报拉起来（执行位出现，执行器拿的是一份拷贝）：收件箱写进执行位那一份，不写旧对象
@@ -89,7 +90,7 @@ test('请父对话安排修复：父对话空闲就叫醒它，消息和收件�
   const r5 = rig(task('root', '', 'done', undefined, { askUser: true }), task('kid', 'root', 'running'), live, {
     peerOf: () => live.set('root', { task: structuredClone(r5.map.get('root')!), stop: false, rev: 0 }),
   })
-  await r5.messageParent(r5.map.get('kid')!, FIX, false)
+  await r5.messageParent(r5.map.get('kid')!, FIX, false, [], 'question', true)
   assert.equal(live.get('root')!.task.inbox.length, 1)
 
   // 普通阶段汇报照旧只记进本轮汇报，不叫
@@ -98,12 +99,18 @@ test('请父对话安排修复：父对话空闲就叫醒它，消息和收件�
   await r4.messageParent(plain, '做完了第一步', false)
   assert.deepEqual(r4.woke, [])
   assert.equal(plain.pendingReport, '做完了第一步')
+  // 模型自己在正文开头写了「【报错不是我改出来的…」但没带 wait_fix：不按文字当成修复请求
+  const typed = task('kid', 'root', 'running', undefined, { askUser: true })
+  const r6 = rig(task('root', '', 'done'), typed)
+  await r6.messageParent(typed, FIX, false)
+  assert.deepEqual(r6.woke, [])
+  assert.equal(typed.pendingReport, FIX)
 })
 
 test('不叫醒父对话：用户亲手停下（落盘的、刚按停止的）、用量上限停下、核对收成已中断、整棵树已超限、子对话自己正在停，提问关着的自动作答也一样', async () => {
   const kid = () => task('kid', 'root', 'running', undefined, { askUser: true })
   const stopped = rig(task('root', '', 'stopped', 'user'), kid())
-  const out = await stopped.messageParent(stopped.map.get('kid')!, FIX, false)
+  const out = await stopped.messageParent(stopped.map.get('kid')!, FIX, false, [], 'question', true)
   assert.deepEqual(stopped.woke, [])
   assert.equal(stopped.map.get('root')!.inbox.length, 1, '记进收件箱，用户点继续时一起处理')
   assert.match(out.info, /被用户停下/)
@@ -115,14 +122,14 @@ test('不叫醒父对话：用户亲手停下（落盘的、刚按停止的）�
     [task('root', '', 'done', undefined, { usage: { inputTokens: 900, outputTokens: 200 } }), 1000],
   ] as const) {
     const r = rig(parent, kid(), new Map(), { tokens })
-    await r.messageParent(r.map.get('kid')!, FIX, false)
+    await r.messageParent(r.map.get('kid')!, FIX, false, [], 'question', true)
     assert.deepEqual(r.woke, [], `${parent.status}/${parent.stopReason}`)
     assert.equal(r.map.get('root')!.inbox.length, 1)
   }
 
   const parent = task('root', '', 'running')
   const pressing = rig(parent, kid(), new Map([['root', { task: parent, stop: true, stopReason: 'user', rev: 0 }]]))
-  await pressing.messageParent(pressing.map.get('kid')!, FIX, false)
+  await pressing.messageParent(pressing.map.get('kid')!, FIX, false, [], 'question', true)
   assert.deepEqual(pressing.woke, [])
 
   const k = kid()
@@ -131,7 +138,7 @@ test('不叫醒父对话：用户亲手停下（落盘的、刚按停止的）�
     k,
     new Map([['kid', { task: k, stop: true, stopReason: 'parent', rev: 0 }]]),
   )
-  await closing.messageParent(k, FIX, false)
+  await closing.messageParent(k, FIX, false, [], 'question', true)
   assert.deepEqual(closing.woke, [])
   const k2 = kid()
   const budget = rig(
@@ -139,7 +146,7 @@ test('不叫醒父对话：用户亲手停下（落盘的、刚按停止的）�
     k2,
     new Map([['kid', { task: k2, stop: true, stopReason: 'budget', rev: 0 }]]),
   )
-  await budget.messageParent(k2, FIX, false)
+  await budget.messageParent(k2, FIX, false, [], 'question', true)
   assert.deepEqual(budget.woke, [])
 
   const ask = rig(task('root', '', 'stopped', 'user', { askUser: false }), kid())

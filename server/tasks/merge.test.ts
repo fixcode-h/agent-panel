@@ -50,7 +50,9 @@ const review = () =>
     title: '评审改动',
     agentId: REVIEWER,
     status: 'done',
-    output: '验收结论：通过',
+    output: '没有问题',
+    // 门禁只认评审用 submit_verdict 交的结论（ADR 0041 第 16 节）
+    submitted: { verdict: 'pass', at },
   })
 
 const task = (over: Record<string, unknown>) =>

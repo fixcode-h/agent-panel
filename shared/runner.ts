@@ -11,7 +11,6 @@ import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
 import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './task-export.ts'
 import { LESSON_REVIEW_LANG } from './lesson-review.ts'
-import { SUMMARY_HEAD } from './helper-summary.ts'
 import { DIAGNOSIS_LANG, demoDiagnosis } from './diagnosis.ts'
 
 export interface RunContext {
@@ -567,11 +566,17 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
   // 「默认」工作流：结果后面带上推荐块（从说明里附的工作流挑前两个），演示里也能看到推荐的下一步
   if (call.step && ctx.workflow && isDefaultWorkflow(ctx.workflow.id))
     out = { ...out, text: `${out.text}\n\n${demoNext(ctx.workflow.document, task)}` }
-  // 后面有条件连线的节点要给出结论；演示里一律通过
-  if (call.deciding && !/结论[:：]/.test(out.text)) out = { ...out, text: `${out.text}\n\n结论：通过` }
-  // 子任务做完要交以「## 总结」开头的总结（面板按它判定做完，见 helper-summary.ts）；演示里照着写
-  if (call.step?.slot === 'sub' && !out.text.includes(SUMMARY_HEAD))
-    out = { ...out, text: `${out.text}\n\n${SUMMARY_HEAD}\n${call.step.title}：完成。` }
+  // 验收和带条件连线的节点用 submit_verdict 交结论（面板只认工具，见 shared/submitted.ts）：演示里照着调用。
+  // 验收第 1 轮不通过、之后通过（和 reviewOutput 的文字一致）；分支一律通过
+  if ((call.reviewing || call.deciding) && call.orch?.submitVerdict)
+    call.orch.submitVerdict(
+      call.reviewing && call.step?.round === 1
+        ? { verdict: 'fail', blockers: [{ id: 'R1', text: '重复提交时没有给出提示', must: true }] }
+        : { verdict: 'pass' },
+    )
+  // 子任务用 submit_result 交结果（面板只认工具，见 helper-summary.ts）：演示里照着调用
+  if (call.step?.slot === 'sub' && call.orch?.submitResult)
+    call.orch.submitResult({ state: 'done', summary: `${call.step.title}：完成。`, left: '' })
   const ok = await speak(ctx, call.agentId, call.step?.id ?? '', out)
   if (ok && !call.step) task.todos = (task.todos ?? []).map((t) => ({ ...t, status: 'done' as const }))
   return ok ? { ok: true, text: out.text } : { ok: false, stopped: true, error: '已停止' }
@@ -588,12 +593,12 @@ function dispatchOutput(call: AgentCall): Output {
     }
   if (call.dispatching === 'answer') return { tools: [], changes: [], text: '按方案一做，保持和现有接口一致。' }
   const node = /节点「([^」]+)」/.exec(call.prompt)?.[1] ?? '这个节点'
-  const branch = call.prompt.includes('dispatch 里必须写 branch') ? ', "branch": "pass"' : ''
-  return {
-    tools,
-    changes: [],
-    text: `看了「${node}」的结果和改动，符合这个节点的要求，可以往下走。\n\n\`\`\`dispatch\n{"action": "continue"${branch}}\n\`\`\``,
-  }
+  // 决定用 dispatch 工具交（面板只认工具，见 shared/submitted.ts）：评估一律通过，有分支走「通过」（和原来写在回复里的一样）
+  call.orch?.submitDispatch?.({
+    action: 'continue',
+    ...(call.prompt.includes('dispatch 里必须写 branch') ? { branch: 'pass' as const } : {}),
+  })
+  return { tools, changes: [], text: `看了「${node}」的结果和改动，符合这个节点的要求，可以往下走。` }
 }
 
 function demoNext(document: string, task: Task) {
