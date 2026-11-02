@@ -1,9 +1,11 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { t } from '../../shared/i18n.ts'
+import type { LifeReport } from '../../shared/lifecycle.ts'
 import { copyFileToClipboard } from '../locate-file.ts'
 import { revealDir } from '../open.ts'
 import { DATA_DIR } from '../store.ts'
+import { lifecycleAnalysis } from './lifecycle-ai.ts'
 import { lifecycleReport, redact } from './lifecycle.ts'
 import type { TasksScope } from './scope.ts'
 
@@ -32,8 +34,8 @@ export function registerLifecycleRoutes(sc: TasksScope) {
   })
 
   /** 生成完整的诊断文件：写盘、去密钥 */
-  async function writeDiag(id: string) {
-    const r = await lifecycleReport(sc, id, true)
+  async function writeDiag(id: string, report?: LifeReport) {
+    const r = report ?? (await lifecycleReport(sc, id, true))
     if (!r) return null
     const dir = DIAG_DIR()
     await mkdir(dir, { recursive: true })
@@ -48,6 +50,28 @@ export function registerLifecycleRoutes(sc: TasksScope) {
     if (!file) return sc.bad(c, t('任务不存在'), 404)
     const copied = await copyFileToClipboard(file)
     return c.json({ path: file, copied })
+  })
+
+  /**
+   * 「AI 分析」：先照样写一份诊断文件（AI 要看整棵树时自己读），再把选中节点的材料整理成 AI 处理的输入，
+   * 页面拿去走统一的 AI 分析窗口（openAiFix）。材料去掉密钥
+   */
+  sc.routes.post('/:id/lifecycle/analysis', async (c) => {
+    const id = c.req.param('id')
+    const body = (await c.req.json().catch(() => ({}))) as { node?: string }
+    const r = await lifecycleReport(sc, id, true)
+    if (!r) return sc.bad(c, t('任务不存在'), 404)
+    const node = r.nodes.find((n) => n.id === (body.node || id))
+    if (!node) return sc.bad(c, t('任务不存在'), 404)
+    const file = (await writeDiag(id, r))!
+    const input = lifecycleAnalysis(r, node, file)
+    return c.json({
+      ...input,
+      error: redact(input.error),
+      output: redact(input.output),
+      context: redact(input.context),
+      cwd: DIAG_DIR(),
+    })
   })
 
   sc.routes.get('/:id/lifecycle/download', async (c) => {

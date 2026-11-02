@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
-import { exitText, lastExit, parseLogLine, verdictOf, type LifeFacts } from './lifecycle.ts'
+import { countEvents, eventKind, exitText, lastExit, parseLogLine, verdictOf, type LifeFacts } from './lifecycle.ts'
 
 setLang('zh')
 
@@ -155,4 +155,38 @@ test('不报「请求开始」的 CLI（Codex、Pi）：按 CLI 启动时间说�
   const v = verdictOf(base({ trace: { requests: 0, startedAt: NOW - 20_000 } }), NOW)
   assert.match(v.headline, /CLI 启动 20 秒，还没有任何输出/)
   assert.deepEqual(codes(base({ trace: { requests: 0, startedAt: NOW - 200_000 } })), ['model-silent'])
+})
+
+test('五类事件计数：按事件名归类，对话自己和子任务分开数，记下最近一次的时间和摘要', () => {
+  assert.equal(eventKind('模型请求开始'), 'requests')
+  assert.equal(eventKind('CLI 重试模型请求'), 'retries')
+  assert.equal(eventKind('卡住：问过状态没回复，停掉重启'), 'errors', '卡住算出错，不算停止')
+  assert.equal(eventKind('停止整棵对话树'), 'stops')
+  assert.equal(eventKind('CLI 报这一轮结束', { ok: 'true' }), undefined)
+  assert.equal(eventKind('CLI 报这一轮结束', { ok: 'false' }), 'errors')
+  assert.equal(eventKind('模型开始输出'), undefined)
+  const lines = [
+    '2026-11-02 11:00:00.000 [模型请求开始] n=1',
+    '2026-11-02 11:00:01.000 [CLI 重试模型请求] attempt=1 error="529 overloaded"',
+    '2026-11-02 11:00:02.000 [模型请求开始] n=1 step=h1',
+    '2026-11-02 11:00:03.000 [用户停止]',
+    '2026-11-02 11:00:04.000 [CLI 进程退出] pid=3 code=null signal=SIGTERM killed=stopped',
+  ].map((x) => parseLogLine(x)!)
+  const c = countEvents(lines)
+  assert.deepEqual(
+    [c.requests.n, c.retries.n, c.errors.n, c.stops.n, c.exits.n],
+    [1, 1, 0, 1, 1],
+    '子任务（step=h1）的请求不算进对话自己',
+  )
+  assert.equal(c.retries.last?.text, 'CLI 重试模型请求 attempt=1 error=529 overloaded')
+  assert.equal(c.exits.last?.text, 'CLI 进程退出 code=null signal=SIGTERM', 'pid、step 这类定位字段不进摘要')
+  assert.equal(countEvents(lines, 'h1').requests.n, 1)
+})
+
+test('两秒内有输出写「模型在输出」，不写「0 秒前」', () => {
+  const v = verdictOf(
+    base({ trace: { requests: 2, requestAt: NOW - 3000, firstOutputAt: NOW - 2500, lastOutputAt: NOW - 300 } }),
+    NOW,
+  )
+  assert.equal(v.headline, '模型在输出')
 })
