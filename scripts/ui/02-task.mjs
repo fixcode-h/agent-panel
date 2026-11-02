@@ -1418,8 +1418,38 @@ await runShard(import.meta.filename, async (api) => {
     /** 对话页签条上父对话的标题 */
     const convTitle = (s) => p.locator('[data-conv-title]').getByText(s, { exact: true })
     await convTitle(CART).waitFor({ timeout: 8000 })
+    // 标题栏按钮和「更多操作」菜单是同一份清单：「转成弹窗」默认不钉在标题栏，只在菜单里；
+    // 在菜单里点它右边的钉子钉上后出现在「更多操作」左边（所有对话共用，记在本机，后面第二个对话也有）
     const toDock = p.getByRole('button', { name: '转成弹窗', exact: true })
-    if (!(await toDock.count())) errors.push('转成弹窗：对话页标题栏没有这个按钮')
+    if (await toDock.count()) errors.push('转成弹窗：默认不该钉在标题栏')
+    // 右栏开关不进菜单，固定在「更多操作」右边（标题栏最右端）
+    {
+      const more = await p.getByRole('button', { name: '更多操作', exact: true }).first().boundingBox()
+      const rail = await p
+        .locator('[data-conv-title]')
+        .locator('xpath=ancestor::*[.//button[@aria-label="更多操作"]][1]')
+        .getByRole('button', { name: /^(显示文件|收起文件面板)$/ })
+        .filter({ visible: true })
+        .first()
+        .boundingBox()
+        .catch(() => null)
+      if (!more || !rail || rail.x <= more.x) errors.push('标题栏：右栏开关应在「更多操作」右边')
+    }
+    await p.getByRole('button', { name: '更多操作', exact: true }).first().click()
+    if (!(await p.getByRole('menuitem', { name: /^转成弹窗/ }).count())) errors.push('更多操作：菜单里没有「转成弹窗」')
+    for (const name of ['状态', '对话进程']) {
+      const pin = p.getByRole('button', { name: `从标题栏取下：${name}`, exact: true })
+      if (!(await pin.count())) errors.push(`更多操作：「${name}」默认应钉在标题栏`)
+    }
+    await p.getByRole('button', { name: '钉在标题栏：转成弹窗', exact: true }).click()
+    await check(p, '任务-更多操作-钉住转成弹窗')
+    await p.keyboard.press('Escape')
+    // 菜单收起动画结束前页面其余部分还挂着 aria-hidden，按角色找不到：等它出现
+    const pinned = await toDock.waitFor({ timeout: 5000 }).then(
+      () => true,
+      () => false,
+    )
+    if (!pinned) errors.push('转成弹窗：在菜单里钉上后标题栏没有这个按钮')
     else {
       await toDock.click()
       const first = dockOf(CART)
