@@ -14,13 +14,14 @@ import {
   helperRunning,
   helpersWorking,
   runRunning,
-  announcedOnly,
   taskDeleted,
   withAttachments,
   type ChildFlowStop,
   type ChildHold,
 } from '../../shared/task.ts'
-import { nextNudge, nudgeMax } from '../../shared/conv-mode.ts'
+import { isChatMode, nextNudge, nudgeMax } from '../../shared/conv-mode.ts'
+import { makeAlert } from '../../shared/alerts.ts'
+import type { TurnInfo } from '../exec/turn-info.ts'
 import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled, type MergeStall } from '../../shared/merge-stall.ts'
 import { cancelWait, steerTask } from '../exec/runner.ts'
 import { stopHelper } from '../../shared/engine.ts'
@@ -37,6 +38,12 @@ import { killTaskClis } from '../exec/orphans.ts'
 import { RULE_CMD, isolated, HELPER_STOP_TIMEOUT_MS, HELPER_STOP_POLL_MS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import { letterResult } from '../../shared/child-letter.ts'
+
+/**
+ * 没列计划时，这一轮动手（跑命令、改文件）几次以上才推它列计划：照 Claude Code 的做法，三步以上的事才值得列计划，
+ * 改一处再跑一下检查这种小事不推（用户 2026-11-02：计划不要分得太细，合理就好）
+ */
+const PLAN_ACTS = 3
 
 /**
  * 子对话的生命周期：在跑的计数、彻底完成的判定和推进（advanceChildTo，ADR 0003）、合回、上报父对话、一轮结束时推进计划（nudgePlan，ADR 0032）、规则命令、启动子对话。
@@ -512,12 +519,12 @@ export function createChildren(sc: TasksScope) {
    * 独立分支里的先试着收口（条件都满足就完成、回收；只差请求收尾时提醒它一次），再统一上报父对话。
    * 放到下一拍：别在 CLI 收尾的回调里结束它
    */
-  function settleChildTurn(child: Task) {
+  function settleChildTurn(child: Task, turn?: TurnInfo) {
     if (!child.parentTaskId) return
     if (isolated(child) && !hasHeld(child.id) && !sc.merging.has(child.id) && !child.resolved) {
       setImmediate(
         () =>
-          void settleChildWorktree(child.id).catch((e) => {
+          void settleChildWorktree(child.id, turn).catch((e) => {
             log.warn('task', '子对话一轮结束收口失败', { task: child.id, error: (e as Error).message })
             sc.alertOn(child.id, 'panel', t('这一轮结束后整理独立分支、上报父对话时出错'))(e)
           }),
@@ -527,7 +534,7 @@ export function createChildren(sc: TasksScope) {
     void (async () => {
       // 共用目录的子对话（P4、没有版本管理）改完没请收尾：和独立分支一样提醒一次，评审、验收不因版本管理方式省掉
       if (!isolated(child) && !hasHeld(child.id) && !child.resolved && (await nudgeMerge(child))) return
-      if (await nudgePlan(child)) return
+      if (await nudgePlan(child, turn)) return
       await reportChild(child.id)
     })().catch((e) => {
       log.warn('task', '子对话状态上报失败', { task: child.id, error: (e as Error).message })
@@ -539,7 +546,7 @@ export function createChildren(sc: TasksScope) {
    * 一轮结束后收口子对话的独立分支：条件都满足就回收（见 advanceChildTo，会上报「已完成」），
    * 只差「请父对话收尾」却没请的提醒它一次；其余照常上报现在的状态
    */
-  async function settleChildWorktree(childId: string) {
+  async function settleChildWorktree(childId: string, turn?: TurnInfo) {
     const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
     if (!tk?.parentTaskId) return
     if (isolated(tk)) {
@@ -547,7 +554,7 @@ export function createChildren(sc: TasksScope) {
       if (!holds.length) return
       if (await nudgeMerge(tk)) return
     }
-    if (await nudgePlan(tk)) return
+    if (await nudgePlan(tk, turn)) return
     await reportChild(childId)
   }
 
@@ -559,9 +566,9 @@ export function createChildren(sc: TasksScope) {
    * 子对话照常上报父对话，顶层对话就停在那里等用户。
    * 推出去了（或者已经排好稍后推）返回 true
    */
-  async function nudgePlan(conv: Task): Promise<boolean> {
-    // 没列计划的对话（Chat 模式、只聊几句就动手的项目对话）：看这一轮是不是说完打算就停了（见 nudgeAnnounced）
-    if (!activePlan(conv)) return nudgeAnnounced(conv)
+  async function nudgePlan(conv: Task, turn?: TurnInfo): Promise<boolean> {
+    // 没有计划的对话：这一轮动了手却没列计划，推它把计划列出来再按计划做完（见 nudgeNoPlan）
+    if (!activePlan(conv)) return turn ? nudgeNoPlan(conv, turn) : false
     /** settled：这一轮已经停稳（进程结束，或者停在保活上等下一句）；刚结束那一下 CLI 还没停到等待上，不看这一项 */
     const stalled = async (settled: boolean) => {
       const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
@@ -582,7 +589,18 @@ export function createChildren(sc: TasksScope) {
     if (!now) return false
     const key = `${now.plan.id}:${now.p.done}`
     const nth = takeNudge(conv, key)
-    if (!nth) return false
+    if (!nth) {
+      // 推满了计划还没做完：写一行警告留给用户，不让它看起来像做完了
+      await warnStopped(
+        conv.id,
+        key,
+        t('计划才做了 {done}/{total}，面板推了几次还是停下了：停在这里等你看一下', {
+          done: now.p.done,
+          total: now.p.total,
+        }),
+      )
+      return false
+    }
     // 稍等一下再推：这一轮刚结束时 CLI 还没停到「等下一句」上；等它停稳了再看一次，还停着才推
     setTimeout(() => {
       void (async () => {
@@ -623,45 +641,82 @@ export function createChildren(sc: TasksScope) {
     return true
   }
 
+  /** 推满了还停着的那一轮：每个进度只写一次警告行（按 nudge 的 key 记） */
+  const warned = new Map<string, string>()
+  async function warnStopped(id: string, key: string, text: string) {
+    if (warned.get(id) === key) return
+    warned.set(id, key)
+    const tk = sc.live.get(id)?.task ?? (await sc.store.get(id))
+    if (!tk) return
+    tk.messages.push({
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text,
+      tools: [],
+      alert: makeAlert('warn', '', 'unfinished'),
+      at: new Date().toISOString(),
+    })
+    const entry = sc.live.get(id)
+    if (entry) entry.rev++
+    await sc.store.update(id, tk)
+    log.info('task', '推满了还停着，留给用户', { task: id, key })
+  }
+
   /**
-   * 没有计划的对话这一轮以一句打算收尾（「我再确认…」，见 announcedOnly）、之后没调用任何工具：
-   * 等 CLI 停稳后推「接着做你刚说的」。每条用户消息推几次见 takeNudge，推满了还停着就留给用户。
-   * 用户报过：Chat 模式的对话说完「我再确认这些连接的状态」就停住，要用户说「继续啊」才接着做
+   * 这一轮跑了命令、改了文件（acts，PLAN_ACTS 次以上），却没有计划就结束了：面板只按计划判断做完没有
+   * （用户 2026-11-02 定，不按回复里的字眼猜），没有计划就没法知道后面还有没有要做的。
+   * 用户报过：主理清完工作区、删完本地分支，说完「现在删除远端这 12 个已合并分支。」就停了，那一轮没列计划。
+   * 推它把做过的和还要做的列进计划，之后按计划推进（nudgePlan）接管。
+   * 这一轮列过、收过计划（finish_plan）的不推；Chat 页没有面板计划，不推；在等提问、子对话、后台命令的不推
    */
-  async function nudgeAnnounced(conv: Task): Promise<boolean> {
-    const said = (tk: Task) => (tk.working || tk.resolved ? '' : announcedOnly(tk))
-    if (!said(conv)) return false
-    // 一条用户（或父对话）消息只推一次：推过之后它又只说打算就停，就留给用户，不来回推。
-    // 面板自己推的那条不算新消息（panel），所以按最后一条不是面板发的消息记
+  async function nudgeNoPlan(conv: Task, turn: TurnInfo): Promise<boolean> {
+    if (isChatMode(conv) || turn.acts < PLAN_ACTS) return false
+    const planned = (tk: Task) => {
+      const last = tk.plans?.at(-1)
+      const at = last ? [last.createdAt, last.updatedAt ?? '', last.doneAt].sort().at(-1)! : ''
+      return !!at && !!turn.since && at >= turn.since
+    }
+    const stalled = async (settled: boolean) => {
+      const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
+      if (!tk || tk.imported || taskDeleted(tk) || tk.working || tk.resolved || activePlan(tk) || planned(tk))
+        return undefined
+      if (tk.status === 'stopped' || tk.status === 'failed') return undefined
+      // 停稳的才推：进程结束了，或者停在保活上等下一句；这期间用户发了消息、开了新一轮就不推
+      if (settled && !(tk.status === 'done' || (tk.status === 'running' && tk.awaitingUser))) return undefined
+      if (settled && tk.turnDoneAt !== conv.turnDoneAt) return undefined
+      if (tk.requests.length || tk.parentAsks?.length || hasHeld(tk.id) || sc.startQueue.has(tk.id)) return undefined
+      if (tk.wrapRequest && tk.wrapRequest.state !== 'failed') return undefined
+      if (sc.pendingJobs(tk.id) || helpersWorking(tk) || runRunning(tk) || (await activeChildren(tk.id)))
+        return undefined
+      return tk
+    }
+    if (!(await stalled(false))) return false
+    // 一条用户（或父对话）消息只推一次：面板自己推的那条不算新消息（panel）
     const asked = [...conv.messages].reverse().find((m) => m.role === 'user' && !m.panel)
-    const key = `said:${asked?.id ?? ''}`
-    const nth = takeNudge(conv, key)
-    if (!nth) return false
+    const key = `noplan:${asked?.id ?? ''}`
+    if (!takeNudge(conv, key)) return false
     setTimeout(() => {
       void (async () => {
-        const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
-        // 停稳的才推：进程结束了，或者停在保活上等下一句；这期间用户发了消息、开了新一轮就不推
-        const settled = !!tk && (tk.status === 'done' || (tk.status === 'running' && tk.awaitingUser))
-        const intent = tk && settled && tk.turnDoneAt === conv.turnDoneAt ? said(tk) : ''
-        if (!tk || !intent || tk.imported || taskDeleted(tk)) {
+        const tk = await stalled(true)
+        if (!tk) {
           if (conv.parentTaskId) await reportChild(conv.id)
           return
         }
-        if (tk.requests.length || tk.parentAsks?.length || hasHeld(tk.id) || sc.startQueue.has(tk.id)) return
-        if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return
         const text =
-          `【面板】你说了「${intent}」，但这一轮没有调用工具就结束了。直接接着做：调用工具去做这件事，做完给出结论；` +
-          '确实做不了就说明卡在哪里、需要什么。' +
-          lastNudge(conv, nth)
+          '【面板】这一轮跑了命令 / 改了文件，但没有计划就结束了，面板按计划判断这件事做完没有。' +
+          '先用 set_plan 把这件事列成计划：已经做完的步骤标完成，还没做的（包括你刚说要做的下一步）列成待做，然后按计划接着做完；' +
+          '确实已经全部做完，就把做过的步骤列出来全部标完成，再 finish_plan。'
         const ok = tk.parentTaskId
           ? (await sc.sendToChild(tk.parentTaskId, tk.id, text, 'build')).ok
           : await sc.wakeConv(tk.id, text, { panel: 'build' }).then(
               () => true,
               () => false,
             )
-        if (ok) log.info('task', '对话说完打算就收尾，已推它接着做', { task: conv.id })
+        if (ok) log.info('task', '对话动了手却没列计划就收尾，已推它列计划', { task: conv.id, acts: turn.acts })
         else if (conv.parentTaskId) await reportChild(conv.id)
-      })().catch((e) => log.warn('task', '推对话接着做失败', { task: conv.id, error: (e as Error).message }))
+      })().catch((e) => log.warn('task', '推对话列计划失败', { task: conv.id, error: (e as Error).message }))
     }, sc.PLAN_NUDGE_MS).unref?.()
     return true
   }

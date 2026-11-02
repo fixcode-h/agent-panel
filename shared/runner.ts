@@ -11,6 +11,7 @@ import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
 import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './task-export.ts'
 import { LESSON_REVIEW_LANG } from './lesson-review.ts'
+import { SUMMARY_HEAD } from './helper-summary.ts'
 import { DIAGNOSIS_LANG, demoDiagnosis } from './diagnosis.ts'
 
 export interface RunContext {
@@ -568,6 +569,9 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
     out = { ...out, text: `${out.text}\n\n${demoNext(ctx.workflow.document, task)}` }
   // 后面有条件连线的节点要给出结论；演示里一律通过
   if (call.deciding && !/结论[:：]/.test(out.text)) out = { ...out, text: `${out.text}\n\n结论：通过` }
+  // 子任务做完要交以「## 总结」开头的总结（面板按它判定做完，见 helper-summary.ts）；演示里照着写
+  if (call.step?.slot === 'sub' && !out.text.includes(SUMMARY_HEAD))
+    out = { ...out, text: `${out.text}\n\n${SUMMARY_HEAD}\n${call.step.title}：完成。` }
   const ok = await speak(ctx, call.agentId, call.step?.id ?? '', out)
   if (ok && !call.step) task.todos = (task.todos ?? []).map((t) => ({ ...t, status: 'done' as const }))
   return ok ? { ok: true, text: out.text } : { ok: false, stopped: true, error: '已停止' }

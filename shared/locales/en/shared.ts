@@ -135,6 +135,8 @@ export const EN_SHARED: Record<string, string> = {
   '主角色整理结果失败：{error}': 'Main role failed to write the final result: {error}',
   '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
   '子任务没能执行：{error}': 'Subtask could not run: {error}',
+  '子任务推了一次还是没交最后的总结，交回的结果可能没做完':
+    'The subtask was nudged once but still gave no final summary; its result may be unfinished',
   '「{title}」在原来的子任务里重试：{list}': '"{title}" is retrying in the original subtasks: {list}',
   '「{title}」{note}': '{title}: {note}',
   '已转交父对话创建「{title}」{id}': 'Handed "{title}" to the parent conversation{id}',
