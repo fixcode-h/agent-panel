@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 /**
- * 单测分两批跑：含真实时钟断言的几个文件串行，其余文件并发跑。
+ * 单测全部文件一批并发跑（核数 × 1.5 与内存取小，AGENT_PANEL_UNIT_CONCURRENCY 可改）。
  *
- * 为什么拆：node --test 默认按 CPU 核数并发跑文件，计时类用例（等落盘窗口、等请求超时）
- * 和别的文件抢 CPU 时等待会被拉长，断言随机失败；全量串行又慢到几分钟。
- * 真正吃时间的只有下面清单里的几个文件，其余文件并行不影响彼此。
+ * 以前含真实时钟断言的 5 个文件单独串行跑一批，CI 上要多等半分钟；2026-11-02 实测把它们并进
+ * 并发批连跑 3 次全量都通过（4 核、并发 6，全量 96s → 63s），就去掉了串行批。
+ * 偶发超窗靠下面的「失败文件串行重跑」兜底，重跑才过的会进抖动报告，CI 照样判红。
  *
  * 用法：
- *   node scripts/unit-tests.mjs          # 两批都跑（npm run test:unit）
- *   node scripts/unit-tests.mjs timing   # 只跑计时文件，串行
- *   node scripts/unit-tests.mjs rest     # 只跑其余文件，并发（核数 × 1.5 与内存取小，AGENT_PANEL_UNIT_CONCURRENCY 可改）
+ *   node scripts/unit-tests.mjs          # 全量（npm run test:unit）
  *   node scripts/unit-tests.mjs --files a.test.ts,b.test.ts   # 只跑指定文件（test:affected 用）
  *   node scripts/unit-tests.mjs --failed  # 只跑上一次还失败的文件（改完复测用，npm run test:failed）
  *   node scripts/unit-tests.mjs --verbose # 完整 TAP 也打到终端（默认只写进 logs/tests/）
@@ -19,8 +17,7 @@
  * Agent 把它读进上下文就是十几万 token。失败只重跑失败的文件（串行、总共最多 3 次），
  * 不整套重跑；规则和判定在 scripts/lib/test-results.mjs。
  *
- * --files 的文件清单由 scripts/changed-tests.mjs 按影响面分析算出来；这里仍然按
- * timing / rest 两批跑，所以按影响面临时选出来的计时文件也不会和别人抢 CPU。
+ * --files 的文件清单由 scripts/changed-tests.mjs 按影响面分析算出来。
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -44,16 +41,6 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-/** 有真实时钟断言、必须独占 CPU 的文件：新出现这类用例时加到这里，不要另起一份清单 */
-const TIMING_FILES = [
-  'server/exec/worktree.test.ts',
-  'server/exec/pi-rpc.test.ts',
-  'server/task-store.test.ts',
-  'server/exec/process.test.ts',
-  // 后台命令名额的用例靠 1 秒内的 setTimeout 轮询等排队/启动，和别的文件抢事件循环时会晚于窗口
-  'server/background.test.ts',
-]
-
 const TSX_CLI = path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')
 
 /**
@@ -61,7 +48,6 @@ const TSX_CLI = path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')
  * （scripts/lib/concurrency.mjs；AGENT_PANEL_UNIT_CONCURRENCY 写了就照它开）。
  * node --test 默认只开「核数 - 1」个，但并发批的文件大半时间在等真实的定时器、子进程和磁盘，
  * CPU 闲着；4 核机器上实测 3 个 69s、6 个 49s、8 个 48s（再多就是 CPU 打满了）。
- * 怕抢 CPU 的计时类用例在 TIMING_FILES 里单独串行，不受这里影响。
  */
 const restConcurrency = (units) =>
   suggestConcurrency({
@@ -75,7 +61,7 @@ const restConcurrency = (units) =>
 
 /**
  * 取出 --files（`--files a.test.ts,b.test.ts` 或 `--files=a,b`）：受影响的单测文件由
- * scripts/changed-tests.mjs 算出来，这里只负责按 timing / rest 两批跑它们。
+ * scripts/changed-tests.mjs 算出来，这里只负责跑它们。
  */
 function splitFilesArg(list) {
   const files = []
@@ -120,15 +106,13 @@ if (flag('--failed') && !given.length) {
   )
   process.exit(0)
 }
-const which = ['timing', 'rest'].includes(argv[0]) ? argv[0] : ''
-// 第一个位置参数只能是 timing / rest；其余参数原样透传给 node --test，
-// 保持原来的用法（`npm run test:unit -- --test-name-pattern 桥接` 也不受影响）。
-// 选项的值（例如「桥接」）在 argv[0] 是选项时不会被当成位置参数
-if (!which && argv[0] && !argv[0].startsWith('-')) {
-  console.error(`不认识的参数 ${argv[0]}：只支持 timing / rest，其余选项会透传给 node --test`)
+// 参数原样透传给 node --test（`npm run test:unit -- --test-name-pattern 桥接` 照常用）；
+// 不再有 timing / rest 分批，旧用法直接报错，免得以为只跑了一部分
+if (argv[0] && !argv[0].startsWith('-')) {
+  console.error(`不认识的参数 ${argv[0]}：单测不再分 timing / rest 两批，选项会透传给 node --test`)
   process.exit(1)
 }
-const extra = which ? argv.slice(1) : argv
+const extra = argv
 // 命令行自己传了 --test-concurrency 就听它的，不再叠加一份；否则按这批的文件数算（见 restConcurrency）
 const ownConcurrency = extra.some((a) => a.startsWith('--test-concurrency'))
 const restOptsFor = (files) => {
@@ -137,10 +121,6 @@ const restOptsFor = (files) => {
   console.log(concurrencyLine('[unit]', c))
   return [...extra, `--test-concurrency=${c.value}`]
 }
-if (given.length && which) {
-  console.error('--files 和 timing / rest 不能同时用：指定了文件就只跑这些文件')
-  process.exit(1)
-}
 if (!existsSync(TSX_CLI)) {
   // 启动校验失败直接退出：这里没有后续内容要跑，exit() 的截断风险只影响长输出
   console.error(`找不到 tsx（${TSX_CLI}）：这个目录还没装依赖，先跑 npm ci`)
@@ -148,13 +128,6 @@ if (!existsSync(TSX_CLI)) {
 }
 
 const all = listUnitTests(root)
-// 计时文件改名后清单会和实际文件对不上：静默少跑这几个等于把并发抖动放回来，直接失败
-const missing = TIMING_FILES.filter((file) => !all.includes(file))
-if (missing.length) {
-  console.error(`TIMING_FILES 里的路径不存在（改名后要同步这份清单）：${missing.join('、')}`)
-  process.exit(1)
-}
-const rest = all.filter((file) => !TIMING_FILES.includes(file))
 
 const REPORTER = path.join(root, 'scripts/lib/test-reporter.mjs')
 // 继承来的接口、面板和 git 变量会让断言随机器变：去掉，日志里只列名字（scripts/lib/test-env.mjs）
@@ -198,14 +171,10 @@ if (given.length) {
     console.error(`--files 里有不认识的测试文件：${unknown.join('、')}`)
     process.exit(1)
   }
-  const timing = all.filter((file) => given.includes(file) && TIMING_FILES.includes(file))
-  const others = all.filter((file) => given.includes(file) && !TIMING_FILES.includes(file))
-  batches.push(['指定的计时文件（串行）', timing, [...extra, '--test-concurrency=1']])
-  batches.push(['指定的其余文件（并发）', others, () => restOptsFor(others)])
+  const chosen = all.filter((file) => given.includes(file))
+  batches.push(['指定的文件（并发）', chosen, () => restOptsFor(chosen)])
 } else {
-  // 计时文件先跑：整轮有失败时也能先看到最容易抖的那批结果
-  if (which !== 'rest') batches.push(['计时文件（串行）', TIMING_FILES, [...extra, '--test-concurrency=1']])
-  if (which !== 'timing') batches.push(['其余文件（并发）', rest, () => restOptsFor(rest)])
+  batches.push(['全部文件（并发）', all, () => restOptsFor(all)])
 }
 
 let exitCode = 0
@@ -222,8 +191,7 @@ for (const [label, files, opts] of batches) {
     console.log(`[unit] ${label}：没有文件，跳过`)
     continue
   }
-  const slug = label.startsWith('计时') || label.startsWith('指定的计时') ? 'timing' : 'rest'
-  const first = run(files, typeof opts === 'function' ? opts() : opts, `unit-${slug}`)
+  const first = run(files, typeof opts === 'function' ? opts() : opts, 'unit')
   const summary = summarize(first.events, root)
   allSummary.push(...summary)
   const tests = summary.reduce((n, f) => n + f.tests, 0)
@@ -242,7 +210,7 @@ for (const [label, files, opts] of batches) {
   // 只重跑失败的文件，串行（抖动多半来自和别的文件抢 CPU）；每次只带上一次还失败的
   const attempts = [failing]
   for (let i = 2; retry && failing.length && i <= MAX_ATTEMPTS; i++) {
-    const again = run(failing, [...extra, '--test-concurrency=1'], `unit-${slug}-retry${i}`)
+    const again = run(failing, [...extra, '--test-concurrency=1'], `unit-retry${i}`)
     const now = failedFiles(summarize(again.events, root))
     failing = again.code && !now.length ? failing : now
     attempts.push(failing)

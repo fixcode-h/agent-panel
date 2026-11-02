@@ -58,10 +58,9 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 | -------------------------------- | -------------------------------------------------------------------------------------- |
 | 全量单测                         | `npm run test:unit`（只打结论、失败详情、抖动和最慢的文件；完整 TAP 在 `logs/tests/`） |
 | 只复测上次失败的单测文件         | `npm run test:failed`                                                                  |
-| 看完整输出                       | `npm run test:unit -- --verbose`，或读 `logs/tests/unit-*.tap`                         |
+| 看完整输出                       | `npm run test:unit -- --verbose`，或读 `logs/tests/unit.tap`                           |
 | 失败不重跑（排查抖动）           | `npm run test:unit -- --no-retry`                                                      |
 | 只跑指定单测文件                 | `node scripts/unit-tests.mjs --files a.test.ts,b.test.ts`                              |
-| 只跑计时文件（串行）             | `npm run test:unit:timing`                                                             |
 | 按影响面跑增量                   | `npm run test:affected -- --since <任务基线>`                                          |
 | 全量端到端（Windows 必须走 WSL） | `npm run test:e2e:wsl`（走 WSL 默认发行版；默认发行版必须是 Ubuntu-24.04）             |
 | 只跑部分端到端分片               | `npm run test:e2e -- 03 07`                                                            |
@@ -93,7 +92,7 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 - **继承环境**：单测、端到端、界面检查起进程前去掉 `ANTHROPIC_*`、`OPENAI_*`、`CLAUDE_CODE_*` 这类会改变 CLI 行为的变量，面板自己的 `AGENT_PANEL_*`（测试入口的开关 `AGENT_PANEL_UNIT_*` / `E2E_*` / `UI_*` 保留）和 `GIT_CONFIG_*`、`GIT_DIR` 这类 git 变量，日志里按前缀列出去掉了哪些（`scripts/lib/test-env.mjs`）。分片额外带 `AGENT_PANEL_E2E_SHARD_ID` / `AGENT_PANEL_UI_SHARD_ID`。
 - **并发**：三个入口都用 `scripts/lib/concurrency.mjs` 的 `suggestConcurrency`，CPU、可用内存（`process.availableMemory`，会算进 cgroup；每个单元按单测 120M、e2e 600M、界面 500M 估，只用 70%）和单元数取小，e2e 另有默认上限 4，日志打印「并发 N，由哪一项决定」。只管测试进程，和面板里对话的执行无关；用户 2026-10-30 定为一直开着、不设开关。`AGENT_PANEL_UNIT_CONCURRENCY` 写了就照它开（调试用）；`AGENT_PANEL_E2E_CONCURRENCY` 和 `AGENT_PANEL_UI_CONCURRENCY` 只能再往下压，写大了日志会写明没用上。
 - **用例报数**：见上面「分层边界与报数」；总数不设上限，`npm run lint` 只拦本次净新增（要写「测试预算:」理由），清理靠「测试验收」的「清理用例」定期一批做。
-- **串行清单**：`TIMING_FILES` 仍是最后手段，进清单要有证据；串行不等于稳定（`server/background.test.ts` 在串行批里也超过窗口）。
+- **不再有串行清单**：2026-11-02 用户嫌 CI 慢，去掉了 `TIMING_FILES` 串行批，全部单测一批并发跑（4 核实测 3 次全量全过，96s → 63s）。计时类用例偶发超窗要改断言（注入时钟 / 事件驱动 / 放宽窗口），不要再加串行清单。
 
 ## 依赖
 
