@@ -3,7 +3,7 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-27（本轮把「自动压缩上下文」的默认值从「按 Agent 自己的规则」（0）改成 70%，并给设置加了 `defaultsVersion` 迁移版本；同日新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试；同日补「版本更新」一节：GitHub 403 限流时回退缓存、ETag/304、冷却与 `GITHUB_TOKEN`）；2026-10-28 图片附件改为直接放对话目录根（不再有 attachments/ 子目录），git 的更改列表和评审差异按任务上记的 placedAttachments 排除面板图片
+- analyzed_at: 2026-10-27（本轮把「自动压缩上下文」的默认值从「按 Agent 自己的规则」（0）改成 70%，并给设置加了 `defaultsVersion` 迁移版本；同日新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试；同日补「版本更新」一节：GitHub 403 限流时回退缓存、ETag/304、冷却与 `GITHUB_TOKEN`）；2026-10-28 图片附件改为直接放对话目录根（不再有 attachments/ 子目录），git 的更改列表和评审差异按任务上记的 placedAttachments 排除面板图片；2026-11-02 项目教训改存项目文档目录的 `lessons.md`（旧项目 JSON 继续读取，见 features.md）
 
 ## 职责
 
@@ -12,7 +12,7 @@
 - 项目与任务：项目扫描和分类（配合 `shared/project-scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks.ts`、`server/task-store.ts`）。
 - CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载，CLI 自己的插件（Pi 的扩展包，装删更新跑 CLI 的命令）（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/install.ts`）。
 - 面板能力给 Agent 用：进程内 MCP 工具，编排（`server/orch-mcp.ts`）、向用户提问（`server/ask-mcp.ts`）、UI 设计（`server/design-mcp.ts`）。`spawn_agents` 顶层的 `agent` / `tier` / `resume` 是整批默认值，顶层写错字段直接报错（以前只读 `tasks[i]`、顶层 `resume` 被静默丢掉，复看会退回默认「子任务」角色，见 [bugs/helper-resume-lost-role.md](bugs/helper-resume-lost-role.md)）；resume 命中时角色怎么定、`tier` 跟谁，规则在 [shared 模块 README 里「对话的执行计划」那一条](../shared/README.md)。
-- 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训、导出、版本更新。
+- 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训（存在项目文档目录的 `lessons.md`，见 [features.md](features.md) 和 [ADR 0039](../../adr/0039-project-lessons-in-docs.md)）、导出、版本更新。
 - Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见 [library.md](library.md)「技能库的多文件管理」。
 - 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它，见 [network.md](network.md)「GitHub 出网与代理回退」。
 

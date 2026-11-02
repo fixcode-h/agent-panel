@@ -141,12 +141,13 @@ import { installLogging, log, logFile } from './log.ts'
 import { sweepPanelMcp } from './panel-mcp-files.ts'
 import { existsSync } from 'node:fs'
 import { detectShells, currentShell } from './shells.ts'
-import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
+import { projectLessons, readGlobalLessons, writeGlobalLessons } from './lessons.ts'
+import { loadProjectLessons, projectWithLessons } from './project-lessons.ts'
+import { projectLessonRoutes } from './project-lesson-routes.ts'
 import { staleProjectWrite } from './project-lock.ts'
 import { acquireInstanceLock } from './instance-lock.ts'
 import { installHttpGuards } from './http-guards.ts'
 import { cleanupItemTrash, itemTrashRoutes, trashItem } from './item-trash.ts'
-import { LESSON_REVIEW_LANG, parseLessonReview } from '../shared/lesson-review.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
@@ -759,7 +760,11 @@ async function parseProject(body: unknown) {
   return { data: p.data }
 }
 
-app.get('/projects', async (c) => c.json(sortProjects(await projects.list())))
+app.get('/projects', async (c) => {
+  // 项目教训在项目文档目录的 lessons.md 里：列表也返回合并后的结果，界面不用再单独取
+  const [list, agentList] = await Promise.all([projects.list(), agents.list()])
+  return c.json(sortProjects(await Promise.all(list.map((p) => projectWithLessons(p, agentList)))))
+})
 
 // 新建项目时的 AI 分析：只读扫描本地目录，给出填好一半的表单
 app.post('/projects/analyze', async (c) => {
@@ -807,17 +812,24 @@ app.put('/projects/:id', async (c) => {
   }
   const r = await parseProject(body)
   if (r.error) return bad(c, r.error)
-  // 没带教训的请求（旧版界面、脚本）不清空已有的教训：它们大多是角色在对话里记的
-  if (body && typeof body === 'object' && !('lessons' in body))
-    r.data!.lessons = (await projects.get(c.req.param('id')))?.lessons ?? []
   // 初始化标记同理：只有项目设置页会带上它，脚本改设置不会把它清掉
   if (body && typeof body === 'object' && !('initializedAt' in body))
-    r.data!.initializedAt = (await projects.get(c.req.param('id')))?.initializedAt ?? ''
+    r.data!.initializedAt = (await projects.get(id))?.initializedAt ?? ''
   // 保存的推荐也是：没带的请求保留上次初始化的结果
   if (body && typeof body === 'object' && !('initResult' in body))
-    r.data!.initResult = (await projects.get(c.req.param('id')))?.initResult
-  const x = await projects.update(c.req.param('id'), r.data!)
-  return x ? c.json(x) : bad(c, t('项目不存在'), 404)
+    r.data!.initResult = (await projects.get(id))?.initResult
+  if (body && typeof body === 'object' && 'lessons' in body) {
+    // 项目设置页带回整份教训：走 lessons 的同一个队列写文件，队列内再核对一次版本，
+    // 不让用户在设置页的旧快照覆盖掉这期间 Agent 刚记的条目
+    const saved = await lessons.replace(id, r.data!, typeof expected === 'string' ? expected : undefined)
+    if (!saved.ok) return bad(c, saved.info, saved.status)
+    return c.json(saved.project)
+  }
+  // 没带教训的请求（旧版界面、脚本）不清空已有的教训：它们大多是角色在对话里记的
+  r.data!.lessons = (await projects.get(id))?.lessons ?? []
+  const x = await projects.update(id, r.data!)
+  if (!x) return bad(c, t('项目不存在'), 404)
+  return c.json({ ...x, lessons: (await loadProjectLessons(x, await agents.list())).lessons })
 })
 
 /**
@@ -835,30 +847,9 @@ app.put('/projects/:id/init-result', async (c) => {
   return x ? c.json(x) : bad(c, t('项目不存在'), 404)
 })
 
-// 记一条项目教训（对话里「记成项目教训」）：单独的接口，不用把整个项目设置发回来，也不会盖掉 Agent 刚记的
-const lessons = projectLessons(projects)
-app.post('/projects/:id/lessons', async (c) => {
-  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
-  if (!body || typeof body.title !== 'string') return bad(c, t('规则不能为空'))
-  const r = await lessons.record(c.req.param('id'), {
-    ...(body as Partial<LessonDraft>),
-    title: body.title,
-    source: 'user',
-  })
-  return r.ok && r.project ? c.json(r.project) : bad(c, r.info)
-})
-
-// AI 评审项目教训：用户在评审卡片上逐条点「应用」，一次一条
-app.post('/projects/:id/lessons/review', async (c) => {
-  const body = (await c.req.json().catch(() => null)) as { item?: unknown } | null
-  const review = parseLessonReview(
-    '```' + LESSON_REVIEW_LANG + '\n' + JSON.stringify({ items: [body?.item] }) + '\n```',
-  )
-  const item = review?.items[0]
-  if (!item) return bad(c, t('评审建议的格式不对'))
-  const r = await lessons.review(c.req.param('id'), item)
-  return r.ok && r.project ? c.json(r.project) : bad(c, r.info)
-})
+// 记一条项目教训（对话里「记成项目教训」）和应用一条 AI 评审建议：路由在单独模块里
+const lessons = projectLessons(projects, { agents })
+projectLessonRoutes(app, lessons)
 
 // 全局教训：所有项目共用。只有界面上用户确认过的修改才会写进来，Agent 没有写它的工具
 app.get('/global-lessons', async (c) => c.json(await readGlobalLessons()))
