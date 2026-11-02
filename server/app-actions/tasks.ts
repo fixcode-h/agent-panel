@@ -110,6 +110,8 @@ export const taskActions = [
         projectId,
         mode: 'chat',
         prompt: a.message,
+        // 带上发件对话：新对话的第一条记成「对话 X 发来」，不当成用户说的话（ADR 0041）
+        ...(ctx.caller?.taskId && { from: ctx.caller.taskId }),
         ...(a.agentId ? { agentId: a.agentId } : {}),
       })) as Task
       return brief(t)

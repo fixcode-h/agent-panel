@@ -1,3 +1,4 @@
+import { sourceHeader } from '../../shared/peer-message.ts'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
@@ -113,8 +114,14 @@ export function registerConversationRoutes(s: TasksScope) {
       }
     }
     // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
-    const expanded = await s.expandForWorkflow(draft, input.prompt)
-    if (expanded && draft.messages[0]) draft.messages[0].prompt = expanded
+    const raw0 = await s.expandForWorkflow(draft, input.prompt)
+    // 别的对话替它建的（app 动作 task.create）：第一条记成「同项目对话发来」，交给 CLI 时写明不是用户说的（ADR 0041）
+    const sender = input.from && !parent ? await s.current(input.from) : undefined
+    const first = draft.messages[0]
+    if (sender && first) first.peer = await s.peerOf(sender, 'peer', 'task', input.prompt)
+    const head = first ? sourceHeader(first) : ''
+    const expanded = head ? head + (raw0 || input.prompt) : raw0
+    if (expanded && first) first.prompt = expanded
     // 附件：图片拷进这个对话的对话目录（tasks/files/<id>/attachments/），交给 Agent 的是那里的绝对路径；
     // 其它文件原样用绝对路径。对话里显示的仍是原来那份（缩略图从附件目录读）
     const placed = await s.placeInTask(draft, input.attachments ?? [])

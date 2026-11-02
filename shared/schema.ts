@@ -1093,11 +1093,9 @@ export const NewTaskInput = z.object({
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
-  /**
-   * 父对话的「子对话也提问」：之后新建的子对话默认是否开启提问（见 shared/child-ask.ts）。
-   * 只在创建父对话时用，之后走 PATCH /tasks/:id 改；不传时按设置里的默认值
-   */
+  /** 父对话的「子对话也提问」：之后新建子对话默认开不开提问（见 shared/child-ask.ts）；只在创建时用，不传按设置 */
   childAskUser: z.boolean().optional(),
+  from: z.string().optional(), // 别的对话替它建的（task.create）：发件对话 id，第一条记成 peer（ADR 0041）
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
   analysis: AnalysisKind.optional(),
   /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」把修复建议发回它）；和对话无关的分析不填 */
