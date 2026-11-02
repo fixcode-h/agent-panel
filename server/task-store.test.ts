@@ -16,6 +16,19 @@ const PERSIST_WAIT_INTERVAL_MS = 20
 
 const { createStampTracker, createTaskStore, messageChars } = await import('./task-store.ts')
 
+/** 等落盘：写文件是真实 I/O（fsync + rename），慢盘上耗时不定，只能轮询；到点报出等的是什么 */
+async function until(cond: () => boolean, what: string, ms = PERSIST_WAIT_TIMEOUT_MS) {
+  const end = Date.now() + ms
+  for (;;) {
+    // rename 换名的瞬间 Windows 上读文件可能报 EPERM / EBUSY：当作还没写完，下一轮再读
+    try {
+      if (cond()) return
+    } catch {}
+    if (Date.now() > end) assert.fail(`等了 ${ms}ms 仍未成立：${what}`)
+    await new Promise((r) => setTimeout(r, PERSIST_WAIT_INTERVAL_MS))
+  }
+}
+
 const write = (file: string, data: unknown) => {
   mkdirSync(path.dirname(file), { recursive: true })
   writeFileSync(file, JSON.stringify(data), 'utf8')
@@ -221,8 +234,9 @@ test('消息连续更新时对话文件按间隔合并写，窗口内的最后�
     } as never)
   assert.deepEqual(ids(), [], '窗口内不写，避免每次都重写几 MB 的对话文件')
 
-  // 窗口过去后写到最新的一份
-  await new Promise((r) => setTimeout(r, 600))
+  // 窗口过去后写到最新的一份。到点的写盘是 fire-and-forget 的 fsync + rename，Windows CI 上一次能慢过 200ms，
+  // 固定等 600ms 会偶发读到旧的 []：轮询到写完为止，真丢了最后一次照样超时失败
+  await until(() => ids()[0] === 'm5', '窗口结束后写最后一次更新的内容')
   assert.deepEqual(ids(), ['m5'], '窗口结束后写最后一次更新的内容')
 
   // 删除时窗口里等着的那份一起丢掉，不会删完又写回来
