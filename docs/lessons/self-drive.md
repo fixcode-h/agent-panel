@@ -8,7 +8,7 @@ paths: server/tasks/children.ts, server/tasks/merge.ts, shared/drive.ts, shared/
 
 - 规则：完成没有、通过没有、走哪条分支，只看结构化信号（`submit_verdict` 记在 `TaskStep.submitted` 上、CLI 协议事件、面板自己写的字段），不用正则从模型回复里找「验收结论：通过」「## 总结」这类字眼；没交就补问一次，再没有按出错显示，**不默认通过 / 做完**。回复文字只用来展示和交接。
 - 起因：用户 2026-11-02：「绝对不能依靠 Agent 的输出包含什么就任务处于什么状态」；排查出 7 处按文字判状态，其中验收、分支、主角色决定读不到时默认按通过 / 继续。
-- 防线：`server/review-gate.test.ts`「只认 submit_verdict，不看回复文字」、`server/engine-steps.test.ts`「验收没交 submit_verdict」。
+- 防线：`scripts/rules-check.mjs` 第 19 条；`server/review-gate.test.ts`「只认 submit_verdict」、`server/engine-steps.test.ts`「验收没交 submit_verdict」、`shared/helper-summary.test.ts`。
 
 ## 推进次数只在真推出去时记，每个判断写进对话日志
 

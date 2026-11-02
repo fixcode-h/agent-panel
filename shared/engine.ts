@@ -487,7 +487,12 @@ export interface Orchestra {
   /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 结束这份计划 */
   plans: boolean
   /** partial：只交变更步骤，其余没写到的步骤留在计划里不动（步骤多时分两批交） */
-  setPlan(input: { title?: string; steps?: PlanItemInput[]; partial?: boolean }): Promise<{ ok: boolean; info: string }>
+  setPlan(input: {
+    title?: string
+    steps?: PlanItemInput[]
+    partial?: boolean
+    summary?: string
+  }): Promise<{ ok: boolean; info: string }>
   finishPlan(summary: string): Promise<{ ok: boolean; info: string }>
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
@@ -2996,6 +3001,10 @@ function makeOrchestra(
         // 对话自己改了计划：新要求算看过了（见 inputUnhandled）
         const plan = activePlan(task)
         if (plan) plan.agentUpdatedAt = new Date().toISOString()
+        // 总结写进这个对话自己的计划（ADR 0041：各写各的，不写进父对话的计划）；最后一步标完成时计划已收起，写在它上面
+        const sum = input.summary?.trim()
+        const target = plan ?? task.plans?.at(-1)
+        if (sum && target) target.summary = sum.slice(0, 8000)
         host.changed(true)
       }
       return r
@@ -3003,6 +3012,9 @@ function makeOrchestra(
     async finishPlan(summary) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
       const r = finishPlan(task, summary, undefined, await kidsOf(host))
+      // 总结记在刚结束的这份计划上（结束后它不再是 activePlan）
+      const last = task.plans?.at(-1)
+      if (r.ok && last && summary.trim()) last.summary = summary.trim().slice(0, 8000)
       if (r.ok) host.changed(true)
       return r
     },

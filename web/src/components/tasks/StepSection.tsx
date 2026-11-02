@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { Crown, Loader2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
-import { parseVerdict } from '@shared/engine'
+import { verdictOf } from '@shared/submitted'
 import { useData } from '@/lib/data'
 import { stepDuration, stepLabel, verdictText } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
@@ -146,15 +146,8 @@ function StepSectionBase({
               <FoldedRun key={i} msgs={r.msgs} task={task} teamNames={teamNames} live={root.status === 'running'} />
             )
           const s = task.steps.find((x) => x.id === r.step)
-          const v =
-            s?.slot === 'review'
-              ? parseVerdict(
-                  r.msgs
-                    .filter((m) => m.role === 'agent')
-                    .map((m) => m.text)
-                    .join('\n'),
-                )
-              : null
+          // 验收结论只认 submit_verdict 交的（ADR 0041 第 16 节），界面和判定是同一个来源
+          const v = s?.slot === 'review' ? verdictOf(s) || null : null
           return (
             <div key={i} data-step={r.step} className="flex flex-col gap-3 rounded-xl border bg-panel px-3.5 py-3">
               <div className="flex flex-wrap items-center gap-2 text-xs">

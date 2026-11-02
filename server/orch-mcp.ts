@@ -273,6 +273,11 @@ export function orchTools(o: Orchestra) {
               type: 'object',
               properties: {
                 title: { type: 'string', description: '这份计划的名字（开新计划时写）' },
+                summary: {
+                  type: 'string',
+                  description:
+                    '把最后几步标完成、计划随之结束时一起交：这份计划的总结（做了什么、结果、遗留），记在你自己的计划上',
+                },
                 partial: {
                   type: 'boolean',
                   description:
@@ -297,13 +302,13 @@ export function orchTools(o: Orchestra) {
             name: 'finish_plan',
             title: '结束计划',
             description:
-              '主动结束这份计划（步骤全部完成时计划本来就会自动结束）。不用写总结，传了也不保存；之后有新内容用 set_plan 开新计划。',
+              '主动结束这份计划（步骤全部完成时计划本来就会自动结束）。summary 写这份计划的总结（做了什么、结果、遗留），记在你自己的计划上；之后有新内容用 set_plan 开新计划。',
             inputSchema: {
               type: 'object',
               properties: {
                 summary: {
                   type: 'string',
-                  description: '不用写：给这一步留的兼容字段，传了也不会保存',
+                  description: '这份计划的总结：做了什么、结果、遗留；父对话和用户读它了解你做完了什么',
                 },
               },
             },
@@ -1026,6 +1031,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
         title: str(a?.title),
         steps: Array.isArray(a?.steps) ? a.steps : [],
         partial: a?.partial === true,
+        summary: str(a?.summary),
       })
       return text(r.info, !r.ok)
     }

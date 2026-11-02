@@ -577,8 +577,10 @@ test('协调 Agent：计划已结束后派子对话，自动重开计划并补�
       ).ok,
       true,
     )
-    assert.equal((await call.orch!.finishPlan('')).ok, true)
+    assert.equal((await call.orch!.finishPlan('改好了界面，收尾的活交给子对话')).ok, true)
     assert.equal(activePlanOf(task), undefined, '计划确实结束了')
+    // 总结记在这个对话自己的计划上（ADR 0041：各写各的计划）
+    assert.equal(task.plans.at(-1)!.summary, '改好了界面，收尾的活交给子对话')
     const r = await call.orch!.createConversation('设计页 AI 对话复用 Chat 样式', '把设计页的对话换成 Chat 样式')
     assert.equal(r.ok, true)
     assert.match(r.info, /等待中/, '子对话挂到了步骤上')
