@@ -22,6 +22,12 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts
 - 起因：分组、图标、计数、标题 `(n)` 各算一套，已完成不显示对勾、已解决画成暂停；独立分支条和 AI 分析菜单按 `status` 判断，做完的没有合并按钮；橙点不看状态，和转圈同在一行。
 - 防线：`shared/task-stage.test.ts` 的一致性用例、`web/src/lib/title-count.test.ts`、`scripts/e2e.mjs`、`scripts/rules-check.mjs`。
 
+## 状态胶囊只显示累计执行时长，等什么放进提示
+
+- 规则：对话页页签条右端的胶囊只显示 `taskDuration(task)` 的累计执行时长（运行中、等结果都一样），不按「最后一条用户消息」计时，也不切成「子对话执行中」；在等什么（`taskWaitText`）放进 `title` 和胶囊内的读屏说明——可见时长加 `aria-hidden`、说明用 `sr-only` 文本，不要给没有 role 的 `span` 加 `aria-label`（generic 不允许命名，读屏多半忽略）。等你处理（needs）保留琥珀提示，时长放提示里。显示口径写在 `web/src/components/tasks/head-status.ts` 的 `headStatus`，组件只按它画。
+- 起因：用户 2026-11-02 报「这个运行时间有问题」，截图「运行中 · 0:23」，实际这条对话已累计约 18 分钟——每发一句用户消息就从头计时；等子对话 / 后台命令时时间又被状态文字顶掉。
+- 防线：`web/src/components/tasks/head-status.test.ts`（等子对话只显示时长、运行中按累计段相加、needs 保留琥珀）；`scripts/ui/02-task.mjs` 断言等子对话时胶囊文字是 `m:ss`、悬停提示和读屏说明里写着在等什么。
+
 ## 背景块不能和外层背景的边重合
 
 - 规则：有底色的块（Card、预览框、编辑器、浮在底部的操作条）放进另一块有底色的区域里，四周都要离外层的边留 `--surface-inset`（16px）。`Card` 自带 `data-surface`，设置卡（`.settings-card`）会给它上下补边距；自己写的有底色块要标 `data-surface=""`。吸底浮条用 `bottom-4` 这类偏移，不贴窗口底边；行内卡片宽度不超过所在行（`max-w-[min(…,100%)]`）。
