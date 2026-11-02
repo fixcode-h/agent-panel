@@ -3,6 +3,7 @@ import * as D from '@radix-ui/react-dialog'
 import { X, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { ModalResizeHandles, useModalResize } from './modal-resize'
 
 /**
  * 弹窗遮罩：Modal、Sheet 和各处手写的 D.Overlay 用同一个，透明度只在 index.css 的 --scrim 定义。
@@ -159,6 +160,7 @@ export function Modal({
   stacked,
   onOpenAutoFocus,
   onEscapeKeyDown,
+  resizeKey,
   className,
 }: {
   open: boolean
@@ -183,14 +185,23 @@ export function Modal({
   onOpenAutoFocus?: (e: Event) => void
   /** Esc 先给调用方：弹窗里还有一层自己的编辑态（新建文件夹的输入框）时 preventDefault 只退出那一层，不关弹窗 */
   onEscapeKeyDown?: (e: KeyboardEvent) => void
+  /**
+   * 尺寸记忆的键：默认按「尺寸档 + 标题」区分弹窗（见 lib/modal-size.ts），
+   * 同一档、同一标题的多个弹窗要各记各的（例如不同文件的预览）时传一个稳定的 key
+   */
+  resizeKey?: string
   /** 加在弹窗本体上（固定高度、换底色等） */
   className?: string
 }) {
+  const tier = size ?? (wide ? 'lg' : 'md')
+  const resize = useModalResize({ open, title, tier, resizeKey })
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
         <D.Overlay className={cn(MODAL_OVERLAY, stacked && 'z-[60]')} />
         <D.Content
+          ref={resize.contentRef}
+          style={resize.contentStyle}
           aria-describedby={undefined}
           onInteractOutside={closeOnOutside ? undefined : (e) => e.preventDefault()}
           onOpenAutoFocus={onOpenAutoFocus}
@@ -198,11 +209,12 @@ export function Modal({
           className={cn(
             'fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-3.75rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 anim-dialog focus:outline-none',
             MODAL_SURFACE,
-            SIZES[size ?? (wide ? 'lg' : 'md')],
+            SIZES[tier],
             stacked && 'z-[70]',
             className,
           )}
         >
+          <ModalResizeHandles resize={resize} />
           {bare ? (
             <>
               {title !== null && <D.Title className="sr-only">{title}</D.Title>}

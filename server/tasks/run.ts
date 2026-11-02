@@ -806,6 +806,8 @@ export function createRun(sc: TasksScope) {
       messageId?: string
       /** 停下时独立分支里还有没提交的改动（见 stopWorktreeNote）：父对话里那一行直接写几个文件、目录在哪 */
       worktree?: TaskMessage['worktree']
+      /** 面板在父对话里自动画出的子对话总结卡（见 TaskMessage.summaryCards） */
+      summaryCards?: TaskMessage['summaryCards']
     },
   ) {
     // 上一次收尾还在删独立分支的目录：等它结束再继续，不然它会在重建之后把新目录和同名分支删掉
@@ -877,6 +879,7 @@ export function createRun(sc: TasksScope) {
       ...(m.panel ? { panel: m.panel } : {}),
       ...(m.child ? { child: m.child } : {}),
       ...(m.peer ? { peer: m.peer } : {}),
+      ...(m.summaryCards?.length ? { summaryCards: m.summaryCards } : {}),
       ...(expanded ? { prompt: expanded } : {}),
       tools: [],
       ...(m.attachments.length ? { attachments: m.attachments } : {}),

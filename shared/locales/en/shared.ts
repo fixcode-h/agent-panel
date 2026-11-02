@@ -169,4 +169,6 @@ export const EN_SHARED: Record<string, string> = {
   '它的 {n} 个子对话等用户处理': '{n} of its sub-conversations are waiting for the user',
   '它的子对话在等用户处理（确认请求或回答提问）':
     'Its sub-conversation is waiting for the user (an approval or an answer)',
+  // 弹窗四角拖动条（components/ui/modal-resize.tsx）：四边沿用「拖动调整宽度/高度」
+  拖动调整大小: 'Drag to resize',
 }

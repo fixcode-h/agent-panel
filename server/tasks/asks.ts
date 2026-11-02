@@ -144,7 +144,7 @@ export function createAsks(s: TasksScope) {
   async function wakeConv(
     id: string,
     text: string,
-    extra: Pick<TaskMessage, 'panel' | 'peer' | 'child' | 'worktree'> = {},
+    extra: Pick<TaskMessage, 'panel' | 'peer' | 'child' | 'worktree' | 'summaryCards'> = {},
   ): Promise<DeliveryHow> {
     for (let i = 0; i < 3; i++) {
       const entry = runningConv(id)
@@ -170,6 +170,7 @@ export function createAsks(s: TasksScope) {
         ...(extra.peer ? { peer: extra.peer } : {}),
         ...(extra.child ? { child: extra.child } : {}),
         ...(extra.worktree ? { worktree: extra.worktree } : {}),
+        ...(extra.summaryCards?.length && { summaryCards: extra.summaryCards }),
         at: new Date().toISOString(),
       }
       if (entry.task.status === 'running') return (await s.deliver(entry, msg, text, [])).how

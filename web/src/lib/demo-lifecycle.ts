@@ -1,5 +1,13 @@
 import type { Task } from '@shared/schema'
-import { verdictOf, type LifeFacts, type LifeNode, type LifeReport } from '@shared/lifecycle'
+import {
+  countEvents,
+  parseLogLine,
+  verdictOf,
+  type LifeFacts,
+  type LogLine,
+  type LifeNode,
+  type LifeReport,
+} from '@shared/lifecycle'
 import { subtreeTaskIds } from '@shared/run-usage'
 import { taskState } from '@shared/task'
 
@@ -29,12 +37,24 @@ export function demoLifecycle(task: Task, tasks: Task[]): LifeReport {
       helpers: tk.steps.filter((s) => s.slot === 'sub' && (s.status === 'running' || s.status === 'pending')).length,
       jobs: tk.jobs?.length ?? 0,
       waitsOn: [],
-      trace: tk.working ? { requests: 3, requestAt: now - 54_000 } : undefined,
+      trace: tk.working ? { requests: 11, requestAt: now - 54_000, lastOutputAt: now - 60_000 } : undefined,
       exit: alive ? undefined : { at: now - 600_000, code: 0, aliveMs: 240_000 },
     }
     // 已经退出的：整段往前挪，退出那一行排在最后
     const shift = alive ? 0 : 600_000
     const at = (ago: number) => new Date(now - ago - shift).toISOString().replace('T', ' ').replace('Z', '')
+    // 一轮里十来次模型请求：首字等待几百毫秒，偶尔一次慢的；在执行的最后一次还没回
+    const log = [`${at(240_000)} [CLI 进程启动] pid=${pid}`]
+    const waits = [820, 540, 610, 380, 1240, 450, 6200, 520, 300, 470]
+    waits.forEach((w, i) => {
+      const t0 = 230_000 - i * 17_000
+      log.push(`${at(t0)} [模型请求开始] n=${i + 1}`)
+      log.push(`${at(t0 - w)} [模型开始输出] n=${i + 1} waitedMs=${w} kind=${i % 3 ? 'thinking' : 'text_delta'}`)
+    })
+    if (tk.working) {
+      log.push(`${at(74_000)} [CLI 重试模型请求] attempt=1 error="529 overloaded"`)
+      log.push(`${at(54_000)} [模型请求开始] n=${waits.length + 1}`)
+    } else log.push(`${at(0)} [CLI 进程退出] pid=${pid} code=0 aliveMs=240000`)
     nodes.push({
       id: tk.id,
       parentId: tk.parentTaskId && ids.has(tk.parentTaskId) ? tk.parentTaskId : undefined,
@@ -55,14 +75,8 @@ export function demoLifecycle(task: Task, tasks: Task[]): LifeReport {
             },
           ]
         : [],
-      log: [
-        `${at(240_000)} [CLI 进程启动] pid=${pid}`,
-        `${at(230_000)} [模型请求开始] n=1`,
-        `${at(222_000)} [模型开始输出] n=1 waitedMs=8000 kind=text_delta`,
-        ...(tk.working
-          ? [`${at(54_000)} [模型请求开始] n=3`]
-          : [`${at(0)} [CLI 进程退出] pid=${pid} code=0 aliveMs=240000`]),
-      ],
+      log,
+      counts: countEvents(log.map(parseLogLine).filter((x): x is LogLine => !!x)),
     })
     for (const s of tk.steps.filter((x) => x.slot === 'sub')) {
       const sf: LifeFacts = {
@@ -88,6 +102,7 @@ export function demoLifecycle(task: Task, tasks: Task[]): LifeReport {
         facts: sf,
         verdict: verdictOf(sf, now),
         processes: [],
+        counts: countEvents([]),
         log: [],
       })
     }

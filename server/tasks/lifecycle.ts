@@ -4,6 +4,7 @@ import { activePlan } from '../../shared/plan.ts'
 import { subtreeTaskIds } from '../../shared/run-usage.ts'
 import { taskState } from '../../shared/task.ts'
 import {
+  countEvents,
   lastExit,
   parseLogLine,
   verdictOf,
@@ -146,6 +147,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       facts,
       verdict: verdictOf(facts, now),
       processes: procOf(id),
+      counts: countEvents(parsed),
       log: lines,
     })
     // 子任务、工作流节点：挂在派它的那一步（或对话本身）下面
@@ -191,6 +193,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
         facts: sf,
         verdict: verdictOf(sf, now),
         processes: procOf(id, s.id),
+        counts: countEvents(parsed, s.id),
         log: lines.filter((l) => l.includes(`step=${s.id}`)).slice(-VIEW_LOG_LINES),
       })
     }

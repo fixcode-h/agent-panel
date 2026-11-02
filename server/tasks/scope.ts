@@ -270,6 +270,8 @@ export interface TasksScope {
       delivery?: import('../../shared/schema.ts').DeliveryHow
       messageId?: string
       worktree?: import('../../shared/schema.ts').TaskMessage['worktree']
+      /** 面板在父对话里自动画出的子对话总结卡（见 TaskMessage.summaryCards） */
+      summaryCards?: import('../../shared/schema.ts').TaskMessage['summaryCards']
     },
   ) => Promise<Task>
   forwardSpawn: (
@@ -381,6 +383,7 @@ export interface TasksScope {
     peer?: PeerFrom,
     worktree?: import('../../shared/schema.ts').TaskMessage['worktree'],
     wake?: boolean,
+    summaryCards?: import('../../shared/schema.ts').TaskMessage['summaryCards'],
   ) => Promise<void>
   notePlanInput: (tk: Task, skip?: boolean, now?: string) => boolean
   nudgePlan: (conv: Task, turn?: TurnInfo) => Promise<boolean>
@@ -720,7 +723,10 @@ export interface TasksScope {
   wakeConv: (
     id: string,
     text: string,
-    extra?: Pick<import('../../shared/schema.ts').TaskMessage, 'panel' | 'peer' | 'child' | 'worktree'>,
+    extra?: Pick<
+      import('../../shared/schema.ts').TaskMessage,
+      'panel' | 'peer' | 'child' | 'worktree' | 'summaryCards'
+    >,
   ) => Promise<import('../../shared/schema.ts').DeliveryHow>
   wakeTask: (
     id: string,
