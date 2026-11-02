@@ -938,13 +938,17 @@ await runShard('工作流条件与失败', async (api) => {
   )
   assert.equal(tAtt.messages[0].text, '看看这张图', '附件不写进消息正文')
   const kAtt = calls().at(-1)
-  assert.match(
-    kAtt.input,
-    /## 附件[\s\S]*截图\.png：截图\.png（对话目录里的图片，相对路径）/,
-    '图片给的是对话目录里的相对文件名',
+  // 用户发来的图片拷进对话目录的 attachments/，交给 Agent 的是那里的绝对路径
+  const convDir = path.join(dataDir, 'tasks', 'files', tAtt.id)
+  const shotInConv = path.join(convDir, 'attachments', '截图.png')
+  assert.ok(
+    kAtt.input.includes(`截图.png：${shotInConv}（图片，本机绝对路径）`),
+    `图片给的是对话目录里的绝对路径：${kAtt.input}`,
   )
-  assert.ok(existsSync(path.join(projectDir, '截图.png')), '图片直接拷在对话目录根下')
+  assert.ok(existsSync(shotInConv), '图片拷在对话目录的 attachments/ 下')
+  assert.ok(!existsSync(path.join(projectDir, '截图.png')), '项目根不再多出图片')
   assert.equal(kAtt.args[kAtt.args.indexOf('--add-dir') + 1], path.join(dataDir, 'uploads'))
+  assert.ok(kAtt.args.includes(convDir), '对话目录放行给 CLI，Agent 读得到')
   assert.deepEqual(await call('GET', `/projects/${project.id}/files?q=read`), ['README.md'])
   // 非图片的文件不再拷进对话目录：只在 uploads 里有一份，交给 Agent 的是原来的绝对路径
   const doc = await call('POST', '/uploads', {

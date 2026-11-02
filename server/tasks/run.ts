@@ -885,7 +885,7 @@ export function createRun(sc: TasksScope) {
       sc.release(entry)
       return next
     }
-    // 附件拷进这个任务的执行目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
+    // 附件拷进这个对话的对话目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
     const placed = m.placed ?? (await sc.placeInTask(next, m.attachments))
     if (!m.recorded) next.messages.push(newMessage())
     taskLog(id, '新开一轮', {

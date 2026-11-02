@@ -115,8 +115,8 @@ export function registerConversationRoutes(s: TasksScope) {
     // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
     const expanded = await s.expandForWorkflow(draft, input.prompt)
     if (expanded && draft.messages[0]) draft.messages[0].prompt = expanded
-    // 附件：图片拷进这个任务自己的目录（Agent 用得着相对路径），其它文件原样用绝对路径；
-    // 对话里显示的仍是原来那份（缩略图从附件目录读）
+    // 附件：图片拷进这个对话的对话目录（tasks/files/<id>/attachments/），交给 Agent 的是那里的绝对路径；
+    // 其它文件原样用绝对路径。对话里显示的仍是原来那份（缩略图从附件目录读）
     const placed = await s.placeInTask(draft, input.attachments ?? [])
     const task = await s.store.create(draft)
     return {

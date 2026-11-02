@@ -1,7 +1,16 @@
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
+import { ATTACH_DIR } from './attachments.ts'
 import { log } from './log.ts'
 import { TASK_FILE_KINDS, TASK_FILES_DIR } from './store.ts'
+
+/**
+ * 图片附件的副本放哪：对话目录下的 attachments/（用户 2026-11 定的）。
+ * 交给 Agent 的是这里的绝对路径，不在项目目录里，用户发截图不会弄脏项目。
+ */
+export function taskAttachDir(taskId: string) {
+  return path.join(TASK_FILES_DIR, taskId, ATTACH_DIR)
+}
 
 /**
  * 告诉 Agent 自己产出的临时东西放哪（用户 2026-10-31 定的）：以前截图、临时测试脚本散落在项目里，

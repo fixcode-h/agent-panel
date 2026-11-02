@@ -3,7 +3,7 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-27（本轮把「自动压缩上下文」的默认值从「按 Agent 自己的规则」（0）改成 70%，并给设置加了 `defaultsVersion` 迁移版本；同日新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试；同日补「版本更新」一节：GitHub 403 限流时回退缓存、ETag/304、冷却与 `GITHUB_TOKEN`）；2026-10-28 图片附件改为直接放对话目录根（不再有 attachments/ 子目录），git 的更改列表和评审差异按任务上记的 placedAttachments 排除面板图片
+- analyzed_at: 2026-10-27（本轮把「自动压缩上下文」的默认值从「按 Agent 自己的规则」（0）改成 70%，并给设置加了 `defaultsVersion` 迁移版本；同日新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试；同日补「版本更新」一节：GitHub 403 限流时回退缓存、ETag/304、冷却与 `GITHUB_TOKEN`）；2026-10-28 图片附件改为直接放对话目录根（不再有 attachments/ 子目录），git 的更改列表和评审差异按任务上记的 placedAttachments 排除面板图片；2026-11 图片附件改放到对话目录的 `attachments/`（`<DATA_DIR>/tasks/files/<任务 id>/attachments/`，`task-files.ts` 的 `taskAttachDir`），交给 Agent 绝对路径，项目根 / worktree 根不再新增用户图片；旧任务记的相对文件名继续复用，`placedFiles()` 只把旧任务落在工作目录里的相对路径交给 git 排除
 
 ## 职责
 

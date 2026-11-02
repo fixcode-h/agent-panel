@@ -43,13 +43,13 @@ export function attachmentRef(a: Pick<Attachment, 'name' | 'mime' | 'quote'>) {
 }
 
 /**
- * 附件列表里每一行的读法：图片拷进了对话目录、给的是相对路径；其它是本机绝对路径。
- * 两种形态都有，按附件本身判（attachChip），不能只看路径是不是绝对：
- * 项目对话里粘贴进来的项目内文件会被 placeAttachments 换成相对路径，但它不是图片。
+ * 附件列表里每一行的读法：图片拷进对话目录的 attachments/，给的是那里的绝对路径；
+ * 工作目录里本来就有的文件（旧任务当年拷进去的、粘贴进来的项目内文件）仍是相对路径。
+ * 按路径形态判，不能只看附件类型：项目内文件会被换成相对路径，但它不是图片。
  */
 function attachReadNote(a: Pick<Attachment, 'name' | 'mime' | 'quote' | 'path'>) {
   const image = attachChip(a) === 'image'
-  if (!isAbsolutePath(a.path)) return image ? '对话目录里的图片，相对路径' : '对话目录里的文件，相对路径'
+  if (!isAbsolutePath(a.path)) return image ? '工作目录里的图片，相对路径' : '工作目录里的文件，相对路径'
   return image ? '图片，本机绝对路径' : '本机绝对路径'
 }
 
