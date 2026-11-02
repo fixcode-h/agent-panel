@@ -27,10 +27,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const box = p.getByRole('textbox', { name: '搜索设置' })
     if (!(await box.evaluate((el) => el === document.activeElement))) errors.push('设置搜索：Ctrl+F 没有聚焦搜索框')
     await box.fill('保留')
-    await check(p, '设置-搜索', ['搜索设置', '离开后保留', '未读回复保留'])
-    // 问号里的详细说明也要能搜到：「橙点」只出现在「未读回复保留」的悬停说明里
-    await box.fill('橙点')
-    await check(p, '设置-搜索-悬停说明', ['未读回复保留'])
+    await check(p, '设置-搜索', ['搜索设置', '离开后保留'])
+    // 「未读回复保留」已经去掉（用户 2026-11-02）：搜它不应该再出现这一项
+    await box.fill('未读回复保留')
+    if (await p.getByRole('option', { name: /未读回复保留/ }).count())
+      errors.push('设置：「未读回复保留」已经去掉，不该再出现')
+    // 问号里的详细说明也要能搜到：「续接」出现在「子对话完成后保留」的悬停说明里
+    await box.fill('续接')
+    await check(p, '设置-搜索-悬停说明', ['子对话完成后保留'])
     await box.fill('额外参数')
     await p.getByRole('option', { name: /额外参数/ }).waitFor({ timeout: 5000 })
     await box.press('Enter')

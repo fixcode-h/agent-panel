@@ -1,6 +1,6 @@
 /**
  * 启动迁移：崩溃留在盘上的「在用」标记（working / awaitingUser / prewarming）要清掉，
- * 不然清理和保活上限会一直把这些对话当成在用；只在内存里的东西（排着的消息、提问的回调、后台命令）丢了要落到盘上。
+ * 不然清理和回收判定会一直把这些对话当成在用；只在内存里的东西（排着的消息、提问的回调、后台命令）丢了要落到盘上。
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'

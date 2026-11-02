@@ -369,11 +369,10 @@ export function createRun(sc: TasksScope) {
         signal: entry.abort.signal,
         // 停下这一轮的原因：engine 收尾时按它决定写「已暂停」还是写清是谁结束的（见 StopReason）
         stopReason: () => entry.stopReason,
-        // 开始保活（CLI 停在等下一句）前先按全局上限收一批最久没用的，别让挂着的进程越来越多
+        // 开始保活（CLI 停在等下一句）时把回收计时从现在起算满一整段
         onKeepAlive: (taskId) => {
-          // 回收计时从现在起算满一整段：执行期间计时器被 busy 挡回去过，不重置会提前收掉刚空下来的会话
+          // 执行期间计时器被 busy 挡回去过，不重置会提前收掉刚空下来的会话
           resetIdleCountdown(taskId)
-          void sc.enforceKeepAlive(taskId)
         },
         changed,
         newId: randomUUID,

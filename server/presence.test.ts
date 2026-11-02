@@ -17,13 +17,12 @@ const {
   setPresenceIdleHandler,
   setPresenceGraceMs,
   setPresenceReclaimPolicy,
-  setPresenceUnreadKeeper,
   setViewer,
   touchPresence,
 } = await import('./presence.ts')
 
-// 上限默认 8，这里的用例自己设定；未读宽限默认 30 分钟，用例里调小
-setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+// 宽限期默认 60 分钟，测试里用环境变量缩短（见上面）
+setPresenceReclaimPolicy({ enabled: true })
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 // 真实保活判定：名下有子对话在跑时，这一轮结束、进程退了也在等结果（见 shared/task.ts 的 keepAliveHolding）
@@ -79,47 +78,16 @@ test('测试用的环境变量优先于设置里的宽限期', async () => {
   forgetPresence(id)
 })
 
-test('这一轮完成还没看过：也回收，只是宽限更长', async () => {
-  const id = 'presence-unread'
-  let idle = 0
-  setPresenceIdleHandler((taskId) => {
-    if (taskId === id) idle++
-  })
-  const unread = new Set([id])
-  setPresenceUnreadKeeper((taskId) => unread.has(taskId))
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
-
-  setViewer(id, 'tab-a', true)
-  setViewer(id, 'tab-a', false)
-  await wait(80)
-  assert.equal(idle, 0, '未读宽限还没到，先留着')
-  assert.equal(isWatched(id), true, '这段时间回来还能直接接着说')
-  assert.equal(hasViewer(id), true)
-
-  // 到期照样回收：橙点只有用户点开才会消，不收的话进程永远挂着
-  await wait(300)
-  assert.equal(idle, 1, '未读宽限到了也回收')
-  assert.equal(isWatched(id), false)
-  assert.equal(hasViewer(id), false, '回收后不再保活')
-
-  setPresenceUnreadKeeper(() => false)
-  forgetPresence(id)
-})
-
 test('看过之后页面还开着：不提前计时，等页面切走再算', async () => {
   const id = 'presence-seen-open'
   let idle = 0
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  let unread = true
-  setPresenceUnreadKeeper((taskId) => taskId === id && unread)
-
   setViewer(id, 'tab-a', true)
   setViewer(id, 'tab-a', false)
-  // 页面重新打开并看过：还在看，不该开始计时
+  // 页面重新打开还在看：不该开始计时
   setViewer(id, 'tab-a', true)
-  unread = false
   rescheduleIfUnwatched(id)
   await wait(60)
   assert.equal(idle, 0, '还有人看着，不回收')
@@ -130,30 +98,6 @@ test('看过之后页面还开着：不提前计时，等页面切走再算', as
   await wait(60)
   assert.equal(idle, 1)
 
-  setPresenceUnreadKeeper(() => false)
-  forgetPresence(id)
-})
-
-test('宽限计时开始后才变成未读：计时照旧走完，到点回收', async () => {
-  const id = 'presence-unread-window'
-  let idle = 0
-  setPresenceIdleHandler((taskId) => {
-    if (taskId === id) idle++
-  })
-  let unread = false
-  setPresenceUnreadKeeper((taskId) => taskId === id && unread)
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
-
-  // 已经看过：离开就按已读宽限开始计时
-  setViewer(id, 'tab-a', true)
-  setViewer(id, 'tab-a', false)
-  // 计时过程中又被标成未读（例如刚完成一轮）：已经排好的时长不改
-  unread = true
-  await wait(70)
-  assert.equal(idle, 1, '到点照样回收')
-  assert.equal(isWatched(id), false)
-
-  setPresenceUnreadKeeper(() => false)
   forgetPresence(id)
 })
 
@@ -163,7 +107,6 @@ test('关掉自动回收：页面切走后也不结束，进程一直留着', as
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  setPresenceUnreadKeeper(() => false)
   setPresenceReclaimPolicy({ enabled: false })
 
   setViewer(id, 'tab-a', true)
@@ -172,7 +115,7 @@ test('关掉自动回收：页面切走后也不结束，进程一直留着', as
   assert.equal(idle, 0, '关掉后不计时')
   assert.equal(hasViewer(id), true, '一直留着')
 
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  setPresenceReclaimPolicy({ enabled: true })
   forgetPresence(id)
 })
 
@@ -182,32 +125,24 @@ test('这一轮完成时页面正开着：算看过，不留橙点也不留着�
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  let unread = true
-  setPresenceUnreadKeeper((taskId) => taskId === id && unread)
-
   assert.equal(seenWhileWatched(id), false, '页面还没上报时没人看')
   setViewer(id, 'tab-a', true)
   assert.equal(seenWhileWatched(id), true, '页面开着')
 
   // 完成时页面正开着：调用方直接把 turnSeenAt 一起写上，不再算未读
-  if (seenWhileWatched(id)) unread = false
   setViewer(id, 'tab-a', false)
   await wait(60)
   assert.equal(idle, 1, '按宽限期正常回收')
 
-  setPresenceUnreadKeeper(() => false)
   forgetPresence(id)
 })
 
-test('正在执行的对话不受两个时长管：到点不回收，空下来重新计满一整段', async () => {
+test('正在执行的对话不受宽限管：到点不回收，空下来重新计满一整段', async () => {
   const id = 'presence-busy'
   let idle = 0
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  const unread = new Set([id])
-  setPresenceUnreadKeeper((taskId) => unread.has(taskId))
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
   let running = true
   setPresenceBusy((taskId) => taskId === id && running)
 
@@ -233,42 +168,6 @@ test('正在执行的对话不受两个时长管：到点不回收，空下来�
   assert.equal(idle, 1, '空满一整段才回收')
 
   setPresenceBusy(() => false)
-  setPresenceUnreadKeeper(() => false)
-  forgetPresence(id)
-})
-
-test('宽限期设成 0：正在跑的对话不会靠 0ms 定时器反复重排，空下来才回收', async () => {
-  const id = 'presence-zero-grace'
-  let idle = 0
-  setPresenceIdleHandler((taskId) => {
-    if (taskId === id) idle++
-  })
-  const unread = new Set([id])
-  setPresenceUnreadKeeper((taskId) => unread.has(taskId))
-  // 宽限期 0：到点就收
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 0 })
-  let running = true
-  setPresenceBusy((taskId) => taskId === id && running)
-
-  setViewer(id, 'tab-a', true)
-  setViewer(id, 'tab-a', false)
-  await wait(60)
-  assert.equal(idle, 0, '正在跑：0 宽限也不结束这一轮')
-
-  // 关键：busy 时不能排 0ms 定时器反复重排（旧写法会一直自旋）。
-  // 这里变成空闲但不调 resetIdleCountdown：要一直不回收，而不是下一个 tick 就被收掉
-  running = false
-  await wait(60)
-  assert.equal(idle, 0, '执行期间不重排计时：空下来要靠重置计时，不是靠自旋')
-
-  // 这一轮真的结束了（onKeepAlive 会调它）：从现在起按整段算，0 宽限就是立刻收
-  resetIdleCountdown(id)
-  await wait(30)
-  assert.equal(idle, 1, '空下来后按整段回收')
-
-  setPresenceBusy(() => false)
-  setPresenceUnreadKeeper(() => false)
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
   forgetPresence(id)
 })
 
@@ -278,8 +177,7 @@ test('父对话在等子对话：宽限到了也不回收，子对话结束、�
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  setPresenceUnreadKeeper(() => false)
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  setPresenceReclaimPolicy({ enabled: true })
   // 父对话这一轮已经结束、进程也退了（不保活的 CLI）：只有名下的子对话还在跑
   let children = 1
   setPresenceBusy((taskId) => taskId === id && keepAliveHolding({ live: false, children }))
@@ -308,8 +206,7 @@ test('宽限到点还在跑的对话留一个复查：子对话被停掉、自�
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  setPresenceUnreadKeeper(() => false)
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  setPresenceReclaimPolicy({ enabled: true })
   // 父对话没有执行位（这一轮结束、进程已退），名下的子对话还在跑
   let children = 1
   setPresenceBusy((taskId) => taskId === id && keepAliveHolding({ live: false, children }))
@@ -335,8 +232,7 @@ test('关掉自动回收：宽限或复查到点都不收（开关只有一处�
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  setPresenceUnreadKeeper(() => false)
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  setPresenceReclaimPolicy({ enabled: true })
   let children = 1
   setPresenceBusy((taskId) => taskId === id && keepAliveHolding({ live: false, children }))
 
@@ -351,7 +247,7 @@ test('关掉自动回收：宽限或复查到点都不收（开关只有一处�
   await wait(300)
   assert.equal(idle, 0, '关掉自动回收后，复查也不能把会话收掉')
 
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  setPresenceReclaimPolicy({ enabled: true })
   setPresenceBusy(() => false)
   forgetPresence(id)
 })
@@ -362,8 +258,7 @@ test('复查不占宽限计时：空下来以后按宽限收，不等到复查�
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  setPresenceUnreadKeeper(() => false)
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  setPresenceReclaimPolicy({ enabled: true })
   let children = 1
   setPresenceBusy((taskId) => taskId === id && keepAliveHolding({ live: false, children }))
 
@@ -389,8 +284,6 @@ test('保活只在对话页真的开着时生效：没上报过、过了宽限�
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  setPresenceUnreadKeeper(() => false)
-
   // 只调接口、没有页面（脚本、测试）：不留 CLI 等下一句
   assert.equal(hasViewer(id), false)
 
@@ -406,11 +299,9 @@ test('保活只在对话页真的开着时生效：没上报过、过了宽限�
   // 清掉记录后回到「没有页面」的状态
   forgetPresence(id)
   assert.equal(hasViewer(id), false)
-
-  setPresenceUnreadKeeper(() => false)
 })
 
-test('保活上限只放过前台开着的页面：切走后宽限期里 hasViewer 还算有人，isViewing 不算', () => {
+test('isViewing 只认前台开着的页面：切走后宽限期里 hasViewer 还算有人，isViewing 不算', () => {
   const id = 'presence-viewing'
   setPresenceIdleHandler(() => {})
   setViewer(id, 'tab-a', true)
@@ -420,7 +311,7 @@ test('保活上限只放过前台开着的页面：切走后宽限期里 hasView
   assert.equal(isViewing(id), true, '另一个标签页还开着')
   setViewer(id, 'tab-b', false)
   assert.equal(hasViewer(id), true, '宽限期里回来还能接着说')
-  assert.equal(isViewing(id), false, '但已经不在看了，超过保活上限时可以收掉')
+  assert.equal(isViewing(id), false, '但已经不在看了')
   forgetPresence(id)
 })
 
@@ -430,7 +321,6 @@ test('菜单「激活 Agent」：过了宽限的对话重新算有人看，再�
   setPresenceIdleHandler((taskId) => {
     if (taskId === id) idle++
   })
-  setPresenceUnreadKeeper(() => false)
   setViewer(id, 'tab-a', true)
   setViewer(id, 'tab-a', false)
   await wait(60)

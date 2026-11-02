@@ -1,11 +1,10 @@
 /**
  * 对话页面是否还开着：CLI 在 MCP 工具上等用户下一句时，只有页面还开着才继续等。
  * 切走（页面卸载或隐藏）后给一段宽限，期间切回来还能直接接着说；过了宽限让 CLI 结束这一轮。
- * 宽限时长在设置里改（presenceGraceMinutes / unreadGraceMinutes），环境变量优先，测试用。
- * 两个时长只管「回复完停在等下一句」的空闲会话：这一轮还在跑（CLI 正在处理、在等子任务）的对话
+ * 宽限时长在设置里改（presenceGraceMinutes），环境变量优先，测试用。
+ * 宽限只管「回复完停在等下一句」的空闲会话：这一轮还在跑（CLI 正在处理、在等子任务）的对话
  * 到点也不回收，由调用方通过 setPresenceBusy 提供判定（见 server/tasks.ts 的 keepAliveBusy）。
- * 保活会话的数量上限（keepAliveLimit）也不在这里：那个要看哪些任务还在跑、名下有没有子对话，
- * 由 server/tasks.ts 的 enforceKeepAlive 统一收，这里只负责「到时间了该放手」
+ * 这里只负责「到时间了该放手」
  */
 const fixedMs = (name: string) => {
   const raw = process.env[name]
@@ -14,7 +13,6 @@ const fixedMs = (name: string) => {
   return Number.isFinite(n) ? Math.max(0, n) : undefined
 }
 const FIXED_GRACE_MS = fixedMs('AGENT_PANEL_PRESENCE_GRACE_MS')
-const FIXED_UNREAD_GRACE_MS = fixedMs('AGENT_PANEL_PRESENCE_UNREAD_GRACE_MS')
 
 /**
  * 这一轮还在跑、宽限到点不能回收时，隔多久再判一次（见 evict）。
@@ -24,41 +22,34 @@ const BUSY_RECHECK_MS = fixedMs('AGENT_PANEL_PRESENCE_RECHECK_MS') ?? 60 * 60_00
 
 /** 看过之后离开的宽限：回来接着说不用重开 CLI */
 const DEFAULT_GRACE_MS = 60 * 60_000
-/** 这一轮完成但没打开看过的宽限：橙点还亮着，用户可能隔一会儿回来，给短一点的一段 */
-const DEFAULT_UNREAD_GRACE_MS = 30 * 60_000
 
 let graceMs = DEFAULT_GRACE_MS
-let unreadGraceMs = DEFAULT_UNREAD_GRACE_MS
 let reclaimEnabled = true
 
 const nonNegative = (v: number, fallback: number) => (Number.isFinite(v) ? Math.max(0, v) : fallback)
 
 /**
  * 改宽限期（设置保存后调用）；0 表示页面切走就让 CLI 结束这一轮。
- * 只改「看过之后离开」这一段，未读宽限和总开关看 setPresenceReclaimPolicy
+ * 总开关和宽限一起换掉看 setPresenceReclaimPolicy
  */
 export function setPresenceGraceMs(ms: number) {
   graceMs = nonNegative(ms, DEFAULT_GRACE_MS)
 }
 
 export type PresenceReclaimPolicy = {
-  /** 关掉后不按时间回收：回复完没人看的进程一直留着（数量上限仍按设置里的 keepAliveLimit 收） */
+  /** 关掉后不按时间回收：回复完没人看的进程一直留着 */
   enabled: boolean
-  /** 看过之后离开的宽限 */
+  /** 离开后的宽限：看过和没看过的回复共用这一段 */
   graceMs: number
-  /** 这一轮完成但没打开看过的宽限 */
-  unreadGraceMs: number
 }
 
 /** 回收策略整套换掉（设置保存、服务启动时调用） */
 export function setPresenceReclaimPolicy(p: Partial<PresenceReclaimPolicy>) {
   if (p.enabled !== undefined) reclaimEnabled = p.enabled
   if (p.graceMs !== undefined) graceMs = nonNegative(p.graceMs, DEFAULT_GRACE_MS)
-  if (p.unreadGraceMs !== undefined) unreadGraceMs = nonNegative(p.unreadGraceMs, DEFAULT_UNREAD_GRACE_MS)
 }
 
 const grace = () => FIXED_GRACE_MS ?? graceMs
-const unreadGrace = () => FIXED_UNREAD_GRACE_MS ?? unreadGraceMs
 
 /** 任务 id → 正在看这个任务的页面 */
 const viewers = new Map<string, Set<string>>()
@@ -89,18 +80,8 @@ export function setPresenceIdleHandler(fn: (taskId: string) => void) {
 }
 
 /**
- * 这一轮回复完成、但用户还没打开看过（侧栏的橙点）时要不要留更久。
- * 由调用方提供判断，只有它知道任务现在的 turnDoneAt / turnSeenAt
- */
-let keepUnread: ((taskId: string) => boolean) | undefined
-
-export function setPresenceUnreadKeeper(fn: (taskId: string) => boolean) {
-  keepUnread = fn
-}
-
-/**
  * 这个对话这一轮是不是还在跑（CLI 正在处理、在等它派出的子任务、名下子对话还在执行）。
- * 执行中的对话不受两个时长管：页面开着还是切到后台都一样，宽限到了也不结束这一轮。
+ * 执行中的对话不受宽限管：页面开着还是切到后台都一样，宽限到了也不结束这一轮。
  * 由调用方提供判定，只有它知道任务的状态（这里的 presence 模块只看页面在不在）
  */
 let busy: ((taskId: string) => boolean) | undefined
@@ -130,7 +111,7 @@ export function setViewer(taskId: string, viewerId: string, active: boolean) {
 }
 
 /**
- * 没人在看时开始宽限计时。这一轮完成但还没看过（侧栏橙点）的对话也计时，只是宽限短一些：
+ * 没人在看时开始宽限计时。这一轮完成但还没看过（侧栏橙点）的对话也按同一段宽限回收：
  * 不收的话进程会一直挂着，而橙点只有用户点开才会消，等于永远不回收。
  * 看过之后要再调一次（见 rescheduleIfUnwatched），否则没人再触发计时。
  * 这一轮还在跑时到点不回收，见 evict
@@ -139,7 +120,7 @@ function scheduleIdle(taskId: string) {
   if (timers.has(taskId)) return
   // 设置里关掉自动回收：保持老办法，没人看的对话一直留着
   if (!reclaimEnabled) return
-  const ms = keepUnread?.(taskId) ? unreadGrace() : grace()
+  const ms = grace()
   timers.set(
     taskId,
     setTimeout(
@@ -244,7 +225,7 @@ export function hasViewer(taskId: string) {
 
 /**
  * 现在有页面正开着这个对话（在前台）。和 hasViewer 不同：切走后的宽限期里 hasViewer 还算有人，这里不算。
- * 保活数量上限只放过这一种：宽限期里的对话也算进上限，不然一小时内点开过的对话全都豁免，上限形同虚设
+ * `/keepalive` 列表用它标出前台开着的对话，手动释放保活会话时跳过这些
  */
 export function isViewing(taskId: string) {
   return (viewers.get(taskId)?.size ?? 0) > 0

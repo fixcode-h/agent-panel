@@ -370,9 +370,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
   '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
   '自动回收闲置 Agent': 'Reclaim idle agents automatically',
-  '没看过的回复保留多久（分钟）': 'Keep unread replies for (minutes)',
-  同时保活的会话上限: 'Max kept-alive conversations',
-  '填 0 到 50 之间的整数': 'Enter a whole number from 0 to 50',
   '回到上一个版本 v{version}': 'Back to previous version v{version}',
   '回到 v{version}？': 'Go back to v{version}?',
   '会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。':
@@ -1774,21 +1771,12 @@ export const EN_SETTINGS: Record<string, string> = {
   '子对话完成后 Agent 保留多久（分钟）': 'Minutes to keep the agent after a sub-chat finishes',
   '回收空闲 Agent': 'Reclaim idle agents',
   '空闲到时结束进程，再用时续接会话': 'Ends idle processes on a timer; the session resumes later',
-  '回复完没人看着的空闲 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这两段时间和数量上限管，页面切到后台也照样跑完。关掉后不再按时间回收，只会按「最多保活」收，进程会越攒越多。':
-    'Idle agents whose replies nobody is watching are reclaimed after the two times below, and restarted when you come back (a few seconds; the session resumes). Running chats ignore these times and the limit, and keep going in the background. When off, nothing is reclaimed on a timer, only by “Max kept alive”, so processes pile up.',
+  '回复完没人看着的空闲 Agent 会在「离开后保留」这段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这段时间管，页面切到后台也照样跑完。关掉后不再按时间回收，进程会越攒越多。':
+    'Idle agents whose replies nobody is watching are reclaimed after the “Keep after leaving” time, and restarted when you come back (a few seconds; the session resumes). Running chats ignore this time and keep going in the background. When off, nothing is reclaimed on a timer, so processes pile up.',
   离开后保留: 'Keep after leaving',
   '离开对话后 Agent 留多久': 'How long the agent stays after you leave a chat',
   '填 0 表示回复完就结束这一轮。这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。只算回复完停在等下一句的空闲对话，正在执行的对话不会因为这个时长被收掉。':
     '0 ends the turn as soon as the reply is done. Within this time you can send a message and continue without restarting the agent; each waiting chat holds one agent process. Only idle chats waiting for the next message count; running chats are never reclaimed by this.',
-  未读回复保留: 'Keep unread replies',
-  回复还没看时最多留多久: "How long to keep a reply you haven't read",
-  '填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。正在执行的不受影响。':
-    "0 reclaims as soon as the reply is done. While a finished reply hasn't been opened (the orange dot in the sidebar is still on), it is kept at most this long; then it is reclaimed, and opening the chat restarts the agent and resumes the session. Running chats are not affected.",
-  最多保活: 'Max kept alive',
-  超出时结束最久没用的: 'Ends the least recently used beyond this',
-  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用的（下次打开需要重新启动一次）。正在执行的对话（包括已经切到后台在跑的）不占名额，也不会被收掉。':
-    "How many idle chats waiting for the next message, with nobody watching, are kept; beyond that the least recently used ends (it restarts once next time you open it). Running chats, including ones in the background, don't count and are never reclaimed.",
-  个: 'chats',
   自动归档: 'Auto-archive',
   多久没动静的对话收进归档: 'Archive chats that have been quiet this long',
   '对话（连同子对话）这么多天没有动静、没在执行、回复也都看过了，就自动归档：列表里不再显示，在筛选里选「已归档」还能找到，随时可以取消归档。':

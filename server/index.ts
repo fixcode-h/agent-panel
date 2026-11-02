@@ -436,12 +436,11 @@ async function parseWorkflow(body: unknown, selfId = '') {
 // 端口被残留进程或并行的分片占着时能立刻发现，不会等到第一个请求超时才看出假通过
 app.get('/health', (c) => c.json({ ok: true, instance: process.env.AGENT_PANEL_INSTANCE ?? '' }))
 // ---- 设置 ----
-/** 回收策略跟着设置走：宽限、上限、总开关；保存后立即生效，不用重启服务 */
+/** 回收策略跟着设置走：宽限、总开关；保存后立即生效，不用重启服务 */
 const applyPresenceReclaim = (s: Awaited<ReturnType<typeof getSettings>>) =>
   setPresenceReclaimPolicy({
     enabled: s.reclaimIdleCli,
     graceMs: s.presenceGraceMinutes * 60_000,
-    unreadGraceMs: s.unreadGraceMinutes * 60_000,
   })
 app.get('/settings', async (c) => c.json(await getSettings()))
 // 本机能用的命令行环境（设置「常规」里选）；fresh=1 重新检测
