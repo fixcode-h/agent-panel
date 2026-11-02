@@ -600,6 +600,31 @@ test('协调 Agent：计划已结束后派子对话，自动重开计划并补�
   assert.equal(step!.waits[0]?.ref, 'c1')
 })
 
+/** 真实接口测试发现：最后一步标完成时计划自动收起，模型没带 summary，计划上就一直没有总结 */
+test('计划自动收起没带总结：set_plan 提醒补，finish_plan 只把总结补到刚收起的那份上', async () => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '写两个文件' } as never, undefined, '', 'p2'),
+    id: 'p2',
+  } as Task
+  const h = host(task, [], async (call) => {
+    await call.orch!.setPlan({ steps: [{ title: '写 a' }, { title: '写 b' }] })
+    const r = await call.orch!.setPlan({
+      steps: [
+        { title: '写 a', status: 'done' },
+        { title: '写 b', status: 'done' },
+      ],
+    })
+    assert.equal(activePlanOf(task), undefined, '全部完成，计划收起')
+    assert.match(r.info, /还没写总结：用 finish_plan/)
+    const f = await call.orch!.finishPlan('a、b 都写好了')
+    assert.equal(f.ok, true)
+    assert.equal(task.plans.at(-1)!.summary, 'a、b 都写好了')
+    return { ok: true, text: '写好了。' }
+  })
+  h.agents = [agent('m', '协调')]
+  await runEngineTurn(h)
+})
+
 /** 拿当前进行中的计划（测试里只关心有没有、内容是什么） */
 const activePlanOf = (task: Task) => {
   const last = task.plans.at(-1)

@@ -3006,13 +3006,25 @@ function makeOrchestra(
         const target = plan ?? task.plans?.at(-1)
         if (sum && target) target.summary = sum.slice(0, 8000)
         host.changed(true)
+        // 最后一步标完成、计划自动收起却没带总结：提醒补一句，不然这份计划只剩步骤列表，父对话和用户看不到结果
+        if (!plan && target?.doneAt && !target.summary)
+          return {
+            ...r,
+            info: `${r.info}\n这份计划还没写总结：用 finish_plan 的 summary 补上（做了什么、结果、遗留）。`,
+          }
       }
       return r
     },
     async finishPlan(summary) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
+      // 计划已自动收起、还没总结：这次只补总结（setPlan 收起时提醒过）；正常结束时总结记在刚结束的这份上
+      const closed = !activePlan(task) ? task.plans?.at(-1) : undefined
+      if (closed && !closed.summary && summary.trim()) {
+        closed.summary = summary.trim().slice(0, 8000)
+        host.changed(true)
+        return { ok: true, info: '总结记在刚结束的那份计划上了。之后有新内容用 set_plan 开新的计划。' }
+      }
       const r = finishPlan(task, summary, undefined, await kidsOf(host))
-      // 总结记在刚结束的这份计划上（结束后它不再是 activePlan）
       const last = task.plans?.at(-1)
       if (r.ok && last && summary.trim()) last.summary = summary.trim().slice(0, 8000)
       if (r.ok) host.changed(true)
