@@ -71,7 +71,7 @@ test('cherry-pick（Git）：只收这个对话自己的提交，混了别的文
   }
 })
 
-test('cherry-pick（P4）：只搬这个对话改的文件、三方合并进目标，在目标建对应的 pending，不 submit', async () => {
+test('cherry-pick（P4）：pending 的改动三方合并进目标（不要求是这个对话改的），在目标建对应的 pending，不 submit', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ap-pick-src-'))
   const target = mkdtempSync(path.join(tmpdir(), 'ap-pick-dst-'))
   try {
@@ -118,12 +118,8 @@ test('cherry-pick（P4）：只搬这个对话改的文件、三方合并进目�
         if (cmd === 'change') return { ok: true, out: 'Change 42 created.', err: '' }
         return { ok: true, out: '', err: '' }
       }
-    const rejected = await cherryPickP4(root, target, taskOf([path.join(root, 'src/a.lua')]), '7', p4)
-    assert.equal(rejected.ok, false)
-    assert.match(rejected.info, /src\/b\.lua：这个对话没有改过它/)
-    assert.equal(calls.filter((c) => c[0] === 'dst').length, 0, '不合格时目标工作区一点没动')
-
-    const ok = await cherryPickP4(root, target, taskOf(['src/a.lua', 'src/b.lua']), '7', p4)
+    // 不要求是这个对话改的（P4 只守「不 submit」）：对话里一个文件都没改过也照样搬
+    const ok = await cherryPickP4(root, target, taskOf([]), '7', p4)
     assert.equal(ok.ok, true, ok.info)
     assert.equal(
       readFileSync(path.join(target, 'src/a.lua'), 'utf8'),
@@ -199,13 +195,7 @@ test('cherry-pick（P4）：已经 submit 的 changelist 按「提交前一版 �
         if (cmd === 'change') return { ok: true, out: 'Change 43 created.', err: '' }
         return { ok: true, out: '', err: '' }
       }
-    // 已提交的 changelist 里有这个对话没改过的文件：一样整次拒绝，目标不动
-    const rejected = await cherryPickP4(root, target, taskOf(['src/a.lua', 'src/new.lua']), '9', p4)
-    assert.equal(rejected.ok, false)
-    assert.match(rejected.info, /src\/old\.lua：这个对话没有改过它[\s\S]*已经提交/)
-    assert.equal(calls.filter((c) => c[0] === 'dst').length, 0)
-
-    const ok = await cherryPickP4(root, target, taskOf(['src/a.lua', 'src/new.lua', 'src/old.lua']), '9', p4)
+    const ok = await cherryPickP4(root, target, taskOf(['src/a.lua']), '9', p4)
     assert.equal(ok.ok, true, ok.info)
     assert.ok(!calls.some((c) => c[1] === 'opened'), '已提交的不按打开的文件找')
     assert.equal(
@@ -222,6 +212,76 @@ test('cherry-pick（P4）：已经 submit 的 changelist 按「提交前一版 �
     const made = calls.find((c) => c[0] === 'dst' && c[1] === 'change')
     assert.match(made?.at(-1) ?? '', /修复跑测图标（cherry-pick 自 9）/)
     assert.ok(!calls.some((c) => c.includes('submit')), '不 submit')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(target, { recursive: true, force: true })
+  }
+})
+
+test('cherry-pick（P4）：别的 stream 上用户自己提交的 changelist，按 stream 换算路径搬过去', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ap-pick-src-'))
+  const target = mkdtempSync(path.join(tmpdir(), 'ap-pick-dst-'))
+  try {
+    // 目标也是同一个项目目录（另一个工作区里的 Game）：相对路径一样
+    mkdirSync(path.join(target, 'Src'), { recursive: true })
+    writeFileSync(path.join(target, 'Src/a.lua'), 'ONE\ntwo\nthree\nfour\nfive\n')
+    writeFileSync(path.join(target, 'Src/gone.lua'), 'gone\n')
+    // 子流上的提交：当前工作区在父流 //depot/Dev，映射里没有 //depot/1.0_official_dev 的文件
+    const revs: Record<string, string> = {
+      '//depot/1.0_official_dev/Game/Src/a.lua#6': 'one\ntwo\nthree\nfour\nfive\n',
+      '//depot/1.0_official_dev/Game/Src/a.lua#7': 'one\ntwo\nthree\nfour\nFIVE\n',
+    }
+    const calls: string[][] = []
+    const p4 =
+      (cwd: string): P4Run =>
+      async (args, stdin) => {
+        calls.push([cwd === target ? 'dst' : 'src', ...args, ...(stdin ? [stdin] : [])])
+        const [cmd] = args.filter((x) => x !== '-ztag')
+        if (cmd === 'describe')
+          return {
+            ok: true,
+            out: [
+              '... change 1259263',
+              '... status submitted',
+              '... desc 修复 hong_main',
+              '... depotFile0 //depot/1.0_official_dev/Game/Src/a.lua',
+              '... action0 integrate',
+              '... rev0 7',
+              '... depotFile1 //depot/1.0_official_dev/Game/Src/gone.lua',
+              '... action1 delete',
+              '... rev1 3',
+            ].join('\n'),
+            err: '',
+          }
+        if (cmd === 'client') return { ok: true, out: '... Client hong_main\n... Stream //depot/Dev', err: '' }
+        if (cmd === 'where') {
+          // 项目目录映射到父流里的 Game 子目录；子流的文件不在这个工作区的映射里
+          if (args.at(-1)!.endsWith('...'))
+            return { ok: true, out: `... depotFile //depot/Dev/Game/...\n... path ${root}/...`, err: '' }
+          return { ok: false, out: '', err: 'file(s) not in client view.' }
+        }
+        if (cmd === 'print') {
+          const spec = args.at(-1)!
+          if (!(spec in revs)) return { ok: false, out: '', err: `${spec} - no such file(s).` }
+          writeFileSync(args[args.indexOf('-o') + 1], revs[spec])
+          return { ok: true, out: '', err: '' }
+        }
+        if (cmd === 'change') return { ok: true, out: 'Change 44 created.', err: '' }
+        return { ok: true, out: '', err: '' }
+      }
+    const said = (text: string) => ({ changes: [], messages: [{ role: 'user', text, tools: [] }] }) as unknown as Task
+    const ok = await cherryPickP4(root, target, said('把 CL 1259263 cherry-pick 到 Dev'), '1259263', p4)
+    assert.equal(ok.ok, true, ok.info)
+    assert.equal(
+      readFileSync(path.join(target, 'Src/a.lua'), 'utf8'),
+      'ONE\ntwo\nthree\nfour\nFIVE\n',
+      '子流提交的改动合进目标，目标原有差异保留',
+    )
+    assert.ok(
+      calls.some((c) => c[0] === 'dst' && c[1] === 'delete' && c.at(-1)!.endsWith(path.join('Src', 'gone.lua'))),
+      '删除的文件在目标里也删',
+    )
+    assert.ok(!calls.some((c) => ['integrate', 'copy', 'merge', 'submit'].includes(c[1])), '不跑流间集成，不 submit')
   } finally {
     rmSync(root, { recursive: true, force: true })
     rmSync(target, { recursive: true, force: true })

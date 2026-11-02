@@ -13,8 +13,8 @@ import { ownFiles, rel } from './own-changes.ts'
  * 只能搬这个对话自己做的改动。以前只在提示词里要求，Agent 常常按两条分支的差异去同步，
  * 把目标分支故意没有、但不是这次修改的内容也带过去。所以这里逐个核对：
  * - Git：只收这个对话开始之后的普通提交（不收合并提交），提交里的每个文件都必须是这个对话改过的
- * - P4：只收指定 changelist 里这个对话改过的文件，pending 以打开前的 have 版本、已提交的以提交前一版为基准，
- *   三方合并进目标（只带这次改的那几处）
+ * - P4：搬指定 changelist 自己的改动（不要求是这个对话改的，用户 2026-11-02 定的），pending 以打开前的 have 版本、
+ *   已提交的以提交前一版为基准，三方合并进目标（只带这次改的那几处）；只在目标建 pending，永远不 submit
  * 有一项不合格整次都不做，写清是哪个提交 / 文件、为什么
  */
 
@@ -135,6 +135,47 @@ export async function cherryPickGit(
   }
 }
 
+/**
+ * 已提交的 changelist 里集成类的动作按内容变化归类：integrate 是改了内容，branch / move/add 是多出一个文件，
+ * move/delete 是少了一个文件。比较的都是这个 changelist 提交前后两版，搬过去的只是这一次的变化
+ */
+const ACTION_AS: Record<string, string> = {
+  integrate: 'edit',
+  branch: 'add',
+  'move/add': 'add',
+  'move/delete': 'delete',
+}
+
+/**
+ * depot 路径 → 项目里的相对路径。先按当前工作区的映射（p4 where）找；找不到时多半是这个 changelist
+ * 提交在别的 stream 上（例如子流的提交要搬回父流），当前工作区没映射那条流：
+ * 按 stream 的层级换算——同一个 depot 里各条流的根目录层数一样，去掉流根、再去掉项目在流里的子目录，
+ * 剩下的就是项目里的相对路径（两条流的目录结构是一样的，目标也按这个相对路径找文件）
+ */
+function streamMapper(root: string, src: P4Run) {
+  let layout: Promise<{ depth: number; sub: string } | null> | undefined
+  const readLayout = async () => {
+    const stream = parseZtag((await src(['-ztag', 'client', '-o'])).out)[0]?.Stream ?? ''
+    const proj = parseZtag((await src(['-ztag', 'where', path.join(root, '...')])).out)[0]?.depotFile ?? ''
+    if (!stream || !proj.startsWith(`${stream}/`)) return null
+    // 项目在流里的子目录：//depot/Dev/Game/... → /Game；项目就是流根时是空串
+    const sub = proj.slice(stream.length).replace(/\/\.\.\.$/, '')
+    return { depth: stream.split('/').length, sub }
+  }
+  return async (depot: string) => {
+    const where = parseZtag((await src(['-ztag', 'where', depot])).out)[0]
+    const local = where?.path ?? ''
+    const r = local ? rel(root, local) : ''
+    if (r) return { local, rel: r }
+    const l = await (layout ??= readLayout())
+    if (!l) return { local: '', rel: '' }
+    const rest = `/${depot.split('/').slice(l.depth).join('/')}`
+    if (l.sub && !rest.startsWith(`${l.sub}/`)) return { local: '', rel: '' }
+    const p = rest.slice(l.sub.length + 1)
+    return { local: '', rel: p }
+  }
+}
+
 /** 要搬的一个文件：base 是改之前的版本，mine 是改完的内容（pending 是本地文件，已提交的是打印出来的那一版） */
 type P4File = { rel: string; action: string; depot: string; base: string; mine: string }
 
@@ -152,7 +193,7 @@ function describedFiles(rec: Record<string, string>) {
 export async function cherryPickP4(
   root: string,
   target: string,
-  task: Pick<Task, 'messages' | 'changes'>,
+  _task: Pick<Task, 'messages' | 'changes'>,
   changelist: string,
   p4: (cwd: string) => P4Run,
 ): Promise<Result> {
@@ -184,23 +225,23 @@ export async function cherryPickP4(
       ok: false,
       info: submitted ? `已提交的 changelist ${cl} 里没有文件。` : `changelist ${cl} 里没有打开的文件。`,
     }
-  const mine = ownFiles(task, root)
+  // 不要求是这个对话改的（用户 2026-11-02 定的：P4 只守「不自己 submit」这一条）：
+  // 搬的只是这个 changelist 自己的改动（pending 是打开前到现在、已提交的是提交前后两版之差），
+  // 不会带上两条流本来就不同的内容；用户常在 P4V 里提交后让 Agent 搬
+  const toRel = streamMapper(root, src)
   const bad: string[] = []
   const picked: (Omit<P4File, 'base' | 'mine'> & { local: string; rev?: number })[] = []
   for (const r of listed) {
-    const where = parseZtag((await src(['-ztag', 'where', r.depot])).out)[0]
-    const local = where?.path ?? ''
-    const p = local ? rel(root, local) : ''
-    if (!p) bad.push(`${r.depot}：不在项目目录里`)
-    else if (!mine.has(p)) bad.push(`${p}：这个对话没有改过它，不是这次的修改`)
-    else if (!['edit', 'add', 'delete'].includes(r.action))
-      bad.push(`${p}：动作是 ${r.action}，面板只搬编辑、新增、删除`)
-    else picked.push({ rel: p, action: r.action, local, depot: r.depot, rev: r.rev })
+    const { local, rel: p } = await toRel(r.depot)
+    const action = ACTION_AS[r.action] ?? r.action
+    if (!p) bad.push(`${r.depot}：不在项目目录里（对应不到这个项目的目录）`)
+    else if (!['edit', 'add', 'delete'].includes(action)) bad.push(`${p}：动作是 ${r.action}，面板只搬编辑、新增、删除`)
+    else picked.push({ rel: p, action, local, depot: r.depot, rev: r.rev })
   }
   if (bad.length)
     return {
       ok: false,
-      info: `没有 cherry-pick（只能搬这个对话自己改的文件，有一个不合格整次都不做）：\n${bad.map((x) => `- ${x}`).join('\n')}\n${submitted ? '这个 changelist 已经提交、改不了：' : ''}把不属于这次修改的文件挪出这个 changelist 再调用${submitted ? '（已提交的只能让用户决定怎么处理）' : ''}。`,
+      info: `没有 cherry-pick（有一个文件搬不了整次都不做）：\n${bad.map((x) => `- ${x}`).join('\n')}\n把情况告诉用户，由用户决定怎么处理。`,
     }
   // 编辑的文件做三方合并：基准是改之前的版本（pending 是打开前的 have，已提交的是提交前一版），
   // 「我们」是这次改完的，合进目标里的同一个文件。只把这段改动带过去，目标分支本来就不同的地方（哪怕紧挨着改动）
@@ -218,10 +259,14 @@ export async function cherryPickP4(
     const files: P4File[] = []
     for (const [i, f] of picked.entries()) {
       // 改完的内容：pending 就是本地文件；已提交的取提交的那一版（本地可能已经又改过了）
-      const mineFile =
-        !submitted || f.action === 'delete'
-          ? f.local
-          : await fetchRev(`${f.depot}#${f.rev}`, path.join(work, `${i}.mine`), `提交的版本 #${f.rev}`, f)
+      // 删除的不需要内容；别的流上提交的文件本地没有对应路径，所以删除不看 local
+      if (f.action === 'delete') {
+        files.push({ rel: f.rel, action: f.action, depot: f.depot, base: '', mine: '' })
+        continue
+      }
+      const mineFile = !submitted
+        ? f.local
+        : await fetchRev(`${f.depot}#${f.rev}`, path.join(work, `${i}.mine`), `提交的版本 #${f.rev}`, f)
       if (!mineFile) continue
       let base = ''
       if (f.action === 'edit') {
