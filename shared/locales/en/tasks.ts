@@ -930,6 +930,7 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 条后台命令': '{n} background commands',
   '这条后台命令是子任务「{title}」起的。\n': 'This background command was started by the subtask "{title}".\n',
   合并编译: 'Merge build',
+  面板提醒: 'Panel notice',
   子任务结果: 'Subtask results',
   '{n} 个子任务交回了结果': '{n} subtask(s) returned results',
   '等待子任务：{list}': 'Waiting for subtasks: {list}',
