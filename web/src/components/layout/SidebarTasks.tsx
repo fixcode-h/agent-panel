@@ -29,7 +29,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt, taskBusy, taskDoneDot, taskState } from '@shared/task'
+import { askedAt, byAskedAt, planLeft, taskBusy, taskDoneDot, taskState } from '@shared/task'
 import {
   SIDEBAR_GROUP_LABEL,
   SIDEBAR_ROW_OFF,
@@ -122,6 +122,8 @@ export function TaskRow({
   // 橙点只在对话真的停在完成态、而且不是当前打开的那个时才画（见 taskDoneDot）：
   // 未读可能是上一轮留下的，对话后来又跑起来时会和转圈撞在同一行
   const unreadDot = taskDoneDot(task, !!unread, active)
+  // 计划没做完就停下了：行尾写「未完成 / 卡住 x/y」（ADR 0041），不再像做完了一样只画橙点
+  const left = state === 'unfinished' ? planLeft(task) : undefined
   return (
     <>
       <ContextMenu>
@@ -224,10 +226,11 @@ export function TaskRow({
                     kids={busy ? (task.childrenWorking ?? 0) : 0}
                     running={busy}
                     failed={attention === 'failed'}
+                    left={left}
                     unread={unreadDot}
                   />
                 }
-                time={!attention && !unreadDot ? shortTime(askedAt(task), timeOnly) : undefined}
+                time={!attention && !unreadDot && !left ? shortTime(askedAt(task), timeOnly) : undefined}
               />
             )}
           </button>

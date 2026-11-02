@@ -777,3 +777,37 @@ test('运行区的子任务：被打断的只在对话又跑起来时才列；�
   assert.equal(helperShown({ status: 'running' }, sub('running')), true)
   assert.equal(helperShown({ status: 'running' }, sub('done')), false)
 })
+
+test('顶层对话计划没做完就停下：状态是「未完成」不是「已完成」，不画橙点；推满了的那条警告让它显示「卡住」，摘要里也认得出', async () => {
+  const { planLeft, taskSummary } = await import('./task.ts')
+  const { TaskPlan } = await import('./schema.ts')
+  const plans = [
+    TaskPlan.parse({
+      id: 'p1',
+      createdAt: '2026-11-02T00:00:00.000Z',
+      steps: [
+        { id: '1', title: '改代码', status: 'done', note: '改了 3 个文件' },
+        { id: '2', title: '跑测试', status: 'pending' },
+      ],
+    }),
+  ]
+  const base = { status: 'running' as const, working: false, awaitingUser: true, steps: [], plans }
+  assert.equal(taskState(base), 'unfinished')
+  assert.equal(taskDoneDot(base, true), false, '没做完不画「做完未看」的橙点')
+  assert.equal(taskActive(base), false, '未完成不算在运行（不转圈、不计入执行中）')
+  assert.equal(taskState({ ...base, working: true }), 'running')
+  const user = { id: 'u', role: 'user', agentId: '', step: '', text: '做事', tools: [], at: '1' } as TaskMessage
+  const warn = { ...user, id: 'w', role: 'system', text: '推满了', alert: { kind: 'unfinished' } } as TaskMessage
+  assert.deepEqual(planLeft({ ...base, messages: [user] }), { done: 1, total: 2, stuck: false })
+  assert.equal(planLeft({ ...base, messages: [user, warn] })?.stuck, true)
+  assert.equal(
+    planLeft({ ...base, messages: [user, warn, { ...user, id: 'u2' }] })?.stuck,
+    false,
+    '用户又发了消息就不算卡住',
+  )
+  // 侧栏读的是摘要：计划和那条警告要留下，备注不带
+  const sum = taskSummary({ ...base, messages: [user, warn], workflows: [], runs: [] } as unknown as Task)
+  assert.deepEqual(planLeft(sum), { done: 1, total: 2, stuck: true })
+  assert.equal(sum.plans[0].steps[0].note, '')
+  assert.equal(taskState(sum), 'unfinished')
+})

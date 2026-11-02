@@ -173,4 +173,9 @@ export const EN_SHARED: Record<string, string> = {
     'Its sub-conversation is waiting for the user (an approval or an answer)',
   // 弹窗四角拖动条（components/ui/modal-resize.tsx）：四边沿用「拖动调整宽度/高度」
   拖动调整大小: 'Drag to resize',
+  '计划没做完，面板推了几次还是停着，等你看一下':
+    'The plan is unfinished and it stopped again after several nudges; take a look',
+  '计划还没做完，这一轮停下了': 'The plan is not finished yet; this turn has stopped',
+  '卡住 {done}/{total}': 'Stuck {done}/{total}',
+  '未完成 {done}/{total}': 'Unfinished {done}/{total}',
 }

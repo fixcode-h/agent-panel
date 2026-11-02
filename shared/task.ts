@@ -1880,7 +1880,25 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
     childNeeds: x.childrenNeeds ?? 0,
     stopReason: x.stopReason,
     gone: taskGone(x),
+    // 计划没做完（ADR 0041 P4）：这一轮停了、也不在等结果时显示「未完成」，不再显示成「已完成」画橙点
+    unfinished: !!openPlan({ plans: x.plans ?? [], steps: x.steps }),
   }
+}
+
+/**
+ * 计划没做完时的进度和是不是推满了还停着（「卡住」，面板写过 unfinished 警告、之后用户没再发消息）。
+ * 侧栏「未完成 3/7」「卡住 3/7」读它；摘要（taskSummary）里留了够它判定的计划和那条警告
+ */
+export function planLeft(x: Pick<Task, 'plans' | 'steps' | 'messages'>) {
+  const open = openPlan(x)
+  if (!open) return undefined
+  let stuck = false
+  for (let i = x.messages.length - 1; i >= 0; i--) {
+    const m = x.messages[i]
+    if (m.alert?.kind === 'unfinished') stuck = true
+    if (m.alert?.kind === 'unfinished' || (m.role === 'user' && !m.panel)) break
+  }
+  return { ...open, stuck }
 }
 
 /** 任务对外的状态：见 convState */
@@ -2092,14 +2110,22 @@ export function autoArchivePicks(
 
 export function taskSummary(t: Task): Task {
   const first = t.messages.find((m) => m.role === 'user')
+  const plan = openPlan(t) ? activePlan(t) : undefined
+  const left = planLeft(t)
+  const stuckNote = left?.stuck ? [...t.messages].reverse().find((m) => m.alert?.kind === 'unfinished') : undefined
   return {
     ...t,
     askedAt: askedAt(t),
-    messages: first ? [{ ...first, text: first.text.slice(0, 500), tools: [] }] : [],
+    messages: [
+      ...(first ? [{ ...first, text: first.text.slice(0, 500), tools: [] }] : []),
+      // 推满了还停着的那条警告（见 planLeft）：侧栏据此写「卡住」而不是「未完成」
+      ...(stuckNote ? [{ ...stuckNote, text: '', tools: [] }] : []),
+    ],
     // brief 是父对话给的要求原文（可能上千字），列表和侧栏都读不到，跟着 output / command 一起清掉
     steps: t.steps.map(({ usage, ...s }) => ({ ...s, output: '', command: [], brief: '', changes: [] })),
     todos: [],
-    plans: [],
+    // 只留没做完的那份计划、去掉备注和等待项：侧栏的「未完成 x/y」和 convState 的 unfinished 要它（见 taskFacts）
+    plans: plan ? [{ ...plan, steps: plan.steps.map((x) => ({ ...x, note: '', waits: [], children: [] })) }] : [],
     baseline: {},
     sessions: {},
     sessionDirs: {},

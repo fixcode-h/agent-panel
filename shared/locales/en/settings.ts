@@ -1883,4 +1883,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '没有残留进程：所有对话的 CLI 都在跑或已经结束。':
     "No leftover processes: every conversation's CLI is either running or has exited.",
   '（不属于任何对话）': '(not part of any conversation)',
+  状态弹窗日志贴到最新: 'Stick the status log to the latest',
+  清理已合并的分支: 'Clean up merged branches',
 }

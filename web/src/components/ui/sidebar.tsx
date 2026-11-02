@@ -145,7 +145,7 @@ function RunTag({ children, className }: { children: ReactNode; className?: stri
 }
 
 /**
- * 任务行右边的状态：同一时刻只出一个，优先级 等你回复 > 子对话在跑 > 自己在跑 > 失败 > 未读。
+ * 任务行右边的状态：同一时刻只出一个，优先级 等你回复 > 子对话在跑 > 自己在跑 > 失败 > 卡住 / 未完成 > 未读。
  * 判定由调用方从 taskState / taskDoneDot 取（一个状态只在一处算），这里只管画
  */
 export function TaskRowStatus({
@@ -153,6 +153,7 @@ export function TaskRowStatus({
   kids = 0,
   running,
   failed,
+  left,
   unread,
 }: {
   /** 有没回答的提问、待确认的请求 */
@@ -162,6 +163,8 @@ export function TaskRowStatus({
   /** 自己在执行或在等会推回来的结果 */
   running?: boolean
   failed?: boolean
+  /** 计划没做完就停下（见 shared/task.ts 的 planLeft）：推满了还停着是「卡住」（琥珀），否则「未完成」（灰） */
+  left?: { done: number; total: number; stuck: boolean }
   unread?: boolean
 }) {
   if (needs)
@@ -176,6 +179,18 @@ export function TaskRowStatus({
     return (
       <StatusPill tone="err" className={SMALL_PILL}>
         {t('失败')}
+      </StatusPill>
+    )
+  if (left)
+    return (
+      <StatusPill
+        tone={left.stuck ? 'wait' : 'idle'}
+        className={SMALL_PILL}
+        title={left.stuck ? t('计划没做完，面板推了几次还是停着，等你看一下') : t('计划还没做完，这一轮停下了')}
+      >
+        {left.stuck
+          ? t('卡住 {done}/{total}', { done: left.done, total: left.total })
+          : t('未完成 {done}/{total}', { done: left.done, total: left.total })}
       </StatusPill>
     )
   // 未读只是一个 6px 强调色圆点（带读屏说明），不写字
