@@ -10,6 +10,9 @@ import { t } from '../shared/i18n.ts'
 // 检测要把每个 CLI 都跑一遍 --version（Windows 上一次要一两秒），结果多留一会儿；
 // 设置里改了命令或环境变量时自动重新检测，在面板里装、卸 CLI 时也会清掉
 const TTL = 5 * 60_000
+/** 第一次跑 --version 的限时；超时后单独重试一次用 RETRY_TIMEOUT */
+const VERSION_TIMEOUT = 15_000
+const RETRY_TIMEOUT = 30_000
 let cached: { at: number; key: string; data: CliStatus[] } | null = null
 
 export const invalidateClis = () => {
@@ -65,11 +68,17 @@ function probe(key: string, settings: Awaited<ReturnType<typeof getSettings>>) {
   const p = Promise.all(
     CLIS.map(async (c): Promise<CliStatus> => {
       const cs = cliSettings(settings, c.id)
-      const r = await capture(cs.command, c.versionArgs, process.cwd(), childEnv(cs.env), 10_000)
-      const installed = !r.spawnError && !r.killed && r.code === 0
-      const out = installed ? ((r.stdout || r.stderr).trim().split('\n')[0] ?? '') : failLine(r.stdout, r.stderr)
       const env = childEnv(cs.env)
+      let r = await capture(cs.command, c.versionArgs, process.cwd(), env, VERSION_TIMEOUT)
+      // 超时不等于没装：几个 CLI 同时启动，Windows 上杀毒软件扫刚自动更新过的大可执行文件（Claude Code 的
+      // claude.exe 两百多 MB），第一次 --version 可能要十几秒。再单独给一次更长的时间
+      if (r.killed && !r.spawnError) r = await capture(cs.command, c.versionArgs, process.cwd(), env, RETRY_TIMEOUT)
       const file = resolveCommand(cs.command, env)
+      const ran = !r.spawnError && !r.killed && r.code === 0
+      // 两次都超时、但文件确实在：按已安装算（版本没读到），不让用户以为没装、去点「安装」
+      const slow = !ran && !!r.killed && !r.spawnError && !!file
+      const installed = ran || slow
+      const out = ran ? ((r.stdout || r.stderr).trim().split('\n')[0] ?? '') : failLine(r.stdout, r.stderr)
       return {
         path: installed ? file : undefined,
         source: installed ? await cliSource(c.id, file) : undefined,
@@ -78,13 +87,15 @@ function probe(key: string, settings: Awaited<ReturnType<typeof getSettings>>) {
         command: cs.command,
         enabled: cs.enabled,
         installed,
-        version: installed ? out : undefined,
-        error: installed
+        version: ran ? out : undefined,
+        error: ran
           ? undefined
-          : (r.spawnError ??
-            (r.killed ? t('检测超时') : out || t('退出码 {code}', { code: String(r.code) })) +
-              // 跑起来但报错时带上实际跑的是哪个文件：多半是这份安装坏了，或者 PATH 里先找到了旧的那份
-              (file && !r.spawnError ? ` (${file})` : '')),
+          : slow
+            ? t('读取版本超时')
+            : (r.spawnError ??
+              (r.killed ? t('检测超时') : out || t('退出码 {code}', { code: String(r.code) })) +
+                // 跑起来但报错时带上实际跑的是哪个文件：多半是这份安装坏了，或者 PATH 里先找到了旧的那份
+                (file && !r.spawnError ? ` (${file})` : '')),
         models: c.models,
         docsUrl: c.docsUrl,
       }
@@ -92,7 +103,9 @@ function probe(key: string, settings: Awaited<ReturnType<typeof getSettings>>) {
   )
     .then((data) => {
       // 检测期间被清掉（刚装、卸了 CLI）的话，这次的结果已经不准，不存
-      if (running?.p === p) cached = { at: Date.now(), key, data }
+      // 有版本没读到的（超时按已安装算的），半分钟后就在后台重新读一次，不等满 TTL
+      const at = data.some((d) => d.installed && !d.version) ? Date.now() - TTL + 30_000 : Date.now()
+      if (running?.p === p) cached = { at, key, data }
       return data
     })
     .finally(() => {

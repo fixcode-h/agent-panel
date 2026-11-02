@@ -32,6 +32,7 @@ export const EN_SERVER: Record<string, string> = {
 
   // 检测 / 模型列表
   检测超时: 'Detection timed out',
+  读取版本超时: 'version check timed out',
   '退出码 {code}': 'Exit code {code}',
   未知错误: 'Unknown error',
   'ChatGPT 账号': 'ChatGPT account',
