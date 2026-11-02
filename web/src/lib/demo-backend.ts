@@ -8,6 +8,7 @@ import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildSummary, demoParentCard } from './demo-child-summary'
+import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
 import {
@@ -1287,53 +1288,6 @@ const DEMO_STATUS: Record<string, string> = {
   'src/components/CartBadge.tsx': 'A',
   'src/pages/OrderList.tsx': '?',
   'tests/cart.test.ts': 'D',
-}
-
-/**
- * 示例对话改过的两个文件：差异窗口要有真实的 hunk、删除、新增和行内改动可看。
- * 演示里没有仓库，这些文本直接当任务的差异返回（见 demoTask 的 diff 分支）。
- */
-const DEMO_DIFFS: Record<string, string> = {
-  'src/components/CartBadge.tsx': [
-    'diff --git a/src/components/CartBadge.tsx b/src/components/CartBadge.tsx',
-    'index 3c1a2f0..8d4b7c1 100644',
-    '--- a/src/components/CartBadge.tsx',
-    '+++ b/src/components/CartBadge.tsx',
-    '@@ -1,11 +1,13 @@',
-    " import { useEffect, useState } from 'react'",
-    "+import { useCart } from '../store/cart'",
-    ' ',
-    ' export function CartBadge() {',
-    '-  const [count, setCount] = useState(0)',
-    '+  const items = useCart()',
-    '+  const count = items.reduce((n, item) => n + item.count, 0)',
-    ' ',
-    '   useEffect(() => {',
-    "-    fetch('/api/cart').then((r) => r.json()).then((d) => setCount(d.length))",
-    '-  }, [])',
-    "+    document.title = count > 0 ? `购物车 (${count})` : '商城'",
-    '+  }, [count])',
-    ' ',
-    '   return <span className="badge">{count}</span>',
-    ' }',
-  ].join('\n'),
-  'src/components/RestockButton.tsx': [
-    'diff --git a/src/components/RestockButton.tsx b/src/components/RestockButton.tsx',
-    'new file mode 100644',
-    'index 0000000..4b825dc',
-    '--- /dev/null',
-    '+++ b/src/components/RestockButton.tsx',
-    '@@ -0,0 +1,9 @@',
-    "+import { useState } from 'react'",
-    '+',
-    '+export function RestockButton({ productId }: { productId: string }) {',
-    '+  const [sent, setSent] = useState(false)',
-    '+  if (sent) return <button disabled>已登记</button>',
-    '+  return (',
-    '+    <button onClick={() => setSent(true)}>到货通知我</button>',
-    '+  )',
-    '+}',
-  ].join('\n'),
 }
 
 /** 在线演示里文件页的写操作：新建的目录记在这里，改过的内容直接在 DEMO_CONTENTS 上改，刷新就回到初始状态 */
@@ -4548,8 +4502,9 @@ async function seedTasks(d: Db) {
         spans: [{ from: 'demo-before', to: 'demo-after' }],
         files: [
           ...task.changes,
-          { path: 'src/store/cart.ts', add: 12, del: 4 },
-          { path: 'tests/cart.test.ts', add: 18, del: 0 },
+          // 和 DEMO_DIFFS 里的样例对得上：cart.ts 是短改动，cart.test.ts 是整份删除
+          { path: 'src/store/cart.ts', add: 4, del: 1 },
+          { path: 'tests/cart.test.ts', add: 0, del: 62 },
         ],
       }
     // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。

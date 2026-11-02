@@ -303,6 +303,8 @@ export const EN_TASKS: Record<string, string> = {
   长行折行显示: 'Long lines wrap onto the next line',
   '长行不折行，可以左右滚动': 'Long lines stay on one line — scroll sideways',
   差异显示方式: 'Diff layout',
+  收起文件列表: 'Hide file list',
+  显示文件列表: 'Show file list',
   上一个文件: 'Previous file',
   '上一个文件（Alt + ↑）': 'Previous file (Alt + ↑)',
   下一个文件: 'Next file',

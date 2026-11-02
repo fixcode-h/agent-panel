@@ -64,6 +64,8 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/RunView.tsx',
     'web/src/components/tasks/TaskMenu.tsx',
     'web/src/components/tasks/DiffDialog.tsx',
+    'web/src/components/tasks/TurnChanges.tsx',
+    'web/src/components/tasks/ChangesTree.tsx',
     'web/src/components/tasks/MemoryChart.tsx',
     'web/src/components/tasks/RequestCard.tsx',
     'web/src/components/tasks/ChildAskCard.tsx',
