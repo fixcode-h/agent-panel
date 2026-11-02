@@ -19,6 +19,7 @@ import {
   forceInstallRelease,
   installRelease,
   loadReleases,
+  loadVersion,
   rollbackRelease,
   useAppUpdate,
 } from '@/lib/app-update'
@@ -31,6 +32,7 @@ import { t } from '@shared/i18n'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
 
 /** 更新说明里没有 @角色 */
 const NO_TEAM = new Set<string>()
@@ -80,6 +82,8 @@ function ReleaseRow({
   const [open, setOpen] = useState(false)
   const isCur = r.version === current
   const newer = compareVersions(r.version, current) > 0
+  // feed 兜底只有版本号：没有下载地址时不给「下载」「更新」入口，只引导去 GitHub Releases
+  const downloadable = !!(r.zipUrl || r.tarUrl)
   return (
     <li className="flex flex-col border-b py-3 last:border-b-0">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
@@ -100,17 +104,31 @@ function ReleaseRow({
         )}
         <span className="font-mono text-xs text-subtle">{dateTime(r.publishedAt)}</span>
         <span className="ml-auto flex items-center gap-1.5">
-          <a
-            href={r.zipUrl || r.tarUrl}
-            target="_blank"
-            rel="noreferrer"
-            title={r.size ? t('下载 zip 包（约 {size}）', { size: mb(r.size) }) : t('下载 zip 包')}
-            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-body text-muted hover:bg-sel hover:text-fg"
-          >
-            <Download className="h-3.5 w-3.5" />
-            {t('下载')}
-          </a>
-          {!isCur && !import.meta.env.VITE_DEMO && (
+          {downloadable ? (
+            <a
+              href={r.zipUrl || r.tarUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={r.size ? t('下载 zip 包（约 {size}）', { size: mb(r.size) }) : t('下载 zip 包')}
+              className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-body text-muted hover:bg-sel hover:text-fg"
+            >
+              <Download className="h-3.5 w-3.5" />
+              {t('下载')}
+            </a>
+          ) : (
+            r.url && (
+              <a
+                href={r.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-body text-muted hover:bg-sel hover:text-fg"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                {t('在 GitHub 上查看')}
+              </a>
+            )
+          )}
+          {!isCur && downloadable && !import.meta.env.VITE_DEMO && (
             <Button
               size="sm"
               variant="secondary"
@@ -144,7 +162,13 @@ function ReleaseRow({
 }
 
 /** 设置里的「版本更新」：当前版本、有没有新包、最近五个包（可下载、可切换） */
-export function UpdateSection() {
+export function UpdateSection({
+  autoCheck,
+  onAutoCheckChange,
+}: {
+  autoCheck: boolean
+  onAutoCheckChange: (on: boolean) => void
+}) {
   const { data, loading, job, restarting } = useAppUpdate()
   const [confirm, setConfirm] = useState<AppRelease | null>(null)
   const [undo, setUndo] = useState(false)
@@ -154,9 +178,11 @@ export function UpdateSection() {
   const canInstall = !!data?.packaged && !demo
   const running = job?.status === 'running' || !!restarting
 
-  // 打开「版本更新」就马上检查一次，不等自动检查的间隔
+  // 当前版本、是否发布包、上一个版本只读本地，任何时候都要显示；
+  // 自动检查开关只管 /releases：关着时打开这里也不自动请求，只留「检查更新」按钮
   useEffect(() => {
-    if (!running) void loadReleases(true)
+    void loadVersion()
+    if (autoCheck && !running) void loadReleases(true)
     // 只在打开时检查；安装中途不重新检查
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -203,6 +229,13 @@ export function UpdateSection() {
             {t('检查更新')}
           </Button>
         </div>
+
+        {/* 包在 label 里：点文字也能切换，和设置里其他开关一致 */}
+        <label className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1">
+          <Switch aria-label={t('自动检查更新')} checked={autoCheck} onCheckedChange={onAutoCheckChange} />
+          <span className="text-body">{t('自动检查更新')}</span>
+          <span className="text-xs text-subtle">{t('打开页面时和页面开着时每小时检查一次；关掉后只保留手动检查')}</span>
+        </label>
 
         {running ? (
           <div className="flex flex-col gap-1.5">
@@ -255,24 +288,50 @@ export function UpdateSection() {
             />
           </p>
         ) : !data ? (
-          <p className="flex items-center gap-1.5 text-body text-subtle">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            {t('正在检查…')}
-          </p>
+          loading ? (
+            <p className="flex items-center gap-1.5 text-body text-subtle">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {t('正在检查…')}
+            </p>
+          ) : (
+            // 关着自动检查时不会自动请求：点按钮之前没有结果，不能一直显示「正在检查」
+            <p className="text-body text-subtle">{t('还没有检查过更新，点「检查更新」查看最新版本。')}</p>
+          )
         ) : (
           <>
-            {/* 限流时服务端回退到上次的结果：这不是检查失败，提示要温和，别用失败的颜色 */}
-            {data.limitedUntil && (
+            {/* GitHub API 被限流 / 不可用时服务端退到 Release feed：这不是检查失败，提示要温和，别用失败的颜色 */}
+            {data.source === 'feed' ? (
               <p className="flex flex-wrap items-center gap-1 text-body leading-relaxed text-subtle">
                 <Info className="h-3.5 w-3.5 shrink-0" />
-                {t('GitHub 暂时限制了访问，这里显示的是上次检查的结果；约 {minutes} 分钟后恢复，也可以到', {
-                  minutes: minutesUntil(data.limitedUntil),
-                })}{' '}
+                {data.limitedUntil
+                  ? t(
+                      'GitHub 限制了 API 访问，已通过 Release feed 获取最新版本（{time}）；约 {minutes} 分钟后恢复完整列表，也可以到',
+                      {
+                        time: checkedTime(data.feedCheckedAt || data.checkedAt || ''),
+                        minutes: minutesUntil(data.limitedUntil),
+                      },
+                    )
+                  : t('GitHub API 暂时不可用，最新版本来自 Release feed（{time}），也可以到', {
+                      time: checkedTime(data.feedCheckedAt || data.checkedAt || ''),
+                    })}{' '}
                 <a href={RELEASES_URL} target="_blank" rel="noreferrer" className="underline">
                   GitHub Releases
                 </a>{' '}
-                {t('手动下载。')}
+                {t('查看。')}
               </p>
+            ) : (
+              data.limitedUntil && (
+                <p className="flex flex-wrap items-center gap-1 text-body leading-relaxed text-subtle">
+                  <Info className="h-3.5 w-3.5 shrink-0" />
+                  {t('GitHub 暂时限制了访问，这里显示的是上次检查的结果；约 {minutes} 分钟后恢复，也可以到', {
+                    minutes: minutesUntil(data.limitedUntil),
+                  })}{' '}
+                  <a href={RELEASES_URL} target="_blank" rel="noreferrer" className="underline">
+                    GitHub Releases
+                  </a>{' '}
+                  {t('手动下载。')}
+                </p>
+              )
             )}
             {data.update ? (
               <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-3.5 py-2.5">
@@ -281,17 +340,35 @@ export function UpdateSection() {
                   {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
                   <span className="text-subtle"> · {dateTime(data.update.publishedAt)}</span>
                 </span>
-                {canInstall && (
+                {canInstall && data.update.tarUrl ? (
                   <Button size="sm" onClick={() => setConfirm(data.update!)}>
                     {t('更新到 {tag}', { tag: data.update.tag })}
                   </Button>
+                ) : (
+                  <a
+                    href={data.update.url || RELEASES_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-body text-accent-text hover:underline"
+                  >
+                    {t('到 GitHub Releases 下载')}
+                  </a>
                 )}
               </div>
-            ) : (
+            ) : loading ? (
+              // 已经读到本地版本、正在问 GitHub：不能显示成「还没有检查」
+              <p className="flex items-center gap-1.5 text-body text-subtle">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t('正在检查…')}
+              </p>
+            ) : data.checkedAt || data.source ? (
               <p className="flex items-center gap-1.5 text-body text-success">
                 <CircleCheck className="h-4 w-4" />
                 {t('已是最新版本')}
               </p>
+            ) : (
+              // 只读到了本地版本（自动检查关着），还没问过 GitHub：不能说成「已是最新」
+              <p className="text-body text-subtle">{t('还没有检查过更新，点「检查更新」查看最新版本。')}</p>
             )}
           </>
         )}
@@ -331,7 +408,13 @@ export function UpdateSection() {
             ))}
           </ul>
         ) : (
-          <p className="py-3 text-body text-subtle">{loading ? t('正在读取…') : t('暂时没有读到发布的包。')}</p>
+          <p className="py-3 text-body text-subtle">
+            {loading
+              ? t('正在读取…')
+              : data?.checkedAt || data?.source
+                ? t('暂时没有读到发布的包。')
+                : t('点「检查更新」读取最近的版本。')}
+          </p>
         )}
       </section>
 

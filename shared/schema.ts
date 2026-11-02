@@ -2519,6 +2519,11 @@ export const Settings = z.object({
    * 关掉只跳过设置里的地址，环境变量 HTTPS_PROXY 和本机代理自动探测照旧——那两条不是这里的配置
    */
   networkProxyEnabled: z.boolean().catch(true).default(true),
+  /**
+   * 自动检查面板更新：打开后页面打开时检查一次、之后每小时问一次服务端。
+   * 默认关：GitHub 偶尔限流，自动检查只能回旧结果，由用户点「检查更新」更可控（用户要求）
+   */
+  autoCheckUpdates: z.boolean().catch(false).default(false),
   /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
   requireToken: z.boolean().default(false),
   /** 外网访问：默认关闭 */

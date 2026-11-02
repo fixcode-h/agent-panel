@@ -1,12 +1,13 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob } from '@shared/version'
 import { api } from './api'
+import { useData } from './data'
 import { t } from '@shared/i18n'
 
 /**
- * 面板版本更新的全局状态：打开页面时自动检查（服务端记着上次检查的时间，最多每 6 小时真去问一次 GitHub），
- * 页面一直开着就每小时问一次服务端；侧栏的「设置」和设置里的「版本更新」共用；
- * 安装进度也放在这里，关掉设置再打开不会丢。
+ * 面板版本更新的全局状态：设置里打开「自动检查更新」时，页面打开先检查一次
+ * （服务端记着上次检查的时间，最多每 6 小时真去问一次 GitHub），页面一直开着就每小时问一次服务端；
+ * 侧栏的「设置」和设置里的「版本更新」共用；安装进度也放在这里，关掉设置再打开不会丢。
  */
 interface State {
   data?: AppReleases
@@ -27,29 +28,76 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l)
 }
 
-let started = false
+let timer: ReturnType<typeof setInterval> | undefined
+
+/**
+ * 按设置启停自动检查：打开时先检查一次，之后每小时问一次服务端（没到 6 小时服务端直接回上次的结果）。
+ * 重复打开不会重置计时器；check 单独传入，测试可以不真的发请求
+ */
+export function autoCheck(on: boolean, check: () => void = () => void loadReleases()) {
+  if (!on) {
+    stopAutoCheck()
+    return false
+  }
+  if (timer) return false
+  // 先占位再检查：check 万一同步再调 autoCheck 也不会重复起一个（目前只有 React effect 调它）
+  timer = setInterval(() => {
+    if (!state.loading && !state.job && !state.restarting) check()
+  }, 3600_000)
+  check()
+  return true
+}
+
+export function stopAutoCheck() {
+  if (timer) clearInterval(timer)
+  timer = undefined
+}
+
+/**
+ * 检查请求失败时的新状态：只清掉发布列表并记下错误，
+ * loadVersion 读到的当前版本 / 是否发布包 / 上一个版本要留着——否则本地服务重启、代理 502 时
+ * 会把发布包显示成「从源码运行」，也会让「回到上一个版本」消失
+ */
+export function failedReleases(data: AppReleases | undefined, error: string): AppReleases {
+  return { ...(data ?? { current: '', packaged: false, releases: [] }), releases: [], error }
+}
+
 export async function loadReleases(refresh = false) {
   set({ loading: true })
   try {
     set({ data: await api.appReleases(refresh) })
   } catch (e) {
-    set({ data: { current: state.data?.current ?? '', packaged: false, releases: [], error: (e as Error).message } })
+    set({ data: failedReleases(state.data, (e as Error).message) })
   } finally {
     set({ loading: false })
   }
 }
 
+/**
+ * 当前版本、是否发布包、上一个版本：只读本地（`/app/version`），不访问 GitHub。
+ * 关掉自动检查时也要显示这些本地信息，不能等用户点「检查更新」才出来
+ */
+export async function loadVersion() {
+  try {
+    const v = await api.appVersion()
+    // 保留已经读到的发布列表、更新和错误，只补本地版本信息
+    set({ data: { releases: [], ...state.data, ...v } })
+  } catch {
+    // 读不到只影响这几项展示；更新检查仍然可以手动点
+  }
+}
+
 export function useAppUpdate() {
   const s = useSyncExternalStore(subscribe, () => state)
+  const { settings } = useData()
+  const auto = settings?.autoCheckUpdates ?? false
   useEffect(() => {
-    if (started) return
-    started = true
-    void loadReleases()
-    // 不用 refresh：没到 6 小时服务端直接回上次的结果
-    setInterval(() => {
-      if (!state.loading && !state.job && !state.restarting) void loadReleases()
-    }, 3600_000)
-  }, [])
+    // 设置还没读到时先不动：关着自动检查的用户不该在设置读回来之前先发一次请求
+    if (!settings) return
+    autoCheck(auto)
+    // 只在开关变化时启停；设置里其他字段变化不重新计时。要不要检查只看 autoCheckUpdates
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto])
   return s
 }
 

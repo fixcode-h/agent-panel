@@ -335,6 +335,18 @@ export const EN_SETTINGS: Record<string, string> = {
   'GitHub 暂时限制了访问，这里显示的是上次检查的结果；约 {minutes} 分钟后恢复，也可以到':
     'GitHub is temporarily rate limiting requests, so this is the result from the last check. Try again in about {minutes} minutes, or go to',
   '手动下载。': 'to download manually.',
+  '查看。': 'to view.',
+  自动检查更新: 'Check for updates automatically',
+  '打开页面时和页面开着时每小时检查一次；关掉后只保留手动检查':
+    'Check once when the page opens and hourly while it stays open; when off, only the manual check remains',
+  '还没有检查过更新，点「检查更新」查看最新版本。':
+    'Updates have not been checked yet. Use "Check for updates" to see the latest version.',
+  '点「检查更新」读取最近的版本。': 'Use "Check for updates" to load recent versions.',
+  'GitHub 限制了 API 访问，已通过 Release feed 获取最新版本（{time}）；约 {minutes} 分钟后恢复完整列表，也可以到':
+    'GitHub is rate-limiting the API. The latest version came from the Release feed ({time}); the full list returns in about {minutes} minutes, or you can go to',
+  'GitHub API 暂时不可用，最新版本来自 Release feed（{time}），也可以到':
+    'The GitHub API is temporarily unavailable. The latest version comes from the Release feed ({time}), or you can go to',
+  '到 GitHub Releases 下载': 'Download from GitHub Releases',
   '正在检查…': 'Checking…',
   已是最新版本: "You're up to date",
   '上次检查 {time}': 'Last checked {time}',

@@ -4779,6 +4779,8 @@ async function demoApp(url: string): Promise<unknown> {
   if (url.startsWith('/app/install') || url.startsWith('/app/rollback')) fail('在线演示不能安装，可以下载包到本机运行')
   // 演示里不会真的强制更新，也就没有被打断的任务
   if (url.startsWith('/app/interrupted')) return { at: '', acknowledged: false, tasks: [] } satisfies InterruptedTasks
+  // 当前版本只读上次读到的发布缓存：这个接口不该为了显示版本号再去请求 GitHub
+  if (url.startsWith('/app/version')) return { current: demoReleasesCache()[0]?.version ?? '', packaged: false }
   let list: AppRelease[] = []
   let limitedUntil: string | undefined
   let res: Response | null = null
@@ -4834,12 +4836,13 @@ async function demoApp(url: string): Promise<unknown> {
     }
   }
   const current = list[0]?.version ?? ''
-  if (url.startsWith('/app/version')) return { current, packaged: false }
   return {
     current,
     packaged: false,
     checkedAt: new Date().toISOString(),
     limitedUntil,
+    // 演示版直接从浏览器读 GitHub API，没有 Atom feed 兜底，结果都按 API / 它的缓存算
+    source: 'api',
     releases: list.slice(0, 5),
     update: pickUpdate(current, list),
   } satisfies AppReleases

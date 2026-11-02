@@ -309,6 +309,10 @@ export const EN_SERVER: Record<string, string> = {
   '发现新版本 {version}，但现在不能更新：{error}':
     'Version {version} is available but cannot be installed now: {error}',
   '发现新版本 {version}，正在下载…': 'Version {version} is available, downloading…',
+  '发现新版本 {version}，但暂时拿不到 GitHub API 的安装包地址，请到 GitHub Releases 手动下载':
+    'Version {version} is available, but the package address is unavailable from the GitHub API. Download it manually from GitHub Releases',
+  '这个版本没有可用的安装包地址，请到 GitHub Releases 手动下载':
+    'This release has no usable package address; download it manually from GitHub Releases',
   '已更新到 {version}，正在重启': 'Updated to {version}, restarting',
   '从源码运行时请用 git 更新，只有发布的包能在这里更新':
     'Running from source: update with git. Only released packages can update here.',
