@@ -20,7 +20,7 @@ e2e 和假 CLI 在 [e2e.md](./e2e.md)，界面检查在 [ui-check.md](./ui-check
 
 ## 慢或偶发失败的用例降级，不删
 
-- 规则：对时钟敏感、依赖并发窗口的单测文件加进 `scripts/unit-tests.mjs` 的 `TIMING_FILES`；只等外部事件的用例给事件循环保活（`net.test.ts` 的 `setTimeout` 补 `unref` 空转）；并行跑时分不清是哪一通调用就别取「最后一通」，按本轮提示词匹配再 `waitFor`（`03-chat.mjs`）。
+- 规则：对时钟敏感、依赖并发窗口的单测改断言（注入时钟 / 事件驱动 / 放宽窗口），不要再拆串行批（2026-11-02 用户嫌慢，`TIMING_FILES` 串行批已去掉）；只等外部事件的用例给事件循环保活（`net.test.ts` 的 `setTimeout` 补 `unref` 空转）；并行跑时分不清是哪一通调用就别取「最后一通」，按本轮提示词匹配再 `waitFor`（`03-chat.mjs`）。
 - 起因：拆成计时批和并发批后 `worktree.test.ts` 201s→17s（accfdd85）；并发上限 4 下两处「取最后一通」偶发取错（f0c802d5）。
 - 防线：`test:unit`、`test:e2e`。
 
