@@ -214,3 +214,15 @@ test('两秒内有输出写「模型在输出」，不写「0 秒前」', () => 
   )
   assert.equal(v.headline, '模型在输出')
 })
+
+test('在等用户确认、回答时没有输出：说在等你处理，不报「输出到一半停住」', () => {
+  const v = verdictOf(
+    base({
+      state: 'needs',
+      trace: { requests: 12, requestAt: NOW - 700_000, firstOutputAt: NOW - 699_000, lastOutputAt: NOW - 699_000 },
+    }),
+    NOW,
+  )
+  assert.match(v.headline, /在等你处理/)
+  assert.deepEqual(v.anomalies, [])
+})

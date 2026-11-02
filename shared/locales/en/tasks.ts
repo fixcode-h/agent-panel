@@ -1749,4 +1749,5 @@ export const EN_TASKS: Record<string, string> = {
   '交结果：做完': 'Result: done',
   '交结果：卡住': 'Result: stuck',
   '交结果：没做完': 'Result: unfinished',
+  '在等你处理：确认操作或回答提问': 'Waiting for you: confirm an action or answer a question',
 }
