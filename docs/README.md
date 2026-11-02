@@ -43,6 +43,7 @@ npm run build      # 正式版前端（在线演示版用 npx vite build --mode 
 | [lessons/README.md](lessons/README.md)                         | 项目教训：返工过的地方整理成按文件取用的规则                          |
 | [adr/README.md](adr/README.md)                                 | 架构决策记录（ADR）：为什么这么定、放弃了什么                         |
 | [review/2026-10-backlog.md](review/2026-10-backlog.md)         | 优化与补充清单：按优先级排好、可逐项勾选的待办                        |
+| [review/2026-11-review.md](review/2026-11-review.md)           | 2026-11 全面评审：优化点与 Bug 清单                                   |
 | [openspec/](openspec/)                                         | OpenSpec 变更记录（过程文档，不是现行规范，见下）                     |
 
 ## openspec/ 的用途和现状
