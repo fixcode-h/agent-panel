@@ -298,7 +298,8 @@ export function createRun(sc: TasksScope) {
     /** 这一轮已经报过写盘失败：磁盘满时每次落盘都会失败，只在对话里报一次，恢复后再失败再报 */
     let saveErrorShown = false
     const flush = (keepUpdatedAt = false, now = false) =>
-      sc.store.update(task.id, entry.task, { keepUpdatedAt, now }).then(
+      // 已被面板放弃的执行（见 keepalive.ts 的 abandonLive）：状态已经按停止落过盘，新的一轮可能已经开了，不再写旧快照
+      (entry.orphaned ? Promise.resolve() : sc.store.update(task.id, entry.task, { keepUpdatedAt, now })).then(
         () => {
           saveErrorShown = false
         },
@@ -624,7 +625,7 @@ export function createRun(sc: TasksScope) {
         },
       })
     })()
-    entry.done = run
+    const settled = run
       .catch((e) => {
         log.error('task', '任务执行出错', { task: task.id, error: e })
         taskLog(task.id, '执行出错', { error: e as Error })
@@ -654,6 +655,11 @@ export function createRun(sc: TasksScope) {
         })
       })
       .finally(async () => {
+        // 面板已经放弃了这份执行（杀了进程、落了停止、让出了执行位）：后面的收尾都已经做过，再做会盖掉新的一轮
+        if (entry.orphaned) {
+          taskLog(task.id, '已放弃的执行这时才收完，不再收尾', { status: entry.task.status })
+          return
+        }
         log.info('task', `任务结束：${entry.task.status}`, { task: task.id })
         taskLog(task.id, '执行结束', {
           status: entry.task.status,
@@ -747,6 +753,8 @@ export function createRun(sc: TasksScope) {
             .prewarmChat(entry.task, true)
             .catch((e) => console.error(`按新的选择预热失败：${(e as Error).message}`))
       })
+    // 面板放弃这份执行时 done 马上结束：等它的人不用陪着卡住的引擎一直等（见 keepalive.ts 的 abandonLive）
+    entry.done = entry.abandoned ? Promise.race([settled, entry.abandoned]) : settled
     return entry.task
   }
 

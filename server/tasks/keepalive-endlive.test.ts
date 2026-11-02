@@ -4,23 +4,56 @@
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import test from 'node:test'
-import type { StopReason } from '../../shared/schema.ts'
-import { createKeepAlive } from './keepalive.ts'
+import type { StopReason, Task } from '../../shared/schema.ts'
 import type { TasksScope } from './scope.ts'
 import type { Live } from './types.ts'
+
+// 进程登记在 DATA_DIR 下（放弃执行时会按登记杀进程）：import 之前指到临时目录，不碰本机的数据目录
+process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'keepalive-data-'))
+const { createKeepAlive, STOP_WATCH_MS } = await import('./keepalive.ts')
 
 /** stopAt：第几次停止时进程才结束（1 = 一停就退；2 = 第一次停不下来，要限时后再停一次） */
 function rig(stopAt: number) {
   let release: () => void = () => {}
   let stops = 0
+  let abandon: () => void = () => {}
+  const abandoned = new Promise<void>((r) => (abandon = r))
+  const run = new Promise<void>((r) => (release = r))
   const entry = {
-    task: { id: 'kid' },
+    task: {
+      id: 'kid',
+      status: 'running',
+      working: true,
+      updatedAt: new Date().toISOString(),
+      messages: [],
+      steps: [],
+      turns: [],
+      runs: [],
+    } as unknown as Task,
+    rev: 0,
     abort: { abort: () => ++stops === stopAt && release() },
-    done: new Promise<void>((r) => (release = r)),
+    // 和 run.ts 一样：面板放弃这份执行时 done 跟着结束
+    done: Promise.race([run, abandoned]),
+    abandon,
+    abandoned,
   } as unknown as Live
-  const s = { live: new Map([['kid', entry]]), closeChildren: async () => {} } as unknown as TasksScope
-  return { ...createKeepAlive(s), entry, release, stops: () => stops }
+  const saved: Task[] = []
+  const live = new Map([['kid', entry]])
+  const s = {
+    live,
+    closeChildren: async () => {},
+    release: (e: Live) => live.get(e.task.id) === e && live.delete(e.task.id),
+    store: { update: async (_id: string, tk: Task) => void saved.push(structuredClone(tk)) },
+    reportToParent: async () => {},
+    followUp: async () => {},
+    alertOn: () => () => {},
+    shuttingDown: false,
+  } as unknown as TasksScope
+  return { ...createKeepAlive(s), entry, release, stops: () => stops, live, saved }
 }
 
 test('取消等待后 CLI 不退出：限时到了按收尾原因强制停掉，不一直等', async () => {
@@ -57,7 +90,7 @@ test('限时内收完就返回，不等满时限', async () => {
   assert.equal(r.stops(), 1)
 })
 
-test('强制停止后执行仍收不完：再等一段就返回，不把收尾一起拖住', async () => {
+test('强制停止后执行仍收不完：直接收口、让出执行位，父对话再交代任务时能开新的一轮', async () => {
   const r = rig(99)
   // 第一次停下（没有等下一句的 CLI 可取消）也不结束：模拟这一份执行的收尾卡在别处
   const hold = setTimeout(() => {}, 5000)
@@ -65,5 +98,49 @@ test('强制停止后执行仍收不完：再等一段就返回，不把收尾�
   await r.endLive('kid', r.entry, 'finish', 30)
   clearTimeout(hold)
   assert.ok(Date.now() - t0 < 2000)
-  assert.equal(r.stops(), 2)
+  assert.ok(r.stops() >= 2)
+  // 以前只是「不再等它」，执行位一直占着：父对话再交给它的任务被交进这份没有进程的执行里，子对话一直「等待模型」
+  assert.equal(r.live.has('kid'), false, '执行位让出来了')
+  assert.equal(r.entry.orphaned, true, '标成已放弃，引擎之后收完也不再写盘')
+  // done 跟着结束：等它的人（wakeConv、closeChildren）不会一直挂着
+  await r.entry.done
+  // 收尾停的：这一轮已经答完，按正常结束落盘，不显示成执行中
+  const last = r.saved.at(-1)!
+  assert.equal(last.status, 'done')
+  assert.equal(last.working, false)
+})
+
+test('用户停止后进程已经没了：不等引擎收尾，几秒内直接按已停止收口', async () => {
+  const r = rig(99)
+  const hold = setTimeout(() => {}, 10_000)
+  r.stopTask('kid', 'user')
+  // 名下没有活着的 CLI 进程（测试里本来就没有）：连着几次看不到就收口
+  await Promise.race([r.entry.done, new Promise((res) => setTimeout(res, STOP_WATCH_MS * 6))])
+  clearTimeout(hold)
+  assert.equal(r.live.has('kid'), false, '执行位让出来了，停止按钮点一次就够')
+  const last = r.saved.at(-1)!
+  assert.equal(last.status, 'stopped')
+  assert.equal(last.stopReason, 'user' satisfies StopReason)
+  assert.equal(last.working, false)
+})
+
+test('用户停止后引擎自己很快收完：不重复收口', async () => {
+  const r = rig(1)
+  r.stopTask('kid', 'user')
+  await r.entry.done
+  r.live.delete('kid')
+  await new Promise((res) => setTimeout(res, STOP_WATCH_MS * 4))
+  assert.equal(r.entry.orphaned, undefined, '引擎正常收完的不当成放弃')
+  assert.equal(r.saved.length, 0)
+})
+
+test('子对话完成后保留：默认 5 分钟；CLI 没停在等下一句上时不留，由收尾马上结束', async () => {
+  const { Settings } = await import('../../shared/schema.ts')
+  assert.equal(Settings.parse({}).childDoneKeepMinutes, 5)
+  // 坏值退回默认，不让整份设置读不出来
+  assert.equal(Settings.parse({ childDoneKeepMinutes: -1 }).childDoneKeepMinutes, 5)
+  const r = rig(1)
+  // 测试里没有等下一句的 CLI（进程早退了）：没有可留的，交回 false 让 completeChild 照常结束
+  assert.equal(await r.keepDoneChild('kid', r.entry), false)
+  assert.equal(r.keepingDone('kid'), false)
 })

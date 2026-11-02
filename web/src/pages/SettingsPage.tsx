@@ -176,6 +176,7 @@ function SettingsBody({
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
   const [unread, setUnread] = useState(String(initial.unreadGraceMinutes))
   const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
+  const [childKeep, setChildKeep] = useState(String(initial.childDoneKeepMinutes))
   const [archiveDays, setArchiveDays] = useState(String(initial.autoArchiveDays))
   const [reclaim, setReclaim] = useState(initial.reclaimIdleCli)
   const [bgLimit, setBgLimit] = useState(String(initial.backgroundLimit))
@@ -328,6 +329,8 @@ function SettingsBody({
   const unreadValid = unread !== '' && Number.isInteger(unreadMin) && unreadMin >= 0 && unreadMin <= 1440
   const keepN = Number(keepAlive)
   const keepValid = keepAlive !== '' && Number.isInteger(keepN) && keepN >= 0 && keepN <= 50
+  const childKeepMin = Number(childKeep)
+  const childKeepValid = childKeep !== '' && Number.isInteger(childKeepMin) && childKeepMin >= 0 && childKeepMin <= 1440
   const archiveN = Number(archiveDays)
   const archiveValid = archiveDays !== '' && Number.isInteger(archiveN) && archiveN >= 0 && archiveN <= 3650
   const bgN = Number(bgLimit)
@@ -367,6 +370,7 @@ function SettingsBody({
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
+    childDoneKeepMinutes: childKeepValid ? childKeepMin : initial.childDoneKeepMinutes,
     autoArchiveDays: archiveValid ? archiveN : initial.autoArchiveDays,
     reclaimIdleCli: reclaim,
     backgroundLimit: bgValid ? bgN : initial.backgroundLimit,
@@ -1029,7 +1033,7 @@ function SettingsBody({
                       </Row>
                     </Advanced>
                   </Group>
-                  <Group title={t('后台会话')}>
+                  <Group title={t('Agent 进程')}>
                     <Row
                       title={t('回收空闲 Agent')}
                       desc={t('空闲到时结束进程，再用时续接会话')}
@@ -1077,6 +1081,22 @@ function SettingsBody({
                         />
                       </Row>
                     )}
+                    <Row
+                      title={t('子对话完成后保留')}
+                      desc={t('完成后 Agent 再留多久')}
+                      hint={t(
+                        '填 0 表示完成就结束。子对话彻底完成后，它的 Agent 先停在等下一句上，这段时间里父对话或你接着交代，直接交给同一个进程，不用重新启动；到点还没人用就结束，之后再交代会续接原会话。在独立分支里做的子对话完成时分支目录会删掉，Agent 随之结束，不受这一项影响。',
+                      )}
+                    >
+                      <NumberField
+                        value={childKeep}
+                        onChange={setChildKeep}
+                        unit={t('分钟')}
+                        invalid={!childKeepValid}
+                        error={t('填 0 到 1440 之间的整数，0 表示不保留')}
+                        label={t('子对话完成后 Agent 保留多久（分钟）')}
+                      />
+                    </Row>
                     <Row
                       title={t('最多保活')}
                       desc={t('超出时结束最久没用的')}

@@ -582,6 +582,9 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
   )
   // 结束时间单独记一个文件，用来检查并行节点是否真的同时运行
   process.on('exit', () => appendFileSync(`${log}.end`, JSON.stringify({ pid: process.pid, end: Date.now() }) + '\n'))
+  // 像真的 CLI 一样收到 SIGTERM 就退出：面板停止对话树时直接结束进程（keepalive.ts 的 stopTree），
+  // 不加这个的话默认处理不触发 exit 事件，进程确实结束了，结束时间却记不下来
+  process.on('SIGTERM', () => process.exit(143))
 }
 
 // FAKE_REPLAY：按录下的 Claude Code 输出一轮一轮回放（见 scripts/fake-cli/replay.mjs），不走下面手写的固定输出。

@@ -18,6 +18,7 @@ export const VISIBLE_SETTINGS = [
   'unreadGraceMinutes',
   'reclaimIdleCli',
   'keepAliveLimit',
+  'childDoneKeepMinutes',
   'autoArchiveDays',
   'backgroundLimit',
   'largeFileMB',

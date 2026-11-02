@@ -10,6 +10,7 @@ import { getSettings } from '../settings.ts'
 import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
 import { answerRequest, dropRequests, cancelWait, forgetNotes } from '../exec/runner.ts'
 import { taskLog } from '../task-log.ts'
+import { log } from '../log.ts'
 import { taskChanges } from '../own-changes.ts'
 import { applyFixesInDir } from '../files.ts'
 import { FixApplyInput } from '../../shared/diagnosis.ts'
@@ -421,6 +422,9 @@ export function registerActionRoutes(s: TasksScope) {
   async function userStop(id: string) {
     // 用户点「暂停」是唯一标成 user 的路径：别处停任务必须写清是谁结束的（见 StopReason）
     s.stopTask(id, 'user')
+    // 停止就是这棵对话树都别干了：名下子对话、子任务一起停，CLI 进程直接结束，不等各自收尾。
+    // 进程没了就算停下了（见 keepalive.ts 的 watchStop），点一次停止就够
+    await s.stopTree(id).catch((e) => log.warn('task', '停止整棵对话树失败', { task: id, error: (e as Error).message }))
     // 还在等回答的提问、确认马上作废并落盘：不然返回的任务还带着它们，提问窗口关不掉。
     // 停止是停掉这个对话附属的一切：名下子对话的提问、确认、请用户决定的选择也一起作废
     const kids = (await s.store.list()).filter((x) => x.parentTaskId === id)

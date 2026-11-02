@@ -2475,6 +2475,12 @@ export const Settings = z.object({
    */
   keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
   /**
+   * 子对话彻底完成后，CLI 还停在等下一句上多久（分钟）再结束；0 表示完成就结束。
+   * 这段时间里父对话或用户接着交代，消息直接交给同一个进程，不用冷启动。
+   * 只管共用目录的子对话：独立分支的子对话完成时目录就删了，CLI 跟着结束（见 server/tasks/keepalive.ts 的 keepDoneChild）
+   */
+  childDoneKeepMinutes: z.number().int().min(0).max(1440).catch(5).default(5),
+  /**
    * 自动归档：顶层对话（连同子对话）这么多天没动、没在执行、回复也都看过了，就归档（侧栏和列表默认不显示，
    * 筛选「已归档」还能找到，随时取消归档）。0 表示不自动归档
    */

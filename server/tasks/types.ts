@@ -20,6 +20,15 @@ export type Live = {
   orch?: Orchestra
   /** 换 CLI/模型/强度时由 PATCH 负责重启，收尾不要重复预热 */
   restart?: boolean
+  /**
+   * 这份执行被面板放弃了（进程已经杀掉、状态已经按停止落盘、执行位已经让出，见 keepalive.ts 的 abandonLive）：
+   * 引擎那边哪怕之后才收完，也不能再往盘上写旧快照，否则会盖掉新的一轮
+   */
+  orphaned?: boolean
+  /** 放弃这份执行时调用：done 跟着结束，等它的人（wakeConv、endLive、closeChildren……）不会一直挂着 */
+  abandon?: () => void
+  /** abandon 调用后才结束的 Promise，run.ts 和 done 合在一起 */
+  abandoned?: Promise<void>
 }
 
 /** 子对话转交给父对话的子任务请求：父对话下一轮建 Orchestra 时直接派 */

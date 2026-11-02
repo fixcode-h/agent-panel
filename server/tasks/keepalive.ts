@@ -1,14 +1,14 @@
 import { Task, type StopReason } from '../../shared/schema.ts'
 import { keepAliveHolding, keepAliveVictims } from '../../shared/task.ts'
 import { getSettings } from '../settings.ts'
-import { hasHeld } from '../exec/delivery.ts'
+import { dropHeld, hasHeld, markHeld } from '../exec/delivery.ts'
 import { isViewing } from '../presence.ts'
 import { worktreeStatus } from '../exec/worktree.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TaskProcess } from '../../shared/schema.ts'
 import { subtreeTaskIds } from '../../shared/run-usage.ts'
-import { trackedClis, untrackCliProcess } from '../exec/orphans.ts'
+import { killTaskClis, trackedClis, untrackCliProcess } from '../exec/orphans.ts'
 import { commandSummary, ownedEntries, processSnapshot, subtree, sumRss, trackedStatus } from '../exec/proc-stats.ts'
 import { HARD_STOP } from '../exec/invoke.ts'
 import type { TasksScope } from './scope.ts'
@@ -16,12 +16,28 @@ import type { Live } from './types.ts'
 import { cancelWait } from '../exec/runner.ts'
 import { settleReclaimed } from '../exec/reclaim.ts'
 import { taskLog } from '../task-log.ts'
+import { killTree, killTreeDeep, taskCliAlive } from '../exec/process.ts'
+import { settleStopped } from '../../shared/task-settle.ts'
+import { TaskBusyError } from './helpers.ts'
 
 /**
  * 停止对话、保活上限与回收（还在运行的对话不回收，见 ADR 0012）、对话名下的进程面板。
  */
 /** 取消等下一句后等进程自己退出的时长，过了就强制停止（见 endLive）。比 invoke 的 EXIT_GRACE_MS 长：常驻协议的 CLI 先按正常退出收掉 */
 export const END_LIVE_GRACE_MS = 20_000
+/**
+ * 用户停止后盯着这份执行的间隔：进程没了就是停下了，连着这么多次看不到它名下的 CLI 进程就直接收口，
+ * 不再等引擎自己走完收尾（以前收尾卡在别处时，停止按钮要连点好几次）
+ */
+export const STOP_WATCH_MS = 1000
+const STOP_GONE_TICKS = 3
+/** 用户停止后进程还在的话，过了这么久直接杀掉（正常情况下停止当时就已经杀过一遍） */
+export const STOP_KILL_MS = 8000
+/** 停止后无论如何不再等它的上限：进程杀不掉、引擎卡住都按停止收口，让出执行位 */
+export const STOP_GIVE_UP_MS = 30_000
+
+/** 用户意图的停止（暂停、随父对话停、归档、删除）：这些才盯着进程、到点直接收口 */
+const WATCHED_STOPS = new Set<StopReason>(['user', 'parent', 'archive', 'delete'])
 
 export function createKeepAlive(s: TasksScope) {
   const stopTask = (id: string, reason: StopReason) => {
@@ -42,10 +58,155 @@ export function createKeepAlive(s: TasksScope) {
     if (firstStop || (reason !== 'parent' && reason !== 'budget')) e.stopReason = reason
     // CLI 卡住了（没有响应、换人接手）：不理会中断，直接结束进程，别让用户的新消息再等上几秒
     e.abort.abort(reason === 'stalled' || reason === 'replaced' ? HARD_STOP : undefined)
+    // 用户要停的：进程没了就算停下了，不等引擎慢慢收尾；进程迟迟不退就直接杀（见 watchStop）
+    if (WATCHED_STOPS.has(reason)) watchStop(id, e)
     // 用户按的暂停、父对话收尾、打断并重发：独立分支里没提交的改动会留在那儿，
     // 现在就在父对话里点明，不留到用户自己发现
     if (firstStop && (reason === 'user' || reason === 'parent' || reason === 'supersede'))
       void stopWorktreeNote(e.task, reason)
+  }
+
+  /** 正在盯着的停止：同一份执行只盯一次（停止按钮连点、closeChildren 补停） */
+  const watching = new WeakSet<Live>()
+
+  /**
+   * 停止后盯着这份执行名下的 CLI 进程：进程没了就是停下了，连着几次看不到进程就直接收口（abandonLive），
+   * 不再等引擎把收尾走完；进程过了 STOP_KILL_MS 还在就杀掉，过了 STOP_GIVE_UP_MS 无论如何都收口。
+   * 正常情况下引擎在进程退出后几十毫秒就收完了，这里只兜「收尾卡在别处」的那一类
+   */
+  function watchStop(id: string, e: Live) {
+    if (watching.has(e)) return
+    watching.add(e)
+    const started = Date.now()
+    let gone = 0
+    let killed = false
+    const tick = async () => {
+      if (s.live.get(id) !== e || e.orphaned) return
+      const elapsed = Date.now() - started
+      gone = taskCliAlive(id) ? 0 : gone + 1
+      if (gone >= STOP_GONE_TICKS) return void abandonLive(id, e, e.stopReason ?? 'user', '停止后进程已经结束')
+      if (elapsed >= STOP_GIVE_UP_MS) return void abandonLive(id, e, e.stopReason ?? 'user', '停止后一直没收完')
+      if (!killed && elapsed >= STOP_KILL_MS) {
+        killed = true
+        taskLog(id, '停止后进程还在，直接结束', { ms: elapsed })
+        await killTaskClis(id, (pid) => void killTreeDeep(pid)).catch(() => [])
+      }
+      setTimeout(() => void tick(), STOP_WATCH_MS).unref?.()
+    }
+    setTimeout(() => void tick(), STOP_WATCH_MS).unref?.()
+  }
+
+  /**
+   * 放弃这份执行：杀掉它名下的 CLI 进程，按停止（收尾的按正常结束）落盘，让出执行位，done 跟着结束。
+   * 用在「进程已经没了引擎还没收完」「收尾卡住等不到」这两类：以前执行位一直占着，
+   * 父对话再把任务交给这个子对话时消息被交进这份已经没人在跑的执行里，子对话一直停在「等待模型」，
+   * 用户停止再继续，新的一轮也不知道那条任务（用户报过）。
+   * 之后引擎就算收完了也不再写盘（Live.orphaned），不会盖掉新的一轮
+   */
+  async function abandonLive(id: string, e: Live, reason: StopReason, why: string): Promise<boolean> {
+    if (s.live.get(id) !== e || e.orphaned) return false
+    e.orphaned = true
+    if (!e.stop || !e.stopReason) e.stopReason = reason
+    e.stop = true
+    e.abort.abort(HARD_STOP)
+    cancelWait(id)
+    const killed = await killTaskClis(id, (pid) => void killTreeDeep(pid)).catch(() => [] as number[])
+    const how = e.stopReason ?? reason
+    const tk = e.task
+    // 收尾结束的（finish）这一轮已经答完：按正常结束落，排着的消息由收尾后的新一轮接着处理；
+    // 别的按停止落（和启动迁移、页面回收同一份写法），排着的消息标成没送出去，用户知道要重发
+    if (how === 'finish') {
+      if (tk.status === 'running') tk.status = 'done'
+      tk.working = false
+      tk.awaitingUser = false
+      tk.prewarming = false
+    } else if (tk.status === 'running') Object.assign(tk, settleStopped(tk, how))
+    else {
+      tk.working = false
+      tk.awaitingUser = false
+      tk.prewarming = false
+    }
+    tk.apiWait = undefined
+    for (const st of tk.steps) st.apiWait = undefined
+    if (how !== 'finish') {
+      const lost = dropHeld(id)
+      if (lost.length) markHeld(tk.messages, lost, 'lost')
+    }
+    tk.updatedAt = new Date().toISOString()
+    s.release(e)
+    e.rev++
+    e.abandon?.()
+    taskLog(id, '放弃这份执行：进程已结束，直接收口', { reason: how, why, killed: killed.length || undefined })
+    log.warn('task', '执行没有自己收完，面板直接收口并让出执行位', { task: id, reason: how, why })
+    await s.store
+      .update(id, tk)
+      .catch((err) => log.warn('task', '收口放弃的执行时写盘失败', { task: id, error: (err as Error).message }))
+    // 收尾时交来的新任务：这时执行位已经空了，接着开新的一轮（等着它的 wakeConv 也会试，撞上了就算了）
+    if (how === 'finish' && hasHeld(id) && !s.shuttingDown)
+      void s.followUp(id).catch((err) => {
+        if (err instanceof TaskBusyError) return
+        log.error('task', '放弃卡住的执行后没能接着处理排着的消息', { task: id, error: (err as Error).message })
+        s.alertOn(id, 'delivery', t('收尾后没能接着处理排着的消息'))(err)
+      })
+    // 停下的子对话：父对话那边照常收到状态（引擎的收尾不会再报了）
+    else if (tk.parentTaskId && how !== 'finish') void s.reportToParent(tk).catch(() => {})
+    return true
+  }
+
+  /**
+   * 停掉整棵对话树：名下所有子对话、孙对话（连同它们派出的子任务）都按「随父对话停」结束，
+   * 然后直接结束这些对话名下的全部 CLI 进程，不等各自收尾。进程没了引擎马上就收完，收不完的由 watchStop 收口。
+   * 用户停止、归档时用：以前要等每一层收尾，父对话要点好几次停止才能全部停下
+   */
+  async function stopTree(id: string) {
+    const tk = s.live.get(id)?.task ?? (await s.store.get(id))
+    if (!tk) return
+    const ids = await subtreeIdsOf(tk)
+    for (const kid of ids) {
+      if (kid === id || !s.live.has(kid)) continue
+      // 停在等下一句的直接取消等待，它自己结束这一轮；正在执行的按随父对话停
+      if (!cancelWait(kid)) stopTask(kid, 'parent')
+      else {
+        const ke = s.live.get(kid)
+        if (ke) watchStop(kid, ke)
+      }
+    }
+    const killed = (
+      await Promise.all([...ids].map((x) => killTaskClis(x, (pid) => void killTreeDeep(pid)).catch(() => [])))
+    ).flat()
+    taskLog(id, '停止整棵对话树', { tasks: ids.size, killed: killed.length || undefined })
+  }
+
+  /** 已完成、CLI 还留着的子对话：id → 保留期到了结束它的定时器（见 keepDoneChild） */
+  const doneKeep = new Map<string, ReturnType<typeof setTimeout>>()
+  /** 已完成的子对话 CLI 还在保留期里：兜底回收不能把它当成收口后的遗留进程 */
+  const keepingDone = (id: string) => doneKeep.has(id)
+
+  /**
+   * 子对话彻底完成后 CLI 先别结束：停在等下一句上再留设置里的「子对话完成后保留」这么久，
+   * 父对话或用户这段时间里接着交代，消息直接交给同一个进程，不用冷启动；到点还没人用就结束它。
+   * 只在 CLI 确实停在等下一句上时留（没人看着、早已退出的不用留）。返回 false 时由调用方马上结束
+   */
+  async function keepDoneChild(id: string, e: Live): Promise<boolean> {
+    const minutes = (await getSettings()).childDoneKeepMinutes
+    // awaitingUser：runner 停在等下一句上时置的（见 runner.ts 的 listen），等子任务时不算
+    if (!minutes || s.live.get(id) !== e || !e.task.awaitingUser) return false
+    clearTimeout(doneKeep.get(id))
+    const timer = setTimeout(() => {
+      doneKeep.delete(id)
+      // 保留期里又接着做了（父对话交代了新任务、用户发了消息）：这一轮由它自己的收尾管，不在这里结束
+      if (s.live.get(id) !== e || !e.task.resolved) return
+      taskLog(id, '子对话完成后的保留期到了，结束 CLI', { minutes })
+      void endLive(id, e, 'finish')
+        .then(() => killTaskClis(id, killTree))
+        .catch((err) =>
+          log.warn('task', '保留期到了结束子对话的 CLI 失败', { task: id, error: (err as Error).message }),
+        )
+    }, minutes * 60_000)
+    timer.unref?.()
+    doneKeep.set(id, timer)
+    taskLog(id, '子对话完成，CLI 再保留一段', { minutes })
+    return true
   }
 
   /**
@@ -231,10 +392,9 @@ export function createKeepAlive(s: TasksScope) {
       }),
     ])
     clearTimeout(timer)
-    if (stuck) {
-      taskLog(id, '强制停止后执行仍没收完，不再等它', { reason, graceMs })
-      log.warn('task', '强制停止后执行仍没收完，不再等它', { task: id, reason })
-    }
+    // 强制停止后还没收完：直接收口、让出执行位。只是「不再等它」的话执行位一直占着，
+    // 父对话再交代任务时消息会被交进这份已经没有进程的执行里，子对话一直停在「等待模型」（用户报过）
+    if (stuck) await abandonLive(id, e, reason, '强制停止后执行仍没收完')
   }
 
   async function closeWaiting(id: string, e: Live) {
@@ -244,6 +404,10 @@ export function createKeepAlive(s: TasksScope) {
   }
 
   return {
+    abandonLive,
+    keepDoneChild,
+    keepingDone,
+    stopTree,
     allowedPids,
     processPanel,
     stopTask,

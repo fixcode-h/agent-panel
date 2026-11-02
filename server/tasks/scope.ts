@@ -27,6 +27,12 @@ export interface TasksScope {
   closeWaiting: (id: string, e: Live) => Promise<void>
   /** 结束对话的 CLI 并等执行位释放，限时内没收完就强制停（见 keepalive.ts） */
   endLive: (id: string, e: Live, reason: import('../../shared/schema.ts').StopReason, graceMs?: number) => Promise<void>
+  /** 子对话完成后 CLI 再保留一段（设置「子对话完成后保留」），返回 false 时调用方马上结束它（见 keepalive.ts） */
+  keepDoneChild: (id: string, e: Live) => Promise<boolean>
+  /** 已完成的子对话 CLI 还在保留期里 */
+  keepingDone: (id: string) => boolean
+  /** 停掉整棵对话树并直接结束名下全部 CLI 进程（用户停止、归档） */
+  stopTree: (id: string) => Promise<void>
   PLAN_NUDGE_MS: number
   READONLY: string
   activeChildren: (parentId: string) => Promise<number>
