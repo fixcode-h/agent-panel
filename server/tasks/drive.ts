@@ -77,6 +77,7 @@ export function createDrive(
       if (!tk || tk.imported || taskDeleted(tk)) return 'gone'
       if (!planStalled(tk)) return stallSkip(tk)
       // 已经停下、失败的不推；页面切走、闲置回收的保活进程是正常说完的一轮，照常推（同 nudgeMerge）
+      if (haltedBy(tk)) return `halted:${haltedBy(tk)}`
       if (tk.status === 'failed' || (tk.status === 'stopped' && !reclaimed(tk))) return `status:${tk.status}`
       // 正常说完的一轮：进程结束了（done），或者还停在保活上等下一句（这时 status 仍是 running）。
       // 失败、被停下的不推：那是出错了或用户让它停，要让用户看到再决定
@@ -162,6 +163,21 @@ export function createDrive(
 
   /** 保活进程被页面切走、闲置回收收掉的：这一轮是正常说完的，和用户、父对话叫停的不同（见 nudgeMerge 的同一判断） */
   const reclaimed = (tk: Task) => tk.status === 'stopped' && (tk.stopReason === 'presence' || tk.stopReason === 'idle')
+  /**
+   * 这一轮是被叫停的（用户暂停、父对话停下、收尾、重启……）：不管状态记成什么都不推。
+   * 停止和这一轮结束撞在同一刻时状态会记成 done（这一轮已经答完），只看 status 会把刚被停下的对话又推起来
+   * （2026-11-02 真实接口测试撞到：父对话停下后子对话被收尾自检拉起来接着跑）。页面切走、闲置回收是正常收掉的，照常推
+   */
+  const stops = new Map<string, string>()
+  /** 停止时记一笔（keepalive.ts 的 stopTask 调）：这次执行收尾后内存里的执行位没了，复查时照样认得出是被叫停的 */
+  const noteStop = (id: string, reason: string) => void stops.set(id, reason)
+  /** 真正开了新的一轮（继续执行、新消息、推进）：上次的停止不再算数 */
+  const clearStop = (id: string) => void stops.delete(id)
+  const haltedBy = (tk: Task) => {
+    const live = sc.live.get(tk.id)
+    const why = stops.get(tk.id) ?? (live?.stop ? live.stopReason : tk.stopReason)
+    return why && why !== 'presence' && why !== 'idle' ? why : ''
+  }
 
   /** planStalled 不成立时写进日志的原因：只为排查，判定本身仍以 planStalled 为准 */
   function stallSkip(tk: Task): string {
@@ -230,6 +246,7 @@ export function createDrive(
       if (tk.working) return 'working'
       if (tk.resolved) return 'resolved'
       if (activePlan(tk) || planned(tk)) return 'planned'
+      if (haltedBy(tk)) return `halted:${haltedBy(tk)}`
       if (tk.status === 'failed' || (tk.status === 'stopped' && !reclaimed(tk))) return `status:${tk.status}`
       // 停稳的才推：进程结束了，或者停在保活上等下一句；这期间用户发了消息、开了新一轮就不推
       if (settled && !(tk.status === 'done' || reclaimed(tk) || (tk.status === 'running' && tk.awaitingUser)))
@@ -281,5 +298,5 @@ export function createDrive(
     return true
   }
 
-  return { nudgePlan, nudgeState: (id: string) => budget.state(id), resetNudge }
+  return { nudgePlan, nudgeState: (id: string) => budget.state(id), resetNudge, noteStop, clearStop }
 }

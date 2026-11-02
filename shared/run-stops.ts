@@ -1,5 +1,5 @@
 import type { EngineHost } from './engine.ts'
-import type { TaskStep } from './schema.ts'
+import type { Task, TaskStep } from './schema.ts'
 import { clip } from './text.ts'
 
 /*
@@ -104,10 +104,30 @@ export function dropInterrupted(s: TaskStep, why: string) {
  * 一起被停下的子对话、子任务也接不回来（2026-11-02 真实接口测试撞到：停止和这一轮结束落在同一毫秒）
  */
 export function userCutWork(host: EngineHost) {
-  if (host.stopReason?.() !== 'user') return false
+  // 用户按的停止，或者随父对话一起停（子对话被父对话停下时同样会撞上「这一轮刚结束」，父对话继续时要能把它拉回来）
+  const why = host.stopReason?.()
+  if (why !== 'user' && why !== 'parent') return false
   const { task } = host
   if (task.steps.some((s) => s.slot === 'sub' && (s.interrupted || s.status === 'running' || s.status === 'pending')))
     return true
+  // 计划还没做完（含在等结果的步骤）：活没干完
   const plan = task.plans?.at(-1)
-  return !!plan && !plan.doneAt && plan.steps.some((s) => s.waits?.some((w) => w.state === 'waiting'))
+  return !!plan && !plan.doneAt && plan.steps.some((s) => s.status !== 'done' && s.status !== 'skipped')
 }
+
+/**
+ * 被停下时这一轮其实已经答完了没有：保活的进程回复完停在等下一句，之后被停止、换 CLI、父对话结束而收掉，
+ * 这时 CLI 已经报过这一轮完成（turnDoneAt），而且晚于最后一条用户消息，就算正常结束，不能记成被打断。
+ */
+export function answeredAll(task: Task, turn: { startedAt: string }) {
+  const done = Date.parse(task.turnDoneAt ?? '')
+  if (!Number.isFinite(done) || done < Date.parse(turn.startedAt)) return false
+  const lastAsk = [...task.messages].reverse().find((m) => m.role === 'user')
+  return !lastAsk?.at || done >= Date.parse(lastAsk.at)
+}
+
+/**
+ * 这一轮是面板在对话彻底完成后收掉的（stopReason 为 finish）：子对话收尾做完、结束等下一句的进程。
+ * 这时活已经干完，CLI 有没有来得及报完成（turnDoneAt）都不影响，不能记成「这一轮被中断」
+ */
+export const finishedStop = (host: EngineHost) => host.stopReason?.() === 'finish'

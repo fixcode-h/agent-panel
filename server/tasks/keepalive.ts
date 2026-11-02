@@ -45,6 +45,7 @@ export function createKeepAlive(s: TasksScope) {
     if (reason === 'user' || reason === 'archive') void s.closeChildren(id)
     const e = s.live.get(id)
     taskLog(id, '停止', { reason, live: !!e, already: e?.stop || undefined })
+    s.noteStop(id, reason)
     if (!e) return
     // 已经在停了（停止按钮连点、closeChildren 先停一次再补一次）：别再推一条一模一样的提示
     const firstStop = !e.stop

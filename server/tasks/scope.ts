@@ -392,6 +392,9 @@ export interface TasksScope {
   nudgeState: (id: string) => { key: string; n: number } | undefined
   /** 用户亲自发了新消息：推进次数清零（ADR 0041） */
   resetNudge: (id: string) => void
+  /** 停止时记下（自驱不推被叫停的对话），开新一轮时清掉 */
+  noteStop: (id: string, reason: string) => void
+  clearStop: (id: string) => void
   panelAlert: (taskId: string, kind: AlertKind, text: string, error: unknown, level?: 'warn' | 'error') => Promise<void>
   paramsOf: (p: Project, workflowId: string) => Record<string, string | number | boolean | string[]>
   parentRequestBuild: (

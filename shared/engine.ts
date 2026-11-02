@@ -4369,8 +4369,8 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       first = false
       if (!r.ok) {
         // 这一轮 CLI 已经报过完成才被收掉（交付完回收、父对话收尾、闲置回收）不算被打断；用户停下时还有活没干完的除外（见 userCutWork）
-        const done = answeredAll(task, turn ?? { startedAt: '' }) && !rs.userCutWork(host)
-        const answered = !!turn && !!r.stopped && (done || finishedStop(host))
+        const done = rs.answeredAll(task, turn ?? { startedAt: '' }) && !rs.userCutWork(host)
+        const answered = !!turn && !!r.stopped && (done || rs.finishedStop(host))
         // 停止原因记进这一轮的结局：面板重启、父对话收尾、用户暂停在报告里要能分开算
         if (turn)
           endTurn(task, turn, answered ? 'done' : r.stopped ? 'stopped' : 'failed', Date.now(), host.stopReason?.())
@@ -4404,6 +4404,11 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       }
       prompt = `## 计划执行结果\n${results.join('\n\n')}\n\n请根据结果继续：向用户说明完成了什么、有哪些改动和遗留问题；需要再启动一次计划就继续调用 start_plan。`
     }
+    // 等子任务结果时用户停下、活还没干完：记成已停止，「继续执行」才能把整棵树接回来（见 userCutWork）
+    if (rs.userCutWork(host)) {
+      if (turn) endTurn(task, turn, 'stopped', Date.now(), 'user')
+      return finish(host, { ok: false, stopped: true, error: '' })
+    }
     if (turn) endTurn(task, turn, 'done')
     if (host.task.parentTaskId) host.task.summary = summaryOf(host.task)
     // 预热没有处理新消息时由调用方恢复状态
@@ -4430,23 +4435,6 @@ function delegatesRole(host: EngineHost, agent: Agent | undefined) {
   if (!agent) return false
   return agent.canDelegate || includedAgents(agent, host.agents).some((x) => x.agent.canDelegate)
 }
-
-/**
- * 被停下时这一轮其实已经答完了没有：保活的进程回复完停在等下一句，之后被停止、换 CLI、父对话结束而收掉，
- * 这时 CLI 已经报过这一轮完成（turnDoneAt），而且晚于最后一条用户消息，就算正常结束，不能记成被打断。
- */
-function answeredAll(task: Task, turn: { startedAt: string }) {
-  const done = Date.parse(task.turnDoneAt ?? '')
-  if (!Number.isFinite(done) || done < Date.parse(turn.startedAt)) return false
-  const lastAsk = [...task.messages].reverse().find((m) => m.role === 'user')
-  return !lastAsk?.at || done >= Date.parse(lastAsk.at)
-}
-
-/**
- * 这一轮是面板在对话彻底完成后收掉的（stopReason 为 finish）：子对话收尾做完、结束等下一句的进程。
- * 这时活已经干完，CLI 有没有来得及报完成（turnDoneAt）都不影响，不能记成「这一轮被中断」
- */
-const finishedStop = (host: EngineHost) => host.stopReason?.() === 'finish'
 
 /** 子对话的摘要：最近一条 Agent 回复的开头，父对话的协调 Agent 用它判断关联 */
 function summaryOf(task: Task) {
@@ -4478,7 +4466,7 @@ function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
 export function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
   // 这一轮其实已经答完了（见 answeredAll）：CLI 报过完成、只是停在等下一句之后才被收掉，不算被打断——
   // 不写「这一轮被中断」、不记 stopReason，状态照常是 done。真停止（用户暂停、面板重启、CLI 崩溃）照旧
-  const answered = !!r.stopped && (!!opts?.answered || finishedStop(host))
+  const answered = !!r.stopped && (!!opts?.answered || rs.finishedStop(host))
   for (const s of host.task.steps)
     if (s.status === 'running') {
       s.status = answered ? 'done' : r.stopped ? 'pending' : 'failed'

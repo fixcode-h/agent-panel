@@ -817,7 +817,7 @@ test('用户停止时还有没干完的活：即使 CLI 刚报完这一轮也记
   const host = (steps: unknown[], plans: unknown[] = [], why = 'user') =>
     ({ task: { steps, plans }, stopReason: () => why }) as never
   assert.equal(userCutWork(host([{ slot: 'sub', status: 'pending', interrupted: true }])), true, '派出的子任务被打断')
-  const waiting = [{ steps: [{ waits: [{ state: 'waiting' }] }], doneAt: '' }]
+  const waiting = [{ steps: [{ status: 'waiting', waits: [{ state: 'waiting' }] }], doneAt: '' }]
   assert.equal(userCutWork(host([], waiting)), true, '计划里还在等子对话、后台命令')
   assert.equal(userCutWork(host([{ slot: 'sub', status: 'done' }])), false, '活都干完了：停在等下一句时停止照旧算完成')
   assert.equal(
