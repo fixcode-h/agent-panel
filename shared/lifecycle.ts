@@ -71,6 +71,54 @@ export function lastExit(lines: LogLine[], step = ''): ProcessExit | undefined {
   return undefined
 }
 
+/**
+ * 日志事件按五类计数：弹窗顶上的数字块、日志的筛选和配色、诊断文件里的 counts 都按这一份分，免得三处口径不一。
+ * 只认事件名（server 里 taskLog 的第二个参数），新增事件时在这里归类；归不了类的不计数
+ */
+export const EVENT_KINDS = ['requests', 'retries', 'errors', 'stops', 'exits'] as const
+export type EventKind = (typeof EVENT_KINDS)[number]
+
+export function eventKind(event: string, fields: Record<string, string> = {}): EventKind | undefined {
+  if (event === '模型请求开始') return 'requests'
+  if (event === 'CLI 重试模型请求' || event === '模型请求没有输出就换了下一次') return 'retries'
+  if (event === 'CLI 进程退出') return 'exits'
+  if (event === 'CLI 报这一轮结束') return fields.ok === 'false' ? 'errors' : undefined
+  // 先认出错再认停止：「卡住：问过状态没回复，停掉重启」算出错
+  if (/出错|报错|失败|被拒|拒收|没建起来|卡住/.test(event)) return 'errors'
+  if (/停止|停掉|直接结束|结束 CLI/.test(event)) return 'stops'
+  return undefined
+}
+
+export interface EventCount {
+  n: number
+  /** 最近一次：时间和一句摘要（事件名之外最要紧的两个字段） */
+  last?: { at: number; text: string }
+}
+export type LifeCounts = Record<EventKind, EventCount>
+
+/** 一行日志的摘要：去掉序号、pid、步骤这类定位字段，留前两个 */
+function brief(l: LogLine) {
+  const kv = Object.entries(l.fields).filter(([k]) => k !== 'n' && k !== 'pid' && k !== 'step')
+  const tail = kv.slice(0, 2).map(([k, v]) => `${k}=${v.length > 80 ? `${v.slice(0, 80)}…` : v}`)
+  return [l.event, ...tail].join(' ')
+}
+
+/**
+ * 按完整日志数五类事件（服务端读整份日志时算，弹窗只拿到最近 200 行，自己数会少）。
+ * step 为空时数对话自己这一轮（日志里没有 step 的行），否则只数这一步的
+ */
+export function countEvents(lines: LogLine[], step = ''): LifeCounts {
+  const out = Object.fromEntries(EVENT_KINDS.map((k) => [k, { n: 0 }])) as LifeCounts
+  for (const l of lines) {
+    if ((l.fields.step ?? '') !== step) continue
+    const k = eventKind(l.event, l.fields)
+    if (!k) continue
+    out[k].n++
+    out[k].last = { at: l.at, text: brief(l) }
+  }
+  return out
+}
+
 /** 模型请求轨迹（server/exec/cli-trace.ts 的 CliTrace，时间是毫秒时间戳） */
 export interface TraceFacts {
   /** 这次 CLI 调用开始的时间：不报「请求开始」的 CLI（Codex、Pi）按它算等了多久 */
@@ -209,7 +257,8 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
           )
       } else if (tr?.lastOutputAt) {
         const ms = now - tr.lastOutputAt
-        headline = t('模型在输出：最后一段输出在 {s} 秒前', { s: sec(ms) })
+        // 两秒内的算「正在输出」，不写「0 秒前」
+        headline = ms < 2000 ? t('模型在输出') : t('模型在输出：最后一段输出在 {s} 秒前', { s: sec(ms) })
         if (ms > OUTPUT_STALL_MS)
           add(
             'output-stalled',
@@ -325,6 +374,8 @@ export interface LifeNode {
   facts: LifeFacts
   verdict: LifeVerdict
   processes: LifeProcess[]
+  /** 按完整日志数的五类事件（旧的诊断文件没有） */
+  counts?: LifeCounts
   /** 最近的日志行（原样） */
   log: string[]
 }

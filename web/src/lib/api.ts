@@ -877,6 +877,12 @@ export const api = {
   /** 生成诊断文件并放进系统剪贴板；copied 为 false 时只拿到路径 */
   lifecycleFile: (id: string) =>
     request<{ path: string; copied: boolean }>(`/tasks/${id}/lifecycle/file`, json('POST', {})),
+  /** 「AI 分析」选中节点：服务端写好诊断文件、整理成 AI 处理的输入（见 server/tasks/lifecycle-ai.ts） */
+  lifecycleAnalysis: (id: string, node: string) =>
+    request<{ title: string; topic: string; ask: string; error: string; output: string; context: string; cwd: string }>(
+      `/tasks/${id}/lifecycle/analysis`,
+      json('POST', { node }),
+    ),
   /** 在文件管理器里打开诊断文件所在的目录 */
   lifecycleReveal: (id: string) => request<{ ok: boolean }>(`/tasks/${id}/lifecycle/reveal`, json('POST', {})),
   taskSession: (id: string, cli: string) => request<SessionInfo>(`/tasks/${id}/session?cli=${encodeURIComponent(cli)}`),

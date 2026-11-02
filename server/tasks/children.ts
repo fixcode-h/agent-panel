@@ -40,6 +40,7 @@ import { killTaskClis } from '../exec/orphans.ts'
 import { RULE_CMD, isolated, HELPER_STOP_TIMEOUT_MS, HELPER_STOP_POLL_MS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import { letterResult } from '../../shared/child-letter.ts'
+import { childSummaryCards } from '../../shared/summary-card.ts'
 
 /**
  * 没列计划时，这一轮动手（跑命令、改文件）几次以上才做收尾自检（见 nudgeNoPlan）：三步以上的事才可能做了一半，
@@ -478,8 +479,12 @@ export function createChildren(sc: TasksScope) {
     // 这一轮 AI 自己用 message_parent 写的汇报并进这一封当「结果」（ADR 0034：一轮只交一封），没写才取最后一条回复
     // 只带要点（shared/child-letter.ts）：最后一条回复取全文从里面认总结，lastReply 只有开头 300 字、认不出末尾的总结
     const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())?.text
-    const brief = letterResult(tk.pendingReport?.trim() || last || tk.summary || '')
+    const src = tk.pendingReport?.trim() || last || tk.summary || ''
+    const brief = letterResult(src)
     const summary = brief.text
+    // 父对话里由面板自动显示的卡片（父对话不再自己写）：标题取子对话这一轮总结的「类型｜结论」，
+    // 点标题跳到子对话里的详细总结；没写总结时为空
+    const cards = childSummaryCards(src, tk.id)
     // 用户直接在子对话里交代过新要求：不再单独发消息，这封汇报里带上原话
     const direct = tk.userDirect ? `\n用户在这个子对话里直接交代过：${tk.userDirect}` : ''
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
@@ -499,7 +504,7 @@ export function createChildren(sc: TasksScope) {
           : r.state === 'failed' || r.state === 'stopped'
             ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
             : ''
-    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要，详细总结在子对话「${tk.title}」里：写它的卡片时标题链到它，不用转述细节）` : ''}` : ''}`
+    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要，详细总结在子对话「${tk.title}」里：面板会自动显示它的总结卡片，点标题看全文，不用转述细节）` : ''}` : ''}`
     await sc.noteParent(
       tk.parentTaskId,
       tk,
@@ -511,6 +516,7 @@ export function createChildren(sc: TasksScope) {
       undefined,
       // 只有「只剩合回却没请收尾」要叫起父对话；失败、中断的重试提示照旧放进收件箱
       !!next && r.state === 'unfinished',
+      cards,
     )
     // 并进去的阶段汇报、用户的原话已经交出去了，下一封不再重复带。
     // 随父对话（或用量上限）停下的那次 noteParent 只改计划、不发（见 noteParent 的 cascaded），留到继续后的那一封

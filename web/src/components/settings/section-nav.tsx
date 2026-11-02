@@ -158,7 +158,7 @@ export function SectionToc() {
   // 刚打开、还没滚动也没算过时没有当前项：先点亮第一个，别出现整条都暗的情况
   const cur = active || items[0].id
   return (
-    <TabBar variant="underline" label={t('本页小节')} className="px-5 md:px-9">
+    <TabBar variant="underline" label={t('本页小节')} className="mb-4 px-5 md:px-9">
       {items.map((s) => (
         <TabItem key={s.id} active={cur === s.id} onSelect={() => go(s.id)}>
           {s.label}
