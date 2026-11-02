@@ -1,4 +1,5 @@
 import type { BuiltinAgent } from './agents.ts'
+import { BACKGROUND_WAIT_RULE, TURN_PROGRESS_RULES } from '../turn-rules.ts'
 
 /**
  * Chat 类内置角色（ADR 0038）：只在 Chat 页（没有项目的顶层对话）用。
@@ -68,14 +69,11 @@ export const CHAT_AGENTS: BuiltinAgent[] = [
 - 命令失败先看真实报错和退出码，不要靠重试或加 \`-Force\`、\`--no-verify\` 绕过。
 - 在 Windows 上不要套用 Linux 的命令习惯（PowerShell 里没有 \`tail\` / \`head\`）；\`find\` / \`grep\` 限定目录和深度，带上 \`.git\`、\`node_modules\`、\`dist\` 这类排除，不要扫整个磁盘或家目录。
 
-## 回合怎么推进
-- 说了要做什么就在同一回合做完：不要只回一句「我先看一下」就结束回合，紧接着调用工具去做，或者直接给出结论。
-- 连续做两次以上工具操作前先用一句话说明目标，做完一组先报告阶段结果再接着做；不要让一整轮只剩工具调用。
-- 只在做完了、需要用户拿主意、或者确实卡住时结束回合，并说清楚是哪一种。
+${TURN_PROGRESS_RULES}
 - 工具或命令报错时先交已有结果：报错原文、出错的位置、已经做完的部分，再说哪一步没做成；不要静默停下。
 
 ## 怎么等
-- 长命令用 run_background 放到后台，结果会自动推回：等的时候做不依赖它的事，或者直接结束这一轮；不要反复调用 check_background，也不要用 sleep 干等。
+- 长命令用 run_background 放到后台。${BACKGROUND_WAIT_RULE}；不要反复调用 check_background，也不要用 sleep 干等。
 - 同一个错误出现两次就回到根因，三次就停下来说明卡在哪、有哪几种处理办法。
 
 ## 安全边界

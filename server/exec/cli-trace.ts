@@ -29,6 +29,14 @@ export interface CliTrace {
   /** CLI 报这一轮结束的时间和结论 */
   resultAt?: number
   resultOk?: boolean
+  /**
+   * 这一轮怎么停的（ADR 0041）：模型最后一次回应的 stop_reason、最后一段输出是什么、这一轮调了几次工具。
+   * 用来分清「说了要做却没做」是模型把说明单独发成一条（end_turn + 最后是正文 + 没调工具）、网关截断（max_tokens），
+   * 还是真的做完了
+   */
+  lastTurn?: { stopReason?: string; endedOn?: string; tools: number }
+  /** 这一轮到现在调过的工具（按 id 去重：同一个工具会报好几次进度；报结束时清空） */
+  turnTools?: Set<string>
 }
 
 /** 不算「模型在输出」的事件：用量、会话、请求开始这些是 CLI 自己报的元数据 */
@@ -104,7 +112,15 @@ export function traceCli(taskId: string, step: string | undefined, ev: CliEvent,
     case 'result':
       tr.resultAt = now
       tr.resultOk = ev.ok
-      log('CLI 报这一轮结束', { ok: ev.ok, error: ev.ok ? undefined : ev.error })
+      tr.lastTurn = { stopReason: ev.stopReason, endedOn: tr.lastEvent, tools: tr.turnTools?.size ?? 0 }
+      tr.turnTools = undefined
+      log('CLI 报这一轮结束', {
+        ok: ev.ok,
+        error: ev.ok ? undefined : ev.error,
+        stopReason: ev.stopReason,
+        endedOn: tr.lastTurn.endedOn,
+        tools: tr.lastTurn.tools,
+      })
       return
     case 'error':
       log('CLI 报错', { error: ev.message })
@@ -118,5 +134,6 @@ export function traceCli(taskId: string, step: string | undefined, ev: CliEvent,
   }
   tr.lastOutputAt = now
   tr.lastEvent = ev.type
+  if (ev.type === 'tool') (tr.turnTools ??= new Set()).add(ev.id ?? `#${tr.turnTools?.size ?? 0}`)
   tr.retry = undefined
 }

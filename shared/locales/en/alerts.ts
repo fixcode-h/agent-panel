@@ -90,6 +90,10 @@ export const EN_ALERTS: Record<string, string> = {
   正在重试: 'Retrying',
   'Agent 向模型发的请求失败了，它正在自动重试。':
     "The agent's request to the model failed and it is retrying automatically.",
+  '上游没有返回任何状态码就断开了：多半是网关或中转服务的连接中断、请求超时，流式输出中途断开也是这样。':
+    'The upstream closed the connection without returning any status code: most likely the gateway or relay dropped the connection or the request timed out (a stream cut off midway looks the same).',
+  '先等它自己重试完；频繁出现就检查代理和中转服务的稳定性，或者换一个接口、模型。':
+    'Let it finish retrying first. If it happens often, check the stability of the proxy and relay, or switch to another API or model.',
   '一般会自己恢复，不用处理；反复重试失败时看原始信息里的原因。':
     'This usually recovers by itself. If retries keep failing, check the raw details for the cause.',
   '上游网关或中转服务把连接断开了（502/503/504、Connection closed）：可能是中转服务到模型源不稳定、这次请求太久，也可能是请求接近上游上限被直接断开；本地代理或网络中断也会有同样的报错。':

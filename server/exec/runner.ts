@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { turnInfo, type TurnInfo } from './turn-info.ts'
 import { detectVcs } from '../projects-analyze.ts'
 import { projectDocRoot } from '../doc-root.ts'
@@ -55,7 +54,7 @@ import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { attachmentAddDirs, placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
-import { CACHE_DIR, HANDOFF_DIR, writeFileOnce } from '../store.ts'
+import { CACHE_DIR, HANDOFF_DIR, handoffDirOf, writeFileOnce } from '../store.ts'
 import { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 
@@ -1178,13 +1177,13 @@ async function runAgent(
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
     systemPromptModPath,
     // 图片附件拷在对话目录的 attachments/ 下（对话目录在下面一并放行）；其余按原来的绝对路径交给 Agent，
-    // 工作目录之外的那些要放行。节点交接的完整结果也在数据目录里
+    // 工作目录之外的那些要放行。交接的完整结果在数据目录里，启动前就建好目录并放行（见 handoffDirOf）
     addDirs: [
       ...attachmentAddDirs(
         task.messages.flatMap((m) => m.attachments ?? []),
         { cwd, uploadsRoot: UPLOADS_DIR },
       ),
-      ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
+      handoffDirOf(task.id),
       // 对话目录在工作目录外：放行，Agent 才能读到拷进来的图片、把截图和临时文件写进去
       taskDir.dir,
     ],

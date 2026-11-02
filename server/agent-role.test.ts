@@ -142,9 +142,10 @@ test('节点：固定用默认 CLI 的档位', () => {
   assert.equal(nodeAgentRun(agent('b', { model: 'gpt-5' }), '').model, '@medium')
 })
 
-test('默认对话：连续工具操作时注入可见进度要求', () => {
+test('默认对话：注入「回合怎么推进」，不再要求单独报告阶段结果', () => {
   const prompt = defaultChatPrompt('用户要求', false, true, false)
-  assert.match(prompt, /用户要求[\s\S]*连续做两次以上工具操作前先用一句话说明当前目标/)
+  assert.match(prompt, /用户要求[\s\S]*要说明就和工具调用写在同一条回复里/)
+  assert.doesNotMatch(prompt, /报告阶段结果|一整轮只剩工具调用/)
   // 有角色（含 Chat 模式空 id 按内置「助手」跑）时规则由角色给，不再补
   assert.equal(defaultChatPrompt('用户要求', true, true, false), '用户要求')
   assert.equal(defaultChatPrompt('用户要求', false, true, true), '用户要求')

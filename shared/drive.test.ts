@@ -1,0 +1,25 @@
+/**
+ * 自驱的进度指纹（shared/drive.ts）：推进次数按它计，指纹变了就从头数。
+ * 运行：npx tsx --test shared/drive.test.ts
+ */
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { planProgressKey, shortKey } from './drive.ts'
+import { TaskPlan } from './schema.ts'
+
+const plan = (steps: { id: string; title: string; status: string; note?: string }[]) =>
+  TaskPlan.parse({ id: 'p1', createdAt: '2026-11-02T00:00:00.000Z', steps })
+
+test('进度指纹：步骤状态变了、加了步骤就算有进展；只改备注、标题不算（免得改一个字刷新推进次数）', () => {
+  const a = plan([
+    { id: '1', title: '改代码', status: 'done' },
+    { id: '2', title: '跑测试', status: 'pending' },
+  ])
+  const key = planProgressKey(a)
+  // 已完成步数没变、但某步从待做变成进行中：原来的「计划 id:已完成几步」认不出，推满 3 次后就再也不推
+  assert.notEqual(planProgressKey(plan([a.steps[0], { ...a.steps[1], status: 'running' }])), key)
+  assert.notEqual(planProgressKey(plan([...a.steps, { id: '3', title: '提交', status: 'pending' }])), key)
+  assert.equal(planProgressKey(plan([a.steps[0], { ...a.steps[1], title: '跑单测', note: '先跑受影响的' }])), key)
+  assert.match(shortKey(key), /^[0-9a-f]{8}$/)
+  assert.equal(shortKey(key), shortKey(planProgressKey(a)))
+})

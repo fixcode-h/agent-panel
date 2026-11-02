@@ -84,7 +84,7 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
-import { clipToFile, layeredBatch } from './helper-batch.ts'
+import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
 import { SUMMARY_HEAD, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
@@ -960,9 +960,9 @@ function sendRunMessage(host: EngineHost, from: string, to: string, text: string
   return true
 }
 
-/** 节点 / 步骤的输出：太长时另存文件，交给下游的结果里写明去哪读 */
-async function storeOutput(host: EngineHost, step: TaskStep, text: string) {
-  return clipToFile(host.saveHandoff, step, text, MAX_OUTPUT, '开始之前请先读完。')
+/** 节点 / 步骤的输出：太长时另存文件，交给下游的结果里写明去哪读；评审、验收（whole）要逐条处置，上限放宽 */
+async function storeOutput(host: EngineHost, step: TaskStep, text: string, whole = false) {
+  return clipToFile(host.saveHandoff, step, text, whole ? WHOLE_OUTPUT : MAX_OUTPUT, '开始之前请先读完。')
 }
 
 /** 一次流程调用：在哪个工作流的哪个流程，挂在哪个节点的哪个入口下 */
@@ -1850,7 +1850,7 @@ async function runNodeSingle(
           title: step.title,
           agent: agentName,
           instructions: node.instructions,
-          result: clip(text, 8000),
+          result: await clipToFile(host.saveHandoff, step, text, 8000, '评估前先读完。'),
           round: n,
           reworksLeft: node.hooks.maxRounds - reworks,
           branches: branchy
@@ -1910,7 +1910,7 @@ async function runNodeSingle(
           delegations,
           [
             d.input || `处理和节点「${step.title}」相关的事`,
-            `## 节点「${step.title}」的结果\n${clip(text, 6000)}`,
+            `## 节点「${step.title}」的结果\n${await clipToFile(host.saveHandoff, step, text, 6000, '先读完。')}`,
           ].join('\n\n'),
         )
         if (!r.ok)
@@ -1924,7 +1924,7 @@ async function runNodeSingle(
                   error: r.error,
                 }),
           })
-        extra = `### 委派给工作流「${target.name}」的结果\n${clip(r.output, 6000)}`
+        extra = `### 委派给工作流「${target.name}」的结果\n${await clipToFile(host.saveHandoff, step, r.output, 6000, '先读完。')}`
         continue
       }
       const ok = d.action === 'continue' ? d : undefined
@@ -2277,7 +2277,7 @@ async function runNodeSteps(
           title: step.title,
           agent: agentName,
           instructions: units[last].instructions,
-          result: clip(text, 8000),
+          result: await clipToFile(host.saveHandoff, step, text, 8000, '评估前先读完。'),
           round: n,
           reworksLeft: units[last].maxRounds - reworks,
           branches: branchy
@@ -2355,7 +2355,7 @@ async function runNodeSteps(
             round: delegations,
             input: [
               d.input || `处理和节点「${step.title}」相关的事`,
-              `## 节点「${step.title}」的结果\n${clip(text, 6000)}`,
+              `## 节点「${step.title}」的结果\n${await clipToFile(host.saveHandoff, step, text, 6000, '先读完。')}`,
             ].join('\n\n'),
             owner: step.title,
           },
@@ -2374,7 +2374,7 @@ async function runNodeSteps(
             },
             recordOf(last),
           )
-        extra = `### 委派给工作流「${target.name}」的结果\n${clip(r.output, 6000)}`
+        extra = `### 委派给工作流「${target.name}」的结果\n${await clipToFile(host.saveHandoff, step, r.output, 6000, '先读完。')}`
         continue
       }
       const ok = d.action === 'continue' ? d : undefined
@@ -3826,7 +3826,7 @@ async function runHelper(
       const late = await settleHelpers(host, step)
       // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的意见整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
       // 完整内容和节点一样存成文件，交回的结果里写明去哪读
-      step.output = await storeOutput(host, step, late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text)
+      step.output = await storeOutput(host, step, late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text, reviewing)
       step.status = 'done'
     } else {
       step.status = r.stopped || r.halted ? 'pending' : 'failed'

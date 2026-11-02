@@ -153,6 +153,14 @@ function retryInfo(detail: string): AlertInfo {
       fix: t('把设置里的「自动压缩上下文」调到 70%，或者新开一个对话只带必要的内容；一直重试多半恢复不了。'),
     }
   if (cause === 'network') return { ...INFO.network(), title: t('正在重试') }
+  // CLI 只报了 unknown、没有状态码（Claude Code 的 api_retry 里 error_status 为空）：上游没给任何回应就断了，
+  // 原来落到通用那句「一般会自己恢复」，用户看不出是什么问题（2026-11-02 诊断文件里连着三次）
+  if (/[：:]\s*(unknown)?\s*$/i.test(detail.trim()))
+    return {
+      title: t('正在重试'),
+      what: t('上游没有返回任何状态码就断开了：多半是网关或中转服务的连接中断、请求超时，流式输出中途断开也是这样。'),
+      fix: t('先等它自己重试完；频繁出现就检查代理和中转服务的稳定性，或者换一个接口、模型。'),
+    }
   return {
     title: t('正在重试'),
     what: t('Agent 向模型发的请求失败了，它正在自动重试。'),

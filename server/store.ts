@@ -30,6 +30,16 @@ export const CHATS_DIR = path.join(DATA_DIR, 'chats')
 /** 节点之间交接的完整结果（太长时提示里只放开头），按任务分目录 */
 export const HANDOFF_DIR = path.join(DATA_DIR, 'tasks', 'handoff')
 /**
+ * 这个对话的交接目录，没有就建好。CLI 启动时就要放行它（--add-dir）：原来目录存在才放行，
+ * 保活的 CLI 启动时子任务还没交过结果、目录还不存在，之后评审结果存进来它读不到，
+ * 只能让评审子任务「原样重述一遍」（用户 2026-11-02 报：评审摘要被截断，完整结论没拿到）
+ */
+export function handoffDirOf(taskId: string) {
+  const dir = path.join(HANDOFF_DIR, taskId)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+/**
  * 对话目录：Agent 自己产出的截图、临时测试脚本和数据、其他临时文件按对话分目录放这里（用户 2026-10-31 定的），
  * 不在项目里、系统临时目录里随手建 temp 文件夹。删对话时一起删
  */

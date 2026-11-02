@@ -1,4 +1,5 @@
 import { coreDefinition } from '../../shared/builtin/core.ts'
+import { planProgressKey } from '../../shared/drive.ts'
 import { randomUUID } from 'node:crypto'
 import { Task, type Project, type PeerFrom, type TaskMessage } from '../../shared/schema.ts'
 import { childReport, type ConvState, taskDeleted, type ChildHold } from '../../shared/task.ts'
@@ -16,7 +17,6 @@ import {
   activePlan,
   markChildWrapUp,
   markWrapUp,
-  planProgress,
   openWork,
   refreshChildWait,
   syncKids,
@@ -40,14 +40,14 @@ export function createMerge(sc: TasksScope) {
   /** 这一轮结束时已经催过「请父对话收尾」的子对话：再结束还没请就照常上报父对话，不反复催 */
   const mergeNudged = new Set<string>()
   /**
-   * 计划没做完就收尾、被催过接着做的子对话：记下催的时候计划做到哪（计划 id + 已完成几步）。
+   * 计划没做完就收尾、被催过接着做的子对话：记下催的时候计划的进度指纹（见 shared/drive.ts 的 planProgressKey）。
    * 同一个进度只催一次：催过还停在原地就照常上报父对话「未完成」，不在面板里来回推
    */
   const planNudged = new Map<string, string>()
   /** 面板已经按这个进度推过它接着做（nudgePlan），它还停在原地 */
   const stuckAfterNudge = (tk: Task) => {
     const plan = activePlan(tk)
-    return !!plan && planNudged.get(tk.id) === `${plan.id}:${planProgress(tk, plan).done}`
+    return !!plan && planNudged.get(tk.id) === planProgressKey(plan)
   }
   /** 一轮结束后等多久再推「接着做计划」：等 CLI 停到等下一句上；测试用环境变量缩短 */
   const PLAN_NUDGE_MS = Number(process.env.AGENT_PANEL_PLAN_NUDGE_MS) || 2000

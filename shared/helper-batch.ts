@@ -21,6 +21,12 @@ export async function clipToFile(save: SaveHandoff, step: TaskStep, text: string
   return `${clip(text, limit)}\n\n（完整结果有 ${text.length} 字，这里只附了开头。完整内容在文件 ${file}，${hint}）`
 }
 
+/**
+ * 评审、测试验收这类要逐条处置的结果（whole）交回的上限：超出才存文件只交开头。
+ * 原来和普通结果一样 4000 字，评审意见后半截要另读文件，父对话常常读不到就让评审「原样重述」（ADR 0041 第 14 节）
+ */
+export const WHOLE_OUTPUT = 20000
+
 /** 一批子任务交回结果的总字数，和每个至少留多少 */
 const HELPER_BATCH_CHARS = 12000
 const HELPER_SHARE_MIN = 1500

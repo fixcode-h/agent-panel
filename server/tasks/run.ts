@@ -55,6 +55,7 @@ import { placedFiles } from '../attachments.ts'
 import { currentBranch, isBigProject } from '../exec/worktree.ts'
 import { currentTestSteps, isUeBuildCommand } from '../../shared/test-steps.ts'
 import { log } from '../log.ts'
+import { inboxWithFile } from './inbox-file.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { markChildWrapUp } from '../../shared/plan.ts'
@@ -425,7 +426,7 @@ export function createRun(sc: TasksScope) {
           : () => {
               const got = entry.task.inbox
               entry.task.inbox = []
-              return got
+              return got.map((m) => inboxWithFile(task.id, m))
             },
         messageParent: task.parentTaskId
           ? (text, question, options, kind) => sc.messageParent(entry.task, text, question, options, kind)
@@ -840,7 +841,10 @@ export function createRun(sc: TasksScope) {
     }
     sc.notePlanInput(next, !!m.panel || !!m.child)
     // 用户发了新消息：上一轮已经全部做完的 CLI 待办收起，不再一直挂着「待办已完成」
-    if (!m.panel && !m.child && !m.peer) next.todos = settledTodos(next.todos)
+    if (!m.panel && !m.child && !m.peer) {
+      next.todos = settledTodos(next.todos)
+      sc.resetNudge(next.id)
+    }
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
@@ -988,7 +992,10 @@ export function createRun(sc: TasksScope) {
     })
     if (wait === 'ok') {
       // CLI 停在等下一句（上一轮已结束）：用户的新消息同样收起全部做完的待办
-      if (msg.role === 'user' && !msg.panel && !msg.child && !msg.peer) task.todos = settledTodos(task.todos)
+      if (msg.role === 'user' && !msg.panel && !msg.child && !msg.peer) {
+        task.todos = settledTodos(task.todos)
+        sc.resetNudge(task.id)
+      }
       task.updatedAt = new Date().toISOString()
       markDelivery(task, msg, 'wait')
       await sc.store.update(task.id, task)

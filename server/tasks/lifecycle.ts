@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import type { Task, TaskStep } from '../../shared/schema.ts'
-import { activePlan } from '../../shared/plan.ts'
+import { activePlan, openWork, planProgress } from '../../shared/plan.ts'
+import { planProgressKey, shortKey } from '../../shared/drive.ts'
+import { nudgeMax } from '../../shared/conv-mode.ts'
 import { subtreeTaskIds } from '../../shared/run-usage.ts'
 import { taskState } from '../../shared/task.ts'
 import {
@@ -47,6 +49,19 @@ async function readLog(taskId: string, full: boolean) {
   const all = cut.split('\n').filter(Boolean)
   const parsed = all.map(parseLogLine).filter((x): x is LogLine => !!x)
   return { lines: full ? all : all.slice(-VIEW_LOG_LINES), parsed }
+}
+
+/** 诊断里的计划事实：推进按指纹计数，这里写同一份短指纹，对得上就知道是不是这一个进度推满了 */
+function planFacts(tk: Task, plan: NonNullable<ReturnType<typeof activePlan>>) {
+  const p = planProgress(tk, plan)
+  return {
+    title: plan.title,
+    done: p.done,
+    total: p.total,
+    waiting: p.waiting,
+    open: openWork(tk).length,
+    key: shortKey(planProgressKey(plan)),
+  }
 }
 
 /** 这一步（或对话自己这一轮，step 为空）正在跑的工具 */
@@ -113,6 +128,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
         return { id: w.ref, title: kid?.title ?? w.label ?? w.ref, state: kid ? taskState(kid) : ('done' as const) }
       })
     const helpers = tk.steps.filter((s) => s.slot === 'sub' && (s.status === 'running' || s.status === 'pending'))
+    const nudged = sc.nudgeState(id)
     const facts: LifeFacts = {
       kind: 'conversation',
       status: tk.status,
@@ -131,6 +147,8 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       waitsOn,
       trace: cliTrace(id),
       exit: lastExit(parsed),
+      ...(plan && { plan: planFacts(tk, plan) }),
+      ...(nudged && { nudge: { key: shortKey(nudged.key), n: nudged.n, max: nudgeMax(tk) } }),
     }
     const agent = tk.usage.agents[tk.agentId]
     nodes.push({
