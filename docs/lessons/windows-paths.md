@@ -20,4 +20,4 @@ paths: server/exec/worktree.ts, server/exec/git.ts, server/turn-changes.test.ts,
 
 - 规则：合并、切分支、checkout 之后再读工作区文件做断言时，先 `.replace(/\r\n/g, '\n')` 再比（`server/tasks/merge.test.ts` 的 `readText`）；测试自己 `writeFileSync` 写、没经过 git 检出的文件不用。
 - 起因：860d4ae7 补的合并用例在 Windows CI 上挂了（`'b\r\n' !== 'b\n'`），Git 默认 `core.autocrlf=true`，检出的文件是 CRLF。
-- 防线：Windows 单测（`unit-windows`）；Linux 上用 `HOME` 指向写了 `core.autocrlf = true` 的 `.gitconfig` 跑能复现。
+- 防线：CI 不再跑 Windows 单测（2026-11-02 用户去掉了 `unit-windows`）；Linux 上用 `HOME` 指向写了 `core.autocrlf = true` 的 `.gitconfig` 跑能复现。
