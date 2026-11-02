@@ -2,9 +2,9 @@
 
 - 状态：已修复（e2e `03-chat`「动了手却没列计划就收尾」、`09-subagent-runtime`「子任务没交最后的总结就结束」通过）
 - 症状：对话（Claude Code + `deepseek-v4.1-flash`）查了一半，回复「情况基本清楚了……我再确认这些连接的状态和目标 IP……」或「现在删除远端这 12 个已合并分支。」后这一轮就结束了，没有调用任何工具，停在「等下一句」，用户说「继续啊」才接着做；子任务说完「继续读操作原语与快照/选择器。」就交回，结果只有这一句
-- 入口：`server/tasks/run.ts` 的 `onTurnEnd` → `server/tasks/children.ts` 的 `nudgePlan` / `nudgeNoPlan`；子任务是 `shared/engine.ts` 的 `runHelper` → `shared/helper-summary.ts` 的 `runWithSummary`
+- 入口：`server/tasks/run.ts` 的 `onTurnEnd` → `server/tasks/drive.ts` 的 `nudgePlan` / `nudgeNoPlan`（2026-11-02 从 `children.ts` 拆出）；子任务是 `shared/engine.ts` 的 `runHelper` → `shared/helper-summary.ts` 的 `runWithSummary`
 - 根因类型：模型提前结束回合（CLI 正常报这一轮结束，stop_reason 是 end_turn），面板的兜底只认「计划没做完」，没列计划的对话和子任务没人推
-- 模块：`server`（`server/tasks/children.ts`、`shared/helper-summary.ts`）
+- 模块：`server`（`server/tasks/drive.ts`、`shared/helper-summary.ts`）
 - 关键词：Chat 模式、只说不做、提前结束回合、继续、没有计划、催办、deepseek、Codex、接着读、删除远端分支、子任务、总结
 
 ## 根因
@@ -19,8 +19,13 @@
 - 计划提示词照 Claude Code 待办的口径：三步以上的事才列计划，过程中冒出的新步骤加进计划。
 - 一轮结束的 stop_reason 透传进 rpc 会话的 result 事件，以后能直接看出是模型收的尾。
 
+## 2026-11-02 再改（ADR 0041）
+
+- 没计划时不再推它「先列计划」，改成收尾自检（不需要计划的事这一轮做完就算完成）；一个工具都没调就结束的首轮也自检一次。
+- 根因之一是提示词：「先报告阶段结果再继续」让模型单独发一条说明就结束这一轮，回合规则改成允许直接调用工具、说明和工具调用写在同一条回复里（`shared/turn-rules.ts`）。
+
 ## 防线
 
-- e2e `03-chat`「动了手却没列计划就收尾：面板推一次让它列计划，不来回推」。
+- e2e `03-chat`「只回一句就收尾：补一次收尾自检」「动了手却没列计划就收尾：收尾自检一次，不逼它列计划、不来回推」。
 - e2e `09-subagent-runtime`「子任务没交最后的总结就结束：面板在同一个会话里推一次，补上总结再交回」。
 - `shared/helper-summary.test.ts`：只认总结标题行，「已完成」这类字眼不算。
