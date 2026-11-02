@@ -34,7 +34,7 @@ import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@sh
 import { applyContentWidth, switchLang } from '@/lib/data'
 import { LANGS, t } from '@shared/i18n'
 import { WEBHOOK_MAX_ATTEMPTS } from '@shared/schedule'
-import { defaultCli, orderClis } from '@shared/settings'
+import { defaultCli, mergeCliEnv, orderClis } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cliColor } from '@/lib/cli-style'
@@ -390,7 +390,8 @@ function SettingsBody({
           tiers: { high: tier(d.tiers.high), medium: tier(d.tiers.medium), low: tier(d.tiers.low) },
           permission: d.permission,
           extraArgs: splitArgs(d.args),
-          env: textToEnv(d.envText),
+          // 定义自带的环境变量改过的值存成同名覆盖，和自由添加的合成一份（同名以覆盖为准）
+          env: mergeCliEnv(textToEnv(d.envText), d.envOverrides),
           showLimits: d.showLimits,
           autoCompact: d.autoCompact,
           maxTurns: d.maxTurns,
