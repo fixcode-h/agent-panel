@@ -25,7 +25,6 @@ import {
   endRun,
   trackWait,
   newTask,
-  announcedOnly,
   taskDeleted,
   withAttachments,
   withTaskModel,
@@ -378,21 +377,21 @@ export function createRun(sc: TasksScope) {
         changed,
         newId: randomUUID,
         // 子对话这一轮真结束的地方收口父对话计划里等它的步骤（进程保活等下一句时 run 不返回，等不到收尾）
-        // 顶层对话：做到一半（这一轮调过工具）就收尾、计划还没做完时，面板推它接着做（见 nudgePlan）。
-        // 只回答了一句话、没动手的那一轮不推：可能是用户问了个问题，或者让它先停下。
-        // Agent 模式（项目里的对话）例外：没动手但最后一句是「我先…」「接下来…」这种要动手的话，也推（ADR 0037）
+        // 顶层对话：计划没做完、也没在等结果就收尾时，面板推它接着做；动了手却没列计划，推它先列计划（见 nudgePlan）。
+        // 判断做完没有只看计划，不看回复里的字眼（用户 2026-11-02 定）。Chat 页没动手的那一轮不推
         // 每一轮结束都按整棵对话树核一次用量上限（见 tasks/budget.ts）：到了上限就停下，也不再推它接着做
         onTurnEnd: task.parentTaskId
-          ? () => {
-              sc.settleChildTurn(entry.task)
+          ? (turn) => {
+              sc.settleChildTurn(entry.task, turn)
               void sc.checkBudget(entry.task)
             }
           : (turn) =>
               void sc.checkBudget(entry.task).then((over) => {
                 if (over || task.mode !== 'chat') return
-                if (turn.tools <= 0 && (isChatMode(entry.task) || !announcedOnly(entry.task))) return
+                // Chat 页只回答了一句、没动手的那一轮不推；项目里的对话按计划推（计划没做完、或动了手却没列计划，见 nudgePlan）
+                if (turn.tools <= 0 && isChatMode(entry.task)) return
                 return sc
-                  .nudgePlan(entry.task)
+                  .nudgePlan(entry.task, turn)
                   .catch((e) =>
                     log.warn('task', '推对话接着做计划失败', { task: task.id, error: (e as Error).message }),
                   )

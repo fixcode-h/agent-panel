@@ -1226,6 +1226,7 @@ export const AlertKind = z.enum([
   'delivery', // 面板没能把消息交给对话（后台结果、子对话上报）
   'worktree', // 独立分支建不起来、删不掉
   'budget', // 用户给这个计划 / 任务设的 token 或时长上限到了
+  'unfinished', // 计划没做完就停下，面板推满了还这样
   'panel', // 面板自己出错
 ])
 export type AlertKind = z.infer<typeof AlertKind>

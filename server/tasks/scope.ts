@@ -1,3 +1,4 @@
+import type { TurnInfo } from '../exec/turn-info.ts'
 import type { Hono, Context } from 'hono'
 import type {
   Task,
@@ -377,7 +378,7 @@ export interface TasksScope {
     wake?: boolean,
   ) => Promise<void>
   notePlanInput: (tk: Task, skip?: boolean, now?: string) => boolean
-  nudgePlan: (conv: Task) => Promise<boolean>
+  nudgePlan: (conv: Task, turn?: TurnInfo) => Promise<boolean>
   panelAlert: (taskId: string, kind: AlertKind, text: string, error: unknown, level?: 'warn' | 'error') => Promise<void>
   paramsOf: (p: Project, workflowId: string) => Record<string, string | number | boolean | string[]>
   parentRequestBuild: (
@@ -587,8 +588,8 @@ export interface TasksScope {
     msgId?: string,
     declined?: boolean,
   ) => boolean
-  settleChildTurn: (child: Task) => void
-  settleChildWorktree: (childId: string) => Promise<void>
+  settleChildTurn: (child: Task, turn?: TurnInfo) => void
+  settleChildWorktree: (childId: string, turn?: TurnInfo) => Promise<void>
   shuttingDown: boolean
   /** 面板替父对话新建子对话（卡住的子对话找人接手时用），和父对话的 create_conversation 走同一条创建路径 */
   spawnChildOf: (

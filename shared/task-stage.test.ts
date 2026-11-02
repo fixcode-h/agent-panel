@@ -6,7 +6,6 @@ import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { TaskIcon } from './task.ts'
 import { isChatMode, nextNudge, nudgeMax } from './conv-mode.ts'
 import {
-  announcedOnly,
   convActive,
   convState,
   taskActive,
@@ -777,33 +776,6 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起 / �
   assert.match(note, /「e2e」（npm run test:e2e）[\s\S]*不要等[\s\S]*run_background/)
   // 没有可列的：只有一句续接说明
   assert.equal(resumeNote({ stopReason: 'user', steps: [], runs: [] }).split('\n').length, 1)
-})
-
-test('说完打算就收尾：最后一句是要动手的话、之后没调工具才算，问用户、给结论的不算', () => {
-  const m = (role: string, text: string, tools: unknown[] = []) => ({ role, text, tools, step: '' })
-  const of = (...messages: unknown[]) => announcedOnly({ messages } as never)
-  // 用户报的那一轮：查到一半说「我再确认…」就停了
-  assert.equal(
-    of(m('user', '能优化么'), m('agent', '', [{}]), m('agent', '情况基本清楚了。我再确认这些连接的状态和目标 IP。')),
-    '我再确认这些连接的状态和目标 IP。',
-  )
-  assert.match(of(m('user', 'x'), m('agent', '配置拿到了。\n现在我要定位是哪个程序在发起连接。')), /^现在我要定位/)
-  assert.equal(of(m('user', 'x'), m('agent', '你更想先解决哪个：日志刷屏，还是关掉探测？')), '', '在问用户')
-  assert.equal(of(m('user', 'x'), m('agent', '改好了，测试都通过。')), '', '给了结论')
-  assert.equal(of(m('user', 'x'), m('agent', '我再看看。', [{}])), '', '说完接着调了工具')
-  assert.equal(of(m('agent', '我再看看。'), m('user', '继续')), '', '最后是用户消息')
-  // 省掉「我」的打算（实测报告问题 8：Codex + 第三方模型说完「接着读 design4.md」就结束这一轮）
-  assert.equal(
-    of(m('user', 'x'), m('agent', '', [{}]), m('agent', 'design3.md 读完。接着读 design4.md')),
-    '接着读 design4.md',
-  )
-  assert.match(of(m('user', 'x'), m('agent', '现在检查配置文件。')), /^现在检查/)
-  assert.match(of(m('user', 'x'), m('agent', '先跑类型检查。')), /^先跑/)
-  assert.match(of(m('user', 'x'), m('agent', 'Now reading design4.md.')), /^Now reading/)
-  assert.equal(of(m('user', 'x'), m('agent', '现在看来没有问题。')), '', '「现在看来」是结论')
-  assert.equal(of(m('user', 'x'), m('agent', '现在改好了。')), '', '带「了」的是结论')
-  assert.equal(of(m('user', 'x'), m('agent', '然后运行成功。')), '', '说的是结果')
-  assert.equal(of(m('user', 'x'), m('agent', '先这样。')), '', '没有动手的动词')
 })
 
 test('Chat 页和 Agent 模式分开：Chat 页、子对话只推一次，项目里的顶层对话同一进度最多推 3 次，进度变了重新数', () => {

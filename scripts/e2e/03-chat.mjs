@@ -164,6 +164,32 @@ await runShard('对话与续接', async (api) => {
   assert.equal(empAgent.length, 1, '只有模型自己那一轮，面板没有再推')
   assert.match(empAgent[0].text, /我先把工作区更新到最新/)
 
+  // 动了手（跑了两条命令）却没列计划就收尾：面板不看回复字眼，只按计划判断，推它一次把计划列出来接着做；
+  // 推过的那一轮只跑了一条命令，不再推（用户 2026-11-02 报：删完本地分支说「现在删除远端」就停了）
+  step('动了手却没列计划就收尾：面板推一次让它列计划，不来回推')
+  const np = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'claude',
+    prompt: 'NOPLAN_ACTS 清理已合并的分支',
+  })
+  const npDone = await waitFor(
+    async () => {
+      const x = await call('GET', `/tasks/${np.id}`)
+      return x.status === 'done' && x.messages.some((m) => m.role === 'agent' && /NOPLAN_NUDGE_GOT/.test(m.text))
+        ? x
+        : null
+    },
+    { timeout: 20000, label: '推它列计划的那一轮做完' },
+  )
+  await sleep(3000)
+  const npNow = await call('GET', `/tasks/${np.id}`)
+  assert.equal(npNow.messages.filter((m) => m.panel === 'build').length, 1, '只推了一次')
+  assert.match(npNow.messages.find((m) => m.panel === 'build').text, /没有计划就结束了[\s\S]*set_plan/)
+  assert.equal(npDone.status, 'done')
+  await call('DELETE', `/tasks/${np.id}`)
+
   // 回放真实 Claude Code 录下的输出（scripts/fake-cli/replay.mjs）：面板按原来的事件顺序解析出正文、工具调用和用量；
   // 录像只有一轮，面板再起一轮时假 CLI 报错，不会悄悄当成成功
   step('回放录下的真实 CLI 输出：正文、工具调用、用量照常解析；录像用完再跑报错')

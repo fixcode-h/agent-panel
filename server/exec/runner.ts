@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { turnInfo, type TurnInfo } from './turn-info.ts'
 import { detectVcs } from '../projects-analyze.ts'
 import { projectDocRoot } from '../doc-root.ts'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
@@ -173,7 +174,7 @@ export interface RealContext {
    * 子对话靠它收口父对话计划里等自己的步骤：进程会被保活留着等下一句，run 不会返回，收尾处的回报等不到。
    * tools：这一轮调用过几次工具（顶层对话据此分辨「做到一半停了」和「只是回答了一句话」）
    */
-  onTurnEnd?: (turn: { tools: number }) => void
+  onTurnEnd?: (turn: TurnInfo) => void
   changed: (flush?: boolean) => void
   newId: () => string
   /** 任务所在目录是否是 git 仓库（决定改动从 git 读还是从工具调用里统计） */
@@ -1381,7 +1382,7 @@ async function runAgent(
     turnEnded = true
     markTurnDone(task)
     closeChanges()
-    ctx.onTurnEnd?.({ tools: turnTools() })
+    ctx.onTurnEnd?.(turnInfo(turnTools(), turnMsgs()))
   }
   /**
    * 没有响应的检测（见 NO_RESPONSE_MS）：交出一句话、一个工具结果，或 CLI 开始一次模型请求时开始计时，
