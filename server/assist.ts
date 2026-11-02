@@ -26,6 +26,7 @@ import { getSettings } from './settings.ts'
 import { resolvePath } from './fs.ts'
 import { t } from '../shared/i18n.ts'
 import { readGlobalLessons } from './lessons.ts'
+import { loadProjectLessons } from './project-lessons.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
@@ -307,7 +308,11 @@ export function assistApi(deps: {
       ...(input.kind === 'project' && input.subject.path?.trim() ? { projectPath: input.subject.path.trim() } : {}),
       ...(input.kind === 'project' ? { defaultWorkflowIds: await projectWorkflowIds(deps.categories, workflows) } : {}),
       ...(project && input.kind === 'lessons'
-        ? { projectName: project.name, projectLessons: project.lessons, globalLessons: await readGlobalLessons() }
+        ? {
+            projectName: project.name,
+            projectLessons: (await loadProjectLessons(project, agents)).lessons,
+            globalLessons: await readGlobalLessons(),
+          }
         : {}),
       ...(wf ? { paramSpec: derivedParams(wf, agents), target: wf } : {}),
       ...(input.subject.agentId ? { paramAgentId: input.subject.agentId } : {}),

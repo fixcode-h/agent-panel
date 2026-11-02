@@ -316,8 +316,8 @@ function flushHeld(task: Task) {
   if (!hasHeld(task.id)) return
   const q = takeHeld(task.id)!
   markHeld(task.messages, [q], 'wait')
-  const { msg, recorded } = heldMessage(task.messages, q)
-  const got = deliverWait(task, msg, q.attachments, recorded)
+  const { msg, recorded, placed } = heldMessage(task.messages, q, task.placedAttachments)
+  const got = deliverWait(task, msg, placed, recorded)
   // 交不出去（进程已经换了一套 CLI）：原样放回去，由整次执行结束后接着处理
   if (got !== 'ok') returnHeld(task.id, q)
 }
@@ -1177,15 +1177,15 @@ async function runAgent(
     op: (op?.kind === 'compact' ? def.compact : def.review) === 'native' ? op : undefined,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
     systemPromptModPath,
-    // 附件里只有图片拷进了任务目录；其余按原来的绝对路径交给 Agent，工作目录之外的那些要放行。
-    // 节点交接的完整结果也在数据目录里
+    // 图片附件拷在对话目录的 attachments/ 下（对话目录在下面一并放行）；其余按原来的绝对路径交给 Agent，
+    // 工作目录之外的那些要放行。节点交接的完整结果也在数据目录里
     addDirs: [
       ...attachmentAddDirs(
         task.messages.flatMap((m) => m.attachments ?? []),
         { cwd, uploadsRoot: UPLOADS_DIR },
       ),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
-      // 对话目录在工作目录外：放行，Agent 才能把截图、临时文件写进去
+      // 对话目录在工作目录外：放行，Agent 才能读到拷进来的图片、把截图和临时文件写进去
       taskDir.dir,
     ],
     noEdit: chat && !!ctx.beginEdit,

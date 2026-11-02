@@ -40,7 +40,7 @@ const relTo = (full: string) => path.relative(DATA_DIR, full).split(path.sep).jo
 
 /**
  * 目录占用：递归统计，不跟随链接。
- * 链接指向的是数据目录外面（共用依赖、别的盘），跟进去会把别人的文件算成这里的占用
+ * 链接指向的是数据目录外面（项目目录、别的盘），跟进去会把别人的文件算成这里的占用
  */
 export async function dirSize(dir: string): Promise<{ bytes: number; files: number }> {
   const s = await lstat(dir).catch(() => null)

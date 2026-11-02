@@ -4,9 +4,19 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import { setLang } from '../../shared/i18n.ts'
 import type { Task, TaskMessage } from '../../shared/schema.ts'
-import { addNoteTaker, dropHeld, hasHeld, holdForNextTurn, removeHeld, removeNoteTaker, takeHeld } from './delivery.ts'
+import {
+  addNoteTaker,
+  dropHeld,
+  hasHeld,
+  heldMessage,
+  holdForNextTurn,
+  removeHeld,
+  removeNoteTaker,
+  takeHeld,
+} from './delivery.ts'
 import { steerTask } from './runner.ts'
 
 setLang('zh')
@@ -22,6 +32,26 @@ const msg = (id: string, text: string): TaskMessage => ({
 })
 
 const chat = (id: string) => ({ id, mode: 'chat', messages: [], steps: [] }) as unknown as Task
+
+test('排着的消息交给 CLI 时，图片换成任务上记的对话目录那份；没记的用原路径', () => {
+  const upload = { name: '截图.png', path: 'C:/uploads/u1/截图.png', size: 1, mime: 'image/png' }
+  const pdf = { name: '需求.pdf', path: 'C:/uploads/u2/需求.pdf', size: 1, mime: 'application/pdf' }
+  const conv = path.join('C:/data', 'tasks', 'files', 't1', 'attachments', '截图.png')
+  const got = heldMessage(
+    [msg('m1', '看图')],
+    { id: 'm1', text: '看图', attachments: [upload, pdf] },
+    {
+      [path.resolve(upload.path)]: conv,
+    },
+  )
+  assert.equal(got.recorded, true)
+  assert.deepEqual(
+    got.placed.map((a) => a.path),
+    [conv, pdf.path],
+    '有映射的用对话目录那份，其它原样',
+  )
+  assert.equal(upload.path, 'C:/uploads/u1/截图.png', '不改传进来的附件')
+})
 
 test('交不出去的消息记在这一轮之后处理：按顺序取，取完就没有了', () => {
   const id = 'task-held'

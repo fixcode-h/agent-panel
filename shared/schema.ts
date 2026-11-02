@@ -908,7 +908,10 @@ const ProjectFields = z.object({
    * 关掉时每次改动都跑完整步骤。旧项目也默认打开：小改动在没有标「小改动也跑」的合并步骤时仍跑全部合并步骤，不会少编译
    */
   scaledVerify: z.boolean().default(true),
-  /** 项目教训：旧项目没有时是空数组 */
+  /**
+   * 项目教训：新数据存在项目文档目录的 lessons.md（见 server/project-lessons.ts），这里只保留旧项目的数据，
+   * 读取时和文件合并、写入后清空。旧项目没有时是空数组
+   */
   lessons: z.array(ProjectLesson).max(200).default([]),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
   wslDistro: z.string().trim().max(60).default(''),
@@ -1393,13 +1396,13 @@ export const TaskMessage = z.object({
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
   /**
-   * 面板推回给 CLI 的消息（后台命令结果、合并编译结果、子任务结果）：不是用户说的话，
+   * 面板推回给 CLI 的消息（后台命令结果、合并编译结果、计划催促、子任务结果）：不是用户说的话，
    * 对话里显示成 AI 回复里的一行，点开看全文。child 是子对话交回父对话的回报：
    * 只交给父对话的 AI，界面上不显示（子对话自己的状态图标已经说明做完了，汇报在子对话自己的对话里看）。
    * ask 是子对话请父对话决定的问题：父对话里显示成一张可以直接回答的卡片；
    * note 是执行中用户改设置这类说明，画成回复里的一行，不把回复截成两段
    */
-  panel: z.enum(['background', 'build', 'helpers', 'child', 'ask', 'note', 'wrapup']).optional(),
+  panel: z.enum(['background', 'build', 'nudge', 'helpers', 'child', 'ask', 'note', 'wrapup']).optional(),
   /**
    * panel 为 child / wrapup 时：是哪个子对话、上报时它处在哪个状态（见 shared/task.ts 的 ConvState）。
    * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示
@@ -1579,7 +1582,7 @@ export const StopReason = z.enum([
   'delete', // 删除对话（进回收站时结束）
   'restart', // 面板重启、服务退出
   'presence', // 页面切走、宽限期到了，CLI 不再等下一句
-  'idle', // 保活会话超过全局上限，闲置回收（不是用户按的暂停）
+  'idle', // 闲置回收（手动释放保活会话等，不是用户按的暂停）
   'supersede', // 用户发了新消息，打断当前这一轮
   'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
   'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
@@ -2128,8 +2131,9 @@ export const TaskData = z.object({
   /** 任务开始时的提交（git 仓库才有）；统计改动和看差异都和它比，Agent 中途提交了也不丢 */
   baseRef: z.string().default(''),
   /**
-   * 面板拷进对话目录的图片：消息里记的源文件绝对路径 → 对话目录里的文件名。
-   * 统计 git 改动时按它排除面板自己放进来的文件（不靠文件名猜），再次执行时也按它复用同一份拷贝。
+   * 面板拷进对话目录的图片：消息里记的源文件绝对路径 → 对话目录 attachments/ 里的绝对路径。
+   * 再次执行时按它复用同一份拷贝。旧任务的值是任务工作目录里的相对文件名，仍照旧复用；
+   * 统计 git 改动时只把旧任务这种可能落在工作目录里的值交给排除名单（不靠文件名猜）。
    */
   placedAttachments: z.record(z.string(), z.string()).default({}),
   /** 正在等用户确认的请求 */
@@ -2461,19 +2465,8 @@ export const Settings = z.object({
    * 只管空闲会话：正在执行的一轮（切到后台也一样）到点不回收，见 server/tasks.ts 的 keepAliveBusy
    */
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
-  /**
-   * 这一轮回复完成、但用户还没打开看过的对话，多久回收（分钟）；0 表示回复完就回收。
-   * 这类对话没有页面开着，不收的话进程会一直挂着，而橙点只有用户点开才会消。同理只管空闲会话
-   */
-  unreadGraceMinutes: z.number().int().min(0).max(1440).catch(30).default(30),
   /** 关掉后不自动回收：回复完没人看的 CLI 进程一直留着，进程会越攒越多，内存只增不减 */
   reclaimIdleCli: z.boolean().catch(true).default(true),
-  /**
-   * 同时保活的会话上限：回复完停在等下一句、又没人在看的 CLI 最多留几个，超过就结束最久没用的那个，
-   * 下次打开靠 --resume 续接（冷启动一次）。只统计空闲会话，正在执行的对话不占名额也不会被收掉。
-   * 0 表示不限制
-   */
-  keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
   /**
    * 子对话彻底完成后，CLI 还停在等下一句上多久（分钟）再结束；0 表示完成就结束。
    * 这段时间里父对话或用户接着交代，消息直接交给同一个进程，不用冷启动。
@@ -2516,6 +2509,11 @@ export const Settings = z.object({
    * 关掉只跳过设置里的地址，环境变量 HTTPS_PROXY 和本机代理自动探测照旧——那两条不是这里的配置
    */
   networkProxyEnabled: z.boolean().catch(true).default(true),
+  /**
+   * 自动检查面板更新：打开后页面打开时检查一次、之后每小时问一次服务端。
+   * 默认关：GitHub 偶尔限流，自动检查只能回旧结果，由用户点「检查更新」更可控（用户要求）
+   */
+  autoCheckUpdates: z.boolean().catch(false).default(false),
   /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
   requireToken: z.boolean().default(false),
   /** 外网访问：默认关闭 */

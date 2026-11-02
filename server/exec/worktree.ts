@@ -13,7 +13,6 @@ import {
   realpath,
   rename,
   stat,
-  utimes,
   writeFile,
 } from 'node:fs/promises'
 import path from 'node:path'
@@ -52,11 +51,13 @@ const branchName = (taskId: string, title: string) => {
 const SECRET_ENV = /^\.env\.(local|production|prod|development|dev|staging|test)$/i
 
 /**
- * node_modules 只放一份在项目分组目录下（见 sharedDepsDir）：Node / npm 会沿目录向上找最近的
- * node_modules，独立目录里既不放目录也不建链接。其他依赖目录（Python venv、PHP vendor）按自己的
- * 路径找，不能共用，仍然各复制一份。
+ * 每个独立目录各有一份 node_modules（2026-11-02 用户决定，见 docs/lessons/worktree.md）：
+ * 在 A 里 npm install / 改依赖不会影响 B 和项目主目录，npm 修剪也只动自己这份。
+ * 复制的是真实文件，不建任何链接：2026-10 的事故是把项目那份链接进子对话，
+ * npm 顺着链接删掉了项目里的真目录。
+ * 其他依赖目录（Python venv、PHP vendor）按自己的路径找，同样各复制一份。
  */
-const HOISTED_DEPS = 'node_modules'
+const DEPS_DIR = 'node_modules'
 const LOCAL_DEP_DIRS = ['.venv', 'venv', 'vendor']
 
 /**
@@ -70,7 +71,7 @@ async function repoRoot(repo: string) {
 
 /**
  * 每个项目一组目录：worktrees/<项目>-<路径哈希>/<任务 id>。
- * 依赖按项目分开是有必要的：数据目录里会有多个项目，共用一个位置时后开的项目会把前一个的依赖换掉。
+ * 按项目分组让不同项目的任务目录不混在一起，清理和排查时一眼能分清；
  * 路径哈希让同名但不同路径的项目也能分开（Windows 路径不分大小写，和 normPath 口径一致）。
  */
 const repoKey = async (repo: string) => {
@@ -90,31 +91,19 @@ const repoKey = async (repo: string) => {
 /** 任务的独立目录：项目分组目录下按任务 id 建 */
 const taskDir = async (repo: string, taskId: string) => path.join(WORKTREES_DIR, await repoKey(repo), taskId)
 
-/**
- * 共用依赖放在每条独立目录的上级，Node / npm 才找得到（同一个项目的子对话共用一份）。
- * 每个子对话各复制一份时，本机 600MB / 2.7 万个文件实测 12–20 秒，6 个并行要写约 4GB；
- * 共用一份只付一次，之后开子对话的依赖成本接近 0。
- * 和 2026-10 事故（把项目那份链接进子对话，npm 按分支的 package.json 修剪掉真目录）的区别：
- * 子对话里既没有 node_modules 目录也没有链接，npm install 的 prefix 是它自己的 package.json，
- * 写出来的是它自己目录下的新目录，动不到共用的这一份。
- */
-export const sharedDepsDir = async (repo: string) => path.join(WORKTREES_DIR, await repoKey(repo), HOISTED_DEPS)
-
-/** 共用依赖目录里记录「按哪份 lock 复制的」：lock 变了才重新复制 */
+/** 依赖副本里记录「按哪份 lock 复制的」：项目的 lock 变了才重新复制 */
 const DEPS_MARK = '.agent-panel-deps.json'
-/** 复制共用依赖时占位 / 临时用的目录：清扫时要跳过（见 sweepWorktrees） */
-const DEPS_LOCK = `${HOISTED_DEPS}.lock`
-const DEPS_TMP_PREFIX = `${HOISTED_DEPS}.tmp-`
-/** 复制期间每多久更新一次锁的时间（心跳）：进程被杀后别人靠它判断锁已经没人了 */
-const DEPS_HEARTBEAT_MS = 2_000
-/** 锁这么久没更新就当复制方已经没了（进程被杀、面板重启），可以直接抢 */
-const DEPS_LOCK_DEAD_MS = 15_000
-/** 等别人复制完最多等多久：大项目 + 慢盘也够；等不到再抢一次锁，两次都不行就记 warn 让这个目录自己装 */
-const DEPS_WAIT_MS = 90_000
-const DEPS_WAIT_STEP_MS = 200
+/** 复制用的临时 / 换下来的旧副目录：都放在独立目录里，随目录一起删 */
+const DEPS_TMP_PREFIX = `${DEPS_DIR}.tmp-`
+const DEPS_OLD_PREFIX = `${DEPS_DIR}.old-`
+/** 临时目录多久没动过算复制中断留下的残留：可能还有别的准备正在写这份，刚建的不动 */
+const DEPS_TMP_STALE_MS = 10 * 60_000
 /** 换上新的一份时 Windows 上刚复制完的目录偶尔还被扫描 / 句柄占着：改名失败时等一会儿再试 */
 const RENAME_ATTEMPTS = 5
 const RENAME_RETRY_MS = 150
+/** 单个文件复制失败时最多试几次：Windows 上杀毒软件扫描会让 copyFile 偶发 EPERM */
+const COPY_ATTEMPTS = 3
+const COPY_RETRY_MS = 50
 
 /** 一批复制多少个文件：27k 个文件、600MB 的 node_modules 实测 12–20 秒，再往上并发提升不明显 */
 const COPY_BATCH = 64
@@ -123,7 +112,7 @@ const COPY_BATCH = 64
  * 把整个依赖目录复制一份到独立目录（逐层建目录、逐文件复制）。
  * 不用硬链接：跨分卷用不了（数据目录在 C:、项目常在别的盘），同分卷时 npm 原地重写
  * node_modules/.package-lock.json 又会顺着 inode 改到项目那一份。复制最稳，代价是一次性成本。
- * 复制失败时把没复制完的目录删掉：留着的话下次 existsSync 会当成已经准备好，问题被藏起来。
+ * 任何一个文件没复制成功都算失败（调用方会删掉半份）：留着半份会被当成已经准备好，问题被藏起来。
  */
 async function cloneDir(from: string, to: string) {
   const dirs: string[] = []
@@ -141,6 +130,20 @@ async function cloneDir(from: string, to: string) {
   }
   await walk(from, to)
   for (const d of dirs) await mkdir(d, { recursive: true })
+  const failed: string[] = []
+  const copyWithRetry = async (s: string, d: string) => {
+    let last: Error | null = null
+    for (let i = 0; i < COPY_ATTEMPTS; i++) {
+      try {
+        await copyFile(s, d)
+        return
+      } catch (e) {
+        last = e as Error
+      }
+      if (i < COPY_ATTEMPTS - 1) await new Promise((r) => setTimeout(r, COPY_RETRY_MS))
+    }
+    failed.push(`${path.basename(s)}：${last?.message ?? '复制失败'}`)
+  }
   // 依赖里的符号链接（npm 在 Linux/macOS 上给 .bin 建的那种）按原来的相对目标重建；
   // Windows 上建不了就复制目标内容（那边走的是 .cmd，不影响命令能不能跑起来）
   for (const [s, d] of links) {
@@ -151,15 +154,22 @@ async function cloneDir(from: string, to: string) {
           () => false,
         )
       : false
-    if (!ok) await copyFile(s, d).catch(() => {})
+    if (ok) continue
+    // 目录链接（npm workspaces 的 node_modules/<子包>）在 Windows 上可能建不出来：
+    // 旧实现是跳过，这里也一样，不让一个链接把整份复制判失败；缺的那份由子对话自己装
+    if ((await stat(s).catch(() => null))?.isDirectory()) {
+      log.warn('worktree', '依赖里的目录链接没建出来，副本里少这一份', { from: s, target })
+      continue
+    }
+    await copyWithRetry(s, d)
   }
-  for (let i = 0; i < files.length; i += COPY_BATCH) {
-    await Promise.all(files.slice(i, i + COPY_BATCH).map(([s, d]) => copyFile(s, d).catch(() => {})))
-  }
+  for (let i = 0; i < files.length; i += COPY_BATCH)
+    await Promise.all(files.slice(i, i + COPY_BATCH).map(([s, d]) => copyWithRetry(s, d)))
+  if (failed.length) throw new Error(`${failed.length} 个文件没复制过去，例如 ${failed.slice(0, 3).join('；')}`)
   return files.length
 }
 
-/** 共用依赖是按哪个文件复制的：锁文件和 package.json 的大小、修改时间 */
+/** 依赖副本是按哪个文件复制的：锁文件和 package.json 的大小、修改时间 */
 interface DepsStamp {
   source: string
   size: number
@@ -169,18 +179,18 @@ interface DepsStamp {
 const sameStamp = (a: DepsStamp | null, b: DepsStamp | null) =>
   !!a && !!b && a.source === b.source && a.size === b.size && Math.abs(a.mtimeMs - b.mtimeMs) < 1
 
-/** 判断共用依赖要不要重做：优先 package-lock，没有就用 package.json，再没有就用依赖目录本身 */
+/** 判断依赖副本要不要重做：优先 package-lock，没有就用 package.json，再没有就用依赖目录本身 */
 async function depsStamp(root: string): Promise<DepsStamp | null> {
-  for (const name of ['package-lock.json', 'npm-shrinkwrap.json', 'package.json', HOISTED_DEPS]) {
+  for (const name of ['package-lock.json', 'npm-shrinkwrap.json', 'package.json', DEPS_DIR]) {
     const st = await stat(path.join(root, name)).catch(() => null)
     if (st) return { source: name, size: st.size, mtimeMs: Math.round(st.mtimeMs) }
   }
   return null
 }
 
-/** 共用依赖现在这一份是按什么复制的；读不到记录时返回 null */
-async function sharedDepsStamp(shared: string): Promise<DepsStamp | null> {
-  const text = await readFile(path.join(shared, DEPS_MARK), 'utf8').catch(() => '')
+/** 这个独立目录的依赖是按什么复制的；读不到记录时返回 null */
+async function copiedDepsStamp(dir: string): Promise<DepsStamp | null> {
+  const text = await readFile(path.join(dir, DEPS_DIR, DEPS_MARK), 'utf8').catch(() => '')
   if (!text) return null
   try {
     const mark = JSON.parse(text) as DepsStamp
@@ -190,51 +200,10 @@ async function sharedDepsStamp(shared: string): Promise<DepsStamp | null> {
   }
 }
 
-/** 共用依赖存在，而且是按现在这份 lock 复制的 */
-async function sharedDepsReady(shared: string, stamp: DepsStamp | null) {
-  if (!stamp || !existsSync(shared)) return false
-  return sameStamp(await sharedDepsStamp(shared), stamp)
-}
-
-/** 抢复制锁：mkdir 是原子的，同一个项目的多个子对话同时开时只有一个去复制，其余等它 */
-async function acquireDepsLock(group: string, lock: string) {
-  await mkdir(group, { recursive: true })
-  const st = await lstat(lock).catch(() => null)
-  // 复制方每 2 秒更新一次锁的时间：很久没更新说明它已经没了，把锁挪走重抢。
-  // 用 rename 接替过期的锁是原子的：不能先 rm 再 mkdir——两个调用方同时看到同一把过期锁时，
-  // 都会删掉对方刚建的那把、各自都以为拿到了锁，然后两个进程同时复制 682MB，
-  // 换装时还会互相把对方刚放好的那一份挪走。rename 失败的说明锁已经被别人接走，直接去竞争 mkdir。
-  if (st && Date.now() - st.mtimeMs > DEPS_LOCK_DEAD_MS) {
-    const stale = `${lock}.stale-${process.pid}-${Date.now()}`
-    if (
-      await rename(lock, stale).then(
-        () => true,
-        () => false,
-      )
-    )
-      await rm(stale, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 }).catch(() => {})
-  }
-  return mkdir(lock).then(
-    () => true,
-    (e: NodeJS.ErrnoException) => {
-      // 已经被别人占着是正常情况；其他错误（权限、磁盘）也按「没抢到」处理，等超时后记 warn
-      if (e.code !== 'EEXIST') log.warn('worktree', '建不了共用依赖的复制锁', { dir: lock, error: e.message })
-      return false
-    },
-  )
-}
-
-/** 等别人复制完：返回就绪 / 锁没了（可以重新抢） / 超时 */
-async function waitSharedDeps(shared: string, stamp: DepsStamp | null, lock: string) {
-  const until = Date.now() + DEPS_WAIT_MS
-  while (Date.now() < until) {
-    if (await sharedDepsReady(shared, stamp)) return 'ready'
-    const st = await lstat(lock).catch(() => null)
-    // 锁没了，或者复制方已经很久没心跳（进程被杀、面板重启）：重新抢，不要干等到超时
-    if (!st || Date.now() - st.mtimeMs > DEPS_LOCK_DEAD_MS) return 'gone'
-    await new Promise((r) => setTimeout(r, DEPS_WAIT_STEP_MS))
-  }
-  return 'timeout'
+/** 这个目录里已经有一份完整的副本，而且是按现在这份 lock 复制的 */
+async function depsReady(dir: string, stamp: DepsStamp | null) {
+  if (!stamp || !existsSync(path.join(dir, DEPS_DIR))) return false
+  return sameStamp(await copiedDepsStamp(dir), stamp)
 }
 
 /** 改名带重试：Windows 上刚复制完的目录偶尔还被扫描 / 句柄占着。返回空串表示成功，否则是最后一次的错误 */
@@ -253,116 +222,108 @@ async function renameDir(from: string, to: string) {
 }
 
 /**
- * 用新复制的一份换掉旧的：先把旧的改名挪开、再把新的改名进来，最后删旧的。
- * 不能先删旧的再改名：删到一半失败（Windows 上子对话正在读里面的文件）会留下残缺的一份，
- * 同项目的所有子对话都会缺包。换装失败会回滚（新的改名失败就把旧的放回去），
- * 两次 rename 之间有一个很短的窗口 shared 不在，期间新起的命令会暂时找不到依赖；
- * 成功后就是完整的新版，不会出现「半新半旧」。
+ * 用新复制的一份换掉这个目录里的旧依赖：先把旧的改名挪开、再把新的改名进来，最后删旧的。
+ * 不能先删旧的再改名：删到一半失败（Windows 上子对话正在读里面的文件）会留下残缺的一份。
+ * 换装失败会回滚（新的改名失败就把旧的放回去），成功后要么完整旧版、要么完整新版。
  */
-async function replaceSharedDeps(shared: string, tmp: string) {
-  const old = `${shared}.old-${Date.now()}`
-  const moved = existsSync(shared)
+async function replaceDirDeps(dir: string, tmp: string) {
+  const target = path.join(dir, DEPS_DIR)
+  const old = path.join(dir, `${DEPS_OLD_PREFIX}${Date.now()}`)
+  // 2026-10 事故的旧布局可能是指向项目依赖的链接：只删链接本身，不把它改名后再递归删，
+  // 免得某些平台上顺着链接动到项目那份
+  const st = await lstat(target).catch(() => null)
+  const linked = st?.isSymbolicLink() === true
+  if (linked) await rm(target, { force: true }).catch(() => {})
+  const moved = !linked && !!st
   if (moved) {
-    const err = await renameDir(shared, old)
+    const err = await renameDir(target, old)
     if (err) {
       // 旧的还在原地、没被动过：这轮先用旧的
-      log.warn('worktree', '旧的共用依赖正被使用，这次先不换', { dir: shared, error: err })
+      log.warn('worktree', '旧的依赖副本正被使用，这次先不换', { dir: target, error: err })
       return false
     }
   }
-  const err = await renameDir(tmp, shared)
+  const err = await renameDir(tmp, target)
   if (err) {
-    if (moved) await renameDir(old, shared)
-    log.warn('worktree', '共用依赖改名失败，这轮先用旧的', { dir: shared, error: err })
+    if (moved) await renameDir(old, target)
+    log.warn('worktree', '依赖副本改名失败，这轮先用旧的', { dir: target, error: err })
     return false
   }
-  // 旧的一份可能正被别的子对话读着（Windows 上删不掉）：留着，下次准备时再清
+  // 旧的一份可能正被这个目录里的命令读着（Windows 上删不掉）：留着，下次准备时再清
   if (moved) await rm(old, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 }).catch(() => {})
   return true
 }
 
-/** 上次换装没删掉的旧份（node_modules.old-<时间戳>）：删得掉就删，删不掉下次再试 */
-async function cleanOldDeps(shared: string) {
-  const prefix = `${path.basename(shared)}.old-`
-  const group = path.dirname(shared)
-  for (const name of await readdir(group).catch(() => [] as string[])) {
-    if (!name.startsWith(prefix)) continue
-    await rm(path.join(group, name), { recursive: true, force: true, maxRetries: 2, retryDelay: 100 }).catch(() => {})
+/**
+ * 清掉复制留下的副目录：换装挪开的旧份直接删；复制中断留下的临时目录只有很久没动过才删
+ * （可能还有别的准备正在写这份，刚建的不能动）。删不掉的下次再试，随任务目录回收时也会一起删。
+ */
+async function cleanLeftoverDeps(dir: string) {
+  for (const name of await readdir(dir).catch(() => [] as string[])) {
+    const at = path.join(dir, name)
+    const staleTmp =
+      name.startsWith(DEPS_TMP_PREFIX) &&
+      Date.now() - ((await lstat(at).catch(() => null))?.mtimeMs ?? Date.now()) > DEPS_TMP_STALE_MS
+    if (!name.startsWith(DEPS_OLD_PREFIX) && !staleTmp) continue
+    await rm(at, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 }).catch(() => {})
   }
 }
 
-/** 复制一份到共用的依赖目录（同项目、同 lock 只做一次）；失败时清掉临时目录、保留旧的一份 */
-async function copySharedDeps(shared: string, from: string, stamp: DepsStamp | null, lock: string) {
-  const group = path.dirname(shared)
-  const tmp = path.join(group, `${DEPS_TMP_PREFIX}${process.pid}-${Math.random().toString(36).slice(2, 8)}`)
+/** 复制一份到独立目录；失败时清掉临时目录、保留旧的一份 */
+async function copyDirDeps(dir: string, from: string, stamp: DepsStamp | null) {
+  const tmp = path.join(dir, `${DEPS_TMP_PREFIX}${process.pid}-${Math.random().toString(36).slice(2, 8)}`)
   const started = Date.now()
-  // 复制期间定时更新锁的时间：进程被杀后等待方不用干等到超时
-  const beat = setInterval(() => {
-    const now = new Date()
-    utimes(lock, now, now).catch(() => {})
-  }, DEPS_HEARTBEAT_MS)
   try {
     const files = await cloneDir(from, tmp).catch(async (e: Error) => {
       await rm(tmp, { recursive: true, force: true }).catch(() => {})
-      log.warn('worktree', '依赖没复制到共用目录，这个子对话要自己装', { from, error: e.message })
+      log.warn('worktree', '依赖没复制到这个独立目录，它要自己装', { dir, from, error: e.message })
       return 0
     })
     if (!files) return false
-    if (stamp) await writeFile(path.join(tmp, DEPS_MARK), JSON.stringify(stamp)).catch(() => {})
-    if (!(await replaceSharedDeps(shared, tmp))) {
+    if (stamp)
+      await writeFile(path.join(tmp, DEPS_MARK), JSON.stringify(stamp)).catch((e: Error) => {
+        log.warn('worktree', '依赖复制记录没写成功，下次准备会再复制一遍', { dir, error: e.message })
+      })
+    if (!(await replaceDirDeps(dir, tmp))) {
       await rm(tmp, { recursive: true, force: true }).catch(() => {})
-      log.warn('worktree', '共用依赖没能换成新的一份，这轮先用旧的', { dir: shared, stamp })
       return false
     }
-    await cleanOldDeps(shared)
-    log.info('worktree', '依赖复制到共用目录（同项目的子对话不再各复制一份）', {
-      dir: shared,
+    await cleanLeftoverDeps(dir)
+    log.info('worktree', '依赖复制到这个独立目录（每个 worktree 各一份）', {
+      dir: path.join(dir, DEPS_DIR),
       files,
       ms: Date.now() - started,
     })
     return true
-  } finally {
-    clearInterval(beat)
+  } catch (e) {
+    await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    log.warn('worktree', '依赖复制失败，这个独立目录要自己装', { dir, error: (e as Error).message })
+    return false
   }
 }
 
 /**
- * 准备共用的依赖：项目里有 node_modules 时复制一份到项目的分组目录下，只在 lock 变化时重做。
- * 项目自己没装依赖时什么都不做（返回 missing），由子对话按需自己装。
+ * 准备这个独立目录自己的依赖：从项目根复制一份真实的 node_modules，项目的 lock 变了才刷新。
+ * 每份目标路径都不同，并发开多个子对话时各复制各的、不会互相踩，因此不需要共用一份时的全局锁。
+ * 项目自己没装依赖时跳过（返回 missing），不让开 worktree 因此失败。
  */
-export async function ensureSharedDeps(repo: string): Promise<'ready' | 'copied' | 'missing' | 'failed'> {
-  // 源目录和 lock 都按项目根读：传进来的可能是父对话的独立目录（那里没有 node_modules，
-  // 不归一化的话会当成「项目没装依赖」，从父对话里开的子对话就不会刷新依赖）
+export async function ensureWorktreeDeps(
+  dir: string,
+  repo: string,
+): Promise<'ready' | 'copied' | 'missing' | 'failed'> {
+  // 源目录和 lock 都按项目根读：传进来的可能是父对话的独立目录
   const root = await repoRoot(repo)
-  const from = path.join(root, HOISTED_DEPS)
+  const from = path.join(root, DEPS_DIR)
   if (!existsSync(from)) return 'missing'
-  const shared = await sharedDepsDir(repo)
-  const group = path.dirname(shared)
-  const lock = path.join(group, DEPS_LOCK)
-  // 分组回退到 repo 本身时（不是 git 仓库、读不到 common dir）别把自己复制给自己
-  if (path.resolve(from) === path.resolve(shared)) return 'ready'
-  // 抢锁失败就等：锁没了（上一次复制被杀、面板重启）就再抢一次，最多两轮，不干等满超时
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const stamp = await depsStamp(root)
-    if (await sharedDepsReady(shared, stamp)) {
-      await cleanOldDeps(shared)
-      return 'ready'
-    }
-    if (!(await acquireDepsLock(group, lock))) {
-      if ((await waitSharedDeps(shared, stamp, lock)) === 'ready') return 'ready'
-      continue
-    }
-    try {
-      // 等锁的时候别人可能已经复制好了（含 lock 刚被改过的情况）
-      const now = await depsStamp(root)
-      if (await sharedDepsReady(shared, now)) return 'ready'
-      if (!(await copySharedDeps(shared, from, now, lock))) return 'failed'
-      return 'copied'
-    } finally {
-      await rm(lock, { recursive: true, force: true }).catch(() => {})
-    }
+  const target = path.join(dir, DEPS_DIR)
+  // 读不到 common dir、项目根就是 dir 本身时：别把自己复制给自己
+  if (path.resolve(from) === path.resolve(target)) return 'ready'
+  const stamp = await depsStamp(root)
+  if (await depsReady(dir, stamp)) {
+    await cleanLeftoverDeps(dir)
+    return 'ready'
   }
-  return 'failed'
+  return (await copyDirDeps(dir, from, stamp)) ? 'copied' : 'failed'
 }
 
 interface PackageJson {
@@ -381,26 +342,16 @@ async function packageJson(dir: string): Promise<PackageJson | null> {
   }
 }
 
-/** 从 dir 向上找最近的 node_modules：独立目录里不再各放一份，靠的就是祖先这一份 */
-function nearestNodeModules(dir: string) {
-  for (let at = path.resolve(dir); ; at = path.dirname(at)) {
-    const nm = path.join(at, HOISTED_DEPS)
-    if (existsSync(nm)) return nm
-    if (path.dirname(at) === at) return ''
-  }
-}
-
 /**
- * package.json 里声明、但 node_modules 里没装上的包。
- * 依赖目录被某个工作目录跑安装/清理修剪掉之后，后面的命令只会各自报「找不到模块」；
- * 开独立目录时先看一眼，直接把「哪个目录、少了什么、怎么补」写进面板日志。
+ * package.json 里声明、但这个目录自己的 node_modules 里没装上的包。
+ * 每个独立目录跑的是自己那份副本，缺了就在这里说清，不要留给后面每条命令各报「找不到模块」。
  */
 export async function missingDeps(dir: string) {
   const pkg = await packageJson(dir)
   if (!pkg) return []
-  const nm = nearestNodeModules(dir)
-  if (!nm) return Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })
   const want = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })
+  const nm = path.join(dir, DEPS_DIR)
+  if (!existsSync(nm)) return want
   return want.filter((name) => !existsSync(path.join(nm, name, 'package.json')))
 }
 
@@ -408,40 +359,29 @@ export async function missingDeps(dir: string) {
 function warnMissingDeps(dir: string, missing: string[]) {
   if (!missing.length) return
   log.error('worktree', '依赖不完整：这个目录里少装了声明的包，接下来会接连报「找不到模块」', {
-    dir: path.join(dir, 'node_modules'),
+    dir: path.join(dir, DEPS_DIR),
     missing: missing.slice(0, 20).join('、') + (missing.length > 20 ? ` 等 ${missing.length} 个` : ''),
-    recover:
-      '在一份完整的独立目录里跑 npm ci --include=dev，或者把完好的 node_modules 整份复制回来；不要在多个对话共用的目录里跑 npm install / npm ci',
+    recover: '在这个独立目录里跑 npm ci --include=dev 重新装一份；每个 worktree 的依赖互不影响',
   })
 }
 
 /**
- * 早先开的工作目录里各有一份 node_modules（副本，或指向项目的链接——2026-10 事故的来源）。
- * 现在改用共用的一份（见 ensureSharedDeps），准备目录时把旧的清掉：链接只删链接本身、不删目标，副本直接删省磁盘。
- * 只在这个目录刚被再次准备时调用（新建、重建），不会动正在跑命令的目录。
+ * 2026-10 事故的旧布局：独立目录里的 node_modules 是指向项目那份的链接。
+ * 准备目录时只把链接删掉（不删目标），随后 ensureWorktreeDeps 会复制一份真实文件进来。
+ * 真实的目录副本不再删：每个 worktree 各一份正是现在的设计。
  */
-async function dropCopiedDeps(dir: string) {
-  const mine = path.join(dir, HOISTED_DEPS)
-  const st = await lstat(mine).catch(() => null)
-  if (!st) return
-  if (st.isSymbolicLink()) {
-    await rm(mine, { force: true }).catch(() => {})
-    return
-  }
-  // 旧布局的任务目录（worktrees/<任务 id>）不在项目分组目录下，删了自己这份就向上找不到了：
-  // 只有上级已经有可用的一份时才删（新布局 <项目分组>/<任务 id> 才有）
-  if (!nearestNodeModules(path.dirname(dir))) return
-  await rm(mine, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch((e: Error) => {
-    log.warn('worktree', '旧的依赖副本没删掉，先用共用的一份', { dir: mine, error: e.message })
-  })
+async function dropLinkedDeps(dir: string) {
+  const mine = path.join(dir, DEPS_DIR)
+  if (!(await lstat(mine).catch(() => null))?.isSymbolicLink()) return
+  await rm(mine, { force: true }).catch(() => {})
 }
 
 /**
- * 独立目录里不能共用的依赖目录（.venv / venv / vendor）各复制一份，并清掉旧版的 node_modules 副本。
+ * 独立目录里不能共用的依赖目录（.venv / venv / vendor）各复制一份，并解开旧版的 node_modules 链接。
  * 返回复制过去的目录名（写进 git exclude 用）。复制失败不算错：Agent 自己在独立目录里也会看到缺什么。
  */
 export async function isolateDeps(dir: string, repo: string) {
-  await dropCopiedDeps(dir)
+  await dropLinkedDeps(dir)
   const prepared: string[] = []
   for (const name of LOCAL_DEP_DIRS) {
     const from = path.join(repo, name)
@@ -467,27 +407,43 @@ export async function isolateDeps(dir: string, repo: string) {
   return prepared
 }
 
-/** 独立目录的准备工作：依赖共用一份（见 ensureSharedDeps），环境文件复制一份——含密钥的 .env.local 等不复制 */
+/** 这个路径还没被忽略时，把 pattern 写进该工作目录自己的 info/exclude（已有同一行时不重复写） */
+async function excludeIfNeeded(dir: string, sample: string, pattern: string) {
+  const ignored = await capture('git', ['check-ignore', '-q', sample], dir, process.env, 10_000)
+  if (ignored.code === 0) return
+  const exclude = await capture('git', ['rev-parse', '--git-path', 'info/exclude'], dir, process.env, 10_000)
+  if (exclude.code !== 0) return
+  const file = path.resolve(dir, exclude.stdout.trim())
+  const text = await readFile(file, 'utf8').catch(() => '')
+  if (text.split(/\r?\n/).includes(pattern)) return
+  await appendFile(file, `${pattern}\n`).catch(() => {})
+}
+
+/** 独立目录的准备工作：复制一份自己的依赖（见 ensureWorktreeDeps），环境文件复制一份——含密钥的 .env.local 等不复制 */
 async function prepare(dir: string, repo: string) {
-  // 先准备共用的一份（第一次开子对话时付一次复制成本），再清理旧布局里各目录的副本
-  const shared = await ensureSharedDeps(repo)
-  if (shared === 'failed') log.warn('worktree', '共用依赖没准备好，这个子对话里要自己装', { repo })
+  // 必须在复制之前写 exclude：复制要 12–20 秒，中途被杀留下的 node_modules.tmp-* 如果还没被忽略，
+  // 恢复后这个任务目录会一直算「有未提交改动」，合并门禁和清扫都不敢动它
+  await excludeIfNeeded(dir, DEPS_DIR, `/${DEPS_DIR}`)
+  const sideDirs = [
+    [`${DEPS_DIR}.tmp-probe`, `/${DEPS_DIR}.tmp-*`],
+    [`${DEPS_DIR}.old-probe`, `/${DEPS_DIR}.old-*`],
+  ] as const
+  for (const [sample, pattern] of sideDirs) await excludeIfNeeded(dir, sample, pattern)
+  // 每个独立目录复制自己的一份；项目没装依赖时跳过，不让开 worktree 因此失败
+  const deps = await ensureWorktreeDeps(dir, repo)
+  if (deps === 'missing') log.info('worktree', '项目里没有 node_modules，这个独立目录里要自己装', { repo })
+  else if (deps === 'failed') log.warn('worktree', '依赖没复制到这个独立目录，它要自己装', { repo })
   const prepared = await isolateDeps(dir, repo)
-  // 项目没忽略这些目录时，合并前的 git add -A 会把整个依赖装进提交：写进这个工作目录自己的 exclude。
-  // node_modules 也要写：子对话里自己 npm install 会建一份（项目漏写 .gitignore 时不能让它进提交）
-  for (const name of new Set([HOISTED_DEPS, ...prepared])) {
-    const ignored = await capture('git', ['check-ignore', '-q', name], dir, process.env, 10_000)
-    if (ignored.code === 0) continue
-    const exclude = await capture('git', ['rev-parse', '--git-path', 'info/exclude'], dir, process.env, 10_000)
-    if (exclude.code === 0) await appendFile(path.resolve(dir, exclude.stdout.trim()), `/${name}\n`).catch(() => {})
-  }
+  // 其他按自己的路径找依赖的目录（.venv / venv / vendor）也写进 exclude，免得 git add -A 带进提交
+  for (const name of prepared) await excludeIfNeeded(dir, name, `/${name}`)
   const envs = await readdir(repo).catch(() => [] as string[])
   for (const name of envs) {
     if (!name.startsWith('.env') || SECRET_ENV.test(name)) continue
     const from = path.join(repo, name)
     await copyFile(from, path.join(dir, name)).catch(() => {})
   }
-  warnMissingDeps(repo, await missingDeps(repo))
+  // 副本在这个独立目录里，缺包就按它自己的目录核对
+  warnMissingDeps(dir, await missingDeps(dir))
 }
 
 /** 能不能开独立分支：要是 git 仓库、至少有一个提交；不能时抛出给用户看的原因 */
@@ -555,7 +511,13 @@ export async function ensureWorktree(
   await checkRepo(cwd)
   const branch = wt.branch || branchName(taskId, title)
   const dir = wt.path || (await taskDir(cwd, taskId))
-  if (existsSync(dir) && (await hasBranch(cwd, branch))) return { worktree: wt, rebuilt: false }
+  if (existsSync(dir) && (await hasBranch(cwd, branch))) {
+    // 继续一个已有的目录：旧 worktree 可能还没有自己那份依赖（用户也可能删过），准备时补一份；
+    // 顺手清掉上次复制中断留下的临时目录。已经就绪时只读一次 marker，不会重新复制。
+    const deps = await ensureWorktreeDeps(dir, cwd)
+    if (deps === 'failed') log.warn('worktree', '依赖没复制到这个独立目录，它要自己装', { dir })
+    return { worktree: wt, rebuilt: false }
+  }
   const baseBranch = (await git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')).stdout.trim()
   const branchAlive = await hasBranch(cwd, branch)
   // 目录还在、分支没了这种不一致：先把残留目录清掉，否则 worktree add 会因为目录已存在失败
@@ -1220,8 +1182,11 @@ export async function sweepWorktrees(opts: SweepOptions = {}): Promise<SweepResu
       owner,
     )
   }
-  /** 共用依赖、复制锁和临时目录不是任务目录，不能当残留清 */
-  const isDepsDir = (name: string) => name === HOISTED_DEPS || name.startsWith(`${HOISTED_DEPS}.`)
+  /**
+   * 旧版在项目分组目录下放过共用的 node_modules、复制锁和临时目录：它们不是任务目录，不能当残留清。
+   * 新版本不再建共用份，但旧目录可能还有旧 worktree 靠祖先解析，这里也不主动删，等那些目录回收后自然消失。
+   */
+  const isDepsDir = (name: string) => name === DEPS_DIR || name.startsWith(`${DEPS_DIR}.`)
   for (const e of entries) {
     if (!e.isDirectory() || isDepsDir(e.name)) continue
     const at = path.join(root, e.name)

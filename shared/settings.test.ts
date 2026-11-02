@@ -3,6 +3,16 @@ import test from 'node:test'
 import { Settings } from './schema.ts'
 import { migrateRemovedClis } from './settings.ts'
 
+test('旧设置里的 keepAliveLimit / unreadGraceMinutes 读时剥离：两项设置已取消，不会报错', () => {
+  // 用户 2026-11-02 决定取消保活数量上限和未读回复的独立保留时长：
+  // 旧 settings.json 里的字段直接丢弃，不触发整份设置重置
+  assert.equal(Settings.safeParse({ keepAliveLimit: 1, unreadGraceMinutes: 5 }).success, true)
+  const s = Settings.parse({ keepAliveLimit: 4, unreadGraceMinutes: 5, presenceGraceMinutes: 5 })
+  assert.equal('keepAliveLimit' in s, false, '读出来的设置里不再有 keepAliveLimit')
+  assert.equal('unreadGraceMinutes' in s, false, '读出来的设置里不再有 unreadGraceMinutes')
+  assert.equal(s.presenceGraceMinutes, 5, '同一份设置里的其他项照常读出')
+})
+
 test('旧设置里的 Gemini API 和 Gemini CLI 在读出来之前清掉，幂等', () => {
   const raw = {
     apis: [

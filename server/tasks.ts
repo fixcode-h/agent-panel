@@ -30,7 +30,7 @@ import {
 import { getSettings } from './settings.ts'
 import { cancelWait } from './exec/runner.ts'
 import { makeAlert } from '../shared/alerts.ts'
-import { setPresenceBusy, setPresenceIdleHandler, setPresenceUnreadKeeper } from './presence.ts'
+import { setPresenceBusy, setPresenceIdleHandler } from './presence.ts'
 import { settleReclaimed } from './exec/reclaim.ts'
 import { migrateOnStart } from './tasks/startup.ts'
 import { createStateSweep, STATE_SWEEP_MS } from './tasks/state-sweep.ts'
@@ -38,6 +38,7 @@ import { lazyScope, type Lister, type Live } from './tasks/types.ts'
 import type { TasksScope } from './tasks/scope.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
 import { CHATS_DIR } from './store.ts'
+import { taskAttachDir } from './task-files.ts'
 import { createTaskStore } from './task-store.ts'
 import { worktreeStatus } from './exec/worktree.ts'
 import { mkdir } from 'node:fs/promises'
@@ -133,7 +134,6 @@ export function tasksApi(deps: {
     dropWorktree: () => dropWorktree,
     endBackground: () => endBackground,
     endInlineEdit: () => endInlineEdit,
-    enforceKeepAlive: () => enforceKeepAlive,
     ensureChildWorktree: () => ensureChildWorktree,
     expandForWorkflow: () => expandForWorkflow,
     finishChild: () => finishChild,
@@ -287,13 +287,7 @@ export function tasksApi(deps: {
     }
     void settleReclaimed(store, id, 'presence')
   })
-  // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
-  setPresenceUnreadKeeper((id) => {
-    const tk = live.get(id)?.task
-    if (!tk) return false
-    return !!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt
-  })
-  // 两个时长到达时先问这一句：还在跑的对话不按「离开多久」回收（见 keepAliveBusy）
+  // 宽限到达时先问这一句：还在跑的对话不按「离开多久」回收（见 keepAliveBusy）
   setPresenceBusy((id) => keepAliveBusy(id))
   /** 服务正在退出：不再接着处理这一轮结束后要处理的消息 */
   let shuttingDown = false
@@ -408,9 +402,9 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 图片附件拷进任务自己的执行目录，路径换成相对 Agent 的那一份。
-   * Chat 的执行目录要先建出来（它本来只在第一次执行时才建）。
-   * 拷进来的文件名记在任务上（placedAttachments）：统计 git 改动时排除它们，再次执行时复用同一份。
+   * 图片附件拷进这个对话的对话目录（`tasks/files/<id>/attachments/`），交给 Agent 的是那里的绝对路径；
+   * 已经在任务工作目录里的文件仍给相对路径。Chat 的执行目录要先建出来（它本来只在第一次执行时才建）。
+   * 拷进来的路径记在任务上（placedAttachments）：再次执行时复用同一份。
    */
   async function placeInTask(
     tk: Pick<Task, 'worktree' | 'projectId' | 'id' | 'placedAttachments'>,
@@ -420,7 +414,7 @@ export function tasksApi(deps: {
     const dir = await taskDir(tk)
     if (!dir) return attachments
     if (!tk.projectId && !isolated(tk)) await mkdir(dir, { recursive: true })
-    const r = await placeAttachments(dir, attachments, tk.placedAttachments)
+    const r = await placeAttachments(taskAttachDir(tk.id), attachments, tk.placedAttachments, dir)
     Object.assign(tk.placedAttachments, r.placed)
     return r.attachments
   }
@@ -659,7 +653,6 @@ export function tasksApi(deps: {
     subtreeIdsOf,
     taskAlive,
     keepAliveBusy,
-    enforceKeepAlive,
     closeWaiting,
     endLive,
     keepDoneChild,

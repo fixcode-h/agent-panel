@@ -54,9 +54,9 @@
 ## 网页设计的位置计算（2026-11-01）
 
 - `shared/web-layout.ts` 的 `webLayoutTree`：照 `shared/web.ts` 的 `webCss` 算 CSS flex——Frame 的 Direction、Gap、Padding、AlignItems（默认 stretch，AlignSelf 单独改）、JustifyContent（start / center / end / between / around / evenly）、Wrap（按宽度分行，容器高度算上所有行）；子控件宽高是像素 / fill / auto，fill 在排列方向上是 `flex: 1 1 0`（先扣掉自己的内边距和边框再平分），在交叉方向上拉伸；box-sizing 是 border-box，边框算在宽高里；绝对定位按 Pin 贴在父控件的内边距框上；平板 / 手机用断点里的属性（`propsAt`），Collapsed 的不占位置；UserWidget 画成子控件的根、名字记引用它的那个。
-- 标 est 的：文字（字宽表估，Text 默认 16 号、行高 1.5）、按钮和输入框（浏览器默认：normal 行高约 1.15 倍字号，输入框约 12.7 倍字号宽）、没写宽高的图片（按图片尺寸）、放不下时的收缩、换行，以及被它们推着走的控件。
+- 标 est 的：文字（字宽表估，Text 默认 16 号、行高 1.5）、按钮和输入框（浏览器默认：normal 行高约 1.15 倍字号，输入框约 12.7 倍字号宽）、没写宽高的图片（按图片尺寸）、放不下时的收缩、换行，以及被它们推着走的控件。估算随机器字体变：Chromium 的默认输入框宽 = 20 个字的内容宽 + 内边距 + 边框，内容宽由字体解析决定（同样 14px，`inherit` 实测总宽 173px、显式 Times New Roman 188px），和 12.7em 的假设可能差二十来像素；按钮文字宽也随字宽表差几个像素。est 控件之间互相推着排可以，**固定尺寸的控件不要排在它们后面靠它们定 x**。
 - 接入：`server/design-layout.ts` 的 `sessionLayout` 按设计种类选 `layoutTree` / `webLayoutTree`（网页按桌面宽度），改完自动回读、`get_layout`、截图失败时的位置表网页设计也都有了；提示词改成网页同样拿工具结果回读，平板 / 手机的位置用 screenshot。
-- 回归：`shared/web-layout.test.ts`（期望值和浏览器量的一致）、`shared/web-layout.fixtures.ts` 三组样例交给 `scripts/ui/11-umg-layout.mjs` 用 WebNode 画出来逐个比对（非估算 ≤ 0.6px）、`server/design-mcp.test.ts`（网页改完回读和 get_layout）。
+- 回归：`shared/web-layout.test.ts`（期望值和浏览器量的一致）、`shared/web-layout.fixtures.ts` 三组样例交给 `scripts/ui/11-umg-layout.mjs` 用 WebNode 画出来逐个比对（非估算 ≤ 0.6px；固定尺寸的 `Pic` 放在行首，避免让按钮 / 输入框的估算值决定它的 x）、`server/design-mcp.test.ts`（网页改完回读和 get_layout）。
 
 ## 第 3 批：步骤和界面（2026-11-01）
 

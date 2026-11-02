@@ -10,6 +10,7 @@ import {
   type TaskMessage,
 } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
+import { loadProjectLessons, projectWithLessons } from '../project-lessons.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
 import {
   beginRun,
@@ -254,7 +255,13 @@ export function createRun(sc: TasksScope) {
     // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录；
     // 子对话不建独立分支，和父对话用同一个目录（父对话在独立分支里时就是父的那个目录）
     const dir = found ? await sc.taskDir(task).catch(() => found.path) : ''
-    const project = found && dir && dir !== found.path ? { ...found, path: dir } : found
+    // 真正拼进提示词的是 runner 里的 ctx.project.lessons（见 server/exec/runner.ts 的 lessonsPrompt 调用）：
+    // 必须在这里挂上「文件 + 旧 JSON」的合并结果，否则写文件后项目 JSON 被清空，新会话的教训段会整段消失
+    let project = found
+    if (found && task.projectId) {
+      const withLessons = await projectWithLessons(found, agents)
+      project = dir && dir !== found.path ? { ...withLessons, path: dir } : withLessons
+    } else if (found && dir && dir !== found.path) project = { ...found, path: dir }
     const parentTask = task.parentTaskId
       ? (sc.live.get(task.parentTaskId)?.task ?? (await sc.store.get(task.parentTaskId)) ?? undefined)
       : undefined
@@ -369,11 +376,10 @@ export function createRun(sc: TasksScope) {
         signal: entry.abort.signal,
         // 停下这一轮的原因：engine 收尾时按它决定写「已暂停」还是写清是谁结束的（见 StopReason）
         stopReason: () => entry.stopReason,
-        // 开始保活（CLI 停在等下一句）前先按全局上限收一批最久没用的，别让挂着的进程越来越多
+        // 开始保活（CLI 停在等下一句）时把回收计时从现在起算满一整段
         onKeepAlive: (taskId) => {
-          // 回收计时从现在起算满一整段：执行期间计时器被 busy 挡回去过，不重置会提前收掉刚空下来的会话
+          // 执行期间计时器被 busy 挡回去过，不重置会提前收掉刚空下来的会话
           resetIdleCountdown(taskId)
-          void sc.enforceKeepAlive(taskId)
         },
         changed,
         newId: randomUUID,
@@ -563,10 +569,13 @@ export function createRun(sc: TasksScope) {
                 return { ...r, held }
               }
             : undefined,
-        // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；Agent 记的标上来源，用户在项目设置里复查
+        // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；文件里的新教训和旧项目 JSON 合并后交给 Agent
         lessons: task.projectId
           ? {
-              list: async () => (await sc.deps.projects.get(task.projectId))?.lessons ?? [],
+              list: async () => {
+                const p = await sc.deps.projects.get(task.projectId)
+                return p ? (await loadProjectLessons(p, agents)).lessons : []
+              },
               globals: readGlobalLessons,
               record: async (input) =>
                 sc.deps.recordLesson
@@ -885,7 +894,7 @@ export function createRun(sc: TasksScope) {
       sc.release(entry)
       return next
     }
-    // 附件拷进这个任务的执行目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
+    // 附件拷进这个对话的对话目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
     const placed = m.placed ?? (await sc.placeInTask(next, m.attachments))
     if (!m.recorded) next.messages.push(newMessage())
     taskLog(id, '新开一轮', {

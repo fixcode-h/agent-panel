@@ -92,6 +92,21 @@ await runShard(import.meta.filename, async (api) => {
   })
   const { openFiles, backToTask, closed } = taskPageHelpers(p, api)
 
+  // 页签条右端的胶囊只显示累计执行时长：等子对话时不换成「子对话执行中」，在等什么放进悬停提示和 sr-only 读屏说明
+  // （用户报「这个运行时间有问题」：等到子对话 / 后台命令时时间就消失了）
+  {
+    const header = p.locator('header').filter({ has: p.locator('[role="tablist"][aria-label="对话页签"]') })
+    const pill = header.locator('[title*="子对话执行中"]').first()
+    if (!(await pill.count())) errors.push('状态胶囊：等子对话时悬停提示里没有说明在等什么')
+    else {
+      const text = (await pill.locator('[data-head-clock]').innerText()).trim()
+      if (!/^\d+:\d{2}(:\d{2})?$/.test(text)) errors.push(`状态胶囊：等子对话时应只显示执行时长，实际「${text}」`)
+      const screen = ((await pill.locator('.sr-only').textContent()) ?? '').trim()
+      if (!screen.includes('子对话执行中')) errors.push(`状态胶囊：读屏说明里没有说明在等什么（实际「${screen}」）`)
+      if (!(await shotOf(p, pill, '任务-状态胶囊-等子对话'))) errors.push('状态胶囊：截图失败')
+    }
+  }
+
   // 宽屏右栏默认开着（重设计：固定「项目文件 / 本对话改动」两个页签），最宽 440，不和对话平分；
   // 页签条右端的按钮能收起，再点展开
   // 会话栏在中间对话的右边、同一块面板里（照 Claude Code）：环境、上下文、Token 用量、工具调用四块，上下文按块细分；

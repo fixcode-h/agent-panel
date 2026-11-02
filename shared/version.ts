@@ -39,6 +39,13 @@ export interface AppReleases {
    * 页面据此显示温和提示，而不是当成检查失败
    */
   limitedUntil?: string
+  /**
+   * 这次结果从哪来：api 是 GitHub API（或它之前的完整缓存），feed 是 API 被限流 / 不可用时
+   * 从 Release 的 Atom feed 读到的最新版本。feed 只有版本号，没有安装包地址
+   */
+  source?: 'api' | 'feed'
+  /** Release feed 最近一次读到的时间（ISO） */
+  feedCheckedAt?: string
   error?: string
 }
 

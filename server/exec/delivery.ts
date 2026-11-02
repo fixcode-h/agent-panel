@@ -1,4 +1,16 @@
-import type { Attachment, TaskMessage } from '../../shared/schema.ts'
+import path from 'node:path'
+import type { Attachment, Task, TaskMessage } from '../../shared/schema.ts'
+
+/**
+ * 交给 CLI 的附件路径：按任务上记的落盘映射换成那一份（图片在对话目录里的绝对路径），
+ * 查不到的（非图片、旧任务没记的）用原路径。排着的消息收进来时已经拷过，见 conversation-routes 的 placeInTask。
+ */
+export function placedPaths(tk: Pick<Task, 'placedAttachments'>, attachments: readonly Attachment[]): Attachment[] {
+  return attachments.map((a) => {
+    const to = tk.placedAttachments[path.resolve(a.path)]
+    return to ? { ...a, path: to } : a
+  })
+}
 
 /**
  * 执行中补充的两种「交不出去」的落脚点。
@@ -80,14 +92,21 @@ export function markHeld(
 
 /**
  * 排着的这条交给 CLI 时用的消息：对话里记着的那条（recorded）换上排队时的正文，没记的当面板消息。
- * 父对话接连几封信合成了一条（holdForNextTurn），只交第一封的原文会丢掉后面几封
+ * 父对话接连几封信合成了一条（holdForNextTurn），只交第一封的原文会丢掉后面几封。
+ * placed：按任务上记的落盘映射换过的附件，图片用对话目录里的那份（收消息时已经拷过，见 placeInTask）
  */
-export function heldMessage(messages: TaskMessage[], q: HeldMessage): { msg: TaskMessage; recorded: boolean } {
+export function heldMessage(
+  messages: TaskMessage[],
+  q: HeldMessage,
+  placedAttachments: Task['placedAttachments'] = {},
+): { msg: TaskMessage; recorded: boolean; placed: Attachment[] } {
+  const placed = placedPaths({ placedAttachments }, q.attachments)
   const rec = messages.find((m) => m.id === q.id)
-  if (rec) return { msg: { ...rec, text: q.text }, recorded: true }
+  if (rec) return { msg: { ...rec, text: q.text }, recorded: true, placed }
   return {
     msg: { id: q.id, role: 'system', agentId: '', step: '', text: q.text, tools: [], at: new Date().toISOString() },
     recorded: false,
+    placed,
   }
 }
 

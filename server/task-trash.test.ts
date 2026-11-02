@@ -4,7 +4,7 @@
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -142,6 +142,19 @@ test('永久删除才会清掉聊天的工作目录，进回收站时留着（7 
   assert.ok(existsSync(chatDir), '进回收站时工作目录还留着')
   await t.routes.request('/trash-chat-dir/permanent', { method: 'DELETE' })
   assert.ok(!existsSync(chatDir), '永久删除时工作目录一起删掉')
+})
+
+test('用户发来的图片在对话目录里：进回收站时留着，永久删除时随对话目录一起清掉', async () => {
+  await make('trash-attach')
+  // 图片附件拷在数据目录的 tasks/files/<id>/attachments（见 server/task-files.ts）
+  const attachDir = path.join(dir, 'tasks', 'files', 'trash-attach', 'attachments')
+  mkdirSync(attachDir, { recursive: true })
+  writeFileSync(path.join(attachDir, '图.png'), 'png')
+  const t = api()
+  await t.routes.request('/trash-attach', { method: 'DELETE' })
+  assert.ok(existsSync(path.join(attachDir, '图.png')), '进回收站时图还留着，恢复后还能看')
+  await t.routes.request('/trash-attach/permanent', { method: 'DELETE' })
+  assert.ok(!existsSync(attachDir), '永久删除时随对话目录一起删掉')
 })
 
 test('进了回收站的对话读不到：旧链接和 AI 窗口的轮询都靠它判「已关闭」', async () => {

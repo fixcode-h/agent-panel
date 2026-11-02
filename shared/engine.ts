@@ -4368,7 +4368,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
         task.promptSent = rememberSent(task.promptSent, who, { ...live, session: task.sessions[who] })
       first = false
       if (!r.ok) {
-        // 这一轮 CLI 已经报过完成（turnDoneAt）才被收掉：例如子对话交付完合并回收、父对话收尾、保活上限，
+        // 这一轮 CLI 已经报过完成（turnDoneAt）才被收掉：例如子对话交付完合并回收、父对话收尾、闲置回收，
         // 这时用户没点暂停、活也已经干完，不能记成被打断。和 endTurn 用同一个判据，两处结论必须一致
         const answered = !!turn && !!r.stopped && (answeredAll(task, turn) || finishedStop(host))
         // 停止原因记进这一轮的结局：面板重启、父对话收尾、用户暂停在报告里要能分开算

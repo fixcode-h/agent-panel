@@ -123,6 +123,7 @@ const restOptsFor = (files) => {
 }
 if (!existsSync(TSX_CLI)) {
   // 启动校验失败直接退出：这里没有后续内容要跑，exit() 的截断风险只影响长输出
+  // 每个 worktree 都有自己的 node_modules（见 docs/lessons/worktree.md），这里读的就是当前目录这份
   console.error(`找不到 tsx（${TSX_CLI}）：这个目录还没装依赖，先跑 npm ci`)
   process.exit(1)
 }

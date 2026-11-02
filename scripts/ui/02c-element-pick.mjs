@@ -254,6 +254,78 @@ await runShard(import.meta.filename, async (api) => {
     await backToTask()
   }
 
+  // 一轮改动的差异窗口：左边文件树 + 右边对照，尺寸跟内容走（短 diff 收紧、长 diff 用满视口），左栏可以收起
+  {
+    /** 当前差异窗口相对视口的大小 */
+    const size = () =>
+      p.evaluate(() => {
+        const d = document.querySelector('[role="dialog"]')
+        if (!d) return null
+        const r = d.getBoundingClientRect()
+        return { w: r.width, h: r.height, vw: innerWidth, vh: innerHeight }
+      })
+    /** 一轮改动卡片里的文件行：按完整路径找，不和右栏文件树的同名文件混在一起 */
+    const card = p.locator('.turn-changes')
+    const file = (path) => card.getByTitle(path, { exact: true })
+
+    // 长 diff：62 行的删除，窗口应该长到视口上限、正文自己滚动
+    await card.getByRole('button', { name: '查看全部', exact: true }).click()
+    await file('tests/cart.test.ts').click()
+    await check(p, '差异-一轮改动-长', ['cart.test.ts', 'expect(total).toBe(42)', '-62'])
+    const long = await size()
+    if (!long) errors.push('差异-一轮改动-长：窗口没有打开')
+    else {
+      if (long.h < long.vh - 90)
+        errors.push(`差异-一轮改动-长：窗口高 ${Math.round(long.h)}px，长 diff 应该用满视口（${long.vh}px）`)
+      if (long.w < long.vw * 0.9)
+        errors.push(`差异-一轮改动-长：窗口宽 ${Math.round(long.w)}px，应该接近铺满（视口 ${long.vw}px）`)
+      const scrolls = await p.evaluate(() =>
+        [...document.querySelectorAll('[role="dialog"] *')].some(
+          (el) => ['auto', 'scroll'].includes(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight + 1,
+        ),
+      )
+      if (!scrolls) errors.push('差异-一轮改动-长：长 diff 超出视口时正文应该在窗口里滚动')
+    }
+    // 左栏收起 / 展开：收起后文件树不再占宽度
+    await p.getByRole('button', { name: '收起文件列表', exact: true }).click()
+    if (await p.locator('[role="dialog"] aside[aria-label="这一轮的改动"]').count())
+      errors.push('差异-一轮改动-长：点「收起文件列表」后文件树还在')
+    await check(p, '差异-收起文件列表', ['左右对照', 'expect(total).toBe(42)'])
+    await p.getByRole('button', { name: '显示文件列表', exact: true }).click()
+    if (!(await p.locator('[role="dialog"] aside[aria-label="这一轮的改动"]').count()))
+      errors.push('差异-一轮改动-长：点「显示文件列表」后文件树没有回来')
+    await p.keyboard.press('Escape')
+    await closed()
+
+    // 短 diff：几行改动，窗口应该按内容收紧，不再固定 640 高
+    await file('src/components/RestockButton.tsx').click()
+    await check(p, '差异-一轮改动-短', ['RestockButton.tsx', '到货通知我'])
+    const short = await size()
+    if (!short) errors.push('差异-一轮改动-短：窗口没有打开')
+    else {
+      if (short.h > 600) errors.push(`差异-一轮改动-短：窗口高 ${Math.round(short.h)}px，短 diff 应该按内容收紧`)
+      if (short.w < short.vw * 0.9)
+        errors.push(`差异-一轮改动-短：窗口宽 ${Math.round(short.w)}px，应该接近铺满（视口 ${short.vw}px）`)
+    }
+    await p.keyboard.press('Escape')
+    await closed()
+
+    // 窄屏：文件树自动隐藏，只留顶部的上一个 / 下一个
+    await p.setViewportSize({ width: 820, height: 800 })
+    await file('src/components/RestockButton.tsx').click()
+    await check(p, '差异-一轮改动-窄屏', ['到货通知我', '2 / 4'])
+    if (
+      await p
+        .locator('[role="dialog"] aside[aria-label="这一轮的改动"]')
+        .isVisible()
+        .catch(() => false)
+    )
+      errors.push('差异-一轮改动-窄屏：820px 宽时文件树应该自动隐藏')
+    await p.keyboard.press('Escape')
+    await closed()
+    await p.setViewportSize({ width: 1440, height: 900 })
+  }
+
   // 执行计划：输入框上方的按钮，点开是计划窗口（进行中的主步骤展开子步骤），以前的计划收在下面
   await p.getByRole('button', { name: '执行计划' }).click()
   await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])

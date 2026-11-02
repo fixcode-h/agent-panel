@@ -43,13 +43,13 @@ export function attachmentRef(a: Pick<Attachment, 'name' | 'mime' | 'quote'>) {
 }
 
 /**
- * 附件列表里每一行的读法：图片拷进了对话目录、给的是相对路径；其它是本机绝对路径。
- * 两种形态都有，按附件本身判（attachChip），不能只看路径是不是绝对：
- * 项目对话里粘贴进来的项目内文件会被 placeAttachments 换成相对路径，但它不是图片。
+ * 附件列表里每一行的读法：图片拷进对话目录的 attachments/，给的是那里的绝对路径；
+ * 工作目录里本来就有的文件（旧任务当年拷进去的、粘贴进来的项目内文件）仍是相对路径。
+ * 按路径形态判，不能只看附件类型：项目内文件会被换成相对路径，但它不是图片。
  */
 function attachReadNote(a: Pick<Attachment, 'name' | 'mime' | 'quote' | 'path'>) {
   const image = attachChip(a) === 'image'
-  if (!isAbsolutePath(a.path)) return image ? '对话目录里的图片，相对路径' : '对话目录里的文件，相对路径'
+  if (!isAbsolutePath(a.path)) return image ? '工作目录里的图片，相对路径' : '工作目录里的文件，相对路径'
   return image ? '图片，本机绝对路径' : '本机绝对路径'
 }
 
@@ -642,6 +642,14 @@ export interface ChildReport {
 
 /** 失败信息最多展示这么多字：只留能定位的那一句，完整原文在子对话里 */
 const FAILURE_NOTE_MAX = 160
+
+/**
+ * 面板的计划催促该按提醒显示：新消息 panel 是 'nudge'，旧对话里记成了 'build'（用户报障的那条就是），
+ * 只能按正文开头认；合并编译结果仍是 'build'，不能被当成提醒
+ */
+const PLAN_NUDGE_HEAD = /^【面板】(你的计划才做了|这一轮跑了命令)/
+export const isPlanNudge = (m: Pick<TaskMessage, 'panel' | 'text'>) =>
+  m.panel === 'nudge' || (m.panel === 'build' && PLAN_NUDGE_HEAD.test(m.text))
 
 /**
  * 子对话这次失败的根因：最后一条还没恢复的报错（CLI 重试耗尽的上游报错、面板工具没接上、
@@ -1947,7 +1955,7 @@ export function taskBusyCount(list: Parameters<typeof taskBusy>[0][]): number {
 }
 
 /**
- * 保活回收判定：这个对话还在运行吗？在运行的不按两段时间回收、也不参与上限淘汰（ADR 0012）。
+ * 保活回收判定：这个对话还在运行吗？在运行的不按宽限回收（ADR 0012）。
  * 状态部分就是 convActive（taskFacts）：在跑、在等子任务 / 子对话 / 后台命令 / 工作流、有没回复的提问和请求；
  * 另外这一轮没收尾、在预热也算。后台命令数和名下还在运行的子对话数不在任务数据里，由调用方按运行时情况传。
  */
@@ -1967,7 +1975,7 @@ export function keepAliveBusy(
  * - 在（这一轮在跑、或者停在等下一句保活着）：看任务自己的事实，见上面的 keepAliveBusy；
  * - 不在（这一轮结束、进程已退出，例如不支持保活的 CLI）：名下还有子对话 / 后台命令没回来时它在等结果，
  *   不能按「没人看就不留着」回收——回收会把它落成「已中断」，子对话的结果回来时没人在等（用户报的「父对话被回收」）。
- * 回收时长、保活上限都只问这一处，不在各触发点各写一个 if（ADR 0012）
+ * 回收时长只问这一处，不在各触发点各写一个 if（ADR 0012）
  */
 export function keepAliveHolding(x: {
   /** 还在执行位里（Live 里有一条） */
@@ -1984,34 +1992,6 @@ export function keepAliveHolding(x: {
   if (!x.live) return !!x.more || !!(x.children || x.background)
   if (x.more) return true
   return !!x.task && keepAliveBusy(x.task, { background: x.background, children: x.children })
-}
-
-/**
- * 保活会话（回复完停在等下一句、CLI 进程还没退）超过全局上限时要结束哪几个：
- * 只从没人在看的里面挑最近使用时间最早的（LRU），`exceptId` 是刚进入保活的那个，不算；
- * 正在看的页面不算（用户马上会回来发消息，回收了反而要重新启动）。
- * 候选只看 awaitingUser：正在执行的一轮它不是 true（调用方还会把还在跑的子对话、后台命令排在外面）。
- * 返回要结束的 id，从最久没用的开始；没超限返回空数组。limit 为 0 表示不限制。
- */
-export function keepAliveVictims(
-  list: Pick<Task, 'id' | 'awaitingUser' | 'turnSeenAt' | 'turnDoneAt' | 'updatedAt'>[],
-  limit: number,
-  exceptId = '',
-  watched: (id: string) => boolean = () => false,
-): string[] {
-  if (!limit) return []
-  // awaitingUser 就是「回复完停在等下一句」：正在跑的这一轮它一直是 false，天然不在候选里
-  const idle = list.filter((t) => t.awaitingUser && t.id !== exceptId && !watched(t.id))
-  // 刚进入保活的那一个也算进上限：已有 idle 数 + 1 超过 limit 时要收掉差的那么多。
-  // 没传 exceptId（那个自己还在忙、不占名额）时不能加 1，否则会多收一个空闲会话
-  const over = idle.length + (exceptId ? 1 : 0) - limit
-  if (over <= 0) return []
-  const used = (t: Pick<Task, 'turnSeenAt' | 'turnDoneAt' | 'updatedAt'>) =>
-    t.turnSeenAt || t.turnDoneAt || t.updatedAt || ''
-  return idle
-    .sort((a, b) => used(a).localeCompare(used(b)))
-    .slice(0, over)
-    .map((t) => t.id)
 }
 
 /**

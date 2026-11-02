@@ -27,7 +27,16 @@ import {
 } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { PROXY_ENV_EXAMPLE } from '@shared/proxy'
-import { accountModelId, cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
+import {
+  accountModelId,
+  cliSettings,
+  defaultCli,
+  mergeCliEnv,
+  readCliEnvText,
+  splitCliEnv,
+  tierFallback,
+  tierOf,
+} from '@shared/settings'
 import { autoLimits, fmtTokens, limitSupport, MIN_AGENT_CONTEXT, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
 import { useData, useTasks } from '@/lib/data'
@@ -65,7 +74,10 @@ export const textToEnv = (text: string) =>
 /** 编辑中的 CLI 设置：参数和环境变量先按文本编辑，保存时再解析 */
 export interface CliDraft extends Omit<CliSettings, 'extraArgs' | 'env'> {
   args: string
+  /** 用户自己追加的环境变量（不含 CLI 定义里已有的键） */
   envText: string
+  /** CLI 定义自带的环境变量里改过的值：键和定义里的同名，保存时写进 CliSettings.env 覆盖定义值 */
+  envOverrides: Record<string, string>
 }
 
 /**
@@ -587,6 +599,76 @@ function ModelSource({ cli, data }: { cli: CliDefinition; data?: CliModels }) {
   return <p className={cn('pt-1 text-xs leading-relaxed', data.error ? 'text-warning' : 'text-subtle')}>{text}</p>
 }
 
+/**
+ * CLI 定义自带的环境变量：键和默认值来自 CLI 定义，用户改过的值存成同名覆盖。
+ * 定义里有的键只在这里出现，下面的自由编辑区只放用户自己加的键，同一个键只有一个编辑入口。
+ */
+function DefaultEnv({
+  def,
+  overrides,
+  onChange,
+}: {
+  def: CliDefinition
+  overrides: Record<string, string>
+  onChange: (v: Record<string, string>) => void
+}) {
+  const entries = Object.entries(def.env ?? {})
+  if (!entries.length) return null
+  // 改成默认值等于没有改过：不存覆盖，「恢复默认」就是删掉这一条
+  const set = (key: string, value: string, fallback: string) => {
+    const next = { ...overrides }
+    if (value === fallback) delete next[key]
+    else next[key] = value
+    onChange(next)
+  }
+  return (
+    <Row
+      title={t('默认环境变量')}
+      desc={t('每次运行都会带上，可以改值')}
+      hint={t(
+        '这些是 {cli} 的 CLI 配置里自带的，每次运行都会传给 {cli}。改过的值存成同名覆盖，点右边的按钮恢复默认。',
+        { cli: def.name },
+      )}
+      stack
+    >
+      <div className="flex flex-col gap-2">
+        {entries.map(([key, fallback]) => {
+          const changed = Object.hasOwn(overrides, key)
+          return (
+            <div key={key} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+              <span className="flex min-w-0 shrink-0 flex-col sm:w-[300px]">
+                <code className="font-mono text-body break-all text-muted" title={key}>
+                  {key}
+                </code>
+                {changed && !!fallback && (
+                  <span className="text-caption break-all text-subtle">{t('默认 {value}', { value: fallback })}</span>
+                )}
+              </span>
+              <div className="relative min-w-0 flex-1">
+                <Input
+                  aria-label={t('{key} 的值', { key })}
+                  className="h-9 pr-8 font-mono text-body"
+                  value={changed ? overrides[key] : fallback}
+                  onChange={(e) => set(key, e.target.value, fallback)}
+                  spellCheck={false}
+                />
+                {changed && (
+                  <IconButton
+                    icon={RotateCcw}
+                    label={t('恢复默认')}
+                    onClick={() => set(key, fallback, fallback)}
+                    className="absolute top-1/2 right-1.5 -translate-y-1/2"
+                  />
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Row>
+  )
+}
+
 export function CliSection({
   def,
   draft,
@@ -612,6 +694,20 @@ export function CliSection({
   onAddApi: (a: ApiConfig) => void
 }) {
   const set = <K extends keyof CliDraft>(k: K, v: CliDraft[K]) => onChange({ ...draft, [k]: v })
+  // 自由编辑区里写到的默认键同步到上面的行；输入过程中不改文本（受控 textarea 的光标会跳到末尾），
+  // 离开输入框时再把完整的默认键行移走，同一个键只留上面一个入口
+  const onEnvText = (text: string) => {
+    const next = { ...draft.envOverrides }
+    for (const [key, value] of Object.entries(readCliEnvText(def.env, text).values)) {
+      if (def.env?.[key] === value) delete next[key]
+      else next[key] = value
+    }
+    onChange({ ...draft, envText: text, envOverrides: next })
+  }
+  const commitEnvText = () => {
+    const text = readCliEnvText(def.env, draft.envText).kept.join('\n')
+    if (text !== draft.envText) onChange({ ...draft, envText: text })
+  }
   // 模型和思考强度用本机 CLI 实际支持的
   const full = useCliDef(def.id) ?? def
   const models = useCliModels(def.id)
@@ -844,7 +940,7 @@ export function CliSection({
         </Row>
       </Group>
 
-      <Group title={t('运行')}>
+      <Group title={t('常用')}>
         <Row
           title={t('权限')}
           desc={<span className={cn(DANGER_PERMS.includes(perm.id) && 'text-warning')}>{perm.hint}</span>}
@@ -905,32 +1001,40 @@ export function CliSection({
             ]}
           />
         </Row>
-        <Advanced label={t('可执行文件、参数、环境变量')}>
+        <DefaultEnv def={def} overrides={draft.envOverrides} onChange={(v) => set('envOverrides', v)} />
+        <Row title={t('额外参数')} desc={t('每次调用都追加')} hint={t('角色自己的参数排在后面。')}>
+          <Input
+            value={draft.args}
+            onChange={(e) => set('args', e.target.value)}
+            placeholder={t('例如 --add-dir ../shared')}
+            className="h-9 font-mono text-body"
+            spellCheck={false}
+          />
+        </Row>
+        <Row
+          title={t('环境变量')}
+          desc={t('每行一个 KEY=VALUE，只传给这个 Agent')}
+          hint={t('上面「默认环境变量」里已经有的键，在这里写会并到那一行；这里放自己追加的变量。')}
+          stack
+        >
+          <Textarea
+            rows={2}
+            aria-label={t('{cli} 环境变量', { cli: def.name })}
+            value={draft.envText}
+            onChange={(e) => onEnvText(e.target.value)}
+            onBlur={commitEnvText}
+            placeholder={def.envExample || PROXY_ENV_EXAMPLE}
+            className="font-mono text-body"
+            spellCheck={false}
+          />
+        </Row>
+        <Advanced label={t('可执行文件')}>
           <Row title={t('可执行文件')} desc={t('留空时从 PATH 查找 {command}', { command: def.command })}>
             <Input
               value={draft.command}
               onChange={(e) => set('command', e.target.value)}
               placeholder={def.command}
               className="h-9 font-mono text-body"
-              spellCheck={false}
-            />
-          </Row>
-          <Row title={t('额外参数')} desc={t('每次调用都追加')} hint={t('角色自己的参数排在后面。')}>
-            <Input
-              value={draft.args}
-              onChange={(e) => set('args', e.target.value)}
-              placeholder={t('例如 --add-dir ../shared')}
-              className="h-9 font-mono text-body"
-              spellCheck={false}
-            />
-          </Row>
-          <Row title={t('环境变量')} desc={t('每行一个 KEY=VALUE，只传给这个 Agent')} stack>
-            <Textarea
-              rows={2}
-              value={draft.envText}
-              onChange={(e) => set('envText', e.target.value)}
-              placeholder={def.envExample || PROXY_ENV_EXAMPLE}
-              className="font-mono text-body"
               spellCheck={false}
             />
           </Row>
@@ -953,7 +1057,7 @@ export function CliSection({
               tiers: draft.tiers,
               permission: draft.permission,
               extraArgs: splitArgs(draft.args),
-              env: textToEnv(draft.envText),
+              env: mergeCliEnv(textToEnv(draft.envText), draft.envOverrides),
               maxTurns: draft.maxTurns,
               options: draft.options,
             }}
@@ -1021,6 +1125,8 @@ export const toDraft = (s: Settings): Record<string, CliDraft> =>
       const raw = s.clis[c.id]
       const eff = cliSettings(s, c.id)
       const own = CliSettings.parse(raw ?? {})
+      // 定义自带的环境变量单独编辑（改过的值存成同名覆盖），自由编辑区只放用户自己加的键
+      const env = splitCliEnv(c.env, own.env)
       return [
         c.id,
         {
@@ -1032,7 +1138,8 @@ export const toDraft = (s: Settings): Record<string, CliDraft> =>
           permission: eff.permission,
           // 用户自己写的：API 模式和 CLI 定义自带的环境变量、参数不算（保存时会写回设置里）
           args: joinArgs(own.extraArgs),
-          envText: envToText(own.env),
+          envText: envToText(env.extra),
+          envOverrides: env.overrides,
           showLimits: eff.showLimits,
           autoCompact: eff.autoCompact,
           maxTurns: own.maxTurns,

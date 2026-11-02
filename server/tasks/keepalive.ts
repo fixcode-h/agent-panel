@@ -1,8 +1,7 @@
 import { Task, type StopReason } from '../../shared/schema.ts'
-import { keepAliveHolding, keepAliveVictims } from '../../shared/task.ts'
+import { keepAliveHolding } from '../../shared/task.ts'
 import { getSettings } from '../settings.ts'
 import { dropHeld, hasHeld, markHeld } from '../exec/delivery.ts'
-import { isViewing } from '../presence.ts'
 import { worktreeStatus } from '../exec/worktree.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
@@ -21,7 +20,7 @@ import { settleStopped } from '../../shared/task-settle.ts'
 import { STOP_GIVE_UP_MS, TaskBusyError } from './helpers.ts'
 
 /**
- * 停止对话、保活上限与回收（还在运行的对话不回收，见 ADR 0012）、对话名下的进程面板。
+ * 停止对话、保活与回收（还在运行的对话不回收，见 ADR 0012）、对话名下的进程面板。
  */
 /** 取消等下一句后等进程自己退出的时长，过了就强制停止（见 endLive）。比 invoke 的 EXIT_GRACE_MS 长：常驻协议的 CLI 先按正常退出收掉 */
 export const END_LIVE_GRACE_MS = 20_000
@@ -214,7 +213,7 @@ export function createKeepAlive(s: TasksScope) {
   }
 
   /**
-   * 这个对话还在运行，不能回收、失活（ADR 0012）：两个回收时长、保活上限都先问它，页面开着还是切到后台都一样。
+   * 这个对话还在运行，不能回收、失活（ADR 0012）：回收宽限先问它，页面开着还是切到后台都一样。
    * 判定就是 convActive（自己在跑、在等子任务 / 子对话 / 后台命令 / 工作流，有没回复的提问和请求），
    * 再加上这一轮没收尾、在预热、还有排队的消息。只有停在等下一句、什么都没挂着的才是空闲会话。
    * 名下子对话只算还在运行的（childActive）：父对话被回收不会再连带停掉子对话，闲着的子对话不用护着它
@@ -269,29 +268,6 @@ export function createKeepAlive(s: TasksScope) {
         { dirty: st.dirty, path: wt.path, branch: wt.branch },
       )
       .catch((e) => log.warn('task', '子对话停止时没能提示父对话', { task: tk.id, error: (e as Error).message }))
-  }
-
-  /**
-   * 保活会话的全局上限：CLI 回复完停在等下一句时会留一个进程，页面开着的不算（用户马上回来）。
-   * 没人在看又超过设置里的上限时，结束最久没用的那个（reason='idle'），
-   * 下次打开靠 --resume 续接，代价是冷启动一次。
-   * 只收空闲会话：正在跑的对话（不管页面开着还是切到后台）不占名额也不被选走
-   */
-  async function enforceKeepAlive(selfId = '') {
-    const { keepAliveLimit } = await getSettings()
-    if (!keepAliveLimit) return
-    // 还在运行的对话（自己或名下子对话、子任务、后台命令没完，提问没回复）不回收：只收真闲着的。
-    // 判定和宽限到期时是同一个（keepAliveBusy → convActive）
-    const pool = [...s.live.values()].map((e) => e.task).filter((t) => !keepAliveBusy(t.id))
-    // 只放过前台正开着的页面：切走后还在宽限期里的也算进上限（hasViewer 会把它们都当成有人在看，
-    // 一小时内点开过的对话全部豁免，上限形同虚设）。这里排掉的只有 running 的，见 keepAliveVictims
-    // 刚进入保活的那个也算进上限（+1）；它其实是 busy（后台命令还在跑）时不占名额，别多收一个空闲会话
-    const exceptId = selfId && !keepAliveBusy(selfId) ? selfId : ''
-    const victims = keepAliveVictims(pool, keepAliveLimit, exceptId, isViewing)
-    for (const id of victims) {
-      log.info('task', '保活的会话超过上限，结束最久没用的', { task: id, limit: keepAliveLimit })
-      stopTask(id, 'idle')
-    }
   }
 
   // ---- 进程与内存：标题栏下拉里的进程列表、关闭、清理、内存曲线 ----
@@ -418,7 +394,6 @@ export function createKeepAlive(s: TasksScope) {
     subtreeIdsOf,
     taskAlive,
     keepAliveBusy,
-    enforceKeepAlive,
     closeWaiting,
     endLive,
   }

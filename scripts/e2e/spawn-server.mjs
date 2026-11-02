@@ -29,8 +29,9 @@ const MAX_LINES = 200
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
- * tsx 的可执行文件：子对话的 worktree 里没有自己的 node_modules（依赖按项目共用一份放在上级目录，
- * 见 docs/lessons/worktree.md），所以沿上级目录找。找不到时返回当前目录的路径，让 spawn 报原来的错
+ * tsx 的可执行文件：每个 worktree 现在都有自己的 node_modules（见 docs/lessons/worktree.md），
+ * 直接用当前根目录这一份。沿上级找只是给手动建的、还没准备依赖的目录兜底。
+ * 找不到时返回当前目录的路径，让 spawn 报原来的错。
  */
 export function tsxBin(root) {
   for (let dir = root; ; dir = path.dirname(dir)) {

@@ -185,8 +185,8 @@ await runShard('对话与续接', async (api) => {
   )
   await sleep(3000)
   const npNow = await call('GET', `/tasks/${np.id}`)
-  assert.equal(npNow.messages.filter((m) => m.panel === 'build').length, 1, '只推了一次')
-  assert.match(npNow.messages.find((m) => m.panel === 'build').text, /没有计划就结束了[\s\S]*set_plan/)
+  assert.equal(npNow.messages.filter((m) => m.panel === 'nudge').length, 1, '只推了一次')
+  assert.match(npNow.messages.find((m) => m.panel === 'nudge').text, /没有计划就结束了[\s\S]*set_plan/)
   assert.equal(npDone.status, 'done')
   await call('DELETE', `/tasks/${np.id}`)
 

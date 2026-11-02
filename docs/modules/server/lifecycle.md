@@ -24,7 +24,7 @@
 
 `settleReclaimed` 只改「`running` 且 `working === false`」的任务：**正在产出的（`working === true`）不碰**（不能把真在产出的任务写成已停止），**已经停下的不碰**（用户暂停、父对话结束这类原因不能被覆盖，和 `stopTask` 的原因语义一致）。界面侧 `web/src/components/tasks/child-line.ts` 的 `convGone` 对 `idle` 的行也返回 `'hint'`，所以停下来的行上依然写「Agent 进程已回收，继续会重新拉起」（计划没做完的行还会由 `childLabels` 追加一条同样的标签，不只在悬停里）；用户按的暂停（`stopReason: 'user'`）不显示这句。回归：`server/reclaim.test.ts` 5 条、`child-line.test.ts` 的「页面宽限回收后的静止行」。这条路径的完整排查也在同一份 Bug 记录里。
 
-**两段回收时长和保活上限只收真空闲的会话**：`server/presence.ts` 的 `evict` 和 `server/tasks/keepalive.ts` 的 `enforceKeepAlive` 都先问同一个判定（`server/tasks/keepalive.ts` 的 `keepAliveBusy` → `shared/task.ts` 的 `keepAliveHolding`）：
+**回收宽限只收真空闲的会话**：`server/presence.ts` 的 `evict` 先问同一个判定（`server/tasks/keepalive.ts` 的 `keepAliveBusy` → `shared/task.ts` 的 `keepAliveHolding`）：
 
 - 有执行位时按任务事实判（`convActive`：在跑、等子对话 / 子任务 / 后台命令 / 工作流、有没回复的提问和请求），再加上正在启动和还有排队的消息；
 - **没有执行位时**（这一轮已经结束、进程也退了，例如工作流节点、压缩 / 审查这类操作，或者对话页已经关了）看名下还在跑的子对话（`childrenRunning`，和 `childActive` 同一套判定）和还没回来的后台命令：它们的结果还要交回这条对话，按「没人看就回收」收掉会把它落成「已中断」（用户报的「父对话被回收」）。

@@ -177,6 +177,58 @@ export function cliSettings(
   }
 }
 
+/** 一条环境变量；设置和 CLI 定义里的 env 都用这个形状 */
+export type CliEnvEntry = CliSettings['env'][number]
+
+/**
+ * 把用户存的环境变量按 CLI 定义拆开：定义里自带的键算「覆盖」，其余是用户自己加的。
+ * 实际启动 CLI 时后面的同名键覆盖前面的（`server/exec/process.ts` 的 childEnv 逐个赋值），
+ * 所以先按 key 折叠成最后一个值再比较；值和定义里相同时不保留（等于没改），这样「恢复默认」就是删掉这一条覆盖。
+ * 设置页的「默认环境变量」只列定义里的键，自由编辑区只列自己加的键，同一个键只有一个编辑入口。
+ */
+export function splitCliEnv(defEnv: Record<string, string> | undefined, env: CliEnvEntry[]) {
+  const last = new Map<string, string>()
+  for (const e of env) if (e.key) last.set(e.key, e.value)
+  const overrides: Record<string, string> = {}
+  const extra: CliEnvEntry[] = []
+  for (const [key, value] of last) {
+    // 用 hasOwn 而不是 key in：定义里的键可能是 constructor 这类原型上的名字
+    if (defEnv && Object.hasOwn(defEnv, key)) {
+      if (defEnv[key] !== value) overrides[key] = value
+    } else extra.push({ key, value })
+  }
+  return { overrides, extra }
+}
+
+/**
+ * 保存时把自由添加的变量和默认键的覆盖合成一份 env。
+ * 同一个键只留最后一条，和实际启动时后写生效一致；覆盖排在后面、覆盖自由编辑区里的同名项。
+ */
+export function mergeCliEnv(extra: CliEnvEntry[], overrides: Record<string, string>) {
+  const merged = new Map<string, string>()
+  for (const e of extra) if (e.key) merged.set(e.key, e.value)
+  for (const [key, value] of Object.entries(overrides)) merged.set(key, value)
+  return [...merged].map(([key, value]) => ({ key, value }))
+}
+
+/**
+ * 从设置页自由编辑的环境变量文本里取出 CLI 定义已有的键（最后一个同名键生效），其余行原样留下。
+ * 逐字输入时调用方不能改文本（受控 textarea 的光标会跳到末尾），所以这里只解析、不重写；
+ * 离开输入框时再用返回的 kept 把定义里已有的键移走。
+ */
+export function readCliEnvText(defEnv: Record<string, string> | undefined, text: string) {
+  const values: Record<string, string> = {}
+  const kept: string[] = []
+  for (const line of text.split('\n')) {
+    const row = line.trim()
+    const at = row.indexOf('=')
+    const key = at > 0 ? row.slice(0, at).trim() : ''
+    if (key && !row.startsWith('#') && defEnv && Object.hasOwn(defEnv, key)) values[key] = row.slice(at + 1)
+    else kept.push(line)
+  }
+  return { values, kept }
+}
+
 /**
  * 系统默认 CLI；设置里的值无效时用第一个。
  * 选的那个被停用了就换成按顺序第一个启用的，免得 Agent 一直落到停用的 CLI 上；一个都没启用时照旧返回设置里的值
