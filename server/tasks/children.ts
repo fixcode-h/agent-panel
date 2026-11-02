@@ -208,7 +208,10 @@ export function createChildren(sc: TasksScope) {
     // 只能等 presence 宽限期（未读的连计时都不排）兜底，实测会留下十几个没人用的进程。
     // 原因写 finish：界面和引擎都按「做完后收尾」处理，不显示成「这一轮被中断」
     // 限时：CLI 取消等待后不退出时强制停掉，收尾不能一直卡着（父对话再交代任务会跟着卡住）
-    if (entry) await sc.endLive(childId, entry, 'finish')
+    // 共用目录的子对话按设置「子对话完成后保留」再留几分钟：这段时间里父对话接着交代，直接交给同一个进程。
+    // 独立分支的不留：下面马上要删它的目录，CLI 的工作目录没了，再交给它也跑不了
+    const kept = entry && !isolated(tk) ? await sc.keepDoneChild(childId, entry) : false
+    if (entry && !kept) await sc.endLive(childId, entry, 'finish')
     // 后台命令结果推回来还要开新一轮，彻底完成时一起停掉
     await sc.background.stop(childId)
     if (isolated(tk)) {
@@ -233,10 +236,11 @@ export function createChildren(sc: TasksScope) {
     sc.claims.release(tk.parentTaskId!, childId)
     // 落到 resolved 之后再核对一次：上面只停得到本进程 live 里的那一轮，
     // 重启前留下的、或某条路径漏停的 CLI 还挂在登记里（任务已经完成了，进程留着没人要）。
-    // 日志由 killTaskClis 写，里面带任务和 pid
-    await killTaskClis(childId, killTree).catch((err) =>
-      log.warn('task', '收尾后回收子对话的 CLI 进程失败', { task: childId, error: (err as Error).message }),
-    )
+    // 日志由 killTaskClis 写，里面带任务和 pid。保留期里的那个是特意留着的，到点由保留期结束
+    if (!kept)
+      await killTaskClis(childId, killTree).catch((err) =>
+        log.warn('task', '收尾后回收子对话的 CLI 进程失败', { task: childId, error: (err as Error).message }),
+      )
   }
 
   /**

@@ -1766,7 +1766,12 @@ export const EN_SETTINGS: Record<string, string> = {
   条: 'cmds',
   新建文件格式: 'New file format',
   面板写文件时用的编码和换行符: 'Encoding and line endings the panel writes with',
-  后台会话: 'Background sessions',
+  'Agent 进程': 'Agent processes',
+  子对话完成后保留: 'Keep after a sub-chat finishes',
+  '完成后 Agent 再留多久': 'How long the agent stays after finishing',
+  '填 0 表示完成就结束。子对话彻底完成后，它的 Agent 先停在等下一句上，这段时间里父对话或你接着交代，直接交给同一个进程，不用重新启动；到点还没人用就结束，之后再交代会续接原会话。在独立分支里做的子对话完成时分支目录会删掉，Agent 随之结束，不受这一项影响。':
+    '0 ends it as soon as it finishes. After a sub-chat is fully done, its agent waits for the next message; anything the parent or you send within this time goes straight to the same process without a restart. If nobody uses it by then it ends, and later messages resume the original session. Sub-chats that worked on their own branch end right away, since the branch directory is removed when they finish.',
+  '子对话完成后 Agent 保留多久（分钟）': 'Minutes to keep the agent after a sub-chat finishes',
   '回收空闲 Agent': 'Reclaim idle agents',
   '空闲到时结束进程，再用时续接会话': 'Ends idle processes on a timer; the session resumes later',
   '回复完没人看着的空闲 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这两段时间和数量上限管，页面切到后台也照样跑完。关掉后不再按时间回收，只会按「最多保活」收，进程会越攒越多。':

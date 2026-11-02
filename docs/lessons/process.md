@@ -18,3 +18,9 @@ paths: server/exec/process.ts, server/exec/orphans.ts, server/exec/proc-stats.ts
 - 规则：界面靠 `messageStamp` 判断消息变没变，工具行的 `running`、`ms` 这类决定转圈和耗时的字段必须进 stamp，否则服务端收掉了界面也不刷新。停止后台命令用 `killTreeDeep`：先拍进程表快照，按 ppid 把子孙都杀掉，Windows 上父进程先退、孙进程被改挂（或 setsid）也能找到。
 - 起因：用户 2026-10-23 反馈「强制停止对话，不会终止后台运行命令」，截图里 `git config…` 一直转圈：stamp 没包含 `running`，停止的更新推不到界面；`taskkill /T` 找不到已经脱离父进程的孙进程。
 - 防线：`shared/task-stage.test.ts` 的 `messageStamp` 用例；`server/exec/proc-stats.test.ts` 的 `descendants` 用例。
+
+## 等不到执行收尾就收口并让出执行位，不能只写「不再等它」
+
+- 规则：限时等一份执行收完（`endLive`、停止后）等不到时，走 `server/tasks/keepalive.ts` 的 `abandonLive`：杀进程、按停止（收尾的按完成）落盘、`release` 执行位、`abandon()` 让 `done` 结束；之后引擎收完也不写盘（`Live.orphaned`）。执行位留着不放，`runningConv` 就一直把消息交给这份没有进程的执行，排着的消息永远等不到「这一轮结束」。「停下没有」按进程判断：用户停止后名下 CLI 进程没了就是停下了（`watchStop`），不等引擎走完收尾。
+- 起因：用户 2026-11-02 报「子对话完成后父对话再交代任务，子对话一直等待模型；停止再继续也不知道那条任务」——4fd28a6 给 `endLive` 加了限时，但超时后只是「不再等它」，执行位没让出来。
+- 防线：`server/tasks/keepalive-endlive.test.ts` 的「强制停止后执行仍收不完」「用户停止后进程已经没了」。

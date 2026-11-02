@@ -120,6 +120,9 @@ export function tasksApi(deps: {
     claims: () => claims,
     closeWaiting: () => closeWaiting,
     endLive: () => endLive,
+    keepDoneChild: () => keepDoneChild,
+    keepingDone: () => keepingDone,
+    stopTree: () => stopTree,
     cliChildren: () => cliChildren,
     closeChildren: () => closeChildren,
     completing: () => completing,
@@ -299,12 +302,12 @@ export function tasksApi(deps: {
    * 已经在执行时返回已有的那一份（fresh 为 false），由调用方决定复用还是返回 409，不能覆盖
    */
   const reserve = (task: Task) =>
-    reserveOnce(live, task.id, (): Live => ({
-      task: structuredClone(task),
-      stop: false,
-      abort: new AbortController(),
-      rev: 0,
-    }))
+    reserveOnce(live, task.id, (): Live => {
+      // 面板放弃这份执行时（进程没了、停不下来，见 keepalive.ts 的 abandonLive）让 done 也跟着结束
+      let abandon = () => {}
+      const abandoned = new Promise<void>((r) => (abandon = r))
+      return { task: structuredClone(task), stop: false, abort: new AbortController(), rev: 0, abandon, abandoned }
+    })
   /** 只释放自己的执行位：旧的一轮收尾时不能把新的一轮删掉 */
   const release = (entry: Live) => releaseIfSame(live, entry.task.id, entry)
 
@@ -659,6 +662,9 @@ export function tasksApi(deps: {
     enforceKeepAlive,
     closeWaiting,
     endLive,
+    keepDoneChild,
+    keepingDone,
+    stopTree,
   } = createKeepAlive(scope)
 
   const routes = new Hono()
@@ -803,6 +809,8 @@ export function tasksApi(deps: {
     async reapSettledClis() {
       const metas = new Map((await store.list()).map((tk) => [tk.id, tk]))
       const settled = async (id: string) => {
+        // 完成后还在保留期里的子对话：CLI 是特意留着的，到点由保留期自己结束
+        if (keepingDone(id)) return false
         // 在跑的用 live 那份，它比落盘的新（刚置 resolved / 刚停下）
         const tk = live.get(id)?.task ?? metas.get(id)
         // 读不到（刚建、刚删）：这一轮不动，下一轮再看
