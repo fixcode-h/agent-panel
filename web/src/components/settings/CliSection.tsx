@@ -683,7 +683,7 @@ export function CliSection({
             {!status
               ? t('检测中…')
               : ok
-                ? t('已安装 · {version}', { version: status.version ?? '' })
+                ? t('已安装 · {version}', { version: status.version ?? status.error ?? '' })
                 : t('没有检测到：{error}', { error: status.error ?? '' })}
           </p>
         </div>
