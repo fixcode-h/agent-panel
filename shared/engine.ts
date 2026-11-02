@@ -636,7 +636,7 @@ export interface EngineHost {
    */
   confirm?: (step: TaskStep, text: string) => Promise<{ allow: boolean; answer?: string } | null>
   /** 节点结果太长时把完整内容存成文件，返回文件路径，下游节点自己去读；没有时只截断 */
-  saveHandoff?: (step: TaskStep, text: string) => Promise<string>
+  saveHandoff?: (step: Pick<TaskStep, 'id' | 'title'>, text: string) => Promise<string>
   /**
    * 交给评审的改动（git 仓库才有）：since 是上一轮评审记下的快照，给了就只取那之后的增量。
    * 派「评审」时面板一次把差异带进提示词，评审只看代码，不用自己一个回合一个回合地 git diff、读文件（ADR 0010）
@@ -1796,7 +1796,7 @@ async function runNodeSingle(
           error: t('「{title}」验收 {round} 轮仍未通过。最后一轮的意见：\n{feedback}', {
             title: step.title,
             round: n,
-            feedback: clip(rv.output, 1500),
+            feedback: await clipToFile(host.saveHandoff, step, rv.output, 1500, '先读完。'),
           }),
         }
       system(
@@ -1877,7 +1877,7 @@ async function runNodeSingle(
           error: t('主角色退回「{title}」{n} 次后仍不满意：{feedback}', {
             title: step.title,
             n: reworks,
-            feedback: clip(d.feedback, 1500),
+            feedback: await clipToFile(host.saveHandoff, step, d.feedback, 1500, '先读完。'),
           }),
         })
       if (d.action === 'delegate' && (delegations >= MAX_DELEGATIONS || n > node.hooks.maxRounds + MAX_DELEGATIONS + 2))
@@ -2196,7 +2196,7 @@ async function runNodeSteps(
           error: t('「{title}」验收 {round} 轮仍未通过。最后一轮的意见：\n{feedback}', {
             title: r.title,
             round: n,
-            feedback: clip(rv.output, 1500),
+            feedback: await clipToFile(host.saveHandoff, step, rv.output, 1500, '先读完。'),
           }),
         }
       system(host, t('「{title}」第 {round} 轮验收未通过，已把意见交回节点继续完善。', { title: r.title, round }), r.id)
@@ -2306,7 +2306,7 @@ async function runNodeSteps(
             error: t('主角色退回「{title}」{n} 次后仍不满意：{feedback}', {
               title: step.title,
               n: reworks,
-              feedback: clip(d.feedback, 1500),
+              feedback: await clipToFile(host.saveHandoff, step, d.feedback, 1500, '先读完。'),
             }),
           },
           recordOf(last),
@@ -4398,10 +4398,10 @@ export async function runConversationTurn(host: EngineHost, who: string) {
         const out = await startPlan(host, p)
         results.push(
           out.ok
-            ? `### 计划执行完成\n${clip(out.text || '（没有文字输出）', 12000)}`
+            ? `### 计划执行完成\n${await clipToFile(host.saveHandoff, { id: `plan-${host.newId()}`, title: '计划执行结果' }, out.text || '（没有文字输出）', 12000, '先读完。')}`
             : out.stopped
               ? rs.stoppedPlanText(out.stopped)
-              : `### 计划执行失败\n${clip(out.error || '执行失败', 4000)}`,
+              : `### 计划执行失败\n${await clipToFile(host.saveHandoff, { id: `plan-${host.newId()}`, title: '计划执行失败' }, out.error || '执行失败', 4000, '先读完。')}`,
         )
       }
       prompt = `## 计划执行结果\n${results.join('\n\n')}\n\n请根据结果继续：向用户说明完成了什么、有哪些改动和遗留问题；需要再启动一次计划就继续调用 start_plan。`
@@ -4466,7 +4466,7 @@ function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
     `## 任务的原始需求\n${original}`,
     host.workflow?.document.trim() ? `## 工作流说明\n${host.workflow.document.trim()}` : '',
     blocked
-      ? `工作流停在了节点「${blocked.title}」：它的结论是不通过，后面的节点还没有执行。它的结果：\n${clip(blocked.output, 3000)}\n\n` +
+      ? `工作流停在了节点「${blocked.title}」：它的结论是不通过，后面的节点还没有执行。它的结果：\n${clip(blocked.output, 6000) /* 存时已按 storeOutput 截过、带全文指针，留够长度不切掉指针 */}\n\n` +
         `请按追加要求处理（例如修好不通过的地方），必要时自己验证；${after}之后会重新执行「${blocked.title}」，通过后接着走后面的流程，后面节点的工作不用你做。`
       : host.task.flowClosed
         ? `用户已经结束了工作流，没完成的节点不再执行。请按追加要求直接修改，必要时自己验证；${after}`
@@ -4657,7 +4657,7 @@ export async function runEngineTurn(host: EngineHost) {
       return finish(host, r)
     }
     const d = parseDispatch(r.text) ?? { action: 'answer' as const }
-    main.step.output = clip(stripDispatch(r.text).trim(), MAX_OUTPUT)
+    main.step.output = await storeOutput(host, main.step, stripDispatch(r.text).trim())
     host.changed(true)
     // 编排器用工具直接要求的运行（run_workflow）优先，其次才是 dispatch 里的决定
     const asked = takePendingRun(host)
@@ -4689,7 +4689,7 @@ export async function runEngineTurn(host: EngineHost) {
       return finish(host, r)
     }
     const d = parseDispatch(r.text) ?? { action: 'answer' as const }
-    main.step.output = clip(stripDispatch(r.text).trim(), MAX_OUTPUT)
+    main.step.output = await storeOutput(host, main.step, stripDispatch(r.text).trim())
     system(host, dispatchText(d, t('这次要求')), main.step.id)
     host.changed(true)
     // 编排器用工具直接要求的运行（run_workflow）优先，其次才是 dispatch 里的决定

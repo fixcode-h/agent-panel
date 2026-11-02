@@ -1,4 +1,5 @@
 import { coreDefinition } from '../../shared/builtin/core.ts'
+import { clipWithFile } from './inbox-file.ts'
 import { planProgressKey } from '../../shared/drive.ts'
 import { randomUUID } from 'node:crypto'
 import { Task, type Project, type PeerFrom, type TaskMessage } from '../../shared/schema.ts'
@@ -201,7 +202,7 @@ export function createMerge(sc: TasksScope) {
       parentId,
       tk,
       `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩${wt ? '合回' : '验收'}了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
-${wt ? `它在独立分支 ${wt.branch} 里的验证` : '它和你共用目录（改动已经在你的目录里，没有分支要合），它的验证'}：${tests.slice(0, 600)}${noBuild ? `\n合回后不用编译：${noBuild}` : ''}${note ? `\n它的说明：${note.slice(0, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${triageText(triage).slice(0, 1500)}` : ''}${bypass ? `\n⚠️ 它这次的收尾用了**显式放行**：评审门禁被绕过，记录如下（谁、什么时候、为什么、原本拦住什么）——用户要求带着这个问题先合并，你如果觉得理由站不住，打回给它或者直接问用户：\n${overrideText(bypass)}` : ''}
+${wt ? `它在独立分支 ${wt.branch} 里的验证` : '它和你共用目录（改动已经在你的目录里，没有分支要合），它的验证'}：${clipWithFile(parentId, `「${tk.title}」的验证`, tests, 600)}${noBuild ? `\n合回后不用编译：${noBuild}` : ''}${note ? `\n它的说明：${clipWithFile(parentId, `「${tk.title}」的说明`, note, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${clipWithFile(parentId, `「${tk.title}」的评审处置`, triageText(triage), 1500)}` : ''}${bypass ? `\n⚠️ 它这次的收尾用了**显式放行**：评审门禁被绕过，记录如下（谁、什么时候、为什么、原本拦住什么）——用户要求带着这个问题先合并，你如果觉得理由站不住，打回给它或者直接问用户：\n${overrideText(bypass)}` : ''}
 ${
   wt
     ? `请你收尾：调用 finish_child（id ${tk.id}），面板把它的分支合回「${wt.baseBranch || '你所在的分支'}」、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支。`

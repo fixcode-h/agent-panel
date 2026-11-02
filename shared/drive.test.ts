@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planProgressKey, shortKey } from './drive.ts'
+import { DriveBudget, planProgressKey, shortKey } from './drive.ts'
 import { TaskPlan } from './schema.ts'
 
 const plan = (steps: { id: string; title: string; status: string; note?: string }[]) =>
@@ -22,4 +22,21 @@ test('进度指纹：步骤状态变了、加了步骤就算有进展；只改�
   assert.equal(planProgressKey(plan([a.steps[0], { ...a.steps[1], title: '跑单测', note: '先跑受影响的' }])), key)
   assert.match(shortKey(key), /^[0-9a-f]{8}$/)
   assert.equal(shortKey(key), shortKey(planProgressKey(a)))
+})
+
+test('推进账本：只在真推出去时记；同一进度推满就停，进度变了重新数；同一条输入总数有上限，用户发消息清零', () => {
+  const b = new DriveBudget(4)
+  // 只看不记：刚结束那一下复查没过（后台结果这时交进来）不能把次数用掉
+  for (let i = 0; i < 5; i++) assert.equal(b.can('c', 'k1', 3, 'u1'), 'ok')
+  assert.deepEqual([b.take('c', 'k1', 3, 'u1'), b.take('c', 'k1', 3, 'u1'), b.take('c', 'k1', 3, 'u1')], [1, 2, 3])
+  assert.equal(b.can('c', 'k1', 3, 'u1'), 'exhausted')
+  assert.equal(b.take('c', 'k1', 3, 'u1'), 0)
+  // 进度变了从 1 数；但这条输入之后一共只能推 4 次（来回改步骤状态刷新指纹也推不下去）
+  assert.equal(b.take('c', 'k2', 3, 'u1'), 1)
+  assert.equal(b.can('c', 'k3', 3, 'u1'), 'total-cap')
+  // 新的一条输入（父对话来信、用户消息）重新数总数；用户亲自发消息整个清零
+  assert.equal(b.can('c', 'k3', 3, 'u2'), 'ok')
+  b.reset('c')
+  assert.equal(b.can('c', 'k1', 3, 'u1'), 'ok')
+  assert.equal(b.state('c'), undefined)
 })

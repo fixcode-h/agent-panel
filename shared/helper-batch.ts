@@ -7,14 +7,20 @@ import { clip } from './text.ts'
  */
 
 /** 把交回的完整内容存成文件，返回路径；存不了返回空串（宿主不支持、写盘失败） */
-export type SaveHandoff = ((step: TaskStep, text: string) => Promise<string>) | undefined
+export type SaveHandoff = ((step: Pick<TaskStep, 'id' | 'title'>, text: string) => Promise<string>) | undefined
 
 /**
  * 交回的结果超出上限：完整内容存成文件，只交开头 + 文件路径。
  * 截断就必须写明全文在哪：存不了文件（宿主不支持、写盘失败）时整段交回，不能悄悄丢掉后半段
  * （评审的意见在后半段被截掉，派它的对话既看不到也找不到全文）
  */
-export async function clipToFile(save: SaveHandoff, step: TaskStep, text: string, limit: number, hint: string) {
+export async function clipToFile(
+  save: SaveHandoff,
+  step: Pick<TaskStep, 'id' | 'title'>,
+  text: string,
+  limit: number,
+  hint: string,
+) {
   if (text.length <= limit) return text
   const file = save ? await save(step, text).catch(() => '') : ''
   if (!file) return text

@@ -215,10 +215,10 @@ export interface PeerReport {
  * 旧数据里「下一步」没写前缀的重试说明也归到下一步
  */
 export function parseReport(text: string): PeerReport | null {
-  // 末尾「这是摘要，详细总结在子对话里」是写给父对话 AI 的（见 shared/child-letter.ts），界面上点子对话就能看全文
+  // 末尾「这是摘要……全文在哪」是写给父对话 AI 的（见 server/tasks/children.ts 的 reportChild），界面上点子对话就能看全文
   const lines = text
     .replace(/\n处理完这个结果后[^\n]*$/, '')
-    .replace(/\n（这是摘要，详细总结在子对话[^\n]*）$/, '')
+    .replace(/\n（这是摘要[，。][^\n]*）$/, '')
     .split('\n')
   const out: PeerReport = {
     steps: [],

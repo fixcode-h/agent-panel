@@ -19,8 +19,9 @@ import {
   type ChildFlowStop,
   type ChildHold,
 } from '../../shared/task.ts'
-import { isChatMode, nextNudge, nudgeMax } from '../../shared/conv-mode.ts'
-import { planProgressKey, shortKey } from '../../shared/drive.ts'
+import { isChatMode, nudgeMax } from '../../shared/conv-mode.ts'
+import { DriveBudget, planProgressKey, shortKey } from '../../shared/drive.ts'
+import { saveToHandoff } from './inbox-file.ts'
 import { taskLog } from '../task-log.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import type { TurnInfo } from '../exec/turn-info.ts'
@@ -57,25 +58,23 @@ export function createChildren(sc: TasksScope) {
    * 最后一次要它说明卡在哪；子对话、Chat 页的对话仍只推一次（见 shared/conv-mode.ts 的 nudgeMax、ADR 0037）。
    * 原来同一进度一律只推一次，用户反馈「走一步就停，催一下又走一步」
    */
-  const nudgeCount = new Map<string, { key: string; n: number }>()
-  /** 这个进度（key）还剩不剩次数：只看不记（刚结束那一下用，真推出去之前才 takeNudge） */
-  const peekNudge = (conv: Task, key: string) => !!nextNudge(nudgeCount.get(conv.id), key, nudgeMax(conv))
+  const budget = new DriveBudget()
+  /** 一条输入：用户或父对话最近的一条消息（面板自己推的不算） */
+  const inputOf = (tk: Task) => [...tk.messages].reverse().find((m) => m.role === 'user' && !m.panel)?.id ?? ''
   /**
    * 用户亲自发了新消息：次数清零（ADR 0041）。用户说「继续」就是给了新的机会，不该被「同一进度推满了」挡住；
    * 父对话、其他对话发来的不清零（外部输入只改计划，计划变了指纹自然会变）
    */
   const resetNudge = (id: string) => {
-    nudgeCount.delete(id)
+    budget.reset(id)
     warned.delete(id)
   }
-  /** 这个进度（key）还能不能再推：能推时记一次、返回这是第几次（从 1 开始），推满了返回 0 */
-  const takeNudge = (conv: Task, key: string): number => {
-    const next = nextNudge(nudgeCount.get(conv.id), key, nudgeMax(conv))
-    if (!next) return 0
-    nudgeCount.set(conv.id, next)
+  /** 真推出去时记一次：返回这是这个进度的第几次（从 1 开始），推满了返回 0 */
+  const takeNudge = (conv: Task, key: string, max = nudgeMax(conv)): number => {
+    const n = budget.take(conv.id, key, max, inputOf(conv))
     // 子对话「推过还停在原地」的判定（merge.ts 的 stuckAfterNudge）读这个
-    sc.planNudged.set(conv.id, key)
-    return next.n
+    if (n) sc.planNudged.set(conv.id, key)
+    return n
   }
   /** 推满之前的最后一次：要它说明卡在哪，不再只说打算 */
   const lastNudge = (conv: Task, nth: number) =>
@@ -504,7 +503,7 @@ export function createChildren(sc: TasksScope) {
           : r.state === 'failed' || r.state === 'stopped'
             ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
             : ''
-    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要，详细总结在子对话「${tk.title}」里：面板会自动显示它的总结卡片，点标题看全文，不用转述细节）` : ''}` : ''}`
+    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要。${fullAt(tk.parentTaskId, tk.title, src)}面板会自动给用户显示它的总结卡片，不用转述细节）` : ''}` : ''}`
     await sc.noteParent(
       tk.parentTaskId,
       tk,
@@ -619,8 +618,10 @@ export function createChildren(sc: TasksScope) {
       return false
     }
     const progress = { done: now.p.done, total: now.p.total, key: shortKey(now.key) }
-    if (!peekNudge(conv, now.key)) {
-      say({ action: 'stuck', reason: 'exhausted', ...progress, max: nudgeMax(conv) })
+    const can = budget.can(conv.id, now.key, nudgeMax(conv), inputOf(now.tk))
+    if (can !== 'ok') {
+      const reason = can
+      say({ action: 'stuck', reason, ...progress, max: nudgeMax(conv) })
       // 推满了计划还没做完：写一行警告留给用户，不让它看起来像做完了
       await warnStopped(
         conv.id,
@@ -636,13 +637,19 @@ export function createChildren(sc: TasksScope) {
     setTimeout(() => {
       void (async () => {
         const again = await stalled(true)
-        if (typeof again === 'string' || again.key !== now.key) {
-          // 这期间有输入交进来（后台结果、消息）或计划变了：不推、不记次数，等下一轮结束再判
-          say({ action: 'cancel', reason: typeof again === 'string' ? again : 'progress-changed', ...progress })
+        if (typeof again === 'string') {
+          // 这期间有输入交进来（后台结果、消息）、开了新一轮：不推、不记次数，等那一轮结束再判
+          say({ action: 'cancel', reason: again, ...progress })
           if (conv.parentTaskId) await reportChild(conv.id)
           return
         }
-        const nth = takeNudge(conv, now.key)
+        if (again.key !== now.key) {
+          // 还停着，但计划变了（面板收口了等待项这类，没有开新的一轮）：不能就此放弃，按新的进度再判一次
+          say({ action: 'reevaluate', reason: 'progress-changed', ...progress })
+          if (!(await nudgePlan(again.tk)) && conv.parentTaskId) await reportChild(conv.id)
+          return
+        }
+        const nth = takeNudge(again.tk, now.key, nudgeMax(conv))
         if (!nth) {
           say({ action: 'stuck', reason: 'exhausted', ...progress, max: nudgeMax(conv) })
           if (conv.parentTaskId) await reportChild(conv.id)
@@ -673,6 +680,15 @@ export function createChildren(sc: TasksScope) {
       })().catch((e) => log.warn('task', '推对话接着做计划失败', { task: conv.id, error: (e as Error).message }))
     }, sc.PLAN_NUDGE_MS).unref?.()
     return true
+  }
+
+  /** 摘要截掉的全文存进父对话的交接目录，告诉它去哪读（ADR 0041 第 14 节）；存不了就说在子对话里 */
+  const fullAt = (parentId: string, title: string, src: string) => {
+    try {
+      return `完整总结在文件 ${saveToHandoff(parentId, `子对话「${title}」的总结`, src)}，需要细节时读它；`
+    } catch {
+      return `完整总结在子对话「${title}」里；`
+    }
   }
 
   /** 保活进程被页面切走、闲置回收收掉的：这一轮是正常说完的，和用户、父对话叫停的不同（见 nudgeMerge 的同一判断） */
@@ -765,9 +781,9 @@ export function createChildren(sc: TasksScope) {
     // 没调工具的那种每条输入只自检一次（自检那一轮它确认完成也是没调工具，不能再问）；动了手的最多 2 次
     const key = `${silent ? 'check0' : 'check'}:${asked?.id ?? ''}`
     const max = silent ? 1 : Math.min(2, nudgeMax(conv))
-    const allowed = (n = nudgeCount.get(conv.id)) => nextNudge(n, key, max)
-    if (!allowed()) {
-      say({ action: 'done', reason: 'checked' })
+    const can = budget.can(conv.id, key, max, inputOf(first))
+    if (can !== 'ok') {
+      say({ action: 'done', reason: can === 'exhausted' ? 'checked' : can })
       return false
     }
     setTimeout(() => {
@@ -778,9 +794,8 @@ export function createChildren(sc: TasksScope) {
           if (conv.parentTaskId) await reportChild(conv.id)
           return
         }
-        const next = allowed()
-        if (!next) return
-        nudgeCount.set(conv.id, next)
+        const nth = budget.take(conv.id, key, max, inputOf(tk))
+        if (!nth) return
         const text =
           '【面板】（收尾自检）这次的事做完了吗？没做完就直接调用工具接着做，不用先说明；' +
           '做完了就用一两句话确认结果，不用列计划。确实卡住了就说明卡在哪、需要什么。'
@@ -790,7 +805,7 @@ export function createChildren(sc: TasksScope) {
               () => true,
               () => false,
             )
-        say({ action: ok ? 'check' : 'send-failed', kind: silent ? 'no-tools' : 'acts', nth: next.n, max })
+        say({ action: ok ? 'check' : 'send-failed', kind: silent ? 'no-tools' : 'acts', nth, max })
         if (!ok && conv.parentTaskId) await reportChild(conv.id)
       })().catch((e) => log.warn('task', '收尾自检失败', { task: conv.id, error: (e as Error).message }))
     }, sc.PLAN_NUDGE_MS).unref?.()
@@ -964,7 +979,7 @@ export function createChildren(sc: TasksScope) {
     closeChildren,
     completing,
     nudgePlan,
-    nudgeState: (id: string) => nudgeCount.get(id),
+    nudgeState: (id: string) => budget.state(id),
     resetNudge,
     reportToParent,
     reportedDone,
