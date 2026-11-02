@@ -8,7 +8,7 @@
  *   （在 WSL 里带 GIT_DIR / GIT_WORK_TREE 跑测试时会污染主仓库，见 docs/lessons/e2e.md）。
  * - GIT_CONFIG_COUNT 是面板给后台命令注入的防推送配置（pushInsteadOf 指向不存在的协议），
  *   留着会让这里自己的 push / clone 失败；测试自己建仓库，不认外面的 git 配置。
- * - 独立目录和共用的依赖目录都建在 DATA_DIR 下：指到临时目录，别写进真实的数据目录。
+ * - 独立目录建在 DATA_DIR 下：指到临时目录，别写进真实的数据目录。
  *
  * 这个文件不以 .test.ts 结尾，不会被 scripts/unit-tests.mjs 当成一个用例文件。
  */
@@ -37,6 +37,7 @@ export const {
   branchesOverlap,
   createWorktree,
   ensureWorktree,
+  ensureWorktreeDeps,
   isolateDeps,
   mergeOverlap,
   mergeSides,
@@ -45,7 +46,6 @@ export const {
   missingDeps,
   releaseWorktree,
   removeWorktree,
-  sharedDepsDir,
   sweepWorktrees,
   worktreeStatus,
   WORKTREES_DIR,
@@ -79,8 +79,8 @@ export const tid = () => `test-${Math.random().toString(36).slice(2, 10)}`
 export const branchAlive = (repo: string, branch: string) =>
   git(repo, 'branch', '--list', branch).toString().trim() !== ''
 
-/** 共用依赖在 `<数据目录>/worktrees/<项目>-<哈希>/node_modules`；测试的数据目录是临时目录，整个根可以直接清 */
-export const resetSharedDeps = () => rmSync(WORKTREES_DIR, { recursive: true, force: true })
+/** 独立目录都在 `<数据目录>/worktrees/` 下；测试的数据目录是临时目录，整个根可以直接清 */
+export const resetWorktrees = () => rmSync(WORKTREES_DIR, { recursive: true, force: true })
 
 /**
  * 模板仓库：init + add + commit 只在模块加载时做一次，每个用例 cpSync 一份（连 .git 和历史一起）。
@@ -94,7 +94,7 @@ function buildTemplate(): void {
   mkdirSync(path.join(templateRepo, 'node_modules', 'dep'), { recursive: true })
   writeFileSync(path.join(templateRepo, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
   writeFileSync(path.join(templateRepo, 'node_modules', 'dep', 'package.json'), '{"name":"dep","version":"1.0.0"}\n')
-  // 共用依赖按 package-lock 判断要不要重新复制（见 worktree.ts 的 depsStamp）
+  // 依赖副本按 package-lock 判断要不要重新复制（见 worktree.ts 的 depsStamp）
   writeFileSync(path.join(templateRepo, 'package.json'), '{"name":"demo","version":"1.0.0"}\n')
   writeFileSync(path.join(templateRepo, 'package-lock.json'), '{"name":"demo","lockfileVersion":3,"packages":{}}\n')
   writeFileSync(path.join(templateRepo, '.env'), 'TOKEN=dev\n')

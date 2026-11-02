@@ -38,7 +38,7 @@
 
 ## 三、测试与工程效率
 
-- [x] **每个子对话整份复制 node_modules** — 已改：依赖只放一份在 `worktrees/<项目>-<哈希>/node_modules`，独立目录里不放、靠 Node / npm 向上解析；本机实测首次约 10s / 682MB、之后每个约 1s / 15MB（改动前 11–12s / 696MB） — 证据：`server/exec/worktree.ts` 的 `ensureSharedDeps`、`server/exec/worktree.test.ts` 的「依赖共用」用例 — P0
+- [x] **每个子对话整份复制 node_modules** — 已改（2026-11-02 用户决定，覆盖原共用方案）：每个 worktree 创建 / 重建时把项目根的 `node_modules` 复制成自己的一份真实文件，不共用、不建链接；A 里改依赖不影响 B 和项目主目录，删除 worktree 时随目录一起删；每个 worktree 约 682MB / 首次 12–20 秒是明确接受的代价 — 证据：`server/exec/worktree.ts` 的 `ensureWorktreeDeps`、`server/exec/worktree.test.ts` / `worktree-merge.test.ts` 的「依赖各自一份」用例、`docs/lessons/worktree.md` — P0
 - [x] **UI 检查墙钟被 task 分片卡住** — 总 128.8s 里 task 独占 128.8s（121 步、3908 行），并行再多也压不下去 — 证据：`ui-timings.json`、`wc -l scripts/ui/02-task.mjs` 计 3908 行 — 建议：拆成 `02-task` / `02b-subagent` / `02c-element-pick`；`scripts/ui-check.mjs:27` 按文件名自动收录，无需改入口 — P1
       （2026-10-27 已完成 · 提交 `21ef1ab7`；后续 `4eca2288` / `ee86feb9` 按实测再分片，`18466ce8` 把 4 个小题合成 `08-misc`，整轮降到约 60s）
 - [x] **界面检查每步都截全页图 + 每步最多等 1s 动画** — `check()` 每调用一次就 `screenshot()` 全页落盘（task 分片 121 张）；`settle()` 用 `Promise.race` 上 1000ms 兜底 — 证据：`scripts/ui/harness.mjs:141`、`scripts/ui/harness.mjs:98` — 建议：成功步骤不截、只失败与里程碑截（或 jpeg q60），`settle` 兜底降到 300ms — P1
