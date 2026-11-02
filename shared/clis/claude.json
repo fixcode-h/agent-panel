@@ -238,7 +238,8 @@
   },
   "envExample": "ANTHROPIC_API_KEY=sk-ant-...",
   "env": {
-    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+    "ENABLE_TOOL_SEARCH": "false"
   },
   "options": [
     {
