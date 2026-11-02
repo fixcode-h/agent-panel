@@ -3,6 +3,7 @@ import * as D from '@radix-ui/react-dialog'
 import { Loader2 } from 'lucide-react'
 import { Button } from './button'
 import { MODAL_OVERLAY, MODAL_SURFACE } from './modal'
+import { ModalResizeHandles, useModalResize } from './modal-resize'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
@@ -23,6 +24,7 @@ export function ConfirmDialog({
   onOpenChange,
   blocked,
   extra,
+  resizeKey,
 }: {
   open: boolean
   title: string
@@ -35,8 +37,11 @@ export function ConfirmDialog({
   blocked?: string
   /** 说明下面的额外内容，例如「以后不再提醒」 */
   extra?: React.ReactNode
+  /** 尺寸记忆的键：默认按「confirm + 标题」区分，同名确认框要各记各的时传它 */
+  resizeKey?: string
 }) {
   const [pending, setPending] = useState(false)
+  const resize = useModalResize({ open, title, tier: 'confirm', resizeKey })
   const confirm = async () => {
     if (pending) return
     setPending(true)
@@ -52,20 +57,28 @@ export function ConfirmDialog({
         <D.Overlay className={MODAL_OVERLAY} />
         {/* 外壳和所有弹窗同一份（MODAL_SURFACE）：圆角、细线、窗口底色 */}
         <D.Content
+          ref={resize.contentRef}
+          style={resize.contentStyle}
           className={cn(
             MODAL_SURFACE,
-            'fixed top-1/2 left-1/2 z-50 block w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 p-6 anim-dialog focus:outline-none',
+            'fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 p-6 anim-dialog focus:outline-none',
           )}
         >
-          <D.Title className="text-heading font-semibold">{title}</D.Title>
-          {description && (
-            <D.Description className="mt-1.5 text-body leading-relaxed text-muted">{description}</D.Description>
-          )}
-          {extra && <div className="mt-3">{extra}</div>}
-          {blocked && (
-            <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-body leading-relaxed text-warning">{blocked}</p>
-          )}
-          <div className="mt-6 flex justify-end gap-2">
+          <ModalResizeHandles resize={resize} />
+          {/* 内容多、弹窗被拖矮时正文自己滚动，底部按钮始终可见 */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <D.Title className="text-heading font-semibold">{title}</D.Title>
+            {description && (
+              <D.Description className="mt-1.5 text-body leading-relaxed text-muted">{description}</D.Description>
+            )}
+            {extra && <div className="mt-3">{extra}</div>}
+            {blocked && (
+              <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-body leading-relaxed text-warning">
+                {blocked}
+              </p>
+            )}
+          </div>
+          <div className="mt-6 flex shrink-0 justify-end gap-2">
             <Button variant="secondary" onClick={() => onOpenChange(false)}>
               {blocked ? t('知道了') : t('取消')}
             </Button>
