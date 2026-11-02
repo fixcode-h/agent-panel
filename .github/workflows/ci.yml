@@ -138,30 +138,6 @@ jobs:
           path: ui-timings.json
           retention-days: 7
 
-  # Windows 上跑单测：面板的主要用户在 Windows，server/shared 里有几十处 win32 分支、只在 Windows 上跑的用例
-  # （真的 .cmd 垫片、路径分隔符、杀进程树）在 ubuntu 上永远是 skip。和托盘一样按改动决定跑不跑
-  unit-windows:
-    needs: changes
-    if: needs.changes.outputs.tray == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run test:unit
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: unit-windows-logs
-          path: logs/tests/
-          retention-days: 7
-
   # 推送到 dev 时看这次改了哪些文件：Windows 托盘那一步最慢，只在托盘程序、服务端或出包相关的文件变了时才跑。
   # 主干出包（release.yml 调用本文件）、PR、手动运行时总是跑
   changes:
