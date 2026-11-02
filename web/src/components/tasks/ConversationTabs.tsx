@@ -5,7 +5,7 @@ import { taskBusy, taskState, taskWaitText } from '@shared/task'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
-import { pad2 } from '@shared/datetime'
+import { headStatus } from './head-status'
 import { StatusPill } from '@/components/ui/status-pill'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { InlineRename } from '@/components/ui/inline-rename'
@@ -117,48 +117,28 @@ export function ConversationTabs({
   )
 }
 
-/** 秒数写成时钟样式（3:12、1:02:05）：页签条右端的胶囊位置窄，比「3m 12s」更紧凑 */
-function clock(ms: number) {
-  const sec = Math.max(0, Math.floor(ms / 1000))
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  return h ? `${h}:${pad2(m)}:${pad2(sec % 60)}` : `${m}:${pad2(sec % 60)}`
-}
-
 /**
- * 页签条右端的状态胶囊（设计稿「运行中 · 3:12」）：这一轮在跑时写用时（从最后一条用户消息算起），
- * 在等子对话 / 后台命令时写在等什么，有提问等你时琥珀色。状态只从 taskState 派生，不另判
+ * 页签条右端的胶囊：这一位置只显示累计执行时长，不随新消息重置，也不切成「子对话执行中」；
+ * 在等什么放进悬停提示（等子对话 / 后台命令 / 工作流），有提问等你时仍是琥珀提示。
+ * 运行中、等结果都每秒刷新：等后台命令、工作流时这一段可能还在累计。
  */
 function HeadStatus({ task }: { task: Task }) {
   const state = taskState(task)
-  const run = state === 'running'
-  const now = useNow(run)
-  if (run) {
-    let from = task.updatedAt
-    // 从后往前找最后一条用户消息（目标库没有 findLast）：每秒刷新一次，不整段 filter 拷贝
-    for (let i = task.messages.length - 1; i >= 0; i--)
-      if (task.messages[i].role === 'user') {
-        from = task.messages[i].at
-        break
-      }
-    return (
-      <StatusPill tone="run" spin className="hidden tabular-nums md:inline-flex">
-        {t('运行中')} · {clock(now - Date.parse(from))}
-      </StatusPill>
-    )
-  }
-  if (state === 'waiting')
-    return (
-      <StatusPill tone="run" spin className="hidden md:inline-flex">
-        {taskWaitText(task) || t('运行中')}
-      </StatusPill>
-    )
-  if (state === 'needs')
-    return (
-      <StatusPill tone="wait" className="hidden md:inline-flex">
-        {/* 只是子对话在等你确认时写「子对话等你处理」：这一页没有确认卡，用户要知道该去哪儿 */}
-        {taskWaitText(task) || t('等你回复')}
-      </StatusPill>
-    )
-  return null
+  const now = useNow(state === 'running' || state === 'waiting')
+  const view = headStatus(task, now)
+  if (!view) return null
+  return (
+    <StatusPill
+      tone={view.tone}
+      spin={view.spin}
+      title={view.hint}
+      className={cn('hidden md:inline-flex', view.tone === 'run' && 'tabular-nums')}
+    >
+      {/* 可见的只留时长；等什么放进读屏说明——generic 的 span 不认 aria-label，用 sr-only 文本 */}
+      <span data-head-clock aria-hidden>
+        {view.text}
+      </span>
+      <span className="sr-only">{view.hint}</span>
+    </StatusPill>
+  )
 }

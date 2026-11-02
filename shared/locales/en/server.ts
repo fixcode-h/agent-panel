@@ -178,6 +178,20 @@ export const EN_SERVER: Record<string, string> = {
   '构建命令：{cmd}': 'Build command: {cmd}',
   '测试命令：{cmd}': 'Test command: {cmd}',
   项目不存在: 'Project not found',
+  '教训文件读取失败：{error}': 'Couldn’t read the lessons file: {error}',
+  '教训文件格式不对，没有覆盖：{error}': 'The lessons file is malformed, so it was left untouched: {error}',
+  '教训文件写入失败：{error}': 'Couldn’t write the lessons file: {error}',
+  项目教训写入失败: 'Couldn’t save project lessons',
+  教训文件的维护说明没有结束标记: 'The lessons file header is missing its end marker',
+  '第 {n} 行在教训标记之外，无法识别：{line}': 'Line {n} is outside any lesson marker and can’t be recognized: {line}',
+  '第 {n} 行不是「字段: 值」的形式：{line}': 'Line {n} is not in “field: value” form: {line}',
+  '第 {n} 行的教训没有 {end} 结束标记': 'The lesson at line {n} has no {end} end marker',
+  '第 {n} 行的教训缺 title': 'The lesson at line {n} has no title',
+  '第 {n} 行的 paths 要写成 JSON 数组': 'paths at line {n} must be a JSON array',
+  '第 {n} 行的 tags 要写成 JSON 数组': 'tags at line {n} must be a JSON array',
+  '第 {n} 行的 enabled 只能是 true 或 false': 'enabled at line {n} must be true or false',
+  '第 {n} 行的 history 要写成 JSON 数组': 'history at line {n} must be a JSON array',
+  '第 {n} 行的教训不符合格式：{error}': 'The lesson at line {n} is invalid: {error}',
   保存版本格式不对: 'Invalid save version.',
   '项目在别处被修改过，请刷新后重试': 'This project was changed elsewhere. Refresh, then try again.',
   项目顺序格式不对: 'Invalid project order',
@@ -295,6 +309,10 @@ export const EN_SERVER: Record<string, string> = {
   '发现新版本 {version}，但现在不能更新：{error}':
     'Version {version} is available but cannot be installed now: {error}',
   '发现新版本 {version}，正在下载…': 'Version {version} is available, downloading…',
+  '发现新版本 {version}，但暂时拿不到 GitHub API 的安装包地址，请到 GitHub Releases 手动下载':
+    'Version {version} is available, but the package address is unavailable from the GitHub API. Download it manually from GitHub Releases',
+  '这个版本没有可用的安装包地址，请到 GitHub Releases 手动下载':
+    'This release has no usable package address; download it manually from GitHub Releases',
   '已更新到 {version}，正在重启': 'Updated to {version}, restarting',
   '从源码运行时请用 git 更新，只有发布的包能在这里更新':
     'Running from source: update with git. Only released packages can update here.',

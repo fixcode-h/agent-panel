@@ -141,7 +141,7 @@ export function TurnChangesCard({ task, msg }: { task: Pick<Task, 'id' | 'workin
 
 /**
  * 一轮改动的差异窗口：左边是这一轮改的文件（默认按目录树，可以切成列表），右边是选中文件的差异（默认左右对照）。
- * 窄屏放不下左栏，只留顶部的上一个 / 下一个
+ * 大屏可以收起左栏把宽度全给差异；窄屏（lg 以下）放不下左栏，只留顶部的上一个 / 下一个
  */
 function TurnDiffDialog({
   taskId,
@@ -160,6 +160,8 @@ function TurnDiffDialog({
   const [error, setError] = useState('')
   const [view, setView] = useState<'tree' | 'list'>('tree')
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  // 左栏可以收起：文件多、路径长时把整块宽度让给左右对照
+  const [treeOpen, setTreeOpen] = useState(true)
   useEffect(() => {
     if (!path) return
     let live = true
@@ -182,61 +184,65 @@ function TurnDiffDialog({
       return next
     })
   return (
-    <Modal open={!!path} onOpenChange={(o) => !o && onPath(null)} title={null} size="xl" bare closeOnOutside>
+    <Modal open={!!path} onOpenChange={(o) => !o && onPath(null)} title={null} size="diff" bare closeOnOutside>
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-64 shrink-0 flex-col border-r bg-card md:flex" aria-label={t('这一轮的改动')}>
-          {/* 和右边差异的标题栏（ModalHeader）同高，横线连成一条 */}
-          <div className="flex h-[2.0625rem] shrink-0 items-center gap-2 border-b border-(color:--modal-edge) px-3">
-            <span className="min-w-0 flex-1 truncate text-body font-medium">
-              {t('已更改 {n} 个文件', { n: changes.files.length })}
-            </span>
-            <Segmented
-              size="sm"
-              iconOnly
-              label={t('改动显示方式')}
-              value={view}
-              onChange={setView}
-              options={[
-                { id: 'tree', label: t('按目录'), icon: ListTree },
-                { id: 'list', label: t('列表'), icon: List },
-              ]}
-            />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-            {view === 'tree' ? (
-              <ChangesTree
-                changes={changes.files}
-                onDiff={onPath}
-                scoped={false}
-                collapsed={collapsed}
-                onToggle={toggle}
-                selected={path ?? undefined}
+        {treeOpen && (
+          <aside className="hidden w-64 shrink-0 flex-col border-r bg-card lg:flex" aria-label={t('这一轮的改动')}>
+            {/* 和右边差异的标题栏（ModalHeader）同高，横线连成一条 */}
+            <div className="flex h-[2.0625rem] shrink-0 items-center gap-2 border-b border-(color:--modal-edge) px-3">
+              <span className="min-w-0 flex-1 truncate text-body font-medium">
+                {t('已更改 {n} 个文件', { n: changes.files.length })}
+              </span>
+              <Segmented
+                size="sm"
+                iconOnly
+                // 和右边差异的标题栏同高（33px）：段控件压到 24px（每段 20px），上下留出边距；照 ProjectFileDialog 标题栏的写法
+                className="shrink-0 flex-nowrap *:h-5 *:w-5"
+                label={t('改动显示方式')}
+                value={view}
+                onChange={setView}
+                options={[
+                  { id: 'tree', label: t('按目录'), icon: ListTree },
+                  { id: 'list', label: t('列表'), icon: List },
+                ]}
               />
-            ) : (
-              changes.files.map((f) => {
-                const Icon = fileIcon(f.path)
-                return (
-                  <button
-                    key={f.path}
-                    type="button"
-                    onClick={() => onPath(f.path)}
-                    title={f.path}
-                    aria-current={f.path === path ? 'true' : undefined}
-                    className={cn(
-                      'flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-left font-mono text-xs hover:bg-sel',
-                      f.path === path && 'bg-sel',
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                    <span className="min-w-0 flex-1 truncate text-muted">{f.path}</span>
-                    <span className="shrink-0 text-success">+{f.add}</span>
-                    <span className="w-8 shrink-0 text-right text-danger">{f.del ? `-${f.del}` : ''}</span>
-                  </button>
-                )
-              })
-            )}
-          </div>
-        </aside>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+              {view === 'tree' ? (
+                <ChangesTree
+                  changes={changes.files}
+                  onDiff={onPath}
+                  scoped={false}
+                  collapsed={collapsed}
+                  onToggle={toggle}
+                  selected={path ?? undefined}
+                />
+              ) : (
+                changes.files.map((f) => {
+                  const Icon = fileIcon(f.path)
+                  return (
+                    <button
+                      key={f.path}
+                      type="button"
+                      onClick={() => onPath(f.path)}
+                      title={f.path}
+                      aria-current={f.path === path ? 'true' : undefined}
+                      className={cn(
+                        'flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-left font-mono text-xs hover:bg-sel',
+                        f.path === path && 'bg-sel',
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                      <span className="min-w-0 flex-1 truncate text-muted">{f.path}</span>
+                      <span className="shrink-0 text-success">+{f.add}</span>
+                      <span className="w-8 shrink-0 text-right text-danger">{f.del ? `-${f.del}` : ''}</span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </aside>
+        )}
         <div className="flex min-w-0 flex-1 flex-col">
           <DiffShell
             path={path ?? ''}
@@ -245,6 +251,7 @@ function TurnDiffDialog({
             files={changes.files.map((f) => f.path)}
             onNavigate={onPath}
             close={<ModalClose />}
+            sidebar={{ open: treeOpen, onToggle: () => setTreeOpen((v) => !v) }}
             empty={
               error ? (
                 <p className="p-6 text-body text-danger">{error}</p>

@@ -78,6 +78,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [composer.md](./composer.md)                     | 对话输入框                       |
 | [data.md](./data.md)                             | 数据结构、存储、升级兼容和出包   |
 | [design.md](./design.md)                         | UI 设计 Agent 的验收             |
+| [design-layout.md](./design-layout.md)           | 网页设计的排版回读和对照夹具     |
 | [e2e.md](./e2e.md)                               | 端到端测试和假 CLI               |
 | [execution.md](./execution.md)                   | 一轮执行怎么收尾                 |
 | [list-pane.md](./list-pane.md)                   | 中间列表栏                       |

@@ -243,7 +243,6 @@ export interface TasksScope {
     ok: boolean
     info: string
   }>
-  enforceKeepAlive: (selfId?: string) => Promise<void>
   ensureChildWorktree: (entry: Live, project: Project | null | undefined) => Promise<void>
   expandForWorkflow: (tk: Pick<Task, 'mode' | 'worktree' | 'projectId' | 'id'>, text: string) => Promise<string>
   finishChild: (

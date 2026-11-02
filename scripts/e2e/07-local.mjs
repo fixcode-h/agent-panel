@@ -755,7 +755,7 @@ await runShard('本机请求与设置', async (api) => {
   }
   step('保活中切换界面语言：不再交给旧进程，按新语言重开')
 
-  // ---- 正在执行的对话不受回收限制：两个时长和保活上限只管「回复完停在等下一句」的空闲会话 ----
+  // ---- 正在执行的对话不受回收限制：宽限只管「回复完停在等下一句」的空闲会话 ----
   {
     // 这一轮停在「等后台命令结果」上（CLI 注册了 waiter，任务 awaitingUser=true）。
     // 旧实现宽限到点会 cancelWait 把这个 waiter 取消、结束这一轮；新实现因为后台命令还在跑而不回收。
@@ -795,27 +795,15 @@ await runShard('本机请求与设置', async (api) => {
   }
   step('正在等后台命令结果的对话切到后台，过了宽限也不回收')
 
-  // 保活上限只淘汰空闲会话：有后台命令还在跑的不算空闲，不能连它的 CLI 一起收掉
+  // 保活数量上限已取消：超过原来默认的 4 个空闲会话也不会被数量回收，只按宽限回收
   {
-    const keep = (await call('GET', '/settings')).keepAliveLimit
-    // 创建过就登记，不管哪条断言失败都要在 finally 里改回设置、收掉这些对话
+    // 创建过就登记，不管哪条断言失败都要在 finally 里收掉这些对话
     const created = []
     const track = (t) => {
       created.push(t)
       return t
     }
     try {
-      const bg = track(
-        await call('POST', '/tasks', {
-          projectId: project.id,
-          mode: 'chat',
-          agentId: '',
-          cli: 'commandcode',
-          askUser: false,
-          prompt: 'BG_LONG BG_SLOW 后台命令还在跑 run_background',
-        }),
-      )
-      await call('POST', `/tasks/${bg.id}/presence`, { viewerId: 'e2e', active: true })
       const waiting = (id) =>
         waitFor(
           async () => {
@@ -824,16 +812,10 @@ await runShard('本机请求与设置', async (api) => {
           },
           { timeout: 20000, label: '停在等下一句' },
         )
-      const bgTask = await waiting(bg.id)
-      assert.ok(
-        bgTask.jobs?.length,
-        `后台命令还在跑：${JSON.stringify({ jobs: bgTask.jobs, status: bgTask.status, awaiting: bgTask.awaitingUser })}\n面板工具调用：${JSON.stringify(readLog(`${log}.panel`).slice(-4))}`,
-      )
-      const bgPid = calls().findLast((c) => c.input.includes('BG_LONG')).pid
-
-      await call('PUT', '/settings', { ...(await call('GET', '/settings')), keepAliveLimit: 1 })
+      // 5 个空闲对话（原来的默认上限是 4），页面都开着先让它们停在等下一句
       const idle = []
-      for (const name of ['保活上限里的空闲对话 A', '保活上限里的空闲对话 B']) {
+      for (let i = 1; i <= 5; i++) {
+        const name = `数量上限取消后的空闲对话 ${i}`
         const t = track(
           await call('POST', '/tasks', {
             projectId: project.id,
@@ -846,79 +828,47 @@ await runShard('本机请求与设置', async (api) => {
         )
         await call('POST', `/tasks/${t.id}/presence`, { viewerId: 'e2e', active: true })
         await waiting(t.id)
-        idle.push(t)
+        const pid = calls().findLast((c) => c.input.includes(name))?.pid
+        assert.ok(pid, `第 ${i} 个空闲对话应该已经起过 CLI`)
+        idle.push({ t, pid })
       }
-      // 只切走 A（唯一的空闲候选）。B 的页面保持开着，用它跑一轮来触发上限检查：
-      // 这样从「切走」到「触发」只有 B 的一轮（几十毫秒），A 不会先被宽限回收，测到的就是上限淘汰。
-      // bg 也切走（否则 isViewing 会豁免它），但它有后台命令在跑，不应该被选中
-      const [a, b] = idle
-      // 切走前 A 还必须在等下一句：不在保活里的对话不会成为候选
-      const aBefore = await call('GET', `/tasks/${a.id}`)
-      assert.ok(aBefore.awaitingUser, `A 应该停在等下一句：${aBefore.status}/${aBefore.awaitingUser}`)
-      await call('POST', `/tasks/${a.id}/presence`, { viewerId: 'e2e', active: false })
-      await call('POST', `/tasks/${bg.id}/presence`, { viewerId: 'e2e', active: false })
-      const again = '再回一句，用来触发上限回收'
-      await call('POST', `/tasks/${b.id}/messages`, { text: again })
-      // 等到 B 这一轮真的跑完（again 之后有新的回复）再算回到保活：只看 awaitingUser + 消息已存在
-      // 会在消息刚送到、新一轮还没开始的瞬间就成立，那时还没触发上限检查
+      const trigger = idle[4]
+      // 关掉前 4 个的页面、第 5 个保持开着用它跑一轮来触发保活判定：旧实现会在这一轮结束、进入保活时
+      // 按默认上限 4 从这 4 个空闲会话里收掉最久没用的一个；新实现没有数量回收，4 个都应该还在。
+      // 触发轮只有几十毫秒，4 个的 1200ms 宽限不会先到，测到的就是数量回收而不是按时间回收
+      for (const x of idle.slice(0, 4))
+        await call('POST', `/tasks/${x.t.id}/presence`, { viewerId: 'e2e', active: false })
+      const again = '再回一句，触发一次保活判定'
+      await call('POST', `/tasks/${trigger.t.id}/messages`, { text: again })
       await waitFor(
         async () => {
-          const t = await call('GET', `/tasks/${b.id}`)
+          const t = await call('GET', `/tasks/${trigger.t.id}`)
           const at = t.messages.findIndex((m) => m.text === again)
           const replied = at >= 0 && t.messages.slice(at + 1).some((m) => m.role === 'agent' && m.text.trim())
           return t.awaitingUser && replied
         },
-        { timeout: 20000, label: '第二个空闲对话又回到等下一句' },
+        { timeout: 20000, label: '触发轮又回到等下一句' },
       )
-      // 上限淘汰走 stopTask('idle')。但保活中「已经答完」的会话被收掉时 engine 不写 stopReason
-      // （见 shared/engine.ts 的 finish：answered 就当作正常完成），所以从任务上看不出来是哪种路径。
-      // 改按运行日志判：只有上限淘汰会记「保活的会话超过上限」这一条，宽限到点只 cancelWait、不记。
-      // 日志是多行的，task id 在标题行的下面几行：要连着后几行一起看，不能只看标题那一行
-      const recycleLine = await waitFor(
-        async () => {
-          const { logs } = await call('GET', '/data')
-          if (!logs?.current || !existsSync(logs.current)) return null
-          const lines = readFileSync(logs.current, 'utf8').split('\n')
-          const hits = lines
-            .map((l, i) => (l.includes('保活的会话超过上限') ? lines.slice(i, i + 4).join('\n') : ''))
-            .filter(Boolean)
-          return hits.some((l) => l.includes(a.id)) ? hits : null
-        },
-        {
-          timeout: 15000,
-          label: '超过上限时收掉空闲会话',
-          describe: async () => {
-            const { logs } = await call('GET', '/data')
-            const text = logs?.current && existsSync(logs.current) ? readFileSync(logs.current, 'utf8') : ''
-            return {
-              limit: (await call('GET', '/settings')).keepAliveLimit,
-              a: await call('GET', `/tasks/${idle[0].id}`).then((t) => [t.status, t.stopReason, t.awaitingUser]),
-              b: await call('GET', `/tasks/${idle[1].id}`).then((t) => [t.status, t.stopReason, t.awaitingUser]),
-              bg: await call('GET', `/tasks/${bg.id}`).then((t) => [
-                t.status,
-                t.stopReason,
-                t.awaitingUser,
-                t.jobs?.length,
-              ]),
-              log: logs?.current,
-              aLines: text
-                .split('\n')
-                .filter((l) => l.includes(a.id))
-                .slice(-14),
-              tail: text.split('\n').slice(-14),
-            }
-          },
-        },
-      )
-      // 收掉的是空闲对话，而且不看后台命令还在跑的那个（旧实现会把这三个一起选中，连着它一起收掉）
-      assert.ok(!recycleLine.some((l) => l.includes(bg.id)), `有后台命令在跑的不算空闲会话：${recycleLine.join(' / ')}`)
-      assert.ok(!recycleLine.some((l) => l.includes(b.id)), `页面开着的对话不回收：${recycleLine.join(' / ')}`)
-      const bgNow = await call('GET', `/tasks/${bg.id}`)
-      assert.equal(bgNow.awaitingUser, true, '后台命令还在跑的那个照旧停在等下一句')
-      assert.equal(calls().find((c) => c.pid === bgPid)?.end, undefined, '它的 CLI 进程没被收掉')
+      // 旧实现的回收是 fire-and-forget 的 void enforceKeepAlive：触发轮刚进入保活就立刻断言，
+      // stopTask 还没让引擎收尾、进程也还没退出，会在没有删掉上限逻辑的代码上假通过。
+      // 留 400ms 观察窗（仍远小于 4 个空闲会话的 1200ms 宽限，不会混进按时间回收）：
+      // 旧实现会在这段时间里停掉最久没用的那个（CLI 退出并记一条「保活的会话超过上限」日志），新实现一个都不动
+      await sleep(400)
+      const { logs } = await call('GET', '/data')
+      const logText = logs?.current && existsSync(logs.current) ? readFileSync(logs.current, 'utf8') : ''
+      assert.ok(!logText.includes('保活的会话超过上限'), '不应该再有按数量回收的日志')
+      for (const [i, x] of idle.entries()) {
+        const now = await call('GET', `/tasks/${x.t.id}`)
+        assert.equal(now.awaitingUser, true, `第 ${i + 1} 个空闲对话没被数量回收`)
+        assert.equal(calls().find((c) => c.pid === x.pid)?.end, undefined, `第 ${i + 1} 个空闲对话的 CLI 还在`)
+      }
+      // 设置里已经不再有这个字段：旧字段 PUT 进来也读不出来，不影响同一份设置里的其他项
+      const saved = await call('PUT', '/settings', {
+        ...(await call('GET', '/settings')),
+        keepAliveLimit: 1,
+      })
+      assert.equal('keepAliveLimit' in saved, false, '保存后设置里不再有 keepAliveLimit')
     } finally {
-      // 中途断言失败也要改回设置：不然这个分片后面的用例都按上限 1 跑
-      await call('PUT', '/settings', { ...(await call('GET', '/settings')), keepAliveLimit: keep }).catch(() => {})
       // 保活中的对话（还在等下一句）不强制停止就会挂 15s 超时：直接并行收走，不等它们的宽限
       await Promise.all(
         created.map(async (t) => {
@@ -934,7 +884,7 @@ await runShard('本机请求与设置', async (api) => {
       )
     }
   }
-  step('保活上限只淘汰空闲会话：有后台命令还在跑的对话不被收掉')
+  step('保活数量上限已取消：超过 4 个空闲会话也不会被数量回收')
 
   // 打开对话页就预热：轮询看到 done 的那一下，引擎刚标完状态、收尾还没释放执行位。
   // 这里不隔 sleep 紧循环盯住第一轮结束，看到 done 立刻预热（CI 上 60ms 轮询更容易撞进这个窗口）

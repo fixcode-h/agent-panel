@@ -42,6 +42,8 @@ test('网页：文字按字宽估、固定宽度里折行，后面的控件跟�
   const at = rects('网页文字和控件')
   assert.deepEqual(at('Title'), [24, 24, 752, 48])
   assert.deepEqual(at('Body'), [24, 84, 300, 48])
+  // Pic 是固定尺寸，必须排在这一行的最前面：位置不能靠按钮文字宽 / 输入框默认宽推出来（字体一变就偏）
+  assert.deepEqual(at('Pic'), [24, 144, 64, 48])
   assert.deepEqual(at('After'), [24, 204, 752, 40])
 })
 
