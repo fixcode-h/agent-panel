@@ -599,11 +599,11 @@ export function createChildren(sc: TasksScope) {
       const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
       if (!tk || tk.imported || taskDeleted(tk)) return 'gone'
       if (!planStalled(tk)) return stallSkip(tk)
-      // 已经停下、失败的从来不推（下面 settled 那项也会挡）
-      if (tk.status === 'stopped' || tk.status === 'failed') return `status:${tk.status}`
+      // 已经停下、失败的不推；页面切走、闲置回收的保活进程是正常说完的一轮，照常推（同 nudgeMerge）
+      if (tk.status === 'failed' || (tk.status === 'stopped' && !reclaimed(tk))) return `status:${tk.status}`
       // 正常说完的一轮：进程结束了（done），或者还停在保活上等下一句（这时 status 仍是 running）。
       // 失败、被停下的不推：那是出错了或用户让它停，要让用户看到再决定
-      if (settled && !(tk.status === 'done' || (tk.status === 'running' && tk.awaitingUser)))
+      if (settled && !(tk.status === 'done' || reclaimed(tk) || (tk.status === 'running' && tk.awaitingUser)))
         return tk.working ? 'working' : `status:${tk.status}`
       // 等用户回答、等确认、还有排队要处理的消息、后台命令还在跑：不是停住了
       if (tk.requests.length || tk.parentAsks?.length) return 'asking'
@@ -675,6 +675,9 @@ export function createChildren(sc: TasksScope) {
     return true
   }
 
+  /** 保活进程被页面切走、闲置回收收掉的：这一轮是正常说完的，和用户、父对话叫停的不同（见 nudgeMerge 的同一判断） */
+  const reclaimed = (tk: Task) => tk.status === 'stopped' && (tk.stopReason === 'presence' || tk.stopReason === 'idle')
+
   /** planStalled 不成立时写进日志的原因：只为排查，判定本身仍以 planStalled 为准 */
   function stallSkip(tk: Task): string {
     if (tk.working) return 'working'
@@ -742,9 +745,9 @@ export function createChildren(sc: TasksScope) {
       if (tk.working) return 'working'
       if (tk.resolved) return 'resolved'
       if (activePlan(tk) || planned(tk)) return 'planned'
-      if (tk.status === 'stopped' || tk.status === 'failed') return `status:${tk.status}`
+      if (tk.status === 'failed' || (tk.status === 'stopped' && !reclaimed(tk))) return `status:${tk.status}`
       // 停稳的才推：进程结束了，或者停在保活上等下一句；这期间用户发了消息、开了新一轮就不推
-      if (settled && !(tk.status === 'done' || (tk.status === 'running' && tk.awaitingUser)))
+      if (settled && !(tk.status === 'done' || reclaimed(tk) || (tk.status === 'running' && tk.awaitingUser)))
         return `status:${tk.status}`
       if (settled && tk.turnDoneAt !== conv.turnDoneAt) return 'new-turn'
       if (tk.requests.length || tk.parentAsks?.length) return 'asking'

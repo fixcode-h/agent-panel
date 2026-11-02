@@ -55,6 +55,7 @@ import { placedFiles } from '../attachments.ts'
 import { currentBranch, isBigProject } from '../exec/worktree.ts'
 import { currentTestSteps, isUeBuildCommand } from '../../shared/test-steps.ts'
 import { log } from '../log.ts'
+import { sourceHeader } from '../../shared/peer-message.ts'
 import { inboxWithFile } from './inbox-file.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
@@ -847,7 +848,10 @@ export function createRun(sc: TasksScope) {
       next.todos = settledTodos(next.todos)
       sc.resetNudge(next.id)
     }
-    const expanded = await expandForWorkflow(next, m.text)
+    // 父对话、其他对话发来的：交给 CLI 的那份前面写明来源（见 sourceHeader），对话里记的原文不变
+    const head = m.panel ? '' : sourceHeader({ peer: m.peer })
+    const raw = await expandForWorkflow(next, m.text)
+    const expanded = head ? head + (raw || m.text) : raw
     dropEndNotes(next)
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
     if (next.parentTaskId && next.resolved) {

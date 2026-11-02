@@ -1171,6 +1171,7 @@ export const FollowUpInput = z.object({
    * 推送和响应到达后按 id 替换成真实的一份，不会出现两条。必须是 uuid，避免和已有消息撞 id
    */
   messageId: z.uuid().optional(),
+  from: z.string().optional(), // 别的对话替它发的（task.send）：发件对话 id，记成 peer（ADR 0041）
 })
 /** 父对话发布的一条全局规则 */
 export const TaskRule = z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })

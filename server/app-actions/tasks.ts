@@ -118,12 +118,16 @@ export const taskActions = [
   defineAction({
     name: 'task.send',
     title: '给对话发消息',
-    description: '以用户的身份给另一个对话发一条消息（它在跑时交给正在跑的 CLI）。不能发给你自己。',
+    description: '给另一个对话发一条消息（它在跑时交给正在跑的 CLI），对方会看到是你这个对话发的。不能发给你自己。',
     level: 'write',
     input: z.object({ id: z.string().trim().min(1), text: z.string().trim().min(1).max(20000) }),
     run: async (a, ctx) => {
       if (a.id === ctx.caller?.taskId) throw new ActionError('不能给你自己这个对话发消息')
-      const t = (await ctx.api('POST', `/tasks/${enc(a.id)}/messages`, { text: a.text })) as Task
+      const t = (await ctx.api('POST', `/tasks/${enc(a.id)}/messages`, {
+        text: a.text,
+        // 带上发件对话：收件方记成「对话 X 发来」，不当成用户说的话（ADR 0041）
+        ...(ctx.caller?.taskId && { from: ctx.caller.taskId }),
+      })) as Task
       return brief(t)
     },
   }),

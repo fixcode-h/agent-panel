@@ -134,6 +134,7 @@ export function traceCli(taskId: string, step: string | undefined, ev: CliEvent,
   }
   tr.lastOutputAt = now
   tr.lastEvent = ev.type
-  if (ev.type === 'tool') (tr.turnTools ??= new Set()).add(ev.id ?? `#${tr.turnTools?.size ?? 0}`)
+  // 只数带 id 的：同一个工具会报好几次进度，没有 id 时分不清是不是同一个，宁可少数也不多算
+  if (ev.type === 'tool' && ev.id) (tr.turnTools ??= new Set()).add(ev.id)
   tr.retry = undefined
 }

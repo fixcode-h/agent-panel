@@ -1332,7 +1332,7 @@ function inboxPart(host: EngineHost) {
   const ask = host.task.askUser
     ? ''
     : '「提问」关着：子对话的提问和收尾建议都由你决定，用户不会回答。按已有信息选最合理的做法，写清「你替他决定了什么、依据、如果不对怎么改」，缺关键信息也选一个默认方案继续并在结论里标出；不要空着等用户。'
-  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 2000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。${ask}`
+  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 20000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。${ask}`
 }
 
 /**

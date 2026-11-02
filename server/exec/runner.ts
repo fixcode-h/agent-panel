@@ -127,6 +127,7 @@ import { promptLangReminder, promptLangRules, promptUserNameRules, replyLang } f
 import { compactedSilently } from '../../shared/prompt-delta.ts'
 import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
+import { sourceHeader } from '../../shared/peer-message.ts'
 import { taskLog } from '../task-log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { dropAsked } from '../../shared/task-settle.ts'
@@ -1976,7 +1977,7 @@ async function runAgent(
           deliver: (msg, placed, recorded) => {
             taskLog(task.id, '消息交给等下一句的 CLI', { messageId: msg.id, recorded: recorded || undefined })
             // 只有用户自己的话才按「用户这次的消息」补状态；面板推的（后台命令结果、父对话传话）原样交
-            fromUser = msg.role === 'user' && !msg.panel
+            fromUser = msg.role === 'user' && !msg.panel && !msg.peer
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
             if (!recorded) task.messages.push(msg)
@@ -1988,7 +1989,7 @@ async function runAgent(
             task.working = true
             // 之后的输出另起一条，排在用户消息后面
             cur = undefined
-            const text = withAttachments(msg.text, placed ?? msg.attachments ?? [])
+            const text = withAttachments(sourceHeader(msg) + msg.text, placed ?? msg.attachments ?? [])
             // 新的一轮从这里算起：空回合判定只看这条消息之后的输出
             turnMark = { from: mine.length, touched: touched.size, input: text }
             turnEnded = false

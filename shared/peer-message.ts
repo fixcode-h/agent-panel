@@ -58,6 +58,20 @@ export function peerName(p: Pick<PeerFrom, 'name' | 'title' | 'rel'>) {
 }
 
 /**
+ * 交给 CLI 时写在消息前面的来源（ADR 0041）：父对话、其他对话发来的不是用户说的话，模型要分得清。
+ * 原来只有插话（steerNote）这条路说明了来源，等下一句、开新一轮交过去的就是一条普通的用户消息。
+ * 面板消息（panel）有自己的【面板】格式；父对话转交的用户回答（answer）本来就是用户的决定；子对话汇报有自己的格式：都不加
+ */
+export function sourceHeader(m: Pick<TaskMessage, 'panel' | 'peer'>): string {
+  const p = m.peer
+  if (!p || m.panel || p.kind === 'answer') return ''
+  const who = p.title || p.name
+  if (p.rel === 'parent') return `（下面是父对话「${who}」发来的消息，不是用户说的）\n`
+  if (p.rel === 'peer') return `（下面是同项目的对话「${who}」发来的消息，不是用户说的）\n`
+  return ''
+}
+
+/**
  * 旧数据（加 peer 之前）里子对话交回父对话的消息：按 panel 和 child 补成一份 peer，界面同样画成「接收消息」。
  * 认不出是谁发的（面板替用户说的话）返回 undefined，照旧画成面板的一行
  */
