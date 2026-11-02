@@ -140,3 +140,87 @@ test('cherry-pick（P4）：只搬这个对话改的文件、三方合并进目�
     rmSync(target, { recursive: true, force: true })
   }
 })
+
+test('cherry-pick（P4）：已经 submit 的 changelist 按「提交前一版 → 提交的版本」三方合并进目标，新增删除照搬，不 submit', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ap-pick-src-'))
+  const target = mkdtempSync(path.join(tmpdir(), 'ap-pick-dst-'))
+  try {
+    mkdirSync(path.join(root, 'src'))
+    mkdirSync(path.join(target, 'src'))
+    // 提交之后本地又改过：搬的必须是提交的那一版，不是本地现在的
+    writeFileSync(path.join(root, 'src/a.lua'), 'one\ntwo\nthree\nfour\nFIVE\nlocal later\n')
+    writeFileSync(path.join(target, 'src/a.lua'), 'ONE\ntwo\nthree\nfour\nfive\n')
+    writeFileSync(path.join(target, 'src/old.lua'), 'old\n')
+    // 每个 depot 文件各个版本的内容：a.lua #3 是提交前，#4 是这次提交的；new.lua #1 是这次新增的
+    const revs: Record<string, string> = {
+      '//d/src/a.lua#3': 'one\ntwo\nthree\nfour\nfive\n',
+      '//d/src/a.lua#4': 'one\ntwo\nthree\nfour\nFIVE\n',
+      '//d/src/new.lua#1': 'new\n',
+    }
+    const calls: string[][] = []
+    const p4 =
+      (cwd: string): P4Run =>
+      async (args, stdin) => {
+        calls.push([cwd === target ? 'dst' : 'src', ...args, ...(stdin ? [stdin] : [])])
+        const [cmd] = args.filter((x) => x !== '-ztag')
+        if (cmd === 'describe')
+          return {
+            ok: true,
+            out: [
+              '... change 9',
+              '... status submitted',
+              '... desc 修复跑测图标',
+              '... depotFile0 //d/src/a.lua',
+              '... action0 edit',
+              '... rev0 4',
+              '... depotFile1 //d/src/new.lua',
+              '... action1 add',
+              '... rev1 1',
+              '... depotFile2 //d/src/old.lua',
+              '... action2 delete',
+              '... rev2 2',
+            ].join('\n'),
+            err: '',
+          }
+        if (cmd === 'opened') return { ok: true, out: '', err: '' }
+        if (cmd === 'where') {
+          const f = args.at(-1)!.replace('//d/', '')
+          return { ok: true, out: `... path ${path.join(root, f)}`, err: '' }
+        }
+        if (cmd === 'print') {
+          const spec = args.at(-1)!
+          if (!(spec in revs)) return { ok: false, out: '', err: `${spec} - no such file(s).` }
+          writeFileSync(args[args.indexOf('-o') + 1], revs[spec])
+          return { ok: true, out: '', err: '' }
+        }
+        if (cmd === 'change') return { ok: true, out: 'Change 43 created.', err: '' }
+        return { ok: true, out: '', err: '' }
+      }
+    // 已提交的 changelist 里有这个对话没改过的文件：一样整次拒绝，目标不动
+    const rejected = await cherryPickP4(root, target, taskOf(['src/a.lua', 'src/new.lua']), '9', p4)
+    assert.equal(rejected.ok, false)
+    assert.match(rejected.info, /src\/old\.lua：这个对话没有改过它[\s\S]*已经提交/)
+    assert.equal(calls.filter((c) => c[0] === 'dst').length, 0)
+
+    const ok = await cherryPickP4(root, target, taskOf(['src/a.lua', 'src/new.lua', 'src/old.lua']), '9', p4)
+    assert.equal(ok.ok, true, ok.info)
+    assert.ok(!calls.some((c) => c[1] === 'opened'), '已提交的不按打开的文件找')
+    assert.equal(
+      readFileSync(path.join(target, 'src/a.lua'), 'utf8'),
+      'ONE\ntwo\nthree\nfour\nFIVE\n',
+      '只带提交里改的那一行，目标原有差异保留，本地提交后又改的不带',
+    )
+    assert.equal(readFileSync(path.join(target, 'src/new.lua'), 'utf8'), 'new\n', '新增的按提交的版本放过去')
+    assert.ok(
+      calls.some((c) => c[0] === 'dst' && c[1] === 'delete'),
+      '删除的在目标里也删',
+    )
+    assert.match(ok.info, /已提交的 changelist 9[\s\S]*changelist 43[\s\S]*没有 submit/)
+    const made = calls.find((c) => c[0] === 'dst' && c[1] === 'change')
+    assert.match(made?.at(-1) ?? '', /修复跑测图标（cherry-pick 自 9）/)
+    assert.ok(!calls.some((c) => c.includes('submit')), '不 submit')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(target, { recursive: true, force: true })
+  }
+})
