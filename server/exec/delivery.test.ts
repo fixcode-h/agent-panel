@@ -17,7 +17,7 @@ import {
   removeNoteTaker,
   takeHeld,
 } from './delivery.ts'
-import { steerTask } from './runner.ts'
+import { steerTask } from './steering.ts'
 
 setLang('zh')
 
