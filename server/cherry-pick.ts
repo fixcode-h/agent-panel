@@ -13,14 +13,15 @@ import { ownFiles, rel } from './own-changes.ts'
  * 只能搬这个对话自己做的改动。以前只在提示词里要求，Agent 常常按两条分支的差异去同步，
  * 把目标分支故意没有、但不是这次修改的内容也带过去。所以这里逐个核对：
  * - Git：只收这个对话开始之后的普通提交（不收合并提交），提交里的每个文件都必须是这个对话改过的
- * - P4：只收指定 changelist 里这个对话改过的文件，以打开前的 have 版本为基准三方合并进目标（只带这次改的那几处）
+ * - P4：只收指定 changelist 里这个对话改过的文件，pending 以打开前的 have 版本、已提交的以提交前一版为基准，
+ *   三方合并进目标（只带这次改的那几处）
  * 有一项不合格整次都不做，写清是哪个提交 / 文件、为什么
  */
 
 export interface CherryPickArgs {
   /** Git：要搬的提交（这个对话做的） */
   commits?: string[]
-  /** P4：要搬的 pending changelist */
+  /** P4：要搬的 changelist（pending 或已经 submit 的） */
   changelist?: string
 }
 
@@ -134,6 +135,20 @@ export async function cherryPickGit(
   }
 }
 
+/** 要搬的一个文件：base 是改之前的版本，mine 是改完的内容（pending 是本地文件，已提交的是打印出来的那一版） */
+type P4File = { rel: string; action: string; depot: string; base: string; mine: string }
+
+/**
+ * 已提交的 changelist 用 describe 列出来的文件：depotFile0 / action0 / rev0…（同一条记录里按序号排）。
+ * 编辑的基准是提交前一版（rev-1），改完的是提交的那一版（rev）
+ */
+function describedFiles(rec: Record<string, string>) {
+  const out: { depot: string; action: string; rev: number }[] = []
+  for (let i = 0; `depotFile${i}` in rec; i++)
+    out.push({ depot: rec[`depotFile${i}`], action: rec[`action${i}`] ?? '', rev: Number(rec[`rev${i}`]) })
+  return out
+}
+
 export async function cherryPickP4(
   root: string,
   target: string,
@@ -145,58 +160,91 @@ export async function cherryPickP4(
   if (!/^\d+$/.test(cl))
     return {
       ok: false,
-      info: 'changelist 要写这个对话的 pending changelist 编号（default 里可能混着别的改动，先用 p4_split_changelists 分出来）。',
+      info: 'changelist 要写这次改动所在的 changelist 编号：还没提交的 pending（default 里可能混着别的改动，先用 p4_split_changelists 分出来），或者已经 submit 的那个。',
     }
   if (!existsSync(target)) return { ok: false, info: `目标项目路径不存在：${target}。请用户到项目设置里重新填。` }
   const src = p4(root)
-  const opened = await src(['-ztag', 'opened', '-c', cl])
-  if (!opened.ok) return { ok: false, info: `读不出 changelist ${cl}：${opened.err}` }
-  const recs = parseZtag(opened.out).filter((r) => r.depotFile)
-  if (!recs.length) return { ok: false, info: `changelist ${cl} 里没有打开的文件。` }
+  // 先看这个 changelist 是 pending 还是已经 submit：已提交的没有打开的文件，要按提交时的版本取改动
+  const head = parseZtag((await src(['-ztag', 'describe', '-s', cl])).out)[0]
+  const submitted = head?.status === 'submitted'
+  const srcDesc = head?.desc?.trim()
+  const listed: { depot: string; action: string; rev?: number }[] = []
+  if (submitted) listed.push(...describedFiles(head))
+  else {
+    const opened = await src(['-ztag', 'opened', '-c', cl])
+    if (!opened.ok) return { ok: false, info: `读不出 changelist ${cl}：${opened.err}` }
+    listed.push(
+      ...parseZtag(opened.out)
+        .filter((r) => r.depotFile)
+        .map((r) => ({ depot: r.depotFile, action: r.action })),
+    )
+  }
+  if (!listed.length)
+    return {
+      ok: false,
+      info: submitted ? `已提交的 changelist ${cl} 里没有文件。` : `changelist ${cl} 里没有打开的文件。`,
+    }
   const mine = ownFiles(task, root)
   const bad: string[] = []
-  const files: { rel: string; action: string; local: string; depot: string }[] = []
-  for (const r of recs) {
-    const where = parseZtag((await src(['-ztag', 'where', r.depotFile])).out)[0]
+  const picked: (Omit<P4File, 'base' | 'mine'> & { local: string; rev?: number })[] = []
+  for (const r of listed) {
+    const where = parseZtag((await src(['-ztag', 'where', r.depot])).out)[0]
     const local = where?.path ?? ''
     const p = local ? rel(root, local) : ''
-    if (!p) bad.push(`${r.depotFile}：不在项目目录里`)
+    if (!p) bad.push(`${r.depot}：不在项目目录里`)
     else if (!mine.has(p)) bad.push(`${p}：这个对话没有改过它，不是这次的修改`)
     else if (!['edit', 'add', 'delete'].includes(r.action))
       bad.push(`${p}：动作是 ${r.action}，面板只搬编辑、新增、删除`)
-    else files.push({ rel: p, action: r.action, local, depot: r.depotFile })
+    else picked.push({ rel: p, action: r.action, local, depot: r.depot, rev: r.rev })
   }
   if (bad.length)
     return {
       ok: false,
-      info: `没有 cherry-pick（只能搬这个对话自己改的文件，有一个不合格整次都不做）：\n${bad.map((x) => `- ${x}`).join('\n')}\n把不属于这次修改的文件挪出这个 changelist 再调用。`,
+      info: `没有 cherry-pick（只能搬这个对话自己改的文件，有一个不合格整次都不做）：\n${bad.map((x) => `- ${x}`).join('\n')}\n${submitted ? '这个 changelist 已经提交、改不了：' : ''}把不属于这次修改的文件挪出这个 changelist 再调用${submitted ? '（已提交的只能让用户决定怎么处理）' : ''}。`,
     }
-  // 编辑的文件做三方合并：基准是打开前的 have 版本，「我们」是这次改完的，合进目标里的同一个文件。
-  // 只把 have → 现在 这段改动带过去，目标分支本来就不同的地方（哪怕紧挨着改动）原样保留；真正撞在一起才算冲突。
-  // 全部先在临时目录里合好，有一个合不上整次都不动目标
+  // 编辑的文件做三方合并：基准是改之前的版本（pending 是打开前的 have，已提交的是提交前一版），
+  // 「我们」是这次改完的，合进目标里的同一个文件。只把这段改动带过去，目标分支本来就不同的地方（哪怕紧挨着改动）
+  // 原样保留；真正撞在一起才算冲突。全部先在临时目录里合好，有一个合不上整次都不动目标
   const work = await mkdtemp(path.join(tmpdir(), 'ap-pick-'))
   try {
-    const merged: { rel: string; file: string }[] = []
     const fail: string[] = []
+    /** 取一个版本到临时目录：读不出来时记进 fail，返回空 */
+    const fetchRev = async (spec: string, file: string, what: string, f: { rel: string }) => {
+      const got = await src(['print', '-q', '-o', file, spec])
+      if (got.ok && existsSync(file)) return file
+      fail.push(`${f.rel}：读不出${what}（${got.err || 'p4 print 没有输出'}）`)
+      return ''
+    }
+    const files: P4File[] = []
+    for (const [i, f] of picked.entries()) {
+      // 改完的内容：pending 就是本地文件；已提交的取提交的那一版（本地可能已经又改过了）
+      const mineFile =
+        !submitted || f.action === 'delete'
+          ? f.local
+          : await fetchRev(`${f.depot}#${f.rev}`, path.join(work, `${i}.mine`), `提交的版本 #${f.rev}`, f)
+      if (!mineFile) continue
+      let base = ''
+      if (f.action === 'edit') {
+        const spec = submitted ? `${f.depot}#${(f.rev ?? 1) - 1}` : `${f.depot}#have`
+        base = await fetchRev(spec, path.join(work, `${i}.base`), submitted ? '提交前的版本' : '打开前的版本', f)
+        if (!base) continue
+      }
+      files.push({ rel: f.rel, action: f.action, depot: f.depot, base, mine: mineFile })
+    }
+    const merged: { rel: string; file: string }[] = []
     for (const [i, f] of files.filter((x) => x.action === 'edit').entries()) {
       const there = path.join(target, f.rel)
       if (!existsSync(there)) {
         fail.push(`${f.rel}：目标里没有这个文件`)
         continue
       }
-      const base = path.join(work, `${i}.base`)
+      // 打开了但没改（和改之前一样）：不是这次的修改，不搬
+      if ((await readFile(f.base)).equals(await readFile(f.mine))) continue
       const theirs = path.join(work, `${i}.target`)
-      const got = await src(['print', '-q', '-o', base, `${f.depot}#have`])
-      if (!got.ok || !existsSync(base)) {
-        fail.push(`${f.rel}：读不出打开前的版本（${got.err || 'p4 print 没有输出'}）`)
-        continue
-      }
-      // 打开了但没改（和 have 一样）：不是这次的修改，不搬
-      if ((await readFile(base)).equals(await readFile(f.local))) continue
       await copyFile(there, theirs)
       const m = await capture(
         'git',
-        ['merge-file', '-L', 'target', '-L', 'have', '-L', 'mine', theirs, base, f.local],
+        ['merge-file', '-L', 'target', '-L', 'before', '-L', 'mine', theirs, f.base, f.mine],
         work,
       )
       if (m.code !== 0) fail.push(`${f.rel}：这次的改动和目标里的内容撞在一起了，合不上`)
@@ -213,7 +261,6 @@ export async function cherryPickP4(
     const dst = p4(target)
     // 新 changelist 沿用来源的描述（按 P4 的规则只建 pending、不 submit），末尾注明从哪个 changelist 搬来。
     // 表单直接从 Node 写进 p4 的标准输入（UTF-8），不经 shell 管道，中文描述不会变成 ???（见 p4.md）
-    const srcDesc = (await src(['-ztag', 'describe', '-s', cl])).out.match(/^\.\.\. desc (.*)$/m)?.[1]?.trim()
     const desc = `${srcDesc || '改动'}（cherry-pick 自 ${cl}）`
     const made = await dst(['change', '-i'], `Change: new\n\nDescription:\n\t${desc}\n`)
     const num = /Change (\d+) created/.exec(made.out)?.[1]
@@ -233,7 +280,7 @@ export async function cherryPickP4(
     for (const f of files.filter((x) => x.action === 'add')) {
       const abs = path.join(target, f.rel)
       await mkdir(path.dirname(abs), { recursive: true })
-      await copyFile(f.local, abs)
+      await copyFile(f.mine, abs)
       const a = await dst(['add', '-c', num, abs])
       if (!a.ok) errs.push(`${f.rel}：p4 add 失败（${a.err}）`)
       else done.push(`${f.rel}（新增）`)
@@ -245,7 +292,7 @@ export async function cherryPickP4(
     }
     return {
       ok: !errs.length,
-      info: `${done.length ? `已在目标工作区的 changelist ${num} 里搬好 ${done.length} 个文件：\n${done.map((x) => `- ${x}`).join('\n')}\n` : ''}${errs.length ? `有 ${errs.length} 个没搬成：\n${errs.map((x) => `- ${x}`).join('\n')}\n` : ''}没有 submit。`,
+      info: `${done.length ? `已${submitted ? `把已提交的 changelist ${cl} ` : ''}在目标工作区的 changelist ${num} 里搬好 ${done.length} 个文件：\n${done.map((x) => `- ${x}`).join('\n')}\n` : ''}${errs.length ? `有 ${errs.length} 个没搬成：\n${errs.map((x) => `- ${x}`).join('\n')}\n` : ''}没有 submit。`,
     }
   } finally {
     await rm(work, { recursive: true, force: true }).catch(() => {})
