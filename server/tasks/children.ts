@@ -447,12 +447,16 @@ export function createChildren(sc: TasksScope) {
     // 这一轮 AI 自己用 message_parent 写的汇报并进这一封当「结果」（ADR 0034：一轮只交一封），没写才取最后一条回复
     // 只带要点（shared/child-letter.ts）：最后一条回复取全文从里面认总结，lastReply 只有开头 300 字、认不出末尾的总结
     const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())?.text
-    const src = tk.pendingReport?.trim() || last || tk.summary || ''
+    const reply = tk.pendingReport?.trim() || last || tk.summary || ''
+    // 结果优先用子对话写进它自己计划的总结（ADR 0041：总结写在各自的计划里，是它明确交的，不靠从回复里认）；
+    // 计划还没收尾、没写总结时才退回最后的回复
+    const plan = tk.plans?.at(-1)
+    const src = (plan?.doneAt && plan.summary.trim()) || reply
     const brief = letterResult(src)
     const summary = brief.text
     // 父对话里由面板自动显示的卡片（父对话不再自己写）：标题取子对话这一轮总结的「类型｜结论」，
-    // 点标题跳到子对话里的详细总结；没写总结时为空
-    const cards = childSummaryCards(src, tk.id)
+    // 点标题跳到子对话里的详细总结；没写总结时为空。卡片只做展示，从回复里画
+    const cards = childSummaryCards(reply, tk.id)
     // 用户直接在子对话里交代过新要求：不再单独发消息，这封汇报里带上原话
     const direct = tk.userDirect ? `\n用户在这个子对话里直接交代过：${tk.userDirect}` : ''
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么

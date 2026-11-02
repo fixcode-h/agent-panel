@@ -20,6 +20,7 @@
 // 16. 界面上的中文要走 t()：JSX 文字节点里直接写中文会在英文界面里露出来
 // 17. 不给 process.env 整个赋值：换成普通对象后再设 HOME 等变量，os.homedir() 和子进程都读不到
 // 18. 面板工具不按「是不是 Chat 页」裁：server/orch-mcp.ts、orch-hint.ts、ask-mcp.ts 里不出现 isChatMode / isPlainChat / .plain
+// 19. 状态只认工具调用：判定逻辑不调用按回复文字识别结论 / 决定的函数（parseVerdict / leadVerdict / parseDispatch）
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -488,6 +489,20 @@ for (const f of ['server/orch-mcp.ts', 'server/orch-hint.ts', 'server/ask-mcp.ts
       if (/\bisChatMode\b|\bisPlainChat\b|\bo\.plain\b|orch\.plain\b/.test(line))
         errors.push(
           `${f}:${i + 1}：面板工具不按「是不是 Chat 页」裁，读 Orchestra 的能力字段（canSpawn / team / plans），见 ADR 0038`,
+        )
+    })
+}
+
+// 19. 状态只认工具调用，绝不按 Agent 回复里的字判定（ADR 0041 第 16 节，见 docs/lessons/self-drive.md）：
+// 按回复文字识别结论、决定的旧函数只留在定义它的文件和测试里，别处调用就拦下
+for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(x) && !/\.test\.tsx?$/.test(x))) {
+  if (f === 'shared/verdict.ts' || f === 'shared/dispatch.ts') continue
+  read(f)
+    .split('\n')
+    .forEach((line, i) => {
+      if (/\b(parseVerdict|leadVerdict|parseDispatch)\(/.test(line))
+        errors.push(
+          `${f}:${i + 1}：状态只认工具调用（submit_verdict / submit_result / dispatch），不从回复文字里认结论，见 ADR 0041 第 16 节`,
         )
     })
 }

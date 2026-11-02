@@ -1804,7 +1804,7 @@ export const TaskPlan = z.object({
    * 面板替它推进的变化（结果回来标完成、派子对话挂等待、子对话上报改备注）不算对话看过了新要求
    */
   agentUpdatedAt: z.string().optional(),
-  /** 计划完成后 Agent 写的总结（必须有）；auto 表示 Agent 没写、面板取了它最后的回复 */
+  /** 对话自己写的这份计划的总结：收尾时随 set_plan / finish_plan 交（ADR 0041）；autoSummary 是旧数据的标记 */
   summary: z.string().default(''),
   autoSummary: z.boolean().default(false),
 })
