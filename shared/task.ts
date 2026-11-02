@@ -1950,7 +1950,7 @@ export function taskBusyCount(list: Parameters<typeof taskBusy>[0][]): number {
 }
 
 /**
- * 保活回收判定：这个对话还在运行吗？在运行的不按两段时间回收、也不参与上限淘汰（ADR 0012）。
+ * 保活回收判定：这个对话还在运行吗？在运行的不按宽限回收（ADR 0012）。
  * 状态部分就是 convActive（taskFacts）：在跑、在等子任务 / 子对话 / 后台命令 / 工作流、有没回复的提问和请求；
  * 另外这一轮没收尾、在预热也算。后台命令数和名下还在运行的子对话数不在任务数据里，由调用方按运行时情况传。
  */
@@ -1970,7 +1970,7 @@ export function keepAliveBusy(
  * - 在（这一轮在跑、或者停在等下一句保活着）：看任务自己的事实，见上面的 keepAliveBusy；
  * - 不在（这一轮结束、进程已退出，例如不支持保活的 CLI）：名下还有子对话 / 后台命令没回来时它在等结果，
  *   不能按「没人看就不留着」回收——回收会把它落成「已中断」，子对话的结果回来时没人在等（用户报的「父对话被回收」）。
- * 回收时长、保活上限都只问这一处，不在各触发点各写一个 if（ADR 0012）
+ * 回收时长只问这一处，不在各触发点各写一个 if（ADR 0012）
  */
 export function keepAliveHolding(x: {
   /** 还在执行位里（Live 里有一条） */
@@ -1987,34 +1987,6 @@ export function keepAliveHolding(x: {
   if (!x.live) return !!x.more || !!(x.children || x.background)
   if (x.more) return true
   return !!x.task && keepAliveBusy(x.task, { background: x.background, children: x.children })
-}
-
-/**
- * 保活会话（回复完停在等下一句、CLI 进程还没退）超过全局上限时要结束哪几个：
- * 只从没人在看的里面挑最近使用时间最早的（LRU），`exceptId` 是刚进入保活的那个，不算；
- * 正在看的页面不算（用户马上会回来发消息，回收了反而要重新启动）。
- * 候选只看 awaitingUser：正在执行的一轮它不是 true（调用方还会把还在跑的子对话、后台命令排在外面）。
- * 返回要结束的 id，从最久没用的开始；没超限返回空数组。limit 为 0 表示不限制。
- */
-export function keepAliveVictims(
-  list: Pick<Task, 'id' | 'awaitingUser' | 'turnSeenAt' | 'turnDoneAt' | 'updatedAt'>[],
-  limit: number,
-  exceptId = '',
-  watched: (id: string) => boolean = () => false,
-): string[] {
-  if (!limit) return []
-  // awaitingUser 就是「回复完停在等下一句」：正在跑的这一轮它一直是 false，天然不在候选里
-  const idle = list.filter((t) => t.awaitingUser && t.id !== exceptId && !watched(t.id))
-  // 刚进入保活的那一个也算进上限：已有 idle 数 + 1 超过 limit 时要收掉差的那么多。
-  // 没传 exceptId（那个自己还在忙、不占名额）时不能加 1，否则会多收一个空闲会话
-  const over = idle.length + (exceptId ? 1 : 0) - limit
-  if (over <= 0) return []
-  const used = (t: Pick<Task, 'turnSeenAt' | 'turnDoneAt' | 'updatedAt'>) =>
-    t.turnSeenAt || t.turnDoneAt || t.updatedAt || ''
-  return idle
-    .sort((a, b) => used(a).localeCompare(used(b)))
-    .slice(0, over)
-    .map((t) => t.id)
 }
 
 /**

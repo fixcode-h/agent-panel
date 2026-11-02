@@ -174,8 +174,6 @@ function SettingsBody({
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [childAsk, setChildAsk] = useState(String(initial.childIdleAskMinutes))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
-  const [unread, setUnread] = useState(String(initial.unreadGraceMinutes))
-  const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
   const [childKeep, setChildKeep] = useState(String(initial.childDoneKeepMinutes))
   const [archiveDays, setArchiveDays] = useState(String(initial.autoArchiveDays))
   const [reclaim, setReclaim] = useState(initial.reclaimIdleCli)
@@ -326,10 +324,6 @@ function SettingsBody({
   const childAskValid = childAsk !== '' && Number.isInteger(childAskMin) && childAskMin >= 0 && childAskMin <= 1440
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
-  const unreadMin = Number(unread)
-  const unreadValid = unread !== '' && Number.isInteger(unreadMin) && unreadMin >= 0 && unreadMin <= 1440
-  const keepN = Number(keepAlive)
-  const keepValid = keepAlive !== '' && Number.isInteger(keepN) && keepN >= 0 && keepN <= 50
   const childKeepMin = Number(childKeep)
   const childKeepValid = childKeep !== '' && Number.isInteger(childKeepMin) && childKeepMin >= 0 && childKeepMin <= 1440
   const archiveN = Number(archiveDays)
@@ -370,8 +364,6 @@ function SettingsBody({
     speech,
     readAloud,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
-    unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
-    keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
     childDoneKeepMinutes: childKeepValid ? childKeepMin : initial.childDoneKeepMinutes,
     autoArchiveDays: archiveValid ? archiveN : initial.autoArchiveDays,
     reclaimIdleCli: reclaim,
@@ -1041,7 +1033,7 @@ function SettingsBody({
                       title={t('回收空闲 Agent')}
                       desc={t('空闲到时结束进程，再用时续接会话')}
                       hint={t(
-                        '回复完没人看着的空闲 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这两段时间和数量上限管，页面切到后台也照样跑完。关掉后不再按时间回收，只会按「最多保活」收，进程会越攒越多。',
+                        '回复完没人看着的空闲 Agent 会在「离开后保留」这段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这段时间管，页面切到后台也照样跑完。关掉后不再按时间回收，进程会越攒越多。',
                       )}
                     >
                       <Switch aria-label={t('自动回收闲置 Agent')} checked={reclaim} onCheckedChange={setReclaim} />
@@ -1065,25 +1057,6 @@ function SettingsBody({
                         />
                       </Row>
                     )}
-                    {reclaim && (
-                      <Row
-                        indent
-                        title={t('未读回复保留')}
-                        desc={t('回复还没看时最多留多久')}
-                        hint={t(
-                          '填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。正在执行的不受影响。',
-                        )}
-                      >
-                        <NumberField
-                          value={unread}
-                          onChange={setUnread}
-                          unit={t('分钟')}
-                          invalid={!unreadValid}
-                          error={t('填 0 到 1440 之间的整数，0 表示不保留')}
-                          label={t('没看过的回复保留多久（分钟）')}
-                        />
-                      </Row>
-                    )}
                     <Row
                       title={t('子对话完成后保留')}
                       desc={t('完成后 Agent 再留多久')}
@@ -1098,23 +1071,6 @@ function SettingsBody({
                         invalid={!childKeepValid}
                         error={t('填 0 到 1440 之间的整数，0 表示不保留')}
                         label={t('子对话完成后 Agent 保留多久（分钟）')}
-                      />
-                    </Row>
-                    <Row
-                      title={t('最多保活')}
-                      desc={t('超出时结束最久没用的')}
-                      hint={t(
-                        '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用的（下次打开需要重新启动一次）。正在执行的对话（包括已经切到后台在跑的）不占名额，也不会被收掉。',
-                      )}
-                    >
-                      <NumberField
-                        value={keepAlive}
-                        onChange={setKeepAlive}
-                        unit={t('个')}
-                        empty={t('不限')}
-                        invalid={!keepValid}
-                        error={t('填 0 到 50 之间的整数')}
-                        label={t('同时保活的会话上限')}
                       />
                     </Row>
                     <Row

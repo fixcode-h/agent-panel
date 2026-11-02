@@ -4,13 +4,13 @@ paths: server/exec/process.ts, server/exec/orphans.ts, server/exec/proc-stats.ts
 
 # CLI 进程：停止、保活和回收
 
-## 停下要有原因，保活有上限，收口后不留进程
+## 停下要有原因，保活只按时间回收，收口后不留进程
 
 - 规则：`stopTask(id, reason)` 的 `reason` 必填，只有用户点 `/stop` 传 `'user'`，其余按原因传（收尾、换 CLI、归档、删除、重启、页面切走、打断）；异常退出走失败，不归成停止。
-- 规则：会话「彻底完成」时不分独立分支都 `cancelWait/stopTask` + `await entry.done` + `background.stop`，worktree 回收只在 `isolated` 做；`awaitingUser` 超过 `keepAliveLimit` 时 `keepAliveVictims()` 停最久没用的，「正在看」只认前台开着的页面（`isViewing`，不是 `hasViewer`）。
+- 规则：会话「彻底完成」时不分独立分支都 `cancelWait/stopTask` + `await entry.done` + `background.stop`，worktree 回收只在 `isolated` 做；空闲会话只按「离开后保留」的宽限回收（`presenceGraceMinutes`，`server/presence.ts` 的 `evict`），没看过的回复也共用这一段。用户 2026-11-02 决定取消保活的全局数量上限（`keepAliveLimit` / `keepAliveVictims` / `enforceKeepAlive`）和单独的「未读回复保留」（`unreadGraceMinutes`）：大量空闲对话不会再因为超过 N 个被结束，代价是空闲进程可能更多、内存紧张时更明显。
 - 规则：任务收口后不能拿「进程还活着」当理由留着它：收尾落 `resolved` 后按 owner 再核对一次，另有启动 + 每小时的兜底回收（判定只用 `taskSettled`）；发出停止后确认退出才丢登记（杀不掉就写回）。
 - 规则：面板起的 CLI 记在 `run/cli-pids/<面板 pid>.json`，每个实例只写、只删自己那份（共用一份再读盘合并会被别的实例退出清空、并发登记覆盖）；清理只写已退出实例的文件，「面板还活着」要 pid 在**且**命令行像 `server.mjs` / `server/index.ts`（认 `./` 和引号路径，宁多认）。
-- 起因：12 个对话各留一个进程没被保活上限收住；共用目录的子对话 `resolved` 后 CLI 一直留着，用户报「4 小时前启动的进程没退」。
+- 起因：12 个对话各留一个进程没被闲置回收收住（当时靠保活数量上限兜底，上限已在 2026-11-02 取消）；共用目录的子对话 `resolved` 后 CLI 一直留着，用户报「4 小时前启动的进程没退」。
 - 防线：`server/presence.test.ts`、`shared/task-stage.test.ts` 的保活用例；`server/exec/orphans.test.ts` 的登记分账、启动清理、兜底回收、写回登记；`server/task-restart.test.ts` 的「已收口的不再拉起」。
 
 ## 驱动转圈、计时的字段必须进 messageStamp；停止要杀到孙进程

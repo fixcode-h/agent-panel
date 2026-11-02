@@ -30,12 +30,15 @@ test('设置搜索：空格分开的每段都要命中，不分大小写，也�
 })
 
 test('设置搜索：问号里的详细说明能搜到，说明没命中时结果里显示详细说明', () => {
-  const it = item('未读回复保留', { desc: '回复还没看时最多留多久', hint: '侧栏的橙点还亮着时最多再留这么久' })
-  assert.equal(matchSetting(it, searchTerms('橙点')), true)
-  assert.equal(hitText(it, searchTerms('橙点')), it.hint)
+  const it = item('子对话完成后保留', {
+    desc: '完成后 Agent 再留多久',
+    hint: '到点还没人用就结束，之后再交代会续接原会话',
+  })
+  assert.equal(matchSetting(it, searchTerms('续接')), true)
+  assert.equal(hitText(it, searchTerms('续接')), it.hint)
   // 说明命中、或者只是标题命中时还显示一行说明
-  assert.equal(hitText(it, searchTerms('回复')), it.desc)
-  assert.equal(hitText(it, searchTerms('未读')), it.desc)
+  assert.equal(hitText(it, searchTerms('保留')), it.desc)
+  assert.equal(hitText(it, searchTerms('子对话')), it.desc)
 })
 
 test('设置搜索：命中的字切成段，重叠的合并', () => {

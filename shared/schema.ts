@@ -1582,7 +1582,7 @@ export const StopReason = z.enum([
   'delete', // 删除对话（进回收站时结束）
   'restart', // 面板重启、服务退出
   'presence', // 页面切走、宽限期到了，CLI 不再等下一句
-  'idle', // 保活会话超过全局上限，闲置回收（不是用户按的暂停）
+  'idle', // 闲置回收（手动释放保活会话等，不是用户按的暂停）
   'supersede', // 用户发了新消息，打断当前这一轮
   'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
   'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
@@ -2464,19 +2464,8 @@ export const Settings = z.object({
    * 只管空闲会话：正在执行的一轮（切到后台也一样）到点不回收，见 server/tasks.ts 的 keepAliveBusy
    */
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
-  /**
-   * 这一轮回复完成、但用户还没打开看过的对话，多久回收（分钟）；0 表示回复完就回收。
-   * 这类对话没有页面开着，不收的话进程会一直挂着，而橙点只有用户点开才会消。同理只管空闲会话
-   */
-  unreadGraceMinutes: z.number().int().min(0).max(1440).catch(30).default(30),
   /** 关掉后不自动回收：回复完没人看的 CLI 进程一直留着，进程会越攒越多，内存只增不减 */
   reclaimIdleCli: z.boolean().catch(true).default(true),
-  /**
-   * 同时保活的会话上限：回复完停在等下一句、又没人在看的 CLI 最多留几个，超过就结束最久没用的那个，
-   * 下次打开靠 --resume 续接（冷启动一次）。只统计空闲会话，正在执行的对话不占名额也不会被收掉。
-   * 0 表示不限制
-   */
-  keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
   /**
    * 子对话彻底完成后，CLI 还停在等下一句上多久（分钟）再结束；0 表示完成就结束。
    * 这段时间里父对话或用户接着交代，消息直接交给同一个进程，不用冷启动。
