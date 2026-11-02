@@ -1166,10 +1166,7 @@ export const FollowUpInput = z.object({
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** 任务正在执行时：true 先停下当前这一轮再发送；否则直接交给正在跑的 CLI，交不出去就这一轮结束后接着处理 */
   interrupt: z.boolean().default(false),
-  /**
-   * 页面生成的消息 id：点发送时本地已经按这个 id 插进对话（待认领），服务端沿用它，
-   * 推送和响应到达后按 id 替换成真实的一份，不会出现两条。必须是 uuid，避免和已有消息撞 id
-   */
+  /** 页面生成的消息 id（待认领）：服务端沿用，推送到达后按 id 换成真实的一份、不出现两条；必须是 uuid，免得撞 id */
   messageId: z.uuid().optional(),
   from: z.string().optional(), // 别的对话替它发的（task.send）：发件对话 id，记成 peer（ADR 0041）
 })
