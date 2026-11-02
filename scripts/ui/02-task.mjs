@@ -888,6 +888,9 @@ await runShard(import.meta.filename, async (api) => {
       if (!(await p.locator('[data-life-ai]').count()) || !(await p.locator('[data-life-copy]').count()))
         errors.push('对话菜单「状态」：标题栏没有「AI 分析」或「复制诊断文件」')
       // 点计数块只看那一类日志，再点一次取消
+      // 对话节点：在执行给「停止」，停了给「重启」（父对话已说完，两个都不该同时出现）
+      if ((await p.locator('[data-life-stop]').count()) + (await p.locator('[data-life-resume]').count()) > 1)
+        errors.push('对话菜单「状态」：停止和重启按钮同时出现')
       await p.locator('[data-life-counts] button').first().click()
       if ((await p.locator('[data-life-counts] button[aria-pressed="true"]').count()) !== 1)
         errors.push('对话菜单「状态」：点计数块没有切到只看这一类日志')
