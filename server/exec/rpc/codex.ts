@@ -40,8 +40,14 @@ export function codexAdapter(
   // 每个条目开始的时刻：完成时才发的条目（改文件、MCP、搜索）用它算耗时
   const itemStart = new Map<string, number>()
   const review = o.op?.kind === 'review'
-  // 回复和推理摘要是否已经流式输出过：输出过的在 item/completed 时不再重复整段
+  // 回复（streamed）和推理摘要（thought）是否已经流式输出过：输出过的在 item/completed 时不再重复整段。
+  // 两边分开记：有的网关把推理 delta 记在回复条目的 id 下，混在一起会把没流式输出过的回复正文当成输出过而丢掉
   const streamed = new Set<string>()
+  const thought = new Set<string>()
+  // 已经开始的回复条目：有的网关（deepseek 中转）同一条回复会发两次 item/started，第二次不能再空一段
+  const startedMsgs = new Set<string>()
+  // 还没完成的推理条目：有的网关把推理 delta 记在回复条目的 id 下，推理条目完成时按这里认出已经流式输出过
+  const openReasoning = new Set<string>()
   let textSeen = false
   let thinkingSeen = false
   // 用量按累计值做差，重复推送不会算两遍
@@ -239,7 +245,8 @@ export function codexAdapter(
       case 'reasoning': {
         const parts: string[] = item.summary?.length ? item.summary : (item.content ?? [])
         const text = parts.join('\n\n')
-        return !streamed.has(item.id) && text ? [{ type: 'thinking', text: sep('thinking') + text, delta: true }] : []
+        openReasoning.delete(item.id)
+        return !thought.has(item.id) && text ? [{ type: 'thinking', text: sep('thinking') + text, delta: true }] : []
       }
       case 'commandExecution': {
         const code = item.exitCode
@@ -385,8 +392,12 @@ export function codexAdapter(
         return
       case 'item/started':
         if (p.item?.id) itemStart.set(p.item.id, Date.now())
-        // 新的一段回复开始，之前的段落要和它分开
-        if (p.item?.type === 'agentMessage' && textSeen && !review) ctx.emit({ type: 'text_delta', text: '\n\n' })
+        if (p.item?.type === 'reasoning' && p.item.id) openReasoning.add(p.item.id)
+        // 新的一段回复开始，之前的段落要和它分开；同一条回复重复的 item/started 不算新段落
+        if (p.item?.type === 'agentMessage' && !startedMsgs.has(p.item.id)) {
+          if (p.item.id) startedMsgs.add(p.item.id)
+          if (textSeen && !review) ctx.emit({ type: 'text_delta', text: '\n\n' })
+        }
         if (p.item?.type === 'commandExecution' && p.item.id) {
           startedCmds.add(p.item.id)
           const cmd = unwrapShell(p.item.command)
@@ -425,13 +436,15 @@ export function codexAdapter(
       case 'item/reasoning/summaryTextDelta':
       case 'item/reasoning/textDelta': {
         if (!p.delta) return
-        const first = !streamed.has(p.itemId)
-        streamed.add(p.itemId)
+        const first = !thought.has(p.itemId)
+        thought.add(p.itemId)
+        // delta 记在别的 id 下（网关把推理挂在回复条目上）：正开着的推理条目也算输出过，完成时不再整段重发一遍
+        if (!openReasoning.has(p.itemId)) for (const id of openReasoning) thought.add(id)
         ctx.emit({ type: 'thinking', text: (first ? sep('thinking') : '') + p.delta, delta: true })
         return
       }
       case 'item/reasoning/summaryPartAdded':
-        if (streamed.has(p.itemId)) ctx.emit({ type: 'thinking', text: '\n\n', delta: true })
+        if (thought.has(p.itemId)) ctx.emit({ type: 'thinking', text: '\n\n', delta: true })
         return
       case 'item/completed':
         for (const ev of onItem(p.item)) ctx.emit(ev)
@@ -534,6 +547,9 @@ export function codexAdapter(
       startedCmds.clear()
       itemStart.clear()
       streamed.clear()
+      thought.clear()
+      startedMsgs.clear()
+      openReasoning.clear()
       textSeen = false
       thinkingSeen = false
       prevTotal = undefined
