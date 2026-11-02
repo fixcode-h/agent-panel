@@ -24,6 +24,12 @@ e2e 和假 CLI 在 [e2e.md](./e2e.md)，界面检查在 [ui-check.md](./ui-check
 - 起因：拆成计时批和并发批后 `worktree.test.ts` 201s→17s（accfdd85）；并发上限 4 下两处「取最后一通」偶发取错（f0c802d5）。
 - 防线：`test:unit`、`test:e2e`。
 
+## 等真实落盘用轮询，不用固定 sleep
+
+- 规则：单测里等定时器触发的真实写盘（`task-store` 合并窗口、`writeJsonAtomic` 的 fsync + rename）要轮询到目标内容出现再断言（`task-store.test.ts` 的 `until`，超时 5s 报出等的是什么）；固定 `setTimeout(r, 600)` 只适合「到点后不该写回来」这种否定式断言。
+- 起因：9e0d885 的「窗口内的最后一次一定落地」固定等 600ms，Windows CI 上写盘慢过 200ms，偶发读到 `[]`。
+- 防线：人工。
+
 ## 这几类测试一条都不能删
 
 - 规则：用户报过的 Bug 的回归用例（`docs/modules/*/bugs/` 每个至少一条）、数据丢失与不可逆路径（`readJson` / `writeJsonAtomic`、回收站、`task-store` 落盘窗口）、凭据与安全边界（访问令牌、越权 403）、执行器与合并流程的关键分支（`server/exec/**`、`submit_merge` 的 hold）。
