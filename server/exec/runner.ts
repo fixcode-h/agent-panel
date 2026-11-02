@@ -143,6 +143,7 @@ import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
 import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn-changes.ts'
+import { addWaiter, firstWaiter, removeWaiter, userWaitSlot, waitersOf, type Waiter } from './waiters.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -243,23 +244,6 @@ const steers = new Map<string, Set<Steerer>>()
 const notes = new Map<string, string[]>()
 
 /**
- * 回复完停在 wait_user_message 上等下一句的调用（任务 id → 它）。
- * 用户发消息时直接作为工具结果交回去，进程不用结束再 --resume；页面切走宽限到了就让它结束这一轮
- */
-interface Waiter {
-  /**
-   * 用户发来下一句：记进对话再交给正在等的 CLI（placed 是拷进任务目录的那份，只有 CLI 用）。
-   * recorded：消息早已记在对话里（排着等下一轮的那些），只交给 CLI、不再记一遍
-   */
-  deliver: (msg: TaskMessage, placed?: Attachment[], recorded?: boolean) => void
-  /** 用户离开了：结束等待 */
-  cancel: () => void
-  /** 输入框里的 CLI/模型/强度还是启动这个进程时的那一套 */
-  current: () => boolean
-}
-const waiters = new Map<string, Set<Waiter>>()
-
-/**
  * 面板交给 CLI 的东西（一句话、工具结果、一次模型请求）之后多久一点输出都没有，算「没有响应」。
  * 模型正常都在几秒内开始输出（思考也是流式的）；测试用环境变量缩短
  */
@@ -297,7 +281,7 @@ export function deliverWait(
   placed?: Attachment[],
   recorded = false,
 ): 'ok' | 'stale' | 'none' {
-  const w = waiters.get(task.id)?.values().next().value
+  const w = firstWaiter(task.id)
   if (!w) return 'none'
   if (!w.current()) {
     w.cancel()
@@ -340,9 +324,7 @@ function waitChat(task: Task, signal: AbortSignal, changed: (flush?: boolean) =>
       if (settled) return
       settled = true
       signal.removeEventListener('abort', onAbort)
-      const set = waiters.get(task.id)
-      set?.delete(w)
-      if (!set?.size) waiters.delete(task.id)
+      removeWaiter(task.id, w)
       resolve(value)
     }
     const onAbort = () => done(null)
@@ -359,7 +341,7 @@ function waitChat(task: Task, signal: AbortSignal, changed: (flush?: boolean) =>
       // 进程已经退出了，下一轮按输入框里现在的选择开
       current: () => true,
     }
-    ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(w)
+    addWaiter(task.id, w)
     signal.addEventListener('abort', onAbort, { once: true })
   })
 }
@@ -367,7 +349,7 @@ function waitChat(task: Task, signal: AbortSignal, changed: (flush?: boolean) =>
 /** 用户离开了这个对话：让还在等下一句的 CLI 结束这一轮；返回有没有真的取消到 */
 export function cancelWait(taskId: string) {
   let canceled = false
-  for (const w of waiters.get(taskId) ?? []) {
+  for (const w of waitersOf(taskId)) {
     w.cancel()
     canceled = true
   }
@@ -1855,15 +1837,10 @@ async function runAgent(
     }
     addNoteTaker(task.id, taker)
   }
-  // 对话页开着时，回复完停在面板的工具上等下一句：用户发消息直接交回这个进程，不用 --resume。
-  // 有插话协议（Command Code、Pi）的对话也要这个工具，只是不用它取补充
-  let waiter: Waiter | undefined
+  // 这次调用里的「等下一句」：用户的下一句直接交回这个进程，不用 --resume；新挂上的换下还挂着的旧的
+  const userWait = userWaitSlot(task.id)
   /** 模型在这一轮里调用过 wait_user_message：结束时不用再保活一次 */
   let toolWaited = false
-  /**
-   * 等用户的下一条消息。fromTool 是模型正在调 wait_user_message（这一轮还没结束）；
-   * 否则是面板在这一轮结束后保活：不靠模型自觉调工具，回复完就把进程留着
-   */
   /** 停在等待上等子任务：CLI 本来就没有输出，不算卡住 */
   let waitingHelpers = false
   // 这一轮派出的子任务：对话停在面板的等待工具上等它们，等的时候用户照样能聊（见 helperGate）
@@ -1880,7 +1857,8 @@ async function runAgent(
         )
       : undefined
   /**
-   * 停下等下一句 / 等子任务：这段不用模型，让出 API 名额；拿到要处理的内容后先拿回名额再交给 CLI，
+   * 停下等下一句 / 等子任务（fromTool：模型正在调 wait_user_message；否则是面板在这一轮结束后保活）：
+   * 这段不用模型，让出 API 名额；拿到要处理的内容后先拿回名额再交给 CLI，
    * 满了就排队（对话上显示在等哪个 API），排队时停止就结束这一轮
    */
   /** 最近一次等到的是送进来的消息（用户 / 面板消息），不是子任务交回的结果 */
@@ -1961,10 +1939,8 @@ async function runAgent(
             aborted: signal.aborted || undefined,
           })
           signal.removeEventListener('abort', onAbort)
-          const set = waiters.get(task.id)
-          if (waiter) set?.delete(waiter)
-          if (!set?.size) waiters.delete(task.id)
-          waiter = undefined
+          if (helpers) removeWaiter(task.id, w)
+          else userWait.drop(w)
           if (helpers) waitingHelpers = false
           task.awaitingUser = false
           task.prewarming = false
@@ -1973,7 +1949,7 @@ async function runAgent(
           resolve(value)
         }
         const onAbort = () => done(null)
-        waiter = {
+        const w: Waiter = {
           deliver: (msg, placed, recorded) => {
             taskLog(task.id, '消息交给等下一句的 CLI', { messageId: msg.id, recorded: recorded || undefined })
             // 只有用户自己的话才按「用户这次的消息」补状态；面板推的（后台命令结果、父对话传话）原样交
@@ -2002,11 +1978,14 @@ async function runAgent(
           // 等子任务时没有换 CLI 的问题：消息照样交给这个进程
           current: helpers ? () => true : stillCurrent,
         }
-        ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(waiter)
+        // 上一次的还挂着（CLI 自己又跑了一轮再停回来）：旧的摘出等待表不再接消息，Promise 留到停止时随 signal 结束
+        // 等子任务的等待照常挂；等下一句的换下还挂着的旧等待（CLI 自己又跑了一轮再停回来）
+        const put = helpers ? { replaced: false, size: addWaiter(task.id, w) } : userWait.put(w)
+        if (put.replaced) taskLog(task.id, '换下仍挂着的等下一句')
         taskLog(task.id, helpers ? '停下等子任务' : '停下等下一句', {
           cli: def.name,
           prewarm: prewarmMode || undefined,
-          waiters: waiters.get(task.id)!.size,
+          waiters: put.size,
           viewer: isWatched(task.id),
         })
         signal.addEventListener('abort', onAbort, { once: true })
