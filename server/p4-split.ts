@@ -51,16 +51,18 @@ export function p4Runner(cwd: string): P4Run {
   }
 }
 
-/** 解析 p4 -ztag 的输出：每条记录是一组「... key value」行，空行或 key 重复时开始下一条 */
+/**
+ * 解析 p4 -ztag 的输出：每条记录是一组「... key value」行，同一个 key 再出现时开始下一条。
+ * 不能把空行当分隔：describe 的描述里可能带空行（多行描述），会把一条记录拆成两条，
+ * status / depotFile 落到第二条里——已提交的 changelist 会被当成 pending，cherry-pick 报「没有打开的文件」。
+ * P4 的每条记录都会重复首 key（change / depotFile / clientFile），按重复的 key 分条是可靠的
+ */
 export function parseZtag(out: string): Record<string, string>[] {
   const recs: Record<string, string>[] = []
   let cur: Record<string, string> | null = null
   for (const line of out.split(/\r?\n/)) {
     const m = /^\.\.\. (\S+)(?: (.*))?$/.exec(line)
-    if (!m) {
-      if (!line.trim() && cur) cur = null
-      continue
-    }
+    if (!m) continue
     const [, key, value = ''] = m
     if (!cur || key in cur) {
       cur = {}

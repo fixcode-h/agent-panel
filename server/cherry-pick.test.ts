@@ -164,8 +164,11 @@ test('cherry-pick（P4）：已经 submit 的 changelist 按「提交前一版 �
             ok: true,
             out: [
               '... change 9',
-              '... status submitted',
+              // 真实输出里多行描述带空行：不能因此把 status / depotFile 分到另一条记录
               '... desc 修复跑测图标',
+              'https://example.com/issue/1',
+              '',
+              '... status submitted',
               '... depotFile0 //d/src/a.lua',
               '... action0 edit',
               '... rev0 4',

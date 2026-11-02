@@ -12,12 +12,34 @@ test('按扩展名分桶：C++、表格、Lua、其他', () => {
   assert.equal(p4Bucket('//depot/Script/ui/slot.luac'), 'Other')
 })
 
-test('parseZtag：多条记录按空行分开', () => {
+test('parseZtag：多条记录按重复的 key 分开', () => {
   const recs = parseZtag('... depotFile //a/x.cpp\n... change default\n\n... depotFile //a/y.lua\n... change default\n')
   assert.deepEqual(
     recs.map((r) => r.depotFile),
     ['//a/x.cpp', '//a/y.lua'],
   )
+})
+
+test('parseZtag：描述里带空行不把一条 describe 记录拆开（已提交的 CL 要读到 status 和文件）', () => {
+  // 实测 p4 -ztag describe -s 的输出：多行描述里带空行。按空行分条会把 status / depotFile 拆到第二条，
+  // cherry-pick 只看第一条，把已提交的 CL 当成 pending
+  const recs = parseZtag(
+    [
+      '... change 1259263',
+      '... user qimei.hong',
+      '... desc [Lua] 脱卡重进后重发地图音乐事件',
+      'https://example.com/issue/1',
+      '',
+      '... status submitted',
+      '... depotFile0 //d/src/a.lua',
+      '... action0 edit',
+      '... rev0 2',
+      '',
+    ].join('\n'),
+  )
+  assert.equal(recs.length, 1)
+  assert.equal(recs[0].status, 'submitted')
+  assert.equal(recs[0].depotFile0, '//d/src/a.lua')
 })
 
 /** 假的 p4：记下每次调用，按命令返回预设的输出 */
