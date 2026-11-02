@@ -1,3 +1,4 @@
+import { tracedEvents } from './cli-trace.ts'
 import { effortEnv, getCli, isOffEffort, type BuildOptions } from '../../shared/clis.ts'
 import { apiModelIdFor } from '../../shared/accounts.ts'
 import { cliSettings } from '../../shared/settings.ts'
@@ -125,6 +126,8 @@ export async function invokeCli(o: {
   /** CLI 取了面板的工具清单（字数）：会话栏的上下文细分用 */
   onTools?: (listed: { name: string; chars: number }[], deferred: { name: string; chars: number }[]) => void
 }): Promise<ProcessResult> {
+  // 模型请求轨迹（见 cli-trace.ts）：每个事件先记一笔再交给调用方，状态诊断按它说清「等待模型」卡在哪
+  o = { ...o, onEvent: tracedEvents(o.owner?.taskId ?? '', o.owner?.step, o.onEvent) }
   const def = getCli(o.cliId)!
   // 旧设置里的模型可能没带 API 的 provider 前缀（例如 deepseek/...），执行前按当前 API 归一化
   const cs = cliSettings(await getSettings(), o.cliId)

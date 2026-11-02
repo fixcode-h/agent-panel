@@ -90,6 +90,53 @@ export async function clipboardFiles(): Promise<string[]> {
     .filter(Boolean)
 }
 
+/** 跑一个写剪贴板的小命令（可以给 stdin），成功（退出码 0）返回 true；没装、出错、超时都当作没成功 */
+function succeeds(command: string, args: string[], stdin = '', timeoutMs = 5000): Promise<boolean> {
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>
+    try {
+      child = spawn(command, args, { windowsHide: true })
+    } catch {
+      return resolve(false)
+    }
+    const timer = setTimeout(() => {
+      child.kill()
+      resolve(false)
+    }, timeoutMs)
+    child.on('error', () => {
+      clearTimeout(timer)
+      resolve(false)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      resolve(code === 0)
+    })
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(stdin)
+  })
+}
+
+/**
+ * 把一个文件放进系统剪贴板（不是它的内容，是文件本身）：在聊天窗口里粘贴就是一个附件。
+ * 状态诊断的「复制诊断文件」用。放不进去（没有 xclip / wl-copy、无图形界面）返回 false，调用方给出路径
+ */
+export async function copyFileToClipboard(file: string): Promise<boolean> {
+  if (process.platform === 'win32')
+    return succeeds('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `Set-Clipboard -Path '${file.replace(/'/g, "''")}'`,
+    ])
+  if (process.platform === 'darwin')
+    return succeeds('osascript', ['-e', `set the clipboard to (POSIX file ${JSON.stringify(file)})`])
+  const uri = `file://${file.split('/').map(encodeURIComponent).join('/')}\n`
+  return (
+    (await succeeds('xclip', ['-selection', 'clipboard', '-t', 'text/uri-list', '-i'], uri)) ||
+    (await succeeds('wl-copy', ['--type', 'text/uri-list'], uri))
+  )
+}
+
 /** 平时放文件的地方（中英文系统的文件夹名都试；OneDrive 会把桌面、文档挪进去） */
 function commonDirs() {
   const home = homedir()

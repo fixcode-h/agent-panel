@@ -869,6 +869,32 @@ await runShard(import.meta.filename, async (api) => {
       await check(p, '父子往来记录')
       await p.keyboard.press('Escape')
       await closed()
+      // 状态诊断：左边对话树（父对话、子对话、子任务），右边选中那个的生命周期（结论、进程、日志）
+      await p.getByRole('button', { name: '更多操作', exact: true }).first().click()
+      await p.getByRole('menuitem', { name: '状态', exact: true }).click()
+      const headline = p.locator('[data-life-headline]').first()
+      if (
+        !(await headline.waitFor({ timeout: 10000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        errors.push('对话菜单「状态」：弹窗里没有结论')
+      else if ((await p.locator('[data-lifecycle] aside[aria-label="对话树"] li').count()) < 2)
+        errors.push('对话菜单「状态」：对话树里没有子对话或子任务')
+      // 五类事件的计数块、标题栏右上角的「AI 分析」和「复制诊断文件」
+      if ((await p.locator('[data-life-counts] button').count()) !== 5)
+        errors.push('对话菜单「状态」：事件计数不是五块（模型请求、重试、出错、停止、进程退出）')
+      if (!(await p.locator('[data-life-ai]').count()) || !(await p.locator('[data-life-copy]').count()))
+        errors.push('对话菜单「状态」：标题栏没有「AI 分析」或「复制诊断文件」')
+      // 点计数块只看那一类日志，再点一次取消
+      await p.locator('[data-life-counts] button').first().click()
+      if ((await p.locator('[data-life-counts] button[aria-pressed="true"]').count()) !== 1)
+        errors.push('对话菜单「状态」：点计数块没有切到只看这一类日志')
+      await p.locator('[data-life-counts] button').first().click()
+      await check(p, '状态诊断')
+      await p.keyboard.press('Escape')
+      await closed()
     }
     {
       const key = 'agent-panel-demo-v3'

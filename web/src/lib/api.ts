@@ -1,6 +1,7 @@
 import type { ShellReport } from '@shared/shells'
 import { trackedFetch } from './connection'
 import type { CollabEvent } from '@shared/collab-timeline'
+import type { LifeReport } from '@shared/lifecycle'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
 import type { ComfyChain } from '@shared/comfy-chain'
@@ -150,6 +151,9 @@ export const designFileUrl = (id: string, file: string) =>
 /** 导出下载的地址；在线演示没有后端，由页面自己打包 */
 export const designExportUrl = (id: string, format: 'zip' | 'json' | 'react') =>
   `/api/designs/${id}/export?format=${format}`
+
+/** 状态诊断文件的下载地址（完整日志、去掉密钥） */
+export const lifecycleDownloadUrl = (id: string) => `/api/tasks/${id}/lifecycle/download`
 
 /** 非 2xx 的响应转成错误：响应体挂到错误上，有些接口（例如更新撞上「已经在更新」）会在里面带上要继续处理的信息 */
 async function failure(res: Response): Promise<never> {
@@ -868,6 +872,19 @@ export const api = {
     request<Task>(`/tasks/${id}/stop${force ? '?force=1' : ''}`, { method: 'POST' }),
   resumeTask: (id: string, latest = false) => request<Task>(`/tasks/${id}/resume`, json('POST', { latest })),
   taskCollab: (id: string) => request<{ rootId: string; events: CollabEvent[] }>(`/tasks/${id}/collab`),
+  /** 状态诊断：这棵对话树每个节点的 CLI 生命周期（见 shared/lifecycle.ts） */
+  taskLifecycle: (id: string) => request<LifeReport>(`/tasks/${id}/lifecycle`),
+  /** 生成诊断文件并放进系统剪贴板；copied 为 false 时只拿到路径 */
+  lifecycleFile: (id: string) =>
+    request<{ path: string; copied: boolean }>(`/tasks/${id}/lifecycle/file`, json('POST', {})),
+  /** 「AI 分析」选中节点：服务端写好诊断文件、整理成 AI 处理的输入（见 server/tasks/lifecycle-ai.ts） */
+  lifecycleAnalysis: (id: string, node: string) =>
+    request<{ title: string; topic: string; ask: string; error: string; output: string; context: string; cwd: string }>(
+      `/tasks/${id}/lifecycle/analysis`,
+      json('POST', { node }),
+    ),
+  /** 在文件管理器里打开诊断文件所在的目录 */
+  lifecycleReveal: (id: string) => request<{ ok: boolean }>(`/tasks/${id}/lifecycle/reveal`, json('POST', {})),
   taskSession: (id: string, cli: string) => request<SessionInfo>(`/tasks/${id}/session?cli=${encodeURIComponent(cli)}`),
   taskDiff: (id: string, path: string) =>
     request<{ path: string; dir: string; diff: string; git: boolean; before: boolean }>(

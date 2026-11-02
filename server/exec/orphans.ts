@@ -27,7 +27,13 @@ const PANEL_PID = process.pid
 const ownFile = () => path.join(DIR, `${PANEL_PID}${SUFFIX}`)
 
 /** 这条 CLI 是哪个对话（含子对话、子任务、工作流）起的：taskId 是执行它的那个任务，rootTaskId 是对话树的最上层 */
-export type TrackedOwner = { taskId: string; rootTaskId: string; title: string }
+export type TrackedOwner = {
+  taskId: string
+  rootTaskId: string
+  title: string
+  /** 对话里的哪一步（子任务、工作流节点）；对话本身这一轮是空。状态诊断按「对话 + 步骤」分开记模型请求轨迹 */
+  step?: string
+}
 
 /** 一条登记：pid、命令行（拼好的，日志和判定用）、工作目录、开始时间 */
 export type TrackedCli = {

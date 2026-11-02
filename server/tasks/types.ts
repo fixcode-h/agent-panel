@@ -10,6 +10,8 @@ export type Live = {
   stop: boolean
   /** 为什么停：只有 'user' 是用户按的暂停，其余是顺带结束的动作（见 shared/schema.ts 的 StopReason） */
   stopReason?: StopReason
+  /** 第一次发出停止的时间（毫秒）：状态诊断按它判断停止是不是拖太久了 */
+  stopAt?: number
   abort: AbortController
   done?: Promise<void>
   rev: number

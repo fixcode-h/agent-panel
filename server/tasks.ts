@@ -63,6 +63,7 @@ import { registerWorktreeRoutes } from './tasks/worktree-routes.ts'
 import { registerReadRoutes } from './tasks/read-routes.ts'
 import { registerChildrenRoutes } from './tasks/children-routes.ts'
 import { registerProcessRoutes } from './tasks/process-routes.ts'
+import { registerLifecycleRoutes } from './tasks/lifecycle-routes.ts'
 import { registerListRoutes } from './tasks/list-routes.ts'
 import { createIdleAsk } from './tasks/idle-ask.ts'
 import { createBudget } from './tasks/budget.ts'
@@ -681,6 +682,7 @@ export function tasksApi(deps: {
   const { childUnmerged, gitGate } = registerChildrenRoutes(scope)
   registerCollabRoutes(scope)
   registerProcessRoutes(scope)
+  registerLifecycleRoutes(scope)
   registerReadRoutes(scope)
   const { prewarmChat, createTask } = registerConversationRoutes(scope)
   const { dropWorktree, taskDir, worktreeHome } = registerWorktreeRoutes(scope)
