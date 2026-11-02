@@ -95,6 +95,24 @@ function renderReply(text: string, teamNames: Set<string>, live?: boolean, act?:
 }
 
 /**
+ * 父对话里由面板自动画出的子对话总结卡（见 TaskMessage.summaryCards）：只有类型和结论，
+ * 点标题打开子对话的详细总结。和回复里的卡片共用 cardHtml，样式一致
+ */
+export function SummaryCardView({ card }: { card: SummaryCard }) {
+  const openSummary = useChildSummaryOpen()
+  const canJump = !!openSummary
+  // card 是 ReceivedRow 每次渲染新建的对象，用 useMemo 永远命中不了，直接算
+  const html = cardHtml(card, new Set(), false, false, canJump)
+  const onClick = (e: React.MouseEvent) => {
+    const go = (e.target as HTMLElement).closest<HTMLElement>('[data-child-summary]')
+    if (go && openSummary) openSummary(go.dataset.childSummary ?? '')
+  }
+  return (
+    <div className="chat-md [overflow-wrap:anywhere]" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+  )
+}
+
+/**
  * Agent 回复的 Markdown，排版参照 Claude Code：行内代码是小标签，代码块带语言栏、复制按钮和高亮，
  * mermaid 画成图、源码收在下面。流式输出时不画图，等这段输出完再画，免得半截的图反复报错。
  */

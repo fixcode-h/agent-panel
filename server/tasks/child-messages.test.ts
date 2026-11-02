@@ -123,6 +123,26 @@ test('同一个子对话的汇报父对话还没读：新的替换掉旧的，�
   assert.equal(root.messages.find((m) => m.text === '第二封')!.peer?.superseded, undefined)
 })
 
+test('子对话上报带上面板自动画的总结卡：消息上留着，父对话按它画卡', async () => {
+  const kid = task('kid', 'root', 'done')
+  const r = rig(task('root', '', 'stopped', 'user'), kid)
+  const cards = [{ kind: 'fix', label: '修复', title: '修好了', child: kid.id }]
+  await r.noteParent(
+    'root',
+    kid,
+    '【子对话状态】已完成',
+    undefined,
+    undefined,
+    { id: kid.id, title: kid.title, state: 'done' },
+    { id: kid.id, title: kid.title, name: '', rel: 'child', kind: 'report', subject: '' },
+    undefined,
+    false,
+    cards,
+  )
+  const msg = r.map.get('root')!.messages.find((m) => m.panel === 'child')!
+  assert.deepEqual(msg.summaryCards, cards)
+})
+
 test('子对话自己被停下（不是跟着父对话）：计划在等它，照旧叫起父对话；父对话因用量上限停下、被核对收成已中断、整棵树已超限时只进收件箱', async () => {
   const kid = task('kid', 'root', 'stopped', 'user')
   const r = rig(task('root', '', 'done'), kid)

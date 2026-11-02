@@ -29,7 +29,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { RowShell } from './ToolRow'
-import { Markdown } from './Markdown'
+import { Markdown, SummaryCardView } from './Markdown'
+import type { SummaryKind } from '@shared/summary-card'
 import { useChildList, useChildOpen, usePeerMail } from './child-open'
 import { replyOf } from '@/lib/tasks'
 
@@ -451,6 +452,8 @@ export function ReceivedRow({ m }: { m: TaskMessage }) {
   const peer = peerOfMessage(m)
   if (!peer) return null
   const state = m.child?.state ? convStateText(m.child.state) : ''
+  // 子对话交回结果时面板自动画的总结卡（父对话不再自己写）：被新汇报取代的那一行不再画旧卡
+  const cards = peer.superseded ? [] : (m.summaryCards ?? [])
   return (
     <div data-letter={m.id} className="min-w-0">
       <PeerLine
@@ -475,6 +478,16 @@ export function ReceivedRow({ m }: { m: TaskMessage }) {
         at={m.at}
         superseded={peer.superseded}
       />
+      {cards.length > 0 && (
+        <div className="mt-2 flex flex-col gap-2">
+          {cards.map((c, i) => (
+            <SummaryCardView
+              key={`${m.id}:${i}`}
+              card={{ kind: c.kind as SummaryKind, label: c.label, title: c.title, fields: [], child: c.child }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
