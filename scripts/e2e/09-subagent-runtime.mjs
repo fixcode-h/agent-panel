@@ -562,7 +562,7 @@ await runShard('子对话运行与监管', async (api) => {
       parentTaskId: stallParent.id,
       prompt: 'PLAN_STALL 计划做一半就停',
     })
-    const pushes = (x) => x.messages.filter((m) => m.panel === 'build' && m.text.includes('你的计划才做了'))
+    const pushes = (x) => x.messages.filter((m) => m.panel === 'nudge' && m.text.includes('你的计划才做了'))
     // 推送交到了 CLI：它回复里带上标记
     const pushed = await waitFor(
       async () => {

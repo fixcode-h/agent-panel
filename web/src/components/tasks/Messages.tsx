@@ -1,6 +1,7 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import type { AnalysisScope } from '@shared/analysis-home'
 import {
+  Bell,
   Bot,
   ChevronRight,
   Brain,
@@ -45,7 +46,7 @@ import { runRow, type WorkflowRun } from '@/lib/run-row'
 import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
-import { convStateText, deliveryStatus } from '@shared/task'
+import { convStateText, deliveryStatus, isPlanNudge } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { stripLessonReview } from '@shared/lesson-review'
@@ -498,12 +499,14 @@ const MessageBody = memo(
 )
 
 /**
- * 面板推回给 CLI 的消息（后台命令、合并编译、子任务的结果）和父子对话之间的往来（子对话状态、收尾请求）：
+ * 面板推回给 CLI 的消息（后台命令、合并编译、计划催促、子任务的结果）和父子对话之间的往来（子对话状态、收尾请求）：
  * 都画成 AI 回复里的一行，像一次工具调用，点开看全文
  */
 const PANEL_KIND = {
   background: { icon: Terminal, verb: () => t('后台命令') },
   build: { icon: GitMerge, verb: () => t('合并编译') },
+  // 计划催促是面板自己的提醒，不是合并编译：用铃铛和强调色浅底，一眼和真正的编译结果分开
+  nudge: { icon: Bell, verb: () => t('面板提醒') },
   helpers: { icon: Bot, verb: () => t('子任务结果') },
   child: { icon: Workflow, verb: () => t('子对话状态') },
   wrapup: { icon: GitMerge, verb: () => t('子对话请求') },
@@ -516,7 +519,9 @@ const LEAD_TAG = /^【[^】]{1,12}】/
 function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) {
   const [open, setOpen] = useState(false)
   const openChild = useChildOpen()
-  const kind = PANEL_KIND[m.panel === 'ask' || !m.panel ? 'background' : m.panel]
+  // 旧对话里的计划催促存成 'build'：按正文认出来，照样显示成提醒（见 isPlanNudge）
+  const nudge = isPlanNudge(m)
+  const kind = PANEL_KIND[nudge ? 'nudge' : m.panel === 'ask' || !m.panel ? 'background' : m.panel]
   const Icon = kind.icon
   // 结尾那句「处理完这个结果后重新总结」是说给 AI 的，界面上不显示
   const body = m.text
@@ -538,11 +543,15 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
     m.panel === 'child'
       ? m.child?.state === 'failed'
       : m.panel !== 'helpers' && /跑完了：失败|被停止了|没通过|没能合回/.test(body.split('\n')[0])
+  // 提醒行用强调色图标，和灰底的普通过程行分开；失败的仍是红色
+  const glyphClass = failed ? 'text-danger' : nudge ? 'text-accent-text' : 'text-subtle'
   // 停下时独立分支里还有没提交的改动：行上（不用点开）就写清几个文件、目录在哪，并给一键继续
   const wt = m.worktree
   return (
     <RowShell
-      glyph={<Icon className={cn('h-3.5 w-3.5 shrink-0', failed ? 'text-danger' : 'text-subtle')} />}
+      glyph={<Icon className={cn('h-3.5 w-3.5 shrink-0', glyphClass)} />}
+      // 提醒行用强调色浅底，和其余过程行的灰底分开；只覆盖这一行，不动全局 --c-row-bg
+      className={nudge ? '[--c-row-bg:var(--accent-soft)]' : undefined}
       verb={m.panel === 'child' && !m.child ? t('对话消息') : kind.verb()}
       title={head}
       open={open}

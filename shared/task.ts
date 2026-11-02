@@ -644,6 +644,14 @@ export interface ChildReport {
 const FAILURE_NOTE_MAX = 160
 
 /**
+ * 面板的计划催促该按提醒显示：新消息 panel 是 'nudge'，旧对话里记成了 'build'（用户报障的那条就是），
+ * 只能按正文开头认；合并编译结果仍是 'build'，不能被当成提醒
+ */
+const PLAN_NUDGE_HEAD = /^【面板】(你的计划才做了|这一轮跑了命令)/
+export const isPlanNudge = (m: Pick<TaskMessage, 'panel' | 'text'>) =>
+  m.panel === 'nudge' || (m.panel === 'build' && PLAN_NUDGE_HEAD.test(m.text))
+
+/**
  * 子对话这次失败的根因：最后一条还没恢复的报错（CLI 重试耗尽的上游报错、面板工具没接上、
  * 进程被回收、面板出错）。取第一行并截断：父对话收到的汇报靠它定位，不用再翻子对话。
  */
