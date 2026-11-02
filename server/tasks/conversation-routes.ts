@@ -31,7 +31,7 @@ import { t } from '../../shared/i18n.ts'
 import { killTree } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
 import type { TasksScope } from './scope.ts'
-import { PREWARM_PROMPT, RULE_CMD, TaskBusyError } from './helpers.ts'
+import { PREWARM_PROMPT, RULE_CMD, TaskBusyError, settleBefore } from './helpers.ts'
 import { scopeError } from '../../shared/conv-mode.ts'
 
 /**
@@ -389,7 +389,7 @@ export function registerConversationRoutes(s: TasksScope) {
   s.routes.post('/:id/end-flow', async (c) => {
     const id = c.req.param('id')
     const prev = s.live.get(id)
-    if (prev && prev.task.status !== 'running') await prev.done
+    await settleBefore(prev)
     if (s.live.has(id)) return s.bad(c, t('任务正在执行，请先停止'), 409)
     const tk = await s.store.get(id)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
@@ -403,7 +403,7 @@ export function registerConversationRoutes(s: TasksScope) {
   s.routes.post('/:id/resume', async (c) => {
     const id = c.req.param('id')
     const prev = s.live.get(id)
-    if (prev && prev.task.status !== 'running') await prev.done
+    await settleBefore(prev)
     if (s.live.has(id)) return s.bad(c, t('任务正在执行'), 409)
     const task = await s.store.get(id)
     if (!task) return s.bad(c, t('任务不存在'), 404)

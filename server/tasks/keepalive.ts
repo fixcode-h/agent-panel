@@ -18,7 +18,7 @@ import { settleReclaimed } from '../exec/reclaim.ts'
 import { taskLog } from '../task-log.ts'
 import { killTree, killTreeDeep, taskCliAlive } from '../exec/process.ts'
 import { settleStopped } from '../../shared/task-settle.ts'
-import { TaskBusyError } from './helpers.ts'
+import { STOP_GIVE_UP_MS, TaskBusyError } from './helpers.ts'
 
 /**
  * 停止对话、保活上限与回收（还在运行的对话不回收，见 ADR 0012）、对话名下的进程面板。
@@ -33,8 +33,6 @@ export const STOP_WATCH_MS = 1000
 const STOP_GONE_TICKS = 3
 /** 用户停止后进程还在的话，过了这么久直接杀掉（正常情况下停止当时就已经杀过一遍） */
 export const STOP_KILL_MS = 8000
-/** 停止后无论如何不再等它的上限：进程杀不掉、引擎卡住都按停止收口，让出执行位 */
-export const STOP_GIVE_UP_MS = 30_000
 
 /** 用户意图的停止（暂停、随父对话停、归档、删除）：这些才盯着进程、到点直接收口 */
 const WATCHED_STOPS = new Set<StopReason>(['user', 'parent', 'archive', 'delete'])

@@ -144,3 +144,21 @@ test('子对话完成后保留：默认 5 分钟；CLI 没停在等下一句上�
   assert.equal(await r.keepDoneChild('kid', r.entry), false)
   assert.equal(r.keepingDone('kid'), false)
 })
+
+test('停止后马上点「继续」：先等正在停下的那一份收完，不当成「任务正在执行」拒掉；没在停的不等', async () => {
+  const { settleBefore } = await import('./helpers.ts')
+  const hold = setTimeout(() => {}, 10_000)
+  // 正在执行、没人停它：不等（继续执行照旧按「正在执行」拒）
+  const busy = rig(99)
+  const t0 = Date.now()
+  await settleBefore(busy.entry)
+  assert.ok(Date.now() - t0 < 200)
+  assert.equal(busy.live.has('kid'), true)
+  // 刚点了停止、进程已经没了、引擎还没收完：等到收口、执行位让出来再往下走
+  const r = rig(99)
+  r.stopTask('kid', 'user')
+  await settleBefore(r.entry)
+  clearTimeout(hold)
+  assert.equal(r.live.has('kid'), false, '等完执行位已经空了，继续执行能直接占到')
+  assert.equal(r.saved.at(-1)?.status, 'stopped')
+})
