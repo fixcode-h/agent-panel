@@ -628,8 +628,8 @@ export function createChildren(sc: TasksScope) {
           '确实卡住了就说明卡在哪一步、需要什么才能继续。' +
           lastNudge(conv, nth)
         const ok = again.tk.parentTaskId
-          ? (await sc.sendToChild(again.tk.parentTaskId, again.tk.id, text, 'build')).ok
-          : await sc.wakeConv(again.tk.id, text, { panel: 'build' }).then(
+          ? (await sc.sendToChild(again.tk.parentTaskId, again.tk.id, text, 'nudge')).ok
+          : await sc.wakeConv(again.tk.id, text, { panel: 'nudge' }).then(
               () => true,
               () => false,
             )
@@ -713,8 +713,8 @@ export function createChildren(sc: TasksScope) {
           '先用 set_plan 把这件事列成计划：已经做完的步骤标完成，还没做的（包括你刚说要做的下一步）列成待做，然后按计划接着做完；' +
           '确实已经全部做完，就把做过的步骤列出来全部标完成，再 finish_plan。'
         const ok = tk.parentTaskId
-          ? (await sc.sendToChild(tk.parentTaskId, tk.id, text, 'build')).ok
-          : await sc.wakeConv(tk.id, text, { panel: 'build' }).then(
+          ? (await sc.sendToChild(tk.parentTaskId, tk.id, text, 'nudge')).ok
+          : await sc.wakeConv(tk.id, text, { panel: 'nudge' }).then(
               () => true,
               () => false,
             )

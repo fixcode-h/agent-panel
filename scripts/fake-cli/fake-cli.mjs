@@ -751,7 +751,7 @@ if (input.includes('BG_TESTSTEP') && input.includes('run_background')) {
   await new Promise((r) => setTimeout(r, 900))
 }
 // 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈。
-// BG_SLOW 时跑得更久：测保活上限这类用例要在它跑着的时候做别的操作，命令得比整段流程长
+// BG_SLOW 时跑得更久：测保活 / 回收这类用例要在它跑着的时候做别的操作，命令得比整段流程长
 if (input.includes('BG_LONG') && input.includes('run_background'))
   await panelCall('run_background', {
     command: `node -e "setTimeout(()=>{},${input.includes('BG_SLOW') ? 30000 : 4000})"`,

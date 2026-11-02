@@ -9,7 +9,7 @@ import path from 'node:path'
 import { claudeParser, commandCodeParser, parserFor, type CliEvent } from './parsers.ts'
 import { getCli } from '../../shared/clis.ts'
 import { Settings } from '../../shared/schema.ts'
-import { cliSettings } from '../../shared/settings.ts'
+import { cliSettings, mergeCliEnv, readCliEnvText, splitCliEnv } from '../../shared/settings.ts'
 import { codexAppSession, unwrapShell } from './rpc/codex.ts'
 
 const CWD = '/work/shop'
@@ -775,13 +775,94 @@ test('Pi：联网搜索插件的批量搜索、批量抓取也显示成网页搜
   assert.equal(tool('fetch_content', { url: 'https://a.example/x' }).label, 'https://a.example/x')
 })
 
-test('Claude Code：默认关掉自带的自动记忆（按目录存，同一项目的对话会互相串），设置里关掉开关就不加', () => {
+test('Claude Code：默认关掉自带的自动记忆，定义自带的环境变量能被设置里的同名值覆盖、恢复默认后回到定义值', () => {
   const env = (options: Record<string, boolean>) =>
     cliSettings(Settings.parse({ clis: { claude: { options } } }), 'claude').env.filter(
       (e) => e.key === 'CLAUDE_CODE_DISABLE_AUTO_MEMORY',
     )
   assert.deepEqual(env({}), [{ key: 'CLAUDE_CODE_DISABLE_AUTO_MEMORY', value: '1' }])
   assert.deepEqual(env({ noAutoMemory: false }), [])
+
+  // 定义自带的 env 走同一条合并规则：用户的同名值排在后面、覆盖定义值
+  const defEnv = getCli('claude')?.env ?? {}
+  const valueOf = (list: { key: string; value: string }[]) =>
+    Object.fromEntries(
+      cliSettings(Settings.parse({ clis: { claude: { env: list } } }), 'claude').env.map((e) => [e.key, e.value]),
+    )
+  assert.equal(valueOf([]).ENABLE_TOOL_SEARCH, defEnv.ENABLE_TOOL_SEARCH)
+  const saved = mergeCliEnv([], { ENABLE_TOOL_SEARCH: 'true' })
+  assert.equal(valueOf(saved).ENABLE_TOOL_SEARCH, 'true')
+
+  // 设置页打开时按定义拆开：改过的默认键进「默认环境变量」，写回定义值等于没改、不存覆盖
+  assert.deepEqual(splitCliEnv(defEnv, saved), { overrides: { ENABLE_TOOL_SEARCH: 'true' }, extra: [] })
+  assert.deepEqual(splitCliEnv(defEnv, [{ key: 'ENABLE_TOOL_SEARCH', value: defEnv.ENABLE_TOOL_SEARCH ?? '' }]), {
+    overrides: {},
+    extra: [],
+  })
+
+  // 恢复默认 = 删掉这条覆盖；自由编辑区里手写的默认键并到覆盖里，同一个键不会存两条
+  assert.equal(valueOf(mergeCliEnv([], {})).ENABLE_TOOL_SEARCH, defEnv.ENABLE_TOOL_SEARCH)
+  assert.deepEqual(
+    mergeCliEnv(
+      [
+        { key: 'MY_VAR', value: '1' },
+        { key: 'ENABLE_TOOL_SEARCH', value: 'from-text' },
+      ],
+      { ENABLE_TOOL_SEARCH: 'true' },
+    ),
+    [
+      { key: 'MY_VAR', value: '1' },
+      { key: 'ENABLE_TOOL_SEARCH', value: 'true' },
+    ],
+  )
+
+  // 已有的重复键按实际启动顺序处理：最后一个同名键生效，最后一项等于默认值时前面的覆盖要清掉
+  assert.deepEqual(
+    splitCliEnv({ A: '1' }, [
+      { key: 'A', value: '9' },
+      { key: 'A', value: '1' },
+    ]),
+    { overrides: {}, extra: [] },
+  )
+  assert.deepEqual(
+    splitCliEnv({ A: '1' }, [
+      { key: 'A', value: '1' },
+      { key: 'A', value: '9' },
+    ]),
+    { overrides: { A: '9' }, extra: [] },
+  )
+  assert.deepEqual(
+    splitCliEnv({}, [
+      { key: 'X', value: '1' },
+      { key: 'X', value: '2' },
+    ]),
+    { overrides: {}, extra: [{ key: 'X', value: '2' }] },
+  )
+  assert.deepEqual(
+    mergeCliEnv(
+      [
+        { key: 'X', value: '1' },
+        { key: 'X', value: '2' },
+      ],
+      {},
+    ),
+    [{ key: 'X', value: '2' }],
+  )
+
+  // 自由编辑区逐字输入时只解析、不改文本：默认键的值同步到上面的行，其余行原样留下
+  assert.deepEqual(readCliEnvText(defEnv, 'MY_VAR=1\nENABLE_TOOL_SEARCH=true'), {
+    values: { ENABLE_TOOL_SEARCH: 'true' },
+    kept: ['MY_VAR=1'],
+  })
+  // 最后一个同名键生效；未写完的行、注释、值里的 = 都原样保留
+  assert.deepEqual(
+    readCliEnvText(defEnv, 'ENABLE_TOOL_SEARCH=true\nENABLE_TOOL_SEARCH=false\n# note\nENABLE_TOOL_SEARCH'),
+    {
+      values: { ENABLE_TOOL_SEARCH: 'false' },
+      kept: ['# note', 'ENABLE_TOOL_SEARCH'],
+    },
+  )
+  assert.deepEqual(readCliEnvText(defEnv, 'MY_VAR=a=b'), { values: {}, kept: ['MY_VAR=a=b'] })
 })
 
 test('Pi 的重试事件：带上次数和原因，重试成功后算恢复而不是失败', () => {

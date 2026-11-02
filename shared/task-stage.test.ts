@@ -32,7 +32,6 @@ import {
   childWaiting,
   keepAliveBusy,
   keepAliveHolding,
-  keepAliveVictims,
   runRunning,
   stopReasonText,
   taskBusy,
@@ -355,49 +354,8 @@ test('stopReasonText：只有用户按的暂停说「已暂停」，其它来源
     assert.notEqual(stopReasonText(r), '已暂停', r)
 })
 
-test('keepAliveVictims：超过上限时结束最久没用的，正在看的和刚进入的不算', () => {
-  const alive = (id: string, seen: string, awaiting = true) => ({
-    id,
-    awaitingUser: awaiting,
-    turnSeenAt: seen,
-    turnDoneAt: '',
-    updatedAt: seen,
-  })
-  const list = [
-    alive('a', '2026-01-01T10:00:00Z'),
-    alive('b', '2026-01-01T12:00:00Z'),
-    alive('c', '2026-01-01T11:00:00Z'),
-    alive('running', '2026-01-01T09:00:00Z', false),
-  ]
-  // 上限 3、刚进来的 d：只超一个，收掉最久没用的 a（running 不在等下一句，不算）
-  assert.deepEqual(keepAliveVictims([...list, alive('d', '2026-01-01T13:00:00Z')], 3, 'd'), ['a'])
-  // 正在执行的对话不占名额：只剩它一个时上限多小都不收它（它连候选都不是）
-  assert.deepEqual(keepAliveVictims([list[3]], 1, 'd'), [], 'running 的既不算名额也不会被选走')
-  assert.deepEqual(
-    keepAliveVictims([list[3], alive('d', '2026-01-01T13:00:00Z')], 1, 'd'),
-    [],
-    '只有一个空闲的，没超限',
-  )
-  // 上限 2：超两个就收两个，从最久没用的开始
-  assert.deepEqual(keepAliveVictims([...list, alive('d', '2026-01-01T13:00:00Z')], 2, 'd'), ['a', 'c'])
-  // 没超限不动
-  assert.deepEqual(keepAliveVictims(list, 4, 'd'), [])
-  // 刚进入保活的那个不会被自己收掉
-  assert.deepEqual(keepAliveVictims(list, 3, 'a'), [])
-  // 页面正开着的不算：b 正在看，就轮不到它
-  assert.deepEqual(
-    keepAliveVictims(list, 2, 'd', (id) => id === 'a'),
-    ['c'],
-  )
-  // 0 表示不限制
-  assert.deepEqual(keepAliveVictims(list, 0, 'd'), [])
-  // 不传 exceptId（刚进入保活的那个自己还在忙、不占名额）：不能把那个 +1 算进去，否则会多收一个
-  assert.deepEqual(keepAliveVictims(list, 2, ''), ['a'], '上限 2、3 个空闲：只收最久没用的一个')
-  assert.deepEqual(keepAliveVictims(list, 3, ''), [], '上限 3、3 个空闲：正好到顶，一个都不收')
-})
-
 test('keepAliveHolding：名下有子对话在跑时，这一轮结束、进程也退了也不回收', () => {
-  // 停在等下一句、名下没有东西：空闲会话，按两段时间回收
+  // 停在等下一句、名下没有东西：空闲会话，按宽限回收
   const idle = {
     status: 'running' as const,
     working: false,
@@ -420,7 +378,7 @@ test('keepAliveHolding：名下有子对话在跑时，这一轮结束、进程�
 
 test('keepAliveBusy：只有停在等下一句、名下没东西在跑的才算空闲', () => {
   const idle = { status: 'running' as const, working: false, awaitingUser: true, prewarming: false, steps: [] }
-  assert.equal(keepAliveBusy(idle), false, '停在等下一句：空闲，可以被上限/时长收')
+  assert.equal(keepAliveBusy(idle), false, '停在等下一句：空闲，可以被时长收')
   // 有没回复的提问、请求：还在运行（convActive），不能收
   assert.equal(keepAliveBusy({ ...idle, requests: [{}] as never }), true, '请求还没回复')
   // 正在回话、正在启动：都不是空闲

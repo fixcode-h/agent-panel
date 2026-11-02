@@ -187,6 +187,15 @@ export const EN_SETTINGS: Record<string, string> = {
   '例如 --add-dir ../shared': 'e.g. --add-dir ../shared',
   环境变量: 'Environment variables',
   '每行一个 KEY=VALUE，只传给这个 Agent': 'One KEY=VALUE per line, passed only to this agent',
+  '{cli} 环境变量': '{cli} environment variables',
+  默认环境变量: 'Default environment variables',
+  '每次运行都会带上，可以改值': 'Always passed at run time; you can change the values',
+  '这些是 {cli} 的 CLI 配置里自带的，每次运行都会传给 {cli}。改过的值存成同名覆盖，点右边的按钮恢复默认。':
+    "{cli}'s CLI config includes these and passes them at every run. Changed values are saved as same-name overrides; click the button on the right to reset to the default.",
+  '默认 {value}': 'Default {value}',
+  '{key} 的值': '{key} value',
+  '上面「默认环境变量」里已经有的键，在这里写会并到那一行；这里放自己追加的变量。':
+    'Keys already listed under "Default environment variables" are merged into that row if written here; add your own variables here.',
   '实际调用（任务描述从 stdin 传入）': 'Actual command (task description is passed via stdin)',
 
   // 模型列表来源
@@ -326,6 +335,18 @@ export const EN_SETTINGS: Record<string, string> = {
   'GitHub 暂时限制了访问，这里显示的是上次检查的结果；约 {minutes} 分钟后恢复，也可以到':
     'GitHub is temporarily rate limiting requests, so this is the result from the last check. Try again in about {minutes} minutes, or go to',
   '手动下载。': 'to download manually.',
+  '查看。': 'to view.',
+  自动检查更新: 'Check for updates automatically',
+  '打开页面时和页面开着时每小时检查一次；关掉后只保留手动检查':
+    'Check once when the page opens and hourly while it stays open; when off, only the manual check remains',
+  '还没有检查过更新，点「检查更新」查看最新版本。':
+    'Updates have not been checked yet. Use "Check for updates" to see the latest version.',
+  '点「检查更新」读取最近的版本。': 'Use "Check for updates" to load recent versions.',
+  'GitHub 限制了 API 访问，已通过 Release feed 获取最新版本（{time}）；约 {minutes} 分钟后恢复完整列表，也可以到':
+    'GitHub is rate-limiting the API. The latest version came from the Release feed ({time}); the full list returns in about {minutes} minutes, or you can go to',
+  'GitHub API 暂时不可用，最新版本来自 Release feed（{time}），也可以到':
+    'The GitHub API is temporarily unavailable. The latest version comes from the Release feed ({time}), or you can go to',
+  '到 GitHub Releases 下载': 'Download from GitHub Releases',
   '正在检查…': 'Checking…',
   已是最新版本: "You're up to date",
   '上次检查 {time}': 'Last checked {time}',
@@ -370,9 +391,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
   '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
   '自动回收闲置 Agent': 'Reclaim idle agents automatically',
-  '没看过的回复保留多久（分钟）': 'Keep unread replies for (minutes)',
-  同时保活的会话上限: 'Max kept-alive conversations',
-  '填 0 到 50 之间的整数': 'Enter a whole number from 0 to 50',
   '回到上一个版本 v{version}': 'Back to previous version v{version}',
   '回到 v{version}？': 'Go back to v{version}?',
   '会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。':
@@ -1534,7 +1552,6 @@ export const EN_SETTINGS: Record<string, string> = {
   上下文占到这个比例时压缩: 'Compact when context use reaches this share',
   '对话结束一轮后自动压缩：写一份摘要，下一轮开新会话带上。':
     'After a turn ends, compacts automatically: writes a summary and carries it into a new session next turn.',
-  '可执行文件、参数、环境变量': 'Executable, arguments, environment',
   每次调用都追加: 'Appended to every call',
   '角色自己的参数排在后面。': "The role's own arguments come after these.",
   '5 小时和每周额度用了多少': '5-hour and weekly quota used',
@@ -1774,21 +1791,12 @@ export const EN_SETTINGS: Record<string, string> = {
   '子对话完成后 Agent 保留多久（分钟）': 'Minutes to keep the agent after a sub-chat finishes',
   '回收空闲 Agent': 'Reclaim idle agents',
   '空闲到时结束进程，再用时续接会话': 'Ends idle processes on a timer; the session resumes later',
-  '回复完没人看着的空闲 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这两段时间和数量上限管，页面切到后台也照样跑完。关掉后不再按时间回收，只会按「最多保活」收，进程会越攒越多。':
-    'Idle agents whose replies nobody is watching are reclaimed after the two times below, and restarted when you come back (a few seconds; the session resumes). Running chats ignore these times and the limit, and keep going in the background. When off, nothing is reclaimed on a timer, only by “Max kept alive”, so processes pile up.',
+  '回复完没人看着的空闲 Agent 会在「离开后保留」这段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这段时间管，页面切到后台也照样跑完。关掉后不再按时间回收，进程会越攒越多。':
+    'Idle agents whose replies nobody is watching are reclaimed after the “Keep after leaving” time, and restarted when you come back (a few seconds; the session resumes). Running chats ignore this time and keep going in the background. When off, nothing is reclaimed on a timer, so processes pile up.',
   离开后保留: 'Keep after leaving',
   '离开对话后 Agent 留多久': 'How long the agent stays after you leave a chat',
   '填 0 表示回复完就结束这一轮。这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。只算回复完停在等下一句的空闲对话，正在执行的对话不会因为这个时长被收掉。':
     '0 ends the turn as soon as the reply is done. Within this time you can send a message and continue without restarting the agent; each waiting chat holds one agent process. Only idle chats waiting for the next message count; running chats are never reclaimed by this.',
-  未读回复保留: 'Keep unread replies',
-  回复还没看时最多留多久: "How long to keep a reply you haven't read",
-  '填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。正在执行的不受影响。':
-    "0 reclaims as soon as the reply is done. While a finished reply hasn't been opened (the orange dot in the sidebar is still on), it is kept at most this long; then it is reclaimed, and opening the chat restarts the agent and resumes the session. Running chats are not affected.",
-  最多保活: 'Max kept alive',
-  超出时结束最久没用的: 'Ends the least recently used beyond this',
-  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用的（下次打开需要重新启动一次）。正在执行的对话（包括已经切到后台在跑的）不占名额，也不会被收掉。':
-    "How many idle chats waiting for the next message, with nobody watching, are kept; beyond that the least recently used ends (it restarts once next time you open it). Running chats, including ones in the background, don't count and are never reclaimed.",
-  个: 'chats',
   自动归档: 'Auto-archive',
   多久没动静的对话收进归档: 'Archive chats that have been quiet this long',
   '对话（连同子对话）这么多天没有动静、没在执行、回复也都看过了，就自动归档：列表里不再显示，在筛选里选「已归档」还能找到，随时可以取消归档。':

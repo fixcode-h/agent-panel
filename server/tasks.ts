@@ -30,7 +30,7 @@ import {
 import { getSettings } from './settings.ts'
 import { cancelWait } from './exec/runner.ts'
 import { makeAlert } from '../shared/alerts.ts'
-import { setPresenceBusy, setPresenceIdleHandler, setPresenceUnreadKeeper } from './presence.ts'
+import { setPresenceBusy, setPresenceIdleHandler } from './presence.ts'
 import { settleReclaimed } from './exec/reclaim.ts'
 import { migrateOnStart } from './tasks/startup.ts'
 import { createStateSweep, STATE_SWEEP_MS } from './tasks/state-sweep.ts'
@@ -134,7 +134,6 @@ export function tasksApi(deps: {
     dropWorktree: () => dropWorktree,
     endBackground: () => endBackground,
     endInlineEdit: () => endInlineEdit,
-    enforceKeepAlive: () => enforceKeepAlive,
     ensureChildWorktree: () => ensureChildWorktree,
     expandForWorkflow: () => expandForWorkflow,
     finishChild: () => finishChild,
@@ -288,13 +287,7 @@ export function tasksApi(deps: {
     }
     void settleReclaimed(store, id, 'presence')
   })
-  // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
-  setPresenceUnreadKeeper((id) => {
-    const tk = live.get(id)?.task
-    if (!tk) return false
-    return !!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt
-  })
-  // 两个时长到达时先问这一句：还在跑的对话不按「离开多久」回收（见 keepAliveBusy）
+  // 宽限到达时先问这一句：还在跑的对话不按「离开多久」回收（见 keepAliveBusy）
   setPresenceBusy((id) => keepAliveBusy(id))
   /** 服务正在退出：不再接着处理这一轮结束后要处理的消息 */
   let shuttingDown = false
@@ -660,7 +653,6 @@ export function tasksApi(deps: {
     subtreeIdsOf,
     taskAlive,
     keepAliveBusy,
-    enforceKeepAlive,
     closeWaiting,
     endLive,
     keepDoneChild,

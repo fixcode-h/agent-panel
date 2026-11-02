@@ -8,6 +8,7 @@ import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildSummary, demoParentCard } from './demo-child-summary'
+import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
 import {
@@ -1287,53 +1288,6 @@ const DEMO_STATUS: Record<string, string> = {
   'src/components/CartBadge.tsx': 'A',
   'src/pages/OrderList.tsx': '?',
   'tests/cart.test.ts': 'D',
-}
-
-/**
- * 示例对话改过的两个文件：差异窗口要有真实的 hunk、删除、新增和行内改动可看。
- * 演示里没有仓库，这些文本直接当任务的差异返回（见 demoTask 的 diff 分支）。
- */
-const DEMO_DIFFS: Record<string, string> = {
-  'src/components/CartBadge.tsx': [
-    'diff --git a/src/components/CartBadge.tsx b/src/components/CartBadge.tsx',
-    'index 3c1a2f0..8d4b7c1 100644',
-    '--- a/src/components/CartBadge.tsx',
-    '+++ b/src/components/CartBadge.tsx',
-    '@@ -1,11 +1,13 @@',
-    " import { useEffect, useState } from 'react'",
-    "+import { useCart } from '../store/cart'",
-    ' ',
-    ' export function CartBadge() {',
-    '-  const [count, setCount] = useState(0)',
-    '+  const items = useCart()',
-    '+  const count = items.reduce((n, item) => n + item.count, 0)',
-    ' ',
-    '   useEffect(() => {',
-    "-    fetch('/api/cart').then((r) => r.json()).then((d) => setCount(d.length))",
-    '-  }, [])',
-    "+    document.title = count > 0 ? `购物车 (${count})` : '商城'",
-    '+  }, [count])',
-    ' ',
-    '   return <span className="badge">{count}</span>',
-    ' }',
-  ].join('\n'),
-  'src/components/RestockButton.tsx': [
-    'diff --git a/src/components/RestockButton.tsx b/src/components/RestockButton.tsx',
-    'new file mode 100644',
-    'index 0000000..4b825dc',
-    '--- /dev/null',
-    '+++ b/src/components/RestockButton.tsx',
-    '@@ -0,0 +1,9 @@',
-    "+import { useState } from 'react'",
-    '+',
-    '+export function RestockButton({ productId }: { productId: string }) {',
-    '+  const [sent, setSent] = useState(false)',
-    '+  if (sent) return <button disabled>已登记</button>',
-    '+  return (',
-    '+    <button onClick={() => setSent(true)}>到货通知我</button>',
-    '+  )',
-    '+}',
-  ].join('\n'),
 }
 
 /** 在线演示里文件页的写操作：新建的目录记在这里，改过的内容直接在 DEMO_CONTENTS 上改，刷新就回到初始状态 */
@@ -2633,6 +2587,10 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
       if (cur?.updatedAt && cur.updatedAt !== expected) fail('项目在别处被修改过，请刷新后重试', 409)
     }
     const input = parse(ProjectInput, body)
+    // 和真正的服务端一样：没带 lessons 的请求（旧版界面、脚本）不清空已有的教训
+    const raw = body && typeof body === 'object' ? (body as Record<string, unknown>) : null
+    if (method === 'PUT' && raw && !('lessons' in raw))
+      input.lessons = (d.projects ?? []).find((x) => x.id === id)?.lessons ?? []
     if (input.categoryId && !d.projectCategories.some((c) => c.id === input.categoryId)) fail('项目分类不存在')
     if (input.workflowId && !d.workflows.some((w) => w.id === input.workflowId)) fail('工作流不存在')
     // 和服务端一样：没指定默认工作流、分类也没有时不能保存
@@ -4548,8 +4506,9 @@ async function seedTasks(d: Db) {
         spans: [{ from: 'demo-before', to: 'demo-after' }],
         files: [
           ...task.changes,
-          { path: 'src/store/cart.ts', add: 12, del: 4 },
-          { path: 'tests/cart.test.ts', add: 18, del: 0 },
+          // 和 DEMO_DIFFS 里的样例对得上：cart.ts 是短改动，cart.test.ts 是整份删除
+          { path: 'src/store/cart.ts', add: 4, del: 1 },
+          { path: 'tests/cart.test.ts', add: 0, del: 62 },
         ],
       }
     // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
@@ -4820,6 +4779,8 @@ async function demoApp(url: string): Promise<unknown> {
   if (url.startsWith('/app/install') || url.startsWith('/app/rollback')) fail('在线演示不能安装，可以下载包到本机运行')
   // 演示里不会真的强制更新，也就没有被打断的任务
   if (url.startsWith('/app/interrupted')) return { at: '', acknowledged: false, tasks: [] } satisfies InterruptedTasks
+  // 当前版本只读上次读到的发布缓存：这个接口不该为了显示版本号再去请求 GitHub
+  if (url.startsWith('/app/version')) return { current: demoReleasesCache()[0]?.version ?? '', packaged: false }
   let list: AppRelease[] = []
   let limitedUntil: string | undefined
   let res: Response | null = null
@@ -4875,12 +4836,13 @@ async function demoApp(url: string): Promise<unknown> {
     }
   }
   const current = list[0]?.version ?? ''
-  if (url.startsWith('/app/version')) return { current, packaged: false }
   return {
     current,
     packaged: false,
     checkedAt: new Date().toISOString(),
     limitedUntil,
+    // 演示版直接从浏览器读 GitHub API，没有 Atom feed 兜底，结果都按 API / 它的缓存算
+    source: 'api',
     releases: list.slice(0, 5),
     update: pickUpdate(current, list),
   } satisfies AppReleases

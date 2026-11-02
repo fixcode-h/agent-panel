@@ -10,6 +10,8 @@ import {
   FolderOpen,
   List,
   Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Undo2,
   WrapText,
   FileDiff as FileDiffIcon,
@@ -71,6 +73,7 @@ export function DiffShell({
   close,
   empty,
   note,
+  sidebar,
 }: {
   path: string
   /** 差异文本；空字符串表示没有内容，用 empty 说明原因 */
@@ -87,6 +90,8 @@ export function DiffShell({
   empty?: React.ReactNode
   /** 正文下面的说明 */
   note?: string
+  /** 左侧文件树：给了就在工具栏放收起 / 展开按钮（窄屏文件树本来就不显示） */
+  sidebar?: { open: boolean; onToggle: () => void }
 }) {
   const [mode, setMode] = useScopedSetting<'split' | 'unified'>(
     'diff-view',
@@ -186,6 +191,19 @@ export function DiffShell({
         )}
       </ModalHeader>
       <div className="flex h-10 shrink-0 items-center gap-1 border-b bg-card/95 px-2.5">
+        {sidebar && (
+          <>
+            <IconButton
+              size="2xs"
+              className="hidden lg:grid"
+              icon={sidebar.open ? PanelLeftClose : PanelLeftOpen}
+              label={sidebar.open ? t('收起文件列表') : t('显示文件列表')}
+              aria-pressed={sidebar.open}
+              onClick={sidebar.onToggle}
+            />
+            <span className="mx-0.5 h-4 w-px shrink-0 bg-line" aria-hidden />
+          </>
+        )}
         <Segmented
           size="sm"
           label={t('差异显示方式')}
@@ -431,7 +449,7 @@ export function ProjectDiffDialog({
     })
   return (
     // 它总是从文件预览窗口里打开，层级要高过那个窗口（stacked）；只看不填，点到外面就关
-    <Modal open={!!path} onOpenChange={onOpenChange} title={null} size="xl" bare closeOnOutside stacked>
+    <Modal open={!!path} onOpenChange={onOpenChange} title={null} size="diff" bare closeOnOutside stacked>
       <DiffShell
         path={shown}
         diff={text}
@@ -462,7 +480,7 @@ export function ProjectDiffDialog({
 }
 
 /**
- * 差异窗口：默认左右对照，可以切到上下对照；窗口尽量占满屏幕。
+ * 差异窗口：默认左右对照，可以切到上下对照；文件的全部改动用 diff 档（按内容高、接近满宽）。
  * - 给了 path：「更改」里点一个文件，看它和任务开始时相比改了什么，可以在编辑器里打开或撤销
  * - 给了 diff：工具行里的编辑记录，看这一次改了什么
  * - 同时给了 files / onPathChange：可以在「更改」列表里上下切换文件，不用关掉窗口再点
@@ -557,12 +575,12 @@ export function DiffDialog({
   return (
     <>
       {/* 只看不填：点到外面就关 */}
-      {/* 编辑工具那一次的改动（own）通常就几行：弹窗跟着内容高，最高到铺满的四分之三；文件的全部改动用 xl 档 */}
+      {/* 编辑工具那一次的改动（own）通常就几行：窄一些、跟着内容高，最高到视口；文件的全部改动用 diff 档 */}
       <Modal
         open={own || !!path}
         onOpenChange={onOpenChange}
         title={null}
-        size={own ? 'fit' : 'xl'}
+        size={own ? 'fit' : 'diff'}
         bare
         closeOnOutside
       >

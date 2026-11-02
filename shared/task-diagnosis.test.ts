@@ -8,6 +8,7 @@ import { collabEvents } from './collab-timeline.ts'
 import { setLang } from './i18n.ts'
 import { Task } from './schema.ts'
 import { diagnoseTask } from './task-diagnosis.ts'
+import { isPlanNudge } from './task.ts'
 
 setLang('zh')
 const at = '2026-10-01T00:00:00.000Z'
@@ -48,6 +49,13 @@ test('停住的对话：说清计划还剩几步、下一步是什么，面板�
   assert.equal(p?.text, '计划 2/4')
   assert.equal(p?.detail, '下一步：第 3 步')
   assert.match(d.items.find((x) => x.kind === 'nudge')?.text ?? '', /还没有回应/)
+  // 同一条计划催促在界面上按提醒显示：新消息 panel 是 'nudge'，旧对话记成 'build' 也认，
+  // 真正的合并编译结果同样是 'build'，不能因为正文里有【面板】就当成提醒
+  assert.equal(isPlanNudge({ panel: 'nudge', text: '随便什么正文' }), true)
+  assert.equal(isPlanNudge({ panel: 'build', text: '【面板】你的计划才做了 2/4' }), true)
+  assert.equal(isPlanNudge({ panel: 'build', text: '【面板】这一轮跑了命令 / 改了文件，但没有计划就结束了' }), true)
+  assert.equal(isPlanNudge({ panel: 'build', text: '合并编译：「购物车」跑完了：通过' }), false)
+  assert.equal(isPlanNudge({ panel: 'background', text: '【面板】你的计划才做了' }), false)
 })
 
 test('在等子对话：列出在动的子对话，很久没输出的标红；停下的对话给出继续的提示', () => {

@@ -63,7 +63,7 @@ export async function migrateOnStart(store: Store, claims?: ReturnType<typeof cr
   }
   // 上面没处理的（status 不是 running、也不在恢复名单里）还可能带着 working / awaitingUser / prewarming：
   // 崩溃时这一轮的收尾没来得及落盘。刚启动时一个 CLI 进程都没有，这些「在用」标记都是假的，
-  // 不清掉的话清理（cleanup.ts 的 chatBusy、sweepTaskInfoOf）永远当它在用，保活上限也会把它算进去
+  // 不清掉的话清理（cleanup.ts 的 chatBusy、sweepTaskInfoOf）永远当它在用，回收判定也会把它算进去
   for (const meta of await store.list())
     if (meta.working === true || meta.awaitingUser === true || meta.prewarming === true) {
       const task = await store.get(meta.id)
