@@ -78,14 +78,12 @@ export function StatusCard({ task, kids = [] }: { task: Task; kids?: (ChildEntry
                 title={[x.text, x.detail].filter(Boolean).join('\n')}
                 className={cn('min-h-0 py-1', x.kind === 'hint' && 'text-muted')}
               >
-                <span className="block truncate">{x.text}</span>
+                <span>{x.text}</span>
                 {x.detail && (
                   <span
-                    className={cn(
-                      'block truncate text-xs',
-                      x.tone === 'danger' || x.tone === 'warning' ? TONE[x.tone] : 'text-muted',
-                    )}
+                    className={cn('text-xs', x.tone === 'danger' || x.tone === 'warning' ? TONE[x.tone] : 'text-muted')}
                   >
+                    {' · '}
                     {x.detail}
                   </span>
                 )}
