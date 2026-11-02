@@ -165,14 +165,16 @@ test('停止后马上点「继续」：先等正在停下的那一份收完，�
 
 test('停父对话：在等子任务的子对话按「随父对话停」收口（继续时会被拉起），停在等下一句的照常结束不标停止', async () => {
   const hold = setTimeout(() => {}, 10_000)
-  const mk = (id: string, awaitingUser: boolean) => {
+  /** 各对话被停的先后：自上而下，父对话先停（它就不会再处理下面停下时的消息、不会重派） */
+  const stopped: string[] = []
+  const mk = (id: string, awaitingUser: boolean, parentTaskId = 'p') => {
     let abandon: () => void = () => {}
     const abandoned = new Promise<void>((r) => (abandon = r))
     let stops = 0
     const e = {
       task: {
         id,
-        parentTaskId: 'p',
+        parentTaskId,
         status: 'running',
         working: false,
         awaitingUser,
@@ -183,7 +185,7 @@ test('停父对话：在等子任务的子对话按「随父对话停」收口�
         runs: [],
       } as unknown as Task,
       rev: 0,
-      abort: { abort: () => void stops++ },
+      abort: { abort: () => void (stops++, stopped.push(id)) },
       done: abandoned,
       abandon,
       abandoned,
@@ -191,14 +193,24 @@ test('停父对话：在等子任务的子对话按「随父对话停」收口�
     return { e, stops: () => stops }
   }
   // helperKid：派出的子任务还在跑，它停在等子任务上；idleKid：这一轮说完了，停在等下一句
+  const root = mk('p', false, '')
   const helperKid = mk('k1', false)
   const idleKid = mk('k2', true)
+  // 孙对话：在执行，最后停
+  const grandKid = mk('g1', false, 'k1')
   const live = new Map([
+    ['p', root.e],
     ['k1', helperKid.e],
     ['k2', idleKid.e],
+    ['g1', grandKid.e],
   ])
   const saved: Task[] = []
-  const tasks = [{ id: 'p' }, { id: 'k1', parentTaskId: 'p' }, { id: 'k2', parentTaskId: 'p' }]
+  const tasks = [
+    { id: 'p' },
+    { id: 'k1', parentTaskId: 'p' },
+    { id: 'k2', parentTaskId: 'p' },
+    { id: 'g1', parentTaskId: 'k1' },
+  ]
   const s = {
     live,
     closeChildren: async () => {},
@@ -214,7 +226,10 @@ test('停父对话：在等子任务的子对话按「随父对话停」收口�
     shuttingDown: false,
   } as unknown as TasksScope
   const k = createKeepAlive(s)
-  await k.stopTree('p')
+  await k.stopTree('p', 'user')
+  assert.deepEqual(stopped.slice(0, 3), ['p', 'k1', 'g1'], '自上而下：父对话先停，再子对话，再孙对话')
+  assert.equal(root.e.stopReason, 'user' satisfies StopReason, '发起的这个对话是用户停的')
+  assert.equal(grandKid.e.stopReason, 'parent' satisfies StopReason)
   assert.equal(helperKid.e.stop, true, '等子任务的子对话被停下（中断子任务），不是只取消等待')
   assert.equal(helperKid.e.stopReason, 'parent' satisfies StopReason)
   assert.ok(!idleKid.e.stop, '停在等下一句的不标停止：这一轮已经正常说完')

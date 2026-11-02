@@ -1835,6 +1835,15 @@ export function helperActive(s: Pick<TaskStep, 'status' | 'slot'>) {
 }
 
 /**
+ * 运行区要不要列这个子任务：在跑的列；还没开始的（排队等启动、被打断后等重新开始，都是 pending）
+ * 只在对话在执行时才会开始，对话停着时不算在跑、不列
+ * （以前停了父对话，子对话名下被打断的子任务还一排在运行区转圈，用户报过）
+ */
+export function helperShown(task: Pick<Task, 'status'>, s: Pick<TaskStep, 'status' | 'slot'>) {
+  return helperRunning(s) || (helperActive(s) && task.status === 'running')
+}
+
+/**
  * 对话派出的子任务（spawn_agents 的步骤）还在跑：CLI 这一轮已经回复完（working 已是 false），
  * 但对话停在那里等它们交回结果，在侧栏和项目首页里也算「还在跑」
  */

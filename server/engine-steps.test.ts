@@ -900,6 +900,42 @@ test('子任务：失败后 resume 写它的 id，就在原来那个子任务里
   assert.match(JSON.stringify(firstWait), /failed/)
 })
 
+test('子任务：有中断没做完的子任务时不能另派新的，要 resume 它或先终止（用户 2026-11-02）', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  const got: Record<string, unknown> = {}
+  const { task, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const o = call.orch!
+      const first = o.spawn([{ title: '调研 worktree', instructions: '查一下' }]).ids
+      await o.wait(first, 1000)
+      // 模拟父对话停下：这个子任务被打断，落成 pending + interrupted（见 shared/task-settle.ts 的 settleStopped）
+      const prev = task.steps.find((s) => s.id === first[0])!
+      prev.status = 'pending'
+      prev.interrupted = true
+      // 模型没照续接说明 resume，另派了一个「重派」：拒绝，并列出要接着做的那个
+      got.fresh = o.spawn([{ title: 'worktree 深挖重派', instructions: '重新查' }])
+      // 终止被打断的那个（它没有在跑的进程）：直接记成已终止，之后才能另派
+      got.stop = o.stopHelpers([first[0]], '不需要了')
+      got.after = o.spawn([{ title: '换个方向', instructions: '查别的' }])
+      await o.wait((got.after as { ids: string[] }).ids, 1000)
+      return '一步结果'
+    }
+    if (call.step?.slot === 'sub') return '查到了'
+    return '验收结论：通过'
+  })
+  await runEngineTurn(host)
+  const fresh = got.fresh as { ids: string[]; error?: string }
+  assert.deepEqual(fresh.ids, [])
+  assert.match(fresh.error ?? '', /中断了还没做完[\s\S]*调研 worktree[\s\S]*resume/)
+  const stop = got.stop as { ok: boolean; info: string }
+  assert.equal(stop.ok, true, stop.info)
+  const subs = task.steps.filter((s) => s.slot === 'sub')
+  assert.equal(subs[0].status, 'skipped', '被打断的那个记成已终止')
+  assert.equal(subs[0].interrupted, false)
+  assert.equal((got.after as { ids: string[] }).ids.length, 1, '终止之后可以另派')
+  assert.equal(subs.length, 2, '被拒的那次没有多出记录')
+})
+
 test('子对话重试标记：去掉「（重试）」这类标记后和原标题一样', () => {
   assert.equal(retryBase('子对话子任务挪到总结下面（重试）'), '子对话子任务挪到总结下面')
   assert.equal(retryBase('修登录 (retry 2)'), '修登录')

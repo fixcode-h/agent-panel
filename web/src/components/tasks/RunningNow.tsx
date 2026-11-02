@@ -1,10 +1,10 @@
 import { useUserName } from '@/lib/user-name'
 import { useMemo, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { CircleSlash, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import {
-  helperActive,
   helperRunning,
+  helperShown,
   sortHelpers,
   stepMs,
   visibleChildren,
@@ -67,7 +67,8 @@ export function runningRows<C extends ChildEntry>({
 export function activeHelpers(task: Task) {
   const steps = chatHelperIds(task)
     .map((id) => task.steps.find((s) => s.id === id))
-    .filter((s): s is TaskStep => !!s && helperActive(s))
+    // 被打断的子任务在对话停着时不列（见 helperShown）
+    .filter((s): s is TaskStep => !!s && helperShown(task, s))
   return sortHelpers(steps)
 }
 
@@ -201,7 +202,12 @@ function HelperRow({
   return (
     <RowShell
       glyph={
-        <Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', running ? 'text-accent-text' : 'text-subtle')} />
+        // 被打断的不转圈：它这会儿没人在跑，等对话接着做时才会重新开始
+        !running && step.interrupted ? (
+          <CircleSlash className="h-3.5 w-3.5 shrink-0 text-subtle" />
+        ) : (
+          <Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', running ? 'text-accent-text' : 'text-subtle')} />
+        )
       }
       verb={<span className="sr-only md:not-sr-only">{t('子任务')}</span>}
       title={title}

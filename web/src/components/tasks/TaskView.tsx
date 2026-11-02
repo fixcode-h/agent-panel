@@ -1456,7 +1456,7 @@ export function TaskView({
   }
   const stop = async () => {
     try {
-      await api.stopTask(task.id)
+      apply(await api.stopTask(task.id))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -1719,9 +1719,9 @@ export function TaskView({
       leading={
         <>
           <TaskContextRing task={task} node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined} />
-          {/* 还在等名下的东西跑完时不放「继续执行」：那一轮不是「被中断」，再拉起一遍会和还在跑的子对话重复。
-              只挡「已停止」这一种：失败时「重试」是用户主动重跑，哪怕子对话还在跑也要能点 */}
-          {!working && !(task.status === 'stopped' && waitText) && canResume && (
+          {/* 还在等名下的东西跑完时不放「继续执行」：再拉起一遍会和还在跑的子对话重复。只挡「已停止」：失败时「重试」要能点；
+              用户亲手停的（user）也不挡：整棵树已经停了，服务端继续时会先等它们停稳（settleBefore），挡了就找不到继续入口 */}
+          {!working && !(task.status === 'stopped' && waitText && task.stopReason !== 'user') && canResume && (
             <Button
               size="sm"
               variant="secondary"

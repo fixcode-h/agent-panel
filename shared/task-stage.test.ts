@@ -8,6 +8,7 @@ import { isChatMode, nextNudge, nudgeMax } from './conv-mode.ts'
 import {
   convActive,
   convState,
+  helperShown,
   taskActive,
   taskState,
   taskWaitText,
@@ -757,4 +758,22 @@ test('Chat 页和 Agent 模式分开：Chat 页、子对话只推一次，项目
   assert.deepEqual(nextNudge(r!, 'plan:2', 3), { key: 'plan:2', n: 1 })
   // 只推一次的：同一进度第二次就推满
   assert.equal(nextNudge({ key: 'said:m1', n: 1 }, 'said:m1', 1), null)
+})
+
+test('运行区的子任务：被打断的只在对话又跑起来时才列；对话停着时不列、不算在跑', () => {
+  const sub = (status: 'running' | 'pending' | 'done', interrupted?: boolean) => ({
+    slot: 'sub' as const,
+    status,
+    interrupted,
+  })
+  // 停了父对话，子对话名下的子任务落成 pending + interrupted：以前一排还在运行区转圈（用户报过）
+  assert.equal(helperShown({ status: 'stopped' }, sub('pending', true)), false)
+  assert.equal(helperShown({ status: 'failed' }, sub('pending', true)), false)
+  // 对话继续执行了：被打断的子任务马上会接着做，照样列出来
+  assert.equal(helperShown({ status: 'running' }, sub('pending', true)), true)
+  // 还没开始、排着等启动的：对话在执行时列，停着时也不会自己开始，不列；在跑的照常列；做完的不列
+  assert.equal(helperShown({ status: 'running' }, sub('pending')), true)
+  assert.equal(helperShown({ status: 'stopped' }, sub('pending')), false)
+  assert.equal(helperShown({ status: 'running' }, sub('running')), true)
+  assert.equal(helperShown({ status: 'running' }, sub('done')), false)
 })
