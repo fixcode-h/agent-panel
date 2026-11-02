@@ -662,6 +662,11 @@ await runShard('子对话与计划', async (api) => {
         },
         { timeout: 40000, label: '子对话开好独立分支并在跑' },
       )
+      // 停止会立刻结束 CLI 进程：先等这一轮的计划真的建好（PLAN_NEXT），再停，不然负载高时计划还没建就被停了
+      await waitFor(
+        async () => (await call('GET', `/tasks/${stopKid.id}`)).plans?.at(-1)?.steps.some((x) => x.status !== 'done'),
+        { timeout: 20000, label: '子对话这一轮的计划建好' },
+      )
       // 分支目录里放一个没提交的文件：用户点停止时它就留在那儿（面板不自动提交、也不清理）
       writeFileSync(path.join(branch.path, 'dirty-when-stopped.txt'), 'x\n')
       await call('POST', `/tasks/${stopKid.id}/stop`)

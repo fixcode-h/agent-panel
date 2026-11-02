@@ -102,7 +102,7 @@ export function resumeNote(
   const helpers = task.steps.filter((s) => s.slot === 'sub' && s.interrupted && s.status !== 'done')
   if (helpers.length)
     lines.push(
-      `- 中断时没跑完的子任务：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。还需要就用 spawn_agents 带 resume: <id> 在原来的会话里接着跑，不要重新派一个。`,
+      `- 中断时没跑完的子任务：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。还需要就用 spawn_agents 带 resume: <id> 在原来的会话里接着跑，不要重新派一个（有中断没做完的子任务时另派新的会被拒绝）；不需要了就用 stop_subtask 终止。`,
     )
   const runs = (task.runs ?? []).filter((r) => r.status === 'stopped' || r.status === 'running')
   if (runs.length)
