@@ -359,6 +359,7 @@ export interface TasksScope {
     question: boolean,
     options?: string[],
     kind?: AskKind,
+    fix?: boolean,
   ) => Promise<{
     ok: boolean
     info: string

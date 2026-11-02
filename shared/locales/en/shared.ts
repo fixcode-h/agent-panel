@@ -129,7 +129,8 @@ export const EN_SHARED: Record<string, string> = {
   这次要求: 'This request',
   第一条要求: 'First request',
   '主角色评估「{title}」失败：{error}': 'Main role failed to review "{title}": {error}',
-  '主角色没有写调度决定，「{title}」按通过处理。': 'Main role did not write a decision; treating "{title}" as a pass.',
+  '主角色没有用 dispatch 交「{title}」的决定，流程停在这里':
+    'The main role did not submit a decision for "{title}" with dispatch; the flow stops here',
   '主角色退回「{title}」{n} 次后仍不满意：{feedback}':
     'Main role is still not satisfied after sending "{title}" back {n} times: {feedback}',
   '「{title}」委派的工作流「{name}」失败：{error}': 'The workflow "{name}" delegated from "{title}" failed: {error}',

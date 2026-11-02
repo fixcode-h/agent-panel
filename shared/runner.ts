@@ -593,12 +593,12 @@ function dispatchOutput(call: AgentCall): Output {
     }
   if (call.dispatching === 'answer') return { tools: [], changes: [], text: '按方案一做，保持和现有接口一致。' }
   const node = /节点「([^」]+)」/.exec(call.prompt)?.[1] ?? '这个节点'
-  const branch = call.prompt.includes('dispatch 里必须写 branch') ? ', "branch": "pass"' : ''
-  return {
-    tools,
-    changes: [],
-    text: `看了「${node}」的结果和改动，符合这个节点的要求，可以往下走。\n\n\`\`\`dispatch\n{"action": "continue"${branch}}\n\`\`\``,
-  }
+  // 决定用 dispatch 工具交（面板只认工具，见 shared/submitted.ts）：评估一律通过，有分支走「通过」（和原来写在回复里的一样）
+  call.orch?.submitDispatch?.({
+    action: 'continue',
+    ...(call.prompt.includes('dispatch 里必须写 branch') ? { branch: 'pass' as const } : {}),
+  })
+  return { tools, changes: [], text: `看了「${node}」的结果和改动，符合这个节点的要求，可以往下走。` }
 }
 
 function demoNext(document: string, task: Task) {

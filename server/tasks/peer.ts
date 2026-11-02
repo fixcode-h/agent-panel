@@ -19,8 +19,6 @@ const saveFailed = (e: unknown): never => {
   throw new Error(`写盘失败，这条消息没有记下（重启后会丢）：${(e as Error).message}`)
 }
 
-/** 子对话请父对话安排修复的报错（engine 的 toParent 带 wait_fix 时加的开头）：要父对话马上动手，不并进一轮结束的汇报 */
-const FIX_HEAD = /^【报错不是我改出来的/
 /** 叫醒文案里要去掉的那一行开头（叫醒文案自己说了是什么事） */
 const FIX_HEAD_LINE = /^【报错不是我改出来的[^】\n]*】/
 /** 父对话里那条修复请求的结尾（remindParentFix 按它找回当时的报错） */
@@ -52,6 +50,8 @@ export function createPeer(s: TasksScope) {
     question: boolean,
     options: string[] = [],
     kind: AskKind = 'question',
+    /** 请父对话安排修复（message_parent 带 wait_fix）：只认这个字段，不看正文开头写了什么 */
+    fix = false,
   ) {
     const parent = s.live.get(child.parentTaskId)?.task ?? (await s.store.get(child.parentTaskId))
     if (!parent) {
@@ -85,7 +85,6 @@ export function createPeer(s: TasksScope) {
     }
     // 请父对话安排修复（toParent 带 wait_fix）：交给父对话的 AI 马上分派，不是问用户的问题。
     // 子对话那一步挂着等父对话，自己的一轮结束也不会再上报（计划在等别人），只记收件箱就成了父子互等
-    const fix = FIX_HEAD.test(text)
     if (fix) question = false
     // 阶段汇报不单独发（ADR 0034：一轮只交一封）：记在子对话上，这一轮结束面板上报状态时并进去当「结果」。
     // 要父对话动手的（提问、收尾建议、请它安排修复）照旧马上发

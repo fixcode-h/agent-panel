@@ -705,6 +705,24 @@ if (
   input.includes('你还没有用 submit_result')
 )
   await panelCall('submit_result', { state: 'done', summary: '做完了。' })
+// 主 Agent 交决定（ADR 0041 第 16 节）：面板只认 dispatch 工具。对话的第一条要求起一次运行；评估节点时
+// 节点说明里有 MAINREWORK 时第一次评估退回，有 MAINDELEGATE:<工作流 id> 时第一次评估委派给它，有分支时按 BRANCHNO 选。
+// 补问（「你还没有用 dispatch」）也照这个规则交；NO_DISPATCH 模拟漏交
+function dispatchFor(text) {
+  const firstEval = text.includes('这是对它的第 1 次评估')
+  if (text.includes('## 事件：这个对话的第一条要求')) return { action: 'run', input: '按需求执行' }
+  if (!text.includes('## 事件：节点完成') && !text.includes('你还没有用 dispatch')) return null
+  if (text.includes('MAINREWORK') && firstEval) return { action: 'rework', feedback: '补上错误处理' }
+  const delegate = /MAINDELEGATE:(\S+)/.exec(text)?.[1]
+  if (delegate && firstEval) return { action: 'delegate', workflow: delegate, input: '帮忙检查一遍' }
+  if (text.includes('dispatch 里必须写 branch'))
+    return { action: 'continue', branch: text.includes('BRANCHNO') ? 'fail' : 'pass', note: '注意兼容旧数据' }
+  return { action: 'continue' }
+}
+{
+  const d = input.includes('NO_DISPATCH') ? null : dispatchFor(input)
+  if (d) await panelCall('dispatch', d)
+}
 // 操控软件的动作（ADR 0011）：任务里有 APP_DO:<一行 JSON>、面板也给了 app_do 时，像真的 Agent 那样按用户的指令调一次。
 // 只认用户这一条消息里的标记（附在后面的用法说明里也有 app_do 字样，所以要两个都在）
 const appDo = /APP_DO:(\{.*\})/.exec(input)?.[1]
@@ -1050,26 +1068,12 @@ const turnReply = () => {
     : ''
   // 主 Agent 的调度轮：评估节点时写 dispatch 决定。节点说明里有 MAINREWORK 时第一次评估退回，
   // 有 MAINDELEGATE:<工作流 id> 时第一次评估委派给它，有分支时按 BRANCHNO 选；流程完成时给一段最终结果
-  const firstEval = input.includes('这是对它的第 1 次评估')
-  const dispatch = input.includes('## 事件：这个对话的第一条要求')
-    ? '\n```dispatch\n' + JSON.stringify({ action: 'run', input: '按需求执行' }) + '\n```'
-    : input.includes('## 事件：节点完成')
-      ? '\n```dispatch\n' +
-        JSON.stringify(
-          input.includes('MAINREWORK') && firstEval
-            ? { action: 'rework', feedback: '补上错误处理' }
-            : /MAINDELEGATE:(\S+)/.test(input) && firstEval
-              ? { action: 'delegate', workflow: /MAINDELEGATE:(\S+)/.exec(input)[1], input: '帮忙检查一遍' }
-              : input.includes('dispatch 里必须写 branch')
-                ? { action: 'continue', branch: input.includes('BRANCHNO') ? 'fail' : 'pass', note: '注意兼容旧数据' }
-                : { action: 'continue' },
-        ) +
-        '\n```'
-      : input.includes('## 事件：流程完成')
-        ? '\n最终结果：主 Agent 整理好了'
-        : input.includes('## 事件：子 Agent 提问')
-          ? '\n主 Agent 的回答：用方案一'
-          : ''
+  // 主 Agent 的决定走 dispatch 工具（见模块顶层的 dispatchFor），回复里只写给人看的话
+  const dispatch = input.includes('## 事件：流程完成')
+    ? '\n最终结果：主 Agent 整理好了'
+    : input.includes('## 事件：子 Agent 提问')
+      ? '\n主 Agent 的回答：用方案一'
+      : ''
   // 子对话收尾前派的评审（agent 写「评审」）：按分级给意见，最后一行给验收结论。
   // 结论由派它的子对话在 instructions 里用 REVIEW_MARK:pass / REVIEW_MARK:fail 指定（取最后一次），
   // 不能光看「input 里有没有 REVIEW_BLOCK」：评审的 input 里也带着子对话的原始需求。

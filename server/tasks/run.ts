@@ -437,7 +437,7 @@ export function createRun(sc: TasksScope) {
               return got.map((m) => inboxWithFile(task.id, m))
             },
         messageParent: task.parentTaskId
-          ? (text, question, options, kind) => sc.messageParent(entry.task, text, question, options, kind)
+          ? (text, question, options, kind, fix) => sc.messageParent(entry.task, text, question, options, kind, fix)
           : undefined,
         // 子对话点名「禁止子对话执行」的角色时，把它转交父对话创建（见 ADR 0019）
         forwardSpawn: task.parentTaskId ? (spec) => sc.forwardSpawn(entry.task, spec) : undefined,

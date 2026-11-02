@@ -72,7 +72,6 @@ import {
   evaluateEvent,
   firstPlanEvent,
   mainDuties,
-  parseDispatch,
   planEvent,
   questionEvent,
   stripDispatch,
@@ -98,7 +97,16 @@ import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from 
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from './test-steps.ts'
 import { parseVerdict } from './verdict.ts'
-import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from './submitted.ts'
+import {
+  DISPATCH_ASK,
+  ensureVerdict,
+  recordDecision,
+  reviewVerdict,
+  submitOn,
+  takeDecision,
+  verdictOf,
+  type Blocker,
+} from './submitted.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
@@ -421,6 +429,8 @@ export interface Orchestra {
   common: { name: string; description: string }[]
   /** 调用者自己就是子任务：不能再派子任务、不能启动工作流、不能开子对话 */
   helper: boolean
+  /** 交决定（dispatch）：只有主 Agent 有 */
+  submitDispatch?: (d: Dispatch) => { ok: boolean; info: string }
   /** 交结果（submit_result）：只有子任务有 */
   submitResult?: (r: { state: 'done' | 'unfinished' | 'stuck'; summary: string; left: string }) => {
     ok: boolean
@@ -835,6 +845,8 @@ export interface EngineHost {
     question: boolean,
     options?: string[],
     kind?: AskKind,
+    /** 请父对话安排修复的报错（message_parent 带 wait_fix）：按这个字段判，不从正文开头反推（ADR 0041 第 16 节） */
+    fix?: boolean,
   ) => Promise<{ ok: boolean; info: string }>
   /**
    * 子对话点名「只在父对话执行」的角色（runIn: 'parent'）时，把它转交父对话创建子任务（见 ADR 0019）。
@@ -1797,11 +1809,13 @@ async function runNodeSingle(
             ? ev
             : { ...ev, error: t('主角色评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
         )
-      let d: Dispatch | null = parseDispatch(ev.text)
-      if (!d) {
-        system(host, t('主角色没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
-        d = { action: 'continue' }
-      }
+      // 决定只认 dispatch 工具（ADR 0041 第 16 节）：没交补问一次，还没有就停下，不再默认按通过继续
+      let d = takeDecision<Dispatch>(main.step) ?? (await askDecision(host, main, 'evaluate'))
+      if (!d)
+        return fail({
+          ok: false,
+          error: t('主角色没有用 dispatch 交「{title}」的决定，流程停在这里', { title: step.title }),
+        })
       // 退回次数用完、委派来回太多次：只能继续或停下
       if (d.action === 'rework' && reworks >= node.hooks.maxRounds)
         return fail({
@@ -2234,11 +2248,13 @@ async function runNodeSteps(
             : { ...ev, error: t('主角色评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
           recordOf(last),
         )
-      let d: Dispatch | null = parseDispatch(ev.text)
-      if (!d) {
-        system(host, t('主角色没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
-        d = { action: 'continue' }
-      }
+      // 决定只认 dispatch 工具（ADR 0041 第 16 节）：没交补问一次，还没有就停下，不再默认按通过继续
+      let d = takeDecision<Dispatch>(main.step) ?? (await askDecision(host, main, 'evaluate'))
+      if (!d)
+        return fail({
+          ok: false,
+          error: t('主角色没有用 dispatch 交「{title}」的决定，流程停在这里', { title: step.title }),
+        })
       // 退回次数用完、委派来回太多次：只能继续或停下
       if (d.action === 'rework' && reworks >= units[last].maxRounds)
         return fail(
@@ -2481,6 +2497,8 @@ function mainTurn(
     const mail = takeMail(host, main.step.id)
     const ev = mail.length ? `${event}\n\n## 收到的消息\n${mail.map((m) => `- ${m}`).join('\n')}` : event
     const full = `${mainFull(host, main)}\n\n${ev}`
+    // 这一轮的决定这一轮交：上一轮（整理结果、回答提问时）误交的作废，不能被这一轮拿去当决定
+    takeDecision(main.step)
     const resumed = !!host.task.sessions[main.step.id]
     main.step.rounds++
     host.changed(true)
@@ -2499,6 +2517,12 @@ function mainTurn(
   const p = main.chain.then(go, go)
   main.chain = p.catch(() => undefined)
   return p
+}
+
+/** 主 Agent 这一轮没交决定：在它的会话里补问一次，交了返回决定，还没交返回 null */
+async function askDecision(host: EngineHost, main: MainCtl, kind: NonNullable<AgentCall['dispatching']>) {
+  const r = await mainTurn(host, main, kind, DISPATCH_ASK)
+  return r.ok ? (takeDecision<Dispatch>(main.step) ?? null) : null
 }
 
 /** 执行一个带主 Agent 的流程：节点都完成后由主 Agent 整理结果，作为这个流程的输出 */
@@ -2880,6 +2904,7 @@ function makeOrchestra(
       submitVerdict: (v: { verdict: 'pass' | 'fail'; blockers?: Blocker[] }) =>
         submitOn(self, { verdict: v.verdict, blockers: v.blockers ?? [] }, () => host.changed(true)),
     }),
+    ...(ctx.main && self === ctx.main.step && { submitDispatch: (d: Dispatch) => recordDecision(self, d) }),
     ...(helper && {
       submitResult: (r: { state: 'done' | 'unfinished' | 'stuck'; summary: string; left: string }) =>
         submitOn(self, r, () => host.changed(true)),
@@ -3203,7 +3228,7 @@ function makeOrchestra(
       const at = waitFix?.trim()
       // 写明这是要父对话分派修复的报错：父对话按「编译、测试报错的分派」规则找改出它的子对话（见 shared/fix-route.ts）
       const body = at ? `【报错不是我改出来的，请安排修复后通知我】\n${text.trim()}` : text.trim()
-      const r = await host.messageParent(body, question, options, kind)
+      const r = await host.messageParent(body, question, options, kind, !!at)
       if (!r.ok || !at) return r
       const wait = bindWait(task, at, { kind: 'parent', ref: PARENT_FIX_REF, label: '父对话安排修复' })
       host.changed(true)
@@ -4617,7 +4642,8 @@ export async function runEngineTurn(host: EngineHost) {
       }
       return finish(host, r)
     }
-    const d = parseDispatch(r.text) ?? { action: 'answer' as const }
+    // 只认 dispatch 工具交的决定；没交就只回答，不起运行（不会因为漏交而自己跑起来）
+    const d: Dispatch = takeDecision<Dispatch>(main.step) ?? { action: 'answer' }
     main.step.output = await storeOutput(host, main.step, stripDispatch(r.text).trim())
     host.changed(true)
     // 编排器用工具直接要求的运行（run_workflow）优先，其次才是 dispatch 里的决定
@@ -4649,7 +4675,8 @@ export async function runEngineTurn(host: EngineHost) {
       }
       return finish(host, r)
     }
-    const d = parseDispatch(r.text) ?? { action: 'answer' as const }
+    // 只认 dispatch 工具交的决定；没交就只回答，不起运行（不会因为漏交而自己跑起来）
+    const d: Dispatch = takeDecision<Dispatch>(main.step) ?? { action: 'answer' }
     main.step.output = await storeOutput(host, main.step, stripDispatch(r.text).trim())
     system(host, dispatchText(d, t('这次要求')), main.step.id)
     host.changed(true)
