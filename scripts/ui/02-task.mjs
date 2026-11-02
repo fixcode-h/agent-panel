@@ -1627,4 +1627,102 @@ await runShard(import.meta.filename, async (api) => {
     await p.goto(base)
     await backToTask()
   }
+  // 深色下选中对话正文：底色要一眼看得出来（用户反馈「黑色模式选中的颜色太淡」）。
+  // 读 ::selection 的计算底色，和它下面的页面底算亮度比；顺带确认选中文字的颜色没被改掉、仍然清晰
+  {
+    await p.goto(base)
+    await backToTask()
+    await p.evaluate(() => document.documentElement.classList.add('dark'))
+    // 整页刷新后消息是异步合并进来的：先等到有正文再选，慢环境不会抢在消息渲染前报「找不到正文」
+    await p
+      .waitForFunction(
+        () => {
+          const el = document.querySelector('[data-conversation-scroll="messages"] [data-msg]:not([data-user]) p')
+          return (el?.textContent ?? '').trim().length > 10
+        },
+        null,
+        { timeout: 15000 },
+      )
+      .catch(() => {})
+    const info = await p.evaluate(() => {
+      // 计算样式里的颜色可能是 oklab() / color(srgb …)（color-mix 的结果），交给 canvas 统一换成 rgba 再算
+      const ctx = document.createElement('canvas').getContext('2d')
+      const rgba = (c) => {
+        ctx.clearRect(0, 0, 1, 1)
+        ctx.fillStyle = '#000'
+        ctx.fillStyle = c
+        ctx.fillRect(0, 0, 1, 1)
+        const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+        return [r, g, b, a / 255]
+      }
+      // 元素下面可能叠着好几层半透明底：一路往上找，直到不透明为止
+      const solid = (el) => {
+        const layers = []
+        for (let e = el; e; e = e.parentElement) {
+          const c = rgba(getComputedStyle(e).backgroundColor)
+          if (c[3] > 0) layers.push(c)
+          if (c[3] >= 1) break
+        }
+        let out = [255, 255, 255]
+        for (const [r, g, b, a] of layers.reverse())
+          out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a)]
+        return out
+      }
+      const lum = ([r, g, b]) => {
+        const f = (c) => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+      }
+      const ratio = (a, b) => {
+        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+        return (hi + 0.05) / (lo + 0.05)
+      }
+      const scope = document.querySelector('[data-conversation-scroll="messages"]')
+      const candidates = [...(scope?.querySelectorAll('[data-msg]:not([data-user]) p') ?? [])].filter(
+        (n) => (n.textContent ?? '').trim().length > 10,
+      )
+      // 优先挑当前视口里看得见的一段：截图要拍到高亮，选中视口外的话截出来是别处
+      const el =
+        candidates.find((n) => {
+          const r = n.getBoundingClientRect()
+          return r.height > 0 && r.bottom > 0 && r.top < innerHeight
+        }) ?? candidates[0]
+      if (!el) return null
+      el.scrollIntoView({ block: 'center' })
+      // 真选中这段文字：截图里看到的高亮和用户手动拖选的一致
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const selection = window.getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+      el.setAttribute('data-selection-probe', '')
+      const bg = solid(el)
+      const sel = rgba(getComputedStyle(el, '::selection').backgroundColor)
+      const selected = [0, 1, 2].map((i) => sel[i] * sel[3] + bg[i] * (1 - sel[3]))
+      const fg = rgba(getComputedStyle(el).color)
+      return {
+        ratio: ratio(selected, bg),
+        textRatio: ratio(fg, selected),
+        pageBg: bg.map((v) => Math.round(v)),
+        selectedBg: selected.map((v) => Math.round(v)),
+      }
+    })
+    if (!info) errors.push('任务-深色选中底色：找不到可选的对话正文')
+    else {
+      // 40% 的强调色叠在深底上约 1.7~2.2；原来的 12%~16% 只有约 1.15，截图里几乎看不出
+      if (info.ratio < 1.5)
+        errors.push(
+          `任务-深色选中底色：选中色和页面底的亮度比只有 ${info.ratio.toFixed(2)}，太淡（rgb(${info.pageBg.join(',')}) → rgb(${info.selectedBg.join(',')})）`,
+        )
+      if (info.textRatio < 4.5)
+        errors.push(`任务-深色选中底色：选中文字对比度只有 ${info.textRatio.toFixed(2)}，文字看不清`)
+      if (!(await shotOf(p, p.locator('[data-selection-probe]'), '任务-深色选中底色')))
+        errors.push('任务-深色选中底色：没有截到选中文字')
+      await check(p, '任务-深色选中底色')
+      await p.evaluate(() => {
+        window.getSelection()?.removeAllRanges()
+        document.querySelector('[data-selection-probe]')?.removeAttribute('data-selection-probe')
+        document.documentElement.classList.remove('dark')
+      })
+    }
+  }
 })
