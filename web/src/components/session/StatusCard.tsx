@@ -63,7 +63,9 @@ export function StatusCard({ task, kids = [] }: { task: Task; kids?: (ChildEntry
         <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
           <HeadIcon state={d.state} task={task} />
         </span>
-        <p className="min-w-0 flex-1 text-body leading-5 break-words text-fg">{d.headline}</p>
+        <p className="min-w-0 flex-1 truncate text-body leading-5 text-fg" title={d.headline}>
+          {d.headline}
+        </p>
       </div>
       {items.length > 0 && (
         <div className="mt-1 flex flex-col">
@@ -76,14 +78,12 @@ export function StatusCard({ task, kids = [] }: { task: Task; kids?: (ChildEntry
                 title={[x.text, x.detail].filter(Boolean).join('\n')}
                 className={cn('min-h-0 py-1', x.kind === 'hint' && 'text-muted')}
               >
-                <span className="block truncate">{x.text}</span>
+                <span>{x.text}</span>
                 {x.detail && (
                   <span
-                    className={cn(
-                      'block truncate text-xs',
-                      x.tone === 'danger' || x.tone === 'warning' ? TONE[x.tone] : 'text-muted',
-                    )}
+                    className={cn('text-xs', x.tone === 'danger' || x.tone === 'warning' ? TONE[x.tone] : 'text-muted')}
                   >
+                    {' · '}
                     {x.detail}
                   </span>
                 )}

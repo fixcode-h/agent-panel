@@ -1031,6 +1031,7 @@ export function ChatReply({
   live,
   author,
   command,
+  hoistSticky,
   actions,
   last,
   latest,
@@ -1049,6 +1050,11 @@ export function ChatReply({
   author?: Author
   /** 启动这一轮的命令：按 Agent 显示的对话没有 author，用这个显示在名字那行最右边 */
   command?: string[]
+  /**
+   * 吸顶署名交给外层（消息列表）渲染到回复体外面：放在 reply-body 里时粘性包含块只有这一段回复的高度，
+   * 滚过回复后面的用户消息就断开了；TaskView 会把一轮回复和后面的用户消息放进同一个容器
+   */
+  hoistSticky?: boolean
   actions?: React.ReactNode
   /** 最后一轮：操作一直显示 */
   last?: boolean
@@ -1061,6 +1067,10 @@ export function ChatReply({
   /** 回复下面、时间上面的内容（例如需要的图片、AI 问的问题） */
   children?: React.ReactNode
 }) {
+  // 外层负责吸顶署名时，这里算好是谁：和 Msgs 里那套判定一致（这一段里第一条回复的 Agent）
+  const { agents } = useData()
+  const { modelOf } = useAgentView()
+  const effortOf = useEffortOf()
   // 旧数据里同一个子对话的同一份汇报被写了两遍：这一轮显示前先收成一条（见 peer-dedupe）
   const list = dedupePeerReports(msgs)
   // 这一轮收尾时折到第几条消息：之后子对话的回报、后台命令结果又进来、CLI 被重新拉起来时，
@@ -1080,17 +1090,34 @@ export function ChatReply({
   // 运行区（子对话、子任务、后台命令、工作流运行）挂在最新一段的总结下面；
   // 结果推回来开了新的一段，就跟着挂到新的总结下面
   const lastPart = lastIndex(parts, (p) => p.length > 0)
+  // 吸顶头放在回复体外面时由 ChatReply 渲染，名字还是要和 Msgs 里一样取这一段第一条回复的 Agent
+  const firstAgent = hoistSticky ? parts[0]?.find((m) => m.role === 'agent') : undefined
+  const firstAgentDef = firstAgent ? agents.find((x) => x.id === firstAgent.agentId) : undefined
+  const hoistedAuthor: Author | undefined = hoistSticky
+    ? (author ??
+      (firstAgentDef
+        ? {
+            name: firstAgentDef.name,
+            cli: firstAgentDef.cli,
+            icon: firstAgentDef.icon,
+            model: modelOf(firstAgentDef),
+            effort: effortOf(firstAgentDef),
+            command,
+          }
+        : undefined))
+    : undefined
   const body = (
     <>
-      {author && <StickyAuthor author={author} />}
+      {author && !hoistSticky && <StickyAuthor author={author} />}
       {/* 回复完成后思考、工具调用和中间的说明自动收进一个折叠，折叠行写这段做了什么 */}
       {parts.map((part, i) => {
         if (!part.length) return null
         const tail = i === parts.length - 1
         // 名字只在第一段显示一次，后面几段接着上面那段接着写；
         // 按 Agent 显示的对话没有外面的署名栏，名字行自己吸顶，和按 CLI 显示的一样
-        const same = { msgs: part, task, teamNames, author, command, hideAuthor: !!author || i > 0 }
-        if (!fold) return <Msgs key={i} {...same} live={live} stickyAuthor={!author} />
+        // 吸顶头由外层渲染时，这一段的正文不再自己画名字行
+        const same = { msgs: part, task, teamNames, author, command, hideAuthor: !!author || hoistSticky || i > 0 }
+        if (!fold) return <Msgs key={i} {...same} live={live} stickyAuthor={!author && !hoistSticky} />
         const isLive = !!live && tail
         const isTail = i === lastPart
         // 子对话和后台命令只在最新的一轮上列。两者都跟 latest 走：latest 已经跳过尾部刚发出的
@@ -1122,7 +1149,7 @@ export function ChatReply({
             {...same}
             live={isLive}
             foldId={`${key}#${i}`}
-            stickyAuthor={!author && i === 0}
+            stickyAuthor={!author && !hoistSticky && i === 0}
             running={
               turnMsg ? (
                 <>
@@ -1140,14 +1167,24 @@ export function ChatReply({
     </>
   )
   // 正文比回复头缩进一格（reply-body）：图标在最左，名字、正文、下面的复制按钮在同一条竖线上
-  if (live) return <div className="reply-body flex flex-col gap-2">{body}</div>
+  // 吸顶头要跨过后面的用户消息时放在回复体外面（hoistSticky），由 TaskView 的分组容器当粘性包含块
+  if (live)
+    return (
+      <>
+        {hoistedAuthor && <StickyAuthor author={hoistedAuthor} />}
+        <div className="reply-body flex flex-col gap-2">{body}</div>
+      </>
+    )
   const replies = list.map(replyText).filter((x, i) => list[i].role === 'agent' && x.trim())
   const text = replies.map((x) => x.trim()).join('\n\n')
   // 朗读只念没折叠的部分：每一段收尾后留在外面的总结；不折叠的对话整轮都在外面，念全部
   const spoken = fold ? parts.map(unfoldedText).filter(Boolean).join('\n\n') : text
   return (
-    <ReplyFrame text={text} at={list.at(-1)?.at} actions={actions} always={last} speak={{ id: key, text: spoken }}>
-      <div className="reply-body flex flex-col gap-2">{body}</div>
-    </ReplyFrame>
+    <>
+      {hoistedAuthor && <StickyAuthor author={hoistedAuthor} />}
+      <ReplyFrame text={text} at={list.at(-1)?.at} actions={actions} always={last} speak={{ id: key, text: spoken }}>
+        <div className="reply-body flex flex-col gap-2">{body}</div>
+      </ReplyFrame>
+    </>
   )
 }
