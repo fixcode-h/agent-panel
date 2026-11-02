@@ -235,7 +235,10 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
           'warning',
           t('停止发出 {s} 秒了还没收完：进程{alive}', { s: sec(ms), alive: f.cliAlive ? t('还在') : t('已经没了') }),
         )
-    } else if (f.apiWait) headline = t('排队等 API 并发名额')
+    } else if (f.state === 'needs')
+      // 在等用户确认操作或回答提问（CLI 报了 ask）：本来就没有输出，不算卡住，不能说成「输出到一半停了」（2026-11-02 真实测试撞到）
+      headline = t('在等你处理：确认操作或回答提问')
+    else if (f.apiWait) headline = t('排队等 API 并发名额')
     else if (f.live?.prewarming) headline = t('正在预热 CLI')
     else if (f.working) {
       if (f.runningTool) headline = t('在跑工具：{tool}', { tool: f.runningTool })

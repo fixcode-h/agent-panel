@@ -224,6 +224,8 @@ export function createRun(sc: TasksScope) {
   ) {
     const task = entry.task
     const before = task.status
+    // 开了新的一轮：上次的停止不再挡自驱（见 drive.ts 的 noteStop）
+    if (!prewarm) sc.clearStop(task.id)
     taskLog(task.id, prewarm ? '启动（预热）' : resume ? '启动（继续执行）' : first ? '启动（新对话）' : '启动', {
       from: before,
       op: op || undefined,

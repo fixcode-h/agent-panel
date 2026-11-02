@@ -46,6 +46,7 @@ function rig(stopAt: number) {
   const s = {
     live,
     closeChildren: async () => {},
+    noteStop: () => {},
     release: (e: Live) => live.get(e.task.id) === e && live.delete(e.task.id),
     store: { update: async (_id: string, tk: Task) => void saved.push(structuredClone(tk)) },
     reportToParent: async () => {},
@@ -214,6 +215,7 @@ test('停父对话：在等子任务的子对话按「随父对话停」收口�
   const s = {
     live,
     closeChildren: async () => {},
+    noteStop: () => {},
     release: (e: Live) => live.get(e.task.id) === e && live.delete(e.task.id),
     store: {
       list: async () => tasks,
