@@ -9,7 +9,7 @@ import type { Task } from '../../shared/schema.ts'
 import { NO_PUSH_ANSWER, pushAnswerCut } from '../../shared/push-auth.ts'
 import { wrapUpFrom } from '../tasks/helpers.ts'
 import { askPushRequest } from './panel-requests.ts'
-import { answerRequest, autoAnswerQuestions, dropRequests } from './runner.ts'
+import { answerRequest, autoAnswerQuestions, dropRequests } from './requests.ts'
 
 setLang('zh')
 

@@ -94,14 +94,15 @@ export function promptLangWord(lang: ReplyLang = replyLang()): string {
 }
 
 /**
- * 结论行的写法。结论靠固定说法识别（engine.ts 的 parseVerdict 中文、英文两种都认），
- * 所以两种写法都告诉 Agent：回复用英文时写 Verdict: pass / fail 也能识别，不会因为语言换了就丢结论。
- * 中文那句的措辞不要改（`最后单独一行写「验收结论…`、`「结论：通过」或「结论：不通过」`）：
- * scripts/fake-cli 按这两个片段模拟 CLI 给出的验收结论，端到端测试靠它验证验收轮次和条件连线。
+ * 要结论时的那句话（ADR 0041 第 16 节）：结论只认 submit_verdict 工具，不看回复里写了什么，语言换了也不影响。
+ * 措辞里的「submit_verdict 工具交验收结论」「submit_verdict 工具交结论」不要改：
+ * scripts/fake-cli 按这两个片段模拟 CLI 调工具交结论，端到端测试靠它验证验收轮次和条件连线。
  */
 export const VERDICT_LINE = {
-  review: '单独一行写「验收结论：通过」或「验收结论：不通过」（回复用英文时写「Verdict: pass」或「Verdict: fail」）',
-  branch: '单独一行写「结论：通过」或「结论：不通过」（回复用英文时写「Verdict: pass」或「Verdict: fail」）',
+  review:
+    '调用 submit_verdict 工具交验收结论：verdict 写 pass（通过）或 fail（不通过），不通过时 blockers 列出必须改的地方。面板只认这个工具，不看回复里写的字',
+  branch:
+    '调用 submit_verdict 工具交结论：verdict 写 pass（通过）或 fail（不通过）。面板只认这个工具，不看回复里写的字',
 } as const
 
 /**

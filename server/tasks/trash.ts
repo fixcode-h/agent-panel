@@ -1,7 +1,7 @@
 import { Task, type StopReason } from '../../shared/schema.ts'
 import { taskDeleted } from '../../shared/task.ts'
 import { forgetClaims } from '../claims.ts'
-import { forgetNotes } from '../exec/runner.ts'
+import { forgetNotes } from '../exec/steering.ts'
 import { forgetPresence } from '../presence.ts'
 import type { TasksScope } from './scope.ts'
 import { CHATS_DIR, HANDOFF_DIR, TASK_FILES_DIR } from '../store.ts'

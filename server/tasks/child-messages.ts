@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Task, type PeerFrom, type PeerKind, type TaskMessage } from '../../shared/schema.ts'
 import { type ConvState, taskDeleted } from '../../shared/task.ts'
-import { steerTask } from '../exec/runner.ts'
+import { steerTask } from '../exec/steering.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import {

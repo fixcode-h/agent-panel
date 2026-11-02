@@ -18,7 +18,7 @@ import { isHelperAgent } from './builtin/core.ts'
 import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 import { diagnosisPromptRules } from './diagnosis.ts'
 import { fmtDuration } from './duration.ts'
-import { leadVerdict } from './verdict.ts'
+import { verdictOf } from './submitted.ts'
 import { clip as clipText } from './text.ts'
 import {
   NO_PROBES,
@@ -448,7 +448,7 @@ export function reworkCounts(task: Task): ReworkCounts {
     rerun: task.steps.reduce((n, s) => n + Math.max(0, s.reruns ?? 0), 0),
     merge: mergeRejects(task),
     // 结论按评审门禁同一种读法（首行优先），派出去的子任务只有评审、测试验收会写结论
-    sub: task.steps.filter((s) => s.slot === 'sub' && s.status === 'done' && leadVerdict(s.output) === 'fail').length,
+    sub: task.steps.filter((s) => s.slot === 'sub' && s.status === 'done' && verdictOf(s) === 'fail').length,
   }
 }
 

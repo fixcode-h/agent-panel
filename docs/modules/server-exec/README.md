@@ -34,6 +34,20 @@
 
 `server/exec/runner.ts`：由 `server/tasks.ts` 在节点执行时调用，宿主决定「怎么调用一个 Agent」，执行引擎本身在 `shared/engine.ts`。
 
+`server/exec/real-turn.ts` 的 `runRealTurn` 是一轮真实执行的入口（把宿主能力交给 `shared/engine.ts`），调用 Agent 时经 `runner.ts` 的 `gatedRunAgent` 启动 CLI。`runner.ts` 只留一次 CLI 调用本身（`runAgent`：拼参数、收事件、写消息、保活等下一句），周边按功能拆在：
+
+| 文件                    | 内容                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `real-context.ts`       | `RealContext`：一轮执行的宿主上下文                                                                         |
+| `steering.ts`           | 执行中的补充（插话、`read_user_notes`、留给下一个节点）、`deliverWait` 交消息给等下一句的进程、`cancelWait` |
+| `waiters.ts`            | 等下一句 / 等子任务的登记和摘除（每个等待只摘自己，见 `bugs/keepalive-double-wait.md`）                     |
+| `requests.ts`           | CLI 的提问和授权请求：自动作答、作废、回答后交回                                                            |
+| `api-gate.ts`           | API 并发名额：拿名额、排队标记、等别人时让出再拿回                                                          |
+| `retry-policy.ts`       | 断线续接、环境性卡住重试的次数和判定，`failureHints`                                                        |
+| `speed-meter.ts`        | 实时输出速度                                                                                                |
+| `search-exclude-env.ts` | 搜索排除写成 ripgrep 配置交给 CLI                                                                           |
+| `handoff-file.ts`       | 交接内容存成文件                                                                                            |
+
 ## 依赖
 
 `shared/clis.ts` 的 CLI 定义（**不按 CLI 名字写分支**，差异一律做成定义字段）、`cross-spawn`。
