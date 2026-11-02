@@ -2633,6 +2633,10 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
       if (cur?.updatedAt && cur.updatedAt !== expected) fail('项目在别处被修改过，请刷新后重试', 409)
     }
     const input = parse(ProjectInput, body)
+    // 和真正的服务端一样：没带 lessons 的请求（旧版界面、脚本）不清空已有的教训
+    const raw = body && typeof body === 'object' ? (body as Record<string, unknown>) : null
+    if (method === 'PUT' && raw && !('lessons' in raw))
+      input.lessons = (d.projects ?? []).find((x) => x.id === id)?.lessons ?? []
     if (input.categoryId && !d.projectCategories.some((c) => c.id === input.categoryId)) fail('项目分类不存在')
     if (input.workflowId && !d.workflows.some((w) => w.id === input.workflowId)) fail('工作流不存在')
     // 和服务端一样：没指定默认工作流、分类也没有时不能保存

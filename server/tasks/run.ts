@@ -10,6 +10,7 @@ import {
   type TaskMessage,
 } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
+import { loadProjectLessons, projectWithLessons } from '../project-lessons.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
 import {
   beginRun,
@@ -254,7 +255,13 @@ export function createRun(sc: TasksScope) {
     // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录；
     // 子对话不建独立分支，和父对话用同一个目录（父对话在独立分支里时就是父的那个目录）
     const dir = found ? await sc.taskDir(task).catch(() => found.path) : ''
-    const project = found && dir && dir !== found.path ? { ...found, path: dir } : found
+    // 真正拼进提示词的是 runner 里的 ctx.project.lessons（见 server/exec/runner.ts 的 lessonsPrompt 调用）：
+    // 必须在这里挂上「文件 + 旧 JSON」的合并结果，否则写文件后项目 JSON 被清空，新会话的教训段会整段消失
+    let project = found
+    if (found && task.projectId) {
+      const withLessons = await projectWithLessons(found, agents)
+      project = dir && dir !== found.path ? { ...withLessons, path: dir } : withLessons
+    } else if (found && dir && dir !== found.path) project = { ...found, path: dir }
     const parentTask = task.parentTaskId
       ? (sc.live.get(task.parentTaskId)?.task ?? (await sc.store.get(task.parentTaskId)) ?? undefined)
       : undefined
@@ -563,10 +570,13 @@ export function createRun(sc: TasksScope) {
                 return { ...r, held }
               }
             : undefined,
-        // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；Agent 记的标上来源，用户在项目设置里复查
+        // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；文件里的新教训和旧项目 JSON 合并后交给 Agent
         lessons: task.projectId
           ? {
-              list: async () => (await sc.deps.projects.get(task.projectId))?.lessons ?? [],
+              list: async () => {
+                const p = await sc.deps.projects.get(task.projectId)
+                return p ? (await loadProjectLessons(p, agents)).lessons : []
+              },
               globals: readGlobalLessons,
               record: async (input) =>
                 sc.deps.recordLesson

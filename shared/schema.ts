@@ -908,7 +908,10 @@ const ProjectFields = z.object({
    * 关掉时每次改动都跑完整步骤。旧项目也默认打开：小改动在没有标「小改动也跑」的合并步骤时仍跑全部合并步骤，不会少编译
    */
   scaledVerify: z.boolean().default(true),
-  /** 项目教训：旧项目没有时是空数组 */
+  /**
+   * 项目教训：新数据存在项目文档目录的 lessons.md（见 server/project-lessons.ts），这里只保留旧项目的数据，
+   * 读取时和文件合并、写入后清空。旧项目没有时是空数组
+   */
   lessons: z.array(ProjectLesson).max(200).default([]),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
   wslDistro: z.string().trim().max(60).default(''),
