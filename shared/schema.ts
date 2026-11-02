@@ -1,3 +1,4 @@
+import { Submitted } from './submitted.ts'
 import { z } from 'zod'
 import { DARK_TEXT_LEVEL_DEFAULT, LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
 import { MarkdownStyle } from './markdown-style.ts'
@@ -1542,6 +1543,8 @@ export const TaskStep = z.object({
   reviews: z.number().int().default(0),
   /** 节点自己给出的结论（有条件连线时要求写）：决定走哪条线 */
   branch: z.enum(['', 'pass', 'fail']).optional(),
+  /** Agent 用 submit_verdict / submit_result 交的结论和结果：状态只认它，不看回复文字（见 shared/submitted.ts） */
+  submitted: Submitted.optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
   /** 子任务 / 节点在排队等 API 的并发名额；拿到就去掉 */

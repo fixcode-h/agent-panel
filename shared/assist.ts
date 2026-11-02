@@ -308,7 +308,7 @@ const WORKFLOW_RULES = `- 流程是节点和连线组成的图：从 start 出�
 - 节点可以挂三个流程入口：start（开始前执行，结果作为节点的初始资料）、review（验收：不通过会把意见交回节点继续完善，最多 maxRounds 轮）、end（完成后执行）。值写流程名
 - 节点的 flow 写流程名时，这个节点就是执行那个流程，而不是交给 Agent
 - 可以引用的流程：flows 里的其他流程（子流程），或「已有的工作流」的名称。不要让流程互相引用形成循环
-- 验收流程的最后一个节点要在结尾写「验收结论：通过」或「验收结论：不通过」
+- 验收流程的最后一个节点要调用面板工具 submit_verdict 交结论（verdict 写 pass 或 fail，不通过时 blockers 写失败项）；面板只认这个工具调用，不看回复里写了什么
 - flows 里有且只有一个 main 为 true 的主流程；只在确实需要复用或验收时才建子流程
 - members 列出除主 Agent 外参与流程的 Agent 和它在这个工作流里的职责；节点里用到的 Agent 都要在 members 里
 - 已有的 Agent 能胜任就复用，确实缺少某种角色时才在 newAgents 里新建（字段和 Agent 草稿相同）
@@ -352,7 +352,7 @@ const WORKFLOW_SHAPE = `{
     },
     {
       "name": "代码验收",
-      "nodes": [{ "key": "review", "title": "审查改动", "agent": "代码审查", "instructions": "…最后一行写「验收结论：通过」或「验收结论：不通过」" }],
+      "nodes": [{ "key": "review", "title": "审查改动", "agent": "代码审查", "instructions": "…最后调用 submit_verdict 交结论，不通过时 blockers 写失败项" }],
       "edges": [["start", "review"], ["review", "end"]]
     }
   ],

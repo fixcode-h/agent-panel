@@ -1297,7 +1297,8 @@ test('导出同一棵树两次结果一致，体积超过上限时拒绝生成�
 
 test('统计：评审、测试验收的子任务给了不通过也记成返工（ADR 0009）', () => {
   const base = twoRounds()
-  const sub = (id: string, output: string) => ({
+  // 结论只认 submit_verdict 交的（ADR 0041 第 16 节），回复里写了什么不算
+  const sub = (id: string, output: string, verdict?: 'pass' | 'fail') => ({
     id,
     parentId: '@chat',
     slot: 'sub',
@@ -1306,14 +1307,16 @@ test('统计：评审、测试验收的子任务给了不通过也记成返工�
     startedAt: at,
     endedAt: at,
     output,
+    ...(verdict && { submitted: { verdict, at } }),
   })
   const rec = Task.parse({
     ...base,
     steps: [
-      sub('h1', '验收结论：不通过\n必须改：R1'),
-      // 首行通过、正文提到上一轮「不通过」的复看不算返工
-      sub('h2', '验收结论：通过\n上一轮的「验收结论：不通过」都已改掉'),
-      sub('h3', '查到了三处调用'),
+      sub('h1', '有一处必须改', 'fail'),
+      // 交了通过、正文提到上一轮「不通过」的复看不算返工
+      sub('h2', '上一轮的「验收结论：不通过」都已改掉', 'pass'),
+      // 回复里写了「不通过」但没交结论：不按文字算
+      sub('h3', '验收结论：不通过'),
     ],
   })
   const s = taskStats(rec)

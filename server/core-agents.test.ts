@@ -282,14 +282,15 @@ test('评审：仍是必备角色，收尾时要按代码改动给分级意见�
     '🟠 中级（应该改）',
     '🟡 低级（可以改）',
     '💡 建议',
-    '验收结论：通过',
-    '验收结论：不通过',
-    'Verdict: pass',
-    '必须处置：R1',
+    // ADR 0041 第 16 节：结论只认 submit_verdict 工具调用，高级和中级作为 must 意见交
+    'submit_verdict',
+    'must 写 true',
     '需要先定的口径',
   ])
     assert.ok(code.includes(s), `评审（代码改动）要写明「${s}」`)
   assert.match(code, /有高级就判不通过/)
+  assert.match(code, /有高级时必须写 "fail"/)
+  assert.doesNotMatch(code, /验收结论：通过|Verdict: pass|必须处置：/, '不再要求写供面板识别的结论行')
   assert.match(code, /只看面板附的增量和上一轮每条意见的处置/)
   // 参照 Claude Code 的代码审查：先找候选、再逐条复核，每条写失败场景，推不出的不报
   assert.match(code, /第一遍找候选问题/)
@@ -313,7 +314,7 @@ test('评审：仍是必备角色，收尾时要按代码改动给分级意见�
   assert.match(code, /有没有能拦住它的回归测试/)
   // 参数被改成「方案或结论」时也要给结论：否则收尾门禁（shared/review-gate.ts）会一直拦着合不回去
   const plan = renderTemplate(def.agent.instructions, { target: '方案或结论' })
-  assert.ok(plan.includes('验收结论：通过'), '评审（方案或结论）同样要给验收结论')
+  assert.ok(plan.includes('submit_verdict'), '评审（方案或结论）同样要用 submit_verdict 交结论')
 })
 
 test('执行角色：评审写进计划单独成步，收尾顺序是改完→快速检查→评审→按意见改→完整测试→submit_merge', () => {
@@ -340,7 +341,7 @@ test('执行角色：评审写进计划单独成步，收尾顺序是改完→�
   assert.match(section, /面板只附增量/, '复看只给增量')
   assert.match(section, /面板会把这次的改动（文件列表 \+ 每处改动前后几行的差异/, '改动由面板一次附给评审')
   assert.match(section, /带上交接单 review（第一次评审 goal、checks 必填/, '派评审时对话整理交接单')
-  assert.match(section, /🔴 高级（必须改，有它评审就写不通过）、🟠 中级/, '四级意见')
+  assert.match(section, /🔴 高级（必须改，有它评审就交不通过）、🟠 中级/, '四级意见')
   assert.match(section, /最多复看 2 轮/, '复看有上限')
   assert.match(section, /review_triage/, 'submit_merge 带处置')
   assert.match(section, /模块文档/, '收尾前同步模块文档')
@@ -557,7 +558,8 @@ test('测试验收：多了「设计用例」「补测试」两种做法，默�
     onFail: '只报告',
   })
   assert.match(run, /## 先读项目配置的测试步骤/)
-  assert.match(run, /验收结论：通过/)
+  assert.match(run, /submit_verdict/)
+  assert.doesNotMatch(run, /验收结论：通过/)
   assert.doesNotMatch(run, /测试矩阵/)
   const design = renderTemplate(def.agent.instructions, { task: '设计用例' })
   assert.match(design, /## 这次只设计用例：不写代码、不跑整套测试/)
@@ -567,7 +569,7 @@ test('测试验收：多了「设计用例」「补测试」两种做法，默�
   const write = renderTemplate(def.agent.instructions, { task: '补测试' })
   assert.match(write, /只改测试文件和测试夹具，不改产品代码/)
   assert.match(write, /不写永远通过的测试/)
-  assert.match(write, /验收结论：通过/)
+  assert.match(write, /submit_verdict/)
   // ADR 0031：用例总数不设上限，靠「清理用例」定期一批清掉；先列候选等用户确认，只认三类淘汰理由
   const clean = renderTemplate(def.agent.instructions, { task: '清理用例' })
   assert.match(clean, /中间必须停下来等用户确认，不能一口气删完/)

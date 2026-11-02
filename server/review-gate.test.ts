@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PlanStep, TaskStep } from '../shared/schema.ts'
 import { applyPlan } from '../shared/plan.ts'
-import { blockingIds, overrideInput, reviewGate, triageInput } from '../shared/review-gate.ts'
+import { overrideInput, reviewGate, triageInput } from '../shared/review-gate.ts'
 
 const REVIEWER = 'a-reviewer'
 const isReviewer = (id: string) => id === REVIEWER
@@ -28,21 +28,31 @@ function reviewStep(over: Partial<Parameters<typeof PlanStep.parse>[0]> = {}) {
 
 const planDone = [PlanStep.parse({ id: '1', title: '改代码', status: 'done' }), reviewStep()]
 
-/** 照着角色设定写的评审结果 */
-const passed = '💭 建议：错误处理可以合并。\n验收结论：通过'
-const blocked = '🛑 必须改：server/tasks.ts:1120 少判空。\n验收结论：不通过'
+/** 评审用 submit_verdict 交的结论（门禁只认它，不看回复文字）；ids 是必须处置的意见编号 */
+const sv = (verdict: 'pass' | 'fail', ids: string[] = []) => ({
+  submitted: {
+    verdict,
+    blockers: ids.map((id) => ({ id, text: `${id} 的问题`, must: true })),
+    summary: '',
+    left: '',
+    at: new Date(1).toISOString(),
+  },
+})
+const passed = sv('pass')
+/** 不通过、意见没编号 */
+const blocked = {
+  submitted: { ...sv('fail').submitted, blockers: [{ id: '', text: 'server/tasks.ts:1120 少判空', must: true }] },
+}
 
 test('评审门禁：计划里没有评审步骤时拦下，并说清要单独写进计划', () => {
-  const r = reviewGate([sub({ output: passed })], isReviewer, [
-    PlanStep.parse({ id: '1', title: '改代码', status: 'done' }),
-  ])
+  const r = reviewGate([sub(passed)], isReviewer, [PlanStep.parse({ id: '1', title: '改代码', status: 'done' })])
   assert.equal(r.ok, false)
   assert.match(r.ok === false ? r.info : '', /计划里缺少评审步骤/)
   assert.match(r.ok === false ? r.info : '', /review: true/)
 })
 
 test('评审门禁：计划里的评审步骤还没完成时拦下（派评审时标等待中，拿回结论再标完成）', () => {
-  const r = reviewGate([sub({ output: passed })], isReviewer, [
+  const r = reviewGate([sub(passed)], isReviewer, [
     PlanStep.parse({ id: '1', title: '改代码', status: 'done' }),
     reviewStep({ status: 'waiting' }),
   ])
@@ -51,7 +61,7 @@ test('评审门禁：计划里的评审步骤还没完成时拦下（派评审�
 })
 
 test('评审门禁：计划里有两个评审步骤时，后一步没做完也拦下', () => {
-  const r = reviewGate([sub({ output: passed })], isReviewer, [
+  const r = reviewGate([sub(passed)], isReviewer, [
     PlanStep.parse({ id: '1', title: '改代码', status: 'done' }),
     reviewStep({ id: '2', title: '评审本次改动', status: 'done' }),
     reviewStep({ id: '3', title: '复看评审', status: 'waiting' }),
@@ -68,34 +78,12 @@ test('评审门禁：没派过评审时拦下，并给出派评审的写法', ()
   assert.match(r.ok === false ? r.info : '', /spawn_agents 的 agent 写「评审」/)
 })
 
-test('评审门禁：结论写在第一行时以首行为准，正文提到上一轮「不通过」不影响', () => {
-  const output = ['验收结论：通过', '🛑 上一轮的「验收结论：不通过」都已改掉，复看没有新问题。'].join('\n')
-  assert.equal(reviewGate([sub({ output })], isReviewer, planDone).ok, true)
-  // 首行没有结论时才退回全文最后一条（兼容不按约定写的老报告）
-  const legacy = ['💭 建议：可以再简化一点。', '验收结论：通过'].join('\n')
-  assert.equal(reviewGate([sub({ output: legacy })], isReviewer, planDone).ok, true)
-})
-
-test('评审门禁：首行的验收结论带前缀或加粗也认（评审的常见写法）', () => {
-  const cases: [string, boolean][] = [
-    ['评审结论：不通过\n🛑 必须改：xxx', false],
-    ['**验收结论：不通过**\n🛑 必须改：xxx', false],
-    ['验收结论：**不通过**\n🛑 必须改：xxx', false],
-    ['验收结论：通过\n💭 建议：可以再简化一点', true],
-  ]
-  for (const [output, pass] of cases) assert.equal(reviewGate([sub({ output })], isReviewer, planDone).ok, pass, output)
-})
-
 test('评审门禁：最近一次评审通过才放行', () => {
-  assert.equal(reviewGate([sub({ output: passed })], isReviewer, planDone).ok, true)
-})
-
-test('评审门禁：英文的 Verdict: pass 也认（回复语言不定时）', () => {
-  assert.equal(reviewGate([sub({ output: 'No blockers.\nVerdict: pass' })], isReviewer, planDone).ok, true)
+  assert.equal(reviewGate([sub(passed)], isReviewer, planDone).ok, true)
 })
 
 test('评审门禁：不通过时不要求复看到通过，要求逐条写处置（ADR 0009）', () => {
-  const r = reviewGate([sub({ output: blocked })], isReviewer, planDone)
+  const r = reviewGate([sub(blocked)], isReviewer, planDone)
   assert.equal(r.ok, false)
   assert.match(r.ok === false ? r.info : '', /还没写处置/)
   assert.match(r.ok === false ? r.info : '', /review_triage/)
@@ -103,20 +91,14 @@ test('评审门禁：不通过时不要求复看到通过，要求逐条写处�
   const t = [
     { id: '少判空', decision: 'fix' as const, reason: '读了 server/tasks.ts:1120，确实会空指针，已补判空和用例' },
   ]
-  assert.equal(reviewGate([sub({ output: blocked })], isReviewer, planDone, t).ok, true)
+  assert.equal(reviewGate([sub(blocked)], isReviewer, planDone, t).ok, true)
 })
 
-const numbered = [
-  '验收结论：不通过',
-  '必须改：R1、R2',
-  '🛑 R1 server/a.ts:10 少判空',
-  '🛑 R2 shared/b.ts:20 口径不一致',
-  '💭 建议：命名可以短一点',
-].join('\n')
+const numbered = sv('fail', ['R1', 'R2'])
 
 test('评审门禁：每个 🛑 编号都要有处置，缺哪个说哪个', () => {
   const one = [{ id: 'R1', decision: 'fix' as const, reason: '核实是真问题，已补判空并加用例' }]
-  const r = reviewGate([sub({ output: numbered })], isReviewer, planDone, one)
+  const r = reviewGate([sub(numbered)], isReviewer, planDone, one)
   assert.equal(r.ok, false)
   assert.match(r.ok === false ? r.info : '', /R2 还没有处置/)
   const both = [
@@ -127,7 +109,7 @@ test('评审门禁：每个 🛑 编号都要有处置，缺哪个说哪个', ()
       reason: '两处都按 runMs 算，评审把 waitMs 看成了 runMs（shared/b.ts:20）',
     },
   ]
-  assert.equal(reviewGate([sub({ output: numbered })], isReviewer, planDone, both).ok, true, '编号不分大小写')
+  assert.equal(reviewGate([sub(numbered)], isReviewer, planDone, both).ok, true, '编号不分大小写')
 })
 
 test('评审门禁：处置的理由太短不算（说不清怎么核实的）', () => {
@@ -135,29 +117,32 @@ test('评审门禁：处置的理由太短不算（说不清怎么核实的）',
     { id: 'R1', decision: 'fix' as const, reason: '改了' },
     { id: 'R2', decision: 'defer' as const, reason: '范围外：重启落盘那段归另一个子对话，影响已停止任务的跨度' },
   ]
-  const r = reviewGate([sub({ output: numbered })], isReviewer, planDone, t)
+  const r = reviewGate([sub(numbered)], isReviewer, planDone, t)
   assert.equal(r.ok, false)
   assert.match(r.ok === false ? r.info : '', /R1 的理由太短/)
 })
 
-test('评审门禁：🛑 编号写在开头那行就认，正文被截断也不漏', () => {
-  assert.deepEqual(blockingIds('验收结论：不通过\n必须改：R1、R2、R3\n🛑 R1 …'), ['R1', 'R2', 'R3'])
-  assert.deepEqual(blockingIds('验收结论：通过\n必须改：无'), [])
+test('评审门禁：交了通过却列了必须处置的意见，按要处置处理', () => {
+  assert.equal(reviewGate([sub(sv('pass', ['R1']))], isReviewer, planDone).ok, false)
 })
 
-test('评审门禁：写了通过却列了带编号的 🛑，按有 🛑 处理', () => {
-  const output = '验收结论：通过\n🛑 R1 server/a.ts:10 少判空'
-  assert.equal(reviewGate([sub({ output })], isReviewer, planDone).ok, false)
+test('评审门禁：只认 submit_verdict，不看回复文字（ADR 0041 第 16 节）', () => {
+  // 回复里写了「验收结论：通过」但没调工具：不算交了结论
+  const r = reviewGate([sub({ output: '验收结论：通过' })], isReviewer, planDone)
+  assert.equal(r.ok, false)
+  assert.match(r.ok === false ? r.info : '', /没有用 submit_verdict 交结论/)
+  // 工具交了通过，回复里写的「不通过」不影响
+  assert.equal(reviewGate([sub({ output: '验收结论：不通过', ...passed })], isReviewer, planDone).ok, true)
 })
 
 test('评审门禁：改完复看通过后放行，只看最后一次', () => {
-  assert.equal(reviewGate([sub({ output: blocked }), sub({ output: passed })], isReviewer, planDone).ok, true)
+  assert.equal(reviewGate([sub(blocked), sub(passed)], isReviewer, planDone).ok, true)
 })
 
-test('评审门禁：评审没写结论时拦下，要求补一行验收结论', () => {
+test('评审门禁：评审没交结论时拦下，要求重新派一次让它交', () => {
   const r = reviewGate([sub({ output: '💅 细节：命名可以更短。' })], isReviewer, planDone)
   assert.equal(r.ok, false)
-  assert.match(r.ok === false ? r.info : '', /没有写验收结论/)
+  assert.match(r.ok === false ? r.info : '', /没有用 submit_verdict 交结论/)
 })
 
 test('评审门禁：评审还在跑、或者没正常结束时拦下', () => {
@@ -170,11 +155,7 @@ test('评审门禁：评审还在跑、或者没正常结束时拦下', () => {
 })
 
 test('评审门禁：别的角色的子任务不算评审', () => {
-  const r = reviewGate(
-    [sub({ agentId: 'a-doc', title: '写文档', output: '验收结论：通过' }), sub({ output: blocked })],
-    isReviewer,
-    planDone,
-  )
+  const r = reviewGate([sub({ agentId: 'a-doc', title: '写文档', ...passed }), sub(blocked)], isReviewer, planDone)
   assert.equal(r.ok, false, '最后一票在评审角色上：写文档那步的结论不算数')
 })
 
@@ -210,35 +191,34 @@ test('评审门禁：工具参数里的处置认不出的项丢掉', () => {
   assert.deepEqual(triageInput('R1'), [])
 })
 
-test('评审门禁：四级意见里高级、中级要处置，低级和建议不用', () => {
-  const output = [
-    '验收结论：通过',
-    '必须处置：R1',
-    '🟠 R1 server/a.ts:10 失败场景：传空数组时返回 undefined',
-    '🟡 命名可以更短',
-    '💡 以后可以换成 Map',
-  ].join('\n')
-  // 通过但列了中级：仍要处置
-  const r = reviewGate([sub({ output })], isReviewer, planDone)
+test('评审门禁：只有标 must 的意见要处置，建议性的不用', () => {
+  const withMust = {
+    submitted: {
+      ...sv('pass').submitted,
+      blockers: [
+        { id: 'R1', text: '传空数组时返回 undefined', must: true },
+        { id: 'R2', text: '命名可以更短', must: false },
+      ],
+    },
+  }
+  // 通过但列了要处置的：仍要处置
+  const r = reviewGate([sub(withMust)], isReviewer, planDone)
   assert.equal(r.ok, false)
   assert.match(r.ok === false ? r.info : '', /R1 还没有处置/)
+  assert.doesNotMatch(r.ok === false ? r.info : '', /R2/)
   const t = [{ id: 'R1', decision: 'defer' as const, reason: '空数组只在旧导入数据里出现，这次范围外，记进遗留' }]
-  assert.equal(reviewGate([sub({ output })], isReviewer, planDone, t).ok, true)
-  // 复看正文里提到上一轮的编号不算新的意见
-  const recheck = ['验收结论：通过', '必须处置：无', '上一轮的高级 R1、中级 R2 都已改好。'].join('\n')
-  assert.equal(reviewGate([sub({ output: recheck })], isReviewer, planDone).ok, true)
-  assert.deepEqual(blockingIds('验收结论：不通过\n必须处置：R1、R2\n🔴 R1 …\n🟠 R2 …'), ['R1', 'R2'])
+  assert.equal(reviewGate([sub(withMust)], isReviewer, planDone, t).ok, true)
 })
 
 test('评审门禁：拦下时一并给出显式放行通道，但不能自己判「问题不大」', () => {
-  const r = reviewGate([sub({ output: blocked })], isReviewer, planDone)
+  const r = reviewGate([sub(blocked)], isReviewer, planDone)
   assert.equal(r.ok, false)
   assert.match(r.ok === false ? r.info : '', /review_override/)
   assert.match(r.ok === false ? r.info : '', /已知问题也合并/)
 })
 
 test('评审门禁：用户明确放行时通过，并带回「原本拦住什么」留给任务记录', () => {
-  const r = reviewGate([sub({ output: blocked })], isReviewer, planDone, [], {
+  const r = reviewGate([sub(blocked)], isReviewer, planDone, [], {
     by: 'user',
     reason: '用户要求先合并这一版，少判空的空数组问题下一版补',
   })
@@ -248,13 +228,13 @@ test('评审门禁：用户明确放行时通过，并带回「原本拦住什�
 })
 
 test('评审门禁：放行理由太短不算说明，照旧拦下并说清差多少字', () => {
-  const r = reviewGate([sub({ output: blocked })], isReviewer, planDone, [], { by: 'user', reason: '先合' })
+  const r = reviewGate([sub(blocked)], isReviewer, planDone, [], { by: 'user', reason: '先合' })
   assert.equal(r.ok, false)
   assert.match(r.ok === false ? r.info : '', /理由太短/)
 })
 
 test('评审门禁：本来就能过时不记放行（记录只对应真绕过门禁的那次）', () => {
-  const r = reviewGate([sub({ output: passed })], isReviewer, planDone, [], {
+  const r = reviewGate([sub(passed)], isReviewer, planDone, [], {
     by: 'user',
     reason: '用户要求先合并这一版，少判空的空数组问题下一版补',
   })

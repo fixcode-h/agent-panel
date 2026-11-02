@@ -83,8 +83,8 @@ export const EN_SHARED: Record<string, string> = {
   '「{title}」没有可执行的角色，请先给工作流选择主角色':
     '"{title}" has no role to run it. Choose a main role for the workflow first',
   '「{title}」的验收流程失败：{error}': 'Review flow of "{title}" failed: {error}',
-  '「{title}」的验收流程没有写「验收结论」，按通过处理。':
-    'The review flow of "{title}" gave no verdict, so it was treated as passed.',
+  '「{title}」的验收流程没有用 submit_verdict 交结论，不能算通过':
+    '"{title}": the acceptance flow did not submit a verdict with submit_verdict, so it cannot count as passed',
   '「{title}」验收 {round} 轮仍未通过。最后一轮的意见：\n{feedback}':
     '"{title}" still failed review after {round} rounds. Feedback from the last round:\n{feedback}',
   '「{title}」第 {round} 轮验收未通过，已把意见交回节点继续完善。':
@@ -109,7 +109,8 @@ export const EN_SHARED: Record<string, string> = {
     'This run has spent ${used}, reaching the workflow limit of ${limit}, so it is paused. Click "Continue" to grant the same amount again.',
   '这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。':
     'This run has used {used} tokens, reaching the workflow limit of {limit}, so it is paused. Click "Continue" to grant the same amount again.',
-  '「{title}」没有写「结论」，按通过处理。': '"{title}" did not state a verdict; treating it as a pass.',
+  '「{title}」没有用 submit_verdict 交结论，不知道该走哪条分支':
+    '"{title}" did not submit a verdict with submit_verdict, so the branch to take is unknown',
   '主角色评估「{title}」：通过，走「{branch}」分支': 'Main role reviewed "{title}": pass, taking the "{branch}" branch',
   '主角色评估「{title}」：通过': 'Main role reviewed "{title}": pass',
   '。交代后续：{note}': '. Note for the next nodes: {note}',

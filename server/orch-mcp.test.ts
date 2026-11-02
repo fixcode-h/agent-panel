@@ -297,6 +297,7 @@ test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失
     'wait_agents',
     'send_message',
     'read_messages',
+    'submit_verdict',
   ])
   const st: any = await (
     await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_status', arguments: {} } })
@@ -593,7 +594,11 @@ test('resume：不写 agent 沿用原任务的角色，写了用写的，非 res
     newId: () => `id${task.messages.length}`,
     runAgent: async (call) => {
       calls.push(call)
-      if (call.step?.slot === 'sub') return { ok: true, text: '做完了' }
+      // 评审子任务用工具交结论（面板只认它；不交会被补问一次，见 shared/submitted.ts）
+      if (call.step?.slot === 'sub') {
+        if (call.step.agentId === 'r') call.orch?.submitVerdict?.({ verdict: 'pass' })
+        return { ok: true, text: '做完了' }
+      }
       round++
       // 评审代码改动要带交接单：第一次派评审必填 goal、checks
       const brief = { goal: '修好复看角色', checks: 'npm run test:unit 通过' }
@@ -906,17 +911,17 @@ const IDENTITIES: [string, object, string[]][] = [
   // 子任务只做派给它的那一件事：计划、收尾合并、开分支、找父对话、派子任务、记教训都不给它；后台命令的结果推回派它的对话
   [
     '子任务·对话派的',
-    { self: '@chat/sub/h1', helper: true, team: true, canBackground: true, lessons: READ_LESSONS },
-    ['get_status', ...BG, 'project_lessons', 'send_message', 'read_messages'],
+    { self: '@chat/sub/h1', helper: true, team: true, canBackground: true, lessons: READ_LESSONS, submitVerdict: okCb },
+    ['get_status', ...BG, 'project_lessons', 'send_message', 'read_messages', 'submit_verdict'],
   ],
   [
     '子任务·工作流节点派的（工作流任务里）',
-    { self: 'a/sub/h1', helper: true, team: true, sharedState: true, lessons: READ_LESSONS },
-    ['get_status', 'project_lessons', 'read_state', 'write_state', 'send_message', 'read_messages'],
+    { self: 'a/sub/h1', helper: true, team: true, sharedState: true, lessons: READ_LESSONS, submitVerdict: okCb },
+    ['get_status', 'project_lessons', 'read_state', 'write_state', 'send_message', 'read_messages', 'submit_verdict'],
   ],
   [
     '工作流节点（工作流任务里）',
-    { self: 'a', canSpawn: true, team: true, sharedState: true, lessons: LESSONS },
+    { self: 'a', canSpawn: true, team: true, sharedState: true, lessons: LESSONS, submitVerdict: okCb },
     [
       'get_status',
       ...LESSON_TOOLS,
@@ -927,6 +932,7 @@ const IDENTITIES: [string, object, string[]][] = [
       'wait_agents',
       'send_message',
       'read_messages',
+      'submit_verdict',
     ],
   ],
   [

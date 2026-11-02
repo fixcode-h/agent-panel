@@ -41,7 +41,7 @@ test('合并后的角色按参数切换做法，模板都能展开干净', () =>
   assert.match(render('developer', { task: '性能问题' }), /建立基线/)
   assert.match(render('developer'), /按已确认的设计/)
   assert.match(render('reviewer', { target: '方案或结论' }), /同意 \/ 部分同意 \/ 不同意/)
-  assert.match(render('reviewer'), /验收结论/)
+  assert.match(render('reviewer'), /submit_verdict/)
   assert.match(render('analyst', { scale: 'architectural', stack: 'ue' }), /架构契约[\s\S]*gameplay-framework\.md/)
   assert.match(render('blender', { stage: '质检' }), /不修改模型/)
   // 每个合并掉的 key 都指向还在的内置角色

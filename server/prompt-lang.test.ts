@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
-import { parseVerdict, runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
+import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
 import { getLang, resolveLang, setLang } from '../shared/i18n.ts'
 import {
   PROMPT_LANG_ENV,
@@ -152,19 +152,13 @@ test('auto：界面按系统 / 浏览器语言解析，回复语言跟随用户�
   assert.match(promptLangRules('auto-zh'), /## 回复语言\n面板语言设成了「自动」.*用户用中文写就用中文/)
 })
 
-test('语言名和结论行：语言名跟着设置，结论行中文英文两种写法都能被识别', () => {
+test('语言名和要结论时的那句话：结论只认 submit_verdict 工具，不让模型在回复里写给面板识别的字（ADR 0041 第 16 节）', () => {
   assert.equal(promptLangWord('zh'), '中文')
   assert.equal(promptLangWord('en'), '英文')
-  // 提示词里两种写法都给了，Agent 用英文回复时写 Verdict: pass / fail 也能读到结论
-  assert.match(VERDICT_LINE.review, /验收结论：通过/)
-  assert.match(VERDICT_LINE.review, /Verdict: pass/)
-  assert.match(VERDICT_LINE.branch, /结论：通过/)
-  assert.match(VERDICT_LINE.branch, /Verdict: fail/)
-  assert.equal(parseVerdict('检查完了。\n验收结论：通过'), 'pass')
-  assert.equal(parseVerdict('All good.\nVerdict: pass'), 'pass')
-  assert.equal(parseVerdict('One blocker.\nVerdict: fail'), 'fail')
-  assert.equal(parseVerdict('验收结论：不通过'), 'fail')
-  assert.equal(parseVerdict('结论：通过'), 'pass')
+  // 措辞里的这两个片段不要改：scripts/fake-cli 按它模拟 CLI 调工具交结论
+  assert.match(VERDICT_LINE.review, /submit_verdict 工具交验收结论/)
+  assert.match(VERDICT_LINE.branch, /submit_verdict 工具交结论/)
+  for (const line of Object.values(VERDICT_LINE)) assert.doesNotMatch(line, /单独一行写|Verdict: pass/)
 })
 
 test('工作流节点提示词：设置成中文时注入中文规则，通用要求也用中文', async () => {
@@ -172,8 +166,8 @@ test('工作流节点提示词：设置成中文时注入中文规则，通用�
     const prompt = await nodePrompt()
     assert.match(prompt, /## 回复语言\n界面语言设成了中文/)
     assert.match(prompt, /完成后用中文按上面的「总结格式」写总结卡/)
-    // 结论行的中文措辞不要改：scripts/fake-cli 按这个片段模拟 CLI 给出的结论
-    assert.match(prompt, /最后单独一行写「结论：通过」或「结论：不通过」/)
+    // 要结论时点名 submit_verdict：scripts/fake-cli 按这个片段模拟 CLI 调工具交结论
+    assert.match(prompt, /最后调用 submit_verdict 工具交结论/)
     assert.doesNotMatch(prompt, /## Reply language/)
     assert.doesNotMatch(prompt, /始终用中文回答/)
   })

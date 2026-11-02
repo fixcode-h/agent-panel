@@ -4,6 +4,12 @@ paths: server/tasks/children.ts, server/tasks/merge.ts, shared/drive.ts, shared/
 
 # 对话自驱和交给模型的数据（ADR 0041）
 
+## 状态只认工具调用，绝不按 Agent 回复里的字判定
+
+- 规则：完成没有、通过没有、走哪条分支，只看结构化信号（`submit_verdict` 记在 `TaskStep.submitted` 上、CLI 协议事件、面板自己写的字段），不用正则从模型回复里找「验收结论：通过」「## 总结」这类字眼；没交就补问一次，再没有按出错显示，**不默认通过 / 做完**。回复文字只用来展示和交接。
+- 起因：用户 2026-11-02：「绝对不能依靠 Agent 的输出包含什么就任务处于什么状态」；排查出 7 处按文字判状态，其中验收、分支、主角色决定读不到时默认按通过 / 继续。
+- 防线：`server/review-gate.test.ts`「只认 submit_verdict，不看回复文字」、`server/engine-steps.test.ts`「验收没交 submit_verdict」。
+
 ## 推进次数只在真推出去时记，每个判断写进对话日志
 
 - 规则：一轮结束时只看还剩不剩次数（`peekNudge`），等 CLI 停稳、复查通过、消息交出去之前才 `takeNudge`；复查没通过（这期间后台结果、消息交进来了）不记次数。进度按 `shared/drive.ts` 的 `planProgressKey`（步骤 id + 状态）算，不按「已完成几步」。用户亲自发消息清零次数。推了、没推、为什么，都 `taskLog` 写「计划推进」「收尾自检」，诊断文件带 `plan` / `nudge`。

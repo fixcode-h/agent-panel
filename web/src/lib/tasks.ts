@@ -469,6 +469,18 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(t('发送消息'), quoted || firstLine(a.to), 'other', text(a.text))
     case 'read_messages':
       return as(t('查看消息'), '')
+    // 交结论：标题写通过 / 不通过，展开看必须处置的意见
+    case 'submit_verdict':
+      return as(
+        a.verdict === 'fail' ? t('交结论：不通过') : t('交结论：通过'),
+        '',
+        'other',
+        Array.isArray(a.blockers)
+          ? (a.blockers as { id?: string; text?: string }[])
+              .map((b) => `- ${b.id ? `${b.id} ` : ''}${b.text ?? ''}`)
+              .join('\n')
+          : undefined,
+      )
     case 'read_user_notes':
       return as(t('查看用户补充'), '', 'read')
     // 提问和等下一句：问题本身有提问卡片，这里只说明模型在做什么

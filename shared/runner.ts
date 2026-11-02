@@ -567,8 +567,14 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
   // 「默认」工作流：结果后面带上推荐块（从说明里附的工作流挑前两个），演示里也能看到推荐的下一步
   if (call.step && ctx.workflow && isDefaultWorkflow(ctx.workflow.id))
     out = { ...out, text: `${out.text}\n\n${demoNext(ctx.workflow.document, task)}` }
-  // 后面有条件连线的节点要给出结论；演示里一律通过
-  if (call.deciding && !/结论[:：]/.test(out.text)) out = { ...out, text: `${out.text}\n\n结论：通过` }
+  // 验收和带条件连线的节点用 submit_verdict 交结论（面板只认工具，见 shared/submitted.ts）：演示里照着调用。
+  // 验收第 1 轮不通过、之后通过（和 reviewOutput 的文字一致）；分支一律通过
+  if ((call.reviewing || call.deciding) && call.orch?.submitVerdict)
+    call.orch.submitVerdict(
+      call.reviewing && call.step?.round === 1
+        ? { verdict: 'fail', blockers: [{ id: 'R1', text: '重复提交时没有给出提示', must: true }] }
+        : { verdict: 'pass' },
+    )
   // 子任务做完要交以「## 总结」开头的总结（面板按它判定做完，见 helper-summary.ts）；演示里照着写
   if (call.step?.slot === 'sub' && !out.text.includes(SUMMARY_HEAD))
     out = { ...out, text: `${out.text}\n\n${SUMMARY_HEAD}\n${call.step.title}：完成。` }

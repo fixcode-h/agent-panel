@@ -1742,4 +1742,6 @@ export const EN_TASKS: Record<string, string> = {
   正在停止: 'Stopping',
   接着原来的会话继续执行: 'Continue the original session',
   重启: 'Restart',
+  '交结论：通过': 'Verdict: pass',
+  '交结论：不通过': 'Verdict: fail',
 }

@@ -674,6 +674,30 @@ async function panelCall(name, params) {
     )
   return res.result
 }
+// 交结论（ADR 0041 第 16 节）：面板只认 submit_verdict 工具，不看回复里的字。提示词点名要结论时像真的 Agent 那样调一次：
+// 验收第 1 轮不通过、之后通过；条件分支有 BRANCHNO（没补 GATEFIXED）时不通过；子对话收尾前派的评审按 REVIEW_MARK 给。
+// 补问（「你还没有用 submit_verdict」）也照这个规则交。NO_VERDICT 模拟漏调工具（补问也不交）
+{
+  const roleAll = [input, ...args, systemText].join('\n')
+  const reviewer = roleAll.includes('你负责独立评审')
+  const asked =
+    input.includes('submit_verdict 工具交验收结论') ||
+    input.includes('submit_verdict 工具交结论') ||
+    input.includes('你还没有用 submit_verdict') ||
+    reviewer
+  if (asked && !input.includes('NO_VERDICT')) {
+    const mark = [...roleAll.matchAll(/REVIEW_MARK:(pass|fail)/g)].at(-1)?.[1] ?? 'pass'
+    const fail = reviewer
+      ? mark === 'fail'
+      : input.includes('submit_verdict 工具交验收结论')
+        ? input.includes('第 1 轮验收')
+        : input.includes('BRANCHNO') && !input.includes('GATEFIXED')
+    await panelCall('submit_verdict', {
+      verdict: fail ? 'fail' : 'pass',
+      blockers: fail ? [{ id: 'R1', text: 'child-done.txt 只写了一行，补上改了什么', must: true }] : [],
+    })
+  }
+}
 // 操控软件的动作（ADR 0011）：任务里有 APP_DO:<一行 JSON>、面板也给了 app_do 时，像真的 Agent 那样按用户的指令调一次。
 // 只认用户这一条消息里的标记（附在后面的用法说明里也有 app_do 字样，所以要两个都在）
 const appDo = /APP_DO:(\{.*\})/.exec(input)?.[1]
@@ -1005,7 +1029,7 @@ const turnReply = () => {
   // 面板的收尾自检（ADR 0041）：确认做完了，不再调工具；回复带标记，端到端测试据此确认自检交到了 CLI
   if (input.includes('（收尾自检）')) return 'SELF_CHECK_GOT 这次的事已经做完了。'
   if (input.includes('FAKE_EMPTY')) return '我先把工作区更新到最新，顺便确认分支和本地改动的基线。'
-  const verdict = input.includes('最后单独一行写「验收结论')
+  const verdict = input.includes('submit_verdict 工具交验收结论')
     ? input.includes('第 1 轮验收')
       ? '\n验收结论：不通过'
       : '\n验收结论：通过'
@@ -1014,7 +1038,7 @@ const turnReply = () => {
   const long =
     input.includes('LONGOUT') && !input.includes('上游节点的结果') ? `\n${'很长的方案。'.repeat(1000)}结尾` : ''
   // 后面有条件连线的节点要给出结论：任务里有 BRANCHNO 时给「不通过」，用户补充了 GATEFIXED（修好了）后给「通过」
-  const branch = input.includes('「结论：通过」或「结论：不通过」')
+  const branch = input.includes('submit_verdict 工具交结论')
     ? `\n结论：${input.includes('BRANCHNO') && !input.includes('GATEFIXED') ? '不通过' : '通过'}`
     : ''
   // 主 Agent 的调度轮：评估节点时写 dispatch 决定。节点说明里有 MAINREWORK 时第一次评估退回，

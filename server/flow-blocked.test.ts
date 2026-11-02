@@ -53,8 +53,12 @@ test('流程停在前置检查上：用户发要求后主角色先处理，处�
     newId: () => `id${++n}`,
     runAgent: async (call) => {
       log.push(call)
-      if (call.step?.id === 'check')
-        return { ok: true, text: ++checks === 1 ? '缺配置。\n\n结论：不通过' : '结论：通过' }
+      if (call.step?.id === 'check') {
+        // 分支结论只认 submit_verdict（ADR 0041 第 16 节）
+        const pass = ++checks > 1
+        call.orch?.submitVerdict?.({ verdict: pass ? 'pass' : 'fail' })
+        return { ok: true, text: pass ? '配置齐了' : '缺配置。' }
+      }
       if (call.step?.id === 'impl') return { ok: true, text: '做完了' }
       return { ok: true, text: '已补上配置' }
     },

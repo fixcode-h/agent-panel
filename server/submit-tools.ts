@@ -1,0 +1,64 @@
+/**
+ * 交结论、交结果的面板工具（ADR 0041 第 16 节）：状态只认这些工具调用，不看回复里写了什么字。
+ * 从 orch-mcp.ts 拆出来：那个文件到了行数上限
+ */
+import type { Orchestra } from '../shared/engine.ts'
+
+const text = (s: string, isError = false) => ({ content: [{ type: 'text', text: s }], ...(isError && { isError }) })
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+
+/**
+ * 交结论（ADR 0041 第 16 节）：验收、带条件连线的节点、评审都用它交「通过 / 不通过」，面板只认这个工具，不看回复里的字。
+ * 节点和子任务都挂着：用不到的不会调用；提示词里只在要结论的地方点名它
+ */
+const SUBMIT_VERDICT = {
+  name: 'submit_verdict',
+  title: '交结论',
+  description:
+    '交这一步的结论：验收、评审、要选分支的节点用它。面板只按这个工具判定通过还是不通过，不看回复里写了什么。不通过时 blockers 列出必须改的地方。交完就结束这一轮。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['pass', 'fail'], description: 'pass 通过，fail 不通过' },
+      blockers: {
+        type: 'array',
+        description: '意见：必须处置的（原来的高级 / 中级）must 写 true；建议性的写 false 或不列',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: '编号，例如 R1' },
+            text: { type: 'string', description: '问题和修法，一两句' },
+            must: { type: 'boolean', description: '要执行的一方逐条处置' },
+          },
+          required: ['text'],
+        },
+      },
+    },
+    required: ['verdict'],
+  },
+}
+
+/** 这个调用者能用的交结论 / 交结果工具 */
+export function submitTools(o: Orchestra) {
+  return o.submitVerdict ? [SUBMIT_VERDICT] : []
+}
+
+// oxlint-disable-next-line no-explicit-any -- MCP 的参数就是任意 JSON，和 orch-mcp.ts 的 callOrchTool 一样
+export function callSubmitTool(o: Orchestra, name: string, a: any) {
+  if (name === 'submit_verdict') {
+    if (!o.submitVerdict) return text('这里不用交结论', true)
+    const v = str(a?.verdict).trim().toLowerCase()
+    if (v !== 'pass' && v !== 'fail') return text('verdict 只能是 pass 或 fail', true)
+    const blockers = (Array.isArray(a?.blockers) ? a.blockers : [])
+      .filter((b: unknown) => b && typeof b === 'object')
+      .map((b: { id?: unknown; text?: unknown; must?: unknown }) => ({
+        id: str(b.id).trim(),
+        text: str(b.text).trim(),
+        must: b.must === true,
+      }))
+      .filter((b: { text: string }) => b.text)
+    const r = o.submitVerdict({ verdict: v, blockers })
+    return text(r.info, !r.ok)
+  }
+  return text(`未知工具：${name}`, true)
+}

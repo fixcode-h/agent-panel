@@ -98,6 +98,7 @@ import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from 
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from './test-steps.ts'
 import { parseVerdict } from './verdict.ts'
+import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from './submitted.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
@@ -420,6 +421,8 @@ export interface Orchestra {
   common: { name: string; description: string }[]
   /** 调用者自己就是子任务：不能再派子任务、不能启动工作流、不能开子对话 */
   helper: boolean
+  /** 交结论（submit_verdict，ADR 0041 第 16 节）：节点和子任务有，对话本身没有 */
+  submitVerdict?: (v: { verdict: 'pass' | 'fail'; blockers?: Blocker[] }) => { ok: boolean; info: string }
   /** 能派子任务（spawn_agents / stop_subtask / wait_agents）：子任务和 Chat 模式没有（ADR 0038） */
   canSpawn: boolean
   /** 有并行的节点、子任务可查可传话（get_status / send_message / read_messages）：Chat 模式没有 */
@@ -1670,6 +1673,7 @@ async function runNodeSingle(
         `上一次执行失败了：${clip(r.error, 1000)}\n\n请检查已经做了哪些，接着完成本节点「${step.title}」的工作，完成后同样简要总结。${tail}`,
       )
     }
+    if (r.ok && (inv.slot === 'review' || deciding)) r = await ensureVerdict(r, step, (q) => call(q + tail))
     if (!r.ok) return r
     // 节点派出去的子 Agent 是它工作的一部分：等它们都结束；它自己没取回的结果并进节点的输出
     const late = await settleHelpers(host, step)
@@ -1699,11 +1703,15 @@ async function runNodeSingle(
             ? rv.error
             : t('「{title}」的验收流程失败：{error}', { title: step.title, error: rv.error }),
         }
-      const verdict = parseVerdict(rv.output)
+      // 结论只认验收流程里用 submit_verdict 交的（ADR 0041 第 16 节）；没交不算通过，按出错停下给用户看
+      const verdict = reviewVerdict(host.task.steps, step.id, round)
       step.rounds = round
-      step.verdict = verdict === 'fail' ? 'fail' : 'pass'
       if (!verdict)
-        system(host, t('「{title}」的验收流程没有写「验收结论」，按通过处理。', { title: step.title }), step.id)
+        return {
+          ok: false,
+          error: t('「{title}」的验收流程没有用 submit_verdict 交结论，不能算通过', { title: step.title }),
+        }
+      step.verdict = verdict
       host.changed(true)
       if (verdict !== 'fail') return null
       // 不通过、要带着意见重做这一轮：单独累加，重新执行节点时 rounds 会清零，从 rounds 反推会少算
@@ -1853,11 +1861,15 @@ async function runNodeSingle(
     }
   }
 
-  // 条件连线按节点的结论选路；没写结论时按通过处理
+  // 条件连线按节点用 submit_verdict 交的结论选路；没交不默认走「通过」，按出错停下（ADR 0041 第 16 节）
   if (deciding) {
-    const v = parseVerdict(text)
-    step.branch = v === 'fail' ? 'fail' : 'pass'
-    if (!v) system(host, t('「{title}」没有写「结论」，按通过处理。', { title: step.title }), step.id)
+    const v = verdictOf(step)
+    if (!v)
+      return fail({
+        ok: false,
+        error: t('「{title}」没有用 submit_verdict 交结论，不知道该走哪条分支', { title: step.title }),
+      })
+    step.branch = v
   }
 
   // 结束流程
@@ -2073,6 +2085,7 @@ async function runNodeSteps(
         `上一次执行失败了：${clip(res.error, 1000)}\n\n请检查已经做了哪些，接着完成这一步「${r.title}」的工作，完成后同样简要总结。${tail}`,
       )
     }
+    if (res.ok && (inv.slot === 'review' || decidingHere)) res = await ensureVerdict(res, r, (q) => call(q + tail))
     if (!res.ok) return res
     const late = await settleHelpers(host, r)
     return late ? { ok: true, text: `${res.text}\n\n## 子 Agent 的结果\n${late}` } : res
@@ -2100,10 +2113,14 @@ async function runNodeSteps(
           ...rv,
           error: rv.stopped ? rv.error : t('「{title}」的验收流程失败：{error}', { title: r.title, error: rv.error }),
         }
-      const verdict = parseVerdict(rv.output)
+      const verdict = reviewVerdict(host.task.steps, r.id, round)
       r.rounds = round
-      r.verdict = verdict === 'fail' ? 'fail' : 'pass'
-      if (!verdict) system(host, t('「{title}」的验收流程没有写「验收结论」，按通过处理。', { title: r.title }), r.id)
+      if (!verdict)
+        return {
+          ok: false,
+          error: t('「{title}」的验收流程没有用 submit_verdict 交结论，不能算通过', { title: r.title }),
+        }
+      r.verdict = verdict
       host.changed(true)
       if (verdict !== 'fail') return null
       // 同 runNodeSingle：验收不通过要重做的次数单独累加
@@ -2303,11 +2320,15 @@ async function runNodeSteps(
     }
   }
 
-  // 条件连线按节点的结论选路；没写结论时按通过处理
+  // 条件连线按最后一步用 submit_verdict 交的结论选路；没交按出错停下
   if (deciding) {
-    const v = parseVerdict(text)
-    step.branch = v === 'fail' ? 'fail' : 'pass'
-    if (!v) system(host, t('「{title}」没有写「结论」，按通过处理。', { title: step.title }), step.id)
+    const v = verdictOf(recordOf(units.length - 1))
+    if (!v)
+      return fail(
+        { ok: false, error: t('「{title}」没有用 submit_verdict 交结论，不知道该走哪条分支', { title: step.title }) },
+        recordOf(units.length - 1),
+      )
+    step.branch = v
   }
 
   // 结束流程接收最后一步的输出
@@ -2607,7 +2628,7 @@ function helperReport(host: EngineHost, s: TaskStep): HelperReport {
 }
 
 const REVIEW_SOFT_LIMIT_MS = REVIEW_SOFT_LIMIT_MIN * 60_000
-const REVIEW_WRAP_NOTE = `【面板提醒】评审已经进行了 ${REVIEW_SOFT_LIMIT_MIN} 分钟：停止再读代码，按目前已确认的意见马上交卷（第一行验收结论、第二行必须处置）；没来得及确认的标「可能」，没看完的文件单列「没看完」。`
+const REVIEW_WRAP_NOTE = `【面板提醒】评审已经进行了 ${REVIEW_SOFT_LIMIT_MIN} 分钟：停止再读代码，按目前已确认的意见马上交卷（调用 submit_verdict 交结论，必须处置的意见列进 blockers）；没来得及确认的标「可能」，没看完的文件单列「没看完」。`
 
 /** 这个角色是不是在评审代码改动（必备角色「评审」、评审对象是代码改动）；评审方案或结论的不算 */
 function reviewsCode(agent: Agent | undefined, params?: ParamValues) {
@@ -2843,6 +2864,10 @@ function makeOrchestra(
       .filter((a) => a.id !== self.agentId && !(host.isolated && a.origin === VCS_ORIGIN))
       .map((a) => ({ name: a.name, description: a.description })),
     helper,
+    ...(where && {
+      submitVerdict: (v: { verdict: 'pass' | 'fail'; blockers?: Blocker[] }) =>
+        submitOn(self, { verdict: v.verdict, blockers: v.blockers ?? [] }, () => host.changed(true)),
+    }),
     canSpawn: !helper && !chatMode,
     team: !chatMode,
     autoReturn: !!ctx.chat && !helper,
@@ -3732,7 +3757,8 @@ async function runHelper(
       signal: ac.signal,
     }
     // 子任务按最后的总结判定做完：没交总结就在同一个会话里推一次；评审按验收结论判定，不看总结（见 helper-summary.ts）
-    const r = await runWithSummary(host, step, call, () => clearTimeout(wrap), system, !reviewing)
+    let r = await runWithSummary(host, step, call, () => clearTimeout(wrap), system, !reviewing)
+    if (reviewing) r = await ensureVerdict(r, step, (q) => host.runAgent({ ...call, prompt: q, fresh: undefined }))
     if (!compacted && host.task.sessions[sessionKey] && (r.ok || r.stopped))
       host.task.promptSent = rememberSent(
         host.task.promptSent,

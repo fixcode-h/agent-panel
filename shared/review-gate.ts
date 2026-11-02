@@ -1,5 +1,5 @@
 import type { PlanStep, TaskStep } from './schema.ts'
-import { leadVerdict } from './verdict.ts'
+import { mustIds, verdictOf } from './submitted.ts'
 
 /**
  * 评审门禁：子对话合回父对话分支之前，必须
@@ -79,7 +79,7 @@ export const REVIEW_TIP = [
   '收尾前先派一次「评审」（spawn_agents 的 agent 写「评审」），并在计划里单独列出「评审本次改动」这一步（标 review: true）：',
   '- 派评审时把这一步标成等待中，拿回结论后标完成；',
   '- 改动由面板附进评审的提示词（git 仓库），instructions 里写清：这次的需求和验收标准、父对话划的范围、改到的模块和对应的模块文档路径、已经跑过的检查（命令 + 结果）；',
-  '- 要它**第一行**先单独写「验收结论：通过」或「验收结论：不通过」，第二行写「必须处置：R1、R2…」（列出高级和中级的编号，没有写「必须处置：无」），再按 🔴 高级 / 🟠 中级 / 🟡 低级 / 💡 建议列意见：子任务输出太长时面板只留开头，写在末尾会被截掉，门禁就读不到。',
+  '- 评审用 submit_verdict 工具交结论（verdict 写 pass / fail），高级和中级的意见列进 blockers 并标 must: true（带 R1、R2 这样的编号）；面板门禁只认这个工具，不看评审回复里写了什么。',
   '拿回意见后逐条自己核实再决定修不修（评审的意见是线索，不是结论）；修了要复看时用 spawn_agents 的 resume 接着上一次评审的会话，面板只附增量。最后跑完整测试，调用 submit_merge 时在 review_triage 里写清最近一次评审每条高级、中级的处置。',
 ].join('\n')
 
@@ -89,25 +89,6 @@ export const OVERRIDE_TIP =
 
 /** 计划里还没有标 review 的步骤 */
 const NO_STEP = `没有请求收尾：计划里缺少评审步骤。执行角色收尾时要把评审单独写进计划（set_plan 里一条主步骤，标题写清是评审，并标 review: true）——放在别的步骤的子步骤里不算：派评审时标等待中，拿回结论后标完成，计划面板上能看到这一步才算数。`
-
-/**
- * 需要处置的意见行：以 🔴 高级、🟠 中级（🛑 是还在用三级时的「必须改」）开头。只认行首：
- * 复看里常见「上一轮的高级 R1 已改好」这种正文，按全文找会把已经处置过的编号又算一遍
- */
-const MUST = /^[\s>*#\-\d.、]*(🔴|🟠|🛑|【?高级|【?中级)/
-
-/**
- * 评审列出的、要执行角色处置的编号（高级和中级）：第二行「必须处置：R1、R2」优先（写在开头，输出被截断也读得到），
- * 再补上正文里带高级 / 中级标记的行里出现的编号。没编号时返回空数组
- */
-export function blockingIds(output: string): string[] {
-  const ids = new Set<string>()
-  const lines = output.split('\n')
-  const head = lines.slice(0, 3).find((l) => /必须(处置|改)\s*[:：]|blockers?\s*[:：]/i.test(l))
-  for (const m of head?.matchAll(/\bR\d+\b/g) ?? []) ids.add(m[0])
-  for (const l of lines) if (MUST.test(l)) for (const m of l.matchAll(/\bR\d+\b/g)) ids.add(m[0])
-  return [...ids]
-}
 
 export function reviewGate(
   steps: TaskStep[],
@@ -148,13 +129,14 @@ function gate(
       `没有请求收尾：最近一次评审「${last.title}」${why}。等它给出结论再调用 submit_merge；它失败或被你停掉时重新派一次。`,
     )
   }
-  const verdict = leadVerdict(last.output)
+  // 结论和必须处置的意见只认评审用 submit_verdict 交的（ADR 0041 第 16 节），不看它回复里写了什么字
+  const verdict = verdictOf(last)
   if (!verdict)
     return block(
-      `没有请求收尾：最近一次评审「${last.title}」没有写验收结论。让它第一行单独写「验收结论：通过」或「验收结论：不通过」（回复用英文时写「Verdict: pass」或「Verdict: fail」），再调用 submit_merge。`,
+      `没有请求收尾：最近一次评审「${last.title}」没有用 submit_verdict 交结论。重新派一次评审（resume 写它的 id），让它交结论后再调用 submit_merge。`,
     )
-  // 通过也可能带着中级（不判不通过，但要处置）；没编号的标记行不算（复看里常见「上一轮的高级都已改掉」）
-  if (verdict === 'pass' && !blockingIds(last.output).length) return { ok: true }
+  // 通过也可能带着必须处置的意见（原来的中级）：要逐条处置
+  if (verdict === 'pass' && !mustIds(last).length) return { ok: true }
   return triageGate(last, triage)
 }
 
@@ -180,7 +162,7 @@ function triageGate(last: TaskStep, triage: TriageItem[]): { ok: true } | { ok: 
     return block(
       `没有请求收尾：review_triage 里 ${short.map((x) => x.id).join('、')} 的理由太短。写清你怎么核实的、为什么这么处置。`,
     )
-  const ids = blockingIds(last.output)
+  const ids = mustIds(last)
   if (!ids.length) {
     if (valid.length) return { ok: true }
     return block(
@@ -190,7 +172,9 @@ function triageGate(last: TaskStep, triage: TriageItem[]): { ok: true } | { ok: 
   const done = new Set(valid.map((x) => x.id.trim().toUpperCase()))
   const missing = ids.filter((id) => !done.has(id.toUpperCase()))
   if (!missing.length) return { ok: true }
-  return block(`没有请求收尾：最近一次评审「${last.title}」的高级 / 中级里 ${missing.join('、')} 还没有处置。${how}`)
+  return block(
+    `没有请求收尾：最近一次评审「${last.title}」${verdictOf(last) === 'fail' ? '的结论是不通过，' : '交了通过但'}要处置的意见里 ${missing.join('、')} 还没有处置。${how}`,
+  )
 }
 
 /** 放行记录写成给父对话和交接摘要看的几行 */

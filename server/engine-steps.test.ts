@@ -177,6 +177,25 @@ test('多步骤节点：确认只作用于配了确认的那一步', async () =>
   assert.equal(task.steps.find((s) => s.id === 'a')!.status, 'done')
 })
 
+test('验收没交 submit_verdict：补问一次，还不交就按出错停下，不再默认通过（ADR 0041 第 16 节）', async () => {
+  const w = workflow(
+    [{ id: 's1', title: '实现', instructions: '写代码。', review: { kind: 'sub', id: 'check' }, maxRounds: 2 }],
+    true,
+  )
+  // 验收节点只在回复里写「通过」，从不调工具：面板不看文字
+  const { task, log, host } = makeHost(w, (call) => (call.step?.nodeId === 'verify' ? '验收结论：通过' : '实现结果'))
+  await runEngineTurn(host)
+  const asks = log.filter((c) => c.step?.nodeId === 'verify' && c.prompt.includes('你还没有用 submit_verdict'))
+  assert.equal(asks.length, 1, '在验收节点自己的会话里补问一次')
+  const s1 = task.steps.find((s) => s.id === 'a/step/s1')!
+  assert.notEqual(s1.verdict, 'pass', '没交结论不算通过')
+  assert.equal(task.steps.find((s) => s.id === 'a')!.status, 'failed')
+  assert.ok(
+    task.messages.some((m) => /没有用 submit_verdict 交结论，不能算通过/.test(m.text)),
+    '原因写进对话',
+  )
+})
+
 test('多步骤节点：验收意见只回到那一步，通过后继续下一步', async () => {
   const w = workflow(
     [
@@ -193,7 +212,12 @@ test('多步骤节点：验收意见只回到那一步，通过后继续下一�
   )
   let reviews = 0
   const { task, log, host } = makeHost(w, (call) => {
-    if (call.step?.nodeId === 'verify') return ++reviews === 1 ? '验收结论：不通过' : '验收结论：通过'
+    // 结论只认 submit_verdict（ADR 0041 第 16 节）：第一轮不通过，复看通过
+    if (call.step?.nodeId === 'verify') {
+      const pass = ++reviews > 1
+      call.orch?.submitVerdict?.({ verdict: pass ? 'pass' : 'fail' })
+      return pass ? '复看没有问题' : '有一处要改'
+    }
     return call.step?.id === 'a/step/s1' ? '实现结果' : '收尾结果'
   })
   await runEngineTurn(host)
@@ -744,6 +768,7 @@ test('子任务：resume 接着之前那个子任务的会话，复看的评审�
       await o.wait(again, 1000)
       return '一步结果'
     }
+    call.orch?.submitVerdict?.({ verdict: 'pass' })
     return '验收结论：通过'
   })
   const { params } = AgentInput.parse({ name: '验收', params: [{ key: 'task', options: ['跑验收', '清理用例'] }] })
@@ -881,6 +906,7 @@ test('子任务：失败后 resume 写它的 id，就在原来那个子任务里
       if (tries === 1) return { ok: false, error: '连接断开' }
       return '查到了'
     }
+    call.orch?.submitVerdict?.({ verdict: 'pass' })
     return '验收结论：通过'
   })
   await runEngineTurn(host)
@@ -921,6 +947,7 @@ test('子任务：有中断没做完的子任务时不能另派新的，要 resu
       return '一步结果'
     }
     if (call.step?.slot === 'sub') return '查到了'
+    call.orch?.submitVerdict?.({ verdict: 'pass' })
     return '验收结论：通过'
   })
   await runEngineTurn(host)
@@ -1022,6 +1049,7 @@ test('子任务：派「评审」时面板把改动附进提示词，复看只�
       await o.wait(again, 1000)
       return '一步结果'
     }
+    call.orch?.submitVerdict?.({ verdict: 'pass' })
     return '验收结论：通过\n必须处置：无'
   })
   host.agents = [...agents, { ...agent('r', '评审'), origin: 'builtin:reviewer' }]
