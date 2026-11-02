@@ -489,12 +489,10 @@ export function registerConversationRoutes(s: TasksScope) {
     const parentId = parent.id
     // 停父对话后马上点继续：子对话已经落成「已中断」，但这一份执行还在收尾（写盘、上报）、执行位没放，
     // 下面按「不在执行」筛就会漏掉它，既不拉起也不在续接说明里出现。先等在停的那些收完，最多等几秒
-    const settling = [...s.live.values()].filter((e) => e.task.parentTaskId === parentId && e.stop && e.done)
-    if (settling.length)
-      await Promise.race([
-        Promise.all(settling.map((e) => e.done!.catch(() => {}))),
-        new Promise((r) => setTimeout(r, 5000).unref?.()),
-      ])
+    // 等多久和「继续执行」先等停稳是同一个上限（settleBefore）：停下的执行最迟这么久一定收口（见 keepalive.ts 的 watchStop），
+    // 以前只等 5 秒，进程退得慢的子对话会被漏掉，既不拉起也不写进续接说明
+    const settling = [...s.live.values()].filter((e) => e.task.parentTaskId === parentId && e.stop)
+    await Promise.all(settling.map((e) => settleBefore(e)))
     const stopped = (await s.store.list()).filter(
       (k) =>
         k.parentTaskId === parentId &&

@@ -162,3 +162,66 @@ test('停止后马上点「继续」：先等正在停下的那一份收完，�
   assert.equal(r.live.has('kid'), false, '等完执行位已经空了，继续执行能直接占到')
   assert.equal(r.saved.at(-1)?.status, 'stopped')
 })
+
+test('停父对话：在等子任务的子对话按「随父对话停」收口（继续时会被拉起），停在等下一句的照常结束不标停止', async () => {
+  const hold = setTimeout(() => {}, 10_000)
+  const mk = (id: string, awaitingUser: boolean) => {
+    let abandon: () => void = () => {}
+    const abandoned = new Promise<void>((r) => (abandon = r))
+    let stops = 0
+    const e = {
+      task: {
+        id,
+        parentTaskId: 'p',
+        status: 'running',
+        working: false,
+        awaitingUser,
+        updatedAt: new Date().toISOString(),
+        messages: [],
+        steps: [],
+        turns: [],
+        runs: [],
+      } as unknown as Task,
+      rev: 0,
+      abort: { abort: () => void stops++ },
+      done: abandoned,
+      abandon,
+      abandoned,
+    } as unknown as Live
+    return { e, stops: () => stops }
+  }
+  // helperKid：派出的子任务还在跑，它停在等子任务上；idleKid：这一轮说完了，停在等下一句
+  const helperKid = mk('k1', false)
+  const idleKid = mk('k2', true)
+  const live = new Map([
+    ['k1', helperKid.e],
+    ['k2', idleKid.e],
+  ])
+  const saved: Task[] = []
+  const tasks = [{ id: 'p' }, { id: 'k1', parentTaskId: 'p' }, { id: 'k2', parentTaskId: 'p' }]
+  const s = {
+    live,
+    closeChildren: async () => {},
+    release: (e: Live) => live.get(e.task.id) === e && live.delete(e.task.id),
+    store: {
+      list: async () => tasks,
+      get: async (id: string) => tasks.find((x) => x.id === id),
+      update: async (_id: string, tk: Task) => void saved.push(structuredClone(tk)),
+    },
+    reportToParent: async () => {},
+    followUp: async () => {},
+    alertOn: () => () => {},
+    shuttingDown: false,
+  } as unknown as TasksScope
+  const k = createKeepAlive(s)
+  await k.stopTree('p')
+  assert.equal(helperKid.e.stop, true, '等子任务的子对话被停下（中断子任务），不是只取消等待')
+  assert.equal(helperKid.e.stopReason, 'parent' satisfies StopReason)
+  assert.ok(!idleKid.e.stop, '停在等下一句的不标停止：这一轮已经正常说完')
+  // 进程没了几秒内收口：原因是随父对话停，父对话继续时 resumeKids 会把它拉起来（以前被记成用户停的就不拉）
+  await Promise.race([helperKid.e.done, new Promise((r) => setTimeout(r, STOP_WATCH_MS * 6))])
+  clearTimeout(hold)
+  const last = saved.filter((x) => x.id === 'k1').at(-1)!
+  assert.equal(last.status, 'stopped')
+  assert.equal(last.stopReason, 'parent' satisfies StopReason)
+})

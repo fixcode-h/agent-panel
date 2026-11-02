@@ -1479,8 +1479,11 @@ export function childIcon(x: ChildEntry): TaskIcon {
   const st = childState(x)
   if (st === 'failed') return 'failed'
   if (st === 'needs') return 'waiting'
-  // 等结果、未完成、待收尾也转圈：还没做完，不能画成静止的
-  if (st === 'running' || st === 'waiting' || st === 'unfinished' || st === 'wrapup') return 'running'
+  // 等结果、待收尾也转圈：还没做完，结果会自己推回来（后台命令、子任务、父对话的合并），不能画成静止的
+  if (st === 'running' || st === 'waiting' || st === 'wrapup') return 'running'
+  // 未完成（计划没做完、分支没合回）只在它的 CLI 还活着时转圈：进程回收了就没人在往前做，
+  // 转圈会让父对话里一排卡片看着像还在跑、停止父对话后也还在转（用户报过），画成静止 + 「继续会重新拉起」
+  if (st === 'unfinished') return x.cliAlive ? 'running' : 'idle'
   if (st === 'done') return 'done'
   // 停下：只有用户按的暂停才是暂停图标，别的来源要说清是谁结束的
   return x.stopReason && x.stopReason !== 'user' ? 'idle' : 'stopped'
@@ -1525,8 +1528,10 @@ function childEntryOf(
 export function restartInterrupted(
   task: Parameters<typeof childFacts>[0] & Pick<Task, 'id' | 'title' | 'createdAt' | 'worktree'>,
 ): boolean {
-  const entry = childEntryOf(task)
-  return childSpinning(entry) && childState(entry) !== 'wrapup'
+  // 按状态判，不按图标：这里的 cliAlive 固定是 false（重启后进程都没了），图标会把「未完成」画成静止，
+  // 可计划没做完的照样要落成已停止、进恢复名单
+  const st = childState(childEntryOf(task))
+  return st === 'running' || st === 'waiting' || st === 'unfinished'
 }
 
 /**

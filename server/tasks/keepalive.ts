@@ -81,8 +81,8 @@ export function createKeepAlive(s: TasksScope) {
       if (s.live.get(id) !== e || e.orphaned) return
       const elapsed = Date.now() - started
       gone = taskCliAlive(id) ? 0 : gone + 1
-      if (gone >= STOP_GONE_TICKS) return void abandonLive(id, e, e.stopReason ?? 'user', '停止后进程已经结束')
-      if (elapsed >= STOP_GIVE_UP_MS) return void abandonLive(id, e, e.stopReason ?? 'user', '停止后一直没收完')
+      if (gone >= STOP_GONE_TICKS) return void abandonLive(id, e, e.stopReason ?? 'parent', '停止后进程已经结束')
+      if (elapsed >= STOP_GIVE_UP_MS) return void abandonLive(id, e, e.stopReason ?? 'parent', '停止后一直没收完')
       if (!killed && elapsed >= STOP_KILL_MS) {
         killed = true
         taskLog(id, '停止后进程还在，直接结束', { ms: elapsed })
@@ -161,12 +161,18 @@ export function createKeepAlive(s: TasksScope) {
     const ids = await subtreeIdsOf(tk)
     for (const kid of ids) {
       if (kid === id || !s.live.has(kid)) continue
-      // 停在等下一句的直接取消等待，它自己结束这一轮；正在执行的按随父对话停
-      if (!cancelWait(kid)) stopTask(kid, 'parent')
-      else {
-        const ke = s.live.get(kid)
-        if (ke) watchStop(kid, ke)
+      // 一律按「随父对话停」停：停在等下一句、等派出的子任务（helpers）的也一样。
+      // 以前这两种只取消等待：没记停下原因，收口时被当成用户亲手停的，父对话继续时不会把它拉起来；
+      // 等子任务的取消等待后引擎还在等子任务，并没有停（用户报过：子对话有子任务在跑，停了父对话再继续，子对话起不来）
+      // 这一轮已经正常说完、停在等下一句（awaitingUser）的除外：取消等待让它照常结束，状态还是完成，
+      // 标成停止的话父对话继续时会被白拉起来一轮
+      // （awaitingUser 和等下一句的等待者是 runner 的 listen 里一起设上的）
+      if (s.live.get(kid)?.task.awaitingUser) {
+        cancelWait(kid)
+        continue
       }
+      stopTask(kid, 'parent')
+      cancelWait(kid)
     }
     const killed = (
       await Promise.all([...ids].map((x) => killTaskClis(x, (pid) => void killTreeDeep(pid)).catch(() => [])))

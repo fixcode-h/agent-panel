@@ -139,11 +139,16 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
       text: c.asking || !(c.requests || c.childNeeds) ? t('等{who}选择', { who }) : t('等{who}确认', { who }),
       tone: 'warning',
     })
-  if (icon === 'running' && c.plan)
+  // 进程回收了的「未完成」画成静止（见 childIcon），计划进度和「未完成」照样写，只是不再用执行中的颜色
+  const parked = icon === 'idle' && state === 'unfinished'
+  if ((icon === 'running' || parked) && c.plan)
     out.push({ text: t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total }), tone: 'warning' })
   if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })
-  // 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText）
-  if (icon === 'stopped' || icon === 'idle') out.push({ text: stopReasonText(c.stopReason), tone: 'subtle' })
+  if (parked) out.push({ text: convStateText(state), tone: 'subtle' })
+  // 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText）。
+  // 静止的「未完成」没有停下原因（这一轮是正常说完的）就不写，免得写成「已暂停」
+  if ((icon === 'stopped' || icon === 'idle') && !(parked && !c.stopReason))
+    out.push({ text: stopReasonText(c.stopReason), tone: 'subtle' })
   // 进程回收了、这一轮停下但还有没做完的（计划没做完）：行上补一句继续会重新拉起。
   // 静止的行以前只有悬停里能看到这句，一排卡片只剩「页面切走后结束」，用户以为再也起不来了
   // plan 来自 openPlan：只在计划没做完时才有值（做完了是 undefined）
