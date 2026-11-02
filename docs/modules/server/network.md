@@ -41,12 +41,16 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 
 `server/update.ts` 的 `updateApi()` 负责设置页的「版本更新」和托盘菜单的「检查更新」，路由挂在 `/app` 下（`/releases`、`/install`、`/install/:id`、`/install/:id/force`、`/install-current`、`/rollback`）。
 
-- 检查结果缓存在数据目录的 `cache/updates/releases.json`：`{ at, list, etag?, limitedUntil? }`。`at` 是上次成功读到列表的时间；自动检查最多每 `CHECK_EVERY`（6 小时）用一次缓存，点「检查更新」带 `refresh=1` 时马上请求。
+- 检查结果缓存在数据目录的 `cache/updates/releases.json`：`{ at, list, etag?, limitedUntil?, feed? }`。`at` 是上次成功读到 API 列表的时间；自动检查最多每 `CHECK_EVERY`（6 小时）用一次缓存，点「检查更新」带 `refresh=1` 时马上请求。
 - 减少请求：缓存里的 `etag` 下次作为 `If-None-Match` 带上，GitHub 回 304 时直接沿用缓存（conditional request 不计入配额），只把 `at` 挪到现在。环境变量 `GITHUB_TOKEN` 存在时带 `Authorization: Bearer`，配额从 60 次/小时提到 5000 次/小时；token 只从环境变量读，不落盘。
-- 限流回退：403 / 429 时按响应里的 `retry-after`、其次 `x-ratelimit-reset` 算出 `limitedUntil`（都没有时默认 15 分钟，计算在 `shared/version.ts` 的 `rateLimitUntil`）。有缓存就写进缓存并返回上次的列表，`/releases` 响应里的 `limitedUntil` 让页面显示「显示的是上次检查的结果」的温和提示；没有缓存才报错，文案里带「约 N 分钟后恢复」。冷却期内点「检查更新」也只回缓存，不再请求 GitHub。
-- 托盘 `checkAndInstall` 走同一个 `releases(true)`：限流时用缓存列表判断有没有新版本，没有缓存才报失败。
-- 在线演示（`web/src/lib/demo-backend.ts`）没有服务端缓存，用浏览器 localStorage 记上次的列表，403 / 429 时同样回退并带 `limitedUntil`。
-- 回归：`server/update.test.ts` 覆盖 403 无缓存报错、403 有缓存回退并标出恢复时间、`retry-after` 计算、冷却期不再请求、ETag 304 复用缓存、带 `GITHUB_TOKEN` 时发 `Authorization`。
+- 限流回退：403 / 429 时按响应里的 `retry-after`、其次 `x-ratelimit-reset` 算出 `limitedUntil`（都没有时默认 15 分钟，计算在 `shared/version.ts` 的 `rateLimitUntil`）。
+- **Atom feed 兜底**：API 被限流（403 / 429）、返回其他错误（5xx 等）或连不上时，读 `https://github.com/<REPO>/releases.atom`（可用 `AGENT_PANEL_RELEASES_FEED_URL` 覆盖）判断有没有新版本。只解析第一个 `<entry>` 的 `<title>`（tag）、`<updated>` 和 `rel="alternate"` 的链接；feed 没有安装包地址和 `SHA256SUMS`，所以这类版本的 `tarUrl` / `zipUrl` / `sumsUrl` 为空。feed 结果单独缓存 `FEED_CACHE_MS`（15 分钟），冷却期内连点「检查更新」不会反复请求 feed；缓存里已有同一 tag 时沿用 API 那份（带安装包地址）。
+- `/releases` 响应里 `source` 标明这次结果来自 `api` 还是 `feed`，`feedCheckedAt` 是 feed 读到的时间，`limitedUntil` 仍然表示 API 的冷却期。只有 feed、还没有 API 缓存时 `at` 是 0，`checkedAt` 不输出，避免显示成 1970 年。
+- 冷却期内点「检查更新」：不请求 API，但会读 feed（受 15 分钟缓存约束）；feed 也失败时，有 API 旧缓存就回退旧缓存并带 `limitedUntil`，没有缓存才报错，文案里带「约 N 分钟后恢复」。
+- 托盘 `checkAndInstall` 走同一个 `releases(true)`：拿到的是 feed 兜底版本（没有 `tarUrl`）时只提示有新版本、让用户去 GitHub Releases 手动下载，不假装能自动安装；`POST /install` 对没有安装包地址的 tag 返回 502。
+- 自动检查由设置里的 `autoCheckUpdates` 控制（默认关）：关着时页面打开和定时都不请求 `/releases`；打开设置页的「版本更新」只调本地的 `GET /app/version`（当前版本、是否发布包、上一个版本，不访问 GitHub），版本列表仍要点「检查更新」。打开后前端 `web/src/lib/app-update.ts` 的 `autoCheck` 在页面打开时检查一次、之后每小时问一次服务端（服务端仍按 6 小时缓存合并请求）。
+- 在线演示（`web/src/lib/demo-backend.ts`）没有服务端缓存，用浏览器 localStorage 记上次的列表，403 / 429 时同样回退并带 `limitedUntil`；它的 `GET /app/version` 只读这份缓存，不解析 Atom feed。
+- 回归：`server/update.test.ts` 覆盖 403 无缓存报错、403 有缓存回退并标出恢复时间、`retry-after` 计算、冷却期不再请求、ETag 304 复用缓存、带 `GITHUB_TOKEN` 时发 `Authorization`，以及 Atom feed 解析、403 / 5xx 时 feed 兜底、冷却期内只读 feed、feed 失败回退缓存、feed 版本不能一键安装；`web/src/lib/app-update.test.ts` 覆盖自动检查开关关着不发请求、打开只启动一次。
 
 ## 账号与登录
 

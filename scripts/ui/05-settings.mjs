@@ -14,6 +14,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
   await check(p, '设置', ['常规', '内容宽度', '命令行 Shell', 'Git Bash（默认）', '子对话卡住时追问'])
   if (!(await p.getByLabel('子对话没有输出时自动询问（分钟）').count())) errors.push('设置：没有子对话自动询问的输入框')
+  // 版本更新：自动检查默认关（用户要求），关着时不自动请求，只给「检查更新」引导
+  await p.getByRole('button', { name: '版本更新', exact: true }).click()
+  await check(p, '设置-版本更新', ['自动检查更新', '还没有检查过更新，点「检查更新」查看最新版本。'])
+  if ((await p.getByRole('switch', { name: '自动检查更新' }).getAttribute('aria-checked')) !== 'false')
+    errors.push('设置-版本更新：「自动检查更新」默认应该是关')
+  await p.getByRole('button', { name: '常规', exact: true }).click()
   // 窗口矮到左栏要滚动时：吸顶的「设置」标题上方不能露出滚过去的分类（以前漏出半行「快捷键」）
   await p.setViewportSize({ width: 1440, height: 560 })
   errors.push(...(await stickyLeakProblems(p, '设置-矮窗口')))

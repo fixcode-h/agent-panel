@@ -195,6 +195,7 @@ function SettingsBody({
   const [shell, setShell] = useState(initial.shell)
   const [proxy, setProxy] = useState(initial.proxy)
   const [proxyOn, setProxyOn] = useState(initial.networkProxyEnabled)
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState(initial.autoCheckUpdates)
   const [speech, setSpeech] = useState(initial.speech)
   const [readAloud, setReadAloud] = useState(initial.readAloud)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
@@ -355,6 +356,7 @@ function SettingsBody({
     shell,
     proxy: proxy.trim(),
     networkProxyEnabled: proxyOn,
+    autoCheckUpdates,
     contentWidth,
     appearance,
     fileFormat,
@@ -1395,7 +1397,9 @@ function SettingsBody({
               {cur.id === 'deploy' && <DeploySection />}
               {cur.id === 'tags' && <TagsSection />}
               {cur.id === 'global-lessons' && <GlobalLessonsSection />}
-              {cur.id === 'update' && <UpdateSection />}
+              {cur.id === 'update' && (
+                <UpdateSection autoCheck={autoCheckUpdates} onAutoCheckChange={setAutoCheckUpdates} />
+              )}
 
               {cur.id === 'categories' && <ProjectCategoryList />}
 

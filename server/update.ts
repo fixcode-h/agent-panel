@@ -11,6 +11,7 @@ import {
   STALE_UPDATE_MS,
   compareVersions,
   minutesUntil,
+  parseVersion,
   pickUpdate,
   rateLimitUntil,
   type AppRelease,
@@ -48,6 +49,11 @@ export function currentVersion() {
 }
 
 const API = () => process.env.AGENT_PANEL_RELEASES_URL ?? `https://api.github.com/repos/${REPO}/releases`
+/**
+ * Release 的 Atom feed：GitHub API 被限流 / 不可用时用它判断有没有新版本。
+ * 它走的是网页 feed，不受 API 的每小时配额限制，但只有版本号、没有安装包地址
+ */
+const FEED = () => process.env.AGENT_PANEL_RELEASES_FEED_URL ?? `https://github.com/${REPO}/releases.atom`
 
 /** 包里会被替换的文件；data/ 等其他内容不动 */
 const FILES = ['server.mjs', 'package.json', 'start.sh', 'install-service.sh', 'README.md', '使用说明.txt']
@@ -62,6 +68,14 @@ const VERSION_FILE = 'version.txt'
 const CACHE_FILE = () => path.join(CACHE_DIR, 'updates', 'releases.json')
 /** 自动检查更新的间隔 */
 const CHECK_EVERY = 6 * 3600_000
+/** feed 结果的缓存时间：限流冷却期内连点「检查更新」不反复请求 feed */
+const FEED_CACHE_MS = 15 * 60_000
+
+/** 从 feed 读到的最新版本；at 是真正读到它的时间 */
+interface FeedLatest {
+  at: number
+  release: AppRelease
+}
 
 interface ReleasesCache {
   at: number
@@ -70,6 +84,51 @@ interface ReleasesCache {
   etag?: string
   /** GitHub 限流到这一刻（毫秒）：这期间点「检查更新」也只回缓存，不再撞它的限流 */
   limitedUntil?: number
+  /** Release feed 最近一次读到的版本：API 被限流 / 不可用时用它判断有没有新版本 */
+  feed?: FeedLatest
+}
+
+/** 一次检查的结果：列表，以及它是从 API 还是 feed 兜底拿到的 */
+interface ReleasesResult {
+  list: AppRelease[]
+  source: 'api' | 'feed'
+  /** feed 读到的时间（毫秒）：只有 source 为 feed 时才有 */
+  feedAt?: number
+}
+
+const decodeXml = (s: string) =>
+  s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+
+/**
+ * 从 Release 的 Atom feed 里取最新版本：只看第一个 <entry>。
+ * feed 里没有安装包地址和校验文件，所以 tarUrl / zipUrl / sumsUrl 留空，界面据此不提供一键更新
+ */
+export function parseFeed(xml: string): AppRelease | undefined {
+  const entry = /<entry\b[^>]*>([\s\S]*?)<\/entry>/.exec(xml)?.[1]
+  if (!entry) return undefined
+  const tag = decodeXml(/<title\b[^>]*>([\s\S]*?)<\/title>/.exec(entry)?.[1] ?? '').trim()
+  const parsed = parseVersion(tag)
+  if (!parsed) return undefined
+  const updated = /<updated\b[^>]*>([\s\S]*?)<\/updated>/.exec(entry)?.[1]?.trim() ?? ''
+  // <link rel="alternate" type="text/html" href="…">：release 页面；属性顺序不固定，按整段找
+  const link = [...entry.matchAll(/<link\b[^>]*>/g)].map((m) => m[0]).find((t) => /\brel="alternate"/.test(t))
+  const href = link ? /href="([^"]*)"/.exec(link)?.[1] : undefined
+  return {
+    tag,
+    version: tag.replace(/^v/, ''),
+    prerelease: !!parsed.dev,
+    publishedAt: updated,
+    notes: '',
+    url: decodeXml(href ?? ''),
+    tarUrl: '',
+    zipUrl: '',
+    size: 0,
+  }
 }
 
 function readCache(): ReleasesCache | undefined {
@@ -292,14 +351,50 @@ export function updateApi(deps: {
   const newestFirst = (a: AppRelease, b: AppRelease) =>
     compareVersions(b.version, a.version) || b.publishedAt.localeCompare(a.publishedAt)
 
-  async function releases(refresh: boolean): Promise<AppRelease[]> {
+  /**
+   * 读 Release 的 Atom feed：API 被限流 / 不可用时用它判断有没有新版本。
+   * 结果单独缓存 FEED_CACHE_MS，冷却期内连点「检查更新」不会反复请求；
+   * feed 只是补充，不能动 API 列表的 at / etag
+   */
+  async function feedRelease(): Promise<FeedLatest | undefined> {
+    const now = Date.now()
+    if (cache?.feed && now - cache.feed.at < FEED_CACHE_MS) return cache.feed
+    try {
+      const res = await netFetch(FEED(), {
+        headers: { Accept: 'application/atom+xml', 'User-Agent': 'agent-panel' },
+        timeoutMs: 15_000,
+      })
+      if (!res.ok) {
+        log.warn('update', `读取 Release feed 失败：${res.status}`)
+        return cache?.feed
+      }
+      const release = parseFeed(await res.text())
+      if (!release) {
+        log.warn('update', 'Release feed 里没有可用的版本')
+        return cache?.feed
+      }
+      const feed = { at: Date.now(), release }
+      await saveCache({ ...(cache ?? { at: 0, list: [] }), feed })
+      return feed
+    } catch (e) {
+      log.warn('update', '读取 Release feed 失败', e)
+      return cache?.feed
+    }
+  }
+
+  /** 把 feed 里的最新版本并进列表：缓存里已经有同一版本时沿用缓存（它带安装包地址） */
+  const withFeed = (list: AppRelease[], release: AppRelease) =>
+    list.some((r) => r.tag === release.tag) ? list : [...list, release].sort(newestFirst)
+
+  async function releases(refresh: boolean): Promise<ReleasesResult> {
     const now = Date.now()
     // 自动检查最多每 6 小时一次；设置里打开「版本更新」或点「检查更新」时 refresh，马上检查
-    if (!refresh && cache && now - cache.at < CHECK_EVERY) return cache.list
-    // GitHub 说过要等到什么时候：这期间点「检查更新」也只回上次的结果，不再撞它的限流。
-    // 没有缓存可回退时同样不能请求，只报失败
+    if (!refresh && cache && now - cache.at < CHECK_EVERY) return { list: cache.list, source: 'api' }
+    // GitHub 说过要等到什么时候：这期间点「检查更新」也不撞 API，退到 Release feed 判断有没有新版本
     if (limited && limited.until > now) {
-      if (cache?.list.length) return cache.list
+      const feed = await feedRelease()
+      if (feed) return { list: withFeed(cache?.list ?? [], feed.release), source: 'feed', feedAt: feed.at }
+      if (cache?.list.length) return { list: cache.list, source: 'api' }
       throw rateLimited(limited.status, limited.until)
     }
     const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-panel' }
@@ -308,26 +403,43 @@ export function updateApi(deps: {
     // 有 token 就用认证请求：配额从 60 次/小时提到 5000 次/小时。只读环境变量，不落盘
     const token = process.env.GITHUB_TOKEN
     if (token) headers.Authorization = `Bearer ${token}`
-    // 用 netFetch 自己的超时：它超时后要能换代理重试，AbortSignal.timeout 一旦触发就再也发不出请求
-    const res = await netFetch(`${API()}?per_page=30`, { headers, timeoutMs: 15_000 })
+    let res: Response
+    try {
+      // 用 netFetch 自己的超时：它超时后要能换代理重试，AbortSignal.timeout 一旦触发就再也发不出请求
+      res = await netFetch(`${API()}?per_page=30`, { headers, timeoutMs: 15_000 })
+    } catch (e) {
+      // 连不上 GitHub（网络 / 代理都不通）也算 API 不可用，先看 feed 能不能判断新版本
+      const feed = await feedRelease()
+      if (feed) return { list: withFeed(cache?.list ?? [], feed.release), source: 'feed', feedAt: feed.at }
+      throw e
+    }
     if (res.status === 304 && cache) {
       // 没变化：沿用上次的列表，只把检查时间挪到现在（304 也算一次成功的检查）；
       // 请求成功说明限流已经过去，把冷却和缓存里的残留一起清掉
       limited = undefined
       await saveCache({ ...cache, at: Date.now(), limitedUntil: undefined })
-      return cache.list
+      return { list: cache.list, source: 'api' }
     }
     if (!res.ok) {
       if (res.status === 403 || res.status === 429) {
         const until = rateLimitUntil(res)
         limited = { until, status: res.status }
-        // 有上次的结果就先给用户看，并记住恢复时间；冷却期内不再请求 GitHub
+        // 限流时先看 feed：能拿到最新版本就照常提示有没有更新，并记住恢复时间
+        const feed = await feedRelease()
+        if (feed) {
+          await saveCache({ ...(cache ?? { at: 0, list: [] }), limitedUntil: until, feed })
+          return { list: withFeed(cache?.list ?? [], feed.release), source: 'feed', feedAt: feed.at }
+        }
+        // feed 也读不到时，有上次的完整结果就先给用户看；冷却期内不再请求 GitHub
         if (cache?.list.length) {
           await saveCache({ ...cache, limitedUntil: until })
-          return cache.list
+          return { list: cache.list, source: 'api' }
         }
         throw rateLimited(res.status, until)
       }
+      // 其他错误（5xx 等）也先试 feed：能判断有没有新版本就不算检查失败
+      const feed = await feedRelease()
+      if (feed) return { list: withFeed(cache?.list ?? [], feed.release), source: 'feed', feedAt: feed.at }
       throw new Error(t('GitHub 返回 {status}', { status: res.status }))
     }
     const data = (await res.json()) as any[]
@@ -353,7 +465,7 @@ export function updateApi(deps: {
       .sort(newestFirst)
     limited = undefined
     await saveCache({ at: Date.now(), list, etag: res.headers.get('etag') ?? undefined })
-    return list
+    return { list, source: 'api' }
   }
 
   async function install(job: AppUpdateJob & { force?: boolean }, rel: AppRelease, onWait?: () => void) {
@@ -526,7 +638,7 @@ export function updateApi(deps: {
     report('checking', t('正在检查更新…'))
     let list: AppRelease[]
     try {
-      list = await releases(true)
+      list = (await releases(true)).list
     } catch (e) {
       log.warn('update', '检查更新失败', e)
       return report('failed', t('检查更新失败：{error}', { error: (e as Error).message }))
@@ -534,6 +646,14 @@ export function updateApi(deps: {
     const current = currentVersion()
     const rel = pickUpdate(current, list)
     if (!rel) return report('latest', t('已经是最新版本（{version}）', { version: current }))
+    // feed 兜底只有版本号，没有安装包地址：能提醒用户有新版本，但不能在这里自动下载安装
+    if (!rel.tarUrl)
+      return report(
+        'failed',
+        t('发现新版本 {version}，但暂时拿不到 GitHub API 的安装包地址，请到 GitHub Releases 手动下载', {
+          version: rel.version,
+        }),
+      )
     const started = startInstall(rel, () =>
       report('waiting', t('新版本 {version} 已下载，等所有任务结束后再替换并重启', { version: rel.version })),
     )
@@ -554,16 +674,19 @@ export function updateApi(deps: {
       const current = currentVersion()
       const base: AppReleases = { current, packaged: packaged(), previous: previousVersion(), releases: [] }
       try {
-        const list = await releases(c.req.query('refresh') === '1')
+        const result = await releases(c.req.query('refresh') === '1')
         // 冷却期还没过：这次显示的是上次的列表，页面据此把失败提示换成温和说明
         const limitedUntil = cache?.limitedUntil && cache.limitedUntil > Date.now() ? cache.limitedUntil : undefined
         return c.json({
           ...base,
-          checkedAt: cache ? new Date(cache.at).toISOString() : undefined,
+          // 只有 feed 结果、还没有 API 缓存时 at 是 0，不能显示成 1970 年
+          checkedAt: cache?.at ? new Date(cache.at).toISOString() : undefined,
+          feedCheckedAt: result.feedAt ? new Date(result.feedAt).toISOString() : undefined,
+          source: result.source,
           limitedUntil: limitedUntil ? new Date(limitedUntil).toISOString() : undefined,
           // 缓存里可能是旧版按发布时间排的列表，这里再按版本号排一次
-          releases: [...list].sort(newestFirst).slice(0, 5),
-          update: pickUpdate(current, list),
+          releases: [...result.list].sort(newestFirst).slice(0, 5),
+          update: pickUpdate(current, result.list),
         } satisfies AppReleases)
       } catch (e) {
         log.warn('update', '检查更新失败', e)
@@ -578,11 +701,15 @@ export function updateApi(deps: {
       if (!packaged()) return c.json({ error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新') }, 400)
       let rel: AppRelease | undefined
       try {
-        rel = (await releases(false)).find((r) => r.tag === tag) ?? (await releases(true)).find((r) => r.tag === tag)
+        rel =
+          (await releases(false)).list.find((r) => r.tag === tag) ??
+          (await releases(true)).list.find((r) => r.tag === tag)
       } catch (e) {
         return c.json({ error: t('读取版本列表失败：{error}', { error: (e as Error).message }) }, 502)
       }
       if (!rel) return c.json({ error: t('找不到版本 {tag}', { tag: tag ?? '' }) }, 404)
+      // feed 兜底只有版本号：没有安装包地址时不能假装能装，让用户去 GitHub Releases 手动下载
+      if (!rel.tarUrl) return c.json({ error: t('这个版本没有可用的安装包地址，请到 GitHub Releases 手动下载') }, 502)
       const started = startInstall(rel)
       if ('error' in started)
         return c.json({ error: started.error, ...(started.busy ? { busy: started.busy } : {}) }, started.status)

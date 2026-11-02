@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -9,11 +9,29 @@ import { setLang } from '../shared/i18n.ts'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-update-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { platformAsset, stopForUpdate, updateApi } = await import('./update.ts')
+const { platformAsset, stopForUpdate, updateApi, parseFeed } = await import('./update.ts')
 
 // 断言的是中文原文，CI 的系统语言是英文。update.ts 的依赖链会引入 lang.ts，
 // 它加载时按系统语言重新设置，所以要在 import 之后再固定
 setLang('zh')
+
+/**
+ * 默认的 feed 桩：没有专门测 feed 的用例里立即 404，
+ * 避免限流用例真的去访问 github.com
+ */
+async function stubDeadFeed() {
+  const http = await import('node:http')
+  const server = http.createServer((_req, res) => {
+    res.statusCode = 404
+    res.end('')
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/releases.atom`
+  process.env.AGENT_PANEL_RELEASES_FEED_URL = url
+  return { url, close: () => new Promise<void>((r) => server.close(() => r())) }
+}
+const deadFeed = await stubDeadFeed()
+after(() => deadFeed.close())
 
 /** 三个平台各自的包，加上旧的通用包 */
 const assets = (v: string) => [
@@ -178,7 +196,13 @@ test('更新卡住时不再一直挡住：没有进展超过 10 分钟的会作�
 /** 检查更新的缓存文件：每个用例自己准备，避免上一个用例留下缓存干扰 */
 const releasesCacheFile = () => path.join(dir, 'cache', 'updates', 'releases.json')
 const clearReleasesCache = () => rmSync(releasesCacheFile(), { force: true })
-const writeReleasesCache = (c: { at: number; list: unknown[]; etag?: string; limitedUntil?: number }) => {
+const writeReleasesCache = (c: {
+  at: number
+  list: unknown[]
+  etag?: string
+  limitedUntil?: number
+  feed?: { at: number; release: unknown }
+}) => {
   mkdirSync(path.dirname(releasesCacheFile()), { recursive: true })
   writeFileSync(releasesCacheFile(), JSON.stringify(c))
 }
@@ -224,6 +248,57 @@ async function stubGithub(
     close: () => new Promise<void>((r) => server.close(() => r())),
   }
 }
+
+/**
+ * 同时提供 API 和 Atom feed 的 GitHub 桩：记下两个路径各被请求了几次，
+ * 用来断言限流后没有再撞 API、feed 有自己的短缓存
+ */
+async function stubGithubFeed(
+  api: () => { status?: number; headers?: Record<string, string>; body?: string },
+  feed: () => { status?: number; body?: string },
+) {
+  const http = await import('node:http')
+  const hits = { api: 0, feed: 0 }
+  const server = http.createServer((req, res) => {
+    if (req.url?.startsWith('/releases.atom')) {
+      hits.feed++
+      const r = feed()
+      res.statusCode = r.status ?? 200
+      res.setHeader('content-type', 'application/atom+xml')
+      res.end(r.body ?? '')
+      return
+    }
+    hits.api++
+    const r = api()
+    res.statusCode = r.status ?? 200
+    if (res.statusCode !== 304) res.setHeader('content-type', 'application/json')
+    for (const [k, v] of Object.entries(r.headers ?? {})) res.setHeader(k, v)
+    res.end(r.body ?? '')
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  process.env.AGENT_PANEL_RELEASES_URL = `${base}/releases`
+  process.env.AGENT_PANEL_RELEASES_FEED_URL = `${base}/releases.atom`
+  return {
+    hits,
+    close: async () => {
+      await new Promise<void>((r) => server.close(() => r()))
+      process.env.AGENT_PANEL_RELEASES_FEED_URL = deadFeed.url
+      delete process.env.AGENT_PANEL_RELEASES_URL
+    },
+  }
+}
+
+/** GitHub 的 Release feed 样本：和真实 feed 一样，只带 tag、时间和 release 页面 */
+const atom = (tag: string, updated = '2026-01-01T00:00:00Z') => `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>tag:github.com,2008:Repository/1/${tag}</id>
+    <updated>${updated}</updated>
+    <link rel="alternate" type="text/html" href="https://example.com/releases/tag/${tag}"/>
+    <title>${tag}</title>
+  </entry>
+</feed>`
 
 const makeUpdateApi = () =>
   updateApi({ running: () => 0, restart: () => {}, stopAll: async () => {}, interrupted: () => [] })
@@ -352,5 +427,127 @@ test('版本列表按版本号从新到旧排：后出包的旧版本不会排�
   } finally {
     await new Promise<void>((r) => server.close(() => r()))
     delete process.env.AGENT_PANEL_RELEASES_URL
+  }
+})
+
+test('Release feed 解析：取最新 tag 和 release 页面，没有安装包地址', () => {
+  const rel = parseFeed(atom('v9.9.9', '2026-02-03T04:05:06Z'))
+  assert.equal(rel?.tag, 'v9.9.9')
+  assert.equal(rel?.version, '9.9.9')
+  assert.equal(rel?.publishedAt, '2026-02-03T04:05:06Z')
+  assert.equal(rel?.url, 'https://example.com/releases/tag/v9.9.9')
+  assert.equal(rel?.tarUrl, '', 'feed 里没有安装包地址')
+  assert.equal(rel?.zipUrl, '')
+  assert.equal(rel?.sumsUrl, undefined)
+  assert.equal(parseFeed('<feed></feed>'), undefined, '没有 entry 时不算读到版本')
+  assert.equal(parseFeed(atom('not-a-version')), undefined, '标题不是版本号的 entry 要忽略')
+  assert.equal(parseFeed(atom('v1.2.3-dev'))?.prerelease, true, '预览版按 tag 的 -dev 判断')
+})
+
+test('API 被限流时退到 Release feed：能判断新版本，冷却期内不再撞 API，feed 有自己的短缓存', async () => {
+  clearReleasesCache()
+  const reset = Math.floor(Date.now() / 1000) + 10 * 60
+  const gh = await stubGithubFeed(
+    () => ({ status: 403, headers: { 'x-ratelimit-reset': String(reset) } }),
+    () => ({ body: atom('v9.9.9') }),
+  )
+  try {
+    const first: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    assert.equal(first.error, undefined, 'feed 能兜底时不算检查失败')
+    assert.equal(first.source, 'feed')
+    assert.equal(first.update?.tag, 'v9.9.9', 'feed 里的最新版本照常提示')
+    assert.equal(first.releases[0].tag, 'v9.9.9')
+    assert.equal(first.releases[0].tarUrl, '', 'feed 结果没有安装包地址')
+    assert.ok(first.feedCheckedAt, '要标出 feed 的检查时间')
+    assert.equal(first.limitedUntil, new Date(reset * 1000).toISOString())
+    assert.equal(gh.hits.api, 1)
+    assert.equal(gh.hits.feed, 1)
+
+    // 冷却期内再点「检查更新」：不撞 API，feed 也走短缓存
+    const again: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    assert.equal(again.source, 'feed')
+    assert.equal(gh.hits.api, 1, '冷却期内不能再请求 GitHub API')
+    assert.equal(gh.hits.feed, 1, 'feed 结果在缓存期内，不连点')
+
+    // feed 缓存过期后才再读一次 feed，API 仍然不动
+    const saved = JSON.parse(readFileSync(releasesCacheFile(), 'utf8'))
+    saved.feed.at = Date.now() - 60 * 60_000
+    writeFileSync(releasesCacheFile(), JSON.stringify(saved))
+    const stale: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    assert.equal(stale.source, 'feed')
+    assert.equal(gh.hits.api, 1)
+    assert.equal(gh.hits.feed, 2)
+  } finally {
+    await gh.close()
+  }
+})
+
+test('API 被限流、feed 也失败时：有缓存回退缓存，没有缓存才报错', async () => {
+  const reset = Math.floor(Date.now() / 1000) + 10 * 60
+  const gh = await stubGithubFeed(
+    () => ({ status: 403, headers: { 'x-ratelimit-reset': String(reset) } }),
+    () => ({ status: 500, body: 'nope' }),
+  )
+  try {
+    // 没有缓存：如实报错，并且冷却期内不再撞 API
+    clearReleasesCache()
+    const api = makeUpdateApi().api
+    const none: any = await (await api.request('/releases?refresh=1')).json()
+    assert.match(none.error, /403/, '没有缓存时要报出限流')
+    const blocked: any = await (await api.request('/releases?refresh=1')).json()
+    assert.match(blocked.error, /403/)
+    assert.equal(gh.hits.api, 1, '没有缓存可回退时也要进入冷却')
+
+    // 有缓存：回退到上次的完整列表，并标出恢复时间
+    writeReleasesCache({ at: Date.now() - 7 * 3600_000, list: [cachedRelease()] })
+    const cached: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    assert.equal(cached.error, undefined)
+    assert.equal(cached.source, 'api', 'feed 失败时显示的是 API 的旧缓存')
+    assert.equal(cached.releases[0].tag, 'v9.9.9')
+    assert.ok(cached.limitedUntil)
+    assert.equal(cached.feedCheckedAt, undefined)
+  } finally {
+    await gh.close()
+  }
+})
+
+test('API 返回 5xx 时也用 Release feed 兜底', async () => {
+  clearReleasesCache()
+  const gh = await stubGithubFeed(
+    () => ({ status: 502, body: 'bad gateway' }),
+    () => ({ body: atom('v9.9.9') }),
+  )
+  try {
+    const body: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    assert.equal(body.error, undefined)
+    assert.equal(body.source, 'feed')
+    assert.equal(body.update?.tag, 'v9.9.9')
+    assert.equal(body.limitedUntil, undefined, '5xx 不是限流，不标恢复时间')
+  } finally {
+    await gh.close()
+  }
+})
+
+test('feed 兜底拿到的版本没有安装包地址：/install 不假装能装', async () => {
+  clearReleasesCache()
+  const oldApp = process.env.AGENT_PANEL_APP_DIR
+  process.env.AGENT_PANEL_APP_DIR = dir
+  const gh = await stubGithubFeed(
+    () => ({ status: 403, headers: { 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 600) } }),
+    () => ({ body: atom('v9.9.9') }),
+  )
+  try {
+    const res = await makeUpdateApi().api.request('/install', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tag: 'v9.9.9' }),
+    })
+    assert.equal(res.status, 502)
+    const body: any = await res.json()
+    assert.match(body.error, /GitHub Releases/, '要引导用户去 GitHub Releases 手动下载')
+  } finally {
+    await gh.close()
+    if (oldApp === undefined) delete process.env.AGENT_PANEL_APP_DIR
+    else process.env.AGENT_PANEL_APP_DIR = oldApp
   }
 })
