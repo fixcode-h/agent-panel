@@ -49,14 +49,14 @@ const task = (id: string, extra: Record<string, unknown>) =>
     ...extra,
   })
 
-/** 任务在子对话列表里会不会转圈：和界面用同一份判定，cliAlive 取进程已回收的值 */
-const spins = (t: Task) =>
+/** 任务在子对话列表里会不会转圈：和界面用同一份判定。alive 是 CLI 还活着（回收 / 重启之前），默认取进程已回收的值 */
+const spins = (t: Task, alive = false) =>
   childSpinning({
     id: t.id,
     title: t.title,
     status: t.status,
     working: t.working,
-    cliAlive: false,
+    cliAlive: alive,
     startedAt: t.createdAt,
     requests: t.requests.length,
     asking: t.parentAsks?.length ?? 0,
@@ -76,7 +76,7 @@ test('进程已回收、状态还写着 running 的等下一句任务：收口�
   })
   const created = await store.create(waiting)
   const savedAt = created.updatedAt
-  assert.equal(spins(waiting), true, '回收前界面把它画成在跑（等下一句 + 计划没做完）')
+  assert.equal(spins(waiting, true), true, '回收前（CLI 还活着）界面把它画成在跑（等下一句 + 计划没做完）')
 
   assert.equal(await settleReclaimed(store, waiting.id, 'presence'), true)
 
@@ -126,7 +126,7 @@ test('这一轮已经说完（done）、但计划没做完：回收时也收口�
   const store = createTaskStore()
   const doneUnfinished = task('done-unfinished', { status: 'done', plans: [halfPlan()] })
   await store.create(doneUnfinished)
-  assert.equal(spins(doneUnfinished), true, 'done + 计划没做完，界面按 unfinished 画成在跑')
+  assert.equal(spins(doneUnfinished, true), true, 'done + 计划没做完、CLI 还活着，界面按 unfinished 画成在跑')
 
   assert.equal(await settleReclaimed(store, doneUnfinished.id, 'presence'), true)
 
