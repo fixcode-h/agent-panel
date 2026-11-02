@@ -97,3 +97,17 @@ export function dropInterrupted(s: TaskStep, why: string) {
   if (!s.output) s.output = why
   return true
 }
+
+/**
+ * 用户按停止时这一轮还有没干完的活：派出的子任务被打断了，或者计划里还有在等结果（子任务、子对话、后台命令）的步骤。
+ * 这时即使 CLI 恰好刚报完这一轮结束，也要记成「已停止」：记成「已完成」的话「继续执行」会被拒，
+ * 一起被停下的子对话、子任务也接不回来（2026-11-02 真实接口测试撞到：停止和这一轮结束落在同一毫秒）
+ */
+export function userCutWork(host: EngineHost) {
+  if (host.stopReason?.() !== 'user') return false
+  const { task } = host
+  if (task.steps.some((s) => s.slot === 'sub' && (s.interrupted || s.status === 'running' || s.status === 'pending')))
+    return true
+  const plan = task.plans?.at(-1)
+  return !!plan && !plan.doneAt && plan.steps.some((s) => s.waits?.some((w) => w.state === 'waiting'))
+}
