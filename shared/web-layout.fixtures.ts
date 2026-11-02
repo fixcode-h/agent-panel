@@ -179,9 +179,12 @@ export function webLayoutFixtures(): WebLayoutFixture[] {
               { Direction: 'row', Gap: 8, AlignItems: 'center' },
               {
                 Children: [
+                  // Pic 是固定尺寸，放在最前面：它的位置不能靠按钮文字宽或输入框默认宽推出来。
+                  // 后两者的估算随机器字体变（Chromium 默认输入框宽由字体解析决定，和 12.7em 的估算可能差二十来像素），
+                  // 而 Pic 自己的容差只按 64×48 算，上游的估算误差会把它的位置对不上。
+                  w('Picture', 'Pic', { Width: 64, Height: 48 }),
                   w('WebButton', 'Buy', { Text: 'Buy now', Padding: pad(16, 8) }),
                   w('Input', 'Email', { Placeholder: 'you@example.com', Padding: pad(8, 6), BorderWidth: 1 }),
-                  w('Picture', 'Pic', { Width: 64, Height: 48 }),
                 ],
               },
             ),
