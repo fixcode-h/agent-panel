@@ -236,6 +236,51 @@ test('Claude Code：出错的结果、Bash 的退出码；每次模型回应开�
   assert.equal((edit as { exitCode?: number }).exitCode, undefined)
 })
 
+/**
+ * deepseek 中转网关（真实抓到的顺序）：推理 delta 记在回复条目的 id 下，推理条目完成时 id 不同；
+ * 同一条回复发两次 item/started。思考和正文都只出一次，不多出一段空回复
+ */
+test('Codex app-server：网关把推理 delta 挂在回复条目上时思考不重复、正文不丢', async () => {
+  const events: CliEvent[] = []
+  const session = codexAppSession({
+    cwd: CWD,
+    input: '17*23',
+    model: '',
+    effort: 'high',
+    permission: '',
+    extraArgs: [],
+    platform: 'linux',
+    onEvent: (e) => events.push(e),
+  })
+  session.start({ write: () => {}, end: () => {} })
+  const msg = { type: 'agentMessage', id: 'msg_1_item_0', text: '' }
+  const n = (method: string, params: object) => ({ method, params: { threadId: 'thr', turnId: 'turn_1', ...params } })
+  for (const m of [
+    { id: 1, result: {} },
+    { id: 2, result: { thread: { id: 'thr' } } },
+    { id: 3, result: { turn: { id: 'turn_1' } } },
+    n('item/started', { item: { type: 'reasoning', id: 'rs_1', summary: [], content: [] } }),
+    n('item/started', { item: msg }),
+    n('item/reasoning/summaryPartAdded', { itemId: msg.id, summaryIndex: 0 }),
+    n('item/reasoning/summaryTextDelta', { itemId: msg.id, delta: '先算 17*20', summaryIndex: 0 }),
+    n('item/reasoning/summaryTextDelta', { itemId: msg.id, delta: '，再加 17*3。', summaryIndex: 0 }),
+    n('item/agentMessage/delta', { itemId: msg.id, delta: '391' }),
+    n('item/completed', { item: { type: 'reasoning', id: 'rs_1', summary: ['先算 17*20，再加 17*3。'], content: [] } }),
+    n('item/started', { item: { ...msg, text: '391' } }),
+    n('item/completed', { item: { ...msg, text: '391' } }),
+  ]) {
+    session.handle(m)
+    await tick()
+  }
+  const join = (type: string) =>
+    events
+      .filter((e) => e.type === type)
+      .map((e) => (e as { text: string }).text)
+      .join('')
+  assert.equal(join('thinking'), '先算 17*20，再加 17*3。', '推理条目完成时不再整段重发')
+  assert.equal(join('text_delta') + join('text'), '391', '重复的 item/started 不多出空段落')
+})
+
 /** Codex 的 error 通知：willRetry 时 Codex 自己会重试（断流重连的 message 是「Reconnecting... n/m」，原因在 additionalDetails） */
 const codexError = (message: string, willRetry = true, additionalDetails?: string) => ({
   method: 'error',
