@@ -28,7 +28,7 @@ import {
   autoArchivePicks,
 } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
-import { cancelWait } from './exec/runner.ts'
+import { cancelWait } from './exec/steering.ts'
 import { makeAlert } from '../shared/alerts.ts'
 import { setPresenceBusy, setPresenceIdleHandler } from './presence.ts'
 import { settleReclaimed } from './exec/reclaim.ts'

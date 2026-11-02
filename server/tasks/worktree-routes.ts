@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Task, type Project } from '../../shared/schema.ts'
 import { childHoldsOf } from '../../shared/task.ts'
-import { cancelWait } from '../exec/runner.ts'
+import { cancelWait } from '../exec/steering.ts'
 import { CHATS_DIR } from '../store.ts'
 import { mergeSidesText, mergeWorktree, removeWorktree, worktreeStatus } from '../exec/worktree.ts'
 import { rm } from 'node:fs/promises'

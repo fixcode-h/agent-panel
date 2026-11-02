@@ -7,7 +7,7 @@ import { childReport, type ConvState, taskDeleted, type ChildHold } from '../../
 import { branchCommits, gitChanges, gitHead, gitNumstat } from '../exec/git.ts'
 import { type HandoffInput, handoffMissing, handoffTemplate, handoffText } from '../../shared/handoff.ts'
 import { overrideText, reviewGate, triageText, type ReviewOverride, type TriageItem } from '../../shared/review-gate.ts'
-import { steerTask } from '../exec/runner.ts'
+import { steerTask } from '../exec/steering.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { placedFiles } from '../attachments.ts'
 import { commitWorktree } from '../exec/worktree.ts'

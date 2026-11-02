@@ -12,7 +12,7 @@ import { commandSummary, ownedEntries, processSnapshot, subtree, sumRss, tracked
 import { HARD_STOP } from '../exec/invoke.ts'
 import type { TasksScope } from './scope.ts'
 import type { Live } from './types.ts'
-import { cancelWait } from '../exec/runner.ts'
+import { cancelWait } from '../exec/steering.ts'
 import { settleReclaimed } from '../exec/reclaim.ts'
 import { taskLog } from '../task-log.ts'
 import { killTree, killTreeDeep, taskCliAlive } from '../exec/process.ts'

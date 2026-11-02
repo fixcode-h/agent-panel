@@ -38,15 +38,10 @@ import { childAskInitial } from '../../shared/child-ask.ts'
 import { getSettings } from '../settings.ts'
 import { detectClis } from '../detect.ts'
 import { gitHead, gitNumstat } from '../exec/git.ts'
-import {
-  deliverWait,
-  forgetNotes,
-  noPushEnv,
-  runRealTurn,
-  stalledTurn,
-  steerTask,
-  type RealContext,
-} from '../exec/runner.ts'
+import { noPushEnv, stalledTurn } from '../exec/runner.ts'
+import { deliverWait, forgetNotes, steerTask } from '../exec/steering.ts'
+import { runRealTurn } from '../exec/real-turn.ts'
+import { type RealContext } from '../exec/real-context.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { dropHeld, hasHeld, holdForNextTurn, markHeld, takeHeld } from '../exec/delivery.ts'
 import { resetIdleCountdown } from '../presence.ts'

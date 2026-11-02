@@ -24,22 +24,11 @@ import {
   Loader2,
   MessageSquareText,
   MoreHorizontal,
-  PanelRight,
-  SquareChartGantt,
-  Pencil,
   RotateCw,
-  Trash2,
   X,
-  ListPlus,
   Download,
   FileCode2,
   FileInput,
-  Sparkles,
-  Settings2,
-  CircleStop,
-  Copy,
-  ClipboardList,
-  PictureInPicture2,
   Upload,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
@@ -47,6 +36,8 @@ import { useDiagDialogs } from './diag-dialogs'
 import { ParentBar } from './ChildMail'
 import { ChildrenBar, plainRow } from './ChildrenBar'
 import { ProcessMenu } from './ProcessPanel'
+import { PinMenuRow, PinnedButton, useHeaderPins } from './HeaderPins'
+import { taskHeaderItems } from './header-items'
 import { TurnRail } from './TurnRail'
 import { chatHelperIds } from './HelperCards'
 import { keepLiveFields, windowedForSummary } from '@/lib/live-fields'
@@ -94,7 +85,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { InlineRename } from '@/components/ui/inline-rename'
-import { IconButton, ToggleIconButton } from '@/components/ui/icon-button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Badge } from '@/components/ui/badge'
 import { StatusPill } from '@/components/ui/status-pill'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
@@ -504,6 +495,10 @@ export function TaskView({
   const [convSettings, setConvSettings] = useState(false)
   // 对话菜单「状态」（CLI 生命周期诊断）和「父子往来记录」（ADR 0034：默认不在右栏）
   const diag = useDiagDialogs(taskId)
+  // 标题栏按钮和「更多操作」菜单是同一份清单，钉上的显示在标题栏（所有对话共用，见 HeaderPins）
+  const pins = useHeaderPins()
+  // 「对话进程」下拉：钉在标题栏时由它自己的按钮开关，没钉时从菜单打开，开关放在这一层
+  const [procOpen, setProcOpen] = useState(false)
   // 没发出去的内容由 ChatComposer 自己按对话记着（切走再回来还在），打字时不再重渲染整页；
   // 这里只留一个「输入框是不是空的」，给「继续执行」按钮用，只在空 / 非空切换时更新
   const [draftEmpty, setDraftEmpty] = useState(true)
@@ -591,7 +586,8 @@ export function TaskView({
   const [filesFolded, setFilesFolded] = useState(() => readFilesFolded(taskId))
   const [sessionOpen, setSessionOpen] = useState(() => readStored(SESSION_BAR_KEY) !== 'closed')
   // 会话栏和右侧文件栏并排放不下时谁让：后打开的那个留着（默认会话栏，照 Claude Code）
-  const [lastRail, setLastRail] = useState<'session' | 'files'>('session')
+  // auto：还没手动开过哪一边。文件栏放不下时默认让给会话栏；Chat 页的右栏（代码、来源、附件）是聊天自己的内容，默认它留着
+  const [lastRail, setLastRail] = useState<'session' | 'files' | 'auto'>('auto')
   // 对话加右栏这一整行的宽度：按它算会话栏放不放得下
   const [rowW, setRowW] = useState(0)
   const [rowEl, setRowEl] = useState<HTMLDivElement | null>(null)
@@ -1303,9 +1299,13 @@ export function TaskView({
   const showOther = !pane && !onParent && openRun > 0
   // 会话栏放不放得下：先保中间对话的最小宽度；再加上右侧那一栏（文件或功能面板）也放得下就并排，
   // 放不下时后打开的那个留着，另一个让开（文件栏让开时只是不显示，不记成收起）
-  const sessionAllowed = !pane && !embed && !noFiles && !showOther
-  const sideW = reportOn ? reportPane.width : taskPanel.width
-  const sideWanted = reportOn || childOn || (!filesFolded && !noFiles)
+  // Chat 页（不属于项目）也有会话栏，只是不显示环境那些和项目有关的块（见 SessionBar 的 noProject）
+  const sessionAllowed = !pane && !embed && !showOther
+  // Chat 页的右栏（代码、来源、附件）：和项目对话的文件栏一样参与「并排放不放得下」
+  const chatRailWanted = chatPage && chatRailOn && !chatRail.empty && !reportOn && !reportCover
+  const chatRailW = Math.min(420, rowW * 0.4)
+  const sideW = reportOn ? reportPane.width : chatRailWanted ? chatRailW : taskPanel.width
+  const sideWanted = reportOn || childOn || (!filesFolded && !noFiles) || chatRailWanted
   const sessionFits = rowW >= SESSION_BAR_W + CONVERSATION_MIN
   const bothFit = rowW >= SESSION_BAR_W + CONVERSATION_MIN + sideW
   const sessionShown =
@@ -1313,8 +1313,12 @@ export function TaskView({
     sessionOpen &&
     sessionFits &&
     // 模型设计对话：右栏是 3D 预览（「模型」页签），放不下时会话栏让开，不让预览被挤掉
-    (bothFit || !sideWanted || (lastRail === 'session' && !reportOn && !task.modelDesign))
+    (bothFit ||
+      !sideWanted ||
+      (lastRail !== 'files' && !reportOn && !task.modelDesign && !(chatRailWanted && lastRail === 'auto')))
   const filesYield = !reportOn && !childOn && !filesFolded && sessionShown && !bothFit
+  // 放不下时 Chat 右栏和文件栏一样给会话栏让开（后打开的那个留着）
+  const chatRailShown = chatRailWanted && !(sessionShown && !bothFit)
   const filesHidden = (filesFolded && !childOn) || filesYield
   const closeReport = () => {
     if (reportCover) return setReportCover(false)
@@ -1835,10 +1839,9 @@ export function TaskView({
 
   // 标题区（面包屑、状态、标题）和操作按钮：父对话放进页签条（标题是父对话页签、按钮在页签条右端），
   // 中间打开的子对话沿用原来的标题栏
-  // 进程菜单、模拟 / 导入标记：子对话在标题后面，父对话在页签条右端
+  // 模拟 / 导入标记：子对话在标题后面，父对话在页签条右端（对话进程是标题栏按钮，可钉，见 headerItems）
   const headerBadges = (
     <>
-      <ProcessMenu taskId={task.id} />
       {task.simulated && (
         <Badge tone="warning" title={t('没有真正调用 Agent，输出是示例')} className="hidden shrink-0 md:inline-flex">
           <FlaskConical className="h-3 w-3" />
@@ -1900,6 +1903,80 @@ export function TaskView({
       {headerBadges}
     </nav>
   )
+  // 标题栏的按钮和「更多操作」菜单是同一份清单（header-items、HeaderPins）：钉上的画在「更多操作」左边，没钉的只在菜单里
+  const { items: headerItems, railButton } = taskHeaderItems({
+    task,
+    pane,
+    family: !!task.parentTaskId || children.length > 0,
+    reportTitle: report ? reportTitle(report.kind) : undefined,
+    reportOn,
+    reportCover,
+    setReportCover,
+    filesHidden,
+    rail: !pane && !noFiles ? 'files' : chatPage ? 'chat' : null,
+    chatRailEmpty: chatRail.empty,
+    chatRailShown,
+    sessionToggle: sessionAllowed && sessionFits,
+    sessionShown,
+    progress: task.mode === 'workflow' && tops.length > 0,
+    progressOpen,
+    setProgressOpen,
+    procOpen,
+    setProcOpen,
+    busy: running && working,
+    resumeLatest: !task.imported && wfChanged && (task.status === 'failed' || task.status === 'stopped'),
+    canPopout: !pane && !embed && !task.imported && !task.parentTaskId,
+    on: {
+      settings: () => setConvSettings(true),
+      rename: () => setRenaming(task.title),
+      exportIt,
+      exportHtml,
+      copy: copyIt,
+      status: diag.openStatus,
+      collab: diag.openCollab,
+      analyze: () => setAnalyzing(true),
+      forceStop: () => setForceAsk(true),
+      resumeLatest: () => void resume(true),
+      remove: () => setDeleting(true),
+      popout: () => {
+        minimizeTask({ id: task.id, projectId: task.projectId || undefined })
+        // 和 AI 窗口的“去对话里看”相反：收起后回上一级，不同时显示对话页和浮条
+        go(minimizeBackRoute({ projectId: task.projectId || undefined }))
+      },
+      session: (v) => {
+        setSessionOpen(v)
+        writeStored(SESSION_BAR_KEY, v ? '' : 'closed')
+        if (v) setLastRail('session')
+      },
+      reportWide: () => {
+        if (reportOn) return closeReport()
+        setReportFolded(false)
+        writeReportFolded(taskId, false)
+      },
+      // 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度
+      filesWide: () => {
+        setLastRail('files')
+        // 功能面板占着右栏：收起它换成文件
+        if (reportOn) {
+          setReportFolded(true)
+          writeReportFolded(taskId, true)
+          if (filesFolded) toggleFiles()
+          return
+        }
+        // 给会话栏让开了位置的：点了就换回文件，不是收起
+        if (filesYield) return
+        toggleFiles()
+      },
+      filesCover: () => setPanel(true),
+      chatRail: () => {
+        setLastRail('files')
+        // 给会话栏让开了位置的：点了就换回右栏，不是收起
+        if (chatRailWanted && !chatRailShown) return
+        toggleChatRail()
+      },
+    },
+  })
+  const pinnedItems = headerItems.filter((x) => pins.isPinned(x.key))
   const headerActions = (
     <>
       {task.mode === 'workflow' && (
@@ -1932,28 +2009,6 @@ export function TaskView({
           ))}
         </div>
       )}
-      {task.mode === 'workflow' && tops.length > 0 && (
-        <IconButton
-          size="sm"
-          tone="bare"
-          icon={ListPlus}
-          label={t('任务进度')}
-          aria-expanded={progressOpen}
-          onClick={() => setProgressOpen((v) => !v)}
-        />
-      )}
-      {/* 窄屏右栏放不下：文件面板从右边滑出来盖在对话上 */}
-      {!pane && !noFiles && (
-        <IconButton
-          size="sm"
-          tone="bare"
-          icon={PanelRight}
-          label={t('显示文件')}
-          title={t('文件')}
-          onClick={() => setPanel(true)}
-          className="xl:hidden"
-        />
-      )}
       {/* 子对话面板右上角的「解决」：标记为已解决，记录、分支和未提交改动都保留；已经解决时换成标记 */}
       {pane &&
         task.parentTaskId &&
@@ -1976,155 +2031,32 @@ export function TaskView({
             <CheckCircle2 className="h-4 w-4" />
           </IconButton>
         ))}
+      {pinnedItems.map((x) => (
+        <PinnedButton key={x.key} item={x} />
+      ))}
+      {/* 对话进程没钉在标题栏时：从菜单打开，面板贴着「更多操作」左边这个看不见的锚点弹出 */}
+      {!pins.isPinned('processes') && (
+        <ProcessMenu taskId={task.id} open={procOpen} onOpenChange={setProcOpen} hidden />
+      )}
       <Menu>
         <MenuTrigger asChild>
           <IconButton size="sm" tone="bare" label={t('更多操作')}>
             <MoreHorizontal className="h-4 w-4" />
           </IconButton>
         </MenuTrigger>
-        <MenuContent>
-          {/* 项目里的父对话有自己的设置：目标、全局规则、子对话 */}
-          {task.projectId && !task.parentTaskId && task.mode === 'chat' && !task.imported && (
-            <MenuItem onSelect={() => setConvSettings(true)}>
-              <Settings2 className="h-4 w-4" />
-              {t('对话设置')}
-            </MenuItem>
-          )}
-          <MenuItem onSelect={() => setRenaming(task.title)}>
-            <Pencil className="h-4 w-4" />
-            {t('重命名')}
-          </MenuItem>
-          <MenuItem onSelect={exportIt} title={t('连同它分出的子对话一起导出，导入后父子结构能还原')}>
-            <Download className="h-4 w-4" />
-            {t('导出任务')}
-          </MenuItem>
-          <MenuItem onSelect={exportHtml} title={t('导出一个自包含的 HTML 文件，没装面板的浏览器也能直接打开')}>
-            <FileCode2 className="h-4 w-4" />
-            {t('导出 HTML 报告')}
-          </MenuItem>
-          <MenuItem onSelect={copyIt}>
-            <Copy className="h-4 w-4" />
-            {t('复制对话')}
-          </MenuItem>
-          {diag.menuItems(!!task.parentTaskId || children.length > 0)}
-          {/* CLI 还连着、只是在等下一句时也能分析：只有真的在处理这一轮才不行 */}
-          <MenuItem disabled={running && working} onSelect={() => setAnalyzing(true)}>
-            <Sparkles className="h-4 w-4" />
-            {t('AI 分析执行结果')}
-          </MenuItem>
-          {/* 停止只收这一轮，CLI 还留着等下一句；要连进程一起结束时用这一项 */}
-          {!task.imported && (
-            <MenuItem onSelect={() => setForceAsk(true)}>
-              <CircleStop className="h-4 w-4" />
-              {t('强制停止')}
-            </MenuItem>
-          )}
-          {!task.imported && wfChanged && (task.status === 'failed' || task.status === 'stopped') && (
-            <MenuItem onSelect={() => resume(true)}>
-              <RotateCw className="h-4 w-4" />
-              {t('按最新的工作流继续')}
-            </MenuItem>
-          )}
-          <MenuItem danger onSelect={() => setDeleting(true)}>
-            <Trash2 className="h-4 w-4" />
-            {t('删除任务')}
-          </MenuItem>
+        <MenuContent className="min-w-[220px]">
+          {headerItems.map((x) => (
+            <PinMenuRow key={x.key} item={x} pinned={pins.isPinned(x.key)} onPin={(v) => pins.setPinned(x.key, v)} />
+          ))}
         </MenuContent>
       </Menu>
-      {/* 转成弹窗：把当前对话收成右下角的浮条，页面回到上一级。
-          只在对话页本体上给：右栏子对话（pane）、AI 窗口里嵌的（embed）不需要——
-          右栏本来就在对话旁边、AI 窗口自己已经有最小化按钮；导入的任务只能看，不收。
-          子对话也不给：浮条的状态和标题靠 useData().tasks 找对话，而 /tasks 列表
-          只回顶层对话（见 server/tasks.ts），子对话收起来会一出现就写「对话已关闭」。 */}
-      {!pane && !embed && !task.imported && !task.parentTaskId && (
-        <IconButton
-          size="sm"
-          tone="bare"
-          label={t('转成弹窗')}
-          title={t('转成弹窗（对话继续在后台运行）')}
-          onClick={() => {
-            minimizeTask({ id: task.id, projectId: task.projectId || undefined })
-            // 和 AI 窗口的“去对话里看”相反：收起后回上一级，不同时显示对话页和浮条
-            go(minimizeBackRoute({ projectId: task.projectId || undefined }))
-          }}
-        >
-          <PictureInPicture2 className="h-4 w-4" />
-        </IconButton>
-      )}
-      {/* AI 分析对话的功能面板：宽屏切到右栏（子对话、运行开着时先收起它们），窄屏和子对话面板里盖在对话上 */}
-      {report && !pane && (
-        <ToggleIconButton
-          size="sm"
-          icon={ClipboardList}
-          className="hidden xl:grid"
-          label={reportTitle(report.kind)}
-          title={reportOn ? t('收起功能面板') : reportTitle(report.kind)}
-          pressed={reportOn}
-          onPressedChange={() => {
-            if (reportOn) return closeReport()
-            setReportFolded(false)
-            writeReportFolded(taskId, false)
-          }}
-        />
-      )}
-      {report && (
-        <ToggleIconButton
-          size="sm"
-          icon={ClipboardList}
-          className={pane ? undefined : 'xl:hidden'}
-          label={reportTitle(report.kind)}
-          pressed={reportCover}
-          onPressedChange={setReportCover}
-        />
-      )}
-      {/* 会话栏：中间对话右边的一列（环境、上下文、输出内容、更改）；连中间对话都放不下时不给开关 */}
-      {sessionAllowed && sessionFits && (
-        <ToggleIconButton
-          size="sm"
-          icon={SquareChartGantt}
-          label={sessionShown ? t('隐藏会话栏') : t('显示会话栏')}
-          pressed={sessionShown}
-          onPressedChange={(v) => {
-            setSessionOpen(v)
-            writeStored(SESSION_BAR_KEY, v ? '' : 'closed')
-            if (v) setLastRail('session')
-          }}
-        />
-      )}
-      {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度 */}
-      {!pane && !noFiles && (
-        <IconButton
-          size="sm"
-          tone="bare"
-          className="hidden xl:grid"
-          // 收起时和窄屏那个按钮一样：读屏名是「显示文件」、悬停提示「文件」（两者都指同一栏）
-          label={filesHidden || reportOn ? t('显示文件') : t('收起文件面板')}
-          title={filesHidden || reportOn ? t('文件') : t('收起文件面板')}
-          aria-expanded={!filesHidden && !reportOn}
-          onClick={() => {
-            setLastRail('files')
-            // 功能面板占着右栏：收起它换成文件
-            if (reportOn) {
-              setReportFolded(true)
-              writeReportFolded(taskId, true)
-              if (filesFolded) toggleFiles()
-              return
-            }
-            // 给会话栏让开了位置的：点了就换回文件，不是收起
-            if (filesYield) return
-            toggleFiles()
-          }}
-        >
-          {/* 开着、收起同一个图标（设计稿）：开着时图标是前景色（tone="bare" 按 aria-expanded 提亮） */}
-          <PanelRight className="h-4 w-4" />
-        </IconButton>
-      )}
+      {/* 右栏开关不进菜单，固定在「更多操作」右边 */}
+      {railButton}
       {embed?.actions}
     </>
   )
 
   // Chat 页（没有项目的聊天）的标题栏（Chat.dc.html）：标题，右边导出、开关右栏
-  const chatRailShown = chatPage && chatRailOn && !chatRail.empty && !reportOn && !reportCover
   const chatHeader = (
     <header
       className={cn(
@@ -2164,20 +2096,6 @@ export function TaskView({
         </MenuContent>
       </Menu>
       {headerActions}
-      <ToggleIconButton
-        size="sm"
-        // 设计稿：标题栏右端的图标都无底，开着时是前景色
-        tone="bare"
-        icon={PanelRight}
-        label={t('开关右栏')}
-        // 三样都没有时禁用，悬停说明为什么点不了
-        title={chatRail.empty ? t('这段聊天里还没有代码、来源或附件') : chatRailShown ? t('收起右栏') : t('打开右栏')}
-        pressed={chatRailShown}
-        disabled={chatRail.empty}
-        onPressedChange={toggleChatRail}
-        // 右栏只在宽屏并排（窄屏放不下第二栏），开关跟着只在宽屏出现
-        className="hidden xl:grid"
-      />
     </header>
   )
 
@@ -2511,6 +2429,7 @@ export function TaskView({
                         projectName={project?.name}
                         onTask={apply}
                         kids={children}
+                        noProject={noFiles}
                         env={
                           <EnvChip
                             compact

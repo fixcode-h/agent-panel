@@ -3,7 +3,7 @@ import test from 'node:test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { handoffName, saveHandoffFile } from './runner.ts'
+import { handoffName, saveHandoffFile } from './handoff-file.ts'
 
 test('交接文件：子任务 id 带「/」和 Windows 保留字符也存成一个文件，返回的路径读得到全文', async () => {
   assert.equal(handoffName('@chat/sub/h3'), '@chat_sub_h3')

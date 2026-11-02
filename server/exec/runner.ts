@@ -1,47 +1,25 @@
-import { turnInfo, type TurnInfo } from './turn-info.ts'
-import { detectVcs } from '../projects-analyze.ts'
-import { projectDocRoot } from '../doc-root.ts'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
-import path from 'node:path'
+import { turnInfo } from './turn-info.ts'
+
+import { stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import {
   aliasAgent,
-  type Agent,
   type AgentUsage,
-  type Attachment,
-  type CliStatus,
-  type Project,
-  type Settings,
-  type StopReason,
   type Task,
   type TaskMessage,
-  type TaskStep,
   type ToolUse,
   type Alert,
-  type Workflow,
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
-import { isGatewayError, makeAlert } from '../../shared/alerts.ts'
-import {
-  addNoteTaker,
-  hasHeld,
-  holdForNextTurn,
-  heldMessage,
-  markHeld,
-  noteTakersOf,
-  removeNoteTaker,
-  returnHeld,
-  takeHeld,
-  type NoteTaker,
-} from './delivery.ts'
-import { clearApiWait, markApiWait } from './api-wait.ts'
+import { makeAlert } from '../../shared/alerts.ts'
+import { addNoteTaker, holdForNextTurn, removeNoteTaker, type NoteTaker } from './delivery.ts'
+
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import {
   changesSince,
   mergeChanges,
   ownedChanges,
   pauseRun,
-  questionAnswers,
   resumeRun,
   sessionChanged,
   sessionMoved,
@@ -49,12 +27,12 @@ import {
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
-import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
+
 import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { attachmentAddDirs, placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
-import { CACHE_DIR, HANDOFF_DIR, handoffDirOf, writeFileOnce } from '../store.ts'
+import { handoffDirOf } from '../store.ts'
 import { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 
@@ -64,16 +42,8 @@ import { cachedModels, effortRejected, knownWindows, markNoEffort, supportedEffo
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
 import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
-import {
-  NODE_PART,
-  helperGate,
-  runEngineTurn,
-  type AgentCall,
-  type AgentResult,
-  type EngineHost,
-} from '../../shared/engine.ts'
-import { projectFormat } from '../file-format.ts'
-import { searchExcludeOf, searchExcludeRgConfig } from '../../shared/search-exclude.ts'
+import { NODE_PART, helperGate, type AgentCall, type AgentResult } from '../../shared/engine.ts'
+
 import { clip } from '../../shared/text.ts'
 import {
   CONTEXT_CARRY_SHARE,
@@ -105,35 +75,34 @@ import {
   CompactTracker,
   settleCompactRow,
   shouldRetryThrash,
-  thrashHint,
   thrashNote,
   THRASH_RETRY_PROMPT,
 } from './compaction.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
-import { listIntegrations } from '../integrations.ts'
+
 import { ensureBundled } from '../bundled-skills.ts'
-import { reviewDiff } from './git.ts'
+
 import { invokeCli, type CliControl } from './invoke.ts'
 import { setLimits } from '../cli-extras.ts'
 import type { BuildOptions } from '../../shared/clis.ts'
-import type { AskReply, CliEvent } from './parsers.ts'
+import type { CliEvent } from './parsers.ts'
 import { childEnv, exitReason, stderrTail } from './process.ts'
-import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
+
 import { redirectWait } from './redirect.ts'
 import { t } from '../../shared/i18n.ts'
-import { fmtDuration } from '../../shared/duration.ts'
+
 import { promptLangReminder, promptLangRules, promptUserNameRules, replyLang } from '../../shared/prompt-lang.ts'
 import { compactedSilently } from '../../shared/prompt-delta.ts'
 import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
 import { sourceHeader } from '../../shared/peer-message.ts'
 import { taskLog } from '../task-log.ts'
-import { AUTO_ANSWER } from '../asks.ts'
+
 import { dropAsked } from '../../shared/task-settle.ts'
 import { askViaParent } from './child-question.ts'
-import { askPushRequest, dropOwnRequests, noteAnswer, panelRequest, replies } from './panel-requests.ts'
-import { denyAdvice } from './deny-advice.ts'
+import { replies } from './panel-requests.ts'
+
 import { orchHint } from '../orch-mcp.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
@@ -143,7 +112,29 @@ import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
 import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn-changes.ts'
-import { addWaiter, firstWaiter, removeWaiter, userWaitSlot, waitersOf, type Waiter } from './waiters.ts'
+import { addWaiter, removeWaiter, userWaitSlot, type Waiter } from './waiters.ts'
+import {
+  EFFORT_REJECTED,
+  EnvStallNote,
+  MAX_NET_RETRIES,
+  SESSION_OTHER_PROJECT,
+  canKeepAlive,
+  envStallBudget,
+  envStallFailure,
+  envStallNote,
+  envStallTimeout,
+  failureHints,
+  forgetPromptSent,
+  isNetError,
+  settleEnvStallNotes,
+  shouldRetryEnvStall,
+  silentTurn,
+} from './retry-policy.ts'
+import { type Steerer, cancelWait, flushHeld, notes, steerNote, steers } from './steering.ts'
+import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from './api-gate.ts'
+import { searchExcludeEnv } from './search-exclude-env.ts'
+import { speedMeter } from './speed-meter.ts'
+import type { RealContext } from './real-context.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -151,97 +142,6 @@ function markTurnDone(task: Task) {
   task.turnDoneAt = now
   if (seenWhileWatched(task.id)) task.turnSeenAt = now
 }
-
-export interface RealContext {
-  task: Task
-  agents: Agent[]
-  workflows: Workflow[]
-  workflow?: Workflow
-  project: Project
-  settings: Settings
-  clis: CliStatus[]
-  /** 本轮用户输入 */
-  prompt: string
-  signal: AbortSignal
-  /** 为什么停下这一轮：'user' 是用户按的暂停，其余是顺带结束的动作（见 EngineHost.stopReason） */
-  stopReason?: () => StopReason | undefined
-  /**
-   * 开始保活（CLI 回复完停在等下一句）时通知宿主：宿主按全局上限收掉最久没用的保活会话，
-   * 不然页面开着过、又切走的对话会各留一个进程，叠起来就是十几个
-   */
-  onKeepAlive?: (taskId: string) => void
-  /**
-   * 对话这一轮真的结束了（CLI 报了这一轮的结果，或者回复完停在等下一句）。
-   * 子对话靠它收口父对话计划里等自己的步骤：进程会被保活留着等下一句，run 不会返回，收尾处的回报等不到。
-   * tools：这一轮调用过几次工具（顶层对话据此分辨「做到一半停了」和「只是回答了一句话」）
-   */
-  onTurnEnd?: (turn: TurnInfo) => void
-  changed: (flush?: boolean) => void
-  newId: () => string
-  /** 任务所在目录是否是 git 仓库（决定改动从 git 读还是从工具调用里统计） */
-  isGit: boolean
-  /** 这一轮不是普通的对话：压缩上下文，或者审查代码 */
-  op?: AgentCall['op']
-  /** 「继续流程」：见 EngineHost.resume */
-  resume?: boolean
-  /** 打开对话页时后台用 --resume 启动，只等下一句 */
-  prewarm?: boolean
-  prewarmFrom?: Task['status']
-  prewarmTurnDoneAt?: string
-  /** 对话 Agent 启动计划、分派子对话用的项目数据（见 EngineHost） */
-  workflowCatalog?: EngineHost['workflowCatalog']
-  resolveWorkflow?: EngineHost['resolveWorkflow']
-  listConversations?: EngineHost['listConversations']
-  createConversation?: EngineHost['createConversation']
-  sendToConversation?: EngineHost['sendToConversation']
-  /** 父子对话之间的通讯和文件认领（见 EngineHost） */
-  rules?: EngineHost['rules']
-  goal?: EngineHost['goal']
-  takeInbox?: EngineHost['takeInbox']
-  messageParent?: EngineHost['messageParent']
-  claimFiles?: EngineHost['claimFiles']
-  releaseFiles?: EngineHost['releaseFiles']
-  /** 子对话点名「禁止子对话执行」的角色时转交父对话（见 ADR 0019） */
-  forwardSpawn?: EngineHost['forwardSpawn']
-  /** 对话级的 Orchestra：宿主拿它在父对话正在跑时派转交来的子任务 */
-  onOrchestra?: EngineHost['onOrchestra']
-  childIsolation?: EngineHost['childIsolation']
-  worktreeHome?: EngineHost['worktreeHome']
-  branch?: EngineHost['branch']
-  wrapUp?: EngineHost['wrapUp']
-  p4Split?: EngineHost['p4Split']
-  cherryPick?: EngineHost['cherryPick']
-  submitMerge?: EngineHost['submitMerge']
-  isolated?: EngineHost['isolated']
-  finishChild?: EngineHost['finishChild']
-  ueBuild?: EngineHost['ueBuild']
-  peers?: EngineHost['peers']
-  messagePeer?: EngineHost['messagePeer']
-  verify?: EngineHost['verify']
-  beginEdit?: EngineHost['beginEdit']
-  inlineEdit?: EngineHost['inlineEdit']
-  runBackground?: EngineHost['runBackground']
-  cliTodos?: EngineHost['cliTodos']
-  checkBackground?: EngineHost['checkBackground']
-  stopBackground?: EngineHost['stopBackground']
-  lessons?: EngineHost['lessons']
-}
-
-/** 正在跑的一次 CLI 调用里能接收补充的那个：step 为空是对话，否则是工作流节点 */
-interface Steerer {
-  step: string
-  agentId: string
-  steer: (text: string) => Promise<boolean>
-  /**
-   * 补充交给了它：之后的输出另起一条，排在用户消息后面。
-   * msg 是交出去的那条用户消息，这一轮最后没有任何输出时要靠它把消息捡回来重放
-   */
-  accepted: (msg?: TaskMessage) => void
-}
-/** 任务 id → 正在跑、能接收补充的调用（工作流里同时执行的节点可能有几个） */
-const steers = new Map<string, Set<Steerer>>()
-/** 工作流里正在跑的节点都收不了补充（Command Code）时，留给下一个开始的节点 */
-const notes = new Map<string, string[]>()
 
 /**
  * 面板交给 CLI 的东西（一句话、工具结果、一次模型请求）之后多久一点输出都没有，算「没有响应」。
@@ -271,163 +171,6 @@ export const continuesOutput = (ev: CliEvent, cur: TaskMessage | undefined) => {
 const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
 
 /**
- * 把用户消息交给正在等下一句的 CLI。
- * 没有在等时返回 none；等着的进程已经不是输入框里的选择时返回 stale，
- * 调用方等它退出后按新的选择重新开始，不能把消息交给旧 CLI。
- */
-export function deliverWait(
-  task: Task,
-  msg: TaskMessage,
-  placed?: Attachment[],
-  recorded = false,
-): 'ok' | 'stale' | 'none' {
-  const w = firstWaiter(task.id)
-  if (!w) return 'none'
-  if (!w.current()) {
-    w.cancel()
-    return 'stale'
-  }
-  w.deliver(msg, placed, recorded)
-  return 'ok'
-}
-
-/**
- * CLI 刚停到等下一句上：这一轮里没交出去、排着「这一轮结束后处理」的消息直接交给它。
- * 排着的消息原本要等整次执行结束才接着处理，可保活的进程不会结束——这一轮刚说完、还没停稳时到的
- * 后台命令结果、子对话回报、用户的话就一直排着，对话收不到（用户报过：后台命令结果没回来，对话一直卡着）
- */
-function flushHeld(task: Task) {
-  if (!hasHeld(task.id)) return
-  const q = takeHeld(task.id)!
-  markHeld(task.messages, [q], 'wait')
-  const { msg, recorded, placed } = heldMessage(task.messages, q, task.placedAttachments)
-  const got = deliverWait(task, msg, placed, recorded)
-  // 交不出去（进程已经换了一套 CLI）：原样放回去，由整次执行结束后接着处理
-  if (got !== 'ok') returnHeld(task.id, q)
-}
-
-/** 对话派出的子任务（不是工作流节点） */
-const isHelperStep = (task: Task, id: string) => {
-  const s = id ? task.steps.find((x) => x.id === id) : undefined
-  return !!s && s.slot === 'sub'
-}
-
-/**
- * 对话停下等子任务时（回复完 CLI 就退出的，Claude Code、Codex），等用户的下一条消息：
- * 消息记进对话，交给引擎马上开一轮回复。停止、页面离开时返回 null，引擎只等子任务
- */
-function waitChat(task: Task, signal: AbortSignal, changed: (flush?: boolean) => void): Promise<string | null> {
-  if (signal.aborted) return Promise.resolve(null)
-  return new Promise((resolve) => {
-    let settled = false
-    const done = (value: string | null) => {
-      if (settled) return
-      settled = true
-      signal.removeEventListener('abort', onAbort)
-      removeWaiter(task.id, w)
-      resolve(value)
-    }
-    const onAbort = () => done(null)
-    taskLog(task.id, '等子任务期间等用户消息')
-    const w: Waiter = {
-      deliver: (msg, placed, recorded) => {
-        taskLog(task.id, '消息交给等子任务的对话', { messageId: msg.id, recorded: recorded || undefined })
-        if (!recorded) task.messages.push(msg)
-        task.working = true
-        changed(true)
-        done(withAttachments(msg.text, placed ?? msg.attachments ?? []))
-      },
-      cancel: () => done(null),
-      // 进程已经退出了，下一轮按输入框里现在的选择开
-      current: () => true,
-    }
-    addWaiter(task.id, w)
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
-}
-
-/** 用户离开了这个对话：让还在等下一句的 CLI 结束这一轮；返回有没有真的取消到 */
-export function cancelWait(taskId: string) {
-  let canceled = false
-  for (const w of waitersOf(taskId)) {
-    w.cancel()
-    canceled = true
-  }
-  if (canceled) taskLog(taskId, '取消等下一句')
-  return canceled
-}
-
-/** 任务删掉了：还没被节点取走的补充也一起清掉，别一直留在内存里 */
-export function forgetNotes(taskId: string) {
-  notes.delete(taskId)
-}
-
-/**
- * 交给 CLI 的补充。对话里先让模型判断这条补充和当前任务的关系：
- * 相关就调整方向；无关就先做完手上的事，再处理这条，别把当前任务丢在半路。
- * 工作流里交给正在跑的节点，按原来的说法结合当前任务处理。
- * fromParent：父对话 / 面板发来的（状态询问、收尾提醒），不是用户补充；用「用户补充」的措辞会让模型
- * 把它当成无关信息先放着，子对话就不会回答状态询问了。
- */
-export const steerNote = (text: string, chat: boolean, fromParent = false) => {
-  // 补充是一条新的用户消息，重复一次语言要求，别让模型接着上一段换成别的语言
-  const remind = promptLangReminder()
-  if (fromParent)
-    return (
-      '父对话 / 面板在你执行中发来一条消息（不是用户发的补充）：\n' +
-      '- 和当前任务有关（状态询问、交代任务、调整方向）：按它处理并回复；\n' +
-      '- 无关：先简短说明会等当前任务完成后再处理，然后继续手上的事。\n\n' +
-      `${remind}\n\n内容：\n${text}`
-    )
-  return chat
-    ? '用户在你执行中补充了信息。先判断它和当前任务的关系：\n' +
-        '- 相关（对当前任务的调整、修改或补充）：按它调整方向，继续当前任务；\n' +
-        '- 无关：先简短说明会等当前任务完成后再处理，然后继续手上的事，不要现在开始做它；当前任务做完后再处理这条内容。\n\n' +
-        `${remind}\n\n补充的内容：\n${text}`
-    : `用户在执行中补充了信息，请结合它继续当前的任务：\n${remind}\n\n${text}`
-}
-
-/**
- * 执行中的补充：把信息交给正在跑的调用，CLI 在当前这一轮里接着处理。
- * 有插话协议的直接插话；没有协议但能用面板的工具取的（见 CLI 配置的 notes）登记给它取；
- * 工作流里交给所有正在跑的节点，它们都不支持（Command Code）时留给下一个开始的节点。
- * 消息在每一种情况下都立刻记进对话，让用户看得到；任务没在跑时返回 false，由调用方记进对话并等这一轮结束。
- */
-export async function steerTask(
-  task: Task,
-  text: string,
-  msg: TaskMessage,
-): Promise<'steer' | 'notes' | 'next-node' | false> {
-  // 对话里派出的子任务也登记了插话：用户的话是说给对话的，不交给它们（交过去会记在子任务名下，对话里看不到）
-  const all = [...(steers.get(task.id) ?? [])].filter((s) => !(task.mode === 'chat' && isHelperStep(task, s.step)))
-  const took: Steerer[] = []
-  for (const s of all)
-    if (await s.steer(steerNote(text, task.mode === 'chat', msg.peer?.rel === 'parent'))) took.push(s)
-  if (took.length) {
-    // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
-    const at = took[0]
-    task.messages.push({ ...msg, step: at.step, agentId: at.step ? at.agentId : msg.agentId })
-    for (const s of took) s.accepted(msg)
-    return 'steer'
-  }
-  const takers = noteTakersOf(task.id)
-  if (takers?.size) {
-    // 对话的 CLI 没有插话协议：登记给正在跑的它，下一次调用 read_user_notes 时交给模型；
-    // 这一轮结束还没取走的，由 runner 交给下一轮接着处理
-    task.messages.push(msg)
-    for (const k of takers) k.add(msg)
-    return 'notes'
-  }
-  // 主 Agent 在调度（评估、整理结果）时也算工作流在跑：补充留给下一个开始的调用
-  const running = task.steps.find((x) => x.status === 'running' && !x.parentId)
-  if (!(task.mode === 'workflow' && running)) return false
-  ;(notes.get(task.id) ?? notes.set(task.id, []).get(task.id)!).push(text)
-  task.messages.push({ ...msg, step: running.id, agentId: msg.agentId })
-  return 'next-node'
-}
-
-/** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
-/**
  * 补充排在正在执行的命令后面、命令跑了这么久还没完：停下命令让 CLI 马上处理补充（见 rpc.redirect）。
  * 会改文件、装依赖、跑测试的命令按这个阈值打断；只读命令（ls、rg、git log、git worktree list）
  * 跑完这批工具就会被取走，等它自然结束，真卡住了才按 REDIRECT_READONLY_AFTER_MS 兜底（见 redirect.ts）
@@ -440,6 +183,7 @@ const REDIRECT_READONLY_AFTER_MS =
 /** 停下命令后跟补充一起交给模型的说明 */
 const REDIRECT_NOTE =
   '（面板说明：用户在你执行命令时发来了下面的消息。为了马上回应，刚才还在执行的命令已被中断：这条命令已经取消，它的输出不完整，不要当成结果使用。先回应用户；之后如果还需要那条命令的结果，重新执行。需要等待的命令（sleep、轮询 CI、长时间的测试或编译）不要在前台阻塞，用后台命令执行或直接告诉用户你在等什么。）'
+/** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
 const MAX_LIVE_OUTPUT = 8000
 const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
 
@@ -465,377 +209,11 @@ const SUMMARY_PROMPT =
   '请把我们到目前为止的对话整理成一份摘要，用于在新的会话里继续工作：包括要做的事、已经做了什么（改了哪些文件、关键的决定和原因）、' +
   '还没做完的、需要注意的问题。只输出摘要本身，不要做别的事，也不要修改文件。'
 
-const stepTitle = (task: Task, id: string) => task.steps.find((s) => s.id === id)?.title ?? ''
-
-/** 「提问」开关关掉了：还在等回答的问题让 CLI 自己选 */
-export function autoAnswerQuestions(task: Task) {
-  for (const req of task.requests.filter((x) => x.kind === 'question')) {
-    const fn = replies.get(req.id)
-    if (!fn) continue
-    replies.delete(req.id)
-    task.requests = task.requests.filter((x) => x.id !== req.id)
-    fn(AUTO_ANSWER)
-  }
-}
-
-/**
- * 用户停止对话（提问窗口的关闭就是不回答、终止对话）：还在等回答的请求马上作废，页面上的提问立刻收起。
- * 不能等这一轮的进程结束再清：保活的 CLI 卡在等回答时这一轮不会结束，提问就一直关不掉。
- * 工作流节点的确认不在这里处理：它跟着停止信号自己收掉，继续执行时重新确认
- */
-export function dropRequests(task: Task) {
-  const drop = task.requests.filter((x) => x.kind !== 'confirm')
-  if (!drop.length) return false
-  task.requests = task.requests.filter((x) => x.kind === 'confirm')
-  for (const req of drop) {
-    const fn = replies.get(req.id)
-    replies.delete(req.id)
-    fn?.({ allow: false, message: '用户不回答这个问题，终止了对话：先不要继续，等用户的下一条消息。' })
-  }
-  return true
-}
-
-/** 用户在任务页上回答了请求；找不到（已经结束、已回答过）时返回 false */
-export function answerRequest(task: Task, id: string, r: AskReply, newId: () => string) {
-  const fn = replies.get(id)
-  const req = task.requests.find((x) => x.id === id)
-  if (!fn || !req) return false
-  replies.delete(id)
-  task.requests = task.requests.filter((x) => x.id !== id)
-  const deny = denyAdvice(task, req, r)
-  const what =
-    req.kind === 'confirm'
-      ? r.allow
-        ? t('你确认了「{title}」的结果，接着往下执行', { title: stepTitle(task, req.step) })
-        : t('你退回了「{title}」：{answer}', { title: stepTitle(task, req.step), answer: r.answer ?? '' })
-      : req.kind === 'question'
-        ? req.questions && req.questions.length > 1 && r.answers?.length
-          ? t('你回答了：{answers}', {
-              answers: req.questions.map((q, i) => `${q.question} → ${r.answers?.[i] ?? ''}`).join('；'),
-            })
-          : !r.allow
-            ? t('你没有回答「{title}」', { title: req.title })
-            : t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answers?.[0] ?? r.answer ?? '' })
-        : r.allow
-          ? t('你允许了：{title}', { title: req.title })
-          : (deny.what ?? t('你拒绝了：{title}', { title: req.title }))
-  // 回答了问题：问题和答案在对话正文里显示，不再是一行灰色的说明
-  const answers = req.kind === 'question' ? questionAnswers(req, r) : undefined
-  // 请求处理完就继续执行：等待结算进 waitMs，从这一刻重新算执行时间
-  if (!task.requests.length) resumeRun(task)
-  noteAnswer(task, req, r)
-  task.messages.push({
-    id: newId(),
-    role: 'system',
-    agentId: req.agentId,
-    step: req.step,
-    text: what,
-    tools: [],
-    at: new Date().toISOString(),
-    ...(answers ? { answers } : {}),
-  })
-  fn(deny.reply)
-  return true
-}
-
-/**
- * 实时输出速度：最近 3 秒内流式输出的 token 数 ÷ 时间。CLI 只在一次请求结束时才报告真实的输出 token，
- * 所以先按字数估算，拿到真实数字后按「真实 ÷ 估算」校准。
- */
-function speedMeter(onIdle: () => void) {
-  const WINDOW = 3000
-  let samples: [number, number][] = []
-  let est = 0
-  let real = 0
-  let lastAt = 0
-  let genMs = 0
-  let tps = 0
-  const ratio = () => (est > 50 && real > 0 ? Math.min(3, Math.max(0.5, real / est)) : 1)
-  const timer = setInterval(() => {
-    if (tps && Date.now() - lastAt > 1500) {
-      tps = 0
-      samples = []
-      onIdle()
-    }
-  }, 500)
-  return {
-    /** 流式输出了一段文字；返回新增的生成时间（毫秒） */
-    add(text: string) {
-      const now = Date.now()
-      const gap = lastAt ? now - lastAt : 0
-      // 两段输出间隔太久（在跑工具）不算生成时间
-      const add = gap < 2000 ? gap : 0
-      genMs += add
-      lastAt = now
-      est += estTokens(text)
-      samples.push([now, est])
-      while (samples.length > 2 && now - samples[1][0] > WINDOW) samples.shift()
-      const [t0, e0] = samples[0]
-      const dt = (now - t0) / 1000
-      tps = dt > 0.3 ? ((est - e0) / dt) * ratio() : tps
-      return add
-    },
-    real(n: number) {
-      real += n
-    },
-    get tps() {
-      return Math.round(tps * 10) / 10
-    },
-    stop() {
-      clearInterval(timer)
-      tps = 0
-    },
-  }
-}
-
-/** 连接断开时自动续接的次数上限 */
-const MAX_NET_RETRIES = 2
-
-/**
- * 环境性失败（请求超时，但进程还活着、一个字都没输出）自动重试的次数上限。
- * 只重试一次：高负载时多等一会儿就能过，等两轮都过不了说明不是等待时间的问题
- */
-const MAX_ENV_RETRIES = 1
-
-/**
- * 桥接扩展加载预算：从 CLI 定义里读（mcp.vars.loadBudget），不在这里写死。
- * 没有这个变量的 CLI（codex / claude / commandcode）没有「启动时要把扩展装完」这段预算，返回 0
- */
-export function envStallBudget(cliId: string) {
-  const budget = Number(getCli(cliId)?.mcp?.vars.loadBudget)
-  return Number.isFinite(budget) && budget > 0 ? budget : 0
-}
-
-/**
- * 环境性失败重试那一轮的请求超时。
- * 默认的 15 秒是「桥接扩展加载预算 10 秒 + 5 秒给 CLI 冷启动和回包」（见 docs/modules/server-exec/bugs/pi-bridge-tools-timeout.md），
- * 高负载时这段预算会被挤爆；重试轮再留一整份加载预算，25 秒足够覆盖，又不至于让用户白等更久
- */
-export function envStallTimeout(cliId: string) {
-  return REQUEST_TIMEOUT_MS + envStallBudget(cliId)
-}
-
-/**
- * 这一轮该不该因为环境性失败自动重试：只有「进程活着、没有任何响应」的超时算，
- * 模型明确报错、工具失败这些内容性失败不带标记，不会走到这里。
- * 没有加载预算的 CLI 不重试：放宽不了等待，原样重跑一遍既没用、也会让留痕里的「放宽到」说谎
- */
-export function shouldRetryEnvStall(o: {
-  /** 结果事件带的环境性卡住标记（session 层判定的） */
-  stall: boolean
-  /** 这一轮已经自动重试过几次 */
-  retries: number
-  aborted: boolean
-  prewarm: boolean
-  /** 桥接扩展加载预算（毫秒）：大于 0 才放宽得了 */
-  budget: number
-}) {
-  return o.stall && !o.prewarm && !o.aborted && o.budget > 0 && o.retries < MAX_ENV_RETRIES
-}
-
-/** 环境性失败重试前写进对话的说明 */
-export function envStallNote(timeoutMs: number, n = MAX_ENV_RETRIES) {
-  return t('这一轮没有响应，已自动重试 {n} 次（等待放宽到 {wait}）…', { n, wait: fmtDuration(timeoutMs) })
-}
-
-/** 重试也没等到响应时，失败卡片上追加的原因：让用户知道面板已经试过一次 */
-export function envStallFailure(n: number) {
-  return t('已自动重试 {n} 次，仍然没有响应。', { n })
-}
-
-/**
- * 这一轮结束后要不要留着进程等用户下一句（面板保活）：对话模式、不是压缩/审查这类操作、CLI 定义开了 keepAlive。
- * 和 rpc.nativeAsk 无关：那只决定提问和审批走 CLI 自己的协议还是面板的 MCP 工具（见 invoke.ts 的 canTake），
- * 进程能不能留着开下一轮是另一件事；两者混在一起会让原生提问的常驻协议白白每轮重启。
- */
-/** 会话压缩过：之前发过的规则段落只剩摘要，下一轮对话按完整提示重发（见 shared/prompt-delta.ts） */
-export function forgetPromptSent(task: Task, sessionKey: string) {
-  if (task.promptSent?.[sessionKey]) {
-    const { [sessionKey]: _gone, ...rest } = task.promptSent
-    task.promptSent = rest
-  }
-  // 没有系统提示词参数的 CLI 只在会话第一条消息里带角色设定：压缩后它也只剩摘要，下一轮要重发
-  if (task.roleHashes?.[sessionKey]) {
-    const { [sessionKey]: _role, ...roles } = task.roleHashes
-    task.roleHashes = roles
-  }
-}
-
-export function canKeepAlive(o: { chat: boolean; op: boolean; cliKeepAlive: boolean }) {
-  return o.chat && !o.op && o.cliKeepAlive
-}
-
-/**
- * 这一轮是不是「什么都没收到」：CLI 报了一轮结束，却没有正文、没调工具、没改文件。
- * 这是 CLI 或网关出了问题（网关吞了请求、带图请求被拒），按错误显示给用户，不自动重试。
- * 不再按回复文字猜「只说了一句准备语」：用户 2026-10-29 要求去掉，寒暄、反问这类正常回复会被误判
- * 成没做完，还白白多跑一轮。只说了一句就收尾的回复照常收尾，由用户决定要不要接着说。
- * 「什么都没收到」仍然要拦：否则这一轮会被当成已完成并保活等下一句，
- * 用户发来的消息全落在死回合里，既没有回复也没有报错（见 docs/lessons/execution.md）。
- */
-export function silentTurn(o: {
-  /** 这一轮产生的所有回复 */
-  texts: string[]
-  /** 这一轮调用过的工具数 */
-  tools: number
-  /** 这一轮改过的文件数 */
-  changed: number
-}) {
-  return !o.tools && !o.changed && !o.texts.some((x) => x.trim())
-}
-
-/** 环境性失败重试前写进对话的提示：重试成功要收成普通说明 */
-export interface EnvStallNote {
-  msg: TaskMessage
-  base: string
-}
-
-/**
- * 重试成功了：这一轮其实做成了，那张红色卡片要收成普通说明，
- * 否则用户会以为这一轮失败了（和断流续接、空回合续一轮一个道理）
- */
-export function settleEnvStallNotes(notes: EnvStallNote[]) {
-  for (const { msg, base } of notes) {
-    msg.error = undefined
-    msg.transient = true
-    msg.text = [base, '', t('已自动重试 {n} 次，这一轮继续做完了。', { n: MAX_ENV_RETRIES })].join('\n')
-    if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动重试，继续做完了') }
-  }
-}
-
-const NETWORK_ERROR =
-  /Connection error|APIConnectionError|Unable to connect to the API|Failed to process successful response|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
-
-/** 断流和上游网关断开算同一种网络问题：给连接中断的说明，有会话时自动续接 */
-const isNetError = (detail: string) => NETWORK_ERROR.test(detail) || isGatewayError(detail)
-
-/**
- * 会话在别的项目目录里，CLI 要求交互确认才继续（Pi 的「Session found in different project ... Fork this session into current directory?」）。
- * 面板里没有交互终端，答不了这个问，CLI 直接按 Aborted 退出。撞上了丢掉会话重开
- */
-const SESSION_OTHER_PROJECT = /Session found in different project|Fork this session into current directory/i
-
-/** 模型不支持调整思考强度：去掉 --effort 重跑一次，并在进程内记住 */
-const EFFORT_REJECTED =
-  /推理强度不可调整|推理强度.{0,10}(不支持|无法)|(effort|reasoning).{0,40}(not (supported|available|adjustable)|can't|cannot|unable)|(not (supported|adjustable)|can't|cannot|unable).{0,40}(effort|reasoning)/i
-
-const NOT_LOGGED_IN =
-  /Please run \/login|Invalid API key|not logged in|log ?in (again|first)|authentication[_ ](error|failed)|OAuth token (has )?expired|token (has )?expired|401 Unauthorized|codex login|refresh token|No API key found/i
-
-/** 各个 CLI 登录的方法：在终端里照着做 */
-const loginHow = (cli: string) =>
-  ({
-    claude: t('运行 claude，在里面输入 /login'),
-    codex: t('运行 codex login'),
-    commandcode: t('运行 cmdc，按提示登录'),
-    pi: t('运行 pi，在里面输入 /login'),
-  })[cli] ?? t('运行它并按提示登录')
-
-/** 把常见的 CLI 报错翻译成能照着做的说明，原始输出另外附在后面 */
-export function failureHints(detail: string, cli?: { id: string; name: string; compactThrash?: RegExp }) {
-  const hints: string[] = []
-  if (cli?.compactThrash?.test(detail)) hints.push(thrashHint(cli.name))
-  if (NOT_LOGGED_IN.test(detail))
-    hints.push(
-      t('· {cli} 好像没有登录，或者登录已经过期。请在终端里{how}，登录后回来点「继续执行」。', {
-        cli: cli?.name ?? 'Agent',
-        how: loginHow(cli?.id ?? ''),
-      }),
-    )
-  const byok =
-    /"([^"]+)" routes via Command Code; your providers\.json also declares it — use ((?:"[^"]+"(?: or )?)+)/.exec(
-      detail,
-    )
-  if (byok) {
-    const alt = [...byok[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]).join(t(' 或 '))
-    hints.push(
-      t(
-        '· 模型「{model}」走的是 Command Code 官方服务，不是你在 providers.json 里接的接口。想用自己的接口，请把模型换成「{alt}」（模型下拉的「配置文件」分组里）。',
-        { model: byok[1], alt },
-      ),
-    )
-  }
-  if (isNetError(detail))
-    hints.push(
-      t(
-        '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让角色分几次写。',
-      ),
-    )
-  // Codex 的线程里存着上一个模型的工具调用时，换成别的模型后接口会一直拒绝这条历史
-  if (/input\.content/i.test(detail))
-    hints.push(
-      t(
-        '· 模型接口拒绝了这段聊天记录（input.content 无效或缺失）。常见于在同一个对话里换了模型：Codex 的会话里留着上一个模型的工具调用，新模型接不上。如果反复出现，请新建一个对话。',
-      ),
-    )
-  return hints
-}
-
-/** 调用一次 Agent 对应的 CLI，把输出写进任务消息 */
-/** 两个信号任一触发就触发（AbortSignal.any 要 Node 20.3+；包现在要求 22，这里留着兜底） */
-function anySignal(a: AbortSignal, b: AbortSignal) {
-  const ac = new AbortController()
-  const fire = (x: AbortSignal) => () => ac.abort(x.reason)
-  if (a.aborted || b.aborted) ac.abort((a.aborted ? a : b).reason)
-  else {
-    a.addEventListener('abort', fire(a), { once: true })
-    b.addEventListener('abort', fire(b), { once: true })
-  }
-  return ac.signal
-}
-
-/**
- * 正在跑的调用手里的 API 名额：任务 id + 节点 id（对话这一轮是空的）→ 名额。
- * 等下一句、等子任务、等别的 Agent 回答时让出，接着干之前再拿回（见 waitNext 和 yieldApiSlot）
- */
-const apiSlots = new Map<string, ApiSlot>()
-const slotKey = (taskId: string, step: string) => `${taskId}\n${step}`
-/** 正停在 wait_agents / ask_main 里等别人的调用（slotKey）：见 yieldApiSlot */
-const inToolWait = new Set<string>()
-
-/** 这次调用要用的 API：CLI 的登录方式是 API 时才有；账号登录不受并发上限管 */
-function callApi(ctx: RealContext, call: AgentCall) {
-  const id = ctx.agents.some((a) => a.id === call.agentId) ? call.agentId : aliasAgent(call.agentId)
-  const found = turnRole(ctx.task, ctx.agents, id)
-  // 找不到角色时由 runAgent 报错
-  if (!found) return undefined
-  const agent =
-    call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(ctx.settings)) : withTaskModel(found, ctx.task)
-  return cliSettings(ctx.settings, agentRun(agent, ctx.settings).cli).api
-}
-
-/**
- * 拿名额；满了就排队，排队时对话（或子任务、节点）上标出在等哪个 API、前面还有几个。
- * 排队的子任务、节点显示成「排队中」，拿到再回到执行中。停止信号到了返回 false
- *
- * 标记用 try/finally 无条件清：只清「这次排过队」会在复用别处排队时漏清（排队标记就会跟到任务结束）。
- * reason 区分开跑前排队还是让出后拿回，后者不显示成「排队等名额」。
- */
-async function takeApiSlot(
-  ctx: RealContext,
-  step: TaskStep | undefined,
-  slot: ApiSlot,
-  signal: AbortSignal,
-  reason: 'start' | 'yield' = 'start',
-) {
-  let before: TaskStep['status'] | undefined
-  try {
-    return await slot.take(signal, (ahead) => {
-      // 队伍动了会反复回调：before 只在第一次记下，后面不再改状态
-      const b = markApiWait(ctx, step, slot.name, ahead, reason)
-      if (before === undefined) before = b
-    })
-  } finally {
-    // 不管拿到、被停止还是被让出，标记都必须清：它只能表示「此刻真的在排队」
-    clearApiWait(ctx, step, before)
-  }
-}
-
 /**
  * 按 API 的并发上限执行一次调用（对话这一轮、子任务、工作流节点都从这里进）：
  * 先拿名额再启动 CLI，结束时还回去。名额按 API 计，没设上限的也记着数，改成有上限时马上按实际占用算
  */
-async function gatedRunAgent(ctx: RealContext, call: AgentCall): Promise<AgentResult> {
+export async function gatedRunAgent(ctx: RealContext, call: AgentCall): Promise<AgentResult> {
   const r = await runWithSlot(ctx, call)
   if (call.op?.kind === 'compact') settleCompactRow(call.op, r)
   return r
@@ -863,28 +241,7 @@ async function runWithSlot(ctx: RealContext, call: AgentCall): Promise<AgentResu
   }
 }
 
-/**
- * 调用停下来等别人（wait_agents 等子任务、ask_main 等主 Agent 回答）时让出名额，等完再拿回：
- * 占着名额等子任务，子任务又在排队等名额，就互相等死了
- */
-async function yieldApiSlot<T>(ctx: RealContext, stepId: string, wait: () => Promise<T>): Promise<T> {
-  // 对话自己（@chat）不是一个节点，名额记在空的节点 id 下
-  if (!ctx.task.steps.some((s) => s.id === stepId)) stepId = ''
-  const key = slotKey(ctx.task.id, stepId)
-  const slot = apiSlots.get(key)
-  // 停在工具里等的这段 CLI 本来就没有输出（wait_agents 一次能等二十几分钟）：空闲检测不算它卡住
-  inToolWait.add(key)
-  if (!slot?.holding) return wait().finally(() => inToolWait.delete(key))
-  slot.drop()
-  try {
-    return await wait()
-  } finally {
-    inToolWait.delete(key)
-    const step = stepId ? ctx.task.steps.find((s) => s.id === stepId) : undefined
-    await takeApiSlot(ctx, step, slot, ctx.signal, 'yield')
-  }
-}
-
+/** 调用一次 Agent 对应的 CLI，把输出写进任务消息 */
 async function runAgent(
   ctx: RealContext,
   call: AgentCall,
@@ -2688,191 +2045,3 @@ async function runAgent(
   }
   return done
 }
-
-/**
- * 搜索排除交给 rg 自己执行：大项目（尤其 P4 这种没有 .gitignore 的）只靠提示词时，
- * CLI 内置搜索照样扫进 Intermediate、Saved 这些产物目录，一次搜几分钟。
- * 写一份 ripgrep 配置、用 RIPGREP_CONFIG_PATH 指过去；用户本来设了的，把原来的内容放在前面一起带上
- */
-async function searchExcludeEnv(ctx: RealContext): Promise<{ key: string; value: string }[]> {
-  const lines = searchExcludeRgConfig(ctx.project, { onlyProject: ctx.isGit })
-  if (!lines.length) return []
-  const own = process.env.RIPGREP_CONFIG_PATH
-  const prev = own ? await readFile(own, 'utf8').catch(() => '') : ''
-  const body = [prev.trimEnd(), ...lines].filter(Boolean).join('\n') + '\n'
-  // 按内容起名、已有就不再写：并行的几个 Agent 同时启动时，rg 不会读到写了一半的文件
-  const file = path.join(CACHE_DIR, 'rg', `${createHash('sha1').update(body).digest('hex').slice(0, 16)}.rc`)
-  try {
-    await writeFileOnce(file, body)
-  } catch (e) {
-    log.warn('agent', '写搜索排除配置失败', e)
-    return []
-  }
-  return [{ key: 'RIPGREP_CONFIG_PATH', value: file }]
-}
-
-/**
- * 这次执行里能用的授权：项目设置的推送策略、这个对话里用户已经做过的选择、
- * 本机已经装好并登录的外部工具（gh、cloudflared 等）。列进提示词，模型不用重新探测
- */
-async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
-  const views = await listIntegrations().catch(() => [])
-  // cherry-pick 目标只对 Git / P4 项目有意义：按项目目录现在的版本管理说清怎么搬（目录换了类型就不提）
-  const target = ctx.project.cherryPick?.trim()
-  const vcs = ctx.project.path ? (await detectVcs(ctx.project.path).catch(() => null))?.vcs : undefined
-  return {
-    push: ctx.project.gitPolicy ?? 'ask',
-    // 用户对推送的回答（task.remotePush）不在这一刻定死：getter 现取，回答记上之后保活的下一条消息（nextPrompt 重拼）才看得到
-    get answered() {
-      return ctx.task.remotePush
-    },
-    tools: views.filter((v) => v.installed && v.authed).map((v) => v.name),
-    ...(target && (vcs === 'git' || vcs === 'p4') ? { cherryPick: { vcs, target } } : {}),
-    docs: await projectDocRoot(ctx.project.path, ctx.agents, vcs ?? 'none'),
-  }
-}
-
-/** 真实执行一轮：调度交给执行引擎，调用 Agent 时启动对应 CLI */
-export async function runRealTurn(ctx: RealContext) {
-  ctx.task.simulated = false
-  // ADR 0020：这一轮的计划提醒（滞后 / 新输入没跟着改）由 engine 的 planPart 写进提示词；
-  // 服务端在这里留一条日志，方便事后确认「到底提醒过没有」。新输入的提醒只算一次：
-  // 这一轮结束后记下「提醒过这次输入」，同一个要求不会每轮重复追问（对话选择「不改计划、说明一句」时尤其需要）
-  const plan = activePlan(ctx.task)
-  const unhandled = plan ? inputUnhandled(plan) : undefined
-  // 本轮提醒的是「这一次输入」：轮中随时可能又来新消息（deliver 会更新 lastInputAt），
-  // 轮末不能再读 lastInputAt，否则会把没提醒过的那次也标成已提醒（评审 R2）
-  const noticedInput = unhandled !== undefined ? plan?.lastInputAt : undefined
-  const notice = planNotice(ctx.task)
-  if (notice) log.warn('plan', '计划需要对话收口，已写进这一轮的提示词', { task: ctx.task.id, notice })
-  // 这一轮弹出的推送授权卡：这一轮结束时还没回答就作废（等着它的 CLI 已经不在了）
-  const ownAsks = new Set<string>()
-  await runEngineTurn({
-    task: ctx.task,
-    agents: ctx.agents,
-    workflows: ctx.workflows,
-    workflow: ctx.workflow,
-    prompt: ctx.prompt,
-    policy: await taskPolicy(ctx),
-    resume: ctx.resume,
-    prewarm: ctx.prewarm,
-    prewarmFrom: ctx.prewarmFrom,
-    prewarmTurnDoneAt: ctx.prewarmTurnDoneAt,
-    changed: ctx.changed,
-    newId: ctx.newId,
-    // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
-    fileFormat: projectFormat(ctx.project, ctx.settings),
-    // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段
-    searchExclude: searchExcludeOf(ctx.project),
-    searchInGit: ctx.isGit,
-    workflowCatalog: ctx.workflowCatalog,
-    resolveWorkflow: ctx.resolveWorkflow,
-    listConversations: ctx.listConversations,
-    createConversation: ctx.createConversation,
-    sendToConversation: ctx.sendToConversation,
-    // 全局规则、目标在 run.ts 里是 getter（现取父对话的）：这里也转成 getter，别在建 host 时求值成快照
-    get rules() {
-      return ctx.rules
-    },
-    get goal() {
-      return ctx.goal
-    },
-    takeInbox: ctx.takeInbox,
-    messageParent: ctx.messageParent,
-    claimFiles: ctx.claimFiles,
-    releaseFiles: ctx.releaseFiles,
-    childIsolation: ctx.childIsolation,
-    worktreeHome: ctx.worktreeHome,
-    branch: ctx.branch,
-    // 收尾种类在 run.ts 里是 getter（按现在的推送授权算）：保活中用户点了「允许」，下一条消息就带上推送收尾
-    get wrapUp() {
-      return ctx.wrapUp
-    },
-    p4Split: ctx.p4Split,
-    cherryPick: ctx.cherryPick,
-    submitMerge: ctx.submitMerge,
-    isolated: ctx.isolated,
-    finishChild: ctx.finishChild,
-    ueBuild: ctx.ueBuild,
-    peers: ctx.peers,
-    messagePeer: ctx.messagePeer,
-    verify: ctx.verify,
-    beginEdit: ctx.beginEdit,
-    inlineEdit: ctx.inlineEdit,
-    runBackground: ctx.runBackground,
-    cliTodos: ctx.cliTodos,
-    checkBackground: ctx.checkBackground,
-    stopBackground: ctx.stopBackground,
-    forwardSpawn: ctx.forwardSpawn,
-    onOrchestra: ctx.onOrchestra,
-    lessons: ctx.lessons,
-    runAgent: (call) => gatedRunAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
-    yieldSlot: (stepId, wait) => yieldApiSlot(ctx, stepId, wait),
-    signal: ctx.signal,
-    stopReason: ctx.stopReason,
-    // 对话等子任务时用户发来的消息：马上开一轮回复
-    waitChat: ctx.task.mode === 'chat' ? (signal) => waitChat(ctx.task, signal, ctx.changed) : undefined,
-    // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
-    steer: async (stepId, text) => {
-      for (const s of steers.get(ctx.task.id) ?? [])
-        if (s.step === stepId && (await s.steer(text))) {
-          s.accepted()
-          return true
-        }
-      return false
-    },
-    // 停止任务时不再等，节点停在这里，继续执行时重新确认
-    confirm: (step, text) =>
-      panelRequest(ctx, {
-        step: step.id,
-        agentId: step.agentId,
-        kind: 'confirm',
-        title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
-        // 审阅弹窗按文档渲染整段结果、还要在上面标注，截得太短看不全
-        detail: clip(text, 40000),
-      }),
-    askPush: (info) => askPushRequest(ctx, info, ownAsks),
-    reviewDiff: ctx.isGit
-      ? async (since, files) => {
-          // 没点名文件时只取这个对话改过的（和「更改」面板一致）：对话开始前就没提交的改动不算它的，不交给评审
-          const own =
-            files ??
-            (since ? undefined : (await taskChanges(ctx.project.path, ctx.task).catch(() => null))?.map((c) => c.path))
-          const d = await reviewDiff(ctx.project.path, ctx.task.baseRef, since, own, placedFiles(ctx.task))
-          if (!d) return null
-          if (d.diff || !d.full) return { snapshot: d.snapshot, stat: d.stat, diff: d.diff }
-          // 太长：完整差异存进交接目录，提示词里只给文件列表和路径
-          const dir = path.join(HANDOFF_DIR, ctx.task.id)
-          await mkdir(dir, { recursive: true })
-          const file = path.join(dir, `review-${d.snapshot.slice(0, 12)}.diff`)
-          await writeFile(file, d.full)
-          return { snapshot: d.snapshot, stat: d.stat, diff: '', file }
-        }
-      : undefined,
-    saveHandoff: (step, text) => saveHandoffFile(ctx.task.id, step, text),
-  }).finally(() => dropOwnRequests(ctx.task, ownAsks))
-  if (noticedInput && plan) {
-    plan.inputNotedAt = noticedInput
-    ctx.changed()
-  }
-}
-
-/**
- * 交接内容存成文件，返回路径。子任务的 id 带「/」（@chat/sub/h3）：直接拿来当文件名会落进不存在的子目录，
- * 写盘失败后结果只剩开头、也没有路径（评审意见被截断的原因），所以文件名里不能当路径的字符都换掉
- */
-export async function saveHandoffFile(
-  taskId: string,
-  step: { id: string; title: string },
-  text: string,
-  root = HANDOFF_DIR,
-) {
-  const dir = path.join(root, taskId)
-  await mkdir(dir, { recursive: true })
-  const file = path.join(dir, `${handoffName(step.id)}.md`)
-  await writeFile(file, `# ${step.title}\n\n${text}\n`)
-  return file
-}
-
-/** 步骤 id 变成一个安全的文件名（Windows 也能用）：路径分隔符和保留字符都换成「_」 */
-export const handoffName = (id: string) => id.replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^[._]+/, '') || 'step'

@@ -21,6 +21,7 @@ export function SessionBar({
   env,
   onTask,
   kids,
+  noProject,
 }: {
   task: Task
   /** 名下的子对话（/children 的摘要）：「状态」那句话按它判断在等什么，子对话本身不在这里列 */
@@ -32,6 +33,8 @@ export function SessionBar({
   onSettings?: () => void
   /** 「环境」标题行右端的入口：切分支、独立分支、CLI 额度（输入框下面原来那块收到这里） */
   env?: ReactNode
+  /** Chat 模式的聊天不属于项目：环境（目录、仓库、分支）和项目有关，整块不显示 */
+  noProject?: boolean
 }) {
   const ctx = useSessionContext(task)
   const { def, info } = ctx
@@ -39,34 +42,36 @@ export function SessionBar({
   const worktree = task.worktree
   return (
     <div className="scroll-fade flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-session-bar>
-      <SessionCard id="env" title={t('环境')} trailing={env}>
-        <SessionRow
-          icon={worktree ? <Split /> : <Monitor />}
-          title={info?.dir}
-          trailing={onSettings && <IconButton size="xs" icon={Settings} label={t('对话设置')} onClick={onSettings} />}
-        >
-          {worktree ? t('本机 · 独立分支') : t('本机')}
-          {def && <span className="text-subtle"> · {def.name}</span>}
-        </SessionRow>
-        {/* 仓库和分支合成一行（仓库 · 分支）；不是 git 仓库就整行不显示 */}
-        {(worktree || info?.isGit) && (
+      {!noProject && (
+        <SessionCard id="env" title={t('环境')} trailing={env}>
           <SessionRow
-            icon={<BookMarked />}
-            title={[info?.dir ?? worktree?.path, worktree?.branch || info?.branch].filter(Boolean).join(' · ')}
+            icon={worktree ? <Split /> : <Monitor />}
+            title={info?.dir}
+            trailing={onSettings && <IconButton size="xs" icon={Settings} label={t('对话设置')} onClick={onSettings} />}
           >
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="min-w-0 truncate">{info?.repo || projectName || '…'}</span>
-              <span aria-hidden className="shrink-0 text-subtle">
-                ·
-              </span>
-              <GitBranch className="!h-3.5 !w-3.5 shrink-0 text-muted" />
-              <span className="max-w-[50%] min-w-0 shrink-0 truncate font-mono text-body">
-                {worktree?.branch || info?.branch || '…'}
-              </span>
-            </span>
+            {worktree ? t('本机 · 独立分支') : t('本机')}
+            {def && <span className="text-subtle"> · {def.name}</span>}
           </SessionRow>
-        )}
-      </SessionCard>
+          {/* 仓库和分支合成一行（仓库 · 分支）；不是 git 仓库就整行不显示 */}
+          {(worktree || info?.isGit) && (
+            <SessionRow
+              icon={<BookMarked />}
+              title={[info?.dir ?? worktree?.path, worktree?.branch || info?.branch].filter(Boolean).join(' · ')}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="min-w-0 truncate">{info?.repo || projectName || '…'}</span>
+                <span aria-hidden className="shrink-0 text-subtle">
+                  ·
+                </span>
+                <GitBranch className="!h-3.5 !w-3.5 shrink-0 text-muted" />
+                <span className="max-w-[50%] min-w-0 shrink-0 truncate font-mono text-body">
+                  {worktree?.branch || info?.branch || '…'}
+                </span>
+              </span>
+            </SessionRow>
+          )}
+        </SessionCard>
+      )}
 
       <SessionCard id="context" title={t('上下文')}>
         <SessionContextBody task={task} ctx={ctx} onTask={onTask} />
