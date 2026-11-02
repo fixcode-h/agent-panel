@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline'
 import spawn from 'cross-spawn'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
+import { taskLog } from '../task-log.ts'
 import { descendants, processSnapshot } from './proc-stats.ts'
 import {
   looksLikePanelCli,
@@ -318,6 +319,9 @@ export function runProcess(o: {
     const pid = child.pid
     if (pid) live.set(pid, child)
     if (pid && o.owner?.taskId) owned.set(pid, o.owner.taskId)
+    // 对话名下的 CLI 进程：启动和退出都记进对话日志，状态诊断据此说清「进程为什么不在了」
+    const spawnedAt = Date.now()
+    if (pid && o.owner?.taskId) taskLog(o.owner.taskId, 'CLI 进程启动', { pid, step: o.owner.step || undefined })
     // 面板起的 CLI（带面板的桥接参数或面板临时目录）登记下来：面板被强杀后，下次启动照着它认遗留进程；
     // 短命令（git、版本检测）不带这些痕迹，不登记也不频繁写盘
     if (pid) {
@@ -365,8 +369,23 @@ export function runProcess(o: {
       forget()
       clearTimeout(exitTimer)
       rl.close()
+      logExit(code, signal)
       done({ code, exitSignal: signal })
     })
+    /** 退出码、信号、是不是面板主动结束的（killed 是原因）、活了多久、stderr 最后几行 */
+    const logExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (!pid || !o.owner?.taskId) return
+      const tail = stderr.trim().slice(-300)
+      taskLog(o.owner.taskId, 'CLI 进程退出', {
+        pid,
+        code,
+        signal: signal ?? undefined,
+        killed: killed ?? undefined,
+        aliveMs: Date.now() - spawnedAt,
+        step: o.owner.step || undefined,
+        stderr: tail || undefined,
+      })
+    }
     // 进程已经退出，但输出流还被别人（孙进程继承了 stdout）握着时，close 可能永远不来：
     // 已经读不到更多输出了，等 3 秒给它收尾，别让等结果的调用方（后台命令、任务）挂死
     child.on('exit', (code, signal) => {
@@ -379,6 +398,7 @@ export function runProcess(o: {
       exitTimer = setTimeout(() => {
         if (settled) return
         log.warn('exec', '进程已退出但输出流没关，先结束等待', { pid: child.pid, code, signal })
+        logExit(code, signal)
         done({ code, exitSignal: signal })
       }, 3000)
       exitTimer.unref?.()

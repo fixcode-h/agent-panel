@@ -869,6 +869,22 @@ await runShard(import.meta.filename, async (api) => {
       await check(p, '父子往来记录')
       await p.keyboard.press('Escape')
       await closed()
+      // 状态诊断：左边对话树（父对话、子对话、子任务），右边选中那个的生命周期（结论、进程、日志）
+      await p.getByRole('button', { name: '更多操作', exact: true }).first().click()
+      await p.getByRole('menuitem', { name: '状态', exact: true }).click()
+      const headline = p.locator('[data-life-headline]').first()
+      if (
+        !(await headline.waitFor({ timeout: 10000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        errors.push('对话菜单「状态」：弹窗里没有结论')
+      else if ((await p.locator('[data-lifecycle] ol[aria-label="对话树"] li').count()) < 2)
+        errors.push('对话菜单「状态」：对话树里没有子对话或子任务')
+      await check(p, '状态诊断')
+      await p.keyboard.press('Escape')
+      await closed()
     }
     {
       const key = 'agent-panel-demo-v3'

@@ -41,10 +41,9 @@ import {
   ClipboardList,
   PictureInPicture2,
   Upload,
-  History,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
-import { CollabLog } from './CollabLog'
+import { useDiagDialogs } from './diag-dialogs'
 import { ParentBar } from './ChildMail'
 import { ChildrenBar, plainRow } from './ChildrenBar'
 import { ProcessMenu } from './ProcessPanel'
@@ -503,8 +502,8 @@ export function TaskView({
   const agents = useMemo(() => withImportedAgents(localAgents, { imported }), [localAgents, imported])
   const [analyzing, setAnalyzing] = useState(false)
   const [convSettings, setConvSettings] = useState(false)
-  // 对话菜单「父子往来记录」：排查用的完整时间线，默认不在右栏（ADR 0034）
-  const [collabLog, setCollabLog] = useState(false)
+  // 对话菜单「状态」（CLI 生命周期诊断）和「父子往来记录」（ADR 0034：默认不在右栏）
+  const diag = useDiagDialogs(taskId)
   // 没发出去的内容由 ChatComposer 自己按对话记着（切走再回来还在），打字时不再重渲染整页；
   // 这里只留一个「输入框是不是空的」，给「继续执行」按钮用，只在空 / 非空切换时更新
   const [draftEmpty, setDraftEmpty] = useState(true)
@@ -2007,12 +2006,7 @@ export function TaskView({
             <Copy className="h-4 w-4" />
             {t('复制对话')}
           </MenuItem>
-          {(task.parentTaskId || children.length > 0) && (
-            <MenuItem onSelect={() => setCollabLog(true)}>
-              <History className="h-4 w-4" />
-              {t('父子往来记录')}
-            </MenuItem>
-          )}
+          {diag.menuItems(!!task.parentTaskId || children.length > 0)}
           {/* CLI 还连着、只是在等下一句时也能分析：只有真的在处理这一轮才不行 */}
           <MenuItem disabled={running && working} onSelect={() => setAnalyzing(true)}>
             <Sparkles className="h-4 w-4" />
@@ -2459,6 +2453,7 @@ export function TaskView({
                               task={task}
                               label={t('{name} 正在回复', { name: chatLabel })}
                               agentIds={[task.agentId]}
+                              onStatus={diag.openStatus}
                             />
                             <LiveStats task={task} agentIds={[task.agentId]} />
                           </div>
@@ -2467,7 +2462,12 @@ export function TaskView({
                           <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
                             <div className="flex items-center gap-2 text-body text-muted">
                               <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
-                              <RunPhase task={task} label={t('思考中…')} agentIds={[task.agentId]} />
+                              <RunPhase
+                                task={task}
+                                label={t('思考中…')}
+                                agentIds={[task.agentId]}
+                                onStatus={diag.openStatus}
+                              />
                               <LiveStats task={task} agentIds={[task.agentId]} />
                             </div>
                           </PendingReply>
@@ -2476,7 +2476,12 @@ export function TaskView({
                       以前只看 awaitingUser 就写「等待你的下一条消息」，子任务还在跑时也这么说
                       （用户报的：子任务在跑、状态行却说在等你 + 空闲）。判定统一用 childWait，不另写一套 */}
                       {running && task.mode === 'chat' && !working && chatWait && (
-                        <ChatWaitLine wait={chatWait} awaiting={task.awaitingUser} task={task} />
+                        <ChatWaitLine
+                          wait={chatWait}
+                          awaiting={task.awaitingUser}
+                          task={task}
+                          onStatus={diag.openStatus}
+                        />
                       )}
                       {working && task.mode === 'workflow' && runningSteps.length === 0 && (
                         <div className="flex items-center gap-2 text-body text-muted">
@@ -2734,13 +2739,7 @@ export function TaskView({
             />
             <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
             <JobDialog taskId={task.id} target={jobTarget} onOpenChange={(o) => !o && setJobTarget(null)} />
-            {collabLog && (
-              <CollabLog
-                taskId={task.id}
-                onClose={() => setCollabLog(false)}
-                onOpenChild={task.parentTaskId ? outerNav?.child : openChildIn}
-              />
-            )}
+            {diag.dialogs(task.parentTaskId ? outerNav?.child : openChildIn)}
             {convSettings && (
               <ConversationSettingsDialog
                 task={task}

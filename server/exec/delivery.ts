@@ -136,6 +136,8 @@ export function removeHeld(taskId: string, id: string) {
 }
 
 export const hasHeld = (taskId: string) => !!held.get(taskId)?.length
+/** 排着等「这一轮结束后处理」的消息条数（状态诊断用） */
+export const heldCount = (taskId: string) => held.get(taskId)?.length ?? 0
 
 /** 这一轮停下了（失败、暂停、面板退出）：不再自动接着跑，消息留在对话里由用户决定 */
 export const dropHeld = (taskId: string) => {

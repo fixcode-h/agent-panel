@@ -360,7 +360,18 @@ export function PendingReply({
  * 这一轮没在跑时状态行：先说清在等什么结果，真的停在等下一句时才说「等待你的下一条消息」。
  * 等用户回答、等确认由对话里的提问卡片表达，这里不重复
  */
-export function ChatWaitLine({ wait, awaiting, task }: { wait: ChildWait; awaiting: boolean; task: Task }) {
+export function ChatWaitLine({
+  wait,
+  awaiting,
+  task,
+  onStatus,
+}: {
+  wait: ChildWait
+  awaiting: boolean
+  task: Task
+  /** 点了打开状态诊断（等子对话、等子任务一直不动时看卡在哪）；见 RunPhase */
+  onStatus?: () => void
+}) {
   if (wait.kind === 'answer' || wait.kind === 'confirm') return null
   // 等下一句要 CLI 真的停在面板工具上等（awaitingUser）：只是预热完、还在启动时不写成在等你
   if (wait.kind === 'next' && !awaiting) return null
@@ -383,7 +394,18 @@ export function ChatWaitLine({ wait, awaiting, task }: { wait: ChildWait; awaiti
         <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
       )}
       <span className="inline-flex items-baseline">
-        {text}
+        {onStatus ? (
+          <button
+            type="button"
+            onClick={onStatus}
+            title={t('查看状态：模型请求、CLI 进程、为什么停在这里')}
+            className="cursor-pointer underline-offset-4 hover:text-fg hover:underline"
+          >
+            {text}
+          </button>
+        ) : (
+          text
+        )}
         {next && <WaitDots />}
       </span>
       {/* 等下一句时确实空闲（它在等你），等别人的结果时才是「等待中」：不把在干活的对话说成没事做 */}
@@ -399,7 +421,18 @@ export function ChatWaitLine({ wait, awaiting, task }: { wait: ChildWait; awaiti
  * agentIds 要和同一行 LiveStats 的传法一致：判断「真的在出 token」只能看这一行显示的那几个 Agent，
  * 看全部 Agent 会把「别人在输出、这一轮自己在排队」当成在输出，反而把真排队遮掉
  */
-export function RunPhase({ task, label, agentIds }: { task: Task; label: string; agentIds?: string[] }) {
+export function RunPhase({
+  task,
+  label,
+  agentIds,
+  onStatus,
+}: {
+  task: Task
+  label: string
+  agentIds?: string[]
+  /** 点了打开状态诊断（「等待模型」卡住时想知道卡在哪）；不给就是一段纯文字 */
+  onStatus?: () => void
+}) {
   const now = useNow(true)
   const idle = now - Date.parse(task.updatedAt)
   // 执行中发的补充排在最后：还在跑的命令在它前面那条回复里，不能只看最后一条
@@ -424,5 +457,16 @@ export function RunPhase({ task, label, agentIds }: { task: Task; label: string;
     )
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
-  return <>{busy || streaming || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
+  const text = busy || streaming || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })
+  if (!onStatus) return <>{text}</>
+  return (
+    <button
+      type="button"
+      onClick={onStatus}
+      title={t('查看状态：模型请求、CLI 进程、为什么停在这里')}
+      className="cursor-pointer underline-offset-4 hover:text-fg hover:underline"
+    >
+      {text}
+    </button>
+  )
 }
