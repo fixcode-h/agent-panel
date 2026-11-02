@@ -321,8 +321,38 @@ export function claudeParser(cwd: string): Parser {
   let costTotal = 0
   /** 最近一次模型回应停下的原因（流式 message_delta 里报），result 时带出去 */
   let stopReason = ''
+  /** Claude Code 自己在重试模型请求（api_retry）：第几次。之后模型回应开始了就算接上，发 retry_ok */
+  let retrying = 0
   return (o) => {
     const out: CliEvent[] = []
+    // 网关报错（529 / 5xx / 超时）时 Claude Code 自己重试，最多十来次、间隔越来越长，期间没有别的输出。
+    // 不接这个事件的话界面只会一直写「等待模型」，插进来的消息也要等它重试完（用户报过「父对话总在等待模型」）
+    if (o.type === 'system' && o.subtype === 'api_retry') {
+      retrying = Number(o.attempt) || retrying + 1
+      const err = oneLine(
+        [o.error_status, o.error].filter((x) => x !== undefined && x !== null && x !== '').join(' '),
+        300,
+      )
+      out.push({
+        type: 'notice',
+        text: t('模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}', {
+          s: Math.max(1, Math.round((Number(o.retry_delay_ms) || 0) / 1000)),
+          n: retrying,
+          max: o.max_retries ?? '?',
+          error: err,
+        }),
+        kind: 'retry',
+        attempt: retrying,
+        ...(typeof o.max_retries === 'number' ? { maxAttempts: o.max_retries } : {}),
+        ...(err ? { error: err } : {}),
+      })
+      return out
+    }
+    // 重试后模型回应开始了：这次请求接上了，把「正在重试」收成已恢复
+    if (retrying && (o.type === 'stream_event' || o.type === 'assistant')) {
+      out.push({ type: 'retry_ok', text: t('第 {n} 次重试成功了，接着做。', { n: retrying }), attempt: retrying })
+      retrying = 0
+    }
     if (o.type === 'system' && o.subtype === 'init' && o.session_id) {
       out.push({ type: 'session', id: o.session_id })
       if (o.model) out.push({ type: 'usage', model: o.model })

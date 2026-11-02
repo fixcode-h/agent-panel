@@ -240,6 +240,40 @@ test('Claude Code：出错的结果、Bash 的退出码；每次模型回应开�
  * deepseek 中转网关（真实抓到的顺序）：推理 delta 记在回复条目的 id 下，推理条目完成时 id 不同；
  * 同一条回复发两次 item/started。思考和正文都只出一次，不多出一段空回复
  */
+test('Claude Code：网关出错时自己重试（api_retry）画成「正在重试」，模型回应开始后收成已恢复', () => {
+  const parse = claudeParser(CWD)
+  // Claude Code 2.1.316 对着返回 529 的网关实测输出的行（去掉了 session_id / uuid）
+  const retry = (attempt: number, delay: number) => ({
+    type: 'system',
+    subtype: 'api_retry',
+    attempt,
+    max_retries: 10,
+    retry_delay_ms: delay,
+    error_status: 529,
+    error: 'overloaded',
+  })
+  const first = parse(retry(1, 594))
+  assert.deepEqual(first, [
+    {
+      type: 'notice',
+      text: '模型请求失败，1 秒后第 1/10 次重试：529 overloaded',
+      kind: 'retry',
+      attempt: 1,
+      maxAttempts: 10,
+      error: '529 overloaded',
+    },
+  ])
+  const second = parse(retry(2, 4259))
+  assert.equal((second[0] as { attempt: number }).attempt, 2)
+  assert.match((second[0] as { text: string }).text, /4 秒后第 2\/10 次重试/)
+  // 重试接上了：模型回应开头先报 retry_ok，再照常报 request_start；之后不再重复报
+  const back = parse({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm1' } } })
+  assert.deepEqual(back[0], { type: 'retry_ok', text: '第 2 次重试成功了，接着做。', attempt: 2 })
+  assert.ok(back.some((e) => e.type === 'request_start'))
+  const later = parse({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm2' } } })
+  assert.ok(!later.some((e) => e.type === 'retry_ok'))
+})
+
 test('Codex app-server：网关把推理 delta 挂在回复条目上时思考不重复、正文不丢', async () => {
   const events: CliEvent[] = []
   const session = codexAppSession({

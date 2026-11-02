@@ -59,13 +59,13 @@ const halfPlan = () => ({
 const donePlan = () => ({ ...halfPlan(), doneAt: at, steps: halfPlan().steps.map((s) => ({ ...s, status: 'done' })) })
 
 /** 同一条任务在子对话列表里会不会转圈：和界面用同一份判定，cliAlive 取重启后的值（进程没了） */
-const spins = (t: Task) =>
+const spins = (t: Task, alive = false) =>
   childSpinning({
     id: t.id,
     title: t.title,
     status: t.status,
     working: t.working,
-    cliAlive: false,
+    cliAlive: alive,
     startedAt: t.createdAt,
     requests: t.requests.length,
     asking: t.parentAsks?.length ?? 0,
@@ -103,7 +103,7 @@ test('重启前这一轮还在跑的任务：落成已停止，节点标成被�
 
 test('这一轮说完了但计划没做完的子对话：重启后落成已停止，不再显示在跑', async () => {
   const t = task('half-plan', { status: 'done', plans: [halfPlan()] })
-  assert.equal(spins(t), true, '重启前它本来画成在跑（unfinished）')
+  assert.equal(spins(t, true), true, '重启前（CLI 还活着）它本来画成在跑（unfinished）')
   const back = await afterRestart(t)
   assert.equal(back.status, 'stopped', '计划没做完的任务重启后没人会接着做，不能继续显示执行中')
   assert.equal(back.stopReason, 'restart')

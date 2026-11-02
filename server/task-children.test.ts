@@ -309,8 +309,8 @@ test('运行区列的子对话：和悬浮层「运行中」、状态栏计数�
   const shown = visibleChildren(list)
   assert.deepEqual(
     shown.map((x) => x.id),
-    ['resolved-running', 'background', 'working', 'wrapup', 'unfinished'],
-    '在跑的那一类在前（同类按本次开启时间倒序），再是计划没做完、待收尾的',
+    ['resolved-running', 'background', 'working', 'wrapup'],
+    '在跑的那一类在前（同类按本次开启时间倒序），再是待收尾的；计划没做完但 CLI 已经停了的不列（没人在往前做）',
   )
   assert.equal(shown.length, childCounts(list).running, '运行区的条数就是状态栏分子，不许两处各算一遍')
   assert.deepEqual(

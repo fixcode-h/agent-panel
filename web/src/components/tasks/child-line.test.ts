@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setLang, t } from '@shared/i18n'
-import type { ChildWait } from '@shared/task'
+import { childIcon, type ChildWait } from '@shared/task'
 import { childClosedHint, childLabels, childNote, type ChildSummary } from './child-line'
 
 // 整个文件断言的都是文案：固定成中文，不跟着 CI 的 LANG 变（见 docs/lessons 的测试教训）
@@ -82,7 +82,18 @@ test('停下（进程回收）时说清是谁结束的，不说「已关闭」',
 test('独立分支还没合回（未完成）时也不显示「已关闭」：这一轮确实没完', () => {
   const line = texts(closedWaiting({ background: 0, waiting: undefined, unmerged: true }))
   assert.ok(!line.includes(t('已关闭')), `不该出现「已关闭」：${line.join(' / ')}`)
-  assert.deepEqual(line, [t('计划 {done}/{total}', { done: 13, total: 14 }), t('未完成')])
+  // 进程回收了就不再转圈（childIcon 是 idle）：计划进度、未完成照写，补一句继续会重新拉起
+  assert.deepEqual(line, [
+    t('计划 {done}/{total}', { done: 13, total: 14 }),
+    t('未完成'),
+    t('Agent 进程已回收，继续会重新拉起'),
+  ])
+  assert.equal(childIcon(closedWaiting({ background: 0, waiting: undefined, unmerged: true })), 'idle')
+  // CLI 还活着的未完成照旧转圈
+  assert.equal(
+    childIcon(closedWaiting({ background: 0, waiting: undefined, unmerged: true, cliAlive: true })),
+    'running',
+  )
 })
 
 test('这一轮失败且进程回收：不说「已关闭」，也不说「进程回收了会重新拉起」（失败由行首图标说明）', () => {

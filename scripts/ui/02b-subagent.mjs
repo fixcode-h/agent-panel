@@ -605,6 +605,9 @@ await runShard(import.meta.filename, async (api) => {
         // 只留「计划没做完」这一条原因，否则验的不是计划收口
         child.resolved = false
         child.worktree = undefined
+        // CLI 停在等下一句上（进程还活着）：计划没做完、进程已回收的不再列进运行区（见 shared/task.ts 的 childIcon），
+        // 这里要的是「还在进行、能点解决」的那一行
+        child.awaitingUser = true
         const at = new Date(Date.now() - 30 * 60_000).toISOString()
         child.plans = [
           {
@@ -635,7 +638,7 @@ await runShard(import.meta.filename, async (api) => {
     else {
       await p.reload()
       await backToTask()
-      // 计划没做完的算「还在进行」，运行区里要有这一行（右栏才是带「解决」按钮的那个面板）
+      // 计划没做完、CLI 还活着的算「还在进行」，运行区里要有这一行（右栏才是带「解决」按钮的那个面板）
       const openRow = p.locator(`[aria-label="运行中"] button[title*="${TITLE}"]`).first()
       const listed = await openRow.waitFor({ timeout: 10000 }).then(
         () => true,
