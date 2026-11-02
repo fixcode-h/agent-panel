@@ -2188,6 +2188,136 @@ export function TaskView({
   )
 
   const needs = task.imported ? null : handleNeeds
+  const renderBlock = (b: Block, i: number): React.ReactNode => {
+    if (b.kind === 'turn')
+      return (
+        <ChatTurn
+          key={b.key}
+          msgs={b.msgs}
+          task={task}
+          teamNames={teamNames}
+          live={working && i + hidden === blocks.length - 1}
+          last={!working && i + hidden === blocks.length - 1}
+          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列，
+          // 刚发出的用户消息排在后面时也算）
+          latest={i + hidden === latestTurn}
+          fallback={byCli ? chatRun : undefined}
+          command={task.command}
+        />
+      )
+    if (b.kind === 'run')
+      return task.mode === 'chat' && (task.runs?.length ?? 0) > 0 ? (
+        // 和 AI 回复的正文对齐（缩进同 .reply-body）：对话里的工作流卡片、收发消息都在同一条竖线上
+        <div key={b.key} className="reply-indent min-w-0">
+          <RunChecklist task={task} run={b.run} onOpen={() => openRunIn(b.run)} />
+        </div>
+      ) : (
+        <div key={b.key} className="reply-indent min-w-0">
+          <RunCard
+            task={task}
+            run={b.run}
+            name={task.workflowName || workflow?.name}
+            onOpen={() => (task.mode === 'workflow' ? openFlow() : openRunIn(b.run))}
+            onStep={task.mode === 'workflow' ? openFlow : undefined}
+          />
+        </div>
+      )
+    if (b.kind === 'steps')
+      return (
+        <div key={b.key} className="flex flex-col gap-7">
+          {b.roots.map((r) => (
+            <StepSection key={r} task={task} rootId={r} msgs={b.byRoot.get(r)!} teamNames={teamNames} sticky="chat" />
+          ))}
+        </div>
+      )
+    if (b.m.peer)
+      return (
+        <div key={b.m.id} className="reply-indent min-w-0">
+          <ReceivedRow m={b.m} />
+        </div>
+      )
+    if (b.m.role === 'user')
+      return (
+        <Fragment key={b.m.id}>
+          <UserMessage
+            anchorId={b.m.id}
+            // 分析对话的第一句是面板拼好的报错 / 记录：画成「分析对象」卡片（设计稿 AiWindow）。
+            // 不只在 AI 分析窗口里：从窗口「在父对话里打开」放大到对话页后也一样折叠成卡片，不铺成整段长文
+            subject={
+              b.m.id === firstUser && isAnalysisTask(task, localAgents)
+                ? { label: t('分析对象'), hint: t('面板自动附上') }
+                : undefined
+            }
+            text={b.m.text}
+            at={b.m.at}
+            attachments={b.m.attachments}
+            status={
+              b.m.delivery && (
+                <DeliveryLine
+                  delivery={b.m.delivery}
+                  active={deliveryActive(b.m.delivery.at, task)}
+                  onResend={task.imported ? undefined : () => void resend(b.m)}
+                />
+              )
+            }
+            actions={
+              <UserMessageMenu
+                chat={task.mode === 'chat' && !task.imported}
+                canRewind={b.m.id !== firstUser}
+                canLesson={!!project && !task.imported}
+                running={running}
+                onRewind={() => setRewindAsk(b.m.id)}
+                onFork={() => fork(b.m.id)}
+                onLesson={() => setLessonOf(b.m.text)}
+              />
+            }
+          />
+          {/* 主理把这条消息分到了哪里：分诊卡，不同意可以一键改派 */}
+          <RouteCard
+            routes={(task.routes ?? []).filter((r) => r.messageId === b.m.id)}
+            later={task.messages.slice(task.messages.indexOf(b.m) + 1)}
+            onReroute={
+              task.imported
+                ? undefined
+                : async (text) => {
+                    try {
+                      apply(await api.sendMessage(task.id, text, [], false))
+                    } catch (e) {
+                      toast.error((e as Error).message)
+                    }
+                  }
+            }
+          />
+        </Fragment>
+      )
+    if (b.m.role === 'system')
+      return (
+        <NoteMessage key={b.m.id} m={b.m} msgs={task.messages} task={task} className="justify-center text-center" />
+      )
+    return <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
+  }
+  // 一轮回复和后面的用户消息放同一个容器：吸顶署名的粘性包含块是它，会一直保持到下一段回复头
+  const renderedBlocks: React.ReactNode[] = []
+  for (let i = 0; i < shownBlocks.length; i++) {
+    const b = shownBlocks[i]
+    if (b.kind !== 'turn') {
+      renderedBlocks.push(renderBlock(b, i))
+      continue
+    }
+    let end = i + 1
+    while (end < shownBlocks.length && shownBlocks[end].kind === 'msg') end++
+    renderedBlocks.push(
+      <div key={b.key} className="flex flex-col gap-2">
+        {renderBlock(b, i)}
+        {shownBlocks.slice(i + 1, end).map((m, j) => (
+          <div key={m.kind === 'msg' ? m.m.id : `follow-${i}-${j}`} className="mt-3">
+            {renderBlock(m, i + 1 + j)}
+          </div>
+        ))}
+      </div>,
+    )
+    i = end - 1
+  }
   return (
     <WithAgents agents={agents}>
       <div role="status" aria-live="polite" className="sr-only">
@@ -2317,120 +2447,7 @@ export function TaskView({
                           {task.messageHasMore ? t('显示更早的消息') : t('显示更早的 {n} 段', { n: hidden })}
                         </Button>
                       )}
-                      {shownBlocks.map((b, i) =>
-                        b.kind === 'turn' ? (
-                          <div key={b.key} className="flex flex-col gap-4">
-                            <ChatTurn
-                              msgs={b.msgs}
-                              task={task}
-                              teamNames={teamNames}
-                              live={working && i + hidden === blocks.length - 1}
-                              last={!working && i + hidden === blocks.length - 1}
-                              // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列，
-                              // 刚发出的用户消息排在后面时也算）
-                              latest={i + hidden === latestTurn}
-                              fallback={byCli ? chatRun : undefined}
-                              command={task.command}
-                            />
-                          </div>
-                        ) : b.kind === 'run' ? (
-                          task.mode === 'chat' && (task.runs?.length ?? 0) > 0 ? (
-                            // 和 AI 回复的正文对齐（缩进同 .reply-body）：对话里的工作流卡片、收发消息都在同一条竖线上
-                            <div key={b.key} className="reply-indent min-w-0">
-                              <RunChecklist task={task} run={b.run} onOpen={() => openRunIn(b.run)} />
-                            </div>
-                          ) : (
-                            <div key={b.key} className="reply-indent min-w-0">
-                              <RunCard
-                                task={task}
-                                run={b.run}
-                                name={task.workflowName || workflow?.name}
-                                onOpen={() => (task.mode === 'workflow' ? openFlow() : openRunIn(b.run))}
-                                onStep={task.mode === 'workflow' ? openFlow : undefined}
-                              />
-                            </div>
-                          )
-                        ) : b.kind === 'steps' ? (
-                          <div key={b.key} className="flex flex-col gap-7">
-                            {b.roots.map((r) => (
-                              <StepSection
-                                key={r}
-                                task={task}
-                                rootId={r}
-                                msgs={b.byRoot.get(r)!}
-                                teamNames={teamNames}
-                                sticky="chat"
-                              />
-                            ))}
-                          </div>
-                        ) : b.m.peer ? (
-                          <div key={b.m.id} className="reply-indent min-w-0">
-                            <ReceivedRow m={b.m} />
-                          </div>
-                        ) : b.m.role === 'user' ? (
-                          <Fragment key={b.m.id}>
-                            <UserMessage
-                              anchorId={b.m.id}
-                              // 分析对话的第一句是面板拼好的报错 / 记录：画成「分析对象」卡片（设计稿 AiWindow）。
-                              // 不只在 AI 分析窗口里：从窗口「在父对话里打开」放大到对话页后也一样折叠成卡片，不铺成整段长文
-                              subject={
-                                b.m.id === firstUser && isAnalysisTask(task, localAgents)
-                                  ? { label: t('分析对象'), hint: t('面板自动附上') }
-                                  : undefined
-                              }
-                              text={b.m.text}
-                              at={b.m.at}
-                              attachments={b.m.attachments}
-                              status={
-                                b.m.delivery && (
-                                  <DeliveryLine
-                                    delivery={b.m.delivery}
-                                    active={deliveryActive(b.m.delivery.at, task)}
-                                    onResend={task.imported ? undefined : () => void resend(b.m)}
-                                  />
-                                )
-                              }
-                              actions={
-                                <UserMessageMenu
-                                  chat={task.mode === 'chat' && !task.imported}
-                                  canRewind={b.m.id !== firstUser}
-                                  canLesson={!!project && !task.imported}
-                                  running={running}
-                                  onRewind={() => setRewindAsk(b.m.id)}
-                                  onFork={() => fork(b.m.id)}
-                                  onLesson={() => setLessonOf(b.m.text)}
-                                />
-                              }
-                            />
-                            {/* 主理把这条消息分到了哪里：分诊卡，不同意可以一键改派 */}
-                            <RouteCard
-                              routes={(task.routes ?? []).filter((r) => r.messageId === b.m.id)}
-                              later={task.messages.slice(task.messages.indexOf(b.m) + 1)}
-                              onReroute={
-                                task.imported
-                                  ? undefined
-                                  : async (text) => {
-                                      try {
-                                        apply(await api.sendMessage(task.id, text, [], false))
-                                      } catch (e) {
-                                        toast.error((e as Error).message)
-                                      }
-                                    }
-                              }
-                            />
-                          </Fragment>
-                        ) : b.m.role === 'system' ? (
-                          <NoteMessage
-                            key={b.m.id}
-                            m={b.m}
-                            msgs={task.messages}
-                            task={task}
-                            className="justify-center text-center"
-                          />
-                        ) : (
-                          <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
-                        ),
-                      )}
+                      {renderedBlocks}
                       <NextWorkflows task={task} />
                       {running &&
                         task.mode === 'chat' &&
