@@ -85,7 +85,7 @@ import {
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
 import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
-import { SUMMARY_HEAD, runWithSummary } from './helper-summary.ts'
+import { STATE_LINE, SUMMARY_HEAD, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
@@ -3783,7 +3783,7 @@ async function runHelper(
       siblings.length
         ? `## 同时进行的子 Agent\n下面这些和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings.map((x) => `- ${x}`).join('\n')}`
         : '',
-      `## 要求\n只完成上面这件事，不要做发起节点的其他工作。${reviewing ? `完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。` : `做完后用${promptLangWord()}写最后的总结，以「${SUMMARY_HEAD}」开头，交回给派你的 Agent；面板按这段总结判断子任务做完没有，没做完不要先写总结。`}\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
+      `## 要求\n只完成上面这件事，不要做发起节点的其他工作。${reviewing ? `完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。` : `做完后用${promptLangWord()}写最后的总结，以「${SUMMARY_HEAD}」开头、第一行写「${STATE_LINE}」，交回给派你的 Agent；面板按这段总结判断子任务做完没有，没做完不要先写总结，接着做；确实做不下去就写「状态：卡住：卡在哪、需要什么」。`}\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
     ].filter(Boolean)
     // 接着原来的子任务做（复看、重试）：会话里已经有需求和通用规则，只发新的和变了的段落（见 shared/prompt-delta.ts）
     const sessionKey = step.session || step.id
