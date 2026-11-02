@@ -38,6 +38,7 @@ import { lazyScope, type Lister, type Live } from './tasks/types.ts'
 import type { TasksScope } from './tasks/scope.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
 import { CHATS_DIR } from './store.ts'
+import { taskAttachDir } from './task-files.ts'
 import { createTaskStore } from './task-store.ts'
 import { worktreeStatus } from './exec/worktree.ts'
 import { mkdir } from 'node:fs/promises'
@@ -401,9 +402,9 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 图片附件拷进任务自己的执行目录，路径换成相对 Agent 的那一份。
-   * Chat 的执行目录要先建出来（它本来只在第一次执行时才建）。
-   * 拷进来的文件名记在任务上（placedAttachments）：统计 git 改动时排除它们，再次执行时复用同一份。
+   * 图片附件拷进这个对话的对话目录（`tasks/files/<id>/attachments/`），交给 Agent 的是那里的绝对路径；
+   * 已经在任务工作目录里的文件仍给相对路径。Chat 的执行目录要先建出来（它本来只在第一次执行时才建）。
+   * 拷进来的路径记在任务上（placedAttachments）：再次执行时复用同一份。
    */
   async function placeInTask(
     tk: Pick<Task, 'worktree' | 'projectId' | 'id' | 'placedAttachments'>,
@@ -413,7 +414,7 @@ export function tasksApi(deps: {
     const dir = await taskDir(tk)
     if (!dir) return attachments
     if (!tk.projectId && !isolated(tk)) await mkdir(dir, { recursive: true })
-    const r = await placeAttachments(dir, attachments, tk.placedAttachments)
+    const r = await placeAttachments(taskAttachDir(tk.id), attachments, tk.placedAttachments, dir)
     Object.assign(tk.placedAttachments, r.placed)
     return r.attachments
   }

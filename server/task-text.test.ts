@@ -63,22 +63,22 @@ test('文字里引用了附件：路径换到原来的位置，没引用的才�
     withAttachments('看看这张图', [c]),
     '看看这张图\n\n## 附件\n用户附上了这些文件，按标注的方式读取：\n- 渲染.png：/uploads/3/渲染.png（图片，本机绝对路径）',
   )
-  // 图片拷进对话目录后是相对路径（见 server/attachments.ts），按类型和路径形态逐条标注，
+  // 工作目录里本来就有的文件仍是相对路径（旧任务当年拷进去的、项目内的文件），按类型和路径形态逐条标注，
   // 不能把绝对路径和相对路径混成一句
   const shot = { name: '截图.png', path: '截图.png', size: 1, mime: 'image/png' }
   assert.equal(
     withAttachments('看看', [shot]),
-    '看看\n\n## 附件\n用户附上了这些文件，按标注的方式读取：\n- 截图.png：截图.png（对话目录里的图片，相对路径）',
+    '看看\n\n## 附件\n用户附上了这些文件，按标注的方式读取：\n- 截图.png：截图.png（工作目录里的图片，相对路径）',
   )
   assert.equal(
     withAttachments('看看', [shot, b]),
-    '看看\n\n## 附件\n用户附上了这些文件，按标注的方式读取：\n- 截图.png：截图.png（对话目录里的图片，相对路径）\n- 需求.pdf：/uploads/2/需求.pdf（本机绝对路径）',
+    '看看\n\n## 附件\n用户附上了这些文件，按标注的方式读取：\n- 截图.png：截图.png（工作目录里的图片，相对路径）\n- 需求.pdf：/uploads/2/需求.pdf（本机绝对路径）',
   )
   // 项目对话里粘贴进来的项目内文件会被换成相对路径（ref），但它不是图片，不能跟着说成图片
   const code = { name: 'main.ts', path: 'src/main.ts', size: 1, mime: 'text/plain', ref: true }
   assert.equal(
     withAttachments('看看', [code]),
-    '看看\n\n## 附件\n用户附上了这些文件，按标注的方式读取：\n- main.ts：src/main.ts（对话目录里的文件，相对路径）',
+    '看看\n\n## 附件\n用户附上了这些文件，按标注的方式读取：\n- main.ts：src/main.ts（工作目录里的文件，相对路径）',
   )
 })
 
