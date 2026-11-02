@@ -19,6 +19,8 @@ import {
 } from '../../shared/task.ts'
 import { saveToHandoff } from './inbox-file.ts'
 import { createDrive } from './drive.ts'
+import { planProgressKey } from '../../shared/drive.ts'
+import { nudgeMax } from '../../shared/conv-mode.ts'
 import type { TurnInfo } from '../exec/turn-info.ts'
 import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled, type MergeStall } from '../../shared/merge-stall.ts'
 import { cancelWait, steerTask } from '../exec/runner.ts'
@@ -150,7 +152,7 @@ export function createChildren(sc: TasksScope) {
     if (state === 'wrapup') return `wrapup|${tk.wrapRequest?.at ?? ''}`
     if (state === 'unfinished') {
       const plan = activePlan(tk)
-      return `unfinished|${plan ? `${plan.id}:${planProgress(tk, plan).done}` : ''}|${openWork(tk).length}`
+      return `unfinished|${plan ? planProgressKey(plan) : ''}|${openWork(tk).length}`
     }
     return `${state}|${tk.turnDoneAt}`
   }
@@ -415,8 +417,8 @@ export function createChildren(sc: TasksScope) {
         log.warn('task', '更新父对话计划的等待说明失败', { task: tk.id, error: (e as Error).message }),
       )
       if (!r.notify) return
-      // 计划没做完就收尾：由面板推子对话接着做（nudgePlan），不发消息打扰父对话——父对话收到也只能再催一遍。
-      // 面板推过一次（同一进度）还停在原地，才告诉父对话一次
+      // 计划没做完就收尾：子对话自己按计划接着做（自驱，nudgePlan），不发消息打扰父对话——父对话收到也只能再催一遍。
+      // 同一进度推满了还停在原地，才告诉父对话一次（ADR 0041）
       if (r.state === 'unfinished' && openWork(tk).length && !sc.stuckAfterNudge(tk)) return
     }
     // 面板重启时被停下的：不是出错，重启后由恢复流程接着做，不往父对话里报「已中断」
@@ -463,7 +465,7 @@ export function createChildren(sc: TasksScope) {
           ? '这是面板最后一次转告：交回后它仍不调用 submit_merge，就停下来告诉用户它卡在合回前、卡在哪，由用户决定，不要再来回催。'
           : '')
       : r.state === 'unfinished'
-        ? `\n下一步：面板已经推过它一次接着做，它仍停在这里。用 send_to_conversation 交回这个子对话（id ${tk.id}），写清下一步要做什么；不要另建一个子对话重做。`
+        ? `\n下一步：它按自己的计划推了 ${nudgeMax(tk)} 次仍停在这里，看上面的结果判断卡在哪：缺信息就回答它，方向不对就改要求，都用 send_to_conversation 交回这个子对话（id ${tk.id}），写清新的要求或答案；不要只发「继续」（它会自己接着做，催也没用），也不要另建一个子对话重做。确实做不下去就告诉用户。`
         : r.state === 'stopped' && tk.stopReason === 'user'
           ? // 用户亲手停的是「先别动」，不是失败：实测里父对话把它当成中断去交回重试，用户停它的意思就没了
             '\n下一步：这是用户自己停掉的，不是失败。不要自动交回、重派或另建子对话重做；计划里等它的那一步继续等，用户要它接着做时会自己继续，或者交代你再交给它。'

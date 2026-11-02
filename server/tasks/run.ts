@@ -82,6 +82,13 @@ import type { TasksScope } from './scope.ts'
 /**
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
  */
+/**
+ * 这条输入给对话一次新的推进机会（推进次数清零，ADR 0041）：用户亲自发的，或父对话交代的新任务（有新内容）。
+ * 其他对话、子对话汇报、面板消息、父对话的状态询问不算：外部输入只改计划，计划变了指纹自然会变
+ */
+const freshChance = (m: { panel?: unknown; child?: unknown; peer?: { rel: string; kind: string } }) =>
+  !m.panel && !m.child && (!m.peer || (m.peer.rel === 'parent' && m.peer.kind === 'task'))
+
 export function createRun(sc: TasksScope) {
   /** 每个子对话已经报给父对话的撞车（路径 + 对方 id），见 checkCollisions */
   const collided = new Map<string, Set<string>>()
@@ -844,10 +851,8 @@ export function createRun(sc: TasksScope) {
     }
     sc.notePlanInput(next, !!m.panel || !!m.child)
     // 用户发了新消息：上一轮已经全部做完的 CLI 待办收起，不再一直挂着「待办已完成」
-    if (!m.panel && !m.child && !m.peer) {
-      next.todos = settledTodos(next.todos)
-      sc.resetNudge(next.id)
-    }
+    if (!m.panel && !m.child && !m.peer) next.todos = settledTodos(next.todos)
+    if (freshChance(m)) sc.resetNudge(next.id)
     // 父对话、其他对话发来的：交给 CLI 的那份前面写明来源（见 sourceHeader），对话里记的原文不变
     const head = m.panel ? '' : sourceHeader({ peer: m.peer })
     const raw = await expandForWorkflow(next, m.text)
@@ -999,10 +1004,8 @@ export function createRun(sc: TasksScope) {
     })
     if (wait === 'ok') {
       // CLI 停在等下一句（上一轮已结束）：用户的新消息同样收起全部做完的待办
-      if (msg.role === 'user' && !msg.panel && !msg.child && !msg.peer) {
-        task.todos = settledTodos(task.todos)
-        sc.resetNudge(task.id)
-      }
+      if (msg.role === 'user' && !msg.panel && !msg.child && !msg.peer) task.todos = settledTodos(task.todos)
+      if (msg.role === 'user' && freshChance(msg)) sc.resetNudge(task.id)
       task.updatedAt = new Date().toISOString()
       markDelivery(task, msg, 'wait')
       await sc.store.update(task.id, task)

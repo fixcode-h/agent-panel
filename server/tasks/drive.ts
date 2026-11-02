@@ -47,8 +47,9 @@ export function createDrive(
   /** 真推出去时记一次：返回这是这个进度的第几次（从 1 开始），推满了返回 0 */
   const takeNudge = (conv: Task, key: string, max = nudgeMax(conv)): number => {
     const n = budget.take(conv.id, key, max, inputOf(conv))
-    // 子对话「推过还停在原地」的判定（merge.ts 的 stuckAfterNudge）读这个
-    if (n) sc.planNudged.set(conv.id, key)
+    // 子对话「推满了还停在原地」的判定（merge.ts 的 stuckAfterNudge）读这个：推满才记，没推满时子对话还在自驱，不报父对话
+    if (n && n >= max) sc.planNudged.set(conv.id, key)
+    else if (n) sc.planNudged.delete(conv.id)
     return n
   }
   /** 推满之前的最后一次：要它说明卡在哪，不再只说打算 */

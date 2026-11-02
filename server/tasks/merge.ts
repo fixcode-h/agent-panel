@@ -41,11 +41,11 @@ export function createMerge(sc: TasksScope) {
   /** 这一轮结束时已经催过「请父对话收尾」的子对话：再结束还没请就照常上报父对话，不反复催 */
   const mergeNudged = new Set<string>()
   /**
-   * 计划没做完就收尾、被催过接着做的子对话：记下催的时候计划的进度指纹（见 shared/drive.ts 的 planProgressKey）。
-   * 同一个进度只催一次：催过还停在原地就照常上报父对话「未完成」，不在面板里来回推
+   * 计划没做完就收尾、推满了还停着的子对话：记下推满时计划的进度指纹（见 shared/drive.ts 的 planProgressKey）。
+   * 推满了还停在原地，才上报父对话「卡住」；没推满时子对话还在自驱，不打扰父对话（ADR 0041）
    */
   const planNudged = new Map<string, string>()
-  /** 面板已经按这个进度推过它接着做（nudgePlan），它还停在原地 */
+  /** 面板已经按这个进度推满了（nudgePlan），它还停在原地 */
   const stuckAfterNudge = (tk: Task) => {
     const plan = activePlan(tk)
     return !!plan && planNudged.get(tk.id) === planProgressKey(plan)

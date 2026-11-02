@@ -14,9 +14,12 @@ type ModeOf = Pick<Task, 'mode' | 'projectId'> & { parentTaskId?: string }
  */
 export const isChatMode = (tk: ModeOf) => tk.mode === 'chat' && !tk.projectId && !tk.parentTaskId
 
-/** Agent 模式的顶层对话同一个进度最多推几次（ADR 0037）；子对话推不动会上报父对话、Chat 页一问一答，都只推一次 */
+/**
+ * Agent 模式的对话同一个进度最多推几次（ADR 0037）。顶层对话和子对话一样：自驱属于对话自己，
+ * 子对话推满了才把「卡住」报给父对话，不再推一次就交给父对话去催（ADR 0041）；Chat 页一问一答只推一次
+ */
 export const AGENT_NUDGE_MAX = 3
-export const nudgeMax = (tk: ModeOf) => (tk.parentTaskId || isChatMode(tk) ? 1 : AGENT_NUDGE_MAX)
+export const nudgeMax = (tk: ModeOf) => (isChatMode(tk) ? 1 : AGENT_NUDGE_MAX)
 
 /**
  * 面板推对话「接着做」的计数：key 是进度（计划 id + 已完成几步，或「said:用户消息 id」），进度变了从 1 重新数。

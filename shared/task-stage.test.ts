@@ -746,7 +746,7 @@ test('Chat 页和 Agent 模式分开：Chat 页、子对话只推一次，项目
   assert.equal(isChatMode(child), false)
   assert.equal(isChatMode({ ...plain, mode: 'workflow' }), false)
   assert.equal(nudgeMax(plain), 1)
-  assert.equal(nudgeMax(child), 1)
+  assert.equal(nudgeMax(child), 3, '子对话和顶层对话一样自驱 3 次，推满才报父对话（ADR 0041）')
   assert.equal(nudgeMax(agentConv), 3)
   // 同一进度：第 1、2、3 次能推，第 4 次推满；进度变了从 1 重新数
   let r = nextNudge(undefined, 'plan:1', 3)
