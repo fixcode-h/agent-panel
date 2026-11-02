@@ -3383,6 +3383,16 @@ function tasksRoute(
   if (sub === 'lifecycle' && method === 'POST' && rid === 'file')
     return { path: '~/.agent-panel/diagnostics/demo.json', copied: false }
   if (sub === 'lifecycle' && method === 'POST' && rid === 'reveal') return { ok: true }
+  if (sub === 'lifecycle' && method === 'POST' && rid === 'analysis')
+    return {
+      title: `对话状态诊断：${task.title}`,
+      topic: 'task-lifecycle',
+      ask: '分析这个对话现在的状态是否正常',
+      error: '',
+      output: '',
+      context: '',
+      cwd: '~/.agent-panel/diagnostics',
+    }
   // 父子协作时间线：和正式后端一样按父对话那一组算
   if (sub === 'collab' && method === 'GET') {
     const root = (task.parentTaskId && tasks.find((x) => x.id === task.parentTaskId)) || task
