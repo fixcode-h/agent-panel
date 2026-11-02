@@ -7,6 +7,7 @@
  * 和其他分片并行跑：每个分片自己有临时数据目录、假 CLI 日志、端口和服务（见 harness.mjs）。
  */
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync } from 'node:fs'
 
 import { runShard } from './harness.mjs'
 
@@ -64,4 +65,27 @@ await runShard('用户直接发给子对话后通知父对话', async (api) => {
   assert.ok(fresh[0].text.includes(latest.text.replace(/\s+/g, ' ').trim().slice(0, 60)), '状态里带的是这一轮的结果')
   assert.ok(fresh[0].text.includes('USER_DIRECT'), '汇报里带上用户直接交代的原话')
   step('用户直接发给子对话：父对话计划挂上等它，做完收口那一步并叫起父对话；每轮只报一条状态')
+
+  // ---- 状态诊断：整棵树每个节点的 CLI 生命周期、结论，生成诊断文件（完整日志、去掉密钥）----
+  const report = await call('GET', `/tasks/${parent.id}/lifecycle`)
+  assert.equal(report.format, 'agent-panel-lifecycle/1')
+  assert.equal(report.rootId, parent.id)
+  const pNode = report.nodes.find((n) => n.id === parent.id)
+  const kNode = report.nodes.find((n) => n.id === kid.id)
+  assert.ok(pNode && kNode, '父对话和子对话都在树里')
+  assert.equal(kNode.parentId, parent.id, '子对话挂在父对话下面')
+  assert.ok(pNode.verdict.headline, '每个节点都有一句话结论')
+  assert.ok(
+    kNode.log.some((l) => l.includes('[CLI 进程启动]')) && kNode.log.some((l) => l.includes('[CLI 进程退出]')),
+    `子对话的日志里记了进程的启动和退出：${kNode.log.slice(-8).join(' | ')}`,
+  )
+  assert.ok(!kNode.facts.cliAlive || kNode.facts.awaitingUser, '跑完一轮的子对话进程要么退了，要么停在等下一句')
+  if (!kNode.facts.cliAlive) assert.ok(kNode.verdict.why, '进程不在时写清为什么')
+  // 复制诊断文件：CI 上没有图形剪贴板，copied 是 false，照样给出写好的文件
+  const saved = await call('POST', `/tasks/${parent.id}/lifecycle/file`, {})
+  assert.ok(existsSync(saved.path), '诊断文件写好了')
+  const file = JSON.parse(readFileSync(saved.path, 'utf8'))
+  assert.equal(file.nodes.length, report.nodes.length, '文件里是同一棵树')
+  assert.ok(!/sk-[A-Za-z0-9_-]{12,}/.test(readFileSync(saved.path, 'utf8')), '文件里没有密钥')
+  step('状态诊断：父子对话的生命周期和结论，生成诊断文件')
 })
