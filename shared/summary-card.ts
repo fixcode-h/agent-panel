@@ -8,9 +8,10 @@ import { getLang, type Lang } from './i18n.ts'
  * 类型和字段只在这里定义一次：提示词（summaryCardRules）和界面解析（splitSummaryCards）都从这张表来，
  * 主理的汇报、子对话的排查报告也引用它，不另写一套。
  *
- * 父子对话分两种写法（用户要求）：父对话里是简洁的卡片，标题链到子对话；子对话自己写详细总结
+ * 父子对话分两种写法（用户要求）：父对话只用文字汇报、自己不写卡片；子对话自己写详细总结
  * （`## 类型｜一句话结论` + 每段一个 `### 段名`），照普通 Markdown 显示，问题、原因、方案、改了哪些、影响都分段写清。
- * 卡片字段一两句放不下这些，子对话又是用户点进去看细节的地方，所以详细的那份不画成卡片。
+ * 子对话交回结果时，面板按它的总结自动在父对话里画一张卡片（childSummaryCards），标题是「类型｜结论」并链回子对话；
+ * 卡片字段一两句放不下详细总结，子对话又是用户点进去看细节的地方，所以详细的那份不画成卡片。
  */
 
 export type SummaryKind = 'fix' | 'feature' | 'improve' | 'analysis' | 'blocked'
@@ -155,14 +156,23 @@ const KIND_KEYS = Object.keys(SUMMARY_KINDS) as SummaryKind[]
 
 const fieldLine = (x: FieldDef, lang: Lang) => `- **${x[lang]}**：`
 
-/** 父对话的卡片标题链到子对话的写法：`[结论](child:<id>)`，界面画成能点的标题 */
+/** 子对话总结卡的标题链到子对话的写法：`[结论](child:<id>)`，界面画成能点的标题 */
 export const CHILD_LINK = 'child:'
 
 /**
  * 给 Agent 的「总结格式」一节：按当前回复语言写类型和字段名，界面两种语言都认。
- * parent：能分派子对话的父对话，写子对话的结果时卡片标题链到那个子对话（点了跳到子对话里的详细总结）
+ * parent：能分派子对话的父对话，不写卡片（用户 2026-11-02 定）：子对话的结果由面板按它自己的总结自动画成卡片，
+ * 标题链到那个子对话（点了跳到子对话里的详细总结）；父对话自己直接做完的交付也只用文字汇报
  */
 export function summaryCardRules(lang: Lang = getLang(), parent = false): string {
+  if (parent)
+    return `## 总结格式
+你在父对话里，不写总结卡：
+- 子对话交回结果时，面板会把它的总结自动显示成一张卡片，标题是子对话总结的「类型｜结论」，点标题跳到子对话里的详细总结。你不用自己写卡片，也不用从子对话的总结里提炼字段。
+- 你自己直接做完的交付同样只写文字，不写卡片。
+- 用文字把结果汇报给用户：做了什么、验证结果如何、有什么遗留、要用户决定或处理的事。按证据核对子对话的结果，没有证据的写「未验证」；子对话漏掉的要点补进文字里。
+- 一轮里做了几件互不相关的事就分几段写；问答、闲聊、派单那一轮、计划还没做完的中间进度不用汇报格式。
+${lang === 'zh' ? '' : '- 回复用英文时用英文写。\n'}`
   const table = KIND_KEYS.map((k) => {
     const d = SUMMARY_KINDS[k]
     return `| ${d[lang]} | ${d.when} | ${d.fields.map((x) => x[lang]).join(' · ')} |`
@@ -180,11 +190,7 @@ export function summaryCardRules(lang: Lang = getLang(), parent = false): string
 - 需要用户决定或动手的事，在卡片末尾加一行「${NEEDS_YOU[lang]}」；没有就不写这一行。
 - 一轮里做了几件互不相关的事就写几张卡，每张按自己的类型；卡片之外的说明、排查报告、表格放在卡片下面。
 - 问答、闲聊、派单那一轮、计划还没做完的中间进度不写卡片。
-${
-  parent
-    ? `- 写子对话交回的结果时一个子对话一张卡：标题里的结论写成指向它的链接「### 类型｜[一句话结论](${CHILD_LINK}<子对话 id>)」，用户点标题跳到子对话里的详细总结。每个字段一两句写清要点，问题和原因的来龙去脉、逐个文件的改动留在子对话的总结里，不要整段照搬。\n`
-    : ''
-}${lang === 'zh' ? '' : '- 回复用英文时类型和字段名用英文（表里就是英文名），不要中英混写。\n'}
+${lang === 'zh' ? '' : '- 回复用英文时类型和字段名用英文（表里就是英文名），不要中英混写。\n'}
 | 类型 | 什么时候用 | 字段（按顺序） |
 | --- | --- | --- |
 ${table}
@@ -197,7 +203,7 @@ ${example}
 
 /**
  * 子对话的「总结格式」：详细总结，普通 Markdown，不写成卡片。父对话收到的「最近的结果」是从这一段摘的要点（shared/child-letter.ts），
- * 用户在父对话里点卡片标题也跳到这里，所以要写到没参与的人看完就明白
+ * 面板自动画在父对话里的卡片标题也跳到这里，所以要写到没参与的人看完就明白
  */
 export function summaryDetailRules(lang: Lang = getLang()): string {
   const table = KIND_KEYS.map((k) => {
@@ -420,4 +426,21 @@ export function summariesOf(md: string): SummaryCard[] {
   const text = unfenceSummaries(md)
   const cards = splitSummaryCards(text).flatMap((x) => ('card' in x ? [x.card] : []))
   return cards.length ? cards : detailSummaries(text)
+}
+
+/** 面板自动画在父对话里的子对话总结卡（TaskMessage.summaryCards）：只有类型和结论，标题链到子对话 */
+export interface ChildSummaryCard {
+  kind: SummaryKind
+  label: string
+  title: string
+  child: string
+}
+
+/**
+ * 子对话交回结果时，面板自动画在父对话里的卡片：标题取子对话总结的「类型｜结论」，
+ * child 指向子对话（见 CHILD_LINK，点标题跳到它的详细总结）。父对话不再自己写这张卡。
+ * 子对话一轮写了几份总结就出几张卡；没写总结时没有卡片。
+ */
+export function childSummaryCards(md: string, childId: string): ChildSummaryCard[] {
+  return summariesOf(md).map((c) => ({ kind: c.kind, label: c.label, title: c.title, child: childId }))
 }

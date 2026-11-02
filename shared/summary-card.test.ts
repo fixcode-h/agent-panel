@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  childSummaryCards,
   isSummaryTitle,
   splitSummaryCards,
   summariesOf,
@@ -159,8 +160,43 @@ test('子对话的总结格式提示词：每类段落按语言列出，示例�
     const [c] = summariesOf(example)
     assert.equal(c.fields.length, SUMMARY_KINDS.fix.detail.length)
   }
-  assert.match(summaryCardRules('zh', true), /child:<子对话 id>/)
+  // 父对话不写卡片（用户 2026-11-02 定）：子对话结果由面板自动画卡，自己只用文字汇报
+  const parent = summaryCardRules('zh', true)
+  assert.match(parent, /不写总结卡/)
+  assert.match(parent, /面板会把它的总结自动显示成一张卡片/)
+  assert.doesNotMatch(parent, /```markdown/, '父对话不该再有卡片示例')
+  assert.doesNotMatch(parent, /\| 类型 \| 什么时候用 \|/, '父对话不该再列卡片字段表')
   assert.doesNotMatch(summaryCardRules('zh'), /child:/)
+})
+
+test('子对话交回结果：面板按它的总结自动画出带 child 链接的卡片', () => {
+  const md = [
+    '侧栏时间的问题修好了，改动已经合回 main。',
+    '',
+    '## 修复｜侧栏的「x 分钟前」不再停在打开页面那一刻',
+    '',
+    '### 问题',
+    '页面开着不动，相对时间不更新。',
+    '',
+    '### 验证',
+    '两条单测改前失败、改后通过。',
+  ].join('\n')
+  assert.deepEqual(childSummaryCards(md, 't_abc-1'), [
+    {
+      kind: 'fix',
+      label: '修复',
+      title: '侧栏的「x 分钟前」不再停在打开页面那一刻',
+      child: 't_abc-1',
+    },
+  ])
+  // 一轮写了几份总结就出几张卡
+  const many = `${md}\n\n## 分析｜另起一份\n\n### 结论\n可以合。`
+  assert.deepEqual(
+    childSummaryCards(many, 't2').map((c) => c.title),
+    ['侧栏的「x 分钟前」不再停在打开页面那一刻', '另起一份'],
+  )
+  // 没写总结的回复没有卡片，父对话只看到文字
+  assert.deepEqual(childSummaryCards('已经跑完测试，全部通过。', 't3'), [])
 })
 
 test('包在 markdown 代码块里的总结放回正文，别的代码块不动', () => {

@@ -71,6 +71,8 @@ export function createChildMessages(sc: TasksScope) {
     worktree?: TaskMessage['worktree'],
     /** 父对话得动手的上报（例如子对话只剩合回却没请收尾）：计划里没等它也叫起父对话，不只放进收件箱 */
     wake = false,
+    /** 面板在父对话里自动画出的子对话总结卡（见 shared/summary-card.ts 的 childSummaryCards） */
+    summaryCards?: TaskMessage['summaryCards'],
   ) {
     const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
     if (!parent) {
@@ -114,6 +116,7 @@ export function createChildMessages(sc: TasksScope) {
           ...(child && { child }),
           ...(peer && { peer }),
           ...(worktree && { worktree }),
+          ...(summaryCards?.length && { summaryCards }),
         })
         return
       } catch (e) {
@@ -134,6 +137,7 @@ export function createChildMessages(sc: TasksScope) {
       ...(child && { child }),
       ...(peer && { peer }),
       ...(worktree && { worktree }),
+      ...(summaryCards?.length && { summaryCards }),
       at: new Date().toISOString(),
     }
     // 父对话正在执行：实时交给它；交不了的记进收件箱，父对话下一轮开始时一起处理

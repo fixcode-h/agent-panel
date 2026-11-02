@@ -7,7 +7,7 @@ import { demoRestart } from './demo-restart'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
-import { demoChatTodos, demoChildSummary, demoParentCard } from './demo-child-summary'
+import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-summary'
 import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
@@ -4118,11 +4118,12 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
           kind: 'report' as const,
           subject: '已完成：合回原分支、标记完成',
         },
+        // 和正式后端一致：面板按子对话的总结自动在父对话里画卡片，父对话不再自己回一条卡
+        ...(how.summary && { summaryCards: demoChildCards(it.id) }),
         at: new Date().toISOString(),
       }
       if (how.summary) it.messages.push(demoReply(`${it.id}-summary`, agent.id, demoChildSummary()))
       parent.messages.push(report)
-      if (how.summary) parent.messages.push(demoReply(`${it.id}-card`, agent.id, demoParentCard(it.id)))
       // 旧数据里同一份汇报曾被写两遍（runner 一轮结束回调发了两次，见 peer-dedupe.ts）：
       // 演示里留一条这样的样本，界面上应该只显示一行
       if (title === '核对通知时序')
