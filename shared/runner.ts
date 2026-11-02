@@ -11,7 +11,6 @@ import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
 import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './task-export.ts'
 import { LESSON_REVIEW_LANG } from './lesson-review.ts'
-import { SUMMARY_HEAD } from './helper-summary.ts'
 import { DIAGNOSIS_LANG, demoDiagnosis } from './diagnosis.ts'
 
 export interface RunContext {
@@ -575,9 +574,9 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
         ? { verdict: 'fail', blockers: [{ id: 'R1', text: '重复提交时没有给出提示', must: true }] }
         : { verdict: 'pass' },
     )
-  // 子任务做完要交以「## 总结」开头的总结（面板按它判定做完，见 helper-summary.ts）；演示里照着写
-  if (call.step?.slot === 'sub' && !out.text.includes(SUMMARY_HEAD))
-    out = { ...out, text: `${out.text}\n\n${SUMMARY_HEAD}\n${call.step.title}：完成。` }
+  // 子任务用 submit_result 交结果（面板只认工具，见 helper-summary.ts）：演示里照着调用
+  if (call.step?.slot === 'sub' && call.orch?.submitResult)
+    call.orch.submitResult({ state: 'done', summary: `${call.step.title}：完成。`, left: '' })
   const ok = await speak(ctx, call.agentId, call.step?.id ?? '', out)
   if (ok && !call.step) task.todos = (task.todos ?? []).map((t) => ({ ...t, status: 'done' as const }))
   return ok ? { ok: true, text: out.text } : { ok: false, stopped: true, error: '已停止' }

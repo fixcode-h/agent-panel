@@ -469,6 +469,14 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(t('发送消息'), quoted || firstLine(a.to), 'other', text(a.text))
     case 'read_messages':
       return as(t('查看消息'), '')
+    // 交结果：标题写做完 / 没做完 / 卡住，展开看总结和还差什么
+    case 'submit_result':
+      return as(
+        a.state === 'done' ? t('交结果：做完') : a.state === 'stuck' ? t('交结果：卡住') : t('交结果：没做完'),
+        firstLine(a.left),
+        'other',
+        [text(a.summary), text(a.left)].filter(Boolean).join('\n\n') || undefined,
+      )
     // 交结论：标题写通过 / 不通过，展开看必须处置的意见
     case 'submit_verdict':
       return as(

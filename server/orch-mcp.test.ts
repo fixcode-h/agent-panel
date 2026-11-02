@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { autoSubmit } from './submit-test-kit.ts'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
@@ -57,6 +58,7 @@ function host(task: Task, log: AgentCall[]): EngineHost {
     changed: () => {},
     newId: () => `id${++n}`,
     runAgent: async (call) => {
+      autoSubmit(call)
       log.push(call)
       const o = call.orch!
       if (call.step?.id === 'a') {
@@ -125,6 +127,7 @@ async function spawnWithStep(helperOk: boolean, takeAway = false, mixed = false)
     changed: () => {},
     newId: () => `id${task.messages.length}`,
     runAgent: async (call) => {
+      autoSubmit(call)
       if (call.step?.slot === 'sub') {
         finished()
         // mixed：同一批里一只成功一只失败，最后必须退成进行中（不能因为有一只成功就标完成）
@@ -359,6 +362,7 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
     changed: () => {},
     newId: () => `id${task.messages.length}`,
     runAgent: async (call) => {
+      autoSubmit(call)
       if (call.step?.slot === 'sub') {
         // 对话里的子任务用不上共享状态：即使对话跑过 start_plan、task.runs 还留着上一次运行，
         // 也不能把这两个工具注册回来，更不能把上一次运行的 state 交给它
@@ -593,6 +597,7 @@ test('resume：不写 agent 沿用原任务的角色，写了用写的，非 res
     changed: () => {},
     newId: () => `id${task.messages.length}`,
     runAgent: async (call) => {
+      autoSubmit(call)
       calls.push(call)
       // 评审子任务用工具交结论（面板只认它；不交会被补问一次，见 shared/submitted.ts）
       if (call.step?.slot === 'sub') {
@@ -670,6 +675,7 @@ test('resume：原任务的角色已经不在了就报错，不悄悄退回默�
     changed: () => {},
     newId: () => `id${task.messages.length}`,
     runAgent: async (call) => {
+      autoSubmit(call)
       if (call.step?.slot === 'sub') return { ok: true, text: '查完了' }
       round++
       if (round === 1) {
@@ -715,6 +721,7 @@ test('点名的角色不存在：报错，不落到默认「子任务」', async
     changed: () => {},
     newId: () => `id${task.messages.length}`,
     runAgent: async (call) => {
+      autoSubmit(call)
       if (call.step?.slot === 'sub') return { ok: true, text: '查完了' }
       // 顶层和任务级都写错：写入的角色找不到时不能悄悄派出默认「子任务」
       const r = await callOrchTool(call.orch!, 'spawn_agents', {
@@ -911,13 +918,38 @@ const IDENTITIES: [string, object, string[]][] = [
   // 子任务只做派给它的那一件事：计划、收尾合并、开分支、找父对话、派子任务、记教训都不给它；后台命令的结果推回派它的对话
   [
     '子任务·对话派的',
-    { self: '@chat/sub/h1', helper: true, team: true, canBackground: true, lessons: READ_LESSONS, submitVerdict: okCb },
-    ['get_status', ...BG, 'project_lessons', 'send_message', 'read_messages', 'submit_verdict'],
+    {
+      self: '@chat/sub/h1',
+      helper: true,
+      team: true,
+      canBackground: true,
+      lessons: READ_LESSONS,
+      submitResult: okCb,
+      submitVerdict: okCb,
+    },
+    ['get_status', ...BG, 'project_lessons', 'send_message', 'read_messages', 'submit_result', 'submit_verdict'],
   ],
   [
     '子任务·工作流节点派的（工作流任务里）',
-    { self: 'a/sub/h1', helper: true, team: true, sharedState: true, lessons: READ_LESSONS, submitVerdict: okCb },
-    ['get_status', 'project_lessons', 'read_state', 'write_state', 'send_message', 'read_messages', 'submit_verdict'],
+    {
+      self: 'a/sub/h1',
+      helper: true,
+      team: true,
+      sharedState: true,
+      lessons: READ_LESSONS,
+      submitResult: okCb,
+      submitVerdict: okCb,
+    },
+    [
+      'get_status',
+      'project_lessons',
+      'read_state',
+      'write_state',
+      'send_message',
+      'read_messages',
+      'submit_result',
+      'submit_verdict',
+    ],
   ],
   [
     '工作流节点（工作流任务里）',
@@ -1038,6 +1070,7 @@ function identityHost(op: {
     listConversations: async () => [],
     // 对话 / 节点第一次被调用时记下它的 Orchestra，再派一个子任务把子任务的也记下来
     runAgent: async (call: AgentCall) => {
+      autoSubmit(call)
       const o = call.orch!
       const sub = call.step?.slot === 'sub'
       const key = `${o.self.startsWith('@chat') ? 'chat' : 'node'}${sub ? '-helper' : ''}`
@@ -1119,6 +1152,7 @@ test('Chat 模式的一轮：提示词另起一套，不带项目对话的授权
       askPush: async () => ({ allow: true }),
       runBackground: okCb,
       runAgent: async (call: AgentCall) => {
+        autoSubmit(call)
         prompt = call.prompt
         names = orchTools(call.orch!).map((x) => x.name)
         return { ok: true, text: '好' }

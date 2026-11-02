@@ -698,6 +698,13 @@ async function panelCall(name, params) {
     })
   }
 }
+// 子任务交结果（ADR 0041 第 16 节）：面板只认 submit_result 工具。SUB_NO_SUMMARY 模拟说完一句就结束、没交，
+// 面板补问（「你还没有用 submit_result」）后才交
+if (
+  (input.includes('submit_result 工具交结果') && !input.includes('SUB_NO_SUMMARY')) ||
+  input.includes('你还没有用 submit_result')
+)
+  await panelCall('submit_result', { state: 'done', summary: '做完了。' })
 // 操控软件的动作（ADR 0011）：任务里有 APP_DO:<一行 JSON>、面板也给了 app_do 时，像真的 Agent 那样按用户的指令调一次。
 // 只认用户这一条消息里的标记（附在后面的用法说明里也有 app_do 字样，所以要两个都在）
 const appDo = /APP_DO:(\{.*\})/.exec(input)?.[1]
@@ -790,7 +797,7 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
   })
-// 派一个说完一句就结束、没交总结的子任务（SUB_NO_SUMMARY 只出现在子任务的指令里，见 turnReply 的 subSummary）
+// 派一个说完一句就结束、没交结果的子任务（SUB_NO_SUMMARY 只出现在子任务的指令里，见模块顶层的 submit_result）
 if (input.includes('SPAWN_NO_SUMMARY') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '读操作原语', instructions: 'SUB_NO_SUMMARY 继续读操作原语与快照/选择器' }],
@@ -1085,11 +1092,8 @@ const turnReply = () => {
   // 面板推它「计划没做完，接着做」：回复带上标记，端到端测试据此确认推送真的交到了 CLI
   const planNudgeGot = input.includes('你的计划才做了') ? '\nPLAN_NUDGE_GOT' : ''
   const noPlanGot = input.includes('（收尾自检）') ? '\nNOPLAN_NUDGE_GOT' : ''
-  // 子任务做完要交以「## 总结」开头的总结（面板按它判定子任务做完）；SUB_NO_SUMMARY 模拟说完一句就结束，推了（续接只发那句话）才补总结
-  const subSummary =
-    (input.includes('派出的子 Agent') && !input.includes('SUB_NO_SUMMARY')) || input.includes('还没交最后的总结')
-      ? '\n\n## 总结\n做完了。'
-      : ''
+  // 子任务交结果走 submit_result 工具（见模块顶层那段），回复里只写给人看的一句
+  const subSummary = input.includes('你还没有用 submit_result') ? '\n\nSUB_RESULT_GOT 补交了结果。' : ''
   return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}${planNudgeGot}${noPlanGot}${subSummary}`
 }
 // 写配置文件接的 CLI 同一目录里第一轮叫 agent-panel、同时在跑的另几轮带后缀，按参数和文件名找这一轮的那一项（最后写进去的）

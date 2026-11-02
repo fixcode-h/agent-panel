@@ -38,9 +38,30 @@ const SUBMIT_VERDICT = {
   },
 }
 
+/** 子任务交结果：做完 / 没做完 / 卡住，面板只按它判断子任务做完没有 */
+const SUBMIT_RESULT = {
+  name: 'submit_result',
+  title: '交结果',
+  description:
+    '子任务最后交结果：做完、没做完、做不下去都要交。面板只按这个工具判断你做完没有，不看回复里写了什么。没做完时先接着做，确实停下来才交 unfinished；交完就结束这一轮。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      state: {
+        type: 'string',
+        enum: ['done', 'unfinished', 'stuck'],
+        description: 'done 做完；unfinished 没做完；stuck 做不下去（缺信息、缺权限、方向不对）',
+      },
+      summary: { type: 'string', description: '结论和关键文件，几句话；派你的 Agent 按它接着做' },
+      left: { type: 'string', description: '没做完时还差什么；卡住时卡在哪、需要什么' },
+    },
+    required: ['state', 'summary'],
+  },
+}
+
 /** 这个调用者能用的交结论 / 交结果工具 */
 export function submitTools(o: Orchestra) {
-  return o.submitVerdict ? [SUBMIT_VERDICT] : []
+  return [...(o.submitResult ? [SUBMIT_RESULT] : []), ...(o.submitVerdict ? [SUBMIT_VERDICT] : [])]
 }
 
 // oxlint-disable-next-line no-explicit-any -- MCP 的参数就是任意 JSON，和 orch-mcp.ts 的 callOrchTool 一样
@@ -58,6 +79,16 @@ export function callSubmitTool(o: Orchestra, name: string, a: any) {
       }))
       .filter((b: { text: string }) => b.text)
     const r = o.submitVerdict({ verdict: v, blockers })
+    return text(r.info, !r.ok)
+  }
+  if (name === 'submit_result') {
+    if (!o.submitResult) return text('只有子任务要交结果', true)
+    const state = str(a?.state).trim().toLowerCase()
+    if (state !== 'done' && state !== 'unfinished' && state !== 'stuck')
+      return text('state 只能是 done、unfinished 或 stuck', true)
+    const summary = str(a?.summary).trim()
+    if (!summary) return text('summary 是空的：写结论和关键文件', true)
+    const r = o.submitResult({ state, summary, left: str(a?.left).trim() })
     return text(r.info, !r.ok)
   }
   return text(`未知工具：${name}`, true)

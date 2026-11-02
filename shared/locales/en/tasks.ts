@@ -1744,4 +1744,7 @@ export const EN_TASKS: Record<string, string> = {
   重启: 'Restart',
   '交结论：通过': 'Verdict: pass',
   '交结论：不通过': 'Verdict: fail',
+  '交结果：做完': 'Result: done',
+  '交结果：卡住': 'Result: stuck',
+  '交结果：没做完': 'Result: unfinished',
 }

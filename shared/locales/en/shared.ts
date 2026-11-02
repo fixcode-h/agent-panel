@@ -136,10 +136,8 @@ export const EN_SHARED: Record<string, string> = {
   '主角色整理结果失败：{error}': 'Main role failed to write the final result: {error}',
   '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
   '子任务没能执行：{error}': 'Subtask could not run: {error}',
-  '子任务推了 {n} 次还是没做完（{why}），交回的结果可能不完整':
-    'The subtask was nudged {n} times and still is not done ({why}); the result handed back may be incomplete',
-  没交最后的总结: 'no final summary',
-  总结写的是未完成: 'its summary says unfinished',
+  '子任务补问了一次还是没有用 submit_result 交结果，做没做完不确定':
+    'The subtask was asked once more but still did not submit a result with submit_result; whether it finished is unknown',
   '「{title}」在原来的子任务里重试：{list}': '"{title}" is retrying in the original subtasks: {list}',
   '「{title}」{note}': '{title}: {note}',
   '已转交父对话创建「{title}」{id}': 'Handed "{title}" to the parent conversation{id}',

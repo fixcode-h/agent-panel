@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { autoSubmit } from './submit-test-kit.ts'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '../shared/schema.ts'
 import { newTask, stopReasonText } from '../shared/task.ts'
@@ -100,6 +101,7 @@ function makeHost(
     newId: () => `id${++n}`,
     confirm,
     runAgent: async (call) => {
+      autoSubmit(call)
       log.push(call)
       const r = await reply(call)
       return typeof r === 'string' ? { ok: true, text: r } : r
@@ -378,6 +380,7 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
       changed: () => {},
       newId: () => 'x',
       runAgent: async (call) => {
+        autoSubmit(call)
         prompts.push(call.prompt)
         pushTool = call.orch?.askPush
         return { ok: true, text: '好了' }
@@ -560,6 +563,7 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
     await promptsOf(chat, {
       ...allowAll,
       runAgent: async (call) => {
+        autoSubmit(call)
         if (call.step?.slot === 'sub') keep(`${who}的${call.agentId}`, call)
         else if (!spawned) {
           spawned = true
@@ -598,6 +602,7 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
       ...{ task, workflows: [w], workflow: w, prompt: '发布', changed: () => {}, newId: () => 'x' },
       ...allowAll,
       runAgent: async (call) => {
+        autoSubmit(call)
         if (call.agentId === 'vcs') keep(who, call)
         return { ok: true, text: '好了' }
       },
@@ -635,6 +640,7 @@ test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也
     changed: () => {},
     newId: () => 'x',
     runAgent: async (call) => {
+      autoSubmit(call)
       prompts.push(call.prompt)
       return { ok: true, text: '好了' }
     },
@@ -665,6 +671,7 @@ test('搜索排除清单：Git 仓库里 rg 只补项目自己填的目录，并
     changed: () => {},
     newId: () => 'x',
     runAgent: async (call) => {
+      autoSubmit(call)
       prompts.push(call.prompt)
       return { ok: true, text: '好了' }
     },

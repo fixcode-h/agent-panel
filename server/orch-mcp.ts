@@ -1299,6 +1299,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       )
     }
     case 'submit_verdict':
+    case 'submit_result':
       return callSubmitTool(o, name, a)
     case 'ask_main': {
       const q = str(a?.question).trim()

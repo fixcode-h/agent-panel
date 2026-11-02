@@ -83,7 +83,7 @@ import { t } from './i18n.ts'
 import { clip } from './text.ts'
 import { ensureTaskRun, runMail, runRecord, runState, sendRunMessage, statePart, writeRunState } from './run-state.ts'
 import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
-import { STATE_LINE, SUMMARY_HEAD, runWithSummary } from './helper-summary.ts'
+import { resultLine, resultOf, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
@@ -421,6 +421,11 @@ export interface Orchestra {
   common: { name: string; description: string }[]
   /** 调用者自己就是子任务：不能再派子任务、不能启动工作流、不能开子对话 */
   helper: boolean
+  /** 交结果（submit_result）：只有子任务有 */
+  submitResult?: (r: { state: 'done' | 'unfinished' | 'stuck'; summary: string; left: string }) => {
+    ok: boolean
+    info: string
+  }
   /** 交结论（submit_verdict，ADR 0041 第 16 节）：节点和子任务有，对话本身没有 */
   submitVerdict?: (v: { verdict: 'pass' | 'fail'; blockers?: Blocker[] }) => { ok: boolean; info: string }
   /** 能派子任务（spawn_agents / stop_subtask / wait_agents）：子任务和 Chat 模式没有（ADR 0038） */
@@ -2720,11 +2725,18 @@ export function settleHelperWaits(host: EngineHost) {
   for (const w of waiting)
     if (w.state === 'waiting') {
       const kid = task.steps.find((s) => s.id === w.ref)
-      if (kid && helperOver(host, kid)) hit.push(...settleWait(task, 'helper', w.ref, kid.status === 'done'))
+      if (kid && helperOver(host, kid)) hit.push(...settleWait(task, 'helper', w.ref, helperDone(kid)))
     }
   if (hit.length) host.changed(true)
   return hit
 }
+
+/**
+ * 子任务算不算做完（计划里等它的那一步据此收口）：正常结束，并且交了结果「做完」或评审交了结论（ADR 0041 第 16 节）。
+ * 没交、交的是没做完 / 卡住：那一步退回进行中，由派它的对话按自己的计划处理
+ */
+const helperDone = (kid: TaskStep) =>
+  kid.status === 'done' && (resultOf(kid) === 'done' || (!!kid.submitted?.verdict && !resultOf(kid)))
 
 /** 子任务没做完时交回结果里带的一句：重试要在原来的子任务里接着做，不另派一个 */
 const RETRY_HINT = (id: string) =>
@@ -2747,7 +2759,7 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
   return late
     .map((k) =>
       k.status === 'done'
-        ? `### ${k.title}\n${outputs.get(k.id) ?? (k.output || '（没有文字输出）')}`
+        ? `### ${k.title}${k.submitted?.verdict ? '' : resultLine(k)}\n${outputs.get(k.id) ?? (k.output || '（没有文字输出）')}`
         : (k.status === 'skipped' && st.errors.get(k.id)
             ? `### ${k.title}\n（${clip(st.errors.get(k.id)!, 300)}）`
             : `### ${k.title}\n（${STATUS_TEXT[k.status] ?? k.status}${st.errors.get(k.id) ? `：${clip(st.errors.get(k.id)!, 300)}` : ''}）`) +
@@ -2867,6 +2879,10 @@ function makeOrchestra(
     ...(where && {
       submitVerdict: (v: { verdict: 'pass' | 'fail'; blockers?: Blocker[] }) =>
         submitOn(self, { verdict: v.verdict, blockers: v.blockers ?? [] }, () => host.changed(true)),
+    }),
+    ...(helper && {
+      submitResult: (r: { state: 'done' | 'unfinished' | 'stuck'; summary: string; left: string }) =>
+        submitOn(self, r, () => host.changed(true)),
     }),
     canSpawn: !helper && !chatMode,
     team: !chatMode,
@@ -3727,7 +3743,7 @@ async function runHelper(
       siblings.length
         ? `## 同时进行的子 Agent\n下面这些和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings.map((x) => `- ${x}`).join('\n')}`
         : '',
-      `## 要求\n只完成上面这件事，不要做发起节点的其他工作。${reviewing ? `完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。` : `做完后用${promptLangWord()}写最后的总结，以「${SUMMARY_HEAD}」开头、第一行写「${STATE_LINE}」，交回给派你的 Agent；面板按这段总结判断子任务做完没有，没做完不要先写总结，接着做；确实做不下去就写「状态：卡住：卡在哪、需要什么」。`}\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
+      `## 要求\n只完成上面这件事，不要做发起节点的其他工作。${reviewing ? `完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。` : `最后调用 submit_result 工具交结果：state 写 done（做完）、unfinished（没做完）或 stuck（做不下去），summary 写结论和关键文件，没做完或卡住时 left 写还差什么、卡在哪。面板只按这个工具判断子任务做完没有，不看回复里写了什么；没做完就接着做，不要先交。回复本身用${promptLangWord()}写，会交回给派你的 Agent。`}\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
     ].filter(Boolean)
     // 接着原来的子任务做（复看、重试）：会话里已经有需求和通用规则，只发新的和变了的段落（见 shared/prompt-delta.ts）
     const sessionKey = step.session || step.id

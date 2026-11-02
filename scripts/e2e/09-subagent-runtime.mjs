@@ -166,18 +166,23 @@ await runShard('子对话运行与监管', async (api) => {
       30000,
     )
     const sub = done.steps.find((s) => s.slot === 'sub' && s.title === '读操作原语')
-    const runs = calls().filter((x) => x.input?.includes('SUB_NO_SUMMARY') || x.input?.includes('还没交最后的总结'))
-    assert.ok(
-      runs.some((x) => x.input.startsWith('【面板】这个子任务这一轮结束了，但还没交最后的总结')),
-      '没交总结：面板在同一个会话里推了一次',
+    const runs = calls().filter(
+      (x) => x.input?.includes('SUB_NO_SUMMARY') || x.input?.includes('你还没有用 submit_result'),
     )
-    assert.match(sub.output, /## 总结\n做完了。/, '推过之后交回的结果带上了总结')
     assert.ok(
-      !done.messages.some((m) => m.step === sub.id && m.role === 'system' && /没交最后的总结/.test(m.text)),
-      '补上了总结就不留警告',
+      runs.some((x) => x.input.startsWith('【面板】你还没有用 submit_result 工具交结果')),
+      '没交结果：面板在同一个会话里补问了一次',
+    )
+    assert.equal(sub.submitted?.state, 'done', '补问后用 submit_result 交了结果，记在子任务自己那一步上')
+    assert.match(sub.output, /SUB_RESULT_GOT/, '补问那一轮的回复也交回了')
+    assert.ok(
+      !done.messages.some(
+        (m) => m.step === sub.id && m.role === 'system' && /没有用 submit_result 交结果/.test(m.text),
+      ),
+      '补交了结果就不留警告',
     )
     await call('DELETE', `/tasks/${(await waitDone(ns.id, 30000)).id}`)
-    step('子任务没交最后的总结就结束：面板在同一个会话里推一次，补上总结再交回')
+    step('子任务没交结果就结束：面板在同一个会话里补问一次，交了结果再交回')
   }
 
   // ---- 子对话列表口径：在等后台命令的照样列，父对话自己在跑时也照样给 ----
