@@ -252,7 +252,8 @@ await runShard('工作流条件与失败', async (api) => {
   const cf2 = await waitConfirm(br.id)
   const redo = calls().slice(nBranch).at(-1)
   assert.match(redo.input, /用户看了结果，要求修改：\n多跑一遍集成测试 BRANCHNO/, '退回的意见交回节点')
-  assert.match(redo.input, /结论：通过」或「结论：不通过/, '返工后同样要给出结论')
+  // 结论只认 submit_verdict 工具（8bfe5a0）：返工的提示同样要求用工具交结论，不再要求在回复里写「结论：通过」
+  assert.match(redo.input, /同样调用 submit_verdict 工具交结论/, '返工后同样要给出结论')
   await call('POST', `/tasks/${br.id}/requests/${cf2.id}`, { allow: true })
   br = await waitDone(br.id)
   assert.equal(br.status, 'done', JSON.stringify(br.messages.filter((m) => m.role === 'system')))
