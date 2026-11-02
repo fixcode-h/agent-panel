@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, Copy, X } from 'lucide-react'
+import { ArrowDown, Copy, Loader2, RotateCw, Square, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import {
   EVENT_KINDS,
@@ -10,11 +10,14 @@ import {
   type LifeNode,
   type LogLine,
 } from '@shared/lifecycle'
-import { convStateText, stopReasonText, type ConvState } from '@shared/task'
+import { convStateText, resumable, stopReasonText, type ConvState } from '@shared/task'
+import { api } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { copyText } from '@/lib/copy-text'
 import { fmtDuration } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { IconButton } from '@/components/ui/icon-button'
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
@@ -32,7 +35,7 @@ export function worst(list: Anomaly[]) {
 
 const KIND_TEXT = { conversation: t('对话'), helper: t('子任务'), node: t('工作流节点') } as const
 
-const STATE_TONE: Record<ConvState, StatusTone> = {
+export const STATE_TONE: Record<ConvState, StatusTone> = {
   running: 'run',
   waiting: 'wait',
   needs: 'wait',
@@ -52,6 +55,79 @@ const COUNT_META: Record<EventKind, { label: string; tone: string }> = {
   exits: { label: t('进程退出'), tone: 'text-fg' },
 }
 
+/** 状态胶囊、树上那句状态的颜色：和 StatusPill 的几种状态色同一套（运行青、完成绿、等你琥珀、失败红、停着灰） */
+export const TONE_TEXT: Record<StatusTone, string> = {
+  run: 'text-run',
+  ok: 'text-success',
+  wait: 'text-warning',
+  err: 'text-danger',
+  idle: 'text-subtle',
+}
+
+/** 节点的对外状态：对话用 convState，子任务按步骤状态折算（被打断算停着） */
+export function nodeState(node: LifeNode): ConvState {
+  const f = node.facts
+  if (f.state) return f.state
+  if (f.interrupted) return 'stopped'
+  return f.status === 'running'
+    ? 'running'
+    : f.status === 'failed'
+      ? 'failed'
+      : f.status === 'stopped'
+        ? 'stopped'
+        : 'done'
+}
+
+/**
+ * 对话的停止 / 重启：在执行就给「停止」（和任务页的停止同一个接口，按对话树自上而下停），
+ * 停了或失败了给「重启」（就是任务页的「继续执行」，接着原来的会话跑）。点完不等结果，弹窗每 2 秒刷新会跟上
+ */
+function RunControl({ node }: { node: LifeNode }) {
+  const [busy, setBusy] = useState(false)
+  const f = node.facts
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true)
+    try {
+      await fn()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (f.status === 'running') {
+    const stopping = !!f.live?.stop
+    return (
+      <Button
+        size="sm"
+        variant="danger-outline"
+        className="h-7"
+        disabled={busy || stopping}
+        onClick={() => void run(() => api.stopTask(node.taskId))}
+        data-life-stop
+      >
+        {busy || stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3 w-3" />}
+        {stopping ? t('正在停止') : t('停止')}
+      </Button>
+    )
+  }
+  if (!resumable(f.status)) return null
+  return (
+    <Button
+      size="sm"
+      variant="secondary"
+      className="h-7"
+      disabled={busy}
+      title={t('接着原来的会话继续执行')}
+      onClick={() => void run(() => api.resumeTask(node.taskId))}
+      data-life-resume
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+      {t('重启')}
+    </Button>
+  )
+}
+
 /** 日志的筛选：全部、关键事件（重试、出错、停止、退出），或者点计数块选的某一类 */
 type LogFilter = '' | 'key' | EventKind
 
@@ -60,15 +136,7 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
   const [filter, setFilter] = useState<LogFilter>('')
   const f = node.facts
   const level = worst(node.verdict.anomalies)
-  const state: ConvState | undefined =
-    f.state ??
-    (f.status === 'running'
-      ? 'running'
-      : f.status === 'failed'
-        ? 'failed'
-        : f.status === 'stopped'
-          ? 'stopped'
-          : 'done')
+  const state = nodeState(node)
   const ago = (ms?: number | null) => (ms ? t('{d} 前', { d: fmtDuration(Math.max(0, now - ms)) }) : '—')
   const lines = useMemo(() => node.log.map((raw) => ({ raw, l: parseLogLine(raw) })), [node.log])
   return (
@@ -88,6 +156,8 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
               {convStateText(state)}
             </StatusPill>
           )}
+          <span className="flex-1" />
+          {node.kind === 'conversation' && <RunControl node={node} />}
         </div>
         <p
           data-life-headline
@@ -449,16 +519,18 @@ function LifeLog({
       <div
         ref={box}
         onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto py-1.5 font-mono text-footnote leading-6"
+        // 行与行之间一道细线（divide-y，和各页列表的分割线一样），每行上下留空：
+        // 事件标签各自是一小块，不会上下连成一片（用户 2026-11-02 指出背景连到一起）
+        className="min-h-0 flex-1 divide-y overflow-y-auto font-mono text-footnote leading-5"
       >
         {rows.length === 0 && <p className="px-3.5 py-6 text-center font-sans text-subtle">{t('没有这类事件')}</p>}
         {rows.map((r, i) =>
           r.kind === 'day' ? (
-            <div key={i} className="px-3.5 pt-1 font-sans text-caption text-subtle">
+            <div key={i} className="px-3.5 pt-2.5 pb-1.5 font-sans text-caption text-subtle">
               {r.day}
             </div>
           ) : r.kind === 'pair' ? (
-            <div key={i} className="flex min-w-0 items-center gap-3 px-3.5 hover:bg-hover">
+            <div key={i} className="flex min-w-0 items-center gap-3 px-3.5 py-1.5 hover:bg-hover">
               <span className="shrink-0 text-subtle">{r.req.raw.slice(11, 23)}</span>
               <span className="w-28 shrink-0">
                 <span className="rounded-sm bg-accent/12 px-1.5 py-px font-sans text-caption text-accent-text">
@@ -471,13 +543,7 @@ function LifeLog({
               </span>
             </div>
           ) : (
-            <div
-              key={i}
-              className={cn(
-                'flex min-w-0 items-center gap-3 px-3.5 hover:bg-hover',
-                r.l && /errors|retries/.test(eventKind(r.l.event, r.l.fields) ?? '') && 'bg-danger/5',
-              )}
-            >
+            <div key={i} className="flex min-w-0 items-center gap-3 px-3.5 py-1.5 hover:bg-hover">
               {r.l ? (
                 <>
                   <span className="shrink-0 text-subtle">{r.raw.slice(11, 23)}</span>

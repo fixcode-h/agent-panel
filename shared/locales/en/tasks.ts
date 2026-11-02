@@ -1739,4 +1739,7 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个 · {alive} 个进程活着': '{n} items · {alive} processes alive',
   '{n} 个异常': '{n} anomalies',
   模型在输出: 'Model is streaming',
+  正在停止: 'Stopping',
+  接着原来的会话继续执行: 'Continue the original session',
+  重启: 'Restart',
 }

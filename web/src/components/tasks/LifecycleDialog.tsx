@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { SIDEBAR_ROW_OFF, SIDEBAR_ROW_ON } from '@/components/ui/sidebar'
-import { LifeDetail, worst } from './LifecycleDetail'
+import { LifeDetail, nodeState, STATE_TONE, TONE_TEXT, worst } from './LifecycleDetail'
 
 /**
  * 状态诊断（对话菜单「状态」，点「等待模型」那一行也会打开）：左边是这棵对话树（对话、子对话、子任务、工作流节点），
@@ -244,7 +244,10 @@ function LifeTree({ report, picked, onPick }: { report: LifeReport; picked: stri
                     {bad}
                   </span>
                 ) : (
-                  <span className="shrink-0 text-footnote text-subtle">{rowState(n)}</span>
+                  // 状态文字按状态着色（和状态胶囊同一套颜色），一眼分出在跑、停了、做完
+                  <span className={cn('shrink-0 text-footnote', TONE_TEXT[STATE_TONE[nodeState(n)]])}>
+                    {rowState(n)}
+                  </span>
                 )}
               </button>
             </li>
