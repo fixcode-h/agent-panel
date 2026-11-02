@@ -101,3 +101,16 @@ test('Claude Code：control_request 里的提问转成卡片，回答写回 upda
   refused.reply({ allow: false, answer: '先别发' })
   assert.deepEqual(deny.sent[0].response.response, { behavior: 'deny', message: '用户拒绝了：先别发' })
 })
+
+test('Claude Code：一轮结束把 stop_reason 交给 finish，日志才能分清是模型自己收尾还是被截断', () => {
+  const { ctx } = fakeCtx()
+  const got: unknown[][] = []
+  ;(ctx as { finish: unknown }).finish = async (...a: unknown[]) => (got.push(a), false)
+  const adapter = claudeAdapter({
+    cwd: '/tmp',
+    input: '',
+    parse: () => [{ type: 'result', ok: true, stopReason: 'end_turn' }],
+  })
+  adapter.message!(ctx, { type: 'result' })
+  assert.deepEqual(got[0], [true, undefined, 0, 'end_turn'])
+})

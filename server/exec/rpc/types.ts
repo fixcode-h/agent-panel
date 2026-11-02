@@ -31,7 +31,8 @@ export interface RpcContext {
    * 这一轮结束：先给面板结果，再关 stdin 让 CLI 退出。
    * 面板还可能接着用这个进程（保活）时不关，返回 true；这时别再发退出消息
    */
-  finish: (ok: boolean, error?: string, delayMs?: number) => Promise<boolean>
+  /** stopReason：模型最后一次回应为什么停（只写日志，排查「说了要做却没调工具就结束」） */
+  finish: (ok: boolean, error?: string, delayMs?: number, stopReason?: string) => Promise<boolean>
   /** 取消已经排好的关闭（例如插话后 CLI 还在接着输出） */
   hold: () => void
 }

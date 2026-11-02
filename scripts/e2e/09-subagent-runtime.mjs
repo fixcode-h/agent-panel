@@ -151,6 +151,35 @@ await runShard('子对话运行与监管', async (api) => {
     step('子任务起的后台命令：带子任务步骤，结果推回并标注来源，跑完消失')
   }
 
+  // ---- 子任务按最后的总结判定做完：说完一句就结束、没交总结的，面板在同一个会话里推一次 ----
+  // 用户 2026-11-02 报的：子任务说完「继续读操作原语与快照/选择器。」就结束了，交回的结果只有这一句
+  {
+    const ns = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      prompt: 'SPAWN_NO_SUMMARY 派一个子任务读代码',
+    })
+    const done = await waitTask(
+      ns.id,
+      (t) => t.steps.some((s) => s.slot === 'sub' && s.title === '读操作原语' && s.status === 'done'),
+      30000,
+    )
+    const sub = done.steps.find((s) => s.slot === 'sub' && s.title === '读操作原语')
+    const runs = calls().filter((x) => x.input?.includes('SUB_NO_SUMMARY') || x.input?.includes('还没交最后的总结'))
+    assert.ok(
+      runs.some((x) => x.input.startsWith('【面板】这个子任务这一轮结束了，但还没交最后的总结')),
+      '没交总结：面板在同一个会话里推了一次',
+    )
+    assert.match(sub.output, /## 总结\n做完了。/, '推过之后交回的结果带上了总结')
+    assert.ok(
+      !done.messages.some((m) => m.step === sub.id && m.role === 'system' && /没交最后的总结/.test(m.text)),
+      '补上了总结就不留警告',
+    )
+    await call('DELETE', `/tasks/${(await waitDone(ns.id, 30000)).id}`)
+    step('子任务没交最后的总结就结束：面板在同一个会话里推一次，补上总结再交回')
+  }
+
   // ---- 子对话列表口径：在等后台命令的照样列，父对话自己在跑时也照样给 ----
   // 以前运行区自己写 `working && !resolved`，在等后台命令、已解决但还在跑的子对话只在悬浮层里有、
   // 运行区没有，同一个页面对不上数。这里固定接口要如实给「还在跑」和「在等什么」，

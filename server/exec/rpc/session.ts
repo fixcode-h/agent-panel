@@ -176,12 +176,19 @@ export function createRpcSession(o: {
       responded = true
       for (const e of Array.isArray(event) ? event : [event]) o.onEvent(e)
     },
-    async finish(ok, error, delayMs = 0) {
+    async finish(ok, error, delayMs = 0, stopReason) {
       // 已经关掉了：还挂着的请求是 end() 里用「已关闭」结束的，别再报一次结果
       if (ended) return false
       finished = true
       // 环境性卡住只在失败时有用：成功的一轮不用让 runner 去分辨要不要重试
-      o.onEvent({ type: 'result', ok, error, ...(!ok && stalled ? { envStall: true } : {}) })
+      // stopReason 要带上：runner 在「这一轮结束」的日志里记它，以前这里重拼 result 时丢了，日志里永远看不到
+      o.onEvent({
+        type: 'result',
+        ok,
+        error,
+        ...(!ok && stalled ? { envStall: true } : {}),
+        ...(stopReason ? { stopReason } : {}),
+      })
       // 这一轮结束了：保活时同一进程还会开下一轮，标记和「有没有响应」都不能带过去
       stalled = false
       responded = false

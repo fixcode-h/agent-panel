@@ -31,7 +31,7 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
         // 进程留着（保活）时再要一次上下文细分，会话栏按它分块；一次性的执行这时 stdin 已经关了，请求直接落空。
         // 不能等细分回来再结束这一轮：CLI 发完结果就退出时会被当成「没完成这一轮」
         if (ev.type === 'result') {
-          void ctx.finish(ev.ok, ev.error, steered ? 2500 : 0)
+          void ctx.finish(ev.ok, ev.error, steered ? 2500 : 0, ev.stopReason)
           void contextSnapshot(ctx).then((snapshot) => snapshot && ctx.emit({ type: 'context', snapshot }))
         } else ctx.emit(ev)
       }

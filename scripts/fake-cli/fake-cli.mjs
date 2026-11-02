@@ -763,6 +763,11 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
   })
+// 派一个说完一句就结束、没交总结的子任务（SUB_NO_SUMMARY 只出现在子任务的指令里，见 turnReply 的 subSummary）
+if (input.includes('SPAWN_NO_SUMMARY') && input.includes('spawn_agents'))
+  await panelCall('spawn_agents', {
+    tasks: [{ title: '读操作原语', instructions: 'SUB_NO_SUMMARY 继续读操作原语与快照/选择器' }],
+  })
 // 一次派两个子任务（API 并发上限的用例：名额是 1 时两个要一个一个跑，对话等它们时不占名额，不会互相等死）
 if (input.includes('SPAWN_TWO_SUBS') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
@@ -1050,7 +1055,13 @@ const turnReply = () => {
   const statusGot = input.includes('【状态询问】') ? '\nSTATUS_ASK_GOT' : ''
   // 面板推它「计划没做完，接着做」：回复带上标记，端到端测试据此确认推送真的交到了 CLI
   const planNudgeGot = input.includes('你的计划才做了') ? '\nPLAN_NUDGE_GOT' : ''
-  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}${planNudgeGot}`
+  const noPlanGot = input.includes('没有计划就结束了') ? '\nNOPLAN_NUDGE_GOT' : ''
+  // 子任务做完要交以「## 总结」开头的总结（面板按它判定子任务做完）；SUB_NO_SUMMARY 模拟说完一句就结束，推了（续接只发那句话）才补总结
+  const subSummary =
+    (input.includes('派出的子 Agent') && !input.includes('SUB_NO_SUMMARY')) || input.includes('还没交最后的总结')
+      ? '\n\n## 总结\n做完了。'
+      : ''
+  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}${planNudgeGot}${noPlanGot}${subSummary}`
 }
 // 写配置文件接的 CLI 同一目录里第一轮叫 agent-panel、同时在跑的另几轮带后缀，按参数和文件名找这一轮的那一项（最后写进去的）
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
@@ -1721,6 +1732,15 @@ if (kind === 'claude') {
     type: 'assistant',
     message: { id: 'm1', content: [{ type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'npm test' } }] },
   })
+  // NOPLAN_ACTS：动了手（改文件加两条命令，三处动作）却没列计划就收尾（用户 2026-11-02 报的：删完本地分支说「现在删除远端」就停了）
+  if (input.includes('NOPLAN_ACTS') && !input.includes('没有计划就结束了'))
+    out({
+      type: 'assistant',
+      message: {
+        id: 'm1b',
+        content: [{ type: 'tool_use', id: 't3b', name: 'Bash', input: { command: 'git branch -D old' } }],
+      },
+    })
   out({
     type: 'stream_event',
     event: {
@@ -1733,7 +1753,8 @@ if (kind === 'claude') {
     },
   })
   out({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'text', text: '' } } })
-  for (const part of reply.match(/.{1,6}/g))
+  // 按 6 个字一段流式输出，换行也要带上（真的 Claude Code 照样流出换行；丢了换行子任务的「## 总结」标题行认不出）
+  for (const part of reply.match(/[\s\S]{1,6}/g))
     out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: part } } })
   out({
     type: 'assistant',

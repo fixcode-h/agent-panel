@@ -85,6 +85,7 @@ import {
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
 import { clipToFile, layeredBatch } from './helper-batch.ts'
+import { SUMMARY_HEAD, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
@@ -1418,7 +1419,7 @@ function planPart(host: EngineHost, coordinator: boolean): string[] {
     // 这一段总要有：变空了会被列进「不再适用的规则」，计划收起或只剩收尾那一轮，模型会以为计划不用管了
     `## 计划进度\n${check || (cur ? '没有进行中或待做的步骤：前面的都做完了，就接着做计划最后的收尾步骤。' : '没有进行中的计划。')}`,
     `## 计划怎么维护
-- 需要好几步才能做完的事（改代码、排查问题、跨模块、要测试验证），分析梳理完先用 set_plan 列出计划再动手；一问一答、一两行的小改动不用列。
+- 三步以上、不是一下就能做完的事，先用 set_plan 列出计划再动手；单一、简单的事和纯问答不用列。做的过程中发现新的步骤就加进计划。面板按计划判断你做完没有：动了手却没列计划、或者计划没做完就结束这一轮，面板会推你接着做。
 - 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
 - **动手前先把这一步标成「进行中」**（set_plan 带它的 id + status），一份计划里同时只能有一个进行中；**做完立刻**在同一批动作里把它标完成、再把下一步标进行中。不要连着做完几步再一起更新，也不要在计划里还有进行中的步骤时去做别的步骤的事。
 - **按计划一直做下去**：计划没做完、也没在等结果时，不要结束这一轮——做完一步马上接着做下一步。不要只写一句「接下来跑检查 / 先改某处」就停下，要做的事直接调用工具去做；只有全部做完、卡住了要问、或者在等结果时才结束这一轮。
@@ -3780,7 +3781,7 @@ async function runHelper(
       siblings.length
         ? `## 同时进行的子 Agent\n下面这些和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings.map((x) => `- ${x}`).join('\n')}`
         : '',
-      `## 要求\n只完成上面这件事，不要做发起节点的其他工作。完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
+      `## 要求\n只完成上面这件事，不要做发起节点的其他工作。${reviewing ? `完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。` : `做完后用${promptLangWord()}写最后的总结，以「${SUMMARY_HEAD}」开头，交回给派你的 Agent；面板按这段总结判断子任务做完没有，没做完不要先写总结。`}\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
     ].filter(Boolean)
     // 接着原来的子任务做（复看、重试）：会话里已经有需求和通用规则，只发新的和变了的段落（见 shared/prompt-delta.ts）
     const sessionKey = step.session || step.id
@@ -3794,23 +3795,23 @@ async function runHelper(
     ;(wrap as { unref?: () => void } | undefined)?.unref?.() // 只有 Node 的定时器有 unref，在线演示（浏览器）里是数字
     // 这次调用里会话压缩过：规则只剩摘要，不记已发段落，下次接着做时发完整的
     let compacted = false
-    const r = await host
-      .runAgent({
-        step,
-        agentId: step.agentId,
-        prompt: delta ?? full,
-        onCompacted: () => (compacted = true),
-        ...(delta ? { fresh: full } : {}),
-        // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
-        sessionKey,
-        tier,
-        params: step.params, // 不传时 runner 按角色默认值渲染：「清理用例」会变回「跑验收」
-        // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
-        // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
-        orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
-        signal: ac.signal,
-      })
-      .finally(() => clearTimeout(wrap))
+    const call: AgentCall = {
+      step,
+      agentId: step.agentId,
+      prompt: delta ?? full,
+      onCompacted: () => (compacted = true),
+      ...(delta ? { fresh: full } : {}),
+      // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
+      sessionKey,
+      tier,
+      params: step.params, // 不传时 runner 按角色默认值渲染：「清理用例」会变回「跑验收」
+      // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
+      // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
+      orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
+      signal: ac.signal,
+    }
+    // 子任务按最后的总结判定做完：没交总结就在同一个会话里推一次；评审按验收结论判定，不看总结（见 helper-summary.ts）
+    const r = await runWithSummary(host, step, call, () => clearTimeout(wrap), system, !reviewing)
     if (!compacted && host.task.sessions[sessionKey] && (r.ok || r.stopped))
       host.task.promptSent = rememberSent(
         host.task.promptSent,
