@@ -781,12 +781,15 @@ export function orchTools(o: Orchestra) {
             name: 'cherry_pick',
             title: 'cherry-pick 到目标',
             description:
-              '用户要求把改动 cherry-pick 到项目设置的目标时用它，由面板核对后执行：只收这个对话自己做的改动，提交 / 文件里有不是这次修改的整次不做。Git 写 commits（这个对话做的提交，按先后顺序）；P4 写 changelist（这次改动所在的 pending，面板在目标工作区建一个对应的 pending，不 submit）。不要自己跑 git cherry-pick / merge 或复制文件过去。',
+              '用户要求把改动 cherry-pick 到项目设置的目标时用它，由面板核对后执行：只收这个对话自己做的改动，提交 / 文件里有不是这次修改的整次不做。Git 写 commits（这个对话做的提交，按先后顺序）；P4 写 changelist（这次改动所在的 pending，或者已经 submit 的那个编号；面板在目标工作区建一个对应的 pending，不 submit）。不要自己跑 git cherry-pick / merge 或复制文件过去。',
             inputSchema: {
               type: 'object',
               properties: {
                 commits: { type: 'array', items: { type: 'string' }, description: 'Git：这个对话做的提交哈希' },
-                changelist: { type: 'string', description: 'P4：这次改动所在的 pending changelist 编号' },
+                changelist: {
+                  type: 'string',
+                  description: 'P4：这次改动所在的 changelist 编号（还没提交的 pending，或已经 submit 的）',
+                },
               },
             },
           },
