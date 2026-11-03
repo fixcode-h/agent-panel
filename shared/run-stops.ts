@@ -115,6 +115,22 @@ export function cancelUnit(s: TaskStep, why = '', at = Date.now()) {
   if (why && !s.output) s.output = why
 }
 
+/** 中断子任务时带的「暂停」原因：runHelper 收到它按暂停收（会接着做），不按终止记跳过 */
+const PAUSE = { pause: true, toString: () => '对话这一轮失败了，子任务暂停，继续执行时接着做' }
+export const pausedSignal = (signal: AbortSignal) => signal.reason === PAUSE
+
+/**
+ * 对话自己的 CLI 失败（不是停止）时还在跑的子任务：没人再等它们的结果了，中断它的 CLI、按暂停收，
+ * 继续执行时在原来那条记录里接着跑（ADR 0042）。以前只记成失败、不中断，它跑完又把自己写成完成，状态来回跳。
+ * 不是子任务（工作流节点）返回 false，由调用方照旧按失败收
+ */
+export function pauseHelper(taskId: string, s: TaskStep) {
+  if (s.slot !== 'sub') return false
+  const ac = helperStops.get(helperKey(taskId, s.id))
+  if (ac && !ac.signal.aborted) ac.abort(PAUSE)
+  return true
+}
+
 /**
  * stop_subtask 终止一个被打断、还没重新开始的子任务：它没有在跑的进程可停，直接记成已终止。
  * 不收掉的话它一直挂着「已打断」，也挡着另派新的子任务。返回有没有收掉

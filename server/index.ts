@@ -87,6 +87,7 @@ import { modelCatalogApi } from './model-catalog.ts'
 import { getLimits, isSharedSkill, listSkills } from './cli-extras.ts'
 import { packagesApi } from './cli-packages.ts'
 import { interruptedApi } from './interrupted.ts'
+import { autoResumeAfterRestart } from './restart-interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
 import { appActionsApi, setActionHost } from './app-actions/index.ts'
@@ -1154,6 +1155,16 @@ app.route(
   }),
 )
 app.route('/remote', remoteApi({ link: withToken }))
+// 设置里开了「重启后自动继续」：迁移做完后把上次被重启打断的对话逐个继续（和首页「全部继续」同一个名单、同一个接口）
+void tasks
+  .ready()
+  .then(() =>
+    autoResumeAfterRestart({
+      enabled: async () => (await getSettings()).resumeAfterRestart,
+      call: (method, path, body) => callApi((req) => app.fetch(req), method, path, body),
+    }),
+  )
+  .catch((e) => log.warn('task', '面板重启后自动继续出错', e))
 
 void tasks.cleanupUploads()
 // 启动时先在后台检测一遍 CLI，打开页面时直接用结果

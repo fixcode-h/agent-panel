@@ -3758,6 +3758,7 @@ async function runHelper(
   rs.helperStops.set(key, ac)
   /** 被终止了：记成跳过，原因交回给派它的对话（见 settleHelpers） */
   const stopped = () => {
+    if (rs.pausedSignal(ac.signal)) return void (rs.pauseUnit(step), host.changed(true))
     // 交回给派它的对话看的说明，不翻译
     st.errors.set(step.id, `已终止：${String(ac.signal.reason || '没写原因')}`)
     rs.cancelUnit(step)
@@ -4483,7 +4484,7 @@ export function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean })
   const cut = !!r.stopped && host.task.steps.some((s) => s.status === 'running')
   const answered = !!r.stopped && !cut && (!!opts?.answered || rs.finishedStop(host))
   for (const s of host.task.steps.filter((x) => x.status === 'running'))
-    if (r.stopped) rs.pauseUnit(s)
+    if (r.stopped || rs.pauseHelper(host.task.id, s)) rs.pauseUnit(s)
     else [s.status, s.endedAt] = ['failed', now()]
   if (r.budget) system(host, r.error, '', false, true, 'budget')
   else if (r.stopped && !answered) {
