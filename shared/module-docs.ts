@@ -96,6 +96,13 @@ const code = (xs: string[]) => xs.map((x) => `\`${x}\``).join('、')
 /** 地图里生成区的起止标记：生成器只重写这两行之间的内容 */
 export const MAP_BEGIN = '<!-- 模块表：由各模块 README 的元数据生成，不要手改（npm run docs:modules） -->'
 export const MAP_END = '<!-- /模块表 -->'
+/**
+ * 认生成区的起始标记只看开头：「文档」照着模板自己写地图时会把标记里的说明换个说法（2026-11-03 真实 API 实测），
+ * 按整句比就认不出，地图被当成旧的手写地图、再也不会跟着模块文档更新
+ */
+const BEGIN_RE = /<!--\s*模块表[^>]*-->/
+/** 地图里有没有生成区 */
+export const hasGeneratedTable = (mapText: string) => BEGIN_RE.test(mapText) && mapText.includes(MAP_END)
 
 /** 按模块名排序生成模块表（Markdown），文档列是相对 DOC_ROOT 的链接 */
 export function renderModuleTable(docs: ModuleDoc[]): string {
@@ -136,7 +143,7 @@ export function withModuleTable(mapText: string, docs: ModuleDoc[]): string {
   const table = renderModuleTable(docs)
   if (!mapText.trim()) return EMPTY_MAP(table)
   const text = mapText.replace(/\r\n/g, '\n')
-  const b = text.indexOf(MAP_BEGIN)
+  const b = BEGIN_RE.exec(text)?.index ?? -1
   const e = text.indexOf(MAP_END)
   if (b >= 0 && e > b) return `${text.slice(0, b)}${MAP_BEGIN}\n\n${table}\n\n${text.slice(e)}`
   const lines = text.split('\n')

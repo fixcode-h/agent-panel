@@ -85,7 +85,7 @@ import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
 import { orchAskPush, pushPolicyText } from './push-auth.ts'
-import { docRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
+import { docRootText, plainDocRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
 import { handedToOther, noteHandOff, type HandOffs } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
@@ -614,6 +614,8 @@ export interface EngineHost {
    */
   policy?: {
     push: 'ask' | 'allow' | 'deny'
+    /** P4 / SVN 以外的项目的文档根（docs 为空时给，见 shared/doc-root.ts 的 plainDocRootText） */
+    docRoot?: string
     /** 项目是 Git 仓库但没配远端：没有地方可推，推送规则改成不推、不问（ask_push 也不给） */
     noRemote?: boolean
     /** 这个对话里用户对推送的回答 */
@@ -1391,7 +1393,7 @@ function commonPart(host: EngineHost, w?: Workflow, chat = false, helper = false
     // 对话（含它派出的子任务）用不到共享状态：对话里跑过工作流后 task.runs 会留着上一次运行，
     // 注入旧状态会让模型去调根本没注册的 read_state / write_state
     chat ? '' : statePart(host.task),
-    [policy, docRootText(host.policy?.docs)].filter(Boolean).join('\n\n'),
+    [policy, docRootText(host.policy?.docs) || plainDocRootText(host.policy?.docRoot)].filter(Boolean).join('\n\n'),
     goalPart(host),
     rulesPart(host),
     searchPart(host),
@@ -3067,7 +3069,7 @@ function makeOrchestra(
       const docs = await docsFirst(
         extra ?? {},
         host.moduleDocs,
-        selfAgent?.params.find((p) => p.key === 'docsFirst')?.default !== false,
+        selfAgent?.params.find((p) => p.key === 'docsFirst')?.default === true,
       )
       if (docs.block) return { ok: false, info: docs.block }
       const r = await host.createConversation({
@@ -4074,7 +4076,9 @@ async function conversationPrompt(
   const parts = [
     `## 用户这次的消息\n${host.prompt}`,
     promptLangRules(),
-    [policyPart(host), docRootText(host.policy?.docs)].filter(Boolean).join('\n\n'),
+    [policyPart(host), docRootText(host.policy?.docs) || plainDocRootText(host.policy?.docRoot)]
+      .filter(Boolean)
+      .join('\n\n'),
     cherryPickPart(host),
     goalPart(host),
     rulesPart(host),

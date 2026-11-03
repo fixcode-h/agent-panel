@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { t } from '../../shared/i18n.ts'
 import type { Task, TaskMessage } from '../../shared/schema.ts'
 import { failLostWaits } from '../../shared/plan-lost.ts'
+import { pauseUnit } from '../../shared/run-stops.ts'
 import { restartInterrupted, restartUnfinished, taskDeleted } from '../../shared/task.ts'
 import { droppedAsksNote, settleStopped } from '../../shared/task-settle.ts'
 import type { createTaskStore } from '../task-store.ts'
@@ -85,6 +86,43 @@ export async function migrateOnStart(store: Store, claims?: ReturnType<typeof cr
     if (!task) continue
     lostWaits(task)
     await store.update(task.id, { ...task, messages: markLost(task.messages) }, { keepUpdatedAt: true })
+  }
+  // 对话这一轮已经说完、派出的子任务还在跑时面板重启了（2026-11-03 真实 API 实测：协调器派「文档」写 Bug 记录后就说完了这一轮，
+  // 那个子任务又挂着一张读文件的权限卡）。有没回答的卡片时对话算「等你处理」，不在上面的恢复名单里，于是整个被跳过：
+  // 子任务一直标着「在执行」（诊断报 working-no-process），卡片的回调跟着进程没了、点了也没用，计划里等它的那一步永远等着。
+  // 按被打断收口（继续时 resume 原来的会话），作废这些卡片，等它的那一步退回「需要修复」，写一句说明。
+  // 工作流节点的确认（confirm）不算：继续执行时会重新确认（和 droppedAsksNote 同一个口径）
+  const dead = (x: Task['requests'][number]) => x.kind !== 'confirm'
+  for (const meta of await store.list()) {
+    if (taskDeleted(meta)) continue
+    if (!meta.steps.some((x) => x.slot === 'sub' && x.status === 'running') && !meta.requests.some(dead)) continue
+    const task = await store.get(meta.id)
+    if (!task) continue
+    const hit = task.steps.filter((x) => x.slot === 'sub' && x.status === 'running')
+    for (const x of hit) pauseUnit(x, Date.parse(task.updatedAt))
+    failLostWaits(task, 'helper', (ref) => !hit.some((x) => x.id === ref))
+    const dropped = droppedAsksNote({ requests: task.requests.filter(dead) })
+    task.requests = task.requests.filter((x) => !dead(x))
+    task.messages.push({
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: [
+        hit.length
+          ? t(
+              '面板重启时子任务{list}还在执行，已中断。要接着做就发消息，AI 会用 spawn_agents 的 resume 在原来的会话里续上。',
+              { list: hit.map((x) => t('「{name}」', { name: x.title })).join(t('、')) },
+            )
+          : '',
+        dropped,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      tools: [],
+      at: stamp,
+    })
+    await store.update(task.id, task)
   }
   // 合并到一半面板退出的子对话：「合并中」只在内存里有效，重启后没人在合，finish_child 和 submit_merge 却都按它拒绝，
   // 父子两边都卡住。退回「已请求收尾」，并告诉父对话重新 finish_child

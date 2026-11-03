@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  plainDocRootText,
   DOC_PLACE_INSIDE,
   DOC_PLACE_SIBLING,
   docRootText,
@@ -72,4 +73,12 @@ test('提示词写明项目外文档不做 P4 / SVN 操作；「文档根」下�
     exposesForVcs(ex, 'p4').map((e) => e.key),
     ['docRoot', 'commitPolicy'],
   )
+})
+
+test('Git 项目也写明文档根在项目里，「文档根」参数只对 P4 有效', () => {
+  const text = plainDocRootText('/p/docs')
+  assert.match(text, /文档根是 `\/p\/docs`，在项目目录里/)
+  assert.match(text, /模块文档是 `\/p\/docs\/modules\/<模块>\/README\.md`/)
+  assert.match(text, /不写到项目目录外/)
+  assert.equal(plainDocRootText(undefined), '')
 })

@@ -1698,6 +1698,8 @@ export const EN_TASKS: Record<string, string> = {
   '子对话 {list} 已经请父对话收尾 {m} 分钟了，父对话没有合回也没有退回':
     'Sub-chats {list} asked the parent to wrap up {m} minutes ago; the parent has neither merged nor sent them back',
   '面板已提醒 {n}/{max} 次': 'The panel has reminded it {n}/{max} times',
+  '面板重启时子任务{list}还在执行，已中断。要接着做就发消息，AI 会用 spawn_agents 的 resume 在原来的会话里续上。':
+    'Sub-tasks {list} were still running when the panel restarted and were interrupted. Send a message to continue; the AI will resume them in their original sessions with spawn_agents.',
   '有 {n} 条消息排着等「这一轮结束后处理」，可这一轮已经结束了，没人接':
     '{n} messages are queued for "after this turn", but the turn has ended and nothing will pick them up',
   '已经不在执行，排队等 API 的标记却还留着': 'No longer running, but the "queued for API" marker is still there',

@@ -7,7 +7,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Agent } from '../shared/schema.ts'
 import { projectDocRoot } from './doc-root.ts'
-import { MAP_BEGIN, parseModuleDoc, withModuleTable, type ModuleDoc } from '../shared/module-docs.ts'
+import { hasGeneratedTable, parseModuleDoc, withModuleTable, type ModuleDoc } from '../shared/module-docs.ts'
 
 /**
  * 项目的文档根：P4 / SVN 项目按「文档」角色的设置算（可能在项目外）；Git 和没有版本管理的项目 projectDocRoot 不给，
@@ -57,7 +57,7 @@ export async function syncModuleMap(docRoot: string): Promise<{ changed: boolean
  */
 export async function syncManagedModuleMap(docRoot: string) {
   const before = await readFile(path.join(docRoot, 'MODULE-MAP.md'), 'utf8').catch(() => '')
-  if (before && !before.includes(MAP_BEGIN)) return { changed: false, skipped: 'legacy' as const }
+  if (before && !hasGeneratedTable(before)) return { changed: false, skipped: 'legacy' as const }
   return syncModuleMap(docRoot)
 }
 

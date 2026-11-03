@@ -48,6 +48,10 @@ test('模块地图：有生成区只换生成区，旧的手写表换成生成�
   const edited = out.replace('手写段落', '改过的手写段落')
   assert.ok(withModuleTable(edited, docs.slice(0, 1)).includes('改过的手写段落'))
   assert.doesNotMatch(withModuleTable(edited, docs.slice(0, 1)), /\| app \|/)
+  // 「文档」自己写的地图把标记的说明换了个说法：照样认作生成区
+  const paraphrased =
+    '# 地图\n\n<!-- 模块表：按元数据维护，不要手改 -->\n\n| 模块 | 源码 |\n| --- | --- |\n| calc | `src/` |\n\n<!-- /模块表 -->\n'
+  assert.match(withModuleTable(paraphrased, docs), /\| web \| `web\/` \|/)
   // 没有地图时建一个骨架
   assert.match(withModuleTable('', docs), /^# 模块地图/)
 })
