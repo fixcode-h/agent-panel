@@ -77,7 +77,7 @@ import { ensureTaskRun, runMail, runRecord, runState, sendRunMessage, statePart,
 import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
 import { flowPhase, pickFlow, workflowCatalogText, type WorkflowEntry } from './flow-child.ts'
 import { runChildFlow } from './flow-child-run.ts'
-import { submitDiagnosis, type DiagnosisInput } from './bug-diagnosis.ts'
+import { submitDiagnosis, updateBugCase, type DiagnosisInput } from './bug-diagnosis.ts'
 import { resultLine, resultOf, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
@@ -603,6 +603,7 @@ export interface Orchestra {
   askPush?: (input: { branch?: string; summary?: string }) => Promise<{ ok: boolean; info: string }>
   /** Bug 诊断报告（ADR 0045）：父对话派来的 Bug 子对话才有，交了等用户确认方案再改 */
   diagnose?: (input: DiagnosisInput) => { ok: boolean; info: string }
+  bugCase?: (input: DiagnosisInput) => { ok: boolean; info: string } // update_bug_case（ADR 0046）
 }
 
 /** p4_split_changelists 的参数：从哪个 changelist 分、只分哪些文件、每类一句描述 */
@@ -2831,8 +2832,8 @@ function takePendingRun(host: EngineHost) {
 }
 
 /** 交诊断报告（ADR 0045）：记进任务、挂成等用户确认的请求，马上落盘让界面看到 */
-function diagnoseTask(host: EngineHost, input: DiagnosisInput) {
-  const r = submitDiagnosis(host.task, input, host.newId)
+function diagnoseTask(host: EngineHost, input: DiagnosisInput, draft?: boolean) {
+  const r = draft ? updateBugCase(host.task, input) : submitDiagnosis(host.task, input, host.newId)
   if (r.ok) host.changed(true)
   return r
 }
@@ -3280,7 +3281,10 @@ function makeOrchestra(
     p4Split: host.p4Split,
     cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
     askPush: orchAskPush(host, !!ctx.chat, helper),
-    ...(task.bug && task.parentTaskId && ctx.chat && !helper && { diagnose: (x) => diagnoseTask(host, x) }),
+    ...(task.bug &&
+      task.parentTaskId &&
+      ctx.chat &&
+      !helper && { diagnose: (x) => diagnoseTask(host, x), bugCase: (x) => diagnoseTask(host, x, true) }),
     status: () => statusTree(host, self.id),
     spawn(tasks, step, opts) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }

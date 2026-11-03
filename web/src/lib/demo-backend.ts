@@ -4,7 +4,7 @@
  */
 import { diagnosisPending } from '@shared/task'
 import { flowProgress } from '@shared/flow-child'
-import { decideDiagnosis } from '@shared/bug-diagnosis'
+import { bugStage, decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
@@ -3447,6 +3447,7 @@ function tasksRoute(
           workflow: runRunning(x),
           flow: flowProgress(x),
           diagnosis: diagnosisPending(x),
+          bug: bugStage(x) || undefined,
           helpers: helpersWorking(x),
           unmerged: x.worktree?.state === 'active',
           // 和正式后端对齐：独立分支目录里还有几个文件没提交（没真的 git，按工作区状态给一个固定的数）

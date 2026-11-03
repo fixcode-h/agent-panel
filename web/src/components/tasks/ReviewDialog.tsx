@@ -14,7 +14,16 @@ import { reviewFeedback } from '@/lib/review-feedback'
 import { Segmented } from '@/components/ui/segmented'
 import { t } from '@shared/i18n'
 
-type Note = { id: number; quote: string; comment: string; range: Range; kind?: string }
+/** range：标在正文哪段文字上；点「改用这个方案」这类预设加的标注没有选区 */
+type Note = { id: number; quote: string; comment: string; range?: Range; kind?: string }
+
+/** 不用选文字就能加的标注（诊断报告的「改用方案 B」）：点一下加一条，内容预先填好 */
+export interface PresetNote {
+  label: string
+  quote: string
+  comment: string
+  kind: string
+}
 
 /** 标注的种类（诊断报告的「疑问 / 改方案 / 补充信息」）：不给就是普通的「要改的地方」 */
 export interface NoteKind {
@@ -50,6 +59,7 @@ export function ReviewDialog({
   versions,
   texts,
   readOnly,
+  presets,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -68,6 +78,8 @@ export function ReviewDialog({
   texts?: { approve: string; revise: string; hintApprove: string; hintRevise: string }
   /** 只看不审（已经确认过的报告） */
   readOnly?: boolean
+  /** 右栏上方的快捷标注按钮（只在能审的时候出现） */
+  presets?: PresetNote[]
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -100,10 +112,10 @@ export function ReviewDialog({
 
   useEffect(() => {
     if (!canHighlight() || !open || old) return
-    const all = new Highlight(...notes.map((n) => n.range))
+    const all = new Highlight(...notes.flatMap((n) => (n.range ? [n.range] : [])))
     const cur = notes.find((n) => n.id === active)
     CSS.highlights.set('review-note', all)
-    if (cur) CSS.highlights.set('review-note-active', new Highlight(cur.range))
+    if (cur?.range) CSS.highlights.set('review-note-active', new Highlight(cur.range))
     else CSS.highlights.delete('review-note-active')
     return () => {
       CSS.highlights.delete('review-note')
@@ -141,6 +153,15 @@ export function ReviewDialog({
     window.getSelection()?.removeAllRanges()
   }
 
+  // 快捷标注：不用选文字，加一条预先填好的（例如「改用方案 B」），同一个按钮只加一次
+  const addPreset = (p: PresetNote) => {
+    if (notes.some((n) => n.quote === p.quote && n.kind === p.kind)) return
+    const id = ++seq.current
+    setNotes((ns) => [...ns, { id, quote: p.quote, comment: p.comment, kind: p.kind }])
+    setActive(id)
+    setFocusId(id)
+  }
+
   // 点到已标注的文字：右栏对应那条亮起来
   const onDocClick = (e: React.MouseEvent) => {
     if (!notes.length || !window.getSelection()?.isCollapsed) return
@@ -148,7 +169,7 @@ export function ReviewDialog({
     if (!pos) return
     const hit = [...notes].reverse().find((n) => {
       try {
-        return n.range.isPointInRange(pos.startContainer, pos.startOffset)
+        return !!n.range?.isPointInRange(pos.startContainer, pos.startOffset)
       } catch {
         return false
       }
@@ -162,7 +183,7 @@ export function ReviewDialog({
   const reveal = (n: Note) => {
     setActive(n.id)
     const box = scrollRef.current
-    if (!box) return
+    if (!box || !n.range) return
     const r = n.range.getBoundingClientRect()
     const b = box.getBoundingClientRect()
     if (r.top < b.top || r.bottom > b.bottom)
@@ -250,6 +271,15 @@ export function ReviewDialog({
             {t('标注')}
             {notes.length > 0 && <span className="text-subtle">{notes.length}</span>}
           </div>
+          {presets && presets.length > 0 && !locked && (
+            <div className="flex flex-wrap gap-1.5 px-3 pb-2" data-review-presets>
+              {presets.map((p) => (
+                <Button key={p.label} size="sm" variant="secondary" onClick={() => addPreset(p)}>
+                  {p.label}
+                </Button>
+              ))}
+            </div>
+          )}
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
             {notes.length === 0 && (
               <p className="px-1 py-6 text-center text-xs leading-relaxed text-subtle">

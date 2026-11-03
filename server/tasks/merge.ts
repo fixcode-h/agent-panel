@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import { coreDefinition } from '../../shared/builtin/core.ts'
 import { diagnosisGate } from '../../shared/bug-diagnosis.ts'
 import { clipWithFile } from './inbox-file.ts'
@@ -95,6 +97,20 @@ export function createMerge(sc: TasksScope) {
       tk.changes.map((c) => c.path),
     )
     if (diag) return { ok: false, info: diag }
+    // 用户报的 Bug（ADR 0046）：[排查-…] 临时日志清掉才收尾（文档里提到这个前缀的不算）
+    if (tk.bug) {
+      const dir = await sc.taskDir(tk)
+      const left: string[] = []
+      for (const c of tk.changes.filter((x) => !x.path.endsWith('.md'))) {
+        const body = await readFile(path.join(dir, c.path), 'utf8').catch(() => '')
+        if (body.includes('[排查-')) left.push(c.path)
+      }
+      if (left.length)
+        return {
+          ok: false,
+          info: `没有请求收尾：这些文件里还有 [排查-…] 临时日志：${left.join('、')}。删掉（确实要留的按项目的日志规范改写）再收尾。`,
+        }
+    }
     // 后台还在跑的命令多半就是测试：没跑完就不算跑通，合进去后回收分支还会把它掐掉
     const pending = sc.background.list(childId).filter((j) => j.state === 'queued' || j.state === 'running')
     if (pending.length)

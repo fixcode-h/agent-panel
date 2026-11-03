@@ -9,7 +9,9 @@ import { format, resolveConfig } from 'prettier'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const file = path.join(root, 'skills/coding/systematic-debugging/SKILL.md')
 const { debugSkillMd } = await tsImport('../shared/builtin/bug-method.ts', import.meta.url)
-const text = await format(debugSkillMd(), { ...(await resolveConfig(file)), filepath: file })
+// Prettier 配置在 config/ 下（和 npm run lint 同一份），按文件位置找不到它
+const config = await resolveConfig(file, { config: path.join(root, 'config/.prettierrc.json') })
+const text = await format(debugSkillMd(), { ...config, filepath: file })
 const now = await readFile(file, 'utf8').catch(() => '')
 if (process.argv.includes('--check')) {
   if (now !== text) {
