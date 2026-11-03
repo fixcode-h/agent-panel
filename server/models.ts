@@ -7,7 +7,7 @@ import { CLIS, catalogEfforts, offEffort, type CliDefinition } from '../shared/c
 import { RpcSpec } from '../shared/cli-spec.ts'
 import type { CliModel, CliModels } from '../shared/schema.ts'
 import { clampEffort, cliSettings } from '../shared/settings.ts'
-import { apiModelInfo, type ModelCatalogEntry } from '../shared/model-catalog.ts'
+import { apiMappedModel, apiModelInfo, type ModelCatalogEntry } from '../shared/model-catalog.ts'
 import { apiModelList, apiModelPrefix, modelsForProtocol, type ApiConfig } from '../shared/accounts.ts'
 import { mergedModelCatalog } from './model-catalog-store.ts'
 import { capture, childEnv } from './exec/process.ts'
@@ -517,6 +517,8 @@ function withCatalog(
 ): CliModel[] {
   const off = offEffort(def)
   return models.map((m) => {
+    // 配了映射的模型：思考强度只按映射到的模型给（不用 CLI 自己报的），和界面上显示的映射模型名对得上
+    if (apiMappedModel(m.id, api)) m = { ...m, efforts: undefined, defaultEffort: undefined }
     const info = apiModelInfo(m.id, api, entries)
     if (!info.matched || !info.entry) return m
     const entry = info.entry

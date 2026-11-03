@@ -1,5 +1,6 @@
 import { agentCli, defaultSettings, modelText } from '@shared/settings'
 import { useData } from './data'
+import { modelNameIn } from './model-name'
 import { t } from '@shared/i18n'
 
 /** 列表和任务页显示 Agent 用：系统默认的 CLI、模型档位换成实际值 */
@@ -13,6 +14,7 @@ export function useAgentView() {
       const name = clis.find((c) => c.id === id)?.name.split(' ')[0] ?? id
       return a.cli ? name : t('{name}（默认）', { name })
     },
-    modelOf: (a: { cli: string; model: string }) => modelText(a, s),
+    // 配了映射的模型显示映射到的模型名（见 lib/model-name）
+    modelOf: (a: { cli: string; model: string }) => modelText(a, s, (m, cli) => modelNameIn(s, m, cli)),
   }
 }

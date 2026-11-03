@@ -366,7 +366,9 @@ export function TierTable({
             </span>
             {readOnly ? (
               <>
-                <span className="truncate font-mono text-body">{model}</span>
+                <span className="truncate font-mono text-body" title={model}>
+                  {mapTo || model}
+                </span>
                 <span className="truncate text-body text-muted">{value[tr.id].effort || defaultEffort}</span>
               </>
             ) : (

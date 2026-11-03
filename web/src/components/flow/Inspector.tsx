@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { modelNameIn } from '@/lib/model-name'
 import {
   ArrowDown,
   ArrowUp,
@@ -289,7 +290,7 @@ export function NodeInspector({
                           options={MODEL_TIERS.map((m) => ({ id: m.id, label: t('{tier}档', { tier: m.label }) }))}
                         />
                         <span className="font-mono text-caption text-subtle">
-                          {cs.tiers[tier].model || t('自动')}
+                          {(cs.tiers[tier].model && modelNameIn(s, cs.tiers[tier].model, defCliId)) || t('自动')}
                           {cs.tiers[tier].effort ? ` · ${cs.tiers[tier].effort}` : ''}
                         </span>
                       </div>

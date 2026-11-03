@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useModelName } from '@/lib/model-name'
 import { Loader2, Shrink } from 'lucide-react'
 import { getCli } from '@shared/clis'
 import { contextBreakdown } from '@shared/context-breakdown'
@@ -142,10 +143,11 @@ export function SessionContextBody({
   onTask?: (t: Task) => void
 }) {
   const { cur, data } = ctx
+  const modelName = useModelName()
   if (!data) return <p className="text-xs text-subtle">{t('Agent 回复后显示上下文占用')}</p>
   return (
     <div className="flex flex-col gap-3">
-      <ContextHead data={data} caption={cur?.usage.model} />
+      <ContextHead data={data} caption={cur?.usage.model && modelName(cur.usage.model, ctx.cli)} />
       <ContextLegend data={data} />
       <CompactFooter task={task} data={data} onTask={onTask} />
     </div>

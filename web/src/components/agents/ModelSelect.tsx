@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import { CONFIG_GROUP, modelGroup } from '@/lib/cli-style'
+import { useModelName } from '@/lib/model-name'
 import { cn } from '@/lib/utils'
 import { Input, Select } from '@/components/ui/input'
 import { t } from '@shared/i18n'
@@ -15,24 +16,34 @@ const CUSTOM = '__custom'
  */
 export function modelOptions(
   def: CliDefinition,
-  o: { tiers?: Tiers; defaultValue?: string; extra?: string[] },
+  o: {
+    tiers?: Tiers
+    defaultValue?: string
+    extra?: string[]
+    /** 选项上显示的模型名（配了映射显示映射到的模型，见 lib/model-name）；值仍是真实模型名 */
+    name?: (model: string) => string
+  },
 ): { value: string; label: string; group?: string }[] {
   const apiMode = !!def.apiMode
+  const name = o.name ?? ((m: string) => m)
   const opts: { value: string; label: string; group?: string }[] = [
     ...(o.tiers
       ? MODEL_TIERS.filter((m) => !apiMode || def.models.some((x) => x.id === o.tiers![m.id].model)).map((m) => ({
           value: `@${m.id}`,
-          label: t('{tier}档 · {model}', { tier: m.label, model: o.tiers![m.id].model || t('自动') }),
+          label: t('{tier}档 · {model}', {
+            tier: m.label,
+            model: (o.tiers![m.id].model && name(o.tiers![m.id].model)) || t('自动'),
+          }),
           group: t('档位'),
         }))
       : []),
-    ...def.models.map((m) => ({ value: m.id, label: m.id, group: modelGroup(def, m) })),
+    ...def.models.map((m) => ({ value: m.id, label: name(m.id), group: modelGroup(def, m) })),
   ]
   // 组按固定顺序：档位、CLI 读取、配置文件
   opts.sort((a, b) => rank(a.group) - rank(b.group))
   // API 方式只列 API 里配的模型：以前存的、自己填的都不再放进「其他」组
   for (const v of [o.defaultValue, ...(o.extra ?? [])])
-    if (v && !opts.some((x) => x.value === v) && !apiMode) opts.push({ value: v, label: v, group: t('其他') })
+    if (v && !opts.some((x) => x.value === v) && !apiMode) opts.push({ value: v, label: name(v), group: t('其他') })
   const d = o.defaultValue
   return [
     ...(d ? [] : [{ value: '', label: t('自动（默认）') }]),
@@ -62,7 +73,13 @@ export function ModelSelect({
   'aria-label'?: string
 }) {
   // 列表里没有的值（自己填的、以前存的）放进「其他」组里显示，不用切到输入框
-  const options = modelOptions(def, { tiers, defaultValue, extra: value ? [value] : [] })
+  const modelName = useModelName()
+  const options = modelOptions(def, {
+    tiers,
+    defaultValue,
+    extra: value ? [value] : [],
+    name: (m) => modelName(m, def.id),
+  })
   // 只有主动选了「其他模型…」才显示输入框
   const [custom, setCustom] = useState(false)
   const shown = custom ? CUSTOM : value === defaultValue ? '' : value

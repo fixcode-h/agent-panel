@@ -2,8 +2,8 @@ import type { ReactNode } from 'react'
 import { Brain, Check, ChevronDown, Sparkles } from 'lucide-react'
 import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { getCli, isOffEffort, type CliDefinition } from '@shared/clis'
-import { apiModelIdFor, cliApi } from '@shared/accounts'
-import { apiModelKey } from '@shared/model-catalog'
+import { apiModelIdFor } from '@shared/accounts'
+import { useModelName } from '@/lib/model-name'
 import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
 import { cliColor, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'
@@ -115,8 +115,10 @@ function effortDefault(def: CliDefinition, model: string, configured: string) {
 /** 对话里一条回复的署名：CLI 名字，模型和思考强度（没记模型时是 CLI 自己的默认模型） */
 export function useRunAuthor(run: ChatRun | undefined) {
   const def = useCliDef(run?.cli || undefined)
+  const modelName = useModelName()
   if (!run || !def) return undefined
-  const model = run.model || def.models.find((m) => m.isDefault)?.id || ''
+  // 配了映射的显示映射到的模型
+  const model = modelName(run.model || def.models.find((m) => m.isDefault)?.id || '', def.id)
   return {
     name: def.name,
     cli: def.id,
@@ -129,12 +131,15 @@ export function useRunAuthor(run: ChatRun | undefined) {
 /** 对话时选 CLI、模型和思考强度；模型默认的那项标「（默认）」，强度只显示 CLI 的英文取值 */
 export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange: (v: ChatRun) => void }) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
+  const modelName = useModelName()
   if (!usable.length) return <span className="px-2 text-footnote text-subtle">{t('没有可用的 Agent')}</span>
   const clisOpts = usable.map((c) => ({
     value: c.id,
     label: c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name,
   }))
-  const models = def ? modelOptions(def, { defaultValue: defModel, extra: [run.model] }) : []
+  const models = def
+    ? modelOptions(def, { defaultValue: defModel, extra: [run.model], name: (m) => modelName(m, def.id) })
+    : []
   // 只列这个模型支持的强度；一个都不支持（模型不能思考）时不显示这一项
   const efforts = def ? defaultEffortOptions(def, defEffort, modelEfforts(def, run.model)) : []
   return (
@@ -214,19 +219,10 @@ const FACE =
  * （用户想看实际在用的是哪个模型），名字只留最后一个「/」后面那段（provider 前缀太长、挤掉强度）
  */
 function useShownModel() {
-  const { settings } = useData()
+  const modelName = useModelName()
   return (cli: string, model: string, fallback: string) => {
-    const cs = settings?.clis?.[cli]
-    const api =
-      cs?.authMode === 'api'
-        ? cliApi(
-            getCli(cli)?.auth,
-            settings?.apis.find((a) => a.id === cs.apiId),
-            cs.apiProtocol,
-          )
-        : undefined
-    const mapped = (model && api?.modelMap?.[apiModelKey(model, api.modelMap)]) || ''
-    const name = mapped || fallback
+    const mapped = model ? modelName(model, cli) : ''
+    const name = mapped && mapped !== model ? mapped : fallback
     return name.slice(name.lastIndexOf('/') + 1) || name
   }
 }

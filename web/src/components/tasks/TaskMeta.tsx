@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useModelName } from '@/lib/model-name'
 import {
   ArrowRight,
   Check,
@@ -252,6 +253,7 @@ function ContextBar({ p }: { p: number }) {
 /** 当前对话的上下文：大号百分比做主信息，用量、剩余、模型、速度、压缩按主次往下排 */
 function ContextCard({ line }: { line: ContextLine }) {
   const { name, icon, cli, u, live } = line
+  const modelName = useModelName()
   const p = pctOf(u)
   const tps = live?.tps ?? 0
   const compact = line.compact ? compactionText(line.compact) : ''
@@ -295,7 +297,7 @@ function ContextCard({ line }: { line: ContextLine }) {
       </dl>
       <div className="flex flex-col gap-1 text-xs">
         <span className="truncate text-muted" title={u.model}>
-          {u.model || t('默认模型')}
+          {modelName(u.model, cli) || t('默认模型')}
         </span>
         {compact && (
           <span className="truncate text-subtle" title={compact}>
@@ -310,6 +312,7 @@ function ContextCard({ line }: { line: ContextLine }) {
 /** 工作流里一个节点的上下文：一行名字和用量，下面一根细条 */
 function ContextRow({ line }: { line: ContextLine }) {
   const { name, icon, cli, u, live } = line
+  const modelName = useModelName()
   const p = pctOf(u)
   const tps = live?.tps ?? 0
   const compact = line.compact ? compactionText(line.compact) : ''
@@ -325,7 +328,7 @@ function ContextRow({ line }: { line: ContextLine }) {
       </div>
       <ContextBar p={p} />
       <span className="truncate text-caption text-subtle" title={compact || undefined}>
-        {fmtTokens(u.context)} / {fmtTokens(u.window)} · {u.model || t('默认模型')}
+        {fmtTokens(u.context)} / {fmtTokens(u.window)} · {modelName(u.model, cli) || t('默认模型')}
         {compact && ` · ${compact}`}
       </span>
     </li>

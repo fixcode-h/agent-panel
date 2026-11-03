@@ -6,6 +6,7 @@
  * 用户逐项采纳，确认后只用采纳的分项拼出报告（见 shared/summary.ts 的 renderReport）。
  * 来源、日期、进行中的提炼和已采纳的分项存在本机（web/src/lib/summary-page.ts），加过的项目存在服务端。
  */
+import { modelNameIn } from '@/lib/model-name'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileText } from 'lucide-react'
 import { toast } from '@/lib/toast'
@@ -159,7 +160,8 @@ export function SummaryPage() {
       name: a.name,
       cli: run.cli,
       cliName: getCli(run.cli)?.name ?? run.cli,
-      model: run.model,
+      // 配了映射的显示映射到的模型
+      model: modelNameIn(settings, run.model, run.cli),
       // 本机没有这个角色（被删了）时按内置定义跑，没有可以点开的角色
       onOpen: a.own ? () => go({ page: 'agents', id: a.id }) : undefined,
     }
