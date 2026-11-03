@@ -333,14 +333,20 @@ export function agentPermission(a: { cli: string; permission?: string }, setting
 }
 
 /** 列表里显示的模型：「中档 · sonnet」「opus」「默认 · sonnet」 */
-export function modelText(a: { cli: string; model: string; effort?: string }, settings: Settings) {
+export function modelText(
+  a: { cli: string; model: string; effort?: string },
+  settings: Settings,
+  /** 界面上显示的模型名（配了映射显示映射到的模型）；不给照原样 */
+  name: (model: string, cli: string) => string = (m) => m,
+) {
   const r = agentRun(a, settings)
   const tier = tierOf(a.model)
-  const m = r.model || t('Agent 默认')
+  const shown = r.model ? name(r.model, r.cli) : ''
+  const m = shown || t('Agent 默认')
   return tier
     ? t('{tier}档 · {model}', { tier: tier.label, model: m })
     : a.model
       ? m
       : // 没选模型：直接写实际用的模型，CLI 名后面已经标了（默认），这里不再重复「默认」
-        r.model || t('默认模型')
+        shown || t('默认模型')
 }

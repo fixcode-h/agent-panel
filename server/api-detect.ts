@@ -117,6 +117,7 @@ export function toApi(
     apiKey,
     authHeader: bearer ? 'bearer' : 'x-api-key',
     models: modelsOf(obj, src.models),
+    modelProtocols: {},
     modelMap: {},
     modelEfforts: {},
     maxConcurrent: 0,

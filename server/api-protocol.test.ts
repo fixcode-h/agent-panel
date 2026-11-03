@@ -16,6 +16,7 @@ const api = (protocol: ApiProtocol, baseUrl: string): ApiConfig => ({
   apiKey: 'k',
   authHeader: 'x-api-key',
   models: ['m'],
+  modelProtocols: {},
   modelMap: {},
   modelEfforts: {},
   maxConcurrent: 0,

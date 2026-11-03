@@ -16,6 +16,13 @@ export const API_PROTOCOL_LABEL: Record<ApiProtocol, string> = {
   'openai-chat': 'OpenAI Chat Completions',
 }
 
+/** 协议的短名：地方窄、只要能区分开时用（API 配置里每个模型的协议勾选） */
+export const API_PROTOCOL_SHORT: Record<ApiProtocol, string> = {
+  anthropic: 'Anthropic',
+  'openai-responses': 'Responses',
+  'openai-chat': 'Chat',
+}
+
 /** 模型名里的协议后缀；不带后缀的是通用模型，所有协议都能用 */
 const PROTOCOL_MODEL_SUFFIX: Record<ApiProtocol, string[]> = {
   anthropic: ['-anthropic', '-anthropic-messages'],
@@ -108,6 +115,11 @@ export const ApiConfig = z.object({
    * 发给 CLI 的仍然是原来的模型名
    */
   modelMap: z.record(z.string(), z.string()).default({}),
+  /**
+   * 每个模型能在哪几种协议下用：模型名 → 协议列表。没有这一项的模型所有协议都能用；
+   * 一个 API 同时支持几种协议时，各协议可以分配不同的可选模型（apiForProtocol 按它过滤）
+   */
+  modelProtocols: z.record(z.string(), z.array(z.enum(API_PROTOCOLS))).default({}),
   /** 每个模型的默认思考强度：模型名 → 强度 id；没有时用模型目录里的默认值 */
   modelEfforts: z.record(z.string(), z.string()).default({}),
   /**
@@ -136,8 +148,18 @@ export function apiEndpoint(api: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'endpo
  * 都只看 protocol / baseUrl，选定协议后统一经过这里，别的地方不用知道一个 API 有几种协议
  */
 export function apiForProtocol(api: ApiConfig, protocol: ApiProtocol): ApiConfig {
-  if (api.protocol === protocol && !Object.keys(api.endpoints ?? {}).length) return api
-  return { ...api, protocol, baseUrl: apiEndpoint(api, protocol) }
+  const models = apiModelsForProtocol(api, protocol)
+  if (api.protocol === protocol && !Object.keys(api.endpoints ?? {}).length && models.length === api.models.length)
+    return api
+  return { ...api, protocol, baseUrl: apiEndpoint(api, protocol), models }
+}
+
+/** 某种协议下能选的模型：没单独分配协议的模型都算，分配了的只在列出的协议下出现；顺序不变（第一个是默认） */
+export function apiModelsForProtocol(api: Pick<ApiConfig, 'models' | 'modelProtocols'>, protocol: ApiProtocol) {
+  return api.models.filter((m) => {
+    const only = api.modelProtocols?.[m]
+    return !only?.length || only.includes(protocol)
+  })
 }
 
 /**
@@ -699,6 +721,7 @@ export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig, las
     apiKey: '',
     authHeader: 'x-api-key',
     models: [],
+    modelProtocols: {},
     modelMap: {},
     modelEfforts: {},
     maxConcurrent: 0,

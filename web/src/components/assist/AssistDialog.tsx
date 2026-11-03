@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useModelName } from '@/lib/model-name'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import * as D from '@radix-ui/react-dialog'
 import { toast, toastError } from '@/lib/toast'
@@ -375,6 +376,7 @@ function RunPicker({
   onEffort: (v: string) => void
   disabled?: boolean
 }) {
+  const modelName = useModelName()
   const cs = cliSettings(settings, def.id)
   const run = agentRun({ cli: def.id, model, effort }, settings)
   // 不单独放「默认」选项：默认会用到的那个模型直接选中，后面标上（默认）
@@ -387,7 +389,12 @@ function RunPicker({
     ModelTier,
     { model: string }
   >
-  const options = modelOptions(def, { tiers: tierRuns, defaultValue: defaultPick, extra: [model] })
+  const options = modelOptions(def, {
+    tiers: tierRuns,
+    defaultValue: defaultPick,
+    extra: [model],
+    name: (m) => modelName(m, def.id),
+  })
   // 思考强度的默认：档位或设置给的，其次是模型自己的默认
   const usedModel = run.model || defaultModel
   const defaultEffort =
@@ -400,8 +407,9 @@ function RunPicker({
     <div
       className="flex min-w-0 items-center gap-0.5"
       title={
-        t('这次用 {model}', { model: run.model || defaultModel || t('Agent 自动选择的模型') }) +
-        (run.effort ? ` · ${run.effort}` : '')
+        t('这次用 {model}', {
+          model: modelName(run.model || defaultModel, def.id) || t('Agent 自动选择的模型'),
+        }) + (run.effort ? ` · ${run.effort}` : '')
       }
     >
       <Select

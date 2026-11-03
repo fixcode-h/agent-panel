@@ -21,6 +21,7 @@ import { CLIS } from '@shared/clis'
 import {
   API_PROTOCOLS,
   API_PROTOCOL_LABEL,
+  API_PROTOCOL_SHORT,
   apiEndpoint,
   apiProtocols,
   apiProvider,
@@ -85,6 +86,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
       apiKey: '',
       authHeader: 'x-api-key',
       models: [],
+      modelProtocols: {},
       modelMap: {},
       modelEfforts: {},
       maxConcurrent: 0,
@@ -222,9 +224,10 @@ function ApiCard({
   }
   const toggle = (m: string) => {
     const models = a.models.includes(m) ? a.models.filter((x) => x !== m) : [...a.models, m]
-    // 移除模型后它的映射也没用了，一起清掉
+    // 移除模型后它的映射、协议分配也没用了，一起清掉
     const modelMap = Object.fromEntries(Object.entries(a.modelMap).filter(([k]) => models.includes(k)))
-    onChange({ models, modelMap })
+    const modelProtocols = Object.fromEntries(Object.entries(a.modelProtocols).filter(([k]) => models.includes(k)))
+    onChange({ models, modelMap, modelProtocols })
   }
   /** 可选的模型：只列当前协议能用的，第一个是默认模型 */
   const probeOptions = useMemo(() => {
@@ -260,6 +263,24 @@ function ApiCard({
     if (to) modelMap[m] = to
     else delete modelMap[m]
     onChange({ modelMap })
+  }
+  /** 这个模型在哪几种协议下能选：没单独分配的是全部（勾选的协议都能用） */
+  const modelProtos = (m: string) => {
+    const only = a.modelProtocols[m]
+    return only?.length ? protos.filter((p) => only.includes(p)) : protos
+  }
+  /** 给模型勾选 / 取消一种协议；全勾上等于没分配（存储里去掉这一项），至少留一种 */
+  const setModelProtocol = (m: string, p: ApiProtocol, on: boolean) => {
+    const cur = modelProtos(m)
+    const next = on ? protos.filter((x) => x === p || cur.includes(x)) : cur.filter((x) => x !== p)
+    if (!next.length) {
+      toast.error(t('每个模型至少要留一种协议，不用的模型直接移除'))
+      return
+    }
+    const modelProtocols = { ...a.modelProtocols }
+    if (next.length === protos.length) delete modelProtocols[m]
+    else modelProtocols[m] = next
+    onChange({ modelProtocols })
   }
   const setEffort = (m: string, v: string) => {
     const modelEfforts = { ...a.modelEfforts }
@@ -636,39 +657,68 @@ function ApiCard({
             {modelsForProtocols(a.models, protos).map((m, i) => (
               <Card
                 key={m}
-                className="flex items-center gap-3 rounded-lg px-2.5 py-1.5"
+                className="flex flex-col gap-1.5 rounded-lg px-2.5 py-1.5"
                 title={i === 0 ? t('第一个是默认模型') : undefined}
               >
-                {/* 模型名按自己的长度占位，映射模型的下拉填满剩下的；窄的时候两边一起收，模型名至少留几个字 */}
-                <span className="min-w-[6rem] max-w-[45%] shrink truncate font-mono text-footnote">
-                  {m}
-                  {i === 0 && (
-                    <span className="ml-1.5 rounded-sm bg-accent-soft px-1 text-micro text-accent-text">
-                      {t('默认')}
-                    </span>
-                  )}
-                </span>
-                <label className="flex shrink-0 items-center gap-1.5 text-footnote text-subtle">
-                  {t('默认思考强度')}
-                  <Select
-                    aria-label={t('{model} 的默认思考强度', { model: m })}
-                    className="h-7 w-24 text-footnote"
-                    value={a.modelEfforts[m] ?? ''}
-                    options={effortOptions(m)}
-                    onChange={(e) => setEffort(m, e.target.value)}
-                  />
-                </label>
-                <label className="flex min-w-[9rem] flex-1 items-center gap-1.5 text-footnote text-subtle">
-                  <span className="shrink-0">{t('映射模型')}</span>
-                  <Select
-                    aria-label={t('{model} 的映射模型', { model: m })}
-                    className="h-7 min-w-0 flex-1 font-mono text-footnote"
-                    value={a.modelMap[m] ?? ''}
-                    options={mapOptions(m, a.modelMap[m])}
-                    onChange={(e) => setMap(m, e.target.value)}
-                  />
-                </label>
-                <IconButton icon={X} label={t('移除 {name}', { name: m })} onClick={() => toggle(m)} />
+                <div className="flex items-center gap-3">
+                  {/* 模型名按自己的长度占位，映射模型的下拉填满剩下的；窄的时候两边一起收，模型名至少留几个字 */}
+                  <span className="min-w-[6rem] max-w-[45%] shrink truncate font-mono text-footnote">
+                    {m}
+                    {i === 0 && (
+                      <span className="ml-1.5 rounded-sm bg-accent-soft px-1 text-micro text-accent-text">
+                        {t('默认')}
+                      </span>
+                    )}
+                  </span>
+                  <label className="flex shrink-0 items-center gap-1.5 text-footnote text-subtle">
+                    {t('默认思考强度')}
+                    <Select
+                      aria-label={t('{model} 的默认思考强度', { model: m })}
+                      className="h-7 w-24 text-footnote"
+                      value={a.modelEfforts[m] ?? ''}
+                      options={effortOptions(m)}
+                      onChange={(e) => setEffort(m, e.target.value)}
+                    />
+                  </label>
+                  <label className="flex min-w-[9rem] flex-1 items-center gap-1.5 text-footnote text-subtle">
+                    <span className="shrink-0">{t('映射模型')}</span>
+                    <Select
+                      aria-label={t('{model} 的映射模型', { model: m })}
+                      className="h-7 min-w-0 flex-1 font-mono text-footnote"
+                      value={a.modelMap[m] ?? ''}
+                      options={mapOptions(m, a.modelMap[m])}
+                      onChange={(e) => setMap(m, e.target.value)}
+                    />
+                  </label>
+                  <IconButton icon={X} label={t('移除 {name}', { name: m })} onClick={() => toggle(m)} />
+                </div>
+                {/* 每个模型分配能在哪几种协议下用，Agent 选了哪种协议就只列那种协议的模型。
+                    三种协议都列出来（用短名，能区分就行）；API 没勾选的协议灰掉不能点 */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-footnote text-subtle">
+                  <span>{t('可用的协议')}</span>
+                  {API_PROTOCOLS.map((p) => {
+                    const off = !protos.includes(p)
+                    return (
+                      <span
+                        key={p}
+                        title={
+                          off
+                            ? t('这个 API 没有勾选 {protocol} 协议', { protocol: API_PROTOCOL_LABEL[p] })
+                            : API_PROTOCOL_LABEL[p]
+                        }
+                      >
+                        <Checkbox
+                          checked={!off && modelProtos(m).includes(p)}
+                          disabled={off}
+                          onChange={(v) => setModelProtocol(m, p, v)}
+                          label={<span className="text-footnote text-muted">{API_PROTOCOL_SHORT[p]}</span>}
+                          ariaLabel={t('{model} 在 {protocol} 下可用', { model: m, protocol: API_PROTOCOL_LABEL[p] })}
+                          className="items-center"
+                        />
+                      </span>
+                    )
+                  })}
+                </div>
               </Card>
             ))}
             <form

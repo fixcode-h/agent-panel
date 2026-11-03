@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ApiConfig, apiEndpoint, apiProtocols, cliApiProtocol, modelsForProtocols, withEndpoints } from './accounts.ts'
+import {
+  ApiConfig,
+  apiEndpoint,
+  apiModelsForProtocol,
+  apiProtocols,
+  cliApiProtocol,
+  modelsForProtocols,
+  withEndpoints,
+} from './accounts.ts'
 import { getCli } from './clis.ts'
 import { Settings } from './schema.ts'
-import { cliSettings } from './settings.ts'
+import { cliSettings, modelText } from './settings.ts'
+import { shownModelName } from './model-catalog.ts'
 
 const relay = (p: Partial<ApiConfig> = {}) =>
   ApiConfig.parse({ id: 'r', name: 'relay', apiKey: 'sk-xxxx', models: ['m'], ...p })
@@ -64,4 +73,31 @@ test('几种协议一起过滤模型：有一种协议对得上就保留', () =>
     'a-responses',
     'c',
   ])
+})
+
+test('各协议分配不同的可选模型：Agent 选了哪种协议只列那种协议的模型，没分配的都能用', () => {
+  const api = relay({
+    protocol: 'anthropic',
+    endpoints: { anthropic: '', 'openai-chat': '' },
+    models: ['claude-x', 'gpt-y', 'shared-z'],
+    modelProtocols: { 'claude-x': ['anthropic'], 'gpt-y': ['openai-chat'] },
+  })
+  assert.deepEqual(apiModelsForProtocol(api, 'anthropic'), ['claude-x', 'shared-z'])
+  const settings = Settings.parse({
+    apis: [api],
+    clis: { commandcode: { authMode: 'api', apiId: 'r', apiProtocol: 'openai-chat' } },
+  })
+  assert.deepEqual(cliSettings(settings, 'commandcode').api?.models, ['gpt-y', 'shared-z'])
+})
+
+test('界面显示的模型名：配了映射显示映射到的模型，带 provider 前缀的也能找到；没配照原样', () => {
+  const api = relay({ models: ['relay-x', 'plain'], modelMap: { 'relay-x': 'claude-sonnet-5-5' } })
+  assert.equal(shownModelName('relay-x', api), 'claude-sonnet-5-5')
+  assert.equal(shownModelName('agentpanel/relay-x', api), 'claude-sonnet-5-5')
+  assert.equal(shownModelName('plain', api), 'plain')
+  const settings = Settings.parse({ apis: [api], clis: { claude: { authMode: 'api', apiId: 'r' } } })
+  assert.equal(
+    modelText({ cli: 'claude', model: 'relay-x' }, settings, (m) => shownModelName(m, api)),
+    'claude-sonnet-5-5',
+  )
 })

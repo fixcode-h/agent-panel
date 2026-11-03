@@ -502,6 +502,20 @@ export function apiModelKey(model: string, table: Record<string, unknown> | unde
   return model
 }
 
+/** 这个模型在 API 设置里映射到的模型；没配映射时为空 */
+export function apiMappedModel(model: string, api: Pick<ApiConfig, 'modelMap'> | undefined) {
+  if (!model || !api?.modelMap) return ''
+  return api.modelMap[apiModelKey(model, api.modelMap)] || ''
+}
+
+/**
+ * 界面上显示的模型名：配了映射就显示映射到的模型（用户关心的是实际在用哪个模型），
+ * 没配映射照原样。API 配置页要看真实模型名，不经过这里
+ */
+export function shownModelName(model: string, api: Pick<ApiConfig, 'modelMap'> | undefined) {
+  return apiMappedModel(model, api) || model
+}
+
 /** AI 补全的一次查询 */
 export interface ModelLookupJob {
   id: string

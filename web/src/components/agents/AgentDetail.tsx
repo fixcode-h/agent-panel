@@ -1,4 +1,5 @@
 import { subAgentIds } from '@shared/flow'
+import { useModelName } from '@/lib/model-name'
 import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
@@ -177,6 +178,7 @@ export function AgentDetail({
   const cs = cliSettings(s, cliId)
   // 模型和思考强度用本机 CLI 实际支持的（读不到时是内置建议）
   const cliDef = useCliDef(cliId)
+  const modelName = useModelName()
   // 不看 Agent 自己的思考强度，得到「跟随设置」时的值
   const run = agentRun({ ...draft, effort: '' }, s)
   const defCli = agentCli({ cli: '' }, s)
@@ -235,12 +237,22 @@ export function AgentDetail({
   const tierOptions = [
     ...MODEL_TIERS.map((m) => ({
       value: `@${m.id}`,
-      label: t('{tier}档 · {model}', { tier: m.label, model: cs.tiers[m.id].model || t('自动') }),
+      label: t('{tier}档 · {model}', {
+        tier: m.label,
+        model: (cs.tiers[m.id].model && modelName(cs.tiers[m.id].model, cliId)) || t('自动'),
+      }),
     })),
     ...(draft.model && !tierOf(draft.model)
       ? [{ value: draft.model, label: t('{model}（旧设置，请换成档位）', { model: draft.model }) }]
       : !draft.model
-        ? [{ value: '', label: t('默认模型 · {model}（旧设置，请换成档位）', { model: usedModel || t('自动') }) }]
+        ? [
+            {
+              value: '',
+              label: t('默认模型 · {model}（旧设置，请换成档位）', {
+                model: (usedModel && modelName(usedModel, cliId)) || t('自动'),
+              }),
+            },
+          ]
         : []),
   ]
   const live = { ...agent, ...value }

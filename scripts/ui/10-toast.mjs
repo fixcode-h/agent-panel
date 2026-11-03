@@ -173,10 +173,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .catch(() => {})
       await envTitle.waitFor({ timeout: 5000 }).catch(() => {})
     }
-    await row.click({ button: 'right' })
+    // 右键菜单和菜单项都直接派发事件，不用鼠标点：提示叠满展开后会盖住那一行的右半边和弹出的菜单
+    // （提示在右上角，那一行也在右边），鼠标点会被提示挡住、一直重试到超时。这条用例测的是提示排队，
+    // 不是这一行点不点得到，所以不走命中测试
+    const box = await row.boundingBox()
+    await row.dispatchEvent('contextmenu', {
+      button: 2,
+      clientX: (box?.x ?? 0) + 8,
+      clientY: (box?.y ?? 0) + (box?.height ?? 0) / 2,
+    })
     const item = p.getByRole('menuitem', { name: '复制分支名', exact: true }).first()
     await item.waitFor({ timeout: 5000 })
-    await item.click()
+    await item.dispatchEvent('click')
     // 满额时这一条只排队，不等 DOM 增长（等不到）；调用方用 sameTop 和元素身份确认
     if (expectQueued) return
     return p
