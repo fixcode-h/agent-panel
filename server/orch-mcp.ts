@@ -787,7 +787,7 @@ export function orchTools(o: Orchestra) {
             name: 'cherry_pick',
             title: 'cherry-pick 到目标',
             description:
-              '用户要求把改动 cherry-pick 到项目设置的目标时用它，由面板核对后执行。Git 写 commits（这个对话做的提交，按先后顺序；有不是这次修改的提交整次不做）；P4 写 changelist（用户要搬的 pending，或已经 submit 的编号，别的 stream 上的也行；面板只搬这个 changelist 自己的改动，在目标工作区建一个对应的 pending，不 submit，用户明确要求前也不要自己 p4 submit）。不要自己跑 git cherry-pick / merge、p4 integrate / merge / copy 或复制文件过去；被拒绝时把原因告诉用户。',
+              '用户要求把改动 cherry-pick 到项目设置的目标时用它，由面板核对后执行。Git 写 commits（这个对话做的提交，按先后顺序；有不是这次修改的提交整次不做）；P4 写 changelist（用户要搬的 pending，或已经 submit 的编号，别的 stream 上的也行；面板只搬这个 changelist 自己的改动，在目标工作区建一个对应的 pending，不 submit，用户明确要求前也不要自己 p4 submit）。不要自己跑 git cherry-pick / merge、p4 integrate / merge / copy 或复制文件过去；被拒绝时把原因告诉用户；有冲突时面板把冲突留在目标里，把冲突文件和位置告诉用户，由用户自己解决。',
             inputSchema: {
               type: 'object',
               properties: {

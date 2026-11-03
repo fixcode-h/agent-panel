@@ -17,5 +17,5 @@ export function cherryPickPart(host: EngineHost) {
       ? '面板只收这个对话自己做的提交，有不属于这次修改的提交会整次拒绝。'
       : '目标里的 pending 留给用户检查后自己提交。'
   return `## Cherry-pick
-用户要求把改动 cherry-pick 过去时，必须调用 cherry_pick 工具，由面板核对后执行：${what}。${scope}不要自己跑 git cherry-pick / merge / rebase，也不要跑 p4 integrate / merge / copy / populate 或改 stream 的父子关系，不要按两条分支、两条流或两个目录的差异同步，也不要复制文件过去；被拒绝或有冲突时把原因告诉用户，由用户决定。只有用户明确要求时才调用（面板会核对用户的消息，用户没提时调用会被拒绝），不要自己发起，也不要写进计划或建议里替用户决定。`
+用户要求把改动 cherry-pick 过去时，必须调用 cherry_pick 工具，由面板核对后执行：${what}。${scope}不要自己跑 git cherry-pick / merge / rebase，也不要跑 p4 integrate / merge / copy / populate 或改 stream 的父子关系，不要按两条分支、两条流或两个目录的差异同步，也不要复制文件过去；被拒绝时把原因告诉用户，由用户决定；有冲突时面板不撤回，会把冲突留在目标里（Git 停在冲突的提交上，P4 把冲突标记写进文件），把冲突文件和位置告诉用户，由用户自己解决，你不要去解决。只有用户要求时才调用（面板会看用户最近几条消息，用户没提时调用会被拒绝），不要自己发起，也不要写进计划或建议里替用户决定；不要让用户按固定说法回复，用户说要搬就行。`
 }
