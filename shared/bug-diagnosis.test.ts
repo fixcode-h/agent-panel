@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { setLang } from './i18n.ts'
 import {
+  approvedBrief,
+  bugRecordDraft,
   bugStage,
   decideDiagnosis,
   diagnosisGate,
@@ -257,4 +259,24 @@ test('收尾：影响面每一条都要有验证记录，回归测试要记下',
   assert.match(diagnosisGate(tk, ['web/src/lib/login.ts']), /这些影响面还没有验证记录：接口重试/)
   done(tk, ['登录重试', ' 接口 重试 '])
   assert.equal(diagnosisGate(tk, ['web/src/lib/login.ts']), '', '影响面按名字对，忽略空白')
+})
+
+test('评审对照和 Bug 记录草稿（ADR 0046）：只取用户确认过的那一版', () => {
+  const tk = bugTask({ title: '登录超时后一直转圈' } as Partial<Task>)
+  assert.equal(approvedBrief(tk), '')
+  assert.ok(submitDiagnosis(tk, standard(), id).ok)
+  assert.equal(approvedBrief(tk), '', '还没确认的不给评审')
+  assert.equal(bugRecordDraft(tk), '')
+  decideDiagnosis(tk, 1, { approve: true, notes: [], overall: '' }, id)
+  const brief = approvedBrief(tk)
+  assert.match(brief, /## 用户确认的诊断报告（第 1 版）/)
+  assert.match(brief, /选定方案 A：改成次数常量——login\.ts:44/)
+  assert.match(brief, /  - 接口重试：共用常量（验证：api\.test\.ts）/)
+  done(tk, ['登录重试', '接口重试'])
+  const rec = bugRecordDraft(tk)
+  assert.match(rec, /^# 登录超时后一直转圈\n\n- 状态：已修复（web\/src\/lib\/login\.test\.ts）/)
+  assert.match(rec, /- 入口：`web\/src\/lib\/login\.ts:40` retry/)
+  assert.match(rec, /- 引入：a1b2c3 《重试改成按秒》 2026-10-30（recent，blame）/)
+  assert.match(rec, /\n\n## 修复\n\n改成次数常量：login\.ts:44/)
+  assert.match(rec, /- 接口重试：npm test → 通过/)
 })

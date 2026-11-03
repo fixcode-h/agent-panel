@@ -471,3 +471,74 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
     return `没有请求收尾：确认的方案里这些影响面还没有验证记录：${left.join('、')}。逐条验证后用 update_bug_case 的 result.impactChecks 记下（area 照报告里的写，附命令和本轮输出）。`
   return ''
 }
+
+/**
+ * 评审对照用（ADR 0046 第 9 条）：用户确认过的那一版的要点，派评审时面板附进它的提示词。
+ * 没有确认过的报告返回空。发给 Agent 的提示词，不翻译
+ */
+export function approvedBrief(task: Pick<Task, 'bug' | 'diagnoses'>): string {
+  const d = task.bug ? [...(task.diagnoses ?? [])].reverse().find((x) => x.status === 'approved') : undefined
+  if (!d) return ''
+  const chosen = d.options.find((o) => o.id === d.chosen?.id)
+  const lines = [
+    `## 用户确认的诊断报告（第 ${d.version} 版）`,
+    '这是用户报的 Bug，改动应当照这份方案做。对照它看：改动是不是选定的方案、只改了方案里的文件、影响面每一条有没有对应的验证、同类现场处理了没有；对不上的按级别报出来。',
+    `- 根因：${d.rootCause}`,
+    chosen ? `- 选定方案 ${chosen.id}：${chosen.title}——${chosen.change}` : d.fix ? `- 修复方案：${d.fix}` : '',
+    d.files.length ? `- 方案里的文件：${d.files.join('、')}` : '',
+    ...(d.impact.length
+      ? ['- 影响面：', ...d.impact.map((x) => `  - ${x.area}：${x.effect}（验证：${x.verify}）`)]
+      : []),
+    d.verify ? `- 验证计划：${d.verify}` : '',
+  ]
+  return lines.filter(Boolean).join('\n')
+}
+
+/**
+ * Bug 记录的草稿（ADR 0046 第 5 条）：修完请父对话收尾时附上，派「文档」写 Bug 记录时原样交给它，
+ * 不用它再从对话里摘。元数据头照 docs/modules/<模块>/bugs/<id>.md 的格式（状态 / 症状 / 入口 / 根因类型 / 模块 / 关键词）
+ */
+export function bugRecordDraft(task: Pick<Task, 'title' | 'bug' | 'diagnoses' | 'bugCase'>): string {
+  const d = [...(task.diagnoses ?? [])].reverse().find((x) => x.status === 'approved')
+  if (!task.bug || !d) return ''
+  const r = task.bugCase?.result
+  const a = d.attribution
+  const chosen = d.options.find((o) => o.id === d.chosen?.id)
+  const entry = d.stack.length
+    ? d.stack.map((h) => `\`${h.file}${h.line ? `:${h.line}` : ''}\` ${h.fn}`).join(' → ')
+    : d.location
+  const meta = [
+    `- 状态：已修复${r?.regressionTests.length ? `（${r.regressionTests.join('、')}）` : ''}`,
+    `- 症状：${d.symptom.split('\n')[0]}`,
+    `- 入口：${entry.split('\n')[0]}`,
+    `- 根因类型：${d.rootCause.split('\n')[0]}`,
+    a
+      ? `- 引入：${[a.change, a.title && `《${a.title}》`, a.date].filter(Boolean).join(' ')}（${a.category}，${a.how}）`
+      : '',
+  ]
+  const sec = (title: string, ...parts: string[]) => {
+    const body = parts.filter((x) => x.trim()).join('\n\n')
+    return body ? `## ${title}\n\n${body}` : ''
+  }
+  return [
+    `# ${task.title}\n\n${meta.filter(Boolean).join('\n')}`,
+    sec('现象', d.symptom, d.repro && `复现：${d.repro}`),
+    sec('根因', d.rootCause, d.evidence && `证据：${d.evidence}`),
+    sec(
+      '修复',
+      chosen ? `${chosen.title}：${chosen.change}` : d.fix,
+      d.chosen?.whyNotOthers ? `没选别的修法：${d.chosen.whyNotOthers}` : '',
+    ),
+    sec(
+      '防线',
+      [
+        r?.regressionTests.length ? `- 回归测试：${r.regressionTests.join('、')}` : '- 回归测试：无',
+        ...(r?.impactChecks ?? []).map(
+          (x) => `- ${x.area}：${x.command}${x.output ? ` → ${x.output.split('\n')[0]}` : ''}`,
+        ),
+      ].join('\n'),
+    ),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}

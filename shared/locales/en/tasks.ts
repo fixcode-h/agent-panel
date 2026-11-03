@@ -1859,4 +1859,10 @@ export const EN_TASKS: Record<string, string> = {
   修复设计: 'Fix design',
   归因: 'Attribution',
   定位: 'Locating',
+  '已按完整流程发到「{title}」，查清后会先交诊断报告给你确认':
+    'Sent to "{title}" for the full process; it will hand you a diagnosis report to confirm first',
+  '责任类别：{c}': 'Responsibility: {c}',
+  '作为用户报的 Bug 发回被分析的对话：先交诊断报告给你确认方案，再改':
+    'Send it back to the analysed conversation as a reported bug: it hands you a diagnosis report to confirm the plan before changing anything',
+  按完整流程修: 'Fix with full process',
 }

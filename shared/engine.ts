@@ -77,7 +77,7 @@ import { ensureTaskRun, runMail, runRecord, runState, sendRunMessage, statePart,
 import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
 import { flowPhase, pickFlow, workflowCatalogText, type WorkflowEntry } from './flow-child.ts'
 import { runChildFlow } from './flow-child-run.ts'
-import { submitDiagnosis, updateBugCase, type DiagnosisInput } from './bug-diagnosis.ts'
+import { approvedBrief, submitDiagnosis, updateBugCase, type DiagnosisInput } from './bug-diagnosis.ts'
 import { resultLine, resultOf, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
@@ -2699,7 +2699,7 @@ function briefPart(b: ReviewBrief | undefined) {
 async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
   const agent = host.agents.find((a) => a.id === step.agentId)
   if (agent?.origin !== 'builtin:reviewer') return ''
-  const brief = briefPart(spec.review)
+  const brief = [briefPart(spec.review), approvedBrief(host.task)].filter(Boolean).join('\n\n')
   if (!host.reviewDiff)
     return [brief, changedFilesPart(host.task.changes.map((c) => c.path))].filter(Boolean).join('\n\n')
   const key = step.session || ''
