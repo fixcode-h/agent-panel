@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { flowLine, flowPhase, pickFlow, workflowCatalogText, type WorkflowEntry } from './flow-child.ts'
+import {
+  canStartFlow,
+  flowLine,
+  namedWorkflow,
+  withWorkflow,
+  flowPhase,
+  pickFlow,
+  workflowCatalogText,
+  workflowPrompt,
+  type WorkflowEntry,
+} from './flow-child.ts'
 import type { Task, TaskStep } from './schema.ts'
+import { taskTitle } from './task.ts'
 
 /** 工作流子对话（ADR 0044）：这一轮跑流程图的哪一段、进度怎么说、父对话怎么挑工作流 */
 const step = (id: string, status: TaskStep['status'], title = id) => ({ id, title, status, parentId: '' }) as TaskStep
@@ -70,4 +81,29 @@ test('可用工作流目录：带适用、不用、只读和判定规则；没�
   assert.match(text, /问答和分析、排查和 Bug 定位、一两个文件的小改动/)
   assert.match(text, /拿不准就交给子对话/)
   assert.match(workflowCatalogText([]), /项目还没有配置工作流/)
+})
+
+test('用户点名工作流（「在项目里运行」、输入框引入工作流）：要求带名字和 id；只有能开子对话又能启动工作流的角色才给入口', () => {
+  assert.equal(workflowPrompt({ id: 'g', name: '通用项目' }, '  做功能\n'), '用工作流「通用项目」（id g）做：\n做功能')
+  const agents = [
+    { id: 'lead', canDelegate: true, canPlan: true },
+    { id: 'exec', canDelegate: true, canPlan: false },
+  ]
+  assert.ok(canStartFlow(agents, 'lead'))
+  assert.ok(!canStartFlow(agents, 'exec'))
+  assert.ok(!canStartFlow(agents, ''), '不用角色的对话没有 start_workflow')
+})
+
+test('输入框里的工作流卡片：发送时摘掉卡片、要求点名它；找不到只写名字；发出去的消息拆得回卡片', () => {
+  const flows = [{ id: 'g', name: '通用项目' }]
+  assert.equal(withWorkflow('[工作流:通用项目] 加个导出按钮', flows), '用工作流「通用项目」（id g）做：\n加个导出按钮')
+  assert.equal(withWorkflow('加个导出按钮 [工作流:旧名字]', flows), '用工作流「旧名字」做：\n加个导出按钮')
+  assert.equal(withWorkflow('不带工作流 [图片:a.png]', flows), '不带工作流 [图片:a.png]')
+  assert.deepEqual(namedWorkflow('用工作流「通用项目」（id g）做：\n加个导出按钮'), {
+    name: '通用项目',
+    rest: '加个导出按钮',
+  })
+  assert.deepEqual(namedWorkflow('用工作流「旧名字」做：\n加'), { name: '旧名字', rest: '加' })
+  assert.equal(namedWorkflow('用工作流做个东西'), undefined)
+  assert.equal(taskTitle('用工作流「通用项目」（id g）做：\n加个导出按钮'), '加个导出按钮', '对话标题取用户写的要求')
 })

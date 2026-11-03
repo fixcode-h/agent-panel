@@ -1,9 +1,10 @@
 // 附件卡片点开以后怎么看：图片用看图浮层，文件用文件弹窗（看不了的可以用默认程序打开），引用看原文。
 // 输入框里的卡片和发出去的消息里的卡片共用这一套
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Copy, File as FileIcon, Image as ImageIcon, ImageOff, TextQuote } from 'lucide-react'
+import { Copy, File as FileIcon, Image as ImageIcon, ImageOff, TextQuote, Workflow as WorkflowIcon } from 'lucide-react'
 import { copyText } from '@/lib/copy-text'
 import { attachOf, segments, type ChipKind } from '@shared/composer'
+import { namedWorkflow } from '@shared/flow-child'
 import type { Attachment } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
@@ -156,7 +157,15 @@ export function MessageChip({
       : attachment
         ? attachment.path
         : name
-  const Icon = missing ? ImageOff : kind === 'quote' ? TextQuote : kind === 'image' ? ImageIcon : FileIcon
+  const Icon = missing
+    ? ImageOff
+    : kind === 'quote'
+      ? TextQuote
+      : kind === 'image'
+        ? ImageIcon
+        : kind === 'workflow'
+          ? WorkflowIcon
+          : FileIcon
   // 样子和输入框里的卡片一样（RichInput 的 chipNode 也用 CHIP_TONE），发出去前后看起来是同一张
   const tone = CHIP_TONE[missing ? 'missing' : kind]
   return (
@@ -211,7 +220,9 @@ export function MessageBody({ text, attachments = [] }: { text: string; attachme
     },
     [images],
   )
-  const parts = segments(text)
+  // 点名工作流的要求（输入框里引入了工作流）：开头那句画回工作流卡片，和发出去前输入框里的一样
+  const flow = namedWorkflow(text)
+  const parts = segments(flow ? flow.rest : text)
   const used = new Set<Attachment>()
   const body = parts.map((s, i) => {
     if ('text' in s) return <span key={i}>{s.text}</span>
@@ -250,6 +261,7 @@ export function MessageBody({ text, attachments = [] }: { text: string; attachme
         )
       })}
       {rest.length > 0 && parts.length > 0 && ' '}
+      {flow && <MessageChip kind="workflow" name={flow.name} />}
       {body}
       <AttachmentViewer target={view} onClose={() => setView(null)} />
     </>

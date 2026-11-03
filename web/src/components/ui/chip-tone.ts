@@ -21,6 +21,12 @@ export const CHIP_TONE: Record<ChipKind | 'missing', { box: string; hover: strin
     icon: 'text-success',
     status: 'text-success/80',
   },
+  workflow: {
+    box: 'bg-warning/12 ring-warning/35',
+    hover: 'hover:bg-warning/20',
+    icon: 'text-warning',
+    status: 'text-warning/80',
+  },
   /** 附件已经不在了：退回中性色，看得出是张卡片但不抢眼 */
   missing: { box: 'bg-sel/70 ring-line-strong', hover: '', icon: 'text-subtle', status: 'text-subtle' },
 }

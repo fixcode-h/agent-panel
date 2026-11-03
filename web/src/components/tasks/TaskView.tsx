@@ -123,6 +123,7 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
+import { canStartFlow, withWorkflow } from '@shared/flow-child'
 import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { dropChip, forSend, pathText } from '@shared/composer'
@@ -1353,6 +1354,9 @@ export function TaskView({
   }
 
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
+  // 引入工作流只给项目里的父对话、而且角色能启动工作流（start_workflow 只给这样的父对话）；子对话不启动工作流
+  const canPickFlow =
+    !!task.projectId && !task.parentTaskId && task.mode !== 'workflow' && canStartFlow(localAgents, task.agentId)
   const send = async (input?: string) => {
     const text = input ?? followTa.current?.text() ?? ''
     if (!text.trim() && !files.attachments.length) return
@@ -1363,7 +1367,9 @@ export function TaskView({
       )
       return
     }
-    const content = forSend(expandQuotes(text, files.attachments), files.attachments.length ? ATTACHMENT_PROMPT : '')
+    // 引入了工作流（行内的工作流卡片）：这条要求点名它，父对话照用户点名的起工作流子对话（ADR 0044）
+    const said = withWorkflow(expandQuotes(text, files.attachments), workflows)
+    const content = forSend(said, files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
     // 发出去的这一刻就清空输入框、把消息插进对话。清空不能等接口返回：服务端这条的响应要等
     // settings、项目、git/p4 探测、CLI 拉起这一串（消息本身早已经 SSE 到界面），
@@ -1677,7 +1683,12 @@ export function TaskView({
       onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
       // 空着按 ↑ 取回自己上一条发的话（不取父对话、面板代发的）
       recall={() => [...task.messages].reverse().find((m) => m.role === 'user' && !m.peer && !m.panel)?.text}
-      attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
+      attach={{
+        onMention: mention.start,
+        canMention: !!project?.path,
+        self: task.id,
+        workflows: canPickFlow,
+      }}
       tools={
         <>
           <AskToggle

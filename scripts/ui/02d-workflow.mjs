@@ -190,4 +190,79 @@ await runShard(import.meta.filename, async (api) => {
       }
     }
   }
+
+  // 对话中的输入框「+」里引入工作流（ADR 0044：工作流只由父对话启动）：父对话的角色能启动工作流才有这一项；
+  // 选好后输入框下面出工作流标记，发出去的要求点名这个工作流，交给父对话起工作流子对话
+  {
+    const KEY = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), KEY)
+    const name = await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      const task = db.tasks.find((x) => x.title.startsWith('购物车右上角'))
+      const agent = db.agents.find((a) => a.id === task.agentId)
+      if (!agent) return ''
+      Object.assign(agent, { canDelegate: true, canPlan: true })
+      localStorage.setItem(k, JSON.stringify(db))
+      return db.workflows[0]?.name ?? ''
+    }, KEY)
+    if (!name) errors.push('引入工作流：演示数据里父对话没有角色或没有工作流，用例前提不成立')
+    else {
+      await p.reload()
+      await backToTask()
+      await p.locator('#follow-up').waitFor({ timeout: 10000 })
+      await p.getByRole('button', { name: '添加文件、图片或引用' }).first().click()
+      const item = p.getByRole('button', { name: '引入工作流' })
+      if (
+        !(await item.waitFor({ timeout: 3000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        errors.push('引入工作流：父对话的「+」菜单里没有这一项')
+      else {
+        await check(p, '引入工作流-菜单', ['上传文件或图片', '引入工作流', '引入会话'])
+        await item.click()
+        await p
+          .getByRole('button', { name: new RegExp(name) })
+          .first()
+          .click()
+        // 和图片一样插成输入框里的一张行内卡片
+        const chip = p.locator(`#follow-up [data-chip="workflow"][data-name="${name}"]`)
+        await chip.waitFor({ timeout: 3000 }).catch(() => errors.push('引入工作流：选好后输入框里没有工作流卡片'))
+        await p.locator('#follow-up').click()
+        await p.keyboard.type('把角标刷新改掉')
+        await check(p, '引入工作流-已选', [name])
+        await p.keyboard.press('Enter')
+        await chip
+          .waitFor({ state: 'detached', timeout: 5000 })
+          .catch(() => errors.push('引入工作流：发出去后输入框里的工作流卡片还在'))
+        const sent = await p
+          .waitForFunction(
+            (k) => {
+              const task = JSON.parse(localStorage.getItem(k) ?? '{}').tasks.find((x) =>
+                x.title.startsWith('购物车右上角'),
+              )
+              return task.messages.find((m) => m.role === 'user' && m.text.includes('把角标刷新改掉'))?.text
+            },
+            KEY,
+            { timeout: 5000 },
+          )
+          .then(
+            (h) => h.jsonValue(),
+            () => '',
+          )
+        if (!sent.startsWith(`用工作流「${name}」（id `)) errors.push(`引入工作流：发出去的要求没有点名工作流：${sent}`)
+        // 对话里那条消息把点名画回工作流卡片，不露出「用工作流…（id …）做：」原文
+        await p
+          .locator(`[data-chip="workflow"][data-name="${name}"]`)
+          .last()
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('引入工作流：对话里的消息没有显示工作流卡片'))
+        if (await p.getByText(`用工作流「${name}」`, { exact: false }).count())
+          errors.push('引入工作流：对话里露出了点名工作流的原文')
+        await check(p, '引入工作流-已发送', ['把角标刷新改掉'])
+      }
+    }
+    await p.evaluate(([k, raw]) => localStorage.setItem(k, raw), [KEY, saved])
+  }
 })
