@@ -12,22 +12,32 @@ import { StepIcon } from '@/components/tasks/TaskStatusIcon'
 // 工作流编辑页里「这个工作流在所选项目里跑过的执行」：底部工具条的「运行中」「重新运行」和属性栏的「运行进度」页签共用。
 // 数据就是全局任务列表（摘要，有任务在跑时每 2.5 秒刷新），不另外请求
 
-/** 这次执行用的是不是这个工作流：继续流程时可能换了工作流，以最后一次运行记录为准，旧任务没有运行记录时看任务本身 */
-const usesWorkflow = (tk: Task, id: string) =>
-  tk.mode === 'workflow' && (tk.runs?.at(-1)?.workflowId || tk.workflowId) === id
+/**
+ * 「在项目里运行」建的父对话（ADR 0044）：第一条消息点名了这个工作流（见 RunInProjectDialog 的 workflowPrompt），
+ * 由它开工作流子对话；子对话还没开出来时，这次执行就是这个父对话
+ */
+const startsWorkflow = (tk: Task, id: string) =>
+  !tk.parentTaskId && !!tk.messages?.find((m) => m.role === 'user')?.text.includes(`（id ${id}）做：`)
 
 /**
- * 所选项目里这个工作流的执行，新的在前。只取项目里的顶层对话：
- * 「在项目里运行」只建顶层对话，子对话是父对话派出去的，重新运行它没有意义
+ * 这次执行用的是不是这个工作流：老的工作流任务（继续流程时可能换了工作流，以最后一次运行记录为准）、
+ * 跑这个工作流的工作流子对话、点名它的父对话
  */
+const usesWorkflow = (tk: Task, id: string) =>
+  (tk.mode === 'workflow' && !tk.parentTaskId && (tk.runs?.at(-1)?.workflowId || tk.workflowId) === id) ||
+  tk.flow?.workflowId === id ||
+  startsWorkflow(tk, id)
+
+/** 所选项目里这个工作流的执行，新的在前 */
 export function useFlowRuns(workflowId: string, projectId: string) {
   const { tasks } = useTasks()
   const list = projectId
     ? tasks
-        .filter((tk) => tk.projectId === projectId && !tk.parentTaskId && !taskGone(tk) && usesWorkflow(tk, workflowId))
+        .filter((tk) => tk.projectId === projectId && !taskGone(tk) && usesWorkflow(tk, workflowId))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     : []
-  const running = list.filter((tk) => runRunning(tk))
+  // 点名工作流的父对话还在跑（还在开子对话、或者在等它）也算这次执行在跑
+  const running = list.filter((tk) => runRunning(tk) || (startsWorkflow(tk, workflowId) && tk.status === 'running'))
   return { last: list[0] as Task | undefined, running }
 }
 
