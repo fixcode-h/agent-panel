@@ -1,5 +1,5 @@
 /**
- * Codex 的思考摘要：设置里的下拉选项（CLI 定义 options 里带 choices 的那种），选中的值填进 model_reasoning_summary。
+ * Codex 的思考摘要和 Fast 模式：思考摘要是设置里的下拉选项（CLI 定义 options 里带 choices 的那种），选中的值填进 model_reasoning_summary。
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
@@ -13,7 +13,7 @@ import { cliSettings, optionValue } from './settings.ts'
 const opts = { model: 'gpt-6-astra', permission: 'workspace-write', extraArgs: [] }
 const summaryArg = (args: string[]) => args.find((a) => a.startsWith('model_reasoning_summary='))
 
-test('Codex 设置里有「思考摘要」下拉：四种取值、默认 auto，选中的值填进 model_reasoning_summary', () => {
+test('Codex 设置里的思考摘要（四种取值、默认 auto）和 Fast 模式（默认关）填进参数', () => {
   const o = getCli('codex')!.options!.find((x) => x.id === 'reasoningSummary')!
   assert.deepEqual(
     o.choices.map((c) => c.id),
@@ -26,6 +26,10 @@ test('Codex 设置里有「思考摘要」下拉：四种取值、默认 auto，
       summaryArg(codex.buildArgs({ ...opts, options: { reasoningSummary: v } })),
       `model_reasoning_summary="${v}"`,
     )
+  // Fast 模式默认关、关着不传；打开时传 service_tier="fast"
+  assert.equal(cliSettings(Settings.parse({}), 'codex').options.fast, false)
+  assert.ok(!codex.buildArgs({ ...opts, options: { fast: false } }).some((a) => a.startsWith('service_tier=')))
+  assert.ok(codex.buildArgs({ ...opts, options: { fast: true } }).includes('service_tier="fast"'))
   // 没给设置时不加（调用方都会经过 cliSettings 带上默认值）
   assert.equal(summaryArg(codex.buildArgs(opts)), undefined)
 })
