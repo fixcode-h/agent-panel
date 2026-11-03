@@ -671,6 +671,10 @@ export function lastFailureNote(messages: TaskMessage[] = []): string {
   return ''
 }
 
+/** 这些停止原因下子对话不会再回来：父计划等它的那一步要收成失败（其余停下都是暂停，见 ADR 0042） */
+const STOP_ENDS: StopReason[] = ['archive', 'delete', 'replaced', 'lost']
+export const stopEnds = (reason: StopReason | undefined) => !!reason && STOP_ENDS.includes(reason)
+
 /**
  * 子对话一轮结束（或者合并、置完成、收尾请求这些状态变化）时，交给父对话的是什么：
  * 状态只从 convState 来，父对话的计划、上报的说法、子对话栏用的是同一个结论。
@@ -733,11 +737,12 @@ export function childReport(
   })()
   return {
     state,
-    // 用户亲手停的不是失败：那一步继续等（用户继续它时结果照常推回），不退回「需要修复」引着父对话去重派
+    // 停下是暂停不是失败（ADR 0042）：父计划那一步继续等，继续时原来的子对话接着做、结果照常推回；
+    // 只有归档、删除、被接手、核对时已经没人在跑（lost）才算这一步等不到了，退回「需要修复」让父对话处理
     settle:
       state === 'done'
         ? 'ok'
-        : state === 'failed' || (state === 'stopped' && task.stopReason !== 'user')
+        : state === 'failed' || (state === 'stopped' && stopEnds(task.stopReason))
           ? 'fail'
           : 'hold',
     why: [convStateText(state), reason].filter(Boolean).join(t('：')),

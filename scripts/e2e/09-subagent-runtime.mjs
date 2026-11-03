@@ -703,4 +703,55 @@ await runShard('子对话运行与监管', async (api) => {
     await call('DELETE', `/tasks/${rp.id}`)
     step('父对话被停下后继续：一起被打断的子对话由面板连带拉起来，续接提示写清是续接')
   }
+  // ---- 停下就是暂停（ADR 0042）：父计划等着的子对话随父对话停下，那一步不退回「需要修复」；
+  //      继续时原来的子对话接着做，做完结果对上计划、父对话被叫醒 ----
+  {
+    const lead = await agent({ name: '统筹-继续', cli: 'claude', canDelegate: true, instructions: '你负责派子对话。' })
+    const rp = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: lead.id,
+      prompt: 'PLAN_KID_WAIT 派子对话改登录',
+    })
+    const waitOf = async () => {
+      const p = await call('GET', `/tasks/${rp.id}`)
+      const step = p.plans?.at(-1)?.steps?.[0]
+      return { step, wait: step?.waits?.find((w) => w.kind === 'child') }
+    }
+    const kid = await waitFor(
+      async () => {
+        const list = await call('GET', `/tasks/${rp.id}/children`)
+        const k = list.find((x) => x.title === '改登录')
+        return k?.working && (await waitOf()).wait?.state === 'waiting' ? k : undefined
+      },
+      { label: '父对话列好计划、派出的子对话在执行，那一步在等它', timeout: 20000 },
+    )
+    await call('POST', `/tasks/${rp.id}/stop`)
+    await waitFor(
+      async () => {
+        const k = await call('GET', `/tasks/${kid.id}`)
+        return k.status === 'stopped' && k.stopReason === 'parent'
+      },
+      { label: '子对话随父对话停下', timeout: 20000 },
+    )
+    await waitFor(async () => (await call('GET', `/tasks/${rp.id}`)).status === 'stopped', {
+      label: '父对话停下',
+      timeout: 20000,
+    })
+    const paused = await waitOf()
+    assert.equal(paused.wait?.state, 'waiting', '子对话随父对话停下是暂停：父计划那一步还在等它，不收成失败')
+    assert.doesNotMatch(paused.step?.note ?? '', /需要修复/, '那一步不退回「需要修复」')
+    const before = (await call('GET', `/tasks/${rp.id}/children`)).length
+    await call('POST', `/tasks/${rp.id}/resume`, {})
+    // 原来的子对话接着做完：结果对上计划那一步，不另建子对话
+    await waitFor(async () => ((await waitOf()).wait?.state === 'ok' ? true : undefined), {
+      label: '继续后子对话做完，父计划那一步收到结果',
+      timeout: 40000,
+    })
+    assert.equal((await call('GET', `/tasks/${rp.id}/children`)).length, before, '没有另建子对话')
+    assert.equal((await call('GET', `/tasks/${kid.id}`)).stopReason ?? '', '', '子对话接着做完，不再记着停止原因')
+    await call('POST', `/tasks/${rp.id}/stop`).catch(() => {})
+    await call('DELETE', `/tasks/${rp.id}`)
+    step('停下就是暂停：随父对话停下的子对话继续后接着做完，父计划那一步收到结果、没有另建子对话')
+  }
 })
