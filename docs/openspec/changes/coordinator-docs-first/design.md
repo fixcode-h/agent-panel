@@ -538,4 +538,4 @@ engine 那边：内置协调器时，「你的定位」只留就地微改动的�
 - 单测：`shared/task.ts` 的新判定（子对话待收尾时父对话算「停住」；子对话还在跑时不算）。
 - e2e（`scripts/fake-cli`）：子对话 `submit_merge` → 父对话的假 CLI 只回一句「现在合回」不调工具 → 断言面板推了一次、父对话第二轮调用了 `finish_child`、子对话完成；再加一个推满后出现警告和「合回」按钮的用例。先在现在的代码上确认会失败，改完再确认通过。
 
-修好、验证通过后按规则写 Bug 记录：`docs/modules/server/bugs/parent-ignores-wrap-request.md`（用户报的），再跑 `npm run docs:bugs`。
+修好、验证通过后按规则写 Bug 记录：在 `docs/modules/server/bugs/` 下新增 `parent-ignores-wrap-request.md`（用户报的），再跑 `npm run docs:bugs`。
