@@ -632,8 +632,12 @@ await runShard('子对话运行与监管', async (api) => {
     await call('DELETE', `/tasks/${stuckParent.id}`)
     step('子对话卡住：问过没回复就重启，重启没恢复就警告并新开子对话接手')
   }
-  // ---- 子对话计划做了一半就收尾（只回一句打算、不调工具）：子对话自己按计划推，同一进度最多 3 次，推满才报父对话（ADR 0041） ----
+  // ---- 子对话计划做了一半就收尾（只回一句打算、不调工具）：子对话自己按计划推，同一进度推满才报父对话（ADR 0041） ----
   {
+    // 次数上限现在来自设置 nudgeMax（默认 6）：这一片只需要验证「推满才报」的行为，调成 3 次省时间，
+    // 顺便覆盖设置真的接到了推进逻辑上
+    const full = await call('GET', '/settings')
+    await call('PUT', '/settings', { ...full, nudgeMax: 3 })
     const stallParent = await waitDone(
       (
         await call('POST', '/tasks', {
@@ -683,6 +687,8 @@ await runShard('子对话运行与监管', async (api) => {
       '推满之前不打扰父对话，推满后只报一次',
     )
     await call('DELETE', `/tasks/${stallParent.id}`)
+    // 改回这一片开始时的设置，后面的用例不受 nudgeMax=3 影响
+    await call('PUT', '/settings', full)
     step('子对话计划做一半就收尾：子对话自己推满 3 次仍不动，才上报父对话一次')
   }
   // ---- 父对话被停下后继续：一起被打断的子对话由面板连带拉起来，续接的提示写清是续接、子对话已在接着做 ----

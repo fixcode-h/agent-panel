@@ -738,7 +738,7 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起 / �
   assert.equal(resumeNote({ stopReason: 'user', steps: [], runs: [] }).split('\n').length, 1)
 })
 
-test('Chat 页和 Agent 模式分开：Chat 页、子对话只推一次，项目里的顶层对话同一进度最多推 3 次，进度变了重新数', () => {
+test('Chat 页和 Agent 模式分开：Chat 页只推一次，Agent 模式的次数跟设置走，进度变了重新数', () => {
   const plain = { mode: 'chat' as const, projectId: '', parentTaskId: '' }
   const agentConv = { mode: 'chat' as const, projectId: 'p1', parentTaskId: '' }
   const child = { mode: 'chat' as const, projectId: 'p1', parentTaskId: 'parent' }
@@ -746,17 +746,19 @@ test('Chat 页和 Agent 模式分开：Chat 页、子对话只推一次，项目
   assert.equal(isChatMode(agentConv), false)
   assert.equal(isChatMode(child), false)
   assert.equal(isChatMode({ ...plain, mode: 'workflow' }), false)
-  assert.equal(nudgeMax(plain), 1)
-  assert.equal(nudgeMax(child), 3, '子对话和顶层对话一样自驱 3 次，推满才报父对话（ADR 0041）')
-  assert.equal(nudgeMax(agentConv), 3)
-  // 同一进度：第 1、2、3 次能推，第 4 次推满；进度变了从 1 重新数
-  let r = nextNudge(undefined, 'plan:1', 3)
+  assert.equal(nudgeMax(plain, 6), 1)
+  assert.equal(nudgeMax(plain, 0), 1, 'Chat 页一问一答不受设置影响，仍只推 1 次')
+  assert.equal(nudgeMax(child, 6), 6, '子对话和顶层对话一样自驱，推满才报父对话（ADR 0041）')
+  assert.equal(nudgeMax(agentConv, 6), 6, '默认按设置里的 6 次')
+  assert.equal(nudgeMax(agentConv, 2), 2, '上限换成设置里的值')
+  assert.equal(nudgeMax(agentConv, 0), 0, '0 表示不自动推')
+  // 同一进度：第 1–6 次能推，第 7 次推满；进度变了从 1 重新数
+  let r = nextNudge(undefined, 'plan:1', 6)
   assert.deepEqual(r, { key: 'plan:1', n: 1 })
-  r = nextNudge(r!, 'plan:1', 3)
-  r = nextNudge(r!, 'plan:1', 3)
-  assert.deepEqual(r, { key: 'plan:1', n: 3 })
-  assert.equal(nextNudge(r!, 'plan:1', 3), null)
-  assert.deepEqual(nextNudge(r!, 'plan:2', 3), { key: 'plan:2', n: 1 })
+  for (let i = 2; i <= 6; i++) r = nextNudge(r!, 'plan:1', 6)
+  assert.deepEqual(r, { key: 'plan:1', n: 6 })
+  assert.equal(nextNudge(r!, 'plan:1', 6), null)
+  assert.deepEqual(nextNudge(r!, 'plan:2', 6), { key: 'plan:2', n: 1 })
   // 只推一次的：同一进度第二次就推满
   assert.equal(nextNudge({ key: 'said:m1', n: 1 }, 'said:m1', 1), null)
 })
