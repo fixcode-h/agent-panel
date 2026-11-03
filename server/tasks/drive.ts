@@ -115,9 +115,12 @@ export function createDrive(
           total: now.p.total,
         }),
       )
-      // 子对话到了上限要让父对话知道（ADR 0041）。max=0 时一次都没推、planNudged 没记上，
-      // children.ts 的 stuckAfterNudge 判断会把「未完成」这封信吞掉，父计划就一直挂着
-      if (conv.parentTaskId) await reportChild(conv.id)
+      // 子对话到了上限就不会再推这个进度了，要让父对话知道（ADR 0041）。max=0 时 takeNudge 从来没执行过、
+      // planNudged 还是空的，不先记上，children.ts 的「没推满不报」守卫会把「未完成」这封信吞掉，父计划就一直挂着
+      if (conv.parentTaskId) {
+        sc.planNudged.set(conv.id, now.key)
+        await reportChild(conv.id)
+      }
       return false
     }
     // 稍等一下再推：这一轮刚结束时 CLI 还没停到「等下一句」上；等它停稳了再看一次，还停着才推
