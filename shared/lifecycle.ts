@@ -169,6 +169,8 @@ export interface LifeFacts {
   plan?: { title: string; done: number; total: number; waiting: number; open: number; key: string }
   /** 面板推进（自驱）的计数：最后一个进度指纹（短）、这个进度推了几次、最多几次 */
   nudge?: { key: string; n: number; max: number }
+  /** runner 已经把这一轮标成卡住（没有响应检测，见 server/exec/stall-watch.ts）：从什么时候起没输出 */
+  stalled?: { since: number }
 }
 
 export type AnomalyLevel = 'danger' | 'warning' | 'info'
@@ -192,8 +194,8 @@ const sec = (ms: number) => Math.max(0, Math.round(ms / 1000))
 
 /** 模型多久没回算异常：大上下文的第一段输出几十秒很常见，一分半还没有就该看一眼了 */
 export const MODEL_SILENT_MS = 90_000
-/** 输出到一半停住多久算异常（没有工具在跑时） */
-export const OUTPUT_STALL_MS = 120_000
+/** 输出到一半停住多久算异常（没有工具在跑时）：和 runner 标卡住的 90 秒一致，免得面板已标卡住、诊断还说在输出 */
+export const OUTPUT_STALL_MS = 90_000
 /** 停止发出后多久还没收完算异常（正常几十毫秒，兜底 3 秒收口） */
 export const STOP_SLOW_MS = 5_000
 
@@ -260,13 +262,33 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
           )
       } else if (tr?.lastOutputAt) {
         const ms = now - tr.lastOutputAt
+        // 最后收到的是工具结果：卡的是模型的下一次请求没回来，不是流到一半断了（2026-11-03 用户报的子任务）
+        const afterTool = tr.lastEvent === 'tool_result'
         // 两秒内的算「正在输出」，不写「0 秒前」
-        headline = ms < 2000 ? t('模型在输出') : t('模型在输出：最后一段输出在 {s} 秒前', { s: sec(ms) })
-        if (ms > OUTPUT_STALL_MS)
+        headline =
+          ms < 2000
+            ? t('模型在输出')
+            : afterTool
+              ? t('工具结果交回 {s} 秒了，等模型的下一次回复', { s: sec(ms) })
+              : t('模型在输出：最后一段输出在 {s} 秒前', { s: sec(ms) })
+        if (ms > OUTPUT_STALL_MS || f.stalled)
           add(
             'output-stalled',
             'warning',
-            t('输出到一半停了 {s} 秒，没有工具在跑，也没有新的请求：CLI 可能卡在流式输出里', { s: sec(ms) }),
+            [
+              afterTool
+                ? t('工具结果交回 {s} 秒了，模型的下一次请求没有任何输出，CLI 也没报重试：多半是网关没回或连接挂住了', {
+                    s: sec(ms),
+                  })
+                : t('输出到一半停了 {s} 秒，没有工具在跑，也没有新的请求：CLI 可能卡在流式输出里', { s: sec(ms) }),
+              f.stalled
+                ? f.kind === 'helper'
+                  ? t('面板已标成卡住，再没有输出会停掉它、接回会话重试')
+                  : t('面板已标成卡住：再发一条消息会停掉它、接回会话重开')
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' '),
           )
       } else headline = t('这一轮在执行，还没有模型请求的记录')
       if (!f.cliAlive)
