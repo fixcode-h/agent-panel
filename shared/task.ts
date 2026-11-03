@@ -26,8 +26,12 @@ import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.t
 import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
 
 export function taskTitle(prompt: string) {
-  // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文
-  const raw = prompt.trim().split('\n')[0]
+  // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文。
+  // 点名工作流的那句（shared/flow-child.ts 的 workflowPrompt）不是用户写的，跳过它取后面的要求
+  const raw = prompt
+    .replace(/^用工作流「[^」\n]+」(?:（id [^）\n]*）)?做：\n/, '')
+    .trim()
+    .split('\n')[0]
   const line =
     raw
       .replace(/\[(?:图片|文件|引用):[^\]]+\]/g, '')

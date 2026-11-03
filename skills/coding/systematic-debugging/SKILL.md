@@ -1,376 +1,168 @@
 ---
 name: systematic-debugging
-description: 系统化调试：先查模块 bugs.md 历史，从相关模块开始逐层定位，日志只看本次问题的时间段并排出事件和状态流转时间线，在每一层按根因调查、模式分析、假设验证、实现修复四个阶段找到根因后再修，找到就停。遇到任何 Bug、测试失败或意外行为，在提出修复方案之前使用。
+description: 系统化调试：用户报的 Bug 走完整流程（立案、定位、时间线、归因含版本归因、修复设计比较候选方案、交诊断报告、修复验证、防复发），自己发现的问题走简易版；先查模块 bugs.md 历史，证据链齐了才修，修根因不修症状。遇到任何 Bug、测试失败或意外行为，在提出修复方案之前使用。
 user-invocable: true
 ---
 
-# Systematic Debugging
+<!-- 由 shared/builtin/bug-method.ts 生成（node scripts/gen-debug-skill.mjs），不要手改：改方法只改那个文件，再重新生成 -->
 
-## Overview
+# 系统化调试
 
-Random fixes waste time and create new bugs. Quick patches mask underlying issues.
+先找到原因再修。随手改会浪费时间，还会改出新的 Bug；只把症状压下去的修法会把问题藏起来。
 
-**Core principle:** ALWAYS find root cause before attempting fixes. Symptom fixes are failure.
+## 走哪条路
 
-**Violating the letter of this process is violating the spirit of debugging.**
+| 情况                                                                                              | 走哪条                                           |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| 用户报的、要查原因的 Bug：父对话派单写了 kind: "bug"（有 submit_diagnosis 工具），或用户发了 /bug | 完整流程（下面的「用户报的 Bug：完整查找流程」） |
+| 自己写代码、自测、跑测试、评审或测试验收报出的问题                                                | 简易版（下面的「修自己发现的问题」）             |
+| 只读的排查分析（分析角色）                                                                        | 完整流程的前五个阶段，改代码的部分写成建议       |
 
-## The Iron Law
+## 修自己发现的问题（简易版）
 
-```
-NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
-```
+你自己写代码、自测、跑测试、评审或测试验收报出来的问题，按这个简易版查和修，不交诊断报告、不用用户确认。用户报的 Bug 不按这个：父对话派单写了 kind: "bug"（你有 submit_diagnosis 工具），或者用户发了 /bug，面板会另给完整流程，按那个做。
 
-If you haven't completed Phase 1, you cannot propose fixes.
+1. 现象：失败的测试名、断言或报错原文、评审意见原文，照抄不改写；一堆错只盯第一条。
+2. 定位：从出错点往回读到入口，写出调用栈（一跳一行 `path:line 函数`）；用到日志的先在代码里找到打印它的位置。
+3. 根因：证据链三环（现象 ← 报错或测试输出 ← 代码 path:line 的条件或赋值）齐了才动手；推不通就先写一个失败用例或加临时日志（前缀 `[排查-<主题>]`）确认，不猜着改。是不是这次改动引入的看自己的 diff 就够；确认改动之前就坏（在独立 worktree 里用改动前的版本跑一次，不动用户的工作区），写一句「历史遗留 / 外部依赖」和依据，列进顺带发现。
+4. 修：修根因，写一句为什么这样修；把报错 try/catch 掉、加判空绕过、加重试、在原逻辑外面再兜底一层（再扫一遍、多加一条降级分支）让它「不报了」都不算修。影响面只看要改的函数的调用方和同类写法（同一模块里搜一遍，是同一个原因的一起修）；修法要动接口、数据格式或别的模块时，写两三句比较不同修法再选。
+5. 验证：能写测试的先写会失败的用例，改前失败、改后通过；再跑相关的测试和快速检查。
 
-## When to Use
+- 同一个问题修了三次还不对，停下来写清查过什么、排除了什么、卡在哪，交给父对话或用户，不在上一次的修法上再叠一层。
+- `[排查-…]` 临时日志修完删掉。
+- Bug 记录只记用户报的 Bug，自己发现的不写；值得长期记住的写项目教训。交接摘要里写一段：现象、根因（path:line）、怎么修的、验证结果。
 
-Use for ANY technical issue:
+## 用户报的 Bug：完整查找流程
 
-- Test failures
-- Bugs in production
-- Unexpected behavior
-- Performance problems
-- Build failures
-- Integration issues
+这是用户报的、要查清原因的 Bug：要找得准（根因有证据、能解释全部现象、知道是哪次改动引入的），也要修得好（比较几种修法选最优，不引入新问题）。按下面八个阶段做，阶段可以回退（归因推不通回定位或时间线，修完验证不过回归因），不能跳。
+起点：用户点名的模块或部分 → 父对话交来的模块 → 都没有时按报错原文、堆栈和 MODULE-MAP 先定到一个模块。父对话已经排除的不要重查。先查这个模块的 `bugs.md` 和历史 Bug 记录：命中的把它的复现条件、根因和排查路径当作优先假设，但要重新验证，不直接套用。
 
-**Use this ESPECIALLY when:**
+### 级别：按难度定要求
 
-- Under time pressure (emergencies make guessing tempting)
-- "Just one quick fix" seems obvious
-- You've already tried multiple fixes
-- Previous fix didn't work
-- You don't fully understand the issue
+| 级别                                                                                                                       | 典型情况                                                                   | 要求的差别                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 快速                                                                                                                       | 有报错堆栈直接指到出错行、必现、根因读代码就能确定、改一个文件             | 时间线可以只写一行（出错行的 blame 结果）；修复设计可以只有一个方案，但写一句为什么没有别的合理修法                                    |
+| 标准                                                                                                                       | 默认                                                                       | 八个阶段全做；候选方案至少两个                                                                                                         |
+| 深入                                                                                                                       | 偶发、并发和时序、跨模块、回归但找不到引入点、改了三次不对、只在某些环境出 | 涉及状态的必须排状态流转时间线、变更时间线要完整；引入点要用二分或差异法定下来；假设表至少两个假设；偶发的按原频率估算运行次数并写统计 |
+| 派单写了级别就从它开始；没写的自己判断。查的过程中发现更难就升级并写明原因；要降级写明理由（用户审阅时看得到），不悄悄降。 |
 
-**Don't skip when:**
+### 1. 立案：钉住现象，再去读代码
 
-- Issue seems simple (simple bugs have root causes too)
-- You're in a hurry (rushing guarantees rework)
-- Manager wants it fixed NOW (systematic is faster than thrashing)
+- 读代码之前先把现象钉死，写成一张「现象卡」：期望是什么、实际是什么（报错原文、截图里的字、错误的值）、怎么触发（步骤、输入、环境、版本）、多久出一次（必现 / 偶发）、什么时候开始的（以前好过吗，哪次改动或升级之后坏的）。拿不到的项写「未知」，不补猜。
+- 能复现的先复现一次（跑相关测试或命令、按步骤操作），拿到本轮的真实输出：复现一次抵得上读一小时代码。偶发的记下触发条件和频率，后面靠加日志抓。
+- 现象是「一堆错」时只盯第一条，后面的多半是它引出来的；报错原文里的类名、键名、数字原样抄进搜索，不改写。
 
-## Module Bug History First
+### 2. 定位：模块文档 → 模块代码 → 调用栈 → 日志（不能跳）
 
-在进入四阶段调试前，先确定受影响模块，并按以下顺序读取历史问题：
+- 模块文档：先读 `MODULE-MAP.md` 找到模块，再读 `modules/<模块>/README.md` 和 `bugs.md` 里相似的历史 Bug；文档写清的入口、数据流直接用，不重新探。
+- 模块代码：从文档给的入口文件开始，只读现象实际走的那条路径（入口 → 出错点）；用报错原文、函数名限定在模块目录里搜（按「搜索范围」的规则带排除），不通读整个模块、不扩散到其它模块。
+- 调用栈：把这条路径写下来，一跳一行：`入口 path:line 函数 → 下一跳 path:line 函数 → … → 出错点`，每一跳都是读过的代码。有报错堆栈时每一帧都要对得上，对不上说明读错了路径，回到上一步。
+- 最后才看日志：要用的每一条日志，先拿它的原文在代码里搜到打印它的位置（path:line），标在调用栈的哪一跳上；再按时间顺序对：哪一跳打了、哪一跳该打却没打（说明没走到）、打出来的值和那里的分支条件对不对得上。代码里搜不到出处的日志（别的进程、第三方库）写明来源，不拿它当这个模块的证据。
+- 这一层排除了才往下一层：调用栈这一段读完了，或者日志、测试证明这一层的输入输出都对，才下到它调用的依赖或底层模块；每下一层先写一句「上一层为什么排除、依据是什么」。
+- 控制深度：同一层读了不少代码还没有假设，就换成加日志或测试缩小范围，不再扩大阅读范围；下到第三层还没找到，停下来报告查过哪几层、各自的排除依据、下一步要加哪些日志或要用户提供什么。
 
-1. 根据 `MODULE-MAP.md`、代码路径、错误堆栈和入口文件确定模块名。
-2. 查找 `DOC_ROOT/modules/<模块名>/bugs.md`；如果存在，先按错误信息、症状、入口、关键词和根因类型搜索。
-3. 如果索引命中，读取对应的 `DOC_ROOT/modules/<模块名>/bugs/<bug-id>.md`，把其中的复现条件、根因、排查路径和回归测试作为优先假设；必须重新验证，不能直接套用旧结论。
-4. 如果没有命中，按下面的通用四阶段流程自行查找。
-5. 用户报的 Bug 修复并验证后，无论是否命中历史记录，都更新 `bugs.md` 和对应单 Bug 文档；记录新证据、修复路径、回归测试和防复发护栏。
+### 3. 时间线：什么时候、按什么顺序坏的，那段时间里变了什么
 
-**Bug 记录只记用户报的 Bug。** 自己写代码、自测、评审或跑测试时发现并修掉的问题（包括自己改出来的测试失败）不写 `bugs.md` 和单 Bug 文档，写进交接摘要；值得长期记住的写进项目教训。
+两条线分别排，再对齐：现象时间线说明「哪一步先坏的」，变更时间线说明「坏之前变了什么」。
 
-模块 Bug 记录必须至少包含：
+#### 看日志：先划定时间段，再排时间线
 
-- Bug ID、日期、状态和影响范围；
-- 症状、错误信息、关键词和受影响入口；
-- 复现条件与最小复现步骤；
-- 根因和数据/调用排查路径；
-- 修复文件、验证命令和回归测试；
-- 防复发护栏，以及与 OpenSpec change 的链接（若存在）。
+- 先定这次问题的时间段，只分析这一段：按现象卡里的触发时间、用户复现的时刻，定出起止（开始操作前一点 → 现象出现之后）；再用时间戳、本次运行的启动行、进程号、会话 / 请求 ID 把日志切到这一段。写明「分析范围：<文件> <起>–<止>（或第 X–Y 行），依据：……」。
+  - 这一段以外的日志（之前几次运行、别的会话、轮转前的旧文件、以前排查留下的输出）不进分析，也不拿来当证据：旧报错可能早就修了，或者是另一个问题。同一个文件里有多次运行的，按启动行或进程号分开，只取这次的。
+  - 日志没有时间戳、分不清哪段是这次的：复现前先记下文件当前的行数或大小（`wc -l`），复现后只看新增的部分（`tail -n +<行号+1>`）；能清空或换新文件的先换。时间段确实定不下来就问用户，不要整份一起看。
+  - 对比实验例外：要比较好的一次和坏的一次、改前和改后、两台机器时，可以看两段或几段，但每段都标清来源和时间（「A 改前 10:02–10:05」「B 改后 10:20–10:23」），每条证据写明出自哪一段，不混着引用。
+- 排事件时间线：把这一段里和现象相关的事件按时间排成表 `时间 | 来源（path:line 或进程） | 事件 | 关键值`，包括用户操作、请求和回调、异步任务的开始和结束、重试、报错；把现象出现的那一刻标出来。重点看「最后一个正常事件」和「第一个异常事件」之间发生了什么，问题通常就在这段间隙里；第一个异常之后的报错多半是连锁反应，先不追。多个进程或线程的日志按同一个时钟合并，时钟对不齐的写明偏差。
+- 涉及状态的一定要梳理状态流转时间线：问题和状态有关时（状态机、status 字段、标志位、生命周期、连接 / 加载 / 任务状态、界面状态），先列出这段时间里每一次变化 `时间 | 旧状态 → 新状态 | 谁改的（path:line） | 由什么事件触发`，再从代码里整理出允许的流转（哪个状态能到哪个、由什么触发），逐条对照，找出：不该发生的流转、该发生却没发生的、顺序反了的、同一时刻被两处改（竞态）、改了没通知或通知了没改、异步回来时状态已经变了还照旧处理。日志里状态变化没打全时，先在每个改状态的地方加临时日志（旧值 → 新值、调用方、触发事件；只读的分析写成建议）再复现，不靠推测补中间状态。
+- 修完复测时用同样的办法切出新的一段，排出新的时间线，和修前的逐条对比，说清哪一步变了。
 
-OpenSpec 仍然只承载一次独立变更；它在 `design.md` 中引用模块文档和 Bug 记录，归档后把长期知识回写 `docs/modules/<模块名>/`。
+#### 变更时间线
 
-## 查到哪一层为止
+- 从「以前好过」到现在，列出变了什么：`时间 | 变化（提交 / CL / rev、依赖升级、配置、数据、环境） | 碰到的文件或模块 | 和现象的关系`。代码改动先看出错模块最近的提交（`git log -p -n 10 -- <模块目录>`，P4 用 `p4 changes -m 10 <路径>/...`，SVN 用 `svn log -l 10 <路径>`）。
+- 和现象时间线对齐：现象第一次出现之前最近的那几次变化是第一批嫌疑；两处环境一好一坏的，逐项对比版本、配置、数据、系统，差的那一项就是第一个假设（差异法）。
 
-四个阶段在**一层**里做完，不是一路往底层挖：
+### 4. 归因：为什么坏、是谁那边的问题、还有没有别的可能
 
-1. **起点**：用户点名的模块或部分优先；其次是别人交来的模块；都没有时按报错原文、堆栈和 `MODULE-MAP.md` 先定到一个模块。
-2. **在这一层查**：用报错原文、函数名限定在这个模块里搜索（`rg <关键词> <模块目录>`，带上项目设置的排除目录），只读现象实际走的那条路径（入口 → 出错点），同时看这个模块最近的改动（`git log -p -n 10 -- <模块目录>`）。回归问题往往就在最近的改动里。
-   - 报错、堆栈已经给出具体文件时直接读那个文件，不做全仓搜索。
-   - 模块目录里搜完没命中，才把范围扩大一级（模块 → 调用方 → 仓库根），每一步都带排除（`-g '!node_modules' -g '!dist'`；UE 工程的排除清单见 `ue-project-structure`）。
-   - 可能超过 60 秒的搜索放后台（面板的 `run_background`）或先小范围试；不要一条全仓 grep 干等。
-3. **评估可疑代码**：能从输入一步步推到错误输出、每一步都有代码依据，才算确定，直接进入 Phase 4；推不通或有两种以上可能，先加临时日志或写针对性的测试复现，用结果确认或排除，不改代码去猜。
-4. **排除了才下一层**：这条路径读完，或者日志、测试证明这一层的输入输出都对，才进入它调用的那个依赖或底层模块；每下一层先写一句上一层的排除依据。
-5. **找到就停**：找到能完整解释现象的原因并验证后就修，修完收尾。下面「Trace Data Flow」说的追到源头，指追到能完整解释现象的那一处，不是追到最底层；路上看到的其他可疑点单独列出，不顺手修。
-6. **控制深度**：同一层读了不少代码还没有假设，换成加日志或测试缩小范围，不再扩大阅读范围；下到第三层还没找到，停下来报告查过哪几层、各自的排除依据和下一步建议。
+- 证据链三环齐全才算根因：现象 ← 日志原文（哪一行、写了什么）或测试输出 ← 代码 path:line 的哪个条件或赋值，并且能从输入一步步推到错误输出。
+- 缺一环、有两种以上可能、日志没覆盖关键分支 → 不改代码去猜：能自己复现的（跑相关测试或命令、写一个失败用例）先复现，用结果确认或排除；自己复现不了，就在调用栈上可能分叉的几处加临时日志（统一前缀 `[排查-<主题>]`，打出分支条件和关键变量的值，不打密钥和大段数据），告诉用户怎么复现、日志写在哪、要贴回哪几行，然后停下等用户（计划里这一步标等待中）；拿到日志回到定位那一步。没验证过的不写成结论，也不用「可能 / 应该 / 估计」带过：写成「假设：……，用 X 确认」。
+- 一致性检查：根因要能解释现象卡里的每一条——为什么是这个触发条件、为什么偶发（或必现）、为什么只在这个环境、为什么以前没出。有一条解释不了，说明还有别的原因或者根因找错了，不能下结论。
+- 鉴别诊断：把查过的其他可能列成假设表（已证实 / 已排除 / 待验证），每条写依据；深入级别至少两个假设。
 
-## 定位顺序：模块文档 → 模块代码 → 调用栈 → 日志
+#### 版本归因：是哪次改动引入的、是谁那边的问题
 
-拿到日志、报错就直接翻日志找「像的那一行」，是最常见的瞎猜来源：那一行是哪段代码打的、在调用链的哪一步都没对上。每一层里按这个顺序，不能跳：
+定位到出错的几行后，查清它是怎么来的。全程只读：P4 不 sync、不 revert，SVN 不 update，Git 不在用户的工作区里 checkout；要跑旧版本就开独立 worktree 或把文件取到临时目录。
 
-1. **模块文档**：`MODULE-MAP.md` → `modules/<模块>/README.md` → `bugs.md`。文档写清的入口和数据流直接用。
-2. **模块代码**：从入口读到出错点，只读现象走的那条路径。
-3. **调用栈**：写成一跳一行的 `path:line 函数 → path:line 函数 → … → 出错点`，每一跳都读过；有报错堆栈时每一帧都对得上，对不上就是读错了路径。
-4. **再对日志**：每条要用的日志先拿原文在代码里搜出打印位置（`path:line`），标到调用栈上；按时间顺序看哪一跳打了、哪一跳该打没打（没走到）、值和分支条件对不对得上。搜不到出处的日志（别的进程、第三方库）写明来源，不当成这个模块的证据。
+| 要查的                                                                                     | Git                                                                                                   | P4                                                             | SVN                                      |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------- |
+| 出错的几行最后是谁改的                                                                     | `git blame -w -C -L <起>,<止> -- <文件>`（仓库有 `.git-blame-ignore-revs` 时加 `--ignore-revs-file`） | `p4 annotate -c -i <文件>`                                     | `svn blame <文件>`                       |
+| 这段代码怎么演变的                                                                         | `git log -L <起>,<止>:<文件>`、`git log -S '<关键串>'`                                                | `p4 filelog <文件>`、`p4 describe -du <CL>`                    | `svn log -v <文件>`、`svn diff -c <rev>` |
+| 那次改动是不是「引入」                                                                     | 读那次 diff；或在独立 worktree 里把复现用例放到它的前一版上跑（`git show <rev>^:<path>` 只读取文件）  | `p4 print <文件>@<CL-1>` 取前一版对比                          | `svn cat -r <rev-1> <文件>` 取前一版对比 |
+| 回归了却找不到具体行                                                                       | `git bisect run <复现命令>`（在独立 worktree 里）                                                     | 按 changelist 列表手工二分，每次 `p4 print` 出那一版的相关文件 | 按 rev 手工二分，`svn cat` 到临时目录    |
+| 没有版本管理：用文件修改时间、依赖版本、用户描述，或者一好一坏两处环境逐项对比（差异法）。 |
 
-### 看日志：先划定时间段，再排时间线
+- blame 只说明最后谁动过这几行，不等于是它引入的：要看那次改动之前是不是就有问题。格式化、搬移文件的提交跳过去往前找。
+- 结论写成「引入于 <提交号 / CL / rev>《标题》（作者，日期），依据：blame / bisect / diff / 日志」，再标一个责任类别：本次改动（这个分支或对话里还没合进去的）、近期变更、历史遗留（一直有，这次的输入才触发）、外部依赖（第三方库、上游服务、CLI，写版本）、环境配置、数据（旧格式、脏数据）、用户操作（按设计就是这样，结论是「不是 Bug」或「要改提示」）、未确定（写清试过什么、还缺什么）。
+- 作者、提交号、时间照版本记录原文写，不加评价。
+- 引入那次的 diff 往往直接说明了修法（漏改的调用方、改错的条件、该一起改的另一处），同类搜索也从这次 diff 开始。
+- 找到就停：找到能完整解释现象的原因并验证后就进入修复设计，不再往更底层找「更根本」的问题；路上看到的其他可疑点列进「顺带发现」，不修。「全面」指根因要解释全部现象，不是往下挖得更深。
 
-- **只分析这次问题的那一段**：按触发时间、用户复现的时刻定出起止，用时间戳、本次运行的启动行、进程号、会话 / 请求 ID 切出来，写明「分析范围：<文件> <起>–<止>（或第 X–Y 行），依据：……」。之前几次运行、别的会话、轮转前的旧文件、以前排查留下的输出都不进分析：旧报错可能早就修了，或者是另一个问题。没有时间戳的，复现前记下行数（`wc -l`），复现后只看新增部分（`tail -n +<行号+1>`）；时间段定不下来就问用户，不整份一起看。
-- **对比实验例外**：好的一次 vs 坏的一次、改前 vs 改后、两台机器，可以看几段，但每段标清来源和时间（「A 改前 10:02–10:05」「B 改后 10:20–10:23」），每条证据写明出自哪一段。
-- **事件时间线**：把这一段里相关的事件排成 `时间 | 来源（path:line 或进程） | 事件 | 关键值`，标出现象出现的时刻；重点看「最后一个正常事件」到「第一个异常事件」之间发生了什么，之后的报错多半是连锁反应。多进程 / 多线程按同一个时钟合并，时钟对不齐写明偏差。
-- **涉及状态的一定要梳理状态流转时间线**：列出每一次变化 `时间 | 旧状态 → 新状态 | 谁改的（path:line） | 触发事件`，再从代码整理出允许的流转表逐条对照：不该发生的流转、该发生没发生、顺序反了、同一时刻两处改（竞态）、改了没通知或通知了没改、异步回来时状态已变还照旧处理。状态变化没打全就先在每个改状态处加 `[排查-<主题>]` 日志（旧值 → 新值、调用方、触发事件）再复现，不靠推测补中间状态。
-- 修完复测时用同样的办法切出新的一段，和修前的时间线逐条对比。
+### 5. 修复设计：比较几种修法，选最优，不默认选改得最少的
+
+1. 影响面：列出要改的地方会碰到什么，每条写「怎么受影响、用什么验证」——调用方（谁调用了要改的函数或读了要改的字段、几处，用搜索结果不估）；数据和契约（持久化格式、旧数据、接口形状、默认值、配置项）；时序和并发（异步顺序、重入、取消、超时）；平台和变体（不同 CLI、操作系统、Git / P4 / SVN、语言）；界面和文案（空、加载、报错、超长这些状态分支，多语言）；同类现场（同一个原因在别处的其他表现，从引入那次 diff 和同类写法搜索来）。
+2. 候选方案：至少两个有实质区别的修法（快速级别可以一个，写一句为什么没有别的）。常见的几组对照：在源头修 / 在边界上校验；只修这一处 / 修掉这一类写法；回退引入的那次改动 / 往前修；修实现 / 修契约（改接口或数据格式，带迁移）。
+3. 每个方案写五项，用证据说话：修得全（能解释的现象、同类现场修掉了哪些、漏了哪些）；修改面（改哪些文件、大概几处、动不动契约和数据格式）；风险（可能引入的新问题从影响面哪几条来、怎么防）；契合（合不合现有架构、模块边界、项目约定和 ADR）；可验证（能不能写出改前失败、改后通过的测试，影响面各条能不能逐项验证）。
+4. 选定并写理由。底线只有两条：修的是根因（把报错 try/catch 掉、加判空绕过、加重试、在原逻辑外面再兜底一层（再扫一遍、多加一条降级分支）让它「不报了」都不算修）、复现用例改后通过。满足底线的方案之间没有固定优先级，按上面五项权衡，写清「选 A 因为……；不选 B 因为……」。取舍提示：同类现场是同一个根因时，只修一处就是没修全；动契约能一次修掉一类问题但要迁移旧数据时，把迁移成本写进风险让用户判断；修改面差不多时选更容易验证的。
+5. 验证计划：复现用例 + 影响面每一条对应的验证（测试名、命令或手测步骤），修完按它逐条给结果。
+
+### 6. 交诊断报告，等用户确认
+
+- 你有 submit_diagnosis 工具时，前五步做完先不动手：用它交诊断报告，然后结束这一轮。用户确认了方案才写失败测试、按方案修；用户标了疑问就只查被问到的几条，交新一版，answers 按编号回答。确认之前一个文件都不改，交报告之前也不改。
+- 字段怎么装：symptom 写现象卡和级别；repro 写复现方式、本轮输出、复现率；location 写模块、层和调用栈（一跳一行）；evidence 写时间线（现象 + 变更）和证据链；rootCause 写根因、引入点和责任类别、根因怎么解释现象的每一条；excluded 写假设表里排除的和依据；fix 写候选方案的比较、选了哪个和为什么不选别的；files 写选定方案要改的文件；risk 写影响面清单；verify 写验证计划（复现用例 + 影响面逐条）。
+- 查了三层还没找到根因，同样交诊断报告：rootCause 写「未找到」，confirmed 写 false，fix 写下一步要加的日志和要用户提供什么。
+- 没有 submit_diagnosis 工具（不是父对话派来的 Bug，例如 Chat 里用户发的 /bug）：把同样的内容按「排查报告」的前 8 节写在回复里，结束这一轮，等用户回复同意再改。
+
+### 7. 修复与验证
+
+- 先有能复现的失败测试（改前失败、改后通过），没法自动化的写成可重复的手工步骤并登记为延期验证；再按确认的方案修，只改方案里的文件，要多改先交新一版说明为什么。
+- 修的是原因不是症状：把报错 try/catch 掉、加判空绕过、加重试、在原逻辑外面再兜底一层（再扫一遍、多加一条降级分支）让它「不报了」都不算修。
+- 按验证计划逐条给结果：复现用例改前改后的输出、影响面每一条的「命令 + 结果」、相关测试；偶发的按原频率跑够次数，写清跑了几次、坏了几次。
+- 按确认的方案修完验证不过：不在这次修法上接着改，把修法和失败证据写进「已排除」，回到归因，交新一版诊断报告。
+- `[排查-…]` 临时日志删掉，确实要留的按项目的日志规范改写。
+
+### 8. 防复发与归档
+
+- 回归测试留在改动里，名字说清拦住的是哪个现象。
+- 同类隐患：根因是一种写法错（少判空、顺序错、单位错、漏同步）时，从引入那次 diff 和同一模块里搜一遍同样的写法：是同一个 Bug 的其他现场就一起修（修复设计里已经算进去的），不是的列进「顺带发现」，不扩大范围。
+- 回写模块文档：这次摸清的入口、调用链、关键日志在哪打、怎么复现、易错点，交给「文档」写进 `modules/<模块>/README.md`（模块还没有文档就新建），把调用栈、日志证据、根因、引入点和验证结果原样附上；Bug 记录只记用户报的 Bug：这次就是，修完同时交给「文档」写 Bug 记录。下次同类问题先读文档就能定位。
 
 ### 排查记录：不重复返工
 
-- 一开始就维护三栏记录：**已确认的事实**（附证据）、**已排除的方向**（附排除依据）、**待验证的假设**（各自怎么验证）。每次验证后更新；换假设、续接对话时先读它，排除过的不重查，试过的修法不重试。
-- 一次只验证一个假设、只改一个变量。修复没生效就把修法和失败证据记进「已排除」，回到证据链，不在上一次的修法上叠一层。
-- 复现、复测前确认跑的是这次的代码和配置：构建产物、缓存、热更新、没重启的进程、没生效的配置、连错的环境都会造成「改了没变化」或「没改却好了」；用版本号、日志里的启动时间或一条临时日志确认生效。
-- 偶发问题按原频率估算要跑多少次才算数（十次坏一次就至少跑二三十次），写清跑了几次、坏了几次。
-
-**证据链**：根因 = 现象 ← 日志原文（或测试输出）← 代码 `path:line` 的条件或赋值，三环都有才算确定。缺一环就是假设，写成「假设：……，用 X 确认」，不写「可能 / 应该」。
-
-**证据不够时二选一，不猜着改**：
-
-- 能自己复现（相关测试、命令、新写一个失败用例）就先复现；
-- 复现不了就在调用栈上可能分叉的几处加临时日志（统一前缀 `[排查-<主题>]`，打分支条件和关键变量，不打密钥），告诉用户复现步骤、日志在哪、要贴回哪几行，然后停下等；拿到日志回到第 4 步。修完删掉这些临时日志。
-
-**回写**：这次摸清、文档里还没写的入口、调用链、关键日志位置、复现方法，写回 `modules/<模块>/README.md`（没有就新建，按项目的文档规则，通常交给文档角色）。下次同类问题先读文档就能定位。
-
-## The Four Phases
-
-You MUST complete each phase before proceeding to the next.
-
-### Phase 1: Root Cause Investigation
-
-**BEFORE attempting ANY fix:**
-
-1. **Read Error Messages Carefully**
-   - Don't skip past errors or warnings
-   - They often contain the exact solution
-   - Read stack traces completely
-   - Note line numbers, file paths, error codes
-
-2. **Reproduce Consistently**
-   - Can you trigger it reliably?
-   - What are the exact steps?
-   - Does it happen every time?
-   - If not reproducible → gather more data, don't guess
-
-3. **Check Recent Changes**
-   - What changed that could cause this?
-   - Git diff, recent commits
-   - New dependencies, config changes
-   - Environmental differences
-
-4. **Gather Evidence in Multi-Component Systems**
-
-   **WHEN system has multiple components (CI → build → signing, API → service → database):**
-
-   **BEFORE proposing fixes, add diagnostic instrumentation:**
-
-   ```
-   For EACH component boundary:
-     - Log what data enters component
-     - Log what data exits component
-     - Verify environment/config propagation
-     - Check state at each layer
-
-   Run once to gather evidence showing WHERE it breaks
-   THEN analyze evidence to identify failing component
-   THEN investigate that specific component
-   ```
-
-   **Example (multi-layer system):**
-
-   ```bash
-   # Layer 1: Workflow
-   echo "=== Secrets available in workflow: ==="
-   echo "IDENTITY: ${IDENTITY:+SET}${IDENTITY:-UNSET}"
-
-   # Layer 2: Build script
-   echo "=== Env vars in build script: ==="
-   env | grep IDENTITY || echo "IDENTITY not in environment"
-
-   # Layer 3: Signing script
-   echo "=== Keychain state: ==="
-   security list-keychains
-   security find-identity -v
-
-   # Layer 4: Actual signing
-   codesign --sign "$IDENTITY" --verbose=4 "$APP"
-   ```
-
-   **This reveals:** Which layer fails (secrets → workflow ✓, workflow → build ✗)
-
-5. **Trace Data Flow**
-
-   **WHEN error is deep in call stack:**
-
-   See `root-cause-tracing.md` in this directory for the complete backward tracing technique.
-
-   **Quick version:**
-   - Where does bad value originate?
-   - What called this with bad value?
-   - Keep tracing up until you find the source
-   - Fix at source, not at symptom
-
-### Phase 2: Pattern Analysis
-
-**Find the pattern before fixing:**
-
-1. **Find Working Examples**
-   - Locate similar working code in same codebase
-   - What works that's similar to what's broken?
-
-2. **Compare Against References**
-   - If implementing pattern, read reference implementation COMPLETELY
-   - Don't skim - read every line
-   - Understand the pattern fully before applying
-
-3. **Identify Differences**
-   - What's different between working and broken?
-   - List every difference, however small
-   - Don't assume "that can't matter"
-
-4. **Understand Dependencies**
-   - What other components does this need?
-   - What settings, config, environment?
-   - What assumptions does it make?
-
-### Phase 3: Hypothesis and Testing
-
-**Scientific method:**
-
-1. **Form Single Hypothesis**
-   - State clearly: "I think X is the root cause because Y"
-   - Write it down
-   - Be specific, not vague
-
-2. **Test Minimally**
-   - Make the SMALLEST possible change to test hypothesis
-   - One variable at a time
-   - Don't fix multiple things at once
-
-3. **Verify Before Continuing**
-   - Did it work? Yes → Phase 4
-   - Didn't work? Form NEW hypothesis
-   - DON'T add more fixes on top
-
-4. **When You Don't Know**
-   - Say "I don't understand X"
-   - Don't pretend to know
-   - Ask for help
-   - Research more
-
-### Phase 4: Implementation
-
-**Fix the root cause, not the symptom:**
-
-1. **Create Failing Test Case**
-   - Simplest possible reproduction
-   - Automated test if possible
-   - One-off test script if no framework
-   - MUST have before fixing
-   - 需要专门的 TDD 流程时，配合 `test-driven-development` 技能
-
-2. **Implement Single Fix**
-   - Address the root cause identified
-   - ONE change at a time
-   - No "while I'm here" improvements
-   - No bundled refactoring
-
-3. **Verify Fix**
-   - Test passes now?
-   - No other tests broken?
-   - Issue actually resolved?
-
-4. **If Fix Doesn't Work**
-   - STOP
-   - Count: How many fixes have you tried?
-   - If < 3: Return to Phase 1, re-analyze with new information
-   - **If ≥ 3: STOP and question the architecture (step 5 below)**
-   - DON'T attempt Fix #4 without architectural discussion
-
-5. **If 3+ Fixes Failed: Question Architecture**
-
-   **Pattern indicating architectural problem:**
-   - Each fix reveals new shared state/coupling/problem in different place
-   - Fixes require "massive refactoring" to implement
-   - Each fix creates new symptoms elsewhere
-
-   **STOP and question fundamentals:**
-   - Is this pattern fundamentally sound?
-   - Are we "sticking with it through sheer inertia"?
-   - Should we refactor architecture vs. continue fixing symptoms?
-
-   **Discuss with your human partner before attempting more fixes**
-
-   This is NOT a failed hypothesis - this is a wrong architecture.
-
-## Red Flags - STOP and Follow Process
-
-If you catch yourself thinking:
-
-- "Quick fix for now, investigate later"
-- "Just try changing X and see if it works"
-- "Add multiple changes, run tests"
-- "Skip the test, I'll manually verify"
-- "It's probably X, let me fix that"
-- "I don't fully understand but this might work"
-- "Pattern says X but I'll adapt it differently"
-- "Here are the main problems: [lists fixes without investigation]"
-- Proposing solutions before tracing data flow
-- **"One more fix attempt" (when already tried 2+)**
-- **Each fix reveals new problem in different place**
-
-**ALL of these mean: STOP. Return to Phase 1.**
-
-**If 3+ fixes failed:** Question the architecture (see Phase 4.5)
-
-## your human partner's Signals You're Doing It Wrong
-
-**Watch for these redirections:**
-
-- "Is that not happening?" - You assumed without verifying
-- "Will it show us...?" - You should have added evidence gathering
-- "Stop guessing" - You're proposing fixes without understanding
-- "Ultrathink this" - Question fundamentals, not just symptoms
-- "We're stuck?" (frustrated) - Your approach isn't working
-
-**When you see these:** STOP. Return to Phase 1.
-
-## Common Rationalizations
-
-| Excuse                                       | Reality                                                                 |
-| -------------------------------------------- | ----------------------------------------------------------------------- |
-| "Issue is simple, don't need process"        | Simple issues have root causes too. Process is fast for simple bugs.    |
-| "Emergency, no time for process"             | Systematic debugging is FASTER than guess-and-check thrashing.          |
-| "Just try this first, then investigate"      | First fix sets the pattern. Do it right from the start.                 |
-| "I'll write test after confirming fix works" | Untested fixes don't stick. Test first proves it.                       |
-| "Multiple fixes at once saves time"          | Can't isolate what worked. Causes new bugs.                             |
-| "Reference too long, I'll adapt the pattern" | Partial understanding guarantees bugs. Read it completely.              |
-| "I see the problem, let me fix it"           | Seeing symptoms ≠ understanding root cause.                             |
-| "One more fix attempt" (after 2+ failures)   | 3+ failures = architectural problem. Question pattern, don't fix again. |
-
-## Quick Reference
-
-| Phase                 | Key Activities                                         | Success Criteria            |
-| --------------------- | ------------------------------------------------------ | --------------------------- |
-| **1. Root Cause**     | Read errors, reproduce, check changes, gather evidence | Understand WHAT and WHY     |
-| **2. Pattern**        | Find working examples, compare                         | Identify differences        |
-| **3. Hypothesis**     | Form theory, test minimally                            | Confirmed or new hypothesis |
-| **4. Implementation** | Create test, fix, verify                               | Bug resolved, tests pass    |
-
-## When Process Reveals "No Root Cause"
-
-If systematic investigation reveals issue is truly environmental, timing-dependent, or external:
-
-1. You've completed the process
-2. Document what you investigated
-3. Implement appropriate handling (retry, timeout, error message)
-4. Add monitoring/logging for future investigation
-
-**But:** 95% of "no root cause" cases are incomplete investigation.
-
-## Supporting Techniques
-
-These techniques are part of systematic debugging and available in this directory:
-
-- **`root-cause-tracing.md`** - Trace bugs backward through call stack to find original trigger
-- **`defense-in-depth.md`** - Add validation at multiple layers after finding root cause
-- **`condition-based-waiting.md`** - Replace arbitrary timeouts with condition polling
-
-**Related capabilities:**
-
-- `test-driven-development`：需要专门 TDD 流程时配合使用
-- `verification-before-completion`：准备声明完成前配合使用
-
-## Real-World Impact
-
-From debugging sessions:
-
-- Systematic approach: 15-30 minutes to fix
-- Random fixes approach: 2-3 hours of thrashing
-- First-time fix rate: 95% vs 40%
-- New bugs introduced: Near zero vs common
+- 一开始就在计划里（set_plan）或回复里维护一份排查记录，分三栏：已确认的事实（附证据）、已排除的方向（附排除依据：日志原文、测试结果）、待验证的假设（各自怎么验证）。每做完一次验证就更新；新一轮开始、换假设、续接上次的对话时先读它，排除过的不再重查，试过的修法不再重试。
+- 一次只验证一个假设、只改一个变量；同时改几处就分不清是哪一处起的作用。修复没生效时把这次的修法和失败的证据记进「已排除」，回到证据链，不在上一次的修法上再叠一层。
+- 复现和复测前先确认跑的是这次的代码和配置：构建产物、缓存、热更新、没重启的进程、改了但没生效的配置、连错的环境或数据目录都会让「改了没变化」或「没改却好了」；能确认的用版本号、日志里的启动时间或一条临时日志确认生效了再看结果。
+- 偶发问题不能只跑一次就说修好了：按原来的频率估算要跑多少次才算数（例如原来十次坏一次，就至少跑二三十次），写清跑了几次、坏了几次。
+
+计划（set_plan）按这八个阶段列，快速级别可以合成「立案 → 定位和归因 → 修复设计 → 交诊断报告 → 修复和收尾」五步。交回按下面的小节写，派你的那一方按同一张表核对：
+
+### 排查报告（交回按这几节写，缺的写「无」或「未知」，不省略小节）
+
+最后一条回复先按「总结格式」写「修复」类的总结（给用户看清重点），排查报告接在总结下面（给父对话逐项核对）。
+
+1. 级别与模块：快速 / 标准 / 深入（升降过的写原因）；问题在哪个模块、哪一层，排除了哪些层（各自的依据）。
+2. 现象：期望 vs 实际、触发条件、环境和版本、频率、从什么时候开始。
+3. 复现：命令 / 测试 / 操作步骤和本轮的真实输出、复现率；复现不了写清试过什么。
+4. 调用栈：入口 path:line 函数 → … → 出错点，一跳一行。
+5. 时间线：现象时间线（分析的是哪份日志的哪一段、按时间排的关键事件、涉及状态的状态流转，标出最后一个正常和第一个异常）+ 变更时间线（从以前好过到现在，代码、依赖、配置、数据、环境变了什么）。
+6. 证据链：现象 ← 日志原文或测试输出 ← 代码 path:line 的条件或赋值。
+7. 归因：根因（一两句）；引入点（提交 / CL / rev、作者、日期、怎么确定的）和责任类别；根因怎么解释现象的每一条（为什么偶发、为什么只在这个环境、为什么以前没出）；排除的其他假设和依据。
+8. 修复设计：影响面清单；候选方案和五项比较；选了哪个、为什么不选别的；交过诊断报告的写按第几版确认的方案。
+9. 修复：改了哪些文件和哪几处。
+10. 验证：复现用例改前失败 / 改后通过的输出；影响面逐条的验证「命令 + 结果」；偶发的运行次数和结果；临时日志已清。
+11. 回归与隐患：补了哪条回归测试；同类写法搜了哪里、结果如何；顺带发现（不修）。
+12. 文档：回写了哪份模块文档 / Bug 记录，或交给了「文档」什么内容。
+
+## 附录
+
+- `root-cause-tracing.md`：错误出现在调用栈深处时，怎么沿调用链往回追到坏值的来源。
+- `defense-in-depth.md`：根因修好之后，什么时候值得在别的层再加一道校验（不能代替修根因）。
+- `condition-based-waiting.md`：测试里的等待别用固定时长，按条件等；偶发失败常常出在这里。
+- `find-polluter.sh`：找出是哪个测试污染了共享状态，让别的测试偶发失败。

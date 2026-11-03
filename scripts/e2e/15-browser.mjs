@@ -32,10 +32,14 @@ await runShard('浏览器连真实服务端', async (api) => {
 
   // 正式版前端：构建到临时目录，不碰仓库里的 dist/
   const dist = mkdtempSync(path.join(tmpdir(), 'agent-panel-e2e-dist-'))
-  execFileSync(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', dist], {
-    cwd: root,
-    stdio: 'ignore',
-  })
+  execFileSync(
+    process.execPath,
+    [path.join(root, 'node_modules/vite/bin/vite.js'), 'build', '--config', 'config/vite.config.ts', '--outDir', dist],
+    {
+      cwd: root,
+      stdio: 'ignore',
+    },
+  )
   assert.ok(existsSync(path.join(dist, 'index.html')), '前端构建出来了')
 
   const api0 = new URL(baseUrl)

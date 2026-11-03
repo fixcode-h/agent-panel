@@ -140,7 +140,7 @@ test('界面分片：目录前缀和精确文件都认，一个文件可以命�
   })
   assert.deepEqual(plan.shards, ['02-task', '09-summary'])
   // 按完整分片名筛选：只写 09 会同时跑 09-hint / 09-plans / 09-summary
-  assert.equal(plan.commands.ui, 'npx vite build --mode demo && node scripts/ui-check.mjs 02-task 09-summary')
+  assert.equal(plan.commands.ui, 'npm run build:demo && node scripts/ui-check.mjs 02-task 09-summary')
 })
 
 test('改动只命中界面时不算映射不出来；命中单测和分片时两样都跑', () => {
@@ -335,15 +335,15 @@ test('改动清单去重，空清单时不崩', () => {
   assert.match(reportChangedTests(empty), /--since/)
 })
 
-test('目录外的源码（extension/、vite.config.ts）不参与单测，不因此强制全量', () => {
+test('目录外的源码（extension/、config/vite.config.ts）不参与单测，不因此强制全量', () => {
   const plan = planChangedTests({
-    changed: ['extension/popup.js', 'vite.config.ts'],
+    changed: ['extension/popup.js', 'config/vite.config.ts'],
     testFiles: ['shared/foo.test.ts'],
     sourceFiles: ['shared/foo.ts', 'shared/foo.test.ts'],
     covers,
     imports: {},
   })
-  assert.deepEqual(plan.ignored, ['extension/popup.js', 'vite.config.ts'])
+  assert.deepEqual(plan.ignored, ['extension/popup.js', 'config/vite.config.ts'])
   assert.deepEqual(plan.tests, [])
   assert.equal(plan.full.tests.required, false, '目录外源码不会被当成「已删除」，不该触发全量')
   assert.match(reportChangedTests(plan), /不涉及测试的改动/)
@@ -424,6 +424,6 @@ test('界面影响面过宽时给全量界面检查命令，不再按分片拼�
   const changed = Object.keys(wideCovers).map((_, i) => `web/src/p${i}/a.tsx`)
   const plan = planChangedTests({ changed, testFiles: [], covers: wideCovers })
   assert.equal(plan.full.ui.required, true)
-  assert.equal(plan.commands.ui, 'npx vite build --mode demo && node scripts/ui-check.mjs')
+  assert.equal(plan.commands.ui, 'npm run build:demo && node scripts/ui-check.mjs')
   assert.match(reportChangedTests(plan), /界面检查命令（必须全量）：/)
 })

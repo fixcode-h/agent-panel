@@ -6,7 +6,7 @@
  *
  * 每个分片是一个独立进程：自己的静态服务、浏览器和演示数据，互不干扰（见 scripts/ui/harness.mjs）。
  *
- * 用法：npx vite build --mode demo && node scripts/ui-check.mjs
+ * 用法：npm run build:demo && node scripts/ui-check.mjs
  * 只跑某几个分片：node scripts/ui-check.mjs 02 06（按文件名前缀匹配；02 会跑 02、02b、02c 三片）
  * 并发：按 CPU / 内存取小；AGENT_PANEL_UI_CONCURRENCY=2 node scripts/ui-check.mjs 再往下压
  * 只跑 CI 的某一组：node scripts/ui-check.mjs --group a（分组见下面的 CI_GROUP_A）

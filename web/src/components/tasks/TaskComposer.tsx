@@ -1,27 +1,15 @@
 import { useDeferredValue, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
-import {
-  ArrowUp,
-  Bot,
-  Check,
-  ChevronDown,
-  CornerDownRight,
-  FolderGit2,
-  GitBranch,
-  MessageSquare,
-  Workflow as WorkflowIcon,
-  X,
-} from 'lucide-react'
+import { ArrowUp, Bot, Check, ChevronDown, CornerDownRight, FolderGit2, GitBranch, MessageSquare } from 'lucide-react'
 import { type ParamValues, type Project, type Task } from '@shared/schema'
-import { forSend } from '@shared/composer'
+import { forSend, takeWorkflow } from '@shared/composer'
 import { resolveParams } from '@shared/agent-role'
 import { relatedTasks } from '@shared/related'
-import { defaultCli, defaultSettings } from '@shared/settings'
+import { canStartFlow, withWorkflow } from '@shared/flow-child'
 import { api } from '@/lib/api'
 import { useData, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
-import { IconButton } from '@/components/ui/icon-button'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
 import {
@@ -48,8 +36,9 @@ export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-body text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
 /**
- * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、Agent，从「+」里可以改成按工作流执行。
- * 默认直接对话。传了 project 时项目固定。
+ * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、Agent，从「+」里可以引入工作流。
+ * 一律新建对话；引入了工作流时第一条要求点名它，由这个父对话启动（ADR 0044，不再新建老的工作流任务）。
+ * 传了 project 时项目固定。
  */
 export function TaskComposer({
   project: fixed,
@@ -63,7 +52,7 @@ export function TaskComposer({
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
 }) {
-  const { workflows, agents, projects, loading, settings } = useData()
+  const { workflows, agents, projects, loading } = useData()
   const { tasks } = useTasks()
   const [projectId, setProjectId] = useState(() => {
     try {
@@ -109,9 +98,8 @@ export function TaskComposer({
   // 没发出去的内容按模式各自记住：切到别的模式再回来还在
   const draftKey = standalone ? 'new:chat' : fixed ? `new:project:${fixed.id}` : 'new:agent'
   const [prompt, setPrompt] = useDraft(draftKey)
-  // 默认对话；在「+」里选了工作流才按流程执行
-  const [workflowId, setWorkflowId] = useState('')
-  const workflow = workflowId ? workflows.find((w) => w.id === workflowId) : undefined
+  // 「+」里引入工作流：只有项目里、用的角色能启动工作流时才有这一项；选中的插成输入框里的一张工作流卡片
+  const canFlow = !standalone && !!project && canStartFlow(agents, agentId)
   const [busy, setBusy] = useState(false)
   // 「独立分支」默认不勾选（用户要求），换了项目也回到不勾选
   const [isolate, setIsolate] = useState(false)
@@ -126,9 +114,9 @@ export function TaskComposer({
   const mention = useFileMention(project, editor, files)
   const chips = useComposerChips({ files, editor, text: prompt, change: setPrompt })
   const { addFiles, addReady, drop } = chips
-  // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
+  // 「/」菜单：按选的 CLI 列
   const slash = useSlashMenu({
-    cli: workflow ? defaultCli(settings ?? defaultSettings()) : chatRun.cli,
+    cli: chatRun.cli,
     projectId: project?.id,
     scope: 'new',
     setText: setPrompt,
@@ -143,23 +131,25 @@ export function TaskComposer({
   const canStart =
     (standalone || !!project) &&
     (!!prompt.trim() || files.attachments.length > 0) &&
-    (workflow ? true : byCli ? !!chatRun.cli : !!agent) &&
+    (byCli ? !!chatRun.cli : !!agent) &&
     // 要问用户的参数没选好时不能开始：服务端也会拒绝，这里先挡住并让「参数」按钮显示警告
-    (workflow || !missing.length) &&
+    !missing.length &&
     !busy &&
     !files.uploading
 
+  // 引入了工作流就是要新开一次，不提示发到已有的对话
+  const named = !!takeWorkflow(prompt).name
   // 项目首页：要求看起来和已有的对话是同一件事时，提示可以直接发过去接着做，不用新开一个对话从头了解
   const asked = useDeferredValue(prompt)
   const related = useMemo(
     () =>
-      fixed && !workflow
+      fixed && !named
         ? relatedTasks(
             asked,
             tasks.filter((x) => x.projectId === fixed.id && !x.parentTaskId && !x.archived && !x.imported),
           )
         : [],
-    [asked, tasks, fixed, workflow],
+    [asked, tasks, fixed, named],
   )
   const sendTo = async (id: string) => {
     if ((!prompt.trim() && !files.attachments.length) || busy || files.uploading) return
@@ -188,19 +178,20 @@ export function TaskComposer({
       try {
         if (project) localStorage.setItem('last-project', project.id)
       } catch {}
-      const byWorkflow = !!workflow
+      // 引入了工作流（行内的工作流卡片）：第一条要求点名它，由这个父对话启动（ADR 0044）
+      const said = withWorkflow(prompt, workflows)
       onCreated(
         await api.createTask({
           projectId: project?.id ?? '',
-          mode: byWorkflow ? 'workflow' : 'chat',
-          workflowId: workflow?.id ?? '',
-          agentId: byWorkflow ? '' : agentId,
-          cli: byWorkflow || !byCli ? '' : chatRun.cli,
-          model: byWorkflow || !byCli ? '' : chatRun.model,
-          effort: byWorkflow || !byCli ? '' : chatRun.effort,
+          mode: 'chat',
+          workflowId: '',
+          agentId,
+          cli: byCli ? chatRun.cli : '',
+          model: byCli ? chatRun.model : '',
+          effort: byCli ? chatRun.effort : '',
           // 参数跟着 Agent 走：没有 Agent 角色（直接对话）时没有参数可选
-          params: byWorkflow || byCli ? {} : params,
-          prompt: forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
+          params: byCli ? {} : params,
+          prompt: forSend(said, files.attachments.length ? ATTACHMENT_PROMPT : ''),
           attachments: files.attachments,
           // 只有打开了「独立分支」才传；子对话一律不建独立分支
           isolate: canIsolate && isolate ? true : undefined,
@@ -298,7 +289,7 @@ export function TaskComposer({
           actions={chips.chipActions}
           copyOf={chips.copyOfChip}
           info={chips.chipInfo}
-          placeholder={workflow ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')}
+          placeholder={t('想问什么，或者让它做什么')}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-heading leading-relaxed"
         />
@@ -317,71 +308,49 @@ export function TaskComposer({
               onMention={mention.start}
               canMention={!!project?.path}
               onSession={addReady}
-              onWorkflow={standalone || !project ? undefined : setWorkflowId}
-              workflowId={workflowId}
+              onWorkflow={canFlow ? (w) => editor.current?.insertChip({ kind: 'workflow', name: w.name }) : undefined}
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
             <ElementPickButton onPick={chips.addQuote} rootRef={chips.dropRef} className="h-8 w-8 rounded-lg" />
             <SpeechButton onText={(v) => editor.current?.insert(v)} className="h-8 w-8 rounded-lg" />
-            {workflow ? (
-              <>
-                {isolateSwitch}
-                <span
-                  className={cn(chip, 'cursor-default')}
-                  title={t('按工作流「{name}」的流程图执行', { name: workflow.name })}
-                >
-                  <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
-                  <IconButton
-                    size="2xs"
-                    icon={X}
-                    label={t('改回直接对话')}
-                    onClick={() => setWorkflowId('')}
-                    className="-mr-1"
-                  />
-                </span>
-              </>
+            {/* 用不用项目设置的 Agent 在新建时决定，对话开始后就不能再改 */}
+            {!standalone && project && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={useAgent}
+                aria-label={t('使用项目设置的角色')}
+                title={agentTitle}
+                onClick={() => setUseAgent((v) => !v)}
+                className={cn(
+                  chip,
+                  'w-8 justify-center px-0',
+                  useAgent ? 'text-accent-text hover:opacity-80' : 'text-subtle',
+                )}
+              >
+                <Bot className="h-4 w-4 shrink-0" />
+              </button>
+            )}
+            {standalone && chatRoles.length > 0 && (
+              <AgentPicker
+                scope="chat"
+                exclude={agents.filter((a) => a.origin === CHAT_ORIGIN).map((a) => a.id)}
+                onPick={(a) => setChatRole(a.id)}
+                onNone={() => setChatRole('')}
+                noneLabel={t('助手（默认）')}
+              >
+                <button type="button" className={chip} title={t('这个对话用的 Chat 角色，开始后不能再改')}>
+                  <Bot className="h-4 w-4 shrink-0" />
+                  <span className="max-w-32 truncate">{agent?.name ?? t('助手')}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                </button>
+              </AgentPicker>
+            )}
+            {isolateSwitch}
+            {byCli ? (
+              <ChatModelPicker value={chat} onChange={setChat} />
             ) : (
-              <>
-                {/* 用不用项目设置的 Agent 在新建时决定，对话开始后就不能再改 */}
-                {!standalone && project && (
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={useAgent}
-                    aria-label={t('使用项目设置的角色')}
-                    title={agentTitle}
-                    onClick={() => setUseAgent((v) => !v)}
-                    className={cn(
-                      chip,
-                      'w-8 justify-center px-0',
-                      useAgent ? 'text-accent-text hover:opacity-80' : 'text-subtle',
-                    )}
-                  >
-                    <Bot className="h-4 w-4 shrink-0" />
-                  </button>
-                )}
-                {standalone && chatRoles.length > 0 && (
-                  <AgentPicker
-                    scope="chat"
-                    exclude={agents.filter((a) => a.origin === CHAT_ORIGIN).map((a) => a.id)}
-                    onPick={(a) => setChatRole(a.id)}
-                    onNone={() => setChatRole('')}
-                    noneLabel={t('助手（默认）')}
-                  >
-                    <button type="button" className={chip} title={t('这个对话用的 Chat 角色，开始后不能再改')}>
-                      <Bot className="h-4 w-4 shrink-0" />
-                      <span className="max-w-32 truncate">{agent?.name ?? t('助手')}</span>
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                    </button>
-                  </AgentPicker>
-                )}
-                {isolateSwitch}
-                {byCli ? (
-                  <ChatModelPicker value={chat} onChange={setChat} />
-                ) : (
-                  agentParams.length > 0 && <ParamsChip params={agentParams} values={params} onChange={setParams} />
-                )}
-              </>
+              agentParams.length > 0 && <ParamsChip params={agentParams} values={params} onChange={setParams} />
             )}
 
             <button

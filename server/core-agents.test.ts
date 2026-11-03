@@ -4,9 +4,6 @@ import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'
 import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../shared/review-limits.ts'
 import {
-  BUG_METHOD,
-  BUG_REPORT_TEXT,
-  LOG_TIMELINE_TEXT,
   BUILTIN_AGENTS,
   CODING_TEXT,
   DESIGN_BRIEF_TEXT,
@@ -14,6 +11,13 @@ import {
   SELF_CHECK_TEXT,
 } from '../shared/builtin/agents.ts'
 import { isTestAgent } from '../shared/test-steps.ts'
+import {
+  BUG_ANALYSIS_TEXT,
+  BUG_FULL_TEXT,
+  BUG_REPORT_TEXT,
+  BUG_SIMPLE_TEXT,
+  LOG_TIMELINE_TEXT,
+} from '../shared/builtin/bug-method.ts'
 import { TURN_PROGRESS_RULES } from '../shared/turn-rules.ts'
 import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE } from '../shared/builtin/legacy.ts'
 import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
@@ -204,20 +208,21 @@ test('调研、评审：说明压成一句话、同一批工具一起发出，�
 test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，找到就停', () => {
   const role = (key: string) => BUILTIN_AGENTS.find((a) => a.key === key)!.agent.instructions
   // 只写「找到根因」时 Agent 会一路挖到底层：起点、往下一层的条件、停止和深度上限都要写成能照做的规则
-  assert.match(BUG_METHOD, /用户点名的模块或部分 → 父对话交来的模块/)
-  assert.match(BUG_METHOD, /这一层排除了才往下一层/)
-  assert.match(BUG_METHOD, /不要再往更底层找「更根本」的问题/)
-  assert.match(BUG_METHOD, /不改代码去猜，先加临时日志或写针对性的测试复现/)
-  assert.match(BUG_METHOD, /下到第三层还没找到/)
+  assert.match(BUG_FULL_TEXT, /用户点名的模块或部分 → 父对话交来的模块/)
+  assert.match(BUG_FULL_TEXT, /这一层排除了才往下一层/)
+  assert.match(BUG_FULL_TEXT, /不再往更底层找「更根本」的问题/)
+  assert.match(BUG_FULL_TEXT, /不改代码去猜：能自己复现的.*先复现.*加临时日志/)
+  assert.match(BUG_FULL_TEXT, /下到第三层还没找到/)
   // 用户要求：先模块文档 → 模块代码 → 调用栈，最后才看日志；日志要先在代码里找到出处；
   // 结论要三环证据链，推不通就复现或加日志等用户，不猜；摸清的模块回写文档
-  assert.match(BUG_METHOD, /模块文档 → 模块代码 → 调用栈 → 日志（不能跳）/)
-  assert.match(BUG_METHOD, /先拿它的原文在代码里搜到打印它的位置/)
-  assert.match(BUG_METHOD, /现象 ← 日志原文.*← 代码 path:line/)
-  assert.match(BUG_METHOD, /然后停下等用户（计划里这一步标等待中）/)
-  assert.match(BUG_METHOD, /交给「文档」写进 `modules\/<模块>\/README\.md`/)
+  assert.match(BUG_FULL_TEXT, /模块文档 → 模块代码 → 调用栈 → 日志（不能跳）/)
+  assert.match(BUG_FULL_TEXT, /先拿它的原文在代码里搜到打印它的位置/)
+  assert.match(BUG_FULL_TEXT, /现象 ← 日志原文.*← 代码 path:line/)
+  assert.match(BUG_FULL_TEXT, /然后停下等用户（计划里这一步标等待中）/)
+  assert.match(BUG_FULL_TEXT, /交给「文档」写进 `modules\/<模块>\/README\.md`/)
   const analyzer = role('analyzer')
   assert.match(analyzer, /## 排查报错和日志：先代码后日志/)
+  assert.ok(analyzer.includes(BUG_ANALYSIS_TEXT))
   assert.match(analyzer, /先拿原文在代码里搜到打印它的位置/)
   assert.match(analyzer, /单列一条「补模块文档」/)
 
@@ -228,31 +233,39 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.match(orch, /原文整段附进 message/)
   assert.match(orch, /调用栈、证据链（日志原文或测试输出 \+ path:line）、验证结果。缺了就交回让它补/)
 
+  // ADR 0046：平时的角色设定只带简易版，完整流程只在用户报的 Bug 里由面板注入，不让每个对话都背着它
   const worker = role('worker')
-  assert.ok(renderTemplate(worker, {}).includes(BUG_METHOD))
-  assert.match(renderTemplate(worker, {}), /Bug：在对话里按下面的「按模块逐层定位」找和修/)
+  assert.ok(renderTemplate(worker, {}).includes(BUG_SIMPLE_TEXT))
+  assert.ok(!renderTemplate(worker, {}).includes(BUG_FULL_TEXT))
+  assert.match(renderTemplate(worker, {}), /面板会另给「完整查找流程」/)
   // 「Bug 修复」工作流下线、执行角色不启动工作流（ADR 0044）
   assert.doesNotMatch(worker, /start_plan|总是按工作流/)
 
   const dev = role('developer')
-  assert.ok(renderTemplate(dev, { task: '修 Bug' }).includes(BUG_METHOD))
-  assert.ok(!renderTemplate(dev, { task: '实现' }).includes(BUG_METHOD))
-  assert.ok(!renderTemplate(dev, { task: '性能问题' }).includes(BUG_METHOD), '性能问题按基线走，不套 Bug 的逐层定位')
+  assert.ok(renderTemplate(dev, { task: '修 Bug' }).includes(BUG_SIMPLE_TEXT), '工作流里修的是流程中发现的问题：简易版')
+  assert.ok(!renderTemplate(dev, { task: '实现' }).includes(BUG_SIMPLE_TEXT))
+  assert.ok(
+    !renderTemplate(dev, { task: '性能问题' }).includes(BUG_SIMPLE_TEXT),
+    '性能问题按基线走，不套 Bug 的逐层定位',
+  )
 
   // 2026-10-29 加强（ADR 0030）：读代码之前先钉住现象、复现一次，回归先看最近改动；
   // 修复要有改前失败、改后通过的测试，修根因不修症状，再查同类隐患；主理派 Bug 按现象卡写、交回时核对回归测试
-  assert.match(BUG_METHOD, /### 第 0 步：钉住现象，再去读代码/)
-  assert.match(BUG_METHOD, /复现一次抵得上读一小时代码/)
-  assert.match(BUG_METHOD, /「以前好过」的是回归：先看最近的改动/)
-  assert.match(BUG_METHOD, /差异法/)
-  assert.match(BUG_METHOD, /先有能复现的失败测试（改前失败、改后通过）/)
-  assert.match(BUG_METHOD, /把报错 try\/catch 掉、加判空绕过、加重试、在原逻辑外面再兜底一层.*让它「不报了」都不算修/)
+  assert.match(BUG_FULL_TEXT, /### 1\. 立案：钉住现象，再去读代码/)
+  assert.match(BUG_FULL_TEXT, /复现一次抵得上读一小时代码/)
+  assert.match(BUG_FULL_TEXT, /#### 变更时间线/)
+  assert.match(BUG_FULL_TEXT, /差异法/)
+  assert.match(BUG_FULL_TEXT, /先有能复现的失败测试（改前失败、改后通过）/)
+  assert.match(
+    BUG_FULL_TEXT,
+    /把报错 try\/catch 掉、加判空绕过、加重试、在原逻辑外面再兜底一层.*让它「不报了」都不算修/,
+  )
   // 2026-10-31：叠加兜底（再扫一遍、多一条降级分支）也算修症状，主理交回核对时同样退回
   assert.match(orch, /在原逻辑外面再兜底一层.*交回让它说明为什么这是根因，说不清就退回/)
-  assert.match(BUG_METHOD, /同类隐患/)
+  assert.match(BUG_FULL_TEXT, /同类隐患/)
   // 用户 2026-10-31：日志只看本次问题的时间段（对比实验除外、要标来源），排事件时间线，涉及状态必须排状态流转时间线；
   // 维护排查记录（事实 / 已排除 / 待验证），排除过的不重查，避免返工
-  for (const text of [BUG_METHOD, analyzer]) {
+  for (const text of [BUG_FULL_TEXT, BUG_ANALYSIS_TEXT, analyzer]) {
     assert.ok(text.includes(LOG_TIMELINE_TEXT), '执行、开发和分析共用看日志的方法')
   }
   assert.match(LOG_TIMELINE_TEXT, /先定这次问题的时间段，只分析这一段/)
@@ -260,9 +273,9 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.match(LOG_TIMELINE_TEXT, /对比实验例外/)
   assert.match(LOG_TIMELINE_TEXT, /排事件时间线/)
   assert.match(LOG_TIMELINE_TEXT, /涉及状态的一定要梳理状态流转时间线/)
-  assert.match(BUG_METHOD, /### 排查记录：不重复返工/)
-  assert.match(BUG_METHOD, /排除过的不再重查，试过的修法不再重试/)
-  assert.match(BUG_METHOD, /先确认跑的是这次的代码和配置/)
+  assert.match(BUG_FULL_TEXT, /### 排查记录：不重复返工/)
+  assert.match(BUG_FULL_TEXT, /排除过的不再重查，试过的修法不再重试/)
+  assert.match(BUG_FULL_TEXT, /先确认跑的是这次的代码和配置/)
   assert.match(orch, /写清这段日志对应的时间段/)
   assert.match(orch, /Bug 派单的「现象」按现象卡写/)
   assert.match(orch, /修复能写自动化测试却没有「改前失败、改后通过」的回归用例，也交回补/)
@@ -534,12 +547,25 @@ test('交付契约：方案摘要、实现计划、排查报告、自测清单�
   assert.match(SELF_CHECK_TEXT, /复现用例改前失败、改后通过的输出都要有/)
   assert.match(SELF_CHECK_TEXT, /`\[排查-…\]` 临时日志/)
   // 排查报告：交回按固定小节，主理按同一张表核对
-  for (const s of ['现象', '复现', '范围', '时间线', '调用栈', '证据链', '根因', '修复', '验证', '回归与隐患', '文档'])
+  for (const s of [
+    '级别与模块',
+    '现象',
+    '复现',
+    '调用栈',
+    '时间线',
+    '证据链',
+    '归因',
+    '修复设计',
+    '修复',
+    '验证',
+    '回归与隐患',
+    '文档',
+  ])
     assert.ok(BUG_REPORT_TEXT.includes(`${s}：`), `排查报告缺「${s}」`)
-  assert.ok(BUG_METHOD.includes(BUG_REPORT_TEXT), 'Bug 方法的交回按排查报告写')
+  assert.ok(BUG_FULL_TEXT.includes(BUG_REPORT_TEXT), 'Bug 方法的交回按排查报告写')
   assert.match(role('orchestrator'), /按「排查报告」的小节核对/)
   assert.match(role('orchestrator'), /派单正文按固定小节写/)
-  assert.match(role('analyzer'), /排查部分按「排查报告」的小节组织/)
+  assert.match(role('analyzer'), /排查部分按「排查报告」的前 8 节组织/)
   // 写代码的硬规则同批加的两条：接口先读定义再写，边界先想再写
   assert.match(CODING_TEXT, /不凭记忆写接口/)
   assert.match(CODING_TEXT, /边界先想再写/)

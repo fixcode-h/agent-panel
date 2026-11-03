@@ -2,9 +2,9 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
-import { writeDemoBuildInfo } from './scripts/lib/demo-build-info.mjs'
-import { sourceLoc } from './scripts/lib/source-loc.mjs'
-import { settingsIndex } from './scripts/lib/settings-index.mjs'
+import { writeDemoBuildInfo } from '../scripts/lib/demo-build-info.mjs'
+import { sourceLoc } from '../scripts/lib/source-loc.mjs'
+import { settingsIndex } from '../scripts/lib/settings-index.mjs'
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
@@ -34,25 +34,26 @@ const demoBuildInfo = (): Plugin => ({
   apply: 'build',
   // closeBundle 在产物写完之后执行，此时 dist-demo 已经被清空重建过，标记不会被清掉
   closeBundle() {
-    writeDemoBuildInfo(r('.'), r('./dist-demo'))
+    writeDemoBuildInfo(r('..'), r('../dist-demo'))
   },
 })
 
 export default defineConfig(({ mode }) => {
-  // `vite build --mode demo`：后端在浏览器里模拟，做成在线演示页
+  // `npm run build:demo`（vite build --mode demo）：后端在浏览器里模拟，做成在线演示页
   const demo = mode === 'demo'
   return {
-    root: 'web',
+    // 配置文件在 config/ 下，root 用绝对路径指回仓库根的 web/，不受启动目录影响
+    root: r('../web'),
     plugins: [
       woff2Only(),
-      sourceLoc(r('./web/src')),
-      settingsIndex(r('.')),
+      sourceLoc(r('../web/src')),
+      settingsIndex(r('..')),
       react(),
       tailwindcss(),
       ...(demo ? [demoBuildInfo()] : []),
     ],
     resolve: {
-      alias: { '@': r('./web/src'), '@shared': r('./shared') },
+      alias: { '@': r('../web/src'), '@shared': r('../shared') },
     },
     define: demo ? { 'import.meta.env.VITE_DEMO': JSON.stringify('1') } : {},
     server: {

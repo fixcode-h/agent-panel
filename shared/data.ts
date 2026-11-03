@@ -50,7 +50,7 @@ export const CHAT_WORKSPACE_TOP_N = 20
  */
 export const BUILD_OUTPUTS = [
   { id: 'dist', label: t('正式版前端'), hint: t('npm run build 生成，清掉后重新构建就有了') },
-  { id: 'dist-demo', label: t('演示版前端'), hint: t('vite build --mode demo 生成，界面检查用') },
+  { id: 'dist-demo', label: t('演示版前端'), hint: t('npm run build:demo 生成，界面检查用') },
   { id: 'release', label: t('历史安装包'), hint: t('npm run package 生成，旧版本的包可以清') },
   { id: 'ui-shots', label: t('界面检查截图'), hint: t('node scripts/ui-check.mjs 生成，可以清') },
 ] as const

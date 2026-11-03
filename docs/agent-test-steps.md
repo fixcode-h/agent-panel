@@ -237,12 +237,12 @@ node scripts/changed-tests.mjs --json               # 给脚本用
    `FULL_COVERAGE_MIN_TESTS` / `FULL_COVERAGE_MIN_SHARDS`）时也建议全量。
 7. **算不出来时保守报出来**：影响面里的非测试文件有解析不了的 import（路径不存在、非字面量的动态 import）时，
    依赖闭包不完整，明确报理由并建议全量，不静默少跑。**删除 / 改名**的文件不在依赖图里，依赖它的文件反查不到，同样直接建议全量单测
-   （只对参与依赖图的目录 `shared/`、`server/`、`web/src/`、`scripts/`；`extension/*.js`、根目录 `vite.config.ts` 这类不参与单测，
+   （只对参与依赖图的目录 `shared/`、`server/`、`web/src/`、`scripts/`；`extension/*.js`、`config/vite.config.ts` 这类不参与单测，
    归入不涉及测试的改动，不会因此强制全量）。
    影响面挑不出可靠范围时给的是**全量命令**（`npm run test:unit` / 全量界面检查），不会再列一长串增量命令诱导人缩回增量。
 
 界面分片命令用完整分片名筛（`node scripts/ui-check.mjs 02-task`），写 `02` 会同时跑 02-task / 02b / 02c / 02d。
-产物必须是这次源码构建出来的（`ui-check` 会校验），所以命令里先 `npx vite build --mode demo`。
+产物必须是这次源码构建出来的（`ui-check` 会校验），所以命令里先 `npm run build:demo`。
 
 **缓存**：每个文件的 import 解析结果按 mtime + size 缓存在 `node_modules/.cache/agent-panel/import-graph.json`
 （先写临时文件再改名，多个子对话同时跑不会读到半截 JSON）；没改过的文件直接复用，改过的才重新解析。

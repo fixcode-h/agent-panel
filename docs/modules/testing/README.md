@@ -64,7 +64,7 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 | 按影响面跑增量                   | `npm run test:affected -- --since <任务基线>`                                          |
 | 全量端到端（Windows 必须走 WSL） | `npm run test:e2e:wsl`（走 WSL 默认发行版；默认发行版必须是 Ubuntu-24.04）             |
 | 只跑部分端到端分片               | `npm run test:e2e -- 03 07`                                                            |
-| 全量界面检查                     | `npx vite build --mode demo && node scripts/ui-check.mjs`（不先构建会被拦下）          |
+| 全量界面检查                     | `npm run build:demo && node scripts/ui-check.mjs`（不先构建会被拦下）                  |
 | 只跑部分界面分片                 | `node scripts/ui-check.mjs 08-misc`                                                    |
 | 只复测上次失败的分片             | `npm run test:e2e -- --failed`、`node scripts/ui-check.mjs --failed`                   |
 | 各层用例数                       | `node scripts/test-layers.mjs --report`（检查随 `npm run lint` 跑）                    |
@@ -102,7 +102,7 @@ Node.js 22+、`tsx`（单测执行器）、Playwright chromium（界面检查；
 
 - 改了编排脚本：`npm run test:unit` 里对应的 `scripts/lib/*.test.mjs`，加上一次全量 `npm run test:unit`。
 - 改了分片或 `covers.mjs`：`npm run lint`（分片登记与文档一致性），再跑受影响分片。
-- 改了界面检查：先 `npx vite build --mode demo`，再跑对应分片，看 `ui-shots/`。
+- 改了界面检查：先 `npm run build:demo`，再跑对应分片，看 `ui-shots/`。
 - 改了并发或环境默认值：分别在显式环境变量与默认值下各跑一次，核对日志里的并发值 / locale。
 
 ## 待确认

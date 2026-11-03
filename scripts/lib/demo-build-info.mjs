@@ -1,8 +1,8 @@
 /**
  * 在线演示版（dist-demo）的构建标记。
  *
- * 界面检查跑的是 `npx vite build --mode demo` 的产物：源码改了却没重新构建时，它会拿旧产物跑出
- * 「通过」或者大面积「找不到元素」，白花时间还误导人。所以构建结束时（vite.config.ts）把参与构建的
+ * 界面检查跑的是 `npm run build:demo` 的产物：源码改了却没重新构建时，它会拿旧产物跑出
+ * 「通过」或者大面积「找不到元素」，白花时间还误导人。所以构建结束时（config/vite.config.ts）把参与构建的
  * 每个源文件的短哈希写进 dist-demo/.build-info.json，ui-check 启动时重算一遍，对不上就明确失败。
  *
  * 用内容哈希而不是 mtime：切分支、git checkout 会改 mtime 但内容没变，那种不算过期。
@@ -21,7 +21,7 @@ const SOURCE_DIRS = ['web/src', 'shared', 'web/public']
 // 构建插件也决定产物（给原生标签写 data-src），改了要重新构建
 const SOURCE_FILES = [
   'web/index.html',
-  'vite.config.ts',
+  'config/vite.config.ts',
   'scripts/lib/source-loc.mjs',
   'package.json',
   'package-lock.json',
@@ -65,7 +65,7 @@ export function demoSourceInfo(root) {
   return { hash, files }
 }
 
-/** 构建结束时调用（vite.config.ts 的 demo 构建）：把这次构建用的源文件指纹写进产物目录 */
+/** 构建结束时调用（config/vite.config.ts 的 demo 构建）：把这次构建用的源文件指纹写进产物目录 */
 export function writeDemoBuildInfo(root, outDir) {
   const info = { ...demoSourceInfo(root), at: new Date().toISOString() }
   writeFileSync(path.join(outDir, BUILD_INFO_FILE), JSON.stringify(info, null, 2) + '\n')
@@ -100,7 +100,7 @@ export function checkDemoBuild(root, outDir) {
 export function describeDemoBuildProblem(root, outDir = path.join(root, 'dist-demo')) {
   const r = checkDemoBuild(root, outDir)
   if (r.ok) return null
-  const rebuild = '先运行 npx vite build --mode demo 再跑界面检查'
+  const rebuild = '先运行 npm run build:demo 再跑界面检查'
   if (r.reason === 'missing-dist') return `没有演示版产物（dist-demo/index.html）：${rebuild}`
   if (r.reason === 'missing-info' || r.reason === 'bad-info')
     return `dist-demo 里没有可用的构建标记（${BUILD_INFO_FILE}），产物来源不明：${rebuild}`

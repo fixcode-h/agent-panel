@@ -3,6 +3,7 @@ import { Loader2, Play } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import { taskSummary } from '@shared/task'
+import { canStartFlow, workflowPrompt } from '@shared/flow-child'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { useNewAskUser } from '@/components/chat/AskToggle'
@@ -18,21 +19,6 @@ export function lastProject() {
   } catch {
     return ''
   }
-}
-
-/**
- * 工作流只由父对话启动（ADR 0044）：在项目里新建一个父对话（项目的默认角色，一般是主理），
- * 第一条消息点名这个工作流（带 id，不在项目可选列表里也认得出），父对话用 start_workflow 开工作流子对话。
- * 父对话的角色启动不了工作流时，它会直接在对话里做：弹窗里先说清楚
- */
-export function workflowPrompt(workflow: { id: string; name: string }, text: string) {
-  return `用工作流「${workflow.name}」（id ${workflow.id}）做：\n${text.trim()}`
-}
-
-/** 这个项目的父对话能不能启动工作流：默认角色要能开子对话、能启动工作流 */
-function canStartFlow(agents: { id: string; canDelegate: boolean; canPlan: boolean }[], agentId: string) {
-  const a = agents.find((x) => x.id === agentId)
-  return !!a && a.canDelegate && a.canPlan
 }
 
 /**

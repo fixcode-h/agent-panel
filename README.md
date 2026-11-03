@@ -124,7 +124,7 @@ npm run typecheck
 npm run lint       # oxlint、Prettier 格式检查、规则检查和密钥扫描
 npm run test:unit  # 执行引擎、CLI 输出解析、内置模板、前端纯逻辑等单元测试
 npm run test:e2e   # 用 scripts/fake-cli 模拟各个 CLI 的输出，走完整流程（需要 macOS / Linux 和 git）
-node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo（产物和源码对不上会直接失败），分片并行跑，截图在 ui-shots/
+node scripts/ui-check.mjs   # 界面检查：先 npm run build:demo（产物和源码对不上会直接失败），分片并行跑，截图在 ui-shots/
 ```
 
 界面检查用 Playwright 驱动 chromium，第一次跑之前装一次浏览器：`npx playwright install chromium`（CI 里也是这一步）。

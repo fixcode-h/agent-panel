@@ -37,7 +37,7 @@ const PREVIEW: Record<string, string> = {
   body: '正文段落：Agent 的回复、工作流说明、项目文档都按这里的字号、颜色和段距排版。\n\n第二段：段落之间的距离就是「段落间距」。',
   strong: '正文里有 **粗体**、*斜体* 和 ~~删除线~~ 三种强调。',
   link: '详细说明见 [ADR 0034](https://example.com)，链接在正文里这样显示。',
-  code: '改完运行 `npm run lint`，配置在 `.prettierrc.json`。',
+  code: '改完运行 `npm run lint`，配置在 `config/.prettierrc.json`。',
   pre: '```ts\n// 找到这个对话最近一次工作流运行\nexport function latestRun(runs: Run[], id: string) {\n  return runs.filter((r) => r.conv === id).at(-1) ?? null\n}\n```\n\n```diff\n- onClick={() => openTab(run)}\n+ onClick={() => showGraph(run)}\n```',
   quote: '> 引用：Agent 汇报里的原话放在这里。\n>\n> > 引用里再引用换一种颜色。',
   alert:

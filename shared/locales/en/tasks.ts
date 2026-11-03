@@ -125,7 +125,6 @@ export const EN_TASKS: Record<string, string> = {
   刷新文件: 'Refresh files',
   '{n} 个改动': '{n} changes',
   点文件在中间查看: 'Click a file to view it in the center',
-  '按工作流「{name}」的流程图执行': 'Runs along the flow of workflow "{name}"',
 
   // 附件
   '一次最多附上 {n} 个文件': 'You can attach up to {n} files at a time',
@@ -227,12 +226,9 @@ export const EN_TASKS: Record<string, string> = {
   工作流: 'Workflow',
   对话: 'Chat',
   '{n} 个节点': '{n} nodes',
-  按工作流执行: 'Run as workflow',
-  '不用工作流，直接对话': 'No workflow, just chat',
-  '选了工作流就按它的流程图执行；不选时直接和角色对话。':
-    'With a workflow selected, it runs along that workflow’s flow; without one you chat with the role directly.',
-  '描述要做的事，Agent 会按工作流分工完成': 'Describe what to do and the Agents will split it up by the workflow',
-  改回直接对话: 'Back to a direct chat',
+  引入工作流: 'Use a workflow',
+  '选中的工作流插进输入框，发送时这条要求点名它，由父对话启动，在工作流子对话里按流程图执行。':
+    'The chosen workflow is inserted into the input; when sent, the request names it and the parent conversation starts it in a workflow sub-conversation.',
   '对话用的 Agent': 'Agent to chat with',
   '没有可用的 Agent': 'No agent available',
   开始执行: 'Start',

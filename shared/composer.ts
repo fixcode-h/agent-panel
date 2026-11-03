@@ -8,7 +8,7 @@
  *
  * 发出去的消息在对话里按同样的卡片显示；复制消息时卡片换成文件路径，粘贴回输入框时再按路径认回卡片（findPaths）。
  */
-export type ChipKind = 'image' | 'file' | 'skill' | 'command' | 'quote'
+export type ChipKind = 'image' | 'file' | 'skill' | 'command' | 'quote' | 'workflow'
 
 export interface Chip {
   kind: ChipKind
@@ -17,11 +17,25 @@ export interface Chip {
 
 export type Segment = { text: string } | { chip: Chip }
 
-const LABEL: Record<ChipKind, string> = { image: '图片', file: '文件', skill: '技能', command: '命令', quote: '引用' }
-const KIND: Record<string, ChipKind> = { 图片: 'image', 文件: 'file', 技能: 'skill', 命令: 'command', 引用: 'quote' }
+const LABEL: Record<ChipKind, string> = {
+  image: '图片',
+  file: '文件',
+  skill: '技能',
+  command: '命令',
+  quote: '引用',
+  workflow: '工作流',
+}
+const KIND: Record<string, ChipKind> = {
+  图片: 'image',
+  文件: 'file',
+  技能: 'skill',
+  命令: 'command',
+  引用: 'quote',
+  工作流: 'workflow',
+}
 
 /** 标记是「[类型:名字]」，名字里不会再有方括号；没写全的（例如用户在讲数组）当普通文字 */
-const marker = () => /\[(图片|文件|技能|命令|引用):([^[\]\n]+)\]/g
+const marker = () => /\[(图片|文件|技能|命令|引用|工作流):([^[\]\n]+)\]/g
 
 /** 卡片存进文字里的样子 */
 export const chipMarker = (kind: ChipKind, name: string) => `[${LABEL[kind]}:${name}]`
@@ -145,6 +159,12 @@ export function copyText(value: string, attachments: readonly AttachLike[] = [])
       out += s.text
       continue
     }
+    // 引入的工作流：复制出来照原样留着标记，粘贴回输入框还是一张工作流卡片
+    if (s.chip.kind === 'workflow') {
+      out += chipMarker(s.chip.kind, s.chip.name)
+      afterPath = false
+      continue
+    }
     if (!isAttachChip(s.chip.kind)) {
       // Skill / 命令写成「/名字」。贴着前面的路径时也要隔开，否则读出来是「D:\up\a.png/blender」，
       // 既不是那个路径也不是那条命令。正常发送时 Skill 总在最前面（forSend 提到最前），这里的空格只在异常顺序下出现
@@ -219,6 +239,20 @@ export function solePath(text: string): string | undefined {
   const [hit] = hits
   if (text.slice(0, hit.start).trim() || text.slice(hit.end).trim()) return undefined
   return hit.path
+}
+
+/**
+ * 引入的工作流卡片（「+」里的「引入工作流」）：取出第一张的名字，卡片都从文字里摘掉。
+ * 发送时由调用方把剩下的要求写成点名这个工作流的一句（shared/flow-child.ts 的 withWorkflow）
+ */
+export function takeWorkflow(value: string): { name: string; rest: string } {
+  let list = segments(value)
+  const first = list.find((s) => 'chip' in s && s.chip.kind === 'workflow')
+  for (let i = list.length - 1; i >= 0; i--) {
+    const s = list[i]
+    if ('chip' in s && s.chip.kind === 'workflow') list = removeAt(list, i)
+  }
+  return { name: first && 'chip' in first ? first.chip.name : '', rest: join(list) }
 }
 
 /** 发给服务端的内容。fallback：只放了附件、一个字没写时补上的一句话（例如「请查看附件」） */
