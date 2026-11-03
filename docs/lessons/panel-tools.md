@@ -27,3 +27,10 @@ paths: server/orch-mcp.ts, shared/panel-tools.ts, server/ask-mcp.ts
 - 规则：`cherry_pick` 这类替 Agent 执行的版本管理操作，输入要覆盖用户的真实来源：P4 的 changelist 可能是 pending，也可能是用户自己在 P4V 里提交的、提交在另一条 stream 上（当前工作区映射不到）。路径对不上时按 stream 层级换算（`server/cherry-pick.ts` 的 `streamMapper`）。P4 只守一条：面板只在目标建 pending、永远不 submit，Agent 也不能自己 p4 submit，除非用户明确要求；不再要求文件是「这个对话改过的」（用户 2026-11-02 定的，搬的只是这个 changelist 自己的改动，不会带上两条流本来的差异）。提示词里禁止的原生命令要按版本管理列全（git 的 cherry-pick / merge、p4 的 integrate / merge / copy / populate），否则工具一拒绝 Agent 就自己去做 stream copy。
 - 起因：用户 2026-11-02 报「已经提交的 cl 还是不支持 cherrypick」——20ae2be 只认这个对话自己提交的 CL、只用 `p4 where` 找路径，用户在子流上提交的 CL 1259263 被整次拒绝，Agent 随后转去分析 stream 父子关系、准备 copy up。
 - 防线：`server/cherry-pick.test.ts` 的「用户点名的已提交 changelist 在别的 stream 上」。
+
+## 替用户执行的操作：按意图认用户的要求，冲突留给用户，不撤回
+
+- 规则：`cherry_pick` 这类「只有用户要求才能做」的工具，按用户**最近几条**消息里的意图判断（`server/cherry-pick.ts` 的 `userAsked`，`ASK_WINDOW` 条），不能只看最后一条、也不能要求固定说法：用户说完「cherry-pick 过去」再补一句「只要 lua」时，补的那句没有关键词照样算。拒绝的说明里不要让 Agent 要用户按某句话回复。关键词避开日常用语（「提到」「拿到」不算）。
+- 规则：搬的过程中有冲突不撤回：Git 停在冲突的提交上（目标分支没检出时在数据目录里开固定的工作目录，不用会被清掉的 tmp），P4 把冲突标记写进目标文件并打开在 pending 里；结果写清目录、冲突文件和怎么接着做（`git cherry-pick --continue` / `--abort`），Agent 不替用户解决冲突。只有校验不合格（不是这个对话的提交、读不出版本）才整次拒绝或跳过。
+- 起因：用户 2026-11-03 报「cherry-pick 强制要求回复『cherry-pick 1267576, 只要 lua』这么一句」「有冲突也弄过去，等用户自行解决」——原来只看最后一条用户消息、有冲突整次撤回。
+- 防线：`server/cherry-pick.test.ts` 的「用户最近几条消息里要求过就算」「有冲突不撤回」两组。

@@ -5,8 +5,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'nod
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Task } from '../shared/schema.ts'
-import { cherryPickGit, cherryPickP4, userAsked } from './cherry-pick.ts'
 import type { P4Run } from './p4-split.ts'
+
+// 数据目录换成临时的：目标分支没检出时面板在数据目录里开工作目录（有冲突时留给用户），不能碰真正的 ~/.agent-panel
+process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'ap-pick-data-'))
+const { cherryPickGit, cherryPickP4, userAsked } = await import('./cherry-pick.ts')
 
 const sh = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, encoding: 'utf8' }).trim()
@@ -282,6 +285,91 @@ test('cherry-pick（P4）：别的 stream 上用户自己提交的 changelist，
       '删除的文件在目标里也删',
     )
     assert.ok(!calls.some((c) => ['integrate', 'copy', 'merge', 'submit'].includes(c[1])), '不跑流间集成，不 submit')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(target, { recursive: true, force: true })
+  }
+})
+
+test('cherry-pick：用户最近几条消息里要求过就算，不用按固定说法回复；「提到」这类不算', () => {
+  const msgs = (...xs: [string, string][]) =>
+    ({ messages: xs.map(([role, text]) => ({ role, text })) }) as unknown as Task
+  // 用户先说要搬、Agent 问一句、用户补一句：补的那句没有关键词也算
+  assert.equal(
+    userAsked(msgs(['user', '把这个 cherry-pick 过去'], ['agent', '要搬哪些？'], ['user', '只要 lua']), 'release'),
+    true,
+  )
+  assert.equal(userAsked(msgs(['user', '这个也搬过去吧']), 'release'), true)
+  // 很早以前说过，后面又聊了好几句别的：不算
+  assert.equal(
+    userAsked(msgs(['user', 'cherry-pick 过去'], ['user', 'a'], ['user', 'b'], ['user', 'c']), 'release'),
+    false,
+  )
+  assert.equal(userAsked(msgs(['user', '你提到的那个问题再看看']), 'release'), false)
+})
+
+test('cherry-pick（Git）：有冲突不撤回，停在冲突的提交上留给用户解决，写清目录和冲突文件', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ap-pick-conflict-'))
+  try {
+    sh(dir, 'init', '-q', '-b', 'main')
+    sh(dir, 'config', 'user.name', 't')
+    sh(dir, 'config', 'user.email', 't@t')
+    commit(dir, 'a.txt', 'a\n', 'base')
+    sh(dir, 'branch', 'release')
+    sh(dir, 'checkout', '-q', 'release')
+    commit(dir, 'a.txt', 'release\n', 'release change')
+    sh(dir, 'checkout', '-q', 'main')
+    const mine = commit(dir, 'a.txt', 'mine\n', 'my fix')
+    const r = await cherryPickGit(dir, 'release', taskOf(['a.txt']), [mine])
+    assert.equal(r.ok, true, r.info)
+    assert.match(r.info, /有冲突[\s\S]*a\.txt[\s\S]*git cherry-pick --continue/)
+    const at = /目录：(.+)/.exec(r.info)?.[1]?.trim() ?? ''
+    assert.ok(at && at.startsWith(process.env.AGENT_PANEL_DATA!), '目标分支没检出时在数据目录里开工作目录')
+    assert.match(readFileSync(path.join(at, 'a.txt'), 'utf8'), /<<<<<<<[\s\S]*>>>>>>>/, '冲突留在文件里')
+    assert.equal(sh(dir, 'branch', '--show-current'), 'main', '不动当前目录')
+    // 冲突没解决前再搬：那个目录不干净，说清楚
+    const again = await cherryPickGit(dir, 'release', taskOf(['a.txt']), [mine])
+    assert.equal(again.ok, false)
+    assert.match(again.info, /没提交的改动/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('cherry-pick（P4）：和目标撞在一起时不撤回，冲突标记写进目标文件、照样打开在 pending 里，留给用户解决', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ap-pick-src-'))
+  const target = mkdtempSync(path.join(tmpdir(), 'ap-pick-dst-'))
+  try {
+    mkdirSync(path.join(root, 'src'))
+    mkdirSync(path.join(target, 'src'))
+    writeFileSync(path.join(root, 'src/a.lua'), 'one\nFIVE\n')
+    // 目标里同一行也改过：合不上
+    writeFileSync(path.join(target, 'src/a.lua'), 'one\nfive-target\n')
+    const calls: string[][] = []
+    const p4 =
+      (cwd: string): P4Run =>
+      async (args) => {
+        calls.push([cwd === target ? 'dst' : 'src', ...args])
+        const [cmd] = args.filter((x) => x !== '-ztag')
+        if (cmd === 'opened') return { ok: true, out: '... depotFile //d/src/a.lua\n... action edit', err: '' }
+        if (cmd === 'where')
+          return { ok: true, out: `... path ${path.join(root, args.at(-1)!.replace('//d/', ''))}`, err: '' }
+        if (cmd === 'print') {
+          writeFileSync(args[args.indexOf('-o') + 1], 'one\nfive\n')
+          return { ok: true, out: '', err: '' }
+        }
+        if (cmd === 'change') return { ok: true, out: 'Change 43 created.', err: '' }
+        return { ok: true, out: '', err: '' }
+      }
+    const r = await cherryPickP4(root, target, taskOf([]), '8', p4)
+    assert.equal(r.ok, true, r.info)
+    assert.match(r.info, /a\.lua（编辑，有冲突）[\s\S]*留给用户解决/)
+    assert.match(readFileSync(path.join(target, 'src/a.lua'), 'utf8'), /<<<<<<< target[\s\S]*FIVE[\s\S]*>>>>>>> mine/)
+    assert.ok(
+      calls.some((c) => c[0] === 'dst' && c[1] === 'edit'),
+      '冲突的文件也打开在目标的 pending 里',
+    )
+    assert.ok(!calls.some((c) => c.includes('submit')), '不 submit')
   } finally {
     rmSync(root, { recursive: true, force: true })
     rmSync(target, { recursive: true, force: true })
