@@ -129,7 +129,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
   return (
     <div
       className={cn(
-        'group/node flex w-[264px] flex-col gap-1.5 overflow-hidden rounded-xl bg-card p-2.5 text-left shadow-card transition-[box-shadow,transform] duration-150',
+        'group/node flex w-[264px] flex-col gap-1.5 overflow-hidden rounded-xl bg-card p-2.5 text-left shadow-card ring-1 ring-line-strong transition-[box-shadow,transform] duration-150',
         'hover:shadow-pop',
         st?.card,
         v.loose && 'opacity-80 outline-1 -outline-offset-1 outline-line-strong outline-dashed',
@@ -285,7 +285,7 @@ const TermNode = memo(function TermNode({ data, selected }: NodeProps<Node<TermD
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-full bg-card py-1.5 pr-4 pl-1.5 shadow-card transition-shadow hover:shadow-pop',
+        'flex items-center gap-2 rounded-full bg-card py-1.5 pr-4 pl-1.5 shadow-card ring-1 ring-line-strong transition-shadow hover:shadow-pop',
         selected && 'node-selected',
         data.status && data.status !== 'pending' && ring[data.status],
       )}
