@@ -27,7 +27,8 @@ export function settleStopped(tk: Task, reason: StopReason): Task {
     plans: tk.plans ? structuredClone(tk.plans) : tk.plans,
     status: 'stopped',
     stopReason: reason,
-    requests: [],
+    // 诊断报告的确认（ADR 0045）不挂在 CLI 进程上：停下、重启都留着，用户随时能确认
+    requests: tk.requests.filter((r) => r.purpose === 'diagnosis'),
     apiWait: undefined,
     working: false,
     awaitingUser: false,

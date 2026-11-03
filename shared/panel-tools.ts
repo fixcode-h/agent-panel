@@ -24,6 +24,7 @@ export const PANEL_TOOL_NAMES = [
   'message_peer',
   'start_plan',
   'start_workflow',
+  'submit_diagnosis',
   'set_plan',
   'finish_plan',
   'get_status',

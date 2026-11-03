@@ -77,6 +77,7 @@ import { ensureTaskRun, runMail, runRecord, runState, sendRunMessage, statePart,
 import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
 import { flowPhase, pickFlow, workflowCatalogText, type WorkflowEntry } from './flow-child.ts'
 import { runChildFlow } from './flow-child-run.ts'
+import { submitDiagnosis, type DiagnosisInput } from './bug-diagnosis.ts'
 import { resultLine, resultOf, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
@@ -501,7 +502,7 @@ export interface Orchestra {
     message: string,
     files?: string[],
     step?: string,
-    extra?: { role?: string; route?: RouteInput; flow?: NonNullable<Task['flow']> },
+    extra?: { role?: string; route?: RouteInput; flow?: NonNullable<Task['flow']>; bug?: boolean },
   ): Promise<{ ok: boolean; id?: string; info: string }>
   /** rerun：给工作流子对话的这条消息是「同一个工作流再跑一次」（start_workflow 带 again） */
   sendToConversation(
@@ -600,6 +601,8 @@ export interface Orchestra {
   cherryPick?: EngineHost['cherryPick']
   /** 推送授权（ask_push，见 shared/push-auth.ts）：只有项目推送策略为「问一次」的顶层对话有 */
   askPush?: (input: { branch?: string; summary?: string }) => Promise<{ ok: boolean; info: string }>
+  /** Bug 诊断报告（ADR 0045）：父对话派来的 Bug 子对话才有，交了等用户确认方案再改 */
+  diagnose?: (input: DiagnosisInput) => { ok: boolean; info: string }
 }
 
 /** p4_split_changelists 的参数：从哪个 changelist 分、只分哪些文件、每类一句描述 */
@@ -731,6 +734,8 @@ export interface EngineHost {
     files?: string[]
     /** 工作流子对话（ADR 0044）：第一轮由面板按流程图跑，跑完交给执行角色收尾 */
     flow?: NonNullable<Task['flow']>
+    /** 父对话派来的 Bug（ADR 0045）：子对话修之前要交诊断报告给用户确认 */
+    bug?: boolean
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行；rerun 是让工作流子对话把同一个工作流再跑一次 */
   sendToConversation?: (
@@ -2825,6 +2830,13 @@ function takePendingRun(host: EngineHost) {
   return list.join('\n\n')
 }
 
+/** 交诊断报告（ADR 0045）：记进任务、挂成等用户确认的请求，马上落盘让界面看到 */
+function diagnoseTask(host: EngineHost, input: DiagnosisInput) {
+  const r = submitDiagnosis(host.task, input, host.newId)
+  if (r.ok) host.changed(true)
+  return r
+}
+
 /** 编排工具，绑定在调用它的节点上（主 Agent 的调度轮也有一份） */
 function makeOrchestra(
   host: EngineHost,
@@ -3068,6 +3080,7 @@ function makeOrchestra(
         files,
         ...(role && !extra?.flow && { agentId: role.id }),
         ...(extra?.flow && { flow: extra.flow }),
+        ...(extra?.bug && { bug: true }),
       })
       if (r.ok && r.id) recordRoute(host, 'child', [r.id], title.trim(), extra?.route)
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
@@ -3267,6 +3280,7 @@ function makeOrchestra(
     p4Split: host.p4Split,
     cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
     askPush: orchAskPush(host, !!ctx.chat, helper),
+    ...(task.bug && task.parentTaskId && ctx.chat && !helper && { diagnose: (x) => diagnoseTask(host, x) }),
     status: () => statusTree(host, self.id),
     spawn(tasks, step, opts) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }

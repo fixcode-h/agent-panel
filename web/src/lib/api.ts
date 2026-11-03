@@ -944,6 +944,16 @@ export const api = {
   mergeWorktree: (id: string) => request<{ task: Task; into: string }>(`/tasks/${id}/worktree/merge`, json('POST', {})),
   /** 删除独立分支（连目录一起） */
   discardWorktree: (id: string) => request<Task>(`/tasks/${id}/worktree/discard`, json('POST', {})),
+  /** 诊断报告（ADR 0045）：确认方案或带着标注退回；返回交给子对话的话，页面再作为消息发给它 */
+  decideDiagnosis: (
+    id: string,
+    version: number,
+    body: {
+      approve: boolean
+      notes: { quote: string; kind: 'question' | 'change' | 'info'; comment: string }[]
+      overall: string
+    },
+  ) => request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis/${version}`, json('POST', body)),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   /**

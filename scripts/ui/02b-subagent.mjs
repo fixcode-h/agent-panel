@@ -804,4 +804,113 @@ await runShard(import.meta.filename, async (api) => {
     await p.reload()
     await backToTask()
   }
+
+  // Bug 诊断报告（ADR 0045）：父对话页的子对话请求条上有「查看报告」，点开审阅弹窗：
+  // 有多版切换、标注能选「疑问 / 改方案 / 补充信息」，按钮是「确认方案，开始修」「有疑问，再查」
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const parent = db.tasks.find((x) => x.title.includes('购物车右上角'))
+      const kid = db.tasks.find((x) => x.parentTaskId === parent.id && !x.archived)
+      const at = new Date().toISOString()
+      const base = {
+        at,
+        symptom: '购物车角标在删除最后一件商品后仍显示 1',
+        repro: '加入一件商品后删除，角标停在 1',
+        location: 'web/src/cart/badge.ts:21 count() → store.ts:48 items',
+        evidence: '日志「[cart] remove id=3 left=0」← store.ts:52 删除后没有派发 change 事件',
+        rootCause: 'store.ts 删除最后一件时提前 return，没有通知订阅者',
+        confirmed: true,
+        excluded: '接口返回：删除接口返回的列表已经是空的',
+        fix: 'store.ts:52 去掉提前 return，统一在末尾派发 change',
+        files: ['web/src/cart/store.ts'],
+        risk: '只影响购物车的删除',
+        verify: 'store.test.ts 新增「删除最后一件后角标归零」，改前失败、改后通过',
+        answers: [],
+        overall: '',
+        before: [],
+      }
+      kid.bug = true
+      kid.diagnoses = [
+        {
+          ...base,
+          version: 1,
+          status: 'superseded',
+          notes: [{ id: 1, quote: '提前 return', kind: 'question', comment: '为什么以前没出现？' }],
+        },
+        {
+          ...base,
+          version: 2,
+          status: 'pending',
+          notes: [],
+          answers: [{ id: 1, answer: '上周的重构把派发挪进了循环里' }],
+        },
+      ]
+      kid.requests = [
+        {
+          id: 'demo-diag',
+          step: '',
+          agentId: '',
+          kind: 'confirm',
+          purpose: 'diagnosis',
+          version: 2,
+          title: '诊断报告第 2 版',
+          detail: '',
+          options: [],
+          at,
+        },
+      ]
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await p.reload()
+    await backToTask()
+    const open = p.locator('[data-status-row="child-requests"]').getByRole('button', { name: '查看报告' })
+    await open
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('诊断报告：父对话页的子对话请求条上没有「查看报告」'))
+    if (await open.count()) {
+      await open.first().click()
+      const dlg = p.getByRole('dialog')
+      await dlg
+        .getByRole('button', { name: '确认方案，开始修' })
+        .waitFor({ timeout: 10000 })
+        .catch(() => errors.push('诊断报告：弹窗里没有「确认方案，开始修」'))
+      if (!(await dlg.getByRole('radiogroup', { name: '版本' }).count())) errors.push('诊断报告：有两版却没有版本切换')
+      if (!(await dlg.getByText('上周的重构把派发挪进了循环里').count()))
+        errors.push('诊断报告：第 2 版没有显示对上一版意见的回答')
+      // 选中根因那段文字标注：标注能选种类，「有疑问，再查」随之可点
+      const target = dlg.getByText('store.ts 删除最后一件时提前 return', { exact: false }).first()
+      await target.selectText().catch(() => {})
+      await p.mouse.up().catch(() => {})
+      const mark = dlg.getByRole('button', { name: '标注', exact: true })
+      if (await mark.count()) {
+        await mark.click()
+        if (!(await dlg.getByRole('radiogroup', { name: '标注 1 的种类' }).count()))
+          errors.push('诊断报告：标注上没有「疑问 / 改方案 / 补充信息」的选择')
+        await dlg.getByRole('radio', { name: '改方案' }).first().click()
+        await dlg.getByLabel('标注 1 的意见').fill('顺便看看结算页的角标')
+        if (await dlg.getByRole('button', { name: '有疑问，再查' }).isDisabled())
+          errors.push('诊断报告：标注了还不能点「有疑问，再查」')
+      } else errors.push('诊断报告：选中文字后没有出现「标注」按钮')
+      await check(p, '诊断报告-审阅弹窗', ['诊断报告', '修复方案'])
+      // 切到第 1 版：只读，按钮收起
+      await dlg.getByRole('radio', { name: '第 1 版' }).click()
+      await settle(p)
+      if (
+        await dlg
+          .getByRole('button', { name: '确认方案，开始修' })
+          .isVisible()
+          .catch(() => false)
+      )
+        errors.push('诊断报告：切到旧的一版还能确认')
+      await check(p, '诊断报告-旧版只读')
+      await p.keyboard.press('Escape')
+    }
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.reload()
+    await backToTask()
+  }
 })

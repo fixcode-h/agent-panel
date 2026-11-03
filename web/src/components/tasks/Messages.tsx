@@ -1,4 +1,5 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
+import { BugReportLine } from './DiagnosisDialog'
 import type { AnalysisScope } from '@shared/analysis-home'
 import {
   Bell,
@@ -132,9 +133,8 @@ export function NoteMessage({
   className?: string
 }) {
   const { projects } = useData()
-  // 计划启动时写进对话的那条提示：只是把计划输入又抄了一遍，用户知道自己让 Agent 干了什么，不画出来。
-  // 按消息上的标记判断，不看文案——用户自己打的字里也可能出现「开始执行计划」
-  if (m.planStart) return null
+  if (m.planStart) return null // 计划启动的那条提示只是把计划输入又抄了一遍，不画出来（按标记判断，不看文案）
+  if (m.bugReport && task) return <BugReportLine version={m.bugReport} text={m.text} task={task} />
   if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
   const around = msgs && (m.error || m.alert) ? conversationAround(msgs, msgs.indexOf(m)) : ''
   const cwd =

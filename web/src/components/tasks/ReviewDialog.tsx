@@ -11,9 +11,27 @@ import { IconButton } from '@/components/ui/icon-button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { Markdown } from './Markdown'
 import { reviewFeedback } from '@/lib/review-feedback'
+import { Segmented } from '@/components/ui/segmented'
 import { t } from '@shared/i18n'
 
-type Note = { id: number; quote: string; comment: string; range: Range }
+type Note = { id: number; quote: string; comment: string; range: Range; kind?: string }
+
+/** 标注的种类（诊断报告的「疑问 / 改方案 / 补充信息」）：不给就是普通的「要改的地方」 */
+export interface NoteKind {
+  id: string
+  label: string
+  /** 写意见那一栏的提示 */
+  placeholder: string
+}
+
+/** 诊断报告这类有多版的文档：每一版的标题、正文和状态；不是最新那版时只读 */
+export interface ReviewVersion {
+  key: string
+  label: string
+  detail: string
+  /** 状态文字（已作废、已确认…），写在切换条下面 */
+  status?: string
+}
 
 /** 浏览器支持 CSS Custom Highlight 时用它画标注：不改渲染出来的 DOM，Markdown 重画也不会冲掉 */
 const canHighlight = () => typeof CSS !== 'undefined' && 'highlights' in CSS && typeof Highlight !== 'undefined'
@@ -28,12 +46,28 @@ export function ReviewDialog({
   open,
   onOpenChange,
   onAnswer,
+  kinds,
+  versions,
+  texts,
+  readOnly,
 }: {
-  req: TaskRequest
+  req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
   open: boolean
   onOpenChange: (open: boolean) => void
-  onAnswer: (allow: boolean, answer?: string) => Promise<void>
+  /** notes / overall 是原始的标注和整体意见：诊断报告要按种类、按编号交回，不只是一段文字 */
+  onAnswer: (
+    allow: boolean,
+    answer?: string,
+    raw?: { notes: { quote: string; comment: string; kind: string }[]; overall: string },
+  ) => Promise<void>
+  kinds?: NoteKind[]
+  /** 多版文档：最后一项是这次要审的（就是 req.detail），前面的只读 */
+  versions?: ReviewVersion[]
+  /** 按钮和提示的说法：诊断报告是「确认方案，开始修」「有疑问，再查」 */
+  texts?: { approve: string; revise: string; hintApprove: string; hintRevise: string }
+  /** 只看不审（已经确认过的报告） */
+  readOnly?: boolean
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -48,6 +82,12 @@ export function ReviewDialog({
   // 选中文字后浮在选区上方的「标注」按钮，位置相对滚动区
   const [pick, setPick] = useState<{ range: Range; quote: string; top: number; left: number } | null>(null)
   const [busy, setBusy] = useState<'' | 'allow' | 'deny'>('')
+  // 多版时看的是哪一版：默认最新那版（要审的）；旧版只读，不能标注
+  const [ver, setVer] = useState('')
+  const shown = versions?.find((v) => v.key === ver) ?? versions?.at(-1)
+  const old = !!versions && !!shown && shown !== versions.at(-1)
+  const locked = readOnly || old
+  const detail = shown?.detail ?? req.detail
 
   // 换了一个请求（退回后 Agent 改完又来确认）时标注从头开始
   useEffect(() => {
@@ -55,10 +95,11 @@ export function ReviewDialog({
     setOverall('')
     setPick(null)
     setActive(null)
+    setVer('')
   }, [req.id])
 
   useEffect(() => {
-    if (!canHighlight() || !open) return
+    if (!canHighlight() || !open || old) return
     const all = new Highlight(...notes.map((n) => n.range))
     const cur = notes.find((n) => n.id === active)
     CSS.highlights.set('review-note', all)
@@ -68,9 +109,10 @@ export function ReviewDialog({
       CSS.highlights.delete('review-note')
       CSS.highlights.delete('review-note-active')
     }
-  }, [notes, active, open])
+  }, [notes, active, open, old])
 
   const readSelection = () => {
+    if (locked) return setPick(null)
     const sel = window.getSelection()
     const doc = docRef.current
     const box = scrollRef.current
@@ -92,7 +134,7 @@ export function ReviewDialog({
   const addNote = () => {
     if (!pick) return
     const id = ++seq.current
-    setNotes((ns) => [...ns, { id, quote: pick.quote, comment: '', range: pick.range }])
+    setNotes((ns) => [...ns, { id, quote: pick.quote, comment: '', range: pick.range, kind: kinds?.[0]?.id }])
     setActive(id)
     setFocusId(id)
     setPick(null)
@@ -132,7 +174,10 @@ export function ReviewDialog({
     if (busy) return
     setBusy(allow ? 'allow' : 'deny')
     try {
-      await onAnswer(allow, allow ? undefined : reviewFeedback(notes, overall))
+      await onAnswer(allow, allow ? undefined : reviewFeedback(notes, overall), {
+        notes: notes.map((n) => ({ quote: n.quote, comment: n.comment, kind: n.kind ?? '' })),
+        overall,
+      })
       onOpenChange(false)
     } catch (e) {
       toast.error((e as Error).message)
@@ -160,8 +205,24 @@ export function ReviewDialog({
           onScroll={() => pick && setPick(null)}
         >
           <div ref={docRef} className="mx-auto max-w-[820px]" onClick={onDocClick}>
-            {req.detail ? (
-              <Markdown text={req.detail} teamNames={teamNames} />
+            {versions && versions.length > 1 && (
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <Segmented
+                  size="sm"
+                  value={shown?.key ?? ''}
+                  onChange={(v) => {
+                    // 换版本时文档重画，旧版本上画的标注位置对不上：切到旧版先不显示标注
+                    setVer(v)
+                    setPick(null)
+                  }}
+                  label={t('版本')}
+                  options={versions.map((v) => ({ id: v.key, label: v.label }))}
+                />
+                {shown?.status && <span className="text-xs text-subtle">{shown.status}</span>}
+              </div>
+            )}
+            {detail ? (
+              <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
             ) : (
               <p className="text-body text-subtle">{t('这一步没有输出内容')}</p>
             )}
@@ -223,6 +284,16 @@ export function ReviewDialog({
                     }}
                   />
                 </div>
+                {kinds && (
+                  <Segmented
+                    size="sm"
+                    value={n.kind ?? kinds[0].id}
+                    onChange={(v) => setNotes((ns) => ns.map((x) => (x.id === n.id ? { ...x, kind: v } : x)))}
+                    label={t('标注 {n} 的种类', { n: i + 1 })}
+                    options={kinds.map((k) => ({ id: k.id, label: k.label }))}
+                    className="self-start"
+                  />
+                )}
                 <Textarea
                   ref={(el) => {
                     if (el && focusId === n.id) {
@@ -237,7 +308,7 @@ export function ReviewDialog({
                     setNotes((ns) => ns.map((x) => (x.id === n.id ? { ...x, comment: v } : x)))
                   }}
                   rows={2}
-                  placeholder={t('这里要怎么改')}
+                  placeholder={kinds?.find((k) => k.id === n.kind)?.placeholder ?? t('这里要怎么改')}
                   aria-label={t('标注 {n} 的意见', { n: i + 1 })}
                   className="min-w-0 resize-none py-1.5 text-body"
                 />
@@ -258,9 +329,15 @@ export function ReviewDialog({
       </div>
       <div className="flex items-center gap-2 border-t px-5 py-3">
         <span className="min-w-0 truncate text-xs text-subtle">
-          {hasFeedback ? t('「修改」会把标注和意见交给 Agent 按意见调整') : t('没有要改的地方就点「确认」继续')}
+          {locked
+            ? readOnly
+              ? t('这一版已经处理过了，只能查看')
+              : t('这是旧的一版，只能查看；切回最新一版再标注')
+            : hasFeedback
+              ? (texts?.hintRevise ?? t('「修改」会把标注和意见交给 Agent 按意见调整'))
+              : (texts?.hintApprove ?? t('没有要改的地方就点「确认」继续'))}
         </span>
-        <div className="ml-auto flex shrink-0 gap-2">
+        <div className={cn('ml-auto flex shrink-0 gap-2', locked && 'hidden')}>
           <Button
             size="sm"
             variant="secondary"
@@ -269,11 +346,11 @@ export function ReviewDialog({
             onClick={() => void submit(false)}
           >
             {busy === 'deny' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {t('修改')}
+            {texts?.revise ?? t('修改')}
           </Button>
           <Button size="sm" disabled={!!busy} onClick={() => void submit(true)}>
             {busy === 'allow' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {t('确认')}
+            {texts?.approve ?? t('确认')}
           </Button>
         </div>
       </div>
