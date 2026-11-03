@@ -8,6 +8,7 @@ import type { HelperReport, HelperSpec, Orchestra, RouteInput } from '../shared/
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
 import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
 import { callStartWorkflow } from './start-workflow-tool.ts'
+import { callDiagnosis, DIAGNOSIS_TOOL } from './diagnosis-tool.ts'
 // 用法说明搬到了单独的文件（这个文件到了行数上限），调用方照旧从这里取
 export { orchHint } from './orch-hint.ts'
 
@@ -408,6 +409,12 @@ export function orchTools(o: Orchestra) {
                   type: 'string',
                   description: '子对话用哪个高级角色（名字）：不写用「执行」；项目里有更合适的（例如 UE 专用的）时写它',
                 },
+                kind: {
+                  type: 'string',
+                  enum: ['bug'],
+                  description:
+                    '用户报的 Bug 写 "bug"：子对话修之前先交诊断报告，用户确认了方案才改。评审、测试里发现的问题不写',
+                },
                 route: routeField(),
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },
@@ -806,6 +813,7 @@ export function orchTools(o: Orchestra) {
         ]
       : []),
     ...(o.askPush ? [ASK_PUSH_TOOL] : []),
+    ...(o.diagnose ? [DIAGNOSIS_TOOL] : []),
     ...(o.lessons
       ? [
           {
@@ -1027,6 +1035,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
     case 'start_plan':
       // 老会话里模型还记得这个工具：说清楚现在归谁，不悄悄吞掉
       return text('子对话不再启动工作流：工作流由父对话用 start_workflow 启动，按派给你的事直接做', true)
+    case 'submit_diagnosis':
+      return callDiagnosis(o, a)
     case 'start_workflow':
       return callStartWorkflow(o, a, routeOf(a?.route))
     case 'set_plan': {
@@ -1085,6 +1095,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const r = await o.createConversation(str(a?.title).trim(), message, files, str(a?.step).trim(), {
         role: str(a?.role).trim() || undefined,
         route: routeOf(a?.route),
+        bug: str(a?.kind) === 'bug',
       })
       return text(r.id ? `${r.info}（id: ${r.id}）` : r.info, !r.ok)
     }

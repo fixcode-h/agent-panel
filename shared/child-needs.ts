@@ -50,6 +50,8 @@ export interface ChildRequest {
   detail: string
   /** 只是允许 / 拒绝一个操作（命令、改文件、工具、推送授权）：行上直接给两个按钮；提问、节点确认要点进子对话答 */
   quick: boolean
+  /** 诊断报告（ADR 0045）：行上给「查看报告」，在父对话页直接打开审阅弹窗 */
+  purpose?: TaskRequest['purpose']
 }
 
 /** 说明在行上只用来悬停看，留这么多字够看清命令；完整内容在子对话的确认卡上 */
@@ -65,6 +67,7 @@ export function pendingRequest(tk: Pick<Task, 'requests'>): ChildRequest | undef
     title: r.title,
     detail: r.detail.slice(0, REQUEST_DETAIL_MAX),
     quick: r.kind === 'command' || r.kind === 'file' || r.kind === 'tool',
+    ...(r.purpose && { purpose: r.purpose }),
   }
 }
 

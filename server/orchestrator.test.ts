@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
-import { convStateText, newTask } from '../shared/task.ts'
+import { convState, convStateText, newTask, taskFacts } from '../shared/task.ts'
 import { activePlan, applyPlan } from '../shared/plan.ts'
 import { runEngineTurn, stopPlan, type AgentCall, type EngineHost } from '../shared/engine.ts'
 
@@ -794,4 +794,49 @@ test('每轮提示：写出当前第几步、计划滞后提醒和新输入先�
 
   await runEngineTurn(h)
   assert.equal(log.length, 1)
+})
+
+test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交了报告挂成等用户确认；普通子对话、父对话都没有', async () => {
+  const kid = (bug: boolean) =>
+    ({
+      ...newTask({ projectId: 'p', mode: 'chat', agentId: 'w', prompt: '修登录' } as never, undefined, '', 'b1'),
+      id: 'b1',
+      parentTaskId: 'p0',
+      rootTaskId: 'p0',
+      ...(bug && { bug: true }),
+    }) as Task
+  const bugKid = kid(true)
+  const h = host(bugKid, [], async (call) => {
+    assert.ok(call.orch?.diagnose, 'Bug 子对话有交诊断报告的工具')
+    const r = call.orch!.diagnose!({
+      symptom: '超时后一直转圈',
+      repro: '',
+      location: 'login.ts:40',
+      evidence: '日志 ← login.ts:44',
+      rootCause: '单位不对',
+      confirmed: true,
+      excluded: '',
+      fix: '换成次数上限',
+      files: ['login.ts'],
+      risk: '',
+      verify: 'login.test.ts 改前失败改后通过',
+      answers: [],
+    })
+    assert.equal(r.ok, true)
+    return { ok: true, text: '已交诊断报告，等确认' }
+  })
+  h.agents = [agent('w', '执行')]
+  await runEngineTurn(h)
+  assert.equal(bugKid.requests[0]?.purpose, 'diagnosis')
+  assert.equal(bugKid.diagnoses?.[0].status, 'pending')
+  assert.equal(convStateText(convState(taskFacts(bugKid))), convStateText('needs'), '等你确认')
+
+  for (const t0 of [kid(false), { ...kid(false), id: 'p1', parentTaskId: '' } as Task]) {
+    const h2 = host(t0, [], async (call) => {
+      assert.equal(call.orch?.diagnose, undefined)
+      return { ok: true, text: '直接修' }
+    })
+    h2.agents = [agent('w', '执行')]
+    await runEngineTurn(h2)
+  }
 })

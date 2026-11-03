@@ -21,6 +21,7 @@ import {
 import type { ProjectProposal } from './project-init.ts'
 import { AskQuestion, TaskRequest } from './task-request.ts'
 import { TaskFlow, WorkflowKind } from './task-flow-schema.ts'
+import { Diagnosis } from './bug-diagnosis-schema.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -1395,6 +1396,7 @@ export const TaskMessage = z.object({
    * 但数据照旧保留，历史任务、导出和继续执行都读得到
    */
   planStart: z.boolean().optional(),
+  bugReport: z.number().int().optional(), // Bug 诊断报告第几版（ADR 0045）：对话里画成可点开报告的一行
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
   /**
@@ -2255,8 +2257,9 @@ export const TaskData = z.object({
   remotePushAt: z.string().optional(),
   /** 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离 */
   runSeq: z.number().int().default(0),
-  /** 工作流子对话（ADR 0044）：见 task-flow-schema.ts */
-  flow: TaskFlow.optional(),
+  flow: TaskFlow.optional(), // 工作流子对话（ADR 0044）：见 task-flow-schema.ts
+  bug: z.boolean().optional(), // 父对话派来的 Bug（ADR 0045）：修之前交诊断报告 diagnoses，用户确认方案才能改
+  diagnoses: z.array(Diagnosis).optional(),
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
   imported: z
     .object({

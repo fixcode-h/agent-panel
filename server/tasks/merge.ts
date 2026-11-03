@@ -1,4 +1,5 @@
 import { coreDefinition } from '../../shared/builtin/core.ts'
+import { diagnosisGate } from '../../shared/bug-diagnosis.ts'
 import { clipWithFile } from './inbox-file.ts'
 import { planProgressKey } from '../../shared/drive.ts'
 import { randomUUID } from 'node:crypto'
@@ -88,6 +89,12 @@ export function createMerge(sc: TasksScope) {
         ok: false,
         info: '没有请求收尾：tests 里写上你在独立分支里跑了哪些编译、测试和结果。没跑通就先修好再调用；这次确实不需要测试（只改了文档、注释）时写明原因。',
       }
+    // 父对话派来的 Bug（ADR 0045）：要有用户确认过的方案，实际改动不超出方案里的文件
+    const diag = diagnosisGate(
+      tk,
+      tk.changes.map((c) => c.path),
+    )
+    if (diag) return { ok: false, info: diag }
     // 后台还在跑的命令多半就是测试：没跑完就不算跑通，合进去后回收分支还会把它掐掉
     const pending = sc.background.list(childId).filter((j) => j.state === 'queued' || j.state === 'running')
     if (pending.length)

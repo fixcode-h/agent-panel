@@ -3,6 +3,7 @@
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { flowProgress } from '@shared/flow-child'
+import { decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
@@ -3524,6 +3525,18 @@ function tasksRoute(
     task.stopReason = 'user'
     persist()
     return task
+  }
+  // 诊断报告的确认（ADR 0045）：和正式后端一样只记决定、返回交给子对话的话，页面再作为消息发过去
+  if (sub === 'diagnosis' && rid && method === 'POST') {
+    const r = decideDiagnosis(
+      task,
+      Number(rid),
+      body as Parameters<typeof decideDiagnosis>[2],
+      () => `demo-${crypto.randomUUID()}`,
+    )
+    if (!r.ok) fail(r.error)
+    persist()
+    return { task, message: r.ok ? r.message : '' }
   }
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
   if (sub === 'requests' && rid) {

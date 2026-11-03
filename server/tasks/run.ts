@@ -144,7 +144,8 @@ export function createRun(sc: TasksScope) {
       files,
       agentId,
       flow,
-    }: { title: string; message: string; files?: string[]; agentId?: string; flow?: Task['flow'] },
+      bug,
+    }: { title: string; message: string; files?: string[]; agentId?: string; flow?: Task['flow']; bug?: boolean },
   ) {
     const worker = agents.find((a) => a.origin === 'builtin:worker')
     const subId = randomUUID()
@@ -160,7 +161,13 @@ export function createRun(sc: TasksScope) {
       askUser: childAskInitial(parent),
     })
     // 工作流子对话（ADR 0044）：第一轮由引擎按流程图跑，跑完交给执行角色收尾，所以角色固定用「执行」
-    const draft = { ...newTask(input, undefined, at, subId, [], {}), id: subId, ...(flow && { flow }) }
+    // 父对话派来的 Bug（ADR 0045）：修之前要交诊断报告给用户确认
+    const draft = {
+      ...newTask(input, undefined, at, subId, [], {}),
+      id: subId,
+      ...(flow && { flow }),
+      ...(bug && { bug }),
+    }
     // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
     // 只有直接调接口没给时才退回用户消息开头
     if (title.trim()) draft.title = title.trim().slice(0, 80)
@@ -654,9 +661,9 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files, agentId, flow }) => {
+        createConversation: async ({ title, message, files, agentId, flow, bug }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          return spawnChild(entry.task, project, agents, { title, message, files, agentId, flow })
+          return spawnChild(entry.task, project, agents, { title, message, files, agentId, flow, bug })
         },
         sendToConversation: async (id, message, opts) => {
           // 同一个工作流再跑一次（start_workflow 带 again）：先把子对话的流程图状态改回「起一次新的运行」

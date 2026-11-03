@@ -364,6 +364,9 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
   switch (name) {
     case 'create_conversation':
       return as(t('新建子对话'), firstLine(a.title) || quoted, 'agent', text(a.message))
+    // 交诊断报告（ADR 0045）：报告本身在对话里有可点开的一行，这里只写根因
+    case 'submit_diagnosis':
+      return as(t('交诊断报告'), firstLine(a.rootCause), 'other', text(a.fix))
     // 父对话启动工作流（ADR 0044）：开出来的是工作流子对话，点它和子对话一样在右栏打开
     case 'start_workflow':
       return as(t('启动工作流'), firstLine(a.title) || firstLine(a.input), 'agent', text(a.input))

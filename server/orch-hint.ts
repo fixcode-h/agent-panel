@@ -32,7 +32,7 @@ export function orchHint(o: Orchestra) {
   const child =
     bg +
     (o.child
-      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.ueBuild === 'child' && !o.isolated ? 'request_build 向父对话申请编译（UE 不在子对话里编译，结果会推回来）、' : ''}${o.canSubmit ? (o.ueBuild === 'child' && o.isolated ? 'submit_merge 检查完请父对话收尾（合回原分支后由父对话申请编译，UE 不在子对话里编译）、' : o.isolated ? 'submit_merge 测试跑通、只剩合回时请父对话收尾（结果会推回来）、' : 'submit_merge 评审处置完、测试跑通、只剩收尾时请父对话验收（结果会推回来）、') : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
+      ? `${o.diagnose ? 'submit_diagnosis 修 Bug 之前交诊断报告、等用户确认方案再改、' : ''}${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.ueBuild === 'child' && !o.isolated ? 'request_build 向父对话申请编译（UE 不在子对话里编译，结果会推回来）、' : ''}${o.canSubmit ? (o.ueBuild === 'child' && o.isolated ? 'submit_merge 检查完请父对话收尾（合回原分支后由父对话申请编译，UE 不在子对话里编译）、' : o.isolated ? 'submit_merge 测试跑通、只剩合回时请父对话收尾（结果会推回来）、' : 'submit_merge 评审处置完、测试跑通、只剩收尾时请父对话验收（结果会推回来）、') : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
       : '')
   // 对话里派完子任务结束这一轮就行，结果自动交回；工作流节点要自己用 wait_agents 取
   const collect = o.autoReturn ? '派完结束这一轮，结果会自动交回' : '再用 wait_agents 取结果'
