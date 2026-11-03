@@ -1,10 +1,9 @@
 {
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "$schema": "../node_modules/oxlint/configuration_schema.json",
   "plugins": ["react", "typescript"],
   "categories": {
     "correctness": "warn"
   },
-  "ignorePatterns": ["dist", "dist-demo", "release", "build", "ui-shots", "server/exec/fixtures"],
   "rules": {
     "react-hooks/rules-of-hooks": "error",
     "react-hooks/exhaustive-deps": "warn",

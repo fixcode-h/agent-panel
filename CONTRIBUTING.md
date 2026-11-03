@@ -46,8 +46,8 @@ npm run test:affected  # 只跑受改动影响的单测；动到高风险区或�
   wsl.exe -d Ubuntu-24.04 -- bash -lc "npm run test:e2e"
   ```
 - 只改文档和样式时跑前两条即可。
-- 格式问题用 `npx prettier --write <文件>` 改掉，不要留给下一个提交。
-- 改了界面：`npm run build` 确认正式版能构建；`test:affected` 列出的界面分片用 `npx vite build --mode demo && node scripts/ui-check.mjs <分片>` 跑（需要先 `npx playwright install chromium`，截图在 `ui-shots/`）。
+- 格式问题用 `npm run format`（或 `npx prettier --write --config config/.prettierrc.json --ignore-path .gitignore --ignore-path config/.prettierignore <文件>`）改掉，不要留给下一个提交。
+- 改了界面：`npm run build` 确认正式版能构建；`test:affected` 列出的界面分片用 `npm run build:demo && node scripts/ui-check.mjs <分片>` 跑（需要先 `npx playwright install chromium`，截图在 `ui-shots/`）。
 
 ## 代码约定
 

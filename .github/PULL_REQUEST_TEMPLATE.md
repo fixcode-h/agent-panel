@@ -34,4 +34,4 @@
 - [ ] 提交说明按约定写了前缀（`新功能：` / `改进：` / `修复：` / `内部：`）
 - [ ] 修 Bug 或加功能时补了能复现问题的测试
 - [ ] 踩过的坑按 `docs/lessons/` 记了教训（没有就跳过）
-- [ ] 格式问题已用 `npx prettier --write` 改掉，CI 的检查能过
+- [ ] 格式问题已用 `npm run format`（或 `npx prettier --write --config config/.prettierrc.json --ignore-path .gitignore --ignore-path config/.prettierignore <文件>`）改掉，CI 的检查能过
