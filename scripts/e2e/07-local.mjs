@@ -25,6 +25,12 @@ import { tsxBin } from './spawn-server.mjs'
  */
 const UPDATED_AT_TOLERANCE_MS = 200
 
+/** 这个对话启动过的 CLI 进程：按面板给它记的日志认（假 CLI 的日志不分对话，同一段时间里别的对话的进程也会写进去） */
+const taskPidsOf = (call) => async (id) => {
+  const life = await call('GET', `/tasks/${id}/lifecycle`)
+  return (life.nodes?.[0]?.log ?? []).flatMap((l) => /\[CLI 进程启动\] pid=(\d+)/.exec(l)?.[1] ?? [])
+}
+
 await runShard('本机请求与设置', async (api) => {
   const {
     baseUrl: base,
@@ -49,6 +55,7 @@ await runShard('本机请求与设置', async (api) => {
     cli,
     setupBase,
   } = api
+  const taskPids = taskPidsOf(call)
   const { project, A, B, C, settings, wf } = await setupBase()
   // 自定义 CLI：配置文件写的 stdin CLI，本分片的配置读写和 ask/MCP 用例都用它
   const customSpec = JSON.parse(readFileSync(path.join(root, 'scripts/e2e/fixtures/custom-cli.json'), 'utf8'))
@@ -640,7 +647,6 @@ await runShard('本机请求与设置', async (api) => {
 
   // 对话页开着、模型没有调用 wait_user_message：面板自己把进程留着，回来发消息不再启动新进程
   {
-    const beforePids = new Set(readLog(log).map((x) => x.pid))
     let w = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
@@ -680,9 +686,10 @@ await runShard('本机请求与设置', async (api) => {
       await sleep(100)
     }
     assert.ok(w.messages.length > beforeMsgs, '用户消息和回复都记进对话')
-    const pids = readLog(log)
-      .filter((x) => !beforePids.has(x.pid))
-      .map((x) => x.pid)
+    // 按这个对话自己的日志数进程：假 CLI 的日志不分对话，前面几步的对话这时可能正好被收尾自检拉起来（ADR 0041），
+    // 按时间窗口数会把它们算进来，CI 上时好时坏（2026-11-03）
+    const pids = await taskPids(w.id)
+    assert.ok(pids.length, '对话日志里记了 CLI 进程启动')
     assert.equal(new Set(pids).size, 1, '整个过程只启动了一个 CLI 进程')
     assert.equal('queue' in w, false, '不再有排队字段')
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '接着说')
@@ -718,7 +725,6 @@ await runShard('本机请求与设置', async (api) => {
   // 保活中切换界面语言：系统提示词和 mod 的环境变量固定在旧进程里，新消息的提醒却是新语言；
   // 不能把下一句交给旧进程，要按新语言重开（和换 CLI / 模型同一条路）
   {
-    const beforePids = new Set(readLog(log).map((x) => x.pid))
     const cur = await call('GET', '/settings')
     let w = await call('POST', '/tasks', {
       projectId: project.id,
@@ -737,20 +743,28 @@ await runShard('本机请求与设置', async (api) => {
       },
       { timeout: 20000, label: '切换语言前停在等下一句' },
     )
-    const first = readLog(log).filter((x) => !beforePids.has(x.pid))
-    assert.equal(new Set(first.map((x) => x.pid)).size, 1, '第一轮只有一个进程')
+    // 进程按这个对话自己的日志认（见上一步：假 CLI 的日志不分对话，别的对话的收尾自检会混进来）
+    const first = await taskPids(w.id)
+    assert.equal(new Set(first).size, 1, '第一轮只有一个进程')
     const n = readLog(log).length
     await call('PUT', '/settings', { ...cur, language: 'en' })
     await call('POST', `/tasks/${w.id}/messages`, { text: '接着说' })
+    await waitFor(async () => (await taskPids(w.id)).some((p) => !first.includes(p)) || null, {
+      timeout: 20000,
+      label: '语言变了以后按新语言重开进程',
+    })
+    // 假 CLI 自己的 pid 和面板记的（启动脚本那一层）对不上：按这次发的那句认出新进程收到的输入
     const next = await waitFor(
-      () => {
-        const rows = readLog(log).slice(n)
-        return rows.length ? rows : null
+      () =>
+        readLog(log)
+          .slice(n)
+          .find((x) => x.input?.includes('接着说')) ?? null,
+      {
+        timeout: 20000,
+        label: '新进程收到了下一句',
       },
-      { timeout: 20000, label: '语言变了以后按新语言重开进程' },
     )
-    assert.ok(!first.some((x) => x.pid === next[0].pid), '语言变了不能把下一句交给旧语言的进程')
-    assert.match(next[0].input, /Keep writing both your reply and your reasoning \/ thinking in English/)
+    assert.match(next.input, /Keep writing both your reply and your reasoning \/ thinking in English/)
     await call('PUT', '/settings', { ...cur })
     await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: false })
     await waitDone(w.id, 15000)

@@ -819,6 +819,9 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
   })
+// 派一个慢的子任务（ADR 0042：停下父对话再继续，子任务由面板在原记录里接着跑）。续接时不再派
+if (input.includes('SPAWN_SLOW_HELPER') && input.includes('spawn_agents') && !input.includes('面板说明：上一轮'))
+  await panelCall('spawn_agents', { tasks: [{ title: '慢慢查日志', instructions: 'SLOW 慢慢查日志' }] })
 // 派一个说完一句就结束、没交结果的子任务（SUB_NO_SUMMARY 只出现在子任务的指令里，见模块顶层的 submit_result）
 if (input.includes('SPAWN_NO_SUMMARY') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {

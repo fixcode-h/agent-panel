@@ -10,7 +10,8 @@
 import type { StopReason, Task, TaskMessage } from './schema.ts'
 import { endRun as endPlanRun } from './plan.ts'
 import { t } from './i18n.ts'
-import { idleWaitDuration, pauseStep, stopReasonText, waitDuration } from './task.ts'
+import { idleWaitDuration, stopReasonText, waitDuration } from './task.ts'
+import { pauseUnit } from './run-stops.ts'
 
 /**
  * 落成已停止：结掉还在跑的轮次、步骤（记为被打断，继续执行时续接它的会话）、工作流运行和各段等待时长。
@@ -27,6 +28,7 @@ export function settleStopped(tk: Task, reason: StopReason): Task {
     status: 'stopped',
     stopReason: reason,
     requests: [],
+    apiWait: undefined,
     working: false,
     awaitingUser: false,
     prewarming: false,
@@ -40,11 +42,12 @@ export function settleStopped(tk: Task, reason: StopReason): Task {
     turns: (tk.turns ?? []).map((x) =>
       x.status === 'running' ? { ...x, status: 'stopped' as const, endedAt: tk.updatedAt } : x,
     ),
+    // 还在跑的步骤暂停（被打断，继续执行时续接它的会话），和引擎收尾同一个写法（pauseUnit，ADR 0042）；
+    // 排队等 API 名额的标记一起清掉：已经没人在排了，不清的话重启后还显示在排队
     steps: tk.steps.map((s) => {
-      const w = { ...s, waitMs: waitDuration(s, at), waitStartedAt: '' }
-      if (s.status !== 'running') return w
-      pauseStep(w, at)
-      return { ...w, status: 'pending' as const, interrupted: true }
+      const w = { ...s, waitMs: waitDuration(s, at), waitStartedAt: '', apiWait: undefined }
+      if (s.status === 'running') pauseUnit(w, at)
+      return w
     }),
   }
   // 还标着「运行中」的工作流运行：已经没人在跑它了，计划里绑着它的那一步按「工作流没走完」收口；

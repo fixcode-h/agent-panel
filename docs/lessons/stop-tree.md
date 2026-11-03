@@ -19,3 +19,9 @@ paths: server/tasks/keepalive.ts, server/tasks/actions-routes.ts, server/tasks/c
 - 规则：界面上「在跑」只给真的有人在推进的：对话停下后计划按暂停画（`PlanPanel` 的 `planPaused`），排着的子任务只在对话执行时进运行区（`helperShown`），图标不转圈；用户亲手停的对话不因为「名下还有东西在跑」藏「继续执行」。
 - 规则：只写在提示词里的「不要重派」靠不住：被打断的子任务由 `spawn_agents` 强制，要么 `resume` 它，要么 `stop_subtask` 终止后再派。
 - 防线：`server/tasks/keepalive-endlive.test.ts` 的「停父对话：在等子任务的子对话按随父对话停收口」；`shared/task-stage.test.ts` 的「运行区的子任务」；`server/engine-steps.test.ts` 的「有中断没做完的子任务时不能另派新的」；`web/src/components/tasks/child-line.test.ts` 的「独立分支还没合回」；`server/exec/parsers.test.ts` 的「Claude Code：网关出错时自己重试」。流程总表见 `docs/modules/server/README.md` 的「对话进程的生命周期」。
+
+## 停下就是暂停：子任务只用 pauseUnit / cancelUnit 收，暂停的子对话不结算父计划的等待
+
+- 规则：子任务、工作流节点停下只走 `shared/run-stops.ts` 的 `pauseUnit`（会接着做）或 `cancelUnit`（明确不做了），不在别处手写 `status` / `interrupted` / `apiWait`。子对话停下时父计划等它的那一步只有 `stopEnds`（归档、删除、被接手、`lost`）才收成失败；拉起子对话后用 `rearmKidWait` 恢复等待。继续执行时被打断的子任务由引擎 `resumePausedHelpers` 在原记录续跑。
+- 起因：用户 2026-11-03 要求「停了再启动不新开，子对话、父对话复用」，梳理出随父对话停下的子对话被收成失败、拉起后做完叫不醒父对话（ADR 0042）。
+- 防线：`shared/pause-unit.test.ts`、`shared/resume-kids.test.ts`；`scripts/e2e/09-subagent-runtime.mjs` 的「停下就是暂停」「被打断的子任务由面板接着跑」。

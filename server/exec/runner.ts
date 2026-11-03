@@ -783,6 +783,9 @@ async function runAgent(
       thinkingOf = undefined
     switch (ev.type) {
       case 'session':
+        // 会话换了（找不到、换了 CLI / 目录后开的新会话）：记下前后，「状态」诊断里看得出这是第几个会话、为什么换（ADR 0042）
+        if (task.sessions[sessionKey] && task.sessions[sessionKey] !== ev.id)
+          taskLog(task.id, '换了新会话', { key: sessionKey, from: task.sessions[sessionKey], to: ev.id })
         task.sessions[sessionKey] = ev.id
         // 会话按目录存：每个会话都记下是在哪开的，续接前先看（子任务也一样）
         task.sessionDirs[sessionKey] = cwd

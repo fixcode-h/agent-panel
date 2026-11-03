@@ -34,6 +34,7 @@ import { killTaskClis } from '../exec/orphans.ts'
 import type { TasksScope } from './scope.ts'
 import { PREWARM_PROMPT, RULE_CMD, TaskBusyError, settleBefore } from './helpers.ts'
 import { scopeError } from '../../shared/conv-mode.ts'
+import { pausedHelpers } from '../../shared/run-stops.ts'
 
 /**
  * 新建对话、发消息、预热、激活与关闭 Agent、在看 / 已读、结束流程、继续执行（连带拉起一起被打断的子对话）。
@@ -468,6 +469,16 @@ export function registerConversationRoutes(s: TasksScope) {
       // 子对话被用户直接继续时也一样：它名下连带停下的孙对话一起拉起，它在父计划里的等待恢复成等待中（ADR 0042）
       const kids = task.mode === 'chat' ? await resumeKids(entry.task) : undefined
       if (task.mode === 'chat' && task.parentTaskId) await rearmInParent(task.parentTaskId, id)
+      // 这次继续拉起了谁、没拉起谁、哪些子任务由面板接着跑：写进对话日志，「状态」诊断里看得到（ADR 0042）
+      if (task.mode === 'chat')
+        taskLog(id, '继续计划', {
+          kids: kids?.resumed.join('、') || undefined,
+          failed: kids?.failed.map((k) => k.title).join('、') || undefined,
+          helpers:
+            pausedHelpers(entry.task)
+              .map((s) => s.title)
+              .join('、') || undefined,
+        })
       const prompt = resumePrompt(task, users, kids?.resumed, kids?.failed, kids?.notes)
       const agents = await s.deps.agents.list()
       return c.json(await withoutStoppedJobs(entry.task, () => s.start(entry, prompt, false, agents, undefined, true)))
@@ -505,7 +516,12 @@ export function registerConversationRoutes(s: TasksScope) {
     const last = users.at(-1)
     const text = withAttachments(last?.prompt || last?.text || '', last?.attachments)
     if (task.mode !== 'chat') return text
-    return `${[resumeNote(task, resumed, failed), ...notes].join('\n')}\n\n原来的要求：\n${text}`
+    const note = [resumeNote(task, resumed, failed), ...notes].join('\n')
+    // 会话接得上：原来的要求已经在会话里，不再原样发一遍，免得模型当成新要求从头重做（ADR 0042）。
+    // 接不上（会话找不到、换了 CLI / 目录）时 runner 会把之前的对话整段带过去，原来的要求也在里面；
+    // 只有这一轮还没拿到会话就被停下（没有会话可接）时才附上原文
+    if (task.sessions[task.agentId]) return note
+    return `${note}\n\n原来的要求：\n${text}`
   }
 
   /**
