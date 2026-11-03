@@ -470,7 +470,7 @@ export function tasksApi(deps: {
   /** 项目设置里这个工作流的暴露项取值（每个工作流一份） */
   const paramsOf = (p: Project, workflowId: string) => p.workflowParams[workflowId] ?? {}
 
-  /** 子对话 Agent 能选的工作流：项目默认 + 可选列表，按名称、说明和节点概览交给它挑 */
+  /** 父对话能启动的工作流（ADR 0044）：项目默认 + 可选列表，按名称、说明、适用场景和节点概览交给它挑 */
   function workflowCatalog(project: Project, all: Workflow[], fallback?: Workflow) {
     const picked = [fallback, ...project.workflowIds.map((id) => all.find((w) => w.id === id))]
       .filter((w): w is Workflow => !!w)
@@ -479,6 +479,9 @@ export function tasksApi(deps: {
       id: w.id,
       name: w.name,
       description: w.description,
+      when: w.when,
+      notFor: w.notFor,
+      kind: w.kind,
       steps: topoOrder(entryFlow(w))
         .map((n) => n.title.trim())
         .filter(Boolean)

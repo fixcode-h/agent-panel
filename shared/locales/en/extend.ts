@@ -145,9 +145,9 @@ export const EN_EXTEND: Record<string, string> = {
   能开启子对话: 'Can start sub-conversations',
   '项目顶层的对话里可以把消息交给子对话，或者新建子对话；子对话本身不能再分派。':
     'In a top-level project conversation it can hand messages to a sub-conversation or create one. Sub-conversations cannot delegate further.',
-  能启动计划: 'Can start plans',
-  '需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。':
-    'Runs a workflow plan for full processes or larger changes. When off, it only works directly in the current conversation.',
+  能启动工作流: 'Can start workflows',
+  '父对话可以按工作流开工作流子对话（还要能开启子对话）；子对话一律不能启动工作流。':
+    'A parent conversation can start a workflow as a workflow sub-conversation (also needs sub-conversations enabled). Sub-conversations never start workflows.',
   '只对子对话生效：勾上后子对话里不能执行这个角色，点名它会自动转交父对话创建子任务，子对话的计划步骤立即标完成、不会被它卡住；父对话和工作流节点里照常可以直接派它。':
     'Only applies to sub-conversations: when on, a sub-conversation cannot run this role — naming it there hands the subtask to the parent conversation instead, and the sub-conversation’s plan step is marked done right away so it is not blocked. Parent conversations and workflow nodes can still run it directly.',
   '拖动调整顺序（也可以按 Alt + 方向键），越靠前的设定越先交给它':

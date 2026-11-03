@@ -867,6 +867,15 @@ if (
   await panelCall('set_plan', { title: '等子对话', steps: [{ title: '派子对话改登录' }] })
   await panelCall('create_conversation', { title: '改登录', message: 'SLOW 改登录页', step: '1' })
 }
+// 父对话按工作流做（ADR 0044）：列一步计划、用 start_workflow 开工作流子对话挂在这一步上。
+// 工作流名字写在要求里（START_WORKFLOW:<名字>），继续执行的续接提示里还有原来的要求，不再开第二个
+{
+  const wf = /START_WORKFLOW:(\S+)/.exec(input)?.[1]
+  if (wf && input.includes('start_workflow') && input.includes('set_plan') && !input.includes('面板说明：上一轮')) {
+    await panelCall('set_plan', { title: '按工作流做', steps: [{ title: '工作流做功能' }] })
+    await panelCall('start_workflow', { workflow: wf, input: '做功能', title: '工作流做功能', step: '1' })
+  }
+}
 // 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
 if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {
   for (let i = 1; i <= 6; i++)

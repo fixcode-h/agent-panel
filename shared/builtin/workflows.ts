@@ -12,9 +12,10 @@ import { autoLayout, END, START } from '../flow.ts'
 import { DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 
 /**
- * 内置工作流：项目常驻的「通用项目」「UE 项目」，加上规范开发、迁移、Bug、架构、评审、依赖、发布准备和美术资产链。
+ * 内置工作流：项目常驻的「通用项目」「UE 项目」，加上规范开发、迁移、架构、评审、依赖、发布准备和美术资产链。
  * 启动时全部自动装一次（见 install.ts 的 seedProjectWorkflows），用户删掉的不再装回来。
- * 改代码的工作流都在子对话里跑，只做到「实现 + 快速检查 + 文档同步」，评审、完整测试和合回由执行角色收尾（见 CHILD_RULES）。
+ * 工作流只由父对话启动（ADR 0044），跑在工作流子对话里；改代码的只做到「实现 + 快速检查 + 文档同步」，
+ * 评审、完整测试和合回由那个子对话的执行角色收尾（见 CHILD_RULES）。when / notFor / kind 是父对话挑工作流看的。
  * 节点里的 agent 写内置 Agent 的 key（./agents.ts），装的时候换成本机的 Agent id。
  * 节点说明是交给 CLI 的提示词，不翻译。
  */
@@ -70,6 +71,10 @@ export interface BuiltinWorkflow {
   document: string
   /** 对外暴露给项目的配置项 */
   expose?: WorkflowExpose[]
+  /** 父对话挑工作流看的（ADR 0044）：什么时候用、什么时候不用、改不改代码。旧定义（legacy-*.ts）没有 */
+  when?: string
+  notFor?: string
+  kind?: 'change' | 'readonly'
   flows: FlowSpec[]
 }
 
@@ -110,11 +115,11 @@ const DOC_ROOT: WorkflowExpose = {
 }
 
 /**
- * 改代码的工作流都由子对话（执行角色）用 start_plan 启动，只是子对话计划里的一个主步骤。
- * 收尾前评审、评审后的完整测试和编译、合回父对话分支（submit_merge）都由执行角色在工作流之后做，
+ * 改代码的工作流由父对话启动、跑在工作流子对话里（ADR 0044），流程图就是那个子对话计划里的一个主步骤。
+ * 收尾前评审、评审后的完整测试和编译、合回父对话分支（submit_merge）都由那个子对话的执行角色在流程图跑完后做，
  * 工作流里再放评审、完整验收或提交节点就会重复，还会把顺序弄反（完整测试跑在评审前面）。
  */
-const CHILD_RULES = `- 这个工作流由子对话用 start_plan 启动，只做到「实现 + 快速检查 + 文档同步」：收尾前评审（只看这次的 diff，带交接单）、评审后的完整测试和编译、合回父对话分支（submit_merge）由执行角色在工作流跑完后按它的规则做，工作流里不放评审、完整验收和提交节点。
+const CHILD_RULES = `- 这个工作流由父对话启动，跑在工作流子对话里，只做到「实现 + 快速检查 + 文档同步」：收尾前评审（只看这次的 diff，带交接单）、评审后的完整测试和编译、合回父对话分支（submit_merge）由这个子对话的执行角色在流程图跑完后按它的规则做，工作流里不放评审、完整验收和提交节点。
 - 实现节点改完只跑项目测试步骤里标「快速」的检查（类型检查、代码检查这类），记下命令和结果；完整测试和编译留到评审之后。
 - 要落盘的文档交给「文档」角色写进文档根；Bug 记录只记用户报的 Bug，开发、自测、评审中自己发现的问题不写。
 - 推送、PR、submit、合并到主干由父对话决定，子对话不执行、不询问、也不建议。
@@ -130,23 +135,26 @@ const DOCS_NODE: NodeSpec = {
     '把这次改动同步进模块文档：职责、入口、数据流或已知问题变了才改，改到的模块还没有文档时补上；没有要更新的写明原因。这次修的是用户报的 Bug 才写 Bug 记录。',
 }
 
-/** 「通用项目」：任何类型的项目都能用的常驻流程，也是子对话改代码时默认用的工作流 */
+/** 「通用项目」：任何类型的项目都能用的常驻流程，也是父对话起正式功能开发时默认用的工作流 */
 export const GENERAL: BuiltinWorkflow = {
   key: GENERAL_KEY,
   name: GENERAL_NAME,
   description: '项目默认的工作流：识别现场并确认方案 → 实现并跑快速检查 → 同步文档；评审、完整测试和合回由子对话收尾',
   category: '项目',
+  when: '正式的功能开发：跨模块、要先确认方案再动手',
+  notFor: '小改动、Bug、问答',
+  kind: 'change',
   main: 'orchestrator',
   members: [
     ['orchestrator', '项目对话的统筹：把用户需求分给合适的子对话'],
-    ['worker', '子对话的执行者：小事直接做，正式改动按工作流执行，最后评审、测试、合回'],
+    ['worker', '子对话的执行者：在对话里直接做；工作流子对话里给流程图收尾（评审、测试、合回）'],
     ['analyst', '识别现场，收敛需求，出方案等你确认'],
     ['developer', '按确认的方案实现'],
     ['docsync', '同步项目文档'],
     ['worklog', '把指定日期各项目做完的事汇总成一份简短的 Markdown 报告'],
   ],
   document: `## 适用
-项目里边界清楚的功能、调整和小重构。需要完整规范链路的大功能用「功能开发（OpenSpec）」，改数据结构用「数据与配置迁移」。
+正式的功能开发：跨模块、要先确认方案再动手。小改动、Bug 和问答不走工作流；需要完整规范链路的大功能用「功能开发（OpenSpec）」，改数据结构用「数据与配置迁移」。
 
 ## 约定
 - 版本控制和文档根在第一个节点识别，后面的节点按它的结论操作。
@@ -191,6 +199,9 @@ const UE_PROJECT: BuiltinWorkflow = {
   name: UE_PROJECT_NAME,
   description: 'UE 项目的工作流：识别与侦察 → 确认方案 → C++ / Lua 实现 → 同步文档；编译由父对话按申请统一做',
   category: '项目',
+  when: 'UE 项目里的正式功能开发：跨模块、要先确认方案再动手',
+  notFor: '小改动、Bug、问答',
+  kind: 'change',
   main: 'orchestrator',
   members: [
     ['orchestrator', '项目对话的统筹：按 UE 的结构和资产规则分派，收到申请时占位编译'],
@@ -263,6 +274,9 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
     description:
       '复杂功能的完整链路：识别与前置检查 → 设计压测 → 规范门禁 → 按 tasks 实现 → 延期验证项 → 归档 → 同步文档',
     category: '开发',
+    when: '用户要求按规范走，或者项目用 OpenSpec 管需求',
+    notFor: '没有规范要求的日常功能',
+    kind: 'change',
     main: 'developer',
     members: [
       ['spec', '识别现场与前置检查、写规范、规范门禁、归档'],
@@ -379,6 +393,9 @@ ${CHILD_RULES}`,
     name: '数据与配置迁移',
     description: '改 schema、数据格式或配置结构：先定兼容策略，迁移和回滚成对写，用旧数据验证，最后才切默认值',
     category: '开发',
+    when: '改 schema、数据格式、配置结构，要兼容旧数据',
+    notFor: '只加一个可选字段这类不影响旧数据的改动',
+    kind: 'change',
     main: 'developer',
     members: [
       ['analyst', '确认迁移范围、读写方和兼容策略（一次性 / 双写 / 懒迁移）'],
@@ -440,56 +457,13 @@ ${CHILD_RULES}`,
     ],
   },
   {
-    key: 'bugfix',
-    name: 'Bug 修复',
-    description: '从相关模块开始逐层定位，找到能解释现象的原因就修，再写用户报的 Bug 记录',
-    category: '问题处理',
-    main: 'developer',
-    members: [
-      ['developer', '修 Bug：从模块开始逐层定位，写失败测试、修复'],
-      ['docsync', '写用户报的这个 Bug 的记录，同步模块文档'],
-    ],
-    document: `## 适用
-Bug、测试失败、线上问题。执行角色默认在对话里直接按「按模块逐层定位」找和修，只有设成「总是按工作流」时才用这个工作流。
-
-## 约定
-- 从用户点名的模块（或父对话交来的模块）开始查；这一层排除了才往下一层，找到能完整解释现象的原因就修，修完就停，不再往底层挖。
-- 拿不准时先加日志或写测试复现，不改代码去猜；没找到根因不修。
-- 修复前先有能复现问题的测试或步骤，修复后它必须通过。
-- 下到第三层还没找到、或者连续三次修复失败，就停下来报告查过的层和排除依据。
-- 修完写 Bug 记录：症状、复现、根因、修复、回归测试、防复发。只记用户报的 Bug；修的过程中自己发现、顺手修掉的其他问题不写 Bug 记录。
-${CHILD_RULES}`,
-    flows: [
-      {
-        id: 'main',
-        name: '主流程',
-        nodes: [
-          {
-            id: 'fix',
-            title: '定位并修复',
-            agent: 'developer',
-            tier: 'high',
-            params: { scene: true, task: '修 Bug' },
-            retries: 1,
-            instructions:
-              '先识别现场，确定从哪个模块查起（输入里点名的模块或部分优先），查 bugs.md 里有没有相似的历史 Bug；再按「按模块逐层定位」找到根因并修复这个问题，跑复现用例和快速检查。',
-          },
-          {
-            ...DOCS_NODE,
-            title: 'Bug 记录',
-            instructions:
-              '为用户报的这个 Bug 写 Bug 记录（模块 bugs.md 加索引，bugs/<id>.md 写症状、复现、根因、修复、回归测试、防复发）并同步相关模块文档；修的过程中自己发现的其他问题不写 Bug 记录。',
-          },
-        ],
-        edges: chain(START, 'fix', 'docs', END),
-      },
-    ],
-  },
-  {
     key: 'architecture',
     name: '架构设计',
     description: '识别现场并出候选方案 → 压测并确认 → 写成架构文档和 ADR',
     category: '规划',
+    when: '要出候选方案、做取舍、写 ADR',
+    notFor: '已经定了方案的实现',
+    kind: 'change',
     main: 'analyst',
     members: [
       ['analyst', '识别现场，读已有的架构文档，给候选方案和架构契约，再压测方案'],
@@ -539,6 +513,9 @@ ${CHILD_RULES}`,
     name: '代码评审',
     description: '只读：先把评审范围整理成交接单，再只评改动的行，给出分级评审意见',
     category: '质量',
+    when: '用户要求评审一段改动（分支、提交区间或 changelist）',
+    notFor: '子对话收尾前的评审（执行角色自己派）',
+    kind: 'readonly',
     main: 'reviewer',
     members: [
       ['explorer', '调研：列出评审范围内的改动，整理评审交接单'],
@@ -584,6 +561,9 @@ ${CHILD_RULES}`,
     name: '依赖升级与安全',
     description: '查过期依赖、已知漏洞和许可问题，按风险分批升级，每批都有验证',
     category: '质量',
+    when: '升级依赖、查漏洞和许可',
+    notFor: '只升一个包的补丁版本',
+    kind: 'change',
     main: 'deps',
     members: [
       ['deps', '查过期 / 漏洞 / 许可，按可回滚的批次升级，每批跑项目测试步骤'],
@@ -637,6 +617,9 @@ ${CHILD_RULES}`,
     name: '发布与回滚',
     description: '确认发布范围 → 构建并验证产物 → 写发布说明和回滚方案；打 tag、推送和发布由父对话做',
     category: '交付',
+    when: '准备发版：定范围、验产物、写发布说明和回滚方案',
+    notFor: '打 tag、推送、发布（父对话做）',
+    kind: 'change',
     main: 'vcs',
     members: [
       ['vcs', '汇总改动、确认发布范围和版本号'],
@@ -694,6 +677,8 @@ ${CHILD_RULES}`,
     name: 'Blender 建模与动画',
     description: '规格确认 → 分件建模 → 装配、动画与减面 → 质检确认 → 导出 UE',
     category: '美术',
+    when: '用 Blender 建模、做动画、导出 UE',
+    kind: 'change',
     main: 'blender',
     members: [['blender', '建模、装配、动画、减面、质检（体检、多视角对照、可拆分测试）和导出']],
     document: `## 适用
@@ -782,11 +767,14 @@ ${CHILD_RULES}`,
  * - 日常开发：和「通用项目」的主流程是同一件事。
  * - UE 功能开发：和「UE 项目」的主流程是同一件事。
  * - 项目初始化：项目设置里的「AI 初始化项目」已经覆盖（写 AGENTS.md 和文档框架、推荐测试步骤和工作流）。
+ * - Bug 修复（ADR 0044 下线）：Bug 交子对话在对话里按逐层定位做，固定节点会丢掉中间的线索。
  */
 export const RETIRED_WORKFLOWS: Record<string, string> = {
   'daily-dev': GENERAL_KEY,
   'ue-dev': UE_PROJECT_KEY,
   bootstrap: GENERAL_KEY,
+  // ADR 0044：Bug 不走固定剧本（下一步查哪里要看上一步查到了什么），交子对话按逐层定位做
+  bugfix: GENERAL_KEY,
 }
 
 /** 内置工作流里用到的所有 Agent（key） */
@@ -814,6 +802,9 @@ export function buildWorkflow(
     entryFlowId: 'main',
     document: w.document,
     expose: w.expose ?? [],
+    when: w.when,
+    notFor: w.notFor,
+    kind: w.kind,
     flows: w.flows.map((f) => buildFlow(f, agentId)),
   }
 }

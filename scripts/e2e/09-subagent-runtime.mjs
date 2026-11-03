@@ -845,4 +845,76 @@ await runShard('子对话运行与监管', async (api) => {
     await call('DELETE', `/tasks/${rp.id}`)
     step('停下就是暂停：随父对话停下的子对话继续后接着做完，父计划那一步收到结果、没有另建子对话')
   }
+
+  // ---- 工作流只由父对话启动（ADR 0044）：start_workflow 开工作流子对话，流程图跑完交执行角色收尾，父计划那一步收到结果 ----
+  {
+    const wf = await call('POST', '/workflows', {
+      name: '小流程',
+      description: '一个节点的流程',
+      when: '测试用',
+      mainAgentId: '',
+      members: [],
+      flows: [
+        {
+          id: 'main',
+          name: '主流程',
+          nodes: [{ id: 'impl', title: '实现', agentId: B.id, instructions: '写代码。', x: 0, y: 0 }],
+          edges: [
+            { id: 'e1', from: 'start', to: 'impl' },
+            { id: 'e2', from: 'impl', to: 'end' },
+          ],
+        },
+      ],
+      entryFlowId: 'main',
+      document: '',
+    })
+    const cur = (await call('GET', '/projects')).find((x) => x.id === project.id)
+    const { id: _i, createdAt: _cc, updatedAt: _uu, ...curInput } = cur
+    await call('PUT', `/projects/${project.id}`, { ...curInput, workflowIds: [...(cur.workflowIds ?? []), wf.id] })
+    const lead = await agent({
+      name: '主理-工作流',
+      cli: 'claude',
+      canDelegate: true,
+      canPlan: true,
+      instructions: '你负责分派。',
+    })
+    const rp = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: lead.id,
+      prompt: 'START_WORKFLOW:小流程 按工作流做功能',
+    })
+    const parentCall = await callOf('START_WORKFLOW:小流程')
+    assert.match(
+      parentCall.input,
+      /## 可用工作流[\s\S]*｜小流程：一个节点的流程[\s\S]*适用：测试用/,
+      '父对话看得到可用工作流',
+    )
+    const waitOf = async () =>
+      (await call('GET', `/tasks/${rp.id}`)).plans?.at(-1)?.steps?.[0]?.waits?.find((w) => w.kind === 'child')
+    await waitFor(async () => ((await waitOf())?.state === 'ok' ? true : undefined), {
+      label: '工作流子对话跑完流程图、执行角色收尾后，父计划那一步收到结果',
+      timeout: 40000,
+    })
+    const kids = await call('GET', `/tasks/${rp.id}/children`)
+    const k = kids.find((x) => x.title === '工作流做功能')
+    assert.ok(k, '开出了工作流子对话')
+    const kidTask = await call('GET', `/tasks/${k.id}`)
+    assert.equal(kidTask.flow?.workflowName, '小流程')
+    assert.equal(kidTask.flow?.handed, true, '流程图跑完交给了执行角色')
+    assert.equal(kidTask.runs?.[0]?.status, 'done')
+    assert.ok(
+      calls().some((c) => (c.input ?? '').includes('工作流「小流程」跑完了')),
+      '执行角色拿到的是流程图的结果，按收尾做',
+    )
+    assert.ok(
+      !calls().some(
+        (c) => (c.input ?? '').includes('工作流「小流程」跑完了') && (c.input ?? '').includes('## 可用工作流'),
+      ),
+      '子对话不列可用工作流',
+    )
+    await call('POST', `/tasks/${rp.id}/stop`).catch(() => {})
+    await call('DELETE', `/tasks/${rp.id}`)
+    step('工作流只由父对话启动：开工作流子对话，流程图跑完交执行角色收尾，父计划那一步收到结果')
+  }
 })

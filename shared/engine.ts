@@ -1,17 +1,10 @@
 /**
  * 执行引擎：按流程图调度节点，真实执行和模拟执行共用。
- *
- * - 从「开始」出发，一个节点的上游全部完成后才执行，没有依赖关系的节点同时执行
- * - 节点可以挂三个流程入口：开始（结果作为初始资料）、验收（不通过就把意见交回节点继续完善）、
- *   结束（结果并入节点输出）；也可以整个节点就是执行另一个流程
- * - 每个节点在 task.steps 里有一条记录，id 是路径（`n1/review.2/n5`），也用作 CLI 会话键；
- *   续跑时已完成的节点直接复用输出
- * - 主 Agent 调度（工作流打开 dispatch 时）：每次执行一个工作流都有一个主 Agent（`@main` 节点，一个续接的会话），
- *   子 Agent 的节点完成后交给它评估（通过 / 退回 / 委派其他工作流 / 停下），条件连线由它选路，流程结束时它整理结果。
- *   调用另一个工作流时那个工作流有自己的主 Agent，挂在发起的节点下面，任务进度里就是主 Agent → 子 Agent 的层级
- * - 节点执行中可以通过编排工具（Orchestra，真实执行由 server/orch-mcp.ts 交给 CLI）派子 Agent 并行处理、
- *   查各 Agent 的状态、向主 Agent 提问、给别的 Agent 传话；派出的子 Agent 挂在节点下面（`n1/sub/h1`）
- *
+ * - 从「开始」出发，上游全部完成才执行，没有依赖的节点同时执行；节点可挂开始 / 验收 / 结束流程，也可以整个就是另一个流程
+ * - 每个节点在 task.steps 里有一条记录，id 是路径（`n1/review.2/n5`），也是 CLI 会话键；续跑时已完成的节点直接复用输出
+ * - 旧版的主 Agent 调度（`@main`）只为读旧任务保留；节点执行中可以经编排工具（Orchestra，真实执行由 server/orch-mcp.ts
+ *   交给 CLI）派子 Agent 并行、查状态、传话，派出的子 Agent 挂在节点下面（`n1/sub/h1`）
+ * - 工作流只由父对话启动，跑在工作流子对话里（ADR 0044，见 flow-child.ts 和这里的 runChildFlow）
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
 import type { HandoffInput } from './handoff.ts'
@@ -82,6 +75,8 @@ import { t } from './i18n.ts'
 import { clip } from './text.ts'
 import { ensureTaskRun, runMail, runRecord, runState, sendRunMessage, statePart, writeRunState } from './run-state.ts'
 import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
+import { flowPhase, pickFlow, workflowCatalogText, type WorkflowEntry } from './flow-child.ts'
+import { runChildFlow } from './flow-child-run.ts'
 import { resultLine, resultOf, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
@@ -480,10 +475,10 @@ export interface Orchestra {
   run(input: string): { ok: boolean; info: string }
   /** 结束这次运行：没完成的节点不再执行，之后的要求由编排器直接处理 */
   closeRun(): { ok: boolean; info: string }
-  /** 对话 Agent：可以把一次工作流运行排到这一轮后面，跑完再继续对话 */
+  /** 父对话能启动工作流（角色开了 canPlan、能分派子对话，ADR 0044）：start_workflow 在它下面开工作流子对话 */
   planning: boolean
-  /** step：这次运行是计划里的哪个主步骤（不写就在计划末尾加一步） */
-  plan(workflowId: string, input: string, step?: string): { ok: boolean; info: string }
+  /** 按 id 或名字找能启动的工作流（空是项目默认的）；找不到时 info 列出可选的 */
+  pickWorkflow(idOrName: string): { ok: false; info: string } | { ok: true; flow: NonNullable<Task['flow']> }
   /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 结束这份计划 */
   plans: boolean
   /** partial：只交变更步骤，其余没写到的步骤留在计划里不动（步骤多时分两批交） */
@@ -506,15 +501,17 @@ export interface Orchestra {
     message: string,
     files?: string[],
     step?: string,
-    extra?: { role?: string; route?: RouteInput },
+    extra?: { role?: string; route?: RouteInput; flow?: NonNullable<Task['flow']> },
   ): Promise<{ ok: boolean; id?: string; info: string }>
+  /** rerun：给工作流子对话的这条消息是「同一个工作流再跑一次」（start_workflow 带 again） */
   sendToConversation(
     id: string,
     message: string,
     step?: string,
     route?: RouteInput,
+    rerun?: boolean,
   ): Promise<{ ok: boolean; info: string }>
-  /** 终止子对话正在跑的工作流（start_plan 启动的那次运行）：子对话本身不停，改动由子对话决定留不留 */
+  /** 终止工作流子对话正在跑的流程图（ADR 0044）：没跑的节点不再跑，子对话按失败交回，父对话决定怎么办 */
   stopConversationWorkflow(id: string, why: string): { ok: boolean; info: string }
   /** 调用者的角色挂了能力：可以 use_capability 就地加载它们的做法 */
   capabilities: boolean
@@ -679,8 +676,8 @@ export interface EngineHost {
    * 其余是父对话收尾、换 CLI、面板重启这些顺带结束的动作。收尾时读现值的，所以要传函数
    */
   stopReason?: () => StopReason | undefined
-  /** 项目里可选的工作流目录：启动计划时 Agent 按名称、说明和节点概览挑一个 */
-  workflowCatalog?: () => { id: string; name: string; description: string; steps: string[] }[]
+  /** 项目里可选的工作流目录：父对话按名称、说明、适用场景和节点概览挑一个（ADR 0044） */
+  workflowCatalog?: () => WorkflowEntry[]
   /**
    * 写文件的格式（项目设置优先，没设时跟随全局），写进公共部分让 Agent 照着做；
    * 不传时说明文件不带这一段（在线演示）
@@ -718,6 +715,8 @@ export interface EngineHost {
       waiting?: string
       /** 最后有动静的时间：多久没新输出，父对话一眼能看出来 */
       lastActivityAt?: string
+      /** 工作流子对话的进度（ADR 0044，见 flow-child.ts 的 flowLine） */
+      flow?: string
       /** 创建时间、是否已经收尾完成：计划按它们对齐等待中的步骤（见 plan.ts 的 linkKids） */
       createdAt?: string
       resolved?: boolean
@@ -730,9 +729,15 @@ export interface EngineHost {
     agentId?: string
     /** 父对话划给这个子对话的文件 / 目录：创建时替它认领 */
     files?: string[]
+    /** 工作流子对话（ADR 0044）：第一轮由面板按流程图跑，跑完交给执行角色收尾 */
+    flow?: NonNullable<Task['flow']>
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
-  /** 给已有子对话追加消息并异步执行 */
-  sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
+  /** 给已有子对话追加消息并异步执行；rerun 是让工作流子对话把同一个工作流再跑一次 */
+  sendToConversation?: (
+    id: string,
+    message: string,
+    opts?: { rerun?: boolean },
+  ) => Promise<{ ok: boolean; info: string }>
   /**
    * 父对话的就地微改动（只有项目顶层对话、角色开了 inlineEdit 时有）：begin 校验护栏并记下基线，
    * end 按真实改动核对、越界时写提示（见 shared/inline-edit.ts）
@@ -958,20 +963,6 @@ export function system(host: EngineHost, text: string, step = '', error = false,
   })
 }
 
-/** 计划 / 工作流启动的那条提示：只是把计划输入又抄了一遍，界面上不显示（用户知道自己让 Agent 干了什么），数据里留着 */
-function planStarted(host: EngineHost, text: string, step = '') {
-  host.task.messages.push({
-    id: host.newId(),
-    role: 'system',
-    agentId: '',
-    step,
-    text,
-    tools: [],
-    planStart: true,
-    at: now(),
-  })
-}
-
 // 执行上限（花费 / token / 时长）的判定在 engine-budget.ts
 
 function userRequests(task: Task) {
@@ -988,11 +979,8 @@ const CHAT_EARLIER = 3
 const CHAT_EARLIER_CHARS = 300
 
 /**
- * 交给节点 / 子任务的「用户需求」。工作流任务就是一件事，第一条是需求、后面的都是补充，全带上。
- * 对话（含在对话里 start_plan 跑的工作流、派出的子任务）会一直聊下去：第一条往往是很久以前的另一件事，
- * 整段历史全带上的话，每派一个子任务、每跑一个节点都重发一遍，越聊越长。
- * 对话只带全最新的一条（这一轮在处理的）；第一条截短留着（子对话的第一条是父对话交代的任务），
- * 中间的只留最近几条的开头当背景；要做的事以交给它的要求为准
+ * 交给节点 / 子任务的「用户需求」：工作流任务就是一件事，全带上；对话会一直聊下去，全带上会越聊越长，
+ * 所以只带全最新的一条，第一条截短留着（子对话的第一条是父对话交代的任务），中间的只留最近几条的开头当背景
  */
 export function nodeRequests(task: Task): { original: string; extra: string[]; earlier: boolean } {
   const all = userRequests(task)
@@ -1364,7 +1352,7 @@ function planPart(host: EngineHost, coordinator: boolean): string[] {
     `## 计划进度\n${check || (cur ? '没有进行中或待做的步骤：前面的都做完了，就接着做计划最后的收尾步骤。' : '没有进行中的计划。')}`,
     `## 计划怎么维护
 - 三步以上、不是一下就能做完的事，先用 set_plan 列出计划再动手；单一、简单的事和纯问答不用列。做的过程中发现新的步骤就加进计划。面板按计划判断你做完没有：动了手却没列计划、或者计划没做完就结束这一轮，面板会推你接着做。
-- 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
+- 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要交给工作流时调用 start_workflow 并带上它的 step，等它的方式和等子对话一样。
 - **动手前先把这一步标成「进行中」**（set_plan 带它的 id + status），一份计划里同时只能有一个进行中；**做完立刻**在同一批动作里把它标完成、再把下一步标进行中。不要连着做完几步再一起更新，也不要在计划里还有进行中的步骤时去做别的步骤的事。
 - **按计划一直做下去**：计划没做完、也没在等结果时，不要结束这一轮——做完一步马上接着做下一步。不要只写一句「接下来跑检查 / 先改某处」就停下，要做的事直接调用工具去做；只有全部做完、卡住了要问、或者在等结果时才结束这一轮。
 - 什么算完成一步：改完代码并且跑通这一步该跑的检查（这一步涉及多项时，跑完它该跑的那几项）；只是起了个子任务、跑完一条命令、写了一段说明，都不算完成。
@@ -1405,7 +1393,7 @@ function commonPart(host: EngineHost, w?: Workflow, chat = false, helper = false
     promptLangRules(),
     req.extra,
     w?.document.trim() ? `## 工作流说明\n${w.document.trim()}` : '',
-    // 对话（含它派出的子任务）用不到共享状态：对话里跑过 start_plan 后 task.runs 会留着上一次运行，
+    // 对话（含它派出的子任务）用不到共享状态：对话里跑过工作流后 task.runs 会留着上一次运行，
     // 注入旧状态会让模型去调根本没注册的 read_state / write_state
     chat ? '' : statePart(host.task),
     [policy, docRootText(host.policy?.docs)].filter(Boolean).join('\n\n'),
@@ -2417,9 +2405,8 @@ async function runRef(
 const MAX_DELEGATIONS = 2
 
 /**
- * 这个节点完成后要不要交给主 Agent 评估：子 Agent 做的节点、调用另一个工作流的节点、后面有条件连线的节点。
- * 主 Agent 自己做的节点不再评估自己；验收、开始、结束入口里的节点属于发起节点的验证，也不评估；
- * 带验收流程、完成后等用户确认的节点已经有人把关，也不评估（有条件连线时仍由主 Agent 选路）
+ * 这个节点完成后要不要交给主 Agent 评估：子 Agent 做的、调用另一个工作流的、后面有条件连线的节点。
+ * 主 Agent 自己做的、入口流程里的、已经有验收或用户确认把关的不评估（有条件连线时仍由主 Agent 选路）
  */
 function mainEvaluates(inv: Invocation, node: FlowNode, branchy: boolean) {
   if (!inv.main || inv.main.workflow.id !== inv.workflow.id) return false
@@ -2735,11 +2722,8 @@ function helperOver(host: EngineHost, k: TaskStep) {
 }
 
 /**
- * 子任务都结束了：把计划里等它们的那一步收口（kind: 'helper'，见 spawn 的 step）。
- * 成功标完成、失败或终止退回进行中并写清原因；子任务还没结束的不动它。
- *
- * 按「计划里还挂着的 helper 等待」遍历，不只看这一批刚交回的子任务：模型在老会话里调过 wait_agents 时，
- * 那些子任务已经被取走（delivered 已 set），这一批就轮不到它们——点名的那一步会永远停在等待中
+ * 子任务都结束了：把计划里等它们的那一步收口（kind: 'helper'）。成功标完成、失败或终止退回进行中并写清原因。
+ * 按「计划里还挂着的 helper 等待」遍历，不只看这一批：老会话里 wait_agents 取走过的，这一批轮不到，那一步会永远等着
  */
 export function settleHelperWaits(host: EngineHost) {
   const { task } = host
@@ -2841,25 +2825,6 @@ function takePendingRun(host: EngineHost) {
   return list.join('\n\n')
 }
 
-/** 对话 Agent 要求的计划运行：工具调用只记下来，等这一轮 CLI 结束后由引擎同步跑完再继续对话 */
-interface PlannedRun {
-  workflowId: string
-  input: string
-  /** 计划里的哪个主步骤；空表示在计划末尾加一步 */
-  step?: string
-}
-const pendingPlans = new WeakMap<EngineHost, PlannedRun[]>()
-
-function askPlan(host: EngineHost, plan: PlannedRun) {
-  pendingPlans.set(host, [...(pendingPlans.get(host) ?? []), plan])
-}
-
-function takePendingPlans(host: EngineHost) {
-  const list = pendingPlans.get(host)
-  pendingPlans.delete(host)
-  return list ?? []
-}
-
 /** 编排工具，绑定在调用它的节点上（主 Agent 的调度轮也有一份） */
 function makeOrchestra(
   host: EngineHost,
@@ -2917,7 +2882,7 @@ function makeOrchestra(
     canSpawn: !helper && !chatMode,
     team: !chatMode,
     autoReturn: !!ctx.chat && !helper,
-    // 对话（含它派出的子任务）用不到共享状态：对话里跑过 start_plan 之后 task.runs 会残留上一次运行，
+    // 对话（含它派出的子任务）用不到共享状态：对话里跑过工作流之后 task.runs 会残留上一次运行，
     // 只看 runs 会把工具又注册回来，读到的还是上一次运行的 state
     sharedState: !ctx.chat && !!runRecord(task),
     helperBatch() {
@@ -2955,7 +2920,7 @@ function makeOrchestra(
     },
     run(input) {
       if (helper) return { ok: false, info: '子任务不能启动工作流，只做派给你的这一件事' }
-      if (ctx.chat) return { ok: false, info: '对话里用 start_plan 启动工作流' }
+      if (ctx.chat) return { ok: false, info: '对话里没有这个工具：父对话用 start_workflow 启动工作流' }
       if (!planner) return { ok: false, info: '只有编排器能起运行，节点里按流程走' }
       const run = currentRun(task)
       if (task.steps.some((s) => !s.parentId && inRun(s.id, run) && s.status === 'running' && !isMainStep(s)))
@@ -2974,24 +2939,14 @@ function makeOrchestra(
       task.flowClosed = true
       return { ok: true, info: '这次运行已经结束，没完成的节点不再执行' }
     },
-    planning: !!ctx.planning,
-    plan(workflowId, input, step) {
-      if (helper) return { ok: false, info: '子任务不能启动工作流，只做派给你的这一件事' }
-      if (!ctx.chat) return { ok: false, info: '节点里不能启动计划，按流程执行' }
-      if (!ctx.planning)
-        return { ok: false, info: '这个 Agent 没有开启「按工作流执行计划」的能力，直接在当前对话里执行' }
-      if (task.steps.some((s) => !s.parentId && inRun(s.id, currentRun(task)) && s.status === 'running'))
-        return { ok: false, info: '上一次计划还在执行，等它结束再启动新的' }
-      askPlan(host, { workflowId: workflowId.trim(), input: input.trim(), step: step?.trim() })
-      const wf = workflowId ? task.runs.flatMap((r) => r.workflows).find((w) => w.id === workflowId) : undefined
-      const label = wf?.name || workflowId || '默认工作流'
-      planStarted(
-        host,
-        t('开始执行计划（{name}）：{input}', { name: label, input: clip(input || t('按工作流走一遍'), 300) }),
-        where,
-      )
-      host.changed(true)
-      return { ok: true, info: '这一轮结束后会同步跑完这次计划，再把结果交回对话' }
+    planning: !!ctx.planning && coordinator,
+    pickWorkflow(key) {
+      if (helper || !ctx.planning || !coordinator)
+        return {
+          ok: false,
+          info: '只有项目里的父对话能启动工作流；子对话、子任务和工作流节点都不能，按派给你的事直接做',
+        }
+      return pickFlow(host.workflowCatalog?.() ?? [], key)
     },
     plans: !!ctx.chat && !helper && !!task.projectId,
     async setPlan(input) {
@@ -3040,6 +2995,7 @@ function makeOrchestra(
           [
             `- ${c.id}｜${c.title}｜${c.status}`,
             c.summary ? `：${clip(c.summary, 200)}` : '',
+            c.flow ? `｜${c.flow}` : '',
             // 在等什么、最后有动静多久了：「是不是卡住了」靠这两项回答，不再让人拿分支时间戳猜
             c.waiting ? `｜${c.waiting}` : '',
             c.doing ? `｜在做：${c.doing}` : '',
@@ -3097,7 +3053,8 @@ function makeOrchestra(
         title: title.trim(),
         message,
         files,
-        ...(role && { agentId: role.id }),
+        ...(role && !extra?.flow && { agentId: role.id }),
+        ...(extra?.flow && { flow: extra.flow }),
       })
       if (r.ok && r.id) recordRoute(host, 'child', [r.id], title.trim(), extra?.route)
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
@@ -3108,7 +3065,7 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return { ok: r.ok, id: r.id, info: [r.info, wait].filter(Boolean).join('\n') }
     },
-    async sendToConversation(id, message, step, route) {
+    async sendToConversation(id, message, step, route, rerun) {
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
       // 一条消息只交给一个子对话（用户 2026-10-24 定的）：同一段话逐个转给几个子对话，
@@ -3123,7 +3080,7 @@ function makeOrchestra(
           info: `这段话已经交给了子对话 ${other}，一条消息只交给一个子对话：选最相关的那一个交，别的子对话不用重复发。`,
         }
       noteHandOff(task.messages, handed, id.trim(), message)
-      const r = await host.sendToConversation(id.trim(), message)
+      const r = await host.sendToConversation(id.trim(), message, rerun ? { rerun } : undefined)
       if (!r.ok) handed.delete(message.trim())
       // 标题从子对话列表里取：补步骤时用它当标题（只看 id 的话计划里会出现「子对话：c1」这种没信息量的标题）
       const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''
@@ -3354,7 +3311,7 @@ function makeOrchestra(
           }
       }
       // 只在父对话执行的角色（runIn: 'parent'，或挂载上定成「转交父对话」）：子对话里点名它时不在这里建，
-      // 转交父对话创建（见 ADR 0019）。判定放引擎里：对话、工作流节点、start_plan、计划面板定时任务的 spawn 都走这里，放 orch-mcp 会漏
+      // 转交父对话创建（见 ADR 0019）。判定放引擎里：对话、工作流节点、计划面板定时任务的 spawn 都走这里，放 orch-mcp 会漏
       const local = list.filter((spec) => {
         if (opts?.local || !host.task.parentTaskId) return true
         const want = spec.agent?.trim()
@@ -3818,7 +3775,7 @@ async function runHelper(
       tier,
       params: step.params, // 不传时 runner 按角色默认值渲染：「清理用例」会变回「跑验收」
       // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
-      // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
+      // chat 要透传：对话里的子任务用不上共享状态（跑过工作流后 task.runs 会残留上一次运行）
       orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
       signal: ac.signal,
     }
@@ -3986,12 +3943,29 @@ function chatStep(host: EngineHost, agentId: string): TaskStep {
   }
 }
 
-/** 对话里启动一次工作流运行：节点全部新建，同步跑完，结果交回对话 */
+/**
+ * 工作流子对话跑一次流程图（ADR 0044）：again 是要接着跑的运行号（停下后继续、失败节点重跑），
+ * 用那次运行存下的快照、没做完的节点接着做；不给就起一次新的运行，节点全部新建。paused 是整个对话被停下了
+ */
 async function startPlan(
   host: EngineHost,
-  plan: PlannedRun,
-): Promise<{ ok: boolean; text: string; error?: string; stopped?: { why: string; changes: string } }> {
-  const snap = host.resolveWorkflow?.(plan.workflowId)
+  plan: { workflowId: string; input: string },
+  again = 0,
+): Promise<{
+  ok: boolean
+  text: string
+  error?: string
+  paused?: boolean
+  stopped?: { why: string; changes: string }
+}> {
+  const old = again ? host.task.runs.find((x) => x.id === again) : undefined
+  const snap = old
+    ? {
+        workflow: old.workflows.find((w) => w.id === old.workflowId),
+        workflows: old.workflows,
+        skillSlots: old.skillSlots,
+      }
+    : host.resolveWorkflow?.(plan.workflowId)
   const workflow =
     snap?.workflow ?? (plan.workflowId ? host.workflows.find((w) => w.id === plan.workflowId) : host.workflow)
   if (!workflow)
@@ -4002,9 +3976,9 @@ async function startPlan(
     }
   const workflows = snap?.workflows ?? workflowClosure(workflow, host.workflows)
   const skillSlots = snap?.skillSlots ?? host.task.skillSlots
-  // runSeq 是已经跑完的次数：第一次计划是第 1 次运行
-  const run = (host.task.runSeq ?? 0) + 1
-  host.task.runSeq = run
+  // runSeq 是已经跑过的次数：第一次是第 1 次运行；接着跑时沿用原来的运行号
+  const run = old ? again : (host.task.runSeq ?? 0) + 1
+  host.task.runSeq = Math.max(host.task.runSeq ?? 0, run)
   host.task.flowClosed = false
   host.workflow = workflow
   host.workflows = workflows
@@ -4012,11 +3986,12 @@ async function startPlan(
   host.task.workflowName = workflow.name
   host.task.workflows = workflows
   host.task.skillSlots = skillSlots
-  ensureTaskRun(host, workflow, run, skillSlots)
+  const rec0 = ensureTaskRun(host, workflow, run, skillSlots)
+  ;[rec0.status, rec0.endedAt] = ['running', '']
   for (const s of planTask(workflow, run).steps)
     if (!host.task.steps.some((x) => x.id === s.id)) host.task.steps.push(s)
-  // 工作流是计划里的一个主步骤，它的节点就是子步骤
-  if (host.task.projectId) bindRun(host.task, plan.step ?? '', run, t('工作流「{name}」', { name: workflow.name }))
+  // 工作流是计划里的一个主步骤，它的节点就是子步骤；接着跑时这一步已经在了
+  if (host.task.projectId && !old) bindRun(host.task, '', run, t('工作流「{name}」', { name: workflow.name }))
   host.changed(true)
   const inv: Invocation = {
     workflow,
@@ -4061,7 +4036,9 @@ async function startPlan(
     const d = ran && host.reviewDiff ? await host.reviewDiff(snapshot).catch(() => null) : null
     return { ok: false, text: '', error: why, stopped: { why, changes: d?.stat.trim() ?? '' } }
   }
-  return r.ok ? { ok: true, text: r.output } : { ok: false, text: '', error: r.error }
+  return r.ok
+    ? { ok: true, text: r.output }
+    : { ok: false, text: '', error: r.error, paused: !!r.stopped || !!r.halted }
 }
 
 /** 对话 Agent 的提示：这次的消息、可选工作流、子对话目录，以及分派规则 */
@@ -4105,7 +4082,7 @@ async function conversationPrompt(
     p4Part(host),
     // 每轮的总结（shared/summary-card.ts）：子对话写详细 Markdown，其余写卡片，父对话的卡片标题链到子对话
     kind === 'sub' ? summaryDetailRules() : summaryCardRules(undefined, coordinator),
-    // 对话模式没有共享状态工具：这里不注入（跑过 start_plan 时 task.runs 里是上一次运行的旧状态）
+    // 对话模式没有共享状态工具：这里不注入（跑过工作流时 task.runs 里是上一次运行的旧状态）
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt
       ? `## 执行目录
@@ -4126,16 +4103,8 @@ ${
         }，再在原目录${host.worktreeHome ? ` ${host.worktreeHome}` : ''}里推送原分支${wrapKind(host) === 'push' ? '并用 gh 合并到主干' : ''}。
 ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
       : '',
-    catalog.length && planning
-      ? `## 可用工作流\n${catalog
-          .map(
-            (w, i) =>
-              `- id: ${w.id}｜${w.name}${i === 0 ? '（默认）' : ''}：${w.description}${w.steps.length ? `（节点：${w.steps.join(' → ')}）` : ''}`,
-          )
-          .join('\n')}\n\n需要按计划执行时调用 start_plan，workflow 写上面的 id；不写就是默认工作流。`
-      : planning
-        ? '## 可用工作流\n项目还没有配置工作流，直接在对话里执行。'
-        : '## 工作流\n当前 Agent 没有开启「按工作流执行计划」的能力，直接在对话里执行。',
+    // 只有父对话（能分派、开了 canPlan）列可用工作流和启动规则；子对话不启动工作流，不列（ADR 0044）
+    planning ? workflowCatalogText(catalog) : '',
   ]
   if (coordinator) {
     // 内置「主理」的角色设定里已经有一整套更细的处理顺序、分诊表和派单写法（系统提示词里常驻），
@@ -4222,11 +4191,8 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
     parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。${topPush(host)}${noDelegate}`)
   } else {
     parts.push(
-      planning
-        ? `## 执行方式
-你只负责当前这个子对话的任务。要修改代码、跨模块改动或较大的研究时，调用 start_plan 按项目的默认工作流执行（更合适的可选工作流写它的 id）；只是问题、分析或一两行的小改动直接在对话里做。你没有创建子对话的能力。${noDelegate}`
-        : `## 执行方式
-你只负责当前这个子对话的任务，直接在对话里执行。你没有创建子对话或按工作流启动计划的能力。${noDelegate}`,
+      `## 执行方式
+你只负责当前这个子对话的任务，直接在对话里执行。你不能创建子对话，也不能启动工作流（工作流由父对话启动）。${noDelegate}`,
     )
     // 角色（或它引入的「通用约束」）里已经写了这两条时，面板不再每个子对话重复一遍；
     // 按正文判断而不是按来源：用户把通用约束改掉了这两节，面板照旧补上
@@ -4274,10 +4240,19 @@ export async function runConversationTurn(host: EngineHost, who: string) {
   const agent = who ? turnRole(task, host.agents, who) : chatRoleFor(task, host.agents)
   // Chat 模式没有子对话（子对话要项目），create_conversation 一定失败：不按分派对话去提示
   const coordinator = kind === 'top' && !!agent?.canDelegate && !!task.projectId
-  const planning = !!agent?.canPlan && !isChatMode(task)
+  const planning = coordinator && !!agent?.canPlan && !isChatMode(task) // 只有父对话能启动工作流（ADR 0044）
   const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, who)
   if (turn) host.changed(true)
   try {
+    // 工作流子对话（ADR 0044）：先按流程图跑，跑完带着结果交给执行角色收尾；没跑完（停下、失败、终止）已在里面收口
+    if (flowPhase(task) && !host.prewarm) {
+      const next = await runChildFlow(host, { startPlan, putMail, system, finish })
+      if (next === undefined) {
+        if (turn) endTurn(task, turn, task.status === 'stopped' ? 'stopped' : 'failed', Date.now(), host.stopReason?.())
+        return
+      }
+      host.prompt = next
+    }
     const inline = coordinator && !!host.inlineEdit && agent?.inlineEdit === 'tiny'
     // 第一轮和保活进程里的下一条必须用同一套参数拼：以前保活那处漏传了 agent，
     // 角色设定里已写过的规则（主理的分派规则、子对话的提问和完成标准）被发回去，下一轮又宣布作废
@@ -4325,7 +4300,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
     for (let i = 0; i < 30; i++) {
       // 计划带的执行上限：和工作流节点同一套口径，每圈开始前先看一次。
       // 计划启动的是 chat 模式，不走 runNodeSteps，这里不查的话 token / 时长上限就完全不生效。
-      // includeWorkflow=false：对话里跑过 start_plan 之后任务也带着工作流快照，工作流那份额度不该管聊天轮次
+      // includeWorkflow=false：对话里跑过工作流之后任务也带着工作流快照，工作流那份额度不该管聊天轮次
       const over = overBudget(host, false)
       if (over) {
         if (turn) endTurn(task, turn, 'stopped', Date.now(), host.stopReason?.())
@@ -4403,20 +4378,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
         prompt = text
         continue
       }
-      const plans = takePendingPlans(host)
-      if (!plans.length) break
-      const results: string[] = []
-      for (const p of plans) {
-        const out = await startPlan(host, p)
-        results.push(
-          out.ok
-            ? `### 计划执行完成\n${await clipToFile(host.saveHandoff, { id: `plan-${host.newId()}`, title: '计划执行结果' }, out.text || '（没有文字输出）', 12000, '先读完。')}`
-            : out.stopped
-              ? rs.stoppedPlanText(out.stopped)
-              : `### 计划执行失败\n${await clipToFile(host.saveHandoff, { id: `plan-${host.newId()}`, title: '计划执行失败' }, out.error || '执行失败', 4000, '先读完。')}`,
-        )
-      }
-      prompt = `## 计划执行结果\n${results.join('\n\n')}\n\n请根据结果继续：向用户说明完成了什么、有哪些改动和遗留问题；需要再启动一次计划就继续调用 start_plan。`
+      break
     }
     // 等子任务结果时用户停下、活还没干完：记成已停止，「继续执行」才能把整棵树接回来（见 userCutWork）
     if (rs.userCutWork(host)) {
@@ -4523,12 +4485,7 @@ export function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean })
   host.changed(true)
 }
 
-/**
- * 执行一轮：
- * - 对话模式直接发给对应 Agent
- * - 工作流模式由常驻编排器（`@main`）负责：这次运行还没走完就按流程图接着执行；
- *   走完了就把用户的新要求交给它，由它决定起一次新的运行、重跑，还是直接回答
- */
+/** 执行一轮：对话模式发给对应 Agent（工作流子对话先跑流程图）；旧的工作流模式按流程图接着执行、追加要求交给主角色 */
 export async function runEngineTurn(host: EngineHost) {
   const { task } = host
   task.status = 'running'
@@ -4544,7 +4501,7 @@ export async function runEngineTurn(host: EngineHost) {
   for (const s of task.steps) if (isMainStep(s) && s.status !== 'done' && s.status !== 'skipped') s.status = 'skipped'
   host.changed(true)
 
-  // 新架构里项目对话都是对话：Agent 自己决定直接执行，还是用 start_plan 启动工作流
+  // 新架构里项目对话都是对话：父对话决定直接执行、交给子对话，还是用 start_workflow 启动工作流
   if (task.mode === 'chat') return runConversationTurn(host, task.agentId)
 
   const wf = host.workflow

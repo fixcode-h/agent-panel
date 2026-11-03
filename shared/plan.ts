@@ -1480,7 +1480,7 @@ export function waitNote(hit: { title: string; done: boolean }[]) {
     : `（计划步骤${names}等的结果到了：先处理这一步，再接着按计划做。）\n`
 }
 
-/** 工作流做主步骤：start_plan 启动时挂上运行编号；没指定步骤就在计划末尾加一步 */
+/** 工作流做主步骤：流程图开跑时挂上运行编号；没指定步骤就在计划末尾加一步 */
 export function bindRun(task: PlanTask, stepId: string, run: number, title: string, now = new Date().toISOString()) {
   task.plans ??= []
   let plan = activePlan(task)

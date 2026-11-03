@@ -494,8 +494,8 @@ export function AgentDetail({
                     <Checkbox
                       checked={draft.canPlan}
                       onChange={(v) => set('canPlan', v)}
-                      label={t('能启动计划')}
-                      hint={t('需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。')}
+                      label={t('能启动工作流')}
+                      hint={t('父对话可以按工作流开工作流子对话（还要能开启子对话）；子对话一律不能启动工作流。')}
                     />
                   </>
                 )}

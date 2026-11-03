@@ -22,7 +22,7 @@ export function runState(task: Task): Record<string, RunStateEntry> {
 
 /** 交给节点的共享状态快照：并发节点开始前读一次，执行中也可以用 read_state 再读 */
 export function statePart(task: Task) {
-  // 只注入「这一次还在跑的运行」的状态：对话里跑过 start_plan 之后 task.runs 留着上一次运行，
+  // 只注入「这一次还在跑的运行」的状态：对话里跑过工作流之后 task.runs 留着上一次运行，
   // 再注入旧状态会误导模型，而对话模式根本没注册 read_state / write_state（提示里也不能提）
   const rec = runRecord(task)
   if (!rec || rec.status !== 'running') return ''

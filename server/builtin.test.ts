@@ -19,6 +19,7 @@ import {
   RETIRED_WORKFLOWS,
 } from '../shared/builtin/workflows.ts'
 import { BEFORE_TIDY, GENERAL_LEGACY } from '../shared/builtin/legacy-workflows.ts'
+import { BEFORE_0044 } from '../shared/builtin/legacy-workflows-0044.ts'
 import {
   annotateMergedAgents,
   migrateGeneralWorkflow,
@@ -502,7 +503,7 @@ test('没改过的旧「通用约束」「任务 Agent」（现在的「执行�
   assert.match(rules.instructions, /怎么等，什么时候算阻塞/, '补上等待与阻塞判定')
   assert.doesNotMatch(rules.instructions, /单次不超过 60 秒/, '旧的 60 秒轮询规则已经换成新的等待规则')
   const worker = updated.find((a) => a.name === '执行')!
-  assert.match(worker.instructions, /没有开启按工作流执行计划的能力/, '补上不能起计划时怎么退化成对话')
+  assert.match(worker.instructions, /你不启动工作流/, '子对话不启动工作流（ADR 0044）')
   // 再启动：已经不是旧指纹，不再改
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
 
@@ -664,7 +665,7 @@ test('旧项目迁移：指向内置「默认」工作流的也改用「通用�
   )
 })
 
-test('没改过的「开发」和「Bug 修复」升级成按模块逐层定位，再启动不再改', async () => {
+test('没改过的「开发」升级成按模块逐层定位，再启动不再改；「Bug 修复」工作流下线', async () => {
   const saved: Agent[] = []
   const agentOps = {
     async updateAgent(id: string, input: AgentInput) {
@@ -684,39 +685,32 @@ test('没改过的「开发」和「Bug 修复」升级成按模块逐层定位�
   assert.match(up[0].instructions, /按模块逐层定位/)
   assert.equal((await upgradeBuiltinAgents({ ...st, agents: up }, agentOps)).length, 0, '再启动不再改')
 
-  // 「Bug 修复」：上一版的说明和主流程（验收流程没变，照新定义）
-  const def = BUILTIN_WORKFLOWS.find((w) => w.key === 'bugfix')!
-  const old = LEGACY_WORKFLOWS.bugfix.at(-1)!
+  // 「Bug 修复」工作流 ADR 0044 下线：没改过的副本（含最后一版）删掉，项目引用改指「通用项目」
   const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
-  const legacy = WorkflowInput.parse({
-    ...buildWorkflow(
-      { ...def, document: old.document, flows: [...old.flows, ...def.flows.filter((f) => f.id !== 'main')] },
-      (k) => k,
-    ),
-    categoryId: 'cat',
-    tags: [],
-    origin: 'builtin:bugfix',
-  })
-  let wf: Workflow | null = null
-  const meta = () => ({ id: 'new', createdAt: '', updatedAt: '' })
-  const ops: BuiltinOps = {
-    createAgent: async (a) => ({ ...AgentInput.parse(a), ...meta() }),
-    createCategory: async (name, scope) => ({ ...CategoryInput.parse({ name, scope }), ...meta() }),
-    createTag: async (x) => ({ ...TagInput.parse(x), ...meta() }),
-    createWorkflow: async (x) => ({ ...WorkflowInput.parse(x), ...meta() }),
-    updateWorkflow: async (id, input) => {
-      wf = { ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' }
-      return wf
-    },
+  const general = {
+    ...WorkflowInput.parse({ ...buildWorkflow(GENERAL, (k) => k), origin: GENERAL_ORIGIN }),
+    id: 'g',
+    createdAt: '',
+    updatedAt: '',
   }
-  const w: Workflow = { ...legacy, id: 'bf', createdAt: '', updatedAt: '' }
-  const r = await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [w] }, ops)
-  assert.ok(wf, '旧副本被升级')
-  const next = r.state.workflows.find((x) => x.id === 'bf')!
-  assert.match(next.document, /找到能完整解释现象的原因就修，修完就停/)
-  wf = null
-  await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [next] }, ops)
-  assert.equal(wf, null, '再启动不再改')
+  const bug = (def: (typeof BEFORE_0044)[string], id: string): Workflow => ({
+    ...WorkflowInput.parse({
+      ...buildWorkflow({ ...GENERAL, document: def.document, flows: def.flows }, (k) => k),
+      origin: 'builtin:bugfix',
+    }),
+    id,
+    createdAt: '',
+    updatedAt: '',
+  })
+  const last = BEFORE_0044.bugfix
+  const edited = { ...bug(last, 'b2'), document: '我改过的 Bug 流程' }
+  const gone = retiredWorkflows({ agents: mine, workflows: [general, bug(last, 'b1'), edited] })
+  assert.deepEqual(
+    gone.map((r) => [r.workflow.id, r.into]),
+    [['b1', 'g']],
+    '没改过的删掉，改过的保留',
+  )
+  assert.ok(!BUILTIN_WORKFLOWS.some((w) => w.key === 'bugfix'), '不再装「Bug 修复」')
 })
 
 test('上一版的「通用约束」「执行」「版本控制」副本升级：推送归父对话、搜索范围、文档职责收敛', async () => {
@@ -1117,8 +1111,8 @@ test('自带工作流默认全部加入：装过一次的删掉后不再装回�
   for (const w of r.state.workflows)
     for (const f of w.flows)
       for (const nd of f.nodes) for (const s of nodeSteps(nd)) if (s.kind === 'agent') assert.ok(ids.has(s.agentId))
-  // 用户删掉「Bug 修复」和「通用项目」：下次启动只补「通用项目」
-  const left = r.state.workflows.filter((w) => w.origin !== 'builtin:bugfix' && w.origin !== GENERAL_ORIGIN)
+  // 用户删掉「代码评审」和「通用项目」：下次启动只补「通用项目」
+  const left = r.state.workflows.filter((w) => w.origin !== 'builtin:review' && w.origin !== GENERAL_ORIGIN)
   const r2 = await seedProjectWorkflows({ ...r.state, workflows: left }, ops, r.seeded)
   assert.deepEqual(
     r2.created.map((w) => w.origin),
@@ -1128,11 +1122,11 @@ test('自带工作流默认全部加入：装过一次的删掉后不再装回�
   const r3 = await seedProjectWorkflows(
     r2.state,
     ops,
-    r.seeded.filter((k) => k !== 'bugfix'),
+    r.seeded.filter((k) => k !== 'review'),
   )
   assert.deepEqual(
     r3.created.map((w) => w.origin),
-    ['builtin:bugfix'],
+    ['builtin:review'],
   )
 })
 
@@ -1144,7 +1138,7 @@ test('整理改过的工作流：停在整理前那一版、没改过的副本�
     // 登记的旧版不能和现在的定义一样，否则每次启动都会重写一遍
     assert.notDeepEqual(legacy.at(-1), { document: def.document, flows: def.flows }, `${def.key} 登记的旧版没变`)
   }
-  for (const key of ['project-general', 'project-ue', 'openspec', 'migration', 'bugfix', 'review', 'deps', 'release']) {
+  for (const key of ['project-general', 'project-ue', 'openspec', 'migration', 'review', 'deps', 'release']) {
     const def = BUILTIN_WORKFLOWS.find((w) => w.key === key)!
     const old = BEFORE_TIDY[key]
     const w: Workflow = {

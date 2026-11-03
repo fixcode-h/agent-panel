@@ -296,6 +296,10 @@ export function workflowFingerprint(w: WorkflowInput) {
     entryFlowId: x.entryFlowId,
     document: x.document.trim(),
     expose: x.expose,
+    // ADR 0044 加的挑选字段：只在填了时算进指纹，加字段之前记下的指纹照样对得上（不然没改过的副本都算改过、不再升级）
+    ...(x.when && { when: x.when }),
+    ...(x.notFor && { notFor: x.notFor }),
+    ...(x.kind && { kind: x.kind }),
     flows: x.flows.map(({ startPos: _s, endPos: _e, ...f }) => ({
       ...f,
       nodes: f.nodes.map(({ x: _x, y: _y, ...n }) => n),
@@ -480,6 +484,9 @@ export async function upgradeBuiltinWorkflows(state: BuiltinState, api: BuiltinO
       entryFlowId: built.entryFlowId,
       document: built.document,
       expose: built.expose,
+      when: built.when,
+      notFor: built.notFor,
+      kind: built.kind,
       flows,
     }
     const latest = workflowFingerprint(input)

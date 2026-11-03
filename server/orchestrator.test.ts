@@ -6,8 +6,8 @@ import { activePlan, applyPlan } from '../shared/plan.ts'
 import { runEngineTurn, stopPlan, type AgentCall, type EngineHost } from '../shared/engine.ts'
 
 /**
- * 项目对话：Agent 在对话里直接执行，或者用 start_plan 按工作流执行一次计划；
- * 消耗的是 Agent 自己配置的能力（canPlan / canDelegate），不再有常驻编排器。
+ * 项目对话：父对话直接执行、分派子对话，或者用 start_workflow 开工作流子对话（ADR 0044）；
+ * 用的是 Agent 自己配置的能力（canPlan / canDelegate），不再有常驻编排器。
  */
 const agent = (id: string, name: string, extra: Partial<Agent> = {}): Agent => ({
   ...AgentInput.parse({ name }),
@@ -60,149 +60,222 @@ function host(task: Task, log: AgentCall[], runAgent: EngineHost['runAgent']): E
   }
 }
 
-test('对话里启动计划：同步跑完工作流，再把结果交回同一个会话', async () => {
-  const w = workflow()
-  const task = {
-    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '做功能' } as never, undefined, '', 't'),
-    id: 't',
-  } as Task
+/** 工作流子对话（ADR 0044）：父对话 start_workflow 开出来的，第一轮由面板按流程图跑 */
+const flowKid = (id: string, extra: Partial<Task> = {}) =>
+  ({
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'w', prompt: '做功能' } as never, undefined, '', id),
+    id,
+    parentTaskId: 'p0',
+    rootTaskId: 'p0',
+    flow: { workflowId: 'wf', workflowName: '执行计划', input: '做功能', kind: 'change', run: 0, handed: false },
+    ...extra,
+  }) as Task
+
+test('工作流子对话：先按流程图跑完，再带着结果交给执行角色收尾', async () => {
+  const task = flowKid('k1')
   const log: AgentCall[] = []
-  let turn = 0
   const h = host(task, log, async (call) => {
     if (call.step) return { ok: true, text: `${call.step.title}好了` }
-    if (turn++ === 0) {
-      assert.match(call.prompt, /## 用户这次的消息\n做功能/)
-      assert.equal(call.orch?.planning, true)
-      assert.equal(call.orch?.coordinator, false)
-      const r = call.orch!.plan(w.id, '做功能')
-      assert.equal(r.ok, true)
-      return { ok: true, text: '开始处理' }
-    }
-    // 工作流跑完：结果交回同一个会话；计划全部完成就结束了，不再追一轮要总结
-    assert.match(call.prompt, /## 计划执行结果/)
-    return { ok: true, text: '做完了' }
+    if (/补一个测试/.test(call.prompt)) return { ok: true, text: '补好了' }
+    // 执行角色只收尾：拿到的是流程图的结果，不是「从头做一遍」
+    assert.match(call.prompt, /工作流「执行计划」跑完了/)
+    assert.match(call.prompt, /验收好了/)
+    assert.match(call.prompt, /评审.*完整测试和编译.*合回/)
+    assert.doesNotMatch(call.prompt, /## 可用工作流/, '子对话不列可用工作流')
+    assert.equal(call.orch?.planning, false)
+    return { ok: true, text: '收尾好了' }
   })
-  h.agents = [agent('m', '协调', { canPlan: true }), agent('w', '开发')]
+  h.agents = [agent('w', '执行', { canPlan: true })]
 
   await runEngineTurn(h)
   assert.equal(task.status, 'done')
-  assert.equal(task.plans.length, 1)
-  assert.equal(task.plans[0].steps[0].run, 1)
-  assert.equal(task.plans[0].summary, '', '不再写计划总结')
-  assert.equal(task.runSeq, 1)
+  assert.equal(task.flow?.handed, true)
+  assert.equal(task.flow?.run, 1)
   assert.equal(task.runs.length, 1)
   assert.equal(task.runs[0].status, 'done')
-  const steps = task.steps.filter((s) => s.runId === 1)
+  assert.equal(task.plans[0].steps[0].run, 1, '流程图是子对话计划里的一个主步骤')
   assert.deepEqual(
-    steps.map((s) => s.id),
+    log.filter((c) => !!c.step).map((c) => c.step!.id),
     ['a', 'b'],
   )
-  assert.ok(steps.every((s) => s.status === 'done'))
-  assert.equal(
-    task.steps.some((s) => s.kind === 'main'),
-    false,
-    '不再有常驻编排器',
-  )
-  const talks = log.filter((c) => !c.step)
-  assert.equal(talks.length, 2, '对话一轮 + 计划结果一轮，不再追要总结')
-  assert.equal(talks[1].sessionKey, 'm')
-  assert.equal(log.filter((c) => !!c.step).length, 2, '两个节点各执行一次')
+  assert.equal(log.filter((c) => !c.step).length, 1, '流程图跑完交给执行角色一轮')
+  // 再来一条消息：流程图已经交出去了，按普通子对话由执行角色处理，不再跑节点
+  h.prompt = '补一个测试'
+  await runEngineTurn(h)
+  assert.equal(log.filter((c) => !!c.step).length, 2)
 })
 
-test('终止对话里的工作流：只停这次运行，后面的节点不再跑，改了哪些文件交回对话决定留不留', async () => {
-  const w = workflow()
-  const task = {
-    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '做功能' } as never, undefined, '', 't2'),
-    id: 't2',
-  } as Task
+test('工作流子对话被停下：同一次运行在继续时从没做完的节点接着跑，不重新起', async () => {
+  const task = flowKid('k2')
   const log: AgentCall[] = []
-  let turn = 0
+  let stopB = true
+  const h = host(task, log, async (call) => {
+    if (call.step?.id === 'b' && stopB) {
+      stopB = false
+      return { ok: false, stopped: true, error: '' }
+    }
+    if (call.step) return { ok: true, text: `${call.step.title}好了` }
+    return { ok: true, text: '收尾好了' }
+  })
+  h.agents = [agent('w', '执行')]
+
+  await runEngineTurn(h)
+  assert.equal(task.status, 'stopped')
+  assert.equal(task.runs[0].status, 'stopped')
+  assert.equal(task.flow?.handed, false)
+  assert.equal(log.filter((c) => !c.step).length, 0, '没跑完不交给执行角色')
+
+  h.resume = true
+  h.prompt = '（面板：继续执行）'
+  await runEngineTurn(h)
+  assert.equal(task.status, 'done')
+  assert.equal(task.runs.length, 1, '还是同一次运行')
+  assert.equal(task.runSeq, 1)
+  assert.deepEqual(
+    log.filter((c) => !!c.step).map((c) => c.step!.id),
+    ['a', 'b', 'b'],
+    '「实现」做完了不重跑，「验收」接着做',
+  )
+  assert.equal(task.flow?.handed, true)
+})
+
+test('工作流子对话的节点失败：按失败交回父对话，父对话的意见交给失败的节点重跑，再接着往下走', async () => {
+  const task = flowKid('k3')
+  const log: AgentCall[] = []
+  let failB = true
+  const h = host(task, log, async (call) => {
+    if (call.step?.id === 'b' && failB) {
+      failB = false
+      return { ok: false, error: '验收没过' }
+    }
+    if (call.step) return { ok: true, text: `${call.step.title}好了` }
+    return { ok: true, text: '收尾好了' }
+  })
+  h.agents = [agent('w', '执行')]
+
+  await runEngineTurn(h)
+  assert.equal(task.status, 'failed')
+  assert.equal(task.runs[0].status, 'failed')
+  assert.ok(task.messages.some((m) => /工作流停在「验收」/.test(m.text)))
+
+  h.prompt = '把空值也算上再验'
+  await runEngineTurn(h)
+  const rerun = log.filter((c) => c.step?.id === 'b').at(-1)!
+  assert.match(rerun.prompt, /父对话：把空值也算上再验/, '意见交给重跑的节点')
+  assert.equal(task.status, 'done')
+  assert.equal(task.flow?.handed, true)
+  assert.deepEqual(
+    log.filter((c) => !!c.step).map((c) => c.step!.id),
+    ['a', 'b', 'b'],
+  )
+})
+
+test('终止工作流子对话：没跑的节点不再跑，按失败交回，改了哪些文件写进结果；之后的消息交给执行角色', async () => {
+  const task = flowKid('k4')
+  const log: AgentCall[] = []
   const h = host(task, log, async (call) => {
     if (call.step) {
       // 节点调用带着这次运行的终止信号：终止时正在跑的节点跟着结束
       assert.ok(call.signal, '工作流节点要带上运行的终止信号')
-      assert.equal(stopPlan('t2', '方向错了'), true)
+      assert.equal(stopPlan('k4', '方向错了'), true)
       assert.equal(call.signal!.aborted, true)
       return { ok: false, stopped: true, error: '' }
     }
-    if (turn++ === 0) {
-      call.orch!.plan(w.id, '做功能')
-      return { ok: true, text: '开始处理' }
-    }
-    assert.match(call.prompt, /### 工作流被终止\n原因：方向错了/)
-    assert.match(call.prompt, /src\/a\.ts \| 3/, '这次运行改的文件交回对话')
-    assert.match(call.prompt, /由你决定这些改动怎么处理/)
     return { ok: true, text: '撤回了 src/a.ts' }
   })
-  h.agents = [agent('m', '协调', { canPlan: true }), agent('w', '开发')]
+  h.agents = [agent('w', '执行')]
   h.reviewDiff = async (since) => ({ snapshot: 's1', stat: since ? ' src/a.ts | 3 +++' : '', diff: '' })
 
   await runEngineTurn(h)
-  assert.equal(task.status, 'done', '对话本身没停')
+  assert.equal(task.status, 'failed')
+  assert.equal(task.flow?.cancelled, true)
   assert.equal(task.runs[0].status, 'stopped')
+  assert.ok(task.messages.some((m) => /工作流被终止：方向错了[\s\S]*src\/a\.ts \| 3/.test(m.text)))
   assert.deepEqual(
     log.filter((c) => !!c.step).map((c) => c.step!.id),
     ['a'],
     '终止后「验收」不再开始',
   )
-  assert.equal(stopPlan('t2', '再停一次'), false, '运行结束后没有可停的')
+  assert.equal(stopPlan('k4', '再停一次'), false, '运行结束后没有可停的')
+  // 父对话再交消息：交给执行角色处理，不再跑流程图
+  h.prompt = '把 src/a.ts 撤回'
+  await runEngineTurn(h)
+  assert.equal(log.filter((c) => !!c.step).length, 1)
+  assert.equal(log.filter((c) => !c.step).length, 1)
 })
 
-test('终止工作流：运行开始前拍快照的那段时间里也停得下来，一个节点都不跑', async () => {
-  const w = workflow()
-  const task = {
-    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '做功能' } as never, undefined, '', 't3'),
-    id: 't3',
-  } as Task
+test('终止工作流：拍快照的那段时间里也停得下来，一个节点都不跑', async () => {
+  const task = flowKid('k5')
   const log: AgentCall[] = []
-  let turn = 0
-  const h = host(task, log, async (call) => {
-    if (turn++ === 0) {
-      call.orch!.plan(w.id, '做功能')
-      return { ok: true, text: '开始处理' }
-    }
-    assert.match(call.prompt, /### 工作流被终止\n原因：点早了/)
-    assert.match(call.prompt, /这次运行没有留下文件改动/, '一个节点都没跑，不能把运行前的改动算成它的')
-    return { ok: true, text: '好的' }
-  })
-  h.agents = [agent('m', '协调', { canPlan: true }), agent('w', '开发')]
+  const h = host(task, log, async () => ({ ok: true, text: '好的' }))
+  h.agents = [agent('w', '执行')]
   // 拍快照的时候用户点了终止：这时开关必须已经登记好
   h.reviewDiff = async (since) => {
-    if (!since) assert.equal(stopPlan('t3', '点早了'), true, '快照期间点终止要停得下来')
+    if (!since) assert.equal(stopPlan('k5', '点早了'), true, '快照期间点终止要停得下来')
     return { snapshot: 's1', stat: ' old.ts | 1 +', diff: '' }
   }
 
   await runEngineTurn(h)
   assert.equal(task.runs[0].status, 'stopped')
-  assert.deepEqual(
-    log.filter((c) => !!c.step),
-    [],
-    '一个节点都不跑',
-  )
+  assert.equal(task.flow?.cancelled, true)
+  assert.deepEqual(log, [], '一个节点都不跑，也不交给执行角色')
+  assert.ok(!task.messages.some((m) => /old\.ts/.test(m.text)), '运行前就有的改动不算它的')
 })
 
-test('对话 Agent 没开「按工作流执行计划」：没有 start_plan 能力，直接回答', async () => {
+test('只有父对话能启动工作流：父对话列可用工作流和判定规则，子对话、没开 canPlan 的都没有', async () => {
   const task = {
-    ...newTask(
-      { projectId: 'p', mode: 'chat', agentId: 'm', prompt: '这个项目用什么语言' } as never,
-      undefined,
-      '',
-      't2',
-    ),
-    id: 't2',
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '做功能' } as never, undefined, '', 'p9'),
+    id: 'p9',
   } as Task
-  const log: AgentCall[] = []
-  const h = host(task, log, async (call) => {
-    assert.equal(call.orch?.planning, false)
-    assert.match(call.orch!.plan('', '做功能').info, /没有开启/)
-    return { ok: true, text: '用的是 TypeScript。' }
+  const made: { title: string; flow?: Task['flow'] }[] = []
+  const h = host(task, [], async (call) => {
+    assert.equal(call.orch?.planning, true)
+    assert.match(call.prompt, /## 可用工作流\n- id: wf｜执行计划（默认）/)
+    assert.match(call.prompt, /拿不准就交给子对话，不起工作流/)
+    assert.equal(call.orch!.pickWorkflow('没有这个').ok, false)
+    const got = call.orch!.pickWorkflow('执行计划')
+    assert.ok(got.ok)
+    const r = await call.orch!.createConversation('做功能', '做功能', undefined, undefined, {
+      flow: { ...got.flow, input: '做功能' },
+    })
+    assert.equal(r.ok, true)
+    return { ok: true, text: '已启动工作流' }
   })
-  h.agents = [agent('m', '协调', { canDelegate: true })]
-
+  h.agents = [agent('m', '主理', { canDelegate: true, canPlan: true })]
+  h.listConversations = async () => []
+  h.createConversation = async ({ title, flow }) => {
+    made.push({ title, flow })
+    return { ok: true, id: 'k9', title, info: '已新建' }
+  }
   await runEngineTurn(h)
-  assert.equal(task.runs.length, 0, '没有起运行')
-  assert.equal(task.steps.length, 0, '没有执行流程节点')
-  assert.equal(log.length, 1)
+  assert.equal(made[0].flow?.workflowId, 'wf')
+  assert.equal(made[0].flow?.input, '做功能')
+  assert.equal(
+    task.plans.at(-1)?.steps.some((s) => s.waits.some((w) => w.ref === 'k9')),
+    true,
+    '父计划等它',
+  )
+
+  // 没开 canPlan 的父对话、子对话（即使角色开了 canPlan）：不列目录，pickWorkflow 拒绝
+  for (const [t0, a] of [
+    [{ ...task, id: 'p10', plans: [], messages: [] } as Task, agent('m', '主理', { canDelegate: true })],
+    [
+      { ...task, id: 'c10', parentTaskId: 'p9', plans: [], messages: [] } as Task,
+      agent('m', '执行', { canPlan: true }),
+    ],
+  ] as const) {
+    const h2 = host(t0, [], async (call) => {
+      assert.equal(call.orch?.planning, false)
+      assert.doesNotMatch(call.prompt, /## 可用工作流/)
+      assert.match(
+        call.orch!.pickWorkflow('').ok ? '' : (call.orch!.pickWorkflow('') as { info: string }).info,
+        /只有项目里的父对话能启动工作流/,
+      )
+      return { ok: true, text: '直接做' }
+    })
+    h2.agents = [a]
+    await runEngineTurn(h2)
+  }
 })
 
 test('协调 Agent：一条消息只交给一个子对话，同一段话再发给别的子对话被拒绝', async () => {
@@ -475,7 +548,7 @@ test('分派角色用在不能分派的地方：明说角色设定里的分派�
   // 子对话里换成了「统筹」：不能再建子对话
   const sub = await run(mk('s1', { parentTaskId: 'top' }))
   assert.equal(sub.orch?.coordinator, false)
-  assert.match(sub.prompt, /没有创建子对话/)
+  assert.match(sub.prompt, /不能创建子对话/)
   assert.match(sub.prompt, /分派子对话的规则这次不适用/)
   // Chat 模式（没有项目）：不按分派对话提示，提示词另起一套（ADR 0038），根本不提子对话的工具
   const free = await run(mk('s2', { projectId: '' }))

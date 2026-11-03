@@ -86,9 +86,12 @@ function host(task: Task, log: AgentCall[]): EngineHost {
             text(await callOrchTool(o, 'spawn_agents', { tasks: [{ title: '更细', instructions: '拆得更细' }] })),
             /不能再派子任务/,
           )
-          assert.match(text(await callOrchTool(o, 'start_plan', { input: '跑一遍' })), /不能启动工作流/)
+          assert.match(
+            text(await callOrchTool(o, 'start_workflow', { input: '跑一遍' })),
+            /只有项目里的父对话能启动工作流/,
+          )
           const names = orchTools(o).map((x) => x.name)
-          assert.ok(!names.includes('spawn_agents') && !names.includes('start_plan'), names.join(','))
+          assert.ok(!names.includes('spawn_agents') && !names.includes('start_workflow'), names.join(','))
         }
         return { ok: true, text: `子 Agent「${call.step.title}」做完了` }
       }
@@ -339,7 +342,7 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
   const task = {
     ...newTask({ projectId: 'p', mode: 'chat', prompt: '做功能' } as never, undefined, '', 't3'),
     id: 't3',
-    // 对话里跑过 start_plan：task.runs 里留着上一次运行的记录和它写下的共享状态
+    // 对话里跑过工作流：task.runs 里留着上一次运行的记录和它写下的共享状态
     runSeq: 1,
     runs: [
       {
@@ -364,7 +367,7 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
     runAgent: async (call) => {
       autoSubmit(call)
       if (call.step?.slot === 'sub') {
-        // 对话里的子任务用不上共享状态：即使对话跑过 start_plan、task.runs 还留着上一次运行，
+        // 对话里的子任务用不上共享状态：即使对话跑过工作流、task.runs 还留着上一次运行，
         // 也不能把这两个工具注册回来，更不能把上一次运行的 state 交给它
         assert.equal(call.orch!.sharedState, false)
         assert.ok(!orchTools(call.orch!).some((x) => x.name === 'read_state' || x.name === 'write_state'))
@@ -834,7 +837,7 @@ const IDENTITIES: [string, object, string[]][] = [
       ...BG,
       'set_plan',
       'finish_plan',
-      'start_plan',
+      'start_workflow',
       ...COORD,
       'begin_inline_edit',
       'end_inline_edit',
@@ -852,15 +855,15 @@ const IDENTITIES: [string, object, string[]][] = [
   ],
   ['项目顶层·非统筹', TOP, ['get_status', ...BG, 'set_plan', 'finish_plan', 'finish_child', ...LESSON_TOOLS, ...TAIL]],
   [
-    '项目顶层·非统筹 全开（按需开分支 + canPlan + 挂能力 + P4 + cherry-pick + 推送问一次）',
-    { ...TOP, canBeginEdit: true, planning: true, capabilities: true, p4Split: okCb, cherryPick: okCb, askPush: okCb },
+    // 不能分派子对话的顶层对话没有 start_workflow（工作流子对话要能分派，ADR 0044）：makeOrchestra 给的 planning 是 false
+    '项目顶层·非统筹 全开（按需开分支 + 挂能力 + P4 + cherry-pick + 推送问一次）',
+    { ...TOP, canBeginEdit: true, capabilities: true, p4Split: okCb, cherryPick: okCb, askPush: okCb },
     [
       'get_status',
       'begin_edit',
       ...BG,
       'set_plan',
       'finish_plan',
-      'start_plan',
       'use_capability',
       'finish_child',
       'p4_split_changelists',
@@ -897,14 +900,14 @@ const IDENTITIES: [string, object, string[]][] = [
     ['get_status', 'begin_edit', ...BG, 'set_plan', 'finish_plan', ...CHILD_TOOLS, ...LESSON_TOOLS, ...TAIL],
   ],
   [
-    '子对话·共用目录 全开（canPlan + 挂能力 + UE + P4）',
-    { ...CHILD, claims: true, planning: true, capabilities: true, ueBuild: 'child', p4Split: okCb },
+    // 子对话不启动工作流（ADR 0044）：角色开了 canPlan 也没有 start_workflow
+    '子对话·共用目录 全开（挂能力 + UE + P4）',
+    { ...CHILD, claims: true, capabilities: true, ueBuild: 'child', p4Split: okCb },
     [
       'get_status',
       ...BG,
       'set_plan',
       'finish_plan',
-      'start_plan',
       'use_capability',
       ...CHILD_TOOLS,
       'request_build',
@@ -968,7 +971,7 @@ const IDENTITIES: [string, object, string[]][] = [
     ],
   ],
   [
-    '工作流节点（子对话 start_plan 跑的，共用目录）',
+    '工作流节点（工作流子对话跑的，共用目录）',
     {
       self: 'a',
       canSpawn: true,
@@ -1099,7 +1102,7 @@ test('面板工具按身份裁剪：每个身份的完整清单，真实 makeOrc
   assert.deepEqual((await real({}))('chat'), want.get('项目顶层·非统筹'))
   assert.deepEqual((await real({ parent: true }))('chat'), want.get('子对话·共用目录'))
   assert.deepEqual((await real({ chat: true }))('chat'), want.get('Chat 模式·助手（无项目，没有派单和传话）'))
-  // Chat 里用着旧 Agent 角色（canPlan、canDelegate）：清单和助手一样，拿不到 start_plan、create_conversation
+  // Chat 里用着旧 Agent 角色（canPlan、canDelegate）：清单和助手一样，拿不到 start_workflow、create_conversation
   assert.deepEqual(
     (await real({ chat: true, legacy: true }))('chat'),
     want.get('Chat 模式·助手（无项目，没有派单和传话）'),
@@ -1173,7 +1176,7 @@ test('Chat 模式的一轮：提示词另起一套，不带项目对话的授权
   assert.match(chatModePart(true), /面板会把它显示/)
   assert.doesNotMatch(
     chat.prompt,
-    /## 授权情况|ask_push|项目对话|start_plan|create_conversation|## 执行方式|## 执行计划/,
+    /## 授权情况|ask_push|项目对话|start_plan|start_workflow|create_conversation|## 执行方式|## 执行计划/,
   )
   // 项目里的对话照旧：授权、执行方式、面板计划都在，ask_push 和派子任务也在
   const conv = await run('p')

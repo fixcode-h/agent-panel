@@ -20,7 +20,7 @@ export function budgetLimit(
 /**
  * 这一轮用掉的花费 / token / 时长超过上限时，返回暂停的说明（导出给单测验证聊天模式也走这套判定）。
  * includeWorkflow：要把工作流设的上限也算进来吗。节点执行路径传 true；
- * chat 路径传 false——工作流预算管的是「这次工作流执行」，对话里跑过一次 start_plan 之后，
+ * chat 路径传 false——工作流预算管的是「这次工作流执行」，对话里跑过一次工作流之后，
  * 任务会一直带着工作流快照（host.workflow 非空），不能让那个上限转头把普通的聊天轮次也停掉。
  */
 export function overBudget(host: EngineHost, includeWorkflow = true): string {

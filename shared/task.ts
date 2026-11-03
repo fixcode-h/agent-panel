@@ -791,7 +791,7 @@ export function askOptions(options: string[] | undefined, kind: AskKind = 'quest
  * 子对话彻底完成要满足的条件，缺哪个列哪个：
  * - working：这一轮还在跑
  * - background：后台命令还在跑 / 排队（结果推回来还要接着做）
- * - workflow：start_plan 启动的工作流运行还没跑完（工具调用返回得比运行本身早，不能只看这一轮跑没跑）
+ * - workflow：工作流运行还没跑完（工作流子对话的流程图，或老对话里 start_plan 起的运行）
  * - helpers：它派出去的子任务还在跑（结果交回来时它还要接着做）
  * - plan：计划还没做完（见 shared/plan.ts 的 openPlan）
  * - asking：还有待用户回答的提问
@@ -837,7 +837,7 @@ export function childHolds(x: {
 export const childComplete = (x: Parameters<typeof childHolds>[0]) => childHolds(x).length === 0
 
 /**
- * 工作流运行还在跑：start_plan 启动的那次运行（task.runs 最后一条）还没结束。
+ * 工作流运行还在跑：最近一次运行（task.runs 最后一条）还没结束。
  * 「启动工作流」这个工具调用一下子就会返回，运行本身在它后面接着跑，只看这一轮跑没跑会把还在跑的工作流当成结束。
  */
 export function runRunning(task: { status: Task['status']; runs?: Task['runs']; steps?: Task['steps'] }): boolean {

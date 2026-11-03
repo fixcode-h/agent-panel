@@ -7,6 +7,7 @@ import { overrideInput, triageInput } from '../shared/review-gate.ts'
 import type { HelperReport, HelperSpec, Orchestra, RouteInput } from '../shared/engine.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
 import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
+import { callStartWorkflow } from './start-workflow-tool.ts'
 // 用法说明搬到了单独的文件（这个文件到了行数上限），调用方照旧从这里取
 export { orchHint } from './orch-hint.ts'
 
@@ -318,27 +319,30 @@ export function orchTools(o: Orchestra) {
     ...(o.planning
       ? [
           {
-            name: 'start_plan',
+            name: 'start_workflow',
             title: '启动工作流',
             description:
-              '按工作流启动一次计划执行：节点全部新建，同一层没有依赖的节点同时执行，跑完把结果交回对话。需要完整流程、跨模块改动或较大的研究时用；简单任务直接在对话里做更快。',
+              '在你下面开一个工作流子对话，按工作流的流程图把这件事做完（异步执行，马上返回子对话 id）。流程图跑完由它的执行角色评审、测试、合回，你按等子对话的方式等它。只用于步骤和门禁事先定好的事，判定规则见提示里的「可用工作流」；问答、排查、Bug 定位、小改动不要起工作流。',
             inputSchema: {
               type: 'object',
               properties: {
                 workflow: {
                   type: 'string',
-                  description: '工作流 id（见提示里的「可用工作流」）；不写用项目默认工作流',
+                  description: '工作流 id 或名字（见提示里的「可用工作流」）；不写用项目默认工作流',
                 },
-                input: { type: 'string', description: '这次计划要做什么：目标、范围、验收标准' },
-                ...(o.plans
-                  ? {
-                      step: {
-                        type: 'string',
-                        description:
-                          '执行计划里哪个主步骤用这个工作流做（步骤 id），工作流的节点就是它的子步骤；不写就在计划末尾加一步',
-                      },
-                    }
-                  : {}),
+                input: { type: 'string', description: '这次要做什么：目标、范围、验收标准，工作流的节点只看得到这些' },
+                title: { type: 'string', description: '子对话的短标题（10–20 字），不写用工作流名字加要做的事' },
+                files: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: '这个工作流负责的文件或目录（相对项目根），和 create_conversation 的 files 一样',
+                },
+                again: {
+                  type: 'string',
+                  description: '已有工作流子对话的 id：在它的分支上把同一个工作流再跑一次（方案被否、要从头再来时用）',
+                },
+                route: routeField(),
+                ...(o.plans ? { step: stepField('这个工作流') } : {}),
               },
               required: ['input'],
             },
@@ -428,14 +432,14 @@ export function orchTools(o: Orchestra) {
           },
           {
             name: 'stop_workflow',
-            title: '终止子对话的工作流',
+            title: '终止工作流',
             description:
-              '终止子对话里 start_plan 正在跑的工作流：方向错了、已经不需要、卡住不动时用。只停这次运行，子对话本身不停；它会收到「工作流被终止」和这次运行改了哪些文件，由它决定保留还是清理。',
+              '终止工作流子对话正在跑的流程图：方向错了、已经不需要、卡住不动时用。没跑的节点不再跑，子对话按失败交回，结果里写着这次运行改了哪些文件；之后要清理还是接着做，用 send_to_conversation 交给它。',
             inputSchema: {
               type: 'object',
               properties: {
-                id: { type: 'string', description: '子对话 id' },
-                reason: { type: 'string', description: '为什么终止，一句话（会交给子对话）' },
+                id: { type: 'string', description: '工作流子对话的 id' },
+                reason: { type: 'string', description: '为什么终止，一句话' },
               },
               required: ['id', 'reason'],
             },
@@ -1020,12 +1024,11 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
   switch (name) {
     case 'get_status':
       return text(o.status())
-    case 'start_plan': {
-      const input = str(a?.input).trim()
-      if (!input) return text('input 是空的：写清楚这次计划要做什么', true)
-      const r = o.plan(str(a?.workflow).trim(), input, str(a?.step).trim())
-      return text(r.info, !r.ok)
-    }
+    case 'start_plan':
+      // 老会话里模型还记得这个工具：说清楚现在归谁，不悄悄吞掉
+      return text('子对话不再启动工作流：工作流由父对话用 start_workflow 启动，按派给你的事直接做', true)
+    case 'start_workflow':
+      return callStartWorkflow(o, a, routeOf(a?.route))
     case 'set_plan': {
       const r = await o.setPlan({
         title: str(a?.title),

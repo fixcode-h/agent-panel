@@ -731,7 +731,7 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起 / �
   // 被打断的子任务由面板在原来的会话里接着跑（ADR 0042）：写明不要重派
   assert.match(note, /面板在原来的会话里接着跑：「查日志」（id h1）[\s\S]*不要重新派/)
   assert.doesNotMatch(note, /已完成的子任务/, '做完的子任务不列')
-  assert.match(note, /「修复 Bug」[\s\S]*start_plan/)
+  assert.match(note, /「修复 Bug」[\s\S]*不会接着跑/)
   // 一起停掉的后台命令不会再推回结果：写明不要等，要结果就重新启动
   assert.match(note, /「e2e」（npm run test:e2e）[\s\S]*不要等[\s\S]*run_background/)
   // 没有可列的：只有一句续接说明
