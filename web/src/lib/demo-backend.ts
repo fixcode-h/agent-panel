@@ -4127,7 +4127,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       it.messages[0].peer = {
         id: parent.id,
         title: parent.title,
-        name: '主理',
+        name: '协调器',
         rel: 'parent',
         kind: 'task',
         subject: title,

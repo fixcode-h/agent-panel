@@ -419,7 +419,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
                   <Workflow className="h-[18px] w-[18px]" strokeWidth={2.3} />
                 </span>
               }
-              name={t('主理')}
+              name={t('协调器')}
               model="deepseek-v4.1-flash"
               effort="high"
             />

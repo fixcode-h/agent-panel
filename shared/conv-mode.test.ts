@@ -92,7 +92,7 @@ test('角色分两类：各入口的类别校验、Chat 角色保存时归零能
     },
   )
   // Agent 角色不能挂 Chat 角色，引入的 Chat 角色去掉；项目默认角色、工作流里只能用 Agent 角色
-  const a = AgentInput.parse({ name: '主理副本', mounts: [{ agentId: helper.id }], includes: [helper.id] })
+  const a = AgentInput.parse({ name: '协调器副本', mounts: [{ agentId: helper.id }], includes: [helper.id] })
   assert.match(normalizeScope(a, [helper]), /不能挂载/)
   assert.deepEqual(a.includes, [])
   assert.match(agentOnlyError(['', helper.id], [worker, helper]), /是 Chat 角色/)

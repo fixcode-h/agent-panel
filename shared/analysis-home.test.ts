@@ -73,7 +73,7 @@ test('分析归属：Chat 模式的对话、项目外的分析都开 Chat 对话
   assert.equal(analysisHome({ kind: 'project', projectId: '' }).place, 'chat')
 })
 
-test('分析对话用必备角色「分析」，关掉或没装时不用角色', () => {
+test('分析对话用必备角色「排查分析」，关掉或没装时不用角色', () => {
   assert.equal(analyzerId([{ id: 'a', origin: 'builtin:analyzer', enabled: true }]), 'a')
   assert.equal(analyzerId([{ id: 'a', origin: 'builtin:analyzer', enabled: false }]), '')
   assert.equal(analyzerId([{ id: 'w', origin: 'builtin:worker', enabled: true }]), '')

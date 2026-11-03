@@ -183,9 +183,9 @@ test('文档角色：旧副本存着旧默认（关）的「写 Bug 记录」升
   assert.equal(upgradeParamDefaults(off, 'docsync').params.find((p) => p.key === 'bug')!.default, false)
 })
 
-test('主理：汇报默认详细，旧副本的「精简」升级一次，之后用户再选精简的保留', () => {
+test('协调器：汇报默认详细，旧副本的「精简」升级一次，之后用户再选精简的保留', () => {
   const orch = coreDefinition('orchestrator').agent
-  assert.equal(orch.params.find((p) => p.key === 'report')!.default, '详细', '主理的汇报应该默认详细')
+  assert.equal(orch.params.find((p) => p.key === 'report')!.default, '详细', '协调器的汇报应该默认详细')
   const old = AgentInput.parse({
     ...orch,
     params: orch.params.map((p) => (p.key === 'report' ? { ...p, default: '精简' } : p)),
@@ -410,7 +410,7 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
   const r = await seedBuiltins({ agents: [mine], categories: [], tags: [], workflows: [] }, ops)
   assert.equal(r.workflows.length, BUILTIN_WORKFLOWS.length)
   const built = r.agents.filter((a) => a.origin.startsWith('builtin:'))
-  // 必备角色「子任务」「分析」「助手」（连同它引入的「聊天约束」）不在任何工作流里，由启动时的必备角色检查装上
+  // 必备角色「子任务」「排查分析」「助手」（连同它引入的「聊天约束」）不在任何工作流里，由启动时的必备角色检查装上
   const notInFlows = ['helper', 'analyzer', 'chat', 'chat-rules']
   assert.equal(
     built.length,

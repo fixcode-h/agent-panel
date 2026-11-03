@@ -2217,7 +2217,7 @@ export function TaskView({
               />
             }
           />
-          {/* 主理把这条消息分到了哪里：分诊卡，不同意可以一键改派 */}
+          {/* 协调器把这条消息分到了哪里：分诊卡，不同意可以一键改派 */}
           <RouteCard
             routes={(task.routes ?? []).filter((r) => r.messageId === b.m.id)}
             later={task.messages.slice(task.messages.indexOf(b.m) + 1)}

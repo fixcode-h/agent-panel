@@ -9,7 +9,7 @@ import type { Agent, Task } from './schema.ts'
  * - 项目相关（项目设置、项目的 Skill / MCP、导入的只读记录、跨对话的执行分析）：在这个项目里开一个顶层对话。
  * - 归不到项目的（面板设置、CLI、本机环境、面板内存）：开 Chat 模式的对话。
  *
- * 分析对话统一用必备角色「分析」（builtin:analyzer），找不到时退回不用角色。
+ * 分析对话统一用必备角色「排查分析」（builtin:analyzer），找不到时退回不用角色。
  */
 export type AnalysisScope =
   /** 某个对话（顶层或子对话）或它名下子任务的分析；task 只用到这几个字段 */
@@ -61,6 +61,6 @@ export function analysisHome(
 export const rootIdOf = (tk: Pick<Task, 'id' | 'parentTaskId' | 'rootTaskId'>) =>
   tk.parentTaskId ? tk.rootTaskId || tk.parentTaskId : tk.id
 
-/** 分析对话用的角色：必备角色「分析」；没装上（旧数据、演示）时返回空，按不用角色开 */
+/** 分析对话用的角色：必备角色「排查分析」；没装上（旧数据、演示）时返回空，按不用角色开 */
 export const analyzerId = (agents: Pick<Agent, 'id' | 'origin' | 'enabled'>[]) =>
   agents.find((a) => a.origin === 'builtin:analyzer' && a.enabled)?.id ?? ''

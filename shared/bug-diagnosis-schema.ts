@@ -19,7 +19,7 @@ export type DiagnosisNote = z.infer<typeof DiagnosisNote>
 
 const str = (max: number) => z.string().max(max).catch('').default('')
 
-/** 级别（ADR 0046）：快速 / 标准 / 深入，按难度定要求；主理派单初判，子对话可升级、降级要写理由 */
+/** 级别（ADR 0046）：快速 / 标准 / 深入，按难度定要求；协调器派单初判，子对话可升级、降级要写理由 */
 export const BugLevel = z.enum(['quick', 'standard', 'deep'])
 export type BugLevel = z.infer<typeof BugLevel>
 

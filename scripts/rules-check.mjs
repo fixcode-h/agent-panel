@@ -21,6 +21,7 @@
 // 17. 不给 process.env 整个赋值：换成普通对象后再设 HOME 等变量，os.homedir() 和子进程都读不到
 // 18. 面板工具不按「是不是 Chat 页」裁：server/orch-mcp.ts、orch-hint.ts、ask-mcp.ts 里不出现 isChatMode / isPlainChat / .plain
 // 19. 状态只认工具调用：判定逻辑不调用按回复文字识别结论 / 决定的函数（parseVerdict / leadVerdict / parseDispatch）
+// 20. 给 Agent 的规则每条只有一个出处：内置角色设定、面板提示词、方法类技能之间，同一句（30 字以上）不许出现在两个文件里（ADR 0048）
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -505,6 +506,40 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
           `${f}:${i + 1}：状态只认工具调用（submit_verdict / submit_result / dispatch），不从回复文字里认结论，见 ADR 0041 第 16 节`,
         )
     })
+}
+
+// 20. 给 Agent 的规则每条只有一个出处（ADR 0048）：同一条规则抄在角色设定、面板提示词和技能里，改一处漏一处就互相打架
+// （改造前读模块文档的顺序写了 9 处、「Bug 记录只记用户报的」写了 8 处）。按句子比：30 字以上的同一句出现在两个文件里就拦下。
+// 生成出来的技能（systematic-debugging 由 bug-method.ts 生成）、美术和 UE 代码风格示例不算；确实要两处都写的句子末尾加 rule-dup-ok
+{
+  const ruleFiles = [
+    'shared/builtin/agents.ts',
+    'shared/builtin/bug-method.ts',
+    'shared/engine.ts',
+    'shared/push-auth.ts',
+    'shared/turn-rules.ts',
+    ...files.filter(
+      (f) => /^skills\/(coding|docs|project|vcs|workflow)\/.*\.md$/.test(f) && !f.includes('systematic-debugging'),
+    ),
+  ].filter((f) => existsSync(path.join(root, f)))
+  const seen = new Map()
+  for (const f of ruleFiles)
+    // 模板字符串里的 \` 先还原成 `，和 Markdown 里同一句比得上
+    for (const raw of read(f)
+      .replace(/\\`/g, '`')
+      .split(/[。；\n]/)) {
+      if (raw.includes('rule-dup-ok')) continue
+      const line = raw.replace(/^[\s\-*#>|`'"]+|[\s`'",]+$/g, '').replace(/\$\{[^}]*\}/g, '')
+      if ([...line].length < 30 || /^(\/\/|\*|import |export |const |if |return )/.test(line)) continue
+      const at = seen.get(line) ?? new Set()
+      at.add(f)
+      seen.set(line, at)
+    }
+  for (const [line, at] of seen)
+    if (at.size > 1)
+      errors.push(
+        `同一条规则写在了 ${[...at].join('、')}：只留一个出处，别处写一行指针（ADR 0048）：${line.slice(0, 60)}…`,
+      )
 }
 
 if (errors.length) {

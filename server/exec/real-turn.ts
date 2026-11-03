@@ -15,7 +15,7 @@ import path from 'node:path'
 import { placedFiles } from '../attachments.ts'
 import { projectDocRoot } from '../doc-root.ts'
 import { projectFormat } from '../file-format.ts'
-import { reviewDiff } from './git.ts'
+import { gitHasRemote, reviewDiff } from './git.ts'
 import { saveHandoffFile } from './handoff-file.ts'
 import { searchExcludeOf } from '../../shared/search-exclude.ts'
 import { steers, waitChat } from './steering.ts'
@@ -32,8 +32,11 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
   // cherry-pick 目标只对 Git / P4 项目有意义：按项目目录现在的版本管理说清怎么搬（目录换了类型就不提）
   const target = ctx.project.cherryPick?.trim()
   const vcs = ctx.project.path ? (await detectVcs(ctx.project.path).catch(() => null))?.vcs : undefined
+  // Git 仓库没配远端：没有地方可推。不探的话「问一次」的项目会在每次合回后弹推送授权卡（2026-11-03 真实 API 实测）
+  const noRemote = vcs === 'git' && !(await gitHasRemote(ctx.project.path).catch(() => true))
   return {
     push: ctx.project.gitPolicy ?? 'ask',
+    ...(noRemote && { noRemote: true }),
     // 用户对推送的回答（task.remotePush）不在这一刻定死：getter 现取，回答记上之后保活的下一条消息（nextPrompt 重拼）才看得到
     get answered() {
       return ctx.task.remotePush

@@ -93,7 +93,7 @@ export const settledTodos = <T extends { status: string }>(todos: T[] | undefine
 
 /**
  * 新建对话、换角色时的类别校验：Chat 模式只能用 Chat 角色，项目里的对话只能用 Agent 角色。
- * 例外只有面板开的「AI 分析」：归不到项目时开在 Chat，用必备角色「分析」（面板专用，受 Chat 模式的能力上限管）
+ * 例外只有面板开的「AI 分析」：归不到项目时开在 Chat，用必备角色「排查分析」（面板专用，受 Chat 模式的能力上限管）
  */
 export function scopeError(
   tk: ModeOf & { analysis?: unknown },

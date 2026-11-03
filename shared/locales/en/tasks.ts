@@ -778,8 +778,8 @@ export const EN_TASKS: Record<string, string> = {
   '读一下这个项目的目录、脚本和配置，按项目的实际情况把「{name}」的参数配好，说明每一项为什么这么填':
     'Read this project\'s folders, scripts and config, then fill in the parameters of "{name}" to fit the project, explaining why for each one',
   必备角色: 'Core roles',
-  '项目对话靠这几个角色运转：主理分诊、执行做事、文档落盘、测试验收、版本控制收尾。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
-    "Project conversations run on these roles: the lead triages, the executor does the work, docs writes everything to disk, test & acceptance verifies, and version control wraps up the delivery. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
+  '项目对话靠这几个角色运转：协调器分诊、执行做事、文档落盘、测试验收、版本控制收尾。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
+    "Project conversations run on these roles: the coordinator triages, the executor does the work, docs writes everything to disk, test & acceptance verifies, and version control wraps up the delivery. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
   '改了 {n} 项': '{n} changed',
   去角色页改所有项目的默认值和模型: 'Change the defaults and model for all projects on the Roles page',
   角色设置: 'Role settings',
@@ -1203,8 +1203,8 @@ export const EN_TASKS: Record<string, string> = {
   分析完成: 'Analysis done',
   分析失败: 'Analysis failed',
   功能面板: 'Side panel',
-  '用「分析」角色新建对话来分析，只分析不改文件；对话里的分析在项目里另开，子对话里的开在它所属的顶层对话下':
-    'Starts a conversation with the Analysis role that only analyzes and never edits files; an analysis of a conversation opens separately in the project, while an analysis inside a sub-conversation opens under its top-level conversation',
+  '用「排查分析」角色新建对话来分析，只分析不改文件；对话里的分析在项目里另开，子对话里的开在它所属的顶层对话下':
+    'Starts a conversation with the Troubleshooting Analysis role that only analyzes and never edits files; an analysis of a conversation opens separately in the project, while an analysis inside a sub-conversation opens under its top-level conversation',
   'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
     "The AI reads the full execution record (messages, each node's result, time, tokens and cache hits), judges the result quality, what could be optimized and whether the panel framework has issues, and proposes changes you can apply directly. Nothing is applied until you review the diff.",
   '{name} 最近 {n} 次执行': 'last {n} runs of {name}',

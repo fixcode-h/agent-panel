@@ -244,7 +244,11 @@ export interface ReviewDiff {
   file?: string
 }
 
-/** 分诊记录的输入：派单工具的 route 参数（主理写的理解、理由、假设） */
+/** send_to_conversation 送到之后跟在返回后面的一句：这一轮可以结束、怎么跟用户说、不要猜状态 */
+export const SENT_NOTE =
+  '交出去了：这一轮可以结束，它做完会自动推回结果。给用户只说「已交回，等它的结果」，不要轮询，也不要拿 busy、「已完成」这类状态去猜它接没接到；用户问起时用 list_conversations 看一次 lastActivityAt 是否比交回的时间新。'
+
+/** 分诊记录的输入：派单工具的 route 参数（协调器写的理解、理由、假设） */
 export interface RouteInput {
   understanding?: string
   reason?: string
@@ -628,6 +632,8 @@ export interface EngineHost {
    */
   policy?: {
     push: 'ask' | 'allow' | 'deny'
+    /** 项目是 Git 仓库但没配远端：没有地方可推，推送规则改成不推、不问（ask_push 也不给） */
+    noRemote?: boolean
     /** 这个对话里用户对推送的回答 */
     answered?: 'allowed' | 'denied'
     /** 已安装并登录的外部工具 */
@@ -3115,7 +3121,9 @@ function makeOrchestra(
       const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: kidTitle || id.trim() }) : ''
       if (r.ok) recordRoute(host, 'resend', [id.trim()], kidTitle || id.trim(), route)
       if (r.ok) host.changed(true)
-      return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
+      // 送没送到、之后怎么做由返回自己说清（以前写在协调器设定里一整节教它读返回值，ADR 0048 删掉了那一节）
+      const info = r.ok ? `${r.info}\n${SENT_NOTE}${wait ? `\n${wait}` : ''}` : r.info
+      return { ok: r.ok, info }
     },
     stopConversationWorkflow: (id, why) =>
       coordinator ? rs.stopChildPlan(task.id, id, why) : { ok: false, info: '这个对话不能管理子对话' },
@@ -4078,7 +4086,7 @@ async function conversationPrompt(
   kind: 'top' | 'sub',
   planning: boolean,
   coordinator: boolean,
-  /** 角色本身是做分派的（例如「主理」），这次却不能分派：要明说角色设定里的分派规则不适用 */
+  /** 角色本身是做分派的（例如「协调器」），这次却不能分派：要明说角色设定里的分派规则不适用 */
   delegates = false,
   /** 父对话能就地做微小改动（角色开了 inlineEdit、宿主给了护栏） */
   inline = false,
@@ -4138,7 +4146,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     planning ? workflowCatalogText(catalog) : '',
   ]
   if (coordinator) {
-    // 内置「主理」的角色设定里已经有一整套更细的处理顺序、分诊表和派单写法（系统提示词里常驻），
+    // 内置「协调器」的角色设定里已经有一整套更细的处理顺序、分诊表和派单写法（系统提示词里常驻），
     // 这两节再每轮发一遍只是重复；自建的统筹角色没有这些，照旧给
     const ownDispatch = agent?.origin === 'builtin:orchestrator'
     const dispatchRules = `## 这条消息怎么处理
@@ -4208,7 +4216,7 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
 - 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支；有冲突撤回并推回给那个子对话。一次只合一个，你不用自己合并。合回去只代表改动进了你的分支，不等于它做完了：它还有计划没做完、后台命令还在跑、待回答的提问或者这一轮没结束时，面板不会把它标成完成，你也不要当它已经交付完了。
 - 合并结果里写着「两边都改了这些文件」时，那个文件两边都动过（git 没报冲突也算了）：让子对话核对内容、确认没有把对方的改动盖掉，再当它交付完了。
 - 每次合并的结果会告诉你；子对话做完一轮却没合并时，面板会先催它一次，还没合再交给你决定。子对话反复冲突、或者问题其实是别的子对话的改动引起的，由你协调。
-- 几个子对话都合进来之后，需要整体验证时新建一个子对话去跑完整的测试，你自己不跑。
+- 几个子对话都合进来之后的整体验证：范围为「全量，合并后由父对话跑」的测试面板会自动跑；用户点名要整体回归时派「测试验收」（spawn_agents），不另开子对话，你自己也不跑。
 - 合并时面板已经在这个分支上提交了，你不用另外提交。`
           : `## 子对话共用一个目录
 所有子对话都在同一个目录里直接改，不建独立分支。为了不互相覆盖：
@@ -4286,7 +4294,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
     }
     const inline = coordinator && !!host.inlineEdit && agent?.inlineEdit === 'tiny'
     // 第一轮和保活进程里的下一条必须用同一套参数拼：以前保活那处漏传了 agent，
-    // 角色设定里已写过的规则（主理的分派规则、子对话的提问和完成标准）被发回去，下一轮又宣布作废
+    // 角色设定里已写过的规则（协调器的分派规则、子对话的提问和完成标准）被发回去，下一轮又宣布作废
     const buildPrompt = () =>
       conversationPrompt(host, kind, planning, coordinator, !coordinator && delegatesRole(host, agent), inline, agent)
     const parts = await buildPrompt()
