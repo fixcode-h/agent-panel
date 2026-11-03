@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import path from 'node:path'
@@ -285,6 +286,9 @@ export async function saveProjectLessons(
 ): Promise<SaveLessonsResult> {
   const file = await projectLessonsFile(project, agents)
   if (!file) return { ok: true, inFile: false, lessons }
+  // 没有教训、文件也还没有：不建一个只有文件头的空文件。保存项目设置时也会走到这里，
+  // 以前每次保存都在用户仓库里留下一个没人要的未跟踪文件（2026-11-03 真实 API 实测：父对话目录里冒出 docs/lessons.md）
+  if (!lessons.length && !existsSync(file)) return { ok: true, inFile: true, lessons }
   return enqueueWrite(file, async () => {
     const current = await readProjectLessonsFile(file)
     if (current.error)

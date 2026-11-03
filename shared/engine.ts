@@ -3068,9 +3068,10 @@ function makeOrchestra(
             info: `计划里「${at0.title}」这一步还在等子对话「${holder.label}」（id ${holder.ref}），它还没做完。用 send_to_conversation 交回它接着做，写清下一步；不要另建一个子对话重做。它确实起不来（交回时报错、状态是失败）再另建，并在派单里写明接手的是哪个子对话的活。`,
           }
       }
+      // 工作流子对话（start_workflow）不走这道门：它没有 modules 参数，工作流有自己的步骤（2026-11-03 真实 API 实测：拦得一个工作流都起不来）
       const docs = await docsFirst(
         extra ?? {},
-        host.moduleDocs,
+        extra?.flow ? undefined : host.moduleDocs,
         selfAgent?.params.find((p) => p.key === 'docsFirst')?.default === true,
       )
       if (docs.block) return { ok: false, info: docs.block }
