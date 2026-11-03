@@ -92,3 +92,30 @@ test('退出时没有在运行的对话也写一次空名单，把上次没处�
   await recordRestart([])
   assert.deepEqual(ids(await routes().get()), [])
 })
+
+test('设置里开了「重启后自动继续」：按首页同一份名单逐个继续，全部拉起才确认；关着时什么都不做（ADR 0042）', async () => {
+  const { autoResumeAfterRestart } = await import('./restart-interrupted.ts')
+  const run = async (enabled: boolean, fail: string[] = []) => {
+    const calls: string[] = []
+    await autoResumeAfterRestart({
+      enabled: async () => enabled,
+      call: async (method, path) => {
+        calls.push(`${method} ${path}`)
+        if (path === '/app/restart-interrupted')
+          return { at: 'x', acknowledged: false, tasks: [{ id: 'a' }, { id: 'b' }] }
+        if (fail.some((id) => path === `/tasks/${id}/resume`)) throw new Error('起不来')
+        return {}
+      },
+    })
+    return calls
+  }
+  assert.deepEqual(await run(false), [], '默认关：不读名单、不继续')
+  assert.deepEqual(await run(true), [
+    'GET /app/restart-interrupted',
+    'POST /tasks/a/resume',
+    'POST /tasks/b/resume',
+    'POST /app/restart-interrupted/ack',
+  ])
+  // 有拉不起来的：不确认，首页照旧提示用户自己处理
+  assert.ok(!(await run(true, ['b'])).includes('POST /app/restart-interrupted/ack'))
+})

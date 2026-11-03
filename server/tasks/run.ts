@@ -73,6 +73,7 @@ import { projectDocRoot } from '../doc-root.ts'
 import { cherryPickFor } from '../cherry-pick.ts'
 import { TaskBusyError, isolated, parentRunRole, isP4, wrapUpFrom, wrapUpProbe } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { pauseHelper, pauseUnit } from '../../shared/run-stops.ts'
 
 /**
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
@@ -651,12 +652,12 @@ export function createRun(sc: TasksScope) {
         }
         entry.task.status = 'failed'
         // 还画成在跑的节点、子任务一起收口：不然它们一直转圈、没有输出，终止按钮又说已经结束了
+        // 子任务中断并暂停（继续执行时在原记录里接着跑，ADR 0042），工作流节点记失败
         const at = new Date().toISOString()
         for (const s of entry.task.steps)
-          if (s.status === 'running') {
-            s.status = 'failed'
-            s.endedAt = at
-          }
+          if (s.status !== 'running') continue
+          else if (pauseHelper(task.id, s)) pauseUnit(s)
+          else [s.status, s.endedAt] = ['failed', at]
         entry.task.messages.push({
           id: randomUUID(),
           role: 'system',
