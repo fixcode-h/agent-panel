@@ -480,6 +480,12 @@ export const CliSpec = z.object({
       /** 设置里手动改的上下文窗口、最大输出用哪个环境变量传给 CLI；不写表示 CLI 不接受 */
       limitEnv: z.object({ context: z.string().optional(), maxOutput: z.string().optional() }).default({}),
       /**
+       * 长上下文要靠模型名后缀开（Claude Code 的 [1m]）：这一轮用的上下文窗口（手动设的，或按映射 / 模型目录自动算的）
+       * 不小于 min 时，交给 CLI 的模型名后面加上 suffix。Claude Code 认得出是自家模型时不看 limitEnv 的窗口，
+       * 只按模型名决定窗口，不加后缀就一直按 200K 算、提前压缩。CLI 报回来的模型名会去掉后缀再用
+       */
+      longContext: z.object({ suffix: z.string().min(1), min: z.number().int().positive() }).optional(),
+      /**
        * 或者写进 CLI 的配置文件（账号方式下用，API 方式由 auth.api.modelLimits 写）：只在这一轮里加上，结束后还原。
        * at 是模型条目的位置，{provider}、{model} 是模型 ID「provider/model」的两段，例如 Pi 的
        * providers.{provider}.modelOverrides.{model}；context / maxOutput 是写进条目的键名
@@ -755,6 +761,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     slash: f.slash,
     nativeCommands: f.nativeCommands,
     limitEnv: f.limitEnv,
+    longContext: f.longContext,
     limitFile: f.limitFile,
     limitArgs: f.limitArgs.length ? f.limitArgs : undefined,
     modelSwitch: f.modelSwitch,

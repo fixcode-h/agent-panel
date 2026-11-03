@@ -3,7 +3,16 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { autoLimits, fmtTokens, knownLimits, limitEnvVars, limitSupport, parseTokens } from '../shared/model-limits.ts'
+import {
+  autoLimits,
+  fmtTokens,
+  knownLimits,
+  limitEnvVars,
+  limitSupport,
+  longContextModel,
+  parseTokens,
+  stripLongContext,
+} from '../shared/model-limits.ts'
 import { DEFAULT_MODEL_CONTEXT, DEFAULT_MODEL_MAX_OUTPUT, matchModel } from '../shared/model-catalog.ts'
 import { getCli } from '../shared/clis.ts'
 import { supportsEffort } from '../shared/settings.ts'
@@ -105,4 +114,16 @@ test('Claude Code 用环境变量，Codex 只接受上下文窗口（参数）',
   const args = codex.buildArgs({ model: 'gpt-6-sol', permission: '', extraArgs: [], contextWindow: 300_000 })
   assert.ok(args.includes('model_context_window=300000'))
   assert.ok(!codex.buildArgs({ model: 'x', permission: '', extraArgs: [] }).some((a) => a.includes('context_window')))
+})
+
+test('Claude Code 的长上下文靠模型名后缀开：窗口到 1M 才加 [1m]，报回来的模型名去掉后缀', () => {
+  // Claude Code 认得出的自家模型只按模型名定窗口（不看 CLAUDE_CODE_MAX_CONTEXT_TOKENS），不加 [1m] 一直按 200K 算
+  const claude = getCli('claude')
+  assert.equal(longContextModel(claude, 'claude-sonnet-4-6', 1_000_000), 'claude-sonnet-4-6[1m]')
+  assert.equal(longContextModel(claude, 'claude-sonnet-4-6', 200_000), 'claude-sonnet-4-6')
+  assert.equal(longContextModel(claude, 'claude-sonnet-4-6[1m]', 1_000_000), 'claude-sonnet-4-6[1m]')
+  assert.equal(longContextModel(claude, '@high', 1_000_000), '@high')
+  assert.equal(stripLongContext(claude, 'claude-sonnet-4-6[1m]'), 'claude-sonnet-4-6')
+  // 没有这条规则的 CLI 原样传
+  assert.equal(longContextModel(getCli('codex'), 'gpt-5.5', 1_000_000), 'gpt-5.5')
 })
