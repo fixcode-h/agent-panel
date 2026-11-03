@@ -25,3 +25,9 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, server/exec/worktre
 - 规则：用 `runShard` 的 `waitFor` 等状态和假 CLI 写的记录文件（状态位早于记录写入，读早了是空），一次性断言带 `label`；跨轮次等待的超时收敛成文件顶部常量（`WAIT_CLI_ROUND_MS = 60000`）。等对话空闲不能只看一阵没跑（子对话 `submit_merge` 会叫起父对话）；判节点并发用 `step.startedAt/endedAt`。否定式断言要临时去掉修复接线跑一遍。
 - 起因：原脚本 54 处固定 `sleep(800)`；「切到后台不回收」第一版用 `SLOW`，旧实现没有 waiter 也通过。
 - 防线：`test:e2e`；对照开关在 `docs/modules/scripts/README.md`。
+
+## 数「启动了几个 CLI 进程」按对话自己的日志，不按假 CLI 日志的时间窗口
+
+- 规则：断言某个对话启动了几个进程时，用面板给这个对话记的 `[CLI 进程启动] pid=`（`GET /tasks/:id/lifecycle` 的日志），不要拿假 CLI 日志「这段时间新增的 pid」：假 CLI 的日志不分对话，前面几步的对话可能正好被收尾自检、计划推进拉起来。面板记的 pid 是启动脚本那一层，和假 CLI 自己写的 `process.pid` 对不上，要看输入就按这次发的那句话去假 CLI 日志里找。触发词还要避开已有的宽词（`HANG` 会匹配 `HELPER_HANG_ONCE`）。
+- 起因：ADR 0041 加了收尾自检（ea58e52c）后，`07-local`「回来发消息复用同一个 CLI」在 CI 和本机时好时坏（2 !== 1，多出来的是上一步对话的「（收尾自检）」进程）。
+- 防线：`scripts/e2e/07-local.mjs` 的 `taskPidsOf`。
