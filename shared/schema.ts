@@ -21,7 +21,7 @@ import {
 import type { ProjectProposal } from './project-init.ts'
 import { AskQuestion, TaskRequest } from './task-request.ts'
 import { TaskFlow, WorkflowKind } from './task-flow-schema.ts'
-import { Diagnosis } from './bug-diagnosis-schema.ts'
+import { BugCase, Diagnosis } from './bug-diagnosis-schema.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -2255,11 +2255,11 @@ export const TaskData = z.object({
    */
   remotePush: z.enum(['allowed', 'denied']).optional(),
   remotePushAt: z.string().optional(),
-  /** 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离 */
-  runSeq: z.number().int().default(0),
+  runSeq: z.number().int().default(0), // 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离
   flow: TaskFlow.optional(), // 工作流子对话（ADR 0044）：见 task-flow-schema.ts
   bug: z.boolean().optional(), // 父对话派来的 Bug（ADR 0045）：修之前交诊断报告 diagnoses，用户确认方案才能改
   diagnoses: z.array(Diagnosis).optional(),
+  bugCase: BugCase.optional(), // Bug 档案草稿（ADR 0046）：update_bug_case 随查随记，submit_diagnosis 冻结成一版
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
   imported: z
     .object({
@@ -2591,8 +2591,8 @@ export const Settings = z.object({
    * 面板自己写的文件（说明文件、部署的全局说明）和交给 Agent 的约定都按它来
    */
   fileFormat: FileFormat.prefault({}),
-  /** 界面语言：auto 跟随浏览器 */
-  language: z.enum(['auto', 'zh', 'en']).default('auto'),
+  language: z.enum(['auto', 'zh', 'en']).default('auto'), // 界面语言：auto 跟随浏览器
+  bugAuthor: z.boolean().catch(true).default(true), // Bug 诊断报告的引入点显示作者（ADR 0046）；关了只显示提交号
   /**
    * 命令行环境：面板替 Agent 跑整行命令（后台命令、合并时编译里「自动」环境的步骤）用哪个 shell。
    * 只在 Windows 上有选择；kind 为空表示按本机检测的推荐（有 Git Bash 用 Git Bash，没有用 WSL，再没有用 cmd）

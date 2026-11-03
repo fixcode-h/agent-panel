@@ -316,12 +316,18 @@ BugCase = {
 
 - **第 1 期（2026-11-03）**：方法放在新文件 `shared/builtin/bug-method.ts`：`BUG_FULL_TEXT`（完整流程）、`BUG_SIMPLE_TEXT`（简易版）、`BUG_ANALYSIS_TEXT`（分析角色）、`BUG_REPORT_TEXT`（按八个阶段排的 12 节排查报告）、`LOG_TIMELINE_TEXT`、`bugCommandPrompt`、`debugSkillMd`。`agents.ts` 原来的 `BUG_METHOD` 去掉。`/bug` 加进内置命令，`/fix` 的展开改成简易版。systematic-debugging 的 SKILL.md 由 `scripts/gen-debug-skill.mjs` 生成，三份附录改写成中文。诊断报告的字段暂时不变，新内容按 S6 写的对应关系装进现有字段（例如时间线进 evidence、候选方案比较进 fix、影响面进 risk）。
 
+- **第 2 期（2026-11-03）**：诊断报告扩成 Bug 档案（`shared/bug-diagnosis-schema.ts` 的 `BugCaseFields`：级别、调用栈、时间线、引入点、一致性、假设、影响面、候选方案、选定、下一步），任务上多一份草稿 `Task.bugCase`。新工具 `update_bug_case`（`server/diagnosis-tool.ts`）随查随记、返回所在阶段和还缺什么；`submit_diagnosis` 把草稿合上这次交的内容冻结成一版，按级别查必填。收尾核对（`diagnosisGate`）多了两条：`result` 里要有回归测试、影响面逐条有验证记录；`submitMerge` 还拦改动里留着的 `[排查-` 临时日志。审阅弹窗按档案画时间线表、引入点、候选方案，没选的方案有「改用方案 X」按钮（加一条「改方案」意见退回）。设置里加「诊断报告显示作者」（默认开）。父对话的子对话行写「Bug · 阶段」。
+
+- **第 3 期（2026-11-03）**：分析窗口的结论块（`shared/diagnosis.ts`）多了调用栈、时间线、引入点三块，旧块照读；结论页画出「引入点」「时间线」卡片，被分析的是一个对话时多一个「按完整流程修」，把查到的原样带上、以 `/bug` 发回那个对话。派评审时，面板把用户确认过的那一版的要点（选定方案、方案里的文件、影响面、验证计划）附进评审的提示词（`approvedBrief`）。用户报的 Bug 请父对话收尾时，收尾请求里带上 Bug 记录的草稿（`bugRecordDraft`），父对话派「文档」时原样附上。
+
 和正文不一样的几处：
 
 - **完整流程不进角色设定。** 执行、开发的角色设定只带简易版；完整流程由面板在 `kind: "bug"` 子对话的新会话第一轮注入，或者随 `/bug` 的展开一起给（`server/exec/bug-prompt.ts`）。这样平时的对话不用背着几千字，用户报的 Bug 又一定拿得到全文。
 - **技能和方法一致靠单测核对。** 没放进 `scripts/rules-check.mjs`：生成要跑 TypeScript 和 Prettier，放在 `shared/builtin/bug-method.test.ts` 里比对，手改技能文件单测会失败。
 - **子对话里中途发 `/bug`。** 正在回复时拒绝（这一轮换不了工具，等这一轮结束或先停止再发）。空闲、进程还挂着等下一句时，标记以后交付这条消息会发现「和现在的选择对不上」（runner 的 `stillCurrent` 多比一项 `bug`），按现有逻辑结束旧进程、重开新一轮，新一轮就有 `submit_diagnosis`。
 - **保活进程里收到的 `/bug` 也由面板展开。** 别的 `/命令` 在保活时原样交给 CLI；`/bug` 不行，原样交给 Claude Code 会被当成它自己的同名命令。
+- **计划不预置，阶段从档案推算。** 子对话的计划由它自己用 set_plan 管，面板预置八步会和它的计划互相覆盖；改成按草稿和报告推算查到哪一步（`bugStage`），父对话的子对话行上写「Bug · 阶段」，效果一样，不碰它的计划。
+- **分析窗口不直接开 Bug 子对话。** 「按完整流程修」走 `/bug`：发回被分析的对话，由它按在哪（父对话、子对话、别的会话）去派单或就地查，分析窗口查到的写进这条消息，不另做一条「把档案原样塞进新子对话」的路；子对话从这段已查到的内容接着核对，不从头查。
 
 ## 已定的问题
 

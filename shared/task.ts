@@ -1132,6 +1132,8 @@ export interface ChildEntry {
   waiting?: ChildWait
   /** 交了 Bug 诊断报告、等用户确认（ADR 0045）：算执行中，行上写「等你查看诊断报告」 */
   diagnosis?: boolean
+  /** 用户报的 Bug（ADR 0046）：查到哪个阶段了（见 bug-diagnosis.ts 的 bugStage），行上写「Bug · 阶段」 */
+  bug?: string
   /** 工作流子对话（ADR 0044）：哪个工作流、跑到第几个节点（见 flow-child.ts 的 flowProgress） */
   flow?: FlowProgress
 }

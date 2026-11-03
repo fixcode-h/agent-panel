@@ -870,6 +870,46 @@ await runShard(import.meta.filename, async (api) => {
         answers: [],
         overall: '',
         before: [],
+        // ADR 0046 的档案字段：调用栈、时间线、引入点、影响面、候选方案
+        level: 'standard',
+        stack: [
+          { file: 'web/src/cart/badge.ts', line: 21, fn: 'count', note: '读购物车数量' },
+          { file: 'web/src/cart/store.ts', line: 52, fn: 'remove', note: '删除最后一件时提前 return' },
+        ],
+        timeline: [
+          { at: '2026-10-27', source: 'c0ffee1', kind: 'change', text: '购物车删除重构：派发挪进循环', abnormal: true },
+          { at: '10:02:01', source: 'store.ts:52', kind: 'event', text: '[cart] remove id=3 left=0' },
+        ],
+        attribution: {
+          category: 'recent',
+          change: 'c0ffee1',
+          author: '李四',
+          date: '2026-10-27',
+          title: '购物车删除重构',
+          how: 'blame',
+          confidence: 'high',
+          note: 'blame 指到这次提交，前一版跑复现用例通过',
+        },
+        consistency: [{ observation: '只在删最后一件时出现', explanation: '只有 left=0 时提前 return' }],
+        impact: [{ area: '购物车角标', effect: '删除后刷新', verify: 'store.test.ts' }],
+        options: [
+          {
+            id: 'A',
+            title: '去掉提前 return',
+            change: 'store.ts:52',
+            files: ['web/src/cart/store.ts'],
+            covers: '角标',
+          },
+          {
+            id: 'B',
+            title: '角标自己轮询数量',
+            change: 'badge.ts 定时读',
+            files: ['web/src/cart/badge.ts'],
+            covers: '角标',
+            misses: '别的订阅者',
+          },
+        ],
+        chosen: { id: 'A', why: '修在源头', whyNotOthers: 'B 只是绕过，别的订阅者照样收不到' },
       }
       kid.bug = true
       kid.diagnoses = [
@@ -944,7 +984,11 @@ await runShard(import.meta.filename, async (api) => {
       // 选中根因那段文字标注：标注能选种类，「有疑问，再查」随之可点
       // 和阶段确认那一步（02d）一样用真实的鼠标拖选：程序化选区不会触发弹窗里的 mouseup
       await settle(p)
-      const b = await dlg.getByText('store.ts 删除最后一件时提前 return', { exact: false }).first().boundingBox()
+      // 报告加了时间线、引入点、候选方案后变长了：根因那段可能在可视区外，先滚进来再拖
+      const cause = dlg.getByText('store.ts 删除最后一件时提前 return', { exact: false }).first()
+      await cause.scrollIntoViewIfNeeded().catch(() => {})
+      await settle(p)
+      const b = await cause.boundingBox()
       if (b) {
         await p.mouse.move(b.x + 2, b.y + b.height / 2)
         await p.mouse.down()
@@ -965,7 +1009,17 @@ await runShard(import.meta.filename, async (api) => {
         if (await dlg.getByRole('button', { name: '有疑问，再查' }).isDisabled())
           errors.push('诊断报告：标注了还不能点「有疑问，再查」')
       } else errors.push('诊断报告：选中文字后没有出现「标注」按钮')
-      await check(p, '诊断报告-审阅弹窗', ['诊断报告', '修复方案'])
+      // ADR 0046：引入点、时间线、候选方案画出来；没选的方案能一键加「改方案」意见
+      for (const text of ['引入于', '购物车删除重构', '方案 B：角标自己轮询数量'])
+        if (!(await dlg.getByText(text, { exact: false }).count())) errors.push(`诊断报告：没有显示「${text}」`)
+      const useB = dlg.getByRole('button', { name: '改用方案 B' })
+      if (!(await useB.count())) errors.push('诊断报告：没有「改用方案 B」')
+      else {
+        await useB.click()
+        if (!(await dlg.getByText('方案 B：角标自己轮询数量', { exact: false }).count()))
+          errors.push('诊断报告：点「改用方案 B」后标注里没有这一条')
+      }
+      await check(p, '诊断报告-审阅弹窗', ['诊断报告', '候选方案'])
       // 切到第 1 版：只读，按钮收起
       await dlg.getByRole('radio', { name: '第 1 版' }).click()
       await settle(p)

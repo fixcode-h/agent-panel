@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { t } from './i18n.ts'
+import { BugAttribution, BugHop, BugTimelineItem } from './bug-diagnosis-schema.ts'
 
 /**
  * 排查类分析（AI 排查、报错交给 AI）的结构化结论：回复末尾的 diagnosis 代码块（JSON），
@@ -90,6 +91,10 @@ export const Diagnosis = z.object({
     .transform((xs) => [
       ...new Set(xs.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim())),
     ]),
+  // Bug 档案里的三块（ADR 0046）：查得到才写，旧的结论块没有它们照常读
+  stack: listOf(BugHop, 30),
+  timeline: listOf(BugTimelineItem, 40),
+  attribution: BugAttribution.optional().catch(undefined),
 })
 export type Diagnosis = z.infer<typeof Diagnosis>
 export type DiagnosisEvidence = Diagnosis['evidence'][number]
@@ -155,6 +160,45 @@ export function diagnosisFixPrompt(d: Diagnosis, subject = '') {
     ...(fixes.length ? ['修复建议：', ...fixes, ''] : []),
     ...(d.files.length ? [`相关文件：${d.files.join('、')}`, ''] : []),
     '先确认根因和现在的代码对得上再改，改动只限这个问题；改完跑相关的检查，最后说明改了什么、验证结果。',
+  ].join('\n')
+}
+
+/**
+ * 「按完整流程修」发回被分析的对话的那段话（ADR 0046）：/bug 开头，面板按完整查找流程展开；
+ * 分析窗口已经查到的原样带上，那边先核对再接着做，不从头查。发给 Agent 的提示词，不翻译
+ */
+export function diagnosisBugPrompt(d: Diagnosis) {
+  const a = d.attribution
+  return [
+    `/bug ${d.rootCause.title}`,
+    '',
+    '分析窗口已经查到的（先核对和现在的代码对得上，再按完整流程接着做；查过的不用从头再查）：',
+    `- 根因：${d.rootCause.title}${d.rootCause.detail ? `。${d.rootCause.detail}` : ''}`,
+    ...(d.stack.length
+      ? ['- 调用栈：', ...d.stack.map((h) => `  - \`${at(h.file, h.line)}\` ${h.fn}${h.note ? `：${h.note}` : ''}`)]
+      : []),
+    ...(d.timeline.length
+      ? [
+          '- 时间线：',
+          ...d.timeline.map((x) => `  - ${x.at} [${x.kind}] ${x.source}：${x.text}${x.abnormal ? '（异常）' : ''}`),
+        ]
+      : []),
+    ...(a
+      ? [
+          `- 引入点：${[a.change, a.title && `《${a.title}》`, a.author, a.date].filter(Boolean).join(' ')}（${a.category}，${a.how}）${a.note ? `：${a.note}` : ''}`,
+        ]
+      : []),
+    ...(d.evidence.length
+      ? [
+          '- 证据：',
+          ...d.evidence.map(
+            (e) => `  - ${e.file ? `\`${at(e.file, e.line)}\`` : e.command}${e.note ? `：${e.note}` : ''}`,
+          ),
+        ]
+      : []),
+    ...(d.fixes.length
+      ? ['- 修复建议：', ...d.fixes.map((f) => `  - ${f.file ? `\`${at(f.file, f.line)}\`：` : ''}${f.change}`)]
+      : []),
   ].join('\n')
 }
 
@@ -259,6 +303,7 @@ export function diagnosisPromptRules() {
     '- evidence 的 kind 标出这条证据的角色：problem 是出问题的那段，reference 是对照的正确写法或口径，repro 是复现出来的报错或输出，context 是旁证；拿不准就不写 kind。',
     '- fixes 只写建议，不代表已经改了；before / after 可以留空，写的话只写几行。',
     '- 面板可以一键应用 before → after：before 必须从文件里原样复制（包括缩进），并且在那个文件里只出现一次；做不到原样就留空，只写 change。',
+    '- 查得到的话再加三项（没有就不写）：stack 调用栈 [{"file","line","fn","note"}]，从入口到出错点一跳一项；timeline 时间线 [{"at","source","kind","text","abnormal"}]，kind 写 event（事件）、state（状态流转）或 change（代码提交、依赖、配置、数据、环境的变化），abnormal 标第一个异常和引入问题的那次变更；attribution 引入点 {"category","change","author","date","title","how","confidence","note"}，category 是 current 本次改动 / recent 近期变更 / legacy 历史遗留 / external 外部依赖 / environment 环境配置 / data 数据 / user 用户操作 / unknown 未确定，how 是 blame / bisect / diff / log / none，作者和提交号照版本记录原文写。',
   ].join('\n')
 }
 
@@ -297,6 +342,17 @@ export function demoDiagnosis(memory: boolean): Diagnosis {
           { file: '', change: '在「对话进程」里清理已结束的子任务进程，再观察十分钟的曲线', before: '', after: '' },
         ],
         files: ['shared/memory-analysis.ts'],
+        stack: [],
+        timeline: [
+          { at: '10:00', source: '进程列表', kind: 'event', text: 'claude 410 MB', abnormal: false },
+          {
+            at: '10:30',
+            source: '进程列表',
+            kind: 'event',
+            text: 'claude 612 MB，子任务结束后没有回落',
+            abnormal: true,
+          },
+        ],
       }
     : {
         rootCause: {
@@ -351,5 +407,35 @@ export function demoDiagnosis(memory: boolean): Diagnosis {
           },
         ],
         files: ['src/components/ProductCard.tsx', 'src/store/cart.ts'],
+        stack: [
+          { file: 'src/pages/ProductList.tsx', line: 18, fn: 'ProductList', note: '逐个渲染商品卡片' },
+          { file: 'src/components/ProductCard.tsx', line: 7, fn: 'ProductCard', note: 'price 为 null 时调用 toFixed' },
+        ],
+        timeline: [
+          {
+            at: '10-28 15:20',
+            source: '4f2a9c1',
+            kind: 'change',
+            text: '接口对下架商品改成返回 price: null',
+            abnormal: true,
+          },
+          {
+            at: '10:02:13',
+            source: 'ProductCard.tsx:7',
+            kind: 'event',
+            text: 'TypeError: Cannot read properties of null',
+            abnormal: false,
+          },
+        ],
+        attribution: {
+          category: 'recent',
+          change: '4f2a9c1',
+          author: '王五',
+          date: '2026-10-28',
+          title: '下架商品不再返回价格',
+          how: 'blame',
+          confidence: 'high',
+          note: '这次提交之前 price 一定有值，卡片没写判空',
+        },
       }
 }

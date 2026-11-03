@@ -141,6 +141,12 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
     })
   // 工作流子对话（ADR 0044）：先说是哪个工作流；流程图还没跑完时带上做到第几个节点，跑完了就是普通的收尾
   if (c.flow) out.push({ text: flowLabel(c.flow), tone: 'plain' })
+  // 用户报的 Bug（ADR 0046）：查到哪个阶段了；等你确认报告时下面写「报告待确认」，这里只说是 Bug
+  if (c.bug)
+    out.push({
+      text: c.diagnosis || icon === 'done' ? t('Bug') : t('Bug · {stage}', { stage: c.bug }),
+      tone: 'plain',
+    })
   // 进程回收了的「未完成」画成静止（见 childIcon），计划进度和「未完成」照样写，只是不再用执行中的颜色
   const parked = icon === 'idle' && state === 'unfinished'
   if ((icon === 'running' || parked) && c.plan)

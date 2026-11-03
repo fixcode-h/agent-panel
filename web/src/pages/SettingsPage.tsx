@@ -189,6 +189,7 @@ function SettingsBody({
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
+  const [bugAuthor, setBugAuthor] = useState(initial.bugAuthor)
   const [userName, setUserName] = useState(initial.userName)
   const [developerMode, setDeveloperMode] = useState(initial.developerMode)
   const [elementPicker, setElementPicker] = useState(initial.elementPicker)
@@ -347,6 +348,7 @@ function SettingsBody({
     requireToken,
     remoteAccess,
     askUserDefault,
+    bugAuthor,
     userName: userName.trim(),
     developerMode,
     elementPicker,
@@ -916,6 +918,15 @@ function SettingsBody({
                         checked={askUserDefault}
                         onCheckedChange={setAskUserDefault}
                       />
+                    </Row>
+                    <Row
+                      title={t('诊断报告显示作者')}
+                      desc={t('Bug 的引入点写出是谁的改动')}
+                      hint={t(
+                        '用户报的 Bug 查清后，诊断报告会写出问题是哪次改动引入的。打开时连作者一起写（照版本记录原文），关掉只写提交号和标题。',
+                      )}
+                    >
+                      <Switch aria-label={t('诊断报告显示作者')} checked={bugAuthor} onCheckedChange={setBugAuthor} />
                     </Row>
                     <Row
                       title={t('大文件只传路径')}

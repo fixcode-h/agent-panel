@@ -1,9 +1,11 @@
 import { useState, type ReactNode } from 'react'
-import { Check, CircleAlert, GraduationCap, Loader2, SquarePlus, Terminal } from 'lucide-react'
+import { Bug, Check, CircleAlert, GraduationCap, Loader2, SquarePlus, Terminal } from 'lucide-react'
 import type { Project, Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { taskSummary } from '@shared/task'
+import { blameLabel } from '@shared/bug-diagnosis'
 import {
+  diagnosisBugPrompt,
   diagnosisFixPrompt,
   diagnosisLessonText,
   fixApplicable,
@@ -121,8 +123,8 @@ export function DiagnosisReport({
   onTask: (task: Task) => void
 }) {
   const { go } = useNav()
-  const { upsertTask } = useData()
-  const [busy, setBusy] = useState<'' | 'here' | 'new'>('')
+  const { upsertTask, settings } = useData()
+  const [busy, setBusy] = useState<'' | 'here' | 'new' | 'bug'>('')
   const [sentTo, setSentTo] = useState('')
   const [lesson, setLesson] = useState(false)
   // 「应用这 N 处修改」每一处的结果（按修复的序号）：只在这次打开里记着，重开后再点会按文件现状重新判断
@@ -149,6 +151,25 @@ export function DiagnosisReport({
       setSentTo(tk.title)
       const r = analysisRoute({ taskId: tk.id, projectId: tk.projectId || undefined, parentTaskId: tk.parentTaskId })
       toast.success(t('修复建议已发到「{title}」', { title: tk.title }), {
+        action: r ? { label: t('查看'), onClick: () => leave(r) } : undefined,
+      })
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  // 按完整流程修（ADR 0046）：作为用户报的 Bug 发回被分析的对话（/bug），那边先交诊断报告给用户确认方案再改；
+  // 分析窗口查到的原样带过去，不从头查
+  const fixAsBug = async () => {
+    if (busy || !target) return
+    setBusy('bug')
+    try {
+      const tk = await api.sendMessage(target, diagnosisBugPrompt(d))
+      setSentTo(tk.title)
+      const r = analysisRoute({ taskId: tk.id, projectId: tk.projectId || undefined, parentTaskId: tk.parentTaskId })
+      toast.success(t('已按完整流程发到「{title}」，查清后会先交诊断报告给你确认', { title: tk.title }), {
         action: r ? { label: t('查看'), onClick: () => leave(r) } : undefined,
       })
     } catch (e) {
@@ -315,8 +336,53 @@ export function DiagnosisReport({
           </ul>
         </Card>
       )}
+      {d.attribution && (
+        <Card label={t('引入点')}>
+          {(d.attribution.change || d.attribution.title) && (
+            <span className="text-body leading-relaxed">
+              {d.attribution.change && <code className="mr-1 font-mono text-footnote">{d.attribution.change}</code>}
+              {d.attribution.title && `《${d.attribution.title}》`}
+              {[settings?.bugAuthor === false ? '' : d.attribution.author, d.attribution.date]
+                .filter(Boolean)
+                .join('，')}
+            </span>
+          )}
+          <span className="text-footnote text-subtle">
+            {t('责任类别：{c}', { c: blameLabel(d.attribution.category) })}
+          </span>
+          {d.attribution.note && <p className="text-body leading-relaxed text-muted">{d.attribution.note}</p>}
+        </Card>
+      )}
+      {d.timeline.length > 0 && (
+        <Card label={t('时间线')}>
+          <ol className="flex flex-col gap-1.5">
+            {d.timeline.map((x, i) => (
+              <li key={i} className="flex items-baseline gap-2 text-body leading-relaxed">
+                <span className="w-24 shrink-0 font-mono text-footnote text-subtle">{x.at}</span>
+                <span className={cn('min-w-0 flex-1', x.abnormal && 'text-danger')}>
+                  {x.text}
+                  {x.source && <span className="ml-1.5 font-mono text-footnote text-subtle">{x.source}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </Card>
+      )}
       <div className="flex flex-col gap-2">
         {fixButton}
+        {target && (
+          <Button
+            variant="secondary"
+            // 竖排里不能带 SECONDARY 的 flex-1，不然高度被压扁
+            className={cn(SECONDARY, 'w-full flex-none')}
+            disabled={!!busy}
+            title={t('作为用户报的 Bug 发回被分析的对话：先交诊断报告给你确认方案，再改')}
+            onClick={() => void fixAsBug()}
+          >
+            {busy === 'bug' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bug className="h-3.5 w-3.5" />}
+            {t('按完整流程修')}
+          </Button>
+        )}
         {(sentTo || selfState === 'done') && (
           <p className="truncate text-center text-footnote text-subtle">
             {sentTo ? t('已发到「{title}」', { title: sentTo }) : t('已在这个对话里修过')}
