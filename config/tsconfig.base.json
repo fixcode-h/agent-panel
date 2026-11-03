@@ -1,6 +1,6 @@
 // 各层 tsconfig 共用的编译选项。运行环境（lib / types）不放这里：
 // web 只有 DOM，server 只有 Node，shared 两边都要能跑所以两个都没有，各层自己的 tsconfig 里写。
-// paths 相对本文件所在的项目根解析，各层继承后不用再写。
+// paths 相对本文件所在目录（config/）解析，所以从 config/ 指回项目根；各层继承后不用再写。
 {
   "compilerOptions": {
     "target": "ES2022",
@@ -16,8 +16,8 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "@/*": ["./web/src/*"],
-      "@shared/*": ["./shared/*"]
+      "@/*": ["../web/src/*"],
+      "@shared/*": ["../shared/*"]
     }
   }
 }

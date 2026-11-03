@@ -162,7 +162,7 @@
 - `npm run test:unit`
 - `shared/design.test.ts` 的「只重绘蒙版要求「勾了 + 生图方式支持 + 真有蒙版」三个条件同时成立」：`sendsMaskOnly` 的真值表（三个条件单独缺失各一条，外加与 `canInpaint` 口径一致）；去掉 `inpaintSupported` 判断后这条用例会失败。
 - `npm run test:e2e:wsl`（Windows 上在 WSL 里跑）；本次覆盖 `scripts/e2e/06-assist.mjs` 的「设计补充测试」（插话成功、无 job 时直接开一轮）、「设计接续测试」（CLI 没有插话通道时消息进对话并在这一轮结束后自动接着处理）和「设计停止测试」（停止时排队消息标 `lost`、停止后再发的消息能接着开始新一轮）。
-- `npx vite build --mode demo` + `node scripts/ui-check.mjs`：`scripts/ui/04-design.mjs` 开头断言设计对话用的是共用消息区（`[data-conversation-scroll="messages"]`）；「UI设计-原画张数」断言右键菜单能改一次出几张原画、选中状态跟着变。
+- `npm run build:demo` + `node scripts/ui-check.mjs`：`scripts/ui/04-design.mjs` 开头断言设计对话用的是共用消息区（`[data-conversation-scroll="messages"]`）；「UI设计-原画张数」断言右键菜单能改一次出几张原画、选中状态跟着变。
 - 输出样式与 Chat 对话一致：`scripts/ui/04-design.mjs` 在「UI设计-引用消息」之后断言回复收尾后出现过程的折叠行，按可访问名定位（`getByRole('button', { name: /(其他操作|思考) \d+ 次/ })`，和 `02-task.mjs` 同一套口径，不依赖中文 `title`）；折叠行文字是这一段按实际做了什么拼出来的（设计工具不属于 read/edit/run/search/web，设计页常见的是「其他操作 N 次 · 思考 N 次」）。展开后看到「思考过程」，再收起后它卸载、「需要的图片：n 张」仍在（设计页特有的内容不跟着折叠没掉）；同时截图「UI设计-过程折叠」「UI设计-展开过程」。
 - 原画标注：`scripts/ui/04-design.mjs` 的「UI设计-原画标注工具」断言原画阶段工具栏上框选 / 箭头 / 画笔 / 打点 / 蒙版五个文字标签可见；「UI设计-原画标注」在图上框一块、写说明后断言底部出现「发送标注给 AI（1）」且说明显示在标注卡片上；「UI设计-原画标注发出」点这个按钮，断言标注随用户消息出现在对话里、随后出第 2 轮原画；「UI设计-原画标注-收起对话」先收起 AI 对话栏再点这个按钮，断言对话栏自动打开、消息发出；「UI设计-原画标注-不支持局部重绘」画一个蒙版 + 一个框选后勾上「只重绘蒙版区域」，断言按钮仍是「发送标注给 AI（2）」而不是「按蒙版重绘（1）」（演示环境没有本机 ComfyUI，默认生图方式不支持局部重绘）。`ConceptBoard` 的根元素带 `data-concept-board`，用例按它定位，不和画布上的同类型工具栏混。
 

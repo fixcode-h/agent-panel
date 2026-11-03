@@ -121,11 +121,11 @@ function assertNoDemoModules(where, ids, mustHave) {
 }
 
 // 1. 正式版前端（不带 --mode demo，演示用的模拟后端不会打进来）
-// 用 Vite 的 JS 接口构建（配置仍是 vite.config.ts）：Windows 上 npx 是 .cmd，execFileSync 启动不了；
+// 用 Vite 的 JS 接口构建（配置仍是 config/vite.config.ts）：Windows 上 npx 是 .cmd，execFileSync 启动不了；
 // 另外挂一个只在这里用的插件，记下每个产物 chunk 实际打进了哪些模块，下面按它查演示内容
 const webModules = new Set()
 await viteBuild({
-  configFile: path.join(root, 'vite.config.ts'),
+  configFile: path.join(root, 'config/vite.config.ts'),
   mode: 'production',
   plugins: [
     {

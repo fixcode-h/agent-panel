@@ -20,12 +20,13 @@ function makeRepo() {
   dirs.push(root)
   mkdirSync(path.join(root, 'web/src'), { recursive: true })
   mkdirSync(path.join(root, 'shared'), { recursive: true })
+  mkdirSync(path.join(root, 'config'), { recursive: true })
   mkdirSync(path.join(root, 'dist-demo'), { recursive: true })
   writeFileSync(path.join(root, 'web/index.html'), '<div id="root"></div>\n')
   writeFileSync(path.join(root, 'web/src/app.tsx'), 'export const app = 1\n')
   writeFileSync(path.join(root, 'web/src/app.test.tsx'), 'test\n')
   writeFileSync(path.join(root, 'shared/schema.ts'), 'export const s = 1\n')
-  writeFileSync(path.join(root, 'vite.config.ts'), 'export default {}\n')
+  writeFileSync(path.join(root, 'config/vite.config.ts'), 'export default {}\n')
   writeFileSync(path.join(root, 'dist-demo/index.html'), '<div id="root"></div>\n')
   const build = () => writeDemoBuildInfo(root, path.join(root, 'dist-demo'))
   return { root, build, out: path.join(root, 'dist-demo') }
@@ -48,7 +49,7 @@ test('改源码后提示具体哪个文件变了，并要求重新构建', () =>
   assert.deepEqual(r.changed, ['改动 web/src/app.tsx'])
   const text = describeDemoBuildProblem(root, out)
   assert.match(text, /改动 web\/src\/app\.tsx/)
-  assert.match(text, /npx vite build --mode demo/)
+  assert.match(text, /npm run build:demo/)
 })
 
 test('增删源文件也算过期', () => {
@@ -71,8 +72,8 @@ test('只改测试文件不需要重新构建', () => {
 test('改构建配置或依赖锁文件也算过期', () => {
   const { root, build, out } = makeRepo()
   build()
-  writeFileSync(path.join(root, 'vite.config.ts'), 'export default { plugins: [] }\n')
-  assert.deepEqual(checkDemoBuild(root, out).changed, ['改动 vite.config.ts'])
+  writeFileSync(path.join(root, 'config/vite.config.ts'), 'export default { plugins: [] }\n')
+  assert.deepEqual(checkDemoBuild(root, out).changed, ['改动 config/vite.config.ts'])
   build()
   // 依赖只在锁文件上升级时（package.json 的 range 没变）产物也会变
   writeFileSync(path.join(root, 'package-lock.json'), '{}\n')

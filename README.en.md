@@ -76,7 +76,7 @@ npm run test:affected  # only the unit tests affected by your change
 npm run test:unit      # all unit tests
 npm run test:e2e       # end-to-end tests with fake CLIs (macOS / Linux; on Windows use WSL: npm run test:e2e:wsl)
 node scripts/ui-check.mjs   # UI check against the demo build; screenshots in ui-shots/
-npx vite build --mode demo  # the in-browser demo build
+npm run build:demo     # the in-browser demo build
 npm run package        # release packages into release/
 ```
 

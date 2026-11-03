@@ -15,11 +15,11 @@ npm run dev        # 前端 http://localhost:5173，后端 http://127.0.0.1:8787
 npm run typecheck  # 类型检查 + 漏翻检查
 npm run lint       # oxlint、Prettier 格式检查、规则检查、密钥扫描
 npm run test:unit  # 单元测试
-npm run build      # 正式版前端（在线演示版用 npx vite build --mode demo）
+npm run build      # 正式版前端（在线演示版用 npm run build:demo）
 ```
 
 端到端测试需要 macOS / Linux；在 Windows 上放到 WSL（Ubuntu 24.04）里跑：`npm run test:e2e:wsl`（等同于在 WSL 里 `npm run test:e2e`）。
-界面检查先 `npx vite build --mode demo`，再 `node scripts/ui-check.mjs`；第一次跑之前装一次 Playwright 的浏览器：`npx playwright install chromium`。出包用 `npm run package`，产物在 `release/`。
+界面检查先 `npm run build:demo`，再 `node scripts/ui-check.mjs`；第一次跑之前装一次 Playwright 的浏览器：`npx playwright install chromium`。出包用 `npm run package`，产物在 `release/`。
 
 ## 文档索引
 
