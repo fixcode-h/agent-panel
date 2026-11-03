@@ -1902,4 +1902,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '打开后，面板重启时还在执行的对话会在启动后自动继续（和首页「全部继续」一样，连带拉起它们的子对话和子任务）。默认关：继续会花钱、会接着改项目，关着时由你在首页点「全部继续」或逐个继续。':
     'When on, conversations that were running when the panel restarted continue automatically after startup (same as "Resume all" on the home page, including their sub-conversations and subtasks). Off by default: continuing costs money and keeps changing the project; when off, use "Resume all" on the home page or continue them one by one.',
   面板重启后自动继续被打断的对话: 'Automatically continue interrupted conversations after the panel restarts',
+  最匹配: 'Best match',
+  '全部模型 · {vendor}': 'All models · {vendor}',
 }

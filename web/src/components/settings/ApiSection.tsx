@@ -292,18 +292,31 @@ function ApiCard({
   const autoModel = (m: string) =>
     matchModel(m, { entries: modelCatalog?.entries ?? [], protocol: a.protocol })?.entry.id ?? ''
   // 映射选项：先按模型名推测厂商，只列这个厂商的模型；第一项是自动识别
+  /**
+   * 映射下拉：最上面是「自动识别」和识别到的那个模型，接着是这个厂家的其他模型，最后按厂家列出目录里的全部模型，
+   * 识别错了（认成别家、或者根本没认出来）也能直接选到正确的模型
+   */
   const mapOptions = (m: string, current = '') => {
     const entries = modelCatalog?.entries ?? []
     const auto = autoModel(m)
-    const vendor = matchModel(m, { entries })?.entry.vendor
-    const pool = vendor ? entries.filter((e) => e.vendor.toLowerCase() === vendor.toLowerCase()) : entries
+    const vendor = (matchModel(m, { entries })?.entry.vendor ?? '').toLowerCase()
+    const opt = (e: (typeof entries)[number], group: string) => ({
+      value: e.id,
+      label: `${e.id} · ${fmtTokens(e.context)} / ${fmtTokens(e.maxOutput)}`,
+      group,
+    })
+    const best = entries.find((e) => e.id === auto)
+    const rest = entries.filter((e) => e.id !== auto)
+    const same = vendor ? rest.filter((e) => e.vendor.toLowerCase() === vendor) : []
+    const others = rest.filter((e) => !same.includes(e))
     const list = [
       { value: '', label: auto ? t('自动识别（{model}）', { model: auto }) : t('自动识别'), group: '' },
-      ...pool.map((e) => ({
-        value: e.id,
-        label: `${e.id} · ${fmtTokens(e.context)} / ${fmtTokens(e.maxOutput)}`,
-        group: e.vendor,
-      })),
+      ...(best ? [opt(best, t('最匹配'))] : []),
+      ...same.map((e) => opt(e, e.vendor)),
+      // 其余厂家按厂家名分组、组内保持目录顺序
+      ...[...others]
+        .sort((x, y) => x.vendor.localeCompare(y.vendor))
+        .map((e) => opt(e, t('全部模型 · {vendor}', { vendor: e.vendor }))),
     ]
     // 目录变了、已选的值不在里面时也要能显示
     return current && !list.some((o) => o.value === current) ? [...list, { value: current, label: current }] : list
