@@ -324,13 +324,21 @@ async function runAgent(
     const now = agentRun(withTaskModel(found, task), settings)
     // 这一轮里开了独立分支：进程还在原目录里，不能再等下一句，结束后在新目录里重开
     const wt = task.worktree?.state === 'active' ? task.worktree.path : ''
-    return (
-      now.cli === cliId &&
-      now.model === model &&
-      task.effort === startPick.effort &&
-      replyLang() === startPick.lang &&
-      (!wt || wt === cwd)
-    )
+    const diff = [
+      ['cli', cliId, now.cli],
+      ['model', model, now.model],
+      ['effort', startPick.effort, task.effort],
+      ['lang', startPick.lang, replyLang()],
+      ['cwd', cwd, wt || cwd],
+    ].filter(([, was, is]) => (was ?? '') !== (is ?? ''))
+    // 对不上就会结束这个进程、按现在的选择重开：记下是哪一项、前后各是什么，偶发重开时诊断文件里能直接看出原因
+    if (diff.length)
+      taskLog(
+        task.id,
+        '等下一句的 CLI 和现在的选择对不上',
+        Object.fromEntries(diff.map(([k, a, b]) => [k, `${a} → ${b}`])),
+      )
+    return !diff.length
   }
   // 预热期间的输出不记进对话；用户发来第一句后开始正常记
   let prewarmMode = prewarm
