@@ -728,7 +728,8 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起 / �
   assert.doesNotMatch(note, /stack…/, '报错只取第一行')
   assert.match(note, /已经完成的不要重做/)
   assert.match(note, /「改侧栏」[\s\S]*不用另建子对话重做/)
-  assert.match(note, /「查日志」（id h1）[\s\S]*resume/)
+  // 被打断的子任务由面板在原来的会话里接着跑（ADR 0042）：写明不要重派
+  assert.match(note, /面板在原来的会话里接着跑：「查日志」（id h1）[\s\S]*不要重新派/)
   assert.doesNotMatch(note, /已完成的子任务/, '做完的子任务不列')
   assert.match(note, /「修复 Bug」[\s\S]*start_plan/)
   // 一起停掉的后台命令不会再推回结果：写明不要等，要结果就重新启动

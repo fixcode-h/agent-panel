@@ -1,6 +1,6 @@
 # ADR 0042：停下就是暂停，继续就是原样回来——子任务、子对话、父对话共用一套暂停 / 继续规则
 
-状态：提议（2026-11-03 第 1 期已实施，第 2～4 期未开始） · 2026-11-03
+状态：已接受（2026-11-03 四期都已实施） · 2026-11-03
 
 - 影响范围：`shared/task.ts`（`childReport`）、`shared/resume-kids.ts`、`shared/plan.ts`、`server/tasks/conversation-routes.ts`（`resumeKids`、`/resume`）、`server/tasks/child-messages.ts`（`noteParent`）、`shared/engine.ts`（子任务的 `resume`、`finish`）、`shared/task-settle.ts`、`server/tasks/keepalive.ts`（`stopTree`）
 - 取代：无。补全 [0032](./0032-conversations-keep-going.md) 的「继续时连带恢复」和 [0036](./0036-stuck-child-restart-takeover.md) 的卡住接手
@@ -78,6 +78,13 @@
 3. **第 3 期**：`shared/` 加纯函数 `planResume(树, 起点)`，算出要拉起谁、怎么接回会话；被打断的子任务由面板在原记录、原会话里接着跑；继续计划写进对话日志，「状态」诊断里显示。
 4. **第 4 期**：续接提示不重放原文；会话代数（`sessionGen`）记进诊断。
 
+## 实施记录
+
+- 第 1 期：`childReport` 按 `stopEnds`（`archive`、`delete`、`replaced`、`lost`）结算失败，其余停下继续等；`resumeKids` 递归、拉起后 `rearmKidWait`；用户直接继续子对话时 `rearmInParent`。
+- 第 2 期：`shared/run-stops.ts` 的 `pauseUnit` / `cancelUnit`；引擎收尾（`finish`）、子任务被停 / 被叫停 / 被终止、`settleStopped`、`dropInterrupted` 都走它们。停的时候还有子任务在跑就不算答完（不再把在跑的子任务记成完成）；收口时清掉所有步骤和对话的排队标记。
+- 第 3 期：被打断的子任务由面板在原记录、原会话里接着跑——不另加一套重跑逻辑，对话这一轮是「继续执行」时，引擎在调用 CLI 之前用 `spawn_agents` 带 `resume` 的同一条路径把它们拉起（`resumePausedHelpers`），接不上的原因写进这一轮的提示。不做成设置：用户明确要求复用，默认就是这样。`/resume` 把「继续计划」（拉起了谁、没拉起谁、哪些子任务接着跑）写进对话日志，「状态」诊断里看得到。没有单独抽 `planResume` 纯函数：拉起子对话的分类已经在 `sortStoppedKids`，子任务就是 `pausedHelpers`，再包一层只是转手。
+- 第 4 期：会话接得上（有会话 id）时续接提示不再附「原来的要求」；runner 收到新会话 id 替换旧的时记「换了新会话」（前后 id），诊断里看得出换过几次会话。没有新增 `sessionGen` 字段，日志足够。
+
 ## 风险与代价
 
 - 暂停的子对话不再把父计划收成失败：如果暂停后谁都没把它拉起来（比如父对话还在跑、子对话被页面切走回收后再没人推），父计划会一直等。防线：只有能被自动接回的原因保持等待中，`lost` 照旧失败；「状态」诊断的 `child-idle-parent-waiting` 会报出这种情况。
@@ -86,5 +93,5 @@
 
 ## 开放问题
 
-- 被打断的子任务由面板自动接着跑，还是保留「模型决定要不要接着跑」：倾向自动接着跑（用户明确要求复用），做成默认开启。第 3 期之前照现状由续接说明提醒模型。
 - 面板重启后是否自动按继续计划拉起之前在跑的对话树：倾向加一个设置，默认关。定下来之前照现状由首页「全部继续」手动拉起。
+- 父对话的 CLI 失败（不是停止）时还在跑的子任务记成失败、但没有被中断，可能晚些又写成完成：本 ADR 没处理，见风险一节；倾向失败时也按暂停收、中断它们。

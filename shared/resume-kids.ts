@@ -100,10 +100,11 @@ export function resumeNote(
       `- 没能拉起来的子对话：${failed.map((k) => `「${k.title}」（id ${k.id}，${k.error.split('\n')[0].slice(0, 120)}）`).join('、')}。` +
         '计划里等它的那一步已退回进行中；需要的话另建子对话接手（它原来的改动还在它的目录 / 分支里），不要干等它的结果。',
     )
-  const helpers = task.steps.filter((s) => s.slot === 'sub' && s.interrupted && s.status !== 'done')
+  // 被打断的子任务由面板在原来那条记录、原来的会话里接着跑（ADR 0042，见 run-stops.ts 的 resumePausedHelpers）
+  const helpers = task.steps.filter((s) => s.slot === 'sub' && s.interrupted && s.status === 'pending')
   if (helpers.length)
     lines.push(
-      `- 中断时没跑完的子任务：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。还需要就用 spawn_agents 带 resume: <id> 在原来的会话里接着跑，不要重新派一个（有中断没做完的子任务时另派新的会被拒绝）；不需要了就用 stop_subtask 终止。`,
+      `- 中断时没跑完的子任务已经由面板在原来的会话里接着跑：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。不要重新派，结果会照常交回给你；不需要了就用 stop_subtask 终止。`,
     )
   const runs = (task.runs ?? []).filter((r) => r.status === 'stopped' || r.status === 'running')
   if (runs.length)
