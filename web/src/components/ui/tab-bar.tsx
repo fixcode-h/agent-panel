@@ -23,6 +23,7 @@ export function TabBar({
   children,
   leading,
   trailing,
+  trailingLabel,
   variant = 'bar',
 }: {
   /** 读屏名，如「对话页签」 */
@@ -35,13 +36,25 @@ export function TabBar({
   leading?: ReactNode
   /** 页签条右端的操作（状态、开关右栏） */
   trailing?: ReactNode
+  /**
+   * 给了就把右端包成一个 toolbar（读屏名用它），并把页签条设成容器：
+   * 右栏的工具区跟着页签换内容，里面的按钮按页签条宽度收缩（@container 查询），不看窗口宽度
+   */
+  trailingLabel?: string
   variant?: TabVariant
 }) {
   const underline = variant === 'underline'
   const fit = variant === 'fit'
   return (
     <TabVariantContext.Provider value={variant}>
-      <Root className={cn('flex shrink-0 items-stretch border-b', underline ? 'h-10' : 'h-9 bg-bg', className)}>
+      <Root
+        className={cn(
+          'flex shrink-0 items-stretch border-b',
+          underline ? 'h-10' : 'h-9 bg-bg',
+          trailingLabel && '@container',
+          className,
+        )}
+      >
         {leading && <div className={cn('flex shrink-0 items-center px-1.5', !underline && 'border-r')}>{leading}</div>}
         <div
           role="tablist"
@@ -54,7 +67,14 @@ export function TabBar({
         >
           {children}
         </div>
-        {trailing && <div className="flex shrink-0 items-center gap-1.5 px-2">{trailing}</div>}
+        {trailing &&
+          (trailingLabel ? (
+            <div role="toolbar" aria-label={trailingLabel} className="flex shrink-0 items-center gap-0.5 px-2">
+              {trailing}
+            </div>
+          ) : (
+            <div className="flex shrink-0 items-center gap-1.5 px-2">{trailing}</div>
+          ))}
       </Root>
     </TabVariantContext.Provider>
   )
@@ -69,6 +89,7 @@ export function TabItem({
   icon,
   busy,
   tag,
+  extra,
   preview,
   fill,
   title,
@@ -87,6 +108,8 @@ export function TabItem({
   busy?: boolean
   /** 标题后面的小标签（子对话、工作流、计数） */
   tag?: ReactNode
+  /** 标题和关闭按钮之间的附加按钮（右栏子对话页签的切换下拉）：自己处理点击，不触发选中 */
+  extra?: ReactNode
   /** 预览页签：标题斜体，下一次单击会替换它 */
   preview?: boolean
   /** 平分页签条的宽度，标题居中 */
@@ -159,6 +182,7 @@ export function TabItem({
           </span>
         )}
       </button>
+      {extra && <span className="ml-0.5 flex shrink-0 items-center">{extra}</span>}
       {onClose ? (
         <button
           type="button"

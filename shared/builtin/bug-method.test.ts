@@ -58,6 +58,7 @@ test('分析角色：只读，前五个阶段，修复写成建议', () => {
 
 test('systematic-debugging 技能由方法生成，和方法一致（改了方法跑 node scripts/gen-debug-skill.mjs）', async () => {
   const file = 'skills/coding/systematic-debugging/SKILL.md'
-  const want = await format(debugSkillMd(), { ...(await resolveConfig(file)), filepath: file })
+  const config = await resolveConfig(file, { config: 'config/.prettierrc.json' })
+  const want = await format(debugSkillMd(), { ...config, filepath: file })
   assert.equal(readFileSync(file, 'utf8'), want)
 })
