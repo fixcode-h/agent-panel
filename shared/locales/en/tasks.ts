@@ -881,7 +881,6 @@ export const EN_TASKS: Record<string, string> = {
   结束就地改动: 'Finish in-place edit',
   释放文件: 'Release files',
   '按类型分 changelist': 'Split changelists by type',
-  终止子对话的工作流: "Stop sub-conversation's workflow",
   'cherry-pick 改动': 'Cherry-pick changes',
   请用户授权推送: 'Ask to push',
   查看项目教训: 'Read project lessons',
@@ -1757,4 +1756,11 @@ export const EN_TASKS: Record<string, string> = {
   '交结果：卡住': 'Result: stuck',
   '交结果：没做完': 'Result: unfinished',
   '在等你处理：确认操作或回答提问': 'Waiting for you: confirm an action or answer a question',
+  工作流子对话: 'Workflow sub-conversation',
+  运行的视图: 'Run view',
+  看这次运行的完整输出: "See this run's full output",
+  '工作流 · {name} {done}/{total}': 'Workflow · {name} {done}/{total}',
+  '工作流 · {name}': 'Workflow · {name}',
+  '这个项目的默认角色不能启动工作流，会直接在对话里做':
+    "This project's default role can't start workflows, so it will do the work in the conversation",
 }

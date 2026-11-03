@@ -26,6 +26,7 @@ import {
   endRun,
   trackWait,
   newTask,
+  runRunning,
   taskDeleted,
   withAttachments,
   withTaskModel,
@@ -55,6 +56,7 @@ import { inboxWithFile } from './inbox-file.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { markChildWrapUp } from '../../shared/plan.ts'
+import { flowLine } from '../../shared/flow-child.ts'
 import { statSync } from 'node:fs'
 import path from 'node:path'
 import {
@@ -136,7 +138,13 @@ export function createRun(sc: TasksScope) {
     parent: Task,
     project: Project,
     agents: Agent[],
-    { title, message, files, agentId }: { title: string; message: string; files?: string[]; agentId?: string },
+    {
+      title,
+      message,
+      files,
+      agentId,
+      flow,
+    }: { title: string; message: string; files?: string[]; agentId?: string; flow?: Task['flow'] },
   ) {
     const worker = agents.find((a) => a.origin === 'builtin:worker')
     const subId = randomUUID()
@@ -151,7 +159,8 @@ export function createRun(sc: TasksScope) {
       // 父对话的「子对话也提问」决定这条新子对话开不开提问
       askUser: childAskInitial(parent),
     })
-    const draft = { ...newTask(input, undefined, at, subId, [], {}), id: subId }
+    // 工作流子对话（ADR 0044）：第一轮由引擎按流程图跑，跑完交给执行角色收尾，所以角色固定用「执行」
+    const draft = { ...newTask(input, undefined, at, subId, [], {}), id: subId, ...(flow && { flow }) }
     // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
     // 只有直接调接口没给时才退回用户消息开头
     if (title.trim()) draft.title = title.trim().slice(0, 80)
@@ -200,6 +209,22 @@ export function createRun(sc: TasksScope) {
         .filter(Boolean)
         .join('\n'),
     }
+  }
+
+  /**
+   * 工作流子对话把同一个工作流再跑一次（start_workflow 带 again，ADR 0044）：流程图状态改回「起一次新的运行」，
+   * 之后照常把消息交给它，它的下一轮从头跑流程图。还在跑的不改，先等它停下或终止；返回空串是改好了
+   */
+  async function rerunChildFlow(parentId: string, id: string, input: string) {
+    const cur = sc.live.get(id.trim())?.task ?? (await sc.store.get(id.trim()))
+    if (!cur || cur.parentTaskId !== parentId) return `找不到你名下的子对话 ${id}`
+    if (!cur.flow) return `子对话「${cur.title}」不是工作流子对话：要它接着做用 send_to_conversation`
+    if (cur.working || runRunning(cur))
+      return `工作流子对话「${cur.title}」还在跑：等它停下，或者先用 stop_workflow 终止再重跑`
+    const flow = { ...cur.flow, input, run: 0, handed: false, cancelled: undefined }
+    cur.flow = flow
+    if (!sc.live.has(cur.id)) await sc.store.update(cur.id, { ...cur, flow })
+    return ''
   }
 
   /** 面板自己替父对话新建子对话（不经父对话的那一轮）：按父对话所在项目和现在的角色列表来 */
@@ -621,6 +646,7 @@ export function createRun(sc: TasksScope) {
                 childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) }),
               ),
               lastActivityAt: childLastActivity(cur),
+              flow: flowLine(cur) || undefined,
               // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
               autoAsk: cur.autoAsk,
               createdAt: cur.createdAt,
@@ -628,11 +654,16 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files }) => {
+        createConversation: async ({ title, message, files, agentId, flow }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          return spawnChild(entry.task, project, agents, { title, message, files })
+          return spawnChild(entry.task, project, agents, { title, message, files, agentId, flow })
         },
-        sendToConversation: async (id, message) => {
+        sendToConversation: async (id, message, opts) => {
+          // 同一个工作流再跑一次（start_workflow 带 again）：先把子对话的流程图状态改回「起一次新的运行」
+          if (opts?.rerun) {
+            const bad = await rerunChildFlow(entry.task.id, id, message)
+            if (bad) return { ok: false, info: bad }
+          }
           // 父对话交给已有子对话：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
           const r = await sc.sendToChild(entry.task.id, id, message, undefined, 'task')
           // 交给子对话就算回答了它的提问：父对话里的提问卡片收起

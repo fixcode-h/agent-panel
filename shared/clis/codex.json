@@ -109,6 +109,11 @@
       "why": "思考摘要的形式（设置里的「思考摘要」）；none 只关掉摘要，模型照样推理"
     },
     {
+      "if": "opt.fast",
+      "args": ["-c", "service_tier=\"fast\""],
+      "why": "Fast 模式（设置里的开关）：新版本把 fast 当成 priority 的旧名照样认，旧版本只认 fast。关着时不传，不写 default：旧版本不认这个值，配置会读不进来"
+    },
+    {
       "if": "autoCompactTokens",
       "args": ["-c", "model_auto_compact_token_limit={autoCompactTokens}"]
     },
@@ -313,6 +318,12 @@
   },
   "options": [
     {
+      "id": "fast",
+      "label": "Fast 模式",
+      "hint": "用更快的优先通道回复，消耗用量更快；只有支持的账号和模型生效（service_tier）",
+      "default": false
+    },
+    {
       "id": "reasoningSummary",
       "label": "思考摘要",
       "hint": "思考过程在对话里显示成什么样；关闭只是不显示摘要，模型照样思考（model_reasoning_summary）",
@@ -329,6 +340,8 @@
     "en": {
       "关闭": "Off",
       "思考摘要": "Reasoning summary",
+      "Fast 模式": "Fast mode",
+      "用更快的优先通道回复，消耗用量更快；只有支持的账号和模型生效（service_tier）": "Replies through the faster priority tier and uses up your limits faster; only takes effect on supported accounts and models (service_tier)",
       "思考过程在对话里显示成什么样；关闭只是不显示摘要，模型照样思考（model_reasoning_summary）": "How the reasoning shows up in the conversation; Off only hides the summary, the model still reasons (model_reasoning_summary)",
       "自动": "Auto",
       "简洁": "Concise",

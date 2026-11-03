@@ -24,7 +24,7 @@ export function stopHelper(taskId: string, stepId: string, why: string) {
 }
 
 /**
- * 对话里 start_plan 正在跑的工作流：任务 id → 终止它用的开关和所在的宿主。
+ * 正在跑的流程图（工作流子对话，ADR 0044）：任务 id → 终止它用的开关和所在的宿主。
  * 只停这次运行，不停对话：界面上工作流卡片的「终止」、父对话的 stop_workflow 都走 stopPlan，
  * 停下后运行的结果按「被终止」交回对话，这次运行改了哪些文件一起交回，由对话决定保留还是清理
  */

@@ -174,8 +174,9 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 
 ### 改代码的工作流只做到「实现 + 快速检查 + 文档同步」
 
-改代码的工作流由子对话（执行角色）用 `start_plan` 启动，只是子对话计划里的一个主步骤。收尾前评审（[ADR 0013](adr/0013-review-diff-only-with-brief.md)）、
-评审后的完整测试和编译、`submit_merge` 合回父对话分支都由执行角色在工作流之后做，所以工作流里**不放**：
+工作流只由父对话启动（[ADR 0044](adr/0044-workflow-started-by-parent.md)）：主理用 `start_workflow` 在自己下面开一个工作流子对话，
+面板按流程图把节点跑完，流程图就是那个子对话计划里的一个主步骤。收尾前评审（[ADR 0013](adr/0013-review-diff-only-with-brief.md)）、
+评审后的完整测试和编译、`submit_merge` 合回父对话分支都由那个子对话的执行角色在流程图跑完后做，所以工作流里**不放**：
 
 - 评审节点：评审要带交接单、只看 diff，由执行角色派，计划里单列一步；
 - 完整验收（`review: 'check'` 挂测试验收）：那会把完整测试跑在评审前面，评审改完还得再跑一次；
@@ -185,13 +186,16 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 实现节点改完只跑项目测试步骤里标「快速」的检查；最后一个节点是「文档」同步，Bug 记录只记用户报的 Bug。
 测试步骤照样注入这些工作流的说明：带 `project-testing` 技能的角色（开发、执行、依赖）也算要跑测试（`withTestSteps`）。
 
+父对话挑工作流看每个工作流的 `when`（什么时候用）、`notFor`（不用）、`kind`（`change` 改代码、跑完合回；`readonly` 一个文件都不写），
+判定规则只写在 `shared/flow-child.ts` 的 `WORKFLOW_PICK_RULES`：用户点名 → 命中适用场景 → 问答 / 排查 / Bug / 小改动一律不起 → 拿不准交子对话。
+新增内置工作流必须写这三项，写不出「什么时候用」的说明它不是固定剧本，不该做成工作流。
+
 | key               | 名称                 | 适用场景                               | 主 Agent       | 节点                                                                                   |
 | ----------------- | -------------------- | -------------------------------------- | -------------- | -------------------------------------------------------------------------------------- |
 | `project-general` | 通用项目             | 项目默认、边界清楚的功能和改动         | `orchestrator` | analyst（识别现场与方案，确认）→ developer → docsync                                   |
 | `project-ue`      | UE 项目              | UE 的 C++ / Lua 改动                   | `orchestrator` | explorer（ue 侦察）→ analyst（确认）→ developer（不编译）→ docsync                     |
 | `openspec`        | 功能开发（OpenSpec） | 需要完整规范的复杂功能                 | `developer`    | spec → analyst → spec（门禁）→ developer → tester（延期验证项）→ spec（归档）→ docsync |
 | `migration`       | 数据与配置迁移       | 改 schema / 数据格式 / 配置结构        | `developer`    | analyst（含读写方）→ developer → tester（旧数据验证）→ docsync                         |
-| `bugfix`          | Bug 修复             | `worker.mode=总是按工作流` 时的 Bug    | `developer`    | developer 修 Bug → docsync（用户报的 Bug 记录）                                        |
 | `architecture`    | 架构设计             | 新模块架构或现有架构评审               | `analyst`      | analyst（architectural）→ analyst（压测）→ docsync（ADR 一律写）                       |
 | `review`          | 代码评审             | 评审分支 / 提交 / changelist，全程只读 | `reviewer`     | explorer（整理评审交接单）→ reviewer（只评改动的行）                                   |
 | `deps`            | 依赖升级与安全       | 过期、漏洞、大版本升级                 | `deps`         | deps 体检（确认）→ deps 分批升级 → docsync                                             |
@@ -208,6 +212,7 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 | `daily-dev` | `project-general` | 和「通用项目」的主流程是同一件事                                               |
 | `ue-dev`    | `project-ue`      | 和「UE 项目」的主流程是同一件事                                                |
 | `bootstrap` | `project-general` | 项目设置里的「AI 初始化项目」已经写 AGENTS.md 和文档框架、推荐测试步骤和工作流 |
+| `bugfix`    | `project-general` | ADR 0044 下线：Bug 交子对话在对话里按逐层定位做，固定节点会丢掉中间线索        |
 
 改工作流定义时把改前那一版追加进 `LEGACY_WORKFLOWS`（只登记真改了的，登记了没变的会每次启动重写一遍），没改过的副本启动时升级。
 
@@ -258,6 +263,6 @@ Git / Perforce / SVN 分开建角色（版本控制本来就是同一个能力�
 
 **不新增找 Bug 的角色**：`debugger` 已经合并进 `developer`（见上面的合并表），方法差异放在角色设定里，不再拆一个角色。
 
-**Bug 不固定启动工作流**：子对话默认（`worker.mode=自动`）在对话里直接按方法找和修。定位时下一步查哪里取决于上一步查到了什么，
+**Bug 不走工作流**：子对话在对话里直接按方法找和修。定位时下一步查哪里取决于上一步查到了什么，
 拆成固定节点每次交接都会丢掉中间线索；验证和提交子对话本来就会做（合并编译、测试验收）。
-`worker.mode=总是按工作流` 时才用「Bug 修复」工作流，它的节点用的是同一套方法。
+「Bug 修复」工作流已下线（ADR 0044），执行角色也不再有「总是按工作流」的选项。

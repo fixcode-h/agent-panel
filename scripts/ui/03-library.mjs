@@ -585,7 +585,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('Agent-参数说明：按 Esc 后说明浮层没消失'))
   await check(p, 'Agent-参数说明')
   await p.getByRole('tab', { name: /^设定/ }).click()
-  await check(p, '角色-设定', ['能开启子对话', '能启动计划', '基本信息'])
+  await check(p, '角色-设定', ['能开启子对话', '能启动工作流', '基本信息'])
   await p.getByRole('tab', { name: /^运行/ }).click()
   await check(p, '角色-运行', ['运行环境', '额外参数', '对话范围'])
   // 角色分层：必备的「主理」是高级角色，「能力」页列出挂载的基本角色和各自的用法，评审只能派出

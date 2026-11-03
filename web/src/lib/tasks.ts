@@ -364,6 +364,9 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
   switch (name) {
     case 'create_conversation':
       return as(t('新建子对话'), firstLine(a.title) || quoted, 'agent', text(a.message))
+    // 父对话启动工作流（ADR 0044）：开出来的是工作流子对话，点它和子对话一样在右栏打开
+    case 'start_workflow':
+      return as(t('启动工作流'), firstLine(a.title) || firstLine(a.input), 'agent', text(a.input))
     case 'send_to_conversation':
       return as(t('发送消息'), quoted || firstLine(a.id), 'agent', text(a.message))
     case 'list_conversations':
@@ -405,9 +408,9 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     // 父对话收尾子对话：标题写子对话的名字（结果里有），点它打开那个子对话
     case 'finish_child':
       return as(t('收尾子对话'), quoted || firstLine(a.id), 'agent')
-    // 父对话终止子对话里 start_plan 跑着的工作流：子对话本身不停，点它打开那个子对话，展开看终止原因
+    // 父对话终止工作流子对话的流程图：点它打开那个子对话，展开看终止原因
     case 'stop_workflow':
-      return as(t('终止子对话的工作流'), quoted || firstLine(a.id), 'agent', text(a.reason))
+      return as(t('终止工作流'), quoted || firstLine(a.id), 'agent', text(a.reason))
     case 'request_build':
       return as(t('申请编译'), firstLine(a.note), 'other', text(a.note))
     case 'list_peers':
@@ -528,7 +531,8 @@ function waitSummary(tool: ToolUse, a: Record<string, unknown>) {
 /** 新建、交给、收尾子对话和终止它的工作流这几次调用指向哪个子对话：新建的 id 在工具输出的「（id: …）」里，其余在参数里 */
 export function panelChildId(tool: ToolUse) {
   const name = panelName(tool)
-  if (name === 'create_conversation') return /（id: ([^）\s]+)）/.exec(tool.output ?? '')?.[1] ?? ''
+  if (name === 'create_conversation' || name === 'start_workflow')
+    return /（id: ([^）\s]+)）/.exec(tool.output ?? '')?.[1] ?? firstLine(toolArgs(tool).again)
   if (name === 'send_to_conversation' || name === 'finish_child' || name === 'stop_workflow')
     return firstLine(toolArgs(tool).id)
   return ''

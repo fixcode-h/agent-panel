@@ -1,5 +1,6 @@
 import type { FlowSpec } from './workflows.ts'
 import { BEFORE_TIDY, CHECK, GENERAL_LEGACY } from './legacy-workflows.ts'
+import { BEFORE_0044 } from './legacy-workflows-0044.ts'
 import type { ParamValue } from '../schema.ts'
 import { END, START } from '../flow.ts'
 
@@ -1726,10 +1727,14 @@ export const LEGACY_WORKFLOWS: Record<string, LegacyWorkflow[]> = {
  */
 for (const key of ['project-general', 'project-ue', 'openspec', 'migration', 'bugfix', 'review', 'deps', 'release'])
   (LEGACY_WORKFLOWS[key] ??= []).push(BEFORE_TIDY[key])
+/** ADR 0044 改了说明（工作流改由父对话启动）的工作流：改前那一版也认 */
+for (const [key, def] of Object.entries(BEFORE_0044)) (LEGACY_WORKFLOWS[key] ??= []).push(def)
 
 /** 合并掉的工作流（workflows.ts 的 RETIRED_WORKFLOWS）没改过时的样子：和它一致的本机副本才删 */
 export const RETIRED_WORKFLOW_DEFS: Record<string, LegacyWorkflow[]> = {
   'daily-dev': [BEFORE_TIDY['daily-dev']],
   'ue-dev': [BEFORE_TIDY['ue-dev']],
   bootstrap: [BEFORE_TIDY.bootstrap],
+  // ADR 0044 下线：Bug 交子对话按逐层定位做，不再有固定剧本；历次没改过的版本都认
+  bugfix: LEGACY_WORKFLOWS.bugfix ?? [],
 }

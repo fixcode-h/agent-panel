@@ -535,6 +535,24 @@ await runShard(import.meta.filename, async (api) => {
     // 点「启动工作流」这一行：面板内换成这次运行的视图，不是把内容铺在子对话里
     await runTitle.first().click()
     await check(p, '子对话-运行视图', ['子对话：到货提醒', '第 1 次运行'])
+    // 运行页能切到流程图（ADR 0044）：标题栏的「输出 / 流程图」切换，流程图页画这次运行的节点，再切回输出
+    {
+      const tabs = p.getByRole('radiogroup', { name: '运行的视图' })
+      if (!(await tabs.count())) errors.push('子对话运行视图：标题栏没有「输出 / 流程图」切换')
+      else {
+        await tabs.getByRole('radio', { name: '流程图' }).click()
+        await p
+          .locator('.react-flow')
+          .first()
+          .waitFor({ timeout: 10000 })
+          .catch(() => errors.push('子对话运行视图：切到流程图后没有画出流程图'))
+        await settle(p)
+        await check(p, '子对话-运行视图-流程图')
+        await tabs.getByRole('radio', { name: '输出' }).click()
+        await settle(p)
+        if (await p.locator('.react-flow').count()) errors.push('子对话运行视图：切回输出后流程图还在')
+      }
+    }
     if (!(await p.getByRole('button', { name: '返回子对话' }).count()))
       errors.push('子对话运行视图：标题栏左边没有返回子对话的按钮')
     if (!(await p.getByRole('button', { name: '关闭子对话面板' }).count()))

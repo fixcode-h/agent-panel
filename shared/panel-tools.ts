@@ -23,6 +23,7 @@ export const PANEL_TOOL_NAMES = [
   'list_peers',
   'message_peer',
   'start_plan',
+  'start_workflow',
   'set_plan',
   'finish_plan',
   'get_status',

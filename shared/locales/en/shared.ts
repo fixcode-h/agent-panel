@@ -1,7 +1,10 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_SHARED: Record<string, string> = {
-  '开始执行计划（{name}）：{input}': 'Starting plan ({name}): {input}',
-  按工作流走一遍: 'run through the workflow',
+  '工作流「{name}」跑完了，交给执行角色收尾': 'Workflow "{name}" finished; handing over to the executor to wrap up',
+  '这次运行改动了这些文件：': 'This run changed these files:',
+  '工作流被终止：{why}': 'Workflow stopped: {why}',
+  '工作流停在「{node}」：节点失败，原因见节点里的错误。父对话交回意见后从这个节点重跑。':
+    'Workflow halted at "{node}": the node failed (see its error). It reruns from this node once the parent conversation sends feedback.',
   '找不到要执行的工作流：{id}': 'Workflow to run not found: {id}',
   // clis.ts：模型档位、思考强度、权限模式
   高: 'High',

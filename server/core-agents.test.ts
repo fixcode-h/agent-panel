@@ -229,9 +229,10 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.match(orch, /调用栈、证据链（日志原文或测试输出 \+ path:line）、验证结果。缺了就交回让它补/)
 
   const worker = role('worker')
-  assert.ok(renderTemplate(worker, { mode: '自动' }).includes(BUG_METHOD))
-  assert.match(renderTemplate(worker, { mode: '自动' }), /Bug：不启动工作流/)
-  assert.match(renderTemplate(worker, { mode: '总是按工作流' }), /按可用工作流里的「Bug 修复」执行/)
+  assert.ok(renderTemplate(worker, {}).includes(BUG_METHOD))
+  assert.match(renderTemplate(worker, {}), /Bug：在对话里按下面的「按模块逐层定位」找和修/)
+  // 「Bug 修复」工作流下线、执行角色不启动工作流（ADR 0044）
+  assert.doesNotMatch(worker, /start_plan|总是按工作流/)
 
   const dev = role('developer')
   assert.ok(renderTemplate(dev, { task: '修 Bug' }).includes(BUG_METHOD))
@@ -434,14 +435,14 @@ test('必备角色：不合法的参数值退回内置默认，定义里没有�
   const cur = AgentInput.parse({
     ...def.agent,
     params: [
-      { key: 'mode', label: 'x', type: 'select', options: ['乱写'], default: '乱写' },
+      { key: 'verify', label: 'x', type: 'select', options: ['乱写'], default: '乱写' },
       { key: 'batch', label: 'x', type: 'select', options: [], default: '中' },
       { key: 'extra', label: 'x', type: 'text', default: '多出来的' },
     ],
     origin: 'builtin:worker',
   })
   const next = syncCore(cur, def, { categoryId: 'c', includes: [] })
-  assert.equal(next.params.find((p) => p.key === 'mode')?.default, '自动')
+  assert.equal(next.params.find((p) => p.key === 'verify')?.default, '自动')
   assert.equal(next.params.find((p) => p.key === 'batch')?.default, '中')
   assert.ok(!next.params.some((p) => p.key === 'extra'))
   assert.ok(isCoreAgent(next))

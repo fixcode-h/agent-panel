@@ -20,6 +20,7 @@ import {
 } from './tts.ts'
 import type { ProjectProposal } from './project-init.ts'
 import { AskQuestion, TaskRequest } from './task-request.ts'
+import { TaskFlow, WorkflowKind } from './task-flow-schema.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -131,7 +132,7 @@ export const AgentInput = z.object({
   common: z.boolean().default(false),
   /** 可以创建子对话、把用户消息分派给子对话（只有项目顶层对话里生效，子对话不能再分派） */
   canDelegate: z.boolean().default(false),
-  /** 可以按工作流启动计划（start_plan）；关掉时只能在当前对话里直接执行 */
+  /** 可以启动工作流（start_workflow，ADR 0044）：只对项目里能分派子对话的父对话生效，子对话一律不能 */
   canPlan: z.boolean().default(false),
   /**
    * 在哪类对话里能启动：any 任意对话（默认）；parent 只在父对话里执行。
@@ -515,6 +516,10 @@ export const WorkflowFields = z.object({
   tags: z.array(z.string()).max(20).default([]),
   /** 工作流说明（Markdown）：目标、规范、完成标准等，每个节点执行时都会带上 */
   document: z.string().max(50000).default(''),
+  /** 父对话挑工作流看的（ADR 0044）：适用场景、不适用的情况；kind 是改代码（收尾合回）还是一个文件都不写 */
+  when: z.string().trim().max(200).optional(),
+  notFor: z.string().trim().max(200).optional(),
+  kind: WorkflowKind.optional(),
   /** 对外暴露的配置项：项目设置里按它渲染表单 */
   expose: z.array(WorkflowExpose).max(20).default([]),
   /** 每次执行的上限：花费（美元）、token（输入 + 输出）超过就暂停，免得验收来回循环一直烧钱；0 表示不限 */
@@ -1749,7 +1754,7 @@ export type PlanItem = z.infer<typeof PlanItem>
 export const PlanStep = PlanItem.extend({
   /** 子步骤；主步骤是一次工作流运行时为空，子步骤就是那次运行的节点（run） */
   children: z.array(PlanItem).default([]),
-  /** 这个主步骤是第几次工作流运行（start_plan 启动的） */
+  /** 这个主步骤是第几次工作流运行（工作流子对话的流程图） */
   run: z.number().int().optional(),
   /**
    * 面板加的收尾步骤，永远是计划的最后一步（见 plan.ts 的 ensureWrapUp）：merge 是子对话的独立分支合回父对话
@@ -1835,10 +1840,7 @@ export const RunMessage = z.object({
 })
 export type RunMessage = z.infer<typeof RunMessage>
 
-/**
- * 一次工作流运行：对话里可以按顺序跑很多次，每次用一份独立的工作流快照、共享状态和消息。
- * 节点本身仍在 task.steps 里，用 runId 和这里对应。
- */
+/** 一次工作流运行：每次一份独立的工作流快照、共享状态和消息；节点在 task.steps 里，用 runId 和这里对应 */
 export const TaskRun = z.object({
   /** 第几次运行，从 1 开始 */
   id: z.number().int(),
@@ -2118,10 +2120,7 @@ export const TaskData = z.object({
   workflows: z.array(Workflow).default([]),
   /** 历次工作流运行：每次一份工作流快照、共享状态和节点消息。旧任务没有 */
   runs: z.array(TaskRun).default([]),
-  /**
-   * 新建对话时解析好的技能槽取值（工作流 expose 里 target=skill 的项）：Agent 的 skills 写 `{{槽名}}`，
-   * 执行时按这里换成具体的技能名。和上面的工作流快照一起定下来，之后改项目设置不影响这个对话
-   */
+  /** 技能槽取值（工作流 expose 里 target=skill 的项，Agent 的 skills 写 `{{槽名}}`）：和工作流快照一起定下来 */
   skillSlots: z.record(z.string(), z.string()).default({}),
   /**
    * 工作流任务新建时、以及「继续流程」时把项目里的测试步骤写一份进任务（纯对话任务为空）。
@@ -2256,6 +2255,8 @@ export const TaskData = z.object({
   remotePushAt: z.string().optional(),
   /** 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离 */
   runSeq: z.number().int().default(0),
+  /** 工作流子对话（ADR 0044）：见 task-flow-schema.ts */
+  flow: TaskFlow.optional(),
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
   imported: z
     .object({
@@ -2268,11 +2269,7 @@ export const TaskData = z.object({
 })
 export type TaskData = z.infer<typeof TaskData>
 
-/**
- * 旧任务的消息用节点下标记录所属节点，换成节点 id。
- * 更早的版本还有 queue（执行中排队的追加要求）：现在执行中收到的消息直接进对话，
- * 读旧数据时把没处理的普通要求补到对话末尾，让用户仍然看得到；等 CLI 取走的补充已经不成立了，丢掉。
- */
+/** 旧任务：消息的节点下标换成节点 id；旧 queue 里没处理的普通要求补到对话末尾（等 CLI 取走的补充丢掉） */
 function migrateTask(raw: unknown) {
   const v = moveSessions(dropLegacyAgent(raw))
   if (!v || typeof v !== 'object') return v

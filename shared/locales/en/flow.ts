@@ -262,7 +262,6 @@ export const EN_FLOW: Record<string, string> = {
   节点名称: 'Node name',
   显示属性栏: 'Show properties panel',
   拖动调整属性栏的宽度: 'Drag to resize the properties panel',
-  推荐的下一步: 'Suggested next steps',
   '自带的工作流都被删掉了，可以从内置工作流里重新添加，「默认」工作流做完后会推荐用它们接着做':
     'All bundled workflows have been deleted. You can add them back from the built-in workflows; the Default workflow recommends them as next steps when it finishes',
   '什么都可以交给它：分析、排查、找资料、小改动，给出结果并推荐下一步用哪个工作流':
