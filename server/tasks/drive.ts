@@ -11,6 +11,7 @@ import { hasHeld } from '../exec/delivery.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import { activePlan, needsFix, planProgress, openWork } from '../../shared/plan.ts'
+import { getSettings } from '../settings.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
@@ -30,8 +31,8 @@ export function createDrive(
 ) {
   const { reportChild, activeChildren } = deps
   /**
-   * 推对话「接着做」的次数：Agent 模式的顶层对话（项目里的对话）同一个进度最多推 3 次，推了还原地不动就停下，
-   * 最后一次要它说明卡在哪；子对话、Chat 页的对话仍只推一次（见 shared/conv-mode.ts 的 nudgeMax、ADR 0037）。
+   * 推对话「接着做」的次数：Agent 模式（顶层对话和子对话）同一个进度最多推设置里的 nudgeMax 次（默认 6，
+   * 0 表示不自动推），推了还原地不动就停下，最后一次要它说明卡在哪；Chat 页的对话仍只推一次（见 shared/conv-mode.ts、ADR 0037）。
    * 原来同一进度一律只推一次，用户反馈「走一步就停，催一下又走一步」
    */
   const budget = new DriveBudget()
@@ -46,7 +47,7 @@ export function createDrive(
     warned.delete(id)
   }
   /** 真推出去时记一次：返回这是这个进度的第几次（从 1 开始），推满了返回 0 */
-  const takeNudge = (conv: Task, key: string, max = nudgeMax(conv)): number => {
+  const takeNudge = (conv: Task, key: string, max: number): number => {
     const n = budget.take(conv.id, key, max, inputOf(conv))
     // 子对话「推满了还停在原地」的判定（merge.ts 的 stuckAfterNudge）读这个：推满才记，没推满时子对话还在自驱，不报父对话
     if (n && n >= max) sc.planNudged.set(conv.id, key)
@@ -54,15 +55,15 @@ export function createDrive(
     return n
   }
   /** 推满之前的最后一次：要它说明卡在哪，不再只说打算 */
-  const lastNudge = (conv: Task, nth: number) =>
-    nudgeMax(conv) > 1 && nth >= nudgeMax(conv)
+  const lastNudge = (nth: number, max: number) =>
+    max > 1 && nth >= max
       ? `这是第 ${nth} 次提醒：如果做不下去，就停下来说明卡在哪一步、需要什么才能继续，不要再只说打算。`
       : ''
   /**
    * 对话这一轮说完了，计划却没做完、也没在等任何结果（见 planStalled）：常见于模型只回了一句
    * 「先跑类型检查」「我跑 test:failed」就收尾，那次回应里没有任何工具调用，CLI 照常报这一轮结束（用户报过多次）。
    * 子对话这时父对话只会收到一条状态，它在忙别的就没人推；顶层对话就一直停在等下一句。这里由面板马上推它接着做下一步。
-   * 同一个进度推几次见 takeNudge（Agent 模式的顶层对话最多 3 次，其余 1 次），推满了还没动静：
+   * 同一个进度推几次见 takeNudge（Agent 模式最多设置里的 nudgeMax 次，Chat 页 1 次），推满了还没动静：
    * 子对话照常上报父对话，顶层对话就停在那里等用户。
    * 次数只在真推出去时记（ADR 0041）：刚结束那一下只看还剩不剩次数，等 CLI 停稳复查通过、消息交出去之前才记。
    * 原来刚结束就记，复查时后台结果刚好交进来就静默返回，次数白白用掉，推满后同一进度再也不推（用户 2026-11-02 报）。
@@ -72,6 +73,8 @@ export function createDrive(
   async function nudgePlan(conv: Task, turn?: TurnInfo): Promise<boolean> {
     // 没有计划的对话：这一轮动了手却没列计划，推它把计划列出来再按计划做完（见 nudgeNoPlan）
     if (!activePlan(conv)) return turn ? nudgeNoPlan(conv, turn) : false
+    // 次数上限来自设置，Chat 模式仍是 1（见 shared/conv-mode.ts 的 nudgeMax）
+    const max = nudgeMax(conv, (await getSettings()).nudgeMax)
     /** settled：这一轮已经停稳（进程结束，或者停在保活上等下一句）；刚结束那一下 CLI 还没停到等待上，不看这一项 */
     const stalled = async (settled: boolean) => {
       const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
@@ -98,19 +101,26 @@ export function createDrive(
       return false
     }
     const progress = { done: now.p.done, total: now.p.total, key: shortKey(now.key) }
-    const can = budget.can(conv.id, now.key, nudgeMax(conv), inputOf(now.tk))
+    const can = budget.can(conv.id, now.key, max, inputOf(now.tk))
     if (can !== 'ok') {
       const reason = can
-      say({ action: 'stuck', reason, ...progress, max: nudgeMax(conv) })
-      // 推满了计划还没做完：写一行警告留给用户，不让它看起来像做完了
+      say({ action: 'stuck', reason, ...progress, max })
+      // 到了上限（推满或设为 0）计划还没做完：写一行警告留给用户，不让它看起来像做完了。
+      // 文案不说「推了几次」：设为 0 时一次都没推
       await warnStopped(
         conv.id,
         now.key,
-        t('计划才做了 {done}/{total}，面板推了几次还是停下了：停在这里等你看一下', {
+        t('计划才做了 {done}/{total}，面板不会再自动提醒它了：停在这里等你看一下', {
           done: now.p.done,
           total: now.p.total,
         }),
       )
+      // 子对话到了上限就不会再推这个进度了，要让父对话知道（ADR 0041）。max=0 时 takeNudge 从来没执行过、
+      // planNudged 还是空的，不先记上，children.ts 的「没推满不报」守卫会把「未完成」这封信吞掉，父计划就一直挂着
+      if (conv.parentTaskId) {
+        sc.planNudged.set(conv.id, now.key)
+        await reportChild(conv.id)
+      }
       return false
     }
     // 稍等一下再推：这一轮刚结束时 CLI 还没停到「等下一句」上；等它停稳了再看一次，还停着才推
@@ -129,9 +139,9 @@ export function createDrive(
           if (!(await nudgePlan(again.tk)) && conv.parentTaskId) await reportChild(conv.id)
           return
         }
-        const nth = takeNudge(again.tk, now.key, nudgeMax(conv))
+        const nth = takeNudge(again.tk, now.key, max)
         if (!nth) {
-          say({ action: 'stuck', reason: 'exhausted', ...progress, max: nudgeMax(conv) })
+          say({ action: 'stuck', reason: 'exhausted', ...progress, max })
           if (conv.parentTaskId) await reportChild(conv.id)
           return
         }
@@ -148,14 +158,14 @@ export function createDrive(
               : '接着做下一步：') +
           '直接调用工具去做，不用先说明；一步做完就用 set_plan 标完成，并在同一条回复里接着调用工具做下一步，直到计划做完。' +
           '确实卡住了就说明卡在哪一步、需要什么才能继续。' +
-          lastNudge(conv, nth)
+          lastNudge(nth, max)
         const ok = again.tk.parentTaskId
           ? (await sc.sendToChild(again.tk.parentTaskId, again.tk.id, text, 'nudge')).ok
           : await sc.wakeConv(again.tk.id, text, { panel: 'nudge' }).then(
               () => true,
               () => false,
             )
-        say({ action: ok ? 'continue' : 'send-failed', nth, max: nudgeMax(conv), ...progress })
+        say({ action: ok ? 'continue' : 'send-failed', nth, max, ...progress })
         if (!ok && conv.parentTaskId) await reportChild(conv.id)
       })().catch((e) => log.warn('task', '推对话接着做计划失败', { task: conv.id, error: (e as Error).message }))
     }, sc.PLAN_NUDGE_MS).unref?.()
@@ -265,9 +275,10 @@ export function createDrive(
       say({ action: 'none', reason: first })
       return false
     }
-    // 没调工具的那种每条输入只自检一次（自检那一轮它确认完成也是没调工具，不能再问）；动了手的最多 2 次
+    // 没调工具的那种每条输入只自检一次（自检那一轮它确认完成也是没调工具，不能再问）；动了手的最多 2 次，
+    // 两种都不超过设置里的提醒次数，设成 0 时一次都不推
     const key = `${silent ? 'check0' : 'check'}:${asked?.id ?? ''}`
-    const max = silent ? 1 : Math.min(2, nudgeMax(conv))
+    const max = Math.min(silent ? 1 : 2, nudgeMax(conv, (await getSettings()).nudgeMax))
     const can = budget.can(conv.id, key, max, inputOf(first))
     if (can !== 'ok') {
       say({ action: 'done', reason: can === 'exhausted' ? 'checked' : can })

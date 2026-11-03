@@ -121,6 +121,8 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
   const order = [...tasks.keys()].sort(
     (a, b) => depth(a) - depth(b) || (tasks.get(a)!.createdAt || '').localeCompare(tasks.get(b)!.createdAt || ''),
   )
+  // 所有节点用同一份设置：推进次数上限要写到 nudge 事实里，和面板实际用的对齐
+  const st = await getSettings()
   for (const id of order) {
     const tk = tasks.get(id)!
     const e = sc.live.get(id)
@@ -156,7 +158,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       trace: cliTrace(id),
       exit: lastExit(parsed),
       ...(plan && { plan: planFacts(tk, plan) }),
-      ...(nudged && { nudge: { key: shortKey(nudged.key), n: nudged.n, max: nudgeMax(tk) } }),
+      ...(nudged && { nudge: { key: shortKey(nudged.key), n: nudged.n, max: nudgeMax(tk, st.nudgeMax) } }),
       ...stalledFacts(id),
     }
     const agent = tk.usage.agents[tk.agentId]
@@ -225,7 +227,6 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       })
     }
   }
-  const st = await getSettings()
   return {
     format: LIFECYCLE_FORMAT,
     generatedAt: new Date(now).toISOString(),
