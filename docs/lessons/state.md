@@ -1,5 +1,5 @@
 ---
-paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**, shared/peer-message.ts
+paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**, shared/peer-message.ts, shared/bug-diagnosis.ts, web/src/components/tasks/ToolRow.tsx
 ---
 
 # 对话状态和父子对话之间的交付
@@ -28,3 +28,9 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**, shared
 - 规则：`sentToOther` 和 `handedOff` 只在当前这条用户消息（`currentAskIndex`：用户亲自发的、已交给 CLI 的最后一条）里去重；子对话交回、面板推进拉起的几轮仍算同一条，用户发了新消息就重新算。例外（`handOffFrom`）：转发的正文就是某条更早的用户消息原文时从那条算起，内存记录也不随插话清空——插话、read_user_notes 进来的消息也会成为当前消息。
 - 起因：审计发现按整个对话历史去重，父对话对 A 说过「继续」，以后对 B 说「继续」永远被拒；收窄后（2bb92363）「规则 1 交给 c1、规则 2 插话进来、再把规则 1 交给 c2」被放过。
 - 防线：`shared/peer-message.test.ts`、`server/orchestrator.test.ts` 的去重用例。
+
+## Agent 停下等用户看方案、看报告：算执行中，入口只放在那一行工具调用上
+
+- 规则：Agent 交了东西等用户审（诊断报告这类），这件事还没做完：对话状态算执行中（`ConvFacts.diagnosis` → `running`），父对话那边照样转圈、不推它接着做、不当成做完；不要挂成「等你处理」的请求（`task.requests`），也不要在父对话页另放一个按钮。审阅入口只放在交东西的那一行工具调用上（转圈 + 「查看报告」）。
+- 起因：ADR 0045 第一版（1efc3a9）把诊断报告挂成请求，子对话变成「等你处理」、不转圈，父对话页还多一条「查看报告」，用户纠正。
+- 防线：`shared/bug-diagnosis.test.ts`（交了报告 convState 是 running、不挂请求）、`server/orchestrator.test.ts`、`scripts/ui/02b-subagent.mjs`（父对话页没有单独的「查看报告」，按钮在工具行上）。

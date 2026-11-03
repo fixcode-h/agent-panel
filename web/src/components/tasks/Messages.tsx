@@ -134,7 +134,7 @@ export function NoteMessage({
 }) {
   const { projects } = useData()
   if (m.planStart) return null // 计划启动的那条提示只是把计划输入又抄了一遍，不画出来（按标记判断，不看文案）
-  if (m.bugReport && task) return <BugReportLine version={m.bugReport} text={m.text} task={task} />
+  if (m.bugReport) return <BugReportLine text={m.text} />
   if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
   const around = msgs && (m.error || m.alert) ? conversationAround(msgs, msgs.indexOf(m)) : ''
   const cwd =
@@ -311,7 +311,7 @@ export function AgentMessage({
   return (
     <MessageBody
       m={text === m.text ? m : { ...m, text }}
-      task={task ? { id: task.id, status: task.status, changes: task.changes, jobs: task.jobs } : undefined}
+      task={task}
       teamNames={teamNames}
       compact={compact}
       live={live}
@@ -331,11 +331,10 @@ export function AgentMessage({
 /** 启动命令是数组：任务推送时每次都是新对象，比较按内容 */
 const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
 
-/** 工具行只用到任务的这几样：不把整个任务（含上千条消息）传进每条回复 */
-type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> & { analysis?: Task['analysis'] }
-
-/** 后台命令的状态：跑完时放到后台的那一行要停止转圈 */
-const jobsSig = (task?: ToolTask) => task?.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
+/** 工具行只用到任务的这几样；后台命令、诊断报告（ADR 0045）的状态变了，那一行才重画（停转 / 开始转） */
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> &
+  Partial<Pick<Task, 'analysis' | 'title' | 'diagnoses'>>
+const jobsSig = (k?: ToolTask) => `${k?.jobs?.map((j) => `${j.id}:${j.state}`)}|${k?.diagnoses?.map((d) => d.status)}`
 
 type BodyProps = {
   m: TaskMessage

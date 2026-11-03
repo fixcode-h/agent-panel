@@ -1,17 +1,18 @@
 /**
  * Bug 先交诊断报告、用户确认了方案再改（ADR 0045）：纯函数，引擎、服务端和界面共用。
- * - 子对话（父对话派来的 Bug，task.bug）查到根因后用 submit_diagnosis 交报告（submitDiagnosis），
- *   报告挂成一条等用户处理的请求，这一轮结束；确认之前不改文件。
+ * - 子对话（父对话派来的 Bug，task.bug）查到根因后用 submit_diagnosis 交报告（submitDiagnosis），这一轮结束；
+ *   等确认期间对话算执行中（convState 的 diagnosis），交报告那一行工具调用一直转圈、上面有「查看报告」（用户 2026-11-03 定的：
+ *   不是「等你处理」的请求，父对话页也不单独显示）。确认之前不改文件。
  * - 用户在审阅弹窗里确认或标疑问（decideDiagnosis），结果作为新消息交回子对话（diagnosisFeedback）。
  *   不跟「提问」开关走：总是用户确认，父对话不代为确认（用户 2026-11-03 定的）。
  * - 收尾（submit_merge）前核对：要有确认过的方案，实际改动不超出方案里的文件（diagnosisGate）。
  * 交给 Agent 的话是提示词，不翻译；报告的小节名、对话里的提示、请求标题是界面文案，走 t()。
  */
-import type { Task, TaskMessage, TaskRequest } from './schema.ts'
+import type { Task, TaskMessage } from './schema.ts'
 import type { Diagnosis, DiagnosisNote } from './bug-diagnosis-schema.ts'
 import { t } from './i18n.ts'
 
-type DiagTask = Pick<Task, 'bug' | 'diagnoses' | 'requests' | 'messages' | 'changes'>
+type DiagTask = Pick<Task, 'bug' | 'diagnoses' | 'messages' | 'changes'>
 
 /** submit_diagnosis 交上来的内容 */
 export interface DiagnosisInput {
@@ -113,7 +114,7 @@ export function diagnosisMarkdown(d: Diagnosis, prev?: Diagnosis): string {
 }
 
 /**
- * 交一版诊断报告：上一版作废，新的一版挂成等用户确认的请求（不跟「提问」开关走），对话里记一条可点开的报告。
+ * 交一版诊断报告：上一版作废，新的一版等用户确认（不跟「提问」开关走），对话里记一条报告行。
  * 返回给 Agent 的话；不合格时 ok 为 false、什么都不改
  */
 export function submitDiagnosis(
@@ -149,22 +150,6 @@ export function submitDiagnosis(
     before: (task.changes ?? []).map((c) => normPath(c.path)).filter(Boolean),
   }
   ;(task.diagnoses ??= []).push(d)
-  // 上一版还挂着的确认（不该有，防重复）先去掉：同一时间只等一版
-  task.requests = task.requests.filter((r) => r.purpose !== 'diagnosis')
-  const req: TaskRequest = {
-    id: newId(),
-    step: '',
-    agentId: '',
-    kind: 'confirm',
-    purpose: 'diagnosis',
-    version,
-    title: t('诊断报告第 {n} 版', { n: version }),
-    detail: diagnosisMarkdown(d, prev),
-    options: [],
-    at: now,
-  }
-  task.requests.push(req)
-  task.messages.push(diagnosisMessage(newId(), version, t('交了诊断报告第 {n} 版，等你确认方案', { n: version }), now))
   return {
     ok: true,
     version,
@@ -205,7 +190,6 @@ export function decideDiagnosis(
   d.notes = notes
   d.overall = decision.overall.trim()
   d.decidedAt = now
-  task.requests = task.requests.filter((r) => r.purpose !== 'diagnosis')
   task.messages.push(
     diagnosisMessage(
       newId(),

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { diagnosisPending } from '../../shared/task.ts'
 import { Task, type Agent, type TaskMessage } from '../../shared/schema.ts'
 import {
   advanceChild,
@@ -576,7 +577,8 @@ export function createChildren(sc: TasksScope) {
     const live = sc.live.get(child.id)
     const why = live?.stop ? live.stopReason : child.stopReason
     if (why && why !== 'presence' && why !== 'idle') return false
-    if (child.requests.length || child.parentAsks?.length || openWork(child).length) return false
+    if (child.requests.length || child.parentAsks?.length || diagnosisPending(child) || openWork(child).length)
+      return false
     if (sc.background.list(child.id).some((j) => j.state === 'queued' || j.state === 'running')) return false
     if (!isolated(child)) return nudgeShared(child)
     const project = await sc.deps.projects.get(child.projectId)

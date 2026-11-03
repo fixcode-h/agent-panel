@@ -4,7 +4,6 @@ import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import type { ChildSummary } from './child-line'
-import { DiagnosisLoader } from './DiagnosisDialog'
 
 /** 一次最多列几行：再多就在最后一行写「还有 N 个」，点开子对话列表看全部 */
 const MAX_ROWS = 3
@@ -21,8 +20,6 @@ export function childrenConfirming(kids: ChildSummary[]) {
 function rowText(c: ChildSummary) {
   const req = c.request
   if (!req) return t('子对话「{title}」下面的子对话等你处理', { title: c.title })
-  if (req.purpose === 'diagnosis')
-    return t('子对话「{title}」的{what}等你确认方案', { title: c.title, what: req.title })
   return req.kind === 'question'
     ? t('子对话「{title}」等你回答：{what}', { title: c.title, what: req.title })
     : t('子对话「{title}」等你确认：{what}', { title: c.title, what: req.title })
@@ -46,8 +43,6 @@ export function ChildRequestBar({
 }) {
   // 正在提交的是哪一个按钮（请求 id + 允许 / 拒绝）：提交期间两个按钮都不能再点，免得重复回答
   const [busy, setBusy] = useState('')
-  // 在父对话页直接打开的诊断报告（ADR 0045）：不用先切进子对话
-  const [report, setReport] = useState('')
   const list = childrenConfirming(kids)
   if (!list.length) return null
   const shown = list.slice(0, MAX_ROWS)
@@ -91,11 +86,7 @@ export function ChildRequestBar({
             {i === shown.length - 1 && rest > 0 && (
               <span className="shrink-0 text-subtle">{t('另有 {n} 个子对话在等', { n: rest })}</span>
             )}
-            {req?.purpose === 'diagnosis' ? (
-              <Button size="sm" onClick={() => setReport(c.id)} className="h-6 px-2 text-xs">
-                {t('查看报告')}
-              </Button>
-            ) : req?.quick && onAnswer ? (
+            {req?.quick && onAnswer ? (
               <>
                 <Button
                   size="sm"
@@ -120,7 +111,6 @@ export function ChildRequestBar({
           </div>
         )
       })}
-      {report && <DiagnosisLoader taskId={report} onClose={() => setReport('')} />}
     </div>
   )
 }

@@ -1,13 +1,10 @@
-import { useEffect, useState } from 'react'
 import { FileSearch } from 'lucide-react'
 import type { Task, TaskRequest } from '@shared/schema'
 import type { Diagnosis } from '@shared/bug-diagnosis-schema'
 import { diagnosisMarkdown } from '@shared/bug-diagnosis'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
-import { Button } from '@/components/ui/button'
 import { ReviewDialog, type NoteKind } from './ReviewDialog'
 
 /**
@@ -46,7 +43,7 @@ export function DiagnosisDialog({
   onOpenChange,
   onDone,
 }: {
-  task: Pick<Task, 'id' | 'title' | 'diagnoses' | 'requests'>
+  task: Pick<Task, 'id' | 'title' | 'diagnoses'>
   open: boolean
   onOpenChange: (open: boolean) => void
   onDone?: (task: Task) => void
@@ -95,86 +92,15 @@ export function DiagnosisDialog({
   )
 }
 
-/** 输入框上方的入口：诊断报告等你确认（和节点确认那一条同样式） */
-export function DiagnosisEntry({
-  task,
-  onDone,
-  className,
-}: {
-  task: Task
-  onDone: (task: Task) => void
-  className?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const last = task.diagnoses?.at(-1)
-  if (!last) return null
-  return (
-    <>
-      <div
-        role="alertdialog"
-        aria-label={t('诊断报告等你确认')}
-        className={cn(
-          'mx-auto mb-2 flex max-w-(--content-w) items-center gap-2.5 rounded-2xl border border-warning/50 bg-card px-4 py-2.5 shadow-card animate-[pop-in_160ms_ease-out]',
-          className,
-        )}
-      >
-        <FileSearch className="h-4 w-4 shrink-0 text-warning" />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-body font-medium">{t('诊断报告第 {n} 版', { n: last.version })}</span>
-          <span className="truncate text-xs text-warning">{t('确认方案后才会开始改')}</span>
-        </div>
-        <Button size="sm" className="shrink-0" onClick={() => setOpen(true)}>
-          {t('查看报告')}
-        </Button>
-      </div>
-      <DiagnosisDialog task={task} open={open} onOpenChange={setOpen} onDone={onDone} />
-    </>
-  )
-}
-
-/** 在别处（父对话页、对话里的报告行）打开某个子对话的报告：先取最新的一份再弹 */
-export function DiagnosisLoader({ taskId, onClose }: { taskId: string; onClose: () => void }) {
-  const [task, setTask] = useState<Task | null>(null)
-  useEffect(() => {
-    let live = true
-    api
-      .task(taskId)
-      .then((x) => live && setTask(x))
-      .catch((e: Error) => {
-        toast.error(e.message)
-        onClose()
-      })
-    return () => {
-      live = false
-    }
-    // 只按对话取一次：onClose 每次渲染都是新函数
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId])
-  if (!task) return null
-  return <DiagnosisDialog task={task} open onOpenChange={(v) => !v && onClose()} onDone={setTask} />
-}
-
 /**
- * 对话里的报告行：交了第几版、确认了、提了意见，都是一行可点开的记录，点开看那一版的报告（随时回看）。
- * 报告存在任务上（task.diagnoses），这一行只记版本号
+ * 对话里的一行记录：你确认了第几版、对第几版提了意见。「查看报告」只放在交报告的那一行工具调用上（用户 2026-11-03 定的），
+ * 这里不再放入口，免得同一份报告到处都是按钮
  */
-export function BugReportLine({ version, text, task }: { version: number; text: string; task: Task }) {
-  const [open, setOpen] = useState(false)
-  const d = task.diagnoses?.find((x) => x.version === version)
+export function BugReportLine({ text }: { text: string }) {
   return (
     <div className="flex items-center justify-center gap-1.5 text-footnote text-subtle">
       <FileSearch className="h-3.5 w-3.5 shrink-0" />
       <span className="min-w-0 truncate">{text}</span>
-      {d && (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="shrink-0 cursor-pointer text-accent-text underline-offset-[3px] hover:underline"
-        >
-          {t('查看报告')}
-        </button>
-      )}
-      {d && <DiagnosisDialog task={task} open={open} onOpenChange={setOpen} />}
     </div>
   )
 }
