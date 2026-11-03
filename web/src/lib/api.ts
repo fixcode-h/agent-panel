@@ -1161,6 +1161,8 @@ export const api = {
   saveSummaryConfig: (c: SummaryConfig) => request<SummaryConfig>('/summary/config', json('PUT', c)),
   extractSummary: (input: SummaryExtractRequest) => request<SummaryJob>('/summary/extract', json('POST', input)),
   summaryJob: (id: string) => request<SummaryJob>(`/summary/jobs/${id}`),
+  /** 再次生成：用这份报告的分项开一次待确认（原报告不动，ADR 0043） */
+  redoSummary: (id: string) => request<SummaryJob>(`/summary/${id}/redo`, json('POST', {})),
   stopSummary: (id: string) => request<SummaryJob>(`/summary/jobs/${id}/stop`, json('POST', {})),
   createSummary: (input: SummaryCreateRequest) => request<SummaryRecord>('/summary', json('POST', input)),
   saveSummary: (id: string, md: string) => request<SummaryRecord>(`/summary/${id}`, json('PUT', { md })),

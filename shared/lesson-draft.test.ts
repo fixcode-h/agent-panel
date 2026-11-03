@@ -203,25 +203,41 @@ test('教训草稿：用户把标题改成「该怎么做」后再提炼，不�
   assert.deepEqual(missingDrafts(found, existing), [], '已经提炼过的那条不能再生成一份')
 })
 
-test('lessonDraftsFromReport：改版后的两节报告（需求 / Bug）也能提炼', () => {
-  const md = renderReport({
-    grain: 'day',
-    from: '2026-10-29',
-    to: '2026-10-29',
-    items: [
-      { id: 'n', kind: 'need', project: '面板', title: '支持按周生成', content: '可以按周汇总', cause: '', fix: '' },
-      {
-        id: 'b',
-        kind: 'bug',
-        project: '面板',
-        title: '子任务点暂停显示已停止',
-        content: '',
-        cause: '进程退出后状态没同步',
-        fix: '退出时同步状态',
-      },
-    ],
-  })
-  const drafts = lessonDraftsFromReport({ id: 'r', day: '2026-10-29', md })
+test('lessonDraftsFromReport：新报告按存下的分项提炼，没解决的问题不算（ADR 0043）', () => {
+  const items = [
+    {
+      id: 'n',
+      kind: 'need' as const,
+      project: '面板',
+      title: '支持按周生成',
+      content: '可以按周汇总',
+      cause: '',
+      fix: '',
+      link: '',
+    },
+    {
+      id: 'b',
+      kind: 'bug' as const,
+      project: '面板',
+      title: '子任务点暂停显示已停止',
+      content: '',
+      cause: '进程退出后状态没同步',
+      fix: '退出时同步状态',
+      link: 'BUG-1',
+    },
+    {
+      id: 'c',
+      kind: 'bug' as const,
+      project: '面板',
+      title: '偶尔卡住',
+      content: '',
+      cause: '还在查',
+      fix: '',
+      link: '',
+    },
+  ]
+  const md = renderReport({ grain: 'day', from: '2026-10-29', to: '2026-10-29', items })
+  const drafts = lessonDraftsFromReport({ id: 'r', day: '2026-10-29', md, items })
   assert.deepEqual(
     drafts.map((d) => d.title),
     ['子任务点暂停显示已停止'],

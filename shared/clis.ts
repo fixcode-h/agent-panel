@@ -59,8 +59,8 @@ export interface BuildOptions {
    * before 是要丢掉的第一轮的 id，分叉到它之前（Pi 用那一轮用户消息的 entryId）
    */
   fork?: { turnId?: string; end?: string; before?: string }
-  /** 设置里各个开关的状态（含默认值），参数规则用「opt.<id>」判断 */
-  options?: Record<string, boolean>
+  /** 设置里各个开关的状态（含默认值）、下拉选项选中的值，参数规则用「opt.<id>」判断、「{opt.<id>}」取值 */
+  options?: Record<string, boolean | string>
   /** 对话的标题：能给会话起名的 CLI 用它（例如 Pi 的 --name），在 CLI 自己的会话列表里认得出来 */
   title?: string
   /** 不是普通的一轮对话：压缩上下文，或者审查代码 */
@@ -75,6 +75,16 @@ export interface BuildOptions {
 /** 审查什么：未提交的改动、和某个分支的差异，或者按说明审查 */
 export type ReviewTarget =
   { type: 'uncommitted' } | { type: 'base'; branch: string } | { type: 'custom'; instructions: string }
+
+/** 设置里给用户的开关或下拉选项（见 cli-spec.ts 的 options）：写了 choices 的是下拉，值是选中的 id */
+export interface CliOption {
+  id: string
+  label: string
+  hint: string
+  default: boolean | string
+  env: Record<string, string>
+  choices: { id: string; label: string }[]
+}
 
 export type ModelTier = 'high' | 'medium' | 'low'
 
@@ -223,7 +233,7 @@ export interface CliDefinition {
   /** 自动压缩抖动的报错（见 cli-spec.ts 的 compactThrash）：认出来时在原会话里续一轮，再失败才报失败 */
   compactThrash?: RegExp
   /** 设置里给用户的开关（见 cli-spec.ts 的 options）：打开时加上 env，参数规则用「opt.<id>」判断 */
-  options?: { id: string; label: string; hint: string; default: boolean; env: Record<string, string> }[]
+  options?: CliOption[]
   /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、pi（pi --list-models）、claude（配置和环境变量）；为空时只用 models 里写的 */
   modelsFrom: string
   /** 只读的权限：在用户的项目里只分析不改文件时用（例如优化说明文件）；为空时用设置里的权限 */

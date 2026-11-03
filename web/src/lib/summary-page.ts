@@ -24,6 +24,8 @@ export interface SummaryPageState {
   jobId: string
   /** 这次提炼里已经采纳的分项 id */
   adopted: string[]
+  /** 待确认时给分项附的单子链接（分项 id → 网址或单号，ADR 0043）：确认生成时合进分项 */
+  links: Record<string, string>
   mode: ReportMode
 }
 
@@ -34,6 +36,7 @@ export const DEFAULT_SUMMARY_PAGE: SummaryPageState = {
   savedOn: '',
   jobId: '',
   adopted: [],
+  links: {},
   mode: 'preview',
 }
 
@@ -42,6 +45,16 @@ const memory: { raw: string | null } = { raw: null }
 
 const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/** 单子链接：只留字符串值，单条最长 300 字（和 SummaryEntry.link 一样） */
+function parseLinks(v: unknown): Record<string, string> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>)
+      .filter((e): e is [string, string] => typeof e[1] === 'string')
+      .map(([k, x]) => [k, x.slice(0, 300)]),
+  )
+}
 
 /** 读存档：坏数据、旧版本缺字段都按默认值处理，页面照常打开 */
 export function parseSummaryPage(raw: string | null, now = new Date()): SummaryPageState {
@@ -64,6 +77,7 @@ export function parseSummaryPage(raw: string | null, now = new Date()): SummaryP
     savedOn: today,
     jobId: savedOn === today && isText(v.jobId) ? v.jobId : '',
     adopted: Array.isArray(v.adopted) ? [...new Set(v.adopted.filter(isText))] : [],
+    links: parseLinks(v.links),
     mode: v.mode === 'edit' ? 'edit' : 'preview',
   }
 }

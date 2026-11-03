@@ -105,7 +105,7 @@ test('内置 Agent：引用的 Skill 都是自带的，引入的 Agent 存在，
   }
 })
 
-test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开，工作总结页也用它', () => {
+test('「每日工作总结」：只出报告不改代码，需求 / 问题分开、像人写的日报，工作总结页也用它', () => {
   const b = BUILTIN_AGENTS.find((x) => x.key === 'worklog')
   assert.ok(b, '内置角色里有「每日工作总结」')
   assert.equal(b.agent.name, '每日工作总结')
@@ -125,24 +125,27 @@ test('「每日工作总结」：只出报告不改代码，需求 / Bug 分开�
   assert.match(role, /只算范围内的/)
   assert.match(role, /范围外的对话、消息、报告一律不写/)
   assert.match(role, /本地自然日/)
-  // 分类：需求只写做了什么，Bug 写原因和修复；Bug 只收用户自己报的
+  // 分类：需求和问题两类；问题只收用户自己报的
   assert.match(role, /\*\*需求\*\*/)
   assert.match(role, /只收用户自己报的问题/)
-  assert.match(role, /「原因」/)
-  assert.match(role, /「修复」/)
-  assert.match(role, /描述清楚最重要/)
-  // 原因和修法要讲清因果；测试过没过、推没推送这类不写（用户嫌报告里全是这些）
-  assert.match(role, /把因果讲完整/)
-  assert.match(role, /为什么这样改现象就消失了/)
-  assert.match(role, /测试是否通过/)
+  // 写法（ADR 0043）：像人写的日报——需求说怎么做的，问题说怎么回事、怎么解决的，没解决留空；去掉 AI 腔
+  assert.match(role, /像自己写给组长的日报/)
+  assert.match(role, /一两句说是怎么做的/)
+  assert.match(role, /还没解决就留空/)
+  assert.match(role, /「实现了」「优化了」/, '列出不许用的 AI 说法')
+  // 版本管理操作不写（用户嫌报告里全是提交、合并这些）；测试过没过这类也不写
+  assert.match(role, /版本管理操作一律不写/)
+  assert.match(role, /cherry-pick/)
+  assert.match(role, /测试过没过/)
   // 只写结果：真实跑一次时输出里贴了路径、函数名和接口名
-  assert.match(role, /不写具体文件名/)
+  assert.match(role, /不写文件名/)
   assert.match(role, /不编造/)
-  // 自己跑（计划面板定时拉起）时读任务记录、有读取预算，输出 Markdown 两节
+  // 自己跑（计划面板定时拉起）时读任务记录、有读取预算，输出 Markdown 两节，不加粗、不写标签
   assert.match(role, /tasks\/projects\//)
   assert.match(role, /读取预算/)
-  assert.match(role, /## 一、需求/)
-  assert.match(role, /## 二、Bug/)
+  assert.match(role, /## 需求/)
+  assert.match(role, /## 问题/)
+  assert.match(role, /不加粗、不写「内容：\/原因：\/修复：」这类标签/)
   assert.match(role, /只输出报告本身/)
   // 工作总结页调用时选「面板提供」：材料由面板给，不再去读数据目录
   const panel = composeRole(

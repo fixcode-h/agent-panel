@@ -2,11 +2,14 @@
  * 提炼出的分项：需求和 Bug 分两组，每条后面一个「采纳」按钮。
  * 只是挑选，不在这里生成报告：确认按钮在页面底部的确认栏（ConfirmBar），报告只包含采纳的分项。
  */
-import { Bug, Check, ListChecks, Plus, Sparkle } from 'lucide-react'
+import { useState } from 'react'
+import { Bug, Check, Link2, ListChecks, Pencil, Plus, Sparkle, X } from 'lucide-react'
 import type { SummaryEntry, SummaryKind } from '@shared/summary'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Input } from '@/components/ui/input'
 
 /** 两类分项的展示：组标题、图标、颜色；以后加一类只改这里 */
 export const KIND_VIEW: Record<SummaryKind, { label: () => string; icon: typeof Bug; tone: string; soft: string }> = {
@@ -35,17 +38,95 @@ function EntryBody({ entry }: { entry: SummaryEntry }) {
   )
 }
 
+/** 单子链接是网址时可以点开看；单号（BUG-123）照原样显示 */
+const isUrl = (s: string) => /^https?:\/\//i.test(s.trim())
+
+/**
+ * 分项附的单子（Bug 单 / 需求单的网址或单号，ADR 0043）：没填时是一个「附加单子」的小按钮，点开就地填；
+ * 填过的显示链接，可以改或去掉。回车、失焦都算填完；Esc 放弃这次修改
+ */
+function EntryLink({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const done = () => {
+    setEditing(false)
+    if (draft.trim() !== value) onChange(draft.trim())
+  }
+  if (editing)
+    return (
+      <Input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={done}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') done()
+          if (e.key === 'Escape') {
+            setDraft(value)
+            setEditing(false)
+          }
+        }}
+        maxLength={300}
+        aria-label={t('单子链接')}
+        placeholder={t('Bug 单或需求单的链接、单号')}
+        className="mt-2 h-8 text-body"
+      />
+    )
+  if (!value)
+    return (
+      <Button
+        variant="link"
+        tone="muted"
+        className="mt-1.5 text-xs"
+        onClick={() => {
+          setDraft('')
+          setEditing(true)
+        }}
+      >
+        <Link2 className="h-3.5 w-3.5" />
+        {t('附加单子')}
+      </Button>
+    )
+  return (
+    <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-muted" data-summary-link>
+      <Link2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
+      {isUrl(value) ? (
+        <a href={value} target="_blank" rel="noreferrer" className="min-w-0 truncate text-accent-text hover:underline">
+          {value}
+        </a>
+      ) : (
+        <span className="min-w-0 truncate">{value}</span>
+      )}
+      <IconButton
+        icon={Pencil}
+        size="2xs"
+        label={t('改单子链接')}
+        onClick={() => {
+          setDraft(value)
+          setEditing(true)
+        }}
+      />
+      <IconButton icon={X} size="2xs" label={t('去掉单子链接')} onClick={() => onChange('')} />
+    </div>
+  )
+}
+
 /** 一条分项：整张卡可点（和右边的按钮效果一样），采纳后描边和底色变成强调色 */
 export function EntryCard({
   entry,
   adopted,
   onToggle,
   disabled,
+  link,
+  onLink,
 }: {
   entry: SummaryEntry
   adopted: boolean
   onToggle: () => void
   disabled?: boolean
+  /** 待确认时附的单子；不传 onLink 时不显示（只读的地方） */
+  link?: string
+  onLink?: (v: string) => void
 }) {
   return (
     <li
@@ -61,6 +142,7 @@ export function EntryCard({
           <p className="min-w-0 text-prose leading-snug font-medium">{entry.title}</p>
         </div>
         <EntryBody entry={entry} />
+        {onLink && <EntryLink value={link ?? ''} onChange={onLink} />}
       </div>
       <Button
         size="sm"
@@ -87,12 +169,16 @@ function EntryGroup({
   adopted,
   onToggle,
   onAdoptAll,
+  links,
+  onLink,
 }: {
   kind: SummaryKind
   entries: SummaryEntry[]
   adopted: Set<string>
   onToggle: (id: string) => void
   onAdoptAll: (ids: string[], on: boolean) => void
+  links: Record<string, string>
+  onLink: (id: string, v: string) => void
 }) {
   const view = KIND_VIEW[kind]
   const Icon = view.icon
@@ -124,7 +210,14 @@ function EntryGroup({
       </div>
       <ul className="flex flex-col gap-2">
         {entries.map((x) => (
-          <EntryCard key={x.id} entry={x} adopted={adopted.has(x.id)} onToggle={() => onToggle(x.id)} />
+          <EntryCard
+            key={x.id}
+            entry={x}
+            adopted={adopted.has(x.id)}
+            onToggle={() => onToggle(x.id)}
+            link={links[x.id] ?? x.link}
+            onLink={(v) => onLink(x.id, v)}
+          />
         ))}
       </ul>
     </section>
@@ -137,11 +230,16 @@ export function EntryList({
   adopted,
   onToggle,
   onAdoptAll,
+  links,
+  onLink,
 }: {
   entries: SummaryEntry[]
   adopted: Set<string>
   onToggle: (id: string) => void
   onAdoptAll: (ids: string[], on: boolean) => void
+  /** 待确认时附的单子链接（分项 id → 链接） */
+  links: Record<string, string>
+  onLink: (id: string, v: string) => void
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -155,6 +253,8 @@ export function EntryList({
             adopted={adopted}
             onToggle={onToggle}
             onAdoptAll={onAdoptAll}
+            links={links}
+            onLink={onLink}
           />
         ) : null
       })}

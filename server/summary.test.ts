@@ -111,8 +111,42 @@ test('确认生成、编辑与删除：只用传进来的分项拼报告，存�
   const rec = (await res.json()) as ReportRecord
   assert.equal(rec.day, '2026-10-23')
   assert.equal(rec.items.length, 2)
-  assert.match(rec.md, /^# 2026-10-23 工作总结\n/)
-  assert.match(rec.md, /## 一、需求[\s\S]*支持按周生成[\s\S]*## 二、Bug[\s\S]*原因：状态没同步/)
+  assert.match(rec.md, /^# 10月23日工作日报\n/)
+  assert.match(rec.md, /## 需求[\s\S]*支持按周生成[\s\S]*## 问题[\s\S]*点暂停显示已停止。状态没同步。退出时同步状态。/)
+
+  // 再次生成（ADR 0043）：分项连同单子回到一次已完成的提炼，确认后是一份新报告，原报告不动
+  const redo = await app.request(`/summary/${rec.id}/redo`, json('POST', {}))
+  assert.equal(redo.status, 201)
+  const job = (await redo.json()) as {
+    id: string
+    status: string
+    basedOn: string
+    items: { id: string; link: string }[]
+  }
+  assert.equal(job.status, 'done')
+  assert.equal(job.basedOn, rec.id)
+  assert.equal(job.items.length, 2)
+  assert.equal(((await (await app.request(`/summary/jobs/${job.id}`)).json()) as { status: string }).status, 'done')
+  const again = await app.request(
+    '/summary',
+    json('POST', {
+      source: 'tasks',
+      grain: 'day',
+      from: '2026-10-23',
+      to: '2026-10-23',
+      items: [{ ...job.items[1], link: 'BUG-9' }],
+      basedOn: job.basedOn,
+    }),
+  )
+  const next = (await again.json()) as ReportRecord
+  assert.notEqual(next.id, rec.id)
+  assert.equal(next.basedOn, rec.id)
+  assert.match(next.md, /单子：BUG-9/)
+  const kept = ((await (await app.request('/summary')).json()) as { reports: ReportRecord[] }).reports.find(
+    (r) => r.id === rec.id,
+  )
+  assert.equal(kept?.md, rec.md, '原报告原样留着')
+  assert.equal((await app.request('/summary/nope/redo', json('POST', {}))).status, 404)
   // 一条都没采纳不能生成
   const empty = await app.request(
     '/summary',

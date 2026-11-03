@@ -963,11 +963,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .first()
       .waitFor({ timeout: 3000 })
       .catch(() => errors.push('工作总结：采纳两条后确认栏没有显示「已采纳 2 项」'))
+    // 待确认时给 Bug 附一个单子（ADR 0043）：填完显示在条目下，生成后写进报告
+    const bugCard = p.getByRole('region', { name: 'Bug', exact: true }).locator('[data-summary-entry]').first()
+    await bugCard.getByRole('button', { name: '附加单子' }).click()
+    await bugCard.getByLabel('单子链接').fill('BUG-123')
+    await bugCard.getByLabel('单子链接').press('Enter')
+    await bugCard
+      .locator('[data-summary-link]')
+      .getByText('BUG-123')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('工作总结：附加的单子没有显示在条目下'))
     await check(p, '工作总结-采纳')
     await confirm.click()
     const view = p.getByRole('main', { name: '报告' })
     await view.waitFor({ timeout: 8000 }).catch(() => errors.push('工作总结：确认后没有打开生成的报告'))
-    for (const heading of ['一、需求', '二、Bug'])
+    for (const heading of ['需求', '问题'])
       if (!(await view.getByText(heading, { exact: false }).count())) errors.push(`工作总结：报告里没有「${heading}」`)
     if (needTitle && !(await view.getByText(needTitle, { exact: false }).count()))
       errors.push('工作总结：采纳的需求没有写进报告')
@@ -977,16 +987,40 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       errors.push('工作总结：新报告没有出现在「今天」这一组')
     await check(p, '工作总结-报告')
 
-    // 编辑：Markdown 正文，原因 / 修复写在 Bug 条目下
+    // 编辑：Markdown 正文像人写的日报（ADR 0043）：不加粗、不写「原因：/修复：」标签，单子另起一行
     await view.getByRole('radio', { name: '编辑' }).click()
     const text = await view
       .getByLabel('报告正文')
       .inputValue()
       .catch(() => '')
-    if (!/^# \d{4}-\d{2}-\d{2} 工作总结/.test(text))
-      errors.push(`工作总结：报告第一行不是日期标题（${text.slice(0, 30)}）`)
-    if (!/原因：[\s\S]*修复：/.test(text)) errors.push('工作总结：Bug 条目没有写原因和修复')
+    if (!/^# \d+月\d+日工作日报/.test(text)) errors.push(`工作总结：报告第一行不是日报标题（${text.slice(0, 30)}）`)
+    if (/\*\*|内容：|原因：|修复：/.test(text)) errors.push('工作总结：报告里还有加粗或「内容：/原因：/修复：」标签')
+    if (!/单子：BUG-123/.test(text)) errors.push('工作总结：待确认时附的单子没有写进报告')
     await view.getByRole('radio', { name: '预览' }).click()
+
+    // 再次生成：条目连同单子回到待确认，确认后是一份新报告，原报告还在
+    const firstId = await p.evaluate(() => location.hash)
+    await view.getByRole('button', { name: '再次生成' }).click()
+    await p
+      .getByText('已采纳 2 项', { exact: false })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('工作总结：再次生成后条目没有回到待确认（应全部预先采纳）'))
+    if (!(await p.locator('[data-summary-link]').getByText('BUG-123').count()))
+      errors.push('工作总结：再次生成时单子没有带回来')
+    await p.getByRole('button', { name: '确认生成报告' }).click()
+    await p
+      .locator('[data-summary-based-on]')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('工作总结：再次生成的报告没写是从哪份生成的'))
+    if ((await p.evaluate(() => location.hash)) === firstId)
+      errors.push('工作总结：再次生成覆盖了原报告，应该是新的一份')
+    // 原报告还在：跳回它的地址能打开，不会被当成「已经不在本机」退回提炼面板
+    await p.evaluate((h) => (location.hash = h), firstId)
+    await p.waitForTimeout(400)
+    if ((await p.evaluate(() => location.hash)) !== firstId || (await p.locator('[data-summary-based-on]').count()))
+      errors.push('工作总结：再次生成后原报告打不开了')
+    await check(p, '工作总结-再次生成')
 
     // 复制：写到剪贴板，并弹出成功提示
     await view.getByRole('button', { name: '复制' }).click()

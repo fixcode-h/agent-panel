@@ -146,9 +146,19 @@ export function lessonDraftsFromReport(report: {
   day: string
   md: string
   projectNames?: string[]
+  /** 生成时采纳的分项（ADR 0043 起报告正文是人写的口吻，没有「修复：」前缀可解析）：有就按它取，老报告照旧解析正文 */
+  items?: { kind: string; title: string; content: string; cause: string; fix: string }[]
 }): LessonDraftInput[] {
-  const bugs = sectionItems(sectionLines(report.md, ['## 二、Bug', '## 三、问题与修复', '## 二、用户报告的 Bug']))
-  const progress = sectionItems(sectionLines(report.md, ['## 一、需求', '## 二、需求进度']))
+  const fromItems = !!report.items?.length
+  // 分项里的问题：只取解决了的（没解决的没有「该怎么做」）；正文是「怎么回事 + 怎么解决的」
+  const bugs = fromItems
+    ? report
+        .items!.filter((x) => x.kind === 'bug' && x.fix.trim())
+        .map((x) => ({ title: x.title, status: '', body: [x.cause, x.fix].filter((v) => v.trim()).join('\n') }))
+    : sectionItems(sectionLines(report.md, ['## 二、Bug', '## 三、问题与修复', '## 二、用户报告的 Bug']))
+  const progress = fromItems
+    ? report.items!.filter((x) => x.kind === 'need').map((x) => ({ title: x.title, status: '', body: x.content }))
+    : sectionItems(sectionLines(report.md, ['## 一、需求', '## 二、需求进度']))
   const picked: { item: ReportItem; why: string }[] = [
     ...bugs.map((x) => ({ item: x, why: t('问题与修复') })),
     ...progress

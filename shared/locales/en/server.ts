@@ -674,4 +674,6 @@ export const EN_SERVER: Record<string, string> = {
   '{cli} 不能用 API': '{cli} cannot use an API',
   '设置还没保存完，稍等一下再点更新': 'Settings are still saving; wait a moment and click Update again',
   '{cli} 还没选能用的 API': '{cli} has no usable API selected yet',
+  '这份报告是改版前生成的，没有存分项，没法再次生成；重新提炼这段时间吧':
+    "This report was made before items were saved and can't be generated again; extract this period again instead",
 }

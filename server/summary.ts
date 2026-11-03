@@ -23,6 +23,8 @@ import {
   extractRetryHint,
   parseExtract,
   renderReport,
+  reportGrain,
+  reportSpan,
   reportsContext,
   reportsInWindow,
   skippedProjects,
@@ -302,6 +304,40 @@ export function summaryApi(deps: {
       const p = SummaryExtractRequest.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       return start(c, p.data)
+    })
+    /**
+     * 再次生成（ADR 0043）：用这份报告的分项（连同单子链接）开一次已经完成的提炼，页面按普通的待确认列表显示，
+     * 用户改完确认后生成一份新报告；原报告不改、不删
+     */
+    .post('/:id/redo', async (c) => {
+      const r = (await deps.reports.list()).find((x) => x.id === c.req.param('id'))
+      if (!r) return bad(c, t('找不到这份报告'), 404)
+      if (!r.items.length) return bad(c, t('这份报告是改版前生成的，没有存分项，没法再次生成；重新提炼这段时间吧'))
+      const span = reportSpan(r)
+      const job: Job = {
+        id: randomUUID(),
+        status: 'done',
+        source: r.source,
+        grain: reportGrain(r),
+        from: span.from,
+        to: span.to,
+        projectIds: r.projectIds,
+        items: r.items,
+        taskCount: r.taskCount,
+        reportCount: r.reportCount,
+        cli: r.cli,
+        model: r.model,
+        effort: r.effort,
+        tools: [],
+        outChars: 0,
+        startedAt: Date.now(),
+        durationMs: r.durationMs,
+        basedOn: r.id,
+        abort: new AbortController(),
+        at: Date.now(),
+      }
+      jobs.set(job.id, job)
+      return c.json(view(job), 201)
     })
     .get('/jobs/:id', (c) => {
       const j = jobs.get(c.req.param('id'))

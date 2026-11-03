@@ -104,6 +104,11 @@
       "args": ["-c", "model_reasoning_effort=\"{effort}\""]
     },
     {
+      "if": "opt.reasoningSummary",
+      "args": ["-c", "model_reasoning_summary=\"{opt.reasoningSummary}\""],
+      "why": "思考摘要的形式（设置里的「思考摘要」）；none 只关掉摘要，模型照样推理"
+    },
+    {
       "if": "autoCompactTokens",
       "args": ["-c", "model_auto_compact_token_limit={autoCompactTokens}"]
     },
@@ -306,9 +311,28 @@
     "stdioType": false,
     "headersKey": "http_headers"
   },
+  "options": [
+    {
+      "id": "reasoningSummary",
+      "label": "思考摘要",
+      "hint": "思考过程在对话里显示成什么样；关闭只是不显示摘要，模型照样思考（model_reasoning_summary）",
+      "default": "auto",
+      "choices": [
+        { "id": "auto", "label": "自动" },
+        { "id": "concise", "label": "简洁" },
+        { "id": "detailed", "label": "详细" },
+        { "id": "none", "label": "关闭" }
+      ]
+    }
+  ],
   "i18n": {
     "en": {
       "关闭": "Off",
+      "思考摘要": "Reasoning summary",
+      "思考过程在对话里显示成什么样；关闭只是不显示摘要，模型照样思考（model_reasoning_summary）": "How the reasoning shows up in the conversation; Off only hides the summary, the model still reasons (model_reasoning_summary)",
+      "自动": "Auto",
+      "简洁": "Concise",
+      "详细": "Detailed",
       "很高": "Extra high",
       "最高": "Max",
       "Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。": "Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.",
