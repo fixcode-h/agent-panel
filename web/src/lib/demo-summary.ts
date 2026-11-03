@@ -63,8 +63,16 @@ function sampleItems(names: string[], round: number): SummaryEntry[] {
     const needs = [NEEDS[k % NEEDS.length], NEEDS[(k + 1) % NEEDS.length]]
     const bug = BUGS[k % BUGS.length]
     return [
-      ...needs.map((n) => ({ id: crypto.randomUUID(), kind: 'need' as const, project, ...n, cause: '', fix: '' })),
-      { id: crypto.randomUUID(), kind: 'bug' as const, project, content: '', ...bug },
+      ...needs.map((n) => ({
+        id: crypto.randomUUID(),
+        kind: 'need' as const,
+        project,
+        ...n,
+        cause: '',
+        fix: '',
+        link: '',
+      })),
+      { id: crypto.randomUUID(), kind: 'bug' as const, project, content: '', ...bug, link: '' },
     ]
   })
 }
@@ -93,6 +101,7 @@ function seedReport(grain: 'day' | 'week', day: Date, names: string[], round: nu
     taskCount: grain === 'week' ? 0 : names.length * 3,
     reportCount: grain === 'week' ? 3 : 0,
     durationMs: demoMs(1600),
+    basedOn: '',
   }
   reports.set(rec.id, rec)
 }
@@ -231,6 +240,33 @@ export function demoSummary(
             )
       Object.assign(job, { status: 'done', items, durationMs: demoMs(1500) })
     }, demoMs(1500))
+    return job
+  }
+  // POST /summary/:id/redo：再次生成，用这份报告的分项开一次已完成的提炼（原报告不动，ADR 0043）
+  if (method === 'POST' && id && sub === 'redo') {
+    const rec = reports.get(id)
+    if (!rec) throw new Error('找不到这份报告')
+    const job: SummaryJob = {
+      id: crypto.randomUUID(),
+      status: 'done',
+      source: rec.source,
+      grain: rec.grain ?? 'day',
+      from: rec.from || rec.day,
+      to: rec.to || rec.day,
+      projectIds: rec.projectIds,
+      items: rec.items,
+      taskCount: rec.taskCount,
+      reportCount: rec.reportCount,
+      cli: rec.cli,
+      model: rec.model,
+      effort: rec.effort,
+      tools: [],
+      outChars: 0,
+      startedAt: Date.now(),
+      durationMs: rec.durationMs,
+      basedOn: rec.id,
+    }
+    jobs.set(job.id, job)
     return job
   }
   // PUT /summary/:id：保存编辑后的正文

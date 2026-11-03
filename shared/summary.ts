@@ -101,6 +101,8 @@ export const SummaryEntry = z.object({
   /** Bug：原因 / 修复方案 */
   cause: z.string().trim().max(600).default(''),
   fix: z.string().trim().max(600).default(''),
+  /** 待确认时用户附的单子（Bug 单 / 需求单的网址或单号）：直接写进报告（ADR 0043） */
+  link: z.string().trim().max(300).default(''),
 })
 export type SummaryEntry = z.infer<typeof SummaryEntry>
 
@@ -128,6 +130,8 @@ export const SummaryCreateRequest = z.object({
   taskCount: z.number().int().min(0).default(0),
   reportCount: z.number().int().min(0).default(0),
   durationMs: z.number().int().min(0).default(0),
+  /** 再次生成：原报告的 id（原报告不改，见 ADR 0043） */
+  basedOn: z.string().max(64).default(''),
 })
 export type SummaryCreateRequest = z.infer<typeof SummaryCreateRequest>
 
@@ -162,6 +166,8 @@ export const SummaryReport = z.object({
   reportCount: z.number().int().default(0),
   /** 提炼用了多久（毫秒）：老报告没有这个字段，按 0 处理（页面不显示耗时） */
   durationMs: z.number().int().min(0).default(0),
+  /** 从哪份报告再次生成的（原报告 id）；不是再次生成的为空 */
+  basedOn: z.string().default(''),
 })
 export type SummaryReport = z.infer<typeof SummaryReport>
 
@@ -202,6 +208,8 @@ export interface SummaryJob {
   startedAt: number
   /** 提炼花了多久（跑完才有） */
   durationMs?: number
+  /** 再次生成开的任务：原报告的 id，确认生成时带上（见 ADR 0043） */
+  basedOn?: string
 }
 
 /** 项目的名字（报告分节、列表显示用） */
@@ -577,11 +585,12 @@ export function extractPrompt(input: {
     '- 输出：只输出一个 ```json 代码块，不要别的文字。格式：',
     '```json',
     '{"items":[',
-    '  {"kind":"need","project":"<项目名>","title":"<需求标题>","content":"<做了什么、用户能感受到什么变化>"},',
-    '  {"kind":"bug","project":"<项目名>","title":"<问题标题：用户看到的现象>","cause":"<为什么会出现这个现象>","fix":"<改了什么、为什么这样改就好了>"}',
+    '  {"kind":"need","project":"<项目名>","title":"<做成了什么>","content":"<一两句：是怎么做的>"},',
+    '  {"kind":"bug","project":"<项目名>","title":"<用户看到的问题>","cause":"<一两句：问题是怎么回事>","fix":"<一两句：怎么解决的；没解决就留空>"}',
     ']}',
     '```',
     '- 标题和内容里不要写项目名称，报告不按项目区分。',
+    '- 提交、推送、合并、合回、cherry-pick、开分支、打包发版这类版本管理操作不算条目，也不要写进任何条目。',
     '- 材料里的「总结卡」是 Agent 当时写的现象、原因、修复，优先照它写清因果；材料里有的原因和修法要写进去，不要压成一句「修复了 xx 问题」。',
     `- 最多 ${SUMMARY_ITEMS_MAX} 条；没有可写的内容就输出 {"items":[]}，不要凑数。`,
     '',
@@ -622,7 +631,7 @@ const RawEntry = z.object({
   fix: z.unknown().optional(),
 })
 
-const text = (v: unknown, max: number) => (typeof v === 'string' ? clip(v, max) : '')
+const text = (v: unknown, max: number) => (typeof v === 'string' ? clip(plainText(v), max) : '')
 
 /**
  * 把 CLI 的回答解析成分项：认不出种类、没有标题的条目丢掉，项目名对不上时按大小写和空白宽松匹配，
@@ -656,6 +665,7 @@ export function parseExtract(
       content: kind === 'need' ? text(r.data.content, 600) : '',
       cause: kind === 'bug' ? text(r.data.cause, 600) : '',
       fix: kind === 'bug' ? text(r.data.fix, 600) : '',
+      link: '',
     })
     if (items.length >= SUMMARY_ITEMS_MAX) break
   }
@@ -664,45 +674,65 @@ export function parseExtract(
 
 // ---- 拼报告 ----
 
-/** 报告的一级标题：按天「2026-10-29 工作总结」，按周「第 44 周工作总结（2026-10-26 至 2026-11-01）」 */
-export function reportHeading(grain: SummaryGrain, from: string, to: string) {
-  if (grain === 'day' || from === to) return `${from} 工作总结`
-  return `第 ${isoWeek(parseDay(from) ?? new Date()).week} 周工作总结（${from} 至 ${to}）`
+/** 月日：2026-11-03 → 11月3日（日报口语里不带年份、不加空格，范围跨年时标题由周数和起止日期说清） */
+function monthDay(day: string) {
+  const d = parseDay(day)
+  return d ? `${d.getMonth() + 1}月${d.getDate()}日` : day
 }
 
-/** 报告固定的两节：需求在前、Bug 在后 */
-export const REPORT_SECTIONS = ['## 一、需求', '## 二、Bug'] as const
+/** 报告的一级标题：按天「11月3日工作日报」，按周「第45周工作周报（11月3日-11月9日）」 */
+export function reportHeading(grain: SummaryGrain, from: string, to: string) {
+  if (grain === 'day' || from === to) return `${monthDay(from)}工作日报`
+  return `第${isoWeek(parseDay(from) ?? new Date()).week}周工作周报（${monthDay(from)}-${monthDay(to)}）`
+}
+
+/** 报告的两节：需求在前、问题在后（ADR 0043：不叫「Bug」，没有条目的节整节不写） */
+export const REPORT_SECTIONS = ['## 需求', '## 问题'] as const
 
 /**
- * 用采纳的分项拼报告：需求和 Bug 分两节，节内直接编号列条目，不按项目分小节、不写项目名。
- * 需求只写「内容」（做了什么、实现了什么），Bug 写「原因」和「修复」；某一节没有条目时写「暂无」
+ * 去掉一眼就像 AI 写的符号：加粗、反引号、破折号，压掉多余空白（ADR 0043）。
+ * 只做确定无害的替换，不改写句子；口吻靠「每日工作总结」角色的写法规则
+ */
+export function plainText(s: string) {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\s*(——|—|--)\s*/g, '，')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*\n\s*/g, ' ')
+    .trim()
+}
+
+/** 一句话收尾：没有句末标点就补「。」，两句话拼起来不会粘在一起 */
+const sentence = (s: string) => {
+  const x = plainText(s)
+  return !x || /[。！？.!?；;）)」]$/.test(x) ? x : `${x}。`
+}
+
+/** 单子：网址原样写（贴进聊天工具能直接点），单号照写 */
+const linkLine = (link: string) => (link.trim() ? [`   单子：${link.trim()}`] : [])
+
+/**
+ * 用采纳的分项拼报告（ADR 0043）：像人写的日报——每条一段话，不加粗、不写「内容：/原因：/修复：」标签；
+ * 需求是「标题。怎么做的」，问题是「标题。怎么回事。怎么解决的」（没解决就只写问题）；有单子另起一行。
+ * 没有条目的节整节不写；两节都没有时写一句「今天没有可写的内容。」
  */
 export function renderReport(input: { grain: SummaryGrain; from: string; to: string; items: SummaryEntry[] }) {
-  const section = (kind: SummaryKind) => {
+  const section = (kind: SummaryKind, head: string) => {
     const list = input.items.filter((x) => x.kind === kind)
-    if (!list.length) return ['暂无', '']
+    if (!list.length) return []
     return [
-      ...list.flatMap((x, i) => [
-        `${i + 1}. **${x.title}**`,
-        ...(kind === 'need'
-          ? x.content
-            ? [`   内容：${x.content}`]
-            : []
-          : [...(x.cause ? [`   原因：${x.cause}`] : []), ...(x.fix ? [`   修复：${x.fix}`] : [])]),
-      ]),
+      head,
+      '',
+      ...list.flatMap((x, i) => {
+        const body = (kind === 'need' ? [x.content] : [x.cause, x.fix]).map(sentence).filter(Boolean).join('')
+        return [`${i + 1}. ${sentence(x.title)}${body}`, ...linkLine(x.link ?? '')]
+      }),
       '',
     ]
   }
-  return [
-    `# ${reportHeading(input.grain, input.from, input.to)}`,
-    '',
-    REPORT_SECTIONS[0],
-    '',
-    ...section('need'),
-    REPORT_SECTIONS[1],
-    '',
-    ...section('bug'),
-  ]
+  const body = [...section('need', REPORT_SECTIONS[0]), ...section('bug', REPORT_SECTIONS[1])]
+  return [`# ${reportHeading(input.grain, input.from, input.to)}`, '', ...(body.length ? body : ['没有可写的内容。'])]
     .join('\n')
     .trimEnd()
     .concat('\n')

@@ -1,9 +1,10 @@
 /**
- * 右边打开的一份报告：头部写范围、来源和规模，正文可以预览 / 编辑（自动保存）、复制、删除；
+ * 右边打开的一份报告：头部写范围、来源和规模，正文可以预览 / 编辑（自动保存）、复制、删除、再次生成；
  * 下面是从这份报告提炼候选教训的草稿区。
+ * 再次生成（ADR 0043）把分项放回待确认列表，确认后生成一份新报告，这一份原样留着。
  */
 import { useState } from 'react'
-import { Copy, FileText, Layers, Trash2 } from 'lucide-react'
+import { Copy, FileText, Layers, RefreshCw, Trash2 } from 'lucide-react'
 import {
   formatDuration,
   reportChars,
@@ -37,6 +38,9 @@ export function ReportView({
   onCopy,
   onSaved,
   onDelete,
+  onRedo,
+  basedOn,
+  onOpenReport,
 }: {
   report: SummaryRecord
   /** 预览 / 编辑由页面记着：切页面回来后还是之前那个 tab */
@@ -46,6 +50,11 @@ export function ReportView({
   /** 保存成功后把新正文交回去：树里的快照跟着变，不然再点回这份会拿旧内容 */
   onSaved: (md: string) => void
   onDelete: () => void
+  /** 再次生成：分项放回待确认列表（改版前没存分项的报告不能用） */
+  onRedo: () => void
+  /** 这份是从哪份报告再次生成的（还在的话） */
+  basedOn?: SummaryRecord
+  onOpenReport: (id: string) => void
 }) {
   const [md, setMd] = useState(report.md)
   // 组件按报告 id 重挂（调用方给 key），切走时补存的也是这份
@@ -95,6 +104,20 @@ export function ReportView({
         save={save}
         actions={
           <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRedo}
+              disabled={!report.items.length}
+              title={
+                report.items.length
+                  ? t('把这份报告的条目放回待确认，改完生成一份新的；这一份原样留着')
+                  : t('这份报告是改版前生成的，没有存条目，没法再次生成')
+              }
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t('再次生成')}
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => onCopy(md)}>
               <Copy className="h-3.5 w-3.5" />
               {t('复制')}
@@ -104,6 +127,20 @@ export function ReportView({
         }
       />
       <div className="flex w-full max-w-[920px] flex-col gap-4 px-4 pt-5 pb-10 md:px-8">
+        {report.basedOn && (
+          <p className="text-xs text-subtle" data-summary-based-on>
+            {basedOn ? (
+              <>
+                {t('由这份报告再次生成：')}
+                <Button variant="link" className="text-xs" onClick={() => onOpenReport(basedOn.id)}>
+                  {new Date(basedOn.createdAt).toLocaleString(uiLocale())}
+                </Button>
+              </>
+            ) : (
+              t('由另一份报告再次生成（原报告已删除）')
+            )}
+          </p>
+        )}
         <Card as="section" aria-label={t('报告内容')}>
           <div className="flex items-center gap-2 border-b px-4 py-2">
             <Segmented

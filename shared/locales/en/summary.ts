@@ -95,4 +95,18 @@ export const EN_SUMMARY: Record<string, string> = {
   '{cli} 的回答解析不了（已重试一次）：{error}': 'Could not parse the answer from {cli} (retried once): {error}',
   '找不到这次提炼，可能已过期': 'This extraction was not found; it may have expired',
   找不到这次提炼: 'This extraction was not found',
+  单子链接: 'Ticket link',
+  'Bug 单或需求单的链接、单号': 'Link or number of the bug / requirement ticket',
+  附加单子: 'Attach ticket',
+  改单子链接: 'Edit ticket link',
+  去掉单子链接: 'Remove ticket link',
+  '把这份报告的条目放回待确认，改完生成一份新的；这一份原样留着':
+    "Put this report's items back for review and generate a new one; this report stays as it is",
+  '这份报告是改版前生成的，没有存条目，没法再次生成':
+    "This report was made before items were saved, so it can't be generated again",
+  再次生成: 'Generate again',
+  '由这份报告再次生成：': 'Generated again from: ',
+  '由另一份报告再次生成（原报告已删除）': 'Generated again from another report (deleted)',
+  '还有一次提炼在跑，等它结束或停掉再再次生成':
+    'An extraction is still running; wait for it to finish or stop it first',
 }

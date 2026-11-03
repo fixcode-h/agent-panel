@@ -61,6 +61,8 @@ export function SummaryComposer({
   error,
   adopted,
   onToggle,
+  links,
+  onLink,
   onAdoptAll,
   onExtract,
   onStop,
@@ -91,6 +93,9 @@ export function SummaryComposer({
   error: string
   adopted: Set<string>
   onToggle: (id: string) => void
+  /** 待确认时附的单子链接（分项 id → 链接，ADR 0043） */
+  links: Record<string, string>
+  onLink: (id: string, v: string) => void
   onAdoptAll: (ids: string[], on: boolean) => void
   onExtract: () => void
   onStop: () => void
@@ -297,7 +302,14 @@ export function SummaryComposer({
             </div>
             {job.items.length ? (
               <>
-                <EntryList entries={job.items} adopted={adopted} onToggle={onToggle} onAdoptAll={onAdoptAll} />
+                <EntryList
+                  entries={job.items}
+                  adopted={adopted}
+                  onToggle={onToggle}
+                  onAdoptAll={onAdoptAll}
+                  links={links}
+                  onLink={onLink}
+                />
                 <ConfirmBar entries={job.items} adopted={adopted} busy={confirming} onConfirm={onConfirm} />
               </>
             ) : (

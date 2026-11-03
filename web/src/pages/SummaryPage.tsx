@@ -113,7 +113,7 @@ export function SummaryPage() {
         setJob(j)
         if (j.status === 'failed') setError(j.error ?? t('提炼失败'))
       })
-      .catch(() => patch({ jobId: '', adopted: [] }))
+      .catch(() => patch({ jobId: '', adopted: [], links: {} }))
     // 只在挂载时接一次；之后的 job 由轮询更新
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -205,7 +205,7 @@ export function SummaryPage() {
     if (job?.status === 'running') return
     setJob(null)
     setError('')
-    patch({ ...p, jobId: '', adopted: [] })
+    patch({ ...p, jobId: '', adopted: [], links: {} })
   }
 
   const extract = async () => {
@@ -219,7 +219,7 @@ export function SummaryPage() {
         projectIds: ids,
       })
       setJob(next)
-      patch({ jobId: next.id, adopted: [] })
+      patch({ jobId: next.id, adopted: [], links: {} })
     } catch (e) {
       setError((e as Error).message)
     }
@@ -236,7 +236,10 @@ export function SummaryPage() {
 
   const confirm = async () => {
     if (!job || confirming) return
-    const items = job.items.filter((x) => adopted.has(x.id))
+    // 待确认时附的单子合进分项：写进报告，也存进报告的分项（再次生成时带回来）
+    const items = job.items
+      .filter((x) => adopted.has(x.id))
+      .map((x) => ({ ...x, link: (page.links[x.id] ?? x.link ?? '').trim() }))
     if (!items.length) return
     setConfirming(true)
     try {
@@ -259,16 +262,41 @@ export function SummaryPage() {
         taskCount: job.taskCount,
         reportCount: job.reportCount,
         durationMs: job.durationMs ?? 0,
+        basedOn: job.basedOn ?? '',
       })
       setReports((prev) => [rec, ...prev])
       setJob(null)
-      patch({ jobId: '', adopted: [], mode: 'preview' })
+      patch({ jobId: '', adopted: [], links: {}, mode: 'preview' })
       toast.success(t('报告已生成'))
       go({ page: 'summary', id: rec.id })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
       setConfirming(false)
+    }
+  }
+
+  /**
+   * 再次生成（ADR 0043）：把这份报告的分项（连同单子）放回待确认列表、全部预先采纳，用户改完确认后生成一份新报告；
+   * 原报告不动。范围、来源跟着原报告走，提炼面板显示的就是那段时间
+   */
+  const redo = async (r: SummaryRecord) => {
+    if (job?.status === 'running') return toast.info(t('还有一次提炼在跑，等它结束或停掉再再次生成'))
+    try {
+      const next = await api.redoSummary(r.id)
+      setError('')
+      setJob(next)
+      patch({
+        source: next.source,
+        grain: next.grain,
+        day: next.from,
+        jobId: next.id,
+        adopted: next.items.map((x) => x.id),
+        links: Object.fromEntries(next.items.filter((x) => x.link).map((x) => [x.id, x.link])),
+      })
+      go({ page: 'summary' })
+    } catch (e) {
+      toast.error((e as Error).message)
     }
   }
 
@@ -306,6 +334,9 @@ export function SummaryPage() {
             onCopy={copy}
             onSaved={(md) => setReports((prev) => prev.map((r) => (r.id === selected.id ? { ...r, md } : r)))}
             onDelete={() => setDeleting(selected)}
+            onRedo={() => void redo(selected)}
+            basedOn={reports.find((r) => r.id === selected.basedOn)}
+            onOpenReport={(id) => go({ page: 'summary', id })}
           />
         ) : (
           <DetailEmpty icon={<FileText className="h-6 w-6" />} title={t('读取中…')} />
@@ -334,6 +365,8 @@ export function SummaryPage() {
           onToggle={(id) =>
             patch({ adopted: adopted.has(id) ? page.adopted.filter((x) => x !== id) : [...page.adopted, id] })
           }
+          links={page.links}
+          onLink={(id, v) => patch({ links: { ...page.links, [id]: v } })}
           onAdoptAll={(list, on) =>
             patch({
               adopted: on ? [...new Set([...page.adopted, ...list])] : page.adopted.filter((x) => !list.includes(x)),

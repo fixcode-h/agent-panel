@@ -22,6 +22,7 @@ const sample = (): SummaryPageState => ({
   savedOn: '2026-10-23',
   jobId: 'j1',
   adopted: ['a', 'b'],
+  links: { a: 'BUG-1' },
   mode: 'edit',
 })
 

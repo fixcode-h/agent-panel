@@ -199,47 +199,59 @@ const entry = (over: Partial<SummaryEntry>): SummaryEntry => ({
   content: '',
   cause: '',
   fix: '',
+  link: '',
   ...over,
 })
 
 const record = (over: Partial<SummaryRecord>) =>
   SummaryRecord.parse({ id: 'r', createdAt: today(9), updatedAt: today(9), day: '2026-10-23', ...over })
 
-test('renderReport：需求和 Bug 分两节、不写项目名，需求写内容，Bug 写原因和修复', () => {
+test('renderReport：像人写的日报，每条一段话，不加粗、不写标签；有单子另起一行，没解决的问题只写问题（ADR 0043）', () => {
   const md = renderReport({
     grain: 'day',
     from: '2026-10-23',
     to: '2026-10-23',
     items: [
-      entry({ title: '支持按周生成', content: '可以选一周，从日报汇总成周报' }),
-      entry({ kind: 'bug', title: '点暂停显示已停止', cause: '子任务进程已退出但状态没更新', fix: '退出时同步状态' }),
-      entry({ project: '后台', title: '加接口', content: '新增删除报告的接口' }),
+      entry({
+        title: '工作总结能按周生成',
+        content: '日期那里加了按天和按周的切换，按周时取周一到周日',
+        link: 'https://x.test/REQ-1',
+      }),
+      entry({
+        kind: 'bug',
+        title: '点暂停后子任务显示**已停止**',
+        cause: '子任务进程已经退出，状态没跟着改——界面就一直显示已停止',
+        fix: '进程退出时同步状态',
+        link: 'BUG-7',
+      }),
+      entry({ kind: 'bug', title: '日志偶尔不贴到最新', cause: '刷新时滚动位置被重置了，还在查' }),
+      entry({ project: '后台', title: '加了删除报告的接口。', content: '' }),
     ],
   })
   assert.equal(
     md,
     [
-      '# 2026-10-23 工作总结',
+      '# 10月23日工作日报',
       '',
-      '## 一、需求',
+      '## 需求',
       '',
-      '1. **支持按周生成**',
-      '   内容：可以选一周，从日报汇总成周报',
-      '2. **加接口**',
-      '   内容：新增删除报告的接口',
+      '1. 工作总结能按周生成。日期那里加了按天和按周的切换，按周时取周一到周日。',
+      '   单子：https://x.test/REQ-1',
+      '2. 加了删除报告的接口。',
       '',
-      '## 二、Bug',
+      '## 问题',
       '',
-      '1. **点暂停显示已停止**',
-      '   原因：子任务进程已退出但状态没更新',
-      '   修复：退出时同步状态',
+      '1. 点暂停后子任务显示已停止。子任务进程已经退出，状态没跟着改，界面就一直显示已停止。进程退出时同步状态。',
+      '   单子：BUG-7',
+      '2. 日志偶尔不贴到最新。刷新时滚动位置被重置了，还在查。',
       '',
     ].join('\n'),
   )
-  // 没有 Bug 时那一节写「暂无」，周报标题带周号
+  // 没有条目的节整节不写；周报标题带周号和起止日期
   const week = renderReport({ grain: 'week', from: '2026-10-19', to: '2026-10-25', items: [entry({})] })
-  assert.match(week, /^# 第 43 周工作总结（2026-10-19 至 2026-10-25）/)
-  assert.match(week, /## 二、Bug\n\n暂无\n$/)
+  assert.match(week, /^# 第43周工作周报（10月19日-10月25日）/)
+  assert.doesNotMatch(week, /## 问题|暂无/)
+  assert.match(renderReport({ grain: 'day', from: '2026-10-23', to: '2026-10-23', items: [] }), /没有可写的内容/)
 })
 
 test('parseExtract：取 JSON 代码块，丢掉认不出的条目，项目名宽松匹配', () => {
