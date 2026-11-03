@@ -16,7 +16,15 @@ import {
   X,
 } from 'lucide-react'
 import { getCli, type CliDefinition } from '@shared/clis'
-import { API_PROTOCOL_LABEL, apiFits, type ApiConfig } from '@shared/accounts'
+import {
+  API_PROTOCOL_LABEL,
+  apiFits,
+  apiForProtocol,
+  apiProtocols,
+  cliApiProtocol,
+  type ApiConfig,
+  type ApiProtocol,
+} from '@shared/accounts'
 import { apiBaseUrl } from '@shared/api-vendors'
 import type { CliAccounts, LoginJob, ProviderAuthCheck } from '@shared/schema'
 import { api } from '@/lib/api'
@@ -40,23 +48,47 @@ export function CliAuthPanel({
   def,
   mode,
   apiId,
+  apiProtocol,
   apis,
   onMode,
   onApi,
+  onProtocol,
   onGoApis,
   onAddApi,
 }: {
   def: CliDefinition
   mode: 'account' | 'api'
   apiId: string
+  /** 选的协议；空是没选过，按 cliApiProtocol 的默认 */
+  apiProtocol: string
   apis: ApiConfig[]
   onMode: (m: 'account' | 'api') => void
   onApi: (id: string) => void
+  onProtocol: (p: ApiProtocol) => void
   onGoApis: () => void
   onAddApi: (a: ApiConfig) => void
 }) {
   const fitting = apis.filter((a) => apiFits(def.auth, a))
-  const cur = fitting.find((a) => a.id === apiId)
+  const raw = fitting.find((a) => a.id === apiId)
+  // 这个 Agent 实际会用的协议和地址：API 和 Agent 都支持的协议里选的那个
+  const protocol = cliApiProtocol(def.auth, raw, apiProtocol)
+  const cur = raw && protocol ? apiForProtocol(raw, protocol) : undefined
+  const protocols = raw ? apiProtocols(raw).filter((p) => def.auth?.api?.protocols.includes(p)) : []
+  const [updating, setUpdating] = useState(false)
+  /** 更新：把选的 API 现在的地址、密钥和模型写进这个 Agent 自己的配置文件 */
+  const update = async () => {
+    setUpdating(true)
+    try {
+      await api.applyCliApi(def.id, { apiId, apiProtocol })
+      toast.success(t('已把 API 更新到 {cli} 的配置', { cli: def.name }))
+      // 写进配置文件后模型列表可能变了：重新读一次
+      void loadCliModels(def.id, true).catch(() => {})
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setUpdating(false)
+    }
+  }
   return (
     <Group title={t('登录方式')}>
       <Row
@@ -95,6 +127,32 @@ export function CliAuthPanel({
                 ]}
                 className="w-64"
               />
+              {/* 一个 API 可以同时支持几种协议：选这个 Agent 用哪种，地址跟着换成那种协议的 */}
+              {cur && (
+                <Select
+                  aria-label={t('{cli} 用的协议', { cli: def.name })}
+                  title={
+                    protocols.length > 1 ? undefined : t('这个 API 只有这一种协议是 {cli} 能用的', { cli: def.name })
+                  }
+                  value={protocol ?? ''}
+                  disabled={protocols.length < 2}
+                  onChange={(e) => onProtocol(e.target.value as ApiProtocol)}
+                  options={protocols.map((p) => ({ value: p, label: API_PROTOCOL_LABEL[p] }))}
+                  className="w-52"
+                />
+              )}
+              {cur && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={updating}
+                  title={t('把这个 API 现在的地址、密钥和模型写进 {cli} 自己的配置文件', { cli: def.name })}
+                  onClick={() => void update()}
+                >
+                  {updating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  {t('更新')}
+                </Button>
+              )}
               <Button variant="secondary" size="sm" onClick={onGoApis}>
                 {t('管理 API')}
               </Button>
@@ -121,7 +179,7 @@ export function CliAuthPanel({
               filter={(d) => apiFits(def.auth, d.api)}
               onAdd={onAddApi}
               onSaved={(a) => onApi(a.id)}
-              selected={cur?.id}
+              selected={raw?.id}
             />
           </div>
         </Row>

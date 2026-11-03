@@ -21,8 +21,11 @@ import { CLIS } from '@shared/clis'
 import {
   API_PROTOCOLS,
   API_PROTOCOL_LABEL,
+  apiEndpoint,
+  apiProtocols,
   apiProvider,
-  modelsForProtocol,
+  modelsForProtocols,
+  withEndpoints,
   type ApiConfig,
   type ApiProtocol,
 } from '@shared/accounts'
@@ -32,6 +35,7 @@ import { Button } from '@/components/ui/button'
 import { ComboInput, Input, Select } from '@/components/ui/input'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { Card } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { IconButton } from '@/components/ui/icon-button'
 import { Group } from './parts'
@@ -54,8 +58,9 @@ const PRESETS: { label: string; protocol: ApiProtocol }[] = [
 /** API 卡片展开还是收起，按 API 记在本地 */
 const FOLD = 'api-open:'
 
-/** 哪些 CLI 能用这个协议的 API */
-const usedBy = (p: ApiProtocol) => CLIS.filter((c) => c.auth?.api?.protocols.includes(p)).map((c) => c.name)
+/** 哪些 CLI 能用这几种协议里的任何一种 */
+const usedBy = (ps: ApiProtocol[]) =>
+  CLIS.filter((c) => c.auth?.api?.protocols.some((p) => ps.includes(p))).map((c) => c.name)
 
 /**
  * 全局的 API：在这里配一次（接口地址、密钥、可用的模型），每个 CLI 都能在自己的页面里选用，
@@ -76,6 +81,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
       provider: '',
       protocol: preset?.protocol ?? 'openai-chat',
       baseUrl: '',
+      endpoints: { [preset?.protocol ?? 'openai-chat']: '' },
       apiKey: '',
       authHeader: 'x-api-key',
       models: [],
@@ -87,7 +93,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
     <Group>
       <p className="pb-3 text-body leading-relaxed text-subtle">
         {t(
-          '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Command Code 三种都能用。',
+          '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API，选用 API 和协议。一个 API 可以同时勾选几种协议，每种填自己的接口地址，密钥共用。改完 API 点「一键更新」（或在 Agent 页面点「更新」）才会写进 Agent 的配置文件；模型下拉优先从 Agent 读取。Agent 只能选它支持的协议：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Command Code 和 Pi 三种都能用。',
         )}
       </p>
       <div className="flex flex-col gap-4">
@@ -160,14 +166,15 @@ function ApiCard({
   const busy = fetching || testing
   /** 绑定的内置厂家：名称就是绑定（没有单独的绑定字段），有厂家时名称不给直接改 */
   const vendor = findVendor(a.name)
-  /** 厂家按当前协议给的地址：只当接口地址输入框的提示，留空时请求就用它 */
-  const vendorUrl = vendor?.urls[a.protocol] ?? ''
+  /** 这个 API 支持的协议：每种可以有自己的地址，密钥共用；读模型、测试连接用排在最前的那种（a.protocol） */
+  const protos = apiProtocols(a)
   const canProbe = !!apiBaseUrl(a)
+  const endpointKey = JSON.stringify(a.endpoints)
 
   // 连接相关的字段一改，上一次的测试结果就过期了
   useEffect(() => {
     setProbe(undefined)
-  }, [a.protocol, a.baseUrl, a.apiKey, a.authHeader])
+  }, [a.protocol, a.baseUrl, endpointKey, a.apiKey, a.authHeader])
 
   const fail = (e: unknown) => {
     const message = (e as Error).message
@@ -179,7 +186,7 @@ function ApiCard({
     try {
       const { models } = await api.apiModels(a)
       // 从接口读到的模型也按协议过滤：带别的协议后缀的不显示，不带后缀的通用模型保留
-      const list = modelsForProtocol(models, a.protocol)
+      const list = modelsForProtocols(models, protos)
       setFound(list)
       setFilter('')
       if (!a.models.length) onChange({ models: list.slice(0, 1) })
@@ -193,7 +200,7 @@ function ApiCard({
   const testConnection = async () => {
     setTesting(true)
     // 选了模型就真的用这个模型发一次请求；一个模型都没有时退回只验证能列出模型
-    const target = probeTarget(modelsForProtocol(a.models, a.protocol), probeModel)
+    const target = probeTarget(modelsForProtocols(a.models, protos), probeModel)
     try {
       if (target) {
         await api.probeApiModel({ ...a, model: target })
@@ -203,7 +210,7 @@ function ApiCard({
         return
       }
       const { models } = await api.apiModels(a)
-      const list = modelsForProtocol(models, a.protocol)
+      const list = modelsForProtocols(models, protos)
       const message = t('连接可用，读到 {n} 个模型（还没有选中的模型，这次只验证了连接）', { n: list.length })
       setProbe({ ok: true, message })
       toast.success(message)
@@ -221,11 +228,13 @@ function ApiCard({
   }
   /** 可选的模型：只列当前协议能用的，第一个是默认模型 */
   const probeOptions = useMemo(() => {
-    const list = modelsForProtocol(a.models, a.protocol)
+    const list = modelsForProtocols(a.models, protos)
     return list.length
       ? list.map((m) => ({ value: m, label: m }))
       : [{ value: '', label: t('先点「从接口获取」或手动填写模型') }]
-  }, [a.models, a.protocol])
+    // protos 每次渲染都是新数组，按它的内容（a.protocol、endpoints）比
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [a.models, a.protocol, endpointKey])
   /** 换模型后上一次的测试结果就过期了，否则会把「模型 A 可用」误读成 B 也通过了 */
   const pickProbeModel = (v: string) => {
     setProbeModel(v)
@@ -239,7 +248,7 @@ function ApiCard({
     const m = draft.trim()
     if (!m) return
     // 带别的协议后缀的模型不给加，免得加了又因为协议不匹配被隐藏
-    if (!modelsForProtocol([m], a.protocol).length) {
+    if (!modelsForProtocols([m], protos).length) {
       toast.error(t('模型名和当前协议不匹配'))
       return
     }
@@ -304,16 +313,28 @@ function ApiCard({
     if (!picked) return
     const old = findVendor(a.name)
     setName(picked.name)
+    // 厂家给了地址的协议都勾上（地址留空用厂家的）；用户自己写过、不是厂家地址的保留
+    const endpoints = Object.fromEntries(
+      (Object.keys(picked.urls) as ApiProtocol[]).map((p) => {
+        const own = protos.includes(p) ? apiEndpoint(a, p) : ''
+        return [p, isVendorUrl(own) ? '' : own]
+      }),
+    )
+    // 主协议尽量不变：厂家支持原来的主协议就还用它
+    const primary = vendorEndpoint(picked, a.protocol).protocol
     onChange({
       name: picked.name,
-      protocol: vendorEndpoint(picked, a.protocol).protocol,
-      ...(isVendorUrl(a.baseUrl) ? { baseUrl: '' } : {}),
+      ...withEndpoints(a, endpoints),
+      ...(primary in endpoints ? { protocol: primary, baseUrl: endpoints[primary] } : {}),
       ...(!a.provider.trim() || a.provider === old?.provider ? { provider: picked.provider } : {}),
     })
   }
-  /** 换协议：地址留空时提示跟着厂家的新地址；旧版本写进真实值的厂家地址一并清掉 */
-  const setProtocol = (protocol: ApiProtocol) => {
-    onChange({ protocol, ...(isVendorUrl(a.baseUrl) ? { baseUrl: '' } : {}) })
+  /** 勾选 / 取消一种协议，或改它的地址；至少留一种（最后一种不给取消） */
+  const setEndpoint = (p: ApiProtocol, url: string | undefined) => {
+    const next: Partial<Record<ApiProtocol, string>> = Object.fromEntries(protos.map((x) => [x, apiEndpoint(a, x)]))
+    if (url === undefined) delete next[p]
+    else next[p] = url
+    onChange(withEndpoints(a, next))
   }
   /** 清空厂家绑定：名称回到自定义，接口地址、密钥和模型都不动（整卡删除在展开后的底部） */
   const clearVendor = () => {
@@ -370,7 +391,7 @@ function ApiCard({
             <span className="truncate font-medium">{a.name}</span>
             <span className="truncate text-footnote text-subtle">
               {[
-                API_PROTOCOL_LABEL[a.protocol],
+                protos.map((p) => API_PROTOCOL_LABEL[p]).join(' / '),
                 a.models.length ? t('{n} 个模型', { n: a.models.length }) : t('还没有模型'),
               ].join(' · ')}
             </span>
@@ -430,31 +451,47 @@ function ApiCard({
       {open && (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-footnote text-subtle">
-              {t('协议')}
-              <Select
-                aria-label={t('协议')}
-                value={a.protocol}
-                onChange={(e) => setProtocol(e.target.value as ApiProtocol)}
-                options={API_PROTOCOLS.map((p) => ({ value: p, label: API_PROTOCOL_LABEL[p] }))}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-footnote text-subtle">
-              {t('接口地址')}
-              <Input
-                value={a.baseUrl}
-                onChange={(e) => onChange({ baseUrl: e.target.value })}
-                placeholder={vendorUrl || 'https://api.example.com/v1'}
-                spellCheck={false}
-                aria-label={t('接口地址')}
-                className="h-9 font-mono text-body"
-              />
-              {vendorUrl && !a.baseUrl.trim() && (
-                <span className="text-caption text-subtle">
-                  {t('留空时用 {vendor} 的默认地址：{url}', { vendor: a.name, url: vendorUrl })}
-                </span>
-              )}
-            </label>
+            {/* 一个 API 可以同时支持几种协议，每种一个地址（留空用厂家的默认地址），密钥共用；
+                Agent 选这个 API 时再选用哪种协议 */}
+            <div className="flex flex-col gap-1.5 text-footnote text-subtle sm:col-span-2">
+              <span>{t('协议和接口地址')}</span>
+              {API_PROTOCOLS.map((p) => {
+                const on = protos.includes(p)
+                const hint = vendor?.urls[p] ?? ''
+                const value = on ? apiEndpoint(a, p) : ''
+                return (
+                  <div key={p} className="flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Checkbox
+                        checked={on}
+                        // 最后一种不给取消：API 至少要支持一种协议
+                        disabled={on && protos.length === 1}
+                        onChange={(v) => setEndpoint(p, v ? '' : undefined)}
+                        label={<span className="text-body text-fg">{API_PROTOCOL_LABEL[p]}</span>}
+                        className="w-56 shrink-0 items-center"
+                      />
+                      <Input
+                        value={value}
+                        disabled={!on}
+                        onChange={(e) => setEndpoint(p, e.target.value)}
+                        placeholder={on ? hint || 'https://api.example.com/v1' : t('没有勾选这种协议')}
+                        spellCheck={false}
+                        aria-label={t('{protocol} 的接口地址', { protocol: API_PROTOCOL_LABEL[p] })}
+                        className="h-9 min-w-0 flex-1 font-mono text-body"
+                      />
+                    </div>
+                    {on && hint && !value.trim() && (
+                      <span className="pl-[14.5rem] text-caption text-subtle max-sm:pl-0">
+                        {t('留空时用 {vendor} 的默认地址：{url}', { vendor: a.name, url: hint })}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+              <span className="text-caption text-subtle">
+                {t('密钥共用一个。读模型列表、测试连接用勾选的第一种协议；各个 Agent 在自己的设置里选用哪种。')}
+              </span>
+            </div>
             <label className="flex flex-col gap-1 text-footnote text-subtle sm:col-span-2">
               {t('提供方 ID')}
               <Input
@@ -499,7 +536,7 @@ function ApiCard({
                 </Button>
               </span>
             </label>
-            {a.protocol === 'anthropic' && (
+            {protos.includes('anthropic') && (
               <label className="flex flex-col gap-1 text-footnote text-subtle">
                 {t('密钥的发送方式')}
                 <Select
@@ -546,7 +583,7 @@ function ApiCard({
                 aria-label={t('测试连接用的模型')}
                 title={t('选中哪个模型，点「测试连接」就用它真的发一次请求')}
                 className="h-8 w-44 font-mono text-footnote"
-                value={probeTarget(modelsForProtocol(a.models, a.protocol), probeModel)}
+                value={probeTarget(modelsForProtocols(a.models, protos), probeModel)}
                 options={probeOptions}
                 disabled={busy || !probeOptions.some((o) => o.value)}
                 onChange={(e) => pickProbeModel(e.target.value)}
@@ -583,7 +620,7 @@ function ApiCard({
                       error: probe.message,
                       context: [
                         `API 名称：${a.name}`,
-                        `协议：${a.protocol}`,
+                        `协议：${protos.join(', ')}（读模型、测试连接用 ${a.protocol}）`,
                         `接口地址：${apiBaseUrl(a) || '（空）'}${a.baseUrl.trim() ? '' : '（留空时用厂家默认地址）'}`,
                         `提供方 ID：${apiProvider(a)}`,
                         `密钥：${a.apiKey ? '已填写' : '未填写'}`,
@@ -596,7 +633,7 @@ function ApiCard({
               </div>
             )}
             {/* 一个模型一行：默认思考强度和映射模型都按模型配；别的协议后缀的模型不显示 */}
-            {modelsForProtocol(a.models, a.protocol).map((m, i) => (
+            {modelsForProtocols(a.models, protos).map((m, i) => (
               <Card
                 key={m}
                 className="flex items-center gap-3 rounded-lg px-2.5 py-1.5"
@@ -701,7 +738,7 @@ function ApiCard({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <p className="min-w-0 flex-1 text-footnote text-subtle">
-              {t('可以用在：{clis}', { clis: usedBy(a.protocol).join('、') || '—' })}
+              {t('可以用在：{clis}', { clis: usedBy(protos).join('、') || '—' })}
             </p>
             {/* 绑定了厂家时右上角是「清空绑定」，整卡删除放在这里，两个动作分得开 */}
             {vendor && (

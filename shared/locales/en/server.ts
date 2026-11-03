@@ -671,4 +671,7 @@ export const EN_SERVER: Record<string, string> = {
   读不到系统进程信息: 'Could not read system process information',
   '已从 {from} 换成 {to}，之前的会话不再续用，之前的对话会带给新会话。':
     'Switched from {from} to {to}. The previous session won’t be resumed; the conversation so far is carried over to the new session.',
+  '{cli} 不能用 API': '{cli} cannot use an API',
+  '设置还没保存完，稍等一下再点更新': 'Settings are still saving; wait a moment and click Update again',
+  '{cli} 还没选能用的 API': '{cli} has no usable API selected yet',
 }

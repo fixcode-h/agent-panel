@@ -58,7 +58,7 @@ import { Card } from '@/components/ui/card'
 import { ModelSelect } from '@/components/agents/ModelSelect'
 import { Advanced, CopyText, Group, Row } from './parts'
 import { CliAuthPanel } from './CliAuthPanel'
-import type { ApiConfig, ApiProtocol } from '@shared/accounts'
+import { cliApi, type ApiConfig, type ApiProtocol } from '@shared/accounts'
 import { CliLimitsPanel, hasLimits } from './CliLimits'
 import { CliSkills } from './CliSkills'
 import { CliPackages } from './CliPackages'
@@ -712,10 +712,15 @@ export function CliSection({
   const full = useCliDef(def.id) ?? def
   const models = useCliModels(def.id)
   // API 模式：模型目录按这个接口的协议优先选
-  const apiConfig = draft.authMode === 'api' ? apis.find((a) => a.id === draft.apiId) : undefined
+  // 换成这个 Agent 选的协议（地址、按协议的模型目录都跟着这个协议）
+  const selectedApi = cliApi(
+    def.auth,
+    apis.find((a) => a.id === draft.apiId),
+    draft.apiProtocol,
+  )
+  const apiConfig = draft.authMode === 'api' ? selectedApi : undefined
   // 账号方式：以前 API 方式存下的模型（带 provider 前缀、协议后缀）按执行时的规则换成账号模型显示，
   // 下拉里看到的就是实际会用的，不再出现 API 的模型
-  const selectedApi = apis.find((a) => a.id === draft.apiId)
   const shown = (m: string) => (draft.authMode === 'account' ? accountModelId(def, selectedApi, m) : m)
   const view: CliDraft = {
     ...draft,
@@ -890,9 +895,12 @@ export function CliSection({
           def={def}
           mode={draft.authMode}
           apiId={draft.apiId}
+          apiProtocol={draft.apiProtocol}
           apis={apis}
           onMode={(m) => set('authMode', m)}
-          onApi={(id) => set('apiId', id)}
+          // 换 API 时协议回到「没选过」：按新 API 的主协议或第一种两边都支持的来
+          onApi={(id) => onChange({ ...draft, apiId: id, apiProtocol: '' })}
+          onProtocol={(p) => set('apiProtocol', p)}
           onGoApis={onGoApis}
           onAddApi={onAddApi}
         />
@@ -1050,6 +1058,7 @@ export function CliSection({
               autoCompact: draft.autoCompact,
               authMode: draft.authMode,
               apiId: draft.apiId,
+              apiProtocol: draft.apiProtocol,
               enabled: draft.enabled,
               command: draft.command.trim(),
               defaultModel: draft.defaultModel.trim(),
@@ -1146,6 +1155,7 @@ export const toDraft = (s: Settings): Record<string, CliDraft> =>
           options: own.options,
           authMode: eff.authMode,
           apiId: eff.apiId,
+          apiProtocol: eff.apiProtocol,
         },
       ]
     }),

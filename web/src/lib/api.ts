@@ -438,12 +438,20 @@ export const api = {
   /** 查 API 账户余额（服务端带上密钥去请求，页面拿不到密钥也不直连第三方） */
   apiBalance: (a: Pick<ApiConfig, 'name' | 'apiKey'>) => request<ApiBalance>('/accounts/api-balance', json('POST', a)),
   applyApi: (id: string) => request<{ clis: string[] }>(`/accounts/apis/${id}/apply`, json('POST', {})),
+  /** 把这个 Agent 选的 API（地址、密钥、模型）写进它自己的配置文件；apiId / apiProtocol 是页面上看到的，和已保存的对不上时服务端拒绝 */
+  applyCliApi: (cli: string, sel: { apiId: string; apiProtocol: string }) =>
+    request<{ ok: true }>(`/accounts/clis/${cli}/apply-api`, json('POST', sel)),
   /** mode 给出时按这种登录方式读（设置页切换后还没保存也能先读到） */
-  cliModels: (id: string, refresh = false, mode?: { authMode: 'account' | 'api'; apiId?: string }) => {
+  cliModels: (
+    id: string,
+    refresh = false,
+    mode?: { authMode: 'account' | 'api'; apiId?: string; apiProtocol?: string },
+  ) => {
     const q = new URLSearchParams()
     if (refresh) q.set('refresh', '1')
     if (mode) q.set('auth', mode.authMode)
     if (mode?.authMode === 'api') q.set('api', mode.apiId ?? '')
+    if (mode?.authMode === 'api' && mode.apiProtocol) q.set('protocol', mode.apiProtocol)
     const qs = q.toString()
     return request<CliModels>(`/clis/${id}/models${qs ? `?${qs}` : ''}`)
   },

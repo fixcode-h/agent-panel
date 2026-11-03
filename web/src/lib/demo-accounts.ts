@@ -45,6 +45,8 @@ const list = (cli: string): CliAccounts => {
 export function demoAccounts(method: string, seg: string[], body: Record<string, any>): unknown {
   // 一键更新：演示时没有真正的 CLI 配置文件可写
   if (seg[0] === 'apis' && seg[2] === 'apply') return { clis: [] }
+  // Agent 设置里的「更新」：同样没有配置文件可写，按写成功处理
+  if (seg[0] === 'clis' && seg[2] === 'apply-api') return { ok: true }
   const [, cli, sub, id] = seg
   if (!cli) return CLIS.filter((c) => c.auth).map((c) => list(c.id))
   // 演示：像是在本机 Claude Code 和 Codex 的配置里识别到的两个网关
@@ -59,6 +61,7 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
           provider: '',
           protocol: 'anthropic',
           baseUrl: 'https://gateway.example.com/anthropic',
+          endpoints: {},
           apiKey: 'sk-demo-xxxxxxxxxxxxxxxx',
           authHeader: 'bearer',
           models: ['claude-sonnet-5-5'],
@@ -76,6 +79,7 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
           provider: 'openrouter',
           protocol: 'openai-responses',
           baseUrl: 'https://openrouter.ai/api/v1',
+          endpoints: {},
           apiKey: 'sk-or-demo-0000',
           authHeader: 'x-api-key',
           models: [],

@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { CLIS, getCli, type CliDefinition } from '../shared/clis.ts'
 import {
   apiFits,
+  cliApi,
   apiInjection,
   apiModelPrefix,
   apiProvider,
@@ -776,8 +777,13 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
       await pruneApiModels(def, cs.api, injection.provider, env)
     } else {
       // 切回账号时优先用上一次真正写进去的 provider；没有时再用当前选中的 API
-      const selected = settings.apis.find((a) => a.id === cs.apiId)
-      const cleanup = lastProvider ? undefined : selected && apiFits(def.auth, selected) ? selected : undefined
+      const cleanup = lastProvider
+        ? undefined
+        : cliApi(
+            def.auth,
+            settings.apis.find((a) => a.id === cs.apiId),
+            cs.apiProtocol,
+          )
       await applyEdits(fillEdits(spec.accountEdits, def.auth, cleanup, lastProvider), env)
     }
   } catch (e) {
@@ -792,7 +798,8 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
  */
 function authSignature(settings: Settings, cliId: string) {
   const cs = cliSettings(settings, cliId)
-  return JSON.stringify([cs.enabled, cs.authMode, cs.apiId])
+  // 换了协议也要重写：地址、协议写法都跟着变
+  return JSON.stringify([cs.enabled, cs.authMode, cs.apiId, cs.apiProtocol])
 }
 
 /**
@@ -829,6 +836,22 @@ export async function applyApiToClis(apiId: string) {
     clis.push(def.id)
   }
   return clis
+}
+
+/**
+ * 把一个 Agent 选的 API（选定协议的地址、密钥、模型）写进它自己的配置文件：Agent 设置里的「更新」按钮。
+ * selection 是页面上看到的选择：和已保存的对不上（自动保存还没完成）时不写，免得把旧的选择写进去
+ */
+export async function applyCliApi(cliId: string, selection: { apiId: string; apiProtocol: string }) {
+  const def = getCli(cliId)
+  if (!def?.auth?.api) throw new Error(t('{cli} 不能用 API', { cli: def?.name ?? cliId }))
+  const settings = await getSettings()
+  const cs = cliSettings(settings, cliId)
+  if (cs.authMode !== 'api' || cs.apiId !== selection.apiId || cs.apiProtocol !== selection.apiProtocol)
+    throw new Error(t('设置还没保存完，稍等一下再点更新'))
+  if (!cs.api) throw new Error(t('{cli} 还没选能用的 API', { cli: def.name }))
+  await prepareAuth(cliId)
+  invalidateModels(cliId)
 }
 
 // ---- 登录 ----
@@ -1233,6 +1256,18 @@ export function accountsApi() {
           const settings = await getSettings()
           if (!settings.apis.some((a) => a.id === id)) return c.json({ error: t('找不到这个 API') }, 404)
           return c.json({ clis: await applyApiToClis(id) })
+        }),
+      )
+      // 把某个 Agent 选的 API 写进它自己的配置文件（Agent 设置里的「更新」）
+      .post(
+        '/clis/:cli/apply-api',
+        guard(async (c) => {
+          const body = (await c.req.json().catch(() => ({}))) as { apiId?: unknown; apiProtocol?: unknown }
+          await applyCliApi(c.req.param('cli'), {
+            apiId: typeof body.apiId === 'string' ? body.apiId : '',
+            apiProtocol: typeof body.apiProtocol === 'string' ? body.apiProtocol : '',
+          })
+          return c.json({ ok: true as const })
         }),
       )
       // 读 API 的模型列表（在服务端请求，页面直接请求会被跨域挡住）
