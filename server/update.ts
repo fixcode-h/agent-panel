@@ -98,6 +98,9 @@ interface ReleasesResult {
 
 const decodeXml = (s: string) =>
   s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&nbsp;/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -105,10 +108,53 @@ const decodeXml = (s: string) =>
     .replace(/&amp;/g, '&')
 
 /**
- * 从 Release 的 Atom feed 里取最新版本：只看第一个 <entry>。
- * feed 里没有安装包地址和校验文件，所以 tarUrl / zipUrl / sumsUrl 留空，界面据此不提供一键更新
+ * 发布的安装包和校验文件按固定的名字放在 Release 下面（名字见 scripts/package.mjs 的 archives，两边要一起改）。
+ * 下载地址走 github.com/…/releases/download，不经过 API，限流时照样能下；SHA256SUMS 也在同一处，安装前照常校验
  */
-export function parseFeed(xml: string): AppRelease | undefined {
+export function releaseAssets(tag: string): Asset[] {
+  const base = `agent-panel-${tag.replace(/^v/, '')}`
+  const dir = `https://github.com/${REPO}/releases/download/${encodeURIComponent(tag)}/`
+  return [`${base}.zip`, `${base}-mac.tar.gz`, `${base}-mac.zip`, `${base}-linux.tar.gz`, 'SHA256SUMS'].map((name) => ({
+    name,
+    browser_download_url: dir + name,
+    size: 0,
+  }))
+}
+
+/**
+ * GitHub 渲染好的更新说明（HTML）转回 Markdown：面板的更新说明按 Markdown 显示。
+ * 只认发布说明里会出现的几种标签（标题、列表、段落、加粗、代码、链接），其余标签去掉、只留文字
+ */
+export function htmlToMarkdown(html: string): string {
+  const out = html
+    .replace(/\r?\n/g, ' ')
+    .replace(
+      /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi,
+      (_, n: string, x: string) => `\n\n${'#'.repeat(Number(n))} ${x.trim()}\n\n`,
+    )
+    .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_, x: string) => `\n- ${x.trim()}`)
+    .replace(/<\/?(ul|ol)\b[^>]*>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, '**$2**')
+    .replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, '*$2*')
+    .replace(/<code>([\s\S]*?)<\/code>/gi, '`$1`')
+    .replace(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
+    .replace(/<[^>]+>/g, '')
+  return decodeXml(out)
+    .split('\n')
+    .map((l) => l.trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/**
+ * 从 Release 的 Atom feed 里取最新版本：只看第一个 <entry>。
+ * feed 里没有安装包列表，地址按发布的固定命名拼出来（releaseAssets）；更新说明取 <content> 里渲染好的 HTML。
+ * 大小不知道（0），下载时按响应头补上
+ */
+export function parseFeed(xml: string, platform: string = process.platform): AppRelease | undefined {
   const entry = /<entry\b[^>]*>([\s\S]*?)<\/entry>/.exec(xml)?.[1]
   if (!entry) return undefined
   const tag = decodeXml(/<title\b[^>]*>([\s\S]*?)<\/title>/.exec(entry)?.[1] ?? '').trim()
@@ -118,15 +164,20 @@ export function parseFeed(xml: string): AppRelease | undefined {
   // <link rel="alternate" type="text/html" href="…">：release 页面；属性顺序不固定，按整段找
   const link = [...entry.matchAll(/<link\b[^>]*>/g)].map((m) => m[0]).find((t) => /\brel="alternate"/.test(t))
   const href = link ? /href="([^"]*)"/.exec(link)?.[1] : undefined
+  // <content type="html"> 里是转义过的 HTML：先还原成 HTML 再转 Markdown
+  const content = /<content\b[^>]*>([\s\S]*?)<\/content>/.exec(entry)?.[1] ?? ''
+  const assets = releaseAssets(tag)
+  const main = platformAsset(assets, platform)
   return {
     tag,
     version: tag.replace(/^v/, ''),
     prerelease: !!parsed.dev,
     publishedAt: updated,
-    notes: '',
+    notes: htmlToMarkdown(decodeXml(content)),
     url: decodeXml(href ?? ''),
-    tarUrl: '',
-    zipUrl: '',
+    tarUrl: main.url,
+    zipUrl: assets.find((a) => a.name === main.zip)?.browser_download_url ?? '',
+    sumsUrl: assets.find((a) => a.name === 'SHA256SUMS')?.browser_download_url ?? '',
     size: 0,
   }
 }
@@ -646,7 +697,7 @@ export function updateApi(deps: {
     const current = currentVersion()
     const rel = pickUpdate(current, list)
     if (!rel) return report('latest', t('已经是最新版本（{version}）', { version: current }))
-    // feed 兜底只有版本号，没有安装包地址：能提醒用户有新版本，但不能在这里自动下载安装
+    // 拿不到安装包地址的版本（例如定义改过、拼不出本平台的包）：能提醒用户有新版本，但不能在这里自动下载安装
     if (!rel.tarUrl)
       return report(
         'failed',
@@ -708,7 +759,7 @@ export function updateApi(deps: {
         return c.json({ error: t('读取版本列表失败：{error}', { error: (e as Error).message }) }, 502)
       }
       if (!rel) return c.json({ error: t('找不到版本 {tag}', { tag: tag ?? '' }) }, 404)
-      // feed 兜底只有版本号：没有安装包地址时不能假装能装，让用户去 GitHub Releases 手动下载
+      // 没有安装包地址时不能假装能装，让用户去 GitHub Releases 手动下载
       if (!rel.tarUrl) return c.json({ error: t('这个版本没有可用的安装包地址，请到 GitHub Releases 手动下载') }, 502)
       const started = startInstall(rel)
       if ('error' in started)

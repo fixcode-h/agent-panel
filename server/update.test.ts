@@ -289,14 +289,15 @@ async function stubGithubFeed(
   }
 }
 
-/** GitHub 的 Release feed 样本：和真实 feed 一样，只带 tag、时间和 release 页面 */
-const atom = (tag: string, updated = '2026-01-01T00:00:00Z') => `<?xml version="1.0" encoding="UTF-8"?>
+/** GitHub 的 Release feed 样本：和真实 feed 一样，带 tag、时间、release 页面和转义过的 HTML 更新说明 */
+const atom = (tag: string, updated = '2026-01-01T00:00:00Z', content = '') => `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>tag:github.com,2008:Repository/1/${tag}</id>
     <updated>${updated}</updated>
     <link rel="alternate" type="text/html" href="https://example.com/releases/tag/${tag}"/>
     <title>${tag}</title>
+    <content type="html">${content}</content>
   </entry>
 </feed>`
 
@@ -430,15 +431,25 @@ test('版本列表按版本号从新到旧排：后出包的旧版本不会排�
   }
 })
 
-test('Release feed 解析：取最新 tag 和 release 页面，没有安装包地址', () => {
-  const rel = parseFeed(atom('v9.9.9', '2026-02-03T04:05:06Z'))
+test('Release feed 解析：取最新 tag、release 页面和更新说明，安装包和校验文件按发布的命名拼出地址', () => {
+  // 真实 feed 的 <content> 是转义过一次的 HTML，正文里的 & 再转义一层
+  const html =
+    '&lt;h2&gt;新功能&lt;/h2&gt;\n&lt;ul&gt;\n&lt;li&gt;&lt;strong&gt;Fast 模式&lt;/strong&gt; — 设置里打开 &lt;code&gt;service_tier&lt;/code&gt;，见&lt;a href=&quot;https://example.com/x&quot;&gt;说明&lt;/a&gt; A &amp;amp; B&lt;/li&gt;\n&lt;/ul&gt;'
+  const rel = parseFeed(atom('v9.9.9', '2026-02-03T04:05:06Z', html), 'linux')
   assert.equal(rel?.tag, 'v9.9.9')
   assert.equal(rel?.version, '9.9.9')
   assert.equal(rel?.publishedAt, '2026-02-03T04:05:06Z')
   assert.equal(rel?.url, 'https://example.com/releases/tag/v9.9.9')
-  assert.equal(rel?.tarUrl, '', 'feed 里没有安装包地址')
-  assert.equal(rel?.zipUrl, '')
-  assert.equal(rel?.sumsUrl, undefined)
+  assert.equal(
+    rel?.notes,
+    '## 新功能\n\n- **Fast 模式** — 设置里打开 `service_tier`，见[说明](https://example.com/x) A & B',
+  )
+  const dl = 'https://github.com/fixcode-h/agent-panel/releases/download/v9.9.9/'
+  assert.equal(rel?.tarUrl, `${dl}agent-panel-9.9.9-linux.tar.gz`, '下载地址不走 API，限流时照样能下')
+  assert.equal(rel?.sumsUrl, `${dl}SHA256SUMS`, '校验文件也要有，安装前照常校验')
+  assert.equal(parseFeed(atom('v9.9.9'), 'win32')?.tarUrl, `${dl}agent-panel-9.9.9.zip`)
+  assert.equal(parseFeed(atom('v9.9.9'), 'darwin')?.zipUrl, `${dl}agent-panel-9.9.9-mac.zip`)
+  assert.equal(parseFeed(atom('v9.9.9'))?.notes, '', '没有说明时为空')
   assert.equal(parseFeed('<feed></feed>'), undefined, '没有 entry 时不算读到版本')
   assert.equal(parseFeed(atom('not-a-version')), undefined, '标题不是版本号的 entry 要忽略')
   assert.equal(parseFeed(atom('v1.2.3-dev'))?.prerelease, true, '预览版按 tag 的 -dev 判断')
@@ -457,7 +468,7 @@ test('API 被限流时退到 Release feed：能判断新版本，冷却期内不
     assert.equal(first.source, 'feed')
     assert.equal(first.update?.tag, 'v9.9.9', 'feed 里的最新版本照常提示')
     assert.equal(first.releases[0].tag, 'v9.9.9')
-    assert.equal(first.releases[0].tarUrl, '', 'feed 结果没有安装包地址')
+    assert.match(first.releases[0].tarUrl, /\/releases\/download\/v9\.9\.9\//, 'feed 结果也能下载和一键更新')
     assert.ok(first.feedCheckedAt, '要标出 feed 的检查时间')
     assert.equal(first.limitedUntil, new Date(reset * 1000).toISOString())
     assert.equal(gh.hits.api, 1)
@@ -525,29 +536,5 @@ test('API 返回 5xx 时也用 Release feed 兜底', async () => {
     assert.equal(body.limitedUntil, undefined, '5xx 不是限流，不标恢复时间')
   } finally {
     await gh.close()
-  }
-})
-
-test('feed 兜底拿到的版本没有安装包地址：/install 不假装能装', async () => {
-  clearReleasesCache()
-  const oldApp = process.env.AGENT_PANEL_APP_DIR
-  process.env.AGENT_PANEL_APP_DIR = dir
-  const gh = await stubGithubFeed(
-    () => ({ status: 403, headers: { 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 600) } }),
-    () => ({ body: atom('v9.9.9') }),
-  )
-  try {
-    const res = await makeUpdateApi().api.request('/install', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ tag: 'v9.9.9' }),
-    })
-    assert.equal(res.status, 502)
-    const body: any = await res.json()
-    assert.match(body.error, /GitHub Releases/, '要引导用户去 GitHub Releases 手动下载')
-  } finally {
-    await gh.close()
-    if (oldApp === undefined) delete process.env.AGENT_PANEL_APP_DIR
-    else process.env.AGENT_PANEL_APP_DIR = oldApp
   }
 })
