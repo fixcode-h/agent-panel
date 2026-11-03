@@ -93,6 +93,30 @@ test('上一秒还在输出、下一秒「等待模型」：说清请求发出�
   )
 })
 
+/** 用户 2026-11-03 报：子任务交回工具结果后 5 分钟没动静，诊断却说「卡在流式输出里」；runner 已标卡住诊断也要认 */
+test('工具结果交回后没了下文：说清是等下一次请求；runner 已标卡住的直接报，和 90 秒阈值一致', () => {
+  const tr = { requests: 1, requestAt: NOW - 300_000, firstOutputAt: NOW - 299_000, lastOutputAt: NOW - 297_000 }
+  const helper = verdictOf(base({ kind: 'helper', state: undefined, trace: { ...tr, lastEvent: 'tool_result' } }), NOW)
+  assert.match(helper.headline, /工具结果交回 297 秒了/)
+  assert.match(helper.anomalies[0].text, /下一次请求没有任何输出/)
+  assert.doesNotMatch(helper.anomalies[0].text, /流式输出/)
+  // 输出停了 95 秒：过了 90 秒就报（以前要 120 秒，runner 已标卡住诊断还说「模型在输出」）
+  assert.deepEqual(codes(base({ trace: { ...tr, lastOutputAt: NOW - 95_000, lastEvent: 'thinking' } })), [
+    'output-stalled',
+  ])
+  // runner 已标卡住：子任务写明面板会停掉它重试
+  const marked = verdictOf(
+    base({
+      kind: 'helper',
+      state: undefined,
+      stalled: { since: NOW - 60_000 },
+      trace: { ...tr, lastOutputAt: NOW - 60_000 },
+    }),
+    NOW,
+  )
+  assert.match(marked.anomalies[0].text, /接回会话重试/)
+})
+
 test('这一轮说完了在等子对话：子对话已经不跑了、父对话却没被叫醒要报出来；子对话还在跑只是说明', () => {
   const waiting = base({ working: false, state: 'waiting', waitsOn: [{ id: 'k1', title: '修登录', state: 'running' }] })
   assert.match(verdictOf(waiting, NOW).headline, /在等子对话：「修登录」（执行中）/)

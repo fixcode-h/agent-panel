@@ -12,6 +12,7 @@ const api = (protocol: ApiProtocol, baseUrl: string): ApiConfig => ({
   provider: 'relay',
   protocol,
   baseUrl,
+  endpoints: {},
   apiKey: 'k',
   authHeader: 'x-api-key',
   models: ['m'],

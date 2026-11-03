@@ -1675,6 +1675,13 @@ export const EN_TASKS: Record<string, string> = {
   '模型在输出：最后一段输出在 {s} 秒前': 'The model is responding: last output {s}s ago',
   '输出到一半停了 {s} 秒，没有工具在跑，也没有新的请求：CLI 可能卡在流式输出里':
     'Output stopped midway {s}s ago with no tool running and no new request: the CLI may be stuck in the stream',
+  '工具结果交回 {s} 秒了，等模型的下一次回复': 'Tool result returned {s}s ago; waiting for the next model reply',
+  '工具结果交回 {s} 秒了，模型的下一次请求没有任何输出，CLI 也没报重试：多半是网关没回或连接挂住了':
+    'Tool result returned {s}s ago and the next model request has produced nothing, with no retry reported: the gateway most likely did not answer or the connection hung',
+  '面板已标成卡住，再没有输出会停掉它、接回会话重试':
+    'The panel has marked it as stuck; if there is still no output it will stop it and retry in the same session',
+  '面板已标成卡住：再发一条消息会停掉它、接回会话重开':
+    'The panel has marked it as stuck: sending another message will stop it and restart in the same session',
   '这一轮在执行，还没有模型请求的记录': 'This turn is running; no model request recorded yet',
   '这一轮标着在执行，但它的 CLI 进程已经不在了：执行位没有收口':
     "This turn is marked running but its CLI process is gone: the execution slot wasn't settled",

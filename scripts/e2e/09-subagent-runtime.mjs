@@ -151,6 +151,58 @@ await runShard('子对话运行与监管', async (api) => {
     step('子任务起的后台命令：带子任务步骤，结果推回并标注来源，跑完消失')
   }
 
+  // ---- 停下再继续（ADR 0042）：被打断的子任务由面板在原来那条记录、原来的会话里接着跑，不另派新的 ----
+  {
+    const hp = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      prompt: 'SPAWN_SLOW_HELPER 派一个慢子任务',
+    })
+    const helperOf = async () =>
+      (await call('GET', `/tasks/${hp.id}`)).steps.filter((s) => s.slot === 'sub' && s.title === '慢慢查日志')
+    await waitFor(async () => ((await helperOf())[0]?.status === 'running' ? true : undefined), {
+      label: '子任务在跑',
+      timeout: 20000,
+    })
+    await call('POST', `/tasks/${hp.id}/stop`)
+    const paused = await waitFor(
+      async () => {
+        const t = await call('GET', `/tasks/${hp.id}`)
+        const h = t.steps.find((s) => s.slot === 'sub' && s.title === '慢慢查日志')
+        return t.status === 'stopped' && h?.status === 'pending' && h.interrupted ? h : undefined
+      },
+      { label: '停下后子任务暂停（被打断）', timeout: 20000 },
+    )
+    const before = calls().length
+    await call('POST', `/tasks/${hp.id}/resume`, {})
+    // 面板自己在原来的会话里接着跑，不等模型 resume：子任务的这次调用带着「这是重试」
+    await waitFor(
+      () =>
+        calls()
+          .slice(before)
+          .find((c) => c.input.includes('这是重试') && c.input.includes('上次执行到一半被中断了')),
+      { label: '被打断的子任务由面板接着跑', timeout: 20000 },
+    )
+    const done = await waitTask(
+      hp.id,
+      (t) => t.steps.some((s) => s.title === '慢慢查日志' && s.status === 'done'),
+      40000,
+    )
+    const list = done.steps.filter((s) => s.slot === 'sub' && s.title === '慢慢查日志')
+    assert.equal(list.length, 1, '没有另派新的子任务')
+    assert.equal(list[0].id, paused.id, '就是原来那条记录')
+    assert.equal(list[0].reruns, 1, '在原记录里重跑了一次')
+    const parentCall = calls()
+      .slice(before)
+      .find((c) => c.input.includes('面板说明：上一轮') && c.input.includes('慢慢查日志'))
+    assert.match(parentCall?.input ?? '', /已经由面板在原来的会话里接着跑：「慢慢查日志」[\s\S]*不要重新派/)
+    // 会话接得上：原来的要求已经在会话里，不再原样重放（免得模型当成新要求从头重做）
+    assert.doesNotMatch(parentCall.input, /原来的要求：/, '续接不重放原来的要求')
+    await call('DELETE', `/tasks/${hp.id}`)
+    step('停下再继续：被打断的子任务由面板在原记录、原会话里接着跑，不另派新的')
+  }
+
   // ---- 子任务按最后的总结判定做完：说完一句就结束、没交总结的，面板在同一个会话里推一次 ----
   // 用户 2026-11-02 报的：子任务说完「继续读操作原语与快照/选择器。」就结束了，交回的结果只有这一句
   {
@@ -183,6 +235,38 @@ await runShard('子对话运行与监管', async (api) => {
     )
     await call('DELETE', `/tasks/${(await waitDone(ns.id, 30000)).id}`)
     step('子任务没交结果就结束：面板在同一个会话里补问一次，交了结果再交回')
+  }
+
+  // ---- 子任务卡住：面板标卡住、停掉卡住的调用，接回会话重试后做完（用户 2026-11-03 报：子任务卡死，父对话一直干等） ----
+  {
+    const hs = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      prompt: 'SPAWN_FREEZING_HELPER 派一个子任务清理构建目录',
+    })
+    const done = await waitTask(
+      hs.id,
+      (t) => t.steps.some((s) => s.slot === 'sub' && s.title === '清理构建目录' && s.status === 'done'),
+      30000,
+    )
+    const sub = done.steps.find((s) => s.slot === 'sub' && s.title === '清理构建目录')
+    const mine = done.messages.filter((m) => m.step === sub.id && m.role === 'system')
+    assert.ok(
+      mine.some((m) => m.alert?.kind === 'no_response'),
+      '卡住时在子任务里写了「没有响应」警告',
+    )
+    assert.ok(
+      mine.some((m) => /面板停掉它、接回会话重试（第 1 次）/.test(m.text)),
+      '重试前写了一行说明，不悄悄重试',
+    )
+    assert.ok(
+      calls().some((x) => x.input?.startsWith('【面板】你上一次卡住了')),
+      '在同一个会话里接着做',
+    )
+    assert.equal(sub.submitted?.state, 'done', '重试后交了结果')
+    await call('DELETE', `/tasks/${(await waitDone(hs.id, 30000)).id}`)
+    step('子任务卡住：标卡住、停掉调用，接回会话重试后做完')
   }
 
   // ---- 子对话列表口径：在等后台命令的照样列，父对话自己在跑时也照样给 ----
@@ -514,7 +598,8 @@ await runShard('子对话运行与监管', async (api) => {
     const old = await waitFor(
       async () => {
         const t = await call('GET', `/tasks/${dead.id}`)
-        return t.messages.some((m) => m.alert?.kind === 'no_response') ? t : undefined
+        // 等的是换人接手那一条：之前那条「没有响应」的警告也是 no_response，只等任意一条会在它还没写到时就去断言
+        return t.messages.some((m) => m.alert?.kind === 'no_response' && m.text.includes('接手')) ? t : undefined
       },
       { label: '原子对话里记了换人接手的警告', timeout: 10000 },
     )
@@ -667,20 +752,26 @@ await runShard('子对话运行与监管', async (api) => {
     assert.notEqual(doneAfter.stopReason, 'parent', '已交付的子对话的停止原因不被改成父对话')
     assert.equal((await call('GET', `/tasks/${pausedKid.id}`)).stopReason, 'user', '用户停掉的子对话原因还是用户')
     const before = calls().length
+    // 续接不再重放原来的要求（ADR 0042）：按 --resume 的会话 id 认出是哪个对话的这一轮
+    const kidSession = Object.values((await call('GET', `/tasks/${rk.id}`)).sessions ?? {})[0]
     await call('POST', `/tasks/${rp.id}/resume`, {})
     const kidCall = await waitFor(
       () =>
         calls()
           .slice(before)
-          .find((c) => c.input.includes('被连带中断的子对话') && c.input.includes('面板说明：上一轮')),
+          // Codex 的续接走 app-server（假 CLI 记在 resume），别的 CLI 在 --resume 参数里
+          .find(
+            (c) => (c.resume === kidSession || c.args?.includes(kidSession)) && c.input.includes('面板说明：上一轮'),
+          ),
       { label: '子对话被连带拉起来、续接提示写清是续接', timeout: 20000 },
     )
     assert.ok(kidCall, '父对话继续时，一起被打断的子对话接着做')
+    assert.doesNotMatch(kidCall.input, /原来的要求：/, '会话接得上：不重放原来的要求')
     const parentCall = await waitFor(
       () =>
         calls()
           .slice(before)
-          .find((c) => c.input.includes('父对话中断后继续') && c.input.includes('一起中断的子对话已经由面板拉起来')),
+          .find((c) => c.input.includes('一起中断的子对话已经由面板拉起来')),
       { label: '父对话的续接提示点名已经拉起来的子对话', timeout: 20000 },
     )
     assert.match(parentCall.input, /被连带中断的子对话/, '续接提示写明拉起来的是哪个子对话')
@@ -702,5 +793,56 @@ await runShard('子对话运行与监管', async (api) => {
     await call('POST', `/tasks/${rk.id}/stop`).catch(() => {})
     await call('DELETE', `/tasks/${rp.id}`)
     step('父对话被停下后继续：一起被打断的子对话由面板连带拉起来，续接提示写清是续接')
+  }
+  // ---- 停下就是暂停（ADR 0042）：父计划等着的子对话随父对话停下，那一步不退回「需要修复」；
+  //      继续时原来的子对话接着做，做完结果对上计划、父对话被叫醒 ----
+  {
+    const lead = await agent({ name: '统筹-继续', cli: 'claude', canDelegate: true, instructions: '你负责派子对话。' })
+    const rp = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: lead.id,
+      prompt: 'PLAN_KID_WAIT 派子对话改登录',
+    })
+    const waitOf = async () => {
+      const p = await call('GET', `/tasks/${rp.id}`)
+      const step = p.plans?.at(-1)?.steps?.[0]
+      return { step, wait: step?.waits?.find((w) => w.kind === 'child') }
+    }
+    const kid = await waitFor(
+      async () => {
+        const list = await call('GET', `/tasks/${rp.id}/children`)
+        const k = list.find((x) => x.title === '改登录')
+        return k?.working && (await waitOf()).wait?.state === 'waiting' ? k : undefined
+      },
+      { label: '父对话列好计划、派出的子对话在执行，那一步在等它', timeout: 20000 },
+    )
+    await call('POST', `/tasks/${rp.id}/stop`)
+    await waitFor(
+      async () => {
+        const k = await call('GET', `/tasks/${kid.id}`)
+        return k.status === 'stopped' && k.stopReason === 'parent'
+      },
+      { label: '子对话随父对话停下', timeout: 20000 },
+    )
+    await waitFor(async () => (await call('GET', `/tasks/${rp.id}`)).status === 'stopped', {
+      label: '父对话停下',
+      timeout: 20000,
+    })
+    const paused = await waitOf()
+    assert.equal(paused.wait?.state, 'waiting', '子对话随父对话停下是暂停：父计划那一步还在等它，不收成失败')
+    assert.doesNotMatch(paused.step?.note ?? '', /需要修复/, '那一步不退回「需要修复」')
+    const before = (await call('GET', `/tasks/${rp.id}/children`)).length
+    await call('POST', `/tasks/${rp.id}/resume`, {})
+    // 原来的子对话接着做完：结果对上计划那一步，不另建子对话
+    await waitFor(async () => ((await waitOf()).wait?.state === 'ok' ? true : undefined), {
+      label: '继续后子对话做完，父计划那一步收到结果',
+      timeout: 40000,
+    })
+    assert.equal((await call('GET', `/tasks/${rp.id}/children`)).length, before, '没有另建子对话')
+    assert.equal((await call('GET', `/tasks/${kid.id}`)).stopReason ?? '', '', '子对话接着做完，不再记着停止原因')
+    await call('POST', `/tasks/${rp.id}/stop`).catch(() => {})
+    await call('DELETE', `/tasks/${rp.id}`)
+    step('停下就是暂停：随父对话停下的子对话继续后接着做完，父计划那一步收到结果、没有另建子对话')
   }
 })

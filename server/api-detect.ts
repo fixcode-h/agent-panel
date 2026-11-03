@@ -113,6 +113,7 @@ export function toApi(
     provider: key,
     protocol: map[wire] ?? src.protocol,
     baseUrl: url || src.defaultBaseUrl,
+    endpoints: {},
     apiKey,
     authHeader: bearer ? 'bearer' : 'x-api-key',
     models: modelsOf(obj, src.models),

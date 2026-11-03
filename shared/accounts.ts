@@ -38,6 +38,12 @@ export function modelsForProtocol(models: string[], protocol?: ApiProtocol): str
   })
 }
 
+/** 按几种协议过滤模型：带后缀的模型只要有一种协议对得上就保留（一个 API 同时支持几种协议时用） */
+export function modelsForProtocols(models: string[], protocols: ApiProtocol[]): string[] {
+  if (!protocols.length) return models
+  return models.filter((m) => protocols.some((p) => modelsForProtocol([m], p).length))
+}
+
 /** 当前模型是别的协议后缀时，换成同一个模型在当前协议下的后缀；没有就回退到第一个可用的 */
 export function modelForProtocol(model: string, protocol: ApiProtocol | undefined, models: string[]): string {
   if (!protocol || !model) return model
@@ -80,8 +86,18 @@ export const ApiConfig = z.object({
     .max(60)
     .regex(/^[A-Za-z0-9_-]*$/)
     .default(''),
+  /**
+   * 主协议和它的地址：读模型列表、测试连接、按协议过滤模型用这一个。
+   * 支持几种协议时它是 endpoints 里排在最前的那个（界面改 endpoints 时同步改它），老配置只有这一对
+   */
   protocol: z.enum(API_PROTOCOLS).default('openai-chat'),
   baseUrl: z.string().trim().default(''),
+  /**
+   * 一个 API 同时支持的几种协议，每种可以有自己的接口地址（留空用厂家按协议给的默认地址），密钥共用一个。
+   * 有这个键就表示支持这种协议；整个为空的老配置只支持 protocol 那一种，地址是 baseUrl（见 apiProtocols / apiEndpoint）。
+   * Agent 选这个 API 时再选用哪种协议（CliSettings.apiProtocol），交给 Agent 前用 apiForProtocol 换成那种协议的地址
+   */
+  endpoints: z.record(z.string(), z.string().trim()).default({}),
   apiKey: z.string().default(''),
   /** Anthropic 协议：密钥用哪种方式带（x-api-key，或 Authorization: Bearer） */
   authHeader: z.enum(['x-api-key', 'bearer']).default('x-api-key'),
@@ -101,6 +117,68 @@ export const ApiConfig = z.object({
   maxConcurrent: z.number().int().min(0).max(999).default(0),
 })
 export type ApiConfig = z.infer<typeof ApiConfig>
+
+/** 这个 API 支持哪些协议，按 API_PROTOCOLS 的顺序；没配 endpoints 的老配置只有 protocol 那一种 */
+export function apiProtocols(api: Pick<ApiConfig, 'protocol' | 'endpoints'>): ApiProtocol[] {
+  const own = API_PROTOCOLS.filter((p) => p in (api.endpoints ?? {}))
+  return own.length ? own : [api.protocol]
+}
+
+/** 某种协议用的接口地址（用户填的，留空时由 apiBaseUrl 补厂家默认）；不支持这种协议时为空 */
+export function apiEndpoint(api: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'endpoints'>, protocol: ApiProtocol) {
+  const own = api.endpoints ?? {}
+  if (API_PROTOCOLS.some((p) => p in own)) return own[protocol] ?? ''
+  return protocol === api.protocol ? api.baseUrl : ''
+}
+
+/**
+ * 换成用某种协议时的 API：protocol、baseUrl 改成这种协议的。交给 CLI、查模型目录、写配置文件的代码
+ * 都只看 protocol / baseUrl，选定协议后统一经过这里，别的地方不用知道一个 API 有几种协议
+ */
+export function apiForProtocol(api: ApiConfig, protocol: ApiProtocol): ApiConfig {
+  if (api.protocol === protocol && !Object.keys(api.endpoints ?? {}).length) return api
+  return { ...api, protocol, baseUrl: apiEndpoint(api, protocol) }
+}
+
+/**
+ * 改了支持的协议或地址之后的 endpoints 和主协议：主协议跟着排在最前的那个走，
+ * 一种都没勾时保留原来的主协议（API 不能一种协议都不支持）
+ */
+export function withEndpoints(api: ApiConfig, endpoints: Partial<Record<ApiProtocol, string>>): Partial<ApiConfig> {
+  const kept = Object.fromEntries(
+    API_PROTOCOLS.filter((p) => endpoints[p] !== undefined).map((p) => [p, endpoints[p] ?? '']),
+  ) as Record<string, string>
+  const first = API_PROTOCOLS.find((p) => p in kept)
+  if (!first) return { endpoints: { [api.protocol]: apiEndpoint(api, api.protocol) } }
+  return { endpoints: kept, protocol: first, baseUrl: kept[first] }
+}
+
+/**
+ * Agent 用这个 API 时走哪种协议：选过且两边都支持的优先；没选过（老设置）或选的已经不支持时，
+ * 先用 API 的主协议，再按 API_PROTOCOLS 的顺序取第一种两边都支持的。两边没有共同的协议时为空
+ */
+export function cliApiProtocol(
+  auth: { api?: { protocols: ApiProtocol[] } } | undefined,
+  api: Pick<ApiConfig, 'protocol' | 'endpoints'> | undefined,
+  preferred?: string,
+): ApiProtocol | undefined {
+  const cli = auth?.api?.protocols
+  if (!cli || !api) return undefined
+  const both = apiProtocols(api).filter((p) => cli.includes(p))
+  if (preferred && both.includes(preferred as ApiProtocol)) return preferred as ApiProtocol
+  if (both.includes(api.protocol)) return api.protocol
+  return both[0]
+}
+
+/** Agent 实际要用的 API：换成选定协议的地址；协议对不上时为空 */
+export function cliApi(
+  auth: { api?: { protocols: ApiProtocol[] } } | undefined,
+  api: ApiConfig | undefined,
+  preferred?: string,
+): ApiConfig | undefined {
+  const p = cliApiProtocol(auth, api, preferred)
+  return api && p ? apiForProtocol(api, p) : undefined
+}
 
 /** CLI 配置里的 provider 名：显式值优先，否则从 API 名称生成 */
 export function apiProvider(api: Pick<ApiConfig, 'name' | 'provider'>, fallback = 'agentpanel') {
@@ -604,9 +682,8 @@ function fillValue(v: unknown, vars: Record<string, string>, api: ApiConfig, pre
   return v
 }
 
-/** 这个 CLI 能不能用这个 API（协议对得上） */
-export const apiFits = (auth: CliAuth | undefined, api: ApiConfig | undefined) =>
-  !!auth?.api && !!api && auth.api.protocols.includes(api.protocol)
+/** 这个 CLI 能不能用这个 API（API 支持的协议里有一种 CLI 能用） */
+export const apiFits = (auth: CliAuth | undefined, api: ApiConfig | undefined) => !!cliApiProtocol(auth, api)
 
 /** 填一份配置编辑；没有 API（切回账号）时仍可用最后选用的 API 填 {provider} */
 export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig, lastProvider?: string): JsonEdit[] {
@@ -618,6 +695,7 @@ export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig, las
     provider,
     protocol: 'openai-chat',
     baseUrl: '',
+    endpoints: {},
     apiKey: '',
     authHeader: 'x-api-key',
     models: [],

@@ -10,7 +10,7 @@ import {
   WORD_SPACING,
 } from './schema.ts'
 import {
-  apiFits,
+  cliApi,
   apiInjection,
   apiModelIdFor,
   apiModelPrefix,
@@ -144,10 +144,15 @@ export function cliSettings(
 ): CliSettings & { command: string; permission: string; api?: ApiConfig } {
   const def = getCli(cliId)
   const s = CliSettings.parse(settings.clis[cliId] ?? {})
-  const selectedApi = settings.apis.find((a) => a.id === s.apiId)
+  // 选的 API 换成这个 CLI 用的那种协议（地址也换成那种协议的）；协议对不上时为空
+  const selectedApi = cliApi(
+    def?.auth,
+    settings.apis.find((a) => a.id === s.apiId),
+    s.apiProtocol,
+  )
   // API 模式：选的 API 协议对得上时，把接口地址、密钥按 CLI 定义里的规则加进环境变量和参数（所有调用 CLI 的地方都经过这里）
   const api = s.authMode === 'api' ? selectedApi : undefined
-  const inject = def?.auth && api && apiFits(def.auth, api) ? apiInjection(def.auth, api) : undefined
+  const inject = def?.auth && api ? apiInjection(def.auth, api) : undefined
   const accountModel = (model: string) => (s.authMode === 'account' ? accountModelId(def, selectedApi, model) : model)
   const tier = (t: ModelTier) => ({
     model: accountModel(s.tiers[t].model || tierFallback(def, s.defaultModel, t)),

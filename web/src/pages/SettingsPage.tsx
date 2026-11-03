@@ -30,6 +30,7 @@ import {
   Heading,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
+import { cliApi } from '@shared/accounts'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
 import { applyContentWidth, switchLang } from '@/lib/data'
 import { LANGS, t } from '@shared/i18n'
@@ -309,10 +310,11 @@ function SettingsBody({
     for (const c of CLIS) {
       const d = drafts[c.id]
       if (!d) continue
-      setCliMode(c.id, { authMode: d.authMode, apiId: d.apiId })
+      setCliMode(c.id, { authMode: d.authMode, apiId: d.apiId, apiProtocol: d.apiProtocol })
       if (!d.enabled || c.auth?.api?.modelSource !== 'cli') continue
       preloadCliModels(c.id, { authMode: 'account' })
-      if (d.apiId && apis.some((a) => a.id === d.apiId)) preloadCliModels(c.id, { authMode: 'api', apiId: d.apiId })
+      if (d.apiId && apis.some((a) => a.id === d.apiId))
+        preloadCliModels(c.id, { authMode: 'api', apiId: d.apiId, apiProtocol: d.apiProtocol })
     }
   }, [drafts, apis])
 
@@ -392,6 +394,7 @@ function SettingsBody({
           options: d.options,
           authMode: d.authMode,
           apiId: d.apiId,
+          apiProtocol: d.apiProtocol,
         },
       ]),
     ),
@@ -411,7 +414,14 @@ function SettingsBody({
       // 登录方式、选的 API 或它的模型变了：这个 CLI 的模型下拉要重新读（账号和 API 各列各的）
       for (const c of CLIS) {
         const cs = v.clis[c.id]
-        const a = cs?.authMode === 'api' ? v.apis.find((x) => x.id === cs.apiId) : undefined
+        const a =
+          cs?.authMode === 'api'
+            ? cliApi(
+                c.auth,
+                v.apis.find((x) => x.id === cs.apiId),
+                cs.apiProtocol,
+              )
+            : undefined
         const sig = `${cs?.authMode ?? 'account'}|${a ? `${a.id}|${a.name}|${a.provider}|${a.protocol}|${a.baseUrl}|${a.apiKey}|${a.models.join(',')}` : ''}`
         if (modelSig.current[c.id] !== undefined && modelSig.current[c.id] !== sig)
           void loadCliModels(c.id, true).catch(() => {})
@@ -444,7 +454,14 @@ function SettingsBody({
   const deployHintId = useId()
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
   const defDraft = drafts[defCli]
-  const defApi = defDraft.authMode === 'api' ? apis.find((a) => a.id === defDraft.apiId) : undefined
+  const defApi =
+    defDraft.authMode === 'api'
+      ? cliApi(
+          defDef.auth,
+          apis.find((a) => a.id === defDraft.apiId),
+          defDraft.apiProtocol,
+        )
+      : undefined
   const defProtocol = defApi?.protocol
 
   // 搜索：跨所有页搜设置项（索引在构建时从源码抽出，见 scripts/lib/settings-index.mjs）

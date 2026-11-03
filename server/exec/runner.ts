@@ -135,6 +135,7 @@ import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from '
 import { searchExcludeEnv } from './search-exclude-env.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
+import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -143,16 +144,10 @@ function markTurnDone(task: Task) {
   if (seenWhileWatched(task.id)) task.turnSeenAt = now
 }
 
-/**
- * 面板交给 CLI 的东西（一句话、工具结果、一次模型请求）之后多久一点输出都没有，算「没有响应」。
- * 模型正常都在几秒内开始输出（思考也是流式的）；测试用环境变量缩短
- */
-const NO_RESPONSE_MS = Number(process.env.AGENT_PANEL_NO_RESPONSE_MS) || 90_000
 /** 只说明 CLI 收下了、不说明模型在回的事件：不算有了响应 */
 const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'files_changed', 'context'])
 /** 任务 id → 卡住的这一轮（没得到回应的那条输入）：下一条消息据此停掉卡住的 CLI、接回会话重开 */
-const stalled = new Map<string, { input: string; since: number }>()
-export const stalledTurn = (taskId: string) => stalled.get(taskId)
+export { stalledTurn } from './stall-watch.ts'
 
 /** 插话收下后还算「同一段输出」的事件：不产生新内容（见 runAgent 的 cutAfter） */
 const CONTINUES = new Set(['session', 'turn', 'limits', 'usage', 'gen', 'context', 'files_changed'])
@@ -259,6 +254,10 @@ async function runAgent(
 ): Promise<AgentResult> {
   // 单独终止这一次调用（界面上终止一个子任务）：和整个任务的停止信号合在一起，后面统一看 ctx.signal
   if (call.signal && !retried) ctx = { ...ctx, signal: anySignal(ctx.signal, call.signal) }
+  // 子任务卡住到时间由面板停掉这次调用（见下面的「没有响应」检测）：记下是谁停的，返回 stalled 而不是「已停止」
+  const stallAc = new AbortController()
+  const outerSignal = ctx.signal
+  if (call.stallRetry && call.step) ctx = { ...ctx, signal: anySignal(ctx.signal, stallAc.signal) }
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
@@ -316,6 +315,8 @@ async function runAgent(
   // 对话（不属于节点的调用）才能插话、分叉、撤回
   const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
   const prewarm = chat && !!call.prewarm
+  // 子任务也查「没有响应」：以前只查对话，子任务卡在网关上只剩 30 分钟的空闲超时兜底，派它的对话一直干等
+  const helperWatch = !!step && !!call.stallRetry && !op
   // 启动这一轮时的选择；执行中换了 CLI/模型/强度，或者面板语言变了（系统提示词和 mod 的环境变量固定在
   // 这个进程里，新消息的提醒却是新语言），结束时都不能还停在旧进程上等下一句
   const startPick = { cli: task.cli, model: task.model, effort: task.effort, lang: replyLang() }
@@ -323,13 +324,21 @@ async function runAgent(
     const now = agentRun(withTaskModel(found, task), settings)
     // 这一轮里开了独立分支：进程还在原目录里，不能再等下一句，结束后在新目录里重开
     const wt = task.worktree?.state === 'active' ? task.worktree.path : ''
-    return (
-      now.cli === cliId &&
-      now.model === model &&
-      task.effort === startPick.effort &&
-      replyLang() === startPick.lang &&
-      (!wt || wt === cwd)
-    )
+    const diff = [
+      ['cli', cliId, now.cli],
+      ['model', model, now.model],
+      ['effort', startPick.effort, task.effort],
+      ['lang', startPick.lang, replyLang()],
+      ['cwd', cwd, wt || cwd],
+    ].filter(([, was, is]) => (was ?? '') !== (is ?? ''))
+    // 对不上就会结束这个进程、按现在的选择重开：记下是哪一项、前后各是什么，偶发重开时诊断文件里能直接看出原因
+    if (diff.length)
+      taskLog(
+        task.id,
+        '等下一句的 CLI 和现在的选择对不上',
+        Object.fromEntries(diff.map(([k, a, b]) => [k, `${a} → ${b}`])),
+      )
+    return !diff.length
   }
   // 预热期间的输出不记进对话；用户发来第一句后开始正常记
   let prewarmMode = prewarm
@@ -723,98 +732,30 @@ async function runAgent(
     closeChanges()
     ctx.onTurnEnd?.(turnInfo(turnTools(), turnMsgs()))
   }
-  /**
-   * 没有响应的检测（见 NO_RESPONSE_MS）：交出一句话、一个工具结果，或 CLI 开始一次模型请求时开始计时，
-   * 之后有任何真正的输出就停。超时写一行警告、标成卡住；后来又有输出了，警告标成已恢复。
-   * 只看对话：工作流里几个节点同时跑，卡住的是哪一个由空闲检测管
-   */
-  let armedAt = 0
-  let armedInput = call.prompt
-  let stallMsg: TaskMessage | undefined
-  /** 计时起点之后已经有过输出：再停住就是「输出到一半停了」，不是「一直没开始」 */
-  let midway = false
-  const arm = (input?: string) => {
-    if (!chat || op) return
-    armedAt = Date.now()
-    midway = false
-    if (input !== undefined) armedInput = input
-  }
-  const heard = () => {
-    // 有了输出也接着计时：模型（多是第三方网关）流到半句就断了、进程还活着时，页面会一直停在「等待模型」，
-    // 用户只能自己停下再发。这一轮还在跑就从这次输出重新算，到点同样告诉用户
-    armedAt = chat && !op && task.working ? Date.now() : 0
-    midway = !!armedAt
-    const st = stalled.get(task.id)
-    if (!st) return
-    stalled.delete(task.id)
-    if (stallMsg?.alert && !stallMsg.alert.resolved) {
-      stallMsg.alert = {
-        ...stallMsg.alert,
-        resolved: t('{s} 秒后有输出了，接着在处理', { s: Math.round((Date.now() - st.since) / 1000) }),
-      }
-      ctx.changed(true)
-    }
-  }
-  const stallTimer = setInterval(
-    () => {
-      if (!armedAt || finished || prewarmMode) return
-      // 在等用户、等子任务、等确认：本来就没有输出
-      // 还有工具在跑（并行调用里先回来一个结果）：等的是工具，不是模型；排队等 API 名额时消息还没交给 CLI
-      if (
-        task.awaitingUser ||
+  const watch = createStallWatch({
+    task,
+    step,
+    agentId,
+    cli: def.name,
+    watch: (chat && !op) || helperWatch,
+    helper: helperWatch,
+    input: call.prompt,
+    // 在等用户、等子任务、等确认：本来就没有输出（子任务不看对话在不在等用户：那是派它的对话的状态）。
+    // 还有工具在跑（并行调用里先回来一个结果）：等的是工具，不是模型；排队等 API 名额时消息还没交给 CLI
+    busy: () =>
+      !!(
+        (!helperWatch && task.awaitingUser) ||
         waitingHelpers ||
-        task.apiWait ||
+        (helperWatch ? call.step?.apiWait : task.apiWait) ||
         toolStart.size ||
         task.requests.some((x) => asked.includes(x.id))
-      ) {
-        armedAt = Date.now()
-        return
-      }
-      const quiet = Date.now() - armedAt
-      if (quiet < NO_RESPONSE_MS) return
-      const since = armedAt
-      armedAt = 0
-      stalled.set(task.id, { input: armedInput, since })
-      const secs = Math.round(quiet / 1000)
-      stallMsg = {
-        id: ctx.newId(),
-        role: 'system',
-        agentId,
-        step,
-        text: midway
-          ? t('{cli} 输出到一半停了，{s} 秒没有新的内容。直接再发一条消息，面板会停掉它、接回这个会话重新开始。', {
-              cli: def.name,
-              s: secs,
-            })
-          : t('{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。', {
-              cli: def.name,
-              s: secs,
-            }),
-        tools: [],
-        alert: makeAlert(
-          'warn',
-          [
-            midway
-              ? t('{cli} 输出到一半后 {s} 秒没有新的输出（没有思考、正文或工具调用），模型的流可能断了。', {
-                  cli: def.name,
-                  s: secs,
-                })
-              : t('{cli} 在 {s} 秒里没有任何输出（没有思考、正文或工具调用）。', { cli: def.name, s: secs }),
-            t('交给它的最后一条内容：'),
-            clip(armedInput, 800),
-          ].join('\n'),
-          'no_response',
-        ),
-        at: new Date().toISOString(),
-      }
-      task.messages.push(stallMsg)
-      log.warn('agent', `${def.name} 交出消息后 ${secs} 秒没有输出，标成卡住`, { task: task.id, step })
-      taskLog(task.id, '标成卡住', { step: step || undefined, secs, midway: midway || undefined })
-      ctx.changed(true)
-    },
-    Math.min(5000, Math.max(50, NO_RESPONSE_MS / 4)),
-  )
-  stallTimer.unref?.()
+      ),
+    off: () => finished || prewarmMode,
+    newId: ctx.newId,
+    changed: () => ctx.changed(true),
+    kill: () => stallAc.abort('stalled'),
+  })
+  const { arm, heard } = watch
   const apply = (ev: CliEvent) => {
     // 有了真正的输出：不算卡住。工具结果交回去、开始一次模型请求后，重新开始等模型的回应
     if (!NOT_RESPONSE.has(ev.type)) heard()
@@ -842,6 +783,9 @@ async function runAgent(
       thinkingOf = undefined
     switch (ev.type) {
       case 'session':
+        // 会话换了（找不到、换了 CLI / 目录后开的新会话）：记下前后，「状态」诊断里看得出这是第几个会话、为什么换（ADR 0042）
+        if (task.sessions[sessionKey] && task.sessions[sessionKey] !== ev.id)
+          taskLog(task.id, '换了新会话', { key: sessionKey, from: task.sessions[sessionKey], to: ev.id })
         task.sessions[sessionKey] = ev.id
         // 会话按目录存：每个会话都记下是在哪开的，续接前先看（子任务也一样）
         task.sessionDirs[sessionKey] = cwd
@@ -1049,7 +993,7 @@ async function runAgent(
       case 'result':
         result = ev
         // 这一轮结束了：之后没有输出是在等下一句，不算卡住
-        armedAt = 0
+        watch.disarm()
         // 留一条「为什么停」：排查「说了要做却没调工具就结束」时看是模型自己收尾（end_turn）还是被截断
         if (chat && !op)
           log.info('agent', `${def.name} 这一轮结束`, {
@@ -1497,8 +1441,7 @@ async function runAgent(
     finished = true
     if (chat) taskLog(task.id, '对话的 CLI 进程结束', { cli: def.name, aborted: ctx.signal.aborted || undefined })
     blender?.close()
-    clearInterval(stallTimer)
-    stalled.delete(task.id)
+    watch.stop()
     clearTimeout(redirectTimer)
     for (const x of [...toolStart.keys()]) endTool(x)
     // CLI 说开始压缩了，进程结束都没等到压缩完成：不能显示得像压缩成功了
@@ -1584,6 +1527,16 @@ async function runAgent(
         error: r.spawnError,
         cli: def.name,
         hint: def.installHint,
+      }),
+    }
+  // 子任务卡住被面板停掉（用户没有同时停止）：交回 stalled，由 runStalled 接回会话重试
+  if (stallAc.signal.aborted && !outerSignal.aborted)
+    return {
+      ok: false,
+      stalled: true,
+      error: t('{cli} 连续 {s} 秒没有任何输出，面板停掉了这次调用', {
+        cli: def.name,
+        s: Math.round((NO_RESPONSE_MS * 2) / 1000),
       }),
     }
   // 停止时 CLI 自己中断了这一轮（进程正常退出），也算停止

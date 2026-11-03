@@ -413,7 +413,7 @@ function touch(item: PlanItem, now: string) {
 }
 
 /** 状态变了记时间：第一次开始做记 startedAt（since：知道真正开工的时间就用它），结束时记 endedAt */
-function setStatus(item: PlanItem, status: PlanStatus, now: string, since = now) {
+export function setStatus(item: PlanItem, status: PlanStatus, now: string, since = now) {
   if (item.status === status) return
   item.status = status
   if (status !== 'pending' && !item.startedAt) item.startedAt = since < now ? since : now
@@ -518,7 +518,7 @@ function mergeLevel<T extends PlanItem>(
 }
 
 /** 主步骤的状态跟着子步骤走：子步骤都结束就完成，有失败的就失败，有在做的就算进行中 */
-function rollUp(step: PlanStep, now: string) {
+export function rollUp(step: PlanStep, now: string) {
   if (step.run || !step.children.length) return
   // 主步骤的开始、结束跟着子步骤的真实时间走：最早开工的子步骤、最晚做完的子步骤
   const first =

@@ -1,6 +1,7 @@
-import type { EngineHost } from './engine.ts'
+import type { EngineHost, Orchestra } from './engine.ts'
 import type { Task, TaskStep } from './schema.ts'
 import { clip } from './text.ts'
+import { pauseStep } from './task.ts'
 
 /*
  * 只停对话的一部分（一个子任务、一次工作流运行）用的开关：对话本身不停。
@@ -85,16 +86,42 @@ export function interruptedBlock(mine: TaskStep[], fresh: number, resumed: Map<u
   return `这些子任务中断了还没做完：${list}。要接着做就在 spawn_agents 里带 resume: <id>，在原来的会话里接着跑，不要另派新的；确实不需要了先用 stop_subtask 终止它们，再派新的。`
 }
 
+/*
+ * 子任务、工作流节点停下时只有两种收法（ADR 0042）：
+ * - 暂停（pauseUnit）：停下但会接着做——待做 + 被打断，继续时在原来那条记录、原来的会话里接着跑；
+ * - 终止（cancelUnit）：明确不做了——记成跳过，之后才允许另派新的。
+ * 以前 finish、settleStopped、runHelper、dropInterrupted 各写一份，漏清排队标记、漏记被打断的情况都出过
+ */
+
+/** 暂停：结掉这一段用时，记成待做 + 被打断，清掉排队标记。at 是结算的时刻（落盘收口时用最后一次落盘的时间） */
+export function pauseUnit(s: TaskStep, at = Date.now()) {
+  // 落盘收口按 updatedAt 结算：老数据时间解析不出来时按现在算，不能让 toISOString 抛错
+  if (!Number.isFinite(at)) at = Date.now()
+  if (s.status === 'running') pauseStep(s, at)
+  s.status = 'pending'
+  s.interrupted = true
+  s.apiWait = undefined
+  s.endedAt = new Date(at).toISOString()
+}
+
+/** 终止：记成跳过、不再被打断，清掉排队标记；why 在还没有输出时当结果交回 */
+export function cancelUnit(s: TaskStep, why = '', at = Date.now()) {
+  if (!Number.isFinite(at)) at = Date.now()
+  if (s.status === 'running') pauseStep(s, at)
+  s.status = 'skipped'
+  s.interrupted = false
+  s.apiWait = undefined
+  s.endedAt = new Date(at).toISOString()
+  if (why && !s.output) s.output = why
+}
+
 /**
  * stop_subtask 终止一个被打断、还没重新开始的子任务：它没有在跑的进程可停，直接记成已终止。
  * 不收掉的话它一直挂着「已打断」，也挡着另派新的子任务。返回有没有收掉
  */
 export function dropInterrupted(s: TaskStep, why: string) {
   if (s.status !== 'pending' || !s.interrupted) return false
-  s.status = 'skipped'
-  s.interrupted = false
-  s.endedAt = new Date().toISOString()
-  if (!s.output) s.output = why
+  cancelUnit(s, why)
   return true
 }
 
@@ -131,3 +158,26 @@ export function answeredAll(task: Task, turn: { startedAt: string }) {
  * 这时活已经干完，CLI 有没有来得及报完成（turnDoneAt）都不影响，不能记成「这一轮被中断」
  */
 export const finishedStop = (host: EngineHost) => host.stopReason?.() === 'finish'
+
+/** 这个对话（self 是它这一轮的节点）名下被打断、还没做完的子任务：继续执行时由面板接着跑（ADR 0042） */
+export const pausedHelpers = (task: Pick<Task, 'steps'>, selfId?: string) =>
+  task.steps.filter(
+    (s) => s.slot === 'sub' && s.status === 'pending' && !!s.interrupted && (!selfId || s.parentId === selfId),
+  )
+
+/**
+ * 继续执行时，被打断的子任务由面板在原来那条记录、原来的会话里接着跑，不再等模型读续接说明自己去 resume
+ * （模型没照做时子任务一直挂着，还挡着另派新的）。走的就是 spawn_agents 带 resume 的同一条路径：
+ * 角色、参数、会话、重试提示都和模型自己 resume 时一样，结果照常交回这个对话。
+ * 返回没能接着跑的原因（空串是都接上了或没有要接的），调用方写进这一轮的提示里让模型处理
+ */
+export function resumePausedHelpers(host: EngineHost, orch: Orchestra, selfId: string) {
+  const list = pausedHelpers(host.task, selfId)
+  if (!list.length) return ''
+  const r = orch.spawn(
+    list.map((s) => ({ title: s.title, instructions: '', resume: s.id })),
+    undefined,
+    { local: true },
+  )
+  return r.error ?? ''
+}

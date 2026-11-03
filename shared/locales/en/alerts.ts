@@ -129,6 +129,11 @@ export const EN_ALERTS: Record<string, string> = {
   '续接不上，已开新会话重新执行': 'Couldn’t resume; reran in a new session',
   '已自动重试，继续做完了': 'Retried automatically and it finished',
   '{s} 秒后有输出了，接着在处理': 'Output resumed after {s}s and it is working again',
+  '等了 {s} 秒没收到响应头（首字节超时）': 'no response headers after {s}s (first-byte timeout)',
+  '{cli} {s} 秒没有新的输出。再过 {s} 秒还是没有，面板会停掉它、接回会话重试。':
+    '{cli} has produced no new output for {s}s. If there is still none in another {s}s, the panel will stop it and retry in the same session.',
+  '{cli} 连续 {s} 秒没有任何输出，面板停掉了这次调用':
+    '{cli} produced no output for {s}s, so the panel stopped this call',
   '{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。':
     '{cli} received the message {s}s ago and has produced no output. Send another message and the panel will stop it and restart in the same session.',
   '{cli} 在 {s} 秒里没有任何输出（没有思考、正文或工具调用）。':

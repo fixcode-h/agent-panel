@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Brain, Check, ChevronDown, Sparkles } from 'lucide-react'
 import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { getCli, isOffEffort, type CliDefinition } from '@shared/clis'
-import { apiModelIdFor } from '@shared/accounts'
+import { apiModelIdFor, cliApi } from '@shared/accounts'
 import { apiModelKey } from '@shared/model-catalog'
 import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
@@ -217,7 +217,14 @@ function useShownModel() {
   const { settings } = useData()
   return (cli: string, model: string, fallback: string) => {
     const cs = settings?.clis?.[cli]
-    const api = cs?.authMode === 'api' ? settings?.apis.find((a) => a.id === cs.apiId) : undefined
+    const api =
+      cs?.authMode === 'api'
+        ? cliApi(
+            getCli(cli)?.auth,
+            settings?.apis.find((a) => a.id === cs.apiId),
+            cs.apiProtocol,
+          )
+        : undefined
     const mapped = (model && api?.modelMap?.[apiModelKey(model, api.modelMap)]) || ''
     const name = mapped || fallback
     return name.slice(name.lastIndexOf('/') + 1) || name

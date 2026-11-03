@@ -54,6 +54,6 @@ registerFixTopic(LIFECYCLE_TOPIC, {
       '这是 Agent 面板（本机调度编码 CLI 的网页控制台）的「状态」诊断。读法：',
       '- 日志行格式「时间 [事件] 键=值」。模型请求开始 / 模型开始输出（waitedMs 是首字等待）/ CLI 重试模型请求 / CLI 报这一轮结束 来自 CLI 的事件流；CLI 进程启动 / 退出（code、signal、killed=stopped|timeout|idle、aliveMs）来自面板的进程登记。',
       '- facts.live 是面板内存里的执行位：stop=true 表示停止已发出还没收完；held 是排着等这一轮结束后处理的消息。',
-      '- 异常编号：model-silent（请求发出很久没有输出）、output-stalled（输出到一半停住）、working-no-process（标着执行但进程没了）、child-idle-parent-waiting（子对话已停、父对话没被叫醒）、held-unhandled（排着的消息没人接）、slot-idle（执行位空占）、stop-slow（停止迟迟没收完）、process-leftover（收口后进程还在）、apiwait-stale、running-no-slot。',
+      '- 异常编号：model-silent（请求发出很久没有输出）、output-stalled（输出到一半停住，或工具结果交回后下一次请求没回来）、working-no-process（标着执行但进程没了）、child-idle-parent-waiting（子对话已停、父对话没被叫醒）、held-unhandled（排着的消息没人接）、slot-idle（执行位空占）、stop-slow（停止迟迟没收完）、process-leftover（收口后进程还在）、apiwait-stale、running-no-slot。',
     ].join('\n'),
 })

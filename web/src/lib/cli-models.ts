@@ -10,7 +10,7 @@ import { api } from './api'
  * 账号和 API 方式能用的模型不一样，按「CLI + 登录方式 + 选的 API」分开缓存：
  * 切换方式时直接换成那种方式的列表，不会先显示另一种方式的模型，读过的切回来也不用再等。
  */
-export type CliMode = { authMode: 'account' | 'api'; apiId?: string }
+export type CliMode = { authMode: 'account' | 'api'; apiId?: string; apiProtocol?: string }
 const cache = new Map<string, CliModels>()
 const pending = new Map<string, Promise<CliModels>>()
 const listeners = new Set<() => void>()
@@ -19,7 +19,11 @@ const modes = new Map<string, CliMode>()
 
 // 设置还没读到时不知道是哪种方式，按服务端已保存的读，单独存一份
 const keyOf = (id: string, mode = modes.get(id)) =>
-  !mode ? `${id}|saved` : mode.authMode === 'api' ? `${id}|api|${mode.apiId ?? ''}` : `${id}|account`
+  !mode
+    ? `${id}|saved`
+    : mode.authMode === 'api'
+      ? `${id}|api|${mode.apiId ?? ''}|${mode.apiProtocol ?? ''}`
+      : `${id}|account`
 
 /** 记下 CLI 现在的登录方式；变了时用到模型列表的地方跟着换 */
 export function setCliMode(id: string, mode: CliMode) {
@@ -31,7 +35,7 @@ export function setCliMode(id: string, mode: CliMode) {
 /** 设置读到或保存后：所有 CLI 的登录方式按设置更新 */
 export function setCliModes(settings: Settings) {
   for (const [id, cs] of Object.entries(settings.clis))
-    setCliMode(id, { authMode: cs.authMode ?? 'account', apiId: cs.apiId })
+    setCliMode(id, { authMode: cs.authMode ?? 'account', apiId: cs.apiId, apiProtocol: cs.apiProtocol })
 }
 
 /** 思考强度从低到高的顺序；CLI 返回的顺序不固定 */

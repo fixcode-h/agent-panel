@@ -139,6 +139,10 @@ export const EN_SHARED: Record<string, string> = {
   '子任务没能执行：{error}': 'Subtask could not run: {error}',
   '子任务补问了一次还是没有用 submit_result 交结果，做没做完不确定':
     'The subtask was asked once more but still did not submit a result with submit_result; whether it finished is unknown',
+  '子任务的 CLI 卡住了，面板停掉它、接回会话重试（第 {n} 次）：{error}':
+    "The subtask's CLI got stuck; the panel stopped it and is retrying in the same session (attempt {n}): {error}",
+  '子任务的 CLI 连续卡住，面板接回会话重试了 {n} 次还是没有输出：{error}':
+    "The subtask's CLI kept getting stuck; the panel retried {n} times in the same session and still got no output: {error}",
   '「{title}」在原来的子任务里重试：{list}': '"{title}" is retrying in the original subtasks: {list}',
   '「{title}」{note}': '{title}: {note}',
   '已转交父对话创建「{title}」{id}': 'Handed "{title}" to the parent conversation{id}',

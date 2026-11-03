@@ -583,7 +583,7 @@ async function modelsFromCli(
 }
 
 /** 按登录方式查模型时指定的方式：设置页切换后还没保存时也能先读到对应的列表 */
-export type ModelsMode = { authMode: 'account' | 'api'; apiId?: string }
+export type ModelsMode = { authMode: 'account' | 'api'; apiId?: string; apiProtocol?: string }
 
 /** 缓存按「CLI + 登录方式 + 选的 API」分开存：账号和 API 来回切换时直接用已经读过的，不用每次都重跑 CLI */
 function cacheKey(id: string, api: ApiConfig | undefined) {
@@ -603,7 +603,12 @@ export async function cliModels(id: string, refresh = false, mode?: ModelsMode):
         ...settings,
         clis: {
           ...settings.clis,
-          [id]: { ...(settings.clis[id] ?? {}), authMode: mode.authMode, apiId: mode.apiId ?? '' },
+          [id]: {
+            ...(settings.clis[id] ?? {}),
+            authMode: mode.authMode,
+            apiId: mode.apiId ?? '',
+            apiProtocol: mode.apiProtocol ?? '',
+          },
         } as typeof settings.clis,
       }
     : settings
@@ -742,7 +747,11 @@ export function modelsApi() {
     const auth = c.req.query('auth')
     const mode =
       auth === 'account' || auth === 'api'
-        ? { authMode: auth as ModelsMode['authMode'], apiId: c.req.query('api') ?? '' }
+        ? {
+            authMode: auth as ModelsMode['authMode'],
+            apiId: c.req.query('api') ?? '',
+            apiProtocol: c.req.query('protocol') ?? '',
+          }
         : undefined
     return c.json(await cliModels(id, c.req.query('refresh') === '1', mode))
   })

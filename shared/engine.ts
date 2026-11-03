@@ -187,10 +187,9 @@ const SLOT_PROMPT: Record<string, string> = {
 /** 节点提示词里节点自己的部分从这里开始，前面是同一个任务里各节点共用的部分 */
 export const NODE_PART = '## 当前节点'
 
-export type AgentResult =
-  | { ok: true; text: string }
-  /** stopped：用户停止；halted：别的节点失败了，这里没再继续（节点保持待执行，续跑时重来） */
-  | { ok: false; stopped?: boolean; halted?: boolean; error: string; reported?: boolean; budget?: boolean }
+/** stopped：用户停止；halted：别的节点失败了没再继续（续跑时重来）；stalled：子任务卡住被 runner 停掉（runStalled 重试） */
+type FailFlags = { stopped?: boolean; halted?: boolean; reported?: boolean; budget?: boolean; stalled?: boolean }
+export type AgentResult = { ok: true; text: string } | ({ ok: false; error: string } & FailFlags)
 /** 一轮执行的结果里「没成功」的那几种；导出给单测构造 finish 的入参 */
 export type Fail = Extract<AgentResult, { ok: false }>
 
@@ -233,6 +232,7 @@ export interface AgentCall {
   onInput?: (info: { setup: number; rules: number; fresh: boolean }) => void
   /** 只停这一次调用（终止单个子任务）；整个任务停止仍走宿主的信号 */
   signal?: AbortSignal
+  stallRetry?: boolean // 子任务：runner 也查没有响应，卡住到时间停掉这次调用、返回 stalled（helper-summary 的 runStalled）
   /**
    * 这一圈接着上一圈做（子任务、计划交回的结果），不是用户的新要求：
    * 总结下面的改动卡片接着上一圈的终点算，子任务和工作流在空档里改的文件才算得进来
@@ -3758,17 +3758,17 @@ async function runHelper(
   rs.helperStops.set(key, ac)
   /** 被终止了：记成跳过，原因交回给派它的对话（见 settleHelpers） */
   const stopped = () => {
-    step.status = 'skipped'
     // 交回给派它的对话看的说明，不翻译
     st.errors.set(step.id, `已终止：${String(ac.signal.reason || '没写原因')}`)
-    step.endedAt = now()
+    rs.cancelUnit(step)
     host.changed(true)
   }
   // 派出就开跑，不按任务限数排队（用户要求）：一个节点最多派几个由 spawn 的 MAX_HELPERS_PER_STEP 管，
   // 真要限流用 API 设置里的并发上限（server/api-slots.ts），那是按厂家限流各算各的
   try {
     if (ac.signal.aborted) return stopped()
-    if (host.halted) return
+    // 工作流被叫停、还没开始的：暂停（被打断），继续时能 resume 它；不然停在「待做」既不能接着做、也挡不住另派
+    if (host.halted) return rs.pauseUnit(step)
     step.status = 'running'
     step.startedAt = now()
     host.changed(true)
@@ -3834,17 +3834,14 @@ async function runHelper(
     if (ac.signal.aborted) return stopped()
     if (r.ok) {
       const late = await settleHelpers(host, step)
-      // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的意见整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
-      // 完整内容和节点一样存成文件，交回的结果里写明去哪读
+      // 评审、测试验收的输出常比交接上限长：完整内容和节点一样存成文件，交回的结果里写明去哪读（只截开头会丢意见）
       step.output = await storeOutput(host, step, late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text, reviewing)
       step.status = 'done'
     } else {
-      step.status = r.stopped || r.halted ? 'pending' : 'failed'
-      // 被停止的标成打断：报告和界面才能说清「这一轮被停了、结论没出来」，而不是像还没开始
-      if (r.stopped || r.halted) {
-        pauseStep(step)
-        step.interrupted = true
-      } else {
+      // 被停止的暂停（被打断）：报告和界面才能说清「这一轮被停了、结论没出来」，继续时在原记录里接着做
+      if (r.stopped || r.halted) rs.pauseUnit(step)
+      else {
+        step.status = 'failed'
         st.errors.set(step.id, r.error)
         system(host, r.error || t('执行失败'), step.id, true)
       }
@@ -4342,6 +4339,10 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       // 不能放在 makeOrchestra 后面一直挂着：等子任务结果、跑计划、执行工作流节点都在这同一个 try 里，
       // 那时派出的对话级子任务不参与节点收尾，这一轮很快就 done 了，结果再也交不回来
       host.onOrchestra?.(orch)
+      // 继续执行：被打断的子任务由面板在原记录、原会话里接着跑（ADR 0042），接不上的原因交给模型处理
+      const lost =
+        first && host.resume && !host.prewarm ? rs.resumePausedHelpers(host, orch, chatStep(host, who).id) : ''
+      if (lost) prompt += `\n\n（面板说明：被打断的子任务没能自动接着跑：${lost}）`
       let r: AgentResult
       // 第一圈是这条消息和规则；之后的是子任务、计划交回的结果
       if (first) sentParts(parts, prompt)
@@ -4478,14 +4479,12 @@ function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
 export function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
   // 这一轮其实已经答完了（见 answeredAll）：CLI 报过完成、只是停在等下一句之后才被收掉，不算被打断——
   // 不写「这一轮被中断」、不记 stopReason，状态照常是 done。真停止（用户暂停、面板重启、CLI 崩溃）照旧
-  const answered = !!r.stopped && (!!opts?.answered || rs.finishedStop(host))
-  for (const s of host.task.steps)
-    if (s.status === 'running') {
-      s.status = answered ? 'done' : r.stopped ? 'pending' : 'failed'
-      s.interrupted = !!r.stopped && !answered
-      if (r.stopped && !answered) pauseStep(s)
-      s.endedAt = now()
-    }
+  // 停的时候还有子任务、节点在跑：活没干完，不能记成答完、更不能把它们记成完成（ADR 0042），一律暂停、继续时接着做
+  const cut = !!r.stopped && host.task.steps.some((s) => s.status === 'running')
+  const answered = !!r.stopped && !cut && (!!opts?.answered || rs.finishedStop(host))
+  for (const s of host.task.steps.filter((x) => x.status === 'running'))
+    if (r.stopped) rs.pauseUnit(s)
+    else [s.status, s.endedAt] = ['failed', now()]
   if (r.budget) system(host, r.error, '', false, true, 'budget')
   else if (r.stopped && !answered) {
     // 谁结束的这一轮：用户自己按的暂停不写提示行（输入框旁已经有「继续执行」按钮）；

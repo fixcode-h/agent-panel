@@ -698,6 +698,10 @@ async function panelCall(name, params) {
     })
   }
 }
+// 子任务卡住（HELPER_FREEZE_ONCE 只出现在子任务的指令里）：一个字都不回，像网关把模型请求吞了、进程却活着。
+// 面板停掉它、接回会话重试时提示里带「你上一次卡住了」，这次照常做完（用户 2026-11-03 报的子任务卡死）
+if (input.includes('HELPER_FREEZE_ONCE') && input.includes('派出的子 Agent') && !input.includes('你上一次卡住了'))
+  await new Promise(() => setInterval(() => {}, 60_000))
 // 子任务交结果（ADR 0041 第 16 节）：面板只认 submit_result 工具。SUB_NO_SUMMARY 模拟说完一句就结束、没交，
 // 面板补问（「你还没有用 submit_result」）后才交
 if (
@@ -815,10 +819,18 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
   })
+// 派一个慢的子任务（ADR 0042：停下父对话再继续，子任务由面板在原记录里接着跑）。续接时不再派
+if (input.includes('SPAWN_SLOW_HELPER') && input.includes('spawn_agents') && !input.includes('面板说明：上一轮'))
+  await panelCall('spawn_agents', { tasks: [{ title: '慢慢查日志', instructions: 'SLOW 慢慢查日志' }] })
 // 派一个说完一句就结束、没交结果的子任务（SUB_NO_SUMMARY 只出现在子任务的指令里，见模块顶层的 submit_result）
 if (input.includes('SPAWN_NO_SUMMARY') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '读操作原语', instructions: 'SUB_NO_SUMMARY 继续读操作原语与快照/选择器' }],
+  })
+// 派一个第一次会卡住的子任务（HELPER_FREEZE_ONCE 见模块顶层）
+if (input.includes('SPAWN_FREEZING_HELPER') && input.includes('spawn_agents'))
+  await panelCall('spawn_agents', {
+    tasks: [{ title: '清理构建目录', instructions: 'HELPER_FREEZE_ONCE 删掉根目录的构建产物' }],
   })
 // 一次派两个子任务（API 并发上限的用例：名额是 1 时两个要一个一个跑，对话等它们时不占名额，不会互相等死）
 if (input.includes('SPAWN_TWO_SUBS') && input.includes('spawn_agents'))
@@ -843,6 +855,17 @@ if (input.includes('FORWARD_DOC') && input.includes('spawn_agents')) {
       process.env.FAKE_CLI_LOG + '.forward',
       JSON.stringify({ id, text: r?.content?.[0]?.text ?? '' }) + '\n',
     )
+}
+// 父对话列一步计划、派一个子对话挂在这一步上等它（ADR 0042：停下再继续，子对话做完要叫醒父对话）。
+// 继续执行时续接提示里还有原来的要求，不能再列一遍计划、再派一个
+if (
+  input.includes('PLAN_KID_WAIT') &&
+  input.includes('create_conversation') &&
+  input.includes('set_plan') &&
+  !input.includes('面板说明：上一轮')
+) {
+  await panelCall('set_plan', { title: '等子对话', steps: [{ title: '派子对话改登录' }] })
+  await panelCall('create_conversation', { title: '改登录', message: 'SLOW 改登录页', step: '1' })
 }
 // 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
 if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {

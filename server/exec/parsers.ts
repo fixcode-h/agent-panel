@@ -329,8 +329,17 @@ export function claudeParser(cwd: string): Parser {
     // 不接这个事件的话界面只会一直写「等待模型」，插进来的消息也要等它重试完（用户报过「父对话总在等待模型」）
     if (o.type === 'system' && o.subtype === 'api_retry') {
       retrying = Number(o.attempt) || retrying + 1
+      // 首字节超时（网关在 CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS 内连响应头都没回）时 error 只有 unknown，
+      // 等了多久在 waited_ms 里：带上才看得出是「网关没回」，不是模型报错（用户 2026-11-03 报子任务一启动就重试）
+      const waited = Number(o.waited_ms) || 0
       const err = oneLine(
-        [o.error_status, o.error].filter((x) => x !== undefined && x !== null && x !== '').join(' '),
+        [
+          o.error_status,
+          o.error,
+          waited ? t('等了 {s} 秒没收到响应头（首字节超时）', { s: Math.round(waited / 1000) }) : '',
+        ]
+          .filter((x) => x !== undefined && x !== null && x !== '')
+          .join(' '),
         300,
       )
       out.push({

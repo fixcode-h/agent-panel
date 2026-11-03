@@ -1,4 +1,5 @@
 import type { StopReason, Task } from './schema.ts'
+import { activePlan, FAIL_PREFIX, rollUp, setStatus } from './plan.ts'
 import { stopReasonText, taskDeleted } from './task.ts'
 
 // 放在单独的文件里：shared/task.ts、shared/plan.ts 都快到行数上限（scripts/file-caps.json）
@@ -6,13 +7,13 @@ import { stopReasonText, taskDeleted } from './task.ts'
 /** 父对话继续时要看的子对话字段 */
 export type ResumeKid = Pick<Task, 'id' | 'title' | 'stopReason' | 'wrapRequest'>
 
-/** 被连带打断、父对话继续时要接着做的停止原因：父对话停的、面板重启、卡住重开、核对时收口 */
-const AGAIN: StopReason[] = ['parent', 'restart', 'stalled', 'lost']
+/** 被连带打断、父对话继续时要接着做的停止原因：父对话停的、面板重启、卡住重开、核对时收口、整棵树到了用量上限 */
+const AGAIN: StopReason[] = ['parent', 'restart', 'stalled', 'lost', 'budget']
 
 /**
  * 父对话计划里等这个子对话的都已经收成「成功」，没有还在等、也没有失败的：父对话已经收下它的结果。
  * 之后它又被父对话的停止连带打断（比如正在回父对话的一句话），活本身已经交了，继续时不能让它从头再做一遍。
- * 父对话停止时还在等它的那一步会被收成失败（见 noteParent 的 cascaded），所以这里不会把没交付的误判成已交付
+ * 被连带停下时等它的那一步保持「等待中」（ADR 0042，见 childReport 的 settle），所以这里不会把没交付的误判成已交付
  */
 export function kidAccepted(parent: Pick<Task, 'plans'>, kidId: string): boolean {
   const plan = parent.plans?.at(-1)
@@ -99,10 +100,11 @@ export function resumeNote(
       `- 没能拉起来的子对话：${failed.map((k) => `「${k.title}」（id ${k.id}，${k.error.split('\n')[0].slice(0, 120)}）`).join('、')}。` +
         '计划里等它的那一步已退回进行中；需要的话另建子对话接手（它原来的改动还在它的目录 / 分支里），不要干等它的结果。',
     )
-  const helpers = task.steps.filter((s) => s.slot === 'sub' && s.interrupted && s.status !== 'done')
+  // 被打断的子任务由面板在原来那条记录、原来的会话里接着跑（ADR 0042，见 run-stops.ts 的 resumePausedHelpers）
+  const helpers = task.steps.filter((s) => s.slot === 'sub' && s.interrupted && s.status === 'pending')
   if (helpers.length)
     lines.push(
-      `- 中断时没跑完的子任务：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。还需要就用 spawn_agents 带 resume: <id> 在原来的会话里接着跑，不要重新派一个（有中断没做完的子任务时另派新的会被拒绝）；不需要了就用 stop_subtask 终止。`,
+      `- 中断时没跑完的子任务已经由面板在原来的会话里接着跑：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。不要重新派，结果会照常交回给你；不需要了就用 stop_subtask 终止。`,
     )
   const runs = (task.runs ?? []).filter((r) => r.status === 'stopped' || r.status === 'running')
   if (runs.length)
@@ -115,4 +117,34 @@ export function resumeNote(
       `- 中断时一起停掉的后台命令：${jobs.map((j) => `「${j.name}」（${j.command.split('\n')[0].slice(0, 120)}）`).join('、')}。它们不会再推回结果，不要等；还需要结果就用 run_background 重新启动，不需要了就在计划里把等它的那一步改掉。`,
     )
   return lines.join('\n')
+}
+
+/**
+ * 子对话重新跑起来了（父对话继续时连带拉起，或者用户直接继续它）：父计划里等它、已经收成失败的等待改回「等待中」，
+ * 它做完时结果才对得上、父对话才会被叫醒（ADR 0042）。那一步只因为等它而退回「需要修复」的，也改回等待中。
+ * 返回有没有改动（调用方据此落盘）
+ */
+export function rearmKidWait(parent: Pick<Task, 'plans'>, kidId: string, now = new Date().toISOString()): boolean {
+  const plan = activePlan(parent)
+  if (!plan) return false
+  let changed = false
+  for (const step of plan.steps) {
+    let touched = false
+    for (const item of [...step.children, step]) {
+      const hit = item.waits.filter((w) => w.kind === 'child' && w.ref === kidId && w.state === 'failed')
+      if (!hit.length) continue
+      for (const w of hit) w.state = 'waiting'
+      changed = touched = true
+      if (item.status !== 'running' || item.waits.some((w) => w.state === 'failed')) continue
+      // 「需要修复」是 settleWait 因为等的结果失败写上的：失败的等待都恢复了，这句说明也就过时了
+      if (item.note.startsWith(FAIL_PREFIX)) item.note = ''
+      setStatus(item, 'waiting', now)
+    }
+    if (!touched || !step.children.length) continue
+    // 主步骤原先也因为「需要修复」退回了进行中：子步骤都不在做了就跟着回到等待中（rollUp 只把「待做」改成等待中）
+    if (step.status === 'running' && !step.children.some((c) => c.status === 'running')) setStatus(step, 'waiting', now)
+    rollUp(step, now)
+  }
+  if (changed) plan.updatedAt = now
+  return changed
 }

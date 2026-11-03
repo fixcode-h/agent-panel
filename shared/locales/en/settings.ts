@@ -448,8 +448,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '共 {n} 个': '{n} total',
   '还没有装 Skill': 'No skills installed yet',
   '自定义 API': 'Custom API',
-  '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Command Code 三种都能用。':
-    'Set up APIs here, then switch an agent\'s "Sign-in method" to API on its page. After editing an API, click "Update all" to write it into the config files of the agents using it; model lists still come from the agent first. Only agents that speak the protocol can use it: Anthropic for Claude Code, OpenAI Responses for Codex; Command Code takes all three.',
+  '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API，选用 API 和协议。一个 API 可以同时勾选几种协议，每种填自己的接口地址，密钥共用。改完 API 点「一键更新」（或在 Agent 页面点「更新」）才会写进 Agent 的配置文件；模型下拉优先从 Agent 读取。Agent 只能选它支持的协议：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Command Code 和 Pi 三种都能用。':
+    'Set up APIs here, then switch an agent\'s "Sign-in method" to API on its page and pick the API and protocol. One API can enable several protocols, each with its own endpoint, sharing one key. After editing an API, click "Update all" (or "Update" on the agent\'s page) to write it into the agents\' config files; model lists still come from the agent first. An agent can only pick protocols it supports: Anthropic for Claude Code, OpenAI Responses for Codex; Command Code and Pi take all three.',
   '提供方 ID': 'Provider ID',
   '留空时用 API 名称生成': 'Leave empty to derive it from the API name',
   '写进 Agent 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 Agent 也用它拼模型 ID。':
@@ -476,8 +476,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '余额不足，接口会拒绝请求': 'Balance used up — the API will reject requests',
   刷新余额: 'Refresh balance',
   点刷新按钮查看余额: 'Click refresh to check the balance',
-  协议: 'Protocol',
-  接口地址: 'Base URL',
   密钥: 'API key',
   隐藏密钥: 'Hide key',
   显示密钥: 'Show key',
@@ -1885,4 +1883,14 @@ export const EN_SETTINGS: Record<string, string> = {
   '（不属于任何对话）': '(not part of any conversation)',
   状态弹窗日志贴到最新: 'Stick the status log to the latest',
   清理已合并的分支: 'Clean up merged branches',
+  协议和接口地址: 'Protocols and endpoints',
+  没有勾选这种协议: 'Protocol not enabled',
+  '{protocol} 的接口地址': '{protocol} endpoint',
+  '密钥共用一个。读模型列表、测试连接用勾选的第一种协议；各个 Agent 在自己的设置里选用哪种。':
+    'One key is shared by all protocols. Fetching models and testing the connection use the first checked protocol; each Agent picks which protocol to use in its own settings.',
+  '已把 API 更新到 {cli} 的配置': "Updated the API in {cli}'s config",
+  '{cli} 用的协议': 'Protocol used by {cli}',
+  '这个 API 只有这一种协议是 {cli} 能用的': 'This is the only protocol of this API that {cli} supports',
+  '把这个 API 现在的地址、密钥和模型写进 {cli} 自己的配置文件':
+    "Write this API's current endpoint, key and models into {cli}'s own config file",
 }

@@ -459,6 +459,11 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 | `modelInput`               | CLI 靠模型条目自己声明的「能接收哪些输入」决定要不要把图片发给模型时（Pi 的 `input`），按模型目录的 `images` 写回这个键；`withImage` / `withoutImage` 是支持和不支持图片时写的值，目录里没登记 `images` 的模型不动          |
 
 已经能写配置文件的 CLI（Codex、Command Code、Pi、Claude Code）把 API 地址和密钥都写进各自的配置，执行时的 `env` / `args` 只留模型、思考强度和沙箱等运行参数。
+
+一个 API 可以同时支持几种协议（`ApiConfig.endpoints`：协议 → 这种协议的接口地址，密钥共用；为空的老配置只有 `protocol` / `baseUrl` 那一种）。
+CLI 选 API 时再选协议（`CliSettings.apiProtocol`），`shared/accounts.ts` 的 `cliApi` 按 `auth.api.protocols` 取两边都支持的那种、换成那种协议的地址，
+`cliSettings` 返回的 `api` 已经是换好的，模板里的 `{protocol}` / `{wire}` / `{baseUrl}` 都按它填。没选过协议时先用 API 的主协议，再取第一种两边都支持的。
+改了 API 不会自动写进 CLI 的配置文件：「API 配置」页的「一键更新」写进所有在用它的 CLI，CLI 页的「更新」只写这一个（`server/accounts.ts` 的 `applyCliApi`，页面上的选择和已保存的对不上时拒绝）。
 `{provider}` 来自 API 的 `provider`：识别到的 API 用 CLI 配置里的键（例如 `providers.tokenapi` 的 `tokenapi`），新建的从 API 名称生成。
 `{models}` / `{modelList}` 写进 provider 配置时会去掉模型 ID 上已有的 `{provider}/`，避免变成 `tokenapi/tokenapi/...`。
 

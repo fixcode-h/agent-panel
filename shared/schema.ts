@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { DARK_TEXT_LEVEL_DEFAULT, LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
 import { MarkdownStyle } from './markdown-style.ts'
 import { ComponentStyle } from './component-style.ts'
-import { ApiConfig } from './accounts.ts'
+import { API_PROTOCOLS, ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { RemoteAccess } from './remote-schema.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
@@ -2352,8 +2352,9 @@ export const CliSettings = z.object({
   env: z.array(z.object({ key: z.string().trim(), value: z.string() })).default([]),
   /** 用账号（浏览器登录）还是 API（全局设置里配的接口 + 密钥）；两种方式的模型下拉各列各的 */
   authMode: z.enum(['account', 'api']).default('account'),
-  /** API 模式用哪个 API（全局设置里 apis 的 id） */
+  /** API 模式用哪个 API（apis 的 id），和用它的哪种协议（ApiConfig.endpoints；空是没选过，按 cliApiProtocol 取默认） */
   apiId: z.string().default(''),
+  apiProtocol: z.enum(['', ...API_PROTOCOLS]).default(''),
   /** 在任务页和设置里显示账号额度（5 小时、每周用了多少） */
   showLimits: z.boolean().default(false),
   /** 上下文占用达到这个百分比时自动压缩（默认 70%，见 AUTO_COMPACT_DEFAULT）；0 表示用 CLI 自己的规则 */
