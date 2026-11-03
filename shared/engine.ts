@@ -187,10 +187,9 @@ const SLOT_PROMPT: Record<string, string> = {
 /** 节点提示词里节点自己的部分从这里开始，前面是同一个任务里各节点共用的部分 */
 export const NODE_PART = '## 当前节点'
 
-export type AgentResult =
-  | { ok: true; text: string }
-  /** stopped：用户停止；halted：别的节点失败了，这里没再继续（节点保持待执行，续跑时重来） */
-  | { ok: false; stopped?: boolean; halted?: boolean; error: string; reported?: boolean; budget?: boolean }
+/** stopped：用户停止；halted：别的节点失败了没再继续（续跑时重来）；stalled：子任务卡住被 runner 停掉（runStalled 重试） */
+type FailFlags = { stopped?: boolean; halted?: boolean; reported?: boolean; budget?: boolean; stalled?: boolean }
+export type AgentResult = { ok: true; text: string } | ({ ok: false; error: string } & FailFlags)
 /** 一轮执行的结果里「没成功」的那几种；导出给单测构造 finish 的入参 */
 export type Fail = Extract<AgentResult, { ok: false }>
 
@@ -233,6 +232,7 @@ export interface AgentCall {
   onInput?: (info: { setup: number; rules: number; fresh: boolean }) => void
   /** 只停这一次调用（终止单个子任务）；整个任务停止仍走宿主的信号 */
   signal?: AbortSignal
+  stallRetry?: boolean // 子任务：runner 也查没有响应，卡住到时间停掉这次调用、返回 stalled（helper-summary 的 runStalled）
   /**
    * 这一圈接着上一圈做（子任务、计划交回的结果），不是用户的新要求：
    * 总结下面的改动卡片接着上一圈的终点算，子任务和工作流在空档里改的文件才算得进来
@@ -3834,8 +3834,7 @@ async function runHelper(
     if (ac.signal.aborted) return stopped()
     if (r.ok) {
       const late = await settleHelpers(host, step)
-      // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的意见整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
-      // 完整内容和节点一样存成文件，交回的结果里写明去哪读
+      // 评审、测试验收的输出常比交接上限长：完整内容和节点一样存成文件，交回的结果里写明去哪读（只截开头会丢意见）
       step.output = await storeOutput(host, step, late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text, reviewing)
       step.status = 'done'
     } else {

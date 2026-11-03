@@ -17,6 +17,7 @@ import {
   type LogLine,
 } from '../../shared/lifecycle.ts'
 import { cliTrace } from '../exec/cli-trace.ts'
+import { stalledTurn } from '../exec/stall-watch.ts'
 import { heldCount } from '../exec/delivery.ts'
 import { trackedClis } from '../exec/orphans.ts'
 import { taskCliAlive } from '../exec/process.ts'
@@ -66,6 +67,12 @@ function planFacts(tk: Task, plan: NonNullable<ReturnType<typeof activePlan>>) {
 }
 
 /** 这一步（或对话自己这一轮，step 为空）正在跑的工具 */
+/** runner 已把这一轮（子任务按步骤）标成卡住：诊断直接认，不再自己按秒数另算一遍 */
+function stalledFacts(id: string, step = '') {
+  const st = stalledTurn(id, step)
+  return st ? { stalled: { since: st.since } } : {}
+}
+
 function runningTool(tk: Task, step = '') {
   for (let i = tk.messages.length - 1; i >= 0 && i >= tk.messages.length - 6; i--) {
     const m = tk.messages[i]
@@ -150,6 +157,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       exit: lastExit(parsed),
       ...(plan && { plan: planFacts(tk, plan) }),
       ...(nudged && { nudge: { key: shortKey(nudged.key), n: nudged.n, max: nudgeMax(tk) } }),
+      ...stalledFacts(id),
     }
     const agent = tk.usage.agents[tk.agentId]
     nodes.push({
@@ -196,6 +204,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
         waitsOn: [],
         trace: cliTrace(id, s.id),
         exit: lastExit(parsed, s.id),
+        ...stalledFacts(id, s.id),
       }
       nodes.push({
         id: `${id}#${s.id}`,

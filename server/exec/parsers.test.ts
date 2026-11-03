@@ -272,6 +272,16 @@ test('Claude Code：网关出错时自己重试（api_retry）画成「正在重
   assert.ok(back.some((e) => e.type === 'request_start'))
   const later = parse({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm2' } } })
   assert.ok(!later.some((e) => e.type === 'retry_ok'))
+  // 首字节超时：网关连响应头都没回，error 只有 unknown，等了多久在 waited_ms 里（用户 2026-11-03 报子任务一启动就重试）
+  const ttfb = parse({
+    type: 'system',
+    subtype: 'api_retry',
+    attempt: 1,
+    max_retries: 10,
+    error: 'unknown',
+    waited_ms: 60_012,
+  })
+  assert.equal((ttfb[0] as { error: string }).error, 'unknown 等了 60 秒没收到响应头（首字节超时）')
 })
 
 test('Codex app-server：网关把推理 delta 挂在回复条目上时思考不重复、正文不丢', async () => {

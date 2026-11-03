@@ -185,6 +185,38 @@ await runShard('子对话运行与监管', async (api) => {
     step('子任务没交结果就结束：面板在同一个会话里补问一次，交了结果再交回')
   }
 
+  // ---- 子任务卡住：面板标卡住、停掉卡住的调用，接回会话重试后做完（用户 2026-11-03 报：子任务卡死，父对话一直干等） ----
+  {
+    const hs = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      prompt: 'SPAWN_FREEZING_HELPER 派一个子任务清理构建目录',
+    })
+    const done = await waitTask(
+      hs.id,
+      (t) => t.steps.some((s) => s.slot === 'sub' && s.title === '清理构建目录' && s.status === 'done'),
+      30000,
+    )
+    const sub = done.steps.find((s) => s.slot === 'sub' && s.title === '清理构建目录')
+    const mine = done.messages.filter((m) => m.step === sub.id && m.role === 'system')
+    assert.ok(
+      mine.some((m) => m.alert?.kind === 'no_response'),
+      '卡住时在子任务里写了「没有响应」警告',
+    )
+    assert.ok(
+      mine.some((m) => /面板停掉它、接回会话重试（第 1 次）/.test(m.text)),
+      '重试前写了一行说明，不悄悄重试',
+    )
+    assert.ok(
+      calls().some((x) => x.input?.startsWith('【面板】你上一次卡住了')),
+      '在同一个会话里接着做',
+    )
+    assert.equal(sub.submitted?.state, 'done', '重试后交了结果')
+    await call('DELETE', `/tasks/${(await waitDone(hs.id, 30000)).id}`)
+    step('子任务卡住：标卡住、停掉调用，接回会话重试后做完')
+  }
+
   // ---- 子对话列表口径：在等后台命令的照样列，父对话自己在跑时也照样给 ----
   // 以前运行区自己写 `working && !resolved`，在等后台命令、已解决但还在跑的子对话只在悬浮层里有、
   // 运行区没有，同一个页面对不上数。这里固定接口要如实给「还在跑」和「在等什么」，
