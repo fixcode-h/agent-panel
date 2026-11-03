@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
   Box,
   Diff,
@@ -29,6 +29,9 @@ import { childIcon } from '@shared/task'
 import type { ChildSummary } from './child-line'
 import { ChangesTree } from './ChangesTree'
 import { TaskStatusIcon } from './TaskStatusIcon'
+import { ChildSwitcher } from './ChildSwitcher'
+import { PaneNavCtx, PaneToolbarCtx, useChildList } from './child-open'
+import { InlineRename } from '@/components/ui/inline-rename'
 
 /** 3D 预览要 three.js（几百 KB），只有模型设计对话用到：单独分块，按需加载 */
 const ModelPreview = lazy(() => import('./ModelPreview').then((m) => ({ default: m.ModelPreview })))
@@ -132,6 +135,25 @@ export function TaskFiles({
   const [mode, setMode] = useState<'tree' | 'list'>('list')
   /** 最近点开看差异的文件：差异窗口关掉后列表里还标着，知道刚看到哪 */
   const [picked, setPicked] = useState<string | null>(null)
+  // 页签条右端留给子对话的工具区（ADR 0047）：子对话面板把按钮挂进来；没选中子对话页签时藏起来、不卸载
+  const [childSlot, setChildSlot] = useState<HTMLElement | null>(null)
+  // 双击子对话页签改名：页签就地换成输入框
+  const [renaming, setRenaming] = useState<string | null>(null)
+  // 切换子对话：父对话的子对话列表和「在右栏打开」都在外层的上下文里
+  const siblings = useChildList()
+  const nav = useContext(PaneNavCtx)
+  const renameChild = async (value: string) => {
+    const title = value.trim()
+    setRenaming(null)
+    if (!child || !title || title === child.task?.title) return
+    try {
+      upsertTask(taskSummary(await api.renameTask(child.id, title)))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  // 换了子对话就不再改上一个的名字
+  useEffect(() => setRenaming(null), [childId])
 
   // 改动过一次（新增、改了行数）才重新读：执行中每秒都在更新任务，不能跟着刷
   const changes = node
@@ -161,8 +183,48 @@ export function TaskFiles({
   }, [tab, dirs, files.version])
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 右栏固定两个页签：项目文件 / 本对话改动，按内容宽度左对齐（设计稿 .ptab.sm） */}
-      <TabBar label={t('文件视图')} variant="fit">
+      {/* 右栏固定两个页签：项目文件 / 本对话改动，按内容宽度左对齐（设计稿 .ptab.sm）。
+          右端是当前页签的工具区（ADR 0047）：文件页放查找 / 显示方式和刷新，子对话页放子对话自己的按钮。
+          group/hdr：子对话的「解决」按钮悬停页签条才显示 */}
+      <TabBar
+        label={t('文件视图')}
+        variant="fit"
+        className="group/hdr"
+        trailingLabel={onChild ? t('子对话操作') : t('文件操作')}
+        trailing={
+          <>
+            {child && <div ref={setChildSlot} className={cn('flex items-center gap-0.5', !onChild && 'hidden')} />}
+            {!onChild && !onModel && (
+              <>
+                {tab === 'files' ? (
+                  <IconButton
+                    icon={Search}
+                    label={t('查找文件')}
+                    size="sm"
+                    tone="bare"
+                    aria-pressed={searchOpen}
+                    onClick={() => setSearchOpen((v) => !v)}
+                    className={cn(searchOpen && 'bg-sel text-fg')}
+                  />
+                ) : (
+                  changes.length > 0 && (
+                    <IconButton
+                      icon={mode === 'tree' ? List : ListTree}
+                      label={mode === 'tree' ? t('平铺显示每个文件') : t('按目录分组显示')}
+                      size="sm"
+                      tone="bare"
+                      onClick={() => setMode(mode === 'tree' ? 'list' : 'tree')}
+                    />
+                  )
+                )}
+                <IconButton label={t('刷新文件')} size="sm" tone="bare" onClick={files.refresh}>
+                  <RefreshCw className={cn('h-3.5 w-3.5', files.loading && 'animate-spin')} />
+                </IconButton>
+              </>
+            )}
+          </>
+        }
+      >
         {task.modelDesign && (
           <TabItem
             active={onModel}
@@ -176,36 +238,64 @@ export function TaskFiles({
           active={tab === 'files'}
           onSelect={() => setTab('files')}
           icon={<FileText className="h-[0.8125rem] w-[0.8125rem]" />}
+          title={t('项目文件')}
         >
-          {t('项目文件')}
+          {/* 页签条窄了没选中的文件页签只留图标（ADR 0047 收缩顺序最后一步） */}
+          <span className={cn(tab !== 'files' && '@max-[440px]:sr-only')}>{t('项目文件')}</span>
         </TabItem>
         <TabItem
           active={tab === 'changes'}
           onSelect={() => setTab('changes')}
           icon={<Diff className="h-[0.8125rem] w-[0.8125rem]" />}
           tag={changes.length > 0 ? changes.length : undefined}
-          title={changes.length > 0 ? `+${add} -${del}` : undefined}
+          title={changes.length > 0 ? `${t('本对话改动')} +${add} -${del}` : t('本对话改动')}
         >
-          {t('本对话改动')}
+          <span className={cn(tab !== 'changes' && '@max-[440px]:sr-only')}>{t('本对话改动')}</span>
         </TabItem>
-        {child && (
-          <TabItem
-            active={onChild}
-            onSelect={() => setTab('child')}
-            onClose={child.onClose}
-            closeLabel={t('关闭子对话')}
-            title={[t('子对话'), child.task?.title].filter(Boolean).join(' · ')}
-            icon={
-              child.task ? (
-                <TaskStatusIcon status={child.task.status} icon={childIcon(child.task)} className="h-3.5 w-3.5" />
-              ) : (
-                <MessageSquareText className="h-[0.8125rem] w-[0.8125rem]" />
-              )
-            }
-            className="max-w-[12rem] min-w-0"
-          >
-            {child.task?.title ?? t('子对话')}
-          </TabItem>
+        {child && renaming !== null ? (
+          <div className="flex max-w-[14rem] min-w-0 shrink-0 items-center">
+            <InlineRename
+              value={renaming}
+              size="sm"
+              label={t('子对话标题')}
+              onCommit={(v) => void renameChild(v)}
+              onCancel={() => setRenaming(null)}
+              className="w-full"
+            />
+          </div>
+        ) : (
+          child && (
+            <TabItem
+              active={onChild}
+              onSelect={() => setTab('child')}
+              onDoubleClick={() => setRenaming(child.task?.title ?? '')}
+              extra={
+                <ChildSwitcher
+                  variant="chevron"
+                  list={siblings}
+                  current={child.id}
+                  onOpen={(id) => {
+                    if (id === child.id) setTab('child')
+                    else nav?.child?.(id)
+                  }}
+                />
+              }
+              onClose={child.onClose}
+              closeLabel={t('关闭子对话')}
+              title={[t('子对话'), child.task?.title].filter(Boolean).join(' · ')}
+              icon={
+                child.task ? (
+                  <TaskStatusIcon status={child.task.status} icon={childIcon(child.task)} className="h-3.5 w-3.5" />
+                ) : (
+                  <MessageSquareText className="h-[0.8125rem] w-[0.8125rem]" />
+                )
+              }
+              className="max-w-[14rem] min-w-[5rem] shrink"
+            >
+              {/* 界面检查按 data-child-tab 读右栏打开的是哪个子对话 */}
+              <span data-child-tab>{child.task?.title ?? t('子对话')}</span>
+            </TabItem>
+          )
         )}
       </TabBar>
       {/* 子对话页签：切到文件、改动时只是藏起来，不卸载 */}
@@ -215,7 +305,7 @@ export function TaskFiles({
           data-child-view
           className={cn('flex min-h-0 flex-1 flex-col', !onChild && 'hidden')}
         >
-          {child.view}
+          <PaneToolbarCtx.Provider value={childSlot}>{child.view}</PaneToolbarCtx.Provider>
         </section>
       )}
       {onModel && (
@@ -225,38 +315,14 @@ export function TaskFiles({
       )}
       {!onChild && !onModel && (
         <>
-          {/* 项目信息行：分支 · 改动数；行尾是这一页的工具（查找、显示方式）和刷新 */}
-          <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-footnote text-subtle">
+          {/* 项目信息行：分支 · 改动数，只放信息；这一页的工具在页签条右端（ADR 0047） */}
+          <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b px-4 text-footnote text-subtle">
             <GitBranch className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={2.2} />
             <span className="min-w-0 truncate font-mono text-footnote text-muted" title={files.info?.dir ?? dir}>
               {files.info?.branch ?? t('没有分支')}
             </span>
             <span aria-hidden>·</span>
             <span className="shrink-0">{t('{n} 个改动', { n: changes.length })}</span>
-            <div className="ml-auto flex shrink-0 items-center gap-0.5">
-              {tab === 'files' ? (
-                <IconButton
-                  icon={Search}
-                  label={t('查找文件')}
-                  size="2xs"
-                  aria-pressed={searchOpen}
-                  onClick={() => setSearchOpen((v) => !v)}
-                  className={cn(searchOpen && 'bg-sel text-fg')}
-                />
-              ) : (
-                changes.length > 0 && (
-                  <IconButton
-                    icon={mode === 'tree' ? List : ListTree}
-                    label={mode === 'tree' ? t('平铺显示每个文件') : t('按目录分组显示')}
-                    size="2xs"
-                    onClick={() => setMode(mode === 'tree' ? 'list' : 'tree')}
-                  />
-                )
-              )}
-              <IconButton label={t('刷新文件')} size="2xs" onClick={files.refresh}>
-                <RefreshCw className={cn('h-3 w-3', files.loading && 'animate-spin')} />
-              </IconButton>
-            </div>
           </div>
           {tab === 'files' ? (
             <>

@@ -303,7 +303,7 @@ await runShard(import.meta.filename, async (api) => {
         else {
           const opened = await p
             .waitForFunction(
-              (title) => !!document.querySelector('[data-child-view]')?.innerText.includes(title),
+              (title) => (document.querySelector('[data-child-tab]')?.textContent || '').includes(title),
               clicked,
               { timeout: 3000 },
             )
@@ -330,8 +330,7 @@ await runShard(import.meta.filename, async (api) => {
       // 右栏子对话标题行左侧的切换下拉：和运行区那处一致，Esc 关、鼠标和键盘都要真的切过去
       {
         /** 右栏标题（h2）现在的文字：切换是否生效看它 */
-        const paneTitle = () =>
-          p.evaluate(() => (document.querySelector('[data-child-view] h2')?.textContent || '').trim())
+        const paneTitle = () => p.evaluate(() => (document.querySelector('[data-child-tab]')?.textContent || '').trim())
         /** 菜单里的条目：标题、选中标记、键盘高亮 */
         const menuItems = () =>
           p.evaluate(() =>
@@ -345,7 +344,7 @@ await runShard(import.meta.filename, async (api) => {
         const switchedTo = (title) =>
           p
             .waitForFunction(
-              (name) => (document.querySelector('[data-child-view] h2')?.textContent || '').trim() === name,
+              (name) => (document.querySelector('[data-child-tab]')?.textContent || '').trim() === name,
               title,
               { timeout: 3000 },
             )
@@ -353,7 +352,8 @@ await runShard(import.meta.filename, async (api) => {
               () => true,
               () => false,
             )
-        const trigger = p.locator('[data-child-view] button[aria-label="切换子对话"]').first()
+        // 切换下拉在右栏子对话页签上（ADR 0047）：标题后面那个 ▾
+        const trigger = p.locator('button[data-child-switch]').first()
         const openMenu = async () => {
           await trigger.click()
           await p
@@ -363,7 +363,7 @@ await runShard(import.meta.filename, async (api) => {
             .catch(() => {})
           return menuItems()
         }
-        if (!(await trigger.count())) errors.push('右栏子对话标题左边没有切换子对话的按钮')
+        if (!(await trigger.count())) errors.push('右栏子对话页签上没有切换子对话的 ▾')
         else {
           const currentTitle = await paneTitle()
           const items = await openMenu()
@@ -463,9 +463,13 @@ await runShard(import.meta.filename, async (api) => {
           })
         const openedFor = (title) =>
           p
-            .waitForFunction((name) => !!document.querySelector('[data-child-view]')?.innerText.includes(name), title, {
-              timeout: 3000,
-            })
+            .waitForFunction(
+              (name) => (document.querySelector('[data-child-tab]')?.textContent || '').includes(name),
+              title,
+              {
+                timeout: 3000,
+              },
+            )
             .then(
               () => true,
               () => false,

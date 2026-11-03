@@ -1,7 +1,7 @@
 import { useUserName } from '@/lib/user-name'
 import { Fragment } from 'react'
 import * as M from '@radix-ui/react-dropdown-menu'
-import { Check, CheckCircle2, GitBranch, ListTree } from 'lucide-react'
+import { Check, CheckCircle2, ChevronDown, GitBranch, ListTree } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { childDoneDot, childIcon, childStage, sortChildren, stopReasonText, type TaskStage } from '@shared/task'
 import { cn } from '@/lib/utils'
@@ -108,7 +108,9 @@ export function childGroups(list: ChildSummary[], grouped: boolean) {
 }
 
 /**
- * 子对话切换下拉：标题旁的小按钮，列出这个父对话的全部子对话，点一项就在右栏打开。
+ * 子对话切换下拉：列出这个父对话的全部子对话，点一项就在右栏打开。
+ * 右栏子对话页签上是标题后面的 ▾（variant="chevron"，只有一个子对话时没得切、不画）；
+ * 其余地方是 ListTree 图标按钮。
  * 排序和分组复用悬浮层「全部」那一套（sortChildren + childGroups），当前打开的那项带勾选。
  * Radix 的 DropdownMenu 自己处理点外部关闭、Esc、上下键和 Enter
  */
@@ -117,25 +119,45 @@ export function ChildSwitcher({
   current,
   onOpen,
   className,
+  variant = 'icon',
 }: {
   list: ChildSummary[]
   /** 右栏当前打开的子对话 id：没有时为空 */
   current: string
   onOpen: (id: string) => void
   className?: string
+  /** chevron：页签上的 ▾，和页签的关闭按钮同一套尺寸 */
+  variant?: 'icon' | 'chevron'
 }) {
-  if (!list.length) return null
+  if (!list.length || (variant === 'chevron' && list.length < 2)) return null
   return (
     <M.Root modal={false}>
       <M.Trigger asChild>
-        <IconButton
-          size="2xs"
-          icon={ListTree}
-          label={t('切换子对话')}
-          // 行本身是可点的（打开子对话）：点这个按钮只开列表，不跟着打开当前行
-          onClick={(e) => e.stopPropagation()}
-          className={className}
-        />
+        {variant === 'chevron' ? (
+          <button
+            type="button"
+            aria-label={t('切换子对话')}
+            title={t('切换子对话')}
+            data-child-switch
+            // 页签本身点了是选中它：点 ▾ 只开列表
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              'flex h-[1.125rem] w-[1.125rem] shrink-0 cursor-pointer items-center justify-center rounded-sm text-subtle hover:bg-hover hover:text-fg data-[state=open]:bg-hover data-[state=open]:text-fg',
+              className,
+            )}
+          >
+            <ChevronDown className="h-3 w-3" strokeWidth={2.4} />
+          </button>
+        ) : (
+          <IconButton
+            size="2xs"
+            icon={ListTree}
+            label={t('切换子对话')}
+            // 行本身是可点的（打开子对话）：点这个按钮只开列表，不跟着打开当前行
+            onClick={(e) => e.stopPropagation()}
+            className={className}
+          />
+        )}
       </M.Trigger>
       <M.Portal>
         <M.Content

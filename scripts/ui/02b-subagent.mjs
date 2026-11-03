@@ -248,7 +248,9 @@ await runShard(import.meta.filename, async (api) => {
     if (!pane) errors.push('独立分支：用键盘在行上按 Enter 没有打开子对话')
     else {
       // 面板先出来、子对话内容后加载：等标题真的画出来再判断打开的是哪一个
-      const rightTitle = await childView(p)
+      // 标题在右栏的子对话页签上（ADR 0047）
+      const rightTitle = await p
+        .locator('[data-child-tab]')
         .getByText('Git+worktree 不再提示文件撞车')
         .first()
         .waitFor({ timeout: 5000 })
@@ -503,13 +505,43 @@ await runShard(import.meta.filename, async (api) => {
         errors.push('子对话页签：子对话没有在右栏显示')
       if (!(await childTab.count())) errors.push('子对话页签：右栏页签条上没有子对话的页签')
       else {
+        // 页签条右端的工具区跟着页签换（ADR 0047）：子对话页只有子对话的按钮，文件页只有文件页的按钮
+        const tools = (name) => p.getByRole('toolbar', { name })
+        const has = (name, btn) =>
+          tools(name).getByRole('button', { name: btn, exact: true }).filter({ visible: true }).count()
+        if (!(await has('子对话操作', '更多操作'))) errors.push('工具区：子对话页签上没有子对话的「更多操作」')
+        if (await has('子对话操作', '查找文件')) errors.push('工具区：子对话页签上出现了文件页的「查找文件」')
+        if (await aside.locator('[data-child-view] header[class*="group/hdr"]').count())
+          errors.push('子对话页签：子对话面板里还画着自己的标题栏')
         await tabs.getByRole('tab').first().click()
         await settle(p)
         if (await childView(p).count()) errors.push('子对话页签：点项目文件页签后还显示子对话')
         if (!(await childTab.count())) errors.push('子对话页签：切到项目文件后子对话页签被关掉了')
+        if (!(await has('文件操作', '查找文件'))) errors.push('工具区：项目文件页签上没有「查找文件」')
+        if (await has('文件操作', '更多操作')) errors.push('工具区：项目文件页签上还显示子对话的「更多操作」')
         await childTab.click()
         await settle(p)
         if (!(await childView(p).count())) errors.push('子对话页签：点子对话页签没切回子对话')
+        // 双击子对话页签就地改名，Esc 取消
+        await childTab.dblclick()
+        const box = p.getByRole('textbox', { name: '子对话标题' })
+        if (
+          !(await box.waitFor({ timeout: 3000 }).then(
+            () => true,
+            () => false,
+          ))
+        )
+          errors.push('子对话页签：双击页签没有出现改名输入框')
+        else {
+          await p.keyboard.press('Escape')
+          if (
+            !(await box.waitFor({ state: 'detached', timeout: 3000 }).then(
+              () => true,
+              () => false,
+            ))
+          )
+            errors.push('子对话页签：改名时按 Esc 没有取消')
+        }
       }
       await check(p, '子对话-页签')
     }
@@ -666,7 +698,9 @@ await runShard(import.meta.filename, async (api) => {
       else {
         await openRow.click()
         const pane = '[data-child-view]'
-        const solve = p.locator(`${pane} button[aria-label="解决"]`).first()
+        // 子对话的按钮在右栏页签条右端的工具区（ADR 0047），不在子对话面板里
+        const tools = '[role="toolbar"][aria-label="子对话操作"]'
+        const solve = p.locator(`${tools} button[aria-label="解决"]`).first()
         const opened = await solve.waitFor({ timeout: 10000 }).then(
           () => true,
           () => false,
@@ -675,16 +709,19 @@ await runShard(import.meta.filename, async (api) => {
         else {
           /** 右栏子对话的计划折叠头：说了什么、还挂着几步没做完、标题栏是不是已解决 */
           const head = () =>
-            p.evaluate((sel) => {
-              const box = document.querySelector(`${sel} [data-status-row="plan"]`)
-              const btn = box?.querySelector('button[aria-label="执行计划"]')
-              return {
-                text: (btn?.textContent || '').replace(/\s+/g, ' ').trim(),
-                left: !!box?.querySelector('[data-plan-left]'),
-                solved: !!document.querySelector(`${sel} [title="已解决"]`),
-                resolveBtn: !!document.querySelector(`${sel} button[aria-label="解决"]`),
-              }
-            }, pane)
+            p.evaluate(
+              ([sel, bar]) => {
+                const box = document.querySelector(`${sel} [data-status-row="plan"]`)
+                const btn = box?.querySelector('button[aria-label="执行计划"]')
+                return {
+                  text: (btn?.textContent || '').replace(/\s+/g, ' ').trim(),
+                  left: !!box?.querySelector('[data-plan-left]'),
+                  solved: !!document.querySelector(`${bar} [title="已解决"]`),
+                  resolveBtn: !!document.querySelector(`${bar} button[aria-label="解决"]`),
+                }
+              },
+              [pane, tools],
+            )
           const before = await head()
           if (!before.text.includes(`计划 ${done}/6`))
             errors.push(`点解决收口计划：前提不成立，折叠头是「${before.text}」，不是「计划 ${done}/6」`)
