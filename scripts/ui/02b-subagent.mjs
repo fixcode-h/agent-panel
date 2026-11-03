@@ -882,11 +882,21 @@ await runShard(import.meta.filename, async (api) => {
       if (!(await dlg.getByText('上周的重构把派发挪进了循环里').count()))
         errors.push('诊断报告：第 2 版没有显示对上一版意见的回答')
       // 选中根因那段文字标注：标注能选种类，「有疑问，再查」随之可点
-      const target = dlg.getByText('store.ts 删除最后一件时提前 return', { exact: false }).first()
-      await target.selectText().catch(() => {})
-      await p.mouse.up().catch(() => {})
-      const mark = dlg.getByRole('button', { name: '标注', exact: true })
-      if (await mark.count()) {
+      // 和阶段确认那一步（02d）一样用真实的鼠标拖选：程序化选区不会触发弹窗里的 mouseup
+      await settle(p)
+      const b = await dlg.getByText('store.ts 删除最后一件时提前 return', { exact: false }).first().boundingBox()
+      if (b) {
+        await p.mouse.move(b.x + 2, b.y + b.height / 2)
+        await p.mouse.down()
+        await p.mouse.move(b.x + b.width - 2, b.y + b.height / 2, { steps: 5 })
+        await p.mouse.up()
+      }
+      const mark = p.getByRole('button', { name: '标注', exact: true })
+      const shown = await mark.waitFor({ timeout: 3000 }).then(
+        () => true,
+        () => false,
+      )
+      if (shown) {
         await mark.click()
         if (!(await dlg.getByRole('radiogroup', { name: '标注 1 的种类' }).count()))
           errors.push('诊断报告：标注上没有「疑问 / 改方案 / 补充信息」的选择')
