@@ -17,7 +17,7 @@
 - 全部 TypeScript，不用 Python：前端 `web/`（React 19 + Vite + Tailwind v4 + Radix UI + @xyflow/react），
   服务端 `server/`（Hono，只监听 127.0.0.1），前后端共用的结构和逻辑在 `shared/`（zod schema、流程图、执行引擎）。
 - 用户数据是数据目录（默认 `~/.agent-panel`）下的 JSON 文件。
-- 在线演示（`vite build --mode demo`）把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。
+- 在线演示（`npm run build:demo`，即 `vite build --mode demo`）把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。
 - 自带 Skill 在 `skills/`，内置角色和工作流模板在 `shared/builtin/`，浏览器扩展在 `extension/`。
 
 ## 硬规则
@@ -60,11 +60,11 @@ npm run test:affected # 按影响面只跑受本次改动影响的单测（含�
 npm run test:failed  # 只复测上一次还失败的单测文件（e2e / 界面检查加 --failed）；完整输出在 logs/tests/
 npm run test:e2e     # 端到端测试（用 scripts/fake-cli 模拟各个 CLI）
 npm run test:e2e:wsl # 同上，在 WSL 里跑（Windows 开发机上用这个）
-node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo（产物和源码对不上会直接失败），分片在 scripts/ui/ 并行跑，截图在 ui-shots/
+node scripts/ui-check.mjs   # 界面检查：先 npm run build:demo（产物和源码对不上会直接失败），分片在 scripts/ui/ 并行跑，截图在 ui-shots/
 npm run build        # 正式版前端
-npx vite build --mode demo   # 在线演示版
+npm run build:demo   # 在线演示版（vite build --mode demo）
 npm run package      # 出包到 release/（正式版，不含演示内容）
-npx prettier --write <文件>  # 格式化（配置在 .prettierrc.json）
+npm run format       # 格式化（配置在 config/.prettierrc.json；只格式化某个文件：npx prettier --write --config config/.prettierrc.json --ignore-path .gitignore --ignore-path config/.prettierignore <文件>）
 ```
 
 在 Windows 上测试时，端到端测试放到本机的 WSL（Ubuntu 24.04）里运行，不在 Windows 本机直接跑。
@@ -74,8 +74,8 @@ npx prettier --write <文件>  # 格式化（配置在 .prettierrc.json）
 以前反复返工的几件事，提交前过一遍：
 
 1. `git status --short` 看清楚要提交的文件：新文件都 add 了，测试或 CLI 留下的临时输出没混进来。
-2. 本地只跑受影响的测试，全量交给 CI（推到 `dev` 每次都会跑全量单测、e2e 和界面检查）：`npm run typecheck && npm run lint && npm run test:affected`（改动已提交时加 `-- --since <开工时的提交>`）。格式问题 `npx prettier --write` 改掉，别留给下一个提交。
-   - `test:affected` 按 import 依赖算影响面：动到高风险区或影响面过宽时它自己会改跑全量单测，按它的结论来，不自己缩回增量；它列出的界面分片和「必须跑 e2e」也要照跑（界面分片先 `npx vite build --mode demo`）。
+2. 本地只跑受影响的测试，全量交给 CI（推到 `dev` 每次都会跑全量单测、e2e 和界面检查）：`npm run typecheck && npm run lint && npm run test:affected`（改动已提交时加 `-- --since <开工时的提交>`）。格式问题 `npm run format` 改掉，别留给下一个提交。
+   - `test:affected` 按 import 依赖算影响面：动到高风险区或影响面过宽时它自己会改跑全量单测，按它的结论来，不自己缩回增量；它列出的界面分片和「必须跑 e2e」也要照跑（界面分片先 `npm run build:demo`）。
    - 不主动跑全量 `test:unit` / `test:e2e` / `ui-check`；推送后 CI 失败时，用 `npm run test:failed`、`npm run test:e2e -- --failed`、`node scripts/ui-check.mjs <分片>` 只复测失败的部分。
 3. 改了提示词或文案，搜一下测试里有没有断言原句。
 4. `node scripts/lessons.mjs` 对照这次改动的相关教训。

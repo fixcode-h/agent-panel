@@ -1,5 +1,5 @@
 /**
- * scripts/lib/demo-build-info.mjs 的类型声明：vite.config.ts 会 import 它（demo 构建结束时写构建标记），
+ * scripts/lib/demo-build-info.mjs 的类型声明：config/vite.config.ts 会 import 它（demo 构建结束时写构建标记），
  * 脚本本身是 .mjs（ui-check 直接由 node 跑），所以类型单独写这一份。
  */
 export declare const BUILD_INFO_FILE: string

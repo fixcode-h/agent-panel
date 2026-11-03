@@ -43,7 +43,7 @@ export const SAME_DIR_FALLBACK_MAX = 6
 
 /**
  * 参与依赖图的目录：CLI 只扫这几棵目录，`missing-source`（文件被删 / 改名）也只对它们里的文件算。
- * 目录外的源码（`extension/*.js`、根目录的 `vite.config.ts`）不参与单测，改它们不该强制全量。
+ * 目录外的源码（`extension/*.js`、`config/` 下的 `vite.config.ts`）不参与单测，改它们不该强制全量。
  */
 export const DEPENDENCY_DIRS = ['shared/', 'server/', 'web/src/', 'scripts/']
 
@@ -194,7 +194,7 @@ export function planChangedTests({ changed, testFiles, sourceFiles, covers = {},
   const codeChanged = files.filter((f) => SOURCE_FILE.test(f))
   // 已删除 / 改名 / 不在扫描范围的文件：图里没有它，依赖它的文件反查不到，只能保守全量。
   // （旧口径按路径文本比对，删掉文件也能命中依赖它的测试，换成真实文件匹配后要补上这条）
-  // 只对参与依赖图的目录算：`extension/`、`vite.config.ts` 这类本来就不进图，删改它们和单测无关。
+  // 只对参与依赖图的目录算：`extension/`、`config/vite.config.ts` 这类本来就不进图，删改它们和单测无关。
   if (sourceFiles) {
     const scanned = new Set(sourceFiles.map(norm))
     const missing = codeChanged.filter((f) => inDependencyDirs(f) && !scanned.has(f))
@@ -230,7 +230,7 @@ export function planChangedTests({ changed, testFiles, sourceFiles, covers = {},
     if (risk && !fullReasons.some((r) => r.code === 'high-risk'))
       addFull('high-risk', 'tests', `${file} 在「${risk.why}」高风险区，增量挑不出可靠范围，跑全量单测 + e2e`)
     if (!SOURCE_FILE.test(file) || !inDependencyDirs(file)) {
-      // 目录外的源码（extension/、vite.config.ts）不参与单测，当作不涉及测试的改动
+      // 目录外的源码（extension/、config/vite.config.ts）不参与单测，当作不涉及测试的改动
       ignored.push(file)
       continue
     }
@@ -352,9 +352,9 @@ export function planChangedTests({ changed, testFiles, sourceFiles, covers = {},
           : '',
       // 界面检查的产物必须是这次源码构建出来的（ui-check 会校验），所以先构建再按分片跑
       ui: fullUi.required
-        ? 'npx vite build --mode demo && node scripts/ui-check.mjs'
+        ? 'npm run build:demo && node scripts/ui-check.mjs'
         : shardList.length
-          ? `npx vite build --mode demo && node scripts/ui-check.mjs ${shardList.map((s) => s.replace(/\.mjs$/, '')).join(' ')}`
+          ? `npm run build:demo && node scripts/ui-check.mjs ${shardList.map((s) => s.replace(/\.mjs$/, '')).join(' ')}`
           : '',
     },
   }

@@ -5,7 +5,12 @@
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client"],
-    "tsBuildInfoFile": "./.tmp/tsc/test.tsbuildinfo"
+    "tsBuildInfoFile": "../.tmp/tsc/test.tsbuildinfo"
   },
-  "include": ["shared/**/*.test.ts", "web/src/**/*.test.ts", "web/src/**/*.test.tsx", "web/src/settings-index.d.ts"]
+  "include": [
+    "../shared/**/*.test.ts",
+    "../web/src/**/*.test.ts",
+    "../web/src/**/*.test.tsx",
+    "../web/src/settings-index.d.ts"
+  ]
 }
