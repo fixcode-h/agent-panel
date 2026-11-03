@@ -1893,4 +1893,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '这个 API 只有这一种协议是 {cli} 能用的': 'This is the only protocol of this API that {cli} supports',
   '把这个 API 现在的地址、密钥和模型写进 {cli} 自己的配置文件':
     "Write this API's current endpoint, key and models into {cli}'s own config file",
+  '每个模型至少要留一种协议，不用的模型直接移除': "Each model needs at least one protocol; remove models you don't use",
+  可用的协议: 'Available for',
+  '{model} 在 {protocol} 下可用': '{model} available over {protocol}',
+  '这个 API 没有勾选 {protocol} 协议': "This API doesn't have {protocol} enabled",
 }

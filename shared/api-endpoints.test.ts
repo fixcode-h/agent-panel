@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ApiConfig, apiEndpoint, apiProtocols, cliApiProtocol, modelsForProtocols, withEndpoints } from './accounts.ts'
+import {
+  ApiConfig,
+  apiEndpoint,
+  apiModelsForProtocol,
+  apiProtocols,
+  cliApiProtocol,
+  modelsForProtocols,
+  withEndpoints,
+} from './accounts.ts'
 import { getCli } from './clis.ts'
 import { Settings } from './schema.ts'
 import { cliSettings } from './settings.ts'
@@ -64,4 +72,19 @@ test('几种协议一起过滤模型：有一种协议对得上就保留', () =>
     'a-responses',
     'c',
   ])
+})
+
+test('各协议分配不同的可选模型：Agent 选了哪种协议只列那种协议的模型，没分配的都能用', () => {
+  const api = relay({
+    protocol: 'anthropic',
+    endpoints: { anthropic: '', 'openai-chat': '' },
+    models: ['claude-x', 'gpt-y', 'shared-z'],
+    modelProtocols: { 'claude-x': ['anthropic'], 'gpt-y': ['openai-chat'] },
+  })
+  assert.deepEqual(apiModelsForProtocol(api, 'anthropic'), ['claude-x', 'shared-z'])
+  const settings = Settings.parse({
+    apis: [api],
+    clis: { commandcode: { authMode: 'api', apiId: 'r', apiProtocol: 'openai-chat' } },
+  })
+  assert.deepEqual(cliSettings(settings, 'commandcode').api?.models, ['gpt-y', 'shared-z'])
 })
