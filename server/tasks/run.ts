@@ -436,8 +436,10 @@ export function createRun(sc: TasksScope) {
                 if (over || task.mode !== 'chat') return
                 // Chat 页只回答了一句、没动手的那一轮不推；项目里的对话按计划推（计划没做完、或动了手却没列计划，见 nudgePlan）
                 if (turn.tools <= 0 && isChatMode(entry.task)) return
+                // 有子对话在等它收尾时先推收尾：这时计划那一步写着「等子对话」，nudgePlan 会当成在等别人而不推
                 return sc
-                  .nudgePlan(entry.task, turn)
+                  .nudgeWrapUp(entry.task)
+                  .then((pushed) => pushed || sc.nudgePlan(entry.task, turn))
                   .catch((e) =>
                     log.warn('task', '推对话接着做计划失败', { task: task.id, error: (e as Error).message }),
                   )

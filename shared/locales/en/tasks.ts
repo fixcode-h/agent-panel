@@ -1695,6 +1695,9 @@ export const EN_TASKS: Record<string, string> = {
   '计划还在等子对话 {list}，它们已经不在跑了，父对话却没被叫醒':
     "The plan is still waiting on sub-chats {list}; they are no longer running, but the parent wasn't woken up",
   '这一轮说完了，在等子对话：{list}': 'The turn is done, waiting for sub-chats: {list}',
+  '子对话 {list} 已经请父对话收尾 {m} 分钟了，父对话没有合回也没有退回':
+    'Sub-chats {list} asked the parent to wrap up {m} minutes ago; the parent has neither merged nor sent them back',
+  '面板已提醒 {n}/{max} 次': 'The panel has reminded it {n}/{max} times',
   '有 {n} 条消息排着等「这一轮结束后处理」，可这一轮已经结束了，没人接':
     '{n} messages are queued for "after this turn", but the turn has ended and nothing will pick them up',
   '已经不在执行，排队等 API 的标记却还留着': 'No longer running, but the "queued for API" marker is still there',

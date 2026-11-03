@@ -388,6 +388,8 @@ export interface TasksScope {
   ) => Promise<void>
   notePlanInput: (tk: Task, skip?: boolean, now?: string) => boolean
   nudgePlan: (conv: Task, turn?: TurnInfo) => Promise<boolean>
+  /** 父对话一轮结束时有子对话在等它收尾：推它 finish_child（见 drive.ts 的 nudgeWrapUp） */
+  nudgeWrapUp: (conv: Task) => Promise<boolean>
   /** 推进计数的现状（诊断用）：最后一个进度指纹和推了几次 */
   nudgeState: (id: string) => { key: string; n: number } | undefined
   /** 用户亲自发了新消息：推进次数清零（ADR 0041） */
@@ -749,7 +751,7 @@ export interface TasksScope {
       }
       peer?: PeerFrom
     },
-  ) => Promise<void>
+  ) => Promise<boolean>
   withJobs: (task: Task) => Task
   withLive: (task: Task) => Promise<Task>
   workflowCatalog: (

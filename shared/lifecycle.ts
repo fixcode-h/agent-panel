@@ -162,7 +162,13 @@ export interface LifeFacts {
   /** 还在跑的后台命令数 */
   jobs: number
   /** 计划里正在等的子对话，以及它们现在的状态 */
-  waitsOn: { id: string; title: string; state: ConvState }[]
+  waitsOn: {
+    id: string
+    title: string
+    state: ConvState
+    /** 它已经请父对话收尾、还在等父对话处理（见 shared/task.ts 的 wrapUpPending）：请求的时间 */
+    wrapAt?: string
+  }[]
   trace?: TraceFacts
   exit?: ProcessExit
   /** 面板计划（没有就是 undefined）：做了几步、一共几步、在等几步、还剩几步要做、进度指纹（短） */
@@ -308,13 +314,33 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
   // ---- 不论状态都要查的矛盾 ----
   if (f.state === 'waiting' || f.state === 'running' || f.status === 'running') {
     // 计划在等的子对话已经不动了，父对话却没被叫醒：交回的结果没送到，或者送到了没开新的一轮
-    const idle = f.waitsOn.filter((k) => k.state !== 'running' && k.state !== 'waiting' && k.state !== 'needs')
+    const idle = f.waitsOn.filter(
+      (k) => !k.wrapAt && k.state !== 'running' && k.state !== 'waiting' && k.state !== 'needs',
+    )
     if (idle.length && !f.working)
       add(
         'child-idle-parent-waiting',
         'danger',
         t('计划还在等子对话 {list}，它们已经不在跑了，父对话却没被叫醒', { list: kidsText(idle) }),
       )
+  }
+  // 子对话请父对话收尾了，父对话这一轮却没合回也没退回：等的其实是父对话自己（用户 2026-11-03 报的互相等）
+  const wrap = f.working ? [] : f.waitsOn.filter((k) => k.wrapAt)
+  if (wrap.length) {
+    const oldest = Math.min(...wrap.map((k) => Date.parse(k.wrapAt!) || now))
+    add(
+      'wrapup-unhandled',
+      'danger',
+      [
+        t('子对话 {list} 已经请父对话收尾 {m} 分钟了，父对话没有合回也没有退回', {
+          list: kidsText(wrap),
+          m: Math.max(0, Math.round((now - oldest) / 60000)),
+        }),
+        f.nudge ? t('面板已提醒 {n}/{max} 次', { n: f.nudge.n, max: f.nudge.max }) : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    )
   }
   if (f.status !== 'running' && f.waitsOn.some((k) => k.state === 'running' || k.state === 'waiting'))
     add('waiting-children', 'info', t('这一轮说完了，在等子对话：{list}', { list: kidsText(f.waitsOn) }))

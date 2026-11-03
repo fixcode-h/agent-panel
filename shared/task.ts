@@ -1345,6 +1345,17 @@ export function planStalled(tk: Pick<Task, 'plans' | 'steps' | 'working' | 'reso
   return !plan.steps.some((s) => s.waits?.some((w) => w.state === 'waiting'))
 }
 
+/**
+ * 已经请父对话收尾、还在等父对话处理的子对话（wrapRequest 是 requested，还没合回、没收下）。
+ * 父对话计划里等它们的那一步看着是「在等子对话」，其实子对话等的是父对话自己调用 finish_child：
+ * planStalled 会把这一步当成在等别人而不推，父对话说一句「现在合回」就结束这一轮时，两边就互相等住了
+ * （用户 2026-11-03 报）。父对话一轮结束时的兜底（server/tasks/drive.ts 的 nudgeWrapUp）、
+ * 状态诊断（shared/lifecycle.ts 的 wrapup-unhandled）都只按这一处判断
+ */
+export function wrapUpPending<K extends Pick<Task, 'id' | 'wrapRequest' | 'resolved'>>(kids: K[]): K[] {
+  return kids.filter((k) => !k.resolved && k.wrapRequest?.state === 'requested')
+}
+
 export interface ChildIdleAskDecision {
   ask: boolean
   /** 不问的原因：off 关闭、not-running 没在执行、waiting 在等能解释的东西、too-soon 没到阈值、limit 问够了 */
