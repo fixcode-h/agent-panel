@@ -379,7 +379,16 @@ await runShard(import.meta.filename, async (api) => {
           else {
             await p.locator('[role="menu"] [data-child-item]:not([data-current])').first().click()
             if (!(await switchedTo(target.title))) errors.push(`右栏切换下拉：点了「${target.title}」后右栏没有切过去`)
-            if (await p.locator('[role="menu"]').count()) errors.push('右栏切换下拉：点了条目后菜单还开着')
+            // 下拉挂在页签上、切换后不卸载（ADR 0047）：Radix 放完 60ms 的退场动画才移除菜单，等它离开再判
+            if (
+              !(await p
+                .waitForFunction(() => !document.querySelector('[role="menu"]'), null, { timeout: 3000 })
+                .then(
+                  () => true,
+                  () => false,
+                ))
+            )
+              errors.push('右栏切换下拉：点了条目后菜单还开着')
             await check(p, '子对话-右栏切换下拉-点选')
           }
           // Esc 关
