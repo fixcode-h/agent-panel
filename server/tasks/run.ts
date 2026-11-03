@@ -1,5 +1,5 @@
 import { withProjectParams } from '../../shared/builtin/core.ts'
-import { syncManagedModuleMap } from '../module-map.ts'
+import { docRootOf, syncManagedModuleMap } from '../module-map.ts'
 import { randomUUID } from 'node:crypto'
 import {
   NewTaskInput,
@@ -407,8 +407,8 @@ export function createRun(sc: TasksScope) {
       // 这一轮写了模块文档就把模块地图跟上（ADR 0048）：目录是这一轮的工作目录（子对话是它的独立分支），读不到就算了
       const docDir = project.path
       const syncDocMap = () =>
-        void projectDocRoot(docDir, agents)
-          .then((d) => (d ? syncManagedModuleMap(d.root) : undefined))
+        void docRootOf(docDir, agents)
+          .then((root) => syncManagedModuleMap(root))
           .catch((e) => log.warn('task', '重新生成模块地图失败', { task: entry.task.id, error: (e as Error).message }))
       await runRealTurn({
         task: entry.task,

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { goneModulesNote } from '../module-map.ts'
 import path from 'node:path'
 import { coreDefinition } from '../../shared/builtin/core.ts'
 import { bugRecordDraft, diagnosisGate } from '../../shared/bug-diagnosis.ts'
@@ -580,7 +581,11 @@ ${
         sc.alertOn(parent.id, 'panel', t('收尾子对话后刷新计划失败'))(e)
         return ''
       })
-      return plan ? { ...r, info: `${r.info}\n\n${plan}` } : r
+      // 合回后模块的源码没了（删除、移走）：提醒父对话派「文档」清理模块文档（ADR 0048）
+      const gone = r.ok
+        ? await goneModulesNote(await sc.taskDir(parent), await sc.deps.agents.list()).catch(() => '')
+        : ''
+      return { ...r, info: [r.info, plan, gone].filter(Boolean).join('\n\n') }
     })()
     // 限时回话：收尾要等子对话的 CLI 退出、删独立分支，慢的时候会撞上 CLI 工具调用一分钟的超时，
     // 父对话只看到「The operation timed out」，不知道收尾到底成没成，又反复调用。过了时限先说清楚，收尾在后台接着做

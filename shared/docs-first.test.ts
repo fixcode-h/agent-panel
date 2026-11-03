@@ -18,11 +18,13 @@ test('先建模块文档：有模块没文档就拦下并说清下一步，都�
   assert.match(ok.note!, /- web：docs\/modules\/web\/README\.md/)
 })
 
-test('先建模块文档：写了理由、角色关了开关、没写 modules、宿主查不了文档时都放行', async () => {
+test('先建模块文档：写了理由、角色关了开关、宿主查不了文档时放行；没写 modules 要它写上', async () => {
   const skip = await docsFirst({ modules: ['calc'], skipDocs: '分析失败' }, lookup([]), true)
   assert.equal(skip.block, undefined)
   assert.match(skip.note!, /没先建文档：分析失败/)
   assert.equal((await docsFirst({ modules: ['calc'] }, lookup([]), false)).block, undefined)
-  assert.deepEqual(await docsFirst({}, lookup([]), true), {})
+  assert.match((await docsFirst({}, lookup([]), true)).block!, /要写 modules/, '开着开关又没写 modules：拦下要它写')
+  assert.deepEqual(await docsFirst({ skipDocs: '只写文档' }, lookup([]), true), {})
+  assert.deepEqual(await docsFirst({}, lookup([]), false), {})
   assert.deepEqual(await docsFirst({ modules: ['calc'] }, undefined, true), {})
 })

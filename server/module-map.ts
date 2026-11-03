@@ -9,6 +9,17 @@ import type { Agent } from '../shared/schema.ts'
 import { projectDocRoot } from './doc-root.ts'
 import { MAP_BEGIN, parseModuleDoc, withModuleTable, type ModuleDoc } from '../shared/module-docs.ts'
 
+/**
+ * 项目的文档根：P4 / SVN 项目按「文档」角色的设置算（可能在项目外）；Git 和没有版本管理的项目 projectDocRoot 不给，
+ * 按 project-documentation 的路径模型取：已有 docs/ 或 doc/ 就用它，没有就是 docs/
+ */
+export async function docRootOf(projectPath: string, agents: Agent[]) {
+  const doc = await projectDocRoot(projectPath, agents).catch(() => undefined)
+  if (doc) return doc.root
+  const have = ['docs', 'doc', 'Docs'].find((d) => existsSync(path.join(projectPath, d)))
+  return path.join(projectPath, have ?? 'docs')
+}
+
 /** 文档根下所有模块文档（按目录名），读不出元数据的跳过 */
 export async function readModuleDocs(docRoot: string): Promise<ModuleDoc[]> {
   const dir = path.join(docRoot, 'modules')
@@ -55,8 +66,7 @@ export async function syncManagedModuleMap(docRoot: string) {
  * 只做文件检查，不建索引、不搜代码（用户 2026-11-03 定）；路径写成相对项目根的样子，子对话照着读
  */
 export async function lookupModuleDocs(projectPath: string, agents: Agent[], modules: string[]) {
-  const doc = await projectDocRoot(projectPath, agents)
-  const root = doc?.root ?? path.join(projectPath, 'docs')
+  const root = await docRootOf(projectPath, agents)
   const found: Record<string, string> = {}
   const missing: string[] = []
   for (const m of modules) {
@@ -65,4 +75,16 @@ export async function lookupModuleDocs(projectPath: string, agents: Agent[], mod
     else missing.push(m)
   }
   return { root, found, missing }
+}
+
+/**
+ * 子对话合回后查一遍：模块文档里写的「源码」路径是不是全都不在了（模块被删、移走或并进别的模块）。
+ * 面板只负责发现，删目录还是改路径由「文档」判断（task=清理）；返回给父对话的一段说明，没有就是空串
+ */
+export async function goneModulesNote(projectPath: string, agents: Agent[]) {
+  const gone = (await readModuleDocs(await docRootOf(projectPath, agents))).filter(
+    (d) => d.sources.length && d.sources.every((src) => !existsSync(path.join(projectPath, src))),
+  )
+  if (!gone.length) return ''
+  return `模块文档对不上了：${gone.map((d) => `「${d.name}」（源码 ${d.sources.join('、')}）`).join('、')}的源码已经不在了。用 spawn_agents 派「文档」，params 写 {"task": "清理"}，instructions 写这几个模块和这次合回的改动：真删了就删模块文档目录，移走、改名的改路径。`
 }

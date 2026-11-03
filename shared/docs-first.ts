@@ -43,7 +43,15 @@ export async function docsFirst(
   enabled: boolean,
 ): Promise<{ block?: string; note?: string }> {
   const modules = clean(input.modules ?? [])
-  if (!lookup || !modules.length) return {}
+  if (!lookup) return {}
+  // 没写 modules 门禁就被绕过了（2026-11-03 真实 API 实测：设定里写了要写，模型照样不写）：开着「先建文档」时拦下要它写上
+  if (!modules.length)
+    return enabled && !input.skipDocs?.trim()
+      ? {
+          block:
+            '没有建子对话：create_conversation 要写 modules，写这次涉及的模块（模块地图里的模块名；还没写文档的写目录名，例如 src/calc）。面板按它查模块文档：有就把路径附进派单，没有就先让「文档」分析。确实不涉及具体模块（只写文档、纯调研）时在 skip_docs 写明理由。',
+        }
+      : {}
   const r = await lookup(modules).catch(() => null)
   if (!r) return {}
   const have = Object.entries(r.found)
