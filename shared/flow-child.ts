@@ -6,6 +6,7 @@
 import type { Task, TaskStep } from './schema.ts'
 import { topSteps } from './flow.ts'
 import { clip } from './text.ts'
+import { takeWorkflow } from './composer.ts'
 
 type FlowTask = Pick<Task, 'flow' | 'runs' | 'steps' | 'runSeq'>
 
@@ -166,4 +167,35 @@ export function pickFlow(
     }
   const flow = { workflowId: w.id, workflowName: w.name, input: '', kind: w.kind ?? 'change', run: 0, handed: false }
   return { ok: true, flow }
+}
+
+/**
+ * 用户手动点名工作流（ADR 0044 第 7 条）：「在项目里运行」和输入框「+」里的「引入工作流」都把要求写成这一句发给父对话，
+ * 父对话按判定规则第 1 条直接用它起工作流子对话。带 id：重名、不在项目可选列表里也认得出
+ */
+export function workflowPrompt(workflow: { id: string; name: string }, text: string) {
+  return `用工作流「${workflow.name}」（id ${workflow.id}）做：\n${text.trim()}`
+}
+
+/** 这个角色当父对话时能不能启动工作流：要能开子对话、能启动工作流（start_workflow 只给这样的父对话） */
+export function canStartFlow(agents: { id: string; canDelegate: boolean; canPlan: boolean }[], agentId: string) {
+  const a = agents.find((x) => x.id === agentId)
+  return !!a && a.canDelegate && a.canPlan
+}
+
+/**
+ * 输入框里引入了工作流（行内的工作流卡片）：卡片摘掉，剩下的要求写成点名它的一句；没有卡片原样返回。
+ * 按名字找工作流拿 id；找不到（改名、删了）只写名字，父对话按名字再认一次
+ */
+export function withWorkflow(value: string, workflows: readonly { id: string; name: string }[]) {
+  const { name, rest } = takeWorkflow(value)
+  if (!name) return value
+  const w = workflows.find((x) => x.name === name)
+  return w ? workflowPrompt(w, rest) : `用工作流「${name}」做：\n${rest.trim()}`
+}
+
+/** 发出去的要求点名了工作流（workflowPrompt / withWorkflow 写出来的那句）：拆出名字和后面的要求，对话里把点名画回工作流卡片 */
+export function namedWorkflow(text: string): { name: string; rest: string } | undefined {
+  const m = /^用工作流「([^」\n]+)」(?:（id [^）\n]*）)?做：\n/.exec(text)
+  return m ? { name: m[1], rest: text.slice(m[0].length) } : undefined
 }

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
   AtSign,
-  Check,
   ChevronLeft,
   ChevronRight,
   FileCode2,
@@ -746,7 +745,6 @@ export function AttachMenu({
   onStyle,
   styleKind,
   self,
-  workflowId,
   onWorkflow,
   className,
 }: {
@@ -756,10 +754,11 @@ export function AttachMenu({
   canMention: boolean
   /** 引入会话：选好的会话整理成附件交回来；不传就没有这一项 */
   onSession?: (a: Attachment) => void
-  /** 按工作流执行：选好的工作流 id 交回来；不传就没有这一项（例如不属于项目的聊天） */
-  onWorkflow?: (id: string) => void
-  /** 现在选中的工作流，列表里打勾 */
-  workflowId?: string
+  /**
+   * 引入工作流：选好的工作流交回来，调用方在输入框里插一张工作流卡片；发送时这条要求点名它、由父对话启动（ADR 0044）。
+   * 不传就没有这一项（不属于项目的聊天、子对话、角色启动不了工作流的对话）
+   */
+  onWorkflow?: (w: { id: string; name: string }) => void
   /** 引入风格：选好的风格交回来（UI 设计的对话用）；不传就没有这一项 */
   onStyle?: (s: SavedStyle) => void
   /** 引入风格时只列这一类（游戏 / 网页）的风格；不写列两类，分开显示 */
@@ -824,10 +823,9 @@ export function AttachMenu({
             />
           ) : view === 'workflows' && onWorkflow ? (
             <WorkflowList
-              value={workflowId}
               onBack={() => setView('menu')}
-              onPick={(id) => {
-                onWorkflow(id)
+              onPick={(w) => {
+                onWorkflow(w)
                 setOpen(false)
                 setView('menu')
               }}
@@ -866,7 +864,7 @@ export function AttachMenu({
               {onWorkflow && (
                 <button type="button" className={menuItem} onClick={() => setView('workflows')}>
                   <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
-                  <span className="flex-1">{t('按工作流执行')}</span>
+                  <span className="flex-1">{t('引入工作流')}</span>
                   <ChevronRight className="h-3.5 w-3.5 text-subtle" />
                 </button>
               )}
@@ -892,25 +890,20 @@ export function AttachMenu({
   )
 }
 
-/** 按工作流执行时选工作流：第一项是不用工作流，直接对话；每项标出节点数和是否就绪 */
-function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () => void; onPick: (id: string) => void }) {
+/** 引入工作流时选工作流：每项标出节点数和是否就绪；选中的插成输入框里的一张卡片，不要了按退格删掉 */
+function WorkflowList({ onBack, onPick }: { onBack: () => void; onPick: (w: { id: string; name: string }) => void }) {
   const { workflows, agents, clis } = useData()
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
         <IconButton size="sm" icon={ChevronLeft} label={t('返回')} onClick={onBack} />
-        <span className="px-1 text-body">{t('按工作流执行')}</span>
+        <span className="px-1 text-body">{t('引入工作流')}</span>
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
-        <button type="button" className={menuItem} onClick={() => onPick('')}>
-          <MessageSquare className="h-4 w-4 shrink-0 text-subtle" />
-          <span className="flex-1">{t('不用工作流，直接对话')}</span>
-          {!value && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
-        </button>
         {workflows.map((w) => {
           const ready = isReady(workflowChecks(w, agents, clis, workflows))
           return (
-            <button key={w.id} type="button" className={menuItem} onClick={() => onPick(w.id)}>
+            <button key={w.id} type="button" className={menuItem} onClick={() => onPick(w)}>
               <span
                 title={ready ? t('就绪') : t('未就绪')}
                 className={cn('h-2 w-2 shrink-0 rounded-full', ready ? 'bg-success' : 'bg-warning')}
@@ -921,7 +914,6 @@ function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () =>
                   {t('{n} 个节点', { n: topoOrder(entryFlow(w)).length })}
                 </span>
               </span>
-              {w.id === value && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
             </button>
           )
         })}
@@ -930,7 +922,7 @@ function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () =>
         )}
       </div>
       <p className="border-t px-3 py-2 text-caption leading-relaxed text-subtle">
-        {t('选了工作流就按它的流程图执行；不选时直接和角色对话。')}
+        {t('选中的工作流插进输入框，发送时这条要求点名它，由父对话启动，在工作流子对话里按流程图执行。')}
       </p>
     </div>
   )

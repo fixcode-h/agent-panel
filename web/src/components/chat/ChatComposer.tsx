@@ -105,6 +105,8 @@ export function ChatComposer({
         /** 引入风格（UI 设计用）：选好的风格交回来；styleKind 限定只列哪一类 */
         onStyle?: (s: SavedStyle) => void
         styleKind?: DesignKind
+        /** 「+」里有没有「引入工作流」（项目里、角色能启动工作流的父对话）：选好的插成一张工作流卡片 */
+        workflows?: boolean
       }
     | false
   /** 「+」后面的开关和选项 */
@@ -280,6 +282,9 @@ export function ChatComposer({
             self={attach?.self}
             onStyle={attach?.onStyle}
             styleKind={attach?.styleKind}
+            onWorkflow={
+              attach?.workflows ? (w) => editor.current?.insertChip({ kind: 'workflow', name: w.name }) : undefined
+            }
             className={sm ? 'h-7 w-7' : undefined}
           />
         )}
