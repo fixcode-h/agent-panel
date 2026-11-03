@@ -5,7 +5,7 @@
  * 互不影响。总入口 scripts/e2e.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 
 import http from 'node:http'
@@ -536,6 +536,20 @@ await runShard('本机请求与设置', async (api) => {
   // 点了允许记进 task.remotePush（c5e5c5d8 起这个字段一直没有写入点），同一个对话里再调直接返回、不再弹卡
   {
     const panelLog = () => readLog(log + '.panel').filter((x) => x.name === 'ask_push')
+    // 没配远端的仓库没地方可推：不弹授权卡，提示词写明不推不问（2026-11-03 真实 API 实测：没有远端也每次合回后弹卡）
+    const bare = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: 'ASK_PUSH 没有远端时不问',
+    })
+    const bareDone = await waitDone(bare.id)
+    assert.equal(bareDone.requests.length, 0, '没有远端不弹推送授权卡')
+    assert.match(calls().find((c) => c.input?.includes('ASK_PUSH 没有远端时不问')).input, /这个仓库没有配置远端/)
+    // 下面要真的走授权卡：给仓库配一个远端（只用来让面板认出有地方可推，假 CLI 不会真的推）
+    execFileSync('git', ['remote', 'add', 'origin', path.join(project.path, '.no-such-remote')], { cwd: project.path })
     const before = panelLog().length
     const t = await call('POST', '/tasks', {
       projectId: project.id,
@@ -567,8 +581,9 @@ await runShard('本机请求与设置', async (api) => {
     assert.equal(panelLog().length, before + 2)
     assert.match(panelLog().at(-1).text, /已经同意推送/, '同意过的不再弹卡')
     assert.match(calls().find((c) => c.input?.includes('ASK_PUSH 再推一次')).input, /这个对话里用户已经同意推送/)
+    execFileSync('git', ['remote', 'remove', 'origin'], { cwd: project.path })
   }
-  step('推送授权：ask_push 弹卡不被「提问」开关自动作答，允许后记进对话，再调不弹卡')
+  step('推送授权：没有远端时不问；ask_push 弹卡不被「提问」开关自动作答，允许后记进对话，再调不弹卡')
 
   // 执行中补充：Command Code 走常驻 RPC 的 turn/steer，已经在「插话」那一节覆盖；
   // MCP 的 read_user_notes 拉取通道由 server/ask-mcp.test.ts 单独测试
