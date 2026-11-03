@@ -39,7 +39,13 @@ import { noPushEnv } from './no-push.ts'
 export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
 import { expandSlash } from '../slash.ts'
 import { cachedModels, effortRejected, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
-import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
+import {
+  autoLimits,
+  limitEnvVars,
+  longContextModel,
+  stripLongContext,
+  type ModelLimits,
+} from '../../shared/model-limits.ts'
 import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
 import { NODE_PART, helperGate, type AgentCall, type AgentResult } from '../../shared/engine.ts'
@@ -514,7 +520,9 @@ async function runAgent(
   // 自动压缩：Claude Code 用环境变量，Codex 用配置（按上下文窗口换算成 token 数）；Command Code 由面板在一轮结束后压缩
   const pct = cs.autoCompact
   const build: BuildOptions = {
-    model,
+    // API 方式下上下文窗口够大时按 CLI 定义加长上下文后缀（Claude Code 的 [1m]）：它认得出的自家模型只认这个，
+    // 不看环境变量里的窗口。账号方式不加：账号的模型窗口 CLI 自己知道，有的套餐也用不了 1M，加了反而报错
+    model: cs.api ? longContextModel(def, model, limits.context) : model,
     effort,
     permission: agentPermission(agent, settings),
     extraArgs: [...cs.extraArgs, ...agent.extraArgs],
@@ -856,7 +864,8 @@ async function runAgent(
       case 'usage': {
         usageSeen = true
         const u = au()
-        if (ev.model) u.model = ev.model
+        // 报回来的模型名去掉长上下文后缀（[1m]），显示和按模型查映射、目录都用原名
+        if (ev.model) u.model = stripLongContext(def, ev.model)
         if (ev.context !== undefined) {
           // 对话的会话里上下文骤降：CLI 自己压缩了却没报 compacted，同样作废已发的规则段落
           if (chat && compactedSilently(u.context, ev.context)) compacted()

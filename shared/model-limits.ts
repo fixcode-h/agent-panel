@@ -120,6 +120,19 @@ export function limitSupport(def: CliDefinition | undefined) {
 }
 
 /** 按 CLI 定义把手动设的值写成环境变量；参数由各自的 buildArgs 处理 */
+/** 交给 CLI 的模型名：上下文窗口够大、CLI 要靠模型名后缀开长上下文时加上后缀（已经带了不重复加） */
+export function longContextModel(def: Pick<CliDefinition, 'longContext'> | undefined, model: string, context?: number) {
+  const lc = def?.longContext
+  if (!lc || !model || model.startsWith('@') || !context || context < lc.min || model.endsWith(lc.suffix)) return model
+  return model + lc.suffix
+}
+
+/** CLI 报回来的模型名去掉长上下文后缀，界面显示和按模型查映射、目录时用原名 */
+export function stripLongContext(def: Pick<CliDefinition, 'longContext'> | undefined, model: string) {
+  const s = def?.longContext?.suffix
+  return s && model.endsWith(s) ? model.slice(0, -s.length) : model
+}
+
 export function limitEnvVars(def: CliDefinition, v: ModelLimits) {
   const out: { key: string; value: string }[] = []
   if (v.context && def.limitEnv?.context) out.push({ key: def.limitEnv.context, value: String(v.context) })
