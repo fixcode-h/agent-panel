@@ -25,6 +25,7 @@
 - **CLI 的差异写进 CLI 定义**（`shared/clis.ts`、`shared/clis/*.json`），代码按定义里的字段走，不按 CLI 的名字写分支（`scripts/rules-check.mjs` 会拦）。
 - **界面文案用 `t('中文原文')`**，英文同一个提交写进 `shared/locales/en/`；漏翻 `npm run typecheck` 会失败。发给 Agent 的提示词、注释、演示数据不翻译。
 - **界面参考 Claude Code 的风格，视觉质量很重要**。界面细则见 `docs/lessons/ui.md`。
+- **碰到文件行数上限就按功能拆成小文件**（`scripts/file-caps.json`，`npm run lint` 会拦）：把职责完整的一块挪进新文件，原文件只留调用；不删注释、不合并行凑数。细则见 `docs/lessons/file-caps.md`。
 - 注释用中文，写「为什么」。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。
 - Agent 执行出的错误一律显示给用户，不悄悄重试。
 - **凭据不进仓库**：密码、令牌、API key 只放本机数据目录（默认 `~/.agent-panel`）或环境变量，不写进代码、测试、fixtures、文档和提交说明；示例只用 `sk-xxxx`、`your-api-key` 这类占位符。`npm run lint` 会跑 `scripts/secret-check.mjs` 扫描全仓和暂存区，发现疑似真实 key 直接失败；确实要保留的行在结尾加 `secret-check-ok` 并写明原因。

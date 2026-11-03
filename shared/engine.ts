@@ -8,6 +8,8 @@
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
 import type { HandoffInput } from './handoff.ts'
+import { kidsOf, kidTitleOf, retryTarget } from './child-lookup.ts'
+import { docsFirst, type DocsFirstInput, type ModuleDocsLookup } from './docs-first.ts'
 import type { ReviewTarget } from './clis.ts'
 import { commonAgents, includedAgents, mountedAgents, roleKind, loadCapability, paramsProblem } from './agent-role.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES, normInlinePaths } from './inline-edit.ts'
@@ -105,7 +107,7 @@ import {
 } from './submitted.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
-import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
+import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
 import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
@@ -131,40 +133,20 @@ import {
   ensureChildStep,
   WRAP_UP,
   type PlanItemInput,
-  type PlanKid,
   type WrapUpAnswer,
   type WrapUpKind,
 } from './plan.ts'
 
 /** 子任务、工作流运行的终止开关在 run-stops.ts：服务端路由从这里取 */
 export { stopHelper, stopPlan } from './run-stops.ts'
+/** 查名下子对话（计划对上等待、补步骤的标题、判断是不是重试）在 child-lookup.ts */
+export { retryBase } from './child-lookup.ts'
 
 /**
  * 每个父对话交给子对话的话 → 交给了哪个子对话、当时是哪条用户消息（见 sendToConversation：
  * 用户的一条消息只交给一个子对话）。范围和 sentToOther 一致（见 shared/peer-message.ts 的 handedToOther）
  */
 const handedOff = new WeakMap<object, HandOffs>()
-
-/**
- * 这个对话名下的子对话（计划按它对上等待、收口）：set_plan、finish_plan 都按这一份算。
- * 取不到列表时当没有子对话（老版本宿主），不影响计划本身
- */
-async function kidsOf(host: EngineHost): Promise<PlanKid[]> {
-  const list = host.listConversations ? await host.listConversations().catch(() => []) : []
-  return list.map((c) => ({
-    id: c.id,
-    title: c.title,
-    createdAt: c.createdAt ?? '',
-    done: !!c.resolved,
-    endedAt: c.resolved ? c.at : '',
-  }))
-}
-
-/** 一个子对话的标题：取不到时返回空串（调用方退到用 id） */
-async function kidTitleOf(host: EngineHost, id: string) {
-  const list = host.listConversations ? await host.listConversations().catch(() => []) : []
-  return list.find((c) => c.id === id)?.title.trim() ?? ''
-}
 
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'
@@ -506,7 +488,7 @@ export interface Orchestra {
     message: string,
     files?: string[],
     step?: string,
-    extra?: { role?: string; route?: RouteInput; flow?: NonNullable<Task['flow']>; bug?: boolean },
+    extra?: { role?: string; route?: RouteInput; flow?: NonNullable<Task['flow']>; bug?: boolean } & DocsFirstInput,
   ): Promise<{ ok: boolean; id?: string; info: string }>
   /** rerun：给工作流子对话的这条消息是「同一个工作流再跑一次」（start_workflow 带 again） */
   sendToConversation(
@@ -899,6 +881,7 @@ export interface EngineHost {
   cherryPick?: (input: { commits?: string[]; changelist?: string }) => Promise<{ ok: boolean; info: string }>
   /** 弹推送授权卡等用户点（回答由宿主记进 task.remotePush，不受「提问」开关影响）；停止时 null */
   askPush?: (info: { branch?: string; summary?: string }) => Promise<{ allow: boolean; message?: string } | null>
+  moduleDocs?: ModuleDocsLookup // 查模块文档（先建文档再开子对话，shared/docs-first.ts）
 }
 
 /** Agent 用 record_lesson 记的一条教训 */
@@ -3081,9 +3064,15 @@ function makeOrchestra(
             info: `计划里「${at0.title}」这一步还在等子对话「${holder.label}」（id ${holder.ref}），它还没做完。用 send_to_conversation 交回它接着做，写清下一步；不要另建一个子对话重做。它确实起不来（交回时报错、状态是失败）再另建，并在派单里写明接手的是哪个子对话的活。`,
           }
       }
+      const docs = await docsFirst(
+        extra ?? {},
+        host.moduleDocs,
+        selfAgent?.params.find((p) => p.key === 'docsFirst')?.default !== false,
+      )
+      if (docs.block) return { ok: false, info: docs.block }
       const r = await host.createConversation({
         title: title.trim(),
-        message,
+        message: message + (docs.note ?? ''),
         files,
         ...(role && !extra?.flow && { agentId: role.id }),
         ...(extra?.flow && { flow: extra.flow }),
@@ -3710,26 +3699,6 @@ function makeOrchestra(
     },
     inbox: () => takeMail(host, self.id),
   }
-}
-
-/** 去掉标题里「（重试）」「重试 2」「(retry)」这类标记，比较是不是同一件事 */
-export const retryBase = (title: string) =>
-  title
-    .replace(/[（(【[]\s*(?:第\s*\d+\s*次)?\s*(?:重试|再试|retry)\s*\d*\s*[）)】\]]/gi, '')
-    .replace(/\s*[-—:：·|｜]?\s*(?:重试|再试|retry)\s*\d*\s*$/i, '')
-    .trim()
-
-/**
- * 新建子对话其实是在重试一个失败、中断的子对话：标题去掉重试标记后和它一样。
- * 返回那个子对话，父对话应该用 send_to_conversation 交回给它
- */
-async function retryTarget(host: EngineHost, title: string) {
-  if (!host.listConversations) return undefined
-  const base = retryBase(title)
-  if (!base) return undefined
-  const ended = new Set([convStateText('failed'), convStateText('stopped')])
-  const list = await host.listConversations().catch(() => [])
-  return list.find((c) => !c.resolved && !c.busy && ended.has(c.status) && retryBase(c.title) === base)
 }
 
 /** 失败、被终止、被中断的子任务：spawn_agents 的 resume 写它时在原来那条记录里重试 */

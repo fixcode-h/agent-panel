@@ -1,9 +1,11 @@
 # scripts：端到端测试、界面检查、出包和检查脚本
 
-- status: inferred
-- source_paths: `scripts/`
-- entry: `scripts/e2e.mjs`、`scripts/ui-check.mjs`、`scripts/package.mjs`、`scripts/rules-check.mjs`
-- analyzed_at: 2026-10-24
+- 状态：documented
+- 职责：端到端测试、界面检查、出包、规则检查和漏翻检查、教训检索、Windows 托盘
+- 源码：`scripts/`
+- 入口：`scripts/e2e.mjs`、`scripts/ui-check.mjs`、`scripts/package.mjs`、`scripts/rules-check.mjs`
+- 关键词：出包、规则检查、漏翻检查、教训检索、托盘、发布说明
+- 更新：2026-10-24
 
 ## 职责
 

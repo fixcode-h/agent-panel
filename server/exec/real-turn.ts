@@ -1,5 +1,6 @@
 /** 真实执行一轮：调度交给执行引擎（shared/engine.ts），调用 Agent 时经 runner 启动对应 CLI。从 runner.ts 拆出 */
 import { HANDOFF_DIR } from '../store.ts'
+import { lookupModuleDocs } from '../module-map.ts'
 import { type EngineHost, runEngineTurn } from '../../shared/engine.ts'
 import type { RealContext } from './real-context.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
@@ -147,6 +148,10 @@ export async function runRealTurn(ctx: RealContext) {
         detail: clip(text, 40000),
       }),
     askPush: (info) => askPushRequest(ctx, info, ownAsks),
+    // 先建模块文档再开子对话（ADR 0048）：只有项目顶层对话建子对话，文档根按项目设置算
+    moduleDocs: ctx.task.parentTaskId
+      ? undefined
+      : (modules) => lookupModuleDocs(ctx.project.path, ctx.agents, modules),
     reviewDiff: ctx.isGit
       ? async (since, files) => {
           // 没点名文件时只取这个对话改过的（和「更改」面板一致）：对话开始前就没提交的改动不算它的，不交给评审

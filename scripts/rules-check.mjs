@@ -8,6 +8,7 @@
 // 6b. 界面不用细字重（font-thin / extralight / light、font-weight 100–300）：主次靠颜色和字号分
 // 6c. 字号、圆角不手写，用阶梯里的名字
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
+// 7c. `docs/MODULE-MAP.md` 的模块表由各模块 README 的元数据生成（scripts/doc-modules.mjs，ADR 0048）：手改表格、改了元数据没重新生成都会被拦下
 // 7b. `docs/modules/<模块>/bugs.md` 由 `bugs/<bug-id>.md` 生成：手改索引、改了详情忘了重生成都会被拦下
 // 8. 一轮结束只发一次回调：server/exec/runner.ts 里 markTurnDone 和 ctx.onTurnEnd 只能从 endTurn() 一处发出
 // 9. 共享仓库的 config 里不能有 core.worktree
@@ -254,6 +255,13 @@ errors.push(...checkModuleDocsInRoot(root))
 // （见 skills/docs/project-documentation「模块文档」）。多个子对话并行收尾时各自新增详情文件，就不会都改同一张表
 // 末尾而反复冲突；手改索引或改完详情没重生成都在这里拦下
 errors.push(...checkBugIndexesInRoot(root))
+
+// 7c. 模块表是生成物：跑一遍生成脚本的 --check（它要 tsx 读 shared/module-docs.ts，所以单独起一个进程）
+try {
+  execFileSync(process.execPath, [path.join(root, 'scripts/doc-modules.mjs'), '--check'], { cwd: root, stdio: 'pipe' })
+} catch (e) {
+  errors.push(String(e.stderr || e.message).trim() || 'docs/MODULE-MAP.md 的模块表不是最新：跑 npm run docs:modules')
+}
 
 // 8. 一轮结束只发一次回调：runner 里 markTurnDone 和 ctx.onTurnEnd 只能从 endTurn() 一处发出。
 // 两处各发一次时同一轮会被上报两遍（CLI 的 result 和「回复完停在等下一句」相隔几百毫秒，

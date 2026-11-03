@@ -1,9 +1,11 @@
 # design：UI 设计、AI 对话与导出
 
-- status: verified
-- source_paths: `web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`
-- entry: `server/designs.ts`
-- analyzed_at: 2026-10-24
+- 状态：documented
+- 职责：UI 设计：设计数据、AI 对话（设计工具 MCP）、原画与图片生成、导出
+- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`
+- 入口：`server/designs.ts`
+- 关键词：UI 设计、原画、生图、导出、ComfyUI、设计工具
+- 更新：2026-10-24
 
 ## 职责
 

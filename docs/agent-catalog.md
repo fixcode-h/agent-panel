@@ -75,9 +75,9 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 | `orchestrator` | 协调器（必备）   | 父对话：分析、澄清、分诊                            |      | general、ue（主 Agent）                                              | `vcs` `split` `confirm` `clarify` `report`                                                       |
 | `worker`       | 执行（必备）     | 子对话执行                                          |      | 项目对话运行路径                                                     | `vcs` `mode` `batch` `verify` `commit`                                                           |
 | `helper`       | 子任务（必备）   | 并行收集、核实、计划                                |      | —（spawn_agents 不点名时默认用它，不作为可选角色展示）               | —                                                                                                |
-| `docsync`      | 文档（必备）     | 文档落盘                                            | ✓    | 改代码的工作流最后一个节点都是它；architecture、release              | `docRoot` `lang` `index` `adr` `bug`                                                             |
+| `docsync`      | 文档（必备）     | 文档落盘                                            | ✓    | 改代码的工作流最后一个节点都是它；architecture、release              | `task`（同步 / 模块分析 / 清理）`docRoot` `lang` `index` `adr` `bug`                             |
 | `tester`       | 测试验收（必备） | 构建/测试/验收，独立设计用例、补测试                | ✓    | openspec（延期验证项）、migration（旧数据验证）、release（产物验证） | `task`（跑验收 / 设计用例 / 补测试 / 清理用例）`scope` `env` `regress` `onFail` `write` `serial` |
-| `explorer`     | 调研             | 只读调研（可回写模块文档）                          | ✓    | ue、review                                                           | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene`                  |
+| `explorer`     | 调研             | 只读调研（模块要点交「文档」写）                    | ✓    | ue、review                                                           | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene`                  |
 | `reviewer`     | 评审（必备）     | 独立评审与复核                                      | ✓    | review；子对话收尾前由执行角色直接派                                 | `target`（代码改动 / 安全 / 方案或结论）`vcs`                                                    |
 | `analyst`      | 方案设计         | 需求、方案与架构契约                                |      | general、ue、openspec、architecture、migration                       | `scene` `scale`（spike / bounded / architectural）`grill` `stack`                                |
 | `spec`         | 规范撰写         | OpenSpec 产物与门禁                                 |      | openspec                                                             | `scene` `stage`                                                                                  |
@@ -100,7 +100,7 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 
 `tester.task` 的「设计用例」「补测试」（2026-10-29，[ADR 0030](adr/0030-delivery-contracts-between-roles.md)）：独立于实现者再想一遍用例是「测试与验收」能力块里的一档，不另建「测试设计」角色——
 它和「评审」一样靠独立视角起作用（实现者写的测试只覆盖它想到的路径），所以挂在执行上是 `subtask` 派出，不就地用。
-同一批评估过、**没有**新增或合并的：`helper`（子任务）和 `explorer`（调研）都只读、都能回写模块文档，但 `helper` 是 `spawn_agents` 不点名时的引擎兜底（`isHelperAgent`），
+同一批评估过、**没有**新增或合并的：`helper`（子任务）和 `explorer`（调研）都只读（2026-11-03 起都不再自己写模块文档，要点交「文档」，ADR 0048），但 `helper` 是 `spawn_agents` 不点名时的引擎兜底（`isHelperAgent`），
 合并会动引擎，收益只是少一份短设定；`spec`（规范撰写）绑着 OpenSpec 的命令和门禁，并进 `analyst` 会让方案设计每次都带一段用不上的流程；`i18n` 并回 `developer` 会丢掉「拿已有译文当术语表」这类独立交付标准。
 现有 17 个角色里没有职责被别的角色完整覆盖的，前几轮已经合掉 12 个（见下表），这次不再删。
 同日的「清理用例」（[ADR 0031](adr/0031-test-count-report-not-cap.md)）：用例总数不再设上限，重复、被覆盖、过时的用例由它定期一次列出一批候选（只认三类淘汰理由），用户确认后才删。

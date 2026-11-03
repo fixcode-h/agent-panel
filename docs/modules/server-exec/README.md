@@ -1,9 +1,11 @@
 # server-exec：真实调用本机 CLI
 
-- status: inferred
-- source_paths: `server/exec/`
-- entry: `server/exec/runner.ts`
-- analyzed_at: 2026-10-24（2026-10-27 补「压缩上下文的记录」一条，核对自 `server/exec/runner.ts` 的 `describeCompaction` 和 `server/exec/hints.test.ts`；2026-10-30 补「上下文占用与细分」一条，核对自 `server/exec/parsers.ts`、`server/exec/rpc/claude.ts`、`shared/context-breakdown.ts`）
+- 状态：documented
+- 职责：真实执行：拼 CLI 参数、管进程、解析输出、RPC 会话、git 改动统计、子对话 worktree
+- 源码：`server/exec/`
+- 入口：`server/exec/runner.ts`
+- 关键词：CLI 参数、进程、输出解析、RPC、独立分支、worktree、git 改动
+- 更新：2026-10-24（2026-10-27 补「压缩上下文的记录」一条，核对自 `server/exec/runner.ts` 的 `describeCompaction` 和 `server/exec/hints.test.ts`；2026-10-30 补「上下文占用与细分」一条，核对自 `server/exec/parsers.ts`、`server/exec/rpc/claude.ts`、`shared/context-breakdown.ts`）
 
 ## 职责
 

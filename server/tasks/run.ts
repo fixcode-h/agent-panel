@@ -1,4 +1,5 @@
 import { withProjectParams } from '../../shared/builtin/core.ts'
+import { syncManagedModuleMap } from '../module-map.ts'
 import { randomUUID } from 'node:crypto'
 import {
   NewTaskInput,
@@ -403,6 +404,12 @@ export function createRun(sc: TasksScope) {
       if (first) entry.task.baseline = snapshot ?? {}
       // 收尾要的工作区探测只做一次；收尾种类本身按现在的推送授权现算（见下面的 wrapUp getter）
       const wrapProbe = await wrapUpProbe(entry.task, project.path, project.gitPolicy)
+      // 这一轮写了模块文档就把模块地图跟上（ADR 0048）：目录是这一轮的工作目录（子对话是它的独立分支），读不到就算了
+      const docDir = project.path
+      const syncDocMap = () =>
+        void projectDocRoot(docDir, agents)
+          .then((d) => (d ? syncManagedModuleMap(d.root) : undefined))
+          .catch((e) => log.warn('task', '重新生成模块地图失败', { task: entry.task.id, error: (e as Error).message }))
       await runRealTurn({
         task: entry.task,
         agents,
@@ -428,10 +435,12 @@ export function createRun(sc: TasksScope) {
         // 每一轮结束都按整棵对话树核一次用量上限（见 tasks/budget.ts）：到了上限就停下，也不再推它接着做
         onTurnEnd: task.parentTaskId
           ? (turn) => {
+              syncDocMap()
               sc.settleChildTurn(entry.task, turn)
               void sc.checkBudget(entry.task)
             }
-          : (turn) =>
+          : (turn) => {
+              syncDocMap()
               void sc.checkBudget(entry.task).then((over) => {
                 if (over || task.mode !== 'chat') return
                 // Chat 页只回答了一句、没动手的那一轮不推；项目里的对话按计划推（计划没做完、或动了手却没列计划，见 nudgePlan）
@@ -443,7 +452,8 @@ export function createRun(sc: TasksScope) {
                   .catch((e) =>
                     log.warn('task', '推对话接着做计划失败', { task: task.id, error: (e as Error).message }),
                   )
-              }),
+              })
+            },
         isGit: snapshot !== null,
         op,
         resume,
