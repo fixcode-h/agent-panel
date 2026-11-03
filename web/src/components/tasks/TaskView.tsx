@@ -92,7 +92,6 @@ import { ConversationShell, useConversationScroll } from '@/components/chat/Conv
 import { AgentMessage, DeliveryLine, NoteMessage } from './Messages'
 import { ReceivedRow } from './PeerMessage'
 import { LiveStats } from './LiveStats'
-import { NextWorkflows } from './NextWorkflows'
 import { AnalyzeDialog } from './Evolution'
 import { AnalysisPanel, reportTitle } from './AnalysisPanel'
 import { AnalysisMark } from './AnalysisMark'
@@ -2370,7 +2369,6 @@ export function TaskView({
                         </Button>
                       )}
                       {renderedBlocks}
-                      <NextWorkflows task={task} />
                       {running &&
                         task.mode === 'chat' &&
                         working &&

@@ -2946,7 +2946,20 @@ function makeOrchestra(
           ok: false,
           info: '只有项目里的父对话能启动工作流；子对话、子任务和工作流节点都不能，按派给你的事直接做',
         }
-      return pickFlow(host.workflowCatalog?.() ?? [], key)
+      const r = pickFlow(host.workflowCatalog?.() ?? [], key)
+      if (r.ok || !key.trim()) return r
+      // 用户点名、不在项目可选列表里的工作流（工作流页「在项目里运行」会带上 id）：按 id 认，名字认不出来照旧报
+      const w = host.resolveWorkflow?.(key.trim())?.workflow
+      if (!w || w.id !== key.trim()) return r
+      const flow = {
+        workflowId: w.id,
+        workflowName: w.name,
+        input: '',
+        kind: w.kind ?? 'change',
+        run: 0,
+        handed: false,
+      }
+      return { ok: true as const, flow }
     },
     plans: !!ctx.chat && !helper && !!task.projectId,
     async setPlan(input) {

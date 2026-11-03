@@ -1,6 +1,6 @@
 # ADR 0044：工作流只由父对话启动，每次启动挂成父对话下的一个「工作流子对话」
 
-状态：提议 · 2026-11-03
+状态：已接受（2026-11-03 用户确认，三期都已实施；实施时的调整见「实施记录」） · 2026-11-03
 
 - 影响范围：`server/orch-mcp.ts`（`start_plan` / `stop_workflow` 换成 `start_workflow` / `stop_workflow`）、`shared/engine.ts`（`makeOrchestra` 的 `plan`、`startPlan`、`runConversationTurn`、`conversationPrompt`）、`shared/builtin/agents.ts`（主理、执行）、`shared/builtin/workflows.ts`（`CHILD_RULES`、各工作流的适用场景）、`shared/schema.ts`（`Workflow`、`Task`）、`shared/task.ts`（`childHolds`、`runRunning`）、`shared/resume-kids.ts`、`shared/run-stops.ts`、`server/tasks/run.ts`（`spawnChild`）、`web/src/components/tasks/`（`TaskView`、`RunCard`、`RunView`、`TaskFlow`、`ConversationTabs`、`NextWorkflows`）、`web/src/components/workflows/RunInProjectDialog.tsx`、`docs/agent-catalog.md`
 - 取代：`docs/agent-catalog.md`「改代码的工作流由子对话（执行角色）用 `start_plan` 启动」这一条；补全 [0042](./0042-pause-resume-reuse.md) 里工作流运行的暂停 / 继续
@@ -51,19 +51,19 @@
 
 ### 事实核对
 
-| 位置                                            | 现状                                                                                                                                                                                              |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server/orch-mcp.ts` 的工具表                   | `o.planning` 时给 `start_plan`（workflow、input、step）；`o.planner && !o.planning` 时给 `run_workflow` / `close_run`；协调者有 `stop_workflow`，用来终止子对话里 `start_plan` 正在跑的那次运行   |
-| `shared/engine.ts` 的 `runConversationTurn`     | `planning = agent.canPlan && !isChatMode(task)`；这一轮 CLI 结束后，`takePendingPlans` 逐个 `startPlan` 同步跑完，再把「计划执行结果」作为下一条提示交回同一个会话                                |
-| `shared/engine.ts` 的 `startPlan`               | 运行写进当前任务：`task.runs` 加一条，节点进 `task.steps`；`bindRun` 把它挂成计划里的一个主步骤；终止开关在 `rs.planStops`                                                                        |
-| `shared/engine.ts` 的 `conversationPrompt`      | 子对话有 `planning` 时，「执行方式」写「要修改代码、跨模块改动或较大的研究时调用 start_plan」，并列出「可用工作流」目录                                                                           |
-| `shared/builtin/agents.ts` 的主理               | `canDelegate: true`、`canPlan: false`，注释写「不在父对话里起工作流：改代码的工作流要独立分支和收尾，放子对话」；分派表里写「要按固定剧本做的 → create_conversation，message 里点名用哪个工作流」 |
-| `shared/builtin/agents.ts` 的执行（`worker`）   | `canPlan: true`；`mode=自动` 时正式功能、跨模块改动用 `start_plan`，Bug 不起工作流；`mode=总是按工作流` 时 Bug 也走「Bug 修复」工作流                                                             |
-| `shared/resume-kids.ts` 的 `resumeNote`         | 中断时没跑完的工作流不接着跑，只写「还要跑就用 start_plan 重新启动那一步」                                                                                                                        |
-| `shared/task.ts` 的 `childHolds` / `runRunning` | 子对话彻底完成前要等 `start_plan` 那次运行结束（`workflow` 这一项）                                                                                                                               |
-| `web/src/components/tasks/TaskView.tsx`         | 父对话里的运行开在**中间页签**（`ConversationTabs` + `RunPanel`）；子对话面板里点运行，就地盖成 `RunView`；对话里点「启动工作流」那一行，弹出 `RunDialog` 窗口                                    |
-| `web/src/components/tasks/TaskFlow.tsx`         | 流程图画布只给 `mode: 'workflow'` 的任务用（`view === 'flow'`），而且按任务的 `topSteps` 画，不分是第几次运行                                                                                     |
-| `web/src/components/tasks/NextWorkflows.tsx`    | 只在 `mode: 'workflow'`、并且是老的「默认」工作流时出现                                                                                                                                           |
+| 位置                                              | 现状                                                                                                                                                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/orch-mcp.ts` 的工具表                     | `o.planning` 时给 `start_plan`（workflow、input、step）；`o.planner && !o.planning` 时给 `run_workflow` / `close_run`；协调者有 `stop_workflow`，用来终止子对话里 `start_plan` 正在跑的那次运行   |
+| `shared/engine.ts` 的 `runConversationTurn`       | `planning = agent.canPlan && !isChatMode(task)`；这一轮 CLI 结束后，`takePendingPlans` 逐个 `startPlan` 同步跑完，再把「计划执行结果」作为下一条提示交回同一个会话                                |
+| `shared/engine.ts` 的 `startPlan`                 | 运行写进当前任务：`task.runs` 加一条，节点进 `task.steps`；`bindRun` 把它挂成计划里的一个主步骤；终止开关在 `rs.planStops`                                                                        |
+| `shared/engine.ts` 的 `conversationPrompt`        | 子对话有 `planning` 时，「执行方式」写「要修改代码、跨模块改动或较大的研究时调用 start_plan」，并列出「可用工作流」目录                                                                           |
+| `shared/builtin/agents.ts` 的主理                 | `canDelegate: true`、`canPlan: false`，注释写「不在父对话里起工作流：改代码的工作流要独立分支和收尾，放子对话」；分派表里写「要按固定剧本做的 → create_conversation，message 里点名用哪个工作流」 |
+| `shared/builtin/agents.ts` 的执行（`worker`）     | `canPlan: true`；`mode=自动` 时正式功能、跨模块改动用 `start_plan`，Bug 不起工作流；`mode=总是按工作流` 时 Bug 也走「Bug 修复」工作流                                                             |
+| `shared/resume-kids.ts` 的 `resumeNote`           | 中断时没跑完的工作流不接着跑，只写「还要跑就用 start_plan 重新启动那一步」                                                                                                                        |
+| `shared/task.ts` 的 `childHolds` / `runRunning`   | 子对话彻底完成前要等 `start_plan` 那次运行结束（`workflow` 这一项）                                                                                                                               |
+| `web/src/components/tasks/TaskView.tsx`           | 父对话里的运行开在**中间页签**（`ConversationTabs` + `RunPanel`）；子对话面板里点运行，就地盖成 `RunView`；对话里点「启动工作流」那一行，弹出 `RunDialog` 窗口                                    |
+| `web/src/components/tasks/TaskFlow.tsx`           | 流程图画布只给 `mode: 'workflow'` 的任务用（`view === 'flow'`），而且按任务的 `topSteps` 画，不分是第几次运行                                                                                     |
+| `NextWorkflows`（web/src/components/tasks，已删） | 只在 `mode: 'workflow'`、并且是老的「默认」工作流时出现                                                                                                                                           |
 
 ### 现在的问题
 
@@ -269,9 +269,21 @@
 - **`change` 工作流跑完多一轮执行角色的 CLI 调用。** 这一轮现在就有（子对话 `start_plan` 后照样要收尾），只是换了位置。
 - **两套逻辑并存一段时间。** 老 `mode: 'workflow'` 任务和新的工作流子对话会并存，直到老数据自然淘汰。
 
-## 开放问题（待用户确认）
+## 实施记录
 
-1. **`change` 工作流跑完由执行角色收尾。** 本文的选择是：评审 → 完整测试 → 合回，这一段沿用子对话那一套，不放进工作流。确认是否这样。
-2. **「工作流页面可以切换到流程图页面」的理解。** 本文理解为：看一次运行的页面（右栏）里，在「输出」和「流程图」之间切换。如果指的是工作流编辑页本身，请指出。
-3. **工作流页「在项目里运行」改成在某个父对话下起。** 默认新建父对话，不再建独立的工作流任务。确认是否这样。
-4. **「Bug 修复」工作流只在用户点名时用。** 其余 Bug 都交子对话按逐层定位做。确认是否这样。
+用户 2026-11-03 确认：适用场景表照用；「Bug 修复」工作流直接去掉；不在这个范围里的工作流删掉，现有工作流不合理的一并调整；其余按本文建议。
+
+- **第 1 期**：`start_workflow` / `stop_workflow`（父对话，角色要同时能分派、开了 canPlan）；工作流子对话记 `Task.flow`（`shared/task-flow-schema.ts`）；这一轮跑流程图的哪一段、进度、交给执行角色的话、可用工作流目录和判定规则都在 `shared/flow-child.ts`，跑流程图那一段在 `shared/flow-child-run.ts`。子对话去掉 `start_plan`，执行角色去掉 `mode` 参数。「Bug 修复」进 `RETIRED_WORKFLOWS`（没改过的副本删掉、项目引用改指「通用项目」，改过的留着）；九个内置工作流补上 `when` / `notFor` / `kind`，「通用项目」的「适用」改成正式功能开发。工作流指纹只在填了这三项时才算进去，加字段之前记下的指纹照样对得上。
+- **第 2 期**：运行页（子对话里就地打开的 `RunView`、父对话的 `RunPanel`）加「输出 / 流程图」切换，`TaskFlow` 按运行号画、第 2 次起的运行按节点 id 对回；子对话栏标出工作流子对话，列表标签写「工作流 · 名字 n/m」；右栏打开还在跑流程图的工作流子对话时直接看流程图。
+- **第 3 期**：工作流页「在项目里运行」「重新运行」改成新建父对话、第一条消息点名工作流（带 id），父对话按判定规则第 1 条用 `start_workflow` 启动；不在项目可选列表里的工作流按 id 也认。去掉 `NextWorkflows`。
+
+和正文不一样的几处（实现时按更省的一条路走）：
+
+- **只读工作流也经执行角色交付**：`readonly` 跑完同样交给执行角色，只是交代「不用评审、不用测试，整理成总结后按收尾规则交付」。不另做一条「直接交回父对话」的路，子对话的收尾、状态和父计划的结算只有一套。
+- **节点失败按子对话失败交回**：父计划那一步按子对话失败结算（0042 的口径不变）；父对话 `send_to_conversation` 交回意见时，失败的节点带着意见重跑、接着往下走，等待照常重新挂上。
+- **「在项目里运行」经父对话的模型**：新建对话时必须带第一条消息，它本身就会开一轮；所以让这一轮按「用户点名了工作流」去启动，而不是面板绕过父对话再开一次。项目默认角色启动不了工作流时，弹窗里先说清会直接在对话里做。
+- **中间的运行页签和 `RunDialog` 留给老数据**：新的运行都在工作流子对话里、从右栏看；升级前父对话自己跑过的运行，照旧在中间页签和弹窗里看（也有「输出 / 流程图」切换）。
+
+## 开放问题
+
+原先的四条都已由用户确认（见「实施记录」第一段），目前没有未定的问题。

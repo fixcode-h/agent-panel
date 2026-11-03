@@ -1761,4 +1761,6 @@ export const EN_TASKS: Record<string, string> = {
   看这次运行的完整输出: "See this run's full output",
   '工作流 · {name} {done}/{total}': 'Workflow · {name} {done}/{total}',
   '工作流 · {name}': 'Workflow · {name}',
+  '这个项目的默认角色不能启动工作流，会直接在对话里做':
+    "This project's default role can't start workflows, so it will do the work in the conversation",
 }
