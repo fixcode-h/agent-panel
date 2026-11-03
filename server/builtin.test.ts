@@ -665,7 +665,7 @@ test('旧项目迁移：指向内置「默认」工作流的也改用「通用�
   )
 })
 
-test('没改过的「开发」升级成按模块逐层定位，再启动不再改；「Bug 修复」工作流下线', async () => {
+test('没改过的「开发」升级成新版（修 Bug 走简易版，ADR 0046），再启动不再改；「Bug 修复」工作流下线', async () => {
   const saved: Agent[] = []
   const agentOps = {
     async updateAgent(id: string, input: AgentInput) {
@@ -682,7 +682,7 @@ test('没改过的「开发」升级成按模块逐层定位，再启动不再�
   const st = { agents: [prev], categories: [], tags: [], workflows: [] }
   const up = await upgradeBuiltinAgents(st, agentOps)
   assert.equal(up.length, 1, '上一版「开发」升级')
-  assert.match(up[0].instructions, /按模块逐层定位/)
+  assert.match(up[0].instructions, /修自己发现的问题（简易版）/)
   assert.equal((await upgradeBuiltinAgents({ ...st, agents: up }, agentOps)).length, 0, '再启动不再改')
 
   // 「Bug 修复」工作流 ADR 0044 下线：没改过的副本（含最后一版）删掉，项目引用改指「通用项目」

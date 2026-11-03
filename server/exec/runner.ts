@@ -142,6 +142,7 @@ import { searchExcludeEnv } from './search-exclude-env.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
 import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
+import { bugMethodPrompt, bugSlash } from './bug-prompt.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -326,6 +327,7 @@ async function runAgent(
   // 启动这一轮时的选择；执行中换了 CLI/模型/强度，或者面板语言变了（系统提示词和 mod 的环境变量固定在
   // 这个进程里，新消息的提醒却是新语言），结束时都不能还停在旧进程上等下一句
   const startPick = { cli: task.cli, model: task.model, effort: task.effort, lang: replyLang() }
+  const startBug = String(!!task.bug)
   const stillCurrent = () => {
     const now = agentRun(withTaskModel(found, task), settings)
     // 这一轮里开了独立分支：进程还在原目录里，不能再等下一句，结束后在新目录里重开
@@ -336,6 +338,8 @@ async function runAgent(
       ['effort', startPick.effort, task.effort],
       ['lang', startPick.lang, replyLang()],
       ['cwd', cwd, wt || cwd],
+      // 用户在子对话里发了 /bug：标成用户报的 Bug 后要有 submit_diagnosis，旧进程的工具列表里没有，重开
+      ['bug', startBug, String(!!task.bug)],
     ].filter(([, was, is]) => (was ?? '') !== (is ?? ''))
     // 对不上就会结束这个进程、按现在的选择重开：记下是哪一项、前后各是什么，偶发重开时诊断文件里能直接看出原因
     if (diff.length)
@@ -470,7 +474,9 @@ async function runAgent(
   if (chat && !op && ctx.prompt.trim().startsWith('/')) {
     const head = '## 用户这次的消息\n'
     const at = input.indexOf(head + ctx.prompt)
-    const expanded = await expandSlash(ctx.prompt, cliId, cwd, def.slash && !carry)
+    const expanded =
+      bugSlash(ctx.prompt, task, !!call.orch?.coordinator) ??
+      (await expandSlash(ctx.prompt, cliId, cwd, def.slash && !carry))
     if (at >= 0 && expanded !== ctx.prompt)
       input = `${input.slice(0, at + head.length)}${expanded}${input.slice(at + head.length + ctx.prompt.length)}`
   }
@@ -480,6 +486,9 @@ async function runAgent(
   // Chat 模式没有后台命令时说明是空的，不拼空行
   const hint = orch && !resume ? orchHint(orch) : ''
   if (hint) input = `${input}\n\n${hint}`
+  // 用户报的 Bug：新会话第一轮带上完整查找流程（ADR 0046）
+  const bugMethod = !op && bugMethodPrompt(task, ctx.prompt, !resume)
+  if (bugMethod) input = `${input}\n\n${bugMethod}`
   // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取；
   // 子任务只查不记，不带记教训的说明
   if (!resume && !op && task.projectId) {
@@ -1318,6 +1327,9 @@ async function runAgent(
    * 交给调用方按当前状态补上变了的段落（见 shared/prompt-delta.ts）；子任务结果、/命令照旧原样
    */
   const withState = async (text: string | null) => {
+    // /bug 面板自己展开，原样交过去 Claude Code 会当成它自己的同名命令
+    const bug = text !== null && fromUser ? bugSlash(text, task, !!call.orch?.coordinator) : undefined
+    if (bug) return bug
     if (text === null || !fromUser || !call.nextPrompt || text.trim().startsWith('/')) return text
     return call.nextPrompt(text).catch((e) => {
       // 拼不出带状态的提示时退回原文照常交给 CLI（用户的话不能丢），但要留日志，不悄悄吞掉

@@ -917,4 +917,35 @@ await runShard('子对话运行与监管', async (api) => {
     await call('DELETE', `/tasks/${rp.id}`)
     step('工作流只由父对话启动：开工作流子对话，流程图跑完交执行角色收尾，父计划那一步收到结果')
   }
+
+  // ---- /bug 发给子对话（ADR 0046）：面板把它标成用户报的 Bug，交给 CLI 的是展开后的完整查找流程，不是原样的 /bug ----
+  {
+    const bp = await waitDone(
+      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话等 bug' })).id,
+      20000,
+    )
+    const kid = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: B.id,
+          parentTaskId: bp.id,
+          prompt: '子对话先做点别的',
+        })
+      ).id,
+      20000,
+    )
+    assert.ok(!kid.bug, '普通子对话不是用户报的 Bug')
+    const sent = await call('POST', `/tasks/${kid.id}/messages`, { text: '/bug 购物车角标偶尔不刷新' })
+    assert.equal(sent.bug, true, '子对话里发 /bug：标成用户报的 Bug，之后有交诊断报告的工具')
+    const run = await callOf('购物车角标偶尔不刷新')
+    assert.ok(run.input.includes('用 submit_diagnosis 交诊断报告'), '展开成子对话按完整流程交报告的要求')
+    assert.ok(run.input.includes('## 用户报的 Bug：完整查找流程'), '带上完整查找流程')
+    assert.ok(!run.input.includes('/bug 购物车'), 'Claude Code 不会收到原样的 /bug')
+    await waitDone(kid.id, 20000)
+    await call('POST', `/tasks/${bp.id}/stop`).catch(() => {})
+    await call('DELETE', `/tasks/${bp.id}`)
+    step('/bug 发给子对话：标成用户报的 Bug，按完整查找流程展开')
+  }
 })

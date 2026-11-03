@@ -554,8 +554,14 @@ export const EN_DESIGN: Record<string, string> = {
   '给改动补测试并跑通；后面可以写要测的范围':
     'Add tests for the changes and get them passing; optionally name what to test',
   '[范围]': '[scope]',
-  定位并修复一个报错或问题: 'Find and fix an error or problem',
+  '快速修一个报错或问题：自己查、自己修，不用确认报告':
+    'Quickly fix an error or problem: investigate and fix it directly, no report to confirm',
   '<报错或现象>': '<error or symptom>',
+  '按完整流程查一个 Bug：时间线、调用栈、引入的改动、比较几种修法，先交报告给你确认再改':
+    'Investigate a bug with the full process: timeline, call stack, the change that introduced it and several fix options; you confirm the report before anything is changed',
+  '<现象>': '<symptom>',
+  '子对话正在回复，等这一轮结束或先停止，再发 /bug':
+    'The sub-conversation is replying. Wait for this turn to finish or stop it, then send /bug again',
   '只出方案不改代码：读相关代码，给出实现步骤、要改的文件和风险':
     'Plan only, no edits: read the relevant code and outline the steps, files to change and risks',
   '<需求>': '<requirement>',
