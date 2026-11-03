@@ -2466,6 +2466,7 @@ export const Settings = z.object({
    * 还没回复就停掉、接回原会话重启，重启没恢复就新开子对话接手（见 shared/stuck-child.ts）。和 idleTimeoutMinutes 是两个独立的档位
    */
   childIdleAskMinutes: z.number().int().min(0).max(1440).catch(3).default(3),
+  nudgeMax: z.number().int().min(0).max(20).catch(6).default(6), // 计划没做完就停下时最多推几次接着做；0 表示不自动推。子对话和顶层对话共用，Chat 页固定 1 次（见 shared/conv-mode.ts 的 nudgeMax）
   /**
    * 对话页切走后，CLI 还停在等下一句的工具上多久（分钟）；0 表示回复完就结束这一轮。
    * 期间这个对话保留一个 CLI 进程，值越大越省重开的时间，同时挂着的进程也越多。
