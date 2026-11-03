@@ -82,7 +82,7 @@ function ReleaseRow({
   const [open, setOpen] = useState(false)
   const isCur = r.version === current
   const newer = compareVersions(r.version, current) > 0
-  // feed 兜底只有版本号：没有下载地址时不给「下载」「更新」入口，只引导去 GitHub Releases
+  // 没有下载地址时（拼不出本平台的包）不给「下载」「更新」入口，只引导去 GitHub Releases
   const downloadable = !!(r.zipUrl || r.tarUrl)
   return (
     <li className="flex flex-col border-b py-3 last:border-b-0">

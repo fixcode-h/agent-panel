@@ -351,6 +351,7 @@ if (process.argv.includes('--no-archive')) {
 // macOS 也出 zip：.app 是目录，zip 能带上可执行权限，方便在 Finder 里直接解压。
 // zip 怎么写看本机的 tar：bsdtar（Windows 10 起自带、macOS）的 -a 按扩展名写 zip；GNU tar（Linux、CI）不认 -a 写 zip，
 // 会悄悄写成未压缩的 tar——发布过的 .zip 就是这样打不开的，所以 Linux 上用 zip 命令，最后再核对文件头
+// 包名改了要同步 server/update.ts 的 releaseAssets：GitHub API 限流时面板按这些名字拼下载地址
 const archives = {
   win: [`${base}.zip`],
   mac: [`${base}-mac.tar.gz`, `${base}-mac.zip`],
