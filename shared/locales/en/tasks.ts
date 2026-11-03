@@ -1756,4 +1756,9 @@ export const EN_TASKS: Record<string, string> = {
   '交结果：卡住': 'Result: stuck',
   '交结果：没做完': 'Result: unfinished',
   '在等你处理：确认操作或回答提问': 'Waiting for you: confirm an action or answer a question',
+  工作流子对话: 'Workflow sub-conversation',
+  运行的视图: 'Run view',
+  看这次运行的完整输出: "See this run's full output",
+  '工作流 · {name} {done}/{total}': 'Workflow · {name} {done}/{total}',
+  '工作流 · {name}': 'Workflow · {name}',
 }

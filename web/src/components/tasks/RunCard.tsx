@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, type ReactNode } from 'react'
+import { lazy, memo, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { CircleCheck, CircleX, Loader2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { stepMs } from '@shared/task'
@@ -16,7 +16,69 @@ import { Modal, ModalHeader } from '@/components/ui/modal'
 import { FlowStrip, type FlowNode } from '@/components/ui/flow-strip'
 import { StepIcon } from './TaskStatusIcon'
 import { StepSection } from './StepSection'
+import { Segmented } from '@/components/ui/segmented'
 import { t } from '@shared/i18n'
+
+// 流程图画布（@xyflow）只在切到「流程图」时才加载，看输出的时候不拖慢打开
+const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
+
+/** 看一次运行的两页：按节点铺开的输出、流程图（ADR 0044）。选到哪一页记在本机，下次打开还是这一页 */
+export type RunTab = 'output' | 'flow'
+const RUN_TAB_KEY = 'run-view-tab'
+export function useRunTab(initial?: RunTab) {
+  const [tab, setTab] = useState<RunTab>(() => {
+    if (initial) return initial
+    try {
+      return localStorage.getItem(RUN_TAB_KEY) === 'flow' ? 'flow' : 'output'
+    } catch {
+      return 'output'
+    }
+  })
+  const pick = (v: RunTab) => {
+    setTab(v)
+    try {
+      localStorage.setItem(RUN_TAB_KEY, v)
+    } catch {}
+  }
+  return [tab, pick] as const
+}
+
+/** 标题栏里的「输出 / 流程图」切换 */
+export function RunTabs({ tab, onTab }: { tab: RunTab; onTab: (v: RunTab) => void }) {
+  return (
+    <Segmented
+      size="sm"
+      value={tab}
+      onChange={onTab}
+      label={t('运行的视图')}
+      options={[
+        { id: 'output', label: t('输出') },
+        { id: 'flow', label: t('流程图') },
+      ]}
+      className="shrink-0"
+    />
+  )
+}
+
+/** 运行页的正文：输出页是 RunFlow，流程图页是按这次运行画的流程图（点节点在下面看它的输出） */
+export function RunBody({
+  task,
+  run,
+  tab,
+  onTab,
+}: {
+  task: Task
+  run: number
+  tab: RunTab
+  onTab: (v: RunTab) => void
+}) {
+  if (tab === 'output') return <RunFlow task={task} run={run} />
+  return (
+    <Suspense fallback={null}>
+      <TaskFlow task={task} run={run} onOpenChat={() => onTab('output')} openLabel={t('看这次运行的完整输出')} />
+    </Suspense>
+  )
+}
 
 /** 一次运行的状态：有失败的算失败，还在跑的算执行中，全做完算完成。运行面板和子对话里的运行视图共用 */
 export function runState(task: Task, run: number) {
@@ -169,6 +231,7 @@ export function RunPanel({
   footer?: ReactNode
 }) {
   const state = runState(task, run)
+  const [tab, setTab] = useRunTab()
   useEscape(true, onClose)
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
@@ -184,9 +247,10 @@ export function RunPanel({
             </span>
           )}
         </span>
+        <RunTabs tab={tab} onTab={setTab} />
         <IconButton size="sm" icon={X} label={t('关闭')} onClick={onClose} />
       </header>
-      <RunFlow task={task} run={run} />
+      <RunBody task={task} run={run} tab={tab} onTab={setTab} />
       {footer && <div className="shrink-0 border-t bg-bg px-3 py-3 md:px-4">{footer}</div>}
     </div>
   )

@@ -2,6 +2,7 @@
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
+import { flowProgress } from '@shared/flow-child'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
@@ -3442,6 +3443,7 @@ function tasksRoute(
           // 和正式后端对齐：运行区、悬浮层都靠这几项判断「还在跑 / 在等什么」
           background,
           workflow: runRunning(x),
+          flow: flowProgress(x),
           helpers: helpersWorking(x),
           unmerged: x.worktree?.state === 'active',
           // 和正式后端对齐：独立分支目录里还有几个文件没提交（没真的 git，按工作区状态给一个固定的数）

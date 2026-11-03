@@ -26,14 +26,20 @@ function combined(list: StepStatus[]): StepStatus | undefined {
 /** 任务的流程图：主流程的节点显示执行状态，挂载的流程显示轮次和结论；点节点在下面看它的输出 */
 export function TaskFlow({
   task,
+  run,
   focus,
   onOpenChat,
+  openLabel,
   onSelect,
 }: {
   task: Task
+  /** 画第几次运行（工作流子对话的运行页切到流程图时给，ADR 0044）；不给是任务现在这一次 */
+  run?: number
   /** 外面（右栏的任务进度）要求选中的节点；at 变了就重新选中 */
   focus?: { id: string; at: number }
   onOpenChat: () => void
+  /** 节点输出下面那个链接的说法：运行页里是切回「输出」 */
+  openLabel?: string
   /** 选中的节点变了：右栏跟着只看这个节点 */
   onSelect?: (id: string) => void
 }) {
@@ -48,27 +54,33 @@ export function TaskFlow({
     () => (box.current?.clientHeight ?? window.innerHeight) - 160,
   )
   const { modelOf } = useAgentView()
-  // 用任务创建时存下的工作流画图，之后改了工作流也和执行记录对得上
-  const { workflow, workflows } = taskWorkflows(task, data.workflows)
+  // 用任务创建时存下的工作流画图，之后改了工作流也和执行记录对得上；指定了运行就用那次运行存下的快照
+  const rec = run ? task.runs?.find((r) => r.id === run) : undefined
+  const { workflow, workflows } = rec
+    ? { workflow: rec.workflows.find((w) => w.id === rec.workflowId) ?? rec.workflows[0], workflows: rec.workflows }
+    : taskWorkflows(task, data.workflows)
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
-  const tops = topSteps(task)
+  const tops = run ? topSteps(task, run) : topSteps(task)
   const flow = workflow ? (getFlow(workflow, tops[0]?.flowId ?? '') ?? entryFlow(workflow)) : undefined
-  const runningId = tops.find((s) => s.status === 'running')?.id
+  // 选中的是流程图上的节点 id：第 2 次起的运行记录 id 带运行前缀（`r2/impl`），按 nodeId 对回节点
+  const runningId = tops.find((s) => s.status === 'running')?.nodeId
   // 执行中的节点底部的耗时每秒走一次
   const now = useNow(!!runningId)
-  const [sel, setSel] = useState(() => runningId ?? tops.find((s) => s.status === 'failed')?.id ?? tops[0]?.id ?? '')
+  const [sel, setSel] = useState(
+    () => runningId ?? tops.find((s) => s.status === 'failed')?.nodeId ?? tops[0]?.nodeId ?? '',
+  )
   const [follow, setFollow] = useState(true)
   useEffect(() => {
     if (follow && runningId) setSel(runningId)
   }, [follow, runningId])
   useEffect(() => {
-    onSelect?.(sel)
+    onSelect?.(tops.find((s) => s.nodeId === sel)?.id ?? sel)
     // 只在选中的节点变化时通知；onSelect 每次渲染都是新函数
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [sel])
   useEffect(() => {
     if (!focus) return
-    setSel(focus.id)
+    setSel(tops.find((s) => s.id === focus.id)?.nodeId ?? focus.id)
     setFollow(false)
     // 每次点「定位」（focus.at 变化）才跳过去
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -89,7 +101,7 @@ export function TaskFlow({
     const base = nodeViews(flow, workflow, workflows, agents, modelOf)
     const out: Record<string, NodeView> = {}
     for (const [id, v] of Object.entries(base)) {
-      const step = tops.find((s) => s.id === id)
+      const step = tops.find((s) => s.nodeId === id)
       const kids = step ? childSteps(task, step.id) : []
       // 节点底部：耗时（含之前被打断时做的部分）和 token（输入 + 输出，含节点里各步、挂载流程等所有子节点）
       const tokens = step ? tokenCount(stepsTokens([step, ...stepTree(task, step.id)])) : 0
@@ -132,7 +144,7 @@ export function TaskFlow({
       <p className="px-6 py-10 text-center text-body text-subtle">{t('这个任务的工作流已经删除，无法显示流程图。')}</p>
     )
 
-  const status = (id: string) => (id === START ? 'done' : tops.find((s) => s.id === id)?.status)
+  const status = (id: string) => (id === START ? 'done' : tops.find((s) => s.nodeId === id)?.status)
   const allDone = tops.length > 0 && tops.every((s) => s.status === 'done')
   const edgeTone = (from: string, to: string): EdgeTone => {
     const a = status(from)
@@ -143,7 +155,7 @@ export function TaskFlow({
     return 'idle'
   }
 
-  const step = tops.find((s) => s.id === sel)
+  const step = tops.find((s) => s.nodeId === sel)
   const msgs = step
     ? task.messages.filter((m) => m.role !== 'user' && (m.step === step.id || m.step.startsWith(step.id + '/')))
     : []
@@ -190,7 +202,7 @@ export function TaskFlow({
               )}
               <Button variant="link" onClick={onOpenChat} className="self-start text-xs">
                 <MessageSquareText className="h-3.5 w-3.5" />
-                {t('在对话中查看完整过程')}
+                {openLabel ?? t('在对话中查看完整过程')}
               </Button>
             </div>
           </div>

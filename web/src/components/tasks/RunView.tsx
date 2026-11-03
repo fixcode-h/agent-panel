@@ -7,7 +7,7 @@ import { t } from '@shared/i18n'
 import { useEscape } from '@/lib/useEscape'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { IconButton } from '@/components/ui/icon-button'
-import { RunFlow, runState } from './RunCard'
+import { RunBody, RunTabs, runState, useRunTab, type RunTab } from './RunCard'
 
 /** 节点状态的说法：复制出去的文本里要能看懂，和列表里的叫法一致 */
 const stateText: Record<StepStatus, () => string> = {
@@ -36,6 +36,7 @@ export function RunView({
   onBack,
   onClose,
   footer,
+  tab,
 }: {
   /** 子对话自己的任务：运行和节点的输出都在它上面 */
   task: Task
@@ -48,9 +49,12 @@ export function RunView({
   onClose?: () => void
   /** 子对话的输入框：跟着这次运行放在底下，和右栏运行面板（RunPanel）用的是同一个 */
   footer?: ReactNode
+  /** 打开时先看哪一页：父对话里点工作流子对话时直接看流程图；不给按上次看的 */
+  tab?: RunTab
 }) {
   // Esc 和返回按钮一样回子对话，不关面板
   useEscape(true, onBack)
+  const [view, setView] = useRunTab(tab)
   const state = run > 0 ? runState(task, run) : 'waiting'
   const title = run > 0 ? runName(task, run) : t('启动工作流')
   const output = (tool?.output ?? '').replace(/\s+$/, '')
@@ -89,6 +93,7 @@ export function RunView({
             <span className="shrink-0">{run > 0 ? t('第 {n} 次运行', { n: run }) : t('启动工作流')}</span>
           </span>
         </span>
+        {run > 0 && <RunTabs tab={view} onTab={setView} />}
         <Menu>
           <MenuTrigger asChild>
             <IconButton size="sm" label={t('更多操作')}>
@@ -113,7 +118,7 @@ export function RunView({
         {onClose && <IconButton size="sm" icon={X} label={t('关闭子对话面板')} onClick={onClose} />}
       </header>
       {run > 0 ? (
-        <RunFlow task={task} run={run} />
+        <RunBody task={task} run={run} tab={view} onTab={setView} />
       ) : (
         // 没有运行可看（调用失败、还没开始执行）：把原因和这次的输出照原样留着，和运行窗口里一致
         <div className="min-h-0 flex-1 overflow-auto">

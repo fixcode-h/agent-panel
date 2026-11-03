@@ -99,7 +99,7 @@ import { AnalysisMark } from './AnalysisMark'
 import { findReport, isAnalysisTask } from '@/lib/analysis-report'
 import { StepSection } from './StepSection'
 import { LoadTrace, LoadTracePill } from './LoadTrace'
-import { RunCard, RunPanel } from './RunCard'
+import { RunCard, RunPanel, type RunTab } from './RunCard'
 import { RunView } from './RunView'
 import { TaskPanel } from './TaskPanel'
 import { PlanButton } from './PlanPanel'
@@ -647,7 +647,17 @@ export function TaskView({
   const [openRun, setOpenRun] = useState(() => (pane ? 0 : readPaneRun(taskId)))
   // 子对话面板里点开的一次运行：在这块面板内换成那次运行的视图（带返回），不另开一栏。
   // run 为 0 是认不回来是哪次运行（调用失败、还没开始），按「没有启动运行」显示原因
-  const [paneRun, setPaneRun] = useState<{ run: number; tool?: ToolUse } | null>(null)
+  const [paneRun, setPaneRun] = useState<{ run: number; tool?: ToolUse; tab?: RunTab } | null>(null)
+  // 工作流子对话（ADR 0044）在右栏打开时，流程图还在跑就直接看这次运行的流程图；每个子对话只自动开一次，返回后不再弹回来
+  const flowShown = useRef('')
+  useEffect(() => {
+    const f = task?.flow
+    if (!pane || !task || !f?.run || f.handed || f.cancelled || flowShown.current === task.id) return
+    flowShown.current = task.id
+    setPaneRun({ run: f.run, tab: 'flow' })
+    // 只看对话换了没有、运行号和交没交出去：task 每次推送都是新对象，按它跑会反复判断
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [pane, task?.id, task?.flow?.run, task?.flow?.handed])
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
   // 强制停止：连 CLI 进程一起结束（预览、等下一句的进程不留着），用在会话卡住或不想再让它跑的时候
@@ -2473,6 +2483,7 @@ export function TaskView({
                     task={task}
                     run={paneRun.run}
                     tool={paneRun.tool}
+                    tab={paneRun.tab}
                     onBack={() => setPaneRun(null)}
                     onClose={onClose}
                     footer={composer}

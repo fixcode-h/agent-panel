@@ -1,4 +1,5 @@
 /** 新建任务的初始数据；真实执行和在线演示共用 */
+import type { FlowProgress } from './flow-child.ts'
 import {
   type AskKind,
   type Attachment,
@@ -1116,6 +1117,8 @@ export interface ChildEntry {
   autoAsk?: { at: string; count: number; held?: boolean }
   /** 这会儿在等什么（见 childWait）：不是在跑也不是卡住 */
   waiting?: ChildWait
+  /** 工作流子对话（ADR 0044）：哪个工作流、跑到第几个节点（见 flow-child.ts 的 flowProgress） */
+  flow?: FlowProgress
 }
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（前五项只有一项有值） */
