@@ -1,6 +1,6 @@
 /** 真实执行一轮：调度交给执行引擎（shared/engine.ts），调用 Agent 时经 runner 启动对应 CLI。从 runner.ts 拆出 */
 import { HANDOFF_DIR } from '../store.ts'
-import { docRootOf, lookupModuleDocs } from '../module-map.ts'
+import { docRootOf, lookupModuleDocs, moduleIndexText } from '../module-map.ts'
 import { type EngineHost, runEngineTurn } from '../../shared/engine.ts'
 import type { RealContext } from './real-context.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
@@ -49,6 +49,8 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
     ...(vcs !== 'p4' &&
       vcs !== 'svn' &&
       ctx.project.path && { docRoot: await docRootOf(ctx.project.path, ctx.agents) }),
+    // 协调器定位模块用：只给项目里的顶层对话
+    ...(!ctx.task.parentTaskId && ctx.project.path && { modules: await moduleIndexText(ctx.project.path, ctx.agents) }),
   }
 }
 

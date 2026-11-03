@@ -7,7 +7,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Agent } from '../shared/schema.ts'
 import { projectDocRoot } from './doc-root.ts'
-import { hasGeneratedTable, parseModuleDoc, withModuleTable, type ModuleDoc } from '../shared/module-docs.ts'
+import { parseModuleDoc, withModuleTable, type ModuleDoc } from '../shared/module-docs.ts'
 
 /**
  * 项目的文档根：P4 / SVN 项目按「文档」角色的设置算（可能在项目外）；Git 和没有版本管理的项目 projectDocRoot 不给，
@@ -51,17 +51,6 @@ export async function syncModuleMap(docRoot: string): Promise<{ changed: boolean
 }
 
 /**
- * 每轮结束时调（server/tasks/run.ts）：模块文档改了就把地图跟上。只管「已经是生成格式」的地图，
- * 旧的手写地图（没有生成区标记）不自动改：那会在用户的项目里冒出一大段没人要的改动，迁移交给「文档」或 npm run docs:modules。
- * 没有地图、但已经有模块文档时建一个
- */
-export async function syncManagedModuleMap(docRoot: string) {
-  const before = await readFile(path.join(docRoot, 'MODULE-MAP.md'), 'utf8').catch(() => '')
-  if (before && !hasGeneratedTable(before)) return { changed: false, skipped: 'legacy' as const }
-  return syncModuleMap(docRoot)
-}
-
-/**
  * 协调器建子对话前查模块文档（shared/docs-first.ts）：每个模块看 `<DOC_ROOT>/modules/<模块>/README.md` 在不在。
  * 只做文件检查，不建索引、不搜代码（用户 2026-11-03 定）；路径写成相对项目根的样子，子对话照着读
  */
@@ -87,4 +76,26 @@ export async function goneModulesNote(projectPath: string, agents: Agent[]) {
   )
   if (!gone.length) return ''
   return `模块文档对不上了：${gone.map((d) => `「${d.name}」（源码 ${d.sources.join('、')}）`).join('、')}的源码已经不在了。用 spawn_agents 派「文档」，params 写 {"task": "清理"}，instructions 写这几个模块和这次合回的改动：真删了就删模块文档目录，移走、改名的改路径。`
+}
+
+/**
+ * 协调器每轮看到的「已有模块文档」（ADR 0048）：从各模块 README 的元数据现读，一个模块一行。
+ * 用户的项目里面板不改写 MODULE-MAP.md：父对话目录里留下没人提交的改动会挡住子对话合回，几个子对话各自重新生成同一张表还会互相冲突。
+ * 模块 README 是唯一来源，这一段只是它的索引；没有模块文档时说清楚，协调器就按目录判断
+ */
+export async function moduleIndexText(projectPath: string, agents: Agent[]) {
+  const root = await docRootOf(projectPath, agents)
+  const docs = (await readModuleDocs(root)).sort((a, b) => (a.name < b.name ? -1 : 1))
+  const rel = (f: string) => path.relative(projectPath, f).split(path.sep).join('/') || f
+  if (!docs.length)
+    return `## 已有模块文档\n文档根 \`${rel(root)}\` 下还没有模块文档：定位时看一、二级目录判断模块，开子对话前面板会让「文档」先把要用的模块分析好。`
+  const shown = docs.slice(0, 80)
+  return `## 已有模块文档（模块名｜职责｜源码｜关键词）\n按关键词、职责对上模块后读 \`${rel(root)}/modules/<模块>/README.md\`；这里没有的模块还没写文档。\n${shown
+    .map(
+      (d) =>
+        `- ${d.name}｜${d.role || d.title}｜${d.sources.join('、')}｜${d.keywords.slice(0, 12).join('、')}${d.status === 'stale' ? '（文档可能过期）' : ''}`,
+    )
+    .join(
+      '\n',
+    )}${docs.length > shown.length ? `\n（另有 ${docs.length - shown.length} 个模块没列出，看 modules/ 目录）` : ''}`
 }

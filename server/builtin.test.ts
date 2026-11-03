@@ -851,7 +851,7 @@ test('调研、子任务、评审三个角色：先读模块地图和模块文�
   assert.match(doc, /写之前先读 `modules\/<模块>\/README\.md`/, '文档角色写之前先读模块文档')
   assert.match(doc, /合并时只改对应小节/, '已有文档时合并，不整文件覆盖')
   assert.match(doc, /删掉 `modules\/<模块>\/` 整个目录/, '模块没了删掉模块文档目录')
-  assert.match(doc, /模块表是按各模块 README 的元数据头生成的，不要手改表格/, '模块表不手改')
+  assert.match(doc, /不要手写、手改模块表，地图不存在也不要建/, '模块表不手改、不自己建')
   assert.doesNotMatch(doc, /retired/, '不留墓碑目录')
   // 评审代码改动（ADR 0013）：材料只有交接单和面板附的差异，不读模块文档和 bugs.md；评审方案或结论时才按上面的顺序定位
   assert.match(text('reviewer'), /不读 `MODULE-MAP\.md`、模块文档、`bugs\.md`/, '评审代码不读模块文档')

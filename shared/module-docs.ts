@@ -94,7 +94,7 @@ const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\n/g, ' ')
 const code = (xs: string[]) => xs.map((x) => `\`${x}\``).join('、')
 
 /** 地图里生成区的起止标记：生成器只重写这两行之间的内容 */
-export const MAP_BEGIN = '<!-- 模块表：由各模块 README 的元数据生成，不要手改（npm run docs:modules） -->'
+export const MAP_BEGIN = '<!-- 模块表：由各模块 README 的元数据生成，不要手改 -->'
 export const MAP_END = '<!-- /模块表 -->'
 /**
  * 认生成区的起始标记只看开头：「文档」照着模板自己写地图时会把标记里的说明换个说法（2026-11-03 真实 API 实测），

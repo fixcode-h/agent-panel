@@ -1,25 +1,23 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { goneModulesNote, syncManagedModuleMap } from './module-map.ts'
-import { MAP_BEGIN } from '../shared/module-docs.ts'
+import { goneModulesNote, moduleIndexText } from './module-map.ts'
 
-test('每轮结束时的地图同步：没有地图就建、内容一样不写，旧的手写地图不自动改', async () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'module-map-'))
+test('协调器每轮看到的已有模块文档：从模块 README 的元数据现读，不改写 MODULE-MAP.md', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'module-index-'))
   try {
-    mkdirSync(path.join(root, 'modules/calc'), { recursive: true })
-    writeFileSync(path.join(root, 'modules/calc/README.md'), '# calc：计算\n\n- 职责：加减乘除\n- 源码：`src/`\n')
-    const first = await syncManagedModuleMap(root)
-    assert.equal(first.changed, true)
-    const map = readFileSync(path.join(root, 'MODULE-MAP.md'), 'utf8')
-    assert.ok(map.includes(MAP_BEGIN) && map.includes('| calc | `src/` | 加减乘除 |'))
-    assert.equal((await syncManagedModuleMap(root)).changed, false, '再跑一次不改文件')
-    // 用户项目里旧的手写地图：不动它
-    writeFileSync(path.join(root, 'MODULE-MAP.md'), '# 地图\n\n| 模块 | 文档 |\n| --- | --- |\n| x | y |\n')
-    assert.equal((await syncManagedModuleMap(root)).changed, false)
-    assert.match(readFileSync(path.join(root, 'MODULE-MAP.md'), 'utf8'), /\| x \| y \|/)
+    assert.match(await moduleIndexText(root, []), /还没有模块文档：定位时看一、二级目录/)
+    mkdirSync(path.join(root, 'docs/modules/calc'), { recursive: true })
+    writeFileSync(
+      path.join(root, 'docs/modules/calc/README.md'),
+      '# calc：计算\n\n- 职责：加减乘除\n- 源码：`src/`\n- 关键词：计算器、add\n',
+    )
+    const text = await moduleIndexText(root, [])
+    assert.match(text, /- calc｜加减乘除｜src\/｜计算器、add/)
+    assert.match(text, /读 `docs\/modules\/<模块>\/README\.md`/)
+    assert.equal(existsSync(path.join(root, 'docs/MODULE-MAP.md')), false, '不在用户的项目里写地图')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

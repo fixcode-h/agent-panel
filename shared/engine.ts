@@ -614,6 +614,8 @@ export interface EngineHost {
    */
   policy?: {
     push: 'ask' | 'allow' | 'deny'
+    /** 已有模块文档的索引（协调器定位用，server/module-map.ts 的 moduleIndexText） */
+    modules?: string
     /** P4 / SVN 以外的项目的文档根（docs 为空时给，见 shared/doc-root.ts 的 plainDocRootText） */
     docRoot?: string
     /** 项目是 Git 仓库但没配远端：没有地方可推，推送规则改成不推、不问（ask_push 也不给） */
@@ -4142,6 +4144,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     // 这一段按全文记指纹（shared/prompt-delta.ts），逐分钟变的「最后活动 N 分钟前」会让整段每轮重发，不放进来。
     // 卡住了面板会自动询问、重启（ADR 0036），父对话要看多久没输出时用 list_conversations 查
     parts.push(
+      host.policy?.modules ?? '',
       `## 现有子对话\n${
         list.length
           ? list
