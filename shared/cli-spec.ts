@@ -328,7 +328,7 @@ export function mcpExtras(
   name: string,
   url: string,
   dir = '',
-  options: Record<string, boolean> = {},
+  options: Record<string, boolean | string> = {},
   override: Record<string, string | number> = {},
 ) {
   const on = spec.extras.filter((e) => options[e.option])
@@ -537,17 +537,26 @@ export const CliSpec = z.object({
   envExample: z.string().default(''),
   /**
    * 设置里给用户的开关：打开时加上 env，参数规则里用条件「opt.<id>」判断（例如 Pi 的离线运行、codemode）。
-   * default 是没改过时的状态
+   * default 是没改过时的状态。写了 choices 的是下拉选项（例如 Codex 的思考摘要）：值是选中的 id，
+   * 参数里用「{opt.<id>}」填进去，default 写其中一个 id；下拉选项不加 env
    */
   options: z
     .array(
-      z.object({
-        id: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
-        label: z.string(),
-        hint: z.string().default(''),
-        default: z.boolean().default(false),
-        env: z.record(z.string(), z.string()).default({}),
-      }),
+      z
+        .object({
+          id: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
+          label: z.string(),
+          hint: z.string().default(''),
+          default: z.union([z.boolean(), z.string()]).default(false),
+          env: z.record(z.string(), z.string()).default({}),
+          choices: z.array(z.object({ id: z.string().min(1), label: z.string() })).default([]),
+        })
+        .refine(
+          (o) => (o.choices.length ? o.choices.some((c) => c.id === o.default) : typeof o.default === 'boolean'),
+          {
+            message: '下拉选项的 default 要是 choices 里的一个 id，开关的 default 要是 true / false',
+          },
+        ),
     )
     .default([]),
   /** 每次运行都加的环境变量（用户在设置里写的同名变量优先）：例如让无界面运行信任工作目录 */
@@ -645,7 +654,7 @@ function value(o: BuildOptions, key: string): unknown {
     case 'textOnly':
       return o.textOnly
     default:
-      // opt.<id>：设置里这个开关开着
+      // opt.<id>：设置里这个开关开着，或下拉选项选中的值
       return key.startsWith('opt.') ? o.options?.[key.slice(4)] || undefined : undefined
   }
 }
@@ -661,7 +670,8 @@ function holds(o: BuildOptions, cond: string) {
 }
 
 function fill(s: string, o: BuildOptions, item?: string) {
-  return s.replace(/\{(\w+)(?:\|([^}]*)|:([^}]*))?\}/g, (_, key: string, sep?: string, def?: string) => {
+  // 键里允许点号：{opt.<id>} 填下拉选项选中的值
+  return s.replace(/\{([\w.]+)(?:\|([^}]*)|:([^}]*))?\}/g, (_, key: string, sep?: string, def?: string) => {
     if (key === 'item') return item ?? ''
     const v = value(o, key)
     if (Array.isArray(v)) return v.join(sep ?? ',')
@@ -783,7 +793,12 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     env: spec.env,
     stderrNoise: spec.stderrNoise.map((x) => new RegExp(x.pattern)),
     compactThrash: spec.compactThrash && new RegExp(spec.compactThrash.pattern, 'i'),
-    options: spec.options.map((x) => ({ ...x, label: tr(x.label), hint: tr(x.hint) })),
+    options: spec.options.map((x) => ({
+      ...x,
+      label: tr(x.label),
+      hint: tr(x.hint),
+      choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
+    })),
     mcp: spec.mcp,
     mcpStore: spec.mcpStore,
     packages: spec.packages && {

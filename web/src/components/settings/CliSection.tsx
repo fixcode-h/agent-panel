@@ -32,6 +32,7 @@ import {
   cliSettings,
   defaultCli,
   mergeCliEnv,
+  optionValue,
   readCliEnvText,
   splitCliEnv,
   tierFallback,
@@ -981,11 +982,20 @@ export function CliSection({
         </Row>
         {(def.options ?? []).map((o) => (
           <Row key={o.id} title={o.label} desc={o.hint}>
-            <Switch
-              checked={draft.options[o.id] ?? o.default}
-              onCheckedChange={(v) => set('options', { ...draft.options, [o.id]: v })}
-              aria-label={`${def.name} ${o.label}`}
-            />
+            {o.choices.length ? (
+              <Select
+                aria-label={`${def.name} ${o.label}`}
+                value={String(optionValue(o, draft.options[o.id]))}
+                onChange={(e) => set('options', { ...draft.options, [o.id]: e.target.value })}
+                options={o.choices.map((c) => ({ value: c.id, label: c.label }))}
+              />
+            ) : (
+              <Switch
+                checked={optionValue(o, draft.options[o.id]) === true}
+                onCheckedChange={(v) => set('options', { ...draft.options, [o.id]: v })}
+                aria-label={`${def.name} ${o.label}`}
+              />
+            )}
           </Row>
         ))}
         <Row
