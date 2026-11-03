@@ -1764,6 +1764,7 @@ export const EN_TASKS: Record<string, string> = {
   '这个项目的默认角色不能启动工作流，会直接在对话里做':
     "This project's default role can't start workflows, so it will do the work in the conversation",
   // Bug 诊断报告（ADR 0045）
+  报告待确认: 'Report awaits approval',
   等你查看报告: 'Waiting for you to review the report',
   '等你查看诊断报告第 {n} 版': 'Waiting for you to review diagnosis report v{n}',
   查看报告: 'View report',

@@ -884,6 +884,8 @@ await runShard(import.meta.filename, async (api) => {
       .first()
       .waitFor({ timeout: 10000 })
       .catch(() => errors.push('诊断报告：父对话里在跑的子对话那一行没有写「等你查看诊断报告第 2 版」'))
+    if (!(await p.getByText('报告待确认', { exact: true }).count()))
+      errors.push('诊断报告：父对话里那一行没有用「报告待确认」和别的执行中区分开')
     const open = childView(p).getByRole('button', { name: '查看报告' })
     await open
       .first()

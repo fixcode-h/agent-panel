@@ -145,7 +145,10 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
   const parked = icon === 'idle' && state === 'unfinished'
   if ((icon === 'running' || parked) && c.plan)
     out.push({ text: t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total }), tone: 'warning' })
-  if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })
+  // 交了 Bug 诊断报告、等你确认（ADR 0045）：还在转圈（没做完），但状态写成「报告待确认」并用提醒色，
+  // 一眼和别的「执行中」分开，知道是这一个在等你看报告
+  if (icon === 'running' && c.diagnosis) out.push({ text: t('报告待确认'), tone: 'warning' })
+  else if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })
   if (parked) out.push({ text: convStateText(state), tone: 'subtle' })
   // 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText）。
   // 静止的「未完成」没有停下原因（这一轮是正常说完的）就不写，免得写成「已暂停」

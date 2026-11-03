@@ -214,7 +214,12 @@ export function ChildrenBar({
                       )}
                     >
                       {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
-                      <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent-text')} />
+                      <Loader2
+                        className={cn(
+                          'h-3 w-3 shrink-0 animate-spin',
+                          stale?.cls ?? (c.diagnosis ? 'text-warning' : 'text-accent-text'),
+                        )}
+                      />
                       {c.analysis && <AnalysisMark kind={c.analysis} />}
                       {/* 工作流子对话（ADR 0044）：标题前一个流程图标，和普通子对话分开 */}
                       {c.flow && (
