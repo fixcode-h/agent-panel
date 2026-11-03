@@ -16,7 +16,6 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ReviewDialog } from './ReviewDialog'
-import { DiagnosisEntry } from './DiagnosisDialog'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { QuestionPanel, type PanelQuestion } from '@/components/chat/QuestionPanel'
 import { t } from '@shared/i18n'
@@ -43,8 +42,6 @@ export function TaskRequestCard({ task, onAnswered }: { task: Task; onAnswered: 
   const { agents } = useData()
   const req = task.requests?.[0]
   const a = req && agents.find((x) => x.id === req.agentId)
-  // 诊断报告（ADR 0045）：确认走自己的接口，确认后再作为消息交给对话
-  if (req?.purpose === 'diagnosis') return <DiagnosisEntry task={task} onDone={onAnswered} />
   return (
     <RequestCard
       requests={task.requests ?? []}

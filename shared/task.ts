@@ -513,7 +513,12 @@ export interface ConvFacts {
   stopReason?: StopReason
   /** 已经收起（归档 / 独立分支被用户删掉）：见 taskGone；能不能归成已完成还要看它是不是没在动（见 convState） */
   gone?: boolean
+  /** 交了 Bug 诊断报告、等用户确认方案（ADR 0045）：算执行中——它停在这一步上，确认了接着改，不是做完了 */
+  diagnosis?: boolean
 }
+
+/** 最新一版 Bug 诊断报告还在等用户确认（ADR 0045）：状态、等待原因、完成判定都读它 */
+export const diagnosisPending = (t: { diagnoses?: Task['diagnoses'] }) => t.diagnoses?.at(-1)?.status === 'pending'
 
 /** 回收站保留期：删除只做标记，这么多天后才由启动后的清理任务物理删除（见 server/tasks.ts 的 cleanupTrash） */
 export const TRASH_RETENTION_DAYS = 7
@@ -557,12 +562,12 @@ export function convState(x: ConvFacts): ConvState {
   // 但不能盖住还在跑：用户删了独立分支后接着在原目录做（isolated 的注释：discarded 回到共用目录，worktree 不会清），
   // 或者在等后台命令 / 子对话的结果——这些照旧如实显示，和「已置完成」是同一条规矩。
   // 这也是侧栏「N 个执行中」、标题 (n)、保活回收判定的入口（见 convActive）
-  if (x.gone && !x.working && !pending) return 'done'
+  if (x.gone && !x.working && !x.diagnosis && !pending) return 'done'
   if (x.requests || x.asking || x.childNeeds) return 'needs'
   // 这一轮失败了但还有结果会推回来时不算失败：结果回来会接着开一轮，
   // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
   if (x.status === 'failed' && !pending) return 'failed'
-  if (x.working) return 'running'
+  if (x.working || x.diagnosis) return 'running'
   if (pending) return 'waiting'
   if (x.status === 'stopped' && !x.resolved && x.stopReason !== 'finish') return 'stopped'
   if (x.wrapup && !x.resolved) return 'wrapup'
@@ -609,12 +614,14 @@ export function childFacts(
     archived?: Task['archived']
     deletedAt?: Task['deletedAt']
     worktree?: Task['worktree']
+    diagnoses?: Task['diagnoses']
   },
   x: { background?: number; unmerged?: boolean; childNeeds?: number } = {},
 ): ConvFacts {
   return {
     status: task.status,
     working: task.working,
+    diagnosis: diagnosisPending(task),
     resolved: task.resolved === true,
     requests: task.requests.length,
     asking: task.parentAsks?.length ?? 0,
@@ -897,6 +904,7 @@ export function childFlowOf(
   task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps'> & {
     runs?: Task['runs']
     resolved?: boolean
+    diagnoses?: Task['diagnoses']
   },
   x: { background?: number; merged?: boolean; reported?: boolean; parentTest?: boolean } = {},
 ): ChildFlowState {
@@ -907,7 +915,8 @@ export function childFlowOf(
     helpers: helpersWorking(task),
     plan: openPlan(task),
     asking: task.parentAsks?.length ?? 0,
-    requests: task.requests.length,
+    // 诊断报告等确认（ADR 0045）和等确认的请求一样拦着完成
+    requests: task.requests.length + (diagnosisPending(task) ? 1 : 0),
     unmerged: x.merged === false,
     parentTest: x.parentTest,
     completed: task.resolved === true,
@@ -1117,6 +1126,8 @@ export interface ChildEntry {
   autoAsk?: { at: string; count: number; held?: boolean }
   /** 这会儿在等什么（见 childWait）：不是在跑也不是卡住 */
   waiting?: ChildWait
+  /** 交了 Bug 诊断报告、等用户确认（ADR 0045）：算执行中，行上写「等你查看诊断报告」 */
+  diagnosis?: boolean
   /** 工作流子对话（ADR 0044）：哪个工作流、跑到第几个节点（见 flow-child.ts 的 flowProgress） */
   flow?: FlowProgress
 }
@@ -1148,6 +1159,7 @@ export type ChildWait =
   | { kind: 'background'; n: number }
   | { kind: 'helpers'; list: string[] }
   | { kind: 'workflow' }
+  | { kind: 'diagnosis'; version: number }
   | { kind: 'next' }
 
 /** 等待原因的一句话：子对话栏、list_conversations、计划面板都用它 */
@@ -1164,6 +1176,8 @@ export function childWaitText(w: ChildWait | undefined): string {
       return t('等子任务：{list}', { list: w.list.join(t('、')) })
     case 'workflow':
       return t('等工作流跑完')
+    case 'diagnosis':
+      return t('等你查看诊断报告第 {n} 版', { n: w.version })
     case 'next':
       return t('等下一句')
     default:
@@ -1177,13 +1191,17 @@ export function childWaitText(w: ChildWait | undefined): string {
  * background 由服务端给（后台命令在服务端跑，任务里只有编号），cliAlive 同理
  */
 export function childWait(
-  tk: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'steps'> & { runs?: Task['runs'] },
+  tk: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'steps'> & {
+    runs?: Task['runs']
+    diagnoses?: Task['diagnoses']
+  },
   x: { background?: number; cliAlive?: boolean; childNeeds?: number } = {},
 ): ChildWait | undefined {
   const asking = tk.parentAsks?.length ?? 0
   if (asking) return { kind: 'answer', n: asking }
   const requests = tk.requests?.length ?? 0
   if (requests) return confirmWait(tk.requests)
+  if (diagnosisPending(tk)) return { kind: 'diagnosis', version: tk.diagnoses!.at(-1)!.version }
   if (x.childNeeds) return { kind: 'children', n: x.childNeeds }
   if (x.background) return { kind: 'background', n: x.background }
   const helpers = tk.steps.filter(helperRunning).map((s) => s.title)
@@ -1868,6 +1886,7 @@ export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
     jobs?: Task['jobs']
     archived?: Task['archived']
     worktree?: Task['worktree']
+    diagnoses?: Task['diagnoses']
   }
 
 /**
@@ -1878,6 +1897,7 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
   return {
     status: x.status,
     working: x.working,
+    diagnosis: diagnosisPending(x),
     resolved: x.resolved === true,
     requests: x.requests?.length ?? 0,
     asking: x.parentAsks?.length ?? 0,

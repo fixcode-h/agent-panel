@@ -796,7 +796,7 @@ test('每轮提示：写出当前第几步、计划滞后提醒和新输入先�
   assert.equal(log.length, 1)
 })
 
-test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交了报告挂成等用户确认；普通子对话、父对话都没有', async () => {
+test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交了报告等用户确认时算执行中；普通子对话、父对话都没有', async () => {
   const kid = (bug: boolean) =>
     ({
       ...newTask({ projectId: 'p', mode: 'chat', agentId: 'w', prompt: '修登录' } as never, undefined, '', 'b1'),
@@ -827,9 +827,13 @@ test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交
   })
   h.agents = [agent('w', '执行')]
   await runEngineTurn(h)
-  assert.equal(bugKid.requests[0]?.purpose, 'diagnosis')
+  assert.equal(bugKid.requests.length, 0, '不挂成等你处理的请求')
   assert.equal(bugKid.diagnoses?.[0].status, 'pending')
-  assert.equal(convStateText(convState(taskFacts(bugKid))), convStateText('needs'), '等你确认')
+  assert.equal(
+    convState(taskFacts(bugKid)),
+    'running',
+    '等确认期间子对话算执行中，父对话那边照样转圈（用户 2026-11-03 定的）',
+  )
 
   for (const t0 of [kid(false), { ...kid(false), id: 'p1', parentTaskId: '' } as Task]) {
     const h2 = host(t0, [], async (call) => {

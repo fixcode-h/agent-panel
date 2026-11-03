@@ -333,7 +333,15 @@ export function RunningNow({
             // 宽度下行会窄一半，按视口断点会误判
             container
             // 行前不放切换子对话的下拉（用户要求去掉）：每个子对话自己一行，要换着看就点另一行
-            glyph={<Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', stale?.cls ?? 'text-accent-text')} />}
+            // 等你确认诊断报告的（ADR 0045）转圈用提醒色：和标签「报告待确认」一起，和别的执行中分开
+            glyph={
+              <Loader2
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 animate-spin',
+                  stale?.cls ?? (k.diagnosis ? 'text-warning' : 'text-accent-text'),
+                )}
+              />
+            }
             // 窄屏不写动作名：把宽度留给标题、状态标签和耗时，否则「计划 1/2」后面的「执行中」会被裁掉。
             // 用 sr-only 不用 hidden：不占宽度，读屏仍能读到这行是子对话
             verb={<span className="sr-only md:not-sr-only">{t('子对话')}</span>}

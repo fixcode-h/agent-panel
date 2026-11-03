@@ -805,15 +805,17 @@ await runShard(import.meta.filename, async (api) => {
     await backToTask()
   }
 
-  // Bug 诊断报告（ADR 0045）：父对话页的子对话请求条上有「查看报告」，点开审阅弹窗：
-  // 有多版切换、标注能选「疑问 / 改方案 / 补充信息」，按钮是「确认方案，开始修」「有疑问，再查」
+  // Bug 诊断报告（ADR 0045）：等确认期间子对话算执行中（父对话页不单独放按钮），
+  // 「查看报告」只在子对话里交报告的那一行工具调用上；点开审阅弹窗：多版切换、标注能选「疑问 / 改方案 / 补充信息」
   {
     const key = 'agent-panel-demo-v3'
     const saved = await p.evaluate((k) => localStorage.getItem(k), key)
     await p.evaluate((k) => {
       const db = JSON.parse(localStorage.getItem(k))
       const parent = db.tasks.find((x) => x.title.includes('购物车右上角'))
-      const kid = db.tasks.find((x) => x.parentTaskId === parent.id && !x.archived)
+      // 用一个已经停下的子对话（演示里在跑的子对话会被模拟执行改写消息）：解决标记去掉，等确认期间算执行中
+      const kid = db.tasks.find((x) => x.parentTaskId === parent.id && x.title.includes('修侧栏时间显示'))
+      Object.assign(kid, { resolved: false, status: 'done', working: false })
       const at = new Date().toISOString()
       const base = {
         at,
@@ -848,29 +850,50 @@ await runShard(import.meta.filename, async (api) => {
           answers: [{ id: 1, answer: '上周的重构把派发挪进了循环里' }],
         },
       ]
-      kid.requests = [
-        {
-          id: 'demo-diag',
-          step: '',
-          agentId: '',
-          kind: 'confirm',
-          purpose: 'diagnosis',
-          version: 2,
-          title: '诊断报告第 2 版',
-          detail: '',
-          options: [],
-          at,
-        },
-      ]
+      kid.requests = []
+      kid.messages.push({
+        id: 'demo-diag-tool',
+        role: 'agent',
+        agentId: '',
+        step: '',
+        text: '',
+        at,
+        tools: [
+          {
+            kind: 'other',
+            name: 'MCP__panel__submit_diagnosis',
+            label: '',
+            detail: '',
+            input: JSON.stringify({ rootCause: 'store.ts 删除最后一件时提前 return', fix: '去掉提前 return' }),
+            output: '已交诊断报告第 2 版，等用户确认。现在结束这一轮回复，确认之前不要改任何文件。',
+            ms: 800,
+          },
+        ],
+      })
+      localStorage.setItem(`task-child:${parent.id}`, kid.id)
+      localStorage.removeItem(`task-run:${parent.id}`)
       localStorage.setItem(k, JSON.stringify(db))
     }, key)
     await p.reload()
     await backToTask()
-    const open = p.locator('[data-status-row="child-requests"]').getByRole('button', { name: '查看报告' })
+    // 父对话不为它单独放一行：等报告期间它照常是在跑的子对话，那一行的说明写在等什么
+    if (await p.locator('[data-child-request]').count())
+      errors.push('诊断报告：父对话页不该为等确认的诊断报告单独放一行')
+    await p
+      .getByText('等你查看诊断报告第 2 版', { exact: false })
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('诊断报告：父对话里在跑的子对话那一行没有写「等你查看诊断报告第 2 版」'))
+    if (!(await p.getByText('报告待确认', { exact: true }).count()))
+      errors.push('诊断报告：父对话里那一行没有用「报告待确认」和别的执行中区分开')
+    const open = childView(p).getByRole('button', { name: '查看报告' })
     await open
       .first()
       .waitFor({ timeout: 10000 })
-      .catch(() => errors.push('诊断报告：父对话页的子对话请求条上没有「查看报告」'))
+      .catch(() => errors.push('诊断报告：子对话里交报告的那一行工具调用上没有「查看报告」'))
+    await check(p, '诊断报告-子对话里的工具行')
+    if (!(await childView(p).getByText('等你查看报告').count()))
+      errors.push('诊断报告：交报告那一行没有写「等你查看报告」')
     if (await open.count()) {
       await open.first().click()
       const dlg = p.getByRole('dialog')

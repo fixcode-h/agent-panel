@@ -11,6 +11,7 @@ import {
   type DiagnosisInput,
 } from './bug-diagnosis.ts'
 import type { Task } from './schema.ts'
+import { childWait, convState, diagnosisPending } from './task.ts'
 
 /** Bug 先交诊断报告、用户确认了方案再改（ADR 0045） */
 setLang('zh')
@@ -35,22 +36,23 @@ const id = () => `id${++n}`
 const bugTask = (over: Partial<Task> = {}) =>
   ({ bug: true, diagnoses: [], requests: [], messages: [], changes: [], ...over }) as unknown as Task
 
-test('交诊断报告：挂成等用户确认的请求，对话里记一条可点开的报告；不是父对话派来的 Bug 不收', () => {
+test('交诊断报告：记成等用户确认的一版，对话算执行中（不是等你处理的请求）；不是父对话派来的 Bug 不收', () => {
   assert.equal(submitDiagnosis(bugTask({ bug: false }), input(), id).ok, false)
   const tk = bugTask({ changes: [{ path: 'web/src/lib/login.ts' }] as Task['changes'] })
   const r = submitDiagnosis(tk, input(), id)
   assert.ok(r.ok && r.version === 1)
   assert.match(r.info, /结束这一轮.*确认之前不要改任何文件/)
-  assert.equal(tk.requests.length, 1)
-  assert.equal(tk.requests[0].purpose, 'diagnosis')
-  assert.equal(tk.requests[0].version, 1)
-  assert.match(tk.requests[0].detail, /## 根因（已证实）\nmax 用的是秒/)
-  assert.match(
-    tk.requests[0].detail,
-    /## 交报告前已改动的文件\n- `web\/src\/lib\/login\.ts`/,
-    '确认之前就动了手的要摆出来',
-  )
-  assert.equal(tk.messages.at(-1)?.bugReport, 1)
+  assert.equal(tk.requests.length, 0, '不挂成等你处理的请求：用户要的是子对话还在转圈')
+  assert.equal(pendingDiagnosis(tk)?.version, 1)
+  assert.ok(diagnosisPending(tk))
+  assert.equal(convState({ status: 'done', diagnosis: diagnosisPending(tk) }), 'running', '等确认期间算执行中')
+  assert.deepEqual(childWait({ ...tk, status: 'done', working: false, steps: [], parentAsks: [] } as Task), {
+    kind: 'diagnosis',
+    version: 1,
+  })
+  const md = diagnosisMarkdown(tk.diagnoses![0])
+  assert.match(md, /## 根因（已证实）\nmax 用的是秒/)
+  assert.match(md, /## 交报告前已改动的文件\n- `web\/src\/lib\/login\.ts`/, '确认之前就动了手的要摆出来')
   // 还在等确认时再交：不收
   assert.match(submitDiagnosis(tk, input(), id).info, /还在等用户确认/)
 })
@@ -87,7 +89,7 @@ test('用户标疑问：退回的话按编号列出；新一版要逐条回答�
   assert.match(r.message, /1\. \[疑问\]「max 用的是秒」：配置里写的是毫秒吧？/)
   assert.match(r.message, /2\. \[补充信息\]：上周升级过 axios/)
   assert.match(r.message, /只处理被问到的几条/)
-  assert.equal(tk.requests.length, 0, '处理了就收起')
+  assert.ok(!diagnosisPending(tk), '处理了就不再算等确认')
   assert.equal(decideDiagnosis(tk, 1, { approve: true, notes: [], overall: '' }, id).ok, false, '同一版不能处理两次')
   // 新一版漏答第 3 条（改方案）：不收；第 2 条是补充信息，不用答
   assert.match(submitDiagnosis(tk, input({ answers: [{ id: 1, answer: '查了，是秒' }] }), id).info, /还没回答：3/)
@@ -106,7 +108,7 @@ test('用户标疑问：退回的话按编号列出；新一版要逐条回答�
   assert.equal(tk.diagnoses?.[0].status, 'superseded')
   assert.equal(pendingDiagnosis(tk)?.version, 2)
   assert.match(
-    tk.requests[0].detail,
+    diagnosisMarkdown(tk.diagnoses![1], tk.diagnoses![0]),
     /## 回答上一版的意见\n1\. \*\*疑问\*\*「max 用的是秒」：配置里写的是毫秒吧？\n {3}- 回答：查了 config\.ts:8/,
   )
 })

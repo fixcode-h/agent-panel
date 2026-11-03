@@ -25,9 +25,7 @@ export const TaskRequest = z.object({
    * 面板自己发起的授权（不是 CLI 的权限请求）：push 是 ask_push 的推送授权卡，用户点的「允许 / 拒绝」
    * 由面板记进 task.remotePush（见 server/exec/panel-requests.ts）。旧数据没有这个字段，照普通请求处理
    */
-  purpose: z.enum(['push', 'diagnosis']).optional(),
-  /** purpose 是 diagnosis 时：等确认的是诊断报告第几版（ADR 0045） */
-  version: z.number().int().optional(),
+  purpose: z.enum(['push']).optional(),
   title: z.string(),
   detail: z.string().default(''),
   /** 问题的选项；也可以自己填 */

@@ -172,3 +172,18 @@ test('工作流子对话（ADR 0044）：行上标出是哪个工作流，流程
   assert.ok(childLabels(handed).some((l) => l.text === '工作流 · 通用项目'))
   assert.ok(!childLabels(closedWaiting()).some((l) => l.text.startsWith('工作流')), '普通子对话不标')
 })
+
+test('交了 Bug 诊断报告等你确认（ADR 0045）：还在转圈，状态写「报告待确认」，不写「执行中」', () => {
+  const row = closedWaiting({
+    cliAlive: false,
+    background: 0,
+    plan: undefined,
+    waiting: undefined,
+    diagnosis: true,
+    status: 'done',
+  })
+  assert.equal(childIcon(row), 'running')
+  const labels = childLabels(row).map((l) => l.text)
+  assert.ok(labels.includes('报告待确认'))
+  assert.ok(!labels.includes('执行中'))
+})

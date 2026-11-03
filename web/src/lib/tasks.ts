@@ -219,6 +219,8 @@ export interface ToolView {
   waiting?: boolean
   /** 这次调用启动了一次工作流：点标题打开这次运行的对话，不是一段文本 */
   startsRun?: boolean
+  /** 交诊断报告（ADR 0045）：交的是第几版；那一版还在等用户确认时这一行一直转圈、给「查看报告」 */
+  diagnosis?: number
   /** 给另一个对话发消息（交给子对话、回报父对话、给其他父对话传话）：画成一行「发送消息」 */
   send?: { kind: PeerKind; to: string; body: string }
 }
@@ -272,6 +274,7 @@ export function toolView(tool: ToolUse): ToolView | null {
     // 交出去的命令还没拿到结果：不管那一刻的调用记的是什么，这一行都算在跑
     const waiting = ids.length > 0 && bgPendingIds(tool.output ?? '').length > 0
     const startsRun = name === 'start_plan' || name === 'run_workflow'
+    const diagnosis = name === 'submit_diagnosis' ? Number(/第 (\d+) 版/.exec(tool.output ?? '')?.[1]) || 0 : 0
     const send = sendOf(name, tool)
     return {
       tool: panel,
@@ -281,6 +284,7 @@ export function toolView(tool: ToolUse): ToolView | null {
       ...(jobs?.length && { jobs }),
       ...(waiting && { waiting }),
       ...(startsRun && { startsRun }),
+      ...(diagnosis && { diagnosis }),
     }
   }
   const mcp = tool.name === 'MCP' ? MCP_LABEL.exec(tool.label) : null

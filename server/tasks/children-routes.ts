@@ -1,4 +1,5 @@
 import { Task, type Project } from '../../shared/schema.ts'
+import { diagnosisPending } from '../../shared/task.ts'
 import { flowProgress } from '../../shared/flow-child.ts'
 import {
   childActivity,
@@ -139,6 +140,8 @@ export function registerChildrenRoutes(s: TasksScope) {
           workflow: runRunning(liveTask),
           // 工作流子对话（ADR 0044）：行上标出是哪个工作流、跑到哪个节点
           flow: flowProgress(liveTask),
+          // 等用户确认诊断报告（ADR 0045）：算执行中，行上的说明来自 waiting
+          diagnosis: diagnosisPending(liveTask),
           // 它派出去的子任务还在跑：结果交回来它还要接着做，也不能算做完了
           helpers: helpersWorking(liveTask),
           // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」；带上正在做的那一步

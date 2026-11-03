@@ -1764,7 +1764,9 @@ export const EN_TASKS: Record<string, string> = {
   '这个项目的默认角色不能启动工作流，会直接在对话里做':
     "This project's default role can't start workflows, so it will do the work in the conversation",
   // Bug 诊断报告（ADR 0045）
-  '子对话「{title}」的{what}等你确认方案': 'Sub-conversation "{title}": {what} awaits your approval',
+  报告待确认: 'Report awaits approval',
+  等你查看报告: 'Waiting for you to review the report',
+  '等你查看诊断报告第 {n} 版': 'Waiting for you to review diagnosis report v{n}',
   查看报告: 'View report',
   疑问: 'Question',
   '哪里看不明白、觉得不对，要它查清楚': 'What looks unclear or wrong — have it check',
@@ -1785,9 +1787,6 @@ export const EN_TASKS: Record<string, string> = {
   '「有疑问，再查」把标注按编号交回，它逐条查清后交新一版':
     '"Question it" sends your numbered notes back; it answers each and submits a new version',
   '方案已经记下，但没能交给子对话：{error}': "Decision saved, but couldn't deliver it to the sub-conversation: {error}",
-  诊断报告等你确认: 'Diagnosis report awaits your approval',
-  '诊断报告第 {n} 版': 'Diagnosis report v{n}',
-  确认方案后才会开始改: 'Code changes start only after you approve the plan',
   '标注 {n} 的种类': 'Type of note {n}',
   '这一版已经处理过了，只能查看': 'This version has been handled; view only',
   '这是旧的一版，只能查看；切回最新一版再标注': 'This is an older version, view only; switch to the latest to annotate',
@@ -1804,7 +1803,6 @@ export const EN_TASKS: Record<string, string> = {
   影响和风险: 'Impact and risk',
   验证计划: 'Verification plan',
   交报告前已改动的文件: 'Files already changed before the report',
-  '交了诊断报告第 {n} 版，等你确认方案': 'Submitted diagnosis report v{n}; waiting for you to approve the plan',
   这一版诊断报告已经处理过了: 'This version of the diagnosis report has already been handled',
   '退回要写清哪里有疑问：先标注，或者写整体意见':
     "To send it back, say what's in question: annotate first, or write an overall comment",
