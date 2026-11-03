@@ -5,11 +5,13 @@ import type { Task } from '../shared/schema.ts'
 import { restartResumable } from '../shared/resume-kids.ts'
 import { CACHE_DIR, writeJsonAtomic } from './store.ts'
 import { readInterrupted, resolveInterrupted, type InterruptedEntry, type InterruptedRecord } from './interrupted.ts'
+import { log } from './log.ts'
 
 /**
  * 被「面板退出 / 重启」打断的对话（实测报告问题 18）：以前重启后所有对话都停在「面板重启时中断」，只能逐个点「继续」。
  * 退出前（tasks.stopAll）记下名单，重启后首页给一条「上次有 N 个对话在运行：全部继续 / 逐个看」。
- * 不做成「重启后自动继续」：继续会花钱、会接着改项目，用户可能正是因为它跑偏了才关的面板，要用户点一下才拉起。
+ * 默认不自动继续：继续会花钱、会接着改项目，用户可能正是因为它跑偏了才关的面板，要用户点一下才拉起。
+ * 设置里开了「重启后自动继续」（resumeAfterRestart，ADR 0042）才由 autoResumeAfterRestart 在启动后逐个拉起。
  * 和强制更新的记录（interrupted-by-update.json + 弹窗）分开放：那边是更新前问好的，这边是任何一次退出。
  */
 const FILE = () => path.join(CACHE_DIR, 'interrupted-by-restart.json')
@@ -69,4 +71,28 @@ export function restartRoutes(deps: {
         return c.json(await body())
       })
   )
+}
+
+/**
+ * 设置里开了「重启后自动继续」：启动迁移做完后，按首页「全部继续」同一份名单、同一个继续接口逐个拉起（ADR 0042）。
+ * 一个个来：每个父对话继续时还要连带拉起子对话、续跑子任务，并发起一堆 CLI 容易撞上保活上限。
+ * 拉不起来的留在名单里，首页照旧提示，用户自己处理；全部拉起才确认，不再提示
+ */
+export async function autoResumeAfterRestart(o: {
+  enabled: () => Promise<boolean>
+  call: (method: string, path: string, body?: unknown) => Promise<unknown>
+}) {
+  if (!(await o.enabled().catch(() => false))) return
+  const list = (await o.call('GET', '/app/restart-interrupted')) as InterruptedTasks
+  if (list.acknowledged || !list.tasks.length) return
+  let failed = 0
+  for (const x of list.tasks)
+    try {
+      await o.call('POST', `/tasks/${x.id}/resume`, {})
+      log.info('task', '面板重启后自动继续', { task: x.id })
+    } catch (e) {
+      failed++
+      log.warn('task', '面板重启后自动继续没能拉起', { task: x.id, error: (e as Error).message })
+    }
+  if (!failed) await o.call('POST', '/app/restart-interrupted/ack', {})
 }

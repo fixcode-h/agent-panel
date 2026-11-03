@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { finish, type EngineHost } from './engine.ts'
-import { cancelUnit, dropInterrupted, pauseUnit } from './run-stops.ts'
+import { cancelUnit, dropInterrupted, helperKey, helperStops, pauseUnit, pausedSignal } from './run-stops.ts'
 import { Task, TaskStep } from './schema.ts'
 import { settleStopped } from './task-settle.ts'
 
@@ -71,10 +71,20 @@ test('停下时还有子任务在跑：即使这一轮已经答完，也不把�
   const idle = chat([step({ status: 'done' })])
   finish(idle.host, { ok: false, stopped: true, error: '' }, { answered: true })
   assert.equal(idle.task.status, 'done')
-  // 不是停下而是失败：在跑的记失败
-  const bad = chat([step()])
+})
+
+test('对话自己的 CLI 失败（不是停止）：在跑的子任务被中断并暂停，继续时接着做；工作流节点照旧记失败', () => {
+  const bad = chat([step(), step({ id: 'n1', slot: '' as never })])
+  const ac = new AbortController()
+  helperStops.set(helperKey('t', 's/sub/h1'), ac)
   finish(bad.host, { ok: false, error: 'CLI 崩了' })
-  assert.equal(bad.task.steps[0].status, 'failed')
+  assert.equal(ac.signal.aborted, true, '子任务的 CLI 被中断：不然它跑完又把自己写成完成')
+  assert.equal(pausedSignal(ac.signal), true, '按暂停中断，不按终止（终止会记成跳过）')
+  assert.equal(bad.task.steps[0].status, 'pending')
+  assert.equal(bad.task.steps[0].interrupted, true)
+  assert.equal(bad.task.steps[1].status, 'failed', '工作流节点照旧记失败')
+  assert.equal(bad.task.status, 'failed')
+  helperStops.delete(helperKey('t', 's/sub/h1'))
 })
 
 test('落盘收口和引擎收尾同一个写法：在跑的步骤暂停，所有步骤和对话的排队标记清掉', () => {

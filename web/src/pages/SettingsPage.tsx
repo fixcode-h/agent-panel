@@ -178,6 +178,7 @@ function SettingsBody({
   const [childKeep, setChildKeep] = useState(String(initial.childDoneKeepMinutes))
   const [archiveDays, setArchiveDays] = useState(String(initial.autoArchiveDays))
   const [reclaim, setReclaim] = useState(initial.reclaimIdleCli)
+  const [resumeRestart, setResumeRestart] = useState(initial.resumeAfterRestart)
   const [bgLimit, setBgLimit] = useState(String(initial.backgroundLimit))
   const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
   const [longPaste, setLongPaste] = useState(String(initial.longPasteChars))
@@ -369,6 +370,7 @@ function SettingsBody({
     childDoneKeepMinutes: childKeepValid ? childKeepMin : initial.childDoneKeepMinutes,
     autoArchiveDays: archiveValid ? archiveN : initial.autoArchiveDays,
     reclaimIdleCli: reclaim,
+    resumeAfterRestart: resumeRestart,
     backgroundLimit: bgValid ? bgN : initial.backgroundLimit,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     // 内存采样间隔在设置 →「数据」里改，这里沿用原来的值
@@ -1074,6 +1076,19 @@ function SettingsBody({
                         />
                       </Row>
                     )}
+                    <Row
+                      title={t('重启后自动继续')}
+                      desc={t('面板重启后接着跑被打断的对话')}
+                      hint={t(
+                        '打开后，面板重启时还在执行的对话会在启动后自动继续（和首页「全部继续」一样，连带拉起它们的子对话和子任务）。默认关：继续会花钱、会接着改项目，关着时由你在首页点「全部继续」或逐个继续。',
+                      )}
+                    >
+                      <Switch
+                        aria-label={t('面板重启后自动继续被打断的对话')}
+                        checked={resumeRestart}
+                        onCheckedChange={setResumeRestart}
+                      />
+                    </Row>
                     <Row
                       title={t('子对话完成后保留')}
                       desc={t('完成后 Agent 再留多久')}

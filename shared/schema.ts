@@ -2462,9 +2462,8 @@ export const Settings = z.object({
   /** CLI 这么多分钟没有任何输出时提醒，再过同样的时间自动停止；0 表示不检测。比总时长更合适：长任务不会被误杀，卡死的会被发现 */
   idleTimeoutMinutes: z.number().int().min(0).max(1440).default(15),
   /**
-   * 子对话这么多分钟没有任何输出时，面板以父对话的名义自动问它当前在做什么、是否卡住；0 表示不问。
-   * 问过之后再过这么久还没回复就停掉它、接回原会话重启，重启没恢复就新开子对话接手（见 shared/stuck-child.ts）。
-   * 和 idleTimeoutMinutes 是两个独立的档位：那一条管所有对话的提醒 / 自动停止
+   * 子对话这么多分钟没有任何输出时，面板以父对话的名义自动问它当前在做什么、是否卡住；0 表示不问。问过再过这么久
+   * 还没回复就停掉、接回原会话重启，重启没恢复就新开子对话接手（见 shared/stuck-child.ts）。和 idleTimeoutMinutes 是两个独立的档位
    */
   childIdleAskMinutes: z.number().int().min(0).max(1440).catch(3).default(3),
   /**
@@ -2475,6 +2474,7 @@ export const Settings = z.object({
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
   /** 关掉后不自动回收：回复完没人看的 CLI 进程一直留着，进程会越攒越多，内存只增不减 */
   reclaimIdleCli: z.boolean().catch(true).default(true),
+  resumeAfterRestart: z.boolean().catch(false).default(false), // 重启后自动继续被打断的对话；默认关，见 ADR 0042
   /**
    * 子对话彻底完成后，CLI 还停在等下一句上多久（分钟）再结束；0 表示完成就结束。
    * 这段时间里父对话或用户接着交代，消息直接交给同一个进程，不用冷启动。
