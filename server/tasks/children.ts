@@ -467,9 +467,7 @@ export function createChildren(sc: TasksScope) {
     // 信里写的次数要和面板实际用的上限一致（设置 nudgeMax，默认 6）；设为 0 时一次都没推，不能写「推了 0 次」
     const nudgeLimit = nudgeMax(tk, (await getSettings()).nudgeMax)
     const nudgeText =
-      nudgeLimit > 0
-        ? `它按自己的计划推了 ${nudgeLimit} 次仍停在这里`
-        : '它一次都没被推（面板提醒次数为 0）仍停在这里'
+      nudgeLimit > 0 ? `它按自己的计划推了 ${nudgeLimit} 次仍停在这里` : '它一次都没被推（面板提醒次数为 0）仍停在这里'
     const next = mergeOnly
       ? `\n这是它第 ${stops} 次停在这里没请收尾${sc.mergeNudged.has(tk.id) ? '（面板已经提醒过它一次）' : ''}。` +
         `下一步：用 send_to_conversation 让它${isolated(tk) ? '在自己的分支里' : ''}评审处置完、跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。` +
