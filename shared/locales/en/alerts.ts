@@ -12,8 +12,8 @@ export const EN_ALERTS: Record<string, string> = {
     'This turn ended with the plan unfinished (or work done without a plan), and nothing is being waited on. The panel already nudged it a few times and it still stopped here. This usually happens when the model announces its next step and then ends the turn.',
   '看一下计划和最后几条回复：要接着做就发「继续」或点「继续执行」；确实不用做了，让它把剩下的步骤标成跳过。':
     'Check the plan and the last few replies: send "continue" or click "Continue" to carry on; if the rest is not needed, ask it to mark the remaining steps as skipped.',
-  '计划才做了 {done}/{total}，面板推了几次还是停下了：停在这里等你看一下':
-    'The plan is only {done}/{total} done and it stopped again after several nudges; it is waiting for you to take a look',
+  '计划才做了 {done}/{total}，面板不会再自动提醒它了：停在这里等你看一下':
+    'The plan is only {done}/{total} done and the panel will not nudge it automatically again; it is waiting for you to take a look',
   // 警告行
   '原始信息：': 'Raw details:',
   点开看原因和怎么办: 'Open to see the cause and what to do',

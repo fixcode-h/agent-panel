@@ -105,15 +105,19 @@ export function createDrive(
     if (can !== 'ok') {
       const reason = can
       say({ action: 'stuck', reason, ...progress, max })
-      // 推满了计划还没做完：写一行警告留给用户，不让它看起来像做完了
+      // 到了上限（推满或设为 0）计划还没做完：写一行警告留给用户，不让它看起来像做完了。
+      // 文案不说「推了几次」：设为 0 时一次都没推
       await warnStopped(
         conv.id,
         now.key,
-        t('计划才做了 {done}/{total}，面板推了几次还是停下了：停在这里等你看一下', {
+        t('计划才做了 {done}/{total}，面板不会再自动提醒它了：停在这里等你看一下', {
           done: now.p.done,
           total: now.p.total,
         }),
       )
+      // 子对话到了上限要让父对话知道（ADR 0041）。max=0 时一次都没推、planNudged 没记上，
+      // children.ts 的 stuckAfterNudge 判断会把「未完成」这封信吞掉，父计划就一直挂着
+      if (conv.parentTaskId) await reportChild(conv.id)
       return false
     }
     // 稍等一下再推：这一轮刚结束时 CLI 还没停到「等下一句」上；等它停稳了再看一次，还停着才推

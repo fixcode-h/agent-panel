@@ -18,7 +18,7 @@ paths: server/tasks/children.ts, server/tasks/merge.ts, shared/drive.ts, shared/
 
 ## 子对话和顶层对话一样自驱，推满了才报父对话
 
-- 规则：`nudgeMax` 只按 Chat / Agent 分（Agent 模式按设置 `nudgeMax`，默认 6 次、0 表示不自动推；Chat 页 1 次），不按是不是子对话分。父对话只在子对话推满（`stuckAfterNudge` 读推满时才记的 `planNudged`）时收到一次「卡住」，信里写明不要只发「继续」；父对话交代新任务（peer parent + task）给子对话一次新机会。
+- 规则：`nudgeMax` 只按 Chat / Agent 分（Agent 模式按设置 `nudgeMax`，默认 6 次、0 表示不自动推；Chat 页 1 次），不按是不是子对话分。父对话只在子对话推满（`stuckAfterNudge` 读推满时才记的 `planNudged`）时收到一次「卡住」，信里写明不要只发「继续」；父对话交代新任务（peer parent + task）给子对话一次新机会。0 只是不推模型（也不留「推了几次」的警告），子对话卡住仍要在 `nudgePlan` 的 `can !== 'ok'` 分支上报父对话，否则父计划会一直挂着。
 - 起因：用户 2026-11-02：自驱属于对话自己，不是父对话检测到再来推，外部消息只改变计划。
 - 防线：e2e `09-subagent-runtime`「子对话自己推满 3 次仍不动，才上报父对话一次」（这一片把设置 `nudgeMax` 调成 3，省时间并覆盖设置生效）；默认值和范围在 `shared/settings.test.ts`。
 

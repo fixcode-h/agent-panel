@@ -1776,8 +1776,8 @@ export const EN_SETTINGS: Record<string, string> = {
     'When a sub-chat prints nothing for this long, the panel asks it, as the parent, what it is doing and whether it is stuck; a reply resets the timer. If there is still no reply after another such period (several times longer while a command runs), the panel stops it and restarts it on its original session. If that does not help, it adds a warning and starts a new sub-chat that takes over with the original task and progress so far.',
   面板提醒次数: 'Follow-up nudges',
   计划没做完却停下时最多推几次接着做: 'How many times to nudge when the plan is unfinished',
-  '计划没做完却停下时，面板最多推这么多次让它接着做；推满还停着就留一条提醒等你处理。没有计划、拿不准做没做完时，也按这个次数上限做收尾自检。0 表示不自动推，停下来等你。Chat 页一问一答固定只推 1 次。':
-    'When a turn ends before its plan is done, the panel nudges the chat to keep going up to this many times; if it still stops, a reminder is left for you. For chats without a plan that may have unfinished work, this is also the upper bound for the wrap-up self-check. 0 disables automatic nudges and waits for you. Chat page Q&A always nudges once.',
+  '计划没做完却停下时，面板最多推这么多次让它接着做；推满还停着就留一条提醒等你处理。没有计划、拿不准做没做完时，最多做 2 次收尾自检，且不超过这个上限。0 表示不自动推，停下来等你；子对话卡住时仍会告诉父对话。Chat 页一问一答固定只推 1 次。':
+    'When a turn ends before its plan is done, the panel nudges the chat to keep going up to this many times; if it still stops, a reminder is left for you. For chats without a plan that may have unfinished work, the wrap-up self-check runs at most twice and never more than this limit. 0 disables automatic nudges and waits for you; a stuck sub-chat is still reported to its parent. Chat page Q&A always nudges once.',
   次: 'times',
   不推: 'Never',
   '填 0 到 20 之间的整数，0 表示不推': 'Enter a whole number from 0 to 20; 0 disables nudges',
