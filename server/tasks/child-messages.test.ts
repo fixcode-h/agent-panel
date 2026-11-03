@@ -82,7 +82,7 @@ test('跟着父对话（或用量上限）停下的子对话不报中断，只�
     const root = r.map.get('root')!
     assert.equal(root.inbox.length, 0)
     assert.equal(root.messages.length, 0)
-    // 计划那一步照旧退回进行中，继续后等它的结果
+    // 这里直接按失败结算（只测连带停下不写对话流、不进收件箱）；实际连带停下按暂停结算、那一步继续等（ADR 0042）
     const step = root.plans.at(-1)!.steps.find((x) => x.waits.some((w) => w.ref === kid.id))!
     assert.notEqual(step.status, 'done')
   }

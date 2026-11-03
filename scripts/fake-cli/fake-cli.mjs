@@ -853,6 +853,17 @@ if (input.includes('FORWARD_DOC') && input.includes('spawn_agents')) {
       JSON.stringify({ id, text: r?.content?.[0]?.text ?? '' }) + '\n',
     )
 }
+// 父对话列一步计划、派一个子对话挂在这一步上等它（ADR 0042：停下再继续，子对话做完要叫醒父对话）。
+// 继续执行时续接提示里还有原来的要求，不能再列一遍计划、再派一个
+if (
+  input.includes('PLAN_KID_WAIT') &&
+  input.includes('create_conversation') &&
+  input.includes('set_plan') &&
+  !input.includes('面板说明：上一轮')
+) {
+  await panelCall('set_plan', { title: '等子对话', steps: [{ title: '派子对话改登录' }] })
+  await panelCall('create_conversation', { title: '改登录', message: 'SLOW 改登录页', step: '1' })
+}
 // 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
 if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {
   for (let i = 1; i <= 6; i++)

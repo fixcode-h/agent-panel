@@ -418,9 +418,9 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
   const parentAsk = [{ id: 'q', question: '?', options: [], kind: 'question' }] as Task['parentAsks']
   assert.equal(childReport(child({ parentAsks: parentAsk })).state, 'needs')
 
-  // 执行失败、被停止：退回进行中，note 里看得出是等谁失败了；有未完成计划也算结束
+  // 执行失败、被归档（不会再回来）：退回进行中，note 里看得出是等谁失败了；有未完成计划也算结束
   for (const status of ['failed', 'stopped'] as const) {
-    const r = childReport(child({ status, stopReason: 'parent', plans: childPlan(false) }))
+    const r = childReport(child({ status, stopReason: 'archive', plans: childPlan(false) }))
     assert.equal(r.settle, 'fail')
     assert.match(r.why, status === 'failed' ? /执行失败/ : /已中断/)
     const badTask = waiting()
@@ -429,6 +429,20 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
     assert.equal(item.status, 'running')
     assert.match(item.note, /需要修复：.*改文件/)
   }
+  // 停下是暂停（ADR 0042）：随父对话停、面板重启、卡住重开、用量上限，那一步都继续等，继续时原来的子对话接着做
+  for (const why of ['parent', 'restart', 'stalled', 'budget'] as const)
+    assert.equal(
+      childReport(child({ status: 'stopped', stopReason: why, plans: childPlan(false) })).settle,
+      'hold',
+      why,
+    )
+  // 不会再回来的（删除、被接手、核对时已经没人在跑）才算等不到
+  for (const why of ['delete', 'replaced', 'lost'] as const)
+    assert.equal(
+      childReport(child({ status: 'stopped', stopReason: why, plans: childPlan(false) })).settle,
+      'fail',
+      why,
+    )
   // 用户亲手停的不是失败：那一步继续等，说法写明是用户停的，父对话不会当成要修复的去重派（实测报告问题 3）
   const paused = childReport(child({ status: 'stopped', stopReason: 'user', plans: childPlan(false) }))
   assert.equal(paused.state, 'stopped')

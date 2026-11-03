@@ -15,7 +15,7 @@ import { blockedStep, taskFlow, taskWorkflows } from '../../shared/flow.ts'
 import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
 import { settleWait } from '../../shared/plan.ts'
-import { kidsSkipNote, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
+import { kidsSkipNote, rearmKidWait, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
 import { closeFlow, dropEndNotes, newTask, taskDeleted, withAttachments, withTaskModel } from '../../shared/task.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
@@ -464,8 +464,10 @@ export function registerConversationRoutes(s: TasksScope) {
           entry.task.platform = process.platform
         }
       }
-      // 对话：一起被中断的子对话由面板连带拉起来（先拉，父对话的续接提示里才写得清哪些已经在接着做）
-      const kids = task.mode === 'chat' && !task.parentTaskId ? await resumeKids(entry.task) : undefined
+      // 对话：一起被中断的子对话由面板连带拉起来（先拉，父对话的续接提示里才写得清哪些已经在接着做）。
+      // 子对话被用户直接继续时也一样：它名下连带停下的孙对话一起拉起，它在父计划里的等待恢复成等待中（ADR 0042）
+      const kids = task.mode === 'chat' ? await resumeKids(entry.task) : undefined
+      if (task.mode === 'chat' && task.parentTaskId) await rearmInParent(task.parentTaskId, id)
       const prompt = resumePrompt(task, users, kids?.resumed, kids?.failed, kids?.notes)
       const agents = await s.deps.agents.list()
       return c.json(await withoutStoppedJobs(entry.task, () => s.start(entry, prompt, false, agents, undefined, true)))
@@ -474,6 +476,20 @@ export function registerConversationRoutes(s: TasksScope) {
       throw e
     }
   })
+
+  /**
+   * 用户直接继续一个子对话：父计划里等它、已经收成失败的等待恢复成等待中（ADR 0042），它做完时父对话才会被叫醒。
+   * 父对话在执行就改执行位里那一份，否则改落盘的
+   */
+  async function rearmInParent(parentId: string, kidId: string) {
+    const live = s.live.get(parentId)
+    const parent = live?.task ?? (await s.store.get(parentId))
+    if (!parent || !rearmKidWait(parent, kidId)) return
+    parent.updatedAt = new Date().toISOString()
+    if (live) live.rev++
+    await s.store.update(parentId, parent).catch(() => {})
+    taskLog(parentId, '子对话接着做，计划恢复等它', { kid: kidId })
+  }
 
   /**
    * 继续执行时交给 CLI 的话：最后一条要求原样再交一遍；对话模式前面写清这是续接、中断时还有什么没跑完（见 resumeNote）。
@@ -532,9 +548,13 @@ export function registerConversationRoutes(s: TasksScope) {
       try {
         dropEndNotes(got.value.task)
         const users = kid.messages.filter((m) => m.role === 'user' && !m.step)
-        const prompt = resumePrompt(kid, users)
+        // 递归：它名下一起停下的孙对话先拉起来，它自己的续接说明里才写得清（ADR 0042）
+        const sub = await resumeKids(got.value.task)
+        const prompt = resumePrompt(kid, users, sub.resumed, sub.failed, sub.notes)
         await withoutStoppedJobs(got.value.task, () => s.start(got.value, prompt, false, agents, undefined, true))
         titles.push(kid.title)
+        // 父计划里等它的那一步接着等：它做完时结果对得上、父对话会被叫醒
+        if (rearmKidWait(parent, kid.id)) taskLog(parentId, '连带拉起的子对话接着做，计划恢复等它', { kid: kid.id })
         log.info('task', '父对话继续执行，连带拉起被打断的子对话', { parent: parentId, task: kid.id })
       } catch (e) {
         s.release(got.value)
