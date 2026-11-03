@@ -1,6 +1,6 @@
 import { t } from './i18n.ts'
 import { LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
-import { CLIS, getCli, MODEL_TIERS, type CliDefinition, type ModelTier } from './clis.ts'
+import { CLIS, getCli, MODEL_TIERS, type CliDefinition, type CliOption, type ModelTier } from './clis.ts'
 import {
   AUTO_COMPACT_DEFAULT,
   CliSettings,
@@ -161,9 +161,9 @@ export function cliSettings(
     context: s.tiers[t].context,
     maxOutput: s.tiers[t].maxOutput,
   })
-  // 定义里的开关：没改过的用默认值；开着的把它的环境变量加上
-  const options = Object.fromEntries((def?.options ?? []).map((o) => [o.id, s.options[o.id] ?? o.default]))
-  const optionEnv = (def?.options ?? []).filter((o) => options[o.id]).flatMap((o) => Object.entries(o.env))
+  // 定义里的开关：没改过的用默认值；开着的把它的环境变量加上。下拉选项存的值不在可选项里（定义改过）时退回默认
+  const options = Object.fromEntries((def?.options ?? []).map((o) => [o.id, optionValue(o, s.options[o.id])]))
+  const optionEnv = (def?.options ?? []).filter((o) => options[o.id] === true).flatMap((o) => Object.entries(o.env))
   return {
     ...s,
     defaultModel: accountModel(s.defaultModel),
@@ -180,6 +180,12 @@ export function cliSettings(
     permission: s.permission || def?.defaultPermission || '',
     tiers: { high: tier('high'), medium: tier('medium'), low: tier('low') },
   }
+}
+
+/** 开关或下拉选项现在的值：没改过、或类型和定义对不上的（开关改成了下拉、选项删了）用定义里的默认值 */
+export function optionValue(o: CliOption, saved: boolean | string | undefined): boolean | string {
+  if (o.choices.length) return typeof saved === 'string' && o.choices.some((c) => c.id === saved) ? saved : o.default
+  return typeof saved === 'boolean' ? saved : o.default
 }
 
 /** 一条环境变量；设置和 CLI 定义里的 env 都用这个形状 */

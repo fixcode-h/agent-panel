@@ -2358,8 +2358,8 @@ export const CliSettings = z.object({
   autoCompact: z.number().int().min(0).max(100).default(AUTO_COMPACT_DEFAULT),
   /** 一轮任务最多执行多少回合（模型请求次数）；0 表示用 CLI 自己的默认值（Command Code 是 1000） */
   maxTurns: z.number().int().min(0).max(1000).default(0),
-  /** CLI 定义里开关（options）的状态；没改过的按定义里的默认值 */
-  options: z.record(z.string(), z.boolean()).default({}),
+  /** CLI 定义里开关（options）的状态、下拉选项选中的 id；没改过的按定义里的默认值 */
+  options: z.record(z.string(), z.union([z.boolean(), z.string().max(60)])).default({}),
 })
 export type CliSettings = z.infer<typeof CliSettings>
 
