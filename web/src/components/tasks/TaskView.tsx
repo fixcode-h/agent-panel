@@ -114,7 +114,7 @@ import { FileDialog, FileOpenCtx } from './FileDialog'
 import { HandleNeedsCtx, SummaryCardsCtx } from './Markdown'
 import { AiLookCtx } from '@/lib/ai-look'
 import { JobDialog, type JobTarget } from './JobDialog'
-import { ChildListCtx, ChildMailProvider, PaneNavCtx, type PeerMail } from './child-open'
+import { ChildListCtx, ChildMailProvider, PaneNavCtx, PaneToolbarCtx, type PeerMail } from './child-open'
 import { type ChildSummary } from './child-line'
 import { ChildSwitcher } from './ChildSwitcher'
 import { ParentAskPanel } from './ChildAskCard'
@@ -573,6 +573,9 @@ export function TaskView({
   // 这里在组件顶层取外层的值（Provider 之外），标题旁的切换下拉用它，不另取一份数据
   const outerChildren = useContext(ChildListCtx)
   const outerNav = useContext(PaneNavCtx)
+  // 右栏页签条右端的工具区（ADR 0047）：给了就不画子对话自己的标题栏，按钮挂到那里
+  const toolbarSlot = useContext(PaneToolbarCtx)
+  const inToolbar = pane && !!toolbarSlot
   // 父对话和名下子对话之间的信（ADR 0034）：交代任务那行的回执、子对话面板里每个子对话的往来都读这一份。
   // 收件箱里还没读到的按子对话数：面板上写「n 封未读」
   const messages = task?.messages
@@ -1865,13 +1868,15 @@ export function TaskView({
       {task.simulated && (
         <Badge tone="warning" title={t('没有真正调用 Agent，输出是示例')} className="hidden shrink-0 md:inline-flex">
           <FlaskConical className="h-3 w-3" />
-          {t('模拟')}
+          {/* 右栏工具区里只留图标，悬停看说明（ADR 0047） */}
+          <span className="@max-[600px]:sr-only">{t('模拟')}</span>
         </Badge>
       )}
       {task.imported && (
         <Badge tone="accent" title={t('从导出的文件导入，只能查看')} className="hidden shrink-0 md:inline-flex">
           <FileInput className="h-3 w-3" />
-          {t('导入')}
+          {/* 右栏工具区里只留图标，悬停看说明（ADR 0047） */}
+          <span className="@max-[600px]:sr-only">{t('导入')}</span>
         </Badge>
       )}
     </>
@@ -2024,7 +2029,7 @@ export function TaskView({
               )}
             >
               <Icon className={cn('h-3.5 w-3.5', v === 'flow' && 'rotate-90')} />
-              <span className="hidden sm:inline">{label}</span>
+              <span className="hidden sm:inline @max-[560px]:hidden!">{label}</span>
             </button>
           ))}
         </div>
@@ -2035,7 +2040,8 @@ export function TaskView({
         (task.resolved ? (
           <StatusPill tone="ok" title={t('已解决')}>
             <CheckCircle2 className="h-3.5 w-3.5" />
-            {t('已解决')}
+            {/* 右栏工具区窄了先把文字收掉，只留对勾（ADR 0047 的收缩顺序第一步） */}
+            <span className="@max-[600px]:sr-only">{t('已解决')}</span>
           </StatusPill>
         ) : (
           <IconButton
@@ -2044,16 +2050,23 @@ export function TaskView({
             label={t('解决')}
             disabled={resolving}
             onClick={() => void resolveChild()}
-            // 默认隐起来（opacity-0），鼠标进标题栏或 Tab 聚焦才显示；
+            // 默认隐起来（opacity-0），鼠标进标题栏（右栏是页签条）或焦点进来才显示；
             // 没有 hover 的设备（触屏、平板）常显，否则根本点不到
-            className="opacity-0 group-hover/hdr:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+            className="opacity-0 group-focus-within/hdr:opacity-100 group-hover/hdr:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
           >
             <CheckCircle2 className="h-4 w-4" />
           </IconButton>
         ))}
-      {pinnedItems.map((x) => (
-        <PinnedButton key={x.key} item={x} />
-      ))}
+      {pinnedItems.map((x) =>
+        // 右栏工具区窄了把钉住的按钮收起来（它们都还在「更多操作」里）；对话进程的面板要贴着它弹出，不收
+        inToolbar && x.key !== 'processes' ? (
+          <span key={x.key} className="flex @max-[520px]:hidden!">
+            <PinnedButton item={x} />
+          </span>
+        ) : (
+          <PinnedButton key={x.key} item={x} />
+        ),
+      )}
       {/* 对话进程没钉在标题栏时：从菜单打开，面板贴着「更多操作」左边这个看不见的锚点弹出 */}
       {!pins.isPinned('processes') && (
         <ProcessMenu taskId={task.id} open={procOpen} onOpenChange={setProcOpen} hidden />
@@ -2282,6 +2295,15 @@ export function TaskView({
                 {dropOver && <DropOverlay />}
                 {chatPage ? (
                   chatHeader
+                ) : inToolbar ? (
+                  // 右栏里的子对话（ADR 0047）：状态和标题在页签上，按钮挂到页签条右端的工具区，不再画一行标题栏
+                  createPortal(
+                    <>
+                      {headerBadges}
+                      {headerActions}
+                    </>,
+                    toolbarSlot!,
+                  )
                 ) : pane ? (
                   <header
                     className={cn(

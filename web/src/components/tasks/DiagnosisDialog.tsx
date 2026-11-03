@@ -4,6 +4,7 @@ import type { Diagnosis } from '@shared/bug-diagnosis-schema'
 import { diagnosisMarkdown } from '@shared/bug-diagnosis'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { useData } from '@/lib/data'
 import { toast } from '@/lib/toast'
 import { ReviewDialog, type NoteKind } from './ReviewDialog'
 
@@ -26,12 +27,12 @@ const STATUS: Record<Diagnosis['status'], () => string> = {
   superseded: () => t('已作废，有更新的一版'),
 }
 
-/** 每一版的标题、正文和状态：正文按上一版补出「回答上一版的意见」 */
-function versionsOf(list: Diagnosis[]) {
+/** 每一版的标题、正文和状态：正文按上一版补出「回答上一版的意见」；author：引入点写不写作者（设置里的开关） */
+function versionsOf(list: Diagnosis[], author: boolean) {
   return list.map((d, i) => ({
     key: String(d.version),
     label: t('第 {n} 版', { n: d.version }),
-    detail: diagnosisMarkdown(d, list[i - 1]),
+    detail: diagnosisMarkdown(d, list[i - 1], { author }),
     status: STATUS[d.status](),
   }))
 }
@@ -48,21 +49,33 @@ export function DiagnosisDialog({
   onOpenChange: (open: boolean) => void
   onDone?: (task: Task) => void
 }) {
+  const { settings } = useData()
+  const author = settings?.bugAuthor !== false
   const list = task.diagnoses ?? []
   const last = list.at(-1)
   if (!last) return null
   const req: Pick<TaskRequest, 'id' | 'title' | 'detail'> = {
     id: `${task.id}:${last.version}`,
     title: t('诊断报告 · {title}', { title: task.title }),
-    detail: diagnosisMarkdown(last, list.at(-2)),
+    detail: diagnosisMarkdown(last, list.at(-2), { author }),
   }
+  // 候选方案里没选的那几个：点一下加一条「改方案」意见，退回让它按这个方案交新一版（ADR 0046，档案不由界面直接改）
+  const presets = last.options
+    .filter((o) => o.id && o.id !== last.chosen?.id)
+    .map((o) => ({
+      label: t('改用方案 {id}', { id: o.id }),
+      quote: t('方案 {id}：{title}', { id: o.id, title: o.title }),
+      comment: t('改用这个方案'),
+      kind: 'change',
+    }))
   return (
     <ReviewDialog
       req={req}
       open={open}
       onOpenChange={onOpenChange}
       kinds={KINDS()}
-      versions={versionsOf(list)}
+      versions={versionsOf(list, author)}
+      presets={presets}
       readOnly={last.status !== 'pending'}
       texts={{
         approve: t('确认方案，开始修'),

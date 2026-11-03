@@ -808,7 +808,10 @@ test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交
   const bugKid = kid(true)
   const h = host(bugKid, [], async (call) => {
     assert.ok(call.orch?.diagnose, 'Bug 子对话有交诊断报告的工具')
+    assert.ok(call.orch?.bugCase, '也有随查随记的档案工具（ADR 0046）')
     const r = call.orch!.diagnose!({
+      level: 'quick',
+      attribution: { category: 'recent', change: 'a1b2', how: 'blame' },
       symptom: '超时后一直转圈',
       repro: '',
       location: 'login.ts:40',
@@ -838,6 +841,7 @@ test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交
   for (const t0 of [kid(false), { ...kid(false), id: 'p1', parentTaskId: '' } as Task]) {
     const h2 = host(t0, [], async (call) => {
       assert.equal(call.orch?.diagnose, undefined)
+      assert.equal(call.orch?.bugCase, undefined)
       return { ok: true, text: '直接修' }
     })
     h2.agents = [agent('w', '执行')]

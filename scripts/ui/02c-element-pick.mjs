@@ -946,6 +946,9 @@ await runShard(import.meta.filename, async (api) => {
       .getByText(/分析完成\s*·\s*\d/)
       .waitFor({ timeout: 20000 })
       .catch(() => errors.push('AI 排查：状态胶囊上没有分析用时'))
+    // Bug 档案的时间线（ADR 0046）：结论块里写了就在结论页画出来，异常的那一条标红
+    if (!(await diag.getByText('子任务结束后没有回落', { exact: false }).count()))
+      errors.push('AI 排查：结论块写了时间线，结论页没有画出来')
     await check(p, 'AI排查-结论', ['根因', '影响', '在当前对话里修'])
     await diag.getByRole('tab', { name: /^证据/ }).click()
     await check(p, 'AI排查-证据', ['claude'])

@@ -76,3 +76,9 @@ export function ChildMailProvider({
     createElement(PeerMailCtx.Provider, { value: mail }, children),
   )
 }
+
+/**
+ * 右栏页签条右端留给子对话的工具区（ADR 0047）：右栏的 TaskFiles 提供，里面的子对话面板（pane）
+ * 拿到后不画自己的标题栏，把操作按钮挂进去；子对话页签没选中时工具区藏起来，不卸载
+ */
+export const PaneToolbarCtx = createContext<HTMLElement | null>(null)

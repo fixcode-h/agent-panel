@@ -34,6 +34,7 @@ import { killTaskClis } from '../exec/orphans.ts'
 import type { TasksScope } from './scope.ts'
 import { PREWARM_PROMPT, RULE_CMD, TaskBusyError, settleBefore } from './helpers.ts'
 import { scopeError } from '../../shared/conv-mode.ts'
+import { BUG_CMD } from '../../shared/builtin/bug-method.ts'
 import { pausedHelpers } from '../../shared/run-stops.ts'
 
 /**
@@ -177,6 +178,17 @@ export function registerConversationRoutes(s: TasksScope) {
       const r = await s.ruleCommand(id, text.trim())
       taskLog(id, '面板命令', { cmd: '/rule', error: 'error' in r ? r.error : undefined })
       return 'error' in r ? s.bad(c, r.error) : c.json(r.task)
+    }
+    // 用户在子对话里发 /bug：标成用户报的 Bug（ADR 0046），它才有 submit_diagnosis、按完整流程查。
+    // 正在回复的这一轮里没法换工具，先拦住；挂着等下一句的旧进程由交付时的「选择对不上」重开（runner 的 stillCurrent）
+    if (BUG_CMD.test(text.trim()) && cur?.parentTaskId && !cur.bug && !peer) {
+      const live = s.live.get(id)
+      if (live?.task.working) return s.bad(c, t('子对话正在回复，等这一轮结束或先停止，再发 /bug'), 409)
+      // 在跑的以内存里那份为准（s.current 拿到的就是它），落盘也落它，不拿旧的盖新的
+      cur.bug = true
+      if (live && live.task !== cur) live.task.bug = true
+      await s.store.update(id, live?.task ?? cur)
+      taskLog(id, '面板命令', { cmd: '/bug', mark: 'bug' })
     }
     // 用户直接进子对话回复，就当作回答了它挂在父对话里的提问（不打断这次发送）；别的对话发来的不算用户的回答
     if (!peer)

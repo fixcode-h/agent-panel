@@ -1,128 +1,28 @@
-# Defense-in-Depth Validation
+# 多层校验：根因修好之后，让同类问题进不来
 
-## Overview
+坏数据引起的 Bug，在一处加校验看起来就够了，但换一条代码路径、一次重构、一个 mock 就能绕过去。根因修好之后，可以在数据经过的几层各加一道校验，让这类问题在结构上进不来。
 
-When you fix a bug caused by invalid data, adding validation at one place feels sufficient. But that single check can be bypassed by different code paths, refactoring, or mocks.
+**它不能代替修根因。** 只在出错点外面加校验、不修来源，就是完整流程里说的「在原逻辑外面再兜底一层」，不算修。
 
-**Core principle:** Validate at EVERY layer data passes through. Make the bug structurally impossible.
+## 哪几层
 
-## Why Multiple Layers
+| 层       | 作用                                 | 例子                                                                   |
+| -------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| 入口     | 在接口边界上拒掉明显不对的输入       | `createProject` 里 `workingDirectory` 为空、不存在、不是目录就直接报错 |
+| 业务逻辑 | 确认数据对这一步操作说得通           | `initializeWorkspace` 要求 `projectDir` 非空                           |
+| 环境护栏 | 在特定环境里拦住危险操作             | 测试环境里拒绝在临时目录以外 `git init`                                |
+| 诊断日志 | 别的层都没拦住时，留下排查用的上下文 | 执行前记下目录、`cwd`、堆栈                                            |
 
-Single validation: "We fixed the bug"
-Multiple layers: "We made the bug impossible"
+## 怎么用
 
-Different layers catch different cases:
+1. 先按完整流程或 `root-cause-tracing.md` 找到坏值的来源和经过的每一层。
+2. 在来源修掉根因。
+3. 看这几层里哪些值得加：会被别的调用方、别的入口用到的才加；只有一条路径的不加，免得每层都塞满重复的判断。
+4. 每加一层都写一个测试：绕过上一层直接调用这一层，确认它能拦住。
+5. 写进修复设计的「影响面」和验证计划，评审时能对上。
 
-- Entry validation catches most bugs
-- Business logic catches edge cases
-- Environment guards prevent context-specific dangers
-- Debug logging helps when other layers fail
+## 注意
 
-## The Four Layers
-
-### Layer 1: Entry Point Validation
-
-**Purpose:** Reject obviously invalid input at API boundary
-
-```typescript
-function createProject(name: string, workingDirectory: string) {
-  if (!workingDirectory || workingDirectory.trim() === '') {
-    throw new Error('workingDirectory cannot be empty')
-  }
-  if (!existsSync(workingDirectory)) {
-    throw new Error(`workingDirectory does not exist: ${workingDirectory}`)
-  }
-  if (!statSync(workingDirectory).isDirectory()) {
-    throw new Error(`workingDirectory is not a directory: ${workingDirectory}`)
-  }
-  // ... proceed
-}
-```
-
-### Layer 2: Business Logic Validation
-
-**Purpose:** Ensure data makes sense for this operation
-
-```typescript
-function initializeWorkspace(projectDir: string, sessionId: string) {
-  if (!projectDir) {
-    throw new Error('projectDir required for workspace initialization')
-  }
-  // ... proceed
-}
-```
-
-### Layer 3: Environment Guards
-
-**Purpose:** Prevent dangerous operations in specific contexts
-
-```typescript
-async function gitInit(directory: string) {
-  // In tests, refuse git init outside temp directories
-  if (process.env.NODE_ENV === 'test') {
-    const normalized = normalize(resolve(directory))
-    const tmpDir = normalize(resolve(tmpdir()))
-
-    if (!normalized.startsWith(tmpDir)) {
-      throw new Error(`Refusing git init outside temp dir during tests: ${directory}`)
-    }
-  }
-  // ... proceed
-}
-```
-
-### Layer 4: Debug Instrumentation
-
-**Purpose:** Capture context for forensics
-
-```typescript
-async function gitInit(directory: string) {
-  const stack = new Error().stack
-  logger.debug('About to git init', {
-    directory,
-    cwd: process.cwd(),
-    stack,
-  })
-  // ... proceed
-}
-```
-
-## Applying the Pattern
-
-When you find a bug:
-
-1. **Trace the data flow** - Where does bad value originate? Where used?
-2. **Map all checkpoints** - List every point data passes through
-3. **Add validation at each layer** - Entry, business, environment, debug
-4. **Test each layer** - Try to bypass layer 1, verify layer 2 catches it
-
-## Example from Session
-
-Bug: Empty `projectDir` caused `git init` in source code
-
-**Data flow:**
-
-1. Test setup → empty string
-2. `Project.create(name, '')`
-3. `WorkspaceManager.createWorkspace('')`
-4. `git init` runs in `process.cwd()`
-
-**Four layers added:**
-
-- Layer 1: `Project.create()` validates not empty/exists/writable
-- Layer 2: `WorkspaceManager` validates projectDir not empty
-- Layer 3: `WorktreeManager` refuses git init outside tmpdir in tests
-- Layer 4: Stack trace logging before git init
-
-**Result:** All 1847 tests passed, bug impossible to reproduce
-
-## Key Insight
-
-All four layers were necessary. During testing, each layer caught bugs the others missed:
-
-- Different code paths bypassed entry validation
-- Mocks bypassed business logic checks
-- Edge cases on different platforms needed environment guards
-- Debug logging identified structural misuse
-
-**Don't stop at one validation point.** Add checks at every layer.
+- 校验报错要说清是什么值、为什么不行，不要一句「参数错误」。
+- 不要在校验里悄悄改成默认值继续跑：那等于把问题藏起来。
+- 环境护栏只拦危险操作，不改变正常环境里的行为。
