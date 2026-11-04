@@ -30,10 +30,12 @@ import {
   hookInstall,
   HOOK_EVENTS_ENV,
   supportedEvents,
+  versionAtLeast,
   type BeforeEndDecision,
   type BeforeEndInput,
   type HookAnswer,
   type HookFacts,
+  type HookToolScope,
 } from '../../shared/hooks.ts'
 import type { HookEventName } from '../../shared/hook-defs.ts'
 
@@ -147,6 +149,8 @@ export async function invokeCli(o: {
    * 只装这几个；onHook 按事件和从原生输入里取出的事实回答
    */
   hookEvents?: HookEventName[]
+  /** 工具前 / 工具后各自关心哪几类工具（见 shared/hooks.ts 的 HookToolScope） */
+  hookTools?: HookToolScope
   onHook?: (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
 }): Promise<ProcessResult> {
   // 模型请求轨迹（见 cli-trace.ts）：每个事件先记一笔再交给调用方，状态诊断按它说清「等待模型」卡在哪
@@ -275,7 +279,16 @@ export async function invokeCli(o: {
     // 用户自己配的 MCP 服务器没有这个端点
     const extras = mcpExtras(def.mcp!, servers[0]!.name, servers[0]!.url, dir, build.options)
     // 钩子是一条命令的 CLI（Claude Code、Codex）：转发脚本和钩子配置也放进这一轮的临时目录
-    const hooks = hookSpec && bridge ? hookInstall(hookSpec, dir, hookActive) : { args: [], files: [], env: {} }
+    // 本机版本确定支持 HTTP 钩子时直接 POST 到面板（读不到版本不换：老版本不认会静静地不跑，守卫就失效了）
+    const ver = knownVersion(def.id)
+    const http = !!hookSpec?.http && /\d+\.\d+\.\d+/.test(ver ?? '') && versionAtLeast(ver, hookSpec.http.minVersion)
+    const hooks =
+      hookSpec && bridge
+        ? hookInstall(hookSpec, dir, hookActive, {
+            tools: o.hookTools,
+            ...(http ? { httpUrl: `${bridge.url}/hook` } : {}),
+          })
+        : { args: [], files: [], env: {} }
     // 几个工具写进同一个配置文件时先合在一起，一次写进去
     const files = new Map<string, unknown>()
     for (const f of [...tools.flatMap((x) => x.files), ...extras.files, ...hooks.files])

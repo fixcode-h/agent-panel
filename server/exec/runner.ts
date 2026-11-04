@@ -13,6 +13,7 @@ import {
 import { getCli } from '../../shared/clis.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { hookMarker } from '../../shared/hooks.ts'
+import { addFirstToken } from '../../shared/first-token-stats.ts'
 import { hookOptions } from '../hooks/dispatch.ts'
 import { addNoteTaker, holdForNextTurn, removeNoteTaker, type NoteTaker } from './delivery.ts'
 
@@ -158,12 +159,12 @@ function markTurnDone(task: Task) {
 }
 
 /** 只说明 CLI 收下了、不说明模型在回的事件：不算有了响应 */
-const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'files_changed', 'context'])
+const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'files_changed', 'context', 'sent', 'wait'])
 /** 任务 id → 卡住的这一轮（没得到回应的那条输入）：下一条消息据此停掉卡住的 CLI、接回会话重开 */
 export { stalledTurn } from './stall-watch.ts'
 
 /** 插话收下后还算「同一段输出」的事件：不产生新内容（见 runAgent 的 cutAfter） */
-const CONTINUES = new Set(['session', 'turn', 'limits', 'usage', 'gen', 'context', 'files_changed'])
+const CONTINUES = new Set(['session', 'turn', 'limits', 'usage', 'gen', 'context', 'files_changed', 'sent', 'wait'])
 /**
  * 这个事件还属于正在输出的那一段（cur）：同一段正文、思考的增量，和不产生内容的用量、会话这些事件。
  * 换成工具、新一次模型回应、正文之后又开始思考，这一段就说完了
@@ -984,6 +985,10 @@ async function runAgent(
         // 模型请求的耗时记在这段回复上：两步之间看起来「卡住」的时间大多在这里
         if (cur) cur.modelMs = (cur.modelMs ?? 0) + ev.ms
         break
+      case 'wait':
+        // 首包时间（cli-trace 算好的）：会话栏显示平均 / 最长，分得清是链路慢还是模型一直在想
+        au().firstToken = addFirstToken(au().firstToken, ev.ms)
+        break
       case 'error':
         errors.push(ev.message)
         break
@@ -1477,8 +1482,9 @@ async function runAgent(
         : undefined,
     // 只交手动改过的：自动值是面板按模型目录估的，不该写进 CLI 的配置盖掉它自己的
     limits: manual,
-    // 钩子（ADR 0049）：结束前、工具前后、压缩之后，装哪些、怎么答在 server/hooks/dispatch.ts；预热只等下一句，不装
-    ...(prewarmMode ? {} : hooks),
+    // 钩子（ADR 0049）：装哪些、怎么答在 server/hooks/dispatch.ts。预热也装：预热起的进程之后会处理用户的消息
+    //（开独立分支后在新目录重开也是预热），不装就没有守卫、也只能靠一轮结束后的提醒；还没收到消息时 before-end.ts 放行
+    ...hooks,
   }).finally(() => {
     finished = true
     if (chat) taskLog(task.id, '对话的 CLI 进程结束', { cli: def.name, aborted: ctx.signal.aborted || undefined })

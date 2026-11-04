@@ -188,3 +188,38 @@ test('执行中补充的通道：没有新补充时说清楚，通道关掉后�
   s.close()
   assert.equal((await rpc(token, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).error.code, -32001)
 })
+
+test('HTTP 钩子：CLI 直接 POST 原生输入，回的就是按模板填好的输出；没挂钩子、出错回空对象', async () => {
+  const { getCli } = await import('../shared/clis.ts')
+  const spec = getCli('claude')!.hooks!
+  const s = openAskBridge({
+    hook: {
+      spec,
+      beforeEnd: async () => ({ block: true, reason: '接着做', why: 'test' }),
+      on: async (ev, facts) =>
+        ev === 'tool.before' && facts.tool?.kind === 'shell' ? { deny: true, reason: '不许' } : {},
+    },
+  })
+  const token = tokenOf(s.url)
+  const post = async (event: string, body: unknown) =>
+    (
+      await askMcpApi().request(`/ask/${token}/hook/${event}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'content-type': 'application/json' },
+      })
+    ).json() as Promise<any>
+  assert.deepEqual(await post('turn.beforeEnd', { hook_event_name: 'Stop', last_assistant_message: '我做完了' }), {
+    decision: 'block',
+    reason: '接着做',
+  })
+  const deny = await post('tool.before', {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Bash',
+    tool_input: { command: 'ls' },
+  })
+  assert.equal(deny.hookSpecificOutput.permissionDecision, 'deny')
+  assert.deepEqual(await post('tool.before', { tool_name: 'Read', tool_input: { file_path: 'a' } }), {})
+  s.close()
+  assert.deepEqual(await post('tool.before', { tool_name: 'Bash' }), {}, '通道关掉后不表态')
+})

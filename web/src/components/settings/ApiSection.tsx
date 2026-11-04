@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ComboInput, Input, Select } from '@/components/ui/input'
 import { AiFixButton } from '@/components/ui/ai-fix'
+import { ApiSpeedTest } from './ApiSpeedTest'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChipGroup } from '@/components/ui/chip-group'
@@ -666,6 +667,12 @@ function ApiCard({
                 )}
               </div>
             )}
+            {/* 测速：各协议一小一大两个请求的首包，按结果给 Agent 挑快的协议 */}
+            <ApiSpeedTest
+              a={a}
+              model={probeTarget(modelsForProtocols(a.models, protos), probeModel)}
+              disabled={busy || !canProbe}
+            />
             {/* 一个模型一行：默认思考强度和映射模型都按模型配；别的协议后缀的模型不显示 */}
             {modelsForProtocols(a.models, protos).map((m, i) => (
               <Card

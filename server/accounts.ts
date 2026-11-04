@@ -1229,7 +1229,7 @@ function looksLikeAnswer(protocol: ApiProtocol, text: string) {
  * 按协议构造最小的一次推理请求：地址、请求体、认证头。
  * Anthropic 要 /v1/messages（地址自带 /v1 时不重复），OpenAI 的两种协议分别是 /responses 和 /chat/completions。
  */
-function probeRequest(
+export function probeRequest(
   protocol: ApiProtocol,
   base: string,
   model: string,

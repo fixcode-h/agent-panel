@@ -49,7 +49,7 @@ import { dropHeld, hasHeld, holdForNextTurn, markHeld, takeHeld } from '../exec/
 import { resetIdleCountdown } from '../presence.ts'
 import type { Live } from './types.ts'
 import { placedFiles } from '../attachments.ts'
-import { currentBranch, isBigProject } from '../exec/worktree.ts'
+import { currentBranch, isBigProject, refillSpareDeps } from '../exec/worktree.ts'
 import { currentTestSteps, isUeBuildCommand } from '../../shared/test-steps.ts'
 import { log } from '../log.ts'
 import { sourceHeader } from '../../shared/peer-message.ts'
@@ -146,7 +146,17 @@ export function createRun(sc: TasksScope) {
       agentId,
       flow,
       bug,
-    }: { title: string; message: string; files?: string[]; agentId?: string; flow?: Task['flow']; bug?: boolean },
+      edits,
+    }: {
+      title: string
+      message: string
+      files?: string[]
+      agentId?: string
+      flow?: Task['flow']
+      bug?: boolean
+      /** 一定要改代码：第一次执行前就开好独立分支（只在独立分支模式下有用） */
+      edits?: boolean
+    },
   ) {
     const worker = agents.find((a) => a.origin === 'builtin:worker')
     const subId = randomUUID()
@@ -168,6 +178,7 @@ export function createRun(sc: TasksScope) {
       id: subId,
       ...(flow && { flow }),
       ...(bug && { bug }),
+      ...(edits && project.childIsolation === 'worktree' && { editFirst: true }),
     }
     // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
     // 只有直接调接口没给时才退回用户消息开头
@@ -295,6 +306,8 @@ export function createRun(sc: TasksScope) {
     // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录；
     // 子对话不建独立分支，和父对话用同一个目录（父对话在独立分支里时就是父的那个目录）
     const dir = found ? await sc.taskDir(task).catch(() => found.path) : ''
+    // 这一轮可能会开独立分支（还没开、要改文件时才开）：先在后台备一份依赖副本，真开的时候改名拿走，不用当场等十几秒复制
+    if (dir && entry.task.wantsWorktree && !isolated(entry.task) && !prewarm) void refillSpareDeps(dir)
     // 真正拼进提示词的是 runner 里的 ctx.project.lessons（见 server/exec/runner.ts 的 lessonsPrompt 调用）：
     // 必须在这里挂上「文件 + 旧 JSON」的合并结果，否则写文件后项目 JSON 被清空，新会话的教训段会整段消失
     let project = found
@@ -669,9 +682,9 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files, agentId, flow, bug }) => {
+        createConversation: async ({ title, message, files, agentId, flow, bug, edits }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          return spawnChild(entry.task, project, agents, { title, message, files, agentId, flow, bug })
+          return spawnChild(entry.task, project, agents, { title, message, files, agentId, flow, bug, edits })
         },
         sendToConversation: async (id, message, opts) => {
           // 同一个工作流再跑一次（start_workflow 带 again）：先把子对话的流程图状态改回「起一次新的运行」

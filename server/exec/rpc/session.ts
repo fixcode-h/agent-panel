@@ -173,8 +173,10 @@ export function createRpcSession(o: {
       })
     },
     emit(event) {
-      responded = true
-      for (const e of Array.isArray(event) ? event : [event]) o.onEvent(e)
+      const list = Array.isArray(event) ? event : [event]
+      // 面板自己记的「交出去了」不是 CLI 的响应：不能让「一个响应都没收到」的卡住判断失效
+      if (list.some((e) => e.type !== 'sent')) responded = true
+      for (const e of list) o.onEvent(e)
     },
     async finish(ok, error, delayMs = 0, stopReason) {
       // 已经关掉了：还挂着的请求是 end() 里用「已关闭」结束的，别再报一次结果

@@ -21,6 +21,8 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
   return {
     start(ctx) {
       ctx.send({ type: 'user', message: { role: 'user', content: withImages(o.input, o.images) } })
+      // Claude Code 的「请求开始」（message_start）要等模型回出第一段才到：交出去的时间由面板自己记，首包等待从这里算
+      ctx.emit({ type: 'sent' })
     },
     message(ctx, m) {
       // 审批的回答不需要面板再处理
@@ -69,6 +71,7 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
       // CLI 在这条消息到达时开新一轮
       steered = false
       ctx.send({ type: 'user', message: { role: 'user', content: text } })
+      ctx.emit({ type: 'sent' })
     },
     async steer(ctx, text) {
       steered = true

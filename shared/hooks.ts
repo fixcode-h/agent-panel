@@ -87,8 +87,20 @@ export const HooksSpec = z.object({
       failed: z.array(z.string()).default([]),
     })
     .default({ name: 'tool_name', input: 'tool_input', path: ['file_path'], output: [], failed: [] }),
+  /**
+   * 命令类钩子能直接 POST 到面板（不用每次起一个 node 跑转发脚本）：本机版本不低于 minVersion 时，
+   * 配置里引用 {hookScript} 的那一项换成 entry（{url} 换成这个事件的地址，原生输入直接交给面板，回的就是 CLI 要的输出）。
+   * 读不到本机版本时不换：老版本不认这种钩子会静静地不跑，守卫就失效了
+   */
+  http: z.object({ minVersion: z.string(), entry: z.unknown() }).optional(),
 })
 export type HooksSpec = z.infer<typeof HooksSpec>
+
+/**
+ * 工具前 / 工具后这一轮实际关心哪几类工具（内置守卫、提醒和用户钩子合起来）：配置里写了 {toolMatcher} 的 CLI
+ * 只对这几类工具触发钩子，读文件、搜索这类没人管的工具不再每次多跑一趟。不给、含 any 时所有工具都触发
+ */
+export type HookToolScope = Partial<Record<'tool.before' | 'tool.after', ToolKind[]>>
 
 /** 面板对「结束前」的回答：block 时 reason 是交给 Agent 的说明（不翻译），why 是写进日志的原因 */
 export interface BeforeEndDecision {
@@ -214,7 +226,7 @@ function mergeConfig(a: unknown, b: unknown): unknown {
  * {dir} 换成面板这一轮的临时目录，{hookScript} 换成转发脚本。路径一律用正斜杠：钩子命令在 Windows 上也可能交给 bash 执行，
  * 反斜杠会被当成转义。没有要装的返回空
  */
-export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[]) {
+export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[], opts: HookInstallOptions = {}) {
   const d = dir.replace(/\\/g, '/')
   const script = `${d}/${HOOK_SCRIPT}`
   const fill = (v: unknown): unknown =>
@@ -225,12 +237,13 @@ export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[
         : v && typeof v === 'object'
           ? Object.fromEntries(Object.entries(v).map(([k, x]) => [fill(k) as string, fill(x)]))
           : v
-  const parts: { files: Record<string, unknown>; args: string[] }[] = []
-  if (active.includes('turn.beforeEnd') && spec.beforeEnd?.via === 'command') parts.push(spec.beforeEnd)
+  const parts: { event: HookEventName; files: Record<string, unknown>; args: string[] }[] = []
+  if (active.includes('turn.beforeEnd') && spec.beforeEnd?.via === 'command')
+    parts.push({ event: 'turn.beforeEnd', ...spec.beforeEnd })
   // 写在扩展里的事件（Pi、Command Code）既没有文件也没有参数：不算命令类，不写转发脚本
   for (const ev of ['tool.before', 'tool.after', 'context.restored'] as const) {
     const e = spec.events[ev]
-    if (active.includes(ev) && e && (e.args.length || Object.keys(e.files).length)) parts.push(e)
+    if (active.includes(ev) && e && (e.args.length || Object.keys(e.files).length)) parts.push({ event: ev, ...e })
   }
   if (!parts.length)
     return {
@@ -238,17 +251,65 @@ export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[
       files: [] as { path: string; content: unknown }[],
       env: {} as Record<string, string>,
     }
+  // 每个事件先填自己的那几处：工具过滤（{toolMatcher}），能直接 POST 时把转发脚本那一项换成 HTTP 钩子
+  const own = (p: (typeof parts)[number]) => {
+    const scope = p.event === 'tool.before' || p.event === 'tool.after' ? opts.tools?.[p.event] : undefined
+    const matcher = toolMatcher(spec, scope)
+    const url = opts.httpUrl && spec.http ? `${opts.httpUrl}/${p.event}` : ''
+    const each = (v: unknown): unknown => {
+      if (typeof v === 'string') return v.replace(/\{toolMatcher\}/g, () => matcher)
+      if (Array.isArray(v)) return v.map(each)
+      if (!v || typeof v !== 'object') return v
+      const o = v as Record<string, unknown>
+      if (url && typeof o.command === 'string' && o.command.includes('{hookScript}'))
+        return fillHttp(spec.http!.entry, url)
+      return Object.fromEntries(Object.entries(o).map(([k, x]) => [k, each(x)]))
+    }
+    return { files: each(p.files) as Record<string, unknown>, args: each(p.args) as string[] }
+  }
+  const filled = parts.map(own)
   const merged = new Map<string, unknown>()
-  for (const p of parts)
+  for (const p of filled)
     for (const [k, v] of Object.entries(p.files)) merged.set(k, merged.has(k) ? mergeConfig(merged.get(k), v) : v)
+  const args = [...spec.args, ...filled.flatMap((p) => p.args)]
+  // 全换成 HTTP 钩子以后没人再引用转发脚本：不写脚本、不加环境变量
+  const needScript = JSON.stringify([args, [...merged]]).includes('{hookScript}') || !opts.httpUrl || !spec.http
   return {
-    args: [...spec.args, ...parts.flatMap((p) => p.args)].map((a) => fill(a) as string),
-    env: { [HOOK_SCRIPT_ENV]: script },
+    args: args.map((a) => fill(a) as string),
+    env: needScript ? { [HOOK_SCRIPT_ENV]: script } : ({} as Record<string, string>),
     files: [
-      { path: script, content: hookForwarderSource(spec.dropInput) as unknown },
+      ...(needScript ? [{ path: script, content: hookForwarderSource(spec.dropInput) as unknown }] : []),
       ...[...merged].map(([p, content]) => ({ path: fill(p) as string, content: fill(content) })),
     ],
   }
+}
+
+export interface HookInstallOptions {
+  /** 这一轮工具前 / 工具后实际关心哪几类工具：配置里的 {toolMatcher} 按它填 */
+  tools?: HookToolScope
+  /** 本机 CLI 支持 HTTP 钩子时，面板这一轮的钩子地址（{url} 是它加上 /事件名）；空时用转发脚本 */
+  httpUrl?: string
+}
+
+/**
+ * {toolMatcher} 的值：这几类工具在这个 CLI 里的工具名，用 | 连起来；要所有工具时为空（Claude Code 的 matcher 为空即全部）。
+ * 面板自己的工具（panel）和任意工具（any）列不全名字，按全部算；对照表里某一类一个名字都没有时也按全部算，宁可多跑也不漏
+ */
+export function toolMatcher(spec: HooksSpec, kinds: ToolKind[] | undefined): string {
+  if (!kinds?.length || kinds.includes('any') || kinds.includes('panel')) return ''
+  if (kinds.some((k) => !spec.toolNames[k]?.length)) return ''
+  // 用 shell 跑改文件命令的 CLI（editCommands）：改文件也可能以 shell 工具的名字出现
+  const all = kinds.includes('edit') && spec.editCommands.length ? [...kinds, 'shell' as const] : kinds
+  return [...new Set(all.flatMap((k) => spec.toolNames[k] ?? []))].join('|')
+}
+
+/** HTTP 钩子那一项：{url} 换成这个事件的地址 */
+function fillHttp(tpl: unknown, url: string): unknown {
+  if (typeof tpl === 'string') return tpl.replace(/\{url\}/g, () => url)
+  if (Array.isArray(tpl)) return tpl.map((x) => fillHttp(x, url))
+  if (tpl && typeof tpl === 'object')
+    return Object.fromEntries(Object.entries(tpl).map(([k, v]) => [k, fillHttp(v, url)]))
+  return tpl
 }
 
 /** 从原生输入里取「结束前」要的那一点：只认几个已知的「已经续过」标记，其余（含回复文字）一律不要 */

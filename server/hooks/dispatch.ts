@@ -2,7 +2,7 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Agent, Project, Task } from '../../shared/schema.ts'
 import type { AgentCall } from '../../shared/engine.ts'
-import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts } from '../../shared/hooks.ts'
+import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts, HookToolScope } from '../../shared/hooks.ts'
 import {
   BUILTIN_HOOKS,
   builtinList,
@@ -176,6 +176,8 @@ export function unverifiedEdit(task: Pick<Task, 'messages'>): string {
 export async function hookOptions(c: HookCallCtx): Promise<{
   beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
   hookEvents?: HookEventName[]
+  /** 工具前 / 工具后各自关心哪几类工具：能按工具名过滤的 CLI 只对这几类触发（见 shared/hooks.ts 的 toolMatcher） */
+  hookTools?: HookToolScope
   onHook?: (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
 }> {
   if (!c.call.orch) return {}
@@ -232,6 +234,18 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   if (lessons.length || on('loop-hint') || pace || mine('tool.after').length) events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
   for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
+  // 各事件关心哪几类工具：内置的守卫、提醒只看改文件和跑命令（guards.ts、plan-pace 的 WORK、loopHint、教训），
+  // 用户钩子按自己的匹配范围（任意工具就是全部）。读文件、搜索没人管时，能过滤的 CLI 就不再为它们跑钩子
+  const userKinds = (event: HookEventName) => mine(event).map((h) => h.match.tool)
+  const hookTools: HookToolScope = {
+    'tool.before': [...(guards.length ? (['edit', 'shell'] as const) : []), ...userKinds('tool.before')],
+    'tool.after': [
+      ...(lessons.length ? (['edit'] as const) : []),
+      ...(on('loop-hint') ? (['shell'] as const) : []),
+      ...(pace ? (['edit', 'shell'] as const) : []),
+      ...userKinds('tool.after'),
+    ],
+  }
 
   const runUser = async (event: HookEventName, facts: HookFacts) => {
     const plan = activePlan(c.task)
@@ -427,7 +441,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return {}
   }
 
-  return { ...(beforeEnd ? { beforeEnd } : {}), ...(events.length ? { hookEvents: events, onHook } : {}) }
+  return { ...(beforeEnd ? { beforeEnd } : {}), ...(events.length ? { hookEvents: events, hookTools, onHook } : {}) }
 }
 
 /** 只看范围（项目、角色、CLI），不看工具匹配：装不装 tool.* 只要范围对得上就装，具体匹不匹配到触发时再看 */
