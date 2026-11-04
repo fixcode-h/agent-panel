@@ -197,6 +197,15 @@ export const EN_HOOKS: Record<string, string> = {
     'When the same command fails several times in a row, adds a note to try another approach or say where it is stuck (needs a CLI that reports failures: Claude Code, Pi, Command Code)',
   连续失败几次提醒: 'Failures in a row before the hint',
   '1 到 100，默认 3': '1 to 100, default 3',
+  计划没跟上提醒: 'Plan falling behind hint',
+  '项目里的对话改文件、跑命令时，计划没有进行中的步骤，或者进行中的那一步动手多次还没更新，补一句让它先用 set_plan 标完成、标下一步（同一步提醒几次可以设置）':
+    'When a project conversation edits files or runs commands while its plan has no step in progress, or the step in progress has gone many actions without an update, adds a note to mark it done and start the next one with set_plan first (how many times per step is configurable)',
+  动手几次没更新就提醒: 'Actions without a plan update before the hint',
+  '1 到 100，默认 20；超过 3 分钟没更新时，到三分之一就提醒':
+    '1 to 100, default 20; after 3 minutes without an update, a third of that is enough',
+  同一步最多提醒几次: 'Most hints per step',
+  '1 到 100，默认 1；提醒过后再动手到上面的次数才提醒下一次':
+    '1 to 100, default 1; after a hint, the next one comes only after that many more actions',
   改完没验证: 'Edited but not verified',
   '这条消息以来改过文件，之后却一条命令都没跑就要结束时，拦一次让它跑一下检查（或说明为什么不用跑）':
     'When files were edited since this message but no command ran afterwards, blocks once so it runs a check (or explains why none is needed)',

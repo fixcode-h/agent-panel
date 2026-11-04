@@ -12,7 +12,9 @@ import {
   childState,
   childWaitText,
   convStateText,
+  sortChildren,
   stopReasonText,
+  visibleChildren,
   type ChildActivity,
   type ChildEntry,
 } from '@shared/task'
@@ -153,7 +155,8 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
     out.push({ text: t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total }), tone: 'warning' })
   // 交了 Bug 诊断报告、等你确认（ADR 0045）：还在转圈（没做完），但状态写成「报告待确认」并用提醒色，
   // 一眼和别的「执行中」分开，知道是这一个在等你看报告
-  if (icon === 'running' && c.diagnosis) out.push({ text: t('报告待确认'), tone: 'warning' })
+  // 等报告时又提了问（图标是 waiting，前面已经写了「等你选择 / 确认」）：仍写出报告在等确认，这一行留在运行区
+  if ((icon === 'running' || icon === 'waiting') && c.diagnosis) out.push({ text: t('报告待确认'), tone: 'warning' })
   else if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })
   if (parked) out.push({ text: convStateText(state), tone: 'subtle' })
   // 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText）。
@@ -191,4 +194,19 @@ export const childLabelClass: Record<ChildLabelTone, string> = {
   accent: 'shrink-0 text-caption text-accent-text',
   subtle: 'shrink-0 text-caption text-subtle',
   plain: 'chip-lift shrink-0 rounded-full bg-field px-1.5 text-caption text-subtle',
+}
+
+/**
+ * 交了诊断报告等你确认（ADR 0045）、又在等你回答提问或确认请求的子对话：状态是「等你处理」（convState 里
+ * requests / asking 排在诊断前面），不转圈，visibleChildren 不列它。以前运行区里这一行就此消失，
+ * 只剩输入框上方「等你回答」那一条，看着像子对话行被提问顶掉了（用户报的现象）。
+ * 运行区照旧留着这一行（行尾还是「查看报告」），提问另外显示。停下的、已收起的不算：报告不再算在跑
+ */
+export const reportAsking = (c: ChildEntry) =>
+  !!c.diagnosis && c.status !== 'stopped' && !c.gone && childIcon(c) === 'waiting'
+
+/** 运行区列的子对话：转圈的那一批（visibleChildren）加上等诊断报告时又提了问的；顺序同 sortChildren */
+export function listedChildren<C extends ChildEntry>(children: C[]): C[] {
+  const extra = children.filter(reportAsking)
+  return extra.length ? sortChildren([...visibleChildren(children), ...extra]) : visibleChildren(children)
 }
