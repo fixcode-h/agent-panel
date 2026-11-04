@@ -9,12 +9,13 @@ import {
 } from '../../shared/task.ts'
 import { isChatMode, nudgeMax } from '../../shared/conv-mode.ts'
 import { planProgressKey, shortKey, type DriveBudget } from '../../shared/drive.ts'
-import { activePlan, needsFix, openWork, planProgress } from '../../shared/plan.ts'
+import { activePlan, needsFix, openWork, panelWrap, planProgress } from '../../shared/plan.ts'
 import { allowEnd, type BeforeEndDecision, type BeforeEndInput } from '../../shared/hooks.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { taskLog } from '../task-log.ts'
 import { getSettings } from '../settings.ts'
 import type { TasksScope } from './scope.ts'
+import { isolated } from './helpers.ts'
 
 /** 没列计划时，这条输入以来动手（跑命令、改文件）几次以上才算「可能做了一半」：和收尾自检同一个门槛 */
 const WORKED_ACTS = 3
@@ -86,6 +87,8 @@ export function createBeforeEnd(
     return { acts, reads, tools: acts + reads, checked: checked >= 0 }
   }
 
+  const mergeOwed = (tk: Task) => mergeOwedOf(tk, sc.mergeNudged.has(tk.id))
+
   /** 拦住时在预算里记一次；推满了返回 0 */
   const take = (tk: Task, key: string, max: number) => budget.take(tk.id, key, max, inputOf(tk))
 
@@ -115,6 +118,25 @@ export function createBeforeEnd(
           `【面板】这些子对话已经请你收尾，它们一直在等你，先处理再结束：\n${lines.join('\n')}\n` +
           '直接调用工具处理，不用先说明；收尾请求里有它的验证结果，核对后决定合回还是交回。' +
           d.lastNudge(nth, max),
+      }
+    }
+
+    // 子对话做完了、只差请父对话收尾却要结束（用户报过：说一句「现在收尾」就停，没调 submit_merge）：
+    // 以前等这一轮结束后由 nudgeMerge 另发一条提醒，现在在同一轮里拦住。只看计划和改动清单，不跑 git
+    const merge = mergeOwed(tk)
+    if (merge) {
+      const nth = take(tk, `merge:${inputOf(tk)}`, 1)
+      if (nth) {
+        // 一轮结束后的那条提醒不再补发（同一个记号，见 children.ts 的 nudgeMerge）
+        sc.mergeNudged.add(tk.id)
+        taskLog(tk.id, '结束前钩子：没请收尾，拦住', { why: merge })
+        return {
+          block: true,
+          why: 'merge-owed',
+          reason: isolated(tk)
+            ? '【面板】你还没请父对话收尾：独立分支里的改动没合回之前不算做完。按「验证」跑通编译和测试，然后直接调用 submit_merge（tests 写上跑了什么、结果如何），父对话会合并、标完成并删除分支；不要自己 git merge。验证没过就修好再交，确实不该合并就说明原因。'
+            : '【面板】你还没请父对话验收：改了代码先按「收尾前评审」派评审、逐条处置，按「验证」跑通编译和测试，再直接调用 submit_merge（tests 写上跑了什么、结果如何，handoff 写交接要点）。确实不该交付就说明原因。',
+        }
       }
     }
 
@@ -178,4 +200,21 @@ export function createBeforeEnd(
     if (!r.block) taskLog(convId, '结束前钩子：放行', { why: r.why, again: input.again || undefined })
     return r
   }
+}
+
+/**
+ * 子对话该请收尾却还没请：计划只剩收尾那一步（别的都做完了），或者没列计划但改过文件。
+ * 已经请过、已经提醒过（nudged）、被收下的不算；返回原因，不该拦返回空。只看计划和改动清单，不跑 git
+ */
+export function mergeOwedOf(
+  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'wrapRequest' | 'plans' | 'steps' | 'changes'>,
+  nudged: boolean,
+): string {
+  if (!tk.parentTaskId || tk.resolved || tk.wrapRequest || nudged) return ''
+  const plan = activePlan(tk)
+  if (plan) {
+    const wrapOpen = plan.steps.some((s) => panelWrap(s.wrapUp) && s.status !== 'done')
+    return wrapOpen && !openWork(tk).length ? 'plan-wrap-left' : ''
+  }
+  return tk.changes.length ? 'changed-no-plan' : ''
 }

@@ -45,6 +45,30 @@ export async function setBuiltin(id: string, on: boolean, defaultOn: boolean) {
   await save({ ...cur, builtins })
 }
 
+/** 按项目的内置钩子开关：on 为 null 时去掉这个项目的设置，回到跟着全局 */
+export async function setProjectBuiltin(projectId: string, id: string, on: boolean | null) {
+  const cur = await readHooks()
+  const mine = { ...(cur.projects[projectId] ?? {}) }
+  if (on === null) delete mine[id]
+  else mine[id] = on
+  const projects = { ...cur.projects }
+  if (Object.keys(mine).length) projects[projectId] = mine
+  else delete projects[projectId]
+  await save({ ...cur, projects })
+}
+
+/** 内置钩子的参数：和默认值一样时不记（默认值以后改了能跟着走） */
+export async function setBuiltinParam(id: string, key: string, value: string[] | number, isDefault: boolean) {
+  const cur = await readHooks()
+  const mine = { ...(cur.params[id] ?? {}) }
+  if (isDefault) delete mine[key]
+  else mine[key] = value
+  const params = { ...cur.params }
+  if (Object.keys(mine).length) params[id] = mine
+  else delete params[id]
+  await save({ ...cur, params })
+}
+
 /** 新建或更新一个用户钩子（id 为空时新建）；命令钩子的脚本同时写到它自己的文件 */
 export async function putHook(input: HookDefInput): Promise<HookDef> {
   const cur = await readHooks()

@@ -11,7 +11,12 @@ export interface BuiltinHookView {
   name: string
   description: string
   defaultOn: boolean
+  /** 实际用的值：看的是某个项目时按那个项目算 */
   on: boolean
+  globalOn: boolean
+  /** 这个项目单独设的开关；没设（跟着全局）为 null */
+  projectOn: boolean | null
+  params: { key: string; kind: 'list' | 'number'; label: string; hint: string; value: string[] | number }[]
 }
 export interface HooksView {
   builtins: BuiltinHookView[]
@@ -40,8 +45,13 @@ export interface HookTriggerView {
 }
 
 export const hooksApi = {
-  list: () => request<HooksView>('/hooks'),
-  setBuiltin: (id: string, on: boolean) => request<{ ok: true }>(`/hooks/builtins/${id}`, json('PUT', { on })),
+  list: (projectId = '') =>
+    request<HooksView>(projectId ? `/hooks?projectId=${encodeURIComponent(projectId)}` : '/hooks'),
+  /** projectId 给了是这个项目单独的开关；on 为 null 去掉单独的设置 */
+  setBuiltin: (id: string, on: boolean | null, projectId = '') =>
+    request<{ ok: true }>(`/hooks/builtins/${id}`, json('PUT', projectId ? { on, projectId } : { on })),
+  setParam: (id: string, key: string, value: string[] | number) =>
+    request<{ ok: true }>(`/hooks/builtins/${id}/params`, json('PUT', { key, value })),
   check: (def: HookDefInput, run = false) => request<HookCheckView>('/hooks/check', json('POST', { def, run })),
   test: (def: HookDefInput, input?: unknown) => request<HookTestView>('/hooks/test', json('POST', { def, input })),
   save: (def: HookDefInput) =>

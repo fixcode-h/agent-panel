@@ -92,66 +92,30 @@ export const HookDef = z.object({
 export type HookDef = z.infer<typeof HookDef>
 export type HookDefInput = z.input<typeof HookDef>
 
-/** 面板自带的钩子：可以开关、看说明，不能删、不能改逻辑 */
-export interface BuiltinHook {
-  id: string
-  event: HookEventName
-  name: () => string
-  description: () => string
-  defaultOn: boolean
-}
-
-export const BUILTIN_HOOKS: BuiltinHook[] = [
-  {
-    id: 'keep-going',
-    event: 'turn.beforeEnd',
-    name: () => t('没做完不收尾'),
-    description: () =>
-      t(
-        '计划没做完、子对话请求收尾还没处理、没列计划却做了一半就要结束时，在同一轮里拦住让它接着做（Chat 页一问一答不拦）',
-      ),
-    defaultOn: true,
-  },
-  {
-    id: 'restore-plan',
-    event: 'context.restored',
-    name: () => t('压缩后补回计划'),
-    description: () => t('压缩上下文之后，把当前计划和进度、派单的目标、在等什么补给模型，免得它忘了做到哪'),
-    defaultOn: true,
-  },
-  {
-    id: 'read-only-guard',
-    event: 'tool.before',
-    name: () => t('只读身份守卫'),
-    description: () => t('调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因'),
-    defaultOn: true,
-  },
-  {
-    id: 'temp-file-guard',
-    event: 'tool.before',
-    name: () => t('临时文件位置守卫'),
-    description: () => t('往盘符根目录、面板的数据目录里写文件时拒绝，说明临时文件该放到项目的 .tmp/ 或系统临时目录'),
-    defaultOn: false,
-  },
-  {
-    id: 'push-lessons',
-    event: 'tool.after',
-    name: () => t('改文件后推送教训'),
-    description: () => t('第一次改到某个文件时，把项目教训里管这个文件的几条补给模型'),
-    defaultOn: false,
-  },
-]
+// 内置钩子的清单、参数和开关的取法在 hook-builtins.ts（这里转出去，老的引用不用改）
+export {
+  BUILTIN_HOOKS,
+  builtinOn,
+  builtinParam,
+  builtinList,
+  type BuiltinHook,
+  type BuiltinParam,
+} from './hook-builtins.ts'
 
 /** 数据目录里 hooks.json 的形状：内置钩子的开关（只记改过默认值的）和用户的钩子 */
 export const HooksData = z.object({
   builtins: z.record(z.string(), z.boolean()).default({}),
+  /** 按项目单独设的内置钩子开关（项目 id → 钩子 id → 开 / 关），覆盖全局；没设的跟着全局 */
+  projects: z.record(z.string(), z.record(z.string(), z.boolean())).default({}),
+  /** 内置钩子的参数（钩子 id → 参数名 → 值），没改过的不记 */
+  params: z
+    .record(z.string(), z.record(z.string(), z.union([z.array(z.string().max(300)).max(50), z.number()])))
+    .default({}),
   hooks: z.array(HookDef).default([]),
   /** 做过的一次性迁移：webhook 是设置里原来的「计划 Webhook」迁成钩子 */
   migrated: z.object({ webhook: z.boolean().default(false) }).default({ webhook: false }),
 })
 export type HooksData = z.infer<typeof HooksData>
-
-export const builtinOn = (data: Pick<HooksData, 'builtins'>, h: BuiltinHook) => data.builtins[h.id] ?? h.defaultOn
 
 /** 交给用户钩子的输入（统一格式，与 CLI 无关；不含模型回复的文字，也不含凭据） */
 export interface HookInput {

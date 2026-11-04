@@ -5,6 +5,7 @@ import type { AgentCall } from '../../shared/engine.ts'
 import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts } from '../../shared/hooks.ts'
 import {
   BUILTIN_HOOKS,
+  builtinList,
   builtinOn,
   globMatch,
   hookApplies,
@@ -21,6 +22,16 @@ import { loadProjectLessons } from '../project-lessons.ts'
 import { readHooks } from './store.ts'
 import { noteTrigger, runHook } from './run.ts'
 import { taskLog } from '../task-log.ts'
+import {
+  bugDeny,
+  dangerDeny,
+  longDeny,
+  pushDeny,
+  secretDeny,
+  testScopeDeny,
+  worktreeDeny,
+  type GuardCtx,
+} from './guards.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -77,7 +88,7 @@ function identity(c: HookCallCtx): 'read-only' | 'coordinator' | '' {
 }
 
 /** 只读身份守卫：要改文件（和只读角色的写命令）时拒绝；父对话开了就地微改动时，改它登记的那几个文件放行 */
-function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts): string {
+function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts, extra: string[] = []): string {
   const tool = facts.tool
   if (!tool) return ''
   if (tool.kind === 'edit') {
@@ -92,7 +103,7 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts): string {
   if (who === 'read-only' && tool.kind === 'shell') {
     // 按段比：`cd 项目 && git commit` 也要拦
     const segs = commandSegments(String(tool.input.command ?? ''))
-    const hit = WRITE_COMMANDS.find((w) => segs.some((c) => c.startsWith(w)))
+    const hit = [...WRITE_COMMANDS, ...extra.filter(Boolean)].find((w) => segs.some((c) => c.startsWith(w)))
     if (hit)
       return `【面板】你是只读的角色，不跑会改仓库或装依赖的命令（${hit.trim()}）：需要的话写进结果，由派你的对话安排。`
   }
@@ -100,12 +111,12 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts): string {
 }
 
 /** 临时文件位置守卫：写到盘符根目录下一两层、或面板的数据目录里时拒绝（项目目录、系统临时目录里照常） */
-function tempFileDeny(c: HookCallCtx, facts: HookFacts): string {
+function tempFileDeny(c: HookCallCtx, facts: HookFacts, allow: string[] = []): string {
   const tool = facts.tool
   if (!tool || tool.kind !== 'edit') return ''
   for (const f of tool.paths.length ? tool.paths : [tool.path].filter(Boolean)) {
     const p = path.resolve(c.cwd, f)
-    if (inside(c.cwd, p) || inside(tmpdir(), p)) continue
+    if (inside(c.cwd, p) || inside(tmpdir(), p) || allow.some((d) => d && inside(d, p))) continue
     const root = path.parse(p).root
     const depth = path.relative(root, p).split(path.sep).filter(Boolean).length
     if (inside(DATA_DIR, p) || depth <= 2)
@@ -136,10 +147,12 @@ export async function hookOptions(c: HookCallCtx): Promise<{
 }> {
   if (!c.call.orch) return {}
   const data: HooksData = await readHooks()
+  // 开关可以按项目单独设（覆盖全局，见 hook-builtins.ts）
   const on = (id: string) =>
     builtinOn(
       data,
       BUILTIN_HOOKS.find((h) => h.id === id)!,
+      c.project.id,
     )
   const who = identity(c)
   const base: Omit<HookInput, 'event'> = {
@@ -156,8 +169,29 @@ export async function hookOptions(c: HookCallCtx): Promise<{
           (l) => l.enabled && l.paths.length,
         )
       : []
+  // 工具前的内置守卫，按这个顺序问，第一个拒绝的说了算（第四期的几个见 guards.ts）
+  const guard = (id: string): GuardCtx => ({
+    task: c.task,
+    project: c.project.id ? c.project : null,
+    cwd: c.cwd,
+    helper: !!c.call.orch?.helper,
+    canBackground: !!c.call.orch?.canBackground,
+    list: (key) => builtinList(data, id, key),
+  })
+  const GUARDS: [string, (g: GuardCtx, f: HookFacts) => string][] = [
+    ['read-only-guard', (g, f) => (who ? readOnlyDeny(c, who, f, g.list('extra')) : '')],
+    ['worktree-guard', worktreeDeny],
+    ['bug-diagnosis-guard', bugDeny],
+    ['push-guard', pushDeny],
+    ['danger-guard', dangerDeny],
+    ['test-scope-guard', testScopeDeny],
+    ['long-command-guard', longDeny],
+    ['secret-guard', secretDeny],
+    ['temp-file-guard', (g, f) => tempFileDeny(c, f, g.list('allow'))],
+  ]
+  const guards = GUARDS.filter(([id]) => on(id) && (id !== 'read-only-guard' || who))
   const events: HookEventName[] = []
-  if ((on('read-only-guard') && who) || on('temp-file-guard') || mine('tool.before').length) events.push('tool.before')
+  if (guards.length || mine('tool.before').length) events.push('tool.before')
   if (lessons.length || mine('tool.after').length) events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
 
@@ -210,6 +244,19 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return out
   }
 
+  /** 内置钩子也记进「最近触发」：拦了什么、补了什么在设置页看得到，不用翻对话 */
+  const noteBuiltin = (id: string, event: HookEventName, result: 'block' | 'deny' | 'context', detail: string) =>
+    noteTrigger({
+      at: new Date().toISOString(),
+      hookId: `builtin:${id}`,
+      name: BUILTIN_HOOKS.find((h) => h.id === id)?.name() ?? id,
+      event,
+      taskId: c.task.id,
+      result,
+      detail,
+      ms: 0,
+    })
+
   const builtinEnd = on('keep-going') ? c.call.beforeEnd : undefined
   const userEnd = mine('turn.beforeEnd').length > 0
   const beforeEnd =
@@ -220,18 +267,21 @@ export async function hookOptions(c: HookCallCtx): Promise<{
             const u = await runUser('turn.beforeEnd', {})
             if (u.block) d = { block: true, reason: u.block, why: 'user-hook' }
           }
-          if (d.block && d.reason) c.mark(d.reason)
+          if (d.block && d.reason) {
+            c.mark(d.reason)
+            if (d.why !== 'user-hook') noteBuiltin('keep-going', 'turn.beforeEnd', 'block', d.reason)
+          }
           return d
         }
       : undefined
 
   const onHook = async (event: HookEventName, facts: HookFacts): Promise<HookAnswer> => {
     if (event === 'tool.before') {
-      const deny =
-        (on('read-only-guard') && who && readOnlyDeny(c, who, facts)) ||
-        (on('temp-file-guard') && tempFileDeny(c, facts))
-      if (deny) {
-        taskLog(c.task.id, '工具前钩子：拒绝', { tool: facts.tool?.name, path: facts.tool?.path })
+      for (const [id, fn] of guards) {
+        const deny = fn(guard(id), facts)
+        if (!deny) continue
+        taskLog(c.task.id, '工具前钩子：拒绝', { guard: id, tool: facts.tool?.name, path: facts.tool?.path })
+        noteBuiltin(id, event, 'deny', deny)
         return { deny: true, reason: deny }
       }
       const u = await runUser(event, facts)
@@ -246,6 +296,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         pushed.set(c.task.id, seen)
         const hit = lessons.filter((l) => !seen.has(l.id) && l.paths.some((g) => globMatch(g, r)))
         for (const l of hit) seen.add(l.id)
+        if (hit.length) noteBuiltin('push-lessons', event, 'context', `${r}：${hit.map((l) => l.title).join('、')}`)
         if (hit.length)
           ctx.push(
             `【面板】${r} 有相关的项目教训，照着做：\n${hit.map((l) => `- ${l.title}${l.rule ? `：${l.rule}` : ''}`).join('\n')}`,
@@ -261,6 +312,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         if (text) {
           ctx.push(text)
           taskLog(c.task.id, '压缩后补回计划', { chars: text.length })
+          noteBuiltin('restore-plan', event, 'context', text.slice(0, 200))
         }
       }
       ctx.push(...(await runUser(event, facts)).context)

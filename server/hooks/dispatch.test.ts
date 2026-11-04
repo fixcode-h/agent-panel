@@ -69,8 +69,10 @@ test('只读的角色改文件被拒绝，跑写仓库的命令也被拒绝；�
     tool: { kind: 'shell', name: 'Bash', input: { command: 'git log' }, path: '', paths: [] },
   })
   assert.ok(!c.deny, '只读命令照常')
+  // 第四期起推送、危险命令这些守卫默认开着，普通角色也装工具前；它改项目里的文件照常放行
   const plain = await hookOptions(ctx())
-  assert.ok(!plain.hookEvents?.includes('tool.before'), '没开别的工具前钩子时，普通角色不装')
+  assert.ok(plain.hookEvents?.includes('tool.before'))
+  assert.ok(!(await plain.onHook!('tool.before', edit(path.join(dir, 'a.ts')))).deny, '普通角色改文件照常')
 })
 
 test('只统筹的父对话改文件被拒绝；就地微改动登记过的文件放行', async () => {
@@ -90,7 +92,8 @@ test('只统筹的父对话改文件被拒绝；就地微改动登记过的文�
 test('关掉内置钩子就不装；临时文件守卫默认关，打开后拦住写到盘符根目录下的文件', async () => {
   resetHooksCache()
   await setBuiltin('read-only-guard', false, true)
-  assert.ok(!(await hookOptions(ctx({ origin: 'builtin:reviewer' }))).hookEvents?.includes('tool.before'))
+  const rv = await hookOptions(ctx({ origin: 'builtin:reviewer' }))
+  assert.ok(!(await rv.onHook!('tool.before', edit(path.join(dir, 'a.ts')))).deny, '关掉只读守卫后评审改文件不拦')
   await setBuiltin('temp-file-guard', true, false)
   const o = await hookOptions(ctx())
   const r = await o.onHook!('tool.before', edit(path.join(path.parse(dir).root, 'scratch', 'x.txt')))

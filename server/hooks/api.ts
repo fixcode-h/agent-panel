@@ -1,9 +1,18 @@
 import { Hono } from 'hono'
-import { BUILTIN_HOOKS, builtinOn, HookEventName, type HookDefInput } from '../../shared/hook-defs.ts'
+import { BUILTIN_HOOKS, builtinOn, builtinParam, HookEventName, type HookDefInput } from '../../shared/hook-defs.ts'
 import { CLIS } from '../../shared/clis.ts'
 import { hookEventsFor } from '../../shared/hooks.ts'
 import { t } from '../../shared/i18n.ts'
-import { deleteHook, migrateWebhook, orderHooks, putHook, readHooks, setBuiltin } from './store.ts'
+import {
+  deleteHook,
+  migrateWebhook,
+  orderHooks,
+  putHook,
+  readHooks,
+  setBuiltin,
+  setBuiltinParam,
+  setProjectBuiltin,
+} from './store.ts'
 import { watchTaskEvents } from './notify.ts'
 import { onTaskChange } from '../task-store.ts'
 import { getSettings } from '../settings.ts'
@@ -34,6 +43,8 @@ export function hooksApi(deps?: {
   return new Hono()
     .get('/', async (c) => {
       const data = await readHooks()
+      // 带了 projectId 时 on 是这个项目实际用的值，projectOn 是这个项目单独设的（没设为 null，跟着全局）
+      const projectId = c.req.query('projectId') ?? ''
       return c.json({
         builtins: BUILTIN_HOOKS.map((h) => ({
           id: h.id,
@@ -41,7 +52,16 @@ export function hooksApi(deps?: {
           name: h.name(),
           description: h.description(),
           defaultOn: h.defaultOn,
-          on: builtinOn(data, h),
+          on: builtinOn(data, h, projectId),
+          globalOn: builtinOn(data, h),
+          projectOn: projectId ? (data.projects[projectId]?.[h.id] ?? null) : null,
+          params: (h.params ?? []).map((p) => ({
+            key: p.key,
+            kind: p.kind,
+            label: p.label(),
+            hint: p.hint(),
+            value: builtinParam(data, h, p.key),
+          })),
         })),
         hooks: data.hooks,
         // 每个 CLI 支持哪些事件：界面上把不支持的灰掉、写明原因
@@ -52,8 +72,29 @@ export function hooksApi(deps?: {
     .put('/builtins/:id', async (c) => {
       const h = BUILTIN_HOOKS.find((x) => x.id === c.req.param('id'))
       if (!h) return c.json({ error: t('没有这个内置钩子') }, 404)
-      const body = (await c.req.json().catch(() => ({}))) as { on?: unknown }
-      await setBuiltin(h.id, body.on === true, h.defaultOn)
+      const body = (await c.req.json().catch(() => ({}))) as { on?: unknown; projectId?: unknown }
+      // 带 projectId 是这个项目单独的开关；on 为 null 表示去掉单独的设置、跟着全局
+      if (typeof body.projectId === 'string' && body.projectId)
+        await setProjectBuiltin(body.projectId, h.id, body.on === null ? null : body.on === true)
+      else await setBuiltin(h.id, body.on === true, h.defaultOn)
+      return c.json({ ok: true })
+    })
+    .put('/builtins/:id/params', async (c) => {
+      const h = BUILTIN_HOOKS.find((x) => x.id === c.req.param('id'))
+      const body = (await c.req.json().catch(() => ({}))) as { key?: unknown; value?: unknown }
+      const p = h?.params?.find((x) => x.key === body.key)
+      if (!h || !p) return c.json({ error: t('没有这个参数') }, 404)
+      const value =
+        p.kind === 'number'
+          ? Number(body.value)
+          : (Array.isArray(body.value) ? body.value : [])
+              .map((x) => String(x).trim())
+              .filter(Boolean)
+              .slice(0, 50)
+      if (p.kind === 'number' && (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 100))
+        return c.json({ error: t('要是 1 到 100 之间的整数') }, 400)
+      const isDefault = JSON.stringify(value) === JSON.stringify(p.default)
+      await setBuiltinParam(h.id, p.key, value, isDefault)
       return c.json({ ok: true })
     })
     .post('/check', async (c) => {

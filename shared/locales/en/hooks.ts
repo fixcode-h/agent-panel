@@ -4,8 +4,6 @@ export const EN_HOOKS: Record<string, string> = {
   脚本不能为空: 'Script is required',
   地址不对: 'Invalid URL',
   没做完不收尾: "Don't stop half-done",
-  '计划没做完、子对话请求收尾还没处理、没列计划却做了一半就要结束时，在同一轮里拦住让它接着做（Chat 页一问一答不拦）':
-    'When the plan is unfinished, a child is waiting to be wrapped up, or work without a plan is half-done, stop the agent from ending and keep it going in the same turn (Chat page Q&A is not affected)',
   压缩后补回计划: 'Restore the plan after compaction',
   '压缩上下文之后，把当前计划和进度、派单的目标、在等什么补给模型，免得它忘了做到哪':
     'After the context is compacted, give the model the current plan and progress, the task goal, and what it is waiting on, so it does not lose its place',
@@ -51,7 +49,6 @@ export const EN_HOOKS: Record<string, string> = {
   '还没有自己的钩子。新建一个，或者让 AI 按你的描述写一个':
     'No hooks of your own yet. Create one, or let AI write one from your description',
   最近触发: 'Recent runs',
-  '面板这次启动以来最近 50 次用户钩子的运行': 'The last 50 runs of your hooks since the panel started',
   '{ms} 毫秒': '{ms} ms',
   还没有触发过: 'Nothing has run yet',
   '删除钩子「{name}」？': 'Delete the hook "{name}"?',
@@ -141,4 +138,51 @@ export const EN_HOOKS: Record<string, string> = {
   '计划任务 Webhook': 'Scheduled task webhook',
   '从设置里原来的「计划 Webhook」迁过来：计划任务跑完时把结果 POST 到这个地址':
     'Moved from the old "Schedule webhook" setting: POSTs the result to this URL when a scheduled task finishes',
+  '「{name}」的参数': 'Parameters of "{name}"',
+  内置钩子的开关: 'Built-in hook switches',
+  '所有项目（全局）': 'All projects (global)',
+  '只在「{name}」': 'Only in "{name}"',
+  '这个项目单独设的开关优先，没设的跟着全局': "This project's own switches win; the rest follow the global ones",
+  '跟随全局（{state}）': 'Follow global ({state})',
+  开: 'on',
+  关: 'off',
+  '面板这次启动以来最近 50 次钩子的运行（内置钩子只记拦下和补说明的）':
+    'The last 50 hook runs since the panel started (built-in hooks are recorded only when they block or add context)',
+  另外拦下的命令: 'Also block these commands',
+  '计划没做完、子对话请求收尾还没处理、子对话做完了却没请父对话收尾、没列计划却做了一半就要结束时，在同一轮里拦住让它接着做（Chat 页一问一答不拦）':
+    "Keeps the agent going in the same turn when the plan isn't done, a child's wrap-up request is unhandled, a finished child hasn't asked its parent to wrap up, or work stopped halfway without a plan (not on the Chat page)",
+  '只读角色另外不许跑的命令前缀，一行一个，例如 make deploy':
+    'Extra command prefixes read-only roles may not run, one per line, e.g. make deploy',
+  推送授权守卫: 'Push authorization guard',
+  '按项目的「推送到远端」设置和这个对话的授权拦 git push、合并 PR：没授权先让它调 ask_push，用户拒绝过、项目不推送、子对话和子任务都直接拒绝并说明原因':
+    'Checks git push and PR merges against the project\'s "Push to remote" setting and this conversation\'s authorization: without authorization it must call ask_push first; refused pushes, no-push projects, child conversations and subtasks are denied with the reason',
+  'Bug 先诊断守卫': 'Diagnose-first guard',
+  '父对话派来的 Bug：诊断报告还没被用户确认就改文件、或者改到确认方案以外的文件时拒绝，免得改完收尾时才被打回':
+    'For bugs handed down by a parent: denies edits before the diagnosis is approved, or to files outside the approved plan, so the work is not rejected at wrap-up',
+  危险命令守卫: 'Dangerous command guard',
+  '拦下不可挽回的命令：递归删除根目录、家目录、项目、面板数据目录，原分支上 reset --hard / clean / 撤销整个工作区，强推，删主干分支':
+    'Blocks irreversible commands: recursive deletes of the root, home, project or panel data directory; reset --hard / clean / reverting the whole working tree on the original branch; force pushes; deleting the main branch',
+  '另外当成危险命令拦下的命令前缀，一行一个，例如 docker system prune':
+    'Extra command prefixes to block as dangerous, one per line, e.g. docker system prune',
+  长命令转后台: 'Long commands to background',
+  '完整测试、端到端、界面检查、开发服务器这类长命令放在前台跑时拒绝，让它交给面板的后台命令，执行中发来的消息不用等它跑完':
+    "Denies full test suites, end-to-end and UI checks, and dev servers in the foreground and has them run as the panel's background commands, so messages sent meanwhile don't wait",
+  另外算长命令的命令前缀: 'Extra long-command prefixes',
+  '一行一个，例如 npm run build、cargo test': 'One per line, e.g. npm run build, cargo test',
+  测试步骤归属守卫: 'Test step ownership guard',
+  '项目里设成「合回后由父对话跑」的测试步骤，子对话在独立分支里跑时拒绝':
+    'Denies test steps the project runs in the parent after merging when a child runs them in its own branch',
+  凭据守卫: 'Credential guard',
+  '往项目文件里写像是真实密钥、令牌、私钥的内容时拒绝，让它改成从环境变量读；本机的 .env 这类文件放行':
+    'Denies writing what looks like a real key, token or private key into project files and asks for environment variables instead; local files like .env are allowed',
+  可以写凭据的文件: 'Files that may hold credentials',
+  '相对项目根的路径通配，一行一个；.env、.env.* 已经放行':
+    'Path globs relative to the project root, one per line; .env and .env.* are already allowed',
+  独立分支越界守卫: 'Branch boundary guard',
+  '子对话在自己的独立分支里，要改分支目录以外的文件（比如原仓库里的）时拒绝':
+    "Denies a child working in its own branch editing files outside that branch's directory (such as the original repository)",
+  另外允许写的目录: 'Also allowed directories',
+  '绝对路径，一行一个': 'Absolute paths, one per line',
+  没有这个参数: 'No such parameter',
+  '要是 1 到 100 之间的整数': 'Must be a whole number from 1 to 100',
 }
