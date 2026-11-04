@@ -1505,7 +1505,7 @@ export const EN_SETTINGS: Record<string, string> = {
   适应画布: 'Fit to canvas',
   本对话改动: 'Changes in this conversation',
   对话部件: 'Conversation parts',
-  主理: 'Lead',
+  协调器: 'Coordinator',
   结果丢失: 'Result lost',
   按这张: 'Follow this ',
   已上传: 'uploaded',

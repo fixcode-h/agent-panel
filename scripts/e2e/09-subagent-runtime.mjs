@@ -878,7 +878,7 @@ await runShard('子对话运行与监管', async (api) => {
     const { id: _i, createdAt: _cc, updatedAt: _uu, ...curInput } = cur
     await call('PUT', `/projects/${project.id}`, { ...curInput, workflowIds: [...(cur.workflowIds ?? []), wf.id] })
     const lead = await agent({
-      name: '主理-工作流',
+      name: '协调器-工作流',
       cli: 'claude',
       canDelegate: true,
       canPlan: true,

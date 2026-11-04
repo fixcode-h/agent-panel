@@ -8,7 +8,7 @@ import type { AgentMount } from '../schema.ts'
  * 必备角色：项目对话离不开的八个能力块，加上 Chat 页的「助手」。启动时自动装好、不能删除，也不能改成别的角色：
  * 名称、角色设定、Skill、能力开关、参数的定义都由面板维护，每次启动按内置定义同步；
  * 用户能改的只有运行配置（CLI、模型、思考强度、权限、额外参数、开场要求、标签）和参数的取值。
- * 这样「主理把文档交给文档角色」「执行派测试验收去跑」「收尾前派评审、交付前交版本控制收尾」这类约定才靠得住，
+ * 这样「协调器把文档交给文档角色」「执行派测试验收去跑」「收尾前派评审、交付前交版本控制收尾」这类约定才靠得住，
  * 不会因为某个角色被改成别的而断掉。
  */
 export const CORE_AGENTS = [
@@ -112,9 +112,9 @@ export function keepParamValues(defs: AgentParam[], mine: AgentParam[]): AgentPa
 const DEFAULT_CHANGES: { id: string; core: CoreKey; key: string; from: ParamValue }[] = [
   // 文档角色的「写 Bug 记录」从默认关改成默认开（89dbf5a 只改了定义，已装的副本还是关的）
   { id: 'docsync.bug-on', core: 'docsync', key: 'bug', from: false },
-  // 主理的「大改动先确认」默认打开：拆三个以上子对话、跨模块的派单先给用户看方案（角色分层改造）
+  // 协调器的「大改动先确认」默认打开：拆三个以上子对话、跨模块的派单先给用户看方案（角色分层改造）
   { id: 'orchestrator.confirm-on', core: 'orchestrator', key: 'confirm', from: false },
-  // 主理的「汇报」默认改成详细：用户 2026-10-30 要求主理的汇报写详细（已装的副本还是精简的）
+  // 协调器的「汇报」默认改成详细：用户 2026-10-30 要求协调器的汇报写详细（已装的副本还是精简的）
   { id: 'orchestrator.report-detailed', core: 'orchestrator', key: 'report', from: '精简' },
 ]
 
@@ -145,7 +145,7 @@ const RUN_IN_CHANGES: { id: string; core: CoreKey; runIn: AgentInput['runIn'] }[
  * 只在启动时做一次，之后用户关掉不会被改回来
  */
 const INLINE_EDIT_CHANGES: { id: string; core: CoreKey; inlineEdit: AgentInput['inlineEdit'] }[] = [
-  // 主理（原统筹）可以就地做护栏内的微改动：改个文案不用等一个子对话冷启动
+  // 协调器（原统筹）可以就地做护栏内的微改动：改个文案不用等一个子对话冷启动
   { id: 'orchestrator.inline-edit', core: 'orchestrator', inlineEdit: 'tiny' },
 ]
 

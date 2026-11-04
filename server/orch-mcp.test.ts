@@ -803,7 +803,7 @@ const IDENTITIES: [string, object, string[]][] = [
   // Chat 模式（ADR 0038）：不派子任务、没有并行节点可传话；面板计划只在 Agent 模式，Chat 用 CLI 自带的待办
   ['Chat 模式·助手（无项目，没有派单和传话）', { autoReturn: true, canBackground: true }, BG],
   [
-    '项目顶层·主理（canDelegate）',
+    '项目顶层·协调器（canDelegate）',
     { ...TOP, coordinator: true, peers: true },
     [
       'get_status',
@@ -819,7 +819,7 @@ const IDENTITIES: [string, object, string[]][] = [
     ],
   ],
   [
-    '项目顶层·主理 全开（canPlan + 就地改动 + 挂能力 + UE + P4 + cherry-pick + 推送问一次）',
+    '项目顶层·协调器 全开（canPlan + 就地改动 + 挂能力 + UE + P4 + cherry-pick + 推送问一次）',
     {
       ...TOP,
       coordinator: true,
@@ -1097,7 +1097,7 @@ test('面板工具按身份裁剪：每个身份的完整清单，真实 makeOrc
     return (k: string) => orchTools(seen.get(k)!).map((x) => x.name)
   }
   const top = await real({ delegate: true })
-  assert.deepEqual(top('chat'), want.get('项目顶层·主理（canDelegate）'))
+  assert.deepEqual(top('chat'), want.get('项目顶层·协调器（canDelegate）'))
   assert.deepEqual(top('chat-helper'), want.get('子任务·对话派的'))
   assert.deepEqual((await real({}))('chat'), want.get('项目顶层·非统筹'))
   assert.deepEqual((await real({ parent: true }))('chat'), want.get('子对话·共用目录'))

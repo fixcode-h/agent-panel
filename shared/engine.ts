@@ -8,6 +8,8 @@
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
 import type { HandoffInput } from './handoff.ts'
+import { kidsOf, kidTitleOf, retryTarget } from './child-lookup.ts'
+import { docsFirst, type DocsFirstInput, type ModuleDocsLookup } from './docs-first.ts'
 import type { ReviewTarget } from './clis.ts'
 import { commonAgents, includedAgents, mountedAgents, roleKind, loadCapability, paramsProblem } from './agent-role.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES, normInlinePaths } from './inline-edit.ts'
@@ -83,7 +85,7 @@ import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
 import { orchAskPush, pushPolicyText } from './push-auth.ts'
-import { docRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
+import { docRootText, plainDocRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
 import { handedToOther, noteHandOff, type HandOffs } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
@@ -105,7 +107,7 @@ import {
 } from './submitted.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
-import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
+import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
 import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
@@ -131,40 +133,20 @@ import {
   ensureChildStep,
   WRAP_UP,
   type PlanItemInput,
-  type PlanKid,
   type WrapUpAnswer,
   type WrapUpKind,
 } from './plan.ts'
 
 /** 子任务、工作流运行的终止开关在 run-stops.ts：服务端路由从这里取 */
 export { stopHelper, stopPlan } from './run-stops.ts'
+/** 查名下子对话（计划对上等待、补步骤的标题、判断是不是重试）在 child-lookup.ts */
+export { retryBase } from './child-lookup.ts'
 
 /**
  * 每个父对话交给子对话的话 → 交给了哪个子对话、当时是哪条用户消息（见 sendToConversation：
  * 用户的一条消息只交给一个子对话）。范围和 sentToOther 一致（见 shared/peer-message.ts 的 handedToOther）
  */
 const handedOff = new WeakMap<object, HandOffs>()
-
-/**
- * 这个对话名下的子对话（计划按它对上等待、收口）：set_plan、finish_plan 都按这一份算。
- * 取不到列表时当没有子对话（老版本宿主），不影响计划本身
- */
-async function kidsOf(host: EngineHost): Promise<PlanKid[]> {
-  const list = host.listConversations ? await host.listConversations().catch(() => []) : []
-  return list.map((c) => ({
-    id: c.id,
-    title: c.title,
-    createdAt: c.createdAt ?? '',
-    done: !!c.resolved,
-    endedAt: c.resolved ? c.at : '',
-  }))
-}
-
-/** 一个子对话的标题：取不到时返回空串（调用方退到用 id） */
-async function kidTitleOf(host: EngineHost, id: string) {
-  const list = host.listConversations ? await host.listConversations().catch(() => []) : []
-  return list.find((c) => c.id === id)?.title.trim() ?? ''
-}
 
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'
@@ -244,7 +226,11 @@ export interface ReviewDiff {
   file?: string
 }
 
-/** 分诊记录的输入：派单工具的 route 参数（主理写的理解、理由、假设） */
+/** send_to_conversation 送到之后跟在返回后面的一句：这一轮可以结束、怎么跟用户说、不要猜状态 */
+export const SENT_NOTE =
+  '交出去了：这一轮可以结束，它做完会自动推回结果。给用户只说「已交回，等它的结果」，不要轮询，也不要拿 busy、「已完成」这类状态去猜它接没接到；用户问起时用 list_conversations 看一次 lastActivityAt 是否比交回的时间新。'
+
+/** 分诊记录的输入：派单工具的 route 参数（协调器写的理解、理由、假设） */
 export interface RouteInput {
   understanding?: string
   reason?: string
@@ -502,7 +488,7 @@ export interface Orchestra {
     message: string,
     files?: string[],
     step?: string,
-    extra?: { role?: string; route?: RouteInput; flow?: NonNullable<Task['flow']>; bug?: boolean },
+    extra?: { role?: string; route?: RouteInput; flow?: NonNullable<Task['flow']>; bug?: boolean } & DocsFirstInput,
   ): Promise<{ ok: boolean; id?: string; info: string }>
   /** rerun：给工作流子对话的这条消息是「同一个工作流再跑一次」（start_workflow 带 again） */
   sendToConversation(
@@ -628,6 +614,12 @@ export interface EngineHost {
    */
   policy?: {
     push: 'ask' | 'allow' | 'deny'
+    /** 已有模块文档的索引（协调器定位用，server/module-map.ts 的 moduleIndexText） */
+    modules?: string
+    /** P4 / SVN 以外的项目的文档根（docs 为空时给，见 shared/doc-root.ts 的 plainDocRootText） */
+    docRoot?: string
+    /** 项目是 Git 仓库但没配远端：没有地方可推，推送规则改成不推、不问（ask_push 也不给） */
+    noRemote?: boolean
     /** 这个对话里用户对推送的回答 */
     answered?: 'allowed' | 'denied'
     /** 已安装并登录的外部工具 */
@@ -893,6 +885,7 @@ export interface EngineHost {
   cherryPick?: (input: { commits?: string[]; changelist?: string }) => Promise<{ ok: boolean; info: string }>
   /** 弹推送授权卡等用户点（回答由宿主记进 task.remotePush，不受「提问」开关影响）；停止时 null */
   askPush?: (info: { branch?: string; summary?: string }) => Promise<{ allow: boolean; message?: string } | null>
+  moduleDocs?: ModuleDocsLookup // 查模块文档（先建文档再开子对话，shared/docs-first.ts）
 }
 
 /** Agent 用 record_lesson 记的一条教训 */
@@ -1402,7 +1395,7 @@ function commonPart(host: EngineHost, w?: Workflow, chat = false, helper = false
     // 对话（含它派出的子任务）用不到共享状态：对话里跑过工作流后 task.runs 会留着上一次运行，
     // 注入旧状态会让模型去调根本没注册的 read_state / write_state
     chat ? '' : statePart(host.task),
-    [policy, docRootText(host.policy?.docs)].filter(Boolean).join('\n\n'),
+    [policy, docRootText(host.policy?.docs) || plainDocRootText(host.policy?.docRoot)].filter(Boolean).join('\n\n'),
     goalPart(host),
     rulesPart(host),
     searchPart(host),
@@ -3075,9 +3068,16 @@ function makeOrchestra(
             info: `计划里「${at0.title}」这一步还在等子对话「${holder.label}」（id ${holder.ref}），它还没做完。用 send_to_conversation 交回它接着做，写清下一步；不要另建一个子对话重做。它确实起不来（交回时报错、状态是失败）再另建，并在派单里写明接手的是哪个子对话的活。`,
           }
       }
+      // 工作流子对话（start_workflow）不走这道门：它没有 modules 参数，工作流有自己的步骤（2026-11-03 真实 API 实测：拦得一个工作流都起不来）
+      const docs = await docsFirst(
+        extra ?? {},
+        extra?.flow ? undefined : host.moduleDocs,
+        selfAgent?.params.find((p) => p.key === 'docsFirst')?.default === true,
+      )
+      if (docs.block) return { ok: false, info: docs.block }
       const r = await host.createConversation({
         title: title.trim(),
-        message,
+        message: message + (docs.note ?? ''),
         files,
         ...(role && !extra?.flow && { agentId: role.id }),
         ...(extra?.flow && { flow: extra.flow }),
@@ -3115,7 +3115,9 @@ function makeOrchestra(
       const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: kidTitle || id.trim() }) : ''
       if (r.ok) recordRoute(host, 'resend', [id.trim()], kidTitle || id.trim(), route)
       if (r.ok) host.changed(true)
-      return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
+      // 送没送到、之后怎么做由返回自己说清（以前写在协调器设定里一整节教它读返回值，ADR 0048 删掉了那一节）
+      const info = r.ok ? `${r.info}\n${SENT_NOTE}${wait ? `\n${wait}` : ''}` : r.info
+      return { ok: r.ok, info }
     },
     stopConversationWorkflow: (id, why) =>
       coordinator ? rs.stopChildPlan(task.id, id, why) : { ok: false, info: '这个对话不能管理子对话' },
@@ -3704,26 +3706,6 @@ function makeOrchestra(
   }
 }
 
-/** 去掉标题里「（重试）」「重试 2」「(retry)」这类标记，比较是不是同一件事 */
-export const retryBase = (title: string) =>
-  title
-    .replace(/[（(【[]\s*(?:第\s*\d+\s*次)?\s*(?:重试|再试|retry)\s*\d*\s*[）)】\]]/gi, '')
-    .replace(/\s*[-—:：·|｜]?\s*(?:重试|再试|retry)\s*\d*\s*$/i, '')
-    .trim()
-
-/**
- * 新建子对话其实是在重试一个失败、中断的子对话：标题去掉重试标记后和它一样。
- * 返回那个子对话，父对话应该用 send_to_conversation 交回给它
- */
-async function retryTarget(host: EngineHost, title: string) {
-  if (!host.listConversations) return undefined
-  const base = retryBase(title)
-  if (!base) return undefined
-  const ended = new Set([convStateText('failed'), convStateText('stopped')])
-  const list = await host.listConversations().catch(() => [])
-  return list.find((c) => !c.resolved && !c.busy && ended.has(c.status) && retryBase(c.title) === base)
-}
-
 /** 失败、被终止、被中断的子任务：spawn_agents 的 resume 写它时在原来那条记录里重试 */
 const retriable = (s: TaskStep) =>
   s.status === 'failed' || s.status === 'skipped' || (s.status === 'pending' && !!s.interrupted)
@@ -4078,7 +4060,7 @@ async function conversationPrompt(
   kind: 'top' | 'sub',
   planning: boolean,
   coordinator: boolean,
-  /** 角色本身是做分派的（例如「主理」），这次却不能分派：要明说角色设定里的分派规则不适用 */
+  /** 角色本身是做分派的（例如「协调器」），这次却不能分派：要明说角色设定里的分派规则不适用 */
   delegates = false,
   /** 父对话能就地做微小改动（角色开了 inlineEdit、宿主给了护栏） */
   inline = false,
@@ -4097,7 +4079,9 @@ async function conversationPrompt(
   const parts = [
     `## 用户这次的消息\n${host.prompt}`,
     promptLangRules(),
-    [policyPart(host), docRootText(host.policy?.docs)].filter(Boolean).join('\n\n'),
+    [policyPart(host), docRootText(host.policy?.docs) || plainDocRootText(host.policy?.docRoot)]
+      .filter(Boolean)
+      .join('\n\n'),
     cherryPickPart(host),
     goalPart(host),
     rulesPart(host),
@@ -4138,7 +4122,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     planning ? workflowCatalogText(catalog) : '',
   ]
   if (coordinator) {
-    // 内置「主理」的角色设定里已经有一整套更细的处理顺序、分诊表和派单写法（系统提示词里常驻），
+    // 内置「协调器」的角色设定里已经有一整套更细的处理顺序、分诊表和派单写法（系统提示词里常驻），
     // 这两节再每轮发一遍只是重复；自建的统筹角色没有这些，照旧给
     const ownDispatch = agent?.origin === 'builtin:orchestrator'
     const dispatchRules = `## 这条消息怎么处理
@@ -4161,6 +4145,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     // 这一段按全文记指纹（shared/prompt-delta.ts），逐分钟变的「最后活动 N 分钟前」会让整段每轮重发，不放进来。
     // 卡住了面板会自动询问、重启（ADR 0036），父对话要看多久没输出时用 list_conversations 查
     parts.push(
+      host.policy?.modules ?? '',
       `## 现有子对话\n${
         list.length
           ? list
@@ -4208,7 +4193,7 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
 - 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支；有冲突撤回并推回给那个子对话。一次只合一个，你不用自己合并。合回去只代表改动进了你的分支，不等于它做完了：它还有计划没做完、后台命令还在跑、待回答的提问或者这一轮没结束时，面板不会把它标成完成，你也不要当它已经交付完了。
 - 合并结果里写着「两边都改了这些文件」时，那个文件两边都动过（git 没报冲突也算了）：让子对话核对内容、确认没有把对方的改动盖掉，再当它交付完了。
 - 每次合并的结果会告诉你；子对话做完一轮却没合并时，面板会先催它一次，还没合再交给你决定。子对话反复冲突、或者问题其实是别的子对话的改动引起的，由你协调。
-- 几个子对话都合进来之后，需要整体验证时新建一个子对话去跑完整的测试，你自己不跑。
+- 几个子对话都合进来之后的整体验证：范围为「全量，合并后由父对话跑」的测试面板会自动跑；用户点名要整体回归时派「测试验收」（spawn_agents），不另开子对话，你自己也不跑。
 - 合并时面板已经在这个分支上提交了，你不用另外提交。`
           : `## 子对话共用一个目录
 所有子对话都在同一个目录里直接改，不建独立分支。为了不互相覆盖：
@@ -4286,7 +4271,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
     }
     const inline = coordinator && !!host.inlineEdit && agent?.inlineEdit === 'tiny'
     // 第一轮和保活进程里的下一条必须用同一套参数拼：以前保活那处漏传了 agent，
-    // 角色设定里已写过的规则（主理的分派规则、子对话的提问和完成标准）被发回去，下一轮又宣布作废
+    // 角色设定里已写过的规则（协调器的分派规则、子对话的提问和完成标准）被发回去，下一轮又宣布作废
     const buildPrompt = () =>
       conversationPrompt(host, kind, planning, coordinator, !coordinator && delegatesRole(host, agent), inline, agent)
     const parts = await buildPrompt()

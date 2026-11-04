@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { goneModulesNote } from '../module-map.ts'
 import path from 'node:path'
 import { coreDefinition } from '../../shared/builtin/core.ts'
 import { bugRecordDraft, diagnosisGate } from '../../shared/bug-diagnosis.ts'
@@ -55,6 +56,8 @@ export function createMerge(sc: TasksScope) {
   }
   /** 一轮结束后等多久再推「接着做计划」：等 CLI 停到等下一句上；测试用环境变量缩短 */
   const PLAN_NUDGE_MS = Number(process.env.AGENT_PANEL_PLAN_NUDGE_MS) || 2000
+  /** 收尾请求没能马上交给父对话时，过多久复查一次；测试用环境变量缩短 */
+  const WRAP_RECHECK_MS = Number(process.env.AGENT_PANEL_WRAP_RECHECK_MS) || 60_000
 
   /**
    * 子对话只剩合回时请父对话收尾（ADR 0005）：子对话这边能做的都做完了——计划除了合回都做完、
@@ -223,7 +226,7 @@ export function createMerge(sc: TasksScope) {
     const child = { id: tk.id, title: tk.title, state: 'wrapup' as const }
     // 用户报的 Bug（ADR 0046）：Bug 记录的草稿跟着收尾请求交给父对话
     const record = bugRecordDraft(tk)
-    await wakeTask(
+    const delivered = await wakeTask(
       parentId,
       tk,
       `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩${wt ? '合回' : '验收'}了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
@@ -239,6 +242,8 @@ ${
         peer: await sc.peerOf(tk, 'child', 'wrapup', note || (wt ? '只剩合回，请收尾' : '只剩验收，请收尾')),
       },
     )
+    // 没能马上交给父对话（退回了收件箱）：父对话空着就没人开新的一轮，过一会儿按「有子对话在等收尾」推它一次
+    if (!delivered) setTimeout(() => void recheckWrapUp(parentId), WRAP_RECHECK_MS).unref?.()
     return {
       ok: true,
       info: wt
@@ -273,18 +278,29 @@ ${
       /** 发件对话：收件方画成一行「接收消息」 */
       peer?: PeerFrom
     } = {},
-  ) {
+  ): Promise<boolean> {
     try {
       await sc.wakeConv(id, text, {
         panel: meta.panel ?? 'child',
         ...(meta.child && { child: meta.child }),
         ...(meta.peer && { peer: meta.peer }),
       })
+      return true
     } catch (e) {
       log.warn('task', '没能马上交给对话，放进收件箱', { task: id, error: (e as Error).message })
       sc.alertOn(id, 'delivery', t('一条消息没能马上交给这个对话，已放进收件箱'))(e)
       await sc.noteParent(id, from, text, text, undefined, meta.child, meta.peer)
+      return false
     }
+  }
+
+  /** 收尾请求进了收件箱之后的复查：父对话还空着、请求还没处理，就推它一次（见 drive.ts 的 nudgeWrapUp） */
+  async function recheckWrapUp(parentId: string) {
+    const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
+    if (!parent || sc.live.has(parentId)) return
+    await sc
+      .nudgeWrapUp(parent)
+      .catch((e) => log.warn('task', '复查父对话收尾失败', { task: parentId, error: (e as Error).message }))
   }
 
   /**
@@ -565,7 +581,11 @@ ${
         sc.alertOn(parent.id, 'panel', t('收尾子对话后刷新计划失败'))(e)
         return ''
       })
-      return plan ? { ...r, info: `${r.info}\n\n${plan}` } : r
+      // 合回后模块的源码没了（删除、移走）：提醒父对话派「文档」清理模块文档（ADR 0048）
+      const gone = r.ok
+        ? await goneModulesNote(await sc.taskDir(parent), await sc.deps.agents.list()).catch(() => '')
+        : ''
+      return { ...r, info: [r.info, plan, gone].filter(Boolean).join('\n\n') }
     })()
     // 限时回话：收尾要等子对话的 CLI 退出、删独立分支，慢的时候会撞上 CLI 工具调用一分钟的超时，
     // 父对话只看到「The operation timed out」，不知道收尾到底成没成，又反复调用。过了时限先说清楚，收尾在后台接着做

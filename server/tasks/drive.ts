@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { diagnosisPending } from '../../shared/task.ts'
 import type { Task } from '../../shared/schema.ts'
-import { planStalled, helpersWorking, runRunning, taskDeleted } from '../../shared/task.ts'
+import { planStalled, helpersWorking, runRunning, taskDeleted, wrapUpPending } from '../../shared/task.ts'
 import { isChatMode, nudgeMax } from '../../shared/conv-mode.ts'
 import { DriveBudget, planProgressKey, shortKey } from '../../shared/drive.ts'
 import { taskLog } from '../task-log.ts'
@@ -205,6 +205,85 @@ export function createDrive(
     return 'waits-pending'
   }
 
+  /**
+   * 父对话这一轮结束了，名下却有子对话已经请它收尾、还没处理（见 shared/task.ts 的 wrapUpPending）：
+   * 推它调用 finish_child 合回，或者用 send_to_conversation 退回要补的。
+   * 不推的话父对话计划里那一步写着「等子对话」，planStalled 当它在等别人；子对话又在等父对话收尾，两边就互相等住了
+   * （用户 2026-11-03 报：父对话回「改动核对通过……现在合回」就结束了这一轮，没调 finish_child）。
+   * 次数和计划推进共用设置里的 nudgeMax，按「这几个收尾请求」记；推满了写一行警告留给用户（独立分支可以在子对话里点合并）。
+   * 只管能 finish_child 的项目顶层对话。推出去了（或排好稍后推）返回 true
+   */
+  async function nudgeWrapUp(conv: Task): Promise<boolean> {
+    if (conv.parentTaskId || !conv.projectId || isChatMode(conv)) return false
+    const max = nudgeMax(conv, (await getSettings()).nudgeMax)
+    const say = (data: Record<string, unknown>) => taskLog(conv.id, '收尾提醒', data)
+    const stalled = async (settled: boolean) => {
+      const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
+      if (!tk || tk.imported || taskDeleted(tk)) return 'gone'
+      if (tk.working) return 'working'
+      if (haltedBy(tk)) return `halted:${haltedBy(tk)}`
+      if (tk.status === 'failed' || (tk.status === 'stopped' && !reclaimed(tk))) return `status:${tk.status}`
+      if (settled && !(tk.status === 'done' || reclaimed(tk) || (tk.status === 'running' && tk.awaitingUser)))
+        return `status:${tk.status}`
+      if (tk.requests.length || diagnosisPending(tk)) return 'asking'
+      if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
+      const kids = (await sc.store.list())
+        .filter((k) => k.parentTaskId === tk.id)
+        .map((k) => sc.live.get(k.id)?.task ?? k)
+      // 正在合并的、父对话已经交回了话（排着等它开新一轮）的不算没处理
+      const waiting = wrapUpPending(kids).filter(
+        (k) => !sc.merging.has(k.id) && !hasHeld(k.id) && !sc.startQueue.has(k.id),
+      )
+      if (!waiting.length) return 'none-pending'
+      return { tk, waiting, key: `wrap:${waiting.map((k) => `${k.id}@${k.wrapRequest!.at}`).join(',')}` }
+    }
+    const now = await stalled(false)
+    if (typeof now === 'string') {
+      if (now !== 'none-pending') say({ action: 'none', reason: now })
+      return false
+    }
+    const can = budget.can(conv.id, now.key, max, inputOf(now.tk))
+    if (can !== 'ok') {
+      say({ action: 'stuck', reason: can, max, kids: now.waiting.map((k) => k.id) })
+      await warnStopped(
+        conv.id,
+        now.key,
+        t('子对话{list}已经请你收尾，面板提醒了还没处理：发一条消息让它接着收尾，或者进子对话点「合并」', {
+          list: now.waiting.map((k) => `「${k.title}」`).join('、'),
+        }),
+      )
+      return false
+    }
+    setTimeout(() => {
+      void (async () => {
+        const again = await stalled(true)
+        if (typeof again === 'string') {
+          say({ action: 'cancel', reason: again })
+          return
+        }
+        const nth = budget.take(conv.id, again.key, max, inputOf(again.tk))
+        if (!nth) {
+          say({ action: 'stuck', reason: 'exhausted', max })
+          return
+        }
+        const lines = again.waiting.map(
+          (k) =>
+            `- 「${k.title}」（id ${k.id}）：${k.worktree?.state === 'active' ? '合回它的独立分支' : '验收它的改动'}，验证够了就调用 finish_child（id ${k.id}）；要它补的用 send_to_conversation 交回`,
+        )
+        const text =
+          `【面板】这些子对话已经请你收尾，你这一轮结束了却还没处理，它们一直在等你：\n${lines.join('\n')}\n` +
+          '直接调用工具处理，不用先说明；收尾请求里有它的验证结果，核对后决定合回还是交回。' +
+          lastNudge(nth, max)
+        const ok = await sc.wakeConv(again.tk.id, text, { panel: 'nudge' }).then(
+          () => true,
+          () => false,
+        )
+        say({ action: ok ? 'continue' : 'send-failed', nth, max, kids: again.waiting.map((k) => k.id) })
+      })().catch((e) => log.warn('task', '提醒父对话收尾失败', { task: conv.id, error: (e as Error).message }))
+    }, sc.PLAN_NUDGE_MS).unref?.()
+    return true
+  }
+
   /** 推满了还停着的那一轮：每个进度只写一次警告行（按 nudge 的 key 记） */
   const warned = new Map<string, string>()
   async function warnStopped(id: string, key: string, text: string) {
@@ -310,5 +389,5 @@ export function createDrive(
     return true
   }
 
-  return { nudgePlan, nudgeState: (id: string) => budget.state(id), resetNudge, noteStop, clearStop }
+  return { nudgePlan, nudgeWrapUp, nudgeState: (id: string) => budget.state(id), resetNudge, noteStop, clearStop }
 }

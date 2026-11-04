@@ -135,6 +135,25 @@ test('这一轮说完了在等子对话：子对话已经不跑了、父对话�
   assert.ok(codes(parked).includes('child-idle-parent-waiting'))
 })
 
+test('子对话请父对话收尾了、父对话这一轮却没合回也没退回：报 wrapup-unhandled，不当成子对话停了', () => {
+  const at = new Date(NOW - 5 * 60_000).toISOString()
+  const stuck = base({
+    status: 'done',
+    state: 'waiting',
+    working: false,
+    live: undefined,
+    cliAlive: false,
+    waitsOn: [{ id: 'k1', title: '面板提醒次数做成设置项', state: 'wrapup', wrapAt: at }],
+    nudge: { key: 'x', n: 1, max: 6 },
+  })
+  assert.deepEqual(codes(stuck), ['wrapup-unhandled'])
+  const text = verdictOf(stuck, NOW).anomalies[0].text
+  assert.match(text, /已经请父对话收尾 5 分钟了/)
+  assert.match(text, /面板已提醒 1\/6 次/)
+  // 父对话正在处理（这一轮在跑）：不报
+  assert.deepEqual(codes(base({ working: true, state: 'waiting', waitsOn: stuck.waitsOn })), [])
+})
+
 test('全部做完了还显示在等：排着的消息没人接、执行位空占着、残留的排队标记和进程都报出来', () => {
   assert.deepEqual(
     codes(base({ status: 'done', state: 'done', working: false, live: undefined, cliAlive: false, held: 2 })),

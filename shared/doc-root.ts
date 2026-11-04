@@ -138,6 +138,17 @@ export function docRootText(d: DocRootInfo | undefined) {
 这是 ${name} 项目，文档根是 \`${d.root}\`（${why}）。所有项目文档（模块说明、设计、ADR、Bug 记录、worklog、openspec）都写在它下面，不另找位置。${rule}`
 }
 
+/**
+ * Git / 没有版本管理的项目也要说清文档根（2026-11-03 真实 API 实测）：以前只给 P4 / SVN 项目这一段，
+ * Git 项目里「文档」按自己的参数（项目外同级 ProjectDoc/docs，本来只对 P4 有意义）写到了项目外，
+ * 面板却去项目里的 docs/ 找模块文档，「先建文档」就一直拦着。文档根和面板查文档用同一个算法（server/module-map.ts 的 docRootOf）
+ */
+export function plainDocRootText(root: string | undefined) {
+  if (!root) return ''
+  return `## 文档根
+文档根是 \`${root}\`，在项目目录里，随代码一起纳入版本管理。所有项目文档（模块说明、设计、ADR、Bug 记录）都写在它下面，模块文档是 \`${root}/modules/<模块>/README.md\`；不写到项目目录外，「文档」角色的「文档根」参数只对 P4 项目有效。`
+}
+
 /** P4 分 changelist 的规则里补一句：项目外文档根里的文件不纳管 */
 export function p4DocsSkip(d: DocRootInfo | undefined) {
   return d?.outside

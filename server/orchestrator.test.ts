@@ -241,7 +241,25 @@ test('只有父对话能启动工作流：父对话列可用工作流和判定�
     assert.equal(r.ok, true)
     return { ok: true, text: '已启动工作流' }
   })
-  h.agents = [agent('m', '主理', { canDelegate: true, canPlan: true })]
+  // 开着「先建模块文档」、宿主能查模块文档：工作流子对话也不能被这道门拦住（start_workflow 没有 modules 参数，2026-11-03 真实 API 实测）
+  h.agents = [
+    agent('m', '协调器', {
+      canDelegate: true,
+      canPlan: true,
+      params: [
+        {
+          key: 'docsFirst',
+          label: '先建模块文档',
+          type: 'bool',
+          default: true,
+          options: [],
+          description: '',
+          ask: false,
+        },
+      ],
+    }),
+  ]
+  h.moduleDocs = async (modules) => ({ root: '/p/docs', found: {}, missing: modules })
   h.listConversations = async () => []
   h.createConversation = async ({ title, flow }) => {
     made.push({ title, flow })
@@ -258,7 +276,7 @@ test('只有父对话能启动工作流：父对话列可用工作流和判定�
 
   // 没开 canPlan 的父对话、子对话（即使角色开了 canPlan）：不列目录，pickWorkflow 拒绝
   for (const [t0, a] of [
-    [{ ...task, id: 'p10', plans: [], messages: [] } as Task, agent('m', '主理', { canDelegate: true })],
+    [{ ...task, id: 'p10', plans: [], messages: [] } as Task, agent('m', '协调器', { canDelegate: true })],
     [
       { ...task, id: 'c10', parentTaskId: 'p9', plans: [], messages: [] } as Task,
       agent('m', '执行', { canPlan: true }),

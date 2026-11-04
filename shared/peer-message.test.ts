@@ -147,9 +147,9 @@ test('parseReport：旧数据下一步没写前缀也归到下一步；只有计
 
 test('sourceHeader：父对话、其他对话发来的写明「不是用户说的」；转交的用户回答、面板消息、子对话汇报不加', () => {
   const peer = (rel: 'parent' | 'child' | 'peer', kind: PeerKind = 'task') =>
-    ({ id: 'x', title: '主理', name: '统筹', rel, kind, subject: '' }) as const
-  assert.match(sourceHeader({ peer: peer('parent') }), /父对话「主理」发来的消息，不是用户说的/)
-  assert.match(sourceHeader({ peer: peer('peer') }), /同项目的对话「主理」发来的消息，不是用户说的/)
+    ({ id: 'x', title: '协调器', name: '统筹', rel, kind, subject: '' }) as const
+  assert.match(sourceHeader({ peer: peer('parent') }), /父对话「协调器」发来的消息，不是用户说的/)
+  assert.match(sourceHeader({ peer: peer('peer') }), /同项目的对话「协调器」发来的消息，不是用户说的/)
   assert.equal(sourceHeader({ peer: peer('parent', 'answer') }), '')
   assert.equal(sourceHeader({ peer: peer('child', 'report') }), '')
   assert.equal(sourceHeader({ panel: 'nudge', peer: peer('parent') }), '')

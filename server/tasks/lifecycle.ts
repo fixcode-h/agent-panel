@@ -4,7 +4,7 @@ import { activePlan, openWork, planProgress } from '../../shared/plan.ts'
 import { planProgressKey, shortKey } from '../../shared/drive.ts'
 import { nudgeMax } from '../../shared/conv-mode.ts'
 import { subtreeTaskIds } from '../../shared/run-usage.ts'
-import { taskState } from '../../shared/task.ts'
+import { taskState, wrapUpPending } from '../../shared/task.ts'
 import {
   countEvents,
   lastExit,
@@ -135,7 +135,13 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       .filter((w) => w.kind === 'child' && w.state === 'waiting')
       .map((w) => {
         const kid = tasks.get(w.ref)
-        return { id: w.ref, title: kid?.title ?? w.label ?? w.ref, state: kid ? taskState(kid) : ('done' as const) }
+        const wrapAt = kid && wrapUpPending([kid]).length ? kid.wrapRequest!.at : undefined
+        return {
+          id: w.ref,
+          title: kid?.title ?? w.label ?? w.ref,
+          state: kid ? taskState(kid) : ('done' as const),
+          ...(wrapAt && { wrapAt }),
+        }
       })
     const helpers = tk.steps.filter((s) => s.slot === 'sub' && (s.status === 'running' || s.status === 'pending'))
     const nudged = sc.nudgeState(id)

@@ -49,13 +49,13 @@ const PREVIEW: Record<string, string> = {
     '| 文件 | 改动 | 状态 |\n| --- | --: | :-: |\n| index.css | +120 | 通过 |\n| Markdown.tsx | +8 | 通过 |\n| schema.ts | +3 | 待测 |',
   hr: '分隔线上面的一段。\n\n---\n\n分隔线下面的一段。',
   img: `![替代文字显示成图注](${IMG})`,
-  mention: '@主理 是团队里的角色；@不存在 不在团队里，标成警告色。',
+  mention: '@协调器 是团队里的角色；@不存在 不在团队里，标成警告色。',
   mermaid:
     '```mermaid\nflowchart LR\n  A([开始]) --> B{通过?}\n  B -- 是 --> C[合并]\n  B -- 否 --> D[返工] --> B\n```',
 }
 const headingPreview = (h: string) =>
   `${'#'.repeat(Number(h.slice(1)))} ${h.toUpperCase()} 标题\n标题下面跟着的正文，看上下间距。`
-const SAMPLE_TEAM = new Set(['主理'])
+const SAMPLE_TEAM = new Set(['协调器'])
 
 type Ctx = {
   style: MarkdownStyle

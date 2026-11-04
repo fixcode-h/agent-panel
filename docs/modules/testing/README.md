@@ -1,9 +1,11 @@
 # testing：测试基础设施（单测 / 端到端 / 界面检查的编排）
 
-- status: analyzed
-- source_paths: `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/e2e/`、`scripts/ui-check.mjs`、`scripts/ui/`、`scripts/changed-tests.mjs`、`scripts/test-layers.mjs`、`scripts/test-budget.mjs`、`scripts/lib/changed-tests.test.mjs`、`scripts/lib/test-layers.test.mjs`、`scripts/lib/test-budget.test.mjs`、`scripts/lib/test-files.mjs`、`scripts/lib/`、`scripts/fake-cli/`
-- entry: `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/ui-check.mjs`、`scripts/changed-tests.mjs`、`scripts/test-layers.mjs`、`scripts/test-budget.mjs`
-- analyzed_at: 2026-10-28
+- 状态：documented
+- 职责：单测 / 端到端 / 界面检查的编排：分层与预算、并发、失败隔离、环境默认化、改动 → 测试选择
+- 源码：`scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/e2e/`、`scripts/ui-check.mjs`、`scripts/ui/`、`scripts/changed-tests.mjs`、`scripts/test-layers.mjs`、`scripts/test-budget.mjs`、`scripts/lib/changed-tests.test.mjs`、`scripts/lib/test-layers.test.mjs`、`scripts/lib/test-budget.test.mjs`、`scripts/lib/test-files.mjs`、`scripts/lib/`、`scripts/fake-cli/`
+- 入口：`scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/ui-check.mjs`、`scripts/changed-tests.mjs`、`scripts/test-layers.mjs`、`scripts/test-budget.mjs`
+- 关键词：单测、端到端、e2e、界面检查、测试预算、按改动选测试
+- 更新：2026-10-28
 
 ## 职责
 

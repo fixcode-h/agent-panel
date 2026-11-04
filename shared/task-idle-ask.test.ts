@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { childAutoAskWaiting, childIdleAsk, CHILD_IDLE_ASK_MAX, planStalled } from './task.ts'
+import { childAutoAskWaiting, childIdleAsk, CHILD_IDLE_ASK_MAX, planStalled, wrapUpPending } from './task.ts'
 import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled } from './merge-stall.ts'
 
 /** 一分钟按 1 秒算：阈值、上限这些判定不用真的等几分钟 */
@@ -154,4 +154,19 @@ test('只剩合回又停下：每停一轮记一次，同一轮重复上报不�
   assert.equal(b.n, 2)
   assert.equal(nextMergeStall(b, 'p:4', 't3').n, 1, '进度变了从头数')
   assert.ok(MERGE_STALL_REPORTS >= 2, '至少给父对话交回一次的机会')
+})
+
+test('wrapUpPending：只认请过收尾、还没被父对话处理的子对话', () => {
+  const req = (state: string) => ({ state, at: '2026-11-03T00:00:00Z', note: '', tests: '', info: '' }) as never
+  const kids = [
+    { id: 'a', resolved: false, wrapRequest: req('requested') },
+    { id: 'b', resolved: false, wrapRequest: req('merging') },
+    { id: 'c', resolved: false, wrapRequest: req('failed') },
+    { id: 'd', resolved: true, wrapRequest: req('requested') },
+    { id: 'e', resolved: false },
+  ]
+  assert.deepEqual(
+    wrapUpPending(kids).map((k) => k.id),
+    ['a'],
+  )
 })

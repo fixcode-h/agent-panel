@@ -77,3 +77,18 @@ export function skillLine(name: string) {
 export function retiredWithoutSuccessor(names: string[]) {
   return [...new Set(names.filter((n) => n in RETIRED_SKILL_MAP && !RETIRED_SKILL_MAP[n]))]
 }
+
+/**
+ * 角色设定里「要用的 Skill」那一节补上技能装在哪：面板把自带技能统一装在一个目录（server/bundled-skills.ts 的 sharedRoot），
+ * 只写「~/.agents/skills」时模型会自己猜 ~ 是哪里——CLI 的用户目录和工作目录对不上时猜错，读到不存在的路径再弹权限卡卡住
+ * （2026-11-03 真实 API 实测：「文档」子任务两次猜成 /home/user/... 和项目目录下的 .agents/skills）。没有这一节时原样返回
+ */
+export function withSkillDir(role: string, dir: string) {
+  const head = '## 要用的 Skill\n'
+  const at = role.indexOf(head)
+  if (at < 0 || !dir) return role
+  const end = role.indexOf('\n', at + head.length)
+  const cut = end < 0 ? role.length : end
+  const note = `\n这些 Skill 装在 \`${dir}\`，路径就是 \`${dir}/<名字>/SKILL.md\`：直接读这个路径，不要自己猜用户目录在哪。`
+  return role.slice(0, cut) + note + role.slice(cut)
+}

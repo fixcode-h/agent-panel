@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { SENT_NOTE } from '../shared/engine.ts'
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'
@@ -135,7 +136,7 @@ test('通用约束：等待要有死的数字上限，超时判阻塞，不靠�
   assert.match(rules, /不要自己写 `sleep` 循环轮询/)
   // 自己验证过的结论不要再等子任务重复验证（那次空等 307 秒就属于这类）
   assert.match(rules, /已经自己验证过结论时，不要再等子任务重复验证/)
-  // 2026-10-31 AI 分析：主理把 send_to_conversation 的「已交给」当成子对话已接手，直接汇报给用户
+  // 2026-10-31 AI 分析：协调器把 send_to_conversation 的「已交给」当成子对话已接手，直接汇报给用户
   assert.match(rules, /工具回「成功」只说明请求被接下，不等于已经生效/)
   assert.match(rules, /异步的等推回的结果，同步的回读一次/)
   assert.match(rules, /不为此轮询/)
@@ -162,23 +163,23 @@ test('通用约束：已授权的操作照做；统筹不再另立一份授权�
     }
 })
 
-test('派单纪律：事务性动作合并派一次、纯执行给低档、标题与正文各写各的范围', () => {
+test('派单纪律：事务性动作合并派一次、标题与正文各写各的范围、交回后的说法由返回自带', () => {
   // 一次运行里 7 个节点标题全是同一句、正文是复制粘贴的同一段：每个子任务都要从零探项目结构
   const orch = BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions
   assert.match(orch, /## 派单的粒度/)
   assert.match(orch, /事务性小动作攒到一起/, '删临时文件、提交几个文件不需要各开一次会话')
-  // 2026-10-31 AI 分析：主理交回后四次误判（还在跑 / working=false / 状态仍是 done / 已交给）
-  assert.match(orch, /## 交回子对话之后怎么确认它接到了/)
-  assert.match(orch, /不要拿 busy、状态是不是「已完成」去猜/)
-  assert.match(orch, /上一轮还在收尾…收尾完会自动开始处理」：排上队了，不用重发/)
-  assert.match(orch, /已收尾（resolved）的子对话照样用 send_to_conversation 交回：面板会在原会话里重新打开它（resume）/)
-  assert.match(orch, /给用户只说「已交回，等它的结果」/)
-  assert.match(orch, /lastActivityAt 比你交回的时间新/)
-  // 角色分层后主理能就地做护栏内的微改动：小动作要么自己做完、要么攒成一次派单，不一个动作开一个子对话
+  // 2026-10-31 AI 分析：协调器交回后四次误判（还在跑 / working=false / 状态仍是 done / 已交给）。
+  // 怎么读返回值不再写在设定里（ADR 0048）：send_to_conversation 送到后的返回自己带上这句（SENT_NOTE）
+  assert.doesNotMatch(orch, /## 交回子对话之后怎么确认它接到了/)
+  assert.match(SENT_NOTE, /给用户只说「已交回，等它的结果」/)
+  assert.match(SENT_NOTE, /不要拿 busy、「已完成」这类状态去猜/)
+  assert.match(SENT_NOTE, /lastActivityAt 是否比交回的时间新/)
+  // 角色分层后协调器能就地做护栏内的微改动：小动作要么自己做完、要么攒成一次派单，不一个动作开一个子对话
   assert.match(orch, /够得上就地微改动的就自己做/, '微改动就地做，不为它开子对话')
   assert.match(orch, /Bug 不走就地微改动/, '就地改动不是父对话自己排查修 Bug 的口子')
   assert.match(orch, /合并只限同类角色能做的动作/, '提交这一类仍交给负责版本管理的角色')
-  assert.match(orch, /tier: "low"/, '纯执行类子任务要显式给低档')
+  // 纯执行类子任务的档位由面板按被派角色的默认档走，不再要协调器自己写 tier（ADR 0048）
+  assert.doesNotMatch(orch, /tier: "low"/)
   assert.match(orch, /同一批派单里不能出现两个相同的标题/)
   assert.match(orch, /message \/ instructions 各写各的范围/)
   assert.match(
@@ -250,7 +251,7 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   )
 
   // 2026-10-29 加强（ADR 0030）：读代码之前先钉住现象、复现一次，回归先看最近改动；
-  // 修复要有改前失败、改后通过的测试，修根因不修症状，再查同类隐患；主理派 Bug 按现象卡写、交回时核对回归测试
+  // 修复要有改前失败、改后通过的测试，修根因不修症状，再查同类隐患；协调器派 Bug 按现象卡写、交回时核对回归测试
   assert.match(BUG_FULL_TEXT, /### 1\. 立案：钉住现象，再去读代码/)
   assert.match(BUG_FULL_TEXT, /复现一次抵得上读一小时代码/)
   assert.match(BUG_FULL_TEXT, /#### 变更时间线/)
@@ -260,7 +261,7 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
     BUG_FULL_TEXT,
     /把报错 try\/catch 掉、加判空绕过、加重试、在原逻辑外面再兜底一层.*让它「不报了」都不算修/,
   )
-  // 2026-10-31：叠加兜底（再扫一遍、多一条降级分支）也算修症状，主理交回核对时同样退回
+  // 2026-10-31：叠加兜底（再扫一遍、多一条降级分支）也算修症状，协调器交回核对时同样退回
   assert.match(orch, /在原逻辑外面再兜底一层.*交回让它说明为什么这是根因，说不清就退回/)
   assert.match(BUG_FULL_TEXT, /同类隐患/)
   // 用户 2026-10-31：日志只看本次问题的时间段（对比实验除外、要标来源），排事件时间线，涉及状态必须排状态流转时间线；
@@ -546,7 +547,7 @@ test('交付契约：方案摘要、实现计划、排查报告、自测清单�
     assert.ok(renderTemplate(dev, { task }).includes(SELF_CHECK_TEXT), `开发（${task}）交付前自测`)
   assert.match(SELF_CHECK_TEXT, /复现用例改前失败、改后通过的输出都要有/)
   assert.match(SELF_CHECK_TEXT, /`\[排查-…\]` 临时日志/)
-  // 排查报告：交回按固定小节，主理按同一张表核对
+  // 排查报告：交回按固定小节，协调器按同一张表核对
   for (const s of [
     '级别与模块',
     '现象',

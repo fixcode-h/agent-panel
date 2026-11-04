@@ -4,7 +4,7 @@
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -51,6 +51,21 @@ test('路径：Git 项目放 <项目>/docs/lessons.md，没有目录时返回 un
     assert.equal(await projectLessonsFile(p, []), path.join(dir, 'docs', 'lessons.md'))
     // 没有路径的项目没有文件可写，返回 undefined 由调用方回退旧 JSON
     assert.equal(await projectLessonsFile(project(''), []), undefined)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('没有教训、文件也还没有时不建文件：保存项目设置不在用户仓库里留一个只有文件头的 lessons.md', async () => {
+  const dir = temp()
+  try {
+    const p = project(dir)
+    const r = await saveProjectLessons(p, [], [])
+    assert.equal(r.ok, true)
+    assert.equal(existsSync(path.join(dir, 'docs', 'lessons.md')), false)
+    // 有教训照常写
+    await saveProjectLessons(p, [], [lesson('l1', '新的')])
+    assert.equal(existsSync(path.join(dir, 'docs', 'lessons.md')), true)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

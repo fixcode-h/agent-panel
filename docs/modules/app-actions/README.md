@@ -1,9 +1,11 @@
 # app-actions：操控软件的动作表
 
-- status: verified
-- source_paths: `server/app-actions/`、`web/src/lib/ui-actions.ts`
-- entry: `server/app-actions/index.ts`
-- analyzed_at: 2026-10-25
+- 状态：documented
+- 职责：操控软件的动作表：Agent 经 MCP 的 app_actions / app_do、脚本经 /api/actions 调同一份
+- 源码：`server/app-actions/`、`web/src/lib/ui-actions.ts`
+- 入口：`server/app-actions/index.ts`
+- 关键词：动作表、app_actions、app_do、操控面板、界面动作
+- 更新：2026-10-25
 
 为什么这么定见 [ADR 0011](../../adr/0011-app-actions-for-agents.md)。这里只写现在怎么工作、怎么加。
 

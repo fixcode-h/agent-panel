@@ -778,8 +778,8 @@ export const EN_TASKS: Record<string, string> = {
   '读一下这个项目的目录、脚本和配置，按项目的实际情况把「{name}」的参数配好，说明每一项为什么这么填':
     'Read this project\'s folders, scripts and config, then fill in the parameters of "{name}" to fit the project, explaining why for each one',
   必备角色: 'Core roles',
-  '项目对话靠这几个角色运转：主理分诊、执行做事、文档落盘、测试验收、版本控制收尾。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
-    "Project conversations run on these roles: the lead triages, the executor does the work, docs writes everything to disk, test & acceptance verifies, and version control wraps up the delivery. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
+  '项目对话靠这几个角色运转：协调器分诊、执行做事、文档落盘、测试验收、版本控制收尾。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
+    "Project conversations run on these roles: the coordinator triages, the executor does the work, docs writes everything to disk, test & acceptance verifies, and version control wraps up the delivery. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
   '改了 {n} 项': '{n} changed',
   去角色页改所有项目的默认值和模型: 'Change the defaults and model for all projects on the Roles page',
   角色设置: 'Role settings',
@@ -1203,8 +1203,8 @@ export const EN_TASKS: Record<string, string> = {
   分析完成: 'Analysis done',
   分析失败: 'Analysis failed',
   功能面板: 'Side panel',
-  '用「分析」角色新建对话来分析，只分析不改文件；对话里的分析在项目里另开，子对话里的开在它所属的顶层对话下':
-    'Starts a conversation with the Analysis role that only analyzes and never edits files; an analysis of a conversation opens separately in the project, while an analysis inside a sub-conversation opens under its top-level conversation',
+  '用「排查分析」角色新建对话来分析，只分析不改文件；对话里的分析在项目里另开，子对话里的开在它所属的顶层对话下':
+    'Starts a conversation with the Troubleshooting Analysis role that only analyzes and never edits files; an analysis of a conversation opens separately in the project, while an analysis inside a sub-conversation opens under its top-level conversation',
   'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
     "The AI reads the full execution record (messages, each node's result, time, tokens and cache hits), judges the result quality, what could be optimized and whether the panel framework has issues, and proposes changes you can apply directly. Nothing is applied until you review the diff.",
   '{name} 最近 {n} 次执行': 'last {n} runs of {name}',
@@ -1695,6 +1695,11 @@ export const EN_TASKS: Record<string, string> = {
   '计划还在等子对话 {list}，它们已经不在跑了，父对话却没被叫醒':
     "The plan is still waiting on sub-chats {list}; they are no longer running, but the parent wasn't woken up",
   '这一轮说完了，在等子对话：{list}': 'The turn is done, waiting for sub-chats: {list}',
+  '子对话 {list} 已经请父对话收尾 {m} 分钟了，父对话没有合回也没有退回':
+    'Sub-chats {list} asked the parent to wrap up {m} minutes ago; the parent has neither merged nor sent them back',
+  '面板已提醒 {n}/{max} 次': 'The panel has reminded it {n}/{max} times',
+  '面板重启时子任务{list}还在执行，已中断。要接着做就发消息，AI 会用 spawn_agents 的 resume 在原来的会话里续上。':
+    'Sub-tasks {list} were still running when the panel restarted and were interrupted. Send a message to continue; the AI will resume them in their original sessions with spawn_agents.',
   '有 {n} 条消息排着等「这一轮结束后处理」，可这一轮已经结束了，没人接':
     '{n} messages are queued for "after this turn", but the turn has ended and nothing will pick them up',
   '已经不在执行，排队等 API 的标记却还留着': 'No longer running, but the "queued for API" marker is still there',

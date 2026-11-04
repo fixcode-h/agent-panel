@@ -25,12 +25,13 @@
 - **CLI 的差异写进 CLI 定义**（`shared/clis.ts`、`shared/clis/*.json`），代码按定义里的字段走，不按 CLI 的名字写分支（`scripts/rules-check.mjs` 会拦）。
 - **界面文案用 `t('中文原文')`**，英文同一个提交写进 `shared/locales/en/`；漏翻 `npm run typecheck` 会失败。发给 Agent 的提示词、注释、演示数据不翻译。
 - **界面参考 Claude Code 的风格，视觉质量很重要**。界面细则见 `docs/lessons/ui.md`。
+- **碰到文件行数上限就按功能拆成小文件**（`scripts/file-caps.json`，`npm run lint` 会拦）：把职责完整的一块挪进新文件，原文件只留调用；不删注释、不合并行凑数。细则见 `docs/lessons/file-caps.md`。
 - 注释用中文，写「为什么」。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。
 - Agent 执行出的错误一律显示给用户，不悄悄重试。
 - **凭据不进仓库**：密码、令牌、API key 只放本机数据目录（默认 `~/.agent-panel`）或环境变量，不写进代码、测试、fixtures、文档和提交说明；示例只用 `sk-xxxx`、`your-api-key` 这类占位符。`npm run lint` 会跑 `scripts/secret-check.mjs` 扫描全仓和暂存区，发现疑似真实 key 直接失败；确实要保留的行在结尾加 `secret-check-ok` 并写明原因。
 - **临时文件只放项目根的 `.tmp/`（已在 `.gitignore` 忽略）或系统临时目录**：不要写到盘符根目录（如 `F:/tmp`）、其他项目目录或用户数据目录；用完清理，别留在仓库里。
 - **贡献流程与漏洞报告**：怎么提改动、跑哪些检查见 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题按 [SECURITY.md](SECURITY.md) 私下报告，不开公开 Issue。
-- **模块文档**：模块说明只放 `docs/modules/<模块>/README.md`（Bug 记录在同目录 `bugs/<bug-id>.md`，只记用户报的 Bug，开发和评审中自己发现的问题不写）。**`docs/modules/<模块>/bugs.md` 是生成物，不要手工编辑**：只写 `bugs/<bug-id>.md` 的元数据头（状态 / 症状 / 入口 / 根因类型 / 关键词），再跑 `npm run docs:bugs` 重写索引；这样多个子对话并行收尾时各自新增一个文件，不会都改同一张表末尾而反复冲突。调研某个模块时先查 `docs/MODULE-MAP.md` 和对应模块文档，有就先读再查；结论回写模块文档，已有就合并不覆盖，模块在代码里没了就删目录并同步 `MODULE-MAP.md` 的表格行。细则见 [skills/docs/project-documentation](skills/docs/project-documentation/SKILL.md)。
+- **模块文档**：模块说明只放 `docs/modules/<模块>/README.md`（Bug 记录在同目录 `bugs/<bug-id>.md`，只记用户报的 Bug，开发和评审中自己发现的问题不写）。**`docs/modules/<模块>/bugs.md` 是生成物，不要手工编辑**：只写 `bugs/<bug-id>.md` 的元数据头（状态 / 症状 / 入口 / 根因类型 / 关键词），再跑 `npm run docs:bugs` 重写索引；这样多个子对话并行收尾时各自新增一个文件，不会都改同一张表末尾而反复冲突。调研某个模块时先查 `docs/MODULE-MAP.md` 和对应模块文档，有就先读再查；结论回写模块文档，已有就合并不覆盖，模块在代码里没了就删目录。**`docs/MODULE-MAP.md` 的模块表也是生成物**：改模块 README 开头的元数据头（状态 / 职责 / 源码 / 入口 / 关键词），再跑 `npm run docs:modules`（ADR 0048）。细则见 [skills/docs/project-documentation](skills/docs/project-documentation/SKILL.md)。
 
 ## 文档地图
 

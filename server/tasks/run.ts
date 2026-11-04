@@ -331,7 +331,7 @@ export function createRun(sc: TasksScope) {
     // Chat 页选的角色被删了也按内置助手的配置算（和 runner 的 turnRole 同一个口径）
     const startAgent = turnRole(task, agents, task.agentId)
     const startedRun = startAgent ? agentRun(withTaskModel(startAgent, task), settings) : undefined
-    // 项目里用分派角色（主理）的顶层对话就是父对话：分诊、派单，只做护栏内的就地微改动
+    // 项目里用分派角色（协调器）的顶层对话就是父对话：分诊、派单，只做护栏内的就地微改动
     const coordinatorRole = !task.parentTaskId && !!task.projectId && !!startAgent?.canDelegate
     // UE 项目（目录里有 .uproject）的编译归父对话：子对话申请，父对话按申请占位编译
     const ueProject = task.mode === 'chat' && !!found?.path && (await isBigProject(found.path).catch(() => false))
@@ -431,17 +431,20 @@ export function createRun(sc: TasksScope) {
               sc.settleChildTurn(entry.task, turn)
               void sc.checkBudget(entry.task)
             }
-          : (turn) =>
+          : (turn) => {
               void sc.checkBudget(entry.task).then((over) => {
                 if (over || task.mode !== 'chat') return
                 // Chat 页只回答了一句、没动手的那一轮不推；项目里的对话按计划推（计划没做完、或动了手却没列计划，见 nudgePlan）
                 if (turn.tools <= 0 && isChatMode(entry.task)) return
+                // 有子对话在等它收尾时先推收尾：这时计划那一步写着「等子对话」，nudgePlan 会当成在等别人而不推
                 return sc
-                  .nudgePlan(entry.task, turn)
+                  .nudgeWrapUp(entry.task)
+                  .then((pushed) => pushed || sc.nudgePlan(entry.task, turn))
                   .catch((e) =>
                     log.warn('task', '推对话接着做计划失败', { task: task.id, error: (e as Error).message }),
                   )
-              }),
+              })
+            },
         isGit: snapshot !== null,
         op,
         resume,
@@ -559,7 +562,7 @@ export function createRun(sc: TasksScope) {
                 ...(await parentRunRole(entry.task, found)),
               }
             : undefined,
-        // 父对话（主理）就地微改动：角色开了才有，护栏在 beginInlineEdit / endInlineEdit（shared/inline-edit.ts）
+        // 父对话（协调器）就地微改动：角色开了才有，护栏在 beginInlineEdit / endInlineEdit（shared/inline-edit.ts）
         inlineEdit:
           coordinatorRole && startAgent?.inlineEdit === 'tiny' && dir
             ? {
@@ -567,7 +570,7 @@ export function createRun(sc: TasksScope) {
                 end: () => sc.endInlineEdit(entry.task, dir),
               }
             : undefined,
-        // 父对话（主理）不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里
+        // 父对话（协调器）不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里
         beginEdit:
           task.mode === 'chat' && !coordinatorRole && entry.task.wantsWorktree && !isolated(entry.task)
             ? () => sc.beginEdit(entry, changed)

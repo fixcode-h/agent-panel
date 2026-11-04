@@ -183,9 +183,9 @@ test('文档角色：旧副本存着旧默认（关）的「写 Bug 记录」升
   assert.equal(upgradeParamDefaults(off, 'docsync').params.find((p) => p.key === 'bug')!.default, false)
 })
 
-test('主理：汇报默认详细，旧副本的「精简」升级一次，之后用户再选精简的保留', () => {
+test('协调器：汇报默认详细，旧副本的「精简」升级一次，之后用户再选精简的保留', () => {
   const orch = coreDefinition('orchestrator').agent
-  assert.equal(orch.params.find((p) => p.key === 'report')!.default, '详细', '主理的汇报应该默认详细')
+  assert.equal(orch.params.find((p) => p.key === 'report')!.default, '详细', '协调器的汇报应该默认详细')
   const old = AgentInput.parse({
     ...orch,
     params: orch.params.map((p) => (p.key === 'report' ? { ...p, default: '精简' } : p)),
@@ -410,7 +410,7 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
   const r = await seedBuiltins({ agents: [mine], categories: [], tags: [], workflows: [] }, ops)
   assert.equal(r.workflows.length, BUILTIN_WORKFLOWS.length)
   const built = r.agents.filter((a) => a.origin.startsWith('builtin:'))
-  // 必备角色「子任务」「分析」「助手」（连同它引入的「聊天约束」）不在任何工作流里，由启动时的必备角色检查装上
+  // 必备角色「子任务」「排查分析」「助手」（连同它引入的「聊天约束」）不在任何工作流里，由启动时的必备角色检查装上
   const notInFlows = ['helper', 'analyzer', 'chat', 'chat-rules']
   assert.equal(
     built.length,
@@ -834,30 +834,31 @@ test('调研、子任务、评审三个角色：先读模块地图和模块文�
     assert.match(text(key), /不做无目标的全局搜索/, `${who}角色不无脑全局搜代码`)
     assert.match(text(key), /以代码为准/, `${who}角色文档与实现不一致时以代码为准`)
   }
-  // 只读角色不写文档，写文档的三个角色要合并、新建时同步表格行、模块没了删除
-  const writers: [string, string, RegExp][] = [
-    ['explorer', '调研', /docs\/modules\/<模块>\/README\.md/],
-    ['helper', '子任务', /docs\/modules\/<模块>\/README\.md/],
-    ['docsync', '文档', /modules\/<模块>\/README\.md/],
-  ]
-  for (const [key, who, docPath] of writers) {
-    const s = text(key)
-    assert.match(s, /模块表加一行/, `${who}角色新建模块文档时同步模块表`)
-    assert.match(s, docPath, `${who}角色把结论写进对应的模块文档`)
-    assert.match(s, /合并/, `${who}角色已有文档时合并，不整文件覆盖`)
-    assert.match(s, /已经不存在/, `${who}角色在模块没了时删除文档并同步模块表`)
+  // 模块文档只有「文档」一个出口（ADR 0048）：调研、子任务不自己写，要点交回；文档角色合并已有的、模块没了删目录，模块表是生成物
+  for (const [key, who] of [
+    ['explorer', '调研'],
+    ['helper', '子任务'],
+  ] as const) {
+    assert.match(
+      text(key),
+      /不要自己写文档：在结果里单列一节「建议补模块文档」/,
+      `${who}角色读明白的模块要点交回，不自己写`,
+    )
+    assert.doesNotMatch(text(key), /模块表加一行/, `${who}角色不改模块表`)
   }
-  assert.match(text('docsync'), /写之前先读/, '文档角色写之前先读模块地图和模块文档')
-  // 删模块文档时目录和表格行要一起处理：都删，或都留（状态写 retired），不能只删一边
-  assert.match(text('docsync'), /删掉 `modules\/<模块>\/` 整个目录/, '文档角色删掉模块文档目录')
-  assert.match(text('docsync'), /模块表删掉那一行/, '文档角色同步删掉模块表那一行')
-  assert.match(text('docsync'), /retired/, '文档角色保留迁移线索时表格行也保留')
+  const doc = text('docsync')
+  assert.match(doc, /模块文档只有一个出口，就是你/)
+  assert.match(doc, /写之前先读 `modules\/<模块>\/README\.md`/, '文档角色写之前先读模块文档')
+  assert.match(doc, /合并时只改对应小节/, '已有文档时合并，不整文件覆盖')
+  assert.match(doc, /删掉 `modules\/<模块>\/` 整个目录/, '模块没了删掉模块文档目录')
+  assert.match(doc, /不要手写、手改模块表，地图不存在也不要建/, '模块表不手改、不自己建')
+  assert.doesNotMatch(doc, /retired/, '不留墓碑目录')
   // 评审代码改动（ADR 0013）：材料只有交接单和面板附的差异，不读模块文档和 bugs.md；评审方案或结论时才按上面的顺序定位
   assert.match(text('reviewer'), /不读 `MODULE-MAP\.md`、模块文档、`bugs\.md`/, '评审代码不读模块文档')
   assert.match(text('worker'), /docs\/MODULE-MAP\.md/, '执行角色调研模块前先看模块地图和模块文档')
 })
 
-test('停在上一版的「调研」也能升级：先查模块地图和模块文档，结论回写', async () => {
+test('停在上一版的「调研」也能升级：先查模块地图和模块文档，要点交回不自己写', async () => {
   const saved: Agent[] = []
   const ops = {
     async updateAgent(id: string, input: AgentInput) {
@@ -879,7 +880,7 @@ test('停在上一版的「调研」也能升级：先查模块地图和模块�
   assert.equal(updated.length, 1, '上一版的「调研」副本升级')
   const explorer = updated[0]
   assert.match(explorer.instructions, /先读文档根的/, '调研先查模块地图定位模块')
-  assert.match(explorer.instructions, /回写模块文档/, '调研结论回写模块文档')
+  assert.match(explorer.instructions, /建议补模块文档/, '调研读明白的模块要点交回')
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
 })
 

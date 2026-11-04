@@ -14,6 +14,8 @@ export const ASK_PUSH = 'ask_push'
 /** 授权段里父对话的推送规则：wt 是独立分支里的补充说明，planned 是「推送收尾已经在计划最后一步」 */
 export function pushPolicyText(p: NonNullable<EngineHost['policy']>, wt: string, planned: string) {
   const done = '任务做完、验证通过并在本地提交之后'
+  if (p.noRemote)
+    return '推送：这个仓库没有配置远端（git remote 为空），没有地方可推：不 push、不建 PR、不合并主干，也不问用户要不要推送；结论里写「已在本地提交，仓库没有远端」。用户要推送时告诉他先给仓库加上远端。'
   if (p.push === 'deny')
     return '推送：项目设置是「不推送，只做本地提交」。不 push、不建 PR、不合并主干、不 P4 submit，也不问用户要不要推；用户在对话里要求推送时，告诉用户先到项目设置把「推送到远端」改掉（这个项目的 git push 已经被面板拦下）。'
   // 拒绝过以后：用户亲手在授权卡上点才算数，所以用户在对话里改口时也要再弹一次卡，不能凭一句话直接推
@@ -30,7 +32,15 @@ export function pushPolicyText(p: NonNullable<EngineHost['policy']>, wt: string,
  */
 export function orchAskPush(host: EngineHost, chat: boolean, helper: boolean): Orchestra['askPush'] {
   const { task } = host
-  if (helper || !chat || task.parentTaskId || !task.projectId || host.policy?.push !== 'ask' || !host.askPush)
+  if (
+    helper ||
+    !chat ||
+    task.parentTaskId ||
+    !task.projectId ||
+    host.policy?.push !== 'ask' ||
+    host.policy.noRemote ||
+    !host.askPush
+  )
     return undefined
   const ask = host.askPush
   return async (info) => {

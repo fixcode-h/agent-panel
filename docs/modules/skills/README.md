@@ -1,9 +1,11 @@
 # skills：内置 Skill
 
-- status: inferred
-- source_paths: `skills/`
-- entry: `skills/README.md`
-- analyzed_at: 2026-10-24
+- 状态：documented
+- 职责：随面板发布的内置 Skill，安装时平铺到用户目录
+- 源码：`skills/`
+- 入口：`skills/README.md`
+- 关键词：Skill、技能、SKILL.md、内置技能
+- 更新：2026-10-24
 
 ## 职责
 

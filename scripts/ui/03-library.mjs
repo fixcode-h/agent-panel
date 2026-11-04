@@ -383,7 +383,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => {})
   await p.goto(base + '#/agents')
-  await check(p, 'Agent', ['设定', '主理'])
+  await check(p, 'Agent', ['设定', '协调器'])
   // 列表栏标题不能被头部按钮挤得截断（用户报过：「角色」被压成半个字）：工作流页同一个列表栏，一起查
   for (const [hash, pane] of [
     ['#/agents', '角色列表'],
@@ -401,7 +401,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 原来的「按标签 / 按分类」切换已经去掉，列表上方不再有分组方式可选
   const rolePane = p.locator('section[aria-label="角色列表"]')
   if (await rolePane.getByRole('radio', { name: '按分类' }).count()) errors.push('角色页：还留着「按分类」的分组切换')
-  // 高级角色、基本角色分两页（列表栏顶上的分段）：默认先看高级角色，必备组里是主理、执行、分析
+  // 高级角色、基本角色分两页（列表栏顶上的分段）：默认先看高级角色，必备组里是协调器、执行、分析
   const layers = rolePane.getByRole('radiogroup', { name: '角色层' })
   const core = p.locator('[data-group-id="#core"]')
   if (!(await layers.count())) errors.push('角色页：没有「高级 / 基本 / Chat」分页')
@@ -412,8 +412,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .textContent()
         .catch(() => '')) ?? ''
     if (!/必备\s*·\s*3/.test(adv)) errors.push(`角色页：高级角色页的必备分组计数不是 3（读到「${adv.slice(0, 20)}」）`)
-    if (!(await core.getByRole('button', { name: /^主理/ }).count())) errors.push('角色页：高级角色页没有「主理」')
-    await check(p, 'Agent-高级角色', ['主理', '执行'])
+    if (!(await core.getByRole('button', { name: /^协调器/ }).count())) errors.push('角色页：高级角色页没有「协调器」')
+    await check(p, 'Agent-高级角色', ['协调器', '执行'])
     await layers.getByRole('radio', { name: /^基本/ }).click()
   }
   // 用 data-group-id / role=group 定位：分类名和标签、角色名可能同名，按文字找会指错组
@@ -588,11 +588,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, '角色-设定', ['能开启子对话', '能启动工作流', '基本信息'])
   await p.getByRole('tab', { name: /^运行/ }).click()
   await check(p, '角色-运行', ['运行环境', '额外参数', '对话范围'])
-  // 角色分层：必备的「主理」是高级角色，「能力」页列出挂载的基本角色和各自的用法，评审只能派出
-  await search.fill('主理')
-  await p.getByText('主理', { exact: true }).first().click()
+  // 角色分层：必备的「协调器」是高级角色，「能力」页列出挂载的基本角色和各自的用法（ADR 0048 起不挂「评审」，「方案设计」只能派出）
+  await search.fill('协调器')
+  await p.getByText('协调器', { exact: true }).first().click()
   await p.getByRole('tab', { name: /^能力/ }).click()
-  await check(p, '角色-能力挂载', ['高级角色', '挂载的能力', '评审', '派成子任务', '父对话可以就地微改动'])
+  await check(p, '角色-能力挂载', ['高级角色', '挂载的能力', '方案设计', '派成子任务', '父对话可以就地微改动'])
   await search.fill('')
   // 技能页：左列表 + 右详情。左边按 Agent 分组，点一项右边换成它的详情（不再是弹窗）
   await p.goto(base + '#/library')

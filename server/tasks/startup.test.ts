@@ -117,3 +117,27 @@ test('migrateOnStart：返回上次没正常退出时还在执行的对话（首
   assert.deepEqual(await migrateOnStart(store), ['run'])
   assert.equal(store.map.get('run')!.stopReason, 'restart')
 })
+
+test('migrateOnStart：对话已经说完、派出的子任务还标着在跑：按被打断收口，计划里等它的那一步退回需要修复', async () => {
+  const step = { id: 'h1', slot: 'sub', title: '补写 Bug 记录', agentId: 'doc', status: 'running', startedAt: at }
+  const plan = {
+    id: 'p1',
+    title: '修 avg',
+    createdAt: at,
+    steps: [
+      { id: '1', title: '写 Bug 记录', status: 'waiting', waits: [{ kind: 'helper', ref: 'h1', state: 'waiting' }] },
+    ],
+  }
+  // 子任务挂着一张权限卡：对话算「等你处理」，不在恢复名单里（真实 API 实测里就是这样漏掉的）
+  const ask = { id: 'r1', step: 'h1', agentId: 'doc', kind: 'tool', title: '使用工具：Read', at }
+  const store = memStore([task('a', { steps: [step], plans: [plan], requests: [ask] })])
+  await migrateOnStart(store)
+  const a = store.map.get('a')!
+  assert.equal(a.status, 'done', '对话本身的状态不动')
+  assert.equal(a.steps[0].status, 'pending')
+  assert.equal(a.steps[0].interrupted, true, '继续时 resume 原来的会话')
+  assert.equal(activePlan(a)!.steps[0].status, 'running', '等它的那一步退回进行中')
+  assert.match(a.messages.at(-1)!.text, /子任务「补写 Bug 记录」还在执行，已中断/)
+  assert.equal(a.requests.length, 0, '回调跟着进程没了的卡片作废')
+  assert.match(a.messages.at(-1)!.text, /「使用工具：Read」，已经作废/)
+})

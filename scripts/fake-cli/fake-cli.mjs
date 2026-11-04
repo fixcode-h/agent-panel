@@ -6,7 +6,7 @@
  * 任务描述里包含 FAIL 会以退出码 1 结束；包含 SLOW 会慢慢输出，方便测试「停止」。
  * 设置环境变量 FAKE_CLI_LOG 后，每次调用的参数、目录和 stdin 会追加写进这个文件。
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -113,6 +113,26 @@ let tookWrap = new Set()
 // 必须随轮清空（见 startTurn）：steered 和它都是跨轮累积的，保活进程第二轮再带 HOLD_STEER 时
 // 不清零就会「不等直接结束」，又变回这个场景要防的假同步
 let steerCount = 0
+/**
+ * 用例要父对话「只说不做」一次（用户 2026-11-03 报：父对话回「现在合回」就结束这一轮，没调 finish_child）：
+ * 用例写下 <FAKE_CLI_LOG>.skip-wrap，下一次收到收尾请求时不调用 finish_child、删掉这个文件并记一笔 via: 'skipped'。
+ * 只跳一次，之后面板推来的提醒照常处理
+ */
+function skipWrapOnce(ids) {
+  const flag = process.env.FAKE_CLI_LOG && `${process.env.FAKE_CLI_LOG}.skip-wrap`
+  if (!flag || !ids.length || !existsSync(flag)) return false
+  unlinkSync(flag)
+  for (const id of ids)
+    appendFileSync(
+      process.env.FAKE_CLI_LOG + '.finish',
+      JSON.stringify({ kind, id, via: 'skipped', at: Date.now() }) + '\n',
+    )
+  return true
+}
+/** 面板推来的收尾提醒（server/tasks/drive.ts 的 nudgeWrapUp）里点名的子对话 */
+const WRAP_NUDGE = /【面板】这些子对话已经请你收尾/
+const nudgeIds = (text) =>
+  WRAP_NUDGE.test(text) ? [...text.matchAll(/finish_child（id ([^）\s]+)）/g)].map((m) => m[1]) : []
 /** 新一轮开始：上一轮处理过的收尾请求、插话计数都不能带到这一轮（同一子对话可以再次请收尾） */
 function startTurn(text) {
   input = text
@@ -134,7 +154,8 @@ async function takeSteer(text) {
       process.env.FAKE_CLI_LOG + '.hold',
       JSON.stringify({ kind, held: true, kid: wrapRequestIds(text)[0] ?? '', at: Date.now() }) + '\n',
     )
-  for (const id of wrapRequestIds(text)) {
+  const skipped = skipWrapOnce(wrapRequestIds(text))
+  for (const id of skipped ? [] : wrapRequestIds(text)) {
     if (tookWrap.has(id)) continue
     tookWrap.add(id)
     const got = await panelCall('finish_child', { id })
@@ -1001,15 +1022,18 @@ if (forcedFinish) {
 }
 // 父对话收到子对话的收尾请求：像真的 Agent 一样看过验证结果后调用 finish_child 收尾。
 // 一轮里可能同时有几个子对话的收尾请求，每个都要处理（只处理第一个会让后面的子对话等到超时）
-if (input.includes('finish_child')) {
-  for (const id of wrapRequestIds(input)) {
+if (input.includes('finish_child') && !skipWrapOnce(wrapRequestIds(input))) {
+  for (const id of [...wrapRequestIds(input), ...nudgeIds(input)]) {
     // 这一轮执行中已经以插话处理过（见 takeSteer）：别再合一次
     if (tookWrap.has(id)) continue
     tookWrap.add(id)
     const got = await panelCall('finish_child', { id })
     if (got?.isError) tookWrap.delete(id)
     if (process.env.FAKE_CLI_LOG)
-      appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id, via: 'input', got }) + '\n')
+      appendFileSync(
+        process.env.FAKE_CLI_LOG + '.finish',
+        JSON.stringify({ kind, id, via: nudgeIds(input).includes(id) ? 'nudge' : 'input', got }) + '\n',
+      )
   }
 }
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI

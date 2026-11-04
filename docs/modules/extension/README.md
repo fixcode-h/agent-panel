@@ -1,9 +1,11 @@
 # extension：浏览器扩展（网页生图）
 
-- status: inferred
-- source_paths: `extension/`
-- entry: `extension/manifest.json`
-- analyzed_at: 2026-10-24
+- 状态：documented
+- 职责：Chrome MV3 扩展：用本机已登录的 Gemini / ChatGPT 网页生图
+- 源码：`extension/`
+- 入口：`extension/manifest.json`
+- 关键词：浏览器扩展、Chrome、网页生图、Gemini、ChatGPT
+- 更新：2026-10-24
 
 ## 职责
 

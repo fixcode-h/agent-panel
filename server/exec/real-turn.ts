@@ -1,5 +1,6 @@
 /** 真实执行一轮：调度交给执行引擎（shared/engine.ts），调用 Agent 时经 runner 启动对应 CLI。从 runner.ts 拆出 */
 import { HANDOFF_DIR } from '../store.ts'
+import { docRootOf, lookupModuleDocs, moduleIndexText } from '../module-map.ts'
 import { type EngineHost, runEngineTurn } from '../../shared/engine.ts'
 import type { RealContext } from './real-context.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
@@ -15,7 +16,7 @@ import path from 'node:path'
 import { placedFiles } from '../attachments.ts'
 import { projectDocRoot } from '../doc-root.ts'
 import { projectFormat } from '../file-format.ts'
-import { reviewDiff } from './git.ts'
+import { gitHasRemote, reviewDiff } from './git.ts'
 import { saveHandoffFile } from './handoff-file.ts'
 import { searchExcludeOf } from '../../shared/search-exclude.ts'
 import { steers, waitChat } from './steering.ts'
@@ -32,8 +33,11 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
   // cherry-pick 目标只对 Git / P4 项目有意义：按项目目录现在的版本管理说清怎么搬（目录换了类型就不提）
   const target = ctx.project.cherryPick?.trim()
   const vcs = ctx.project.path ? (await detectVcs(ctx.project.path).catch(() => null))?.vcs : undefined
+  // Git 仓库没配远端：没有地方可推。不探的话「问一次」的项目会在每次合回后弹推送授权卡（2026-11-03 真实 API 实测）
+  const noRemote = vcs === 'git' && !(await gitHasRemote(ctx.project.path).catch(() => true))
   return {
     push: ctx.project.gitPolicy ?? 'ask',
+    ...(noRemote && { noRemote: true }),
     // 用户对推送的回答（task.remotePush）不在这一刻定死：getter 现取，回答记上之后保活的下一条消息（nextPrompt 重拼）才看得到
     get answered() {
       return ctx.task.remotePush
@@ -41,6 +45,12 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
     tools: views.filter((v) => v.installed && v.authed).map((v) => v.name),
     ...(target && (vcs === 'git' || vcs === 'p4') ? { cherryPick: { vcs, target } } : {}),
     docs: await projectDocRoot(ctx.project.path, ctx.agents, vcs ?? 'none'),
+    // P4 / SVN 以外的项目文档根也由面板给，和查模块文档同一个算法（不然「文档」会按 P4 用的参数写到项目外）
+    ...(vcs !== 'p4' &&
+      vcs !== 'svn' &&
+      ctx.project.path && { docRoot: await docRootOf(ctx.project.path, ctx.agents) }),
+    // 协调器定位模块用：只给项目里的顶层对话
+    ...(!ctx.task.parentTaskId && ctx.project.path && { modules: await moduleIndexText(ctx.project.path, ctx.agents) }),
   }
 }
 
@@ -144,6 +154,10 @@ export async function runRealTurn(ctx: RealContext) {
         detail: clip(text, 40000),
       }),
     askPush: (info) => askPushRequest(ctx, info, ownAsks),
+    // 先建模块文档再开子对话（ADR 0048）：只有项目顶层对话建子对话，文档根按项目设置算
+    moduleDocs: ctx.task.parentTaskId
+      ? undefined
+      : (modules) => lookupModuleDocs(ctx.project.path, ctx.agents, modules),
     reviewDiff: ctx.isGit
       ? async (since, files) => {
           // 没点名文件时只取这个对话改过的（和「更改」面板一致）：对话开始前就没提交的改动不算它的，不交给评审

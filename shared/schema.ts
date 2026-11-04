@@ -1120,7 +1120,7 @@ export type NewTaskInput = z.infer<typeof NewTaskInput>
 
 /** 任务的独立分支：Agent 在这个目录里改，做完后合并回项目或丢弃 */
 /**
- * 一条分诊记录：主理（父对话）把一条消息分到哪里、为什么、替用户做了什么假设。
+ * 一条分诊记录：协调器（父对话）把一条消息分到哪里、为什么、替用户做了什么假设。
  * 由派单工具的 route 参数生成，界面画成分诊卡，用户可以一键改派（见 docs/openspec/changes/role-composition-and-dispatch）
  */
 export const TaskRoute = z.object({

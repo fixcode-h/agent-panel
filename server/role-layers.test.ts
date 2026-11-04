@@ -37,10 +37,10 @@ const tester = agent('ts', '测试验收', {
   ],
 })
 const docs = agent('dc', '文档', { instructions: '写进文档根。' })
-const lead = agent('lead', '主理', {
+const lead = agent('lead', '协调器', {
   canDelegate: true,
   inlineEdit: 'tiny',
-  instructions: '你是主理。',
+  instructions: '你是协调器。',
   mounts: [
     { agentId: 'ts', mode: 'inline', preload: false, rule: '快速检查就地', params: { scope: '快速' } },
     { agentId: 'rv', mode: 'auto', preload: false, rule: '', params: {} },
@@ -261,7 +261,7 @@ test('父对话派子对话：role 只能是启用的高级角色；新开、交
   assert.equal(task.routes[0].assumptions, '导出整张画布')
 })
 
-test('内置定义：主理、执行、分析是高级角色，挂载装好后换成本机 id；评审只能派出', async () => {
+test('内置定义：协调器、执行、排查分析是高级角色，挂载装好后换成本机 id；评审只能派出', async () => {
   const def = (k: string) => BUILTIN_AGENTS.find((a) => a.key === k)!
   for (const k of ['orchestrator', 'worker', 'analyzer']) assert.equal(def(k).agent.kind, 'advanced', k)
   assert.equal(def('reviewer').agent.independent, true)
@@ -275,7 +275,7 @@ test('内置定义：主理、执行、分析是高级角色，挂载装好后�
       assert.notEqual(cap.agent.kind, 'advanced', `${b.key} 只能挂基本角色，${m.key} 是高级角色`)
     }
 
-  // 装一遍：挂载的 key 换成本机 id，主理默认能就地微改动
+  // 装一遍：挂载的 key 换成本机 id，协调器默认能就地微改动
   const agents: Agent[] = []
   let n = 0
   const ops = {
@@ -312,7 +312,10 @@ test('内置定义：主理、执行、分析是高级角色，挂载装好后�
   const orch = findCore(agents, 'orchestrator')!
   assert.equal(orch.inlineEdit, 'tiny')
   const names = mountedAgents(orch, agents).map((m) => m.agent.name)
-  assert.ok(names.includes('评审') && names.includes('文档') && names.includes('版本控制'), names.join('、'))
+  assert.ok(names.includes('文档') && names.includes('版本控制'), names.join('、'))
+  // 协调器不再挂「评审」复核大方案（大方案只保留先给用户确认一道），「方案设计」只能派出（ADR 0048）
+  assert.ok(!names.includes('评审'), names.join('、'))
+  assert.equal(mountedAgents(orch, agents).find((m) => m.agent.name === '方案设计')?.mode, 'subtask')
   const worker = findCore(agents, 'worker')!
   assert.equal(mountedAgents(worker, agents).find((m) => m.agent.name === '评审')?.mode, 'subtask')
   // 再同步一遍不变（不写盘）

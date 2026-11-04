@@ -554,7 +554,7 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
     ['子对话', { agentId: 'worker', parentTaskId: 'parent' }],
   ] as const)
     await promptsOf(chat, { ...allowAll, runAgent: async (call) => (keep(who, call), { ok: true, text: '好了' }) })
-  // 顶层、子对话派的子任务（主理、执行把「版本控制」挂成就地用，派它的是无角色的对话或自建角色）
+  // 顶层、子对话派的子任务（协调器、执行把「版本控制」挂成就地用，派它的是无角色的对话或自建角色）
   for (const [who, chat] of [
     ['顶层派', {}],
     ['子对话派', { parentTaskId: 'parent' }],

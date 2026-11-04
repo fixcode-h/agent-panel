@@ -87,7 +87,8 @@ import {
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 
-import { ensureBundled } from '../bundled-skills.ts'
+import { ensureBundled, sharedRoot } from '../bundled-skills.ts'
+import { withSkillDir } from '../../shared/skill-guide.ts'
 
 import { invokeCli, type CliControl } from './invoke.ts'
 import { setLimits } from '../cli-extras.ts'
@@ -408,7 +409,10 @@ async function runAgent(
       autoLimits(key, catalog, { entries, protocol: cs.api?.protocol }).context
     )
   }
-  const role = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim()
+  const role = withSkillDir(
+    composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim(),
+    sharedRoot(),
+  )
   /** 上下文超长降级时留给旧对话的 token 预算：剩下的给角色设定、提示词和这一轮的要求 */
   const carryBudget = () => Math.max(MIN_CLIP_TOKENS * 2, Math.floor(windowFor(model) * CONTEXT_CARRY_SHARE))
   /**

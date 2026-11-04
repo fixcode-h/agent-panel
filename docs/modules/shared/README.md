@@ -1,9 +1,11 @@
 # shared：前后端共享的数据模型、流程图和执行引擎
 
-- status: inferred
-- source_paths: `shared/`
-- entry: `shared/schema.ts`、`shared/clis.ts`
-- analyzed_at: 2026-10-27（同日给 `ToolUse` 补了压缩前后大小的 `compact` 字段；本轮给角色加「禁止子对话执行」的 `runIn` 与转交父对话的 `spawn` 分支；共享层原有的「禁止子对话执行」步骤筛选和测试耗时记录沿用 2026-10-26 的核对，界面文案 2026-10-27 由「在父对话中执行」改成这个名字、语义未变）
+- 状态：documented
+- 职责：前后端共用的数据结构、CLI 注册表、流程图逻辑、工作流执行引擎、内置角色和工作流、定时计划规则
+- 源码：`shared/`
+- 入口：`shared/schema.ts`、`shared/clis.ts`
+- 关键词：schema、执行引擎、流程图、内置角色、工作流模板、提示词、计划
+- 更新：2026-10-27（同日给 `ToolUse` 补了压缩前后大小的 `compact` 字段；本轮给角色加「禁止子对话执行」的 `runIn` 与转交父对话的 `spawn` 分支；共享层原有的「禁止子对话执行」步骤筛选和测试耗时记录沿用 2026-10-26 的核对，界面文案 2026-10-27 由「在父对话中执行」改成这个名字、语义未变）
 
 ## 职责
 
@@ -41,7 +43,7 @@
   - `spawn_agents` 接着之前的子任务做（`resume`）时**沿用原任务的角色**（提示词、CLI、模型都跟着它）：显式写了 `agent` 就用写的，写别的角色照旧拒绝（`「…」是另一个角色跑的`），写了不存在的角色报错；原角色已被删、又没写 `agent` 时报错让调用方点名，**不退回默认「子任务」**——那等于换个角色接着跑原来的会话，交回的结果看不出走了样。`agentId` 为空是旧数据里「没有角色」，不算「角色被删」。重试分支（失败 / 被终止 / 中断的子任务在原记录上重试）里显式点名了别的角色就换过去。`tier` 仍默认跟发起节点（角色决定 CLI 和模型，`shared/settings.ts` 的 `agentRun`）。
   - `resume` 写的 id 怎么对回子任务（`resumeTarget`）：先按全等找；找不到时按 `/` 路径段边界的**结尾**唯一命中（`sub/h1` 能命中 `@chat/sub/h1`，`xsub/h1` 不算，后缀必须落在 `/` 上）；命中多条时不猜，报错里列候选（`id｜标题`，`helperLabel` 的写法和终止子任务的列表一致）；完全找不到时仍是「不是你派过的子任务（用 spawn_agents 返回的 id）」，并追加最近 `MAX_RESUME_IDS`（8）条实际派过的子任务 id + 标题（超过 8 个时注明总数，少了认不出、多了是干扰）。改的原因是原实现严格全等：模型常把「a/step/s1/sub/h1」写成「sub/h1」，一少写前缀整批都被拒、白花一轮重试。回归：`server/engine-steps.test.ts` 的四个用例（少写前缀按结尾唯一命中并接着原会话、后缀命中多条时拒绝并列候选、后缀不跨路径段、找不到时列出实际派过的子任务）。
   - `spawn_agents` 顶层的 `agent` / `tier` / `resume` 是**整批的默认值**：单个任务里写了以任务里的为准，都没写才落到顶层。顶层 `resume` 配多个任务直接报错（一个会话只能接着跑一轮），顶层出现不认得的字段也报错（`SPAWN_TOP_FIELDS` 白名单），不静默丢掉——「schema 里声明了、代码只在嵌套层读」的字段一丢，就是换了角色、换了新会话，而结果看起来和正常复看一样。这次修的就是它（顶层 `resume` 被丢、复看退回「子任务」角色），见 [server/bugs/helper-resume-lost-role.md](../server/bugs/helper-resume-lost-role.md)。
-  - `spawn_agents` 的 `params`（任务里或顶层整批）是派出角色的参数取值，例如「测试验收」的 `{"task": "清理用例"}`：只认角色声明过的 key 和选项（`paramsProblem`，写错报错，不按默认值静默渲染），存进子任务步骤的 `TaskStep.params`，`runHelper` 交给 runner 的 `composeRole`。取值按「挂载上定的 → resume 接着的子任务上一次的 → 这次写的」叠加，所以 resume 不写就沿用；`reviewsCode` 也按步骤上的 `target` 判断是不是评审代码（主理把评审挂成「方案或结论」，派出去就不再要代码评审的交接单）。旧步骤没有 `params`，按角色默认值渲染。
+  - `spawn_agents` 的 `params`（任务里或顶层整批）是派出角色的参数取值，例如「测试验收」的 `{"task": "清理用例"}`：只认角色声明过的 key 和选项（`paramsProblem`，写错报错，不按默认值静默渲染），存进子任务步骤的 `TaskStep.params`，`runHelper` 交给 runner 的 `composeRole`。取值按「挂载上定的 → resume 接着的子任务上一次的 → 这次写的」叠加，所以 resume 不写就沿用；`reviewsCode` 也按步骤上的 `target` 判断是不是评审代码（协调器把评审挂成「方案或结论」，派出去就不再要代码评审的交接单）。旧步骤没有 `params`，按角色默认值渲染。
   - 回归：`shared/plan.test.ts`（标题改写对回旧步、`id` 顺序与数组顺序不一致加 `partial`、note 清理、子任务等待）和 `server/orch-mcp.test.ts`（`spawn_agents` 的 `step`；顶层默认值解析；resume 不写 agent 沿用原任务角色、写 agent 用写的、非 resume 不带 agent 才是默认子任务；原角色不存在时报错）。
   - 收尾步骤的种类由 `wrapUpKind`（`shared/plan.ts`）一个纯函数判定，口径和提示词「授权情况」那段一致：子对话在独立分支里是 `merge`（合回父对话所在的分支）、P4 工作区共用目录是 `p4`（按文件类型分 changelist）；**父对话**在 Git 仓库、配了远端，并且明确授权推送（项目设置「允许直接推送」，或这个对话里用户已经同意：项目设置「问一次」时父对话调 `ask_push` 弹授权卡，用户点的回答由 `answerRequest` 记进 `task.remotePush`，见 `shared/push-auth.ts`）时是 `push`（`收尾：推送到远端并合并主干`：推送成功后用 gh 建 / 复用 PR，等 PR 检查通过后普通合并到主干，冲突或失败就停下来报告）。`deny` 和 `answered: 'denied'` 不加，「第一次问一次」还没回答时也不加（等回答完、下一轮再加）；P4 工作区、SVN、没有远端的仓库也不加——P4 建在 git 仓库目录下时也会认到 `.git`，推上去的是旧历史；没有远端的仓库这一步永远做不了。种类、标题、备注集中在 `WRAP_UP`，改文案只改这一处。
     `applyPlan` 的 `wrapUp` 参数有三种取值，别混：不传是「这个对话不用收尾」（合回、分 changelist 这类一次性收尾就不做了）、`'none'` 是「明确不推送」（只有它会把计划里还挂着的推送收尾删掉，连同 Agent 照抄的那条同标题步骤）、`undefined` 以外的空值都不算。`server/tasks/helpers.ts` 的 `wrapUpFrom` 只在策略是 `deny` 或用户 `denied` 时回 `'none'`；项目目录没取到时回 `undefined`，这一轮算不出来就保持收尾原样，否则会误删、还告诉模型「不用推了」。工作区探测（`wrapUpProbe`：是不是 P4、有没有远端）每轮只做一次，收尾种类在 `server/tasks/run.ts` 里是 getter、按当前的 `task.remotePush` 现算：保活中用户在授权卡上点了允许，下一条消息的提示词和下一次 `set_plan` 就带上推送收尾。

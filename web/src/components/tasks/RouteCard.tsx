@@ -13,7 +13,7 @@ const TARGET: Record<TaskRoute['target'], { label: string; say: string; icon: ty
   'inline-edit': { label: t('就地微改动'), say: '就地微改动', icon: Pencil },
 }
 
-/** 改派的去向：说给主理的话写中文（发给 Agent 的提示不翻译），按钮文字走 t() */
+/** 改派的去向：说给协调器的话写中文（发给 Agent 的提示不翻译），按钮文字走 t() */
 type Reroute = 'inline' | 'subtask' | 'child'
 const REROUTE: Record<Reroute, { label: string; say: string }> = {
   inline: { label: t('改为就地处理'), say: '就地处理（你自己回答，或者走就地微改动）' },
@@ -32,15 +32,15 @@ const OPTIONS: Record<TaskRoute['target'], Reroute[]> = {
 /** 改派消息里带上分诊 id：界面按它认出哪张卡已经改派过 */
 const rerouteTag = (id: string) => `（分诊 ${id}）`
 
-/** 发给主理的改派消息 */
+/** 发给协调器的改派消息 */
 export function rerouteText(r: TaskRoute, to: Reroute) {
   const what = r.label ? `「${r.label}」` : '上一条'
   return `【改派】${what}不要${TARGET[r.target].say}，改为${REROUTE[to].say}${rerouteTag(r.id)}。已经派出去的先停掉或收回，再按新的方式处理。`
 }
 
 /**
- * 分诊卡：主理（父对话）把这条消息分到了哪里、为什么、替你做了什么假设。
- * 不同意就一键改派：发一条消息给主理，它下一轮照做（角色分层改造，见 docs/openspec/changes/role-composition-and-dispatch）
+ * 分诊卡：协调器（父对话）把这条消息分到了哪里、为什么、替你做了什么假设。
+ * 不同意就一键改派：发一条消息给协调器，它下一轮照做（角色分层改造，见 docs/openspec/changes/role-composition-and-dispatch）
  */
 export function RouteCard({
   routes,

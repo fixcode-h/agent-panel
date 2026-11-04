@@ -1,5 +1,5 @@
 ---
-paths: server/tasks/children.ts, server/tasks/merge.ts, shared/drive.ts, shared/turn-rules.ts, shared/helper-batch.ts, server/tasks/inbox-file.ts, server/store.ts
+paths: server/tasks/children.ts, server/tasks/merge.ts, server/tasks/drive.ts, shared/drive.ts, shared/turn-rules.ts, shared/helper-batch.ts, server/tasks/inbox-file.ts, server/store.ts
 ---
 
 # 对话自驱和交给模型的数据（ADR 0041）
@@ -32,3 +32,9 @@ paths: server/tasks/children.ts, server/tasks/merge.ts, shared/drive.ts, shared/
 - 规则：拼进提示词、交回结果的长文本只用 `clipToFile`（`shared/helper-batch.ts`）或 `inboxWithFile`（`server/tasks/inbox-file.ts`）截，写明全文路径；直接 `clip()` 只用于日志和界面摘要。全文存在交接目录，CLI 启动前用 `handoffDirOf` 建好并放行，不能「目录存在才放行」。评审、验收（whole）上限 `WHOLE_OUTPUT`。
 - 起因：用户 2026-11-02 报父对话「评审摘要被面板截断，完整结论没拿到」：保活 CLI 启动时交接目录还没有、没放行，之后存的全文读不到；子对话汇报、节点结果还有几处直接 `clip` 不留指针。
 - 防线：`server/tasks/inbox-file.test.ts`。
+
+## 互相等的两侧都要有兜底：子对话等父对话收尾时，父对话那一步不算「在等别人」
+
+- 规则：给一侧加了「只说不做时推一次」（子对话的 `nudgeMerge`）之后，检查对面那一侧：父对话计划里「等子对话」的步骤，在子对话已请求收尾（`wrapUpPending`）时等的是父对话自己的 `finish_child`，一轮结束时由 `nudgeWrapUp` 推它；判断只在 `shared/task.ts` 一处，状态诊断（`wrapup-unhandled`）共用它。
+- 起因：用户 2026-11-03 报父对话回「现在合回」就结束了这一轮，`planStalled` 见计划有等待中的步骤就不推，父子一直互相等。
+- 防线：e2e `04-subagents`「父对话收到收尾请求却没合回」、`shared/lifecycle.test.ts`、`shared/task-idle-ask.test.ts`。

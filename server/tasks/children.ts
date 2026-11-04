@@ -48,7 +48,7 @@ import { childSummaryCards } from '../../shared/summary-card.ts'
  */
 export function createChildren(sc: TasksScope) {
   // 一轮结束时的推进（自驱，ADR 0041）放在 drive.ts；它要上报子对话、看名下子对话在不在跑，用下面定义的两个函数
-  const { nudgePlan, nudgeState, resetNudge, noteStop, clearStop } = createDrive(sc, {
+  const { nudgePlan, nudgeWrapUp, nudgeState, resetNudge, noteStop, clearStop } = createDrive(sc, {
     reportChild: (id) => reportChild(id),
     activeChildren: (id) => activeChildren(id),
   })
@@ -735,6 +735,7 @@ export function createChildren(sc: TasksScope) {
     closeChildren,
     completing,
     nudgePlan,
+    nudgeWrapUp,
     nudgeState,
     noteStop,
     clearStop,

@@ -14,7 +14,7 @@ import { DIAGNOSIS_LANG } from '@shared/diagnosis'
  */
 export type ReportKind = 'run' | 'lessons' | 'init' | 'diagnosis'
 
-/** 是不是 AI 分析开出的对话：新对话看 analysis，旧对话看是不是用的必备角色「分析」 */
+/** 是不是 AI 分析开出的对话：新对话看 analysis，旧对话看是不是用的必备角色「排查分析」 */
 export function isAnalysisTask(
   task: Pick<Task, 'analysis' | 'agentId'> | { analysis?: Task['analysis']; agentId?: string },
   agents: Pick<Agent, 'id' | 'origin'>[],
