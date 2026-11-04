@@ -58,6 +58,7 @@ import type { ChildActivity, ChildHold, ChildWait, TrashRow } from '@shared/task
 import type { SearchHit } from '@shared/task-search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
+import type { DiagnosisDecision } from '@shared/bug-diagnosis'
 import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
 import type { LessonReviewItem } from '@shared/lesson-review'
@@ -955,11 +956,8 @@ export const api = {
   decideDiagnosis: (
     id: string,
     version: number,
-    body: {
-      approve: boolean
-      notes: { quote: string; kind: 'question' | 'change' | 'info'; comment: string }[]
-      overall: string
-    },
+    // cancel：这次不修，计划标完成，返回的 message 为空（不用发给子对话）
+    body: DiagnosisDecision,
   ) => request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis/${version}`, json('POST', body)),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),

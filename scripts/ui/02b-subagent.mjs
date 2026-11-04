@@ -1047,6 +1047,26 @@ await runShard(import.meta.filename, async (api) => {
       )
         errors.push('诊断报告：切到旧的一版还能确认')
       await check(p, '诊断报告-旧版只读')
+      // 取消修复：先确认，确认后弹窗关掉，对话里记一行「你取消了…」，不再等确认
+      await dlg.getByRole('radio', { name: '第 2 版' }).click()
+      await settle(p)
+      const cancel = dlg.getByRole('button', { name: '取消修复' })
+      if (!(await cancel.count())) errors.push('诊断报告：最新一版没有「取消修复」')
+      else {
+        await cancel.click()
+        const ask = p.getByRole('dialog', { name: '取消这次修复？' })
+        await ask.waitFor({ timeout: 5000 }).catch(() => errors.push('诊断报告：点「取消修复」没有先弹确认框'))
+        await check(p, '诊断报告-取消修复确认')
+        await ask.getByRole('button', { name: '不修了' }).click()
+        await childView(p)
+          .getByText('你取消了诊断报告第 2 版', { exact: false })
+          .waitFor({ timeout: 10000 })
+          .catch(() => errors.push('诊断报告：取消后对话里没有「你取消了诊断报告第 2 版」那一行'))
+        if (await p.getByRole('button', { name: '确认方案，开始修' }).count())
+          errors.push('诊断报告：取消后审阅弹窗还开着')
+        if (await childView(p).getByText('等你查看报告').count())
+          errors.push('诊断报告：取消后交报告那一行还写着「等你查看报告」')
+      }
       await p.keyboard.press('Escape')
     }
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
