@@ -2,6 +2,7 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Agent, Project, Task } from '../../shared/schema.ts'
 import type { AgentCall } from '../../shared/engine.ts'
+import { traceCli } from '../exec/cli-trace.ts'
 import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts, HookToolScope } from '../../shared/hooks.ts'
 import {
   BUILTIN_HOOKS,
@@ -347,6 +348,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
           }
           if (d.block && d.reason) {
             c.mark(d.reason)
+            // 拦住后 CLI 马上带着说明发下一次请求：首包从这里算（cli-trace），不然只算出零点几秒
+            traceCli(c.task.id, c.call.step?.id ?? '', { type: 'sent' })
             if (d.why !== 'user-hook' && d.why !== 'verify')
               noteBuiltin('keep-going', 'turn.beforeEnd', 'block', d.reason)
           }
