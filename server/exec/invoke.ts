@@ -24,6 +24,7 @@ import { rm, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { CACHE_DIR } from '../store.ts'
 import { expandHome } from '../cli-extras.ts'
+import { HOOK_URL_ENV, hookInstall, type BeforeEndDecision, type BeforeEndInput } from '../../shared/hooks.ts'
 
 /** 这一轮面板自己的临时目录（绝对路径）：放 CLI 要加载的桥接脚本等，用完删掉 */
 export const scratchDir = () => path.join(CACHE_DIR, 'cli-run', randomUUID().slice(0, 12))
@@ -125,6 +126,11 @@ export async function invokeCli(o: {
   owner?: TrackedOwner
   /** CLI 取了面板的工具清单（字数）：会话栏的上下文细分用 */
   onTools?: (listed: { name: string; chars: number }[], deferred: { name: string; chars: number }[]) => void
+  /**
+   * 结束前钩子（ADR 0049）：模型准备结束这一轮时问一次，拦住就在同一轮里接着做。
+   * CLI 定义里写了 hooks.beforeEnd、这一轮挂了编排工具时才装；不给时照旧只靠一轮结束后的提醒
+   */
+  beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
 }): Promise<ProcessResult> {
   // 模型请求轨迹（见 cli-trace.ts）：每个事件先记一笔再交给调用方，状态诊断按它说清「等待模型」卡在哪
   o = { ...o, onEvent: tracedEvents(o.owner?.taskId ?? '', o.owner?.step, o.onEvent) }
@@ -181,6 +187,8 @@ export async function invokeCli(o: {
   let bridge: ReturnType<typeof openAskBridge> | undefined
   let slot: ReturnType<typeof claimPanelName> | undefined
   let run = { ...o, build, env }
+  // 结束前钩子只给挂了编排工具的调用（对话、子任务、节点）：压缩、审查这类操作只挂提问工具，不该被拦住
+  const hookSpec = o.orch && o.beforeEnd ? def.hooks?.beforeEnd : undefined
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
   let input = o.input
   const askable = !!o.askUser && !o.noAskTool
@@ -203,7 +211,16 @@ export async function invokeCli(o: {
       ...(o.orch ? { orch: o.orch } : {}),
       ...(o.orch && o.app ? { app: o.app } : {}),
       ...(o.onTools ? { onTools: o.onTools } : {}),
+      ...(hookSpec && o.beforeEnd
+        ? {
+            beforeEnd: o.beforeEnd,
+            hookBlock: hookSpec.via === 'command' ? hookSpec.block : undefined,
+            hookDrop: hookSpec.dropInput,
+          }
+        : {}),
     })
+    // 钩子命令、Command Code 的 mod 从环境变量取转发地址（Pi 的扩展用 {url}/hook）
+    if (hookSpec) run = { ...run, env: { ...run.env, [HOOK_URL_ENV]: `${bridge.url}/hook` } }
     // 写配置文件接 MCP 的 CLI（Command Code、Pi）：同一个目录里平时只有一项 agent-panel，
     // 同时在跑的另几轮才带后缀，不然后写的会把先写的那一项冲掉（见 panel-mcp-files.ts）。用参数传的保持固定的名字
     const fileBased = Object.keys(def.mcp.files ?? {}).length > 0
@@ -234,9 +251,11 @@ export async function invokeCli(o: {
     // 按设置里的开关才注入的扩展（Pi 的联网搜索）用面板自己的那一项填地址：
     // 用户自己配的 MCP 服务器没有这个端点
     const extras = mcpExtras(def.mcp!, servers[0]!.name, servers[0]!.url, dir, build.options)
+    // 钩子是一条命令的 CLI（Claude Code）：转发脚本和钩子配置也放进这一轮的临时目录
+    const hooks = hookSpec && bridge ? hookInstall(hookSpec, dir) : { args: [], files: [] }
     // 几个工具写进同一个配置文件时先合在一起，一次写进去
     const files = new Map<string, unknown>()
-    for (const f of [...tools.flatMap((x) => x.files), ...extras.files])
+    for (const f of [...tools.flatMap((x) => x.files), ...extras.files, ...hooks.files])
       files.set(
         f.path,
         files.has(f.path) && typeof f.content !== 'string' ? merge(files.get(f.path), f.content) : f.content,
@@ -248,9 +267,13 @@ export async function invokeCli(o: {
         o.cwd,
         [...files].map(([p, content]) => ({ path: p, content })),
       )
+      // 接着 run 往下改（不从 o 重来）：o 里没有上面按思考强度补的环境变量和钩子的转发地址
       run = {
-        ...o,
-        build: { ...build, extraArgs: [...(build.extraArgs ?? []), ...tools.flatMap((x) => x.args), ...extras.args] },
+        ...run,
+        build: {
+          ...build,
+          extraArgs: [...(build.extraArgs ?? []), ...tools.flatMap((x) => x.args), ...extras.args, ...hooks.args],
+        },
         input,
       }
     } catch (e) {

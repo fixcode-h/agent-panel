@@ -9,6 +9,8 @@ import type { AgentCall, AgentResult, EngineHost } from './engine.ts'
 import type { TaskStep } from './schema.ts'
 import { t } from './i18n.ts'
 import { CHILD_RESTART_MAX } from './stuck-child.ts'
+import { allowEnd, type BeforeEndDecision } from './hooks.ts'
+import { VERDICT_ASK, verdictOf } from './submitted.ts'
 
 /** 补问那一句（发给 Agent，不翻译） */
 export const RESULT_ASK =
@@ -38,7 +40,9 @@ export async function runWithSummary(
   /** false：评审这类用 submit_verdict 交结论的子任务，不要求 submit_result */
   check = true,
 ): Promise<AgentResult> {
-  call = { ...call, stallRetry: true }
+  // 结束前钩子（ADR 0049）：没交结果 / 结论就在同一轮里拦一次，交给它的就是一轮结束后补问的那一句，
+  // 支持钩子的 CLI 不用再开一轮补问；不支持的照旧走下面的补问
+  call = { ...call, stallRetry: true, beforeEnd: submitGate(step, check ? 'result' : 'verdict', call.signal) }
   const r = await runStalled(host, step, call, system).finally(ran)
   if (!check || !r.ok || call.signal?.aborted || resultOf(step)) return r
   const again = await runStalled(host, step, { ...call, prompt: RESULT_ASK, fresh: undefined }, system)
@@ -46,6 +50,20 @@ export async function runWithSummary(
   if (!resultOf(step))
     system(host, t('子任务补问了一次还是没有用 submit_result 交结果，做没做完不确定'), step.id, false)
   return { ok: true, text: [r.text, again.text].filter(Boolean).join('\n\n') }
+}
+
+/**
+ * 子任务的结束前判断：看这一步交没交 submit_result（评审看 submit_verdict），只拦一次。
+ * 被单独终止的、已经交了的放行；不读回复文字
+ */
+export function submitGate(step: TaskStep, need: 'result' | 'verdict', signal?: AbortSignal) {
+  let asked = 0
+  return async (): Promise<BeforeEndDecision> => {
+    if (signal?.aborted) return allowEnd('stopped')
+    if (need === 'result' ? resultOf(step) : verdictOf(step)) return allowEnd('submitted')
+    if (asked++) return allowEnd('asked')
+    return { block: true, reason: need === 'result' ? RESULT_ASK : VERDICT_ASK, why: `no-${need}` }
+  }
 }
 
 /** 卡住重试时交给子任务的那句（发给 Agent，不翻译） */

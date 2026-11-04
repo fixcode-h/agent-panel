@@ -359,6 +359,35 @@
     "vars": {},
     "extras": []
   },
+  "hooks": {
+    "beforeEnd": {
+      "via": "command",
+      "args": ["--settings", "{dir}/agent-panel-hooks.json"],
+      "files": {
+        "{dir}/agent-panel-hooks.json": {
+          "hooks": {
+            "Stop": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "node \"{hookScript}\"",
+                    "timeout": 15
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "block": {
+        "decision": "block",
+        "reason": "{reason}"
+      },
+      "dropInput": ["last_assistant_message"],
+      "why": "Stop 钩子返回 decision=block 时 Claude Code 不结束这一轮，把 reason 交给模型接着做（2.1.318 实测）。设置走 --settings 传文件，不改用户的 ~/.claude/settings.json；文件不放参数里，Windows 上 cmd 会把 JSON 里的引号转坏"
+    }
+  },
   "mcpStore": {
     "file": "${CLAUDE_CONFIG_DIR:-~}/.claude.json",
     "format": "json",

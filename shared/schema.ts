@@ -22,6 +22,7 @@ import type { ProjectProposal } from './project-init.ts'
 import { AskQuestion, TaskRequest } from './task-request.ts'
 import { TaskFlow, WorkflowKind } from './task-flow-schema.ts'
 import { BugCase, Diagnosis } from './bug-diagnosis-schema.ts'
+import { PanelKind } from './panel-kind.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -1399,14 +1400,8 @@ export const TaskMessage = z.object({
   bugReport: z.number().int().optional(), // Bug 诊断报告第几版（ADR 0045）：对话里画成可点开报告的一行
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
-  /**
-   * 面板推回给 CLI 的消息（后台命令结果、合并编译结果、计划催促、子任务结果）：不是用户说的话，
-   * 对话里显示成 AI 回复里的一行，点开看全文。child 是子对话交回父对话的回报：
-   * 只交给父对话的 AI，界面上不显示（子对话自己的状态图标已经说明做完了，汇报在子对话自己的对话里看）。
-   * ask 是子对话请父对话决定的问题：父对话里显示成一张可以直接回答的卡片；
-   * note 是执行中用户改设置这类说明，画成回复里的一行，不把回复截成两段
-   */
-  panel: z.enum(['background', 'build', 'nudge', 'helpers', 'child', 'ask', 'note', 'wrapup']).optional(),
+  /** 面板推回的消息和父子对话之间的往来是哪一种（见 shared/panel-kind.ts）；用户、Agent 说的话没有 */
+  panel: PanelKind.optional(),
   /**
    * panel 为 child / wrapup 时：是哪个子对话、上报时它处在哪个状态（见 shared/task.ts 的 ConvState）。
    * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示

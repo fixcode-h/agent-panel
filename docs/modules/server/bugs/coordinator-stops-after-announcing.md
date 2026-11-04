@@ -1,6 +1,6 @@
 # 协调器说完下一步就停住，面板第三次没再推
 
-- 状态：分析中（未修复；分析依据是用户导出的两个对话：`更新到最新版本`、子对话 `修复 Pi models.json 写入校验`，面板 v0.28.2439，Claude Code + `deepseek-v4.1-flash`，强度 high）
+- 状态：已修复（Claude Code、Pi、Command Code 改用结束前钩子在同一轮里拦住，见 ADR 0049；e2e `03-chat` 两条「结束前钩子」、`09-subagent-runtime`「结束前钩子在同一轮里拦满 3 次」、`shared/hooks.test.ts` 通过；Codex 仍靠一轮结束后的提醒，门槛改成按这条输入累计。分析依据是用户导出的两个对话：`更新到最新版本`、子对话 `修复 Pi models.json 写入校验`，面板 v0.28.2439，Claude Code + `deepseek-v4.1-flash`，强度 high）
 - 症状：项目对话里，协调器做着做着回一句「我看一下 lock 里的标记，然后补装。」「我直接跑一下 Pi 的模型列表，同时查面板里这条 API 配置的 provider 字段。」就结束这一轮，没有调用工具；前两次面板发了「收尾自检」把它推起来，第三次没推，对话停在「等你回复」，看上去不知道接下来要做什么
 - 入口：`server/tasks/run.ts` 的 `onTurnEnd` → `server/tasks/drive.ts` 的 `nudgePlan` → `nudgeNoPlan`；`server/exec/turn-info.ts` 的 `turnInfo`（`acts` 的算法）；`shared/turn-rules.ts` 的「回合怎么推进」
 - 根因类型：Claude Code 把 end_turn 当「做完了」，`deepseek-v4.1-flash` 写说明时约 14% 会在没生成工具调用时就 end_turn；面板只能在这一轮结束后另发提醒补救（有计划时必然看到提醒），没计划时兜底门槛按「这一轮」算又有漏洞
@@ -148,3 +148,11 @@ Claude Code 走 Stop 钩子以后，这几条只对其他 CLI 起作用。建议
 ## 附：Pi 报错（这个对话原本在查的问题，没查完）
 
 协调器停下前已经发现：Pi 的 `~/.pi/agent/models.json` 里同时有 `opendesign`（小写，`openai-completions`）和 `OpenDesign`（大写，`anthropic-messages`）两个 provider，Pi 报 `Model "OpenDesign/deepseek-v4.1-flash" not found`。还没确认大写那条是从哪里写进去的、Pi 为什么认不出它。这是另一个问题，要查可以单独开。
+
+## 修复
+
+- 结束前钩子（ADR 0049）：模型准备结束这一轮时 CLI 先问面板（`server/tasks/before-end.ts`），计划没做完、子对话请求收尾没处理、没列计划却做了一半时拦住，在同一轮里接着做；对话里只留一行「面板让它接着做」。
+  - Claude Code 用 `--settings` 传 Stop 钩子；Pi 在桥接扩展里处理 `agent_before_settle`；Command Code 在 mod 里加 `onStop`。
+- 判断和一轮结束后的提醒是同一套、同一个账本（`DriveBudget`）：钩子拦满放行后，兜底照常留警告、上报父对话。
+- 没列计划时门槛按「这条输入以来」累计（读文件 / 搜索每 3 次折算 1 次），自检过以后从那次之后数：本文前半段的「第三次没推」修掉了，Codex 的兜底提醒同样受益。
+- 子任务没交 `submit_result` / `submit_verdict` 也在同一轮里拦一次（`shared/helper-summary.ts` 的 `submitGate`）。

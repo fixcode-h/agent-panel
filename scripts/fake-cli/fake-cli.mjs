@@ -11,7 +11,7 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { crc32, deflateSync } from 'node:zlib'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { wrapRequestIds } from './wrap-request.mjs'
 import { cliOutputFile } from './outputs.mjs'
 
@@ -128,6 +128,60 @@ function skipWrapOnce(ids) {
       JSON.stringify({ kind, id, via: 'skipped', at: Date.now() }) + '\n',
     )
   return true
+}
+/**
+ * 结束前钩子（ADR 0049）：真的 Claude Code 在模型准备结束这一轮时跑 --settings 里的 Stop 钩子命令，
+ * 输出 decision=block 就把 reason 交给模型、在同一轮里接着做。假 CLI 只在输入带 HOOK_MODE 时照做，
+ * 别的用例照旧走面板一轮结束后的提醒（那条兜底还在，见 server/tasks/drive.ts）。
+ * 返回拦住时的 reason；没拦、没配钩子返回 null。每次跑都记进 <FAKE_CLI_LOG>.hook，用例据此数钩子问了几次
+ */
+function claudeStopHook(active) {
+  const at = args.indexOf('--settings')
+  if (at < 0) return null
+  let cmd
+  try {
+    cmd = JSON.parse(readFileSync(args[at + 1], 'utf8')).hooks?.Stop?.[0]?.hooks?.[0]?.command
+  } catch {
+    return null
+  }
+  if (!cmd) return null
+  const r = spawnSync(cmd, {
+    shell: true,
+    encoding: 'utf8',
+    timeout: 15000,
+    // 照真的 Claude Code 带上回复文字：转发脚本应当把它丢掉，面板不读
+    input: JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: active, last_assistant_message: 'FAKE_TEXT' }),
+  })
+  let reason = null
+  try {
+    const o = JSON.parse(r.stdout || '{}')
+    if (o.decision === 'block') reason = String(o.reason ?? '')
+  } catch {}
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(
+      process.env.FAKE_CLI_LOG + '.hook',
+      JSON.stringify({ active, block: reason !== null, reason }) + '\n',
+    )
+  return reason
+}
+/**
+ * 被钩子拦住后接着做：像真的 Claude Code 一样把 reason 作为一条 user 消息交给模型（面板不把它画成用户消息），
+ * 按 reason 算这一轮的下一句回复；再结束时又跑一次钩子（stop_hook_active=true），直到放行。返回最后一句回复
+ */
+function claudeHookLoop(reply) {
+  let last = reply
+  for (let n = 0; n < 5; n++) {
+    const reason = claudeStopHook(n > 0)
+    if (reason === null) return last
+    out({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: `Stop hook feedback:\n${reason}` }] },
+    })
+    input = reason
+    last = turnReply()
+    out({ type: 'assistant', message: { id: `mh${n}`, content: [{ type: 'text', text: last }] } })
+  }
+  return last
 }
 /** 面板推来的收尾提醒（server/tasks/drive.ts 的 nudgeWrapUp）里点名的子对话 */
 const WRAP_NUDGE = /【面板】这些子对话已经请你收尾/
@@ -1205,6 +1259,8 @@ if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind 
 const reply = turnReply()
 // 空回合：这一轮只回一句准备语，连工具都不调（复现「只回一句话就结束」）
 const emptyTurn = input.includes('FAKE_EMPTY') || input.includes('（收尾自检）')
+// HOOK_MODE：照真的 Claude Code 跑结束前钩子（见 claudeStopHook）；在 input 被钩子的说明换掉之前先记下
+const hookMode = input.includes('HOOK_MODE')
 // 一个字都不回、也不报用量的一轮：CLI 报这一轮「成功」，面板什么都没收到。
 // 复现「网关吞掉请求后空成功收尾」——面板要把它报成错误，不能当成已完成并保活。
 const silentTurn = () => input.includes('FAKE_SILENT')
@@ -1710,11 +1766,12 @@ if (kind === 'claude') {
     })
     out({ type: 'assistant', message: { id: 'm1', content: [{ type: 'text', text: reply }] } })
     out({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 20 } } })
+    const final = hookMode ? claudeHookLoop(reply) : reply
     out({
       type: 'result',
       subtype: 'success',
       is_error: false,
-      result: reply,
+      result: final,
       session_id: session,
       total_cost_usd: 0,
       usage: { input_tokens: 10, output_tokens: 20 },
@@ -1891,11 +1948,12 @@ if (kind === 'claude') {
     })
     process.exit(1)
   }
+  const final = hookMode ? claudeHookLoop(reply) : reply
   out({
     type: 'result',
     subtype: 'success',
     is_error: false,
-    result: reply,
+    result: final,
     session_id: session,
     total_cost_usd: 0.0123,
     usage: { input_tokens: 30, cache_read_input_tokens: 25000, cache_creation_input_tokens: 500, output_tokens: 120 },

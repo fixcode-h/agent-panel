@@ -10,6 +10,7 @@ import type { BuildOptions, CliDefinition, ModelTier } from './clis.ts'
 import { getLang, t } from './i18n.ts'
 import { CliAuth } from './accounts.ts'
 import { CliContextBase } from './context-breakdown.ts'
+import { HooksSpec } from './hooks.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
@@ -603,6 +604,8 @@ export const CliSpec = z.object({
    * 不写表示这个 CLI 用不了面板的工具
    */
   mcp: McpSpec.optional(),
+  /** 钩子（ADR 0049）：结束前怎么问面板（见 shared/hooks.ts）；不写表示这个 CLI 只用一轮结束后的提醒兜底 */
+  hooks: HooksSpec.optional(),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
   mcpStore: McpStore.optional(),
   packages: CliPackages.optional(),
@@ -800,6 +803,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
       choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
     })),
     mcp: spec.mcp,
+    hooks: spec.hooks,
     mcpStore: spec.mcpStore,
     packages: spec.packages && {
       ...spec.packages,

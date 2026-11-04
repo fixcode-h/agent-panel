@@ -218,6 +218,12 @@
       }
     }
   },
+  "hooks": {
+    "beforeEnd": {
+      "via": "extension",
+      "why": "写在面板每轮用 --mod 加载的 mod 里：onStop 返回 { continue: true, reason } 时 Command Code 在同一次运行里接着做，reason 作为一条自动的 stop_hook 回合（官方 mods 文档；连续续跑上限 8 次）。不用 settings.json 的 shell 钩子：那要改用户或项目的配置文件"
+    }
+  },
   "auth": {
     "login": ["login"],
     "loginAlreadyLoggedIn": true,

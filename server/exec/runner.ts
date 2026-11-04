@@ -12,6 +12,7 @@ import {
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { makeAlert } from '../../shared/alerts.ts'
+import { hookMarker } from '../../shared/hooks.ts'
 import { addNoteTaker, holdForNextTurn, removeNoteTaker, type NoteTaker } from './delivery.ts'
 
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
@@ -1462,6 +1463,19 @@ async function runAgent(
         : undefined,
     // 只交手动改过的：自动值是面板按模型目录估的，不该写进 CLI 的配置盖掉它自己的
     limits: manual,
+    // 结束前钩子（ADR 0049）：预热只等下一句，不拦。拦住时在这里记一行「面板让它接着做」，之后的输出另起一条
+    beforeEnd:
+      prewarmMode || !call.beforeEnd
+        ? undefined
+        : (i) =>
+            call.beforeEnd!(i).then((d) => {
+              if (d.block && d.reason) {
+                cur = undefined
+                task.messages.push(hookMarker(d.reason, ctx.newId(), agentId, step))
+                ctx.changed(true)
+              }
+              return d
+            }),
   }).finally(() => {
     finished = true
     if (chat) taskLog(task.id, '对话的 CLI 进程结束', { cli: def.name, aborted: ctx.signal.aborted || undefined })

@@ -476,6 +476,8 @@ export function createRun(sc: TasksScope) {
         forwardSpawn: task.parentTaskId ? (spec) => sc.forwardSpawn(entry.task, spec) : undefined,
         // 父对话排着的转交请求：每轮建 Orchestra 时直接派，不依赖 AI 自己想起来调 spawn_agents
         onOrchestra: (orch) => sc.attachOrchestra(task.id, orch),
+        // 结束前钩子（ADR 0049）：模型准备结束这一轮时，计划没做完、收尾请求没处理就在同一轮里拦住
+        beforeEnd: (input) => sc.beforeEnd(task.id, input),
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await sc.worktreeHome(entry.task, found) : undefined,
         // getter：保活中用户在推送授权卡上点了「允许」，下一条消息的提示词和计划就带上推送收尾
