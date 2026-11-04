@@ -6,8 +6,10 @@ import {
   hookFacts,
   hookForwarderSource,
   hookInstall,
+  HOOK_EVENTS_ENV,
   HOOK_SCRIPT,
   HOOK_SCRIPT_ENV,
+  supportedEvents,
   HOOK_URL_ENV,
 } from './hooks.ts'
 import { getCli } from './clis.ts'
@@ -119,4 +121,30 @@ test('Codex 用 shell 跑 apply_patch 也算改文件，文件路径从补丁头
   assert.equal(f.tool?.kind, 'edit')
   assert.deepEqual(f.tool?.paths, ['a.txt', 'src/b.ts'])
   assert.equal(hookFacts(spec, { tool_name: 'Bash', tool_input: { command: 'ls' } }).tool?.kind, 'shell')
+})
+
+test('Pi、Command Code 的工具前后和压缩之后写在扩展里：按这一轮的事件清单才问，CLI 定义声明支持，不写转发脚本', () => {
+  for (const id of ['pi', 'commandcode'])
+    assert.deepEqual(supportedEvents(getCli(id)!.hooks).sort(), [
+      'context.restored',
+      'tool.after',
+      'tool.before',
+      'turn.beforeEnd',
+    ])
+  assert.deepEqual(hookInstall(getCli('pi')!.hooks!, '/tmp/x', ['tool.before', 'context.restored']), {
+    args: [],
+    files: [],
+    env: {},
+  })
+  const pi = String(Object.values(getCli('pi')!.mcp!.files)[0])
+  for (const ev of ['tool_call', 'tool_result', 'session_compact']) assert.ok(pi.includes(`'${ev}'`), ev)
+  assert.match(pi, /\{hookEventsEnv\}/)
+  const mod = promptLangModSource()
+  for (const h of ['beforeToolCall', 'afterToolCall', 'compaction_done', 'onTurnStart']) assert.ok(mod.includes(h), h)
+  assert.ok(mod.includes(HOOK_EVENTS_ENV))
+  // Pi 的工具名和参数对照到面板的类别、路径
+  const f = hookFacts(getCli('pi')!.hooks!, { tool_name: 'edit', tool_input: { path: 'src/a.ts' } })
+  assert.deepEqual([f.tool?.kind, f.tool?.path], ['edit', 'src/a.ts'])
+  const c = hookFacts(getCli('commandcode')!.hooks!, { tool_name: 'write_file', tool_input: { file_path: 'b.md' } })
+  assert.deepEqual([c.tool?.kind, c.tool?.path], ['edit', 'b.md'])
 })

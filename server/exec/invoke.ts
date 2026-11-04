@@ -27,6 +27,7 @@ import { expandHome } from '../cli-extras.ts'
 import {
   HOOK_URL_ENV,
   hookInstall,
+  HOOK_EVENTS_ENV,
   supportedEvents,
   type BeforeEndDecision,
   type BeforeEndInput,
@@ -235,7 +236,12 @@ export async function invokeCli(o: {
       ...(hookSpec ? { hook: { spec: hookSpec, beforeEnd: o.beforeEnd, on: o.onHook } } : {}),
     })
     // 钩子命令、Command Code 的 mod 从环境变量取转发地址（Pi 的扩展用 {url}/hook）
-    if (hookSpec) run = { ...run, env: { ...run.env, [HOOK_URL_ENV]: `${bridge.url}/hook` } }
+    // 写在扩展里的钩子（Pi、Command Code）按 HOOK_EVENTS_ENV 决定问哪些事件
+    if (hookSpec)
+      run = {
+        ...run,
+        env: { ...run.env, [HOOK_URL_ENV]: `${bridge.url}/hook`, [HOOK_EVENTS_ENV]: hookActive.join(',') },
+      }
     // 写配置文件接 MCP 的 CLI（Command Code、Pi）：同一个目录里平时只有一项 agent-panel，
     // 同时在跑的另几轮才带后缀，不然后写的会把先写的那一项冲掉（见 panel-mcp-files.ts）。用参数传的保持固定的名字
     const fileBased = Object.keys(def.mcp.files ?? {}).length > 0

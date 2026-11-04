@@ -33,7 +33,11 @@ export const BeforeEndSpec = z.object({
 })
 export type BeforeEndSpec = z.infer<typeof BeforeEndSpec>
 
-/** 工具前、工具后、上下文恢复：都是一条命令的钩子（Claude Code、Codex），files 是要合进钩子配置的那一段，args 是要加的参数 */
+/**
+ * 工具前、工具后、上下文恢复。命令类（Claude Code、Codex）：files 是要合进钩子配置的那一段，args 是要加的参数，
+ * deny / context 是 CLI 要的输出模板。写在扩展里的（Pi、Command Code）不写 files / args，deny / context 写成 "{reason}" / "{text}"，
+ * 只表示这个 CLI 能拒绝、能补说明；扩展自己读面板回的 deny / reason / context
+ */
 export const EventSpec = z.object({
   files: z.record(z.string(), z.unknown()).default({}),
   args: z.array(z.string()).default([]),
@@ -117,6 +121,12 @@ export const HOOK_URL_ENV = 'AGENT_PANEL_HOOK_URL'
  */
 export const HOOK_SCRIPT_ENV = 'AGENT_PANEL_HOOK_SCRIPT'
 
+/**
+ * 这一轮装了哪些事件（逗号分隔）：钩子写在扩展里的 CLI（Pi 的桥接扩展、Command Code 的 mod）每轮装的是同一份代码，
+ * 按它决定问不问面板，没人用的工具前 / 工具后不必每次工具调用都多问一次
+ */
+export const HOOK_EVENTS_ENV = 'AGENT_PANEL_HOOK_EVENTS'
+
 /** Pi 扩展续跑时追加的那条消息的类型：面板的输出解析按它认出来，不画成用户消息 */
 export const HOOK_CONTINUE_TYPE = 'agent-panel-continue'
 
@@ -176,8 +186,11 @@ export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[
           : v
   const parts: { files: Record<string, unknown>; args: string[] }[] = []
   if (active.includes('turn.beforeEnd') && spec.beforeEnd?.via === 'command') parts.push(spec.beforeEnd)
-  for (const ev of ['tool.before', 'tool.after', 'context.restored'] as const)
-    if (active.includes(ev) && spec.events[ev]) parts.push(spec.events[ev]!)
+  // 写在扩展里的事件（Pi、Command Code）既没有文件也没有参数：不算命令类，不写转发脚本
+  for (const ev of ['tool.before', 'tool.after', 'context.restored'] as const) {
+    const e = spec.events[ev]
+    if (active.includes(ev) && e && (e.args.length || Object.keys(e.files).length)) parts.push(e)
+  }
   if (!parts.length)
     return {
       args: [] as string[],
