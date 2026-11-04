@@ -16,7 +16,16 @@ import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
 import { settleWait } from '../../shared/plan.ts'
 import { kidsSkipNote, rearmKidWait, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
-import { closeFlow, dropEndNotes, newTask, taskDeleted, withAttachments, withTaskModel } from '../../shared/task.ts'
+import {
+  closeFlow,
+  diagnosisPending,
+  dropEndNotes,
+  newTask,
+  taskDeleted,
+  withAttachments,
+  withTaskModel,
+} from '../../shared/task.ts'
+import { rewaitDiagnosis } from '../../shared/task-settle.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
@@ -448,6 +457,15 @@ export function registerConversationRoutes(s: TasksScope) {
         s.release(entry)
         return s.bad(c, t('只有失败或停止的任务可以继续'), 409)
       }
+      // 诊断报告还在等用户确认（ADR 0045）：继续就是回到等确认这一步，不拉起 CLI 让它自己往下跑；
+      // 用户确认或提意见后，审阅弹窗发的消息才拉起它（用户 2026-11-04 要求）
+      if (task.mode === 'chat' && diagnosisPending(task)) {
+        const saved = await s.store.update(id, rewaitDiagnosis(entry.task))
+        s.release(entry)
+        if (task.parentTaskId) await rearmInParent(task.parentTaskId, id)
+        taskLog(id, '继续：诊断报告还在等确认，回到等确认')
+        return c.json(saved ?? task)
+      }
       // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
       const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }
       let fresh: Workflow | undefined
@@ -562,9 +580,23 @@ export function registerConversationRoutes(s: TasksScope) {
         k.status === 'stopped' &&
         !s.live.has(k.id),
     )
-    const sorted = sortStoppedKids(parent, stopped)
+    // 诊断报告在等用户确认的子对话（ADR 0045）：回到等确认，不拉起 CLI；用户亲手停的也一样，它等的本来就是用户
+    const notes: string[] = []
+    for (const meta of stopped.filter((k) => diagnosisPending(k))) {
+      const kid = await s.store.get(meta.id)
+      if (!kid || s.live.has(kid.id)) continue
+      await s.store.update(kid.id, rewaitDiagnosis(kid))
+      if (rearmKidWait(parent, kid.id)) taskLog(parentId, '子对话的诊断报告还在等确认，计划恢复等它', { kid: kid.id })
+      notes.push(
+        `子对话「${kid.title}」（${kid.id}）的诊断报告还在等用户确认，没有拉起它：用户确认或提意见后它会自己接着做，不要另派子对话重做。`,
+      )
+    }
+    const sorted = sortStoppedKids(
+      parent,
+      stopped.filter((k) => !diagnosisPending(k)),
+    )
     const kids = sorted.resume
-    const notes = kidsSkipNote(sorted.userStopped, sorted.skipped)
+    notes.push(...kidsSkipNote(sorted.userStopped, sorted.skipped))
     const agents = await s.deps.agents.list()
     const titles: string[] = []
     const failed: KidFailure[] = []

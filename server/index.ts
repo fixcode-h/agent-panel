@@ -89,6 +89,7 @@ import { modelsApi } from './models.ts'
 import { modelCatalogApi } from './model-catalog.ts'
 import { getLimits, isSharedSkill, listSkills } from './cli-extras.ts'
 import { packagesApi } from './cli-packages.ts'
+import { trustApi } from './cli-trust-api.ts'
 import { interruptedApi } from './interrupted.ts'
 import { autoResumeAfterRestart } from './restart-interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
@@ -495,6 +496,7 @@ app.route('/library', libraryApi())
 app.route('/mcp-tools', mcpApi())
 // 项目设置里的 MCP：项目目录里识别到的配置，项目目录按 projectId 现取
 app.route('/project-mcp', projectMcpApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
+app.route('/project-trust', trustApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
 app.route('/clis', installApi())
 app.route('/local-image', comfyApi())
 app.route('/speech', speechApi())
