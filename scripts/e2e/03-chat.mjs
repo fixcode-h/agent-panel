@@ -1015,6 +1015,14 @@ ${prompt}
     step('审查改动：Codex 用审查模式，其他 CLI 按审查的要求跑一轮')
 
     // ---- 分叉、撤回 ----
+    // 先看各家 CLI 自己的分叉：项目关掉「新建对话默认开独立分支」，分叉出来的还在同一个目录，会话能原样分叉
+    const {
+      id: _pid,
+      createdAt: _pc,
+      updatedAt: _pu,
+      ...projectBody
+    } = (await call('GET', '/projects')).find((x) => x.id === project.id)
+    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateNew: false })
     let f = await chatWith({ cli: 'claude' }, '第一问')
     f = await waitDone(f.id)
     await call('POST', `/tasks/${f.id}/messages`, { text: '第二问' })
@@ -1077,6 +1085,19 @@ ${prompt}
     step(
       '对话分叉、撤回：Claude Code 用 --resume-session-at，Codex 用 thread/fork，Command Code 截不了时带上之前的对话',
     )
+
+    // 默认开独立分支（isolateNew）时，分叉出来的对话自己开一个分支，不和原对话改同一个目录；
+    // 换了目录 Codex 的会话接不上，就开新会话把留下的对话带过去
+    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateNew: true })
+    const iso = await call('POST', `/tasks/${g.id}/fork`, { messageId: gu.id })
+    assert.equal(iso.worktree?.state, 'active', '分叉出来的顶层对话开了自己的独立分支')
+    assert.notEqual(iso.worktree.path, project.path)
+    await call('POST', `/tasks/${iso.id}/messages`, { text: '分叉到分支后' })
+    await waitDone(iso.id)
+    c = calls().at(-1)
+    assert.equal(c.cwd, iso.worktree.path, '在分叉出来的分支目录里执行')
+    assert.ok(c.input.includes('问 codex'), '换了目录接不上原会话：把留下的对话带过去')
+    step('分叉的对话默认开自己的独立分支，换了目录时把之前的对话带过去')
 
     // ---- 自动压缩阈值：Claude Code 用环境变量，Codex 换算成 token 数 ----
     await call('PUT', '/settings', {

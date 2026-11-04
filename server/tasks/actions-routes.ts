@@ -10,6 +10,7 @@ import { childAskEffect } from '../../shared/child-ask.ts'
 import { NO_PUSH_ANSWER, pushAnswerCut } from '../../shared/push-auth.ts'
 import { getSettings } from '../settings.ts'
 import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
+import { createWorktree } from '../exec/worktree.ts'
 import { answerRequest, dropRequests } from '../exec/requests.ts'
 import { cancelWait, forgetNotes } from '../exec/steering.ts'
 import { convChanges } from '../../shared/conv-changes.ts'
@@ -368,6 +369,25 @@ export function registerActionRoutes(s: TasksScope) {
     return c.json({ task: updated, text: removed.text, attachments: removed.attachments ?? [] })
   })
 
+  /**
+   * 分叉出来的顶层对话在哪个目录做：以前一律回到项目目录，和原对话（或同项目别的对话）改同一个目录会互相覆盖。
+   * 原对话在独立分支里：从它的分支再开一个（看得到它已经提交的改动，合回原对话合回的那个分支；没提交的改动不带）；
+   * 没开的按项目设置的默认（isolateNew）决定开不开。开不了（不是 git 仓库、没有提交）就照旧在项目目录里做
+   */
+  async function forkWorktree(task: Task, id: string, title: string) {
+    if (!task.projectId || task.parentTaskId) return null
+    const project = await s.deps.projects.get(task.projectId)
+    const from = task.worktree?.state === 'active' ? task.worktree : null
+    if (!project || (!from && !project.isolateNew)) return null
+    try {
+      const wt = await createWorktree(from?.path ?? project.path, id, title)
+      return from ? { ...wt, baseBranch: from.baseBranch } : wt
+    } catch (e) {
+      log.info('task', '分叉的对话开不了独立分支，在项目目录里做', { task: id, error: (e as Error).message })
+      return null
+    }
+  }
+
   // 从某条消息分叉：新建一个对话，带着到这条消息为止的对话（含它的回复），原对话不动
   s.routes.post('/:id/fork', async (c) => {
     const task = await idleTask(c)
@@ -383,9 +403,12 @@ export function registerActionRoutes(s: TasksScope) {
     const agents = Object.fromEntries(
       Object.entries(task.usage.agents).map(([k, v]) => [k, { ...v, tps: 0, lastTps: 0, outputTokens: 0, genMs: 0 }]),
     )
+    const title = t('{title}（分叉）', { title: task.title }).slice(0, 80)
+    const id = randomUUID()
     const forked = await s.store.create({
       ...rest,
-      title: t('{title}（分叉）', { title: task.title }).slice(0, 80),
+      id,
+      title,
       autoTitle: false,
       // 消息 id 换新的，免得两个任务里的消息 id 相同
       messages: kept.map((m) => ({ ...m, id: randomUUID() })),
@@ -396,7 +419,7 @@ export function registerActionRoutes(s: TasksScope) {
       runStartedAt: '',
       requests: [],
       todos: [],
-      worktree: null,
+      worktree: await forkWorktree(task, id, title),
       archived: undefined,
       // 推送授权只对点它的那个对话有效：分叉出来的是新对话，需要推送时重新问一次
       ...NO_PUSH_ANSWER,
