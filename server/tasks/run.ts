@@ -1,3 +1,4 @@
+import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
 import {
@@ -580,6 +581,8 @@ export function createRun(sc: TasksScope) {
         branch: coordinatorRole && dir ? await currentBranch(dir).catch(() => '') : undefined,
         // 这一轮的 CLI 自带待办会不会被面板显示：Chat 模式的提示词据此决定怎么说计划（CLI 定义的 todos）
         cliTodos: !!startedRun && !!getCli(startedRun.cli)?.todos,
+        // Chat 页的对话：「关于我」和跨对话记忆进提示词，remember 工具往里记（server/chat-memory.ts）
+        chatMemory: isChatMode(task) ? await chatMemoryFor() : undefined,
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
           task.mode === 'chat' && dir

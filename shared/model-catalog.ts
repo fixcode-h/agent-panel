@@ -48,6 +48,18 @@ export const ModelCatalogEntry = z.object({
   aliases: z.array(z.string().trim().min(1)).default([]),
   /** 信息来源（官方文档地址）；内置目录里没有，AI 补全的会写上 */
   source: z.string().trim().default(''),
+  /**
+   * API 单价（美元 / 百万 token），用户在模型目录里填（设计报告 Agent P1-4）：Codex、Command Code 不报费用，
+   * 按它把 token 折成费用，项目「按费用的用量上限」才对它们起作用。不内置价格：官方价会变，写错了比空着更糟
+   */
+  price: z
+    .object({
+      input: z.number().min(0),
+      output: z.number().min(0),
+      cacheRead: z.number().min(0).default(0),
+      cacheWrite: z.number().min(0).default(0),
+    })
+    .optional(),
 })
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntry>
 

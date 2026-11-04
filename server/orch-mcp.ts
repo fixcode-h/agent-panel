@@ -24,6 +24,7 @@ import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-e
 import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
 import { callStartWorkflow } from './start-workflow-tool.ts'
 import { BUG_CASE_TOOL, callBugCase, callDiagnosis, DIAGNOSIS_TOOL } from './diagnosis-tool.ts'
+import { callMemory, MEMORY_TOOL } from './memory-tool.ts'
 // 用法说明搬到了单独的文件（这个文件到了行数上限），调用方照旧从这里取
 export { orchHint } from './orch-hint.ts'
 
@@ -672,6 +673,7 @@ export function orchTools(o: Orchestra) {
       : []),
     ...(o.askPush ? [ASK_PUSH_TOOL] : []),
     ...(o.diagnose ? [DIAGNOSIS_TOOL, BUG_CASE_TOOL] : []),
+    ...(o.remember ? [MEMORY_TOOL] : []),
     ...(o.lessons
       ? [
           {
@@ -895,6 +897,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       return text('子对话不再启动工作流：工作流由父对话用 start_workflow 启动，按派给你的事直接做', true)
     case 'submit_diagnosis':
       return callDiagnosis(o, a)
+    case 'remember':
+      return callMemory(o, a)
     case 'update_bug_case':
       return callBugCase(o, a)
     case 'start_workflow':

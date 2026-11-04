@@ -31,7 +31,9 @@ export function BudgetField({ value, onChange }: { value: ProjectInput['budget']
       </Field>
       <Field
         label={t('费用上限（美元）')}
-        tip={t('按 Agent 报的费用累计，不报费用的 Agent 不计入。0 或留空表示不限。')}
+        tip={t(
+          '按 Agent 报的费用累计；Codex、Command Code 这类不报费用的，在「设置 · Agent」的模型里填了单价才按 token 折算，没填的不计入。0 或留空表示不限。',
+        )}
       >
         <Input
           type="number"

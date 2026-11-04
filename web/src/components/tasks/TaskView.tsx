@@ -2553,7 +2553,11 @@ export function TaskView({
                   data-chat-rail
                   className="panel relative hidden w-[min(420px,40%)] shrink-0 flex-col overflow-hidden xl:flex"
                 >
-                  <ChatRail rail={chatRail} onOpenFile={(path) => setFileTarget({ path, local: true })} />
+                  <ChatRail
+                    rail={chatRail}
+                    taskId={task.id}
+                    onOpenFile={(path) => setFileTarget({ path, local: true })}
+                  />
                 </aside>
               )}
               {/* 右栏：项目文件和本对话改动（或 AI 分析的功能面板）。子对话在这一栏开页签（TaskFiles 的 child），运行在中间开页签。

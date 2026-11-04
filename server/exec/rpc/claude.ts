@@ -152,6 +152,14 @@ export function claudeAsk(name: string, input: any): Omit<Extract<CliEvent, { ty
       questions: qs.length ? qs : undefined,
     }
   }
+  // 只读规划（权限选「只读规划」）做完后的方案：请用户批准再动手。以前落到通用的「使用工具：ExitPlanMode」，
+  // 卡片上是一段 JSON，看不出是在问要不要按方案开始改。批准后 Claude Code 自己切出规划模式；每次都问，不给「一直允许」
+  if (name === 'ExitPlanMode')
+    return {
+      kind: 'tool',
+      title: t('Agent 规划好了，按这个方案开始改？'),
+      detail: str(input.plan),
+    }
   if (name === 'Bash')
     return {
       kind: 'command',

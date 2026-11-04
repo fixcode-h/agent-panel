@@ -31,6 +31,10 @@ export const handleNeedsText = (title: string, needs: string) =>
 
 let seq = 0
 let mermaidLoad: Promise<typeof import('mermaid').default> | undefined
+/** KaTeX 和它的样式表用到公式时才加载（体积不小，大多数回复里没有公式） */
+let katexLoad: Promise<typeof import('katex').default> | undefined
+const loadKatex = () =>
+  (katexLoad ??= Promise.all([import('katex'), import('katex/dist/katex.min.css')]).then(([m]) => m.default))
 let mermaidTheme = ''
 
 /** mermaid 体积大，只在真的遇到图时才加载；主题跟随当前明暗 */
@@ -192,6 +196,31 @@ export function Markdown({
         }
       }
     })()
+    return () => {
+      cancelled = true
+    }
+  }, [html, live])
+
+  // 数学公式：流式输出时先显示原文，停下后懒加载 KaTeX 换成公式（占位见 web/src/lib/md-math.ts）
+  useEffect(() => {
+    const root = ref.current
+    if (!root || live) return
+    const boxes = [...root.querySelectorAll<HTMLElement>('.md-math:not([data-done])')]
+    if (!boxes.length) return
+    let cancelled = false
+    void loadKatex()
+      .then((katex) => {
+        for (const el of boxes) {
+          if (cancelled) return
+          el.dataset.done = '1'
+          // 写错的公式 KaTeX 会标红显示原文（throwOnError: false），不让一个错公式把整段回复弄空
+          katex.render(el.dataset.tex ?? '', el, {
+            displayMode: el.classList.contains('md-math-block'),
+            throwOnError: false,
+          })
+        }
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }

@@ -1913,4 +1913,26 @@ export const EN_SETTINGS: Record<string, string> = {
   面板重启后自动继续被打断的对话: 'Automatically continue interrupted conversations after the panel restarts',
   最匹配: 'Best match',
   '全部模型 · {vendor}': 'All models · {vendor}',
+  '已清掉 {model} 的单价': 'Cleared the price for {model}',
+  '已保存 {model} 的单价': 'Saved the price for {model}',
+  可不填: 'Optional',
+  '单价（美元 / 百万 token）': 'Price (USD per million tokens)',
+  'CLI 不报费用时按它折算，「按费用的用量上限」才对这个模型起作用；没填就是费用未知':
+    "Used to work out the cost when the CLI doesn't report it, so cost-based usage limits apply to this model. Leave it empty and the cost stays unknown",
+  清掉单价: 'Clear price',
+  保存单价: 'Save price',
+  关于我: 'About me',
+  '写下你希望 Agent 一直记得的事：怎么称呼你、回复用什么语言和格式、你常用的技术栈。Chat 页的每个对话都会带上，不用每次重说；项目里的对话不带。':
+    "Write down what you want the agent to always remember: what to call you, which language and format to reply in, the tech stack you use. Every conversation on the Chat page includes it, so you don't have to repeat yourself; project conversations don't.",
+  '例如：叫我小王；回复用中文，先给结论再展开；前端用 React + TypeScript':
+    'e.g. Call me Sam; reply in English, conclusion first; I use React + TypeScript on the front end',
+  '已保存「关于我」': 'Saved "About me"',
+  记忆: 'Memory',
+  'Chat 里 Agent 发现你以后也该记住的偏好时会记一条，之后的 Chat 对话都会带上。记错了就删掉；也可以自己加。':
+    "When the agent on the Chat page notices a preference worth keeping, it notes it here, and later Chat conversations include it. Delete anything that's wrong, or add your own.",
+  删掉这条记忆: 'Delete this memory',
+  还没有记忆: 'No memories yet',
+  '自己加一条，例如：我的电脑是 Windows，命令要能在 PowerShell 里跑':
+    'Add one yourself, e.g. My computer runs Windows, so commands must work in PowerShell',
+  关于我与记忆: 'About me & memory',
 }
