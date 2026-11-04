@@ -19,10 +19,11 @@ import type { Task as TaskT } from '../../shared/schema.ts'
 import type { TasksScope } from './scope.ts'
 
 // 下面这些模块（日志、附件等）加载时会读数据目录：必须在上面的工具包设好 AGENT_PANEL_DATA 之后再加载
-const { Task, TaskStep, PlanStep, TaskPlan } = await import('../../shared/schema.ts')
+const { Task, TaskStep, PlanStep, TaskPlan, TestStep } = await import('../../shared/schema.ts')
 const { createMerge } = await import('./merge.ts')
 const { createClaims } = await import('../claims.ts')
 const { integrateBranch } = await import('../exec/worktree-integrate.ts')
+const { forwardBuildResult } = await import('./build-results.ts')
 
 const REVIEWER = 'a-reviewer'
 const at = '2026-10-31T00:00:00.000Z'
@@ -78,7 +79,15 @@ function rig(repo: string, tasks: TaskT[]) {
       list: async () => [...map.values()],
       update: async (id: string, tk: TaskT) => void map.set(id, tk),
     },
-    background: { list: () => jobs, occupants: () => [] },
+    background: {
+      list: () => jobs,
+      occupants: () => [],
+      // 父对话替子对话申请编译时起的后台命令：只记下来，结果由用例自己交给 forwardBuildResult
+      start: (job: { name: string }) => {
+        jobs.push({ name: job.name, state: 'queued' })
+        return { ok: true, id: `job-${jobs.length}` }
+      },
+    },
     deps: {
       agents: { list: async () => [{ id: REVIEWER, name: '评审', origin: 'builtin:reviewer' }] },
       projects: { get: async () => null },
@@ -112,7 +121,7 @@ function rig(repo: string, tasks: TaskT[]) {
     childUnmerged: async () => false,
     taskDir: async () => repo,
   } as unknown as TasksScope
-  return { m: createMerge(s), map, jobs, woke, toChild, advanced, integrated, claims }
+  return { m: createMerge(s), s, map, jobs, woke, toChild, advanced, integrated, claims }
 }
 
 /** 一个在独立分支里干活的子对话和它的父对话；分支开在真实的临时仓库上 */
@@ -435,4 +444,80 @@ test('共用目录的子对话：改了文件但没请求收尾时不收；请�
   assert.deepEqual(x.integrated, [])
   assert.deepEqual(x.advanced, [kid.id])
   assert.equal(x.map.get(kid.id)!.wrapRequest, undefined)
+})
+
+test('UE 共用目录的子对话（用户 2026-11-04 报）：没拿到这次改动的编译通过不能请求验收；父对话漏写 children 时面板按申请补上，结果推回子对话', async () => {
+  const repo = project()
+  // 编译步骤只管 C++：改了 .cpp 才要编译
+  const ue = TestStep.parse({ id: 'ue', name: '编译', command: 'Build.bat Game Win64 Development', merge: true })
+  const parent = task({ id: 'root', title: '父对话' })
+  const kid = task({
+    id: 'ue-kid',
+    parentTaskId: 'root',
+    title: '改角色移动',
+    steps: [review()],
+    plans: [plan()],
+    testSteps: [ue],
+    changes: [{ path: 'Source/Game/Move.cpp', add: 3, del: 1 }],
+  })
+  const x = rig(repo, [parent, kid])
+  const submit = () => x.m.submitMerge(kid.id, '', '编译通过', true, handoff)
+  // 1. 没申请过编译：面板直接拒（硬约束，不靠提示词）
+  assert.match((await submit()).info, /还没申请过编译/)
+  // 2. 申请了：记在子对话上，父对话收到编译申请；结果出来之前照样拒
+  assert.equal((await x.m.childRequestBuild(x.map.get(kid.id)!, '改了 Move.cpp')).ok, true)
+  assert.equal(x.map.get(kid.id)!.buildAsk?.state, 'asked')
+  assert.match(x.woke.at(-1)!.text, /【编译申请】/)
+  assert.match((await submit()).info, /编译还没出结果/)
+  // 3. 父对话申请编译时漏了 children：面板按「谁申请过还没编」补上
+  const pr = await x.m.parentRequestBuild(parent, { testSteps: [ue], wslDistro: '' } as never, '编 Move.cpp', [])
+  assert.equal(pr.ok, true, pr.info)
+  assert.match(pr.info, /children 没写，面板按申请补上了：「改角色移动」/)
+  assert.equal(x.map.get(kid.id)!.buildAsk?.state, 'building')
+  // 4. 编译跑完：按子对话上的记录推回给它（没在等收尾，照常叫醒它）
+  const tail = await forwardBuildResult(
+    x.s,
+    { id: pr.id!, state: 'done', taskId: 'root' },
+    'UE 编译：编译 跑完了：成功',
+  )
+  assert.equal(tail, '')
+  assert.equal(x.map.get(kid.id)!.buildAsk?.state, 'passed')
+  assert.match(x.toChild.at(-1)!.text, /【父对话编译结果】UE 编译：编译 跑完了：成功/)
+  // 5. 编译通过：能请求验收了（rig 的后台命令表不分对话，把这条编译标成跑完）
+  for (const j of x.jobs) j.state = 'done'
+  const ok = await submit()
+  assert.equal(ok.ok, true, ok.info)
+  // 6. 通过之后又改了 C++：要重新编译
+  const k = x.map.get(kid.id)!
+  k.wrapRequest = undefined
+  k.changes = [{ path: 'Source/Game/Move.cpp', add: 5, del: 1 }]
+  assert.match((await submit()).info, /编译通过之后又改了要编译的文件/)
+})
+
+test('编译通过时子对话已经在等收尾：不叫醒它（叫醒会作废收尾请求），只记一行，并在父对话的结果里点名 finish_child；失败照常退回它修', async () => {
+  const repo = project()
+  const building = (id: string, job: string, over: Record<string, unknown> = {}) =>
+    task({
+      id,
+      parentTaskId: 'root',
+      title: id,
+      buildAsk: { state: 'building', at, sig: 's', jobs: [job] },
+      ...over,
+    })
+  const waiting = building('wait-kid', 'j1', { wrapRequest: { state: 'requested', at } })
+  const broken = building('bad-kid', 'j2', { wrapRequest: { state: 'requested', at } })
+  const x = rig(repo, [task({ id: 'root', title: '父对话' }), waiting, broken])
+  const tail = await forwardBuildResult(x.s, { id: 'j1', state: 'done', taskId: 'root' }, '编译成功')
+  assert.match(
+    tail,
+    /子对话「wait-kid」（id wait-kid）申请的编译通过了，它已经请你收尾、正在等你：.*调用 finish_child（id wait-kid）/,
+  )
+  assert.equal(x.toChild.length, 0, '不叫醒它')
+  const w = x.map.get('wait-kid')!
+  assert.equal(w.wrapRequest?.state, 'requested', '收尾请求还在')
+  assert.match(w.messages.at(-1)!.text, /编译通过：编译成功\n你已经请父对话验收/)
+  // 失败：照常叫醒它去修（它的收尾请求本来就该作废）
+  assert.equal(await forwardBuildResult(x.s, { id: 'j2', state: 'failed', taskId: 'root' }, '编译失败：C2065'), '')
+  assert.equal(x.map.get('bad-kid')!.buildAsk?.state, 'failed')
+  assert.match(x.toChild.at(-1)!.text, /【父对话编译结果】编译失败：C2065/)
 })

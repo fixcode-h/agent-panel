@@ -128,9 +128,27 @@ export async function migrateOnStart(store: Store, claims?: ReturnType<typeof cr
   // 父子两边都卡住。退回「已请求收尾」，并告诉父对话重新 finish_child
   for (const meta of all.filter((x) => x.wrapRequest?.state === 'merging' && !taskDeleted(x)))
     await reopenMerge(store, meta.id, '合回父对话分支时面板重启了')
+  // 父对话替子对话起的 UE 编译：后台命令只在内存里，重启就没了。退回「申请了还没编」（父对话再 request_build 时面板会自动补上它），
+  // 并告诉父对话重新申请，不然子对话一直等一个不会来的结果（见 shared/build-ask.ts）
+  for (const meta of all.filter((x) => x.buildAsk?.state === 'building' && !taskDeleted(x)))
+    await reopenBuild(store, meta.id)
   // 认领只在内存里：还没交出去的共用目录子对话按记录里改过的文件补回（列表里带 changes，不用读全量）
   if (claims) rebuildClaims(claims, await store.list())
   return crashed
+}
+
+/** 编译到一半面板重启：退回「申请了还没编」，在父对话收件箱里留一句让它重新 request_build */
+async function reopenBuild(store: Store, id: string) {
+  const kid = await store.get(id)
+  if (!kid?.buildAsk || kid.buildAsk.state !== 'building') return
+  await store.update(kid.id, { ...kid, buildAsk: { ...kid.buildAsk, state: 'asked', jobs: [] } })
+  const parent = kid.parentTaskId ? await store.get(kid.parentTaskId) : null
+  if (!parent) return
+  const text = `【编译申请】面板重启前替子对话「${kid.title}」（id ${kid.id}）起的编译没跑完，结果没有拿到：重新调用 request_build（children 写 ["${kid.id}"]），结果会推给它。`
+  await store.update(parent.id, {
+    ...parent,
+    inbox: [...parent.inbox, { from: kid.id, title: kid.title, text, at: new Date().toISOString() }],
+  })
 }
 
 /**

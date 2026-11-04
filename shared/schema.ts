@@ -22,6 +22,8 @@ import type { ProjectProposal } from './project-init.ts'
 import { AskQuestion, TaskRequest } from './task-request.ts'
 import { TaskFlow, WorkflowKind } from './task-flow-schema.ts'
 import { BugCase, Diagnosis } from './bug-diagnosis-schema.ts'
+import { WrapRequest } from './wrap-request-schema.ts'
+import { BuildAsk } from './build-ask.ts'
 import { PanelKind } from './panel-kind.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
@@ -1905,26 +1907,9 @@ export const TaskData = z.object({
   parentTaskId: z.string().default(''),
   /** 顶层对话的 id：子对话从哪个项目对话分出来的；顶层对话自己为空 */
   rootTaskId: z.string().default(''),
-  /**
-   * 子对话请父对话收尾的记录（见 ADR 0005）：子对话只剩合回时调用 submit_merge 写 requested，
-   * 父对话 finish_child 合并时是 merging，和原分支冲突、退回子对话时是 failed（info 写原因；父对话目录挡路时留 requested）。
-   * 收尾做完（resolved）或者子对话又开始干活时清掉
-   */
-  wrapRequest: z
-    .object({
-      /**
-       * testing：已经合回，父对话在跑勾了「禁止子对话执行」的测试步骤（见 ADR 0018）；
-       * test-failed：已经合回、父对话测试没通过，正在退回给子对话修（和「没合进去」的 failed 是两回事）
-       */
-      state: z.enum(['requested', 'merging', 'failed', 'testing', 'test-failed']),
-      at: z.string(),
-      note: z.string().default(''),
-      tests: z.string().default(''),
-      /** UE 项目：合回去后父对话要接着编译（独立分支里编不了 UE，见 ADR 0004） */
-      build: z.boolean().optional(),
-      info: z.string().default(''),
-    })
-    .optional(),
+  /** 子对话请父对话收尾的记录（ADR 0005，见 wrap-request-schema.ts） */
+  wrapRequest: WrapRequest.optional(),
+  buildAsk: BuildAsk.optional(), // UE 子对话申请的编译和结果（见 build-ask.ts），结果按它推回子对话
   /**
    * 子对话的交接摘要（见 ADR 0007）：submit_merge 时按模板写的关键信息加上面板补的 git 事实。
    * 完成后再被叫醒、上下文又大时，开新会话只带它，不把上次的工具输出全带进去

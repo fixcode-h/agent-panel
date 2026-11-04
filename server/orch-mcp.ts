@@ -1011,7 +1011,11 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       return text(r.info, !r.ok)
     }
     case 'request_build': {
-      const kids = Array.isArray(a?.children) ? a.children.map(String) : []
+      // 也认旧提示里写错的 child（单个 id）：漏了的话面板还会按「谁申请过」补上（shared/build-ask.ts）
+      const kids = [
+        ...(Array.isArray(a?.children) ? a.children.map(String) : []),
+        ...(a?.child ? [String(a.child)] : []),
+      ]
       const r = await o.requestBuild(str(a?.note), str(a?.step) || undefined, kids)
       return text(r.info, !r.ok)
     }

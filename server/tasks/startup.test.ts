@@ -141,3 +141,22 @@ test('migrateOnStart：对话已经说完、派出的子任务还标着在跑：
   assert.equal(a.requests.length, 0, '回调跟着进程没了的卡片作废')
   assert.match(a.messages.at(-1)!.text, /「使用工具：Read」，已经作废/)
 })
+
+test('migrateOnStart：替子对话起的编译跑到一半面板重启：退回「申请了还没编」，父对话收件箱里留一句重新 request_build', async () => {
+  const store = memStore([
+    task('p'),
+    task('kid', {
+      parentTaskId: 'p',
+      title: '改角色移动',
+      buildAsk: { state: 'building', at, sig: 's', jobs: ['job-1'] },
+    }),
+  ])
+  await migrateOnStart(store, createClaims())
+  const kid = store.map.get('kid')!
+  assert.equal(kid.buildAsk?.state, 'asked', '父对话再 request_build 时面板会自动补上它')
+  assert.deepEqual(kid.buildAsk?.jobs, [])
+  assert.match(
+    store.map.get('p')!.inbox.at(-1)!.text,
+    /替子对话「改角色移动」（id kid）起的编译没跑完.*重新调用 request_build/,
+  )
+})

@@ -109,7 +109,6 @@ export function tasksApi(deps: {
     bad: () => bad,
     beginEdit: () => beginEdit,
     beginInlineEdit: () => beginInlineEdit,
-    buildFor: () => buildFor,
     chatProject: () => chatProject,
     checkBudget: () => checkBudget,
     holdWake: () => holdWake,
@@ -573,15 +572,8 @@ export function tasksApi(deps: {
   const { beginEdit, ensureChildWorktree, mergeLock, recordWorktreeError, restoreWorktree } = createEditWorktree(scope)
   const { noteParent, notePlanInput, sendToChild, trackUserToChild } = createChildMessages(scope)
   const { background, endBackground, withJobs, settling } = createJobs(scope)
-  const {
-    buildFor,
-    parentTestStepsOf,
-    parentTesting,
-    parentTests,
-    startParentTests,
-    recordSelfTestRun,
-    recoverParentTests,
-  } = createTestRuns(scope)
+  const { parentTestStepsOf, parentTesting, parentTests, startParentTests, recordSelfTestRun, recoverParentTests } =
+    createTestRuns(scope)
   const {
     PLAN_NUDGE_MS,
     beginInlineEdit,
