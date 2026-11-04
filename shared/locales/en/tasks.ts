@@ -1771,6 +1771,12 @@ export const EN_TASKS: Record<string, string> = {
   '你提了意见，它在再查': "You raised points; it's checking again",
   '已确认，按这版方案修': 'Approved; fixing per this version',
   '已作废，有更新的一版': 'Superseded by a newer version',
+  '你取消了，这次不修': 'You cancelled; no fix this time',
+  取消修复: 'Cancel fix',
+  '取消这次修复？': 'Cancel this fix?',
+  '不再等你确认方案，这一轮就此结束，计划标记为完成，不会改任何文件。之后在这个对话里发话，它会照你的新话做。':
+    'It stops waiting for your approval, this turn ends, the plan is marked done, and no files are changed. Anything you send in this conversation afterwards, it works on that.',
+  不修了: "Don't fix",
   '第 {n} 版': 'Version {n}',
   '诊断报告 · {title}': 'Diagnosis report · {title}',
   '确认方案，开始修': 'Approve plan and fix',
@@ -1802,6 +1808,9 @@ export const EN_TASKS: Record<string, string> = {
   '你确认了诊断报告第 {n} 版的方案': 'You approved the plan in diagnosis report v{n}',
   '你对诊断报告第 {n} 版提了 {k} 条意见，要它再查':
     'You raised {k} points on diagnosis report v{n} and asked it to check again',
+  '你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成':
+    'You cancelled diagnosis report v{n}; no fix this time, and the plan is marked done',
+  '它正在回复，等这一轮结束再取消': "It's replying; cancel after this turn ends",
   '改用方案 {id}': 'Use option {id}',
   '方案 {id}：{title}': 'Option {id}: {title}',
   改用这个方案: 'Use this option instead',

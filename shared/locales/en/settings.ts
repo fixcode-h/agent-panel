@@ -1612,7 +1612,8 @@ export const EN_SETTINGS: Record<string, string> = {
   最大宽度: 'Max width',
   图注: 'Caption',
   使用代理: 'Use proxy',
-  检查和下载更新时走这个代理: 'Use this proxy to check for and download updates',
+  '检查更新、下载更新和安装 Agent 时走这个代理':
+    'Use this proxy to check for and download updates, and to install agents',
   '只支持 http 代理': 'HTTP proxies only',
   让其他电脑也能打开这个面板: 'Let other computers open this panel',
   '不用账号，重启后地址会变': 'No account needed; the URL changes on restart',

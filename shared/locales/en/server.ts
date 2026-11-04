@@ -214,8 +214,8 @@ export const EN_SERVER: Record<string, string> = {
     'No permission to write to the install directory. Open a terminal as administrator and run the command below.',
   '没有权限写入 npm 的全局目录。可以在终端里用 sudo 运行下面的命令，或者把 npm 的全局目录改到自己的用户目录下。':
     'No permission to write to npm’s global directory. Run the command below with sudo in a terminal, or move npm’s global directory into your user folder.',
-  '连不上 npm 仓库，请检查网络或代理（可以在终端里设置 npm 镜像）后重试。':
-    'Can’t reach the npm registry. Check your network or proxy (you can set an npm mirror in a terminal) and try again.',
+  '连不上 npm 仓库，请检查网络，或在「设置 · 网络与代理」里填写代理（也可以在终端里设置 npm 镜像）后重试。':
+    'Cannot reach the npm registry. Check your network, or set a proxy in Settings · Network & proxy (you can also set an npm mirror in a terminal), then try again.',
   '安装失败，详细信息见下面的输出。': 'Install failed. See the output below for details.',
   '卸载失败，详细信息见下面的输出。': 'Uninstall failed. See the output below for details.',
   'del "{bin}" 并删除 "{data}"': 'del "{bin}" and delete "{data}"',
@@ -235,7 +235,13 @@ export const EN_SERVER: Record<string, string> = {
   '更新命令执行完了，但运行的 {path} 还是 {version}。可能还有另一份旧的装在别处，请在下面的「可执行文件」里填新版本的完整路径。':
     'The update command finished, but {path} is still {version}. An older copy may be installed elsewhere; enter the full path to the new version under “Executable” below.',
   '未知的 Agent': 'Unknown agent',
-  '有一个安装 / 卸载还在进行，请等它完成': 'An install / uninstall is in progress. Wait for it to finish.',
+  '安装命令执行完了，但运行时报错：{error}。多半是安装没有完整完成：这个 Agent 还在别处运行（终端或面板里的对话）时，Windows 上它的文件被占用替换不了。请先关掉它再点「安装」，或查看下面输出里安装脚本的报错。':
+    'The install command finished, but running it fails: {error}. The install most likely did not complete: on Windows, if this agent is still running elsewhere (a terminal or a conversation in the panel), its files are locked and cannot be replaced. Close it and click Install again, or check the install script errors in the output below.',
+  'npm 通过环境变量里的代理 {proxy} 访问 {registry}':
+    'npm reaches {registry} through the proxy {proxy} from environment variables',
+  '代理 {proxy} 连不上，npm 直连 {registry}': 'Proxy {proxy} is unreachable; npm connects to {registry} directly',
+  'npm 通过系统代理 {proxy} 访问 {registry}': 'npm reaches {registry} through the system proxy {proxy}',
+  'npm 通过设置里的代理 {proxy} 访问 {registry}': 'npm reaches {registry} through the proxy {proxy} from Settings',
   查不到最新版本: 'Couldn’t find the latest version',
   没有这个操作: 'Operation not found',
 

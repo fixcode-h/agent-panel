@@ -58,6 +58,7 @@ import {
   childSeenLocally,
   childSpinning,
   childWait,
+  diagnosisPending,
   taskActive,
   taskBusy,
   taskState,
@@ -1175,7 +1176,8 @@ export function TaskView({
   }, [task?.id, running, jobRunning])
   useTaskStream(
     taskId,
-    running || jobRunning,
+    // 等确认诊断报告时也要跟：在弹窗里点「取消修复」不发消息，演示版靠轮询看到报告已取消、计划已完成
+    running || jobRunning || (!!task && diagnosisPending(task)),
     apply,
     {
       // 演示版把轮询当作实时更新：轮询在跑才算这一步开始，停下时收回来（正式版走 SSE，不调这两个）

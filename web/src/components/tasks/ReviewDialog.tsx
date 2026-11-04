@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
 import { IconButton } from '@/components/ui/icon-button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -60,6 +61,7 @@ export function ReviewDialog({
   texts,
   readOnly,
   presets,
+  cancel,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -80,6 +82,17 @@ export function ReviewDialog({
   readOnly?: boolean
   /** 右栏上方的快捷标注按钮（只在能审的时候出现） */
   presets?: PresetNote[]
+  /**
+   * 底部的「取消」（诊断报告：这次不修了）：先弹确认框，确认后调 onCancel（带上整体意见），成功就关掉弹窗。
+   * 右上角的关闭只是收起弹窗、之后还能再审，和它不是一回事
+   */
+  cancel?: {
+    label: string
+    title: string
+    description: string
+    confirm: string
+    onCancel: (overall: string) => Promise<void>
+  }
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -94,6 +107,7 @@ export function ReviewDialog({
   // 选中文字后浮在选区上方的「标注」按钮，位置相对滚动区
   const [pick, setPick] = useState<{ range: Range; quote: string; top: number; left: number } | null>(null)
   const [busy, setBusy] = useState<'' | 'allow' | 'deny'>('')
+  const [cancelAsk, setCancelAsk] = useState(false)
   // 多版时看的是哪一版：默认最新那版（要审的）；旧版只读，不能标注
   const [ver, setVer] = useState('')
   const shown = versions?.find((v) => v.key === ver) ?? versions?.at(-1)
@@ -368,6 +382,11 @@ export function ReviewDialog({
               : (texts?.hintApprove ?? t('没有要改的地方就点「确认」继续'))}
         </span>
         <div className={cn('ml-auto flex shrink-0 gap-2', locked && 'hidden')}>
+          {cancel && (
+            <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setCancelAsk(true)}>
+              {cancel.label}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="secondary"
@@ -384,6 +403,24 @@ export function ReviewDialog({
           </Button>
         </div>
       </div>
+      {cancel && (
+        <ConfirmDialog
+          open={cancelAsk}
+          onOpenChange={setCancelAsk}
+          title={cancel.title}
+          description={cancel.description}
+          confirmText={cancel.confirm}
+          onConfirm={async () => {
+            try {
+              await cancel.onCancel(overall)
+              setCancelAsk(false)
+              onOpenChange(false)
+            } catch (e) {
+              toast.error((e as Error).message)
+            }
+          }}
+        />
+      )}
     </Modal>
   )
 }

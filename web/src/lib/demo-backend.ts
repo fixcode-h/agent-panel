@@ -1144,7 +1144,7 @@ function clis(): CliStatus[] {
 const installJobs = new Map<string, CliInstallJob>()
 function cliAction(id: string, action: CliInstallJob['action']) {
   const def = getCli(id) ?? fail('未知的 Agent')
-  if ([...installJobs.values()].some((j) => j.status === 'running')) fail('有一个安装 / 卸载还在进行，请等它完成')
+  for (const j of installJobs.values()) if (j.cli === id && j.status === 'running') return j // 同服务端：只拦同一个 Agent
   const job: CliInstallJob = {
     id: `demo-${crypto.randomUUID()}`,
     cli: id,
