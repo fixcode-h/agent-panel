@@ -40,6 +40,11 @@ export const modeScope = (tk: ModeOf): RoleScope => (isChatMode(tk) ? 'chat' : '
 
 /** 内置「助手」的来源：Chat 页没选角色的对话（agentId 为空）都按它跑 */
 export const CHAT_ORIGIN = 'builtin:chat'
+/** 内置「聊天约束」：只给 Chat 角色引入的常驻规则，自己不能当对话的角色用 */
+export const CHAT_RULES_ORIGIN = 'builtin:chat-rules'
+/** Chat 页能选的自建 Chat 角色：去掉默认的「助手」（不选就是它）和只供引入的「聊天约束」（以前也列出来，选了没意义） */
+export const pickableChatRole = (a: { enabled: boolean; origin?: string; scope?: RoleScope }) =>
+  a.enabled && scopeOf(a) === 'chat' && a.origin !== CHAT_ORIGIN && a.origin !== CHAT_RULES_ORIGIN
 
 /**
  * Chat 模式里没选角色（agentId 为空）的对话按内置「助手」跑：取它的设定、引入、参数、Skill；

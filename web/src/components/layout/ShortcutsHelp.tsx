@@ -14,7 +14,7 @@ export function ShortcutsHelp({ open, onOpenChange }: { open: boolean; onOpenCha
       title: t('全局'),
       rows: [
         [`${MOD}K`, t('命令面板：搜对话、跳页面')],
-        [`${MOD}${SHIFT}O`, t('新建任务')],
+        [`${MOD}${SHIFT}O`, t('新建任务（在 Chat 页时新建聊天）')],
         [`${MOD}B`, t('收起 / 展开侧栏')],
         [`${ALT}↑ / ${ALT}↓`, t('切到上一个 / 下一个对话')],
         ['?', t('打开这份快捷键一览')],

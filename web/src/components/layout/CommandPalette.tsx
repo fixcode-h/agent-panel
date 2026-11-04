@@ -301,9 +301,10 @@ export function useShortcuts(openPalette: () => void, openHelp?: () => void) {
         e.preventDefault()
         openPalette()
       } else if (k === 'o' && e.shiftKey) {
-        // 浏览器不让网页占用 Ctrl+N，新建任务用 Ctrl+Shift+O（和常见的聊天应用一样）
+        // 浏览器不让网页占用 Ctrl+N，新建任务用 Ctrl+Shift+O（和常见的聊天应用一样）。
+        // 在 Chat 页时新建的是聊天（以前一律跳到新建 Agent 任务，Chat 页没有新建聊天的快捷键）
         e.preventDefault()
-        go({ page: 'home' })
+        go(route.page === 'chat' ? { page: 'chat' } : { page: 'home' })
       } else if (k === 'b' && !e.shiftKey) {
         e.preventDefault()
         toggleSidebar()
