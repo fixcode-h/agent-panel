@@ -167,13 +167,22 @@ export function TabItem({
         )}
       >
         {busy ? <Spinner className="text-run" /> : icon && <span className="flex shrink-0 items-center">{icon}</span>}
-        <span className={cn('min-w-0 truncate', !fill && !underline && !fit && 'flex-1', preview && 'italic')}>
+        {/* 文字在固定高度的条里居中时会浮在上半部（字形比盒子中心高），往下补一档（index.css 的 text-optical-center） */}
+        <span
+          className={cn(
+            'min-w-0 truncate',
+            // 只有对话页签这种固定高度的条需要往下补一档；fit / underline 变体的页签高度跟着内容走，本来就居中
+            !fit && !underline && 'text-optical-center',
+            !fill && !underline && !fit && 'flex-1',
+            preview && 'italic',
+          )}
+        >
           {children}
         </span>
         {tag && (
           <span
             className={cn(
-              'shrink-0 rounded-full bg-sel px-1.5 text-caption leading-4 font-normal text-muted',
+              'text-optical-center shrink-0 rounded-full bg-sel px-1.5 text-caption leading-4 font-normal text-muted',
               // 右栏的计数是 18px 的圆角小块（设计稿），一位数时是正圆
               fit && 'grid h-[1.125rem] min-w-[1.125rem] place-items-center px-[0.3125rem] leading-none',
             )}

@@ -347,7 +347,8 @@ export function RowShell({
           {badge && (
             <span
               className={cn(
-                'rounded-sm px-1.5 py-px font-sans text-caption leading-4',
+                // 和同行正文按盒子居中对时整体偏低一档，用 chip-lift 提回去（数值在 index.css 定义）
+                'chip-lift rounded-sm px-1.5 py-px font-sans text-caption leading-4',
                 badgeClass ?? 'bg-sel text-subtle',
               )}
             >
