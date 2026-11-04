@@ -44,3 +44,8 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 
 - 规则：行内代码、状态胶囊、`Badge`、子对话行徽标、页签文字和同一行正文的垂直对齐，只用 `web/src/index.css` 的 `chip-lift`（提色块）和 `text-optical-center`（降条里的文字）；数值（em，随字号缩放）只在 utility 默认值里，组件只加类名，不写 `top-px`、不对称 `padding-block` 或逐处覆盖变量。
 - 起因：用户报「`.lua` 和文字不对齐」，一开始按处补偏移，用户要求「一个地方调整其他地方一起变化」——最后数值只剩 `index.css` 一处。防线：`scripts/ui/harness.mjs` 的 `chipAlignProblems`（`02-task` 分片扫行内标签，偏超过 1.5px 就失败）。
+
+## 标签旁的文字先排正，不靠加大 chip-lift 去凑
+
+- 规则：标签和同一行文字对不齐时，先看旁边那段文字自己是不是被抬高或压低了。常见的原因是 `inline-flex` 容器的第一个子元素是图标（没有文字基线），浏览器拿图标底边当基线，整段文字会被抬高。行里的容器用块级 `flex`，不要为了对齐去改 `--chip-lift`，也不要逐处写偏移。
+- 起因：ff0008ad 给子对话收发信那一行的「汇报 / 传话 / 交代任务」加了 `chip-lift` 后，界面检查仍差 1.55px（上限 1.5px），CI 一直是红的。实测是左边对方名字的 `inline-flex`（图标打头）被抬高了约 1px，把 `PeerMessage.tsx` 改成 `flex` 就对齐了。
