@@ -18,6 +18,7 @@ import {
   fillTemplate,
   nativeModelId,
   modelsForProtocol,
+  dropEmptyBaseUrl,
   pruneModelEntries,
   pruneProviderEntries,
   setModelEfforts,
@@ -737,6 +738,28 @@ async function pruneApiProviders(def: CliDefinition, api: ApiConfig, provider: s
 }
 
 /**
+ * 写配置前删掉值为空的 baseUrl 键：Pi 的 models.json 只在 baseUrl 出现时要求至少 1 个字符，
+ * 一条空地址会让整个文件被判为无效。只删空键，provider、models 和用户配置都保留
+ * （内置 provider 本来就可以不给地址）。
+ */
+async function dropEmptyApiBaseUrls(
+  def: CliDefinition,
+  provider: string,
+  api: ApiConfig | undefined,
+  env: NodeJS.ProcessEnv,
+) {
+  const spec = def.auth?.api?.dropEmptyBaseUrl
+  if (!spec) return
+  const vars = api ? apiVars(api, def.auth?.api?.wire, provider, def.auth?.api?.baseUrl) : { provider }
+  const file = expand(fillTemplate(spec.file, vars), env)
+  const data = await readJsonFile(file)
+  if (!isObj(data)) return
+  if (!dropEmptyBaseUrl(data, fillTemplate(spec.at, vars), spec.baseUrl)) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeCliConfigJson(file, data)
+}
+
+/**
  * API 方式只留 API 里配的模型：provider 的 models 对象里旧模型删掉，
  * 保留 API 配置里的那几个；metadata 由前面的写回保留。
  */
@@ -761,13 +784,21 @@ async function pruneApiModels(def: CliDefinition, api: ApiConfig, provider: stri
 export async function prepareAuth(cliId: string, lastProvider?: string) {
   const def = getCli(cliId)
   const spec = def?.auth?.api
-  if (!def?.auth || !spec || (!spec.edits.length && !spec.accountEdits.length)) return
+  if (!def?.auth || !spec || (!spec.edits.length && !spec.accountEdits.length && !spec.dropEmptyBaseUrl)) return
   try {
     const settings = await getSettings()
     const cs = cliSettings(settings, cliId)
     const env = childEnv(cs.env)
     if (cs.api && apiFits(def.auth, cs.api)) {
       const injection = apiInjection(def.auth, cs.api)
+      // 先删历史留下的空 baseUrl 键（Pi 的 models.json 一条空地址就让整份失效），再写本次配置
+      await dropEmptyApiBaseUrls(def, injection.provider, cs.api, env)
+      if (injection.missingBaseUrl) {
+        // 地址为空：不写 API 配置，并把面板之前写进去的 provider 清掉，免得 Pi 继续用旧端点和密钥
+        log.warn('accounts', 'API 没有接口地址，不写 CLI 配置并清掉旧 provider', { cli: cliId, api: cs.api.name })
+        await applyEdits(fillEdits(spec.accountEdits, def.auth, undefined, injection.provider), env)
+        return
+      }
       await applyEdits(injection.edits, env)
       await writeModelEfforts(def, cs.api, injection.provider, env, cs.command)
       await writeModelDefaultEfforts(def, cs.api, injection.provider, env)
@@ -784,6 +815,10 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
             settings.apis.find((a) => a.id === cs.apiId),
             cs.apiProtocol,
           )
+      // 账号方式也要清：历史坏数据会让整份 models.json 失效，切回账号也加载不到
+      const provider =
+        lastProvider?.trim() || (cleanup ? apiProvider(cleanup, spec.defaultProvider) : spec.defaultProvider)
+      await dropEmptyApiBaseUrls(def, provider, cleanup, env)
       await applyEdits(fillEdits(spec.accountEdits, def.auth, cleanup, lastProvider), env)
     }
   } catch (e) {

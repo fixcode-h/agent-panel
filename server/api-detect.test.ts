@@ -76,6 +76,19 @@ test('识别 API：面板旧版本写的密钥占位名不算用户的配置', (
   assert.equal(toApi(def, src, 'codeg', { ...entry, apiKey: '$AGENT_PANEL_API_KEY' }, {}), null)
 })
 
+test('识别 API：有密钥但没有接口地址的配置不算，免得写进 Pi 后整个文件失效', () => {
+  const pi = getCli('pi')!
+  const src = pi.auth!.apiSources[0]
+  assert.equal(
+    toApi(pi, src, 'ds', { baseUrl: '', api: 'openai-completions', apiKey: 'sk-ds', models: [{ id: 'a' }] }, {}),
+    null,
+  )
+  // 来源自带厂家默认地址时照常识别（没填 ANTHROPIC_BASE_URL 也有地址）
+  const claude = getCli('claude')!
+  const api = toApi(claude, claude.auth!.apiSources[0], '', { ANTHROPIC_API_KEY: 'sk-x' }, {})
+  assert.equal(api?.baseUrl, 'https://api.anthropic.com')
+})
+
 test('识别 API：值的写法和 .env', () => {
   assert.equal(resolveValue('$K', { K: 'v' }), 'v')
   assert.equal(resolveValue('${K}', { K: 'v' }), 'v')

@@ -24,7 +24,7 @@ import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { Switch } from '@/components/ui/switch'
 
 /**
- * 状态诊断右边那一栏（LifecycleDialog 里选中的节点）：结论、异常、五类事件的计数、执行 / 模型 / 进程三张卡、日志。
+ * 状态诊断右边那一栏（LifecycleDialog 里选中的节点）：结论、异常、六类事件的计数、执行 / 模型 / 进程三张卡、日志。
  * 计数由服务端按完整日志算好（shared/lifecycle.ts 的 countEvents），点一块就只看那一类日志
  */
 
@@ -46,9 +46,11 @@ export const STATE_TONE: Record<ConvState, StatusTone> = {
   done: 'ok',
 }
 
-/** 五类事件的名字和有数时的颜色（出错红、重试黄，其余是普通的前景色） */
+/** 六类事件的名字和有数时的颜色（出错红、重试黄，其余是普通的前景色） */
 const COUNT_META: Record<EventKind, { label: string; tone: string }> = {
   requests: { label: t('模型请求'), tone: 'text-fg' },
+  // 面板推了几次「接着做」（计划没做完就停下、收尾自检）：次数上限在设置的「面板提醒次数」
+  nudges: { label: t('面板提醒'), tone: 'text-fg' },
   retries: { label: t('重试'), tone: 'text-warning' },
   errors: { label: t('出错'), tone: 'text-danger' },
   stops: { label: t('停止'), tone: 'text-fg' },
@@ -128,7 +130,7 @@ function RunControl({ node }: { node: LifeNode }) {
   )
 }
 
-/** 日志的筛选：全部、关键事件（重试、出错、停止、退出），或者点计数块选的某一类 */
+/** 日志的筛选：全部、关键事件（面板提醒、重试、出错、停止、退出），或者点计数块选的某一类 */
 type LogFilter = '' | 'key' | EventKind
 
 export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode }) {
@@ -192,7 +194,11 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
       )}
 
       {node.counts && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label={t('事件计数')} data-life-counts>
+        <div
+          className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6"
+          aria-label={t('事件计数')}
+          data-life-counts
+        >
           {EVENT_KINDS.map((k) => {
             const c = node.counts![k]
             const on = filter === k
@@ -402,14 +408,14 @@ function ProcessCard({ node, now }: { node: LifeNode; now: number }) {
   )
 }
 
-/** 日志行的配色类：五类事件之外，模型开始输出、进程启动也单独上色 */
+/** 日志行的配色类：六类事件之外，模型开始输出、进程启动也单独上色 */
 function lineTone(l?: LogLine) {
   if (!l) return ''
   const k = eventKind(l.event, l.fields)
   if (k === 'errors') return 'bg-danger/12 text-danger'
   if (k === 'retries') return 'bg-warning/12 text-warning'
   if (k === 'stops' || k === 'exits' || l.event === 'CLI 进程启动') return 'bg-run-soft text-run'
-  if (l.event === '模型开始输出') return 'bg-accent/12 text-accent-text'
+  if (k === 'nudges' || l.event === '模型开始输出') return 'bg-accent/12 text-accent-text'
   return 'bg-sel text-muted'
 }
 

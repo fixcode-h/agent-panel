@@ -10,6 +10,7 @@ import {
   apiModelList,
   apiProvider,
   fillEdits,
+  dropEmptyBaseUrl,
   modelForProtocol,
   modelsForProtocol,
   pruneModelEntries,
@@ -74,6 +75,44 @@ test('API 注入：provider 写进配置键，provider 前缀的模型在 provid
     'gpt-6-astra': {},
   })
   assert.equal(inj.edits[0].merge, true)
+})
+
+test('接口地址为空时不写 Pi 的 models.json：宁可这一轮不写，也不留下坏 provider', () => {
+  const def = getCli('pi')!
+  // 名称对不上内置厂家、地址也留空：apiBaseUrl 给不出地址
+  const api = ApiConfig.parse({ id: '1', name: '自建中转', protocol: 'openai-chat', apiKey: 'sk-x', models: ['m'] })
+  const missing = apiInjection(def.auth!, api)
+  assert.equal(missing.missingBaseUrl, true)
+  assert.deepEqual(missing.edits, [])
+  // 有地址时照常写，写出的 provider 带非空 baseUrl（Pi 的 schema 要求至少 1 个字符）
+  const ok = apiInjection(def.auth!, { ...api, baseUrl: 'https://relay.example.com/v1' })
+  assert.equal(ok.missingBaseUrl, false)
+  const provider = ok.edits[0].set[`providers.${ok.provider}`] as Record<string, unknown>
+  assert.equal(provider.baseUrl, 'https://relay.example.com/v1')
+})
+
+test('写 Pi 配置前只删空的 baseUrl 键，provider 和 models 都保留', () => {
+  const data = {
+    providers: {
+      // 内置 provider 带了一个空地址：删掉键，模型和覆盖保留
+      deepseek: { baseUrl: '', api: 'openai-completions', models: [{ id: 'deepseek-chat', baseUrl: '' }] },
+      // 内置 provider 不带地址本来就合法，不要动
+      anthropic: { modelOverrides: { 'claude-opus-4-7': { reasoning: true } } },
+      mine: { baseUrl: 'https://mine.example.com/v1', api: 'openai-completions', models: [] },
+    },
+  }
+  assert.equal(dropEmptyBaseUrl(data, 'providers', 'baseUrl'), true)
+  // 空键被删掉，provider 和它的模型都还在；没带地址的 provider 不受影响
+  assert.deepEqual(Object.keys(data.providers), ['deepseek', 'anthropic', 'mine'])
+  assert.equal('baseUrl' in data.providers.deepseek, false)
+  assert.deepEqual(data.providers.deepseek.models, [{ id: 'deepseek-chat' }])
+  assert.equal(data.providers.mine.baseUrl, 'https://mine.example.com/v1')
+  // 已经都合法时不再改动
+  assert.equal(dropEmptyBaseUrl(data, 'providers', 'baseUrl'), false)
+  // Pi 的定义里接上了这两步：空地址不写、写前删空键
+  const api = getCli('pi')!.auth!.api!
+  assert.equal(api.requireBaseUrl, true)
+  assert.equal(api.dropEmptyBaseUrl?.at, 'providers')
 })
 
 test('API 模型 ID：显示和传给 CLI 时补 provider 前缀，已经有的不重复', () => {

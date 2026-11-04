@@ -320,6 +320,42 @@ export function pruneProviderEntries(
   return changed
 }
 
+/** 键存在但值不是非空字符串时删掉这个键；返回有没有改动 */
+const dropEmptyValue = (rec: Record<string, unknown>, key: string) => {
+  if (!(key in rec)) return false
+  const v = rec[key]
+  if (typeof v === 'string' && v.trim()) return false
+  delete rec[key]
+  return true
+}
+
+/**
+ * 删掉配置里值为空的 baseUrl 键（provider 层和它 models 条目层）：
+ * Pi 的 models.json 只在 baseUrl 出现时要求至少 1 个字符，空字符串会让整份文件被判为无效；
+ * 内置 provider 本来就可以不给地址，models 条目也能自己带地址，所以不能删整个 provider——
+ * 只去掉这个空键，provider、models 和用户其它配置都保留。返回有没有改动。
+ */
+export function dropEmptyBaseUrl(data: unknown, at: string, baseUrlKey: string): boolean {
+  let box: unknown = data
+  for (const part of at.split('.')) {
+    if (!box || typeof box !== 'object' || Array.isArray(box)) return false
+    box = (box as Record<string, unknown>)[part]
+  }
+  if (!box || typeof box !== 'object' || Array.isArray(box)) return false
+  let changed = false
+  for (const p of Object.values(box as Record<string, unknown>)) {
+    if (!p || typeof p !== 'object' || Array.isArray(p)) continue
+    const provider = p as Record<string, unknown>
+    if (dropEmptyValue(provider, baseUrlKey)) changed = true
+    if (!Array.isArray(provider.models)) continue
+    for (const m of provider.models) {
+      if (!m || typeof m !== 'object' || Array.isArray(m)) continue
+      if (dropEmptyValue(m as Record<string, unknown>, baseUrlKey)) changed = true
+    }
+  }
+  return changed
+}
+
 /**
  * API 方式只保留 API 里配的模型：provider 的 models 对象里多出来的旧模型删掉。
  * keep 为空时不动，避免把配置删空。返回有没有改动。
@@ -497,6 +533,11 @@ export const CliAuth = z.object({
       edits: z.array(JsonEdit).default([]),
       /** 改回账号时要还原的配置文件 */
       accountEdits: z.array(JsonEdit).default([]),
+      /**
+       * 配置文件里每个 provider 都必须带接口地址（Pi 的 models.json：baseUrl 少一个字符都会让整个文件被判为无效，
+       * 所有模型都加载不到）。地址为空（用户没填、厂家也没有默认地址）时不写 edits，宁可这一轮不写也不留坏数据。
+       */
+      requireBaseUrl: z.boolean().default(false),
       /** 协议在这个 CLI 配置里的写法，用 {wire} 引用 */
       wire: z.record(z.string(), z.string()).default({}),
       /**
@@ -606,6 +647,20 @@ export const CliAuth = z.object({
           /** provider 里接口地址、密钥的键名 */
           baseUrl: z.string().default('baseUrl'),
           apiKey: z.string().default('apiKey'),
+        })
+        .optional(),
+      /**
+       * 写配置前删掉值为空的 baseUrl 键（provider 层和 models 条目层）：Pi 的 models.json
+       * 只在 baseUrl 出现时要求至少 1 个字符，一条空地址就让整个文件被判为无效。只删空键，
+       * provider、models 和用户配置都保留（内置 provider 本来就可以不给地址）。不写表示不处理。
+       */
+      dropEmptyBaseUrl: z
+        .object({
+          file: z.string(),
+          /** provider 对象所在的位置，例如 providers */
+          at: z.string(),
+          /** 接口地址的键名，默认 baseUrl */
+          baseUrl: z.string().default('baseUrl'),
         })
         .optional(),
       /**
@@ -743,19 +798,25 @@ export function apiInjection(auth: CliAuth, api: ApiConfig) {
   const provider = apiProvider(api, spec.defaultProvider)
   const vars = apiVars(api, spec.wire, provider, spec.baseUrl)
   const prefix = spec.modelPrefix ? fillTemplate(spec.modelPrefix, vars) : ''
+  // 接口地址为空（用户没填、厂家也没有默认地址）时不写配置文件：Pi 的 models.json 一条空 baseUrl
+  // 就会让整个文件被判为无效，所有模型都加载不到。调用方据此跳过写配置并给出提示
+  const missingBaseUrl = spec.requireBaseUrl && !vars.baseUrl
   return {
     provider,
     modelPrefix: prefix,
+    missingBaseUrl,
     env: Object.entries(spec.env)
       .map(([k, v]) => ({ key: fillTemplate(k, vars), value: fillTemplate(v, vars) }))
       .filter((e) => e.key && e.value),
     args: spec.args.map((a) => fillTemplate(a, vars)),
-    edits: spec.edits.map((e) => ({
-      file: fillTemplate(e.file, vars),
-      format: e.format,
-      merge: e.merge,
-      set: fillValue(e.set, vars, api, prefix) as Record<string, unknown>,
-      unset: e.unset.map((u) => fillTemplate(u, vars)),
-    })),
+    edits: missingBaseUrl
+      ? []
+      : spec.edits.map((e) => ({
+          file: fillTemplate(e.file, vars),
+          format: e.format,
+          merge: e.merge,
+          set: fillValue(e.set, vars, api, prefix) as Record<string, unknown>,
+          unset: e.unset.map((u) => fillTemplate(u, vars)),
+        })),
   }
 }

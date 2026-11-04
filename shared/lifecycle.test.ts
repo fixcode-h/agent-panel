@@ -224,7 +224,7 @@ test('计划没做完却停下：推满了说是推满了，没推满说推进�
   assert.deepEqual(codes(base({ ...idle, trace: { requests: 3, lastTurn: { stopReason: 'end_turn', tools: 0 } } })), [])
 })
 
-test('五类事件计数：按事件名归类，对话自己和子任务分开数，记下最近一次的时间和摘要', () => {
+test('六类事件计数：按事件名归类，对话自己和子任务分开数，记下最近一次的时间和摘要', () => {
   assert.equal(eventKind('模型请求开始'), 'requests')
   assert.equal(eventKind('CLI 重试模型请求'), 'retries')
   assert.equal(eventKind('卡住：问过状态没回复，停掉重启'), 'errors', '卡住算出错，不算停止')
@@ -232,17 +232,25 @@ test('五类事件计数：按事件名归类，对话自己和子任务分开�
   assert.equal(eventKind('CLI 报这一轮结束', { ok: 'true' }), undefined)
   assert.equal(eventKind('CLI 报这一轮结束', { ok: 'false' }), 'errors')
   assert.equal(eventKind('模型开始输出'), undefined)
+  // 面板真推出去的「接着做」才算提醒；只是判断了没推的（cancel、stuck、send-failed）不算
+  assert.equal(eventKind('计划推进', { action: 'continue' }), 'nudges')
+  assert.equal(eventKind('收尾提醒', { action: 'continue' }), 'nudges')
+  assert.equal(eventKind('收尾自检', { action: 'check' }), 'nudges')
+  assert.equal(eventKind('计划推进', { action: 'stuck' }), undefined)
+  assert.equal(eventKind('计划推进', { action: 'send-failed' }), undefined)
   const lines = [
     '2026-11-02 11:00:00.000 [模型请求开始] n=1',
     '2026-11-02 11:00:01.000 [CLI 重试模型请求] attempt=1 error="529 overloaded"',
     '2026-11-02 11:00:02.000 [模型请求开始] n=1 step=h1',
+    '2026-11-02 11:00:02.500 [计划推进] action=continue nth=1 max=6',
+    '2026-11-02 11:00:02.600 [计划推进] action=cancel reason=working',
     '2026-11-02 11:00:03.000 [用户停止]',
     '2026-11-02 11:00:04.000 [CLI 进程退出] pid=3 code=null signal=SIGTERM killed=stopped',
   ].map((x) => parseLogLine(x)!)
   const c = countEvents(lines)
   assert.deepEqual(
-    [c.requests.n, c.retries.n, c.errors.n, c.stops.n, c.exits.n],
-    [1, 1, 0, 1, 1],
+    [c.requests.n, c.nudges.n, c.retries.n, c.errors.n, c.stops.n, c.exits.n],
+    [1, 1, 1, 0, 1, 1],
     '子任务（step=h1）的请求不算进对话自己',
   )
   assert.equal(c.retries.last?.text, 'CLI 重试模型请求 attempt=1 error=529 overloaded')

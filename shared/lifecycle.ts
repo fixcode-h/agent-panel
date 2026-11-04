@@ -72,14 +72,18 @@ export function lastExit(lines: LogLine[], step = ''): ProcessExit | undefined {
 }
 
 /**
- * 日志事件按五类计数：弹窗顶上的数字块、日志的筛选和配色、诊断文件里的 counts 都按这一份分，免得三处口径不一。
+ * 日志事件按六类计数：弹窗顶上的数字块、日志的筛选和配色、诊断文件里的 counts 都按这一份分，免得三处口径不一。
  * 只认事件名（server 里 taskLog 的第二个参数），新增事件时在这里归类；归不了类的不计数
  */
-export const EVENT_KINDS = ['requests', 'retries', 'errors', 'stops', 'exits'] as const
+export const EVENT_KINDS = ['requests', 'nudges', 'retries', 'errors', 'stops', 'exits'] as const
 export type EventKind = (typeof EVENT_KINDS)[number]
 
 export function eventKind(event: string, fields: Record<string, string> = {}): EventKind | undefined {
   if (event === '模型请求开始') return 'requests'
+  // 面板真推出去的「接着做」（server/tasks/drive.ts）：计划推进、收尾提醒记 action=continue，收尾自检记 action=check；
+  // 只是判断了没推（cancel、stuck、send-failed）的不算
+  if ((event === '计划推进' || event === '收尾提醒') && fields.action === 'continue') return 'nudges'
+  if (event === '收尾自检' && fields.action === 'check') return 'nudges'
   if (event === 'CLI 重试模型请求' || event === '模型请求没有输出就换了下一次') return 'retries'
   if (event === 'CLI 进程退出') return 'exits'
   if (event === 'CLI 报这一轮结束') return fields.ok === 'false' ? 'errors' : undefined
@@ -104,7 +108,7 @@ function brief(l: LogLine) {
 }
 
 /**
- * 按完整日志数五类事件（服务端读整份日志时算，弹窗只拿到最近 200 行，自己数会少）。
+ * 按完整日志数六类事件（服务端读整份日志时算，弹窗只拿到最近 200 行，自己数会少）。
  * step 为空时数对话自己这一轮（日志里没有 step 的行），否则只数这一步的
  */
 export function countEvents(lines: LogLine[], step = ''): LifeCounts {
@@ -425,7 +429,7 @@ export interface LifeNode {
   facts: LifeFacts
   verdict: LifeVerdict
   processes: LifeProcess[]
-  /** 按完整日志数的五类事件（旧的诊断文件没有） */
+  /** 按完整日志数的六类事件（旧的诊断文件没有；面板提醒是后加的，更旧的文件里也没有） */
   counts?: LifeCounts
   /** 最近的日志行（原样） */
   log: string[]
