@@ -79,6 +79,7 @@ import { migrateVerdictText } from './verdict-migrate.ts'
 import { installApi } from './install.ts'
 import { comfyApi } from './comfy.ts'
 import { speechApi } from './speech.ts'
+import { envApi } from './env-api.ts'
 import { ttsApi } from './tts.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
@@ -143,7 +144,7 @@ import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts
 import { installLogging, log, logFile } from './log.ts'
 import { sweepPanelMcp } from './panel-mcp-files.ts'
 import { existsSync } from 'node:fs'
-import { detectShells, currentShell } from './shells.ts'
+import { currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons } from './lessons.ts'
 import { loadProjectLessons, projectWithLessons } from './project-lessons.ts'
 import { projectLessonRoutes } from './project-lesson-routes.ts'
@@ -449,9 +450,6 @@ const applyPresenceReclaim = (s: Awaited<ReturnType<typeof getSettings>>) =>
     graceMs: s.presenceGraceMinutes * 60_000,
   })
 app.get('/settings', async (c) => c.json(await getSettings()))
-// 本机能用的命令行环境（设置「常规」里选）；fresh=1 重新检测
-void currentShell().catch(() => {})
-app.get('/shells', async (c) => c.json(await detectShells(c.req.query('fresh') === '1')))
 app.put('/settings', async (c) => {
   const p = Settings.safeParse(await c.req.json())
   if (!p.success) return bad(c, z.prettifyError(p.error))
@@ -500,6 +498,7 @@ app.route('/project-mcp', projectMcpApi({ projectPath: async (id) => (await proj
 app.route('/clis', installApi())
 app.route('/local-image', comfyApi())
 app.route('/speech', speechApi())
+app.route('/', envApi())
 app.route('/tts', ttsApi())
 app.route('/clis', modelsApi())
 app.route('/clis', packagesApi())

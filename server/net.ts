@@ -9,7 +9,13 @@ import { request as httpsRequest, type RequestOptions as HttpsRequestOptions } f
 import { ProxyAgent, fetch as proxyFetch, type Dispatcher } from 'undici'
 import { getSettings } from './settings.ts'
 import { t } from '../shared/i18n.ts'
-import { DEFAULT_PROXY_PORT, DEFAULT_PROXY_URL, LOCAL_PROXY_PORTS, MAX_LOCAL_PROXIES } from '../shared/proxy.ts'
+import {
+  DEFAULT_PROXY_PORT,
+  DEFAULT_PROXY_URL,
+  LOCAL_PROXY_PORTS,
+  MAX_LOCAL_PROXIES,
+  type DetectedProxy,
+} from '../shared/proxy.ts'
 
 /** 和 fetch 一样用；timeoutMs 只限制等到响应头的时间，之后读 body 不受它影响 */
 export interface NetInit extends RequestInit {
@@ -32,7 +38,7 @@ const MISS_TTL = 30_000
 const SYSTEM_TTL = 60_000
 const REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
 
-const ENV_PROXY = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']
+export const ENV_PROXY = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']
 
 /** 这次请求一开始走哪条路；fallback 表示失败后要不要再找本机代理 */
 export type ProxyPlan =
@@ -266,6 +272,22 @@ export async function localProxies(): Promise<string[]> {
   return list
 }
 
+/**
+ * 设置页「检测本机代理」：不走缓存，重新读系统代理、并发探测全部候选，列出能转发 HTTPS 的 http 代理。
+ * 系统代理在前（用户自己在代理软件里开的），其次按 LOCAL_PROXY_PORTS 的顺序。顺手刷新回退用的缓存。
+ */
+export async function detectProxies(): Promise<DetectedProxy[]> {
+  systemCache = undefined
+  const system = await systemProxies()
+  const candidates = localProxyCandidates(system)
+  const alive = await Promise.all(candidates.map((proxy) => probeProxy(proxy)))
+  const found = candidates.filter((_, i) => alive[i])
+  const list = pickLocalProxies(system, found)
+  localCache = { at: Date.now(), list, ttl: list.length ? FOUND_TTL : MISS_TTL }
+  const sys = new Set(system.map(httpProxy).filter(Boolean))
+  return found.map((url) => ({ url, source: sys.has(url) ? 'system' : 'port' }))
+}
+
 /** 某个代理请求失败后算出的新缓存：去掉它；全都不行了就按「没找到」的短间隔重新探测 */
 export function dropBadProxy(cache: ProxyCache, proxy: string): ProxyCache {
   const list = cache.list.filter((x) => x !== proxy)
@@ -335,8 +357,11 @@ export function configuredProxy(s: { proxy: string; networkProxyEnabled: boolean
   return s.networkProxyEnabled ? s.proxy.trim() : ''
 }
 
-/** 设置里的代理（开关打开且填了才算）优先；没填时用环境变量（这时 NO_PROXY 也照常生效） */
-async function defaultPlan(url: string): Promise<ProxyPlan> {
+/**
+ * 设置里的代理（开关打开且填了才算）优先；没填时用环境变量（这时 NO_PROXY 也照常生效）。
+ * 导出给 npm 这类子进程用：子进程不经过 netFetch，要按同一个顺序把代理交给它（见 server/npm-env.ts）。
+ */
+export async function defaultPlan(url: string): Promise<ProxyPlan> {
   let set = ''
   try {
     set = configuredProxy(await getSettings())
