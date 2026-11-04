@@ -218,6 +218,27 @@ export function childEnv(extra: { key: string; value: string }[]) {
 }
 
 /**
+ * 让 Node 写的 CLI 以为自己接着终端（CLI 定义里 auth.loginTty）。
+ *
+ * Command Code 的 `cmd login` 用 Ink 画登录界面，界面里监听 Ctrl+C，Ink 要把 stdin 切到 raw mode；
+ * 面板跑登录命令时 stdin 是管道，Ink 直接抛「Raw mode is not supported」（附带 ink 文档的网址），
+ * 登录界面卸载，浏览器也没打开（用户 2026-11-04 报）。这里在子进程启动前（NODE_OPTIONS 的 --import）
+ * 把 stdin 标成终端、raw mode 改成空操作，登录流程照常起本机回调、打开浏览器；
+ * 顺便把输出宽度设大：Ink 默认按 80 列折行，备用登录链接会被折成两行，面板只截到半截
+ */
+const PRELOAD = [
+  'process.stdin.isTTY=true',
+  'process.stdin.setRawMode=()=>process.stdin',
+  'process.stdout.columns=1000',
+].join(';')
+
+/** 在子进程环境里加上预加载；用户自己的 NODE_OPTIONS 保留。data: 地址里不能有空格（NODE_OPTIONS 按空格切） */
+export function withFakeTty(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const own = env.NODE_OPTIONS?.trim()
+  return { ...env, NODE_OPTIONS: `${own ? `${own} ` : ''}--import=data:text/javascript,${PRELOAD}` }
+}
+
+/**
  * 启动一个 CLI：参数直接传给进程（不经过 shell 拼接），stdin 写入任务描述，
  * stdout 按行回调。Windows 上用 cross-spawn 处理 npm 生成的 .cmd 启动脚本。
  */
