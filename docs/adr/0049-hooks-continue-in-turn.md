@@ -49,6 +49,7 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
 | P1  | 结束前钩子：Claude Code / Pi / Command Code 接入、对话和子任务的判断、界面的「面板让它接着做」、没计划时的累计门槛、规则检查 | 已实施                |
 | P2  | 设置页「钩子」（内置开关、用户钩子、AI 创建、试跑、触发记录）；工具前 / 工具后 / 上下文恢复事件和四个内置钩子                | 已实施（Claude Code） |
 | P3  | Codex 接入；Pi / Command Code 的工具前后和压缩后；面板事件和 Webhook 合并；旧工作流节点迁到 `submit_verdict`                 | 已实施                |
+| P4  | 把只写在提示词里、或要等收尾才查的规则做成内置守卫；内置钩子的参数、按项目开关；工具结果进输入、版本门槛、按 CLI 关事件      | 已实施                |
 
 ## 实施记录
 
@@ -91,3 +92,23 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
   - 测出 Pi 扩展第一期起就没问过面板：`agent_before_settle` 里按 `context.canContinue === false` 提前返回，那一刻这个值永远是 false，已修。
   - 测出按命令前缀匹配认不出 `cd 项目 && npm test`，改成按 `&&`、`;`、`|` 拆开逐段比（`commandSegments`）。
   - Command Code 用自带 API 也要先 `cmd login` 账号，没法真机跑；`shared/hook-mod.test.ts` 把生成的 mod 加载起来接本地假面板，逐个调用四个事件。
+
+### 第四期（2026-11-04）
+
+起因：盘点后发现面板里不少规则只写在提示词里（推送授权、长命令放后台、凭据不进仓库），或者要等一轮结束、甚至收尾时才查（子对话没请收尾、Bug 先诊断），模型违反了要么没人拦、要么拦得太晚白干一场。判定标准：面板手里有现成的结构化事实、规则已经存在但管得不够、对所有项目适用、误拦面窄。
+
+- **新的内置守卫**（`server/hooks/guards.ts`，都是工具前、默认开）：
+  - 推送授权：按项目的推送设置和对话的授权（`task.remotePush`）拦 `git push`、`gh pr merge`。「问一次」策略下没授权以前完全没人拦；「不推送」和子对话分支原来靠 git 配置兜底，报错看不懂。
+  - Bug 先诊断：诊断没确认就改文件、改到方案以外的文件时拒绝。以前只在 `submit_merge` 时查（`diagnosisGate`）。
+  - 危险命令：递归删根目录、家目录、项目、数据目录；原分支上 `reset --hard`、整目录 `clean` / `checkout`；强推；删主干分支。子对话自己的独立分支里 reset 这类放行，`git clean` 点名具体路径的放行。
+  - 长命令转后台：有 `run_background` 时，开发服务器、监听和完整测试（`FULL_SUITE_COMMAND`）放在前台跑就拒绝。
+  - 测试步骤归属：独立分支里的子对话跑 `scope = parent` 的步骤时拒绝。
+  - 凭据：改文件、往文件重定向的命令里出现高准确率的密钥模式时拒绝，`.env` 这类放行。
+  - 独立分支越界：子对话改自己 worktree 以外的文件时拒绝；原仓库里的一律不行（项目放在临时目录里时也一样）。
+- **「没做完不收尾」补上「子对话做完却没请收尾」**：计划只剩收尾那一步、或没列计划但改过文件时，在同一轮里拦住让它调 `submit_merge`（`mergeOwedOf`）。只看计划和改动清单，不跑 git；拦过后一轮结束的 `nudgeMerge` 不再重发。
+- **两个默认关的**：原地打转提醒（同一条命令连续失败到设置的次数补一句）、改完没验证（改了文件之后一条命令都没跑就结束时拦一次）。
+- **内置钩子可配参数、可按项目开关**（`shared/hook-builtins.ts`，`hooks.json` 的 `params` / `projects`）；内置钩子拦下、补说明的也记进「最近触发」，名字按界面语言显示。
+- **工具结果进输入**：CLI 定义的 `toolFields.output` / `failed` 取执行结果和是否失败；Claude Code 的工具后同时装 `PostToolUseFailure`（带 `error`），补说明的 `hookEventName` 按原生事件填（`{event}`）。Codex 报不出失败。面板自己的工具认成 `panel` 类，用户钩子按去掉前缀的工具名匹配。
+- **版本门槛**：事件可以写 `minVersion`（Codex 0.166.0、Pi 1.5.0、Claude Code 工具后 2.1.0），本机检测到的版本更老时不装那几个事件，退回一轮结束后的提醒；读不到版本照装。
+- **按 CLI 关掉事件**（`hooks.json` 的 `cliOff`）：中转站上 Codex 的工具后补说明会报错这类情况，只在那个 CLI 上关掉。
+- **真实接口测试**（Claude Code + deepseek-v4-flash）：推送授权拦下 `git push`（提示先 `ask_push`）；长命令守卫拦下 `npm run dev`，模型改用 `run_background`；危险命令拦下 `git clean -fd`，模型改用定点的 `rmdir`；原地打转在第二次失败后补了说明（PostToolUseFailure 这条路通了）；改完没验证拦了一次，模型说明只改了注释。
