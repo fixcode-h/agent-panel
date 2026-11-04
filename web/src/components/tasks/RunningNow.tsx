@@ -1,6 +1,6 @@
 import { useUserName } from '@/lib/user-name'
 import { useEffect, useMemo, useState } from 'react'
-import { CircleSlash, Loader2 } from 'lucide-react'
+import { CircleSlash, FileSearch, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import {
   helperRunning,
@@ -93,7 +93,14 @@ function ReportRow({ task, version }: { task: Task; version: number }) {
   return (
     <>
       <RowShell
-        glyph={<Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-warning" />}
+        glyph={
+          // 对话停下了：报告还能确认，但没有人在等着往下做，不再转圈
+          task.status === 'stopped' ? (
+            <FileSearch className="h-3.5 w-3.5 shrink-0 text-warning" />
+          ) : (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-warning" />
+          )
+        }
         verb={t('诊断报告')}
         title={t('第 {n} 版', { n: version })}
         titleClass={NAME_TITLE}

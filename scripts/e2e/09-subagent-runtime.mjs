@@ -991,8 +991,49 @@ await runShard('子对话运行与监管', async (api) => {
     assert.ok(run.input.includes('## 用户报的 Bug：完整查找流程'), '带上完整查找流程')
     assert.ok(!run.input.includes('/bug 购物车'), 'Claude Code 不会收到原样的 /bug')
     await waitDone(kid.id, 20000)
+    step('/bug 发给子对话：标成用户报的 Bug，按完整查找流程展开')
+
+    // 交了诊断报告、停在等用户确认：这一轮已经说完，CLI 不在跑。以前点停止碰不到它，状态还是完成，
+    // 报告又让它一直算在运行，停止按钮一直在、点了没变化（用户报过）
+    const diag = {
+      symptom: '购物车角标偶尔不刷新',
+      repro: 'npm test -- badge.test.ts：并发更新用例失败',
+      location: 'src/badge.ts:12 setCount',
+      evidence: '日志「[badge] stale 3」← badge.ts:14 读的是旧快照',
+      rootCause: 'setCount 读的是渲染前的快照',
+      confirmed: true,
+      excluded: '接口返回慢：日志里 50ms 就回来了',
+      fix: 'badge.ts:14 改成函数式更新',
+      files: ['src/badge.ts'],
+      risk: '只影响角标',
+      verify: 'badge.test.ts 的并发用例改前失败、改后通过',
+      level: 'quick',
+      attribution: {
+        category: 'recent',
+        change: 'a1b2c3',
+        author: '张三',
+        date: '2026-10-30',
+        title: '角标改成读快照',
+        how: 'blame',
+      },
+    }
+    await call('POST', `/tasks/${kid.id}/messages`, {
+      text: `SUBMIT_DIAGNOSIS:${JSON.stringify(diag)}`,
+    })
+    const asked = await waitFor(
+      async () => {
+        const x = await call('GET', `/tasks/${kid.id}`)
+        return !x.working && x.diagnoses?.at(-1)?.status === 'pending' ? x : null
+      },
+      { timeout: 20000, label: '交了诊断报告、停在等确认' },
+    )
+    assert.notEqual(asked.status, 'stopped', '交完报告这一轮是正常说完的')
+    const stopped = await call('POST', `/tasks/${kid.id}/stop`)
+    assert.equal(stopped.status, 'stopped', '等确认时点停止：对话落成已停止，停止按钮变回来')
+    assert.equal(stopped.stopReason, 'user')
+    assert.equal(stopped.diagnoses.at(-1).status, 'pending', '报告留着，之后照样能确认')
     await call('POST', `/tasks/${bp.id}/stop`).catch(() => {})
     await call('DELETE', `/tasks/${bp.id}`)
-    step('/bug 发给子对话：标成用户报的 Bug，按完整查找流程展开')
+    step('诊断报告等确认时点停止：对话停下，报告留着能确认')
   }
 })

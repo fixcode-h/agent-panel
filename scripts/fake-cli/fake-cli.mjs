@@ -912,6 +912,10 @@ function dispatchFor(text) {
 // 只认用户这一条消息里的标记（附在后面的用法说明里也有 app_do 字样，所以要两个都在）
 const appDo = /APP_DO:(\{.*\})/.exec(input)?.[1]
 if (appDo && input.includes('app_do')) await panelCall('app_do', JSON.parse(appDo))
+// Bug 子对话交诊断报告（ADR 0045）：任务里有 SUBMIT_DIAGNOSIS:<一行 JSON> 时交一份。
+// 不看输入里有没有工具说明：续接的会话只重发变了的规则，工具说明头一轮给过就不再带（ADR 0027 / 0028）
+const diagnosis = /SUBMIT_DIAGNOSIS:(\{.*\})/.exec(input)?.[1]
+if (diagnosis) await panelCall('submit_diagnosis', JSON.parse(diagnosis))
 let beganEdit = false
 if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
   const got = await panelCall('begin_edit', {})
