@@ -4,9 +4,13 @@
  * 成功交给子对话收尾，失败把失败的步骤和输出交回去修。
  */
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import test from 'node:test'
 
-import { createParentTests, parentTestJobName, parentTestRun } from './parent-tests.ts'
+import { createParentTests, parentTestJobName, parentTestRun, type ParentTestFail } from './parent-tests.ts'
+import { createBackground } from './background.ts'
 import { type TestStep, ProjectInput } from '../shared/schema.ts'
 
 const step = (id: string, name: string, command = 'run'): TestStep => ({
@@ -32,6 +36,8 @@ function harness() {
   const startedMax = { running: 0 }
   const passed: string[] = []
   const failed: { childId: string; index: number; stepId: string; output: string }[] = []
+  /** 完整的失败对象：断言 stopped 这类标记用（failed 只留对比用的几个字段） */
+  const failedDetail: ParentTestFail[] = []
   const recorded: { stepId: string; ok: boolean; durationMs: number }[] = []
   const tests = createParentTests({
     start: async ({ run, step, name }) => {
@@ -43,6 +49,7 @@ function harness() {
       passed.push(run.childId)
     },
     fail: async (run, failedStep) => {
+      failedDetail.push(failedStep)
       failed.push({
         childId: run.childId,
         index: failedStep.index,
@@ -57,7 +64,7 @@ function harness() {
       throw new Error(`${where}: ${error.message}`)
     },
   })
-  return { tests, started, passed, failed, recorded, startedMax }
+  return { tests, started, passed, failed, failedDetail, recorded, startedMax }
 }
 
 test('一批步骤按配置的顺序跑，全部通过才让子对话收尾', async () => {
@@ -305,4 +312,125 @@ test('结果回来、落耗时期间取消：不推进下一步，也不回传',
   assert.deepEqual(started, ['j1'], '取消后不再启动下一步')
   assert.deepEqual(passed, [], '取消后不把结果交给 pass')
   assert.deepEqual(failed, [])
+})
+
+/** 等条件成立：后台命令和队列的推进都在真实的事件循环里跑，假时钟推不动 */
+async function until(cond: () => boolean, what: string, ms = 5000) {
+  const end = Date.now() + ms
+  while (!cond()) {
+    if (Date.now() > end) assert.fail(`等了 ${ms}ms 仍未成立：${what}`)
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
+test('父对话测试命令被停止：把结论交回子对话，不会永远停在「等父对话测试」', async () => {
+  const ends: ((r: unknown) => void)[] = []
+  const fake = ((_line: string, _cwd: string, o: { onLine: (l: string) => void; signal?: AbortSignal }) =>
+    new Promise((resolve) => {
+      ends.push(resolve)
+      o.signal?.addEventListener('abort', () => resolve({ code: null, killed: 'stopped', stderr: '' }))
+    })) as unknown as NonNullable<Parameters<typeof createBackground>[1]>['run']
+  const dir = mkdtempSync(path.join(tmpdir(), 'parent-test-stop-'))
+  const failed: ParentTestFail[] = []
+  const passed: string[] = []
+  let bg: ReturnType<typeof createBackground>
+  const tests = createParentTests({
+    // 照 server/tasks/test-runs.ts 的接线：父对话测试命令带 notifyOnStop，被停掉时结果也要回来
+    start: async ({ step: s, name }) => {
+      const r = bg.start({
+        taskId: 'p',
+        name,
+        command: s.command,
+        cwd: s.cwd,
+        root: dir,
+        exclusive: true,
+        notifyOnStop: true,
+      })
+      return r.ok ? { ok: true, id: r.id! } : { ok: false, info: r.info }
+    },
+    pass: async (run) => {
+      passed.push(run.childId)
+    },
+    fail: async (_run, f) => {
+      failed.push(f)
+    },
+    record: async () => {},
+  })
+  // 照 server/tasks/jobs.ts 的接线：结果只看后台命令是不是真的跑完了，被停止按未通过处理
+  bg = createBackground(
+    (job) => {
+      void tests.finishJob(job.id, {
+        ok: job.state === 'done',
+        durationMs: 10,
+        output: '',
+        stopped: job.state === 'stopped',
+      })
+    },
+    { run: fake },
+  )
+  tests.enqueue({
+    parentId: 'p',
+    childId: 'c1',
+    childTitle: 'A',
+    steps: [step('tc', '单元测试'), step('e2e', '端到端测试')],
+  })
+  await until(() => ends.length === 1, '第一条父对话测试命令跑起来')
+  const jobId = bg.list('p').find((j) => j.state === 'running')!.id
+  assert.equal(bg.stopOne('p', jobId).ok, true)
+  await until(() => failed.length === 1, '被停止后要把结论交回子对话')
+  assert.equal(failed[0].index, 0, '停在第 1 步')
+  assert.equal(failed[0].stopped, true, '失败说明里要写清是被停止的，不是自己跑完的')
+  assert.equal(passed.length, 0, '被停止不能算通过')
+  assert.equal(tests.statusOf('c1'), '', '队列不再占着它：子对话可以重新收尾')
+  assert.equal(bg.list('p').filter((j) => j.state === 'running').length, 0, '后面的步骤没有跟着跑')
+  void bg.stop('p')
+})
+
+test('父对话被停止 / 归档：正在跑的那批按未通过退回子对话，不留到重启', async () => {
+  const h = harness()
+  h.tests.enqueue({
+    parentId: 'p',
+    childId: 'c1',
+    childTitle: 'A',
+    steps: [step('a1', '一'), step('a2', '二')],
+  })
+  await h.tests.idle()
+  assert.equal(h.tests.statusOf('c1'), 'running')
+  assert.equal(await h.tests.abortByParent('p', '父对话被停止或归档'), true)
+  assert.deepEqual(
+    h.failed,
+    [{ childId: 'c1', index: 0, stepId: 'a1', output: '父对话被停止或归档' }],
+    '把正在跑的那步按未通过退回子对话',
+  )
+  assert.equal(h.failedDetail[0].stopped, true, '退出时要标成“被停止”，失败文案里要写清')
+  assert.equal(h.passed.length, 0)
+  assert.equal(h.tests.statusOf('c1'), '', '队列不再占着它')
+  assert.deepEqual(
+    h.started.map((s) => s.stepId),
+    ['a1'],
+    '不继续起下一步',
+  )
+  assert.equal(await h.tests.abortByParent('other', 'x'), false, '不是这个父对话的批次不动')
+})
+
+test('父对话被停止时队里排着的批次一起退回：不会把下一批起成新命令再被静默停掉', async () => {
+  const h = harness()
+  h.tests.enqueue({ parentId: 'p', childId: 'c1', childTitle: 'A', steps: [step('a1', '一')] })
+  h.tests.enqueue({ parentId: 'p', childId: 'c2', childTitle: 'B', steps: [step('b1', '二')] })
+  await h.tests.idle()
+  assert.equal(h.tests.statusOf('c1'), 'running')
+  assert.equal(h.tests.statusOf('c2'), 'queued')
+  assert.equal(await h.tests.abortByParent('p', '父对话被停止'), true)
+  assert.deepEqual(
+    [...h.failed.map((f) => f.childId)].sort(),
+    ['c1', 'c2'],
+    '跑着的和队里排着的都退回，不会留下 testing',
+  )
+  assert.deepEqual(
+    h.started.map((s) => s.childId),
+    ['c1'],
+    '没有把队里的下一批起成新命令',
+  )
+  assert.equal(h.tests.statusOf('c1'), '')
+  assert.equal(h.tests.statusOf('c2'), '')
 })
