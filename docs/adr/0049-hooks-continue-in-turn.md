@@ -87,3 +87,7 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
 - **面板事件**：`task.done`、`task.failed`、`task.waitingUser`、`task.wrapRequested`、`plan.stepDone`、`schedule.finished`，只通知、输出不看，四个 CLI 都一样（`server/hooks/notify.ts`）。对话事件从任务落盘前后的状态比出来（`task-store` 的 `onTaskChange`），和浏览器通知同一套判断，不读回复文字。
 - **Webhook 并入**：设置里原来的「计划 Webhook」迁成 `schedule.finished` 上的一个 HTTP 钩子（只迁一次，开关照旧）。投递照旧最多重试 3 次、结果记在计划上；收到的 JSON 改成钩子的统一格式，原来的字段放在 `schedule` 下、`event` 改叫 `result`。
 - **按文字认结论删掉了**：`parseVerdict` / `leadVerdict` 删除；老模板里「最后一行写『验收结论：通过』」改成调用 `submit_verdict`，用户存下的旧角色、旧节点启动时用 `rewriteVerdictText` 迁一遍（`server/verdict-migrate.ts`）。
+- **真实接口测试**（deepseek-v4-flash 中转）：Claude Code、Codex、Pi 三个 CLI 都跑过用户钩子拒绝命令、结束前拦住同轮续跑、「对话完成」通知；Codex 只给面板自己的 3 条钩子写了信任。
+  - 测出 Pi 扩展第一期起就没问过面板：`agent_before_settle` 里按 `context.canContinue === false` 提前返回，那一刻这个值永远是 false，已修。
+  - 测出按命令前缀匹配认不出 `cd 项目 && npm test`，改成按 `&&`、`;`、`|` 拆开逐段比（`commandSegments`）。
+  - Command Code 用自带 API 也要先 `cmd login` 账号，没法真机跑；`shared/hook-mod.test.ts` 把生成的 mod 加载起来接本地假面板，逐个调用四个事件。
