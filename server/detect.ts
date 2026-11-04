@@ -15,6 +15,12 @@ const VERSION_TIMEOUT = 15_000
 const RETRY_TIMEOUT = 30_000
 let cached: { at: number; key: string; data: CliStatus[] } | null = null
 
+/**
+ * 上次检测到的版本（不触发检测）：钩子按 CLI 定义里的 minVersion 决定装不装（ADR 0049）。
+ * 还没检测过、没读到版本时返回空，按「够」处理
+ */
+export const knownVersion = (id: string): string => cached?.data.find((c) => c.id === id)?.version ?? ''
+
 export const invalidateClis = () => {
   cached = null
   running = null

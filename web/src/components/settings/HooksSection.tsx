@@ -1,9 +1,21 @@
 import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, Copy, Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, Wand2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+  Wand2,
+} from 'lucide-react'
 import type { HookDef } from '@shared/hook-defs'
 import type { Proposal } from '@shared/assist'
 import { t } from '@shared/i18n'
-import { hooksApi, type HooksView, type HookTriggerView } from '@/lib/api-hooks'
+import { hooksApi, type BuiltinHookView, type HooksView, type HookTriggerView } from '@/lib/api-hooks'
 import { useData } from '@/lib/data'
 import { toast, toastError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
@@ -15,6 +27,9 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { Group, Row } from './parts'
 import { HookEditor } from './HookEditor'
+import { BuiltinParams } from './BuiltinParams'
+import { HookCliEvents } from './HookCliEvents'
+import { Select } from '@/components/ui/input'
 import { eventLabel } from './hook-labels'
 
 /**
@@ -31,10 +46,13 @@ export function HooksSection() {
   const [assist, setAssist] = useState<{ hook?: HookDef } | null>(null)
   const [removing, setRemoving] = useState<HookDef | null>(null)
   const [busy, setBusy] = useState('')
+  // 内置钩子看哪一层的开关：空是全局，选了项目就是这个项目单独的（覆盖全局）
+  const [scope, setScope] = useState('')
+  const [params, setParams] = useState<BuiltinHookView | null>(null)
 
-  const load = async () => {
+  const load = async (sc = scope) => {
     try {
-      const [v, tr] = await Promise.all([hooksApi.list(), hooksApi.triggers().catch(() => [])])
+      const [v, tr] = await Promise.all([hooksApi.list(sc), hooksApi.triggers().catch(() => [])])
       setView(v)
       setTriggers(tr)
       setError('')
@@ -43,8 +61,10 @@ export function HooksSection() {
     }
   }
   useEffect(() => {
-    void load()
-  }, [])
+    void load(scope)
+    // 只在切换范围时重读：load 每次渲染都是新函数，放进依赖会一直重读
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope])
 
   const supportText = (event: string) => {
     if (!view) return ''
@@ -104,18 +124,55 @@ export function HooksSection() {
           '钩子在 Agent 执行到固定时刻自动运行：模型准备结束这一轮、调用工具前后、压缩上下文之后。只按工具、文件、计划这些事实判断，不读模型回复的文字。',
         )}
       </p>
+      <div className="flex flex-wrap items-center gap-2 pt-3">
+        <span className="text-body text-subtle">{t('内置钩子的开关')}</span>
+        <Select
+          className="w-56"
+          value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          aria-label={t('内置钩子的开关')}
+          options={[
+            { value: '', label: t('所有项目（全局）') },
+            ...projects.map((x) => ({ value: x.id, label: t('只在「{name}」', { name: x.name }) })),
+          ]}
+        />
+        {scope && <span className="text-xs text-subtle">{t('这个项目单独设的开关优先，没设的跟着全局')}</span>}
+      </div>
       <Group title={t('内置钩子')}>
         {view.builtins.map((b) => (
           <Row key={b.id} title={b.name} desc={b.description} hint={`${eventLabel(b.event)} · ${supportText(b.event)}`}>
-            <Switch
-              checked={b.on}
-              disabled={busy === `b:${b.id}`}
-              onCheckedChange={(on) => void act(`b:${b.id}`, () => hooksApi.setBuiltin(b.id, on))}
-              aria-label={b.name}
-            />
+            <div className="flex shrink-0 items-center gap-1.5">
+              {scope && b.projectOn !== null && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy === `b:${b.id}`}
+                  onClick={() => void act(`b:${b.id}`, () => hooksApi.setBuiltin(b.id, null, scope))}
+                >
+                  {t('跟随全局（{state}）', { state: b.globalOn ? t('开') : t('关') })}
+                </Button>
+              )}
+              {/* 没有参数的也留出按钮的位置：一列开关上下对齐 */}
+              {b.params.length > 0 ? (
+                <IconButton icon={SlidersHorizontal} label={t('参数')} size="xs" onClick={() => setParams(b)} />
+              ) : (
+                <span className="w-6" aria-hidden />
+              )}
+              <Switch
+                checked={b.on}
+                disabled={busy === `b:${b.id}`}
+                onCheckedChange={(on) => void act(`b:${b.id}`, () => hooksApi.setBuiltin(b.id, on, scope))}
+                aria-label={b.name}
+              />
+            </div>
           </Row>
         ))}
       </Group>
+      <HookCliEvents
+        view={view}
+        busy={busy === 'cli-off'}
+        onChange={(cli, off) => void act('cli-off', () => hooksApi.setCliOff(cli, off))}
+      />
       <Group title={t('我的钩子')} plain>
         <div className="flex flex-wrap items-center gap-2 pb-2">
           <Button size="sm" onClick={() => setEditing({})}>
@@ -172,7 +229,9 @@ export function HooksSection() {
       </Group>
       <Group title={t('最近触发')} plain>
         <div className="flex items-center pb-2">
-          <span className="text-body text-subtle">{t('面板这次启动以来最近 50 次用户钩子的运行')}</span>
+          <span className="text-body text-subtle">
+            {t('面板这次启动以来最近 50 次钩子的运行（内置钩子只记拦下和补说明的）')}
+          </span>
           <IconButton className="ml-auto" icon={RefreshCw} label={t('刷新')} size="xs" onClick={() => void load()} />
         </div>
         {triggers.length ? (
@@ -180,7 +239,10 @@ export function HooksSection() {
             {triggers.map((x, i) => (
               <div key={`${x.at}-${i}`} className="settings-row flex items-center gap-3 py-2 text-body">
                 <span className="w-16 shrink-0 text-xs text-subtle">{new Date(x.at).toLocaleTimeString()}</span>
-                <span className="min-w-0 shrink-0 font-medium">{x.name}</span>
+                {/* 内置钩子的名字按界面语言现取（服务端记的是它自己的语言） */}
+                <span className="min-w-0 shrink-0 font-medium">
+                  {view.builtins.find((b) => `builtin:${b.id}` === x.hookId)?.name ?? x.name}
+                </span>
                 <Badge>{eventLabel(x.event)}</Badge>
                 <span
                   className={cn(
@@ -201,6 +263,7 @@ export function HooksSection() {
           <p className="settings-card py-4 text-center text-body text-subtle">{t('还没有触发过')}</p>
         )}
       </Group>
+      <BuiltinParams hook={params} onOpenChange={(o) => !o && setParams(null)} onSaved={() => void load()} />
       <HookEditor
         open={!!editing}
         initial={editing?.hook}

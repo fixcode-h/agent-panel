@@ -71,9 +71,10 @@ export function buildHookPrompt(subject: Record<string, string>, messages: Assis
 ${support}`,
     `## 钩子收到的输入（stdin 一段 JSON）
 { "event": "tool.before", "task": { "id", "title", "parent" }, "project": { "id", "path" }, "agent": { "id", "name" }, "cli": "claude",
-  "tool": { "kind": "shell | edit | read | any", "name": "Edit", "input": { 原样的工具参数，例如 file_path、command } },
+  "tool": { "kind": "shell | edit | read | panel | any", "name": "Edit", "input": { 原样的工具参数，例如 file_path、command },
+            "panel": "面板工具去掉前缀的名字（kind 是 panel 时）", "result": { "output": "执行结果（截短）", "failed": true } },
   "plan": { "done": 1, "total": 3, "current": "正在做的那一步" } }
-tool 只在 tool.* 里有；plan 在有计划时才有。只通知的事件里有 "notice": { "status": "对话状态", "step": "做完的那一步或收尾说明" }；
+tool 只在 tool.* 里有，result 只在 tool.after 里有（failed 只有 Claude Code、Pi、Command Code 报得出，其余没有这个字段）；plan 在有计划时才有。只通知的事件里有 "notice": { "status": "对话状态", "step": "做完的那一步或收尾说明" }；
 schedule.finished 里有 "schedule": { "result": "run | fail | miss | blocked", "scheduleId", "name", "projectName", "at", "taskId", "error" }。**输入里没有模型回复的文字**：不要、也没法按回复内容的关键字判断状态。`,
     `## 字段
 - name：2–10 个字；description：一句话说明它做什么。
@@ -81,7 +82,7 @@ schedule.finished 里有 "schedule": { "result": "run | fail | miss | blocked", 
 - scope：{ "projects": [], "agents": [], "clis": [] }，都空表示全部。projects 写项目名，agents 写角色名（面板换成内部 id），clis 写 CLI 的 id。
   可选的角色：${roles}
   可选的项目：${projects}
-- match（只给 tool.*）：{ "tool": "shell | edit | read | any", "path": "相对项目根的 glob，可空", "command": "shell 命令前缀，可空" }；其余事件写 { "tool": "any", "path": "", "command": "" }。
+- match（只给 tool.*）：{ "tool": "shell | edit | read | panel | any", "path": "相对项目根的 glob，可空", "command": "shell 命令前缀（会按 &&、; 拆开逐段比）；tool 是 panel 时填面板工具名，例如 submit_merge，可空" }；其余事件写 { "tool": "any", "path": "", "command": "" }。
 - action：二选一
   - { "type": "command", "script": "Node.js 脚本（ESM），从 stdin 读输入，往 stdout 写一个 JSON 或什么都不写" }
   - { "type": "http", "url": "https://…", "headers": [{ "key": "Authorization", "env": "环境变量名" }] }

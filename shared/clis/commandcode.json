@@ -246,7 +246,9 @@
     "toolFields": {
       "name": "tool_name",
       "input": "tool_input",
-      "path": ["file_path", "path"]
+      "path": ["file_path", "path"],
+      "output": ["tool_output"],
+      "failed": ["is_error"]
     }
   },
   "auth": {

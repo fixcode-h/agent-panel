@@ -21,7 +21,7 @@ export interface HookCheck {
 }
 
 /** 疑似真实密钥：和仓库的 secret-check 同一类前缀（脚本里要用凭据就引用环境变量） */
-const SECRET_RES = [
+export const SECRET_RES = [
   /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/,
   /\bsk-(?:ant-|proj-|or-v1-)?[A-Za-z0-9_-]{20,}/,
   /\bAIza[0-9A-Za-z_-]{30,}/,

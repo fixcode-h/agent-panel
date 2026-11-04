@@ -45,7 +45,10 @@ export async function answerHook(h: BridgeHook, event: string, native: unknown):
     const es = h.spec.events[ev.data as keyof HooksSpec['events']]
     if (a.deny && a.reason && ev.data === 'tool.before')
       return { deny: true, reason: a.reason, ...(es?.deny ? { output: fillTpl(es.deny, { reason: a.reason }) } : {}) }
-    if (a.context && es?.context) return { context: a.context, output: fillTpl(es.context, { text: a.context }) }
+    // {event}：同一个面板事件可能来自 CLI 的几个原生事件（Claude Code 的 PostToolUse / PostToolUseFailure），回答要对上
+    const nativeEvent = String((native as { hook_event_name?: unknown })?.hook_event_name ?? '')
+    if (a.context && es?.context)
+      return { context: a.context, output: fillTpl(es.context, { text: a.context, event: nativeEvent }) }
     return {}
   } catch (e) {
     log.warn('agent', '钩子出错，不表态', { event, error: (e as Error).message })

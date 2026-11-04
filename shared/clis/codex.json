@@ -368,7 +368,8 @@
         "decision": "block",
         "reason": "{reason}"
       },
-      "why": "Stop 钩子返回 decision=block 时 Codex 不结束这一轮，把 reason 作为一条 hookPrompt 交给模型接着做（0.166 app-server 实测）。钩子用 -c 传（来源记作 sessionFlags），不改用户的 hooks.json；命令里的转发脚本路径走环境变量，命令每轮不变，信任一次就够（见 trust）。commandWindows 用 cmd 的 %变量% 写法，Windows 上没实测"
+      "why": "Stop 钩子返回 decision=block 时 Codex 不结束这一轮，把 reason 作为一条 hookPrompt 交给模型接着做（0.166 app-server 实测）。钩子用 -c 传（来源记作 sessionFlags），不改用户的 hooks.json；命令里的转发脚本路径走环境变量，命令每轮不变，信任一次就够（见 trust）。commandWindows 用 cmd 的 %变量% 写法，Windows 上没实测",
+      "minVersion": "0.166.0"
     },
     "events": {
       "tool.before": {
@@ -388,7 +389,8 @@
             "hookEventName": "PreToolUse",
             "additionalContext": "{text}"
           }
-        }
+        },
+        "minVersion": "0.166.0"
       },
       "tool.after": {
         "args": [
@@ -400,7 +402,8 @@
             "hookEventName": "PostToolUse",
             "additionalContext": "{text}"
           }
-        }
+        },
+        "minVersion": "0.166.0"
       },
       "context.restored": {
         "args": [
@@ -413,7 +416,8 @@
             "additionalContext": "{text}"
           }
         },
-        "why": "压缩之后 Codex 会以 source=compact 再跑一次 SessionStart，补的说明会交给模型；PostCompact 的 additionalContext 不会（0.166 实测）"
+        "why": "压缩之后 Codex 会以 source=compact 再跑一次 SessionStart，补的说明会交给模型；PostCompact 的 additionalContext 不会（0.166 实测）",
+        "minVersion": "0.166.0"
       }
     },
     "dropInput": ["last_assistant_message"],
@@ -426,7 +430,9 @@
     "toolFields": {
       "name": "tool_name",
       "input": "tool_input",
-      "path": ["file_path", "path"]
+      "path": ["file_path", "path"],
+      "output": ["tool_response"],
+      "failed": []
     }
   }
 }

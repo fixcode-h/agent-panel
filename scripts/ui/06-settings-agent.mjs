@@ -199,7 +199,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await check(p, '设置-授权-已退出', ['未授权', '浏览器授权'])
   // 钩子（ADR 0049 第二期）：内置钩子能开关，我的钩子能新建、让 AI 创建；新建弹窗里有范围、脚本、试跑
   await p.getByRole('button', { name: '钩子', exact: true }).first().click()
-  await check(p, '设置-钩子', ['内置钩子', '没做完不收尾', '只读身份守卫', '我的钩子', '锁文件不要手改', '最近触发'])
+  await check(p, '设置-钩子', [
+    '内置钩子',
+    '没做完不收尾',
+    '只读身份守卫',
+    '推送授权守卫',
+    '危险命令守卫',
+    '内置钩子的开关',
+    '原地打转提醒',
+    '各 CLI 的事件',
+    '我的钩子',
+    '锁文件不要手改',
+    '最近触发',
+  ])
+  // 第四期：内置钩子的参数（一行一项）
+  await p.getByRole('button', { name: '参数' }).nth(1).click()
+  await check(p, '设置-钩子-参数', ['「危险命令守卫」的参数', '另外拦下的命令'])
+  await p.getByRole('dialog').getByRole('button', { name: '取消' }).click()
   const mine = p.locator('[data-setting-group="我的钩子"]')
   await mine.getByRole('button', { name: '新建钩子' }).click()
   await check(p, '设置-钩子-新建', ['新建钩子', '哪些 CLI', 'Node 脚本', '试跑'])

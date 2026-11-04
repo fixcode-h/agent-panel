@@ -722,7 +722,7 @@ export type TestStepScope = (typeof TEST_STEP_SCOPES)[number]
  * 命令里能看出「跑的是全量、很慢」的写法：迁移老步骤和生成默认步骤时补成 parent。
  * 只认这些明确的全量入口，宽泛的 test / build 不改判——猜错成 parent 会让子对话漏跑，比多跑一次更糟。
  */
-const FULL_SUITE_COMMAND = /(test:?(?:unit|all|e2e)\b|\be2e\b|ui-check|playwright\s+test|cypress)/i
+export const FULL_SUITE_COMMAND = /(test:?(?:unit|all|e2e)\b|\be2e\b|ui-check|playwright\s+test|cypress)/i
 
 /**
  * 老步骤的 runInParent 迁成 scope（不保留两个字段）：

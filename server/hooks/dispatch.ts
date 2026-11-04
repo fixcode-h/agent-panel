@@ -5,6 +5,8 @@ import type { AgentCall } from '../../shared/engine.ts'
 import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts } from '../../shared/hooks.ts'
 import {
   BUILTIN_HOOKS,
+  builtinList,
+  builtinNumber,
   builtinOn,
   globMatch,
   hookApplies,
@@ -21,6 +23,16 @@ import { loadProjectLessons } from '../project-lessons.ts'
 import { readHooks } from './store.ts'
 import { noteTrigger, runHook } from './run.ts'
 import { taskLog } from '../task-log.ts'
+import {
+  bugDeny,
+  dangerDeny,
+  longDeny,
+  pushDeny,
+  secretDeny,
+  testScopeDeny,
+  worktreeDeny,
+  type GuardCtx,
+} from './guards.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -77,7 +89,7 @@ function identity(c: HookCallCtx): 'read-only' | 'coordinator' | '' {
 }
 
 /** 只读身份守卫：要改文件（和只读角色的写命令）时拒绝；父对话开了就地微改动时，改它登记的那几个文件放行 */
-function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts): string {
+function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts, extra: string[] = []): string {
   const tool = facts.tool
   if (!tool) return ''
   if (tool.kind === 'edit') {
@@ -92,7 +104,7 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts): string {
   if (who === 'read-only' && tool.kind === 'shell') {
     // 按段比：`cd 项目 && git commit` 也要拦
     const segs = commandSegments(String(tool.input.command ?? ''))
-    const hit = WRITE_COMMANDS.find((w) => segs.some((c) => c.startsWith(w)))
+    const hit = [...WRITE_COMMANDS, ...extra.filter(Boolean)].find((w) => segs.some((c) => c.startsWith(w)))
     if (hit)
       return `【面板】你是只读的角色，不跑会改仓库或装依赖的命令（${hit.trim()}）：需要的话写进结果，由派你的对话安排。`
   }
@@ -100,12 +112,12 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts): string {
 }
 
 /** 临时文件位置守卫：写到盘符根目录下一两层、或面板的数据目录里时拒绝（项目目录、系统临时目录里照常） */
-function tempFileDeny(c: HookCallCtx, facts: HookFacts): string {
+function tempFileDeny(c: HookCallCtx, facts: HookFacts, allow: string[] = []): string {
   const tool = facts.tool
   if (!tool || tool.kind !== 'edit') return ''
   for (const f of tool.paths.length ? tool.paths : [tool.path].filter(Boolean)) {
     const p = path.resolve(c.cwd, f)
-    if (inside(c.cwd, p) || inside(tmpdir(), p)) continue
+    if (inside(c.cwd, p) || inside(tmpdir(), p) || allow.some((d) => d && inside(d, p))) continue
     const root = path.parse(p).root
     const depth = path.relative(root, p).split(path.sep).filter(Boolean).length
     if (inside(DATA_DIR, p) || depth <= 2)
@@ -128,6 +140,35 @@ function restoreText(task: Task): string {
 
 /** 改文件后推送教训：每个对话里同一条教训只推一次 */
 const pushed = new Map<string, Set<string>>()
+/** 原地打转提醒：每个对话里每条命令连续失败了几次（成功一次就清零），提醒过的记在 hinted 里不再重复 */
+const fails = new Map<string, Map<string, number>>()
+/** 改完没验证：每个对话里按哪条输入问过（同一条输入只问一次） */
+const verified = new Map<string, string>()
+
+/**
+ * 这条输入以来改过文件、最后一次改之后一条命令都没跑过：返回这条输入的 id，不该问返回空。
+ * 只看工具的类别（edit / run），不看回复文字；自检过（钩子、提醒的那一行）之后又没动过的不再问
+ */
+export function unverifiedEdit(task: Pick<Task, 'messages'>): string {
+  const msgs = task.messages
+  let at = -1
+  msgs.forEach((m, i) => {
+    if (m.role === 'user' && !m.panel) at = i
+  })
+  if (at < 0) return ''
+  let lastEdit = -1
+  let lastRun = -1
+  let n = 0
+  msgs.slice(at + 1).forEach((m) => {
+    if (m.panel === 'hook' || m.panel === 'nudge') lastRun = Math.max(lastRun, n)
+    for (const x of m.role === 'agent' ? m.tools : []) {
+      n++
+      if (x.kind === 'edit') lastEdit = n
+      else if (x.kind === 'run') lastRun = n
+    }
+  })
+  return lastEdit > 0 && lastRun < lastEdit ? msgs[at].id : ''
+}
 
 export async function hookOptions(c: HookCallCtx): Promise<{
   beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
@@ -136,10 +177,12 @@ export async function hookOptions(c: HookCallCtx): Promise<{
 }> {
   if (!c.call.orch) return {}
   const data: HooksData = await readHooks()
+  // 开关可以按项目单独设（覆盖全局，见 hook-builtins.ts）
   const on = (id: string) =>
     builtinOn(
       data,
       BUILTIN_HOOKS.find((h) => h.id === id)!,
+      c.project.id,
     )
   const who = identity(c)
   const base: Omit<HookInput, 'event'> = {
@@ -156,10 +199,34 @@ export async function hookOptions(c: HookCallCtx): Promise<{
           (l) => l.enabled && l.paths.length,
         )
       : []
+  // 工具前的内置守卫，按这个顺序问，第一个拒绝的说了算（第四期的几个见 guards.ts）
+  const guard = (id: string): GuardCtx => ({
+    task: c.task,
+    project: c.project.id ? c.project : null,
+    cwd: c.cwd,
+    helper: !!c.call.orch?.helper,
+    canBackground: !!c.call.orch?.canBackground,
+    list: (key) => builtinList(data, id, key),
+  })
+  const GUARDS: [string, (g: GuardCtx, f: HookFacts) => string][] = [
+    ['read-only-guard', (g, f) => (who ? readOnlyDeny(c, who, f, g.list('extra')) : '')],
+    ['worktree-guard', worktreeDeny],
+    ['bug-diagnosis-guard', bugDeny],
+    ['push-guard', pushDeny],
+    ['danger-guard', dangerDeny],
+    ['test-scope-guard', testScopeDeny],
+    ['long-command-guard', longDeny],
+    ['secret-guard', secretDeny],
+    ['temp-file-guard', (g, f) => tempFileDeny(c, f, g.list('allow'))],
+  ]
+  const guards = GUARDS.filter(([id]) => on(id) && (id !== 'read-only-guard' || who))
+  // 设置里按 CLI 关掉的事件（比如中转站上 Codex 的工具后）：内置的、自己的钩子都不装
+  const off = new Set(data.cliOff[c.cliId] ?? [])
   const events: HookEventName[] = []
-  if ((on('read-only-guard') && who) || on('temp-file-guard') || mine('tool.before').length) events.push('tool.before')
-  if (lessons.length || mine('tool.after').length) events.push('tool.after')
+  if (guards.length || mine('tool.before').length) events.push('tool.before')
+  if (lessons.length || on('loop-hint') || mine('tool.after').length) events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
+  for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
 
   const runUser = async (event: HookEventName, facts: HookFacts) => {
     const plan = activePlan(c.task)
@@ -167,7 +234,17 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     const input: HookInput = {
       ...base,
       event,
-      ...(facts.tool ? { tool: { kind: facts.tool.kind, name: facts.tool.name, input: facts.tool.input } } : {}),
+      ...(facts.tool
+        ? {
+            tool: {
+              kind: facts.tool.kind,
+              name: facts.tool.name,
+              input: facts.tool.input,
+              ...(facts.tool.panel ? { panel: facts.tool.panel } : {}),
+              ...(facts.tool.result ? { result: facts.tool.result } : {}),
+            },
+          }
+        : {}),
       ...(p
         ? {
             plan: {
@@ -210,28 +287,84 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return out
   }
 
-  const builtinEnd = on('keep-going') ? c.call.beforeEnd : undefined
-  const userEnd = mine('turn.beforeEnd').length > 0
+  /** 内置钩子也记进「最近触发」：拦了什么、补了什么在设置页看得到，不用翻对话 */
+  const noteBuiltin = (id: string, event: HookEventName, result: 'block' | 'deny' | 'context', detail: string) =>
+    noteTrigger({
+      at: new Date().toISOString(),
+      hookId: `builtin:${id}`,
+      name: BUILTIN_HOOKS.find((h) => h.id === id)?.name() ?? id,
+      event,
+      taskId: c.task.id,
+      result,
+      detail,
+      ms: 0,
+    })
+
+  const endOff = off.has('turn.beforeEnd')
+  const builtinEnd = on('keep-going') && !endOff ? c.call.beforeEnd : undefined
+  const userEnd = !endOff && mine('turn.beforeEnd').length > 0
+  // 改完没验证：只给对话（有结束前判断的调用），Chat 页一问一答不拦
+  const verifyEnd = !endOff && on('verify-before-end') && !!c.call.beforeEnd && !isChatMode(c.task)
   const beforeEnd =
-    builtinEnd || userEnd
+    builtinEnd || userEnd || verifyEnd
       ? async (input: BeforeEndInput): Promise<BeforeEndDecision> => {
           let d: BeforeEndDecision = builtinEnd ? await builtinEnd(input) : { block: false, why: 'builtin-off' }
+          if (!d.block && verifyEnd) {
+            const asked = unverifiedEdit(c.task)
+            if (asked && verified.get(c.task.id) !== asked) {
+              verified.set(c.task.id, asked)
+              d = {
+                block: true,
+                why: 'verify',
+                reason:
+                  '【面板】这次改了文件，之后还没跑过任何检查就要结束：按项目的测试步骤跑一下快速检查（类型检查、相关单测），通过了再结束；确实不用跑（只改了文档、注释）就一句话说明原因。',
+              }
+              noteBuiltin('verify-before-end', 'turn.beforeEnd', 'block', d.reason!)
+            }
+          }
           if (!d.block && userEnd) {
             const u = await runUser('turn.beforeEnd', {})
             if (u.block) d = { block: true, reason: u.block, why: 'user-hook' }
           }
-          if (d.block && d.reason) c.mark(d.reason)
+          if (d.block && d.reason) {
+            c.mark(d.reason)
+            if (d.why !== 'user-hook' && d.why !== 'verify')
+              noteBuiltin('keep-going', 'turn.beforeEnd', 'block', d.reason)
+          }
           return d
         }
       : undefined
 
+  /** 原地打转：同一条 shell 命令连续失败到设置的次数时补一句；CLI 报不出失败（failed 为 undefined）的不算 */
+  const loopHint = (facts: HookFacts): string => {
+    const tool = facts.tool
+    if (!tool || tool.kind !== 'shell' || tool.result?.failed === undefined) return ''
+    const key = String(tool.input.command ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (!key) return ''
+    const mine = fails.get(c.task.id) ?? new Map<string, number>()
+    fails.set(c.task.id, mine)
+    if (!tool.result.failed) {
+      mine.delete(key)
+      return ''
+    }
+    const n = (mine.get(key) ?? 0) + 1
+    mine.set(key, n)
+    const times = Math.max(1, builtinNumber(data, 'loop-hint', 'times'))
+    if (n !== times) return ''
+    const text = `【面板】这条命令已经连续失败 ${n} 次了：${key.slice(0, 120)}。先停下来想清楚原因，换个思路（看报错原文、查配置、缩小范围）；确实卡住了就说明卡在哪、需要什么。`
+    noteBuiltin('loop-hint', 'tool.after', 'context', text)
+    return text
+  }
+
   const onHook = async (event: HookEventName, facts: HookFacts): Promise<HookAnswer> => {
     if (event === 'tool.before') {
-      const deny =
-        (on('read-only-guard') && who && readOnlyDeny(c, who, facts)) ||
-        (on('temp-file-guard') && tempFileDeny(c, facts))
-      if (deny) {
-        taskLog(c.task.id, '工具前钩子：拒绝', { tool: facts.tool?.name, path: facts.tool?.path })
+      for (const [id, fn] of guards) {
+        const deny = fn(guard(id), facts)
+        if (!deny) continue
+        taskLog(c.task.id, '工具前钩子：拒绝', { guard: id, tool: facts.tool?.name, path: facts.tool?.path })
+        noteBuiltin(id, event, 'deny', deny)
         return { deny: true, reason: deny }
       }
       const u = await runUser(event, facts)
@@ -246,11 +379,14 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         pushed.set(c.task.id, seen)
         const hit = lessons.filter((l) => !seen.has(l.id) && l.paths.some((g) => globMatch(g, r)))
         for (const l of hit) seen.add(l.id)
+        if (hit.length) noteBuiltin('push-lessons', event, 'context', `${r}：${hit.map((l) => l.title).join('、')}`)
         if (hit.length)
           ctx.push(
             `【面板】${r} 有相关的项目教训，照着做：\n${hit.map((l) => `- ${l.title}${l.rule ? `：${l.rule}` : ''}`).join('\n')}`,
           )
       }
+      const loop = on('loop-hint') ? loopHint(facts) : ''
+      if (loop) ctx.push(loop)
       ctx.push(...(await runUser(event, facts)).context)
       return ctx.length ? { context: ctx.join('\n\n') } : {}
     }
@@ -261,6 +397,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         if (text) {
           ctx.push(text)
           taskLog(c.task.id, '压缩后补回计划', { chars: text.length })
+          noteBuiltin('restore-plan', event, 'context', text.slice(0, 200))
         }
       }
       ctx.push(...(await runUser(event, facts)).context)

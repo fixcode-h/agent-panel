@@ -10,6 +10,7 @@ import {
   HOOK_SCRIPT,
   HOOK_SCRIPT_ENV,
   supportedEvents,
+  versionAtLeast,
   HOOK_URL_ENV,
 } from './hooks.ts'
 import { getCli } from './clis.ts'
@@ -147,4 +148,50 @@ test('Pi、Command Code 的工具前后和压缩之后写在扩展里：按这�
   assert.deepEqual([f.tool?.kind, f.tool?.path], ['edit', 'src/a.ts'])
   const c = hookFacts(getCli('commandcode')!.hooks!, { tool_name: 'write_file', tool_input: { file_path: 'b.md' } })
   assert.deepEqual([c.tool?.kind, c.tool?.path], ['edit', 'b.md'])
+})
+
+test('工具后带上执行结果：Claude Code 的失败事件带 error 算失败，Pi 看 is_error，Codex 报不出失败', () => {
+  const c = hookFacts(getCli('claude')!.hooks!, {
+    hook_event_name: 'PostToolUseFailure',
+    tool_name: 'Bash',
+    tool_input: { command: 'npm test' },
+    error: 'Exit code 1',
+  })
+  assert.deepEqual(c.tool?.result, { output: 'Exit code 1', failed: true })
+  const ok = hookFacts(getCli('claude')!.hooks!, {
+    tool_name: 'Bash',
+    tool_input: { command: 'ls' },
+    tool_response: { stdout: 'a', stderr: '' },
+  })
+  assert.equal(ok.tool?.result?.failed, false)
+  assert.match(ok.tool?.result?.output ?? '', /"stdout":"a"/)
+  const pi = hookFacts(getCli('pi')!.hooks!, { tool_name: 'bash', tool_input: {}, tool_output: 'boom', is_error: true })
+  assert.equal(pi.tool?.result?.failed, true)
+  const cx = hookFacts(getCli('codex')!.hooks!, { tool_name: 'Bash', tool_input: {}, tool_response: 'x' })
+  assert.equal(cx.tool?.result?.failed, undefined, 'Codex 不报失败')
+  assert.equal(hookFacts(getCli('claude')!.hooks!, { tool_name: 'Bash', tool_input: {} }).tool?.result, undefined)
+  // 补说明的 hookEventName 跟着原生事件走
+  assert.deepEqual(
+    fillTpl(getCli('claude')!.hooks!.events['tool.after']!.context, { text: 't', event: 'PostToolUseFailure' }),
+    {
+      hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: 't' },
+    },
+  )
+})
+
+test('面板自己的工具按去掉前缀的名字认成 panel 类', () => {
+  const f = hookFacts(getCli('claude')!.hooks!, { tool_name: 'mcp__panel-ab12__submit_merge', tool_input: {} })
+  assert.deepEqual([f.tool?.kind, f.tool?.panel], ['panel', 'submit_merge'])
+  const p = hookFacts(getCli('pi')!.hooks!, { tool_name: 'spawn_agents', tool_input: {} })
+  assert.equal(p.tool?.kind, 'panel')
+})
+
+test('版本门槛：本机版本比实测过的老就不装，读不到版本照装', () => {
+  assert.ok(versionAtLeast('codex-cli 0.166.0', '0.166.0'))
+  assert.ok(!versionAtLeast('codex-cli 0.150.2', '0.166.0'))
+  assert.ok(versionAtLeast('2.1.318 (Claude Code)', '2.1.0'))
+  assert.ok(versionAtLeast('', '9.9.9'))
+  assert.deepEqual(supportedEvents(getCli('codex')!.hooks, 'codex-cli 0.150.0'), [])
+  assert.equal(supportedEvents(getCli('codex')!.hooks, 'codex-cli 0.166.0').length, 4)
+  assert.ok(!supportedEvents(getCli('pi')!.hooks, '1.4.9').includes('turn.beforeEnd'))
 })

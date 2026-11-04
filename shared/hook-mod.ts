@@ -42,7 +42,8 @@ async function beforeToolCall(p) {
 // 工具后：补的说明接在结果后面
 async function afterToolCall(p) {
   if (!HOOK_EVENTS().includes('tool.after')) return undefined
-  const d = await askPanel('tool.after', toolOf(p), ${FORWARD_TIMEOUT_MS})
+  const out = Array.isArray(p && p.result) ? p.result.map((c) => (c && c.type === 'text' ? c.text : '')).join('\\n') : String((p && p.result) || '')
+  const d = await askPanel('tool.after', { ...toolOf(p), tool_output: out.slice(0, 4000), is_error: !!(p && p.isError) }, ${FORWARD_TIMEOUT_MS})
   return d && d.context ? { additionalContext: d.context } : undefined
 }
 // 压缩之后：Command Code 只有 compaction_done 事件（只能看不能改），先问面板，下一回合开始时补一条不显示的消息
