@@ -9,7 +9,7 @@ import { setLang, t } from '../shared/i18n.ts'
 
 // 设置模块会读数据目录，用临时的别碰本机
 process.env.AGENT_PANEL_DATA = await mkdtemp(path.join(tmpdir(), 'agent-panel-download-data-'))
-const { addSpan, downloadFile, missingSpans, removeDownload } = await import('./download.ts')
+const { addSpan, autoChunk, downloadFile, missingSpans, removeDownload } = await import('./download.ts')
 const { netFetch } = await import('./net.ts')
 setLang('zh')
 
@@ -267,4 +267,12 @@ test('删除下载中的临时文件', async () => {
 
 test('收尾：删掉测试目录', async () => {
   await rm(dir, { recursive: true, force: true })
+})
+
+test('没指定片大小：按连接数切开，小文件也能用满连接，每片 1–16 MB', () => {
+  const MB = 1024 * 1024
+  // 34 MB 的更新包：以前固定 16 MB 只有 3 片，现在 8 条连接都用上
+  assert.equal(Math.ceil((34 * MB) / autoChunk(34 * MB, 8)), 8)
+  assert.equal(autoChunk(2 * MB, 8), MB, '不切得比 1 MB 更碎')
+  assert.equal(autoChunk(4096 * MB, 8), 16 * MB, '大文件仍是 16 MB 一片')
 })
