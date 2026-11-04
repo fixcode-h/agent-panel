@@ -9,6 +9,7 @@ import { t } from '../../shared/i18n.ts'
 import { settleWait, waitNote } from '../../shared/plan.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import type { TasksScope } from './scope.ts'
+import { forwardBuildResult } from './build-results.ts'
 
 /**
  * 后台命令：交出去的命令跑完把结果推回对话（推不进去时排队重试，见 docs/modules/server/bugs/background-result-never-back.md）、对话的后台命令列表、结束一个对话的全部后台命令。
@@ -83,31 +84,18 @@ export function createJobs(sc: TasksScope) {
         // 子任务起的命令：结果照常推回这个对话，但要写清是哪个子任务起的，否则父对话看到一条命令不知道来源
         const owner = job.step ? tk.steps.find((s) => s.id === job.step && s.slot === 'sub') : undefined
         const from = owner ? t('这条后台命令是子任务「{title}」起的。\n', { title: owner.title }) : ''
-        const text = waitNote(hit) + from + result
+        let text = waitNote(hit) + from + result
         if (hit.length) {
           const entry = sc.live.get(tk.id)
           if (entry) entry.rev++
           else await sc.store.update(tk.id, tk)
         }
-        // 父对话替子对话申请的编译：结果直接推给申请的子对话（它们靠这个结果判断能不能请求收尾）
-        const forward = sc.buildFor.get(job.id)
-        if (forward) {
-          sc.buildFor.delete(job.id)
-          for (const kid of forward.children)
-            await sc
-              .sendToChild(
-                forward.parent,
-                kid,
-                `【父对话编译结果】${result}`,
-                'build',
-                'build',
-                /跑完了：失败|被停止了/.test(result),
-              )
-              .catch((e) => {
-                log.warn('task', '编译结果推给子对话失败', { task: kid, error: (e as Error).message })
-                sc.alertOn(kid, 'delivery', t('父对话的编译结果没能交给这个对话'), 'error')(e)
-              })
-        }
+        // 父对话替子对话申请的编译：结果按子对话上的记录推回（它们靠这个结果判断能不能请求收尾）；
+        // 已经在等收尾的不叫醒，改在这条结果后面点名让父对话 finish_child（见 build-results.ts）
+        text += await forwardBuildResult(sc, job, result).catch((e) => {
+          log.warn('task', '编译结果推给子对话失败', { job: job.id, error: (e as Error).message })
+          return ''
+        })
         // 结果交给 CLI，但不是用户说的话：记成面板消息，对话里显示成 AI 回复里的一行
         try {
           await pushJobNote(tk, job, text)

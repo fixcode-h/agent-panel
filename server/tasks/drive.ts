@@ -228,6 +228,9 @@ export function createDrive(
         return `status:${tk.status}`
       if (tk.requests.length || diagnosisPending(tk)) return 'asking'
       if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
+      // 父对话自己还有后台命令在跑（多半是替子对话申请的编译）：结果回来会开新的一轮，到时再提醒。
+      // 编译期间就催它收尾，它只能回「等编译结果」，次数白白用掉，编译出了结果反而不再提醒（用户 2026-11-04 报）
+      if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return 'background'
       const kids = (await sc.store.list())
         .filter((k) => k.parentTaskId === tk.id)
         .map((k) => sc.live.get(k.id)?.task ?? k)

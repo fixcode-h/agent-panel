@@ -157,13 +157,6 @@ export interface TasksScope {
     ok: boolean
     info: string
   }>
-  buildFor: Map<
-    string,
-    {
-      parent: string
-      children: string[]
-    }
-  >
   chatProject: (dir: string) => Project
   chatWorkspace: (id: string) => Promise<Project>
   /** 一轮结束后按整棵对话树核用量上限；true 表示到了上限、已经停下（见 tasks/budget.ts） */
