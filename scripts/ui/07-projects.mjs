@@ -366,6 +366,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       '用 AI 排查整页',
     ])
     await footSpace('MCP')
+    // Pi 的说明页上有「项目配置」信任三选一：演示项目里有 .pi/skills，选「跟随」时提示它不会加载（ADR 0050）
+    await dlg.getByRole('button', { name: /^Pi\b/ }).click()
+    await check(p, '项目设置-Pi项目配置', ['项目配置', '跟随 Pi', '这个项目里有 Pi 的项目配置：.pi/skills'])
+    await dlg.getByRole('radio', { name: '信任', exact: true }).click()
+    if (await dlg.getByText('这个项目里有 Pi 的项目配置', { exact: false }).count())
+      errors.push('项目设置-Pi项目配置：选了「信任」还提示不会加载')
+    await dlg.getByRole('radio', { name: '跟随 Pi', exact: true }).click()
     // 两页切回来都正常（导航里 Skill 和 MCP 相邻）
     await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
     await check(p, '项目设置-Skill 再切回', ['新建 Skill'])

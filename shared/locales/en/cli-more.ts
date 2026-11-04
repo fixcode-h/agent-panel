@@ -44,4 +44,15 @@ export const EN_CLI_MORE: Record<string, string> = {
   '没能从 npm 取到插件列表：{reason}。连不上 npm 时可以在「设置 · 网络与代理」里填写本机代理':
     "Couldn't get the plugin list from npm: {reason}. If npm isn't reachable, set a local proxy in Settings · Network & proxy",
   '这个 Agent 没有插件市场': "This agent doesn't have a plugin marketplace",
+  '没有改成：{error}': "Couldn't change it: {error}",
+  '跟随 {cli}（{value}）': 'Follow {cli} ({value})',
+  '{cli} 自己的设置': "{cli}'s own settings",
+  '改了马上写进 {file}，终端里的 {cli} 也会跟着变；选回「跟随」就删掉这一项':
+    'Changes are written to {file} right away and also apply to {cli} in a terminal. Choose "Follow" to remove the setting',
+  '{file} 不是 JSON 对象': '{file} is not a JSON object',
+  '{file} 读不出来：{error}': "Couldn't read {file}: {error}",
+  没有这个设置项: 'No such setting',
+  '要在 {min} 到 {max} 之间': 'Must be between {min} and {max}',
+  值不对: 'Invalid value',
+  '{file} 里 {at} 的上一级不是对象，没有改': "The parent of {at} in {file} isn't an object, so nothing was changed",
 }

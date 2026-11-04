@@ -120,6 +120,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   if (await market.getByRole('button', { name: '安装 pi-web-access', exact: true }).count())
     errors.push('设置-CLI-Pi市场：已装的 pi-web-access 还显示「安装」')
   await p.getByRole('radio', { name: '已安装和推荐' }).click()
+  // Pi 自己 settings.json 里的设置：没改过的显示「跟随 Pi（默认值）」，改过的显示值（演示里最多重试改成了 5）
+  await p.getByText('最多重试几次', { exact: true }).first().scrollIntoViewIfNeeded()
+  await check(p, '设置-CLI-Pi自己的设置', ['Pi 自己的设置', '跟随 Pi（运行中保持）', '请求空闲超时'])
+  if ((await p.getByRole('spinbutton', { name: 'Pi 最多重试几次' }).inputValue()) !== '5')
+    errors.push('设置-CLI-Pi自己的设置：改过的「最多重试几次」没显示 5')
   await p.getByRole('button', { name: '卸载', exact: true }).first().click()
   await p.getByRole('dialog').last().getByRole('button', { name: '卸载', exact: true }).click()
   await p.getByText('卸载没有成功').first().waitFor({ timeout: 8000 })

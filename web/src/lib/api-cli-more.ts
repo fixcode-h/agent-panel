@@ -1,5 +1,6 @@
+import type { ConfigValue } from '@shared/cli-config-settings'
 import type { GalleryPage, GallerySort } from '@shared/cli-gallery'
-import { request } from './api'
+import { json, request } from './api'
 
 /**
  * CLI 的项目信任、插件市场、CLI 自己的配置项（ADR 0050）。单独一个文件：api.ts 到了行数上限
@@ -14,4 +15,12 @@ export const cliMoreApi = {
     ),
   /** 已装的 npm 包在 npm 上的最新版本：包名 → 版本 */
   cliPackagesLatest: (id: string) => request<Record<string, string>>(`/clis/${id}/packages/latest`),
+  /** CLI 自己配置文件里的设置项现在的值（没写过的不列）；文件读不出来时 error 写原因 */
+  cliConfig: (id: string) => request<{ values: Record<string, ConfigValue>; error: string }>(`/clis/${id}/config`),
+  /** 改一项；value 为 null 是恢复默认（删掉这个键） */
+  saveCliConfig: (id: string, setting: string, value: ConfigValue | null) =>
+    request<{ values: Record<string, ConfigValue>; error: string }>(
+      `/clis/${id}/config`,
+      json('PUT', { id: setting, value }),
+    ),
 }

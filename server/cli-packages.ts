@@ -10,6 +10,7 @@ import { expandHome } from './cli-extras.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
 import { galleryApi } from './cli-gallery.ts'
+import { configSettingsApi } from './cli-config-settings.ts'
 
 /**
  * CLI 自己的插件（扩展包，定义里的 packages）：列表直接读 CLI 的配置文件，装、删、更新跑 CLI 自己的命令，
@@ -64,6 +65,8 @@ export function packagesApi() {
   const app = new Hono()
   // 插件市场和已装包的最新版本（ADR 0050）
   app.route('/', galleryApi())
+  // CLI 自己配置文件里的设置项（ADR 0050）
+  app.route('/', configSettingsApi())
   const need = (id: string) => {
     const def = getCli(id)
     if (!def?.packages) throw new Error(t('这个 Agent 不支持插件'))

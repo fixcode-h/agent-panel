@@ -236,6 +236,8 @@ export interface CliDefinition {
   compactThrash?: RegExp
   /** 设置里给用户的开关（见 cli-spec.ts 的 options）：打开时加上 env，参数规则用「opt.<id>」判断 */
   options?: CliOption[]
+  /** CLI 自己配置文件里的设置项（见 shared/cli-config-settings.ts）：设置页直接读写，终端里的 CLI 也会变 */
+  configSettings?: import('./cli-config-settings.ts').ConfigSetting[]
   /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、pi（pi --list-models）、claude（配置和环境变量）；为空时只用 models 里写的 */
   modelsFrom: string
   /** 只读的权限：在用户的项目里只分析不改文件时用（例如优化说明文件）；为空时用设置里的权限 */

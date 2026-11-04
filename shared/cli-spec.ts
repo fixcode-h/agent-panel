@@ -13,6 +13,7 @@ import { CliContextBase } from './context-breakdown.ts'
 import { HooksSpec } from './hooks.ts'
 import { CliTrust } from './cli-trust.ts'
 import { GalleryOverlap, GallerySpec } from './cli-gallery.ts'
+import { ConfigSetting } from './cli-config-settings.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
@@ -618,6 +619,8 @@ export const CliSpec = z.object({
    * 不写表示这个 CLI 用不了面板的工具
    */
   mcp: McpSpec.optional(),
+  /** CLI 自己配置文件里的设置项（ADR 0050，见 shared/cli-config-settings.ts）：设置页直接读写，只写改过的键 */
+  configSettings: z.array(ConfigSetting).default([]),
   /** 项目信任（ADR 0050）：只在信任后才读的项目文件；参数规则里用 trust=approve / trust=deny（见 shared/cli-trust.ts） */
   trust: CliTrust.optional(),
   /** 钩子（ADR 0049）：结束前怎么问面板（见 shared/hooks.ts）；不写表示这个 CLI 只用一轮结束后的提醒兜底 */
@@ -818,6 +821,13 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
       ...x,
       label: tr(x.label),
       hint: tr(x.hint),
+      choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
+    })),
+    configSettings: spec.configSettings.map((x) => ({
+      ...x,
+      label: tr(x.label),
+      hint: tr(x.hint),
+      unit: tr(x.unit),
       choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
     })),
     mcp: spec.mcp,

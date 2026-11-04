@@ -8,6 +8,7 @@ import { npmName } from '@shared/cli-spec'
 const demoPackages = ['npm:cc-safety-net@2.7.1', 'git:github.com/example/pi-review@v1']
 const VERSIONS: Record<string, string> = { 'cc-safety-net': '2.7.1' }
 const LATEST: Record<string, string> = { 'cc-safety-net': '2.8.0' }
+const demoConfig: Record<string, boolean | number | string> = { retryMax: 5 }
 
 const item = (name: string, desc: string, monthly: number, days: number, extra: Partial<GalleryItem> = {}) =>
   ({
@@ -41,7 +42,7 @@ const GALLERY: GalleryItem[] = mergeItems([
   ],
 ])
 
-/** /clis/:id/packages、/clis/:id/packages/latest、/clis/:id/gallery；不是这几个时返回 undefined */
+/** /clis/:id/packages、/clis/:id/packages/latest、/clis/:id/gallery、/clis/:id/config；不是这几个时返回 undefined */
 export function demoCliPackages(
   sub: string | undefined,
   rest: string | undefined,
@@ -62,6 +63,15 @@ export function demoCliPackages(
       return { ok: true, output, packages: list() }
     }
     return list()
+  }
+  // CLI 自己的配置项：演示里记在内存，改了就生效
+  if (sub === 'config') {
+    if (method === 'PUT') {
+      const b = (body ?? {}) as { id?: string; value?: unknown }
+      if (b.value === null || b.value === undefined) delete demoConfig[String(b.id)]
+      else demoConfig[String(b.id)] = b.value as boolean | number | string
+    }
+    return { values: { ...demoConfig }, error: '' }
   }
   if (sub === 'gallery') {
     const q = (query.get('q') ?? '').toLowerCase()
