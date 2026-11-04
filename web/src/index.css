@@ -876,8 +876,8 @@ body,
  */
 @layer utilities {
   [data-palette='code'] .icon-btn:not(.icon-btn-danger):hover,
-  [data-palette='code'] .icon-btn:not(.icon-btn-danger)[aria-pressed='true'],
-  [data-palette='code'] .icon-btn:not(.icon-btn-danger)[aria-expanded='true'],
+  [data-palette='code'] .icon-btn:not(.icon-btn-danger, .icon-btn-flat)[aria-pressed='true'],
+  [data-palette='code'] .icon-btn:not(.icon-btn-danger, .icon-btn-flat)[aria-expanded='true'],
   [data-palette='code'] .icon-btn:not(.icon-btn-danger)[data-state='open'] {
     background-color: color-mix(in oklab, var(--fg) 8%, transparent);
     color: var(--fg);

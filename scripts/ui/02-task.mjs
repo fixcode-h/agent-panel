@@ -150,8 +150,19 @@ await runShard(import.meta.filename, async (api) => {
     }
     await p.getByRole('button', { name: '隐藏会话栏', exact: true }).click()
     if (await rail.isVisible()) errors.push('会话栏：点「隐藏会话栏」后还在')
+    // 1440 宽放不下时文件栏是给会话栏让位的：收起会话栏不能让它立刻补回原位（用户报「收起面板点击无效」）
+    if (await p.locator('[data-task-panel]').first().isVisible())
+      errors.push('会话栏：放不下时收起会话栏，让位的文件栏补了回来，右边看起来没收起')
     await p.getByRole('button', { name: '显示会话栏', exact: true }).click()
     if (!(await rail.isVisible())) errors.push('会话栏：点「显示会话栏」后没回来')
+    // 标题栏的面板开关开着时不常亮，只在悬停时出底色（用户要求）
+    await p.mouse.move(5, 500)
+    // 悬停底色有淡出过渡，等它走完再取
+    await p.waitForTimeout(400)
+    const lit = await p
+      .getByRole('button', { name: '隐藏会话栏', exact: true })
+      .evaluate((e) => getComputedStyle(e).backgroundColor)
+    if (lit !== 'rgba(0, 0, 0, 0)') errors.push(`会话栏开关：开着、鼠标移开后还有底色（${lit}）`)
     // 1440 宽放不下会话栏 + 文件栏 + 对话：后打开的留着。点「显示文件」换成文件栏，会话栏让开
     await openFiles()
     if (await rail.isVisible()) errors.push('会话栏：放不下时点了「显示文件」，会话栏没有让开')
