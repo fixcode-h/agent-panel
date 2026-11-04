@@ -503,9 +503,10 @@ for (const f of ['server/orch-mcp.ts', 'server/orch-hint.ts', 'server/ask-mcp.ts
 }
 
 // 19. 状态只认工具调用，绝不按 Agent 回复里的字判定（ADR 0041 第 16 节，见 docs/lessons/self-drive.md）：
-// 按回复文字识别结论、决定的旧函数只留在定义它的文件和测试里，别处调用就拦下
+// 按回复文字识别结论的 parseVerdict / leadVerdict 已经删掉（ADR 0049 第三期），再加回来就拦下；
+// parseDispatch 只留在定义它的文件和测试里，别处调用就拦下
 for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(x) && !/\.test\.tsx?$/.test(x))) {
-  if (f === 'shared/verdict.ts' || f === 'shared/dispatch.ts') continue
+  if (f === 'shared/dispatch.ts') continue
   read(f)
     .split('\n')
     .forEach((line, i) => {

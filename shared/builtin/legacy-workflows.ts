@@ -36,7 +36,7 @@ export const CHECK: FlowSpec = {
       tier: 'medium',
       params: { scope: '本次改动', env: '自动', regress: true, onFail: '只报告' },
       instructions:
-        '验收上面「输入」里这次的改动：先读工作流说明里「## 项目测试步骤」，按它执行构建、测试和检查；再对照验收标准逐条写证据。项目没有配置步骤时自己找命令并建议用户补上。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+        '验收上面「输入」里这次的改动：先读工作流说明里「## 项目测试步骤」，按它执行构建、测试和检查；再对照验收标准逐条写证据。项目没有配置步骤时自己找命令并建议用户补上。最后调用 submit_verdict 交结论（verdict 写 pass 或 fail），不通过时 blockers 写失败项。',
     },
   ],
   edges: chain(START, 'verify', END),
@@ -259,7 +259,7 @@ const GENERAL: BuiltinWorkflow = {
           tier: 'medium',
           params: { scope: '本次改动', env: '自动', regress: true },
           instructions:
-            '验证上面「输入」里的改动：按工作流说明里的「## 项目测试步骤」逐条执行——先按每条步骤的「适用改动」比对本次改动清单，不匹配的跳过并写原因，标了 WSL 的真的在 WSL 里跑；逐条给证据。跑不了的登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+            '验证上面「输入」里的改动：按工作流说明里的「## 项目测试步骤」逐条执行——先按每条步骤的「适用改动」比对本次改动清单，不匹配的跳过并写原因，标了 WSL 的真的在 WSL 里跑；逐条给证据。跑不了的登记为延期验证。最后调用 submit_verdict 交结论（verdict 写 pass 或 fail），不通过时 blockers 写失败项。',
         },
       ],
       edges: chain(START, 'verify', END),
@@ -380,7 +380,7 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
           tier: 'medium',
           params: { scope: '本次改动', env: '自动', regress: true, serial: true },
           instructions:
-            '按工作流说明里的「## 项目测试步骤」执行：需要编译时先编译（Build.bat 带 -WaitMutex，同一时间只编译一次），只改资源、配置这类不碰 C++ 的改动不编译；有 Lua 改动时做语法检查，再按验收标准逐条检查。编译不通过就直接判不通过，把错误原文和文件、行列出来。需要 Editor、PIE 或设备的验证登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+            '按工作流说明里的「## 项目测试步骤」执行：需要编译时先编译（Build.bat 带 -WaitMutex，同一时间只编译一次），只改资源、配置这类不碰 C++ 的改动不编译；有 Lua 改动时做语法检查，再按验收标准逐条检查。编译不通过就直接判不通过，把错误原文和文件、行列出来。需要 Editor、PIE 或设备的验证登记为延期验证。最后调用 submit_verdict 交结论（verdict 写 pass 或 fail），不通过时 blockers 写失败项。',
         },
       ],
       edges: chain(START, 'verify', END),
@@ -992,7 +992,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
             tier: 'medium',
             params: { scope: '本次改动', env: '自动', regress: true, serial: true },
             instructions:
-              '按工作流说明里的「## 项目测试步骤」执行：需要编译时先编译（Build.bat 带 -WaitMutex，同一时间只编译一次），只改资源、配置这类不碰 C++ 的改动不编译；有 Lua 改动时做语法检查，再对照设计逐条检查。编译不通过就直接判不通过，把错误原文和文件、行列出来。需要 Editor、PIE 或设备的验证登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+              '按工作流说明里的「## 项目测试步骤」执行：需要编译时先编译（Build.bat 带 -WaitMutex，同一时间只编译一次），只改资源、配置这类不碰 C++ 的改动不编译；有 Lua 改动时做语法检查，再对照设计逐条检查。编译不通过就直接判不通过，把错误原文和文件、行列出来。需要 Editor、PIE 或设备的验证登记为延期验证。最后调用 submit_verdict 交结论（verdict 写 pass 或 fail），不通过时 blockers 写失败项。',
           },
         ],
         edges: chain(START, 'verify', END),

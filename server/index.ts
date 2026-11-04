@@ -75,6 +75,7 @@ import { detectClis } from './detect.ts'
 import { accountsApi, syncCliAuths } from './accounts.ts'
 import { integrationsApi } from './integrations.ts'
 import { hooksApi } from './hooks/api.ts'
+import { migrateVerdictText } from './verdict-migrate.ts'
 import { installApi } from './install.ts'
 import { comfyApi } from './comfy.ts'
 import { speechApi } from './speech.ts'
@@ -205,6 +206,8 @@ async function sweepProjectsPanelMcp() {
   }
 }
 
+// 旧版角色、工作流里「写一行验收结论」的要求改成调用 submit_verdict（面板只认工具调用）
+await migrateVerdictText(agents, workflows)
 // 旧版工作流把步骤写在文档的二级标题里，启动时迁移成流程图
 for (const w of await workflows.list()) {
   if (w.flows.some((f) => f.nodes.length) || !/^##\s/m.test(w.document)) continue
