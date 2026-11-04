@@ -1900,4 +1900,17 @@ export const EN_TASKS: Record<string, string> = {
     'Files go back to how they were before this message, and files created in these turns are deleted; later changes by you or other conversations in these files are kept. Where the same spot was changed, nothing is reverted and the conflicts are listed.',
   '重新生成这条回复：撤回最后一条消息和这一轮改的文件，再原样发一次':
     'Regenerate this reply: rewind the last message and the files changed in this turn, then send it again as is',
+  要改的内容: 'Changes to make',
+  '允许这一次，并且这个对话里之后的{rule}都自动允许（对话里会留一行记录）':
+    'Allow this time, and automatically allow {rule} for the rest of this conversation (a line is left in the conversation each time)',
+  这个对话里一直允许: 'Always allow in this conversation',
+  '命令 {cmd}': 'the command {cmd}',
+  '目录 {dir} 里的文件': 'files in {dir}',
+  '文件 {file}': 'the file {file}',
+  '工具 {name}': 'the tool {name}',
+  '…（还有 {n} 行没显示）': '… ({n} more lines not shown)',
+  '按这个对话的放行规则自动允许（{rule}）：{title}':
+    "Allowed automatically by this conversation's rule ({rule}): {title}",
+  '你允许了：{title}，这个对话里之后的{rule}都自动允许':
+    'You allowed: {title}. {rule} will be allowed automatically for the rest of this conversation',
 }

@@ -191,6 +191,59 @@ await runShard(import.meta.filename, async (api) => {
     }
   }
 
+  // 改文件的审批卡：带要改的内容（按行上色），「这个对话里一直允许」按目录放行（设计报告 Agent P0-3）
+  {
+    const KEY = 'agent-panel-demo-v3'
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      const task = (db.tasks ?? []).find((x) => x.title.startsWith('购物车右上角'))
+      if (!task) return
+      task.requests = [
+        {
+          id: 'ui-edit',
+          step: '',
+          agentId: task.agentId,
+          kind: 'file',
+          title: '修改文件：src/components/CartBadge.tsx',
+          detail: '',
+          diff: '--- a/src/components/CartBadge.tsx\n+++ b/src/components/CartBadge.tsx\n@@\n-  const count = items.length\n+  const count = items.reduce((n, x) => n + x.qty, 0)',
+          rule: 'file:src/components/',
+          options: [],
+          at: new Date().toISOString(),
+        },
+      ]
+      localStorage.setItem(k, JSON.stringify(db))
+    }, KEY)
+    await p.reload()
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    const card = p.getByRole('alertdialog', { name: 'Agent 请求确认' })
+    if (
+      !(await card.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('改文件审批卡：没有出现')
+    else {
+      await settle(p)
+      await check(p, '审批卡-改文件带差异', ['CartBadge.tsx', 'items.reduce', '这个对话里一直允许'])
+      const del = card.getByText('-  const count = items.length', { exact: true })
+      const cls = (await del.count()) ? await del.getAttribute('class') : ''
+      if (!cls?.includes('text-danger')) errors.push('改文件审批卡：删除行没有标红')
+      const always = card.getByRole('button', { name: '这个对话里一直允许', exact: true })
+      if (!(await always.getAttribute('title'))?.includes('目录 src/components/ 里的文件'))
+        errors.push('改文件审批卡：「一直允许」的说明没写清放行的范围')
+    }
+    // 收掉这条，免得挡住后面的步骤
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      const task = (db.tasks ?? []).find((x) => x.title.startsWith('购物车右上角'))
+      if (task) task.requests = []
+      localStorage.setItem(k, JSON.stringify(db))
+    }, KEY)
+    await p.reload()
+  }
+
   // 对话中的输入框「+」里引入工作流（ADR 0044：工作流只由父对话启动）：父对话的角色能启动工作流才有这一项；
   // 选好后输入框下面出工作流标记，发出去的要求点名这个工作流，交给父对话起工作流子对话
   {

@@ -1958,8 +1958,34 @@ if (kind === 'claude') {
       ],
     },
   })
+  // 任务描述里有 ASK_ALWAYS：连着请求改同一个目录里的两个文件（审批卡带 diff、第一次点「一直允许」后第二次自动允许）
+  if (input.includes('ASK_ALWAYS') && streamIn) {
+    const asked = []
+    for (const [n, f] of [
+      ['e1', 'src/a.ts'],
+      ['e2', 'src/b.ts'],
+    ]) {
+      out({
+        type: 'control_request',
+        request_id: n,
+        request: {
+          subtype: 'can_use_tool',
+          tool_name: 'Edit',
+          input: { file_path: f, old_string: 'const x = 1', new_string: 'const x = 2' },
+        },
+      })
+      for (;;) {
+        const m = await globalThis.nextLine()
+        if (m.type === 'control_response' && m.response.request_id === n) {
+          asked.push(m.response.response)
+          break
+        }
+      }
+    }
+    if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify(asked) + '\n')
+  }
   // 任务描述里有 ASK：先请求确认一条命令，再问一个问题，把面板的回答记下来
-  if (input.includes('ASK') && streamIn) {
+  else if (input.includes('ASK') && streamIn) {
     // 照真实 CLI 的行为模拟：bypass 模式少了 --permission-prompt-tool 时不暴露 AskUserQuestion，
     // 提问只能变成文字；跳过确认时审批也不经过面板。回归时 e2e 才能发现提问通道又丢了
     const bypass = args.includes('--dangerously-skip-permissions')

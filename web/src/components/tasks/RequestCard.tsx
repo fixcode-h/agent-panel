@@ -1,3 +1,5 @@
+import { lineClass } from './diff-rows'
+import { ruleText } from '@shared/allow-rules'
 import { useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
@@ -53,6 +55,26 @@ export function TaskRequestCard({ task, onAnswered }: { task: Task; onAnswered: 
   )
 }
 
+/** 改文件请求的差异：按行上色，只显示替换的那几段（shared/allow-rules.ts 的 editDiff），太长时在框里滚动 */
+function RequestDiff({ diff }: { diff: string }) {
+  const lines = diff.split('\n')
+  return (
+    <div
+      aria-label={t('要改的内容')}
+      className="max-h-64 overflow-auto rounded-lg border bg-field/50 py-1 font-mono text-footnote leading-relaxed"
+    >
+      {lines.map((l, i) => {
+        const cls = lineClass(l)
+        return cls === null ? null : (
+          <div key={i} className={cn('px-3 whitespace-pre-wrap [overflow-wrap:anywhere]', cls)}>
+            {l.startsWith('@@') ? '⋯' : l || ' '}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /**
  * AI 等你确认的操作或问题，贴在输入框上方。一次处理一个，回答后 CLI 接着执行；
  * 后面还有几个排队的在右上角标出来。任务页和其他 AI 会话（UI 设计、AI 创建…）共用
@@ -65,7 +87,7 @@ export function RequestCard({
   className,
 }: {
   requests: TaskRequest[]
-  onAnswer: (id: string, r: { allow: boolean; answer?: string; answers?: string[] }) => Promise<void>
+  onAnswer: (id: string, r: { allow: boolean; answer?: string; answers?: string[]; always?: boolean }) => Promise<void>
   agent?: { name: string; icon: string; cli: string }
   /** 提问右上角的关闭（不回答，终止对话）；不给就没有关闭按钮 */
   onClose?: () => Promise<void>
@@ -77,11 +99,11 @@ export function RequestCard({
   const a = agent
   // 推送授权（ask_push）也是「允许 / 拒绝」卡片，换个图标和工具权限请求区分开
   const Icon = req.purpose === 'push' ? CloudUpload : ICONS[req.kind]
-  const send = async (key: string, allow: boolean, text?: string) => {
+  const send = async (key: string, allow: boolean, text?: string, always?: boolean) => {
     if (busy) return
     setBusy(key)
     try {
-      await onAnswer(req.id, { allow, answer: text })
+      await onAnswer(req.id, { allow, answer: text, ...(always ? { always } : {}) })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -183,8 +205,24 @@ export function RequestCard({
             {req.detail}
           </pre>
         )}
+        {req.diff && <RequestDiff diff={req.diff} />}
         {
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            {req.rule && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="mr-auto"
+                disabled={!!busy}
+                title={t('允许这一次，并且这个对话里之后的{rule}都自动允许（对话里会留一行记录）', {
+                  rule: ruleText(req.rule),
+                })}
+                onClick={() => send('always', true, undefined, true)}
+              >
+                {spin('always')}
+                {t('这个对话里一直允许')}
+              </Button>
+            )}
             <Button size="sm" variant="secondary" disabled={!!busy} onClick={() => send('deny', false)}>
               {spin('deny')}
               {t('拒绝')}

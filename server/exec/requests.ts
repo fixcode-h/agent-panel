@@ -6,6 +6,7 @@ import { denyAdvice } from './deny-advice.ts'
 import { noteAnswer, replies } from './panel-requests.ts'
 import { questionAnswers, resumeRun } from '../../shared/task.ts'
 import { t } from '../../shared/i18n.ts'
+import { ruleText } from '../../shared/allow-rules.ts'
 
 const stepTitle = (task: Task, id: string) => task.steps.find((s) => s.id === id)?.title ?? ''
 
@@ -59,13 +60,18 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
             ? t('你没有回答「{title}」', { title: req.title })
             : t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answers?.[0] ?? r.answer ?? '' })
         : r.allow
-          ? t('你允许了：{title}', { title: req.title })
+          ? r.always && req.rule
+            ? t('你允许了：{title}，这个对话里之后的{rule}都自动允许', { title: req.title, rule: ruleText(req.rule) })
+            : t('你允许了：{title}', { title: req.title })
           : (deny.what ?? t('你拒绝了：{title}', { title: req.title }))
   // 回答了问题：问题和答案在对话正文里显示，不再是一行灰色的说明
   const answers = req.kind === 'question' ? questionAnswers(req, r) : undefined
   // 请求处理完就继续执行：等待结算进 waitMs，从这一刻重新算执行时间
   if (!task.requests.length) resumeRun(task)
   noteAnswer(task, req, r)
+  // 「一直允许这类」：记下规则，这个对话里之后的同类请求自动允许（server/exec/ask-request.ts）
+  if (r.allow && r.always && req.rule && !task.allowRules.includes(req.rule))
+    task.allowRules = [...task.allowRules, req.rule]
   task.messages.push({
     id: newId(),
     role: 'system',

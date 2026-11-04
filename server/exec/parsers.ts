@@ -115,6 +115,10 @@ export type CliEvent =
       options?: string[]
       /** 一次问了几个问题（Claude Code 的 AskUserQuestion） */
       questions?: import('../../shared/schema.ts').AskQuestion[]
+      /** 改文件请求的差异（见 shared/allow-rules.ts 的 editDiff） */
+      diff?: string
+      /** 「一直允许这类」的规则键（shared/allow-rules.ts） */
+      rule?: string
       reply: (r: AskReply) => void
     }
 
@@ -130,6 +134,8 @@ export type AskReply = {
    * 协议的拒绝能带原话的接在 message 后面；带不了的（Codex 只有 decline）由适配器插话交给这一轮
    */
   advice?: string
+  /** 允许并且这个对话里一直允许这类 */
+  always?: boolean
 }
 
 export type Parser = (obj: any) => CliEvent[]

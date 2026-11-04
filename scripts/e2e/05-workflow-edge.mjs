@@ -200,6 +200,33 @@ await runShard('工作流条件与失败', async (api) => {
   assert.equal(ask.requests.length, 0)
   step('关掉提问（停止）：在等回答的提问马上作废，提问窗口收起')
 
+  // ---- 审批卡带改动 diff，「这个对话里一直允许」后同目录的下一个改动自动允许（设计报告 Agent P0-3） ----
+  let always = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'ASK_ALWAYS 改两个文件',
+  })
+  const e1 = await waitFor(async () => (await call('GET', `/tasks/${always.id}`)).requests[0] ?? null, {
+    timeout: 10000,
+    label: '改文件的审批卡',
+  })
+  assert.equal(e1.kind, 'file')
+  assert.match(e1.diff, /-const x = 1\n\+const x = 2/, '审批卡带着要改的内容')
+  assert.equal(e1.rule, 'file:src/', '规则按所在目录')
+  await call('POST', `/tasks/${always.id}/requests/${e1.id}`, { allow: true, always: true })
+  always = await waitDone(always.id)
+  assert.deepEqual(always.allowRules, ['file:src/'], '规则记进这个对话')
+  assert.equal(always.requests.length, 0, '同目录的第二个改动没有再弹审批卡')
+  const [x1, x2] = readLog(log + '.ask').at(-1)
+  assert.equal(x1.behavior, 'allow')
+  assert.equal(x2.behavior, 'allow', '第二个改动自动允许')
+  assert.ok(
+    always.messages.some((m) => m.role === 'system' && /按这个对话的放行规则自动允许/.test(m.text)),
+    '自动允许的在对话里留一行',
+  )
+  step('审批卡带改动 diff；点「这个对话里一直允许」后同目录的下一个改动自动允许，并留一行记录')
+
   // ---- 工作流的条件连线、完成后等我确认、预算上限 ----
   const wfBranch = await call('POST', '/workflows', {
     name: '条件分支',
