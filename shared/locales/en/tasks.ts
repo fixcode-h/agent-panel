@@ -1913,4 +1913,8 @@ export const EN_TASKS: Record<string, string> = {
     "Allowed automatically by this conversation's rule ({rule}): {title}",
   '你允许了：{title}，这个对话里之后的{rule}都自动允许':
     'You allowed: {title}. {rule} will be allowed automatically for the rest of this conversation',
+  在项目里继续: 'Continue in a project',
+  '带上这段聊天，到项目里新建对话接着做（可以开子对话、跑工作流）':
+    'Take this chat into a new conversation in a project and keep going there (with sub-conversations and workflows)',
+  '带上这段聊天，到哪个项目里继续': 'Continue this chat in which project?',
 }

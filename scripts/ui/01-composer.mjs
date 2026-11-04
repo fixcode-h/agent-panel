@@ -1053,6 +1053,39 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await todoRow.waitFor({ timeout: 5000 }).catch(() => errors.push('Chat 待办：有 CLI 待办的聊天没有显示待办行'))
     await todoRow.getByRole('button', { name: '待办' }).click()
     await check(c, 'Chat-待办', ['待办 1/3', '整理成表格'])
+
+    // Chat 里 @ 项目文件（设计报告 Chat P0-2）：没有项目时在所有项目里一起搜，每一项标上项目名
+    await c.keyboard.press('Escape')
+    const box = c.getByRole('textbox').last()
+    await box.click()
+    await box.pressSequentially('@Cart')
+    const files = c.getByRole('listbox', { name: '项目文件' })
+    if (
+      !(await files.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('Chat @ 文件：输入 @ 后没有弹出项目文件菜单')
+    else {
+      if (!(await files.getByText('商城前台', { exact: true }).count()))
+        errors.push('Chat @ 文件：菜单里的文件没标上是哪个项目的')
+      await check(c, 'Chat-@项目文件', ['CartBadge'])
+      await c.keyboard.press('Escape')
+    }
+    await box.press('ControlOrMeta+a')
+    await box.press('Backspace')
+
+    // 在项目里继续（设计报告 Chat P0-1）：选一个项目，这段聊天整理成记录放进那个项目的新建输入框，再写一句要求发出去
+    await c.getByRole('button', { name: '在项目里继续', exact: true }).click()
+    await c.getByRole('menuitem', { name: '商城前台' }).click()
+    await c.waitForURL(/#\/projects\//, { timeout: 5000 }).catch(() => errors.push('在项目里继续：没有跳到项目页'))
+    await settle(c)
+    if (!(await c.getByText('接着附上的这段聊天，在这个项目里继续：').count()))
+      errors.push('在项目里继续：项目的新建输入框里没有放好开头那句话')
+    if (!(await c.getByText(/整理一份 Claude Code 和 Codex 的能力对照/).count()))
+      errors.push('在项目里继续：没有带上这段聊天的记录')
+    await check(c, 'Chat-在项目里继续')
     await c.close()
   }
 

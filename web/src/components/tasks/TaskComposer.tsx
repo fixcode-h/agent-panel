@@ -113,7 +113,8 @@ export function TaskComposer({
   const [askUser, setAskUser] = useNewAskUser()
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
-  const mention = useFileMention(project, editor, files)
+  // Chat 页的新建输入框没有项目：@ 在所有项目里一起搜
+  const mention = useFileMention(project, editor, files, standalone ? projects : [])
   const chips = useComposerChips({ files, editor, text: prompt, change: setPrompt })
   const { addFiles, addReady, drop } = chips
   // 「/」菜单：按选的 CLI 列
@@ -308,7 +309,7 @@ export function TaskComposer({
             <AttachMenu
               onFiles={addFiles}
               onMention={mention.start}
-              canMention={!!project?.path}
+              canMention={!!project?.path || (!!standalone && projects.some((p) => p.path))}
               onSession={addReady}
               onWorkflow={canFlow ? (w) => editor.current?.insertChip({ kind: 'workflow', name: w.name }) : undefined}
             />

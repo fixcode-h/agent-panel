@@ -83,6 +83,7 @@ import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { RegenerateButton, RewindDialog } from './RewindDialog'
+import { HandoffButton } from './HandoffButton'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
@@ -453,7 +454,7 @@ export function TaskView({
   /** 子对话面板：父对话里点了它的结果卡片（时间戳），打开后滚到最后一份总结 */
   jumpSummary?: number
 }) {
-  const { agents: localAgents, workflows, settings, upsertTask, removeTask } = useData()
+  const { agents: localAgents, workflows, settings, upsertTask, removeTask, projects: allProjects } = useData()
   const { tasks } = useTasks()
   const nav = useNav()
   const go: typeof nav.go = (r) => {
@@ -507,7 +508,8 @@ export function TaskView({
   const followTa = useRef<RichInputHandle>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
   const files = useAttachments(`task:${taskId}`)
-  const mention = useFileMention(project, followTa, files)
+  // Chat 页的对话没有项目：@ 在所有项目里一起搜
+  const mention = useFileMention(project, followTa, files, task?.projectId ? [] : allProjects)
   const [sending, setSending] = useState(false)
   // 输入框里此刻的附件（渲染时同步）：发送时立刻清空，失败要把这次发的那几个放回去，
   // 不能读闭包里的旧列表——那会把刚清空的当成还在，反倒让附件丢了（见 restoreDraft）
@@ -1691,7 +1693,7 @@ export function TaskView({
       recall={() => [...task.messages].reverse().find((m) => m.role === 'user' && !m.peer && !m.panel)?.text}
       attach={{
         onMention: mention.start,
-        canMention: !!project?.path,
+        canMention: !!project?.path || (!task.projectId && allProjects.some((p) => p.path)),
         self: task.id,
         workflows: canPickFlow,
       }}
@@ -2118,6 +2120,7 @@ export function TaskView({
       </div>
       {/* 用了角色的写一下是谁在回答；Agent 和模型的选择都在输入框里，不放标题栏 */}
       {!byCli && <span className="min-w-0 truncate px-2 text-xs text-subtle">{chatLabel}</span>}
+      {!task.imported && <HandoffButton taskId={task.id} />}
       <Menu>
         <MenuTrigger asChild>
           <IconButton size="sm" tone="bare" label={t('导出')}>
