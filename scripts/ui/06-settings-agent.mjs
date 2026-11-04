@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：设置：Agent 的上下文档位、Pi 安装卸载、插件和「AI 处理」、API 配置、授权、部署、本机生图；最小化浮条
+ * 界面检查分片：设置：Agent 的上下文档位、Pi 安装卸载、插件和「AI 处理」、API 配置、授权、钩子、部署、本机生图；最小化浮条
  *
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
@@ -197,6 +197,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .waitFor({ timeout: 5000 })
     .catch(() => errors.push('授权：退出后没有回到未授权'))
   await check(p, '设置-授权-已退出', ['未授权', '浏览器授权'])
+  // 钩子（ADR 0049 第二期）：内置钩子能开关，我的钩子能新建、让 AI 创建；新建弹窗里有范围、脚本、试跑
+  await p.getByRole('button', { name: '钩子', exact: true }).first().click()
+  await check(p, '设置-钩子', ['内置钩子', '没做完不收尾', '只读身份守卫', '我的钩子', '锁文件不要手改', '最近触发'])
+  const mine = p.locator('[data-setting-group="我的钩子"]')
+  await mine.getByRole('button', { name: '新建钩子' }).click()
+  await check(p, '设置-钩子-新建', ['新建钩子', '哪些 CLI', 'Node 脚本', '试跑'])
+  await p.getByRole('dialog').getByRole('button', { name: '取消' }).click()
+  await mine.getByRole('button', { name: 'AI 创建' }).click()
+  await check(p, '设置-钩子-AI创建', ['用 AI 创建钩子', '只读的评审角色不许跑 git commit'])
+  await p.keyboard.press('Escape')
   // 回到 CLI 的默认 CLI 页（部署在它下面）
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   await p.getByRole('dialog').getByText('默认 Agent', { exact: true }).first().click()

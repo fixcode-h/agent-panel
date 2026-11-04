@@ -360,9 +360,9 @@
     "extras": []
   },
   "hooks": {
+    "args": ["--settings", "{dir}/agent-panel-hooks.json"],
     "beforeEnd": {
       "via": "command",
-      "args": ["--settings", "{dir}/agent-panel-hooks.json"],
       "files": {
         "{dir}/agent-panel-hooks.json": {
           "hooks": {
@@ -371,8 +371,8 @@
                 "hooks": [
                   {
                     "type": "command",
-                    "command": "node \"{hookScript}\"",
-                    "timeout": 15
+                    "command": "node \"{hookScript}\" turn.beforeEnd",
+                    "timeout": 70
                   }
                 ]
               }
@@ -384,8 +384,103 @@
         "decision": "block",
         "reason": "{reason}"
       },
-      "dropInput": ["last_assistant_message"],
       "why": "Stop 钩子返回 decision=block 时 Claude Code 不结束这一轮，把 reason 交给模型接着做（2.1.318 实测）。设置走 --settings 传文件，不改用户的 ~/.claude/settings.json；文件不放参数里，Windows 上 cmd 会把 JSON 里的引号转坏"
+    },
+    "events": {
+      "tool.before": {
+        "files": {
+          "{dir}/agent-panel-hooks.json": {
+            "hooks": {
+              "PreToolUse": [
+                {
+                  "hooks": [
+                    {
+                      "type": "command",
+                      "command": "node \"{hookScript}\" tool.before",
+                      "timeout": 70
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "deny": {
+          "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "{reason}"
+          }
+        },
+        "context": {
+          "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "additionalContext": "{text}"
+          }
+        }
+      },
+      "tool.after": {
+        "files": {
+          "{dir}/agent-panel-hooks.json": {
+            "hooks": {
+              "PostToolUse": [
+                {
+                  "hooks": [
+                    {
+                      "type": "command",
+                      "command": "node \"{hookScript}\" tool.after",
+                      "timeout": 70
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "context": {
+          "hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": "{text}"
+          }
+        }
+      },
+      "context.restored": {
+        "files": {
+          "{dir}/agent-panel-hooks.json": {
+            "hooks": {
+              "SessionStart": [
+                {
+                  "matcher": "compact|resume",
+                  "hooks": [
+                    {
+                      "type": "command",
+                      "command": "node \"{hookScript}\" context.restored",
+                      "timeout": 70
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "context": {
+          "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "{text}"
+          }
+        }
+      }
+    },
+    "dropInput": ["last_assistant_message"],
+    "toolNames": {
+      "shell": ["Bash"],
+      "edit": ["Edit", "Write", "MultiEdit", "NotebookEdit"],
+      "read": ["Read", "Grep", "Glob", "LS"]
+    },
+    "toolFields": {
+      "name": "tool_name",
+      "input": "tool_input",
+      "path": ["file_path", "notebook_path"]
     }
   },
   "mcpStore": {

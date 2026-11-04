@@ -384,6 +384,27 @@ function projectInitDraft(_text: string, ctx: AssistContext) {
   }
 }
 
+/** 钩子：照着描述编一个「改文件后提醒跑检查」的工具后钩子（演示里不试跑，校验只看形状） */
+function hookDraft(text: string) {
+  return {
+    draft: {
+      name: text.slice(0, 10) || '改完提醒检查',
+      description: '改完 TypeScript 文件后提醒模型跑类型检查',
+      event: 'tool.after',
+      scope: { projects: [], agents: [], clis: [] },
+      match: { tool: 'edit', path: '**/*.ts', command: '' },
+      action: {
+        type: 'command',
+        script:
+          "let raw = ''\nprocess.stdin.on('data', (c) => (raw += c)).on('end', () => {\n  process.stdout.write(JSON.stringify({ context: '改了 TypeScript 文件：这一步做完前跑一次类型检查' }))\n})\n",
+      },
+      timeoutSec: 5,
+      onError: 'allow',
+    },
+    note: '这个钩子在改完 .ts 文件之后触发，给模型补一句「记得跑类型检查」；不需要设环境变量。',
+  }
+}
+
 /** 按关键词生成的示例：后台生成和「在项目对话里做」共用 */
 function draftFor(input: AssistInput, ctx: AssistContext, text: string) {
   return input.kind === 'agent'
@@ -398,7 +419,9 @@ function draftFor(input: AssistInput, ctx: AssistContext, text: string) {
             ? lessonsDraft(text, ctx)
             : input.kind === 'project'
               ? projectInitDraft(text, ctx)
-              : workflowDraft(text, ctx)
+              : input.kind === 'hook'
+                ? hookDraft(text)
+                : workflowDraft(text, ctx)
 }
 
 /** 在项目对话里做完后解析结果：演示没有真的回复，直接给示例的 JSON */

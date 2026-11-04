@@ -74,6 +74,7 @@ import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
 import { accountsApi, syncCliAuths } from './accounts.ts'
 import { integrationsApi } from './integrations.ts'
+import { hooksApi } from './hooks/api.ts'
 import { installApi } from './install.ts'
 import { comfyApi } from './comfy.ts'
 import { speechApi } from './speech.ts'
@@ -488,6 +489,7 @@ app.post('/clis/specs/reload', async (c) => {
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 app.route('/accounts', accountsApi())
 app.route('/integrations', integrationsApi())
+app.route('/hooks', hooksApi())
 app.route('/library', libraryApi())
 app.route('/mcp-tools', mcpApi())
 // 项目设置里的 MCP：项目目录里识别到的配置，项目目录按 projectId 现取

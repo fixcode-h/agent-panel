@@ -1,9 +1,11 @@
 import { z } from 'zod'
 import type { TaskMessage } from './schema.ts'
+import type { HookEventName, ToolKind } from './hook-defs.ts'
 
 /**
  * 钩子（ADR 0049）：模型准备结束这一轮时（turn.beforeEnd），CLI 先问面板；计划没做完、也没在等任何结果时
- * 面板答「拦住」并给出下一步，CLI 在同一轮里接着做，对话里不再另起一轮【面板】提醒。
+ * 面板答「拦住」并给出下一步，CLI 在同一轮里接着做，对话里不再另起一轮【面板】提醒。第二期加了工具前、工具后、
+ * 上下文恢复（压缩之后）三个事件，内置钩子和用户钩子都挂在它们上（规范见 shared/hook-defs.ts）。
  *
  * 这里放和 CLI 无关的部分：CLI 定义里的 hooks 字段、面板的判断结果、给 Claude Code 这类「钩子是一条命令」的 CLI
  * 用的转发脚本。怎么装进 CLI（参数、扩展、mod）写在各自的 CLI 定义里，代码按字段走，不按 CLI 的名字分支。
@@ -12,31 +14,55 @@ import type { TaskMessage } from './schema.ts'
  * 转发脚本发给面板之前就把原生输入里的回复文字（last_assistant_message 这类）丢掉，面板根本拿不到
  */
 
-/** 面板事件：现在只有「结束前」；工具前 / 工具后 / 上下文恢复见设计稿 docs/openspec/changes/agent-hooks 的 P2 */
-export const HookEvent = z.enum(['turn.beforeEnd'])
-export type HookEvent = z.infer<typeof HookEvent>
-
 /**
  * CLI 定义里的「结束前钩子」怎么装：
  * - via=command：CLI 的钩子是一条命令（Claude Code 的 Stop）。面板在这一轮的临时目录写转发脚本（{hookScript}）
- *   和 files 里的配置，args 加在参数后面；拦住时转发脚本把 block 模板（{reason} 填好）原样打印给 CLI。
+ *   和 files 里的配置；拦住时转发脚本把 block 模板（{reason} 填好）原样打印给 CLI。
  * - via=extension：钩子写在面板每轮已经装进 CLI 的扩展里（Pi 的 -e 桥接扩展、Command Code 的 --mod），
  *   扩展自己按 HOOK_URL_ENV 或 {url}/hook 问面板，这里只声明「这个 CLI 支持」。
  */
 export const BeforeEndSpec = z.object({
   via: z.enum(['command', 'extension']),
-  args: z.array(z.string()).default([]),
   files: z.record(z.string(), z.unknown()).default({}),
   /** 拦住时 CLI 要的输出（via=command）；里面的 {reason} 换成面板给的说明 */
   block: z.unknown().optional(),
-  /** 原生输入里要丢掉、不交给面板的字段（模型回复的文字），见上面的硬规则 */
-  dropInput: z.array(z.string()).default([]),
   why: z.string().default(''),
 })
 export type BeforeEndSpec = z.infer<typeof BeforeEndSpec>
 
+/** 工具前、工具后、上下文恢复：都是一条命令的钩子（目前只有 Claude Code），files 是要合进钩子配置的那一段 */
+export const EventSpec = z.object({
+  files: z.record(z.string(), z.unknown()).default({}),
+  /** 拒绝这次工具调用时 CLI 要的输出（tool.before），{reason} 换成原因 */
+  deny: z.unknown().optional(),
+  /** 补给模型的一段说明（{text}）；没有这一项表示这个事件不能补说明 */
+  context: z.unknown().optional(),
+})
+export type EventSpec = z.infer<typeof EventSpec>
+
 export const HooksSpec = z.object({
+  /** 装钩子要加的参数（命令类钩子的配置文件路径），有任何一个命令类事件要装时才加 */
+  args: z.array(z.string()).default([]),
   beforeEnd: BeforeEndSpec.optional(),
+  events: z
+    .object({
+      'tool.before': EventSpec.optional(),
+      'tool.after': EventSpec.optional(),
+      'context.restored': EventSpec.optional(),
+    })
+    .default({}),
+  /** 原生输入里要丢掉、不交给面板的字段（模型回复的文字），见上面的硬规则 */
+  dropInput: z.array(z.string()).default([]),
+  /** 各家工具名对照到面板的工具类别（用户钩子按类别匹配） */
+  toolNames: z.record(z.string(), z.array(z.string())).default({}),
+  /** 原生输入里工具名、参数、文件路径在哪个字段 */
+  toolFields: z
+    .object({
+      name: z.string().default('tool_name'),
+      input: z.string().default('tool_input'),
+      path: z.array(z.string()).default(['file_path']),
+    })
+    .default({ name: 'tool_name', input: 'tool_input', path: ['file_path'] }),
 })
 export type HooksSpec = z.infer<typeof HooksSpec>
 
@@ -52,6 +78,20 @@ export interface BeforeEndInput {
   again?: boolean
 }
 
+/** 工具前、工具后、上下文恢复交给面板的事实：都从原生输入里按 CLI 定义取，不含模型回复的文字 */
+export interface HookFacts {
+  tool?: { kind: ToolKind; name: string; input: Record<string, unknown>; path: string }
+  /** 上下文恢复的来由：compact（压缩之后）、resume（续接）、startup（新开） */
+  source?: string
+}
+
+/** 面板对其余事件的回答：deny 只对 tool.before，context 是补给模型的一段说明 */
+export interface HookAnswer {
+  deny?: boolean
+  reason?: string
+  context?: string
+}
+
 /** 放行：不表态 */
 export const allowEnd = (why: string): BeforeEndDecision => ({ block: false, why })
 
@@ -61,26 +101,50 @@ export const HOOK_URL_ENV = 'AGENT_PANEL_HOOK_URL'
 /** Pi 扩展续跑时追加的那条消息的类型：面板的输出解析按它认出来，不画成用户消息 */
 export const HOOK_CONTINUE_TYPE = 'agent-panel-continue'
 
-/** 转发超时：面板没回就放行，钩子坏了不能把对话卡住 */
+/** 转发超时：面板没回就放行，钩子坏了不能把对话卡住（用户钩子自己可以设到 60 秒，转发就按它放宽） */
 export const HOOK_TIMEOUT_MS = 5000
+/** 转发脚本最多等面板这么久：用户钩子的超时上限 60 秒再留一点余量 */
+export const FORWARD_TIMEOUT_MS = 65_000
 
-/** 按模板填 {reason}：模板里的字符串原样替换，对象、数组逐层替换 */
-export function fillBlock(tpl: unknown, reason: string): unknown {
-  if (typeof tpl === 'string') return tpl.replace(/\{reason\}/g, () => reason)
-  if (Array.isArray(tpl)) return tpl.map((x) => fillBlock(x, reason))
+/** 按模板填 {reason} / {text}：模板里的字符串原样替换，对象、数组逐层替换 */
+export function fillTpl(tpl: unknown, vars: { reason?: string; text?: string }): unknown {
+  if (typeof tpl === 'string')
+    return tpl.replace(/\{reason\}/g, () => vars.reason ?? '').replace(/\{text\}/g, () => vars.text ?? '')
+  if (Array.isArray(tpl)) return tpl.map((x) => fillTpl(x, vars))
   if (tpl && typeof tpl === 'object')
-    return Object.fromEntries(Object.entries(tpl).map(([k, v]) => [k, fillBlock(v, reason)]))
+    return Object.fromEntries(Object.entries(tpl).map(([k, v]) => [k, fillTpl(v, vars)]))
   return tpl
 }
 
 /** 转发脚本在这一轮临时目录里的文件名 */
 export const HOOK_SCRIPT = 'agent-panel-hook.mjs'
 
+/** 这个 CLI（按定义）能装哪些事件：结束前看 beforeEnd，其余看 events */
+export function supportedEvents(spec: HooksSpec | undefined): HookEventName[] {
+  if (!spec) return []
+  return [
+    ...(spec.beforeEnd ? (['turn.beforeEnd'] as const) : []),
+    ...(Object.keys(spec.events) as (keyof HooksSpec['events'])[]).filter((k) => spec.events[k]),
+  ]
+}
+
+/** 同一个配置文件的几段合在一起：对象逐层合并，数组接在一起（几个事件各自往 hooks 下面加自己的那一项） */
+function mergeConfig(a: unknown, b: unknown): unknown {
+  if (Array.isArray(a) && Array.isArray(b)) return [...a, ...b]
+  if (a && b && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a) && !Array.isArray(b)) {
+    const out: Record<string, unknown> = { ...(a as Record<string, unknown>) }
+    for (const [k, v] of Object.entries(b as Record<string, unknown>)) out[k] = k in out ? mergeConfig(out[k], v) : v
+    return out
+  }
+  return b
+}
+
 /**
- * via=command 的 CLI 这一轮要加的参数和要写的文件：{dir} 换成面板这一轮的临时目录，{hookScript} 换成转发脚本。
- * 路径一律用正斜杠：钩子命令在 Windows 上也可能交给 bash 执行，反斜杠会被当成转义
+ * 命令类钩子这一轮要加的参数和要写的文件：只装 active 里的事件（没人用的工具前 / 工具后不装，免得每次工具调用都多跑一次脚本）。
+ * {dir} 换成面板这一轮的临时目录，{hookScript} 换成转发脚本。路径一律用正斜杠：钩子命令在 Windows 上也可能交给 bash 执行，
+ * 反斜杠会被当成转义。没有要装的返回空
  */
-export function hookInstall(spec: BeforeEndSpec, dir: string) {
+export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[]) {
   const d = dir.replace(/\\/g, '/')
   const script = `${d}/${HOOK_SCRIPT}`
   const fill = (v: unknown): unknown =>
@@ -91,17 +155,24 @@ export function hookInstall(spec: BeforeEndSpec, dir: string) {
         : v && typeof v === 'object'
           ? Object.fromEntries(Object.entries(v).map(([k, x]) => [fill(k) as string, fill(x)]))
           : v
-  if (spec.via !== 'command') return { args: [] as string[], files: [] as { path: string; content: unknown }[] }
+  const parts: Record<string, unknown>[] = []
+  if (active.includes('turn.beforeEnd') && spec.beforeEnd?.via === 'command') parts.push(spec.beforeEnd.files)
+  for (const ev of ['tool.before', 'tool.after', 'context.restored'] as const)
+    if (active.includes(ev) && spec.events[ev]) parts.push(spec.events[ev]!.files)
+  if (!parts.length) return { args: [] as string[], files: [] as { path: string; content: unknown }[] }
+  const merged = new Map<string, unknown>()
+  for (const p of parts)
+    for (const [k, v] of Object.entries(p)) merged.set(k, merged.has(k) ? mergeConfig(merged.get(k), v) : v)
   return {
     args: spec.args.map((a) => fill(a) as string),
     files: [
       { path: script, content: hookForwarderSource(spec.dropInput) as unknown },
-      ...Object.entries(spec.files).map(([p, content]) => ({ path: fill(p) as string, content: fill(content) })),
+      ...[...merged].map(([p, content]) => ({ path: fill(p) as string, content: fill(content) })),
     ],
   }
 }
 
-/** 从原生输入里取面板要的那一点：只认几个已知的「已经续过」标记，其余（含回复文字）一律不要 */
+/** 从原生输入里取「结束前」要的那一点：只认几个已知的「已经续过」标记，其余（含回复文字）一律不要 */
 export function beforeEndInput(native: unknown, drop: string[] = []): BeforeEndInput {
   if (!native || typeof native !== 'object') return {}
   const o = { ...(native as Record<string, unknown>) }
@@ -109,16 +180,31 @@ export function beforeEndInput(native: unknown, drop: string[] = []): BeforeEndI
   return { again: o.stop_hook_active === true }
 }
 
+/** 从原生输入里取工具前 / 工具后、上下文恢复要的事实：工具名对照到类别，文件路径按定义里的字段取 */
+export function hookFacts(spec: HooksSpec, native: unknown): HookFacts {
+  if (!native || typeof native !== 'object') return {}
+  const o = native as Record<string, unknown>
+  const name = typeof o[spec.toolFields.name] === 'string' ? (o[spec.toolFields.name] as string) : ''
+  const source = typeof o.source === 'string' ? o.source : undefined
+  if (!name) return source ? { source } : {}
+  const raw = o[spec.toolFields.input]
+  const input = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const kind = (Object.entries(spec.toolNames).find(([, names]) => names.includes(name))?.[0] ?? 'any') as ToolKind
+  const path = spec.toolFields.path.map((k) => input[k]).find((v) => typeof v === 'string') as string | undefined
+  return { tool: { kind, name, input, path: path ?? '' }, ...(source ? { source } : {}) }
+}
+
 /**
- * 转发脚本（via=command）：CLI 在模型准备结束时运行它，stdin 进原生 JSON。
+ * 转发脚本（命令类钩子）：CLI 运行它时第一个参数是面板事件，stdin 进原生 JSON。
  * 只做转发，不判断：丢掉回复文字，POST 给面板，面板回了 output 就原样打印，其余（面板没起来、超时、出错）什么都不打印，
- * CLI 就照常结束。用 node:http 不用 fetch：老版本 Node 没有 fetch，也省得被代理环境变量改道
+ * CLI 就照常往下走。用 node:http 不用 fetch：老版本 Node 没有 fetch，也省得被代理环境变量改道
  */
 export function hookForwarderSource(drop: string[]) {
-  return `// Agent 面板的结束前钩子转发（ADR 0049）：只转发，不判断；面板没回就放行
+  return `// Agent 面板的钩子转发（ADR 0049）：只转发，不判断；面板没回就放行
 import { request } from 'node:http'
 
 const url = process.env.${HOOK_URL_ENV}
+const event = process.argv[2] || 'turn.beforeEnd'
 const DROP = ${JSON.stringify(drop)}
 let raw = ''
 process.stdin.setEncoding('utf8')
@@ -130,7 +216,7 @@ process.stdin.on('end', () => {
     native = JSON.parse(raw || '{}')
   } catch {}
   for (const k of DROP) delete native[k]
-  const body = JSON.stringify({ event: 'turn.beforeEnd', native })
+  const body = JSON.stringify({ event, native })
   const req = request(url, { method: 'POST', headers: { 'content-type': 'application/json' } }, (res) => {
     let text = ''
     res.setEncoding('utf8')
@@ -142,7 +228,7 @@ process.stdin.on('end', () => {
       } catch {}
     })
   })
-  req.setTimeout(${HOOK_TIMEOUT_MS}, () => req.destroy())
+  req.setTimeout(${FORWARD_TIMEOUT_MS}, () => req.destroy())
   req.on('error', () => {})
   req.end(body)
 })

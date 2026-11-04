@@ -136,32 +136,61 @@ function skipWrapOnce(ids) {
  * 返回拦住时的 reason；没拦、没配钩子返回 null。每次跑都记进 <FAKE_CLI_LOG>.hook，用例据此数钩子问了几次
  */
 function claudeStopHook(active) {
-  const at = args.indexOf('--settings')
-  if (at < 0) return null
-  let cmd
-  try {
-    cmd = JSON.parse(readFileSync(args[at + 1], 'utf8')).hooks?.Stop?.[0]?.hooks?.[0]?.command
-  } catch {
-    return null
-  }
-  if (!cmd) return null
-  const r = spawnSync(cmd, {
-    shell: true,
-    encoding: 'utf8',
-    timeout: 15000,
-    // 照真的 Claude Code 带上回复文字：转发脚本应当把它丢掉，面板不读
-    input: JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: active, last_assistant_message: 'FAKE_TEXT' }),
+  // 照真的 Claude Code 带上回复文字：转发脚本应当把它丢掉，面板不读
+  const o = claudeRunHook('Stop', {
+    hook_event_name: 'Stop',
+    stop_hook_active: active,
+    last_assistant_message: 'FAKE_TEXT',
   })
-  let reason = null
-  try {
-    const o = JSON.parse(r.stdout || '{}')
-    if (o.decision === 'block') reason = String(o.reason ?? '')
-  } catch {}
+  const reason = o?.decision === 'block' ? String(o.reason ?? '') : null
   if (process.env.FAKE_CLI_LOG)
     appendFileSync(
       process.env.FAKE_CLI_LOG + '.hook',
       JSON.stringify({ active, block: reason !== null, reason }) + '\n',
     )
+  return reason
+}
+/** 跑 --settings 里某个原生事件的钩子命令（Stop、PreToolUse……），返回它打印的 JSON；没配、出错返回 null */
+function claudeRunHook(native, payload) {
+  const at = args.indexOf('--settings')
+  if (at < 0) return null
+  let cmd
+  try {
+    cmd = JSON.parse(readFileSync(args[at + 1], 'utf8')).hooks?.[native]?.[0]?.hooks?.[0]?.command
+  } catch {
+    return null
+  }
+  if (!cmd) return null
+  const r = spawnSync(cmd, { shell: true, encoding: 'utf8', timeout: 15000, input: JSON.stringify(payload) })
+  try {
+    return JSON.parse(r.stdout || 'null')
+  } catch {
+    return null
+  }
+}
+/**
+ * 工具前钩子：照真的 Claude Code，调用工具前先跑 PreToolUse；被拒绝时这次调用不执行，
+ * 工具结果是一条带原因的报错（2.1.318 实测的原样：「PreToolUse:Bash hook error: <原因>」）。返回原因，没拒绝返回 null
+ */
+function claudePreTool(id, name, toolInput) {
+  const o = claudeRunHook('PreToolUse', {
+    hook_event_name: 'PreToolUse',
+    tool_name: name,
+    tool_input: toolInput,
+    tool_use_id: id,
+  })
+  const d = o?.hookSpecificOutput
+  if (d?.permissionDecision !== 'deny') return null
+  const reason = String(d.permissionDecisionReason ?? '')
+  out({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        { type: 'tool_result', tool_use_id: id, content: `PreToolUse:${name} hook error: ${reason}`, is_error: true },
+      ],
+    },
+  })
   return reason
 }
 /**
@@ -1882,6 +1911,8 @@ if (kind === 'claude') {
     type: 'assistant',
     message: { id: 'm1', content: [{ type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'npm test' } }] },
   })
+  // HOOK_MODE：调用 npm test 前照真的 Claude Code 跑工具前钩子（用户钩子、只读守卫在这里拦）
+  if (hookMode) claudePreTool('t3', 'Bash', { command: 'npm test' })
   // NOPLAN_ACTS：动了手（改文件加两条命令，三处动作）却没列计划就收尾（用户 2026-11-02 报的：删完本地分支说「现在删除远端」就停了）
   if (input.includes('NOPLAN_ACTS') && !input.includes('（收尾自检）'))
     out({

@@ -266,6 +266,52 @@ await runShard('对话与续接', async (api) => {
   )
   await call('DELETE', `/tasks/${hn.id}`)
 
+  // 用户钩子（ADR 0049 第二期）：设置页里建一个「不许跑 npm test」的工具前钩子，对话里真的被拦下，
+  // 工具那一行显示成失败、带上原因，「最近触发」里记了一笔
+  step('用户钩子：工具前拒绝一条命令，工具行显示失败和原因，最近触发里有记录')
+  const made = await call('POST', '/hooks', {
+    name: '不许跑 npm test',
+    event: 'tool.before',
+    match: { tool: 'shell', path: '', command: 'npm test' },
+    action: {
+      type: 'command',
+      script: "process.stdout.write(JSON.stringify({ deny: true, reason: '这个项目不跑 npm test' }))",
+    },
+    enabled: true,
+  })
+  assert.equal(made.hook.enabled, true)
+  const ut = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'claude',
+    prompt: 'HOOK_MODE 跑一下测试',
+  })
+  const utDone = await waitDone(ut.id)
+  const npmTest = utDone.messages
+    .flatMap((m) => (m.role === 'agent' ? m.tools : []))
+    .find((x) => /npm test/.test(x.label))
+  assert.ok(
+    npmTest,
+    `有 npm test 这一行；现有工具：${JSON.stringify(utDone.messages.flatMap((m) => m.tools ?? []).map((x) => x.label))}`,
+  )
+  assert.equal(npmTest.failed, true, '被钩子拒绝的调用显示成失败')
+  assert.match(npmTest.output ?? '', /这个项目不跑 npm test/)
+  const trig = await call('GET', '/hooks/triggers')
+  assert.ok(
+    trig.some((x) => x.name === '不许跑 npm test' && x.result === 'deny'),
+    '最近触发里记了这次拒绝',
+  )
+  // 保存前校验：语法错误的脚本存不进去
+  const bad = await fetch(`${base}/hooks`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: '坏的', event: 'tool.after', action: { type: 'command', script: 'let = ;' } }),
+  })
+  assert.equal(bad.status, 400, '语法错误的脚本存不进去')
+  await call('DELETE', `/hooks/${made.hook.id}`)
+  await call('DELETE', `/tasks/${ut.id}`)
+
   // 回放真实 Claude Code 录下的输出（scripts/fake-cli/replay.mjs）：面板按原来的事件顺序解析出正文、工具调用和用量；
   // 录像只有一轮，面板再起一轮时假 CLI 报错，不会悄悄当成成功
   step('回放录下的真实 CLI 输出：正文、工具调用、用量照常解析；录像用完再跑报错')
