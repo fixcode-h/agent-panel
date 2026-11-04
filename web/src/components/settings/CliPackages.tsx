@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FileText, Loader2, Package, RefreshCw, Trash2 } from 'lucide-react'
+import { FileText, Loader2, Package, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { packageIdentity, type InstalledPackage } from '@shared/cli-spec'
 import type { CliDefinition } from '@shared/clis'
 import { t } from '@shared/i18n'
@@ -14,6 +14,8 @@ import { cliMoreApi } from '@/lib/api-cli-more'
 import { npmName } from '@shared/cli-spec'
 import { CliGallery } from './CliGallery'
 import { PackageChangelog } from './PackageChangelog'
+import { PackageResources } from './PackageResources'
+import { CliBuiltins } from './CliBuiltins'
 
 type Action = 'install' | 'remove' | 'update' | 'updateAll'
 
@@ -35,6 +37,8 @@ export function CliPackages({ def }: { def: CliDefinition }) {
   const [latest, setLatest] = useState<Record<string, string>>({})
   // 展开了更新说明的包；from 是刚更新完时更新前的版本（只列比它新的）
   const [notes, setNotes] = useState<{ source: string; from?: string } | null>(null)
+  // 展开了资源开关的包
+  const [res, setRes] = useState('')
   const load = () =>
     api
       .cliPackages(def.id)
@@ -49,6 +53,7 @@ export function CliPackages({ def }: { def: CliDefinition }) {
     setTab('mine')
     setLatest({})
     setNotes(null)
+    setRes('')
     void load()
     if (spec.npmRoot)
       cliMoreApi
@@ -214,6 +219,18 @@ export function CliPackages({ def }: { def: CliDefinition }) {
                   <Package className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                   <span className="min-w-0 flex-1 truncate font-mono text-body">{p.source}</span>
                   <PackageVersion version={p.version} latest={latest[npmName(p.source)]} />
+                  {spec.resources && (
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-expanded={res === p.source}
+                      onClick={() => setRes(res === p.source ? '' : p.source)}
+                      aria-label={t('{name} 的资源开关', { name: p.source })}
+                      title={t('加载哪些资源')}
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   {spec.changelog && (
                     <Button
                       size="icon-sm"
@@ -253,11 +270,13 @@ export function CliPackages({ def }: { def: CliDefinition }) {
                     )}
                   </Button>
                 </div>
+                {res === p.source && <PackageResources cli={def.id} source={p.source} />}
                 {notes?.source === p.source && <PackageChangelog cli={def.id} source={p.source} from={notes.from} />}
               </li>
             ))}
           </Card>
         )}
+        <CliBuiltins def={def} />
       </>
     )
   }

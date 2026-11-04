@@ -503,7 +503,7 @@ app.route('/speech', speechApi())
 app.route('/', envApi())
 app.route('/tts', ttsApi())
 app.route('/clis', modelsApi())
-app.route('/clis', packagesApi())
+app.route('/clis', packagesApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
 app.route('/model-catalog', modelCatalogApi())
 // 账号额度、加载的 Skill；查不到时给出原因，页面上显示
 app.get('/clis/:id/limits', async (c) => {

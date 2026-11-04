@@ -17,6 +17,7 @@ import { ConfigSetting } from './cli-config-settings.ts'
 import { CommandsQuery, HandledReply } from './cli-commands-query.ts'
 import { ArgRule } from './arg-rule.ts'
 import { ChangelogSpec } from './package-changelog.ts'
+import { BuiltinExtensions, LocalPackages, PackageResources } from './package-config.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
@@ -130,6 +131,12 @@ export const CliPackages = z.object({
   gitRoot: z.string().default(''),
   /** 包里的更新说明在哪（见 shared/package-changelog.ts）；不写就没有「更新说明」 */
   changelog: ChangelogSpec.optional(),
+  /** 一个包里按类型开关资源（见 shared/package-config.ts）；不写就没有「资源」开关 */
+  resources: PackageResources.optional(),
+  /** CLI 自带、默认加载的扩展的开关（见 shared/package-config.ts） */
+  builtins: BuiltinExtensions.optional(),
+  /** 装到项目里（见 shared/package-config.ts）；不写项目设置里就没有「这个项目的插件」 */
+  local: LocalPackages.optional(),
   /** 只在这一次运行加载一个包、不写进配置的参数（Pi：-e {source}）：角色级插件用（见 shared/role-plugins.ts）；不写就不能按角色加载 */
   oneOff: z.array(z.string()).default([]),
 })
@@ -845,6 +852,14 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
         note: tr(r.note),
       })),
       overlaps: spec.packages.overlaps.map((o) => ({ ...o, note: tr(o.note) })),
+      resources: spec.packages.resources && {
+        ...spec.packages.resources,
+        types: Object.fromEntries(Object.entries(spec.packages.resources.types).map(([k, v]) => [k, tr(v)])),
+      },
+      builtins: spec.packages.builtins && {
+        ...spec.packages.builtins,
+        items: spec.packages.builtins.items.map((x) => ({ ...x, label: tr(x.label), hint: tr(x.hint) })),
+      },
       gallery: spec.packages.gallery && {
         ...spec.packages.gallery,
         types: Object.fromEntries(Object.entries(spec.packages.gallery.types).map(([k, v]) => [k, tr(v)])),

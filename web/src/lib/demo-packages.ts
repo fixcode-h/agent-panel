@@ -17,6 +17,18 @@ const CHANGELOG: Record<string, { version: string; body: string }[]> = {
 }
 const LATEST: Record<string, string> = { 'cc-safety-net': '2.8.0' }
 const demoConfig: Record<string, boolean | number | string> = { retryMax: 5 }
+/** 演示里的项目插件（项目设置 · Pi）、包里的资源开关、内置扩展开关：都记在内存 */
+const demoProjectPackages = ['npm:@team/pi-review-rules']
+const demoResources: Record<string, Record<string, boolean>> = {
+  'npm:cc-safety-net@2.7.1': { extensions: true, skills: true },
+}
+const RESOURCE_LABEL: Record<string, string> = {
+  extensions: '扩展',
+  skills: 'Skill',
+  prompts: '提示词',
+  themes: '主题',
+}
+const demoBuiltins: Record<string, boolean> = { mcp: true, codemode: true, 'tool-search': true, 'llama.cpp': false }
 
 const item = (name: string, desc: string, monthly: number, days: number, extra: Partial<GalleryItem> = {}) =>
   ({
@@ -60,6 +72,30 @@ export function demoCliPackages(
 ): unknown {
   const list = () => demoPackages.map((x) => ({ source: x, target: x, version: VERSIONS[npmName(x)] }))
   if (sub === 'packages' && rest === 'latest') return LATEST
+  if (sub === 'packages' && rest === 'resources') {
+    const b = (body ?? {}) as { source?: string; type?: string; on?: boolean }
+    const source = method === 'PUT' ? String(b.source) : (query.get('source') ?? '')
+    const cur = (demoResources[source] ??= { extensions: true })
+    if (method === 'PUT' && b.type) cur[b.type] = !!b.on
+    return method === 'PUT'
+      ? { ok: true }
+      : Object.entries(cur).map(([type, on]) => ({ type, label: RESOURCE_LABEL[type] ?? type, on }))
+  }
+  if (sub === 'builtins') {
+    const b = (body ?? {}) as { id?: string; on?: boolean }
+    if (method === 'PUT' && b.id) demoBuiltins[b.id] = !!b.on
+    return { ...demoBuiltins }
+  }
+  // 项目里的插件：和用户级的分开记
+  if (sub === 'packages' && query.get('projectId')) {
+    const b = (body ?? {}) as { action?: string; source?: string }
+    const source = String(b.source ?? '').trim()
+    if (method === 'POST' && b.action === 'install' && source && !demoProjectPackages.includes(source))
+      demoProjectPackages.push(source)
+    if (method === 'POST' && b.action === 'remove') demoProjectPackages.splice(demoProjectPackages.indexOf(source), 1)
+    const packages = demoProjectPackages.map((x) => ({ source: x, target: x }))
+    return method === 'POST' ? { ok: true, output: `${b.action} ${source} (-l)`, packages } : packages
+  }
   if (sub === 'packages' && rest === 'changelog') return CHANGELOG[npmName(query.get('source') ?? '')] ?? null
   if (sub === 'packages') {
     if (method === 'POST') {

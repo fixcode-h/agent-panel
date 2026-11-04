@@ -1,6 +1,7 @@
 import type { ConfigValue } from '@shared/cli-config-settings'
 import type { GalleryPage, GallerySort } from '@shared/cli-gallery'
 import type { ChangelogEntry } from '@shared/package-changelog'
+import type { InstalledPackage } from '@shared/cli-spec'
 import { json, request } from './api'
 
 /**
@@ -27,4 +28,23 @@ export const cliMoreApi = {
   /** 已装插件的更新说明；包没有提供时是 null */
   packageChangelog: (id: string, source: string) =>
     request<ChangelogEntry[] | null>(`/clis/${id}/packages/changelog?${new URLSearchParams({ source })}`),
+  /** 一个已装插件里各类资源（扩展、Skill……）和开关 */
+  packageResources: (id: string, source: string) =>
+    request<{ type: string; label: string; on: boolean }[]>(
+      `/clis/${id}/packages/resources?${new URLSearchParams({ source })}`,
+    ),
+  setPackageResource: (id: string, source: string, type: string, on: boolean) =>
+    request<{ ok: boolean }>(`/clis/${id}/packages/resources`, json('PUT', { source, type, on })),
+  /** CLI 自带扩展的开关：名字 → 开着没 */
+  builtins: (id: string) => request<Record<string, boolean>>(`/clis/${id}/builtins`),
+  setBuiltin: (id: string, builtin: string, on: boolean) =>
+    request<Record<string, boolean>>(`/clis/${id}/builtins`, json('PUT', { id: builtin, on })),
+  /** 项目里的插件（装在项目的配置里，只有这个项目的对话加载） */
+  projectPackages: (id: string, projectId: string) =>
+    request<InstalledPackage[]>(`/clis/${id}/packages?${new URLSearchParams({ projectId })}`),
+  projectPackageAction: (id: string, projectId: string, action: 'install' | 'remove', source: string) =>
+    request<{ ok: boolean; output: string; packages: InstalledPackage[] }>(
+      `/clis/${id}/packages?${new URLSearchParams({ projectId })}`,
+      json('POST', { action, source }),
+    ),
 }
