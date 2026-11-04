@@ -81,8 +81,9 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts): string {
   if (!tool) return ''
   if (tool.kind === 'edit') {
     if (who === 'coordinator') {
-      const r = rel(c.cwd, tool.path)
-      if (r && c.task.inlineEdit?.files.includes(r)) return ''
+      // 补丁一次能改好几个文件：每个都登记过才放行
+      const files = (tool.paths.length ? tool.paths : [tool.path]).map((p) => rel(c.cwd, p))
+      if (files.every((r) => r && c.task.inlineEdit?.files.includes(r))) return ''
       return '【面板】你是只统筹不动手的父对话，不直接改文件：改动交给子对话（create_conversation）；确实是几行以内的微小改动，先调用 begin_inline_edit 登记要改的文件。'
     }
     return '【面板】你是只读的角色，不改项目里的文件：把发现写进结果交回，要改的由派你的对话安排。'
@@ -99,13 +100,15 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts): string {
 /** 临时文件位置守卫：写到盘符根目录下一两层、或面板的数据目录里时拒绝（项目目录、系统临时目录里照常） */
 function tempFileDeny(c: HookCallCtx, facts: HookFacts): string {
   const tool = facts.tool
-  if (!tool || tool.kind !== 'edit' || !tool.path) return ''
-  const p = path.resolve(c.cwd, tool.path)
-  if (inside(c.cwd, p) || inside(tmpdir(), p)) return ''
-  const root = path.parse(p).root
-  const depth = path.relative(root, p).split(path.sep).filter(Boolean).length
-  if (inside(DATA_DIR, p) || depth <= 2)
-    return `【面板】不要把文件写到 ${path.dirname(p)}：临时文件放项目的 .tmp/ 或系统临时目录（${tmpdir()}），用完清理。`
+  if (!tool || tool.kind !== 'edit') return ''
+  for (const f of tool.paths.length ? tool.paths : [tool.path].filter(Boolean)) {
+    const p = path.resolve(c.cwd, f)
+    if (inside(c.cwd, p) || inside(tmpdir(), p)) continue
+    const root = path.parse(p).root
+    const depth = path.relative(root, p).split(path.sep).filter(Boolean).length
+    if (inside(DATA_DIR, p) || depth <= 2)
+      return `【面板】不要把文件写到 ${path.dirname(p)}：临时文件放项目的 .tmp/ 或系统临时目录（${tmpdir()}），用完清理。`
+  }
   return ''
 }
 

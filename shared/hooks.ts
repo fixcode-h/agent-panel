@@ -20,29 +20,39 @@ import type { HookEventName, ToolKind } from './hook-defs.ts'
  *   和 files 里的配置；拦住时转发脚本把 block 模板（{reason} 填好）原样打印给 CLI。
  * - via=extension：钩子写在面板每轮已经装进 CLI 的扩展里（Pi 的 -e 桥接扩展、Command Code 的 --mod），
  *   扩展自己按 HOOK_URL_ENV 或 {url}/hook 问面板，这里只声明「这个 CLI 支持」。
+ * 钩子配置可以写进文件（files，Claude Code 的 --settings），也可以直接写成参数（args，Codex 的 -c hooks.Stop=…）
  */
 export const BeforeEndSpec = z.object({
   via: z.enum(['command', 'extension']),
   files: z.record(z.string(), z.unknown()).default({}),
+  /** 装这个事件要加的参数（钩子配置直接写在参数里的 CLI） */
+  args: z.array(z.string()).default([]),
   /** 拦住时 CLI 要的输出（via=command）；里面的 {reason} 换成面板给的说明 */
   block: z.unknown().optional(),
   why: z.string().default(''),
 })
 export type BeforeEndSpec = z.infer<typeof BeforeEndSpec>
 
-/** 工具前、工具后、上下文恢复：都是一条命令的钩子（目前只有 Claude Code），files 是要合进钩子配置的那一段 */
+/** 工具前、工具后、上下文恢复：都是一条命令的钩子（Claude Code、Codex），files 是要合进钩子配置的那一段，args 是要加的参数 */
 export const EventSpec = z.object({
   files: z.record(z.string(), z.unknown()).default({}),
+  args: z.array(z.string()).default([]),
   /** 拒绝这次工具调用时 CLI 要的输出（tool.before），{reason} 换成原因 */
   deny: z.unknown().optional(),
   /** 补给模型的一段说明（{text}）；没有这一项表示这个事件不能补说明 */
   context: z.unknown().optional(),
+  why: z.string().default(''),
 })
 export type EventSpec = z.infer<typeof EventSpec>
 
 export const HooksSpec = z.object({
   /** 装钩子要加的参数（命令类钩子的配置文件路径），有任何一个命令类事件要装时才加 */
   args: z.array(z.string()).default([]),
+  /**
+   * 钩子要先「信任」才会跑的 CLI 怎么信任面板自己的钩子：rpc 表示开始前用常驻协议查一遍钩子、
+   * 只把命令里引用了 HOOK_SCRIPT_ENV 的那几条（面板的转发脚本）记成信任（Codex 的 hooks/list + config/batchWrite）
+   */
+  trust: z.enum(['rpc']).optional(),
   beforeEnd: BeforeEndSpec.optional(),
   events: z
     .object({
@@ -55,6 +65,8 @@ export const HooksSpec = z.object({
   dropInput: z.array(z.string()).default([]),
   /** 各家工具名对照到面板的工具类别（用户钩子按类别匹配） */
   toolNames: z.record(z.string(), z.array(z.string())).default({}),
+  /** 以这些开头的 shell 命令算改文件（Codex 的模型有时用 shell 跑 apply_patch，钩子收到的工具名是 Bash） */
+  editCommands: z.array(z.string()).default([]),
   /** 原生输入里工具名、参数、文件路径在哪个字段 */
   toolFields: z
     .object({
@@ -80,7 +92,8 @@ export interface BeforeEndInput {
 
 /** 工具前、工具后、上下文恢复交给面板的事实：都从原生输入里按 CLI 定义取，不含模型回复的文字 */
 export interface HookFacts {
-  tool?: { kind: ToolKind; name: string; input: Record<string, unknown>; path: string }
+  /** path 是第一个文件（相对项目根判断范围时用）；paths 是这次要改的全部文件（补丁一次可以改好几个） */
+  tool?: { kind: ToolKind; name: string; input: Record<string, unknown>; path: string; paths: string[] }
   /** 上下文恢复的来由：compact（压缩之后）、resume（续接）、startup（新开） */
   source?: string
 }
@@ -97,6 +110,12 @@ export const allowEnd = (why: string): BeforeEndDecision => ({ block: false, why
 
 /** 转发地址的环境变量：面板起 CLI 时放进去，钩子命令、Command Code 的 mod 从这里取 */
 export const HOOK_URL_ENV = 'AGENT_PANEL_HOOK_URL'
+
+/**
+ * 转发脚本路径的环境变量：钩子命令写成 node "$AGENT_PANEL_HOOK_SCRIPT" 时，命令本身每轮都一样。
+ * Codex 按命令内容算信任的哈希，路径每轮换（临时目录）的话每轮都要重新信任；引用环境变量就只需信任一次
+ */
+export const HOOK_SCRIPT_ENV = 'AGENT_PANEL_HOOK_SCRIPT'
 
 /** Pi 扩展续跑时追加的那条消息的类型：面板的输出解析按它认出来，不画成用户消息 */
 export const HOOK_CONTINUE_TYPE = 'agent-panel-continue'
@@ -155,16 +174,22 @@ export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[
         : v && typeof v === 'object'
           ? Object.fromEntries(Object.entries(v).map(([k, x]) => [fill(k) as string, fill(x)]))
           : v
-  const parts: Record<string, unknown>[] = []
-  if (active.includes('turn.beforeEnd') && spec.beforeEnd?.via === 'command') parts.push(spec.beforeEnd.files)
+  const parts: { files: Record<string, unknown>; args: string[] }[] = []
+  if (active.includes('turn.beforeEnd') && spec.beforeEnd?.via === 'command') parts.push(spec.beforeEnd)
   for (const ev of ['tool.before', 'tool.after', 'context.restored'] as const)
-    if (active.includes(ev) && spec.events[ev]) parts.push(spec.events[ev]!.files)
-  if (!parts.length) return { args: [] as string[], files: [] as { path: string; content: unknown }[] }
+    if (active.includes(ev) && spec.events[ev]) parts.push(spec.events[ev]!)
+  if (!parts.length)
+    return {
+      args: [] as string[],
+      files: [] as { path: string; content: unknown }[],
+      env: {} as Record<string, string>,
+    }
   const merged = new Map<string, unknown>()
   for (const p of parts)
-    for (const [k, v] of Object.entries(p)) merged.set(k, merged.has(k) ? mergeConfig(merged.get(k), v) : v)
+    for (const [k, v] of Object.entries(p.files)) merged.set(k, merged.has(k) ? mergeConfig(merged.get(k), v) : v)
   return {
-    args: spec.args.map((a) => fill(a) as string),
+    args: [...spec.args, ...parts.flatMap((p) => p.args)].map((a) => fill(a) as string),
+    env: { [HOOK_SCRIPT_ENV]: script },
     files: [
       { path: script, content: hookForwarderSource(spec.dropInput) as unknown },
       ...[...merged].map(([p, content]) => ({ path: fill(p) as string, content: fill(content) })),
@@ -189,9 +214,19 @@ export function hookFacts(spec: HooksSpec, native: unknown): HookFacts {
   if (!name) return source ? { source } : {}
   const raw = o[spec.toolFields.input]
   const input = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  const kind = (Object.entries(spec.toolNames).find(([, names]) => names.includes(name))?.[0] ?? 'any') as ToolKind
-  const path = spec.toolFields.path.map((k) => input[k]).find((v) => typeof v === 'string') as string | undefined
-  return { tool: { kind, name, input, path: path ?? '' }, ...(source ? { source } : {}) }
+  let kind = (Object.entries(spec.toolNames).find(([, names]) => names.includes(name))?.[0] ?? 'any') as ToolKind
+  const cmd = typeof input.command === 'string' ? input.command.trim() : ''
+  if (kind === 'shell' && spec.editCommands.some((c) => cmd.startsWith(c))) kind = 'edit'
+  const field = spec.toolFields.path.map((k) => input[k]).find((v) => typeof v === 'string') as string | undefined
+  // 补丁（apply_patch）没有单独的路径参数：从补丁头「*** Add/Update/Delete File: 路径」里取
+  const paths = field
+    ? [field]
+    : kind === 'edit'
+      ? Object.values(input)
+          .filter((v): v is string => typeof v === 'string')
+          .flatMap((v) => [...v.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => m[1].trim()))
+      : []
+  return { tool: { kind, name, input, path: paths[0] ?? '', paths }, ...(source ? { source } : {}) }
 }
 
 /**

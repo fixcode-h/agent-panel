@@ -1,6 +1,7 @@
 import path from 'node:path'
 import type { BuildOptions } from '../../../shared/clis.ts'
 import { t } from '../../../shared/i18n.ts'
+import { HOOK_SCRIPT_ENV } from '../../../shared/hooks.ts'
 import { clipDetail, codexLimits, codexUsage, oneLine, toolText, type AskReply, type CliEvent } from '../parsers.ts'
 import { createRpcSession, type RpcSession } from './session.ts'
 import type { RpcAdapter, RpcContext } from './types.ts'
@@ -26,13 +27,58 @@ const PROGRESS = new Set([
 const THREAD_GONE = /no rollout found|\b(?:thread|session|rollout)\b[^\n]{0,40}\b(?:not found|does not exist)\b/i
 
 /**
+ * 信任面板自己的钩子（ADR 0049 第三期）：Codex 的钩子要用户信任过（按命令内容算的哈希记在 ~/.codex/config.toml 的
+ * hooks.state 里）才会跑，-c 传进去的也一样，没信任的静静地不跑。开始前查一遍这一轮的钩子，只把来自参数（sessionFlags）、
+ * 命令里引用了转发脚本环境变量的那几条记成信任：用户自己配的、项目里的钩子一条都不碰。
+ * 命令每轮相同（路径走环境变量），哈希不变，信任过一次以后这里只是查一下；记的键按事件和序号固定，不会越积越多。
+ * 没信任成（旧版本没有这些接口、写配置失败）时照常执行：这一轮的钩子不生效，面板一轮结束后的提醒照样兜底，但要告诉用户
+ */
+async function trustPanelHooks(ctx: RpcContext, cwd: string) {
+  const list = await ctx.request({ method: 'hooks/list', params: { cwds: [cwd] } }, { timeoutMs: START_TIMEOUT_MS })
+  const hooks: any[] = (list?.result?.data ?? []).flatMap((d: any) => d.hooks ?? [])
+  const mine = hooks.filter(
+    (h) =>
+      h.source === 'sessionFlags' &&
+      h.trustStatus !== 'trusted' &&
+      typeof h.key === 'string' &&
+      typeof h.currentHash === 'string' &&
+      String(h.command ?? '').includes(HOOK_SCRIPT_ENV),
+  )
+  const err = list?.error?.message
+  if (!err && !mine.length) return
+  const w = err
+    ? undefined
+    : await ctx.request(
+        {
+          method: 'config/batchWrite',
+          params: {
+            edits: mine.map((h) => ({
+              keyPath: `hooks.state.${JSON.stringify(h.key)}.trusted_hash`,
+              mergeStrategy: 'upsert',
+              value: h.currentHash,
+            })),
+            reloadUserConfig: true,
+          },
+        },
+        { timeoutMs: START_TIMEOUT_MS },
+      )
+  const fail = err ?? w?.error?.message
+  if (fail)
+    ctx.emit({
+      type: 'notice',
+      text: t('面板的钩子没能在 Codex 里生效（{error}），这一轮改用一轮结束后的提醒', { error: String(fail) }),
+      failed: true,
+    })
+}
+
+/**
  * Codex 用 `codex app-server`（stdin / stdout 上的 JSON-RPC）执行。
  * 流程：initialize → thread/start（续接时 thread/resume，分叉时 thread/fork）→ turn/start
  * （压缩时 thread/compact/start，审查时 review/start）→ 收通知直到 turn/completed。
  * 执行中可以插话（turn/steer）和中断（turn/interrupt）。
  */
 export function codexAdapter(
-  o: BuildOptions & { cwd: string; input: string; images?: string[]; platform?: string },
+  o: BuildOptions & { cwd: string; input: string; images?: string[]; platform?: string; trustHooks?: boolean },
 ): RpcAdapter {
   let thread = ''
   let turnId = ''
@@ -514,6 +560,7 @@ export function codexAdapter(
         return
       }
       ctx.send({ method: 'initialized' })
+      if (o.trustHooks) await trustPanelHooks(ctx, o.cwd)
       if (needsWinSandbox) {
         const ready = await ctx.request(
           { method: 'windowsSandbox/readiness', params: {} },

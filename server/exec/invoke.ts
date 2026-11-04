@@ -266,8 +266,8 @@ export async function invokeCli(o: {
     // 按设置里的开关才注入的扩展（Pi 的联网搜索）用面板自己的那一项填地址：
     // 用户自己配的 MCP 服务器没有这个端点
     const extras = mcpExtras(def.mcp!, servers[0]!.name, servers[0]!.url, dir, build.options)
-    // 钩子是一条命令的 CLI（Claude Code）：转发脚本和钩子配置也放进这一轮的临时目录
-    const hooks = hookSpec && bridge ? hookInstall(hookSpec, dir, hookActive) : { args: [], files: [] }
+    // 钩子是一条命令的 CLI（Claude Code、Codex）：转发脚本和钩子配置也放进这一轮的临时目录
+    const hooks = hookSpec && bridge ? hookInstall(hookSpec, dir, hookActive) : { args: [], files: [], env: {} }
     // 几个工具写进同一个配置文件时先合在一起，一次写进去
     const files = new Map<string, unknown>()
     for (const f of [...tools.flatMap((x) => x.files), ...extras.files, ...hooks.files])
@@ -283,8 +283,10 @@ export async function invokeCli(o: {
         [...files].map(([p, content]) => ({ path: p, content })),
       )
       // 接着 run 往下改（不从 o 重来）：o 里没有上面按思考强度补的环境变量和钩子的转发地址
+      // 转发脚本的路径也放进环境变量：钩子命令引用它（见 HOOK_SCRIPT_ENV），命令本身每轮不变
       run = {
         ...run,
+        env: { ...run.env, ...hooks.env },
         build: {
           ...build,
           extraArgs: [...(build.extraArgs ?? []), ...tools.flatMap((x) => x.args), ...extras.args, ...hooks.args],

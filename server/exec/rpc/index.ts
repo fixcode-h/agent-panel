@@ -1,6 +1,7 @@
 import type { BuildOptions, CliDefinition } from '../../../shared/clis.ts'
 import { RpcSpec } from '../../../shared/cli-spec.ts'
 import { t } from '../../../shared/i18n.ts'
+import { HOOK_SCRIPT_ENV } from '../../../shared/hooks.ts'
 import { parserFor, type CliEvent } from '../parsers.ts'
 import { claudeAdapter } from './claude.ts'
 import { codexAdapter } from './codex.ts'
@@ -31,7 +32,14 @@ export function rpcSessionFor(def: CliDefinition, o: RpcRunOptions): RpcSession 
   const parser = parserFor(def.id, o.cwd)
   const adapter =
     rpc.kind === 'codex'
-      ? codexAdapter({ ...o.build, cwd: o.cwd, input: o.input, images: o.images })
+      ? codexAdapter({
+          ...o.build,
+          cwd: o.cwd,
+          input: o.input,
+          images: o.images,
+          // 这一轮装了面板的钩子（参数里引用了转发脚本的环境变量）、定义说要按协议信任时，开始前先信任
+          trustHooks: def.hooks?.trust === 'rpc' && (o.build.extraArgs ?? []).some((x) => x.includes(HOOK_SCRIPT_ENV)),
+        })
       : rpc.kind === 'claude'
         ? claudeAdapter({ cwd: o.cwd, input: o.input, images: o.images, parse: parser })
         : createSpecAdapter(rpc, {

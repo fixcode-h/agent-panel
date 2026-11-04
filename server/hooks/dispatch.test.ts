@@ -51,7 +51,7 @@ const ctx = (over: { origin?: string; orch?: Record<string, unknown>; task?: nev
   mark: (r: string) => void marks.push(r),
 })
 const edit = (file: string) => ({
-  tool: { kind: 'edit' as const, name: 'Edit', input: { file_path: file }, path: file },
+  tool: { kind: 'edit' as const, name: 'Edit', input: { file_path: file }, path: file, paths: [file] },
 })
 
 test('只读的角色改文件被拒绝，跑写仓库的命令也被拒绝；普通角色不装工具前', async () => {
@@ -62,11 +62,11 @@ test('只读的角色改文件被拒绝，跑写仓库的命令也被拒绝；�
   assert.equal(a.deny, true)
   assert.match(a.reason!, /只读的角色/)
   const b = await ro.onHook!('tool.before', {
-    tool: { kind: 'shell', name: 'Bash', input: { command: 'git commit -m x' }, path: '' },
+    tool: { kind: 'shell', name: 'Bash', input: { command: 'git commit -m x' }, path: '', paths: [] },
   })
   assert.equal(b.deny, true)
   const c = await ro.onHook!('tool.before', {
-    tool: { kind: 'shell', name: 'Bash', input: { command: 'git log' }, path: '' },
+    tool: { kind: 'shell', name: 'Bash', input: { command: 'git log' }, path: '', paths: [] },
   })
   assert.ok(!c.deny, '只读命令照常')
   const plain = await hookOptions(ctx())

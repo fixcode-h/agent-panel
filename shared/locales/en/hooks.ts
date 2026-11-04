@@ -119,4 +119,6 @@ export const EN_HOOKS: Record<string, string> = {
   '超过 {n} 秒没跑完': "Didn't finish within {n} seconds",
   '退出码 {code}': 'Exit code {code}',
   '输出不是 JSON：{text}': "Output isn't JSON: {text}",
+  '面板的钩子没能在 Codex 里生效（{error}），这一轮改用一轮结束后的提醒':
+    "The panel's hooks couldn't be enabled in Codex ({error}); this turn falls back to the end-of-turn reminder",
 }
