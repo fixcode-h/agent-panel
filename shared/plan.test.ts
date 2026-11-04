@@ -1621,8 +1621,11 @@ test('重开已结束的计划：总用时从重开时刻算，不把上一轮�
   assert.equal(plan.steps.find((s) => s.id === at)?.auto, true)
 })
 
-/** 回归（评审 R2）：给已完成的子对话再发消息，复用原来那一步，不补一条「子对话：<id>」 */
-test('给已做完的子对话再发消息：重新打开原来那一步，不靠 id 当标题另开一格', () => {
+/**
+ * 回归（评审 R2）：给已完成的子对话再发消息，不补一条「子对话：<id>」。
+ * 2026-11-04 用户定：完成的步骤锁死，不再把原来那一步改回待做，新加一步（沿用原来的标题）
+ */
+test('给已做完的子对话再发消息：原来那一步保持完成，新加一步沿用它的标题', () => {
   const task = fresh()
   applyPlan(task, { steps: [{ title: 'A' }, { title: 'B' }] })
   const at = ensureChildStep(task, 'kid-1', '子对话甲')
@@ -1631,11 +1634,41 @@ test('给已做完的子对话再发消息：重新打开原来那一步，不�
   assert.equal(activePlan(task)!.steps.find((s) => s.id === at)?.status, 'done')
   // 又交给它一件新事（send_to_conversation 没有 title）
   const again = ensureChildStep(task, 'kid-1', '')
-  assert.equal(again, at, '还是原来那一步')
+  assert.notEqual(again, at, '新加一步')
   const plan = activePlan(task)!
+  assert.equal(plan.steps.find((s) => s.id === at)?.status, 'done', '原来那一步不改回待做')
   assert.equal(plan.steps.filter((s) => s.title.includes('kid-1')).length, 0, '没有出现用 id 当标题的步骤')
-  assert.equal(plan.steps.filter((s) => s.auto).length, 1, '没有多出一步')
-  assert.equal(plan.steps.find((s) => s.id === at)?.title, '子对话：子对话甲', '标题还是原来那个')
+  assert.equal(plan.steps.find((s) => s.id === again)?.title, '子对话：子对话甲', '新的一步沿用原来的标题')
+  assert.ok(
+    !bindWait(task, again, { kind: 'child', ref: 'kid-1', label: '子对话甲' }).startsWith('（'),
+    '新的一步能挂等待',
+  )
+  settleWait(task, 'child', 'kid-1', true)
+  assert.equal(plan.steps.find((s) => s.id === again)?.status, 'done', '做完后新的一步收口')
+})
+
+test('计划提前结束（finish_plan）后，挂着的子对话、后台命令结果回来照样收口', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: 'A', status: 'running' }, { title: 'B' }, { title: 'C' }] })
+  bindWait(task, '1', { kind: 'child', ref: 'kid-1', label: '甲' })
+  bindWait(task, '2', { kind: 'background', ref: 'job-1', label: 'e2e' })
+  bindWait(task, '3', { kind: 'background', ref: 'job-2', label: '编译' })
+  finishPlan(task)
+  const old = task.plans![0]
+  applyPlan(task, { title: '换个方向', steps: [{ title: 'X', status: 'running' }] })
+  assert.equal(holdWait(task, 'child', 'kid-1', '还在改').length, 1, '提前结束的计划里也能写「还在等它」')
+  assert.equal(settleWait(task, 'child', 'kid-1', true).length, 1)
+  assert.equal(old.steps[0].status, 'done', '成功：旧计划里那一步标完成')
+  settleWait(task, 'background', 'job-1', false)
+  assert.equal(old.steps[1].status, 'running', '失败：退回进行中')
+  assert.ok(needsFix(old.steps[1]), '写上需要修复')
+  assert.equal(
+    failLostWaits(task, 'background', () => false),
+    1,
+    '面板重启后丢了的后台命令也收口',
+  )
+  assert.equal(old.steps[2].status, 'running')
+  assert.equal(activePlan(task)?.title, '换个方向', '新计划不受影响')
 })
 
 test('用户点「解决」：没做完的步骤连同子步骤一起收口成完成，计划落到 done', () => {

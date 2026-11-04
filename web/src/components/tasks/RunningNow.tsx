@@ -2,15 +2,7 @@ import { useUserName } from '@/lib/user-name'
 import { useEffect, useMemo, useState } from 'react'
 import { CircleSlash, FileSearch, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
-import {
-  helperRunning,
-  helperShown,
-  sortHelpers,
-  stepMs,
-  visibleChildren,
-  splitStepJobs,
-  type ChildEntry,
-} from '@shared/task'
+import { helperRunning, helperShown, sortHelpers, stepMs, splitStepJobs, type ChildEntry } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
@@ -20,7 +12,7 @@ import { ChildReportButton, DiagnosisAutoOpen, firstShow } from './ChildReport'
 import { DiagnosisDialog } from './DiagnosisDialog'
 import { Button } from '@/components/ui/button'
 import { useChildList, useChildOpen, useJobOpen } from './child-open'
-import { childClosedHint, childLabelClass, childLabels, childNote, staleLine } from './child-line'
+import { childClosedHint, childLabelClass, childLabels, childNote, listedChildren, staleLine } from './child-line'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
 import { isHelperAgent } from '@shared/builtin/core'
@@ -52,8 +44,9 @@ export function runningRows<C extends ChildEntry>({
   const list = jobs ? (task?.jobs ?? []) : []
   // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧
   const { sub, own } = splitStepJobs(task?.steps ?? [], list)
-  // 已标记解决但还在跑、在等后台命令、计划没做完的子对话都要列（见 visibleChildren）
-  const rows = kids ? visibleChildren(children) : []
+  // 已标记解决但还在跑、在等后台命令、计划没做完的子对话都要列（见 visibleChildren）；
+  // 等你确认诊断报告、同时又提了问的子对话也留着（见 listedChildren）
+  const rows = kids ? listedChildren(children) : []
   // 对话派出的子任务：只要没结束（在跑、在排队）就列一行，跟子对话同一批出现在最新一段上；
   // 在跑的排前面，同一组按派出的顺序
   const helpers = kids && task ? activeHelpers(task) : []

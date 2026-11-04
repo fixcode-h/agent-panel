@@ -160,3 +160,31 @@ test('migrateOnStart：替子对话起的编译跑到一半面板重启：退回
     /替子对话「改角色移动」（id kid）起的编译没跑完.*重新调用 request_build/,
   )
 })
+
+test('migrateOnStart：诊断报告还在等用户确认的子对话（保活着 CLI 等下一句）重启后仍在等确认：不落成已中断、不进继续名单', async () => {
+  const diag = { version: 1, at, status: 'pending', symptom: 's', rootCause: 'r', fix: 'f', files: ['a.ts'] }
+  const plans = [
+    {
+      id: 'p1',
+      createdAt: at,
+      steps: [
+        { id: 's1', title: '交诊断报告', status: 'running' },
+        { id: 's2', title: '修' },
+      ],
+    },
+  ]
+  const store = memStore([
+    task('kid', { parentTaskId: 'a', bug: true, status: 'running', awaitingUser: true, diagnoses: [diag], plans }),
+    // 对照：同样计划没做完、没有等确认的报告，照常落成已中断并进名单
+    task('other', { parentTaskId: 'a', status: 'running', awaitingUser: true, plans }),
+  ])
+  const crashed = await migrateOnStart(store)
+  const kid = store.map.get('kid')!
+  assert.equal(kid.status, 'done', '不是已中断：convState 按报告算在运行，弹窗和「查看报告」都在')
+  assert.equal(kid.stopReason, undefined)
+  assert.equal(kid.awaitingUser, false)
+  assert.equal(kid.diagnoses?.[0].status, 'pending', '报告原样留着')
+  assert.ok(!kid.messages.some((m) => /已中断|还没收尾/.test(m.text)), '不写「已中断」的说明')
+  assert.deepEqual(crashed, ['other'], '不进重启后的继续名单：等的是用户，不该拉起 CLI')
+  assert.equal(store.map.get('other')!.status, 'stopped')
+})

@@ -18,6 +18,7 @@ import {
 } from '../../shared/hook-defs.ts'
 import { activePlan, planNowText, planProgress } from '../../shared/plan.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
+import { newPace, planPaceHint, type PaceState } from '../../shared/plan-pace.ts'
 import { DATA_DIR } from '../store.ts'
 import { loadProjectLessons } from '../project-lessons.ts'
 import { readHooks } from './store.ts'
@@ -142,6 +143,8 @@ function restoreText(task: Task): string {
 const pushed = new Map<string, Set<string>>()
 /** 原地打转提醒：每个对话里每条命令连续失败了几次（成功一次就清零），提醒过的记在 hinted 里不再重复 */
 const fails = new Map<string, Map<string, number>>()
+/** 计划没跟上提醒：每个对话在数哪一项、动了几次手、提醒过什么（见 shared/plan-pace.ts） */
+const paces = new Map<string, PaceState>()
 /** 改完没验证：每个对话里按哪条输入问过（同一条输入只问一次） */
 const verified = new Map<string, string>()
 
@@ -224,7 +227,9 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   const off = new Set(data.cliOff[c.cliId] ?? [])
   const events: HookEventName[] = []
   if (guards.length || mine('tool.before').length) events.push('tool.before')
-  if (lessons.length || on('loop-hint') || mine('tool.after').length) events.push('tool.after')
+  // 计划没跟上提醒：只给有执行计划的对话（项目里的对话，不含子任务、Chat 页）
+  const pace = on('plan-pace') && !!c.call.orch.plans
+  if (lessons.length || on('loop-hint') || pace || mine('tool.after').length) events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
   for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
 
@@ -387,6 +392,22 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       }
       const loop = on('loop-hint') ? loopHint(facts) : ''
       if (loop) ctx.push(loop)
+      if (pace && facts.tool) {
+        const st = paces.get(c.task.id) ?? newPace()
+        paces.set(c.task.id, st)
+        const text = planPaceHint(
+          c.task,
+          facts.tool.kind,
+          st,
+          builtinNumber(data, 'plan-pace', 'calls'),
+          builtinNumber(data, 'plan-pace', 'times'),
+        )
+        if (text) {
+          noteBuiltin('plan-pace', event, 'context', text)
+          taskLog(c.task.id, '计划没跟上，工具后补了提醒', { calls: st.calls })
+          ctx.push(text)
+        }
+      }
       ctx.push(...(await runUser(event, facts)).context)
       return ctx.length ? { context: ctx.join('\n\n') } : {}
     }
