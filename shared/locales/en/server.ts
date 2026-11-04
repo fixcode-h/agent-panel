@@ -681,4 +681,7 @@ export const EN_SERVER: Record<string, string> = {
   '{cli} 还没选能用的 API': '{cli} has no usable API selected yet',
   '这份报告是改版前生成的，没有存分项，没法再次生成；重新提炼这段时间吧':
     "This report was made before items were saved and can't be generated again; extract this period again instead",
+  '模型配置里没有 {model}': '{model} is not in the model catalog',
+  'Agent 规划好了，按这个方案开始改？': 'The agent finished planning. Start making changes with this plan?',
+  '「关于我」最多 {n} 字': '"About me" can be at most {n} characters',
 }

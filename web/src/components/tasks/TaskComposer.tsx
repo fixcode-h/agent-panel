@@ -29,7 +29,7 @@ import { ElementPickButton } from '@/components/chat/ElementPicker'
 import { SpeechButton } from '@/components/chat/SpeechButton'
 import { ParamsChip } from '@/components/agents/ParamFields'
 import { AgentPicker } from '@/components/agents/AgentPicker'
-import { CHAT_ORIGIN, scopeOf } from '@shared/conv-mode'
+import { pickableChatRole, scopeOf } from '@shared/conv-mode'
 import { t } from '@shared/i18n'
 
 export const chip =
@@ -68,7 +68,7 @@ export function TaskComposer({
   // Chat 页的聊天不属于任何项目：默认是内置「助手」（存空 id，运行时按它跑，CLI 和模型照旧在这里选），
   // 有自建的 Chat 角色时可以换成它们；只列 Chat 角色，项目里只用 Agent 角色（ADR 0038）
   const [chatRole, setChatRole] = useState('')
-  const chatRoles = agents.filter((a) => a.enabled && scopeOf(a) === 'chat' && a.origin !== CHAT_ORIGIN)
+  const chatRoles = agents.filter(pickableChatRole)
   const wanted = standalone ? chatRole : useAgent ? (project?.defaultAgentId ?? '') : ''
   const agent = agents.find((a) => a.id === wanted && a.enabled && scopeOf(a) === (standalone ? 'chat' : 'agent'))
   const agentId = agent ? wanted : ''
@@ -113,7 +113,8 @@ export function TaskComposer({
   const [askUser, setAskUser] = useNewAskUser()
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
-  const mention = useFileMention(project, editor, files)
+  // Chat 页的新建输入框没有项目：@ 在所有项目里一起搜
+  const mention = useFileMention(project, editor, files, standalone ? projects : [])
   const chips = useComposerChips({ files, editor, text: prompt, change: setPrompt })
   const { addFiles, addReady, drop } = chips
   // 「/」菜单：按选的 CLI 列
@@ -308,7 +309,7 @@ export function TaskComposer({
             <AttachMenu
               onFiles={addFiles}
               onMention={mention.start}
-              canMention={!!project?.path}
+              canMention={!!project?.path || (!!standalone && projects.some((p) => p.path))}
               onSession={addReady}
               onWorkflow={canFlow ? (w) => editor.current?.insertChip({ kind: 'workflow', name: w.name }) : undefined}
             />
@@ -336,7 +337,8 @@ export function TaskComposer({
             {standalone && chatRoles.length > 0 && (
               <AgentPicker
                 scope="chat"
-                exclude={agents.filter((a) => a.origin === CHAT_ORIGIN).map((a) => a.id)}
+                // 默认的「助手」在「无」那一项、只供引入的「聊天约束」不能当角色：都不列
+                exclude={agents.filter((a) => scopeOf(a) === 'chat' && !pickableChatRole(a)).map((a) => a.id)}
                 onPick={(a) => setChatRole(a.id)}
                 onNone={() => setChatRole('')}
                 noneLabel={t('助手（默认）')}

@@ -123,6 +123,7 @@ export async function runRealTurn(ctx: RealContext) {
     inlineEdit: ctx.inlineEdit,
     runBackground: ctx.runBackground,
     cliTodos: ctx.cliTodos,
+    chatMemory: ctx.chatMemory,
     checkBackground: ctx.checkBackground,
     stopBackground: ctx.stopBackground,
     forwardSpawn: ctx.forwardSpawn,

@@ -733,6 +733,10 @@ ${prompt}
   })
   assert.equal(other.model, '', '其他 Agent 不接受临时模型')
   await waitDone(other.id)
+  // Chat 的「关于我」和记忆（设计报告 Chat P1-4）：Chat 页的对话带上，项目里的对话不带
+  await call('PUT', '/chat-memory/about', { about: '叫我小王，回复先给结论' })
+  await call('POST', '/chat-memory/items', { text: '用户的电脑是 Windows' })
+  assert.ok(!calls().at(-1)?.input.includes('## 关于用户'), '项目里的对话不带「关于我」')
   // Chat 模式：不属于项目的聊天，在数据目录里单独的工作目录执行
   // 旧客户端还会传以前默认 Agent 的 id：按不用角色处理
   let free = await call('POST', '/tasks', { mode: 'chat', agentId: 'default-agent', prompt: '随便聊聊' })
@@ -742,6 +746,8 @@ ${prompt}
   assert.equal(free.status, 'done')
   c = calls().at(-1)
   assert.equal(c.cwd, path.join(dataDir, 'chats', free.id), '聊天不在任何项目目录里执行')
+  assert.ok(c.input.includes('## 关于用户') && c.input.includes('叫我小王，回复先给结论'), 'Chat 的对话带上「关于我」')
+  assert.ok(c.input.includes('- 用户的电脑是 Windows'), 'Chat 的对话带上记忆')
   await call('POST', `/tasks/${free.id}/messages`, { text: '再说说' })
   free = await waitDone(free.id)
   assert.ok(calls().at(-1).args.includes('--resume'), '聊天继续时续接会话')

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Package, RefreshCw, Trash2 } from 'lucide-react'
+import { FileText, Loader2, Package, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { packageIdentity, type InstalledPackage } from '@shared/cli-spec'
 import type { CliDefinition } from '@shared/clis'
 import { t } from '@shared/i18n'
@@ -13,6 +13,9 @@ import { Segmented } from '@/components/ui/segmented'
 import { cliMoreApi } from '@/lib/api-cli-more'
 import { npmName } from '@shared/cli-spec'
 import { CliGallery } from './CliGallery'
+import { PackageChangelog } from './PackageChangelog'
+import { PackageResources } from './PackageResources'
+import { CliBuiltins } from './CliBuiltins'
 
 type Action = 'install' | 'remove' | 'update' | 'updateAll'
 
@@ -32,6 +35,10 @@ export function CliPackages({ def }: { def: CliDefinition }) {
   // 「浏览」是插件市场（定义里写了 gallery 才有）；npm 上的最新版本用来标「有新版本」，取不到就不标
   const [tab, setTab] = useState<'mine' | 'browse'>('mine')
   const [latest, setLatest] = useState<Record<string, string>>({})
+  // 展开了更新说明的包；from 是刚更新完时更新前的版本（只列比它新的）
+  const [notes, setNotes] = useState<{ source: string; from?: string } | null>(null)
+  // 展开了资源开关的包
+  const [res, setRes] = useState('')
   const load = () =>
     api
       .cliPackages(def.id)
@@ -45,6 +52,8 @@ export function CliPackages({ def }: { def: CliDefinition }) {
     setResult(null)
     setTab('mine')
     setLatest({})
+    setNotes(null)
+    setRes('')
     void load()
     if (spec.npmRoot)
       cliMoreApi
@@ -58,8 +67,13 @@ export function CliPackages({ def }: { def: CliDefinition }) {
     setBusy({ action, target })
     setResult(null)
     try {
+      const before = list?.find((p) => p.target === target)
       const r = await api.cliPackageAction(def.id, action, target)
       setList(r.packages)
+      // 单个包更新完、版本变了：展开它这次新增的更新说明
+      const after = r.packages.find((p) => p.source === before?.source)
+      if (spec.changelog && action === 'update' && before?.version && after?.version !== before.version)
+        setNotes({ source: before.source, from: before.version })
       setResult({ ok: r.ok, output: r.output })
       if (r.ok && action === 'install') setSource('')
     } catch (e) {
@@ -200,40 +214,69 @@ export function CliPackages({ def }: { def: CliDefinition }) {
         ) : (
           <Card as="ul" className="flex flex-col divide-y rounded-lg" aria-label={t('已装的插件')}>
             {list.map((p) => (
-              <li key={p.source} className="group flex items-center gap-2.5 px-3 py-2" title={p.target}>
-                <Package className="h-3.5 w-3.5 shrink-0 text-accent-text" />
-                <span className="min-w-0 flex-1 truncate font-mono text-body">{p.source}</span>
-                <PackageVersion version={p.version} latest={latest[npmName(p.source)]} />
-                {spec.update && (
+              <li key={p.source} className="flex flex-col">
+                <div className="group flex items-center gap-2.5 px-3 py-2" title={p.target}>
+                  <Package className="h-3.5 w-3.5 shrink-0 text-accent-text" />
+                  <span className="min-w-0 flex-1 truncate font-mono text-body">{p.source}</span>
+                  <PackageVersion version={p.version} latest={latest[npmName(p.source)]} />
+                  {spec.resources && (
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-expanded={res === p.source}
+                      onClick={() => setRes(res === p.source ? '' : p.source)}
+                      aria-label={t('{name} 的资源开关', { name: p.source })}
+                      title={t('加载哪些资源')}
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {spec.changelog && (
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-expanded={notes?.source === p.source}
+                      onClick={() => setNotes(notes?.source === p.source ? null : { source: p.source })}
+                      aria-label={t('{name} 的更新说明', { name: p.source })}
+                      title={t('更新说明')}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {spec.update && (
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      disabled={!!busy}
+                      onClick={() => void run('update', p.target)}
+                      aria-label={t('更新 {name}', { name: p.source })}
+                      title={t('更新')}
+                    >
+                      <RefreshCw className={cn('h-3.5 w-3.5', spin('update', p.target) && 'animate-spin')} />
+                    </Button>
+                  )}
                   <Button
                     size="icon-sm"
                     variant="ghost"
                     disabled={!!busy}
-                    onClick={() => void run('update', p.target)}
-                    aria-label={t('更新 {name}', { name: p.source })}
-                    title={t('更新')}
+                    onClick={() => void run('remove', p.target)}
+                    aria-label={t('卸载 {name}', { name: p.source })}
+                    title={t('卸载')}
                   >
-                    <RefreshCw className={cn('h-3.5 w-3.5', spin('update', p.target) && 'animate-spin')} />
+                    {spin('remove', p.target) ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
                   </Button>
-                )}
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  disabled={!!busy}
-                  onClick={() => void run('remove', p.target)}
-                  aria-label={t('卸载 {name}', { name: p.source })}
-                  title={t('卸载')}
-                >
-                  {spin('remove', p.target) ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
-                  )}
-                </Button>
+                </div>
+                {res === p.source && <PackageResources cli={def.id} source={p.source} />}
+                {notes?.source === p.source && <PackageChangelog cli={def.id} source={p.source} from={notes.from} />}
               </li>
             ))}
           </Card>
         )}
+        <CliBuiltins def={def} />
       </>
     )
   }

@@ -8,6 +8,7 @@ import { agentCli, agentPermission, agentRun, cliSettings, defaultSettings } fro
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { pluginArgs } from '@shared/role-plugins'
 
 /** 仿终端的命令预览，固定深色。任务描述通过 stdin 传入，所以写成管道形式 */
 export function CommandPreview({
@@ -16,6 +17,7 @@ export function CommandPreview({
   effort = '',
   permission = '',
   extraArgs,
+  plugins,
   className,
   title = t('命令预览'),
   override,
@@ -26,6 +28,8 @@ export function CommandPreview({
   /** Agent 自己指定的权限；为空跟随 CLI 设置 */
   permission?: string
   extraArgs: string[]
+  /** 角色额外加载的插件（见 shared/role-plugins.ts） */
+  plugins?: string[]
   className?: string
   title?: string
   /** 设置页还没保存的改动：预览要跟着输入马上变，不等自动保存 */
@@ -43,7 +47,7 @@ export function CommandPreview({
     model: run.model,
     effort: run.effort,
     permission: agentPermission({ cli, permission }, s),
-    extraArgs: [...cs.extraArgs, ...extraArgs],
+    extraArgs: [...cs.extraArgs, ...extraArgs, ...pluginArgs(def, plugins)],
     options: cs.options,
   })
   return <Terminal argv={[cs.command, ...args]} title={title} className={className} />

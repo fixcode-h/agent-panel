@@ -14,6 +14,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
   await check(p, '设置', ['常规', '内容宽度', '命令行 Shell', 'Git Bash（默认）', '子对话卡住时追问'])
   if (!(await p.getByLabel('子对话没有输出时自动询问（分钟）').count())) errors.push('设置：没有子对话自动询问的输入框')
+  // 关于我与记忆（设计报告 Chat P1-4）：「关于我」能改、记忆能看能删能加（演示里有两条示例）
+  await p.getByRole('button', { name: '关于我与记忆', exact: true }).click()
+  await check(p, '设置-关于我与记忆', ['关于我', '叫我小王', '命令要能在 PowerShell 里跑', '2 条'])
+  await p.getByRole('button', { name: '删掉这条记忆' }).first().click()
+  await p
+    .getByText('1 条', { exact: true })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('关于我与记忆：删掉一条后条数没变'))
   // 版本更新：自动检查默认关（用户要求），关着时不自动请求，只给「检查更新」引导
   await p.getByRole('button', { name: '版本更新', exact: true }).click()
   await check(p, '设置-版本更新', ['自动检查更新', '还没有检查过更新，点「检查更新」查看最新版本。'])

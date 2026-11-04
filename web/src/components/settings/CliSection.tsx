@@ -1,3 +1,4 @@
+import { ModelPriceField } from './ModelPrice'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
@@ -450,6 +451,7 @@ export function TierTable({
                       title={can.maxOutput ? undefined : t('{cli} 不接受最大输出的设置', { cli: def.name })}
                     />
                   </div>
+                  <ModelPriceField model={mapTo || model} protocol={protocol} readOnly={readOnly} />
                 </div>
               )}
             </div>

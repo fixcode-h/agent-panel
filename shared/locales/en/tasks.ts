@@ -1534,8 +1534,6 @@ export const EN_TASKS: Record<string, string> = {
   '每个顶层对话连同名下全部子对话合起来算（输入 + 输出）。用到 80% 时在对话里提醒一次，用满时停下整个对话；之后你再发消息会接着跑一轮。0 或留空表示不限。':
     'Counted per top-level conversation together with all its sub-conversations (input + output). At 80% the conversation gets one reminder; at the cap the whole conversation stops, and each message you send after that runs one more turn. 0 or empty means no cap.',
   '费用上限（美元）': 'Cost cap (USD)',
-  '按 Agent 报的费用累计，不报费用的 Agent 不计入。0 或留空表示不限。':
-    'Adds up the cost the Agent reports; Agents that report no cost are not counted. 0 or empty means no cap.',
   用量上限: 'Usage cap',
   '{used} / {cap} token': '{used} / {cap} tokens',
   '${used} / ${cap}': '${used} / ${cap}',
@@ -1913,4 +1911,14 @@ export const EN_TASKS: Record<string, string> = {
     "Allowed automatically by this conversation's rule ({rule}): {title}",
   '你允许了：{title}，这个对话里之后的{rule}都自动允许':
     'You allowed: {title}. {rule} will be allowed automatically for the rest of this conversation',
+  '按 Agent 报的费用累计；Codex、Command Code 这类不报费用的，在「设置 · Agent」的模型里填了单价才按 token 折算，没填的不计入。0 或留空表示不限。':
+    "Adds up the cost the agents report. For agents that don't report cost (such as Codex and Command Code), the cost is worked out from tokens only if you filled in the model's price under Settings · Agent; otherwise it isn't counted. 0 or empty means no limit.",
+  在项目里继续: 'Continue in a project',
+  '带上这段聊天，到项目里新建对话接着做（可以开子对话、跑工作流）':
+    'Take this chat into a new conversation in a project and keep going there (with sub-conversations and workflows)',
+  '带上这段聊天，到哪个项目里继续': 'Continue this chat in which project?',
+  生成的文件: 'Generated files',
+  '导出成一份 Markdown，方便贴进文档或笔记': 'Export as Markdown, handy for pasting into docs or notes',
+  '导出 Markdown': 'Export Markdown',
+  '整理好的记录读不到了，请再试一次': "Couldn't read the prepared record. Please try again",
 }

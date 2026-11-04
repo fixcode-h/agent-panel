@@ -271,6 +271,25 @@
     },
     "sessionId": "state.data.sessionId",
     "deferSteer": true,
+    "commandsQuery": {
+      "args": [
+        { "args": ["--mode", "rpc", "--no-session"] },
+        { "if": "trust=approve", "args": ["--approve"] },
+        { "if": "trust=deny", "args": ["--no-approve"] }
+      ],
+      "request": { "type": "get_commands" },
+      "list": "data.commands",
+      "path": "sourceInfo.path",
+      "kinds": { "extension": "native", "prompt": "command", "skill": "skill" },
+      "namePrefix": { "skill": "skill:" }
+    },
+    "handled": {
+      "save": "prompt",
+      "at": "data.disposition",
+      "value": "handled",
+      "started": { "type": "agent_start" },
+      "graceMs": 3000
+    },
     "redirect": {
       "take": {
         "record": {
@@ -1080,6 +1099,11 @@
   },
   "i18n": {
     "en": {
+      "读 mcp.json 连接你配的 MCP 服务器；面板「MCP 工具」页配给 Pi 的服务器靠它。面板自己的工具不受影响": "Reads mcp.json and connects your MCP servers; servers you give Pi on the panel's MCP tools page depend on it. The panel's own tools are not affected",
+      "让模型写脚本批量调用工具；关掉后设置里的「codemode 和工具搜索」也用不了": "Lets the model write scripts that call tools in batches. When off, \"Codemode and tool search\" in settings won't work either",
+      "工具搜索": "Tool search",
+      "按需搜索工具，工具很多时省上下文": "Searches for tools on demand; saves context when there are many tools",
+      "本机 llama.cpp 模型的接入和 /llama 命令；不用本机模型可以关掉": "Local llama.cpp models and the /llama command; turn off if you don't use local models",
       "关闭": "Off",
       "最低": "Minimal",
       "超高": "Extra high",
@@ -1194,6 +1218,40 @@
         "url": "https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-lsp"
       }
     ],
+    "oneOff": ["-e", "{source}"],
+    "gitRoot": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/git",
+    "changelog": { "manifestKey": "pi" },
+    "resources": {
+      "manifestKey": "pi",
+      "types": { "extensions": "扩展", "skills": "Skill", "prompts": "提示词", "themes": "主题" }
+    },
+    "builtins": {
+      "key": "extensions",
+      "off": "-builtin:{id}",
+      "items": [
+        {
+          "id": "mcp",
+          "label": "MCP",
+          "hint": "读 mcp.json 连接你配的 MCP 服务器；面板「MCP 工具」页配给 Pi 的服务器靠它。面板自己的工具不受影响"
+        },
+        {
+          "id": "codemode",
+          "label": "codemode",
+          "hint": "让模型写脚本批量调用工具；关掉后设置里的「codemode 和工具搜索」也用不了"
+        },
+        { "id": "tool-search", "label": "工具搜索", "hint": "按需搜索工具，工具很多时省上下文" },
+        {
+          "id": "llama.cpp",
+          "label": "llama.cpp",
+          "hint": "本机 llama.cpp 模型的接入和 /llama 命令；不用本机模型可以关掉"
+        }
+      ]
+    },
+    "local": {
+      "file": ".pi/settings.json",
+      "install": ["install", "-l", "--approve", "{source}"],
+      "remove": ["remove", "-l", "--approve", "{source}"]
+    },
     "npmRoot": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/npm/node_modules",
     "gallery": {
       "npmKeyword": "pi-package",

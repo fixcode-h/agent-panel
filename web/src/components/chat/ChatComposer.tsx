@@ -18,6 +18,13 @@ const DRAFT = 'chat-draft:'
  * 输入框里还没发出去的内容：每个对话各自记住，切到别的对话再回来还在（刷新页面也在），发出去后清空。
  * 行内卡片（Skill、图片）也是文字的一部分，按原样存着。
  */
+/** 从别处预先写好某个输入框的草稿（Chat「在项目里继续」把话放进项目的新建输入框）；存不了时什么都不做 */
+export function presetDraft(key: string, text: string) {
+  try {
+    localStorage.setItem(DRAFT + key, text)
+  } catch {}
+}
+
 export function useDraft(key: string) {
   const read = (k: string) => {
     if (!k) return ''

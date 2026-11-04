@@ -24,6 +24,7 @@ import {
   GraduationCap,
   Gauge,
   Keyboard,
+  Brain,
   Mic,
   Volume2,
   Component,
@@ -107,6 +108,9 @@ const SpeechSection = lazy(() =>
 const ReadAloudSection = lazy(() =>
   import('@/components/settings/ReadAloudSection').then((m) => ({ default: m.ReadAloudSection })),
 )
+const ChatMemorySection = lazy(() =>
+  import('@/components/settings/ChatMemorySection').then((m) => ({ default: m.ChatMemorySection })),
+)
 const HooksSection = lazy(() => import('@/components/settings/HooksSection').then((m) => ({ default: m.HooksSection })))
 const IntegrationsSection = lazy(() =>
   import('@/components/settings/IntegrationsSection').then((m) => ({ default: m.IntegrationsSection })),
@@ -137,6 +141,7 @@ const pickLabel = pickButtonLabel
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
+  { id: 'chat-memory', label: t('关于我与记忆'), icon: Brain, group: t('通用') },
   { id: 'speech', label: t('语音输入'), icon: Mic, group: t('通用') },
   { id: 'read-aloud', label: t('语音朗读'), icon: Volume2, group: t('通用') },
   { id: 'fonts', label: t('外观'), icon: Type, group: t('通用') },
@@ -815,6 +820,7 @@ function SettingsBody({
               {cur.id === 'read-aloud' && <ReadAloudSection value={readAloud} onChange={setReadAloud} />}
               {cur.id === 'integrations' && <IntegrationsSection />}
               {cur.id === 'hooks' && <HooksSection />}
+              {cur.id === 'chat-memory' && <ChatMemorySection />}
               {cur.id === 'general' && (
                 <>
                   {demo && (

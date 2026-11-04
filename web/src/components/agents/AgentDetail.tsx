@@ -81,6 +81,7 @@ import {
 import { TagPicker } from '@/components/tags/Tags'
 import { AgentPicker } from './AgentPicker'
 import { ParamsChip, ParamsEditor, ParamsForm } from './ParamFields'
+import { RolePlugins } from './RolePlugins'
 import { builtinDefinition, builtinKey, coreKey, coreUse, defaultMounts, listableAgents } from '@shared/builtin/core'
 import { SkillsPicker, StartersEditor } from './AgentExtras'
 import { CapabilityFields } from './CapabilityFields'
@@ -909,6 +910,7 @@ export function AgentDetail({
                     className="font-mono text-body"
                   />
                 </Field>
+                <RolePlugins cli={draft.cli} value={draft.plugins} onChange={(v) => set('plugins', v)} />
               </FormSection>
             )}
             {tab === 'run' && locked && coreDef && (
@@ -949,6 +951,7 @@ export function AgentDetail({
                   effort={draft.effort}
                   permission={draft.permission}
                   extraArgs={value.extraArgs}
+                  plugins={draft.plugins}
                 />
                 {preview && (
                   <FormSection title={t('实际交给它的设定')}>
