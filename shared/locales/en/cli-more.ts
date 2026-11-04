@@ -56,4 +56,9 @@ export const EN_CLI_MORE: Record<string, string> = {
   值不对: 'Invalid value',
   '{file} 里 {at} 的上一级不是对象，没有改': "The parent of {at} in {file} isn't an object, so nothing was changed",
   插件命令: 'Plugin command',
+  额外加载的插件: 'Extra plugins',
+  '只在这个角色执行时加载，不装进 {cli} 的全局配置，别的角色看不到这些工具。第一次用到时 {cli} 要先下载，那一轮启动会慢一些':
+    "Loaded only when this role runs, not installed in {cli}'s global configuration, so other roles don't see these tools. The first time one is used {cli} downloads it, so that turn starts more slowly",
+  插件来源: 'Plugin source',
+  '推荐：': 'Recommended:',
 }

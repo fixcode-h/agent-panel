@@ -1213,6 +1213,7 @@
         "url": "https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-lsp"
       }
     ],
+    "oneOff": ["-e", "{source}"],
     "npmRoot": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/npm/node_modules",
     "gallery": {
       "npmKeyword": "pi-package",

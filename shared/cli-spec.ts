@@ -125,6 +125,8 @@ export const CliPackages = z.object({
   overlaps: z.array(GalleryOverlap).default([]),
   /** npm 来源的包装在哪（node_modules 目录）：读已装的版本；不写就不显示版本 */
   npmRoot: z.string().default(''),
+  /** 只在这一次运行加载一个包、不写进配置的参数（Pi：-e {source}）：角色级插件用（见 shared/role-plugins.ts）；不写就不能按角色加载 */
+  oneOff: z.array(z.string()).default([]),
 })
 export type CliPackages = z.infer<typeof CliPackages>
 /** 已装的一个包：source 是配置里写的，target 是交给命令用的（相对路径换成了绝对路径），version 是装着的版本（读得到时） */

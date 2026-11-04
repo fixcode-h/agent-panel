@@ -144,6 +144,7 @@ import { type Steerer, cancelWait, flushHeld, notes, steerNote, steers } from '.
 import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from './api-gate.ts'
 import { searchExcludeEnv } from './search-exclude-env.ts'
 import { trustFor } from '../../shared/cli-trust.ts'
+import { pluginArgs } from '../../shared/role-plugins.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
 import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
@@ -546,7 +547,7 @@ async function runAgent(
     permission: agentPermission(agent, settings),
     // 项目设置里信任了（或明确不信任）这个 CLI 的项目配置：按定义加参数（ADR 0050）
     trust: trustFor(def, ctx.project),
-    extraArgs: [...cs.extraArgs, ...agent.extraArgs],
+    extraArgs: [...cs.extraArgs, ...agent.extraArgs, ...pluginArgs(def, agent.plugins)],
     maxTurns: cs.maxTurns || undefined,
     resume,
     fork,
