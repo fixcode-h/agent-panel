@@ -167,7 +167,7 @@ async function failure(res: Response): Promise<never> {
   throw err
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
   if (import.meta.env.VITE_DEMO) {
     const { handle } = await import('./demo-backend')
@@ -226,7 +226,7 @@ export interface KeepAliveItem {
   rss: number | null
 }
 
-const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
+export const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
 
 /** 一个独立分支（git worktree）和它在 git 里的实际情况 */
 export interface WorktreeItem {

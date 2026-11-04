@@ -20,6 +20,7 @@ import {
   Globe,
   Network,
   ShieldCheck,
+  Webhook,
   GraduationCap,
   Gauge,
   Keyboard,
@@ -106,6 +107,7 @@ const SpeechSection = lazy(() =>
 const ReadAloudSection = lazy(() =>
   import('@/components/settings/ReadAloudSection').then((m) => ({ default: m.ReadAloudSection })),
 )
+const HooksSection = lazy(() => import('@/components/settings/HooksSection').then((m) => ({ default: m.HooksSection })))
 const IntegrationsSection = lazy(() =>
   import('@/components/settings/IntegrationsSection').then((m) => ({ default: m.IntegrationsSection })),
 )
@@ -149,6 +151,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'apis', label: t('API 配置'), icon: KeyRound },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'assist', label: t('AI 创建'), icon: Sparkles, group: t('Agent 与 AI') },
+  { id: 'hooks', label: t('钩子'), icon: Webhook, group: t('Agent 与 AI') },
   // 外部 CLI 的授权（GitHub CLI 等），以后加新的授权工具只加定义
   { id: 'integrations', label: t('授权'), icon: ShieldCheck, group: t('连接') },
   { id: 'remote', label: t('外部访问'), icon: Globe, group: t('连接') },
@@ -816,6 +819,7 @@ function SettingsBody({
               {cur.id === 'speech' && <SpeechSection value={speech} onChange={setSpeech} />}
               {cur.id === 'read-aloud' && <ReadAloudSection value={readAloud} onChange={setReadAloud} />}
               {cur.id === 'integrations' && <IntegrationsSection />}
+              {cur.id === 'hooks' && <HooksSection />}
               {cur.id === 'general' && (
                 <>
                   {demo && (

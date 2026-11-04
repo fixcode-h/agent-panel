@@ -54,6 +54,7 @@ import { AskToggle, ScopeRequests, useNewAskUser } from '@/components/chat/AskTo
 import { askUserDefault } from '@/lib/askUserDefault'
 import { t } from '@shared/i18n'
 import { fmtDuration } from '@shared/duration'
+import { HookPreview, hookAssistText, hookExamples } from './hook-assist'
 
 type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMessage[] }
 
@@ -89,6 +90,7 @@ const EXAMPLES: Record<AssistKind, string[]> = {
     t('按项目现在的脚本，生成一套类型检查、单元测试、端到端和构建的步骤'),
     t('这是 UE 项目，补上编译和 Lua 语法检查的步骤'),
   ],
+  hook: hookExamples(),
 }
 
 /** Skill、命令的预览：优化时和当前内容对比，标出改没改 */
@@ -625,6 +627,8 @@ export function AssistDialog({
   globalLessons?: GlobalLesson[]
 }) {
   const shown = target?.name ?? title
+  // 钩子提案的校验、试跑结果：通过才让保存（见 hook-assist.tsx）
+  const [hookOk, setHookOk] = useState(false)
   const { clis, settings, categories, agents, setAgents, setCategories, setWorkflows } = useData()
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const usable = clis.filter((c) => c.installed && c.enabled)
@@ -657,79 +661,81 @@ export function AssistDialog({
           empty: t('生成的命令会显示在这里'),
           button: t('创建命令'),
         }
-      : kind === 'skill'
-        ? {
-            create: t('用 AI 创建 Skill'),
-            desc: t('本机 Agent 写出 SKILL.md，在右侧预览，确认再应用'),
-            intro: t('描述你想要的 Skill，越具体越好。可以从下面的例子开始：'),
-            placeholder: t('描述你想要的 Skill'),
-            empty: t('生成的 Skill 会显示在这里'),
-            button: t('创建 Skill'),
-          }
-        : kind === 'mcp'
+      : kind === 'hook'
+        ? hookAssistText()
+        : kind === 'skill'
           ? {
-              create: t('用 AI 排查 MCP 工具'),
-              desc: t('本机 Agent 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用'),
-              intro: t('说说遇到的问题，或者直接让它排查。'),
-              placeholder: t('补充你知道的情况'),
-              empty: t('修复后的配置会显示在这里'),
-              button: t('应用修复'),
+              create: t('用 AI 创建 Skill'),
+              desc: t('本机 Agent 写出 SKILL.md，在右侧预览，确认再应用'),
+              intro: t('描述你想要的 Skill，越具体越好。可以从下面的例子开始：'),
+              placeholder: t('描述你想要的 Skill'),
+              empty: t('生成的 Skill 会显示在这里'),
+              button: t('创建 Skill'),
             }
-          : kind === 'agent'
+          : kind === 'mcp'
             ? {
-                create: t('用 AI 创建角色'),
-                desc: t('本机 Agent 按固定格式生成角色，校验通过后在右侧预览，确认再应用'),
-                intro: t('描述你想要的角色，越具体越好。可以从下面的例子开始：'),
-                placeholder: t('描述你想要的角色'),
-                empty: t('生成的角色会显示在这里'),
-                button: t('创建角色'),
+                create: t('用 AI 排查 MCP 工具'),
+                desc: t('本机 Agent 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用'),
+                intro: t('说说遇到的问题，或者直接让它排查。'),
+                placeholder: t('补充你知道的情况'),
+                empty: t('修复后的配置会显示在这里'),
+                button: t('应用修复'),
               }
-            : kind === 'params'
+            : kind === 'agent'
               ? {
-                  create: t('AI 配置参数'),
-                  desc: t('在项目目录里只读分析代码，按项目情况给出参数值；确认后才填进表单'),
-                  intro: t('说说你的要求，或者直接让它按项目情况填。'),
-                  placeholder: t('补充要求，例如「端到端测试在 WSL 里跑」'),
-                  empty: t('参数值会显示在这里'),
-                  button: t('填进表单'),
+                  create: t('用 AI 创建角色'),
+                  desc: t('本机 Agent 按固定格式生成角色，校验通过后在右侧预览，确认再应用'),
+                  intro: t('描述你想要的角色，越具体越好。可以从下面的例子开始：'),
+                  placeholder: t('描述你想要的角色'),
+                  empty: t('生成的角色会显示在这里'),
+                  button: t('创建角色'),
                 }
-              : kind === 'lessons'
+              : kind === 'params'
                 ? {
-                    create: t('提取全局教训'),
-                    desc: t('从这个项目的教训里挑出换个项目也适用的，合进全局教训；逐条确认后才写入'),
-                    intro: t('直接让它提取，或者说说你的要求。'),
-                    placeholder: t('补充要求，例如「只看角色自己记的」'),
-                    empty: t('提取出的全局教训会显示在这里'),
-                    button: t('确认写入全局教训'),
+                    create: t('AI 配置参数'),
+                    desc: t('在项目目录里只读分析代码，按项目情况给出参数值；确认后才填进表单'),
+                    intro: t('说说你的要求，或者直接让它按项目情况填。'),
+                    placeholder: t('补充要求，例如「端到端测试在 WSL 里跑」'),
+                    empty: t('参数值会显示在这里'),
+                    button: t('填进表单'),
                   }
-                : kind === 'project'
+                : kind === 'lessons'
                   ? {
-                      create: t('AI 初始化项目'),
-                      desc: t(
-                        '在项目目录里写好 AGENTS.md 和文档框架，评估工作流、推荐项目设置；推荐项回到项目设置里逐项或整体应用',
-                      ),
-                      intro: t('直接让它初始化，或者说说你的要求。'),
-                      placeholder: t('补充要求，例如「文档放在 Docs/ 下」'),
-                      empty: t('初始化的结果会显示在这里'),
-                      button: t('查看推荐并应用'),
+                      create: t('提取全局教训'),
+                      desc: t('从这个项目的教训里挑出换个项目也适用的，合进全局教训；逐条确认后才写入'),
+                      intro: t('直接让它提取，或者说说你的要求。'),
+                      placeholder: t('补充要求，例如「只看角色自己记的」'),
+                      empty: t('提取出的全局教训会显示在这里'),
+                      button: t('确认写入全局教训'),
                     }
-                  : kind === 'teststeps'
+                  : kind === 'project'
                     ? {
-                        create: t('AI 生成测试步骤'),
-                        desc: t('在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单'),
-                        intro: t('说说你的要求，或者直接让它按项目情况生成。'),
-                        placeholder: t('补充要求，例如「编译要放在单元测试前面」'),
-                        empty: t('测试步骤会显示在这里'),
-                        button: t('填进表单'),
+                        create: t('AI 初始化项目'),
+                        desc: t(
+                          '在项目目录里写好 AGENTS.md 和文档框架，评估工作流、推荐项目设置；推荐项回到项目设置里逐项或整体应用',
+                        ),
+                        intro: t('直接让它初始化，或者说说你的要求。'),
+                        placeholder: t('补充要求，例如「文档放在 Docs/ 下」'),
+                        empty: t('初始化的结果会显示在这里'),
+                        button: t('查看推荐并应用'),
                       }
-                    : {
-                        create: t('用 AI 创建工作流'),
-                        desc: t('本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
-                        intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
-                        placeholder: t('描述你想要的工作流'),
-                        empty: t('生成的工作流会显示在这里'),
-                        button: t('创建工作流'),
-                      }
+                    : kind === 'teststeps'
+                      ? {
+                          create: t('AI 生成测试步骤'),
+                          desc: t('在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单'),
+                          intro: t('说说你的要求，或者直接让它按项目情况生成。'),
+                          placeholder: t('补充要求，例如「编译要放在单元测试前面」'),
+                          empty: t('测试步骤会显示在这里'),
+                          button: t('填进表单'),
+                        }
+                      : {
+                          create: t('用 AI 创建工作流'),
+                          desc: t('本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
+                          intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
+                          placeholder: t('描述你想要的工作流'),
+                          empty: t('生成的工作流会显示在这里'),
+                          button: t('创建工作流'),
+                        }
 
   useEffect(() => {
     if (!open) return
@@ -913,7 +919,8 @@ export function AssistDialog({
         latest.kind === 'mcp' ||
         latest.kind === 'params' ||
         latest.kind === 'teststeps' ||
-        latest.kind === 'project'
+        latest.kind === 'project' ||
+        latest.kind === 'hook'
       ) {
         await onApply?.(latest)
         onOpenChange(false)
@@ -1175,6 +1182,8 @@ export function AssistDialog({
                   <TestStepsPreview steps={latest.steps} />
                 ) : latest.kind === 'project' ? (
                   <ProjectPreview p={latest} />
+                ) : latest.kind === 'hook' ? (
+                  <HookPreview hook={latest.hook} onCheck={setHookOk} />
                 ) : latest.kind === 'lessons' ? (
                   <LessonChangesPreview
                     changes={latest.changes}
@@ -1219,7 +1228,13 @@ export function AssistDialog({
               </span>
               <Button
                 className="ml-auto"
-                disabled={!latest || running || applying || (latest.kind === 'lessons' && !picked.size)}
+                disabled={
+                  !latest ||
+                  running ||
+                  applying ||
+                  (latest.kind === 'lessons' && !picked.size) ||
+                  (latest.kind === 'hook' && !hookOk)
+                }
                 onClick={apply}
               >
                 {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}

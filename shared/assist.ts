@@ -46,6 +46,7 @@ import {
 } from './schema.ts'
 import type { DerivedParam } from './agent-params.ts'
 import { condText, includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
+import { buildHookPrompt, resolveHookProposal, type HookProposal } from './assist-hook.ts'
 
 export const AssistKind = z.enum([
   'agent',
@@ -57,6 +58,7 @@ export const AssistKind = z.enum([
   'teststeps',
   'lessons',
   'project',
+  'hook',
 ])
 export type AssistKind = z.infer<typeof AssistKind>
 
@@ -229,6 +231,7 @@ export type Proposal =
   | McpProposal
   | ParamsProposal
   | TestStepsProposal
+  | HookProposal
 
 export interface AssistJob {
   id: string
@@ -290,6 +293,7 @@ const KIND_NAME = {
   teststeps: '测试步骤',
   lessons: '全局教训',
   project: '项目初始化',
+  hook: '钩子',
 }
 
 const AGENT_RULES = `- name 简短，体现职责，例如「前端开发」「代码审查」；不要和已有 Agent 重名（优化时保留原名，除非用户要求改名）
@@ -440,6 +444,7 @@ function buildAssistBody(kind: AssistKind, ctx: AssistContext, messages: AssistM
   if (kind === 'teststeps') return buildTestStepsPrompt(ctx, messages)
   if (kind === 'project') return buildProjectPrompt(ctx, messages)
   if (kind === 'lessons') return buildLessonsPrompt(ctx, messages)
+  if (kind === 'hook') return buildHookPrompt(ctx.subject ?? {}, messages, ctx.agents)
   const improving = !!ctx.target
   const what = KIND_NAME[kind]
   const clis = CLIS.map(
@@ -1079,6 +1084,7 @@ export function resolveProposal(
       },
     }
   }
+  if (kind === 'hook') return resolveHookProposal(json, ctx.subject ?? {}, ctx.agents)
   if (kind === 'teststeps') {
     const r = resolveTestSteps(json)
     return r.error ? { error: r.error } : { proposal: { kind: 'teststeps', steps: r.steps! } }
@@ -1313,7 +1319,8 @@ export async function applyProposal(
     p.kind === 'params' ||
     p.kind === 'teststeps' ||
     p.kind === 'lessons' ||
-    p.kind === 'project'
+    p.kind === 'project' ||
+    p.kind === 'hook'
   )
     return { created: [], categories: [] }
   if (p.kind === 'agent')
