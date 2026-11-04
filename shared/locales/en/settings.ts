@@ -399,11 +399,19 @@ export const EN_SETTINGS: Record<string, string> = {
     'Errors and key events are recorded here. Each launch writes a new file, a new one starts after 5 MB, and only the latest 30 are kept. When something goes wrong, send the newest log file to find the cause.',
   网络与代理: 'Network & proxy',
   启用代理: 'Use a proxy',
-  '检查更新、下载新版本时用下面填的代理。关掉后不用这个地址，但仍会先走环境变量 HTTPS_PROXY（设了的话），没设时先直连；请求失败后再自动找本机正在运行的代理（系统代理或常见端口）。':
-    'Used for update checks and downloads. When off, this address is skipped, but HTTPS_PROXY is still used first when set; otherwise it connects directly, and on failure looks for a local proxy that is running (system proxy or common ports).',
+  '检查更新、下载新版本时用下面填的代理。关掉后不用这个地址，依次走环境变量 HTTPS_PROXY（设了的话）、系统代理（代理软件开了「系统代理」时）、直连；请求失败后再自动找本机正在运行的代理（常见端口）。':
+    'Used for update checks and downloads. When off, this address is skipped and the panel uses HTTPS_PROXY (when set), then the system proxy (when your proxy app has "system proxy" on), then a direct connection; on failure it looks for a local proxy on common ports.',
   代理地址: 'Proxy address',
-  '本机代理的地址，例如 {proxy}。留空时就不用这个地址，顺序和关掉开关一样（环境变量 → 直连 → 本机代理）。只支持 http 代理：v2rayN 默认的入站是 SOCKS，面板用不了，要把它改成 http / mixed 入站，或者填它的 http 入站端口。':
-    'Address of a local proxy, for example {proxy}. When empty this address is skipped, with the same order as turning the switch off (environment variable → direct → local proxy). Only HTTP proxies are supported: v2rayN default inbound is SOCKS, which the panel cannot use; change it to an http / mixed inbound or enter its HTTP inbound port.',
+  '本机代理的地址，例如 {proxy}。点右边的检测按钮会找本机正在运行的代理（系统代理和常见端口）并自动填入。留空时就不用这个地址，顺序和关掉开关一样（环境变量 → 系统代理 → 直连 → 本机代理）。只支持 http 代理：v2rayN 默认的入站是 SOCKS，面板用不了，要把它改成 http / mixed 入站，或者填它的 http 入站端口。':
+    'Address of a local proxy, for example {proxy}. The detect button on the right finds a running local proxy (system proxy and common ports) and fills it in. When empty this address is skipped, with the same order as turning the switch off (environment variable → system proxy → direct → local proxy). Only HTTP proxies are supported: v2rayN default inbound is SOCKS, which the panel cannot use; change it to an http / mixed inbound or enter its HTTP inbound port.',
+  系统代理: 'system proxy',
+  端口探测: 'port scan',
+  '已填入检测到的代理（{source}）': 'Filled in the detected proxy ({source})',
+  '没有检测到能用的 http 代理：确认代理软件已打开，或手动填写它的 http 端口':
+    'No usable HTTP proxy found: make sure your proxy app is running, or enter its HTTP port manually',
+  检测本机代理: 'Detect local proxy',
+  检测: 'Detect',
+  检测本机正在运行的代理并填入: 'Detect a running local proxy and fill it in',
   本页小节: 'Sections on this page',
   后台命令: 'Background commands',
   '{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的':

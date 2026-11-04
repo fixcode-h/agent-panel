@@ -9,7 +9,13 @@ import { request as httpsRequest, type RequestOptions as HttpsRequestOptions } f
 import { ProxyAgent, fetch as proxyFetch, type Dispatcher } from 'undici'
 import { getSettings } from './settings.ts'
 import { t } from '../shared/i18n.ts'
-import { DEFAULT_PROXY_PORT, DEFAULT_PROXY_URL, LOCAL_PROXY_PORTS, MAX_LOCAL_PROXIES } from '../shared/proxy.ts'
+import {
+  DEFAULT_PROXY_PORT,
+  DEFAULT_PROXY_URL,
+  LOCAL_PROXY_PORTS,
+  MAX_LOCAL_PROXIES,
+  type DetectedProxy,
+} from '../shared/proxy.ts'
 
 /** 和 fetch 一样用；timeoutMs 只限制等到响应头的时间，之后读 body 不受它影响 */
 export interface NetInit extends RequestInit {
@@ -264,6 +270,22 @@ export async function localProxies(): Promise<string[]> {
   )
   localCache = { at: Date.now(), list, ttl: list.length ? FOUND_TTL : MISS_TTL }
   return list
+}
+
+/**
+ * 设置页「检测本机代理」：不走缓存，重新读系统代理、并发探测全部候选，列出能转发 HTTPS 的 http 代理。
+ * 系统代理在前（用户自己在代理软件里开的），其次按 LOCAL_PROXY_PORTS 的顺序。顺手刷新回退用的缓存。
+ */
+export async function detectProxies(): Promise<DetectedProxy[]> {
+  systemCache = undefined
+  const system = await systemProxies()
+  const candidates = localProxyCandidates(system)
+  const alive = await Promise.all(candidates.map((proxy) => probeProxy(proxy)))
+  const found = candidates.filter((_, i) => alive[i])
+  const list = pickLocalProxies(system, found)
+  localCache = { at: Date.now(), list, ttl: list.length ? FOUND_TTL : MISS_TTL }
+  const sys = new Set(system.map(httpProxy).filter(Boolean))
+  return found.map((url) => ({ url, source: sys.has(url) ? 'system' : 'port' }))
 }
 
 /** 某个代理请求失败后算出的新缓存：去掉它；全都不行了就按「没找到」的短间隔重新探测 */
