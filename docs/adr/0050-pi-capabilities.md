@@ -2,7 +2,7 @@
 
 状态：已接受（2026-11-04 用户给了能力扩充报告，要求核对、改掉不合理的地方后开发） · 2026-11-04
 
-- 影响范围：`shared/cli-spec.ts`（`trust`、`packages.gallery`、`packages.npmRoot`、`packages.overlaps`、`configSettings`）、`shared/clis/pi.json`、`shared/schema.ts`（`Project.cliTrust`）、`server/exec/runner.ts`、`server/cli-packages.ts`、`server/cli-gallery.ts`（新增）、`server/cli-config-settings.ts`（新增）、`server/cli-trust-api.ts`（新增）、设置页 Pi 分页和项目设置的 CLI 分页
+- 影响范围：`shared/cli-spec.ts`（`trust`、`packages.gallery`、`packages.npmRoot`、`packages.overlaps`、`configSettings`；第四期加 `rpc.commandsQuery`、`rpc.handled`、`packages.oneOff` / `gitRoot` / `changelog` / `resources` / `builtins` / `local`）、`shared/clis/pi.json`、`shared/schema.ts`（`Project.cliTrust`）、`server/exec/runner.ts`、`server/cli-packages.ts`、`server/cli-gallery.ts`（新增）、`server/cli-config-settings.ts`（新增）、`server/cli-trust-api.ts`（新增）、设置页 Pi 分页和项目设置的 CLI 分页
 - 依据：Pi 1.5.0 安装包自带的 `docs/*.md`、`CHANGELOG.md` 和 `dist/` 源码；npm 搜索接口 2026-11-04 实测
 
 ## 背景
@@ -58,9 +58,16 @@
 - 设置页读文件里的当前值；没写过显示「跟随 Pi（默认值）」，只有用户改了才写，「恢复默认」删掉这个键，别的键原样保留。分组标题写明「写在 ~/.pi/agent/settings.json，终端里的 Pi 也会变」。
 - Pi 这期放：自动重试开关和次数、请求空闲超时、Pi 自己的自动压缩开关（说明和面板「自动压缩」的关系）、缓存预热、codemode 呈现方式、不发图片、传输方式。
 
-### 6. 第四、五期（以后做）
+### 6. 第四期（2026-11-04 用户要求接着做）
 
-角色级插件（`-e npm:`）、`get_commands` 合并进斜杠菜单、插件更新说明、插件内资源开关和内置扩展开关、项目级插件；P2 里的导出 HTML、刷新模型目录、实际应答模型、插话投递方式、MCP OAuth 提示。等前三期用起来再排。
+- **「/」菜单里的插件命令**：定义里 `rpc.commandsQuery`，起一次 Pi（`--mode rpc --no-session`，带上项目的信任参数）问 `get_commands`，5 分钟缓存、装删插件后清掉（`server/cli-commands.ts`）。插件包里带的模板和 Skill 按返回的文件路径由面板照常展开；插件命令（`source: extension`）只有 Pi 能执行，这一轮原样只发这一句（`server/slash.ts` 的 `slashInput`）。Pi 自己处理掉、不开新一轮时回 `disposition: handled`，面板按 `rpc.handled` 等 3 秒没收到 `agent_start` 就结束这一轮；命令自己开了一轮（开始记录可能先到）就照常等它跑完（`server/exec/rpc/spec.ts`）。插话（`steer`）里 Pi 不认插件命令，仍按普通文字。
+- **角色级插件**：`Agent.plugins` + 定义里 `packages.oneOff`（Pi：`-e {source}`），角色编辑页「运行」里选，执行时加参数、命令预览里看得到。第一次用到时 Pi 要下载，那一轮启动会慢，靠已有的「环境性卡住重试一次」兜底，界面上写明。
+- **插件更新说明**：定义里 `packages.changelog`（读包里 `pi.changelogPath`，默认 `CHANGELOG.md`）、`packages.gitRoot`（git 来源的安装目录）。已装列表每行一个「更新说明」，单个包更新后版本变了自动展开新增的条目。说明文件只认包目录里面的。
+- **资源开关、自带扩展、项目级插件**：`packages.resources`（按类型开关，写对象写法的空数组；不细到单个文件）、`packages.builtins`（`-builtin:<名字>`）、`packages.local`（`pi install -l --approve`，装进项目的 `.pi/settings.json`；项目配置没选「信任」时提示不会加载）。
+
+### 7. 第五期（以后做）
+
+P2 里的导出 HTML、刷新模型目录、实际应答模型、插话投递方式、MCP OAuth 提示，等前几期用起来再排。
 
 ## 放弃的做法
 

@@ -7,8 +7,28 @@ import { npmName } from '@shared/cli-spec'
  */
 const demoPackages = ['npm:cc-safety-net@2.7.1', 'git:github.com/example/pi-review@v1']
 const VERSIONS: Record<string, string> = { 'cc-safety-net': '2.7.1' }
+/** 演示里插件的更新说明：点「更新」后版本升到 2.8.0，展开这次新增的那一条 */
+const CHANGELOG: Record<string, { version: string; body: string }[]> = {
+  'cc-safety-net': [
+    { version: '2.8.0', body: '- 拦截 `git clean -fdx`\n- 读 `.env.local` 也算读机密文件' },
+    { version: '2.7.1', body: '- 修复 Windows 路径里的反斜杠被当成转义' },
+    { version: '2.7.0', body: '- 新增对 `rm -rf ~` 的拦截' },
+  ],
+}
 const LATEST: Record<string, string> = { 'cc-safety-net': '2.8.0' }
 const demoConfig: Record<string, boolean | number | string> = { retryMax: 5 }
+/** 演示里的项目插件（项目设置 · Pi）、包里的资源开关、内置扩展开关：都记在内存 */
+const demoProjectPackages = ['npm:@team/pi-review-rules']
+const demoResources: Record<string, Record<string, boolean>> = {
+  'npm:cc-safety-net@2.7.1': { extensions: true, skills: true },
+}
+const RESOURCE_LABEL: Record<string, string> = {
+  extensions: '扩展',
+  skills: 'Skill',
+  prompts: '提示词',
+  themes: '主题',
+}
+const demoBuiltins: Record<string, boolean> = { mcp: true, codemode: true, 'tool-search': true, 'llama.cpp': false }
 
 const item = (name: string, desc: string, monthly: number, days: number, extra: Partial<GalleryItem> = {}) =>
   ({
@@ -52,12 +72,38 @@ export function demoCliPackages(
 ): unknown {
   const list = () => demoPackages.map((x) => ({ source: x, target: x, version: VERSIONS[npmName(x)] }))
   if (sub === 'packages' && rest === 'latest') return LATEST
+  if (sub === 'packages' && rest === 'resources') {
+    const b = (body ?? {}) as { source?: string; type?: string; on?: boolean }
+    const source = method === 'PUT' ? String(b.source) : (query.get('source') ?? '')
+    const cur = (demoResources[source] ??= { extensions: true })
+    if (method === 'PUT' && b.type) cur[b.type] = !!b.on
+    return method === 'PUT'
+      ? { ok: true }
+      : Object.entries(cur).map(([type, on]) => ({ type, label: RESOURCE_LABEL[type] ?? type, on }))
+  }
+  if (sub === 'builtins') {
+    const b = (body ?? {}) as { id?: string; on?: boolean }
+    if (method === 'PUT' && b.id) demoBuiltins[b.id] = !!b.on
+    return { ...demoBuiltins }
+  }
+  // 项目里的插件：和用户级的分开记
+  if (sub === 'packages' && query.get('projectId')) {
+    const b = (body ?? {}) as { action?: string; source?: string }
+    const source = String(b.source ?? '').trim()
+    if (method === 'POST' && b.action === 'install' && source && !demoProjectPackages.includes(source))
+      demoProjectPackages.push(source)
+    if (method === 'POST' && b.action === 'remove') demoProjectPackages.splice(demoProjectPackages.indexOf(source), 1)
+    const packages = demoProjectPackages.map((x) => ({ source: x, target: x }))
+    return method === 'POST' ? { ok: true, output: `${b.action} ${source} (-l)`, packages } : packages
+  }
+  if (sub === 'packages' && rest === 'changelog') return CHANGELOG[npmName(query.get('source') ?? '')] ?? null
   if (sub === 'packages') {
     if (method === 'POST') {
       const b = (body ?? {}) as { action?: string; source?: string }
       const source = String(b.source ?? '').trim()
       if (b.action === 'install' && source && !demoPackages.includes(source)) demoPackages.push(source)
       if (b.action === 'remove' && demoPackages.includes(source)) demoPackages.splice(demoPackages.indexOf(source), 1)
+      if (b.action === 'update' && VERSIONS[npmName(source)]) VERSIONS[npmName(source)] = LATEST[npmName(source)]
       const output =
         b.action === 'install' ? `Installed ${source}` : b.action === 'remove' ? `Removed ${source}` : 'Up to date'
       return { ok: true, output, packages: list() }

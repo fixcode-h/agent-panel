@@ -1927,4 +1927,7 @@ export const EN_TASKS: Record<string, string> = {
     'Take this chat into a new conversation in a project and keep going there (with sub-conversations and workflows)',
   '带上这段聊天，到哪个项目里继续': 'Continue this chat in which project?',
   生成的文件: 'Generated files',
+  '导出成一份 Markdown，方便贴进文档或笔记': 'Export as Markdown, handy for pasting into docs or notes',
+  '导出 Markdown': 'Export Markdown',
+  '整理好的记录读不到了，请再试一次': "Couldn't read the prepared record. Please try again",
 }

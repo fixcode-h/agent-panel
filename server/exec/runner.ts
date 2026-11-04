@@ -40,7 +40,7 @@ import { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 
 export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
-import { expandSlash } from '../slash.ts'
+import { slashInput } from '../slash.ts'
 import { cachedModels, effortRejected, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
 import {
   autoLimits,
@@ -146,6 +146,7 @@ import { type Steerer, cancelWait, flushHeld, notes, steerNote, steers } from '.
 import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from './api-gate.ts'
 import { searchExcludeEnv } from './search-exclude-env.ts'
 import { trustFor } from '../../shared/cli-trust.ts'
+import { pluginArgs } from '../../shared/role-plugins.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
 import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
@@ -479,17 +480,18 @@ async function runAgent(
     input = `${input}\n\n## 用户在执行中补充的信息\n${pending.join('\n\n')}`
   }
   if (op?.kind === 'compact') input = def.compact === 'slash' ? '/compact' : SUMMARY_PROMPT
-  // 对话里打的「/命令」：Claude Code 新会话开头原样认得，其他情况展开成普通要求。
-  // 对话提示把用户原话放在「## 用户这次的消息」下面，所以按原话判断，把那一行换成展开后的要求
-  if (chat && !op && ctx.prompt.trim().startsWith('/')) {
-    const head = '## 用户这次的消息\n'
-    const at = input.indexOf(head + ctx.prompt)
-    const expanded =
-      bugSlash(ctx.prompt, task, !!call.orch?.coordinator) ??
-      (await expandSlash(ctx.prompt, cliId, cwd, def.slash && !carry))
-    if (at >= 0 && expanded !== ctx.prompt)
-      input = `${input.slice(0, at + head.length)}${expanded}${input.slice(at + head.length + ctx.prompt.length)}`
-  }
+  // 对话里打的「/命令」：展开成普通要求，插件命令这一轮原样只发这一句（见 server/slash.ts 的 slashInput）
+  const slash =
+    !chat || op
+      ? undefined
+      : await slashInput(input, ctx.prompt, {
+          cli: cliId,
+          cwd,
+          native: def.slash && !carry,
+          trust: trustFor(def, ctx.project),
+          bug: bugSlash(ctx.prompt, task, !!call.orch?.coordinator),
+        })
+  if (slash) input = slash.input
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? call.orch : undefined
@@ -525,6 +527,7 @@ async function runAgent(
     const at = step ? input.indexOf(`\n\n${NODE_PART}\n`) : -1
     input = at < 0 ? role + input : `${input.slice(0, at + 2)}${role}${input.slice(at + 2)}`
   }
+  if (slash?.raw) input = slash.raw
   const setup = input.length - base.length
   // 末尾再提醒一次：长提示词里夹在中间的规则容易被忽略。原生 /命令（Claude Code 新会话开头要原样认出）
   // 和压缩、审查（参数另有含义）不追加
@@ -546,7 +549,7 @@ async function runAgent(
     permission: agentPermission(agent, settings),
     // 项目设置里信任了（或明确不信任）这个 CLI 的项目配置：按定义加参数（ADR 0050）
     trust: trustFor(def, ctx.project),
-    extraArgs: [...cs.extraArgs, ...agent.extraArgs],
+    extraArgs: [...cs.extraArgs, ...agent.extraArgs, ...pluginArgs(def, agent.plugins)],
     maxTurns: cs.maxTurns || undefined,
     resume,
     fork,

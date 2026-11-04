@@ -7,6 +7,7 @@ import { ComponentStyle } from './component-style.ts'
 import { API_PROTOCOLS, ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { ProjectCliTrust } from './cli-trust.ts'
+import { RolePlugins } from './role-plugins.ts'
 import { RemoteAccess } from './remote-schema.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
@@ -133,6 +134,8 @@ export const AgentInput = z.object({
   permission: z.string().default(''),
   /** 追加给 CLI 的参数，例如 --add-dir ../shared */
   extraArgs: z.array(z.string()).default([]),
+  /** 这个角色执行时额外加载的 CLI 插件来源（见 shared/role-plugins.ts） */
+  plugins: RolePlugins,
   enabled: z.boolean().default(true),
   /** 通用 Agent：工作流里任何 Agent 执行时都可以把子任务派给它（编排工具 spawn_agents 里列出来） */
   common: z.boolean().default(false),

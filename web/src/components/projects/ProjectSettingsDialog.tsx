@@ -1,6 +1,7 @@
 import { CliSkills } from '@/components/settings/CliSkills'
 import { ProjectMcpSection } from './ProjectMcpSection'
 import { ProjectCliTrust } from './ProjectCliTrust'
+import { ProjectPackages } from './ProjectPackages'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
@@ -870,6 +871,13 @@ function Body({
                               const { [id]: _, ...rest } = draft.cliTrust ?? {}
                               set('cliTrust', v ? { ...rest, [id]: v } : rest)
                             }}
+                          />
+                        )}
+                        {project && CLIS.find((c) => c.id === id)?.packages?.local && (
+                          <ProjectPackages
+                            def={CLIS.find((c) => c.id === id)!}
+                            projectId={project.id}
+                            trusted={draft.cliTrust?.[id] === 'approve'}
                           />
                         )}
                         <section className="flex flex-col gap-2 pt-6">

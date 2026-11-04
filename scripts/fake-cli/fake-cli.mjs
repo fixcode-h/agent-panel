@@ -607,6 +607,9 @@ if (piRpc) {
     const m = JSON.parse(l)
     if (m.type === 'get_state') {
       say({ type: 'response', command: 'get_state', id: m.id, success: true, data: { sessionId: piSession } })
+    } else if (m.type === 'get_commands') {
+      // 「/」菜单问插件命令（ADR 0050）：假的 Pi 没装插件，回空列表
+      say({ type: 'response', command: 'get_commands', id: m.id, success: true, data: { commands: [] } })
     } else if (m.type === 'get_fork_messages') {
       const h = hist()
       // 这一轮的 prompt 收到后第一次查：把它记成一条新的用户消息

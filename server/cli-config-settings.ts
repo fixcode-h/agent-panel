@@ -15,7 +15,7 @@ import { writeCliConfigJson } from './cli-config-write.ts'
 
 type Read = { ok: true; data: Record<string, unknown> } | { ok: false; error: string }
 
-async function readConfig(file: string): Promise<Read> {
+export async function readConfig(file: string): Promise<Read> {
   if (!existsSync(file)) return { ok: true, data: {} }
   try {
     const data = JSON.parse(await readFile(file, 'utf8'))

@@ -373,6 +373,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (await dlg.getByText('这个项目里有 Pi 的项目配置', { exact: false }).count())
       errors.push('项目设置-Pi项目配置：选了「信任」还提示不会加载')
     await dlg.getByRole('radio', { name: '跟随 Pi', exact: true }).click()
+    // 这个项目的插件：没选「信任」时提示不会加载（ADR 0050 第四期）
+    await dlg.getByText('这个项目的插件', { exact: true }).first().scrollIntoViewIfNeeded()
+    await check(p, '项目设置-Pi项目插件', ['npm:@team/pi-review-rules', '没选「信任」'])
     // 两页切回来都正常（导航里 Skill 和 MCP 相邻）
     await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
     await check(p, '项目设置-Skill 再切回', ['新建 Skill'])

@@ -98,3 +98,18 @@ test('角色分两类：各入口的类别校验、Chat 角色保存时归零能
   assert.match(agentOnlyError(['', helper.id], [worker, helper]), /是 Chat 角色/)
   assert.equal(agentOnlyError(['', worker.id], [worker, helper]), '')
 })
+
+test('Chat 页能选的角色：自建的 Chat 角色；默认的「助手」和只供引入的「聊天约束」不列', async () => {
+  const { pickableChatRole } = await import('./conv-mode.ts')
+  const role = (over: Partial<{ enabled: boolean; origin: string; scope: 'chat' | 'agent' }>) => ({
+    enabled: true,
+    origin: '',
+    scope: 'chat' as const,
+    ...over,
+  })
+  assert.ok(pickableChatRole(role({})))
+  assert.ok(!pickableChatRole(role({ origin: 'builtin:chat' })), '助手是「无」那一项')
+  assert.ok(!pickableChatRole(role({ origin: 'builtin:chat-rules' })), '聊天约束只供引入')
+  assert.ok(!pickableChatRole(role({ scope: 'agent' })), 'Agent 角色不在 Chat 页选')
+  assert.ok(!pickableChatRole(role({ enabled: false })))
+})

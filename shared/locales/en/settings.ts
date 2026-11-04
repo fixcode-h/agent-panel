@@ -1943,4 +1943,5 @@ export const EN_SETTINGS: Record<string, string> = {
   '自己加一条，例如：我的电脑是 Windows，命令要能在 PowerShell 里跑':
     'Add one yourself, e.g. My computer runs Windows, so commands must work in PowerShell',
   关于我与记忆: 'About me & memory',
+  '新建任务（在 Chat 页时新建聊天）': 'New task (a new chat when on the Chat page)',
 }

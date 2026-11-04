@@ -110,6 +110,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await check(p, '设置-CLI-Pi插件-装好联网搜索', ['Installed npm:pi-web-access'])
   // 已装列表显示版本，npm 上有新版本时标出来（ADR 0050）
   await check(p, '设置-CLI-Pi插件-版本', ['2.7.1 → 2.8.0 有新版本'])
+  // 更新说明：点开看最近几版；更新后版本变了，自动展开这次新增的那一条（ADR 0050 第四期）
+  const installedList = p.getByRole('list', { name: '已装的插件' })
+  await installedList.getByRole('button', { name: 'npm:cc-safety-net@2.7.1 的更新说明' }).click()
+  await check(p, '设置-CLI-Pi插件-更新说明', ['修复 Windows 路径里的反斜杠'])
+  await installedList.getByRole('button', { name: '更新 npm:cc-safety-net@2.7.1' }).click()
+  await installedList
+    .getByText('从 2.7.1 更新后新增的：')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('设置-CLI-Pi插件：更新后没有展开这次新增的更新说明'))
+  if (await installedList.getByText('修复 Windows 路径里的反斜杠').count())
+    errors.push('设置-CLI-Pi插件：更新后的说明里还列着旧版本的条目')
+  await check(p, '设置-CLI-Pi插件-更新后说明', ['拦截'])
+  // 包里的资源开关、Pi 自带扩展的开关（ADR 0050 第四期）
+  await installedList.getByRole('button', { name: /npm:cc-safety-net.* 的资源开关/ }).click()
+  await check(p, '设置-CLI-Pi插件-资源开关', ['加载这个插件里的：', 'Skill'])
+  const builtins = p.getByRole('list', { name: 'Pi 自带的扩展' })
+  await builtins.scrollIntoViewIfNeeded()
+  if (await builtins.getByRole('switch', { name: 'Pi 自带的 llama.cpp' }).isChecked())
+    errors.push('设置-CLI-Pi自带扩展：演示里关着的 llama.cpp 显示成开着')
+  await check(p, '设置-CLI-Pi自带扩展', ['MCP', '工具搜索', 'llama.cpp'])
   // 插件市场：按月下载排，和面板功能重复的写明，看不到源码的标出来；已装的不再给「安装」
   await p.getByRole('radio', { name: '浏览插件市场' }).click()
   const market = p.getByRole('list', { name: '插件市场' })
