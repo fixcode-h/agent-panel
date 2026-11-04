@@ -48,8 +48,9 @@ import {
   stripLongContext,
   type ModelLimits,
 } from '../../shared/model-limits.ts'
-import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
+import { apiModelInfo, apiModelKey, modelLimitsFor } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
+import { priceCost } from '../../shared/model-price.ts'
 import { NODE_PART, helperGate, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 
 import { clip } from '../../shared/text.ts'
@@ -906,7 +907,8 @@ async function runAgent(
           t.outputTokens += ev.addOutput ?? 0
           t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
           t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
-          t.costUsd += ev.addCost ?? 0
+          // CLI 不报费用（Codex、Command Code）时按模型目录里填的单价折算（shared/model-price.ts）
+          t.costUsd += ev.addCost ?? priceCost(modelLimitsFor(u.model || model, { entries }).entry?.price, ev)
         }
         if (owner?.usage) Object.assign(owner.usage, { context: u.context, window: u.window, model: u.model })
         break

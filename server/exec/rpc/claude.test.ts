@@ -114,3 +114,21 @@ test('Claude Code：一轮结束把 stop_reason 交给 finish，日志才能分�
   adapter.message!(ctx, { type: 'result' })
   assert.deepEqual(got[0], [true, undefined, 0, 'end_turn'])
 })
+
+test('Claude Code：改文件的审批带要改的内容和按目录的放行规则；命令按程序给规则', () => {
+  const edit = claudeAsk('Edit', { file_path: 'src/a.ts', old_string: 'x = 1', new_string: 'x = 2' })
+  assert.equal(edit.kind, 'file')
+  assert.match(edit.diff ?? '', /-x = 1\n\+x = 2/)
+  assert.equal(edit.rule, 'file:src/')
+  const write = claudeAsk('Write', { file_path: 'b.md', content: '# 标题\n' })
+  assert.match(write.diff ?? '', /\+# 标题/)
+  assert.equal(claudeAsk('Bash', { command: 'git status' }).rule, 'command:git status')
+  assert.equal(claudeAsk('Bash', { command: 'rm -rf dist' }).rule, '', '删除命令每次都问')
+})
+
+test('Claude Code：只读规划做完的 ExitPlanMode 显示成方案审批，不给「一直允许」', () => {
+  const ask = claudeAsk('ExitPlanMode', { plan: '1. 改 a.ts\n2. 跑测试' })
+  assert.equal(ask.title, 'Agent 规划好了，按这个方案开始改？')
+  assert.equal(ask.detail, '1. 改 a.ts\n2. 跑测试')
+  assert.equal(ask.rule, undefined)
+})

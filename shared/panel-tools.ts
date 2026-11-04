@@ -25,6 +25,7 @@ export const PANEL_TOOL_NAMES = [
   'start_plan',
   'start_workflow',
   'submit_diagnosis',
+  'remember',
   'set_plan',
   'finish_plan',
   'get_status',

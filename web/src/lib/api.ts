@@ -74,7 +74,7 @@ import type {
 } from '@shared/deploy'
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ApiBalance } from '@shared/api-balance'
-import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
+import type { ModelCatalogEntry, ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
@@ -219,6 +219,9 @@ export interface KeepAliveItem {
   /** 进程（含子进程）的内存，读不到时为空 */
   rss: number | null
 }
+
+/** Chat 的「关于我」和记忆（和 server/chat-memory.ts 的 ChatMemory 一样） */
+export type ChatMemoryView = { about: string; items: { id: string; text: string; at: string }[] }
 
 export const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
 
@@ -451,6 +454,14 @@ export const api = {
   },
   /** 模型目录：内置的加上用户补充的 */
   modelCatalog: () => request<ModelCatalogInfo>('/model-catalog'),
+  /** Chat 的「关于我」和跨对话记忆（server/chat-memory.ts） */
+  chatMemory: () => request<ChatMemoryView>('/chat-memory'),
+  saveChatAbout: (about: string) => request<ChatMemoryView>('/chat-memory/about', json('PUT', { about })),
+  addChatMemory: (text: string) => request<ChatMemoryView>('/chat-memory/items', json('POST', { text })),
+  forgetChatMemory: (id: string) => request<ChatMemoryView>(`/chat-memory/items/${id}`, { method: 'DELETE' }),
+  /** 给模型目录里的一个模型填单价（美元 / 百万 token）；null 清掉 */
+  setModelPrice: (vendor: string, id: string, price: ModelCatalogEntry['price'] | null) =>
+    request<{ entries: ModelCatalogEntry[] }>('/model-catalog/price', json('PUT', { vendor, id, price })),
   lookupModel: (body: { model: string; protocol?: ApiProtocol; cli?: string }) =>
     request<ModelLookupJob>('/model-catalog/lookup', json('POST', body)),
   modelLookup: (id: string) => request<ModelLookupJob>(`/model-catalog/lookup/${id}`),

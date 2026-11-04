@@ -1,3 +1,4 @@
+import { attachmentUrl } from '@/components/chat/Attachments'
 import { type Agent, type Project, type Task } from '@shared/schema'
 import { lessonReviewPrompt, lessonReviewReport } from '@shared/lesson-review'
 import { t } from '@shared/i18n'
@@ -61,6 +62,23 @@ export async function downloadTask(id: string) {
 export async function downloadTaskHtml(id: string) {
   const { bundle } = await api.taskExport(id, await appVersion())
   download(exportHtmlFileName(bundle.task.title), taskHtml(bundle), 'text/html;charset=utf-8')
+}
+
+/**
+ * 导出 Markdown（设计报告 Chat P2）：和「复制对话」「引入会话」同一份整理记录（服务端整理、超长截断并注明），
+ * 方便贴进文档或笔记；以前只能导出 HTML 报告和 JSON
+ */
+export async function downloadTaskMarkdown(id: string) {
+  const record = await api.taskTranscript(id)
+  const url = await attachmentUrl(record)
+  if (!url) throw new Error(t('整理好的记录读不到了，请再试一次'))
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(t('整理好的记录读不到了，请再试一次'))
+  download(
+    record.name.endsWith('.md') ? record.name : `${record.name}.md`,
+    await res.text(),
+    'text/markdown;charset=utf-8',
+  )
 }
 
 /** 读导出的文件并导入成只读任务（连同包里的子对话），返回父任务在前的整棵树 */

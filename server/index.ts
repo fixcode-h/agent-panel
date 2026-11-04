@@ -1,5 +1,6 @@
 // 必须第一个引入：先定下界面语言，其他模块顶层的文案才会用对语言
 import './lang.ts'
+import { mountExtras } from './extra-routes.ts'
 // 用户自己加的 CLI 配置要在用到 CLI 列表的模块之前读进来
 import { CLI_CONFIG_DIR, loadUserClis, userClis } from './cli-config.ts'
 import { asksApi } from './asks.ts'
@@ -77,10 +78,7 @@ import { integrationsApi } from './integrations.ts'
 import { hooksApi } from './hooks/api.ts'
 import { migrateVerdictText } from './verdict-migrate.ts'
 import { installApi } from './install.ts'
-import { comfyApi } from './comfy.ts'
-import { speechApi } from './speech.ts'
 import { envApi } from './env-api.ts'
-import { ttsApi } from './tts.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
 import { projectMcpApi } from './project-mcp.ts'
@@ -498,10 +496,9 @@ app.route('/mcp-tools', mcpApi())
 app.route('/project-mcp', projectMcpApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
 app.route('/project-trust', trustApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
 app.route('/clis', installApi())
-app.route('/local-image', comfyApi())
-app.route('/speech', speechApi())
+// 本机生图、语音输入 / 朗读、Chat 记忆：各自一组的子路由（server/extra-routes.ts）
+mountExtras(app)
 app.route('/', envApi())
-app.route('/tts', ttsApi())
 app.route('/clis', modelsApi())
 app.route('/clis', packagesApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
 app.route('/model-catalog', modelCatalogApi())

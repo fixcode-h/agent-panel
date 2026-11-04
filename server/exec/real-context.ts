@@ -75,6 +75,7 @@ export interface RealContext {
   inlineEdit?: EngineHost['inlineEdit']
   runBackground?: EngineHost['runBackground']
   cliTodos?: EngineHost['cliTodos']
+  chatMemory?: EngineHost['chatMemory']
   checkBackground?: EngineHost['checkBackground']
   stopBackground?: EngineHost['stopBackground']
   lessons?: EngineHost['lessons']

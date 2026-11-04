@@ -595,6 +595,8 @@ export interface Orchestra {
   /** Bug 诊断报告（ADR 0045）：父对话派来的 Bug 子对话才有，交了等用户确认方案再改 */
   diagnose?: (input: DiagnosisInput) => { ok: boolean; info: string }
   bugCase?: (input: DiagnosisInput) => { ok: boolean; info: string } // update_bug_case（ADR 0046）
+  /** Chat 模式的跨对话记忆（remember 工具，server/chat-memory.ts）：只有 Chat 页的对话有 */
+  remember?: (text: string, forget?: boolean) => Promise<{ ok: boolean; info: string }>
 }
 
 /** p4_split_changelists 的参数：从哪个 changelist 分、只分哪些文件、每类一句描述 */
@@ -821,6 +823,8 @@ export interface EngineHost {
   beginEdit?: () => Promise<{ ok: boolean; info: string }>
   /** 这一轮的 CLI 自带待办会被面板解析显示（CLI 定义的 todos）：Chat 模式据此决定怎么说计划（shared/chat-prompt.ts） */
   cliTodos?: boolean
+  /** Chat 模式的「关于我」和记忆（server/chat-memory.ts）：提示词带上，remember 工具往里记；只有 Chat 页的对话有 */
+  chatMemory?: { about: string; items: string[]; remember: NonNullable<Orchestra['remember']> }
   /**
    * 后台命令：面板在这个对话的目录里跑，马上返回编号；跑完把结果推回对话（正在执行就插话，空闲就开新的一轮）。
    * exclusive 的（编译这类）按项目排队，同一时间只跑一个
@@ -3296,6 +3300,7 @@ function makeOrchestra(
       task.parentTaskId &&
       ctx.chat &&
       !helper && { diagnose: (x) => diagnoseTask(host, x), bugCase: (x) => diagnoseTask(host, x, true) }),
+    remember: !helper && isChatMode(task) ? host.chatMemory?.remember : undefined,
     status: () => statusTree(host, self.id),
     spawn(tasks, step, opts) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }

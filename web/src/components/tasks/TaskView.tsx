@@ -28,6 +28,7 @@ import {
   X,
   Download,
   FileCode2,
+  FileText,
   FileInput,
   Upload,
 } from 'lucide-react'
@@ -78,7 +79,7 @@ import { useEscape } from '@/lib/useEscape'
 import { childLetters, deliveredToCli, messageRecorded, startedRun, withTurnSeenAt } from '@/lib/tasks'
 import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { WithAgents, useData, useNav, useTasks } from '@/lib/data'
-import { downloadTask, downloadTaskHtml, startAnalysis } from '@/lib/task-transfer'
+import { downloadTask, downloadTaskHtml, downloadTaskMarkdown, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -1643,6 +1644,7 @@ export function TaskView({
       () => toast.success(t('已导出 HTML 报告，用浏览器直接打开就能看')),
       (e: Error) => toast.error(e.message),
     )
+  const exportMd = () => downloadTaskMarkdown(task.id).catch((e: Error) => toast.error(e.message))
   /**
    * 复制对话：服务端把这个任务的对话整理成一份转录附件（和「引入会话」同一套格式，超长由它截断并注明），
    * 剪贴板里只放这个文件的路径——粘贴回输入框就会变成一张会话卡片，而不是一大段文字。
@@ -2132,6 +2134,10 @@ export function TaskView({
             <FileCode2 className="h-4 w-4" />
             {t('导出 HTML 报告')}
           </MenuItem>
+          <MenuItem onSelect={exportMd} title={t('导出成一份 Markdown，方便贴进文档或笔记')}>
+            <FileText className="h-4 w-4" />
+            {t('导出 Markdown')}
+          </MenuItem>
           <MenuItem onSelect={exportIt} title={t('连同它分出的子对话一起导出，导入后父子结构能还原')}>
             <Download className="h-4 w-4" />
             {t('导出任务')}
@@ -2553,7 +2559,11 @@ export function TaskView({
                   data-chat-rail
                   className="panel relative hidden w-[min(420px,40%)] shrink-0 flex-col overflow-hidden xl:flex"
                 >
-                  <ChatRail rail={chatRail} onOpenFile={(path) => setFileTarget({ path, local: true })} />
+                  <ChatRail
+                    rail={chatRail}
+                    taskId={task.id}
+                    onOpenFile={(path) => setFileTarget({ path, local: true })}
+                  />
                 </aside>
               )}
               {/* 右栏：项目文件和本对话改动（或 AI 分析的功能面板）。子对话在这一栏开页签（TaskFiles 的 child），运行在中间开页签。
