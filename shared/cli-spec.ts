@@ -16,6 +16,7 @@ import { GalleryOverlap, GallerySpec } from './cli-gallery.ts'
 import { ConfigSetting } from './cli-config-settings.ts'
 import { CommandsQuery, HandledReply } from './cli-commands-query.ts'
 import { ArgRule } from './arg-rule.ts'
+import { ChangelogSpec } from './package-changelog.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
@@ -125,6 +126,10 @@ export const CliPackages = z.object({
   overlaps: z.array(GalleryOverlap).default([]),
   /** npm 来源的包装在哪（node_modules 目录）：读已装的版本；不写就不显示版本 */
   npmRoot: z.string().default(''),
+  /** git 来源的包装在哪（下面按 主机/路径 分目录）：读版本和更新说明 */
+  gitRoot: z.string().default(''),
+  /** 包里的更新说明在哪（见 shared/package-changelog.ts）；不写就没有「更新说明」 */
+  changelog: ChangelogSpec.optional(),
   /** 只在这一次运行加载一个包、不写进配置的参数（Pi：-e {source}）：角色级插件用（见 shared/role-plugins.ts）；不写就不能按角色加载 */
   oneOff: z.array(z.string()).default([]),
 })

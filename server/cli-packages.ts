@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { Hono } from 'hono'
-import { npmName, type InstalledPackage } from '../shared/cli-spec.ts'
+import type { InstalledPackage } from '../shared/cli-spec.ts'
 import { getCli, type CliDefinition } from '../shared/clis.ts'
 import { t } from '../shared/i18n.ts'
 import { cliSettings } from '../shared/settings.ts'
@@ -12,6 +12,7 @@ import { getSettings } from './settings.ts'
 import { galleryApi } from './cli-gallery.ts'
 import { configSettingsApi } from './cli-config-settings.ts'
 import { clearQueriedCommands } from './cli-commands.ts'
+import { packageChangelog, packageDir, readManifest } from './package-dirs.ts'
 
 /**
  * CLI 自己的插件（扩展包，定义里的 packages）：列表直接读 CLI 的配置文件，装、删、更新跑 CLI 自己的命令，
@@ -37,19 +38,13 @@ export async function listPackages(def: Def): Promise<InstalledPackage[]> {
     const target = /^\.\.?([/\\]|$)/.test(source) ? path.resolve(path.dirname(file), source) : source
     return [{ source, target } as InstalledPackage]
   })
-  // npm 来源的包读装着的版本（ADR 0050）：用来和 npm 上的最新版比；读不到（还没装完、装在别处）就不写
-  const root = def.packages.npmRoot && expandHome(def.packages.npmRoot)
-  if (root)
-    await Promise.all(
-      out.map(async (p) => {
-        const name = npmName(p.source)
-        if (!name) return
-        const v = await readFile(path.join(root, name, 'package.json'), 'utf8')
-          .then((t) => JSON.parse(t)?.version)
-          .catch(() => undefined)
-        if (typeof v === 'string' && v) p.version = v
-      }),
-    )
+  // 读装着的版本（ADR 0050）：用来和 npm 上的最新版比；读不到（还没装完、装在别处）就不写
+  await Promise.all(
+    out.map(async (p) => {
+      const v = (await readManifest(packageDir(def.packages, p)))?.version
+      if (typeof v === 'string' && v) p.version = v
+    }),
+  )
   return out
 }
 
@@ -73,6 +68,16 @@ export function packagesApi() {
     if (!def?.packages) throw new Error(t('这个 Agent 不支持插件'))
     return def as Def
   }
+  // 已装的一个包的更新说明（ADR 0050 第四期）：没有就是 null
+  app.get('/:id/packages/changelog', async (c) => {
+    try {
+      const def = need(c.req.param('id'))
+      const p = (await listPackages(def)).find((x) => x.source === c.req.query('source'))
+      return c.json(p ? await packageChangelog(def.packages, p) : null)
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 400)
+    }
+  })
   app.get('/:id/packages', async (c) => {
     try {
       return c.json(await listPackages(need(c.req.param('id'))))

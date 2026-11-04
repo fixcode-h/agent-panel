@@ -61,4 +61,10 @@ export const EN_CLI_MORE: Record<string, string> = {
     "Loaded only when this role runs, not installed in {cli}'s global configuration, so other roles don't see these tools. The first time one is used {cli} downloads it, so that turn starts more slowly",
   插件来源: 'Plugin source',
   '推荐：': 'Recommended:',
+  '{name} 的更新说明': '{name} changelog',
+  更新说明: 'Changelog',
+  这个插件没有提供更新说明: "This plugin doesn't provide a changelog",
+  '没有比 {version} 新的更新说明': 'No changelog entries newer than {version}',
+  '从 {version} 更新后新增的：': 'New since {version}:',
+  '（没有写内容）': '(empty)',
 }

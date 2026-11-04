@@ -1214,6 +1214,8 @@
       }
     ],
     "oneOff": ["-e", "{source}"],
+    "gitRoot": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/git",
+    "changelog": { "manifestKey": "pi" },
     "npmRoot": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/npm/node_modules",
     "gallery": {
       "npmKeyword": "pi-package",
