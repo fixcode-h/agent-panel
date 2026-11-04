@@ -183,11 +183,12 @@ export function childClosedHint(c: ChildSummary) {
   return convGone(c) === 'hint' ? t('Agent 进程已回收，继续会重新拉起') : ''
 }
 
-/** 标签样式：小胶囊带底色的是「状态」，纯文字是「说明」，和列表里的层级一致 */
+/** 标签样式：小胶囊带底色的是「状态」，纯文字是「说明」，和列表里的层级一致。带底色的按 chip-lift 提回去，
+ * 否则胶囊中心比同一行的正文低一档（见 index.css 的 chip-lift） */
 export const childLabelClass: Record<ChildLabelTone, string> = {
-  success: 'flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-caption text-success',
-  warning: 'shrink-0 rounded-full bg-warning/15 px-1.5 text-caption text-warning',
+  success: 'chip-lift flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-caption text-success',
+  warning: 'chip-lift shrink-0 rounded-full bg-warning/15 px-1.5 text-caption text-warning',
   accent: 'shrink-0 text-caption text-accent-text',
   subtle: 'shrink-0 text-caption text-subtle',
-  plain: 'shrink-0 rounded-full bg-field px-1.5 text-caption text-subtle',
+  plain: 'chip-lift shrink-0 rounded-full bg-field px-1.5 text-caption text-subtle',
 }

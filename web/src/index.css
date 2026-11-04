@@ -829,6 +829,25 @@ body,
   }
 }
 /*
+ * 行内小标签（Markdown 行内代码、状态胶囊、带底色的角标）的垂直对齐。
+ * 字形的墨迹中心比字体盒中心高一点（汉字更明显），色块按 baseline 或 flex 居中排时整体偏低约 0.08em，
+ * 这里统一往上提同样多；值用 em 随字号缩放，换字号仍然对齐。行内元素不吃 transform，用相对定位。
+ * 不要再在组件里逐处写 `relative top-px` 或不对称 padding：那是同一个补偿，换个字号就又错位。
+ */
+@utility chip-lift {
+  position: relative;
+  top: calc(-1 * var(--chip-lift));
+}
+/*
+ * 反过来的一种：文字在固定高度的条里垂直居中（对话页签、页签里的小标签、关闭按钮）。
+ * 字形的视觉中线比行盒中心高一点，居中排出来文字会浮在条的上半部；整块内容往下补同样多。
+ * 和 chip-lift 是同一对「盒中心 / 字形中心」的差，方向相反（那里提色块，这里降文字），所以数值分开。
+ */
+@utility text-optical-center {
+  position: relative;
+  top: var(--text-optical-drop);
+}
+/*
  * 「Claude Code」配色下的输入框（对话、聊天两处的输入框外壳 .composer-shell）：只换外观，布局不动。
  * 照 Claude Code 是一块比主区亮一档的实底（--pop）、一道细边、12px 圆角，平时一层很淡的投影微微浮起；聚焦时边框提亮一点、
  * 投影加深，不套蓝色焦点环。放在 utilities 层，靠多一级属性选择器盖过外壳上写死的圆角、底色和聚焦样式；
@@ -1107,6 +1126,13 @@ body,
   --mmd-crit: #fbe9e3;
   --mmd-crit-line: #df9a83;
   --mmd-edge: #8a8a92;
+  /*
+   * 行内小标签的垂直对齐补偿（唯一的定义处，用到的是 chip-lift / text-optical-center 两个 utility）：
+   * 字形墨迹中心比字体盒中心高一点，色块按 baseline 或 flex 居中排时整体偏低一档。值用 em，跟着字号缩放。
+   * 色块往上提用 --chip-lift；固定高度条里的文字往下补用 --text-optical-drop。
+   */
+  --chip-lift: 0.08em;
+  --text-optical-drop: 0.13em;
   --md-body-size: 1;
   --md-body-gap: 0.75;
   --md-body-color: var(--fg);
@@ -1550,7 +1576,7 @@ body,
 }
 /* 行内代码：和 Claude Code 一样是带细边框的小标签，边框带一点文字色 */
 .chat-md :not(pre) > code {
-  @apply px-[5px] py-px font-mono;
+  @apply chip-lift px-[5px] py-px font-mono;
   font-size: calc(var(--md-code-size) * var(--md-base));
   background: var(--md-code-bg);
   color: var(--md-code-color);

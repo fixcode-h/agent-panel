@@ -19,7 +19,8 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-(--c-badge-radius) px-2 py-px text-xs whitespace-nowrap',
+        // 和文字并排时整个胶囊比字形中心低一档，用 chip-lift 提回去（数值在 index.css 定义）
+        'chip-lift inline-flex items-center gap-1 rounded-(--c-badge-radius) px-2 py-px text-xs whitespace-nowrap',
         tones[tone],
         className,
       )}
