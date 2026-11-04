@@ -575,21 +575,34 @@ await runShard('子对话与计划', async (api) => {
     // ---- 父对话收到收尾请求却只说不做：面板推它一次，它再合回（用户 2026-11-03 报的父子互相等） ----
     {
       clearCliOutputs(project.path)
+      // 单开一个父对话：wtParent 的子对话列表里有标题带 COMMIT / SUBMIT_MERGE 的子对话，这些标记会出现在父对话的 input 里，
+      // 假 CLI 会照着在项目目录里再提交一次（没东西可提交时这一轮直接失败），污染后面共用目录的用例
+      const lazyParent = await waitDone(
+        (
+          await call('POST', '/tasks', {
+            projectId: project.id,
+            mode: 'chat',
+            agentId: A.id,
+            prompt: '收尾提醒：父对话',
+          })
+        ).id,
+        20000,
+      )
       // 父对话下一次收到收尾请求时不调用 finish_child（像模型回一句「现在合回」就结束这一轮）
       writeFileSync(log + '.skip-wrap', '1')
       const lazyKid = await call('POST', '/tasks', {
         projectId: project.id,
         mode: 'chat',
         agentId: B.id,
-        parentTaskId: wtParent.id,
-        // 场景标记放在后面：标题只取开头，提醒里带着标题，标记出现在父对话的 input 里会让假 CLI 在父目录里再提交一次
+        parentTaskId: lazyParent.id,
+        // 场景标记放在后面：标题只取开头，收尾请求和提醒里都带着标题，标记出现在父对话的 input 里假 CLI 就会照着做
         prompt:
           '父对话只说不合回的收尾提醒用例：标题只取开头这一段，后面的场景标记不会出现在标题和提醒里。COMMIT BEGIN_EDIT SUBMIT_MERGE',
       })
       const lazyDone = await waitTask(lazyKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 40000).catch(
         async (e) => {
           // 失败时把父对话最后几条消息和 finish 记录打出来：看得出是没推、推了没合，还是合失败
-          const p = await call('GET', `/tasks/${wtParent.id}`)
+          const p = await call('GET', `/tasks/${lazyParent.id}`)
           console.log('finish 记录', JSON.stringify(readLog(log + '.finish').filter((x) => x.id === lazyKid.id)))
           for (const m of p.messages.slice(-6))
             console.log('父对话', m.role, m.panel ?? '', (m.text ?? '').slice(0, 200))
@@ -609,13 +622,13 @@ await runShard('子对话与计划', async (api) => {
         finishes.some((x) => x.via === 'nudge' && !x.got?.isError),
         `面板提醒之后父对话调用 finish_child 合回了：${JSON.stringify(finishes)}`,
       )
-      const pushed = (await call('GET', `/tasks/${wtParent.id}`)).messages.filter(
+      const pushed = (await call('GET', `/tasks/${lazyParent.id}`)).messages.filter(
         (m) => m.panel === 'nudge' && m.text.includes('已经请你收尾') && m.text.includes(lazyKid.id),
       )
       assert.equal(pushed.length, 1, '只推了一次就办完了')
       assert.ok(lazyDone.resolved, '子对话合回后标记完成')
       for (let idle = 0; idle < 5;) {
-        idle = (await call('GET', `/tasks/${wtParent.id}`)).status === 'running' ? 0 : idle + 1
+        idle = (await call('GET', `/tasks/${lazyParent.id}`)).status === 'running' ? 0 : idle + 1
         await sleep(100)
       }
     }

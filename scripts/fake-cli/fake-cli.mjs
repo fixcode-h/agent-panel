@@ -1775,14 +1775,7 @@ if (kind === 'claude') {
     writeFileSync('committed.txt', 'one\ntwo\nthree\n')
     const g = (...a) => execFileSync('git', ['-c', 'user.name=a', '-c', 'user.email=a@a', ...a], { stdio: 'ignore' })
     g('add', 'committed.txt')
-    // 同一目录里第二次遇到 COMMIT（父对话的 input 里列着标题带 COMMIT 的子对话）时内容没变、没东西可提交：
-    // 真的 Agent 会跳过，不能让 git commit 的退出码把这一轮弄成失败
-    let staged = true
-    try {
-      g('diff', '--cached', '--quiet')
-      staged = false
-    } catch {}
-    if (staged) g('commit', '-qm', input.includes('子对话') ? '子对话提交' : 'agent commit')
+    g('commit', '-qm', input.includes('子对话') ? '子对话提交' : 'agent commit')
   }
   out({
     type: 'assistant',
