@@ -15,7 +15,8 @@ export async function rpcQuery(o: {
   env: NodeJS.ProcessEnv
   handshake: RpcAction[]
   jsonrpc?: boolean
-  requests: { method: string; params: object; timeoutMs?: number }[]
+  /** JSON-RPC 写 method + params；按 type 区分的记录流（Pi）直接写那条记录 */
+  requests: (Record<string, unknown> & { timeoutMs?: number })[]
   timeoutMs?: number
 }): Promise<any[]> {
   const results: any[] = []
@@ -46,7 +47,7 @@ export async function rpcQuery(o: {
       }
       for (const q of o.requests) {
         // 每个请求的原样回复都交回去：有的查询允许个别接口报错（旧版本的 Codex 不认 account/read）
-        const { timeoutMs, ...req } = q
+        const { timeoutMs, ...req } = q as typeof q & { timeoutMs?: number }
         results.push(await ctx.request({ ...req, ...(o.jsonrpc ? { jsonrpc: '2.0' } : {}) }, { timeoutMs }))
       }
       void ctx.finish(true)

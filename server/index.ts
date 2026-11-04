@@ -528,9 +528,9 @@ app.get('/clis/:id/skills', async (c) => {
 // 输入框「/」菜单：CLI 自己带的命令和 Skill
 app.get('/clis/:id/commands', async (c) => {
   const pid = c.req.query('projectId')
-  const dir = pid ? ((await projects.get(pid))?.path ?? '') : ''
+  const p = pid ? await projects.get(pid) : null
   try {
-    return c.json(await listCommands(c.req.param('id'), dir))
+    return c.json(await listCommands(c.req.param('id'), p?.path ?? '', p?.cliTrust?.[c.req.param('id')]))
   } catch (e) {
     return bad(c, (e as Error).message)
   }

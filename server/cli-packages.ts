@@ -11,6 +11,7 @@ import { capture, childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
 import { galleryApi } from './cli-gallery.ts'
 import { configSettingsApi } from './cli-config-settings.ts'
+import { clearQueriedCommands } from './cli-commands.ts'
 
 /**
  * CLI 自己的插件（扩展包，定义里的 packages）：列表直接读 CLI 的配置文件，装、删、更新跑 CLI 自己的命令，
@@ -109,6 +110,8 @@ export function packagesApi() {
       .join('\n')
       .trim()
     const ok = r.code === 0 && !r.spawnError
+    // 装删插件后「/」菜单里插件带的命令跟着变
+    if (ok) clearQueriedCommands()
     return c.json({
       ok,
       output: ok

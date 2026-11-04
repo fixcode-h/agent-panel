@@ -55,4 +55,5 @@ export const EN_CLI_MORE: Record<string, string> = {
   '要在 {min} 到 {max} 之间': 'Must be between {min} and {max}',
   值不对: 'Invalid value',
   '{file} 里 {at} 的上一级不是对象，没有改': "The parent of {at} in {file} isn't an object, so nothing was changed",
+  插件命令: 'Plugin command',
 }

@@ -271,6 +271,25 @@
     },
     "sessionId": "state.data.sessionId",
     "deferSteer": true,
+    "commandsQuery": {
+      "args": [
+        { "args": ["--mode", "rpc", "--no-session"] },
+        { "if": "trust=approve", "args": ["--approve"] },
+        { "if": "trust=deny", "args": ["--no-approve"] }
+      ],
+      "request": { "type": "get_commands" },
+      "list": "data.commands",
+      "path": "sourceInfo.path",
+      "kinds": { "extension": "native", "prompt": "command", "skill": "skill" },
+      "namePrefix": { "skill": "skill:" }
+    },
+    "handled": {
+      "save": "prompt",
+      "at": "data.disposition",
+      "value": "handled",
+      "started": { "type": "agent_start" },
+      "graceMs": 3000
+    },
     "redirect": {
       "take": {
         "record": {

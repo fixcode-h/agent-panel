@@ -14,23 +14,13 @@ import { HooksSpec } from './hooks.ts'
 import { CliTrust } from './cli-trust.ts'
 import { GalleryOverlap, GallerySpec } from './cli-gallery.ts'
 import { ConfigSetting } from './cli-config-settings.ts'
+import { CommandsQuery, HandledReply } from './cli-commands-query.ts'
+import { ArgRule } from './arg-rule.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
-/**
- * 一条参数规则：条件都满足时加上 args。
- * if：「model」有值、「!resume」没值、「permission=yolo」等于、「permission!=yolo」不等于；多个条件写成数组，全部满足才加
- * args 里的占位：{model}、{effort}、{permission}、{resume}、{systemPrompt}、{maxTurns}、{title}；
- * {addDirs|,} 把数组用逗号连起来；{maxTurns:200} 没值时用 200。each：对数组的每一项加一次，{item} 是那一项
- */
-export const ArgRule = z.object({
-  if: z.union([z.string(), z.array(z.string())]).optional(),
-  each: z.enum(['addDirs']).optional(),
-  args: z.array(z.string()),
-  /** 为什么这样传（JSON 里没法写注释，写在这里），面板不读 */
-  why: z.string().optional(),
-})
-export type ArgRule = z.infer<typeof ArgRule>
+// 参数规则在 arg-rule.ts（cli-commands-query.ts 也用，放这里会循环引用）
+export { ArgRule } from './arg-rule.ts'
 
 /**
  * 输出里的一种事件：when 里的字段都相等时，按 emit 产生面板的事件（按顺序找第一条对上的）。
@@ -261,6 +251,10 @@ export const RpcSpec = z.object({
   turnLimit: z.object({ when: z.record(z.string(), z.unknown()) }).optional(),
   /** 插话要等 CLI 的下一个模型请求才取走，页面上先显示成「待取走」 */
   deferSteer: z.boolean().default(false),
+  /** 从 CLI 问出「/」命令（插件的命令、插件包里的模板和 Skill，见 shared/cli-commands-query.ts） */
+  commandsQuery: CommandsQuery.optional(),
+  /** 发出去的那句被当命令自己处理、可能不开新一轮时怎么认出来（见 shared/cli-commands-query.ts） */
+  handled: HandledReply.optional(),
   /**
    * 插话要等正在执行的命令跑完才会被取走（Pi 的 steer）：命令跑太久时面板用这一套让它马上处理。
    * 先按 take 收回还排着的插话（texts 是回复里插话原文列表的路径），收回的是空的说明已经被取走了，什么都不做；
