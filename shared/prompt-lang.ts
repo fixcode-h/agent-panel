@@ -1,4 +1,5 @@
 import { getLang, isLangAuto, type Lang } from './i18n.ts'
+import { HOOK_TIMEOUT_MS, HOOK_URL_ENV } from './hooks.ts'
 
 /**
  * 交给 Agent 的回复语言规则：跟随面板设置里的界面语言（auto 的解析见 shared/i18n.ts 的 resolveLang、
@@ -56,14 +57,33 @@ export const PROMPT_LANG_ENV = 'AGENT_PANEL_REPLY_LANG'
 
 /**
  * 给 Command Code 这类只能用 mod / 插件追加系统提示词的 CLI 用的插件源码：内容固定（两种语言都带上），
- * 运行时按 PROMPT_LANG_ENV 取规则，所以切换语言不用重写文件
+ * 运行时按 PROMPT_LANG_ENV 取规则，所以切换语言不用重写文件。
+ * 面板每轮只装这一个 mod，结束前钩子（onStop）也放在这里，转发地址同样从环境变量取
  */
 export function promptLangModSource() {
   const rules = Object.fromEntries((Object.keys(RULES) as ReplyLang[]).map((k) => [k, promptLangRules(k)]))
   return `// 由 Agent 面板生成：把回复语言规则追加到 Command Code 的系统提示词，不要手改
 const RULES = ${JSON.stringify(rules)}
+// 结束前钩子（ADR 0049）：模型准备结束这一轮时问面板，计划没做完、也没在等结果就接着做（onStop 返回 continue）。
+// 只转发，不判断，也不带模型回复的文字；面板没回、这一轮没挂面板的编排工具（没有转发地址）就放行
+async function onStop() {
+  const url = process.env.${HOOK_URL_ENV}
+  if (!url || typeof fetch !== 'function') return undefined
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ event: 'turn.beforeEnd', native: {} }),
+      signal: AbortSignal.timeout(${HOOK_TIMEOUT_MS}),
+    })
+    const d = await r.json()
+    return d && d.block && d.reason ? { continue: true, reason: d.reason } : undefined
+  } catch {
+    return undefined
+  }
+}
 export default function (cmd) {
-  cmd.hooks({ appendSystemPrompt: () => RULES[process.env.${PROMPT_LANG_ENV}] || '' })
+  cmd.hooks({ appendSystemPrompt: () => RULES[process.env.${PROMPT_LANG_ENV}] || '', onStop })
 }
 `
 }

@@ -516,6 +516,20 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
     })
 }
 
+// 19b. 钩子同样不读回复文字（ADR 0049）：CLI 钩子的输入里带着模型最后一句话（Claude Code / Codex 的 last_assistant_message、
+// Command Code mod 的 lastAssistantText），转发前就丢掉。面板代码里只许在 shared/hooks.ts 列出要丢的字段，别处出现就拦下
+for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(x) && !/\.test\.tsx?$/.test(x))) {
+  if (f === 'shared/hooks.ts') continue
+  read(f)
+    .split('\n')
+    .forEach((line, i) => {
+      if (/last_assistant_message|lastAssistantText/.test(line))
+        errors.push(
+          `${f}:${i + 1}：钩子不读模型回复的文字（ADR 0049），要丢的字段只写在 shared/hooks.ts 和 CLI 定义的 dropInput 里`,
+        )
+    })
+}
+
 // 20. 给 Agent 的规则每条只有一个出处（ADR 0048）：同一条规则抄在角色设定、面板提示词和技能里，改一处漏一处就互相打架
 // （改造前读模块文档的顺序写了 9 处、「Bug 记录只记用户报的」写了 8 处）。按句子比：30 字以上的同一句出现在两个文件里就拦下。
 // 生成出来的技能（systematic-debugging 由 bug-method.ts 生成）、美术和 UE 代码风格示例不算；确实要两处都写的句子末尾加 rule-dup-ok

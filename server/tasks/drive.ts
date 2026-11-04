@@ -13,6 +13,7 @@ import { t } from '../../shared/i18n.ts'
 import { activePlan, needsFix, planProgress, openWork } from '../../shared/plan.ts'
 import { getSettings } from '../settings.ts'
 import type { TasksScope } from './scope.ts'
+import { createBeforeEnd } from './before-end.ts'
 
 /**
  * 没列计划时，这一轮动手（跑命令、改文件）几次以上才做收尾自检（见 nudgeNoPlan）：三步以上的事才可能做了一半，
@@ -324,6 +325,8 @@ export function createDrive(
       !!asked && !!turn.since && !conv.messages.some((m) => m.at > asked.at && m.at < turn.since && m.id !== asked.id)
     const silent = turn.tools === 0 && fresh
     if (!silent && turn.acts < PLAN_ACTS) return false
+    // 结束前钩子已经在这一轮里自检过（ADR 0049）：它确认完才放行的，一轮结束后不再问一遍
+    if (asked && conv.messages.some((m) => m.panel === 'hook' && m.at >= asked.at)) return false
     const say = (data: Record<string, unknown>) => taskLog(conv.id, '收尾自检', { ...data, acts: turn.acts })
     const planned = (tk: Task) => {
       const last = tk.plans?.at(-1)
@@ -389,5 +392,16 @@ export function createDrive(
     return true
   }
 
-  return { nudgePlan, nudgeWrapUp, nudgeState: (id: string) => budget.state(id), resetNudge, noteStop, clearStop }
+  // 结束前钩子（ADR 0049）：同一套判断、同一个账本，在 CLI 结束这一轮之前就拦住（见 before-end.ts）
+  const beforeEnd = createBeforeEnd(sc, { budget, inputOf, haltedBy, activeChildren, lastNudge })
+
+  return {
+    nudgePlan,
+    nudgeWrapUp,
+    beforeEnd,
+    nudgeState: (id: string) => budget.state(id),
+    resetNudge,
+    noteStop,
+    clearStop,
+  }
 }

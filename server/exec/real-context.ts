@@ -56,6 +56,8 @@ export interface RealContext {
   forwardSpawn?: EngineHost['forwardSpawn']
   /** 对话级的 Orchestra：宿主拿它在父对话正在跑时派转交来的子任务 */
   onOrchestra?: EngineHost['onOrchestra']
+  /** 对话的结束前判断（ADR 0049，见 server/tasks/before-end.ts） */
+  beforeEnd?: EngineHost['beforeEnd']
   childIsolation?: EngineHost['childIsolation']
   worktreeHome?: EngineHost['worktreeHome']
   branch?: EngineHost['branch']

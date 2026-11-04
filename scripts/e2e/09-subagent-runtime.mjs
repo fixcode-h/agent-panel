@@ -13,7 +13,7 @@ import { runShard } from './harness.mjs'
 
 await runShard('子对话运行与监管', async (api) => {
   const { log, call, sleep, waitFor, waitDone, waitTask, calls, readLog, step, setupBase, agent } = api
-  const { project, B } = await setupBase()
+  const { project, A, B } = await setupBase()
   const { id: _pid, createdAt: _c, updatedAt: _u, ...projectInput } = project
   // 按提示词找那一次调用：调用记录里这时可能已有别的调用（保活进程、父对话回报后的新一轮），
   // 也可能正写到最后半行（readLog 会丢掉半行），所以不能用 at(-1) 猜是哪一次
@@ -690,6 +690,47 @@ await runShard('子对话运行与监管', async (api) => {
     // 改回这一片开始时的设置，后面的用例不受 nudgeMax=3 影响
     await call('PUT', '/settings', full)
     step('子对话计划做一半就收尾：子对话自己推满 3 次仍不动，才上报父对话一次')
+  }
+  // ---- 同一场景走结束前钩子（ADR 0049，假 CLI 照真的 Claude Code 跑 Stop 钩子）：同一轮里拦住接着做，
+  // 不另发【面板】提醒；同一进度拦满了才放行，放行后一轮结束的兜底看到已经推满，照常上报父对话 ----
+  {
+    const full = await call('GET', '/settings')
+    await call('PUT', '/settings', { ...full, nudgeMax: 3 })
+    const hookParent = await waitDone(
+      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '钩子拦住的父对话' }))
+        .id,
+      20000,
+    )
+    const hookKid = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      // 甲用 Claude Code：钩子装在 Claude Code 的定义里（乙是 Codex，没有钩子）
+      agentId: A.id,
+      parentTaskId: hookParent.id,
+      prompt: 'HOOK_MODE PLAN_STALL 计划做一半就停',
+    })
+    const report = await waitFor(
+      async () => {
+        const p = await call('GET', `/tasks/${hookParent.id}`)
+        return p.messages.find((m) => m.child?.id === hookKid.id && m.text.includes('计划还没做完'))
+      },
+      { label: '钩子拦满 3 次仍没动：上报父对话', timeout: 30000 },
+    )
+    assert.ok(report)
+    const kidNow = await call('GET', `/tasks/${hookKid.id}`)
+    const marks = kidNow.messages.filter((m) => m.panel === 'hook')
+    assert.equal(marks.length, 3, '同一进度拦满 3 次')
+    assert.match(marks[0].text, /1\/4[\s\S]*「跑检查」/, '拦的时候写明进度和接下来做哪一步')
+    assert.match(marks[2].text, /第 3 次提醒/)
+    assert.equal(kidNow.messages.filter((m) => m.panel === 'nudge').length, 0, '拦过的不再另发提醒')
+    assert.equal(
+      kidNow.messages.filter((m) => m.role === 'agent' && m.text.includes('PLAN_NUDGE_GOT')).length,
+      3,
+      '每次拦住的说明都交到了 CLI',
+    )
+    await call('DELETE', `/tasks/${hookParent.id}`)
+    await call('PUT', '/settings', full)
+    step('子对话计划做一半：结束前钩子在同一轮里拦满 3 次，不另发提醒，拦满才上报父对话')
   }
   // ---- 父对话被停下后继续：一起被打断的子对话由面板连带拉起来，续接的提示写清是续接、子对话已在接着做 ----
   {

@@ -12,6 +12,7 @@ import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
 import { MORE_TOOLS, moreTools, ORCH_CORE_TOOLS, splitDeferred } from '../shared/panel-tools.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
 import { log } from './log.ts'
+import { allowEnd, beforeEndInput, fillBlock, type BeforeEndDecision, type BeforeEndInput } from '../shared/hooks.ts'
 
 /** 这一轮的清单里三件核心编排工具都在：Pi 桥接据此核对清单完整 */
 export const orchCore = (orch: { name: string }[]) => ORCH_CORE_TOOLS.every((n) => orch.some((x) => x.name === n))
@@ -52,6 +53,12 @@ const sessions = new Map<
     /** 操控软件的动作（app_actions / app_do）：对话的调用才有，值是调用者 */
     app?: ActionCaller
     onTools?: (listed: { name: string; chars: number }[], deferred: { name: string; chars: number }[]) => void
+    /** 结束前钩子（ADR 0049）：CLI 在模型准备结束这一轮时经 /ask/:token/hook 问；没有时一律放行 */
+    beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
+    /** 拦住时交给 CLI 的原生输出模板（钩子是一条命令的 CLI）；扩展自己处理的 CLI 不给 */
+    hookBlock?: unknown
+    /** 原生输入里不交给面板的字段（模型回复的文字） */
+    hookDrop?: string[]
     pending: Set<(r: AskReply) => void>
   }
 >()
@@ -272,6 +279,9 @@ export function openAskBridge(o: {
   app?: ActionCaller
   /** CLI 取了工具清单：直接列出的和收进 more_tools 的各自多少字 */
   onTools?: (listed: ToolChars[], deferred: ToolChars[]) => void
+  beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
+  hookBlock?: unknown
+  hookDrop?: string[]
 }) {
   const token = randomUUID()
   const s = { ...o, pending: new Set<(r: AskReply) => void>() }
@@ -317,6 +327,23 @@ export function askMcpApi() {
         : await handle(s, body)
       if (!out || (Array.isArray(out) && !out.length)) return c.body(null, 202)
       return c.json(out)
+    })
+    .post('/ask/:token/hook', async (c) => {
+      // 结束前钩子（ADR 0049）：转发脚本、Pi 的扩展、Command Code 的 mod 在模型准备结束时 POST 过来。
+      // 任何出错都回「放行」：钩子坏了不能把对话卡住，CLI 照常结束，一轮结束后的提醒还会兜底
+      const s = sessions.get(c.req.param('token'))
+      const body = (await c.req.json().catch(() => null)) as { event?: string; native?: unknown } | null
+      if (!s?.beforeEnd || body?.event !== 'turn.beforeEnd') return c.json({ block: false })
+      const d = await s.beforeEnd(beforeEndInput(body.native, s.hookDrop)).catch((e: Error) => {
+        log.warn('agent', '结束前钩子判断出错，放行', { error: e.message })
+        return allowEnd('error')
+      })
+      if (!d.block || !d.reason) return c.json({ block: false })
+      return c.json({
+        block: true,
+        reason: d.reason,
+        ...(s.hookBlock ? { output: fillBlock(s.hookBlock, d.reason) } : {}),
+      })
     })
     .get('/ask/:token', (c) => c.body(null, 405))
     .delete('/ask/:token', (c) => c.body(null, 200))

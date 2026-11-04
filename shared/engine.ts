@@ -116,6 +116,7 @@ import { isHelperAgent } from './builtin/core.ts'
 import { childAskPrompt } from './child-ask.ts'
 import { subPolicy, topPush } from './sub-policy.ts'
 import { budgetLimit, overBudget } from './engine-budget.ts'
+import type { BeforeEndDecision, BeforeEndInput } from './hooks.ts'
 import {
   activePlan,
   applyPlan,
@@ -216,6 +217,11 @@ export interface AgentCall {
    * 总结下面的改动卡片接着上一圈的终点算，子任务和工作流在空档里改的文件才算得进来
    */
   carry?: boolean
+  /**
+   * 结束前钩子（ADR 0049）：模型准备结束这一轮时问一次，返回 block 就在同一轮里接着做（CLI 支持时才装）。
+   * 只按结构化状态判断（计划、submit_result / submit_verdict 交没交、在不在等结果），不读回复文字
+   */
+  beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
 }
 
 /** 交给评审的改动：snapshot 是这一刻的工作区快照（下一轮复看和它比），diff 太长时 diff 为空、完整内容在 file */
@@ -868,6 +874,11 @@ export interface EngineHost {
    * 等子任务结果、跑计划、执行工作流节点这些阶段不在回调范围内——那时派出的子任务结果交不回来，留给下一轮
    */
   onOrchestra?: (orch: Orchestra | undefined) => void
+  /**
+   * 对话自己的结束前判断（ADR 0049）：计划没做完、子对话请求收尾没处理、没列计划却做了一半时拦住，在同一轮里接着做。
+   * 由服务端按计划和等待状态答（server/tasks/before-end.ts）；子任务、节点交没交结果由引擎自己判断，不走这里
+   */
+  beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
   /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */ claimFiles?: (paths: string[]) => {
     granted: string[]
     held: { path: string; by: string; state?: string }[]
@@ -4359,6 +4370,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
           sessionKey: who,
           ...(host.prewarm ? { prewarm: true } : {}),
           orch,
+          ...(host.beforeEnd && !host.prewarm ? { beforeEnd: host.beforeEnd } : {}),
         })
       } finally {
         // AI 这一轮处理完了：宿主不再把转交来的子任务派进它（后面的阶段交给下一轮）

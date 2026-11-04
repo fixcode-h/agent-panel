@@ -390,6 +390,11 @@ export interface TasksScope {
   nudgePlan: (conv: Task, turn?: TurnInfo) => Promise<boolean>
   /** 父对话一轮结束时有子对话在等它收尾：推它 finish_child（见 drive.ts 的 nudgeWrapUp） */
   nudgeWrapUp: (conv: Task) => Promise<boolean>
+  /** 结束前钩子（ADR 0049）：CLI 在模型准备结束这一轮时问，拦住就在同一轮里接着做（见 before-end.ts） */
+  beforeEnd: (
+    convId: string,
+    input: import('../../shared/hooks.ts').BeforeEndInput,
+  ) => Promise<import('../../shared/hooks.ts').BeforeEndDecision>
   /** 推进计数的现状（诊断用）：最后一个进度指纹和推了几次 */
   nudgeState: (id: string) => { key: string; n: number } | undefined
   /** 用户亲自发了新消息：推进次数清零（ADR 0041） */

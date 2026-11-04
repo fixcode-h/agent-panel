@@ -28,6 +28,7 @@
 - **碰到文件行数上限就按功能拆成小文件**（`scripts/file-caps.json`，`npm run lint` 会拦）：把职责完整的一块挪进新文件，原文件只留调用；不删注释、不合并行凑数。细则见 `docs/lessons/file-caps.md`。
 - 注释用中文，写「为什么」。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。
 - Agent 执行出的错误一律显示给用户，不悄悄重试。
+- **不按模型回复的文字判断状态**：做没做完、通没通过、卡没卡住，都只看工具调用（`set_plan`、`submit_*`）和面板状态；钩子输入里的回复文字转发前就丢掉（ADR 0041、0049，`scripts/rules-check.mjs` 第 19、19b 条会拦）。
 - **凭据不进仓库**：密码、令牌、API key 只放本机数据目录（默认 `~/.agent-panel`）或环境变量，不写进代码、测试、fixtures、文档和提交说明；示例只用 `sk-xxxx`、`your-api-key` 这类占位符。`npm run lint` 会跑 `scripts/secret-check.mjs` 扫描全仓和暂存区，发现疑似真实 key 直接失败；确实要保留的行在结尾加 `secret-check-ok` 并写明原因。
 - **临时文件只放项目根的 `.tmp/`（已在 `.gitignore` 忽略）或系统临时目录**：不要写到盘符根目录（如 `F:/tmp`）、其他项目目录或用户数据目录；用完清理，别留在仓库里。
 - **贡献流程与漏洞报告**：怎么提改动、跑哪些检查见 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题按 [SECURITY.md](SECURITY.md) 私下报告，不开公开 Issue。

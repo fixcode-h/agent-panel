@@ -199,6 +199,73 @@ await runShard('对话与续接', async (api) => {
   assert.ok(!npDone.working)
   await call('DELETE', `/tasks/${np.id}`)
 
+  // 结束前钩子（ADR 0049）：假 CLI 照真的 Claude Code 跑 --settings 里的 Stop 钩子（输入带 HOOK_MODE 时）。
+  // 面板在同一轮里拦住、让它接着做：对话里只多一行「面板让它接着做」，不再另起一轮【面板】提醒
+  const hookLog = () =>
+    existsSync(`${log}.hook`)
+      ? readFileSync(`${log}.hook`, 'utf8')
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l))
+      : []
+  step('结束前钩子：只说一句就要结束，同一轮里拦住自检一次，不另发提醒')
+  rmSync(`${log}.hook`, { force: true })
+  const hk = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'claude',
+    prompt: 'HOOK_MODE FAKE_EMPTY 看一下这个项目',
+  })
+  await waitDone(hk.id)
+  await sleep(3000)
+  const hkNow = await call('GET', `/tasks/${hk.id}`)
+  const marks = hkNow.messages.filter((m) => m.panel === 'hook')
+  assert.equal(
+    marks.length,
+    1,
+    `拦了一次；现有消息：${JSON.stringify(hkNow.messages.map((m) => [m.role, m.panel ?? '', m.text.slice(0, 30)]))}`,
+  )
+  assert.match(marks[0].text, /收尾自检/)
+  assert.equal(hkNow.messages.filter((m) => m.panel === 'nudge').length, 0, '钩子拦过的不再另发提醒')
+  const hkAgent = hkNow.messages.filter((m) => m.role === 'agent')
+  assert.match(hkAgent.at(-1).text, /SELF_CHECK_GOT/, '同一轮里接着答了自检')
+  assert.ok(
+    !hkNow.messages.some((m) => m.role === 'user' && /Stop hook feedback/.test(m.text)),
+    '钩子的说明不画成用户消息',
+  )
+  assert.equal(calls().filter((c) => c.input.includes('HOOK_MODE')).length, 1, '只起了一次 CLI：没有另开一轮')
+  assert.deepEqual(
+    hookLog().map((h) => [h.active, h.block]),
+    [
+      [false, true],
+      [true, false],
+    ],
+    '先拦一次，接着做完再问就放行',
+  )
+  await call('DELETE', `/tasks/${hk.id}`)
+
+  step('结束前钩子：动了手没列计划就收尾，同一轮里自检一次；确认完没再动手的不再问')
+  rmSync(`${log}.hook`, { force: true })
+  const hn = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'claude',
+    prompt: 'HOOK_MODE NOPLAN_ACTS 清理已合并的分支',
+  })
+  await waitDone(hn.id)
+  await sleep(3000)
+  const hnNow = await call('GET', `/tasks/${hn.id}`)
+  assert.equal(hnNow.messages.filter((m) => m.panel === 'hook').length, 1, '自检一次')
+  assert.equal(hnNow.messages.filter((m) => m.panel === 'nudge').length, 0, '一轮结束后不再补一遍')
+  assert.deepEqual(
+    hookLog().map((h) => h.block),
+    [true, false],
+  )
+  await call('DELETE', `/tasks/${hn.id}`)
+
   // 回放真实 Claude Code 录下的输出（scripts/fake-cli/replay.mjs）：面板按原来的事件顺序解析出正文、工具调用和用量；
   // 录像只有一轮，面板再起一轮时假 CLI 报错，不会悄悄当成成功
   step('回放录下的真实 CLI 输出：正文、工具调用、用量照常解析；录像用完再跑报错')
