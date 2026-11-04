@@ -57,6 +57,7 @@
 | [0047](./0047-right-pane-tab-toolbar.md)                  | 对话右栏的按钮跟着页签走，子对话不再单画一行标题栏                                  | 已接受 | 2026-11-03 | 页签条右端是当前页签的工具区；子对话面板去掉 56px 标题栏、双击页签改名；切换子对话的 `▾` 挂在子对话页签上                                                           |
 | [0048](./0048-coordinator-docs-first.md)                  | 主理改名协调器，先查模块文档再派单，规则每条只留一个出处                            | 已接受 | 2026-11-03 | 提炼关键词 → 读 MODULE-MAP 和模块 README；没文档先建再派；面板 / 角色 / 技能三层分工，rules-check 第 20 条拦重复句                                                  |
 | [0049](./0049-hooks-continue-in-turn.md)                  | 钩子模块：模型说完打算就要结束时，在同一轮里拦住接着做                              | 已接受 | 2026-11-04 | Claude Code `--settings` 的 Stop、Pi 扩展的 agent_before_settle、Command Code mod 的 onStop；判断和兜底同一个账本；不读回复文字（rules-check 19b）                  |
+| [0050](./0050-pi-capabilities.md)                         | Pi 能力扩充：项目信任、插件市场、Pi 自己的设置                                      | 已接受 | 2026-11-04 | 项目设置按 CLI 选信任（`trust` 字段）；插件市场取 npm 热度前 1000 个本地排序；`configSettings` 只写用户改过的键；报告里四项参数核对后不做                           |
 
 状态只有四个词，别自己造近义词：
 

@@ -1974,6 +1974,10 @@ export function TaskView({
         setSessionOpen(v)
         writeStored(SESSION_BAR_KEY, v ? '' : 'closed')
         if (v) setLastRail('session')
+        // 放不下时右侧那一栏是给会话栏让开、只是没显示：收起会话栏时一起记成收起，
+        // 不然它会立刻补回原位，看起来像右边的面板没收起来（用户报「收起面板点击无效」）
+        else if (filesYield) toggleFiles()
+        else if (chatRailWanted && !chatRailShown) toggleChatRail()
       },
       reportWide: () => {
         if (reportOn) return closeReport()

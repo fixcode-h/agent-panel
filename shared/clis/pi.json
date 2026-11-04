@@ -111,6 +111,15 @@
       "args": ["--thinking", "{effort}"]
     },
     {
+      "if": "trust=approve",
+      "args": ["--approve"],
+      "why": "项目设置里信任了这个项目：Pi 无界面运行时不弹信任询问，默认跳过项目里的 .pi 配置、扩展、Skill（Pi 1.5 docs/security.md）"
+    },
+    {
+      "if": "trust=deny",
+      "args": ["--no-approve"]
+    },
+    {
       "if": ["permission=full", "!opt.codemode"],
       "args": ["--tools", "+grep,+find,+ls"]
     },
@@ -167,6 +176,15 @@
     {
       "if": "effort",
       "args": ["--thinking", "{effort}"]
+    },
+    {
+      "if": "trust=approve",
+      "args": ["--approve"],
+      "why": "项目设置里信任了这个项目：Pi 无界面运行时不弹信任询问，默认跳过项目里的 .pi 配置、扩展、Skill（Pi 1.5 docs/security.md）"
+    },
+    {
+      "if": "trust=deny",
+      "args": ["--no-approve"]
     },
     {
       "if": ["permission=full", "!opt.codemode"],
@@ -728,7 +746,12 @@
   "docs": ["AGENTS.md", "CLAUDE.md"],
   "docsNote": "Pi 每次启动读项目目录和上级目录里的 AGENTS.md（没有时读 CLAUDE.md），以及 ~/.pi/agent/AGENTS.md。",
   "globalDoc": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/AGENTS.md",
-  "context": { "systemPrompt": 900, "systemTools": 1300, "compactReserve": 16384, "docsMode": "first" },
+  "context": {
+    "systemPrompt": 900,
+    "systemTools": 1300,
+    "compactReserve": 16384,
+    "docsMode": "first"
+  },
   "skills": {
     "user": ["${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills", "~/.agents/skills"],
     "repo": [".pi/skills", ".agents/skills"]
@@ -754,6 +777,147 @@
       "label": "codemode 和工具搜索",
       "hint": "让模型写脚本批量调用工具、按需搜索工具；MCP 工具多时省上下文",
       "default": true
+    },
+    {
+      "id": "cacheRetention",
+      "label": "长时间提示词缓存",
+      "hint": "支持的服务商把提示词缓存保留更久（PI_CACHE_RETENTION=long），长任务里两轮之间隔得久也能命中缓存",
+      "default": false,
+      "env": {
+        "PI_CACHE_RETENTION": "long"
+      }
+    },
+    {
+      "id": "noTelemetry",
+      "label": "关闭匿名统计",
+      "hint": "不发 Pi 的安装、更新匿名统计，请求里也不带来源标记（PI_TELEMETRY=0）；关着时跟随 Pi 自己的设置",
+      "default": false,
+      "env": {
+        "PI_TELEMETRY": "0"
+      }
+    }
+  ],
+  "configSettings": [
+    {
+      "id": "retry",
+      "label": "自动重试",
+      "hint": "模型请求临时失败（限流、断线、服务器出错）时 Pi 自己重试，面板显示「正在重试」",
+      "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+      "at": "retry.enabled",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "id": "retryMax",
+      "label": "最多重试几次",
+      "hint": "Pi 自己重试的次数上限",
+      "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+      "at": "retry.maxRetries",
+      "type": "number",
+      "default": 3,
+      "min": 0,
+      "max": 10,
+      "unit": "次"
+    },
+    {
+      "id": "idleTimeout",
+      "label": "请求空闲超时",
+      "hint": "模型这么久没有任何输出就断开重试；中转慢、思考很久的模型可以调大，0 是不限",
+      "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+      "at": "httpIdleTimeoutMs",
+      "type": "number",
+      "default": 300,
+      "min": 0,
+      "max": 3600,
+      "unit": "秒",
+      "scale": 1000
+    },
+    {
+      "id": "compaction",
+      "label": "Pi 自己的自动压缩",
+      "hint": "上下文快满时 Pi 自己压缩（剩不到 16384 token 时）。面板的「自动压缩」按比例在一轮结束后压缩，两个都开着时先到的那个起作用",
+      "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+      "at": "compaction.enabled",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "id": "cacheWarming",
+      "label": "缓存预热",
+      "hint": "保持服务商的提示词缓存不过期。「两轮之间也保持」适合保活的对话，会多花一点钱",
+      "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+      "at": "cacheWarming",
+      "type": "choice",
+      "default": "streaming",
+      "choices": [
+        {
+          "id": "off",
+          "label": "关闭"
+        },
+        {
+          "id": "streaming",
+          "label": "运行中保持"
+        },
+        {
+          "id": "idle",
+          "label": "两轮之间也保持"
+        }
+      ]
+    },
+    {
+      "id": "codemodeMode",
+      "label": "codemode 呈现方式",
+      "hint": "「只通过 codemode」把内置和扩展的工具都收进 codemode，MCP 工具很多时更省上下文；要先打开上面的「codemode 和工具搜索」",
+      "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+      "at": "codemode.mode",
+      "type": "choice",
+      "default": "on",
+      "choices": [
+        {
+          "id": "on",
+          "label": "工具照常列出"
+        },
+        {
+          "id": "only",
+          "label": "只通过 codemode"
+        }
+      ]
+    },
+    {
+      "id": "blockImages",
+      "label": "不发图片",
+      "hint": "不把图片发给模型；用只支持文字的中转时打开",
+      "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+      "at": "images.blockImages",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "id": "transport",
+      "label": "传输方式",
+      "hint": "服务商同时支持几种连接方式时用哪种；有的服务商用 WebSocket 更稳",
+      "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+      "at": "transport",
+      "type": "choice",
+      "default": "auto",
+      "choices": [
+        {
+          "id": "auto",
+          "label": "自动"
+        },
+        {
+          "id": "sse",
+          "label": "SSE"
+        },
+        {
+          "id": "websocket",
+          "label": "WebSocket"
+        },
+        {
+          "id": "websocket-cached",
+          "label": "WebSocket（复用连接）"
+        }
+      ]
     }
   ],
   "auth": {
@@ -900,6 +1064,20 @@
       "failed": ["is_error"]
     }
   },
+  "trust": {
+    "markers": [
+      ".pi/settings.json",
+      ".pi/mcp.json",
+      ".pi/extensions",
+      ".pi/skills",
+      ".pi/prompts",
+      ".pi/themes",
+      ".pi/SYSTEM.md",
+      ".pi/APPEND_SYSTEM.md"
+    ],
+    "why": "Pi 1.5 docs/security.md「Project trust without an interactive prompt」：print / JSON / RPC 模式没有命令行覆盖或已保存的决定时按跳过处理；AGENTS.md、CLAUDE.md 不受影响；.agents/skills 从工作目录往上找到仓库根目录为止（docs/skills.md）",
+    "upMarkers": [".agents/skills"]
+  },
   "i18n": {
     "en": {
       "关闭": "Off",
@@ -929,7 +1107,42 @@
       "执行前拦下 git reset --hard、rm -rf 这类不可撤销的命令，以及读 SSH 密钥、.env 这类机密文件；Pi 自己没有确认环节": "Blocks irreversible commands such as git reset --hard and rm -rf, and reads of secrets like SSH keys and .env files, before they run. Pi itself never asks for confirmation",
       "代码诊断": "Code diagnostics",
       "用语言服务器（LSP）检查改过的文件、给出报错位置，能自动修的直接修": "Checks edited files with language servers (LSP), reports exact error locations, and applies fixes the server supports",
-      "要先把对应语言的语言服务器装到 PATH（例如 typescript-language-server、pyright），它不会自己下载": "Install the language servers you need on PATH first (for example typescript-language-server or pyright); it does not download them"
+      "要先把对应语言的语言服务器装到 PATH（例如 typescript-language-server、pyright），它不会自己下载": "Install the language servers you need on PATH first (for example typescript-language-server or pyright); it does not download them",
+      "长时间提示词缓存": "Long prompt caching",
+      "支持的服务商把提示词缓存保留更久（PI_CACHE_RETENTION=long），长任务里两轮之间隔得久也能命中缓存": "Providers that support it keep the prompt cache longer (PI_CACHE_RETENTION=long), so long tasks still hit the cache after a long gap between turns",
+      "关闭匿名统计": "Turn off anonymous telemetry",
+      "不发 Pi 的安装、更新匿名统计，请求里也不带来源标记（PI_TELEMETRY=0）；关着时跟随 Pi 自己的设置": "Stops Pi's anonymous install and update reports and its provider attribution headers (PI_TELEMETRY=0). When off, Pi's own setting applies",
+      "扩展": "Extension",
+      "主题": "Theme",
+      "提示词": "Prompt",
+      "Pi 已经内置 MCP，面板的「MCP 工具」页也能直接配，不用再装": "Pi already has MCP built in, and the panel's MCP tools page can configure it directly; no need to install this",
+      "和面板的子对话、子任务重复：面板派活、合并、评审都靠自己的子对话": "Overlaps with the panel's sub-conversations and subtasks: the panel delegates, merges and reviews with its own sub-conversations",
+      "和面板的提问重复：面板已经给 Pi 提供了 ask_user": "Overlaps with the panel's questions: the panel already gives Pi ask_user",
+      "和面板的执行计划重复：面板用 set_plan 显示和推进计划": "Overlaps with the panel's plan: the panel shows and drives plans with set_plan",
+      "自动重试": "Automatic retry",
+      "模型请求临时失败（限流、断线、服务器出错）时 Pi 自己重试，面板显示「正在重试」": "Pi retries model requests that fail temporarily (rate limits, dropped connections, server errors); the panel shows \"Retrying\"",
+      "最多重试几次": "Maximum retries",
+      "Pi 自己重试的次数上限": "How many times Pi retries on its own",
+      "次": "times",
+      "请求空闲超时": "Request idle timeout",
+      "模型这么久没有任何输出就断开重试；中转慢、思考很久的模型可以调大，0 是不限": "Disconnects and retries when the model produces nothing for this long. Raise it for slow relays or models that think for a long time; 0 means no limit",
+      "秒": "seconds",
+      "Pi 自己的自动压缩": "Pi's own automatic compaction",
+      "上下文快满时 Pi 自己压缩（剩不到 16384 token 时）。面板的「自动压缩」按比例在一轮结束后压缩，两个都开着时先到的那个起作用": "Pi compacts on its own when the context is nearly full (fewer than 16384 tokens left). The panel's Auto-compact compacts by percentage after a turn; with both on, whichever comes first applies",
+      "缓存预热": "Cache warming",
+      "保持服务商的提示词缓存不过期。「两轮之间也保持」适合保活的对话，会多花一点钱": "Keeps the provider's prompt cache from expiring. \"Also between turns\" suits kept-alive conversations and costs a little more",
+      "运行中保持": "While running",
+      "两轮之间也保持": "Also between turns",
+      "codemode 呈现方式": "Codemode presentation",
+      "「只通过 codemode」把内置和扩展的工具都收进 codemode，MCP 工具很多时更省上下文；要先打开上面的「codemode 和工具搜索」": "\"Only through codemode\" moves built-in and extension tools into codemode, which saves context when there are many MCP tools. Turn on \"Codemode and tool search\" above first",
+      "工具照常列出": "List tools as usual",
+      "只通过 codemode": "Only through codemode",
+      "不发图片": "Don't send images",
+      "不把图片发给模型；用只支持文字的中转时打开": "Doesn't send images to the model. Turn on for text-only relays",
+      "传输方式": "Transport",
+      "服务商同时支持几种连接方式时用哪种；有的服务商用 WebSocket 更稳": "Which connection to use when a provider supports several; WebSocket is more stable with some providers",
+      "自动": "Auto",
+      "WebSocket（复用连接）": "WebSocket (reuse connection)"
     }
   },
   "mcpStore": {
@@ -949,7 +1162,9 @@
     "update": ["update", "{source}"],
     "updateAll": ["update", "--extensions"],
     "placeholder": "npm:@scope/包名、git:github.com/用户/仓库 或本机目录",
-    "env": { "PI_OFFLINE": "" },
+    "env": {
+      "PI_OFFLINE": ""
+    },
     "recommended": [
       {
         "source": "npm:pi-web-access",
@@ -977,6 +1192,44 @@
         "desc": "用语言服务器（LSP）检查改过的文件、给出报错位置，能自动修的直接修",
         "note": "要先把对应语言的语言服务器装到 PATH（例如 typescript-language-server、pyright），它不会自己下载",
         "url": "https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-lsp"
+      }
+    ],
+    "npmRoot": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/npm/node_modules",
+    "gallery": {
+      "npmKeyword": "pi-package",
+      "sourcePrefix": "npm:",
+      "pageUrl": "https://pi.dev/packages",
+      "types": {
+        "pi-extension": "扩展",
+        "pi-skill": "Skill",
+        "pi-theme": "主题",
+        "pi-prompt": "提示词"
+      }
+    },
+    "overlaps": [
+      {
+        "match": "pi-mcp-adapter",
+        "note": "Pi 已经内置 MCP，面板的「MCP 工具」页也能直接配，不用再装"
+      },
+      {
+        "match": "pi-mcp-extension",
+        "note": "Pi 已经内置 MCP，面板的「MCP 工具」页也能直接配，不用再装"
+      },
+      {
+        "match": "pi-subagents",
+        "note": "和面板的子对话、子任务重复：面板派活、合并、评审都靠自己的子对话"
+      },
+      {
+        "match": "@tintinweb/pi-subagents",
+        "note": "和面板的子对话、子任务重复：面板派活、合并、评审都靠自己的子对话"
+      },
+      {
+        "match": "@juicesharp/rpiv-ask-user-question",
+        "note": "和面板的提问重复：面板已经给 Pi 提供了 ask_user"
+      },
+      {
+        "match": "@juicesharp/rpiv-todo",
+        "note": "和面板的执行计划重复：面板用 set_plan 显示和推进计划"
       }
     ]
   }
