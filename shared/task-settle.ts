@@ -10,7 +10,7 @@
 import type { StopReason, Task, TaskMessage } from './schema.ts'
 import { endRun as endPlanRun } from './plan.ts'
 import { t } from './i18n.ts'
-import { idleWaitDuration, stopReasonText, waitDuration } from './task.ts'
+import { diagnosisPending, idleWaitDuration, stopReasonText, waitDuration } from './task.ts'
 import { pauseUnit } from './run-stops.ts'
 
 /**
@@ -59,6 +59,21 @@ export function settleStopped(tk: Task, reason: StopReason): Task {
       endPlanRun(next, r.id, false, stopReasonText(reason))
     }
   return next
+}
+
+/**
+ * Bug 诊断报告还在等用户确认，CLI 也没在答这一轮（ADR 0045）：这一步等的是用户，不靠 CLI 进程。
+ * 面板退出、CLI 回收、定时核对都不该把它落成「已中断」，继续执行也不该拉起 CLI 让它自己往下跑（用户 2026-11-04 要求）
+ */
+export const diagnosisWaiting = (tk: Pick<Task, 'diagnoses' | 'working'>) => diagnosisPending(tk) && !tk.working
+
+/**
+ * 回到「等你确认诊断报告」：轮次、步骤、等待时长按停下结算（进程已经没了），但不记成已停止——
+ * convState 按报告把它算在运行，弹窗和「查看报告」照常在；用户确认或提意见后发的消息再拉起 CLI。
+ * 用户停止、面板重启打断的这一步，继续执行时都走这里，不另开一轮
+ */
+export function rewaitDiagnosis(tk: Task): Task {
+  return { ...settleStopped(tk, 'restart'), status: 'done', stopReason: undefined }
 }
 
 /**

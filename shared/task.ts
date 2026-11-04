@@ -1599,10 +1599,13 @@ export function restartInterrupted(
 export function restartUnfinished(
   task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'resolved' | 'awaitingUser'> & {
     runs?: Task['runs']
+    diagnoses?: Task['diagnoses']
   },
 ): boolean {
   // 已经收口（resolved）的绝不回名单：它做完了、分支也合了，重启后再拉起就是白跑一轮（也会留下没人要的进程）
   if (task.resolved === true) return false
+  // 诊断报告在等用户确认：重启后仍停在等确认，不拉起 CLI（ADR 0045，见 task-settle.ts 的 diagnosisWaiting）
+  if (diagnosisPending(task)) return false
   // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
   if (task.stopReason === 'user') return false
   // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。

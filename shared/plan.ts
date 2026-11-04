@@ -18,6 +18,7 @@ import { topSteps } from './flow.ts'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan, TaskStep } from './schema.ts'
 import { panelWrap, type WrapUpKind } from './wrap-up.ts'
 import { STATUS_TEXT, planDelta, planRows } from './plan-text.ts'
+import { waitPlans } from './plan-wait.ts'
 export { PANEL_WRAPS, panelWrap, wrapUpKind, type WrapUpInput, type WrapUpKind } from './wrap-up.ts'
 
 /** 一份计划最多多少个主步骤、每个主步骤最多多少个子步骤：再多就该拆成几份计划 */
@@ -1123,7 +1124,12 @@ function nextStepId(plan: TaskPlan) {
  * auto 步骤在 applyPlan 里受保护，Agent 下次交整份计划时不会被当成「不做了」删掉
  */
 export function ensureChildStep(task: PlanTask, ref: string, title: string, now = new Date().toISOString()) {
-  const want = clean(title, 120) || AUTO_STEP_PREFIX + ref
+  // 没给标题（取不到子对话的标题）时沿用以前等它的那一步的标题，不用 id 当标题
+  const prev = (task.plans ?? [])
+    .flatMap((p) => p.steps)
+    .reverse()
+    .find((s) => s.waits.some((w) => w.ref === ref && w.kind === 'child'))
+  const want = clean(title, 120) || prev?.title || AUTO_STEP_PREFIX + ref
   const named = want.startsWith(AUTO_STEP_PREFIX) ? want : AUTO_STEP_PREFIX + want
   let plan = activePlan(task)
   if (!plan) {
@@ -1133,15 +1139,9 @@ export function ensureChildStep(task: PlanTask, ref: string, title: string, now 
     plan.doneAt = ''
     plan.reopenedAt = now
   }
+  // 这个子对话原来那一步已经做完（又交给它一件新事）时 childStepId 对不上，下面新加一步：完成的步骤锁死，不改回待做
   const hit = childStepId(task, ref, want, false)
   if (hit) return hit
-  // 这个子对话原来那一步已经做完（send_to_conversation 又交给它一件新事）：不另开一步，把那一步重新打开，
-  // 否则计划里同一件事出现两格，补的这格还没标题可用（send_to_conversation 没有 title）
-  const revisit = plan.steps.find((s) => !s.wrapUp && s.waits.some((w) => w.kind === 'child' && w.ref === ref))
-  if (revisit) {
-    setStatus(revisit, 'pending', now)
-    return revisit.id
-  }
   const seq = nextStepId(plan)
   const step: PlanStep = {
     id: seq,
@@ -1213,8 +1213,6 @@ export function settleWait(
   now = new Date().toISOString(),
 ) {
   const hit: { title: string; done: boolean }[] = []
-  const plan = activePlan(task)
-  if (!plan) return hit
   const visit = (item: PlanItem, parent?: PlanStep) => {
     const w = item.waits.find((x) => x.kind === kind && x.ref === ref && x.state === 'waiting')
     if (!w) return
@@ -1237,12 +1235,12 @@ export function settleWait(
     hit.push({ title: item.title, done: isSettled(item.status) })
     if (parent) rollUp(parent, now)
   }
-  for (const s of plan.steps) {
-    for (const c of s.children) visit(c, s)
-    visit(s)
+  // 提前结束（finish_plan）的计划里还挂着它的也收口，不然那一步永远「等待中」（见 waitPlans）
+  for (const plan of waitPlans(task, kind, ref)) {
+    for (const s of plan.steps) for (const c of [...s.children, s]) visit(c, c === s ? undefined : s)
+    closeIfSettled(plan, now)
+    plan.updatedAt = now
   }
-  closeIfSettled(plan, now)
-  plan.updatedAt = now
   return hit
 }
 
@@ -1255,8 +1253,6 @@ export const PARENT_FIX_REF = 'fix'
  */
 export function releaseParentWait(task: PlanTask, now = new Date().toISOString()) {
   const hit: string[] = []
-  const plan = activePlan(task)
-  if (!plan) return hit
   const visit = (item: PlanItem, parent?: PlanStep) => {
     const w = item.waits.find((x) => x.kind === 'parent' && x.state === 'waiting')
     if (!w) return
@@ -1267,11 +1263,11 @@ export function releaseParentWait(task: PlanTask, now = new Date().toISOString()
     hit.push(item.title)
     if (parent) rollUp(parent, now)
   }
-  for (const s of plan.steps) {
-    for (const c of s.children) visit(c, s)
-    visit(s)
+  for (const plan of waitPlans(task, 'parent')) {
+    const before = hit.length
+    for (const s of plan.steps) for (const c of [...s.children, s]) visit(c, c === s ? undefined : s)
+    if (hit.length > before) plan.updatedAt = now
   }
-  if (hit.length) plan.updatedAt = now
   return hit
 }
 
@@ -1288,8 +1284,6 @@ export function holdWait(
   why: string,
   now = new Date().toISOString(),
 ): string[] {
-  const plan = activePlan(task)
-  if (!plan) return []
   const changed: string[] = []
   const visit = (item: PlanItem, parent?: PlanStep) => {
     const w = item.waits.find((x) => x.kind === kind && x.ref === ref && x.state === 'waiting')
@@ -1301,11 +1295,11 @@ export function holdWait(
     if (parent) rollUp(parent, now)
     changed.push(item.title)
   }
-  for (const s of plan.steps) {
-    for (const c of s.children) visit(c, s)
-    visit(s)
+  for (const plan of waitPlans(task, kind, ref)) {
+    const before = changed.length
+    for (const s of plan.steps) for (const c of [...s.children, s]) visit(c, c === s ? undefined : s)
+    if (changed.length > before) plan.updatedAt = now
   }
-  if (changed.length) plan.updatedAt = now
   return changed
 }
 
@@ -1459,12 +1453,13 @@ export function refreshChildWait(
   now = new Date().toISOString(),
 ) {
   const plan = activePlan(task)
+  // 没有进行中的计划也先收口：提前结束的计划里挂着它的也要收（见 waitPlans）
+  if (report?.settle === 'hold') holdWait(task, 'child', child.id, report.why, now)
+  else if (report) settleWait(task, 'child', child.id, report.settle === 'ok', now)
   if (!plan) return ''
   const tracked = plan.steps
     .flatMap((s) => [...s.children, s])
     .some((x) => x.waits.some((w) => w.kind === 'child' && w.ref === child.id))
-  if (report?.settle === 'hold') holdWait(task, 'child', child.id, report.why, now)
-  else if (report) settleWait(task, 'child', child.id, report.settle === 'ok', now)
   // settleWait 在步骤全完成时会把计划收起：收起了也要把最后的样子给 Agent 看
   const missing =
     report && !tracked ? `\n计划里没有步骤在等子对话「${child.title}」：对照它的结果用 set_plan 把对应的步骤标好。` : ''

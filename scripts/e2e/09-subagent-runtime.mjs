@@ -1032,8 +1032,17 @@ await runShard('子对话运行与监管', async (api) => {
     assert.equal(stopped.status, 'stopped', '等确认时点停止：对话落成已停止，停止按钮变回来')
     assert.equal(stopped.stopReason, 'user')
     assert.equal(stopped.diagnoses.at(-1).status, 'pending', '报告留着，之后照样能确认')
+    // 停下后点「继续执行」：回到等确认这一步，不拉起 CLI 让它自己往下跑（用户 2026-11-04 要求）
+    const turns = (stopped.turns ?? []).length
+    const resumed = await call('POST', `/tasks/${kid.id}/resume`)
+    assert.notEqual(resumed.status, 'stopped', '继续后回到等确认，不再是已中断')
+    assert.equal(resumed.stopReason ?? null, null)
+    assert.equal(resumed.working, false, '没有开新的一轮')
+    assert.equal(resumed.diagnoses.at(-1).status, 'pending')
+    const after = await call('GET', `/tasks/${kid.id}`)
+    assert.equal((after.turns ?? []).length, turns, '继续不拉起 CLI：确认或提意见后才接着做')
     await call('POST', `/tasks/${bp.id}/stop`).catch(() => {})
     await call('DELETE', `/tasks/${bp.id}`)
-    step('诊断报告等确认时点停止：对话停下，报告留着能确认')
+    step('诊断报告等确认时点停止：对话停下，报告留着能确认；继续执行回到等确认、不拉起 CLI')
   }
 })
