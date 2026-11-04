@@ -47,7 +47,7 @@ import { FrostBarBg } from '@/components/ui/frost'
 import { useEffortOf } from './ChatModelPicker'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningRows, runningTools } from './RunningNow'
-import { TurnChangesCard } from './TurnChanges'
+import { ConvChangesCard } from './TurnChanges'
 import { useAgentView } from '@/lib/agent-view'
 import { conversationAround } from '@shared/fix'
 import { useNow } from '@/lib/useNow'
@@ -1118,8 +1118,9 @@ export function ChatReply({
             isTail={isTail}
           />
         )
-        // 这一段的总结带着这一轮改的文件：「已更改 N 个文件」卡片放在总结下面、运行区上面
-        const turnMsg = task && !isLive ? [...part].reverse().find((m) => m.turnChanges?.files.length) : undefined
+        // 整个对话改了哪些文件：只在对话停下来以后、挂在最后一轮的最后一段下面（用户要的是整个对话的，
+        // 不是每一轮总结下面各一张）；对话还在跑时不出，跑完才出
+        const convCard = task && !isLive && last && isTail && !task.working
         return (
           <FoldedRun
             key={i}
@@ -1128,9 +1129,9 @@ export function ChatReply({
             foldId={`${key}#${i}`}
             stickyAuthor={!author && !hoistSticky && i === 0}
             running={
-              turnMsg ? (
+              convCard ? (
                 <>
-                  <TurnChangesCard task={task!} msg={turnMsg} />
+                  <ConvChangesCard task={task!} />
                   {footer}
                 </>
               ) : (

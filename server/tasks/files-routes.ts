@@ -1,5 +1,6 @@
 import { type Context } from 'hono'
 import { gitFileDiff, gitNumstat, spansFileDiff } from '../exec/git.ts'
+import { convChanges } from '../../shared/conv-changes.ts'
 import { uploadFileOf } from '../uploads.ts'
 import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from '../files.ts'
 import path from 'node:path'
@@ -38,6 +39,22 @@ export function registerFileRoutes(s: TasksScope) {
     const file = c.req.query('path') ?? ''
     const ch = tk.messages.find((m) => m.id === c.req.query('msg'))?.turnChanges
     if (!ch || !ch.files.some((x) => x.path === file)) return s.bad(c, t('这个文件不在这一轮的改动里'))
+    const dir = await s.taskDir(tk)
+    if (!dir || tk.imported) return s.bad(c, t('导入的任务看不到对方电脑上的文件'))
+    try {
+      return c.json({ path: file, diff: await spansFileDiff(dir, ch.spans, file) })
+    } catch (e) {
+      return s.bad(c, (e as Error).message)
+    }
+  })
+
+  // 整个对话里一个文件的差异（对话停下后最后面那张改动卡片点开文件）：各轮的改动按先后拼起来，撤销过的那几轮不算
+  s.routes.get('/:id/conv-diff', async (c) => {
+    const tk = await s.current(c.req.param('id'))
+    if (!tk) return s.bad(c, t('任务不存在'), 404)
+    const file = c.req.query('path') ?? ''
+    const ch = convChanges(tk.messages)
+    if (!ch.files.some((x) => x.path === file)) return s.bad(c, t('这个文件不在这个对话的改动里'))
     const dir = await s.taskDir(tk)
     if (!dir || tk.imported) return s.bad(c, t('导入的任务看不到对方电脑上的文件'))
     try {
