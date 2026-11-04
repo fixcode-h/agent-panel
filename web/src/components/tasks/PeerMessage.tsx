@@ -218,8 +218,10 @@ export function PeerLine(p: PeerLineProps) {
         }
         className={cn(ask && 'border-warning/45', p.superseded && 'opacity-55')}
         verb={
+          // 用块级 flex，不用 inline-flex：inline-flex 放在动作名那层的行盒里按基线排，第一个子元素是图标（没有文字基线），
+          // 浏览器拿图标底边当基线，整段名字被抬高约 1px，旁边的「汇报」「传话」标签就显得偏低（界面检查的行内标签对齐会拦）
           <span
-            className="inline-flex max-w-40 min-w-0 items-center gap-1"
+            className="flex max-w-40 min-w-0 items-center gap-1"
             aria-label={
               p.dir === 'in' ? t('收到 {name} 的信', { name: party }) : t('发给 {name} 的信', { name: party })
             }
