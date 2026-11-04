@@ -6,7 +6,10 @@ import {
   hookFacts,
   hookForwarderSource,
   hookInstall,
+  HOOK_EVENTS_ENV,
   HOOK_SCRIPT,
+  HOOK_SCRIPT_ENV,
+  supportedEvents,
   HOOK_URL_ENV,
 } from './hooks.ts'
 import { getCli } from './clis.ts'
@@ -35,7 +38,7 @@ test('只装这一轮有人用的事件，几个事件合进同一份钩子配�
     hooks: Record<string, unknown>
   }
   assert.deepEqual(Object.keys(cfg.hooks).sort(), ['PreToolUse', 'SessionStart'])
-  assert.deepEqual(hookInstall(getCli('claude')!.hooks!, '/tmp/run', []), { args: [], files: [] })
+  assert.deepEqual(hookInstall(getCli('claude')!.hooks!, '/tmp/run', []), { args: [], files: [], env: {} })
 })
 
 test('工具前 / 工具后：工具名按定义对照到类别，文件路径按定义里的字段取，回复文字不进事实', () => {
@@ -81,7 +84,7 @@ test('Pi、Command Code 写在面板每轮装的扩展里，CLI 定义只声明�
   assert.equal(getCli('pi')!.hooks?.beforeEnd?.via, 'extension')
   assert.equal(getCli('commandcode')!.hooks?.beforeEnd?.via, 'extension')
   // 扩展方式不另写文件、不加参数
-  assert.deepEqual(hookInstall(getCli('pi')!.hooks!, '/tmp/x', ['turn.beforeEnd']), { args: [], files: [] })
+  assert.deepEqual(hookInstall(getCli('pi')!.hooks!, '/tmp/x', ['turn.beforeEnd']), { args: [], files: [], env: {} })
   const pi = String(Object.values(getCli('pi')!.mcp!.files)[0])
   assert.match(pi, /agent_before_settle/)
   assert.match(pi, /continue: true/)
@@ -92,6 +95,56 @@ test('Pi、Command Code 写在面板每轮装的扩展里，CLI 定义只声明�
   assert.doesNotMatch(mod, /lastAssistantText/, 'Command Code 的 mod 不把回复文字发给面板')
 })
 
-test('没声明钩子的 CLI（Codex）照旧只靠一轮结束后的提醒', () => {
-  assert.equal(getCli('codex')!.hooks, undefined)
+test('Codex：钩子写成 -c 参数，命令引用转发脚本的环境变量（每轮相同，信任一次就够），只装有人用的事件', () => {
+  const spec = getCli('codex')!.hooks!
+  assert.equal(spec.trust, 'rpc')
+  const { args, files, env } = hookInstall(spec, 'C:\\tmp\\run1', ['turn.beforeEnd', 'context.restored'])
+  assert.equal(args.length, 4)
+  assert.match(args[1], /^hooks\.Stop=/)
+  assert.match(args[3], /^hooks\.SessionStart=\[\{matcher='compact\|resume'/)
+  assert.ok(
+    args.every((a) => !a.includes('run1')),
+    '参数里不带这一轮的临时目录，命令每轮都一样',
+  )
+  assert.ok(args[1].includes(`$${HOOK_SCRIPT_ENV}`))
+  assert.equal(env[HOOK_SCRIPT_ENV], `C:/tmp/run1/${HOOK_SCRIPT}`)
+  assert.equal(files.length, 1, '只写转发脚本，不写配置文件')
+  const again = hookInstall(spec, '/tmp/run2', ['turn.beforeEnd', 'context.restored'])
+  assert.deepEqual(again.args, args)
+})
+
+test('Codex 用 shell 跑 apply_patch 也算改文件，文件路径从补丁头里取', () => {
+  const spec = getCli('codex')!.hooks!
+  const patch =
+    "apply_patch <<'P'\n*** Begin Patch\n*** Add File: a.txt\n+x\n*** Update File: src/b.ts\n*** End Patch\nP"
+  const f = hookFacts(spec, { tool_name: 'Bash', tool_input: { command: patch } })
+  assert.equal(f.tool?.kind, 'edit')
+  assert.deepEqual(f.tool?.paths, ['a.txt', 'src/b.ts'])
+  assert.equal(hookFacts(spec, { tool_name: 'Bash', tool_input: { command: 'ls' } }).tool?.kind, 'shell')
+})
+
+test('Pi、Command Code 的工具前后和压缩之后写在扩展里：按这一轮的事件清单才问，CLI 定义声明支持，不写转发脚本', () => {
+  for (const id of ['pi', 'commandcode'])
+    assert.deepEqual(supportedEvents(getCli(id)!.hooks).sort(), [
+      'context.restored',
+      'tool.after',
+      'tool.before',
+      'turn.beforeEnd',
+    ])
+  assert.deepEqual(hookInstall(getCli('pi')!.hooks!, '/tmp/x', ['tool.before', 'context.restored']), {
+    args: [],
+    files: [],
+    env: {},
+  })
+  const pi = String(Object.values(getCli('pi')!.mcp!.files)[0])
+  for (const ev of ['tool_call', 'tool_result', 'session_compact']) assert.ok(pi.includes(`'${ev}'`), ev)
+  assert.match(pi, /\{hookEventsEnv\}/)
+  const mod = promptLangModSource()
+  for (const h of ['beforeToolCall', 'afterToolCall', 'compaction_done', 'onTurnStart']) assert.ok(mod.includes(h), h)
+  assert.ok(mod.includes(HOOK_EVENTS_ENV))
+  // Pi 的工具名和参数对照到面板的类别、路径
+  const f = hookFacts(getCli('pi')!.hooks!, { tool_name: 'edit', tool_input: { path: 'src/a.ts' } })
+  assert.deepEqual([f.tool?.kind, f.tool?.path], ['edit', 'src/a.ts'])
+  const c = hookFacts(getCli('commandcode')!.hooks!, { tool_name: 'write_file', tool_input: { file_path: 'b.md' } })
+  assert.deepEqual([c.tool?.kind, c.tool?.path], ['edit', 'b.md'])
 })

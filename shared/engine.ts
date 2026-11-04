@@ -94,7 +94,6 @@ import { changedFilesPart, sharedWrapPart, uePart } from './wrapup-prompt.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from './test-steps.ts'
-import { parseVerdict } from './verdict.ts'
 import {
   DISPATCH_ASK,
   ensureVerdict,
@@ -954,7 +953,6 @@ interface MainCtl {
 
 type FlowResult = { ok: true; output: string } | Fail
 
-export { parseVerdict }
 export { budgetLimit, overBudget }
 
 export function system(host: EngineHost, text: string, step = '', error = false, transient = false, kind?: AlertKind) {

@@ -38,8 +38,8 @@ import { scopeError } from '../shared/conv-mode.ts'
 import type { ScheduleDelivery, ScheduleEvent } from '../shared/schedule.ts'
 import { t } from '../shared/i18n.ts'
 import { createCollection } from './store.ts'
-import { getSettings } from './settings.ts'
-import { deliverWebhook, webhookPayload } from './webhook.ts'
+import { webhookPayload } from './webhook.ts'
+import { notifySchedule } from './hooks/notify.ts'
 import { log } from './log.ts'
 
 const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ error }, status)
@@ -50,15 +50,18 @@ const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ err
  */
 const SETTLE_WINDOW_MS = 2 * 86_400_000
 
-/** 默认的 Webhook 投递：现读设置里的地址，真的 POST 出去（单测注入假的，不走网络） */
+/**
+ * 默认的投递：跑「计划任务跑完」（schedule.finished）上的钩子，原来设置里的「计划 Webhook」已经迁成其中的一个 HTTP 钩子
+ * （ADR 0049 第三期，server/hooks/notify.ts）。单测注入假的，不走网络
+ */
 async function deliverDefault(
   event: ScheduleEvent,
   s: Schedule,
   at: string,
   projectName: string,
 ): Promise<ScheduleDelivery | null> {
-  const settings = await getSettings()
-  return deliverWebhook(settings.webhook, event, webhookPayload(s, event, at, projectName))
+  const { event: result, ...rest } = webhookPayload(s, event, at, projectName)
+  return notifySchedule(event, { result, ...rest })
 }
 
 /** 新建时的运行状态字段：还没跑过 */

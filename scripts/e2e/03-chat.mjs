@@ -246,6 +246,43 @@ await runShard('对话与续接', async (api) => {
   )
   await call('DELETE', `/tasks/${hk.id}`)
 
+  // Codex（ADR 0049 第三期）：钩子用 -c 传，开始前面板只把自己的转发脚本记成信任，信任过的钩子才会跑
+  step('Codex 的结束前钩子：先信任面板自己的钩子，同一轮里拦住自检一次，不另发提醒')
+  rmSync(`${log}.hook`, { force: true })
+  rmSync(`${log}.trust`, { force: true })
+  const cx = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'codex',
+    prompt: 'HOOK_MODE FAKE_EMPTY 看一下这个项目',
+  })
+  await waitDone(cx.id)
+  await sleep(3000)
+  const cxNow = await call('GET', `/tasks/${cx.id}`)
+  const trust = existsSync(`${log}.trust`)
+    ? readFileSync(`${log}.trust`, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
+    : []
+  assert.ok(
+    trust.some((x) => x.keyPath === 'hooks.state."/<session-flags>/config.toml:stop:0:0".trusted_hash'),
+    `信任了面板的 Stop 钩子：${JSON.stringify(trust)}`,
+  )
+  assert.equal(cxNow.messages.filter((m) => m.panel === 'hook').length, 1, '拦了一次')
+  assert.equal(cxNow.messages.filter((m) => m.panel === 'nudge').length, 0, '钩子拦过的不再另发提醒')
+  assert.match(cxNow.messages.filter((m) => m.role === 'agent').at(-1).text, /SELF_CHECK_GOT/, '同一轮里接着答了自检')
+  assert.deepEqual(
+    hookLog().map((h) => [h.active, h.block]),
+    [
+      [false, true],
+      [true, false],
+    ],
+  )
+  await call('DELETE', `/tasks/${cx.id}`)
+
   step('结束前钩子：动了手没列计划就收尾，同一轮里自检一次；确认完没再动手的不再问')
   rmSync(`${log}.hook`, { force: true })
   const hn = await call('POST', '/tasks', {
@@ -311,6 +348,44 @@ await runShard('对话与续接', async (api) => {
   assert.equal(bad.status, 400, '语法错误的脚本存不进去')
   await call('DELETE', `/hooks/${made.hook.id}`)
   await call('DELETE', `/tasks/${ut.id}`)
+
+  // 只通知的面板事件（ADR 0049 第三期）：对话完成一轮时，「对话完成」上的脚本钩子真的跑，输入里有对话和状态
+  step('面板事件：对话完成一轮时跑「对话完成」上的钩子')
+  const doneFile = `${log}.task-done`
+  rmSync(doneFile, { force: true })
+  const notifyHook = await call('POST', '/hooks', {
+    name: '完成通知',
+    event: 'task.done',
+    action: {
+      type: 'command',
+      script: `import { appendFileSync } from 'node:fs'\nlet raw = ''\nprocess.stdin.on('data', (c) => (raw += c)).on('end', () => appendFileSync(${JSON.stringify(doneFile)}, raw + '\\n'))`,
+    },
+    enabled: true,
+  })
+  const nt = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    prompt: '看一下 README',
+  })
+  await waitDone(nt.id)
+  let doneLines = []
+  for (let i = 0; i < 20 && !doneLines.length; i++) {
+    await sleep(500)
+    doneLines = existsSync(doneFile)
+      ? readFileSync(doneFile, 'utf8')
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l))
+      : []
+  }
+  assert.ok(
+    doneLines.some((x) => x.event === 'task.done' && x.task.id === nt.id),
+    `钩子收到了这个对话的完成事件：${JSON.stringify(doneLines)}`,
+  )
+  await call('DELETE', `/hooks/${notifyHook.hook.id}`)
+  await call('DELETE', `/tasks/${nt.id}`)
 
   // 回放真实 Claude Code 录下的输出（scripts/fake-cli/replay.mjs）：面板按原来的事件顺序解析出正文、工具调用和用量；
   // 录像只有一轮，面板再起一轮时假 CLI 报错，不会悄悄当成成功

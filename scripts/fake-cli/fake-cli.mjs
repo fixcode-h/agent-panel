@@ -212,6 +212,60 @@ function claudeHookLoop(reply) {
   }
   return last
 }
+/**
+ * Codex 的钩子（ADR 0049 第三期）：真的 Codex 从 -c hooks.<事件>=[…] 读钩子，按命令内容算的哈希要先记成信任
+ * （面板开始前用 hooks/list + config/batchWrite 做）才会跑，没信任的静静地不跑。假 CLI 照这个来：信任过的才跑，
+ * 信任记录写进 <FAKE_CLI_LOG>.trust，用例据此确认面板只信任了自己的转发脚本
+ */
+const codexTrusted = new Set()
+const snake = (s) => s.replace(/[A-Z]/g, (c, i) => (i ? '_' : '') + c.toLowerCase())
+function codexHookArgs() {
+  const out = []
+  for (let i = 0; i < args.length; i++) {
+    const m = args[i] === '-c' ? /^hooks\.(\w+)=/.exec(args[i + 1] ?? '') : null
+    if (m)
+      out.push({
+        native: m[1],
+        key: `/<session-flags>/config.toml:${snake(m[1])}:0:0`,
+        command: /command='([^']*)'/.exec(args[i + 1])?.[1] ?? '',
+      })
+  }
+  return out
+}
+function codexRunHook(native, payload) {
+  const h = codexHookArgs().find((x) => x.native === native)
+  if (!h || !h.command || !codexTrusted.has(h.key)) return null
+  const r = spawnSync(h.command, { shell: true, encoding: 'utf8', timeout: 15000, input: JSON.stringify(payload) })
+  try {
+    return JSON.parse(r.stdout || 'null')
+  } catch {
+    return null
+  }
+}
+/** Codex 的 Stop 钩子循环：拦住时像真的 Codex 一样发一条 hookPrompt 条目，按 reason 接着回一句，再问到放行为止 */
+function codexHookLoop(reply) {
+  let last = reply
+  for (let n = 0; n < 5; n++) {
+    const o = codexRunHook('Stop', {
+      hook_event_name: 'Stop',
+      stop_hook_active: n > 0,
+      last_assistant_message: 'FAKE_TEXT',
+    })
+    const reason = o?.decision === 'block' ? String(o.reason ?? '') : null
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(
+        process.env.FAKE_CLI_LOG + '.hook',
+        JSON.stringify({ active: n > 0, block: reason !== null, reason }) + '\n',
+      )
+    if (reason === null) return last
+    note('item/completed', { item: { id: `hp${n}`, type: 'hookPrompt', fragments: [{ text: reason }] } })
+    input = reason
+    last = turnReply()
+    note('item/started', { item: { id: `ah${n}`, type: 'agentMessage', text: '' } })
+    note('item/completed', { item: { id: `ah${n}`, type: 'agentMessage', text: last } })
+  }
+  return last
+}
 /** 面板推来的收尾提醒（server/tasks/drive.ts 的 nudgeWrapUp）里点名的子对话 */
 const WRAP_NUDGE = /【面板】这些子对话已经请你收尾/
 const nudgeIds = (text) =>
@@ -310,6 +364,29 @@ if (args[0] === 'app-server') {
       )
     }
     if (req.method === 'config/read') console.log(JSON.stringify({ id: req.id, result: { config: {} } }))
+    if (req.method === 'hooks/list') {
+      const hooks = codexHookArgs().map((h) => ({
+        key: h.key,
+        eventName: h.native,
+        command: h.command,
+        source: 'sessionFlags',
+        currentHash: `sha256:fake-${h.native}`,
+        trustStatus: codexTrusted.has(h.key) ? 'trusted' : 'untrusted',
+      }))
+      console.log(JSON.stringify({ id: req.id, result: { data: [{ cwd: req.params.cwds?.[0] ?? '', hooks }] } }))
+    }
+    if (req.method === 'config/batchWrite') {
+      for (const e of req.params.edits ?? []) {
+        const key = /^hooks\.state\.("[^"]+")\.trusted_hash$/.exec(e.keyPath)?.[1]
+        if (key) codexTrusted.add(JSON.parse(key))
+        if (process.env.FAKE_CLI_LOG)
+          appendFileSync(
+            process.env.FAKE_CLI_LOG + '.trust',
+            JSON.stringify({ keyPath: e.keyPath, value: e.value }) + '\n',
+          )
+      }
+      console.log(JSON.stringify({ id: req.id, result: { status: 'ok' } }))
+    }
     if (req.method === 'account/rateLimits/read') {
       const w = (usedPercent, windowDurationMins) => ({ usedPercent, windowDurationMins, resetsAt: 2000000000 })
       console.log(
@@ -1990,6 +2067,12 @@ if (kind === 'claude') {
     usage: { input_tokens: 30, cache_read_input_tokens: 25000, cache_creation_input_tokens: 500, output_tokens: 120 },
     modelUsage: { sonnet: { contextWindow: 500000 }, 'haiku-small': { contextWindow: 100000 } },
   })
+} else if (kind === 'codex' && emptyTurn) {
+  // 空回合：只回一句就准备结束（HOOK_MODE 时先跑 Stop 钩子）
+  note('item/started', { item: { id: 'a0', type: 'agentMessage', text: '' } })
+  note('item/completed', { item: { id: 'a0', type: 'agentMessage', text: reply } })
+  if (hookMode) codexHookLoop(reply)
+  codexDone('completed')
 } else if (kind === 'codex') {
   note('item/reasoning/summaryTextDelta', { itemId: 'r0', delta: '**规划**\n\n先看目录', summaryIndex: 0 })
   note('turn/plan/updated', {
@@ -2030,6 +2113,7 @@ if (kind === 'claude') {
   note('item/started', { item: { id: 'a0', type: 'agentMessage', text: '' } })
   for (const part of reply.match(/.{1,6}/g)) note('item/agentMessage/delta', { itemId: 'a0', delta: part })
   note('item/completed', { item: { id: 'a0', type: 'agentMessage', text: reply } })
+  if (hookMode) codexHookLoop(reply)
   // BIG_CONTEXT：上下文占用大的对话（交接摘要的叫醒判定要用）。
   // 面板交回子任务结果的那一轮接的是同一个会话，上下文不会比派子任务那轮小；这里也按大值报，
   // 免得「最后一轮只有一句交回说明」把上下文算小，叫醒已完成的子对话时误判成小上下文

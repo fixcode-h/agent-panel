@@ -126,7 +126,6 @@ export const EN_SCHEDULE: Record<string, string> = {
   '计划不能依赖自己，请去掉这一项': 'A plan cannot depend on itself; remove that entry',
   'Webhook 已投递于 {time}': 'Webhook delivered {time}',
   'Webhook 投递失败：{error}': 'Webhook delivery failed: {error}',
-  'Webhook 地址无效': 'The webhook URL is not valid',
   '地址返回 {status}': 'The endpoint returned {status}',
   投递失败: 'Delivery failed',
   '选中的上游计划已经不存在，请重新选择': 'The selected upstream plans no longer exist; pick them again',

@@ -1,6 +1,6 @@
 import { BUILTIN_HOOKS, HookDef, checkOutput, type HookDefInput } from '@shared/hook-defs'
 import { CLIS } from '@shared/clis'
-import { supportedEvents } from '@shared/hooks'
+import { hookEventsFor } from '@shared/hooks'
 import { t } from '@shared/i18n'
 
 /**
@@ -27,7 +27,7 @@ let hooks: HookDef[] = [
 function check(def: HookDefInput) {
   const p = HookDef.safeParse({ ...def, id: def.id || 'demo' })
   if (!p.success) return { errors: p.error.issues.map((i) => `${i.path.join('.')}：${i.message}`), warnings: [] }
-  const no = CLIS.filter((c) => !supportedEvents(c.hooks).includes(p.data.event)).map((c) => c.name)
+  const no = CLIS.filter((c) => !hookEventsFor(c.hooks).includes(p.data.event)).map((c) => c.name)
   return {
     errors: [] as string[],
     warnings: no.length ? [t('这些 CLI 不支持这个事件，在它们的对话里不会触发：{list}', { list: no.join('、') })] : [],
@@ -50,7 +50,7 @@ export function demoHooks(method: string, seg: string[], body: unknown) {
         on: builtins[h.id] ?? h.defaultOn,
       })),
       hooks,
-      support: CLIS.map((c) => ({ id: c.id, name: c.name, events: supportedEvents(c.hooks) })),
+      support: CLIS.map((c) => ({ id: c.id, name: c.name, events: hookEventsFor(c.hooks) })),
     }
   if (method === 'GET' && id === 'triggers')
     return [

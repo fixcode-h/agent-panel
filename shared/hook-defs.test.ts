@@ -56,6 +56,9 @@ test('范围和匹配：关着的、事件不对、范围外、工具类别 / �
   const sh = input({ tool: { kind: 'shell', name: 'Bash', input: { command: 'git push origin dev' } } })
   assert.ok(hookApplies(hook({ match: { tool: 'shell', path: '', command: 'git push' } }), sh))
   assert.ok(!hookApplies(hook({ match: { tool: 'shell', path: '', command: 'npm' } }), sh))
+  // 模型常在前面加 cd：按 &&、; 拆开逐段比
+  const cd = input({ tool: { kind: 'shell', name: 'bash', input: { command: 'cd /p && npm test 2>&1 | tail -20' } } })
+  assert.ok(hookApplies(hook({ match: { tool: 'shell', path: '', command: 'npm test' } }), cd))
 })
 
 test('新建的钩子默认关着；动作只能是脚本或 HTTP，请求头只引用环境变量', () => {

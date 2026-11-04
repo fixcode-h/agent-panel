@@ -355,5 +355,78 @@
       "完全访问": "Full access",
       "不使用沙箱、不确认，只在信任的项目里用": "No sandbox, no confirmations. Use only in trusted projects"
     }
+  },
+  "hooks": {
+    "trust": "rpc",
+    "beforeEnd": {
+      "via": "command",
+      "args": [
+        "-c",
+        "hooks.Stop=[{hooks=[{type='command',command='node \"$AGENT_PANEL_HOOK_SCRIPT\" turn.beforeEnd',commandWindows='node \"%AGENT_PANEL_HOOK_SCRIPT%\" turn.beforeEnd',timeout=70}]}]"
+      ],
+      "block": {
+        "decision": "block",
+        "reason": "{reason}"
+      },
+      "why": "Stop 钩子返回 decision=block 时 Codex 不结束这一轮，把 reason 作为一条 hookPrompt 交给模型接着做（0.166 app-server 实测）。钩子用 -c 传（来源记作 sessionFlags），不改用户的 hooks.json；命令里的转发脚本路径走环境变量，命令每轮不变，信任一次就够（见 trust）。commandWindows 用 cmd 的 %变量% 写法，Windows 上没实测"
+    },
+    "events": {
+      "tool.before": {
+        "args": [
+          "-c",
+          "hooks.PreToolUse=[{hooks=[{type='command',command='node \"$AGENT_PANEL_HOOK_SCRIPT\" tool.before',commandWindows='node \"%AGENT_PANEL_HOOK_SCRIPT%\" tool.before',timeout=70}]}]"
+        ],
+        "deny": {
+          "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "{reason}"
+          }
+        },
+        "context": {
+          "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "additionalContext": "{text}"
+          }
+        }
+      },
+      "tool.after": {
+        "args": [
+          "-c",
+          "hooks.PostToolUse=[{hooks=[{type='command',command='node \"$AGENT_PANEL_HOOK_SCRIPT\" tool.after',commandWindows='node \"%AGENT_PANEL_HOOK_SCRIPT%\" tool.after',timeout=70}]}]"
+        ],
+        "context": {
+          "hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": "{text}"
+          }
+        }
+      },
+      "context.restored": {
+        "args": [
+          "-c",
+          "hooks.SessionStart=[{matcher='compact|resume',hooks=[{type='command',command='node \"$AGENT_PANEL_HOOK_SCRIPT\" context.restored',commandWindows='node \"%AGENT_PANEL_HOOK_SCRIPT%\" context.restored',timeout=70}]}]"
+        ],
+        "context": {
+          "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "{text}"
+          }
+        },
+        "why": "压缩之后 Codex 会以 source=compact 再跑一次 SessionStart，补的说明会交给模型；PostCompact 的 additionalContext 不会（0.166 实测）"
+      }
+    },
+    "dropInput": ["last_assistant_message"],
+    "editCommands": ["apply_patch"],
+    "toolNames": {
+      "shell": ["Bash"],
+      "edit": ["apply_patch"],
+      "read": []
+    },
+    "toolFields": {
+      "name": "tool_name",
+      "input": "tool_input",
+      "path": ["file_path", "path"]
+    }
   }
 }

@@ -960,7 +960,7 @@ ${VCS_TEXT_BEFORE_SVN}
 3. 打开相关文件的上下文（调用方、被调用方、测试），逐项检查：正确性、回归、边界和错误处理、兼容性、测试覆盖、可读性；按项目自己的约定评审，不按个人偏好。
 4. 每条意见分级：🛑 必须改、💭 建议、💅 细节；每条写文件和行、问题、依据。没有证据的猜测不报。
 
-有 🛑 时最后一行写「验收结论：不通过」，否则写「验收结论：通过」。`,
+有 🛑 时调用 submit_verdict 交 fail（blockers 写失败项），否则交 pass。`,
     },
   ],
   blender: [
@@ -1083,7 +1083,7 @@ ${LEGACY_SCENE_TEXT}
 3. capture_views 出至少 6 个视角，并和参考图并排对照；有动画时加 --frames 多帧检查。
 4. 重新打开 .blend，平移再恢复每个 GRP_*，证明可以拆分。
 
-逐条给出结果和截图路径。有 FAIL 或明显偏离参考时最后一行写「验收结论：不通过」，否则写「验收结论：通过」。`,
+逐条给出结果和截图路径。有 FAIL 或明显偏离参考时调用 submit_verdict 交 fail（blockers 写失败项），否则交 pass。`,
     },
   ],
 }
@@ -1102,7 +1102,7 @@ export const LEGACY_AGENT_FIELDS: Record<string, { name: string; description: st
 2. 跑之前确认不会写入工作区或改远端；会改文件的命令（格式化写回、快照更新）不跑，除非要求里明确写了。
 3. 失败时只摘关键日志：失败的用例名、断言或报错原文、相关文件和行号；看一眼相关代码给出初步原因，但不动手修。
 
-结果写：跑了哪些命令、各自通过还是失败、耗时；失败的逐条列出。最后一行写「验证结论：通过」或「验证结论：不通过」。`,
+结果写：跑了哪些命令、各自通过还是失败、耗时；失败的逐条列出。最后调用 submit_verdict 交结论（verdict 写 pass 或 fail），不通过时 blockers 写失败项。`,
   },
   // 下面三个这次加了参数（ADR / Bug 触发条件、推送授权、性能排查），没改过的副本跟着升级
   docsync: {
@@ -1294,7 +1294,7 @@ const GENERAL_PREV: LegacyWorkflow = {
           tier: 'medium',
           params: { regress: true },
           instructions:
-            '验收上面「输入」里这次的改动：先查有没有破坏已有行为、相关模块 bugs.md 里的历史 Bug 有没有复发，再对照验收标准跑构建、测试和检查。逐条写证据，最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+            '验收上面「输入」里这次的改动：先查有没有破坏已有行为、相关模块 bugs.md 里的历史 Bug 有没有复发，再对照验收标准跑构建、测试和检查。逐条写证据，最后调用 submit_verdict 交结论（verdict 写 pass 或 fail），不通过时 blockers 写失败项。',
         },
       ],
       edges: [
@@ -1393,7 +1393,7 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
           agent: 'verifier',
           tier: 'medium',
           instructions:
-            '编译不通过就直接判不通过。编译通过后对照方案逐条检查；需要 Editor、PIE 或设备的验证登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+            '编译不通过就直接判不通过。编译通过后对照方案逐条检查；需要 Editor、PIE 或设备的验证登记为延期验证。最后调用 submit_verdict 交结论（verdict 写 pass 或 fail），不通过时 blockers 写失败项。',
         },
       ],
       edges: [
@@ -1599,7 +1599,7 @@ const GENERAL_BEFORE_REMOTE: LegacyWorkflow = {
           tier: 'medium',
           params: { scope: '本次改动', env: '自动', regress: true },
           instructions:
-            '验证上面「输入」里的改动：按工作流说明里的「## 项目测试步骤」逐条执行——先按每条步骤的「适用改动」比对本次改动清单，不匹配的跳过并写原因，标了 WSL 的真的在 WSL 里跑；逐条给证据。跑不了的登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+            '验证上面「输入」里的改动：按工作流说明里的「## 项目测试步骤」逐条执行——先按每条步骤的「适用改动」比对本次改动清单，不匹配的跳过并写原因，标了 WSL 的真的在 WSL 里跑；逐条给证据。跑不了的登记为延期验证。最后调用 submit_verdict 交结论（verdict 写 pass 或 fail），不通过时 blockers 写失败项。',
         },
       ],
       edges: chain(START, 'verify', END),
@@ -1700,7 +1700,7 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
           tier: 'medium',
           params: { scope: '本次改动', env: '自动', regress: true, serial: true },
           instructions:
-            '按工作流说明里的「## 项目测试步骤」执行：需要编译时先编译（Build.bat 带 -WaitMutex，同一时间只编译一次），只改资源、配置这类不碰 C++ 的改动不编译；有 Lua 改动时做语法检查，再按验收标准逐条检查。编译不通过就直接判不通过，把错误原文和文件、行列出来。需要 Editor、PIE 或设备的验证登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+            '按工作流说明里的「## 项目测试步骤」执行：需要编译时先编译（Build.bat 带 -WaitMutex，同一时间只编译一次），只改资源、配置这类不碰 C++ 的改动不编译；有 Lua 改动时做语法检查，再按验收标准逐条检查。编译不通过就直接判不通过，把错误原文和文件、行列出来。需要 Editor、PIE 或设备的验证登记为延期验证。最后调用 submit_verdict 交结论（verdict 写 pass 或 fail），不通过时 blockers 写失败项。',
         },
       ],
       edges: chain(START, 'verify', END),

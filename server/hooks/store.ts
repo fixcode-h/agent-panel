@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { DATA_DIR, writeJsonAtomic } from '../store.ts'
 import { HookDef, HooksData, type HookDefInput } from '../../shared/hook-defs.ts'
 import { log } from '../log.ts'
+import { t } from '../../shared/i18n.ts'
 
 /**
  * 钩子的存储（ADR 0049 第二期）：数据目录 config/hooks.json（内置钩子的开关 + 用户钩子的定义），
@@ -73,3 +74,23 @@ export async function orderHooks(ids: string[]) {
 
 /** 测试用：换数据目录后清掉缓存 */
 export const resetHooksCache = () => void (cache = undefined)
+
+/**
+ * 设置里原来的「计划 Webhook」（Settings.webhook）迁成 schedule.finished 上的一个 HTTP 钩子（ADR 0049 第三期）：
+ * 只迁一次（hooks.json 里记 migrated.webhook），开关照原样；没填地址的不建。设置里的旧字段留着不删，降级回老版本还能用
+ */
+export async function migrateWebhook(old: { enabled: boolean; url: string }) {
+  const cur = await readHooks()
+  if (cur.migrated.webhook) return
+  const url = old.url.trim()
+  if (/^https?:\/\//.test(url))
+    await putHook({
+      name: t('计划任务 Webhook'),
+      description: t('从设置里原来的「计划 Webhook」迁过来：计划任务跑完时把结果 POST 到这个地址'),
+      event: 'schedule.finished',
+      action: { type: 'http', url },
+      enabled: old.enabled,
+    })
+  const now = await readHooks()
+  await save({ ...now, migrated: { ...now.migrated, webhook: true } })
+}

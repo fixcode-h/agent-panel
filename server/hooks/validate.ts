@@ -1,4 +1,10 @@
-import { HookDef, type HookDefInput, type HookEventName, type HookInput } from '../../shared/hook-defs.ts'
+import {
+  HookDef,
+  type HookDefInput,
+  type HookEventName,
+  type HookInput,
+  isNotifyEvent,
+} from '../../shared/hook-defs.ts'
 import { CLIS } from '../../shared/clis.ts'
 import { supportedEvents } from '../../shared/hooks.ts'
 import { t } from '../../shared/i18n.ts'
@@ -43,6 +49,21 @@ export function sampleInput(event: HookEventName): HookInput {
         }
       : {}),
     plan: { done: 1, total: 3, current: '改代码' },
+    // 只通知的面板事件带的是对话状态、计划任务的结果（ADR 0049 第三期）
+    ...(isNotifyEvent(event) ? { notice: { status: 'running', step: '改代码' } } : {}),
+    ...(event === 'schedule.finished'
+      ? {
+          schedule: {
+            result: 'run',
+            scheduleId: 'sample',
+            name: '每日构建',
+            projectName: '示例项目',
+            at: new Date().toISOString(),
+            taskId: 'sample',
+            error: '',
+          },
+        }
+      : {}),
   }
 }
 

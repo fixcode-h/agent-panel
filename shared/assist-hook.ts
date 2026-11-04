@@ -63,17 +63,21 @@ export function buildHookPrompt(subject: Record<string, string>, messages: Assis
 - tool.before：工具执行前。输出 {"deny": true, "reason": "…"} 拒绝这次调用（reason 会交给模型），或 {"context": "…"} 补一段说明。
 - tool.after：工具返回后。输出 {"context": "…"} 补一段说明。
 - context.restored：压缩上下文、续接之后。输出 {"context": "…"} 补一段说明。
+- 下面几个由面板自己发、只通知（输出不看，每个 CLI 都一样）：task.done 对话完成一轮、task.failed 对话失败、task.waitingUser 停下来等用户回复或确认、
+  task.wrapRequested 子对话请求收尾、plan.stepDone 计划的某一步做完、schedule.finished 计划任务跑完（成功启动 / 启动失败 / 错过 / 上游没成功）。
+  适合做通知：用 HTTP 动作发到飞书、Slack 这类地址，或者脚本里调系统通知。
 
-各 CLI 支持的事件：
+各 CLI 能装的事件（只通知的那几个不用 CLI 支持）：
 ${support}`,
     `## 钩子收到的输入（stdin 一段 JSON）
 { "event": "tool.before", "task": { "id", "title", "parent" }, "project": { "id", "path" }, "agent": { "id", "name" }, "cli": "claude",
   "tool": { "kind": "shell | edit | read | any", "name": "Edit", "input": { 原样的工具参数，例如 file_path、command } },
   "plan": { "done": 1, "total": 3, "current": "正在做的那一步" } }
-tool 只在 tool.* 里有；plan 在有计划时才有。**输入里没有模型回复的文字**：不要、也没法按回复内容的关键字判断状态。`,
+tool 只在 tool.* 里有；plan 在有计划时才有。只通知的事件里有 "notice": { "status": "对话状态", "step": "做完的那一步或收尾说明" }；
+schedule.finished 里有 "schedule": { "result": "run | fail | miss | blocked", "scheduleId", "name", "projectName", "at", "taskId", "error" }。**输入里没有模型回复的文字**：不要、也没法按回复内容的关键字判断状态。`,
     `## 字段
 - name：2–10 个字；description：一句话说明它做什么。
-- event：上面四个之一。
+- event：上面的事件之一。
 - scope：{ "projects": [], "agents": [], "clis": [] }，都空表示全部。projects 写项目名，agents 写角色名（面板换成内部 id），clis 写 CLI 的 id。
   可选的角色：${roles}
   可选的项目：${projects}

@@ -222,6 +222,31 @@
     "beforeEnd": {
       "via": "extension",
       "why": "写在面板每轮用 --mod 加载的 mod 里：onStop 返回 { continue: true, reason } 时 Command Code 在同一次运行里接着做，reason 作为一条自动的 stop_hook 回合（官方 mods 文档；连续续跑上限 8 次）。不用 settings.json 的 shell 钩子：那要改用户或项目的配置文件"
+    },
+    "events": {
+      "tool.before": {
+        "deny": "{reason}",
+        "context": "{text}",
+        "why": "mod 的 beforeToolCall 返回 block=true 时这次调用不执行，additionalContext 作为结果交给模型（官方 mods 文档 hooks-and-events.md）"
+      },
+      "tool.after": {
+        "context": "{text}",
+        "why": "afterToolCall 的 additionalContext 接在结果后面"
+      },
+      "context.restored": {
+        "context": "{text}",
+        "why": "Command Code 压缩后只有 compaction_done 事件：mod 先问面板，下一回合开始（onTurnStart）时补一条不显示的消息"
+      }
+    },
+    "toolNames": {
+      "shell": ["shell_command"],
+      "edit": ["write_file", "edit_file"],
+      "read": ["read_file", "grep", "glob"]
+    },
+    "toolFields": {
+      "name": "tool_name",
+      "input": "tool_input",
+      "path": ["file_path", "path"]
     }
   },
   "auth": {

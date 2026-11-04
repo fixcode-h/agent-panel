@@ -187,8 +187,6 @@ function SettingsBody({
   const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
   const [longPaste, setLongPaste] = useState(String(initial.longPasteChars))
   const [notify, setNotifyOn] = useState(notifyEnabled)
-  const [webhookOn, setWebhookOn] = useState(initial.webhook.enabled)
-  const [webhookUrl, setWebhookUrl] = useState(initial.webhook.url)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
@@ -344,9 +342,6 @@ function SettingsBody({
   const largeValid = largeMB !== '' && Number.isInteger(largeN) && largeN >= 1 && largeN <= 50
   const pasteN = Number(longPaste)
   const pasteValid = longPaste !== '' && Number.isInteger(pasteN) && pasteN >= 0 && pasteN <= 1_000_000
-  const webhookUrlTrimmed = webhookUrl.trim()
-  // 只接受 http / https：填错时提示并沿用原来的地址，不把半截地址存进去（和超时那一项同一个口径）
-  const webhookValid = !webhookUrlTrimmed || /^https?:\/\//.test(webhookUrlTrimmed)
   const tier = (x: CliSettings['tiers']['high']) => ({ ...x, model: x.model.trim() })
   const value: Settings = {
     defaultsVersion: initial.defaultsVersion,
@@ -371,8 +366,8 @@ function SettingsBody({
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     childIdleAskMinutes: childAskValid ? childAskMin : initial.childIdleAskMinutes,
     nudgeMax: nudgeValid ? nudgeN : initial.nudgeMax,
-    // 只存设置，地址属外部配置：没填就存空字符串，不发请求；投递规则见 server/webhook.ts
-    webhook: { enabled: webhookOn, url: webhookValid ? webhookUrlTrimmed : initial.webhook.url },
+    // 计划 Webhook 已并入「钩子」（schedule.finished 上的 HTTP 钩子，ADR 0049 第三期）：旧字段原样留着，只用来迁移
+    webhook: initial.webhook,
     speech,
     readAloud,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
@@ -1178,31 +1173,16 @@ function SettingsBody({
                     </Row>
                     <Row
                       title={t('计划 Webhook')}
-                      desc={t('把计划的运行结果推送到你的地址')}
+                      desc={t('已并入「钩子」')}
                       hint={t(
-                        '计划成功启动、启动失败、错过或上游没成功时，向这个地址 POST 一份 JSON，里面有计划、项目、这一轮的时间和结果。投递失败只记在计划上、不影响计划执行，最多重试 {n} 次。',
+                        '在「钩子」里新建一个「计划任务跑完」事件的 HTTP 钩子：计划成功启动、启动失败、错过或上游没成功时 POST 结果，失败最多重试 {n} 次。以前填的地址已经自动迁过去了。',
                         { n: WEBHOOK_MAX_ATTEMPTS },
                       )}
                     >
-                      <Switch aria-label={t('启用 Webhook')} checked={webhookOn} onCheckedChange={setWebhookOn} />
+                      <Button size="sm" variant="secondary" onClick={() => onSection('hooks')}>
+                        {t('去钩子')}
+                      </Button>
                     </Row>
-                    {webhookOn && (
-                      <Row indent title={t('Webhook 地址')}>
-                        <div className="flex flex-col gap-1">
-                          <Input
-                            value={webhookUrl}
-                            placeholder="https://example.com/hook"
-                            onChange={(e) => setWebhookUrl(e.target.value)}
-                            aria-invalid={!webhookValid}
-                            aria-label={t('Webhook 地址')}
-                            className={cn(!webhookValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                          />
-                          {!webhookValid && (
-                            <span className="text-xs text-danger">{t('填 http 或 https 开头的地址')}</span>
-                          )}
-                        </div>
-                      </Row>
-                    )}
                     {!demo && (
                       <Row
                         title={t('访问令牌')}
