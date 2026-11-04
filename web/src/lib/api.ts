@@ -785,11 +785,12 @@ export const api = {
   /** 打开旧对话时在后台用 --resume 启动，先停在等下一句上 */
   prewarmTask: (id: string) => request<Task>(`/tasks/${id}/prewarm`, { method: 'POST' }),
   /** 撤回到某条消息：返回撤回后的任务和被撤回的那条内容 */
-  rewindTask: (id: string, messageId: string) =>
-    request<{ task: Task; text: string; attachments: Attachment[] }>(
-      `/tasks/${id}/rewind`,
-      json('POST', { messageId }),
-    ),
+  /** files：连同被撤掉那几轮改的文件一起撤；撤不干净时 ok 为 false，什么都没动 */
+  rewindTask: (id: string, messageId: string, files = false) =>
+    request<
+      | { ok: true; task: Task; text: string; attachments: Attachment[] }
+      | { ok: false; conflicts: { path: string; reason: string }[] }
+    >(`/tasks/${id}/rewind`, json('POST', { messageId, files })),
   forkTask: (id: string, messageId: string) => request<Task>(`/tasks/${id}/fork`, json('POST', { messageId })),
   compactTask: (id: string) => request<Task>(`/tasks/${id}/compact`, json('POST', {})),
   reviewTask: (id: string, base = '') => request<Task>(`/tasks/${id}/review`, json('POST', base ? { base } : {})),

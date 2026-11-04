@@ -302,12 +302,15 @@ export function ChatTurnInner({
   latest,
   fallback,
   command,
+  actions,
 }: {
   msgs: TaskMessage[]
   task?: Task
   teamNames: Set<string>
   live: boolean
   last: boolean
+  /** 回复下面那排按钮里追加的（最后一轮的「重新生成」） */
+  actions?: React.ReactNode
   /** 对话里的最新一轮（和父对话在不在跑无关）：运行区的子对话、后台命令按它列 */
   latest: boolean
   fallback?: ChatRun
@@ -332,6 +335,7 @@ export function ChatTurnInner({
       hoistSticky
       author={withCommand}
       command={withCommand ? undefined : command}
+      actions={actions}
     />
   )
 }

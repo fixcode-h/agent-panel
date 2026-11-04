@@ -585,8 +585,6 @@ export const EN_TASKS: Record<string, string> = {
   '思考中…': 'Thinking…',
   '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',
-  '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。':
-    "This message and everything after it will be removed, and its text goes back into the input so you can edit and resend. The agent continues from before this message. File changes aren't undone; undo them under Changes if needed.",
   '放回输入框，改了再发': 'Put back in the input box to edit and resend',
   上一张: 'Previous',
   下一张: 'Next',
@@ -1891,4 +1889,15 @@ export const EN_TASKS: Record<string, string> = {
   '这个文件没有文字差异（可能是二进制文件）。': 'This file has no text differences (it may be binary).',
   这个对话没有要撤销的改动: 'This conversation has no changes to revert',
   这个文件不在这个对话的改动里: "This file isn't among this conversation's changes",
+  '有 {n} 个文件撤不干净，什么都没动：{files}。这些地方之后又被改过，请在编辑器里手动处理。':
+    "{n} files can't be reverted cleanly, so nothing was changed: {files}. These places were changed again later; resolve them in your editor.",
+  '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；这期间建的计划作废、开的子对话停下并归档。':
+    'This message and everything after it will be removed, and its text goes back into the input box so you can edit and resend it. The agent continues from before this message; plans made since then are dropped, and sub-conversations started since then are stopped and archived.',
+  '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；这期间建的计划作废、开的子对话停下并归档。这几轮没有改过文件。':
+    'This message and everything after it will be removed, and its text goes back into the input box so you can edit and resend it. The agent continues from before this message; plans made since then are dropped, and sub-conversations started since then are stopped and archived. No files were changed in these turns.',
+  '同时撤销这几轮改的 {n} 个文件': 'Also revert the {n} files changed in these turns',
+  '文件恢复成这条消息之前的样子，这几轮新建的文件会删掉；之后你或别的对话在这些文件里的改动会保留。改到同一处时什么都不撤，会列出冲突。':
+    'Files go back to how they were before this message, and files created in these turns are deleted; later changes by you or other conversations in these files are kept. Where the same spot was changed, nothing is reverted and the conflicts are listed.',
+  '重新生成这条回复：撤回最后一条消息和这一轮改的文件，再原样发一次':
+    'Regenerate this reply: rewind the last message and the files changed in this turn, then send it again as is',
 }

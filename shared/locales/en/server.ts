@@ -524,7 +524,6 @@ export const EN_SERVER: Record<string, string> = {
   '自动压缩失败：{error}': 'Auto-compact failed: {error}',
   只有对话任务可以这样做: 'Only chat tasks can do this',
   找不到这条消息: "Can't find this message",
-  '第一条消息不能撤回，可以新建一个对话': "The first message can't be rewound. Start a new chat instead",
   '{title}（分叉）': '{title} (fork)',
   '还没有会话，不需要压缩': 'No session yet, nothing to compact',
   '项目不是 git 仓库，没法审查改动': "The project isn't a git repository, so changes can't be reviewed",

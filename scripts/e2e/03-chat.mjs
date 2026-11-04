@@ -1099,6 +1099,39 @@ ${prompt}
     assert.ok(c.input.includes('问 codex'), '换了目录接不上原会话：把留下的对话带过去')
     step('分叉的对话默认开自己的独立分支，换了目录时把之前的对话带过去')
 
+    // 撤回连同文件一起撤（设计报告 Agent P0-2）：独立分支里的新对话第一轮写了 claude-output.txt，
+    // 撤回第一条（以前不让撤）并撤销文件：对话清空、文件没了，下一轮从头开会话
+    let rv = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'claude',
+      prompt: '写个文件',
+      isolate: true,
+    })
+    rv = await waitDone(rv.id)
+    const out = path.join(rv.worktree.path, 'claude-output.txt')
+    assert.ok(existsSync(out), '第一轮在分支目录里写了文件')
+    rv = await waitFor(
+      async () => {
+        const x = await call('GET', `/tasks/${rv.id}`)
+        return x.messages.some((m) => m.turnChanges?.files.length) ? x : null
+      },
+      { timeout: 10000, label: '第一轮记下了改动' },
+    )
+    const back = await call('POST', `/tasks/${rv.id}/rewind`, {
+      messageId: rv.messages.find((m) => m.role === 'user').id,
+      files: true,
+    })
+    assert.equal(back.ok, true)
+    assert.equal(back.text, '写个文件', '撤回的内容交回去方便改')
+    assert.equal(back.task.messages.length, 0, '第一条也能撤回：对话清空')
+    assert.ok(!existsSync(out), '这一轮新建的文件跟着撤掉')
+    await call('POST', `/tasks/${rv.id}/messages`, { text: '重新来' })
+    await waitDone(rv.id)
+    assert.ok(!calls().at(-1).args.includes('--resume'), '一轮都没留：从头开会话')
+    step('撤回到第一条并撤销文件：对话清空、这几轮改的文件恢复、下一轮从头开会话')
+
     // ---- 自动压缩阈值：Claude Code 用环境变量，Codex 换算成 token 数 ----
     await call('PUT', '/settings', {
       ...settings,

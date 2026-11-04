@@ -347,27 +347,75 @@ export function registerActionRoutes(s: TasksScope) {
     return { through: th, session: th.session, latest }
   }
 
-  // 撤回到某条消息：这条和之后的对话都去掉，下一轮从它之前接着聊（文件改动不会撤销）；返回被撤回的那条，方便改了再发
+  /**
+   * 撤回到某条消息：这条和之后的对话都去掉，下一轮从它之前接着聊；返回被撤回的那条，方便改了再发。
+   * files：连同被撤掉那几轮改的文件一起撤（每一轮记下的 turnChanges，和「撤销整个对话」同一套 undoSpans）——
+   * 以前只截对话，代码还停在撤掉的那几轮之后，用户要再去「更改」里一个个撤（设计报告的 Agent P0-2）。
+   * 撤不干净（之后用户或别的对话又改过同一处）时什么都不动，把冲突交回页面。
+   * 被撤掉那几轮里建的计划作废、开的子对话停下并归档：它们是为被撤掉的要求做的，留着会接着往下推。
+   * 第一条也能撤：等于清空对话重新开始（会话从头开）
+   */
   s.routes.post('/:id/rewind', async (c) => {
     const task = await idleTask(c)
     if (task instanceof Response) return task
-    const { messageId } = (await c.req.json().catch(() => ({}))) as { messageId?: string }
-    const i = task.messages.findIndex((m) => m.id === messageId && m.role === 'user' && !m.step)
+    const body = (await c.req.json().catch(() => ({}))) as { messageId?: string; files?: boolean }
+    const i = task.messages.findIndex((m) => m.id === body.messageId && m.role === 'user' && !m.step)
     if (i < 0) return s.bad(c, t('找不到这条消息'))
-    if (!task.messages.slice(0, i).some((m) => m.role === 'user'))
-      return s.bad(c, t('第一条消息不能撤回，可以新建一个对话'))
     const removed = task.messages[i]
-    const updated = await s.store.update(task.id, {
+    const cut = convChanges(task.messages.slice(i))
+    let reverted: string[] = []
+    if (body.files && cut.files.length) {
+      const dir = await s.taskDir(task)
+      if (!dir) return s.bad(c, t('任务没有工作目录'), 404)
+      let r: Awaited<ReturnType<typeof undoSpans>>
+      try {
+        r = await undoSpans(
+          dir,
+          cut.spans,
+          cut.files.map((f) => f.path),
+        )
+      } catch (e) {
+        return s.bad(c, t('撤销失败：{error}', { error: (e as Error).message }))
+      }
+      if (!r.ok) return c.json({ ok: false, conflicts: r.conflicts })
+      reverted = r.files
+    }
+    const kids = await dropLaterChildren(task.id, removed.at)
+    const kept = task.messages.slice(0, i)
+    const dir = reverted.length ? await s.taskDir(task) : ''
+    const base = {
       ...task,
-      messages: task.messages.slice(0, i),
+      messages: kept,
+      // 第一条也能撤：前面没有用户消息时 turnBefore 一轮都不留（through 为空），下一轮开新会话
       rewind: { ...turnBefore(task, i), cut: removed.turn ?? null },
-      status: 'done',
+      status: 'done' as const,
       todos: [],
+      plans: task.plans.filter((p) => p.createdAt < removed.at),
       // 推送授权是在被撤掉的那段对话里点的：跟着撤掉，下一轮需要推送时重新问
       ...(pushAnswerCut(task, removed.at) ? NO_PUSH_ANSWER : {}),
+    }
+    const changes = dir ? ((await taskChanges(dir, base).catch(() => null)) ?? base.changes) : base.changes
+    const updated = await s.store.update(task.id, { ...base, changes })
+    taskLog(task.id, '撤回到一条消息', {
+      files: reverted.length || undefined,
+      children: kids || undefined,
     })
-    return c.json({ task: updated, text: removed.text, attachments: removed.attachments ?? [] })
+    return c.json({ ok: true, task: updated, text: removed.text, attachments: removed.attachments ?? [] })
   })
+
+  /** 撤回时：这条消息之后开的子对话停下并归档，返回停了几个 */
+  async function dropLaterChildren(id: string, at: string) {
+    const kids = (await s.store.list()).filter((x) => x.parentTaskId === id && x.createdAt >= at && !x.archived)
+    for (const k of kids) {
+      await s.stopTree(k.id, 'parent').catch(() => {})
+      const cur = s.live.get(k.id)?.task ?? (await s.store.get(k.id))
+      if (!cur) continue
+      cur.archived = true
+      cur.updatedAt = new Date().toISOString()
+      await s.store.update(k.id, cur)
+    }
+    return kids.length
+  }
 
   /**
    * 分叉出来的顶层对话在哪个目录做：以前一律回到项目目录，和原对话（或同项目别的对话）改同一个目录会互相覆盖。

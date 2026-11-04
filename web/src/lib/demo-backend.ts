@@ -3296,12 +3296,12 @@ function tasksRoute(
     const i = task.messages.findIndex((m) => m.id === messageId && m.role === 'user' && !m.step)
     if (i < 0) fail('找不到这条消息')
     if (sub === 'rewind') {
-      if (!task.messages.slice(0, i).some((m) => m.role === 'user')) fail('第一条消息不能撤回，可以新建一个对话')
       const removed = task.messages[i]
+      task.plans = task.plans.filter((p) => p.createdAt < removed.at) // 和正式版一样：撤掉那几轮建的计划作废
       task.messages = task.messages.slice(0, i)
       task.status = 'done'
       persist()
-      return { task, text: removed.text, attachments: removed.attachments ?? [] }
+      return { ok: true, task, text: removed.text, attachments: removed.attachments ?? [] }
     }
     const next = task.messages.findIndex((m, k) => k > i && m.role === 'user' && !m.step)
     const now = new Date().toISOString()
