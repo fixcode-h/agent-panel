@@ -9,9 +9,36 @@ import { t } from './i18n.ts'
  * 硬规则：输入里没有模型回复的文字，钩子也就没法按文字判断状态（AGENTS.md）。
  */
 
-/** 面板事件。turn.beforeEnd 模型准备结束这一轮；tool.before / tool.after 工具执行前后；context.restored 压缩上下文、续接之后 */
-export const HookEventName = z.enum(['turn.beforeEnd', 'tool.before', 'tool.after', 'context.restored'])
+/**
+ * 面板事件。前四个是 CLI 的钩子，能影响这一轮：turn.beforeEnd 模型准备结束这一轮；tool.before / tool.after 工具执行前后；
+ * context.restored 压缩上下文、续接之后。后面几个（第三期）由面板自己发，只通知、不能改变什么：
+ * task.done 对话完成一轮、task.failed 对话失败、task.waitingUser 等你回复或确认、task.wrapRequested 子对话请求收尾、
+ * plan.stepDone 计划的某一步做完、schedule.finished 计划任务跑到终态（原来的「计划 Webhook」）
+ */
+export const HookEventName = z.enum([
+  'turn.beforeEnd',
+  'tool.before',
+  'tool.after',
+  'context.restored',
+  'task.done',
+  'task.failed',
+  'task.waitingUser',
+  'task.wrapRequested',
+  'plan.stepDone',
+  'schedule.finished',
+])
 export type HookEventName = z.infer<typeof HookEventName>
+
+/** 只通知的面板事件：由面板自己发，钩子的输出不看，CLI 也不用支持 */
+export const NOTIFY_EVENTS: readonly HookEventName[] = [
+  'task.done',
+  'task.failed',
+  'task.waitingUser',
+  'task.wrapRequested',
+  'plan.stepDone',
+  'schedule.finished',
+]
+export const isNotifyEvent = (e: HookEventName) => NOTIFY_EVENTS.includes(e)
 
 /** 工具的类别：各家工具名在 CLI 定义的 hooks.toolNames 里对照到这几类，用户钩子按类别匹配才能跨 CLI 通用 */
 export const ToolKind = z.enum(['shell', 'edit', 'read', 'any'])
@@ -119,6 +146,8 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
 export const HooksData = z.object({
   builtins: z.record(z.string(), z.boolean()).default({}),
   hooks: z.array(HookDef).default([]),
+  /** 做过的一次性迁移：webhook 是设置里原来的「计划 Webhook」迁成钩子 */
+  migrated: z.object({ webhook: z.boolean().default(false) }).default({ webhook: false }),
 })
 export type HooksData = z.infer<typeof HooksData>
 
@@ -133,6 +162,13 @@ export interface HookInput {
   cli: string
   tool?: { kind: ToolKind; name: string; input: Record<string, unknown> }
   plan?: { done: number; total: number; current: string }
+  /** 只通知的对话事件（task.* / plan.stepDone）：对话现在的状态，做完的那一步（plan.stepDone）或收尾说明（task.wrapRequested） */
+  notice?: { status: string; step: string }
+  /**
+   * schedule.finished：计划这一轮的结果。result 是 run 成功启动 / fail 启动失败 / miss 错过 / blocked 上游没成功，
+   * 字段和原来的计划 Webhook 载荷一样（见 server/webhook.ts）
+   */
+  schedule?: Record<string, string>
 }
 
 /** 钩子的输出：block 只对 turn.beforeEnd，deny 只对 tool.before，context 对其余三种 */
@@ -145,16 +181,17 @@ export interface HookOutput {
 
 /** 按事件检查输出：多出事件不支持的字段算格式错，返回错误说明；空对象（不表态）合法 */
 export function checkOutput(event: HookEventName, raw: unknown): { out: HookOutput } | { error: string } {
-  if (raw === undefined || raw === null || raw === '') return { out: {} }
+  // 只通知的事件不看输出：HTTP 钩子收到的多半是对方服务的回执，不当成格式错
+  if (raw === undefined || raw === null || raw === '' || isNotifyEvent(event)) return { out: {} }
   if (typeof raw !== 'object' || Array.isArray(raw)) return { error: t('输出要是一个 JSON 对象') }
   const o = raw as Record<string, unknown>
-  const allowed: Record<HookEventName, string[]> = {
+  const allowed: Partial<Record<HookEventName, string[]>> = {
     'turn.beforeEnd': ['block', 'reason'],
     'tool.before': ['deny', 'reason', 'context'],
     'tool.after': ['context'],
     'context.restored': ['context'],
   }
-  const extra = Object.keys(o).filter((k) => !allowed[event].includes(k))
+  const extra = Object.keys(o).filter((k) => !(allowed[event] ?? []).includes(k))
   if (extra.length) return { error: t('{event} 不支持这些字段：{list}', { event, list: extra.join('、') }) }
   for (const k of ['reason', 'context'] as const)
     if (o[k] !== undefined && typeof o[k] !== 'string') return { error: t('{key} 要是字符串', { key: k }) }

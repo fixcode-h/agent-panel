@@ -140,6 +140,23 @@ const MSG_GAP = 400
  * 任务记录：任务本身全部读进内存，对话消息按需读。写入按任务串行化、原子写；
  * 消息没变时只重写小的任务文件。旧格式第一次读时转换，原文件挪到缓存目录备份。
  */
+/**
+ * 任务每次落盘时前后两份状态的监听（ADR 0049 第三期：面板事件 task.* 的钩子从这里比出来，见 server/hooks/notify.ts）。
+ * 只给不改数据的旁观者用：回调同步调用、不等它，回调里出错也不影响落盘
+ */
+type TaskChange = (old: Task | null, next: Task) => void
+const changeListeners = new Set<TaskChange>()
+export function onTaskChange(cb: TaskChange) {
+  changeListeners.add(cb)
+  return () => changeListeners.delete(cb)
+}
+function changed(old: Task | null, next: Task) {
+  for (const cb of changeListeners)
+    try {
+      cb(old, next)
+    } catch {}
+}
+
 export function createTaskStore() {
   let metas: Map<string, Task> | null = null
   let loading: Promise<Map<string, Task>> | null = null
@@ -632,6 +649,7 @@ export function createTaskStore() {
       ;(await all()).set(id, head(item))
       remember(item)
       await persist(item, opts)
+      changed(old, item)
       return item
     },
     /**
@@ -656,6 +674,7 @@ export function createTaskStore() {
       const hit = full.get(id)
       if (hit) Object.assign(hit, patch, { updatedAt })
       await queueWrite(item, writeFull)
+      changed(old, item)
       return item
     },
     async remove(id: string) {

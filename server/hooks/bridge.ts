@@ -9,7 +9,7 @@ import {
   type HookFacts,
   type HooksSpec,
 } from '../../shared/hooks.ts'
-import { HookEventName } from '../../shared/hook-defs.ts'
+import { HookEventName, isNotifyEvent } from '../../shared/hook-defs.ts'
 import { log } from '../log.ts'
 
 /** 这一轮挂在面板工具通道上的钩子：CLI 定义里的装法（输出模板），以及按事件回答的两个函数 */
@@ -38,10 +38,11 @@ export async function answerHook(h: BridgeHook, event: string, native: unknown):
       const tpl = h.spec.beforeEnd?.via === 'command' ? h.spec.beforeEnd.block : undefined
       return { block: true, reason: d.reason, ...(tpl ? { output: fillTpl(tpl, { reason: d.reason }) } : {}) }
     }
-    if (!h.on) return {}
+    // 只通知的面板事件由面板自己发，不从 CLI 进来
+    if (!h.on || isNotifyEvent(ev.data)) return {}
     const facts = hookFacts(h.spec, dropped(native, h.spec.dropInput))
     const a = await h.on(ev.data, facts)
-    const es = h.spec.events[ev.data]
+    const es = h.spec.events[ev.data as keyof HooksSpec['events']]
     if (a.deny && a.reason && ev.data === 'tool.before')
       return { deny: true, reason: a.reason, ...(es?.deny ? { output: fillTpl(es.deny, { reason: a.reason }) } : {}) }
     if (a.context && es?.context) return { context: a.context, output: fillTpl(es.context, { text: a.context }) }

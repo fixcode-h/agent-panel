@@ -1,11 +1,5 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_SETTINGS: Record<string, string> = {
-  // Webhook 通知
-  '计划成功启动、启动失败、错过或上游没成功时，向这个地址 POST 一份 JSON，里面有计划、项目、这一轮的时间和结果。投递失败只记在计划上、不影响计划执行，最多重试 {n} 次。':
-    'When a plan starts, fails to start, is missed, or is blocked by an upstream plan, the panel POSTs a JSON payload to this URL with the plan, project, the time and result of that run. Delivery failures are recorded on the plan only, never block the plan, and are retried at most {n} times.',
-  'Webhook 地址': 'Webhook URL',
-  '填 http 或 https 开头的地址': 'Use a URL starting with http or https',
-  '启用 Webhook': 'Enable webhook',
   // 项目设置：测试步骤和 Agent 参数
   测试步骤: 'Test steps',
   停用: 'Disabled',
@@ -1813,7 +1807,6 @@ export const EN_SETTINGS: Record<string, string> = {
   页面在后台时弹出系统通知: 'Shows a system notification when the page is in the background',
   '需要浏览器允许通知。': 'The browser must allow notifications.',
   '计划 Webhook': 'Schedule webhook',
-  把计划的运行结果推送到你的地址: 'Pushes schedule results to your URL',
   只允许带令牌打开过的浏览器访问: 'Only browsers that opened the tokenized URL can connect',
   '输入框多一个「抓取界面元素」按钮': 'Adds a “Pick UI element” button to the input box',
   '也可以按快捷键开启抓取：抓取期间左键、右键照常可用，用设置里的鼠标键（默认中键）点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出。':

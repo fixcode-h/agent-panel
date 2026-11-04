@@ -349,6 +349,44 @@ await runShard('对话与续接', async (api) => {
   await call('DELETE', `/hooks/${made.hook.id}`)
   await call('DELETE', `/tasks/${ut.id}`)
 
+  // 只通知的面板事件（ADR 0049 第三期）：对话完成一轮时，「对话完成」上的脚本钩子真的跑，输入里有对话和状态
+  step('面板事件：对话完成一轮时跑「对话完成」上的钩子')
+  const doneFile = `${log}.task-done`
+  rmSync(doneFile, { force: true })
+  const notifyHook = await call('POST', '/hooks', {
+    name: '完成通知',
+    event: 'task.done',
+    action: {
+      type: 'command',
+      script: `import { appendFileSync } from 'node:fs'\nlet raw = ''\nprocess.stdin.on('data', (c) => (raw += c)).on('end', () => appendFileSync(${JSON.stringify(doneFile)}, raw + '\\n'))`,
+    },
+    enabled: true,
+  })
+  const nt = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    prompt: '看一下 README',
+  })
+  await waitDone(nt.id)
+  let doneLines = []
+  for (let i = 0; i < 20 && !doneLines.length; i++) {
+    await sleep(500)
+    doneLines = existsSync(doneFile)
+      ? readFileSync(doneFile, 'utf8')
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l))
+      : []
+  }
+  assert.ok(
+    doneLines.some((x) => x.event === 'task.done' && x.task.id === nt.id),
+    `钩子收到了这个对话的完成事件：${JSON.stringify(doneLines)}`,
+  )
+  await call('DELETE', `/hooks/${notifyHook.hook.id}`)
+  await call('DELETE', `/tasks/${nt.id}`)
+
   // 回放真实 Claude Code 录下的输出（scripts/fake-cli/replay.mjs）：面板按原来的事件顺序解析出正文、工具调用和用量；
   // 录像只有一轮，面板再起一轮时假 CLI 报错，不会悄悄当成成功
   step('回放录下的真实 CLI 输出：正文、工具调用、用量照常解析；录像用完再跑报错')

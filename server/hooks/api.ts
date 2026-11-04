@@ -1,17 +1,36 @@
 import { Hono } from 'hono'
 import { BUILTIN_HOOKS, builtinOn, HookEventName, type HookDefInput } from '../../shared/hook-defs.ts'
 import { CLIS } from '../../shared/clis.ts'
-import { supportedEvents } from '../../shared/hooks.ts'
+import { hookEventsFor } from '../../shared/hooks.ts'
 import { t } from '../../shared/i18n.ts'
-import { deleteHook, orderHooks, putHook, readHooks, setBuiltin } from './store.ts'
+import { deleteHook, migrateWebhook, orderHooks, putHook, readHooks, setBuiltin } from './store.ts'
+import { watchTaskEvents } from './notify.ts'
+import { onTaskChange } from '../task-store.ts'
+import { getSettings } from '../settings.ts'
+import { log } from '../log.ts'
 import { recentTriggers, runHook } from './run.ts'
 import { checkHook, sampleInput } from './validate.ts'
 
 /**
  * 设置页「钩子」的接口（ADR 0049 第二期）：列表、内置钩子开关、用户钩子增删改排序、校验、试跑、最近触发。
- * 保存前一律过 checkHook：语法、密钥、字段搭配不对就拒绝（AI 生成的提案也走这里）
+ * 保存前一律过 checkHook：语法、密钥、字段搭配不对就拒绝（AI 生成的提案也走这里）。
+ * 给了 deps 时顺带接上只通知的面板事件（task.*，见 notify.ts）、把设置里原来的「计划 Webhook」迁成钩子
  */
-export function hooksApi() {
+export function hooksApi(deps?: {
+  projects: { get: (id: string) => Promise<{ path: string } | null> }
+  agents: { list: () => Promise<{ id: string; name: string }[]> }
+}) {
+  if (deps) {
+    onTaskChange(
+      watchTaskEvents({
+        projectPath: async (id) => (await deps.projects.get(id))?.path ?? '',
+        agentName: async (id) => (await deps.agents.list()).find((a) => a.id === id)?.name ?? '',
+      }),
+    )
+    void getSettings()
+      .then((s) => migrateWebhook(s.webhook))
+      .catch((e: Error) => log.warn('hooks', '计划 Webhook 没能迁成钩子', { error: e.message }))
+  }
   return new Hono()
     .get('/', async (c) => {
       const data = await readHooks()
@@ -26,7 +45,8 @@ export function hooksApi() {
         })),
         hooks: data.hooks,
         // 每个 CLI 支持哪些事件：界面上把不支持的灰掉、写明原因
-        support: CLIS.map((x) => ({ id: x.id, name: x.name, events: supportedEvents(x.hooks) })),
+        // 只通知的面板事件由面板自己发，每个 CLI 都算支持
+        support: CLIS.map((x) => ({ id: x.id, name: x.name, events: hookEventsFor(x.hooks) })),
       })
     })
     .put('/builtins/:id', async (c) => {

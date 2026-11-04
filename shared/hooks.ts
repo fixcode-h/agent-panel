@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { TaskMessage } from './schema.ts'
-import type { HookEventName, ToolKind } from './hook-defs.ts'
+import { NOTIFY_EVENTS, type HookEventName, type ToolKind } from './hook-defs.ts'
 
 /**
  * 钩子（ADR 0049）：模型准备结束这一轮时（turn.beforeEnd），CLI 先问面板；计划没做完、也没在等任何结果时
@@ -147,6 +147,12 @@ export function fillTpl(tpl: unknown, vars: { reason?: string; text?: string }):
 
 /** 转发脚本在这一轮临时目录里的文件名 */
 export const HOOK_SCRIPT = 'agent-panel-hook.mjs'
+
+/** 用户钩子在这个 CLI 的对话里能用哪些事件：CLI 能装的，加上面板自己发、只通知的那几个（对哪个 CLI 都一样） */
+export const hookEventsFor = (spec: HooksSpec | undefined): HookEventName[] => [
+  ...supportedEvents(spec),
+  ...NOTIFY_EVENTS,
+]
 
 /** 这个 CLI（按定义）能装哪些事件：结束前看 beforeEnd，其余看 events */
 export function supportedEvents(spec: HooksSpec | undefined): HookEventName[] {

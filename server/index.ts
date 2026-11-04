@@ -489,7 +489,7 @@ app.post('/clis/specs/reload', async (c) => {
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 app.route('/accounts', accountsApi())
 app.route('/integrations', integrationsApi())
-app.route('/hooks', hooksApi())
+app.route('/hooks', hooksApi({ projects, agents }))
 app.route('/library', libraryApi())
 app.route('/mcp-tools', mcpApi())
 // 项目设置里的 MCP：项目目录里识别到的配置，项目目录按 projectId 现取

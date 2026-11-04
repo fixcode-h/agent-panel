@@ -121,4 +121,24 @@ export const EN_HOOKS: Record<string, string> = {
   '输出不是 JSON：{text}': "Output isn't JSON: {text}",
   '面板的钩子没能在 Codex 里生效（{error}），这一轮改用一轮结束后的提醒':
     "The panel's hooks couldn't be enabled in Codex ({error}); this turn falls back to the end-of-turn reminder",
+  对话完成: 'Conversation done',
+  对话失败: 'Conversation failed',
+  计划完成一步: 'Plan step done',
+  计划任务跑完: 'Scheduled task finished',
+  '对话完成一轮时；只通知，输出不看': 'When a conversation finishes a turn; notify only, output is ignored',
+  '对话执行失败时；只通知，输出不看': 'When a conversation fails; notify only, output is ignored',
+  '对话停下来等你回复或确认时；只通知，输出不看':
+    'When a conversation stops to wait for your reply or approval; notify only, output is ignored',
+  '子对话请父对话收尾时；只通知，输出不看':
+    'When a child conversation asks its parent to wrap up; notify only, output is ignored',
+  '计划里的某一步做完时；只通知，输出不看': 'When a plan step is done; notify only, output is ignored',
+  '计划任务成功启动、启动失败、错过或上游没成功时；只通知，HTTP 钩子失败会重试，结果记在计划上':
+    'When a scheduled task starts, fails to start, is missed, or is blocked upstream; notify only. HTTP hooks are retried on failure and the result is recorded on the schedule',
+  '已并入「钩子」': 'Moved into Hooks',
+  '在「钩子」里新建一个「计划任务跑完」事件的 HTTP 钩子：计划成功启动、启动失败、错过或上游没成功时 POST 结果，失败最多重试 {n} 次。以前填的地址已经自动迁过去了。':
+    'Create an HTTP hook on the "Scheduled task finished" event in Hooks: the result is POSTed when a schedule starts, fails to start, is missed, or is blocked upstream, retried at most {n} times. A URL you set before has been moved there automatically.',
+  去钩子: 'Open Hooks',
+  '计划任务 Webhook': 'Scheduled task webhook',
+  '从设置里原来的「计划 Webhook」迁过来：计划任务跑完时把结果 POST 到这个地址':
+    'Moved from the old "Schedule webhook" setting: POSTs the result to this URL when a scheduled task finishes',
 }
