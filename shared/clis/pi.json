@@ -988,7 +988,14 @@
       "长时间提示词缓存": "Long prompt caching",
       "支持的服务商把提示词缓存保留更久（PI_CACHE_RETENTION=long），长任务里两轮之间隔得久也能命中缓存": "Providers that support it keep the prompt cache longer (PI_CACHE_RETENTION=long), so long tasks still hit the cache after a long gap between turns",
       "关闭匿名统计": "Turn off anonymous telemetry",
-      "不发 Pi 的安装、更新匿名统计，请求里也不带来源标记（PI_TELEMETRY=0）；关着时跟随 Pi 自己的设置": "Stops Pi's anonymous install and update reports and its provider attribution headers (PI_TELEMETRY=0). When off, Pi's own setting applies"
+      "不发 Pi 的安装、更新匿名统计，请求里也不带来源标记（PI_TELEMETRY=0）；关着时跟随 Pi 自己的设置": "Stops Pi's anonymous install and update reports and its provider attribution headers (PI_TELEMETRY=0). When off, Pi's own setting applies",
+      "扩展": "Extension",
+      "主题": "Theme",
+      "提示词": "Prompt",
+      "Pi 已经内置 MCP，面板的「MCP 工具」页也能直接配，不用再装": "Pi already has MCP built in, and the panel's MCP tools page can configure it directly; no need to install this",
+      "和面板的子对话、子任务重复：面板派活、合并、评审都靠自己的子对话": "Overlaps with the panel's sub-conversations and subtasks: the panel delegates, merges and reviews with its own sub-conversations",
+      "和面板的提问重复：面板已经给 Pi 提供了 ask_user": "Overlaps with the panel's questions: the panel already gives Pi ask_user",
+      "和面板的执行计划重复：面板用 set_plan 显示和推进计划": "Overlaps with the panel's plan: the panel shows and drives plans with set_plan"
     }
   },
   "mcpStore": {
@@ -1038,6 +1045,44 @@
         "desc": "用语言服务器（LSP）检查改过的文件、给出报错位置，能自动修的直接修",
         "note": "要先把对应语言的语言服务器装到 PATH（例如 typescript-language-server、pyright），它不会自己下载",
         "url": "https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-lsp"
+      }
+    ],
+    "npmRoot": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/npm/node_modules",
+    "gallery": {
+      "npmKeyword": "pi-package",
+      "sourcePrefix": "npm:",
+      "pageUrl": "https://pi.dev/packages",
+      "types": {
+        "pi-extension": "扩展",
+        "pi-skill": "Skill",
+        "pi-theme": "主题",
+        "pi-prompt": "提示词"
+      }
+    },
+    "overlaps": [
+      {
+        "match": "pi-mcp-adapter",
+        "note": "Pi 已经内置 MCP，面板的「MCP 工具」页也能直接配，不用再装"
+      },
+      {
+        "match": "pi-mcp-extension",
+        "note": "Pi 已经内置 MCP，面板的「MCP 工具」页也能直接配，不用再装"
+      },
+      {
+        "match": "pi-subagents",
+        "note": "和面板的子对话、子任务重复：面板派活、合并、评审都靠自己的子对话"
+      },
+      {
+        "match": "@tintinweb/pi-subagents",
+        "note": "和面板的子对话、子任务重复：面板派活、合并、评审都靠自己的子对话"
+      },
+      {
+        "match": "@juicesharp/rpiv-ask-user-question",
+        "note": "和面板的提问重复：面板已经给 Pi 提供了 ask_user"
+      },
+      {
+        "match": "@juicesharp/rpiv-todo",
+        "note": "和面板的执行计划重复：面板用 set_plan 显示和推进计划"
       }
     ]
   }

@@ -14,6 +14,7 @@ import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-su
 import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
+import { demoCliPackages } from './demo-packages'
 import { demoLibrary, demoPanelCommands } from './demo-library'
 import {
   projectSkillRepos,
@@ -1463,7 +1464,6 @@ function demoProjectFiles(
 
 /** 演示的 Skill 列表：用户级的总是有，选了项目时多一个项目里的 */
 // 装了一个带版本号的推荐插件：设置页按去掉版本号的来源认出它已经装了
-const demoPackages = ['npm:cc-safety-net@2.7.1', 'git:github.com/example/pi-review@v1']
 
 const DEMO_SKILLS: CliSkill[] = [
   {
@@ -2117,6 +2117,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
       exportError: '',
     }
   }
+  if (res === 'project-trust') return { pi: ['.pi/skills'] }
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'project-mcp') {
     const project = d.projects.find((p) => p.id === (query.get('projectId') ?? ''))
@@ -2179,19 +2180,9 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
           source: x.source ?? '',
         })),
       ] satisfies SlashCommand[]
-    // 演示里的扩展包：内存里记着，装、删都直接成功
-    if (id && sub === 'packages') {
-      if (method === 'POST') {
-        const b = (body ?? {}) as { action?: string; source?: string }
-        const source = String(b.source ?? '').trim()
-        if (b.action === 'install' && source && !demoPackages.includes(source)) demoPackages.push(source)
-        if (b.action === 'remove' && demoPackages.includes(source)) demoPackages.splice(demoPackages.indexOf(source), 1)
-        const output =
-          b.action === 'install' ? `Installed ${source}` : b.action === 'remove' ? `Removed ${source}` : 'Up to date'
-        return { ok: true, output, packages: demoPackages.map((x) => ({ source: x, target: x })) }
-      }
-      return demoPackages.map((x) => ({ source: x, target: x }))
-    }
+    // 扩展包和插件市场（demo-packages.ts）
+    const pk = id ? demoCliPackages(sub, seg[3], method, body, query) : undefined
+    if (pk !== undefined) return pk
     if (id && sub === 'skills')
       return DEMO_SKILLS.filter(
         (x) =>
