@@ -12,6 +12,7 @@ import {
   type HookEventName,
   type HookInput,
   type HooksData,
+  commandSegments,
 } from '../../shared/hook-defs.ts'
 import { activePlan, planNowText, planProgress } from '../../shared/plan.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
@@ -89,8 +90,9 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts): string {
     return '【面板】你是只读的角色，不改项目里的文件：把发现写进结果交回，要改的由派你的对话安排。'
   }
   if (who === 'read-only' && tool.kind === 'shell') {
-    const cmd = String(tool.input.command ?? '').trim()
-    const hit = WRITE_COMMANDS.find((w) => cmd.startsWith(w))
+    // 按段比：`cd 项目 && git commit` 也要拦
+    const segs = commandSegments(String(tool.input.command ?? ''))
+    const hit = WRITE_COMMANDS.find((w) => segs.some((c) => c.startsWith(w)))
     if (hit)
       return `【面板】你是只读的角色，不跑会改仓库或装依赖的命令（${hit.trim()}）：需要的话写进结果，由派你的对话安排。`
   }

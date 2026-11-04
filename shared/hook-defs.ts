@@ -225,6 +225,17 @@ export function globMatch(glob: string, file: string): boolean {
   return new RegExp(`^${re}$`).test(f)
 }
 
+/**
+ * shell 命令拆成一段一段（按 &&、||、;、|、换行）：模型常写成 `cd 项目 && npm test`，按整条命令的开头比
+ * 「npm test」就对不上了。每段去掉开头的空白，按段比命令前缀
+ */
+export function commandSegments(cmd: string): string[] {
+  return cmd
+    .split(/&&|\|\||;|\||\n/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+}
+
 /** 用户钩子在这次触发里管不管：范围、工具类别、路径、命令前缀都对上才跑 */
 export function hookApplies(h: HookDef, input: HookInput, rel = ''): boolean {
   if (!h.enabled || h.event !== input.event) return false
@@ -237,12 +248,7 @@ export function hookApplies(h: HookDef, input: HookInput, rel = ''): boolean {
   if (!tool) return false
   if (h.match.tool !== 'any' && h.match.tool !== tool.kind) return false
   if (h.match.path && !(rel && globMatch(h.match.path, rel))) return false
-  if (
-    h.match.command &&
-    !String(tool.input.command ?? '')
-      .trim()
-      .startsWith(h.match.command)
-  )
+  if (h.match.command && !commandSegments(String(tool.input.command ?? '')).some((c) => c.startsWith(h.match.command)))
     return false
   return true
 }
