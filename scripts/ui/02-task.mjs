@@ -896,8 +896,12 @@ await runShard(import.meta.filename, async (api) => {
       else if ((await p.locator('[data-lifecycle] aside[aria-label="对话树"] li').count()) < 2)
         errors.push('对话菜单「状态」：对话树里没有子对话或子任务')
       // 五类事件的计数块、标题栏右上角的「AI 分析」和「复制诊断文件」
-      if ((await p.locator('[data-life-counts] button').count()) !== 5)
-        errors.push('对话菜单「状态」：事件计数不是五块（模型请求、重试、出错、停止、进程退出）')
+      if ((await p.locator('[data-life-counts] button').count()) !== 6)
+        errors.push('对话菜单「状态」：事件计数不是六块（模型请求、面板提醒、重试、出错、停止、进程退出）')
+      // 面板推了几次「接着做」：演示日志里推过一次
+      const nudges = p.locator('[data-life-counts] button').nth(1)
+      if (!/面板提醒\s*1/.test((await nudges.innerText().catch(() => '')).replace(/\n/g, ' ')))
+        errors.push('对话菜单「状态」：「面板提醒」那块没有数出推过的一次')
       if (!(await p.locator('[data-life-ai]').count()) || !(await p.locator('[data-life-copy]').count()))
         errors.push('对话菜单「状态」：标题栏没有「AI 分析」或「复制诊断文件」')
       // 点计数块只看那一类日志，再点一次取消
