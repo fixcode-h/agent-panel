@@ -11,6 +11,7 @@ import { getLang, t } from './i18n.ts'
 import { CliAuth } from './accounts.ts'
 import { CliContextBase } from './context-breakdown.ts'
 import { HooksSpec } from './hooks.ts'
+import { CliTrust } from './cli-trust.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
@@ -604,6 +605,8 @@ export const CliSpec = z.object({
    * 不写表示这个 CLI 用不了面板的工具
    */
   mcp: McpSpec.optional(),
+  /** 项目信任（ADR 0050）：只在信任后才读的项目文件；参数规则里用 trust=approve / trust=deny（见 shared/cli-trust.ts） */
+  trust: CliTrust.optional(),
   /** 钩子（ADR 0049）：结束前怎么问面板（见 shared/hooks.ts）；不写表示这个 CLI 只用一轮结束后的提醒兜底 */
   hooks: HooksSpec.optional(),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
@@ -656,6 +659,8 @@ function value(o: BuildOptions, key: string): unknown {
       return o.noEdit
     case 'textOnly':
       return o.textOnly
+    case 'trust':
+      return o.trust
     default:
       // opt.<id>：设置里这个开关开着，或下拉选项选中的值
       return key.startsWith('opt.') ? o.options?.[key.slice(4)] || undefined : undefined
@@ -804,6 +809,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     })),
     mcp: spec.mcp,
     hooks: spec.hooks,
+    trust: spec.trust,
     mcpStore: spec.mcpStore,
     packages: spec.packages && {
       ...spec.packages,

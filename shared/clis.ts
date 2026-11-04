@@ -63,6 +63,8 @@ export interface BuildOptions {
   options?: Record<string, boolean | string>
   /** 对话的标题：能给会话起名的 CLI 用它（例如 Pi 的 --name），在 CLI 自己的会话列表里认得出来 */
   title?: string
+  /** 项目设置里对这个 CLI 的信任选择（见 shared/cli-trust.ts）；不传就跟随 CLI 自己保存的决定 */
+  trust?: 'approve' | 'deny'
   /** 不是普通的一轮对话：压缩上下文，或者审查代码 */
   op?: { kind: 'compact' } | { kind: 'review'; target: ReviewTarget }
   /** 上下文达到这么多 token 时自动压缩（Codex 的 model_auto_compact_token_limit） */
@@ -244,6 +246,8 @@ export interface CliDefinition {
   mcp?: import('./cli-spec.ts').McpSpec
   /** 钩子：结束前怎么问面板（见 shared/hooks.ts）；没有时只用一轮结束后的提醒兜底 */
   hooks?: import('./hooks.ts').HooksSpec
+  /** 项目信任：只在信任后才读的项目文件（见 shared/cli-trust.ts）；没有时项目设置里不显示信任选项 */
+  trust?: import('./cli-trust.ts').CliTrust
   /** 用户自己装的 MCP 工具存在哪（「MCP 工具」页读写）；没有时不管 */
   mcpStore?: import('./cli-spec.ts').McpStore
   packages?: import('./cli-spec.ts').CliPackages

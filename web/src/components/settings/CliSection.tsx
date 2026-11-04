@@ -63,6 +63,7 @@ import { cliApi, type ApiConfig, type ApiProtocol } from '@shared/accounts'
 import { CliLimitsPanel, hasLimits } from './CliLimits'
 import { CliSkills } from './CliSkills'
 import { CliPackages } from './CliPackages'
+import { CliVersionHint } from './CliVersionHint'
 
 export const envToText = (env: CliSettings['env']) => env.map((e) => `${e.key}=${e.value}`).join('\n')
 export const textToEnv = (text: string) =>
@@ -857,6 +858,7 @@ export function CliSection({
             aria-label={t('启用 {cli}', { cli: def.name })}
           />
         )}
+        {ok && <CliVersionHint def={def} version={status?.version} />}
       </div>
       {installer.job ? (
         <InstallLog

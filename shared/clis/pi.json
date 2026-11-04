@@ -111,6 +111,15 @@
       "args": ["--thinking", "{effort}"]
     },
     {
+      "if": "trust=approve",
+      "args": ["--approve"],
+      "why": "项目设置里信任了这个项目：Pi 无界面运行时不弹信任询问，默认跳过项目里的 .pi 配置、扩展、Skill（Pi 1.5 docs/security.md）"
+    },
+    {
+      "if": "trust=deny",
+      "args": ["--no-approve"]
+    },
+    {
       "if": ["permission=full", "!opt.codemode"],
       "args": ["--tools", "+grep,+find,+ls"]
     },
@@ -167,6 +176,15 @@
     {
       "if": "effort",
       "args": ["--thinking", "{effort}"]
+    },
+    {
+      "if": "trust=approve",
+      "args": ["--approve"],
+      "why": "项目设置里信任了这个项目：Pi 无界面运行时不弹信任询问，默认跳过项目里的 .pi 配置、扩展、Skill（Pi 1.5 docs/security.md）"
+    },
+    {
+      "if": "trust=deny",
+      "args": ["--no-approve"]
     },
     {
       "if": ["permission=full", "!opt.codemode"],
@@ -728,7 +746,12 @@
   "docs": ["AGENTS.md", "CLAUDE.md"],
   "docsNote": "Pi 每次启动读项目目录和上级目录里的 AGENTS.md（没有时读 CLAUDE.md），以及 ~/.pi/agent/AGENTS.md。",
   "globalDoc": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/AGENTS.md",
-  "context": { "systemPrompt": 900, "systemTools": 1300, "compactReserve": 16384, "docsMode": "first" },
+  "context": {
+    "systemPrompt": 900,
+    "systemTools": 1300,
+    "compactReserve": 16384,
+    "docsMode": "first"
+  },
   "skills": {
     "user": ["${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills", "~/.agents/skills"],
     "repo": [".pi/skills", ".agents/skills"]
@@ -754,6 +777,24 @@
       "label": "codemode 和工具搜索",
       "hint": "让模型写脚本批量调用工具、按需搜索工具；MCP 工具多时省上下文",
       "default": true
+    },
+    {
+      "id": "cacheRetention",
+      "label": "长时间提示词缓存",
+      "hint": "支持的服务商把提示词缓存保留更久（PI_CACHE_RETENTION=long），长任务里两轮之间隔得久也能命中缓存",
+      "default": false,
+      "env": {
+        "PI_CACHE_RETENTION": "long"
+      }
+    },
+    {
+      "id": "noTelemetry",
+      "label": "关闭匿名统计",
+      "hint": "不发 Pi 的安装、更新匿名统计，请求里也不带来源标记（PI_TELEMETRY=0）；关着时跟随 Pi 自己的设置",
+      "default": false,
+      "env": {
+        "PI_TELEMETRY": "0"
+      }
     }
   ],
   "auth": {
@@ -900,6 +941,20 @@
       "failed": ["is_error"]
     }
   },
+  "trust": {
+    "markers": [
+      ".pi/settings.json",
+      ".pi/mcp.json",
+      ".pi/extensions",
+      ".pi/skills",
+      ".pi/prompts",
+      ".pi/themes",
+      ".pi/SYSTEM.md",
+      ".pi/APPEND_SYSTEM.md"
+    ],
+    "why": "Pi 1.5 docs/security.md「Project trust without an interactive prompt」：print / JSON / RPC 模式没有命令行覆盖或已保存的决定时按跳过处理；AGENTS.md、CLAUDE.md 不受影响；.agents/skills 从工作目录往上找到仓库根目录为止（docs/skills.md）",
+    "upMarkers": [".agents/skills"]
+  },
   "i18n": {
     "en": {
       "关闭": "Off",
@@ -929,7 +984,11 @@
       "执行前拦下 git reset --hard、rm -rf 这类不可撤销的命令，以及读 SSH 密钥、.env 这类机密文件；Pi 自己没有确认环节": "Blocks irreversible commands such as git reset --hard and rm -rf, and reads of secrets like SSH keys and .env files, before they run. Pi itself never asks for confirmation",
       "代码诊断": "Code diagnostics",
       "用语言服务器（LSP）检查改过的文件、给出报错位置，能自动修的直接修": "Checks edited files with language servers (LSP), reports exact error locations, and applies fixes the server supports",
-      "要先把对应语言的语言服务器装到 PATH（例如 typescript-language-server、pyright），它不会自己下载": "Install the language servers you need on PATH first (for example typescript-language-server or pyright); it does not download them"
+      "要先把对应语言的语言服务器装到 PATH（例如 typescript-language-server、pyright），它不会自己下载": "Install the language servers you need on PATH first (for example typescript-language-server or pyright); it does not download them",
+      "长时间提示词缓存": "Long prompt caching",
+      "支持的服务商把提示词缓存保留更久（PI_CACHE_RETENTION=long），长任务里两轮之间隔得久也能命中缓存": "Providers that support it keep the prompt cache longer (PI_CACHE_RETENTION=long), so long tasks still hit the cache after a long gap between turns",
+      "关闭匿名统计": "Turn off anonymous telemetry",
+      "不发 Pi 的安装、更新匿名统计，请求里也不带来源标记（PI_TELEMETRY=0）；关着时跟随 Pi 自己的设置": "Stops Pi's anonymous install and update reports and its provider attribution headers (PI_TELEMETRY=0). When off, Pi's own setting applies"
     }
   },
   "mcpStore": {
@@ -949,7 +1008,9 @@
     "update": ["update", "{source}"],
     "updateAll": ["update", "--extensions"],
     "placeholder": "npm:@scope/包名、git:github.com/用户/仓库 或本机目录",
-    "env": { "PI_OFFLINE": "" },
+    "env": {
+      "PI_OFFLINE": ""
+    },
     "recommended": [
       {
         "source": "npm:pi-web-access",

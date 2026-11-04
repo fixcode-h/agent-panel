@@ -5,6 +5,7 @@ import { MarkdownStyle } from './markdown-style.ts'
 import { ComponentStyle } from './component-style.ts'
 import { API_PROTOCOLS, ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
+import { ProjectCliTrust } from './cli-trust.ts'
 import { RemoteAccess } from './remote-schema.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
@@ -936,6 +937,8 @@ const ProjectFields = z.object({
    * 没设时只用内置默认清单（和 fileFormat 一样是可选的：旧数据和直接拼 Project 字面量的地方不用补）
    */
   searchExclude: z.array(z.string().trim().min(1).max(120)).max(60).optional(),
+  /** 每个 CLI 信不信任项目里它的配置（ADR 0050，见 shared/cli-trust.ts）；没写就跟随 CLI 自己的决定 */
+  cliTrust: ProjectCliTrust,
   /**
    * 子对话怎么避免互相干扰：
    * - worktree：Git 项目里每个子对话在自己的独立分支目录里改文件（只隔离编辑，不在里面编译）；
