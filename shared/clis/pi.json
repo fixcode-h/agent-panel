@@ -769,6 +769,12 @@
       "defaultProvider": "agentpanel",
       "modelSource": "cli",
       "modelPrefix": "{provider}/",
+      "requireBaseUrl": true,
+      "dropEmptyBaseUrl": {
+        "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+        "at": "providers",
+        "baseUrl": "baseUrl"
+      },
       "pruneProviders": {
         "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
         "at": "providers",
