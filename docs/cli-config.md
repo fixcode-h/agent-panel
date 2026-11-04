@@ -450,6 +450,8 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 | `baseUrl`                  | 协议 → 这个 CLI 要的接口地址写法，`{root}` 是去掉末尾 `/v1`、`/v1beta` 的地址：Anthropic SDK 自己拼 `/v1/messages`（Claude Code、Pi 写 `{root}`）；没写的协议原样用                                                         |
 | `thinkArgs`                | API 方式下这一轮带了思考强度（不是 `off: true` 那一档）时加的参数；Codex 对不认识的第三方模型默认不发 reasoning，靠 `model_supports_reasoning_summaries=true` 打开                                                          |
 | `pruneProviders`           | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                                                                                                               |
+| `requireBaseUrl`           | 配置文件里每个 provider 都必须带接口地址时（Pi 的 `models.json`）设为 `true`：地址为空（用户没填、厂家也没有默认地址）时不写 `edits`，并把面板之前写进去的 provider 清掉，免得 Pi 继续用旧地址                              |
+| `dropEmptyBaseUrl`         | 写配置前删掉值为空的 `baseUrl` 键（provider 层和 `models` 条目层）：Pi 的 `models.json` 只在 `baseUrl` 出现时要求至少 1 个字符，一条空地址就让整份文件失效；只删空键，provider、models 和用户配置都保留                     |
 | `pruneModels`              | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                                                                                                                 |
 | `modelEfforts`             | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动                                                                                                          |
 | `modelReasoning`           | CLI 只认模型条目自己声明的「能不能调思考强度」时（Pi 的 `reasoning` 是布尔），目录里有强度的模型写 `true`，下拉才不止一档                                                                                                   |

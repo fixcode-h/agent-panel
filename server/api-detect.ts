@@ -98,6 +98,10 @@ export function toApi(
   const apiKey = bearer || resolveValue(rawKey, env) || (keyEnv ? (env[keyEnv] ?? '') : '')
   const url = resolveValue(pick(obj, src.baseUrl), env)
   if (!apiKey && !url) return null
+  // 没有接口地址的配置用不了，写进 Pi 的 models.json 还会因为一条空 baseUrl 让整份文件失效。
+  // 这种配置不进「识别到的 API」，免得用户选了才发现不能用
+  const baseUrl = url || src.defaultBaseUrl
+  if (!baseUrl) return null
   // 面板旧版本写的密钥占位名不算用户的配置，留着也用不了（见 isLegacyPanelKey）
   // 旧版 Codex 是写在 env_key 里、旧版 Command Code / Pi 是写在 apiKey 里
   if (isLegacyPanelKey(rawKey) || isLegacyPanelKey(keyEnv)) return null
@@ -112,7 +116,7 @@ export function toApi(
     // each 的 key 就是 CLI 配置里的 provider 名（如 providers.tokenapi）；不是 each 的来源没有
     provider: key,
     protocol: map[wire] ?? src.protocol,
-    baseUrl: url || src.defaultBaseUrl,
+    baseUrl,
     endpoints: {},
     apiKey,
     authHeader: bearer ? 'bearer' : 'x-api-key',
