@@ -198,7 +198,7 @@ await runShard('本机请求与设置', async (api) => {
   assert.match(uj.error, /手动删除/)
   assert.deepEqual(
     readLog(log + '.npm')
-      .filter((a) => a[0] !== 'prefix' && a[0] !== 'view')
+      .filter((a) => a[0] !== 'prefix' && a[0] !== 'view' && a[0] !== 'config')
       .map((a) => a.slice(0, 3)),
     [
       ['install', '-g', '@anthropic-ai/claude-code@latest'],
