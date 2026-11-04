@@ -48,6 +48,8 @@ export function demoLifecycle(task: Task, tasks: Task[]): LifeReport {
     const waits = [820, 540, 610, 380, 1240, 450, 6200, 520, 300, 470]
     waits.forEach((w, i) => {
       const t0 = 230_000 - i * 17_000
+      // 中间有一轮计划没做完就停了，面板推它接着做（状态里的「面板提醒」数的就是这种行），按时间排在第 9 次请求前面
+      if (i === 8) log.push(`${at(100_000)} [计划推进] action=continue nth=1 max=6 done=2 total=5`)
       log.push(`${at(t0)} [模型请求开始] n=${i + 1}`)
       log.push(`${at(t0 - w)} [模型开始输出] n=${i + 1} waitedMs=${w} kind=${i % 3 ? 'thinking' : 'text_delta'}`)
     })
