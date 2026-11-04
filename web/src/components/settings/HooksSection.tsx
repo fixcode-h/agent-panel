@@ -239,7 +239,10 @@ export function HooksSection() {
             {triggers.map((x, i) => (
               <div key={`${x.at}-${i}`} className="settings-row flex items-center gap-3 py-2 text-body">
                 <span className="w-16 shrink-0 text-xs text-subtle">{new Date(x.at).toLocaleTimeString()}</span>
-                <span className="min-w-0 shrink-0 font-medium">{x.name}</span>
+                {/* 内置钩子的名字按界面语言现取（服务端记的是它自己的语言） */}
+                <span className="min-w-0 shrink-0 font-medium">
+                  {view.builtins.find((b) => `builtin:${b.id}` === x.hookId)?.name ?? x.name}
+                </span>
                 <Badge>{eventLabel(x.event)}</Badge>
                 <span
                   className={cn(

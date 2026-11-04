@@ -71,7 +71,14 @@ test('危险命令：递归删根、家、项目，原分支上清工作区，�
     assert.ok(dangerDeny(ctx(), sh(c)), c)
   assert.ok(dangerDeny(ctx(), sh('git push --force origin dev')))
   assert.ok(dangerDeny(ctx(), sh('git branch -D main')))
-  for (const c of ['rm -rf dist node_modules', 'rm a.txt', 'git checkout -- src/a.ts', 'git branch -D old', 'git push'])
+  for (const c of [
+    'rm -rf dist node_modules',
+    'rm a.txt',
+    'git checkout -- src/a.ts',
+    'git branch -D old',
+    'git push',
+    'git clean -fd .cache',
+  ])
     assert.equal(dangerDeny(ctx(), sh(c)), '', c)
   const wt = ctx({ task: { parentTaskId: 'par', worktree: { path: proj, state: 'active' } as never } })
   assert.equal(dangerDeny(wt, sh('git reset --hard HEAD')), '', '子对话自己的分支里放行')

@@ -126,7 +126,15 @@ function dangerOf(c: GuardCtx, s: string): string {
     return '会删除主干分支'
   if (inWorktree(c)) return ''
   if (gitSub(s, 'reset') && /\s--hard\b/.test(s)) return '会丢掉工作区里所有没提交的改动（可能有用户的）'
-  if (gitSub(s, 'clean') && /\s-[a-zA-Z]*f/.test(s)) return '会删掉所有没跟踪的文件（可能有用户的）'
+  if (gitSub(s, 'clean') && /\s-[a-zA-Z]*f/.test(s)) {
+    // 点名了具体路径的只清那几处，放行；不带路径或者路径是整个目录才拦
+    const paths = s
+      .split(/\s+/)
+      .slice(1)
+      .filter((w) => w !== 'clean' && !w.startsWith('-') && w !== '--')
+    if (!paths.length || paths.some((x) => x === '.' || x === './' || x === '*'))
+      return '会删掉所有没跟踪的文件（可能有用户的）'
+  }
   if ((gitSub(s, 'checkout') || gitSub(s, 'restore')) && /\s(--\s+)?\.(\s|$)/.test(s))
     return '会撤销整个工作区的改动（可能有用户的）'
   return ''
