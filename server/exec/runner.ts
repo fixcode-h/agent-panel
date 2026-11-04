@@ -988,8 +988,7 @@ async function runAgent(
         // 模型请求的耗时记在这段回复上：两步之间看起来「卡住」的时间大多在这里
         if (cur) cur.modelMs = (cur.modelMs ?? 0) + ev.ms
         break
-      case 'wait':
-        // 首包时间（cli-trace 算好的）：会话栏显示平均 / 最长，分得清是链路慢还是模型一直在想
+      case 'wait': // 首包时间（cli-trace 算好的），会话栏显示：分得清是链路慢还是模型一直在想
         au().firstToken = addFirstToken(au().firstToken, ev.ms)
         break
       case 'error':
@@ -1485,8 +1484,7 @@ async function runAgent(
         : undefined,
     // 只交手动改过的：自动值是面板按模型目录估的，不该写进 CLI 的配置盖掉它自己的
     limits: manual,
-    // 钩子（ADR 0049）：装哪些、怎么答在 server/hooks/dispatch.ts。预热也装：预热起的进程之后会处理用户的消息
-    //（开独立分支后在新目录重开也是预热），不装就没有守卫、也只能靠一轮结束后的提醒；还没收到消息时 before-end.ts 放行
+    // 钩子（ADR 0049，见 server/hooks/dispatch.ts）：预热也装，预热的进程之后要处理用户消息；没收到消息前 before-end.ts 放行
     ...hooks,
   }).finally(() => {
     finished = true
