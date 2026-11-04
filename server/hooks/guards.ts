@@ -73,6 +73,8 @@ export function bugDeny(c: GuardCtx, facts: HookFacts): string {
     return `【面板】诊断报告第 ${d.version} 版还在等用户确认：确认之前不改文件，先等用户的回复。`
   if (d.status === 'questioned')
     return `【面板】用户对诊断报告第 ${d.version} 版提了意见：先逐条处理、用 submit_diagnosis 交新一版，确认后再改文件。`
+  if (d.status === 'cancelled')
+    return `【面板】用户取消了诊断报告第 ${d.version} 版，这次不修：不改文件。用户要你接着修时，先用 submit_diagnosis 交新一版，确认后再改。`
   const extra = outOfPlan(files, d.files)
   if (extra.length)
     return `【面板】${extra.join('、')} 不在用户确认的方案（第 ${d.version} 版）里：确实要改，先交新一版诊断报告写明为什么，等用户确认。`

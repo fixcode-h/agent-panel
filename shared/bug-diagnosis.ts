@@ -11,6 +11,7 @@
 import type { Task, TaskMessage } from './schema.ts'
 import { BugCase, type BugBlame, type BugLevel, type Diagnosis, type DiagnosisNote } from './bug-diagnosis-schema.ts'
 import { t } from './i18n.ts'
+import { settlePlan } from './plan.ts'
 
 type DiagTask = Pick<Task, 'bug' | 'diagnoses' | 'messages' | 'changes' | 'bugCase'>
 
@@ -287,6 +288,7 @@ export function bugStage(task: Pick<Task, 'bug' | 'bugCase' | 'diagnoses'>): str
   if (!task.bug) return ''
   const d = latestDiagnosis(task)
   if (d?.status === 'pending') return t('等你确认')
+  if (d?.status === 'cancelled') return t('已取消')
   if (d?.status === 'approved') return task.bugCase?.result ? t('收尾') : t('修复')
   const c = task.bugCase
   if (!c) return t('立案')
@@ -357,7 +359,8 @@ export function submitDiagnosis(
   const answers = answersOf(input)
   const bad = diagnosisProblem(c, prev, answers)
   if (bad) return { ok: false, info: bad }
-  if (prev && prev.status !== 'superseded') prev.status = 'superseded'
+  // 取消过的那版留着「已取消」：那是用户的决定，不是被新一版顶掉的
+  if (prev && prev.status !== 'superseded' && prev.status !== 'cancelled') prev.status = 'superseded'
   const version = (prev?.version ?? 0) + 1
   const { result: _r, updatedAt: _u, ...body } = c
   const d: Diagnosis = {
@@ -392,17 +395,30 @@ const diagnosisMessage = (id: string, version: number, text: string, at: string)
   at,
 })
 
+/** 审阅弹窗交上来的决定（页面和接口共用）：cancel 为真是「取消修复」，approve 不看 */
+export type DiagnosisDecision = {
+  approve: boolean
+  cancel?: boolean
+  notes: Omit<DiagnosisNote, 'id'>[]
+  overall: string
+}
+
 /**
- * 用户在审阅弹窗里的决定：确认方案，或者带着标注退回再查。只能处理还在等确认的那一版。
+ * 用户在审阅弹窗里的决定：确认方案、带着标注退回再查，或者取消。只能处理还在等确认的那一版。
  * 返回交给子对话的话（调用方作为新消息发给它）；找不到要处理的版本时返回错误
  */
 export function decideDiagnosis(
-  task: DiagTask,
+  task: DiagTask & Pick<Task, 'plans' | 'steps'>,
   version: number,
-  decision: { approve: boolean; notes: Omit<DiagnosisNote, 'id'>[]; overall: string },
+  decision: DiagnosisDecision,
   newId: () => string,
   now = new Date().toISOString(),
 ): { ok: true; message: string } | { ok: false; error: string } {
+  // 取消：不用交话给子对话（message 为空），见 cancelDiagnosis
+  if (decision.cancel) {
+    const r = cancelDiagnosis(task, version, decision.overall, newId, now)
+    return r.ok ? { ok: true, message: '' } : r
+  }
   const d = pendingDiagnosis(task)
   if (!d || d.version !== version) return { ok: false, error: t('这一版诊断报告已经处理过了') }
   const notes = decision.notes
@@ -425,6 +441,31 @@ export function decideDiagnosis(
     ),
   )
   return { ok: true, message: diagnosisFeedback(d) }
+}
+
+/**
+ * 用户在审阅弹窗里点「取消」：这次不修了。不再等确认、也不发话叫醒子对话——这一轮在交报告时已经结束，
+ * 计划里没做完的步骤（含收尾那一步）收口成完成（settlePlan，和用户点「解决」同一套），对话停着等用户的下一句。
+ * 之后用户要它接着修，改文件仍会被拦（bugDeny），要先交新一版报告再确认
+ */
+export function cancelDiagnosis(
+  task: DiagTask & Pick<Task, 'plans' | 'steps'>,
+  version: number,
+  overall: string,
+  newId: () => string,
+  now = new Date().toISOString(),
+): { ok: true } | { ok: false; error: string } {
+  const d = pendingDiagnosis(task)
+  if (!d || d.version !== version) return { ok: false, error: t('这一版诊断报告已经处理过了') }
+  d.status = 'cancelled'
+  d.notes = []
+  d.overall = overall.trim()
+  d.decidedAt = now
+  settlePlan(task, now)
+  task.messages.push(
+    diagnosisMessage(newId(), version, t('你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成', { n: version }), now),
+  )
+  return { ok: true }
 }
 
 /** 用户的决定交给子对话的话 */
@@ -458,6 +499,8 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
   if (d.status === 'pending') return `没有请求收尾：诊断报告第 ${d.version} 版还在等用户确认，确认之前不能收尾。`
   if (d.status === 'questioned')
     return `没有请求收尾：用户对诊断报告第 ${d.version} 版提了意见，先逐条处理、交新一版，等用户确认。`
+  if (d.status === 'cancelled')
+    return `没有请求收尾：用户取消了诊断报告第 ${d.version} 版，这次不修。用户之后要修，先交新一版诊断报告，等用户确认。`
   const extra = outOfPlan(changed, d.files)
   if (extra.length)
     return `没有请求收尾：这些文件不在用户确认的方案（第 ${d.version} 版）里：${extra.join('、')}。不需要的改回去；确实要改，交新一版诊断报告写明为什么，等用户确认后再收尾。`

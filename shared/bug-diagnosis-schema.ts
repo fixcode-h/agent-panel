@@ -141,7 +141,8 @@ export const Diagnosis = z.object({
   verify: z.string().default(''),
   /** 第 2 版起：逐条回答上一版的疑问和改方案（id 对上一版 notes 的 id） */
   answers: z.array(z.object({ id: z.number().int(), answer: z.string() })).default([]),
-  status: z.enum(['pending', 'questioned', 'approved', 'superseded']).default('pending'),
+  /** cancelled：用户在审阅弹窗里点了「取消」，这次不修了（计划收口成完成，对话等用户下一句） */
+  status: z.enum(['pending', 'questioned', 'approved', 'superseded', 'cancelled']).default('pending'),
   notes: z.array(DiagnosisNote).default([]),
   overall: z.string().default(''),
   decidedAt: z.string().optional(),
