@@ -26,7 +26,7 @@ export interface DownloadOptions {
   headers?: Record<string, string>
   /** 同时开几条连接，默认 8 */
   connections?: number
-  /** 每片多大，默认 16 MB */
+  /** 每片多大；不传时按文件大小切成至少「连接数」片，每片 1–16 MB */
   chunkSize?: number
   /** 多久没有收到数据算卡住，默认 45 秒（单连接下载 90 秒）；每次回退到另一条路时重新计时 */
   idleMs?: number
@@ -36,6 +36,8 @@ export interface DownloadOptions {
 
 const CONNECTIONS = 8
 const CHUNK = 16 * 1024 * 1024
+/** 自动切片时每片的下限：太碎的话请求头、重定向的开销比省下的时间还多 */
+const MIN_CHUNK = 1024 * 1024
 const IDLE_MS = 45_000
 /** 等响应头的上限：连不上时交给 netFetch 换代理，不用一直挂着 */
 const HEAD_TIMEOUT_MS = 20_000
@@ -93,6 +95,14 @@ export function missingSpans(total: number, done: Span[], chunk: number): Span[]
   }
   if (at < total) cut(at, total)
   return out
+}
+
+/**
+ * 没指定片大小时按文件切：固定 16 MB 的话 34 MB 的更新包只有 3 片，8 条连接只用上 3 条，
+ * 单连接被限速时整体也快不起来。切成至少 connections 片，每片 1–16 MB。
+ */
+export function autoChunk(total: number, connections: number) {
+  return Math.min(CHUNK, Math.max(MIN_CHUNK, Math.ceil(total / Math.max(1, connections))))
 }
 
 /** 外部取消和「太久没收到数据」合成一个 signal；每收到一块数据调用 reset 重新计时 */
@@ -258,7 +268,6 @@ export async function downloadFile(url: string, to: string, o: DownloadOptions =
   const meta = `${part}.json`
   const headers = o.headers ?? {}
   const connections = Math.max(1, o.connections ?? CONNECTIONS)
-  const chunk = Math.max(64 * 1024, o.chunkSize ?? CHUNK)
   const idleMs = o.idleMs ?? IDLE_MS
   const fetcher = o.fetch ?? netFetch
   /** 这个文件已经报给调用方的净进度；退回单连接时要扣回去 */
@@ -304,6 +313,7 @@ export async function downloadFile(url: string, to: string, o: DownloadOptions =
     }
   }
 
+  const chunk = o.chunkSize ? Math.max(64 * 1024, o.chunkSize) : autoChunk(total, connections)
   const jobs = missingSpans(total, done, chunk)
   if (!jobs.length) {
     await rm(meta, { force: true })

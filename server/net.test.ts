@@ -208,6 +208,53 @@ test('一开始走哪条路：设置优先，没写协议补 http://，socks 照
   assert.deepEqual(planFor(RELEASE_URL, '', '', ''), { kind: 'direct', fallback: true })
 })
 
+test('设置和环境变量都没有、系统开着代理：先走系统代理，不先直连', () => {
+  // 国内直连 GitHub 常常能连上但被限速，请求不失败就不会回退，所以系统代理要排在直连前面
+  assert.deepEqual(planFor(RELEASE_URL, '', '', '', ['127.0.0.1:10809']), {
+    kind: 'proxy',
+    key: 'http://127.0.0.1:10809',
+    shown: 'http://127.0.0.1:10809',
+    system: true,
+  })
+  // 设置和环境变量仍然优先于系统代理
+  assert.equal(planFor(RELEASE_URL, '127.0.0.1:7890', '', '', ['http://127.0.0.1:10809']).kind, 'proxy')
+  assert.deepEqual(planFor(RELEASE_URL, '', 'http://127.0.0.1:7890', '', ['http://127.0.0.1:10809']), {
+    kind: 'proxy',
+    key: 'http://127.0.0.1:7890',
+    shown: 'http://127.0.0.1:7890',
+  })
+  // NO_PROXY 命中、本机地址：照旧直连
+  assert.deepEqual(planFor(RELEASE_URL, '', '', 'github.com', ['http://127.0.0.1:10809']), {
+    kind: 'direct',
+    fallback: false,
+  })
+  assert.deepEqual(planFor('http://127.0.0.1:8787/', '', '', '', ['http://127.0.0.1:10809']), {
+    kind: 'direct',
+    fallback: false,
+  })
+  // 系统代理只填了 socks（用不了）：按没有代理处理
+  assert.deepEqual(planFor(RELEASE_URL, '', '', '', ['socks5://127.0.0.1:10808']), { kind: 'direct', fallback: true })
+})
+
+test('系统代理连不上：回退到探测到的本机代理和直连，报错里按本机代理显示', async () => {
+  const sys = 'http://127.0.0.1:10809'
+  const { deps, calls } = stub({
+    plan: { kind: 'proxy', key: sys, shown: sys, system: true },
+    viaProxy: async () => {
+      throw fetchFailed()
+    },
+    direct: async () => {
+      throw fetchFailed()
+    },
+    discover: async () => [sys],
+  })
+  await assert.rejects(netFetchWith(deps, RELEASE_URL), (e: Error) => {
+    assert.ok(e.message.includes(t('本机代理 {proxy}', { proxy: sys })), e.message)
+    return true
+  })
+  assert.deepEqual(calls, [sys, 'direct'])
+})
+
 test('启用代理的开关：关着时不用设置里的地址，环境变量和自动探测照旧', () => {
   // 开着：用设置里的地址，前后空格去掉
   assert.equal(configuredProxy({ proxy: ' 127.0.0.1:7890 ', networkProxyEnabled: true }), '127.0.0.1:7890')
