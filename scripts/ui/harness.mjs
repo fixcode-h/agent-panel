@@ -408,6 +408,143 @@ export async function nestedEdgeProblems(p, label) {
   const bad = await p.evaluate(NESTED_EDGE_SCAN)
   return bad.map((b) => `${label}：背景块贴着外层背景的边（${b}），要留边距`)
 }
+
+/**
+ * 行内小标签的垂直对齐：行内代码、状态胶囊、带底色的角标，胶囊中心不能比同一行文字的视觉中线偏太多。
+ * 量的是「胶囊矩形中心」和「同一行相邻汉字的字形墨迹中心」（canvas 量字形，不用 baseline 探针插 DOM），
+ * 偏超过 TOLERANCE_PX 就报。新增 chip 忘了用 index.css 的 chip-lift（或改了补偿值）会被这一条拦住。
+ */
+const CHIP_ALIGN_TOLERANCE_PX = 1.5
+export async function chipAlignProblems(p, label) {
+  const bad = await p.evaluate(CHIP_ALIGN_SCAN, CHIP_ALIGN_TOLERANCE_PX)
+  return bad.map((b) => `${label}：${b.what} 比同一行文字偏 ${b.dev}px（要 ≤ ${CHIP_ALIGN_TOLERANCE_PX}px）`)
+}
+const CHIP_ALIGN_SCAN = (max) => {
+  const ctx = document.createElement('canvas').getContext('2d')
+  // 参照字符：汉字统一用「中」（墨迹高度一致），其他字符用自己 —— 大写字高和 x-height 差 1.4px
+  const CHIP_REF = (c) => (/[一-鿿]/.test(c) ? '中' : c)
+  // 字形的墨迹中心（相对 baseline，向上为负）：汉字取「中」，英文取「x」
+  const inkCenter = (font, ch) => {
+    ctx.font = font
+    const m = ctx.measureText(ch)
+    return -((m.actualBoundingBoxAscent || 0) - (m.actualBoundingBoxDescent || 0)) / 2
+  }
+  /** 同一行里离 el 最近的、垂直重叠的字符（不看 el 自己的文字） */
+  const nearest = (el, box) => {
+    const parent = el.parentElement
+    if (!parent) return null
+    let best = null
+    const walker = document.createTreeWalker(parent, NodeFilter.SHOW_TEXT)
+    while (walker.nextNode()) {
+      const node = walker.currentNode
+      if (!node.nodeValue.trim() || el.contains(node)) continue
+      // sr-only / clip 隐藏的说明文字（1px 宽）不算「同一行的文字」：它的盒子不在可见行里
+      const holder = node.parentElement?.getBoundingClientRect()
+      if (!holder || holder.width <= 2 || holder.height <= 2) continue
+      const whole = document.createRange()
+      whole.selectNodeContents(node)
+      const w = whole.getBoundingClientRect()
+      if (Math.min(w.bottom, box.bottom) - Math.max(w.top, box.top) < Math.min(w.height, box.height) * 0.5) continue
+      for (let i = 0; i < node.nodeValue.length; i++) {
+        if (!node.nodeValue[i].trim()) continue
+        const r = document.createRange()
+        r.setStart(node, i)
+        r.setEnd(node, i + 1)
+        const rect = r.getBoundingClientRect()
+        if (!rect.width || !rect.height) continue
+        if (Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top) < Math.min(rect.height, box.height) * 0.5)
+          continue
+        const dx = rect.left >= box.right ? rect.left - box.right : rect.right <= box.left ? box.left - rect.right : 0
+        // 参照优先用汉字（字形墨迹高度一致），其次字母数字；标点不当参照（句号的墨迹只有 0.1em，会把中点拉到 baseline）
+        const rank = /[一-鿿]/.test(node.nodeValue[i]) ? 2 : /[A-Za-z0-9]/.test(node.nodeValue[i]) ? 1 : 0
+        if (rank === 0) continue
+        if (!best || rank > best.rank || (rank === best.rank && dx < best.dx))
+          best = { node, index: i, rect, dx, rank, char: node.nodeValue[i] }
+      }
+    }
+    return best
+  }
+  const out = []
+  // 只扫「靠 chip-lift / text-optical-center 补偿过的」行内小标签。
+  // 基线对齐的元素（例如 items-baseline 卡片头里的 .md-card-kind）不在这条口径里：它们本来就该按基线排
+  for (const el of document.querySelectorAll(
+    '.chat-md code, [class*="chip-lift"], [class*="text-optical-center"][class*="rounded"]',
+  )) {
+    if (!el.getClientRects().length) continue
+    const s = getComputedStyle(el)
+    if (s.visibility === 'hidden' || parseFloat(s.opacity) === 0) continue
+    const box = el.getBoundingClientRect()
+    if (box.width < 6 || box.height < 6) continue
+    const near = nearest(el, box)
+    if (!near) continue
+    const ns = getComputedStyle(near.node.parentElement)
+    const font = `${ns.fontStyle} ${ns.fontWeight} ${ns.fontSize} ${ns.fontFamily}`
+    ctx.font = font
+    // 用实际选中的那个字符量墨迹：拿「x」的 x-height 代表大写的「G」会差 1.4px（正好等于容差）
+    const ch = CHIP_REF(near.char)
+    const m = ctx.measureText(ch)
+    // 单字符 Range 的矩形是行内盒（高度 = 字体 em 框），leading 上下均分：
+    // baseline 在 em 框顶下方 fontBoundingBoxAscent 处。拿 fontSize 当 em 高会差 1~2px（和探针法实测对不上）。
+    const emH = (m.fontBoundingBoxAscent || 0) + (m.fontBoundingBoxDescent || 0)
+    const baseline = near.rect.top + (near.rect.height - emH) / 2 + (m.fontBoundingBoxAscent || 0)
+    const textCenter = baseline + inkCenter(font, ch)
+    const dev = +(box.top + box.height / 2 - textCenter).toFixed(2)
+    if (Math.abs(dev) > max)
+      out.push({
+        what: `${el.tagName.toLowerCase()}「${(el.textContent || '').trim().slice(0, 14)}」`,
+        dev,
+      })
+  }
+  return out
+}
+/**
+ * 页签这类「文字在固定高度条里居中」：带 text-optical-center 的元素，文字中心要和所在页签条的中心对齐。
+ * 和 chipAlignProblems 分开：那条比的是「同一行的文字」，这条比的是「条的中心」。
+ */
+export async function tabAlignProblems(p, label) {
+  const bad = await p.evaluate(TAB_ALIGN_SCAN, CHIP_ALIGN_TOLERANCE_PX)
+  return bad.map((b) => `${label}：${b.what} 比页签条中心偏 ${b.dev}px（要 ≤ ${CHIP_ALIGN_TOLERANCE_PX}px）`)
+}
+const TAB_ALIGN_SCAN = (max) => {
+  const ctx = document.createElement('canvas').getContext('2d')
+  const out = []
+  for (const el of document.querySelectorAll('[class*="text-optical-center"]')) {
+    const bar = el.closest('[role="tablist"]')
+    if (!bar || !el.getClientRects().length) continue
+    // 右栏的页签有两个，没打开的那个仍然有 client rects 但高度是 0：量出来是假偏差
+    const eb = el.getBoundingClientRect()
+    if (eb.width <= 2 || eb.height <= 2) continue
+    // 标题可能被包了一层（tab-bar 的 span 里还有 data-conv-title 的 span），要往后代找文本
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    let node = null
+    while (walker.nextNode()) {
+      if (walker.currentNode.nodeValue.trim()) {
+        node = walker.currentNode
+        break
+      }
+    }
+    if (!node) continue
+    const i = node.nodeValue.search(/[一-鿿A-Za-z0-9]/)
+    // 只有标点的不量；字体取文字自己的父元素（标题可能被一层 span 包着，外壳的字体不一定是那个字的）
+    if (i < 0) continue
+    const s = getComputedStyle(node.parentElement)
+    ctx.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`
+    const ch = /[一-鿿]/.test(node.nodeValue[i]) ? '中' : node.nodeValue[i]
+    const m = ctx.measureText(ch)
+    const r = document.createRange()
+    r.setStart(node, i)
+    r.setEnd(node, i + 1)
+    const rect = r.getBoundingClientRect()
+    const emH = (m.fontBoundingBoxAscent || 0) + (m.fontBoundingBoxDescent || 0)
+    const baseline = rect.top + (rect.height - emH) / 2 + (m.fontBoundingBoxAscent || 0)
+    const textCenter = baseline - ((m.actualBoundingBoxAscent || 0) - (m.actualBoundingBoxDescent || 0)) / 2
+    const b = bar.getBoundingClientRect()
+    const dev = +(textCenter - (b.top + b.height / 2)).toFixed(2)
+    if (Math.abs(dev) > max)
+      out.push({ what: `${(node.nodeValue || '').trim().slice(0, 12) || el.tagName.toLowerCase()}`, dev })
+  }
+  return out
+}
 const NESTED_EDGE_SCAN = () => {
   // 计算样式里的颜色可能是 oklab() / color-mix 的结果：交给 canvas 换成 rgba 再看透明度
   const ctx = document.createElement('canvas').getContext('2d')

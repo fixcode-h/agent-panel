@@ -196,7 +196,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
                           <p className="flex items-center gap-2 text-body">
                             <span className="truncate font-mono">{s.name}</span>
                             {s.issues.length > 0 && (
-                              <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-px text-caption text-warning">
+                              <span className="chip-lift shrink-0 rounded-full bg-warning/15 px-1.5 py-px text-caption text-warning">
                                 {t('{n} 个问题', { n: s.issues.length })}
                               </span>
                             )}

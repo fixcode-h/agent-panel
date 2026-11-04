@@ -8,7 +8,7 @@
  * 各片自己重建前置状态，不依赖别的分片先跑过，任意顺序都能跑。
  */
 
-import { runShard } from './harness.mjs'
+import { chipAlignProblems, runShard, tabAlignProblems } from './harness.mjs'
 import { closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
 
 await runShard(import.meta.filename, async (api) => {
@@ -174,6 +174,13 @@ await runShard(import.meta.filename, async (api) => {
   if (!(await filesPanel.isVisible())) errors.push('任务：点「显示文件」后文件面板没展开')
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+
+  // 行内小标签（Markdown 行内代码、状态胶囊、带底色的角标）要和同一行的文字垂直居中：
+  // 对齐补偿只在 index.css 的 chip-lift 一处，新增 chip 忘了用（或改坏了补偿值）会被这一条拦住
+  await check(p, '行内标签垂直对齐')
+  errors.push(...(await chipAlignProblems(p, '行内标签垂直对齐')))
+  // 页签是反方向的一类（文字在固定高度条里居中），补偿同样只在 index.css 的 text-optical-center 一处
+  errors.push(...(await tabAlignProblems(p, '页签文字垂直居中')))
 
   // 父对话这一轮已经说完、名下还有子对话在跑：输入框要写清在等什么。
   // 旧实现一律写「继续输入要求」，和旁边的停止按钮凑成「子对话在跑、父对话却在等继续」（用户报的现象）。

@@ -369,7 +369,9 @@ function ImportStyle({ onImport }: { onImport: (s: SavedStyle) => void }) {
                         <span className="flex items-center gap-1.5 text-footnote">
                           {s.name}
                           {s.builtin && (
-                            <span className="rounded-sm bg-field px-1 text-micro text-subtle">{t('内置')}</span>
+                            <span className="chip-lift rounded-sm bg-field px-1 text-micro text-subtle">
+                              {t('内置')}
+                            </span>
                           )}
                         </span>
                         <span className="line-clamp-2 text-caption leading-snug text-subtle">
