@@ -554,3 +554,88 @@ test('后台命令只给发起它的对话读：跨 taskId、不存在的编号�
   assert.equal(bg.view('t2', r.id!), null, '结束以后也不给别的对话读')
   assert.ok(bg.view('t1', r.id!))
 })
+
+test('父对话测试命令被停止也要把结果交回去；普通命令照旧不推回', async () => {
+  const ends: ((r: unknown) => void)[] = []
+  const fake = ((_line: string, _cwd: string, o: { onLine: (l: string) => void; signal?: AbortSignal }) =>
+    new Promise((resolve) => {
+      ends.push(resolve)
+      o.signal?.addEventListener('abort', () => resolve({ code: null, killed: 'stopped', stderr: '' }))
+    })) as unknown as NonNullable<Parameters<typeof createBackground>[1]>['run']
+  const done: BgJob[] = []
+  const bg = createBackground((j) => done.push({ ...j }), { run: fake })
+  const dir = mkdtempSync(path.join(tmpdir(), 'bg-stop-notify-'))
+
+  // 面板代子对话跑的父对话测试：用户停掉它时，等结果的子对话必须拿到结论（不然永远停在「等父对话测试」）
+  const marked = bg.start({
+    taskId: 'p',
+    name: '父对话测试：A · 单元测试',
+    command: 'x',
+    cwd: '',
+    root: dir,
+    exclusive: false,
+    notifyOnStop: true,
+  })
+  assert.ok(marked.ok)
+  await until(() => ends.length === 1, '父对话测试命令跑起来')
+  assert.equal(bg.stopOne('p', marked.id!).ok, true)
+  await until(() => done.length === 1, '被停止的父对话测试命令把结果交回去')
+  assert.equal(done[0].id, marked.id)
+  assert.equal(done[0].state, 'stopped', '被停止不能算成功')
+
+  // 普通后台命令：用户主动停的不推回（对话自己停下了，不想被一条结果重新拉起）
+  ends.length = 0
+  const plain = bg.start({ taskId: 'p', name: '自己起的命令', command: 'x', cwd: '', root: dir, exclusive: false })
+  assert.ok(plain.ok)
+  await until(() => ends.length === 1, '普通命令跑起来')
+  assert.equal(bg.stopOne('p', plain.id!).ok, true)
+  await until(() => bg.list('p').some((j) => j.id === plain.id && j.state === 'stopped'), '普通命令置终态')
+  await tick()
+  await tick()
+  assert.equal(done.length, 1, '普通后台命令被停下时结果照旧不推回')
+
+  // 还在独占队里排着就被停掉的父对话测试：同样要有结论，不能让批次等一条从没跑过的命令
+  const queueDir = mkdtempSync(path.join(tmpdir(), 'bg-stop-queued-'))
+  const first = bg.start({
+    taskId: 'p',
+    name: '父对话测试：B · 端到端测试',
+    command: 'x',
+    cwd: '',
+    root: queueDir,
+    exclusive: true,
+    notifyOnStop: true,
+  })
+  const queued = bg.start({
+    taskId: 'p',
+    name: '父对话测试：B · 界面检查',
+    command: 'x',
+    cwd: '',
+    root: queueDir,
+    exclusive: true,
+    notifyOnStop: true,
+  })
+  assert.ok(first.ok && queued.ok)
+  assert.equal(bg.view('p', queued.id!)?.state, 'queued')
+  assert.equal(bg.stopOne('p', queued.id!).ok, true)
+  await until(() => done.some((j) => j.id === queued.id), '排队中被停的父对话测试也把结果交回去')
+  assert.equal(done.find((j) => j.id === queued.id)!.state, 'stopped')
+
+  // 面板退出 / 归档 / 删除这类生命周期停（stop(taskId)）：即使带 notifyOnStop 也不回传——
+  // 那类停法由重启后的 recoverParentTests 把还在 testing 的批次重排，判成「未通过」会让子对话多跑一轮
+  const before = done.length
+  const lifecycle = bg.start({
+    taskId: 'p3',
+    name: '父对话测试：C · 单元测试',
+    command: 'x',
+    cwd: '',
+    root: dir,
+    exclusive: false,
+    notifyOnStop: true,
+  })
+  assert.ok(lifecycle.ok)
+  await until(() => bg.list('p3').some((j) => j.state === 'running'), '生命周期停的命令跑起来')
+  await bg.stop('p3', '（面板退出时它还没跑完）')
+  assert.equal(bg.list('p3').find((j) => j.id === lifecycle.id)!.state, 'stopped', '记录照旧置终态')
+  assert.equal(done.length, before, '生命周期停不回传结果')
+  void bg.stop('p')
+})
