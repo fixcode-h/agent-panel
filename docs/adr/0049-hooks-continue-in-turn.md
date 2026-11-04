@@ -48,7 +48,7 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
 | --- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------- |
 | P1  | 结束前钩子：Claude Code / Pi / Command Code 接入、对话和子任务的判断、界面的「面板让它接着做」、没计划时的累计门槛、规则检查 | 已实施                |
 | P2  | 设置页「钩子」（内置开关、用户钩子、AI 创建、试跑、触发记录）；工具前 / 工具后 / 上下文恢复事件和四个内置钩子                | 已实施（Claude Code） |
-| P3  | Codex 接入；面板事件和 Webhook 合并；旧工作流节点迁到 `submit_verdict`                                                       | 待实施                |
+| P3  | Codex 接入；Pi / Command Code 的工具前后和压缩后；面板事件和 Webhook 合并；旧工作流节点迁到 `submit_verdict`                 | 已实施                |
 
 ## 实施记录
 
@@ -70,3 +70,20 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
   - 改文件后推送教训：默认关；同一对话里每条教训只推一次。
 - **设置页**：`web/src/components/settings/HooksSection.tsx`、`HookEditor.tsx`。AI 创建是辅助对话框的 `hook` 类型（`shared/assist-hook.ts`），预览里服务端校验并试跑都通过才让保存，保存后一律关着。
 - **工具前 / 工具后 / 压缩后目前只有 Claude Code 装**：Pi、Command Code 的扩展里也有对应事件（`tool_call`、`beforeToolCall` 等），留到以后接；设置页照实写不支持。
+
+### 第三期（2026-11-04）
+
+- **Codex**（0.166 app-server 实测）：钩子用 `-c hooks.Stop=[…]` 这类参数传（来源记作 sessionFlags），不改用户的 `hooks.json`。
+  - 格式和 Claude Code 一致：Stop 回 `decision: block` 同一轮续跑（会多出一条 `hookPrompt` 条目，面板不画）；PreToolUse 回 `permissionDecision: deny` 拒绝；SessionStart 的 `additionalContext` 交给模型。
+  - 压缩之后 Codex 以 `source: compact` 再跑一次 SessionStart，补的说明有效；PostCompact 的 `additionalContext` 不会交给模型，所以「压缩后」接在 SessionStart（compact|resume）上。
+  - **信任**：Codex 只跑用户信任过的钩子（按命令内容算的哈希记在 `~/.codex/config.toml` 的 `hooks.state`），`-c` 传不进信任记录，没信任的静静地不跑。面板开始前用 `hooks/list` 查一遍，只把来自参数、命令里引用了 `AGENT_PANEL_HOOK_SCRIPT` 的那几条用 `config/batchWrite` 记成信任，用户自己和项目里的钩子不碰。没用 `--dangerously-bypass-hook-trust`：它会连项目仓库里没审过的钩子一起放行。
+  - 命令里的转发脚本路径走环境变量（`node "$AGENT_PANEL_HOOK_SCRIPT" …`），命令每轮相同、哈希不变，信任一次就够；记的键按事件和序号固定，不会越积越多。Windows 上的 `commandWindows` 用 `%变量%` 写法，没实测。
+  - 模型有时用 shell 跑 `apply_patch`，钩子收到的工具名是 Bash：CLI 定义的 `editCommands` 把它算作改文件，路径从补丁头里取，补丁改到的每个文件都要过只读守卫。
+  - 在 deepseek 中转上 PostToolUse 补说明会让下一次请求报「tool_calls 后面缺 tool 消息」（中转把 Responses 转成 Chat 时顺序对不上），官方接口不受影响；报错照常显示给用户。
+- **Pi / Command Code 的工具前后和压缩后**：写在面板每轮装的扩展里，CLI 定义的 `events` 只声明能拒绝、能补说明。
+  - Pi：桥接扩展接 `tool_call`（返回 `block`）、`tool_result`（补的说明接在结果后面）、`session_compact`（`sendMessage` 补一条不显示的消息）。
+  - Command Code：mod 接 `beforeToolCall`（`block` + `additionalContext`）、`afterToolCall`；压缩只有 `compaction_done` 事件，mod 先问面板，下一回合开始时在 `onTurnStart` 里补一条不显示的消息。
+  - 每轮装的是同一份代码，按环境变量 `AGENT_PANEL_HOOK_EVENTS` 只问这一轮有人用的事件。
+- **面板事件**：`task.done`、`task.failed`、`task.waitingUser`、`task.wrapRequested`、`plan.stepDone`、`schedule.finished`，只通知、输出不看，四个 CLI 都一样（`server/hooks/notify.ts`）。对话事件从任务落盘前后的状态比出来（`task-store` 的 `onTaskChange`），和浏览器通知同一套判断，不读回复文字。
+- **Webhook 并入**：设置里原来的「计划 Webhook」迁成 `schedule.finished` 上的一个 HTTP 钩子（只迁一次，开关照旧）。投递照旧最多重试 3 次、结果记在计划上；收到的 JSON 改成钩子的统一格式，原来的字段放在 `schedule` 下、`event` 改叫 `result`。
+- **按文字认结论删掉了**：`parseVerdict` / `leadVerdict` 删除；老模板里「最后一行写『验收结论：通过』」改成调用 `submit_verdict`，用户存下的旧角色、旧节点启动时用 `rewriteVerdictText` 迁一遍（`server/verdict-migrate.ts`）。
