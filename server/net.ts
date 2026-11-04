@@ -35,7 +35,8 @@ const REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Se
 const ENV_PROXY = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']
 
 /** 这次请求一开始走哪条路；fallback 表示失败后要不要再找本机代理 */
-export type ProxyPlan = { kind: 'proxy'; key: string; shown: string } | { kind: 'direct'; fallback: boolean }
+export type ProxyPlan =
+  { kind: 'proxy'; key: string; shown: string; system?: boolean } | { kind: 'direct'; fallback: boolean }
 
 interface Attempt {
   key: string
@@ -299,7 +300,10 @@ function dispatcherFor(key: string) {
 }
 
 /**
- * 这次请求一开始走哪条路：设置里的代理优先，其次环境变量（这时 NO_PROXY 生效），最后直连。
+ * 这次请求一开始走哪条路：设置里的代理优先，其次环境变量，再其次系统代理（这两条 NO_PROXY 生效），最后直连。
+ * 系统代理（Windows 注册表 / macOS scutil）要放在直连前面：用户开了 Clash、v2rayN 的「系统代理」却没在设置里填时，
+ * 以前先直连，而国内直连 GitHub 往往能连上、只是被限速到几十 KB/s，请求没失败就不会换到代理，
+ * 更新包下载就一直卡在龟速上（2026-11-04 用户反馈「开了代理下载还是很慢」）。
  * set 传的是「实际生效的地址」（已经过了 configuredProxy 的开关判断），这里不再看开关。
  * 设置里填的地址没写协议时补 http://，否则 ProxyAgent 解析不了；socks 这类不支持的照原样传下去，
  * 请求失败后按正常回退处理。
@@ -309,15 +313,18 @@ export function planFor(
   set: string,
   env: string,
   noProxyValue = process.env.NO_PROXY ?? process.env.no_proxy ?? '',
+  system: string[] = [],
 ): ProxyPlan {
   if (isLocalUrl(url)) return { kind: 'direct', fallback: false }
   if (set.trim()) {
     const key = httpProxy(set) || set.trim()
     return { kind: 'proxy', key, shown: redact(key) }
   }
-  if (!env) return { kind: 'direct', fallback: true }
+  const sys = system.map(httpProxy).find(Boolean) ?? ''
+  if (!env && !sys) return { kind: 'direct', fallback: true }
   if (noProxy(url, noProxyValue)) return { kind: 'direct', fallback: false }
-  return { kind: 'proxy', key: env, shown: redact(env) }
+  if (env) return { kind: 'proxy', key: env, shown: redact(env) }
+  return { kind: 'proxy', key: sys, shown: redact(sys), system: true }
 }
 
 /**
@@ -336,7 +343,10 @@ async function defaultPlan(url: string): Promise<ProxyPlan> {
   } catch {
     // 设置读不出来时按没填处理，仍然可以走环境变量和自动检测
   }
-  return planFor(url, set, ENV_PROXY.map((k) => process.env[k]).find(Boolean) ?? '')
+  const env = ENV_PROXY.map((k) => process.env[k]).find(Boolean) ?? ''
+  // 设置和环境变量都没有时才读系统代理：读一次是一条 reg / scutil 命令，结果缓存 60 秒
+  const system = set || env || isLocalUrl(url) ? [] : await systemProxies()
+  return planFor(url, set, env, undefined, system)
 }
 
 const defaultDeps: NetDeps = {
@@ -438,7 +448,7 @@ export async function netFetchWith(deps: NetDeps, url: string, init: NetInit = {
   const plan = await deps.plan(url).catch((): ProxyPlan => ({ kind: 'direct', fallback: true }))
   const first: Attempt =
     plan.kind === 'proxy'
-      ? { key: plan.key, shown: plan.shown, source: 'configured' }
+      ? { key: plan.key, shown: plan.shown, source: plan.system ? 'local' : 'configured' }
       : { key: '', shown: '', source: 'direct' }
   const tried = [first]
 
