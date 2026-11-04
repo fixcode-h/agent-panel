@@ -10,6 +10,7 @@ import { getSettings } from '../settings.ts'
 import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
 import { answerRequest, dropRequests } from '../exec/requests.ts'
 import { cancelWait, forgetNotes } from '../exec/steering.ts'
+import { convChanges } from '../../shared/conv-changes.ts'
 import { taskLog } from '../task-log.ts'
 import { log } from '../log.ts'
 import { settleBefore } from './helpers.ts'
@@ -107,6 +108,43 @@ export function registerActionRoutes(s: TasksScope) {
       const lm = x?.messages.find((y) => y.id === m.id)
       if (lm?.turnChanges) lm.turnChanges = { ...lm.turnChanges, revertedAt: at }
     }
+    const base = live ?? tk
+    const changes = (await taskChanges(dir, base).catch(() => null)) ?? base.changes
+    if (live) live.changes = changes
+    const saved = await s.store.update(id, { ...base, changes }, { now: true })
+    return c.json({ ok: true, task: saved, files: r.files })
+  })
+
+  // 撤销整个对话的改动（对话停下后最后面那张改动卡片的撤销）：各轮从后往前一起撤，规则和撤一轮相同——
+  // 之后用户自己又改的保留，有文件撤不干净时一个都不动，把冲突交回页面
+  s.routes.post('/:id/conv-revert', async (c) => {
+    const id = c.req.param('id')
+    const tk = await s.current(id)
+    if (!tk) return s.bad(c, t('任务不存在'), 404)
+    if (tk.imported) return s.bad(c, s.READONLY, 409)
+    if (tk.working || tk.steps.some((x) => x.status === 'running'))
+      return s.bad(c, t('对话正在执行，等这一轮结束后再撤销'), 409)
+    const ch = convChanges(tk.messages)
+    if (!ch.files.length) return s.bad(c, t('这个对话没有要撤销的改动'), 404)
+    const dir = await s.taskDir(tk)
+    if (!dir) return s.bad(c, t('任务没有工作目录'), 404)
+    let r: Awaited<ReturnType<typeof undoSpans>>
+    try {
+      r = await undoSpans(
+        dir,
+        ch.spans,
+        ch.files.map((f) => f.path),
+      )
+    } catch (e) {
+      return s.bad(c, t('撤销失败：{error}', { error: (e as Error).message }))
+    }
+    if (!r.ok) return c.json({ ok: false, conflicts: r.conflicts })
+    taskLog(id, '撤销了整个对话的改动', { turns: ch.turns.length, files: r.files.length })
+    const at = new Date().toISOString()
+    const live = s.live.get(id)?.task
+    for (const x of [live, tk])
+      for (const lm of x?.messages ?? [])
+        if (lm.turnChanges && ch.turns.includes(lm.id)) lm.turnChanges = { ...lm.turnChanges, revertedAt: at }
     const base = live ?? tk
     const changes = (await taskChanges(dir, base).catch(() => null)) ?? base.changes
     if (live) live.changes = changes

@@ -264,17 +264,19 @@ export function orchTools(o: Orchestra) {
                   type: 'string',
                   description: '子对话用哪个高级角色（名字）：不写用「执行」；项目里有更合适的（例如 UE 专用的）时写它',
                 },
+                // 必填、二选一：以前只有写了 "bug" 才算，父对话常常漏写，派出去的 Bug 子对话没有交诊断报告的工具，
+                // 用户也就看不到审阅弹窗（用户报过）。服务端没写时仍按 task 处理，老的调用照常能用
                 kind: {
                   type: 'string',
-                  enum: ['bug'],
+                  enum: ['task', 'bug'],
                   description:
-                    '用户报的 Bug 写 "bug"：子对话修之前先交诊断报告，用户确认了方案才改。评审、测试里发现的问题不写',
+                    '这个子对话是什么：用户报的 Bug（程序哪里坏了、行为不对要修）写 "bug"，子对话修之前先交诊断报告，用户确认了方案才改；其余（新功能、改进、评审或测试里发现的问题）写 "task"',
                 },
                 route: routeField(),
                 ...docsFirstFields,
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },
-              required: ['title', 'message'],
+              required: ['title', 'message', 'kind'],
             },
           },
           {

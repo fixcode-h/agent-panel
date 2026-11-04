@@ -58,7 +58,7 @@ export function StyleLibraryList({
             <span className="flex items-center gap-1.5 text-footnote">
               <span className="truncate">{s.name}</span>
               {s.builtin && (
-                <span className="shrink-0 rounded-sm bg-field px-1 text-micro text-subtle">{t('内置')}</span>
+                <span className="chip-lift shrink-0 rounded-sm bg-field px-1 text-micro text-subtle">{t('内置')}</span>
               )}
             </span>
             {s.summary && <span className="line-clamp-2 text-caption leading-snug text-subtle">{s.summary}</span>}

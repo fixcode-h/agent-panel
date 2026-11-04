@@ -963,6 +963,22 @@ await runShard(import.meta.filename, async (api) => {
       .catch(() => errors.push('诊断报告：父对话里在跑的子对话那一行没有写「等你查看诊断报告第 2 版」'))
     if (!(await p.getByText('报告待确认', { exact: true }).count()))
       errors.push('诊断报告：父对话里那一行没有用「报告待确认」和别的执行中区分开')
+    // 报告交上来时自动弹一次审阅弹窗（每一版只弹一次，关掉后不再弹）
+    await p
+      .getByRole('dialog')
+      .getByRole('button', { name: '确认方案，开始修' })
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('诊断报告：交上来时没有自动弹出审阅弹窗'))
+    await p.keyboard.press('Escape')
+    await settle(p)
+    if (await p.getByRole('dialog').getByRole('button', { name: '确认方案，开始修' }).count())
+      errors.push('诊断报告：自动弹出的审阅弹窗关掉后又弹了一次')
+    // 子对话页：等确认的报告像子任务一样放在最下面的运行区，不跟着交报告那一行收进工具的折叠里
+    if (!(await childView(p).locator('.proc-list').getByText('诊断报告', { exact: true }).count()))
+      errors.push('诊断报告：子对话最下面的运行区没有等确认的报告那一行')
+    // 父对话页上也有入口：不用先进子对话找交报告那一行
+    if (!(await p.locator('.proc-list').getByRole('button', { name: '查看报告' }).count()))
+      errors.push('诊断报告：父对话页「正在运行」里那个子对话的行上没有「查看报告」')
     const open = childView(p).getByRole('button', { name: '查看报告' })
     await open
       .first()

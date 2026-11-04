@@ -1574,23 +1574,11 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个 · {m} 封未读': '{n} · {m} unread',
   '「{title}」的往来': 'Letters with “{title}”',
   看它和父对话之间的信: 'Letters between it and the parent',
-  已撤销这一轮的改动: 'Reverted the changes from this turn',
   '已更改 {n} 个文件': '{n} files changed',
-  已撤销: 'Reverted',
   '对话正在执行，等这一轮结束后再撤销': 'The conversation is running. Revert after this turn ends',
-  只撤销这一轮的改动: 'Revert only the changes from this turn',
-  查看全部: 'View all',
   '有 {n} 个文件撤不干净，所有文件都没动：': "{n} files can't be reverted cleanly, so no files were touched:",
-  '这些地方在这一轮之后又被改过，请在编辑器里手动处理。':
-    'These spots were changed again after this turn. Please fix them by hand in your editor.',
-  '撤销这一轮的改动？': 'Revert the changes from this turn?',
-  '{n} 个文件会恢复成这一轮开始前的样子，这一轮新建的文件会被删除；这一轮之后你或其他对话在这些文件里的改动会保留。改到同一处时不会撤销，会列出冲突。':
-    '{n} files go back to how they were before this turn and files created in this turn are deleted. Later edits by you or other conversations are kept. If a later edit touches the same spot, nothing is reverted and the conflicts are listed.',
-  这一轮的改动: 'Changes in this turn',
   改动显示方式: 'Change list view',
   按目录: 'By folder',
-  '这一轮里这个文件没有文字差异（可能是二进制文件）。':
-    'No text differences for this file in this turn (it may be a binary file).',
   // 用户消息气泡：送达状态和「⋯」菜单（2026-10-31）
   重新发送: 'Resend',
   这条消息的更多操作: 'More actions for this message',
@@ -1874,4 +1862,21 @@ export const EN_TASKS: Record<string, string> = {
   '作为用户报的 Bug 发回被分析的对话：先交诊断报告给你确认方案，再改':
     'Send it back to the analysed conversation as a reported bug: it hands you a diagnosis report to confirm the plan before changing anything',
   按完整流程修: 'Fix with full process',
+  诊断报告等你确认: 'Diagnosis report awaiting your review',
+  诊断报告: 'Diagnosis report',
+  '打开诊断报告第 {n} 版': 'Open diagnosis report v{n}',
+  已撤销这个对话的改动: "Reverted this conversation's changes",
+  这个对话的改动已撤销: "This conversation's changes were reverted",
+  '这个对话改了 {n} 个文件': 'This conversation changed {n} files',
+  撤销这个对话改的所有文件: 'Revert every file this conversation changed',
+  '查看全部 {n} 个文件': 'Show all {n} files',
+  '这些地方在这个对话改完之后又被改过，请在编辑器里手动处理。':
+    'These places were changed again after this conversation; resolve them in your editor.',
+  '撤销这个对话的改动？': "Revert this conversation's changes?",
+  '{n} 个文件会恢复成这个对话改之前的样子，对话里新建的文件会被删除；你或其他对话之后在这些文件里的改动会保留。改到同一处时不会撤销，会列出冲突。':
+    '{n} files go back to how they were before this conversation changed them, and files it created are deleted; later changes by you or other conversations in these files are kept. Where the same spot was changed, nothing is reverted and the conflicts are listed.',
+  这个对话的改动: "This conversation's changes",
+  '这个文件没有文字差异（可能是二进制文件）。': 'This file has no text differences (it may be binary).',
+  这个对话没有要撤销的改动: 'This conversation has no changes to revert',
+  这个文件不在这个对话的改动里: "This file isn't among this conversation's changes",
 }

@@ -1,5 +1,5 @@
 import { useUserName } from '@/lib/user-name'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CircleSlash, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import {
@@ -16,6 +16,9 @@ import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
+import { ChildReportButton, DiagnosisAutoOpen, firstShow } from './ChildReport'
+import { DiagnosisDialog } from './DiagnosisDialog'
+import { Button } from '@/components/ui/button'
 import { useChildList, useChildOpen, useJobOpen } from './child-open'
 import { childClosedHint, childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
@@ -54,12 +57,17 @@ export function runningRows<C extends ChildEntry>({
   // 对话派出的子任务：只要没结束（在跑、在排队）就列一行，跟子对话同一批出现在最新一段上；
   // 在跑的排前面，同一组按派出的顺序
   const helpers = kids && task ? activeHelpers(task) : []
+  // 在等你确认的诊断报告（ADR 0045）：交报告那一行会被收进工具的折叠里，像子任务一样放在最下面，
+  // 确认或提了意见之后（不再是 pending）就不在这里了，回到普通的记录里
+  const last = kids ? task?.diagnoses?.at(-1) : undefined
+  const report = last?.status === 'pending' ? last.version : 0
   return {
     sub,
     own,
     rows,
     helpers,
-    empty: !tools.length && !own.length && !sub.length && !rows.length && !helpers.length,
+    report,
+    empty: !tools.length && !own.length && !sub.length && !rows.length && !helpers.length && !report,
   }
 }
 
@@ -70,6 +78,47 @@ export function activeHelpers(task: Task) {
     // 被打断的子任务在对话停着时不列（见 helperShown）
     .filter((s): s is TaskStep => !!s && helperShown(task, s))
   return sortHelpers(steps)
+}
+
+/**
+ * 在等你确认的诊断报告：一直转圈、写明第几版，行尾「查看报告」打开审阅弹窗。
+ * 和子任务行一样放在最下面，不跟着交报告那一行收进工具的折叠里
+ */
+function ReportRow({ task, version }: { task: Task; version: number }) {
+  const [open, setOpen] = useState(false)
+  // 交上来时自动弹一次（每一版一次，和父对话页共用记号）：交报告那一行折叠着时根本没挂上，不能只靠它弹
+  useEffect(() => {
+    if (firstShow(task.id, version)) setOpen(true)
+  }, [task.id, version])
+  return (
+    <>
+      <RowShell
+        glyph={<Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-warning" />}
+        verb={t('诊断报告')}
+        title={t('第 {n} 版', { n: version })}
+        titleClass={NAME_TITLE}
+        open={false}
+        rowOpen={() => setOpen(true)}
+        onOpen={() => setOpen(true)}
+        openTip={t('打开诊断报告第 {n} 版', { n: version })}
+        detailStart
+        detail={<span className={childLabelClass.warning}>{t('等你确认')}</span>}
+        action={
+          <Button
+            size="sm"
+            className="h-6 shrink-0 px-2 text-xs"
+            onClick={(e) => {
+              e.stopPropagation()
+              setOpen(true)
+            }}
+          >
+            {t('查看报告')}
+          </Button>
+        }
+      />
+      {open && <DiagnosisDialog task={task} open onOpenChange={setOpen} />}
+    </>
+  )
 }
 
 /** 标题是名字（子任务、子对话）而不是路径或命令：用正文字体，和组件库里「派发子对话 · 代码审查」一样 */
@@ -284,7 +333,7 @@ export function RunningNow({
   const children = useChildList()
   const openChild = useChildOpen()
   // 列什么只算一次：RunningNow 自己列的行和外面画不画分隔线读的是同一个函数
-  const { sub: stepJobs, own: ownJobs, rows, helpers } = runningRows({ task, tools, jobs, kids, children })
+  const { sub: stepJobs, own: ownJobs, rows, helpers, report } = runningRows({ task, tools, jobs, kids, children })
   // 已经有子任务行的，后台命令并进那一行；剩下的（子任务做完了命令还在跑）照旧单独一行
   const helperJobs = new Map(stepJobs.map((x) => [x.step.id, x.jobs]))
   const restJobs = stepJobs.filter((x) => !helpers.some((s) => s.id === x.step.id))
@@ -294,11 +343,12 @@ export function RunningNow({
   const now = useNow(ownJobs.length > 0 || stepJobs.length > 0 || rows.length > 0 || helpers.length > 0)
   // 只为独立调用方保留的兜底：RunningFooter 已经用 runningRows 先判过空（判空和渲染读同一个值），
   // 这边不再判会画出只有分割线、没有内容的一块
-  if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length && !helpers.length) return null
+  if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length && !helpers.length && !report) return null
   const box = (
     // 过程行连成一组（见 index.css 的 proc-list）：每行默认浅底，行间留一点间距，不画分隔线
     <div className="proc-list flex flex-col" aria-label={t('运行中')}>
       <ToolRows tools={tools} task={task} />
+      {task && report > 0 && <ReportRow task={task} version={report} />}
       {task &&
         helpers.map((s) => (
           <HelperRow
@@ -385,9 +435,13 @@ export function RunningNow({
               </span>
             }
             ms={childMs(k, now)}
+            // 在等你确认诊断报告：行尾直接给「查看报告」，不用先进子对话找交报告那一行
+            action={k.diagnosis ? <ChildReportButton childId={k.id} /> : undefined}
           />
         )
       })}
+      {/* 报告交上来时自动弹一次审阅弹窗（每一版只弹一次） */}
+      <DiagnosisAutoOpen ids={rows.filter((k) => k.diagnosis).map((k) => k.id)} />
       {task && win && <HelperWindow task={task} id={win} teamNames={teamNames} onClose={() => setWin('')} />}
     </div>
   )

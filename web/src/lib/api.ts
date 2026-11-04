@@ -904,6 +904,13 @@ export const api = {
       `/tasks/${id}/turn-diff?msg=${encodeURIComponent(msg)}&path=${encodeURIComponent(path)}`,
     ),
   /** 撤销一轮的改动：有文件撤不干净时 ok 为 false，列出冲突的文件，一个都没动 */
+  convDiff: (id: string, path: string) =>
+    request<{ path: string; diff: string }>(`/tasks/${id}/conv-diff?path=${encodeURIComponent(path)}`),
+  convRevert: (id: string) =>
+    request<{ ok: true; task: Task; files: string[] } | { ok: false; conflicts: { path: string; reason: string }[] }>(
+      `/tasks/${id}/conv-revert`,
+      json('POST', {}),
+    ),
   turnRevert: (id: string, msg: string) =>
     request<{ ok: true; task: Task; files: string[] } | { ok: false; conflicts: { path: string; reason: string }[] }>(
       `/tasks/${id}/turn-revert`,

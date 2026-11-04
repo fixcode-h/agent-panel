@@ -269,7 +269,7 @@ await runShard(import.meta.filename, async (api) => {
     const file = (path) => card.getByTitle(path, { exact: true })
 
     // 长 diff：62 行的删除，窗口应该长到视口上限、正文自己滚动
-    await card.getByRole('button', { name: '查看全部', exact: true }).click()
+    await card.getByRole('button', { name: /^查看全部/ }).click()
     await file('tests/cart.test.ts').click()
     await check(p, '差异-一轮改动-长', ['cart.test.ts', 'expect(total).toBe(42)', '-62'])
     const long = await size()
@@ -288,11 +288,11 @@ await runShard(import.meta.filename, async (api) => {
     }
     // 左栏收起 / 展开：收起后文件树不再占宽度
     await p.getByRole('button', { name: '收起文件列表', exact: true }).click()
-    if (await p.locator('[role="dialog"] aside[aria-label="这一轮的改动"]').count())
+    if (await p.locator('[role="dialog"] aside[aria-label="这个对话的改动"]').count())
       errors.push('差异-一轮改动-长：点「收起文件列表」后文件树还在')
     await check(p, '差异-收起文件列表', ['左右对照', 'expect(total).toBe(42)'])
     await p.getByRole('button', { name: '显示文件列表', exact: true }).click()
-    if (!(await p.locator('[role="dialog"] aside[aria-label="这一轮的改动"]').count()))
+    if (!(await p.locator('[role="dialog"] aside[aria-label="这个对话的改动"]').count()))
       errors.push('差异-一轮改动-长：点「显示文件列表」后文件树没有回来')
     await p.keyboard.press('Escape')
     await closed()
@@ -316,7 +316,7 @@ await runShard(import.meta.filename, async (api) => {
     await check(p, '差异-一轮改动-窄屏', ['到货通知我', '2 / 4'])
     if (
       await p
-        .locator('[role="dialog"] aside[aria-label="这一轮的改动"]')
+        .locator('[role="dialog"] aside[aria-label="这个对话的改动"]')
         .isVisible()
         .catch(() => false)
     )

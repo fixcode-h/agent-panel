@@ -28,6 +28,7 @@ import { DIFF_GUTTER, DIFF_HUNK, DIFF_TONE } from '@/components/ui/diff-tone'
 import { CommandDialog, OutputDialog } from './ToolDialog'
 import { RunDialog } from './RunCard'
 import { DiagnosisDialog } from './DiagnosisDialog'
+import { firstShow } from './ChildReport'
 import { Button } from '@/components/ui/button'
 import { PeerLine } from './PeerMessage'
 import { AlertRow } from './AlertRow'
@@ -347,7 +348,8 @@ export function RowShell({
           {badge && (
             <span
               className={cn(
-                'rounded-sm px-1.5 py-px font-sans text-caption leading-4',
+                // 和同行正文按盒子居中对时整体偏低一档，用 chip-lift 提回去（数值在 index.css 定义）
+                'chip-lift rounded-sm px-1.5 py-px font-sans text-caption leading-4',
                 badgeClass ?? 'bg-sel text-subtle',
               )}
             >
@@ -543,6 +545,10 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const [diagOpen, setDiagOpen] = useState(false)
   const report = view.diagnosis ? task?.diagnoses?.find((d) => d.version === view.diagnosis) : undefined
   const waitReport = report?.status === 'pending'
+  // 报告交上来时自动弹一次（每一版只弹一次，和父对话页共用记号，见 ChildReport.tsx）
+  useEffect(() => {
+    if (waitReport && task?.id && report && firstShow(task.id, report.version)) setDiagOpen(true)
+  }, [waitReport, task?.id, report])
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out' | 'plan'>('')
   const openFile = useFileOpen()
   const openJob = useJobOpen()

@@ -3707,8 +3707,8 @@ function tasksRoute(
       ''
     return { path: file, dir: '', diff, git: false, before: false }
   }
-  // 一轮改动的差异和撤销：演示里没有仓库，差异用写好的样例，撤销只记一笔「已撤销」
-  if (sub === 'turn-diff') {
+  // 一轮（和整个对话）改动的差异和撤销：演示里没有仓库，差异用写好的样例，撤销只记一笔「已撤销」
+  if (sub === 'turn-diff' || sub === 'conv-diff') {
     const file = query.get('path') ?? ''
     return { path: file, diff: DEMO_DIFFS[file] ?? '' }
   }
@@ -3719,6 +3719,19 @@ function tasksRoute(
     m!.turnChanges = { ...ch, revertedAt: new Date().toISOString() }
     persist()
     return { ok: true, task, files: ch.files.map((f) => f.path) }
+  }
+  // 整个对话的改动（对话停下后最后面那张卡片）：差异和一轮的共用样例（见上面），撤销把带改动的每一轮都记成已撤销
+  if (sub === 'conv-revert' && method === 'POST') {
+    if (live.has(task.id)) fail('对话正在执行，等这一轮结束后再撤销', 409)
+    const at = new Date().toISOString()
+    const files = new Set<string>()
+    for (const m of task.messages.filter((x) => x.turnChanges?.files.length && !x.turnChanges.revertedAt)) {
+      for (const f of m.turnChanges!.files) files.add(f.path)
+      m.turnChanges = { ...m.turnChanges!, revertedAt: at }
+    }
+    if (!files.size) fail('这个对话没有要撤销的改动', 404)
+    persist()
+    return { ok: true, task, files: [...files] }
   }
   if (sub === 'resume') {
     if (live.has(task.id)) fail('任务正在执行', 409)
@@ -4536,7 +4549,7 @@ async function seedTasks(d: Db) {
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
       { path: 'src/components/RestockButton.tsx', add: 9, del: 0 },
     ]
-    // 这一轮的总结下面挂「已更改 N 个文件」：超过 3 个文件，卡片上才有「查看全部」可点
+    // 对话停下后最后面挂「这个对话改了 N 个文件」：超过 3 个文件，卡片上才有「查看全部」可点
     const summary = [...task.messages].reverse().find((m) => m.role === 'agent' && !m.step && m.text.trim())
     if (summary)
       summary.turnChanges = {
