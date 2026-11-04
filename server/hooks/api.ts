@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { BUILTIN_HOOKS, builtinOn, builtinParam, HookEventName, type HookDefInput } from '../../shared/hook-defs.ts'
 import { CLIS } from '../../shared/clis.ts'
+import { knownVersion } from '../detect.ts'
 import { hookEventsFor } from '../../shared/hooks.ts'
 import { t } from '../../shared/i18n.ts'
 import {
@@ -11,6 +12,7 @@ import {
   readHooks,
   setBuiltin,
   setBuiltinParam,
+  setCliOff,
   setProjectBuiltin,
 } from './store.ts'
 import { watchTaskEvents } from './notify.ts'
@@ -66,7 +68,23 @@ export function hooksApi(deps?: {
         hooks: data.hooks,
         // 每个 CLI 支持哪些事件：界面上把不支持的灰掉、写明原因
         // 只通知的面板事件由面板自己发，每个 CLI 都算支持
-        support: CLIS.map((x) => ({ id: x.id, name: x.name, events: hookEventsFor(x.hooks) })),
+        support: CLIS.map((x) => ({
+          id: x.id,
+          name: x.name,
+          version: knownVersion(x.id),
+          events: hookEventsFor(x.hooks, knownVersion(x.id)),
+          // 版本不够装不上的：设置页写明要多少版本
+          tooOld: (['turn.beforeEnd', 'tool.before', 'tool.after', 'context.restored'] as const)
+            .filter(
+              (e) => hookEventsFor(x.hooks).includes(e) && !hookEventsFor(x.hooks, knownVersion(x.id)).includes(e),
+            )
+            .map((e) => ({
+              event: e,
+              min: (e === 'turn.beforeEnd' ? x.hooks?.beforeEnd?.minVersion : x.hooks?.events[e]?.minVersion) ?? '',
+            })),
+        })),
+        // 按 CLI 关掉的事件
+        cliOff: data.cliOff,
       })
     })
     .put('/builtins/:id', async (c) => {
@@ -77,6 +95,14 @@ export function hooksApi(deps?: {
       if (typeof body.projectId === 'string' && body.projectId)
         await setProjectBuiltin(body.projectId, h.id, body.on === null ? null : body.on === true)
       else await setBuiltin(h.id, body.on === true, h.defaultOn)
+      return c.json({ ok: true })
+    })
+    .put('/cli-off/:cli', async (c) => {
+      const body = (await c.req.json().catch(() => ({}))) as { events?: unknown }
+      const events = HookEventName.array().safeParse(body.events ?? [])
+      if (!events.success || !CLIS.some((x) => x.id === c.req.param('cli')))
+        return c.json({ error: t('参数不对') }, 400)
+      await setCliOff(c.req.param('cli'), events.data)
       return c.json({ ok: true })
     })
     .put('/builtins/:id/params', async (c) => {

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { TaskMessage } from './schema.ts'
 import { NOTIFY_EVENTS, type HookEventName, type ToolKind } from './hook-defs.ts'
+import { panelToolName } from './panel-tools.ts'
 
 /**
  * 钩子（ADR 0049）：模型准备结束这一轮时（turn.beforeEnd），CLI 先问面板；计划没做完、也没在等任何结果时
@@ -27,6 +28,8 @@ export const BeforeEndSpec = z.object({
   files: z.record(z.string(), z.unknown()).default({}),
   /** 装这个事件要加的参数（钩子配置直接写在参数里的 CLI） */
   args: z.array(z.string()).default([]),
+  /** 实测过的最低版本：本机装的更老时不装，退回一轮结束后的提醒（读不到版本时照装） */
+  minVersion: z.string().optional(),
   /** 拦住时 CLI 要的输出（via=command）；里面的 {reason} 换成面板给的说明 */
   block: z.unknown().optional(),
   why: z.string().default(''),
@@ -41,6 +44,7 @@ export type BeforeEndSpec = z.infer<typeof BeforeEndSpec>
 export const EventSpec = z.object({
   files: z.record(z.string(), z.unknown()).default({}),
   args: z.array(z.string()).default([]),
+  minVersion: z.string().optional(),
   /** 拒绝这次工具调用时 CLI 要的输出（tool.before），{reason} 换成原因 */
   deny: z.unknown().optional(),
   /** 补给模型的一段说明（{text}）；没有这一项表示这个事件不能补说明 */
@@ -77,8 +81,12 @@ export const HooksSpec = z.object({
       name: z.string().default('tool_name'),
       input: z.string().default('tool_input'),
       path: z.array(z.string()).default(['file_path']),
+      /** 工具后：执行结果在哪个字段（取第一个有的，对象转成文字） */
+      output: z.array(z.string()).default([]),
+      /** 工具后：这些字段有值（非空、为真）就是执行失败；没有这一项的 CLI 报不出失败 */
+      failed: z.array(z.string()).default([]),
     })
-    .default({ name: 'tool_name', input: 'tool_input', path: ['file_path'] }),
+    .default({ name: 'tool_name', input: 'tool_input', path: ['file_path'], output: [], failed: [] }),
 })
 export type HooksSpec = z.infer<typeof HooksSpec>
 
@@ -97,7 +105,17 @@ export interface BeforeEndInput {
 /** 工具前、工具后、上下文恢复交给面板的事实：都从原生输入里按 CLI 定义取，不含模型回复的文字 */
 export interface HookFacts {
   /** path 是第一个文件（相对项目根判断范围时用）；paths 是这次要改的全部文件（补丁一次可以改好几个） */
-  tool?: { kind: ToolKind; name: string; input: Record<string, unknown>; path: string; paths: string[] }
+  tool?: {
+    kind: ToolKind
+    name: string
+    input: Record<string, unknown>
+    path: string
+    paths: string[]
+    /** 面板自己的工具（submit_merge 这些）去掉前缀后的名字；不是面板工具为空 */
+    panel?: string
+    /** 工具后才有：执行结果（截短）和是不是失败了；CLI 报不出失败时 failed 为 undefined */
+    result?: { output: string; failed?: boolean }
+  }
   /** 上下文恢复的来由：compact（压缩之后）、resume（续接）、startup（新开） */
   source?: string
 }
@@ -136,9 +154,12 @@ export const HOOK_TIMEOUT_MS = 5000
 export const FORWARD_TIMEOUT_MS = 65_000
 
 /** 按模板填 {reason} / {text}：模板里的字符串原样替换，对象、数组逐层替换 */
-export function fillTpl(tpl: unknown, vars: { reason?: string; text?: string }): unknown {
+export function fillTpl(tpl: unknown, vars: { reason?: string; text?: string; event?: string }): unknown {
   if (typeof tpl === 'string')
-    return tpl.replace(/\{reason\}/g, () => vars.reason ?? '').replace(/\{text\}/g, () => vars.text ?? '')
+    return tpl
+      .replace(/\{reason\}/g, () => vars.reason ?? '')
+      .replace(/\{text\}/g, () => vars.text ?? '')
+      .replace(/\{event\}/g, () => vars.event ?? '')
   if (Array.isArray(tpl)) return tpl.map((x) => fillTpl(x, vars))
   if (tpl && typeof tpl === 'object')
     return Object.fromEntries(Object.entries(tpl).map(([k, v]) => [k, fillTpl(v, vars)]))
@@ -149,17 +170,31 @@ export function fillTpl(tpl: unknown, vars: { reason?: string; text?: string }):
 export const HOOK_SCRIPT = 'agent-panel-hook.mjs'
 
 /** 用户钩子在这个 CLI 的对话里能用哪些事件：CLI 能装的，加上面板自己发、只通知的那几个（对哪个 CLI 都一样） */
-export const hookEventsFor = (spec: HooksSpec | undefined): HookEventName[] => [
-  ...supportedEvents(spec),
+export const hookEventsFor = (spec: HooksSpec | undefined, version?: string): HookEventName[] => [
+  ...supportedEvents(spec, version),
   ...NOTIFY_EVENTS,
 ]
 
-/** 这个 CLI（按定义）能装哪些事件：结束前看 beforeEnd，其余看 events */
-export function supportedEvents(spec: HooksSpec | undefined): HookEventName[] {
+/** 版本号里的第一段 x.y.z（CLI 的 --version 常带名字：「codex-cli 0.166.0」「2.1.318 (Claude Code)」） */
+const semver = (v: string) => /(\d+)\.(\d+)\.(\d+)/.exec(v)?.slice(1).map(Number)
+
+/** v 不低于 min；读不出版本（没检测过、格式认不出）时当成够 */
+export function versionAtLeast(v: string | undefined, min: string | undefined): boolean {
+  const a = v ? semver(v) : undefined
+  const b = min ? semver(min) : undefined
+  if (!a || !b) return true
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i]
+  return true
+}
+
+/** 这个 CLI（按定义）能装哪些事件：结束前看 beforeEnd，其余看 events；给了本机版本时按 minVersion 去掉不够的 */
+export function supportedEvents(spec: HooksSpec | undefined, version?: string): HookEventName[] {
   if (!spec) return []
   return [
-    ...(spec.beforeEnd ? (['turn.beforeEnd'] as const) : []),
-    ...(Object.keys(spec.events) as (keyof HooksSpec['events'])[]).filter((k) => spec.events[k]),
+    ...(spec.beforeEnd && versionAtLeast(version, spec.beforeEnd.minVersion) ? (['turn.beforeEnd'] as const) : []),
+    ...(Object.keys(spec.events) as (keyof HooksSpec['events'])[]).filter(
+      (k) => spec.events[k] && versionAtLeast(version, spec.events[k]!.minVersion),
+    ),
   ]
 }
 
@@ -245,7 +280,31 @@ export function hookFacts(spec: HooksSpec, native: unknown): HookFacts {
           .filter((v): v is string => typeof v === 'string')
           .flatMap((v) => [...v.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => m[1].trim()))
       : []
-  return { tool: { kind, name, input, path: paths[0] ?? '', paths }, ...(source ? { source } : {}) }
+  // 面板自己的工具（各家前缀不一样，见 panel-tools.ts）：类别记成 panel，用户钩子按去掉前缀的名字匹配
+  const panel = panelToolName(name)
+  if (panel) kind = 'panel'
+  const result = toolResult(spec, o)
+  return {
+    tool: { kind, name, input, path: paths[0] ?? '', paths, panel, ...(result ? { result } : {}) },
+    ...(source ? { source } : {}),
+  }
+}
+
+/** 结果最多留这么多字：钩子判断「是不是同一个错」够用，不把几 MB 的输出转来转去 */
+const RESULT_MAX = 2000
+
+/** 工具后的执行结果：按定义里的字段取，对象转成文字；没有结果字段（工具前）返回 undefined */
+function toolResult(spec: HooksSpec, o: Record<string, unknown>): { output: string; failed?: boolean } | undefined {
+  const f = spec.toolFields
+  const raw = f.output.map((k) => o[k]).find((v) => v !== undefined && v !== null)
+  const failedKnown = f.failed.length > 0
+  const failed = f.failed.some((k) => {
+    const v = o[k]
+    return v === true || (typeof v === 'string' && v.trim() !== '')
+  })
+  if (raw === undefined && !failed) return undefined
+  const text = typeof raw === 'string' ? raw : raw === undefined ? '' : JSON.stringify(raw)
+  return { output: text.slice(0, RESULT_MAX), ...(failedKnown ? { failed } : {}) }
 }
 
 /**

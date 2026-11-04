@@ -185,4 +185,22 @@ export const EN_HOOKS: Record<string, string> = {
   '绝对路径，一行一个': 'Absolute paths, one per line',
   没有这个参数: 'No such parameter',
   '要是 1 到 100 之间的整数': 'Must be a whole number from 1 to 100',
+  '各 CLI 的事件': 'Events per CLI',
+  '{event}要 {min} 以上': '{event} needs {min} or later',
+  '本机版本 {v}': 'Installed version {v}',
+  还没检测到版本: 'Version not detected yet',
+  '这个 CLI 没有能装的钩子事件，只有一轮结束后的提醒兜底':
+    'This CLI has no hook events to install; only the end-of-turn reminder applies',
+  '版本太老，这些事件不装：{list}': 'Version too old, these events are not installed: {list}',
+  原地打转提醒: 'Going-in-circles hint',
+  '同一条命令连续失败几次时，补一句让它换个思路或者说明卡在哪（要 CLI 报得出失败：Claude Code、Pi、Command Code）':
+    'When the same command fails several times in a row, adds a note to try another approach or say where it is stuck (needs a CLI that reports failures: Claude Code, Pi, Command Code)',
+  连续失败几次提醒: 'Failures in a row before the hint',
+  '1 到 100，默认 3': '1 to 100, default 3',
+  改完没验证: 'Edited but not verified',
+  '这条消息以来改过文件，之后却一条命令都没跑就要结束时，拦一次让它跑一下检查（或说明为什么不用跑）':
+    'When files were edited since this message but no command ran afterwards, blocks once so it runs a check (or explains why none is needed)',
+  面板工具: 'Panel tools',
+  工具名: 'Tool name',
+  '面板工具的名字，例如 submit_merge': 'Name of the panel tool, e.g. submit_merge',
 }

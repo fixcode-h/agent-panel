@@ -23,6 +23,7 @@ import { randomUUID } from 'node:crypto'
 import { rm, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { CACHE_DIR } from '../store.ts'
+import { knownVersion } from '../detect.ts'
 import { expandHome } from '../cli-extras.ts'
 import {
   HOOK_URL_ENV,
@@ -204,7 +205,8 @@ export async function invokeCli(o: {
   let slot: ReturnType<typeof claimPanelName> | undefined
   let run = { ...o, build, env }
   // 结束前钩子只给挂了编排工具的调用（对话、子任务、节点）：压缩、审查这类操作只挂提问工具，不该被拦住
-  const can = supportedEvents(def.hooks)
+  // 本机装的版本比实测过的老时不装那几个事件（读不到版本照装），见 CLI 定义里的 minVersion
+  const can = supportedEvents(def.hooks, knownVersion(def.id))
   const hookActive: HookEventName[] = !o.orch
     ? []
     : [...(o.beforeEnd ? (['turn.beforeEnd'] as const) : []), ...(o.onHook ? (o.hookEvents ?? []) : [])].filter((e) =>

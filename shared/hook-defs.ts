@@ -41,7 +41,8 @@ export const NOTIFY_EVENTS: readonly HookEventName[] = [
 export const isNotifyEvent = (e: HookEventName) => NOTIFY_EVENTS.includes(e)
 
 /** 工具的类别：各家工具名在 CLI 定义的 hooks.toolNames 里对照到这几类，用户钩子按类别匹配才能跨 CLI 通用 */
-export const ToolKind = z.enum(['shell', 'edit', 'read', 'any'])
+/** panel 是面板自己的工具（submit_merge、spawn_agents 这些），匹配时「命令开头」填工具名 */
+export const ToolKind = z.enum(['shell', 'edit', 'read', 'panel', 'any'])
 export type ToolKind = z.infer<typeof ToolKind>
 
 const SCRIPT_MAX = 20000
@@ -98,6 +99,7 @@ export {
   builtinOn,
   builtinParam,
   builtinList,
+  builtinNumber,
   type BuiltinHook,
   type BuiltinParam,
 } from './hook-builtins.ts'
@@ -107,6 +109,11 @@ export const HooksData = z.object({
   builtins: z.record(z.string(), z.boolean()).default({}),
   /** 按项目单独设的内置钩子开关（项目 id → 钩子 id → 开 / 关），覆盖全局；没设的跟着全局 */
   projects: z.record(z.string(), z.record(z.string(), z.boolean())).default({}),
+  /**
+   * 按 CLI 关掉的事件（CLI id → 事件）：比如某个中转站上 Codex 的「工具后补说明」会让下一次请求报错，
+   * 只在这个 CLI 上关掉它；对所有钩子（内置和自己的）都生效
+   */
+  cliOff: z.record(z.string(), z.array(HookEventName)).default({}),
   /** 内置钩子的参数（钩子 id → 参数名 → 值），没改过的不记 */
   params: z
     .record(z.string(), z.record(z.string(), z.union([z.array(z.string().max(300)).max(50), z.number()])))
@@ -124,7 +131,15 @@ export interface HookInput {
   project: { id: string; path: string }
   agent: { id: string; name: string }
   cli: string
-  tool?: { kind: ToolKind; name: string; input: Record<string, unknown> }
+  tool?: {
+    kind: ToolKind
+    name: string
+    input: Record<string, unknown>
+    /** 面板工具去掉前缀的名字（不是面板工具为空） */
+    panel?: string
+    /** 工具后才有：执行结果（截短）和是不是失败了（CLI 报不出失败时没有 failed） */
+    result?: { output: string; failed?: boolean }
+  }
   plan?: { done: number; total: number; current: string }
   /** 只通知的对话事件（task.* / plan.stepDone）：对话现在的状态，做完的那一步（plan.stepDone）或收尾说明（task.wrapRequested） */
   notice?: { status: string; step: string }
@@ -212,6 +227,8 @@ export function hookApplies(h: HookDef, input: HookInput, rel = ''): boolean {
   if (!tool) return false
   if (h.match.tool !== 'any' && h.match.tool !== tool.kind) return false
   if (h.match.path && !(rel && globMatch(h.match.path, rel))) return false
+  // 面板工具按工具名比（「命令开头」填 submit_merge 这类名字），shell 按命令逐段比
+  if (h.match.command && tool.kind === 'panel') return (tool.panel ?? '') === h.match.command
   if (h.match.command && !commandSegments(String(tool.input.command ?? '')).some((c) => c.startsWith(h.match.command)))
     return false
   return true

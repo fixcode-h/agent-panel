@@ -154,6 +154,33 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     ],
   },
   {
+    id: 'loop-hint',
+    event: 'tool.after',
+    name: () => t('原地打转提醒'),
+    description: () =>
+      t(
+        '同一条命令连续失败几次时，补一句让它换个思路或者说明卡在哪（要 CLI 报得出失败：Claude Code、Pi、Command Code）',
+      ),
+    defaultOn: false,
+    params: [
+      {
+        key: 'times',
+        kind: 'number',
+        label: () => t('连续失败几次提醒'),
+        hint: () => t('1 到 100，默认 3'),
+        default: 3,
+      },
+    ],
+  },
+  {
+    id: 'verify-before-end',
+    event: 'turn.beforeEnd',
+    name: () => t('改完没验证'),
+    description: () =>
+      t('这条消息以来改过文件，之后却一条命令都没跑就要结束时，拦一次让它跑一下检查（或说明为什么不用跑）'),
+    defaultOn: false,
+  },
+  {
     id: 'push-lessons',
     event: 'tool.after',
     name: () => t('改文件后推送教训'),
@@ -173,6 +200,12 @@ export function builtinParam(data: Pick<HooksData, 'params'>, h: BuiltinHook, ke
   if (!def) return []
   if (def.kind === 'number') return typeof v === 'number' ? v : (def.default as number)
   return Array.isArray(v) ? v : (def.default as string[])
+}
+
+export const builtinNumber = (data: Pick<HooksData, 'params'>, id: string, key: string): number => {
+  const h = BUILTIN_HOOKS.find((x) => x.id === id)
+  const v = h ? builtinParam(data, h, key) : 0
+  return typeof v === 'number' ? v : 0
 }
 
 export const builtinList = (data: Pick<HooksData, 'params'>, id: string, key: string): string[] => {

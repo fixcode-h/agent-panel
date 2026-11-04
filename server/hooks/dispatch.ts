@@ -6,6 +6,7 @@ import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts } from '.
 import {
   BUILTIN_HOOKS,
   builtinList,
+  builtinNumber,
   builtinOn,
   globMatch,
   hookApplies,
@@ -139,6 +140,35 @@ function restoreText(task: Task): string {
 
 /** 改文件后推送教训：每个对话里同一条教训只推一次 */
 const pushed = new Map<string, Set<string>>()
+/** 原地打转提醒：每个对话里每条命令连续失败了几次（成功一次就清零），提醒过的记在 hinted 里不再重复 */
+const fails = new Map<string, Map<string, number>>()
+/** 改完没验证：每个对话里按哪条输入问过（同一条输入只问一次） */
+const verified = new Map<string, string>()
+
+/**
+ * 这条输入以来改过文件、最后一次改之后一条命令都没跑过：返回这条输入的 id，不该问返回空。
+ * 只看工具的类别（edit / run），不看回复文字；自检过（钩子、提醒的那一行）之后又没动过的不再问
+ */
+export function unverifiedEdit(task: Pick<Task, 'messages'>): string {
+  const msgs = task.messages
+  let at = -1
+  msgs.forEach((m, i) => {
+    if (m.role === 'user' && !m.panel) at = i
+  })
+  if (at < 0) return ''
+  let lastEdit = -1
+  let lastRun = -1
+  let n = 0
+  msgs.slice(at + 1).forEach((m) => {
+    if (m.panel === 'hook' || m.panel === 'nudge') lastRun = Math.max(lastRun, n)
+    for (const x of m.role === 'agent' ? m.tools : []) {
+      n++
+      if (x.kind === 'edit') lastEdit = n
+      else if (x.kind === 'run') lastRun = n
+    }
+  })
+  return lastEdit > 0 && lastRun < lastEdit ? msgs[at].id : ''
+}
 
 export async function hookOptions(c: HookCallCtx): Promise<{
   beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
@@ -190,10 +220,13 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     ['temp-file-guard', (g, f) => tempFileDeny(c, f, g.list('allow'))],
   ]
   const guards = GUARDS.filter(([id]) => on(id) && (id !== 'read-only-guard' || who))
+  // 设置里按 CLI 关掉的事件（比如中转站上 Codex 的工具后）：内置的、自己的钩子都不装
+  const off = new Set(data.cliOff[c.cliId] ?? [])
   const events: HookEventName[] = []
   if (guards.length || mine('tool.before').length) events.push('tool.before')
-  if (lessons.length || mine('tool.after').length) events.push('tool.after')
+  if (lessons.length || on('loop-hint') || mine('tool.after').length) events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
+  for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
 
   const runUser = async (event: HookEventName, facts: HookFacts) => {
     const plan = activePlan(c.task)
@@ -201,7 +234,17 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     const input: HookInput = {
       ...base,
       event,
-      ...(facts.tool ? { tool: { kind: facts.tool.kind, name: facts.tool.name, input: facts.tool.input } } : {}),
+      ...(facts.tool
+        ? {
+            tool: {
+              kind: facts.tool.kind,
+              name: facts.tool.name,
+              input: facts.tool.input,
+              ...(facts.tool.panel ? { panel: facts.tool.panel } : {}),
+              ...(facts.tool.result ? { result: facts.tool.result } : {}),
+            },
+          }
+        : {}),
       ...(p
         ? {
             plan: {
@@ -257,23 +300,63 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       ms: 0,
     })
 
-  const builtinEnd = on('keep-going') ? c.call.beforeEnd : undefined
-  const userEnd = mine('turn.beforeEnd').length > 0
+  const endOff = off.has('turn.beforeEnd')
+  const builtinEnd = on('keep-going') && !endOff ? c.call.beforeEnd : undefined
+  const userEnd = !endOff && mine('turn.beforeEnd').length > 0
+  // 改完没验证：只给对话（有结束前判断的调用），Chat 页一问一答不拦
+  const verifyEnd = !endOff && on('verify-before-end') && !!c.call.beforeEnd && !isChatMode(c.task)
   const beforeEnd =
-    builtinEnd || userEnd
+    builtinEnd || userEnd || verifyEnd
       ? async (input: BeforeEndInput): Promise<BeforeEndDecision> => {
           let d: BeforeEndDecision = builtinEnd ? await builtinEnd(input) : { block: false, why: 'builtin-off' }
+          if (!d.block && verifyEnd) {
+            const asked = unverifiedEdit(c.task)
+            if (asked && verified.get(c.task.id) !== asked) {
+              verified.set(c.task.id, asked)
+              d = {
+                block: true,
+                why: 'verify',
+                reason:
+                  '【面板】这次改了文件，之后还没跑过任何检查就要结束：按项目的测试步骤跑一下快速检查（类型检查、相关单测），通过了再结束；确实不用跑（只改了文档、注释）就一句话说明原因。',
+              }
+              noteBuiltin('verify-before-end', 'turn.beforeEnd', 'block', d.reason!)
+            }
+          }
           if (!d.block && userEnd) {
             const u = await runUser('turn.beforeEnd', {})
             if (u.block) d = { block: true, reason: u.block, why: 'user-hook' }
           }
           if (d.block && d.reason) {
             c.mark(d.reason)
-            if (d.why !== 'user-hook') noteBuiltin('keep-going', 'turn.beforeEnd', 'block', d.reason)
+            if (d.why !== 'user-hook' && d.why !== 'verify')
+              noteBuiltin('keep-going', 'turn.beforeEnd', 'block', d.reason)
           }
           return d
         }
       : undefined
+
+  /** 原地打转：同一条 shell 命令连续失败到设置的次数时补一句；CLI 报不出失败（failed 为 undefined）的不算 */
+  const loopHint = (facts: HookFacts): string => {
+    const tool = facts.tool
+    if (!tool || tool.kind !== 'shell' || tool.result?.failed === undefined) return ''
+    const key = String(tool.input.command ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (!key) return ''
+    const mine = fails.get(c.task.id) ?? new Map<string, number>()
+    fails.set(c.task.id, mine)
+    if (!tool.result.failed) {
+      mine.delete(key)
+      return ''
+    }
+    const n = (mine.get(key) ?? 0) + 1
+    mine.set(key, n)
+    const times = Math.max(1, builtinNumber(data, 'loop-hint', 'times'))
+    if (n !== times) return ''
+    const text = `【面板】这条命令已经连续失败 ${n} 次了：${key.slice(0, 120)}。先停下来想清楚原因，换个思路（看报错原文、查配置、缩小范围）；确实卡住了就说明卡在哪、需要什么。`
+    noteBuiltin('loop-hint', 'tool.after', 'context', text)
+    return text
+  }
 
   const onHook = async (event: HookEventName, facts: HookFacts): Promise<HookAnswer> => {
     if (event === 'tool.before') {
@@ -302,6 +385,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
             `【面板】${r} 有相关的项目教训，照着做：\n${hit.map((l) => `- ${l.title}${l.rule ? `：${l.rule}` : ''}`).join('\n')}`,
           )
       }
+      const loop = on('loop-hint') ? loopHint(facts) : ''
+      if (loop) ctx.push(loop)
       ctx.push(...(await runUser(event, facts)).context)
       return ctx.length ? { context: ctx.join('\n\n') } : {}
     }

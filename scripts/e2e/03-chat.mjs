@@ -250,6 +250,9 @@ await runShard('对话与续接', async (api) => {
   step('Codex 的结束前钩子：先信任面板自己的钩子，同一轮里拦住自检一次，不另发提醒')
   rmSync(`${log}.hook`, { force: true })
   rmSync(`${log}.trust`, { force: true })
+  // 钩子按 CLI 定义里的 minVersion 装（Codex 实测过的是 0.166）：假 CLI 默认报 0.0.1，这里报一个够的版本再重新检测
+  writeFileSync(`${log}.ver`, '0.166.0')
+  await call('GET', '/clis?refresh=1')
   const cx = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -282,6 +285,8 @@ await runShard('对话与续接', async (api) => {
     ],
   )
   await call('DELETE', `/tasks/${cx.id}`)
+  rmSync(`${log}.ver`, { force: true })
+  await call('GET', '/clis?refresh=1')
 
   step('结束前钩子：动了手没列计划就收尾，同一轮里自检一次；确认完没再动手的不再问')
   rmSync(`${log}.hook`, { force: true })

@@ -13,8 +13,9 @@ process.env.AGENT_PANEL_DATA = dir
 
 const { setLang } = await import('../../shared/i18n.ts')
 const { Task, ProjectInput } = await import('../../shared/schema.ts')
-const { hookOptions } = await import('./dispatch.ts')
-const { putHook, setBuiltin, resetHooksCache } = await import('./store.ts')
+const { hookOptions, unverifiedEdit } = await import('./dispatch.ts')
+const { putHook, setBuiltin, resetHooksCache, setBuiltinParam, setCliOff, setProjectBuiltin } =
+  await import('./store.ts')
 const { checkHook } = await import('./validate.ts')
 const { recentTriggers } = await import('./run.ts')
 
@@ -200,4 +201,63 @@ test('保存前校验：语法错误、写死的密钥、给非工具事件配�
     { run: true },
   )
   assert.deepEqual(ok.errors, [])
+})
+
+test('原地打转提醒：同一条命令连续失败到设置的次数时补一句，成功一次就清零；默认关着', async () => {
+  resetHooksCache()
+  const fail = (ok: boolean) => ({
+    tool: {
+      kind: 'shell' as const,
+      name: 'Bash',
+      input: { command: 'npm  run build' },
+      path: '',
+      paths: [],
+      result: { output: ok ? 'ok' : 'error TS2322', failed: !ok },
+    },
+  })
+  const off = await hookOptions(ctx({ task: task({ id: 'loop0' }) }))
+  assert.ok(!(await off.onHook!('tool.after', fail(false))).context, '默认关着')
+  await setBuiltin('loop-hint', true, false)
+  await setBuiltinParam('loop-hint', 'times', 2, false)
+  const o = await hookOptions(ctx({ task: task({ id: 'loop1' }) }))
+  assert.ok(!(await o.onHook!('tool.after', fail(false))).context)
+  assert.match((await o.onHook!('tool.after', fail(false))).context ?? '', /连续失败 2 次/)
+  await o.onHook!('tool.after', fail(true))
+  assert.ok(!(await o.onHook!('tool.after', fail(false))).context, '成功过一次重新数')
+  await setBuiltin('loop-hint', false, false)
+  await setBuiltinParam('loop-hint', 'times', 3, true)
+})
+
+test('改完没验证：改了文件、之后没跑命令才算；跑过命令或自检过的不算', () => {
+  const m = (role: string, tools: string[] = [], panel?: string) => ({
+    id: `${role}${tools.join('')}${panel ?? ''}`,
+    role,
+    text: '',
+    tools: tools.map((kind) => ({ kind, label: kind })),
+    ...(panel ? { panel } : {}),
+  })
+  const t1 = { messages: [m('user'), m('agent', ['read', 'edit'])] } as never
+  assert.equal(unverifiedEdit(t1), 'user')
+  assert.equal(unverifiedEdit({ messages: [m('user'), m('agent', ['edit', 'run'])] } as never), '')
+  assert.equal(unverifiedEdit({ messages: [m('user'), m('agent', ['read'])] } as never), '')
+  assert.equal(unverifiedEdit({ messages: [m('user'), m('agent', ['edit']), m('system', [], 'hook')] } as never), '')
+})
+
+test('按 CLI 关掉的事件不装；内置钩子按项目单独的开关覆盖全局', async () => {
+  resetHooksCache()
+  // 前面用例留下的用户钩子（有一个故意出错、按设置拒绝）会干扰这里，先清掉
+  const { deleteHook, readHooks } = await import('./store.ts')
+  for (const h of (await readHooks()).hooks) await deleteHook(h.id)
+  await setCliOff('claude', ['tool.before'])
+  assert.ok(!(await hookOptions(ctx({ origin: 'builtin:explorer' }))).hookEvents?.includes('tool.before'))
+  await setCliOff('claude', [])
+  await setProjectBuiltin('p1', 'read-only-guard', false)
+  const ro = await hookOptions(ctx({ origin: 'builtin:explorer' }))
+  const roA = await ro.onHook!('tool.before', edit(path.join(dir, 'a.ts')))
+  assert.ok(!roA.deny, `这个项目关了只读守卫：${roA.reason}`)
+  await setProjectBuiltin('p1', 'read-only-guard', null)
+  const back = await hookOptions(ctx({ origin: 'builtin:explorer' }))
+  assert.ok((await back.onHook!('tool.before', edit(path.join(dir, 'a.ts')))).deny, '去掉单独设置后跟着全局')
+  // 内置守卫拦下的也记进最近触发
+  assert.ok(recentTriggers().some((x) => x.hookId === 'builtin:read-only-guard' && x.result === 'deny'))
 })

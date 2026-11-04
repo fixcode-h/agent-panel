@@ -59,6 +59,10 @@ test('范围和匹配：关着的、事件不对、范围外、工具类别 / �
   // 模型常在前面加 cd：按 &&、; 拆开逐段比
   const cd = input({ tool: { kind: 'shell', name: 'bash', input: { command: 'cd /p && npm test 2>&1 | tail -20' } } })
   assert.ok(hookApplies(hook({ match: { tool: 'shell', path: '', command: 'npm test' } }), cd))
+  // 面板工具按名字比
+  const pt = input({ tool: { kind: 'panel', name: 'mcp__panel__submit_merge', input: {}, panel: 'submit_merge' } })
+  assert.ok(hookApplies(hook({ match: { tool: 'panel', path: '', command: 'submit_merge' } }), pt))
+  assert.ok(!hookApplies(hook({ match: { tool: 'panel', path: '', command: 'spawn_agents' } }), pt))
 })
 
 test('新建的钩子默认关着；动作只能是脚本或 HTTP，请求头只引用环境变量', () => {

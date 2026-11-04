@@ -8,6 +8,7 @@ import { t } from '@shared/i18n'
  * 校验只查形状（演示里没有 Node 可以做语法检查、试跑），试跑返回一个按事件编的示例结果
  */
 const builtins: Record<string, boolean> = {}
+const cliOff: Record<string, string[]> = {}
 // 内置钩子的参数；演示里不分项目，按项目的开关也当成全局的
 const params: Record<string, Record<string, string[] | number>> = {}
 let hooks: HookDef[] = [
@@ -61,7 +62,8 @@ export function demoHooks(method: string, seg: string[], body: unknown) {
         })),
       })),
       hooks,
-      support: CLIS.map((c) => ({ id: c.id, name: c.name, events: hookEventsFor(c.hooks) })),
+      support: CLIS.map((c) => ({ id: c.id, name: c.name, events: hookEventsFor(c.hooks), tooOld: [] })),
+      cliOff,
     }
   if (method === 'GET' && id === 'triggers')
     return [
@@ -76,6 +78,10 @@ export function demoHooks(method: string, seg: string[], body: unknown) {
         ms: 42,
       },
     ]
+  if (id === 'cli-off' && sub) {
+    cliOff[sub] = (b.events as string[]) ?? []
+    return { ok: true }
+  }
   if (id === 'builtins' && sub && seg[3] === 'params') {
     params[sub] = { ...params[sub], [String(b.key)]: b.value as string[] | number }
     return { ok: true }

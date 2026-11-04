@@ -433,16 +433,29 @@
                     }
                   ]
                 }
+              ],
+              "PostToolUseFailure": [
+                {
+                  "hooks": [
+                    {
+                      "type": "command",
+                      "command": "node \"{hookScript}\" tool.after",
+                      "timeout": 70
+                    }
+                  ]
+                }
               ]
             }
           }
         },
         "context": {
           "hookSpecificOutput": {
-            "hookEventName": "PostToolUse",
+            "hookEventName": "{event}",
             "additionalContext": "{text}"
           }
-        }
+        },
+        "minVersion": "2.1.0",
+        "why": "PostToolUse 只在成功时触发，失败走 PostToolUseFailure（带 error）：两个都装，面板才知道这次是不是失败了（原地打转提醒要用）。补说明的 hookEventName 要和触发的事件一致，按原生输入填（{event}）"
       },
       "context.restored": {
         "files": {
@@ -480,7 +493,9 @@
     "toolFields": {
       "name": "tool_name",
       "input": "tool_input",
-      "path": ["file_path", "notebook_path"]
+      "path": ["file_path", "notebook_path"],
+      "output": ["tool_response", "error"],
+      "failed": ["error"]
     }
   },
   "mcpStore": {

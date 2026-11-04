@@ -28,6 +28,7 @@ import { AssistDialog } from '@/components/assist/AssistDialog'
 import { Group, Row } from './parts'
 import { HookEditor } from './HookEditor'
 import { BuiltinParams } from './BuiltinParams'
+import { HookCliEvents } from './HookCliEvents'
 import { Select } from '@/components/ui/input'
 import { eventLabel } from './hook-labels'
 
@@ -167,6 +168,11 @@ export function HooksSection() {
           </Row>
         ))}
       </Group>
+      <HookCliEvents
+        view={view}
+        busy={busy === 'cli-off'}
+        onChange={(cli, off) => void act('cli-off', () => hooksApi.setCliOff(cli, off))}
+      />
       <Group title={t('我的钩子')} plain>
         <div className="flex flex-wrap items-center gap-2 pb-2">
           <Button size="sm" onClick={() => setEditing({})}>

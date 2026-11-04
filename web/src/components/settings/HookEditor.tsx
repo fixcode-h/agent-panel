@@ -214,13 +214,17 @@ export function HookEditor({
                   { value: 'edit', label: t('改文件') },
                   { value: 'shell', label: t('跑命令') },
                   { value: 'read', label: t('读文件、搜索') },
+                  { value: 'panel', label: t('面板工具') },
                 ]}
               />
             </Field>
             <Field label={t('文件路径')} hint={t('相对项目根的通配，例如 src/**/*.ts')}>
               <Input value={match.path} onChange={(e) => set({ match: { ...match, path: e.target.value } })} />
             </Field>
-            <Field label={t('命令开头')} hint={t('例如 git push')}>
+            <Field
+              label={match.tool === 'panel' ? t('工具名') : t('命令开头')}
+              hint={match.tool === 'panel' ? t('面板工具的名字，例如 submit_merge') : t('例如 git push')}
+            >
               <Input value={match.command} onChange={(e) => set({ match: { ...match, command: e.target.value } })} />
             </Field>
           </div>

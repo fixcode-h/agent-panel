@@ -21,7 +21,17 @@ export interface BuiltinHookView {
 export interface HooksView {
   builtins: BuiltinHookView[]
   hooks: HookDef[]
-  support: { id: string; name: string; events: HookEventName[] }[]
+  support: {
+    id: string
+    name: string
+    /** 本机检测到的版本；没检测到为空 */
+    version?: string
+    events: HookEventName[]
+    /** 本机版本太老、装不上的事件和要多少版本 */
+    tooOld: { event: HookEventName; min: string }[]
+  }[]
+  /** 按 CLI 关掉的事件 */
+  cliOff: Record<string, HookEventName[]>
 }
 export interface HookCheckView {
   errors: string[]
@@ -50,6 +60,8 @@ export const hooksApi = {
   /** projectId 给了是这个项目单独的开关；on 为 null 去掉单独的设置 */
   setBuiltin: (id: string, on: boolean | null, projectId = '') =>
     request<{ ok: true }>(`/hooks/builtins/${id}`, json('PUT', projectId ? { on, projectId } : { on })),
+  setCliOff: (cli: string, events: HookEventName[]) =>
+    request<{ ok: true }>(`/hooks/cli-off/${cli}`, json('PUT', { events })),
   setParam: (id: string, key: string, value: string[] | number) =>
     request<{ ok: true }>(`/hooks/builtins/${id}/params`, json('PUT', { key, value })),
   check: (def: HookDefInput, run = false) => request<HookCheckView>('/hooks/check', json('POST', { def, run })),
