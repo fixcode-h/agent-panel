@@ -4,6 +4,7 @@ import type { HookDef } from '@shared/hook-defs'
 import type { Proposal } from '@shared/assist'
 import { t } from '@shared/i18n'
 import { hooksApi, type HooksView, type HookTriggerView } from '@/lib/api-hooks'
+import { useData } from '@/lib/data'
 import { toast, toastError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
@@ -22,6 +23,7 @@ import { eventLabel } from './hook-labels'
  * 每个钩子写明哪些 CLI 支持它的事件，不支持的照实写出来，不假装生效
  */
 export function HooksSection() {
+  const { projects } = useData()
   const [view, setView] = useState<HooksView | null>(null)
   const [error, setError] = useState('')
   const [triggers, setTriggers] = useState<HookTriggerView[]>([])
@@ -212,7 +214,11 @@ export function HooksSection() {
           onOpenChange={(o) => !o && setAssist(null)}
           kind="hook"
           title={assist.hook?.name}
-          subject={assist.hook ? { hook: JSON.stringify(assist.hook) } : {}}
+          subject={{
+            ...(assist.hook ? { hook: JSON.stringify(assist.hook) } : {}),
+            // 项目清单交给 AI：范围按项目名写，面板换成 id（见 shared/assist-hook.ts）
+            projects: JSON.stringify(projects.map((x) => ({ id: x.id, name: x.name }))),
+          }}
           onApply={applyAi}
         />
       )}

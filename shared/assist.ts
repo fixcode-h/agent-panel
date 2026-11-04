@@ -444,7 +444,7 @@ function buildAssistBody(kind: AssistKind, ctx: AssistContext, messages: AssistM
   if (kind === 'teststeps') return buildTestStepsPrompt(ctx, messages)
   if (kind === 'project') return buildProjectPrompt(ctx, messages)
   if (kind === 'lessons') return buildLessonsPrompt(ctx, messages)
-  if (kind === 'hook') return buildHookPrompt(ctx.subject ?? {}, messages)
+  if (kind === 'hook') return buildHookPrompt(ctx.subject ?? {}, messages, ctx.agents)
   const improving = !!ctx.target
   const what = KIND_NAME[kind]
   const clis = CLIS.map(
@@ -1084,7 +1084,7 @@ export function resolveProposal(
       },
     }
   }
-  if (kind === 'hook') return resolveHookProposal(json, ctx.subject ?? {})
+  if (kind === 'hook') return resolveHookProposal(json, ctx.subject ?? {}, ctx.agents)
   if (kind === 'teststeps') {
     const r = resolveTestSteps(json)
     return r.error ? { error: r.error } : { proposal: { kind: 'teststeps', steps: r.steps! } }

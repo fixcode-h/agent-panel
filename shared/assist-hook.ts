@@ -3,6 +3,7 @@ import { CLIS } from './clis.ts'
 import { supportedEvents } from './hooks.ts'
 import { promptLangWord } from './prompt-lang.ts'
 import type { AssistMessage } from './assist.ts'
+import type { Agent } from './schema.ts'
 
 /**
  * 设置页「钩子」的 AI 创建（ADR 0049 第二期，设计稿第 7 节）：提示词把钩子规范、各事件的输入输出、
@@ -31,7 +32,17 @@ process.stdin.on('data', (c) => (raw += c)).on('end', () => {
     process.stdout.write(JSON.stringify({ context: '改了 TypeScript 文件：这一步做完前跑一次 npm run typecheck' }))
 })`
 
-export function buildHookPrompt(subject: Record<string, string>, messages: AssistMessage[]) {
+/** 设置页带来的项目清单（id、名称）：AI 按名称写范围，面板换成 id */
+const projectsOf = (subject: Record<string, string>): { id: string; name: string }[] => {
+  try {
+    const v = JSON.parse(subject.projects || '[]') as unknown
+    return Array.isArray(v) ? v.filter((x): x is { id: string; name: string } => !!x && typeof x.id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+export function buildHookPrompt(subject: Record<string, string>, messages: AssistMessage[], agents: Agent[]) {
   const convo = messages
     .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
     .join('\n\n')
@@ -39,6 +50,11 @@ export function buildHookPrompt(subject: Record<string, string>, messages: Assis
     '\n',
   )
   const cur = subject.hook?.trim()
+  const roles = agents.map((a) => a.name).join('、') || '（没有）'
+  const projects =
+    projectsOf(subject)
+      .map((p) => p.name)
+      .join('、') || '（没有）'
   return [
     `你是「Agent 面板」里的配置助手，正在帮用户${cur ? '**改写一个钩子**' : '**新建一个钩子**'}。钩子在 Agent 执行的固定时刻自动运行：模型准备结束这一轮、调用工具前后、压缩上下文之后。`,
     cur ? `## 现在的钩子\n\`\`\`json\n${cur}\n\`\`\`` : '',
@@ -58,7 +74,9 @@ tool 只在 tool.* 里有；plan 在有计划时才有。**输入里没有模型
     `## 字段
 - name：2–10 个字；description：一句话说明它做什么。
 - event：上面四个之一。
-- scope：{ "projects": [], "agents": [], "clis": [] }，都空表示全部；只想管某个 CLI 时在 clis 写它的 id。
+- scope：{ "projects": [], "agents": [], "clis": [] }，都空表示全部。projects 写项目名，agents 写角色名（面板换成内部 id），clis 写 CLI 的 id。
+  可选的角色：${roles}
+  可选的项目：${projects}
 - match（只给 tool.*）：{ "tool": "shell | edit | read | any", "path": "相对项目根的 glob，可空", "command": "shell 命令前缀，可空" }；其余事件写 { "tool": "any", "path": "", "command": "" }。
 - action：二选一
   - { "type": "command", "script": "Node.js 脚本（ESM），从 stdin 读输入，往 stdout 写一个 JSON 或什么都不写" }
@@ -91,6 +109,7 @@ ${EXAMPLE_LINT}
 export function resolveHookProposal(
   json: unknown,
   subject: Record<string, string>,
+  agents: Agent[],
 ): { proposal?: HookProposal; error?: string } {
   const id = (() => {
     try {
@@ -106,6 +125,20 @@ export function resolveHookProposal(
     createdBy: 'ai',
   })
   if (!p.success) return { error: p.error.issues.map((i) => `${i.path.join('.')}：${i.message}`).join('；') }
+  // 范围里写的是名字：换成 id；对不上的退回给 CLI 改（不然保存后这个钩子永远不会触发）
+  const projects = projectsOf(subject)
+  const byName = <T extends { id: string; name: string }>(list: T[], names: string[]) =>
+    names.map((n) => list.find((x) => x.id === n || x.name === n)?.id ?? `?${n}`)
+  const scope = {
+    ...p.data.scope,
+    agents: byName(agents, p.data.scope.agents),
+    projects: byName(projects, p.data.scope.projects),
+  }
+  const bad = [...scope.agents, ...scope.projects].filter((x) => x.startsWith('?')).map((x) => x.slice(1))
+  if (bad.length)
+    return {
+      error: `scope 里这些名字对不上已有的角色或项目：${bad.join('、')}。只能写上面列出的名字，或者留空表示全部。`,
+    }
   const { updatedAt: _u, ...hook } = p.data
-  return { proposal: { kind: 'hook', hook: { ...hook, id } } }
+  return { proposal: { kind: 'hook', hook: { ...hook, id, scope } } }
 }

@@ -73,3 +73,20 @@ test('新建的钩子默认关着；动作只能是脚本或 HTTP，请求头只
   })
   assert.equal(http.action.type === 'http' && http.action.headers[0].env, 'MY_TOKEN')
 })
+
+test('AI 创建的提案：范围里写的角色名、项目名换成 id，对不上的退回给 AI 改；一律关着、来源 ai', async () => {
+  const { resolveHookProposal } = await import('./assist-hook.ts')
+  const agents = [{ id: 'r1', name: '评审' }] as never
+  const subject = { projects: JSON.stringify([{ id: 'p1', name: '商城' }]) }
+  const base = { name: '评审禁止提交', event: 'tool.before', action: { type: 'command', script: 'x' }, enabled: true }
+  const ok = resolveHookProposal(
+    { ...base, scope: { agents: ['评审'], projects: ['商城'], clis: [] } },
+    subject,
+    agents,
+  )
+  assert.deepEqual(ok.proposal?.hook.scope, { agents: ['r1'], projects: ['p1'], clis: [] })
+  assert.equal(ok.proposal?.hook.enabled, false)
+  assert.equal(ok.proposal?.hook.createdBy, 'ai')
+  const bad = resolveHookProposal({ ...base, scope: { agents: ['不存在'], projects: [], clis: [] } }, subject, agents)
+  assert.match(bad.error ?? '', /不存在/)
+})
