@@ -562,16 +562,18 @@ export const taskGone = (t: {
 export function convState(x: ConvFacts): ConvState {
   // 还有会推回来的结果（子对话、子任务、后台命令、工作流）
   const pending = !!(x.background || x.workflow || x.helpers || x.children)
+  // 诊断报告等确认算在运行，但停下的不算：报告留着随时能确认，只是对话不再一直转圈、停止按钮点了也没变化（用户报过）
+  const diag = !!x.diagnosis && x.status !== 'stopped'
   // 已收起（归档 / 删了独立分支）且真的没在动：收敛成已完成，不再显示「等你处理 / 已暂停 / 待收尾 / 未完成」。
   // 但不能盖住还在跑：用户删了独立分支后接着在原目录做（isolated 的注释：discarded 回到共用目录，worktree 不会清），
   // 或者在等后台命令 / 子对话的结果——这些照旧如实显示，和「已置完成」是同一条规矩。
   // 这也是侧栏「N 个执行中」、标题 (n)、保活回收判定的入口（见 convActive）
-  if (x.gone && !x.working && !x.diagnosis && !pending) return 'done'
+  if (x.gone && !x.working && !diag && !pending) return 'done'
   if (x.requests || x.asking || x.childNeeds) return 'needs'
   // 这一轮失败了但还有结果会推回来时不算失败：结果回来会接着开一轮，
   // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
   if (x.status === 'failed' && !pending) return 'failed'
-  if (x.working || x.diagnosis) return 'running'
+  if (x.working || diag) return 'running'
   if (pending) return 'waiting'
   if (x.status === 'stopped' && !x.resolved && x.stopReason !== 'finish') return 'stopped'
   if (x.wrapup && !x.resolved) return 'wrapup'

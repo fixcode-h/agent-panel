@@ -2,7 +2,9 @@ import { type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { TaskPatch, Task, RequestAnswer, defaultAgent } from '../../shared/schema.ts'
-import { childHoldText, helpersWorking, trackWait, withTaskModel } from '../../shared/task.ts'
+import { childHoldText, diagnosisPending, helpersWorking, trackWait, withTaskModel } from '../../shared/task.ts'
+import { settleStopped } from '../../shared/task-settle.ts'
+import { subtreeTaskIds } from '../../shared/run-usage.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { childAskEffect } from '../../shared/child-ask.ts'
 import { NO_PUSH_ANSWER, pushAnswerCut } from '../../shared/push-auth.ts'
@@ -458,6 +460,29 @@ export function registerActionRoutes(s: TasksScope) {
     }
   })
 
+  /**
+   * 诊断报告等确认的对话（ADR 0045）这一轮多半已经说完、CLI 不在跑，停止整棵树碰不到它，状态还是「完成」，
+   * 报告又让它一直算在运行（convState 的 diagnosis）：停止按钮一直在、点了没有变化（用户报过）。
+   * 用户停止时把这棵树里报告还在等确认的对话落成已停止：报告留着，之后照样能确认，确认后发的消息会接着拉起它。
+   * 子对话也记成 user：没有用户的确认它接着跑也只能再等，父对话继续时不用把它白拉起来一轮
+   */
+  async function parkDiagnoses(id: string) {
+    const all = await s.store.list()
+    for (const tid of subtreeTaskIds(all, id)) {
+      const first = s.live.get(tid)?.task ?? all.find((x) => x.id === tid)
+      if (!first || !diagnosisPending(first)) continue
+      // 还在收尾的先等它收完，不和引擎抢着写盘
+      await settleBefore(s.live.get(tid))
+      const e = s.live.get(tid)
+      const tk = e?.task ?? (await s.store.get(tid))
+      if (!tk || tk.working || tk.status === 'stopped') continue
+      Object.assign(tk, settleStopped(tk, 'user'), { updatedAt: new Date().toISOString() })
+      if (e) e.rev++
+      taskLog(tid, '停止：诊断报告还在等确认，落成已停止')
+      await s.store.update(tid, tk)
+    }
+  }
+
   /** 用户停止这个对话：停止按钮、提问窗口的关闭都走这里 */
   async function userStop(id: string) {
     // 停止就是这棵对话树都别干了：自下而上先停子对话（连同它们的子任务、工作流），最后停这个对话，
@@ -494,6 +519,7 @@ export function registerActionRoutes(s: TasksScope) {
     // 等这个对话停稳再回：返回的就是停下后的状态，按钮马上从「停止」变回来，不用等下一次推送（用户报过）。
     // 进程已经结束，一般几十毫秒；收不完的最迟由 watchStop 收口（settleBefore 有上限）
     await settleBefore(s.live.get(id))
+    await parkDiagnoses(id)
     // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
     // 进程不该再留着时（卡住、换机器前的清理）用这个
     if (c.req.query('force')) {

@@ -71,6 +71,8 @@ test('交诊断报告：记成等用户确认的一版，对话算执行中（�
   assert.equal(pendingDiagnosis(tk)?.version, 1)
   assert.ok(diagnosisPending(tk))
   assert.equal(convState({ status: 'done', diagnosis: diagnosisPending(tk) }), 'running', '等确认期间算执行中')
+  // 用户停下了：报告还在等确认，但对话不再算在跑（停止按钮点了要有变化，用户报过）
+  assert.equal(convState({ status: 'stopped', stopReason: 'user', diagnosis: true }), 'stopped')
   assert.deepEqual(childWait({ ...tk, status: 'done', working: false, steps: [], parentAsks: [] } as Task), {
     kind: 'diagnosis',
     version: 1,
