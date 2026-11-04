@@ -1,5 +1,6 @@
 import type { ShellReport } from '@shared/shells'
 import { trackedFetch } from './connection'
+import { summaryApi } from './api-summary'
 import type { CollabEvent } from '@shared/collab-timeline'
 import type { LifeReport } from '@shared/lifecycle'
 import type { TaskExport } from '@shared/task-export'
@@ -62,7 +63,6 @@ import type { DiagnosisDecision } from '@shared/bug-diagnosis'
 import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
 import type { LessonReviewItem } from '@shared/lesson-review'
-import type { LessonDraftInput, LessonDraftRecord } from '@shared/lesson-draft'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type {
   DeployConfig,
@@ -90,13 +90,6 @@ import type {
   McpServer,
   McpTestResult,
 } from '@shared/library'
-import type {
-  SummaryConfig,
-  SummaryCreateRequest,
-  SummaryExtractRequest,
-  SummaryJob,
-  SummaryRecord,
-} from '@shared/summary'
 import type { ProjectSkillsView } from '@shared/project-skills'
 import type { ProjectProposal } from '@shared/project-init'
 import type {
@@ -785,11 +778,12 @@ export const api = {
   /** 打开旧对话时在后台用 --resume 启动，先停在等下一句上 */
   prewarmTask: (id: string) => request<Task>(`/tasks/${id}/prewarm`, { method: 'POST' }),
   /** 撤回到某条消息：返回撤回后的任务和被撤回的那条内容 */
-  rewindTask: (id: string, messageId: string) =>
-    request<{ task: Task; text: string; attachments: Attachment[] }>(
-      `/tasks/${id}/rewind`,
-      json('POST', { messageId }),
-    ),
+  /** files：连同被撤掉那几轮改的文件一起撤；撤不干净时 ok 为 false，什么都没动 */
+  rewindTask: (id: string, messageId: string, files = false) =>
+    request<
+      | { ok: true; task: Task; text: string; attachments: Attachment[] }
+      | { ok: false; conflicts: { path: string; reason: string }[] }
+    >(`/tasks/${id}/rewind`, json('POST', { messageId, files })),
   forkTask: (id: string, messageId: string) => request<Task>(`/tasks/${id}/fork`, json('POST', { messageId })),
   compactTask: (id: string) => request<Task>(`/tasks/${id}/compact`, json('POST', {})),
   reviewTask: (id: string, base = '') => request<Task>(`/tasks/${id}/review`, json('POST', base ? { base } : {})),
@@ -959,8 +953,11 @@ export const api = {
     // cancel：这次不修，计划标完成，返回的 message 为空（不用发给子对话）
     body: DiagnosisDecision,
   ) => request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis/${version}`, json('POST', body)),
-  answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
-    request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
+  answerRequest: (
+    id: string,
+    rid: string,
+    body: { allow: boolean; answer?: string; answers?: string[]; always?: boolean },
+  ) => request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   /**
    * 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定。
    * nudge 说明父对话叫起来了没有：没叫起来时卡片上要把原因显示给用户，不能只当成功处理
@@ -1170,28 +1167,6 @@ export const api = {
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) =>
     request<{ ok: boolean; dir: string }>('/fs/reveal', json('POST', { projectId })),
-  // ---- 工作总结：选项目生成今天的报告，存最近几份 ----
-  summary: () => request<{ reports: SummaryRecord[] }>('/summary'),
-  summaryConfig: () => request<SummaryConfig>('/summary/config'),
-  saveSummaryConfig: (c: SummaryConfig) => request<SummaryConfig>('/summary/config', json('PUT', c)),
-  extractSummary: (input: SummaryExtractRequest) => request<SummaryJob>('/summary/extract', json('POST', input)),
-  summaryJob: (id: string) => request<SummaryJob>(`/summary/jobs/${id}`),
-  /** 再次生成：用这份报告的分项开一次待确认（原报告不动，ADR 0043） */
-  redoSummary: (id: string) => request<SummaryJob>(`/summary/${id}/redo`, json('POST', {})),
-  stopSummary: (id: string) => request<SummaryJob>(`/summary/jobs/${id}/stop`, json('POST', {})),
-  createSummary: (input: SummaryCreateRequest) => request<SummaryRecord>('/summary', json('POST', input)),
-  saveSummary: (id: string, md: string) => request<SummaryRecord>(`/summary/${id}`, json('PUT', { md })),
-  deleteSummary: (id: string) => request<{ ok: true }>(`/summary/${id}`, { method: 'DELETE' }),
-
-  /** 候选教训草稿：从工作总结提炼的半成品，看过后手动写进 docs/lessons/（不会自动落盘） */
-  lessonDrafts: () => request<{ drafts: LessonDraftRecord[] }>('/lesson-drafts'),
-  /** 从一份报告提炼；同一份报告只提炼一次 */
-  extractLessonDrafts: (reportId: string) =>
-    request<{ drafts: LessonDraftRecord[]; created: number; info: string }>(
-      '/lesson-drafts',
-      json('POST', { reportId }),
-    ),
-  saveLessonDraft: (id: string, input: LessonDraftInput) =>
-    request<LessonDraftRecord>(`/lesson-drafts/${id}`, json('PUT', input)),
-  deleteLessonDraft: (id: string) => request<void>(`/lesson-drafts/${id}`, { method: 'DELETE' }),
+  // 工作总结、候选教训草稿（api-summary.ts）
+  ...summaryApi,
 }

@@ -1,3 +1,4 @@
+import { commandRule, editDiff, fileRule, toolRule } from '../../../shared/allow-rules.ts'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { t } from '../../../shared/i18n.ts'
@@ -156,19 +157,43 @@ export function claudeAsk(name: string, input: any): Omit<Extract<CliEvent, { ty
       kind: 'command',
       title: t('运行命令：{cmd}', { cmd: oneLine(str(input.command)) }),
       detail: str(input.description),
+      rule: commandRule(str(input.command)),
     }
-  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(name))
+  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(name)) {
+    const file = str(input.file_path || input.notebook_path)
+    // 要改的内容一起交给审批卡：以前只有文件名，用户只能凭名字决定允不允许
+    const edits =
+      name === 'Write'
+        ? [{ old: '', new: str(input.content) }]
+        : name === 'MultiEdit'
+          ? (Array.isArray(input.edits) ? input.edits : []).map((e: any) => ({
+              old: str(e?.old_string),
+              new: str(e?.new_string),
+            }))
+          : name === 'Edit'
+            ? [{ old: str(input.old_string), new: str(input.new_string) }]
+            : [{ old: '', new: str(input.new_source) }]
     return {
       kind: 'file',
-      title:
-        name === 'Write'
-          ? t('写入文件：{file}', { file: str(input.file_path || input.notebook_path) })
-          : t('修改文件：{file}', { file: str(input.file_path || input.notebook_path) }),
+      title: name === 'Write' ? t('写入文件：{file}', { file }) : t('修改文件：{file}', { file }),
       detail: '',
+      diff: editDiff(file, edits),
+      rule: fileRule(file),
     }
+  }
   if (name === 'WebFetch')
-    return { kind: 'tool', title: t('访问网页：{url}', { url: str(input.url) }), detail: str(input.prompt) }
-  return { kind: 'tool', title: t('使用工具：{name}', { name }), detail: clipDetail(JSON.stringify(input, null, 2)) }
+    return {
+      kind: 'tool',
+      title: t('访问网页：{url}', { url: str(input.url) }),
+      detail: str(input.prompt),
+      rule: toolRule(name),
+    }
+  return {
+    kind: 'tool',
+    title: t('使用工具：{name}', { name }),
+    detail: clipDetail(JSON.stringify(input, null, 2)),
+    rule: toolRule(name),
+  }
 }
 
 /** 允许时交回给 CLI 的参数：问题要带上用户的回答（一次问了几个时每个问题一条） */

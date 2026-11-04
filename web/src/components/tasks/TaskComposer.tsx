@@ -101,12 +101,14 @@ export function TaskComposer({
   // 「+」里引入工作流：只有项目里、用的角色能启动工作流时才有这一项；选中的插成输入框里的一张工作流卡片
   const canFlow = !standalone && !!project && canStartFlow(agents, agentId)
   const [busy, setBusy] = useState(false)
-  // 「独立分支」默认不勾选（用户要求），换了项目也回到不勾选
-  const [isolate, setIsolate] = useState(false)
+  // 「独立分支」默认按项目设置（isolateNew，默认开：几个顶层对话同时改一个目录会互相覆盖，用户 2026-11-04 定），
+  // 换了项目回到那个项目的默认
+  const isolateDefault = project?.isolateNew ?? true
+  const [isolate, setIsolate] = useState(isolateDefault)
   const [isolateFor, setIsolateFor] = useState(project?.id)
   if (isolateFor !== project?.id) {
     setIsolateFor(project?.id)
-    setIsolate(false)
+    setIsolate(isolateDefault)
   }
   const [askUser, setAskUser] = useNewAskUser()
   const editor = useRef<RichInputHandle>(null)

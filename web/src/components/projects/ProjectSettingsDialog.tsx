@@ -129,7 +129,7 @@ const blank: ProjectInput = {
   workflowParams: {},
   agentParams: {},
   childIsolation: 'worktree',
-  isolateDefault: false,
+  isolateNew: true,
   testSteps: [],
   scaledVerify: true,
   lessons: [],
@@ -1239,6 +1239,19 @@ function Body({
                 <FormSection title={t('搜索')}>
                   <SearchExcludeField value={draft.searchExclude} onChange={(v) => set('searchExclude', v)} />
                 </FormSection>
+
+                {gitRepo && (
+                  <FormSection title={t('独立分支')}>
+                    <Checkbox
+                      checked={draft.isolateNew}
+                      onChange={(v) => set('isolateNew', v)}
+                      label={t('新建对话默认开独立分支')}
+                      tip={t(
+                        '新建对话时输入框里的「独立分支」默认打开：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里关掉。',
+                      )}
+                    />
+                  </FormSection>
+                )}
 
                 <FormSection title={t('子对话')}>
                   <Field

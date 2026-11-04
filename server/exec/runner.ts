@@ -111,6 +111,7 @@ import { taskLog } from '../task-log.ts'
 import { dropAsked } from '../../shared/task-settle.ts'
 import { askViaParent } from './child-question.ts'
 import { replies } from './panel-requests.ts'
+import { autoAllowed, requestOf } from './ask-request.ts'
 
 import { orchHint } from '../orch-mcp.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
@@ -1051,19 +1052,11 @@ async function runAgent(
         // 子对话开着「提问」：交给父对话，不在子对话里弹给用户（见 askViaParent）
         if (ev.kind === 'question' && task.parentTaskId && ctx.messageParent) return askViaParent(ev, ctx.messageParent)
         const id = ctx.newId()
+        // 审批卡上点过「一直允许」的同类请求：直接允许，留一行说明（shared/allow-rules.ts）
+        if (autoAllowed(task, ev, { id, step, agentId })) return ctx.changed(true)
         asked.push(id)
         replies.set(id, ev.reply)
-        task.requests.push({
-          id,
-          step,
-          agentId,
-          kind: ev.kind,
-          title: ev.title,
-          detail: ev.detail,
-          options: ev.options ?? [],
-          ...(ev.questions ? { questions: ev.questions } : {}),
-          at: new Date().toISOString(),
-        })
+        task.requests.push(requestOf(ev, { id, step, agentId }))
         // 新的请求马上落盘，侧栏的铃铛和任务页立刻能看到
         ctx.changed(true)
         return

@@ -82,6 +82,7 @@ import { downloadTask, downloadTaskHtml, startAnalysis } from '@/lib/task-transf
 import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { RegenerateButton, RewindDialog } from './RewindDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
@@ -2154,6 +2155,19 @@ export function TaskView({
           latest={i + hidden === latestTurn}
           fallback={byCli ? chatRun : undefined}
           command={task.command}
+          actions={
+            // 最后一条回复下面：重新生成（撤回最后一条消息和这一轮改的文件，再原样发一次）
+            task.mode === 'chat' && !task.imported && !working && i + hidden === blocks.length - 1 ? (
+              <RegenerateButton
+                task={task}
+                onRewound={apply}
+                send={async (text, att) => {
+                  stickToBottom()
+                  apply(await api.sendMessage(task.id, text, att, false))
+                }}
+              />
+            ) : undefined
+          }
         />
       )
     if (b.kind === 'run')
@@ -2214,7 +2228,8 @@ export function TaskView({
             actions={
               <UserMessageMenu
                 chat={task.mode === 'chat' && !task.imported}
-                canRewind={b.m.id !== firstUser}
+                // 第一条也能撤：等于清空对话重新开始（服务端从头开会话）
+                canRewind
                 canLesson={!!project && !task.imported}
                 running={running}
                 onRewind={() => setRewindAsk(b.m.id)}
@@ -2671,26 +2686,16 @@ export function TaskView({
                 }
               />
             )}
-            <ConfirmDialog
-              open={!!rewindAsk}
-              onOpenChange={(o) => !o && setRewindAsk('')}
-              title={t('撤回到这条消息？')}
-              description={t(
-                '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。',
-              )}
-              confirmText={t('撤回')}
-              onConfirm={async () => {
-                try {
-                  const r = await api.rewindTask(task.id, rewindAsk)
-                  apply(r.task)
-                  followTa.current?.setText(r.text)
-                  // 那条消息的图片、文件、引用一起放回来：卡片已经在文字里
-                  files.replace(r.attachments ?? [])
-                  setRewindAsk('')
-                  followTa.current?.focus()
-                } catch (e) {
-                  toast.error((e as Error).message)
-                }
+            <RewindDialog
+              task={task}
+              messageId={rewindAsk}
+              onClose={() => setRewindAsk('')}
+              onDone={(r) => {
+                apply(r.task)
+                followTa.current?.setText(r.text)
+                // 那条消息的图片、文件、引用一起放回来：卡片已经在文字里
+                files.replace(r.attachments ?? [])
+                followTa.current?.focus()
               }}
             />
             <DeleteTaskDialog

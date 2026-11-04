@@ -166,6 +166,7 @@ export function newTask(
     workflowName: wf?.name ?? '',
     runSeq: 0,
     requests: [],
+    allowRules: [],
     working: false,
     turnDoneAt: '',
     turnSeenAt: '',

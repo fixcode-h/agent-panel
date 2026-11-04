@@ -947,8 +947,12 @@ const ProjectFields = z.object({
    * - claim：和父对话共用一个目录，改文件前认领（同一个文件同一时间只归一个子对话）
    */
   childIsolation: z.enum(['worktree', 'claim']).catch('worktree').default('worktree'),
-  /** 新建对话时「独立分支」默认勾上（只是输入框里的默认值，每次新建仍可以改） */
-  isolateDefault: z.boolean().default(false),
+  /**
+   * 新建对话时「独立分支」默认勾上（只是输入框里的默认值，每次新建仍可以改）。默认开：同一个项目里几个顶层对话
+   * 同时改同一个目录会互相覆盖，「改了哪些文件」和「撤销这一轮」也会算进别的对话的改动（用户 2026-11-04 定）。
+   * 旧字段 isolateDefault 界面从来没能改过，存的 false 只是写盘带上的默认值：换名后由 zod 剥掉，旧项目一律按新默认
+   */
+  isolateNew: z.boolean().default(true),
   /**
    * cherry-pick 的目标：Git 项目是本地分支名，P4 项目是目标工作区里的项目路径（另一条分支映射到本机的目录）。
    * 用户让 Agent 把改动 cherry-pick 过去时按它做；没设时为空（可选：旧数据和直接拼 Project 字面量的地方不用补）
@@ -2129,6 +2133,8 @@ export const TaskData = z.object({
   placedAttachments: z.record(z.string(), z.string()).default({}),
   /** 正在等用户确认的请求 */
   requests: z.array(TaskRequest).default([]),
+  /** 审批卡上点过「一直允许」的规则键（shared/allow-rules.ts）：同一个对话里同类请求自动允许 */
+  allowRules: z.array(z.string()).default([]),
   /** 独立分支执行时的工作目录和分支；直接在项目目录执行时为空 */
   worktree: TaskWorktree.nullable().default(null),
   /**
@@ -2650,6 +2656,8 @@ export const RequestAnswer = z.object({
   allow: z.boolean(),
   answer: z.string().max(20000).optional(),
   answers: z.array(z.string().max(20000)).max(20).optional(),
+  /** 允许并且这个对话里一直允许这类（请求的 rule 记进 task.allowRules，见 shared/allow-rules.ts） */
+  always: z.boolean().optional(),
 })
 
 /** 一个保存下来的账号 */
