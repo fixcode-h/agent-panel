@@ -1875,4 +1875,6 @@ export const EN_TASKS: Record<string, string> = {
     'Send it back to the analysed conversation as a reported bug: it hands you a diagnosis report to confirm the plan before changing anything',
   按完整流程修: 'Fix with full process',
   诊断报告等你确认: 'Diagnosis report awaiting your review',
+  诊断报告: 'Diagnosis report',
+  '打开诊断报告第 {n} 版': 'Open diagnosis report v{n}',
 }
