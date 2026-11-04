@@ -16,6 +16,7 @@ import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
+import { ChildReportButton, DiagnosisAutoOpen } from './ChildReport'
 import { useChildList, useChildOpen, useJobOpen } from './child-open'
 import { childClosedHint, childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
@@ -385,9 +386,13 @@ export function RunningNow({
               </span>
             }
             ms={childMs(k, now)}
+            // 在等你确认诊断报告：行尾直接给「查看报告」，不用先进子对话找交报告那一行
+            action={k.diagnosis ? <ChildReportButton childId={k.id} /> : undefined}
           />
         )
       })}
+      {/* 报告交上来时自动弹一次审阅弹窗（每一版只弹一次） */}
+      <DiagnosisAutoOpen ids={rows.filter((k) => k.diagnosis).map((k) => k.id)} />
       {task && win && <HelperWindow task={task} id={win} teamNames={teamNames} onClose={() => setWin('')} />}
     </div>
   )

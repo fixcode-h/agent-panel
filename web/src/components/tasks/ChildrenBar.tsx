@@ -13,6 +13,7 @@ import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import { childCounts, sortChildren, visibleChildren } from '@shared/task'
 import { cn } from '@/lib/utils'
+import { ChildReportButton } from './ChildReport'
 import { useEscape } from '@/lib/useEscape'
 import { useUserName } from '@/lib/user-name'
 import { UnreadDot } from '@/components/ui/badge'
@@ -337,6 +338,13 @@ export function ChildrenBar({
                           </button>
                         </div>
                         {exp && <ChildLetters letters={letters} />}
+                        {c.diagnosis && (
+                          // 在等你确认诊断报告：这里直接给「查看报告」，不用先进子对话找交报告那一行
+                          <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
+                            <span className="min-w-0 truncate text-caption text-warning">{t('诊断报告等你确认')}</span>
+                            <ChildReportButton childId={c.id} className="ml-auto h-6 shrink-0 px-2 text-xs" />
+                          </div>
+                        )}
                         {dirty && (
                           // 没提交的改动还在分支目录里：写清几个文件、哪个目录，并给一键继续
                           <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
