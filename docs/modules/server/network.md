@@ -36,6 +36,7 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 
 - `server/update.ts`：检查 releases（`GET /repos/.../releases`，`timeoutMs: 15_000`）和下载 `SHA256SUMS`（同样 15 秒）。
 - `server/download.ts`：探测（`probe`）、单连接下载（`stream`）、分片下载（`fetchSpan`）都经过 `DownloadOptions.fetch`（默认就是 `netFetch`，测试可以替换），每处都带 `HEAD_TIMEOUT_MS`（20 秒）的响应头超时，这一段超时会换下一条路。下载中途「太久没收到数据」由 `watch` 计时（分片 45 秒、单连接 90 秒）；`netFetch` 每次换一条路重试前会调用 `init.onAttempt`，下载借此重置空闲计时，所以空闲预算只管单条路径，不会因为整轮回退把「body 卡住」的判定拉长。没指定 `chunkSize` 时按 `autoChunk` 切片：至少切成连接数（默认 8）片、每片 1–16 MB，34 MB 的更新包也能用满 8 条连接（以前固定 16 MB 只有 3 片）。
+- npm 子进程（`server/npm-env.ts`，安装 / 更新 / 卸载 CLI 和查最新版本）：不经过 `netFetch`，但用同一个 `defaultPlan` 对 npm 仓库地址选路；设置里的或系统代理先 `probeProxy` 握手确认，再写进 `HTTPS_PROXY` / `HTTP_PROXY` 交给 npm（`.npmrc` 里的代理仍然优先），连不上就直连并在输出里说明。2026-11-04 之前 npm 一直直连，见 [bugs/cli-install-slow-npm-no-proxy.md](bugs/cli-install-slow-npm-no-proxy.md)。
 - `server/update.ts` 和 `server/download.ts` 不再用 `AbortSignal.timeout`（触发一次后就永久处于中止状态，没法用同一条 signal 重试），改用 `netFetch` 的 `timeoutMs`；其它调用方（例如 `server/comfy-templates.ts`、`server/remote.ts`）仍可用自己的 signal，中止后按上面的规则停止回退。
 
 ## 版本更新（GitHub Releases）

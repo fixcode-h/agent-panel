@@ -32,7 +32,7 @@ const MISS_TTL = 30_000
 const SYSTEM_TTL = 60_000
 const REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
 
-const ENV_PROXY = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']
+export const ENV_PROXY = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']
 
 /** 这次请求一开始走哪条路；fallback 表示失败后要不要再找本机代理 */
 export type ProxyPlan =
@@ -335,8 +335,11 @@ export function configuredProxy(s: { proxy: string; networkProxyEnabled: boolean
   return s.networkProxyEnabled ? s.proxy.trim() : ''
 }
 
-/** 设置里的代理（开关打开且填了才算）优先；没填时用环境变量（这时 NO_PROXY 也照常生效） */
-async function defaultPlan(url: string): Promise<ProxyPlan> {
+/**
+ * 设置里的代理（开关打开且填了才算）优先；没填时用环境变量（这时 NO_PROXY 也照常生效）。
+ * 导出给 npm 这类子进程用：子进程不经过 netFetch，要按同一个顺序把代理交给它（见 server/npm-env.ts）。
+ */
+export async function defaultPlan(url: string): Promise<ProxyPlan> {
   let set = ''
   try {
     set = configuredProxy(await getSettings())

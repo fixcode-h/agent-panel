@@ -6,11 +6,12 @@ import type { CliInstallJob, CliStatus, CliUpdate } from '../shared/schema.ts'
 import { detectClis, invalidateClis } from './detect.ts'
 import { invalidateModels } from './models.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
-import { brewName, claudeNative, NPM, npmCommandPath } from './cli-source.ts'
+import { brewName, claudeNative, NPM, npmCommandPath, resolveCommand } from './cli-source.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { rm } from 'node:fs/promises'
 import { t } from '../shared/i18n.ts'
+import { npmEnv } from './npm-env.ts'
 
 const TIMEOUT = 10 * 60_000
 const isWin = process.platform === 'win32'
@@ -47,7 +48,9 @@ export function installApi() {
             '没有权限写入 npm 的全局目录。可以在终端里用 sudo 运行下面的命令，或者把 npm 的全局目录改到自己的用户目录下。',
           )
     if (/ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network/i.test(log))
-      return t('连不上 npm 仓库，请检查网络或代理（可以在终端里设置 npm 镜像）后重试。')
+      return t(
+        '连不上 npm 仓库，请检查网络，或在「设置 · 网络与代理」里填写代理（也可以在终端里设置 npm 镜像）后重试。',
+      )
     return job.action === 'install' ? t('安装失败，详细信息见下面的输出。') : t('卸载失败，详细信息见下面的输出。')
   }
 
@@ -62,7 +65,9 @@ export function installApi() {
     const npm = (args: string[]) => ({
       command: NPM,
       // npm 默认在下载完之前什么都不输出，http 级别的日志能让页面看到它在下载
-      args: [...args, '--no-fund', '--no-audit', '--loglevel=http'],
+      // --foreground-scripts：npm 默认把包自己的安装脚本（postinstall）输出藏起来，脚本失败但退出码是 0 时
+      // （例如 Claude Code 没找到本平台的原生包、只留下占位的 claude.exe）页面上一点线索都没有
+      args: [...args, '--no-fund', '--no-audit', '--loglevel=http', '--foreground-scripts'],
       text: `npm ${args.join(' ')}`,
     })
     const install = job.action === 'install'
@@ -109,6 +114,10 @@ export function installApi() {
       }
     } else {
       job.command = how.text
+      // npm 不认系统代理和面板设置里的代理，要显式交给它（见 server/npm-env.ts）；brew、claude update 不走这里
+      const usesNpm = how.command === NPM || (how.pre?.length ?? 0) > 0
+      const net = usesNpm ? await npmEnv() : { env: childEnv([]) }
+      if (net.note) append(`# ${net.note}\n`)
       // 先卸掉改名前的旧包；卸不掉也不拦着，npm 装新包时会再报具体原因
       for (const step of how.pre ?? []) {
         append(`$ ${step.text}\n`)
@@ -116,7 +125,7 @@ export function installApi() {
           command: step.command,
           args: step.args,
           cwd: homedir(),
-          env: childEnv([]),
+          env: net.env,
           timeoutMs: TIMEOUT,
           onLine: (l) => append(l + '\n'),
           onStderr: append,
@@ -126,7 +135,7 @@ export function installApi() {
         command: how.command,
         args: how.args,
         cwd: homedir(),
-        env: childEnv([]),
+        env: net.env,
         timeoutMs: TIMEOUT,
         onLine: (l) => append(l + '\n'),
         onStderr: append,
@@ -179,6 +188,13 @@ export function installApi() {
         '已经执行了卸载，但还能找到 {path}。它不是 npm 、Homebrew 或官方安装脚本装的，请手动删除这个文件，或用安装它的方式卸载。',
         { path: status.path ?? status.command },
       )
+    } else if (job.action === 'install' && !status?.installed && status?.error && resolveCommand(status.command)) {
+      // 命令找到了、一运行就报错：不是 PATH 的问题，是装下去的文件本身不能用
+      job.status = 'failed'
+      job.error = t(
+        '安装命令执行完了，但运行时报错：{error}。多半是安装没有完整完成：这个 Agent 还在别处运行（终端或面板里的对话）时，Windows 上它的文件被占用替换不了。请先关掉它再点「安装」，或查看下面输出里安装脚本的报错。',
+        { error: status.error },
+      )
     } else if (job.action === 'install' && !status?.installed) {
       job.status = 'failed'
       job.error = t(
@@ -192,7 +208,7 @@ export function installApi() {
       !job.note
     ) {
       // 更新命令成功了，版本却没变：多半是 PATH 里还有另一个旧的
-      const now = await capture(NPM, ['view', pkg, 'version'], homedir(), childEnv([]), 20_000)
+      const now = await capture(NPM, ['view', pkg, 'version'], homedir(), (await npmEnv()).env, 20_000)
       const v = now.stdout.trim().split('\n').at(-1)?.trim()
       if (v && newer(v, status?.version)) {
         job.status = 'failed'
@@ -208,8 +224,10 @@ export function installApi() {
     const def = getCli(c.req.param('id'))
     if (!def) return c.json({ error: t('未知的 Agent') }, 404)
     const action = c.req.param('action') as CliInstallJob['action']
-    if ([...jobs.values()].some((j) => j.status === 'running'))
-      return c.json({ error: t('有一个安装 / 卸载还在进行，请等它完成') }, 409)
+    // 不同的 Agent 可以同时装、同时更新：npm 全局安装各写各的包目录，缓存也支持并发。
+    // 只有同一个 Agent 不能叠两次（两个 npm 改同一个目录会互相打架），这时把正在进行的那次还给页面接着看
+    const same = [...jobs.values()].find((j) => j.cli === def.id && j.status === 'running')
+    if (same) return c.json(same, 202)
     const job: CliInstallJob = {
       id: randomUUID(),
       cli: def.id,
@@ -235,7 +253,7 @@ export function installApi() {
     const status = (await detectClis()).find((x) => x.id === def.id)
     let hit = latest.get(def.id)
     if (!hit || c.req.query('refresh') === '1' || Date.now() - hit.at > 30 * 60_000) {
-      const r = await capture(NPM, ['view', def.npmPackage, 'version'], homedir(), childEnv([]), 20_000)
+      const r = await capture(NPM, ['view', def.npmPackage, 'version'], homedir(), (await npmEnv()).env, 20_000)
       const v = r.stdout.trim().split('\n').at(-1)?.trim()
       hit = semver(v)
         ? { at: Date.now(), version: v }
