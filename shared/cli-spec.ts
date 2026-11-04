@@ -11,6 +11,9 @@ import { getLang, t } from './i18n.ts'
 import { CliAuth } from './accounts.ts'
 import { CliContextBase } from './context-breakdown.ts'
 import { HooksSpec } from './hooks.ts'
+import { CliTrust } from './cli-trust.ts'
+import { GalleryOverlap, GallerySpec } from './cli-gallery.ts'
+import { ConfigSetting } from './cli-config-settings.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
@@ -126,12 +129,24 @@ export const CliPackages = z.object({
       }),
     )
     .default([]),
+  /** 插件市场（ADR 0050，见 shared/cli-gallery.ts）：从 npm 按关键词浏览；不写就没有「浏览」页签 */
+  gallery: GallerySpec.optional(),
+  /** 和面板自己的功能重复的包：市场里的卡片上写一句，不隐藏 */
+  overlaps: z.array(GalleryOverlap).default([]),
+  /** npm 来源的包装在哪（node_modules 目录）：读已装的版本；不写就不显示版本 */
+  npmRoot: z.string().default(''),
 })
 export type CliPackages = z.infer<typeof CliPackages>
-/** 已装的一个包：source 是配置里写的，target 是交给命令用的（相对路径换成了绝对路径） */
+/** 已装的一个包：source 是配置里写的，target 是交给命令用的（相对路径换成了绝对路径），version 是装着的版本（读得到时） */
 export interface InstalledPackage {
   source: string
   target: string
+  version?: string
+}
+
+/** npm 来源（npm:名字@版本）里的包名，不是 npm 来源时为空 */
+export function npmName(source: string): string {
+  return /^npm:(@[^/@\s]+\/[^@\s]+|[^@\s]+)(@.*)?$/.exec(source.trim())?.[1] ?? ''
 }
 
 /**
@@ -604,6 +619,10 @@ export const CliSpec = z.object({
    * 不写表示这个 CLI 用不了面板的工具
    */
   mcp: McpSpec.optional(),
+  /** CLI 自己配置文件里的设置项（ADR 0050，见 shared/cli-config-settings.ts）：设置页直接读写，只写改过的键 */
+  configSettings: z.array(ConfigSetting).default([]),
+  /** 项目信任（ADR 0050）：只在信任后才读的项目文件；参数规则里用 trust=approve / trust=deny（见 shared/cli-trust.ts） */
+  trust: CliTrust.optional(),
   /** 钩子（ADR 0049）：结束前怎么问面板（见 shared/hooks.ts）；不写表示这个 CLI 只用一轮结束后的提醒兜底 */
   hooks: HooksSpec.optional(),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
@@ -656,6 +675,8 @@ function value(o: BuildOptions, key: string): unknown {
       return o.noEdit
     case 'textOnly':
       return o.textOnly
+    case 'trust':
+      return o.trust
     default:
       // opt.<id>：设置里这个开关开着，或下拉选项选中的值
       return key.startsWith('opt.') ? o.options?.[key.slice(4)] || undefined : undefined
@@ -802,8 +823,16 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
       hint: tr(x.hint),
       choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
     })),
+    configSettings: spec.configSettings.map((x) => ({
+      ...x,
+      label: tr(x.label),
+      hint: tr(x.hint),
+      unit: tr(x.unit),
+      choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
+    })),
     mcp: spec.mcp,
     hooks: spec.hooks,
+    trust: spec.trust,
     mcpStore: spec.mcpStore,
     packages: spec.packages && {
       ...spec.packages,
@@ -814,6 +843,11 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
         desc: tr(r.desc),
         note: tr(r.note),
       })),
+      overlaps: spec.packages.overlaps.map((o) => ({ ...o, note: tr(o.note) })),
+      gallery: spec.packages.gallery && {
+        ...spec.packages.gallery,
+        types: Object.fromEntries(Object.entries(spec.packages.gallery.types).map(([k, v]) => [k, tr(v)])),
+      },
     },
     auth: spec.auth && { ...spec.auth, accountNote: tr(spec.auth.accountNote) },
     spec: true,

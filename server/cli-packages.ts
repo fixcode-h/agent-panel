@@ -2,13 +2,15 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { Hono } from 'hono'
-import type { InstalledPackage } from '../shared/cli-spec.ts'
+import { npmName, type InstalledPackage } from '../shared/cli-spec.ts'
 import { getCli, type CliDefinition } from '../shared/clis.ts'
 import { t } from '../shared/i18n.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { expandHome } from './cli-extras.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
+import { galleryApi } from './cli-gallery.ts'
+import { configSettingsApi } from './cli-config-settings.ts'
 
 /**
  * CLI 自己的插件（扩展包，定义里的 packages）：列表直接读 CLI 的配置文件，装、删、更新跑 CLI 自己的命令，
@@ -27,13 +29,27 @@ export async function listPackages(def: Def): Promise<InstalledPackage[]> {
     return []
   }
   const list: unknown[] = Array.isArray(data?.[def.packages.key]) ? data[def.packages.key] : []
-  return list.flatMap((x) => {
+  const out = list.flatMap((x) => {
     const source = typeof x === 'string' ? x : typeof (x as any)?.source === 'string' ? (x as any).source : ''
     if (!source) return []
     // 相对路径是相对配置文件写的，命令按自己的工作目录解析，要换成绝对路径才对得上
     const target = /^\.\.?([/\\]|$)/.test(source) ? path.resolve(path.dirname(file), source) : source
-    return [{ source, target }]
+    return [{ source, target } as InstalledPackage]
   })
+  // npm 来源的包读装着的版本（ADR 0050）：用来和 npm 上的最新版比；读不到（还没装完、装在别处）就不写
+  const root = def.packages.npmRoot && expandHome(def.packages.npmRoot)
+  if (root)
+    await Promise.all(
+      out.map(async (p) => {
+        const name = npmName(p.source)
+        if (!name) return
+        const v = await readFile(path.join(root, name, 'package.json'), 'utf8')
+          .then((t) => JSON.parse(t)?.version)
+          .catch(() => undefined)
+        if (typeof v === 'string' && v) p.version = v
+      }),
+    )
+  return out
 }
 
 /**
@@ -47,6 +63,10 @@ export function packageCommandEnv(def: Def, env: { key: string; value: string }[
 
 export function packagesApi() {
   const app = new Hono()
+  // 插件市场和已装包的最新版本（ADR 0050）
+  app.route('/', galleryApi())
+  // CLI 自己配置文件里的设置项（ADR 0050）
+  app.route('/', configSettingsApi())
   const need = (id: string) => {
     const def = getCli(id)
     if (!def?.packages) throw new Error(t('这个 Agent 不支持插件'))

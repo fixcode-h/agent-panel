@@ -19,6 +19,9 @@ const tones = {
   // 页签条右端、输入框工具条这类一排图标（设计稿 `.ib`）：悬停也不出底，只把图标提到前景色；
   // 打开着（展开、按下、菜单开着）同样是前景色，靠颜色而不是底色表示「开着」
   bare: 'text-muted hover:text-fg aria-expanded:text-fg aria-pressed:text-fg data-[state=open]:text-fg',
+  // 标题栏的面板开关（会话栏、文件栏、右栏、功能面板）：开着不常亮，只有悬停时提亮（用户要求）；
+  // 开没开由读屏的 aria-pressed / aria-expanded 和按钮文字说明。index.css 里「Claude Code」配色的选中底色也跳过它
+  flat: 'text-muted hover:text-fg data-[state=open]:text-fg',
 }
 
 export type IconButtonSize = keyof typeof sizes

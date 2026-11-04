@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -9,7 +9,7 @@ import { cliSettings } from '../shared/settings.ts'
 import { listPackages, packageCommandEnv } from './cli-packages.ts'
 import { childEnv } from './exec/process.ts'
 
-test('扩展包：读 CLI 配置文件里的列表，相对路径按配置文件所在目录换成绝对路径', async () => {
+test('扩展包：读 CLI 配置文件里的列表，相对路径按配置文件所在目录换成绝对路径；npm 包读装着的版本', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'pi-pkg-'))
   const old = process.env.PI_CODING_AGENT_DIR
   process.env.PI_CODING_AGENT_DIR = dir
@@ -22,8 +22,11 @@ test('扩展包：读 CLI 配置文件里的列表，相对路径按配置文件
         packages: ['npm:@x/tools', '../local-pkg', { source: 'git:github.com/x/y@v1', autoload: false }, 3],
       }),
     )
+    // npm 包装在 Pi 的 npm 目录里：读出版本，设置页和 npm 上的最新版比（ADR 0050）
+    mkdirSync(path.join(dir, 'npm', 'node_modules', '@x', 'tools'), { recursive: true })
+    writeFileSync(path.join(dir, 'npm', 'node_modules', '@x', 'tools', 'package.json'), '{"version":"1.2.3"}')
     assert.deepEqual(await listPackages(def), [
-      { source: 'npm:@x/tools', target: 'npm:@x/tools' },
+      { source: 'npm:@x/tools', target: 'npm:@x/tools', version: '1.2.3' },
       // pi remove 认的是解析后的路径，原样的相对路径从别的目录跑会找不到
       { source: '../local-pkg', target: path.resolve(dir, '../local-pkg') },
       { source: 'git:github.com/x/y@v1', target: 'git:github.com/x/y@v1' },

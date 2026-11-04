@@ -142,6 +142,7 @@ import {
 import { type Steerer, cancelWait, flushHeld, notes, steerNote, steers } from './steering.ts'
 import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from './api-gate.ts'
 import { searchExcludeEnv } from './search-exclude-env.ts'
+import { trustFor } from '../../shared/cli-trust.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
 import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
@@ -540,6 +541,8 @@ async function runAgent(
     model: cs.api ? longContextModel(def, model, limits.context) : model,
     effort,
     permission: agentPermission(agent, settings),
+    // 项目设置里信任了（或明确不信任）这个 CLI 的项目配置：按定义加参数（ADR 0050）
+    trust: trustFor(def, ctx.project),
     extraArgs: [...cs.extraArgs, ...agent.extraArgs],
     maxTurns: cs.maxTurns || undefined,
     resume,

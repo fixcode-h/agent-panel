@@ -1,5 +1,6 @@
 import { CliSkills } from '@/components/settings/CliSkills'
 import { ProjectMcpSection } from './ProjectMcpSection'
+import { ProjectCliTrust } from './ProjectCliTrust'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
@@ -858,13 +859,27 @@ function Body({
                     drafts={docDrafts}
                     onDraft={(f, c) => setDocDrafts((d) => ({ ...d, [f]: c }))}
                     extra={
-                      <section className="flex flex-col gap-2 pt-6">
-                        <h3 className="text-body font-medium">Skills</h3>
-                        <p className="text-footnote text-muted">
-                          {t('{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的', { cli: name })}
-                        </p>
-                        <CliSkills key={id} cli={id} projectId={project!.id} />
-                      </section>
+                      <>
+                        {CLIS.find((c) => c.id === id)?.trust && (
+                          <ProjectCliTrust
+                            cli={id}
+                            name={name}
+                            projectId={project?.id}
+                            value={draft.cliTrust?.[id]}
+                            onChange={(v) => {
+                              const { [id]: _, ...rest } = draft.cliTrust ?? {}
+                              set('cliTrust', v ? { ...rest, [id]: v } : rest)
+                            }}
+                          />
+                        )}
+                        <section className="flex flex-col gap-2 pt-6">
+                          <h3 className="text-body font-medium">Skills</h3>
+                          <p className="text-footnote text-muted">
+                            {t('{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的', { cli: name })}
+                          </p>
+                          <CliSkills key={id} cli={id} projectId={project!.id} />
+                        </section>
+                      </>
                     }
                   />
                 )
