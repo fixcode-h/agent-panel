@@ -185,9 +185,13 @@ export function createBeforeEnd(
     const w = workSince(tk, asked.id)
     // 一个工具都没调就要结束：只在还没问过时问（问过以后只回了话、没再动手的不再问，不限次数也不会空转）
     const silent = !w.checked && w.tools === 0
-    if (!silent && w.acts + Math.floor(w.reads / READS_PER_ACT) < WORKED_ACTS) return allowEnd('small')
+    // 问过以后又调工具接着做、还是没用 end_turn 交代就要停：它没回答「做完了吗」，只是换了个地方停（用户 2026-11-05 报：
+    // 问过后读了两个文件，说「派子对话核实并修」就停了，子对话没开）。每次再问之间都隔着真动作，不会空转
+    const resumed = w.checked && w.tools > 0
+    if (!silent && !resumed && w.acts + Math.floor(w.reads / READS_PER_ACT) < WORKED_ACTS) return allowEnd('small')
     // 和收尾自检同一个 key：钩子问过的，一轮结束后不会再问一遍
-    return block(tk, silent ? 'check-no-tools' : 'check-worked', `check:${asked.id}`, CHECK_REMINDER, {
+    const why = silent ? 'check-no-tools' : resumed ? 'check-resumed' : 'check-worked'
+    return block(tk, why, `check:${asked.id}`, CHECK_REMINDER, {
       ...w,
       again: input.again || undefined,
     })

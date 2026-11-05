@@ -571,7 +571,9 @@ export const api = {
     request<ProjectMcpImportResult>(`/project-mcp/import?projectId=${projectId}`, json('POST', { items })),
 
   appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
-  appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
+  /** refresh：马上问 GitHub；cached：只读上次检查存下的列表，不联网 */
+  appReleases: (mode?: 'refresh' | 'cached') =>
+    request<AppReleases>(`/app/releases${mode === 'refresh' ? '?refresh=1' : mode === 'cached' ? '?cached=1' : ''}`),
   appInstall: (tag: string) => request<AppUpdateJob>('/app/install', json('POST', { tag })),
   appInstallJob: (id: string) => request<AppUpdateJob>(`/app/install/${id}`),
   /** 正在跑的那次更新；没有时是 null */
@@ -817,14 +819,7 @@ export const api = {
   discardPaths: (paths: string[]) => request<{ ok: boolean }>('/uploads/discard', json('POST', { paths })),
   /** 附件、粘贴引用的本机文件：读文字内容，点文件卡片时看 */
   localFile: (path: string) =>
-    request<{
-      path: string
-      dir: string
-      exists: boolean
-      binary?: boolean
-      content: string
-      truncated: boolean
-    }>(`/uploads/raw/file?path=${encodeURIComponent(path)}`),
+    request<FileContent & { dir: string }>(`/uploads/raw/file?path=${encodeURIComponent(path)}`),
   /** 引入会话：把任务或设计的对话整理成一份附件 */
   taskTranscript: (id: string) => request<Attachment>(`/tasks/${id}/transcript`, json('POST', {})),
   designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),
@@ -851,8 +846,11 @@ export const api = {
   projectFile: (projectId: string, path: string) =>
     request<FileContent>(`/project-files/${projectId}/content?path=${encodeURIComponent(path)}`),
   /** 保存文件内容：编码和换行按项目设置，原文件是 CRLF 时按原样回写 */
-  writeProjectFile: (projectId: string, path: string, content: string) =>
-    request<{ path: string; size: number }>(`/project-files/${projectId}/content`, json('PUT', { path, content })),
+  writeProjectFile: (projectId: string, path: string, content: string, mtime?: string) =>
+    request<{ path: string; size: number }>(
+      `/project-files/${projectId}/content`,
+      json('PUT', { path, content, mtime }),
+    ),
   /** 在目录里新建文件；同名时后端拒绝，不会覆盖 */
   createProjectFile: (projectId: string, dir: string, name: string, content = '') =>
     request<{ path: string; size: number }>(`/project-files/${projectId}/new`, json('POST', { dir, name, content })),
@@ -921,14 +919,19 @@ export const api = {
       json('POST', { msg }),
     ),
   taskFile: (id: string, path: string) =>
-    request<{
-      path: string
-      dir: string
-      exists: boolean
-      binary?: boolean
-      content: string
-      truncated: boolean
-    }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
+    request<
+      FileContent & {
+        dir: string
+        /** 任务目录里的文件能在弹窗里改；附件、项目外的文件只读 */
+        editable?: boolean
+      }
+    >(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
+  /** 文件弹窗里保存：只能写任务目录里已有的文件，编码和换行按项目设置 */
+  writeTaskFile: (id: string, path: string, content: string, mtime?: string) =>
+    request<{ path: string; size: number }>(`/tasks/${id}/file`, json('PUT', { path, content, mtime })),
+  /** 文件弹窗的「查看改动」：任务目录里的文件和 git 的 HEAD 比 */
+  taskFileDiff: (id: string, path: string) =>
+    request<FileDiff>(`/tasks/${id}/file/diff?path=${encodeURIComponent(path)}`),
   /** 排查结论的「应用这 N 处修改」：在被分析对话的目录里逐条按原文替换，每条给出结果 */
   applyFixes: (id: string, fixes: FixApplyItem[]) =>
     request<{ dir: string; results: FixApplyResult[] }>(`/tasks/${id}/apply-fixes`, json('POST', { fixes })),

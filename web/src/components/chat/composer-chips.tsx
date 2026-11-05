@@ -15,7 +15,7 @@ import {
   type Chip,
   type ChipKind,
 } from '@shared/composer'
-import { MAX_ATTACHMENTS, type Attachment } from '@shared/schema'
+import type { Attachment } from '@shared/schema'
 import { chipTextOf, itemPath } from '@shared/attachment-view'
 import { api } from '@/lib/api'
 import { attachmentUrl } from './Attachments'
@@ -27,6 +27,8 @@ import { insertFileRef, useFileRefDrop, useFileRefDropOn, type FileRef } from '@
 import { t } from '@shared/i18n'
 import { useDropPaste, type AttachHooks, type useAttachments } from './Attachments'
 import { AttachmentViewer, viewOf, type ViewTarget } from './AttachmentView'
+import { useVideoIntake } from '@/components/video/useVideoIntake'
+import { isVideoFile } from '@shared/video'
 import type { ChipActions, RichInputHandle } from './RichInput'
 
 /** 文字里附件卡片的名字 */
@@ -63,6 +65,8 @@ export function useComposerChips({
   /** 粘贴进来的文件：图片是剪贴板截图，没有原路径，直接上传（见 useAttachments 的 add） */
   const addPasted = useCallback((list: File[]) => void files.add(list, hooks, { clipboard: true }), [files, hooks])
   const addReady = useCallback((a: Attachment) => files.addReady(a, hooks), [files, hooks])
+  /** 放进来的视频：打开截帧弹窗，截好的帧当图片放回来（不把视频发给 Agent） */
+  const videoDialog = useVideoIntake(files, editor, addReady)
   /** 引用一段内容：放到输入框末尾 */
   const addQuote = useCallback(
     (quoted: string) => {
@@ -275,7 +279,6 @@ export function useComposerChips({
        * 原文就在粘贴的文字里，所以从别的对话、别的浏览器标签页、甚至另一个面板实例粘过来都能还原，
        * 不依赖本地存储和服务端地址。标记不完整的按普通文字走下面的流程
        */
-      const room = Math.max(0, MAX_ATTACHMENTS - files.items.length)
       const quoted = ed
         ? pasteElementRefs(
             pasted,
@@ -284,13 +287,12 @@ export function useComposerChips({
               files.addQuote(ref, { added: (items) => (name = items[0]?.name), failed: hooks.failed })
               return name
             },
-            room,
+            // 附件不限个数（用户 2026-11-05 定的）：粘贴进来的引用全部换成卡片
+            Infinity,
           )
         : undefined
       // made 为 0 时没有卡片可放，交给下面的超长 / 路径流程处理原文
       if (ed && quoted && quoted.made > 0) {
-        // 没换成卡片的引用会按普通文字留在输入框里（内容不丢），但不能默默不提一句
-        if (quoted.kept > 0) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
         e.preventDefault()
         // 卡片背后的附件 addQuote 已经放好了，这里把卡片标记和其余文字插回粘贴的位置
         const at = ed.caret()
@@ -329,6 +331,12 @@ export function useComposerChips({
           let last = 0
           for (const h of refs) {
             const a = byFrom.get(h.path)
+            // 视频交给截帧弹窗了（见 useVideoIntake）：路径不留在文字里，免得把视频路径发给 Agent
+            if (a && files.videoTaker.current && a.quote === undefined && isVideoFile(a.name, a.mime)) {
+              out += pasted.slice(last, h.start)
+              last = h.end
+              continue
+            }
             const chip = a && names.get(a.path)
             if (!chip) continue
             out += pasted.slice(last, h.start)
@@ -362,6 +370,11 @@ export function useComposerChips({
     refOver,
     /** 右键卡片弹出的菜单，和 viewer 一样挂在输入框外层 */
     chipMenu,
-    viewer: <AttachmentViewer target={view} onClose={() => setView(null)} />,
+    viewer: (
+      <>
+        <AttachmentViewer target={view} onClose={() => setView(null)} />
+        {videoDialog}
+      </>
+    ),
   }
 }

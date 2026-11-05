@@ -2,6 +2,9 @@
 
 export const REPO = 'fixcode-h/agent-panel'
 
+/** 设置「版本更新」里「最近的版本」列几个包；服务端和在线演示共用 */
+export const RECENT_RELEASES = 10
+
 export interface AppRelease {
   /** 例如 v0.11.22-dev */
   tag: string

@@ -1,7 +1,6 @@
 /** 英文词典的一部分，键是中文原文：设置 → Markdown 样式、文件预览的 Markdown 切换 */
 export const EN_MARKDOWN_STYLE: Record<string, string> = {
   'Markdown 样式': 'Markdown style',
-  预览或源码: 'Preview or source',
   源码: 'Source',
   无衬线: 'Sans-serif',
   衬线: 'Serif',

@@ -1,38 +1,24 @@
-import { useState } from 'react'
+import { useState, type HTMLAttributes } from 'react'
 import { BellRing, ChevronRight, CircleCheck, TriangleAlert } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TrailItem } from '@shared/end-turn'
 import { cn } from '@/lib/utils'
-import { Card } from '@/components/ui/card'
 import { LEAD_TAG } from './panel-kind'
+import { localStamp } from './life-log-rows'
 
 /**
- * 状态诊断里的「面板提醒」卡片：面板的提醒（结束前钩子拦住、一轮结束后补发）和 Agent 用 end_turn 交代的结束，
- * 按时间列出来。提醒和 end_turn 都不画进对话（用户 2026-11-05 定），这里是唯一能看到它们的地方。
+ * 状态诊断日志里的「面板提醒」行：面板的提醒（结束前钩子拦住、一轮结束后补发）和 Agent 用 end_turn 交代的结束。
+ * 以前单独一张卡片列在日志上面，用户 2026-11-05 要求按时间插进日志里（life-log-rows.ts 的 buildRows 负责插）。
+ * 提醒和 end_turn 都不画进对话（用户 2026-11-05 定），这里是唯一能看到它们的地方。
  * 每行的结果按结构算（提醒之后调了几次工具、end_turn 的 outcome），不看回复文字
  */
-export function ReminderTrail({ items }: { items: TrailItem[] }) {
-  const reminders = items.filter((x) => x.kind !== 'end').length
-  return (
-    <Card className="flex min-w-0 flex-col gap-1 px-3.5 py-3" data-life-trail>
-      <span className="text-footnote text-subtle">
-        {t('面板提醒')} · {t('{n} 次', { n: reminders })}
-      </span>
-      <ul className="flex flex-col">
-        {[...items].reverse().map((x, i) => (
-          <TrailRow key={`${x.at}-${i}`} item={x} />
-        ))}
-      </ul>
-    </Card>
-  )
-}
-
-const clock = (at: string) => {
-  const d = new Date(at)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour12: false })
-}
-
-function TrailRow({ item: x }: { item: TrailItem }) {
+export function TrailLine({
+  item: x,
+  ms,
+  raw,
+  className,
+  ...rest
+}: { item: TrailItem; ms: number; raw?: string } & HTMLAttributes<HTMLDivElement>) {
   const [open, setOpen] = useState(false)
   const end = x.kind === 'end'
   const blocked = end && x.outcome === 'blocked'
@@ -55,27 +41,41 @@ function TrailRow({ item: x }: { item: TrailItem }) {
         : ''
   const detail = end ? (blocked ? x.need : x.hidden) : x.text?.replace(LEAD_TAG, '')
   return (
-    <li className="min-w-0">
+    <div {...rest} data-life-trail className={cn(className, 'flex-wrap')}>
+      <span className="shrink-0 text-subtle">{localStamp(ms).slice(11, 23)}</span>
+      <span className="w-28 shrink-0">
+        <span
+          className={cn(
+            'inline-flex max-w-full items-center gap-1 rounded-sm px-1.5 py-px align-middle font-sans text-caption',
+            blocked
+              ? 'bg-warning/12 text-warning'
+              : end
+                ? 'bg-success/12 text-success'
+                : 'bg-accent/12 text-accent-text',
+          )}
+        >
+          <Icon className="h-3 w-3 shrink-0" />
+          <span className="truncate">{what}</span>
+        </span>
+      </span>
       <button
         type="button"
         disabled={!detail}
         aria-expanded={detail ? open : undefined}
         onClick={() => setOpen(!open)}
-        className="flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left text-body enabled:hover:bg-sel"
+        title={raw}
+        className="flex min-w-0 flex-1 items-center gap-1 text-left text-muted enabled:cursor-pointer enabled:hover:text-fg"
       >
-        <span className="w-16 shrink-0 font-mono text-caption text-subtle tabular-nums">{clock(x.at)}</span>
-        <Icon className={cn('h-3.5 w-3.5 shrink-0', blocked ? 'text-warning' : end ? 'text-success' : 'text-subtle')} />
-        <span className="shrink-0 text-fg">{what}</span>
-        <span className="min-w-0 flex-1 truncate text-muted">{result}</span>
+        <span className="min-w-0 flex-1 truncate">{result}</span>
         {detail && (
           <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-90')} />
         )}
       </button>
       {open && detail && (
-        <p className="mt-0.5 mb-1.5 ml-[4.5rem] border-l-2 border-line pl-3 text-footnote whitespace-pre-wrap text-muted">
+        <p className="ml-[calc(5.5rem+0.75rem)] basis-full border-l-2 border-line pl-3 font-sans whitespace-pre-wrap text-muted">
           {detail}
         </p>
       )}
-    </li>
+    </div>
   )
 }

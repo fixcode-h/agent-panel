@@ -127,7 +127,6 @@ export const EN_TASKS: Record<string, string> = {
   点文件在中间查看: 'Click a file to view it in the center',
 
   // 附件
-  '一次最多附上 {n} 个文件': 'You can attach up to {n} files at a time',
   选择文件的窗口一直没有响应: 'The file picker did not respond',
   '打不开选择文件的窗口：{error}': 'Could not open the file picker: {error}',
   截图: 'Screenshot',
@@ -1706,7 +1705,6 @@ export const EN_TASKS: Record<string, string> = {
   '卡住了：{need}': 'Stuck: {need}',
   '面板连着提醒了 {n} 次，它都没动手，也没说做完或卡住：停在这里等你看一下':
     'The panel reminded it {n} times in a row and it neither did anything nor said it was done or stuck. Stopped here for you to take a look',
-  '{n} 次': '{n} times',
   结束前拦住: 'Held before ending',
   一轮结束后提醒: 'Reminded after the turn',
   它说卡住了: 'Said it is stuck',
@@ -1749,6 +1747,7 @@ export const EN_TASKS: Record<string, string> = {
   '模型请求 #{n}': 'Request #{n}',
   '{d} 后开始输出': 'Output after {d}',
   跳到最新: 'Jump to latest',
+  双击回到完整日志并定位到这一行: 'Double-click to show the full log and jump to this line',
   '开着时每 2 秒刷新': 'Refreshes every 2 seconds while open',
   '实时 · {time}': 'Live · {time}',
   '把选中这一项的结论、异常、计数和日志交给 AI，判断卡在哪、怎么处理':

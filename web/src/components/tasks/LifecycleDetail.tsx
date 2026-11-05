@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, Copy, Loader2, RotateCw, Square, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import {
@@ -10,6 +10,7 @@ import {
   type LifeNode,
   type LogLine,
 } from '@shared/lifecycle'
+import type { TrailItem } from '@shared/end-turn'
 import { convStateText, resumable, stopReasonText, type ConvState } from '@shared/task'
 import { api } from '@/lib/api'
 import { toast } from '@/lib/toast'
@@ -22,7 +23,8 @@ import { Card } from '@/components/ui/card'
 import { IconButton } from '@/components/ui/icon-button'
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { Switch } from '@/components/ui/switch'
-import { ReminderTrail } from './ReminderTrail'
+import { TrailLine } from './ReminderTrail'
+import { buildRows, type LogFilter, type Parsed, type Row } from './life-log-rows'
 
 /**
  * 状态诊断右边那一栏（LifecycleDialog 里选中的节点）：结论、异常、六类事件的计数、执行 / 模型 / 进程三张卡、日志。
@@ -130,9 +132,6 @@ function RunControl({ node }: { node: LifeNode }) {
     </Button>
   )
 }
-
-/** 日志的筛选：全部、关键事件（面板提醒、重试、出错、停止、退出），或者点计数块选的某一类 */
-type LogFilter = '' | 'key' | EventKind
 
 export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode }) {
   const now = useNow(true)
@@ -259,9 +258,7 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
         <ProcessCard node={node} now={now} />
       </div>
 
-      {node.trail && node.trail.length > 0 && <ReminderTrail items={node.trail} />}
-
-      <LifeLog lines={lines} filter={filter} setFilter={setFilter} />
+      <LifeLog lines={lines} trail={node.trail} filter={filter} setFilter={setFilter} />
     </section>
   )
 }
@@ -284,8 +281,6 @@ function InfoCard({ title, rows, children }: { title: string; rows: [string, str
     </Card>
   )
 }
-
-type Parsed = { raw: string; l?: LogLine }
 
 /** 模型卡：请求次数、首字等待、最后输出，外加最近 12 次首字等待的小柱子（网关忽快忽慢一眼看出） */
 function ModelCard({ node, now, lines }: { node: LifeNode; now: number; lines: Parsed[] }) {
@@ -422,46 +417,6 @@ function lineTone(l?: LogLine) {
   return 'bg-sel text-muted'
 }
 
-type Row =
-  | { kind: 'line'; raw: string; l?: LogLine }
-  | { kind: 'pair'; req: LogLine; out: LogLine }
-  | { kind: 'day'; day: string }
-
-/** 筛选、合并「请求开始 + 开始输出」、按天插分隔 */
-function buildRows(lines: Parsed[], filter: LogFilter, merge: boolean): Row[] {
-  const keep = (x: Parsed) => {
-    if (!filter) return true
-    if (!x.l) return false
-    const k = eventKind(x.l.event, x.l.fields)
-    if (filter === 'key') return !!k && k !== 'requests'
-    if (filter === 'requests') return k === 'requests' || x.l.event === '模型开始输出'
-    return k === filter
-  }
-  const list = lines.filter(keep)
-  const out: Row[] = []
-  let day = ''
-  for (let i = 0; i < list.length; i++) {
-    const { raw, l } = list[i]
-    const d = raw.slice(0, 10)
-    if (l && d !== day) {
-      day = d
-      out.push({ kind: 'day', day: d })
-    }
-    const nx = list[i + 1]?.l
-    if (
-      merge &&
-      l?.event === '模型请求开始' &&
-      nx?.event === '模型开始输出' &&
-      nx.fields.n === l.fields.n &&
-      (nx.fields.step ?? '') === (l.fields.step ?? '')
-    ) {
-      out.push({ kind: 'pair', req: l, out: nx })
-      i++
-    } else out.push({ kind: 'line', raw, l })
-  }
-  return out
-}
-
 const FIELD_SKIP = new Set(['step'])
 
 function Fields({ l }: { l: LogLine }) {
@@ -480,10 +435,12 @@ function Fields({ l }: { l: LogLine }) {
 
 function LifeLog({
   lines,
+  trail,
   filter,
   setFilter,
 }: {
   lines: Parsed[]
+  trail?: TrailItem[]
   filter: LogFilter
   setFilter: (f: LogFilter) => void
 }) {
@@ -491,7 +448,7 @@ function LifeLog({
   // 跟随最新：默认贴着底；往上翻看时停住，底下出「跳到最新」，翻回底部又自动跟上
   const [follow, setFollow] = useState(true)
   const box = useRef<HTMLDivElement>(null)
-  const rows = useMemo(() => buildRows(lines, filter, merge), [lines, filter, merge])
+  const rows = useMemo(() => buildRows(lines, filter, merge, trail), [lines, filter, merge, trail])
   useLayoutEffect(() => {
     const el = box.current
     if (el && follow) el.scrollTop = el.scrollHeight
@@ -500,6 +457,39 @@ function LifeLog({
     const el = box.current
     if (el) setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 24)
   }
+  // 筛选状态下双击某行：取消筛选回到完整日志，滚到同一条并闪一下（用户 2026-11-05 要的）。
+  // spot 是要定位的原始下标，等筛选取消后的列表画出来再滚；flash 留着高亮一会儿再消
+  const [spot, setSpot] = useState<number | null>(null)
+  const [flash, setFlash] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (spot === null || !el) return
+    const row = el.querySelector<HTMLElement>(`[data-at~="${spot}"]`)
+    if (row) el.scrollTop = row.offsetTop - (el.clientHeight - row.offsetHeight) / 2
+    setSpot(null)
+  }, [rows, spot])
+  useEffect(() => {
+    if (flash === null) return
+    const id = setTimeout(() => setFlash(null), 2000)
+    return () => clearTimeout(id)
+  }, [flash])
+  const locate = (r: Row) => {
+    if (!filter || r.kind === 'day') return
+    setFollow(false)
+    setSpot(r.at[0])
+    setFlash(r.at[0])
+    setFilter('')
+  }
+  const lineProps = (r: Exclude<Row, { kind: 'day' }>) => ({
+    'data-at': r.at.join(' '),
+    'data-life-flash': flash !== null && r.at.includes(flash) ? '' : undefined,
+    onDoubleClick: () => locate(r),
+    title: filter ? t('双击回到完整日志并定位到这一行') : undefined,
+    className: cn(
+      'flex min-w-0 items-center gap-3 px-3.5 py-1.5 transition-colors hover:bg-hover',
+      flash !== null && r.at.includes(flash) && 'bg-accent/15 hover:bg-accent/15',
+    ),
+  })
   const kindLabel = filter && filter !== 'key' ? COUNT_META[filter].label : ''
   return (
     <Card className="relative flex min-h-[260px] flex-1 flex-col overflow-hidden" data-life-log>
@@ -530,7 +520,7 @@ function LifeLog({
         onScroll={onScroll}
         // 行与行之间一道细线（divide-y，和各页列表的分割线一样），每行上下留空：
         // 事件标签各自是一小块，不会上下连成一片（用户 2026-11-02 指出背景连到一起）
-        className="min-h-0 flex-1 divide-y overflow-y-auto font-mono text-footnote leading-5"
+        className="relative min-h-0 flex-1 divide-y overflow-y-auto font-mono text-footnote leading-5"
       >
         {rows.length === 0 && <p className="px-3.5 py-6 text-center font-sans text-subtle">{t('没有这类事件')}</p>}
         {rows.map((r, i) =>
@@ -538,8 +528,10 @@ function LifeLog({
             <div key={i} className="px-3.5 pt-2.5 pb-1.5 font-sans text-caption text-subtle">
               {r.day}
             </div>
+          ) : r.kind === 'trail' ? (
+            <TrailLine key={i} item={r.item} ms={r.ms} raw={r.raw} {...lineProps(r)} />
           ) : r.kind === 'pair' ? (
-            <div key={i} className="flex min-w-0 items-center gap-3 px-3.5 py-1.5 hover:bg-hover">
+            <div key={i} {...lineProps(r)}>
               <span className="shrink-0 text-subtle">{r.req.raw.slice(11, 23)}</span>
               <span className="w-28 shrink-0">
                 <span className="rounded-sm bg-accent/12 px-1.5 py-px font-sans text-caption text-accent-text">
@@ -552,7 +544,7 @@ function LifeLog({
               </span>
             </div>
           ) : (
-            <div key={i} className="flex min-w-0 items-center gap-3 px-3.5 py-1.5 hover:bg-hover">
+            <div key={i} {...lineProps(r)}>
               {r.l ? (
                 <>
                   <span className="shrink-0 text-subtle">{r.raw.slice(11, 23)}</span>

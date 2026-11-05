@@ -224,7 +224,8 @@ test('pasteElementRefs：一块都没认出时返回 undefined，交给原来的
 })
 
 test('pasteElementRefs：只换名额内的那几块，后面的引用原文留在原位不丢', async () => {
-  const { MAX_ATTACHMENTS } = await import('@shared/schema')
+  // pasteElementRefs 的上限参数仍可用；输入框传 Infinity（附件不限个数）
+  const MAX_ATTACHMENTS = 10
   const one = formatElementRef(base)
   const value = Array.from({ length: MAX_ATTACHMENTS + 2 }, () => wrapElementRef(one)).join('\n')
   let asked = 0
