@@ -598,6 +598,7 @@ export function createRun(sc: TasksScope) {
                   }
                 return sc.background.start({
                   ...input,
+                  // 交来的 service 原样带上（BgJob.service）：常驻服务不催、不算在等结果
                   taskId: task.id,
                   root: dir,
                   env: noPushEnv(entry.task, project?.gitPolicy),

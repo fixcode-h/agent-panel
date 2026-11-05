@@ -27,6 +27,7 @@ import { getSettings } from '../settings.ts'
 import { taskLogPath } from '../task-log.ts'
 import { currentVersion } from '../update.ts'
 import type { TasksScope } from './scope.ts'
+import { awaitedJob } from '../background.ts'
 
 /*
  * 状态诊断的事实收集：一棵对话树（对话、子对话、子任务、工作流节点）每个节点的现场快照、落盘状态、
@@ -159,7 +160,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       cliAlive: taskCliAlive(id),
       runningTool: runningTool(tk),
       helpers: helpers.length,
-      jobs: sc.background.list(id).filter((j) => j.state === 'queued' || j.state === 'running').length,
+      jobs: sc.background.list(id).filter(awaitedJob).length,
       waitsOn,
       trace: cliTrace(id),
       exit: lastExit(parsed),

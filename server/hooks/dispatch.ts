@@ -194,6 +194,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   /** 工具前 / 工具后各自关心哪几类工具：能按工具名过滤的 CLI 只对这几类触发（见 shared/hooks.ts 的 toolMatcher） */
   hookTools?: HookToolScope
   onHook?: (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
+  /** 后台命令的命令过守卫：拒绝时返回原因（交给模型），放行返回空串 */
+  commandGuard?: (command: string) => Promise<string>
 }> {
   if (!c.call.orch) return {}
   const data: HooksData = await readHooks()
@@ -458,7 +460,31 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return {}
   }
 
-  return { ...(beforeEnd ? { beforeEnd } : {}), ...(events.length ? { hookEvents: events, hookTools, onHook } : {}) }
+  /**
+   * 交给面板后台命令（run_background）的命令也过工具前的守卫和用户钩子：以前它们只管 CLI 自己的命令工具，
+   * 只读角色、推送授权、危险命令、凭据、测试归属这些规则换成后台命令就全绕过去了。长命令守卫不问（它本来就是让命令来这里），
+   * 不看 CLI 支不支持钩子、设置里有没有按 CLI 关掉工具前事件：这是面板自己执行的命令
+   */
+  const commandGuard = async (command: string): Promise<string> => {
+    const facts: HookFacts = {
+      tool: { kind: 'shell', name: 'run_background', input: { command }, path: '', paths: [] },
+    }
+    for (const [id, fn] of guards) {
+      if (id === 'long-command-guard') continue
+      const deny = fn(guard(id), facts)
+      if (!deny) continue
+      taskLog(c.task.id, '后台命令被守卫拒绝', { guard: id, command: command.slice(0, 200) })
+      noteBuiltin(id, 'tool.before', 'deny', deny)
+      return deny
+    }
+    return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
+  }
+
+  return {
+    commandGuard,
+    ...(beforeEnd ? { beforeEnd } : {}),
+    ...(events.length ? { hookEvents: events, hookTools, onHook } : {}),
+  }
 }
 
 /** 只看范围（项目、角色、CLI），不看工具匹配：装不装 tool.* 只要范围对得上就装，具体匹不匹配到触发时再看 */

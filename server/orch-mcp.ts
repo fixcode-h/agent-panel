@@ -15,8 +15,7 @@ import {
   stepField,
   planItem,
 } from './orch-fields.ts'
-import { shellNote } from '../shared/shells.ts'
-import { lastShell } from './shells.ts'
+import { backgroundTools, callBackgroundTool } from './background-tools.ts'
 import { askOptions } from '../shared/task.ts'
 import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
 import { overrideInput, triageInput } from '../shared/review-gate.ts'
@@ -50,12 +49,6 @@ export { orchHint } from './orch-hint.ts'
 // 要短于 CLI 一次工具调用的超时（Codex 的 tool_timeout_sec 在定义里放宽到 1 小时），等待期间写 SSE 心跳（ask-mcp.ts）
 export const WAIT_AGENTS_S = 1500
 
-/** 后台命令在哪个 shell 里跑（设置里的命令行环境），Agent 按它的语法写命令 */
-const shellHint = () => {
-  const sh = lastShell()
-  return sh ? shellNote(sh) : ''
-}
-
 /** 按能力给工具（ADR 0038）：team 管查状态和传话，canSpawn 管派子任务，其余按各自的能力和宿主的客观条件 */
 export function orchTools(o: Orchestra) {
   const main = o.self.endsWith('@main')
@@ -82,53 +75,7 @@ export function orchTools(o: Orchestra) {
           },
         ]
       : []),
-    ...(o.canBackground
-      ? [
-          {
-            name: 'run_background',
-            title: '后台命令',
-            description:
-              '把要跑很久的命令（完整测试、编译、打包）交给面板在后台跑，马上返回编号，不用干等；跑完结果会自动推回给你。等待期间不要改这条命令要检查的文件。' +
-              // 子任务的结果推回的是派它的对话（它自己已结束），要让模型知道这件事，不要以为能在这里等结果
-              (o.helper
-                ? '你是子任务：结果推回派你的对话，并标注是哪个子任务起的，你启动后接着做别的事或结束这一轮。'
-                : '') +
-              shellHint(),
-            inputSchema: {
-              type: 'object',
-              properties: {
-                command: { type: 'string', description: '要执行的命令原文' },
-                name: { type: 'string', description: '给这条命令起个短名字，例如「端到端测试」' },
-                cwd: { type: 'string', description: '相对当前目录的工作目录，不写就是当前目录' },
-                exclusive: {
-                  type: 'boolean',
-                  description: '编译、打包这类会抢文件锁的命令设为 true：按项目排队，同一时间只跑一个',
-                },
-                timeout_minutes: {
-                  type: 'number',
-                  description:
-                    '最多跑多少分钟，到点面板停掉它并把结果推回；按命令正常要多久写宽一些，不写默认 120，最多 480',
-                },
-                ...(o.plans ? { step: stepField('这条命令') } : {}),
-              },
-              required: ['command'],
-            },
-          },
-          {
-            name: 'check_background',
-            title: '查看后台命令',
-            description:
-              '查后台命令的状态、已经跑了多久、多久没输出和最近的输出；不写 id 列出这个对话的全部。结果会自动推回来，不需要轮询。',
-            inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
-          },
-          {
-            name: 'stop_background',
-            title: '停止后台命令',
-            description: '停掉这个对话的一条后台命令：确认它卡住了（长时间没输出、跑偏了）才用，停掉后查清原因再重跑。',
-            inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-          },
-        ]
-      : []),
+    ...backgroundTools(o),
     ...(o.plans
       ? [
           {
@@ -971,26 +918,10 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const r = await o.sendToConversation(id, message, str(a?.step).trim(), routeOf(a?.route))
       return text(r.info, !r.ok)
     }
-    case 'run_background': {
-      const command = str(a?.command).trim()
-      if (!command) return text('command 是空的：写要执行的命令', true)
-      const r = await o.runBackground({
-        command,
-        // 没给名字时用命令第一行：名字会写进推回结果的标题（界面按第一行显示），带换行会把「成功 / 失败」截掉
-        name: str(a?.name).trim() || command.split('\n')[0].trim().slice(0, 40),
-        cwd: str(a?.cwd).trim(),
-        exclusive: a?.exclusive === true,
-        ...(Number(a?.timeout_minutes) > 0 && { timeoutMinutes: Number(a?.timeout_minutes) }),
-        step: str(a?.step).trim(),
-      })
-      return text(r.info, !r.ok)
-    }
+    case 'run_background':
     case 'check_background':
-      return text(o.checkBackground(str(a?.id)))
-    case 'stop_background': {
-      const r = o.stopBackground(str(a?.id))
-      return text(r.info, !r.ok)
-    }
+    case 'stop_background':
+      return (await callBackgroundTool(o, name, a))!
     case 'begin_edit': {
       const r = await o.beginEdit()
       return text(r.info, !r.ok)

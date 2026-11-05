@@ -101,7 +101,7 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
   // 独立分支没合回只对子对话算
   const state = convState({
     ...childFacts(task, {
-      background: task.jobs?.length ?? 0,
+      background: task.jobs?.filter((j) => !j.service).length ?? 0,
       unmerged: !!task.parentTaskId && task.worktree?.state === 'active',
     }),
     children: busyKids.length || (task.childrenWorking ?? 0),

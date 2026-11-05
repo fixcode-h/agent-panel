@@ -34,6 +34,7 @@ import { inlineEditBlocker, inlineEditOverrun, inlineEditOverrunText } from '../
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import type { IntegrateResult } from '../exec/worktree-integrate.ts'
+import { awaitedJob } from '../background.ts'
 
 /** finish_child 最多等多久再回话：CLI 的工具调用一分钟超时，要在那之前回（见 finishChild） */
 const FINISH_WAIT_MS = 45_000
@@ -119,7 +120,7 @@ export function createMerge(sc: TasksScope) {
         }
     }
     // 后台还在跑的命令多半就是测试：没跑完就不算跑通，合进去后回收分支还会把它掐掉
-    const pending = sc.background.list(childId).filter((j) => j.state === 'queued' || j.state === 'running')
+    const pending = sc.background.list(childId).filter(awaitedJob)
     if (pending.length)
       return {
         ok: false,

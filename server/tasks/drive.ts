@@ -14,6 +14,7 @@ import { t } from '../../shared/i18n.ts'
 import { activePlan, needsFix, planProgress, openWork } from '../../shared/plan.ts'
 import type { TasksScope } from './scope.ts'
 import { createBeforeEnd } from './before-end.ts'
+import { awaitedJob } from '../background.ts'
 
 /**
  * 没列计划时，这一轮动手（跑命令、改文件）几次以上才做收尾自检（见 nudgeNoPlan）：三步以上的事才可能做了一半，
@@ -116,7 +117,7 @@ export function createDrive(
       // 等用户回答、等确认、还有排队要处理的消息、后台命令还在跑：不是停住了
       if (userWaiting(tk)) return 'asking'
       if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
-      if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return 'background'
+      if (sc.background.list(tk.id).some(awaitedJob)) return 'background'
       const plan = activePlan(tk)!
       return { tk, plan, p: planProgress(tk, plan), key: planProgressKey(plan) }
     }
@@ -260,7 +261,7 @@ export function createDrive(
       if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
       // 父对话自己还有后台命令在跑（多半是替子对话申请的编译）：结果回来会开新的一轮，到时再提醒。
       // 编译期间就催它收尾，它只能回「等编译结果」，次数白白用掉，编译出了结果反而不再提醒（用户 2026-11-04 报）
-      if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return 'background'
+      if (sc.background.list(tk.id).some(awaitedJob)) return 'background'
       const kids = (await sc.store.list())
         .filter((k) => k.parentTaskId === tk.id)
         .map((k) => sc.live.get(k.id)?.task ?? k)

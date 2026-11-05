@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { createBackground, uiJobs, type BgJob, type BgTimers } from './background.ts'
+import { awaitedJob, createBackground, uiJobs, type BgJob, type BgTimers } from './background.ts'
+import { bgJobIds } from '../shared/panel-tools.ts'
 import { childHoldsOf } from '../shared/task.ts'
 
 function repo() {
@@ -410,6 +411,49 @@ test('限时：写了 timeout_minutes 就按它，超过上限按上限', () => 
   assert.equal(ms(b.id), 8 * 3600_000)
   assert.equal(ms(c.id), 2 * 3600_000)
   void bg.stop('t')
+})
+
+test('常驻服务：不催、限时按上限、对话不算在等它；那一行马上收口，界面照样列出', async () => {
+  const clock = fakeClock()
+  let t = 1_000_000
+  let started = false
+  const fake = ((_l: string, _c: string, o: { signal?: AbortSignal }) =>
+    new Promise((resolve) => {
+      started = true
+      o.signal?.addEventListener('abort', () => resolve({ code: null, killed: 'stopped', stderr: '' }))
+    })) as unknown as NonNullable<Parameters<typeof createBackground>[1]>['run']
+  const notices: string[] = []
+  const bg = createBackground(() => {}, {
+    run: fake,
+    timers: clock.impl,
+    now: () => t,
+    stallMs: 1000,
+    checkFirstMs: 2000,
+    killGraceMs: 100,
+    onNotice: (_j, text) => notices.push(text),
+  })
+  const dir = mkdtempSync(path.join(tmpdir(), 'bg-svc-'))
+  const r = bg.start({
+    taskId: 't',
+    name: 'dev',
+    command: 'npm run dev',
+    cwd: '',
+    root: dir,
+    exclusive: false,
+    service: true,
+  })
+  assert.match(r.info, /常驻服务/)
+  assert.deepEqual(bgJobIds(r.info), [], '不用「已放到后台（编号…）」，那一行不会一直转圈')
+  await until(() => started, '服务跑起来')
+  t += 10_000
+  await clock.advance(10_000)
+  assert.equal(notices.length, 0, '常驻服务很久没输出也不催')
+  const j = bg.list('t')[0]
+  assert.equal(j.timeoutMs, 8 * 3600_000)
+  assert.equal(awaitedJob(j), false, '对话不算在等它')
+  assert.equal(uiJobs(bg.list('t'))[0].service, true, '运行区照样列出、能停掉')
+  assert.equal(bg.stopOne('t', r.id!).ok, true)
+  await until(() => !!bg.list('t')[0].endedAt, '停掉后置终态')
 })
 
 test('子任务起的命令记下它的步骤，父对话自己起的不带；发给界面的映射带上它', async () => {

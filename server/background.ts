@@ -55,7 +55,19 @@ export interface BgJob {
   stopRequested?: boolean
   /** 额外的环境变量（子对话的独立分支禁止推送） */
   env?: { key: string; value: string }[]
+  /**
+   * 常驻服务（开发服务器、监听）：一直跑到被停掉，不是「交出去等结果」。不提醒没输出 / 跑了很久，
+   * 不算对话在等它（awaitedJob），计划不挂等待；中途自己退出了照常把结果推回（多半是起不来或崩了）
+   */
+  service?: boolean
 }
+
+/**
+ * 对话在等它的结果：还在排队或在跑、且不是常驻服务。侧栏转圈、「完成未读」、计划推进、收尾门禁都按它算；
+ * 常驻服务一直跑到被停掉，算进去的话对话永远显示在等结果
+ */
+export const awaitedJob = (j: Pick<BgJob, 'state' | 'service'>) =>
+  (j.state === 'queued' || j.state === 'running') && !j.service
 
 /**
  * 发给界面的后台命令（只带还在跑的）：映射只写这一处，测试直接测它。
@@ -71,6 +83,7 @@ export function uiJobs(list: BgJob[]): TaskJob[] {
       command: j.command,
       state: j.state as 'queued' | 'running',
       startedAt: j.startedAt,
+      ...(j.service ? { service: true } : {}),
     }))
 }
 
@@ -258,6 +271,8 @@ export function createBackground(
    * 用一串 setTimeout 而不是 setInterval：假时钟只有 setTimeout
    */
   function watch(j: BgJob) {
+    // 常驻服务本来就一直跑、可以很久不输出：催它「可能卡住」「跑了很久」都是误报
+    if (j.service) return
     const every = Math.min(60_000, Math.max(50, Math.min(stallMs, checkFirstMs) / 4))
     const tick = () => {
       stallTimers.delete(j.id)
@@ -411,6 +426,8 @@ export function createBackground(
       timeoutMinutes?: number
       /** 被停止时也要把结果交回发起方（见 BgJob.notifyOnStop） */
       notifyOnStop?: boolean
+      /** 常驻服务（见 BgJob.service） */
+      service?: boolean
     }) {
       const cwd = path.resolve(input.root, input.cwd || '.')
       if (path.relative(input.root, cwd).startsWith('..')) return { ok: false, info: 'cwd 不能跳出当前目录' }
@@ -432,7 +449,10 @@ export function createBackground(
         timeoutMs:
           input.timeoutMinutes && input.timeoutMinutes > 0
             ? Math.min(MAX_TIMEOUT_MS, Math.round(input.timeoutMinutes * 60_000))
-            : DEFAULT_TIMEOUT_MS,
+            : input.service
+              ? MAX_TIMEOUT_MS
+              : DEFAULT_TIMEOUT_MS,
+        ...(input.service ? { service: true } : {}),
         ...(input.env?.length ? { env: input.env } : {}),
         // 没带就不写：普通后台命令被停下时结果照旧不推回
         ...(input.notifyOnStop ? { notifyOnStop: true } : {}),
@@ -470,6 +490,13 @@ export function createBackground(
       } else void run(j, input.root)
       // 名额是异步拿的，这会儿还没算上刚排的这几条：直接数还没结束的记录
       const full = [...jobs.values()].filter((x) => x.id !== j.id && !x.endedAt).length >= maxRunning
+      // 常驻服务不用「已放到后台（编号…）」：界面按那句认「还在等结果」的行（bgJobIds），服务那一行该马上收口
+      if (j.service)
+        return {
+          ok: true,
+          id: j.id,
+          info: `已在后台启动常驻服务「${j.name}」（服务编号 ${j.id}）。它一直跑到对话停止或你用 stop_background 停掉，面板不会催；用 check_background 看输出确认它起来了（端口、地址、报错），中途退出了结果会推回给你。不用等它，接着做下一步。`,
+        }
       return {
         ok: true,
         id: j.id,

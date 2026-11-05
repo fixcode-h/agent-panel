@@ -1905,7 +1905,8 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
     resolved: x.resolved === true,
     requests: x.requests?.length ?? 0,
     asking: x.parentAsks?.length ?? 0,
-    background: x.jobs?.length ?? 0,
+    // 常驻服务（开发服务器、监听）一直跑到被停掉，不算「还在等后台结果」
+    background: x.jobs?.filter((j) => !j.service).length ?? 0,
     workflow: runRunning(x),
     helpers: helpersWorking(x),
     children: x.childrenWorking ?? 0,
@@ -1947,7 +1948,7 @@ export const taskTurnUnread = (x: {
   jobs?: Task['jobs']
   /** 后台命令数：/children 的摘要里只有数量（不读整份任务），有它一样算「还在等结果」 */
   background?: number
-}) => !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.length && !x.background
+}) => !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.some((j) => !j.service) && !x.background
 
 /**
  * 行首要不要画橙点（「这一轮做完、你还没看」）：只有对话确实停在完成态才画。
