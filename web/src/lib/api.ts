@@ -115,6 +115,7 @@ import type {
   CaptureRequest,
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
+import type { DocGroupView } from '@shared/doc-root'
 import type { CleanupReport, DataKind, DataUsage, MemoryUsage, WorktreeCleanup } from '@shared/data'
 import type { UsageGrain, UsageGroup, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
@@ -971,8 +972,11 @@ export const api = {
   answerRequest: (
     id: string,
     rid: string,
-    body: { allow: boolean; answer?: string; answers?: string[]; always?: boolean },
+    body: { allow: boolean; answer?: string; answers?: string[]; always?: boolean; ask?: boolean },
   ) => request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
+  /** 父对话名下的工作流运行（不进对话列表）；delegateRun：节点确认交给父对话决定 */
+  flowRuns: (ownerId: string) => request<Task[]>(`/tasks?owner=${encodeURIComponent(ownerId)}`),
+  delegateRun: (id: string) => request<{ ok: boolean; info: string }>(`/tasks/${id}/delegate`, json('POST', {})),
   /**
    * 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定。
    * nudge 说明父对话叫起来了没有：没叫起来时卡片上要把原因显示给用户，不能只当成功处理
@@ -1058,6 +1062,10 @@ export const api = {
   projectDocs: (projectId: string) => request<ProjectDocs>(`/project-docs/${projectId}`),
   saveProjectDoc: (projectId: string, path: DocFile, content: string) =>
     request<ProjectDoc>(`/project-docs/${projectId}`, json('PUT', { path, content })),
+  /** P4 / SVN 各分支共用的文档根（文档放在项目外时才有，别的项目是 null） */
+  docGroup: (projectId: string) => request<DocGroupView | null>(`/project-docs/${projectId}/doc-group`),
+  setDocGroupRoot: (projectId: string, root: string) =>
+    request<DocGroupView>(`/project-docs/${projectId}/doc-group`, json('PUT', { root })),
   optimizeDoc: (projectId: string, input: DocOptimizeInput) =>
     request<DocJob>(`/project-docs/${projectId}/optimize`, json('POST', input)),
   deployState: () => request<DeployState>('/deploy'),

@@ -500,21 +500,14 @@ export const WorkflowExpose = z.object({
 export type WorkflowExpose = z.infer<typeof WorkflowExpose>
 
 /**
- * 工作流：一个主 Agent 和若干子 Agent 组成团队，用流程图编排执行顺序。
- * 主 Agent 执行没指定 Agent 的节点，并在流程完成后处理用户的追加要求。
+ * 工作流：用流程图编排节点的执行顺序，由父对话启动成一次工作流运行（shared/flow-run.ts）。
+ * 没有主 Agent（workflow-runs 设计 D1）：节点按连线执行，没指定角色的节点用默认执行角色。
  */
 export const WorkflowFields = z.object({
   name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
-  /** 主 Agent；为空表示还没选 */
+  /** 默认执行角色：节点没单独指定角色时用它（字段名沿用旧的「主 Agent」，老数据照读）；为空表示还没选 */
   mainAgentId: z.string().default(''),
-  /**
-   * 主 Agent 调度：子 Agent 的节点完成后交给主 Agent 评估（通过、退回、委派其他工作流、停下），
-   * 条件连线由主 Agent 选路，流程结束时主 Agent 整理最终结果。关掉（false）时按连线自动往下走；没写等于打开
-   */
-  dispatch: z.boolean().optional(),
-  /** 主 Agent 调度时用默认 CLI 的哪一档；为空按 Agent 设的档位 */
-  mainTier: NodeTier.optional(),
   /** 旧版的「团队」：子 Agent 现在直接在节点上选，这里只为读旧数据保留 */
   members: z.array(WorkflowMember).default([]),
   /** 流程：第一个默认是主流程；entryFlowId 指定任务从哪个流程开始 */

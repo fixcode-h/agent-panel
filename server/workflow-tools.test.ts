@@ -21,7 +21,6 @@ function orch() {
   const o = {
     self: 'chat',
     common: [],
-    hasMain: false,
     canSpawn: true,
     team: true,
     planning: true,

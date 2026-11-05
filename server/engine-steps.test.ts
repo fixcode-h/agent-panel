@@ -131,7 +131,7 @@ test('多步骤节点：按顺序执行，每步独立会话，上一步输出�
   assert.equal(s2.status, 'done')
   // 两步各自一个会话，按顺序调用
   assert.deepEqual(
-    log.filter((c) => !c.dispatching).map((c) => c.sessionKey),
+    log.map((c) => c.sessionKey),
     ['a/step/s1', 'a/step/s2'],
   )
   assert.match(log[1].prompt, /第一步的结果/)

@@ -78,7 +78,7 @@ import { createTestRuns } from './tasks/test-runs.ts'
 import { createJobs } from './tasks/jobs.ts'
 import { createEditWorktree } from './tasks/edit-worktree.ts'
 import { createChildMessages } from './tasks/child-messages.ts'
-import { createFlowRuns } from './tasks/flow-runs.ts'
+import { createFlowRuns, registerFlowRunRoutes } from './tasks/flow-runs.ts'
 
 /** 任务接口与执行。执行中的任务放在内存里，按节点落盘，避免流式输出时频繁写文件 */
 export function tasksApi(deps: {
@@ -691,6 +691,7 @@ export function tasksApi(deps: {
     await next()
   })
   registerListRoutes(scope)
+  registerFlowRunRoutes(scope)
   const { childUnmerged, gitGate } = registerChildrenRoutes(scope)
   registerCollabRoutes(scope)
   registerProcessRoutes(scope)

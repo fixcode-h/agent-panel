@@ -1,6 +1,6 @@
 # ADR 0044：工作流只由父对话启动，每次启动挂成父对话下的一个「工作流子对话」
 
-状态：已接受（2026-11-03 用户确认，三期都已实施；实施时的调整见「实施记录」） · 2026-11-03
+状态：被替代（被 [0053](./0053-workflow-runs.md) 替代：2026-11-05 起工作流是父对话名下的一次独立运行，不再挂成子对话；「只由父对话启动」和判定规则保留） · 2026-11-03
 
 - 影响范围：`server/orch-mcp.ts`（`start_plan` / `stop_workflow` 换成 `start_workflow` / `stop_workflow`）、`shared/engine.ts`（`makeOrchestra` 的 `plan`、`startPlan`、`runConversationTurn`、`conversationPrompt`）、`shared/builtin/agents.ts`（主理、执行）、`shared/builtin/workflows.ts`（`CHILD_RULES`、各工作流的适用场景）、`shared/schema.ts`（`Workflow`、`Task`）、`shared/task.ts`（`childHolds`、`runRunning`）、`shared/resume-kids.ts`、`shared/run-stops.ts`、`server/tasks/run.ts`（`spawnChild`）、`web/src/components/tasks/`（`TaskView`、`RunCard`、`RunView`、`TaskFlow`、`ConversationTabs`、`NextWorkflows`）、`web/src/components/workflows/RunInProjectDialog.tsx`、`docs/agent-catalog.md`
 - 取代：`docs/agent-catalog.md`「改代码的工作流由子对话（执行角色）用 `start_plan` 启动」这一条；补全 [0042](./0042-pause-resume-reuse.md) 里工作流运行的暂停 / 继续

@@ -156,7 +156,7 @@ test('几个对话同时记，排队写入不丢条目', async () => {
 
 test('面板工具：只有项目里的调用有 project_lessons / record_lesson，参数缺了会报错', async () => {
   const { orchTools, callOrchTool } = await import('./orch-mcp.ts')
-  const base = { self: 'n1', common: [], hasMain: false } as unknown as Parameters<typeof orchTools>[0]
+  const base = { self: 'n1', common: [] } as unknown as Parameters<typeof orchTools>[0]
   assert.ok(!orchTools(base).some((x) => x.name === 'record_lesson'))
   const got: unknown[] = []
   const o = {
@@ -269,7 +269,6 @@ test('面板工具：record_lesson 带 id 改写时必须写 change', async () =
   const o = {
     self: 'n1',
     common: [],
-    hasMain: false,
     lessons: {
       find: async () => '',
       record: async (input: unknown) => {

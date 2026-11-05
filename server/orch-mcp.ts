@@ -782,7 +782,7 @@ function teamTools(o: Orchestra, main: boolean) {
         properties: {
           to: {
             type: 'string',
-            description: o.hasMain ? '节点 id 或标题；main 表示主 Agent' : '节点 id 或标题',
+            description: '节点 id 或标题',
           },
           text: { type: 'string' },
         },

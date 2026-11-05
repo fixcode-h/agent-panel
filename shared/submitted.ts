@@ -93,22 +93,3 @@ export async function ensureVerdict<R extends { ok: boolean; text?: string }>(
   const again = await ask(VERDICT_ASK)
   return again.ok ? { ...again, text: [r.text, again.text].filter(Boolean).join('\n\n') } : again
 }
-
-/**
- * 主 Agent 用 dispatch 工具交的决定：这一轮交、这一轮结束时引擎取走，不落盘（下一轮重新交）。
- * 按交它的那一步（主 Agent 的步骤对象）记，同一个主 Agent 的几轮是串行的，不会互相覆盖
- */
-const decisions = new WeakMap<object, unknown>()
-export function recordDecision<D>(step: object, d: D): { ok: true; info: string } {
-  decisions.set(step, d)
-  return { ok: true, info: '已记下决定。交完就结束这一轮。' }
-}
-export function takeDecision<D>(step: object): D | undefined {
-  const d = decisions.get(step) as D | undefined
-  decisions.delete(step)
-  return d
-}
-
-/** 补问主 Agent 那一句（发给 Agent，不翻译） */
-export const DISPATCH_ASK =
-  '【面板】你还没有用 dispatch 工具交决定。面板只按这个工具决定流程怎么走，不看回复里写了什么：现在调用它，action 写 continue / rework / delegate / stop（对话的第一条要求或新要求时写 run / restart / answer），参数见上面。'

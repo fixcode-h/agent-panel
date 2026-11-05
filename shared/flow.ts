@@ -261,14 +261,6 @@ export const inRun = (id: string, run: number) => (run > 1 ? id.startsWith(runPr
 /** 任务现在跑到第几次运行（还没开始时算第 1 次） */
 export const currentRun = (task: { runSeq?: number }) => Math.max(1, task.runSeq ?? 0)
 
-/**
- * 工作流不再有常驻的编排器（@main）：节点按连线并发执行，验收结论决定条件分支。
- * 函数保留是为了读旧任务——旧任务里可能还挂着 @main 步骤，界面和迁移要靠它认出来。
- */
-export function dispatches(_w: Pick<Workflow, 'dispatch' | 'mainAgentId'>, _f: Flow) {
-  return false
-}
-
 /** 引用的流程：同工作流的子流程，或另一个工作流的主流程 */
 export function resolveRef(
   ref: FlowRef | null,
@@ -373,22 +365,8 @@ export function planTask(workflow: Workflow | undefined, run = 1): { steps: Task
   if (!workflow) return { steps: [] }
   const flow = entryFlow(workflow)
   const p = runPrefix(run)
-  const main =
-    run === 1 && dispatches(workflow, flow)
-      ? [
-          blankStep({
-            id: MAIN_STEP,
-            workflowId: workflow.id,
-            flowId: flow.id,
-            kind: 'main',
-            title: t('主角色'),
-            agentId: workflow.mainAgentId,
-          }),
-        ]
-      : []
   return {
     steps: [
-      ...main,
       ...topoOrder(flow).map((n, i) => {
         const first = nodeSteps(n)[0]
         return blankStep({

@@ -148,7 +148,9 @@ export function TaskComposer({
       fixed && !named
         ? relatedTasks(
             asked,
-            tasks.filter((x) => x.projectId === fixed.id && !x.parentTaskId && !x.archived && !x.imported),
+            tasks.filter(
+              (x) => x.projectId === fixed.id && !x.parentTaskId && !x.flowRun?.owner && !x.archived && !x.imported,
+            ),
           )
         : [],
     [asked, tasks, fixed, named],

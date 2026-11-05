@@ -49,7 +49,6 @@ import {
   stepTree,
   isMainStep,
 } from './flow.ts'
-import { type Dispatch } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
 import { runMail, runRecord, runState, sendRunMessage, statePart, writeRunState } from './run-state.ts'
@@ -157,8 +156,6 @@ export interface AgentCall {
   tier?: NodeTier
   /** Agent 参数的值（节点上填的）；不传时对话用任务里选的 */
   params?: ParamValues
-  /** 主 Agent 的调度轮：评估节点、整理最终结果、回答子 Agent 的提问、决定用户新要求怎么处理（模拟执行据此给出示例输出） */
-  dispatching?: 'evaluate' | 'summary' | 'answer' | 'plan'
   /** 工作流里的调用都带编排工具：派子 Agent、查状态、提问、传话（真实执行交给 CLI 的 MCP） */
   orch?: Orchestra
   /** 预热：打开对话页时先用 --resume 启动，只等下一句，不算一轮、不记输出 */
@@ -375,16 +372,12 @@ export function helperGate(
 export interface Orchestra {
   /** 调用者的节点 id */
   self: string
-  /** 这个工作流有没有主 Agent 调度（没有时不能提问） */
-  hasMain: boolean
   /** 这条调用是不是常驻编排器自己的（只有它能起停运行） */
   planner: boolean
   /** 可以直接派的通用 Agent（名字和简介），spawn_agents 里列出来 */
   common: { name: string; description: string }[]
   /** 调用者自己就是子任务：不能再派子任务、不能启动工作流、不能开子对话 */
   helper: boolean
-  /** 交决定（dispatch）：只有主 Agent 有 */
-  submitDispatch?: (d: Dispatch) => { ok: boolean; info: string }
   /** 交结果（submit_result）：只有子任务有 */
   submitResult?: (r: { state: 'done' | 'unfinished' | 'stuck'; summary: string; left: string }) => {
     ok: boolean
@@ -2471,7 +2464,6 @@ function makeOrchestra(
   }
   return {
     self: self.id,
-    hasMain: false, // 主 Agent 去掉了（design.md D1）；字段第 4 期随 ask_main 一起删
     planner,
     common: commonAgents(host.agents)
       .filter((a) => a.id !== self.agentId && !(host.isolated && a.origin === VCS_ORIGIN))
