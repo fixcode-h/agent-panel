@@ -28,7 +28,7 @@ import { DiffDialog } from './DiffDialog'
 import { DIFF_GUTTER, DIFF_HUNK, DIFF_TONE } from '@/components/ui/diff-tone'
 import { CommandDialog, OutputDialog } from './ToolDialog'
 import { RunDialog } from './RunCard'
-import { DiagnosisDialog } from './DiagnosisDialog'
+import { useDiagnosisWindow } from './diagnosis-window'
 import { firstShow } from './ChildReport'
 import { Button } from '@/components/ui/button'
 import { PeerLine } from './PeerMessage'
@@ -565,13 +565,17 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
   // 交诊断报告那一行（ADR 0045）：那一版还在等用户确认时一直转圈，「查看报告」只放在这一行上
-  const [diagOpen, setDiagOpen] = useState(false)
+  // 弹窗挂在任务页顶层（见 diagnosis-window.tsx）：一轮输出完这一行会收进折叠、卸载，弹窗不能跟着关
+  const diagTask = task && { id: task.id, title: task.title ?? '', diagnoses: task.diagnoses }
+  const { open: showDiag, dialog: diagDialog } = useDiagnosisWindow(diagTask)
   const report = view.diagnosis ? task?.diagnoses?.find((d) => d.version === view.diagnosis) : undefined
   const waitReport = report?.status === 'pending'
   // 报告交上来时自动弹一次（每一版只弹一次，和父对话页共用记号，见 ChildReport.tsx）
   useEffect(() => {
-    if (waitReport && task?.id && report && firstShow(task.id, report.version, report.awaiting ? 'logs' : ''))
-      setDiagOpen(true)
+    if (waitReport && diagTask && report && firstShow(diagTask.id, report.version, report.awaiting ? 'logs' : ''))
+      showDiag(diagTask, true)
+    // 只在这一版变成等你时弹：diagTask 每次渲染都是新对象，不进依赖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [waitReport, task?.id, report])
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out' | 'plan'>('')
   const openFile = useFileOpen()
@@ -704,7 +708,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
               className="h-6 shrink-0 px-2 text-xs"
               onClick={(e) => {
                 e.stopPropagation()
-                setDiagOpen(true)
+                if (diagTask) showDiag(diagTask)
               }}
             >
               {t('查看报告')}
@@ -814,13 +818,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
       {win === 'plan' && task?.id && (
         <RunDialog taskId={task.id} tool={tool} open onOpenChange={(o) => !o && setWin('')} />
       )}
-      {report && task && diagOpen && (
-        <DiagnosisDialog
-          task={{ id: task.id, title: task.title ?? '', diagnoses: task.diagnoses }}
-          open
-          onOpenChange={setDiagOpen}
-        />
-      )}
+      {diagDialog}
       {win === 'out' && (
         <OutputDialog
           title={tool.kind === 'search' ? t('搜索结果') : tool.kind === 'web' ? t('网页') : tool.name || tool.label}
