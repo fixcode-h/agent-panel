@@ -952,11 +952,12 @@ const ProjectFields = z.object({
    */
   childIsolation: z.enum(['worktree', 'claim']).catch('worktree').default('worktree'),
   /**
-   * 新建对话时「独立分支」默认勾上（只是输入框里的默认值，每次新建仍可以改）。默认开：同一个项目里几个顶层对话
-   * 同时改同一个目录会互相覆盖，「改了哪些文件」和「撤销这一轮」也会算进别的对话的改动（用户 2026-11-04 定）。
-   * 旧字段 isolateDefault 界面从来没能改过，存的 false 只是写盘带上的默认值：换名后由 zod 剥掉，旧项目一律按新默认
+   * 新建对话时「独立分支」默认勾不勾（只是输入框里的默认值，每次新建仍可以改）。默认不勾，要的在项目设置里打开
+   * （用户 2026-11-05 定，撤回 2026-11-04 的默认开）。
+   * 旧字段 isolateNew 默认是 true，存的 true 多半只是写盘带上的默认值、不是用户选的；存的 false 和新默认一样。
+   * 所以换名后由 zod 剥掉旧字段，旧项目一律按新默认不勾；更早的 isolateDefault 同理
    */
-  isolateNew: z.boolean().default(true),
+  isolateByDefault: z.boolean().default(false),
   /**
    * cherry-pick 的目标：Git 项目是本地分支名，P4 项目是目标工作区里的项目路径（另一条分支映射到本机的目录）。
    * 用户让 Agent 把改动 cherry-pick 过去时按它做；没设时为空（可选：旧数据和直接拼 Project 字面量的地方不用补）

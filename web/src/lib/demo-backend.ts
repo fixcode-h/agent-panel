@@ -601,7 +601,7 @@ function seed(): Db {
     createdAt,
     agentParams: {},
     childIsolation: 'worktree',
-    isolateNew: true,
+    isolateByDefault: false,
     scaledVerify: true,
     workflowIds: [],
     defaultAgentId: '',
