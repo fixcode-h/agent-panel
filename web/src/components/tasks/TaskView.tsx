@@ -147,6 +147,7 @@ import {
 } from '@/lib/ai-window'
 
 import { RunChecklist, FlowBar, WorktreeBar, ChatTurn, PendingReply, ChatWaitLine, RunPhase } from './TaskViewParts'
+import { visibleMessages } from '@shared/end-turn'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -186,7 +187,8 @@ function runOf(step: string) {
  */
 function toBlocks(task: Task): Block[] {
   const blocks: Block[] = []
-  const msgs = task.messages
+  // 面板提醒、end_turn 和它之后的那句收尾不画进对话，只在「状态」里看（shared/end-turn.ts）
+  const msgs = visibleMessages(task.messages).msgs
   // 有工作流运行的对话：一次运行一张卡片，没有单独的节点段。节点输出不铺在对话里，
   // 按「第一次出现这次运行」的位置放卡片，后面的节点消息都跳过
   const byRun = task.mode === 'workflow' || (task.runs?.length ?? 0) > 0

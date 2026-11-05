@@ -34,6 +34,8 @@ export const PANEL_TOOL_NAMES = [
   'remember',
   'set_plan',
   'finish_plan',
+  // Agent 用它交代这一轮怎么结束（做完 / 卡住），见 shared/end-turn.ts
+  'end_turn',
   'get_status',
   'begin_edit',
   'run_workflow',

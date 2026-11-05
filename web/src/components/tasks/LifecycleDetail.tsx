@@ -22,6 +22,7 @@ import { Card } from '@/components/ui/card'
 import { IconButton } from '@/components/ui/icon-button'
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { Switch } from '@/components/ui/switch'
+import { ReminderTrail } from './ReminderTrail'
 
 /**
  * 状态诊断右边那一栏（LifecycleDialog 里选中的节点）：结论、异常、六类事件的计数、执行 / 模型 / 进程三张卡、日志。
@@ -49,7 +50,7 @@ export const STATE_TONE: Record<ConvState, StatusTone> = {
 /** 六类事件的名字和有数时的颜色（出错红、重试黄，其余是普通的前景色） */
 const COUNT_META: Record<EventKind, { label: string; tone: string }> = {
   requests: { label: t('模型请求'), tone: 'text-fg' },
-  // 面板推了几次「接着做」（计划没做完就停下、收尾自检）：次数上限在设置的「面板提醒次数」
+  // 面板推了几次「接着做」（结束前钩子拦住、一轮结束后补发）：不限次数，逐条记录在下面的「面板提醒」卡片里
   nudges: { label: t('面板提醒'), tone: 'text-fg' },
   retries: { label: t('重试'), tone: 'text-warning' },
   errors: { label: t('出错'), tone: 'text-danger' },
@@ -257,6 +258,8 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
         <ModelCard node={node} now={now} lines={lines} />
         <ProcessCard node={node} now={now} />
       </div>
+
+      {node.trail && node.trail.length > 0 && <ReminderTrail items={node.trail} />}
 
       <LifeLog lines={lines} filter={filter} setFilter={setFilter} />
     </section>

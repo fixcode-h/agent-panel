@@ -787,7 +787,16 @@ const LESSONS = { find: async () => '', record: okCb }
 const READ_LESSONS = { find: async () => '' }
 const toolNames = (o: object) => orchTools({ ...OFF, ...o } as unknown as Orchestra).map((x) => x.name)
 // 项目里的对话（顶层、子对话）共有的：chat=true、不是子任务、在项目里（能派子任务、有并行的子任务可查可传话）
-const CONV = { canSpawn: true, team: true, autoReturn: true, plans: true, canBackground: true, lessons: LESSONS }
+// endTurn：对话（Agent 模式）交代这一轮怎么结束（shared/end-turn.ts），Chat 页、子任务、工作流节点没有
+const CONV = {
+  canSpawn: true,
+  team: true,
+  autoReturn: true,
+  plans: true,
+  canBackground: true,
+  lessons: LESSONS,
+  endTurn: okCb,
+}
 const TOP = { ...CONV, parentOf: true }
 const CHILD = { ...CONV, child: true, canSubmit: true }
 const BG = ['run_background', 'check_background', 'stop_background']
@@ -821,6 +830,7 @@ const IDENTITIES: [string, object, string[]][] = [
       'list_peers',
       'message_peer',
       'finish_child',
+      'end_turn',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
@@ -856,11 +866,16 @@ const IDENTITIES: [string, object, string[]][] = [
       'p4_split_changelists',
       'cherry_pick',
       'ask_push',
+      'end_turn',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
   ],
-  ['项目顶层·非统筹', TOP, ['get_status', ...BG, 'set_plan', 'finish_plan', 'finish_child', ...LESSON_TOOLS, ...TAIL]],
+  [
+    '项目顶层·非统筹',
+    TOP,
+    ['get_status', ...BG, 'set_plan', 'finish_plan', 'finish_child', 'end_turn', ...LESSON_TOOLS, ...TAIL],
+  ],
   [
     // 不能分派子对话的顶层对话没有 start_workflow（只给协调器，ADR 0044）：makeOrchestra 给的 planning 是 false
     '项目顶层·非统筹 全开（按需开分支 + 挂能力 + P4 + cherry-pick + 推送问一次）',
@@ -876,6 +891,7 @@ const IDENTITIES: [string, object, string[]][] = [
       'p4_split_changelists',
       'cherry_pick',
       'ask_push',
+      'end_turn',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
@@ -892,6 +908,7 @@ const IDENTITIES: [string, object, string[]][] = [
       ...CHILD_TOOLS,
       'claim_files',
       'release_files',
+      'end_turn',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
@@ -899,12 +916,22 @@ const IDENTITIES: [string, object, string[]][] = [
   [
     '子对话·独立分支',
     { ...CHILD, isolated: true },
-    ['get_status', ...BG, 'set_plan', 'finish_plan', ...CHILD_TOOLS, ...LESSON_TOOLS, ...TAIL],
+    ['get_status', ...BG, 'set_plan', 'finish_plan', ...CHILD_TOOLS, 'end_turn', ...LESSON_TOOLS, ...TAIL],
   ],
   [
     '子对话·要改时才开分支（还没开）',
     { ...CHILD, canBeginEdit: true },
-    ['get_status', 'begin_edit', ...BG, 'set_plan', 'finish_plan', ...CHILD_TOOLS, ...LESSON_TOOLS, ...TAIL],
+    [
+      'get_status',
+      'begin_edit',
+      ...BG,
+      'set_plan',
+      'finish_plan',
+      ...CHILD_TOOLS,
+      'end_turn',
+      ...LESSON_TOOLS,
+      ...TAIL,
+    ],
   ],
   [
     // 子对话不启动工作流（ADR 0044）：角色开了 canPlan 也没有 start_workflow
@@ -921,6 +948,7 @@ const IDENTITIES: [string, object, string[]][] = [
       'claim_files',
       'release_files',
       'p4_split_changelists',
+      'end_turn',
       ...LESSON_TOOLS,
       ...TAIL,
     ],

@@ -144,12 +144,12 @@ test('子对话请父对话收尾了、父对话这一轮却没合回也没退�
     live: undefined,
     cliAlive: false,
     waitsOn: [{ id: 'k1', title: '面板提醒次数做成设置项', state: 'wrapup', wrapAt: at }],
-    nudge: { key: 'x', n: 1, max: 6 },
+    nudge: { key: 'x', n: 1 },
   })
   assert.deepEqual(codes(stuck), ['wrapup-unhandled'])
   const text = verdictOf(stuck, NOW).anomalies[0].text
   assert.match(text, /已经请父对话收尾 5 分钟了/)
-  assert.match(text, /面板已提醒 1\/6 次/)
+  assert.match(text, /面板已提醒 1 次/)
   // 父对话正在处理（这一轮在跑）：不报
   assert.deepEqual(codes(base({ working: true, state: 'waiting', waitsOn: stuck.waitsOn })), [])
 })
@@ -200,13 +200,13 @@ test('不报「请求开始」的 CLI（Codex、Pi）：按 CLI 启动时间说�
   assert.deepEqual(codes(base({ trace: { requests: 0, startedAt: NOW - 200_000 } })), ['model-silent'])
 })
 
-test('计划没做完却停下：推满了说是推满了，没推满说推进没接上；上一轮被截断、没调工具也要说出来', () => {
+test('计划没做完却停下：提醒过就写提醒了几次，没提醒说推进没接上；上一轮被截断、没调工具也要说出来', () => {
   const idle = { status: 'running' as const, state: 'done' as const, working: false, awaitingUser: true }
   const plan = { title: '贴到最新', done: 3, total: 7, waiting: 0, open: 4, key: 'aaaa0000' }
   const stalled = (x: Partial<LifeFacts>) => verdictOf(base({ ...idle, plan, ...x }), NOW).anomalies
   assert.match(
-    stalled({ nudge: { key: 'aaaa0000', n: 3, max: 3 } }).find((a) => a.code === 'plan-stalled')!.text,
-    /推满了 3 次/,
+    stalled({ nudge: { key: 'aaaa0000', n: 3 } }).find((a) => a.code === 'plan-stalled')!.text,
+    /提醒了 3 次/,
   )
   assert.match(stalled({}).find((a) => a.code === 'plan-stalled')!.text, /也不在等任何结果/)
   // 在等结果、计划已做完：不算停住

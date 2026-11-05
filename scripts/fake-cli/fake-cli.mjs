@@ -1380,7 +1380,11 @@ if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind 
 // 一次性执行（stdin 传一个任务、跑一轮就退出）用的回复；RPC 保活时每轮用 turnReply() 重算
 const reply = turnReply()
 // 空回合：这一轮只回一句准备语，连工具都不调（复现「只回一句话就结束」）
-const emptyTurn = input.includes('FAKE_EMPTY') || input.includes('（收尾自检）')
+// PLAN_STALL 被推之后仍然原地不动（计划停在「跑检查」）：也是空回合。面板提醒不限次数，只有连着几次都没动手才停（空转保护）
+const emptyTurn =
+  input.includes('FAKE_EMPTY') ||
+  input.includes('（收尾自检）') ||
+  (input.includes('你的计划才做了') && input.includes('「跑检查」'))
 // HOOK_MODE：照真的 Claude Code 跑结束前钩子（见 claudeStopHook）；在 input 被钩子的说明换掉之前先记下
 const hookMode = input.includes('HOOK_MODE')
 // 一个字都不回、也不报用量的一轮：CLI 报这一轮「成功」，面板什么都没收到。
