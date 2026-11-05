@@ -191,6 +191,70 @@ await runShard(import.meta.filename, async (api) => {
     }
   }
 
+  // 子对话的阶段确认（工作流节点完成后等你确认）：父对话页不在输入框上方另起黄色确认条，
+  // 和诊断报告一样留在运行区子对话那一行（「阶段待确认」+ 行尾「查看结果」），点了直接在父对话页审阅
+  {
+    const KEY = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), KEY)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      const parent = (db.tasks ?? []).find((x) => x.title.includes('购物车右上角'))
+      // 用一个已经停下的子对话：演示里在跑的子对话会被模拟执行改写
+      const kid = parent && db.tasks.find((x) => x.parentTaskId === parent.id && x.title.includes('修侧栏时间显示'))
+      if (!kid) return
+      parent.requests = []
+      Object.assign(kid, { resolved: false, status: 'done', working: false })
+      kid.requests = [
+        {
+          id: 'ui-child-review',
+          step: kid.steps[0]?.id ?? '',
+          agentId: kid.steps[0]?.agentId,
+          kind: 'confirm',
+          title: '「识别现场与方案」完成了，看一下结果再继续',
+          detail: '## 现场\n\n- 侧栏时间按服务器时区显示\n\n## 方案\n\n改成按浏览器时区格式化',
+          options: [],
+          at: new Date().toISOString(),
+        },
+      ]
+      localStorage.setItem(`task-child:${parent.id}`, '')
+      localStorage.setItem(k, JSON.stringify(db))
+    }, KEY)
+    await p.reload()
+    await backToTask()
+    if (await p.locator('[data-child-request]').count())
+      errors.push('子对话阶段确认：父对话输入框上方不该再有单独的确认条')
+    const btn = p.locator('.proc-list').getByRole('button', { name: '查看结果' })
+    if (
+      !(await btn
+        .first()
+        .waitFor({ timeout: 10000 })
+        .then(
+          () => true,
+          () => false,
+        ))
+    )
+      errors.push('子对话阶段确认：运行区那个子对话的行上没有「查看结果」')
+    else {
+      await check(p, '子对话阶段确认-运行区那一行', ['阶段待确认'])
+      await btn.first().click()
+      const dlg = p.getByRole('dialog')
+      await dlg
+        .getByText('改成按浏览器时区格式化')
+        .waitFor({ timeout: 10000 })
+        .catch(() => errors.push('子对话阶段确认：点「查看结果」没有打开审阅弹窗'))
+      await dlg.getByRole('button', { name: '确认', exact: true }).click()
+      await dlg.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('子对话阶段确认：确认后弹窗没关'))
+      const left = await p.evaluate((k) => {
+        const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+        return db.tasks.find((x) => x.title.includes('修侧栏时间显示'))?.requests?.length ?? 0
+      }, KEY)
+      if (left) errors.push('子对话阶段确认：在父对话页确认后子对话的请求还在')
+    }
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [KEY, saved])
+    await p.reload()
+    await backToTask()
+  }
+
   // 改文件的审批卡：带要改的内容（按行上色），「这个对话里一直允许」按目录放行（设计报告 Agent P0-3）
   {
     const KEY = 'agent-panel-demo-v3'

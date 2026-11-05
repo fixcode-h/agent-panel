@@ -136,9 +136,14 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
   if (convGone(c) === 'closed') out.push({ text: t('已关闭'), tone: 'plain' })
   if (c.resolved && icon === 'done') out.push({ text: t('已解决'), tone: 'success', icon: 'check' })
   // 等的是权限确认（或它下面的子对话在等）时写「等你确认」：说成「选择」用户会去找提问卡
+  // 工作流节点做完等你确认结果的（见 stageConfirm）写「阶段待确认」，和「报告待确认」一个说法
   if (icon === 'waiting')
     out.push({
-      text: c.asking || !(c.requests || c.childNeeds) ? t('等{who}选择', { who }) : t('等{who}确认', { who }),
+      text: stageConfirm(c)
+        ? t('阶段待确认')
+        : c.asking || !(c.requests || c.childNeeds)
+          ? t('等{who}选择', { who })
+          : t('等{who}确认', { who }),
       tone: 'warning',
     })
   // 工作流子对话（ADR 0044）：先说是哪个工作流；流程图还没跑完时带上做到第几个节点，跑完了就是普通的收尾
@@ -205,8 +210,22 @@ export const childLabelClass: Record<ChildLabelTone, string> = {
 export const reportAsking = (c: ChildEntry) =>
   !!c.diagnosis && c.status !== 'stopped' && !c.gone && childIcon(c) === 'waiting'
 
-/** 运行区列的子对话：转圈的那一批（visibleChildren）加上等诊断报告时又提了问的；顺序同 sortChildren */
-export function listedChildren<C extends ChildEntry>(children: C[]): C[] {
-  const extra = children.filter(reportAsking)
+/**
+ * 工作流节点做完、等你确认这一步结果的子对话（请求 kind 'confirm'）：工作流还没走完，和诊断报告一样
+ * 算「还在进行」——运行区、子对话小块一直留着这一行（提醒色转圈），行尾「查看结果」在父对话页直接打开审阅弹窗。
+ * 以前它不转圈（convState 是「等你处理」），只在输入框上方单独起一条黄色确认条，用户要求去掉那条、
+ * 改成和诊断报告一样留在子对话行上。已收起、已解决的不算：没人再处理它的请求。
+ * 停下了也算：请求还挂着，工作流还没走完（只是不再转圈，见 RunningNow）
+ */
+export const stageConfirm = (c: Pick<ChildEntry, 'resolved' | 'gone'> & { request?: Pick<ChildRequest, 'kind'> }) =>
+  c.request?.kind === 'confirm' && !c.resolved && !c.gone
+
+/**
+ * 运行区列的子对话：转圈的那一批（visibleChildren）加上等诊断报告时又提了问的、等你确认工作流阶段结果的；
+ * 顺序同 sortChildren
+ */
+export function listedChildren<C extends ChildEntry & { request?: Pick<ChildRequest, 'kind'> }>(children: C[]): C[] {
+  const shown = new Set(visibleChildren(children))
+  const extra = children.filter((c) => !shown.has(c) && (reportAsking(c) || stageConfirm(c)))
   return extra.length ? sortChildren([...visibleChildren(children), ...extra]) : visibleChildren(children)
 }

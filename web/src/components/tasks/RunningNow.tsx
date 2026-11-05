@@ -1,6 +1,6 @@
 import { useUserName } from '@/lib/user-name'
 import { useEffect, useMemo, useState } from 'react'
-import { CircleSlash, FileSearch, Loader2 } from 'lucide-react'
+import { CircleSlash, ClipboardCheck, FileSearch, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import { helperRunning, helperShown, sortHelpers, stepMs, splitStepJobs, type ChildEntry } from '@shared/task'
 import { cn } from '@/lib/utils'
@@ -12,7 +12,16 @@ import { ChildReportButton, DiagnosisAutoOpen, firstShow } from './ChildReport'
 import { DiagnosisDialog } from './DiagnosisDialog'
 import { Button } from '@/components/ui/button'
 import { useChildList, useChildOpen, useJobOpen } from './child-open'
-import { childClosedHint, childLabelClass, childLabels, childNote, listedChildren, staleLine } from './child-line'
+import {
+  childClosedHint,
+  childLabelClass,
+  childLabels,
+  childNote,
+  listedChildren,
+  stageConfirm,
+  staleLine,
+} from './child-line'
+import { ChildConfirmButton } from './ChildConfirm'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
 import { isHelperAgent } from '@shared/builtin/core'
@@ -376,6 +385,8 @@ export function RunningNow({
         // 进程回收了、对话却还在跑：行上不说「已关闭」（那会和标签同屏矛盾），只在这里补一句
         const gone = childClosedHint(k)
         const detail = [note, stale?.text, gone].filter(Boolean).join(' · ')
+        // 工作流节点做完、等你确认这一步的结果（见 stageConfirm）：和诊断报告一样留在这一行，提醒色
+        const stage = stageConfirm(k)
         return (
           <RowShell
             key={k.id}
@@ -384,13 +395,18 @@ export function RunningNow({
             container
             // 行前不放切换子对话的下拉（用户要求去掉）：每个子对话自己一行，要换着看就点另一行
             // 等你确认诊断报告的（ADR 0045）转圈用提醒色：和标签「报告待确认」一起，和别的执行中分开
+            // 等你确认阶段结果的也用提醒色转圈：工作流没走完，一直在这里转着等你看；对话停下了就不再转
             glyph={
-              <Loader2
-                className={cn(
-                  'h-3.5 w-3.5 shrink-0 animate-spin',
-                  stale?.cls ?? (k.diagnosis ? 'text-warning' : 'text-accent-text'),
-                )}
-              />
+              stage && k.status === 'stopped' ? (
+                <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
+              ) : (
+                <Loader2
+                  className={cn(
+                    'h-3.5 w-3.5 shrink-0 animate-spin',
+                    stale?.cls ?? (k.diagnosis || stage ? 'text-warning' : 'text-accent-text'),
+                  )}
+                />
+              )
             }
             // 窄屏不写动作名：把宽度留给标题、状态标签和耗时，否则「计划 1/2」后面的「执行中」会被裁掉。
             // 用 sr-only 不用 hidden：不占宽度，读屏仍能读到这行是子对话
@@ -436,7 +452,14 @@ export function RunningNow({
             }
             ms={childMs(k, now)}
             // 在等你确认诊断报告：行尾直接给「查看报告」，不用先进子对话找交报告那一行
-            action={k.diagnosis ? <ChildReportButton childId={k.id} /> : undefined}
+            // 等你确认工作流阶段的结果：行尾「查看结果」在这里直接打开审阅弹窗
+            action={
+              k.diagnosis ? (
+                <ChildReportButton childId={k.id} />
+              ) : stage ? (
+                <ChildConfirmButton childId={k.id} />
+              ) : undefined
+            }
           />
         )
       })}
