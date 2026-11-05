@@ -252,6 +252,8 @@ export interface CliDefinition {
   trust?: import('./cli-trust.ts').CliTrust
   /** 用户自己装的 MCP 工具存在哪（「MCP 工具」页读写）；没有时不管 */
   mcpStore?: import('./cli-spec.ts').McpStore
+  /** 启动新会话前探测项目里的远程 MCP（见 server/exec/mcp-probe.ts）；没有时不探测 */
+  mcpProbe?: import('./cli-spec.ts').McpProbe
   packages?: import('./cli-spec.ts').CliPackages
   /** 来自配置文件（不是写在代码里的） */
   spec?: boolean

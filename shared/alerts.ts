@@ -75,6 +75,15 @@ const INFO: Record<AlertKind, (detail?: string) => AlertInfo> = {
       '直接再发一条消息：面板会停掉卡住的 Agent，接着原来的会话重开，把没被处理的消息一起带上。也可以点停止后检查网络。',
     ),
   }),
+  mcp_slow: () => ({
+    title: t('MCP 服务没有响应'),
+    what: t(
+      '项目里配的 MCP 服务连不上或在限定时间内没有回应。有的 Agent 第一轮前会先等所有 MCP 握手，等到超时才开始，所以首字会慢；它连上之前这个对话用不了它的工具。',
+    ),
+    fix: t(
+      '确认这个 MCP 服务在运行、没被别的工作占住（例如编辑器正在做耗时操作）；用不上它时可以从项目的 MCP 配置里去掉。Claude Code 第一轮最多等多久由设置里的环境变量 CLAUDE_CODE_MCP_STARTUP_WAIT_MS（毫秒）决定。',
+    ),
+  }),
   idle: () => ({
     title: t('长时间没有输出'),
     what: t('执行中的 Agent 很久没有任何输出，可能卡在登录、网络重连或交互式确认上。'),
