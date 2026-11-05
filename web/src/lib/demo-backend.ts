@@ -116,6 +116,7 @@ import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import {
   REPO,
+  RECENT_RELEASES,
   minutesUntil,
   pickUpdate,
   rateLimitUntil,
@@ -4818,6 +4819,18 @@ async function demoApp(url: string): Promise<unknown> {
   if (url.startsWith('/app/interrupted')) return { at: '', acknowledged: false, tasks: [] } satisfies InterruptedTasks
   // 当前版本只读上次读到的发布缓存：这个接口不该为了显示版本号再去请求 GitHub
   if (url.startsWith('/app/version')) return { current: demoReleasesCache()[0]?.version ?? '', packaged: false }
+  // 只读上次的结果：和正式后端的 cached=1 一样不联网
+  if (url.includes('cached=1')) {
+    const cached = demoReleasesCache()
+    const current = cached[0]?.version ?? ''
+    return {
+      current,
+      packaged: false,
+      source: 'api',
+      releases: cached.slice(0, RECENT_RELEASES),
+      update: pickUpdate(current, cached),
+    } satisfies AppReleases
+  }
   let list: AppRelease[] = []
   let limitedUntil: string | undefined
   let res: Response | null = null
@@ -4880,7 +4893,7 @@ async function demoApp(url: string): Promise<unknown> {
     limitedUntil,
     // 演示版直接从浏览器读 GitHub API，没有 Atom feed 兜底，结果都按 API / 它的缓存算
     source: 'api',
-    releases: list.slice(0, 5),
+    releases: list.slice(0, RECENT_RELEASES),
     update: pickUpdate(current, list),
   } satisfies AppReleases
 }
