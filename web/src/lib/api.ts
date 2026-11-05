@@ -115,6 +115,7 @@ import type {
   CaptureRequest,
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
+import type { DocGroupView } from '@shared/doc-root'
 import type { CleanupReport, DataKind, DataUsage, MemoryUsage, WorktreeCleanup } from '@shared/data'
 import type { UsageGrain, UsageGroup, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
@@ -1061,6 +1062,10 @@ export const api = {
   projectDocs: (projectId: string) => request<ProjectDocs>(`/project-docs/${projectId}`),
   saveProjectDoc: (projectId: string, path: DocFile, content: string) =>
     request<ProjectDoc>(`/project-docs/${projectId}`, json('PUT', { path, content })),
+  /** P4 / SVN 各分支共用的文档根（文档放在项目外时才有，别的项目是 null） */
+  docGroup: (projectId: string) => request<DocGroupView | null>(`/project-docs/${projectId}/doc-group`),
+  setDocGroupRoot: (projectId: string, root: string) =>
+    request<DocGroupView>(`/project-docs/${projectId}/doc-group`, json('PUT', { root })),
   optimizeDoc: (projectId: string, input: DocOptimizeInput) =>
     request<DocJob>(`/project-docs/${projectId}/optimize`, json('POST', input)),
   deployState: () => request<DeployState>('/deploy'),

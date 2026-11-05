@@ -181,7 +181,12 @@ export const EN_SERVER: Record<string, string> = {
   '测试命令：{cmd}': 'Test command: {cmd}',
   项目不存在: 'Project not found',
   '教训文件读取失败：{error}': 'Couldn’t read the lessons file: {error}',
-  '教训文件格式不对，没有覆盖：{error}': 'The lessons file is malformed, so it was left untouched: {error}',
+  '这些教训文件格式不对，没有改动：{error}': 'These lesson files are malformed and were left untouched: {error}',
+  请填写文档根的完整路径: 'Enter the full path of the docs root',
+  文档根要写完整路径: 'The docs root must be a full path',
+  '只有文档放在项目外的 P4 / SVN 项目能改共用文档根':
+    'Only P4 / SVN projects that keep docs outside the project can change the shared docs root',
+  '改文档根失败：{error}': 'Failed to change the docs root: {error}',
   '教训文件写入失败：{error}': 'Couldn’t write the lessons file: {error}',
   项目教训写入失败: 'Couldn’t save project lessons',
   教训文件的维护说明没有结束标记: 'The lessons file header is missing its end marker',

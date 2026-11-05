@@ -2328,6 +2328,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'project-docs') {
     const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
     if (sub === 'optimize') return startDemoDocJob(body)
+    if (sub === 'doc-group') return null // 演示里没有本机的 P4 / SVN 分支目录，界面按下拉算出的位置显示
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())

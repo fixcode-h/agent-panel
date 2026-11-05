@@ -1231,6 +1231,16 @@ export const EN_SETTINGS: Record<string, string> = {
   初始化完成: 'Initialization finished',
   '文档根：{dir}': 'Docs root: {dir}',
   '这个项目的文档根：{dir}': 'Docs root for this project: {dir}',
+  '已改共用文档根，原来的文档已合并过去': 'Shared docs root changed; the existing docs were merged into it',
+  '各分支共用的文档根：{dir}': 'Docs root shared by all branches: {dir}',
+  '当前分支：{name}': 'Current branch: {name}',
+  '；共用的其他分支：{list}': '; also shared by: {list}',
+  '。分支按项目文件夹区分：同名项目文件夹、分支目录在同一上级下的项目共用文档。':
+    '. Branches are told apart by project folder: projects with the same folder name whose branch folders sit under the same parent share docs.',
+  '合并各分支的旧文档时有 {n} 个文件内容不同，已另存成 .from-<分支>，项目对话会派「文档」合并。':
+    '{n} files differed when the branches’ old docs were merged; they were saved as .from-<branch> and the project chat will have Docs reconcile them.',
+  '合并旧文档出错：{error}': 'Merging old docs failed: {error}',
+  文档根的完整路径: 'Full path of the docs root',
   '（在项目外，写进去的文档不做 P4 / SVN 操作）':
     ' (outside the project: docs written here get no P4 / SVN operations)',
   '（在项目里，随项目纳入版本管理）': ' (inside the project: versioned with the project)',

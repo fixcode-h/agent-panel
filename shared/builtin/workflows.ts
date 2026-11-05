@@ -111,7 +111,7 @@ const DOC_ROOT: WorkflowExpose = {
   default: DOC_PLACE_SIBLING,
   target: 'agent',
   targetId: 'docRoot',
-  description: '只在 P4 项目里设置：项目外层同级 ProjectDoc/docs 里的文档不做 P4 操作，项目内 docs 随项目纳管',
+  description: '只在 P4 项目里设置：项目外层同级 ProjectDoc/docs 各分支共用、不做 P4 操作，项目内 docs 随项目纳管',
 }
 
 /**
