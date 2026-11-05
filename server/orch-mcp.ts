@@ -1,4 +1,5 @@
 import { callSubmitTool, submitTools } from './submit-tools.ts'
+import { EXPERIENCE_KINDS, EXPERIENCE_SCOPE } from '../shared/experience.ts'
 import { docsFirstArgs, docsFirstFields } from './docs-first-tool.ts'
 import {
   agentField,
@@ -674,6 +675,53 @@ export function orchTools(o: Orchestra) {
             : []),
         ]
       : []),
+    ...(o.experience
+      ? [
+          {
+            name: 'project_experience',
+            title: '查项目经验',
+            description:
+              '查这个项目以前的对话学到的经验：某类东西在哪个目录、用户的说法在代码里叫什么、编译测试用什么命令、怎么验证。要在全项目搜索、或要试命令之前先按关键词查（用户的说法和代码里的叫法都可以），命中了直接去对应位置；对不上时照常找。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: '关键词，空格分开，例如「表格 掉落」「编译 游戏模块」' },
+                files: { type: 'array', items: { type: 'string' }, description: '可选：要看或要改的文件、目录' },
+              },
+            },
+          },
+          // 子任务只查不记（makeOrchestra 给子任务的 experience 没有 record）
+          ...(o.experience.record
+            ? [
+                {
+                  name: 'record_experience',
+                  title: '记下项目经验',
+                  description: `记一条项目经验（用户用 /learn 让你学一件事时用），或带 id 更新已有的一条。\n\n${EXPERIENCE_SCOPE}`,
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      kind: { type: 'string', enum: [...EXPERIENCE_KINDS], description: '种类' },
+                      title: { type: 'string', description: '一句话：要做的事 + 去哪 / 用什么' },
+                      body: { type: 'string', description: '一两句补充：路径之间的关系、命令参数、别走的弯路' },
+                      keywords: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: '检索用：用户的说法和代码里的叫法都写上',
+                      },
+                      paths: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: '相对项目根的目录或 glob（必须存在）；命令类写命令本身',
+                      },
+                      id: { type: 'string', description: '更新已有的那条时填它的 id（project_experience 查到的）' },
+                    },
+                    required: ['kind', 'title', 'keywords'],
+                  },
+                },
+              ]
+            : []),
+        ]
+      : []),
     // 共享状态只存在于工作流运行的 task.runs 里，对话模式没有：注册了模型每次调都是「没有共享状态」
     ...(o.sharedState
       ? [
@@ -842,6 +890,25 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const files = Array.isArray(a?.files) ? a.files.map(String) : []
       const tags = Array.isArray(a?.tags) ? a.tags.map(String) : []
       return text(await o.lessons.find(files, { query: str(a?.query), tags }))
+    }
+    case 'project_experience': {
+      if (!o.experience) return text('这个对话没有项目经验（不在项目里，或设置里关了经验）', true)
+      const files = Array.isArray(a?.files) ? a.files.map(String) : []
+      return text(await o.experience.find(str(a?.query), files))
+    }
+    case 'record_experience': {
+      if (!o.experience) return text('这个对话没有项目经验（不在项目里，或设置里关了经验）', true)
+      if (!o.experience.record) return text('子任务不记经验：值得记的写进交回的结果，由派你的对话决定', true)
+      const list = (v: unknown) => (Array.isArray(v) ? v.map(String).filter((x: string) => x.trim()) : [])
+      const r = await o.experience.record({
+        id: str(a?.id).trim() || undefined,
+        kind: str(a?.kind).trim(),
+        title: str(a?.title),
+        body: str(a?.body),
+        keywords: list(a?.keywords),
+        paths: list(a?.paths),
+      })
+      return text(r.info, !r.ok)
     }
     case 'record_lesson': {
       if (!o.lessons) return text('这个对话不在项目里，记不了项目教训', true)

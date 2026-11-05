@@ -66,6 +66,7 @@ DOC_ROOT/
 ├── contributing.md           # 人类开发者协作说明
 ├── p4change/                 # 仅 P4 项目：外部文件变更台账（各分支共用 DOC_ROOT 时在 branches/<分支>/p4change/）
 ├── lessons/<id>.md           # 项目教训，一条一个文件，由面板维护
+├── agent-knowledge/experience/<id>.md  # 项目经验（找位置、叫法、命令），由面板维护
 └── CHANGELOG.md              # 有发布或用户可感知变化时维护
 ```
 

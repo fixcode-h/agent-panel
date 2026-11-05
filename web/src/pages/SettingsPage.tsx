@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Webhook,
   GraduationCap,
+  Lightbulb,
   Gauge,
   Keyboard,
   Brain,
@@ -108,6 +109,9 @@ const SpeechSection = lazy(() =>
 const ReadAloudSection = lazy(() =>
   import('@/components/settings/ReadAloudSection').then((m) => ({ default: m.ReadAloudSection })),
 )
+const ExperienceSection = lazy(() =>
+  import('@/components/settings/ExperienceSection').then((m) => ({ default: m.ExperienceSection })),
+)
 const ChatMemorySection = lazy(() =>
   import('@/components/settings/ChatMemorySection').then((m) => ({ default: m.ChatMemorySection })),
 )
@@ -150,6 +154,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
   { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
   { id: 'global-lessons', label: t('全局教训'), icon: GraduationCap, group: t('项目') },
+  { id: 'experience', label: t('经验'), icon: Lightbulb, group: t('项目') },
   { id: 'models', label: t('默认 Agent'), icon: Cpu, group: t('Agent 与 AI') },
   // 部署和 API 也是 CLI 的事（写全局说明、放技能；各 CLI 用哪个 API），放在 CLI 二级列表里默认 CLI 下面
   { id: 'deploy', label: t('部署'), icon: Rocket },
@@ -384,6 +389,7 @@ function SettingsBody({
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     // 内存采样间隔在设置 →「数据」里改，这里沿用原来的值
     memorySampleSeconds: initial.memorySampleSeconds,
+    experience: initial.experience, // 在设置 →「经验」里改（ExperienceSection 自己保存）
     longPasteChars: pasteValid ? pasteN : initial.longPasteChars,
     defaultCli: defCli,
     clis: Object.fromEntries(
@@ -1408,6 +1414,7 @@ function SettingsBody({
               {cur.id === 'deploy' && <DeploySection />}
               {cur.id === 'tags' && <TagsSection />}
               {cur.id === 'global-lessons' && <GlobalLessonsSection />}
+              {cur.id === 'experience' && <ExperienceSection clis={ordered} drafts={drafts} isReady={isReady} />}
               {cur.id === 'update' && (
                 <UpdateSection autoCheck={autoCheckUpdates} onAutoCheckChange={setAutoCheckUpdates} />
               )}

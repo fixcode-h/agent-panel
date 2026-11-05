@@ -469,6 +469,10 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(a.id ? t('改写教训') : t('记下教训'), firstLine(a.title), 'other', text(a.rule))
     case 'project_lessons':
       return as(t('查看项目教训'), list(a.files), 'read')
+    case 'record_experience':
+      return as(a.id ? t('更新经验') : t('记下经验'), firstLine(a.title), 'other', text(a.body))
+    case 'project_experience':
+      return as(t('查项目经验'), firstLine(a.query) || list(a.files), 'read')
     case 'read_state':
       return as(t('读取共享状态'), '')
     case 'write_state':

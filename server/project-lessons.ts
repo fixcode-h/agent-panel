@@ -46,8 +46,11 @@ const DIR_README_TEXT = `# 项目教训
 可以直接改；某个文件格式不对时面板跳过它、不覆盖，在项目设置里提示。
 `
 
-/** 这个项目的教训目录；项目没有目录（独立聊天、没填路径）时返回 undefined，仍用旧的项目 JSON */
-export async function projectLessonsDir(
+/**
+ * 这个项目的文档根（教训、经验都放在它下面）；项目没有目录（独立聊天、没填路径）时返回 undefined：
+ * Git / 没有版本管理是 <项目>/docs；P4 固定是各分支共用的文档根；SVN 按「文档」角色的文档根
+ */
+export async function projectDocBase(
   project: Pick<Project, 'path' | 'agentParams'>,
   agents: Agent[],
 ): Promise<string | undefined> {
@@ -55,15 +58,23 @@ export async function projectLessonsDir(
   if (!dir) return undefined
   const vcs = (await detectVcs(dir).catch(() => null))?.vcs
   // P4 固定放各分支共用的文档根：换个分支也能看到同一份教训
-  if (vcs === 'p4') return joinPath((await sharedDocRoot(dir, vcs))!, LESSONS_DIR)
+  if (vcs === 'p4') return (await sharedDocRoot(dir, vcs))!
   if (vcs === 'svn') {
     const docs = findCore(agents, 'docsync')
     const root = resolveDocRoot(dir, 'svn', (docs && project.agentParams?.[docs.id]) || {})
     if (!root) return undefined
-    const base = root.place === DOC_PLACE_SIBLING ? (await sharedDocRoot(dir, vcs))! : root.root
-    return joinPath(base, LESSONS_DIR)
+    return root.place === DOC_PLACE_SIBLING ? (await sharedDocRoot(dir, vcs))! : root.root
   }
-  return joinPath(dir, `docs/${LESSONS_DIR}`)
+  return joinPath(dir, 'docs')
+}
+
+/** 这个项目的教训目录；项目没有目录时返回 undefined，仍用旧的项目 JSON */
+export async function projectLessonsDir(
+  project: Pick<Project, 'path' | 'agentParams'>,
+  agents: Agent[],
+): Promise<string | undefined> {
+  const base = await projectDocBase(project, agents)
+  return base && joinPath(base, LESSONS_DIR)
 }
 
 /** 把一条教训写成人和面板都能读的 Markdown：字段在上面，正文用缩进两行的 | 块 */
@@ -413,7 +424,7 @@ async function stale(dir: string, keep: Set<string>) {
 // 同一个目录同时只写一份：P4 不同分支共用一个教训目录时也不会交错
 const writing = new Map<string, Promise<unknown>>()
 
-function enqueueWrite<T>(file: string, run: () => Promise<T>): Promise<T> {
+export function enqueueWrite<T>(file: string, run: () => Promise<T>): Promise<T> {
   const key = process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file)
   const prev = writing.get(key) ?? Promise.resolve()
   const next = prev.catch(() => {}).then(run)
@@ -444,7 +455,7 @@ async function fsyncDir(dir: string) {
 }
 
 /** 原子写文本：先写临时文件并刷盘，再改名；Windows 上文件被占用时重试几次 */
-async function writeTextAtomic(file: string, text: string) {
+export async function writeTextAtomic(file: string, text: string) {
   await mkdir(path.dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
   const fh = await open(tmp, 'w')

@@ -16,6 +16,7 @@ import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-su
 import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
+import { demoExperience } from './demo-experience'
 import { demoChatMemory } from './demo-chat-memory'
 import { demoCliPackages } from './demo-packages'
 import { demoLibrary, demoPanelCommands } from './demo-library'
@@ -2129,6 +2130,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'integrations') return demoIntegrations(method, seg, body ?? {})
   if (res === 'hooks') return demoHooks(method, seg, body ?? {})
+  if (res === 'projects' && id && sub === 'experience') return demoExperience(id, method, seg, body)
   if (res === 'chat-memory') return demoChatMemory(method, seg, (body ?? {}) as Record<string, unknown>)
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {}, activeClis())
   if (res === 'project-skills') return demoProjectSkillsApi(method, seg, query, (body ?? {}) as Record<string, unknown>)

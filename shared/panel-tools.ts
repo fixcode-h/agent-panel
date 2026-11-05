@@ -47,6 +47,8 @@ export const PANEL_TOOL_NAMES = [
   'end_inline_edit',
   'project_lessons',
   'record_lesson',
+  'project_experience',
+  'record_experience',
   'read_state',
   'write_state',
   'ask_main',
@@ -121,6 +123,7 @@ export const MORE_TOOLS = 'more_tools'
  */
 export const DEFERRED_TOOLS: readonly string[] = [
   'record_lesson',
+  'record_experience',
   'begin_inline_edit',
   'end_inline_edit',
   'list_peers',

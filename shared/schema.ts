@@ -1,3 +1,4 @@
+import { ExperienceSettings } from './experience.ts'
 import { Submitted } from './submitted.ts'
 import { z } from 'zod'
 import { DARK_TEXT_LEVEL_DEFAULT, LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
@@ -2634,6 +2635,7 @@ export const Settings = z.object({
       workflowRules: z.string().max(8000).default(''),
     })
     .default({ cli: '', model: '', agentRules: '', workflowRules: '' }),
+  experience: ExperienceSettings, // 项目经验：总开关、自动学习、提炼用的模型（shared/experience.ts）
 })
 export type Settings = z.infer<typeof Settings>
 

@@ -70,6 +70,7 @@ import { summaryCardRules, summaryDetailRules } from './summary-card.ts'
 import { changedFilesPart, sharedWrapPart, uePart } from './wrapup-prompt.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
+import { findExperience, type ExperienceInput, type ProjectExperience } from './experience.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from './test-steps.ts'
 import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from './submitted.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
@@ -546,6 +547,13 @@ export interface Orchestra {
     find(files: string[], opts?: LessonQuery): Promise<string>
     record?(input: LessonInput): Promise<{ ok: boolean; info: string }>
   }
+  /** 项目经验（shared/experience.ts）：按关键词查；设置里关了经验、不在项目里时没有。子任务也能查 */
+  experience?: {
+    find(query: string, files: string[]): Promise<string>
+    list(): Promise<ProjectExperience[]>
+    /** 记一条（/learn 命令让 Agent 学一件事）：子任务没有，值得记的交回派它的对话 */
+    record?(input: ExperienceInput): Promise<{ ok: boolean; info: string }>
+  }
   /** P4 工作区：按文件类型把改动分进各自的 pending（面板执行，不是 P4 项目时没有） */
   p4Split?: EngineHost['p4Split']
   /** 项目设了 cherry-pick 目标：由面板核对后搬（只收这个对话自己的提交 / 改动，见 server/cherry-pick.ts） */
@@ -852,6 +860,11 @@ export interface EngineHost {
     /** 全局教训：只读，Agent 改不了 */
     globals?: () => Promise<GlobalLesson[]>
     record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
+  }
+  /** 项目经验：每次查都现读（刚学到的也能查到）；设置里关了经验时宿主不给 */
+  experience?: {
+    list: () => Promise<ProjectExperience[]>
+    record: (input: ExperienceInput) => Promise<{ ok: boolean; info: string }>
   }
   /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
   p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
@@ -2838,6 +2851,13 @@ function makeOrchestra(
           find: async (files, opts) =>
             findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? [], opts),
           record: helper ? undefined : (input) => host.lessons!.record(input),
+        }
+      : undefined,
+    experience: host.experience
+      ? {
+          find: async (query, files) => findExperience(await host.experience!.list(), query, files),
+          list: () => host.experience!.list(),
+          record: helper ? undefined : (input) => host.experience!.record(input),
         }
       : undefined,
     p4Split: host.p4Split,

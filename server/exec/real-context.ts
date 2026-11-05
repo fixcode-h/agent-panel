@@ -81,4 +81,5 @@ export interface RealContext {
   checkBackground?: EngineHost['checkBackground']
   stopBackground?: EngineHost['stopBackground']
   lessons?: EngineHost['lessons']
+  experience?: EngineHost['experience']
 }

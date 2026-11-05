@@ -68,6 +68,7 @@ import { registerDiagnosisRoutes } from './tasks/diagnosis-routes.ts'
 import { registerListRoutes } from './tasks/list-routes.ts'
 import { createIdleAsk } from './tasks/idle-ask.ts'
 import { createBudget } from './tasks/budget.ts'
+import { createTaskLearner } from './tasks/experience.ts'
 import { createKeepAlive } from './tasks/keepalive.ts'
 import { createRun } from './tasks/run.ts'
 import { createAsks } from './tasks/asks.ts'
@@ -220,6 +221,7 @@ export function tasksApi(deps: {
     wakeTask: () => wakeTask,
     withJobs: () => withJobs,
     withLive: () => withLive,
+    learnExperience: () => learnExperience,
     workflowCatalog: () => workflowCatalog,
     worktreeHome: () => worktreeHome,
     worktreeStatusOf: () => worktreeStatusOf,
@@ -660,6 +662,7 @@ export function tasksApi(deps: {
   const flowRuns = createFlowRuns(scope)
   const { armIdleAsk, disarmIdleAsk, childRecovering } = createIdleAsk(scope)
   const { checkBudget, holdWake } = createBudget(scope)
+  const { learnExperience } = createTaskLearner(scope)
   const {
     allowedPids,
     processPanel,
