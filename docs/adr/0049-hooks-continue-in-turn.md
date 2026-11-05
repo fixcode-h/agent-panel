@@ -122,3 +122,11 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
 - 工具前 / 工具后按这一轮实际关心的工具类别过滤（`hookTools` → 配置里的 `{toolMatcher}`）：内置守卫和提醒只看改文件、跑命令，读文件、搜索不再每次多跑一趟。用户钩子匹配任意工具时照旧全部触发。
 - Claude Code 2.1.318 起用 `type: http` 的钩子直接 POST 到面板（`/api/mcp/ask/<令牌>/hook/<事件>`），不再每次起一个 node 跑转发脚本；读不到本机版本时照旧用转发脚本。回复文字由面板收到后立即丢掉（`answerHook` 的 `dropInput`），判断仍然不读。
 - 不支持 HTTP 钩子的命令类钩子（Codex、老版本 Claude Code）：本机有 curl 时，调转发脚本的命令自动换成 curl 直接 POST 到面板（`shared/hooks.ts` 的 `toCurl`），Codex 0.166 实测每次 11–17 ms，node 转发脚本 81–134 ms。没有 curl 时照旧用转发脚本。Codex 的 `mcp_tool` 钩子不把钩子输入交给工具（`arguments` 为空），守卫没法判断，所以不用它。Pi、Command Code 的钩子本来就在 CLI 进程里直接请求面板，不用改。
+
+## 2026-11-05 更新：end_turn 交代结束，提醒不画进对话、不限次数
+
+用户反馈：Agent 已经写完总结，结束前钩子还是问了一次「（收尾自检）做完了吗」，拦住的那一行像工具调用，把前面的总结挤进了折叠。设计稿 `docs/openspec/changes/end-check-signal/design-v2.md`（含定稿一节）。
+
+- **结束只认工具**：新的面板工具 `end_turn`（`outcome: done | blocked`，blocked 写 `need`），记在 `Task.turnEnds`。这条输入以来交代过 done 就放行；blocked 放行并留一条「卡住了」的警告，子对话上报父对话。计划没做完、子对话没请收尾时 done 会被拒。仍不读回复文字。
+- **提醒不画进对话**：`panel: 'hook' | 'nudge'` 的消息、`end_turn` 这一行、end_turn(done) 之后的那一次输出都不显示（`visibleMessages`），在对话菜单「状态」的「面板提醒」卡片里按时间列出，计数算上钩子拦截。这一条改了本 ADR 决策 1 的「对话里只留一行」。
+- **不限次数**：去掉「面板提醒次数」（第 4 条的次数上限）。计划、收尾请求这几档靠空转保护收住：连着 3 次提醒之间一个工具都没调就停下交给用户（`SPIN_MAX`）。没列计划的自检保留第 6 条的门槛，问过以后没再动手的不会再问。

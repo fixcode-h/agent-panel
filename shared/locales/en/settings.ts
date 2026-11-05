@@ -1795,13 +1795,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '替父对话问进展，不回就重启或换人接手': 'Asks for progress as the parent; restarts or hands over if no reply',
   '子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住，收到回复就重新计时。问过之后再过这么久还没回复（正在跑命令时多等几倍），就停掉它、接回原会话重启；重启也没恢复，就在对话里记一条警告，新开一个子对话带上原任务和已有进展接手。':
     'When a sub-chat prints nothing for this long, the panel asks it, as the parent, what it is doing and whether it is stuck; a reply resets the timer. If there is still no reply after another such period (several times longer while a command runs), the panel stops it and restarts it on its original session. If that does not help, it adds a warning and starts a new sub-chat that takes over with the original task and progress so far.',
-  面板提醒次数: 'Follow-up nudges',
-  计划没做完却停下时最多推几次接着做: 'How many times to nudge when the plan is unfinished',
-  '计划没做完却停下时，面板最多推这么多次让它接着做；推满还停着就留一条提醒等你处理。没有计划、拿不准做没做完时，最多做 2 次收尾自检，且不超过这个上限。0 表示不自动推，停下来等你；子对话卡住时仍会告诉父对话。Chat 页一问一答固定只推 1 次。':
-    'When a turn ends before its plan is done, the panel nudges the chat to keep going up to this many times; if it still stops, a reminder is left for you. For chats without a plan that may have unfinished work, the wrap-up self-check runs at most twice and never more than this limit. 0 disables automatic nudges and waits for you; a stuck sub-chat is still reported to its parent. Chat page Q&A always nudges once.',
   次: 'times',
-  不推: 'Never',
-  '填 0 到 20 之间的整数，0 表示不推': 'Enter a whole number from 0 to 20; 0 disables nudges',
   后台命令并发: 'Background commands at once',
   '测试、编译最多同时跑几条': 'How many tests or builds run at the same time',
   '所有对话交给面板在后台跑的命令（完整测试、编译）超出这个数就排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。':

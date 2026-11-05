@@ -77,6 +77,7 @@ import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
+import { endTurnCheck, pushTurnEnd } from './end-turn.ts'
 import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import {} from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
@@ -440,6 +441,8 @@ export interface Orchestra {
     summary?: string
   }): Promise<{ ok: boolean; info: string }>
   finishPlan(summary: string): Promise<{ ok: boolean; info: string }>
+  /** 对话（Agent 模式）交代这一轮怎么结束：done / blocked（shared/end-turn.ts）；其余身份没有这个工具 */
+  endTurn?: (outcome: string, need: string) => { ok: boolean; info: string }
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
   conversations(): Promise<string>
@@ -2581,6 +2584,17 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
+    // 只给对话（不含 Chat 页一问一答、子任务和工作流节点）：结束前钩子只认它交代的结束，不读回复文字
+    ...(ctx.chat && !helper && !isChatMode(task)
+      ? {
+          endTurn(outcome: string, need: string) {
+            const r = endTurnCheck(task, outcome, need)
+            if (r.end) pushTurnEnd(task, r.end)
+            if (r.end) host.changed(true)
+            return { ok: r.ok, info: r.info }
+          },
+        }
+      : {}),
     coordinator,
     async conversations() {
       if (!coordinator || !host.listConversations) return '（这个对话不能分派子对话）'

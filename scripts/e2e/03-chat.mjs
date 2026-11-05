@@ -169,7 +169,7 @@ await runShard('对话与续接', async (api) => {
   )
   const empChecks = emp.messages.filter((m) => m.panel === 'nudge')
   assert.equal(empChecks.length, 1, '只自检一次')
-  assert.match(empChecks[0].text, /收尾自检[\s\S]*不用列计划/)
+  assert.match(empChecks[0].text, /收尾自检[\s\S]*end_turn/)
   const empAgent = emp.messages.filter((m) => m.role === 'agent')
   assert.equal(empAgent.length, 2, '模型那一轮加自检那一轮')
   assert.match(empAgent[0].text, /我先把工作区更新到最新/)

@@ -75,7 +75,6 @@ test('预热的进程也装结束前钩子：还没收到用户消息时放行�
     inputOf: () => '',
     haltedBy: () => 'user',
     activeChildren: async () => 0,
-    lastNudge: () => '',
   })
   assert.deepEqual(await decide('c1', {}), { block: false, why: 'prewarm' })
   // 收到消息后 runner 清掉 prewarming：不再按预热放行（这里被「用户叫停」挡下，说明走到了正常判断）

@@ -8,6 +8,7 @@ import { ComponentStyle } from './component-style.ts'
 import { API_PROTOCOLS, ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { ProjectCliTrust } from './cli-trust.ts'
+import { EndTurnRecord } from './turn-end.ts'
 import { RolePlugins } from './role-plugins.ts'
 import { RemoteAccess } from './remote-schema.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
@@ -2090,6 +2091,8 @@ export const TaskData = z.object({
   todos: z.array(TaskTodo).default([]),
   /** 对话的执行计划：最后一份没完成的是当前计划，之前的连同总结留着看 */
   plans: z.array(TaskPlan).default([]),
+  /** Agent 用 end_turn 交代的结束（最近的在最后，只留最近 50 条），见 shared/turn-end.ts */
+  turnEnds: z.array(EndTurnRecord).optional(),
   /** 任务开始时项目里已有的未提交改动（git numstat），统计改动时排除 */
   baseline: z.record(z.string(), z.string()).default({}),
   /** 任务创建时的工作流（连同引用的其他工作流）；之后改动、删除工作流不影响这个任务。旧任务没有 */
@@ -2442,7 +2445,7 @@ export const Settings = z.object({
    * 还没回复就停掉、接回原会话重启，重启没恢复就新开子对话接手（见 shared/stuck-child.ts）。和 idleTimeoutMinutes 是两个独立的档位
    */
   childIdleAskMinutes: z.number().int().min(0).max(1440).catch(3).default(3),
-  nudgeMax: z.number().int().min(0).max(20).catch(6).default(6), // 计划没做完就停下时最多推几次接着做；0 表示不自动推。子对话和顶层对话共用，Chat 页固定 1 次（见 shared/conv-mode.ts 的 nudgeMax）
+  nudgeMax: z.number().int().min(0).max(20).catch(6).default(6), // 已不用（2026-11-05 起提醒不限次数，见 shared/end-turn.ts）：旧设置文件里有，留着免得读写时报错
   /**
    * 对话页切走后，CLI 还停在等下一句的工具上多久（分钟）；0 表示回复完就结束这一轮。
    * 期间这个对话保留一个 CLI 进程，值越大越省重开的时间，同时挂着的进程也越多。

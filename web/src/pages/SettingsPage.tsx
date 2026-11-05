@@ -187,7 +187,6 @@ function SettingsBody({
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [childAsk, setChildAsk] = useState(String(initial.childIdleAskMinutes))
-  const [nudge, setNudge] = useState(String(initial.nudgeMax))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
   const [childKeep, setChildKeep] = useState(String(initial.childDoneKeepMinutes))
   const [archiveDays, setArchiveDays] = useState(String(initial.autoArchiveDays))
@@ -338,8 +337,6 @@ function SettingsBody({
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
   const childAskMin = Number(childAsk)
   const childAskValid = childAsk !== '' && Number.isInteger(childAskMin) && childAskMin >= 0 && childAskMin <= 1440
-  const nudgeN = Number(nudge)
-  const nudgeValid = nudge !== '' && Number.isInteger(nudgeN) && nudgeN >= 0 && nudgeN <= 20
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
   const childKeepMin = Number(childKeep)
@@ -375,7 +372,8 @@ function SettingsBody({
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     childIdleAskMinutes: childAskValid ? childAskMin : initial.childIdleAskMinutes,
-    nudgeMax: nudgeValid ? nudgeN : initial.nudgeMax,
+    // 「面板提醒次数」去掉了（2026-11-05：提醒不限次数，靠 end_turn 和空转保护收住）：旧值原样留着，不再用
+    nudgeMax: initial.nudgeMax,
     // 计划 Webhook 已并入「钩子」（schedule.finished 上的 HTTP 钩子，ADR 0049 第三期）：旧字段原样留着，只用来迁移
     webhook: initial.webhook,
     speech,
@@ -1019,23 +1017,6 @@ function SettingsBody({
                         invalid={!childAskValid}
                         error={t('填 0 到 1440 之间的整数，0 表示不问')}
                         label={t('子对话没有输出时自动询问（分钟）')}
-                      />
-                    </Row>
-                    <Row
-                      title={t('面板提醒次数')}
-                      desc={t('计划没做完却停下时最多推几次接着做')}
-                      hint={t(
-                        '计划没做完却停下时，面板最多推这么多次让它接着做；推满还停着就留一条提醒等你处理。没有计划、拿不准做没做完时，最多做 2 次收尾自检，且不超过这个上限。0 表示不自动推，停下来等你；子对话卡住时仍会告诉父对话。Chat 页一问一答固定只推 1 次。',
-                      )}
-                    >
-                      <NumberField
-                        value={nudge}
-                        onChange={setNudge}
-                        unit={t('次')}
-                        empty={t('不推')}
-                        invalid={!nudgeValid}
-                        error={t('填 0 到 20 之间的整数，0 表示不推')}
-                        label={t('面板提醒次数')}
                       />
                     </Row>
                     <Row
