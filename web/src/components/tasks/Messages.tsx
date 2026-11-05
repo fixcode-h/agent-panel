@@ -27,6 +27,7 @@ import {
 } from '@/lib/fold'
 import { dedupePeerReports } from '@/lib/peer-dedupe'
 import { ChildAskCard } from './ChildAskCard'
+import { InlineRoutes, useRouteAnchors } from './route-context'
 import { ReceivedRow } from './PeerMessage'
 import { peerOfMessage } from '@shared/peer-message'
 import { useChildOpen, useChildList, useRunViewOpen, useRunViewTip } from './child-open'
@@ -662,6 +663,30 @@ export function Msgs({
   // 滚过去就跟着滚出视口了（按 CLI 显示的对话 StickyAuthor 在整轮外面，所以不受影响）
   const firstMsg = firstAgent >= 0 ? msgs[firstAgent] : undefined
   const sticky = !author && stickyAuthor && !compactFirst && firstMsg && agents.find((x) => x.id === firstMsg.agentId)
+  const routes = useRouteAnchors()
+  const msgNode = (m: TaskMessage, k: number) => {
+    const inline = inlineEntry(m, task, teamNames)
+    if (inline) return inline
+    if (m.role === 'system') return <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />
+    // 前面隔着子任务、面板结果时仍算同一段回复：不再重复名字
+    let j = k - 1
+    while (j >= 0 && transparent(msgs[j])) j--
+    return (
+      <AgentMessage
+        key={m.id}
+        m={m}
+        task={task}
+        teamNames={teamNames}
+        live={live && k === lastAgent}
+        slot={k === firstAgent ? slot : undefined}
+        slotKey={k === firstAgent ? slotKey : undefined}
+        author={author}
+        command={command}
+        hideAuthor={hideAuthor || (!!sticky && k === firstAgent)}
+        compact={j < 0 ? !!compactFirst : msgs[j].role === 'agent' && msgs[j].agentId === m.agentId}
+      />
+    )
+  }
   return (
     <>
       {sticky && (
@@ -677,29 +702,13 @@ export function Msgs({
         />
       )}
       {lead && <div className="min-w-0">{lead}</div>}
-      {msgs.map((m, k) => {
-        const inline = inlineEntry(m, task, teamNames)
-        if (inline) return inline
-        if (m.role === 'system') return <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />
-        // 前面隔着子任务、面板结果时仍算同一段回复：不再重复名字
-        let j = k - 1
-        while (j >= 0 && transparent(msgs[j])) j--
-        return (
-          <AgentMessage
-            key={m.id}
-            m={m}
-            task={task}
-            teamNames={teamNames}
-            live={live && k === lastAgent}
-            slot={k === firstAgent ? slot : undefined}
-            slotKey={k === firstAgent ? slotKey : undefined}
-            author={author}
-            command={command}
-            hideAuthor={hideAuthor || (!!sticky && k === firstAgent)}
-            compact={j < 0 ? !!compactFirst : msgs[j].role === 'agent' && msgs[j].agentId === m.agentId}
-          />
-        )
-      })}
+      {msgs.map((m, k) => (
+        // 这条消息发起的分诊紧接在它后面；总包一层 Fragment，分诊出现时正在输出的消息不会被重新挂载
+        <Fragment key={m.id}>
+          {msgNode(m, k)}
+          {routes.has(m.id) && <InlineRoutes msgId={m.id} />}
+        </Fragment>
+      ))}
       {tail}
     </>
   )
@@ -878,6 +887,7 @@ export function FoldedRun({
   // AI 分析窗口里过程默认展开（设计稿把读取、搜索、运行一行行列出来，看得到它查了什么）；用户点过的照记下的来
   const ai = useAiLook()
   const [open, setOpen] = useState(() => (foldId ? segOpenOf(foldId, ai) : ai))
+  const routes = useRouteAnchors()
   // 折叠段的 id 列表：按内容签名缓存（见下面 toggle 的说明）
   const foldIds = useRef({ key: '', value: '' })
   const { agents } = useData()
@@ -968,12 +978,16 @@ export function FoldedRun({
         />
       )}
       {before
-        .filter(keptOut)
-        .map(
-          (m) =>
-            inlineEntry(m, task, teamNames) ??
-            (m.role === 'system' && <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />),
-        )}
+        .filter((m) => keptOut(m) || routes.has(m.id))
+        .map((m) => (
+          <Fragment key={m.id}>
+            {keptOut(m) &&
+              (inlineEntry(m, task, teamNames) ??
+                (m.role === 'system' && <NoteMessage m={m} msgs={msgs} task={task} />))}
+            {/* 分诊卡不进折叠：收起时也留在它发起的位置 */}
+            <InlineRoutes msgId={m.id} />
+          </Fragment>
+        ))}
       <AgentMessage
         m={msgs[first]}
         task={task}
@@ -997,6 +1011,8 @@ export function FoldedRun({
           command={command}
         />
       ))}
+      {/* 总结那几条里发起的分诊（收尾前又派了一次）：和展开时一样接在总结后面 */}
+      {msgs.slice(first, last + 1).map((m) => routes.has(m.id) && <InlineRoutes key={m.id} msgId={m.id} />)}
       <Msgs
         msgs={tail}
         task={task}

@@ -16,7 +16,7 @@ import { ANCHOR_RETRY_MS, ANCHOR_TRIES, jumpToMessage } from '@/lib/message-anch
 import { useSummaryJump } from './summary-jump'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from '@/lib/toast'
-import { RouteCard } from './RouteCard'
+import { InlineRoutes, RouteProvider } from './route-context'
 import {
   CheckCircle2,
   FlaskConical,
@@ -2253,22 +2253,8 @@ export function TaskView({
               />
             }
           />
-          {/* 协调器把这条消息分到了哪里：分诊卡，不同意可以一键改派 */}
-          <RouteCard
-            routes={(task.routes ?? []).filter((r) => r.messageId === b.m.id)}
-            later={task.messages.slice(task.messages.indexOf(b.m) + 1)}
-            onReroute={
-              task.imported
-                ? undefined
-                : async (text) => {
-                    try {
-                      apply(await api.sendMessage(task.id, text, [], false))
-                    } catch (e) {
-                      toast.error((e as Error).message)
-                    }
-                  }
-            }
-          />
+          {/* 分诊卡插在 AI 回复里发起它的位置；对不上回复的旧数据才留在用户消息下面 */}
+          <InlineRoutes msgId={b.m.id} inline={false} />
         </Fragment>
       )
     if (b.m.role === 'system')
@@ -2437,7 +2423,12 @@ export function TaskView({
                           {task.messageHasMore ? t('显示更早的消息') : t('显示更早的 {n} 段', { n: hidden })}
                         </Button>
                       )}
-                      {renderedBlocks}
+                      <RouteProvider
+                        task={task}
+                        send={async (text) => apply(await api.sendMessage(task.id, text, [], false))}
+                      >
+                        {renderedBlocks}
+                      </RouteProvider>
                       {running &&
                         task.mode === 'chat' &&
                         working &&

@@ -16,6 +16,18 @@ await runShard(import.meta.filename, async (api) => {
   const p = await openCartTask(api)
   const { backToTask } = taskPageHelpers(p, api)
 
+  // 分诊卡插在 AI 回复里派单的那一处（不堆在用户消息下面），回复收尾折叠后也照样看得到
+  {
+    const card = p.locator('.reply-body [data-route-card="inline"]').filter({ hasText: '核对角标的订阅时机' })
+    if (!(await card.count())) errors.push('分诊卡：AI 回复里派子任务的那一处没有分诊卡')
+    else {
+      await card.first().scrollIntoViewIfNeeded()
+      if (!(await card.first().isVisible())) errors.push('分诊卡：回复折叠后分诊卡被收进了折叠')
+      if (await p.locator('[data-route-card=""]').count()) errors.push('分诊卡：对得上回复的分诊卡还画在用户消息下面')
+      await check(p, '分诊卡-插在回复里', ['分诊', '派子任务'])
+    }
+  }
+
   // 父对话里子对话结果的卡片：标题链到子对话，点了在右栏打开它并滚到它的详细总结；
   // 子对话里的总结照普通 Markdown 显示（标题、分段），不画成卡片
   {
