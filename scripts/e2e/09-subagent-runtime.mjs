@@ -893,7 +893,7 @@ await runShard('子对话运行与监管', async (api) => {
     step('停下就是暂停：随父对话停下的子对话继续后接着做完，父计划那一步收到结果、没有另建子对话')
   }
 
-  // ---- 工作流只由父对话启动（ADR 0044）：start_workflow 开工作流子对话，流程图跑完交执行角色收尾，父计划那一步收到结果 ----
+  // ---- 工作流只由父对话启动：start_workflow 起一次运行（不是子对话），跑完来信、父对话合回，父计划那一步收到结果 ----
   {
     const wf = await call('POST', '/workflows', {
       name: '小流程',
@@ -938,31 +938,29 @@ await runShard('子对话运行与监管', async (api) => {
       '父对话看得到可用工作流',
     )
     const waitOf = async () =>
-      (await call('GET', `/tasks/${rp.id}`)).plans?.at(-1)?.steps?.[0]?.waits?.find((w) => w.kind === 'child')
+      (await call('GET', `/tasks/${rp.id}`)).plans?.at(-1)?.steps?.[0]?.waits?.find((w) => w.kind === 'workflow')
     await waitFor(async () => ((await waitOf())?.state === 'ok' ? true : undefined), {
-      label: '工作流子对话跑完流程图、执行角色收尾后，父计划那一步收到结果',
+      label: '工作流运行跑完、来信、父对话合回后，父计划那一步收到结果',
       timeout: 40000,
     })
+    // 运行不是子对话：子对话栏里没有它，按 owner 查得到
     const kids = await call('GET', `/tasks/${rp.id}/children`)
-    const k = kids.find((x) => x.title === '工作流做功能')
-    assert.ok(k, '开出了工作流子对话')
-    const kidTask = await call('GET', `/tasks/${k.id}`)
-    assert.equal(kidTask.flow?.workflowName, '小流程')
-    assert.equal(kidTask.flow?.handed, true, '流程图跑完交给了执行角色')
-    assert.equal(kidTask.runs?.[0]?.status, 'done')
+    assert.ok(!kids.some((x) => x.title === '工作流做功能'), '不开工作流子对话')
+    const runs = await call('GET', `/tasks?owner=${rp.id}`)
+    assert.equal(runs.length, 1)
+    const run = await call('GET', `/tasks/${runs[0].id}`)
+    assert.equal(run.flowRun?.workflowName, '小流程')
+    assert.equal(run.flowRun?.phase, 'done', '父对话 finish_workflow 合回后完成')
+    assert.equal(run.parentTaskId, '')
     assert.ok(
-      calls().some((c) => (c.input ?? '').includes('工作流「小流程」跑完了')),
-      '执行角色拿到的是流程图的结果，按收尾做',
+      calls().some((c) => /【工作流运行】工作流「小流程」[^\n]*做完了，等你合回/.test(c.input ?? '')),
+      '跑完给父对话写信',
     )
-    assert.ok(
-      !calls().some(
-        (c) => (c.input ?? '').includes('工作流「小流程」跑完了') && (c.input ?? '').includes('## 可用工作流'),
-      ),
-      '子对话不列可用工作流',
-    )
+    assert.ok(!calls().some((c) => (c.input ?? '').includes('工作流「小流程」跑完了')), '没有执行角色收尾那一轮')
+    assert.ok(!(await call('GET', '/tasks')).some((x) => x.id === run.id), '运行不进对话列表')
     await call('POST', `/tasks/${rp.id}/stop`).catch(() => {})
     await call('DELETE', `/tasks/${rp.id}`)
-    step('工作流只由父对话启动：开工作流子对话，流程图跑完交执行角色收尾，父计划那一步收到结果')
+    step('工作流只由父对话启动：起一次运行（不是子对话），跑完来信、父对话合回，父计划那一步收到结果')
   }
 
   // ---- /bug 发给子对话（ADR 0046）：面板把它标成用户报的 Bug，交给 CLI 的是展开后的完整查找流程，不是原样的 /bug ----

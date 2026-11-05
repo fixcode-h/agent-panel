@@ -78,6 +78,7 @@ import { createTestRuns } from './tasks/test-runs.ts'
 import { createJobs } from './tasks/jobs.ts'
 import { createEditWorktree } from './tasks/edit-worktree.ts'
 import { createChildMessages } from './tasks/child-messages.ts'
+import { createFlowRuns } from './tasks/flow-runs.ts'
 
 /** 任务接口与执行。执行中的任务放在内存里，按节点落盘，避免流式输出时频繁写文件 */
 export function tasksApi(deps: {
@@ -138,6 +139,7 @@ export function tasksApi(deps: {
     ensureChildWorktree: () => ensureChildWorktree,
     expandForWorkflow: () => expandForWorkflow,
     finishChild: () => finishChild,
+    flowRuns: () => flowRuns,
     followUp: () => followUp,
     forwardSpawn: () => forwardSpawn,
     getMeta: () => getMeta,
@@ -653,6 +655,8 @@ export function tasksApi(deps: {
   const { answerChildAsk, applyAskUser, applyChildAskUser, runningConv, settleAskFromChild, settleAsks, wakeConv } =
     createAsks(scope)
   const { deliver, expandForWorkflow, followUp, spawnChildOf, start } = createRun(scope)
+  // 工作流运行（不是子对话）：父对话的 start_workflow 等工具落到这里
+  const flowRuns = createFlowRuns(scope)
   const { armIdleAsk, disarmIdleAsk, childRecovering } = createIdleAsk(scope)
   const { checkBudget, holdWake } = createBudget(scope)
   const {

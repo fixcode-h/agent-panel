@@ -3,7 +3,6 @@
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { diagnosisPending } from '@shared/task'
-import { flowProgress } from '@shared/flow-child'
 import { bugStage, decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
@@ -3440,7 +3439,6 @@ function tasksRoute(
           // 和正式后端对齐：运行区、悬浮层都靠这几项判断「还在跑 / 在等什么」
           background,
           workflow: runRunning(x),
-          flow: flowProgress(x),
           diagnosis: diagnosisPending(x),
           bug: bugStage(x) || undefined,
           helpers: helpersWorking(x),

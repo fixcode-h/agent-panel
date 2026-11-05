@@ -492,7 +492,12 @@ ${
         // 进了回收站的对话不算同项目里能互相发消息的一条（它在列表里也已经看不到了）
         .filter(
           (x) =>
-            x.projectId === self.projectId && !x.parentTaskId && x.id !== self.id && !x.archived && !taskDeleted(x),
+            x.projectId === self.projectId &&
+            !x.parentTaskId &&
+            !x.flowRun &&
+            x.id !== self.id &&
+            !x.archived &&
+            !taskDeleted(x),
         )
         .map((x) => sc.live.get(x.id)?.task ?? x)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))

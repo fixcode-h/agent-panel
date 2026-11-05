@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { autoSubmit } from './submit-test-kit.ts'
 import test from 'node:test'
+import { FlowRun } from '../shared/task-flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { chatModePart } from '../shared/chat-prompt.ts'
@@ -246,6 +247,7 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
   const w = workflow()
   const task = {
     ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, w, '', 't1'),
+    flowRun: FlowRun.parse({ owner: 'p' }),
     id: 't1',
   } as Task
   const log: AgentCall[] = []
@@ -276,7 +278,11 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
 
 test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失效', async () => {
   const w = workflow()
-  const task = { ...newTask({ projectId: 'p', mode: 'workflow', prompt: 'x' } as never, w, '', 't2'), id: 't2' } as Task
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'workflow', prompt: 'x' } as never, w, '', 't2'),
+    flowRun: FlowRun.parse({ owner: 'p' }),
+    id: 't2',
+  } as Task
   const log: AgentCall[] = []
   let orch: AgentCall['orch']
   const h = host(task, log)
@@ -796,7 +802,17 @@ const CHILD = { ...CONV, child: true, canSubmit: true }
 const BG = ['run_background', 'check_background', 'stop_background']
 const LESSON_TOOLS = ['project_lessons', 'record_lesson']
 const TAIL = ['spawn_agents', 'stop_subtask', 'send_message', 'read_messages']
-const COORD = ['list_conversations', 'create_conversation', 'send_to_conversation', 'stop_workflow']
+const COORD = ['list_conversations', 'create_conversation', 'send_to_conversation']
+// 能启动工作流的父对话（planning）：起运行和操作运行的一组（server/workflow-tools.ts）
+const WF = [
+  'start_workflow',
+  'list_workflows',
+  'message_workflow',
+  'revise_workflow',
+  'answer_workflow',
+  'stop_workflow',
+  'finish_workflow',
+]
 const CHILD_TOOLS = ['message_parent', 'suggest_next_step', 'submit_merge']
 
 const IDENTITIES: [string, object, string[]][] = [
@@ -837,7 +853,7 @@ const IDENTITIES: [string, object, string[]][] = [
       ...BG,
       'set_plan',
       'finish_plan',
-      'start_workflow',
+      ...WF,
       ...COORD,
       'begin_inline_edit',
       'end_inline_edit',
@@ -855,7 +871,7 @@ const IDENTITIES: [string, object, string[]][] = [
   ],
   ['项目顶层·非统筹', TOP, ['get_status', ...BG, 'set_plan', 'finish_plan', 'finish_child', ...LESSON_TOOLS, ...TAIL]],
   [
-    // 不能分派子对话的顶层对话没有 start_workflow（工作流子对话要能分派，ADR 0044）：makeOrchestra 给的 planning 是 false
+    // 不能分派子对话的顶层对话没有 start_workflow（只给协调器，ADR 0044）：makeOrchestra 给的 planning 是 false
     '项目顶层·非统筹 全开（按需开分支 + 挂能力 + P4 + cherry-pick + 推送问一次）',
     { ...TOP, canBeginEdit: true, capabilities: true, p4Split: okCb, cherryPick: okCb, askPush: okCb },
     [
@@ -1047,6 +1063,8 @@ function identityHost(op: {
     // Chat 模式的对话不选角色（agentId 为空）：运行时按内置「助手」跑（chatRoleFor），这条路径一并测到
     agentId: (mode === 'chat' && !op.chat) || op.legacy ? 'exec' : '',
     parentTaskId: op.parent ? 'P' : undefined,
+    // 工作流节点只在工作流运行里跑（父对话 start_workflow 起的）
+    ...(flow && { flowRun: FlowRun.parse({ owner: 'P' }) }),
   } as unknown as Task
   const coordinatorRole = !op.parent && !!op.delegate && !!projectId
   const host = {
@@ -1215,7 +1233,11 @@ const nap = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 test('wait_agents：一直等到做完；有人传话时提前返回且只列 id；CLI 断开时不算取走；取过的不再交', async () => {
   const w = wakeWf()
-  const task = { ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做' } as never, w, '', 'tw'), id: 'tw' } as any
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做' } as never, w, '', 'tw'),
+    flowRun: FlowRun.parse({ owner: 'p' }),
+    id: 'tw',
+  } as any
   let n = 0
   const log: string[] = []
   await runEngineTurn({

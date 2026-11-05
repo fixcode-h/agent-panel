@@ -395,6 +395,7 @@ export const EN_SERVER: Record<string, string> = {
   运行它并按提示登录: 'run it and follow the login prompt',
   '你确认了「{title}」的结果，接着往下执行': 'You approved the result of "{title}"; continuing',
   '你退回了「{title}」：{answer}': 'You sent "{title}" back: {answer}',
+  '你追问了「{title}」：{answer}': 'You asked about "{title}": {answer}',
   '「{title}」完成了，看一下结果再继续': '"{title}" is done. Check the result before continuing',
   推送到远端并合并主干: 'Push to remote and merge into the main branch',
   '分支：{branch}': 'Branch: {branch}',
@@ -686,4 +687,20 @@ export const EN_SERVER: Record<string, string> = {
   '模型配置里没有 {model}': '{model} is not in the model catalog',
   'Agent 规划好了，按这个方案开始改？': 'The agent finished planning. Start making changes with this plan?',
   '「关于我」最多 {n} 字': '"About me" can be at most {n} characters',
+  '这是旧版的工作流任务，已经不能继续执行；要再做一次，请在父对话里启动工作流':
+    'This is an old-style workflow task and can no longer run. To do it again, start the workflow from the parent conversation',
+  '这次运行已经结束了，要再做一次请从父对话发起':
+    'This run has already ended. To do it again, start it from the parent conversation',
+  '找不到这次运行用的工作流，可能已被删除': 'The workflow for this run was not found; it may have been deleted',
+  '这些节点改了超过 {n} 轮：{nodes}。下次可以先在父对话里把需求聊清楚再起工作流':
+    'These nodes were revised more than {n} times: {nodes}. Next time, clarify the requirements in the parent conversation before starting the workflow',
+  执行这次工作流运行时出错: 'Error while running this workflow run',
+  '开不了独立分支（{error}），这次运行直接在父对话的目录里改':
+    "Could not open a separate branch ({error}); this run edits the parent conversation's directory directly",
+  '父对话补充：{text}': 'Parent conversation added: {text}',
+  '父对话把运行退回到「{node}」：{text}': 'Parent conversation sent the run back to "{node}": {text}',
+  '父对话终止了这次运行：{why}': 'Parent conversation cancelled this run: {why}',
+  父对话把这次运行的改动合回了: "Parent conversation merged this run's changes",
+  父对话放弃了这次运行的改动: "Parent conversation discarded this run's changes",
+  这次运行现在不在等确认: 'This run is not waiting for confirmation',
 }

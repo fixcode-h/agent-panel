@@ -1,11 +1,5 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_SHARED: Record<string, string> = {
-  '工作流「{name}」跑完了，交给执行角色收尾': 'Workflow "{name}" finished; handing over to the executor to wrap up',
-  '这次运行改动了这些文件：': 'This run changed these files:',
-  '工作流被终止：{why}': 'Workflow stopped: {why}',
-  '工作流停在「{node}」：节点失败，原因见节点里的错误。父对话交回意见后从这个节点重跑。':
-    'Workflow halted at "{node}": the node failed (see its error). It reruns from this node once the parent conversation sends feedback.',
-  '找不到要执行的工作流：{id}': 'Workflow to run not found: {id}',
   // clis.ts：模型档位、思考强度、权限模式
   高: 'High',
   中: 'Medium',
@@ -105,9 +99,6 @@ export const EN_SHARED: Record<string, string> = {
   '点「继续流程」': 'Continue flow',
   '这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。':
     'This turn was interrupted: {reason}. {next} to pick up where it left off, or enter new instructions below.',
-  '工作流的主流程还没有连到「开始」的节点，请先在流程图里从「开始」连线':
-    'No node in the main flow is connected to "Start" yet. Draw a connection from "Start" in the flow chart first',
-  '工作流不存在，可能已被删除': 'The workflow does not exist. It may have been deleted',
   '这次执行已经花了 ${used}，达到工作流设定的上限 ${limit}，已暂停。点「继续执行」会再给一份同样的额度。':
     'This run has spent ${used}, reaching the workflow limit of ${limit}, so it is paused. Click "Continue" to grant the same amount again.',
   '这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。':
@@ -128,16 +119,6 @@ export const EN_SHARED: Record<string, string> = {
   '主角色重做这次运行：{feedback}': 'Main role is redoing this run: {feedback}',
   '（没有写具体原因）': '(no specific reason)',
   '主角色直接回答，没有起运行': 'Main role answered directly without starting a run',
-  '主角色起了第 {n} 次运行：{input}': 'Main role started run {n}: {input}',
-  这次要求: 'This request',
-  第一条要求: 'First request',
-  '主角色评估「{title}」失败：{error}': 'Main role failed to review "{title}": {error}',
-  '主角色没有用 dispatch 交「{title}」的决定，流程停在这里':
-    'The main role did not submit a decision for "{title}" with dispatch; the flow stops here',
-  '主角色退回「{title}」{n} 次后仍不满意：{feedback}':
-    'Main role is still not satisfied after sending "{title}" back {n} times: {feedback}',
-  '「{title}」委派的工作流「{name}」失败：{error}': 'The workflow "{name}" delegated from "{title}" failed: {error}',
-  '主角色整理结果失败：{error}': 'Main role failed to write the final result: {error}',
   '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
   '子任务没能执行：{error}': 'Subtask could not run: {error}',
   '子任务补问了一次还是没有用 submit_result 交结果，做没做完不确定':
@@ -154,7 +135,6 @@ export const EN_SHARED: Record<string, string> = {
   '转交父对话创建：{list}（结果交回父对话，这个对话不用等）':
     'Handed to the parent conversation: {list} (the result goes back to the parent; this conversation does not wait)',
   '没能转交：{list}': 'Could not hand over: {list}',
-  '「{title}」向主角色提问：{question}': '"{title}" asked the main role: {question}',
   委派: 'Delegated',
   'Kimi（月之暗面）': 'Kimi (Moonshot)',
   '智谱 GLM': 'GLM (Zhipu)',

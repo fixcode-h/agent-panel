@@ -189,7 +189,7 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 测试步骤照样注入这些工作流的说明：带 `project-testing` 技能的角色（开发、执行、依赖）也算要跑测试（`withTestSteps`）。
 
 父对话挑工作流看每个工作流的 `when`（什么时候用）、`notFor`（不用）、`kind`（`change` 改代码、跑完合回；`readonly` 一个文件都不写），
-判定规则只写在 `shared/flow-child.ts` 的 `WORKFLOW_PICK_RULES`：用户点名 → 命中适用场景 → 问答 / 排查 / Bug / 小改动一律不起 → 拿不准交子对话。
+判定规则只写在 `shared/flow-run.ts` 的 `WORKFLOW_PICK_RULES`：用户点名 → 命中适用场景 → 问答 / 排查 / Bug / 小改动一律不起 → 拿不准交子对话。
 新增内置工作流必须写这三项，写不出「什么时候用」的说明它不是固定剧本，不该做成工作流。
 
 | key               | 名称                 | 适用场景                               | 主 Agent       | 节点                                                                                   |

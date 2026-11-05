@@ -164,15 +164,6 @@ test('一轮结束、停在等下一句的子对话不写「正在思考…」�
   assert.ok(childNote(thinking, true).startsWith(t('正在思考…')))
 })
 
-test('工作流子对话（ADR 0044）：行上标出是哪个工作流，流程图没跑完带进度，交给执行角色后只留名字', () => {
-  const flow = { name: '通用项目', run: 1, done: 1, total: 3, node: '实现', state: 'running' as const }
-  const row = closedWaiting({ cliAlive: true, working: true, background: 0, waiting: undefined, flow })
-  assert.ok(childLabels(row).some((l) => l.text === '工作流 · 通用项目 1/3'))
-  const handed = closedWaiting({ cliAlive: true, working: true, flow: { ...flow, state: 'handed' } })
-  assert.ok(childLabels(handed).some((l) => l.text === '工作流 · 通用项目'))
-  assert.ok(!childLabels(closedWaiting()).some((l) => l.text.startsWith('工作流')), '普通子对话不标')
-})
-
 test('交了 Bug 诊断报告等你确认（ADR 0045）：还在转圈，状态写「报告待确认」，不写「执行中」', () => {
   const row = closedWaiting({
     cliAlive: false,

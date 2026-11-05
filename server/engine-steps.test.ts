@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { autoSubmit } from './submit-test-kit.ts'
 import test from 'node:test'
+import { FlowRun } from '../shared/task-flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '../shared/schema.ts'
 import { newTask, stopReasonText } from '../shared/task.ts'
 import {
@@ -87,6 +88,7 @@ function makeHost(
 ) {
   const task = {
     ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, w, '', 't'),
+    flowRun: FlowRun.parse({ owner: 'p' }),
     id: 't',
   } as Task
   const log: AgentCall[] = []
@@ -577,13 +579,11 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
       },
     })
   }
-  // 工作流节点：顶层工作流任务里的，和子对话里 start_plan 起的（后者照旧读子对话那份）
-  for (const [who, parentTaskId] of [
-    ['顶层工作流节点', undefined],
-    ['子对话里的节点', 'parent'],
-  ] as const) {
+  // 工作流运行的节点（父对话 start_workflow 起的，不是子对话）
+  {
+    const who = '工作流运行的节点'
     const w = Workflow.parse({
-      ...{ id: 'rel', createdAt: '', updatedAt: '', name: '发布', mainAgentId: 'orchestrator', dispatch: false },
+      ...{ id: 'rel', createdAt: '', updatedAt: '', name: '发布' },
       flows: [
         {
           id: 'main',
@@ -596,8 +596,8 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
         },
       ],
     })
-    const input = { projectId: 'p', mode: 'workflow', prompt: '发布', parentTaskId }
-    const task = { ...newTask(input as never, w, '', 'wf'), id: 'wf' } as Task
+    const input = { projectId: 'p', mode: 'workflow', prompt: '发布' }
+    const task = { ...newTask(input as never, w, '', 'wf'), id: 'wf', flowRun: FlowRun.parse({ owner: 'p' }) } as Task
     await runEngineTurn({
       ...{ task, workflows: [w], workflow: w, prompt: '发布', changed: () => {}, newId: () => 'x' },
       ...allowAll,
@@ -610,15 +610,14 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   }
   const auth = /允许直接推送」，这就是用户的授权/
   for (const who of ['父对话', '非统筹顶层对话']) assert.match(full.get(who)!, auth, who)
-  const others = ['子对话', '顶层派的vcs', '子对话派的vcs', '顶层派的tester', '顶层工作流节点', '子对话里的节点']
+  const others = ['子对话', '顶层派的vcs', '子对话派的vcs', '顶层派的tester', '工作流运行的节点']
   for (const who of others) assert.doesNotMatch(full.get(who)!, auth, who)
   // 非统筹顶层对话的角色（「执行」）正文写给子对话：执行方式里明说这里没有父对话
   assert.match(full.get('非统筹顶层对话')!, /没有父对话）：推送、PR、合并主干按上面「授权情况」做/)
   assert.doesNotMatch(full.get('父对话')!, /没有父对话）/)
   for (const who of ['顶层派的vcs', '子对话派的vcs'])
     assert.match(full.get(who)!, /## 授权情况\n你是派出的「版本控制」子任务[^\n]*派单没写目标分支就不合并/, who)
-  assert.match(full.get('顶层工作流节点')!, /## 授权情况\n你在工作流里执行/)
-  assert.match(full.get('子对话里的节点')!, /## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定/)
+  assert.match(full.get('工作流运行的节点')!, /## 授权情况\n你在工作流里执行/)
   assert.match(full.get('顶层派的tester')!, /## 授权情况\n推送、创建 PR、合并主干、P4 submit、合回原分支都不归子任务/)
   // 派单带的 params 真的到了角色设定里：不带时这里是默认的「跑验收」那一套
   assert.match(full.get('顶层派的tester')!, /中间必须停下来等用户确认/)

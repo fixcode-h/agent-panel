@@ -146,8 +146,6 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
           : t('等{who}确认', { who }),
       tone: 'warning',
     })
-  // 工作流子对话（ADR 0044）：先说是哪个工作流；流程图还没跑完时带上做到第几个节点，跑完了就是普通的收尾
-  if (c.flow) out.push({ text: flowLabel(c.flow), tone: 'plain' })
   // 用户报的 Bug（ADR 0046）：查到哪个阶段了；等你确认报告时下面写「报告待确认」，这里只说是 Bug
   if (c.bug)
     out.push({
@@ -173,14 +171,6 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
   // plan 来自 openPlan：只在计划没做完时才有值（做完了是 undefined）
   if (icon === 'idle' && c.plan) out.push({ text: t('Agent 进程已回收，继续会重新拉起'), tone: 'subtle' })
   return out
-}
-
-/** 工作流子对话的标签：工作流名字，流程图没跑完时加上进度（「工作流 · 通用项目 2/3」） */
-export function flowLabel(f: NonNullable<ChildSummary['flow']>) {
-  const live = f.state !== 'handed' && f.state !== 'cancelled' && f.total > 0
-  return live
-    ? t('工作流 · {name} {done}/{total}', { name: f.name, done: f.done, total: f.total })
-    : t('工作流 · {name}', { name: f.name })
 }
 
 /**

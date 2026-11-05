@@ -1,14 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import {
-  ChevronRight,
-  CircleAlert,
-  GitFork,
-  Loader2,
-  MessageCircleQuestion,
-  RotateCw,
-  Workflow as WorkflowIcon,
-  X,
-} from 'lucide-react'
+import { ChevronRight, CircleAlert, GitFork, Loader2, MessageCircleQuestion, RotateCw, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import { childCounts, sortChildren } from '@shared/task'
@@ -232,10 +223,6 @@ export function ChildrenBar({
                         )}
                       />
                       {c.analysis && <AnalysisMark kind={c.analysis} />}
-                      {/* 工作流子对话（ADR 0044）：标题前一个流程图标，和普通子对话分开 */}
-                      {c.flow && (
-                        <WorkflowIcon aria-label={t('工作流子对话')} className="h-3 w-3 shrink-0 text-muted" />
-                      )}
                       <span
                         className={cn(
                           'max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg',

@@ -23,7 +23,8 @@ import {
 } from './tts.ts'
 import type { ProjectProposal } from './project-init.ts'
 import { AskQuestion, TaskRequest } from './task-request.ts'
-import { TaskFlow, WorkflowKind } from './task-flow-schema.ts'
+import { FlowRun, WorkflowKind } from './task-flow-schema.ts'
+import { StopReason } from './stop-reason.ts'
 import { BugCase, Diagnosis } from './bug-diagnosis-schema.ts'
 import { WrapRequest } from './wrap-request-schema.ts'
 import { BuildAsk } from './build-ask.ts'
@@ -529,6 +530,8 @@ export const WorkflowFields = z.object({
   when: z.string().trim().max(200).optional(),
   notFor: z.string().trim().max(200).optional(),
   kind: WorkflowKind.optional(),
+  /** 同一节点修改几轮后在运行结尾提示（不强制终止，用户 2026-11-05 定）；0 表示不提示，不写按 3 */
+  reviseLimit: z.number().int().min(0).max(50).optional(),
   /** 对外暴露的配置项：项目设置里按它渲染表单 */
   expose: z.array(WorkflowExpose).max(20).default([]),
   /** 每次执行的上限：花费（美元）、token（输入 + 输出）超过就暂停，免得验收来回循环一直烧钱；0 表示不限 */
@@ -1562,6 +1565,7 @@ export const TaskStep = z.object({
   submitted: Submitted.optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
+  awaitConfirm: z.boolean().optional(), // 做完了、停在等用户确认：继续时直接回到确认，不重跑节点
   /** 子任务 / 节点在排队等 API 的并发名额；拿到就去掉 */
   apiWait: ApiWait.optional(),
   /**
@@ -1591,29 +1595,8 @@ export type TaskStep = z.infer<typeof TaskStep>
 export const TaskStatus = z.enum(['running', 'done', 'failed', 'stopped'])
 export type TaskStatus = z.infer<typeof TaskStatus>
 
-/**
- * 任务停在 stopped 的原因。只有 'user' 是用户自己按的暂停，其余都是别的动作顺带把这一轮结束了：
- * 以前 stopTask 只有一个 boolean，全走同一条，界面一律显示「已暂停」，用户没按暂停却看到几只子对话被停了。
- * 界面按它决定说「已暂停」还是说清是谁结束的（见 shared/task.ts 的 childIcon / stopReasonText）。
- */
-export const StopReason = z.enum([
-  'user', // 用户点「暂停」
-  'parent', // 父对话收尾，名下子对话一起结束（closeChildren）
-  'switch', // 换 CLI / 模型 / 角色，这一轮重启
-  'archive', // 归档
-  'delete', // 删除对话（进回收站时结束）
-  'restart', // 面板重启、服务退出
-  'presence', // 页面切走、宽限期到了，CLI 不再等下一句
-  'idle', // 闲置回收（手动释放保活会话等，不是用户按的暂停）
-  'supersede', // 用户发了新消息，打断当前这一轮
-  'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
-  'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
-  'close', // 用户从对话菜单点「关闭 Agent」，只结束 CLI 进程，下一条消息续接会话
-  'lost', // 记录写着在执行，面板里却已经没人在跑它（哪条路径忘了落状态），定时核对时收口（见 shared/task-settle.ts）
-  'budget', // 对话树用到了项目设的用量上限（见 shared/budget.ts）
-  'replaced', // 子对话卡住、面板重启也没恢复，换成新开的子对话接手（见 shared/stuck-child.ts）
-])
-export type StopReason = z.infer<typeof StopReason>
+// 停止原因拆到 stop-reason.ts（这个文件到了行数上限），这里照旧导出
+export { StopReason } from './stop-reason.ts'
 
 /**
  * 一轮（TaskTurn）是怎么结束的：只有 done 是正常结束，其余几种在报告里分开写，
@@ -1737,7 +1720,7 @@ export type PlanStatus = z.infer<typeof PlanStatus>
  */
 export const PlanWait = z.object({
   /** parent：子对话把不是自己改出来的报错交给父对话，等父对话通知修好（ref 固定 fix） */
-  kind: z.enum(['background', 'child', 'helper', 'parent']),
+  kind: z.enum(['background', 'child', 'helper', 'parent', 'workflow']),
   ref: z.string(),
   label: z.string().default(''),
   state: z.enum(['waiting', 'ok', 'failed']).default('waiting'),
@@ -2253,7 +2236,7 @@ export const TaskData = z.object({
   remotePush: z.enum(['allowed', 'denied']).optional(),
   remotePushAt: z.string().optional(),
   runSeq: z.number().int().default(0), // 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离
-  flow: TaskFlow.optional(), // 工作流子对话（ADR 0044）：见 task-flow-schema.ts
+  flowRun: FlowRun.optional(), // 工作流运行（不是子对话）：属于哪个父对话、阶段、决定记录，见 task-flow-schema.ts
   bug: z.boolean().optional(), // 父对话派来的 Bug（ADR 0045）：修之前交诊断报告 diagnoses，用户确认方案才能改
   diagnoses: z.array(Diagnosis).optional(),
   bugCase: BugCase.optional(), // Bug 档案草稿（ADR 0046）：update_bug_case 随查随记，submit_diagnosis 冻结成一版
@@ -2666,6 +2649,8 @@ export const RequestAnswer = z.object({
   answers: z.array(z.string().max(20000)).max(20).optional(),
   /** 允许并且这个对话里一直允许这类（请求的 rule 记进 task.allowRules，见 shared/allow-rules.ts） */
   always: z.boolean().optional(),
+  /** 工作流节点确认时只是追问（allow 为 false）：回答问题、不改结果，不算一轮修改（见 shared/flow-run.ts 的 noteConfirm） */
+  ask: z.boolean().optional(),
 })
 
 /** 一个保存下来的账号 */
