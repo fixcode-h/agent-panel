@@ -4445,7 +4445,14 @@ function seedDemoUsage(task: Task, minutes: number) {
     })
   }
   task.turns = turns
-  task.usage = { ...(task.usage ?? {}), ...usage, agents: task.usage?.agents ?? {} }
+  // 会话栏「模型响应」：给对话自己的 Agent 一份首包记录（有快有慢，看得出最近平均和最长）
+  const agents = { ...(task.usage?.agents ?? {}) }
+  const key = task.agentId || Object.keys(agents)[0] || ''
+  const recent = [1420, 2310, 1860, 2950, 1730, 2080, 6400, 2210, 1690, 2470]
+  const firstToken = { n: 37, sumMs: 37 * 2300, maxMs: 9800, recent }
+  const blank = { context: 0, window: 0, model: '', tps: 0, lastTps: 0, outputTokens: 0, genMs: 0 }
+  agents[key] = { ...((agents[key] as typeof blank | undefined) ?? blank), firstToken }
+  task.usage = { ...(task.usage ?? {}), ...usage, agents }
 }
 
 async function seedTasks(d: Db) {

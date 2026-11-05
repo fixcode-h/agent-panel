@@ -6,6 +6,7 @@ import {
   hookFacts,
   hookForwarderSource,
   hookInstall,
+  toolMatcher,
   HOOK_EVENTS_ENV,
   HOOK_SCRIPT,
   HOOK_SCRIPT_ENV,
@@ -194,4 +195,75 @@ test('版本门槛：本机版本比实测过的老就不装，读不到版本�
   assert.deepEqual(supportedEvents(getCli('codex')!.hooks, 'codex-cli 0.150.0'), [])
   assert.equal(supportedEvents(getCli('codex')!.hooks, 'codex-cli 0.166.0').length, 4)
   assert.ok(!supportedEvents(getCli('pi')!.hooks, '1.4.9').includes('turn.beforeEnd'))
+})
+
+test('工具过滤：内置守卫只关心改文件和跑命令时，Claude Code 的工具前 / 工具后只对这几个工具名触发', () => {
+  const spec = getCli('claude')!.hooks!
+  assert.equal(toolMatcher(spec, ['edit', 'shell']), 'Edit|Write|MultiEdit|NotebookEdit|Bash')
+  assert.equal(toolMatcher(spec, ['edit', 'shell', 'any']), '', '有任意工具的用户钩子：全部触发')
+  assert.equal(toolMatcher(spec, ['panel']), '', '面板工具名列不全：全部触发')
+  assert.equal(toolMatcher(spec, []), '')
+  // Codex 用 shell 跑 apply_patch 也算改文件：只关心改文件时 shell 的工具名也要带上；没写 read 的对照表按全部算
+  assert.equal(toolMatcher(getCli('codex')!.hooks!, ['edit']), 'apply_patch|Bash')
+  assert.equal(toolMatcher(getCli('codex')!.hooks!, ['read']), '')
+  const { files } = hookInstall(spec, '/tmp/run', ['tool.before', 'tool.after'], {
+    tools: { 'tool.before': ['edit', 'shell'], 'tool.after': ['shell'] },
+  })
+  const cfg = files.find((f) => f.path.endsWith('agent-panel-hooks.json'))!.content as {
+    hooks: Record<string, { matcher: string }[]>
+  }
+  assert.equal(cfg.hooks.PreToolUse[0].matcher, 'Edit|Write|MultiEdit|NotebookEdit|Bash')
+  assert.equal(cfg.hooks.PostToolUse[0].matcher, 'Bash')
+  assert.equal(cfg.hooks.PostToolUseFailure[0].matcher, 'Bash')
+  // 不给范围：matcher 为空，Claude Code 按全部工具触发（和以前一样）
+  const all = hookInstall(spec, '/tmp/run', ['tool.before']).files.find((f) => f.path.endsWith('.json'))!.content as {
+    hooks: Record<string, { matcher: string }[]>
+  }
+  assert.equal(all.hooks.PreToolUse[0].matcher, '')
+})
+
+test('HTTP 钩子：给了地址时转发脚本那一项换成 POST 到面板，各事件用自己的地址，不再写转发脚本', () => {
+  const spec = getCli('claude')!.hooks!
+  assert.ok(spec.http, 'Claude Code 定义里写了 HTTP 钩子')
+  const r = hookInstall(spec, '/tmp/run', ['turn.beforeEnd', 'tool.before', 'tool.after'], {
+    httpUrl: 'http://127.0.0.1:1/api/mcp/ask/tok/hook',
+  })
+  assert.ok(!r.files.some((f) => f.path.endsWith(HOOK_SCRIPT)), '没人引用转发脚本就不写')
+  assert.deepEqual(r.env, {})
+  const cfg = r.files.find((f) => f.path.endsWith('agent-panel-hooks.json'))!.content as {
+    hooks: Record<string, { hooks: { type: string; url: string }[] }[]>
+  }
+  assert.deepEqual(cfg.hooks.Stop[0].hooks[0], {
+    type: 'http',
+    url: 'http://127.0.0.1:1/api/mcp/ask/tok/hook/turn.beforeEnd',
+    timeout: 70,
+  })
+  assert.equal(cfg.hooks.PreToolUse[0].hooks[0].url, 'http://127.0.0.1:1/api/mcp/ask/tok/hook/tool.before')
+  assert.equal(cfg.hooks.PostToolUseFailure[0].hooks[0].url, 'http://127.0.0.1:1/api/mcp/ask/tok/hook/tool.after')
+  // 没写 http 的 CLI（Codex）给了地址也照旧用转发脚本
+  const codex = hookInstall(getCli('codex')!.hooks!, '/tmp/run', ['turn.beforeEnd'], { httpUrl: 'http://x/hook' })
+  assert.ok(codex.files.some((f) => f.path.endsWith(HOOK_SCRIPT)))
+})
+
+test('通用的 curl 直连：不支持 HTTP 钩子的命令类钩子，本机有 curl 时调转发脚本的命令换成 curl 直接 POST 到面板', () => {
+  const url = 'http://127.0.0.1:1/api/mcp/ask/tok/hook'
+  // Codex：参数里的命令换成 curl，地址走环境变量（命令每轮不变，信任一次就够）；不再写转发脚本
+  const codex = hookInstall(getCli('codex')!.hooks!, '/tmp/run', ['turn.beforeEnd', 'tool.before'], { curlUrl: url })
+  assert.match(codex.args[1], /command='curl -s -f --max-time 65 .*"\$AGENT_PANEL_HOOK_URL\/turn\.beforeEnd"'/)
+  assert.match(codex.args[1], /commandWindows='curl\.exe .*"%AGENT_PANEL_HOOK_URL%\/turn\.beforeEnd"'/)
+  assert.match(codex.args[3], /\$AGENT_PANEL_HOOK_URL\/tool\.before/)
+  assert.ok(!codex.args.join(' ').includes(HOOK_SCRIPT_ENV), '不再引用转发脚本')
+  assert.deepEqual(codex.files, [])
+  // 老版本 Claude Code（没给 httpUrl）：配置文件里的命令换成 curl，地址直接写进这一轮的配置
+  const old = hookInstall(getCli('claude')!.hooks!, '/tmp/run', ['tool.before'], { curlUrl: url }).files[0].content as {
+    hooks: Record<string, { hooks: { type: string; command: string }[] }[]>
+  }
+  assert.equal(old.hooks.PreToolUse[0].hooks[0].type, 'command')
+  assert.match(old.hooks.PreToolUse[0].hooks[0].command, new RegExp(`^curl .*"${url}/tool\\.before"$`))
+  // 支持 HTTP 钩子时 HTTP 优先
+  const now = hookInstall(getCli('claude')!.hooks!, '/tmp/run', ['tool.before'], { curlUrl: url, httpUrl: url })
+    .files[0].content as { hooks: Record<string, { hooks: { type: string }[] }[]> }
+  assert.equal(now.hooks.PreToolUse[0].hooks[0].type, 'http')
+  // 没有 curl：照旧用转发脚本
+  assert.ok(hookInstall(getCli('codex')!.hooks!, '/tmp/run', ['tool.before']).args[1].includes(HOOK_SCRIPT_ENV))
 })

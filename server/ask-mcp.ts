@@ -330,6 +330,15 @@ export function askMcpApi() {
       if (!s?.hook || !body?.event) return c.json({})
       return c.json(await answerHook(s.hook, body.event, body.native))
     })
+    .post('/ask/:token/hook/:event', async (c) => {
+      // HTTP 钩子（CLI 定义的 hooks.http）：CLI 直接把原生输入 POST 过来，回的就是它要的输出，不经转发脚本。
+      // 回复文字的字段由 answerHook 先丢掉（dropInput），判断照旧只看结构化的事实；出错一律回空对象＝不表态
+      const s = sessions.get(c.req.param('token'))
+      const native = await c.req.json().catch(() => null)
+      if (!s?.hook) return c.json({})
+      const r = await answerHook(s.hook, c.req.param('event'), native)
+      return c.json((r.output as Record<string, unknown> | undefined) ?? {})
+    })
     .get('/ask/:token', (c) => c.body(null, 405))
     .delete('/ask/:token', (c) => c.body(null, 200))
 }

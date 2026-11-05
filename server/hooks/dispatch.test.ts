@@ -74,6 +74,8 @@ test('只读的角色改文件被拒绝，跑写仓库的命令也被拒绝；�
   const plain = await hookOptions(ctx())
   assert.ok(plain.hookEvents?.includes('tool.before'))
   assert.ok(!(await plain.onHook!('tool.before', edit(path.join(dir, 'a.ts')))).deny, '普通角色改文件照常')
+  // 内置守卫只看改文件和跑命令：能按工具名过滤的 CLI 不再为读文件、搜索跑钩子（没有用户钩子时）
+  assert.deepEqual([...new Set(plain.hookTools?.['tool.before'])].sort(), ['edit', 'shell'])
 })
 
 test('只统筹的父对话改文件被拒绝；就地微改动登记过的文件放行', async () => {

@@ -1263,3 +1263,30 @@ test('wait_agents：一直等到做完；有人传话时提前返回且只列 id
   assert.doesNotMatch(log[2], /快的结论/, '取过的不再交')
   assert.match(log[3], /都已经交回过了/)
 })
+
+test('create_conversation 的 edits：说明要改代码时交给面板，开工前先开好独立分支', async () => {
+  const { callOrchTool } = await import('./orch-mcp.ts')
+  const got: unknown[] = []
+  const o = {
+    createConversation: async (...args: unknown[]) => {
+      got.push(args[4])
+      return { ok: true, id: 'c1', info: '已新建' }
+    },
+  } as never
+  await callOrchTool(o, 'create_conversation', { title: '改', message: '改个按钮', kind: 'task', edits: true })
+  await callOrchTool(o, 'create_conversation', { title: '查', message: '查个问题', kind: 'task' })
+  assert.equal((got[0] as { edits?: boolean }).edits, true)
+  assert.equal((got[1] as { edits?: boolean }).edits, undefined, '只调研的不开')
+  const tools = orchTools({
+    self: 'a',
+    hasMain: false,
+    coordinator: true,
+    plans: false,
+    canSpawn: true,
+    common: [],
+  } as never)
+  const props = (
+    tools.find((x) => x.name === 'create_conversation')!.inputSchema as { properties: Record<string, unknown> }
+  ).properties
+  assert.ok(props.edits, '模型看得到这个参数')
+})

@@ -493,7 +493,14 @@ export interface Orchestra {
     message: string,
     files?: string[],
     step?: string,
-    extra?: { role?: string; route?: RouteInput; flow?: NonNullable<Task['flow']>; bug?: boolean } & DocsFirstInput,
+    extra?: {
+      role?: string
+      route?: RouteInput
+      flow?: NonNullable<Task['flow']>
+      bug?: boolean
+      /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
+      edits?: boolean
+    } & DocsFirstInput,
   ): Promise<{ ok: boolean; id?: string; info: string }>
   /** rerun：给工作流子对话的这条消息是「同一个工作流再跑一次」（start_workflow 带 again） */
   sendToConversation(
@@ -736,6 +743,8 @@ export interface EngineHost {
     flow?: NonNullable<Task['flow']>
     /** 父对话派来的 Bug（ADR 0045）：子对话修之前要交诊断报告给用户确认 */
     bug?: boolean
+    /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
+    edits?: boolean
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行；rerun 是让工作流子对话把同一个工作流再跑一次 */
   sendToConversation?: (
@@ -1338,7 +1347,7 @@ function editPart(host: EngineHost) {
   if (!host.beginEdit) return ''
   return `## 改文件前先开独立分支
 这个对话设成了在独立分支里改文件，现在你还在原目录里：看代码、回答问题、跑只读的命令都可以直接做，但不要在这里改、新建或删除任何文件，也不要跑会写文件的命令。
-- 确定要改文件时先调用 begin_edit，面板从当前目录开一个独立分支。
+- 确定要改文件时先调用 begin_edit，面板从当前目录开一个独立分支。能确定要改、改哪几处时就调用，不要先把要改的文件逐个读完再开：开分支后会在新目录里接着做，之前读过的内容要重读，模型那边的缓存也会作废。
 - 调用成功后用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮；面板会切到独立分支的目录里，带上这段对话接着改。
 - 只是回答问题、出方案时不用调用。`
 }
@@ -3095,6 +3104,7 @@ function makeOrchestra(
         ...(role && !extra?.flow && { agentId: role.id }),
         ...(extra?.flow && { flow: extra.flow }),
         ...(extra?.bug && { bug: true }),
+        ...(extra?.edits && { edits: true }),
       })
       if (r.ok && r.id) recordRoute(host, 'child', [r.id], title.trim(), extra?.route)
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
@@ -4373,7 +4383,9 @@ export async function runConversationTurn(host: EngineHost, who: string) {
           sessionKey: who,
           ...(host.prewarm ? { prewarm: true } : {}),
           orch,
-          ...(host.beforeEnd && !host.prewarm ? { beforeEnd: host.beforeEnd } : {}),
+          // 预热也装结束前钩子：预热起的进程之后会接着处理用户真正的消息（开独立分支后在新目录里重开也是预热），
+          // 不装的话这些轮次只能等一轮结束后另起一轮提醒。预热还没收到消息时由 before-end 判成放行
+          ...(host.beforeEnd ? { beforeEnd: host.beforeEnd } : {}),
         })
       } finally {
         // AI 这一轮处理完了：宿主不再把转交来的子任务派进它（后面的阶段交给下一轮）

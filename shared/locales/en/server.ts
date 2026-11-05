@@ -78,6 +78,8 @@ export const EN_SERVER: Record<string, string> = {
   修改: 'Edit',
   写入: 'Write',
   失败: 'Failed',
+  接口没有返回模型输出: 'The API returned no model output',
+  '{seconds} 秒内没有响应': 'No response within {seconds} seconds',
   工具: 'Tool',
   网页搜索: 'Web search',
   '查询 MCP 工具': 'Look up MCP tools',

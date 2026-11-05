@@ -570,6 +570,14 @@ export const EN_SETTINGS: Record<string, string> = {
   '模型 {model} 在 {seconds} 秒内没有响应': 'Model {model} did not respond within {seconds} seconds',
   '接口返回的内容不是模型回复：{detail}': 'The API did not return a model reply: {detail}',
   测试连接用的模型: 'Model to test',
+  '测速：每种协议发一个小请求和一个约 2 万 token 的大请求，看首包要等多久（会用掉少量额度）':
+    'Speed test: sends one small and one ~20k-token request per protocol to see how long the first token takes (uses a little quota)',
+  测速: 'Speed test',
+  协议: 'Protocol',
+  小请求首包: 'Small: first token',
+  大请求首包: 'Large: first token',
+  小请求: 'Small request',
+  大请求: 'Large request',
   '选中哪个模型，点「测试连接」就用它真的发一次请求':
     'The selected model is the one “Test connection” actually sends a request with',
   '先点「从接口获取」或手动填写模型': 'Click “Fetch from API” first, or type a model name',

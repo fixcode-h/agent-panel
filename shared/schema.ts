@@ -1,6 +1,7 @@
 import { Submitted } from './submitted.ts'
 import { z } from 'zod'
 import { DARK_TEXT_LEVEL_DEFAULT, LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
+import { FirstTokenStats } from './first-token-stats.ts'
 import { MarkdownStyle } from './markdown-style.ts'
 import { ComponentStyle } from './component-style.ts'
 import { API_PROTOCOLS, ApiConfig } from './accounts.ts'
@@ -1683,6 +1684,8 @@ export const AgentUsage = z.object({
   parts: ContextParts.optional(),
   /** CLI 自己报的上下文细分（Claude Code 每轮结束时要一次）：会话栏优先用它；报不出来的 CLI 没有 */
   snapshot: ContextSnapshot.optional(),
+  /** 模型首包的记录（见 shared/first-token.ts）；旧记录没有 */
+  firstToken: FirstTokenStats.optional(),
 })
 export type AgentUsage = z.infer<typeof AgentUsage>
 
@@ -2067,6 +2070,8 @@ export const TaskData = z.object({
    * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面接着做（能跨目录续接的 CLI 续接原会话，其余开新会话）
    */
   wantsWorktree: z.boolean().default(false),
+  /** 父对话派单时说了要改代码（create_conversation 的 edits）：第一次执行前就开好独立分支，不中途换目录重开 */
+  editFirst: z.boolean().optional(),
   /**
    * 对话分叉或撤回后，下一轮从哪里接着：session 里保留到 through 这一轮（含），之后的丢掉；
    * through 为空表示一轮都不留，开新会话。CLI 不能截断会话时，把留下的对话整理成文字带给新会话

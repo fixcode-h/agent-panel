@@ -18,6 +18,11 @@ export interface CliTrace {
   requests: number
   /** 最近一次请求发出的时间（毫秒） */
   requestAt?: number
+  /**
+   * 面板交出去、CLI 还没报下一次请求的时间（输入交给 CLI、工具结果回来）：下一次请求从这里算起。
+   * 只有「请求开始」报得晚的 CLI 才需要（Claude Code），报得准的 CLI 也按它算，差的是 CLI 自己准备请求的那点时间
+   */
+  pendingSince?: number
   /** 最近一次请求第一段输出的时间；还没有就是 undefined（正在等模型） */
   firstOutputAt?: number
   /** 最近一次有任何输出的时间 */
@@ -52,6 +57,8 @@ const META = new Set<CliEvent['type']>([
   'files_changed',
   'todos',
   'turn',
+  'sent',
+  'wait',
 ])
 
 /** 键是「对话 id + 步骤 id」：子任务、工作流节点和对话自己这一轮各记各的，不互相覆盖 */
@@ -69,13 +76,18 @@ export function tracedEvents(taskId: string, step: string | undefined, onEvent: 
   if (!taskId) return onEvent
   traces.set(keyOf(taskId, step), { requests: 0, startedAt: Date.now() })
   return (ev: CliEvent) => {
-    traceCli(taskId, step, ev)
+    // 这次请求第一段输出到了：先交一个「等了多久」，runner 记进用量（会话栏的首包时间）
+    const waited = traceCli(taskId, step, ev)
+    if (waited !== undefined) onEvent({ type: 'wait', ms: waited })
     onEvent(ev)
   }
 }
 
-/** 一个 CLI 事件：只在关键节点写日志。日志写在对话的日志文件里，步骤 id 记在每一行上 */
-export function traceCli(taskId: string, step: string | undefined, ev: CliEvent, now = Date.now()) {
+/**
+ * 一个 CLI 事件：只在关键节点写日志。日志写在对话的日志文件里，步骤 id 记在每一行上。
+ * 这次请求的第一段输出到达时返回等了多久（毫秒），其余返回 undefined
+ */
+export function traceCli(taskId: string, step: string | undefined, ev: CliEvent, now = Date.now()): number | undefined {
   if (!taskId) return
   const key = keyOf(taskId, step)
   const tr = traces.get(key) ?? traces.set(key, { requests: 0, startedAt: now }).get(key)!
@@ -91,9 +103,15 @@ export function traceCli(taskId: string, step: string | undefined, ev: CliEvent,
       if (tr.requestAt && !tr.firstOutputAt)
         log('模型请求没有输出就换了下一次', { n: tr.requests, waitedMs: now - tr.requestAt })
       tr.requests++
-      tr.requestAt = now
+      // 从交出去的那一刻算（输入交给 CLI、上一批工具结果回来）：Claude Code 的「请求开始」在模型回出第一段时才到，
+      // 按它算首包只有零点几秒，真正等的十几秒全漏掉了（2026-11-04 实测）
+      tr.requestAt = tr.pendingSince ?? now
+      tr.pendingSince = undefined
       tr.firstOutputAt = undefined
-      log('模型请求开始', { n: tr.requests })
+      log('模型请求开始', { n: tr.requests, ...(tr.requestAt < now ? { sentMsAgo: now - tr.requestAt } : {}) })
+      return
+    case 'sent':
+      tr.pendingSince = now
       return
     case 'notice':
       if (ev.kind === 'retry' || ev.kind === 'retry_failed') {
@@ -110,6 +128,7 @@ export function traceCli(taskId: string, step: string | undefined, ev: CliEvent,
       tr.retry = undefined
       return
     case 'result':
+      tr.pendingSince = undefined
       tr.resultAt = now
       tr.resultOk = ev.ok
       tr.lastTurn = { stopReason: ev.stopReason, endedOn: tr.lastEvent, tools: tr.turnTools?.size ?? 0 }
@@ -126,15 +145,22 @@ export function traceCli(taskId: string, step: string | undefined, ev: CliEvent,
       log('CLI 报错', { error: ev.message })
       return
   }
+  // 工具结果交回去以后 CLI 马上发下一次请求：几个工具并行时以最后一个结果为准
+  if (ev.type === 'tool_result') tr.pendingSince = now
   if (META.has(ev.type)) return
+  // 交出去之后又有了输出：不报「请求开始」的 CLI（Codex）这次请求已经开始回了，别留到下一轮去算（会把用户发呆的时间也算进去）
+  if (ev.type !== 'tool_result') tr.pendingSince = undefined
+  let waited: number | undefined
   if (!tr.firstOutputAt) {
     tr.firstOutputAt = now
     // 不报「请求开始」的 CLI：从这次调用开始算
-    log('模型开始输出', { n: tr.requests, waitedMs: now - (tr.requestAt ?? tr.startedAt), kind: ev.type })
+    waited = now - (tr.requestAt ?? tr.startedAt)
+    log('模型开始输出', { n: tr.requests, waitedMs: waited, kind: ev.type })
   }
   tr.lastOutputAt = now
   tr.lastEvent = ev.type
   // 只数带 id 的：同一个工具会报好几次进度，没有 id 时分不清是不是同一个，宁可少数也不多算
   if (ev.type === 'tool' && ev.id) (tr.turnTools ??= new Set()).add(ev.id)
   tr.retry = undefined
+  return waited
 }

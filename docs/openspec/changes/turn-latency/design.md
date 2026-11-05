@@ -1,6 +1,6 @@
 # Design：缩短一轮对话的耗时（模型调用提速）
 
-> 状态：分析稿，未改代码，待用户挑选要做的项（见第 6 节）。
+> 状态：用户选定了 2.2 的测速和首包显示、2.3、3.1、3.2、4.1、4.2、4.3，已实现（PR fixcode-h/agent-panel#201）；实测对比和剩下的待确认项见 [results.md](results.md)。
 > 规划约定：**不加反引号**的路径是实施时才创建的文件；加反引号的是现有文件。现状按 2026-11-04 的 `dev` 核对。
 > 数据来源：用户提供的两份导出——① 对话「修复 Pi models.json 写入校验」（Claude Code + `deepseek-v4.1-flash`，经中转，强度 high，Windows）；
 > ② 对话「修复 claude 原生包下载失败」的状态诊断（Command Code + `deepseek/deepseek-v4.1-flash`，新对话）。

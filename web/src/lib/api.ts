@@ -1,4 +1,5 @@
 import type { ShellReport } from '@shared/shells'
+import type { SpeedRow } from '@shared/api-speed'
 import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
 import type { CollabEvent } from '@shared/collab-timeline'
@@ -432,6 +433,9 @@ export const api = {
   /** 用一个模型真的发一次最小请求，确认这个模型是通的（服务端带密钥请求，错误原文透传） */
   probeApiModel: (a: Pick<ApiConfig, 'name' | 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'> & { model: string }) =>
     request<{ model: string }>('/accounts/api-probe', json('POST', a)),
+  /** 测速：各协议一小一大两个流式请求的首包和总耗时（服务端带密钥请求） */
+  apiSpeed: (a: ApiConfig, model: string) =>
+    request<{ rows: SpeedRow[] }>('/accounts/api-speed', json('POST', { api: a, model })),
   /** 查 API 账户余额（服务端带上密钥去请求，页面拿不到密钥也不直连第三方） */
   apiBalance: (a: Pick<ApiConfig, 'name' | 'apiKey'>) => request<ApiBalance>('/accounts/api-balance', json('POST', a)),
   applyApi: (id: string) => request<{ clis: string[] }>(`/accounts/apis/${id}/apply`, json('POST', {})),

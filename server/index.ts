@@ -74,6 +74,7 @@ import { isPanelSource } from './panel-source.ts'
 import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
 import { accountsApi, syncCliAuths } from './accounts.ts'
+import { apiSpeedApi } from './api-speed.ts'
 import { integrationsApi } from './integrations.ts'
 import { hooksApi } from './hooks/api.ts'
 import { migrateVerdictText } from './verdict-migrate.ts'
@@ -488,6 +489,7 @@ app.post('/clis/specs/reload', async (c) => {
 })
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 app.route('/accounts', accountsApi())
+app.route('/accounts', apiSpeedApi())
 app.route('/integrations', integrationsApi())
 app.route('/hooks', hooksApi({ projects, agents }))
 app.route('/library', libraryApi())

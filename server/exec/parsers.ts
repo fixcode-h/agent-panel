@@ -12,6 +12,13 @@ export type CliEvent =
   | { type: 'session'; id: string }
   /** 开始一次模型请求：执行中补充的消息会在这次请求前被 CLI 取走 */
   | { type: 'request_start' }
+  /**
+   * 面板把一条输入（任务、下一句、插话）交给了 CLI：模型请求从这里开始等。
+   * 只给「请求开始」报得晚的 CLI 用（Claude Code 的 message_start 在模型回出第一段时才到），见 cli-trace.ts
+   */
+  | { type: 'sent' }
+  /** 这次模型请求从交出去到第一段输出等了多久（cli-trace.ts 算好后插进来，runner 记进用量） */
+  | { type: 'wait'; ms: number }
   | { type: 'text_delta'; text: string }
   /** 一整段文字（没有流式增量时使用） */
   | { type: 'text'; text: string }

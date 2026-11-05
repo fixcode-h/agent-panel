@@ -8,10 +8,11 @@ import { ToolStats } from '@/components/tasks/ToolFailuresChip'
 import { SessionCard, SessionRow } from './SessionCard'
 import { SessionContextBody, useSessionContext } from './SessionContext'
 import { StatusCard } from './StatusCard'
+import { LatencyCard } from './LatencyCard'
 import type { ChildEntry } from '@shared/task'
 
 /**
- * 对话页右栏的会话栏（照 Claude Code）：环境、上下文细分、状态（为什么停在这里）、Token 用量、工具调用（改动在右侧文件栏的改动页看）。
+ * 对话页右栏的会话栏（照 Claude Code）：环境、上下文细分、状态（为什么停在这里）、Token 用量、模型响应（首包）、工具调用（改动在右侧文件栏的改动页看）。
  * 上下文的总数来自 Agent 报的用量，细分里面板交给它的部分按字数换算，CLI 自己的部分是 CLI 定义里的估计值
  */
 export function SessionBar({
@@ -84,6 +85,9 @@ export function SessionBar({
       <SessionCard id="tokens" title={t('Token 用量')}>
         <TokenUsage task={task} />
       </SessionCard>
+
+      {/* 等模型的时间：首包一直慢是接口 / 网络，首包快但一轮很久是模型在想、在写 */}
+      <LatencyCard task={task} />
 
       <SessionCard id="tools" title={t('工具调用')}>
         <ToolStats task={task} />
