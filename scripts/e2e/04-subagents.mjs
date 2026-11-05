@@ -409,8 +409,10 @@ await runShard('子对话与计划', async (api) => {
       '合并后提交回到项目目录',
     )
     assert.ok((await call('GET', `/tasks/${wtParent.id}/worktrees`)).items[0].merged, '合并后标成已合并')
-    // 合完再标记完成：独立分支的目录和分支一起删掉
+    // 合完再标记完成：独立分支的目录和分支一起删掉。
+    // 合并成功时子对话 submit_merge 那一轮可能还在产出，这时标完成会按设计拿到 409「这一轮还在执行」，等它停下再标
     const wtDir = merged.task.worktree.path
+    wtKid = await waitTask(wtKid.id, (x) => !x.working)
     const resolved = await call('PATCH', `/tasks/${wtKid.id}`, { resolved: true })
     assert.equal(resolved.resolved, true)
     assert.equal(resolved.worktree.state, 'merged', '标记完成后独立分支记成已合并')
