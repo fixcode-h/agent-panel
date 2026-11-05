@@ -250,9 +250,9 @@ Task.userActions?: {
 
 - 数据：`shared/schema.ts`（`Task.userActions`、`PlanWait.kind` 加 `user`、`PanelKind` 加 `action`）
 - 判定：`shared/task.ts`（`convState` / 列表说法）、`shared/child-needs.ts`、`shared/end-turn.ts` 和 `server/tasks/before-end.ts`（放行档）、`shared/task-diagnosis.ts`
-- 工具：新文件 `server/user-action-tool.ts`（定义和调用，`orch-mcp.ts` 已到行数上限），注册在 `server/orch-mcp.ts`；结果推回复用 `server/tasks/jobs.ts` 的 `pushJobNote` 那条路，抽成共用函数
+- 工具：新文件 server/user-action-tool.ts（待建，放定义和调用：`orch-mcp.ts` 已到行数上限），注册在 `server/orch-mcp.ts`；结果推回复用 `server/tasks/jobs.ts` 的 `pushJobNote` 那条路，抽成共用函数
 - 路由：`server/tasks/` 下新增交回 / 跳过 / 做不了 / 撤销的接口
-- 界面：新组件 `web/src/components/tasks/UserActionCard.tsx`（卡片）和运行区行（接进 `RunningNow.tsx` 的 `runningRows`）、子对话行状态（`child-line.ts`）、提问卡加「这需要我去操作」（`RequestCard.tsx`）、记录行
+- 界面：新组件 web/src/components/tasks/UserActionCard.tsx（待建，卡片）和运行区行（接进 `RunningNow.tsx` 的 `runningRows`）、子对话行状态（`child-line.ts`）、提问卡加「这需要我去操作」（`RequestCard.tsx`）、记录行
 - 提示词：§8 列的几处；文案进 `shared/locales/en/`
 - 演示数据：`web/src/lib/demo-backend.ts` 加一个等你操作的对话
 - 测试：工具参数校验、`convState`、结束前放行、推回的话、子对话交回后父对话卡片收起
