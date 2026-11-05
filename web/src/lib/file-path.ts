@@ -5,7 +5,7 @@
  * （`ui-shots/107-对话-图片气泡.png` 就是这样点不开的）。所以按「段」校验：
  * 段里的字符用 Unicode 字母数字（含中文），最后一段的扩展名必须像扩展名。
  */
-import { t } from '@shared/i18n'
+import { baseName, fileKind, nameParts, parentName } from './file-ref'
 
 /** 服务端能按原图返回的图片格式（server/uploads.ts 的 IMAGE_TYPES）：点开直接看大图 */
 const IMAGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'])
@@ -18,7 +18,8 @@ const EXT = new Set(
     'ts tsx js jsx mjs cjs json jsonc md mdx css scss less html vue svelte ' +
     'py go rs java kt swift c h cc cpp hpp cs rb php yml yaml toml ini sql sh ps1 bat cmd ' +
     'txt xml gradle dart lua proto graphql ' +
-    'png jpg jpeg gif webp bmp svg ico avif pdf'
+    'png jpg jpeg gif webp bmp svg ico avif pdf ' +
+    'xlsx xls xlsm csv docx doc pptx ppt'
   ).split(' '),
 )
 /** 一个路径段：Unicode 字母数字加常见符号，空格只能夹在中间（`我的 文件.png`） */
@@ -80,18 +81,67 @@ const unescapeHtml = (s: string) =>
     return e === 'quot' ? '"' : "'"
   })
 
-/** 渲染好的 Markdown 里，把像路径的行内代码（不在代码块里的）标成可以点的 */
-export function linkPaths(html: string) {
-  return html.replace(
-    /(<pre\b[\s\S]*?<\/pre>)|<code>([^<\n]+)<\/code>/g,
-    (all, pre: string | undefined, text: string) => {
-      if (pre) return all
-      const p = parsePath(unescapeHtml(text))
-      if (!p) return all
-      const attr = (v: string) => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
-      const line = p.line ? ` data-md-line="${p.line}"` : ''
-      const tip = t(isImagePath(p.path) ? '查看图片' : '查看文件')
-      return `<code class="md-path" role="button" tabindex="0" data-path="${attr(p.path)}"${line} title="${tip}">${text}</code>`
-    },
+const attr = (v: string) => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/**
+ * 一个文件标记的 HTML：图标（CSS 按 data-kind 画）+ 文件名 + 灰色扩展名 + 行号。
+ * label 是 Markdown 链接的文字（[配置](src/a.ts)），有它就显示它；parent 是重名时补在前面的上一级目录
+ */
+export function fileRefHtml(p: { path: string; line?: number }, opts: { label?: string; parent?: string } = {}) {
+  const line = p.line ? ` data-md-line="${p.line}"` : ''
+  const { stem, ext } = nameParts(p.path)
+  const body = opts.label
+    ? `<span class="fr-name">${opts.label}</span>`
+    : (opts.parent ? `<span class="fr-dim">${esc(opts.parent)}/</span>` : '') +
+      `<span class="fr-name">${esc(stem)}</span>` +
+      (ext ? `<span class="fr-ext">${esc(ext)}</span>` : '')
+  return (
+    `<span class="md-path file-ref" role="button" tabindex="0" data-file-ref data-kind="${fileKind(p.path)}" ` +
+    `data-path="${attr(p.path)}"${line}>${body}${p.line ? `<span class="fr-line">:${p.line}</span>` : ''}</span>`
   )
+}
+
+/** Markdown 链接的地址指向本机文件（没有协议，或 file://）：取出路径；网页链接、锚点返回 null */
+function linkTarget(href: string) {
+  let h = unescapeHtml(href).trim()
+  if (/^file:\/\//i.test(h)) h = decodeURIComponent(h.replace(/^file:\/\/\/?/i, '')).replace(/^(?=[A-Za-z]:)/, '')
+  else if (/^[a-z][a-z0-9+.-]*:/i.test(h) && !/^[A-Za-z]:[\\/]/.test(h)) return null
+  if (h.startsWith('#')) return null
+  try {
+    h = decodeURIComponent(h)
+  } catch {
+    // 地址里有单独的 % 就按原样用
+  }
+  return parsePath(h)
+}
+
+const CODE_OR_LINK = /(<pre\b[\s\S]*?<\/pre>)|<code>([^<\n]+)<\/code>|<a href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g
+
+/**
+ * 渲染好的 Markdown 里，把像路径的行内代码（不在代码块里的）和指向本机文件的链接换成文件标记。
+ * 同一条消息里文件名相同、路径不同的，名字前面补上一级目录区分
+ */
+export function linkPaths(html: string) {
+  const found: { path: string; line?: number }[] = []
+  const pick = (code?: string, href?: string) =>
+    code !== undefined ? parsePath(unescapeHtml(code)) : href !== undefined ? linkTarget(href) : null
+  for (const m of html.matchAll(CODE_OR_LINK)) {
+    const p = m[1] ? null : pick(m[2], m[3])
+    if (p) found.push(p)
+  }
+  // 同名不同路径：按「名字 → 路径集合」数一遍
+  const byName = new Map<string, Set<string>>()
+  for (const p of found) {
+    const k = baseName(p.path).toLowerCase()
+    byName.set(k, (byName.get(k) ?? new Set()).add(p.path.replace(/\\/g, '/')))
+  }
+  return html.replace(CODE_OR_LINK, (all, pre: string | undefined, code?: string, href?: string, text?: string) => {
+    if (pre) return all
+    const p = pick(code, href)
+    if (!p) return all
+    const dup = (byName.get(baseName(p.path).toLowerCase())?.size ?? 0) > 1
+    const label = href !== undefined && text && unescapeHtml(text.replace(/<[^>]+>/g, '')).trim() !== p.path ? text : ''
+    return fileRefHtml(p, { label, parent: dup && !label ? parentName(p.path) : '' })
+  })
 }

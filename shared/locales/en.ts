@@ -19,6 +19,7 @@ import { EN_SPEECH } from './en/speech.ts'
 import { EN_HOOKS } from './en/hooks.ts'
 import { EN_CLI_MORE } from './en/cli-more.ts'
 import { EN_EXPERIENCE } from './en/experience.ts'
+import { EN_FILE_REF } from './en/file-ref.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
@@ -43,4 +44,5 @@ export const EN: Record<string, string> = {
   ...EN_HOOKS,
   ...EN_CLI_MORE,
   ...EN_EXPERIENCE,
+  ...EN_FILE_REF,
 }
