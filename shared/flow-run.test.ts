@@ -17,7 +17,8 @@ import {
   type WorkflowEntry,
 } from './flow-run.ts'
 import { FlowRun } from './task-flow-schema.ts'
-import type { Task, TaskStep } from './schema.ts'
+import { WRAP_FLOW, WRAP_NODE, withWrapUp, wrapRoles } from './flow-run-wrap.ts'
+import { Workflow, type Task, type TaskStep } from './schema.ts'
 import { taskTitle } from './task.ts'
 
 /** 工作流运行（docs/openspec/changes/workflow-runs/design.md）：进度怎么说、决定记录、退回、父对话怎么挑工作流 */
@@ -155,4 +156,53 @@ test('输入框里的工作流卡片：发送时摘掉卡片、要求点名它�
   assert.deepEqual(namedWorkflow('用工作流「旧名字」做：\n加'), { name: '旧名字', rest: '加' })
   assert.equal(namedWorkflow('用工作流做个东西'), undefined)
   assert.equal(taskTitle('用工作流「通用项目」（id g）做：\n加个导出按钮'), '加个导出按钮', '对话标题取用户写的要求')
+})
+
+test('收尾：入口流程连到结束的线改连到收尾节点，验收流程是评审 → 测试；接过的不重复接，没有执行角色不接', () => {
+  const w = Workflow.parse({
+    id: 'w',
+    createdAt: '',
+    updatedAt: '',
+    name: '流程',
+    flows: [
+      {
+        id: 'main',
+        nodes: [{ id: 'a', title: '实现', agentId: 'x' }],
+        edges: [
+          { id: 'e1', from: 'start', to: 'a' },
+          { id: 'e2', from: 'a', to: 'end' },
+        ],
+      },
+    ],
+  })
+  const roles = { worker: 'wk', reviewer: 'rv', tester: 'ts' }
+  const got = withWrapUp(w, roles)
+  const main = got.flows[0]
+  assert.deepEqual(
+    main.edges.map((e) => `${e.from}>${e.to}`),
+    ['start>a', 'a>wrapup', 'wrapup>end'],
+  )
+  const wrap = main.nodes.find((n) => n.id === WRAP_NODE)!
+  assert.equal(wrap.agentId, 'wk')
+  assert.deepEqual(wrap.hooks.review, { kind: 'sub', id: WRAP_FLOW })
+  const rf = got.flows.find((f) => f.id === WRAP_FLOW)!
+  assert.deepEqual(
+    rf.edges.map((e) => `${e.from}>${e.to}${e.when ? `:${e.when}` : ''}`),
+    ['start>review', 'review>test:pass', 'test>end', 'review>end:fail'],
+    '评审不通过就不用测了，意见直接作为结果交回',
+  )
+  assert.equal(withWrapUp(got, roles), got, '接过的不重复接')
+  assert.equal(withWrapUp(w, { reviewer: 'rv' }), w, '没有执行角色不接')
+  assert.equal(withWrapUp(w, { worker: 'wk' }).flows[0].nodes.at(-1)?.hooks.review, null, '没有评审和测试时只补齐提交')
+  assert.deepEqual(
+    wrapRoles([
+      { id: 'a', origin: 'builtin:worker' },
+      { id: 'b', origin: 'builtin:reviewer', enabled: false },
+    ]),
+    {
+      worker: 'a',
+      reviewer: undefined,
+      tester: undefined,
+    },
+  )
 })

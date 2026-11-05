@@ -6,7 +6,7 @@
  * - 父对话停了，名下在跑的运行一起暂停；父对话继续时接着跑（D4）
  */
 import { randomUUID } from 'node:crypto'
-import type { Agent, Project, Task, TaskMessage } from '../../shared/schema.ts'
+import type { Agent, Project, Task, TaskMessage, Workflow } from '../../shared/schema.ts'
 import { NewTaskInput } from '../../shared/schema.ts'
 import { FlowRun } from '../../shared/task-flow-schema.ts'
 import type { FlowRunHost, RunTarget } from '../../shared/flow-run-orch.ts'
@@ -16,7 +16,8 @@ import { newTask } from '../../shared/task.ts'
 import { settleWait } from '../../shared/plan.ts'
 import { clip } from '../../shared/text.ts'
 import { t } from '../../shared/i18n.ts'
-import { createWorktree } from '../exec/worktree.ts'
+import { commitWorktree, createWorktree } from '../exec/worktree.ts'
+import { withWrapUp, wrapRoles } from '../../shared/flow-run-wrap.ts'
 import { gitHead } from '../exec/git.ts'
 import { answerRequest } from '../exec/requests.ts'
 import { steerTask } from '../exec/steering.ts'
@@ -101,9 +102,13 @@ export function createFlowRuns(sc: TasksScope) {
     project: Project,
     p: PickedFlow & { input: string; title: string; files?: string[] },
   ): Promise<{ ok: boolean; id?: string; info: string }> {
-    const all = await sc.deps.workflows.list()
-    const fallback = (await sc.projectWorkflow(project)) ?? undefined
-    const plan = sc.planWorkflow(project, all, fallback, p.workflowId)
+    // 改代码的运行在流程图末尾接上固定收尾（评审 → 测试 → 修复，见 shared/flow-run-wrap.ts）：先接再拍快照，
+    // 测试步骤才会按项目设置注入到收尾的测试节点里
+    const roles = p.kind === 'change' ? wrapRoles(await sc.deps.agents.list()) : {}
+    const wrap = (w: Workflow) => (p.kind === 'change' ? withWrapUp(w, roles) : w)
+    const all = (await sc.deps.workflows.list()).map(wrap)
+    const found = (await sc.projectWorkflow(project)) ?? undefined
+    const plan = sc.planWorkflow(project, all, found && wrap(found), p.workflowId)
     if (!plan) return bad(`找不到工作流「${p.workflowName || p.workflowId}」`)
     const id = randomUUID()
     const at = now()
@@ -225,7 +230,6 @@ export function createFlowRuns(sc: TasksScope) {
       r.phase = 'running'
       r.pausedBy = undefined
       r.preAnswer = undefined
-      r.wrap = undefined
       r.told = ''
       x.status = 'stopped'
       note(x, t('父对话把运行退回到「{node}」：{text}', { node: at, text: clip(text, 400) }))
@@ -289,6 +293,10 @@ export function createFlowRuns(sc: TasksScope) {
     if (action === 'merge') {
       if (f.phase !== 'ready') return bad(`现在还不能合回（${runLine(runEntry(tk)!)}）：做完、待合回时才能合回`)
       if (tk.worktree?.state === 'active') {
+        // 收尾节点会提交；它没提交完的（或者没有收尾节点）在合回前补一次，不然合回去的只是已提交的那部分
+        await commitWorktree(tk.worktree, `工作流运行：${tk.title}`).catch((e) =>
+          log.warn('task', '合回前提交运行分支上的改动失败', { task: tk.id, error: (e as Error).message }),
+        )
         const r = await sc.integrate(tk, owner)
         if (!r.ok) return bad(r.info)
         await sc.dropWorktree(tk)

@@ -6,7 +6,7 @@ export type WorkflowKind = z.infer<typeof WorkflowKind>
 
 /**
  * 工作流运行的阶段（docs/openspec/changes/workflow-runs/design.md 第 3.3 节）：
- * running 在跑节点；confirm 停在节点上等用户确认；failed 节点失败等决定；wrapup 收尾（评审 / 测试 / 修复）；
+ * running 在跑节点；confirm 停在节点上等用户确认；failed 节点失败等决定；wrapup 收尾（评审 / 测试 / 修复，只在显示时按收尾节点现算）；
  * ready 待合回（change）；done 完成（readonly 跑完，或合回之后）；discarded 放弃了；cancelled 被终止。
  * 暂停不单列：任务停着（status stopped）而阶段还在 running / confirm / wrapup，继续时从这里接着走
  */
@@ -32,7 +32,7 @@ export const FlowDecision = z.object({
 })
 export type FlowDecision = z.infer<typeof FlowDecision>
 
-/** 收尾阶段做到哪：评审、测试、修复，第几轮 */
+/** 收尾阶段做到哪：评审、测试、修复，第几轮（按步骤现算，见 shared/flow-run.ts 的 wrapNow；不落盘） */
 export const FlowWrap = z.object({
   stage: z.enum(['review', 'test', 'fix']),
   round: z.number().int().default(1),
@@ -57,7 +57,6 @@ export const FlowRun = z.object({
   notes: z.array(z.string()).default([]),
   /** 同一节点修改几轮以后在结尾提示（不强制终止，用户 2026-11-05 定）；取自工作流设置，0 表示不提示 */
   reviseLimit: z.number().int().min(0).default(3),
-  wrap: FlowWrap.optional(),
   /** 跑完后交给父对话的结论（一段话）；全文在节点输出里 */
   summary: z.string().default(''),
   /** 父对话停了它（D4：父对话停止时运行也停）；用户在运行上点「重启」或父对话继续时接着跑 */

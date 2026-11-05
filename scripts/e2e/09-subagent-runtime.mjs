@@ -939,10 +939,16 @@ await runShard('子对话运行与监管', async (api) => {
     )
     const waitOf = async () =>
       (await call('GET', `/tasks/${rp.id}`)).plans?.at(-1)?.steps?.[0]?.waits?.find((w) => w.kind === 'workflow')
-    await waitFor(async () => ((await waitOf())?.state === 'ok' ? true : undefined), {
-      label: '工作流运行跑完、来信、父对话合回后，父计划那一步收到结果',
-      timeout: 40000,
-    })
+    await waitFor(
+      async () => {
+        const w = await waitOf()
+        return w && w.state !== 'waiting' ? true : undefined
+      },
+      {
+        label: '工作流运行跑完收尾、来信、父对话合回（合不回就放弃）后，父计划那一步收口',
+        timeout: 40000,
+      },
+    )
     // 运行不是子对话：子对话栏里没有它，按 owner 查得到
     const kids = await call('GET', `/tasks/${rp.id}/children`)
     assert.ok(!kids.some((x) => x.title === '工作流做功能'), '不开工作流子对话')
@@ -950,7 +956,14 @@ await runShard('子对话运行与监管', async (api) => {
     assert.equal(runs.length, 1)
     const run = await call('GET', `/tasks/${runs[0].id}`)
     assert.equal(run.flowRun?.workflowName, '小流程')
-    assert.equal(run.flowRun?.phase, 'done', '父对话 finish_workflow 合回后完成')
+    // 父对话目录里同一个文件也改了（假 CLI 每轮都写 claude-output.txt）：合回被 git 拒绝、如实报给父对话，父对话放弃
+    const fin = readLog(log + '.panel').filter((x) => x.name === 'finish_workflow')
+    assert.match(fin[0]?.text ?? '', /git 拒绝合并/, '合不回时把原因交给父对话')
+    assert.equal(run.flowRun?.phase, fin.at(-1)?.isError ? 'ready' : fin.length > 1 ? 'discarded' : 'done')
+    assert.ok(
+      run.steps.some((s) => s.id === 'wrapup' && s.status === 'done'),
+      '改代码的运行跑完流程图后有收尾（评审、测试）',
+    )
     assert.equal(run.parentTaskId, '')
     assert.ok(
       calls().some((c) => /【工作流运行】工作流「小流程」[^\n]*做完了，等你合回/.test(c.input ?? '')),
@@ -960,7 +973,7 @@ await runShard('子对话运行与监管', async (api) => {
     assert.ok(!(await call('GET', '/tasks')).some((x) => x.id === run.id), '运行不进对话列表')
     await call('POST', `/tasks/${rp.id}/stop`).catch(() => {})
     await call('DELETE', `/tasks/${rp.id}`)
-    step('工作流只由父对话启动：起一次运行（不是子对话），跑完来信、父对话合回，父计划那一步收到结果')
+    step('工作流只由父对话启动：起一次运行（不是子对话），跑完收尾、来信、父对话合回或放弃，父计划那一步收口')
   }
 
   // ---- /bug 发给子对话（ADR 0046）：面板把它标成用户报的 Bug，交给 CLI 的是展开后的完整查找流程，不是原样的 /bug ----

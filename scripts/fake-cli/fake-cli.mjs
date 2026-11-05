@@ -1064,10 +1064,14 @@ if (
     await panelCall('start_workflow', { workflow: wf, input: '做功能', title: '工作流做功能', step: '1' })
   }
 }
-// 工作流运行做完来信（【工作流运行】……等你合回）：像真的父对话一样看过结论后用 finish_workflow 合回
+// 工作流运行做完来信（【工作流运行】……等你合回）：像真的父对话一样看过结论后用 finish_workflow 合回，合不回就放弃
 {
   const done = /【工作流运行】工作流「[^」]*」（id (\S+?)）：做完了，等你合回/.exec(input)?.[1]
-  if (done && input.includes('finish_workflow')) await panelCall('finish_workflow', { id: done, action: 'merge' })
+  if (done && input.includes('finish_workflow')) {
+    const r = await panelCall('finish_workflow', { id: done, action: 'merge' })
+    // 合不回（父对话目录里同一个文件也有没提交的改动）：像真的父对话那样放弃这次运行的改动，不让它一直挂着
+    if (r?.isError) await panelCall('finish_workflow', { id: done, action: 'discard' })
+  }
 }
 // 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
 if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {

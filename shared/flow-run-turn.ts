@@ -52,11 +52,12 @@ export async function runFlowRunTurn(host: EngineHost, d: FlowRunDeps): Promise<
       s.branch = ''
     }
   }
-  if (f.phase !== 'wrapup') f.phase = 'running'
+  f.phase = 'running'
   f.pausedBy = undefined
   host.changed(true)
 
-  if (f.phase === 'running') {
+  // 收尾（评审 → 测试 → 修复）是流程图末尾的一个节点（建运行时接上的，见 flow-run-wrap.ts），和别的节点一起跑
+  {
     const inv: Invocation = {
       workflow: wf,
       flow,
@@ -99,9 +100,8 @@ export async function runFlowRunTurn(host: EngineHost, d: FlowRunDeps): Promise<
     }
   }
 
-  // 收尾（评审 → 测试 → 修复）在第 2 期接进来；现在 change 跑完直接待合回，readonly 直接完成
+  // 改代码的跑完（含收尾）停在待合回，由父对话 finish_workflow 合回或放弃；只读的直接完成
   f.phase = f.kind === 'readonly' ? 'done' : 'ready'
-  f.wrap = undefined
   // 修改超过上限的节点只在结尾提示，不强制终止（用户 2026-11-05 定）
   const over = overLimit(f)
   if (over.length)
