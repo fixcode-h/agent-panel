@@ -147,6 +147,21 @@ function readAttachments(key: string): Item[] {
   }
 }
 
+/** 从别处预先放好某个输入框的附件（已经整理好的，例如会话记录）；存不了时什么都不做 */
+export function presetAttachments(key: string, list: Attachment[]) {
+  try {
+    const items: DraftItem[] = list.map((a, i) => ({
+      key: `preset-${Date.now()}-${i}`,
+      name: a.name,
+      mime: a.mime ?? '',
+      size: a.size ?? 0,
+      done: a,
+      state: a.ref ? 'ref' : 'ready',
+    }))
+    localStorage.setItem(ATTACH + key, JSON.stringify(items))
+  } catch {}
+}
+
 /**
  * 附件列表：选文件、粘贴、拖进来都走 add，选完马上上传。
  * 传了 draftKey（和文字草稿用同一个）就按对话记住，切到别的对话再回来还在。
@@ -1101,14 +1116,29 @@ function SessionPicker({
  * 输入 @ 引用项目里的文件：光标前是「@关键字」时列出匹配的文件，上下键选、回车或 Tab 确认，
  * 选中后换成一张引用路径的文件卡片（和粘贴路径一样，只引用不拷贝）；服务端认不出这个文件时退回「@相对路径 」。
  */
+/** @ 菜单里的一项：项目里的相对路径、项目根目录、几个项目一起搜时的项目名 */
+interface MentionFile {
+  f: string
+  root: string
+  project: string
+}
+/** @ 菜单最多列这么多项 */
+const MENTION_MAX = 40
+
 export function useFileMention(
   project: { id: string; path?: string } | undefined,
   editor: React.RefObject<RichInputHandle | null>,
   attach: Pick<ReturnType<typeof useAttachments>, 'addRefs'>,
+  /**
+   * 没有项目的输入框（Chat 页）在这些项目里一起搜，每一项标上项目名（设计报告 Chat P0-2）：
+   * 以前 Chat 里 @ 不能用，问项目相关的问题只能自己粘绝对路径
+   */
+  pool: { id: string; path?: string; name: string }[] = [],
 ) {
-  const projectId = project?.id
+  const sources = project?.path ? [{ ...project, name: '' }] : pool.filter((p) => p.path)
+  const sourceKey = sources.map((x) => x.id).join(',')
   const [query, setQuery] = useState<{ q: string; start: number } | null>(null)
-  const [files, setFiles] = useState<string[]>([])
+  const [files, setFiles] = useState<MentionFile[]>([])
   const [active, setActive] = useState(0)
   const [closed, setClosed] = useState(false)
 
@@ -1123,14 +1153,22 @@ export function useFileMention(
   }, [editor])
 
   useEffect(() => {
-    if (!query || !projectId || closed) return
+    if (!query || !sources.length || closed) return
     let off = false
     const t = setTimeout(() => {
-      api
-        .projectFiles(projectId, query.q)
-        .then((fs) => {
+      // 一个项目时照旧；好几个项目时每个取前几项，合起来最多 MENTION_MAX 项
+      const each = sources.length > 1 ? Math.ceil(MENTION_MAX / sources.length) : MENTION_MAX
+      Promise.all(
+        sources.map((src) =>
+          api
+            .projectFiles(src.id, query.q)
+            .then((fs) => fs.slice(0, each).map((f) => ({ f, root: src.path ?? '', project: src.name })))
+            .catch(() => [] as MentionFile[]),
+        ),
+      )
+        .then((all) => {
           if (off) return
-          setFiles(fs)
+          setFiles(all.flat().slice(0, MENTION_MAX))
           setActive(0)
           // 换了关键词是一份新列表：菜单回到顶部，选中第一项
           if (box.current) box.current.scrollTop = 0
@@ -1141,14 +1179,14 @@ export function useFileMention(
       off = true
       clearTimeout(t)
     }
-  }, [query?.q, projectId, closed]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [query?.q, sourceKey, closed]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const open = !!query && !!projectId && !closed && files.length > 0
+  const open = !!query && sources.length > 0 && !closed && files.length > 0
 
   // 菜单的滚动和高度：选中项跟着 ↑↓ 滚进可视区，矮窗口时压短（见 useMenuBox）
   const box = useMenuBox(active, open, 18)
 
-  const pick = (f: string) => {
+  const pick = ({ f, root }: MentionFile) => {
     const el = editor.current
     if (!query || !el) return
     // 先把「@关键字」删掉、记下位置：等服务端确认的这一小会儿光标可能被挪走
@@ -1160,7 +1198,6 @@ export function useFileMention(
       el.setCaret(at)
       el.insert(value)
     }
-    const root = project?.path
     if (!root) return put(`@${f} `)
     const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
     const full = `${root.replace(/[\\/]+$/, '')}${sep}${sep === '/' ? f : f.replace(/\//g, sep)}`
@@ -1218,11 +1255,12 @@ export function useFileMention(
       className="max-h-[min(18rem,60vh)]"
     >
       <div className="px-2.5 pt-1.5 pb-1 text-caption text-subtle">{t('项目文件 · ↑↓ 选择，回车确认')}</div>
-      {files.map((f, i) => {
+      {files.map((x, i) => {
+        const { f } = x
         const cut = f.lastIndexOf('/')
         return (
           <button
-            key={f}
+            key={`${x.root}:${f}`}
             type="button"
             role="option"
             aria-selected={i === active}
@@ -1230,7 +1268,7 @@ export function useFileMention(
             onMouseDown={(e) => e.preventDefault()}
             // 用 mousemove 不用 mouseenter：滚动时列表会在鼠标底下换行，mouseenter 会跟着再改一次选中项，来回抖
             onMouseMove={() => setActive(i)}
-            onClick={() => pick(f)}
+            onClick={() => pick(x)}
             className={cn(
               'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-body',
               i === active ? 'bg-sel text-fg' : 'text-muted',
@@ -1239,6 +1277,10 @@ export function useFileMention(
             <FileCode2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
             <span className="shrink-0 font-mono">{f.slice(cut + 1)}</span>
             {cut > 0 && <span className="truncate font-mono text-caption text-subtle">{f.slice(0, cut)}</span>}
+            {/* 在几个项目里一起搜时（Chat 页）标上是哪个项目的 */}
+            {x.project && (
+              <span className="ml-auto max-w-[96px] shrink-0 truncate text-caption text-subtle">{x.project}</span>
+            )}
           </button>
         )
       })}

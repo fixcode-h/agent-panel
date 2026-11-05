@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { t } from '../../shared/i18n.ts'
 import type { Task } from '../../shared/schema.ts'
 import {
+  diagnosisWaiting,
   droppedAsksNote,
+  rewaitDiagnosis,
   settleStopped,
   stateBreaks,
   type StateBreak,
@@ -56,6 +58,11 @@ export function createStateSweep(d: {
     const tk = await d.store.get(id)
     // 读到的完整记录再核一遍：两次扫描之间它可能刚被拉起来
     if (!tk || !stateBreaks(tk, d.live(id)).includes('orphan')) return false
+    // 诊断报告等确认（ADR 0045）：没人在执行是对的，它在等用户；回到等确认，不说「已中断」
+    if (diagnosisWaiting(tk)) {
+      await d.store.update(id, rewaitDiagnosis(tk), { keepUpdatedAt: true })
+      return true
+    }
     const next: Task = settleStopped(tk, 'lost')
     next.messages = [
       ...tk.messages,

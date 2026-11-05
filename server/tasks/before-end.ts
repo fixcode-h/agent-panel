@@ -95,6 +95,8 @@ export function createBeforeEnd(
   async function decide(convId: string, input: BeforeEndInput): Promise<BeforeEndDecision> {
     const tk = sc.live.get(convId)?.task ?? (await sc.store.get(convId))
     if (!tk || tk.imported || taskDeleted(tk)) return allowEnd('gone')
+    // 预热还没收到用户的消息：这时结束是在停下等下一句，不是没做完（收到消息后 runner 会清掉 prewarming）
+    if (tk.prewarming) return allowEnd('prewarm')
     // Chat 页一问一答不拦（用户 2026-11-04 定）
     if (isChatMode(tk)) return allowEnd('chat')
     const busy = await waitingOn(tk)

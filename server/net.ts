@@ -9,7 +9,13 @@ import { request as httpsRequest, type RequestOptions as HttpsRequestOptions } f
 import { ProxyAgent, fetch as proxyFetch, type Dispatcher } from 'undici'
 import { getSettings } from './settings.ts'
 import { t } from '../shared/i18n.ts'
-import { DEFAULT_PROXY_PORT, DEFAULT_PROXY_URL, LOCAL_PROXY_PORTS, MAX_LOCAL_PROXIES } from '../shared/proxy.ts'
+import {
+  DEFAULT_PROXY_PORT,
+  DEFAULT_PROXY_URL,
+  LOCAL_PROXY_PORTS,
+  MAX_LOCAL_PROXIES,
+  type DetectedProxy,
+} from '../shared/proxy.ts'
 
 /** 和 fetch 一样用；timeoutMs 只限制等到响应头的时间，之后读 body 不受它影响 */
 export interface NetInit extends RequestInit {
@@ -32,10 +38,11 @@ const MISS_TTL = 30_000
 const SYSTEM_TTL = 60_000
 const REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
 
-const ENV_PROXY = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']
+export const ENV_PROXY = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']
 
 /** 这次请求一开始走哪条路；fallback 表示失败后要不要再找本机代理 */
-export type ProxyPlan = { kind: 'proxy'; key: string; shown: string } | { kind: 'direct'; fallback: boolean }
+export type ProxyPlan =
+  { kind: 'proxy'; key: string; shown: string; system?: boolean } | { kind: 'direct'; fallback: boolean }
 
 interface Attempt {
   key: string
@@ -265,6 +272,22 @@ export async function localProxies(): Promise<string[]> {
   return list
 }
 
+/**
+ * 设置页「检测本机代理」：不走缓存，重新读系统代理、并发探测全部候选，列出能转发 HTTPS 的 http 代理。
+ * 系统代理在前（用户自己在代理软件里开的），其次按 LOCAL_PROXY_PORTS 的顺序。顺手刷新回退用的缓存。
+ */
+export async function detectProxies(): Promise<DetectedProxy[]> {
+  systemCache = undefined
+  const system = await systemProxies()
+  const candidates = localProxyCandidates(system)
+  const alive = await Promise.all(candidates.map((proxy) => probeProxy(proxy)))
+  const found = candidates.filter((_, i) => alive[i])
+  const list = pickLocalProxies(system, found)
+  localCache = { at: Date.now(), list, ttl: list.length ? FOUND_TTL : MISS_TTL }
+  const sys = new Set(system.map(httpProxy).filter(Boolean))
+  return found.map((url) => ({ url, source: sys.has(url) ? 'system' : 'port' }))
+}
+
 /** 某个代理请求失败后算出的新缓存：去掉它；全都不行了就按「没找到」的短间隔重新探测 */
 export function dropBadProxy(cache: ProxyCache, proxy: string): ProxyCache {
   const list = cache.list.filter((x) => x !== proxy)
@@ -299,7 +322,10 @@ function dispatcherFor(key: string) {
 }
 
 /**
- * 这次请求一开始走哪条路：设置里的代理优先，其次环境变量（这时 NO_PROXY 生效），最后直连。
+ * 这次请求一开始走哪条路：设置里的代理优先，其次环境变量，再其次系统代理（这两条 NO_PROXY 生效），最后直连。
+ * 系统代理（Windows 注册表 / macOS scutil）要放在直连前面：用户开了 Clash、v2rayN 的「系统代理」却没在设置里填时，
+ * 以前先直连，而国内直连 GitHub 往往能连上、只是被限速到几十 KB/s，请求没失败就不会换到代理，
+ * 更新包下载就一直卡在龟速上（2026-11-04 用户反馈「开了代理下载还是很慢」）。
  * set 传的是「实际生效的地址」（已经过了 configuredProxy 的开关判断），这里不再看开关。
  * 设置里填的地址没写协议时补 http://，否则 ProxyAgent 解析不了；socks 这类不支持的照原样传下去，
  * 请求失败后按正常回退处理。
@@ -309,15 +335,18 @@ export function planFor(
   set: string,
   env: string,
   noProxyValue = process.env.NO_PROXY ?? process.env.no_proxy ?? '',
+  system: string[] = [],
 ): ProxyPlan {
   if (isLocalUrl(url)) return { kind: 'direct', fallback: false }
   if (set.trim()) {
     const key = httpProxy(set) || set.trim()
     return { kind: 'proxy', key, shown: redact(key) }
   }
-  if (!env) return { kind: 'direct', fallback: true }
+  const sys = system.map(httpProxy).find(Boolean) ?? ''
+  if (!env && !sys) return { kind: 'direct', fallback: true }
   if (noProxy(url, noProxyValue)) return { kind: 'direct', fallback: false }
-  return { kind: 'proxy', key: env, shown: redact(env) }
+  if (env) return { kind: 'proxy', key: env, shown: redact(env) }
+  return { kind: 'proxy', key: sys, shown: redact(sys), system: true }
 }
 
 /**
@@ -328,15 +357,21 @@ export function configuredProxy(s: { proxy: string; networkProxyEnabled: boolean
   return s.networkProxyEnabled ? s.proxy.trim() : ''
 }
 
-/** 设置里的代理（开关打开且填了才算）优先；没填时用环境变量（这时 NO_PROXY 也照常生效） */
-async function defaultPlan(url: string): Promise<ProxyPlan> {
+/**
+ * 设置里的代理（开关打开且填了才算）优先；没填时用环境变量（这时 NO_PROXY 也照常生效）。
+ * 导出给 npm 这类子进程用：子进程不经过 netFetch，要按同一个顺序把代理交给它（见 server/npm-env.ts）。
+ */
+export async function defaultPlan(url: string): Promise<ProxyPlan> {
   let set = ''
   try {
     set = configuredProxy(await getSettings())
   } catch {
     // 设置读不出来时按没填处理，仍然可以走环境变量和自动检测
   }
-  return planFor(url, set, ENV_PROXY.map((k) => process.env[k]).find(Boolean) ?? '')
+  const env = ENV_PROXY.map((k) => process.env[k]).find(Boolean) ?? ''
+  // 设置和环境变量都没有时才读系统代理：读一次是一条 reg / scutil 命令，结果缓存 60 秒
+  const system = set || env || isLocalUrl(url) ? [] : await systemProxies()
+  return planFor(url, set, env, undefined, system)
 }
 
 const defaultDeps: NetDeps = {
@@ -438,7 +473,7 @@ export async function netFetchWith(deps: NetDeps, url: string, init: NetInit = {
   const plan = await deps.plan(url).catch((): ProxyPlan => ({ kind: 'direct', fallback: true }))
   const first: Attempt =
     plan.kind === 'proxy'
-      ? { key: plan.key, shown: plan.shown, source: 'configured' }
+      ? { key: plan.key, shown: plan.shown, source: plan.system ? 'local' : 'configured' }
       : { key: '', shown: '', source: 'direct' }
   const tried = [first]
 

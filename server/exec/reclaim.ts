@@ -1,6 +1,6 @@
 import type { StopReason, Task } from '../../shared/schema.ts'
 import { restartInterrupted } from '../../shared/task.ts'
-import { settleStopped } from '../../shared/task-settle.ts'
+import { diagnosisWaiting, rewaitDiagnosis, settleStopped } from '../../shared/task-settle.ts'
 import { log } from '../log.ts'
 
 /** 收口只需要这两个动作：读一条任务、写回它 */
@@ -27,6 +27,11 @@ type ReclaimStore = {
 export async function settleReclaimed(store: ReclaimStore, id: string, reason: StopReason): Promise<boolean> {
   const tk = await store.get(id).catch(() => null)
   if (!tk || tk.working) return false
+  // 诊断报告等确认（ADR 0045）：CLI 回收了也照样在等用户，回到等确认而不是「已中断」
+  if (diagnosisWaiting(tk)) {
+    if (tk.status === 'running') await store.update(id, rewaitDiagnosis(tk), { keepUpdatedAt: true }).catch(() => null)
+    return false
+  }
   const unfinished = restartInterrupted(tk)
   if (tk.status !== 'running' && !unfinished) return false
   try {

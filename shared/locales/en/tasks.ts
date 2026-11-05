@@ -375,6 +375,15 @@ export const EN_TASKS: Record<string, string> = {
   输出: 'Output',
   缓存命中: 'Cache hits',
   'Token 用量': 'Token usage',
+  模型响应: 'Model response',
+  模型回复后显示首包时间: 'Time to first token appears after the model replies',
+  最近平均首包: 'recent avg. first token',
+  平均首包: 'Avg. first token',
+  最长首包: 'Longest first token',
+  首包合计: 'First token total',
+  请求次数: 'Requests',
+  '首包偏慢，多半在接口或网络这一侧：可以在「设置 › API」里测速，对比不同协议和链路':
+    'First token is slow, most likely on the API or network side: run a speed test in Settings › API to compare protocols and routes',
   工具调用: 'Tool calls',
   'Agent 回复后显示 Token 用量': 'Token usage appears after the agent replies',
   还没有工具调用: 'No tool calls yet',
@@ -585,8 +594,6 @@ export const EN_TASKS: Record<string, string> = {
   '思考中…': 'Thinking…',
   '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',
-  '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。':
-    "This message and everything after it will be removed, and its text goes back into the input so you can edit and resend. The agent continues from before this message. File changes aren't undone; undo them under Changes if needed.",
   '放回输入框，改了再发': 'Put back in the input box to edit and resend',
   上一张: 'Previous',
   下一张: 'Next',
@@ -656,9 +663,6 @@ export const EN_TASKS: Record<string, string> = {
   '结束这个流程？': 'End this flow?',
   '没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主角色直接处理。':
     "Unfinished nodes won't run; changes already made are kept. Later requests go straight to the main role.",
-  '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主角色处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
-    'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main role to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
-  '处理完了，从「{title}」重新检查，接着走流程': 'Done. Re-checking "{title}" and continuing the flow',
   '这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主角色说，需要时它会再走一遍流程。':
     "This run is over; unfinished nodes won't execute. Tell the main role what you need next and it will run the flow again when needed.",
   '任务正在执行，请先停止': 'The task is running; stop it first',
@@ -799,6 +803,9 @@ export const EN_TASKS: Record<string, string> = {
   '按这个项目现在的脚本和配置，生成类型检查、单元测试、端到端和构建的测试步骤':
     "Based on this project's current scripts and config, generate test steps for type checking, unit tests, end-to-end tests and the build",
   '这个工作流没有需要配置的参数。': 'This workflow has no parameters to configure.',
+  新建对话默认开独立分支: 'Use a separate branch for new chats by default',
+  '打开后新建对话时输入框里的「独立分支」默认勾上：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里改。':
+    'When on, the input box\'s "Separate branch" switch starts checked for new chats: each chat edits in its own git branch and folder, so chats running at the same time don\'t overwrite each other. Merge or discard it when done. You can still change it for any new chat.',
   子对话隔离: 'Sub-conversation isolation',
   '独立 worktree（推荐）': 'Separate worktree (recommended)',
   '共用目录 + 认领文件': 'Shared folder + file claims',
@@ -1533,8 +1540,6 @@ export const EN_TASKS: Record<string, string> = {
   '每个顶层对话连同名下全部子对话合起来算（输入 + 输出）。用到 80% 时在对话里提醒一次，用满时停下整个对话；之后你再发消息会接着跑一轮。0 或留空表示不限。':
     'Counted per top-level conversation together with all its sub-conversations (input + output). At 80% the conversation gets one reminder; at the cap the whole conversation stops, and each message you send after that runs one more turn. 0 or empty means no cap.',
   '费用上限（美元）': 'Cost cap (USD)',
-  '按 Agent 报的费用累计，不报费用的 Agent 不计入。0 或留空表示不限。':
-    'Adds up the cost the Agent reports; Agents that report no cost are not counted. 0 or empty means no cap.',
   用量上限: 'Usage cap',
   '{used} / {cap} token': '{used} / {cap} tokens',
   '${used} / ${cap}': '${used} / ${cap}',
@@ -1574,23 +1579,11 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个 · {m} 封未读': '{n} · {m} unread',
   '「{title}」的往来': 'Letters with “{title}”',
   看它和父对话之间的信: 'Letters between it and the parent',
-  已撤销这一轮的改动: 'Reverted the changes from this turn',
   '已更改 {n} 个文件': '{n} files changed',
-  已撤销: 'Reverted',
   '对话正在执行，等这一轮结束后再撤销': 'The conversation is running. Revert after this turn ends',
-  只撤销这一轮的改动: 'Revert only the changes from this turn',
-  查看全部: 'View all',
   '有 {n} 个文件撤不干净，所有文件都没动：': "{n} files can't be reverted cleanly, so no files were touched:",
-  '这些地方在这一轮之后又被改过，请在编辑器里手动处理。':
-    'These spots were changed again after this turn. Please fix them by hand in your editor.',
-  '撤销这一轮的改动？': 'Revert the changes from this turn?',
-  '{n} 个文件会恢复成这一轮开始前的样子，这一轮新建的文件会被删除；这一轮之后你或其他对话在这些文件里的改动会保留。改到同一处时不会撤销，会列出冲突。':
-    '{n} files go back to how they were before this turn and files created in this turn are deleted. Later edits by you or other conversations are kept. If a later edit touches the same spot, nothing is reverted and the conflicts are listed.',
-  这一轮的改动: 'Changes in this turn',
   改动显示方式: 'Change list view',
   按目录: 'By folder',
-  '这一轮里这个文件没有文字差异（可能是二进制文件）。':
-    'No text differences for this file in this turn (it may be a binary file).',
   // 用户消息气泡：送达状态和「⋯」菜单（2026-10-31）
   重新发送: 'Resend',
   这条消息的更多操作: 'More actions for this message',
@@ -1761,15 +1754,16 @@ export const EN_TASKS: Record<string, string> = {
   '交结果：卡住': 'Result: stuck',
   '交结果：没做完': 'Result: unfinished',
   '在等你处理：确认操作或回答提问': 'Waiting for you: confirm an action or answer a question',
-  工作流子对话: 'Workflow sub-conversation',
   运行的视图: 'Run view',
   看这次运行的完整输出: "See this run's full output",
-  '工作流 · {name} {done}/{total}': 'Workflow · {name} {done}/{total}',
-  '工作流 · {name}': 'Workflow · {name}',
+  工作流运行: 'Workflow run',
   '这个项目的默认角色不能启动工作流，会直接在对话里做':
     "This project's default role can't start workflows, so it will do the work in the conversation",
   // Bug 诊断报告（ADR 0045）
   报告待确认: 'Report awaits approval',
+  阶段待确认: 'Stage awaits approval',
+  阶段结果等你确认: 'Stage result awaiting your review',
+  这一步已经确认过了: 'This step has already been reviewed',
   等你查看报告: 'Waiting for you to review the report',
   '等你查看诊断报告第 {n} 版': 'Waiting for you to review diagnosis report v{n}',
   查看报告: 'View report',
@@ -1783,6 +1777,12 @@ export const EN_TASKS: Record<string, string> = {
   '你提了意见，它在再查': "You raised points; it's checking again",
   '已确认，按这版方案修': 'Approved; fixing per this version',
   '已作废，有更新的一版': 'Superseded by a newer version',
+  '你取消了，这次不修': 'You cancelled; no fix this time',
+  取消修复: 'Cancel fix',
+  '取消这次修复？': 'Cancel this fix?',
+  '不再等你确认方案，这一轮就此结束，计划标记为完成，不会改任何文件。之后在这个对话里发话，它会照你的新话做。':
+    'It stops waiting for your approval, this turn ends, the plan is marked done, and no files are changed. Anything you send in this conversation afterwards, it works on that.',
+  不修了: "Don't fix",
   '第 {n} 版': 'Version {n}',
   '诊断报告 · {title}': 'Diagnosis report · {title}',
   '确认方案，开始修': 'Approve plan and fix',
@@ -1814,6 +1814,9 @@ export const EN_TASKS: Record<string, string> = {
   '你确认了诊断报告第 {n} 版的方案': 'You approved the plan in diagnosis report v{n}',
   '你对诊断报告第 {n} 版提了 {k} 条意见，要它再查':
     'You raised {k} points on diagnosis report v{n} and asked it to check again',
+  '你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成':
+    'You cancelled diagnosis report v{n}; no fix this time, and the plan is marked done',
+  '它正在回复，等这一轮结束再取消': "It's replying; cancel after this turn ends",
   '改用方案 {id}': 'Use option {id}',
   '方案 {id}：{title}': 'Option {id}: {title}',
   改用这个方案: 'Use this option instead',
@@ -1874,4 +1877,70 @@ export const EN_TASKS: Record<string, string> = {
   '作为用户报的 Bug 发回被分析的对话：先交诊断报告给你确认方案，再改':
     'Send it back to the analysed conversation as a reported bug: it hands you a diagnosis report to confirm the plan before changing anything',
   按完整流程修: 'Fix with full process',
+  诊断报告等你确认: 'Diagnosis report awaiting your review',
+  诊断报告: 'Diagnosis report',
+  '打开诊断报告第 {n} 版': 'Open diagnosis report v{n}',
+  已撤销这个对话的改动: "Reverted this conversation's changes",
+  这个对话的改动已撤销: "This conversation's changes were reverted",
+  '这个对话改了 {n} 个文件': 'This conversation changed {n} files',
+  撤销这个对话改的所有文件: 'Revert every file this conversation changed',
+  '查看全部 {n} 个文件': 'Show all {n} files',
+  '这些地方在这个对话改完之后又被改过，请在编辑器里手动处理。':
+    'These places were changed again after this conversation; resolve them in your editor.',
+  '撤销这个对话的改动？': "Revert this conversation's changes?",
+  '{n} 个文件会恢复成这个对话改之前的样子，对话里新建的文件会被删除；你或其他对话之后在这些文件里的改动会保留。改到同一处时不会撤销，会列出冲突。':
+    '{n} files go back to how they were before this conversation changed them, and files it created are deleted; later changes by you or other conversations in these files are kept. Where the same spot was changed, nothing is reverted and the conflicts are listed.',
+  这个对话的改动: "This conversation's changes",
+  '这个文件没有文字差异（可能是二进制文件）。': 'This file has no text differences (it may be binary).',
+  这个对话没有要撤销的改动: 'This conversation has no changes to revert',
+  这个文件不在这个对话的改动里: "This file isn't among this conversation's changes",
+  '有 {n} 个文件撤不干净，什么都没动：{files}。这些地方之后又被改过，请在编辑器里手动处理。':
+    "{n} files can't be reverted cleanly, so nothing was changed: {files}. These places were changed again later; resolve them in your editor.",
+  '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；这期间建的计划作废、开的子对话停下并归档。':
+    'This message and everything after it will be removed, and its text goes back into the input box so you can edit and resend it. The agent continues from before this message; plans made since then are dropped, and sub-conversations started since then are stopped and archived.',
+  '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；这期间建的计划作废、开的子对话停下并归档。这几轮没有改过文件。':
+    'This message and everything after it will be removed, and its text goes back into the input box so you can edit and resend it. The agent continues from before this message; plans made since then are dropped, and sub-conversations started since then are stopped and archived. No files were changed in these turns.',
+  '同时撤销这几轮改的 {n} 个文件': 'Also revert the {n} files changed in these turns',
+  '文件恢复成这条消息之前的样子，这几轮新建的文件会删掉；之后你或别的对话在这些文件里的改动会保留。改到同一处时什么都不撤，会列出冲突。':
+    'Files go back to how they were before this message, and files created in these turns are deleted; later changes by you or other conversations in these files are kept. Where the same spot was changed, nothing is reverted and the conflicts are listed.',
+  '重新生成这条回复：撤回最后一条消息和这一轮改的文件，再原样发一次':
+    'Regenerate this reply: rewind the last message and the files changed in this turn, then send it again as is',
+  要改的内容: 'Changes to make',
+  '允许这一次，并且这个对话里之后的{rule}都自动允许（对话里会留一行记录）':
+    'Allow this time, and automatically allow {rule} for the rest of this conversation (a line is left in the conversation each time)',
+  这个对话里一直允许: 'Always allow in this conversation',
+  '命令 {cmd}': 'the command {cmd}',
+  '目录 {dir} 里的文件': 'files in {dir}',
+  '文件 {file}': 'the file {file}',
+  '工具 {name}': 'the tool {name}',
+  '…（还有 {n} 行没显示）': '… ({n} more lines not shown)',
+  '按这个对话的放行规则自动允许（{rule}）：{title}':
+    "Allowed automatically by this conversation's rule ({rule}): {title}",
+  '你允许了：{title}，这个对话里之后的{rule}都自动允许':
+    'You allowed: {title}. {rule} will be allowed automatically for the rest of this conversation',
+  '按 Agent 报的费用累计；Codex、Command Code 这类不报费用的，在「设置 · Agent」的模型里填了单价才按 token 折算，没填的不计入。0 或留空表示不限。':
+    "Adds up the cost the agents report. For agents that don't report cost (such as Codex and Command Code), the cost is worked out from tokens only if you filled in the model's price under Settings · Agent; otherwise it isn't counted. 0 or empty means no limit.",
+  在项目里继续: 'Continue in a project',
+  '带上这段聊天，到项目里新建对话接着做（可以开子对话、跑工作流）':
+    'Take this chat into a new conversation in a project and keep going there (with sub-conversations and workflows)',
+  '带上这段聊天，到哪个项目里继续': 'Continue this chat in which project?',
+  生成的文件: 'Generated files',
+  '导出成一份 Markdown，方便贴进文档或笔记': 'Export as Markdown, handy for pasting into docs or notes',
+  '导出 Markdown': 'Export Markdown',
+  '整理好的记录读不到了，请再试一次': "Couldn't read the prepared record. Please try again",
+  '已暂停 · {node}': 'Paused · {node}',
+  '「{node}」等你确认': '"{node}" is waiting for your confirmation',
+  '「{node}」失败，等父对话决定': '"{node}" failed; waiting for the parent conversation to decide',
+  '收尾 · 评审（第 {n} 轮）': 'Wrap-up · review (round {n})',
+  '收尾 · 测试（第 {n} 轮）': 'Wrap-up · tests (round {n})',
+  '收尾 · 修复（第 {n} 轮）': 'Wrap-up · fixes (round {n})',
+  '做完了，等父对话合回': 'Done; waiting for the parent conversation to merge it',
+  '在跑「{node}」': 'Running "{node}"',
+  '已改 {n} 轮': 'Revised {n} times',
+  追问: 'Ask',
+  '确认卡片留着，请父对话替你决定': 'Keep the confirmation open and let the parent conversation decide for you',
+  交给父对话: 'Hand to parent',
+  从失败的节点重新跑: 'Rerun from the failed node',
+  从停下的地方接着跑: 'Continue from where it stopped',
+  '想先问清楚什么？（只回答，不改结果）': 'What do you want to ask first? (answer only, the result stays unchanged)',
 }

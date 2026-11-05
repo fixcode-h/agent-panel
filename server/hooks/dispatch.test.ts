@@ -74,6 +74,8 @@ test('只读的角色改文件被拒绝，跑写仓库的命令也被拒绝；�
   const plain = await hookOptions(ctx())
   assert.ok(plain.hookEvents?.includes('tool.before'))
   assert.ok(!(await plain.onHook!('tool.before', edit(path.join(dir, 'a.ts')))).deny, '普通角色改文件照常')
+  // 内置守卫只看改文件和跑命令：能按工具名过滤的 CLI 不再为读文件、搜索跑钩子（没有用户钩子时）
+  assert.deepEqual([...new Set(plain.hookTools?.['tool.before'])].sort(), ['edit', 'shell'])
 })
 
 test('只统筹的父对话改文件被拒绝；就地微改动登记过的文件放行', async () => {
@@ -260,4 +262,22 @@ test('按 CLI 关掉的事件不装；内置钩子按项目单独的开关覆盖
   assert.ok((await back.onHook!('tool.before', edit(path.join(dir, 'a.ts')))).deny, '去掉单独设置后跟着全局')
   // 内置守卫拦下的也记进最近触发
   assert.ok(recentTriggers().some((x) => x.hookId === 'builtin:read-only-guard' && x.result === 'deny'))
+})
+
+test('计划没跟上提醒：默认开、只给有执行计划的对话，动手到次数补一句', async () => {
+  resetHooksCache()
+  const { applyPlan } = await import('../../shared/plan.ts')
+  const tk = task({ id: 'pace1' })
+  applyPlan(tk, { steps: [{ title: '改界面', status: 'running' }, { title: '跑测试' }] })
+  const none = await hookOptions(ctx({ task: tk }))
+  assert.ok(!none.hookEvents?.includes('tool.after'), '没有执行计划（子任务、Chat 页）不装')
+  await setBuiltinParam('plan-pace', 'calls', 2, false)
+  const o = await hookOptions(ctx({ task: tk, orch: { plans: true } }))
+  assert.ok(o.hookEvents?.includes('tool.after'))
+  const file = path.join(dir, 'a.ts')
+  assert.ok(!(await o.onHook!('tool.after', edit(file))).context)
+  assert.match((await o.onHook!('tool.after', edit(file))).context ?? '', /「改界面」/)
+  assert.ok(!(await o.onHook!('tool.after', edit(file))).context, '同一步只提醒一次')
+  assert.ok(recentTriggers().some((x) => x.hookId === 'builtin:plan-pace' && x.result === 'context'))
+  await setBuiltinParam('plan-pace', 'calls', 20, true)
 })

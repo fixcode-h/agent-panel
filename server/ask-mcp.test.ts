@@ -158,12 +158,12 @@ test('握手告诉桥接扩展这一轮有没有编排工具：压缩轮、审�
   const ask = openAskBridge({ ask: () => {} })
   assert.equal((await hello(ask)).result.capabilities.experimental.orchestration.enabled, false)
   ask.close()
-  const orch = openAskBridge({ orch: { self: 'a', hasMain: false, common: [], team: true } as unknown as Orchestra })
+  const orch = openAskBridge({ orch: { self: 'a', common: [], team: true } as unknown as Orchestra })
   assert.equal((await hello(orch)).result.capabilities.experimental.orchestration.enabled, true)
   orch.close()
   // Chat 模式（ADR 0038）只挂后台命令，没有 get_status 这些核心工具：声明成有的话 Pi 报「工具清单不完整」（186443c 回归）
   const chat = openAskBridge({
-    orch: { self: '@chat', hasMain: false, common: [], canBackground: true } as unknown as Orchestra,
+    orch: { self: '@chat', common: [], canBackground: true } as unknown as Orchestra,
   })
   assert.equal((await hello(chat)).result.capabilities.experimental.orchestration.enabled, false)
   chat.close()
@@ -187,4 +187,39 @@ test('执行中补充的通道：没有新补充时说清楚，通道关掉后�
   assert.equal(r.result.content[0].text, '没有新的补充')
   s.close()
   assert.equal((await rpc(token, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).error.code, -32001)
+})
+
+test('HTTP 钩子：CLI 直接 POST 原生输入，回的就是按模板填好的输出；没挂钩子、出错回空对象', async () => {
+  const { getCli } = await import('../shared/clis.ts')
+  const spec = getCli('claude')!.hooks!
+  const s = openAskBridge({
+    hook: {
+      spec,
+      beforeEnd: async () => ({ block: true, reason: '接着做', why: 'test' }),
+      on: async (ev, facts) =>
+        ev === 'tool.before' && facts.tool?.kind === 'shell' ? { deny: true, reason: '不许' } : {},
+    },
+  })
+  const token = tokenOf(s.url)
+  const post = async (event: string, body: unknown) =>
+    (
+      await askMcpApi().request(`/ask/${token}/hook/${event}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'content-type': 'application/json' },
+      })
+    ).json() as Promise<any>
+  assert.deepEqual(await post('turn.beforeEnd', { hook_event_name: 'Stop', last_assistant_message: '我做完了' }), {
+    decision: 'block',
+    reason: '接着做',
+  })
+  const deny = await post('tool.before', {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Bash',
+    tool_input: { command: 'ls' },
+  })
+  assert.equal(deny.hookSpecificOutput.permissionDecision, 'deny')
+  assert.deepEqual(await post('tool.before', { tool_name: 'Read', tool_input: { file_path: 'a' } }), {})
+  s.close()
+  assert.deepEqual(await post('tool.before', { tool_name: 'Bash' }), {}, '通道关掉后不表态')
 })

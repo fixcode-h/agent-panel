@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
-import { IconButton, ToggleIconButton } from '@/components/ui/icon-button'
+import { IconButton } from '@/components/ui/icon-button'
 import type { HeaderItem } from './HeaderPins'
 import { ProcessMenu } from './ProcessPanel'
 
@@ -174,23 +174,25 @@ export function taskHeaderItems(c: HeaderItemsCtx): { items: HeaderItem[]; railB
       pinned: (
         <>
           {!pane && (
-            <ToggleIconButton
+            <IconButton
               size="sm"
+              tone="flat"
               icon={ClipboardList}
               className="hidden xl:grid"
               label={report}
               title={c.reportOn ? t('收起功能面板') : report}
-              pressed={c.reportOn}
-              onPressedChange={on.reportWide}
+              aria-pressed={c.reportOn}
+              onClick={on.reportWide}
             />
           )}
-          <ToggleIconButton
+          <IconButton
             size="sm"
+            tone="flat"
             icon={ClipboardList}
             className={pane ? undefined : 'xl:hidden'}
             label={report}
-            pressed={c.reportCover}
-            onPressedChange={c.setReportCover}
+            aria-pressed={c.reportCover}
+            onClick={() => c.setReportCover((v) => !v)}
           />
         </>
       ),
@@ -204,12 +206,14 @@ export function taskHeaderItems(c: HeaderItemsCtx): { items: HeaderItem[]; railB
       label,
       onSelect: () => on.session(!c.sessionShown),
       pinned: (
-        <ToggleIconButton
+        // 开着不常亮，只在悬停时提亮（tone="flat"）；开没开读屏看 aria-pressed，看得见的是按钮文字
+        <IconButton
           size="sm"
+          tone="flat"
           icon={SquareChartGantt}
           label={label}
-          pressed={c.sessionShown}
-          onPressedChange={on.session}
+          aria-pressed={c.sessionShown}
+          onClick={() => on.session(!c.sessionShown)}
         />
       ),
     })
@@ -222,7 +226,7 @@ export function taskHeaderItems(c: HeaderItemsCtx): { items: HeaderItem[]; railB
       <>
         <IconButton
           size="sm"
-          tone="bare"
+          tone="flat"
           icon={PanelRight}
           label={t('显示文件')}
           title={t('文件')}
@@ -231,7 +235,7 @@ export function taskHeaderItems(c: HeaderItemsCtx): { items: HeaderItem[]; railB
         />
         <IconButton
           size="sm"
-          tone="bare"
+          tone="flat"
           className="hidden xl:grid"
           // 收起时和窄屏那个按钮一样：读屏名是「显示文件」、悬停提示「文件」（两者都指同一栏）
           label={open ? t('收起文件面板') : t('显示文件')}
@@ -239,26 +243,26 @@ export function taskHeaderItems(c: HeaderItemsCtx): { items: HeaderItem[]; railB
           aria-expanded={open}
           onClick={on.filesWide}
         >
-          {/* 开着、收起同一个图标（设计稿）：开着时图标是前景色（tone="bare" 按 aria-expanded 提亮） */}
+          {/* 开着、收起同一个图标（设计稿）：开着也不常亮，只在悬停时提亮（tone="flat"，用户要求） */}
           <PanelRight className="h-4 w-4" />
         </IconButton>
       </>
     )
   } else if (c.rail === 'chat') {
     railButton = (
-      <ToggleIconButton
+      <IconButton
         size="sm"
-        // 设计稿：标题栏右端的图标都无底，开着时是前景色
-        tone="bare"
+        // 标题栏右端的面板开关：开着不常亮，只在悬停时提亮（用户要求）
+        tone="flat"
         icon={PanelRight}
         label={t('开关右栏')}
         // 三样都没有时禁用，悬停说明为什么点不了
         title={
           c.chatRailEmpty ? t('这段聊天里还没有代码、来源或附件') : c.chatRailShown ? t('收起右栏') : t('打开右栏')
         }
-        pressed={c.chatRailShown}
+        aria-pressed={c.chatRailShown}
         disabled={c.chatRailEmpty}
-        onPressedChange={on.chatRail}
+        onClick={on.chatRail}
         // 右栏只在宽屏并排（窄屏放不下第二栏），开关跟着只在宽屏出现
         className="hidden xl:grid"
       />

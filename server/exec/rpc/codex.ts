@@ -1,7 +1,8 @@
+import { commandRule, fileRule } from '../../../shared/allow-rules.ts'
 import path from 'node:path'
 import type { BuildOptions } from '../../../shared/clis.ts'
 import { t } from '../../../shared/i18n.ts'
-import { HOOK_SCRIPT_ENV } from '../../../shared/hooks.ts'
+import { HOOK_SCRIPT_ENV, HOOK_URL_ENV } from '../../../shared/hooks.ts'
 import { clipDetail, codexLimits, codexUsage, oneLine, toolText, type AskReply, type CliEvent } from '../parsers.ts'
 import { createRpcSession, type RpcSession } from './session.ts'
 import type { RpcAdapter, RpcContext } from './types.ts'
@@ -42,7 +43,8 @@ async function trustPanelHooks(ctx: RpcContext, cwd: string) {
       h.trustStatus !== 'trusted' &&
       typeof h.key === 'string' &&
       typeof h.currentHash === 'string' &&
-      String(h.command ?? '').includes(HOOK_SCRIPT_ENV),
+      // 面板自己的钩子：命令引用转发脚本（node）或面板地址（curl）的环境变量
+      [HOOK_SCRIPT_ENV, HOOK_URL_ENV].some((k) => String(h.command ?? '').includes(k)),
   )
   const err = list?.error?.message
   if (!err && !mine.length) return
@@ -220,6 +222,7 @@ export function codexAdapter(
         detail: [p.reason, cmd && clipDetail(cmd), p.cwd && t('目录：{dir}', { dir: p.cwd })]
           .filter(Boolean)
           .join('\n\n'),
+        rule: commandRule(cmd),
         reply: (r) =>
           decided(ctx, r, () =>
             answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
@@ -234,6 +237,8 @@ export function codexAdapter(
         kind: 'file',
         title: p.grantRoot ? t('允许写入目录：{dir}', { dir: p.grantRoot }) : t('修改沙箱以外的文件'),
         detail: String(p.reason ?? ''),
+        // 只有「允许写入某个目录」能一直允许（按那个目录）；没说目录的沙箱外修改每次都问
+        rule: p.grantRoot ? fileRule(`${String(p.grantRoot).replace(/[\\/]+$/, '')}/`) : undefined,
         reply: (r) =>
           decided(ctx, r, () =>
             answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),

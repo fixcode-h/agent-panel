@@ -6,6 +6,7 @@ import type { RealContext } from './real-context.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
 import { askPushRequest, dropOwnRequests, panelRequest } from './panel-requests.ts'
 import { clip } from '../../shared/text.ts'
+import { noteConfirm, nodeTitle } from '../../shared/flow-run.ts'
 
 import { detectVcs } from '../projects-analyze.ts'
 import { gatedRunAgent } from './runner.ts'
@@ -115,6 +116,7 @@ export async function runRealTurn(ctx: RealContext) {
     submitMerge: ctx.submitMerge,
     isolated: ctx.isolated,
     finishChild: ctx.finishChild,
+    runs: ctx.runs,
     ueBuild: ctx.ueBuild,
     peers: ctx.peers,
     messagePeer: ctx.messagePeer,
@@ -123,6 +125,7 @@ export async function runRealTurn(ctx: RealContext) {
     inlineEdit: ctx.inlineEdit,
     runBackground: ctx.runBackground,
     cliTodos: ctx.cliTodos,
+    chatMemory: ctx.chatMemory,
     checkBackground: ctx.checkBackground,
     stopBackground: ctx.stopBackground,
     forwardSpawn: ctx.forwardSpawn,
@@ -144,16 +147,31 @@ export async function runRealTurn(ctx: RealContext) {
         }
       return false
     },
-    // 停止任务时不再等，节点停在这里，继续执行时重新确认
-    confirm: (step, text) =>
-      panelRequest(ctx, {
+    // 停止任务时不再等，节点停在这里，继续执行时重新确认。
+    // 工作流运行：等确认时阶段是「等确认」（父对话的工作流栏据此亮确认按钮），回答记进决定记录
+    confirm: async (step, text) => {
+      const f = ctx.task.flowRun
+      // 运行停着时父对话已经代答了：回到确认就直接用那个回答，不再弹卡片
+      const pre = f?.preAnswer
+      if (f && pre) {
+        f.preAnswer = undefined
+        noteConfirm(f, nodeTitle(ctx.task, step), pre, 'parent')
+        f.delegated = undefined
+        ctx.changed(true)
+        return pre
+      }
+      if (f) [f.phase, f.delegated] = ['confirm', undefined]
+      const r = await panelRequest(ctx, {
         step: step.id,
         agentId: step.agentId,
         kind: 'confirm',
         title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
         // 审阅弹窗按文档渲染整段结果、还要在上面标注，截得太短看不全
         detail: clip(text, 40000),
-      }),
+      })
+      if (f && r) noteConfirm(f, nodeTitle(ctx.task, step), r, f.delegated ? 'parent' : 'user')
+      return r
+    },
     askPush: (info) => askPushRequest(ctx, info, ownAsks),
     // 先建模块文档再开子对话（ADR 0048）：只有项目顶层对话建子对话，文档根按项目设置算
     moduleDocs: ctx.task.parentTaskId

@@ -733,6 +733,10 @@ ${prompt}
   })
   assert.equal(other.model, '', '其他 Agent 不接受临时模型')
   await waitDone(other.id)
+  // Chat 的「关于我」和记忆（设计报告 Chat P1-4）：Chat 页的对话带上，项目里的对话不带
+  await call('PUT', '/chat-memory/about', { about: '叫我小王，回复先给结论' })
+  await call('POST', '/chat-memory/items', { text: '用户的电脑是 Windows' })
+  assert.ok(!calls().at(-1)?.input.includes('## 关于用户'), '项目里的对话不带「关于我」')
   // Chat 模式：不属于项目的聊天，在数据目录里单独的工作目录执行
   // 旧客户端还会传以前默认 Agent 的 id：按不用角色处理
   let free = await call('POST', '/tasks', { mode: 'chat', agentId: 'default-agent', prompt: '随便聊聊' })
@@ -742,6 +746,8 @@ ${prompt}
   assert.equal(free.status, 'done')
   c = calls().at(-1)
   assert.equal(c.cwd, path.join(dataDir, 'chats', free.id), '聊天不在任何项目目录里执行')
+  assert.ok(c.input.includes('## 关于用户') && c.input.includes('叫我小王，回复先给结论'), 'Chat 的对话带上「关于我」')
+  assert.ok(c.input.includes('- 用户的电脑是 Windows'), 'Chat 的对话带上记忆')
   await call('POST', `/tasks/${free.id}/messages`, { text: '再说说' })
   free = await waitDone(free.id)
   assert.ok(calls().at(-1).args.includes('--resume'), '聊天继续时续接会话')
@@ -1015,6 +1021,14 @@ ${prompt}
     step('审查改动：Codex 用审查模式，其他 CLI 按审查的要求跑一轮')
 
     // ---- 分叉、撤回 ----
+    // 先看各家 CLI 自己的分叉：项目关掉「新建对话默认开独立分支」，分叉出来的还在同一个目录，会话能原样分叉
+    const {
+      id: _pid,
+      createdAt: _pc,
+      updatedAt: _pu,
+      ...projectBody
+    } = (await call('GET', '/projects')).find((x) => x.id === project.id)
+    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateByDefault: false })
     let f = await chatWith({ cli: 'claude' }, '第一问')
     f = await waitDone(f.id)
     await call('POST', `/tasks/${f.id}/messages`, { text: '第二问' })
@@ -1077,6 +1091,52 @@ ${prompt}
     step(
       '对话分叉、撤回：Claude Code 用 --resume-session-at，Codex 用 thread/fork，Command Code 截不了时带上之前的对话',
     )
+
+    // 项目设置打开默认独立分支（isolateByDefault）时，分叉出来的对话自己开一个分支，不和原对话改同一个目录；
+    // 换了目录 Codex 的会话接不上，就开新会话把留下的对话带过去
+    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateByDefault: true })
+    const iso = await call('POST', `/tasks/${g.id}/fork`, { messageId: gu.id })
+    assert.equal(iso.worktree?.state, 'active', '分叉出来的顶层对话开了自己的独立分支')
+    assert.notEqual(iso.worktree.path, project.path)
+    await call('POST', `/tasks/${iso.id}/messages`, { text: '分叉到分支后' })
+    await waitDone(iso.id)
+    c = calls().at(-1)
+    assert.equal(c.cwd, iso.worktree.path, '在分叉出来的分支目录里执行')
+    assert.ok(c.input.includes('问 codex'), '换了目录接不上原会话：把留下的对话带过去')
+    step('分叉的对话默认开自己的独立分支，换了目录时把之前的对话带过去')
+
+    // 撤回连同文件一起撤（设计报告 Agent P0-2）：独立分支里的新对话第一轮写了 claude-output.txt，
+    // 撤回第一条（以前不让撤）并撤销文件：对话清空、文件没了，下一轮从头开会话
+    let rv = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'claude',
+      prompt: '写个文件',
+      isolate: true,
+    })
+    rv = await waitDone(rv.id)
+    const out = path.join(rv.worktree.path, 'claude-output.txt')
+    assert.ok(existsSync(out), '第一轮在分支目录里写了文件')
+    rv = await waitFor(
+      async () => {
+        const x = await call('GET', `/tasks/${rv.id}`)
+        return x.messages.some((m) => m.turnChanges?.files.length) ? x : null
+      },
+      { timeout: 10000, label: '第一轮记下了改动' },
+    )
+    const back = await call('POST', `/tasks/${rv.id}/rewind`, {
+      messageId: rv.messages.find((m) => m.role === 'user').id,
+      files: true,
+    })
+    assert.equal(back.ok, true)
+    assert.equal(back.text, '写个文件', '撤回的内容交回去方便改')
+    assert.equal(back.task.messages.length, 0, '第一条也能撤回：对话清空')
+    assert.ok(!existsSync(out), '这一轮新建的文件跟着撤掉')
+    await call('POST', `/tasks/${rv.id}/messages`, { text: '重新来' })
+    await waitDone(rv.id)
+    assert.ok(!calls().at(-1).args.includes('--resume'), '一轮都没留：从头开会话')
+    step('撤回到第一条并撤销文件：对话清空、这几轮改的文件恢复、下一轮从头开会话')
 
     // ---- 自动压缩阈值：Claude Code 用环境变量，Codex 换算成 token 数 ----
     await call('PUT', '/settings', {

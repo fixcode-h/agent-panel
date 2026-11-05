@@ -159,13 +159,6 @@ export interface TasksScope {
     ok: boolean
     info: string
   }>
-  buildFor: Map<
-    string,
-    {
-      parent: string
-      children: string[]
-    }
-  >
   chatProject: (dir: string) => Project
   chatWorkspace: (id: string) => Promise<Project>
   /** 一轮结束后按整棵对话树核用量上限；true 表示到了上限、已经停下（见 tasks/budget.ts） */
@@ -773,4 +766,6 @@ export interface TasksScope {
   }[]
   worktreeHome: (tk: Task, project: Project) => Promise<string>
   worktreeStatusOf: typeof worktreeStatus
+  /** 工作流运行（server/tasks/flow-runs.ts）：父对话的运行工具、运行回信、随父对话暂停 / 继续 */
+  flowRuns: ReturnType<typeof import('./flow-runs.ts').createFlowRuns>
 }

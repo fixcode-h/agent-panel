@@ -15,6 +15,21 @@ export const DOC_PLACE_SIBLING = '项目外层同级 ProjectDoc/docs'
 export const DOC_PLACE_INSIDE = '项目内 docs'
 export const DOC_PLACES = [DOC_PLACE_SIBLING, DOC_PLACE_INSIDE]
 
+/** 项目设置和提示词用到的文档组信息 */
+export interface DocGroupView {
+  key: string
+  root: string
+  manual: boolean
+  branch: string
+  branchDir: string
+  /** 组里的分支：名字和项目目录 */
+  branches: { name: string; path: string }[]
+  /** 还没合并的冲突文件（相对文档根），「文档」合并完删掉 .from- 文件后就不再列 */
+  conflicts: string[]
+  /** 合并旧文档根时出的错 */
+  errors: string[]
+}
+
 /** 文档根只对这几种版本管理按「文档位置」走 */
 export type DocVcs = 'p4' | 'svn'
 export const isDocVcs = (vcs: string | undefined): vcs is DocVcs => vcs === 'p4' || vcs === 'svn'
@@ -27,6 +42,42 @@ export interface DocRootInfo {
   /** 在项目目录外：写进去的文档不做版本管理操作 */
   outside: boolean
   place: string
+  /**
+   * 这个项目所在的分支（项目外的文档根由同一工程的各分支共用时才有，见 server/doc-group.ts）：
+   * 按项目文件夹区分，取项目目录上一级的目录名
+   */
+  branch?: string
+  /** 只属于这个分支的记录（p4change 台账、worklog）放的目录：<文档根>/branches/<分支> */
+  branchDir?: string
+  /** 合并各分支旧文档时内容不同、另存成 .from-<分支> 的文件（相对文档根），等「文档」合并 */
+  conflicts?: string[]
+}
+
+/**
+ * 同一工程的各分支怎么认（用户 2026-11-05 定的「按项目文件夹区分」）：P4 / SVN 的分支常见布局是
+ * <根>/<分支>/<项目文件夹>，比如 D:/P4/Main/Game 和 D:/P4/Dev/Game。项目文件夹名相同、
+ * 分支目录在同一个上级下的项目算同一个工程，共用一个文档根；分支名就是项目目录上一级的目录名。
+ */
+export function docGroupKey(projectPath: string, vcs: DocVcs) {
+  const branchDir = parentDir(projectPath)
+  return `${vcs}:${norm(parentDir(branchDir))}/${baseName(projectPath).toLowerCase()}`
+}
+
+/** 项目所在分支的名字：项目目录上一级的目录名；项目就在根目录下时用项目文件夹名 */
+export function branchNameOf(projectPath: string) {
+  const up = parentDir(projectPath)
+  return baseName(up) || baseName(projectPath)
+}
+
+/** 分支名用作目录名：去掉文件名里不能有的字符 */
+export const branchDirName = (branch: string) => branch.replace(/[<>:"/\\|?*]+/g, '_').trim() || 'default'
+
+/** 路径最后一段（不带分隔符） */
+export function baseName(p: string) {
+  const b = trimEnd(p)
+  const i = Math.max(b.lastIndexOf('/'), b.lastIndexOf('\\'))
+  const last = i < 0 ? b : b.slice(i + 1)
+  return /^[A-Za-z]:$/.test(last) || last === '' ? '' : last
 }
 
 const SEP = /[\\/]+/
@@ -61,7 +112,7 @@ export function joinPath(base: string, rel: string) {
 }
 
 /** 上一级目录；已经是根目录时返回自己 */
-function parentDir(p: string) {
+export function parentDir(p: string) {
   const b = trimEnd(p)
   const i = Math.max(b.lastIndexOf('/'), b.lastIndexOf('\\'))
   if (i < 0) return b
@@ -71,7 +122,7 @@ function parentDir(p: string) {
 }
 
 /** 比较路径用：统一分隔符；Windows 路径（带盘符）不分大小写 */
-function norm(p: string) {
+export function norm(p: string) {
   const s = trimEnd(p).replace(/[\\/]+/g, '/')
   return /^[A-Za-z]:/.test(s) ? s.toLowerCase() : s
 }
@@ -135,7 +186,19 @@ export function docRootText(d: DocRootInfo | undefined) {
     ? `它在项目目录外面：写进去的文档只落盘，${ops}。改动清单、交接和总结里把这些文档单独列成「项目外文档（不纳入版本管理）」。`
     : `它在项目目录里面：文档和代码一样按 ${name} 的规则纳入版本管理。`
   return `## 文档根
-这是 ${name} 项目，文档根是 \`${d.root}\`（${why}）。所有项目文档（模块说明、设计、ADR、Bug 记录、worklog、openspec）都写在它下面，不另找位置。${rule}`
+这是 ${name} 项目，文档根是 \`${d.root}\`（${why}）。所有项目文档（模块说明、设计、ADR、Bug 记录、worklog、openspec）都写在它下面，不另找位置。${rule}${branchText(d)}`
+}
+
+/** 各分支共用文档根时补的一段：哪些按分支分开放、模块文档怎么标分支 */
+function branchText(d: DocRootInfo) {
+  if (!d.branch || !d.branchDir) return ''
+  return `
+
+同一工程的各个分支共用这个文档根，当前分支是「${d.branch}」。
+- 模块说明、ADR、技术文档、Bug 记录、openspec、项目教训各分支共用，直接写在文档根下。
+- 只属于这个分支的记录（p4change 台账、worklog）写在 \`${d.branchDir}\` 下，不写到文档根的同名目录里。
+- 写或改模块文档时，元数据头里的「- 分支：」写成「${d.branch}」（没有这一行就补在「更新」前面）。
+- 读到「分支」不是「${d.branch}」的模块文档，说明它是别的分支写的：照常引用，用到的部分先拿本分支的代码核对，只改和本分支不一致的地方；两个分支在这个模块上确实不同时，在 README 里加一节「## 分支差异」写清楚，不各写一份。`
 }
 
 /**

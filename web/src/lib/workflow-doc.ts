@@ -1,4 +1,8 @@
 import { marked } from 'marked'
+import { mathExtensions } from './md-math'
+
+// 数学公式：先出带原文的占位，渲染组件再懒加载 KaTeX 换成公式（md-math.ts）
+marked.use({ extensions: mathExtensions })
 import type { Agent } from '@shared/schema'
 import { getLang, t } from '@shared/i18n'
 

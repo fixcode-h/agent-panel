@@ -1,5 +1,4 @@
 /** 新建任务的初始数据；真实执行和在线演示共用 */
-import type { FlowProgress } from './flow-child.ts'
 import {
   type AskKind,
   type Attachment,
@@ -27,7 +26,7 @@ import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文。
-  // 点名工作流的那句（shared/flow-child.ts 的 workflowPrompt）不是用户写的，跳过它取后面的要求
+  // 点名工作流的那句（shared/flow-run.ts 的 workflowPrompt）不是用户写的，跳过它取后面的要求
   const raw = prompt
     .replace(/^用工作流「[^」\n]+」(?:（id [^）\n]*）)?做：\n/, '')
     .trim()
@@ -166,6 +165,7 @@ export function newTask(
     workflowName: wf?.name ?? '',
     runSeq: 0,
     requests: [],
+    allowRules: [],
     working: false,
     turnDoneAt: '',
     turnSeenAt: '',
@@ -562,16 +562,18 @@ export const taskGone = (t: {
 export function convState(x: ConvFacts): ConvState {
   // 还有会推回来的结果（子对话、子任务、后台命令、工作流）
   const pending = !!(x.background || x.workflow || x.helpers || x.children)
+  // 诊断报告等确认算在运行，但停下的不算：报告留着随时能确认，只是对话不再一直转圈、停止按钮点了也没变化（用户报过）
+  const diag = !!x.diagnosis && x.status !== 'stopped'
   // 已收起（归档 / 删了独立分支）且真的没在动：收敛成已完成，不再显示「等你处理 / 已暂停 / 待收尾 / 未完成」。
   // 但不能盖住还在跑：用户删了独立分支后接着在原目录做（isolated 的注释：discarded 回到共用目录，worktree 不会清），
   // 或者在等后台命令 / 子对话的结果——这些照旧如实显示，和「已置完成」是同一条规矩。
   // 这也是侧栏「N 个执行中」、标题 (n)、保活回收判定的入口（见 convActive）
-  if (x.gone && !x.working && !x.diagnosis && !pending) return 'done'
+  if (x.gone && !x.working && !diag && !pending) return 'done'
   if (x.requests || x.asking || x.childNeeds) return 'needs'
   // 这一轮失败了但还有结果会推回来时不算失败：结果回来会接着开一轮，
   // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
   if (x.status === 'failed' && !pending) return 'failed'
-  if (x.working || x.diagnosis) return 'running'
+  if (x.working || diag) return 'running'
   if (pending) return 'waiting'
   if (x.status === 'stopped' && !x.resolved && x.stopReason !== 'finish') return 'stopped'
   if (x.wrapup && !x.resolved) return 'wrapup'
@@ -1134,8 +1136,6 @@ export interface ChildEntry {
   diagnosis?: boolean
   /** 用户报的 Bug（ADR 0046）：查到哪个阶段了（见 bug-diagnosis.ts 的 bugStage），行上写「Bug · 阶段」 */
   bug?: string
-  /** 工作流子对话（ADR 0044）：哪个工作流、跑到第几个节点（见 flow-child.ts 的 flowProgress） */
-  flow?: FlowProgress
 }
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（前五项只有一项有值） */
@@ -1597,10 +1597,13 @@ export function restartInterrupted(
 export function restartUnfinished(
   task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'resolved' | 'awaitingUser'> & {
     runs?: Task['runs']
+    diagnoses?: Task['diagnoses']
   },
 ): boolean {
   // 已经收口（resolved）的绝不回名单：它做完了、分支也合了，重启后再拉起就是白跑一轮（也会留下没人要的进程）
   if (task.resolved === true) return false
+  // 诊断报告在等用户确认：重启后仍停在等确认，不拉起 CLI（ADR 0045，见 task-settle.ts 的 diagnosisWaiting）
+  if (diagnosisPending(task)) return false
   // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
   if (task.stopReason === 'user') return false
   // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。

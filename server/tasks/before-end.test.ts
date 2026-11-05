@@ -63,3 +63,22 @@ test('计划只剩合回那一步、没列计划但改过文件：该请收尾�
   ]
   assert.equal(mergeOwedOf(kid({ plans: notYet }), false), '', '别的步骤还没做完，归计划那一档管')
 })
+
+test('预热的进程也装结束前钩子：还没收到用户消息时放行，收到后照常判断', async () => {
+  const { createBeforeEnd } = await import('./before-end.ts')
+  const task = { id: 'c1', prewarming: true, messages: [], requests: [], plans: [], steps: [] } as never as {
+    prewarming: boolean
+  }
+  const sc = { live: new Map([['c1', { task }]]), store: { get: async () => task } } as never
+  const decide = createBeforeEnd(sc, {
+    budget: {} as never,
+    inputOf: () => '',
+    haltedBy: () => 'user',
+    activeChildren: async () => 0,
+    lastNudge: () => '',
+  })
+  assert.deepEqual(await decide('c1', {}), { block: false, why: 'prewarm' })
+  // 收到消息后 runner 清掉 prewarming：不再按预热放行（这里被「用户叫停」挡下，说明走到了正常判断）
+  task.prewarming = false
+  assert.equal((await decide('c1', {})).why, 'halted:user')
+})

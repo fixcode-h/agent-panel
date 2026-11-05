@@ -12,6 +12,13 @@ export type CliEvent =
   | { type: 'session'; id: string }
   /** 开始一次模型请求：执行中补充的消息会在这次请求前被 CLI 取走 */
   | { type: 'request_start' }
+  /**
+   * 面板把一条输入（任务、下一句、插话）交给了 CLI：模型请求从这里开始等。
+   * 只给「请求开始」报得晚的 CLI 用（Claude Code 的 message_start 在模型回出第一段时才到），见 cli-trace.ts
+   */
+  | { type: 'sent' }
+  /** 这次模型请求从交出去到第一段输出等了多久（cli-trace.ts 算好后插进来，runner 记进用量） */
+  | { type: 'wait'; ms: number }
   | { type: 'text_delta'; text: string }
   /** 一整段文字（没有流式增量时使用） */
   | { type: 'text'; text: string }
@@ -115,6 +122,10 @@ export type CliEvent =
       options?: string[]
       /** 一次问了几个问题（Claude Code 的 AskUserQuestion） */
       questions?: import('../../shared/schema.ts').AskQuestion[]
+      /** 改文件请求的差异（见 shared/allow-rules.ts 的 editDiff） */
+      diff?: string
+      /** 「一直允许这类」的规则键（shared/allow-rules.ts） */
+      rule?: string
       reply: (r: AskReply) => void
     }
 
@@ -130,6 +141,10 @@ export type AskReply = {
    * 协议的拒绝能带原话的接在 message 后面；带不了的（Codex 只有 decline）由适配器插话交给这一轮
    */
   advice?: string
+  /** 允许并且这个对话里一直允许这类 */
+  always?: boolean
+  /** 工作流节点确认时只是追问：回答问题、不改结果（见 engine.ts 的确认循环） */
+  ask?: boolean
 }
 
 export type Parser = (obj: any) => CliEvent[]

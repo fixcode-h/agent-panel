@@ -26,6 +26,11 @@ export interface ModuleDoc {
   deps: string[]
   /** 最近一次更新：日期 · 提交号，原样保留 */
   updated: string
+  /**
+   * 最近一次更新这份文档的分支（P4 / SVN 各分支共用一个文档根时写，见 server/doc-group.ts）；
+   * 没写时为空串，按当前分支写的处理
+   */
+  branch: string
 }
 
 /** 字段名 → 键：新格式中文、旧格式英文都认 */
@@ -42,6 +47,8 @@ const FIELDS: Record<string, keyof ModuleDoc> = {
   依赖: 'deps',
   更新: 'updated',
   analyzed_at: 'updated',
+  分支: 'branch',
+  branch: 'branch',
 }
 
 /** 一个字段的值拆成多项：反引号包着的每段算一项，没有反引号时按中文顿号、逗号拆 */
@@ -74,6 +81,7 @@ export function parseModuleDoc(name: string, text: string): ModuleDoc | null {
     keywords: [],
     deps: [],
     updated: '',
+    branch: '',
   }
   for (const line of lines.slice(head + 1)) {
     if (/^## /.test(line)) break
@@ -83,7 +91,7 @@ export function parseModuleDoc(name: string, text: string): ModuleDoc | null {
     if (!key) continue
     const v = m[2].trim()
     if (key === 'status') doc.status = statusOf(v)
-    else if (key === 'role' || key === 'updated') doc[key] = v
+    else if (key === 'role' || key === 'updated' || key === 'branch') doc[key] = v
     else if (key === 'sources' || key === 'entry' || key === 'keywords' || key === 'deps') doc[key] = items(v)
   }
   return doc
@@ -211,4 +219,27 @@ export function migrateModuleHead(text: string, role: string): string {
   return [...lines.slice(0, head + 1), '', ...fields, '', ...tail, ...lines.slice(end)]
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
+}
+
+/**
+ * 给模块 README 的元数据头补上「分支」一行（老项目迁移到共用文档根时用）：已经写了分支的原样返回，
+ * 没有元数据头（不是模块文档）的也原样返回。补在「更新」前面，没有「更新」就补在元数据头最后
+ */
+export function withModuleBranch(text: string, branch: string): string {
+  if (!branch) return text
+  const nl = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  const head = lines.findIndex((l) => /^# /.test(l))
+  if (head < 0) return text
+  let end = lines.findIndex((l, i) => i > head && /^## /.test(l))
+  if (end < 0) end = lines.length
+  const isField = (l: string, re: RegExp) => re.test(l.trim())
+  const block = lines.slice(head + 1, end)
+  if (block.some((l) => isField(l, /^-\s*(分支|branch)\s*[：:]/))) return text
+  const fields = block.map((l, i) => (/^-\s*[^：:\s]+\s*[：:]/.test(l.trim()) ? i : -1)).filter((i) => i >= 0)
+  if (!fields.length) return text
+  const updated = block.findIndex((l) => isField(l, /^-\s*(更新|analyzed_at)\s*[：:]/))
+  const at = head + 1 + (updated >= 0 ? updated : fields[fields.length - 1] + 1)
+  lines.splice(at, 0, `- 分支：${branch}`)
+  return lines.join(nl)
 }

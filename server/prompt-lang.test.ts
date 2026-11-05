@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { FlowRun } from '../shared/task-flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
@@ -79,6 +80,7 @@ async function nodePrompt(): Promise<string> {
   const w = workflow()
   const task = {
     ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, w, '', 't'),
+    flowRun: FlowRun.parse({ owner: 'p' }),
     id: 't',
   } as Task
   await runEngineTurn(host(task, log, [agent('w', '开发')]))
@@ -198,6 +200,7 @@ test('子任务提示词：子对话派出的子任务也带回复语言规则',
     const w = workflow()
     const task = {
       ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, w, '', 't'),
+      flowRun: FlowRun.parse({ owner: 'p' }),
       id: 't',
     } as Task
     const base = host(task, log, [agent('w', '开发')])

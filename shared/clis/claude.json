@@ -240,7 +240,8 @@
   "envExample": "ANTHROPIC_API_KEY=sk-ant-...",
   "env": {
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
-    "ENABLE_TOOL_SEARCH": "false"
+    "ENABLE_TOOL_SEARCH": "false",
+    "CLAUDE_CODE_MCP_STARTUP_WAIT_MS": "3000"
   },
   "options": [
     {
@@ -393,6 +394,7 @@
             "hooks": {
               "PreToolUse": [
                 {
+                  "matcher": "{toolMatcher}",
                   "hooks": [
                     {
                       "type": "command",
@@ -425,6 +427,7 @@
             "hooks": {
               "PostToolUse": [
                 {
+                  "matcher": "{toolMatcher}",
                   "hooks": [
                     {
                       "type": "command",
@@ -436,6 +439,7 @@
               ],
               "PostToolUseFailure": [
                 {
+                  "matcher": "{toolMatcher}",
                   "hooks": [
                     {
                       "type": "command",
@@ -496,7 +500,16 @@
       "path": ["file_path", "notebook_path"],
       "output": ["tool_response", "error"],
       "failed": ["error"]
+    },
+    "http": {
+      "minVersion": "2.1.318",
+      "entry": { "type": "http", "url": "{url}", "timeout": 70 },
+      "why": "2.1.318 实测支持 type: http 的钩子：直接 POST 到面板，不用每次调工具都起一个 node 跑转发脚本（Windows 上每次 0.1–0.2 秒）。读不到本机版本时照旧用转发脚本"
     }
+  },
+  "mcpProbe": {
+    "files": [".mcp.json"],
+    "waitEnv": "CLAUDE_CODE_MCP_STARTUP_WAIT_MS"
   },
   "mcpStore": {
     "file": "${CLAUDE_CONFIG_DIR:-~}/.claude.json",

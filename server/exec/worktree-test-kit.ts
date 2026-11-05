@@ -44,6 +44,7 @@ export const {
   mergeSidesText,
   mergeWorktree,
   missingDeps,
+  refillSpareDeps,
   releaseWorktree,
   removeWorktree,
   sweepWorktrees,

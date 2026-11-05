@@ -12,7 +12,9 @@ import {
   childState,
   childWaitText,
   convStateText,
+  sortChildren,
   stopReasonText,
+  visibleChildren,
   type ChildActivity,
   type ChildEntry,
 } from '@shared/task'
@@ -134,13 +136,16 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
   if (convGone(c) === 'closed') out.push({ text: t('已关闭'), tone: 'plain' })
   if (c.resolved && icon === 'done') out.push({ text: t('已解决'), tone: 'success', icon: 'check' })
   // 等的是权限确认（或它下面的子对话在等）时写「等你确认」：说成「选择」用户会去找提问卡
+  // 工作流节点做完等你确认结果的（见 stageConfirm）写「阶段待确认」，和「报告待确认」一个说法
   if (icon === 'waiting')
     out.push({
-      text: c.asking || !(c.requests || c.childNeeds) ? t('等{who}选择', { who }) : t('等{who}确认', { who }),
+      text: stageConfirm(c)
+        ? t('阶段待确认')
+        : c.asking || !(c.requests || c.childNeeds)
+          ? t('等{who}选择', { who })
+          : t('等{who}确认', { who }),
       tone: 'warning',
     })
-  // 工作流子对话（ADR 0044）：先说是哪个工作流；流程图还没跑完时带上做到第几个节点，跑完了就是普通的收尾
-  if (c.flow) out.push({ text: flowLabel(c.flow), tone: 'plain' })
   // 用户报的 Bug（ADR 0046）：查到哪个阶段了；等你确认报告时下面写「报告待确认」，这里只说是 Bug
   if (c.bug)
     out.push({
@@ -153,7 +158,8 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
     out.push({ text: t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total }), tone: 'warning' })
   // 交了 Bug 诊断报告、等你确认（ADR 0045）：还在转圈（没做完），但状态写成「报告待确认」并用提醒色，
   // 一眼和别的「执行中」分开，知道是这一个在等你看报告
-  if (icon === 'running' && c.diagnosis) out.push({ text: t('报告待确认'), tone: 'warning' })
+  // 等报告时又提了问（图标是 waiting，前面已经写了「等你选择 / 确认」）：仍写出报告在等确认，这一行留在运行区
+  if ((icon === 'running' || icon === 'waiting') && c.diagnosis) out.push({ text: t('报告待确认'), tone: 'warning' })
   else if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })
   if (parked) out.push({ text: convStateText(state), tone: 'subtle' })
   // 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText）。
@@ -165,14 +171,6 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
   // plan 来自 openPlan：只在计划没做完时才有值（做完了是 undefined）
   if (icon === 'idle' && c.plan) out.push({ text: t('Agent 进程已回收，继续会重新拉起'), tone: 'subtle' })
   return out
-}
-
-/** 工作流子对话的标签：工作流名字，流程图没跑完时加上进度（「工作流 · 通用项目 2/3」） */
-export function flowLabel(f: NonNullable<ChildSummary['flow']>) {
-  const live = f.state !== 'handed' && f.state !== 'cancelled' && f.total > 0
-  return live
-    ? t('工作流 · {name} {done}/{total}', { name: f.name, done: f.done, total: f.total })
-    : t('工作流 · {name}', { name: f.name })
 }
 
 /**
@@ -191,4 +189,33 @@ export const childLabelClass: Record<ChildLabelTone, string> = {
   accent: 'shrink-0 text-caption text-accent-text',
   subtle: 'shrink-0 text-caption text-subtle',
   plain: 'chip-lift shrink-0 rounded-full bg-field px-1.5 text-caption text-subtle',
+}
+
+/**
+ * 交了诊断报告等你确认（ADR 0045）、又在等你回答提问或确认请求的子对话：状态是「等你处理」（convState 里
+ * requests / asking 排在诊断前面），不转圈，visibleChildren 不列它。以前运行区里这一行就此消失，
+ * 只剩输入框上方「等你回答」那一条，看着像子对话行被提问顶掉了（用户报的现象）。
+ * 运行区照旧留着这一行（行尾还是「查看报告」），提问另外显示。停下的、已收起的不算：报告不再算在跑
+ */
+export const reportAsking = (c: ChildEntry) =>
+  !!c.diagnosis && c.status !== 'stopped' && !c.gone && childIcon(c) === 'waiting'
+
+/**
+ * 工作流节点做完、等你确认这一步结果的子对话（请求 kind 'confirm'）：工作流还没走完，和诊断报告一样
+ * 算「还在进行」——运行区、子对话小块一直留着这一行（提醒色转圈），行尾「查看结果」在父对话页直接打开审阅弹窗。
+ * 以前它不转圈（convState 是「等你处理」），只在输入框上方单独起一条黄色确认条，用户要求去掉那条、
+ * 改成和诊断报告一样留在子对话行上。已收起、已解决的不算：没人再处理它的请求。
+ * 停下了也算：请求还挂着，工作流还没走完（只是不再转圈，见 RunningNow）
+ */
+export const stageConfirm = (c: Pick<ChildEntry, 'resolved' | 'gone'> & { request?: Pick<ChildRequest, 'kind'> }) =>
+  c.request?.kind === 'confirm' && !c.resolved && !c.gone
+
+/**
+ * 运行区列的子对话：转圈的那一批（visibleChildren）加上等诊断报告时又提了问的、等你确认工作流阶段结果的；
+ * 顺序同 sortChildren
+ */
+export function listedChildren<C extends ChildEntry & { request?: Pick<ChildRequest, 'kind'> }>(children: C[]): C[] {
+  const shown = new Set(visibleChildren(children))
+  const extra = children.filter((c) => !shown.has(c) && (reportAsking(c) || stageConfirm(c)))
+  return extra.length ? sortChildren([...visibleChildren(children), ...extra]) : visibleChildren(children)
 }

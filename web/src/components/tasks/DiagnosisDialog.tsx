@@ -25,6 +25,7 @@ const STATUS: Record<Diagnosis['status'], () => string> = {
   questioned: () => t('你提了意见，它在再查'),
   approved: () => t('已确认，按这版方案修'),
   superseded: () => t('已作废，有更新的一版'),
+  cancelled: () => t('你取消了，这次不修'),
 }
 
 /** 每一版的标题、正文和状态：正文按上一版补出「回答上一版的意见」；author：引入点写不写作者（设置里的开关） */
@@ -82,6 +83,24 @@ export function DiagnosisDialog({
         revise: t('有疑问，再查'),
         hintApprove: t('方案没问题就确认，它才会开始改；有疑问先选中文字标注'),
         hintRevise: t('「有疑问，再查」把标注按编号交回，它逐条查清后交新一版'),
+      }}
+      cancel={{
+        label: t('取消修复'),
+        title: t('取消这次修复？'),
+        description: t(
+          '不再等你确认方案，这一轮就此结束，计划标记为完成，不会改任何文件。之后在这个对话里发话，它会照你的新话做。',
+        ),
+        confirm: t('不修了'),
+        // 不发话给子对话：交报告那一轮已经结束了，计划由服务端收口，它停着等你的下一句
+        onCancel: async (overall) => {
+          const r = await api.decideDiagnosis(task.id, last.version, {
+            approve: false,
+            cancel: true,
+            notes: [],
+            overall,
+          })
+          onDone?.(r.task)
+        },
       }}
       onAnswer={async (allow, _text, raw) => {
         const notes = (raw?.notes ?? []).map((n) => ({

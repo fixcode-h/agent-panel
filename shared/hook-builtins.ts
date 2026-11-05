@@ -173,6 +173,32 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     ],
   },
   {
+    id: 'plan-pace',
+    event: 'tool.after',
+    name: () => t('计划没跟上提醒'),
+    description: () =>
+      t(
+        '项目里的对话改文件、跑命令时，计划没有进行中的步骤，或者进行中的那一步动手多次还没更新，补一句让它先用 set_plan 标完成、标下一步（同一步提醒几次可以设置）',
+      ),
+    defaultOn: true,
+    params: [
+      {
+        key: 'calls',
+        kind: 'number',
+        label: () => t('动手几次没更新就提醒'),
+        hint: () => t('1 到 100，默认 20；超过 3 分钟没更新时，到三分之一就提醒'),
+        default: 20,
+      },
+      {
+        key: 'times',
+        kind: 'number',
+        label: () => t('同一步最多提醒几次'),
+        hint: () => t('1 到 100，默认 1；提醒过后再动手到上面的次数才提醒下一次'),
+        default: 1,
+      },
+    ],
+  },
+  {
     id: 'verify-before-end',
     event: 'turn.beforeEnd',
     name: () => t('改完没验证'),

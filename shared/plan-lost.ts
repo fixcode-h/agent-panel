@@ -1,4 +1,5 @@
-import { activePlan, settleWait } from './plan.ts'
+import { settleWait } from './plan.ts'
+import { waitPlans } from './plan-wait.ts'
 import type { PlanWait, Task } from './schema.ts'
 
 // 放在单独的文件里：shared/plan.ts 到了行数上限（scripts/file-caps.json）
@@ -12,7 +13,8 @@ export function failLostWaits(
   kind: PlanWait['kind'],
   known: (ref: string) => boolean,
 ) {
-  const waits = activePlan(task)?.steps.flatMap((s) => [s, ...s.children].flatMap((x) => x.waits)) ?? []
+  // 提前结束的计划里挂着的也算（见 waitPlans）
+  const waits = waitPlans(task, kind).flatMap((p) => p.steps.flatMap((s) => [s, ...s.children].flatMap((x) => x.waits)))
   const lost = waits.filter((w) => w.kind === kind && w.state === 'waiting' && !known(w.ref))
   return [...new Set(lost.map((w) => w.ref))].filter((ref) => settleWait(task, kind, ref, false).length).length
 }

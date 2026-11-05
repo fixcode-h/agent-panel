@@ -260,15 +260,7 @@ export function WorkflowDetail({
             </FormSection>
 
             <FormSection title={t('角色分工')}>
-              <TeamEditor
-                mainAgentId={draft.mainAgentId}
-                onMainChange={(id) => set('mainAgentId', id)}
-                team={team}
-                dispatch={draft.dispatch !== false}
-                onDispatchChange={(v) => set('dispatch', v)}
-                mainTier={draft.mainTier ?? ''}
-                onMainTierChange={(v) => set('mainTier', v)}
-              />
+              <TeamEditor mainAgentId={draft.mainAgentId} onMainChange={(id) => set('mainAgentId', id)} team={team} />
             </FormSection>
 
             <FormSection title={t('预算上限')}>
@@ -292,6 +284,19 @@ export function WorkflowDetail({
                   />
                 </Field>
               </div>
+            </FormSection>
+
+            <FormSection title={t('修改轮次')}>
+              <p className="-mt-2 text-xs leading-relaxed text-subtle">
+                {t('同一个节点被要求修改超过这么多轮时，运行结尾提示一句（不会强制停下）。0 表示不提示。')}
+              </p>
+              <Field label={t('最多几轮')} className="max-w-60">
+                <Input
+                  inputMode="numeric"
+                  value={String(draft.reviseLimit ?? 3)}
+                  onChange={(e) => set('reviseLimit', Math.min(50, Number(e.target.value.replace(/[^\d]/g, '')) || 0))}
+                />
+              </Field>
             </FormSection>
 
             <FormSection title={t('工作流说明')}>

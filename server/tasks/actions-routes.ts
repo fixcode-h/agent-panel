@@ -2,14 +2,18 @@ import { type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { TaskPatch, Task, RequestAnswer, defaultAgent } from '../../shared/schema.ts'
-import { childHoldText, helpersWorking, trackWait, withTaskModel } from '../../shared/task.ts'
+import { childHoldText, diagnosisPending, helpersWorking, trackWait, withTaskModel } from '../../shared/task.ts'
+import { settleStopped } from '../../shared/task-settle.ts'
+import { subtreeTaskIds } from '../../shared/run-usage.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { childAskEffect } from '../../shared/child-ask.ts'
 import { NO_PUSH_ANSWER, pushAnswerCut } from '../../shared/push-auth.ts'
 import { getSettings } from '../settings.ts'
 import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
+import { createWorktree } from '../exec/worktree.ts'
 import { answerRequest, dropRequests } from '../exec/requests.ts'
 import { cancelWait, forgetNotes } from '../exec/steering.ts'
+import { convChanges } from '../../shared/conv-changes.ts'
 import { taskLog } from '../task-log.ts'
 import { log } from '../log.ts'
 import { settleBefore } from './helpers.ts'
@@ -107,6 +111,43 @@ export function registerActionRoutes(s: TasksScope) {
       const lm = x?.messages.find((y) => y.id === m.id)
       if (lm?.turnChanges) lm.turnChanges = { ...lm.turnChanges, revertedAt: at }
     }
+    const base = live ?? tk
+    const changes = (await taskChanges(dir, base).catch(() => null)) ?? base.changes
+    if (live) live.changes = changes
+    const saved = await s.store.update(id, { ...base, changes }, { now: true })
+    return c.json({ ok: true, task: saved, files: r.files })
+  })
+
+  // 撤销整个对话的改动（对话停下后最后面那张改动卡片的撤销）：各轮从后往前一起撤，规则和撤一轮相同——
+  // 之后用户自己又改的保留，有文件撤不干净时一个都不动，把冲突交回页面
+  s.routes.post('/:id/conv-revert', async (c) => {
+    const id = c.req.param('id')
+    const tk = await s.current(id)
+    if (!tk) return s.bad(c, t('任务不存在'), 404)
+    if (tk.imported) return s.bad(c, s.READONLY, 409)
+    if (tk.working || tk.steps.some((x) => x.status === 'running'))
+      return s.bad(c, t('对话正在执行，等这一轮结束后再撤销'), 409)
+    const ch = convChanges(tk.messages)
+    if (!ch.files.length) return s.bad(c, t('这个对话没有要撤销的改动'), 404)
+    const dir = await s.taskDir(tk)
+    if (!dir) return s.bad(c, t('任务没有工作目录'), 404)
+    let r: Awaited<ReturnType<typeof undoSpans>>
+    try {
+      r = await undoSpans(
+        dir,
+        ch.spans,
+        ch.files.map((f) => f.path),
+      )
+    } catch (e) {
+      return s.bad(c, t('撤销失败：{error}', { error: (e as Error).message }))
+    }
+    if (!r.ok) return c.json({ ok: false, conflicts: r.conflicts })
+    taskLog(id, '撤销了整个对话的改动', { turns: ch.turns.length, files: r.files.length })
+    const at = new Date().toISOString()
+    const live = s.live.get(id)?.task
+    for (const x of [live, tk])
+      for (const lm of x?.messages ?? [])
+        if (lm.turnChanges && ch.turns.includes(lm.id)) lm.turnChanges = { ...lm.turnChanges, revertedAt: at }
     const base = live ?? tk
     const changes = (await taskChanges(dir, base).catch(() => null)) ?? base.changes
     if (live) live.changes = changes
@@ -306,27 +347,94 @@ export function registerActionRoutes(s: TasksScope) {
     return { through: th, session: th.session, latest }
   }
 
-  // 撤回到某条消息：这条和之后的对话都去掉，下一轮从它之前接着聊（文件改动不会撤销）；返回被撤回的那条，方便改了再发
+  /**
+   * 撤回到某条消息：这条和之后的对话都去掉，下一轮从它之前接着聊；返回被撤回的那条，方便改了再发。
+   * files：连同被撤掉那几轮改的文件一起撤（每一轮记下的 turnChanges，和「撤销整个对话」同一套 undoSpans）——
+   * 以前只截对话，代码还停在撤掉的那几轮之后，用户要再去「更改」里一个个撤（设计报告的 Agent P0-2）。
+   * 撤不干净（之后用户或别的对话又改过同一处）时什么都不动，把冲突交回页面。
+   * 被撤掉那几轮里建的计划作废、开的子对话停下并归档：它们是为被撤掉的要求做的，留着会接着往下推。
+   * 第一条也能撤：等于清空对话重新开始（会话从头开）
+   */
   s.routes.post('/:id/rewind', async (c) => {
     const task = await idleTask(c)
     if (task instanceof Response) return task
-    const { messageId } = (await c.req.json().catch(() => ({}))) as { messageId?: string }
-    const i = task.messages.findIndex((m) => m.id === messageId && m.role === 'user' && !m.step)
+    const body = (await c.req.json().catch(() => ({}))) as { messageId?: string; files?: boolean }
+    const i = task.messages.findIndex((m) => m.id === body.messageId && m.role === 'user' && !m.step)
     if (i < 0) return s.bad(c, t('找不到这条消息'))
-    if (!task.messages.slice(0, i).some((m) => m.role === 'user'))
-      return s.bad(c, t('第一条消息不能撤回，可以新建一个对话'))
     const removed = task.messages[i]
-    const updated = await s.store.update(task.id, {
+    const cut = convChanges(task.messages.slice(i))
+    let reverted: string[] = []
+    if (body.files && cut.files.length) {
+      const dir = await s.taskDir(task)
+      if (!dir) return s.bad(c, t('任务没有工作目录'), 404)
+      let r: Awaited<ReturnType<typeof undoSpans>>
+      try {
+        r = await undoSpans(
+          dir,
+          cut.spans,
+          cut.files.map((f) => f.path),
+        )
+      } catch (e) {
+        return s.bad(c, t('撤销失败：{error}', { error: (e as Error).message }))
+      }
+      if (!r.ok) return c.json({ ok: false, conflicts: r.conflicts })
+      reverted = r.files
+    }
+    const kids = await dropLaterChildren(task.id, removed.at)
+    const kept = task.messages.slice(0, i)
+    const dir = reverted.length ? await s.taskDir(task) : ''
+    const base = {
       ...task,
-      messages: task.messages.slice(0, i),
+      messages: kept,
+      // 第一条也能撤：前面没有用户消息时 turnBefore 一轮都不留（through 为空），下一轮开新会话
       rewind: { ...turnBefore(task, i), cut: removed.turn ?? null },
-      status: 'done',
+      status: 'done' as const,
       todos: [],
+      plans: task.plans.filter((p) => p.createdAt < removed.at),
       // 推送授权是在被撤掉的那段对话里点的：跟着撤掉，下一轮需要推送时重新问
       ...(pushAnswerCut(task, removed.at) ? NO_PUSH_ANSWER : {}),
+    }
+    const changes = dir ? ((await taskChanges(dir, base).catch(() => null)) ?? base.changes) : base.changes
+    const updated = await s.store.update(task.id, { ...base, changes })
+    taskLog(task.id, '撤回到一条消息', {
+      files: reverted.length || undefined,
+      children: kids || undefined,
     })
-    return c.json({ task: updated, text: removed.text, attachments: removed.attachments ?? [] })
+    return c.json({ ok: true, task: updated, text: removed.text, attachments: removed.attachments ?? [] })
   })
+
+  /** 撤回时：这条消息之后开的子对话停下并归档，返回停了几个 */
+  async function dropLaterChildren(id: string, at: string) {
+    const kids = (await s.store.list()).filter((x) => x.parentTaskId === id && x.createdAt >= at && !x.archived)
+    for (const k of kids) {
+      await s.stopTree(k.id, 'parent').catch(() => {})
+      const cur = s.live.get(k.id)?.task ?? (await s.store.get(k.id))
+      if (!cur) continue
+      cur.archived = true
+      cur.updatedAt = new Date().toISOString()
+      await s.store.update(k.id, cur)
+    }
+    return kids.length
+  }
+
+  /**
+   * 分叉出来的顶层对话在哪个目录做：以前一律回到项目目录，和原对话（或同项目别的对话）改同一个目录会互相覆盖。
+   * 原对话在独立分支里：从它的分支再开一个（看得到它已经提交的改动，合回原对话合回的那个分支；没提交的改动不带）；
+   * 没开的按项目设置的默认（isolateByDefault）决定开不开。开不了（不是 git 仓库、没有提交）就照旧在项目目录里做
+   */
+  async function forkWorktree(task: Task, id: string, title: string) {
+    if (!task.projectId || task.parentTaskId) return null
+    const project = await s.deps.projects.get(task.projectId)
+    const from = task.worktree?.state === 'active' ? task.worktree : null
+    if (!project || (!from && !project.isolateByDefault)) return null
+    try {
+      const wt = await createWorktree(from?.path ?? project.path, id, title)
+      return from ? { ...wt, baseBranch: from.baseBranch } : wt
+    } catch (e) {
+      log.info('task', '分叉的对话开不了独立分支，在项目目录里做', { task: id, error: (e as Error).message })
+      return null
+    }
+  }
 
   // 从某条消息分叉：新建一个对话，带着到这条消息为止的对话（含它的回复），原对话不动
   s.routes.post('/:id/fork', async (c) => {
@@ -343,9 +451,12 @@ export function registerActionRoutes(s: TasksScope) {
     const agents = Object.fromEntries(
       Object.entries(task.usage.agents).map(([k, v]) => [k, { ...v, tps: 0, lastTps: 0, outputTokens: 0, genMs: 0 }]),
     )
+    const title = t('{title}（分叉）', { title: task.title }).slice(0, 80)
+    const id = randomUUID()
     const forked = await s.store.create({
       ...rest,
-      title: t('{title}（分叉）', { title: task.title }).slice(0, 80),
+      id,
+      title,
       autoTitle: false,
       // 消息 id 换新的，免得两个任务里的消息 id 相同
       messages: kept.map((m) => ({ ...m, id: randomUUID() })),
@@ -356,7 +467,7 @@ export function registerActionRoutes(s: TasksScope) {
       runStartedAt: '',
       requests: [],
       todos: [],
-      worktree: null,
+      worktree: await forkWorktree(task, id, title),
       archived: undefined,
       // 推送授权只对点它的那个对话有效：分叉出来的是新对话，需要推送时重新问一次
       ...NO_PUSH_ANSWER,
@@ -420,6 +531,29 @@ export function registerActionRoutes(s: TasksScope) {
     }
   })
 
+  /**
+   * 诊断报告等确认的对话（ADR 0045）这一轮多半已经说完、CLI 不在跑，停止整棵树碰不到它，状态还是「完成」，
+   * 报告又让它一直算在运行（convState 的 diagnosis）：停止按钮一直在、点了没有变化（用户报过）。
+   * 用户停止时把这棵树里报告还在等确认的对话落成已停止：报告留着，之后照样能确认，确认后发的消息会接着拉起它。
+   * 子对话也记成 user：没有用户的确认它接着跑也只能再等，父对话继续时不用把它白拉起来一轮
+   */
+  async function parkDiagnoses(id: string) {
+    const all = await s.store.list()
+    for (const tid of subtreeTaskIds(all, id)) {
+      const first = s.live.get(tid)?.task ?? all.find((x) => x.id === tid)
+      if (!first || !diagnosisPending(first)) continue
+      // 还在收尾的先等它收完，不和引擎抢着写盘
+      await settleBefore(s.live.get(tid))
+      const e = s.live.get(tid)
+      const tk = e?.task ?? (await s.store.get(tid))
+      if (!tk || tk.working || tk.status === 'stopped') continue
+      Object.assign(tk, settleStopped(tk, 'user'), { updatedAt: new Date().toISOString() })
+      if (e) e.rev++
+      taskLog(tid, '停止：诊断报告还在等确认，落成已停止')
+      await s.store.update(tid, tk)
+    }
+  }
+
   /** 用户停止这个对话：停止按钮、提问窗口的关闭都走这里 */
   async function userStop(id: string) {
     // 停止就是这棵对话树都别干了：自下而上先停子对话（连同它们的子任务、工作流），最后停这个对话，
@@ -456,6 +590,7 @@ export function registerActionRoutes(s: TasksScope) {
     // 等这个对话停稳再回：返回的就是停下后的状态，按钮马上从「停止」变回来，不用等下一次推送（用户报过）。
     // 进程已经结束，一般几十毫秒；收不完的最迟由 watchStop 收口（settleBefore 有上限）
     await settleBefore(s.live.get(id))
+    await parkDiagnoses(id)
     // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
     // 进程不该再留着时（卡住、换机器前的清理）用这个
     if (c.req.query('force')) {

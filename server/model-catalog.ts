@@ -263,49 +263,69 @@ export function modelCatalogApi() {
     job.at = Date.now()
   }
 
-  return new Hono()
-    .get('/', async (c) => {
-      const settings = await getSettings()
-      return c.json({
-        entries: await mergedModelCatalog(),
-        file: MODEL_CONFIG_FILE,
-        dir: MODEL_CONFIG_DIR,
-        aiLookup: settings.modelCatalog.aiLookup,
-      } satisfies ModelCatalogInfo)
-    })
-    .post('/lookup', async (c) => {
-      const p = LookupInput.safeParse(await c.req.json().catch(() => ({})))
-      if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
-      const settings = await getSettings()
-      if (!settings.modelCatalog.aiLookup)
-        return c.json({ error: t('模型信息补全已关闭，请先在「设置 · Agent」里打开') }, 400)
-      const input = p.data
-      if (input.cli && !getCli(input.cli)) return c.json({ error: t('未知的 Agent：{cli}', { cli: input.cli }) }, 400)
-      const job: Job = {
-        id: randomUUID(),
-        model: input.model,
-        protocol: input.protocol,
-        status: 'running',
-        text: '',
-        startedAt: Date.now(),
-        abort: new AbortController(),
-        at: Date.now(),
-        cli: input.cli,
-      }
-      jobs.set(job.id, job)
-      void run(job)
-        .catch((e) => fail(job, (e as Error).message))
-        .finally(() => (job.at = Date.now()))
-      return c.json(view(job), 201)
-    })
-    .get('/lookup/:id', (c) => {
-      const j = jobs.get(c.req.param('id'))
-      return j ? c.json(view(j)) : c.json({ error: t('找不到这次查询，可能已过期') }, 404)
-    })
-    .post('/lookup/:id/stop', (c) => {
-      const j = jobs.get(c.req.param('id'))
-      if (!j) return c.json({ error: t('找不到这次查询') }, 404)
-      j.abort.abort()
-      return c.json(view(j))
-    })
+  const PriceInput = z.object({
+    vendor: z.string().min(1),
+    id: z.string().min(1),
+    price: ModelCatalogEntry.shape.price.unwrap().nullable(),
+  })
+
+  return (
+    new Hono()
+      .get('/', async (c) => {
+        const settings = await getSettings()
+        return c.json({
+          entries: await mergedModelCatalog(),
+          file: MODEL_CONFIG_FILE,
+          dir: MODEL_CONFIG_DIR,
+          aiLookup: settings.modelCatalog.aiLookup,
+        } satisfies ModelCatalogInfo)
+      })
+      // 给目录里的一个模型填单价（美元 / 百万 token，shared/model-price.ts）：CLI 不报费用时按它折算。
+      // price 为 null 清掉；内置的模型也能填，写成一条补充记录（同厂商同 id 覆盖内置那条）
+      .put('/price', async (c) => {
+        const p = PriceInput.safeParse(await c.req.json().catch(() => ({})))
+        if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
+        const all = await mergedModelCatalog()
+        const hit = all.find((m) => m.vendor === p.data.vendor && m.id === p.data.id)
+        if (!hit) return c.json({ error: t('模型配置里没有 {model}', { model: p.data.id }) }, 404)
+        const { price: _old, ...rest } = hit
+        await saveModelEntry(p.data.price ? { ...rest, price: p.data.price } : rest)
+        return c.json({ entries: await mergedModelCatalog() })
+      })
+      .post('/lookup', async (c) => {
+        const p = LookupInput.safeParse(await c.req.json().catch(() => ({})))
+        if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
+        const settings = await getSettings()
+        if (!settings.modelCatalog.aiLookup)
+          return c.json({ error: t('模型信息补全已关闭，请先在「设置 · Agent」里打开') }, 400)
+        const input = p.data
+        if (input.cli && !getCli(input.cli)) return c.json({ error: t('未知的 Agent：{cli}', { cli: input.cli }) }, 400)
+        const job: Job = {
+          id: randomUUID(),
+          model: input.model,
+          protocol: input.protocol,
+          status: 'running',
+          text: '',
+          startedAt: Date.now(),
+          abort: new AbortController(),
+          at: Date.now(),
+          cli: input.cli,
+        }
+        jobs.set(job.id, job)
+        void run(job)
+          .catch((e) => fail(job, (e as Error).message))
+          .finally(() => (job.at = Date.now()))
+        return c.json(view(job), 201)
+      })
+      .get('/lookup/:id', (c) => {
+        const j = jobs.get(c.req.param('id'))
+        return j ? c.json(view(j)) : c.json({ error: t('找不到这次查询，可能已过期') }, 404)
+      })
+      .post('/lookup/:id/stop', (c) => {
+        const j = jobs.get(c.req.param('id'))
+        if (!j) return c.json({ error: t('找不到这次查询') }, 404)
+        j.abort.abort()
+        return c.json(view(j))
+      })
+  )
 }

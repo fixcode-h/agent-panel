@@ -106,11 +106,23 @@ export function createEditWorktree(s: TasksScope) {
     const base = await s.taskDir({ ...tk, worktree: null })
     try {
       await checkRepo(base)
-      entry.task.wantsWorktree = true
-      await s.store.update(tk.id, entry.task)
     } catch (e) {
       log.info('task', '子对话不能开独立分支，共用目录', { task: tk.id, reason: (e as Error).message })
+      return
     }
+    // 父对话说了它要改代码：现在就开好，第一轮就在分支目录里调研和修改，不用中途换目录重开、重读文件
+    if (tk.editFirst) {
+      const err = await openWorktree(entry.task)
+      if (!err) {
+        await s.store.update(tk.id, entry.task)
+        log.info('task', '子对话要改代码，开工前先开好独立分支', { task: tk.id, branch: entry.task.worktree?.branch })
+        return
+      }
+      // 开不出来就退回「要改文件时再开」：begin_edit 时会再试一次，失败原因到时候交给它
+      log.warn('task', '子对话开工前没能开独立分支，改成要改文件时再开', { task: tk.id, error: err })
+    }
+    entry.task.wantsWorktree = true
+    await s.store.update(tk.id, entry.task)
   }
 
   /** 从对话现在的目录开独立分支（开不了时返回原因）。改动从分支开出的那一刻算起：原目录里别人没提交的改动不算这个对话的 */

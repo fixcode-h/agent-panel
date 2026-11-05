@@ -16,7 +16,8 @@ import {
 } from './bug-diagnosis.ts'
 import { Diagnosis } from './bug-diagnosis-schema.ts'
 import type { Task } from './schema.ts'
-import { childWait, convState, diagnosisPending } from './task.ts'
+import { childWait, childFlowOf, convState, diagnosisPending } from './task.ts'
+import { applyPlan, openPlan } from './plan.ts'
 
 /** Bug 先交诊断报告、用户确认了方案再改（ADR 0045） */
 setLang('zh')
@@ -71,6 +72,8 @@ test('交诊断报告：记成等用户确认的一版，对话算执行中（�
   assert.equal(pendingDiagnosis(tk)?.version, 1)
   assert.ok(diagnosisPending(tk))
   assert.equal(convState({ status: 'done', diagnosis: diagnosisPending(tk) }), 'running', '等确认期间算执行中')
+  // 用户停下了：报告还在等确认，但对话不再算在跑（停止按钮点了要有变化，用户报过）
+  assert.equal(convState({ status: 'stopped', stopReason: 'user', diagnosis: true }), 'stopped')
   assert.deepEqual(childWait({ ...tk, status: 'done', working: false, steps: [], parentAsks: [] } as Task), {
     kind: 'diagnosis',
     version: 1,
@@ -279,4 +282,31 @@ test('评审对照和 Bug 记录草稿（ADR 0046）：只取用户确认过的�
   assert.match(rec, /- 引入：a1b2c3 《重试改成按秒》 2026-10-30（recent，blame）/)
   assert.match(rec, /\n\n## 修复\n\n改成次数常量：login\.ts:44/)
   assert.match(rec, /- 接口重试：npm test → 通过/)
+})
+
+test('用户点取消：不再等确认，计划收口成完成，对话不算执行中、等下一句；之后改文件、收尾都要先交新一版', () => {
+  const tk = bugTask({ plans: [], steps: [] })
+  applyPlan(tk, {
+    steps: [{ title: '查根因', status: 'done' }, { title: '交诊断报告', status: 'running' }, { title: '按方案修' }],
+  })
+  submitDiagnosis(tk, input(), id)
+  assert.ok(openPlan(tk), '交报告时计划还没做完')
+  const r = decideDiagnosis(tk, 1, { approve: false, cancel: true, notes: [], overall: '先不修' }, id)
+  assert.deepEqual(r, { ok: true, message: '' }, '取消不交话给子对话：它停着等用户下一句')
+  const d = tk.diagnoses![0]
+  assert.equal(d.status, 'cancelled')
+  assert.equal(d.overall, '先不修')
+  assert.equal(openPlan(tk), undefined, '计划标记完成')
+  assert.ok(tk.plans!.at(-1)!.steps.every((s) => s.status === 'done'))
+  assert.equal(diagnosisPending(tk), false)
+  assert.equal(convState({ status: 'done', diagnosis: diagnosisPending(tk) }), 'done', '不再算执行中')
+  assert.equal(childFlowOf({ ...tk, status: 'done', working: false, parentAsks: [] } as Task).requests, 0)
+  assert.match(tk.messages.at(-1)!.text, /你取消了诊断报告第 1 版/)
+  assert.equal(bugStage(tk), '已取消')
+  assert.match(diagnosisGate(tk, []), /用户取消了诊断报告第 1 版/)
+  assert.equal(decideDiagnosis(tk, 1, { approve: true, notes: [], overall: '' }, id).ok, false, '取消过的不能再确认')
+  // 用户之后又要修：交新一版，取消过的那版留着「已取消」
+  const v2 = submitDiagnosis(tk, input(), id)
+  assert.ok(v2.ok && v2.version === 2)
+  assert.equal(tk.diagnoses![0].status, 'cancelled')
 })

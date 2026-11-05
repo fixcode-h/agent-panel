@@ -116,9 +116,16 @@ export function registerListRoutes(s: TasksScope) {
         ),
       )
     })
-    // 子对话不进入项目列表：按 parentId 查询时才返回它们
+    // 子对话不进入项目列表：按 parentId 查询时才返回它们。
+    // 父对话名下的工作流运行（不是对话，见 shared/flow-run.ts）也不进：按 owner 查询时返回某个父对话名下的运行（父对话的工作流栏用）；
+    // 直接经接口建的独立运行没有父对话，照常列
     const parent = c.req.query('parentId')
-    list = parent ? list.filter((t) => t.parentTaskId === parent) : list.filter((t) => !t.parentTaskId)
+    const owner = c.req.query('owner')
+    list = owner
+      ? list.filter((t) => t.flowRun?.owner === owner)
+      : parent
+        ? list.filter((t) => t.parentTaskId === parent)
+        : list.filter((t) => !t.parentTaskId && !t.flowRun?.owner)
     const body = JSON.stringify(pid ? list.filter((t) => t.projectId === pid) : list)
     // 列表每 2.5 秒被拉一次（有任务在跑时）：内容没变就回 304，前端不用重新序列化、侧栏不用重渲染。
     // 指纹直接算最终响应体：摘要字段多，挑几个字段拼容易漏（改了名、换了摘要却不刷新列表）

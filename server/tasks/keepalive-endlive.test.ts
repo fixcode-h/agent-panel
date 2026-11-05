@@ -226,6 +226,7 @@ test('停父对话：在等子任务的子对话按「随父对话停」收口�
     followUp: async () => {},
     alertOn: () => () => {},
     shuttingDown: false,
+    flowRuns: { pauseRunsOf: () => [] },
   } as unknown as TasksScope
   const k = createKeepAlive(s)
   await k.stopTree('p', 'user')

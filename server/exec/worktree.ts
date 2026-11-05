@@ -323,7 +323,65 @@ export async function ensureWorktreeDeps(
     await cleanLeftoverDeps(dir)
     return 'ready'
   }
-  return (await copyDirDeps(dir, from, stamp)) ? 'copied' : 'failed'
+  // 有按同一份 lock 备好的副本就直接改名拿过来（同一个分卷，瞬间完成），再在后台补一份给下一个
+  if (await takeSpareDeps(dir, repo, stamp)) {
+    refillSpareDeps(repo)
+    return 'copied'
+  }
+  const ok = await copyDirDeps(dir, from, stamp)
+  // 这次是现复制的：顺手在后台备一份，下一个独立目录就不用再等十几秒
+  if (ok) refillSpareDeps(repo)
+  return ok ? 'copied' : 'failed'
+}
+
+/**
+ * 备用的依赖副本（worktrees/<项目>/node_modules.spare/）：开独立目录时直接改名拿走，不用当场复制十几秒。
+ * 仍是每个目录各一份真实文件、不建链接（docs/lessons/worktree.md），代价是每个项目多占一份磁盘；名字以 node_modules. 开头，清扫会跳过
+ */
+const SPARE_DEPS = `${DEPS_DIR}.spare`
+const spareDepsDir = async (repo: string) => path.join(WORKTREES_DIR, await repoKey(repo), SPARE_DEPS)
+/** 正在补副本的项目：同一个项目同时只补一份 */
+const spareFilling = new Map<string, Promise<void>>()
+
+/** 拿走备用副本换进这个独立目录；没有、lock 对不上、被别人先拿走了都返回 false，调用方照旧现复制 */
+async function takeSpareDeps(dir: string, repo: string, stamp: DepsStamp | null) {
+  if (!stamp) return false
+  const spare = await spareDepsDir(repo).catch(() => '')
+  if (!spare || !(await depsReady(spare, stamp))) return false
+  const tmp = path.join(dir, `${DEPS_TMP_PREFIX}spare-${process.pid}-${Date.now()}`)
+  // 两个独立目录同时来拿：改名是原子的，只有一个拿得到，另一个改名失败、退回现复制
+  if (await renameDir(path.join(spare, DEPS_DIR), tmp)) return false
+  if (!(await replaceDirDeps(dir, tmp))) {
+    await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    return false
+  }
+  await cleanLeftoverDeps(dir)
+  log.info('worktree', '用备好的依赖副本，省掉这次复制', { dir: path.join(dir, DEPS_DIR) })
+  return true
+}
+
+/** 在后台按项目现在的 lock 补一份备用副本（已有对得上的、正在补、项目没装依赖时不做）；调用方不用等，Promise 只给测试用 */
+export function refillSpareDeps(repo: string): Promise<void> {
+  const run = async () => {
+    const root = await repoRoot(repo)
+    const from = path.join(root, DEPS_DIR)
+    if (!existsSync(from)) return
+    const spare = await spareDepsDir(repo)
+    const stamp = await depsStamp(root)
+    if (!stamp || (await depsReady(spare, stamp))) return
+    await mkdir(spare, { recursive: true })
+    await copyDirDeps(spare, from, stamp) // 复用独立目录那一套：中途失败不留半份
+  }
+  const key = path.resolve(repo)
+  const running = spareFilling.get(key)
+  if (running) return running
+  const p = run()
+    .catch((e: Error) =>
+      log.warn('worktree', '备用依赖副本没补成，下次开独立目录照旧现复制', { repo, error: e.message }),
+    )
+    .finally(() => spareFilling.delete(key))
+  spareFilling.set(key, p)
+  return p
 }
 
 interface PackageJson {

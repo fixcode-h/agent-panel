@@ -26,3 +26,9 @@ export const LOCAL_PROXY_PORTS = [7890, DEFAULT_PROXY_PORT, 10809, 7891, 7897, 1
 
 /** 真正尝试时最多用几个本地端口：再多也只是让没有代理的更新等更久 */
 export const MAX_LOCAL_PROXIES = 3
+
+/** 设置页「检测本机代理」的一条结果：system 是系统代理（Windows 注册表 / macOS scutil），port 是常见端口探测到的 */
+export interface DetectedProxy {
+  url: string
+  source: 'system' | 'port'
+}

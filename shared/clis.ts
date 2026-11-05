@@ -63,6 +63,8 @@ export interface BuildOptions {
   options?: Record<string, boolean | string>
   /** 对话的标题：能给会话起名的 CLI 用它（例如 Pi 的 --name），在 CLI 自己的会话列表里认得出来 */
   title?: string
+  /** 项目设置里对这个 CLI 的信任选择（见 shared/cli-trust.ts）；不传就跟随 CLI 自己保存的决定 */
+  trust?: 'approve' | 'deny'
   /** 不是普通的一轮对话：压缩上下文，或者审查代码 */
   op?: { kind: 'compact' } | { kind: 'review'; target: ReviewTarget }
   /** 上下文达到这么多 token 时自动压缩（Codex 的 model_auto_compact_token_limit） */
@@ -234,6 +236,8 @@ export interface CliDefinition {
   compactThrash?: RegExp
   /** 设置里给用户的开关（见 cli-spec.ts 的 options）：打开时加上 env，参数规则用「opt.<id>」判断 */
   options?: CliOption[]
+  /** CLI 自己配置文件里的设置项（见 shared/cli-config-settings.ts）：设置页直接读写，终端里的 CLI 也会变 */
+  configSettings?: import('./cli-config-settings.ts').ConfigSetting[]
   /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、pi（pi --list-models）、claude（配置和环境变量）；为空时只用 models 里写的 */
   modelsFrom: string
   /** 只读的权限：在用户的项目里只分析不改文件时用（例如优化说明文件）；为空时用设置里的权限 */
@@ -244,8 +248,12 @@ export interface CliDefinition {
   mcp?: import('./cli-spec.ts').McpSpec
   /** 钩子：结束前怎么问面板（见 shared/hooks.ts）；没有时只用一轮结束后的提醒兜底 */
   hooks?: import('./hooks.ts').HooksSpec
+  /** 项目信任：只在信任后才读的项目文件（见 shared/cli-trust.ts）；没有时项目设置里不显示信任选项 */
+  trust?: import('./cli-trust.ts').CliTrust
   /** 用户自己装的 MCP 工具存在哪（「MCP 工具」页读写）；没有时不管 */
   mcpStore?: import('./cli-spec.ts').McpStore
+  /** 启动新会话前探测项目里的远程 MCP（见 server/exec/mcp-probe.ts）；没有时不探测 */
+  mcpProbe?: import('./cli-spec.ts').McpProbe
   packages?: import('./cli-spec.ts').CliPackages
   /** 来自配置文件（不是写在代码里的） */
   spec?: boolean

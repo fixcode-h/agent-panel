@@ -3,7 +3,6 @@
  * 从 orch-mcp.ts 拆出来：那个文件到了行数上限
  */
 import type { Orchestra } from '../shared/engine.ts'
-import { toDispatch } from '../shared/dispatch.ts'
 
 const text = (s: string, isError = false) => ({ content: [{ type: 'text', text: s }], ...(isError && { isError }) })
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -60,38 +59,9 @@ const SUBMIT_RESULT = {
   },
 }
 
-/** 主 Agent 交决定：流程怎么走只认它（原来读回复里的 dispatch 代码块） */
-const DISPATCH = {
-  name: 'dispatch',
-  title: '交决定',
-  description:
-    '主 Agent 交这一轮的决定：评估节点后继续 / 退回 / 委派 / 停下，对话的第一条或新要求时起运行 / 重做 / 只回答。面板只按这个工具决定流程怎么走，不看回复里写了什么。交完就结束这一轮。',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      action: {
-        type: 'string',
-        enum: ['continue', 'rework', 'delegate', 'stop', 'run', 'restart', 'answer'],
-        description: '决定',
-      },
-      branch: { type: 'string', enum: ['pass', 'fail'], description: 'continue 时后面有条件连线必须写：选哪条路' },
-      note: { type: 'string', description: 'continue 时给后续节点交代的要点' },
-      feedback: { type: 'string', description: 'rework / restart：哪里要改' },
-      workflow: { type: 'string', description: 'delegate：交给哪个工作流（id）' },
-      input: { type: 'string', description: 'delegate / run：交给它的任务' },
-      reason: { type: 'string', description: 'stop：为什么停下' },
-    },
-    required: ['action'],
-  },
-}
-
-/** 这个调用者能用的交结论 / 交结果 / 交决定工具 */
+/** 这个调用者能用的交结论 / 交结果工具 */
 export function submitTools(o: Orchestra) {
-  return [
-    ...(o.submitResult ? [SUBMIT_RESULT] : []),
-    ...(o.submitVerdict ? [SUBMIT_VERDICT] : []),
-    ...(o.submitDispatch ? [DISPATCH] : []),
-  ]
+  return [...(o.submitResult ? [SUBMIT_RESULT] : []), ...(o.submitVerdict ? [SUBMIT_VERDICT] : [])]
 }
 
 // oxlint-disable-next-line no-explicit-any -- MCP 的参数就是任意 JSON，和 orch-mcp.ts 的 callOrchTool 一样
@@ -121,16 +91,7 @@ export function callSubmitTool(o: Orchestra, name: string, a: any) {
     const r = o.submitResult({ state, summary, left: str(a?.left).trim() })
     return text(r.info, !r.ok)
   }
-  if (name === 'dispatch') {
-    if (!o.submitDispatch) return text('只有主 Agent 交决定', true)
-    const d = a && typeof a === 'object' ? toDispatch(a) : null
-    if (!d)
-      return text(
-        '认不出这个决定：action 只能是 continue、rework、delegate、stop、run、restart、answer，delegate 要写 workflow',
-        true,
-      )
-    const r = o.submitDispatch(d)
-    return text(r.info, !r.ok)
-  }
+  // 老会话的模型还记得主 Agent 的 dispatch 工具：主 Agent 去掉了，说清楚不悄悄吞掉
+  if (name === 'dispatch') return text('工作流没有主 Agent 了，不用交决定', true)
   return text(`未知工具：${name}`, true)
 }

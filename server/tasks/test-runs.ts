@@ -18,9 +18,6 @@ import type { TasksScope } from './scope.ts'
  * 测试步骤：父对话代跑子对话的测试（ADR 0018 / 0020）、记录测试结果、重启后接着等还没出结果的测试。
  */
 export function createTestRuns(sc: TasksScope) {
-  /** 父对话替子对话申请的编译（后台命令编号 → 申请的子对话）：结果出来时也推给它们 */
-  const buildFor = new Map<string, { parent: string; children: string[] }>()
-
   /**
    * 父对话测试（ADR 0018 / 0020）：子对话合回后，面板在父对话目录里按顺序跑范围为 parent 的步骤（全量单测、全量界面检查、e2e）。
    * 一次只跑一批的一步：多个子对话同时合并时重测试（WSL e2e 这类）排成一条队，不并着抢机器；
@@ -219,7 +216,6 @@ export function createTestRuns(sc: TasksScope) {
   }
 
   return {
-    buildFor,
     parentTestStepsOf,
     parentTesting,
     parentTests,

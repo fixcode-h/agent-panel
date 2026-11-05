@@ -16,6 +16,7 @@ import { hasHeld } from '../exec/delivery.ts'
 import { placedFiles } from '../attachments.ts'
 import { commitWorktree } from '../exec/worktree.ts'
 import { buildSkipText, buildSteps, buildStepsFor, currentTestSteps, stepCommand } from '../../shared/test-steps.ts'
+import { buildGate, buildKids, buildSig, type BuildAsk } from '../../shared/build-ask.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import {
@@ -165,6 +166,13 @@ export function createMerge(sc: TasksScope) {
     const bypass = review && review.bypass ? { ...review.bypass, at: new Date().toISOString() } : undefined
     // 只认内存里的 merging：记录上的 merging 可能是合并途中面板重启、或旧版本没清掉留下的
     if (merging.has(childId)) return { ok: false, info: '父对话正在合并你的分支，等结果推回来。' }
+    // 共用目录的 UE 子对话（ADR 0004）：改了要编译的文件，就要有这次改动的编译通过结果才能请父对话验收。
+    // 面板侧的硬约束：提示词里说了「编译通过再 submit_merge」，模型照样会申请完编译就顺手交收尾，
+    // 交了之后父子两边都以为对方会动，子对话一直停在「待收尾」（用户 2026-11-04 报）
+    if (build && !own) {
+      const gate = buildGate(tk.buildAsk, await buildSigOf(tk))
+      if (gate) return { ok: false, info: gate }
+    }
     // 交接要点放在最后查：前面几样没满足时先修那些，别让它为了写摘要白跑一趟
     const missing = handoffMissing(handoff)
     if (missing.length)
@@ -256,6 +264,22 @@ ${
    * 这批改动用不用编译（按文件类型，见 buildStepsFor）：不用时返回跟 Agent 说的原因，要编译返回空串。
    * 读不到项目、项目里没配编译步骤、改动清单取不到时都按要编译算——那是「不知道」，交给父对话按原流程处理
    */
+  /** 要编译的改动的指纹（见 shared/build-ask.ts）：只算会触发编译的文件；项目没有编译步骤时为空 */
+  async function buildSigOf(tk: Task) {
+    const project = tk.projectId ? await sc.deps.projects.get(tk.projectId).catch(() => null) : null
+    const steps = currentTestSteps(tk.testSteps, project)
+    if (!buildSteps(steps).length) return ''
+    return buildSig(tk.changes.filter((c) => buildStepsFor(steps, [c.path]).length))
+  }
+
+  /** 改了子对话的编译记录：在跑的改内存里那份（rev++ 让它落盘），没在跑的直接写盘 */
+  async function saveBuildAsk(tk: Task, ask: BuildAsk) {
+    tk.buildAsk = ask
+    const entry = sc.live.get(tk.id)
+    if (entry) entry.rev++
+    await sc.store.update(tk.id, tk)
+  }
+
   async function buildSkip(tk: Task, files: string[]) {
     if (!files.length) return ''
     const project = tk.projectId ? await sc.deps.projects.get(tk.projectId).catch(() => null) : null
@@ -334,6 +358,15 @@ ${
       child.changes.map((c) => c.path),
     )
     if (skip) return { ok: true, info: `没有申请编译：${skip}` }
+    // 记下申请（会落盘）：父对话漏写 children 时面板按它补上，结果按它推回，submit_merge 也按它核对（见 shared/build-ask.ts）
+    await saveBuildAsk(child, {
+      state: 'asked',
+      at: new Date().toISOString(),
+      note,
+      sig: await buildSigOf(child),
+      jobs: [],
+      info: '',
+    })
     await askParentBuild(child, note)
     return {
       ok: true,
@@ -360,20 +393,31 @@ ${
       }
     // 为子对话申请时按它们的改动筛编译步骤：只改了 Lua、配置、表格的不编 C++。
     // 不带子对话（用户要求、父对话自己改的）时照常编；子对话的改动清单都取不到时也照常编
-    const all = await sc.store.list()
-    const mine = new Set(all.filter((x) => x.parentTaskId === parent.id).map((x) => x.id))
-    const to = children.map((x) => x.trim()).filter((x) => mine.has(x))
+    const all = (await sc.store.list()).map((x) => sc.live.get(x.id)?.task ?? x)
+    // 父对话漏写 children（或写成 child）时，按「名下申请过、还没开编」的子对话补上：结果能不能回到子对话不再全看模型填没填
+    const [to, added] = buildKids(all, parent.id, children)
     const kidFiles = [
       ...new Set(
         all.filter((x) => to.includes(x.id)).flatMap((x) => (sc.live.get(x.id)?.task ?? x).changes.map((c) => c.path)),
       ),
     ]
     const steps = to.length ? buildStepsFor(project.testSteps, kidFiles) : buildSteps(project.testSteps)
-    if (!steps.length)
+    if (!steps.length) {
+      // 不用编译也是结果：记成通过，它们的 submit_merge 核对能过
+      for (const tk of all.filter((x) => to.includes(x.id)))
+        await saveBuildAsk(tk, {
+          state: 'passed',
+          at: new Date().toISOString(),
+          note: tk.buildAsk?.note ?? note,
+          sig: await buildSigOf(tk),
+          jobs: [],
+          info: '改动不涉及要编译的文件',
+        })
       return {
         ok: true,
         info: `没有编译：${buildSkipText(project.testSteps, kidFiles)}告诉申请的子对话（${to.join('、')}）不用等编译，接着收尾。`,
       }
+    }
     const dir = await sc.taskDir(parent)
     // 先看占着的再排：排进去以后自己的也算在里面
     const before = sc.background.occupants(dir)
@@ -390,8 +434,16 @@ ${
       if (!r.ok) return { ok: false, info: r.info }
       ids.push(r.id!)
     }
-    // 结果也推给申请的子对话：只认父对话名下的
-    if (to.length) for (const id of ids) sc.buildFor.set(id, { parent: parent.id, children: to })
+    // 结果也推给申请的子对话：记在它们的任务上（会落盘），编译跑完按这份记录推回（server/tasks/jobs.ts）
+    for (const tk of all.filter((x) => to.includes(x.id)))
+      await saveBuildAsk(tk, {
+        state: 'building',
+        at: new Date().toISOString(),
+        note: tk.buildAsk?.note ?? note,
+        sig: tk.buildAsk?.sig || (await buildSigOf(tk)),
+        jobs: ids,
+        info: '',
+      })
     const queuedMine = before.filter((j) => j.taskId === parent.id).length
     const holders: Task[] = []
     for (const id of new Set(before.map((j) => j.taskId).filter((x) => x !== parent.id))) {
@@ -415,6 +467,12 @@ ${
       id: ids.at(-1),
       info: [
         `已申请编译（${steps.map((x) => x.name).join('、')}），编号 ${ids.join('、')}。`,
+        added.length
+          ? `children 没写，面板按申请补上了：${all
+              .filter((x) => added.includes(x.id))
+              .map((x) => `「${x.title}」（id ${x.id}）`)
+              .join('、')}，编译结果会推给它们。`
+          : '',
         who
           ? `这个编译目录现在被${who}占着，你排在后面${holders.some((x) => !x.parentTaskId) ? '，已告诉对方' : ''}。`
           : queuedMine
@@ -434,7 +492,12 @@ ${
         // 进了回收站的对话不算同项目里能互相发消息的一条（它在列表里也已经看不到了）
         .filter(
           (x) =>
-            x.projectId === self.projectId && !x.parentTaskId && x.id !== self.id && !x.archived && !taskDeleted(x),
+            x.projectId === self.projectId &&
+            !x.parentTaskId &&
+            !x.flowRun &&
+            x.id !== self.id &&
+            !x.archived &&
+            !taskDeleted(x),
         )
         .map((x) => sc.live.get(x.id)?.task ?? x)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -758,7 +821,7 @@ ${
           `已把子对话「${tk.title}」合回：${r.info}`,
           `合回还没收尾：它范围为「全量，合并后由父对话跑」的步骤（${parentSteps.map((s) => s.name).join('、')}），面板现在在你的目录里按顺序跑，一次只跑一个（和编译共用一条队）。结果直接回传给子对话：通过才标完成、删分支；失败会退回给它修，它再合并时这些步骤会全部重跑。你不用自己跑，也不用转述结果。`,
           req.build
-            ? `这是 UE 项目：编译仍按 ADR 0004 由你调用 request_build 申请（child 写 ${tk.id}），和这批测试共用独占队。`
+            ? `这是 UE 项目：编译仍按 ADR 0004 由你调用 request_build 申请（children 写 ["${tk.id}"]），和这批测试共用独占队。`
             : '',
         ]
           .filter(Boolean)
@@ -780,7 +843,7 @@ ${
           ? '它的计划收尾步骤已标完成，子对话已结束，独立分支和分支已删除。'
           : `它的计划收尾步骤已标完成；${done ? `还差：${done.info}` : '它这一轮还没结束'}，收口后面板自动结束它并删除独立分支。`,
         req.build
-          ? `这是 UE 项目：改动已经进了你的目录，现在调用 request_build 编译（child 写 ${tk.id}），编译结果面板会转给它。`
+          ? `这是 UE 项目：改动已经进了你的目录，现在调用 request_build 编译（children 写 ["${tk.id}"]），编译结果面板会转给它。`
           : '',
       ]
         .filter(Boolean)
