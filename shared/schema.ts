@@ -1365,6 +1365,14 @@ export const FileChange = z.object({ path: z.string(), add: z.number().int(), de
 export type FileChange = z.infer<typeof FileChange>
 
 /**
+ * 项目根之外、这个对话的 Agent 写出过的一个文件：只有绝对路径。
+ * 不在 git 快照里，算不了增删行数、做不了差异和撤销，右栏只列出来供查看。
+ * 和 FileChange 分开：changes 只放相对项目根、能算差异的改动，审查和撤销只认它
+ */
+export const OutsideChange = z.object({ path: z.string() })
+export type OutsideChange = z.infer<typeof OutsideChange>
+
+/**
  * 一轮对话改了哪些文件（总结下面的「已更改 N 个文件」，见 server/turn-changes.ts）：
  * spans 是 git 快照树的起止（中间被子对话合并隔开时有几段），撤销时只撤这几段自己的改动。
  * revertedAt 是撤销的时间：撤过的卡片只显示「已撤销」，不能再撤
@@ -2016,6 +2024,12 @@ export const TaskData = z.object({
   steps: z.array(TaskStep).default([]),
   messages: z.array(TaskMessage).default([]),
   changes: z.array(FileChange).default([]),
+  /**
+   * 项目根之外、这个对话的 Agent 写出过的文件（CLI 写文件事件报的路径，存绝对路径）。
+   * 面板自己的产物在收集时排除：数据目录里的附件、对话目录的截图 / 临时文件、任务交接和系统临时目录
+   * （见 server/own-changes.ts 的 outsideFiles）。没有 git 快照，只能列出来看，不算进 changes
+   */
+  outsideChanges: z.array(OutsideChange).default([]),
   /** 在线演示里的任务，输出是示例 */
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
