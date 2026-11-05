@@ -42,12 +42,17 @@ export function activeIndex(tops: number[], bottom = false, gap = SCROLL_GAP) {
   return cur
 }
 
-/** 滚到底了吗：内容比可视区还短时也算到底（这时只能看到最后那段） */
+/**
+ * 滚到底了吗：要真的能滚（内容比可视区高）并且已经到底才算。
+ * 内容不足一屏时不算：这时整页都在视野里，算成到底会让短页面一打开就高亮最后一节
+ * （用户报的设置 →「关于我与记忆」）；最后一段很短、但页面整体能滚时仍然算到底。
+ */
 export function atBottom(
   view: { scrollTop: number; clientHeight: number; scrollHeight: number },
   slack = BOTTOM_SLACK,
 ) {
-  return view.scrollTop + view.clientHeight >= view.scrollHeight - slack
+  const scrollable = view.scrollHeight - view.clientHeight > slack
+  return scrollable && view.scrollTop + view.clientHeight >= view.scrollHeight - slack
 }
 
 /** 跳到某个小节该滚到多少：小节在内容里的偏移减掉要留的空，不滚成负数 */
