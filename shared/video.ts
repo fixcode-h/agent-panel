@@ -207,6 +207,25 @@ export interface VideoSession {
   frames: VideoFrame[]
 }
 
+/**
+ * 自动截帧的进度：先整段分析画面（analyze，按已解码到的时间算比例），再一张张截（grab，done/total）。
+ * 均匀模式不分析，直接从 grab 开始
+ */
+export interface AutoProgress {
+  stage: 'analyze' | 'grab'
+  /** analyze 时是 0~1 的比例；grab 时是已经截好几张 */
+  done: number
+  /** grab 时一共要截几张；analyze 时为 1 */
+  total: number
+}
+
+/** ffmpeg 边跑边打的状态行里「time=00:01:02.50」：已经处理到第几秒；没有时 undefined */
+export function ffmpegTime(chunk: string): number | undefined {
+  let last: number | undefined
+  for (const m of chunk.matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)) last = +m[1]! * 3600 + +m[2]! * 60 + +m[3]!
+  return last
+}
+
 /** 帧按时间排；同一时刻手动的排前面 */
 export const sortFrames = (list: VideoFrame[]) =>
   [...list].sort((a, b) => a.time - b.time || (a.source === b.source ? 0 : a.source === 'manual' ? -1 : 1))

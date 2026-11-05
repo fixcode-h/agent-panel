@@ -6,6 +6,7 @@
  * 仍走浏览器上传。发送时按状态挑：拷贝好的用副本，拷贝中或失败的用原路径，
  * 只有还没拿到路径的（查找中、上传中）才拦一下。
  */
+import { attachChip, chipMarker } from './composer.ts'
 import { t } from './i18n.ts'
 import type { Attachment } from './schema.ts'
 
@@ -23,6 +24,12 @@ export interface ItemLike {
   source?: string
   done?: Attachment
   state: ItemState
+  /**
+   * 视频：Agent 收不了视频，发送时换成在截帧弹窗里选好的帧图片（frames）。
+   * 视频本身只引用原路径，不拷、不上传；没选帧时不发（见 needFrames）
+   */
+  video?: boolean
+  frames?: Attachment[]
 }
 
 /** 卡片上显示的文件大小 */
@@ -60,8 +67,16 @@ export const itemPath = (x: Pick<ItemLike, 'source' | 'done' | 'name'>) => x.sou
 /** 卡片上的文字：路径 + 大小 + 状态（前面不加 @，用户嫌多余）；引用卡片显示原文摘要，不换 */
 export function chipTextOf(x: ItemLike) {
   if (x.quote !== undefined || x.done?.quote !== undefined) return undefined
+  // 视频卡片的状态是选了几帧：发出去的是这些帧，不是视频
+  if (x.video) {
+    const n = x.frames?.length ?? 0
+    return { label: `${itemPath(x)} · ${formatSize(x.size)}`, status: n ? t('{n} 帧', { n }) : t('点击选帧') }
+  }
   return { label: `${itemPath(x)} · ${formatSize(x.size)}`, status: itemStatus(x.state) }
 }
+
+/** 还没选帧的视频：发送前要先打开截帧弹窗选好 */
+export const needFrames = (x: ItemLike) => !!x.video && !x.frames?.length
 
 /**
  * 发送时交给服务端的那份附件：已经拷好 / 传好的用它；拷贝中、拷失败的用原路径引用（ref，
@@ -75,12 +90,27 @@ export function sendAttachmentOf(x: ItemLike): Attachment | undefined {
   return undefined
 }
 
-/** 这一项会不会拦住发送：只有「还没有可发的路径」的才会 */
-export const blocksSend = (x: ItemLike) => !sendAttachmentOf(x)
+/** 这一项会不会拦住发送：只有「还没有可发的路径」的才会（视频另看 needFrames） */
+export const blocksSend = (x: ItemLike) => !x.video && !sendAttachmentOf(x)
 
-/** 这一批附件交给服务端的样子 */
+/** 这一批附件交给服务端的样子：视频换成选好的帧图片 */
 export const sendAttachments = (items: readonly ItemLike[]) =>
   items.flatMap((x) => {
+    if (x.video) return x.frames ?? []
     const a = sendAttachmentOf(x)
     return a ? [a] : []
   })
+
+/**
+ * 发送前的文字：视频卡片原位换成它那几帧的图片卡片，交给 Agent 时由 withAttachments 换成帧图片的路径。
+ * 没选帧的视频保持原样（发送前会先拦下来选帧）
+ */
+export function withVideoFrames(text: string, items: readonly ItemLike[]) {
+  let out = text
+  for (const x of items) {
+    if (!x.video || !x.frames?.length) continue
+    const marker = chipMarker('file', x.name)
+    out = out.split(marker).join(x.frames.map((f) => chipMarker(attachChip(f), f.name)).join(' '))
+  }
+  return out
+}

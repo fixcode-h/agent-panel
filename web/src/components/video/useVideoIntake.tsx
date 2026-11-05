@@ -1,34 +1,32 @@
-// 输入框接住视频：放进来的视频（拖、粘贴、选文件、粘贴路径）不当附件发，排队打开截帧弹窗，
-// 选好的帧作为图片附件放回光标处。挂在 useComposerChips 里，任务对话和新建任务的输入框都有
-import { useEffect, useState, type RefObject } from 'react'
-import type { Attachment } from '@shared/schema'
+// 输入框里的视频卡片：点卡片打开截帧弹窗，选好的帧记在这张卡片上，发送时换成帧图片（Agent 收不了视频）。
+// 挂在 useComposerChips 里，任务对话和新建任务的输入框都有；视频本身只引用原路径，不拷、不上传
+import { useEffect, useState } from 'react'
 import type { useAttachments } from '@/components/chat/Attachments'
-import type { RichInputHandle } from '@/components/chat/RichInput'
-import { VideoFramesDialog, type VideoTarget } from './VideoFramesDialog'
+import { VideoFramesDialog } from './VideoFramesDialog'
 
-export function useVideoIntake(
-  files: ReturnType<typeof useAttachments>,
-  editor: RefObject<RichInputHandle | null>,
-  addReady: (a: Attachment) => void,
-) {
-  const [queue, setQueue] = useState<VideoTarget[]>([])
+export function useVideoIntake(files: ReturnType<typeof useAttachments>) {
+  /** 正在选帧的视频卡片（附件的 key） */
+  const [open, setOpen] = useState<string | null>(null)
   useEffect(() => {
-    const taker = files.videoTaker
-    const take = (v: VideoTarget) => setQueue((q) => (q.some((x) => x.path === v.path) ? q : [...q, v]))
-    taker.current = take
+    const host = files.videoHost
+    const show = (key: string) => setOpen(key)
+    host.current = show
     // 只撤自己挂的：同一组附件换了输入框时，后挂上的那个不能被先卸载的这个清掉
     return () => {
-      if (taker.current === take) taker.current = null
+      if (host.current === show) host.current = null
     }
-  }, [files.videoTaker])
-  return (
-    <VideoFramesDialog
-      target={queue[0] ?? null}
-      onClose={() => setQueue((q) => q.slice(1))}
-      onInsert={(list) => {
-        editor.current?.focus()
-        for (const a of list) addReady(a)
-      }}
-    />
-  )
+  }, [files.videoHost])
+  const item = open ? files.items.find((x) => x.key === open) : undefined
+  const path = item?.source ?? item?.done?.path
+  return {
+    /** 打开某张视频卡片的截帧弹窗 */
+    open: setOpen,
+    dialog: (
+      <VideoFramesDialog
+        target={item && path ? { path, name: item.name, chosen: item.frames ?? [] } : null}
+        onClose={() => setOpen(null)}
+        onInsert={(list) => item && files.setFrames(item.key, list)}
+      />
+    ),
+  }
 }

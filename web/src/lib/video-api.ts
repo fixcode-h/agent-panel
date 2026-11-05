@@ -1,5 +1,5 @@
 /** 视频截帧的接口（server/video/routes.ts）；单独一个文件，api.ts 已经很长 */
-import type { AutoMode, EnhanceMethod, FfmpegStatus, VideoSession } from '@shared/video'
+import type { AutoMode, AutoProgress, EnhanceMethod, FfmpegStatus, VideoSession } from '@shared/video'
 import { json, request } from './api'
 
 type Ref = { key: string; path: string }
@@ -11,13 +11,17 @@ export const videoApi = {
   setPath: (path: string) => request<FfmpegStatus>('/video/ffmpeg/path', json('PUT', { path })),
   open: (path: string) => request<VideoSession>('/video/open', json('POST', { path })),
   manual: (v: Ref, time: number) => request<VideoSession>('/video/frames/manual', json('POST', { ...v, time })),
-  auto: (v: Ref, mode: AutoMode, count: number) =>
-    request<VideoSession>('/video/frames/auto', json('POST', { ...v, mode, count })),
+  /** signal：用户点「停止」时断开请求，服务端跟着停掉 FFmpeg */
+  auto: (v: Ref, mode: AutoMode, count: number, signal?: AbortSignal) =>
+    request<VideoSession>('/video/frames/auto', { ...json('POST', { ...v, mode, count }), signal }),
+  /** 自动截帧进行到哪了（没在截时 progress 为 null） */
+  progress: (key: string) =>
+    request<{ progress: AutoProgress | null }>(`/video/frames/progress?key=${encodeURIComponent(key)}`),
   remove: (v: Ref, o: { which?: 'manual' | 'auto'; ids?: string[] }) =>
     request<VideoSession>('/video/frames/remove', json('POST', { ...v, ...o })),
   methods: () => request<{ methods: EnhanceMethod[] }>('/video/enhance/methods'),
-  enhance: (v: Ref, ids: string[], method: string) =>
-    request<VideoSession>('/video/frames/enhance', json('POST', { ...v, ids, method })),
+  enhance: (v: Ref, ids: string[], method: string, signal?: AbortSignal) =>
+    request<VideoSession>('/video/frames/enhance', { ...json('POST', { ...v, ids, method }), signal }),
   unenhance: (v: Ref, ids?: string[]) => request<VideoSession>('/video/frames/unenhance', json('POST', { ...v, ids })),
 }
 

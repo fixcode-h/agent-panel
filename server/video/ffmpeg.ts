@@ -37,7 +37,8 @@ export interface FfmpegResult {
 export function runFfmpeg(
   bin: string,
   args: string[],
-  o: { timeoutMs?: number; signal?: AbortSignal; maxOut?: number } = {},
+  /** onStderr：边跑边看 stderr（解析进度用），每收到一段调一次 */
+  o: { timeoutMs?: number; signal?: AbortSignal; maxOut?: number; onStderr?: (chunk: string) => void } = {},
 ): Promise<FfmpegResult> {
   return new Promise((resolve) => {
     const out: Buffer[] = []
@@ -76,7 +77,9 @@ export function runFfmpeg(
     })
     // stderr 只留最后 1 MB：showinfo 每帧一行，长视频会很多
     child.stderr?.on('data', (b: Buffer) => {
-      err += b.toString('utf8')
+      const chunk = b.toString('utf8')
+      o.onStderr?.(chunk)
+      err += chunk
       if (err.length > 1_000_000) err = err.slice(-1_000_000)
     })
     child.on('error', (e) => finish({ error: e.message }))

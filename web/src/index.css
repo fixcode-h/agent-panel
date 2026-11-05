@@ -3085,3 +3085,13 @@ html [data-sonner-toast][data-styled='true'] {
     animation-iteration-count: infinite !important;
   }
 }
+
+/* 不知道进度时的进度条：一小段来回走（截帧弹窗的 WorkBar） */
+@keyframes work-slide {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
+  }
+}

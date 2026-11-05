@@ -24,12 +24,7 @@ export const EN_VIDEO: Record<string, string> = {
   '发送 {time} 的帧': 'Send frame at {time}',
   删除这一帧: 'Delete this frame',
   截取中: 'Capturing',
-  自动截帧中: 'Auto capturing',
-  清除中: 'Clearing',
-  删除中: 'Deleting',
   先截几帧再增强: 'Capture some frames before enhancing',
-  增强中: 'Enhancing',
-  还原中: 'Restoring',
   '正在检查 FFmpeg': 'Checking FFmpeg',
   正在读取视频: 'Reading video',
   '{time} 的画面': 'Picture at {time}',
@@ -59,13 +54,9 @@ export const EN_VIDEO: Record<string, string> = {
     'Each point picks the sharpest picture within 0.25 s around it. Manual frames are never touched.',
   画面增强: 'Enhance',
   增强方式: 'Enhance method',
-  处理选中的帧: 'Process selected frames',
   去掉增强: 'Remove enhancement',
   '增强会补出原来没有的细节，读文字、数字以原图为准':
     'Enhancing can invent detail that was never there. Trust the original for text and numbers',
-  '发给 AI 的是这些帧图片，不发视频；视频本身不会被拷贝或改动':
-    'The AI gets these frame images, not the video. The video itself is never copied or changed',
-  '放进输入框（{n}）': 'Add to input ({n})',
   上一帧: 'Previous frame',
   '上一帧（←）': 'Previous frame (←)',
   下一帧: 'Next frame',
@@ -79,7 +70,6 @@ export const EN_VIDEO: Record<string, string> = {
   '没找到视频「{name}」在本机的位置，可以手动选择这个视频':
     'Couldn\'t find where "{name}" is on this computer. You can choose the video yourself',
   选择视频: 'Choose video',
-  选的不是视频文件: "That's not a video file",
   // 服务端
   'FFmpeg 处理超时': 'FFmpeg timed out',
   'FFmpeg 输出太大': 'FFmpeg output is too large',
@@ -106,4 +96,20 @@ export const EN_VIDEO: Record<string, string> = {
   'ComfyUI 没有返回图片': 'ComfyUI returned no image',
   取不到这一刻的画面: "Couldn't get the picture at this moment",
   没有说要删哪些帧: 'No frames given to delete',
+  // 输入框里的视频卡片、进度、看大图
+  '先选好视频「{name}」里要发的帧': 'Pick the frames to send from "{name}" first',
+  '滚轮缩放 · 拖动查看 · 双击放大 / 还原': 'Scroll to zoom · drag to pan · double-click to zoom / reset',
+  还原到适应窗口: 'Reset to fit',
+  双击看大图: 'Double-click to view full size',
+  先勾选要处理的帧: 'Check the frames to process first',
+  '处理选中的帧（{n}）': 'Process selected frames ({n})',
+  '先截几帧，勾选的帧会按这个方式处理': 'Capture some frames first. Checked frames are processed this way',
+  '发送时视频换成这些帧图片，视频本身不会被拷贝或改动':
+    'When sent, the video is replaced by these frame images. The video itself is never copied or changed',
+  '用这些帧（{n}）': 'Use these frames ({n})',
+  '增强第 {i}/{n} 张': 'Enhancing {i}/{n}',
+  准备自动截帧: 'Preparing auto capture',
+  '分析画面 {pct}%': 'Analyzing video {pct}%',
+  '截取第 {i}/{n} 张': 'Capturing {i}/{n}',
+  点击选帧: 'Click to pick frames',
 }

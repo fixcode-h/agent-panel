@@ -1,6 +1,6 @@
-// 截帧弹窗下面那排截下来的帧：点一张在上面看大图，勾选决定发不发，悬停出删除。
-// 手动截的帧角上标「手动」（强调色），增强过的标「增强」，并默认显示增强图
-import { Check, X } from 'lucide-react'
+// 截帧弹窗下面那排截下来的帧：点一张在上面看，双击全屏看大图（能缩放、拖动），勾选决定发不发，悬停出删除。
+// 手动截的帧角上标「手动」（强调色），增强过的标「增强」，并默认显示增强图；增强时正在处理的那张盖一层转圈，排队的标「等待」
+import { Check, Loader2, X } from 'lucide-react'
 import { timeText, type VideoFrame } from '@shared/video'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
@@ -11,7 +11,9 @@ export function FrameStrip({
   viewId,
   skipped,
   original,
+  working,
   onView,
+  onZoom,
   onToggle,
   onRemove,
 }: {
@@ -19,7 +21,11 @@ export function FrameStrip({
   viewId: string | null
   skipped: Set<string>
   original: boolean
+  /** 增强时：正在处理的那张和排队的 */
+  working: { cur: string | null; queued: Set<string> }
   onView: (f: VideoFrame) => void
+  /** 双击：全屏看大图 */
+  onZoom: (f: VideoFrame) => void
   onToggle: (f: VideoFrame) => void
   onRemove: (f: VideoFrame) => void
 }) {
@@ -37,15 +43,22 @@ export function FrameStrip({
       {frames.map((f) => {
         const on = !skipped.has(f.id)
         const file = f.enhanced && !original ? f.enhanced.file : f.file
+        const doing = working.cur === f.id
         return (
           <div key={f.id} role="listitem" className="group relative flex w-[136px] shrink-0 flex-col gap-1">
             <button
               type="button"
               onClick={() => onView(f)}
+              onDoubleClick={() => onZoom(f)}
               aria-label={t('看 {time} 的帧', { time: timeText(f.time) })}
+              title={t('双击看大图')}
               className={cn(
                 'relative aspect-video w-full cursor-pointer overflow-hidden rounded-lg border bg-black',
-                viewId === f.id ? 'border-accent ring-2 ring-accent/40' : 'border-line',
+                doing
+                  ? 'border-accent ring-2 ring-accent/60'
+                  : viewId === f.id
+                    ? 'border-accent ring-2 ring-accent/40'
+                    : 'border-line',
                 !on && 'opacity-45',
               )}
             >
@@ -61,6 +74,17 @@ export function FrameStrip({
               {f.enhanced && !original && (
                 <span className="absolute bottom-1 left-1 rounded-sm bg-black/60 px-1 text-micro leading-4 text-white">
                   {t('增强')}
+                </span>
+              )}
+              {doing && (
+                <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 text-micro text-white">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('处理中')}
+                </span>
+              )}
+              {working.queued.has(f.id) && (
+                <span className="absolute right-1 bottom-1 rounded-sm bg-black/60 px-1 text-micro leading-4 text-white">
+                  {t('等待')}
                 </span>
               )}
             </button>

@@ -28,7 +28,6 @@ import { t } from '@shared/i18n'
 import { useDropPaste, type AttachHooks, type useAttachments } from './Attachments'
 import { AttachmentViewer, viewOf, type ViewTarget } from './AttachmentView'
 import { useVideoIntake } from '@/components/video/useVideoIntake'
-import { isVideoFile } from '@shared/video'
 import type { ChipActions, RichInputHandle } from './RichInput'
 
 /** 文字里附件卡片的名字 */
@@ -65,8 +64,8 @@ export function useComposerChips({
   /** 粘贴进来的文件：图片是剪贴板截图，没有原路径，直接上传（见 useAttachments 的 add） */
   const addPasted = useCallback((list: File[]) => void files.add(list, hooks, { clipboard: true }), [files, hooks])
   const addReady = useCallback((a: Attachment) => files.addReady(a, hooks), [files, hooks])
-  /** 放进来的视频：打开截帧弹窗，截好的帧当图片放回来（不把视频发给 Agent） */
-  const videoDialog = useVideoIntake(files, editor, addReady)
+  /** 放进来的视频：留在输入框里当卡片，点开截帧弹窗选帧，发送时换成帧图片（不把视频发给 Agent） */
+  const { open: openVideo, dialog: videoDialog } = useVideoIntake(files)
   /** 引用一段内容：放到输入框末尾 */
   const addQuote = useCallback(
     (quoted: string) => {
@@ -178,6 +177,8 @@ export function useComposerChips({
     () => ({
       open: (chip) => {
         const item = files.items.find((x) => x.name === chip.name)
+        // 视频卡片：打开截帧弹窗，不用文件弹窗看
+        if (item?.video) return openVideo(item.key)
         // 卡片上显示的是缩略图（从草稿恢复时），浮层要看原图；用 || 而不是 ??：
         // 草稿恢复存的 full 可能是空串，不能用它把有值的 preview 挡掉
         const images = files.items.flatMap((x) => {
@@ -199,7 +200,7 @@ export function useComposerChips({
       },
       context: (chip, at) => setMenu({ chip, at }),
     }),
-    [files, change, editor],
+    [files, change, editor, openVideo],
   )
 
   /** 右键卡片的菜单：图片能复制图片，文件复制路径，引用复制原文；菜单项用面板统一样式 */
@@ -331,12 +332,6 @@ export function useComposerChips({
           let last = 0
           for (const h of refs) {
             const a = byFrom.get(h.path)
-            // 视频交给截帧弹窗了（见 useVideoIntake）：路径不留在文字里，免得把视频路径发给 Agent
-            if (a && files.videoTaker.current && a.quote === undefined && isVideoFile(a.name, a.mime)) {
-              out += pasted.slice(last, h.start)
-              last = h.end
-              continue
-            }
             const chip = a && names.get(a.path)
             if (!chip) continue
             out += pasted.slice(last, h.start)
