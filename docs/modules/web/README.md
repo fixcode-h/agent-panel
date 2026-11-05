@@ -5,7 +5,7 @@
 - 源码：`web/`
 - 入口：`web/src/main.tsx`、`web/src/App.tsx`
 - 关键词：页面、对话页、侧栏、流程图画布、设置、组件库、前端
-- 更新：2026-10-25（2026-10-27 按代码复核「打开对话页的加载链路」一节：首屏 `limit=50` 与往前翻页、SSE 按版本补发增量、子对话轮询按状态分档；同日补上下文卡的「最近一次压缩」一行，实现核对自 `web/src/lib/tasks.ts`、`web/src/components/tasks/TaskMeta.tsx`）
+- 更新：2026-10-25（2026-10-27 按代码复核「打开对话页的加载链路」一节：首屏 `limit=50` 与往前翻页、SSE 按版本补发增量、子对话轮询按状态分档；同日补上下文卡的「最近一次压缩」一行，实现核对自 `web/src/lib/tasks.ts`、`web/src/components/tasks/TaskMeta.tsx`；2026-11-05 补「本对话改动」按项目内 / 项目外分组，见 [conversation.md](conversation.md)）
 
 ## 职责
 

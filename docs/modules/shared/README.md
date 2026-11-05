@@ -5,11 +5,11 @@
 - 源码：`shared/`
 - 入口：`shared/schema.ts`、`shared/clis.ts`
 - 关键词：schema、执行引擎、流程图、内置角色、工作流模板、提示词、计划
-- 更新：2026-10-27（同日给 `ToolUse` 补了压缩前后大小的 `compact` 字段；本轮给角色加「禁止子对话执行」的 `runIn` 与转交父对话的 `spawn` 分支；共享层原有的「禁止子对话执行」步骤筛选和测试耗时记录沿用 2026-10-26 的核对，界面文案 2026-10-27 由「在父对话中执行」改成这个名字、语义未变）
+- 更新：2026-10-27（同日给 `ToolUse` 补了压缩前后大小的 `compact` 字段；本轮给角色加「禁止子对话执行」的 `runIn` 与转交父对话的 `spawn` 分支；共享层原有的「禁止子对话执行」步骤筛选和测试耗时记录沿用 2026-10-26 的核对，界面文案 2026-10-27 由「在父对话中执行」改成这个名字、语义未变；2026-11-05 补 `Task.outsideChanges` / `OutsideChange`）
 
 ## 职责
 
-- 数据结构：Agent、工作流、流程、项目、任务、设置等的 zod schema 和类型（`shared/schema.ts`）。其中 `ToolUse` 有可选的 `compact: { before?, after? }`，存一次压缩前后的上下文 token 数：界面直接读数值显示「压缩前 / 压缩后」，不解析 `label` 里的中文。旧数据没有这个字段、CLI 没报数值时字段缺省，界面按缺失降级（只显示有的一项，都没有时那一行不显示）；写入方在 [server-exec 模块](../server-exec/README.md) 的 `describeCompaction`。
+- 数据结构：Agent、工作流、流程、项目、任务、设置等的 zod schema 和类型（`shared/schema.ts`）。其中 `ToolUse` 有可选的 `compact: { before?, after? }`，存一次压缩前后的上下文 token 数：界面直接读数值显示「压缩前 / 压缩后」，不解析 `label` 里的中文。旧数据没有这个字段、CLI 没报数值时字段缺省，界面按缺失降级（只显示有的一项，都没有时那一行不显示）；写入方在 [server-exec 模块](../server-exec/README.md) 的 `describeCompaction`。`Task.changes` 只放相对项目根、能算 git 差异的文件改动；`Task.outsideChanges`（`OutsideChange`，只有绝对路径 `path`）记项目根之外、这个对话的 Agent 写出过的文件，没有快照，只用于展示，收集和排除规则在 [server-exec 模块](../server-exec/README.md)。
 - 设置 schema 和默认值：面板提醒次数 `nudgeMax` 默认 6（范围 0–20，0 表示不自动推；Chat 页固定 1 次，见 `shared/conv-mode.ts` 的 `nudgeMax`）；后台命令并发 `backgroundLimit` 默认 64（范围 1–64，`shared/schema.ts`）；各 CLI 的自动压缩比例 `autoCompact` 默认 70%（`AUTO_COMPACT_DEFAULT`），0 表示按 CLI 自己的规则；子对话并发上限已去掉，`Settings` 没有 `childConcurrency`、`Task` 没有 `childLimit`，旧 settings.json / task JSON 里的这两个字段由 zod 读时剥离、不报错。旧设置里各项默认值的迁移在 `shared/settings.ts` 的 `migrateSettingsDefaults`（正式后端与演示后端共用同一份，按 `Settings.defaultsVersion` 只迁一次）。
 - 本机代理的默认值（`shared/proxy.ts`）：`DEFAULT_PROXY_PORT` / `DEFAULT_PROXY_URL` 是设置页「网络代理」的占位符和说明、CLI 环境变量示例（`PROXY_ENV_EXAMPLE`）、自动探测端口顺序（`LOCAL_PROXY_PORTS`）的唯一出处；`shared/schema.ts` 的 `proxy` 字段注释也指向它。要换默认代理端口只改这一处，别处一律 import（`npm run lint` 的 `rules-check` 会拦住 ts / tsx / mjs / json 里再写的字面量）。默认端口在 v2rayN 里默认跑 socks，mixed 在 10814，纯 socks 时 `ProxyAgent` 用不了、探测会失败。`LOCAL_PROXY_PORTS` 里除了默认端口还有 Clash 的混合端口、老版 v2rayN 的 http 入站、Clash 的 socks 口、Clash Verge Rev 的混合端口和通用的 1080；`MAX_LOCAL_PROXIES`（3）决定真正尝试几个，所以默认端口必须排在前几位。具体顺序和取值只看 `shared/proxy.ts`。
 - 续接会话的提示词增量（`shared/prompt-delta.ts`，[ADR 0027](../../adr/0027-resumed-session-prompt-delta.md)）：对话轮次和接着做的子任务按段落指纹只发新的和变了的规则段落（`promptDelta` / `nextSent` / `rememberSent`，记录在 `Task.promptSent`），完整的放 `fresh` 给 runner 续不上会话时用；`ALWAYS_SECTIONS` 每轮必发，`FULL_EVERY` 轮后补发完整的，压缩后由 runner 的 `forgetPromptSent` 作废。对话里派的子任务、跑的工作流节点「用户需求」走 `nodeRequests`（最新一条全文，第一条和最近几条截短）。

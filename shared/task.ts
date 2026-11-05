@@ -144,6 +144,7 @@ export function newTask(
       },
     ],
     changes: [],
+    outsideChanges: [],
     simulated: false,
     sessions: {},
     sessionDirs: {},

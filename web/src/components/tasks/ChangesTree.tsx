@@ -20,6 +20,7 @@ export function ChangesTree({
   collapsed,
   onToggle,
   selected,
+  plain,
 }: {
   changes: FileChange[]
   onDiff: (path: string) => void
@@ -30,6 +31,8 @@ export function ChangesTree({
   onToggle: (path: string) => void
   /** 正在看的文件：高亮这一行（差异窗口左边的列表用） */
   selected?: string
+  /** 项目外的文件：只列路径、点开查看，没有 git 统计，不显示增删行数 */
+  plain?: boolean
 }) {
   const [shown, setShown] = useState(PAGE)
   const tree = useMemo(() => buildChangeTree(changes), [changes])
@@ -50,7 +53,13 @@ export function ChangesTree({
             onClick={() => (node.dir ? onToggle(node.path) : onDiff(node.path))}
             // 缩进跟着层级走；再深的路径也不会把名字挤没，名字自己截断
             style={{ paddingLeft: `${depth * 12 + 6}px` }}
-            title={node.dir ? node.path : t('查看「{path}」的改动', { path: node.path })}
+            title={
+              node.dir
+                ? node.path
+                : plain
+                  ? t('打开「{path}」', { path: node.path })
+                  : t('查看「{path}」的改动', { path: node.path })
+            }
             aria-expanded={node.dir ? open : undefined}
             aria-current={!node.dir && node.path === selected ? 'true' : undefined}
             className={cn(
@@ -69,8 +78,12 @@ export function ChangesTree({
             )}
             <Icon className={cn('h-3.5 w-3.5 shrink-0', node.dir ? 'text-accent-text/80' : 'text-subtle')} />
             <span className={cn('min-w-0 flex-1 truncate', node.dir ? 'text-fg' : 'text-muted')}>{node.name}</span>
-            <span className="shrink-0 text-success">+{node.add}</span>
-            <span className="w-8 shrink-0 text-right text-danger">{node.del ? `-${node.del}` : ''}</span>
+            {!plain && (
+              <>
+                <span className="shrink-0 text-success">+{node.add}</span>
+                <span className="w-8 shrink-0 text-right text-danger">{node.del ? `-${node.del}` : ''}</span>
+              </>
+            )}
           </button>
         )
       })}

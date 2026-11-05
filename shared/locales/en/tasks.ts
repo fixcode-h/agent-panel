@@ -517,6 +517,9 @@ export const EN_TASKS: Record<string, string> = {
     'This file had uncommitted changes before the task started, and reverting would discard them too. Please handle it in your editor.',
   撤销: 'Revert',
   '查看「{path}」的改动': 'View changes to "{path}"',
+  项目改动: 'Project changes',
+  项目外改动: 'Changes outside the project',
+  '打开「{path}」': 'Open "{path}"',
   // 执行中发消息、打断
   '执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理':
     'You can type while it runs: related notes steer the current work, unrelated ones are handled after this turn',
