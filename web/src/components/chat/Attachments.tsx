@@ -17,7 +17,7 @@ import {
   Paperclip,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { ATTACHMENT_THUMB_WIDTH, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
+import { ATTACHMENT_THUMB_WIDTH, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
 import {
   blocksSend,
   itemStatus,
@@ -172,8 +172,6 @@ export function presetAttachments(key: string, list: Attachment[]) {
  */
 export function useAttachments(draftKey?: string) {
   const [items, setItems] = useState<Item[]>(() => (draftKey ? readAttachments(draftKey) : []))
-  const count = useRef(0)
-  count.current = items.length
   // 同一次事件里连着加（粘贴好几个路径）时还没重新渲染，按这份最新的算
   const itemsRef = useRef(items)
   itemsRef.current = items
@@ -317,15 +315,13 @@ export function useAttachments(draftKey?: string) {
    */
   const pickLarge = useCallback(
     async (hooks?: AttachHooks) => {
-      const room = MAX_ATTACHMENTS - count.current
       try {
         const { files } = await api.pickFiles()
         if (!files.length) return
-        if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
         const limit = largeBytes(settingsRef.current)
         const taken = new Set(names.current)
         const fresh: Item[] = []
-        for (const a of files.slice(0, Math.max(room, 0))) {
+        for (const a of files) {
           if (videoTaker.current && isVideoFile(a.name, a.mime)) {
             videoTaker.current({ path: a.path, name: a.name })
             continue
@@ -414,14 +410,13 @@ export function useAttachments(draftKey?: string) {
   )
 
   /**
-   * 粘贴回来的路径：引用已有的文件，不上传也不拷贝。返回每个路径用的卡片名字（已经附上的同一个文件沿用原来的名字），
-   * 超过上限的不加
+   * 粘贴回来的路径：引用已有的文件，不上传也不拷贝。返回每个路径用的卡片名字（已经附上的同一个文件沿用原来的名字）。
+   * 附件不限个数（用户 2026-11-05 定的）
    */
   const addRefs = useCallback((list: Attachment[]) => {
     const names = new Map<string, { name: string; kind: ChipKind }>()
     const taken = new Set(itemsRef.current.map((x) => x.name))
     const fresh: Item[] = []
-    let full = false
     for (const a of list) {
       if (names.has(a.path)) continue
       if (videoTaker.current && a.quote === undefined && isVideoFile(a.name, a.mime)) {
@@ -431,10 +426,6 @@ export function useAttachments(draftKey?: string) {
       const had = itemsRef.current.find((x) => x.done?.path === a.path || x.source === a.path)
       if (had) {
         names.set(a.path, { name: had.name, kind: itemKind(had) })
-        continue
-      }
-      if (itemsRef.current.length + fresh.length >= MAX_ATTACHMENTS) {
-        full = true
         continue
       }
       const name = a.quote !== undefined ? a.name : uniqueName(a.name, taken)
@@ -450,7 +441,6 @@ export function useAttachments(draftKey?: string) {
       })
       names.set(a.path, { name, kind: attachChip(a) })
     }
-    if (full) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     if (fresh.length) {
       itemsRef.current = [...itemsRef.current, ...fresh]
       setItems((xs) => [...xs, ...fresh])
@@ -472,10 +462,8 @@ export function useAttachments(draftKey?: string) {
       if (take && videos.length) void takeVideos(videos, take)
       const files = videos.length ? input.filter((f) => !videos.includes(f)) : input
       if (!files.length) return
-      const room = MAX_ATTACHMENTS - count.current
-      if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
       const taken = new Set(names.current)
-      const fresh = files.slice(0, Math.max(room, 0)).map((f) => {
+      const fresh = files.map((f) => {
         // 粘贴的截图没有像样的文件名
         const base =
           f.name && f.name !== 'image.png'
@@ -563,7 +551,6 @@ export function useAttachments(draftKey?: string) {
   )
   /** 已经在服务端生成好的附件（引入的会话记录） */
   const addReady = useCallback((a: Attachment, hooks?: AttachHooks) => {
-    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     setItems((xs) => [
       ...xs,
       {
@@ -583,7 +570,6 @@ export function useAttachments(draftKey?: string) {
    * 卡片马上放进输入框，不用等上传
    */
   const addQuote = useCallback((text: string, hooks?: AttachHooks) => {
-    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     const { id, name } = quoteName(text)
     const key = crypto.randomUUID()
     const size = new Blob([text]).size

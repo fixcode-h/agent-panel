@@ -64,7 +64,7 @@ export function showinfoTimes(out: string): number[] {
 export const AUTO_MODES = ['uniform', 'scene', 'screen'] as const
 export type AutoMode = (typeof AUTO_MODES)[number]
 
-/** 自动截帧一次最多几张：再多一条消息也放不下（附件上限 10），给点余量让用户挑 */
+/** 自动截帧一次最多几张：帧太多 AI 看不过来，也拖慢截帧，挑出要紧的几张就够 */
 export const AUTO_MAX = 24
 
 /** 均匀截帧：把时长平分成 n 段，取每段中间（不取 0 秒和最后一刻：开头常是黑屏，结尾常是停在最后的画面） */

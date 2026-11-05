@@ -63,8 +63,6 @@ export const EN_VIDEO: Record<string, string> = {
   去掉增强: 'Remove enhancement',
   '增强会补出原来没有的细节，读文字、数字以原图为准':
     'Enhancing can invent detail that was never there. Trust the original for text and numbers',
-  '选了 {n} 帧，输入框里还能放 {room} 个附件，只放前 {room} 张':
-    '{n} frames selected, but the input only has room for {room} more attachments. Only the first {room} will be added',
   '发给 AI 的是这些帧图片，不发视频；视频本身不会被拷贝或改动':
     'The AI gets these frame images, not the video. The video itself is never copied or changed',
   '放进输入框（{n}）': 'Add to input ({n})',

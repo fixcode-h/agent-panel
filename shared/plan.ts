@@ -1226,6 +1226,11 @@ export function settleWait(
       // 没有「失败」：退回进行中、写清要修什么，对话查问题修好重做；确实不做了由它标 skipped
       setStatus(item, 'running', now)
       item.note = `${FAIL_PREFIX}${failed.map((x) => x.label || x.ref).join('、')}`
+    } else if (item.status === 'waiting' && (item as PlanStep).wrapUp) {
+      // 收尾步骤等的只是收尾前要先回来的结果，不是收尾本身：退回进行中，推送由 Agent、合回 / 验收由面板做完再标完成
+      // （用户 2026-11-05 报：子对话一收口，父对话还没推送合主干，计划就显示完成。见 docs/modules/shared/bugs）
+      setStatus(item, 'running', now)
+      if (item.note.startsWith(HOLD_PREFIX) || isFixNote(item.note)) item.note = ''
     } else if (item.status === 'waiting') {
       setStatus(item, 'done', now)
       // 等都成功了：holdWait 的「还在等它：…」和上一轮失败留下的「等的结果没成功：…」都已经过时，

@@ -1065,8 +1065,6 @@ export const Attachment = z.object({
   quote: z.string().max(50000).optional(),
 })
 export type Attachment = z.infer<typeof Attachment>
-/** 一次最多附上的文件数 */
-export const MAX_ATTACHMENTS = 10
 /**
  * 上传一个附件最大多少（字节）。比设置里「大文件」小的才上传；大文件先在本机找回原路径直接引用，
  * 找不到时没超过这个上限的仍然上传一份
@@ -1104,7 +1102,7 @@ export const NewTaskInput = z.object({
   model: z.string().trim().max(200).default(''),
   effort: z.string().trim().max(40).default(''),
   prompt: z.string().trim().min(1, t('请描述任务')).max(20000),
-  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  attachments: z.array(Attachment).default([]),
   /** chat 模式：Agent 参数的值（没给的用默认值） */
   params: z.record(z.string(), ParamValue).default({}),
   /**
@@ -1182,7 +1180,7 @@ export type TaskSeenResult = z.infer<typeof TaskSeenResult>
 
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
-  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  attachments: z.array(Attachment).default([]),
   /** 任务正在执行时：true 先停下当前这一轮再发送；否则直接交给正在跑的 CLI，交不出去就这一轮结束后接着处理 */
   interrupt: z.boolean().default(false),
   /** 页面生成的消息 id（待认领）：服务端沿用，推送到达后按 id 换成真实的一份、不出现两条；必须是 uuid，免得撞 id */

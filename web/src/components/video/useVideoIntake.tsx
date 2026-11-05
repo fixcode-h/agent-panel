@@ -1,7 +1,7 @@
 // 输入框接住视频：放进来的视频（拖、粘贴、选文件、粘贴路径）不当附件发，排队打开截帧弹窗，
 // 选好的帧作为图片附件放回光标处。挂在 useComposerChips 里，任务对话和新建任务的输入框都有
 import { useEffect, useState, type RefObject } from 'react'
-import { MAX_ATTACHMENTS, type Attachment } from '@shared/schema'
+import type { Attachment } from '@shared/schema'
 import type { useAttachments } from '@/components/chat/Attachments'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { VideoFramesDialog, type VideoTarget } from './VideoFramesDialog'
@@ -24,7 +24,6 @@ export function useVideoIntake(
   return (
     <VideoFramesDialog
       target={queue[0] ?? null}
-      room={MAX_ATTACHMENTS - files.items.length}
       onClose={() => setQueue((q) => q.slice(1))}
       onInsert={(list) => {
         editor.current?.focus()

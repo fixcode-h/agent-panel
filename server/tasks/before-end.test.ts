@@ -62,6 +62,13 @@ test('计划只剩合回那一步、没列计划但改过文件：该请收尾�
     },
   ]
   assert.equal(mergeOwedOf(kid({ plans: notYet }), false), '', '别的步骤还没做完，归计划那一档管')
+  // 父对话已经合回：wrapRequest 清掉、收尾标完成、计划收起，改动清单还在——不能再按「没列计划但改过文件」要它重交
+  const merged = [{ ...plan('done')[0], doneAt: at }]
+  assert.equal(
+    mergeOwedOf(kid({ plans: merged, changes: [{ path: 'a.ts', add: 1, del: 0 }] }), false),
+    '',
+    '已经合回过',
+  )
 })
 
 test('预热的进程也装结束前钩子：还没收到用户消息时放行，收到后照常判断', async () => {

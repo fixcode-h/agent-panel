@@ -14,6 +14,7 @@ import {
   parseVersion,
   pickUpdate,
   rateLimitUntil,
+  RECENT_RELEASES,
   type AppRelease,
   type AppReleases,
   type AppUpdateBusy,
@@ -725,7 +726,12 @@ export function updateApi(deps: {
       const current = currentVersion()
       const base: AppReleases = { current, packaged: packaged(), previous: previousVersion(), releases: [] }
       try {
-        const result = await releases(c.req.query('refresh') === '1')
+        // cached=1：只回上次检查存下的列表，不访问 GitHub。关着自动检查时打开设置用它，
+        // 列表不至于每次都是空的；从没检查过就回空列表，等用户点「检查更新」
+        const result: ReleasesResult =
+          c.req.query('cached') === '1'
+            ? { list: cache?.list ?? [], source: 'api' }
+            : await releases(c.req.query('refresh') === '1')
         // 冷却期还没过：这次显示的是上次的列表，页面据此把失败提示换成温和说明
         const limitedUntil = cache?.limitedUntil && cache.limitedUntil > Date.now() ? cache.limitedUntil : undefined
         return c.json({
@@ -736,7 +742,7 @@ export function updateApi(deps: {
           source: result.source,
           limitedUntil: limitedUntil ? new Date(limitedUntil).toISOString() : undefined,
           // 缓存里可能是旧版按发布时间排的列表，这里再按版本号排一次
-          releases: [...result.list].sort(newestFirst).slice(0, 5),
+          releases: [...result.list].sort(newestFirst).slice(0, RECENT_RELEASES),
           update: pickUpdate(current, result.list),
         } satisfies AppReleases)
       } catch (e) {

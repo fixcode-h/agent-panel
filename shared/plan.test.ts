@@ -804,6 +804,22 @@ test('不用收尾的对话（父对话、共用目录的 Git 子对话）计划
 /** 父对话（明确授权推送）的计划：最后一步是推送收尾 */
 const pushTask = () => fresh()
 
+test('推送收尾在等子对话、后台命令：结果都回来只退回进行中，推送并合并主干前不算完成', () => {
+  // 用户 2026-11-05 报：子对话一收口，父对话还没推送、PR 还没合，计划就显示完成
+  const task = pushTask()
+  applyPlan(task, { steps: [{ title: '派子对话', status: 'done' }] }, undefined, 'push')
+  const wrap = activePlan(task)!.steps.at(-1)!
+  assert.equal(wrap.wrapUp, 'push')
+  bindWait(task, wrap.id, { kind: 'child', ref: 'kid', label: '拆文件' })
+  bindWait(task, wrap.id, { kind: 'background', ref: 'job', label: '界面检查' })
+  settleWait(task, 'background', 'job', true)
+  assert.deepEqual(settleWait(task, 'child', 'kid', true), [{ title: WRAP_UP.push.title, done: false }])
+  const plan = activePlan(task)!
+  assert.ok(plan, '计划没有结束')
+  assert.equal(plan.steps.at(-1)!.status, 'running', '推送和合并主干还要它自己做')
+  assert.ok(!plan.steps.at(-1)!.note.startsWith('还在等它'), '过时的等待说明清掉')
+})
+
 test('父对话的推送收尾：计划最后一步，删掉、挪到中间都放回最后', () => {
   const task = pushTask()
   applyPlan(task, { steps: [{ title: '改代码', status: 'running' }, { title: '跑测试' }] }, undefined, 'push')
