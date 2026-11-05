@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：运行区里的工作流行——在跑时列出来（进度、已跑多久）、点了切到流程图、跑完整行消失。
+ * 界面检查分片：工作流运行在跑时对话里的卡片（进度、已跑多久）、点了切到流程图、跑完不留运行区。
  *
  * 原来是 02b 的最后一块：它要两次整页重载（改 localStorage 造「正在跑」，再改回去看它消失），
  * 单步就要 30 秒，是 02b 里最慢的一步（其余 27 步合计只有 33 秒）。拆成单独一片后，
@@ -49,48 +49,43 @@ await runShard(import.meta.filename, async (api) => {
       await p.reload()
       await p.goto(`${base}#/projects/${encodeURIComponent(info.projectId)}/${encodeURIComponent(info.id)}`)
       await settle(p)
-      const box = p.locator('[aria-label="运行区"]').first()
-      const listed = await box.waitFor({ timeout: 10000 }).then(
+      // 工作流改成独立运行后（4304d14），运行的节点输出都挂在节点上，对话里没有主 Agent 的回复，
+      // 运行自己的对话页靠工作流卡片显示进度和已跑多久；运行区只挂在回复下面，这里不再出现
+      const card = p.locator('[role="button"][data-run]').first()
+      const listed = await card.waitFor({ timeout: 10000 }).then(
         () => true,
         () => false,
       )
-      const text = listed ? ((await box.innerText()) || '').replace(/\s+/g, ' ').trim() : ''
-      if (!listed) errors.push('运行区-工作流在跑：工作流任务在跑时运行区里什么也没有列')
-      else if (!text.includes(`${info.done}/${info.total} 个节点`))
-        errors.push(`运行区-工作流在跑：没有显示进度 ${info.done}/${info.total}，实际「${text}」`)
+      const text = listed ? ((await card.innerText()) || '').replace(/\s+/g, ' ').trim() : ''
+      if (!listed) errors.push('运行区-工作流在跑：工作流运行在跑时对话里没有工作流卡片')
+      else if (!text.includes(`${info.done}/${info.total}`))
+        errors.push(`运行区-工作流在跑：卡片上没有显示进度 ${info.done}/${info.total}，实际「${text}」`)
       else {
         // 耗时跟着开始时间走（造的是 80 秒前开始，读到时只会更大）
         // fmtDuration 的秒位带一位小数（如「1m 20.5s」），只认整秒会漏
         if (!/\d+m \d+(?:\.\d+)?s/.test(text))
-          errors.push(`运行区-工作流在跑：这一行没有显示已跑了多久（实际「${text}」）`)
+          errors.push(`运行区-工作流在跑：卡片上没有显示已跑了多久（实际「${text}」）`)
         await check(p, '运行区-工作流在跑', ['工作流'])
-        // 工作流对话里点整行和点工作流卡片一样：就地切到流程图，不另开「运行 n」页签（用户 2026-10-30 要求）
-        const runner = box.locator('div').filter({ hasText: '个节点' }).last()
+        // 点卡片就地切到流程图，不另开「运行 n」页签（用户 2026-10-30 要求）
         const runTabs = p.getByRole('tablist', { name: '对话页签' }).getByRole('tab', { name: /运行 \d+/ })
         const before = await runTabs.count()
-        await runner.click()
+        await card.click()
         await settle(p)
         const flowTab = p.getByRole('tab', { name: '流程图' }).first()
         if ((await flowTab.getAttribute('aria-selected')) !== 'true')
-          errors.push('运行区-工作流在跑：点这一行没有切到当前对话的流程图')
-        else if ((await runTabs.count()) > before) errors.push('运行区-工作流在跑：点这一行还另外打开了运行页签')
+          errors.push('运行区-工作流在跑：点卡片没有切到当前对话的流程图')
+        else if ((await runTabs.count()) > before) errors.push('运行区-工作流在跑：点卡片还另外打开了运行页签')
         else await check(p, '运行区-工作流在跑-切到流程图', ['流程图'])
         await p.getByRole('tab', { name: '对话' }).first().click()
         await settle(p)
-        // 跑完：这一行从运行区消失，也不在总结下面留一条空横线
+        // 跑完：不留运行区（不在对话下面多一条空横线），卡片不再转圈
         await patch(false)
         await p.reload()
         await settle(p)
-        // 跑完要整块不画：运行区那个 role="group" 的容器不在了，就不会在总结下面留一条空横线
         const areas = await p.locator('[role="group"][aria-label="运行区"]').count()
         if (areas) errors.push(`运行区-工作流在跑：跑完以后运行区还留着（${areas} 块），会多出一条空横线`)
-        const left = await p
-          .locator('[aria-label="运行区"]')
-          .first()
-          .innerText()
-          .catch(() => '')
-        if (left.includes('个节点') || left.includes('工作流'))
-          errors.push(`运行区-工作流在跑：跑完以后这一行还在（「${left.replace(/\s+/g, ' ').trim()}」）`)
+        else if (await p.locator('[data-run] .animate-spin').count())
+          errors.push('运行区-工作流在跑：跑完以后卡片还在转圈')
         else await check(p, '运行区-工作流跑完消失')
       }
       await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [KEY, saved])
