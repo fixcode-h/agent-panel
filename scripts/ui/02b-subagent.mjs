@@ -345,7 +345,9 @@ await runShard(import.meta.filename, async (api) => {
     await p.evaluate((k) => {
       const db = JSON.parse(localStorage.getItem(k))
       const parent = db.tasks.find((x) => x.title.includes('购物车'))
-      const wf = db.tasks.find((x) => x.mode === 'workflow' && x.runs?.length && x.projectId === parent.projectId)
+      const wf = db.tasks.find(
+        (x) => x.mode === 'workflow' && !x.flowRun?.owner && x.runs?.length && x.projectId === parent.projectId,
+      )
       if (!wf) return
       db.tasks = db.tasks.filter((x) => x.id !== 'demo-child-run')
       const child = structuredClone(wf)
@@ -355,6 +357,8 @@ await runShard(import.meta.filename, async (api) => {
         rootTaskId: parent.id,
         title: '子对话：到货提醒',
       })
+      // 造的是老式子对话：独立运行的标记不跟过来（不然右栏按工作流运行直接打开流程图）
+      delete child.flowRun
       child.messages.splice(1, 0, {
         id: 'demo-child-tool',
         role: 'agent',
@@ -1072,5 +1076,31 @@ await runShard(import.meta.filename, async (api) => {
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
     await p.reload()
     await backToTask()
+  }
+
+  // 名下的工作流运行（不是子对话）：子对话那一行下面单独一行，节点等确认时确认就在这里做（查看结果、追问、交给父对话）
+  {
+    const row = p.locator('[data-status-row="workflows"]')
+    await row.waitFor({ timeout: 8000 }).catch(() => errors.push('工作流栏：父对话里没有名下工作流运行那一行'))
+    if (await row.count()) {
+      for (const label of ['查看结果', '追问', '交给父对话'])
+        if (!(await row.locator('button', { hasText: label }).count()))
+          errors.push(`工作流栏：等确认的运行没有「${label}」`)
+      await check(p, '工作流栏-等确认', ['角标订阅购物车数据', '「方案」等你确认'])
+      await row.locator('button', { hasText: '追问' }).click()
+      await p
+        .getByPlaceholder('想先问清楚什么？（只回答，不改结果）')
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('工作流栏：点「追问」没有弹出输入框'))
+      await check(p, '工作流栏-追问')
+      await p.keyboard.press('Escape')
+      await row.locator('button', { hasText: '查看结果' }).click()
+      await p
+        .getByRole('button', { name: '确认', exact: true })
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('工作流栏：点「查看结果」没有打开审阅弹窗'))
+      await check(p, '工作流栏-查看结果', ['方案：购物车角标改成订阅购物车数据'])
+      await p.keyboard.press('Escape')
+    }
   }
 })

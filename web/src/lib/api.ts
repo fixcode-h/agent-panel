@@ -971,8 +971,11 @@ export const api = {
   answerRequest: (
     id: string,
     rid: string,
-    body: { allow: boolean; answer?: string; answers?: string[]; always?: boolean },
+    body: { allow: boolean; answer?: string; answers?: string[]; always?: boolean; ask?: boolean },
   ) => request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
+  /** 父对话名下的工作流运行（不进对话列表）；delegateRun：节点确认交给父对话决定 */
+  flowRuns: (ownerId: string) => request<Task[]>(`/tasks?owner=${encodeURIComponent(ownerId)}`),
+  delegateRun: (id: string) => request<{ ok: boolean; info: string }>(`/tasks/${id}/delegate`, json('POST', {})),
   /**
    * 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定。
    * nudge 说明父对话叫起来了没有：没叫起来时卡片上要把原因显示给用户，不能只当成功处理
