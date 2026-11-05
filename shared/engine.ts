@@ -496,11 +496,14 @@ export interface Orchestra {
     cwd: string
     exclusive: boolean
     timeoutMinutes?: number
+    service?: boolean
     step?: string
   }): Promise<{
     ok: boolean
     info: string
   }>
+  /** 后台命令的命令过工具前守卫（runner 装上，见 server/hooks/dispatch.ts 的 commandGuard）：拒绝时返回原因 */
+  guardCommand?: (command: string) => Promise<string>
   checkBackground(id: string): string
   stopBackground(id: string): { ok: boolean; info: string }
   /** 子对话请父对话收尾：独立分支里由父对话合回原分支，共用目录、P4、没有版本管理时由父对话验收（结果推回来） */
@@ -818,6 +821,8 @@ export interface EngineHost {
     cwd: string
     exclusive: boolean
     timeoutMinutes?: number
+    /** 开发服务器、监听这类常驻进程：不催、不挂计划等待，对话不算在等它（server/background.ts 的 BgJob.service） */
+    service?: boolean
     /** 发起它的子任务步骤：子任务调用时写它自己的步骤 id，结果推回时据此标注来源 */
     step?: string
   }) => Promise<{
@@ -2787,8 +2792,9 @@ function makeOrchestra(
       const owner = step?.trim() || (helper ? self.id : runningStepId(task))
       const r = await host.runBackground(owner ? { ...job, step: owner } : job)
       // 计划里的步骤挂上「等这条命令」：子任务的步骤不在计划里（它是 slot='sub' 的步骤），不挂
+      // 常驻服务（开发服务器、监听）一直跑到被停掉：挂上等待的话那一步永远停在等待中
       const wait =
-        !helper && r.ok && r.id && owner
+        !helper && !job.service && r.ok && r.id && owner
           ? bindWait(task, owner, { kind: 'background', ref: r.id, label: job.name })
           : ''
       if (r.ok) host.changed(true)

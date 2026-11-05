@@ -201,7 +201,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ timeout: 5000 })
     .catch(() => errors.push('UI设计：展开折叠后看不到思考过程'))
   await check(p, 'UI设计-生成中', ['正在生成图片'])
-  await check(p, 'UI设计-写入', ['replace_widget'])
+  // 设计工具按 shared/tool-names.ts 显示中文名（replace_widget → 替换控件）
+  await check(p, 'UI设计-写入', ['替换控件'])
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })
   // 收起后过程不铺在屏幕上：思考块整个不渲染，不是一个还占着位置的隐藏块
   {

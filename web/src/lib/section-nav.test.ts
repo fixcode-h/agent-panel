@@ -25,12 +25,21 @@ test('当前小节：滚到底时算最后一个，短内容也不落下', () =>
   assert.equal(activeIndex([], true), -1)
 })
 
-test('滚到底的判定：贴着底部就算，内容比可视区矮也算', () => {
+test('滚到底的判定：贴着底部就算；内容比可视区短、滚不动时不算', () => {
   assert.ok(atBottom({ scrollTop: 900, clientHeight: 100, scrollHeight: 1000 }))
   assert.ok(atBottom({ scrollTop: 1000 - 100 - BOTTOM_SLACK, clientHeight: 100, scrollHeight: 1000 }))
   assert.ok(!atBottom({ scrollTop: 800, clientHeight: 100, scrollHeight: 1000 }))
-  // 内容比可视区还短：滚不动，只能看到最后那段
-  assert.ok(atBottom({ scrollTop: 0, clientHeight: 800, scrollHeight: 300 }))
+  // 内容比可视区还短：滚不动，不能算到底，否则短页面一打开就高亮最后一节
+  assert.ok(!atBottom({ scrollTop: 0, clientHeight: 800, scrollHeight: 300 }))
+  // 内容刚好一屏高（设置页只有两组时就是这样）：同样滚不动，也不算到底
+  assert.ok(!atBottom({ scrollTop: 0, clientHeight: 713, scrollHeight: 713 }))
+})
+
+test('当前小节：内容不满一屏时算第一个，不是最后一个', () => {
+  // 用户报的「关于我与记忆」：可视区 713、内容 713，两个小节 top 为 0 / 259；
+  // 修复前 atBottom 返回 true，这里会算成 1（高亮「记忆」）
+  const bottom = atBottom({ scrollTop: 0, clientHeight: 713, scrollHeight: 713 })
+  assert.equal(activeIndex([0, 259], bottom), 0)
 })
 
 test('跳转位置：头部留白，不滚成负数', () => {

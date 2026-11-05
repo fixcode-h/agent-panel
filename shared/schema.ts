@@ -1765,6 +1765,8 @@ export const TaskJob = z.object({
   state: z.enum(['queued', 'running']),
   /** 开始跑的时间；排队中为空 */
   startedAt: z.string().default(''),
+  /** 常驻服务（开发服务器、监听）：运行区照样列出、能停掉，但对话不算在等它的结果（server/background.ts 的 awaitedJob） */
+  service: z.boolean().optional(),
 })
 export type TaskJob = z.infer<typeof TaskJob>
 

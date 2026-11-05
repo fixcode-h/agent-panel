@@ -111,6 +111,29 @@ test('长命令转后台：开发服务器、完整测试在前台跑时拒绝�
   assert.equal(longDeny(ctx(), sh('npm run typecheck')), '')
   assert.equal(longDeny(ctx({ canBackground: false }), sh('npm run test:e2e')), '', '没有后台工具时不拦')
   assert.ok(longDeny(ctx({ list: () => ['cargo test'] }), sh('cargo test --all')), '设置里加的也算')
+  assert.match(longDeny(ctx(), sh('npm run dev')), /service/, '常驻进程提示用 service')
+})
+
+test('长命令转后台：只看真正运行的程序，写文件、查文件、提交说明里出现 e2e、--watch 不拦（用户 2026-11-05 报）', () => {
+  for (const cmd of [
+    "cat > docs/a.md <<'EOF'\n先跑 npm run test:e2e\n再用 vite --watch\nEOF",
+    "git commit -m '修复 e2e 超时'",
+    'grep -rn e2e scripts',
+    'cat scripts/e2e/07-local.mjs',
+    'ls scripts/ui-check.mjs',
+    'sed -n 1,20p docs/e2e.md',
+    "@'\nnpm run test:e2e\n'@ | Set-Content a.md",
+  ])
+    assert.equal(longDeny(ctx(), sh(cmd)), '', cmd)
+  assert.match(
+    longDeny(ctx(), sh("cat > a.md <<'EOF'\nx\nEOF\nnpm run test:e2e")),
+    /完整检查/,
+    'heredoc 之后真跑的照样拦',
+  )
+  assert.match(longDeny(ctx(), sh('CI=1 npx playwright test')), /完整检查/, '前面的环境变量跳过')
+  // heredoc 正文不当命令：里面写着 git push --force 不触发危险命令守卫
+  assert.equal(dangerDeny(ctx(), sh("cat > notes.md <<'EOF'\n不要 git push --force\nEOF")), '')
+  assert.match(dangerDeny(ctx(), sh('git push --force origin dev')), /强制推送/)
 })
 
 test('测试步骤归属：独立分支里的子对话跑「合回后由父对话跑」的步骤时拒绝，共用目录照常', () => {

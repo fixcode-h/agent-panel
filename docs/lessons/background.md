@@ -1,5 +1,5 @@
 ---
-paths: server/background.ts, server/exec/parsers.ts, web/src/lib/tasks.ts, server/orch-mcp.ts
+paths: server/background.ts, server/background-tools.ts, server/exec/parsers.ts, web/src/lib/tasks.ts, server/orch-mcp.ts, server/hooks/guards.ts, shared/command-scope.ts
 ---
 
 # 后台命令
@@ -21,3 +21,9 @@ paths: server/background.ts, server/exec/parsers.ts, web/src/lib/tasks.ts, serve
 - 规则：`void someAsync()` 发出去的后台命令、消息投递，抛错时也要把记录置终态并把结果推回；排进「下一轮」的消息在 CLI 停到等下一句时就要送（`runner.ts` 的 `flushHeld`），保活进程不会结束这一轮；重试前撤掉第一次已记进对话的那条。
 - 起因：后台命令跑之前抛错，记录一直「运行中」，对话一直等结果（ADR 0032）。
 - 防线：`server/background.test.ts`「命令没能启动」。
+
+## 后台命令只收长命令，守卫按「真正在跑的程序」判断
+
+- 规则：按命令判断的守卫和用途检查都走 `shared/command-scope.ts`：先去掉 heredoc / here-string 正文再拆段，每段只看开头的程序名，快命令（读写文件、查找、git 本地操作）的参数里出现 `e2e`、`--watch` 不算。`run_background` 拒收写文件和几秒就完的命令，命令先过和 CLI 命令工具同一套守卫（`commandGuard`）；开发服务器、监听按常驻服务（`service`）跑，不催、不算对话在等它（`awaitedJob`）。新加「让 Agent 改用某个工具」的拦截时，先确认匹配的是在跑的程序，不是命令里的字样。
+- 起因：用户 2026-11-05 报「写文件命令怎么也用后台命令了」：长命令守卫把 heredoc 正文、`git commit -m '修复 e2e'`、`grep e2e` 都当成在跑完整测试拦下，让 Agent 改用 `run_background`；后台命令又不过任何守卫，成了绕过推送授权、只读角色的路。
+- 防线：`shared/command-scope.test.ts`、`server/hooks/guards.test.ts`「只看真正运行的程序」、`server/orch-mcp.test.ts`「后台命令只收长命令」、`server/background.test.ts`「常驻服务」。

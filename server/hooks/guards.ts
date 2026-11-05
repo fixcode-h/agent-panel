@@ -3,7 +3,8 @@ import { homedir, tmpdir } from 'node:os'
 import type { Project, Task } from '../../shared/schema.ts'
 import { FULL_SUITE_COMMAND } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
-import { commandSegments, globMatch } from '../../shared/hook-defs.ts'
+import { globMatch } from '../../shared/hook-defs.ts'
+import { endlessSegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
 import { editScope } from '../../shared/bug-phase.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
@@ -32,8 +33,9 @@ const inside = (dir: string, p: string) => {
   const r = path.relative(path.resolve(dir), path.resolve(p))
   return r === '' || (!r.startsWith('..') && !path.isAbsolute(r))
 }
+// heredoc / here-string 的正文是要写进文件的内容，不是命令：去掉再拆段（command-scope.ts）
 const segs = (facts: HookFacts) =>
-  facts.tool?.kind === 'shell' ? commandSegments(String(facts.tool.input.command ?? '')) : []
+  facts.tool?.kind === 'shell' ? runSegments(String(facts.tool.input.command ?? '')) : []
 const editPaths = (facts: HookFacts) =>
   facts.tool?.kind === 'edit' ? (facts.tool.paths.length ? facts.tool.paths : [facts.tool.path]).filter(Boolean) : []
 /** 子对话在自己的独立分支（worktree）里 */
@@ -144,25 +146,20 @@ function dangerOf(c: GuardCtx, s: string): string {
   return ''
 }
 
-/** 不会自己结束的命令（开发服务器、监听）：放在前台会一直挡着对话 */
-const ENDLESS = [
-  /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|watch)\b/,
-  /^(?:npx\s+)?vite(?:\s+(?!build\b|preview\b)\S|$)/,
-  /^(?:npx\s+)?(?:nodemon|http-server|live-server)\b/,
-  /\s--watch\b/,
-  /^(?:npx\s+)?tsc\b.*\s-w\b/,
-]
-
 /**
  * 长命令转后台：完整测试、端到端、界面检查、开发服务器放在前台跑，用户执行中发来的消息要等它跑完才处理，
- * 对话看起来就是卡住（用户 2026-10-27 纠正过，docs/lessons/tooling.md）。这一轮有 run_background 时拒绝并说明用它
+ * 对话看起来就是卡住（用户 2026-10-27 纠正过，docs/lessons/tooling.md）。这一轮有 run_background 时拒绝并说明用它。
+ * 以前按段里的字样匹配，写文件的 heredoc 正文、commit 说明、grep 的参数里有 e2e 也被拦下、让它改用后台命令，
+ * 结果写文件、查文件都跑去了后台（用户 2026-11-05 报）：现在只看段开头真正运行的程序
  */
 export function longDeny(c: GuardCtx, facts: HookFacts): string {
   if (!c.canBackground) return ''
   const extra = c.list('extra').filter(Boolean)
   for (const s of segs(facts)) {
-    if (ENDLESS.some((re) => re.test(s)))
-      return `【面板】${s.slice(0, 80)} 不会自己结束，放在前台会一直挡着对话：用面板工具 run_background 在后台跑，需要访问时看它的输出。`
+    // 只看真正在跑的程序：cat、grep、git commit 这类快命令的参数里出现 e2e、--watch 不算（command-scope.ts）
+    if (quickSegment(s)) continue
+    if (endlessSegment(s))
+      return `【面板】${s.slice(0, 80)} 不会自己结束，放在前台会一直挡着对话：用面板工具 run_background 在后台跑（service 设为 true），用 check_background 看它的输出确认起来了。`
     if (FULL_SUITE_COMMAND.test(s) || extra.some((x) => s.startsWith(x)))
       return `【面板】${s.slice(0, 80)} 是要跑很久的完整检查：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
   }
