@@ -159,7 +159,10 @@ export function createExperienceLearner(deps: LearnDeps) {
     if (!exp.enabled || !exp.autoLearn) return
     const timer = setTimeout(() => {
       timers.delete(taskId)
-      void learn(taskId).catch((e) => log.warn('task', '学经验失败', { task: taskId, error: (e as Error).message }))
+      // 没学的原因（没完成、没过闸门、已覆盖……）写进日志：对话里不刷一行，但「为什么没学」要能查到
+      void learn(taskId)
+        .then((result) => log.info('task', '经验学习', { task: taskId, result }))
+        .catch((e) => log.warn('task', '学经验失败', { task: taskId, error: (e as Error).message }))
     }, SETTLE_MS)
     timer.unref?.()
     timers.set(taskId, timer)

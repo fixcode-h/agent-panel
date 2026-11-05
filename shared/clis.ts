@@ -24,6 +24,11 @@ export interface PermissionOption {
   id: string
   label: string
   hint: string
+  /**
+   * 选了这一档时，CLI 仍然发来的确认请求由面板直接允许（问题照常弹出）：
+   * 例如 Claude Code 跳过确认后，删除工作目录、Windows 路径这类自带安全检查仍会要确认
+   */
+  autoAllow?: boolean
 }
 
 export interface BuildOptions {
@@ -205,7 +210,7 @@ export interface CliDefinition {
   /** 手动设的上下文窗口、最大输出用哪个环境变量告诉 CLI；没有的项 CLI 不接受，只用于面板估算 */
   limitEnv?: { context?: string; maxOutput?: string }
   /** 长上下文靠模型名后缀开（见 cli-spec 的 longContext） */
-  longContext?: { suffix: string; min: number }
+  longContext?: { suffix: string; min: number; models?: string }
   /** buildArgs 里会把这几项写成参数（BuildOptions 的 contextWindow、maxOutput） */
   limitArgs?: ('context' | 'maxOutput')[]
   /** 手动设的上下文窗口、最大输出写进 CLI 配置文件的哪里（这一轮里临时加上），见 cli-spec.ts 的 features.limitFile */

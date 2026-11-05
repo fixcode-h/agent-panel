@@ -124,6 +124,8 @@ export function limitSupport(def: CliDefinition | undefined) {
 export function longContextModel(def: Pick<CliDefinition, 'longContext'> | undefined, model: string, context?: number) {
   const lc = def?.longContext
   if (!lc || !model || model.startsWith('@') || !context || context < lc.min || model.endsWith(lc.suffix)) return model
+  // 只给 CLI 认得出的自家模型加：别家的模型按环境变量里的窗口走，加了后缀反而报 unrecognized_model
+  if (lc.models && !new RegExp(lc.models, 'i').test(model)) return model
   return model + lc.suffix
 }
 

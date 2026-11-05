@@ -13,6 +13,7 @@ import type { Task, TaskMessage } from './schema.ts'
 import { BugCase, BugCollect, type BugLevel, type Diagnosis, type DiagnosisNote } from './bug-diagnosis-schema.ts'
 import {
   causeAgreed,
+  causeInPlan,
   evidenceFiles,
   inputPhase,
   lastPlan,
@@ -134,8 +135,13 @@ function causeProblem(c: BugCase): string {
 
 /** 修复方案：先有用户同意的根因；修法、文件、验证计划；标准以上要影响面和两个方案 */
 function planProblem(c: BugCase, list: Diagnosis[]): string {
-  if (!causeAgreed(list))
-    return '还没有用户同意的根因：先交 phase: cause（论证还没定论交 phase: evidence），用户同意根因后再交修复方案。'
+  // 快速级别可以把根因和方案合成一版交：根因那一节照样要齐、要证实，用户确认这一版就同时同意了根因
+  if (!causeAgreed(list) && c.level !== 'quick')
+    return '还没有用户同意的根因：先交 phase: cause（论证还没定论交 phase: evidence），用户同意根因后再交修复方案。快速级别（必现、读代码就能定、改一个文件）可以把 level 写成 quick，根因和修复方案合成一版交 phase: plan。'
+  if (!causeAgreed(list)) {
+    const cause = causeProblem(c)
+    if (cause) return `快速级别把根因和修复方案合成一版交，根因那一节也要齐：${cause}`
+  }
   const need: [string, boolean][] = [
     ['fix 或 options + chosen（修复方案）', !!c.fix.trim() || !!c.chosen?.id],
     ['verify（验证计划）', !!c.verify.trim()],
@@ -332,12 +338,18 @@ export function submitDiagnosis(
   ;(task.diagnoses ??= []).push(d)
   // 草稿留着：下一版从它改起，用户只问了几条时别的小节不用重写
   task.bugCase = { ...c, updatedAt: now }
+  // 按阶段写明这一版只请用户确认什么（实测：根因那一版里写好了方案，回复说「等你确认方案 A」，
+  // 弹窗按钮却是「同意根因」，用户以为点了就开始修）
   const wait =
     phase === 'verify'
       ? '等用户复现验证、贴日志（或点结束跳过验证）'
       : phase === 'evidence'
         ? '等用户同意加日志（用户也可能直接贴日志）'
-        : '等用户确认'
+        : phase === 'cause'
+          ? `这一版只请用户确认根因，修复方案要等用户同意根因后另交 phase: plan 再确认${d.options.length || d.fix.trim() ? '（你写的修法在弹窗里标成草案，这一版不确认它）' : ''}；回复用户时不要说在等他确认方案`
+          : causeInPlan(d, task.diagnoses)
+            ? '等用户一起确认根因和修复方案（快速级别合成一版），确认了才改代码'
+            : '等用户确认修复方案，确认了才改代码'
   return {
     ok: true,
     version,
