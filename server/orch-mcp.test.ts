@@ -507,6 +507,40 @@ test('后台命令没给名字时取命令第一行：推回结果的标题不�
   assert.equal(names[1], '装依赖')
 })
 
+test('后台命令只收长命令：写文件、快命令拒收；命令先过守卫；开发服务器按常驻服务跑', async () => {
+  const got: { command: string; service?: boolean }[] = []
+  const guarded: string[] = []
+  const o = {
+    runBackground: async (input: { command: string; service?: boolean }) => {
+      got.push(input)
+      return { ok: true, id: 'abc12345', info: '已放到后台（编号 abc12345）。' }
+    },
+    guardCommand: async (command: string) => {
+      guarded.push(command)
+      return /git push/.test(command) ? '【面板】还没拿到推送授权' : ''
+    },
+  } as unknown as Orchestra
+  // 用户 2026-11-05 报：写文件的命令也交给了后台
+  const write = await callOrchTool(o, 'run_background', { command: "cat > a.md <<'EOF'\nnpm run test:e2e\nEOF" })
+  assert.match(text(write), /不用来写文件/)
+  assert.match(text(await callOrchTool(o, 'run_background', { command: 'git status' })), /几秒就能跑完/)
+  assert.equal(got.length, 0, '拒收的不交给面板')
+  // 守卫：和 CLI 命令工具同一套，不能借后台命令绕过推送授权
+  const push = await callOrchTool(o, 'run_background', { command: 'npm run build && git push' })
+  assert.match(text(push), /推送授权/)
+  assert.equal(got.length, 0)
+  await callOrchTool(o, 'run_background', { command: 'npm run test:e2e' })
+  await callOrchTool(o, 'run_background', { command: 'npm run dev' })
+  assert.deepEqual(
+    got.map((x) => [x.command, !!x.service]),
+    [
+      ['npm run test:e2e', false],
+      ['npm run dev', true],
+    ],
+  )
+  assert.ok(guarded.includes('npm run test:e2e'))
+})
+
 /**
  * spawn_agents 的顶层 agent / tier / resume：整批的默认值。
  * 以前只读 tasks[i]，模型把 resume 写在顶层时被静默丢掉，复看的评审退回默认「子任务」角色 + 新会话，

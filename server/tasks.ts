@@ -82,6 +82,7 @@ import { createJobs } from './tasks/jobs.ts'
 import { createEditWorktree } from './tasks/edit-worktree.ts'
 import { createChildMessages } from './tasks/child-messages.ts'
 import { createFlowRuns, registerFlowRunRoutes } from './tasks/flow-runs.ts'
+import { awaitedJob } from './background.ts'
 
 /** 任务接口与执行。执行中的任务放在内存里，按节点落盘，避免流式输出时频繁写文件 */
 export function tasksApi(deps: {
@@ -600,8 +601,7 @@ export function tasksApi(deps: {
   } = createMerge(scope)
 
   /** 后台命令还在跑 / 排队：结果推回来还要接着做，不算彻底结束 */
-  const pendingJobs = (id: string) =>
-    background.list(id).filter((j) => j.state === 'queued' || j.state === 'running').length
+  const pendingJobs = (id: string) => background.list(id).filter(awaitedJob).length
 
   // 定时核对：记录说在做、面板里却没人在做的对话兜底收口，并在对话里说明（见 server/tasks/state-sweep.ts、ADR 0033）
   const stateSweep = createStateSweep({

@@ -14,6 +14,7 @@ import {
   unwrapMoreTools,
 } from '@shared/panel-tools'
 import { peerOfMessage, subjectLine } from '@shared/peer-message'
+import { panelToolTitle, serverTitle, toolListTitle, toolTitle } from '@shared/tool-names'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -262,7 +263,17 @@ function sendOf(name: string, tool: ToolUse): ToolView['send'] {
 export function toolView(tool: ToolUse): ToolView | null {
   // 旧记录：ToolSearch 原样记成了工具名、标题是「select:mcp__panel__finish_child」，按新记录的样子显示
   if (isToolLookup(tool.name ?? ''))
-    return { tool: { ...tool, kind: 'search', name: t('查询 MCP 工具'), label: toolLookupLabel(toolArgs(tool).query) } }
+    return {
+      tool: {
+        ...tool,
+        kind: 'search',
+        name: t('查询 MCP 工具'),
+        label: toolListTitle(toolLookupLabel(toolArgs(tool).query)),
+      },
+    }
+  // 新记录：解析时已经记成「查询 MCP 工具」，副标题是英文工具名，换成中文
+  if (tool.kind === 'search' && (tool.name === '查询 MCP 工具' || tool.name === t('查询 MCP 工具')))
+    return { tool: { ...tool, label: toolListTitle(tool.label) } }
   const panel = panelTool(tool)
   if (panel === null) return null
   if (panel) {
@@ -294,7 +305,11 @@ export function toolView(tool: ToolUse): ToolView | null {
   if (!mcp) return { tool }
   const a = toolArgs(tool)
   const arg = Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined
-  return { tool: { ...tool, name: mcp[2], label: arg ? firstLine(arg).slice(0, 120) : '' }, server: mcp[1] }
+  // 面板自己的设计、Blender 服务的工具换成中文名，服务名也换成中文；别家的工具照原名
+  return {
+    tool: { ...tool, name: toolTitle(mcp[2], mcp[1]), label: arg ? firstLine(arg).slice(0, 120) : '' },
+    server: serverTitle(mcp[1]),
+  }
 }
 
 /**
@@ -368,9 +383,11 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     ...(input !== undefined && { input }),
   })
   const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+  // 中文名统一在 shared/tool-names.ts 里维护；下面按工具不同的只是标题后面跟什么、展开看什么
+  const title = panelToolTitle(name) || name
   switch (name) {
     case 'create_conversation':
-      return as(t('新建子对话'), firstLine(a.title) || quoted, 'agent', text(a.message))
+      return as(title, firstLine(a.title) || quoted, 'agent', text(a.message))
     // 交诊断报告（ADR 0045）：报告本身在对话里有可点开的一行，这里只写根因
     case 'submit_diagnosis':
       return as(
@@ -383,125 +400,125 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       )
     // 加好日志请用户复现：和交报告那一行一样能打开报告
     case 'request_logs':
-      return as(t('请你复现'), Array.isArray(a.added) ? a.added.join('、') : '', 'other')
+      return as(title, Array.isArray(a.added) ? a.added.join('、') : '', 'other')
     // 父对话启动工作流（ADR 0044）：开出来的是工作流子对话，点它和子对话一样在右栏打开
     // 等你操作：标题写要你做什么，展开看步骤（面板上的那一份）
     case 'request_user_action': {
       const c = (a.collect ?? {}) as Record<string, unknown>
       const steps = Array.isArray(c.steps) ? c.steps.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
-      return as(t('请你操作'), firstLine(a.title), 'other', steps || undefined)
+      return as(title, firstLine(a.title), 'other', steps || undefined)
     }
     case 'start_workflow':
-      return as(t('启动工作流'), firstLine(a.title) || firstLine(a.input), 'agent', text(a.input))
+      return as(title, firstLine(a.title) || firstLine(a.input), 'agent', text(a.input))
     case 'send_to_conversation':
-      return as(t('发送消息'), quoted || firstLine(a.id), 'agent', text(a.message))
+      return as(title, quoted || firstLine(a.id), 'agent', text(a.message))
     case 'list_conversations':
-      return as(t('查看子对话'), '')
+      return as(title, '')
     case 'more_tools':
-      return as(t('查看工具用法'), firstLine(a.name))
+      return as(title, firstLine(a.name))
     // 成功派出时子任务各有一行（转圈、完成、失败），这次调用不再单独显示；失败了要让人看到原因
     case 'spawn_agents':
-      return tool.failed ? as(t('派出子任务'), '', 'agent') : null
+      return tool.failed ? as(title, '', 'agent') : null
     // 等子任务是在等面板派出的那几个，不是 CLI 自己的子 Agent：标题写清楚等了几个、做完几个
     case 'wait_agents':
-      return as(t('等待子任务'), waitSummary(tool, a), 'agent')
+      return as(title, waitSummary(tool, a), 'agent')
     // 终止自己派出的子任务：标题写终止的原因，展开看终止了哪几个
     case 'stop_subtask':
-      return as(t('终止子任务'), firstLine(a.reason), 'agent', tool.output || undefined)
+      return as(title, firstLine(a.reason), 'agent', tool.output || undefined)
     case 'run_background': {
       // input 可能直接是命令原文（见 rawCommand）：参数解析拿不到 name / command，
       // 标题用命令第一行，展开的 IN 用完整命令，不能只剩「后台命令」一行
       const command = text(a.command) ?? rawCommand(tool) ?? (tool.kind === 'run' ? tool.label : undefined)
-      return as(t('后台命令'), firstLine(a.name) || firstLine(command), 'other', command)
+      return as(title, firstLine(a.name) || firstLine(command), 'other', command)
     }
     case 'check_background':
-      return as(t('查看后台命令'), firstLine(a.id))
+      return as(title, firstLine(a.id))
     case 'stop_background':
-      return as(t('停止后台命令'), firstLine(a.id))
+      return as(title, firstLine(a.id))
     case 'message_parent': {
       const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
       const body = [text(a.text), opts].filter(Boolean).join('\n\n')
-      return as(t('发送消息'), firstLine(a.text), 'other', body || undefined)
+      return as(title, firstLine(a.text), 'other', body || undefined)
     }
     case 'suggest_next_step': {
       const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
       const body = [text(a.text), opts].filter(Boolean).join('\n\n')
-      return as(t('收尾建议交给用户选'), firstLine(a.text), 'other', body || undefined)
+      return as(title, firstLine(a.text), 'other', body || undefined)
     }
     case 'submit_merge':
     case 'submit_build':
-      return as(t('请父对话收尾'), firstLine(a.note), 'other', text(a.tests))
+      return as(title, firstLine(a.note), 'other', text(a.tests))
     // 父对话收尾子对话：标题写子对话的名字（结果里有），点它打开那个子对话
     case 'finish_child':
-      return as(t('收尾子对话'), quoted || firstLine(a.id), 'agent')
+      return as(title, quoted || firstLine(a.id), 'agent')
     // 父对话终止工作流子对话的流程图：点它打开那个子对话，展开看终止原因
     case 'stop_workflow':
-      return as(t('终止工作流'), quoted || firstLine(a.id), 'agent', text(a.reason))
+      return as(title, quoted || firstLine(a.id), 'agent', text(a.reason))
     case 'request_build':
-      return as(t('申请编译'), firstLine(a.note), 'other', text(a.note))
+      return as(title, firstLine(a.note), 'other', text(a.note))
     case 'list_peers':
-      return as(t('查看其他父对话'), '')
+      return as(title, '')
     case 'message_peer':
-      return as(t('发送消息'), firstLine(a.text), 'other', text(a.text))
+      return as(title, firstLine(a.text), 'other', text(a.text))
     case 'start_plan':
     case 'run_workflow':
-      return as(t('启动工作流'), firstLine(a.input), 'other', text(a.input))
+      return as(title, firstLine(a.input), 'other', text(a.input))
     case 'set_plan': {
       const n = Array.isArray(a.steps) ? a.steps.length : 0
       // 展开看合并后的计划（工具结果里有），不看一段 JSON
-      return as(t('更新计划'), firstLine(a.title) || (n ? t('{n} 个步骤', { n }) : ''), 'other', '')
+      return as(title, firstLine(a.title) || (n ? t('{n} 个步骤', { n }) : ''), 'other', '')
     }
     case 'finish_plan':
-      return as(t('结束计划'), '')
+      return as(title, '')
     case 'close_run':
-      return as(t('结束这次运行'), '')
+      return as(title, '')
     case 'get_status':
-      return as(t('查看节点状态'), '')
+      return as(title, '')
     case 'begin_edit': {
       // 开出来的分支名在结果里：「已开独立分支 xxx（目录 …）」「已经在独立分支 xxx 里」
       const branch = /独立分支 (\S+?)(?:（| 里|$)/.exec(tool.output ?? '')?.[1] ?? ''
-      return as(t('开独立分支'), branch)
+      return as(title, branch)
     }
     // 角色分层：就地加载挂载的能力、父对话就地微改动（见 shared/inline-edit.ts）
     case 'use_capability':
-      return as(t('加载能力'), firstLine(a.name), 'read', '')
+      return as(title, firstLine(a.name), 'read', '')
     case 'begin_inline_edit':
-      return as(t('开始就地改动'), list(a.files), 'other', text(a.reason))
+      return as(title, list(a.files), 'other', text(a.reason))
     case 'end_inline_edit':
-      return as(t('结束就地改动'), '', 'other', tool.output || undefined)
+      return as(title, '', 'other', tool.output || undefined)
     case 'claim_files':
-      return as(t('认领文件'), list(a.paths))
+      return as(title, list(a.paths))
     case 'release_files':
-      return as(t('释放文件'), list(a.paths))
+      return as(title, list(a.paths))
     case 'p4_split_changelists':
-      return as(t('按类型分 changelist'), a.from ? `#${firstLine(a.from)}` : 'default', 'other', '')
+      return as(title, a.from ? `#${firstLine(a.from)}` : 'default', 'other', '')
     // 把这个对话的改动 cherry-pick 到项目设的目标：标题写哪几个提交（短哈希）或哪个 changelist，展开看面板的核对结果
     case 'cherry_pick': {
       const commits = Array.isArray(a.commits) ? a.commits.map((c) => String(c).trim().slice(0, 8)).join(', ') : ''
       const label = commits || (a.changelist ? `#${firstLine(a.changelist)}` : '')
-      return as(t('cherry-pick 改动'), label, 'other', tool.output || undefined)
+      return as(title, label, 'other', tool.output || undefined)
     }
     // 请用户授权推送（项目设置「第一次需要推送时问一次」）：标题写分支，展开看用户的决定
     case 'ask_push':
-      return as(t('请用户授权推送'), firstLine(a.branch), 'other', tool.output || undefined)
+      return as(title, firstLine(a.branch), 'other', tool.output || undefined)
     case 'record_lesson':
       return as(a.id ? t('改写教训') : t('记下教训'), firstLine(a.title), 'other', text(a.rule))
     case 'project_lessons':
-      return as(t('查看项目教训'), list(a.files), 'read')
+      return as(title, list(a.files), 'read')
     case 'record_experience':
       return as(a.id ? t('更新经验') : t('记下经验'), firstLine(a.title), 'other', text(a.body))
     case 'project_experience':
-      return as(t('查项目经验'), firstLine(a.query) || list(a.files), 'read')
+      return as(title, firstLine(a.query) || list(a.files), 'read')
     case 'read_state':
-      return as(t('读取共享状态'), '')
+      return as(title, '')
     case 'write_state':
-      return as(t('写入共享状态'), firstLine(a.key), 'other', text(a.value))
+      return as(title, firstLine(a.key), 'other', text(a.value))
     case 'ask_main':
-      return as(t('向主角色提问'), firstLine(a.question), 'other', text(a.question))
+      return as(title, firstLine(a.question), 'other', text(a.question))
     case 'send_message':
-      return as(t('发送消息'), quoted || firstLine(a.to), 'other', text(a.text))
+      return as(title, quoted || firstLine(a.to), 'other', text(a.text))
     case 'read_messages':
-      return as(t('查看消息'), '')
+      return as(title, '')
     // 交结果：标题写做完 / 没做完 / 卡住，展开看总结和还差什么
     case 'submit_result':
       return as(
@@ -523,7 +540,7 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
           : undefined,
       )
     case 'read_user_notes':
-      return as(t('查看用户补充'), '', 'read')
+      return as(title, '', 'read')
     // 提问和等下一句：问题本身有提问卡片，这里只说明模型在做什么
     case 'ask_user':
       return as(
@@ -532,10 +549,10 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
         'other',
       )
     case 'wait_user_message':
-      return as(t('等待用户消息'), '')
+      return as(title, '')
     // 操控软件：标题写动作名，展开看参数和结果
     case 'app_actions':
-      return as(t('查看软件操作'), firstLine(a.group), 'read')
+      return as(title, firstLine(a.group), 'read')
     case 'app_do':
       return as(
         t('操作软件'),
@@ -544,7 +561,9 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
         a.args && typeof a.args === 'object' && Object.keys(a.args).length ? JSON.stringify(a.args, null, 2) : '',
       )
   }
-  return undefined
+  // 没有专门写法的面板工具（记 Bug 档案、记住一件事……）：中文名 + 第一个参数，不露出英文原名和 panel 标签
+  const arg = Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined
+  return as(title, arg ? firstLine(arg).slice(0, 120) : '')
 }
 
 /** 等待子任务这一行的标题：等完了说做完几个、还剩几个，没等完说在等几个 */

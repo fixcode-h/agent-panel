@@ -17,6 +17,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 关于我与记忆（设计报告 Chat P1-4）：「关于我」能改、记忆能看能删能加（演示里有两条示例）
   await p.getByRole('button', { name: '关于我与记忆', exact: true }).click()
   await check(p, '设置-关于我与记忆', ['关于我', '叫我小王', '命令要能在 PowerShell 里跑', '2 条'])
+  // 打开时内容不满一屏（滚不动）：小节导航要选第一个「关于我」，不能被「滚到底」误判成「记忆」（用户报的 Bug）
+  const toc = p.getByRole('tablist', { name: '本页小节' })
+  const aboutTab = toc.getByRole('tab', { name: '关于我' })
+  // 没出现导航时只报一条，别让下一行的 getAttribute 再等 30 秒按超时中断分片
+  const hasToc = await aboutTab.waitFor({ timeout: 5000 }).then(
+    () => true,
+    () => false,
+  )
+  if (!hasToc) errors.push('设置-关于我与记忆：没有出现「本页小节」导航')
+  else {
+    if ((await aboutTab.getAttribute('aria-selected')) !== 'true')
+      errors.push('设置-关于我与记忆：打开时小节导航应该选中「关于我」')
+    // 点「记忆」仍然点亮它（短页面滚不动，但点击选中要生效）
+    await toc.getByRole('tab', { name: '记忆' }).click()
+    if ((await toc.getByRole('tab', { name: '记忆' }).getAttribute('aria-selected')) !== 'true')
+      errors.push('设置-关于我与记忆：点「记忆」后小节导航应该选中「记忆」')
+  }
   await p.getByRole('button', { name: '删掉这条记忆' }).first().click()
   await p
     .getByText('1 条', { exact: true })
