@@ -194,8 +194,6 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   /** 工具前 / 工具后各自关心哪几类工具：能按工具名过滤的 CLI 只对这几类触发（见 shared/hooks.ts 的 toolMatcher） */
   hookTools?: HookToolScope
   onHook?: (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
-  /** 后台命令的命令过守卫：拒绝时返回原因（交给模型），放行返回空串 */
-  commandGuard?: (command: string) => Promise<string>
 }> {
   if (!c.call.orch) return {}
   const data: HooksData = await readHooks()
@@ -480,8 +478,9 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
   }
 
+  // 装到这次调用的 Orchestra 上：run_background 放行前调它（server/background-tools.ts）
+  c.call.orch.guardCommand = commandGuard
   return {
-    commandGuard,
     ...(beforeEnd ? { beforeEnd } : {}),
     ...(events.length ? { hookEvents: events, hookTools, onHook } : {}),
   }

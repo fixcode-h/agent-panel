@@ -1388,7 +1388,7 @@ async function runAgent(
     ctx.changed(true)
   }
   // 钩子拦住、让它接着做时记一行「面板让它接着做」，之后的输出另起一条
-  const { commandGuard, ...hooks } = await hookOptions({
+  const hooks = await hookOptions({
     task,
     project,
     agent,
@@ -1402,8 +1402,6 @@ async function runAgent(
       ctx.changed(true)
     },
   })
-  // 后台命令的命令也过同一套守卫（见 hookOptions 的 commandGuard）
-  if (orch) orch.guardCommand = commandGuard
   const r = await invokeCli({
     mcp: blender ? [{ name: 'blender', url: blender.url }] : undefined,
     cliId,
