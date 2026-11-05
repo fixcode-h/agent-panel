@@ -3676,6 +3676,30 @@ function tasksRoute(
     }
     return { dir, branch: p?.path ? 'main' : null, isGit: !!p?.path }
   }
+  // 回复里的文件标记：演示的示例工程里有内容的算存在，完整路径按演示项目的目录拼
+  if (sub === 'paths' && method === 'POST') {
+    const root = (d.projects.find((x) => x.id === task.projectId)?.path ?? '').replace(/[\\/]+$/, '')
+    const paths = ((body as { paths?: string[] })?.paths ?? []).map(String)
+    return {
+      items: paths.map((raw) => {
+        const rel = raw.replace(/\\/g, '/').replace(/^\.\//, '')
+        const exists = DEMO_FILES.includes(rel) || rel.startsWith('ui-shots/')
+        const text = DEMO_CONTENTS[rel]
+        return {
+          path: raw,
+          abs: root ? `${root}/${rel}` : rel,
+          rel,
+          inTask: true,
+          exists,
+          dir: false,
+          text: text !== undefined,
+          size: text?.length,
+          mtime: exists ? new Date().toISOString() : undefined,
+        }
+      }),
+    }
+  }
+  if (sub === 'open-path') fail('在线演示不能用本机的程序打开文件')
   // 演示里没有本机的文件管理器：和「打开数据目录」一样明说打不开，不假装成功
   if (sub === 'reveal') fail('在线演示不能打开本机目录')
   // 会话栏：演示里没有本机目录，按演示项目给一份像样的环境、说明文件和 Skill

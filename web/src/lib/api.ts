@@ -2,6 +2,7 @@ import type { ShellReport } from '@shared/shells'
 import type { SpeedRow } from '@shared/api-speed'
 import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
+import { pathsApi } from './api-paths'
 import type { CollabEvent } from '@shared/collab-timeline'
 import type { LifeReport } from '@shared/lifecycle'
 import type { TaskExport } from '@shared/task-export'
@@ -1192,4 +1193,5 @@ export const api = {
     request<{ ok: boolean; dir: string }>('/fs/reveal', json('POST', { projectId })),
   // 工作总结、候选教训草稿（api-summary.ts）
   ...summaryApi,
+  ...pathsApi,
 }

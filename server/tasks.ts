@@ -54,6 +54,7 @@ import { releaseIfSame, reserveOnce } from './slots.ts'
 import { killTree } from './exec/process.ts'
 import { reapSettledTaskClis } from './exec/orphans.ts'
 import { registerFileRoutes } from './tasks/files-routes.ts'
+import { registerPathRoutes } from './tasks/path-routes.ts'
 import { registerCollabRoutes } from './tasks/collab-routes.ts'
 import { createTrash } from './tasks/trash.ts'
 import { registerActionRoutes } from './tasks/actions-routes.ts'
@@ -702,6 +703,7 @@ export function tasksApi(deps: {
   const { prewarmChat, createTask } = registerConversationRoutes(scope)
   const { dropWorktree, taskDir, worktreeHome } = registerWorktreeRoutes(scope)
   const { readableDir } = registerFileRoutes(scope)
+  registerPathRoutes(scope)
   registerActionRoutes(scope)
   const { purgeTasks, enterTrash, restoreTasks } = createTrash(scope)
 
