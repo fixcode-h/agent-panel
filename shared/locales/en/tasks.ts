@@ -807,8 +807,8 @@ export const EN_TASKS: Record<string, string> = {
     "Based on this project's current scripts and config, generate test steps for type checking, unit tests, end-to-end tests and the build",
   '这个工作流没有需要配置的参数。': 'This workflow has no parameters to configure.',
   新建对话默认开独立分支: 'Use a separate branch for new chats by default',
-  '新建对话时输入框里的「独立分支」默认打开：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里关掉。':
-    'The input box\'s "Separate branch" switch starts on for new chats: each chat edits in its own git branch and folder, so chats running at the same time don\'t overwrite each other. Merge or discard it when done. You can still turn it off for any new chat.',
+  '打开后新建对话时输入框里的「独立分支」默认勾上：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里改。':
+    'When on, the input box\'s "Separate branch" switch starts checked for new chats: each chat edits in its own git branch and folder, so chats running at the same time don\'t overwrite each other. Merge or discard it when done. You can still change it for any new chat.',
   子对话隔离: 'Sub-conversation isolation',
   '独立 worktree（推荐）': 'Separate worktree (recommended)',
   '共用目录 + 认领文件': 'Shared folder + file claims',

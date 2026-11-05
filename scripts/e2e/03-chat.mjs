@@ -1028,7 +1028,7 @@ ${prompt}
       updatedAt: _pu,
       ...projectBody
     } = (await call('GET', '/projects')).find((x) => x.id === project.id)
-    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateNew: false })
+    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateByDefault: false })
     let f = await chatWith({ cli: 'claude' }, '第一问')
     f = await waitDone(f.id)
     await call('POST', `/tasks/${f.id}/messages`, { text: '第二问' })
@@ -1092,9 +1092,9 @@ ${prompt}
       '对话分叉、撤回：Claude Code 用 --resume-session-at，Codex 用 thread/fork，Command Code 截不了时带上之前的对话',
     )
 
-    // 默认开独立分支（isolateNew）时，分叉出来的对话自己开一个分支，不和原对话改同一个目录；
+    // 项目设置打开默认独立分支（isolateByDefault）时，分叉出来的对话自己开一个分支，不和原对话改同一个目录；
     // 换了目录 Codex 的会话接不上，就开新会话把留下的对话带过去
-    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateNew: true })
+    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateByDefault: true })
     const iso = await call('POST', `/tasks/${g.id}/fork`, { messageId: gu.id })
     assert.equal(iso.worktree?.state, 'active', '分叉出来的顶层对话开了自己的独立分支')
     assert.notEqual(iso.worktree.path, project.path)
