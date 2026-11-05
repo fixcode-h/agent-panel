@@ -91,25 +91,24 @@ export const EN_EXPERIENCE: Record<string, string> = {
   启用经验: 'Enable experience',
   '关掉后不学、不查，新会话开头也不提': 'When off, nothing is learned or searched, and new sessions do not mention it',
   整个对话完成后自动学: 'Learn after a whole conversation finishes',
-  '对话和它的子对话都完成、空闲一段时间后在后台学，不挡你':
-    'Runs in the background once the conversation and its sub-conversations are done and idle for a while',
-  '先只看工具调用算这次绕了多少路（不花 token），绕路明显或命令反复试错时才调一次模型提炼，最多 2 条。':
-    'First counts detours from tool calls alone (no tokens); only when there was a clear detour or repeated command failures does it call a model once, recording at most 2 entries.',
+  '对话和它的子对话都完成后马上在后台学，不挡你':
+    'Runs in the background as soon as the conversation and its sub-conversations are done, without blocking you',
+  '先只看工具调用判断值不值得学（不花 token）：找到要改的地方前搜索、读文件太多，或者命令失败几次才试成功，才调一次模型提炼，最多记 2 条。':
+    'First decides from tool calls alone whether it is worth learning (no tokens): only when there were many searches and file reads before finding the place to change, or a command failed several times before working, does it call a model once, recording at most 2 entries.',
   新会话开头附上相关经验: 'Attach related experience to new sessions',
   '按需求原文在本地匹配，命中了附上最多两条的标题和位置':
     'Matches the request locally and attaches the title and location of up to two hits',
   学习: 'Learning',
   学得勤不勤: 'How eagerly to learn',
-  '绕路多少次才值得学：少一点 12 次、适中 8 次、勤一点 5 次':
+  '绕路达到几次才学：少一点 12 次、适中 8 次、勤一点 5 次':
     'Detours needed before learning: fewer 12, normal 8, more 5',
+  '绕路：找到最后要改的目录之前，搜索和读别处文件的次数，次数多说明这次找得费劲，值得记下来。命令失败后换了写法才成功的也会学：少一点要失败 3 次，适中和勤一点 2 次。':
+    'A detour is a search or a read of a file elsewhere before reaching the folder that finally got changed; many detours mean finding it was hard and worth remembering. A command that only worked after failing is also learned: 3 failures for Fewer, 2 for Normal and More.',
   少一点: 'Fewer',
   适中: 'Normal',
   勤一点: 'More',
-  对话完成后等多久再学: 'Wait after the conversation finishes',
-  '这段时间里你接着追问，就重新计时': 'Sending a follow-up during this time restarts the wait',
   每个项目每天最多提炼: 'Max learning runs per project per day',
-  '到了上限当天不再调模型，只做不花 token 的那一步':
-    'After the limit, only the token-free step runs for the rest of the day',
+  '填 0 不限；到了上限当天不再调模型提炼': '0 means no limit; once reached, no model is called for the rest of the day',
   '提炼和 AI 评审用的模型': 'Model for learning and AI review',
   '默认跟随对话的 Agent 和模型；AI 评审跟随默认 Agent':
     "Follows the conversation's agent and model by default; AI review uses the default agent",

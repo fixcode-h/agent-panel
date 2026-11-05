@@ -127,7 +127,6 @@ export const EN_TASKS: Record<string, string> = {
   点文件在中间查看: 'Click a file to view it in the center',
 
   // 附件
-  '一次最多附上 {n} 个文件': 'You can attach up to {n} files at a time',
   选择文件的窗口一直没有响应: 'The file picker did not respond',
   '打不开选择文件的窗口：{error}': 'Could not open the file picker: {error}',
   截图: 'Screenshot',
