@@ -34,6 +34,7 @@ import { AiFixButton } from '@/components/ui/ai-fix'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { LocalPackageButton } from './LocalPackageButton'
 
 /** 更新说明里没有 @角色 */
 const NO_TEAM = new Set<string>()
@@ -381,17 +382,23 @@ export function UpdateSection({
             ? t('在线演示不能安装，可以下载包到本机运行。')
             : canInstall
               ? t(
-                  '更新会下载 GitHub 上的包，替换程序文件后自动重启；data 目录里的数据会保留。有任务在执行时会先下载，等所有任务结束后再替换。',
+                  '更新会下载 GitHub 上的包，替换程序文件后自动重启；data 目录里的数据会保留。有任务在执行时会先下载，等所有任务结束后再替换。连不上 GitHub 时，可以先下载好安装包，再用「用本地安装包更新」。',
                 )
               : t('从源码运行时请用 git 拉取更新；这里可以查看和下载发布的包。')}
           {!demo && current.includes('-dev') && ' ' + t('当前是预览版，会提示所有更新的包；正式版只提示正式版。')}
         </p>
-        {canInstall && data?.previous && data.previous !== current && (
-          // 更新前留下的版本：新版本有问题时可以直接换回去，不用重新下载
-          <Button size="sm" variant="ghost" className="w-fit" disabled={running} onClick={() => setUndo(true)}>
-            <Undo2 className="h-3.5 w-3.5" />
-            {t('回到上一个版本 v{version}', { version: data.previous })}
-          </Button>
+        {canInstall && (
+          <div className="flex flex-wrap items-center gap-2">
+            {data?.previous && data.previous !== current && (
+              // 更新前留下的版本：新版本有问题时可以直接换回去，不用重新下载
+              <Button size="sm" variant="ghost" className="w-fit" disabled={running} onClick={() => setUndo(true)}>
+                <Undo2 className="h-3.5 w-3.5" />
+                {t('回到上一个版本 v{version}', { version: data.previous })}
+              </Button>
+            )}
+            {/* 离线、连不上 GitHub 时：用已经下载到本机的安装包更新 */}
+            <LocalPackageButton current={current} disabled={running} />
+          </div>
         )}
       </Card>
 

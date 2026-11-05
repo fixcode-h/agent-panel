@@ -713,4 +713,14 @@ export const EN_SERVER: Record<string, string> = {
   父对话把这次运行的改动合回了: "Parent conversation merged this run's changes",
   父对话放弃了这次运行的改动: "Parent conversation discarded this run's changes",
   这次运行现在不在等确认: 'This run is not waiting for confirmation',
+  '这不是 Agent 面板的安装包：只支持发布页上的 .zip 和 .tar.gz 包':
+    'This is not an Agent Panel package. Only the .zip and .tar.gz packages from the releases page are supported',
+  '包里没有可读的 package.json，不是 Agent 面板的安装包':
+    'The package has no readable package.json, so it is not an Agent Panel package',
+  '这不是 Agent 面板的安装包（包名是 {name}）': 'This is not an Agent Panel package (package name is {name})',
+  '安装包里的版本号不对：{version}': 'Invalid version in the package: {version}',
+  '这是 {pkg} 的安装包，当前系统是 {os}，请改选 {name}':
+    'This package is for {pkg}, but this computer runs {os}. Pick {name} instead',
+  没有收到安装包: 'No package was received',
+  '这个安装包已经失效，请重新选择': 'This package is no longer available. Please pick it again',
 }

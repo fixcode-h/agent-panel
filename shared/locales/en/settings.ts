@@ -346,8 +346,21 @@ export const EN_SETTINGS: Record<string, string> = {
   '上次检查 {time}': 'Last checked {time}',
   '在线演示不能安装，可以下载包到本机运行。':
     "The online demo can't install updates. Download a package to run locally.",
-  '更新会下载 GitHub 上的包，替换程序文件后自动重启；data 目录里的数据会保留。有任务在执行时会先下载，等所有任务结束后再替换。':
-    'Updating downloads the package from GitHub, replaces the app files and restarts automatically. Data in the data folder is kept. If tasks are running, the download starts right away and the files are replaced after all tasks finish.',
+  '更新会下载 GitHub 上的包，替换程序文件后自动重启；data 目录里的数据会保留。有任务在执行时会先下载，等所有任务结束后再替换。连不上 GitHub 时，可以先下载好安装包，再用「用本地安装包更新」。':
+    'Updating downloads the package from GitHub, replaces the app files and restarts automatically. Data in the data folder is kept. If tasks are running, the download starts right away and the files are replaced after all tasks finish. If GitHub can\'t be reached, download a package first and use "Update from local package".',
+  '这个安装包不能用：{error}': "This package can't be used: {error}",
+  '选择已经下载到本机的安装包来更新，连不上 GitHub 时也能用':
+    "Pick a package already downloaded to this computer to update. Works even when GitHub can't be reached",
+  '正在检查安装包…': 'Checking package…',
+  用本地安装包更新: 'Update from local package',
+  '更新到 v{version}？': 'Update to v{version}?',
+  '切换到较旧的 v{version}？': 'Switch to older v{version}?',
+  '重新安装 v{version}？': 'Reinstall v{version}?',
+  '会用这个较旧的包替换当前程序，然后自动重启。旧版本可能读不懂新版本写的部分数据，建议先备份 data 目录。':
+    'This older package will replace the current app, then it restarts automatically. An older version may not understand some data written by the newer one, so back up the data folder first.',
+  '会用这个包替换当前程序，然后自动重启，data 目录里的数据会保留。有任务在执行时，会等所有任务结束后再替换。':
+    'This package will replace the current app, then it restarts automatically. Data in the data folder is kept. If tasks are running, the files are replaced after all tasks finish.',
+  重新安装: 'Reinstall',
   '从源码运行时请用 git 拉取更新；这里可以查看和下载发布的包。':
     'When running from source, pull updates with git. You can still view and download released packages here.',
   '当前是预览版，会提示所有更新的包；正式版只提示正式版。':

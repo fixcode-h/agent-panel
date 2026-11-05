@@ -29,6 +29,41 @@ export const END_TURN_HOW =
 export const CHECK_REMINDER =
   '【面板】（收尾自检）这次的事做完了吗？没做完就直接调用工具接着做，不用先说明；' + END_TURN_HOW
 
+/**
+ * 这条工具调用是不是面板自己的工具（end_turn、set_plan、get_status……）：各家 CLI 报上来的写法不同
+ * （裸名字、mcp__panel__x、记成「MCP · panel · x」），按名字和标题一起认，同 isEndTurnTool
+ */
+export function isPanelTool(x: Pick<ToolUse, 'name' | 'label'>) {
+  return !!(panelToolName(x.name ?? '') || PANEL_TOOL_RE.test(`${x.name ?? ''} ${x.label}`))
+}
+
+/** 只看、不动手的工具类别：读文件、搜索、看网页 */
+const LOOK_KINDS: readonly ToolUse['kind'][] = ['read', 'search', 'web']
+/** 动手的工具类别：跑命令、改文件（哪个工具名算哪一类由 CLI 定义的 toolNames 决定，见 shared/hooks.ts 的 toolKindOf） */
+const ACT_KINDS: readonly ToolUse['kind'][] = ['run', 'edit']
+
+/** 只读的一次调用（读文件、搜索、看网页） */
+export function isLookTool(x: Pick<ToolUse, 'name' | 'label' | 'kind'>) {
+  return !isPanelTool(x) && LOOK_KINDS.includes(x.kind)
+}
+
+/**
+ * 动手的一次调用（跑命令、改文件）：收尾自检（server/tasks/before-end.ts）和一轮结束后的补问（server/exec/turn-info.ts）
+ * 判断「做了多少、可能做了一半」都用这一个。更新待办、加载技能这类不算：做得多不多看的是真动手的次数
+ */
+export function isActTool(x: Pick<ToolUse, 'name' | 'label' | 'kind'>) {
+  return !isPanelTool(x) && ACT_KINDS.includes(x.kind)
+}
+
+/**
+ * CLI 自己的工具（面板工具以外的任何一次调用，含没登记类别的新工具）：判断「问过以后有没有接着做」用它，
+ * 不按类别清单数。以前只数 run / edit / read / search，Windows 上的 PowerShell 被记成 other，
+ * 问过以后跑了 3 条命令也算没接着做，按 small 放行（用户 2026-11-05 报）
+ */
+export function isCliTool(x: Pick<ToolUse, 'name' | 'label'>) {
+  return !isPanelTool(x)
+}
+
 /** 这条工具调用是不是 end_turn（各家 CLI 报上来的名字写法不同，同 fold.ts 的 wrapTool） */
 export function isEndTurnTool(x: Pick<ToolUse, 'name' | 'label'>) {
   const n = panelToolName(x.name ?? '') || PANEL_TOOL_RE.exec(`${x.name ?? ''} ${x.label}`)?.[1] || ''

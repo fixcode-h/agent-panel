@@ -490,7 +490,7 @@
     },
     "dropInput": ["last_assistant_message"],
     "toolNames": {
-      "shell": ["Bash"],
+      "shell": ["Bash", "PowerShell"],
       "edit": ["Edit", "Write", "MultiEdit", "NotebookEdit"],
       "read": ["Read", "Grep", "Glob", "LS"]
     },

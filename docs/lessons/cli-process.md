@@ -39,3 +39,9 @@ paths: server/exec/**, server/merge-build.ts, server/background.ts, shared/panel
 - 规则：CLI 在「调用」事件上报的文件改动（Write、Edit 的 `ev.file`）不能当场记进 `task.changes`：被钩子拦下、执行失败的写入没落盘。走 `server/exec/file-events.ts`，有结果要等的挂着、结果成功再记；面板数据目录和系统临时目录里（又不在项目里）的文件不记。按改动清单做门禁的地方（`submit_merge` 的 Bug 核对）同样先用 `projectChanges` 过滤。
 - 起因：2026-11-05 Bug 子对话写面板临时目录的 `build_editor.bat` 被守卫拦下，仍被记成改动，收尾核对说它「不在方案里」反复拒绝，用户只好确认一版多余的方案、再验证一遍。
 - 防线：`server/exec/file-events.test.ts`、`server/hooks/guards.test.ts`（临时目录不按方案拦）。
+
+## 工具名属于哪一类只认 CLI 定义里的一份
+
+- 规则：哪个工具名是跑命令、改文件、读文件，只从 CLI 定义的 `hooks.toolNames` 取（`shared/hooks.ts` 的 `toolKindOf`），解析层、审批卡、钩子都不另写名单；判断「问过以后有没有接着做」用 `shared/end-turn.ts` 的 `isCliTool`（面板工具以外都算），不按类别清单数；「做了多少」用 `isActTool`（跑命令、改文件，更新待办不算）。CLI 新出的工具只改定义一处。
+- 起因：Windows 上 Claude Code 的 `PowerShell` 工具在解析层和钩子名单里都没登记，解析成 other，收尾自检数不到动作放它停在半路，shell 守卫也管不到（见 `docs/modules/server/bugs/powershell-not-counted.md`）。
+- 防线：`server/exec/parsers.test.ts`「CLI 定义里登记了类别的工具名都按类别解析」。

@@ -86,6 +86,14 @@ export interface AppUpdateJob {
   error?: string
 }
 
+/** 收下并检查过的本地安装包：页面拿它请用户确认，再按 id 安装 */
+export interface LocalPackageInfo {
+  id: string
+  version: string
+  /** 包对应的系统（win / mac / linux）；早期不分平台的通用包为空 */
+  os: string
+}
+
 /**
  * 已经开始、还没结束的更新（在 /app/install 撞上 409 时一并返回）。
  * 光有一句「正在更新」看不出来卡在哪，页面拿到它就能直接显示进度和「强制更新」

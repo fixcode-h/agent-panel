@@ -2,6 +2,8 @@ import { commandRule, editDiff, fileRule, toolRule } from '../../../shared/allow
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { t } from '../../../shared/i18n.ts'
+import { getCli } from '../../../shared/clis.ts'
+import { toolKindOf } from '../../../shared/hooks.ts'
 import { clipDetail, oneLine, type CliEvent, type Parser } from '../parsers.ts'
 import type { RpcAdapter, RpcContext } from './types.ts'
 import { CLAUDE_CONTEXT_IDS, CLAUDE_CONTEXT_NAMES, type ContextSnapshot } from '../../../shared/context-breakdown.ts'
@@ -163,14 +165,16 @@ export function claudeAsk(name: string, input: any): Omit<Extract<CliEvent, { ty
       title: t('Agent 规划好了，按这个方案开始改？'),
       detail: str(input.plan),
     }
-  if (name === 'Bash')
+  // 跑命令、改文件的工具名按 CLI 定义的 toolNames 认（Windows 上跑命令还有 PowerShell），不在这里另写一份名单
+  const kind = toolKindOf(getCli('claude')?.hooks, name)
+  if (kind === 'shell')
     return {
       kind: 'command',
       title: t('运行命令：{cmd}', { cmd: oneLine(str(input.command)) }),
       detail: str(input.description),
       rule: commandRule(str(input.command)),
     }
-  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(name)) {
+  if (kind === 'edit') {
     const file = str(input.file_path || input.notebook_path)
     // 要改的内容一起交给审批卡：以前只有文件名，用户只能凭名字决定允不允许
     const edits =

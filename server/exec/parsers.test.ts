@@ -942,3 +942,20 @@ test('Pi 的重试事件：带上次数和原因，重试成功后算恢复而�
     { type: 'retry_ok', attempt: 1, text: '第 1 次重试成功了，接着做。' },
   ])
 })
+
+test('Claude Code：CLI 定义里登记了类别的工具名都按类别解析，不落到 other（Windows 的 PowerShell 是跑命令）', () => {
+  // 用户 2026-11-05 报：Windows 上 PowerShell 工具被记成 other，收尾自检数不到动作、放它停在「我再确认一下」
+  const names = getCli('claude')!.hooks!.toolNames
+  const kinds: Record<string, string[]> = { shell: ['run'], edit: ['edit'], read: ['read', 'search'] }
+  for (const [cat, list] of Object.entries(names))
+    for (const name of list) {
+      const ev = claudeParser(CWD)({
+        type: 'assistant',
+        message: { id: `m-${name}`, content: [{ type: 'tool_use', id: name, name, input: { command: 'git status' } }] },
+      })
+      const tool = ev.find((e) => e.type === 'tool')
+      assert.ok(tool && tool.type === 'tool', name)
+      assert.ok(kinds[cat]?.includes(tool.tool.kind), `${name} 解析成了 ${tool.tool.kind}`)
+    }
+  assert.ok(names.shell.includes('PowerShell'))
+})
