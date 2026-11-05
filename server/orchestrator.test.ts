@@ -5,6 +5,8 @@ import { convState, convStateText, newTask, taskFacts } from '../shared/task.ts'
 import { activePlan, applyPlan } from '../shared/plan.ts'
 import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
 import { FlowRun } from '../shared/task-flow-schema.ts'
+import { withWrapUp } from '../shared/flow-run-wrap.ts'
+import { planTask } from '../shared/flow.ts'
 
 /**
  * 项目对话：父对话直接执行、分派子对话，或者用 start_workflow 起工作流运行（不是子对话）；
@@ -168,6 +170,32 @@ test('工作流运行停在等确认时被停下：继续时直接回到确认�
   assert.equal(nodeIds(log).filter((id) => id === 'a').length, 2, '只多了追问那一次，结果没重做')
   assert.match(asked[2], /## 追问\n问：为什么这么做\n\n答：因为快/)
   assert.equal(task.flowRun?.phase, 'ready')
+})
+
+test('改代码的运行的收尾：评审不通过意见交回收尾节点修，修完再评审、测试都过了才待合回', async () => {
+  const w = withWrapUp(workflow(), { worker: 'w', reviewer: 'rv', tester: 'ts' })
+  const task = flowRun('r-wrap', { steps: planTask(w).steps })
+  const log: AgentCall[] = []
+  let reviews = 0
+  const h = host(task, log, async (call) => {
+    const s = call.step!
+    if (s.slot === 'review') {
+      const fail = s.nodeId === 'review' && ++reviews === 1
+      call.orch!.submitVerdict!({
+        verdict: fail ? 'fail' : 'pass',
+        blockers: fail ? [{ what: '漏了空值', fix: '补上' } as never] : [],
+      })
+      return { ok: true, text: fail ? '漏了空值' : '没问题' }
+    }
+    return { ok: true, text: `${s.title}好了` }
+  })
+  h.agents = [agent('w', '执行'), agent('rv', '评审'), agent('ts', '测试')]
+  h.workflow = w
+  await runEngineTurn(h)
+  assert.equal(task.flowRun?.phase, 'ready', JSON.stringify(task.messages.filter((m) => m.error).map((m) => m.text)))
+  const order = log.map((c) => (c.step!.slot === 'review' ? c.step!.nodeId : c.step!.id))
+  assert.deepEqual(order, ['a', 'b', 'wrapup', 'review', 'wrapup', 'review', 'test'])
+  assert.match(log[4].prompt, /漏了空值/, '评审意见交回收尾节点')
 })
 
 test('只有父对话能启动工作流：起的是运行（不是子对话），父对话计划里有一步等它', async () => {

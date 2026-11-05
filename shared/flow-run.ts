@@ -4,8 +4,9 @@
  * 进度怎么说、父对话每轮看到的那一节、决定记录怎么拼进节点提示、父对话挑工作流的目录和判定规则。
  */
 import type { Task, TaskStep } from './schema.ts'
-import type { FlowDecision, FlowRun, FlowRunPhase } from './task-flow-schema.ts'
+import type { FlowDecision, FlowRun, FlowRunPhase, FlowWrap } from './task-flow-schema.ts'
 import { topSteps } from './flow.ts'
+import { WRAP_NODE } from './flow-run-wrap.ts'
 import { clip } from './text.ts'
 import { takeWorkflow } from './composer.ts'
 
@@ -48,28 +49,39 @@ export interface RunEntry {
   total: number
   node: string
   /** 收尾做到哪：评审 / 测试 / 修复 第几轮 */
-  wrap?: FlowRun['wrap']
+  wrap?: FlowWrap
   /** 停在等确认的节点修改了几轮（超过上限只提示） */
   rounds?: number
   reviseLimit: number
   updatedAt?: string
 }
 
+/** 收尾做到哪（收尾节点在跑时）：验收流程里在跑测试就是测试、在跑评审就是评审，否则是收尾节点自己在补齐 / 修复 */
+export function wrapNow(task: Pick<Task, 'steps'>): FlowWrap | undefined {
+  const st = topSteps({ steps: task.steps }, RUN_NO).find((s) => s.nodeId === WRAP_NODE)
+  if (st?.status !== 'running') return undefined
+  const checks = task.steps.filter((s) => s.parentId === st.id && s.slot === 'review' && s.status === 'running')
+  const stage = checks.some((s) => s.nodeId === 'test') ? 'test' : checks.length ? 'review' : 'fix'
+  return { stage, round: (st.reviews ?? 0) + 1, review: '', test: '' }
+}
+
 export function runEntry(task: RunTask & Pick<Task, 'updatedAt'>): RunEntry | undefined {
   const f = task.flowRun
   if (!f) return undefined
   const n = runNodes(task)
+  const wrap = f.phase === 'running' ? wrapNow(task) : undefined
   return {
     id: task.id,
     title: task.title,
     workflowName: f.workflowName,
     kind: f.kind,
-    phase: f.phase,
+    // 收尾节点在跑：阶段说成收尾（界面和父对话都按收尾说做到哪），不另记一份状态
+    phase: wrap ? 'wrapup' : f.phase,
     paused: runPaused(task),
     done: n.done,
     total: n.total,
     node: n.node,
-    ...(f.wrap ? { wrap: f.wrap } : {}),
+    ...(wrap ? { wrap } : {}),
     ...(f.phase === 'confirm' && n.node ? { rounds: reviseRounds(f, n.node) } : {}),
     reviseLimit: f.reviseLimit,
     updatedAt: task.updatedAt,
