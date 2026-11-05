@@ -150,6 +150,8 @@ import { pluginArgs } from '../../shared/role-plugins.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
 import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
+import { SUMMARY_PROMPT, reviewPrompt } from './op-prompts.ts'
+import { warnSlowMcp } from './mcp-probe.ts'
 import { bugMethodPrompt, bugSlash } from './bug-prompt.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
@@ -196,28 +198,6 @@ const REDIRECT_NOTE =
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
 const MAX_LIVE_OUTPUT = 8000
 const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
-
-/** 审查改动时给不支持审查模式的 CLI 的要求 */
-function reviewPrompt(target: Extract<NonNullable<BuildOptions['op']>, { kind: 'review' }>['target']) {
-  const what =
-    target.type === 'base'
-      ? `当前分支相对 ${target.branch} 的改动（git diff ${target.branch}...HEAD）`
-      : target.type === 'custom'
-        ? target.instructions
-        : '工作区里还没提交的改动（git diff HEAD，包括新建的文件）'
-  return [
-    `请审查${what}。`,
-    '只审查，不要修改任何文件。',
-    '按严重程度从高到低列出发现的问题：每条写明文件和行号、问题是什么、为什么是问题、建议怎么改。',
-    '重点看会导致错误行为的问题（逻辑错误、边界情况、并发、安全、资源泄漏），其次是可维护性；不要列纯粹的格式问题。',
-    '没有发现问题就直接说没有问题。',
-  ].join('\n')
-}
-
-/** Command Code 不能压缩会话：请它把对话整理成摘要，下一轮开新会话时带上 */
-const SUMMARY_PROMPT =
-  '请把我们到目前为止的对话整理成一份摘要，用于在新的会话里继续工作：包括要做的事、已经做了什么（改了哪些文件、关键的决定和原因）、' +
-  '还没做完的、需要注意的问题。只输出摘要本身，不要做别的事，也不要修改文件。'
 
 /**
  * 按 API 的并发上限执行一次调用（对话这一轮、子任务、工作流节点都从这里进）：
@@ -1387,6 +1367,19 @@ async function runAgent(
       resume: resume ? true : undefined,
       prewarm: prewarmMode || undefined,
       keepAlive: !!keepAlive,
+    })
+  // 新会话：和 CLI 同时探测项目里的远程 MCP，卡住的写一行警告（CLI 第一轮可能在等它握手）
+  if (chat && !resume && !op && !prewarmMode)
+    warnSlowMcp({
+      task,
+      cli: def.name,
+      probe: def.mcpProbe,
+      cwd,
+      env,
+      agentId,
+      step,
+      newId: ctx.newId,
+      changed: () => ctx.changed(true),
     })
   // 压缩上下文：像后台命令一样，一开始就放一行转圈，压缩完成换成前后大小（不再插一行居中的「压缩上下文」）
   if (op?.kind === 'compact' && !prewarmMode) {

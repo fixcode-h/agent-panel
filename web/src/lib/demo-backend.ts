@@ -3,9 +3,12 @@
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { diagnosisPending } from '@shared/task'
+import { seedChatRail } from './demo-chat-rail'
+import { demoOwnedRun } from './demo-flow-run'
 import { bugStage, decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
+import { demoFlowRun } from './demo-flow-run'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
@@ -2787,6 +2790,7 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
         : [],
     ),
     simulated: true,
+    ...(workflow && { flowRun: demoFlowRun(input, workflow) }),
     // 演示里按 Windows 展示测试步骤的环境说明（WSL 步骤怎么跑）
     testSteps: workflow ? (project?.testSteps ?? []) : [],
     platform: workflow ? 'win32' : '',
@@ -3183,6 +3187,9 @@ function tasksRoute(
   const d = load()
   const tasks = (d.tasks ??= [])
   if (!id) {
+    // 和正式版一样：父对话名下的工作流运行按 owner 查；运行不进对话列表（演示数据没有运行，这里通常是空的）
+    const owner = query.get('owner')
+    if (method === 'GET' && owner) return tasks.filter((t) => t.flowRun?.owner === owner && !t.deletedAt)
     if (method === 'GET') {
       const pid = query.get('projectId')
       // 名下还有在跑的子对话：和正式版一样补 childrenWorking——侧栏、输入框靠它说清在等什么，
@@ -3197,7 +3204,7 @@ function tasksRoute(
       // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
       return (
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
-          .filter((t) => !t.parentTaskId && !t.deletedAt)
+          .filter((t) => !t.parentTaskId && !t.flowRun?.owner && !t.deletedAt)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
           .map((t) =>
             taskSummary({
@@ -3405,6 +3412,8 @@ function tasksRoute(
     const bundle = exportTaskTree(task, tasks, d.agents ?? [], query.get('app') ?? '')
     return { bundle, bytes: checkExportSize(bundle) }
   }
+  // 工作流运行的确认交给父对话（和正式版一样只是写信，演示版没有父对话的 CLI，直接回成功）
+  if (sub === 'delegate' && method === 'POST') return { ok: true, info: '已交给父对话决定' }
   if (sub === 'children' && method === 'GET')
     return tasks
       .filter((x) => x.parentTaskId === task.id)
@@ -4543,6 +4552,7 @@ async function seedTasks(d: Db) {
     }
     demoHelper(task, fe)
     await demoChildren(d, task, fe)
+    d.tasks?.push(demoOwnedRun(task, 'demo-flow-run'))
     // 这个对话改过两个文件：「改动」Tab 和差异窗口（含上一个/下一个导航）都要有东西看
     task.changes = [
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
@@ -4625,8 +4635,8 @@ async function seedTasks(d: Db) {
       },
       true,
     )
+    // 工作流运行跑完就结束了（补充要求从父对话交），不再追加一轮
     await done
-    await followUp(d, task, '按钮文案改成「到货通知我」，已经登记过的用户显示「已登记」并置灰。', true)
     back(task, 25)
   }
   // Chat 模式（不属于任何项目）的聊天：侧栏按天分组，演示里留两条不同日期的
@@ -4691,87 +4701,8 @@ async function seedTasks(d: Db) {
         task.awaitingUser = true
       }
     }
-    await seedChatRail(d, fe.id, back)
+    await seedChatRail((input) => createTask(d, input, true), fe.id, back, DEMO_CHAT_SHOT)
   }
-}
-
-/**
- * Chat 页右栏的演示（Chat.dc.html）：一条带截图的提问，回复里有联网搜索、打开网页和两段代码，
- * 右栏的「代码 / 来源 / 附件」三个页签都有内容；另一条置顶的聊天演示侧栏最上面的「置顶」组
- */
-async function seedChatRail(d: Db, agentId: string, back: (t: Task, minutes: number) => void) {
-  const make = async (prompt: string) => {
-    const { task, done } = createTask(
-      d,
-      {
-        projectId: '',
-        mode: 'chat',
-        workflowId: '',
-        agentId,
-        prompt,
-        attachments: [],
-        cli: '',
-        model: '',
-        effort: '',
-        isolate: false,
-        askUser: false,
-        params: {},
-      },
-      true,
-    )
-    await done
-    return task
-  }
-  const pinned = await make('周报写作助手')
-  pinned.pinned = true
-  back(pinned, 60 * 24 * 3)
-  const task = await make('这个报错是因为 use() 用错了吗？顺便讲讲它和 useEffect 取数有什么区别。')
-  task.title = 'React 19 的 use() 怎么用'
-  const user = task.messages.find((m) => m.role === 'user')
-  if (user) user.attachments = [{ name: '报错截图.png', path: DEMO_CHAT_SHOT, size: 48_213, mime: 'image/png' }]
-  const reply = task.messages.find((m) => m.role === 'agent')
-  if (reply) {
-    reply.tools = [
-      {
-        kind: 'web',
-        name: '网页搜索',
-        label: 'react.dev use() 文档',
-        detail: '',
-        output:
-          '1. use – React\nhttps://react.dev/reference/react/use\n2. Suspense – React\nhttps://react.dev/reference/react/Suspense\n3. facebook/react issue: use() re-suspends\nhttps://github.com/facebook/react/issues/27877',
-        ms: 1800,
-      },
-      { kind: 'web', name: '打开网页', label: 'https://react.dev/reference/react/use', detail: '', ms: 900 },
-    ]
-    reply.text = [
-      '是的。截图里的 Promise 写在组件里，**每次渲染都会新建一个**，use() 每次都拿到新的 Promise，于是一直挂起、反复重渲染。',
-      '',
-      '把 Promise 提到组件外面（或者交给父组件 / 缓存）就好：',
-      '',
-      '```tsx',
-      "import { use, Suspense } from 'react'",
-      '',
-      '// 在组件外创建，渲染之间是同一个 Promise',
-      "const userPromise = fetchUser('42')",
-      '',
-      'export function Profile() {',
-      '  const user = use(userPromise)',
-      '  return <h1>{user.name}</h1>',
-      '}',
-      '```',
-      '',
-      '用 useEffect 取数的老写法对照一下：',
-      '',
-      '```tsx',
-      'function ProfileOld() {',
-      '  const [user, setUser] = useState<User | null>(null)',
-      "  useEffect(() => void fetchUser('42').then(setUser), [])",
-      '  return user ? <h1>{user.name}</h1> : <Spinner />',
-      '}',
-      '```',
-    ].join('\n')
-  }
-  back(task, 20)
 }
 
 /** 对话里的报错和警告长什么样：一条已恢复的网络断开、一条 CLI 没有响应、一条额度用完（见 shared/alerts.ts） */

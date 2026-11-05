@@ -405,3 +405,12 @@ export function createFlowRuns(sc: TasksScope) {
 
   return { hostFor, afterTurn, delegate, pauseRunsOf, resumeRunsOf, resume, halt }
 }
+
+/** 运行卡片上的操作（父对话的工作流栏用）：确认、修改、追问走通用的回答请求接口，暂停、重启走 stop / resume */
+export function registerFlowRunRoutes(sc: TasksScope) {
+  // 「交给父对话决定」：确认卡片留着，写信请父对话用 answer_workflow 代答
+  sc.routes.post('/:id/delegate', async (c) => {
+    const r = await sc.flowRuns.delegate(c.req.param('id'))
+    return r.ok ? c.json(r) : sc.bad(c, r.info, 409)
+  })
+}
