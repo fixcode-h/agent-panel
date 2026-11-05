@@ -88,3 +88,53 @@ test('预热的进程也装结束前钩子：还没收到用户消息时放行�
   task.prewarming = false
   assert.equal((await decide('c1', {})).why, 'halted:user')
 })
+
+test('没列计划：收尾自检问过以后又调工具接着做、没交代结束就要停，再问一次；问过只回了话的放行', async () => {
+  // 用户 2026-11-05 报：问过「做完了吗」后它又读了两个文件，说「我派子对话核实并修」就停了，子对话没开出来
+  const { createBeforeEnd } = await import('./before-end.ts')
+  const msg = (role: string, tools: { kind: string }[] = [], panel = '') => ({
+    id: `m${Math.random()}`,
+    role,
+    panel,
+    tools,
+    text: '',
+    at,
+  })
+  const read = { kind: 'read' }
+  const task = {
+    id: 'c2',
+    projectId: '',
+    parentTaskId: '',
+    mode: 'task',
+    messages: [
+      msg('user'),
+      msg('agent', [read, read, read, read, read, read, read, read, read]),
+      msg('system', [], 'hook'),
+    ],
+    requests: [],
+    plans: [],
+    steps: [],
+    changes: [],
+    turnEnds: [],
+  }
+  const sc = {
+    live: new Map([['c2', { task }]]),
+    store: { get: async () => task, list: async () => [] },
+    startQueue: new Set(),
+    background: { list: () => [] },
+  } as never
+  const decide = createBeforeEnd(sc, {
+    budget: { take: () => 1 } as never,
+    inputOf: () => 'in',
+    haltedBy: () => '',
+    activeChildren: async () => 0,
+  })
+  // 问过以后只回了话：不再问
+  task.messages.push(msg('agent'))
+  assert.deepEqual(await decide('c2', {}), { block: false, why: 'small' })
+  // 问过以后又读了文件接着做，没用 end_turn 交代：再问
+  task.messages.push(msg('agent', [read]), msg('agent', [read]))
+  const r = await decide('c2', {})
+  assert.equal(r.block, true)
+  assert.equal(r.why, 'check-resumed')
+})
