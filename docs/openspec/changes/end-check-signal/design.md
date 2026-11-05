@@ -1,6 +1,6 @@
 # 收尾自检：让 Agent 用工具「交卷」，确认完成不再挤掉总结（设计稿 v1）
 
-状态：待确认（只出设计，未改功能代码） · 2026-11-05
+状态：已被 [v2](./design-v2.md) 替代（用户 2026-11-05 改了要求） · 2026-11-05
 
 相关：[ADR 0049](../../../adr/0049-hooks-continue-in-turn.md)（结束前钩子）、[ADR 0041](../../../adr/0041-conversation-self-drive.md) 第 3.4 节（收尾自检）、`server/tasks/before-end.ts`、`web/src/lib/fold.ts`
 
