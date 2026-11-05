@@ -82,7 +82,7 @@ ADR 0052 之后一条一个文件：Git / 无版本管理是 `<项目>/docs/less
 
 ### 3.3 判定写在一处
 
-这套判定只写在 `shared/knowledge-scope.ts`（新增）：`record_lesson` / `record_experience` 的工具说明、记录弹窗的提示文字、「文档」角色设定都引用这里导出的短句，满足 `scripts/rules-check.mjs` 第 20 条「同一句不许出现在两个文件里」。
+这套判定只写在一处（实现时落在 shared/experience.ts 的 EXPERIENCE_SCOPE，教训那半在 shared/lessons.ts 的 RECORD_HINT）：`record_lesson` / `record_experience` 的工具说明、记录弹窗的提示文字、「文档」角色设定都引用这里导出的短句，满足 `scripts/rules-check.mjs` 第 20 条「同一句不许出现在两个文件里」。
 
 ## 4. 教训重构
 
@@ -230,7 +230,7 @@ body: |
 
 再排除：已有经验的 `paths` 已经覆盖 `landing`、`keywords` 也和这次的搜索词重合的，直接给那条记一次「证实」（第 6.5 节），不提炼。
 
-阈值写在 `shared/experience-gate.ts`（新增），有单测；用户能在项目设置里调「学得勤一点 / 少一点」三档，对应不同阈值。
+阈值写在 shared/experience-gate.ts（新增），有单测；用户能在项目设置里调「学得勤一点 / 少一点」三档，对应不同阈值。
 
 ### 6.4 ③ 低档模型提炼一次
 
@@ -379,7 +379,7 @@ body: |
 
 | 位置                                      | 内容                                                                                                                         |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| shared/knowledge-scope.ts                 | 教训 / 经验的准入标准短句，工具说明和界面共用                                                                                |
+| shared/experience.ts（EXPERIENCE_SCOPE）  | 教训 / 经验的准入标准短句，工具说明和界面共用                                                                                |
 | shared/experience.ts                      | 经验的检索、排序、预算（和 `shared/lessons.ts` 同一套写法）                                                                  |
 | shared/experience-gate.ts                 | 机械摘要和闸门（纯函数，单测）                                                                                               |
 | server/project-experience.ts              | 读写 `experience/<id>.md`，复用 `server/project-lessons.ts` 的写入队列和原子写                                               |
