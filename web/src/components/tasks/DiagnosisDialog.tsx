@@ -37,13 +37,21 @@ const STATUS: Record<Diagnosis['status'], () => string> = {
   cancelled: () => t('你取消了，这次不修'),
 }
 
+/** 一版的状态：验证阶段的「给了结果」「点了结束」和别的阶段说法不同 */
+const statusOf = (d: Diagnosis) => {
+  if (d.status === 'pending' && d.awaiting) return t('日志已加好，等你复现')
+  if (phaseOf(d) === 'verify' && d.status === 'answered') return t('你给了验证结果，它在分析')
+  if (phaseOf(d) === 'verify' && d.status === 'approved') return t('你结束了验证')
+  return STATUS[d.status]()
+}
+
 /** 每一版的标题、正文和状态：正文按上一版补出「回答上一版的意见」；author：引入点写不写作者（设置里的开关） */
 function versionsOf(list: Diagnosis[], author: boolean) {
   return list.map((d, i) => ({
     key: String(d.version),
     label: t('第 {n} 版 · {phase}', { n: d.version, phase: phaseLabel(d) }),
-    detail: diagnosisMarkdown(d, list[i - 1], { author }),
-    status: d.status === 'pending' && d.awaiting ? t('日志已加好，等你复现') : STATUS[d.status](),
+    detail: diagnosisMarkdown(d, list[i - 1], { author, list }),
+    status: statusOf(d),
   }))
 }
 
@@ -138,7 +146,7 @@ export function DiagnosisDialog({
     // 等你复现是同一版回到等你：换一个 id，标注和输入从头开始
     id: `${task.id}:${last.version}${last.awaiting ? ':logs' : ''}`,
     title: t('诊断报告 · {title}', { title: task.title }),
-    detail: diagnosisMarkdown(last, list.at(-2), { author }),
+    detail: diagnosisMarkdown(last, list.at(-2), { author, list }),
   }
   // 候选方案里没选的那几个：点一下加一条「改方案」意见，退回让它按这个方案交新一版（ADR 0046，档案不由界面直接改）
   const presets =
@@ -176,7 +184,10 @@ export function DiagnosisDialog({
       versions={versionsOf(list, author)}
       presets={presets}
       readOnly={last.status !== 'pending'}
-      top={<DiagnosisStages list={list} />}
+      // 阶段条按正在看的那一版画：切到旧版看的是那时候走到哪一步
+      top={(key) => (
+        <DiagnosisStages list={list.slice(0, list.findIndex((d) => String(d.version) === key) + 1 || list.length)} />
+      )}
       texts={cfg.texts}
       noApprove={cfg.noApprove}
       feedbackFirst
@@ -215,7 +226,7 @@ export function DiagnosisDialog({
         label: t('取消修复'),
         title: t('取消这次修复？'),
         description: t(
-          '不再等你确认，这一轮就此结束，计划标记为完成，之后不会再改文件。之后在这个对话里发话，它会照你的新话做。',
+          '不再等你确认，这一轮就此结束，计划标记为完成，之后不会再改文件。已经加进代码的 [排查-…] 临时日志不会自动删，要删就在这个对话里跟它说。',
         ),
         confirm: t('不修了'),
         // 不发话给子对话：交报告那一轮已经结束了，计划由服务端收口，它停着等你的下一句

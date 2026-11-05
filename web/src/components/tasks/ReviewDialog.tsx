@@ -7,7 +7,7 @@ import { toast } from '@/lib/toast'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/input'
+import { Select, Textarea } from '@/components/ui/input'
 import { IconButton } from '@/components/ui/icon-button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { Markdown } from './Markdown'
@@ -41,7 +41,7 @@ export interface ReviewVersion {
   key: string
   label: string
   detail: string
-  /** 状态文字（已作废、已确认…），写在切换条下面 */
+  /** 状态文字（已作废、已确认…）：看旧版时写在正文上面 */
   status?: string
 }
 
@@ -104,8 +104,8 @@ export function ReviewDialog({
     confirm: string
     onCancel: (overall: string) => Promise<void>
   }
-  /** 正文上方的内容（诊断报告的阶段条） */
-  top?: ReactNode
+  /** 正文上方的内容（诊断报告的阶段条）：传函数时按正在看的那一版（版本的 key）画 */
+  top?: ReactNode | ((key: string) => ReactNode)
   /**
    * 「交日志」这类按钮（诊断报告：贴日志让它接着分析）：整体意见的文字和附件交给 onSupply。
    * primary：它是主按钮（等你复现、验证）；否则是次按钮，写了整体意见或附了文件才能点
@@ -269,7 +269,32 @@ export function ReviewDialog({
 
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="xl">
-      <ModalHeader icon={ClipboardCheck} iconClass="text-warning" title={req.title}>
+      <ModalHeader
+        icon={ClipboardCheck}
+        iconClass="text-warning"
+        title={req.title}
+        aside={
+          // 多版时在标题栏用下拉选看哪一版（用户 2026-11-05：不要把所有版本都排在正文上面）
+          versions &&
+          versions.length > 1 && (
+            <Select
+              size="xs"
+              aria-label={t('版本')}
+              value={shown?.key ?? ''}
+              onChange={(e) => {
+                // 换版本时文档重画，旧版本上画的标注位置对不上：切到旧版先不显示标注
+                setVer(e.target.value)
+                setPick(null)
+              }}
+              options={[...versions].reverse().map((v, i) => ({
+                value: v.key,
+                label: i ? v.label : t('{label}（最新）', { label: v.label }),
+              }))}
+              className="w-56"
+            />
+          )
+        }
+      >
         {agent && (
           <span className="hidden min-w-0 items-center gap-1.5 text-footnote text-subtle sm:flex">
             <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
@@ -286,23 +311,8 @@ export function ReviewDialog({
           onScroll={() => pick && setPick(null)}
         >
           <div ref={docRef} className="mx-auto max-w-[820px]" onClick={onDocClick}>
-            {versions && versions.length > 1 && (
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <Segmented
-                  size="sm"
-                  value={shown?.key ?? ''}
-                  onChange={(v) => {
-                    // 换版本时文档重画，旧版本上画的标注位置对不上：切到旧版先不显示标注
-                    setVer(v)
-                    setPick(null)
-                  }}
-                  label={t('版本')}
-                  options={versions.map((v) => ({ id: v.key, label: v.label }))}
-                />
-                {shown?.status && <span className="text-xs text-subtle">{shown.status}</span>}
-              </div>
-            )}
-            {top}
+            {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
+            {typeof top === 'function' ? top(shown?.key ?? '') : top}
             {detail ? (
               <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
             ) : (

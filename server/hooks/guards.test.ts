@@ -58,6 +58,11 @@ test('Bug 先诊断：没诊断、等确认、被提意见时不改文件；确�
   )
   assert.equal(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/a.ts'))), '')
   assert.match(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/b.ts'))), /不在用户同意的范围/)
+  assert.equal(
+    bugDeny(ctx(diag('approved')), edit(path.join(data, 'tasks/files/t/tmp/build_editor.bat'))),
+    '',
+    '面板给的临时目录不按方案拦',
+  )
   assert.equal(bugDeny(ctx(), edit(path.join(proj, 'src/b.ts'))), '', '不是 Bug 不管')
   // 按阶段（用户 2026-11-05 定的）：同意了根因还不能改，确认了方案放行方案里的文件和论证时加过日志的文件
   const list = (...ds: object[]) => ({ task: { bug: true, diagnoses: ds } }) as never

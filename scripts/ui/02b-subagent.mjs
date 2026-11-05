@@ -1010,7 +1010,10 @@ await runShard(import.meta.filename, async (api) => {
         .getByRole('button', { name: '确认方案，开始修' })
         .waitFor({ timeout: 10000 })
         .catch(() => errors.push('诊断报告：弹窗里没有「确认方案，开始修」'))
-      if (!(await dlg.getByRole('radiogroup', { name: '版本' }).count())) errors.push('诊断报告：有两版却没有版本切换')
+      // 版本在标题栏的下拉里选（用户 2026-11-05：不要把所有版本排在正文上面）
+      const verPick = dlg.getByRole('combobox', { name: '版本' })
+      if (!(await verPick.count())) errors.push('诊断报告：有两版却没有版本下拉')
+      if (await dlg.getByRole('radiogroup', { name: '版本' }).count()) errors.push('诊断报告：版本还排在正文上面')
       if (!(await dlg.getByText('上周的重构把派发挪进了循环里').count()))
         errors.push('诊断报告：第 2 版没有显示对上一版意见的回答')
       // 选中根因那段文字标注：标注能选种类，「有疑问，出下一版」随之可点
@@ -1042,7 +1045,8 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：标注了还不能点「有疑问，出下一版」')
       } else errors.push('诊断报告：选中文字后没有出现「标注」按钮')
       // ADR 0046：引入点、时间线、候选方案画出来；没选的方案能一键加「改方案」意见
-      for (const text of ['引入于', '购物车删除重构', '方案 B：角标自己轮询数量'])
+      // 候选方案并排成一张比较表：方案 B 是表头一列，做法写在「做法」那一行
+      for (const text of ['引入于', '购物车删除重构', '角标自己轮询数量'])
         if (!(await dlg.getByText(text, { exact: false }).count())) errors.push(`诊断报告：没有显示「${text}」`)
       const useB = dlg.getByRole('button', { name: '改用方案 B' })
       if (!(await useB.count())) errors.push('诊断报告：没有「改用方案 B」')
@@ -1059,7 +1063,8 @@ await runShard(import.meta.filename, async (api) => {
       if (!(await dlg.getByRole('button', { name: '添加文件、图片或引用' }).count()))
         errors.push('诊断报告：整体意见框没有引入文件、图片的「+」')
       // 切到第 1 版：只读，按钮收起
-      await dlg.getByRole('radio', { name: '第 1 版' }).click()
+      await verPick.click()
+      await p.getByRole('option', { name: /^第 1 版/ }).click()
       await settle(p)
       if (
         await dlg
@@ -1070,7 +1075,8 @@ await runShard(import.meta.filename, async (api) => {
         errors.push('诊断报告：切到旧的一版还能确认')
       await check(p, '诊断报告-旧版只读')
       // 取消修复：先确认，确认后弹窗关掉，对话里记一行「你取消了…」，不再等确认
-      await dlg.getByRole('radio', { name: '第 2 版' }).click()
+      await verPick.click()
+      await p.getByRole('option', { name: /^第 2 版/ }).click()
       await settle(p)
       const cancel = dlg.getByRole('button', { name: '取消修复' })
       if (!(await cancel.count())) errors.push('诊断报告：最新一版没有「取消修复」')
