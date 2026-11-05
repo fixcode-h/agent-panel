@@ -65,11 +65,29 @@ export function failedReleases(data: AppReleases | undefined, error: string): Ap
 export async function loadReleases(refresh = false) {
   set({ loading: true })
   try {
-    set({ data: await api.appReleases(refresh) })
+    set({ data: await api.appReleases(refresh ? 'refresh' : undefined) })
   } catch (e) {
     set({ data: failedReleases(state.data, (e as Error).message) })
   } finally {
     set({ loading: false })
+  }
+}
+
+/**
+ * 只读服务端上次检查存下的发布列表，不访问 GitHub：关着自动检查时打开设置、刷新过页面，
+ * 「最近的版本」也直接显示上次的结果，不用每次都点「检查更新」。
+ * 已经有列表（这次打开页面检查过）或正在检查时不动它；读失败也不显示错误，只是列表留空
+ */
+export async function loadCachedReleases() {
+  if (state.loading || state.data?.releases.length) return
+  try {
+    const cached = await api.appReleases('cached')
+    // 等待期间用户点了「检查更新」，以那次的结果为准
+    // 从没检查过（缓存是空的）时保持「还没有检查过」的提示，不能显示成「已是最新」
+    if (state.loading || state.data?.releases.length || cached.error || !cached.releases.length) return
+    set({ data: { ...state.data, ...cached } })
+  } catch {
+    // 读不到缓存只是列表留空，「检查更新」仍然可以点
   }
 }
 

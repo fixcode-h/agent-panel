@@ -18,6 +18,7 @@ import {
   adoptRunningJob,
   forceInstallRelease,
   installRelease,
+  loadCachedReleases,
   loadReleases,
   loadVersion,
   rollbackRelease,
@@ -161,7 +162,7 @@ function ReleaseRow({
   )
 }
 
-/** 设置里的「版本更新」：当前版本、有没有新包、最近五个包（可下载、可切换） */
+/** 设置里的「版本更新」：当前版本、有没有新包、最近十个包（可下载、可切换） */
 export function UpdateSection({
   autoCheck,
   onAutoCheckChange,
@@ -183,6 +184,8 @@ export function UpdateSection({
   useEffect(() => {
     void loadVersion()
     if (autoCheck && !running) void loadReleases(true)
+    // 不自动检查（或安装中）时也先显示上次检查的结果，免得「最近的版本」每次打开都是空的
+    else void loadCachedReleases()
     // 只在打开时检查；安装中途不重新检查
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])

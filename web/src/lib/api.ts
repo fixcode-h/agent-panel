@@ -571,7 +571,9 @@ export const api = {
     request<ProjectMcpImportResult>(`/project-mcp/import?projectId=${projectId}`, json('POST', { items })),
 
   appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
-  appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
+  /** refresh：马上问 GitHub；cached：只读上次检查存下的列表，不联网 */
+  appReleases: (mode?: 'refresh' | 'cached') =>
+    request<AppReleases>(`/app/releases${mode === 'refresh' ? '?refresh=1' : mode === 'cached' ? '?cached=1' : ''}`),
   appInstall: (tag: string) => request<AppUpdateJob>('/app/install', json('POST', { tag })),
   appInstallJob: (id: string) => request<AppUpdateJob>(`/app/install/${id}`),
   /** 正在跑的那次更新；没有时是 null */
