@@ -319,10 +319,11 @@ export function tasksApi(deps: {
   const ready = migrateOnStart(store, claims)
 
   /**
-   * 强制更新、面板退出要记下哪些任务（重启后问用户要不要继续）：正在执行的，以及被打断后还有活要自己干的（`restartUnfinished`：
-   * 这一轮被打断、计划没做完），再加上名下还有子对话在跑的父对话——子对话的结果要交回它，
-   * 它不在名单里就没人接。只按 working 记会把停在等下一句、计划 12/17 的父对话漏掉：
-   * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+   * 强制更新、面板退出要记下哪些任务（重启后问用户要不要继续）：只记这次真正被打断的——
+   * 正在执行的（`working`）、它们名下还有子对话的父对话（子对话的结果要交回它，它不在名单里就没人接），
+   * 以及这一轮还在执行、CLI 被停掉结果回不来的（`status === 'running'` 且不在等下一句）。
+   * 不要直接用 `restartUnfinished` 判全部任务：它还包括历史上停在等下一句、计划没做完的闲置任务，
+   * 每次强制更新都会把它们累计进名单（用户报的现象）；它仍给 `migrateOnStart` 判崩溃名单。
    * 清扫独立目录（`sweepStaleWorktrees`）仍然只看真正在跑的，用 `workingTasks`。
    */
   async function interruptedTasks() {
