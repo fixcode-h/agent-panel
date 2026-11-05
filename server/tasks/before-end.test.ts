@@ -138,3 +138,49 @@ test('没列计划：收尾自检问过以后又调工具接着做、没交代�
   assert.equal(r.block, true)
   assert.equal(r.why, 'check-resumed')
 })
+
+test('没列计划：问过以后跑的是没登记类别的命令工具也算接着做；只调面板自己的工具不算', async () => {
+  // 用户 2026-11-05 报：Windows 上问过后跑了 3 条 PowerShell 命令（当时被记成 other），说「我再确认一下」就停了，钩子按 small 放行
+  const { createBeforeEnd } = await import('./before-end.ts')
+  const msg = (role: string, tools: { kind: string; name?: string; label?: string }[] = [], panel = '') => ({
+    id: `m${Math.random()}`,
+    role,
+    panel,
+    tools,
+    text: '',
+    at,
+  })
+  const read = { kind: 'read', label: 'a.ts' }
+  const task = {
+    id: 'c3',
+    projectId: '',
+    parentTaskId: '',
+    mode: 'task',
+    messages: [msg('user'), msg('agent', Array(9).fill(read)), msg('system', [], 'hook')],
+    requests: [],
+    plans: [],
+    steps: [],
+    changes: [],
+    turnEnds: [],
+  }
+  const sc = {
+    live: new Map([['c3', { task }]]),
+    store: { get: async () => task, list: async () => [] },
+    startQueue: new Set(),
+    background: { list: () => [] },
+  } as never
+  const decide = createBeforeEnd(sc, {
+    budget: { take: () => 1 } as never,
+    inputOf: () => 'in',
+    haltedBy: () => '',
+    activeChildren: async () => 0,
+  })
+  // 问过以后只查了一下面板状态：不是接着做，不再问
+  task.messages.push(msg('agent', [{ kind: 'other', name: 'MCP', label: 'panel · get_status' }]))
+  assert.deepEqual(await decide('c3', {}), { block: false, why: 'small' })
+  // 问过以后跑了没登记类别的工具：算接着做，再问
+  task.messages.push(msg('agent', [{ kind: 'other', name: 'SomeNewShell', label: '$p = 1' }]))
+  const r = await decide('c3', {})
+  assert.equal(r.block, true)
+  assert.equal(r.why, 'check-resumed')
+})

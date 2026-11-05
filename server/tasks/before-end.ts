@@ -7,6 +7,8 @@ import {
   CHECK_REMINDER,
   idleReminders,
   inputIndex,
+  isActTool,
+  isLookTool,
   isReminder,
   mergeOwedOf,
   SPIN_MAX,
@@ -67,7 +69,9 @@ export function createBeforeEnd(
   }
 
   /**
-   * 这条输入以来的工具调用：动手（跑命令、改文件）和只读（读文件、搜索）分开数，end_turn 不算。
+   * 这条输入以来的工具调用：只读（读文件、搜索、看网页）和动手分开数，面板自己的工具（end_turn、set_plan、get_status……）不算。
+   * 动手不按类别清单数：只读以外的 CLI 工具（跑命令、改文件、CLI 自己的子 Agent、没登记类别的新工具）都算。
+   * 以前只数 run / edit，Windows 上的 PowerShell 被记成 other，问过以后跑了 3 条命令也算 0 次，按 small 放行（用户 2026-11-05 报）。
    * 已经问过（钩子拦过、或一轮结束后提醒过）的，从最近那次之后数：问过以后没再动手的不再问第二遍
    */
   function workSince(tk: Task, inputId: string) {
@@ -81,8 +85,8 @@ export function createBeforeEnd(
     let reads = 0
     for (const m of at >= 0 ? tk.messages.slice(at + 1) : tk.messages)
       for (const x of m.role === 'agent' ? m.tools : []) {
-        if (x.kind === 'run' || x.kind === 'edit') acts++
-        else if (x.kind === 'read' || x.kind === 'search') reads++
+        if (isActTool(x)) acts++
+        else if (isLookTool(x)) reads++
       }
     return { acts, reads, tools: acts + reads, checked: checked >= 0 }
   }

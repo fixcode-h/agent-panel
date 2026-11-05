@@ -29,6 +29,31 @@ export const END_TURN_HOW =
 export const CHECK_REMINDER =
   '【面板】（收尾自检）这次的事做完了吗？没做完就直接调用工具接着做，不用先说明；' + END_TURN_HOW
 
+/**
+ * 这条工具调用是不是面板自己的工具（end_turn、set_plan、get_status……）：各家 CLI 报上来的写法不同
+ * （裸名字、mcp__panel__x、记成「MCP · panel · x」），按名字和标题一起认，同 isEndTurnTool
+ */
+export function isPanelTool(x: Pick<ToolUse, 'name' | 'label'>) {
+  return !!(panelToolName(x.name ?? '') || PANEL_TOOL_RE.test(`${x.name ?? ''} ${x.label}`))
+}
+
+/** 只看、不动手的工具类别：读文件、搜索、看网页 */
+const LOOK_KINDS: readonly ToolUse['kind'][] = ['read', 'search', 'web']
+
+/** 只读的一次调用（读文件、搜索、看网页），面板自己的工具不算 */
+export function isLookTool(x: Pick<ToolUse, 'name' | 'label' | 'kind'>) {
+  return !isPanelTool(x) && LOOK_KINDS.includes(x.kind)
+}
+
+/**
+ * 动手的一次调用：只读以外的 CLI 工具都算（跑命令、改文件、CLI 自己的子 Agent、没登记类别的新工具），面板自己的工具不算。
+ * 不按 run / edit 清单数：清单外的工具（Windows 上的 PowerShell 曾被记成 other）会被当成「什么都没做」，
+ * 收尾自检（server/tasks/before-end.ts）和一轮结束后的补问（server/exec/turn-info.ts）都用这一个判断
+ */
+export function isActTool(x: Pick<ToolUse, 'name' | 'label' | 'kind'>) {
+  return !isPanelTool(x) && !LOOK_KINDS.includes(x.kind)
+}
+
 /** 这条工具调用是不是 end_turn（各家 CLI 报上来的名字写法不同，同 fold.ts 的 wrapTool） */
 export function isEndTurnTool(x: Pick<ToolUse, 'name' | 'label'>) {
   const n = panelToolName(x.name ?? '') || PANEL_TOOL_RE.exec(`${x.name ?? ''} ${x.label}`)?.[1] || ''
