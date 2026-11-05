@@ -1013,7 +1013,7 @@ await runShard(import.meta.filename, async (api) => {
       if (!(await dlg.getByRole('radiogroup', { name: '版本' }).count())) errors.push('诊断报告：有两版却没有版本切换')
       if (!(await dlg.getByText('上周的重构把派发挪进了循环里').count()))
         errors.push('诊断报告：第 2 版没有显示对上一版意见的回答')
-      // 选中根因那段文字标注：标注能选种类，「有疑问，再查」随之可点
+      // 选中根因那段文字标注：标注能选种类，「有疑问，出下一版」随之可点
       // 和阶段确认那一步（02d）一样用真实的鼠标拖选：程序化选区不会触发弹窗里的 mouseup
       await settle(p)
       // 报告加了时间线、引入点、候选方案后变长了：根因那段可能在可视区外，先滚进来再拖
@@ -1038,8 +1038,8 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：标注上没有「疑问 / 改方案 / 补充信息」的选择')
         await dlg.getByRole('radio', { name: '改方案' }).first().click()
         await dlg.getByLabel('标注 1 的意见').fill('顺便看看结算页的角标')
-        if (await dlg.getByRole('button', { name: '有疑问，再查' }).isDisabled())
-          errors.push('诊断报告：标注了还不能点「有疑问，再查」')
+        if (await dlg.getByRole('button', { name: '有疑问，出下一版' }).isDisabled())
+          errors.push('诊断报告：标注了还不能点「有疑问，出下一版」')
       } else errors.push('诊断报告：选中文字后没有出现「标注」按钮')
       // ADR 0046：引入点、时间线、候选方案画出来；没选的方案能一键加「改方案」意见
       for (const text of ['引入于', '购物车删除重构', '方案 B：角标自己轮询数量'])

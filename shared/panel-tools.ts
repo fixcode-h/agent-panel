@@ -30,6 +30,7 @@ export const PANEL_TOOL_NAMES = [
   'answer_workflow',
   'finish_workflow',
   'submit_diagnosis',
+  'request_logs',
   'remember',
   'set_plan',
   'finish_plan',

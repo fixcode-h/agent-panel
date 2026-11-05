@@ -102,7 +102,7 @@ export async function attachmentUrl(a: Attachment, opts: { thumb?: boolean } = {
   return `/api/uploads/raw?path=${encodeURIComponent(a.path)}${w}`
 }
 
-const readBase64 = (f: Blob) =>
+export const readBase64 = (f: Blob) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader()
     r.onload = () => resolve(String(r.result).split(',')[1] ?? '')

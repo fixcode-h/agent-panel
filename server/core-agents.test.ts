@@ -219,7 +219,7 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.match(BUG_FULL_TEXT, /模块文档 → 模块代码 → 调用栈 → 日志（不能跳）/)
   assert.match(BUG_FULL_TEXT, /先拿它的原文在代码里搜到打印它的位置/)
   assert.match(BUG_FULL_TEXT, /现象 ← 日志原文.*← 代码 path:line/)
-  assert.match(BUG_FULL_TEXT, /然后停下等用户（计划里这一步标等待中）/)
+  assert.match(BUG_FULL_TEXT, /先写成日志计划交给用户.*用户同意后再加、请用户复现/)
   assert.match(BUG_FULL_TEXT, /交给「文档」写进 `modules\/<模块>\/README\.md`/)
   const analyzer = role('analyzer')
   assert.match(analyzer, /## 排查报错和日志：先代码后日志/)
