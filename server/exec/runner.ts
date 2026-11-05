@@ -33,6 +33,7 @@ import {
 import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { attachmentAddDirs, placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
+import { trackFileWrite, trackOutside } from './outside-changes.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { handoffDirOf } from '../store.ts'
 import { taskFiles } from '../task-files.ts'
@@ -707,8 +708,10 @@ async function runAgent(
       gitBusy = true
       const changes = await taskChanges(cwd, task, touched).catch(() => null)
       gitBusy = false
-      if (changes && !finished) {
-        task.changes = changes
+      // 项目外的写文件不在 git 差异里：和项目内的一起边跑边更新
+      const outside = finished ? 0 : trackOutside(task, cwd, touched)
+      if (!finished && (changes || outside)) {
+        if (changes) task.changes = changes
         ctx.changed()
       }
     }, 1500)
@@ -870,10 +873,7 @@ async function runAgent(
         }
         if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
         if (ev.file) refreshChanges()
-        if (ev.file && !ctx.isGit) {
-          mergeChanges(task.changes, [ev.file])
-          if (owner) mergeChanges((owner.changes ??= []), [ev.file])
-        }
+        if (ev.file && !ctx.isGit) trackFileWrite(task, owner, cwd, ev.file)
         break
       }
       case 'usage': {
@@ -1546,6 +1546,8 @@ async function runAgent(
       task.changes = changes
     }
   }
+  // 项目外写过的文件：任何模式都要记，界面上单独一组列出（没有 git 快照，只能查看）
+  trackOutside(task, cwd, touched)
   ctx.changed(true)
 
   // 进程结束的情况都记一笔：退出码、为什么被停、最后的错误输出，排查问题时对得上页面上的报错

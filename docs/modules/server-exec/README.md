@@ -5,7 +5,7 @@
 - 源码：`server/exec/`
 - 入口：`server/exec/runner.ts`
 - 关键词：CLI 参数、进程、输出解析、RPC、独立分支、worktree、git 改动
-- 更新：2026-10-24（2026-10-27 补「压缩上下文的记录」一条，核对自 `server/exec/runner.ts` 的 `describeCompaction` 和 `server/exec/hints.test.ts`；2026-10-30 补「上下文占用与细分」一条，核对自 `server/exec/parsers.ts`、`server/exec/rpc/claude.ts`、`shared/context-breakdown.ts`）
+- 更新：2026-10-24（2026-10-27 补「压缩上下文的记录」一条，核对自 `server/exec/runner.ts` 的 `describeCompaction` 和 `server/exec/hints.test.ts`；2026-10-30 补「上下文占用与细分」一条，核对自 `server/exec/parsers.ts`、`server/exec/rpc/claude.ts`、`shared/context-breakdown.ts`；2026-11-05 补「项目根之外的写文件记进 `Task.outsideChanges`」，核对自 `server/own-changes.ts`、`server/exec/outside-changes.ts`、`server/exec/runner.ts`）
 
 ## 职责
 
@@ -29,7 +29,7 @@
 - Claude Code 的提问通道：审批和提问都是 CLI 发来的 `control_request(can_use_tool)`，`server/exec/rpc/claude.ts` 把它转成卡片，`AskUserQuestion` 的回答写回 `updatedInput.answers`。它依赖启动参数 `--permission-prompt-tool stdio`，`bypassPermissions`（`--dangerously-skip-permissions`）时也必须带：不带时 Claude Code 不把 `AskUserQuestion` 放进工具列表，模型只能把问题写成纯文本。参数在 `shared/clis/claude.json` 的 `args`，回归用例见 `server/exec/rpc/claude.test.ts`、`server/exec/parsers.test.ts` 的「Claude Code：跳过确认时也保留提问通道」和 `scripts/e2e/05-workflow-edge.mjs`（fake-cli 按启动参数模拟真实工具列表）。
 - 拒绝权限请求后的提醒（`server/exec/deny-advice.ts`）：用户在「允许 / 拒绝」卡上拒绝运行命令、改文件、用工具时，`answerRequest` 在交回 CLI 的回答里加 `AskReply.advice`：第一次是「不要用同样或等价的命令重试，需要就直接问」，同一个操作（按卡片标题认）第 2 次起改成「停下这个做法、结束这一轮向用户说明」，对话里那行写「（第 N 次，已让它停下来问你）」。面板不替用户拒绝、不替它中断：每次请求照样弹卡。拒绝能带原话的协议（Claude Code 的 deny message）把提醒接在拒绝原话后面；只有 decline 的（Codex）由适配器先回 decline 再 `turn/steer` 插进这一轮；Pi 的扩展确认还没接（它的插话会在一轮结束时被收回来另开一轮，不能直接用）。提问、节点确认、推送授权卡不加提醒。
 - 上下文占用与细分（会话栏的「上下文」）：总占用是 `AgentUsage.context`，细分是 `AgentUsage.snapshot`（`shared/context-breakdown.ts` 的 `contextBreakdown` 在有快照、且总占用不小于快照的九成时按快照分块，否则按来源估）。Claude Code 每轮结束用控制请求 `get_context_usage`（`server/exec/rpc/claude.ts` 的 `contextSnapshot` → `claudeContextSnapshot`），类别先按 `CLAUDE_CONTEXT_IDS`、再按 `CLAUDE_CONTEXT_NAMES` 归到共用分类：2.1.3xx 起的回复里类别只有 `name`（`System prompt`、`System tools (deferred)`、`Autocompact buffer`……），没有早期版本的 `id`，只按 id 找会让 rows 为空、上下文恒显示 0。总占用的输入正常情况下来自流式 `message_start` 的 usage，但有的网关（本机用的代理）在那里报全 0、真实用量只在完整 `assistant` 消息和 `result` 里：`server/exec/parsers.ts` 的 `assistant` 分支在没有 `parent_tool_use_id` 时补一条只含 `context` / `model` 的 usage 事件（不带 add\*，累计仍由 message_start 和 result 的差额负责），`message_start` 的 input 为 0 时不带 `context`，否则会把上一条有效值盖成 0。回归：`server/exec/rpc/keepalive-next.test.ts` 的「保活的下一轮……」、`server/exec/parsers.test.ts` 的「Claude Code：stream-json 的文字、思考、工具、待办和用量」。
-- 改动统计：对比任务开始时的 `git diff --numstat` 快照算出改动文件（`server/exec/git.ts`）。
+- 改动统计：对比任务开始时的 `git diff --numstat` 快照算出改动文件（`server/exec/git.ts`）。项目根之外的写文件不在 git 差异里：`server/exec/outside-changes.ts` 把 CLI 写文件事件（`touched`）交给 `server/own-changes.ts` 的 `outsideFiles` 筛出绝对路径、`mergeOutside` 去重后记进 `Task.outsideChanges`，只用于展示（没有快照，不算增删行数、不做差异和撤销）；数据目录（附件、对话目录的截图和临时文件、任务交接）和系统临时目录不算 Agent 的改动。
 - 子对话隔离：`childIsolation = worktree` 时在独立 worktree 里执行并按 git merge 合回（`server/exec/worktree.ts`）；每个独立目录准备时把自己的 `node_modules` 从项目根复制一份（`ensureWorktreeDeps`：真实文件、项目的 lock 变了才重刷、目录里缺副本时补一份，删除 worktree 时随目录一起删，各 worktree 互不影响）；`claim` 模式的文件认领在 `server/claims.ts`，留到子对话的改动被父对话验收（`completeChild`）才放，一轮结束时把改过的文件记到名下、撞了写信给父对话（ADR 0035）。父对话收尾时把子对话分支合进父对话目录的那一段在 `server/exec/worktree-integrate.ts`（`integrateBranch`，失败按 `conflict` / `blocked` / `branch` / `error` 分类，见 [server/children.md](../server/children.md)）。
 
 ## 入口
