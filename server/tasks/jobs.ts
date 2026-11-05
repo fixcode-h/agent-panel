@@ -62,6 +62,8 @@ export function createJobs(sc: TasksScope) {
             ok: job.state === 'done',
             durationMs: jobMs(job),
             output: job.lines.join('\n').slice(-6000),
+            // 被停掉的命令没跑完：按未通过退回子对话，并在说明里写明是被停的
+            stopped: job.state === 'stopped',
           })
         )
           return
@@ -206,6 +208,10 @@ export function createJobs(sc: TasksScope) {
   async function endBackground(id: string) {
     const kids = (await sc.store.list()).filter((x) => x.parentTaskId === id)
     await noteStoppedJobs(id)
+    // 父对话被停止 / 归档 / 删除（面板退出走 stopAll，不经过这里）：面板代它跑的测试命令跟着停了，
+    // 结果不会再回来。先把正在跑的那批按未通过退回子对话（分支保留、可以重新 submit_merge），
+    // 不然它会永远停在「等父对话测试」，只能重启面板
+    await sc.parentTests.abortByParent(id, t('父对话被停止或归档，这批测试没有跑完，结论按未通过处理。'))
     await Promise.all([background.stop(id), ...kids.map((k) => endBackground(k.id))])
   }
 

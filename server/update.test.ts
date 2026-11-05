@@ -103,13 +103,11 @@ test('强制更新：停任务之前记下被打断的任务，重启后据此�
   assert.equal(saved.acknowledged, false)
 })
 
-test('强制更新：没有正在执行的任务时不留记录，也不把上次没处理的冲掉', async () => {
+test('强制更新：没有正在执行的任务时写空名单，把上次没处理的记录冲掉', async () => {
   await stopForUpdate({ phase: '' }, { interrupted: () => [], stopAll: async () => {} })
   const saved = JSON.parse(readFileSync(path.join(dir, 'cache/interrupted-by-update.json'), 'utf8'))
-  assert.deepEqual(
-    saved.tasks.map((x: { id: string }) => x.id),
-    ['task-a', 'task-b'],
-  )
+  assert.deepEqual(saved.tasks, [])
+  assert.equal(saved.acknowledged, false)
 })
 
 test('没有可下载的包时返回空地址，不会把别的平台的包装上', () => {
