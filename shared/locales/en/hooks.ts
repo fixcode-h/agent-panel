@@ -8,8 +8,8 @@ export const EN_HOOKS: Record<string, string> = {
   '压缩上下文之后，把当前计划和进度、派单的目标、在等什么补给模型，免得它忘了做到哪':
     'After the context is compacted, give the model the current plan and progress, the task goal, and what it is waiting on, so it does not lose its place',
   只读身份守卫: 'Read-only guard',
-  '调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因':
-    'Refuse file edits from read-only roles (research, review, root-cause analysis) and from parent conversations that only coordinate, and say why',
+  '调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因；项目 .tmp/ 和系统临时目录里的临时文件放行':
+    'Refuse file edits from read-only roles (research, review, root-cause analysis) and from parent conversations that only coordinate, and say why. Temp files in the project .tmp/ folder or the system temp folder are allowed',
   临时文件位置守卫: 'Temp file location guard',
   '往盘符根目录、面板的数据目录里写文件时拒绝，说明临时文件该放到项目的 .tmp/ 或系统临时目录':
     "Refuse writes to a drive's root folder or the panel's data folder, and point temp files to the project's .tmp/ or the system temp folder",

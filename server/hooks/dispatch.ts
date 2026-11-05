@@ -90,11 +90,25 @@ function identity(c: HookCallCtx): 'read-only' | 'coordinator' | '' {
   return ''
 }
 
+/**
+ * 临时文件位置：项目根的 .tmp/（AGENTS.md 约定的临时目录，已在 .gitignore），或系统临时目录里、又不在项目里的路径。
+ * 项目本身放在系统临时目录里时（测试、临时克隆），项目里的文件照样算改项目
+ */
+function scratchPath(c: HookCallCtx, f: string): boolean {
+  const p = path.resolve(c.cwd, f)
+  const roots = [c.cwd, c.project?.path].filter((x): x is string => !!x)
+  if (roots.some((r) => inside(path.join(r, '.tmp'), p))) return true
+  return inside(tmpdir(), p) && !roots.some((r) => inside(r, p))
+}
+
 /** 只读身份守卫：要改文件（和只读角色的写命令）时拒绝；父对话开了就地微改动时，改它登记的那几个文件放行 */
 function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts, extra: string[] = []): string {
   const tool = facts.tool
   if (!tool) return ''
   if (tool.kind === 'edit') {
+    const all = (tool.paths.length ? tool.paths : [tool.path]).filter(Boolean)
+    // 一次性的临时脚本、草稿（项目的 .tmp/、系统临时目录）不算改项目：以前一律拦，模型只好改用 stdin 喂脚本
+    if (all.length && all.every((p) => scratchPath(c, p))) return ''
     if (who === 'coordinator') {
       // 补丁一次能改好几个文件：每个都登记过才放行
       const files = (tool.paths.length ? tool.paths : [tool.path]).map((p) => rel(c.cwd, p))
