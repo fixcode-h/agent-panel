@@ -1766,6 +1766,9 @@ export const EN_TASKS: Record<string, string> = {
     "This project's default role can't start workflows, so it will do the work in the conversation",
   // Bug 诊断报告（ADR 0045）
   报告待确认: 'Report awaits approval',
+  阶段待确认: 'Stage awaits approval',
+  阶段结果等你确认: 'Stage result awaiting your review',
+  这一步已经确认过了: 'This step has already been reviewed',
   等你查看报告: 'Waiting for you to review the report',
   '等你查看诊断报告第 {n} 版': 'Waiting for you to review diagnosis report v{n}',
   查看报告: 'View report',
