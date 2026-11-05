@@ -21,6 +21,8 @@ import { ReviewDialog } from './ReviewDialog'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { QuestionPanel, type PanelQuestion } from '@/components/chat/QuestionPanel'
 import { t } from '@shared/i18n'
+import { isChatMode } from '@shared/conv-mode'
+import { NOT_A_CHOICE } from '@shared/user-action'
 
 /** 请求里的问题：一次问了几个时每个一条，旧的请求只有标题和选项 */
 export const requestQuestions = (req: TaskRequest): PanelQuestion[] =>
@@ -49,6 +51,8 @@ export function TaskRequestCard({ task, onAnswered }: { task: Task; onAnswered: 
       requests={task.requests ?? []}
       agent={a ? { name: a.name, icon: a.icon, cli: a.cli } : undefined}
       onAnswer={async (id, r) => onAnswered(await api.answerRequest(task.id, id, r))}
+      // 对话（不是 Chat 页一问一答）才有 request_user_action：提问其实是要你去做事时，给个出口让它改用等你操作
+      actionHint={!isChatMode(task)}
       // 关掉提问：这个问题不回答，终止对话；之后发消息或继续执行时 AI 再接着做
       onClose={async () => onAnswered(await api.stopTask(task.id))}
     />
@@ -84,6 +88,7 @@ export function RequestCard({
   onAnswer,
   agent,
   onClose,
+  actionHint,
   className,
 }: {
   requests: TaskRequest[]
@@ -91,6 +96,8 @@ export function RequestCard({
   agent?: { name: string; icon: string; cli: string }
   /** 提问右上角的关闭（不回答，终止对话）；不给就没有关闭按钮 */
   onClose?: () => Promise<void>
+  /** 提问上加「这需要我去操作」：按拒绝结束提问，告诉 Agent 改用 request_user_action */
+  actionHint?: boolean
   className?: string
 }) {
   const req = requests[0]
@@ -141,6 +148,21 @@ export function RequestCard({
           }
         }}
         skipLabel={t('不回答，让 AI 自己决定')}
+        extra={
+          actionHint
+            ? {
+                label: t('这需要我去操作'),
+                title: t('这不是要你选的，而是要你去做一件事：让它改成「等你操作」，写清步骤和要交回什么'),
+                onClick: async () => {
+                  try {
+                    await onAnswer(req.id, { allow: false, answer: NOT_A_CHOICE })
+                  } catch (e) {
+                    toast.error((e as Error).message)
+                  }
+                },
+              }
+            : undefined
+        }
         onClose={
           onClose &&
           (async () => {

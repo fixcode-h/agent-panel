@@ -78,6 +78,7 @@ import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
 import { endTurnCheck, pushTurnEnd } from './end-turn.ts'
+import { requestAction } from './user-action.ts'
 import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import {} from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
@@ -443,6 +444,8 @@ export interface Orchestra {
   finishPlan(summary: string): Promise<{ ok: boolean; info: string }>
   /** 对话（Agent 模式）交代这一轮怎么结束：done / blocked（shared/end-turn.ts）；其余身份没有这个工具 */
   endTurn?: (outcome: string, need: string) => { ok: boolean; info: string }
+  /** 等你操作：请用户离开对话去做一件事（shared/user-action.ts）；和 endTurn 同样只给对话 */
+  requestUserAction?: (input: Record<string, unknown> | undefined) => { ok: boolean; info: string }
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
   conversations(): Promise<string>
@@ -2598,6 +2601,15 @@ function makeOrchestra(
             if (r.end) pushTurnEnd(task, r.end)
             if (r.end) host.changed(true)
             return { ok: r.ok, info: r.info }
+          },
+          requestUserAction(input) {
+            const r = requestAction(task, input, host.newId())
+            if (!r.action) return r
+            // 计划里正在做的那一步挂成「等你操作」：交回时按 settleWait 收口
+            const step = typeof input?.step === 'string' && input.step.trim() ? input.step : runningStepId(task)
+            const wait = step ? bindWait(task, step, { kind: 'user', ref: r.action.id, label: r.action.title }) : ''
+            host.changed(true)
+            return { ok: true, info: wait && !wait.startsWith('（') ? `${r.info}\n${wait}` : r.info }
           },
         }
       : {}),

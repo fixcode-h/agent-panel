@@ -7,6 +7,7 @@
  */
 import { t } from './i18n.ts'
 import { activePlan, needsFix, openPlan, openWork, planProgress } from './plan.ts'
+import { pendingAction, waitedText } from './user-action.ts'
 import type { Task, TaskMessage } from './schema.ts'
 import {
   childActivity,
@@ -66,7 +67,14 @@ type DiagTask = Pick<
   | 'apiWait'
   | 'cliAlive'
   | 'awaitingUser'
-> & { runs?: Task['runs']; jobs?: Task['jobs']; childrenWorking?: number; archived?: boolean; deletedAt?: string }
+> & {
+  runs?: Task['runs']
+  jobs?: Task['jobs']
+  childrenWorking?: number
+  archived?: boolean
+  deletedAt?: string
+  userActions?: Task['userActions']
+}
 
 /** 面板推它接着做计划的那条消息（见 server/tasks/children.ts 的 nudgePlan）：开头固定 */
 const NUDGE_HEAD = '【面板】你的计划才做了'
@@ -105,6 +113,15 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
   if (asking) items.push({ kind: 'ask', text: t('{n} 个提问等你回答', { n: asking }), tone: 'warning' })
   if (task.requests.length)
     items.push({ kind: 'ask', text: t('{n} 项操作等你确认', { n: task.requests.length }), tone: 'warning' })
+  // 等你操作：写清在等什么、等了多久，下一行是跳过时它会怎么做（用户才敢点跳过）
+  const act = pendingAction(task)
+  if (act)
+    items.push({
+      kind: 'ask',
+      text: t('在等你操作：{title}，已等 {took}', { title: act.title, took: waitedText(act, now) }),
+      detail: act.fallback ? t('跳过的话：{fallback}', { fallback: act.fallback }) : '',
+      tone: 'warning',
+    })
 
   if (task.apiWait)
     items.push({

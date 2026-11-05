@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Task } from '@shared/schema'
 import { stopReasonText } from '@shared/task'
+import { pendingAction } from '@shared/user-action'
 import { t } from '@shared/i18n'
 import { setBaseTitle } from './page-signal'
 import { countBusy, initialTitleState, nextTitleState, titleFor, titleWait, type TitleState } from './title-count'
@@ -126,12 +127,16 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
       const doneTurn = !!task.turnDoneAt && task.turnDoneAt !== was.done
       const ended = was.status === 'running' && (task.status === 'failed' || task.status === 'stopped')
       if (!ended && !doneTurn) continue
-      const text = ended
-        ? task.status === 'stopped'
-          ? // 中断不等于用户按了暂停：说清是谁结束的（父对话收尾、面板重启、换 CLI 等）
-            t('任务中断：{reason}', { reason: stopReasonText(task.stopReason) })
-          : TEXT.failed
-        : TEXT.done
+      // 这一轮停在「等你操作」：说清要你去做什么，不报「任务已完成」让人以为做完了
+      const act = doneTurn && !ended ? pendingAction(task) : undefined
+      const text = act
+        ? t('等你操作：{title}', { title: act.title })
+        : ended
+          ? task.status === 'stopped'
+            ? // 中断不等于用户按了暂停：说清是谁结束的（父对话收尾、面板重启、换 CLI 等）
+              t('任务中断：{reason}', { reason: stopReasonText(task.stopReason) })
+            : TEXT.failed
+          : TEXT.done
       try {
         const n = new Notification(text, { body: task.title, tag: task.id })
         n.onclick = () => {
