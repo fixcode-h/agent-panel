@@ -668,18 +668,18 @@ await runShard('子对话运行与监管', async (api) => {
     assert.ok(pushes(pushed).length >= 1, '计划停住时推了它')
     // 三步计划加上面板放在最后的收尾（共用目录也要请父对话验收）一共四步
     assert.match(pushes(pushed)[0].text, /1\/4[\s\S]*「跑检查」/, '推的时候写明进度和接下来做哪一步')
-    // 被推之后仍然原地不动：同一进度推满 3 次（最后一次要它说明卡在哪），才上报父对话一次，并写明不要只发「继续」
+    // 被推之后仍然原地不动：不限次数，但连着 3 次提醒都没动手就是空转，停下并上报父对话一次，写明不要只发「继续」
     const report = await waitFor(
       async () => {
         const p = await call('GET', `/tasks/${stallParent.id}`)
         return p.messages.find((m) => m.child?.id === stallKid.id && m.text.includes('计划还没做完'))
       },
-      { label: '推满 3 次仍没动：上报父对话', timeout: 30000 },
+      { label: '连着 3 次提醒都没动手：上报父对话', timeout: 30000 },
     )
-    assert.match(report.text, /推了 3 次仍停在这里[\s\S]*不要只发「继续」/)
+    assert.match(report.text, /仍停在这里[\s\S]*不要只发「继续」/)
     const kidNow = await call('GET', `/tasks/${stallKid.id}`)
-    assert.equal(pushes(kidNow).length, 3, '同一进度推满 3 次就停，不来回推')
-    assert.match(pushes(kidNow)[2].text, /第 3 次提醒/)
+    assert.equal(pushes(kidNow).length, 3, '连着 3 次提醒都没动手就停（空转保护），不来回推')
+    assert.match(pushes(kidNow)[2].text, /end_turn（outcome: blocked）/, '提醒里写明做不下去就调 end_turn 说卡住')
     const parentNow = await call('GET', `/tasks/${stallParent.id}`)
     assert.equal(
       parentNow.messages.filter((m) => m.child?.id === stallKid.id && m.text.includes('计划还没做完')).length,
@@ -714,14 +714,13 @@ await runShard('子对话运行与监管', async (api) => {
         const p = await call('GET', `/tasks/${hookParent.id}`)
         return p.messages.find((m) => m.child?.id === hookKid.id && m.text.includes('计划还没做完'))
       },
-      { label: '钩子拦满 3 次仍没动：上报父对话', timeout: 30000 },
+      { label: '钩子连着拦了 3 次都没动手：上报父对话', timeout: 30000 },
     )
     assert.ok(report)
     const kidNow = await call('GET', `/tasks/${hookKid.id}`)
     const marks = kidNow.messages.filter((m) => m.panel === 'hook')
-    assert.equal(marks.length, 3, '同一进度拦满 3 次')
+    assert.equal(marks.length, 3, '连着 3 次拦住都没动手就放行（空转保护）')
     assert.match(marks[0].text, /1\/4[\s\S]*「跑检查」/, '拦的时候写明进度和接下来做哪一步')
-    assert.match(marks[2].text, /第 3 次提醒/)
     assert.equal(kidNow.messages.filter((m) => m.panel === 'nudge').length, 0, '拦过的不再另发提醒')
     assert.equal(
       kidNow.messages.filter((m) => m.role === 'agent' && m.text.includes('PLAN_NUDGE_GOT')).length,
@@ -893,7 +892,7 @@ await runShard('子对话运行与监管', async (api) => {
     step('停下就是暂停：随父对话停下的子对话继续后接着做完，父计划那一步收到结果、没有另建子对话')
   }
 
-  // ---- 工作流只由父对话启动（ADR 0044）：start_workflow 开工作流子对话，流程图跑完交执行角色收尾，父计划那一步收到结果 ----
+  // ---- 工作流只由父对话启动：start_workflow 起一次运行（不是子对话），跑完来信、父对话合回，父计划那一步收到结果 ----
   {
     const wf = await call('POST', '/workflows', {
       name: '小流程',
@@ -938,31 +937,42 @@ await runShard('子对话运行与监管', async (api) => {
       '父对话看得到可用工作流',
     )
     const waitOf = async () =>
-      (await call('GET', `/tasks/${rp.id}`)).plans?.at(-1)?.steps?.[0]?.waits?.find((w) => w.kind === 'child')
-    await waitFor(async () => ((await waitOf())?.state === 'ok' ? true : undefined), {
-      label: '工作流子对话跑完流程图、执行角色收尾后，父计划那一步收到结果',
-      timeout: 40000,
-    })
+      (await call('GET', `/tasks/${rp.id}`)).plans?.at(-1)?.steps?.[0]?.waits?.find((w) => w.kind === 'workflow')
+    await waitFor(
+      async () => {
+        const w = await waitOf()
+        return w && w.state !== 'waiting' ? true : undefined
+      },
+      {
+        label: '工作流运行跑完收尾、来信、父对话合回（合不回就放弃）后，父计划那一步收口',
+        timeout: 40000,
+      },
+    )
+    // 运行不是子对话：子对话栏里没有它，按 owner 查得到
     const kids = await call('GET', `/tasks/${rp.id}/children`)
-    const k = kids.find((x) => x.title === '工作流做功能')
-    assert.ok(k, '开出了工作流子对话')
-    const kidTask = await call('GET', `/tasks/${k.id}`)
-    assert.equal(kidTask.flow?.workflowName, '小流程')
-    assert.equal(kidTask.flow?.handed, true, '流程图跑完交给了执行角色')
-    assert.equal(kidTask.runs?.[0]?.status, 'done')
+    assert.ok(!kids.some((x) => x.title === '工作流做功能'), '不开工作流子对话')
+    const runs = await call('GET', `/tasks?owner=${rp.id}`)
+    assert.equal(runs.length, 1)
+    const run = await call('GET', `/tasks/${runs[0].id}`)
+    assert.equal(run.flowRun?.workflowName, '小流程')
+    // 父对话目录里同一个文件也改了（假 CLI 每轮都写 claude-output.txt）：合回被 git 拒绝、如实报给父对话，父对话放弃
+    const fin = readLog(log + '.panel').filter((x) => x.name === 'finish_workflow')
+    assert.match(fin[0]?.text ?? '', /git 拒绝合并/, '合不回时把原因交给父对话')
+    assert.equal(run.flowRun?.phase, fin.at(-1)?.isError ? 'ready' : fin.length > 1 ? 'discarded' : 'done')
     assert.ok(
-      calls().some((c) => (c.input ?? '').includes('工作流「小流程」跑完了')),
-      '执行角色拿到的是流程图的结果，按收尾做',
+      run.steps.some((s) => s.id === 'wrapup' && s.status === 'done'),
+      '改代码的运行跑完流程图后有收尾（评审、测试）',
     )
+    assert.equal(run.parentTaskId, '')
     assert.ok(
-      !calls().some(
-        (c) => (c.input ?? '').includes('工作流「小流程」跑完了') && (c.input ?? '').includes('## 可用工作流'),
-      ),
-      '子对话不列可用工作流',
+      calls().some((c) => /【工作流运行】工作流「小流程」[^\n]*做完了，等你合回/.test(c.input ?? '')),
+      '跑完给父对话写信',
     )
+    assert.ok(!calls().some((c) => (c.input ?? '').includes('工作流「小流程」跑完了')), '没有执行角色收尾那一轮')
+    assert.ok(!(await call('GET', '/tasks')).some((x) => x.id === run.id), '运行不进对话列表')
     await call('POST', `/tasks/${rp.id}/stop`).catch(() => {})
     await call('DELETE', `/tasks/${rp.id}`)
-    step('工作流只由父对话启动：开工作流子对话，流程图跑完交执行角色收尾，父计划那一步收到结果')
+    step('工作流只由父对话启动：起一次运行（不是子对话），跑完收尾、来信、父对话合回或放弃，父计划那一步收口')
   }
 
   // ---- /bug 发给子对话（ADR 0046）：面板把它标成用户报的 Bug，交给 CLI 的是展开后的完整查找流程，不是原样的 /bug ----
@@ -987,7 +997,7 @@ await runShard('子对话运行与监管', async (api) => {
     const sent = await call('POST', `/tasks/${kid.id}/messages`, { text: '/bug 购物车角标偶尔不刷新' })
     assert.equal(sent.bug, true, '子对话里发 /bug：标成用户报的 Bug，之后有交诊断报告的工具')
     const run = await callOf('购物车角标偶尔不刷新')
-    assert.ok(run.input.includes('用 submit_diagnosis 交诊断报告'), '展开成子对话按完整流程交报告的要求')
+    assert.ok(run.input.includes('用 submit_diagnosis 分阶段交报告'), '展开成子对话按完整流程交报告的要求')
     assert.ok(run.input.includes('## 用户报的 Bug：完整查找流程'), '带上完整查找流程')
     assert.ok(!run.input.includes('/bug 购物车'), 'Claude Code 不会收到原样的 /bug')
     await waitDone(kid.id, 20000)
@@ -1032,8 +1042,17 @@ await runShard('子对话运行与监管', async (api) => {
     assert.equal(stopped.status, 'stopped', '等确认时点停止：对话落成已停止，停止按钮变回来')
     assert.equal(stopped.stopReason, 'user')
     assert.equal(stopped.diagnoses.at(-1).status, 'pending', '报告留着，之后照样能确认')
+    // 停下后点「继续执行」：回到等确认这一步，不拉起 CLI 让它自己往下跑（用户 2026-11-04 要求）
+    const turns = (stopped.turns ?? []).length
+    const resumed = await call('POST', `/tasks/${kid.id}/resume`)
+    assert.notEqual(resumed.status, 'stopped', '继续后回到等确认，不再是已中断')
+    assert.equal(resumed.stopReason ?? null, null)
+    assert.equal(resumed.working, false, '没有开新的一轮')
+    assert.equal(resumed.diagnoses.at(-1).status, 'pending')
+    const after = await call('GET', `/tasks/${kid.id}`)
+    assert.equal((after.turns ?? []).length, turns, '继续不拉起 CLI：确认或提意见后才接着做')
     await call('POST', `/tasks/${bp.id}/stop`).catch(() => {})
     await call('DELETE', `/tasks/${bp.id}`)
-    step('诊断报告等确认时点停止：对话停下，报告留着能确认')
+    step('诊断报告等确认时点停止：对话停下，报告留着能确认；继续执行回到等确认、不拉起 CLI')
   }
 })

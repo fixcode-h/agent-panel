@@ -54,6 +54,7 @@ import { releaseIfSame, reserveOnce } from './slots.ts'
 import { killTree } from './exec/process.ts'
 import { reapSettledTaskClis } from './exec/orphans.ts'
 import { registerFileRoutes } from './tasks/files-routes.ts'
+import { registerPathRoutes } from './tasks/path-routes.ts'
 import { registerCollabRoutes } from './tasks/collab-routes.ts'
 import { createTrash } from './tasks/trash.ts'
 import { registerActionRoutes } from './tasks/actions-routes.ts'
@@ -68,6 +69,7 @@ import { registerDiagnosisRoutes } from './tasks/diagnosis-routes.ts'
 import { registerListRoutes } from './tasks/list-routes.ts'
 import { createIdleAsk } from './tasks/idle-ask.ts'
 import { createBudget } from './tasks/budget.ts'
+import { createTaskLearner } from './tasks/experience.ts'
 import { createKeepAlive } from './tasks/keepalive.ts'
 import { createRun } from './tasks/run.ts'
 import { createAsks } from './tasks/asks.ts'
@@ -78,6 +80,7 @@ import { createTestRuns } from './tasks/test-runs.ts'
 import { createJobs } from './tasks/jobs.ts'
 import { createEditWorktree } from './tasks/edit-worktree.ts'
 import { createChildMessages } from './tasks/child-messages.ts'
+import { createFlowRuns, registerFlowRunRoutes } from './tasks/flow-runs.ts'
 
 /** 任务接口与执行。执行中的任务放在内存里，按节点落盘，避免流式输出时频繁写文件 */
 export function tasksApi(deps: {
@@ -138,6 +141,7 @@ export function tasksApi(deps: {
     ensureChildWorktree: () => ensureChildWorktree,
     expandForWorkflow: () => expandForWorkflow,
     finishChild: () => finishChild,
+    flowRuns: () => flowRuns,
     followUp: () => followUp,
     forwardSpawn: () => forwardSpawn,
     getMeta: () => getMeta,
@@ -218,6 +222,7 @@ export function tasksApi(deps: {
     wakeTask: () => wakeTask,
     withJobs: () => withJobs,
     withLive: () => withLive,
+    learnExperience: () => learnExperience,
     workflowCatalog: () => workflowCatalog,
     worktreeHome: () => worktreeHome,
     worktreeStatusOf: () => worktreeStatusOf,
@@ -317,10 +322,11 @@ export function tasksApi(deps: {
   const ready = migrateOnStart(store, claims)
 
   /**
-   * 强制更新、面板退出要记下哪些任务（重启后问用户要不要继续）：正在执行的，以及被打断后还有活要自己干的（`restartUnfinished`：
-   * 这一轮被打断、计划没做完），再加上名下还有子对话在跑的父对话——子对话的结果要交回它，
-   * 它不在名单里就没人接。只按 working 记会把停在等下一句、计划 12/17 的父对话漏掉：
-   * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+   * 强制更新、面板退出要记下哪些任务（重启后问用户要不要继续）：只记这次真正被打断的——
+   * 正在执行的（`working`）、它们名下还有子对话的父对话（子对话的结果要交回它，它不在名单里就没人接），
+   * 以及这一轮还在执行、CLI 被停掉结果回不来的（`status === 'running'` 且不在等下一句）。
+   * 不要直接用 `restartUnfinished` 判全部任务：它还包括历史上停在等下一句、计划没做完的闲置任务，
+   * 每次强制更新都会把它们累计进名单（用户报的现象）；它仍给 `migrateOnStart` 判崩溃名单。
    * 清扫独立目录（`sweepStaleWorktrees`）仍然只看真正在跑的，用 `workingTasks`。
    */
   async function interruptedTasks() {
@@ -380,7 +386,7 @@ export function tasksApi(deps: {
     workflowParams: {},
     agentParams: {},
     childIsolation: 'claim',
-    isolateDefault: false,
+    isolateByDefault: false,
     testSteps: [],
     scaledVerify: true,
     lessons: [],
@@ -653,8 +659,11 @@ export function tasksApi(deps: {
   const { answerChildAsk, applyAskUser, applyChildAskUser, runningConv, settleAskFromChild, settleAsks, wakeConv } =
     createAsks(scope)
   const { deliver, expandForWorkflow, followUp, spawnChildOf, start } = createRun(scope)
+  // 工作流运行（不是子对话）：父对话的 start_workflow 等工具落到这里
+  const flowRuns = createFlowRuns(scope)
   const { armIdleAsk, disarmIdleAsk, childRecovering } = createIdleAsk(scope)
   const { checkBudget, holdWake } = createBudget(scope)
+  const { learnExperience } = createTaskLearner(scope)
   const {
     allowedPids,
     processPanel,
@@ -687,6 +696,7 @@ export function tasksApi(deps: {
     await next()
   })
   registerListRoutes(scope)
+  registerFlowRunRoutes(scope)
   const { childUnmerged, gitGate } = registerChildrenRoutes(scope)
   registerCollabRoutes(scope)
   registerProcessRoutes(scope)
@@ -696,6 +706,7 @@ export function tasksApi(deps: {
   const { prewarmChat, createTask } = registerConversationRoutes(scope)
   const { dropWorktree, taskDir, worktreeHome } = registerWorktreeRoutes(scope)
   const { readableDir } = registerFileRoutes(scope)
+  registerPathRoutes(scope)
   registerActionRoutes(scope)
   const { purgeTasks, enterTrash, restoreTasks } = createTrash(scope)
 

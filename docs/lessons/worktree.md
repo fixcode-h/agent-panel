@@ -10,6 +10,7 @@ paths: server/exec/worktree.ts, server/exec/worktree.test.ts, server/exec/worktr
 - 用户 2026-11-02 的决定：不再共用一份，**每个 worktree 各一份**；在 A 里 `npm install` / 改依赖不影响 B 和项目主目录，两边各有自己的 `.bin` 和平台原生包。
 - 为什么不是链接 / 共用：2026-10 事故里子对话的 `node_modules` 是指向项目那份的 junction，npm 按分支 `package.json` 修剪时删掉了项目真目录。复制真实文件只读项目那份、写自己的这份。硬链接也不行：跨分卷用不了，同分卷时 npm 原地重写 `.package-lock.json` 会顺着 inode 改到项目。
 - 代价（本机 682MB / 约 2.7 万文件）：每个 worktree 创建多一次约 12–20 秒、约 682MB；删除时随目录一起删。这是用户明确接受的代价，不要为省磁盘改回共用或链接。
+- 备用副本（2026-11-04）：分组目录下的 `node_modules.spare/node_modules` 是给下一个独立目录**整份拿走**的（改名，不是链接、也不共用），拿走后后台按当前 lock 再补一份（`refillSpareDeps`）。它多套了一层 `node_modules.spare/`，任务目录往上解析模块时碰不到；目录名以 `node_modules.` 开头，清扫按依赖目录跳过。
 - 不要做：在项目分组目录下再建共用的 `node_modules`（旧版本遗留的那份清扫会跳过、不主动删，避免还有旧 worktree 靠祖先解析）；让清扫去删任务目录里的 `node_modules`（它该随任务目录回收）。
 - 防线：`worktree.test.ts` 的「独立目录复制一份自己的依赖」「删除独立目录时连同依赖一起删」「并发各一份」「项目没有 node_modules 时跳过」「缺了会补一份」；`worktree-merge.test.ts` 的「A 改依赖不影响 B 和项目」「lock 变了新 worktree 拿新副本」「不同项目各是各的」「临时 / 旧副本目录不进提交」「陈旧临时目录清掉」「删除时清理」「清扫一个目录不动别的依赖」。
 

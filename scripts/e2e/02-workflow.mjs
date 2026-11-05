@@ -283,17 +283,11 @@ await runShard('工作流任务', async (api) => {
   assert.ok(!existsSync(path.dirname(handoff)), '永久删除时删掉交接文件')
   step('节点交接：上游结果太长时完整内容存成文件，下游按路径去读')
 
-  // ---- 追加要求：主 Agent 续接会话 ----
+  // ---- 运行结束后再发要求：不再跑节点（没有主 Agent 接着处理，要再做一次由父对话起） ----
+  const nAfter = calls().length
   await call('POST', `/tasks/${t.id}/messages`, { text: '按钮改成红色' })
   t = await waitDone(t.id)
   assert.equal(t.status, 'done')
-  c = calls().at(-1)
-  assert.equal(c.kind, 'claude')
-  assert.ok(
-    c.args.includes('--resume') && c.args.includes(t.sessions.n4),
-    '追加要求应该续接主 Agent 最后执行的节点的会话',
-  )
-  assert.equal(t.sessions[A.id], t.sessions.n4)
-  assert.match(c.input, /按钮改成红色/)
-  step('追加要求：由主 Agent 续接会话处理')
+  assert.equal(calls().length, nAfter, '跑完的运行不再调用 CLI')
+  step('运行结束后再发要求：不再跑节点')
 })

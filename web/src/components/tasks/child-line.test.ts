@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setLang, t } from '@shared/i18n'
 import { childIcon, type ChildWait } from '@shared/task'
-import { childClosedHint, childLabels, childNote, type ChildSummary } from './child-line'
+import { childClosedHint, childLabels, childNote, listedChildren, type ChildSummary } from './child-line'
 
 // 整个文件断言的都是文案：固定成中文，不跟着 CI 的 LANG 变（见 docs/lessons 的测试教训）
 setLang('zh')
@@ -164,15 +164,6 @@ test('一轮结束、停在等下一句的子对话不写「正在思考…」�
   assert.ok(childNote(thinking, true).startsWith(t('正在思考…')))
 })
 
-test('工作流子对话（ADR 0044）：行上标出是哪个工作流，流程图没跑完带进度，交给执行角色后只留名字', () => {
-  const flow = { name: '通用项目', run: 1, done: 1, total: 3, node: '实现', state: 'running' as const }
-  const row = closedWaiting({ cliAlive: true, working: true, background: 0, waiting: undefined, flow })
-  assert.ok(childLabels(row).some((l) => l.text === '工作流 · 通用项目 1/3'))
-  const handed = closedWaiting({ cliAlive: true, working: true, flow: { ...flow, state: 'handed' } })
-  assert.ok(childLabels(handed).some((l) => l.text === '工作流 · 通用项目'))
-  assert.ok(!childLabels(closedWaiting()).some((l) => l.text.startsWith('工作流')), '普通子对话不标')
-})
-
 test('交了 Bug 诊断报告等你确认（ADR 0045）：还在转圈，状态写「报告待确认」，不写「执行中」', () => {
   const row = closedWaiting({
     cliAlive: false,
@@ -186,4 +177,30 @@ test('交了 Bug 诊断报告等你确认（ADR 0045）：还在转圈，状态�
   const labels = childLabels(row).map((l) => l.text)
   assert.ok(labels.includes('报告待确认'))
   assert.ok(!labels.includes('执行中'))
+})
+
+test('等诊断报告确认时又提了问：运行区仍列这一行，标签同时写「等你选择」和「报告待确认」', () => {
+  const base = {
+    cliAlive: true,
+    background: 0,
+    plan: undefined,
+    waiting: undefined,
+    diagnosis: true,
+    status: 'done' as const,
+  }
+  // 用户报的现象：提问（requests / asking）让它变成「等你处理」不转圈，运行区里这一行被输入框上方的提问顶掉了
+  const asking = closedWaiting({ ...base, id: 'ask', asking: 1 })
+  const confirming = closedWaiting({ ...base, id: 'req', requests: 1 })
+  const running = closedWaiting({ ...base, id: 'run', diagnosis: false, working: true })
+  assert.equal(childIcon(asking), 'waiting')
+  const ids = listedChildren([running, asking, confirming]).map((c) => c.id)
+  assert.deepEqual([...ids].sort(), ['ask', 'req', 'run'])
+  const labels = childLabels(asking, '你').map((l) => l.text)
+  assert.ok(labels.includes('等你选择'))
+  assert.ok(labels.includes('报告待确认'))
+  // 停下的、已收起的、没有诊断报告只是在提问的：照旧不列（提问只在输入框上方显示）
+  const stopped = closedWaiting({ ...base, id: 's', asking: 1, status: 'stopped', stopReason: 'user' })
+  const gone = closedWaiting({ ...base, id: 'g', asking: 1, gone: true })
+  const plain = closedWaiting({ ...base, id: 'p', asking: 1, diagnosis: false })
+  assert.deepEqual(listedChildren([stopped, gone, plain]), [])
 })

@@ -21,8 +21,6 @@ import {
 import { saveToHandoff } from './inbox-file.ts'
 import { createDrive } from './drive.ts'
 import { planProgressKey } from '../../shared/drive.ts'
-import { nudgeMax } from '../../shared/conv-mode.ts'
-import { getSettings } from '../settings.ts'
 import type { TurnInfo } from '../exec/turn-info.ts'
 import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled, type MergeStall } from '../../shared/merge-stall.ts'
 import { cancelWait, steerTask } from '../exec/steering.ts'
@@ -464,10 +462,8 @@ export function createChildren(sc: TasksScope) {
     // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
     // 停了几次：面板自己提醒过一次 submit_merge 的也算上，父对话据此判断要不要换个说法或去问用户
     const stops = stall ? stall.n + (sc.mergeNudged.has(tk.id) ? 1 : 0) : 0
-    // 信里写的次数要和面板实际用的上限一致（设置 nudgeMax，默认 6）；设为 0 时一次都没推，不能写「推了 0 次」
-    const nudgeLimit = nudgeMax(tk, (await getSettings()).nudgeMax)
-    const nudgeText =
-      nudgeLimit > 0 ? `它按自己的计划推了 ${nudgeLimit} 次仍停在这里` : '它一次都没被推（面板提醒次数为 0）仍停在这里'
+    // 面板提醒不限次数（2026-11-05）：停在这里是它说了卡住、或者连着几次提醒都没动手（空转保护）
+    const nudgeText = '面板按它自己的计划提醒过它，它说了卡住或者连着几次都没动手，仍停在这里'
     const next = mergeOnly
       ? `\n这是它第 ${stops} 次停在这里没请收尾${sc.mergeNudged.has(tk.id) ? '（面板已经提醒过它一次）' : ''}。` +
         `下一步：用 send_to_conversation 让它${isolated(tk) ? '在自己的分支里' : ''}评审处置完、跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。` +

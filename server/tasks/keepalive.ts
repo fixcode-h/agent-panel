@@ -190,8 +190,11 @@ export function createKeepAlive(s: TasksScope) {
       stopTask(tid, 'parent')
       cancelWait(tid)
     }
+    // 名下的工作流运行（不是子对话，不在这棵树里）一起暂停，父对话继续时接着跑（design.md D4）
+    const runs = s.flowRuns.pauseRunsOf(ids)
     let killed = 0
-    for (const tid of order) killed += (await killTaskClis(tid, (pid) => void killTreeDeep(pid)).catch(() => [])).length
+    for (const tid of [...order, ...runs])
+      killed += (await killTaskClis(tid, (pid) => void killTreeDeep(pid)).catch(() => [])).length
     taskLog(id, '停止整棵对话树', { tasks: ids.size, killed: killed || undefined })
   }
 

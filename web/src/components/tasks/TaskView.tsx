@@ -16,7 +16,7 @@ import { ANCHOR_RETRY_MS, ANCHOR_TRIES, jumpToMessage } from '@/lib/message-anch
 import { useSummaryJump } from './summary-jump'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from '@/lib/toast'
-import { RouteCard } from './RouteCard'
+import { InlineRoutes, RouteProvider } from './route-context'
 import {
   CheckCircle2,
   FlaskConical,
@@ -28,13 +28,16 @@ import {
   X,
   Download,
   FileCode2,
+  FileText,
   FileInput,
   Upload,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { useDiagDialogs } from './diag-dialogs'
+import { useDiagnosisHost } from './diagnosis-window'
 import { ParentBar } from './ChildMail'
 import { ChildrenBar, plainRow } from './ChildrenBar'
+import { useOwnedRuns } from '@/lib/owned-runs'
 import { ProcessMenu } from './ProcessPanel'
 import { PinMenuRow, PinnedButton, useHeaderPins } from './HeaderPins'
 import { taskHeaderItems } from './header-items'
@@ -78,10 +81,12 @@ import { useEscape } from '@/lib/useEscape'
 import { childLetters, deliveredToCli, messageRecorded, startedRun, withTurnSeenAt } from '@/lib/tasks'
 import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { WithAgents, useData, useNav, useTasks } from '@/lib/data'
-import { downloadTask, downloadTaskHtml, startAnalysis } from '@/lib/task-transfer'
+import { downloadTask, downloadTaskHtml, downloadTaskMarkdown, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { RegenerateButton, RewindDialog } from './RewindDialog'
+import { HandoffButton } from './HandoffButton'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
@@ -124,13 +129,14 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
-import { canStartFlow, withWorkflow } from '@shared/flow-child'
+import { canStartFlow, RUN_NO, withWorkflow } from '@shared/flow-run'
 import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { dropChip, forSend, pathText } from '@shared/composer'
 import { ImportedBar, ResolvedBar } from './InputBars'
 import { UserMessage } from '@/components/chat/ChatMessage'
 import { UserMessageMenu } from './UserMessageMenu'
+import { FileRefLayer } from '@/components/files/FileRefLayer'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 import {
   OPEN_CHILD_EVENT,
@@ -142,6 +148,7 @@ import {
 } from '@/lib/ai-window'
 
 import { RunChecklist, FlowBar, WorktreeBar, ChatTurn, PendingReply, ChatWaitLine, RunPhase } from './TaskViewParts'
+import { visibleMessages } from '@shared/end-turn'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -181,7 +188,8 @@ function runOf(step: string) {
  */
 function toBlocks(task: Task): Block[] {
   const blocks: Block[] = []
-  const msgs = task.messages
+  // 面板提醒、end_turn 和它之后的那句收尾不画进对话，只在「状态」里看（shared/end-turn.ts）
+  const msgs = visibleMessages(task.messages).msgs
   // 有工作流运行的对话：一次运行一张卡片，没有单独的节点段。节点输出不铺在对话里，
   // 按「第一次出现这次运行」的位置放卡片，后面的节点消息都跳过
   const byRun = task.mode === 'workflow' || (task.runs?.length ?? 0) > 0
@@ -452,7 +460,7 @@ export function TaskView({
   /** 子对话面板：父对话里点了它的结果卡片（时间戳），打开后滚到最后一份总结 */
   jumpSummary?: number
 }) {
-  const { agents: localAgents, workflows, settings, upsertTask, removeTask } = useData()
+  const { agents: localAgents, workflows, settings, upsertTask, removeTask, projects: allProjects } = useData()
   const { tasks } = useTasks()
   const nav = useNav()
   const go: typeof nav.go = (r) => {
@@ -506,7 +514,8 @@ export function TaskView({
   const followTa = useRef<RichInputHandle>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
   const files = useAttachments(`task:${taskId}`)
-  const mention = useFileMention(project, followTa, files)
+  // Chat 页的对话没有项目：@ 在所有项目里一起搜
+  const mention = useFileMention(project, followTa, files, task?.projectId ? [] : allProjects)
   const [sending, setSending] = useState(false)
   // 输入框里此刻的附件（渲染时同步）：发送时立刻清空，失败要把这次发的那几个放回去，
   // 不能读闭包里的旧列表——那会把刚清空的当成还在，反倒让附件丢了（见 restoreDraft）
@@ -652,16 +661,15 @@ export function TaskView({
   // 子对话面板里点开的一次运行：在这块面板内换成那次运行的视图（带返回），不另开一栏。
   // run 为 0 是认不回来是哪次运行（调用失败、还没开始），按「没有启动运行」显示原因
   const [paneRun, setPaneRun] = useState<{ run: number; tool?: ToolUse; tab?: RunTab } | null>(null)
-  // 工作流子对话（ADR 0044）在右栏打开时，流程图还在跑就直接看这次运行的流程图；每个子对话只自动开一次，返回后不再弹回来
+  // 工作流运行在右栏打开时直接看它的流程图（运行只有一次，见 shared/flow-run.ts 的 RUN_NO）；每次只自动开一回，返回后不再弹回来
   const flowShown = useRef('')
   useEffect(() => {
-    const f = task?.flow
-    if (!pane || !task || !f?.run || f.handed || f.cancelled || flowShown.current === task.id) return
+    if (!pane || !task?.flowRun || flowShown.current === task.id) return
     flowShown.current = task.id
-    setPaneRun({ run: f.run, tab: 'flow' })
-    // 只看对话换了没有、运行号和交没交出去：task 每次推送都是新对象，按它跑会反复判断
+    setPaneRun({ run: RUN_NO, tab: 'flow' })
+    // 只看对话换了没有、是不是工作流运行：task 每次推送都是新对象，按它跑会反复判断
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [pane, task?.id, task?.flow?.run, task?.flow?.handed])
+  }, [pane, task?.id, !!task?.flowRun])
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
   // 强制停止：连 CLI 进程一起结束（预览、等下一句的进程不留着），用在会话卡住或不想再让它跑的时候
@@ -681,6 +689,8 @@ export function TaskView({
   // 命令跑完那一行会消失，窗口跟着行卸载的话用户正好看不到最终输出
   const [jobTarget, setJobTarget] = useState<JobTarget | null>(null)
   const openJob = useCallback((job: JobTarget) => setJobTarget(job), [])
+  // 诊断报告的审阅弹窗同理：一轮输出完、子任务做完时打开它的那一行会重挂，弹窗只由用户关
+  const bug = useDiagnosisHost(task)
   // 盖着文件面板时 Esc 先收面板，不弹停止确认
   useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
@@ -1071,12 +1081,15 @@ export function TaskView({
   }, [childSignal, childScan, task?.id, task?.parentTaskId])
 
   // 记着的子对话已经不在这个父对话下了（被删掉）：回退到文件面板并清掉这条记录
+  // 名下工作流运行也在右栏打开（和运行区的工作流卡片共用一份列表）：它们不在子对话列表里，不能当成被删掉
+  const ownedIds = useOwnedRuns(!pane && task && !task.parentTaskId ? task.id : '').map((x) => x.id)
+  const ownedKey = ownedIds.join(',')
   useEffect(() => {
     if (!openChild || !children.length) return
-    if (children.some((x) => x.id === openChild)) return
+    if (children.some((x) => x.id === openChild) || ownedKey.split(',').includes(openChild)) return
     setOpenChild('')
     writePaneChild(taskId, '')
-  }, [children, openChild, taskId])
+  }, [children, openChild, taskId, ownedKey])
 
   // 打开了这个对话：告诉服务端这一轮已经看过（侧栏的橙点消失），
   // 之后离开时 CLI 才能按宽限期回收；没看过就一直留着，回来能直接接着说
@@ -1640,6 +1653,7 @@ export function TaskView({
       () => toast.success(t('已导出 HTML 报告，用浏览器直接打开就能看')),
       (e: Error) => toast.error(e.message),
     )
+  const exportMd = () => downloadTaskMarkdown(task.id).catch((e: Error) => toast.error(e.message))
   /**
    * 复制对话：服务端把这个任务的对话整理成一份转录附件（和「引入会话」同一套格式，超长由它截断并注明），
    * 剪贴板里只放这个文件的路径——粘贴回输入框就会变成一张会话卡片，而不是一大段文字。
@@ -1690,7 +1704,7 @@ export function TaskView({
       recall={() => [...task.messages].reverse().find((m) => m.role === 'user' && !m.peer && !m.panel)?.text}
       attach={{
         onMention: mention.start,
-        canMention: !!project?.path,
+        canMention: !!project?.path || (!task.projectId && allProjects.some((p) => p.path)),
         self: task.id,
         workflows: canPickFlow,
       }}
@@ -1974,6 +1988,10 @@ export function TaskView({
         setSessionOpen(v)
         writeStored(SESSION_BAR_KEY, v ? '' : 'closed')
         if (v) setLastRail('session')
+        // 放不下时右侧那一栏是给会话栏让开、只是没显示：收起会话栏时一起记成收起，
+        // 不然它会立刻补回原位，看起来像右边的面板没收起来（用户报「收起面板点击无效」）
+        else if (filesYield) toggleFiles()
+        else if (chatRailWanted && !chatRailShown) toggleChatRail()
       },
       reportWide: () => {
         if (reportOn) return closeReport()
@@ -2113,6 +2131,7 @@ export function TaskView({
       </div>
       {/* 用了角色的写一下是谁在回答；Agent 和模型的选择都在输入框里，不放标题栏 */}
       {!byCli && <span className="min-w-0 truncate px-2 text-xs text-subtle">{chatLabel}</span>}
+      {!task.imported && <HandoffButton taskId={task.id} />}
       <Menu>
         <MenuTrigger asChild>
           <IconButton size="sm" tone="bare" label={t('导出')}>
@@ -2123,6 +2142,10 @@ export function TaskView({
           <MenuItem onSelect={exportHtml} title={t('导出一个自包含的 HTML 文件，没装面板的浏览器也能直接打开')}>
             <FileCode2 className="h-4 w-4" />
             {t('导出 HTML 报告')}
+          </MenuItem>
+          <MenuItem onSelect={exportMd} title={t('导出成一份 Markdown，方便贴进文档或笔记')}>
+            <FileText className="h-4 w-4" />
+            {t('导出 Markdown')}
           </MenuItem>
           <MenuItem onSelect={exportIt} title={t('连同它分出的子对话一起导出，导入后父子结构能还原')}>
             <Download className="h-4 w-4" />
@@ -2150,6 +2173,19 @@ export function TaskView({
           latest={i + hidden === latestTurn}
           fallback={byCli ? chatRun : undefined}
           command={task.command}
+          actions={
+            // 最后一条回复下面：重新生成（撤回最后一条消息和这一轮改的文件，再原样发一次）
+            task.mode === 'chat' && !task.imported && !working && i + hidden === blocks.length - 1 ? (
+              <RegenerateButton
+                task={task}
+                onRewound={apply}
+                send={async (text, att) => {
+                  stickToBottom()
+                  apply(await api.sendMessage(task.id, text, att, false))
+                }}
+              />
+            ) : undefined
+          }
         />
       )
     if (b.kind === 'run')
@@ -2210,7 +2246,8 @@ export function TaskView({
             actions={
               <UserMessageMenu
                 chat={task.mode === 'chat' && !task.imported}
-                canRewind={b.m.id !== firstUser}
+                // 第一条也能撤：等于清空对话重新开始（服务端从头开会话）
+                canRewind
                 canLesson={!!project && !task.imported}
                 running={running}
                 onRewind={() => setRewindAsk(b.m.id)}
@@ -2219,22 +2256,8 @@ export function TaskView({
               />
             }
           />
-          {/* 协调器把这条消息分到了哪里：分诊卡，不同意可以一键改派 */}
-          <RouteCard
-            routes={(task.routes ?? []).filter((r) => r.messageId === b.m.id)}
-            later={task.messages.slice(task.messages.indexOf(b.m) + 1)}
-            onReroute={
-              task.imported
-                ? undefined
-                : async (text) => {
-                    try {
-                      apply(await api.sendMessage(task.id, text, [], false))
-                    } catch (e) {
-                      toast.error((e as Error).message)
-                    }
-                  }
-            }
-          />
+          {/* 分诊卡插在 AI 回复里发起它的位置；对不上回复的旧数据才留在用户消息下面 */}
+          <InlineRoutes msgId={b.m.id} inline={false} />
         </Fragment>
       )
     if (b.m.role === 'system')
@@ -2270,13 +2293,13 @@ export function TaskView({
       <div role="status" aria-live="polite" className="sr-only">
         {announce}
       </div>
-      <TaskViewCtx openFile={openFile} aiLook={aiLook} handleNeeds={needs} cards={!task.parentTaskId}>
+      <TaskViewCtx taskId={task.id} openFile={openFile} aiLook={aiLook} handleNeeds={needs} cards={!task.parentTaskId}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider
           value={
             pane || task.parentTaskId
-              ? { runTool: openPaneRun, ...runNav, openChild, job: openJob }
-              : { child: openChildRow, childSummary: openChildSummary, ...runNav, openChild, job: openJob }
+              ? { runTool: openPaneRun, ...runNav, ...bug.nav, openChild, job: openJob }
+              : { child: openChildRow, childSummary: openChildSummary, ...runNav, ...bug.nav, openChild, job: openJob }
           }
         >
           <ChildMailProvider kids={children} mail={peerMail}>
@@ -2403,7 +2426,12 @@ export function TaskView({
                           {task.messageHasMore ? t('显示更早的消息') : t('显示更早的 {n} 段', { n: hidden })}
                         </Button>
                       )}
-                      {renderedBlocks}
+                      <RouteProvider
+                        task={task}
+                        send={async (text) => apply(await api.sendMessage(task.id, text, [], false))}
+                      >
+                        {renderedBlocks}
+                      </RouteProvider>
                       {running &&
                         task.mode === 'chat' &&
                         working &&
@@ -2531,7 +2559,11 @@ export function TaskView({
                   data-chat-rail
                   className="panel relative hidden w-[min(420px,40%)] shrink-0 flex-col overflow-hidden xl:flex"
                 >
-                  <ChatRail rail={chatRail} onOpenFile={(path) => setFileTarget({ path, local: true })} />
+                  <ChatRail
+                    rail={chatRail}
+                    taskId={task.id}
+                    onOpenFile={(path) => setFileTarget({ path, local: true })}
+                  />
                 </aside>
               )}
               {/* 右栏：项目文件和本对话改动（或 AI 分析的功能面板）。子对话在这一栏开页签（TaskFiles 的 child），运行在中间开页签。
@@ -2598,6 +2630,7 @@ export function TaskView({
                           ? {
                               id: openChild,
                               task: children.find((c) => c.id === openChild),
+                              label: ownedIds.includes(openChild) ? t('工作流运行') : undefined,
                               onClose: () => openChildIn(''),
                               focus: childSummaryAt,
                               // 切到别的页签时不卸载，回来滚动位置、输入框里的字都还在
@@ -2667,26 +2700,16 @@ export function TaskView({
                 }
               />
             )}
-            <ConfirmDialog
-              open={!!rewindAsk}
-              onOpenChange={(o) => !o && setRewindAsk('')}
-              title={t('撤回到这条消息？')}
-              description={t(
-                '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。',
-              )}
-              confirmText={t('撤回')}
-              onConfirm={async () => {
-                try {
-                  const r = await api.rewindTask(task.id, rewindAsk)
-                  apply(r.task)
-                  followTa.current?.setText(r.text)
-                  // 那条消息的图片、文件、引用一起放回来：卡片已经在文字里
-                  files.replace(r.attachments ?? [])
-                  setRewindAsk('')
-                  followTa.current?.focus()
-                } catch (e) {
-                  toast.error((e as Error).message)
-                }
+            <RewindDialog
+              task={task}
+              messageId={rewindAsk}
+              onClose={() => setRewindAsk('')}
+              onDone={(r) => {
+                apply(r.task)
+                followTa.current?.setText(r.text)
+                // 那条消息的图片、文件、引用一起放回来：卡片已经在文字里
+                files.replace(r.attachments ?? [])
+                followTa.current?.focus()
               }}
             />
             <DeleteTaskDialog
@@ -2702,6 +2725,7 @@ export function TaskView({
             />
             <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
             <JobDialog taskId={task.id} target={jobTarget} onOpenChange={(o) => !o && setJobTarget(null)} />
+            {bug.dialog}
             {diag.dialogs(task.parentTaskId ? outerNav?.child : openChildIn)}
             {convSettings && (
               <ConversationSettingsDialog
@@ -2736,12 +2760,14 @@ export function TaskView({
  * 合成一个组件是为了不在 TaskView 的大段 JSX 外面再套一层（套一层整段都要重新缩进）
  */
 function TaskViewCtx({
+  taskId,
   openFile,
   aiLook,
   handleNeeds,
   cards,
   children,
 }: {
+  taskId: string
   openFile: (path: string, line?: number) => void
   aiLook: boolean
   handleNeeds: ((text: string) => Promise<void>) | null
@@ -2751,11 +2777,13 @@ function TaskViewCtx({
 }) {
   return (
     <FileOpenCtx.Provider value={openFile}>
-      <AiLookCtx.Provider value={aiLook}>
-        <HandleNeedsCtx.Provider value={handleNeeds}>
-          <SummaryCardsCtx.Provider value={cards}>{children}</SummaryCardsCtx.Provider>
-        </HandleNeedsCtx.Provider>
-      </AiLookCtx.Provider>
+      <FileRefLayer taskId={taskId} preview={openFile}>
+        <AiLookCtx.Provider value={aiLook}>
+          <HandleNeedsCtx.Provider value={handleNeeds}>
+            <SummaryCardsCtx.Provider value={cards}>{children}</SummaryCardsCtx.Provider>
+          </HandleNeedsCtx.Provider>
+        </AiLookCtx.Provider>
+      </FileRefLayer>
     </FileOpenCtx.Provider>
   )
 }

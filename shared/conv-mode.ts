@@ -15,11 +15,10 @@ type ModeOf = Pick<Task, 'mode' | 'projectId'> & { parentTaskId?: string }
 export const isChatMode = (tk: ModeOf) => tk.mode === 'chat' && !tk.projectId && !tk.parentTaskId
 
 /**
- * Agent 模式的对话同一个进度最多推几次（ADR 0037）：次数由设置 nudgeMax 决定（默认为 0–20 里的 6，0 表示不自动推）。
- * 顶层对话和子对话一样：自驱属于对话自己，子对话推满了才把「卡住」报给父对话，不再推一次就交给父对话去催（ADR 0041）；
- * Chat 页一问一答只推一次
+ * 同一个进度最多推几次（ADR 0037）：Agent 模式不限次数（用户 2026-11-05 定，设置里的「面板提醒次数」去掉了），
+ * 靠 end_turn 交代结束、空转保护（shared/end-turn.ts 的 SPIN_MAX）收住；Chat 页一问一答只推一次
  */
-export const nudgeMax = (tk: ModeOf, agentMax: number) => (isChatMode(tk) ? 1 : agentMax)
+export const nudgeMax = (tk: ModeOf) => (isChatMode(tk) ? 1 : Infinity)
 
 /**
  * 面板推对话「接着做」的计数：key 是进度（计划 id + 已完成几步，或「said:用户消息 id」），进度变了从 1 重新数。
@@ -40,6 +39,11 @@ export const modeScope = (tk: ModeOf): RoleScope => (isChatMode(tk) ? 'chat' : '
 
 /** 内置「助手」的来源：Chat 页没选角色的对话（agentId 为空）都按它跑 */
 export const CHAT_ORIGIN = 'builtin:chat'
+/** 内置「聊天约束」：只给 Chat 角色引入的常驻规则，自己不能当对话的角色用 */
+export const CHAT_RULES_ORIGIN = 'builtin:chat-rules'
+/** Chat 页能选的自建 Chat 角色：去掉默认的「助手」（不选就是它）和只供引入的「聊天约束」（以前也列出来，选了没意义） */
+export const pickableChatRole = (a: { enabled: boolean; origin?: string; scope?: RoleScope }) =>
+  a.enabled && scopeOf(a) === 'chat' && a.origin !== CHAT_ORIGIN && a.origin !== CHAT_RULES_ORIGIN
 
 /**
  * Chat 模式里没选角色（agentId 为空）的对话按内置「助手」跑：取它的设定、引入、参数、Skill；

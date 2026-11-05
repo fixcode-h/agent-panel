@@ -54,11 +54,25 @@ test('Bug 先诊断：没诊断、等确认、被提意见时不改文件；确�
   assert.match(bugDeny(ctx(diag('questioned')), edit(path.join(proj, 'src/a.ts'))), /提了意见/)
   assert.match(
     bugDeny(ctx(diag('cancelled')), edit(path.join(proj, 'src/a.ts'))),
-    /取消了诊断报告.*先用 submit_diagnosis 交新一版/,
+    /取消了第 1 版.*先用 submit_diagnosis 交新一版/,
   )
   assert.equal(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/a.ts'))), '')
-  assert.match(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/b.ts'))), /不在用户确认的方案/)
+  assert.match(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/b.ts'))), /不在用户同意的范围/)
+  assert.equal(
+    bugDeny(ctx(diag('approved')), edit(path.join(data, 'tasks/files/t/tmp/build_editor.bat'))),
+    '',
+    '面板给的临时目录不按方案拦',
+  )
   assert.equal(bugDeny(ctx(), edit(path.join(proj, 'src/b.ts'))), '', '不是 Bug 不管')
+  // 按阶段（用户 2026-11-05 定的）：同意了根因还不能改，确认了方案放行方案里的文件和论证时加过日志的文件
+  const list = (...ds: object[]) => ({ task: { bug: true, diagnoses: ds } }) as never
+  const ev = { version: 1, phase: 'evidence', status: 'answered', files: ['src/log.ts'], logPlan: [] }
+  const cause = { version: 2, phase: 'cause', status: 'approved', files: [], logPlan: [] }
+  const plan = { version: 3, phase: 'plan', status: 'approved', files: ['src/a.ts'], logPlan: [] }
+  assert.match(bugDeny(ctx(list(ev)), edit(path.join(proj, 'src/log.ts'))), /先分析/)
+  assert.match(bugDeny(ctx(list(ev, cause)), edit(path.join(proj, 'src/a.ts'))), /先交 phase: plan/)
+  assert.equal(bugDeny(ctx(list(ev, cause, plan)), edit(path.join(proj, 'src/log.ts'))), '', '删临时日志')
+  assert.match(bugDeny(ctx(list(ev, cause, plan)), edit(path.join(proj, 'src/b.ts'))), /不在用户同意的范围/)
 })
 
 test('危险命令：递归删根、家、项目，原分支上清工作区，强推、删主干都拦；普通删除和独立分支里的 reset 放行', () => {

@@ -1,4 +1,8 @@
 import { marked } from 'marked'
+import { mathExtensions } from './md-math'
+
+// 数学公式：先出带原文的占位，渲染组件再懒加载 KaTeX 换成公式（md-math.ts）
+marked.use({ extensions: mathExtensions })
 import type { Agent } from '@shared/schema'
 import { getLang, t } from '@shared/i18n'
 
@@ -50,7 +54,8 @@ const safe = (href: string) => {
 
 // 渲染器提到模块级：每次渲染都新建一个，长对话里每个增量都做一遍没有意义
 const renderer = new marked.Renderer()
-renderer.html = ({ text }) => escape(text)
+// 原样 HTML 一律转义；只放行 <br>：表格单元格里没别的办法换行（诊断报告的表格，shared/bug-diagnosis-md.ts）
+renderer.html = ({ text }) => (/^<br\s*\/?>$/i.test(text.trim()) ? '<br>' : escape(text))
 renderer.link = function ({ href, title, tokens }) {
   const text = this.parser.parseInline(tokens)
   if (!safe(href)) return text

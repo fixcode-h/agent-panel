@@ -156,3 +156,16 @@ export function chatAttachments(messages: readonly TaskMessage[]): Attachment[] 
   }
   return out
 }
+
+/**
+ * Agent 在这个对话里写过、改过的文件（改文件类工具调用的对象，失败的不算），按第一次出现的顺序（设计报告 Chat P1-5）：
+ * Chat 没有文件栏，以前写出来的文件只能在回复里找到路径点开
+ */
+export function chatWrittenFiles(messages: readonly TaskMessage[]): string[] {
+  const seen = new Set<string>()
+  for (const m of messages) {
+    if (m.role !== 'agent') continue
+    for (const x of m.tools ?? []) if (x.kind === 'edit' && !x.failed && x.label.trim()) seen.add(x.label.trim())
+  }
+  return [...seen]
+}

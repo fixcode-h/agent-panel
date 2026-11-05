@@ -110,6 +110,8 @@ export function TaskFiles({
     onClose: () => void
     /** 父对话里点结果卡片要看这个子对话的总结：已经开着但切到了别的页签时也切回来 */
     focus?: number
+    /** 打开的不是子对话（名下的工作流运行）时页签上的叫法 */
+    label?: string
   }
 }) {
   const { upsertTask } = useData()
@@ -285,7 +287,7 @@ export function TaskFiles({
               }
               onClose={child.onClose}
               closeLabel={t('关闭子对话')}
-              title={[t('子对话'), child.task?.title].filter(Boolean).join(' · ')}
+              title={[child.label ?? t('子对话'), child.task?.title].filter(Boolean).join(' · ')}
               icon={
                 child.task ? (
                   <TaskStatusIcon status={child.task.status} icon={childIcon(child.task)} className="h-3.5 w-3.5" />
@@ -296,7 +298,7 @@ export function TaskFiles({
               className="max-w-[14rem] min-w-[5rem] shrink"
             >
               {/* 界面检查按 data-child-tab 读右栏打开的是哪个子对话 */}
-              <span data-child-tab>{child.task?.title ?? t('子对话')}</span>
+              <span data-child-tab>{child.task?.title ?? child.label ?? t('子对话')}</span>
             </TabItem>
           )
         )}

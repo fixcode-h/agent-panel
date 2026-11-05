@@ -10,6 +10,7 @@
 import { t } from './i18n.ts'
 import type { StopReason, TaskStatus } from './schema.ts'
 import { convStateText, stopReasonText, type ConvState } from './task.ts'
+import type { TrailItem } from './end-turn.ts'
 
 /** 对话日志里的一行（server/task-log.ts 写的格式：`2026-10-30 09:07:12.123 [事件] 键=值 …`） */
 export interface LogLine {
@@ -84,6 +85,8 @@ export function eventKind(event: string, fields: Record<string, string> = {}): E
   // 只是判断了没推（cancel、stuck、send-failed）的不算
   if ((event === '计划推进' || event === '收尾提醒') && fields.action === 'continue') return 'nudges'
   if (event === '收尾自检' && fields.action === 'check') return 'nudges'
+  // 结束前钩子在同一轮里拦住（server/tasks/before-end.ts）：和一轮结束后补发的一样算一次面板提醒
+  if (event === '结束前钩子：拦住') return 'nudges'
   if (event === 'CLI 重试模型请求' || event === '模型请求没有输出就换了下一次') return 'retries'
   if (event === 'CLI 进程退出') return 'exits'
   if (event === 'CLI 报这一轮结束') return fields.ok === 'false' ? 'errors' : undefined
@@ -177,8 +180,8 @@ export interface LifeFacts {
   exit?: ProcessExit
   /** 面板计划（没有就是 undefined）：做了几步、一共几步、在等几步、还剩几步要做、进度指纹（短） */
   plan?: { title: string; done: number; total: number; waiting: number; open: number; key: string }
-  /** 面板推进（自驱）的计数：最后一个进度指纹（短）、这个进度推了几次、最多几次 */
-  nudge?: { key: string; n: number; max: number }
+  /** 面板推进（自驱）的计数：最后一个进度指纹（短）、这个进度推了几次（不限次数，2026-11-05 起） */
+  nudge?: { key: string; n: number }
   /** runner 已经把这一轮标成卡住（没有响应检测，见 server/exec/stall-watch.ts）：从什么时候起没输出 */
   stalled?: { since: number }
 }
@@ -340,7 +343,7 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
           list: kidsText(wrap),
           m: Math.max(0, Math.round((now - oldest) / 60000)),
         }),
-        f.nudge ? t('面板已提醒 {n}/{max} 次', { n: f.nudge.n, max: f.nudge.max }) : '',
+        f.nudge ? t('面板已提醒 {n} 次', { n: f.nudge.n }) : '',
       ]
         .filter(Boolean)
         .join(' '),
@@ -379,8 +382,9 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
     add(
       'plan-stalled',
       'warning',
-      f.nudge && f.nudge.key === pl.key && f.nudge.n >= f.nudge.max
-        ? t('计划才做了 {done}/{total}，面板按这个进度推满了 {n} 次，停在这里', {
+      // 面板提醒不限次数（2026-11-05）：停在这里多半是它说了卡住、或者空转保护停下了，提醒次数写在后面
+      f.nudge && f.nudge.key === pl.key
+        ? t('计划才做了 {done}/{total}，面板按这个进度提醒了 {n} 次，停在这里', {
             done: pl.done,
             total: pl.total,
             n: f.nudge.n,
@@ -431,6 +435,8 @@ export interface LifeNode {
   processes: LifeProcess[]
   /** 按完整日志数的六类事件（旧的诊断文件没有；面板提醒是后加的，更旧的文件里也没有） */
   counts?: LifeCounts
+  /** 面板提醒和 Agent 用 end_turn 交代的结束，按时间排（对话才有；提醒不画进对话，只在这里看） */
+  trail?: TrailItem[]
   /** 最近的日志行（原样） */
   log: string[]
 }

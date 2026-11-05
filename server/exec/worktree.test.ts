@@ -20,11 +20,13 @@ import {
   mergeWorktree,
   missingDeps,
   project,
+  refillSpareDeps,
   removeWorktree,
   resetWorktrees,
   sweepWorktrees,
   tid,
   tmp,
+  WORKTREES_DIR,
 } from './worktree-test-kit.ts'
 
 /**
@@ -356,6 +358,31 @@ test('合并时原目录的 index.lock 正被别的 git 进程占着：等锁放
     } finally {
       rmSync(lock, { force: true })
     }
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('备用依赖副本：先在后台备好一份，开独立目录时直接拿走（真实文件、不是链接），拿走后再补一份', async () => {
+  const repo = project()
+  await refillSpareDeps(repo)
+  const group = readdirSync(WORKTREES_DIR).find((d) => existsSync(path.join(WORKTREES_DIR, d, 'node_modules.spare')))
+  assert.ok(group, '分组目录下有一份备用副本')
+  const spare = path.join(WORKTREES_DIR, group!, 'node_modules.spare', 'node_modules')
+  assert.ok(existsSync(path.join(spare, 'dep', 'index.js')))
+  const wt = await createWorktree(repo, tid(), '备用副本')
+  try {
+    const mine = path.join(wt.path, 'node_modules')
+    assert.ok(existsSync(path.join(mine, 'dep', 'index.js')), '独立目录拿到了依赖')
+    assert.ok(existsSync(path.join(mine, '.agent-panel-deps.json')), '带着复制记录：lock 没变时不再重复复制')
+    assert.notEqual(realpathSync(mine), realpathSync(path.join(repo, 'node_modules')), '是独立的一份')
+    // 拿走后后台再补一份给下一个
+    await refillSpareDeps(repo)
+    assert.ok(existsSync(path.join(spare, 'dep', 'index.js')), '又补好了一份')
+    // 清扫不把备用副本当成任务目录残留
+    const r = await sweepWorktrees({ minAgeMs: 0 })
+    assert.ok(!r.removed.some((x) => x.dir.includes('node_modules.spare')))
+    assert.ok(existsSync(spare))
   } finally {
     await removeWorktree(repo, wt, true)
   }

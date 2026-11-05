@@ -1,5 +1,8 @@
 import { CliSkills } from '@/components/settings/CliSkills'
+import { ProjectExperience } from './ProjectExperience'
 import { ProjectMcpSection } from './ProjectMcpSection'
+import { ProjectCliTrust } from './ProjectCliTrust'
+import { ProjectPackages } from './ProjectPackages'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
@@ -9,6 +12,7 @@ import {
   FileText,
   FlaskConical,
   GraduationCap,
+  Lightbulb,
   Library,
   Loader2,
   Plug,
@@ -65,7 +69,8 @@ import { resolveParams } from '@shared/agent-role'
 import { CLIS } from '@shared/clis'
 import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
-import { exposesForVcs, paramsForVcs, resolveDocRoot } from '@shared/doc-root'
+import { exposesForVcs, paramsForVcs } from '@shared/doc-root'
+import { DocRootHint } from './DocRootHint'
 import { cliSettings, orderClis } from '@shared/settings'
 import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
@@ -128,7 +133,7 @@ const blank: ProjectInput = {
   workflowParams: {},
   agentParams: {},
   childIsolation: 'worktree',
-  isolateDefault: false,
+  isolateByDefault: false,
   testSteps: [],
   scaledVerify: true,
   lessons: [],
@@ -747,6 +752,12 @@ function Body({
             <GraduationCap className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('项目教训')}
           </NavItem>
+          {project?.path && (
+            <NavItem on={section === 'experience'} onClick={() => setSection('experience')}>
+              <Lightbulb className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+              {t('项目经验')}
+            </NavItem>
+          )}
           <NavItem on={section === 'skills'} onClick={() => setSection('skills')}>
             <Library className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             Skill
@@ -858,13 +869,34 @@ function Body({
                     drafts={docDrafts}
                     onDraft={(f, c) => setDocDrafts((d) => ({ ...d, [f]: c }))}
                     extra={
-                      <section className="flex flex-col gap-2 pt-6">
-                        <h3 className="text-body font-medium">Skills</h3>
-                        <p className="text-footnote text-muted">
-                          {t('{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的', { cli: name })}
-                        </p>
-                        <CliSkills key={id} cli={id} projectId={project!.id} />
-                      </section>
+                      <>
+                        {CLIS.find((c) => c.id === id)?.trust && (
+                          <ProjectCliTrust
+                            cli={id}
+                            name={name}
+                            projectId={project?.id}
+                            value={draft.cliTrust?.[id]}
+                            onChange={(v) => {
+                              const { [id]: _, ...rest } = draft.cliTrust ?? {}
+                              set('cliTrust', v ? { ...rest, [id]: v } : rest)
+                            }}
+                          />
+                        )}
+                        {project && CLIS.find((c) => c.id === id)?.packages?.local && (
+                          <ProjectPackages
+                            def={CLIS.find((c) => c.id === id)!}
+                            projectId={project.id}
+                            trusted={draft.cliTrust?.[id] === 'approve'}
+                          />
+                        )}
+                        <section className="flex flex-col gap-2 pt-6">
+                          <h3 className="text-body font-medium">Skills</h3>
+                          <p className="text-footnote text-muted">
+                            {t('{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的', { cli: name })}
+                          </p>
+                          <CliSkills key={id} cli={id} projectId={project!.id} />
+                        </section>
+                      </>
                     }
                   />
                 )
@@ -944,7 +976,13 @@ function Body({
                       <p className="text-xs text-subtle">{t('这个角色没有可调的参数。')}</p>
                     )}
                     {coreKey(a) === 'docsync' && (
-                      <DocRootHint path={draft.path} vcs={vcs} agent={a} values={draft.agentParams[a.id] ?? {}} />
+                      <DocRootHint
+                        projectId={project?.id ?? ''}
+                        path={draft.path}
+                        vcs={vcs}
+                        agent={a}
+                        values={draft.agentParams[a.id] ?? {}}
+                      />
                     )}
                   </Collapsible>
                 ))}
@@ -1069,6 +1107,16 @@ function Body({
                   project={project}
                   initialOpen={item}
                 />
+              </div>
+            ) : section === 'experience' && project ? (
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <PageIntro
+                  title={t('项目经验')}
+                  desc={t(
+                    '做某类事最快的路：在哪个目录找、你的说法在代码里叫什么、用什么命令、怎么验证。整个对话完成后面板自动学，学到就加；对话里发「/learn 要学的」也能让角色专门学一条。Agent 需要时按关键词查，不会整份塞进提示词。这里的改动直接保存。',
+                  )}
+                />
+                <ProjectExperience projectId={project.id} />
               </div>
             ) : section === 'tests' ? (
               <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -1224,6 +1272,19 @@ function Body({
                 <FormSection title={t('搜索')}>
                   <SearchExcludeField value={draft.searchExclude} onChange={(v) => set('searchExclude', v)} />
                 </FormSection>
+
+                {gitRepo && (
+                  <FormSection title={t('独立分支')}>
+                    <Checkbox
+                      checked={draft.isolateByDefault}
+                      onChange={(v) => set('isolateByDefault', v)}
+                      label={t('新建对话默认开独立分支')}
+                      tip={t(
+                        '打开后新建对话时输入框里的「独立分支」默认勾上：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里改。',
+                      )}
+                    />
+                  </FormSection>
+                )}
 
                 <FormSection title={t('子对话')}>
                   <Field
@@ -1945,17 +2006,5 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
         </span>
       </div>
     </ParamRow>
-  )
-}
-
-/** P4 项目按文档角色现在选的文档根算出完整路径：改下拉时马上看到会写到哪 */
-function DocRootHint({ path, vcs, agent, values }: { path: string; vcs: string; agent: Agent; values: ParamValues }) {
-  const d = resolveDocRoot(path, vcs, resolveParams(agent.params, values).values)
-  if (!d) return null
-  return (
-    <p className="mt-2 text-xs text-subtle">
-      {t('这个项目的文档根：{dir}', { dir: d.root })}
-      {d.outside ? t('（在项目外，写进去的文档不做 P4 / SVN 操作）') : t('（在项目里，随项目纳入版本管理）')}
-    </p>
   )
 }

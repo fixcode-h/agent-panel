@@ -16,6 +16,18 @@ await runShard(import.meta.filename, async (api) => {
   const p = await openCartTask(api)
   const { backToTask } = taskPageHelpers(p, api)
 
+  // 分诊卡插在 AI 回复里派单的那一处（不堆在用户消息下面），回复收尾折叠后也照样看得到
+  {
+    const card = p.locator('.reply-body [data-route-card="inline"]').filter({ hasText: '核对角标的订阅时机' })
+    if (!(await card.count())) errors.push('分诊卡：AI 回复里派子任务的那一处没有分诊卡')
+    else {
+      await card.first().scrollIntoViewIfNeeded()
+      if (!(await card.first().isVisible())) errors.push('分诊卡：回复折叠后分诊卡被收进了折叠')
+      if (await p.locator('[data-route-card=""]').count()) errors.push('分诊卡：对得上回复的分诊卡还画在用户消息下面')
+      await check(p, '分诊卡-插在回复里', ['分诊', '派子任务'])
+    }
+  }
+
   // 父对话里子对话结果的卡片：标题链到子对话，点了在右栏打开它并滚到它的详细总结；
   // 子对话里的总结照普通 Markdown 显示（标题、分段），不画成卡片
   {
@@ -345,7 +357,9 @@ await runShard(import.meta.filename, async (api) => {
     await p.evaluate((k) => {
       const db = JSON.parse(localStorage.getItem(k))
       const parent = db.tasks.find((x) => x.title.includes('购物车'))
-      const wf = db.tasks.find((x) => x.mode === 'workflow' && x.runs?.length && x.projectId === parent.projectId)
+      const wf = db.tasks.find(
+        (x) => x.mode === 'workflow' && !x.flowRun?.owner && x.runs?.length && x.projectId === parent.projectId,
+      )
       if (!wf) return
       db.tasks = db.tasks.filter((x) => x.id !== 'demo-child-run')
       const child = structuredClone(wf)
@@ -355,6 +369,8 @@ await runShard(import.meta.filename, async (api) => {
         rootTaskId: parent.id,
         title: '子对话：到货提醒',
       })
+      // 照的是工作流运行，造的是子对话：去掉运行的归属，不然按运行画、没有对话里那行「启动工作流」
+      delete child.flowRun
       child.messages.splice(1, 0, {
         id: 'demo-child-tool',
         role: 'agent',
@@ -994,10 +1010,13 @@ await runShard(import.meta.filename, async (api) => {
         .getByRole('button', { name: '确认方案，开始修' })
         .waitFor({ timeout: 10000 })
         .catch(() => errors.push('诊断报告：弹窗里没有「确认方案，开始修」'))
-      if (!(await dlg.getByRole('radiogroup', { name: '版本' }).count())) errors.push('诊断报告：有两版却没有版本切换')
+      // 版本在标题栏的下拉里选（用户 2026-11-05：不要把所有版本排在正文上面）
+      const verPick = dlg.getByRole('combobox', { name: '版本' })
+      if (!(await verPick.count())) errors.push('诊断报告：有两版却没有版本下拉')
+      if (await dlg.getByRole('radiogroup', { name: '版本' }).count()) errors.push('诊断报告：版本还排在正文上面')
       if (!(await dlg.getByText('上周的重构把派发挪进了循环里').count()))
         errors.push('诊断报告：第 2 版没有显示对上一版意见的回答')
-      // 选中根因那段文字标注：标注能选种类，「有疑问，再查」随之可点
+      // 选中根因那段文字标注：标注能选种类，「有疑问，出下一版」随之可点
       // 和阶段确认那一步（02d）一样用真实的鼠标拖选：程序化选区不会触发弹窗里的 mouseup
       await settle(p)
       // 报告加了时间线、引入点、候选方案后变长了：根因那段可能在可视区外，先滚进来再拖
@@ -1022,11 +1041,12 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：标注上没有「疑问 / 改方案 / 补充信息」的选择')
         await dlg.getByRole('radio', { name: '改方案' }).first().click()
         await dlg.getByLabel('标注 1 的意见').fill('顺便看看结算页的角标')
-        if (await dlg.getByRole('button', { name: '有疑问，再查' }).isDisabled())
-          errors.push('诊断报告：标注了还不能点「有疑问，再查」')
+        if (await dlg.getByRole('button', { name: '有疑问，出下一版' }).isDisabled())
+          errors.push('诊断报告：标注了还不能点「有疑问，出下一版」')
       } else errors.push('诊断报告：选中文字后没有出现「标注」按钮')
       // ADR 0046：引入点、时间线、候选方案画出来；没选的方案能一键加「改方案」意见
-      for (const text of ['引入于', '购物车删除重构', '方案 B：角标自己轮询数量'])
+      // 候选方案并排成一张比较表：方案 B 是表头一列，做法写在「做法」那一行
+      for (const text of ['引入于', '购物车删除重构', '角标自己轮询数量'])
         if (!(await dlg.getByText(text, { exact: false }).count())) errors.push(`诊断报告：没有显示「${text}」`)
       const useB = dlg.getByRole('button', { name: '改用方案 B' })
       if (!(await useB.count())) errors.push('诊断报告：没有「改用方案 B」')
@@ -1036,8 +1056,15 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：点「改用方案 B」后标注里没有这一条')
       }
       await check(p, '诊断报告-审阅弹窗', ['诊断报告', '候选方案'])
+      // 整体意见框就是对话输入框（用户 2026-11-05 要的）：能粘贴、拖进、从「+」引入日志文件和图片
+      const overallBox = dlg.getByRole('textbox', { name: '整体意见' })
+      if ((await overallBox.getAttribute('contenteditable').catch(() => null)) !== 'true')
+        errors.push('诊断报告：整体意见框不是对话输入框')
+      if (!(await dlg.getByRole('button', { name: '添加文件、图片或引用' }).count()))
+        errors.push('诊断报告：整体意见框没有引入文件、图片的「+」')
       // 切到第 1 版：只读，按钮收起
-      await dlg.getByRole('radio', { name: '第 1 版' }).click()
+      await verPick.click()
+      await p.getByRole('option', { name: /^第 1 版/ }).click()
       await settle(p)
       if (
         await dlg
@@ -1048,7 +1075,8 @@ await runShard(import.meta.filename, async (api) => {
         errors.push('诊断报告：切到旧的一版还能确认')
       await check(p, '诊断报告-旧版只读')
       // 取消修复：先确认，确认后弹窗关掉，对话里记一行「你取消了…」，不再等确认
-      await dlg.getByRole('radio', { name: '第 2 版' }).click()
+      await verPick.click()
+      await p.getByRole('option', { name: /^第 2 版/ }).click()
       await settle(p)
       const cancel = dlg.getByRole('button', { name: '取消修复' })
       if (!(await cancel.count())) errors.push('诊断报告：最新一版没有「取消修复」')
@@ -1072,5 +1100,33 @@ await runShard(import.meta.filename, async (api) => {
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
     await p.reload()
     await backToTask()
+  }
+
+  // 名下的工作流运行（不是子对话）：运行区里子对话那几行下面、隔一条分割线，一次运行一张卡片；
+  // 节点等确认时确认就在卡片上做（查看结果、追问、交给父对话）
+  {
+    const row = p.locator('[role="group"][aria-label="工作流运行"] [data-run-card]').first()
+    await row.scrollIntoViewIfNeeded().catch(() => {})
+    await row.waitFor({ timeout: 8000 }).catch(() => errors.push('工作流栏：运行区里没有名下工作流运行的卡片'))
+    if (await row.count()) {
+      for (const label of ['查看结果', '追问', '交给父对话'])
+        if (!(await row.locator('button', { hasText: label }).count()))
+          errors.push(`工作流栏：等确认的运行没有「${label}」`)
+      await check(p, '工作流栏-等确认', ['角标订阅购物车数据', '「方案」等你确认'])
+      await row.locator('button', { hasText: '追问' }).click()
+      await p
+        .getByPlaceholder('想先问清楚什么？（只回答，不改结果）')
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('工作流栏：点「追问」没有弹出输入框'))
+      await check(p, '工作流栏-追问')
+      await p.keyboard.press('Escape')
+      await row.locator('button', { hasText: '查看结果' }).click()
+      await p
+        .getByRole('button', { name: '确认', exact: true })
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('工作流栏：点「查看结果」没有打开审阅弹窗'))
+      await check(p, '工作流栏-查看结果', ['方案：购物车角标改成订阅购物车数据'])
+      await p.keyboard.press('Escape')
+    }
   }
 })

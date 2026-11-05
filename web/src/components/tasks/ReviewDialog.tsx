@@ -1,19 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ClipboardCheck, Highlighter, Loader2, Trash2 } from 'lucide-react'
-import type { TaskRequest } from '@shared/schema'
+import type { Attachment, TaskRequest } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/input'
+import { Select, Textarea } from '@/components/ui/input'
 import { IconButton } from '@/components/ui/icon-button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { Markdown } from './Markdown'
 import { reviewFeedback } from '@/lib/review-feedback'
 import { Segmented } from '@/components/ui/segmented'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { t } from '@shared/i18n'
+import { OverallComposer, useLogFiles } from './LogAttach'
 
 /** range：标在正文哪段文字上；点「改用这个方案」这类预设加的标注没有选区 */
 type Note = { id: number; quote: string; comment: string; range?: Range; kind?: string }
@@ -39,8 +41,15 @@ export interface ReviewVersion {
   key: string
   label: string
   detail: string
-  /** 状态文字（已作废、已确认…），写在切换条下面 */
+  /** 状态文字（已作废、已确认…）：看旧版时写在正文上面 */
   status?: string
+}
+
+/** 标注和整体意见的原始内容：诊断报告要按种类、按编号交回；files 是整体意见框里附的日志文件 */
+export interface ReviewRaw {
+  notes: { quote: string; comment: string; kind: string }[]
+  overall: string
+  files: Attachment[]
 }
 
 /** 浏览器支持 CSS Custom Highlight 时用它画标注：不改渲染出来的 DOM，Markdown 重画也不会冲掉 */
@@ -62,17 +71,19 @@ export function ReviewDialog({
   readOnly,
   presets,
   cancel,
+  top,
+  supply,
+  noApprove,
+  feedbackFirst,
+  attach,
+  overallPlaceholder,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
   open: boolean
   onOpenChange: (open: boolean) => void
   /** notes / overall 是原始的标注和整体意见：诊断报告要按种类、按编号交回，不只是一段文字 */
-  onAnswer: (
-    allow: boolean,
-    answer?: string,
-    raw?: { notes: { quote: string; comment: string; kind: string }[]; overall: string },
-  ) => Promise<void>
+  onAnswer: (allow: boolean, answer?: string, raw?: ReviewRaw) => Promise<void>
   kinds?: NoteKind[]
   /** 多版文档：最后一项是这次要审的（就是 req.detail），前面的只读 */
   versions?: ReviewVersion[]
@@ -93,6 +104,20 @@ export function ReviewDialog({
     confirm: string
     onCancel: (overall: string) => Promise<void>
   }
+  /** 正文上方的内容（诊断报告的阶段条）：传函数时按正在看的那一版（版本的 key）画 */
+  top?: ReactNode | ((key: string) => ReactNode)
+  /**
+   * 「交日志」这类按钮（诊断报告：贴日志让它接着分析）：整体意见的文字和附件交给 onSupply。
+   * primary：它是主按钮（等你复现、验证）；否则是次按钮，写了整体意见或附了文件才能点
+   */
+  supply?: { label: string; primary?: boolean; hint: string; onSupply: (raw: ReviewRaw) => Promise<void> }
+  /** 不放「确认」按钮（等你复现时只有交日志和提疑问） */
+  noApprove?: boolean
+  /** 有标注时「修改」变成主按钮、「确认」退成次要（诊断报告：标了疑问就是要接着探讨） */
+  feedbackFirst?: boolean
+  /** 整体意见框用对话的输入框：能引入日志文件、图片（粘贴、拖进来、点「+」），大文件引用路径、小文件拷一份 */
+  attach?: boolean
+  overallPlaceholder?: string
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -106,7 +131,18 @@ export function ReviewDialog({
   const [focusId, setFocusId] = useState<number | null>(null)
   // 选中文字后浮在选区上方的「标注」按钮，位置相对滚动区
   const [pick, setPick] = useState<{ range: Range; quote: string; top: number; left: number } | null>(null)
-  const [busy, setBusy] = useState<'' | 'allow' | 'deny'>('')
+  const [busy, setBusy] = useState<'' | 'allow' | 'deny' | 'supply'>('')
+  const logs = useLogFiles()
+  // 正文和标注栏之间能拖动调宽（用户 2026-11-05 要的）：记在本机，所有审阅弹窗共用一个宽度
+  // 上限按弹窗里这一行的宽度算，正文至少留 360px
+  const rowRef = useRef<HTMLDivElement>(null)
+  const notePane = usePaneWidth(
+    'review-notes',
+    340,
+    260,
+    () => (rowRef.current?.clientWidth ?? window.innerWidth) - 360,
+  )
+  const resetLogs = logs.reset
   const [cancelAsk, setCancelAsk] = useState(false)
   // 多版时看的是哪一版：默认最新那版（要审的）；旧版只读，不能标注
   const [ver, setVer] = useState('')
@@ -122,7 +158,8 @@ export function ReviewDialog({
     setPick(null)
     setActive(null)
     setVer('')
-  }, [req.id])
+    resetLogs()
+  }, [req.id, resetLogs])
 
   useEffect(() => {
     if (!canHighlight() || !open || old) return
@@ -204,15 +241,24 @@ export function ReviewDialog({
       box.scrollTo({ top: box.scrollTop + r.top - b.top - b.height / 3, behavior: 'smooth' })
   }
 
-  const hasFeedback = notes.length > 0 || !!overall.trim()
-  const submit = async (allow: boolean) => {
-    if (busy) return
-    setBusy(allow ? 'allow' : 'deny')
+  // 整体意见框是对话输入框时，文件、图片卡片在文字里是标记：交出去前换成「@路径」
+  const said = attach ? logs.plain(overall) : overall
+  const hasFeedback = notes.length > 0 || !!said.trim()
+  const hasLogs = !!said.trim() || logs.list.length > 0
+  const raw = (): ReviewRaw => ({
+    notes: notes.map((n) => ({ quote: n.quote, comment: n.comment, kind: n.kind ?? '' })),
+    overall: said,
+    files: attach ? logs.list : [],
+  })
+  // 标了疑问（feedbackFirst）或在等日志（supply.primary）时，主按钮换人；补充信息不用回答，只有它时照常确认
+  const asks = notes.some((n) => n.kind !== 'info')
+  const revisePrimary = !!feedbackFirst && asks && !supply?.primary
+  const submit = async (allow: boolean | 'supply') => {
+    if (busy || logs.busy) return
+    setBusy(allow === 'supply' ? 'supply' : allow ? 'allow' : 'deny')
     try {
-      await onAnswer(allow, allow ? undefined : reviewFeedback(notes, overall), {
-        notes: notes.map((n) => ({ quote: n.quote, comment: n.comment, kind: n.kind ?? '' })),
-        overall,
-      })
+      if (allow === 'supply') await supply?.onSupply(raw())
+      else await onAnswer(allow, allow ? undefined : reviewFeedback(notes, said), raw())
       onOpenChange(false)
     } catch (e) {
       toast.error((e as Error).message)
@@ -223,7 +269,32 @@ export function ReviewDialog({
 
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="xl">
-      <ModalHeader icon={ClipboardCheck} iconClass="text-warning" title={req.title}>
+      <ModalHeader
+        icon={ClipboardCheck}
+        iconClass="text-warning"
+        title={req.title}
+        aside={
+          // 多版时在标题栏用下拉选看哪一版（用户 2026-11-05：不要把所有版本都排在正文上面）
+          versions &&
+          versions.length > 1 && (
+            <Select
+              size="xs"
+              aria-label={t('版本')}
+              value={shown?.key ?? ''}
+              onChange={(e) => {
+                // 换版本时文档重画，旧版本上画的标注位置对不上：切到旧版先不显示标注
+                setVer(e.target.value)
+                setPick(null)
+              }}
+              options={[...versions].reverse().map((v, i) => ({
+                value: v.key,
+                label: i ? v.label : t('{label}（最新）', { label: v.label }),
+              }))}
+              className="w-56"
+            />
+          )
+        }
+      >
         {agent && (
           <span className="hidden min-w-0 items-center gap-1.5 text-footnote text-subtle sm:flex">
             <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
@@ -231,31 +302,17 @@ export function ReviewDialog({
           </span>
         )}
       </ModalHeader>
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div ref={rowRef} className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div
           ref={scrollRef}
-          className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4 md:px-8 md:py-6"
+          className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-4 md:px-8 md:py-6"
           onMouseUp={readSelection}
           onKeyUp={readSelection}
           onScroll={() => pick && setPick(null)}
         >
           <div ref={docRef} className="mx-auto max-w-[820px]" onClick={onDocClick}>
-            {versions && versions.length > 1 && (
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <Segmented
-                  size="sm"
-                  value={shown?.key ?? ''}
-                  onChange={(v) => {
-                    // 换版本时文档重画，旧版本上画的标注位置对不上：切到旧版先不显示标注
-                    setVer(v)
-                    setPick(null)
-                  }}
-                  label={t('版本')}
-                  options={versions.map((v) => ({ id: v.key, label: v.label }))}
-                />
-                {shown?.status && <span className="text-xs text-subtle">{shown.status}</span>}
-              </div>
-            )}
+            {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
+            {typeof top === 'function' ? top(shown?.key ?? '') : top}
             {detail ? (
               <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
             ) : (
@@ -278,8 +335,10 @@ export function ReviewDialog({
         </div>
         <aside
           aria-label={t('标注')}
-          className="flex max-h-[45%] min-h-0 shrink-0 flex-col border-t bg-panel md:max-h-none md:w-[340px] md:border-t-0 md:border-l"
+          style={{ '--note-w': `${notePane.width}px` } as React.CSSProperties}
+          className="relative flex max-h-[45%] min-h-0 shrink-0 flex-col border-t bg-panel md:max-h-none md:w-(--note-w) md:max-w-[calc(100%-320px)] md:border-t-0 md:border-l"
         >
+          <ResizeHandle pane={notePane} label={t('拖动调整标注栏宽度')} className="hidden md:block" />
           <div className="flex items-center gap-2 px-4 pt-3 pb-2 text-xs font-medium text-muted">
             <Highlighter className="h-3.5 w-3.5" />
             {t('标注')}
@@ -360,14 +419,25 @@ export function ReviewDialog({
             ))}
           </div>
           <div className="border-t px-3 py-3">
-            <Textarea
-              value={overall}
-              onChange={(e) => setOverall(e.target.value)}
-              rows={2}
-              placeholder={t('整体意见（可选）')}
-              aria-label={t('整体意见')}
-              className="min-w-0 resize-none py-1.5 text-body"
-            />
+            {attach ? (
+              <OverallComposer
+                value={overall}
+                onChange={setOverall}
+                logs={logs}
+                placeholder={overallPlaceholder ?? t('整体意见（可选）')}
+                disabled={locked}
+              />
+            ) : (
+              <Textarea
+                value={overall}
+                onChange={(e) => setOverall(e.target.value)}
+                rows={2}
+                placeholder={overallPlaceholder ?? t('整体意见（可选）')}
+                aria-label={t('整体意见')}
+                disabled={locked}
+                className="min-w-0 resize-none py-1.5 text-body"
+              />
+            )}
           </div>
         </aside>
       </div>
@@ -377,9 +447,11 @@ export function ReviewDialog({
             ? readOnly
               ? t('这一版已经处理过了，只能查看')
               : t('这是旧的一版，只能查看；切回最新一版再标注')
-            : hasFeedback
-              ? (texts?.hintRevise ?? t('「修改」会把标注和意见交给 Agent 按意见调整'))
-              : (texts?.hintApprove ?? t('没有要改的地方就点「确认」继续'))}
+            : supply?.primary
+              ? supply.hint
+              : hasFeedback
+                ? (texts?.hintRevise ?? t('「修改」会把标注和意见交给 Agent 按意见调整'))
+                : (texts?.hintApprove ?? t('没有要改的地方就点「确认」继续'))}
         </span>
         <div className={cn('ml-auto flex shrink-0 gap-2', locked && 'hidden')}>
           {cancel && (
@@ -387,20 +459,52 @@ export function ReviewDialog({
               {cancel.label}
             </Button>
           )}
+          {supply && !supply.primary && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!!busy || logs.busy || !hasLogs}
+              title={hasLogs ? supply.hint : t('先在整体意见里贴日志，或引入日志文件')}
+              onClick={() => void submit('supply')}
+            >
+              {busy === 'supply' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {supply.label}
+            </Button>
+          )}
           <Button
             size="sm"
-            variant="secondary"
+            variant={revisePrimary ? 'primary' : 'secondary'}
             disabled={!!busy || !hasFeedback}
             title={hasFeedback ? undefined : t('先标注要改的地方')}
             onClick={() => void submit(false)}
+            className={cn(revisePrimary && 'order-last')}
           >
             {busy === 'deny' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {texts?.revise ?? t('修改')}
           </Button>
-          <Button size="sm" disabled={!!busy} onClick={() => void submit(true)}>
-            {busy === 'allow' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {texts?.approve ?? t('确认')}
-          </Button>
+          {!noApprove && (
+            <Button
+              size="sm"
+              variant={revisePrimary || supply?.primary ? 'secondary' : 'primary'}
+              disabled={!!busy || logs.busy}
+              title={revisePrimary ? t('还有没处理的疑问：确认后它就不再回答这些标注') : undefined}
+              onClick={() => void submit(true)}
+            >
+              {busy === 'allow' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {texts?.approve ?? t('确认')}
+            </Button>
+          )}
+          {supply?.primary && (
+            <Button
+              size="sm"
+              disabled={!!busy || logs.busy || !hasLogs}
+              title={hasLogs ? undefined : t('先在整体意见里贴日志，或引入日志文件')}
+              onClick={() => void submit('supply')}
+            >
+              {busy === 'supply' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {supply.label}
+            </Button>
+          )}
         </div>
       </div>
       {cancel && (
@@ -412,7 +516,7 @@ export function ReviewDialog({
           confirmText={cancel.confirm}
           onConfirm={async () => {
             try {
-              await cancel.onCancel(overall)
+              await cancel.onCancel(said)
               setCancelAsk(false)
               onOpenChange(false)
             } catch (e) {

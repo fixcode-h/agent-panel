@@ -456,7 +456,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
         text: [
           '截图：`ui-shots/107-对话-图片气泡.png`',
           '',
-          '改的是 `src/App.tsx:7`。',
+          '改的是 `src/App.tsx:7`，入口见 [应用入口](src/App.tsx)。',
+          '',
+          '配置表：`Project/Designer/Excel/C_FunctionalNPCInfo.xlsx`',
           '',
           '不是路径的：`console.log`、`1.2.3`、`https://example.com/a.png`',
         ].join('\n'),
@@ -466,32 +468,69 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       localStorage.setItem(key, JSON.stringify(d))
     }, added)
     await p.reload()
-    const mdPath = p.locator('code.md-path')
+    // 文件标记：图标 + 文件名 + 灰色扩展名，路径在 data-path 上（web/src/lib/file-path.ts 的 fileRefHtml）
+    const mdPath = p.locator('.chat-md .file-ref')
     await mdPath
       .first()
       .waitFor({ timeout: 15000 })
-      .catch(() => errors.push('路径可点：回复里的路径没有标成能点的'))
+      .catch(() => errors.push('路径可点：回复里的路径没有标成文件标记'))
     const links = await mdPath.evaluateAll((els) =>
-      els.map((el) => ({ text: el.textContent ?? '', tip: el.getAttribute('title') ?? '' })),
+      els.map((el) => ({
+        text: el.textContent ?? '',
+        path: el.getAttribute('data-path') ?? '',
+        kind: el.getAttribute('data-kind') ?? '',
+        missing: el.hasAttribute('data-missing'),
+      })),
     )
-    const texts = links.map((l) => l.text)
-    if (!texts.includes('ui-shots/107-对话-图片气泡.png'))
-      errors.push(`路径可点：中文图片路径没有变成链接（${texts.join('、')}`)
-    if (!texts.includes('src/App.tsx:7')) errors.push('路径可点：带行号的文件路径没有变成链接')
-    if (links.find((l) => l.text === 'ui-shots/107-对话-图片气泡.png')?.tip !== '查看图片')
-      errors.push('路径可点：图片路径的提示不是「查看图片」')
+    const paths = links.map((l) => l.path)
+    if (!paths.includes('ui-shots/107-对话-图片气泡.png'))
+      errors.push(`路径可点：中文图片路径没有变成文件标记（${paths.join('、')}）`)
+    if (!links.some((l) => l.path === 'src/App.tsx' && l.text === 'App.tsx:7'))
+      errors.push('路径可点：带行号的文件路径没有显示成「文件名:行号」')
+    if (!links.some((l) => l.path === 'src/App.tsx' && l.text === '应用入口'))
+      errors.push('路径可点：指向本机文件的 Markdown 链接没有换成文件标记')
+    if (links.find((l) => l.path === 'ui-shots/107-对话-图片气泡.png')?.kind !== 'image')
+      errors.push('路径可点：图片路径的图标不是图片')
+    const sheet = links.find((l) => l.path.endsWith('C_FunctionalNPCInfo.xlsx'))
+    if (sheet?.kind !== 'sheet') errors.push('路径可点：xlsx 的图标不是表格')
+    // 演示的示例工程里没有这张表：解析后标成找不到（虚线、划掉）
+    await p
+      .waitForFunction(
+        () => !!document.querySelector('.chat-md .file-ref[data-path$="C_FunctionalNPCInfo.xlsx"][data-missing]'),
+        undefined,
+        { timeout: 5000 },
+      )
+      .catch(() => errors.push('路径可点：找不到的文件没有标成虚线划掉'))
     // 不像路径的行内代码不能变成点了报错的假链接
     const wrong = await p.evaluate(() => {
       const notPath = ['console.log', '1.2.3', 'https://example.com/a.png']
-      return [...document.querySelectorAll('code')]
-        .filter((el) => notPath.includes(el.textContent ?? '') && el.classList.contains('md-path'))
+      return [...document.querySelectorAll('.file-ref')]
+        .filter((el) => notPath.includes(el.textContent ?? ''))
         .map((el) => el.textContent ?? '')
     })
-    if (wrong.length) errors.push(`路径可点：${wrong.join('、')} 不该变成链接`)
+    if (wrong.length) errors.push(`路径可点：${wrong.join('、')} 不该变成文件标记`)
+    // 悬停：卡片里有完整路径和单击会做什么
+    await mdPath.filter({ hasText: 'App.tsx:7' }).first().hover()
+    const card = p.locator('[data-file-card]')
+    await card.waitFor({ timeout: 3000 }).catch(() => errors.push('路径可点：悬停文件标记没有出现路径卡片'))
+    const cardText = (await card.textContent().catch(() => '')) ?? ''
+    if (!cardText.includes('完整路径') || !cardText.includes('src/App.tsx:7'))
+      errors.push(`路径可点：悬停卡片里没有相对路径和完整路径（${cardText}）`)
+    await check(p, '对话-路径-悬停卡片')
+    // 右键：文件菜单
+    await mdPath.filter({ hasText: 'App.tsx:7' }).first().click({ button: 'right' })
+    const menu = p.locator('[role="menu"]')
+    await menu.waitFor({ timeout: 3000 }).catch(() => errors.push('路径可点：右键文件标记没有弹出菜单'))
+    const menuText = (await menu.textContent().catch(() => '')) ?? ''
+    for (const item of ['在面板中查看', '在文件夹中显示', '复制完整路径', '复制相对路径', '复制文件名', '引用到输入框'])
+      if (!menuText.includes(item)) errors.push(`路径可点：右键菜单里没有「${item}」`)
+    await check(p, '对话-路径-右键菜单')
+    await p.keyboard.press('Escape')
+    await p.mouse.move(0, 0)
     await check(p, '对话-路径可点')
     // 点图片路径：弹出来看大图
-    await mdPath
-      .filter({ hasText: 'ui-shots/107-对话-图片气泡.png' })
+    await p
+      .locator('.chat-md .file-ref[data-path="ui-shots/107-对话-图片气泡.png"]')
       .first()
       .evaluate((el) => el.click())
     // 图是异步加载的：等它真的画出来再看 naturalWidth，否则拿到的是 0
@@ -517,7 +556,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await p.locator('[role="dialog"]').waitFor({ state: 'detached', timeout: 3000 })
     // 点文件路径：弹窗里显示文件内容并停在提到的那一行
     await mdPath
-      .filter({ hasText: 'src/App.tsx:7' })
+      .filter({ hasText: 'App.tsx:7' })
       .first()
       .evaluate((el) => el.click())
     const dialog = p.locator('[role="dialog"]')
@@ -1053,6 +1092,62 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await todoRow.waitFor({ timeout: 5000 }).catch(() => errors.push('Chat 待办：有 CLI 待办的聊天没有显示待办行'))
     await todoRow.getByRole('button', { name: '待办' }).click()
     await check(c, 'Chat-待办', ['待办 1/3', '整理成表格'])
+
+    // 数学公式（设计报告 Chat P1-6）：回复里的 $…$、$$…$$ 停下后换成 KaTeX 排版，金额里的 $ 不算
+    await c.evaluate(() => {
+      const k = 'agent-panel-demo-v3'
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      const task = (db.tasks ?? []).find((x) => x.title === '整理一份 Claude Code 和 Codex 的能力对照')
+      const m = task && [...task.messages].reverse().find((x) => x.role === 'agent' && x.text)
+      if (m) m.text += '\n\n成本按 $c = p \\cdot n$ 估算（价格 $5 和 $10 是例子）：\n\n$$\n\\sum_{i=1}^{n} x_i^2\n$$'
+      localStorage.setItem(k, JSON.stringify(db))
+    })
+    await c.reload()
+    await list.getByTitle('整理一份 Claude Code 和 Codex 的能力对照', { exact: true }).click()
+    await c
+      .locator('.md-math .katex')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('数学公式：回复里的公式没有排版成 KaTeX'))
+    if ((await c.locator('.md-math-block .katex-display').count()) < 1)
+      errors.push('数学公式：$$…$$ 没有按块级公式显示')
+    if (!(await c.getByText('价格 $5 和 $10 是例子', { exact: false }).count()))
+      errors.push('数学公式：金额里的 $ 被当成了公式')
+    await c.locator('.md-math').first().scrollIntoViewIfNeeded()
+    await check(c, 'Chat-数学公式')
+
+    // Chat 里 @ 项目文件（设计报告 Chat P0-2）：没有项目时在所有项目里一起搜，每一项标上项目名
+    await c.keyboard.press('Escape')
+    const box = c.getByRole('textbox').last()
+    await box.click()
+    await box.pressSequentially('@Cart')
+    const files = c.getByRole('listbox', { name: '项目文件' })
+    if (
+      !(await files.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('Chat @ 文件：输入 @ 后没有弹出项目文件菜单')
+    else {
+      if (!(await files.getByText('商城前台', { exact: true }).count()))
+        errors.push('Chat @ 文件：菜单里的文件没标上是哪个项目的')
+      await check(c, 'Chat-@项目文件', ['CartBadge'])
+      await c.keyboard.press('Escape')
+    }
+    await box.press('ControlOrMeta+a')
+    await box.press('Backspace')
+
+    // 在项目里继续（设计报告 Chat P0-1）：选一个项目，这段聊天整理成记录放进那个项目的新建输入框，再写一句要求发出去
+    await c.getByRole('button', { name: '在项目里继续', exact: true }).click()
+    await c.getByRole('menuitem', { name: '商城前台' }).click()
+    await c.waitForURL(/#\/projects\//, { timeout: 5000 }).catch(() => errors.push('在项目里继续：没有跳到项目页'))
+    await settle(c)
+    if (!(await c.getByText('接着附上的这段聊天，在这个项目里继续：').count()))
+      errors.push('在项目里继续：项目的新建输入框里没有放好开头那句话')
+    if (!(await c.getByText(/整理一份 Claude Code 和 Codex 的能力对照/).count()))
+      errors.push('在项目里继续：没有带上这段聊天的记录')
+    await check(c, 'Chat-在项目里继续')
     await c.close()
   }
 

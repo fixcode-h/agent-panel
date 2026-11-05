@@ -32,6 +32,10 @@ export const TaskRequest = z.object({
   options: z.array(z.string()).default([]),
   /** 一次问了几个问题时的每一个（有它时 title、options 是第一个问题的） */
   questions: z.array(AskQuestion).optional(),
+  /** 改文件的请求：要改的内容（unified diff 文本），审批卡上按行显示，不用只凭文件名决定 */
+  diff: z.string().optional(),
+  /** 「一直允许这类」的规则键（shared/allow-rules.ts）；没有就不能一直允许 */
+  rule: z.string().optional(),
   at: z.string(),
 })
 export type TaskRequest = z.infer<typeof TaskRequest>

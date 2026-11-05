@@ -321,4 +321,8 @@ export const EN_FLOW: Record<string, string> = {
   节点进度: 'Node progress',
   '这次执行还没有开始执行节点。': 'This run has not started any nodes yet.',
   '上次运行没有任务描述，无法重新运行': 'The last run has no task description, so it cannot be run again',
+  修改轮次: 'Revision rounds',
+  '同一个节点被要求修改超过这么多轮时，运行结尾提示一句（不会强制停下）。0 表示不提示。':
+    'When a node is asked to revise more than this many times, the run notes it at the end (it never stops the run). 0 turns the note off.',
+  最多几轮: 'Rounds',
 }

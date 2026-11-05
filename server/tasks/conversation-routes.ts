@@ -1,5 +1,6 @@
 import { sourceHeader } from '../../shared/peer-message.ts'
 import { randomUUID } from 'node:crypto'
+import { FlowRun } from '../../shared/task-flow-schema.ts'
 import { z } from 'zod'
 import {
   FollowUpInput,
@@ -16,7 +17,16 @@ import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
 import { settleWait } from '../../shared/plan.ts'
 import { kidsSkipNote, rearmKidWait, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
-import { closeFlow, dropEndNotes, newTask, taskDeleted, withAttachments, withTaskModel } from '../../shared/task.ts'
+import {
+  closeFlow,
+  diagnosisPending,
+  dropEndNotes,
+  newTask,
+  taskDeleted,
+  withAttachments,
+  withTaskModel,
+} from '../../shared/task.ts'
+import { rewaitDiagnosis } from '../../shared/task-settle.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
@@ -105,6 +115,12 @@ export function registerConversationRoutes(s: TasksScope) {
       id: randomUUID(),
       testSteps: workflow ? project.testSteps : [],
       platform: workflow ? process.platform : '',
+      // 直接经接口建的工作流任务（端到端测试、脚本）：一次没有父对话的独立运行，在项目目录里跑完直接完成。
+      // 界面上的工作流都由父对话 start_workflow 起（见 server/tasks/flow-runs.ts）
+      ...(workflow &&
+        input.mode === 'workflow' && {
+          flowRun: FlowRun.parse({ owner: '', workflowName: workflow.name, kind: 'readonly', input: input.prompt }),
+        }),
     }
     // 这里是顶层对话选的独立分支（子对话由项目设置决定）：只看输入框的「独立分支」按钮，不看角色。
     // 勾了就在创建时建好（用户要求），父对话也一样，它的子对话从这个分支开出、合回这里
@@ -448,6 +464,15 @@ export function registerConversationRoutes(s: TasksScope) {
         s.release(entry)
         return s.bad(c, t('只有失败或停止的任务可以继续'), 409)
       }
+      // 诊断报告还在等用户确认（ADR 0045）：继续就是回到等确认这一步，不拉起 CLI 让它自己往下跑；
+      // 用户确认或提意见后，审阅弹窗发的消息才拉起它（用户 2026-11-04 要求）
+      if (task.mode === 'chat' && diagnosisPending(task)) {
+        const saved = await s.store.update(id, rewaitDiagnosis(entry.task))
+        s.release(entry)
+        if (task.parentTaskId) await rearmInParent(task.parentTaskId, id)
+        taskLog(id, '继续：诊断报告还在等确认，回到等确认')
+        return c.json(saved ?? task)
+      }
       // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
       const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }
       let fresh: Workflow | undefined
@@ -481,6 +506,8 @@ export function registerConversationRoutes(s: TasksScope) {
       // 子对话被用户直接继续时也一样：它名下连带停下的孙对话一起拉起，它在父计划里的等待恢复成等待中（ADR 0042）
       const kids = task.mode === 'chat' ? await resumeKids(entry.task) : undefined
       if (task.mode === 'chat' && task.parentTaskId) await rearmInParent(task.parentTaskId, id)
+      // 名下随它停的工作流运行接着跑（design.md D4）；运行不是子对话，不在 resumeKids 里
+      if (task.mode === 'chat' && !task.parentTaskId) await s.flowRuns.resumeRunsOf(id)
       // 这次继续拉起了谁、没拉起谁、哪些子任务由面板接着跑：写进对话日志，「状态」诊断里看得到（ADR 0042）
       if (task.mode === 'chat')
         taskLog(id, '继续计划', {
@@ -562,9 +589,23 @@ export function registerConversationRoutes(s: TasksScope) {
         k.status === 'stopped' &&
         !s.live.has(k.id),
     )
-    const sorted = sortStoppedKids(parent, stopped)
+    // 诊断报告在等用户确认的子对话（ADR 0045）：回到等确认，不拉起 CLI；用户亲手停的也一样，它等的本来就是用户
+    const notes: string[] = []
+    for (const meta of stopped.filter((k) => diagnosisPending(k))) {
+      const kid = await s.store.get(meta.id)
+      if (!kid || s.live.has(kid.id)) continue
+      await s.store.update(kid.id, rewaitDiagnosis(kid))
+      if (rearmKidWait(parent, kid.id)) taskLog(parentId, '子对话的诊断报告还在等确认，计划恢复等它', { kid: kid.id })
+      notes.push(
+        `子对话「${kid.title}」（${kid.id}）的诊断报告还在等用户确认，没有拉起它：用户确认或提意见后它会自己接着做，不要另派子对话重做。`,
+      )
+    }
+    const sorted = sortStoppedKids(
+      parent,
+      stopped.filter((k) => !diagnosisPending(k)),
+    )
     const kids = sorted.resume
-    const notes = kidsSkipNote(sorted.userStopped, sorted.skipped)
+    notes.push(...kidsSkipNote(sorted.userStopped, sorted.skipped))
     const agents = await s.deps.agents.list()
     const titles: string[] = []
     const failed: KidFailure[] = []

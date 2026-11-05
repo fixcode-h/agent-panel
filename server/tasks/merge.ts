@@ -3,6 +3,7 @@ import { goneModulesNote } from '../module-map.ts'
 import path from 'node:path'
 import { coreDefinition } from '../../shared/builtin/core.ts'
 import { bugRecordDraft, diagnosisGate } from '../../shared/bug-diagnosis.ts'
+import { projectChanges } from '../exec/file-events.ts'
 import { clipWithFile } from './inbox-file.ts'
 import { planProgressKey } from '../../shared/drive.ts'
 import { randomUUID } from 'node:crypto'
@@ -96,16 +97,18 @@ export function createMerge(sc: TasksScope) {
         info: '没有请求收尾：tests 里写上你在独立分支里跑了哪些编译、测试和结果。没跑通就先修好再调用；这次确实不需要测试（只改了文档、注释）时写明原因。',
       }
     // 父对话派来的 Bug（ADR 0045）：要有用户确认过的方案，实际改动不超出方案里的文件
+    // 面板临时目录里的文件不算项目改动（以前被钩子拦下的写入也记进了改动清单，见 exec/file-events.ts）
+    const dir = await sc.taskDir(tk)
+    const owned = projectChanges(tk.changes, dir)
     const diag = diagnosisGate(
       tk,
-      tk.changes.map((c) => c.path),
+      owned.map((c) => c.path),
     )
     if (diag) return { ok: false, info: diag }
     // 用户报的 Bug（ADR 0046）：[排查-…] 临时日志清掉才收尾（文档里提到这个前缀的不算）
     if (tk.bug) {
-      const dir = await sc.taskDir(tk)
       const left: string[] = []
-      for (const c of tk.changes.filter((x) => !x.path.endsWith('.md'))) {
+      for (const c of owned.filter((x) => !x.path.endsWith('.md'))) {
         const body = await readFile(path.join(dir, c.path), 'utf8').catch(() => '')
         if (body.includes('[排查-')) left.push(c.path)
       }
@@ -492,7 +495,12 @@ ${
         // 进了回收站的对话不算同项目里能互相发消息的一条（它在列表里也已经看不到了）
         .filter(
           (x) =>
-            x.projectId === self.projectId && !x.parentTaskId && x.id !== self.id && !x.archived && !taskDeleted(x),
+            x.projectId === self.projectId &&
+            !x.parentTaskId &&
+            !x.flowRun &&
+            x.id !== self.id &&
+            !x.archived &&
+            !taskDeleted(x),
         )
         .map((x) => sc.live.get(x.id)?.task ?? x)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))

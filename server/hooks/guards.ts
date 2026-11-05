@@ -5,9 +5,11 @@ import { FULL_SUITE_COMMAND } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
 import { commandSegments, globMatch } from '../../shared/hook-defs.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
+import { editScope } from '../../shared/bug-phase.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
 import { DATA_DIR } from '../store.ts'
 import { SECRET_RES } from './validate.ts'
+import { scratchPath } from '../exec/file-events.ts'
 
 /**
  * 内置的工具前守卫（ADR 0049 第四期）：把只写在提示词里、或者要等收尾才查的规则，在工具执行前就拦下来。
@@ -65,19 +67,19 @@ export function pushDeny(c: GuardCtx, facts: HookFacts): string {
  */
 export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   if (!c.task.bug) return ''
-  const files = editPaths(facts).map((p) => rel(c.cwd, p) || p)
+  // 面板给的临时目录、数据目录里的文件（编译脚本、日志副本）不是项目代码，不按方案拦（file-events.ts 也不记成改动）
+  const files = editPaths(facts)
+    .filter((p) => !scratchPath(path.resolve(c.cwd, p), c.cwd))
+    .map((p) => rel(c.cwd, p) || p)
   if (!files.length) return ''
-  const d = latestDiagnosis(c.task)
-  if (!d) return '【面板】这是父对话派来的 Bug：修之前先用 submit_diagnosis 交诊断报告，用户确认方案后再改文件。'
-  if (d.status === 'pending')
-    return `【面板】诊断报告第 ${d.version} 版还在等用户确认：确认之前不改文件，先等用户的回复。`
-  if (d.status === 'questioned')
-    return `【面板】用户对诊断报告第 ${d.version} 版提了意见：先逐条处理、用 submit_diagnosis 交新一版，确认后再改文件。`
-  if (d.status === 'cancelled')
-    return `【面板】用户取消了诊断报告第 ${d.version} 版，这次不修：不改文件。用户要你接着修时，先用 submit_diagnosis 交新一版，确认后再改。`
-  const extra = outOfPlan(files, d.files)
-  if (extra.length)
-    return `【面板】${extra.join('、')} 不在用户确认的方案（第 ${d.version} 版）里：确实要改，先交新一版诊断报告写明为什么，等用户确认。`
+  // 按阶段算能改哪些文件（bug-phase.ts）：同意加日志只放行日志计划里的文件，确认方案后放行方案里的文件和加过日志的文件
+  const scope = editScope(c.task.diagnoses ?? [])
+  if ('deny' in scope) return `【面板】${scope.deny}`
+  const extra = outOfPlan(files, scope.files)
+  if (extra.length) {
+    const d = latestDiagnosis(c.task)
+    return `【面板】${extra.join('、')} 不在用户同意的范围（第 ${d?.version} 版）里：确实要改，先交新一版写明为什么，等用户确认。`
+  }
   return ''
 }
 

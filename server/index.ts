@@ -1,5 +1,6 @@
 // 必须第一个引入：先定下界面语言，其他模块顶层的文案才会用对语言
 import './lang.ts'
+import { mountExtras } from './extra-routes.ts'
 // 用户自己加的 CLI 配置要在用到 CLI 列表的模块之前读进来
 import { CLI_CONFIG_DIR, loadUserClis, userClis } from './cli-config.ts'
 import { asksApi } from './asks.ts'
@@ -73,13 +74,12 @@ import { isPanelSource } from './panel-source.ts'
 import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
 import { accountsApi, syncCliAuths } from './accounts.ts'
+import { apiSpeedApi } from './api-speed.ts'
 import { integrationsApi } from './integrations.ts'
 import { hooksApi } from './hooks/api.ts'
 import { migrateVerdictText } from './verdict-migrate.ts'
 import { installApi } from './install.ts'
-import { comfyApi } from './comfy.ts'
-import { speechApi } from './speech.ts'
-import { ttsApi } from './tts.ts'
+import { envApi } from './env-api.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
 import { projectMcpApi } from './project-mcp.ts'
@@ -88,6 +88,7 @@ import { modelsApi } from './models.ts'
 import { modelCatalogApi } from './model-catalog.ts'
 import { getLimits, isSharedSkill, listSkills } from './cli-extras.ts'
 import { packagesApi } from './cli-packages.ts'
+import { trustApi } from './cli-trust-api.ts'
 import { interruptedApi } from './interrupted.ts'
 import { autoResumeAfterRestart } from './restart-interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
@@ -143,7 +144,7 @@ import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts
 import { installLogging, log, logFile } from './log.ts'
 import { sweepPanelMcp } from './panel-mcp-files.ts'
 import { existsSync } from 'node:fs'
-import { detectShells, currentShell } from './shells.ts'
+import { currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons } from './lessons.ts'
 import { loadProjectLessons, projectWithLessons } from './project-lessons.ts'
 import { projectLessonRoutes } from './project-lesson-routes.ts'
@@ -449,9 +450,6 @@ const applyPresenceReclaim = (s: Awaited<ReturnType<typeof getSettings>>) =>
     graceMs: s.presenceGraceMinutes * 60_000,
   })
 app.get('/settings', async (c) => c.json(await getSettings()))
-// 本机能用的命令行环境（设置「常规」里选）；fresh=1 重新检测
-void currentShell().catch(() => {})
-app.get('/shells', async (c) => c.json(await detectShells(c.req.query('fresh') === '1')))
 app.put('/settings', async (c) => {
   const p = Settings.safeParse(await c.req.json())
   if (!p.success) return bad(c, z.prettifyError(p.error))
@@ -491,18 +489,20 @@ app.post('/clis/specs/reload', async (c) => {
 })
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 app.route('/accounts', accountsApi())
+app.route('/accounts', apiSpeedApi())
 app.route('/integrations', integrationsApi())
 app.route('/hooks', hooksApi({ projects, agents }))
 app.route('/library', libraryApi())
 app.route('/mcp-tools', mcpApi())
 // 项目设置里的 MCP：项目目录里识别到的配置，项目目录按 projectId 现取
 app.route('/project-mcp', projectMcpApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
+app.route('/project-trust', trustApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
 app.route('/clis', installApi())
-app.route('/local-image', comfyApi())
-app.route('/speech', speechApi())
-app.route('/tts', ttsApi())
+// 本机生图、语音输入 / 朗读、Chat 记忆：各自一组的子路由（server/extra-routes.ts）
+mountExtras(app)
+app.route('/', envApi())
 app.route('/clis', modelsApi())
-app.route('/clis', packagesApi())
+app.route('/clis', packagesApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
 app.route('/model-catalog', modelCatalogApi())
 // 账号额度、加载的 Skill；查不到时给出原因，页面上显示
 app.get('/clis/:id/limits', async (c) => {
@@ -527,9 +527,9 @@ app.get('/clis/:id/skills', async (c) => {
 // 输入框「/」菜单：CLI 自己带的命令和 Skill
 app.get('/clis/:id/commands', async (c) => {
   const pid = c.req.query('projectId')
-  const dir = pid ? ((await projects.get(pid))?.path ?? '') : ''
+  const p = pid ? await projects.get(pid) : null
   try {
-    return c.json(await listCommands(c.req.param('id'), dir))
+    return c.json(await listCommands(c.req.param('id'), p?.path ?? '', p?.cliTrust?.[c.req.param('id')]))
   } catch (e) {
     return bad(c, (e as Error).message)
   }
@@ -854,7 +854,7 @@ app.put('/projects/:id/init-result', async (c) => {
 
 // 记一条项目教训（对话里「记成项目教训」）和应用一条 AI 评审建议：路由在单独模块里
 const lessons = projectLessons(projects, { agents })
-projectLessonRoutes(app, lessons)
+projectLessonRoutes(app, lessons, { projects, agents })
 
 // 全局教训：所有项目共用。只有界面上用户确认过的修改才会写进来，Agent 没有写它的工具
 app.get('/global-lessons', async (c) => c.json(await readGlobalLessons()))
@@ -1019,7 +1019,7 @@ app.route('/mcp', designMcpApi())
 app.route('/mcp', blenderMcpApi())
 app.route('/blender', blenderApi())
 app.route('/mcp', askMcpApi())
-const docs = docsApi({ projects })
+const docs = docsApi({ projects, agents })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)
 app.route('/ai-fix', fixApi())

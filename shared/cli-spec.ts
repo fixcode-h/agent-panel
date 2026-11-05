@@ -11,23 +11,18 @@ import { getLang, t } from './i18n.ts'
 import { CliAuth } from './accounts.ts'
 import { CliContextBase } from './context-breakdown.ts'
 import { HooksSpec } from './hooks.ts'
+import { CliTrust } from './cli-trust.ts'
+import { GalleryOverlap, GallerySpec } from './cli-gallery.ts'
+import { ConfigSetting } from './cli-config-settings.ts'
+import { CommandsQuery, HandledReply } from './cli-commands-query.ts'
+import { ArgRule } from './arg-rule.ts'
+import { ChangelogSpec } from './package-changelog.ts'
+import { BuiltinExtensions, LocalPackages, PackageResources } from './package-config.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
-/**
- * 一条参数规则：条件都满足时加上 args。
- * if：「model」有值、「!resume」没值、「permission=yolo」等于、「permission!=yolo」不等于；多个条件写成数组，全部满足才加
- * args 里的占位：{model}、{effort}、{permission}、{resume}、{systemPrompt}、{maxTurns}、{title}；
- * {addDirs|,} 把数组用逗号连起来；{maxTurns:200} 没值时用 200。each：对数组的每一项加一次，{item} 是那一项
- */
-export const ArgRule = z.object({
-  if: z.union([z.string(), z.array(z.string())]).optional(),
-  each: z.enum(['addDirs']).optional(),
-  args: z.array(z.string()),
-  /** 为什么这样传（JSON 里没法写注释，写在这里），面板不读 */
-  why: z.string().optional(),
-})
-export type ArgRule = z.infer<typeof ArgRule>
+// 参数规则在 arg-rule.ts（cli-commands-query.ts 也用，放这里会循环引用）
+export { ArgRule } from './arg-rule.ts'
 
 /**
  * 输出里的一种事件：when 里的字段都相等时，按 emit 产生面板的事件（按顺序找第一条对上的）。
@@ -70,6 +65,23 @@ export const McpSpec = z.object({
   extras: z.array(McpExtra).default([]),
 })
 export type McpSpec = z.infer<typeof McpSpec>
+
+/**
+ * 启动新会话前探测项目里配的远程 MCP（见 server/exec/mcp-probe.ts）：有的 CLI 第一轮前要等所有 MCP 握手，
+ * 一个卡住的服务（例如编辑器主线程忙着的 Unreal 插件）能让首字晚几十秒。探测和启动同时进行、不拖慢启动，
+ * 只是连不上或不响应时在对话里写一行警告，告诉用户第一轮为什么慢、为什么少了它的工具
+ */
+export const McpProbe = z.object({
+  /** CLI 自己读的项目 MCP 配置（相对项目根的 JSON 文件） */
+  files: z.array(z.string()).default([]),
+  /** 文件里放工具表的键 */
+  key: z.string().default('mcpServers'),
+  /** CLI 第一轮最多等 MCP 多少毫秒的环境变量（默认值写在定义的 env 里）：警告里按实际值说等了几秒 */
+  waitEnv: z.string().optional(),
+  /** 多久没响应算卡住 */
+  timeoutMs: z.number().int().positive().default(2000),
+})
+export type McpProbe = z.infer<typeof McpProbe>
 
 /**
  * 用户自己装的 MCP 工具存在 CLI 的哪个配置文件里、怎么写：面板的「MCP 工具」页按这个读写。
@@ -126,12 +138,36 @@ export const CliPackages = z.object({
       }),
     )
     .default([]),
+  /** 插件市场（ADR 0050，见 shared/cli-gallery.ts）：从 npm 按关键词浏览；不写就没有「浏览」页签 */
+  gallery: GallerySpec.optional(),
+  /** 和面板自己的功能重复的包：市场里的卡片上写一句，不隐藏 */
+  overlaps: z.array(GalleryOverlap).default([]),
+  /** npm 来源的包装在哪（node_modules 目录）：读已装的版本；不写就不显示版本 */
+  npmRoot: z.string().default(''),
+  /** git 来源的包装在哪（下面按 主机/路径 分目录）：读版本和更新说明 */
+  gitRoot: z.string().default(''),
+  /** 包里的更新说明在哪（见 shared/package-changelog.ts）；不写就没有「更新说明」 */
+  changelog: ChangelogSpec.optional(),
+  /** 一个包里按类型开关资源（见 shared/package-config.ts）；不写就没有「资源」开关 */
+  resources: PackageResources.optional(),
+  /** CLI 自带、默认加载的扩展的开关（见 shared/package-config.ts） */
+  builtins: BuiltinExtensions.optional(),
+  /** 装到项目里（见 shared/package-config.ts）；不写项目设置里就没有「这个项目的插件」 */
+  local: LocalPackages.optional(),
+  /** 只在这一次运行加载一个包、不写进配置的参数（Pi：-e {source}）：角色级插件用（见 shared/role-plugins.ts）；不写就不能按角色加载 */
+  oneOff: z.array(z.string()).default([]),
 })
 export type CliPackages = z.infer<typeof CliPackages>
-/** 已装的一个包：source 是配置里写的，target 是交给命令用的（相对路径换成了绝对路径） */
+/** 已装的一个包：source 是配置里写的，target 是交给命令用的（相对路径换成了绝对路径），version 是装着的版本（读得到时） */
 export interface InstalledPackage {
   source: string
   target: string
+  version?: string
+}
+
+/** npm 来源（npm:名字@版本）里的包名，不是 npm 来源时为空 */
+export function npmName(source: string): string {
+  return /^npm:(@[^/@\s]+\/[^@\s]+|[^@\s]+)(@.*)?$/.exec(source.trim())?.[1] ?? ''
 }
 
 /**
@@ -246,6 +282,10 @@ export const RpcSpec = z.object({
   turnLimit: z.object({ when: z.record(z.string(), z.unknown()) }).optional(),
   /** 插话要等 CLI 的下一个模型请求才取走，页面上先显示成「待取走」 */
   deferSteer: z.boolean().default(false),
+  /** 从 CLI 问出「/」命令（插件的命令、插件包里的模板和 Skill，见 shared/cli-commands-query.ts） */
+  commandsQuery: CommandsQuery.optional(),
+  /** 发出去的那句被当命令自己处理、可能不开新一轮时怎么认出来（见 shared/cli-commands-query.ts） */
+  handled: HandledReply.optional(),
   /**
    * 插话要等正在执行的命令跑完才会被取走（Pi 的 steer）：命令跑太久时面板用这一套让它马上处理。
    * 先按 take 收回还排着的插话（texts 是回复里插话原文列表的路径），收回的是空的说明已经被取走了，什么都不做；
@@ -604,10 +644,16 @@ export const CliSpec = z.object({
    * 不写表示这个 CLI 用不了面板的工具
    */
   mcp: McpSpec.optional(),
+  /** CLI 自己配置文件里的设置项（ADR 0050，见 shared/cli-config-settings.ts）：设置页直接读写，只写改过的键 */
+  configSettings: z.array(ConfigSetting).default([]),
+  /** 项目信任（ADR 0050）：只在信任后才读的项目文件；参数规则里用 trust=approve / trust=deny（见 shared/cli-trust.ts） */
+  trust: CliTrust.optional(),
   /** 钩子（ADR 0049）：结束前怎么问面板（见 shared/hooks.ts）；不写表示这个 CLI 只用一轮结束后的提醒兜底 */
   hooks: HooksSpec.optional(),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
   mcpStore: McpStore.optional(),
+  /** 启动新会话前探测项目里的远程 MCP，卡住时在对话里提示；不写表示不探测 */
+  mcpProbe: McpProbe.optional(),
   packages: CliPackages.optional(),
   /** 账号和 API：怎么登录、凭据存在哪、怎么改用 API；不写时设置里没有账号和 API 的选项 */
   auth: CliAuth.optional(),
@@ -656,6 +702,8 @@ function value(o: BuildOptions, key: string): unknown {
       return o.noEdit
     case 'textOnly':
       return o.textOnly
+    case 'trust':
+      return o.trust
     default:
       // opt.<id>：设置里这个开关开着，或下拉选项选中的值
       return key.startsWith('opt.') ? o.options?.[key.slice(4)] || undefined : undefined
@@ -802,9 +850,18 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
       hint: tr(x.hint),
       choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
     })),
+    configSettings: spec.configSettings.map((x) => ({
+      ...x,
+      label: tr(x.label),
+      hint: tr(x.hint),
+      unit: tr(x.unit),
+      choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
+    })),
     mcp: spec.mcp,
     hooks: spec.hooks,
+    trust: spec.trust,
     mcpStore: spec.mcpStore,
+    mcpProbe: spec.mcpProbe,
     packages: spec.packages && {
       ...spec.packages,
       placeholder: tr(spec.packages.placeholder),
@@ -814,6 +871,19 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
         desc: tr(r.desc),
         note: tr(r.note),
       })),
+      overlaps: spec.packages.overlaps.map((o) => ({ ...o, note: tr(o.note) })),
+      resources: spec.packages.resources && {
+        ...spec.packages.resources,
+        types: Object.fromEntries(Object.entries(spec.packages.resources.types).map(([k, v]) => [k, tr(v)])),
+      },
+      builtins: spec.packages.builtins && {
+        ...spec.packages.builtins,
+        items: spec.packages.builtins.items.map((x) => ({ ...x, label: tr(x.label), hint: tr(x.hint) })),
+      },
+      gallery: spec.packages.gallery && {
+        ...spec.packages.gallery,
+        types: Object.fromEntries(Object.entries(spec.packages.gallery.types).map(([k, v]) => [k, tr(v)])),
+      },
     },
     auth: spec.auth && { ...spec.auth, accountNote: tr(spec.auth.accountNote) },
     spec: true,

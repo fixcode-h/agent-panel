@@ -13,6 +13,7 @@ import {
 import { getCli } from '../../shared/clis.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { hookMarker } from '../../shared/hooks.ts'
+import { addFirstToken } from '../../shared/first-token-stats.ts'
 import { hookOptions } from '../hooks/dispatch.ts'
 import { addNoteTaker, holdForNextTurn, removeNoteTaker, type NoteTaker } from './delivery.ts'
 
@@ -40,7 +41,7 @@ import { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 
 export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
-import { expandSlash } from '../slash.ts'
+import { slashInput } from '../slash.ts'
 import { cachedModels, effortRejected, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
 import {
   autoLimits,
@@ -49,8 +50,9 @@ import {
   stripLongContext,
   type ModelLimits,
 } from '../../shared/model-limits.ts'
-import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
+import { apiModelInfo, apiModelKey, modelLimitsFor } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
+import { priceCost } from '../../shared/model-price.ts'
 import { NODE_PART, helperGate, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 
 import { clip } from '../../shared/text.ts'
@@ -112,12 +114,14 @@ import { taskLog } from '../task-log.ts'
 import { dropAsked } from '../../shared/task-settle.ts'
 import { askViaParent } from './child-question.ts'
 import { replies } from './panel-requests.ts'
+import { autoAllowed, requestOf } from './ask-request.ts'
 
 import { orchHint } from '../orch-mcp.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
 import { MODEL_HINT } from '../../shared/blender.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
+import { experiencePrompt } from '../../shared/experience.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
@@ -143,10 +147,19 @@ import {
 import { type Steerer, cancelWait, flushHeld, notes, steerNote, steers } from './steering.ts'
 import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from './api-gate.ts'
 import { searchExcludeEnv } from './search-exclude-env.ts'
+import { trustFor } from '../../shared/cli-trust.ts'
+import { pluginArgs } from '../../shared/role-plugins.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
 import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
+import { SUMMARY_PROMPT, reviewPrompt } from './op-prompts.ts'
+import { warnSlowMcp } from './mcp-probe.ts'
 import { bugMethodPrompt, bugSlash } from './bug-prompt.ts'
+import { createFileEvents } from './file-events.ts'
+import { NOT_RESPONSE, PREWARM_QUIET, continuesOutput } from './event-kinds.ts'
+import { createDrafting } from './drafting.ts'
+// 测试从这里取（以前定义在这个文件里）
+export { continuesOutput }
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -155,26 +168,8 @@ function markTurnDone(task: Task) {
   if (seenWhileWatched(task.id)) task.turnSeenAt = now
 }
 
-/** 只说明 CLI 收下了、不说明模型在回的事件：不算有了响应 */
-const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'files_changed', 'context'])
 /** 任务 id → 卡住的这一轮（没得到回应的那条输入）：下一条消息据此停掉卡住的 CLI、接回会话重开 */
 export { stalledTurn } from './stall-watch.ts'
-
-/** 插话收下后还算「同一段输出」的事件：不产生新内容（见 runAgent 的 cutAfter） */
-const CONTINUES = new Set(['session', 'turn', 'limits', 'usage', 'gen', 'context', 'files_changed'])
-/**
- * 这个事件还属于正在输出的那一段（cur）：同一段正文、思考的增量，和不产生内容的用量、会话这些事件。
- * 换成工具、新一次模型回应、正文之后又开始思考，这一段就说完了
- */
-export const continuesOutput = (ev: CliEvent, cur: TaskMessage | undefined) => {
-  if (CONTINUES.has(ev.type)) return true
-  if (ev.type === 'text_delta') return !!cur?.text.trim()
-  if (ev.type === 'thinking') return !!cur?.thinking && !cur.text.trim() && !cur.tools.length
-  return false
-}
-
-/** 预热时不记进对话的事件：正文、思考、工具和待办 */
-const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
 
 /**
  * 补充排在正在执行的命令后面、命令跑了这么久还没完：停下命令让 CLI 马上处理补充（见 rpc.redirect）。
@@ -192,28 +187,6 @@ const REDIRECT_NOTE =
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
 const MAX_LIVE_OUTPUT = 8000
 const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
-
-/** 审查改动时给不支持审查模式的 CLI 的要求 */
-function reviewPrompt(target: Extract<NonNullable<BuildOptions['op']>, { kind: 'review' }>['target']) {
-  const what =
-    target.type === 'base'
-      ? `当前分支相对 ${target.branch} 的改动（git diff ${target.branch}...HEAD）`
-      : target.type === 'custom'
-        ? target.instructions
-        : '工作区里还没提交的改动（git diff HEAD，包括新建的文件）'
-  return [
-    `请审查${what}。`,
-    '只审查，不要修改任何文件。',
-    '按严重程度从高到低列出发现的问题：每条写明文件和行号、问题是什么、为什么是问题、建议怎么改。',
-    '重点看会导致错误行为的问题（逻辑错误、边界情况、并发、安全、资源泄漏），其次是可维护性；不要列纯粹的格式问题。',
-    '没有发现问题就直接说没有问题。',
-  ].join('\n')
-}
-
-/** Command Code 不能压缩会话：请它把对话整理成摘要，下一轮开新会话时带上 */
-const SUMMARY_PROMPT =
-  '请把我们到目前为止的对话整理成一份摘要，用于在新的会话里继续工作：包括要做的事、已经做了什么（改了哪些文件、关键的决定和原因）、' +
-  '还没做完的、需要注意的问题。只输出摘要本身，不要做别的事，也不要修改文件。'
 
 /**
  * 按 API 的并发上限执行一次调用（对话这一轮、子任务、工作流节点都从这里进）：
@@ -476,17 +449,18 @@ async function runAgent(
     input = `${input}\n\n## 用户在执行中补充的信息\n${pending.join('\n\n')}`
   }
   if (op?.kind === 'compact') input = def.compact === 'slash' ? '/compact' : SUMMARY_PROMPT
-  // 对话里打的「/命令」：Claude Code 新会话开头原样认得，其他情况展开成普通要求。
-  // 对话提示把用户原话放在「## 用户这次的消息」下面，所以按原话判断，把那一行换成展开后的要求
-  if (chat && !op && ctx.prompt.trim().startsWith('/')) {
-    const head = '## 用户这次的消息\n'
-    const at = input.indexOf(head + ctx.prompt)
-    const expanded =
-      bugSlash(ctx.prompt, task, !!call.orch?.coordinator) ??
-      (await expandSlash(ctx.prompt, cliId, cwd, def.slash && !carry))
-    if (at >= 0 && expanded !== ctx.prompt)
-      input = `${input.slice(0, at + head.length)}${expanded}${input.slice(at + head.length + ctx.prompt.length)}`
-  }
+  // 对话里打的「/命令」：展开成普通要求，插件命令这一轮原样只发这一句（见 server/slash.ts 的 slashInput）
+  const slash =
+    !chat || op
+      ? undefined
+      : await slashInput(input, ctx.prompt, {
+          cli: cliId,
+          cwd,
+          native: def.slash && !carry,
+          trust: trustFor(def, ctx.project),
+          bug: bugSlash(ctx.prompt, task, !!call.orch?.coordinator),
+        })
+  if (slash) input = slash.input
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? call.orch : undefined
@@ -501,7 +475,10 @@ async function runAgent(
   if (!resume && !op && task.projectId) {
     const globals = await readGlobalLessons()
     const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, globals, !!orch?.lessons?.record)
-    if (lessons) input = `${input}\n\n${lessons}`
+    // 项目经验只放一行「有几条、怎么查」，按需求原文本地匹配到的最多附两条（shared/experience.ts）
+    const exp =
+      orch?.experience && experiencePrompt(await orch.experience.list(), ctx.prompt, settings.experience.preHint)
+    for (const part of [lessons, exp]) if (part) input = `${input}\n\n${part}`
   }
   // 没有系统提示词参数的 CLI：对话目录的规则接在新会话的任务描述后面（有参数的已经放进系统提示词）
   if (!resume && !op && !def.systemPromptFlag) input = `${input}\n\n${taskDir.rule}`
@@ -522,6 +499,7 @@ async function runAgent(
     const at = step ? input.indexOf(`\n\n${NODE_PART}\n`) : -1
     input = at < 0 ? role + input : `${input.slice(0, at + 2)}${role}${input.slice(at + 2)}`
   }
+  if (slash?.raw) input = slash.raw
   const setup = input.length - base.length
   // 末尾再提醒一次：长提示词里夹在中间的规则容易被忽略。原生 /命令（Claude Code 新会话开头要原样认出）
   // 和压缩、审查（参数另有含义）不追加
@@ -541,7 +519,9 @@ async function runAgent(
     model: cs.api ? longContextModel(def, model, limits.context) : model,
     effort,
     permission: agentPermission(agent, settings),
-    extraArgs: [...cs.extraArgs, ...agent.extraArgs],
+    // 项目设置里信任了（或明确不信任）这个 CLI 的项目配置：按定义加参数（ADR 0050）
+    trust: trustFor(def, ctx.project),
+    extraArgs: [...cs.extraArgs, ...agent.extraArgs, ...pluginArgs(def, agent.plugins)],
     maxTurns: cs.maxTurns || undefined,
     resume,
     fork,
@@ -669,6 +649,13 @@ async function runAgent(
     })
   }
   const toolsById = new Map<string, ToolUse>()
+  // 写入等结果成功才记成改动（被钩子拦下、失败的不算），见 file-events.ts
+  const fileEvents = createFileEvents(cwd, (file) => {
+    touched.add(file.path.replaceAll('\\', '/'))
+    // 非 git 项目没有 git 差异可统计：项目内的并进 changes，项目外的记进 outsideChanges
+    if (!ctx.isGit) trackFileWrite(task, owner, cwd, file)
+    refreshChanges()
+  })
   /**
    * 工具行还没建好就到了的输出增量（有的 CLI 先推输出、后报调用）。
    * 按 id 先攒着，等 tool 事件建好行时补上，不然开头这段输出会丢
@@ -680,6 +667,7 @@ async function runAgent(
   const endTool = (x: ToolUse) => {
     // 被打断、CLI 没报结果的调用也要收掉运行中标记，不然这一行会一直转圈
     delete x.running
+    fileEvents.settle(x)
     const t0 = toolStart.get(x)
     if (t0 === undefined) return
     toolStart.delete(x)
@@ -782,9 +770,11 @@ async function runAgent(
     kill: () => stallAc.abort('stalled'),
   })
   const { arm, heard } = watch
+  const drafting = createDrafting(task, () => ctx.changed())
   const apply = (ev: CliEvent) => {
     // 有了真正的输出：不算卡住。工具结果交回去、开始一次模型请求后，重新开始等模型的回应
     if (!NOT_RESPONSE.has(ev.type)) heard()
+    drafting.see(ev)
     if (ev.type === 'tool_result' || ev.type === 'request_start') arm()
     // 预热时模型可能先回一句话再调用等待工具：这些不显示，也不占消息
     if (prewarmMode && PREWARM_QUIET.has(ev.type)) return
@@ -871,9 +861,7 @@ async function runAgent(
           // 补充还排着时又开始跑命令：同样要等它跑完才取，一起计时
           if (steerPending && !redirectTimer) checkRedirect()
         }
-        if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
-        if (ev.file) refreshChanges()
-        if (ev.file && !ctx.isGit) trackFileWrite(task, owner, cwd, ev.file)
+        fileEvents.track(ev.tool, ev.file, toolStart.has(ev.tool))
         break
       }
       case 'usage': {
@@ -899,7 +887,8 @@ async function runAgent(
           t.outputTokens += ev.addOutput ?? 0
           t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
           t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
-          t.costUsd += ev.addCost ?? 0
+          // CLI 不报费用（Codex、Command Code）时按模型目录里填的单价折算（shared/model-price.ts）
+          t.costUsd += ev.addCost ?? priceCost(modelLimitsFor(u.model || model, { entries }).entry?.price, ev)
         }
         if (owner?.usage) Object.assign(owner.usage, { context: u.context, window: u.window, model: u.model })
         break
@@ -978,6 +967,9 @@ async function runAgent(
         // 模型请求的耗时记在这段回复上：两步之间看起来「卡住」的时间大多在这里
         if (cur) cur.modelMs = (cur.modelMs ?? 0) + ev.ms
         break
+      case 'wait': // 首包时间（cli-trace 算好的），会话栏显示：分得清是链路慢还是模型一直在想
+        au().firstToken = addFirstToken(au().firstToken, ev.ms)
+        break
       case 'error':
         errors.push(ev.message)
         break
@@ -1048,19 +1040,11 @@ async function runAgent(
         // 子对话开着「提问」：交给父对话，不在子对话里弹给用户（见 askViaParent）
         if (ev.kind === 'question' && task.parentTaskId && ctx.messageParent) return askViaParent(ev, ctx.messageParent)
         const id = ctx.newId()
+        // 审批卡上点过「一直允许」的同类请求：直接允许，留一行说明（shared/allow-rules.ts）
+        if (autoAllowed(task, ev, { id, step, agentId })) return ctx.changed(true)
         asked.push(id)
         replies.set(id, ev.reply)
-        task.requests.push({
-          id,
-          step,
-          agentId,
-          kind: ev.kind,
-          title: ev.title,
-          detail: ev.detail,
-          options: ev.options ?? [],
-          ...(ev.questions ? { questions: ev.questions } : {}),
-          at: new Date().toISOString(),
-        })
+        task.requests.push(requestOf(ev, { id, step, agentId }))
         // 新的请求马上落盘，侧栏的铃铛和任务页立刻能看到
         ctx.changed(true)
         return
@@ -1383,6 +1367,19 @@ async function runAgent(
       prewarm: prewarmMode || undefined,
       keepAlive: !!keepAlive,
     })
+  // 新会话：和 CLI 同时探测项目里的远程 MCP，卡住的写一行警告（CLI 第一轮可能在等它握手）
+  if (chat && !resume && !op && !prewarmMode)
+    warnSlowMcp({
+      task,
+      cli: def.name,
+      probe: def.mcpProbe,
+      cwd,
+      env,
+      agentId,
+      step,
+      newId: ctx.newId,
+      changed: () => ctx.changed(true),
+    })
   // 压缩上下文：像后台命令一样，一开始就放一行转圈，压缩完成换成前后大小（不再插一行居中的「压缩上下文」）
   if (op?.kind === 'compact' && !prewarmMode) {
     const fresh = compaction.startOp(op, au().context || undefined, toolStart)
@@ -1479,10 +1476,11 @@ async function runAgent(
         : undefined,
     // 只交手动改过的：自动值是面板按模型目录估的，不该写进 CLI 的配置盖掉它自己的
     limits: manual,
-    // 钩子（ADR 0049）：结束前、工具前后、压缩之后，装哪些、怎么答在 server/hooks/dispatch.ts；预热只等下一句，不装
-    ...(prewarmMode ? {} : hooks),
+    // 钩子（ADR 0049，见 server/hooks/dispatch.ts）：预热也装，预热的进程之后要处理用户消息；没收到消息前 before-end.ts 放行
+    ...hooks,
   }).finally(() => {
     finished = true
+    drafting.clear()
     if (chat) taskLog(task.id, '对话的 CLI 进程结束', { cli: def.name, aborted: ctx.signal.aborted || undefined })
     blender?.close()
     watch.stop()

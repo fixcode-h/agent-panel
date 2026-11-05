@@ -254,6 +254,7 @@
   "auth": {
     "login": ["login"],
     "loginAlreadyLoggedIn": true,
+    "loginTty": true,
     "home": "~/.commandcode",
     "files": ["auth.json"],
     "identity": "none",

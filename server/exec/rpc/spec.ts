@@ -220,6 +220,24 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
     return true
   }
 
+  /**
+   * 发出去的那句被 CLI 当命令自己处理了（spec.handled，例如 Pi 的插件命令）：等一会儿还没开始新的一轮就当这一轮结束，
+   * 不然面板一直等结束记录。开始了（收到 started 那样的记录）就照常等它跑完
+   */
+  let handledTimer: ReturnType<typeof setTimeout> | undefined
+  // 这一句交出去以后已经开始了新的一轮：命令自己马上开一轮时，开始记录可能比「已处理」的回复先到
+  let startedInTurn = false
+  function watchHandled(ctx: RpcContext) {
+    const h = spec.handled
+    if (!h || startedInTurn || getPath(saved[h.save], h.at) !== h.value) return
+    clearTimeout(handledTimer)
+    handledTimer = setTimeout(() => {
+      if (ctx.finished || idle) return
+      idle = true
+      settle(ctx, true, '')
+    }, h.graceMs)
+  }
+
   /** 这一轮结束：交结果 */
   function settle(ctx: RpcContext, ok: boolean, error: string) {
     // 退出消息等确认真的不用这个进程了再发（见 exit）；保活时进程要留着开下一轮
@@ -241,10 +259,16 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       }
       const actions =
         o.resume && o.fork && spec.fork?.length ? spec.fork : o.resume && spec.resume?.length ? spec.resume : spec.start
+      startedInTurn = false
       if (!(await run(ctx, actions))) return
       emitIds(ctx)
+      watchHandled(ctx)
     },
     message(ctx, msg) {
+      if (spec.handled && matches(spec.handled.started, msg)) {
+        startedInTurn = true
+        clearTimeout(handledTimer)
+      }
       for (const r of spec.remember) if (matches(r.when, msg)) saved[r.as] = msg
       if (spec.turnLimit && o.maxTurns && !limited && matches(spec.turnLimit.when, msg) && ++turns > o.maxTurns) {
         // 停下后 CLI 照常报结束，结束时再把原因作为这一轮的错误显示
@@ -300,8 +324,10 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       turnSent = ''
       turns = 0
       limited = false
+      startedInTurn = false
       if (!(await run(ctx, spec.start))) return
       emitIds(ctx)
+      watchHandled(ctx)
     },
     exit(ctx) {
       if (!spec.exit) return

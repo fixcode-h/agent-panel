@@ -78,6 +78,8 @@ export const EN_SERVER: Record<string, string> = {
   修改: 'Edit',
   写入: 'Write',
   失败: 'Failed',
+  接口没有返回模型输出: 'The API returned no model output',
+  '{seconds} 秒内没有响应': 'No response within {seconds} seconds',
   工具: 'Tool',
   网页搜索: 'Web search',
   '查询 MCP 工具': 'Look up MCP tools',
@@ -179,7 +181,12 @@ export const EN_SERVER: Record<string, string> = {
   '测试命令：{cmd}': 'Test command: {cmd}',
   项目不存在: 'Project not found',
   '教训文件读取失败：{error}': 'Couldn’t read the lessons file: {error}',
-  '教训文件格式不对，没有覆盖：{error}': 'The lessons file is malformed, so it was left untouched: {error}',
+  '这些教训文件格式不对，没有改动：{error}': 'These lesson files are malformed and were left untouched: {error}',
+  请填写文档根的完整路径: 'Enter the full path of the docs root',
+  文档根要写完整路径: 'The docs root must be a full path',
+  '只有文档放在项目外的 P4 / SVN 项目能改共用文档根':
+    'Only P4 / SVN projects that keep docs outside the project can change the shared docs root',
+  '改文档根失败：{error}': 'Failed to change the docs root: {error}',
   '教训文件写入失败：{error}': 'Couldn’t write the lessons file: {error}',
   项目教训写入失败: 'Couldn’t save project lessons',
   教训文件的维护说明没有结束标记: 'The lessons file header is missing its end marker',
@@ -214,8 +221,8 @@ export const EN_SERVER: Record<string, string> = {
     'No permission to write to the install directory. Open a terminal as administrator and run the command below.',
   '没有权限写入 npm 的全局目录。可以在终端里用 sudo 运行下面的命令，或者把 npm 的全局目录改到自己的用户目录下。':
     'No permission to write to npm’s global directory. Run the command below with sudo in a terminal, or move npm’s global directory into your user folder.',
-  '连不上 npm 仓库，请检查网络或代理（可以在终端里设置 npm 镜像）后重试。':
-    'Can’t reach the npm registry. Check your network or proxy (you can set an npm mirror in a terminal) and try again.',
+  '连不上 npm 仓库，请检查网络，或在「设置 · 网络与代理」里填写代理（也可以在终端里设置 npm 镜像）后重试。':
+    'Cannot reach the npm registry. Check your network, or set a proxy in Settings · Network & proxy (you can also set an npm mirror in a terminal), then try again.',
   '安装失败，详细信息见下面的输出。': 'Install failed. See the output below for details.',
   '卸载失败，详细信息见下面的输出。': 'Uninstall failed. See the output below for details.',
   'del "{bin}" 并删除 "{data}"': 'del "{bin}" and delete "{data}"',
@@ -235,7 +242,13 @@ export const EN_SERVER: Record<string, string> = {
   '更新命令执行完了，但运行的 {path} 还是 {version}。可能还有另一份旧的装在别处，请在下面的「可执行文件」里填新版本的完整路径。':
     'The update command finished, but {path} is still {version}. An older copy may be installed elsewhere; enter the full path to the new version under “Executable” below.',
   '未知的 Agent': 'Unknown agent',
-  '有一个安装 / 卸载还在进行，请等它完成': 'An install / uninstall is in progress. Wait for it to finish.',
+  '安装命令执行完了，但运行时报错：{error}。多半是安装没有完整完成：这个 Agent 还在别处运行（终端或面板里的对话）时，Windows 上它的文件被占用替换不了。请先关掉它再点「安装」，或查看下面输出里安装脚本的报错。':
+    'The install command finished, but running it fails: {error}. The install most likely did not complete: on Windows, if this agent is still running elsewhere (a terminal or a conversation in the panel), its files are locked and cannot be replaced. Close it and click Install again, or check the install script errors in the output below.',
+  'npm 通过环境变量里的代理 {proxy} 访问 {registry}':
+    'npm reaches {registry} through the proxy {proxy} from environment variables',
+  '代理 {proxy} 连不上，npm 直连 {registry}': 'Proxy {proxy} is unreachable; npm connects to {registry} directly',
+  'npm 通过系统代理 {proxy} 访问 {registry}': 'npm reaches {registry} through the system proxy {proxy}',
+  'npm 通过设置里的代理 {proxy} 访问 {registry}': 'npm reaches {registry} through the proxy {proxy} from Settings',
   查不到最新版本: 'Couldn’t find the latest version',
   没有这个操作: 'Operation not found',
 
@@ -387,6 +400,7 @@ export const EN_SERVER: Record<string, string> = {
   运行它并按提示登录: 'run it and follow the login prompt',
   '你确认了「{title}」的结果，接着往下执行': 'You approved the result of "{title}"; continuing',
   '你退回了「{title}」：{answer}': 'You sent "{title}" back: {answer}',
+  '你追问了「{title}」：{answer}': 'You asked about "{title}": {answer}',
   '「{title}」完成了，看一下结果再继续': '"{title}" is done. Check the result before continuing',
   推送到远端并合并主干: 'Push to remote and merge into the main branch',
   '分支：{branch}': 'Branch: {branch}',
@@ -518,7 +532,6 @@ export const EN_SERVER: Record<string, string> = {
   '自动压缩失败：{error}': 'Auto-compact failed: {error}',
   只有对话任务可以这样做: 'Only chat tasks can do this',
   找不到这条消息: "Can't find this message",
-  '第一条消息不能撤回，可以新建一个对话': "The first message can't be rewound. Start a new chat instead",
   '{title}（分叉）': '{title} (fork)',
   '还没有会话，不需要压缩': 'No session yet, nothing to compact',
   '项目不是 git 仓库，没法审查改动': "The project isn't a git repository, so changes can't be reviewed",
@@ -645,6 +658,11 @@ export const EN_SERVER: Record<string, string> = {
   恢复的对话: 'Recovered conversation',
   '父对话测试：{child} · {step}': 'Parent test: {child} · {step}',
   '第 {n} 步「{name}」失败，用时 {time}': 'step {n} "{name}" failed after {time}',
+  '第 {n} 步「{name}」被停止了，没有跑完': 'step {n} "{name}" was stopped before it finished',
+  '这条命令被停止了（不是自己跑完的），结论按未通过处理。':
+    "The command was stopped (it didn't finish on its own), so it counts as failed.",
+  '父对话被停止或归档，这批测试没有跑完，结论按未通过处理。':
+    'The parent conversation was stopped or archived before these tests finished, so they count as failed.',
   找不到这次工具调用: 'This tool call was not found',
   // 模型设计（Blender）
   '没有找到 Blender。请先安装 Blender 4.2 或更新的版本，或在设置里填它的位置。':
@@ -676,4 +694,23 @@ export const EN_SERVER: Record<string, string> = {
   '{cli} 还没选能用的 API': '{cli} has no usable API selected yet',
   '这份报告是改版前生成的，没有存分项，没法再次生成；重新提炼这段时间吧':
     "This report was made before items were saved and can't be generated again; extract this period again instead",
+  '模型配置里没有 {model}': '{model} is not in the model catalog',
+  'Agent 规划好了，按这个方案开始改？': 'The agent finished planning. Start making changes with this plan?',
+  '「关于我」最多 {n} 字': '"About me" can be at most {n} characters',
+  '这是旧版的工作流任务，已经不能继续执行；要再做一次，请在父对话里启动工作流':
+    'This is an old-style workflow task and can no longer run. To do it again, start the workflow from the parent conversation',
+  '这次运行已经结束了，要再做一次请从父对话发起':
+    'This run has already ended. To do it again, start it from the parent conversation',
+  '找不到这次运行用的工作流，可能已被删除': 'The workflow for this run was not found; it may have been deleted',
+  '这些节点改了超过 {n} 轮：{nodes}。下次可以先在父对话里把需求聊清楚再起工作流':
+    'These nodes were revised more than {n} times: {nodes}. Next time, clarify the requirements in the parent conversation before starting the workflow',
+  执行这次工作流运行时出错: 'Error while running this workflow run',
+  '开不了独立分支（{error}），这次运行直接在父对话的目录里改':
+    "Could not open a separate branch ({error}); this run edits the parent conversation's directory directly",
+  '父对话补充：{text}': 'Parent conversation added: {text}',
+  '父对话把运行退回到「{node}」：{text}': 'Parent conversation sent the run back to "{node}": {text}',
+  '父对话终止了这次运行：{why}': 'Parent conversation cancelled this run: {why}',
+  父对话把这次运行的改动合回了: "Parent conversation merged this run's changes",
+  父对话放弃了这次运行的改动: "Parent conversation discarded this run's changes",
+  这次运行现在不在等确认: 'This run is not waiting for confirmation',
 }

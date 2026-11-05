@@ -5,7 +5,7 @@ import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { toastError } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
-import { DiagnosisDialog } from './DiagnosisDialog'
+import { useDiagnosisWindow } from './diagnosis-window'
 
 /**
  * 诊断报告在父对话页上的入口（ADR 0045）：以前「查看报告」只放在子对话里交报告的那一行工具调用上，
@@ -15,12 +15,12 @@ import { DiagnosisDialog } from './DiagnosisDialog'
  */
 
 /** 这一版有没有自动弹过：子对话页和父对话页共用一个记号，同一版不会两边各弹一次 */
-const KEY = (id: string, version: number) => `diagnosis-shown:${id}:${version}`
+const KEY = (id: string, version: number, tag: string) => `diagnosis-shown:${id}:${version}${tag ? `:${tag}` : ''}`
 /** 标记这一版已经弹过；返回 true 表示是第一次（该弹） */
-export function firstShow(id: string, version: number): boolean {
+export function firstShow(id: string, version: number, tag = ''): boolean {
   try {
-    if (localStorage.getItem(KEY(id, version))) return false
-    localStorage.setItem(KEY(id, version), '1')
+    if (localStorage.getItem(KEY(id, version, tag))) return false
+    localStorage.setItem(KEY(id, version, tag), '1')
     return true
   } catch {
     // 浏览器不让存（隐私模式）：不自动弹，入口按钮照样能点
@@ -34,14 +34,18 @@ const pendingVersion = (task: Pick<Task, 'diagnoses'>) => {
   return last?.status === 'pending' ? last.version : 0
 }
 
+/** 同一版回到等你（加好日志等你复现）也要再弹一次：记号带上这个 */
+export const showTag = (task: Pick<Task, 'diagnoses'>) => (task.diagnoses?.at(-1)?.awaiting ? 'logs' : '')
+
 /** 「查看报告」按钮：点了取子对话（要它的各版报告），取到就打开审阅弹窗 */
 export function ChildReportButton({ childId, className }: { childId: string; className?: string }) {
-  const [task, setTask] = useState<Task | null>(null)
+  // 弹窗挂在任务页顶层（见 diagnosis-window.tsx）：子对话做完、运行区重挂时这一行会卸载，弹窗不能跟着关
+  const { open: show, dialog } = useDiagnosisWindow()
   const [busy, setBusy] = useState(false)
   const open = async () => {
     setBusy(true)
     try {
-      setTask(await api.task(childId))
+      show(await api.task(childId))
     } catch (e) {
       toastError(e)
     } finally {
@@ -63,7 +67,7 @@ export function ChildReportButton({ childId, className }: { childId: string; cla
         {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileSearch className="h-3 w-3" />}
         {t('查看报告')}
       </Button>
-      {task && <DiagnosisDialog task={task} open onOpenChange={(o) => !o && setTask(null)} />}
+      {dialog}
     </>
   )
 }
@@ -73,25 +77,26 @@ export function ChildReportButton({ childId, className }: { childId: string; cla
  * ids 是这一刻在等确认的子对话；一次只弹一个，关掉后看下一个
  */
 export function DiagnosisAutoOpen({ ids }: { ids: string[] }) {
-  const [task, setTask] = useState<Task | null>(null)
+  // 弹窗挂在任务页顶层（见 diagnosis-window.tsx）：运行区重挂时这里会卸载，弹出来的报告不能跟着关
+  const { open: show, dialog, showing } = useDiagnosisWindow()
   const busy = useRef(false)
   const key = ids.join(',')
   useEffect(() => {
-    if (task || busy.current || !ids.length) return
+    if (showing || busy.current || !ids.length) return
     busy.current = true
     void (async () => {
       for (const id of ids) {
         const k = await api.task(id).catch(() => null)
         const v = k ? pendingVersion(k) : 0
-        if (k && v && firstShow(id, v)) {
-          setTask(k)
+        if (k && v && firstShow(id, v, showTag(k))) {
+          show(k, true)
           break
         }
       }
       busy.current = false
     })()
-    // 只在这批在等确认的子对话变了时再查一遍：task 关掉（变回 null）后也要接着查下一个
+    // 只在这批在等确认的子对话变了时再查一遍：弹窗关掉（showing 变回 false）后也要接着查下一个
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, task])
-  return task ? <DiagnosisDialog task={task} open onOpenChange={(o) => !o && setTask(null)} /> : null
+  }, [key, showing])
+  return dialog
 }

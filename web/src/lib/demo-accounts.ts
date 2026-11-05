@@ -102,6 +102,19 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
   }
   // 演示：模型探针不真发请求，直接报能通（前端在模型为空时不会调到这里）
   if (cli === 'api-probe') return { model: String(body.model ?? '') }
+  // 演示：测速不真发请求，给一份常见的结果（大请求下 Anthropic 协议明显慢）
+  if (cli === 'api-speed') {
+    const api = (body.api ?? {}) as { endpoints?: Record<string, string>; protocol?: string }
+    const protocols = Object.keys(api.endpoints ?? {}).length
+      ? Object.keys(api.endpoints!)
+      : [api.protocol ?? 'openai-chat']
+    return {
+      rows: protocols.flatMap((protocol) => [
+        { protocol, size: 'small', firstMs: protocol === 'anthropic' ? 1180 : 860, totalMs: 1500 },
+        { protocol, size: 'large', firstMs: protocol === 'anthropic' ? 13900 : 2100, totalMs: 15200 },
+      ]),
+    }
+  }
   // 演示：余额按 DeepSeek 的返回格式给一份假数据
   if (cli === 'api-balance')
     return {

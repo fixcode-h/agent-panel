@@ -1,3 +1,4 @@
+import { ModelPriceField } from './ModelPrice'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
@@ -63,6 +64,8 @@ import { cliApi, type ApiConfig, type ApiProtocol } from '@shared/accounts'
 import { CliLimitsPanel, hasLimits } from './CliLimits'
 import { CliSkills } from './CliSkills'
 import { CliPackages } from './CliPackages'
+import { CliVersionHint } from './CliVersionHint'
+import { CliConfigSettings } from './CliConfigSettings'
 
 export const envToText = (env: CliSettings['env']) => env.map((e) => `${e.key}=${e.value}`).join('\n')
 export const textToEnv = (text: string) =>
@@ -448,6 +451,7 @@ export function TierTable({
                       title={can.maxOutput ? undefined : t('{cli} 不接受最大输出的设置', { cli: def.name })}
                     />
                   </div>
+                  <ModelPriceField model={mapTo || model} protocol={protocol} readOnly={readOnly} />
                 </div>
               )}
             </div>
@@ -857,6 +861,7 @@ export function CliSection({
             aria-label={t('启用 {cli}', { cli: def.name })}
           />
         )}
+        {ok && <CliVersionHint def={def} version={status?.version} />}
       </div>
       {installer.job ? (
         <InstallLog
@@ -1100,6 +1105,18 @@ export function CliSection({
               <CliLimitsPanel cli={def.id} />
             </div>
           )}
+        </Group>
+      )}
+
+      {ok && !!def.configSettings?.length && (
+        <Group title={t('{cli} 自己的设置', { cli: def.name })}>
+          <p className="pb-2 text-footnote text-muted">
+            {t('改了马上写进 {file}，终端里的 {cli} 也会跟着变；选回「跟随」就删掉这一项', {
+              cli: def.name,
+              file: def.configSettings[0].file.replace(/\$\{\w+:-([^}]*)\}/g, '$1'),
+            })}
+          </p>
+          <CliConfigSettings def={def} />
         </Group>
       )}
 

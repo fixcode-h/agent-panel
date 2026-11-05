@@ -3,17 +3,18 @@ import { CircleAlert, Loader2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import type { ChildSummary } from './child-line'
+import { stageConfirm, type ChildSummary } from './child-line'
 
 /** 一次最多列几行：再多就在最后一行写「还有 N 个」，点开子对话列表看全部 */
 const MAX_ROWS = 3
 
 /**
  * 在等你确认的子对话：自己有待确认的请求，或者它下面的子对话在等你（childNeeds）。
- * 只等你回答提问（asking）的不在这里：子对话栏已经有一枚「请你选择」，父对话里也有提问卡片
+ * 只等你回答提问（asking）的不在这里：子对话栏已经有一枚「请你选择」，父对话里也有提问卡片。
+ * 工作流节点做完等你确认结果的也不在这里：它留在子对话那一行上，行尾「查看结果」（见 child-line.ts 的 stageConfirm）
  */
 export function childrenConfirming(kids: ChildSummary[]) {
-  return kids.filter((c) => (c.requests || c.childNeeds) && !c.resolved && !c.gone)
+  return kids.filter((c) => (c.requests || c.childNeeds) && !c.resolved && !c.gone && !stageConfirm(c))
 }
 
 /** 一行写什么：「子对话「X」等你确认：运行命令：npm test」 */
@@ -29,7 +30,7 @@ function rowText(c: ChildSummary) {
  * 子对话在等你确认：贴在输入框上方子对话栏的最前面，一个子对话一行（实测报告问题 1）。
  * 卡在权限确认上的子对话不转圈，运行区和子对话小块都不列它，以前只有点进子对话才看得到「需要你确认」。
  * 只是允许 / 拒绝一个操作（命令、改文件、工具）的，行上直接给两个按钮，不用点进子对话；
- * 提问、节点确认、孙对话在等的要看完整内容，点「去处理」在右栏打开它
+ * 提问、孙对话在等的要看完整内容，点「去处理」在右栏打开它
  */
 export function ChildRequestBar({
   kids,

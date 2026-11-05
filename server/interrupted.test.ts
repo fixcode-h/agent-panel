@@ -42,12 +42,13 @@ test('记下被打断的任务，读回来带上时间和「还没处理」', as
   assert.ok(readFileSync(file, 'utf8').includes('t1'))
 })
 
-test('没有任务时不动上一次的记录', async () => {
+test('没有任务时也写空名单，覆盖上一次的记录', async () => {
   await recordInterrupted([])
-  assert.deepEqual(
-    (await readInterrupted()).tasks.map((x) => x.id),
-    ['t1', 't2'],
-  )
+  const r = await readInterrupted()
+  assert.deepEqual(r.tasks, [])
+  assert.equal(r.acknowledged, false)
+  // 文件确实被重写了：下次启动读到的是这次的空名单，不是上次没处理完的旧任务
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).tasks, [])
   // 再次强制更新时覆盖上一次的
   await recordInterrupted([{ id: 't3', doing: '跑测试' }])
   assert.deepEqual(

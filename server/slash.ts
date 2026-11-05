@@ -7,6 +7,8 @@ import { getCli } from '../shared/clis.ts'
 import { builtinPrompt, fillCommand } from '../shared/commands.ts'
 import { t } from '../shared/i18n.ts'
 import { DATA_DIR } from './store.ts'
+import type { TrustChoice } from '../shared/cli-trust.ts'
+import { queryCliCommands } from './cli-commands.ts'
 
 /**
  * 输入框里的「/」命令：列出 CLI 自己带的命令和 Skill、「所有 Agent」共用的命令，发出去之前按 CLI 展开。
@@ -19,6 +21,8 @@ interface Found extends SlashCommand {
   path: string
   /** 「所有 Agent」共用的命令（数据目录的 commands/，md 格式） */
   panel?: boolean
+  /** 只有 CLI 自己能执行的命令（插件命令，见 server/cli-commands.ts）：原样交给它 */
+  native?: boolean
 }
 
 /** 「所有 Agent」共用的命令放在数据目录里，不属于哪个 CLI */
@@ -108,13 +112,15 @@ async function rawCommands(cli: string, cwd: string): Promise<Found[]> {
 // Codex 列 Skill 要起一次 app-server：短时间内的重复查询用缓存
 const cache = new Map<string, { at: number; list: Promise<Found[]> }>()
 
-async function all(cli: string, cwd: string): Promise<Found[]> {
-  const key = `${cli}\n${cwd}`
+async function all(cli: string, cwd: string, trust?: TrustChoice): Promise<Found[]> {
+  const key = `${cli}\n${cwd}\n${trust ?? ''}`
   const hit = cache.get(key)
   if (hit && Date.now() - hit.at < 30_000) return hit.list
   const list = (async () => {
     const skills: CliSkill[] = await listSkills(cli, cwd).catch(() => [])
     const cmds = await rawCommands(cli, cwd)
+    // 插件里的命令、模板和 Skill 只能问 CLI（Pi 的 get_commands）；问不到就只用扫到的
+    const queried = await queryCliCommands(cli, cwd, trust).catch(() => [])
     const seen = new Set(cmds.map((c) => c.name))
     // 共用的命令排在 CLI 自己的后面：同名时以 CLI 自己的为准
     const panel = (await scanCommands(panelCommandDir(), t('所有 Agent'), 'md')).filter(
@@ -132,6 +138,8 @@ async function all(cli: string, cwd: string): Promise<Found[]> {
           source: s.source || s.scope,
           path: s.path,
         })),
+      // 同名的以扫到的为准：扫到的面板自己展开，问出来的只补插件里的
+      ...queried.filter((c) => !seen.has(c.name) && seen.add(c.name)),
     ]
   })()
   cache.set(key, { at: Date.now(), list })
@@ -143,23 +151,29 @@ async function all(cli: string, cwd: string): Promise<Found[]> {
 export const clearSlashCache = () => cache.clear()
 
 /** 页面列「/」菜单用：不带本机路径 */
-export async function listCommands(cli: string, cwd: string): Promise<SlashCommand[]> {
-  return (await all(cli, cwd)).map(({ path: _p, panel: _x, ...c }) => c)
+export async function listCommands(cli: string, cwd: string, trust?: TrustChoice): Promise<SlashCommand[]> {
+  return (await all(cli, cwd, trust)).map(({ path: _p, panel: _x, native: _n, ...c }) => c)
 }
 
 /**
  * 发给 CLI 之前展开「/命令 参数」。native：CLI 自己认识这些命令（Claude Code、而且是会话开头的原样文字）。
  * 顺序：CLI 自己的命令和 Skill →「所有 Agent」的命令 → 面板的内置命令；都不是的「/xxx」原样发出，当普通文字。
  */
-export async function expandSlash(text: string, cli: string, cwd: string, native: boolean): Promise<string> {
+export async function expandSlash(
+  text: string,
+  cli: string,
+  cwd: string,
+  native: boolean,
+  trust?: TrustChoice,
+): Promise<string> {
   const m = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(text.trim())
   if (!m) return text
   const [, name, rest = ''] = m
   const args = rest.trim()
   if (native && getCli(cli)?.nativeCommands?.includes(name)) return text
-  const c = (await all(cli, cwd).catch(() => [])).find((x) => x.name === name)
+  const c = (await all(cli, cwd, trust).catch(() => [])).find((x) => x.name === name)
   if (!c) return builtinPrompt(name, args) || text
-  if (native && !c.panel) return text
+  if (c.native || (native && !c.panel)) return text
   if (c.kind === 'skill') {
     // 说明直接放进要求里：Skill 多在工作目录外，CLI 不一定有权限去读；目录也告诉它，里面的脚本、参考文件需要时再读
     const { body } = splitFrontMatter(await readFile(c.path, 'utf8').catch(() => ''))
@@ -173,4 +187,25 @@ export async function expandSlash(text: string, cli: string, cwd: string, native
   const { body } = await readCommand(c.path, format)
   if (!body.trim()) return text
   return fillCommand(body, args)
+}
+
+/**
+ * 对话里打的「/命令」交给 CLI 前的样子（runner 用）：Claude Code 新会话开头原样认得，其他展开成普通要求。
+ * 对话提示把用户原话放在「## 用户这次的消息」下面，所以按原话找到那一行换成展开后的要求。
+ * 插件命令（native）只有 CLI 自己认，而且要整句就是这条命令：raw 给出原话，runner 这一轮只发它
+ */
+export async function slashInput(
+  input: string,
+  prompt: string,
+  o: { cli: string; cwd: string; native: boolean; trust?: TrustChoice; bug?: string },
+): Promise<{ input: string; raw?: string }> {
+  if (!prompt.trim().startsWith('/')) return { input }
+  const name = /^\/([^\s/]+)/.exec(prompt.trim())?.[1] ?? ''
+  if (!o.bug && (await all(o.cli, o.cwd, o.trust).catch(() => [])).some((x) => x.native && x.name === name))
+    return { input, raw: prompt.trim() }
+  const head = '## 用户这次的消息\n'
+  const at = input.indexOf(head + prompt)
+  const expanded = o.bug ?? (await expandSlash(prompt, o.cli, o.cwd, o.native, o.trust))
+  if (at < 0 || expanded === prompt) return { input }
+  return { input: `${input.slice(0, at + head.length)}${expanded}${input.slice(at + head.length + prompt.length)}` }
 }

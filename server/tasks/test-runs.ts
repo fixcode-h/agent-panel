@@ -38,6 +38,9 @@ export function createTestRuns(sc: TasksScope) {
         root: await sc.taskDir(parent),
         // 和编译共用一条独占队：同一目录同一时间只跑一条，UE 编译跑着时新测试排在后面
         exclusive: true,
+        // 被停掉（测试卡住时用户用 stop_background 停）也要把结果交回来：队列靠它推进，
+        // 不然这一批既不算通过也不算失败，等它的子对话永远停在「等父对话测试」
+        notifyOnStop: true,
         ...(step.timeoutSec ? { timeoutMinutes: Math.max(1, Math.ceil(step.timeoutSec / 60)) } : {}),
       })
       if (!r.ok) return { ok: false, info: r.info }

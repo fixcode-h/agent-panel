@@ -15,7 +15,7 @@ test('/bug：父对话派 kind: "bug" 子对话，子对话就地交诊断报告
   assert.match(parent, /## 用户报的 Bug\n角标不刷新/)
   assert.ok(!parent.includes(BUG_FULL_TEXT), '父对话只派单，不用带完整方法')
   const child = bugSlash('/bug 角标不刷新', { parentTaskId: 'p' }, false)!
-  assert.match(child, /submit_diagnosis 交诊断报告，用户确认方案之前不改任何文件/)
+  assert.match(child, /submit_diagnosis 分阶段交报告.*每一步用户同意之前不改任何文件/)
   assert.ok(child.includes(BUG_FULL_TEXT))
   assert.match(bugSlash('/bug', { parentTaskId: '' }, false)!, /把诊断报告写在回复里，结束这一轮，等用户回复同意再改/)
   assert.equal(bugSlash('/fix 角标', { parentTaskId: '' }, true), undefined)

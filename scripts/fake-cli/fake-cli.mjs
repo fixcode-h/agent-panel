@@ -607,6 +607,9 @@ if (piRpc) {
     const m = JSON.parse(l)
     if (m.type === 'get_state') {
       say({ type: 'response', command: 'get_state', id: m.id, success: true, data: { sessionId: piSession } })
+    } else if (m.type === 'get_commands') {
+      // 「/」菜单问插件命令（ADR 0050）：假的 Pi 没装插件，回空列表
+      say({ type: 'response', command: 'get_commands', id: m.id, success: true, data: { commands: [] } })
     } else if (m.type === 'get_fork_messages') {
       const h = hist()
       // 这一轮的 prompt 收到后第一次查：把它记成一条新的用户消息
@@ -1052,13 +1055,22 @@ if (
   await panelCall('set_plan', { title: '等子对话', steps: [{ title: '派子对话改登录' }] })
   await panelCall('create_conversation', { title: '改登录', message: 'SLOW 改登录页', step: '1' })
 }
-// 父对话按工作流做（ADR 0044）：列一步计划、用 start_workflow 开工作流子对话挂在这一步上。
+// 父对话按工作流做：列一步计划、用 start_workflow 起一次工作流运行挂在这一步上。
 // 工作流名字写在要求里（START_WORKFLOW:<名字>），继续执行的续接提示里还有原来的要求，不再开第二个
 {
   const wf = /START_WORKFLOW:(\S+)/.exec(input)?.[1]
   if (wf && input.includes('start_workflow') && input.includes('set_plan') && !input.includes('面板说明：上一轮')) {
     await panelCall('set_plan', { title: '按工作流做', steps: [{ title: '工作流做功能' }] })
     await panelCall('start_workflow', { workflow: wf, input: '做功能', title: '工作流做功能', step: '1' })
+  }
+}
+// 工作流运行做完来信（【工作流运行】……等你合回）：像真的父对话一样看过结论后用 finish_workflow 合回，合不回就放弃
+{
+  const done = /【工作流运行】工作流「[^」]*」（id (\S+?)）：做完了，等你合回/.exec(input)?.[1]
+  if (done && input.includes('finish_workflow')) {
+    const r = await panelCall('finish_workflow', { id: done, action: 'merge' })
+    // 合不回（父对话目录里同一个文件也有没提交的改动）：像真的父对话那样放弃这次运行的改动，不让它一直挂着
+    if (r?.isError) await panelCall('finish_workflow', { id: done, action: 'discard' })
   }
 }
 // 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
@@ -1368,7 +1380,11 @@ if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind 
 // 一次性执行（stdin 传一个任务、跑一轮就退出）用的回复；RPC 保活时每轮用 turnReply() 重算
 const reply = turnReply()
 // 空回合：这一轮只回一句准备语，连工具都不调（复现「只回一句话就结束」）
-const emptyTurn = input.includes('FAKE_EMPTY') || input.includes('（收尾自检）')
+// PLAN_STALL 被推之后仍然原地不动（计划停在「跑检查」）：也是空回合。面板提醒不限次数，只有连着几次都没动手才停（空转保护）
+const emptyTurn =
+  input.includes('FAKE_EMPTY') ||
+  input.includes('（收尾自检）') ||
+  (input.includes('你的计划才做了') && input.includes('「跑检查」'))
 // HOOK_MODE：照真的 Claude Code 跑结束前钩子（见 claudeStopHook）；在 input 被钩子的说明换掉之前先记下
 const hookMode = input.includes('HOOK_MODE')
 // 一个字都不回、也不报用量的一轮：CLI 报这一轮「成功」，面板什么都没收到。
@@ -1958,8 +1974,34 @@ if (kind === 'claude') {
       ],
     },
   })
+  // 任务描述里有 ASK_ALWAYS：连着请求改同一个目录里的两个文件（审批卡带 diff、第一次点「一直允许」后第二次自动允许）
+  if (input.includes('ASK_ALWAYS') && streamIn) {
+    const asked = []
+    for (const [n, f] of [
+      ['e1', 'src/a.ts'],
+      ['e2', 'src/b.ts'],
+    ]) {
+      out({
+        type: 'control_request',
+        request_id: n,
+        request: {
+          subtype: 'can_use_tool',
+          tool_name: 'Edit',
+          input: { file_path: f, old_string: 'const x = 1', new_string: 'const x = 2' },
+        },
+      })
+      for (;;) {
+        const m = await globalThis.nextLine()
+        if (m.type === 'control_response' && m.response.request_id === n) {
+          asked.push(m.response.response)
+          break
+        }
+      }
+    }
+    if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify(asked) + '\n')
+  }
   // 任务描述里有 ASK：先请求确认一条命令，再问一个问题，把面板的回答记下来
-  if (input.includes('ASK') && streamIn) {
+  else if (input.includes('ASK') && streamIn) {
     // 照真实 CLI 的行为模拟：bypass 模式少了 --permission-prompt-tool 时不暴露 AskUserQuestion，
     // 提问只能变成文字；跳过确认时审批也不经过面板。回归时 e2e 才能发现提问通道又丢了
     const bypass = args.includes('--dangerously-skip-permissions')

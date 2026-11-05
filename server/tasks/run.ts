@@ -1,3 +1,4 @@
+import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
 import {
@@ -11,6 +12,8 @@ import {
 } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { loadProjectLessons, projectWithLessons } from '../project-lessons.ts'
+import { loadProjectExperience } from '../project-experience.ts'
+import { recordExperience } from '../experience-learn.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
 import {
   beginRun,
@@ -26,7 +29,6 @@ import {
   endRun,
   trackWait,
   newTask,
-  runRunning,
   taskDeleted,
   withAttachments,
   withTaskModel,
@@ -48,7 +50,7 @@ import { dropHeld, hasHeld, holdForNextTurn, markHeld, takeHeld } from '../exec/
 import { resetIdleCountdown } from '../presence.ts'
 import type { Live } from './types.ts'
 import { placedFiles } from '../attachments.ts'
-import { currentBranch, isBigProject } from '../exec/worktree.ts'
+import { currentBranch, isBigProject, refillSpareDeps } from '../exec/worktree.ts'
 import { currentTestSteps, isUeBuildCommand } from '../../shared/test-steps.ts'
 import { log } from '../log.ts'
 import { sourceHeader } from '../../shared/peer-message.ts'
@@ -56,7 +58,6 @@ import { inboxWithFile } from './inbox-file.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { markChildWrapUp } from '../../shared/plan.ts'
-import { flowLine } from '../../shared/flow-child.ts'
 import { statSync } from 'node:fs'
 import path from 'node:path'
 import {
@@ -143,9 +144,17 @@ export function createRun(sc: TasksScope) {
       message,
       files,
       agentId,
-      flow,
       bug,
-    }: { title: string; message: string; files?: string[]; agentId?: string; flow?: Task['flow']; bug?: boolean },
+      edits,
+    }: {
+      title: string
+      message: string
+      files?: string[]
+      agentId?: string
+      bug?: boolean
+      /** 一定要改代码：第一次执行前就开好独立分支（只在独立分支模式下有用） */
+      edits?: boolean
+    },
   ) {
     const worker = agents.find((a) => a.origin === 'builtin:worker')
     const subId = randomUUID()
@@ -160,13 +169,12 @@ export function createRun(sc: TasksScope) {
       // 父对话的「子对话也提问」决定这条新子对话开不开提问
       askUser: childAskInitial(parent),
     })
-    // 工作流子对话（ADR 0044）：第一轮由引擎按流程图跑，跑完交给执行角色收尾，所以角色固定用「执行」
     // 父对话派来的 Bug（ADR 0045）：修之前要交诊断报告给用户确认
     const draft = {
       ...newTask(input, undefined, at, subId, [], {}),
       id: subId,
-      ...(flow && { flow }),
       ...(bug && { bug }),
+      ...(edits && project.childIsolation === 'worktree' && { editFirst: true }),
     }
     // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
     // 只有直接调接口没给时才退回用户消息开头
@@ -216,22 +224,6 @@ export function createRun(sc: TasksScope) {
         .filter(Boolean)
         .join('\n'),
     }
-  }
-
-  /**
-   * 工作流子对话把同一个工作流再跑一次（start_workflow 带 again，ADR 0044）：流程图状态改回「起一次新的运行」，
-   * 之后照常把消息交给它，它的下一轮从头跑流程图。还在跑的不改，先等它停下或终止；返回空串是改好了
-   */
-  async function rerunChildFlow(parentId: string, id: string, input: string) {
-    const cur = sc.live.get(id.trim())?.task ?? (await sc.store.get(id.trim()))
-    if (!cur || cur.parentTaskId !== parentId) return `找不到你名下的子对话 ${id}`
-    if (!cur.flow) return `子对话「${cur.title}」不是工作流子对话：要它接着做用 send_to_conversation`
-    if (cur.working || runRunning(cur))
-      return `工作流子对话「${cur.title}」还在跑：等它停下，或者先用 stop_workflow 终止再重跑`
-    const flow = { ...cur.flow, input, run: 0, handed: false, cancelled: undefined }
-    cur.flow = flow
-    if (!sc.live.has(cur.id)) await sc.store.update(cur.id, { ...cur, flow })
-    return ''
   }
 
   /** 面板自己替父对话新建子对话（不经父对话的那一轮）：按父对话所在项目和现在的角色列表来 */
@@ -294,6 +286,8 @@ export function createRun(sc: TasksScope) {
     // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录；
     // 子对话不建独立分支，和父对话用同一个目录（父对话在独立分支里时就是父的那个目录）
     const dir = found ? await sc.taskDir(task).catch(() => found.path) : ''
+    // 这一轮可能会开独立分支（还没开、要改文件时才开）：先在后台备一份依赖副本，真开的时候改名拿走，不用当场等十几秒复制
+    if (dir && entry.task.wantsWorktree && !isolated(entry.task) && !prewarm) void refillSpareDeps(dir)
     // 真正拼进提示词的是 runner 里的 ctx.project.lessons（见 server/exec/runner.ts 的 lessonsPrompt 调用）：
     // 必须在这里挂上「文件 + 旧 JSON」的合并结果，否则写文件后项目 JSON 被清空，新会话的教训段会整段消失
     let project = found
@@ -519,6 +513,9 @@ export function createRun(sc: TasksScope) {
               : undefined,
         // 顶层项目对话收尾名下的子对话：子对话 submit_merge 请求后由它合回、标完成、删分支（ADR 0005）
         finishChild: !task.parentTaskId && task.projectId ? (id) => sc.finishChild(entry.task, id) : undefined,
+        // 名下的工作流运行（不是子对话）：起、补充、退回、代答、终止、合回（server/tasks/flow-runs.ts）
+        runs:
+          !task.parentTaskId && !task.flowRun && found?.id ? sc.flowRuns.hostFor(() => entry.task, found) : undefined,
         // 父对话之间：看同一项目里的其他父对话、给它们传话（编译占位时的协调就靠它）
         peers: coordinatorRole
           ? async () =>
@@ -580,6 +577,8 @@ export function createRun(sc: TasksScope) {
         branch: coordinatorRole && dir ? await currentBranch(dir).catch(() => '') : undefined,
         // 这一轮的 CLI 自带待办会不会被面板显示：Chat 模式的提示词据此决定怎么说计划（CLI 定义的 todos）
         cliTodos: !!startedRun && !!getCli(startedRun.cli)?.todos,
+        // Chat 页的对话：「关于我」和跨对话记忆进提示词，remember 工具往里记（server/chat-memory.ts）
+        chatMemory: isChatMode(task) ? await chatMemoryFor() : undefined,
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
           task.mode === 'chat' && dir
@@ -627,6 +626,21 @@ export function createRun(sc: TasksScope) {
                   : { ok: false, info: '这里记不了项目教训' },
             }
           : undefined,
+        // 项目经验：设置里关了总开关就整个不给（工具、开头那一行都没有）；每次查都现读，刚学到的也能查到
+        experience:
+          task.projectId && settings.experience.enabled
+            ? {
+                list: async () => {
+                  const p = await sc.deps.projects.get(task.projectId)
+                  return p ? (await loadProjectExperience(p, agents)).items : []
+                },
+                record: async (input) => {
+                  const p = await sc.deps.projects.get(task.projectId)
+                  if (!p?.path) return { ok: false, info: '这个项目没有目录，存不了经验' }
+                  return recordExperience(p, agents, input, task.parentTaskId || task.id)
+                },
+              }
+            : undefined,
         releaseFiles:
           task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
             ? (paths) => releaseUnchanged(sc.claims, entry.task, paths)
@@ -658,7 +672,6 @@ export function createRun(sc: TasksScope) {
                 childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) }),
               ),
               lastActivityAt: childLastActivity(cur),
-              flow: flowLine(cur) || undefined,
               // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
               autoAsk: cur.autoAsk,
               createdAt: cur.createdAt,
@@ -666,16 +679,11 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files, agentId, flow, bug }) => {
+        createConversation: async ({ title, message, files, agentId, bug, edits }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          return spawnChild(entry.task, project, agents, { title, message, files, agentId, flow, bug })
+          return spawnChild(entry.task, project, agents, { title, message, files, agentId, bug, edits })
         },
-        sendToConversation: async (id, message, opts) => {
-          // 同一个工作流再跑一次（start_workflow 带 again）：先把子对话的流程图状态改回「起一次新的运行」
-          if (opts?.rerun) {
-            const bad = await rerunChildFlow(entry.task.id, id, message)
-            if (bad) return { ok: false, info: bad }
-          }
+        sendToConversation: async (id, message) => {
           // 父对话交给已有子对话：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
           const r = await sc.sendToChild(entry.task.id, id, message, undefined, 'task')
           // 交给子对话就算回答了它的提问：父对话里的提问卡片收起
@@ -774,8 +782,15 @@ export function createRun(sc: TasksScope) {
         } else await flush(keepTime, true)
         // 只删自己的执行位：这一轮收尾时如果已经有新的一轮占住了，不能把它删掉
         sc.release(entry)
+        // 工作流运行这一轮收完：等决定、待合回、完成时给父对话写信（放执行位之后：父对话收信马上合回、退回时不会撞上）
+        if (!prewarm && entry.task.flowRun)
+          void sc.flowRuns
+            .afterTurn(entry.task)
+            .catch((e) => log.warn('task', '工作流运行回信失败', { task: task.id, error: (e as Error).message }))
         // 整轮结束了，没被节点取走的补充不会再有人取
         forgetNotes(task.id)
+        // 项目里的顶层对话：空闲够久、整个对话（含子对话）都完成了再学经验，期间又跑起来就重新计时
+        if (!prewarm && !entry.task.parentTaskId && entry.task.projectId) void sc.learnExperience(task.id)
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
         // 收尾停掉的（父对话 finish_child、用户点解决：stopReason finish）不是出错：收尾时交来的新任务照样接着处理
         const endedOk = entry.task.status === 'done' || (entry.stop && entry.stopReason === 'finish')

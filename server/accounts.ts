@@ -41,7 +41,7 @@ import { apiBalanceUrl, apiBaseUrl } from '../shared/api-vendors.ts'
 import { parseApiBalance, type ApiBalance } from '../shared/api-balance.ts'
 import { stripAnsi } from '../shared/ansi.ts'
 import { t } from '../shared/i18n.ts'
-import { capture, childEnv, runProcess } from './exec/process.ts'
+import { capture, childEnv, runProcess, withFakeTty } from './exec/process.ts'
 import { invalidateClis } from './detect.ts'
 import { invalidateModels, pickPiBuiltin, piBuiltinModels } from './models.ts'
 import { log } from './log.ts'
@@ -1044,7 +1044,7 @@ async function startLogin(def: CliDefinition): Promise<LoginJob> {
     command: cs.command,
     args: a.login,
     cwd: homedir(),
-    env,
+    env: a.loginTty ? withFakeTty(env) : env,
     signal: job.abort.signal,
     timeoutMs: LOGIN_TIMEOUT + 10_000,
     onSpawn: (io) => {
@@ -1229,7 +1229,7 @@ function looksLikeAnswer(protocol: ApiProtocol, text: string) {
  * 按协议构造最小的一次推理请求：地址、请求体、认证头。
  * Anthropic 要 /v1/messages（地址自带 /v1 时不重复），OpenAI 的两种协议分别是 /responses 和 /chat/completions。
  */
-function probeRequest(
+export function probeRequest(
   protocol: ApiProtocol,
   base: string,
   model: string,

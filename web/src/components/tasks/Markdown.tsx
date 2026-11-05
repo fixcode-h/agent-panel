@@ -6,6 +6,7 @@ import { t } from '@shared/i18n'
 import { splitSummaryCards, unfenceSummaries, type SummaryCard } from '@shared/summary-card'
 import { linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
+import { targetOf, useFileRef } from '@/components/files/FileRefLayer'
 import { useChildSummaryOpen } from './child-open'
 import { toast } from '@/lib/toast'
 import { enhanceMermaid, mermaidAction, mermaidErrorHtml, mermaidHtml, mermaidThemeVars } from '@/lib/mermaid-fx'
@@ -31,6 +32,10 @@ export const handleNeedsText = (title: string, needs: string) =>
 
 let seq = 0
 let mermaidLoad: Promise<typeof import('mermaid').default> | undefined
+/** KaTeX 和它的样式表用到公式时才加载（体积不小，大多数回复里没有公式） */
+let katexLoad: Promise<typeof import('katex').default> | undefined
+const loadKatex = () =>
+  (katexLoad ??= Promise.all([import('katex'), import('katex/dist/katex.min.css')]).then(([m]) => m.default))
 let mermaidTheme = ''
 
 /** mermaid 体积大，只在真的遇到图时才加载；主题跟随当前明暗 */
@@ -134,6 +139,8 @@ export function Markdown({
   const openFile = useFileOpen()
   // 在任务页里时，像文件路径的行内代码可以点开看文件
   const canOpen = !!openFile
+  // 文件标记的单击、悬停卡片和右键菜单（任务页提供；没有时退回直接打开文件弹窗）
+  const refs = useFileRef()
   const handleNeeds = useContext(HandleNeedsCtx)
   const canAct = !!handleNeeds
   const cards = useContext(SummaryCardsCtx)
@@ -197,12 +204,47 @@ export function Markdown({
     }
   }, [html, live])
 
+  // 数学公式：流式输出时先显示原文，停下后懒加载 KaTeX 换成公式（占位见 web/src/lib/md-math.ts）
+  useEffect(() => {
+    const root = ref.current
+    if (!root || live) return
+    const boxes = [...root.querySelectorAll<HTMLElement>('.md-math:not([data-done])')]
+    if (!boxes.length) return
+    let cancelled = false
+    void loadKatex()
+      .then((katex) => {
+        for (const el of boxes) {
+          if (cancelled) return
+          el.dataset.done = '1'
+          // 写错的公式 KaTeX 会标红显示原文（throwOnError: false），不让一个错公式把整段回复弄空
+          katex.render(el.dataset.tex ?? '', el, {
+            displayMode: el.classList.contains('md-math-block'),
+            throwOnError: false,
+          })
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [html, live])
+
+  // 回复停下后把文件标记按真实情况标一遍：找不到的划掉、其实是目录的换成文件夹图标。
+  // 流式输出时 HTML 每 200ms 换一次，不跟着解析
+  useEffect(() => {
+    if (!live && ref.current && canOpen) refs?.mark(ref.current)
+  }, [html, live, refs, canOpen])
+
+  const refAt = (e: React.SyntheticEvent) =>
+    canOpen ? (e.target as HTMLElement).closest<HTMLElement>('[data-file-ref]') : null
   // 复制按钮是渲染出来的 HTML，用事件委托处理
   const onClick = (e: React.MouseEvent) => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-path]')
+    const el = refAt(e)
     if (el && openFile) {
       // 路径和行号是 linkPaths 解析好放在 data-* 上的，这里直接用
-      openFile(el.dataset.path ?? '', el.dataset.mdLine ? Number(el.dataset.mdLine) : undefined)
+      const target = targetOf(el)
+      if (refs) void refs.open(target)
+      else openFile(target.path, target.line)
       return
     }
     const go = (e.target as HTMLElement).closest<HTMLElement>('[data-child-summary]')
@@ -250,8 +292,28 @@ export function Markdown({
     <div
       ref={ref}
       onClick={onClick}
+      onContextMenu={(e) => {
+        const el = refAt(e)
+        if (el && refs) refs.menu(e, targetOf(el), el)
+      }}
+      onMouseOver={(e) => {
+        const el = refAt(e)
+        // 在同一个标记里面移动（从图标移到文件名）不重新计时
+        if (el && refs && !el.contains(e.relatedTarget as Node | null)) refs.hover(el, targetOf(el))
+      }}
+      onMouseOut={(e) => {
+        const el = refAt(e)
+        if (el && refs && !el.contains(e.relatedTarget as Node | null)) refs.leave()
+      }}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' && (e.target as HTMLElement).dataset.path) onClick(e as unknown as React.MouseEvent)
+        const el = refAt(e)
+        if (!el) return
+        if (e.key === 'Enter') onClick(e as unknown as React.MouseEvent)
+        // 键盘也能弹右键菜单：Shift+F10 或菜单键，菜单出在标记下面
+        if (refs && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
+          const r = el.getBoundingClientRect()
+          refs.menu({ clientX: r.left, clientY: r.bottom, preventDefault: () => e.preventDefault() }, targetOf(el), el)
+        }
       }}
       className={cn('chat-md [overflow-wrap:anywhere]', compact && 'chat-md-compact', className)}
       dangerouslySetInnerHTML={{ __html: html }}

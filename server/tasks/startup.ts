@@ -4,7 +4,7 @@ import type { Task, TaskMessage } from '../../shared/schema.ts'
 import { failLostWaits } from '../../shared/plan-lost.ts'
 import { pauseUnit } from '../../shared/run-stops.ts'
 import { restartInterrupted, restartUnfinished, taskDeleted } from '../../shared/task.ts'
-import { droppedAsksNote, settleStopped } from '../../shared/task-settle.ts'
+import { diagnosisWaiting, droppedAsksNote, rewaitDiagnosis, settleStopped } from '../../shared/task-settle.ts'
 import type { createTaskStore } from '../task-store.ts'
 import { rebuildClaims, type createClaims } from '../claims.ts'
 
@@ -29,7 +29,14 @@ export async function migrateOnStart(store: Store, claims?: ReturnType<typeof cr
   // 界面却还会画成转圈（childIcon 对 unfinished 也返回 running），一直算进「N 个执行中」。
   // 两种都落成已停止，重启后没人接着做的事不再显示成在执行（见 restartInterrupted）
   // 进了回收站的对话不在这里处理：用户已经把它删了，恢复后不该带着一条「已中断，点继续执行」
-  for (const meta of all.filter((x) => (x.status === 'running' || restartInterrupted(x)) && !taskDeleted(x))) {
+  // 诊断报告在等用户确认的（ADR 0045）：等的是用户不是 CLI，重启不算打断，回到等确认、不写「已中断」
+  for (const meta of all.filter((x) => diagnosisWaiting(x) && x.status === 'running' && !taskDeleted(x))) {
+    const task = await store.get(meta.id)
+    if (task) await store.update(task.id, rewaitDiagnosis(task), { keepUpdatedAt: true })
+  }
+  for (const meta of all.filter(
+    (x) => (x.status === 'running' || restartInterrupted(x)) && !diagnosisWaiting(x) && !taskDeleted(x),
+  )) {
     // 列表里只有用户消息，改之前取完整的
     const task = await store.get(meta.id)
     if (!task) continue

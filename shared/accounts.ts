@@ -499,6 +499,11 @@ export const CliAuth = z.object({
   loginAlreadyLoggedIn: z.boolean().default(false),
   /** 登录时从 stdin 写进去的内容（例如要确认的 y） */
   loginStdin: z.string().default(''),
+  /**
+   * 登录命令要终端才能跑（用 Ink 这类终端界面库写的，例如 Command Code）：面板让它以为 stdin 是终端，
+   * 不然一启动就报 raw mode 不支持、浏览器也打不开（见 server/exec/process.ts 的 withFakeTty）。只对 Node 写的 CLI 有用
+   */
+  loginTty: z.boolean().default(false),
   /** 登录前先改的配置 */
   loginEdits: z.array(JsonEdit).default([]),
   /** 凭据所在的目录：~ 是用户目录，${ENV:-默认值} 先取环境变量 */

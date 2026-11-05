@@ -14,6 +14,10 @@ const Decision = z.object({
   approve: z.boolean(),
   /** 用户点了「取消」：这次不修，计划收口、对话等下一句（不返回要交给子对话的话） */
   cancel: z.boolean().default(false),
+  /** 用户贴了日志（论证复现的结果、验证的结果）：logs 是文字，logFiles 是日志文件的路径（也随消息交给子对话） */
+  supply: z.boolean().default(false),
+  logs: z.string().max(200000).default(''),
+  logFiles: z.array(z.string().max(500)).max(20).default([]),
   notes: z
     .array(DiagnosisNote.omit({ id: true }))
     .max(50)

@@ -54,7 +54,10 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     id: 'read-only-guard',
     event: 'tool.before',
     name: () => t('只读身份守卫'),
-    description: () => t('调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因'),
+    description: () =>
+      t(
+        '调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因；项目 .tmp/ 和系统临时目录里的临时文件放行',
+      ),
     defaultOn: true,
     params: [extraCommands(() => t('只读角色另外不许跑的命令前缀，一行一个，例如 make deploy'))],
   },
@@ -169,6 +172,32 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
         label: () => t('连续失败几次提醒'),
         hint: () => t('1 到 100，默认 3'),
         default: 3,
+      },
+    ],
+  },
+  {
+    id: 'plan-pace',
+    event: 'tool.after',
+    name: () => t('计划没跟上提醒'),
+    description: () =>
+      t(
+        '项目里的对话改文件、跑命令时，计划没有进行中的步骤，或者进行中的那一步动手多次还没更新，补一句让它先用 set_plan 标完成、标下一步（同一步提醒几次可以设置）',
+      ),
+    defaultOn: true,
+    params: [
+      {
+        key: 'calls',
+        kind: 'number',
+        label: () => t('动手几次没更新就提醒'),
+        hint: () => t('1 到 100，默认 20；超过 3 分钟没更新时，到三分之一就提醒'),
+        default: 20,
+      },
+      {
+        key: 'times',
+        kind: 'number',
+        label: () => t('同一步最多提醒几次'),
+        hint: () => t('1 到 100，默认 1；提醒过后再动手到上面的次数才提醒下一次'),
+        default: 1,
       },
     ],
   },

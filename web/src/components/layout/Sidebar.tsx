@@ -438,7 +438,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const content = useTaskSearch(chatMode || designMode ? '' : query)
   // 子对话只在父对话页的「子对话」一栏里看，不占项目下的任务列表
   // 模型设计对话属于设计模式（#/model），不列进 Agent 模式的项目对话
-  const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.modelDesign)
+  const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.flowRun?.owner && !t.modelDesign)
   const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter)).sort(byAskedAt) : []
   // 只留项目里的对话：侧栏这一栏不列 Chat，正文命中也不该混进来
   const contentHits = content.hits.filter((h) => projectTasks.some((x) => x.id === h.taskId))

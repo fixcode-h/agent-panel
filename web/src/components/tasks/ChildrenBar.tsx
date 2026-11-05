@@ -1,17 +1,8 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import {
-  ChevronRight,
-  CircleAlert,
-  GitFork,
-  Loader2,
-  MessageCircleQuestion,
-  RotateCw,
-  Workflow as WorkflowIcon,
-  X,
-} from 'lucide-react'
+import { ChevronRight, CircleAlert, GitFork, Loader2, MessageCircleQuestion, RotateCw, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
-import { childCounts, sortChildren, visibleChildren } from '@shared/task'
+import { childCounts, sortChildren } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { ChildReportButton } from './ChildReport'
 import { useEscape } from '@/lib/useEscape'
@@ -24,8 +15,17 @@ import { ChildRowContent, childGroups } from './ChildSwitcher'
 import { ChildLetters } from './ChildMail'
 import { HelperBar } from './HelperCards'
 import { usePeerMail } from './child-open'
-import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } from './child-line'
+import {
+  childClosedHint,
+  childDirty,
+  childNote,
+  listedChildren,
+  stageConfirm,
+  staleLine,
+  type ChildSummary,
+} from './child-line'
 import { ChildRequestBar } from './ChildRequestBar'
+import { ChildConfirmButton } from './ChildConfirm'
 
 /**
  * 输入框上方的状态栏（计划、子任务、子对话各一行）：不套框，当作轻量信息。
@@ -84,12 +84,13 @@ export function ChildrenBar({
   // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决、已经收起（归档 / 独立分支被删掉）的
   // 不再算你要处理的事——用户已经把它删了，不能还在状态栏上催他回答
   const asking = kids.filter((c) => c.asking && !c.resolved && !c.gone)
-  // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、运行区的子对话是同一套判定（见 visibleChildren）
-  const busy = visibleChildren(kids)
+  // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、运行区的子对话是同一套判定（见 listedChildren）；
+  // 等你确认工作流阶段结果、等诊断报告又提了问的也一直留着，不只在输入框上方另起一条
+  const busy = listedChildren(kids)
   // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍
   const { running: working, total } = childCounts(kids)
-  // 「运行中」列转圈的那些：计划没做完、后台命令还没回、已解决但还在跑的子对话也算（见 visibleChildren）
-  const shown = all ? sortChildren(kids) : visibleChildren(kids)
+  // 「运行中」列转圈的那些：计划没做完、后台命令还没回、已解决但还在跑的子对话也算（见 listedChildren）
+  const shown = all ? sortChildren(kids) : listedChildren(kids)
   const current = kids.find((c) => c.id === openChild)
 
   // 小块的个数按这一行实际能用的宽度算：放不下的收成「+N」，不折到下一行去挤子任务，
@@ -218,14 +219,10 @@ export function ChildrenBar({
                       <Loader2
                         className={cn(
                           'h-3 w-3 shrink-0 animate-spin',
-                          stale?.cls ?? (c.diagnosis ? 'text-warning' : 'text-accent-text'),
+                          stale?.cls ?? (c.diagnosis || stageConfirm(c) ? 'text-warning' : 'text-accent-text'),
                         )}
                       />
                       {c.analysis && <AnalysisMark kind={c.analysis} />}
-                      {/* 工作流子对话（ADR 0044）：标题前一个流程图标，和普通子对话分开 */}
-                      {c.flow && (
-                        <WorkflowIcon aria-label={t('工作流子对话')} className="h-3 w-3 shrink-0 text-muted" />
-                      )}
                       <span
                         className={cn(
                           'max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg',
@@ -343,6 +340,14 @@ export function ChildrenBar({
                           <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
                             <span className="min-w-0 truncate text-caption text-warning">{t('诊断报告等你确认')}</span>
                             <ChildReportButton childId={c.id} className="ml-auto h-6 shrink-0 px-2 text-xs" />
+                          </div>
+                        )}
+                        {stageConfirm(c) && (
+                          // 工作流节点做完、等你确认这一步的结果：和诊断报告一样直接给「查看结果」
+                          <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
+                            {/* 等的是哪一步上面一行已经写了（childNote），这里只说要你做什么，不重复整句 */}
+                            <span className="min-w-0 truncate text-caption text-warning">{t('阶段结果等你确认')}</span>
+                            <ChildConfirmButton childId={c.id} className="ml-auto h-6 shrink-0 px-2 text-xs" />
                           </div>
                         )}
                         {dirty && (

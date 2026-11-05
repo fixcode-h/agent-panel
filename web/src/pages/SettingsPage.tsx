@@ -22,8 +22,10 @@ import {
   ShieldCheck,
   Webhook,
   GraduationCap,
+  Lightbulb,
   Gauge,
   Keyboard,
+  Brain,
   Mic,
   Volume2,
   Component,
@@ -107,6 +109,12 @@ const SpeechSection = lazy(() =>
 const ReadAloudSection = lazy(() =>
   import('@/components/settings/ReadAloudSection').then((m) => ({ default: m.ReadAloudSection })),
 )
+const ExperienceSection = lazy(() =>
+  import('@/components/settings/ExperienceSection').then((m) => ({ default: m.ExperienceSection })),
+)
+const ChatMemorySection = lazy(() =>
+  import('@/components/settings/ChatMemorySection').then((m) => ({ default: m.ChatMemorySection })),
+)
 const HooksSection = lazy(() => import('@/components/settings/HooksSection').then((m) => ({ default: m.HooksSection })))
 const IntegrationsSection = lazy(() =>
   import('@/components/settings/IntegrationsSection').then((m) => ({ default: m.IntegrationsSection })),
@@ -137,6 +145,7 @@ const pickLabel = pickButtonLabel
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
+  { id: 'chat-memory', label: t('关于我与记忆'), icon: Brain, group: t('通用') },
   { id: 'speech', label: t('语音输入'), icon: Mic, group: t('通用') },
   { id: 'read-aloud', label: t('语音朗读'), icon: Volume2, group: t('通用') },
   { id: 'fonts', label: t('外观'), icon: Type, group: t('通用') },
@@ -145,6 +154,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
   { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
   { id: 'global-lessons', label: t('全局教训'), icon: GraduationCap, group: t('项目') },
+  { id: 'experience', label: t('经验'), icon: Lightbulb, group: t('项目') },
   { id: 'models', label: t('默认 Agent'), icon: Cpu, group: t('Agent 与 AI') },
   // 部署和 API 也是 CLI 的事（写全局说明、放技能；各 CLI 用哪个 API），放在 CLI 二级列表里默认 CLI 下面
   { id: 'deploy', label: t('部署'), icon: Rocket },
@@ -177,7 +187,6 @@ function SettingsBody({
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [childAsk, setChildAsk] = useState(String(initial.childIdleAskMinutes))
-  const [nudge, setNudge] = useState(String(initial.nudgeMax))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
   const [childKeep, setChildKeep] = useState(String(initial.childDoneKeepMinutes))
   const [archiveDays, setArchiveDays] = useState(String(initial.autoArchiveDays))
@@ -328,8 +337,6 @@ function SettingsBody({
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
   const childAskMin = Number(childAsk)
   const childAskValid = childAsk !== '' && Number.isInteger(childAskMin) && childAskMin >= 0 && childAskMin <= 1440
-  const nudgeN = Number(nudge)
-  const nudgeValid = nudge !== '' && Number.isInteger(nudgeN) && nudgeN >= 0 && nudgeN <= 20
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
   const childKeepMin = Number(childKeep)
@@ -365,7 +372,8 @@ function SettingsBody({
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     childIdleAskMinutes: childAskValid ? childAskMin : initial.childIdleAskMinutes,
-    nudgeMax: nudgeValid ? nudgeN : initial.nudgeMax,
+    // 「面板提醒次数」去掉了（2026-11-05：提醒不限次数，靠 end_turn 和空转保护收住）：旧值原样留着，不再用
+    nudgeMax: initial.nudgeMax,
     // 计划 Webhook 已并入「钩子」（schedule.finished 上的 HTTP 钩子，ADR 0049 第三期）：旧字段原样留着，只用来迁移
     webhook: initial.webhook,
     speech,
@@ -379,6 +387,7 @@ function SettingsBody({
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     // 内存采样间隔在设置 →「数据」里改，这里沿用原来的值
     memorySampleSeconds: initial.memorySampleSeconds,
+    experience: initial.experience, // 在设置 →「经验」里改（ExperienceSection 自己保存）
     longPasteChars: pasteValid ? pasteN : initial.longPasteChars,
     defaultCli: defCli,
     clis: Object.fromEntries(
@@ -815,6 +824,7 @@ function SettingsBody({
               {cur.id === 'read-aloud' && <ReadAloudSection value={readAloud} onChange={setReadAloud} />}
               {cur.id === 'integrations' && <IntegrationsSection />}
               {cur.id === 'hooks' && <HooksSection />}
+              {cur.id === 'chat-memory' && <ChatMemorySection />}
               {cur.id === 'general' && (
                 <>
                   {demo && (
@@ -1007,23 +1017,6 @@ function SettingsBody({
                         invalid={!childAskValid}
                         error={t('填 0 到 1440 之间的整数，0 表示不问')}
                         label={t('子对话没有输出时自动询问（分钟）')}
-                      />
-                    </Row>
-                    <Row
-                      title={t('面板提醒次数')}
-                      desc={t('计划没做完却停下时最多推几次接着做')}
-                      hint={t(
-                        '计划没做完却停下时，面板最多推这么多次让它接着做；推满还停着就留一条提醒等你处理。没有计划、拿不准做没做完时，最多做 2 次收尾自检，且不超过这个上限。0 表示不自动推，停下来等你；子对话卡住时仍会告诉父对话。Chat 页一问一答固定只推 1 次。',
-                      )}
-                    >
-                      <NumberField
-                        value={nudge}
-                        onChange={setNudge}
-                        unit={t('次')}
-                        empty={t('不推')}
-                        invalid={!nudgeValid}
-                        error={t('填 0 到 20 之间的整数，0 表示不推')}
-                        label={t('面板提醒次数')}
                       />
                     </Row>
                     <Row
@@ -1402,6 +1395,7 @@ function SettingsBody({
               {cur.id === 'deploy' && <DeploySection />}
               {cur.id === 'tags' && <TagsSection />}
               {cur.id === 'global-lessons' && <GlobalLessonsSection />}
+              {cur.id === 'experience' && <ExperienceSection clis={ordered} drafts={drafts} isReady={isReady} />}
               {cur.id === 'update' && (
                 <UpdateSection autoCheck={autoCheckUpdates} onAutoCheckChange={setAutoCheckUpdates} />
               )}

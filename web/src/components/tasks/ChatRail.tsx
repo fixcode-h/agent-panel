@@ -1,9 +1,26 @@
 import { useMemo, useState } from 'react'
-import { Code2, Copy, FileText, FolderInput, Globe, Image as ImageIcon, Paperclip } from 'lucide-react'
+import {
+  Code2,
+  Copy,
+  Download,
+  FilePlus2,
+  FileText,
+  FolderInput,
+  Globe,
+  Image as ImageIcon,
+  Paperclip,
+} from 'lucide-react'
 import type { Attachment, TaskMessage } from '@shared/schema'
 import { attachChip } from '@shared/composer'
 import { t } from '@shared/i18n'
-import { chatAttachments, chatCodeBlocks, chatSources, codeFileName, type ChatCode } from '@/lib/chat-rail'
+import {
+  chatAttachments,
+  chatCodeBlocks,
+  chatSources,
+  chatWrittenFiles,
+  codeFileName,
+  type ChatCode,
+} from '@/lib/chat-rail'
 import { copyText } from '@/lib/copy-text'
 import { useData } from '@/lib/data'
 import { api } from '@/lib/api'
@@ -22,7 +39,7 @@ import { Markdown } from './Markdown'
  * 回复里的代码（能复制、存进某个项目）、联网工具查到的来源、用户传的附件。哪一样都没有的页签不画。
  */
 
-export type ChatRailTab = 'code' | 'sources' | 'files'
+export type ChatRailTab = 'code' | 'sources' | 'files' | 'written'
 
 /** 三个页签各有几项：标题栏的右栏开关按它判断有没有东西可看（都没有时禁用） */
 export function useChatRail(messages: readonly TaskMessage[]) {
@@ -30,7 +47,8 @@ export function useChatRail(messages: readonly TaskMessage[]) {
     const code = chatCodeBlocks(messages)
     const sources = chatSources(messages)
     const files = chatAttachments(messages)
-    return { code, sources, files, empty: !code.length && !sources.length && !files.length }
+    const written = chatWrittenFiles(messages)
+    return { code, sources, files, written, empty: !code.length && !sources.length && !files.length && !written.length }
   }, [messages])
 }
 
@@ -38,9 +56,12 @@ const NO_TEAM = new Set<string>()
 
 export function ChatRail({
   rail,
+  taskId,
   onOpenFile,
 }: {
   rail: ReturnType<typeof useChatRail>
+  /** 「生成的文件」的下载地址按对话读（只能读这个对话目录里的文件） */
+  taskId: string
   /** 点附件：用对话页的文件窗口看（图片是大图，文本是内容） */
   onOpenFile: (path: string) => void
 }) {
@@ -48,6 +69,7 @@ export function ChatRail({
     [
       ['code', t('代码'), rail.code.length, <Code2 key="i" className="h-3.5 w-3.5" />],
       ['sources', t('来源'), rail.sources.length, <Globe key="i" className="h-3.5 w-3.5" />],
+      ['written', t('生成的文件'), rail.written.length, <FilePlus2 key="i" className="h-3.5 w-3.5" />],
       ['files', t('附件'), rail.files.length, <Paperclip key="i" className="h-3.5 w-3.5" />],
     ] as const
   ).filter(([, , n]) => n > 0)
@@ -80,6 +102,7 @@ export function ChatRail({
         </div>
       )}
       {tab === 'files' && <FilesTab list={rail.files} onOpen={onOpenFile} />}
+      {tab === 'written' && <WrittenTab taskId={taskId} list={rail.written} onOpen={onOpenFile} />}
     </div>
   )
 }
@@ -218,6 +241,41 @@ function SaveToProject({ code, index, onClose }: { code: ChatCode; index: number
 }
 
 /** 附件页签：一行一个，点开用对话页的文件窗口看 */
+/** 生成的文件：Agent 在这个对话里写过的文件，点开看内容，右边下载 */
+function WrittenTab({ taskId, list, onOpen }: { taskId: string; list: string[]; onOpen: (path: string) => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto p-2">
+      {list.map((p) => {
+        const name = p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1)
+        return (
+          <div key={p} className="flex min-w-0 items-center gap-1 rounded-lg pr-1 transition-colors hover:bg-sel/60">
+            <button
+              type="button"
+              title={p}
+              onClick={() => onOpen(p)}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2.5 py-2 text-left text-body"
+            >
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-sel text-muted">
+                <FileText className="h-3.5 w-3.5" />
+              </span>
+              <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+            </button>
+            <a
+              href={api.taskFileRaw(taskId, p)}
+              download={name}
+              aria-label={t('下载 {name}', { name })}
+              title={t('下载 {name}', { name })}
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </a>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function FilesTab({ list, onOpen }: { list: Attachment[]; onOpen: (path: string) => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto p-2">

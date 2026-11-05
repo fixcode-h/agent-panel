@@ -1,3 +1,4 @@
+import { commandRule, editDiff, fileRule, toolRule } from '../../../shared/allow-rules.ts'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { t } from '../../../shared/i18n.ts'
@@ -20,6 +21,8 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
   return {
     start(ctx) {
       ctx.send({ type: 'user', message: { role: 'user', content: withImages(o.input, o.images) } })
+      // Claude Code 的「请求开始」（message_start）要等模型回出第一段才到：交出去的时间由面板自己记，首包等待从这里算
+      ctx.emit({ type: 'sent' })
     },
     message(ctx, m) {
       // 审批的回答不需要面板再处理
@@ -68,6 +71,7 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
       // CLI 在这条消息到达时开新一轮
       steered = false
       ctx.send({ type: 'user', message: { role: 'user', content: text } })
+      ctx.emit({ type: 'sent' })
     },
     async steer(ctx, text) {
       steered = true
@@ -151,24 +155,56 @@ export function claudeAsk(name: string, input: any): Omit<Extract<CliEvent, { ty
       questions: qs.length ? qs : undefined,
     }
   }
+  // 只读规划（权限选「只读规划」）做完后的方案：请用户批准再动手。以前落到通用的「使用工具：ExitPlanMode」，
+  // 卡片上是一段 JSON，看不出是在问要不要按方案开始改。批准后 Claude Code 自己切出规划模式；每次都问，不给「一直允许」
+  if (name === 'ExitPlanMode')
+    return {
+      kind: 'tool',
+      title: t('Agent 规划好了，按这个方案开始改？'),
+      detail: str(input.plan),
+    }
   if (name === 'Bash')
     return {
       kind: 'command',
       title: t('运行命令：{cmd}', { cmd: oneLine(str(input.command)) }),
       detail: str(input.description),
+      rule: commandRule(str(input.command)),
     }
-  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(name))
+  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(name)) {
+    const file = str(input.file_path || input.notebook_path)
+    // 要改的内容一起交给审批卡：以前只有文件名，用户只能凭名字决定允不允许
+    const edits =
+      name === 'Write'
+        ? [{ old: '', new: str(input.content) }]
+        : name === 'MultiEdit'
+          ? (Array.isArray(input.edits) ? input.edits : []).map((e: any) => ({
+              old: str(e?.old_string),
+              new: str(e?.new_string),
+            }))
+          : name === 'Edit'
+            ? [{ old: str(input.old_string), new: str(input.new_string) }]
+            : [{ old: '', new: str(input.new_source) }]
     return {
       kind: 'file',
-      title:
-        name === 'Write'
-          ? t('写入文件：{file}', { file: str(input.file_path || input.notebook_path) })
-          : t('修改文件：{file}', { file: str(input.file_path || input.notebook_path) }),
+      title: name === 'Write' ? t('写入文件：{file}', { file }) : t('修改文件：{file}', { file }),
       detail: '',
+      diff: editDiff(file, edits),
+      rule: fileRule(file),
     }
+  }
   if (name === 'WebFetch')
-    return { kind: 'tool', title: t('访问网页：{url}', { url: str(input.url) }), detail: str(input.prompt) }
-  return { kind: 'tool', title: t('使用工具：{name}', { name }), detail: clipDetail(JSON.stringify(input, null, 2)) }
+    return {
+      kind: 'tool',
+      title: t('访问网页：{url}', { url: str(input.url) }),
+      detail: str(input.prompt),
+      rule: toolRule(name),
+    }
+  return {
+    kind: 'tool',
+    title: t('使用工具：{name}', { name }),
+    detail: clipDetail(JSON.stringify(input, null, 2)),
+    rule: toolRule(name),
+  }
 }
 
 /** 允许时交回给 CLI 的参数：问题要带上用户的回答（一次问了几个时每个问题一条） */

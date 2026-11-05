@@ -31,13 +31,31 @@ export const chatModePart = (todos: boolean) => `## Chat 模式
 }要拆给多个 Agent 并行、要按项目流程（评审、测试验收、版本控制）做的事，请用户到项目里开对话。`
 
 /** extra：对话里用 /rule 发布的规则、对话目标这类随对话变的段落（由 engine 拼好传进来，没有时是空串） */
+/**
+ * 「关于用户」：用户在设置里写的「关于我 / 回复偏好」，加上之前 Chat 里记下的长期偏好（server/chat-memory.ts）。
+ * 每个 Chat 对话都从空目录开始，没有这段的话偏好每次都要重说。remember 工具的用法跟着说一句
+ */
+export function memoryPart(m: EngineHost['chatMemory']): string {
+  if (!m) return ''
+  const lines = [
+    m.about && `用户写的「关于我」：\n${m.about}`,
+    m.items.length && `之前 Chat 里记下的：\n${m.items.map((x) => `- ${x}`).join('\n')}`,
+  ].filter(Boolean)
+  return [
+    '## 关于用户',
+    ...lines,
+    '用户说了以后也该记住的偏好或长期事实（称呼、语言和格式偏好、常用技术栈、在做的长期项目）时，用 remember 记一句话；记错了、用户改口了用 remember 的 forget 删掉原来那条。只记长期有用的，不记这一次对话的细节、不记密码和密钥。',
+  ].join('\n\n')
+}
+
 export function chatConversationPrompt(
-  host: Pick<EngineHost, 'prompt' | 'runBackground' | 'cliTodos'>,
+  host: Pick<EngineHost, 'prompt' | 'runBackground' | 'cliTodos' | 'chatMemory'>,
   extra: string[],
 ) {
   return [
     `## 用户这次的消息\n${host.prompt}`,
     promptLangRules(),
+    memoryPart(host.chatMemory),
     ...extra,
     backgroundPart(host),
     chatModePart(!!host.cliTodos),

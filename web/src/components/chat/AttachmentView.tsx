@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Copy, File as FileIcon, Image as ImageIcon, ImageOff, TextQuote, Workflow as WorkflowIcon } from 'lucide-react'
 import { copyText } from '@/lib/copy-text'
 import { attachOf, segments, type ChipKind } from '@shared/composer'
-import { namedWorkflow } from '@shared/flow-child'
+import { namedWorkflow } from '@shared/flow-run'
 import type { Attachment } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,7 @@ import { Lightbox, type LightboxImage } from '@/components/ui/lightbox'
 import { FileDialog } from '@/components/tasks/FileDialog'
 import { Markdown } from '@/components/tasks/Markdown'
 import { attachmentUrl, isImage } from './Attachments'
+import { useFileRef, type FileRefTarget } from '@/components/files/FileRefLayer'
 
 /** 点开一张卡片要看的东西 */
 export type ViewTarget =
@@ -139,6 +140,7 @@ export function MessageChip({
   src,
   missing,
   onOpen,
+  fileRef,
 }: {
   kind: ChipKind
   name: string
@@ -148,7 +150,11 @@ export function MessageChip({
   /** 图片已经不在了（取不到、加载不出来）：显图标，点不开 */
   missing?: boolean
   onOpen?: () => void
+  /** 附件是本机文件：和回复里的文件标记一样单击打开、悬停看完整路径、右键文件菜单（FileRefLayer） */
+  fileRef?: FileRefTarget
 }) {
+  const refs = useFileRef()
+  const asRef = !!fileRef && !!refs && !missing
   const label = kind === 'quote' ? quoteLabel(name) : name
   const title = missing
     ? t('附件已经不在了')
@@ -171,12 +177,16 @@ export function MessageChip({
   return (
     <button
       type="button"
-      title={title}
+      title={asRef ? undefined : title}
+      data-file-ref={asRef ? '' : undefined}
+      onContextMenu={asRef ? (e) => refs!.menu(e, fileRef!, e.currentTarget) : undefined}
+      onMouseEnter={asRef ? (e) => refs!.hover(e.currentTarget, fileRef!) : undefined}
+      onMouseLeave={asRef ? refs!.leave : undefined}
       // 和输入框里的卡片同一套标记（RichInput 的 chipNode），界面检查按它找消息里的卡片
       data-chip={kind}
       data-name={name}
       data-missing={missing ? 'true' : undefined}
-      onClick={onOpen}
+      onClick={asRef ? () => void refs!.open(fileRef!) : onOpen}
       disabled={!onOpen}
       className={cn(
         CHIP_SHAPE,
@@ -224,6 +234,11 @@ export function MessageBody({ text, attachments = [] }: { text: string; attachme
   const flow = namedWorkflow(text)
   const parts = segments(flow ? flow.rest : text)
   const used = new Set<Attachment>()
+  // 文件、图片附件按本机文件处理：单击规则和回复里的文件标记一样，「在面板里看」用这里自己的浮层
+  const refOf = (kind: ChipKind, name: string, a?: Attachment): FileRefTarget | undefined =>
+    a && a.quote === undefined && (kind === 'file' || kind === 'image')
+      ? { path: a.path, local: true, preview: () => open(kind, name, a) }
+      : undefined
   const body = parts.map((s, i) => {
     if ('text' in s) return <span key={i}>{s.text}</span>
     const { kind, name } = s.chip
@@ -240,6 +255,7 @@ export function MessageBody({ text, attachments = [] }: { text: string; attachme
         src={a ? urls[a.path] : undefined}
         missing={!!a && !!missing[a.path]}
         onOpen={a && missing[a.path] ? undefined : () => open(kind, name, a)}
+        fileRef={refOf(kind, name, a)}
       />
     )
   })
@@ -257,6 +273,7 @@ export function MessageBody({ text, attachments = [] }: { text: string; attachme
             src={urls[a.path]}
             missing={!!missing[a.path]}
             onOpen={missing[a.path] ? undefined : () => open(kind, a.name, a)}
+            fileRef={refOf(kind, a.name, a)}
           />
         )
       })}

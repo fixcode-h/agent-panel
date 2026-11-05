@@ -1,6 +1,5 @@
 import { Task, type Project } from '../../shared/schema.ts'
 import { diagnosisPending } from '../../shared/task.ts'
-import { flowProgress } from '../../shared/flow-child.ts'
 import { bugStage } from '../../shared/bug-diagnosis.ts'
 import {
   childActivity,
@@ -140,7 +139,6 @@ export function registerChildrenRoutes(s: TasksScope) {
           // 工作流运行还没跑完：流程图跑着时这一轮的 CLI 可能早就结束了，不能凭它当结束
           workflow: runRunning(liveTask),
           // 工作流子对话（ADR 0044）：行上标出是哪个工作流、跑到哪个节点
-          flow: flowProgress(liveTask),
           // 等用户确认诊断报告（ADR 0045）：算执行中，行上的说明来自 waiting
           diagnosis: diagnosisPending(liveTask),
           // 用户报的 Bug（ADR 0046）：查到哪个阶段了
