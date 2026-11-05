@@ -570,7 +570,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const waitReport = report?.status === 'pending'
   // 报告交上来时自动弹一次（每一版只弹一次，和父对话页共用记号，见 ChildReport.tsx）
   useEffect(() => {
-    if (waitReport && task?.id && report && firstShow(task.id, report.version)) setDiagOpen(true)
+    if (waitReport && task?.id && report && firstShow(task.id, report.version, report.awaiting ? 'logs' : ''))
+      setDiagOpen(true)
   }, [waitReport, task?.id, report])
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out' | 'plan'>('')
   const openFile = useFileOpen()

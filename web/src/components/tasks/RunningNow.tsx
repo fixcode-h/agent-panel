@@ -8,7 +8,8 @@ import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
-import { ChildReportButton, DiagnosisAutoOpen, firstShow } from './ChildReport'
+import { ChildReportButton, DiagnosisAutoOpen, firstShow, showTag } from './ChildReport'
+import { bugStage } from '@shared/bug-diagnosis'
 import { DiagnosisDialog } from './DiagnosisDialog'
 import { Button } from '@/components/ui/button'
 import { useChildList, useChildOpen, useJobOpen } from './child-open'
@@ -90,8 +91,10 @@ function ReportRow({ task, version }: { task: Task; version: number }) {
   const [open, setOpen] = useState(false)
   // 交上来时自动弹一次（每一版一次，和父对话页共用记号）：交报告那一行折叠着时根本没挂上，不能只靠它弹
   useEffect(() => {
-    if (firstShow(task.id, version)) setOpen(true)
-  }, [task.id, version])
+    if (firstShow(task.id, version, showTag(task))) setOpen(true)
+    // 同一版加好日志回到等你时（showTag 变了）再弹一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id, version, showTag(task)])
   return (
     <>
       <RowShell
@@ -111,7 +114,7 @@ function ReportRow({ task, version }: { task: Task; version: number }) {
         onOpen={() => setOpen(true)}
         openTip={t('打开诊断报告第 {n} 版', { n: version })}
         detailStart
-        detail={<span className={childLabelClass.warning}>{t('等你确认')}</span>}
+        detail={<span className={childLabelClass.warning}>{bugStage(task) || t('等你确认')}</span>}
         action={
           <Button
             size="sm"

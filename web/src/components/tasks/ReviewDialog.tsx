@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ClipboardCheck, Highlighter, Loader2, Trash2 } from 'lucide-react'
-import type { TaskRequest } from '@shared/schema'
+import type { Attachment, TaskRequest } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
@@ -14,6 +14,7 @@ import { Markdown } from './Markdown'
 import { reviewFeedback } from '@/lib/review-feedback'
 import { Segmented } from '@/components/ui/segmented'
 import { t } from '@shared/i18n'
+import { LogFiles, useLogFiles } from './LogAttach'
 
 /** range：标在正文哪段文字上；点「改用这个方案」这类预设加的标注没有选区 */
 type Note = { id: number; quote: string; comment: string; range?: Range; kind?: string }
@@ -43,6 +44,13 @@ export interface ReviewVersion {
   status?: string
 }
 
+/** 标注和整体意见的原始内容：诊断报告要按种类、按编号交回；files 是整体意见框里附的日志文件 */
+export interface ReviewRaw {
+  notes: { quote: string; comment: string; kind: string }[]
+  overall: string
+  files: Attachment[]
+}
+
 /** 浏览器支持 CSS Custom Highlight 时用它画标注：不改渲染出来的 DOM，Markdown 重画也不会冲掉 */
 const canHighlight = () => typeof CSS !== 'undefined' && 'highlights' in CSS && typeof Highlight !== 'undefined'
 
@@ -62,17 +70,19 @@ export function ReviewDialog({
   readOnly,
   presets,
   cancel,
+  top,
+  supply,
+  noApprove,
+  feedbackFirst,
+  attach,
+  overallPlaceholder,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
   open: boolean
   onOpenChange: (open: boolean) => void
   /** notes / overall 是原始的标注和整体意见：诊断报告要按种类、按编号交回，不只是一段文字 */
-  onAnswer: (
-    allow: boolean,
-    answer?: string,
-    raw?: { notes: { quote: string; comment: string; kind: string }[]; overall: string },
-  ) => Promise<void>
+  onAnswer: (allow: boolean, answer?: string, raw?: ReviewRaw) => Promise<void>
   kinds?: NoteKind[]
   /** 多版文档：最后一项是这次要审的（就是 req.detail），前面的只读 */
   versions?: ReviewVersion[]
@@ -93,6 +103,20 @@ export function ReviewDialog({
     confirm: string
     onCancel: (overall: string) => Promise<void>
   }
+  /** 正文上方的内容（诊断报告的阶段条） */
+  top?: ReactNode
+  /**
+   * 「交日志」这类按钮（诊断报告：贴日志让它接着分析）：整体意见的文字和附件交给 onSupply。
+   * primary：它是主按钮（等你复现、验证）；否则是次按钮，写了整体意见或附了文件才能点
+   */
+  supply?: { label: string; primary?: boolean; hint: string; onSupply: (raw: ReviewRaw) => Promise<void> }
+  /** 不放「确认」按钮（等你复现时只有交日志和提疑问） */
+  noApprove?: boolean
+  /** 有标注时「修改」变成主按钮、「确认」退成次要（诊断报告：标了疑问就是要接着探讨） */
+  feedbackFirst?: boolean
+  /** 整体意见框能附日志文件（粘贴、拖进来、点回形针） */
+  attach?: boolean
+  overallPlaceholder?: string
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -106,7 +130,9 @@ export function ReviewDialog({
   const [focusId, setFocusId] = useState<number | null>(null)
   // 选中文字后浮在选区上方的「标注」按钮，位置相对滚动区
   const [pick, setPick] = useState<{ range: Range; quote: string; top: number; left: number } | null>(null)
-  const [busy, setBusy] = useState<'' | 'allow' | 'deny'>('')
+  const [busy, setBusy] = useState<'' | 'allow' | 'deny' | 'supply'>('')
+  const logs = useLogFiles()
+  const resetLogs = logs.reset
   const [cancelAsk, setCancelAsk] = useState(false)
   // 多版时看的是哪一版：默认最新那版（要审的）；旧版只读，不能标注
   const [ver, setVer] = useState('')
@@ -122,7 +148,8 @@ export function ReviewDialog({
     setPick(null)
     setActive(null)
     setVer('')
-  }, [req.id])
+    resetLogs()
+  }, [req.id, resetLogs])
 
   useEffect(() => {
     if (!canHighlight() || !open || old) return
@@ -205,14 +232,21 @@ export function ReviewDialog({
   }
 
   const hasFeedback = notes.length > 0 || !!overall.trim()
-  const submit = async (allow: boolean) => {
-    if (busy) return
-    setBusy(allow ? 'allow' : 'deny')
+  const hasLogs = !!overall.trim() || logs.files.length > 0
+  const raw = (): ReviewRaw => ({
+    notes: notes.map((n) => ({ quote: n.quote, comment: n.comment, kind: n.kind ?? '' })),
+    overall,
+    files: logs.files,
+  })
+  // 标了疑问（feedbackFirst）或在等日志（supply.primary）时，主按钮换人；补充信息不用回答，只有它时照常确认
+  const asks = notes.some((n) => n.kind !== 'info')
+  const revisePrimary = !!feedbackFirst && asks && !supply?.primary
+  const submit = async (allow: boolean | 'supply') => {
+    if (busy || logs.busy) return
+    setBusy(allow === 'supply' ? 'supply' : allow ? 'allow' : 'deny')
     try {
-      await onAnswer(allow, allow ? undefined : reviewFeedback(notes, overall), {
-        notes: notes.map((n) => ({ quote: n.quote, comment: n.comment, kind: n.kind ?? '' })),
-        overall,
-      })
+      if (allow === 'supply') await supply?.onSupply(raw())
+      else await onAnswer(allow, allow ? undefined : reviewFeedback(notes, overall), raw())
       onOpenChange(false)
     } catch (e) {
       toast.error((e as Error).message)
@@ -256,6 +290,7 @@ export function ReviewDialog({
                 {shown?.status && <span className="text-xs text-subtle">{shown.status}</span>}
               </div>
             )}
+            {top}
             {detail ? (
               <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
             ) : (
@@ -363,11 +398,16 @@ export function ReviewDialog({
             <Textarea
               value={overall}
               onChange={(e) => setOverall(e.target.value)}
-              rows={2}
-              placeholder={t('整体意见（可选）')}
+              rows={attach && supply?.primary ? 5 : 2}
+              placeholder={overallPlaceholder ?? t('整体意见（可选）')}
               aria-label={t('整体意见')}
+              disabled={locked}
               className="min-w-0 resize-none py-1.5 text-body"
+              {...(attach && !locked ? logs.bind : {})}
             />
+            {attach && !locked && (
+              <LogFiles files={logs.files} busy={logs.busy} onPick={() => void logs.pick()} onRemove={logs.remove} />
+            )}
           </div>
         </aside>
       </div>
@@ -377,9 +417,11 @@ export function ReviewDialog({
             ? readOnly
               ? t('这一版已经处理过了，只能查看')
               : t('这是旧的一版，只能查看；切回最新一版再标注')
-            : hasFeedback
-              ? (texts?.hintRevise ?? t('「修改」会把标注和意见交给 Agent 按意见调整'))
-              : (texts?.hintApprove ?? t('没有要改的地方就点「确认」继续'))}
+            : supply?.primary
+              ? supply.hint
+              : hasFeedback
+                ? (texts?.hintRevise ?? t('「修改」会把标注和意见交给 Agent 按意见调整'))
+                : (texts?.hintApprove ?? t('没有要改的地方就点「确认」继续'))}
         </span>
         <div className={cn('ml-auto flex shrink-0 gap-2', locked && 'hidden')}>
           {cancel && (
@@ -387,20 +429,52 @@ export function ReviewDialog({
               {cancel.label}
             </Button>
           )}
+          {supply && !supply.primary && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!!busy || logs.busy || !hasLogs}
+              title={hasLogs ? supply.hint : t('先在整体意见里贴日志，或附上日志文件')}
+              onClick={() => void submit('supply')}
+            >
+              {busy === 'supply' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {supply.label}
+            </Button>
+          )}
           <Button
             size="sm"
-            variant="secondary"
+            variant={revisePrimary ? 'primary' : 'secondary'}
             disabled={!!busy || !hasFeedback}
             title={hasFeedback ? undefined : t('先标注要改的地方')}
             onClick={() => void submit(false)}
+            className={cn(revisePrimary && 'order-last')}
           >
             {busy === 'deny' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {texts?.revise ?? t('修改')}
           </Button>
-          <Button size="sm" disabled={!!busy} onClick={() => void submit(true)}>
-            {busy === 'allow' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {texts?.approve ?? t('确认')}
-          </Button>
+          {!noApprove && (
+            <Button
+              size="sm"
+              variant={revisePrimary || supply?.primary ? 'secondary' : 'primary'}
+              disabled={!!busy || logs.busy}
+              title={revisePrimary ? t('还有没处理的疑问：确认后它就不再回答这些标注') : undefined}
+              onClick={() => void submit(true)}
+            >
+              {busy === 'allow' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {texts?.approve ?? t('确认')}
+            </Button>
+          )}
+          {supply?.primary && (
+            <Button
+              size="sm"
+              disabled={!!busy || logs.busy || !hasLogs}
+              title={hasLogs ? undefined : t('先在整体意见里贴日志，或附上日志文件')}
+              onClick={() => void submit('supply')}
+            >
+              {busy === 'supply' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {supply.label}
+            </Button>
+          )}
         </div>
       </div>
       {cancel && (

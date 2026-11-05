@@ -998,7 +998,7 @@ await runShard('子对话运行与监管', async (api) => {
     const sent = await call('POST', `/tasks/${kid.id}/messages`, { text: '/bug 购物车角标偶尔不刷新' })
     assert.equal(sent.bug, true, '子对话里发 /bug：标成用户报的 Bug，之后有交诊断报告的工具')
     const run = await callOf('购物车角标偶尔不刷新')
-    assert.ok(run.input.includes('用 submit_diagnosis 交诊断报告'), '展开成子对话按完整流程交报告的要求')
+    assert.ok(run.input.includes('用 submit_diagnosis 分阶段交报告'), '展开成子对话按完整流程交报告的要求')
     assert.ok(run.input.includes('## 用户报的 Bug：完整查找流程'), '带上完整查找流程')
     assert.ok(!run.input.includes('/bug 购物车'), 'Claude Code 不会收到原样的 /bug')
     await waitDone(kid.id, 20000)

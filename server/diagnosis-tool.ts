@@ -135,7 +135,34 @@ const CASE_PROPS = {
     },
     required: ['id', 'why'],
   },
-  next: text('根因还没证实时：下一步要加哪些日志、要用户提供什么'),
+  next: text('补充说明：下一步还打算查什么'),
+  logPlan: {
+    type: 'array',
+    description: '论证阶段：这一轮要加的临时日志（前缀 [排查-<主题>]），每处写加在哪、打什么、用来区分哪个假设',
+    items: {
+      type: 'object',
+      properties: {
+        id: text('编号，例如 L1'),
+        file: text('文件（相对项目根）'),
+        line: { type: 'number' },
+        fn: text('函数'),
+        print: text('打什么：分支条件、关键变量、旧值 → 新值'),
+        hypothesis: text('用来区分哪个假设'),
+      },
+      required: ['file', 'print'],
+    },
+  },
+  collect: {
+    type: 'object',
+    description: '论证 / 验证阶段：用户怎么复现、日志在哪、过滤条件、每种结果说明什么（验证阶段写看到什么算修好了）',
+    properties: {
+      steps: { type: 'array', items: { type: 'string' }, description: '复现步骤，一步一项' },
+      where: text('日志在哪：日志文件路径、控制台、浏览器开发者工具'),
+      filter: text('过滤条件，例如 [排查-拖线]'),
+      expect: text('论证：每种结果说明什么；验证：看到什么算修好了'),
+    },
+    required: ['steps', 'expect'],
+  },
 }
 
 /** 原来的几段文字字段 */
@@ -206,10 +233,15 @@ export const DIAGNOSIS_TOOL = {
   name: 'submit_diagnosis',
   title: '交诊断报告',
   description:
-    '用户报的 Bug：前五个阶段做完、修之前交诊断报告，用户在弹窗里确认方案或标出疑问。update_bug_case 记过的档案草稿会自动带上，这里只写还没记的；按级别检查缺什么，缺了会退回说清。交完结束这一轮，确认之前不要改任何文件；结果会作为新消息交给你。查不出根因也交：rootCause 写「未找到」、confirmed 写 false，next 写下一步要加的日志和要用户提供什么。用户提了意见后再交新一版，answers 按编号逐条回答。',
+    '用户报的 Bug：每到一个关口交一版报告，用户在弹窗里同意、标疑问或贴日志，结果作为新消息交给你。按阶段走：evidence 论证（根因还没证实：写 logPlan 要加的日志、collect 怎么复现和每种结果说明什么，用户同意后加日志、复现，拿到日志再分析，可以多轮）→ cause 根因（证据链齐了、confirmed: true，用户同意才往下）→ plan 修复方案（候选修法比较、files，用户确认才改代码）→ verify 验证（修完、用 update_bug_case 记下 result 后交，collect 写用户怎么验证、看到什么算修好了）。update_bug_case 记过的档案草稿会自动带上，这里只写还没记的；按阶段和级别检查缺什么，缺了会退回说清。交完结束这一轮，用户回复之前不要改任何文件。用户提了意见后再交新一版，answers 按编号逐条回答。',
   inputSchema: {
     type: 'object',
     properties: {
+      phase: {
+        type: 'string',
+        enum: ['evidence', 'cause', 'plan', 'verify'],
+        description: '这一版的阶段：evidence 论证、cause 根因、plan 修复方案、verify 验证',
+      },
       ...TEXT_PROPS,
       ...CASE_PROPS,
       answers: {
@@ -225,6 +257,27 @@ export const DIAGNOSIS_TOOL = {
         },
       },
     },
+    required: ['phase'],
+  },
+}
+
+/** request_logs：同意加日志后，加好了日志、自己复现不了，请用户复现贴日志 */
+export const REQUEST_LOGS_TOOL = {
+  name: 'request_logs',
+  title: '请用户复现',
+  description:
+    '用户报的 Bug：用户同意了论证那一版的日志计划、你按计划加好临时日志，自己又复现不了时调用：写这次实际加的位置和复现步骤，面板请用户复现、贴日志。调用后结束这一轮，日志会作为新消息交给你。自己能复现（跑测试、跑命令）就不用调，分析后直接交下一版。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      added: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '这次实际加的日志位置，例如「L1 src/a.ts:212」',
+      },
+      collect: CASE_PROPS.collect,
+    },
+    required: ['added'],
   },
 }
 
@@ -236,6 +289,17 @@ export function callDiagnosis(o: Orchestra, a: Record<string, unknown> | undefin
         ok: false,
         info: '这里不用交诊断报告：只有用户报的 Bug 子对话要交。按派给你的事直接做。',
       }
+  return {
+    content: [{ type: 'text', text: r.info }],
+    ...(!r.ok && { isError: true }),
+  }
+}
+
+/** 执行一次 request_logs */
+export function callRequestLogs(o: Orchestra, a: Record<string, unknown> | undefined) {
+  const r = o.requestLogs
+    ? o.requestLogs(a ?? {})
+    : { ok: false, info: '这里不用请用户复现：只有用户报的 Bug 子对话要。' }
   return {
     content: [{ type: 'text', text: r.info }],
     ...(!r.ok && { isError: true }),

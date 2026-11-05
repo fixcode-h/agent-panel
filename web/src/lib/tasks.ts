@@ -274,7 +274,10 @@ export function toolView(tool: ToolUse): ToolView | null {
     // 交出去的命令还没拿到结果：不管那一刻的调用记的是什么，这一行都算在跑
     const waiting = ids.length > 0 && bgPendingIds(tool.output ?? '').length > 0
     const startsRun = name === 'start_plan' || name === 'run_workflow'
-    const diagnosis = name === 'submit_diagnosis' ? Number(/第 (\d+) 版/.exec(tool.output ?? '')?.[1]) || 0 : 0
+    const diagnosis =
+      name === 'submit_diagnosis' || name === 'request_logs'
+        ? Number(/第 (\d+) 版/.exec(tool.output ?? '')?.[1]) || 0
+        : 0
     const send = sendOf(name, tool)
     return {
       tool: panel,
@@ -370,7 +373,17 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(t('新建子对话'), firstLine(a.title) || quoted, 'agent', text(a.message))
     // 交诊断报告（ADR 0045）：报告本身在对话里有可点开的一行，这里只写根因
     case 'submit_diagnosis':
-      return as(t('交诊断报告'), firstLine(a.rootCause), 'other', text(a.fix))
+      return as(
+        { evidence: t('交论证'), cause: t('交根因'), plan: t('交修复方案'), verify: t('请你验证') }[
+          a.phase as 'evidence'
+        ] ?? t('交诊断报告'),
+        firstLine(a.rootCause) || firstLine(a.symptom),
+        'other',
+        text(a.fix),
+      )
+    // 加好日志请用户复现：和交报告那一行一样能打开报告
+    case 'request_logs':
+      return as(t('请你复现'), Array.isArray(a.added) ? a.added.join('、') : '', 'other')
     // 父对话启动工作流（ADR 0044）：开出来的是工作流子对话，点它和子对话一样在右栏打开
     case 'start_workflow':
       return as(t('启动工作流'), firstLine(a.title) || firstLine(a.input), 'agent', text(a.input))

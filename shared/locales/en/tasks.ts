@@ -1774,24 +1774,14 @@ export const EN_TASKS: Record<string, string> = {
   补充信息: 'Extra info',
   '你知道的事实，例如什么时候开始坏的': 'Facts you know, e.g. when it started breaking',
   等你确认: 'Awaiting your approval',
-  '你提了意见，它在再查': "You raised points; it's checking again",
-  '已确认，按这版方案修': 'Approved; fixing per this version',
   '已作废，有更新的一版': 'Superseded by a newer version',
   '你取消了，这次不修': 'You cancelled; no fix this time',
   取消修复: 'Cancel fix',
   '取消这次修复？': 'Cancel this fix?',
-  '不再等你确认方案，这一轮就此结束，计划标记为完成，不会改任何文件。之后在这个对话里发话，它会照你的新话做。':
-    'It stops waiting for your approval, this turn ends, the plan is marked done, and no files are changed. Anything you send in this conversation afterwards, it works on that.',
   不修了: "Don't fix",
   '第 {n} 版': 'Version {n}',
   '诊断报告 · {title}': 'Diagnosis report · {title}',
   '确认方案，开始修': 'Approve plan and fix',
-  '有疑问，再查': 'Question it, check again',
-  '方案没问题就确认，它才会开始改；有疑问先选中文字标注':
-    'Approve if the plan looks right; it only starts changing code after that. Select text to annotate questions',
-  '「有疑问，再查」把标注按编号交回，它逐条查清后交新一版':
-    '"Question it" sends your numbered notes back; it answers each and submits a new version',
-  '方案已经记下，但没能交给子对话：{error}': "Decision saved, but couldn't deliver it to the sub-conversation: {error}",
   '标注 {n} 的种类': 'Type of note {n}',
   '这一版已经处理过了，只能查看': 'This version has been handled; view only',
   '这是旧的一版，只能查看；切回最新一版再标注': 'This is an older version, view only; switch to the latest to annotate',
@@ -1811,9 +1801,6 @@ export const EN_TASKS: Record<string, string> = {
   这一版诊断报告已经处理过了: 'This version of the diagnosis report has already been handled',
   '退回要写清哪里有疑问：先标注，或者写整体意见':
     "To send it back, say what's in question: annotate first, or write an overall comment",
-  '你确认了诊断报告第 {n} 版的方案': 'You approved the plan in diagnosis report v{n}',
-  '你对诊断报告第 {n} 版提了 {k} 条意见，要它再查':
-    'You raised {k} points on diagnosis report v{n} and asked it to check again',
   '你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成':
     'You cancelled diagnosis report v{n}; no fix this time, and the plan is marked done',
   '它正在回复，等这一轮结束再取消': "It's replying; cancel after this turn ends",

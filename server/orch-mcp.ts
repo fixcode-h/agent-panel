@@ -24,7 +24,14 @@ import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
 import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
 import { callWorkflowTool, workflowTools } from './workflow-tools.ts'
-import { BUG_CASE_TOOL, callBugCase, callDiagnosis, DIAGNOSIS_TOOL } from './diagnosis-tool.ts'
+import {
+  BUG_CASE_TOOL,
+  callBugCase,
+  callDiagnosis,
+  callRequestLogs,
+  DIAGNOSIS_TOOL,
+  REQUEST_LOGS_TOOL,
+} from './diagnosis-tool.ts'
 import { callMemory, MEMORY_TOOL } from './memory-tool.ts'
 // 用法说明搬到了单独的文件（这个文件到了行数上限），调用方照旧从这里取
 export { orchHint } from './orch-hint.ts'
@@ -607,7 +614,7 @@ export function orchTools(o: Orchestra) {
         ]
       : []),
     ...(o.askPush ? [ASK_PUSH_TOOL] : []),
-    ...(o.diagnose ? [DIAGNOSIS_TOOL, BUG_CASE_TOOL] : []),
+    ...(o.diagnose ? [DIAGNOSIS_TOOL, BUG_CASE_TOOL, REQUEST_LOGS_TOOL] : []),
     ...(o.remember ? [MEMORY_TOOL] : []),
     ...(o.lessons
       ? [
@@ -870,6 +877,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       return callMemory(o, a)
     case 'update_bug_case':
       return callBugCase(o, a)
+    case 'request_logs':
+      return callRequestLogs(o, a)
     case 'set_plan': {
       const r = await o.setPlan({
         title: str(a?.title),

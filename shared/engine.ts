@@ -56,7 +56,7 @@ import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
 import { pickFlow, runsSection, workflowCatalogText, type PickedFlow, type WorkflowEntry } from './flow-run.ts'
 import { runFlowRunTurn } from './flow-run-turn.ts'
 import { runTools, type FlowRunHost, type RunTools } from './flow-run-orch.ts'
-import { approvedBrief, submitDiagnosis, updateBugCase, type DiagnosisInput } from './bug-diagnosis.ts'
+import { approvedBrief, requestLogs, submitDiagnosis, updateBugCase, type DiagnosisInput } from './bug-diagnosis.ts'
 import { resultLine, resultOf, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
@@ -563,6 +563,7 @@ export interface Orchestra {
   /** Bug 诊断报告（ADR 0045）：父对话派来的 Bug 子对话才有，交了等用户确认方案再改 */
   diagnose?: (input: DiagnosisInput) => { ok: boolean; info: string }
   bugCase?: (input: DiagnosisInput) => { ok: boolean; info: string } // update_bug_case（ADR 0046）
+  requestLogs?: (input: DiagnosisInput) => { ok: boolean; info: string } // request_logs：加好日志请用户复现
   /** Chat 模式的跨对话记忆（remember 工具，server/chat-memory.ts）：只有 Chat 页的对话有 */
   remember?: (text: string, forget?: boolean) => Promise<{ ok: boolean; info: string }>
 }
@@ -2434,8 +2435,13 @@ function statusTree(host: EngineHost, self: string) {
 }
 
 /** 交诊断报告（ADR 0045）：记进任务、挂成等用户确认的请求，马上落盘让界面看到 */
-function diagnoseTask(host: EngineHost, input: DiagnosisInput, draft?: boolean) {
-  const r = draft ? updateBugCase(host.task, input) : submitDiagnosis(host.task, input, host.newId)
+function diagnoseTask(host: EngineHost, input: DiagnosisInput, draft?: boolean | 'logs') {
+  const r =
+    draft === 'logs'
+      ? requestLogs(host.task, input)
+      : draft
+        ? updateBugCase(host.task, input)
+        : submitDiagnosis(host.task, input, host.newId)
   if (r.ok) host.changed(true)
   return r
 }
@@ -2866,7 +2872,11 @@ function makeOrchestra(
     ...(task.bug &&
       task.parentTaskId &&
       ctx.chat &&
-      !helper && { diagnose: (x) => diagnoseTask(host, x), bugCase: (x) => diagnoseTask(host, x, true) }),
+      !helper && {
+        diagnose: (x) => diagnoseTask(host, x),
+        bugCase: (x) => diagnoseTask(host, x, true),
+        requestLogs: (x) => diagnoseTask(host, x, 'logs'),
+      }),
     remember: !helper && isChatMode(task) ? host.chatMemory?.remember : undefined,
     status: () => statusTree(host, self.id),
     spawn(tasks, step, opts) {

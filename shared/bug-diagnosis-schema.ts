@@ -88,6 +88,34 @@ export const BugResult = z.object({
 })
 export type BugResult = z.infer<typeof BugResult>
 
+/**
+ * 报告的阶段：evidence 论证（还没定论，要加日志复现）、cause 根因（等用户同意）、plan 修复方案、verify 验证（修完等用户复现给日志）。
+ * 按顺序走，论证可以来回多轮；用户否决根因、AI 认可证据不够时回到论证
+ */
+export const BugPhase = z.enum(['evidence', 'cause', 'plan', 'verify'])
+export type BugPhase = z.infer<typeof BugPhase>
+
+/** 日志计划的一处：加在哪、打什么、用来区分哪个假设 */
+export const BugLogPoint = z.object({
+  id: str(20),
+  file: str(500),
+  line: z.coerce.number().int().positive().optional().catch(undefined),
+  fn: str(300),
+  print: str(1000),
+  hypothesis: str(300),
+})
+export type BugLogPoint = z.infer<typeof BugLogPoint>
+
+/** 怎么让用户复现、贴回什么：论证阶段和验证阶段都用 */
+export const BugCollect = z.object({
+  steps: z.array(z.string().max(500)).catch([]).default([]),
+  where: str(500),
+  filter: str(300),
+  /** 每种结果说明什么（论证）/ 看到什么算修好了（验证） */
+  expect: str(2000),
+})
+export type BugCollect = z.infer<typeof BugCollect>
+
 /** 档案里结构化的几块（ADR 0046）：诊断报告的每一版都带着，草稿也是这几块 */
 export const BugCaseFields = {
   level: BugLevel.catch('standard').default('standard'),
@@ -120,10 +148,16 @@ export const BugCaseFields = {
     .catch(undefined),
   /** 根因还没找到时：下一步要加的日志、要用户提供什么 */
   next: str(3000),
+  /** 论证阶段：要加的临时日志 */
+  logPlan: z.array(BugLogPoint).catch([]).default([]),
+  /** 论证 / 验证阶段：复现步骤、日志在哪、过滤条件、每种结果说明什么 */
+  collect: BugCollect.optional().catch(undefined),
 }
 
 export const Diagnosis = z.object({
   ...BugCaseFields,
+  /** 旧数据没有：按 confirmed 推（phaseOf） */
+  phase: BugPhase.optional().catch(undefined),
   version: z.number().int(),
   at: z.string(),
   symptom: z.string().default(''),
@@ -141,8 +175,20 @@ export const Diagnosis = z.object({
   verify: z.string().default(''),
   /** 第 2 版起：逐条回答上一版的疑问和改方案（id 对上一版 notes 的 id） */
   answers: z.array(z.object({ id: z.number().int(), answer: z.string() })).default([]),
-  /** cancelled：用户在审阅弹窗里点了「取消」，这次不修了（计划收口成完成，对话等用户下一句） */
-  status: z.enum(['pending', 'questioned', 'approved', 'superseded', 'cancelled']).default('pending'),
+  /**
+   * cancelled：用户在审阅弹窗里点了「取消」，这次不修了（计划收口成完成，对话等用户下一句）。
+   * answered：用户贴了日志（论证阶段复现的结果、验证阶段的结果），交给 AI 分析
+   */
+  status: z.enum(['pending', 'questioned', 'approved', 'answered', 'superseded', 'cancelled']).default('pending'),
+  /** 论证阶段：用户同意加日志后，AI 加好了日志、请用户复现（request_logs）。有它且 pending 就是「等你复现」 */
+  awaiting: z
+    .object({ at: z.string(), added: z.array(z.string().max(500)).default([]), collect: BugCollect.optional() })
+    .optional(),
+  /** 用户贴回的日志（文字部分；附件随消息交给 AI，这里只记文件名） */
+  logs: z.string().max(20000).default(''),
+  logFiles: z.array(z.string().max(500)).default([]),
+  /** 验证阶段：修完的结果（回归测试、影响面逐条的验证），交验证那一版时从档案里带上 */
+  result: BugResult.optional().catch(undefined),
   notes: z.array(DiagnosisNote).default([]),
   overall: z.string().default(''),
   decidedAt: z.string().optional(),
