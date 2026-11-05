@@ -355,6 +355,22 @@ test('检查更新被限流时：没有缓存就报错，有缓存就回退并�
   }
 })
 
+test('cached=1 只回上次存下的列表，不访问 GitHub，最多列 10 个', async () => {
+  const list = Array.from({ length: 12 }, (_, i) => cachedRelease(`9.9.${i}`))
+  writeReleasesCache({ at: Date.now() - 7 * 3600_000, list })
+  const gh = await stubGithub(() => ({ status: 500 }))
+  try {
+    const body: any = await (await makeUpdateApi().api.request('/releases?cached=1')).json()
+    assert.equal(gh.hits.length, 0, '只读缓存，过了 6 小时也不去问 GitHub')
+    assert.equal(body.error, undefined)
+    assert.equal(body.releases.length, 10)
+    assert.equal(body.releases[0].tag, 'v9.9.11', '按版本号从新到旧')
+  } finally {
+    await gh.close()
+    delete process.env.AGENT_PANEL_RELEASES_URL
+  }
+})
+
 test('列表没变化时带 If-None-Match 拿到 304，复用缓存并更新检查时间', async () => {
   const oldAt = Date.now() - 7 * 3600_000
   writeReleasesCache({ at: oldAt, list: [cachedRelease()], etag: '"v1"' })

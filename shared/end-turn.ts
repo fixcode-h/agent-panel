@@ -23,7 +23,7 @@ export const END_BLOCKED = '【已记下卡点】'
 
 /** 交给 Agent 的说法里，怎么结束的那一句（提醒、提示词都引用它；不翻译） */
 export const END_TURN_HOW =
-  '做完了就调用 end_turn（outcome: done），之后最多用一句话简短收尾，不要重复总结；做不下去就调用 end_turn（outcome: blocked），need 写缺什么。'
+  '做完了就调用 end_turn（outcome: done），之后必须用一句话简短说明收尾，不要重复总结；做不下去就调用 end_turn（outcome: blocked），need 写缺什么。'
 
 /** 没列计划时的收尾自检（用户 2026-11-05 定的说法） */
 export const CHECK_REMINDER =
@@ -134,7 +134,7 @@ export function endTurnCheck(
       ok: false,
       info: `${END_REJECTED}你还没请父对话收尾：按「验证」跑通后调用 submit_merge，它就是这个子对话的结束，不用再调用 end_turn。`,
     }
-  return { ok: true, info: '已结束这一轮：之后最多一句话简短收尾，不要重复总结。', end: { outcome } }
+  return { ok: true, info: '已结束这一轮：之后用一句话简短说明收尾，不要重复总结。', end: { outcome } }
 }
 
 /** 记一次结束：最近的在最后，只留最近 50 条 */
