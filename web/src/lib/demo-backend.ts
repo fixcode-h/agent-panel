@@ -4065,6 +4065,25 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     .filter((i) => i >= 0)
     .at(-1)
   task.messages.splice(last ?? task.messages.length, 0, spawned, ...own)
+  // 这次派单的分诊卡：插在回复里派出子任务的那一处（route-anchor 按 spawned 对上），折叠后也留在原位
+  const ask = task.messages
+    .slice(0, task.messages.indexOf(spawned))
+    .reverse()
+    .find((m) => m.role === 'user' && !m.peer)
+  task.routes = [
+    ...(task.routes ?? []),
+    {
+      id: 'demo-route-helper',
+      target: 'subtask',
+      refs: [id],
+      label: title,
+      understanding: '加购后角标数字不变，要先弄清角标什么时候读购物车数据',
+      reason: '只读代码就能查清，交给子任务并行查，这里接着排查加购流程',
+      assumptions: '',
+      messageId: ask?.id ?? '',
+      at,
+    },
+  ]
 }
 
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
