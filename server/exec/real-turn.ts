@@ -132,6 +132,7 @@ export async function runRealTurn(ctx: RealContext) {
     onOrchestra: ctx.onOrchestra,
     beforeEnd: ctx.beforeEnd,
     lessons: ctx.lessons,
+    experience: ctx.experience,
     runAgent: (call) => gatedRunAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     yieldSlot: (stepId, wait) => yieldApiSlot(ctx, stepId, wait),
     signal: ctx.signal,

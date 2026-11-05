@@ -754,6 +754,8 @@ export interface TasksScope {
   ) => Promise<boolean>
   withJobs: (task: Task) => Task
   withLive: (task: Task) => Promise<Task>
+  /** 顶层对话一轮结束后排一次经验学习（server/experience-learn.ts） */
+  learnExperience: (taskId: string) => Promise<void>
   workflowCatalog: (
     project: Project,
     all: Workflow[],

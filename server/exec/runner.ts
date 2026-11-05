@@ -120,6 +120,7 @@ import { turnRole } from '../../shared/conv-mode.ts'
 import { openBlenderSession } from '../blender-mcp.ts'
 import { MODEL_HINT } from '../../shared/blender.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
+import { experiencePrompt } from '../../shared/experience.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
@@ -486,7 +487,10 @@ async function runAgent(
   if (!resume && !op && task.projectId) {
     const globals = await readGlobalLessons()
     const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, globals, !!orch?.lessons?.record)
-    if (lessons) input = `${input}\n\n${lessons}`
+    // 项目经验只放一行「有几条、怎么查」，按需求原文本地匹配到的最多附两条（shared/experience.ts）
+    const exp =
+      orch?.experience && experiencePrompt(await orch.experience.list(), ctx.prompt, settings.experience.preHint)
+    for (const part of [lessons, exp]) if (part) input = `${input}\n\n${part}`
   }
   // 没有系统提示词参数的 CLI：对话目录的规则接在新会话的任务描述后面（有参数的已经放进系统提示词）
   if (!resume && !op && !def.systemPromptFlag) input = `${input}\n\n${taskDir.rule}`

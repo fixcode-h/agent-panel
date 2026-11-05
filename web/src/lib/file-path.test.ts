@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { setLang, t } from '@shared/i18n'
+import { setLang } from '@shared/i18n'
 import { isImagePath, linkPaths, parsePath } from '@/lib/file-path'
 
 setLang('zh')
@@ -69,27 +69,59 @@ test('parsePath：网址、命令、代码、版本号、普通句子都不是�
     assert.equal(parsePath(s), null, `「${s}」不该认成路径`)
 })
 
-test('linkPaths：行内代码标成可点，代码块里和不像路径的不动', () => {
+test('linkPaths：行内代码换成文件标记（图标种类 + 文件名 + 灰色扩展名 + 行号），代码块里和不像路径的不动', () => {
   const html =
     '<p>截图：<code>ui-shots/107-对话-图片气泡.png</code>，改的是 <code>web/src/lib/file-path.ts:42</code>，' +
     '不是 <code>console.log</code> 也不是 <code>1.2.3</code></p>' +
     '<pre><code>ui-shots/107-对话-图片气泡.png</code></pre>' +
     '<div class="md-code"><div class="md-code-bar"><span>ts</span></div><pre><code class="hljs">src/a.ts</code></pre></div>'
   const out = linkPaths(html)
-  assert.match(
+  assert.ok(
+    out.includes(
+      '<span class="md-path file-ref" role="button" tabindex="0" data-file-ref data-kind="image" data-path="ui-shots/107-对话-图片气泡.png">' +
+        '<span class="fr-name">107-对话-图片气泡</span><span class="fr-ext">.png</span></span>',
+    ),
     out,
-    new RegExp(
-      `<code class="md-path" role="button" tabindex="0" data-path="ui-shots/107-对话-图片气泡.png" title="${t('查看图片')}">`,
+  )
+  assert.match(out, /data-kind="code" data-path="web\/src\/lib\/file-path.ts" data-md-line="42"/)
+  assert.ok(
+    out.includes(
+      '<span class="fr-name">file-path</span><span class="fr-ext">.ts</span><span class="fr-line">:42</span>',
     ),
   )
-  assert.match(out, /data-path="web\/src\/lib\/file-path.ts" data-md-line="42"/)
-  assert.match(out, new RegExp(`title="${t('查看文件')}">web/src/lib/file-path.ts:42</code>`))
   assert.ok(out.includes('<code>console.log</code>'), 'console.log 不该变成链接')
   assert.ok(out.includes('<code>1.2.3</code>'), '版本号不该变成链接')
   // 代码块里的原样保留（外面那层 <pre> 整个跳过）
   assert.ok(out.includes('<pre><code>ui-shots/107-对话-图片气泡.png</code></pre>'), '代码块里的路径不该被标成链接')
   assert.ok(out.includes('<code class="hljs">src/a.ts</code>'), '带语言栏的代码块不该被标成链接')
-  assert.equal(out.match(/md-path/g)?.length, 2)
+  assert.equal(out.match(/data-file-ref/g)?.length, 2)
+})
+
+test('linkPaths：截图里那种表格路径认成表格，纯文件名的 Office 文档也认', () => {
+  const out = linkPaths(
+    '<p><code>Project/Designer/Excel/FunctionalNPC/C_FunctionalNPCInfo.xlsx</code> 和 <code>需求.docx</code></p>',
+  )
+  assert.match(out, /data-kind="sheet" data-path="Project\/Designer\/Excel\/FunctionalNPC\/C_FunctionalNPCInfo.xlsx"/)
+  assert.match(out, /data-kind="doc" data-path="需求.docx"/)
+})
+
+test('linkPaths：同一条消息里同名不同路径的，名字前面补上一级目录', () => {
+  const out = linkPaths('<p><code>client/Config.ts</code>、<code>server/Config.ts</code>、<code>a/b.ts</code></p>')
+  assert.ok(out.includes('<span class="fr-dim">client/</span><span class="fr-name">Config</span>'))
+  assert.ok(out.includes('<span class="fr-dim">server/</span><span class="fr-name">Config</span>'))
+  assert.ok(!out.includes('<span class="fr-dim">a/</span>'), '不重名的不补目录')
+})
+
+test('linkPaths：指向本机文件的 Markdown 链接换成文件标记，显示链接文字；网页链接不动', () => {
+  const out = linkPaths(
+    '<p><a href="src/App.tsx" target="_blank">入口组件</a>、<a href="docs/a.md">docs/a.md</a>、' +
+      '<a href="https://example.com/a.ts" target="_blank">网页</a>、<a href="#x">锚点</a></p>',
+  )
+  assert.match(out, /data-path="src\/App.tsx"><span class="fr-name">入口组件<\/span><\/span>/)
+  // 链接文字就是路径时按文件名显示
+  assert.match(out, /data-path="docs\/a.md"><span class="fr-name">a<\/span><span class="fr-ext">.md<\/span>/)
+  assert.ok(out.includes('<a href="https://example.com/a.ts" target="_blank">网页</a>'))
+  assert.ok(out.includes('<a href="#x">锚点</a>'))
 })
 
 test('linkPaths：转义过的字符还原后再判断，属性里的 & 和引号再转义回去', () => {

@@ -854,7 +854,7 @@ app.put('/projects/:id/init-result', async (c) => {
 
 // 记一条项目教训（对话里「记成项目教训」）和应用一条 AI 评审建议：路由在单独模块里
 const lessons = projectLessons(projects, { agents })
-projectLessonRoutes(app, lessons)
+projectLessonRoutes(app, lessons, { projects, agents })
 
 // 全局教训：所有项目共用。只有界面上用户确认过的修改才会写进来，Agent 没有写它的工具
 app.get('/global-lessons', async (c) => c.json(await readGlobalLessons()))

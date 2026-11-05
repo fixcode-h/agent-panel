@@ -54,6 +54,7 @@ import { releaseIfSame, reserveOnce } from './slots.ts'
 import { killTree } from './exec/process.ts'
 import { reapSettledTaskClis } from './exec/orphans.ts'
 import { registerFileRoutes } from './tasks/files-routes.ts'
+import { registerPathRoutes } from './tasks/path-routes.ts'
 import { registerCollabRoutes } from './tasks/collab-routes.ts'
 import { createTrash } from './tasks/trash.ts'
 import { registerActionRoutes } from './tasks/actions-routes.ts'
@@ -68,6 +69,7 @@ import { registerDiagnosisRoutes } from './tasks/diagnosis-routes.ts'
 import { registerListRoutes } from './tasks/list-routes.ts'
 import { createIdleAsk } from './tasks/idle-ask.ts'
 import { createBudget } from './tasks/budget.ts'
+import { createTaskLearner } from './tasks/experience.ts'
 import { createKeepAlive } from './tasks/keepalive.ts'
 import { createRun } from './tasks/run.ts'
 import { createAsks } from './tasks/asks.ts'
@@ -220,6 +222,7 @@ export function tasksApi(deps: {
     wakeTask: () => wakeTask,
     withJobs: () => withJobs,
     withLive: () => withLive,
+    learnExperience: () => learnExperience,
     workflowCatalog: () => workflowCatalog,
     worktreeHome: () => worktreeHome,
     worktreeStatusOf: () => worktreeStatusOf,
@@ -660,6 +663,7 @@ export function tasksApi(deps: {
   const flowRuns = createFlowRuns(scope)
   const { armIdleAsk, disarmIdleAsk, childRecovering } = createIdleAsk(scope)
   const { checkBudget, holdWake } = createBudget(scope)
+  const { learnExperience } = createTaskLearner(scope)
   const {
     allowedPids,
     processPanel,
@@ -702,6 +706,7 @@ export function tasksApi(deps: {
   const { prewarmChat, createTask } = registerConversationRoutes(scope)
   const { dropWorktree, taskDir, worktreeHome } = registerWorktreeRoutes(scope)
   const { readableDir } = registerFileRoutes(scope)
+  registerPathRoutes(scope)
   registerActionRoutes(scope)
   const { purgeTasks, enterTrash, restoreTasks } = createTrash(scope)
 

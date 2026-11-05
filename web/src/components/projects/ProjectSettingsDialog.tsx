@@ -1,4 +1,5 @@
 import { CliSkills } from '@/components/settings/CliSkills'
+import { ProjectExperience } from './ProjectExperience'
 import { ProjectMcpSection } from './ProjectMcpSection'
 import { ProjectCliTrust } from './ProjectCliTrust'
 import { ProjectPackages } from './ProjectPackages'
@@ -11,6 +12,7 @@ import {
   FileText,
   FlaskConical,
   GraduationCap,
+  Lightbulb,
   Library,
   Loader2,
   Plug,
@@ -750,6 +752,12 @@ function Body({
             <GraduationCap className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('项目教训')}
           </NavItem>
+          {project?.path && (
+            <NavItem on={section === 'experience'} onClick={() => setSection('experience')}>
+              <Lightbulb className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+              {t('项目经验')}
+            </NavItem>
+          )}
           <NavItem on={section === 'skills'} onClick={() => setSection('skills')}>
             <Library className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             Skill
@@ -1099,6 +1107,16 @@ function Body({
                   project={project}
                   initialOpen={item}
                 />
+              </div>
+            ) : section === 'experience' && project ? (
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <PageIntro
+                  title={t('项目经验')}
+                  desc={t(
+                    '做某类事最快的路：在哪个目录找、你的说法在代码里叫什么、用什么命令、怎么验证。整个对话完成后面板自动学，学到就加；对话里发「/learn 要学的」也能让角色专门学一条。Agent 需要时按关键词查，不会整份塞进提示词。这里的改动直接保存。',
+                  )}
+                />
+                <ProjectExperience projectId={project.id} />
               </div>
             ) : section === 'tests' ? (
               <div className="flex min-w-0 flex-1 flex-col gap-4">

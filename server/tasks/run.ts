@@ -12,6 +12,8 @@ import {
 } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { loadProjectLessons, projectWithLessons } from '../project-lessons.ts'
+import { loadProjectExperience } from '../project-experience.ts'
+import { recordExperience } from '../experience-learn.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
 import {
   beginRun,
@@ -624,6 +626,21 @@ export function createRun(sc: TasksScope) {
                   : { ok: false, info: '这里记不了项目教训' },
             }
           : undefined,
+        // 项目经验：设置里关了总开关就整个不给（工具、开头那一行都没有）；每次查都现读，刚学到的也能查到
+        experience:
+          task.projectId && settings.experience.enabled
+            ? {
+                list: async () => {
+                  const p = await sc.deps.projects.get(task.projectId)
+                  return p ? (await loadProjectExperience(p, agents)).items : []
+                },
+                record: async (input) => {
+                  const p = await sc.deps.projects.get(task.projectId)
+                  if (!p?.path) return { ok: false, info: '这个项目没有目录，存不了经验' }
+                  return recordExperience(p, agents, input, task.parentTaskId || task.id)
+                },
+              }
+            : undefined,
         releaseFiles:
           task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
             ? (paths) => releaseUnchanged(sc.claims, entry.task, paths)
@@ -772,6 +789,8 @@ export function createRun(sc: TasksScope) {
             .catch((e) => log.warn('task', '工作流运行回信失败', { task: task.id, error: (e as Error).message }))
         // 整轮结束了，没被节点取走的补充不会再有人取
         forgetNotes(task.id)
+        // 项目里的顶层对话：空闲够久、整个对话（含子对话）都完成了再学经验，期间又跑起来就重新计时
+        if (!prewarm && !entry.task.parentTaskId && entry.task.projectId) void sc.learnExperience(task.id)
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
         // 收尾停掉的（父对话 finish_child、用户点解决：stopReason finish）不是出错：收尾时交来的新任务照样接着处理
         const endedOk = entry.task.status === 'done' || (entry.stop && entry.stopReason === 'finish')

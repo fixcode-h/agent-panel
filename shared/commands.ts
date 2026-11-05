@@ -86,6 +86,20 @@ export const builtinCommands = (): BuiltinCommand[] => [
       '\n\n## 用户报的 Bug\n$ARGUMENTS',
   },
   {
+    name: 'learn',
+    description: t('把一件事学成一条项目经验：在哪找、叫什么、用什么命令，下次直接用'),
+    hint: t('<要学的，例如：表格相关的代码在哪>'),
+    // 记经验靠 record_experience（server/orch-mcp.ts）；经验记什么、不记什么写在工具说明里（shared/experience.ts 的 EXPERIENCE_SCOPE）
+    prompt:
+      '用户用 /learn 要你把下面这件事学成一条项目经验（没写要学什么时，总结这次对话里找到的捷径）：' +
+      '先用 project_experience 看有没有同类的经验；没有或不全，就在项目里只读地查清楚（看目录结构、搜关键词、读入口文件，不改任何文件）。' +
+      '查清后用 record_experience 记一条，同一件事已经有了就带它的 id 更新：标题一句话，关键词同时写用户的说法和代码里的叫法，' +
+      '位置写到目录或入口文件为止，说明一两句；不记行号、函数内部细节和一次性的事。没有 record_experience 工具时告诉用户经验功能在设置里关了。' +
+      '最后用一两句告诉用户记了什么。' +
+      ONE_TURN +
+      '\n\n## 要学的\n$ARGUMENTS',
+  },
+  {
     name: 'plan',
     description: t('只出方案不改代码：读相关代码，给出实现步骤、要改的文件和风险'),
     hint: t('<需求>'),

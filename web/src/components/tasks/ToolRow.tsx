@@ -23,6 +23,7 @@ import { useChildOpen, useJobOpen, useRunToolOpen } from './child-open'
 import { api } from '@/lib/api'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
+import { useFileRef, type FileRefTarget } from '@/components/files/FileRefLayer'
 import { DiffDialog } from './DiffDialog'
 import { DIFF_GUTTER, DIFF_HUNK, DIFF_TONE } from '@/components/ui/diff-tone'
 import { CommandDialog, OutputDialog } from './ToolDialog'
@@ -264,7 +265,10 @@ export function RowShell({
    */
   container,
   boxed,
+  fileRef,
 }: {
+  /** 标题是一个文件（读取、编辑的文件）：悬停看完整路径，右键弹文件菜单（FileRefLayer） */
+  fileRef?: FileRefTarget
   glyph: React.ReactNode
   verb?: React.ReactNode
   /** 动作名后面淡色的小标签（MCP 的服务名） */
@@ -299,6 +303,20 @@ export function RowShell({
   children?: React.ReactNode
 }) {
   const toggle = onToggle
+  const refs = useFileRef()
+  // 文件标题：悬停卡片代替浏览器自带的 title（两个一起出来会叠在一起）
+  const refProps =
+    fileRef && refs
+      ? {
+          'data-file-ref': '',
+          onContextMenu: (e: React.MouseEvent<HTMLElement>) => {
+            e.stopPropagation()
+            refs.menu(e, fileRef, e.currentTarget)
+          },
+          onMouseEnter: (e: React.MouseEvent<HTMLElement>) => refs.hover(e.currentTarget, fileRef),
+          onMouseLeave: refs.leave,
+        }
+      : null
   // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
   const activate = rowOpen ?? toggle
   return (
@@ -369,7 +387,8 @@ export function RowShell({
                   e.stopPropagation()
                   onOpen()
                 }}
-                title={titleTip || openTip}
+                title={refProps ? undefined : titleTip || openTip}
+                {...refProps}
                 // 只有整行打开的子对话行才用 openTip 当读屏名：别的行（接收消息、工具）标题本身就是名字，
                 // 盖掉会让「已完成：合回原分支、标记完成」这类按名字找的入口定位不到
                 aria-label={rowOpen ? openTip : undefined}
@@ -381,7 +400,11 @@ export function RowShell({
                 {title}
               </button>
             ) : (
-              <span className={cn('min-w-0 truncate font-mono text-footnote', titleClass)} title={titleTip}>
+              <span
+                className={cn('min-w-0 truncate font-mono text-footnote', titleClass)}
+                title={refProps ? undefined : titleTip}
+                {...refProps}
+              >
                 {title}
               </span>
             )
@@ -578,6 +601,15 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const isDiff = tool.kind === 'edit' && /^[+\-@ ]/m.test(input)
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
+  // 读取、编辑的文件：标题悬停看完整路径、右键文件菜单；编辑行单击仍是看差异
+  const refs = useFileRef()
+  const fileRef = useMemo<FileRefTarget | undefined>(
+    () =>
+      (tool.kind === 'read' || tool.kind === 'edit') && openFile && isFilePath(tool.label)
+        ? { path: tool.label.trim() }
+        : undefined,
+    [tool.kind, tool.label, openFile],
+  )
 
   const glyph =
     tool.running || bg || waitReport ? (
@@ -623,7 +655,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         tip: t('打开命令行窗口'),
       }
     : file
-      ? { open: () => openFile?.(file), tip: t('查看文件') }
+      ? { open: () => (refs ? void refs.open({ path: file }) : openFile?.(file)), tip: t('查看文件') }
       : view.child && openChild
         ? { open: () => openChild(view.child!), tip: t('在右栏打开子对话') }
         : view.startsRun && task?.id
@@ -654,6 +686,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         verb={verb}
         badge={view.server}
         title={tool.label}
+        fileRef={fileRef}
         detail={detail}
         ms={bg ? (jobStart ? now - jobStart : undefined) : pending ? now - tool.startedAt! : tool.ms}
         open={open}

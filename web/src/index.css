@@ -1583,17 +1583,104 @@ body,
   border: var(--md-code-border) solid color-mix(in srgb, var(--md-code-color) 18%, var(--line));
   border-radius: var(--md-code-radius);
 }
-/* 能点开的文件路径：和普通行内代码分开，透明底 + 描边，移上去像链接（前面不加图标） */
-.chat-md code.md-path {
-  @apply cursor-pointer transition-colors;
+/*
+ * 文件标记：对话里提到的文件（回复里的行内代码路径、指向本机文件的链接）。
+ * 图标 + 文件名 + 灰色扩展名 + 行号，目录放到悬停卡片上（web/src/lib/file-ref.ts）。
+ * HTML 是字符串拼出来的，图标用 mask 按 data-kind 画，颜色跟着主题 token 走
+ */
+.file-ref {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0 0.4em 0 0.3em;
+  vertical-align: -0.2em;
+  line-height: 1.5;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--md-code-radius, 5px);
   color: var(--fg);
-  background: transparent;
-  border-color: var(--line-strong);
+  cursor: pointer;
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  transition:
+    border-color 0.12s,
+    background-color 0.12s;
 }
-.chat-md code.md-path:hover {
-  @apply underline underline-offset-2;
-  color: var(--md-link-color);
-  border-color: var(--md-link-color);
+.file-ref::before {
+  content: '';
+  flex: none;
+  width: 1.05em;
+  height: 1.05em;
+  margin-right: 0.25em;
+  background: currentColor;
+  -webkit-mask: var(--fr-icon) center / contain no-repeat;
+  mask: var(--fr-icon) center / contain no-repeat;
+}
+.file-ref:hover,
+.file-ref[data-menu] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.file-ref:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.file-ref .fr-ext,
+.file-ref .fr-line,
+.file-ref .fr-dim {
+  color: var(--subtle);
+}
+.file-ref .fr-line {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+/* 找不到的文件：虚线框、名字划掉，右键仍能复制路径 */
+.file-ref[data-missing] {
+  border-style: dashed;
+  color: var(--subtle);
+}
+.file-ref[data-missing] .fr-name {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--subtle) 60%, transparent);
+}
+.file-ref[data-kind='file']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3C/svg%3E");
+  color: var(--subtle);
+}
+.file-ref[data-kind='code']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='m10 12.5-2 2 2 2'/%3E%3Cpath d='m14 16.5 2-2-2-2'/%3E%3C/svg%3E");
+  color: var(--md-blue);
+}
+.file-ref[data-kind='data']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1'/%3E%3Cpath d='M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1'/%3E%3C/svg%3E");
+  color: var(--warning);
+}
+.file-ref[data-kind='text']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3Cpath d='M10 9H8'/%3E%3C/svg%3E");
+  color: var(--subtle);
+}
+.file-ref[data-kind='image']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Ccircle cx='10' cy='12' r='2'/%3E%3Cpath d='m20 17-1.3-1.3a2.4 2.4 0 0 0-3.4 0L9 22'/%3E%3C/svg%3E");
+  color: color-mix(in srgb, var(--md-blue) 45%, var(--danger));
+}
+.file-ref[data-kind='sheet']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M8 13h2'/%3E%3Cpath d='M14 13h2'/%3E%3Cpath d='M8 17h2'/%3E%3Cpath d='M14 17h2'/%3E%3C/svg%3E");
+  color: var(--success);
+}
+.file-ref[data-kind='doc']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M8 13h8'/%3E%3Cpath d='M8 17h5'/%3E%3C/svg%3E");
+  color: var(--danger);
+}
+.file-ref[data-kind='media']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='m10 11 5 3-5 3v-6Z'/%3E%3C/svg%3E");
+  color: var(--accent-text);
+}
+.file-ref[data-kind='archive']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 9h1'/%3E%3Cpath d='M10 12h1'/%3E%3Cpath d='M10 15h1'/%3E%3Cpath d='M10 18h1'/%3E%3C/svg%3E");
+  color: var(--warning);
+}
+.file-ref[data-kind='folder']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
+  color: var(--warning);
 }
 /* 代码块：一张卡片，顶部语言名、行数、折行和复制按钮 */
 .chat-md .md-code,
