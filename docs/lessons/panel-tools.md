@@ -10,6 +10,12 @@ paths: server/orch-mcp.ts, shared/panel-tools.ts, server/ask-mcp.ts
 - 起因：审计发现（df820f2 起）README 五组工具数全和代码不符；`stop_workflow`、`cherry_pick` 没登记、对话里露原始名字；186443c 加 Chat 页身份后 Pi 误报「工具清单不完整」。
 - 防线：`server/orch-mcp.test.ts`「面板工具按身份裁剪」、`server/ask-mcp.test.ts` 的握手用例。
 
+## 工具的中文名只在 shared/tool-names.ts 登记，只在某类对话里挂的工具也要进总表
+
+- 规则：面板自带的 MCP 工具（调度、设计、Blender）的中文名都写在 `shared/tool-names.ts`，`toolView`、「正在写」那一行、查询 MCP 工具的副标题都从这里取，不在界面里另写叫法；只在某类对话里挂的工具（Bug 对话的 `update_bug_case`）身份快照测不到，也要进 `PANEL_TOOL_NAMES`。
+- 起因：2026-11-05 用户报对话里显示英文 `update_bug_case` 带个 `panel` 标签：它没进 `PANEL_TOOL_NAMES`，`panelTool` 也没有兜底的中文名。
+- 防线：`web/src/lib/tool-names.test.ts`（总表里每个工具都有中文名）。
+
 ## 给某一类对话裁工具按能力和客观条件，不加「是不是某个页面」的身份开关
 
 - 规则：一类对话少给哪些工具，在 `shared/engine.ts` 的 `makeOrchestra` 算成能力字段（`canSpawn`、`team`、`plans`）或宿主的客观条件（有没有项目、有没有并行节点），`orchTools` / `orchHint` / 握手只读这些字段；握手 `orchestration.enabled` 按清单里核心三件（`ORCH_CORE_TOOLS`）现算，不认身份。新字段别和 `Orchestra` 已有的方法同名（`spawn` 是派子任务的方法，布尔字段叫 `canSpawn`）。
