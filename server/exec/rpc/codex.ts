@@ -6,6 +6,7 @@ import { HOOK_SCRIPT_ENV, HOOK_URL_ENV } from '../../../shared/hooks.ts'
 import { clipDetail, codexLimits, codexUsage, oneLine, toolText, type AskReply, type CliEvent } from '../parsers.ts'
 import { createRpcSession, type RpcSession } from './session.ts'
 import type { RpcAdapter, RpcContext } from './types.ts'
+import { unwrapShell } from '../../../shared/shell-command.ts'
 
 const START_TIMEOUT_MS = 60_000
 
@@ -651,27 +652,8 @@ function diffStat(diff: unknown) {
   return { add, del }
 }
 
-/**
- * 去掉外面包的一层 shell，只留真正的命令：bash -lc '…'、Windows 上的 "…\\cmd.exe" /c "…"、
- * "…\\powershell.exe" -Command '…'（可能套好几层）
- */
-export function unwrapShell(cmd: unknown) {
-  let s = (Array.isArray(cmd) ? cmd.join(' ') : String(cmd ?? '')).trim()
-  const shells = [
-    /^(?:\/bin\/|\/usr\/bin\/)?(?:ba|z)?sh\s+-l?c\s+([\s\S]+)$/,
-    /^"?(?:[^"\s]*[\\/])?cmd(?:\.exe)?"?\s+\/[cCkK]\s+([\s\S]+)$/i,
-    /^"?(?:[^"\s]*[\\/])?(?:powershell|pwsh)(?:\.exe)?"?(?:\s+-(?:NoProfile|NonInteractive|NoLogo|ExecutionPolicy\s+\S+))*\s+-(?:Command|c)\s+([\s\S]+)$/i,
-  ]
-  for (let i = 0; i < 5; i++) {
-    const m = shells.map((r) => s.match(r)).find(Boolean)
-    if (!m) break
-    s = m[1].trim()
-    // 去掉整体包着的一层引号
-    if (s.length > 1 && (s[0] === '"' || s[0] === "'") && s.endsWith(s[0])) s = s.slice(1, -1)
-  }
-  // 命令里的路径在 JSON 里转义成了 \\，显示时还原
-  return s.replace(/\\\\/g, '\\')
-}
+// 剥外壳的规则和钩子按命令前缀比共用一份（shared/shell-command.ts），这里照旧导出给测试
+export { unwrapShell }
 
 function rel(cwd: string, p: unknown) {
   if (typeof p !== 'string' || !p) return ''

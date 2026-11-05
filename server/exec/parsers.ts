@@ -3,6 +3,7 @@ import type { CliLimits, ToolUse } from '../../shared/schema.ts'
 import type { ContextSnapshot } from '../../shared/context-breakdown.ts'
 import { t } from '../../shared/i18n.ts'
 import { getCli } from '../../shared/clis.ts'
+import { toolKindOf } from '../../shared/hooks.ts'
 import type { OutputSpec } from '../../shared/cli-spec.ts'
 import { isToolLookup, panelToolName, toolLookupLabel } from '../../shared/panel-tools.ts'
 import { clip } from '../../shared/text.ts'
@@ -234,6 +235,8 @@ function rel(cwd: string, p: unknown) {
 
 // ---- Claude Code：--output-format stream-json --verbose --include-partial-messages ----
 function claudeTool(name: string, input: any, cwd: string): CliEvent {
+  // 跑命令的工具按 CLI 定义的 toolNames.shell 认（Bash，Windows 上还有 PowerShell），不在这里写死名字
+  if (toolKindOf(getCli('claude')?.hooks, name) === 'shell') return claudeShell(input)
   const file = rel(cwd, input?.file_path ?? input?.notebook_path ?? input?.path)
   const tool = (t: Omit<ToolUse, 'detail'> & { detail?: string }): Extract<CliEvent, { type: 'tool' }> => ({
     type: 'tool',
@@ -257,16 +260,13 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
       const del = edits.reduce((n, e) => n + lines(e?.old_string), 0)
       return { ...tool({ kind: 'edit', label: file, detail: `+${add} -${del}` }), file: { path: file, add, del } }
     }
-    case 'Bash':
-      // Claude Code 拿不到命令的中间输出，所以这里不标 running、也不发 tool_delta，只能跑完一次性显示：
-      // stream-json 的 --include-partial-messages 只流文字、思考和工具入参（input_json_delta），不流工具结果；
-      // 它内部确实有 bash_progress，但只在 CLAUDE_CODE_REMOTE / CLAUDE_CODE_CONTAINER_ID 下才转成 tool_progress，
-      // 而且只带 elapsed_time_seconds 和 task_id，没有输出正文。不要在这里补心跳行假装实时
-      return tool({ kind: 'run', label: oneLine(String(input?.command ?? '')) })
     case 'Grep':
       return tool({ kind: 'search', label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
     case 'Glob':
       return tool({ kind: 'search', name: t('查找文件'), label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
+    case 'LS':
+      // 老版本 Claude Code 的列目录工具：CLI 定义里登记在 read 类，以前这里没认，落到 other
+      return tool({ kind: 'search', name: t('查找文件'), label: rel(cwd, input?.path) })
     case 'ToolSearch':
       return tool(toolLookup(input))
     case 'WebSearch':
@@ -307,6 +307,16 @@ const toolLookup = (input: any) => ({
 const searchLabel = (pattern: unknown, where: string) => `${pattern ?? ''}${where ? ` · ${where}` : ''}`
 
 /** 没有专门处理的工具：MCP 工具拆出服务名，其他的用工具名，后面跟第一个参数，和 Claude Code 的「工具名(参数)」一样 */
+/**
+ * Claude Code 跑命令的工具（Bash、PowerShell）。拿不到命令的中间输出，所以这里不标 running、也不发 tool_delta，只能跑完一次性显示：
+ * stream-json 的 --include-partial-messages 只流文字、思考和工具入参（input_json_delta），不流工具结果；
+ * 它内部确实有 bash_progress，但只在 CLAUDE_CODE_REMOTE / CLAUDE_CODE_CONTAINER_ID 下才转成 tool_progress，
+ * 而且只带 elapsed_time_seconds 和 task_id，没有输出正文。不要在这里补心跳行假装实时
+ */
+function claudeShell(input: any): CliEvent {
+  return { type: 'tool', tool: { kind: 'run', label: oneLine(String(input?.command ?? '')), detail: '' } }
+}
+
 function otherTool(name: string, input: any): CliEvent {
   const mcp = /^mcp__(.+?)__(.+)$/.exec(name)
   const first = Object.values(input ?? {}).find((v) => typeof v === 'string' && v.trim()) as string | undefined

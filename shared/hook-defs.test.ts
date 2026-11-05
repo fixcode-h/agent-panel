@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { checkOutput, globMatch, hookApplies, HookDef, type HookInput } from './hook-defs.ts'
+import { checkOutput, commandSegments, globMatch, hookApplies, HookDef, type HookInput } from './hook-defs.ts'
 import { setLang } from './i18n.ts'
 
 setLang('zh')
@@ -96,4 +96,15 @@ test('AI 创建的提案：范围里写的角色名、项目名换成 id，对�
   assert.equal(ok.proposal?.hook.createdBy, 'ai')
   const bad = resolveHookProposal({ ...base, scope: { agents: ['不存在'], projects: [], clis: [] } }, subject, agents)
   assert.match(bad.error ?? '', /不存在/)
+})
+
+test('命令按段比之前剥掉外壳：cmd /c、wsl -e、powershell -Command、bash -c、& 套几层也认得出里面的命令', () => {
+  // 用户 2026-11-05 问到：Windows 上 PowerShell 工具里 `cmd /c git push`、`wsl -e git push`，以前这一段开头是 cmd / wsl，守卫对不上
+  assert.deepEqual(commandSegments('cd a && cmd /c git push origin dev'), ['cd a', 'git push origin dev'])
+  assert.deepEqual(commandSegments('cmd.exe /C "git add . && git push"'), ['git add .', 'git push'])
+  assert.deepEqual(commandSegments('wsl -d Ubuntu -e git push'), ['git push'])
+  assert.deepEqual(commandSegments('wsl -- bash -lc "git push"'), ['git push'])
+  assert.deepEqual(commandSegments('pwsh -NoProfile -Command "git push; git status"'), ['git push', 'git status'])
+  assert.deepEqual(commandSegments('& git push'), ['git push'])
+  assert.deepEqual(commandSegments('npm test | tail -5'), ['npm test', 'tail -5'], '没有外壳的照旧按段切')
 })

@@ -199,7 +199,8 @@ test('版本门槛：本机版本比实测过的老就不装，读不到版本�
 
 test('工具过滤：内置守卫只关心改文件和跑命令时，Claude Code 的工具前 / 工具后只对这几个工具名触发', () => {
   const spec = getCli('claude')!.hooks!
-  assert.equal(toolMatcher(spec, ['edit', 'shell']), 'Edit|Write|MultiEdit|NotebookEdit|Bash')
+  // Windows 上 Claude Code 还有 PowerShell 命令工具（用户 2026-11-05 报守卫管不到）
+  assert.equal(toolMatcher(spec, ['edit', 'shell']), 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell')
   assert.equal(toolMatcher(spec, ['edit', 'shell', 'any']), '', '有任意工具的用户钩子：全部触发')
   assert.equal(toolMatcher(spec, ['panel']), '', '面板工具名列不全：全部触发')
   assert.equal(toolMatcher(spec, []), '')
@@ -212,9 +213,9 @@ test('工具过滤：内置守卫只关心改文件和跑命令时，Claude Code
   const cfg = files.find((f) => f.path.endsWith('agent-panel-hooks.json'))!.content as {
     hooks: Record<string, { matcher: string }[]>
   }
-  assert.equal(cfg.hooks.PreToolUse[0].matcher, 'Edit|Write|MultiEdit|NotebookEdit|Bash')
-  assert.equal(cfg.hooks.PostToolUse[0].matcher, 'Bash')
-  assert.equal(cfg.hooks.PostToolUseFailure[0].matcher, 'Bash')
+  assert.equal(cfg.hooks.PreToolUse[0].matcher, 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell')
+  assert.equal(cfg.hooks.PostToolUse[0].matcher, 'Bash|PowerShell')
+  assert.equal(cfg.hooks.PostToolUseFailure[0].matcher, 'Bash|PowerShell')
   // 不给范围：matcher 为空，Claude Code 按全部工具触发（和以前一样）
   const all = hookInstall(spec, '/tmp/run', ['tool.before']).files.find((f) => f.path.endsWith('.json'))!.content as {
     hooks: Record<string, { matcher: string }[]>
