@@ -1581,9 +1581,11 @@ export function restartInterrupted(
  * 面板重启 / 强制更新把 CLI 停掉之后，这条任务还有「要它自己接着干」的活没干完。
  *
  * 和 restartInterrupted 分开：那个回答「界面还会不会画成在跑」（含独立分支还没合回，见 childIcon），
- * 这个回答「重启后该不该把它列进继续名单」（强制更新记录被打断的任务、新版本启动后问用户要不要继续）。
+ * 这个回答「重启后还有没有活要自己接着干」（启动迁移时据此判上次是不是没退出）。
  * 记录只按「进程还在跑」（working）挑，会把停在等下一句、计划却只做了 12/17 的父对话漏掉：
  * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+ * 所以这里也把「这一轮说完了但计划没做完」算成还有活；强制更新的恢复名单只取其中
+ * 「这一轮还在执行」的（见 interruptedTaskIds），不会把历史闲置任务累计进去。
  *
  * 不算的四种：
  * - 用户手动暂停（`stopReason: 'user'`）：那是明确的「先别动」，不是一个被强制的更新打断，重启后不能默认接着跑；
@@ -1619,12 +1621,15 @@ export function restartUnfinished(
 }
 
 /**
- * 强制更新停 CLI 之前要记下哪些任务（见 server/tasks.ts 的 interruptedTasks）：
+ * 强制更新、面板退出停 CLI 之前要记下哪些任务（见 server/tasks.ts 的 interruptedTasks）：
  * - 现在真在跑的（working）；
  * - 名下还有在跑的子对话的父对话：子对话的结果要交回它，它不在名单里就没人接；
- * - 被打断后还有活要自己干的（restartUnfinished：这一轮被打断、计划没做完）。
- * 只按 working 挑会把停在等下一句、计划 12/17 的父对话漏掉：子对话进了恢复名单被继续，
- * 父对话却停在「已中断」等用户手动点（用户报的现象）。
+ * - 这一轮真的还在执行、CLI 被停掉结果回不来的（`status === 'running'` 且不是停在等下一句，
+ *   包括在等子任务的那种）。
+ *
+ * 只记本次真正被打断的：不要直接拿 restartUnfinished 判全部任务，它还包括「这一轮已经说完、
+ * 停在等下一句、计划没做完」的历史闲置任务，每次强制更新都会把这些旧任务累计进名单（用户报的现象）。
+ * restartUnfinished 保留原样，启动迁移的崩溃名单还要用它（见 server/tasks/startup.ts）。
  */
 export function interruptedTaskIds(
   tasks: (Pick<
@@ -1649,7 +1654,11 @@ export function interruptedTaskIds(
     ids.add(w.id)
     if (w.parentTaskId) ids.add(w.parentTaskId)
   }
-  for (const tk of tasks) if (!tk.imported && !tk.archived && restartUnfinished(tk)) ids.add(tk.id)
+  // 再走一遍 restartUnfinished 是复用它那几条排除（已收口、等诊断确认、用户暂停、待收尾）：
+  // 不能放宽成只看 status，否则暂停过的任务也会被强制更新重新拉起来
+  for (const tk of tasks)
+    if (!tk.imported && !tk.archived && tk.status === 'running' && !tk.awaitingUser && restartUnfinished(tk))
+      ids.add(tk.id)
   return [...ids]
 }
 
