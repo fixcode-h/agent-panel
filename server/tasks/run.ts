@@ -1,6 +1,7 @@
 import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
+import { BugCase, type BugLevel } from '../../shared/bug-diagnosis-schema.ts'
 import {
   NewTaskInput,
   Task,
@@ -77,6 +78,7 @@ import { cherryPickFor } from '../cherry-pick.ts'
 import { TaskBusyError, isolated, parentRunRole, isP4, wrapUpFrom, wrapUpProbe } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import { pauseHelper, pauseUnit } from '../../shared/run-stops.ts'
+import { dirtyParentBlock, dirtyParentNote } from './dirty-parent.ts'
 
 /**
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
@@ -146,12 +148,15 @@ export function createRun(sc: TasksScope) {
       agentId,
       bug,
       edits,
+      level,
     }: {
       title: string
       message: string
       files?: string[]
       agentId?: string
       bug?: boolean
+      /** Bug 的级别初判：档案从它开始，子对话查下来不符可以改 */
+      level?: BugLevel
       /** 一定要改代码：第一次执行前就开好独立分支（只在独立分支模式下有用） */
       edits?: boolean
     },
@@ -174,6 +179,7 @@ export function createRun(sc: TasksScope) {
       ...newTask(input, undefined, at, subId, [], {}),
       id: subId,
       ...(bug && { bug }),
+      ...(bug && level && { bugCase: BugCase.parse({ level, levelNote: '父对话初判' }) }),
       ...(edits && project.childIsolation === 'worktree' && { editFirst: true }),
     }
     // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
@@ -683,9 +689,13 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files, agentId, bug, edits }) => {
+        createConversation: async ({ title, message, files, agentId, bug, edits, ignoreDirty, level }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          return spawnChild(entry.task, project, agents, { title, message, files, agentId, bug, edits })
+          // 独立分支看不到父对话没提交的改动：要改代码的先拦下交回清单，其余在返回里提醒（见 dirty-parent.ts）
+          const dirty = ignoreDirty ? '' : await (edits ? dirtyParentBlock : dirtyParentNote)(sc, entry.task, project)
+          if (dirty && edits) return { ok: false, info: dirty }
+          const r = await spawnChild(entry.task, project, agents, { title, message, files, agentId, bug, edits, level })
+          return dirty ? { ...r, info: `${r.info}\n${dirty}` } : r
         },
         sendToConversation: async (id, message) => {
           // 父对话交给已有子对话：子对话里画成「接收消息 · 交代任务」，不当成用户说的话

@@ -81,6 +81,14 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '同意根因它就开始设计修复方案；不同意就标出疑问或补充':
     'Agree and it starts designing the fix; otherwise mark your questions or facts',
   确认方案它才开始改代码: 'It only starts changing code once you approve the plan',
+  '快速级别：根因和修复方案一起确认，确认了它才开始改代码':
+    'Quick level: approve the root cause and the fix together; it only starts changing code after that',
+  '你同意了根因和方案，它在修': 'You agreed with the root cause and the plan; it is fixing',
+  同意根因并按这个修: 'Agree and fix it this way',
+  '根因和修复方案一起确认，确认了它才开始改代码；根因或方案有疑问先选中文字标注':
+    'Approve the root cause and the fix together; it only starts changing code after that. Select text to annotate questions about either',
+  '修复方案草案（这一版不确认，同意根因后另交一版）':
+    'Draft fix (not approved in this version; it submits the plan separately after you agree with the root cause)',
   '已经修好：按下面的步骤复现验证，把日志贴回来；不想验证可以直接结束':
     'Fixed: reproduce with the steps below and paste the logs back; or finish without verifying',
   怎么复现: 'How to reproduce',

@@ -21,11 +21,6 @@ import { taskLog } from '../task-log.ts'
 import type { TasksScope } from './scope.ts'
 import { isolated } from './helpers.ts'
 
-/** 没列计划时，这条输入以来动手（跑命令、改文件）几次以上才算「可能做了一半」：和收尾自检同一个门槛 */
-const WORKED_ACTS = 3
-/** 只读的工具（读文件、搜索）几次折算成一次动手：排查类的事以读为主，也要接得住做到一半就停 */
-const READS_PER_ACT = 3
-
 /**
  * 对话（顶层对话、子对话）的结束前判断（ADR 0049）：模型准备结束这一轮时 CLI 问到这里，
  * 返回 block 就在同一轮里接着做，不再等这一轮结束后另发一条【面板】提醒。
@@ -70,7 +65,7 @@ export function createBeforeEnd(
   }
 
   /**
-   * 这条输入以来的工具调用：动手（跑命令、改文件）和只读（读文件、搜索、看网页）分开数，判断做了多少；
+   * 这条输入以来的工具调用：动手（跑命令、改文件）和只读（读文件、搜索、看网页）分开数，记进日志给状态诊断看；
    * tools 是面板工具以外的全部调用（含没登记类别的新工具），判断有没有接着做，见 shared/end-turn.ts 的 isCliTool。
    * 已经问过（钩子拦过、或一轮结束后提醒过）的，从最近那次之后数：问过以后没再动手的不再问第二遍
    */
@@ -179,8 +174,7 @@ export function createBeforeEnd(
       )
     }
 
-    // 没列计划、也没用 end_turn 交代结束：这条输入以来一个工具都没调就要结束（「我先看一下」就停），
-    // 或者动了手、可能做了一半，问一句做完没有（用户 2026-11-05 定的说法），提醒不画进对话
+    // 没列计划、也没用 end_turn 交代结束：问一句做完没有（用户 2026-11-05 定的说法），提醒不画进对话
     const asked = [...tk.messages].reverse().find((m) => m.role === 'user' && !m.panel)
     if (!asked) return allowEnd('no-input')
     // 这一轮列过、收过计划：按计划那一档算，不再自检
@@ -189,14 +183,17 @@ export function createBeforeEnd(
     if (planAt && planAt >= asked.at) return allowEnd('planned')
     if (await d.activeChildren(tk.id)) return allowEnd('children')
     const w = workSince(tk, asked.id)
-    // 一个工具都没调就要结束：只在还没问过时问（问过以后只回了话、没再动手的不再问，不限次数也不会空转）
-    const silent = !w.checked && w.tools === 0
-    // 问过以后又调工具接着做、还是没用 end_turn 交代就要停：它没回答「做完了吗」，只是换了个地方停（用户 2026-11-05 报：
-    // 问过后读了两个文件，说「派子对话核实并修」就停了，子对话没开）。每次再问之间都隔着真动作，不会空转
-    const resumed = w.checked && w.tools > 0
-    if (!silent && !resumed && w.acts + Math.floor(w.reads / READS_PER_ACT) < WORKED_ACTS) return allowEnd('small')
+    // 问过以后只回了话、没再调工具：它答了「做完了吗」，不再问第二遍（不限次数也不会空转）
+    if (w.checked && w.tools === 0) return allowEnd('answered')
+    // 其余没用 end_turn 交代就要结束的一律问一次，不按动了几次手放行（用户 2026-11-05 定）：
+    // 面板不读回复文字，分不清「答完了小问题」和「说了要做下一步却停了」（「我先跑一下测试」「我去派子对话」就停），
+    // 只调了一两个工具时也一样；代价最多是多一次模型请求。
+    // - 一个工具都没调就要结束（「我先看一下」就停）：check-no-tools
+    // - 问过以后又调工具接着做、还是没交代就停：它没回答「做完了吗」，只是换了个地方停（用户 2026-11-05 报：
+    //   问过后读了两个文件，说「派子对话核实并修」就停了，子对话没开），每次再问之间都隔着真动作，不会空转
+    // - 还没问过、动了手：check-worked
+    const why = w.tools === 0 ? 'check-no-tools' : w.checked ? 'check-resumed' : 'check-worked'
     // 和收尾自检同一个 key：钩子问过的，一轮结束后不会再问一遍
-    const why = silent ? 'check-no-tools' : resumed ? 'check-resumed' : 'check-worked'
     return block(tk, why, `check:${asked.id}`, CHECK_REMINDER, {
       ...w,
       again: input.again || undefined,
