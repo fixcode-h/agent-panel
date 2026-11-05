@@ -154,6 +154,11 @@ import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
 import { SUMMARY_PROMPT, reviewPrompt } from './op-prompts.ts'
 import { warnSlowMcp } from './mcp-probe.ts'
 import { bugMethodPrompt, bugSlash } from './bug-prompt.ts'
+import { createFileEvents } from './file-events.ts'
+import { NOT_RESPONSE, PREWARM_QUIET, continuesOutput } from './event-kinds.ts'
+import { createDrafting } from './drafting.ts'
+// 测试从这里取（以前定义在这个文件里）
+export { continuesOutput }
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -162,26 +167,8 @@ function markTurnDone(task: Task) {
   if (seenWhileWatched(task.id)) task.turnSeenAt = now
 }
 
-/** 只说明 CLI 收下了、不说明模型在回的事件：不算有了响应 */
-const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'files_changed', 'context', 'sent', 'wait'])
 /** 任务 id → 卡住的这一轮（没得到回应的那条输入）：下一条消息据此停掉卡住的 CLI、接回会话重开 */
 export { stalledTurn } from './stall-watch.ts'
-
-/** 插话收下后还算「同一段输出」的事件：不产生新内容（见 runAgent 的 cutAfter） */
-const CONTINUES = new Set(['session', 'turn', 'limits', 'usage', 'gen', 'context', 'files_changed', 'sent', 'wait'])
-/**
- * 这个事件还属于正在输出的那一段（cur）：同一段正文、思考的增量，和不产生内容的用量、会话这些事件。
- * 换成工具、新一次模型回应、正文之后又开始思考，这一段就说完了
- */
-export const continuesOutput = (ev: CliEvent, cur: TaskMessage | undefined) => {
-  if (CONTINUES.has(ev.type)) return true
-  if (ev.type === 'text_delta') return !!cur?.text.trim()
-  if (ev.type === 'thinking') return !!cur?.thinking && !cur.text.trim() && !cur.tools.length
-  return false
-}
-
-/** 预热时不记进对话的事件：正文、思考、工具和待办 */
-const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
 
 /**
  * 补充排在正在执行的命令后面、命令跑了这么久还没完：停下命令让 CLI 马上处理补充（见 rpc.redirect）。
@@ -661,6 +648,13 @@ async function runAgent(
     })
   }
   const toolsById = new Map<string, ToolUse>()
+  // 写入等结果成功才记成改动（被钩子拦下、失败的不算），见 file-events.ts
+  const fileEvents = createFileEvents(cwd, (file) => {
+    touched.add(file.path.replaceAll('\\', '/'))
+    refreshChanges()
+    if (!ctx.isGit)
+      for (const into of [task.changes, ...(owner ? [(owner.changes ??= [])] : [])]) mergeChanges(into, [file])
+  })
   /**
    * 工具行还没建好就到了的输出增量（有的 CLI 先推输出、后报调用）。
    * 按 id 先攒着，等 tool 事件建好行时补上，不然开头这段输出会丢
@@ -672,6 +666,7 @@ async function runAgent(
   const endTool = (x: ToolUse) => {
     // 被打断、CLI 没报结果的调用也要收掉运行中标记，不然这一行会一直转圈
     delete x.running
+    fileEvents.settle(x)
     const t0 = toolStart.get(x)
     if (t0 === undefined) return
     toolStart.delete(x)
@@ -772,9 +767,11 @@ async function runAgent(
     kill: () => stallAc.abort('stalled'),
   })
   const { arm, heard } = watch
+  const drafting = createDrafting(task, () => ctx.changed())
   const apply = (ev: CliEvent) => {
     // 有了真正的输出：不算卡住。工具结果交回去、开始一次模型请求后，重新开始等模型的回应
     if (!NOT_RESPONSE.has(ev.type)) heard()
+    drafting.see(ev)
     if (ev.type === 'tool_result' || ev.type === 'request_start') arm()
     // 预热时模型可能先回一句话再调用等待工具：这些不显示，也不占消息
     if (prewarmMode && PREWARM_QUIET.has(ev.type)) return
@@ -861,12 +858,7 @@ async function runAgent(
           // 补充还排着时又开始跑命令：同样要等它跑完才取，一起计时
           if (steerPending && !redirectTimer) checkRedirect()
         }
-        if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
-        if (ev.file) refreshChanges()
-        if (ev.file && !ctx.isGit) {
-          mergeChanges(task.changes, [ev.file])
-          if (owner) mergeChanges((owner.changes ??= []), [ev.file])
-        }
+        fileEvents.track(ev.tool, ev.file, toolStart.has(ev.tool))
         break
       }
       case 'usage': {
@@ -1485,6 +1477,7 @@ async function runAgent(
     ...hooks,
   }).finally(() => {
     finished = true
+    drafting.clear()
     if (chat) taskLog(task.id, '对话的 CLI 进程结束', { cli: def.name, aborted: ctx.signal.aborted || undefined })
     blender?.close()
     watch.stop()

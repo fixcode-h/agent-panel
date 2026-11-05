@@ -5,7 +5,7 @@ import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import { helperRunning, helperShown, sortHelpers, stepMs, splitStepJobs, type ChildEntry } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
-import { jobLabel } from '@/lib/tasks'
+import { jobLabel, toolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
 import { ChildReportButton, DiagnosisAutoOpen, firstShow, showTag } from './ChildReport'
@@ -64,13 +64,17 @@ export function runningRows<C extends ChildEntry>({
   // 确认或提了意见之后（不再是 pending）就不在这里了，回到普通的记录里
   const last = kids ? task?.diagnoses?.at(-1) : undefined
   const report = last?.status === 'pending' ? last.version : 0
+  // 模型正在写一个工具调用的入参（交诊断报告这类要写一二十秒）：转圈写「正在写」，不然像卡死了。
+  // 对话不在跑时不算（服务端没来得及清掉的旧记号）
+  const drafting = kids && task?.working ? task.drafting : undefined
   return {
     sub,
     own,
     rows,
     helpers,
     report,
-    empty: !tools.length && !own.length && !sub.length && !rows.length && !helpers.length && !report,
+    drafting,
+    empty: !tools.length && !own.length && !sub.length && !rows.length && !helpers.length && !report && !drafting,
   }
 }
 
@@ -132,6 +136,28 @@ function ReportRow({ task, version }: { task: Task; version: number }) {
       />
       {dialog}
     </>
+  )
+}
+
+/**
+ * 模型正在写一个工具调用（入参整段写完才会报调用）：转圈、写明在写哪个工具、写了多久。
+ * 面板工具按对话里那一行的叫法（交修复方案、记 Bug 档案），别的工具照原名
+ */
+function DraftRow({ tool, since, now }: { tool: string; since: string; now: number }) {
+  const view = toolView({ kind: 'other', name: tool, label: '', detail: '' })
+  const name = view?.tool.name && view.tool.name !== tool ? view.tool.name : tool.replace(/^mcp__\w+?__/, '')
+  const at = Date.parse(since)
+  return (
+    <RowShell
+      glyph={spin}
+      verb={t('正在写')}
+      title={name}
+      titleClass={NAME_TITLE}
+      detailStart
+      detail={<span className="truncate text-subtle">{t('内容较长时要写一会儿')}</span>}
+      ms={at ? Math.max(0, now - at) : undefined}
+      open={false}
+    />
   )
 }
 
@@ -347,21 +373,30 @@ export function RunningNow({
   const children = useChildList()
   const openChild = useChildOpen()
   // 列什么只算一次：RunningNow 自己列的行和外面画不画分隔线读的是同一个函数
-  const { sub: stepJobs, own: ownJobs, rows, helpers, report } = runningRows({ task, tools, jobs, kids, children })
+  const {
+    sub: stepJobs,
+    own: ownJobs,
+    rows,
+    helpers,
+    report,
+    drafting,
+  } = runningRows({ task, tools, jobs, kids, children })
   // 已经有子任务行的，后台命令并进那一行；剩下的（子任务做完了命令还在跑）照旧单独一行
   const helperJobs = new Map(stepJobs.map((x) => [x.step.id, x.jobs]))
   const restJobs = stepJobs.filter((x) => !helpers.some((s) => s.id === x.step.id))
   const [win, setWin] = useState('')
   const { agents } = useData()
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
-  const now = useNow(ownJobs.length > 0 || stepJobs.length > 0 || rows.length > 0 || helpers.length > 0)
+  const now = useNow(ownJobs.length > 0 || stepJobs.length > 0 || rows.length > 0 || helpers.length > 0 || !!drafting)
   // 只为独立调用方保留的兜底：RunningFooter 已经用 runningRows 先判过空（判空和渲染读同一个值），
   // 这边不再判会画出只有分割线、没有内容的一块
-  if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length && !helpers.length && !report) return null
+  if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length && !helpers.length && !report && !drafting)
+    return null
   const box = (
     // 过程行连成一组（见 index.css 的 proc-list）：每行默认浅底，行间留一点间距，不画分隔线
     <div className="proc-list flex flex-col" aria-label={t('运行中')}>
       <ToolRows tools={tools} task={task} />
+      {drafting && <DraftRow tool={drafting.tool} since={drafting.at} now={now} />}
       {task && report > 0 && <ReportRow task={task} version={report} />}
       {task &&
         helpers.map((s) => (

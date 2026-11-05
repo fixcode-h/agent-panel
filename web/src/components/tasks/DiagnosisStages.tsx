@@ -14,8 +14,21 @@ export function DiagnosisStages({ list }: { list: Diagnosis[] }) {
   const phase = phaseOf(d)
   const rounds = list.filter((x) => phaseOf(x) === 'evidence').length
   const ok = d.status === 'approved' || d.status === 'answered'
-  // 现在在第几步：根因同意了就到方案，方案确认了就到修复，验证有了结果就都完成
-  const at = phase === 'evidence' ? 0 : phase === 'cause' ? (ok ? 2 : 1) : phase === 'plan' ? (ok ? 3 : 2) : ok ? 5 : 4
+  // 现在在第几步：根因同意了就到方案，方案确认了就到修复；验证给了结果它还在分析，点了结束才算都完成
+  const at =
+    phase === 'evidence'
+      ? 0
+      : phase === 'cause'
+        ? ok
+          ? 2
+          : 1
+        : phase === 'plan'
+          ? ok
+            ? 3
+            : 2
+          : d.status === 'approved'
+            ? 5
+            : 4
   const evidence =
     phase === 'evidence' && d.status === 'pending' && d.awaiting
       ? t('论证 · 第 {n} 轮 · 等你复现', { n: rounds })

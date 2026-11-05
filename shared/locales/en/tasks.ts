@@ -1799,7 +1799,6 @@ export const EN_TASKS: Record<string, string> = {
   交诊断报告: 'Submit diagnosis',
   回答上一版的意见: "Answers to the previous version's points",
   现象: 'Symptom',
-  位置和调用栈: 'Location and call stack',
   证据链: 'Evidence chain',
   '根因（已证实）': 'Root cause (confirmed)',
   '根因（假设，还没证实）': 'Root cause (hypothesis, not yet confirmed)',

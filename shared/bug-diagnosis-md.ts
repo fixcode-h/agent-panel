@@ -2,10 +2,13 @@
  * 诊断报告渲染成 Markdown（ADR 0045、0046）：审阅弹窗、交回父对话、对话里的卡片都用这一份。
  * 按阶段排小节（用户 2026-11-05 定的）：最上面一节「结论」写现在在哪一步、要用户做什么，
  * 论证阶段先放日志计划，根因阶段先放证据，方案阶段先放候选方案，验证阶段先放验证步骤；别的小节跟在后面。
+ * 2026-11-05 用户又要求精简：空的、重复的小节不写（级别并进结论，根因只在一处写全），
+ * 能成表的用表格（调用路径、方案比较、验证结果），一段里写了 ①②③、1) 2)、← 链的拆成一行一条（prose）。
  * 小节名是界面文案，走 t()
  */
 import type { BugBlame, BugCollect, BugLevel, Diagnosis } from './bug-diagnosis-schema.ts'
-import { KIND_TEXT, phaseOf } from './bug-phase.ts'
+import { KIND_TEXT, logFilesOf, normPath, phaseOf } from './bug-phase.ts'
+import { prose, shortFile } from './bug-prose.ts'
 import { t } from './i18n.ts'
 
 /** 责任类别在界面上的说法 */
@@ -23,12 +26,12 @@ export const blameLabel = (b: BugBlame) =>
 
 const levelLabel = (l: BugLevel) => ({ quick: t('快速'), standard: t('标准'), deep: t('深入') })[l]
 
-/** 表格单元格：竖线和换行会打断表格 */
+/** 表格单元格：竖线和换行会打断表格，换行换成 <br> 保住分行 */
 const cell = (v: string) =>
   v
     .replace(/\|/g, '\\|')
-    .replace(/\s*\n\s*/g, ' ')
-    .trim() || '—'
+    .trim()
+    .replace(/\s*\n\s*/g, '<br>') || '—'
 const table = (head: string[], rows: string[][]) =>
   rows.length
     ? [
@@ -39,6 +42,8 @@ const table = (head: string[], rows: string[][]) =>
     : ''
 
 const sec = (title: string, body: string) => (body.trim() ? `## ${title}\n${body.trim()}` : '')
+/** 位置写成「文件名:行」：表格里放全路径太挤，全路径在「要改的文件」里 */
+const at = (file: string, line?: number) => `\`${shortFile(file)}${line ? `:${line}` : ''}\``
 
 /** 这一版在哪一步、要用户做什么（结论那一节的第一行） */
 function nextStep(d: Diagnosis): string {
@@ -65,22 +70,79 @@ function nextStep(d: Diagnosis): string {
 
 const PHASE_LABEL = () => ({ evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), verify: t('验证') })
 
-/** 复现步骤、日志在哪、过滤条件、每种结果说明什么 */
+/** 复现步骤一步一行，日志在哪、过滤条件跟在步骤后面；每种结果说明什么（验证：看到什么算修好了）另起一节 */
 function collectSecs(c: BugCollect | undefined, verify: boolean): string[] {
   if (!c) return []
+  const where = [
+    c.where && t('日志在：{where}', { where: c.where }),
+    c.filter && t('过滤：`{filter}`', { filter: c.filter }),
+  ].filter(Boolean)
   return [
-    sec(verify ? t('怎么验证') : t('怎么复现'), c.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')),
     sec(
-      t('贴回什么'),
-      [c.where && t('日志在：{where}', { where: c.where }), c.filter && t('过滤：`{filter}`', { filter: c.filter })]
+      verify ? t('怎么验证') : t('怎么复现'),
+      [c.steps.map((s, i) => `${i + 1}. ${s}`).join('\n'), where.map((w) => `- ${w}`).join('\n')]
         .filter(Boolean)
         .join('\n\n'),
     ),
-    sec(verify ? t('看到什么算修好了') : t('每种结果说明什么'), c.expect),
+    sec(verify ? t('看到什么算修好了') : t('每种结果说明什么'), prose(c.expect)),
   ]
 }
 
-export function diagnosisMarkdown(d: Diagnosis, prev?: Diagnosis, opts: { author?: boolean } = {}): string {
+/** 用户贴的日志：只贴了一个文件路径的写成日志文件，不当成日志正文摆成代码块 */
+function userLogsOf(d: Diagnosis): string {
+  const text = d.logs.trim()
+  const path = /^["'`]?((?:[A-Za-z]:[\\/]|\/|~[\\/])[^"'`\n]+?\.(?:log|txt|json|csv|out))["'`]?(.*)$/s.exec(text)
+  const files = [...(path ? [path[1]] : []), ...d.logFiles]
+  const rest = path ? path[2].trim() : text
+  return [
+    files.length ? `${t('日志文件')}：${files.map((x) => `\`${x}\``).join('、')}` : '',
+    rest && (path ? rest : `\`\`\`\n${rest}\n\`\`\``),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** 候选方案并排比较：一列一个方案，一行一项（改法、修得全、风险……），空的那一项整行不摆 */
+function optionsTable(d: Diagnosis): string {
+  if (!d.options.length) return ''
+  const head = [
+    '',
+    ...d.options.map((o) => `${t('方案 {id}', { id: o.id })}${o.id === d.chosen?.id ? `（${t('选定')}）` : ''}`),
+  ]
+  const rows: [string, (o: Diagnosis['options'][number]) => string][] = [
+    [t('做法'), (o) => o.title],
+    [t('改法'), (o) => o.change],
+    [t('要改的文件'), (o) => o.files.map((f) => `\`${shortFile(f)}\``).join('<br>')],
+    [t('修得全'), (o) => o.covers],
+    [t('漏了'), (o) => o.misses],
+    [t('修改面'), (o) => o.surface],
+    [t('风险'), (o) => o.risk],
+    [t('契合'), (o) => o.fit],
+    [t('可验证'), (o) => o.verifiable],
+  ]
+  return table(
+    head,
+    rows
+      .filter(([, get]) => d.options.some((o) => get(o).trim()))
+      .map(([k, get]) => [`**${k}**`, ...d.options.map((o) => get(o))]),
+  )
+}
+
+/** 交报告前就动过、又不在用户已同意范围（加日志的文件、确认过的方案）里的文件；面板的临时目录不算 */
+function earlyFiles(d: Diagnosis, list: Diagnosis[] | undefined): string[] {
+  const upto = list ? list.slice(0, Math.max(0, list.indexOf(d))) : []
+  const ok = new Set(
+    [...logFilesOf(upto), ...upto.filter((x) => x.status === 'approved').flatMap((x) => x.files)].map(normPath),
+  )
+  return d.before.filter((f) => !/^([A-Za-z]:)?[\\/]/.test(f) && !ok.has(normPath(f)))
+}
+
+export function diagnosisMarkdown(
+  d: Diagnosis,
+  prev?: Diagnosis,
+  /** author：引入点写不写作者；list：全部版本，用来算「交报告前已改动的文件」里哪些是用户没同意过的 */
+  opts: { author?: boolean; list?: Diagnosis[] } = {},
+): string {
   const phase = phaseOf(d)
   const answers = prev
     ? d.answers
@@ -93,11 +155,10 @@ export function diagnosisMarkdown(d: Diagnosis, prev?: Diagnosis, opts: { author
         .filter(Boolean)
         .join('\n')
     : ''
-  const stack = d.stack.length
-    ? d.stack
-        .map((h, i) => `${i + 1}. \`${h.file}${h.line ? `:${h.line}` : ''}\` ${h.fn}${h.note ? ` — ${h.note}` : ''}`)
-        .join('\n')
-    : ''
+  const stack = table(
+    ['#', t('位置'), t('函数'), t('做了什么')],
+    d.stack.map((h, i) => [String(i + 1), at(h.file, h.line), h.fn, h.note ?? '']),
+  )
   const kindText = { event: t('事件'), state: t('状态'), change: t('变更') }
   const timeline = table(
     [t('时间'), t('类别'), t('来源'), t('内容')],
@@ -121,12 +182,15 @@ export function diagnosisMarkdown(d: Diagnosis, prev?: Diagnosis, opts: { author
           ],
           conf: { high: t('高'), medium: t('中'), low: t('低') }[a.confidence],
         }),
-        a.note,
+        prose(a.note),
       ]
         .filter(Boolean)
         .join('\n\n')
     : ''
-  const consistency = d.consistency.map((x) => `- ${x.observation} → ${x.explanation}`).join('\n')
+  const consistency = table(
+    [t('现象'), t('怎么解释')],
+    d.consistency.map((x) => [x.observation, x.explanation]),
+  )
   const hypoText = { confirmed: t('已证实'), excluded: t('已排除'), open: t('待验证') }
   const hypotheses = table(
     [t('假设'), t('结论'), t('依据')],
@@ -136,25 +200,6 @@ export function diagnosisMarkdown(d: Diagnosis, prev?: Diagnosis, opts: { author
     [t('影响面'), t('怎么受影响'), t('怎么验证')],
     d.impact.map((x) => [x.area, x.effect, x.verify]),
   )
-  const options = d.options
-    .map((o) => {
-      const chosen = o.id === d.chosen?.id
-      const rows: [string, string][] = [
-        [t('改法'), o.change],
-        [t('要改的文件'), o.files.map((f) => `\`${f}\``).join('、')],
-        [t('修得全'), o.covers],
-        [t('漏了'), o.misses],
-        [t('修改面'), o.surface],
-        [t('风险'), o.risk],
-        [t('契合'), o.fit],
-        [t('可验证'), o.verifiable],
-      ]
-      return [
-        `### ${t('方案 {id}', { id: o.id })}：${o.title}${chosen ? `（${t('选定')}）` : ''}`,
-        ...rows.filter(([, v]) => v.trim()).map(([k, v]) => `- **${k}**：${v.trim()}`),
-      ].join('\n')
-    })
-    .join('\n\n')
   const chosen = d.chosen
     ? [
         d.chosen.why && `**${t('为什么选方案 {id}', { id: d.chosen.id })}**：${d.chosen.why}`,
@@ -165,38 +210,39 @@ export function diagnosisMarkdown(d: Diagnosis, prev?: Diagnosis, opts: { author
     : ''
   const logPlan = table(
     [t('编号'), t('位置'), t('打什么'), t('区分哪个假设')],
-    d.logPlan.map((l) => [
-      l.id,
-      `\`${l.file}${l.line ? `:${l.line}` : ''}\`${l.fn ? ` ${l.fn}` : ''}`,
-      l.print,
-      l.hypothesis,
-    ]),
+    d.logPlan.map((l) => [l.id, `${at(l.file, l.line)}${l.fn ? ` ${l.fn}` : ''}`, l.print, l.hypothesis]),
   )
   const rootTitle = d.confirmed ? t('根因（已证实）') : t('根因（假设，还没证实）')
+  const root = d.rootCause.trim()
+  const rootFirst = root.split('\n')[0]
+  // 根因只有一行、结论里已经写全了：后面不再单列一节（根因那一版例外，根因就是这一版要审的）
+  const rootSec = phase === 'cause' || root !== rootFirst ? sec(rootTitle, prose(root)) : ''
   const summary = [
     `**${PHASE_LABEL()[phase]}**：${nextStep(d)}`,
-    d.rootCause.trim() && `**${rootTitle}**：${d.rootCause.trim().split('\n')[0]}`,
+    phase !== 'cause' && root && `**${rootTitle}**：${rootFirst}`,
+    `**${t('级别')}**：${levelLabel(d.level)}${d.levelNote ? `（${d.levelNote}）` : ''}`,
   ]
     .filter(Boolean)
     .join('\n\n')
-  const awaiting = d.awaiting
-    ? [d.awaiting.added.length ? `${t('加好的日志')}：${d.awaiting.added.map((x) => `\`${x}\``).join('、')}` : ''].join(
-        '\n',
-      )
+  const awaiting = d.awaiting?.added.length
+    ? `${t('加好的日志')}：\n${d.awaiting.added.map((x) => `- \`${x}\``).join('\n')}`
     : ''
-  const userLogs = [
-    d.logs.trim() ? `\`\`\`\n${d.logs.trim()}\n\`\`\`` : '',
-    d.logFiles.length ? `${t('日志文件')}：${d.logFiles.map((x) => `\`${x}\``).join('、')}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
   const r = (phase === 'verify' && d.result) || undefined
   const result = r
     ? [
-        r.reproBefore && `**${t('改前')}**：${r.reproBefore}`,
-        r.reproAfter && `**${t('改后')}**：${r.reproAfter}`,
-        r.regressionTests.length && `**${t('回归测试')}**：${r.regressionTests.map((x) => `\`${x}\``).join('、')}`,
-        ...r.impactChecks.map((x) => `- ${x.area}：${x.command}${x.output ? ` → ${x.output.split('\n')[0]}` : ''}`),
+        table(
+          ['', t('输出')],
+          [
+            [`**${t('改前')}**`, r.reproBefore],
+            [`**${t('改后')}**`, r.reproAfter],
+          ].filter(([, v]) => v.trim()),
+        ),
+        table(
+          [t('影响面'), t('怎么验证'), t('结果')],
+          r.impactChecks.map((x) => [x.area, x.command, x.output]),
+        ),
+        r.regressionTests.length && `**${t('回归测试')}**：\n${r.regressionTests.map((x) => `- ${x}`).join('\n')}`,
+        r.runs && `**${t('跑了几次')}**：${r.runs}`,
       ]
         .filter(Boolean)
         .join('\n\n')
@@ -204,28 +250,13 @@ export function diagnosisMarkdown(d: Diagnosis, prev?: Diagnosis, opts: { author
 
   // 每个阶段先放用户这一步要看的，证据和背景跟在后面
   const facts = [
-    sec(t('现象'), d.symptom),
-    sec(t('复现'), d.repro),
-    sec(t('位置和调用栈'), [d.location, stack].filter(Boolean).join('\n\n')),
+    sec(t('现象'), prose(d.symptom)),
+    sec(t('复现'), prose(d.repro)),
+    sec(t('位置和调用路径'), [prose(d.location), stack].filter(Boolean).join('\n\n')),
     sec(t('时间线'), timeline),
-    sec(t('证据链'), d.evidence),
+    sec(t('证据链'), prose(d.evidence)),
   ]
-  const cause = [
-    sec(rootTitle, d.rootCause),
-    sec(t('引入点'), attribution),
-    sec(t('根因怎么解释每一条现象'), consistency),
-    sec(t('假设'), hypotheses),
-    sec(t('已排除'), d.excluded),
-  ]
-  const plan = [
-    sec(t('影响面'), impact),
-    sec(t('候选方案'), options),
-    sec(t('选定'), chosen),
-    sec(t('修复方案'), d.fix),
-    sec(t('要改的文件'), d.files.map((f) => `- \`${f}\``).join('\n')),
-    sec(t('影响和风险'), d.risk),
-    sec(t('验证计划'), d.verify),
-  ]
+  const files = d.files.map((f) => `- \`${f}\``).join('\n')
   const body =
     phase === 'evidence'
       ? [
@@ -233,28 +264,42 @@ export function diagnosisMarkdown(d: Diagnosis, prev?: Diagnosis, opts: { author
           sec(t('日志计划'), logPlan),
           ...collectSecs(d.collect, false),
           sec(t('假设'), hypotheses),
-          sec(t('下一步'), d.next),
+          sec(t('下一步'), prose(d.next)),
           ...facts,
-          sec(rootTitle, d.rootCause),
-          sec(t('已排除'), d.excluded),
+          rootSec,
+          sec(t('已排除'), prose(d.excluded)),
         ]
       : phase === 'cause'
-        ? [...cause, ...facts]
+        ? [
+            rootSec,
+            ...facts,
+            sec(t('引入点'), attribution),
+            sec(t('根因怎么解释每一条现象'), consistency),
+            sec(t('假设'), hypotheses),
+            sec(t('已排除'), prose(d.excluded)),
+          ]
         : phase === 'plan'
-          ? [...plan, sec(rootTitle, d.rootCause), sec(t('证据链'), d.evidence), sec(t('引入点'), attribution)]
-          : [
-              ...collectSecs(d.collect, true),
-              sec(t('修复结果'), result),
-              sec(t('改动的文件'), d.files.map((f) => `- \`${f}\``).join('\n')),
-              sec(rootTitle, d.rootCause),
+          ? [
+              sec(t('候选方案'), optionsTable(d)),
+              sec(t('选定'), chosen),
+              sec(t('修复方案'), prose(d.fix)),
+              sec(t('要改的文件'), files),
+              sec(t('影响面'), impact),
+              sec(t('影响和风险'), prose(d.risk)),
+              sec(t('验证计划'), prose(d.verify)),
+              rootSec,
+              sec(t('证据链'), prose(d.evidence)),
+              sec(t('位置和调用路径'), stack),
+              sec(t('引入点'), attribution),
             ]
+          : [...collectSecs(d.collect, true), sec(t('修复结果'), result), sec(t('改动的文件'), files), rootSec]
+  const early = earlyFiles(d, opts.list)
   return [
     sec(t('结论'), summary),
     sec(t('回答上一版的意见'), answers),
-    sec(t('你贴的日志'), userLogs),
-    sec(t('级别'), `${levelLabel(d.level)}${d.levelNote ? `：${d.levelNote}` : ''}`),
+    sec(t('你贴的日志'), userLogsOf(d)),
     ...body,
-    sec(t('交报告前已改动的文件'), d.before.map((f) => `- \`${f}\``).join('\n')),
+    sec(t('交报告前已改动的文件'), early.map((f) => `- \`${f}\``).join('\n')),
   ]
     .filter(Boolean)
     .join('\n\n')

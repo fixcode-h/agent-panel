@@ -160,7 +160,7 @@ test('论证：要日志计划和每种结果说明什么；同意后只放行�
   assert.match(rl.info, /第 1 版/, '对话里那一行能认出是哪一版')
   assert.ok(diagnosisPending(tk) && tk.diagnoses![0].awaiting)
   assert.equal(bugStage(tk), '等你复现')
-  assert.match(diagnosisMarkdown(tk.diagnoses![0]), /## 等你复现\n加好的日志：`L1 web\/src\/lib\/login\.ts:44`/)
+  assert.match(diagnosisMarkdown(tk.diagnoses![0]), /## 等你复现\n加好的日志：\n- `L1 web\/src\/lib\/login\.ts:44`/)
   assert.match(submitDiagnosis(tk, evidenceInput(), id).info, /在等用户复现贴日志/)
   // 用户贴日志：交给它分析
   assert.equal(decideDiagnosis(tk, 1, { ...yes, approve: false, supply: true }, id).ok, false, '要有日志')
@@ -329,8 +329,9 @@ test('报告渲染：根因没证实要标出来，空的小节不写', () => {
   const md = diagnosisMarkdown(
     Diagnosis.parse({ ...input({ confirmed: false, risk: '' }), version: 1, at: '', status: 'pending' }),
   )
-  assert.match(md, /## 根因（假设，还没证实）/)
-  assert.doesNotMatch(md, /影响和风险|交报告前已改动/)
+  // 根因只有一行：写在结论里，不再单列一节；级别并进结论
+  assert.match(md, /\*\*根因（假设，还没证实）\*\*：max 用的是秒/)
+  assert.doesNotMatch(md, /## 根因|## 级别|影响和风险|交报告前已改动/)
 })
 
 const standard = (over: Partial<DiagnosisInput> = {}) =>
@@ -423,7 +424,9 @@ test('档案草稿：随查随记、按阶段提示还缺什么，交报告时�
   ok(decideDiagnosis(tk, 1, yes, id))
   ok(submitDiagnosis(tk, {}, id))
   const plan = diagnosisMarkdown(tk.diagnoses![1])
-  assert.match(plan, /### 方案 A：改成次数常量（选定）/)
+  // 候选方案并排成一张表：一列一个方案
+  assert.match(plan, /\|  \| 方案 A（选定） \| 方案 B \|/)
+  assert.match(plan, /\| \*\*做法\*\* \| 改成次数常量 \|/)
   assert.match(plan, /\*\*为什么不选别的\*\*：B 要动接口层/)
 })
 

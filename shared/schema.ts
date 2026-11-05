@@ -2156,6 +2156,8 @@ export const TaskData = z.object({
   budgetMinutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).default(0),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
   working: z.boolean().default(false),
+  /** 模型正在写一个工具调用的入参（写大段报告、大文件时要一二十秒）：哪个工具、从什么时候开始。不存盘意义不大，调用到了就去掉 */
+  drafting: z.object({ tool: z.string(), at: z.string() }).optional(),
   /**
    * 还在跑或排队的后台命令：服务端发给界面时按当时的情况带上，不存盘。
    * 对话这一轮已经说完、命令还在后台跑时，界面靠它在回复上面转圈

@@ -48,7 +48,7 @@ import { FrostBarBg } from '@/components/ui/frost'
 import { useEffortOf } from './ChatModelPicker'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningRows, runningTools } from './RunningNow'
-import { ConvChangesCard } from './TurnChanges'
+import { ConvTailCards } from './BugReportCard'
 import { useAgentView } from '@/lib/agent-view'
 import { conversationAround } from '@shared/fix'
 import { useNow } from '@/lib/useNow'
@@ -1161,7 +1161,7 @@ export function ChatReply({
             running={
               convCard ? (
                 <>
-                  <ConvChangesCard task={task!} />
+                  <ConvTailCards task={task!} />
                   {footer}
                 </>
               ) : (

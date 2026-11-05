@@ -9,6 +9,7 @@ import { editScope } from '../../shared/bug-phase.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
 import { DATA_DIR } from '../store.ts'
 import { SECRET_RES } from './validate.ts'
+import { scratchPath } from '../exec/file-events.ts'
 
 /**
  * 内置的工具前守卫（ADR 0049 第四期）：把只写在提示词里、或者要等收尾才查的规则，在工具执行前就拦下来。
@@ -66,7 +67,10 @@ export function pushDeny(c: GuardCtx, facts: HookFacts): string {
  */
 export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   if (!c.task.bug) return ''
-  const files = editPaths(facts).map((p) => rel(c.cwd, p) || p)
+  // 面板给的临时目录、数据目录里的文件（编译脚本、日志副本）不是项目代码，不按方案拦（file-events.ts 也不记成改动）
+  const files = editPaths(facts)
+    .filter((p) => !scratchPath(path.resolve(c.cwd, p), c.cwd))
+    .map((p) => rel(c.cwd, p) || p)
   if (!files.length) return ''
   // 按阶段算能改哪些文件（bug-phase.ts）：同意加日志只放行日志计划里的文件，确认方案后放行方案里的文件和加过日志的文件
   const scope = editScope(c.task.diagnoses ?? [])

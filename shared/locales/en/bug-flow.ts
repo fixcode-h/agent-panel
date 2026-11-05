@@ -48,8 +48,8 @@ export const EN_BUG_FLOW: Record<string, string> = {
     'Paste the logs from verification here, or paste / drop log files',
   '你的决定已经记下，但没能交给子对话：{error}':
     "Decision saved, but couldn't deliver it to the sub-conversation: {error}",
-  '不再等你确认，这一轮就此结束，计划标记为完成，之后不会再改文件。之后在这个对话里发话，它会照你的新话做。':
-    'It stops waiting for you, this turn ends, the plan is marked done, and no more files are changed. Anything you send in this conversation afterwards, it works on that.',
+  '不再等你确认，这一轮就此结束，计划标记为完成，之后不会再改文件。已经加进代码的 [排查-…] 临时日志不会自动删，要删就在这个对话里跟它说。':
+    'Stop waiting for your confirmation: this round ends here and the plan is marked done; no more files will be changed. [排查-…] temporary logs already added to the code are not removed automatically; ask it in this conversation if you want them removed.',
   // 阶段条
   '论证 · 第 {n} 轮 · 等你复现': 'Evidence · round {n} · waiting for you to reproduce',
   '论证 · 第 {n} 轮': 'Evidence · round {n}',
@@ -84,7 +84,6 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '已经修好：按下面的步骤复现验证，把日志贴回来；不想验证可以直接结束':
     'Fixed: reproduce with the steps below and paste the logs back; or finish without verifying',
   怎么复现: 'How to reproduce',
-  贴回什么: 'What to paste back',
   '日志在：{where}': 'Logs are in: {where}',
   '过滤：`{filter}`': 'Filter: `{filter}`',
   看到什么算修好了: 'What counts as fixed',
@@ -113,4 +112,15 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '你结束了第 {n} 版的验证': 'You finished verification for version {n}',
   这一版不需要日志: 'This version does not need logs',
   先贴日志或引入日志文件: 'Paste logs or add log files first',
+  '共 {n} 版': '{n} versions',
+  你结束了验证: 'You finished verification',
+  '{label}（最新）': '{label} (latest)',
+  正在写: 'Writing',
+  内容较长时要写一会儿: 'Long content takes a while to write',
+  函数: 'Function',
+  做了什么: 'What it does',
+  怎么解释: 'Explanation',
+  结果: 'Result',
+  跑了几次: 'Runs',
+  位置和调用路径: 'Location and call path',
 }

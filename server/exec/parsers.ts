@@ -57,7 +57,7 @@ export type CliEvent =
       detail?: string
     }
   /** 模型在生成、但不显示的输出（Pi 流式给出的工具参数）：只算进实时速度，不然写大文件时速度会被校准得偏高 */
-  | { type: 'gen'; text: string }
+  | { type: 'gen'; text: string; /** 开始写的是哪个工具的调用（Claude Code 的 content_block_start） */ tool?: string }
   /**
    * 用量。context 是当前上下文占用；add* 是这次新增的 token：输入都按「含缓存」计，缓存命中、缓存写入是输入里的一部分
    */
@@ -440,6 +440,9 @@ export function claudeParser(cwd: string): Parser {
           live.output += add
           if (add) out.push({ type: 'usage', addOutput: add })
         }
+      } else if (e.type === 'content_block_start' && e.content_block?.type === 'tool_use') {
+        // 开始写一个工具调用：入参要整段写完才会报调用，界面先显示「正在写…」（runner 的 drafting）
+        out.push({ type: 'gen', text: '', tool: String(e.content_block.name ?? '') })
       } else if (e.type === 'content_block_start' && e.content_block?.type === 'text' && textInMsg) {
         out.push({ type: 'text_delta', text: '\n\n' })
       } else if (e.type === 'content_block_delta' && e.delta?.type === 'thinking_delta') {
