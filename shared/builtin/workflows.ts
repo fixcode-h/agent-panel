@@ -14,7 +14,7 @@ import { DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 /**
  * 内置工作流：项目常驻的「通用项目」「UE 项目」，加上规范开发、迁移、架构、评审、依赖、发布准备和美术资产链。
  * 启动时全部自动装一次（见 install.ts 的 seedProjectWorkflows），用户删掉的不再装回来。
- * 工作流只由父对话启动，是父对话名下的一次工作流运行（ADR 0052）；改代码的只做到「实现 + 快速检查 + 文档同步」，
+ * 工作流只由父对话启动，是父对话名下的一次工作流运行（ADR 0053）；改代码的只做到「实现 + 快速检查 + 文档同步」，
  * 评审、完整测试和合回由那个子对话的执行角色收尾（见 CHILD_RULES）。when / notFor / kind 是父对话挑工作流看的。
  * 节点里的 agent 写内置 Agent 的 key（./agents.ts），装的时候换成本机的 Agent id。
  * 节点说明是交给 CLI 的提示词，不翻译。
@@ -111,11 +111,11 @@ const DOC_ROOT: WorkflowExpose = {
   default: DOC_PLACE_SIBLING,
   target: 'agent',
   targetId: 'docRoot',
-  description: '只在 P4 项目里设置：项目外层同级 ProjectDoc/docs 里的文档不做 P4 操作，项目内 docs 随项目纳管',
+  description: '只在 P4 项目里设置：项目外层同级 ProjectDoc/docs 各分支共用、不做 P4 操作，项目内 docs 随项目纳管',
 }
 
 /**
- * 改代码的工作流由父对话启动成一次工作流运行（ADR 0052）：流程图跑完后面板接一个固定的「收尾」节点
+ * 改代码的工作流由父对话启动成一次工作流运行（ADR 0053）：流程图跑完后面板接一个固定的「收尾」节点
  * （执行角色补齐并提交，验收流程是评审 → 测试，不通过就修，见 shared/flow-run-wrap.ts），再由父对话合回。
  * 工作流里再放评审、完整验收或提交节点就会重复，还会把顺序弄反（完整测试跑在评审前面）。
  */

@@ -67,7 +67,8 @@ import { resolveParams } from '@shared/agent-role'
 import { CLIS } from '@shared/clis'
 import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
-import { exposesForVcs, paramsForVcs, resolveDocRoot } from '@shared/doc-root'
+import { exposesForVcs, paramsForVcs } from '@shared/doc-root'
+import { DocRootHint } from './DocRootHint'
 import { cliSettings, orderClis } from '@shared/settings'
 import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
@@ -967,7 +968,13 @@ function Body({
                       <p className="text-xs text-subtle">{t('这个角色没有可调的参数。')}</p>
                     )}
                     {coreKey(a) === 'docsync' && (
-                      <DocRootHint path={draft.path} vcs={vcs} agent={a} values={draft.agentParams[a.id] ?? {}} />
+                      <DocRootHint
+                        projectId={project?.id ?? ''}
+                        path={draft.path}
+                        vcs={vcs}
+                        agent={a}
+                        values={draft.agentParams[a.id] ?? {}}
+                      />
                     )}
                   </Collapsible>
                 ))}
@@ -1981,17 +1988,5 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
         </span>
       </div>
     </ParamRow>
-  )
-}
-
-/** P4 项目按文档角色现在选的文档根算出完整路径：改下拉时马上看到会写到哪 */
-function DocRootHint({ path, vcs, agent, values }: { path: string; vcs: string; agent: Agent; values: ParamValues }) {
-  const d = resolveDocRoot(path, vcs, resolveParams(agent.params, values).values)
-  if (!d) return null
-  return (
-    <p className="mt-2 text-xs text-subtle">
-      {t('这个项目的文档根：{dir}', { dir: d.root })}
-      {d.outside ? t('（在项目外，写进去的文档不做 P4 / SVN 操作）') : t('（在项目里，随项目纳入版本管理）')}
-    </p>
   )
 }
