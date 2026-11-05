@@ -21,7 +21,8 @@ import {
   type ProjectDoc,
   type ProjectDocs,
 } from '../shared/docs.ts'
-import type { Project } from '../shared/schema.ts'
+import type { Agent, Project } from '../shared/schema.ts'
+import { docGroupApi } from './doc-group-api.ts'
 import { agentRun, cliSettings } from '../shared/settings.ts'
 import { safeArgs } from './assist.ts'
 import { invokeCli } from './exec/invoke.ts'
@@ -33,7 +34,10 @@ import { t } from '../shared/i18n.ts'
 
 const TIMEOUT = 10 * 60_000
 
-export function docsApi(deps: { projects: { get(id: string): Promise<Project | null> } }) {
+export function docsApi(deps: {
+  projects: { get(id: string): Promise<Project | null> }
+  agents: { list(): Promise<Agent[]> }
+}) {
   const jobs = new Map<string, DocJob & { abort: AbortController; at: number }>()
   const view = ({ abort, at, ...j }: DocJob & { abort: AbortController; at: number }): DocJob => j
   const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ error }, status)
@@ -170,6 +174,8 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
       const readers = CLIS.filter((d) => d.docs.includes(input.path)).map((d) => d.name)
       return start(c, { ...input, prompt: docOptimizePrompt(input, readers) }, dir)
     })
+    // P4 / SVN 各分支共用的文档根：项目设置里看、改（server/doc-group-api.ts）
+    .route('/', docGroupApi(deps))
 
   /** 开始一次优化：检查 CLI 能用，在 dir 里只读运行，结果用 /doc-jobs 查 */
   async function start(c: Context, input: RunInput, dir: string) {

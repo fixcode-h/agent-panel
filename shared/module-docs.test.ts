@@ -1,6 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { MAP_BEGIN, MAP_END, legacyRows, migrateModuleHead, parseModuleDoc, withModuleTable } from './module-docs.ts'
+import {
+  MAP_BEGIN,
+  MAP_END,
+  legacyRows,
+  migrateModuleHead,
+  parseModuleDoc,
+  withModuleBranch,
+  withModuleTable,
+} from './module-docs.ts'
 
 const NEW = `# web：React 前端
 
@@ -69,4 +77,17 @@ test('迁移旧格式的头：英文字段换成中文、职责从旧地图补�
     /^# web：React 前端\n\n- 状态：documented\n- 职责：React 前端页面\n- 源码：`web\/`\n- 入口：`web\/src\/App.tsx`\n- 更新：2026-10-25\n\n## 职责\n\n正文\n$/,
   )
   assert.equal(migrateModuleHead(NEW, 'x'), NEW)
+})
+
+test('模块文档的「分支」：读得出来；补分支时插在「更新」前面，已经有的不动', () => {
+  assert.equal(parseModuleDoc('web', NEW)!.branch, '')
+  const tagged = withModuleBranch(NEW, 'Dev')
+  assert.match(tagged, /- 关键词：页面、侧栏\n- 分支：Dev\n- 更新：/)
+  assert.equal(parseModuleDoc('web', tagged)!.branch, 'Dev')
+  assert.equal(withModuleBranch(tagged, 'Main'), tagged)
+  // 正文里的同名字段不算，不是模块文档的不改
+  assert.equal(withModuleBranch('没有标题', 'Dev'), '没有标题')
+  assert.equal(withModuleBranch('# x：y\n\n## 正文\n- 分支：Main\n', 'Dev'), '# x：y\n\n## 正文\n- 分支：Main\n')
+  // Windows 换行保留
+  assert.match(withModuleBranch(NEW.replace(/\n/g, '\r\n'), 'Dev'), /\r\n- 分支：Dev\r\n- 更新：/)
 })
