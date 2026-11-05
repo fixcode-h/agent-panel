@@ -510,11 +510,21 @@ const exists = (full: string) =>
 /**
  * 保存一个文件：写入格式按项目设置（没设时跟随全局），
  * 原文件是 CRLF 时按原样回写，不在保存时把整个文件的换行都改掉。
+ * expectMtime：打开时读到的修改时间。盘上的对不上说明这期间被别人（多半是 Agent）改过，
+ * 抛 409 让页面问用户要不要覆盖，不悄悄盖掉别人的改动；不传时直接写（用户确认覆盖后）
  */
-export async function writeInDir(dir: string, want: string, content: string, format: FileFormat): Promise<FileWrite> {
+export async function writeInDir(
+  dir: string,
+  want: string,
+  content: string,
+  format: FileFormat,
+  expectMtime?: string,
+): Promise<FileWrite> {
   const full = await into(dir, norm(want))
   const info = await stat(full).catch(() => null)
   if (!info?.isFile()) throw new Error(t('文件已经不在了'))
+  if (expectMtime && info.mtime.toISOString() !== expectMtime)
+    throw Object.assign(new Error(t('文件在你打开之后被改过了')), { status: 409 as const, code: 'changed' })
   checkSize(content)
   const head = await headOf(full)
   const eol = head === null ? null : eolOf(head)
@@ -708,7 +718,7 @@ export async function revealInDir(dir: string, want: string): Promise<void> {
 }
 
 /** 写接口的入参：字段都在这里校验，名字的单段规则在 oneName 里 */
-const WriteInput = z.object({ path: z.string(), content: z.string() })
+const WriteInput = z.object({ path: z.string(), content: z.string(), mtime: z.string().optional() })
 const NewInput = z.object({
   dir: z.string().optional(),
   name: z.string(),
@@ -830,7 +840,7 @@ function filesApi(deps: { projects: { get(id: string): Promise<Project | null> }
       if (!p) return bad(c, t('参数不对'))
       try {
         const dir = await dirOf(c.req.param('id'))
-        return c.json(await writeInDir(dir, p.path, p.content, await formatOf(c.req.param('id'))))
+        return c.json(await writeInDir(dir, p.path, p.content, await formatOf(c.req.param('id')), p.mtime))
       } catch (e) {
         return fail(c, e)
       }
