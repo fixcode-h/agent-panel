@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { useDiagDialogs } from './diag-dialogs'
+import { useDiagnosisHost } from './diagnosis-window'
 import { ParentBar } from './ChildMail'
 import { ChildrenBar, plainRow } from './ChildrenBar'
 import { useOwnedRuns } from '@/lib/owned-runs'
@@ -688,6 +689,8 @@ export function TaskView({
   // 命令跑完那一行会消失，窗口跟着行卸载的话用户正好看不到最终输出
   const [jobTarget, setJobTarget] = useState<JobTarget | null>(null)
   const openJob = useCallback((job: JobTarget) => setJobTarget(job), [])
+  // 诊断报告的审阅弹窗同理：一轮输出完、子任务做完时打开它的那一行会重挂，弹窗只由用户关
+  const bug = useDiagnosisHost(task)
   // 盖着文件面板时 Esc 先收面板，不弹停止确认
   useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
@@ -2295,8 +2298,8 @@ export function TaskView({
         <PaneNavCtx.Provider
           value={
             pane || task.parentTaskId
-              ? { runTool: openPaneRun, ...runNav, openChild, job: openJob }
-              : { child: openChildRow, childSummary: openChildSummary, ...runNav, openChild, job: openJob }
+              ? { runTool: openPaneRun, ...runNav, ...bug.nav, openChild, job: openJob }
+              : { child: openChildRow, childSummary: openChildSummary, ...runNav, ...bug.nav, openChild, job: openJob }
           }
         >
           <ChildMailProvider kids={children} mail={peerMail}>
@@ -2722,6 +2725,7 @@ export function TaskView({
             />
             <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
             <JobDialog taskId={task.id} target={jobTarget} onOpenChange={(o) => !o && setJobTarget(null)} />
+            {bug.dialog}
             {diag.dialogs(task.parentTaskId ? outerNav?.child : openChildIn)}
             {convSettings && (
               <ConversationSettingsDialog
