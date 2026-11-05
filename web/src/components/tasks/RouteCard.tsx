@@ -44,26 +44,35 @@ export function rerouteText(r: TaskRoute, to: Reroute) {
  */
 export function RouteCard({
   routes,
-  later,
+  msgs,
+  inline,
   onReroute,
 }: {
   routes: TaskRoute[]
-  /** 这条用户消息之后的消息：里面有带分诊 id 的改派消息就算已改派 */
-  later: TaskMessage[]
-  /** 不给时只读（对话在跑、导入的对话） */
+  /** 对话里的消息：有带分诊 id 的改派消息就算已改派（分诊 id 唯一，不用限定在哪条之后） */
+  msgs: TaskMessage[]
+  /**
+   * 插在 AI 回复里发起它的那次派单后面（和回复正文同一条竖线，不再让出左侧图标列）；
+   * 不传时是对不上回复的旧数据，画在用户消息下面
+   */
+  inline?: boolean
+  /** 不给时只读（导入的对话） */
   onReroute?: (text: string) => Promise<void>
 }) {
   const [busy, setBusy] = useState('')
   if (!routes.length) return null
-  const rerouted = (r: TaskRoute) => later.some((m) => m.role === 'user' && m.text.includes(rerouteTag(r.id)))
+  const rerouted = (r: TaskRoute) => msgs.some((m) => m.role === 'user' && m.text.includes(rerouteTag(r.id)))
   return (
-    <div className="flex gap-3" data-route-card>
-      <span className="grid w-[26px] shrink-0 place-items-start justify-center pt-0.5">
-        <Route className="h-3.5 w-3.5 text-subtle" />
-      </span>
+    <div className="flex min-w-0 gap-3" data-route-card={inline ? 'inline' : ''}>
+      {!inline && (
+        <span className="grid w-[26px] shrink-0 place-items-start justify-center pt-0.5">
+          <Route className="h-3.5 w-3.5 text-subtle" />
+        </span>
+      )}
       {/* 一次分诊可能派出好几条：每条一张卡，卡之间留空隙，不再挤在同一块底色里分不清边界 */}
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex h-[18px] items-center gap-1.5 text-xs text-subtle">
+          {inline && <Route className="h-3.5 w-3.5" />}
           {t('分诊')}
           {routes.length > 1 && <span className="tabular-nums">· {routes.length}</span>}
         </div>
