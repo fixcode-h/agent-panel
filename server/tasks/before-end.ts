@@ -8,6 +8,7 @@ import {
   idleReminders,
   inputIndex,
   isActTool,
+  isCliTool,
   isLookTool,
   isReminder,
   mergeOwedOf,
@@ -69,9 +70,8 @@ export function createBeforeEnd(
   }
 
   /**
-   * 这条输入以来的工具调用：只读（读文件、搜索、看网页）和动手分开数，面板自己的工具（end_turn、set_plan、get_status……）不算。
-   * 动手不按类别清单数：只读以外的 CLI 工具（跑命令、改文件、CLI 自己的子 Agent、没登记类别的新工具）都算。
-   * 以前只数 run / edit，Windows 上的 PowerShell 被记成 other，问过以后跑了 3 条命令也算 0 次，按 small 放行（用户 2026-11-05 报）。
+   * 这条输入以来的工具调用：动手（跑命令、改文件）和只读（读文件、搜索、看网页）分开数，判断做了多少；
+   * tools 是面板工具以外的全部调用（含没登记类别的新工具），判断有没有接着做，见 shared/end-turn.ts 的 isCliTool。
    * 已经问过（钩子拦过、或一轮结束后提醒过）的，从最近那次之后数：问过以后没再动手的不再问第二遍
    */
   function workSince(tk: Task, inputId: string) {
@@ -83,12 +83,14 @@ export function createBeforeEnd(
     const at = Math.max(asked, checked)
     let acts = 0
     let reads = 0
+    let tools = 0
     for (const m of at >= 0 ? tk.messages.slice(at + 1) : tk.messages)
       for (const x of m.role === 'agent' ? m.tools : []) {
+        if (isCliTool(x)) tools++
         if (isActTool(x)) acts++
         else if (isLookTool(x)) reads++
       }
-    return { acts, reads, tools: acts + reads, checked: checked >= 0 }
+    return { acts, reads, tools, checked: checked >= 0 }
   }
 
   /** 拦住时在账本里记一次（只计数，不限次数：用户 2026-11-05 定），返回这是这个进度的第几次 */

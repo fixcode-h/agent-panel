@@ -3,7 +3,7 @@ import { isActTool } from '../../shared/end-turn.ts'
 
 /**
  * 一轮结束时交给 onTurnEnd 的事实：tools 是这一轮调用过几次工具，acts 是其中动手的次数
- * （shared/end-turn.ts 的 isActTool：只读、搜索、面板自己的工具不算），since 是这一轮第一条输出的时间（判断计划是不是这一轮列的、收的）
+ * （shared/end-turn.ts 的 isActTool：跑命令、改文件），since 是这一轮第一条输出的时间（判断计划是不是这一轮列的、收的）
  */
 export interface TurnInfo {
   tools: number
