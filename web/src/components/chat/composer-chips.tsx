@@ -27,6 +27,8 @@ import { insertFileRef, useFileRefDrop, useFileRefDropOn, type FileRef } from '@
 import { t } from '@shared/i18n'
 import { useDropPaste, type AttachHooks, type useAttachments } from './Attachments'
 import { AttachmentViewer, viewOf, type ViewTarget } from './AttachmentView'
+import { useVideoIntake } from '@/components/video/useVideoIntake'
+import { isVideoFile } from '@shared/video'
 import type { ChipActions, RichInputHandle } from './RichInput'
 
 /** 文字里附件卡片的名字 */
@@ -63,6 +65,8 @@ export function useComposerChips({
   /** 粘贴进来的文件：图片是剪贴板截图，没有原路径，直接上传（见 useAttachments 的 add） */
   const addPasted = useCallback((list: File[]) => void files.add(list, hooks, { clipboard: true }), [files, hooks])
   const addReady = useCallback((a: Attachment) => files.addReady(a, hooks), [files, hooks])
+  /** 放进来的视频：打开截帧弹窗，截好的帧当图片放回来（不把视频发给 Agent） */
+  const videoDialog = useVideoIntake(files, editor, addReady)
   /** 引用一段内容：放到输入框末尾 */
   const addQuote = useCallback(
     (quoted: string) => {
@@ -329,6 +333,12 @@ export function useComposerChips({
           let last = 0
           for (const h of refs) {
             const a = byFrom.get(h.path)
+            // 视频交给截帧弹窗了（见 useVideoIntake）：路径不留在文字里，免得把视频路径发给 Agent
+            if (a && files.videoTaker.current && a.quote === undefined && isVideoFile(a.name, a.mime)) {
+              out += pasted.slice(last, h.start)
+              last = h.end
+              continue
+            }
             const chip = a && names.get(a.path)
             if (!chip) continue
             out += pasted.slice(last, h.start)
@@ -362,6 +372,11 @@ export function useComposerChips({
     refOver,
     /** 右键卡片弹出的菜单，和 viewer 一样挂在输入框外层 */
     chipMenu,
-    viewer: <AttachmentViewer target={view} onClose={() => setView(null)} />,
+    viewer: (
+      <>
+        <AttachmentViewer target={view} onClose={() => setView(null)} />
+        {videoDialog}
+      </>
+    ),
   }
 }

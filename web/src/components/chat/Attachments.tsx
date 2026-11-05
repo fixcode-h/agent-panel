@@ -40,6 +40,8 @@ import type { RichInputHandle } from './RichInput'
 import { useMenuBox } from './useMenuBox'
 import { attachChip, chipMarker, type ChipKind } from '@shared/composer'
 import { quoteName } from '@/lib/quote'
+import { isVideoFile } from '@shared/video'
+import { takeVideos, type VideoTaker } from '@/lib/video-intake'
 import { t } from '@shared/i18n'
 
 /** 附件加进来、上传失败时通知输入框：照着在光标处放一张卡片 */
@@ -184,6 +186,8 @@ export function useAttachments(draftKey?: string) {
   settingsRef.current = settings
   const names = useRef(new Set<string>())
   names.current = new Set(items.map((x) => x.name))
+  /** 输入框挂了截帧弹窗时：视频交给它，不当附件发（Agent 收不了视频，见 shared/video.ts）；没挂时照旧当文件 */
+  const videoTaker = useRef<VideoTaker | null>(null)
   // 同一个输入框换了对话：换成那个对话的附件
   const shown = useRef(draftKey)
   if (shown.current !== draftKey) {
@@ -322,6 +326,10 @@ export function useAttachments(draftKey?: string) {
         const taken = new Set(names.current)
         const fresh: Item[] = []
         for (const a of files.slice(0, Math.max(room, 0))) {
+          if (videoTaker.current && isVideoFile(a.name, a.mime)) {
+            videoTaker.current({ path: a.path, name: a.name })
+            continue
+          }
           // 同一个文件已经附上（或者正在处理）：不重复加
           if (claimed.current.has(a.path) || [...itemsRef.current, ...fresh].some((x) => x.source === a.path)) continue
           claimed.current.add(a.path)
@@ -416,6 +424,10 @@ export function useAttachments(draftKey?: string) {
     let full = false
     for (const a of list) {
       if (names.has(a.path)) continue
+      if (videoTaker.current && a.quote === undefined && isVideoFile(a.name, a.mime)) {
+        videoTaker.current({ path: a.path, name: a.name })
+        continue
+      }
       const had = itemsRef.current.find((x) => x.done?.path === a.path || x.source === a.path)
       if (had) {
         names.set(a.path, { name: had.name, kind: itemKind(had) })
@@ -454,7 +466,12 @@ export function useAttachments(draftKey?: string) {
    * added：文件名定下来的那一刻回调（输入框照着在光标处放卡片）；failed：这张卡片不加了
    */
   const add = useCallback(
-    async (files: File[], hooks?: AttachHooks, opts: { clipboard?: boolean } = {}) => {
+    async (input: File[], hooks?: AttachHooks, opts: { clipboard?: boolean } = {}) => {
+      const take = videoTaker.current
+      const videos = take ? input.filter((f) => isVideoFile(f.name, f.type)) : []
+      if (take && videos.length) void takeVideos(videos, take)
+      const files = videos.length ? input.filter((f) => !videos.includes(f)) : input
+      if (!files.length) return
       const room = MAX_ATTACHMENTS - count.current
       if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
       const taken = new Set(names.current)
@@ -642,6 +659,7 @@ export function useAttachments(draftKey?: string) {
     remove,
     removeNames,
     clear,
+    videoTaker,
     /** 还没拿到路径、会拦住发送的那个附件的状态文案（没有时为空）：查找中 / 上传中 */
     waiting: (() => {
       const x = items.find(blocksSend)

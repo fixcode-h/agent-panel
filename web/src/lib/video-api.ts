@@ -1,0 +1,31 @@
+/** 视频截帧的接口（server/video/routes.ts）；单独一个文件，api.ts 已经很长 */
+import type { AutoMode, EnhanceMethod, FfmpegStatus, VideoSession } from '@shared/video'
+import { json, request } from './api'
+
+type Ref = { key: string; path: string }
+
+export const videoApi = {
+  status: () => request<FfmpegStatus>('/video/status'),
+  download: (mirror: boolean) => request<FfmpegStatus>('/video/ffmpeg/download', json('POST', { mirror })),
+  cancelDownload: () => request<FfmpegStatus>('/video/ffmpeg/cancel', json('POST', {})),
+  setPath: (path: string) => request<FfmpegStatus>('/video/ffmpeg/path', json('PUT', { path })),
+  open: (path: string) => request<VideoSession>('/video/open', json('POST', { path })),
+  manual: (v: Ref, time: number) => request<VideoSession>('/video/frames/manual', json('POST', { ...v, time })),
+  auto: (v: Ref, mode: AutoMode, count: number) =>
+    request<VideoSession>('/video/frames/auto', json('POST', { ...v, mode, count })),
+  remove: (v: Ref, o: { which?: 'manual' | 'auto'; ids?: string[] }) =>
+    request<VideoSession>('/video/frames/remove', json('POST', { ...v, ...o })),
+  methods: () => request<{ methods: EnhanceMethod[] }>('/video/enhance/methods'),
+  enhance: (v: Ref, ids: string[], method: string) =>
+    request<VideoSession>('/video/frames/enhance', json('POST', { ...v, ids, method })),
+  unenhance: (v: Ref, ids?: string[]) => request<VideoSession>('/video/frames/unenhance', json('POST', { ...v, ids })),
+}
+
+/** 浏览器播放用的地址（支持拖进度条） */
+export const videoStreamUrl = (path: string) => `/api/video/stream?path=${encodeURIComponent(path)}`
+/** 播放器放不出来的格式：这一刻的画面 */
+export const videoPreviewUrl = (path: string, t: number) =>
+  `/api/video/preview?path=${encodeURIComponent(path)}&t=${t.toFixed(2)}`
+/** 帧图片：和附件图片同一个接口读（绝对路径的图片） */
+export const frameUrl = (file: string, thumb = false) =>
+  `/api/uploads/raw?path=${encodeURIComponent(file)}${thumb ? '&w=240' : ''}`
