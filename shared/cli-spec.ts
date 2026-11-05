@@ -523,9 +523,13 @@ export const CliSpec = z.object({
       /**
        * 长上下文要靠模型名后缀开（Claude Code 的 [1m]）：这一轮用的上下文窗口（手动设的，或按映射 / 模型目录自动算的）
        * 不小于 min 时，交给 CLI 的模型名后面加上 suffix。Claude Code 认得出是自家模型时不看 limitEnv 的窗口，
-       * 只按模型名决定窗口，不加后缀就一直按 200K 算、提前压缩。CLI 报回来的模型名会去掉后缀再用
+       * 只按模型名决定窗口，不加后缀就一直按 200K 算、提前压缩。CLI 报回来的模型名会去掉后缀再用。
+       * models 是 CLI 认得出的自家模型名（正则，不分大小写）：只给它们加后缀。别家的模型（网关里的 deepseek 这类）
+       * 按 limitEnv 的窗口走，加了后缀 CLI 反而每次报 unrecognized_model（2026-11-05 实测）；不写表示都加
        */
-      longContext: z.object({ suffix: z.string().min(1), min: z.number().int().positive() }).optional(),
+      longContext: z
+        .object({ suffix: z.string().min(1), min: z.number().int().positive(), models: z.string().optional() })
+        .optional(),
       /**
        * 或者写进 CLI 的配置文件（账号方式下用，API 方式由 auth.api.modelLimits 写）：只在这一轮里加上，结束后还原。
        * at 是模型条目的位置，{provider}、{model} 是模型 ID「provider/model」的两段，例如 Pi 的

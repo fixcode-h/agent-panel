@@ -123,6 +123,13 @@ test('Claude Code 的长上下文靠模型名后缀开：窗口到 1M 才加 [1m
   assert.equal(longContextModel(claude, 'claude-sonnet-4-6', 200_000), 'claude-sonnet-4-6')
   assert.equal(longContextModel(claude, 'claude-sonnet-4-6[1m]', 1_000_000), 'claude-sonnet-4-6[1m]')
   assert.equal(longContextModel(claude, '@high', 1_000_000), '@high')
+  // 别家的模型（网关里的 deepseek）按环境变量的窗口走：加了后缀 Claude Code 每次报 unrecognized_model（2026-11-05 实测）
+  assert.equal(longContextModel(claude, 'deepseek-v4.1-flash', 1_000_000), 'deepseek-v4.1-flash')
+  assert.equal(
+    longContextModel(claude, 'us.anthropic.claude-sonnet-4-6', 1_000_000),
+    'us.anthropic.claude-sonnet-4-6[1m]',
+  )
+  assert.equal(longContextModel(claude, 'sonnet', 1_000_000), 'sonnet[1m]')
   assert.equal(stripLongContext(claude, 'claude-sonnet-4-6[1m]'), 'claude-sonnet-4-6')
   // 没有这条规则的 CLI 原样传
   assert.equal(longContextModel(getCli('codex'), 'gpt-5.5', 1_000_000), 'gpt-5.5')
