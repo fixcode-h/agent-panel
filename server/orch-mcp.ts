@@ -24,6 +24,7 @@ import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
 import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
 import { END_TURN_DEF, callEndTurn } from './end-turn-tool.ts'
+import { USER_ACTION_DEF, USER_ACTION_TOOL, callUserAction } from './user-action-tool.ts'
 import { callWorkflowTool, workflowTools } from './workflow-tools.ts'
 import {
   BUG_CASE_TOOL,
@@ -616,6 +617,7 @@ export function orchTools(o: Orchestra) {
       : []),
     ...(o.askPush ? [ASK_PUSH_TOOL] : []),
     ...(o.endTurn ? [END_TURN_DEF] : []),
+    ...(o.requestUserAction ? [USER_ACTION_DEF] : []),
     ...(o.diagnose ? [DIAGNOSIS_TOOL, BUG_CASE_TOOL, REQUEST_LOGS_TOOL] : []),
     ...(o.remember ? [MEMORY_TOOL] : []),
     ...(o.lessons
@@ -1086,6 +1088,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
     }
     case 'end_turn':
       return callEndTurn(o, a)
+    case USER_ACTION_TOOL:
+      return callUserAction(o, a)
     case 'ask_push':
       return callAskPush(o, a)
     case 'claim_files': {

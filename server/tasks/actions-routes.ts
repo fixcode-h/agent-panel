@@ -15,6 +15,7 @@ import { answerRequest, dropRequests } from '../exec/requests.ts'
 import { cancelWait, forgetNotes } from '../exec/steering.ts'
 import { convChanges } from '../../shared/conv-changes.ts'
 import { taskLog } from '../task-log.ts'
+import { cancelUserActions } from './user-actions.ts'
 import { log } from '../log.ts'
 import { settleBefore } from './helpers.ts'
 import { taskChanges } from '../own-changes.ts'
@@ -591,6 +592,7 @@ export function registerActionRoutes(s: TasksScope) {
     // 进程已经结束，一般几十毫秒；收不完的最迟由 watchStop 收口（settleBefore 有上限）
     await settleBefore(s.live.get(id))
     await parkDiagnoses(id)
+    await cancelUserActions(s, id)
     // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
     // 进程不该再留着时（卡住、换机器前的清理）用这个
     if (c.req.query('force')) {

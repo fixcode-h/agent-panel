@@ -13,6 +13,8 @@ import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-summary'
+import { demoSettleAction, demoUserAction } from './demo-user-action'
+import { pendingAction, settleAction } from '@shared/user-action'
 import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
@@ -3452,6 +3454,7 @@ function tasksRoute(
           background,
           workflow: runRunning(x),
           diagnosis: diagnosisPending(x),
+          action: !!pendingAction(x),
           bug: bugStage(x) || undefined,
           helpers: helpersWorking(x),
           unmerged: x.worktree?.state === 'active',
@@ -3481,6 +3484,7 @@ function tasksRoute(
   }
   if (sub === 'messages') {
     const f = parse(FollowUpInput, body)
+    if (f.userAction) settleAction(task, f.userAction, 'returned', { text: f.text })
     const cur = live.get(task.id)
     // 演示里没有常驻 CLI：执行中收到的消息直接记进对话，这一轮结束后接着处理
     if (cur && !f.interrupt) {
@@ -3535,6 +3539,11 @@ function tasksRoute(
     return task
   }
   // 诊断报告的确认（ADR 0045）：和正式后端一样只记决定、返回交给子对话的话，页面再作为消息发过去
+  if (sub === 'user-action' && rid && method === 'POST') {
+    demoSettleAction(task, rid, body)
+    persist()
+    return task
+  }
   if (sub === 'diagnosis' && rid && method === 'POST') {
     const r = decideDiagnosis(
       task,
@@ -4289,6 +4298,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     worktree: { branch: 'agent-panel/git-worktree', at: 10 },
   })
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
+  // 等你操作：子对话要用户跑一次 PIE 抓日志，父对话的子对话行上有「去操作」（demo-user-action.ts）
+  ;(await make('排查路牌偏移')).userActions = [demoUserAction()]
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
   // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下。
   // 这条故意不带 alive：等后台命令期间 CLI 早退了（cliAlive=false），行上也不能写「已关闭」——

@@ -1,0 +1,41 @@
+/** 英文词典的一部分，键是中文原文：等你操作（request_user_action） */
+export const EN_USER_ACTION: Record<string, string> = {
+  等你操作: 'Waiting on you',
+  '等你操作：{title}': 'Waiting on you: {title}',
+  '在等你操作：{title}，已等 {took}': 'Waiting on you: {title} ({took} so far)',
+  '已等 {took}': '{took} so far',
+  '等{who}操作': 'Waiting on {who} to act',
+  去操作: 'Go do it',
+  你的操作: 'Your action',
+  请你操作: 'Asked you to do',
+  完成了: 'Done',
+  '完成了，没有要交回的': 'Done, nothing to hand back',
+  '做不了…': "Can't do it…",
+  做不了的原因: "Why you can't do it",
+  '为什么做不了？它会据此换个办法': "Why can't you do it? It will try another way",
+  告诉它: 'Tell it',
+  '跳过的话：{fallback}': 'If you skip: {fallback}',
+  '也可以这样：{title}': 'Or: {title}',
+  结果在: 'Result in',
+  过滤: 'Filter',
+  怎么看: 'What it means',
+  '做完点「完成了」；有话要说在下面输入框发送': 'Click Done when finished; anything to add, send it below',
+  '结果在下面输入框发送就交回给它（贴日志、拖文件都行）':
+    'Send the result in the box below to hand it back (paste logs or drop files)',
+  '交回给：{title}': 'Hand back to: {title}',
+  '发送就是把结果交回给它：贴日志、拖文件、写看到了什么都可以':
+    'Sending hands the result back: paste logs, drop files, or describe what you saw',
+  '不交回，当普通消息发': 'Send as a normal message instead',
+  '这条是普通消息 · 点这里改成交回': 'Normal message · click to hand back instead',
+  这需要我去操作: 'This needs me to do something',
+  '这不是要你选的，而是要你去做一件事：让它改成「等你操作」，写清步骤和要交回什么':
+    'This is a task for you, not a choice: have it ask with "Waiting on you", with steps and what to hand back',
+  这件事已经不在了: 'This request no longer exists',
+  这件事已经结束了: 'This request has already ended',
+  写一下做不了的原因: "Say why you can't do it",
+  '不到 1 分钟': 'under 1 min',
+  '{h} 小时 {m} 分钟': '{h} h {m} min',
+  对话被停止了: 'The conversation was stopped',
+  '没能把你的操作结果交给它，发一条消息或点「继续执行」会接着处理':
+    'Could not hand your result to it; send a message or click Continue to pick it up',
+}

@@ -3,6 +3,7 @@ import type { SpeedRow } from '@shared/api-speed'
 import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
 import { pathsApi } from './api-paths'
+import { messagesApi } from './api-messages'
 import type { CollabEvent } from '@shared/collab-timeline'
 import type { LifeReport } from '@shared/lifecycle'
 import type { TaskExport } from '@shared/task-export'
@@ -778,15 +779,6 @@ export const api = {
   /** 导出任务连同它分出的子对话：服务端整理成一个包，超过体积上限时直接报错 */
   taskExport: (id: string, app = '') =>
     request<{ bundle: TaskExport; bytes: number }>(`/tasks/${id}/export?app=${encodeURIComponent(app)}`),
-  /**
-   * 发一条消息。messageId：页面已经按这个 id 在本地插进对话了（待认领），服务端沿用它，
-   * 推送和响应到达时按 id 换成真实的一份，不会出现两条
-   */
-  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false, messageId = '') =>
-    request<Task>(
-      `/tasks/${id}/messages`,
-      json('POST', { text, attachments, interrupt, ...(messageId ? { messageId } : {}) }),
-    ),
   /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */
   setPresence: (id: string, viewerId: string, active: boolean) =>
     request<void>(`/tasks/${id}/presence`, json('POST', { viewerId, active })),
@@ -1194,4 +1186,5 @@ export const api = {
   // 工作总结、候选教训草稿（api-summary.ts）
   ...summaryApi,
   ...pathsApi,
+  ...messagesApi,
 }

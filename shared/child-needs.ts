@@ -5,6 +5,7 @@
  */
 import { t } from './i18n.ts'
 import type { Task, TaskRequest } from './schema.ts'
+import { pendingAction } from './user-action.ts'
 
 /** 请求标题在状态说明里最多留这么多字：命令可能很长，完整内容在确认卡上 */
 const REQUEST_NOTE_MAX = 80
@@ -16,9 +17,9 @@ export function requestNote(req: Pick<TaskRequest, 'kind' | 'title'>, n = 1): st
   return n > 1 ? head + t('（共 {n} 项）', { n }) : head
 }
 
-/** 这个对话自己在等用户：有待确认的请求或没答的提问（和 convState 的 requests / asking 同一口径） */
-export const ownNeeds = (tk: Partial<Pick<Task, 'requests' | 'parentAsks'>>) =>
-  !!(tk.requests?.length || tk.parentAsks?.length)
+/** 这个对话自己在等用户：有待确认的请求、没答的提问或等用户去做的事（和 convState 的 requests / asking / action 同一口径） */
+export const ownNeeds = (tk: Partial<Pick<Task, 'requests' | 'parentAsks' | 'userActions'>>) =>
+  !!(tk.requests?.length || tk.parentAsks?.length || pendingAction(tk))
 
 /**
  * 每个对话名下（任意层的后代）有几个对话在等用户处理：一次扫完整份任务列表，按 parentTaskId 一路往上记。
@@ -27,7 +28,7 @@ export const ownNeeds = (tk: Partial<Pick<Task, 'requests' | 'parentAsks'>>) =>
  */
 export function descendantNeeds(
   list: (Pick<Task, 'id' | 'parentTaskId'> &
-    Partial<Pick<Task, 'requests' | 'parentAsks' | 'archived' | 'deletedAt' | 'worktree'>>)[],
+    Partial<Pick<Task, 'requests' | 'parentAsks' | 'userActions' | 'archived' | 'deletedAt' | 'worktree'>>)[],
 ): Map<string, number> {
   const parentOf = new Map(list.map((k) => [k.id, k.parentTaskId ?? '']))
   const out = new Map<string, number>()

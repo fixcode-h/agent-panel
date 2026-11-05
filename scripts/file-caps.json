@@ -5,7 +5,7 @@
     "server/accounts.ts": 1450,
     "server/comfy.ts": 1300,
     "server/designs.ts": 2450,
-    "server/exec/runner.ts": 2050,
+    "server/exec/runner.ts": 2047,
     "server/exec/worktree.ts": 1350,
     "server/index.ts": 1300,
     "shared/assist.ts": 1400,

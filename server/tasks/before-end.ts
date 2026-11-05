@@ -1,12 +1,5 @@
 import type { Task } from '../../shared/schema.ts'
-import {
-  diagnosisPending,
-  helpersWorking,
-  planStalled,
-  runRunning,
-  taskDeleted,
-  wrapUpPending,
-} from '../../shared/task.ts'
+import { userWaiting, helpersWorking, planStalled, runRunning, taskDeleted, wrapUpPending } from '../../shared/task.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
 import { planProgressKey, shortKey, type DriveBudget } from '../../shared/drive.ts'
 import { activePlan, needsFix, openWork, planProgress } from '../../shared/plan.ts'
@@ -55,7 +48,7 @@ export function createBeforeEnd(
   /** 在等别人的东西（提问、排队的输入、后台命令、子任务、子对话）：这时结束这一轮是对的，结果会推回来 */
   async function waitingOn(tk: Task): Promise<string> {
     if (d.haltedBy(tk)) return `halted:${d.haltedBy(tk)}`
-    if (tk.requests.length || tk.parentAsks?.length || diagnosisPending(tk)) return 'asking'
+    if (userWaiting(tk)) return 'asking'
     if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
     if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return 'background'
     if (helpersWorking(tk) || runRunning(tk)) return 'helpers'

@@ -1,5 +1,6 @@
 import { Task, type Project } from '../../shared/schema.ts'
 import { diagnosisPending } from '../../shared/task.ts'
+import { pendingAction } from '../../shared/user-action.ts'
 import { bugStage } from '../../shared/bug-diagnosis.ts'
 import {
   childActivity,
@@ -141,6 +142,7 @@ export function registerChildrenRoutes(s: TasksScope) {
           // 工作流子对话（ADR 0044）：行上标出是哪个工作流、跑到哪个节点
           // 等用户确认诊断报告（ADR 0045）：算执行中，行上的说明来自 waiting
           diagnosis: diagnosisPending(liveTask),
+          action: !!pendingAction(liveTask),
           // 用户报的 Bug（ADR 0046）：查到哪个阶段了
           bug: bugStage(liveTask) || undefined,
           // 它派出去的子任务还在跑：结果交回来它还要接着做，也不能算做完了
