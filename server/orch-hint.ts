@@ -27,6 +27,10 @@ export function orchHint(o: Orchestra) {
   // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
   const bg =
     (o.plans ? 'set_plan 列执行计划、随时更新进度；' : '') +
+    // 结束只认 end_turn（shared/end-turn.ts）：不写明的话模型照旧说完就停，面板只能再提醒一次
+    (o.endTurn
+      ? 'end_turn 结束这一轮（做完了先写好结论，再调用 end_turn（outcome: done）作为最后一个动作，之后最多一句话收尾、不要重复总结；做不下去用 outcome: blocked，need 写缺什么）；'
+      : '') +
     (o.canBeginEdit ? '改文件前先调用 begin_edit 开独立分支，开好后结束这一轮；' : '') +
     (o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : '')
   const child =

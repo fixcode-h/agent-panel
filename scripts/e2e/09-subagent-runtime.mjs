@@ -668,18 +668,18 @@ await runShard('子对话运行与监管', async (api) => {
     assert.ok(pushes(pushed).length >= 1, '计划停住时推了它')
     // 三步计划加上面板放在最后的收尾（共用目录也要请父对话验收）一共四步
     assert.match(pushes(pushed)[0].text, /1\/4[\s\S]*「跑检查」/, '推的时候写明进度和接下来做哪一步')
-    // 被推之后仍然原地不动：同一进度推满 3 次（最后一次要它说明卡在哪），才上报父对话一次，并写明不要只发「继续」
+    // 被推之后仍然原地不动：不限次数，但连着 3 次提醒都没动手就是空转，停下并上报父对话一次，写明不要只发「继续」
     const report = await waitFor(
       async () => {
         const p = await call('GET', `/tasks/${stallParent.id}`)
         return p.messages.find((m) => m.child?.id === stallKid.id && m.text.includes('计划还没做完'))
       },
-      { label: '推满 3 次仍没动：上报父对话', timeout: 30000 },
+      { label: '连着 3 次提醒都没动手：上报父对话', timeout: 30000 },
     )
-    assert.match(report.text, /推了 3 次仍停在这里[\s\S]*不要只发「继续」/)
+    assert.match(report.text, /仍停在这里[\s\S]*不要只发「继续」/)
     const kidNow = await call('GET', `/tasks/${stallKid.id}`)
-    assert.equal(pushes(kidNow).length, 3, '同一进度推满 3 次就停，不来回推')
-    assert.match(pushes(kidNow)[2].text, /第 3 次提醒/)
+    assert.equal(pushes(kidNow).length, 3, '连着 3 次提醒都没动手就停（空转保护），不来回推')
+    assert.match(pushes(kidNow)[2].text, /end_turn（outcome: blocked）/, '提醒里写明做不下去就调 end_turn 说卡住')
     const parentNow = await call('GET', `/tasks/${stallParent.id}`)
     assert.equal(
       parentNow.messages.filter((m) => m.child?.id === stallKid.id && m.text.includes('计划还没做完')).length,
@@ -714,14 +714,13 @@ await runShard('子对话运行与监管', async (api) => {
         const p = await call('GET', `/tasks/${hookParent.id}`)
         return p.messages.find((m) => m.child?.id === hookKid.id && m.text.includes('计划还没做完'))
       },
-      { label: '钩子拦满 3 次仍没动：上报父对话', timeout: 30000 },
+      { label: '钩子连着拦了 3 次都没动手：上报父对话', timeout: 30000 },
     )
     assert.ok(report)
     const kidNow = await call('GET', `/tasks/${hookKid.id}`)
     const marks = kidNow.messages.filter((m) => m.panel === 'hook')
-    assert.equal(marks.length, 3, '同一进度拦满 3 次')
+    assert.equal(marks.length, 3, '连着 3 次拦住都没动手就放行（空转保护）')
     assert.match(marks[0].text, /1\/4[\s\S]*「跑检查」/, '拦的时候写明进度和接下来做哪一步')
-    assert.match(marks[2].text, /第 3 次提醒/)
     assert.equal(kidNow.messages.filter((m) => m.panel === 'nudge').length, 0, '拦过的不再另发提醒')
     assert.equal(
       kidNow.messages.filter((m) => m.role === 'agent' && m.text.includes('PLAN_NUDGE_GOT')).length,

@@ -1691,15 +1691,26 @@ export const EN_TASKS: Record<string, string> = {
   '这一轮说完了，在等子对话：{list}': 'The turn is done, waiting for sub-chats: {list}',
   '子对话 {list} 已经请父对话收尾 {m} 分钟了，父对话没有合回也没有退回':
     'Sub-chats {list} asked the parent to wrap up {m} minutes ago; the parent has neither merged nor sent them back',
-  '面板已提醒 {n}/{max} 次': 'The panel has reminded it {n}/{max} times',
+  '面板已提醒 {n} 次': 'The panel has reminded it {n} times',
   '面板重启时子任务{list}还在执行，已中断。要接着做就发消息，AI 会用 spawn_agents 的 resume 在原来的会话里续上。':
     'Sub-tasks {list} were still running when the panel restarted and were interrupted. Send a message to continue; the AI will resume them in their original sessions with spawn_agents.',
   '有 {n} 条消息排着等「这一轮结束后处理」，可这一轮已经结束了，没人接':
     '{n} messages are queued for "after this turn", but the turn has ended and nothing will pick them up',
   '已经不在执行，排队等 API 的标记却还留着': 'No longer running, but the "queued for API" marker is still there',
   '对话已经收口，它名下的 CLI 进程却还活着': 'The conversation has settled, but its CLI process is still alive',
-  '计划才做了 {done}/{total}，面板按这个进度推满了 {n} 次，停在这里':
-    'The plan is only {done}/{total} done; the panel nudged it {n} times at this progress and it stopped here',
+  '计划才做了 {done}/{total}，面板按这个进度提醒了 {n} 次，停在这里':
+    'The plan is only {done}/{total} done; the panel reminded it {n} times at this progress and it stopped here',
+  '卡住了：{need}': 'Stuck: {need}',
+  '面板连着提醒了 {n} 次，它都没动手，也没说做完或卡住：停在这里等你看一下':
+    'The panel reminded it {n} times in a row and it neither did anything nor said it was done or stuck. Stopped here for you to take a look',
+  '{n} 次': '{n} times',
+  结束前拦住: 'Held before ending',
+  一轮结束后提醒: 'Reminded after the turn',
+  它说卡住了: 'Said it is stuck',
+  它说做完了: 'Said it is done',
+  '之后调了 {n} 次工具': 'then made {n} tool calls',
+  之后没动手: 'then did nothing',
+  收尾那句已隐藏: 'closing line hidden',
   '计划才做了 {done}/{total}，这一轮已经停下，也不在等任何结果':
     'The plan is only {done}/{total} done; this turn has stopped and is not waiting for anything',
   '上一轮因为 {why} 停下，这一轮没有调用工具：可能是输出被截断':
