@@ -928,7 +928,12 @@ export const api = {
       binary?: boolean
       content: string
       truncated: boolean
+      /** 任务目录里的文件能在弹窗里改；附件是上传时的副本，不给改 */
+      editable?: boolean
     }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
+  /** 文件弹窗里保存：只能写任务目录里已有的文件，编码和换行按项目设置 */
+  writeTaskFile: (id: string, path: string, content: string) =>
+    request<{ path: string; size: number }>(`/tasks/${id}/file`, json('PUT', { path, content })),
   /** 排查结论的「应用这 N 处修改」：在被分析对话的目录里逐条按原文替换，每条给出结果 */
   applyFixes: (id: string, fixes: FixApplyItem[]) =>
     request<{ dir: string; results: FixApplyResult[] }>(`/tasks/${id}/apply-fixes`, json('POST', { fixes })),

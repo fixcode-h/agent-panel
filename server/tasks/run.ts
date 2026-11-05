@@ -789,7 +789,7 @@ export function createRun(sc: TasksScope) {
             .catch((e) => log.warn('task', '工作流运行回信失败', { task: task.id, error: (e as Error).message }))
         // 整轮结束了，没被节点取走的补充不会再有人取
         forgetNotes(task.id)
-        // 项目里的顶层对话：空闲够久、整个对话（含子对话）都完成了再学经验，期间又跑起来就重新计时
+        // 项目里的顶层对话：整个对话（含子对话）都完成了就学经验（几秒内又跑起来就等下一轮结束）
         if (!prewarm && !entry.task.parentTaskId && entry.task.projectId) void sc.learnExperience(task.id)
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
         // 收尾停掉的（父对话 finish_child、用户点解决：stopReason finish）不是出错：收尾时交来的新任务照样接着处理

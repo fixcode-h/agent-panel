@@ -15,4 +15,10 @@ export const EN_FILE_REF: Record<string, string> = {
   路径列表不对: 'Invalid path list',
   '文件不存在，可能已删除或路径写错：{path}': 'File not found. It may have been deleted, or the path is wrong: {path}',
   只能打开项目里的文件或对话里提到过的文件: 'Only files in the project or mentioned in this conversation can be opened',
+  // 文件弹窗的阅读 / 编辑
+  阅读或编辑: 'Read or edit',
+  阅读: 'Read',
+  放弃修改: 'Discard changes',
+  附件不能在这里修改: 'Attachments cannot be edited here',
+  只能修改任务目录里的文件: 'Only files in the task folder can be edited',
 }

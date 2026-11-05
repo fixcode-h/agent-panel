@@ -9,12 +9,18 @@ import { isImagePath } from '@/lib/file-path'
 import { cn } from '@/lib/utils'
 import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { Lightbox } from '@/components/ui/lightbox'
+import { ConfirmDialog } from '@/components/ui/dialog'
+import { FileEditor, FileModeBar, isMarkdownPath, useFileEditing } from '@/components/files/file-edit'
+import { Markdown } from './Markdown'
 
 /** 任务页提供：Agent 输出里的文件路径点了以后在这里打开；没有提供时路径就是普通的行内代码 */
 export const FileOpenCtx = createContext<((path: string, line?: number) => void) | null>(null)
 export const useFileOpen = () => useContext(FileOpenCtx)
 
 type File = Awaited<ReturnType<typeof api.taskFile>>
+
+/** 文件里渲染 Markdown 时没有 @角色 */
+const NO_TEAM = new Set<string>()
 
 /**
  * 在线演示没有项目目录：图片给一张内联的占位图，点开看大图这件事照样能演示。
@@ -33,7 +39,8 @@ function demoImg() {
 }
 
 /**
- * Agent 输出里点了一个文件路径：显示文件内容，跳到提到的那一行，可以在编辑器里打开。
+ * Agent 输出里点了一个文件路径：显示文件内容，跳到提到的那一行，可以在编辑器里打开；
+ * 任务目录里的文字文件能切到编辑直接改完保存，Markdown 阅读时按对话里的样式渲染。
  * local：附件卡片（上传的、粘贴路径引用的本机文件），按绝对路径读，不限在任务目录里；
  * 看不了内容的（PDF、Office 这类）可以用系统默认程序打开或在文件夹里显示
  */
@@ -48,6 +55,7 @@ export function FileDialog({
 }) {
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState('')
+  const [askClose, setAskClose] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const isImage = !!target && isImagePath(target.path)
   const local = !!target?.local
@@ -80,8 +88,29 @@ export function FileDialog({
     box.current?.querySelector(`[data-line="${target.line}"]`)?.scrollIntoView({ block: 'center' })
   }, [file, target])
 
-  const lines = file?.content ? file.content.replace(/\n$/, '').split('\n') : []
+  const isMd = !!target && isMarkdownPath(target.path)
+  // 附件、本机文件只读；截断的文件存回去会把后面没读到的部分删掉，也不给编辑
+  const canEdit = !local && !!file?.exists && !file.binary && !file.truncated && file.editable !== false
+  const ed = useFileEditing({
+    content: file?.exists && !file.binary ? file.content : undefined,
+    write: async (text) => {
+      await api.writeTaskFile(taskId, file!.path, text)
+      // 保存后重新读一遍：后端可能调整了换行，界面上显示的应该是盘上的真实内容
+      setFile(await api.taskFile(taskId, file!.path))
+    },
+    resetKey: target,
+    startEdit: isMd && !!target?.line,
+  })
+  const editing = canEdit && ed.mode === 'edit'
+  // 阅读时看的是草稿：改了 Markdown 切回阅读就能看渲染效果
+  const shown = canEdit ? ed.text : (file?.content ?? '')
+  const lines = shown ? shown.replace(/\n$/, '').split('\n') : []
   const textOpen = !!target && !raw
+  // 有没保存的修改时先问一句，别手滑关掉就丢了
+  const change = (open: boolean) => {
+    if (!open && ed.dirty) return setAskClose(true)
+    onOpenChange(open)
+  }
   return (
     <>
       <Lightbox
@@ -92,12 +121,12 @@ export function FileDialog({
       {/* 只看不填：点到外面就关。只有一句说明（找不到、二进制、出错）时弹窗按内容高度、窄一档，不撑满 */}
       <Modal
         open={textOpen}
-        onOpenChange={onOpenChange}
+        onOpenChange={change}
         title={null}
-        size={!file || lines.length ? 'xl' : 'md'}
+        size={!file || lines.length || editing ? 'xl' : 'md'}
         bare
         closeOnOutside
-        className={!file || lines.length ? 'h-[min(760px,calc(100dvh-3.75rem))]' : undefined}
+        className={!file || lines.length || editing ? 'h-[min(760px,calc(100dvh-3.75rem))]' : undefined}
       >
         <ModalHeader
           icon={FileText}
@@ -109,6 +138,8 @@ export function FileDialog({
           }
           titleClass="font-mono"
           titleAttr={target?.path}
+          meta={ed.dirty ? <span className="text-warning">{t('未保存')}</span> : undefined}
+          aside={canEdit ? <FileModeBar ed={ed} /> : undefined}
           actions={
             <>
               <ModalButton
@@ -153,6 +184,12 @@ export function FileDialog({
                 ? t('这个文件不是文字，这里显示不了。可以用默认程序打开，或在文件夹中找到它。')
                 : t('这是二进制文件，不显示内容。')}
             </p>
+          ) : editing ? (
+            <FileEditor ed={ed} line={target?.line} />
+          ) : isMd ? (
+            <div className="mx-auto max-w-[860px] px-8 py-6">
+              <Markdown text={shown} teamNames={NO_TEAM} />
+            </div>
           ) : (
             <pre className="min-w-max py-2 font-mono text-footnote leading-[1.6]">
               {lines.map((l, i) => (
@@ -170,12 +207,23 @@ export function FileDialog({
             </pre>
           )}
         </div>
+        {ed.saveError && (
+          <p className="shrink-0 border-t bg-danger/10 px-4 py-2 text-body text-danger">{ed.saveError}</p>
+        )}
         {file?.truncated && (
           <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">
             {t('文件太大，只显示了前面一部分。完整内容请在编辑器里查看。')}
           </p>
         )}
       </Modal>
+      <ConfirmDialog
+        open={askClose}
+        onOpenChange={setAskClose}
+        title={t('还有没保存的修改，确定放弃？')}
+        description={t('「{path}」这次改的内容不会保存。', { path: target?.path ?? '' })}
+        confirmText={t('放弃')}
+        onConfirm={() => onOpenChange(false)}
+      />
     </>
   )
 }

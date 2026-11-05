@@ -1247,6 +1247,24 @@ await runShard('工作流条件与失败', async (api) => {
     '# 项目外\n',
     '项目外的绝对路径也能看',
   )
+  // 文件弹窗里改完保存：任务目录里的文件能写（绝对路径也换成相对的），项目外的只读、写入被拒
+  assert.equal(rd.editable, true, '任务目录里的文件能编辑')
+  assert.equal(
+    (await call('GET', `/tasks/${tCommit.id}/file?path=${encodeURIComponent(outsideFile)}`)).editable,
+    false,
+    '项目外的文件只读',
+  )
+  const taskDir = rd.dir
+  await call('PUT', `/tasks/${tCommit.id}/file`, { path: path.join(taskDir, 'README.md'), content: '# demo\n改过\n' })
+  assert.equal(readFileSync(path.join(taskDir, 'README.md'), 'utf8'), '# demo\n改过\n', '保存写进任务目录')
+  await call('PUT', `/tasks/${tCommit.id}/file`, { path: 'README.md', content: '# demo\n' })
+  const putOut = await fetch(`${base}/tasks/${tCommit.id}/file`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: outsideFile, content: 'x' }),
+  })
+  assert.equal(putOut.status, 400, '项目外的文件不能写')
+  assert.equal(readFileSync(outsideFile, 'utf8'), '# 项目外\n')
   // 读到的文件是图片时按原图查看
   writeFileSync(path.join(projectDir, 'shot.png'), PNG_1PX)
   const img = await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=shot.png`)
