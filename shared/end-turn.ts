@@ -87,6 +87,10 @@ export function mergeOwedOf(
   nudged: boolean,
 ): string {
   if (!tk.parentTaskId || tk.resolved || tk.wrapRequest || nudged) return ''
+  // 父对话已经合回 / 收下：合进去时面板清掉 wrapRequest、把收尾步骤标完成、计划随之收起，
+  // 这时再按「没列计划但改过文件」算会让它把已经合进去的改动重新请一次收尾（用户 2026-11-05 报：
+  // 子对话被提醒「你还没请父对话收尾」，又开一份计划、再交一次，父对话只好再收一次）
+  if (!activePlan(tk) && tk.plans?.at(-1)?.steps.some((s) => panelWrap(s.wrapUp) && s.status === 'done')) return ''
   const plan = activePlan(tk)
   if (plan) {
     const wrapOpen = plan.steps.some((s) => panelWrap(s.wrapUp) && s.status !== 'done')
