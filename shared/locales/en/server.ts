@@ -658,6 +658,11 @@ export const EN_SERVER: Record<string, string> = {
   恢复的对话: 'Recovered conversation',
   '父对话测试：{child} · {step}': 'Parent test: {child} · {step}',
   '第 {n} 步「{name}」失败，用时 {time}': 'step {n} "{name}" failed after {time}',
+  '第 {n} 步「{name}」被停止了，没有跑完': 'step {n} "{name}" was stopped before it finished',
+  '这条命令被停止了（不是自己跑完的），结论按未通过处理。':
+    "The command was stopped (it didn't finish on its own), so it counts as failed.",
+  '父对话被停止或归档，这批测试没有跑完，结论按未通过处理。':
+    'The parent conversation was stopped or archived before these tests finished, so they count as failed.',
   找不到这次工具调用: 'This tool call was not found',
   // 模型设计（Blender）
   '没有找到 Blender。请先安装 Blender 4.2 或更新的版本，或在设置里填它的位置。':

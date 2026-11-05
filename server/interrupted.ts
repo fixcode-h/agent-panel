@@ -28,9 +28,13 @@ export interface InterruptedRecord {
 
 const EMPTY: InterruptedRecord = { at: '', acknowledged: false, tasks: [] }
 
-/** 记下这次强制更新打断的任务，覆盖上一次的记录；没有任务时不写，免得把上次没处理完的记录冲掉 */
+/**
+ * 记下这次强制更新打断的任务，每次覆盖上一次的记录（没有任务时也写空名单）：
+ * 弹窗只显示当前这次打断要恢复的对话，不能把上次没处理完的旧记录留在名单里。
+ * 空名单覆盖会清掉上一次没确认的记录；如果上次确实是强更打断、只是没来得及处理，
+ * 那些任务仍停在「已中断」，可以从任务页手动继续（用户明确要求名单不累计历史）。
+ */
 export async function recordInterrupted(tasks: InterruptedEntry[]) {
-  if (!tasks.length) return
   const record: InterruptedRecord = { at: new Date().toISOString(), acknowledged: false, tasks }
   await writeJsonAtomic(FILE(), record)
 }
@@ -119,7 +123,7 @@ const isResumable = (task: Task) => task.status === 'stopped' || task.status ===
 
 /**
  * 记下来的「被打断时在做什么」：正在执行的节点 → 没做完的计划进度 → 最后一条要求。
- * 停在等下一句、计划只做到 12/17 的父对话也要进恢复名单（见 restartUnfinished），
+ * 父对话在等名下正在跑的子对话时也会进名单（子对话的结果要交回它），
  * 它没有在跑的节点，只写最后一条要求看不出还剩多少活没做完
  */
 export function restartDoing(task: Pick<Task, 'steps' | 'plans' | 'messages'>) {

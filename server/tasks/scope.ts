@@ -101,6 +101,8 @@ export interface TasksScope {
         value: string
       }[]
       timeoutMinutes?: number
+      /** 被停止时也要把结果交回发起方（父对话测试用，见 background.ts 的 BgJob.notifyOnStop） */
+      notifyOnStop?: boolean
     }):
       | {
           ok: boolean
