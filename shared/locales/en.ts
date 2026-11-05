@@ -21,9 +21,12 @@ import { EN_CLI_MORE } from './en/cli-more.ts'
 import { EN_EXPERIENCE } from './en/experience.ts'
 import { EN_FILE_REF } from './en/file-ref.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
+import { EN_VIDEO } from './en/video.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
+  // 视频截帧放最前：和别处同名的词（手动、自动、增强…）以别处已有的英文为准
+  ...EN_VIDEO,
   ...EN_SHARED,
   ...EN_SERVER,
   ...EN_APP,
