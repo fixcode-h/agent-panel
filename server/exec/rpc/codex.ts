@@ -2,7 +2,7 @@ import { commandRule, fileRule } from '../../../shared/allow-rules.ts'
 import path from 'node:path'
 import type { BuildOptions } from '../../../shared/clis.ts'
 import { t } from '../../../shared/i18n.ts'
-import { HOOK_SCRIPT_ENV } from '../../../shared/hooks.ts'
+import { HOOK_SCRIPT_ENV, HOOK_URL_ENV } from '../../../shared/hooks.ts'
 import { clipDetail, codexLimits, codexUsage, oneLine, toolText, type AskReply, type CliEvent } from '../parsers.ts'
 import { createRpcSession, type RpcSession } from './session.ts'
 import type { RpcAdapter, RpcContext } from './types.ts'
@@ -43,7 +43,8 @@ async function trustPanelHooks(ctx: RpcContext, cwd: string) {
       h.trustStatus !== 'trusted' &&
       typeof h.key === 'string' &&
       typeof h.currentHash === 'string' &&
-      String(h.command ?? '').includes(HOOK_SCRIPT_ENV),
+      // 面板自己的钩子：命令引用转发脚本（node）或面板地址（curl）的环境变量
+      [HOOK_SCRIPT_ENV, HOOK_URL_ENV].some((k) => String(h.command ?? '').includes(k)),
   )
   const err = list?.error?.message
   if (!err && !mine.length) return

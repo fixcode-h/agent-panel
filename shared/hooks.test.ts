@@ -244,3 +244,26 @@ test('HTTP 钩子：给了地址时转发脚本那一项换成 POST 到面板，
   const codex = hookInstall(getCli('codex')!.hooks!, '/tmp/run', ['turn.beforeEnd'], { httpUrl: 'http://x/hook' })
   assert.ok(codex.files.some((f) => f.path.endsWith(HOOK_SCRIPT)))
 })
+
+test('通用的 curl 直连：不支持 HTTP 钩子的命令类钩子，本机有 curl 时调转发脚本的命令换成 curl 直接 POST 到面板', () => {
+  const url = 'http://127.0.0.1:1/api/mcp/ask/tok/hook'
+  // Codex：参数里的命令换成 curl，地址走环境变量（命令每轮不变，信任一次就够）；不再写转发脚本
+  const codex = hookInstall(getCli('codex')!.hooks!, '/tmp/run', ['turn.beforeEnd', 'tool.before'], { curlUrl: url })
+  assert.match(codex.args[1], /command='curl -s -f --max-time 65 .*"\$AGENT_PANEL_HOOK_URL\/turn\.beforeEnd"'/)
+  assert.match(codex.args[1], /commandWindows='curl\.exe .*"%AGENT_PANEL_HOOK_URL%\/turn\.beforeEnd"'/)
+  assert.match(codex.args[3], /\$AGENT_PANEL_HOOK_URL\/tool\.before/)
+  assert.ok(!codex.args.join(' ').includes(HOOK_SCRIPT_ENV), '不再引用转发脚本')
+  assert.deepEqual(codex.files, [])
+  // 老版本 Claude Code（没给 httpUrl）：配置文件里的命令换成 curl，地址直接写进这一轮的配置
+  const old = hookInstall(getCli('claude')!.hooks!, '/tmp/run', ['tool.before'], { curlUrl: url }).files[0].content as {
+    hooks: Record<string, { hooks: { type: string; command: string }[] }[]>
+  }
+  assert.equal(old.hooks.PreToolUse[0].hooks[0].type, 'command')
+  assert.match(old.hooks.PreToolUse[0].hooks[0].command, new RegExp(`^curl .*"${url}/tool\\.before"$`))
+  // 支持 HTTP 钩子时 HTTP 优先
+  const now = hookInstall(getCli('claude')!.hooks!, '/tmp/run', ['tool.before'], { curlUrl: url, httpUrl: url })
+    .files[0].content as { hooks: Record<string, { hooks: { type: string }[] }[]> }
+  assert.equal(now.hooks.PreToolUse[0].hooks[0].type, 'http')
+  // 没有 curl：照旧用转发脚本
+  assert.ok(hookInstall(getCli('codex')!.hooks!, '/tmp/run', ['tool.before']).args[1].includes(HOOK_SCRIPT_ENV))
+})

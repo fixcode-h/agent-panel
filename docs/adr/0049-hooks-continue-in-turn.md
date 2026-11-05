@@ -121,3 +121,4 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
 
 - 工具前 / 工具后按这一轮实际关心的工具类别过滤（`hookTools` → 配置里的 `{toolMatcher}`）：内置守卫和提醒只看改文件、跑命令，读文件、搜索不再每次多跑一趟。用户钩子匹配任意工具时照旧全部触发。
 - Claude Code 2.1.318 起用 `type: http` 的钩子直接 POST 到面板（`/api/mcp/ask/<令牌>/hook/<事件>`），不再每次起一个 node 跑转发脚本；读不到本机版本时照旧用转发脚本。回复文字由面板收到后立即丢掉（`answerHook` 的 `dropInput`），判断仍然不读。
+- 不支持 HTTP 钩子的命令类钩子（Codex、老版本 Claude Code）：本机有 curl 时，调转发脚本的命令自动换成 curl 直接 POST 到面板（`shared/hooks.ts` 的 `toCurl`），Codex 0.166 实测每次 11–17 ms，node 转发脚本 81–134 ms。没有 curl 时照旧用转发脚本。Codex 的 `mcp_tool` 钩子不把钩子输入交给工具（`arguments` 为空），守卫没法判断，所以不用它。Pi、Command Code 的钩子本来就在 CLI 进程里直接请求面板，不用改。

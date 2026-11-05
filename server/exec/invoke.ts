@@ -24,6 +24,7 @@ import { rm, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { CACHE_DIR } from '../store.ts'
 import { knownVersion } from '../detect.ts'
+import { hasCurl } from './has-curl.ts'
 import { expandHome } from '../cli-extras.ts'
 import {
   HOOK_URL_ENV,
@@ -287,6 +288,8 @@ export async function invokeCli(o: {
         ? hookInstall(hookSpec, dir, hookActive, {
             tools: o.hookTools,
             ...(http ? { httpUrl: `${bridge.url}/hook` } : {}),
+            // 不支持 HTTP 钩子的命令类钩子（Codex、老版本 Claude Code）：本机有 curl 就直接 POST 到面板，不起 node
+            ...(hasCurl() ? { curlUrl: `${bridge.url}/hook` } : {}),
           })
         : { args: [], files: [], env: {} }
     // 几个工具写进同一个配置文件时先合在一起，一次写进去

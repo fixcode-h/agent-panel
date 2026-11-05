@@ -257,7 +257,10 @@ export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[
     const matcher = toolMatcher(spec, scope)
     const url = opts.httpUrl && spec.http ? `${opts.httpUrl}/${p.event}` : ''
     const each = (v: unknown): unknown => {
-      if (typeof v === 'string') return v.replace(/\{toolMatcher\}/g, () => matcher)
+      if (typeof v === 'string') {
+        const s = v.replace(/\{toolMatcher\}/g, () => matcher)
+        return opts.curlUrl ? toCurl(s, opts.curlUrl) : s
+      }
       if (Array.isArray(v)) return v.map(each)
       if (!v || typeof v !== 'object') return v
       const o = v as Record<string, unknown>
@@ -272,8 +275,9 @@ export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[
   for (const p of filled)
     for (const [k, v] of Object.entries(p.files)) merged.set(k, merged.has(k) ? mergeConfig(merged.get(k), v) : v)
   const args = [...spec.args, ...filled.flatMap((p) => p.args)]
-  // 全换成 HTTP 钩子以后没人再引用转发脚本：不写脚本、不加环境变量
-  const needScript = JSON.stringify([args, [...merged]]).includes('{hookScript}') || !opts.httpUrl || !spec.http
+  // 全换成 HTTP 钩子、curl 以后没人再引用转发脚本：不写脚本、不加环境变量
+  const refs = JSON.stringify([args, [...merged]])
+  const needScript = refs.includes('{hookScript}') || refs.includes(HOOK_SCRIPT_ENV)
   return {
     args: args.map((a) => fill(a) as string),
     env: needScript ? { [HOOK_SCRIPT_ENV]: script } : ({} as Record<string, string>),
@@ -289,6 +293,30 @@ export interface HookInstallOptions {
   tools?: HookToolScope
   /** 本机 CLI 支持 HTTP 钩子时，面板这一轮的钩子地址（{url} 是它加上 /事件名）；空时用转发脚本 */
   httpUrl?: string
+  /**
+   * 本机有 curl 时面板这一轮的钩子地址：CLI 不支持 HTTP 钩子的，调转发脚本的命令换成 curl 直接 POST 到面板（见 toCurl），
+   * 不再每次起一个 node。空时用转发脚本
+   */
+  curlUrl?: string
+}
+
+/** curl 的参数：-f 面板回错误时不打印（CLI 当成不表态），--max-time 和转发脚本的超时一致 */
+const CURL = '-s -f --max-time 65 -H "content-type: application/json" --data-binary @-'
+const esc = (s: string) => s.replace(/[$%{}]/g, (c) => `\\${c}`)
+
+/**
+ * 调转发脚本的命令换成 curl：原生输入从 stdin 直接 POST 到面板的 /hook/<事件>，面板回的就是 CLI 要的输出（server/ask-mcp.ts）。
+ * 认三种写法：配置文件里的 node "{hookScript}"（地址直接写进这一轮的配置），参数里的 node "$转发脚本变量" 和
+ * Windows 的 node "%转发脚本变量%"（换成地址的环境变量：命令每轮不变，要信任的 CLI 信任一次就够）
+ */
+export function toCurl(cmd: string, url: string): string {
+  const swap = (from: string, to: (ev: string) => string) => (s: string) =>
+    s.replace(new RegExp(`node "${esc(from)}" ([\\w.]+)`, 'g'), (_, ev: string) => to(ev))
+  return [
+    swap('{hookScript}', (ev) => `curl ${CURL} "${url}/${ev}"`),
+    swap(`$${HOOK_SCRIPT_ENV}`, (ev) => `curl ${CURL} "$${HOOK_URL_ENV}/${ev}"`),
+    swap(`%${HOOK_SCRIPT_ENV}%`, (ev) => `curl.exe ${CURL} "%${HOOK_URL_ENV}%/${ev}"`),
+  ].reduce((s, f) => f(s), cmd)
 }
 
 /**
