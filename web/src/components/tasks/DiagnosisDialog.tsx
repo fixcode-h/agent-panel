@@ -3,7 +3,7 @@ import type { Attachment, Task, TaskRequest } from '@shared/schema'
 import { attachChip } from '@shared/composer'
 import type { Diagnosis } from '@shared/bug-diagnosis-schema'
 import { diagnosisMarkdown } from '@shared/bug-diagnosis'
-import { phaseOf } from '@shared/bug-phase'
+import { causeInPlan, phaseOf } from '@shared/bug-phase'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -62,8 +62,18 @@ const phaseLabel = (d: Diagnosis) =>
  * 每个阶段的按钮和提示（用户 2026-11-05 定的流程）：
  * 论证同意加日志（手上有日志可以直接交），等你复现时交日志；根因同意或否决；方案确认开始修；验证交日志或直接结束
  */
-function phaseTexts(d: Diagnosis) {
+function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
   const phase = phaseOf(d)
+  // 快速级别根因和方案合成一版：点一次就同意根因并开始修
+  if (causeInPlan(d, list))
+    return {
+      texts: {
+        approve: t('同意根因并按这个修'),
+        revise: t('有疑问，出下一版'),
+        hintApprove: t('根因和修复方案一起确认，确认了它才开始改代码；根因或方案有疑问先选中文字标注'),
+        hintRevise: t('「有疑问」把标注按编号交回，它逐条回答后交下一版'),
+      },
+    }
   if (phase === 'evidence' && d.awaiting)
     return {
       texts: {
@@ -160,7 +170,7 @@ export function DiagnosisDialog({
             kind: 'change',
           }))
       : []
-  const cfg = phaseTexts(last)
+  const cfg = phaseTexts(last, list)
   // 决定已经记下：把话（和附上的日志文件）交给子对话，叫醒它接着做（在跑、在等下一句、停着都由发消息那条路处理）
   const hand = async (message: string, files: Attachment[], fallback: Task) => {
     const next = await api.sendMessage(task.id, message, files).catch((e: Error) => {

@@ -1040,8 +1040,9 @@ async function runAgent(
         // 子对话开着「提问」：交给父对话，不在子对话里弹给用户（见 askViaParent）
         if (ev.kind === 'question' && task.parentTaskId && ctx.messageParent) return askViaParent(ev, ctx.messageParent)
         const id = ctx.newId()
-        // 审批卡上点过「一直允许」的同类请求：直接允许，留一行说明（shared/allow-rules.ts）
-        if (autoAllowed(task, ev, { id, step, agentId })) return ctx.changed(true)
+        // 审批卡上点过「一直允许」的同类请求、权限是「跳过所有确认」这类一档：直接允许，留一行说明（ask-request.ts）
+        const perm = def.permissions.find((p) => p.id === build.permission)
+        if (autoAllowed(task, ev, { id, step, agentId }, perm?.autoAllow ? perm.label : '')) return ctx.changed(true)
         asked.push(id)
         replies.set(id, ev.reply)
         task.requests.push(requestOf(ev, { id, step, agentId }))

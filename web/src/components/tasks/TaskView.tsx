@@ -37,6 +37,7 @@ import { useDiagDialogs } from './diag-dialogs'
 import { useDiagnosisHost } from './diagnosis-window'
 import { ParentBar } from './ChildMail'
 import { ChildrenBar, plainRow } from './ChildrenBar'
+import { BugReportRow } from './BugReportCard'
 import { useOwnedRuns } from '@/lib/owned-runs'
 import { ProcessMenu } from './ProcessPanel'
 import { PinMenuRow, PinnedButton, useHeaderPins } from './HeaderPins'
@@ -1831,6 +1832,8 @@ export function TaskView({
           <ParentBar task={task} className="mx-auto mb-1 max-w-(--content-w)" />
         </div>
       )}
+      {/* Bug 修完以后的诊断报告入口：常驻在这一块，不跟着消息流滚走 */}
+      <BugReportRow task={task} />
       {(() => {
         // 子对话入口只在父对话里显示（右栏和子对话自己的页面不列子对话）；
         // 子任务入口哪里都显示：它派在哪个对话里，就在哪里看

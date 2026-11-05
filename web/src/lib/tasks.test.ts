@@ -26,10 +26,14 @@ test('加载工具定义不显示成被加载的面板工具：旧记录的 Tool
   const input = '{"query":"select:mcp__panel__finish_child","max_results":3}'
   const old = toolView(tool('ToolSearch', 'select:mcp__panel__finish_child', { input }))
   assert.equal(old?.tool.name, '查询 MCP 工具')
-  assert.equal(old?.tool.label, 'finish_child')
+  // 副标题里要加载的工具也写中文名
+  assert.equal(old?.tool.label, '收尾子对话')
   assert.equal(old?.child, undefined)
-  const now = toolView(tool('查询 MCP 工具', 'finish_child', { kind: 'search', input }))
+  const now = toolView(tool('查询 MCP 工具', 'finish_child, set_plan', { kind: 'search', input }))
   assert.equal(now?.tool.name, '查询 MCP 工具')
+  assert.equal(now?.tool.label, '收尾子对话、更新计划')
+  // 关键词搜索、别家的工具照原样
+  assert.equal(toolView(tool('查询 MCP 工具', 'slack send', { kind: 'search' }))?.tool.label, 'slack send')
 })
 
 test('面板工具在对话里显示中文名，不再露出原始工具名', () => {

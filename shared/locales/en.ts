@@ -15,6 +15,7 @@ import { EN_MARKDOWN_STYLE } from './en/markdown-style.ts'
 import { EN_SHARED } from './en/shared.ts'
 import { EN_SUMMARY } from './en/summary.ts'
 import { EN_TASKS } from './en/tasks.ts'
+import { EN_TOOL_NAMES } from './en/tool-names.ts'
 import { EN_SPEECH } from './en/speech.ts'
 import { EN_HOOKS } from './en/hooks.ts'
 import { EN_CLI_MORE } from './en/cli-more.ts'
@@ -38,6 +39,7 @@ export const EN: Record<string, string> = {
   ...EN_SETTINGS,
   ...EN_MARKDOWN_STYLE,
   ...EN_TASKS,
+  ...EN_TOOL_NAMES,
   ...EN_BUG_FLOW,
   ...EN_USER_ACTION,
   ...EN_DESIGN,

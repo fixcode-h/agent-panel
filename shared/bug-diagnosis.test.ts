@@ -124,7 +124,11 @@ test('各阶段缺小节、没写要改的文件：不收，说清缺什么；�
     submitDiagnosis(tk, input({ phase: 'cause', confirmed: false }), id).info,
     /根因还没证实.*交 phase: evidence/,
   )
-  assert.match(submitDiagnosis(tk, input({ phase: 'plan' }), id).info, /还没有用户同意的根因/)
+  assert.match(submitDiagnosis(tk, input({ phase: 'plan', level: 'standard' }), id).info, /还没有用户同意的根因/)
+  assert.match(
+    submitDiagnosis(tk, input({ phase: 'plan', confirmed: false }), id).info,
+    /快速级别把根因和修复方案合成一版交，根因那一节也要齐：根因还没证实/,
+  )
   assert.match(submitDiagnosis(tk, input({ phase: 'verify' }), id).info, /还没有用户确认的修复方案/)
   assert.equal(tk.diagnoses?.length, 0)
   agreeCause(tk)
@@ -493,4 +497,33 @@ test('用户点取消：不再等确认，计划收口成完成，对话不算�
   const v2 = submitDiagnosis(tk, input(), id)
   assert.ok(v2.ok && v2.version === 2)
   assert.equal(tk.diagnoses![0].status, 'cancelled')
+})
+
+test('快速级别：根因和修复方案合成一版交，用户确认一次就开始修；弹窗里根因那几节也在', () => {
+  // 实测（2026-11-05）：一行就能修的 Bug 也要确认根因、方案、验证三道
+  const tk = bugTask()
+  const r = submitDiagnosis(tk, input({ phase: 'plan' }), id)
+  ok(r)
+  assert.match(r.info, /一起确认根因和修复方案/)
+  const md = diagnosisMarkdown(tk.diagnoses![0], undefined, { list: tk.diagnoses })
+  assert.match(md, /根因和修复方案一起确认/)
+  assert.match(md, /## 根因（已证实）\nmax 用的是秒/)
+  assert.match(md, /## 证据链/)
+  ok(decideDiagnosis(tk, 1, yes, id))
+  assert.deepEqual(editScope(tk.diagnoses!), { files: ['web/src/lib/login.ts'] })
+  assert.match(diagnosisMarkdown(tk.diagnoses![0], undefined, { list: tk.diagnoses }), /你同意了根因和方案/)
+})
+
+test('根因那一版：返回写明只确认根因；提前写的修法在弹窗里标成草案', () => {
+  const tk = bugTask()
+  const r = submitDiagnosis(tk, input({ phase: 'cause', level: 'quick' }), id)
+  ok(r)
+  assert.match(r.info, /只请用户确认根因.*标成草案.*不要说在等他确认方案/)
+  assert.match(diagnosisMarkdown(tk.diagnoses![0]), /## 修复方案草案（这一版不确认，同意根因后另交一版）\nlogin\.ts:44/)
+  // 同意根因后交的方案不算合成的一版
+  ok(decideDiagnosis(tk, 1, yes, id))
+  const p = submitDiagnosis(tk, input({ phase: 'plan' }), id)
+  ok(p)
+  assert.match(p.info, /等用户确认修复方案/)
+  assert.doesNotMatch(diagnosisMarkdown(tk.diagnoses![1], undefined, { list: tk.diagnoses }), /一起确认/)
 })

@@ -31,6 +31,8 @@ export const PANEL_TOOL_NAMES = [
   'finish_workflow',
   'submit_diagnosis',
   'request_logs',
+  // 随查随记的 Bug 档案草稿（ADR 0046）：只在 Bug 对话里挂，没登记时对话里露出 update_bug_case 原名
+  'update_bug_case',
   'remember',
   'set_plan',
   'finish_plan',

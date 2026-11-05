@@ -35,6 +35,17 @@ export function causeAgreed(list: Diagnosis[]): boolean {
   return list.some((d) => phaseOf(d) === 'plan' && d.status === 'approved')
 }
 
+/**
+ * 快速级别根因和方案合成一版（用户 2026-11-05 定：一行就能修的 Bug 不用确认三道）：这一版是修复方案，
+ * 它之前没有用户同意过的根因，根因就跟着这一版一起确认。list 是全部版本（含这一版），只看它之前的
+ */
+export function causeInPlan(d: Diagnosis, list: Diagnosis[]): boolean {
+  // 只有快速级别能合成：别的级别（含没有 phase 的旧数据）照旧是单独确认的方案
+  if (phaseOf(d) !== 'plan' || d.level !== 'quick') return false
+  const i = list.indexOf(d)
+  return !causeAgreed(i >= 0 ? list.slice(0, i) : list)
+}
+
 /** 最后一版修复方案，且它之后没有回到论证 / 根因 */
 export function lastPlan(list: Diagnosis[]): Diagnosis | undefined {
   for (let i = list.length - 1; i >= 0; i--) {
@@ -121,8 +132,9 @@ const quoteOf = (n: DiagnosisNote) => (n.quote ? `「${n.quote.replace(/\s+/g, '
 export const notesList = (notes: DiagnosisNote[]) =>
   notes.map((n) => `${n.id}. [${KIND_TEXT[n.kind]}]${quoteOf(n)}${n.comment ? `：${n.comment}` : ''}`).join('\n')
 
+// 正式日志只对已有日志体系的模块要求（实测：纯函数库照「留下或补上正式日志」会被推着加 console.log）
 const CLEANUP =
-  '收尾前把 `[排查-` 前缀的临时日志全部删掉（面板会核对）；修改的代码里排查需要的正式日志要留下或补上：按项目已有的日志写法、级别和前缀，打关键分支和关键值，不打密钥和大段数据，下次出同类问题看日志就能定位。'
+  '收尾前把 `[排查-` 前缀的临时日志全部删掉（面板会核对）。正式日志：改到的模块已经有日志体系的，按它的写法、级别和前缀在关键分支补上关键值（不打密钥和大段数据），下次出同类问题看日志就能定位；没有日志的模块（纯函数、工具库）不加，在 result 里写一句为什么不加。'
 
 /** 用户的决定交给 AI 的话：按这一版的阶段和用户的选择分别写 */
 export function phaseFeedback(d: Diagnosis): string {
@@ -162,7 +174,7 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}$
 - 加完能自己复现（跑测试、跑命令）就自己跑，分析后交下一版（还没定论交 phase: evidence，证实了交 phase: cause）。
 - 自己复现不了：调用 request_logs 写清复现步骤、日志在哪、过滤条件，然后结束这一轮，等用户贴日志。${notes}${overall}`
   if (phase === 'cause')
-    return `用户同意了第 ${v} 版的根因。现在设计修复方案，交 phase: plan：影响面、至少两个有实质区别的修法和五项比较、选定和理由、要改的文件、验证计划；修改处要留哪些正式日志也写进方案。用户确认之前不改文件。${notes}${overall}`
+    return `用户同意了第 ${v} 版的根因。现在设计修复方案，交 phase: plan：影响面、至少两个有实质区别的修法和五项比较、选定和理由、要改的文件、验证计划；模块已有日志体系的，修改处要留哪些正式日志也写进方案。用户确认之前不改文件。${notes}${overall}`
   if (phase === 'plan')
     return `用户确认了第 ${v} 版的修复方案，按它修：
 - 先写改前失败的测试（没法自动化的写成可重复的手工步骤），再按方案改。
