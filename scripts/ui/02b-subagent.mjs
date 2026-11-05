@@ -1094,6 +1094,14 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：取消后审阅弹窗还开着')
         if (await childView(p).getByText('等你查看报告').count())
           errors.push('诊断报告：取消后交报告那一行还写着「等你查看报告」')
+        // 不再等确认以后，诊断报告的入口固定在输入框上方的状态栏里（和子任务、子对话同一块），不跟着消息流滚走
+        const bugRow = childView(p).locator('[data-status-row="bug-report"]')
+        await bugRow
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('诊断报告：不再等确认后，输入框上方的状态栏里没有诊断报告那一行'))
+        if (await childView(p).locator('.proc-list [data-status-row="bug-report"]').count())
+          errors.push('诊断报告：入口还在消息流里')
+        await check(p, '诊断报告-状态栏入口')
       }
       await p.keyboard.press('Escape')
     }
