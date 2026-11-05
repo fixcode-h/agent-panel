@@ -140,12 +140,18 @@ export async function shapeLearned(
   return p.success ? { item: p.data } : { why: p.error.issues.map((x) => x.message).join('；') }
 }
 
+/** 一轮结束后等多久再看要不要学：只够排着的下一轮开起来，用户感觉是「完成就学」 */
+const SETTLE_MS = 5_000
+
 export function createExperienceLearner(deps: LearnDeps) {
   const timers = new Map<string, NodeJS.Timeout>()
   /** 每个项目同时只跑一个提炼：几个对话同时完成时排队，不同时起好几个 CLI */
   const running = new Map<string, Promise<unknown>>()
 
-  /** 顶层对话一轮结束时调：重新计时，空闲够久再看要不要学 */
+  /**
+   * 顶层对话一轮结束时调：稍等几秒就学（用户要求对话完成就学，不再等十分钟）。
+   * 这几秒是给「执行中收到的消息」接着开下一轮留的：开起来了 isDone 就不成立，这次不学，等那一轮结束再来
+   */
   async function schedule(taskId: string) {
     const exp = ExperienceSettings.parse((await getSettings().catch(() => null))?.experience ?? {})
     clearTimeout(timers.get(taskId))
@@ -154,7 +160,7 @@ export function createExperienceLearner(deps: LearnDeps) {
     const timer = setTimeout(() => {
       timers.delete(taskId)
       void learn(taskId).catch((e) => log.warn('task', '学经验失败', { task: taskId, error: (e as Error).message }))
-    }, exp.idleMinutes * 60_000)
+    }, SETTLE_MS)
     timer.unref?.()
     timers.set(taskId, timer)
   }
@@ -238,7 +244,7 @@ export function createExperienceLearner(deps: LearnDeps) {
     }
     const day = today()
     const used = st.daily[project.id]?.day === day ? st.daily[project.id].count : 0
-    if (used >= exp.dailyLimit) {
+    if (exp.dailyLimit > 0 && used >= exp.dailyLimit) {
       log.info('task', '今天的经验提炼次数用完了，这次不学', { task: task.id, project: project.id })
       await mark()
       return 'limit'

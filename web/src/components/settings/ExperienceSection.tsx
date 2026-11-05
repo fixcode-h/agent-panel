@@ -28,7 +28,6 @@ export function ExperienceSection({
   const { settings, setSettings } = useData()
   const exp = ExperienceSettings.parse(settings?.experience ?? {})
   const [limit, setLimit] = useState(String(exp.dailyLimit))
-  const [idle, setIdle] = useState(String(exp.idleMinutes))
   const save = async (patch: Partial<ExperienceSettings>) => {
     if (!settings) return
     try {
@@ -41,8 +40,8 @@ export function ExperienceSection({
     const n = Number(v)
     return v !== '' && Number.isInteger(n) && n >= min && n <= max ? n : null
   }
-  const limitN = num(limit, 1, 200)
-  const idleN = num(idle, 0, 1440)
+  // 0 表示不限
+  const limitN = num(limit, 0, 200)
   return (
     <div className="flex flex-col">
       <p className="pb-2 text-body leading-relaxed text-subtle">
@@ -58,9 +57,9 @@ export function ExperienceSection({
           <>
             <Row
               title={t('整个对话完成后自动学')}
-              desc={t('对话和它的子对话都完成、空闲一段时间后在后台学，不挡你')}
+              desc={t('对话和它的子对话都完成后马上在后台学，不挡你')}
               hint={t(
-                '先只看工具调用算这次绕了多少路（不花 token），绕路明显或命令反复试错时才调一次模型提炼，最多 2 条。',
+                '先只看工具调用判断值不值得学（不花 token）：找到要改的地方前搜索、读文件太多，或者命令失败几次才试成功，才调一次模型提炼，最多记 2 条。',
               )}
             >
               <Switch
@@ -81,7 +80,13 @@ export function ExperienceSection({
       </Group>
       {exp.enabled && exp.autoLearn && (
         <Group title={t('学习')}>
-          <Row title={t('学得勤不勤')} desc={t('绕路多少次才值得学：少一点 12 次、适中 8 次、勤一点 5 次')}>
+          <Row
+            title={t('学得勤不勤')}
+            desc={t('绕路达到几次才学：少一点 12 次、适中 8 次、勤一点 5 次')}
+            hint={t(
+              '绕路：找到最后要改的目录之前，搜索和读别处文件的次数，次数多说明这次找得费劲，值得记下来。命令失败后换了写法才成功的也会学：少一点要失败 3 次，适中和勤一点 2 次。',
+            )}
+          >
             <Segmented
               label={t('学得勤不勤')}
               size="sm"
@@ -94,20 +99,7 @@ export function ExperienceSection({
               ]}
             />
           </Row>
-          <Row title={t('对话完成后等多久再学')} desc={t('这段时间里你接着追问，就重新计时')}>
-            <NumberField
-              label={t('对话完成后等多久再学')}
-              value={idle}
-              unit={t('分钟')}
-              invalid={idleN === null}
-              onChange={(v) => {
-                setIdle(v)
-                const n = num(v, 0, 1440)
-                if (n !== null) void save({ idleMinutes: n })
-              }}
-            />
-          </Row>
-          <Row title={t('每个项目每天最多提炼')} desc={t('到了上限当天不再调模型，只做不花 token 的那一步')}>
+          <Row title={t('每个项目每天最多提炼')} desc={t('填 0 不限；到了上限当天不再调模型提炼')}>
             <NumberField
               label={t('每个项目每天最多提炼')}
               value={limit}
@@ -115,7 +107,7 @@ export function ExperienceSection({
               invalid={limitN === null}
               onChange={(v) => {
                 setLimit(v)
-                const n = num(v, 1, 200)
+                const n = num(v, 0, 200)
                 if (n !== null) void save({ dailyLimit: n })
               }}
             />
