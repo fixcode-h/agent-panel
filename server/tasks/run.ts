@@ -426,6 +426,10 @@ export function createRun(sc: TasksScope) {
               void sc.checkBudget(entry.task)
             }
           : (turn) => {
+              // 经验学习按「一轮结束」排，不等 run 返回：CLI 保活时进程停在等下一句，run 一直不返回，
+              // 只在 run 收尾处排的话要等闲置回收才学，用户看到的就是「对话完成了却不学」。
+              // 面板接着推它做（nudgePlan / nudgeWrapUp）会在几秒内让它跑起来，learn 到点见它没完成就不学，等下一轮结束再排
+              if (entry.task.projectId) void sc.learnExperience(task.id)
               void sc.checkBudget(entry.task).then((over) => {
                 if (over || task.mode !== 'chat') return
                 // Chat 页只回答了一句、没动手的那一轮不推；项目里的对话按计划推（计划没做完、或动了手却没列计划，见 nudgePlan）
@@ -789,7 +793,8 @@ export function createRun(sc: TasksScope) {
             .catch((e) => log.warn('task', '工作流运行回信失败', { task: task.id, error: (e as Error).message }))
         // 整轮结束了，没被节点取走的补充不会再有人取
         forgetNotes(task.id)
-        // 项目里的顶层对话：整个对话（含子对话）都完成了就学经验（几秒内又跑起来就等下一轮结束）
+        // 项目里的顶层对话：整个对话（含子对话）都完成了就学经验（几秒内又跑起来就等下一轮结束）。
+        // 保活的 CLI 在 onTurnEnd 里已经排过；这里接住不保活的 CLI 和工作流（工作流整轮跑完才到这里），重复排只会重置计时
         if (!prewarm && !entry.task.parentTaskId && entry.task.projectId) void sc.learnExperience(task.id)
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
         // 收尾停掉的（父对话 finish_child、用户点解决：stopReason finish）不是出错：收尾时交来的新任务照样接着处理
