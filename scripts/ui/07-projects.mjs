@@ -171,12 +171,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ state: 'detached', timeout: 3000 })
         .catch(() => {})
     }
-    // 点开 Markdown 文件：标题栏的「预览 / 源码」切换要排成一行、和 24px 的标题栏按钮一样高，
-    // 不能被挤成一个字一行（「预 / 览」竖着叠、撑出标题栏）
+    // 点开 Markdown 文件：标题栏的「阅读 / 编辑」切换要排成一行、和 24px 的标题栏按钮一样高，
+    // 不能被挤成一个字一行（「阅 / 读」竖着叠、撑出标题栏）；阅读时按 Markdown 渲染，切到编辑是源码
     {
       await row('README.md').click()
-      const seg = p.getByRole('dialog').getByRole('radiogroup', { name: '预览或源码' })
-      await seg.waitFor({ timeout: 8000 }).catch(() => errors.push('文件窗口：Markdown 文件没有「预览 / 源码」切换'))
+      const seg = p.getByRole('dialog').getByRole('radiogroup', { name: '阅读或编辑' })
+      await seg.waitFor({ timeout: 8000 }).catch(() => errors.push('文件窗口：Markdown 文件没有「阅读 / 编辑」切换'))
       const m = await seg
         .evaluate((el) => {
           const btn = el.closest('[role="dialog"]')?.querySelector('button[aria-label="复制路径"]')
@@ -198,11 +198,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .catch(() => null)
       if (m) {
         if (Math.abs(m.h - m.btnH) > 1)
-          errors.push(`文件窗口：「预览 / 源码」切换高 ${m.h}px，和标题栏按钮（${m.btnH}px）不一样高`)
+          errors.push(`文件窗口：「阅读 / 编辑」切换高 ${m.h}px，和标题栏按钮（${m.btnH}px）不一样高`)
         for (const it of m.items)
           if (it.textH > it.lineH * 1.5) errors.push(`文件窗口：「${it.text}」折成了多行（文字高 ${it.textH}px）`)
       }
-      await check(p, '文件窗口-Markdown标题栏', ['预览', '源码'])
+      await check(p, '文件窗口-Markdown标题栏', ['阅读', '编辑'])
+      await seg.getByRole('radio', { name: '编辑' }).click()
+      await p
+        .getByRole('dialog')
+        .getByRole('textbox', { name: '文件内容' })
+        .waitFor({ timeout: 3000 })
+        .catch(() => errors.push('文件窗口：切到「编辑」没有出现源码编辑区'))
       await p.keyboard.press('Escape')
       await p
         .getByRole('dialog')

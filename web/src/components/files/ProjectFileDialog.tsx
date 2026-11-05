@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { Code2, Copy, GitCompareArrows, Loader2, PencilLine, X, FileText } from 'lucide-react'
-import { toast } from '@/lib/toast'
+import { Code2, Copy, GitCompareArrows, Loader2, X, FileText } from 'lucide-react'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
 import type { FileContent, FileDiff } from '@shared/files'
@@ -17,7 +16,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Lightbox } from '@/components/ui/lightbox'
 import { DialogScroll, ProjectDiffDialog } from '@/components/tasks/DiffDialog'
 import { Markdown } from '@/components/tasks/Markdown'
-import { Segmented } from '@/components/ui/segmented'
+import { FileEditor, FileModeBar, isMarkdownPath, useFileEditing } from './file-edit'
 
 /** 按扩展名先认出图片，直接看原图，不用等文本接口回来再切换 */
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i
@@ -135,7 +134,8 @@ function sizeText(n: number) {
 
 /**
  * 文件浏览页里点开一个文件：显示内容（带语法高亮），跳到指定的行，可以在编辑器里打开、
- * 直接改完保存，也能看这个文件相对 git 的改了什么。图片用看图的浮层看原图。
+ * 切到编辑直接改完保存（和任务页的文件弹窗共用 file-edit），也能看这个文件相对 git 的改了什么。
+ * Markdown 阅读时按对话里的样式渲染，编辑时改源码。图片用看图的浮层看原图。
  */
 /** 文件预览里没有 @角色 */
 const NO_TEAM = new Set<string>()
@@ -157,10 +157,6 @@ export function ProjectFileDialog({
 }) {
   const [file, setFile] = useState<FileContent | null>(null)
   const [error, setError] = useState('')
-  /** 编辑中的内容；null 表示不在编辑 */
-  const [draft, setDraft] = useState<string | null>(null)
-  const [saveError, setSaveError] = useState('')
-  const [saving, setSaving] = useState(false)
   const [askClose, setAskClose] = useState(false)
   const [hl, setHl] = useState<Hljs | null>(null)
   const [diffOpen, setDiffOpen] = useState(false)
@@ -170,16 +166,11 @@ export function ProjectFileDialog({
   const path = target?.path ?? ''
   const isImage = !!target && IMAGE.test(target.path)
   const raw = isImage ? api.projectFileRaw(projectId, target!.path) : ''
-  // Markdown 文件默认按对话里的同一套样式渲染；带行号打开（从引用跳过来）时要看那一行，先显示源码
-  const isMd = /\.(md|mdx|markdown)$/i.test(path)
-  const [mdView, setMdView] = useState<'preview' | 'source'>('preview')
+  const isMd = isMarkdownPath(path)
   useEffect(() => {
     if (!target) return
-    setMdView(target.line ? 'source' : 'preview')
     setFile(null)
     setError('')
-    setDraft(null)
-    setSaveError('')
     if (raw) return
     api
       .projectFile(projectId, target.path)
@@ -200,8 +191,26 @@ export function ProjectFileDialog({
     box.current?.querySelector(`[data-line="${target.line}"]`)?.scrollIntoView({ block: 'center' })
   }, [file, target])
 
-  // 去掉结尾的换行再分列，最后一行不会是个空行；高亮用同一份内容，行数才对得上
-  const body = file?.content ? file.content.replace(/\n$/, '') : ''
+  // 截断的文件不提供编辑：存回去会把后面没读到的部分删掉
+  const canEdit = !!file?.exists && !file.binary && !file.truncated
+  const ed = useFileEditing({
+    content: file?.exists && !file.binary ? file.content : undefined,
+    write: async (text) => {
+      await api.writeProjectFile(projectId, file!.path, text)
+      // 保存后重新读一遍：后端可能调整了换行或截断，界面上显示的应该是盘上的真实内容
+      setFile(await api.projectFile(projectId, file!.path))
+      onSaved?.()
+    },
+    resetKey: target,
+    // Markdown 阅读是渲染后的文档，对不上行号：带行号打开（从引用跳过来）时直接进编辑看那一行
+    startEdit: isMd && !!target?.line,
+  })
+  const editing = canEdit && ed.mode === 'edit'
+  const dirty = ed.dirty
+  // 去掉结尾的换行再分列，最后一行不会是个空行；高亮用同一份内容，行数才对得上。
+  // 阅读时看的是草稿：改了 Markdown 切回阅读就能看渲染效果
+  const shown = canEdit ? ed.text : (file?.content ?? '')
+  const body = shown ? shown.replace(/\n$/, '') : ''
   const lines = body ? body.split('\n') : []
   const highlighted = useMemo(
     () =>
@@ -211,17 +220,12 @@ export function ProjectFileDialog({
   )
   const size = typeof file?.size === 'number' ? sizeText(file.size) : ''
   const mtime = file?.mtime ? fmtClock(file.mtime) : ''
-  const editing = draft !== null
-  const dirty = editing && !!file && draft !== file.content
-  // 截断的文件不提供编辑：存回去会把后面没读到的部分删掉
-  const canEdit = !!file?.exists && !file.binary && !file.truncated
   const canDiff = !!file?.exists && !file.binary && !isImage
   const textOpen = !!target && !raw
-  const mdPreview = isMd && mdView === 'preview' && !!file?.exists && !file.binary
+  const mdPreview = isMd && !!file?.exists && !file.binary
 
   const close = () => {
-    setDraft(null)
-    setSaveError('')
+    ed.discard()
     setDiffOpen(false)
     onOpenChange(false)
   }
@@ -230,25 +234,6 @@ export function ProjectFileDialog({
     if (open) return
     if (dirty) return setAskClose(true)
     close()
-  }
-  const save = async () => {
-    if (!file || draft === null || saving) return
-    setSaving(true)
-    setSaveError('')
-    try {
-      await api.writeProjectFile(projectId, file.path, draft)
-      // 保存后重新读一遍：后端可能调整了换行或截断，界面上显示的应该是盘上的真实内容
-      const fresh = await api.projectFile(projectId, file.path)
-      setFile(fresh)
-      setDraft(null)
-      onSaved?.()
-      toast.success(t('已保存'))
-    } catch (e) {
-      // 覆盖、越界、太大这类错误由后端给原因，原文显示
-      setSaveError((e as Error).message)
-    } finally {
-      setSaving(false)
-    }
   }
   const openDiff = () => {
     if (!target) return
@@ -280,16 +265,7 @@ export function ProjectFileDialog({
           editing || !file || lines.length ? 'h-[min(760px,calc(100dvh-3.75rem))] max-w-[1000px]' : 'max-w-[560px]',
         )}
       >
-        <div
-          className="flex min-h-0 flex-1 flex-col"
-          onKeyDown={(e) => {
-            // 编辑时随时能按 Ctrl/Cmd+S 保存，不用点按钮
-            if (editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-              e.preventDefault()
-              void save()
-            }
-          }}
-        >
+        <div className="flex min-h-0 flex-1 flex-col">
           <header className={MODAL_HEADER}>
             <FileText className="h-3.5 w-3.5 shrink-0 text-subtle" />
             <D.Title className={cn(MODAL_TITLE, 'flex-1 font-mono')} title={target?.path}>
@@ -297,20 +273,7 @@ export function ProjectFileDialog({
               {target?.line ? <span className="text-subtle">:{target.line}</span> : null}
               {dirty && <span className="ml-2 text-footnote font-normal text-warning">{t('未保存')}</span>}
             </D.Title>
-            {isMd && !editing && file?.exists && !file.binary && (
-              <Segmented
-                size="sm"
-                // 标题栏一排都是 24px 高：段控件整体压到 24px（每段 20px），不折行、不被挤窄
-                className="shrink-0 flex-nowrap *:h-5 *:px-2 *:whitespace-nowrap"
-                label={t('预览或源码')}
-                value={mdView}
-                onChange={setMdView}
-                options={[
-                  { id: 'preview', label: t('预览') },
-                  { id: 'source', label: t('源码') },
-                ]}
-              />
-            )}
+            {canEdit && <FileModeBar ed={ed} />}
             {(size || mtime) && (
               <span className="hidden shrink-0 items-center gap-1.5 font-mono text-caption text-subtle sm:flex">
                 {size && <span title={t('文件大小')}>{size}</span>}
@@ -334,46 +297,24 @@ export function ProjectFileDialog({
                 onClick={openDiff}
               />
             )}
-            {canEdit && !editing && (
-              <IconButton
-                icon={PencilLine}
+            {!editing && file?.exists && dir && (
+              <Button
+                variant="ghost"
                 size="sm"
-                className={MODAL_ICON_BTN}
-                label={t('编辑')}
-                onClick={() => {
-                  setDraft(file!.content)
-                  setSaveError('')
-                }}
-              />
-            )}
-            {editing ? (
-              <>
-                <Button variant="ghost" size="sm" className="h-6" onClick={() => setDraft(null)}>
-                  {t('取消')}
-                </Button>
-                <Button size="sm" className="h-6" disabled={saving || !dirty} onClick={() => void save()}>
-                  {saving ? t('保存中') : t('保存')}
-                </Button>
-              </>
-            ) : (
-              file?.exists &&
-              dir && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6"
-                  onClick={() => window.open(editorUrl(dir, file.path, target?.line))}
-                >
-                  <Code2 className="h-4 w-4" />
-                  {t('在编辑器中打开')}
-                </Button>
-              )
+                className="h-6"
+                onClick={() => window.open(editorUrl(dir, file.path, target?.line))}
+              >
+                <Code2 className="h-4 w-4" />
+                {t('在编辑器中打开')}
+              </Button>
             )}
             <D.Close asChild>
               <IconButton icon={X} label={t('关闭')} size="sm" className={MODAL_ICON_BTN} />
             </D.Close>
           </header>
-          {saveError && <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-body text-danger">{saveError}</p>}
+          {ed.saveError && (
+            <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-body text-danger">{ed.saveError}</p>
+          )}
           <DialogScroll box={box}>
             {error ? (
               <p className="p-6 text-body text-danger">{error}</p>
@@ -386,17 +327,10 @@ export function ProjectFileDialog({
             ) : file.binary ? (
               <p className="p-6 text-body text-subtle">{t('这是二进制文件，不显示内容。')}</p>
             ) : editing ? (
-              // 编辑时不带行号：行号会随输入变，写起来反而碍眼
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                aria-label={t('文件内容')}
-                spellCheck={false}
-                className="h-full w-full resize-none bg-transparent px-4 py-2 font-mono text-footnote leading-[1.6] text-fg/90 outline-none"
-              />
+              <FileEditor ed={ed} line={target?.line} />
             ) : mdPreview ? (
               <div className="mx-auto max-w-[860px] px-8 py-6">
-                <Markdown text={file.content} teamNames={NO_TEAM} />
+                <Markdown text={shown} teamNames={NO_TEAM} />
               </div>
             ) : (
               <pre className="min-w-max py-2 font-mono text-footnote leading-[1.6]">
