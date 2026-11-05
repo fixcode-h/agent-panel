@@ -4,11 +4,11 @@
  */
 import { diagnosisPending } from '@shared/task'
 import { seedChatRail } from './demo-chat-rail'
-import { demoFlowRun } from './demo-flow-run'
-import { FlowRun } from '@shared/task-flow-schema'
+import { demoOwnedRun } from './demo-flow-run'
 import { bugStage, decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
+import { demoFlowRun } from './demo-flow-run'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
@@ -2789,11 +2789,10 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
         : [],
     ),
     simulated: true,
+    ...(workflow && { flowRun: demoFlowRun(input, workflow) }),
     // 演示里按 Windows 展示测试步骤的环境说明（WSL 步骤怎么跑）
     testSteps: workflow ? (project?.testSteps ?? []) : [],
     platform: workflow ? 'win32' : '',
-    // 和正式版的接口一样：直接建的工作流任务是一次没有父对话的独立运行，跑完直接完成
-    ...(workflow && { flowRun: FlowRun.parse({ owner: '', workflowName: workflow.name, kind: 'readonly' }) }),
   })
   // 演示里没有真的仓库：只记下分支信息，让界面能展示合并 / 丢弃。
   // 和服务端一致：只有顶层对话能选独立分支，子对话和父对话共用目录
@@ -4552,7 +4551,7 @@ async function seedTasks(d: Db) {
     }
     demoHelper(task, fe)
     await demoChildren(d, task, fe)
-    d.tasks?.push(demoFlowRun(task, 'demo-flow-run'))
+    d.tasks?.push(demoOwnedRun(task, 'demo-flow-run'))
     // 这个对话改过两个文件：「改动」Tab 和差异窗口（含上一个/下一个导航）都要有东西看
     task.changes = [
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
@@ -4635,6 +4634,7 @@ async function seedTasks(d: Db) {
       },
       true,
     )
+    // 工作流运行跑完就结束了（补充要求从父对话交），不再追加一轮
     await done
     back(task, 25)
   }

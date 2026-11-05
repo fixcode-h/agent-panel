@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：运行区里的工作流行——在跑时列出来（进度、已跑多久）、点了切到流程图、跑完整行消失。
+ * 界面检查分片：工作流运行在跑时对话里的卡片（进度、已跑多久）、点了切到流程图、跑完不留运行区。
  *
  * 原来是 02b 的最后一块：它要两次整页重载（改 localStorage 造「正在跑」，再改回去看它消失），
  * 单步就要 30 秒，是 02b 里最慢的一步（其余 27 步合计只有 33 秒）。拆成单独一片后，
@@ -13,24 +13,91 @@ await runShard(import.meta.filename, async (api) => {
   const p = await openCartTask(api)
   const { backToTask } = taskPageHelpers(p, api)
 
-  // 运行区里「正在跑的工作流」那一行只在对话里列（对话派出的子任务、老的对话内运行）；父对话名下的工作流运行
-  // 改在输入框上方的工作流栏里列（见 02b 的「工作流栏」），运行自己的页面看工作流卡片和流程图
+  // 运行区也列「正在跑的工作流」（用户要求「有运行中的工作流也展示在这」）：谁在跑工作流就显示在谁的对话页。
+  // 以前运行区那行的判定只认 mode === 'chat'，工作流任务自己跑的时候什么也不列。
+  // 这一条同时验「点它切到流程图」和「跑完这一行消失、不留空横线」
+  {
+    const KEY = 'agent-panel-demo-v3'
+    const TITLE = '商品详情页增加'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), KEY)
+    /** 把演示里已经跑完的那条工作流任务改成「正在跑」，进度造出一个确定的值 */
+    const patch = (running) =>
+      p.evaluate(
+        ([k, title, live]) => {
+          const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+          const task = (db.tasks ?? []).find((x) => x.mode === 'workflow' && x.title.includes(title) && x.runs?.length)
+          if (!task) return null
+          const rec = task.runs.at(-1)
+          task.status = live ? 'running' : 'done'
+          rec.status = live ? 'running' : 'done'
+          rec.endedAt = live ? '' : new Date().toISOString()
+          rec.startedAt = new Date(Date.now() - 80_000).toISOString()
+          // 前两个节点做完、其余还没开始：进度是确定的「2/N」，不依赖演示数据跑到哪一步
+          const tops = task.steps.filter((s) => !s.parentId && !s.id.endsWith('@main'))
+          const done = Math.min(2, tops.length)
+          tops.forEach((s, i) => (s.status = live && i >= done ? 'pending' : 'done'))
+          localStorage.setItem(k, JSON.stringify(db))
+          return { id: task.id, projectId: task.projectId, total: tops.length, done, run: rec.id }
+        },
+        [KEY, TITLE, running],
+      )
+    const info = await patch(true)
+    if (!info) errors.push('运行区-工作流在跑：演示数据里没有可用的工作流任务，用例前提不成立')
+    else {
+      // 改完 localStorage 必须整页重载，只改 hash 会被内存里那份旧的演示数据覆盖回去（见演示数据说明），
+      // 再从地址栏直接进这个任务的对话页
+      await p.reload()
+      await p.goto(`${base}#/projects/${encodeURIComponent(info.projectId)}/${encodeURIComponent(info.id)}`)
+      await settle(p)
+      // 工作流改成独立运行后（4304d14），运行的节点输出都挂在节点上，对话里没有主 Agent 的回复，
+      // 运行自己的对话页靠工作流卡片显示进度和已跑多久；运行区只挂在回复下面，这里不再出现
+      const card = p.locator('[role="button"][data-run]').first()
+      const listed = await card.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      )
+      const text = listed ? ((await card.innerText()) || '').replace(/\s+/g, ' ').trim() : ''
+      if (!listed) errors.push('运行区-工作流在跑：工作流运行在跑时对话里没有工作流卡片')
+      else if (!text.includes(`${info.done}/${info.total}`))
+        errors.push(`运行区-工作流在跑：卡片上没有显示进度 ${info.done}/${info.total}，实际「${text}」`)
+      else {
+        // 耗时跟着开始时间走（造的是 80 秒前开始，读到时只会更大）
+        // fmtDuration 的秒位带一位小数（如「1m 20.5s」），只认整秒会漏
+        if (!/\d+m \d+(?:\.\d+)?s/.test(text))
+          errors.push(`运行区-工作流在跑：卡片上没有显示已跑了多久（实际「${text}」）`)
+        await check(p, '运行区-工作流在跑', ['工作流'])
+        // 点卡片就地切到流程图，不另开「运行 n」页签（用户 2026-10-30 要求）
+        const runTabs = p.getByRole('tablist', { name: '对话页签' }).getByRole('tab', { name: /运行 \d+/ })
+        const before = await runTabs.count()
+        await card.click()
+        await settle(p)
+        const flowTab = p.getByRole('tab', { name: '流程图' }).first()
+        if ((await flowTab.getAttribute('aria-selected')) !== 'true')
+          errors.push('运行区-工作流在跑：点卡片没有切到当前对话的流程图')
+        else if ((await runTabs.count()) > before) errors.push('运行区-工作流在跑：点卡片还另外打开了运行页签')
+        else await check(p, '运行区-工作流在跑-切到流程图', ['流程图'])
+        await p.getByRole('tab', { name: '对话' }).first().click()
+        await settle(p)
+        // 跑完：不留运行区（不在对话下面多一条空横线），卡片不再转圈
+        await patch(false)
+        await p.reload()
+        await settle(p)
+        const areas = await p.locator('[role="group"][aria-label="运行区"]').count()
+        if (areas) errors.push(`运行区-工作流在跑：跑完以后运行区还留着（${areas} 块），会多出一条空横线`)
+        else if (await p.locator('[data-run] .animate-spin').count())
+          errors.push('运行区-工作流在跑：跑完以后卡片还在转圈')
+        else await check(p, '运行区-工作流跑完消失')
+      }
+      await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [KEY, saved])
+      await p.reload()
+      await backToTask()
+    }
+  }
 
   // 对话里的工作流卡片：点它和标题栏点「流程图」一样就地切到流程图，不另开运行页（用户 2026-10-30 要求）
   {
-    // 卡片在演示里那条工作流任务（「商品详情页增加…」）的对话里：先打开它
-    const wf = await p.evaluate(() => {
-      const db = JSON.parse(localStorage.getItem('agent-panel-demo-v3') ?? '{}')
-      return (db.tasks ?? []).find((x) => x.mode === 'workflow' && x.title.includes('商品详情页增加') && x.runs?.length)
-    })
-    if (wf) {
-      await p.goto(`${base}#/projects/${encodeURIComponent(wf.projectId)}/${encodeURIComponent(wf.id)}`)
-      await settle(p)
-    }
     const card = p.locator('[role="button"][data-run]').filter({ hasText: '查看流程图' }).first()
-    // 对话是分段加载的：等卡片渲染出来再判断有没有（直接 count 会赶在消息流画完之前）
-    await card.waitFor({ timeout: 8000 }).catch(() => {})
-    if (!(await card.count())) errors.push('工作流卡片：演示的工作流任务里没有工作流卡片，用例前提不成立')
+    if (!(await card.count())) errors.push('工作流卡片：购物车任务的对话里没有工作流卡片，用例前提不成立')
     else {
       // 前面的用例可能留着别的「运行 n」页签：只看点卡片有没有多开
       const runTabs = p.getByRole('tablist', { name: '对话页签' }).getByRole('tab', { name: /运行 \d+/ })

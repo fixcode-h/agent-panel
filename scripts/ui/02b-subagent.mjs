@@ -357,7 +357,7 @@ await runShard(import.meta.filename, async (api) => {
         rootTaskId: parent.id,
         title: '子对话：到货提醒',
       })
-      // 造的是老式子对话：独立运行的标记不跟过来（不然右栏按工作流运行直接打开流程图）
+      // 照的是工作流运行，造的是子对话：去掉运行的归属，不然按运行画、没有对话里那行「启动工作流」
       delete child.flowRun
       child.messages.splice(1, 0, {
         id: 'demo-child-tool',
