@@ -382,7 +382,7 @@ export function tasksApi(deps: {
     workflowParams: {},
     agentParams: {},
     childIsolation: 'claim',
-    isolateNew: false,
+    isolateByDefault: false,
     testSteps: [],
     scaledVerify: true,
     lessons: [],

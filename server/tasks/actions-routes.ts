@@ -420,13 +420,13 @@ export function registerActionRoutes(s: TasksScope) {
   /**
    * 分叉出来的顶层对话在哪个目录做：以前一律回到项目目录，和原对话（或同项目别的对话）改同一个目录会互相覆盖。
    * 原对话在独立分支里：从它的分支再开一个（看得到它已经提交的改动，合回原对话合回的那个分支；没提交的改动不带）；
-   * 没开的按项目设置的默认（isolateNew）决定开不开。开不了（不是 git 仓库、没有提交）就照旧在项目目录里做
+   * 没开的按项目设置的默认（isolateByDefault）决定开不开。开不了（不是 git 仓库、没有提交）就照旧在项目目录里做
    */
   async function forkWorktree(task: Task, id: string, title: string) {
     if (!task.projectId || task.parentTaskId) return null
     const project = await s.deps.projects.get(task.projectId)
     const from = task.worktree?.state === 'active' ? task.worktree : null
-    if (!project || (!from && !project.isolateNew)) return null
+    if (!project || (!from && !project.isolateByDefault)) return null
     try {
       const wt = await createWorktree(from?.path ?? project.path, id, title)
       return from ? { ...wt, baseBranch: from.baseBranch } : wt
