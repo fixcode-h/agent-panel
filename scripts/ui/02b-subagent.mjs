@@ -1052,6 +1052,12 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：点「改用方案 B」后标注里没有这一条')
       }
       await check(p, '诊断报告-审阅弹窗', ['诊断报告', '候选方案'])
+      // 整体意见框就是对话输入框（用户 2026-11-05 要的）：能粘贴、拖进、从「+」引入日志文件和图片
+      const overallBox = dlg.getByRole('textbox', { name: '整体意见' })
+      if ((await overallBox.getAttribute('contenteditable').catch(() => null)) !== 'true')
+        errors.push('诊断报告：整体意见框不是对话输入框')
+      if (!(await dlg.getByRole('button', { name: '添加文件、图片或引用' }).count()))
+        errors.push('诊断报告：整体意见框没有引入文件、图片的「+」')
       // 切到第 1 版：只读，按钮收起
       await dlg.getByRole('radio', { name: '第 1 版' }).click()
       await settle(p)

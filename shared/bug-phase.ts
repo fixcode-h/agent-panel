@@ -131,7 +131,9 @@ export function phaseFeedback(d: Diagnosis): string {
   const overall = d.overall ? `\n\n用户的整体意见：${d.overall}` : ''
   const notes = d.notes.length ? `\n\n用户的标注：\n${notesList(d.notes)}` : ''
   const logs = d.logs.trim() ? `\n\n用户贴的日志：\n\`\`\`\n${d.logs.trim()}\n\`\`\`` : ''
-  const files = d.logFiles.length ? `\n\n用户附上的日志文件（随这条消息附上）：${d.logFiles.join('、')}` : ''
+  const files = d.logFiles.length
+    ? `\n\n用户给的日志文件（本机路径，用工具读，大文件按需分段读）：${d.logFiles.join('、')}`
+    : ''
   if (d.status === 'questioned') {
     const back =
       phase === 'cause'

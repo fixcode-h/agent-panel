@@ -186,7 +186,7 @@ export function diagnosisMarkdown(d: Diagnosis, prev?: Diagnosis, opts: { author
     : ''
   const userLogs = [
     d.logs.trim() ? `\`\`\`\n${d.logs.trim()}\n\`\`\`` : '',
-    d.logFiles.length ? `${t('附件')}：${d.logFiles.join('、')}` : '',
+    d.logFiles.length ? `${t('日志文件')}：${d.logFiles.map((x) => `\`${x}\``).join('、')}` : '',
   ]
     .filter(Boolean)
     .join('\n\n')

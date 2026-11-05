@@ -1,5 +1,6 @@
 import { FileSearch } from 'lucide-react'
 import type { Attachment, Task, TaskRequest } from '@shared/schema'
+import { attachChip } from '@shared/composer'
 import type { Diagnosis } from '@shared/bug-diagnosis-schema'
 import { diagnosisMarkdown } from '@shared/bug-diagnosis'
 import { phaseOf } from '@shared/bug-phase'
@@ -66,7 +67,7 @@ function phaseTexts(d: Diagnosis) {
       supply: {
         label: t('交日志，继续分析'),
         primary: true,
-        hint: t('按报告里的步骤复现，把日志贴在右下角或附上日志文件，它接着分析'),
+        hint: t('按报告里的步骤复现，把日志贴在右下角或引入日志文件、截图，它接着分析'),
       },
       noApprove: true,
       placeholder: t('把复现得到的日志贴在这里，也可以粘贴或拖进日志文件'),
@@ -110,7 +111,7 @@ function phaseTexts(d: Diagnosis) {
     supply: {
       label: t('交日志，确认修好'),
       primary: true,
-      hint: t('按报告里的步骤复现，把日志贴在右下角或附上文件；不想验证就点「结束」，它删掉临时日志后收尾'),
+      hint: t('按报告里的步骤复现，把日志贴在右下角或引入文件、截图；不想验证就点「结束」，它删掉临时日志后收尾'),
     },
     placeholder: t('把验证时的日志贴在这里，也可以粘贴或拖进日志文件'),
   }
@@ -179,13 +180,13 @@ export function DiagnosisDialog({
       texts={cfg.texts}
       noApprove={cfg.noApprove}
       feedbackFirst
-      attach={!!cfg.supply}
+      attach
       overallPlaceholder={cfg.placeholder}
       supply={
         cfg.supply && {
           ...cfg.supply,
           onSupply: async (raw) => {
-            // 贴的日志太长：存成一个附件交过去，提示词里只放短的，不截断用户给的内容
+            // 贴的日志太长：存成一个文件交路径过去，提示词里只放短的，不截断用户给的内容
             const long = raw.overall.length > MAX_PASTE
             const files = long
               ? [
@@ -201,7 +202,8 @@ export function DiagnosisDialog({
               approve: false,
               supply: true,
               logs: long ? '' : raw.overall,
-              logFiles: files.map((f) => f.name),
+              // 图片不算日志文件：它的路径已经在整体意见的文字里
+              logFiles: files.filter((f) => attachChip(f) !== 'image').map((f) => f.path),
               notes: notesOf(raw),
               overall: '',
             })
