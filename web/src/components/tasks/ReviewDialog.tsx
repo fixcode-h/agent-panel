@@ -13,8 +13,9 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { Markdown } from './Markdown'
 import { reviewFeedback } from '@/lib/review-feedback'
 import { Segmented } from '@/components/ui/segmented'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { t } from '@shared/i18n'
-import { LogFiles, useLogFiles } from './LogAttach'
+import { OverallComposer, useLogFiles } from './LogAttach'
 
 /** range：标在正文哪段文字上；点「改用这个方案」这类预设加的标注没有选区 */
 type Note = { id: number; quote: string; comment: string; range?: Range; kind?: string }
@@ -114,7 +115,7 @@ export function ReviewDialog({
   noApprove?: boolean
   /** 有标注时「修改」变成主按钮、「确认」退成次要（诊断报告：标了疑问就是要接着探讨） */
   feedbackFirst?: boolean
-  /** 整体意见框能附日志文件（粘贴、拖进来、点回形针） */
+  /** 整体意见框用对话的输入框：能引入日志文件、图片（粘贴、拖进来、点「+」），大文件引用路径、小文件拷一份 */
   attach?: boolean
   overallPlaceholder?: string
 }) {
@@ -132,6 +133,15 @@ export function ReviewDialog({
   const [pick, setPick] = useState<{ range: Range; quote: string; top: number; left: number } | null>(null)
   const [busy, setBusy] = useState<'' | 'allow' | 'deny' | 'supply'>('')
   const logs = useLogFiles()
+  // 正文和标注栏之间能拖动调宽（用户 2026-11-05 要的）：记在本机，所有审阅弹窗共用一个宽度
+  // 上限按弹窗里这一行的宽度算，正文至少留 360px
+  const rowRef = useRef<HTMLDivElement>(null)
+  const notePane = usePaneWidth(
+    'review-notes',
+    340,
+    260,
+    () => (rowRef.current?.clientWidth ?? window.innerWidth) - 360,
+  )
   const resetLogs = logs.reset
   const [cancelAsk, setCancelAsk] = useState(false)
   // 多版时看的是哪一版：默认最新那版（要审的）；旧版只读，不能标注
@@ -231,12 +241,14 @@ export function ReviewDialog({
       box.scrollTo({ top: box.scrollTop + r.top - b.top - b.height / 3, behavior: 'smooth' })
   }
 
-  const hasFeedback = notes.length > 0 || !!overall.trim()
-  const hasLogs = !!overall.trim() || logs.files.length > 0
+  // 整体意见框是对话输入框时，文件、图片卡片在文字里是标记：交出去前换成「@路径」
+  const said = attach ? logs.plain(overall) : overall
+  const hasFeedback = notes.length > 0 || !!said.trim()
+  const hasLogs = !!said.trim() || logs.list.length > 0
   const raw = (): ReviewRaw => ({
     notes: notes.map((n) => ({ quote: n.quote, comment: n.comment, kind: n.kind ?? '' })),
-    overall,
-    files: logs.files,
+    overall: said,
+    files: attach ? logs.list : [],
   })
   // 标了疑问（feedbackFirst）或在等日志（supply.primary）时，主按钮换人；补充信息不用回答，只有它时照常确认
   const asks = notes.some((n) => n.kind !== 'info')
@@ -246,7 +258,7 @@ export function ReviewDialog({
     setBusy(allow === 'supply' ? 'supply' : allow ? 'allow' : 'deny')
     try {
       if (allow === 'supply') await supply?.onSupply(raw())
-      else await onAnswer(allow, allow ? undefined : reviewFeedback(notes, overall), raw())
+      else await onAnswer(allow, allow ? undefined : reviewFeedback(notes, said), raw())
       onOpenChange(false)
     } catch (e) {
       toast.error((e as Error).message)
@@ -265,10 +277,10 @@ export function ReviewDialog({
           </span>
         )}
       </ModalHeader>
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div ref={rowRef} className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div
           ref={scrollRef}
-          className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4 md:px-8 md:py-6"
+          className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-4 md:px-8 md:py-6"
           onMouseUp={readSelection}
           onKeyUp={readSelection}
           onScroll={() => pick && setPick(null)}
@@ -313,8 +325,10 @@ export function ReviewDialog({
         </div>
         <aside
           aria-label={t('标注')}
-          className="flex max-h-[45%] min-h-0 shrink-0 flex-col border-t bg-panel md:max-h-none md:w-[340px] md:border-t-0 md:border-l"
+          style={{ '--note-w': `${notePane.width}px` } as React.CSSProperties}
+          className="relative flex max-h-[45%] min-h-0 shrink-0 flex-col border-t bg-panel md:max-h-none md:w-(--note-w) md:max-w-[calc(100%-320px)] md:border-t-0 md:border-l"
         >
+          <ResizeHandle pane={notePane} label={t('拖动调整标注栏宽度')} className="hidden md:block" />
           <div className="flex items-center gap-2 px-4 pt-3 pb-2 text-xs font-medium text-muted">
             <Highlighter className="h-3.5 w-3.5" />
             {t('标注')}
@@ -395,18 +409,24 @@ export function ReviewDialog({
             ))}
           </div>
           <div className="border-t px-3 py-3">
-            <Textarea
-              value={overall}
-              onChange={(e) => setOverall(e.target.value)}
-              rows={attach && supply?.primary ? 5 : 2}
-              placeholder={overallPlaceholder ?? t('整体意见（可选）')}
-              aria-label={t('整体意见')}
-              disabled={locked}
-              className="min-w-0 resize-none py-1.5 text-body"
-              {...(attach && !locked ? logs.bind : {})}
-            />
-            {attach && !locked && (
-              <LogFiles files={logs.files} busy={logs.busy} onPick={() => void logs.pick()} onRemove={logs.remove} />
+            {attach ? (
+              <OverallComposer
+                value={overall}
+                onChange={setOverall}
+                logs={logs}
+                placeholder={overallPlaceholder ?? t('整体意见（可选）')}
+                disabled={locked}
+              />
+            ) : (
+              <Textarea
+                value={overall}
+                onChange={(e) => setOverall(e.target.value)}
+                rows={2}
+                placeholder={overallPlaceholder ?? t('整体意见（可选）')}
+                aria-label={t('整体意见')}
+                disabled={locked}
+                className="min-w-0 resize-none py-1.5 text-body"
+              />
             )}
           </div>
         </aside>
@@ -434,7 +454,7 @@ export function ReviewDialog({
               size="sm"
               variant="secondary"
               disabled={!!busy || logs.busy || !hasLogs}
-              title={hasLogs ? supply.hint : t('先在整体意见里贴日志，或附上日志文件')}
+              title={hasLogs ? supply.hint : t('先在整体意见里贴日志，或引入日志文件')}
               onClick={() => void submit('supply')}
             >
               {busy === 'supply' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -468,7 +488,7 @@ export function ReviewDialog({
             <Button
               size="sm"
               disabled={!!busy || logs.busy || !hasLogs}
-              title={hasLogs ? undefined : t('先在整体意见里贴日志，或附上日志文件')}
+              title={hasLogs ? undefined : t('先在整体意见里贴日志，或引入日志文件')}
               onClick={() => void submit('supply')}
             >
               {busy === 'supply' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -486,7 +506,7 @@ export function ReviewDialog({
           confirmText={cancel.confirm}
           onConfirm={async () => {
             try {
-              await cancel.onCancel(overall)
+              await cancel.onCancel(said)
               setCancelAsk(false)
               onOpenChange(false)
             } catch (e) {

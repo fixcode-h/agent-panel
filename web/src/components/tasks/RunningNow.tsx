@@ -10,7 +10,7 @@ import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
 import { ChildReportButton, DiagnosisAutoOpen, firstShow, showTag } from './ChildReport'
 import { bugStage } from '@shared/bug-diagnosis'
-import { DiagnosisDialog } from './DiagnosisDialog'
+import { useDiagnosisWindow } from './diagnosis-window'
 import { Button } from '@/components/ui/button'
 import { useChildList, useChildOpen, useJobOpen } from './child-open'
 import {
@@ -88,10 +88,12 @@ export function activeHelpers(task: Task) {
  * 和子任务行一样放在最下面，不跟着交报告那一行收进工具的折叠里
  */
 function ReportRow({ task, version }: { task: Task; version: number }) {
-  const [open, setOpen] = useState(false)
+  // 弹窗挂在任务页顶层（见 diagnosis-window.tsx）：一轮输出完、子任务做完时这一行会重挂，弹窗不能跟着关
+  const { open: show, dialog } = useDiagnosisWindow(task)
+  const setOpen = () => show(task)
   // 交上来时自动弹一次（每一版一次，和父对话页共用记号）：交报告那一行折叠着时根本没挂上，不能只靠它弹
   useEffect(() => {
-    if (firstShow(task.id, version, showTag(task))) setOpen(true)
+    if (firstShow(task.id, version, showTag(task))) show(task, true)
     // 同一版加好日志回到等你时（showTag 变了）再弹一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [task.id, version, showTag(task)])
@@ -110,8 +112,8 @@ function ReportRow({ task, version }: { task: Task; version: number }) {
         title={t('第 {n} 版', { n: version })}
         titleClass={NAME_TITLE}
         open={false}
-        rowOpen={() => setOpen(true)}
-        onOpen={() => setOpen(true)}
+        rowOpen={setOpen}
+        onOpen={setOpen}
         openTip={t('打开诊断报告第 {n} 版', { n: version })}
         detailStart
         detail={<span className={childLabelClass.warning}>{bugStage(task) || t('等你确认')}</span>}
@@ -121,14 +123,14 @@ function ReportRow({ task, version }: { task: Task; version: number }) {
             className="h-6 shrink-0 px-2 text-xs"
             onClick={(e) => {
               e.stopPropagation()
-              setOpen(true)
+              setOpen()
             }}
           >
             {t('查看报告')}
           </Button>
         }
       />
-      {open && <DiagnosisDialog task={task} open onOpenChange={setOpen} />}
+      {dialog}
     </>
   )
 }

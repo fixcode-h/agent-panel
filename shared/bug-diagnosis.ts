@@ -386,7 +386,7 @@ const diagnosisMessage = (id: string, version: number, text: string, at: string)
 })
 
 /**
- * 审阅弹窗交上来的决定（页面和接口共用）：cancel 为真是「取消修复」；supply 为真是贴日志（logs 文字、logFiles 附件名），
+ * 审阅弹窗交上来的决定（页面和接口共用）：cancel 为真是「取消修复」；supply 为真是贴日志（logs 文字、logFiles 日志文件路径），
  * 都不是时 approve 区分同意和带着标注退回
  */
 export type DiagnosisDecision = {
@@ -444,7 +444,7 @@ export function decideDiagnosis(
     if (phase !== 'evidence' && phase !== 'verify') return { ok: false, error: t('这一版不需要日志') }
     const logs = (decision.logs ?? '').trim()
     const logFiles = (decision.logFiles ?? []).filter(Boolean).slice(0, 20)
-    if (!logs && !logFiles.length) return { ok: false, error: t('先贴日志或附上日志文件') }
+    if (!logs && !logFiles.length) return { ok: false, error: t('先贴日志或引入日志文件') }
     d.status = 'answered'
     d.logs = logs.slice(0, MAX_LOGS)
     d.logFiles = logFiles

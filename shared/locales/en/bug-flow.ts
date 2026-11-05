@@ -12,8 +12,8 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '「有疑问」把标注交回，它先回答再接着论证':
     '"Ask a question" sends your notes back; it answers them before continuing',
   '交日志，继续分析': 'Submit logs, keep analysing',
-  '按报告里的步骤复现，把日志贴在右下角或附上日志文件，它接着分析':
-    'Reproduce with the steps in the report, paste the logs at the bottom right or attach log files, and it carries on',
+  '按报告里的步骤复现，把日志贴在右下角或引入日志文件、截图，它接着分析':
+    'Reproduce with the steps in the report, paste the logs at the bottom right or add log files or screenshots, and it carries on',
   '把复现得到的日志贴在这里，也可以粘贴或拖进日志文件':
     'Paste the logs from your reproduction here, or paste / drop log files',
   同意加日志: 'Allow adding logs',
@@ -42,8 +42,8 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '「还有问题」把标注交回：它会回到论证或重新出方案':
     '"Still broken" sends your notes back: it goes back to evidence or proposes a new plan',
   '交日志，确认修好': 'Submit logs, confirm the fix',
-  '按报告里的步骤复现，把日志贴在右下角或附上文件；不想验证就点「结束」，它删掉临时日志后收尾':
-    'Reproduce with the steps in the report and paste the logs at the bottom right or attach files; to skip verification click "Finish" and it removes the temporary logs and wraps up',
+  '按报告里的步骤复现，把日志贴在右下角或引入文件、截图；不想验证就点「结束」，它删掉临时日志后收尾':
+    'Reproduce with the steps in the report and paste the logs at the bottom right or add files or screenshots; to skip verification click "Finish" and it removes the temporary logs and wraps up',
   '把验证时的日志贴在这里，也可以粘贴或拖进日志文件':
     'Paste the logs from verification here, or paste / drop log files',
   '你的决定已经记下，但没能交给子对话：{error}':
@@ -54,10 +54,10 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '论证 · 第 {n} 轮 · 等你复现': 'Evidence · round {n} · waiting for you to reproduce',
   '论证 · 第 {n} 轮': 'Evidence · round {n}',
   排查阶段: 'Investigation stage',
-  // 附日志文件
-  附日志文件: 'Attach log file',
-  也可以把日志文件直接粘贴或拖进上面的框: 'You can also paste or drop log files into the box above',
-  '先在整体意见里贴日志，或附上日志文件': 'Paste logs into the overall comment first, or attach log files',
+  拖动调整标注栏宽度: 'Drag to resize the notes column',
+  // 引入日志文件
+  日志文件: 'Log files',
+  '先在整体意见里贴日志，或引入日志文件': 'Paste logs into the overall comment first, or add log files',
   '还有没处理的疑问：确认后它就不再回答这些标注':
     'Some questions are still open: approving means it will not answer those notes',
   // 对话里的工具行
@@ -112,5 +112,5 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '你确认了第 {n} 版的修复方案': 'You approved the fix plan in version {n}',
   '你结束了第 {n} 版的验证': 'You finished verification for version {n}',
   这一版不需要日志: 'This version does not need logs',
-  先贴日志或附上日志文件: 'Paste logs or attach log files first',
+  先贴日志或引入日志文件: 'Paste logs or add log files first',
 }
