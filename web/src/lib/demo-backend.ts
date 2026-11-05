@@ -3,10 +3,10 @@
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { diagnosisPending } from '@shared/task'
-import { flowProgress } from '@shared/flow-child'
 import { bugStage, decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
+import { demoFlowRun } from './demo-flow-run'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
@@ -2787,6 +2787,7 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
         : [],
     ),
     simulated: true,
+    ...(workflow && { flowRun: demoFlowRun(input, workflow) }),
     // 演示里按 Windows 展示测试步骤的环境说明（WSL 步骤怎么跑）
     testSteps: workflow ? (project?.testSteps ?? []) : [],
     platform: workflow ? 'win32' : '',
@@ -3440,7 +3441,6 @@ function tasksRoute(
           // 和正式后端对齐：运行区、悬浮层都靠这几项判断「还在跑 / 在等什么」
           background,
           workflow: runRunning(x),
-          flow: flowProgress(x),
           diagnosis: diagnosisPending(x),
           bug: bugStage(x) || undefined,
           helpers: helpersWorking(x),
@@ -4626,8 +4626,8 @@ async function seedTasks(d: Db) {
       },
       true,
     )
+    // 工作流运行跑完就结束了（补充要求从父对话交），不再追加一轮
     await done
-    await followUp(d, task, '按钮文案改成「到货通知我」，已经登记过的用户显示「已登记」并置灰。', true)
     back(task, 25)
   }
   // Chat 模式（不属于任何项目）的聊天：侧栏按天分组，演示里留两条不同日期的

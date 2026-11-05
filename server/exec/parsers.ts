@@ -143,6 +143,8 @@ export type AskReply = {
   advice?: string
   /** 允许并且这个对话里一直允许这类 */
   always?: boolean
+  /** 工作流节点确认时只是追问：回答问题、不改结果（见 engine.ts 的确认循环） */
+  ask?: boolean
 }
 
 export type Parser = (obj: any) => CliEvent[]

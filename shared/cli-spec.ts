@@ -67,6 +67,23 @@ export const McpSpec = z.object({
 export type McpSpec = z.infer<typeof McpSpec>
 
 /**
+ * 启动新会话前探测项目里配的远程 MCP（见 server/exec/mcp-probe.ts）：有的 CLI 第一轮前要等所有 MCP 握手，
+ * 一个卡住的服务（例如编辑器主线程忙着的 Unreal 插件）能让首字晚几十秒。探测和启动同时进行、不拖慢启动，
+ * 只是连不上或不响应时在对话里写一行警告，告诉用户第一轮为什么慢、为什么少了它的工具
+ */
+export const McpProbe = z.object({
+  /** CLI 自己读的项目 MCP 配置（相对项目根的 JSON 文件） */
+  files: z.array(z.string()).default([]),
+  /** 文件里放工具表的键 */
+  key: z.string().default('mcpServers'),
+  /** CLI 第一轮最多等 MCP 多少毫秒的环境变量（默认值写在定义的 env 里）：警告里按实际值说等了几秒 */
+  waitEnv: z.string().optional(),
+  /** 多久没响应算卡住 */
+  timeoutMs: z.number().int().positive().default(2000),
+})
+export type McpProbe = z.infer<typeof McpProbe>
+
+/**
  * 用户自己装的 MCP 工具存在 CLI 的哪个配置文件里、怎么写：面板的「MCP 工具」页按这个读写。
  * 不写表示这个 CLI 的 MCP 配置不归面板管
  */
@@ -635,6 +652,8 @@ export const CliSpec = z.object({
   hooks: HooksSpec.optional(),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
   mcpStore: McpStore.optional(),
+  /** 启动新会话前探测项目里的远程 MCP，卡住时在对话里提示；不写表示不探测 */
+  mcpProbe: McpProbe.optional(),
   packages: CliPackages.optional(),
   /** 账号和 API：怎么登录、凭据存在哪、怎么改用 API；不写时设置里没有账号和 API 的选项 */
   auth: CliAuth.optional(),
@@ -842,6 +861,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     hooks: spec.hooks,
     trust: spec.trust,
     mcpStore: spec.mcpStore,
+    mcpProbe: spec.mcpProbe,
     packages: spec.packages && {
       ...spec.packages,
       placeholder: tr(spec.packages.placeholder),

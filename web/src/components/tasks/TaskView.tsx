@@ -127,7 +127,7 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
-import { canStartFlow, withWorkflow } from '@shared/flow-child'
+import { canStartFlow, RUN_NO, withWorkflow } from '@shared/flow-run'
 import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { dropChip, forSend, pathText } from '@shared/composer'
@@ -656,16 +656,15 @@ export function TaskView({
   // 子对话面板里点开的一次运行：在这块面板内换成那次运行的视图（带返回），不另开一栏。
   // run 为 0 是认不回来是哪次运行（调用失败、还没开始），按「没有启动运行」显示原因
   const [paneRun, setPaneRun] = useState<{ run: number; tool?: ToolUse; tab?: RunTab } | null>(null)
-  // 工作流子对话（ADR 0044）在右栏打开时，流程图还在跑就直接看这次运行的流程图；每个子对话只自动开一次，返回后不再弹回来
+  // 工作流运行在右栏打开时直接看它的流程图（运行只有一次，见 shared/flow-run.ts 的 RUN_NO）；每次只自动开一回，返回后不再弹回来
   const flowShown = useRef('')
   useEffect(() => {
-    const f = task?.flow
-    if (!pane || !task || !f?.run || f.handed || f.cancelled || flowShown.current === task.id) return
+    if (!pane || !task?.flowRun || flowShown.current === task.id) return
     flowShown.current = task.id
-    setPaneRun({ run: f.run, tab: 'flow' })
-    // 只看对话换了没有、运行号和交没交出去：task 每次推送都是新对象，按它跑会反复判断
+    setPaneRun({ run: RUN_NO, tab: 'flow' })
+    // 只看对话换了没有、是不是工作流运行：task 每次推送都是新对象，按它跑会反复判断
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [pane, task?.id, task?.flow?.run, task?.flow?.handed])
+  }, [pane, task?.id, !!task?.flowRun])
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
   // 强制停止：连 CLI 进程一起结束（预览、等下一句的进程不留着），用在会话卡住或不想再让它跑的时候

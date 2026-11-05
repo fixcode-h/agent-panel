@@ -663,9 +663,6 @@ export const EN_TASKS: Record<string, string> = {
   '结束这个流程？': 'End this flow?',
   '没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主角色直接处理。':
     "Unfinished nodes won't run; changes already made are kept. Later requests go straight to the main role.",
-  '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主角色处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
-    'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main role to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
-  '处理完了，从「{title}」重新检查，接着走流程': 'Done. Re-checking "{title}" and continuing the flow',
   '这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主角色说，需要时它会再走一遍流程。':
     "This run is over; unfinished nodes won't execute. Tell the main role what you need next and it will run the flow again when needed.",
   '任务正在执行，请先停止': 'The task is running; stop it first',
@@ -1757,11 +1754,9 @@ export const EN_TASKS: Record<string, string> = {
   '交结果：卡住': 'Result: stuck',
   '交结果：没做完': 'Result: unfinished',
   '在等你处理：确认操作或回答提问': 'Waiting for you: confirm an action or answer a question',
-  工作流子对话: 'Workflow sub-conversation',
   运行的视图: 'Run view',
   看这次运行的完整输出: "See this run's full output",
-  '工作流 · {name} {done}/{total}': 'Workflow · {name} {done}/{total}',
-  '工作流 · {name}': 'Workflow · {name}',
+  工作流运行: 'Workflow run',
   '这个项目的默认角色不能启动工作流，会直接在对话里做':
     "This project's default role can't start workflows, so it will do the work in the conversation",
   // Bug 诊断报告（ADR 0045）

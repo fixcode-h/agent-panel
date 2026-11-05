@@ -294,7 +294,7 @@ await runShard('工作流条件与失败', async (api) => {
   assert.ok(br.messages.some((m) => /你退回了「测试」：多跑一遍集成测试 BRANCHNO/.test(m.text)))
   assert.ok(br.messages.some((m) => /你确认了「测试」的结果/.test(m.text)))
 
-  // 流程停在门禁上（结论不通过、只有「通过」的线）：追加要求交给主 Agent 处理，处理完从门禁重新检查、接着走流程
+  // 流程停在门禁上（结论不通过、只有「通过」的线）：运行停在等决定，继续时从门禁重新检查
   {
     const wfGate = await call('POST', '/workflows', {
       name: '门禁',
@@ -329,49 +329,20 @@ await runShard('工作流条件与失败', async (api) => {
     )
     assert.equal(gateOf(gt, 'g').branch, 'fail')
     assert.equal(gateOf(gt, 'go').status, 'skipped')
+    // 工作流运行停在门禁上（没有能走的线）：不算做完，等决定
+    assert.equal(gt.status, 'failed')
+    assert.equal(gt.flowRun.phase, 'failed')
     assert.ok(
       gt.messages.some((m) => /流程停在「前置检查」/.test(m.text)),
-      '停在门禁时说明怎么继续',
+      '停在门禁时说明停在哪',
     )
-    const nGate = calls().length
-    gt = await call('POST', `/tasks/${gt.id}/messages`, { text: 'GATEFIXED 帮我修好门禁' })
-    gt = await waitDone(gt.id)
-    const fixCall = calls()[nGate]
-    assert.match(fixCall.input, /工作流停在了节点「前置检查」/, '追加要求先交给主 Agent 处理停住的问题')
-    assert.equal(gateOf(gt, 'g').branch, 'pass', '处理完从门禁重新检查')
-    assert.equal(gateOf(gt, 'go').status, 'done', '门禁通过后接着走后面的流程')
-    assert.equal(gt.status, 'done')
-
-    // 「继续流程」：不加新要求，从门禁重新检查；「结束流程」：没完成的节点不再执行
-    let g2 = await waitDone(
-      (
-        await call('POST', '/tasks', {
-          projectId: project.id,
-          mode: 'workflow',
-          workflowId: wfGate.id,
-          prompt: 'BRANCHNO 再来',
-        })
-      ).id,
-    )
+    // 继续：从门禁重新检查
     const nResume = calls().length
-    g2 = await waitDone((await call('POST', `/tasks/${g2.id}/resume`)).id)
-    assert.ok(calls().length > nResume, '继续流程时重新执行门禁')
-    assert.equal(gateOf(g2, 'g').branch, 'fail')
-    g2 = await call('POST', `/tasks/${g2.id}/end-flow`)
-    assert.equal(g2.flowClosed, true)
-    assert.equal(gateOf(g2, 'go').status, 'skipped')
-    // 409：和「子对话已经不在停下了」同一个判定（界面靠这个状态码给「它已经不在停下了」的提示）
-    await assert.rejects(call('POST', `/tasks/${g2.id}/resume`), /409/, '结束的流程不能再继续')
-    // 工作流的输入框也能用「/命令」：按默认 CLI 展开成普通的要求，对话里显示原文
-    const nInit = calls().length
-    g2 = await waitDone((await call('POST', `/tasks/${g2.id}/messages`, { text: '/init' })).id)
-    const um = g2.messages.filter((m) => m.role === 'user').at(-1)
-    assert.equal(um.text, '/init')
-    assert.match(um.prompt, /AGENTS\.md/)
-    assert.match(calls()[nInit].input, /用户已经结束了工作流/)
-    assert.match(calls()[nInit].input, /请分析这个项目/)
-    assert.equal(gateOf(g2, 'g').branch, 'fail', '结束流程后追加要求不再重跑门禁')
-    step('流程停在门禁：追加要求处理完自动接着走；可以继续流程、结束流程；工作流支持「/命令」')
+    gt = await waitDone((await call('POST', `/tasks/${gt.id}/resume`)).id)
+    assert.ok(calls().length > nResume, '继续时重新执行门禁')
+    assert.equal(gateOf(gt, 'g').branch, 'fail')
+    assert.equal(gt.flowRun.phase, 'failed')
+    step('流程停在门禁：算等决定，继续时从门禁重新检查')
   }
 
   // 预算：第一个节点用掉的 token 超过上限，第二个节点开始前暂停；继续执行再给一份额度
@@ -476,15 +447,14 @@ await runShard('工作流条件与失败', async (api) => {
       '节点都接上编排工具',
     )
     assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子任务/)
-    // 追加要求交给工作流的默认执行 Agent（不再有 @main 会话）
+    // 跑完的运行不再接要求（没有主 Agent，也不交给默认执行 Agent）：要再做一次由父对话起
     const n1 = calls().length
     await call('POST', `/tasks/${dm.id}/messages`, { text: '再改一下' })
     dm = await waitDone(dm.id)
-    const follow = calls()[n1]
-    assert.match(follow.input, /再改一下/)
+    assert.equal(calls().length, n1, '跑完的运行不再调用 CLI')
     await call('DELETE', `/workflows/${wfMain.id}`)
   }
-  step('工作流没有再常驻编排器：节点直接执行、自己的结论决定分支，追加要求交给默认执行 Agent')
+  step('工作流没有常驻编排器：节点直接执行、自己的结论决定分支，跑完不再接要求')
 
   // ---- 节点之间传话（send_message）：记成一次工具调用，不把整段正文铺成居中的系统块 ----
   {

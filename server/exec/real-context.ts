@@ -67,6 +67,8 @@ export interface RealContext {
   submitMerge?: EngineHost['submitMerge']
   isolated?: EngineHost['isolated']
   finishChild?: EngineHost['finishChild']
+  /** 父对话名下的工作流运行（server/tasks/flow-runs.ts）：只给项目里的顶层对话 */
+  runs?: EngineHost['runs']
   ueBuild?: EngineHost['ueBuild']
   peers?: EngineHost['peers']
   messagePeer?: EngineHost['messagePeer']

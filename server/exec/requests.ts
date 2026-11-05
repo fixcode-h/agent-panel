@@ -50,7 +50,9 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
     req.kind === 'confirm'
       ? r.allow
         ? t('你确认了「{title}」的结果，接着往下执行', { title: stepTitle(task, req.step) })
-        : t('你退回了「{title}」：{answer}', { title: stepTitle(task, req.step), answer: r.answer ?? '' })
+        : r.ask
+          ? t('你追问了「{title}」：{answer}', { title: stepTitle(task, req.step), answer: r.answer ?? '' })
+          : t('你退回了「{title}」：{answer}', { title: stepTitle(task, req.step), answer: r.answer ?? '' })
       : req.kind === 'question'
         ? req.questions && req.questions.length > 1 && r.answers?.length
           ? t('你回答了：{answers}', {

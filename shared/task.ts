@@ -1,5 +1,4 @@
 /** 新建任务的初始数据；真实执行和在线演示共用 */
-import type { FlowProgress } from './flow-child.ts'
 import {
   type AskKind,
   type Attachment,
@@ -27,7 +26,7 @@ import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文。
-  // 点名工作流的那句（shared/flow-child.ts 的 workflowPrompt）不是用户写的，跳过它取后面的要求
+  // 点名工作流的那句（shared/flow-run.ts 的 workflowPrompt）不是用户写的，跳过它取后面的要求
   const raw = prompt
     .replace(/^用工作流「[^」\n]+」(?:（id [^）\n]*）)?做：\n/, '')
     .trim()
@@ -1137,8 +1136,6 @@ export interface ChildEntry {
   diagnosis?: boolean
   /** 用户报的 Bug（ADR 0046）：查到哪个阶段了（见 bug-diagnosis.ts 的 bugStage），行上写「Bug · 阶段」 */
   bug?: string
-  /** 工作流子对话（ADR 0044）：哪个工作流、跑到第几个节点（见 flow-child.ts 的 flowProgress） */
-  flow?: FlowProgress
 }
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（前五项只有一项有值） */

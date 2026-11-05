@@ -7,7 +7,19 @@ import { z } from 'zod'
  * ask 是子对话请父对话决定的问题：父对话里显示成一张可以直接回答的卡片；
  * note 是执行中用户改设置这类说明，画成回复里的一行，不把回复截成两段；
  * hook 是结束前钩子拦住它、让它在同一轮里接着做的记录（ADR 0049）：只给人看，不交给 CLI（CLI 已经从钩子拿到了）。
+ * workflow 是工作流运行交回父对话的信（等决定、待合回、已完成、已终止）：画成回复里的一行，点开看全文。
  * 从 schema.ts 拆出来：那个文件到了行数上限
  */
-export const PanelKind = z.enum(['background', 'build', 'nudge', 'helpers', 'child', 'ask', 'note', 'wrapup', 'hook'])
+export const PanelKind = z.enum([
+  'background',
+  'build',
+  'nudge',
+  'helpers',
+  'child',
+  'ask',
+  'note',
+  'wrapup',
+  'hook',
+  'workflow',
+])
 export type PanelKind = z.infer<typeof PanelKind>

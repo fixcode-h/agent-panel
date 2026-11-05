@@ -24,8 +24,8 @@
 
 | 环节           | 现在谁做                                                                                                                             | 代码位置                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| 承载运行       | 一个完整的子对话：有执行角色、CLI 会话、消息流、独立分支、认领、8 个对话状态                                                         | `server/tasks/run.ts` 的 `spawnChild`；`shared/flow-child.ts`                        |
-| 跑节点         | 子对话的第一轮由引擎按流程图跑                                                                                                       | `shared/flow-child-run.ts` → `shared/engine.ts` 的 `startPlan` / `runFlow`           |
+| 承载运行       | 一个完整的子对话：有执行角色、CLI 会话、消息流、独立分支、认领、8 个对话状态                                                         | `server/tasks/run.ts` 的 `spawnChild`；`flow-child.ts`                               |
+| 跑节点         | 子对话的第一轮由引擎按流程图跑                                                                                                       | `flow-child-run.ts` → `shared/engine.ts` 的 `startPlan` / `runFlow`                  |
 | 节点之间的判断 | 流程图里的「主 Agent」：常驻在 `@main` 步骤上的一个 CLI 会话，每个子节点做完都要评估一次，还负责选路和最后整理结果                   | `shared/engine.ts` 的 `openMain` / `mainEvaluates` / `mainTurn`                      |
 | 收尾           | 流程图跑完后，同一个子对话的执行角色接手：评审 → 完整测试 → `submit_merge`                                                           | `flowHandoffPrompt`                                                                  |
 | 方案确认       | 节点设了「完成后等用户确认」时，在工作流子对话里挂一条 `kind: 'confirm'` 的请求；父对话只在子对话那一行行尾放一个「查看结果」按钮    | `server/exec/real-turn.ts` 的 `confirm`；`web/src/components/tasks/ChildConfirm.tsx` |
@@ -200,7 +200,7 @@
 
 ### 5.4 判定规则仍然只写在一处
 
-规则就是 `shared/flow-child.ts` 的 `WORKFLOW_PICK_RULES`，挪进 shared/workflow-run/pick.ts。内容按 5.2、5.3 改写：用户点名了就用，拿不准就交给子对话。
+规则就是 `flow-child.ts` 的 `WORKFLOW_PICK_RULES`，挪进 shared/workflow-run/pick.ts。内容按 5.2、5.3 改写：用户点名了就用，拿不准就交给子对话。
 
 ## 6. 问题 4：方案确认在父对话里怎么显示、怎么交互
 
@@ -331,7 +331,7 @@
   - 状态：`status`、`phase`（子阶段）、`steps`、`sessions`、`requests`（等确认、等决定）。
   - 产出和记录：`decisions`（决定记录）、`notes`（运行级说明）、`worktree`、`usage`、`events`、`createdAt` / `endedAt`。
 - 父对话的 Task 加 `runIds: string[]`；计划等待加 `kind: 'run'`。
-- 去掉 `Task.flow`；`shared/flow-child.ts`、`shared/flow-child-run.ts` 拆进 shared/workflow-run/。
+- 去掉 `Task.flow`；`flow-child.ts`、`flow-child-run.ts` 拆进 shared/workflow-run/。
 
 ### 9.2 接口
 
