@@ -1943,4 +1943,5 @@ export const EN_TASKS: Record<string, string> = {
   从失败的节点重新跑: 'Rerun from the failed node',
   从停下的地方接着跑: 'Continue from where it stopped',
   '想先问清楚什么？（只回答，不改结果）': 'What do you want to ask first? (answer only, the result stays unchanged)',
+  在右栏查看: 'Open in the side panel',
 }

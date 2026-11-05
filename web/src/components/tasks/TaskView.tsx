@@ -36,7 +36,7 @@ import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { useDiagDialogs } from './diag-dialogs'
 import { ParentBar } from './ChildMail'
 import { ChildrenBar, plainRow } from './ChildrenBar'
-import { WorkflowBar } from './WorkflowBar'
+import { useOwnedRuns } from '@/lib/owned-runs'
 import { ProcessMenu } from './ProcessPanel'
 import { PinMenuRow, PinnedButton, useHeaderPins } from './HeaderPins'
 import { taskHeaderItems } from './header-items'
@@ -1075,14 +1075,15 @@ export function TaskView({
   }, [childSignal, childScan, task?.id, task?.parentTaskId])
 
   // 记着的子对话已经不在这个父对话下了（被删掉）：回退到文件面板并清掉这条记录
-  // 名下工作流运行也在右栏打开（id 由工作流栏报上来）：它们不在子对话列表里，不能当成被删掉
-  const runIds = useRef<string[]>([])
+  // 名下工作流运行也在右栏打开（和运行区的工作流卡片共用一份列表）：它们不在子对话列表里，不能当成被删掉
+  const ownedIds = useOwnedRuns(!pane && task && !task.parentTaskId ? task.id : '').map((x) => x.id)
+  const ownedKey = ownedIds.join(',')
   useEffect(() => {
     if (!openChild || !children.length) return
-    if (children.some((x) => x.id === openChild) || runIds.current.includes(openChild)) return
+    if (children.some((x) => x.id === openChild) || ownedKey.split(',').includes(openChild)) return
     setOpenChild('')
     writePaneChild(taskId, '')
-  }, [children, openChild, taskId])
+  }, [children, openChild, taskId, ownedKey])
 
   // 打开了这个对话：告诉服务端这一轮已经看过（侧栏的橙点消失），
   // 之后离开时 CLI 才能按宽限期回收；没看过就一直留着，回来能直接接着说
@@ -1840,15 +1841,6 @@ export function TaskView({
           />
         )
       })()}
-      {/* 名下的工作流运行（不是子对话）：子对话那一行下面单独一行，只列还没结束的 */}
-      {!pane && !task.parentTaskId && task.projectId && (
-        <WorkflowBar
-          ownerId={task.id}
-          openId={openChild}
-          onOpen={openChildIn}
-          onList={(ids) => (runIds.current = ids)}
-        />
-      )}
       <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
         <TaskRequestCard task={task} onAnswered={apply} />
         {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
@@ -2641,7 +2633,7 @@ export function TaskView({
                           ? {
                               id: openChild,
                               task: children.find((c) => c.id === openChild),
-                              label: runIds.current.includes(openChild) ? t('工作流运行') : undefined,
+                              label: ownedIds.includes(openChild) ? t('工作流运行') : undefined,
                               onClose: () => openChildIn(''),
                               focus: childSummaryAt,
                               // 切到别的页签时不卸载，回来滚动位置、输入框里的字都还在

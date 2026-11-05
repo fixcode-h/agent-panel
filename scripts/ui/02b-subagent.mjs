@@ -1078,10 +1078,12 @@ await runShard(import.meta.filename, async (api) => {
     await backToTask()
   }
 
-  // 名下的工作流运行（不是子对话）：子对话那一行下面单独一行，节点等确认时确认就在这里做（查看结果、追问、交给父对话）
+  // 名下的工作流运行（不是子对话）：运行区里子对话那几行下面、隔一条分割线，一次运行一张卡片；
+  // 节点等确认时确认就在卡片上做（查看结果、追问、交给父对话）
   {
-    const row = p.locator('[data-status-row="workflows"]')
-    await row.waitFor({ timeout: 8000 }).catch(() => errors.push('工作流栏：父对话里没有名下工作流运行那一行'))
+    const row = p.locator('[role="group"][aria-label="工作流运行"] [data-run-card]').first()
+    await row.scrollIntoViewIfNeeded().catch(() => {})
+    await row.waitFor({ timeout: 8000 }).catch(() => errors.push('工作流栏：运行区里没有名下工作流运行的卡片'))
     if (await row.count()) {
       for (const label of ['查看结果', '追问', '交给父对话'])
         if (!(await row.locator('button', { hasText: label }).count()))
