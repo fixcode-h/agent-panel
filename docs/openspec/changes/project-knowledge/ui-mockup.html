@@ -1,0 +1,972 @@
+<title>教训与经验 · 界面示例</title>
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600&display=swap"
+/>
+<style>
+  /* 布局：一列说明文字 + 一组按 Agent 面板真实配色画的界面片段（项目设置弹窗、对话片段、记录弹窗、学习设置） */
+  :root {
+    --bg: #faf9f5;
+    --panel: #f6f5f0;
+    --card: #ffffff;
+    --line: #e7e4da;
+    --line-strong: #d5d1c4;
+    --fg: #1f1e1c;
+    --muted: #55534d;
+    --subtle: #66645c;
+    --sel: #ebe8df;
+    --accent: #c6613f;
+    --accent-soft: rgb(198 97 63 / 0.11);
+    --accent-text: #a94f2e;
+    --primary: #b95938;
+    --on-primary: #ffffff;
+    --run: #0e6e79;
+    --run-soft: rgb(14 110 121 / 0.1);
+    --peer: #5b4fc4;
+    --peer-soft: rgb(91 79 196 / 0.08);
+    --success: #2f7349;
+    --success-soft: rgb(47 115 73 / 0.1);
+    --warning: #935b0c;
+    --warning-soft: rgb(147 91 12 / 0.1);
+    --danger: #b4372b;
+    --code-bg: #f7f6f1;
+    --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
+    --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
+    --sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei UI', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', 'Noto Sans SC', ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      color-scheme: dark;
+      --bg: #262624;
+      --panel: #232321;
+      --card: #30302e;
+      --line: #3b3a37;
+      --line-strong: #4a4945;
+      --fg: #f5f4ef;
+      --muted: #c3c1b8;
+      --subtle: #a09e95;
+      --sel: #353532;
+      --accent: #d97757;
+      --accent-soft: rgb(217 119 87 / 0.15);
+      --accent-text: #e08463;
+      --primary: #d97757;
+      --on-primary: #1f1e1c;
+      --run: #6ccfd9;
+      --run-soft: rgb(108 207 217 / 0.12);
+      --peer: #b3a9f5;
+      --peer-soft: rgb(179 169 245 / 0.1);
+      --success: #6fbf8b;
+      --success-soft: rgb(111 191 139 / 0.12);
+      --warning: #e3a752;
+      --warning-soft: rgb(227 167 82 / 0.12);
+      --danger: #ec7a64;
+      --code-bg: #2b2b29;
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+      --shadow-pop: 0 10px 30px -10px rgb(0 0 0 / 0.6), 0 0 0 0.5px rgb(255 255 255 / 0.06);
+    }
+  }
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --bg: #262624;
+    --panel: #232321;
+    --card: #30302e;
+    --line: #3b3a37;
+    --line-strong: #4a4945;
+    --fg: #f5f4ef;
+    --muted: #c3c1b8;
+    --subtle: #a09e95;
+    --sel: #353532;
+    --accent: #d97757;
+    --accent-soft: rgb(217 119 87 / 0.15);
+    --accent-text: #e08463;
+    --primary: #d97757;
+    --on-primary: #1f1e1c;
+    --run: #6ccfd9;
+    --run-soft: rgb(108 207 217 / 0.12);
+    --peer: #b3a9f5;
+    --peer-soft: rgb(179 169 245 / 0.1);
+    --success: #6fbf8b;
+    --success-soft: rgb(111 191 139 / 0.12);
+    --warning: #e3a752;
+    --warning-soft: rgb(227 167 82 / 0.12);
+    --danger: #ec7a64;
+    --code-bg: #2b2b29;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+    --shadow-pop: 0 10px 30px -10px rgb(0 0 0 / 0.6), 0 0 0 0.5px rgb(255 255 255 / 0.06);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  [hidden] {
+    display: none !important;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 13.5px;
+    line-height: 1.6;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 32px 64px;
+  }
+  .page {
+    max-width: 920px;
+    margin: 0 auto;
+    display: grid;
+    gap: 40px;
+  }
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    max-width: 62ch;
+  }
+  section {
+    display: grid;
+    gap: 12px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    color: var(--subtle);
+  }
+  section > h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+  }
+  section > p.note {
+    margin: 0;
+    color: var(--muted);
+    max-width: 66ch;
+  }
+  code,
+  .mono {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  /* 弹窗外壳 */
+  .modal {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow-pop);
+    overflow: hidden;
+    min-width: 0;
+  }
+  .modal-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .modal-head b {
+    font-weight: 600;
+  }
+  .modal-head .x {
+    margin-left: auto;
+    color: var(--subtle);
+  }
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+  }
+  .tabs span {
+    padding: 9px 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+  }
+  .tabs span.on {
+    color: var(--fg);
+    border-color: var(--accent);
+    font-weight: 500;
+  }
+  .body {
+    padding: 14px 16px 16px;
+    display: grid;
+    gap: 12px;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .seg {
+    display: inline-flex;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 2px;
+  }
+  .seg button {
+    font: inherit;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    padding: 3px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .seg button[aria-pressed='true'] {
+    background: var(--card);
+    color: var(--fg);
+    box-shadow: var(--shadow);
+    font-weight: 500;
+  }
+  .seg button:focus-visible,
+  .btn:focus-visible,
+  .chip:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .count {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--subtle);
+    margin-left: 4px;
+  }
+  .search {
+    flex: 1 1 180px;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px 10px;
+    color: var(--subtle);
+    background: var(--card);
+  }
+  .btn {
+    font: inherit;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--fg);
+    padding: 3px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn.primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--on-primary);
+  }
+  .btn.ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+  }
+  .btn.small {
+    font-size: 12px;
+    padding: 1px 8px;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .chip {
+    font: inherit;
+    font-size: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 1px 10px;
+    cursor: pointer;
+  }
+  .chip[aria-pressed='true'] {
+    background: var(--sel);
+    color: var(--fg);
+    border-color: var(--line-strong);
+  }
+  .chips .spacer {
+    flex: 1;
+  }
+
+  .list {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .item {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    gap: 4px 10px;
+    padding: 11px 14px;
+    border-top: 1px solid var(--line);
+  }
+  .item:first-child {
+    border-top: 0;
+  }
+  .ico {
+    font-family: var(--mono);
+    color: var(--subtle);
+    font-size: 12px;
+    padding-top: 2px;
+  }
+  .title {
+    font-weight: 500;
+    min-width: 0;
+  }
+  .meta {
+    grid-column: 2 / 4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    color: var(--subtle);
+    font-size: 12px;
+    min-width: 0;
+  }
+  .paths {
+    grid-column: 2 / 4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+  }
+  .path {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 0 6px;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  .desc {
+    grid-column: 2 / 4;
+    color: var(--muted);
+    margin: 0;
+    max-width: 70ch;
+  }
+  .tag {
+    color: var(--accent-text);
+  }
+  .actions {
+    grid-column: 2 / 4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+  .status {
+    font-size: 11.5px;
+    border-radius: 999px;
+    padding: 0 8px;
+    white-space: nowrap;
+    align-self: start;
+    border: 1px solid transparent;
+  }
+  .s-ok {
+    background: var(--success-soft);
+    color: var(--success);
+  }
+  .s-cand {
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+  .s-stale {
+    background: var(--sel);
+    color: var(--subtle);
+    border-color: var(--line);
+  }
+  .s-off {
+    background: transparent;
+    color: var(--subtle);
+    border-color: var(--line);
+  }
+  .ev {
+    font-size: 11.5px;
+    color: var(--peer);
+    background: var(--peer-soft);
+    border-radius: 4px;
+    padding: 0 6px;
+  }
+  .hits {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .hint {
+    color: var(--subtle);
+    font-size: 12px;
+    margin: 0;
+  }
+
+  /* 对话片段 */
+  .conv {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+  }
+  .msg-user {
+    justify-self: end;
+    background: var(--sel);
+    border-radius: 12px;
+    padding: 8px 12px;
+    max-width: 80%;
+  }
+  .tool {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: baseline;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .tool .name {
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .tool .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+    align-self: center;
+  }
+  .prehit {
+    border: 1px dashed var(--line-strong);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--muted);
+    font-size: 12.5px;
+    background: var(--card);
+  }
+  .prehit b {
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .learned {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .learned .spark {
+    color: var(--accent);
+  }
+  .learned .links {
+    display: flex;
+    gap: 10px;
+    margin-left: auto;
+  }
+  .learned a {
+    color: var(--accent-text);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .learned a:hover {
+    text-decoration: underline;
+  }
+  .learned.fail {
+    color: var(--danger);
+  }
+
+  /* 记录弹窗、学习设置 */
+  .two {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+  .kind-pick {
+    display: grid;
+    gap: 6px;
+  }
+  .kind-pick label {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  .kind-pick label:has(input:checked) {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .kind-pick input {
+    margin: 3px 0 0;
+    accent-color: var(--accent);
+  }
+  .kind-pick small {
+    grid-column: 2;
+    color: var(--subtle);
+    font-size: 12px;
+  }
+  .field {
+    display: grid;
+    gap: 4px;
+  }
+  .field span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .field .input {
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 5px 9px;
+    background: var(--card);
+    min-height: 30px;
+    overflow-wrap: anywhere;
+  }
+  .field .input.area {
+    min-height: 54px;
+    color: var(--muted);
+  }
+  .foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 4px;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+  }
+  .row:first-child {
+    border-top: 0;
+  }
+  .row .lbl {
+    min-width: 0;
+  }
+  .row .lbl small {
+    display: block;
+    color: var(--subtle);
+    font-size: 12px;
+  }
+  .switch {
+    width: 30px;
+    height: 17px;
+    border-radius: 999px;
+    background: var(--primary);
+    position: relative;
+    flex: none;
+  }
+  .switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--on-primary);
+  }
+  .usage {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .meter {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line);
+    margin-top: 6px;
+    overflow: hidden;
+  }
+  .meter i {
+    display: block;
+    height: 100%;
+    width: 30%;
+    background: var(--run);
+  }
+
+  @media (max-width: 520px) {
+    .msg-user {
+      max-width: 100%;
+    }
+    .learned .links {
+      margin-left: 0;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .item {
+      transition: background 0.12s;
+    }
+    .item:hover {
+      background: var(--panel);
+    }
+  }
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">docs/openspec/changes/project-knowledge · 示例界面</div>
+    <h1>项目设置里的「教训与经验」</h1>
+    <p>
+      配色和控件按 Agent 面板现有的样式画（浅色 / 深色跟随系统）。数据是示例：一个 UE 项目，用户常说「表格」，代码里叫
+      DataTable。可以点上面的「教训 / 经验」切换、点种类筛选。
+    </p>
+  </header>
+
+  <section aria-labelledby="s1">
+    <div class="eyebrow">8.1</div>
+    <h2 id="s1">项目设置 · 教训与经验</h2>
+    <div class="modal">
+      <div class="modal-head"><b>项目设置 · Game</b><span class="x" aria-hidden="true">✕</span></div>
+      <div class="tabs" aria-hidden="true">
+        <span>常规</span><span>角色</span><span>文档</span><span class="on">教训与经验</span><span>技能</span
+        ><span>MCP</span>
+      </div>
+      <div class="body">
+        <div class="toolbar">
+          <div class="seg" role="group" aria-label="切换教训和经验">
+            <button id="tab-exp" aria-pressed="true">经验<span class="count">23</span></button>
+            <button id="tab-les" aria-pressed="false">教训<span class="count">18</span></button>
+          </div>
+          <div class="search"><span aria-hidden="true">⌕</span><span>搜索标题、关键词、路径</span></div>
+          <button class="btn ghost" id="open-settings">⚙ 学习设置</button>
+          <button class="btn">＋ 加一条</button>
+        </div>
+
+        <!-- 经验 -->
+        <div id="pane-exp" class="body" style="padding: 0">
+          <div class="chips" role="group" aria-label="按种类筛选">
+            <button class="chip" data-k="all" aria-pressed="true">全部 23</button>
+            <button class="chip" data-k="locate" aria-pressed="false">找位置 9</button>
+            <button class="chip" data-k="vocab" aria-pressed="false">叫法对照 5</button>
+            <button class="chip" data-k="command" aria-pressed="false">命令 4</button>
+            <button class="chip" data-k="verify" aria-pressed="false">验证 3</button>
+            <button class="chip" data-k="flow" aria-pressed="false">做法 2</button>
+            <span class="spacer"></span>
+            <span class="hint">2 条还没提交到版本管理</span>
+          </div>
+          <div class="list" id="exp-list">
+            <div class="item" data-k="locate">
+              <span class="ico" aria-hidden="true">📍</span>
+              <span class="title">表格相关的代码和配置在哪</span>
+              <span class="status s-ok">已确认</span>
+              <div class="paths">
+                <span class="path">Source/Game/Table/**</span><span class="path">Content/DataTables/</span>
+              </div>
+              <p class="desc">
+                每张表一个 FXxxRow，注册在 TableRegistry.cpp；数据在
+                Content/DataTables/*.csv。改表格先看这两处，不用全项目搜。
+              </p>
+              <div class="meta">
+                <span class="tag">#表格 #配表 #DataTable #csv</span>
+                <span class="hits">30 天查到 6 次 · 证实 4 次</span>
+                <span>自动学到 · 来自「加一张掉落表」· 那次绕了 14 次搜索</span>
+              </div>
+              <div class="actions">
+                <button class="btn small">编辑</button><button class="btn small">并入模块文档</button>
+              </div>
+            </div>
+            <div class="item" data-k="vocab">
+              <span class="ico" aria-hidden="true">≈</span>
+              <span class="title">「表格」「配表」在代码里叫 DataTable</span>
+              <span class="status s-ok">已确认</span>
+              <p class="desc">
+                搜 UDataTable、FTableRowBase、GetDataTableRow；中文的「表格」在代码和注释里几乎搜不到。
+              </p>
+              <div class="meta">
+                <span class="tag">#表格 #配表</span><span class="hits">30 天查到 5 次 · 证实 3 次</span
+                ><span>用户手记</span>
+              </div>
+            </div>
+            <div class="item" data-k="command">
+              <span class="ico" aria-hidden="true">⌘</span>
+              <span class="title">只编译游戏模块的命令</span>
+              <span class="status s-cand">候选</span>
+              <div class="paths">
+                <span class="path">Build.bat GameEditor Win64 Development -Module=Game</span>
+              </div>
+              <div class="meta">
+                <span class="tag">#编译</span><span class="hits">还没被用上过</span
+                ><span>自动学到 · 来自「修背包排序」· 前两次命令失败</span>
+              </div>
+              <div class="actions">
+                <button class="btn small">对</button><button class="btn small">编辑</button
+                ><button class="btn small ghost">删除</button>
+              </div>
+            </div>
+            <div class="item" data-k="verify">
+              <span class="ico" aria-hidden="true">✓</span>
+              <span class="title">改了表格结构先跑表格检查</span>
+              <span class="status s-cand">候选</span>
+              <div class="paths"><span class="path">Tools/TableCheck.py</span></div>
+              <div class="meta">
+                <span class="tag">#表格 #测试</span><span class="hits">30 天查到 1 次</span
+                ><span>自动学到 · 来自「加一张掉落表」</span>
+              </div>
+              <div class="actions">
+                <button class="btn small">对</button><button class="btn small">编辑</button
+                ><button class="btn small ghost">删除</button>
+              </div>
+            </div>
+            <div class="item" data-k="locate">
+              <span class="ico" aria-hidden="true">📍</span>
+              <span class="title">背包界面的蓝图在哪</span>
+              <span class="status s-stale">可能过期</span>
+              <div class="paths"><span class="path">Content/UI/Inventory/</span></div>
+              <p class="desc">上次查到时这个目录已经不在了（Main 分支），下次有对话找到新位置时会自动更新。</p>
+              <div class="meta"><span class="hits">30 天查到 2 次</span><span>来自 Dev 分支</span></div>
+              <div class="actions">
+                <button class="btn small">编辑</button><button class="btn small ghost">删除</button>
+              </div>
+            </div>
+            <div class="item" data-k="flow">
+              <span class="ico" aria-hidden="true">↳</span>
+              <span class="title">加一张新表的四步</span>
+              <span class="status s-ok">已确认</span>
+              <p class="desc">建 FXxxRow → 在 TableRegistry.cpp 注册 → 加 csv → 跑 Tools/TableCheck.py。</p>
+              <div class="meta">
+                <span class="tag">#表格</span><span class="hits">30 天查到 3 次 · 证实 2 次</span><span>用户确认</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 教训 -->
+        <div id="pane-les" class="body" style="padding: 0" hidden>
+          <div class="chips">
+            <button class="chip" aria-pressed="true">全部 18</button>
+            <button class="chip" aria-pressed="false">生效 14</button>
+            <button class="chip" aria-pressed="false">候选 3</button>
+            <button class="chip" aria-pressed="false">停用 1</button>
+            <span class="spacer"></span>
+            <button class="btn small ghost">AI 评审</button><button class="btn small ghost">提取全局教训</button>
+          </div>
+          <div class="list">
+            <div class="item">
+              <span class="ico" aria-hidden="true">!</span>
+              <span class="title">改表格的行结构必须同时改 csv 表头，否则热重载静默丢列</span>
+              <span class="status s-ok">生效</span>
+              <div class="paths"><span class="path">Source/Game/Table/**</span></div>
+              <div class="meta">
+                <span class="ev">用户纠正</span><span class="tag">#表格</span><span class="hits">30 天查到 4 次</span
+                ><span>角色记录 · 「加一张掉落表」</span>
+              </div>
+            </div>
+            <div class="item">
+              <span class="ico" aria-hidden="true">!</span>
+              <span class="title">UI 文案走本地化表，不在蓝图里写死中文</span>
+              <span class="status s-ok">生效</span>
+              <div class="meta">
+                <span class="ev">返工</span><span class="tag">#界面</span><span>所有改动</span
+                ><span class="hits">30 天查到 9 次</span><span>用户确认</span>
+              </div>
+            </div>
+            <div class="item">
+              <span class="ico" aria-hidden="true">!</span>
+              <span class="title">异步加载资源的回调里先判断对象还在不在</span>
+              <span class="status s-cand">候选</span>
+              <div class="paths"><span class="path">Source/Game/Async/**</span></div>
+              <div class="meta">
+                <span class="ev">回归</span><span class="tag">#并发</span><span class="hits">还没被查到过</span
+                ><span>角色记录 · 修的是之前改出来的崩溃</span>
+              </div>
+              <div class="actions">
+                <button class="btn small">确认生效</button><button class="btn small">编辑</button
+                ><button class="btn small ghost">删除</button>
+              </div>
+            </div>
+            <div class="item">
+              <span class="ico" aria-hidden="true">!</span>
+              <span class="title">打包前先关编辑器</span>
+              <span class="status s-off">停用</span>
+              <div class="meta">
+                <span class="ev">返工</span><span class="hits">90 天没被查到</span
+                ><span>AI 评审建议停用：打包脚本已经会自动关</span>
+              </div>
+            </div>
+          </div>
+          <p class="hint">
+            候选的教训能被 project_knowledge 查到，但不进新对话开头的提示词。被照着做了 3
+            次、或你点了「确认生效」后转成生效。
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s2">
+    <div class="eyebrow">8.2 · 8.3 · 7.3</div>
+    <h2 id="s2">对话里：预检、查询、学到一条</h2>
+    <p class="note">
+      面板在子对话开头用本地匹配先查一次，命中才附上；Agent
+      查询时画成一行工具调用；对话完成后学到了才出一行，没学到不出。
+    </p>
+    <div class="conv">
+      <div class="msg-user">给怪物加一张掉落表，按关卡区分掉率</div>
+      <div class="prehit">
+        可能相关的经验（面板按关键词「表」匹配）：<b>表格相关的代码和配置在哪</b> ·
+        <span class="mono">Source/Game/Table/**</span>、<span class="mono">Content/DataTables/</span>
+      </div>
+      <div class="tool">
+        <span class="dot" aria-hidden="true"></span><span class="name">查知识</span><span class="mono">掉落 表格</span
+        ><span>→ 2 条经验 · 1 条教训</span>
+      </div>
+      <div class="tool">
+        <span class="dot" aria-hidden="true"></span><span class="name">读取</span
+        ><span class="mono">Source/Game/Table/TableRegistry.cpp</span>
+      </div>
+      <div class="tool">
+        <span class="dot" aria-hidden="true"></span><span class="name">编辑</span
+        ><span class="mono">Source/Game/Table/DropRow.h</span>
+      </div>
+      <div class="learned">
+        <span class="spark" aria-hidden="true">✦</span>
+        <span>学到 1 条经验：改了表格结构先跑表格检查（候选）</span>
+        <span class="links"><a>查看</a><a>对</a><a>不对，删掉</a></span>
+      </div>
+      <div class="learned fail">
+        <span aria-hidden="true">⚠</span>
+        <span>经验提炼失败：低档模型没有返回结果（超时 60 秒）。没有重试，可以在经验页再点一次。</span>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s3">
+    <div class="eyebrow">8.4 · 8.5</div>
+    <h2 id="s3">记录弹窗和学习设置</h2>
+    <div class="two">
+      <div class="modal">
+        <div class="modal-head"><b>记下来</b><span class="x" aria-hidden="true">✕</span></div>
+        <div class="body">
+          <div class="kind-pick" role="radiogroup" aria-label="记成哪一种">
+            <label
+              ><input type="radio" name="kind" id="k-les" /><span>教训</span
+              ><small>这么做会错。被纠正、返工、回归之后才记</small></label
+            >
+            <label
+              ><input type="radio" name="kind" id="k-exp" checked /><span>经验</span
+              ><small>做某事最快的路：在哪找、用什么命令、怎么验证</small></label
+            >
+          </div>
+          <div class="field">
+            <span>种类</span>
+            <div class="input">找位置 ▾</div>
+          </div>
+          <div class="field">
+            <span>标题</span>
+            <div class="input">表格相关的代码和配置在哪</div>
+          </div>
+          <div class="field">
+            <span>关键词（用户的说法和代码里的叫法都写上）</span>
+            <div class="input">表格, 配表, DataTable, csv</div>
+          </div>
+          <div class="field">
+            <span>路径</span>
+            <div class="input mono">Source/Game/Table/**, Content/DataTables/</div>
+          </div>
+          <div class="field" id="evidence" hidden>
+            <span>证据</span>
+            <div class="input">用户纠正 ▾</div>
+          </div>
+          <div class="field">
+            <span>说明</span>
+            <div class="input area">每张表一个 FXxxRow，注册在 TableRegistry.cpp……</div>
+          </div>
+          <div class="foot"><button class="btn ghost">取消</button><button class="btn primary">记下</button></div>
+        </div>
+      </div>
+
+      <div class="modal" id="settings">
+        <div class="modal-head"><b>学习设置</b><span class="x" aria-hidden="true">✕</span></div>
+        <div class="body">
+          <div>
+            <div class="row">
+              <div class="lbl">自动学经验<small>对话完成后在后台判断要不要学，不挡你</small></div>
+              <span class="switch" role="img" aria-label="已开启"></span>
+            </div>
+            <div class="row">
+              <div class="lbl">学得勤不勤<small>绕路多少次才值得学</small></div>
+              <div class="seg">
+                <button aria-pressed="false">少一点</button><button aria-pressed="true">适中</button
+                ><button aria-pressed="false">勤一点</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="lbl">提炼用的模型档位</div>
+              <div class="seg"><button aria-pressed="true">低</button><button aria-pressed="false">中</button></div>
+            </div>
+            <div class="row">
+              <div class="lbl">每天最多提炼</div>
+              <span class="mono">10 次</span>
+            </div>
+          </div>
+          <div class="usage">
+            今天：完成 21 个对话 · 18 个没到门槛（0 token）· 提炼 3 次 · 约 10.4k token
+            <div class="meter" aria-hidden="true"><i></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // 只做演示用的切换：教训 / 经验页签、种类筛选、记录弹窗里选教训时出现「证据」
+  const $ = (s) => document.querySelector(s)
+  const exp = $('#tab-exp')
+  const les = $('#tab-les')
+  const show = (isExp) => {
+    exp.setAttribute('aria-pressed', String(isExp))
+    les.setAttribute('aria-pressed', String(!isExp))
+    $('#pane-exp').hidden = !isExp
+    $('#pane-les').hidden = isExp
+  }
+  exp.addEventListener('click', () => show(true))
+  les.addEventListener('click', () => show(false))
+
+  document.querySelectorAll('#pane-exp .chip').forEach((c) =>
+    c.addEventListener('click', () => {
+      document.querySelectorAll('#pane-exp .chip').forEach((x) => x.setAttribute('aria-pressed', String(x === c)))
+      const k = c.dataset.k
+      document.querySelectorAll('#exp-list .item').forEach((it) => {
+        it.hidden = k !== 'all' && it.dataset.k !== k
+      })
+    }),
+  )
+
+  const sync = () => {
+    $('#evidence').hidden = !$('#k-les').checked
+  }
+  $('#k-les').addEventListener('change', sync)
+  $('#k-exp').addEventListener('change', sync)
+
+  $('#open-settings').addEventListener('click', () => $('#settings').scrollIntoView({ behavior: 'smooth' }))
+</script>
