@@ -105,20 +105,6 @@ export const EN_SHARED: Record<string, string> = {
     'This run has used {used} tokens, reaching the workflow limit of {limit}, so it is paused. Click "Continue" to grant the same amount again.',
   '「{title}」没有用 submit_verdict 交结论，不知道该走哪条分支':
     '"{title}" did not submit a verdict with submit_verdict, so the branch to take is unknown',
-  '主角色评估「{title}」：通过，走「{branch}」分支': 'Main role reviewed "{title}": pass, taking the "{branch}" branch',
-  '主角色评估「{title}」：通过': 'Main role reviewed "{title}": pass',
-  '。交代后续：{note}': '. Note for the next nodes: {note}',
-  '主角色把「{title}」退回修改：{feedback}': 'Main role sent "{title}" back for changes: {feedback}',
-  '（没有写具体意见）': '(no specific feedback)',
-  '主角色把「{title}」相关的事委派给工作流「{workflow}」':
-    'Main role delegated work on "{title}" to the workflow "{workflow}"',
-  '主角色停下了流程：{reason}': 'Main role stopped the flow: {reason}',
-  '（没有写原因）': '(no reason given)',
-  '主角色起了新的一次运行：{input}': 'Main role started a new run: {input}',
-  按流程图再走一遍: 'go through the flow again',
-  '主角色重做这次运行：{feedback}': 'Main role is redoing this run: {feedback}',
-  '（没有写具体原因）': '(no specific reason)',
-  '主角色直接回答，没有起运行': 'Main role answered directly without starting a run',
   '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
   '子任务没能执行：{error}': 'Subtask could not run: {error}',
   '子任务补问了一次还是没有用 submit_result 交结果，做没做完不确定':

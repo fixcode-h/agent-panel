@@ -1,5 +1,5 @@
 import { Crown, Plus, ArrowLeftRight } from 'lucide-react'
-import type { Agent, NodeTier } from '@shared/schema'
+import type { Agent } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
@@ -36,10 +36,6 @@ export function TeamEditor({
   onMainChange: (id: string) => void
   /** 节点上用到的子 Agent（只读） */
   team: { agent: Agent; responsibility: string }[]
-  dispatch: boolean
-  onDispatchChange: (v: boolean) => void
-  mainTier: NodeTier
-  onMainTierChange: (v: NodeTier) => void
 }) {
   const { agents } = useData()
   const main = agents.find((a) => a.id === mainAgentId)
