@@ -141,9 +141,12 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
     out.push({
       text: stageConfirm(c)
         ? t('阶段待确认')
-        : c.asking || !(c.requests || c.childNeeds)
-          ? t('等{who}选择', { who })
-          : t('等{who}确认', { who }),
+        : // 等你操作（request_user_action）：要你去做事，不是选择也不是确认
+          c.action && !c.asking && !c.requests
+          ? t('等{who}操作', { who })
+          : c.asking || !(c.requests || c.childNeeds)
+            ? t('等{who}选择', { who })
+            : t('等{who}确认', { who }),
       tone: 'warning',
     })
   // 用户报的 Bug（ADR 0046）：查到哪个阶段了；等你确认报告时下面写「报告待确认」，这里只说是 Bug

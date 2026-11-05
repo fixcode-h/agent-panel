@@ -1,6 +1,6 @@
 # 等你操作：把「请用户去做一件事」从提问框里拿出来（设计稿 · 第二版）
 
-状态：待确认（只出设计，未改功能代码） · 2026-11-05
+状态：已确认，已实施（见 [ADR 0055](../../../adr/0055-user-action-wait.md)） · 2026-11-05
 
 第二版按 2026-11-05 下午 dev 上的代码重审（含 0b6a552「Bug 修复对话不再卡在收尾…」）。用户的要求：结合最新代码看看要加什么、漏了什么、可以删什么；UI 跟随当前界面风格，带上完整界面，标出在哪里弹出、加在哪里。第一版在 git 历史里（b9ef057）。
 
@@ -211,13 +211,13 @@ Task.userActions?: {
 3. **原生提问（Claude Code 的 AskUserQuestion）管不到参数**：只能靠提示词和「这需要我去操作」这个出口，不在钩子里加提醒，免得正常提问也多一轮。
 4. **`end_turn` 的 `blocked` 要不要并进来**：倾向先并存，观察 `need` 里有多少其实能写成步骤。
 
-## 9. 改动范围（确认后再动）
+## 9. 改动范围
 
 - 数据：`shared/schema.ts`（`Task.userActions`、`PlanWait.kind` 加 `user`、`PanelKind` 加 `action`）；`BugCollect` 从 `shared/bug-diagnosis-schema.ts` 挪到共用的地方，或者直接引用
 - 判定：`shared/task.ts`（`convState`、说法）、`shared/child-needs.ts`、`shared/end-turn.ts` 和 `server/tasks/before-end.ts`（放行档）、`shared/task-diagnosis.ts`
-- 工具：新文件 server/user-action-tool.ts（待建，`orch-mcp.ts` 已到行数上限），注册在 `server/orch-mcp.ts`；推回复用 `server/tasks/jobs.ts` 的 `pushJobNote` 那条路，抽成共用函数
+- 工具：新文件 `server/user-action-tool.ts`（`orch-mcp.ts` 已到行数上限），注册在 `server/orch-mcp.ts`；推回复用 `server/tasks/jobs.ts` 的 `pushJobNote` 那条路，抽成共用函数
 - 接口：完成、做不了、跳过；交回走现有的发消息接口，带上等你操作的 id
-- 界面：新组件 web/src/components/tasks/UserActionPanel.tsx（待建，F 和 D）；子对话行的「等你操作」和「去操作」按钮（B，`child-line.ts` 和子对话行组件）；左栏角标（A）；输入框的「交回给」标签（G，`TaskComposer.tsx`）；记录行（E）；状态卡（H，`StatusCard.tsx`）；提问卡出口（`QuestionPanel.tsx`）；浏览器通知（`web/src/lib/notify.ts`）
+- 界面：新组件 `web/src/components/tasks/UserActionPanel.tsx`（F 和 D）；子对话行的「等你操作」和「去操作」按钮（B，`child-line.ts` 和子对话行组件）；左栏角标（A）；输入框的「交回给」标签（G，`ChatComposer` 的 above）；记录行（E）；状态卡（H，`StatusCard.tsx`）；提问卡出口（`QuestionPanel.tsx`）；浏览器通知（`web/src/lib/notify.ts`）
 - 提示词：§7 列的几处；界面文案进 `shared/locales/en/`
 - 演示数据：`web/src/lib/demo-backend.ts` 加一个等你操作的子对话；界面检查分片加一段（面板位置、父对话卡片、交回后收起）
 - 测试：工具参数校验和拒绝、`convState`、结束前放行、推回的话、对话停止时撤掉、子对话交回后父对话卡片收起

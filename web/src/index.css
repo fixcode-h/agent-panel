@@ -868,6 +868,12 @@ body,
   [data-palette='code'].dark .composer-shell:focus-within {
     border-color: #4f4f4f;
   }
+  /* 挂着「交回给」标签（等你操作）：边框换成提问面板的琥珀描边，一眼知道这次发送是交回结果。
+     放在两套配色规则后面、多一级 :has，聚焦时也不被盖掉 */
+  .composer-shell:has([data-hand-back]),
+  [data-palette='code'] .composer-shell:has([data-hand-back]) {
+    border-color: var(--ask-line);
+  }
 }
 /*
  * 「Claude Code」配色下的只有图标的按钮（IconButton，页签条右端那排、行尾操作）：照参考图，

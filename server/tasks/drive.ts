@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { diagnosisPending } from '../../shared/task.ts'
+import { userWaiting } from '../../shared/task.ts'
 import type { Task } from '../../shared/schema.ts'
 import { planStalled, helpersWorking, runRunning, taskDeleted, wrapUpPending } from '../../shared/task.ts'
 import { isChatMode, nudgeMax } from '../../shared/conv-mode.ts'
@@ -114,7 +114,7 @@ export function createDrive(
       if (settled && !(tk.status === 'done' || reclaimed(tk) || (tk.status === 'running' && tk.awaitingUser)))
         return tk.working ? 'working' : `status:${tk.status}`
       // 等用户回答、等确认、还有排队要处理的消息、后台命令还在跑：不是停住了
-      if (tk.requests.length || tk.parentAsks?.length || diagnosisPending(tk)) return 'asking'
+      if (userWaiting(tk)) return 'asking'
       if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
       if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return 'background'
       const plan = activePlan(tk)!
@@ -256,7 +256,7 @@ export function createDrive(
       if (tk.status === 'failed' || (tk.status === 'stopped' && !reclaimed(tk))) return `status:${tk.status}`
       if (settled && !(tk.status === 'done' || reclaimed(tk) || (tk.status === 'running' && tk.awaitingUser)))
         return `status:${tk.status}`
-      if (tk.requests.length || diagnosisPending(tk)) return 'asking'
+      if (userWaiting(tk, false)) return 'asking'
       if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
       // 父对话自己还有后台命令在跑（多半是替子对话申请的编译）：结果回来会开新的一轮，到时再提醒。
       // 编译期间就催它收尾，它只能回「等编译结果」，次数白白用掉，编译出了结果反而不再提醒（用户 2026-11-04 报）
@@ -378,7 +378,7 @@ export function createDrive(
       if (settled && !(tk.status === 'done' || reclaimed(tk) || (tk.status === 'running' && tk.awaitingUser)))
         return `status:${tk.status}`
       if (settled && tk.turnDoneAt !== conv.turnDoneAt) return 'new-turn'
-      if (tk.requests.length || tk.parentAsks?.length || diagnosisPending(tk)) return 'asking'
+      if (userWaiting(tk)) return 'asking'
       if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
       if (tk.wrapRequest && tk.wrapRequest.state !== 'failed') return 'wrap'
       if (sc.pendingJobs(tk.id) || helpersWorking(tk) || runRunning(tk) || (await activeChildren(tk.id)))

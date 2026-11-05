@@ -385,6 +385,12 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     case 'request_logs':
       return as(t('请你复现'), Array.isArray(a.added) ? a.added.join('、') : '', 'other')
     // 父对话启动工作流（ADR 0044）：开出来的是工作流子对话，点它和子对话一样在右栏打开
+    // 等你操作：标题写要你做什么，展开看步骤（面板上的那一份）
+    case 'request_user_action': {
+      const c = (a.collect ?? {}) as Record<string, unknown>
+      const steps = Array.isArray(c.steps) ? c.steps.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
+      return as(t('请你操作'), firstLine(a.title), 'other', steps || undefined)
+    }
     case 'start_workflow':
       return as(t('启动工作流'), firstLine(a.title) || firstLine(a.input), 'agent', text(a.input))
     case 'send_to_conversation':
