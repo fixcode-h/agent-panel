@@ -1258,6 +1258,25 @@ await runShard('工作流条件与失败', async (api) => {
   await call('PUT', `/tasks/${tCommit.id}/file`, { path: path.join(taskDir, 'README.md'), content: '# demo\n改过\n' })
   assert.equal(readFileSync(path.join(taskDir, 'README.md'), 'utf8'), '# demo\n改过\n', '保存写进任务目录')
   await call('PUT', `/tasks/${tCommit.id}/file`, { path: 'README.md', content: '# demo\n' })
+  // 保存时带上打开时的修改时间：期间被别人（Agent）改过就回 409，不悄悄盖掉；不带时照常写
+  const opened = await call('GET', `/tasks/${tCommit.id}/file?path=README.md`)
+  writeFileSync(path.join(taskDir, 'README.md'), '# demo\nAgent 改的\n')
+  const stale = await fetch(`${base}/tasks/${tCommit.id}/file`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: 'README.md', content: '# 我的\n', mtime: opened.mtime }),
+  })
+  assert.equal(stale.status, 409, '打开后被改过：保存回 409')
+  assert.equal(readFileSync(path.join(taskDir, 'README.md'), 'utf8'), '# demo\nAgent 改的\n', '冲突时不写')
+  const fresh = await call('GET', `/tasks/${tCommit.id}/file?path=README.md`)
+  await call('PUT', `/tasks/${tCommit.id}/file`, { path: 'README.md', content: '# demo\n', mtime: fresh.mtime })
+  // 查看改动：任务目录里的文件和 HEAD 比，项目外的不给看
+  assert.equal((await call('GET', `/tasks/${tCommit.id}/file/diff?path=README.md`)).path, 'README.md')
+  assert.equal(
+    (await fetch(`${base}/tasks/${tCommit.id}/file/diff?path=${encodeURIComponent(outsideFile)}`)).status,
+    400,
+    '项目外的文件不能看改动',
+  )
   const putOut = await fetch(`${base}/tasks/${tCommit.id}/file`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },

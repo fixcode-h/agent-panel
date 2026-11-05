@@ -21,4 +21,9 @@ export const EN_FILE_REF: Record<string, string> = {
   放弃修改: 'Discard changes',
   附件不能在这里修改: 'Attachments cannot be edited here',
   只能修改任务目录里的文件: 'Only files in the task folder can be edited',
+  文件在你打开之后被改过了: 'This file changed after you opened it',
+  '可能是 Agent 刚改过「{path}」。覆盖保存会丢掉那些改动；也可以先放弃修改，看看现在的内容再改。':
+    'An agent may have just changed "{path}". Overwriting will discard those changes. You can also discard your edits and look at the current content first.',
+  覆盖保存: 'Overwrite',
+  只能查看任务目录里文件的改动: 'Changes can only be shown for files in the task folder',
 }

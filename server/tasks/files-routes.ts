@@ -11,6 +11,7 @@ import {
   searchInDir,
   searchNameInDir,
   writeInDir,
+  diffInDir,
 } from '../files.ts'
 import { projectFormat } from '../file-format.ts'
 import { getSettings } from '../settings.ts'
@@ -109,7 +110,8 @@ export function registerFileRoutes(s: TasksScope) {
       return await run(await readableDir(c.req.param('id')))
     } catch (e) {
       // 路径越界、不是图片这类参数问题按 400；任务或目录找不到的情况自己带上 404
-      const status = (e as { status?: 400 | 404 }).status ?? 400
+      // 保存时文件被别人改过给 409，页面据此问要不要覆盖
+      const status = (e as { status?: 400 | 404 | 409 }).status ?? 400
       return s.bad(c, (e as Error).message, status)
     }
   }
@@ -150,7 +152,11 @@ export function registerFileRoutes(s: TasksScope) {
 
   // 文件弹窗里改完保存：只能写任务目录里已有的文件（路径走 into() 校验），编码和换行按项目设置
   s.routes.put('/:id/file', async (c) => {
-    const { path: file, content } = (await c.req.json().catch(() => ({}))) as { path?: unknown; content?: unknown }
+    const {
+      path: file,
+      content,
+      mtime,
+    } = (await c.req.json().catch(() => ({}))) as { path?: unknown; content?: unknown; mtime?: unknown }
     const want = typeof file === 'string' ? file.trim() : ''
     if (!want || typeof content !== 'string') return s.bad(c, t('参数不对'))
     if (uploadFileOf(want)) return s.bad(c, t('附件不能在这里修改'))
@@ -160,7 +166,18 @@ export function registerFileRoutes(s: TasksScope) {
       const tk = await s.current(c.req.param('id'))
       const project = tk?.projectId ? await s.deps.projects.get(tk.projectId) : null
       const format = projectFormat(project ?? undefined, await getSettings())
-      return c.json(await writeInDir(dir, rel, content, format))
+      return c.json(await writeInDir(dir, rel, content, format, typeof mtime === 'string' ? mtime : undefined))
+    })
+  })
+
+  // 文件弹窗的「查看改动」：任务目录里的文件和 git 的 HEAD 比（和文件浏览页同一套）
+  s.routes.get('/:id/file/diff', async (c) => {
+    const want = (c.req.query('path') ?? '').trim()
+    if (!want) return s.bad(c, t('缺少文件路径'))
+    return inTaskDir(c, async (dir) => {
+      const rel = relInDir(dir, want)
+      if (!rel) return s.bad(c, t('只能查看任务目录里文件的改动'))
+      return c.json(await diffInDir(dir, rel))
     })
   })
 
