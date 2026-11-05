@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs
 import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '../shared/schema.ts'
+import { MAX_ATTACHMENT_BYTES, type Attachment } from '../shared/schema.ts'
 import { capture } from './exec/process.ts'
 import { pickFiles } from './pick-file.ts'
 import { DATA_DIR } from './store.ts'
@@ -103,9 +103,7 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]>; known?: (file
    * 引用卡片存下的原文文件（quote-<编号>.md）认回成引用，带上原文
    */
   routes.post('/resolve', async (c) => {
-    const p = z
-      .object({ paths: z.array(z.string().min(1).max(4096)).max(50) })
-      .safeParse(await c.req.json().catch(() => null))
+    const p = z.object({ paths: z.array(z.string().min(1).max(4096)) }).safeParse(await c.req.json().catch(() => null))
     if (!p.success) return c.json({ error: t('上传的内容不对') }, 400)
     const files: (Attachment & { from: string })[] = []
     for (const from of p.data.paths) {
@@ -145,8 +143,7 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]>; known?: (file
           .array(
             z.object({ name: z.string().min(1).max(260), size: z.number().int().min(0), mtime: z.number().optional() }),
           )
-          .min(1)
-          .max(MAX_ATTACHMENTS),
+          .min(1),
         /** 不比大小只按名字找：浏览器读不了的文件（被占用）改引用原路径时用，见 locateFiles */
         loose: z.boolean().optional(),
       })
@@ -172,7 +169,7 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]>; known?: (file
    */
   routes.post('/copy', async (c) => {
     const p = z
-      .object({ paths: z.array(z.string().min(1).max(4096)).min(1).max(MAX_ATTACHMENTS) })
+      .object({ paths: z.array(z.string().min(1).max(4096)).min(1) })
       .safeParse(await c.req.json().catch(() => null))
     if (!p.success) return c.json({ error: t('上传的内容不对') }, 400)
     const files: (Attachment & { from: string })[] = []
@@ -201,9 +198,7 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]>; known?: (file
    * 只认已经确认过的路径，并且只删附件目录里那一个副本目录，删不到别的地方。
    */
   routes.post('/discard', async (c) => {
-    const p = z
-      .object({ paths: z.array(z.string().min(1).max(4096)).max(MAX_ATTACHMENTS) })
-      .safeParse(await c.req.json().catch(() => null))
+    const p = z.object({ paths: z.array(z.string().min(1).max(4096)) }).safeParse(await c.req.json().catch(() => null))
     if (!p.success) return c.json({ error: t('上传的内容不对') }, 400)
     for (const want of p.data.paths) {
       const full = path.resolve(want)

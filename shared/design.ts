@@ -14,7 +14,7 @@ import {
   type Margin,
   type Widget,
 } from './umg.ts'
-import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
+import { Attachment, type ToolUse } from './schema.ts'
 import { promptLangWord } from './prompt-lang.ts'
 import { applyOps } from './design-ops.ts'
 import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
@@ -548,7 +548,7 @@ export const DesignChatInput = z.object({
   /** 这次一起发的标注 */
   annotations: z.array(Annotation).max(200).default([]),
   /** 这次一起发的附件：参考图、需求文档等，AI 按路径读取 */
-  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  attachments: z.array(Attachment).default([]),
   /** 这次一起发的控件引用（右键「引用到 AI 对话」） */
   refs: z.array(WidgetCitation).max(30).default([]),
   /** 对话用的 CLI、模型和思考强度；不给时用默认 CLI */

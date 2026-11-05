@@ -54,32 +54,27 @@ const shownFile = (f: VideoFrame, original: boolean) => (f.enhanced && !original
 
 export function VideoFramesDialog({
   target,
-  room,
   onClose,
   onInsert,
 }: {
   target: VideoTarget | null
-  /** 输入框里还能放几个附件 */
-  room: number
   onClose: () => void
   /** 选好的帧交回输入框（普通的图片附件） */
   onInsert: (list: Attachment[]) => void
 }) {
   return (
     <Modal open={!!target} onOpenChange={(o) => !o && onClose()} title={t('从视频截取帧')} size="xl" bare>
-      {target && <Body key={target.path} target={target} room={room} onClose={onClose} onInsert={onInsert} />}
+      {target && <Body key={target.path} target={target} onClose={onClose} onInsert={onInsert} />}
     </Modal>
   )
 }
 
 function Body({
   target,
-  room,
   onClose,
   onInsert,
 }: {
   target: VideoTarget
-  room: number
   onClose: () => void
   onInsert: (list: Attachment[]) => void
 }) {
@@ -267,7 +262,8 @@ function Body({
     return () => window.removeEventListener('keydown', on)
   }, [])
 
-  const send = chosen.slice(0, Math.max(0, room))
+  // 附件不限个数：选中的帧全部放进输入框
+  const send = chosen
   const insert = () => {
     if (!session || !send.length) return
     const taken = new Set<string>()
@@ -530,9 +526,7 @@ function Body({
           </span>
         ) : (
           <span className="min-w-0 truncate text-footnote text-subtle">
-            {chosen.length > room
-              ? t('选了 {n} 帧，输入框里还能放 {room} 个附件，只放前 {room} 张', { n: chosen.length, room })
-              : t('发给 AI 的是这些帧图片，不发视频；视频本身不会被拷贝或改动')}
+            {t('发给 AI 的是这些帧图片，不发视频；视频本身不会被拷贝或改动')}
           </span>
         )}
         <span className="flex-1" />
