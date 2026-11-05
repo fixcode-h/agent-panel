@@ -488,6 +488,40 @@ await runShard('对话与续接', async (api) => {
     assert.ok(!after().some((m) => m.role === 'agent' && m.text.trim()), '没有自动重发这一句')
   }
 
+  // 一轮结束就排经验学习，不等进程退出：页面开着时 CLI 保活停在等下一句，run 一直不返回，
+  // 以前排学习的那一步在 run 收尾处，要等闲置回收才学（用户 2026-11-05 报「对话完成了不学」）。
+  // 这一轮绕路不多过不了闸门，也会把「学到哪了」记进 experience-state.json，据此确认学习在保活期间跑过了
+  step('保活的对话一轮结束就学经验，不等进程退出')
+  {
+    let kp = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: def.id,
+      cli: 'claude',
+      askUser: false,
+      prompt: '看看代码结构',
+    })
+    await call('POST', `/tasks/${kp.id}/seen`, {})
+    await call('POST', `/tasks/${kp.id}/presence`, { viewerId: 'e2e-learn-keep', active: true })
+    kp = await waitFor(
+      async () => {
+        const x = await call('GET', `/tasks/${kp.id}`)
+        return x.awaitingUser && !x.working ? x : null
+      },
+      { timeout: 15000, label: '第一轮回复完停在等下一句' },
+    )
+    const expState = path.join(dataDir, 'experience-state.json')
+    const learned = () => existsSync(expState) && !!JSON.parse(readFileSync(expState, 'utf8')).learned?.[kp.id]
+    await waitFor(learned, {
+      timeout: 15000,
+      label: '保活期间跑过经验学习',
+      describe: () => (existsSync(expState) ? readFileSync(expState, 'utf8') : '没有 experience-state.json'),
+    })
+    assert.ok((await call('GET', `/tasks/${kp.id}`)).awaitingUser, '学习跑的时候进程还保活着，不是等它退出才学')
+    await call('POST', `/tasks/${kp.id}/presence`, { viewerId: 'e2e-learn-keep', active: false })
+    await waitDone(kp.id, 30000)
+  }
+
   // Pi：按配置文件（shared/clis/pi.json）拼参数、走 --mode rpc（get_state / prompt / agent_settled）
   // 并行跑全量时同一时刻可能还有别的 Pi 调用（保活、前面用例的自动续轮）：按这一轮的提示词找，
   // 不能取「最后一通」——那样会拿到别的一通，断言看到的参数跟这一轮无关

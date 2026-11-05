@@ -82,7 +82,8 @@
     {
       "id": "danger-full-access",
       "label": "完全访问",
-      "hint": "不使用沙箱、不确认，只在信任的项目里用"
+      "hint": "不使用沙箱、不确认，只在信任的项目里用",
+      "autoAllow": true
     }
   ],
   "defaultPermission": "workspace-write",

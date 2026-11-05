@@ -24,6 +24,11 @@ export interface PermissionOption {
   id: string
   label: string
   hint: string
+  /**
+   * 选了这一档时，CLI 仍然发来的确认请求由面板直接允许（问题照常弹出）：
+   * 例如 Claude Code 跳过确认后，删除工作目录、Windows 路径这类自带安全检查仍会要确认
+   */
+  autoAllow?: boolean
 }
 
 export interface BuildOptions {

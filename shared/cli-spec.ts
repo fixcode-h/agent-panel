@@ -434,7 +434,17 @@ export const CliSpec = z.object({
   /** 会话不支持中途换思考强度：换了强度也开新会话 */
   effortBoundSession: z.boolean().default(false),
   tiers: z.object({ high: Tier, medium: Tier, low: Tier }).optional(),
-  permissions: z.array(z.object({ id: z.string(), label: z.string(), hint: z.string().default('') })).min(1),
+  permissions: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        hint: z.string().default(''),
+        /** 选了这一档时 CLI 仍然发来的确认请求由面板直接允许（见 PermissionOption.autoAllow） */
+        autoAllow: z.boolean().optional(),
+      }),
+    )
+    .min(1),
   defaultPermission: z.string().optional(),
   /** 从哪里读可用模型：内置读取方式的名字（commandcode、pi）；不写时只用 models 里列的 */
   modelsFrom: z.string().default(''),
@@ -789,7 +799,12 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     effortsFromModel: spec.effortsFromModel,
     effortBoundSession: spec.effortBoundSession,
     tiers: { high: tier('high'), medium: tier('medium'), low: tier('low') },
-    permissions: spec.permissions.map((p) => ({ id: p.id, label: tr(p.label), hint: tr(p.hint) })),
+    permissions: spec.permissions.map((p) => ({
+      id: p.id,
+      label: tr(p.label),
+      hint: tr(p.hint),
+      ...(p.autoAllow ? { autoAllow: true } : {}),
+    })),
     defaultPermission: spec.defaultPermission ?? spec.permissions[0].id,
     systemPromptFlag: !!spec.systemPromptFlag,
     systemPromptFileFlag: spec.systemPromptFileFlag,
