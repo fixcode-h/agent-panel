@@ -348,6 +348,18 @@ export function beforeEndInput(native: unknown, drop: string[] = []): BeforeEndI
   return { again: o.stop_hook_active === true }
 }
 
+/**
+ * 工具名在这个 CLI 里属于哪一类（shell / edit / read），没登记的返回 undefined。
+ * 「哪个工具名是跑命令、改文件、读文件」只认 CLI 定义的 hooks.toolNames 这一份：钩子的 matcher、守卫（hookFacts）
+ * 和对话记录的解析（server/exec/parsers.ts）都从这里取，不在代码里另写一份名单。
+ * 以前解析层写死 `case 'Bash'`，Windows 上 Claude Code 的 PowerShell 工具被记成 other，收尾自检数不到动作、
+ * 守卫也管不到（用户 2026-11-05 报）
+ */
+export function toolKindOf(spec: Pick<HooksSpec, 'toolNames'> | undefined, name: string): ToolKind | undefined {
+  if (!spec || !name) return undefined
+  return Object.entries(spec.toolNames).find(([, names]) => names.includes(name))?.[0] as ToolKind | undefined
+}
+
 /** 从原生输入里取工具前 / 工具后、上下文恢复要的事实：工具名对照到类别，文件路径按定义里的字段取 */
 export function hookFacts(spec: HooksSpec, native: unknown): HookFacts {
   if (!native || typeof native !== 'object') return {}
@@ -357,7 +369,7 @@ export function hookFacts(spec: HooksSpec, native: unknown): HookFacts {
   if (!name) return source ? { source } : {}
   const raw = o[spec.toolFields.input]
   const input = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  let kind = (Object.entries(spec.toolNames).find(([, names]) => names.includes(name))?.[0] ?? 'any') as ToolKind
+  let kind: ToolKind = toolKindOf(spec, name) ?? 'any'
   const cmd = typeof input.command === 'string' ? input.command.trim() : ''
   if (kind === 'shell' && spec.editCommands.some((c) => cmd.startsWith(c))) kind = 'edit'
   const field = spec.toolFields.path.map((k) => input[k]).find((v) => typeof v === 'string') as string | undefined

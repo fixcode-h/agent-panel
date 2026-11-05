@@ -14,15 +14,18 @@ import {
   parseVersion,
   pickUpdate,
   rateLimitUntil,
+  RECENT_RELEASES,
   type AppRelease,
   type AppReleases,
   type AppUpdateBusy,
   type AppUpdateJob,
+  type LocalPackageInfo,
 } from '../shared/version.ts'
 import { capture } from './exec/process.ts'
 import { recordInterrupted, type InterruptedEntry } from './interrupted.ts'
 import { netFetch } from './net.ts'
 import { downloadFile } from './download.ts'
+import { dropStaged, extractPackage, inspectPackage, saveBody, type LocalPackage } from './update-local.ts'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
 
@@ -378,6 +381,8 @@ export function updateApi(deps: {
   }
   /** force：用户点了「强制更新」，停掉正在执行的任务后不再等 */
   const jobs = new Map<string, AppUpdateJob & { force?: boolean }>()
+  /** 收下并检查过、等用户确认安装的本地安装包；work 是它的临时目录 */
+  let staged: { id: string; work: string; pkg: LocalPackage } | undefined
 
   /**
    * 记一次进展。更新卡住时靠它判断：下载没动静、等任务结束等了很久，
@@ -519,8 +524,64 @@ export function updateApi(deps: {
     return { list, source: 'api' }
   }
 
-  async function install(job: AppUpdateJob & { force?: boolean }, rel: AppRelease, onWait?: () => void) {
+  /**
+   * 用 src 里已经解压好的程序文件替换当前的：在线更新和本地安装包共用。
+   * 替换会换掉正在运行的程序，有任务在执行时先等它们结束（用户可以强制更新）；
+   * 替换前把当前版本整个留一份，新版本装不好或加载不了就换回来，data/ 不动
+   */
+  async function replaceWith(job: AppUpdateJob & { force?: boolean }, src: string, onWait?: () => void) {
     const dir = appDir()
+    let running = deps.running()
+    if (running > 0) {
+      onWait?.()
+      job.waiting = true
+      touch(job)
+      while (running > 0) {
+        // 用户点了「强制更新」：中断所有正在执行的 CLI，不再等它们自然结束
+        if (job.force) {
+          await stopForUpdate(job, deps)
+          break
+        }
+        job.phase = t('等待任务结束（还有 {n} 个）', { n: running })
+        // 等任务结束也算有进展：任务数在变、用户还在看着，这段时间不能算卡住
+        touch(job)
+        await new Promise((r) => setTimeout(r, 1000))
+        running = deps.running()
+      }
+      job.waiting = false
+    }
+
+    // 先把当前版本整个留一份，再替换程序文件；中途出错或新版本加载不了就换回来
+    job.phase = t('替换文件')
+    await backup(dir, PREVIOUS())
+    try {
+      await apply(src, dir)
+      job.phase = t('检查新版本')
+      await selfCheck(dir)
+    } catch (e) {
+      log.error('update', '新版本没能装好，退回原来的版本', e)
+      // 退回也失败时要说出来：程序文件可能是新旧混在一起的，不能当作已经退回
+      const back = await apply(PREVIOUS(), dir).then(
+        () => '',
+        (b: Error) => b.message,
+      )
+      if (back)
+        throw new Error(
+          t('新版本没能装好：{error}。退回原来的版本也失败了：{back}。请关掉 Agent 面板后重新解压原来的包', {
+            error: (e as Error).message,
+            back,
+          }),
+        )
+      throw new Error(t('新版本没能装好，已经退回原来的版本：{error}', { error: (e as Error).message }))
+    }
+
+    job.phase = t('正在重启')
+    job.status = 'done'
+    // 留时间让页面拿到「完成」，再重启
+    setTimeout(() => deps.restart(), 800)
+  }
+
+  async function install(job: AppUpdateJob & { force?: boolean }, rel: AppRelease, onWait?: () => void) {
     // 下载的包放在数据目录的缓存里，设置的「数据」里能看到占用、可以清理
     await mkdir(path.join(CACHE_DIR, 'updates'), { recursive: true })
     const work = await mkdtemp(path.join(CACHE_DIR, 'updates', 'update-'))
@@ -566,68 +627,10 @@ export function updateApi(deps: {
           throw new Error(t('下载的包校验不通过，可能下载不完整，请重试'))
       }
 
-      // 下载和校验都不动程序文件，任务执行中也可以继续；
-      // 解压和替换会换掉正在运行的程序，等所有任务结束再做
-      let running = deps.running()
-      if (running > 0) {
-        onWait?.()
-        job.waiting = true
-        touch(job)
-        while (running > 0) {
-          // 用户点了「强制更新」：中断所有正在执行的 CLI，不再等它们自然结束
-          if (job.force) {
-            await stopForUpdate(job, deps)
-            break
-          }
-          job.phase = t('等待任务结束（还有 {n} 个）', { n: running })
-          // 等任务结束也算有进展：任务数在变、用户还在看着，这段时间不能算卡住
-          touch(job)
-          await new Promise((r) => setTimeout(r, 1000))
-          running = deps.running()
-        }
-        job.waiting = false
-      }
-
-      // 2. 解压：Windows 10 起自带 tar，也能解 zip（bsdtar）；macOS / Linux 都有 tar
+      // 2. 解压：只解到临时目录，不动程序文件，任务执行中也可以做；包有问题时不用等任务结束就能报出来
       job.phase = t('解压中')
-      const stage = path.join(work, 'stage')
-      await mkdir(stage)
-      const r = await capture('tar', ['-xf', file, '-C', stage], work, process.env, 120_000)
-      if (r.spawnError || r.code !== 0)
-        throw new Error(t('解压失败：{error}', { error: r.spawnError ?? r.stderr.trim() }))
-      const [top] = await readdir(stage)
-      const src = path.join(stage, top ?? '')
-      if (!top || !existsSync(path.join(src, 'server.mjs')) || !existsSync(path.join(src, 'dist', 'index.html')))
-        throw new Error(t('包里缺少 server.mjs 或 dist，可能下载不完整'))
-
-      // 3. 先把当前版本整个留一份，再替换程序文件；中途出错或新版本加载不了就换回来
-      job.phase = t('替换文件')
-      await backup(dir, PREVIOUS())
-      try {
-        await apply(src, dir)
-        job.phase = t('检查新版本')
-        await selfCheck(dir)
-      } catch (e) {
-        log.error('update', '新版本没能装好，退回原来的版本', e)
-        // 退回也失败时要说出来：程序文件可能是新旧混在一起的，不能当作已经退回
-        const back = await apply(PREVIOUS(), dir).then(
-          () => '',
-          (b: Error) => b.message,
-        )
-        if (back)
-          throw new Error(
-            t('新版本没能装好：{error}。退回原来的版本也失败了：{back}。请关掉 Agent 面板后重新解压原来的包', {
-              error: (e as Error).message,
-              back,
-            }),
-          )
-        throw new Error(t('新版本没能装好，已经退回原来的版本：{error}', { error: (e as Error).message }))
-      }
-
-      job.phase = t('正在重启')
-      job.status = 'done'
-      // 留时间让页面拿到「完成」，再重启
-      setTimeout(() => deps.restart(), 800)
+      const { src } = await extractPackage(file, path.join(work, 'stage'))
+      await replaceWith(job, src, onWait)
     } finally {
       await rm(work, { recursive: true, force: true }).catch(() => {})
     }
@@ -638,11 +641,12 @@ export function updateApi(deps: {
    * busy 是还没结束的那次更新：让页面能显示它的进度和「强制更新」，不是只给一句提示。
    * 它已经超过 STALE_UPDATE_MS 没有进展时作废它，让这次能重新开始。
    */
-  function startInstall(
-    rel: AppRelease,
-    onWait?: () => void,
-  ): { job: AppUpdateJob; done: Promise<void> } | { error: string; status: 400 | 409; busy?: AppUpdateBusy } {
-    if (!packaged()) return { error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新'), status: 400 }
+  function startInstall(rel: AppRelease, onWait?: () => void) {
+    return startJob(rel.tag, (job) => install(job, rel, onWait))
+  }
+
+  /** 还没结束、也没卡住的那次更新挡着时的报错；没有就是 undefined */
+  function busyError(): { error: string; status: 409; busy: AppUpdateBusy } | undefined {
     const live = runningJobs()[0]
     if (live && !isStale(live))
       return {
@@ -652,6 +656,17 @@ export function updateApi(deps: {
         status: 409,
         busy: { job: live, stale: false },
       }
+  }
+
+  /** 开始一次更新：run 负责拿到程序文件并交给 replaceWith。在线更新和本地安装包共用 */
+  function startJob(
+    tag: string,
+    run: (job: AppUpdateJob & { force?: boolean }) => Promise<void>,
+  ): { job: AppUpdateJob; done: Promise<void> } | { error: string; status: 400 | 409; busy?: AppUpdateBusy } {
+    if (!packaged()) return { error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新'), status: 400 }
+    const blocked = busyError()
+    if (blocked) return blocked
+    const live = runningJobs()[0]
     if (live) {
       // 卡住的更新：作废它，让这次重新开始。它自己的循环还在跑，但不会再挡住新的一次
       live.status = 'failed'
@@ -660,7 +675,7 @@ export function updateApi(deps: {
     }
     const job: AppUpdateJob = {
       id: randomUUID(),
-      tag: rel.tag,
+      tag,
       status: 'running',
       phase: t('准备中'),
       received: 0,
@@ -670,9 +685,9 @@ export function updateApi(deps: {
     // 只有页面正在看的这一次有用，以前的记录丢掉
     for (const [id, j] of jobs) if (j.status !== 'running') jobs.delete(id)
     jobs.set(job.id, job)
-    log.info('update', `开始更新到 ${rel.tag}`)
-    const done = install(job, rel, onWait).catch((e) => {
-      log.error('update', `更新到 ${rel.tag} 失败`, e)
+    log.info('update', `开始更新到 ${tag}`)
+    const done = run(job).catch((e) => {
+      log.error('update', `更新到 ${tag} 失败`, e)
       job.status = 'failed'
       job.error = (e as Error).message
       touch(job)
@@ -725,7 +740,12 @@ export function updateApi(deps: {
       const current = currentVersion()
       const base: AppReleases = { current, packaged: packaged(), previous: previousVersion(), releases: [] }
       try {
-        const result = await releases(c.req.query('refresh') === '1')
+        // cached=1：只回上次检查存下的列表，不访问 GitHub。关着自动检查时打开设置用它，
+        // 列表不至于每次都是空的；从没检查过就回空列表，等用户点「检查更新」
+        const result: ReleasesResult =
+          c.req.query('cached') === '1'
+            ? { list: cache?.list ?? [], source: 'api' }
+            : await releases(c.req.query('refresh') === '1')
         // 冷却期还没过：这次显示的是上次的列表，页面据此把失败提示换成温和说明
         const limitedUntil = cache?.limitedUntil && cache.limitedUntil > Date.now() ? cache.limitedUntil : undefined
         return c.json({
@@ -736,7 +756,7 @@ export function updateApi(deps: {
           source: result.source,
           limitedUntil: limitedUntil ? new Date(limitedUntil).toISOString() : undefined,
           // 缓存里可能是旧版按发布时间排的列表，这里再按版本号排一次
-          releases: [...result.list].sort(newestFirst).slice(0, 5),
+          releases: [...result.list].sort(newestFirst).slice(0, RECENT_RELEASES),
           update: pickUpdate(current, result.list),
         } satisfies AppReleases)
       } catch (e) {
@@ -765,6 +785,53 @@ export function updateApi(deps: {
       if ('error' in started)
         return c.json({ error: started.error, ...(started.busy ? { busy: started.busy } : {}) }, started.status)
       return c.json(started.job, 201)
+    })
+    // 本地安装包（离线、连不上 GitHub 时用）：先收下、解压、检查格式和平台，告诉页面包里是哪个版本；
+    // 用户确认后再走和在线更新一样的替换流程（有任务在执行时先等）。请求体就是安装包本身
+    .post('/local-package', async (c) => {
+      if (!packaged()) return c.json({ error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新') }, 400)
+      const blocked = busyError()
+      if (blocked) return c.json({ error: blocked.error, busy: blocked.busy }, 409)
+      // 一次只留一个待装的包：上次选了没装的、面板重启前留下的都清掉
+      staged = undefined
+      const updates = path.join(CACHE_DIR, 'updates')
+      await mkdir(updates, { recursive: true })
+      for (const n of await readdir(updates).catch(() => [] as string[]))
+        if (n.startsWith('local-')) await dropStaged(path.join(updates, n))
+      const work = await mkdtemp(path.join(updates, 'local-'))
+      try {
+        const file = path.join(work, 'package')
+        await saveBody(c.req.raw.body, file)
+        const pkg = await inspectPackage(file, path.join(work, 'stage'))
+        // 解压好就只用解出来的文件，压缩包不用留着占空间
+        await rm(file, { force: true })
+        staged = { id: randomUUID(), work, pkg }
+        log.info('update', `收到本地安装包 v${pkg.version}`)
+        return c.json({ id: staged.id, version: pkg.version, os: pkg.os ?? '' } satisfies LocalPackageInfo)
+      } catch (e) {
+        await dropStaged(work)
+        log.warn('update', '本地安装包不能用', e)
+        return c.json({ error: (e as Error).message }, 400)
+      }
+    })
+    .post('/local-package/:id/install', (c) => {
+      const pkg = staged?.id === c.req.param('id') ? staged : undefined
+      if (!pkg) return c.json({ error: t('这个安装包已经失效，请重新选择') }, 404)
+      const started = startJob(`v${pkg.pkg.version}`, (job) =>
+        replaceWith(job, pkg.pkg.src).finally(() => dropStaged(pkg.work)),
+      )
+      if ('error' in started)
+        return c.json({ error: started.error, ...(started.busy ? { busy: started.busy } : {}) }, started.status)
+      staged = undefined
+      return c.json(started.job, 201)
+    })
+    // 选了包又不装：删掉解压出来的文件
+    .delete('/local-package/:id', async (c) => {
+      if (staged?.id === c.req.param('id')) {
+        await dropStaged(staged.work)
+        staged = undefined
+      }
+      return c.json({ ok: true })
     })
     // 回到上一个版本：和当前版本互换，换完还可以再换回来
     .post('/rollback', async (c) => {

@@ -2,6 +2,9 @@
 
 export const REPO = 'fixcode-h/agent-panel'
 
+/** 设置「版本更新」里「最近的版本」列几个包；服务端和在线演示共用 */
+export const RECENT_RELEASES = 10
+
 export interface AppRelease {
   /** 例如 v0.11.22-dev */
   tag: string
@@ -81,6 +84,14 @@ export interface AppUpdateJob {
   /** 最近一次有进展的时间（ISO）：判断卡住了没有用 */
   updatedAt?: string
   error?: string
+}
+
+/** 收下并检查过的本地安装包：页面拿它请用户确认，再按 id 安装 */
+export interface LocalPackageInfo {
+  id: string
+  version: string
+  /** 包对应的系统（win / mac / linux）；早期不分平台的通用包为空 */
+  os: string
 }
 
 /**

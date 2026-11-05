@@ -43,7 +43,7 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 
 ## 版本更新（GitHub Releases）
 
-`server/update.ts` 的 `updateApi()` 负责设置页的「版本更新」和托盘菜单的「检查更新」，路由挂在 `/app` 下（`/releases`、`/install`、`/install/:id`、`/install/:id/force`、`/install-current`、`/rollback`）。
+`server/update.ts` 的 `updateApi()` 负责设置页的「版本更新」和托盘菜单的「检查更新」，路由挂在 `/app` 下（`/releases`、`/install`、`/install/:id`、`/install/:id/force`、`/install-current`、`/rollback`、`/local-package`）。
 
 - 检查结果缓存在数据目录的 `cache/updates/releases.json`：`{ at, list, etag?, limitedUntil?, feed? }`。`at` 是上次成功读到 API 列表的时间；自动检查最多每 `CHECK_EVERY`（6 小时）用一次缓存，点「检查更新」带 `refresh=1` 时马上请求。
 - 减少请求：缓存里的 `etag` 下次作为 `If-None-Match` 带上，GitHub 回 304 时直接沿用缓存（conditional request 不计入配额），只把 `at` 挪到现在。环境变量 `GITHUB_TOKEN` 存在时带 `Authorization: Bearer`，配额从 60 次/小时提到 5000 次/小时；token 只从环境变量读，不落盘。
@@ -54,7 +54,8 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - 托盘 `checkAndInstall` 走同一个 `releases(true)`：feed 兜底版本也带拼出来的安装包地址，照常下载安装；拿不到本平台安装包地址的版本只提示有新版本、让用户去 GitHub Releases 手动下载，`POST /install` 对这种 tag 返回 502。
 - 自动检查由设置里的 `autoCheckUpdates` 控制（默认关）：关着时页面打开和定时都不请求 `/releases`；打开设置页的「版本更新」只调本地的 `GET /app/version`（当前版本、是否发布包、上一个版本，不访问 GitHub），版本列表仍要点「检查更新」。打开后前端 `web/src/lib/app-update.ts` 的 `autoCheck` 在页面打开时检查一次、之后每小时问一次服务端（服务端仍按 6 小时缓存合并请求）。
 - 在线演示（`web/src/lib/demo-backend.ts`）没有服务端缓存，用浏览器 localStorage 记上次的列表，403 / 429 时同样回退并带 `limitedUntil`；它的 `GET /app/version` 只读这份缓存，不解析 Atom feed。
-- 回归：`server/update.test.ts` 覆盖 403 无缓存报错、403 有缓存回退并标出恢复时间、`retry-after` 计算、冷却期不再请求、ETag 304 复用缓存、带 `GITHUB_TOKEN` 时发 `Authorization`，以及 Atom feed 解析（更新说明转 Markdown、按平台拼安装包和校验文件地址）、403 / 5xx 时 feed 兜底、冷却期内只读 feed、feed 失败回退缓存；`web/src/lib/app-update.test.ts` 覆盖自动检查开关关着不发请求、打开只启动一次。
+- **本地安装包**（2026-11-05）：「版本更新」里的「用本地安装包更新」（`web/src/components/settings/LocalPackageButton.tsx`）给连不上 GitHub、已经手动下好包的用户用。两步：`POST /app/local-package` 的请求体就是安装包本身（`application/octet-stream`，`server/http-guards.ts` 的 `rawUploadAllowed` 只对这个路径放行非 JSON 写请求，请求体上限 1 GB），服务端存进 `cache/updates/local-*`、解压，用 `server/update-local.ts` 的 `inspectPackage` 检查：文件头是 zip / gzip、有 `server.mjs` 和 `dist/index.html`、`package.json` 的 `name` 是 `agent-panel` 且版本号合法、包对应的系统（顶层目录 `-mac` / `-linux` 后缀、`.app`、只有托盘程序没有 `install-service.sh` 算 Windows；都认不出的早期通用包放行）和本机一致，不一致时报出该换哪个包。通过后回 `{ id, version, os }`，页面请用户确认，再 `POST /app/local-package/:id/install` 进 `startJob`，和在线更新共用 `replaceWith`：有任务时先等（可强制更新）、备份当前版本、替换、`--self-check`、失败退回、重启，data 不动。一次只留一个待装的包，选新包或取消（`DELETE`）时删掉。Linux 的 GNU tar 解不了 zip，`extractPackage` 失败后对 zip 改用 `unzip`。在线更新的解压也挪到等任务之前，包有问题时不用等任务结束就能报出来。没有 SHA256SUMS 可对，完整性靠结构检查和 `--self-check` 兜底。
+- 回归：`server/update.test.ts` 覆盖 403 无缓存报错、403 有缓存回退并标出恢复时间、`retry-after` 计算、冷却期不再请求、ETag 304 复用缓存、带 `GITHUB_TOKEN` 时发 `Authorization`，以及 Atom feed 解析（更新说明转 Markdown、按平台拼安装包和校验文件地址）、403 / 5xx 时 feed 兜底、冷却期内只读 feed、feed 失败回退缓存；`web/src/lib/app-update.test.ts` 覆盖自动检查开关关着不发请求、打开只启动一次；`server/update-local.test.ts` 覆盖本地安装包的平台识别、格式 / 包名 / 平台不对时拒绝，以及上传后等任务结束、替换并保留 data。
 
 ## 账号与登录
 

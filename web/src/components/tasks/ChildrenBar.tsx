@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ChevronRight, CircleAlert, GitFork, Loader2, MessageCircleQuestion, RotateCw, X } from 'lucide-react'
+import { ChevronRight, CircleAlert, GitFork, Hand, Loader2, MessageCircleQuestion, RotateCw, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import { childCounts, sortChildren } from '@shared/task'
@@ -9,6 +9,7 @@ import { useEscape } from '@/lib/useEscape'
 import { useUserName } from '@/lib/user-name'
 import { UnreadDot } from '@/components/ui/badge'
 import { IconButton } from '@/components/ui/icon-button'
+import { Button } from '@/components/ui/button'
 import { ComposerPopover } from '@/components/ui/composer-popover'
 import { AnalysisMark } from './AnalysisMark'
 import { ChildRowContent, childGroups } from './ChildSwitcher'
@@ -340,6 +341,20 @@ export function ChildrenBar({
                           <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
                             <span className="min-w-0 truncate text-caption text-warning">{t('诊断报告等你确认')}</span>
                             <ChildReportButton childId={c.id} className="ml-auto h-6 shrink-0 px-2 text-xs" />
+                          </div>
+                        )}
+                        {c.waiting?.kind === 'action' && (
+                          // 在等你操作（request_user_action）：不在父对话里另出卡片，给「去操作」在右栏打开它，
+                          // 步骤和交回都在子对话自己的输入框上面（用户 2026-11-05 在设计稿上批注定的）
+                          <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
+                            <Button
+                              size="sm"
+                              className="ml-auto h-6 shrink-0 px-2 text-xs"
+                              onClick={() => onOpen(c.id)}
+                            >
+                              <Hand className="h-3 w-3" />
+                              {t('去操作')}
+                            </Button>
                           </div>
                         )}
                         {stageConfirm(c) && (

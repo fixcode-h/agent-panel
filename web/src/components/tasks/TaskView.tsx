@@ -125,6 +125,7 @@ import { type ChildSummary } from './child-line'
 import { ChildSwitcher } from './ChildSwitcher'
 import { ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
+import { HandBackTag, UserActionPanel, handBackFor } from './UserActionPanel'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { TaskStatusIcon } from './TaskStatusIcon'
@@ -1414,7 +1415,7 @@ export function TaskView({
     stickToBottom()
     setSending(true)
     try {
-      const sent = await api.sendMessage(task.id, content, attachments, false, messageId)
+      const sent = await api.sendMessage(task.id, content, attachments, false, messageId, handBackFor(task))
       apply(sent)
       // 面板自己处理的命令（例如 /rule 发布全局规则）不把这条记进对话：服务端返回的对话里没有这个 id，
       // 本地那条「待认领」要撤掉，否则会一直挂在对话里（只有切走或刷新才消失）
@@ -1689,6 +1690,7 @@ export function TaskView({
       // 拖文件到页面任何位置都算引入到要求里；流程图视图里节点自己有自己的拖拽，不接管
       dropScope={isFlow ? null : dropArea}
       onDropOver={setDropOver}
+      above={<HandBackTag task={task} />}
       menus={
         <>
           {mention.menu}
@@ -1850,6 +1852,7 @@ export function TaskView({
       <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
         <TaskRequestCard task={task} onAnswered={apply} />
         {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
+        {composer && <UserActionPanel task={task} onChanged={apply} />}
         <WorktreeBar task={task} />
         {flowLeft && !task.imported && (
           <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />

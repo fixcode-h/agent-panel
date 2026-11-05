@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
-import type { AppReleases, AppUpdateBusy, AppUpdateJob } from '@shared/version'
-import { api } from './api'
+import type { AppReleases, AppUpdateBusy, AppUpdateJob, LocalPackageInfo } from '@shared/version'
+import { api, json, request } from './api'
 import { useData } from './data'
 import { t } from '@shared/i18n'
 
@@ -65,11 +65,29 @@ export function failedReleases(data: AppReleases | undefined, error: string): Ap
 export async function loadReleases(refresh = false) {
   set({ loading: true })
   try {
-    set({ data: await api.appReleases(refresh) })
+    set({ data: await api.appReleases(refresh ? 'refresh' : undefined) })
   } catch (e) {
     set({ data: failedReleases(state.data, (e as Error).message) })
   } finally {
     set({ loading: false })
+  }
+}
+
+/**
+ * 只读服务端上次检查存下的发布列表，不访问 GitHub：关着自动检查时打开设置、刷新过页面，
+ * 「最近的版本」也直接显示上次的结果，不用每次都点「检查更新」。
+ * 已经有列表（这次打开页面检查过）或正在检查时不动它；读失败也不显示错误，只是列表留空
+ */
+export async function loadCachedReleases() {
+  if (state.loading || state.data?.releases.length) return
+  try {
+    const cached = await api.appReleases('cached')
+    // 等待期间用户点了「检查更新」，以那次的结果为准
+    // 从没检查过（缓存是空的）时保持「还没有检查过」的提示，不能显示成「已是最新」
+    if (state.loading || state.data?.releases.length || cached.error || !cached.releases.length) return
+    set({ data: { ...state.data, ...cached } })
+  } catch {
+    // 读不到缓存只是列表留空，「检查更新」仍然可以点
   }
 }
 
@@ -105,9 +123,34 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** 下载并安装某个版本；完成后等服务重启成新版本，再刷新页面 */
 export async function installRelease(tag: string) {
+  await runJob(() => api.appInstall(tag))
+}
+
+/**
+ * 本地安装包：把用户选的文件交给服务端，它检查格式、是不是这个系统的包，回包里的版本，
+ * 页面拿版本请用户确认后再装（installLocalPackage）。请求体就是文件本身，不转 base64
+ */
+export const uploadLocalPackage = (file: Blob) =>
+  request<LocalPackageInfo>('/app/local-package', {
+    method: 'POST',
+    body: file,
+    headers: { 'Content-Type': 'application/octet-stream' },
+  })
+
+/** 选了包又不装：让服务端删掉解压出来的文件；删不掉也只是占点缓存，下次选包时会清 */
+export const discardLocalPackage = (id: string) =>
+  request<{ ok: boolean }>(`/app/local-package/${id}`, { method: 'DELETE' }).catch(() => {})
+
+/** 用检查过的本地安装包更新：和在线更新一样等任务结束、替换、重启，进度也显示在同一处 */
+export async function installLocalPackage(id: string) {
+  await runJob(() => request<AppUpdateJob>(`/app/local-package/${id}/install`, json('POST', {})))
+}
+
+/** 开始一次更新并盯到结束：失败时抛出原因，装好后等服务重启成新版本再刷新页面 */
+async function runJob(start: () => Promise<AppUpdateJob>) {
   let job: AppUpdateJob
   try {
-    job = await api.appInstall(tag)
+    job = await start()
   } catch (e) {
     // 已经在更新（409）：把那一次的进度交给界面显示，用户能看到卡在哪、能不能强制更新，
     // 而不是只收到一句「正在更新，请稍等」。服务端超过 10 分钟没进展时会自己作废，重试即可
@@ -126,7 +169,7 @@ export async function installRelease(tag: string) {
     set({ job })
   }
   if (job.status === 'failed') throw new Error(job.error ?? t('更新失败'))
-  await waitRestart(tag.replace(/^v/, ''))
+  await waitRestart(job.tag.replace(/^v/, ''))
 }
 
 /**

@@ -150,7 +150,7 @@ import { loadProjectLessons, projectWithLessons } from './project-lessons.ts'
 import { projectLessonRoutes } from './project-lesson-routes.ts'
 import { staleProjectWrite } from './project-lock.ts'
 import { acquireInstanceLock } from './instance-lock.ts'
-import { installHttpGuards } from './http-guards.ts'
+import { installHttpGuards, rawUploadAllowed } from './http-guards.ts'
 import { cleanupItemTrash, itemTrashRoutes, trashItem } from './item-trash.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
@@ -392,7 +392,8 @@ app.use('*', async (c, next) => {
   if (c.req.header('sec-fetch-site') === 'cross-site') return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   if (
     !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) &&
-    !/application\/json/i.test(c.req.header('content-type') ?? '')
+    !/application\/json/i.test(c.req.header('content-type') ?? '') &&
+    !rawUploadAllowed(c.req.path, c.req.header('content-type'))
   )
     return c.json({ error: t('请求必须是 JSON') }, 415)
   await next()

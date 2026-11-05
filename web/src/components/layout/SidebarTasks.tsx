@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 import { askedAt, byAskedAt, planLeft, taskBusy, taskDoneDot, taskState } from '@shared/task'
+import { pendingAction } from '@shared/user-action'
 import {
   SIDEBAR_GROUP_LABEL,
   SIDEBAR_ROW_OFF,
@@ -223,6 +224,7 @@ export function TaskRow({
                 status={
                   <TaskRowStatus
                     needs={attention === 'ask'}
+                    acting={attention === 'ask' && !!pendingAction(task)}
                     kids={busy ? (task.childrenWorking ?? 0) : 0}
                     running={busy}
                     failed={attention === 'failed'}

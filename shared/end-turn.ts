@@ -23,11 +23,46 @@ export const END_BLOCKED = '【已记下卡点】'
 
 /** 交给 Agent 的说法里，怎么结束的那一句（提醒、提示词都引用它；不翻译） */
 export const END_TURN_HOW =
-  '做完了就调用 end_turn（outcome: done），之后最多用一句话简短收尾，不要重复总结；做不下去就调用 end_turn（outcome: blocked），need 写缺什么。'
+  '做完了就调用 end_turn（outcome: done），之后必须用一句话简短说明收尾，不要重复总结；做不下去就调用 end_turn（outcome: blocked），need 写缺什么。'
 
 /** 没列计划时的收尾自检（用户 2026-11-05 定的说法） */
 export const CHECK_REMINDER =
   '【面板】（收尾自检）这次的事做完了吗？没做完就直接调用工具接着做，不用先说明；' + END_TURN_HOW
+
+/**
+ * 这条工具调用是不是面板自己的工具（end_turn、set_plan、get_status……）：各家 CLI 报上来的写法不同
+ * （裸名字、mcp__panel__x、记成「MCP · panel · x」），按名字和标题一起认，同 isEndTurnTool
+ */
+export function isPanelTool(x: Pick<ToolUse, 'name' | 'label'>) {
+  return !!(panelToolName(x.name ?? '') || PANEL_TOOL_RE.test(`${x.name ?? ''} ${x.label}`))
+}
+
+/** 只看、不动手的工具类别：读文件、搜索、看网页 */
+const LOOK_KINDS: readonly ToolUse['kind'][] = ['read', 'search', 'web']
+/** 动手的工具类别：跑命令、改文件（哪个工具名算哪一类由 CLI 定义的 toolNames 决定，见 shared/hooks.ts 的 toolKindOf） */
+const ACT_KINDS: readonly ToolUse['kind'][] = ['run', 'edit']
+
+/** 只读的一次调用（读文件、搜索、看网页） */
+export function isLookTool(x: Pick<ToolUse, 'name' | 'label' | 'kind'>) {
+  return !isPanelTool(x) && LOOK_KINDS.includes(x.kind)
+}
+
+/**
+ * 动手的一次调用（跑命令、改文件）：收尾自检（server/tasks/before-end.ts）和一轮结束后的补问（server/exec/turn-info.ts）
+ * 判断「做了多少、可能做了一半」都用这一个。更新待办、加载技能这类不算：做得多不多看的是真动手的次数
+ */
+export function isActTool(x: Pick<ToolUse, 'name' | 'label' | 'kind'>) {
+  return !isPanelTool(x) && ACT_KINDS.includes(x.kind)
+}
+
+/**
+ * CLI 自己的工具（面板工具以外的任何一次调用，含没登记类别的新工具）：判断「问过以后有没有接着做」用它，
+ * 不按类别清单数。以前只数 run / edit / read / search，Windows 上的 PowerShell 被记成 other，
+ * 问过以后跑了 3 条命令也算没接着做，就放行了（用户 2026-11-05 报）
+ */
+export function isCliTool(x: Pick<ToolUse, 'name' | 'label'>) {
+  return !isPanelTool(x)
+}
 
 /** 这条工具调用是不是 end_turn（各家 CLI 报上来的名字写法不同，同 fold.ts 的 wrapTool） */
 export function isEndTurnTool(x: Pick<ToolUse, 'name' | 'label'>) {
@@ -87,6 +122,10 @@ export function mergeOwedOf(
   nudged: boolean,
 ): string {
   if (!tk.parentTaskId || tk.resolved || tk.wrapRequest || nudged) return ''
+  // 父对话已经合回 / 收下：合进去时面板清掉 wrapRequest、把收尾步骤标完成、计划随之收起，
+  // 这时再按「没列计划但改过文件」算会让它把已经合进去的改动重新请一次收尾（用户 2026-11-05 报：
+  // 子对话被提醒「你还没请父对话收尾」，又开一份计划、再交一次，父对话只好再收一次）
+  if (!activePlan(tk) && tk.plans?.at(-1)?.steps.some((s) => panelWrap(s.wrapUp) && s.status === 'done')) return ''
   const plan = activePlan(tk)
   if (plan) {
     const wrapOpen = plan.steps.some((s) => panelWrap(s.wrapUp) && s.status !== 'done')
@@ -130,7 +169,7 @@ export function endTurnCheck(
       ok: false,
       info: `${END_REJECTED}你还没请父对话收尾：按「验证」跑通后调用 submit_merge，它就是这个子对话的结束，不用再调用 end_turn。`,
     }
-  return { ok: true, info: '已结束这一轮：之后最多一句话简短收尾，不要重复总结。', end: { outcome } }
+  return { ok: true, info: '已结束这一轮：之后用一句话简短说明收尾，不要重复总结。', end: { outcome } }
 }
 
 /** 记一次结束：最近的在最后，只留最近 50 条 */

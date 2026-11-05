@@ -79,7 +79,8 @@
     {
       "id": "bypassPermissions",
       "label": "跳过所有确认",
-      "hint": "可以执行任意命令，只在信任的项目里用"
+      "hint": "可以执行任意命令，只在信任的项目里用",
+      "autoAllow": true
     },
     {
       "id": "plan",
@@ -212,7 +213,7 @@
       "context": "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
       "maxOutput": "CLAUDE_CODE_MAX_OUTPUT_TOKENS"
     },
-    "longContext": { "suffix": "[1m]", "min": 1000000 },
+    "longContext": { "suffix": "[1m]", "min": 1000000, "models": "claude|^(opus|sonnet|haiku)(\\[|$)" },
     "slash": true,
     "nativeCommands": ["init", "security-review"],
     "limits": "push"
@@ -490,7 +491,7 @@
     },
     "dropInput": ["last_assistant_message"],
     "toolNames": {
-      "shell": ["Bash"],
+      "shell": ["Bash", "PowerShell"],
       "edit": ["Edit", "Write", "MultiEdit", "NotebookEdit"],
       "read": ["Read", "Grep", "Glob", "LS"]
     },

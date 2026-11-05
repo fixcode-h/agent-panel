@@ -36,6 +36,8 @@ export const PANEL_TOOL_NAMES = [
   'finish_plan',
   // Agent 用它交代这一轮怎么结束（做完 / 卡住），见 shared/end-turn.ts
   'end_turn',
+  // 请用户离开对话去做一件事（等你操作），见 shared/user-action.ts
+  'request_user_action',
   'get_status',
   'begin_edit',
   'run_workflow',

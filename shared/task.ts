@@ -22,6 +22,7 @@ import { canPickRun } from './task-run.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
 import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
+import { pendingAction } from './user-action.ts'
 import { byStartedDesc, helperRunning, helpersWorking } from './task-helpers.ts'
 
 export function taskTitle(prompt: string) {
@@ -520,10 +521,21 @@ export interface ConvFacts {
   gone?: boolean
   /** 交了 Bug 诊断报告、等用户确认方案（ADR 0045）：算执行中——它停在这一步上，确认了接着改，不是做完了 */
   diagnosis?: boolean
+  /** 有一件在等用户去做（request_user_action，见 shared/user-action.ts）：和提问一样是「等你处理」 */
+  action?: boolean
 }
 
 /** 最新一版 Bug 诊断报告还在等用户确认（ADR 0045）：状态、等待原因、完成判定都读它 */
 export const diagnosisPending = (t: { diagnoses?: Task['diagnoses'] }) => t.diagnoses?.at(-1)?.status === 'pending'
+
+/**
+ * 这个对话停在等用户：待确认的请求、子对话请用户回答的提问、等确认的诊断报告、等用户去做的事。
+ * 面板的提醒（计划推进、收尾提醒、结束前钩子）碰到它都不推：这时停下是对的，用户处理完会推回来
+ */
+export const userWaiting = (
+  tk: Pick<Task, 'requests'> & Partial<Pick<Task, 'parentAsks' | 'diagnoses' | 'userActions'>>,
+  asks = true,
+) => !!(tk.requests.length || (asks && tk.parentAsks?.length) || diagnosisPending(tk) || pendingAction(tk))
 
 /** 回收站保留期：删除只做标记，这么多天后才由启动后的清理任务物理删除（见 server/tasks.ts 的 cleanupTrash） */
 export const TRASH_RETENTION_DAYS = 7
@@ -570,7 +582,7 @@ export function convState(x: ConvFacts): ConvState {
   // 或者在等后台命令 / 子对话的结果——这些照旧如实显示，和「已置完成」是同一条规矩。
   // 这也是侧栏「N 个执行中」、标题 (n)、保活回收判定的入口（见 convActive）
   if (x.gone && !x.working && !diag && !pending) return 'done'
-  if (x.requests || x.asking || x.childNeeds) return 'needs'
+  if (x.requests || x.asking || x.childNeeds || x.action) return 'needs'
   // 这一轮失败了但还有结果会推回来时不算失败：结果回来会接着开一轮，
   // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
   if (x.status === 'failed' && !pending) return 'failed'
@@ -622,6 +634,7 @@ export function childFacts(
     deletedAt?: Task['deletedAt']
     worktree?: Task['worktree']
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   },
   x: { background?: number; unmerged?: boolean; childNeeds?: number } = {},
 ): ConvFacts {
@@ -629,6 +642,7 @@ export function childFacts(
     status: task.status,
     working: task.working,
     diagnosis: diagnosisPending(task),
+    action: !!pendingAction(task),
     resolved: task.resolved === true,
     requests: task.requests.length,
     asking: task.parentAsks?.length ?? 0,
@@ -912,6 +926,7 @@ export function childFlowOf(
     runs?: Task['runs']
     resolved?: boolean
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   },
   x: { background?: number; merged?: boolean; reported?: boolean; parentTest?: boolean } = {},
 ): ChildFlowState {
@@ -923,7 +938,7 @@ export function childFlowOf(
     plan: openPlan(task),
     asking: task.parentAsks?.length ?? 0,
     // 诊断报告等确认（ADR 0045）和等确认的请求一样拦着完成
-    requests: task.requests.length + (diagnosisPending(task) ? 1 : 0),
+    requests: task.requests.length + (diagnosisPending(task) ? 1 : 0) + (pendingAction(task) ? 1 : 0),
     unmerged: x.merged === false,
     parentTest: x.parentTest,
     completed: task.resolved === true,
@@ -1135,6 +1150,8 @@ export interface ChildEntry {
   waiting?: ChildWait
   /** 交了 Bug 诊断报告、等用户确认（ADR 0045）：算执行中，行上写「等你查看诊断报告」 */
   diagnosis?: boolean
+  /** 挂着等你操作（request_user_action）：算「等你处理」，行上给「去操作」 */
+  action?: boolean
   /** 用户报的 Bug（ADR 0046）：查到哪个阶段了（见 bug-diagnosis.ts 的 bugStage），行上写「Bug · 阶段」 */
   bug?: string
 }
@@ -1167,6 +1184,7 @@ export type ChildWait =
   | { kind: 'helpers'; list: string[] }
   | { kind: 'workflow' }
   | { kind: 'diagnosis'; version: number }
+  | { kind: 'action'; title: string }
   | { kind: 'next' }
 
 /** 等待原因的一句话：子对话栏、list_conversations、计划面板都用它 */
@@ -1185,6 +1203,8 @@ export function childWaitText(w: ChildWait | undefined): string {
       return t('等工作流跑完')
     case 'diagnosis':
       return t('等你查看诊断报告第 {n} 版', { n: w.version })
+    case 'action':
+      return t('等你操作：{title}', { title: w.title })
     case 'next':
       return t('等下一句')
     default:
@@ -1201,6 +1221,7 @@ export function childWait(
   tk: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'steps'> & {
     runs?: Task['runs']
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   },
   x: { background?: number; cliAlive?: boolean; childNeeds?: number } = {},
 ): ChildWait | undefined {
@@ -1209,6 +1230,8 @@ export function childWait(
   const requests = tk.requests?.length ?? 0
   if (requests) return confirmWait(tk.requests)
   if (diagnosisPending(tk)) return { kind: 'diagnosis', version: tk.diagnoses!.at(-1)!.version }
+  const act = pendingAction(tk)
+  if (act) return { kind: 'action', title: act.title }
   if (x.childNeeds) return { kind: 'children', n: x.childNeeds }
   if (x.background) return { kind: 'background', n: x.background }
   const helpers = tk.steps.filter(helperRunning).map((s) => s.title)
@@ -1601,12 +1624,15 @@ export function restartUnfinished(
   task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'resolved' | 'awaitingUser'> & {
     runs?: Task['runs']
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   },
 ): boolean {
   // 已经收口（resolved）的绝不回名单：它做完了、分支也合了，重启后再拉起就是白跑一轮（也会留下没人要的进程）
   if (task.resolved === true) return false
   // 诊断报告在等用户确认：重启后仍停在等确认，不拉起 CLI（ADR 0045，见 task-settle.ts 的 diagnosisWaiting）
   if (diagnosisPending(task)) return false
+  // 在等用户去做一件事：结果由用户交回时推回来，重启后不用把它拉起来
+  if (pendingAction(task)) return false
   // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
   if (task.stopReason === 'user') return false
   // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。
@@ -1863,6 +1889,7 @@ export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
     archived?: Task['archived']
     worktree?: Task['worktree']
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   }
 
 /**
@@ -1874,6 +1901,7 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
     status: x.status,
     working: x.working,
     diagnosis: diagnosisPending(x),
+    action: !!pendingAction(x),
     resolved: x.resolved === true,
     requests: x.requests?.length ?? 0,
     asking: x.parentAsks?.length ?? 0,
@@ -2128,6 +2156,8 @@ export function taskSummary(t: Task): Task {
     // brief 是父对话给的要求原文（可能上千字），列表和侧栏都读不到，跟着 output / command 一起清掉
     steps: t.steps.map(({ usage, ...s }) => ({ ...s, output: '', command: [], brief: '', changes: [] })),
     todos: [],
+    // 等你操作只留还在等的那件：侧栏「等你操作」和 convState 要它，做完的记录在完整对话里看
+    userActions: (t.userActions ?? []).filter((a) => a.status === 'waiting'),
     // 只留没做完的那份计划、去掉备注和等待项：侧栏的「未完成 x/y」和 convState 的 unfinished 要它（见 taskFacts）
     plans: plan ? [{ ...plan, steps: plan.steps.map((x) => ({ ...x, note: '', waits: [], children: [] })) }] : [],
     baseline: {},

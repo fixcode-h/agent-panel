@@ -930,6 +930,24 @@ await runShard(import.meta.filename, async (api) => {
       if ((await p.locator('[data-life-counts] button[aria-pressed="true"]').count()) !== 1)
         errors.push('对话菜单「状态」：点计数块没有切到只看这一类日志')
       await p.locator('[data-life-counts] button').first().click()
+      // 筛选下双击某条：取消筛选回到完整日志，定位并高亮到那一条（用户 2026-11-05 要的）
+      await nudges.click()
+      await p.locator('[data-life-log] [data-at]').first().dblclick()
+      if ((await p.locator('[data-life-counts] button[aria-pressed="true"]').count()) !== 0)
+        errors.push('对话菜单「状态」：筛选下双击日志没有取消筛选')
+      else if (!(await p.locator('[data-life-log] [data-life-flash]').count()))
+        errors.push('对话菜单「状态」：筛选下双击日志后完整日志里没有高亮那一条')
+      else if (
+        !(await p.evaluate(() => {
+          const row = document.querySelector('[data-life-log] [data-life-flash]')
+          const box = row?.parentElement
+          if (!row || !box) return false
+          const a = row.getBoundingClientRect()
+          const b = box.getBoundingClientRect()
+          return a.top >= b.top && a.bottom <= b.bottom
+        }))
+      )
+        errors.push('对话菜单「状态」：筛选下双击日志后没有滚到那一条')
       await check(p, '状态诊断')
       await p.keyboard.press('Escape')
       await closed()

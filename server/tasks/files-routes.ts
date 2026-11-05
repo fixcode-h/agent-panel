@@ -2,11 +2,34 @@ import { type Context } from 'hono'
 import { gitFileDiff, gitNumstat, spansFileDiff } from '../exec/git.ts'
 import { convChanges } from '../../shared/conv-changes.ts'
 import { uploadFileOf } from '../uploads.ts'
-import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from '../files.ts'
+import {
+  listDir,
+  listLevel,
+  rawInDir,
+  readInDir,
+  revealInDir,
+  searchInDir,
+  searchNameInDir,
+  writeInDir,
+  diffInDir,
+} from '../files.ts'
+import { projectFormat } from '../file-format.ts'
+import { getSettings } from '../settings.ts'
 import path from 'node:path'
 import { sessionInfo } from '../session-bar.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
+
+/**
+ * 要改的文件相对任务目录的路径：Agent 输出里常写绝对路径，落在任务目录里面的换成相对路径交给 writeInDir
+ * （它只收相对路径、还会再校验一遍链接越界）；在外面的返回 null，不给改
+ */
+function relInDir(dir: string, want: string) {
+  const root = path.resolve(dir)
+  const full = path.resolve(root, want)
+  const rel = path.relative(root, full)
+  return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null
+}
 
 /**
  * 对话工作目录里的文件：改动差异、会话栏、文件树、读文件和看图、在文件管理器里打开。
@@ -87,7 +110,8 @@ export function registerFileRoutes(s: TasksScope) {
       return await run(await readableDir(c.req.param('id')))
     } catch (e) {
       // 路径越界、不是图片这类参数问题按 400；任务或目录找不到的情况自己带上 404
-      const status = (e as { status?: 400 | 404 }).status ?? 400
+      // 保存时文件被别人改过给 409，页面据此问要不要覆盖
+      const status = (e as { status?: 400 | 404 | 409 }).status ?? 400
       return s.bad(c, (e as Error).message, status)
     }
   }
@@ -117,9 +141,44 @@ export function registerFileRoutes(s: TasksScope) {
     const up = uploadFileOf(want)
     if (up) {
       const dir = path.dirname(up)
-      return c.json({ ...(await readInDir(dir, path.basename(up))), dir })
+      // 附件是上传时拷进数据目录的副本，改它没有意义，不给编辑
+      return c.json({ ...(await readInDir(dir, path.basename(up))), dir, editable: false })
     }
-    return inTaskDir(c, async (dir) => c.json({ ...(await readInDir(dir, want)), dir }))
+    // 读哪里都行（交接文件、项目外的文件），改只限任务目录里面
+    return inTaskDir(c, async (dir) =>
+      c.json({ ...(await readInDir(dir, want)), dir, editable: !!relInDir(dir, want) }),
+    )
+  })
+
+  // 文件弹窗里改完保存：只能写任务目录里已有的文件（路径走 into() 校验），编码和换行按项目设置
+  s.routes.put('/:id/file', async (c) => {
+    const {
+      path: file,
+      content,
+      mtime,
+    } = (await c.req.json().catch(() => ({}))) as { path?: unknown; content?: unknown; mtime?: unknown }
+    const want = typeof file === 'string' ? file.trim() : ''
+    if (!want || typeof content !== 'string') return s.bad(c, t('参数不对'))
+    if (uploadFileOf(want)) return s.bad(c, t('附件不能在这里修改'))
+    return inTaskDir(c, async (dir) => {
+      const rel = relInDir(dir, want)
+      if (!rel) return s.bad(c, t('只能修改任务目录里的文件'))
+      const tk = await s.current(c.req.param('id'))
+      const project = tk?.projectId ? await s.deps.projects.get(tk.projectId) : null
+      const format = projectFormat(project ?? undefined, await getSettings())
+      return c.json(await writeInDir(dir, rel, content, format, typeof mtime === 'string' ? mtime : undefined))
+    })
+  })
+
+  // 文件弹窗的「查看改动」：任务目录里的文件和 git 的 HEAD 比（和文件浏览页同一套）
+  s.routes.get('/:id/file/diff', async (c) => {
+    const want = (c.req.query('path') ?? '').trim()
+    if (!want) return s.bad(c, t('缺少文件路径'))
+    return inTaskDir(c, async (dir) => {
+      const rel = relInDir(dir, want)
+      if (!rel) return s.bad(c, t('只能查看任务目录里文件的改动'))
+      return c.json(await diffInDir(dir, rel))
+    })
   })
 
   // 读到的文件是图片时给页面看图：返回原始内容，只能读任务目录里面的文件和上传的附件

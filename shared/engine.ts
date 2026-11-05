@@ -57,6 +57,7 @@ import { pickFlow, runsSection, workflowCatalogText, type PickedFlow, type Workf
 import { runFlowRunTurn } from './flow-run-turn.ts'
 import { runTools, type FlowRunHost, type RunTools } from './flow-run-orch.ts'
 import { approvedBrief, requestLogs, submitDiagnosis, updateBugCase, type DiagnosisInput } from './bug-diagnosis.ts'
+import type { BugLevel } from './bug-diagnosis-schema.ts'
 import { resultLine, resultOf, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
@@ -78,6 +79,7 @@ import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
 import { endTurnCheck, pushTurnEnd } from './end-turn.ts'
+import { requestAction } from './user-action.ts'
 import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import {} from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
@@ -443,6 +445,8 @@ export interface Orchestra {
   finishPlan(summary: string): Promise<{ ok: boolean; info: string }>
   /** 对话（Agent 模式）交代这一轮怎么结束：done / blocked（shared/end-turn.ts）；其余身份没有这个工具 */
   endTurn?: (outcome: string, need: string) => { ok: boolean; info: string }
+  /** 等你操作：请用户离开对话去做一件事（shared/user-action.ts）；和 endTurn 同样只给对话 */
+  requestUserAction?: (input: Record<string, unknown> | undefined) => { ok: boolean; info: string }
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
   conversations(): Promise<string>
@@ -461,6 +465,10 @@ export interface Orchestra {
       bug?: boolean
       /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
       edits?: boolean
+      /** 父对话确认子对话不需要它目录里没提交的改动（独立分支看不到它们） */
+      ignoreDirty?: boolean
+      /** Bug 的级别初判：子对话的档案从它开始（快速级别根因和方案合成一次确认） */
+      level?: BugLevel
     } & DocsFirstInput,
   ): Promise<{ ok: boolean; id?: string; info: string }>
   sendToConversation(
@@ -709,6 +717,10 @@ export interface EngineHost {
     bug?: boolean
     /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
     edits?: boolean
+    /** 不拦父对话目录里没提交的改动（server/tasks/dirty-parent.ts） */
+    ignoreDirty?: boolean
+    /** Bug 的级别初判（Task.bugCase.level 的初值） */
+    level?: BugLevel
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行 */
   sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
@@ -2599,6 +2611,15 @@ function makeOrchestra(
             if (r.end) host.changed(true)
             return { ok: r.ok, info: r.info }
           },
+          requestUserAction(input) {
+            const r = requestAction(task, input, host.newId())
+            if (!r.action) return r
+            // 计划里正在做的那一步挂成「等你操作」：交回时按 settleWait 收口
+            const step = typeof input?.step === 'string' && input.step.trim() ? input.step : runningStepId(task)
+            const wait = step ? bindWait(task, step, { kind: 'user', ref: r.action.id, label: r.action.title }) : ''
+            host.changed(true)
+            return { ok: true, info: wait && !wait.startsWith('（') ? `${r.info}\n${wait}` : r.info }
+          },
         }
       : {}),
     coordinator,
@@ -2677,6 +2698,8 @@ function makeOrchestra(
         ...(role && { agentId: role.id }),
         ...(extra?.bug && { bug: true }),
         ...(extra?.edits && { edits: true }),
+        ...(extra?.ignoreDirty && { ignoreDirty: true }),
+        ...(extra?.bug && extra.level && { level: extra.level }),
       })
       if (r.ok && r.id) recordRoute(host, 'child', [r.id], title.trim(), extra?.route)
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
@@ -2685,7 +2708,12 @@ function makeOrchestra(
       const at = r.ok && r.id ? step?.trim() || ensureChildStep(task, r.id, title) : ''
       const wait = r.ok && r.id && at ? bindWait(task, at, { kind: 'child', ref: r.id, label: title.trim() }) : ''
       if (r.ok) host.changed(true)
-      return { ok: r.ok, id: r.id, info: [r.info, wait].filter(Boolean).join('\n') }
+      // 没写级别：子对话按标准走，一行就能修的 Bug 也要确认根因、方案两道（实测 2026-11-05）
+      const level =
+        r.ok && extra?.bug && !extra.level
+          ? '没写 level：子对话按「标准」级别查。下次派 Bug 按「Bug 怎么交」的级别初判写上 level，快速级别根因和方案合成一次确认。'
+          : ''
+      return { ok: r.ok, id: r.id, info: [r.info, wait, level].filter(Boolean).join('\n') }
     },
     async sendToConversation(id, message, step, route) {
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }

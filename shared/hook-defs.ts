@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { t } from './i18n.ts'
+import { unwrapShell } from './shell-command.ts'
 
 /**
  * 钩子的规范（ADR 0049 第二期，设计稿 docs/openspec/changes/agent-hooks 第 6 节）：设置页「钩子」里用户建的、
@@ -204,14 +205,18 @@ export function globMatch(glob: string, file: string): boolean {
   return new RegExp(`^${re}$`).test(f)
 }
 
+/** 一段两头的引号（拆段时引号里的 && 也被切开，剩下半边引号）：比前缀前去掉 */
+const unquote = (s: string) => s.replace(/^["']+|["']+$/g, '').trim()
+
 /**
  * shell 命令拆成一段一段（按 &&、||、;、|、换行）：模型常写成 `cd 项目 && npm test`，按整条命令的开头比
- * 「npm test」就对不上了。每段去掉开头的空白，按段比命令前缀
+ * 「npm test」就对不上了。整条和每一段都先剥掉外壳（cmd /c、wsl -e、powershell -Command、bash -c……，见 shared/shell-command.ts），
+ * 去掉两头的空白和引号，按段比命令前缀
  */
 export function commandSegments(cmd: string): string[] {
-  return cmd
+  return unwrapShell(cmd)
     .split(/&&|\|\||;|\||\n/)
-    .map((x) => x.trim())
+    .map((x) => unquote(unwrapShell(unquote(x))))
     .filter(Boolean)
 }
 

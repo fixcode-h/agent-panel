@@ -62,6 +62,7 @@
 | [0052](./0052-p4-shared-docs.md)                          | P4 / SVN 各分支共用一个项目外文档根，模块文档标记来源分支                           | 已接受 | 2026-11-05 | 按项目文件夹分组（`projects/doc-groups.json`）；沿用模块最多的旧 `ProjectDoc/docs`；`p4change`、`worklog` 放 `branches/<分支>/`；模块元数据加「分支」；老项目自动合并、冲突另存 `.from-<分支>` 交「文档」合并；项目教训改成 `lessons/<id>.md` |
 | [0053](./0053-workflow-runs.md)                           | 工作流是父对话名下的一次独立运行，不再是子对话，去掉主 Agent                        | 已接受 | 2026-11-05 | `Task.flowRun`（`owner`、`phase`、决定记录）；父对话的 `*_workflow` 工具；固定收尾节点；工作流栏上确认、追问、暂停、重启；替代 0044 的工作流子对话                                                                                            |
 | [0054](./0054-project-experience.md)                      | 项目经验：整个对话完成后自动学「做某类事最快的路」，按需检索                        | 已接受 | 2026-11-05 | `agent-knowledge/experience/<id>.md`；只看工具调用的闸门决定要不要调模型；`project_experience` / `record_experience`；`/learn`；AI 评审清理；设置里的总开关和模型                                                                             |
+| [0055](./0055-user-action-wait.md)                        | 等你操作：要用户去做的事不走提问                                                    | 已接受 | 2026-11-05 | `request_user_action`；输入框就是交回框；完成了 / 做不了 / 跳过推回 `panel: 'action'`；子对话行「去操作」；提问卡「这需要我去操作」                                                                                                           |
 
 状态只有四个词，别自己造近义词：
 

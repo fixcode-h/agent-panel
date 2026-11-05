@@ -51,6 +51,7 @@ export function QuestionPanel({
   label,
   who,
   teamNames,
+  extra,
   className,
 }: {
   questions: PanelQuestion[]
@@ -69,6 +70,8 @@ export function QuestionPanel({
   who?: React.ReactNode
   /** 问题正文里的 @名字 高亮：有名册时穿进来 */
   teamNames?: Set<string>
+  /** 左下角一个次要按钮（任务对话的「这需要我去操作」）；不给就没有 */
+  extra?: { label: string; title?: string; onClick: () => unknown }
   className?: string
 }) {
   const user = useUserName()
@@ -281,6 +284,18 @@ export function QuestionPanel({
         </label>
       </div>
       <div className="flex items-center gap-2">
+        {extra && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-muted"
+            title={extra.title}
+            disabled={busy}
+            onClick={() => void extra.onClick()}
+          >
+            {extra.label}
+          </Button>
+        )}
         <span className="flex-1" />
         {/* 多选：已经选了几个，提示可以接着选 */}
         {q.multiSelect && a.picked.length > 0 && (

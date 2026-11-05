@@ -58,10 +58,8 @@ export const ExperienceSettings = z
     /** 提炼和 AI 评审用的 CLI / 模型：都空着时跟随这个对话的 Agent */
     cli: z.string().default(''),
     model: z.string().trim().default(''),
-    /** 每个项目每天最多提炼几次 */
-    dailyLimit: z.number().int().min(1).max(200).catch(20).default(20),
-    /** 对话完成后再空闲这么多分钟才学：用户常会马上追问，追问了就算没完成 */
-    idleMinutes: z.number().int().min(0).max(1440).catch(10).default(10),
+    /** 每个项目每天最多提炼几次；0 表示不限（用户要求默认不限，成本由「学得勤不勤」的门槛控制） */
+    dailyLimit: z.number().int().min(0).max(200).catch(0).default(0),
   })
   .prefault({})
 export type ExperienceSettings = z.infer<typeof ExperienceSettings>

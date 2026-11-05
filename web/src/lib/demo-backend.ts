@@ -13,6 +13,8 @@ import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-summary'
+import { demoSettleAction, demoUserAction } from './demo-user-action'
+import { pendingAction, settleAction } from '@shared/user-action'
 import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
@@ -114,6 +116,7 @@ import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import {
   REPO,
+  RECENT_RELEASES,
   minutesUntil,
   pickUpdate,
   rateLimitUntil,
@@ -2105,6 +2108,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
+  if (res === 'video') fail('在线演示不能读本机视频，截帧要在本机运行面板')
   if (res === 'tts') return demoTts(method, seg)
   // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
   if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
@@ -3452,6 +3456,7 @@ function tasksRoute(
           background,
           workflow: runRunning(x),
           diagnosis: diagnosisPending(x),
+          action: !!pendingAction(x),
           bug: bugStage(x) || undefined,
           helpers: helpersWorking(x),
           unmerged: x.worktree?.state === 'active',
@@ -3481,6 +3486,7 @@ function tasksRoute(
   }
   if (sub === 'messages') {
     const f = parse(FollowUpInput, body)
+    if (f.userAction) settleAction(task, f.userAction, 'returned', { text: f.text })
     const cur = live.get(task.id)
     // 演示里没有常驻 CLI：执行中收到的消息直接记进对话，这一轮结束后接着处理
     if (cur && !f.interrupt) {
@@ -3535,6 +3541,11 @@ function tasksRoute(
     return task
   }
   // 诊断报告的确认（ADR 0045）：和正式后端一样只记决定、返回交给子对话的话，页面再作为消息发过去
+  if (sub === 'user-action' && rid && method === 'POST') {
+    demoSettleAction(task, rid, body)
+    persist()
+    return task
+  }
   if (sub === 'diagnosis' && rid && method === 'POST') {
     const r = decideDiagnosis(
       task,
@@ -4289,6 +4300,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     worktree: { branch: 'agent-panel/git-worktree', at: 10 },
   })
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
+  // 等你操作：子对话要用户跑一次 PIE 抓日志，父对话的子对话行上有「去操作」（demo-user-action.ts）
+  ;(await make('排查路牌偏移')).userActions = [demoUserAction()]
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
   // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下。
   // 这条故意不带 alive：等后台命令期间 CLI 早退了（cliAlive=false），行上也不能写「已关闭」——
@@ -4806,6 +4819,18 @@ async function demoApp(url: string): Promise<unknown> {
   if (url.startsWith('/app/interrupted')) return { at: '', acknowledged: false, tasks: [] } satisfies InterruptedTasks
   // 当前版本只读上次读到的发布缓存：这个接口不该为了显示版本号再去请求 GitHub
   if (url.startsWith('/app/version')) return { current: demoReleasesCache()[0]?.version ?? '', packaged: false }
+  // 只读上次的结果：和正式后端的 cached=1 一样不联网
+  if (url.includes('cached=1')) {
+    const cached = demoReleasesCache()
+    const current = cached[0]?.version ?? ''
+    return {
+      current,
+      packaged: false,
+      source: 'api',
+      releases: cached.slice(0, RECENT_RELEASES),
+      update: pickUpdate(current, cached),
+    } satisfies AppReleases
+  }
   let list: AppRelease[] = []
   let limitedUntil: string | undefined
   let res: Response | null = null
@@ -4868,7 +4893,7 @@ async function demoApp(url: string): Promise<unknown> {
     limitedUntil,
     // 演示版直接从浏览器读 GitHub API，没有 Atom feed 兜底，结果都按 API / 它的缓存算
     source: 'api',
-    releases: list.slice(0, 5),
+    releases: list.slice(0, RECENT_RELEASES),
     update: pickUpdate(current, list),
   } satisfies AppReleases
 }
