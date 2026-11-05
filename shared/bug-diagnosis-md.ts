@@ -7,7 +7,7 @@
  * 小节名是界面文案，走 t()
  */
 import type { BugBlame, BugCollect, BugLevel, Diagnosis } from './bug-diagnosis-schema.ts'
-import { KIND_TEXT, logFilesOf, normPath, phaseOf } from './bug-phase.ts'
+import { causeInPlan, KIND_TEXT, logFilesOf, normPath, phaseOf } from './bug-phase.ts'
 import { prose, shortFile } from './bug-prose.ts'
 import { t } from './i18n.ts'
 
@@ -46,7 +46,7 @@ const sec = (title: string, body: string) => (body.trim() ? `## ${title}\n${body
 const at = (file: string, line?: number) => `\`${shortFile(file)}${line ? `:${line}` : ''}\``
 
 /** 这一版在哪一步、要用户做什么（结论那一节的第一行） */
-function nextStep(d: Diagnosis): string {
+function nextStep(d: Diagnosis, withCause = false): string {
   const phase = phaseOf(d)
   if (d.status === 'cancelled') return t('你取消了这次修复')
   if (d.status === 'superseded') return t('这一版已作废，看最新一版')
@@ -56,14 +56,14 @@ function nextStep(d: Diagnosis): string {
     return {
       evidence: t('你同意了，它在加日志'),
       cause: t('你同意了根因，它在设计修复方案'),
-      plan: t('你确认了方案，它在修'),
+      plan: withCause ? t('你同意了根因和方案，它在修') : t('你确认了方案，它在修'),
       verify: t('你结束了验证，它在收尾'),
     }[phase]
   if (d.awaiting) return t('日志已经加好：按下面的步骤复现，把日志贴回来')
   return {
     evidence: t('同意后它按日志计划加临时日志；你手上已有日志也可以直接贴'),
     cause: t('同意根因它就开始设计修复方案；不同意就标出疑问或补充'),
-    plan: t('确认方案它才开始改代码'),
+    plan: withCause ? t('快速级别：根因和修复方案一起确认，确认了它才开始改代码') : t('确认方案它才开始改代码'),
     verify: t('已经修好：按下面的步骤复现验证，把日志贴回来；不想验证可以直接结束'),
   }[phase]
 }
@@ -144,6 +144,8 @@ export function diagnosisMarkdown(
   opts: { author?: boolean; list?: Diagnosis[] } = {},
 ): string {
   const phase = phaseOf(d)
+  // 快速级别根因和方案合成的一版：根因那几节也是这一版要审的
+  const withCause = !!opts.list && causeInPlan(d, opts.list)
   const answers = prev
     ? d.answers
         .map((a) => {
@@ -216,10 +218,10 @@ export function diagnosisMarkdown(
   const root = d.rootCause.trim()
   const rootFirst = root.split('\n')[0]
   // 根因只有一行、结论里已经写全了：后面不再单列一节（根因那一版例外，根因就是这一版要审的）
-  const rootSec = phase === 'cause' || root !== rootFirst ? sec(rootTitle, prose(root)) : ''
+  const rootSec = phase === 'cause' || withCause || root !== rootFirst ? sec(rootTitle, prose(root)) : ''
   const summary = [
-    `**${PHASE_LABEL()[phase]}**：${nextStep(d)}`,
-    phase !== 'cause' && root && `**${rootTitle}**：${rootFirst}`,
+    `**${PHASE_LABEL()[phase]}**：${nextStep(d, withCause)}`,
+    phase !== 'cause' && !withCause && root && `**${rootTitle}**：${rootFirst}`,
     `**${t('级别')}**：${levelLabel(d.level)}${d.levelNote ? `（${d.levelNote}）` : ''}`,
   ]
     .filter(Boolean)
@@ -277,9 +279,17 @@ export function diagnosisMarkdown(
             sec(t('根因怎么解释每一条现象'), consistency),
             sec(t('假设'), hypotheses),
             sec(t('已排除'), prose(d.excluded)),
+            // 提前写好的修法只是草案：这一版只确认根因（实测用户以为点「同意根因」就开始修）
+            sec(
+              t('修复方案草案（这一版不确认，同意根因后另交一版）'),
+              [optionsTable(d), prose(d.fix)].filter(Boolean).join('\n\n'),
+            ),
           ]
-        : phase === 'plan'
+        : phase === 'plan' && withCause
           ? [
+              rootSec,
+              sec(t('证据链'), prose(d.evidence)),
+              sec(t('位置和调用路径'), [prose(d.location), stack].filter(Boolean).join('\n\n')),
               sec(t('候选方案'), optionsTable(d)),
               sec(t('选定'), chosen),
               sec(t('修复方案'), prose(d.fix)),
@@ -287,12 +297,24 @@ export function diagnosisMarkdown(
               sec(t('影响面'), impact),
               sec(t('影响和风险'), prose(d.risk)),
               sec(t('验证计划'), prose(d.verify)),
-              rootSec,
-              sec(t('证据链'), prose(d.evidence)),
-              sec(t('位置和调用路径'), stack),
+              sec(t('现象'), prose(d.symptom)),
               sec(t('引入点'), attribution),
             ]
-          : [...collectSecs(d.collect, true), sec(t('修复结果'), result), sec(t('改动的文件'), files), rootSec]
+          : phase === 'plan'
+            ? [
+                sec(t('候选方案'), optionsTable(d)),
+                sec(t('选定'), chosen),
+                sec(t('修复方案'), prose(d.fix)),
+                sec(t('要改的文件'), files),
+                sec(t('影响面'), impact),
+                sec(t('影响和风险'), prose(d.risk)),
+                sec(t('验证计划'), prose(d.verify)),
+                rootSec,
+                sec(t('证据链'), prose(d.evidence)),
+                sec(t('位置和调用路径'), stack),
+                sec(t('引入点'), attribution),
+              ]
+            : [...collectSecs(d.collect, true), sec(t('修复结果'), result), sec(t('改动的文件'), files), rootSec]
   const early = earlyFiles(d, opts.list)
   return [
     sec(t('结论'), summary),

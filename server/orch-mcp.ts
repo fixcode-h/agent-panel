@@ -21,6 +21,7 @@ import { askOptions } from '../shared/task.ts'
 import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
 import { overrideInput, triageInput } from '../shared/review-gate.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
+import { childKindArgs, childKindFields } from './child-kind-fields.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
 import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
 import { END_TURN_DEF, callEndTurn } from './end-turn-tool.ts'
@@ -218,19 +219,7 @@ export function orchTools(o: Orchestra) {
                   type: 'string',
                   description: '子对话用哪个高级角色（名字）：不写用「执行」；项目里有更合适的（例如 UE 专用的）时写它',
                 },
-                // 必填、二选一：以前只有写了 "bug" 才算，父对话常常漏写，派出去的 Bug 子对话没有交诊断报告的工具，
-                // 用户也就看不到审阅弹窗（用户报过）。服务端没写时仍按 task 处理，老的调用照常能用
-                kind: {
-                  type: 'string',
-                  enum: ['task', 'bug'],
-                  description:
-                    '这个子对话是什么：用户报的 Bug（程序哪里坏了、行为不对要修）写 "bug"，子对话修之前先交诊断报告，用户确认了方案才改；其余（新功能、改进、评审或测试里发现的问题）写 "task"',
-                },
-                edits: {
-                  type: 'boolean',
-                  description:
-                    '这个子对话一定要改代码（实现、修改、修 Bug）时写 true：面板先开好独立分支再让它开工，省掉它中途换目录重开、重读文件。只调研、评审、回答问题的不写',
-                },
+                ...childKindFields,
                 route: routeField(),
                 ...docsFirstFields,
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
@@ -958,8 +947,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const r = await o.createConversation(str(a?.title).trim(), message, files, str(a?.step).trim(), {
         role: str(a?.role).trim() || undefined,
         route: routeOf(a?.route),
-        bug: str(a?.kind) === 'bug',
-        ...(a?.edits === true && { edits: true }),
+        ...childKindArgs(a),
         ...docsFirstArgs(a),
       })
       return text(r.id ? `${r.info}（id: ${r.id}）` : r.info, !r.ok)

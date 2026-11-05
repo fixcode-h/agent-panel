@@ -131,7 +131,7 @@ test('没列计划：收尾自检问过以后又调工具接着做、没交代�
   })
   // 问过以后只回了话：不再问
   task.messages.push(msg('agent'))
-  assert.deepEqual(await decide('c2', {}), { block: false, why: 'small' })
+  assert.deepEqual(await decide('c2', {}), { block: false, why: 'answered' })
   // 问过以后又读了文件接着做，没用 end_turn 交代：再问
   task.messages.push(msg('agent', [read]), msg('agent', [read]))
   const r = await decide('c2', {})
@@ -140,7 +140,7 @@ test('没列计划：收尾自检问过以后又调工具接着做、没交代�
 })
 
 test('没列计划：问过以后跑的是没登记类别的命令工具也算接着做；只调面板自己的工具不算', async () => {
-  // 用户 2026-11-05 报：Windows 上问过后跑了 3 条 PowerShell 命令（当时被记成 other），说「我再确认一下」就停了，钩子按 small 放行
+  // 用户 2026-11-05 报：Windows 上问过后跑了 3 条 PowerShell 命令（当时被记成 other），说「我再确认一下」就停了，钩子放行
   const { createBeforeEnd } = await import('./before-end.ts')
   const msg = (role: string, tools: { kind: string; name?: string; label?: string }[] = [], panel = '') => ({
     id: `m${Math.random()}`,
@@ -177,10 +177,53 @@ test('没列计划：问过以后跑的是没登记类别的命令工具也算�
   })
   // 问过以后只查了一下面板状态：不是接着做，不再问
   task.messages.push(msg('agent', [{ kind: 'other', name: 'MCP', label: 'panel · get_status' }]))
-  assert.deepEqual(await decide('c3', {}), { block: false, why: 'small' })
+  assert.deepEqual(await decide('c3', {}), { block: false, why: 'answered' })
   // 问过以后跑了没登记类别的工具：算接着做，再问
   task.messages.push(msg('agent', [{ kind: 'other', name: 'SomeNewShell', label: '$p = 1' }]))
   const r = await decide('c3', {})
   assert.equal(r.block, true)
   assert.equal(r.why, 'check-resumed')
+})
+
+test('没列计划、还没问过：只调了一两个工具就要结束，也问一次收尾自检，不按动手次数放行', async () => {
+  // 「我先跑一下测试」「我去派子对话」说完就停：面板不读回复文字，只调了一个工具也要问一次
+  const { createBeforeEnd } = await import('./before-end.ts')
+  const msg = (role: string, tools: { kind: string; label?: string }[] = [], panel = '') => ({
+    id: `m${Math.random()}`,
+    role,
+    panel,
+    tools,
+    text: '',
+    at,
+  })
+  const task = {
+    id: 'c4',
+    projectId: '',
+    parentTaskId: '',
+    mode: 'task',
+    messages: [msg('user'), msg('agent', [{ kind: 'read', label: 'a.ts' }])],
+    requests: [],
+    plans: [],
+    steps: [],
+    changes: [],
+    turnEnds: [],
+  }
+  const sc = {
+    live: new Map([['c4', { task }]]),
+    store: { get: async () => task, list: async () => [] },
+    startQueue: new Set(),
+    background: { list: () => [] },
+  } as never
+  const decide = createBeforeEnd(sc, {
+    budget: { take: () => 1 } as never,
+    inputOf: () => 'in',
+    haltedBy: () => '',
+    activeChildren: async () => 0,
+  })
+  const r = await decide('c4', {})
+  assert.equal(r.block, true)
+  assert.equal(r.why, 'check-worked')
+  // 问过以后只回了话：放行
+  task.messages.push(msg('system', [], 'hook'), msg('agent'))
+  assert.deepEqual(await decide('c4', {}), { block: false, why: 'answered' })
 })

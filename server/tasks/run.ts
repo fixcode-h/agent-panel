@@ -1,6 +1,7 @@
 import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
+import { BugCase, type BugLevel } from '../../shared/bug-diagnosis-schema.ts'
 import {
   NewTaskInput,
   Task,
@@ -77,6 +78,7 @@ import { cherryPickFor } from '../cherry-pick.ts'
 import { TaskBusyError, isolated, parentRunRole, isP4, wrapUpFrom, wrapUpProbe } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import { pauseHelper, pauseUnit } from '../../shared/run-stops.ts'
+import { dirtyParentBlock, dirtyParentNote } from './dirty-parent.ts'
 
 /**
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
@@ -146,12 +148,15 @@ export function createRun(sc: TasksScope) {
       agentId,
       bug,
       edits,
+      level,
     }: {
       title: string
       message: string
       files?: string[]
       agentId?: string
       bug?: boolean
+      /** Bug 的级别初判：档案从它开始，子对话查下来不符可以改 */
+      level?: BugLevel
       /** 一定要改代码：第一次执行前就开好独立分支（只在独立分支模式下有用） */
       edits?: boolean
     },
@@ -174,6 +179,7 @@ export function createRun(sc: TasksScope) {
       ...newTask(input, undefined, at, subId, [], {}),
       id: subId,
       ...(bug && { bug }),
+      ...(bug && level && { bugCase: BugCase.parse({ level, levelNote: '父对话初判' }) }),
       ...(edits && project.childIsolation === 'worktree' && { editFirst: true }),
     }
     // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
@@ -426,6 +432,10 @@ export function createRun(sc: TasksScope) {
               void sc.checkBudget(entry.task)
             }
           : (turn) => {
+              // 经验学习按「一轮结束」排，不等 run 返回：CLI 保活时进程停在等下一句，run 一直不返回，
+              // 只在 run 收尾处排的话要等闲置回收才学，用户看到的就是「对话完成了却不学」。
+              // 面板接着推它做（nudgePlan / nudgeWrapUp）会在几秒内让它跑起来，learn 到点见它没完成就不学，等下一轮结束再排
+              if (entry.task.projectId) void sc.learnExperience(task.id)
               void sc.checkBudget(entry.task).then((over) => {
                 if (over || task.mode !== 'chat') return
                 // Chat 页只回答了一句、没动手的那一轮不推；项目里的对话按计划推（计划没做完、或动了手却没列计划，见 nudgePlan）
@@ -679,9 +689,13 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files, agentId, bug, edits }) => {
+        createConversation: async ({ title, message, files, agentId, bug, edits, ignoreDirty, level }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          return spawnChild(entry.task, project, agents, { title, message, files, agentId, bug, edits })
+          // 独立分支看不到父对话没提交的改动：要改代码的先拦下交回清单，其余在返回里提醒（见 dirty-parent.ts）
+          const dirty = ignoreDirty ? '' : await (edits ? dirtyParentBlock : dirtyParentNote)(sc, entry.task, project)
+          if (dirty && edits) return { ok: false, info: dirty }
+          const r = await spawnChild(entry.task, project, agents, { title, message, files, agentId, bug, edits, level })
+          return dirty ? { ...r, info: `${r.info}\n${dirty}` } : r
         },
         sendToConversation: async (id, message) => {
           // 父对话交给已有子对话：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
@@ -789,7 +803,8 @@ export function createRun(sc: TasksScope) {
             .catch((e) => log.warn('task', '工作流运行回信失败', { task: task.id, error: (e as Error).message }))
         // 整轮结束了，没被节点取走的补充不会再有人取
         forgetNotes(task.id)
-        // 项目里的顶层对话：整个对话（含子对话）都完成了就学经验（几秒内又跑起来就等下一轮结束）
+        // 项目里的顶层对话：整个对话（含子对话）都完成了就学经验（几秒内又跑起来就等下一轮结束）。
+        // 保活的 CLI 在 onTurnEnd 里已经排过；这里接住不保活的 CLI 和工作流（工作流整轮跑完才到这里），重复排只会重置计时
         if (!prewarm && !entry.task.parentTaskId && entry.task.projectId) void sc.learnExperience(task.id)
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
         // 收尾停掉的（父对话 finish_child、用户点解决：stopReason finish）不是出错：收尾时交来的新任务照样接着处理

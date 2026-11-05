@@ -58,7 +58,7 @@ export function isActTool(x: Pick<ToolUse, 'name' | 'label' | 'kind'>) {
 /**
  * CLI 自己的工具（面板工具以外的任何一次调用，含没登记类别的新工具）：判断「问过以后有没有接着做」用它，
  * 不按类别清单数。以前只数 run / edit / read / search，Windows 上的 PowerShell 被记成 other，
- * 问过以后跑了 3 条命令也算没接着做，按 small 放行（用户 2026-11-05 报）
+ * 问过以后跑了 3 条命令也算没接着做，就放行了（用户 2026-11-05 报）
  */
 export function isCliTool(x: Pick<ToolUse, 'name' | 'label'>) {
   return !isPanelTool(x)
