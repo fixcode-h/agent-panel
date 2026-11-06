@@ -5,7 +5,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
-import { countEvents, eventKind, exitText, lastExit, parseLogLine, verdictOf, type LifeFacts } from './lifecycle.ts'
+import {
+  countDone,
+  countEvents,
+  eventKind,
+  exitText,
+  lastExit,
+  parseLogLine,
+  verdictOf,
+  type LifeFacts,
+} from './lifecycle.ts'
 
 setLang('zh')
 
@@ -276,4 +285,17 @@ test('在等用户确认、回答时没有输出：说在等你处理，不报�
   )
   assert.match(v.headline, /在等你处理/)
   assert.deepEqual(v.anomalies, [])
+})
+
+test('「它说做完了」按 end_turn(done) 的记录数，卡住的不算，旧数据没有记录时为 0', () => {
+  const base = countEvents([])
+  assert.equal(countDone(base).done.n, 0)
+  const c = countDone(base, [
+    { at: '2026-11-06T01:00:00.000Z', outcome: 'done' },
+    { at: '2026-11-06T01:10:00.000Z', outcome: 'blocked', need: '缺账号' },
+    { at: '2026-11-06T01:20:00.000Z', outcome: 'done' },
+  ])
+  assert.equal(c.done.n, 2)
+  assert.equal(c.done.last?.at, Date.parse('2026-11-06T01:20:00.000Z'))
+  assert.equal(c.requests.n, 0, '其余类别原样保留')
 })

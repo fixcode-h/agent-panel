@@ -913,9 +913,16 @@ await runShard(import.meta.filename, async (api) => {
         errors.push('对话菜单「状态」：弹窗里没有结论')
       else if ((await p.locator('[data-lifecycle] aside[aria-label="对话树"] li').count()) < 2)
         errors.push('对话菜单「状态」：对话树里没有子对话或子任务')
-      // 五类事件的计数块、标题栏右上角的「AI 分析」和「复制诊断文件」
-      if ((await p.locator('[data-life-counts] button').count()) !== 6)
-        errors.push('对话菜单「状态」：事件计数不是六块（模型请求、面板提醒、重试、出错、停止、进程退出）')
+      // 事件的计数块（对话多一块「它说做完了」）、标题栏右上角的「AI 分析」和「复制诊断文件」
+      if ((await p.locator('[data-life-counts] button').count()) !== 7)
+        errors.push('对话菜单「状态」：事件计数不是七块（模型请求、面板提醒、它说做完了、重试、出错、停止、进程退出）')
+      if (!(await p.locator('[data-life-progress]').count())) errors.push('对话菜单「状态」：没有「推进」卡')
+      // 搜日志：搜不到时给提示，清空后回到完整日志
+      const search = p.getByRole('textbox', { name: '搜日志' })
+      await search.fill('没有这句话的日志')
+      if (!(await p.locator('[data-life-log]').getByText('没有搜到').count()))
+        errors.push('对话菜单「状态」：搜日志搜不到时没有提示')
+      await search.fill('')
       // 面板推了几次「接着做」：演示日志里推过一次
       const nudges = p.locator('[data-life-counts] button').nth(1)
       if (!/面板提醒\s*1/.test((await nudges.innerText().catch(() => '')).replace(/\n/g, ' ')))

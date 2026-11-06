@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, Copy, Loader2, RotateCw, Square, X } from 'lucide-react'
+import { ArrowDown, Copy, Loader2, RotateCw, Search, Square, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import {
   EVENT_KINDS,
@@ -24,10 +24,11 @@ import { IconButton } from '@/components/ui/icon-button'
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { Switch } from '@/components/ui/switch'
 import { TrailLine } from './ReminderTrail'
-import { buildRows, type LogFilter, type Parsed, type Row } from './life-log-rows'
+import { LifeProgressCard } from './LifeProgressCard'
+import { buildRows, searchRows, type LogFilter, type Parsed, type Row } from './life-log-rows'
 
 /**
- * 状态诊断右边那一栏（LifecycleDialog 里选中的节点）：结论、异常、六类事件的计数、执行 / 模型 / 进程三张卡、日志。
+ * 状态诊断右边那一栏（LifecycleDialog 里选中的节点）：结论、异常、各类事件的计数、执行 / 模型 / 进程 / 推进几张卡、日志。
  * 计数由服务端按完整日志算好（shared/lifecycle.ts 的 countEvents），点一块就只看那一类日志
  */
 
@@ -49,11 +50,13 @@ export const STATE_TONE: Record<ConvState, StatusTone> = {
   done: 'ok',
 }
 
-/** 六类事件的名字和有数时的颜色（出错红、重试黄，其余是普通的前景色） */
+/** 各类事件的名字和有数时的颜色（出错红、重试黄、做完绿，其余是普通的前景色） */
 const COUNT_META: Record<EventKind, { label: string; tone: string }> = {
   requests: { label: t('模型请求'), tone: 'text-fg' },
   // 面板推了几次「接着做」（结束前钩子拦住、一轮结束后补发）：不限次数，逐条记录在下面的「面板提醒」卡片里
   nudges: { label: t('面板提醒'), tone: 'text-fg' },
+  // Agent 用 end_turn 交代做完了几次：点开只看这些行，双击回到完整日志定位（用户 2026-11-06 要的）
+  done: { label: t('它说做完了'), tone: 'text-success' },
   retries: { label: t('重试'), tone: 'text-warning' },
   errors: { label: t('出错'), tone: 'text-danger' },
   stops: { label: t('停止'), tone: 'text-fg' },
@@ -141,6 +144,8 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
   const state = nodeState(node)
   const ago = (ms?: number | null) => (ms ? t('{d} 前', { d: fmtDuration(Math.max(0, now - ms)) }) : '—')
   const lines = useMemo(() => node.log.map((raw) => ({ raw, l: parseLogLine(raw) })), [node.log])
+  // 「它说做完了」只有对话有（end_turn 只挂给对话），子任务、工作流节点不列这一块
+  const kinds = EVENT_KINDS.filter((k) => k !== 'done' || node.kind === 'conversation')
   return (
     <section
       aria-label={t('生命周期')}
@@ -195,12 +200,16 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
 
       {node.counts && (
         <div
-          className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6"
+          className={cn(
+            'grid grid-cols-2 gap-2 sm:grid-cols-4',
+            kinds.length > 6 ? 'lg:grid-cols-7' : 'sm:grid-cols-3 lg:grid-cols-6',
+          )}
           aria-label={t('事件计数')}
           data-life-counts
         >
-          {EVENT_KINDS.map((k) => {
-            const c = node.counts![k]
+          {kinds.map((k) => {
+            // 旧的诊断文件没有后加的类别：按 0 显示
+            const c = node.counts![k] ?? { n: 0 }
             const on = filter === k
             return (
               <Card
@@ -228,7 +237,9 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
         </div>
       )}
 
-      <div className="grid gap-2 lg:grid-cols-3">
+      <div
+        className={cn('grid gap-2 md:grid-cols-2', node.kind === 'conversation' ? 'xl:grid-cols-4' : 'xl:grid-cols-3')}
+      >
         <InfoCard
           title={t('执行')}
           rows={[
@@ -256,6 +267,7 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
         />
         <ModelCard node={node} now={now} lines={lines} />
         <ProcessCard node={node} now={now} />
+        {node.kind === 'conversation' && <LifeProgressCard node={node} now={now} />}
       </div>
 
       <LifeLog lines={lines} trail={node.trail} filter={filter} setFilter={setFilter} />
@@ -448,7 +460,9 @@ function LifeLog({
   // 跟随最新：默认贴着底；往上翻看时停住，底下出「跳到最新」，翻回底部又自动跟上
   const [follow, setFollow] = useState(true)
   const box = useRef<HTMLDivElement>(null)
-  const rows = useMemo(() => buildRows(lines, filter, merge, trail), [lines, filter, merge, trail])
+  // 按文字搜日志（用户 2026-11-06 要求扩充状态面板）：和类别筛选叠加，双击命中的行同样回到完整日志定位
+  const [q, setQ] = useState('')
+  const rows = useMemo(() => searchRows(buildRows(lines, filter, merge, trail), q), [lines, filter, merge, trail, q])
   useLayoutEffect(() => {
     const el = box.current
     if (el && follow) el.scrollTop = el.scrollHeight
@@ -474,17 +488,18 @@ function LifeLog({
     return () => clearTimeout(id)
   }, [flash])
   const locate = (r: Row) => {
-    if (!filter || r.kind === 'day') return
+    if ((!filter && !q.trim()) || r.kind === 'day') return
     setFollow(false)
     setSpot(r.at[0])
     setFlash(r.at[0])
     setFilter('')
+    setQ('')
   }
   const lineProps = (r: Exclude<Row, { kind: 'day' }>) => ({
     'data-at': r.at.join(' '),
     'data-life-flash': flash !== null && r.at.includes(flash) ? '' : undefined,
     onDoubleClick: () => locate(r),
-    title: filter ? t('双击回到完整日志并定位到这一行') : undefined,
+    title: filter || q.trim() ? t('双击回到完整日志并定位到这一行') : undefined,
     className: cn(
       'flex min-w-0 items-center gap-3 px-3.5 py-1.5 transition-colors hover:bg-hover',
       flash !== null && r.at.includes(flash) && 'bg-accent/15 hover:bg-accent/15',
@@ -506,6 +521,18 @@ function LifeLog({
           </button>
         )}
         <span className="flex-1" />
+        <label className="inline-flex h-6 w-40 items-center gap-1.5 rounded-md border border-line-strong bg-field px-1.5 focus-within:border-accent">
+          <Search className="h-3 w-3 shrink-0" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && q && (e.stopPropagation(), setQ(''))}
+            placeholder={t('搜日志')}
+            aria-label={t('搜日志')}
+            className="min-w-0 flex-1 bg-transparent text-footnote text-fg outline-none placeholder:text-subtle"
+          />
+          {q && <IconButton icon={X} label={t('清空')} size="2xs" onClick={() => setQ('')} />}
+        </label>
         <label className="inline-flex cursor-pointer items-center gap-2">
           <Switch checked={filter === 'key'} onCheckedChange={(v) => setFilter(v ? 'key' : '')} />
           {t('只看关键事件')}
@@ -522,7 +549,11 @@ function LifeLog({
         // 事件标签各自是一小块，不会上下连成一片（用户 2026-11-02 指出背景连到一起）
         className="relative min-h-0 flex-1 divide-y overflow-y-auto font-mono text-footnote leading-5"
       >
-        {rows.length === 0 && <p className="px-3.5 py-6 text-center font-sans text-subtle">{t('没有这类事件')}</p>}
+        {rows.length === 0 && (
+          <p className="px-3.5 py-6 text-center font-sans text-subtle">
+            {q.trim() ? t('没有搜到「{q}」', { q: q.trim() }) : t('没有这类事件')}
+          </p>
+        )}
         {rows.map((r, i) =>
           r.kind === 'day' ? (
             <div key={i} className="px-3.5 pt-2.5 pb-1.5 font-sans text-caption text-subtle">
