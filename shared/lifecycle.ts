@@ -11,6 +11,7 @@ import { t } from './i18n.ts'
 import type { StopReason, TaskStatus } from './schema.ts'
 import { convStateText, stopReasonText, type ConvState } from './task.ts'
 import type { TrailItem } from './end-turn.ts'
+import type { EndTurnRecord } from './turn-end.ts'
 
 /** 对话日志里的一行（server/task-log.ts 写的格式：`2026-10-30 09:07:12.123 [事件] 键=值 …`） */
 export interface LogLine {
@@ -73,10 +74,11 @@ export function lastExit(lines: LogLine[], step = ''): ProcessExit | undefined {
 }
 
 /**
- * 日志事件按六类计数：弹窗顶上的数字块、日志的筛选和配色、诊断文件里的 counts 都按这一份分，免得三处口径不一。
- * 只认事件名（server 里 taskLog 的第二个参数），新增事件时在这里归类；归不了类的不计数
+ * 日志事件按类计数：弹窗顶上的数字块、日志的筛选和配色、诊断文件里的 counts 都按这一份分，免得三处口径不一。
+ * 只认事件名（server 里 taskLog 的第二个参数），新增事件时在这里归类；归不了类的不计数。
+ * done（它说做完了）不从日志数：按对话记下的 end_turn(done)（Task.turnEnds）算，见 countDone
  */
-export const EVENT_KINDS = ['requests', 'nudges', 'retries', 'errors', 'stops', 'exits'] as const
+export const EVENT_KINDS = ['requests', 'nudges', 'done', 'retries', 'errors', 'stops', 'exits'] as const
 export type EventKind = (typeof EVENT_KINDS)[number]
 
 export function eventKind(event: string, fields: Record<string, string> = {}): EventKind | undefined {
@@ -111,7 +113,7 @@ function brief(l: LogLine) {
 }
 
 /**
- * 按完整日志数六类事件（服务端读整份日志时算，弹窗只拿到最近 200 行，自己数会少）。
+ * 按完整日志数各类事件（服务端读整份日志时算，弹窗只拿到最近 200 行，自己数会少）。
  * step 为空时数对话自己这一轮（日志里没有 step 的行），否则只数这一步的
  */
 export function countEvents(lines: LogLine[], step = ''): LifeCounts {
@@ -124,6 +126,20 @@ export function countEvents(lines: LogLine[], step = ''): LifeCounts {
     out[k].last = { at: l.at, text: brief(l) }
   }
   return out
+}
+
+/**
+ * 「它说做完了」：Agent 用 end_turn(outcome: done) 交代做完的次数（用户 2026-11-06 要在计数里看到、点开定位）。
+ * 只认这次工具调用的记录，不读回复文字（ADR 0041、0049）；记录只留最近 50 条（shared/end-turn.ts 的 pushTurnEnd）
+ */
+export function countDone(counts: LifeCounts, ends: EndTurnRecord[] = []): LifeCounts {
+  const done = ends.filter((e) => e.outcome === 'done')
+  const last = done.at(-1)
+  const ms = last ? Date.parse(last.at) : NaN
+  return {
+    ...counts,
+    done: { n: done.length, ...(!Number.isNaN(ms) && { last: { at: ms, text: 'end_turn outcome=done' } }) },
+  }
 }
 
 /** 模型请求轨迹（server/exec/cli-trace.ts 的 CliTrace，时间是毫秒时间戳） */
@@ -433,7 +449,7 @@ export interface LifeNode {
   facts: LifeFacts
   verdict: LifeVerdict
   processes: LifeProcess[]
-  /** 按完整日志数的六类事件（旧的诊断文件没有；面板提醒是后加的，更旧的文件里也没有） */
+  /** 按完整日志数的各类事件（旧的诊断文件没有；面板提醒是后加的，更旧的文件里也没有） */
   counts?: LifeCounts
   /** 面板提醒和 Agent 用 end_turn 交代的结束，按时间排（对话才有；提醒不画进对话，只在这里看） */
   trail?: TrailItem[]

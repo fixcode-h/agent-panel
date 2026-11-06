@@ -6,6 +6,7 @@ import { panelTrail } from '../../shared/end-turn.ts'
 import { subtreeTaskIds } from '../../shared/run-usage.ts'
 import { taskState, wrapUpPending } from '../../shared/task.ts'
 import {
+  countDone,
   countEvents,
   lastExit,
   parseLogLine,
@@ -182,8 +183,9 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       facts,
       verdict: verdictOf(facts, now),
       processes: procOf(id),
-      counts: countEvents(parsed),
-      trail: panelTrail(tk),
+      counts: countDone(countEvents(parsed), tk.turnEnds),
+      // 和 end_turn 记录的上限（50 条）对齐，点「它说做完了」筛出来的条数才对得上计数
+      trail: panelTrail(tk, 80),
       log: lines,
     })
     // 子任务、工作流节点：挂在派它的那一步（或对话本身）下面

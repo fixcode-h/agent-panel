@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parseLogLine } from '@shared/lifecycle'
-import { buildRows, localStamp, type Row } from './life-log-rows'
+import { buildRows, localStamp, searchRows, type Row } from './life-log-rows'
 
 const raw = [
   '2026-11-05 22:20:00.000 [模型请求开始] n=1',
@@ -33,9 +33,23 @@ test('面板提醒按时间插进日志：对得上「面板提醒」行的顶�
     ['pair', 'trail', 'trail'],
   )
   assert.deepEqual(ats(rows), [[0, 1], [-1], [2]])
-  // 顶替的那行沿用日志的时间和原文；筛「面板提醒」两条都留下
+  // 顶替的那行沿用日志的时间和原文；end_turn(done) 归「它说做完了」，不再跟着「面板提醒」
   const hook = rows[2]
   assert.ok(hook.kind === 'trail' && hook.raw === raw[2] && localStamp(hook.ms) === raw[2].slice(0, 23))
-  assert.deepEqual(ats(buildRows(lines, 'nudges', true, trail)), [[-1], [2]])
+  assert.deepEqual(ats(buildRows(lines, 'nudges', true, trail)), [[2]])
+  assert.deepEqual(ats(buildRows(lines, 'done', true, trail)), [[-1]])
+  assert.deepEqual(ats(buildRows(lines, 'key', true, trail)), [[-1], [2]])
   assert.deepEqual(ats(buildRows(lines, 'retries', true, trail)), [])
+})
+
+test('搜日志：只留命中的行（含提醒原文），没命中行的日期分隔一起去掉', () => {
+  const at = (s: string) => new Date(Date.parse(s)).toISOString()
+  const trail = [
+    { at: at('2026-11-05T22:21:00.000'), kind: 'end' as const, outcome: 'done' as const, hidden: '刷新问题修好了' },
+  ]
+  const rows = buildRows(lines, '', true, trail)
+  assert.deepEqual(ats(searchRows(rows, 'CHECK-worked')), [[2]], '不分大小写')
+  assert.deepEqual(ats(searchRows(rows, '刷新问题')), [[-1]])
+  assert.deepEqual(searchRows(rows, '没有这句'), [])
+  assert.equal(searchRows(rows, '  '), rows)
 })

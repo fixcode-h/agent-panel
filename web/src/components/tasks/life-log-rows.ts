@@ -51,9 +51,11 @@ export function buildRows(lines: Parsed[], filter: LogFilter, merge: boolean, tr
     if (best >= 0) byLine.set(best, item)
     else loose.push({ item, ms, at: -(i + 1) })
   })
-  const keepKind = (k: EventKind | undefined, isTrail: boolean) => {
+  // 面板提醒行归「面板提醒」，end_turn(done) 那行归「它说做完了」，卡住的交代仍跟着面板提醒
+  const trailKind = (x: TrailItem): EventKind => (x.kind === 'end' && x.outcome === 'done' ? 'done' : 'nudges')
+  const keepKind = (k: EventKind | undefined, trail?: TrailItem) => {
     if (!filter) return true
-    if (isTrail) return filter === 'key' || filter === 'nudges'
+    if (trail) return filter === 'key' || filter === trailKind(trail)
     if (filter === 'key') return !!k && k !== 'requests'
     return k === filter
   }
@@ -63,19 +65,19 @@ export function buildRows(lines: Parsed[], filter: LogFilter, merge: boolean, tr
   const pushLoose = (until: number) => {
     while (li < loose.length && loose[li].ms < until) {
       const x = loose[li++]
-      if (keepKind(undefined, true)) list.push({ trail: x.item, ms: x.ms, at: x.at })
+      if (keepKind(undefined, x.item)) list.push({ trail: x.item, ms: x.ms, at: x.at })
     }
   }
   lines.forEach((x, at) => {
     if (x.l) pushLoose(x.l.at)
     const t = byLine.get(at)
     if (t) {
-      if (keepKind('nudges', true)) list.push({ trail: t, ms: x.l!.at, at, raw: x.raw })
+      if (keepKind('nudges', t)) list.push({ trail: t, ms: x.l!.at, at, raw: x.raw })
       return
     }
     if (!filter) return list.push({ ...x, at })
     if (!x.l) return
-    if (filter === 'requests' ? kindOf(x) === 'requests' || x.l.event === '模型开始输出' : keepKind(kindOf(x), false))
+    if (filter === 'requests' ? kindOf(x) === 'requests' || x.l.event === '模型开始输出' : keepKind(kindOf(x)))
       list.push({ ...x, at })
   })
   pushLoose(Infinity)
@@ -109,6 +111,32 @@ export function buildRows(lines: Parsed[], filter: LogFilter, merge: boolean, tr
       out.push({ kind: 'pair', req: l, out: nx.l, at: [at, nx.at] })
       i++
     } else out.push({ kind: 'line', raw, l, at: [at] })
+  }
+  return out
+}
+
+/** 一行里能搜到的文字：原始日志行、提醒原文、end_turn 交代的缺什么和收尾那句 */
+function rowText(r: Exclude<Row, { kind: 'day' }>) {
+  if (r.kind === 'line') return r.raw
+  if (r.kind === 'pair') return `${r.req.raw}\n${r.out.raw}`
+  return [r.raw, r.item.text, r.item.need, r.item.hidden].filter(Boolean).join('\n')
+}
+
+/** 日志里按文字搜（不分大小写）：只留命中的行，没有命中行的日期分隔一起去掉 */
+export function searchRows(rows: Row[], q: string): Row[] {
+  const s = q.trim().toLowerCase()
+  if (!s) return rows
+  const out: Row[] = []
+  let day: Row | undefined
+  for (const r of rows) {
+    if (r.kind === 'day') {
+      day = r
+      continue
+    }
+    if (!rowText(r).toLowerCase().includes(s)) continue
+    if (day) out.push(day)
+    day = undefined
+    out.push(r)
   }
   return out
 }
