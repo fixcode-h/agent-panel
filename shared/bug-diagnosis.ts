@@ -94,15 +94,54 @@ const LEVEL_TEXT: Record<BugLevel, string> = {
 const ATTRIBUTION_NEED =
   'attribution 要写版本归因：引入点（提交 / CL / rev、作者、日期、标题）、怎么确定的（how）和责任类别（category）；查不到写 category: unknown，note 写试过什么、还缺什么。'
 
+/**
+ * 论证的假设表：至少两个（含已排除的，只列一个就是只盯眼前那一处），待验证的要有编号，好和日志计划对上。
+ * 用户 2026-11-06 报一个 Bug 来回加了七八轮日志，每轮一两处：一轮要把所有待验证的假设都覆盖到
+ */
+function hypothesisLack(c: BugCase): string[] {
+  if (c.hypotheses.length < 2)
+    return ['hypotheses 至少两个候选假设（沿调用栈每个能让结果走偏的分叉都想一遍，已排除的也列上并写依据）']
+  if (c.hypotheses.some((h) => h.status === 'open' && !h.id.trim()))
+    return ['hypotheses 里待验证的假设要写 id（H1、H2…），日志计划按编号对上']
+  if (!c.hypotheses.some((h) => h.status === 'open'))
+    return ['hypotheses 里没有待验证的假设：都排除或证实了就不用再加日志，交 phase: cause；还有怀疑的标 open']
+  return []
+}
+
+/** 日志计划的 hypothesis 里写的编号：「H1、H2」「H1：单位混用」都认 */
+const idsIn = (s: string) => s.toUpperCase().split(/[\s,，、/;；:：]+/)
+
+/** 待验证、但日志计划里没有一处写它编号的假设 */
+const uncovered = (c: BugCase) =>
+  c.hypotheses
+    .filter((h) => h.status === 'open' && h.id.trim())
+    .map((h) => h.id.trim())
+    .filter((id) => !c.logPlan.some((l) => idsIn(l.hypothesis).includes(id.toUpperCase())))
+
+/** 上一版是用户按日志计划复现、贴回了日志的论证：再交论证就是又一轮，next 要写这一轮的（和上一版一样算没写） */
+const againAfterLogs = (list: Diagnosis[]) => {
+  const prev = list.at(-1)
+  return !!prev && phaseOf(prev) === 'evidence' && prev.status === 'answered'
+}
+
 /** 论证：日志计划、复现步骤、每种结果说明什么；logPlan、collect 要在这一次里写（每轮的日志不一样，不能沿用上一轮） */
-function evidenceProblem(c: BugCase, input: DiagnosisInput): string {
+function evidenceProblem(c: BugCase, input: DiagnosisInput, list: Diagnosis[]): string {
   const lack: string[] = []
   if (!c.symptom.trim()) lack.push('symptom（现象）')
-  if (!c.hypotheses.length) lack.push('hypotheses（这一轮要区分的假设，至少一个）')
+  lack.push(...hypothesisLack(c))
   if (input.logPlan === undefined || !c.logPlan.length)
     lack.push('logPlan（这一轮要加的临时日志，每处写 file、print、hypothesis）')
-  else if (c.logPlan.some((l) => !l.file.trim() || !l.print.trim()))
-    lack.push('logPlan 每一处都要写 file（加在哪）和 print（打什么）')
+  else {
+    if (c.logPlan.some((l) => !l.file.trim() || !l.print.trim() || !l.hypothesis.trim()))
+      lack.push('logPlan 每一处都要写 file（加在哪）、print（打什么）和 hypothesis（对应的假设编号，或「路标」）')
+    const bare = uncovered(c)
+    if (bare.length)
+      lack.push(
+        `这几个待验证的假设没有日志能判真假：${bare.join('、')}（logPlan 的 hypothesis 写上编号；一轮就把每个假设都覆盖到，不留到下一轮）`,
+      )
+  }
+  if (againAfterLogs(list) && (!c.next.trim() || c.next.trim() === list.at(-1)!.next.trim()))
+    lack.push('next（又一轮论证：上一轮的日志看到了什么、为什么没能定论、新假设从哪来）')
   if (input.collect === undefined || !c.collect?.steps.length) lack.push('collect.steps（怎么复现）')
   if (!c.collect?.expect.trim()) lack.push('collect.expect（每种结果说明什么：看到 A 是哪个假设、看到 B 是哪个）')
   return lack.length
@@ -198,7 +237,7 @@ export function diagnosisProblem(
   const phase = inputPhase(input, c, list)
   const bad =
     phase === 'evidence'
-      ? evidenceProblem(c, input)
+      ? evidenceProblem(c, input, list)
       : phase === 'cause'
         ? causeProblem(c)
         : phase === 'plan'

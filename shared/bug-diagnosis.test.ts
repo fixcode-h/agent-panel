@@ -84,9 +84,13 @@ const evidenceInput = (over: Partial<DiagnosisInput> = {}) =>
     phase: 'evidence',
     confirmed: false,
     rootCause: '假设：重试次数和秒数混用',
-    hypotheses: [{ text: '单位混用', status: 'open', basis: '代码里 max 来自 config' }],
+    hypotheses: [
+      { id: 'H1', text: '单位混用', status: 'open', basis: '代码里 max 来自 config' },
+      { id: 'H2', text: '后端超时', status: 'excluded', basis: '日志里请求 200ms 就回来了' },
+    ],
     logPlan: [
-      { id: 'L1', file: 'web/src/lib/login.ts:44', fn: 'retry', print: 'retries、max', hypothesis: '单位混用' },
+      { id: 'L1', file: 'web/src/lib/login.ts:44', fn: 'retry', print: 'retries、max', hypothesis: 'H1：单位混用' },
+      { id: 'L2', file: 'web/src/lib/login.ts:30', fn: 'login', print: '进入、请求 ID', hypothesis: '路标' },
     ],
     collect: { steps: ['打开登录页', '断网后点登录'], filter: '[排查-登录]', expect: 'max 大于 10 说明是秒' },
     files: [],
@@ -191,7 +195,14 @@ test('论证：要日志计划和每种结果说明什么；同意后只放行�
   assert.ok('deny' in editScope(tk.diagnoses!), '给了日志先分析，不改文件')
   // 还没定论：第二轮论证（新的日志计划），之后证实了再交根因
   assert.match(submitDiagnosis(tk, evidenceInput({ logPlan: undefined }), id).info, /logPlan/, '每轮要写这一轮的日志')
-  ok(submitDiagnosis(tk, evidenceInput(), id))
+  assert.match(submitDiagnosis(tk, evidenceInput(), id).info, /next（又一轮论证/, '再加一轮要写清上一轮为什么没定论')
+  ok(
+    submitDiagnosis(
+      tk,
+      evidenceInput({ next: '路标停在 api.ts，retries=3 max=30：H1 待定，新怀疑重试计数被重置' }),
+      id,
+    ),
+  )
   assert.equal(tk.diagnoses![0].status, 'answered', '用户做过的事留着，不改成作废')
   ok(decideDiagnosis(tk, 2, { approve: false, supply: true, logs: 'max=30', notes: [], overall: '' }, id))
   ok(submitDiagnosis(tk, input({ phase: 'cause' }), id))
@@ -317,7 +328,13 @@ test('收尾核对：要有确认过的方案、交过验证且用户给了结�
 
 test('验证：用户可以直接点结束跳过验证；论证时加过日志的文件修完时能改（删临时日志）', () => {
   const tk = bugTask()
-  ok(submitDiagnosis(tk, evidenceInput({ logPlan: [{ id: 'L1', file: 'web/src/lib/api.ts', print: 'status' }] }), id))
+  ok(
+    submitDiagnosis(
+      tk,
+      evidenceInput({ logPlan: [{ id: 'L1', file: 'web/src/lib/api.ts', print: 'status', hypothesis: 'H1' }] }),
+      id,
+    ),
+  )
   ok(decideDiagnosis(tk, 1, yes, id))
   approvePlan(tk)
   assert.deepEqual(editScope(tk.diagnoses!), { files: ['web/src/lib/login.ts', 'web/src/lib/api.ts'] })
@@ -536,7 +553,7 @@ test('第几版（用户 2026-11-06 定）：按意见修改、阶段往下走�
   // 论证两轮：同一版
   ok(submitDiagnosis(tk, evidenceInput(), id))
   ok(decideDiagnosis(tk, last().version, { ...yes, approve: false, supply: true, logs: 'max=30' }, id))
-  ok(submitDiagnosis(tk, evidenceInput(), id))
+  ok(submitDiagnosis(tk, evidenceInput({ next: '上一轮 max=30 还分不清' }), id))
   assert.equal(last().rev, 1, '论证多轮还是第 1 版')
   ok(decideDiagnosis(tk, last().version, { ...yes, approve: false, supply: true, logs: 'max=30' }, id))
   // 往下走到根因；用户提了疑问，逐条回答后再交：还是同一版
@@ -570,4 +587,45 @@ test('第几版（用户 2026-11-06 定）：按意见修改、阶段往下走�
   ok(submitDiagnosis(tk, input({ phase: 'plan', answers: [{ id: 1, answer: '换修法' }] }), id))
   assert.equal(last().rev, 4)
   assert.match(tk.messages.at(-1)!.text, /你对第 3 版的验证提了 1 条意见/)
+})
+
+test('论证的日志一次加够（用户 2026-11-06 定）：至少两个假设、每个待验证的假设都有日志、每处写对应哪个', () => {
+  const tk = bugTask()
+  const info = (over: Partial<DiagnosisInput>) => submitDiagnosis(tk, evidenceInput(over), id).info
+  assert.match(
+    info({ hypotheses: [{ id: 'H1', text: '单位混用', status: 'open', basis: '' }] }),
+    /至少两个候选假设/,
+    '只列一个假设就是只盯眼前那一处',
+  )
+  assert.match(
+    info({
+      hypotheses: [
+        { text: '单位混用', status: 'open', basis: '' },
+        { text: '计数被重置', status: 'open', basis: '' },
+      ],
+    }),
+    /待验证的假设要写 id/,
+  )
+  const two = [
+    { id: 'H1', text: '单位混用', status: 'open', basis: '' },
+    { id: 'H2', text: '计数被重置', status: 'open', basis: '' },
+  ]
+  assert.match(info({ hypotheses: two }), /没有日志能判真假：H2/, '每个待验证的假设这一轮都要覆盖到')
+  assert.match(
+    info({ hypotheses: two, logPlan: [{ id: 'L1', file: 'a.ts', print: 'x', hypothesis: '' }] }),
+    /hypothesis（对应的假设编号，或「路标」）/,
+  )
+  ok(
+    submitDiagnosis(
+      tk,
+      evidenceInput({
+        hypotheses: two,
+        logPlan: [
+          { id: 'L1', file: 'web/src/lib/login.ts', print: 'retries、max', hypothesis: 'h1、H2' },
+          { id: 'L2', file: 'web/src/lib/api.ts', print: '进入', hypothesis: '路标' },
+        ],
+      }),
+      id,
+    ),
+  )
 })

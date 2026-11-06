@@ -130,6 +130,8 @@ export const BugCaseFields = {
   hypotheses: z
     .array(
       z.object({
+        /** 编号 H1、H2…：日志计划的 hypothesis 按编号对上，面板核对每个待验证的假设都有日志 */
+        id: str(20),
         text: str(1500),
         status: z.enum(['confirmed', 'excluded', 'open']).catch('open').default('open'),
         basis: str(2000),

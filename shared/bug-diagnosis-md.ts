@@ -196,7 +196,7 @@ export function diagnosisMarkdown(
   const hypoText = { confirmed: t('已证实'), excluded: t('已排除'), open: t('待验证') }
   const hypotheses = table(
     [t('假设'), t('结论'), t('依据')],
-    d.hypotheses.map((h) => [h.text, hypoText[h.status], h.basis]),
+    d.hypotheses.map((h) => [h.id ? `${h.id} ${h.text}` : h.text, hypoText[h.status], h.basis]),
   )
   const impact = table(
     [t('影响面'), t('怎么受影响'), t('怎么验证')],
