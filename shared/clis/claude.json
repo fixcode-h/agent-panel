@@ -242,12 +242,57 @@
   "env": {
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
     "ENABLE_TOOL_SEARCH": "false",
-    "CLAUDE_CODE_MCP_STARTUP_WAIT_MS": "3000"
+    "CLAUDE_CODE_MCP_STARTUP_WAIT_MS": "3000",
+    "CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS": "30000",
+    "CLAUDE_CODE_GLOB_TIMEOUT_SECONDS": "120",
+    "BASH_DEFAULT_TIMEOUT_MS": "120000",
+    "BASH_MAX_TIMEOUT_MS": "600000",
+    "BASH_MAX_OUTPUT_LENGTH": "30000",
+    "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS": "25000"
+  },
+  "envNotes": {
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": {
+      "label": "关闭自带的后台命令",
+      "hint": "Claude Code 自己的后台命令不受面板监管，进程被回收结果就没了；面板改用自己的后台命令（CLAUDE_CODE_DISABLE_BACKGROUND_TASKS，1 为关闭）"
+    },
+    "ENABLE_TOOL_SEARCH": {
+      "label": "MCP 工具按需搜索",
+      "hint": "false 时启动就把面板等 MCP 工具全部交给模型，不用先搜索才能调用（ENABLE_TOOL_SEARCH）"
+    },
+    "CLAUDE_CODE_MCP_STARTUP_WAIT_MS": {
+      "label": "首轮等 MCP 连接（毫秒）",
+      "hint": "新对话第一轮最多等 MCP 服务连上多久，超时没连上的在对话里提示（CLAUDE_CODE_MCP_STARTUP_WAIT_MS）"
+    },
+    "CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS": {
+      "label": "输出中断判定（毫秒）",
+      "hint": "模型输出到一半、这么久收不到任何数据就断开这次请求，面板接回会话续接；不设时 Claude Code 要等 5 分钟，中转网关往往等满它自己的读超时（常见 60 秒）才断开。设得太短，模型正常停顿较久时也会被打断（CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS）"
+    },
+    "CLAUDE_CODE_GLOB_TIMEOUT_SECONDS": {
+      "label": "查找和搜索文件超时（秒）",
+      "hint": "「查找文件」「搜索」在目录里扫文件，超过这么久就中止并报超时；不设时 Claude Code 只等 20 秒（WSL 里 60 秒），大工程的插件、第三方库目录常常扫不完（CLAUDE_CODE_GLOB_TIMEOUT_SECONDS）"
+    },
+    "BASH_DEFAULT_TIMEOUT_MS": {
+      "label": "命令默认超时（毫秒）",
+      "hint": "模型跑命令时没有自己指定超时，就按这个时长中止命令（BASH_DEFAULT_TIMEOUT_MS）"
+    },
+    "BASH_MAX_TIMEOUT_MS": {
+      "label": "命令最长超时（毫秒）",
+      "hint": "模型给命令指定的超时最多放宽到这么长；编译、跑全量测试这类慢命令被中途打断时调大（BASH_MAX_TIMEOUT_MS）"
+    },
+    "BASH_MAX_OUTPUT_LENGTH": {
+      "label": "命令输出保留字数",
+      "hint": "命令输出超过这么多字时中间截掉，只把开头和结尾交给模型；Claude Code 最多认 150000（BASH_MAX_OUTPUT_LENGTH）"
+    },
+    "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS": {
+      "label": "读文件单次上限（token）",
+      "hint": "读文件时一次最多读进这么多 token，超过就报错让模型分段读；调大能少读几次，但每次占的上下文更多（CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS）"
+    }
   },
   "options": [
     {
       "id": "noAutoMemory",
       "label": "不用 Claude Code 自带的记忆",
+      "desc": "项目里的对话不共用 Claude Code 的记忆",
       "hint": "Claude Code 的自动记忆按项目目录存，面板在同一个项目里开的所有对话共用，一个对话里的临时约定会带进别的对话。打开时关掉它（CLAUDE_CODE_DISABLE_AUTO_MEMORY=1），要长期记住的写进面板的项目教训",
       "default": true,
       "env": {
@@ -523,6 +568,15 @@
   },
   "i18n": {
     "en": {
+      "项目里的对话不共用 Claude Code 的记忆": "Conversations in a project don't share Claude Code's memory",
+      "关闭自带的后台命令": "Turn off built-in background commands",
+      "Claude Code 自己的后台命令不受面板监管，进程被回收结果就没了；面板改用自己的后台命令（CLAUDE_CODE_DISABLE_BACKGROUND_TASKS，1 为关闭）": "Claude Code's own background commands aren't supervised by the panel and their results are lost when the process is reclaimed, so the panel uses its own background commands instead (CLAUDE_CODE_DISABLE_BACKGROUND_TASKS, 1 turns them off)",
+      "MCP 工具按需搜索": "Search MCP tools on demand",
+      "false 时启动就把面板等 MCP 工具全部交给模型，不用先搜索才能调用（ENABLE_TOOL_SEARCH）": "When false, the panel's and other MCP tools are all given to the model at start, so it can call them without searching first (ENABLE_TOOL_SEARCH)",
+      "首轮等 MCP 连接（毫秒）": "MCP wait on first turn (ms)",
+      "新对话第一轮最多等 MCP 服务连上多久，超时没连上的在对话里提示（CLAUDE_CODE_MCP_STARTUP_WAIT_MS）": "How long the first turn of a new conversation waits for MCP servers to connect; servers that don't connect in time are reported in the conversation (CLAUDE_CODE_MCP_STARTUP_WAIT_MS)",
+      "输出中断判定（毫秒）": "Stalled output timeout (ms)",
+      "模型输出到一半、这么久收不到任何数据就断开这次请求，面板接回会话续接；不设时 Claude Code 要等 5 分钟，中转网关往往等满它自己的读超时（常见 60 秒）才断开。设得太短，模型正常停顿较久时也会被打断（CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS）": "If no data arrives for this long partway through the model's output, the request is dropped and the panel resumes the session. Without it Claude Code waits 5 minutes, and relay gateways often wait out their own read timeout (commonly 60 seconds) before closing. Too short a value also cuts off models that pause for a while normally (CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS)",
       "不用 Claude Code 自带的记忆": "Turn off Claude Code's built-in memory",
       "Claude Code 的自动记忆按项目目录存，面板在同一个项目里开的所有对话共用，一个对话里的临时约定会带进别的对话。打开时关掉它（CLAUDE_CODE_DISABLE_AUTO_MEMORY=1），要长期记住的写进面板的项目教训": "Claude Code stores its auto memory per project folder, so every conversation the panel opens in the same project shares it and a one-off agreement in one conversation leaks into others. When on, it is turned off (CLAUDE_CODE_DISABLE_AUTO_MEMORY=1) and anything worth keeping long term goes into the panel's project lessons",
       "关闭": "Off",
@@ -536,7 +590,17 @@
       "只读规划": "Read-only planning",
       "只分析和出方案，不改文件": "Only analyzes and proposes a plan; does not edit files",
       "逐项确认": "Confirm each action",
-      "改文件和需要审批的命令都会在任务页上请你确认": "File edits and commands that need approval are confirmed on the task page"
+      "改文件和需要审批的命令都会在任务页上请你确认": "File edits and commands that need approval are confirmed on the task page",
+      "查找和搜索文件超时（秒）": "Find and search files timeout (s)",
+      "「查找文件」「搜索」在目录里扫文件，超过这么久就中止并报超时；不设时 Claude Code 只等 20 秒（WSL 里 60 秒），大工程的插件、第三方库目录常常扫不完（CLAUDE_CODE_GLOB_TIMEOUT_SECONDS）": "How long \"Find files\" and \"Search\" may scan folders before giving up with a timeout. Without it Claude Code waits only 20 seconds (60 in WSL), which often isn't enough for plugin or third-party folders in large projects (CLAUDE_CODE_GLOB_TIMEOUT_SECONDS)",
+      "命令默认超时（毫秒）": "Default command timeout (ms)",
+      "模型跑命令时没有自己指定超时，就按这个时长中止命令（BASH_DEFAULT_TIMEOUT_MS）": "Commands the model runs without choosing a timeout are stopped after this long (BASH_DEFAULT_TIMEOUT_MS)",
+      "命令最长超时（毫秒）": "Longest command timeout (ms)",
+      "模型给命令指定的超时最多放宽到这么长；编译、跑全量测试这类慢命令被中途打断时调大（BASH_MAX_TIMEOUT_MS）": "The longest timeout the model can give a command. Raise it if slow commands such as builds or full test runs get cut off (BASH_MAX_TIMEOUT_MS)",
+      "命令输出保留字数": "Command output kept (characters)",
+      "命令输出超过这么多字时中间截掉，只把开头和结尾交给模型；Claude Code 最多认 150000（BASH_MAX_OUTPUT_LENGTH）": "Command output longer than this is cut in the middle and only the start and end go to the model. Claude Code accepts at most 150000 (BASH_MAX_OUTPUT_LENGTH)",
+      "读文件单次上限（token）": "File read limit per call (tokens)",
+      "读文件时一次最多读进这么多 token，超过就报错让模型分段读；调大能少读几次，但每次占的上下文更多（CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS）": "The most tokens a single file read may return; larger reads fail and the model reads in parts. A higher value means fewer reads but more context per read (CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS)"
     }
   }
 }

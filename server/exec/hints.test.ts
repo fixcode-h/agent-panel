@@ -25,6 +25,7 @@ import {
   envStallNote,
   envStallTimeout,
   failureHints,
+  isNetError,
   silentTurn,
   settleEnvStallNotes,
   shouldRetryEnvStall,
@@ -62,6 +63,8 @@ test('Command Code 的响应流中途断开：按断流处理，给出续接说�
   const hints = failureHints('Failed to process successful response', { id: 'commandcode', name: 'Command Code' })
   assert.equal(hints.length, 1)
   assert.match(hints[0], /连接中途断开/)
+  // Claude Code 的输出中断判定触发后不自己重试、直接结束这一轮：同样算断流，交给面板续接
+  assert.ok(isNetError('API Error: Stream idle timeout - no chunks received'))
 })
 
 test('自动续接成功后，断开时的报错不再显示成错误', () => {

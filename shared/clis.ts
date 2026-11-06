@@ -87,6 +87,8 @@ export type ReviewTarget =
 export interface CliOption {
   id: string
   label: string
+  /** 标题下一行的短说明；有它时 hint 只放问号里 */
+  desc: string
   hint: string
   default: boolean | string
   env: Record<string, string>
@@ -235,6 +237,8 @@ export interface CliDefinition {
   envExample: string
   /** 每次运行都加的环境变量，用户在设置里写的同名变量优先 */
   env?: Record<string, string>
+  /** env 里每个变量在设置页显示的中文名和说明（变量名放问号里，见 cli-spec.ts 的 envNotes） */
+  envNotes?: Record<string, { label: string; hint: string }>
   /** stderr 里和失败无关的提示行（见 cli-spec.ts 的 stderrNoise）：失败原因里的 stderr 尾巴去掉这些行 */
   stderrNoise?: RegExp[]
   /** 自动压缩抖动的报错（见 cli-spec.ts 的 compactThrash）：认出来时在原会话里续一轮，再失败才报失败 */

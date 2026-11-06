@@ -3,7 +3,7 @@ import type { Attachment, Task, TaskRequest } from '@shared/schema'
 import { attachChip } from '@shared/composer'
 import type { Diagnosis } from '@shared/bug-diagnosis-schema'
 import { diagnosisMarkdown } from '@shared/bug-diagnosis'
-import { causeInPlan, phaseOf } from '@shared/bug-phase'
+import { causeInPlan, phaseOf, revOf, roundOf } from '@shared/bug-phase'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -33,7 +33,7 @@ const STATUS: Record<Diagnosis['status'], () => string> = {
   questioned: () => t('你提了意见，它在接着分析'),
   approved: () => t('你已同意'),
   answered: () => t('你给了日志，它在分析'),
-  superseded: () => t('已作废，有更新的一版'),
+  superseded: () => t('已被后面交的报告取代'),
   cancelled: () => t('你取消了，这次不修'),
 }
 
@@ -45,14 +45,22 @@ const statusOf = (d: Diagnosis) => {
   return STATUS[d.status]()
 }
 
-/** 每一版的标题、正文和状态：正文按上一版补出「回答上一版的意见」；author：引入点写不写作者（设置里的开关） */
+/**
+ * 每一份报告的标题、正文和状态：正文按上一份补出「回答上一轮的意见」；author：引入点写不写作者（设置里的开关）。
+ * 第几版只在结论被推翻时加（nextRev），同一版同一阶段交了几轮的标出第几轮
+ */
 function versionsOf(list: Diagnosis[], author: boolean) {
-  return list.map((d, i) => ({
-    key: String(d.version),
-    label: t('第 {n} 版 · {phase}', { n: d.version, phase: phaseLabel(d) }),
-    detail: diagnosisMarkdown(d, list[i - 1], { author, list }),
-    status: statusOf(d),
-  }))
+  return list.map((d, i) => {
+    const n = revOf(d)
+    const k = roundOf(d, list)
+    const phase = phaseLabel(d)
+    return {
+      key: String(d.version),
+      label: k > 1 ? t('第 {n} 版 · {phase} · 第 {k} 轮', { n, phase, k }) : t('第 {n} 版 · {phase}', { n, phase }),
+      detail: diagnosisMarkdown(d, list[i - 1], { author, list }),
+      status: statusOf(d),
+    }
+  })
 }
 
 const phaseLabel = (d: Diagnosis) =>
@@ -69,9 +77,9 @@ function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
     return {
       texts: {
         approve: t('同意根因并按这个修'),
-        revise: t('有疑问，出下一版'),
+        revise: t('有疑问，让它修改'),
         hintApprove: t('根因和修复方案一起确认，确认了它才开始改代码；根因或方案有疑问先选中文字标注'),
-        hintRevise: t('「有疑问」把标注按编号交回，它逐条回答后交下一版'),
+        hintRevise: t('「有疑问」把标注按编号交回，它逐条回答、改好再交（还是这一版）'),
       },
     }
   if (phase === 'evidence' && d.awaiting)
@@ -94,9 +102,9 @@ function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
     return {
       texts: {
         approve: t('同意加日志'),
-        revise: t('继续分析，出下一版'),
+        revise: t('有疑问，接着分析'),
         hintApprove: t('同意后它只在日志计划里的文件加临时日志，不改逻辑；手上已有日志可以贴在右下角直接交'),
-        hintRevise: t('「继续分析」把标注按编号交回，它逐条回答后交下一版'),
+        hintRevise: t('「有疑问」把标注按编号交回，它逐条回答后接着论证'),
       },
       supply: { label: t('我有日志，直接分析'), hint: t('不用它加日志：直接分析你贴的日志') },
       placeholder: t('整体意见（可选）；手上已有日志可以贴在这里，或粘贴、拖进日志文件'),
@@ -107,16 +115,16 @@ function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
         approve: t('同意根因'),
         revise: t('否决，再分析'),
         hintApprove: t('同意根因它就开始设计修复方案；觉得不对就选中文字标出疑问或补充，再点「否决」'),
-        hintRevise: t('「否决」把疑问和补充交回：它认为证据不够会回到论证加日志，否则逐条回答交新一版'),
+        hintRevise: t('「否决」把疑问和补充交回：它认为证据不够会回到论证加日志（升一版），否则逐条回答后再交'),
       },
     }
   if (phase === 'plan')
     return {
       texts: {
         approve: t('确认方案，开始修'),
-        revise: t('有疑问，出下一版'),
+        revise: t('有疑问，让它修改'),
         hintApprove: t('方案没问题就确认，它才会开始改代码；有疑问先选中文字标注'),
-        hintRevise: t('「有疑问」把标注按编号交回，它逐条回答后交下一版'),
+        hintRevise: t('「有疑问」把标注按编号交回，它逐条回答、改好再交（还是这一版）'),
       },
     }
   return {
@@ -158,7 +166,7 @@ export function DiagnosisDialog({
     title: t('诊断报告 · {title}', { title: task.title }),
     detail: diagnosisMarkdown(last, list.at(-2), { author, list }),
   }
-  // 候选方案里没选的那几个：点一下加一条「改方案」意见，退回让它按这个方案交新一版（ADR 0046，档案不由界面直接改）
+  // 候选方案里没选的那几个：点一下加一条「改方案」意见，退回让它按这个方案改好再交（ADR 0046，档案不由界面直接改）
   const presets =
     phaseOf(last) === 'plan'
       ? last.options

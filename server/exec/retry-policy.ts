@@ -125,8 +125,10 @@ export function settleEnvStallNotes(notes: EnvStallNote[]) {
   }
 }
 
+// Stream idle timeout：Claude Code 的输出中断判定（CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS）触发后以
+// 「API Error: Stream idle timeout - no chunks received」结束这一轮，不像连接被断开那样自己重试（2.1.318 实测）
 const NETWORK_ERROR =
-  /Connection error|APIConnectionError|Unable to connect to the API|Failed to process successful response|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
+  /Connection error|APIConnectionError|Unable to connect to the API|Failed to process successful response|Stream connection failed|stream (disconnected|closed|error)|Stream idle timeout|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
 /** 断流和上游网关断开算同一种网络问题：给连接中断的说明，有会话时自动续接 */
 export const isNetError = (detail: string) => NETWORK_ERROR.test(detail) || isGatewayError(detail)

@@ -158,7 +158,13 @@ export const Diagnosis = z.object({
   ...BugCaseFields,
   /** 旧数据没有：按 confirmed 推（phaseOf） */
   phase: BugPhase.optional().catch(undefined),
+  /** 交报告的顺序号（第几份）：接口、对话里那一行都按它认；界面和提示词里的「第几版」是 rev */
   version: z.number().int(),
+  /**
+   * 第几版（用户 2026-11-06 定）：只在之前的结论被推翻时 +1（回到更早的阶段、确认过的方案换掉），
+   * 按意见修改、阶段往下走都还是同一版（nextRev）。旧数据没有：按 version 显示
+   */
+  rev: z.number().int().optional(),
   at: z.string(),
   symptom: z.string().default(''),
   repro: z.string().default(''),

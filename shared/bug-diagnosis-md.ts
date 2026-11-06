@@ -49,7 +49,7 @@ const at = (file: string, line?: number) => `\`${shortFile(file)}${line ? `:${li
 function nextStep(d: Diagnosis, withCause = false): string {
   const phase = phaseOf(d)
   if (d.status === 'cancelled') return t('你取消了这次修复')
-  if (d.status === 'superseded') return t('这一版已作废，看最新一版')
+  if (d.status === 'superseded') return t('这份报告已被后面交的取代，看最新的')
   if (d.status === 'questioned') return t('你提了意见，它在接着分析')
   if (d.status === 'answered') return phase === 'verify' ? t('你给了验证结果，它在分析') : t('你给了日志，它在分析')
   if (d.status === 'approved')
@@ -318,7 +318,7 @@ export function diagnosisMarkdown(
   const early = earlyFiles(d, opts.list)
   return [
     sec(t('结论'), summary),
-    sec(t('回答上一版的意见'), answers),
+    sec(t('回答上一轮的意见'), answers),
     sec(t('你贴的日志'), userLogsOf(d)),
     ...body,
     sec(t('交报告前已改动的文件'), early.map((f) => `- \`${f}\``).join('\n')),

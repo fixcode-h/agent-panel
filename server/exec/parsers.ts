@@ -94,6 +94,8 @@ export type CliEvent =
       attempt?: number
       maxAttempts?: number
       error?: string
+      /** CLI 自己报了这次请求等了多久没回应（首字节超时）：面板就不再另算「之前多久没有输出」 */
+      waitedMs?: number
     }
   /** CLI 自动重试成功了：只用来把前面那张「正在重试」收成已恢复，不再多提示一行 */
   | { type: 'retry_ok'; text: string; attempt?: number }
@@ -355,8 +357,9 @@ export function claudeParser(cwd: string): Parser {
     if (o.type === 'system' && o.subtype === 'api_retry') {
       retrying = Number(o.attempt) || retrying + 1
       // 首字节超时（网关在 CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS 内连响应头都没回）时 error 只有 unknown，
-      // 等了多久在 waited_ms 里：带上才看得出是「网关没回」，不是模型报错（用户 2026-11-03 报子任务一启动就重试）
-      const waited = Number(o.waited_ms) || 0
+      // 等了多久在 waited_ms 里：带上才看得出是「网关没回」，不是模型报错（用户 2026-11-03 报子任务一启动就重试）。
+      // 2.1.318 起挪进了 no_response.waited_ms，老版本在顶层，两处都认
+      const waited = Number(o.no_response?.waited_ms ?? o.waited_ms) || 0
       const err = oneLine(
         [
           o.error_status,
@@ -379,6 +382,21 @@ export function claudeParser(cwd: string): Parser {
         attempt: retrying,
         ...(typeof o.max_retries === 'number' ? { maxAttempts: o.max_retries } : {}),
         ...(err ? { error: err } : {}),
+        ...(waited ? { waitedMs: waited } : {}),
+      })
+      return out
+    }
+    // 输出到一半断流（CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS 到点）：Claude Code 在 message_stop 上带 abandoned_blocks
+    // 丢掉没写完的这段，只有思考时直接重新请求，不发 api_retry（2.1.318 对真实网关实测）。不接的话界面上
+    // 思考突然断掉又从头来，看不出发生了什么；已经写了正文的，接着会以 Stream idle timeout 结束这一轮
+    if (o.type === 'stream_event' && o.event?.type === 'message_stop' && o.abandoned_blocks) {
+      retrying += 1
+      out.push({
+        type: 'notice',
+        text: t('模型输出中途断了，Claude Code 丢掉没写完的这段、重新请求'),
+        kind: 'retry',
+        attempt: retrying,
+        error: 'stream idle timeout',
       })
       return out
     }

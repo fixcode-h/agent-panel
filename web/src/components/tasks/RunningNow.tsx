@@ -10,7 +10,7 @@ import { toolTitle } from '@shared/tool-names'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
 import { ChildReportButton, DiagnosisAutoOpen, firstShow, showTag } from './ChildReport'
-import { bugStage } from '@shared/bug-diagnosis'
+import { bugStage, revOf } from '@shared/bug-diagnosis'
 import { useDiagnosisWindow } from './diagnosis-window'
 import { Button } from '@/components/ui/button'
 import { useChildList, useChildOpen, useJobOpen } from './child-open'
@@ -96,6 +96,9 @@ function ReportRow({ task, version }: { task: Task; version: number }) {
   // 弹窗挂在任务页顶层（见 diagnosis-window.tsx）：一轮输出完、子任务做完时这一行会重挂，弹窗不能跟着关
   const { open: show, dialog } = useDiagnosisWindow(task)
   const setOpen = () => show(task)
+  // 显示的是第几版（只在结论被推翻时加）；version 是交报告的顺序号，自动弹窗的记号按它
+  const d = task.diagnoses?.find((x) => x.version === version)
+  const rev = d ? revOf(d) : version
   // 交上来时自动弹一次（每一版一次，和父对话页共用记号）：交报告那一行折叠着时根本没挂上，不能只靠它弹
   useEffect(() => {
     if (firstShow(task.id, version, showTag(task))) show(task, true)
@@ -114,12 +117,12 @@ function ReportRow({ task, version }: { task: Task; version: number }) {
           )
         }
         verb={t('诊断报告')}
-        title={t('第 {n} 版', { n: version })}
+        title={t('第 {n} 版', { n: rev })}
         titleClass={NAME_TITLE}
         open={false}
         rowOpen={setOpen}
         onOpen={setOpen}
-        openTip={t('打开诊断报告第 {n} 版', { n: version })}
+        openTip={t('打开诊断报告第 {n} 版', { n: rev })}
         detailStart
         detail={<span className={childLabelClass.warning}>{bugStage(task) || t('等你确认')}</span>}
         action={

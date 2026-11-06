@@ -1630,6 +1630,14 @@ body,
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+/* 文字是一整个弹性子项，窄处按普通文字折行（长名字任意处断开），扩展名和行号不拆开 */
+.file-ref .fr-text {
+  min-width: 0;
+}
+.file-ref .fr-ext,
+.file-ref .fr-line {
+  white-space: nowrap;
+}
 .file-ref .fr-ext,
 .file-ref .fr-line,
 .file-ref .fr-dim {

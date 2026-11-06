@@ -1183,7 +1183,7 @@ export type ChildWait =
   | { kind: 'background'; n: number }
   | { kind: 'helpers'; list: string[] }
   | { kind: 'workflow' }
-  | { kind: 'diagnosis'; version: number }
+  | { kind: 'diagnosis'; version: number; rev: number }
   | { kind: 'action'; title: string }
   | { kind: 'next' }
 
@@ -1202,7 +1202,7 @@ export function childWaitText(w: ChildWait | undefined): string {
     case 'workflow':
       return t('等工作流跑完')
     case 'diagnosis':
-      return t('等你查看诊断报告第 {n} 版', { n: w.version })
+      return t('等你查看诊断报告第 {n} 版', { n: w.rev })
     case 'action':
       return t('等你操作：{title}', { title: w.title })
     case 'next':
@@ -1229,7 +1229,10 @@ export function childWait(
   if (asking) return { kind: 'answer', n: asking }
   const requests = tk.requests?.length ?? 0
   if (requests) return confirmWait(tk.requests)
-  if (diagnosisPending(tk)) return { kind: 'diagnosis', version: tk.diagnoses!.at(-1)!.version }
+  if (diagnosisPending(tk)) {
+    const d = tk.diagnoses!.at(-1)!
+    return { kind: 'diagnosis', version: d.version, rev: d.rev ?? d.version }
+  }
   const act = pendingAction(tk)
   if (act) return { kind: 'action', title: act.title }
   if (x.childNeeds) return { kind: 'children', n: x.childNeeds }
