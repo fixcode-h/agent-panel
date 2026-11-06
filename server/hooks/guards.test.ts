@@ -54,7 +54,7 @@ test('Bug 先诊断：没诊断、等确认、被提意见时不改文件；确�
   assert.match(bugDeny(ctx(diag('questioned')), edit(path.join(proj, 'src/a.ts'))), /提了意见/)
   assert.match(
     bugDeny(ctx(diag('cancelled')), edit(path.join(proj, 'src/a.ts'))),
-    /取消了第 1 版.*先用 submit_diagnosis 交新一版/,
+    /取消了第 1 版.*先用 submit_diagnosis 重新交报告/,
   )
   assert.equal(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/a.ts'))), '')
   assert.match(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/b.ts'))), /不在用户同意的范围/)

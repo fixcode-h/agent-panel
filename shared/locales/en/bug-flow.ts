@@ -5,6 +5,7 @@ export const EN_BUG_FLOW: Record<string, string> = {
   你已同意: 'You agreed',
   '你给了日志，它在分析': 'You provided logs; it is analysing them',
   '第 {n} 版 · {phase}': 'Version {n} · {phase}',
+  '第 {n} 版 · {phase} · 第 {k} 轮': 'Version {n} · {phase} · round {k}',
   '日志已加好，等你复现': 'Logs added; waiting for you to reproduce',
   论证: 'Evidence',
   // 按阶段的按钮和提示
@@ -17,11 +18,11 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '把复现得到的日志贴在这里，也可以粘贴或拖进日志文件':
     'Paste the logs from your reproduction here, or paste / drop log files',
   同意加日志: 'Allow adding logs',
-  '继续分析，出下一版': 'Keep analysing, next version',
+  '有疑问，接着分析': 'Question it, keep analysing',
   '同意后它只在日志计划里的文件加临时日志，不改逻辑；手上已有日志可以贴在右下角直接交':
     'Once allowed it only adds temporary logs to the files in the log plan, no logic changes. Already have logs? Paste them at the bottom right and submit',
-  '「继续分析」把标注按编号交回，它逐条回答后交下一版':
-    '"Keep analysing" sends your numbered notes back; it answers each and submits the next version',
+  '「有疑问」把标注按编号交回，它逐条回答后接着论证':
+    '"Question it" sends your numbered notes back; it answers each and keeps gathering evidence',
   '我有日志，直接分析': 'I have logs, analyse them',
   '不用它加日志：直接分析你贴的日志': 'Skip adding logs: analyse the logs you pasted',
   '整体意见（可选）；手上已有日志可以贴在这里，或粘贴、拖进日志文件':
@@ -30,13 +31,13 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '否决，再分析': 'Reject, analyse again',
   '同意根因它就开始设计修复方案；觉得不对就选中文字标出疑问或补充，再点「否决」':
     'Agree and it starts designing the fix; if it looks wrong, select text to add questions or facts, then click "Reject"',
-  '「否决」把疑问和补充交回：它认为证据不够会回到论证加日志，否则逐条回答交新一版':
-    '"Reject" sends your points back: if it agrees the evidence is thin it goes back to adding logs, otherwise it answers each point in a new version',
-  '有疑问，出下一版': 'Question it, next version',
+  '「否决」把疑问和补充交回：它认为证据不够会回到论证加日志（升一版），否则逐条回答后再交':
+    '"Reject" sends your points back: if it agrees the evidence is thin it goes back to adding logs (a new version), otherwise it answers each point and resubmits',
+  '有疑问，让它修改': 'Question it, ask for changes',
   '方案没问题就确认，它才会开始改代码；有疑问先选中文字标注':
     'Approve if the plan looks right; it only starts changing code after that. Select text to annotate questions',
-  '「有疑问」把标注按编号交回，它逐条回答后交下一版':
-    '"Question it" sends your numbered notes back; it answers each and submits the next version',
+  '「有疑问」把标注按编号交回，它逐条回答、改好再交（还是这一版）':
+    '"Question it" sends your numbered notes back; it answers each and resubmits (same version)',
   '结束，跳过验证': 'Finish, skip verification',
   还有问题: 'Still broken',
   '「还有问题」把标注交回：它会回到论证或重新出方案':
@@ -68,7 +69,7 @@ export const EN_BUG_FLOW: Record<string, string> = {
   请你复现: 'Asks you to reproduce',
   // 报告的结论和小节
   你取消了这次修复: 'You cancelled this fix',
-  '这一版已作废，看最新一版': 'This version is superseded; see the latest',
+  '这份报告已被后面交的取代，看最新的': 'This report was replaced by a later one; see the latest',
   '你给了验证结果，它在分析': 'You provided verification results; it is analysing them',
   '你同意了，它在加日志': 'You agreed; it is adding logs',
   '你同意了根因，它在设计修复方案': 'You agreed with the root cause; it is designing the fix',
@@ -113,7 +114,8 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '你给了第 {n} 版的验证结果，交给它分析':
     'You provided verification results for version {n}; handed over for analysis',
   '你给了第 {n} 版要的日志，交给它分析': 'You provided the logs version {n} asked for; handed over for analysis',
-  '你对第 {n} 版提了 {k} 条意见，要它接着分析': 'You raised {k} points on version {n} and asked it to keep analysing',
+  '你对第 {n} 版的{phase}提了 {k} 条意见，要它接着分析':
+    'You raised {k} points on the {phase} of version {n} and asked it to keep analysing',
   '你同意了第 {n} 版的日志计划': 'You allowed the log plan in version {n}',
   '你同意了第 {n} 版的根因': 'You agreed with the root cause in version {n}',
   '你确认了第 {n} 版的修复方案': 'You approved the fix plan in version {n}',

@@ -233,20 +233,20 @@ export const DIAGNOSIS_TOOL = {
   name: 'submit_diagnosis',
   title: '交诊断报告',
   description:
-    '用户报的 Bug：每到一个关口交一版报告，用户在弹窗里同意、标疑问或贴日志，结果作为新消息交给你。按阶段走：evidence 论证（根因还没证实：写 logPlan 要加的日志、collect 怎么复现和每种结果说明什么，用户同意后加日志、复现，拿到日志再分析，可以多轮）→ cause 根因（证据链齐了、confirmed: true，用户同意才往下）→ plan 修复方案（候选修法比较、files，用户确认才改代码）→ verify 验证（修完、用 update_bug_case 记下 result 后交，collect 写用户怎么验证、看到什么算修好了）。update_bug_case 记过的档案草稿会自动带上，这里只写还没记的；按阶段和级别检查缺什么，缺了会退回说清。交完结束这一轮，用户回复之前不要改任何文件。用户提了意见后再交新一版，answers 按编号逐条回答。',
+    '用户报的 Bug：每到一个关口交一份报告，用户在弹窗里同意、标疑问或贴日志，结果作为新消息交给你。按阶段走：evidence 论证（根因还没证实：写 logPlan 要加的日志、collect 怎么复现和每种结果说明什么，用户同意后加日志、复现，拿到日志再分析，可以多轮）→ cause 根因（证据链齐了、confirmed: true，用户同意才往下）→ plan 修复方案（候选修法比较、files，用户确认才改代码）→ verify 验证（修完、用 update_bug_case 记下 result 后交，collect 写用户怎么验证、看到什么算修好了）。update_bug_case 记过的档案草稿会自动带上，这里只写还没记的；按阶段和级别检查缺什么，缺了会退回说清。交完结束这一轮，用户回复之前不要改任何文件。用户提了意见后改好再交，answers 按编号逐条回答。版本号由面板定：按意见修改、阶段往下走还是同一版，回到更早的阶段或换掉确认过的方案才升一版；跟用户说第几版照返回里的写。',
   inputSchema: {
     type: 'object',
     properties: {
       phase: {
         type: 'string',
         enum: ['evidence', 'cause', 'plan', 'verify'],
-        description: '这一版的阶段：evidence 论证、cause 根因、plan 修复方案、verify 验证',
+        description: '这一份的阶段：evidence 论证、cause 根因、plan 修复方案、verify 验证',
       },
       ...TEXT_PROPS,
       ...CASE_PROPS,
       answers: {
         type: 'array',
-        description: '第 2 版起：按编号回答上一版用户的意见',
+        description: '用户提了意见后再交时：按编号回答用户上一轮的意见',
         items: {
           type: 'object',
           properties: {

@@ -287,7 +287,8 @@ export function toolView(tool: ToolUse): ToolView | null {
     const startsRun = name === 'start_plan' || name === 'run_workflow'
     const diagnosis =
       name === 'submit_diagnosis' || name === 'request_logs'
-        ? Number(/第 (\d+) 版/.exec(tool.output ?? '')?.[1]) || 0
+        ? // 按「报告 #n」（交报告的顺序号）认；旧输出只有「第 n 版」，那时两者一样
+          Number((/报告 #(\d+)/.exec(tool.output ?? '') ?? /第 (\d+) 版/.exec(tool.output ?? ''))?.[1]) || 0
         : 0
     const send = sendOf(name, tool)
     return {
