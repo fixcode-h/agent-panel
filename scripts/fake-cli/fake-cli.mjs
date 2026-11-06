@@ -34,6 +34,10 @@ const kind =
           ? 'claude'
           : 'custom'
         : 'commandcode'
+// 启动时就把面板 MCP 的地址记下（和真的 CLI 一样只读一次配置，见 panelMcpUrl）；没有面板工具的这一轮读不到，用到时再读
+try {
+  panelMcpUrl.atStart = panelMcpUrl()
+} catch {}
 // Pi 的 RPC 模式：stdin 一行一条命令，stdout 一行一条记录（和 --mode json 的会话事件同一套）
 const piRpc = kind === 'pi' && args.includes('--mode') && args[args.indexOf('--mode') + 1] === 'rpc'
 // 登录：按 FAKE_AUTH 把凭据文件写到各个 CLI 放凭据的地方（每次登录换一个邮箱），打印一个登录网址
@@ -1339,12 +1343,18 @@ const turnReply = () => {
 function panelExt() {
   return args.find((a, i) => args[i - 1] === '-e' && /agent-panel-(agent-)?panel[\w-]*\.ts$/.test(a))
 }
+// 真的 CLI 只在启动时读一次 MCP 配置，之后一直连那个地址；这里也在启动时记下（见文件顶部的 panelMcpUrl.atStart）。
+// 以前每次用到才去读工作目录里的配置文件：同一个项目目录里前一个对话收尾还原配置、别的对话加了自己的那一项时，
+// 读到的可能已经不是这一轮的（最后一项是别人的、或者文件刚被删掉），假 CLI 崩掉或连到别的对话的通道上，
+// e2e 偶发「预热完停在等下一句」超时。有钩子转发地址（面板给这一轮的通道地址加 /hook）时按它认出自己的那一项
 function panelMcpUrl() {
+  if (panelMcpUrl.atStart) return panelMcpUrl.atStart
   if (kind === 'pi') return /new URL\('([^']+)'\)/.exec(readFileSync(panelExt(), 'utf8'))[1]
   const cfg = JSON.parse(readFileSync(kind === 'custom' ? '.custom/settings.json' : '.mcp.json', 'utf8'))
   const keys = Object.keys(cfg.mcpServers).filter((k) => /^(agent-)?panel/.test(k))
-  const hit = cfg.mcpServers[keys.at(-1)]
-  return hit.httpUrl ?? hit.url
+  const urls = keys.map((k) => cfg.mcpServers[k].httpUrl ?? cfg.mcpServers[k].url)
+  const own = process.env.AGENT_PANEL_HOOK_URL?.replace(/\/hook$/, '')
+  return urls.find((u) => u === own) ?? urls.at(-1)
 }
 
 // 没有插话协议的 CLI（Command Code）：用户在执行中补充的要求会登记给它，模型用面板的工具取走。

@@ -590,6 +590,12 @@ await runShard('本机请求与设置', async (api) => {
 
   // 对话页开着时：CLI 回复完停在 wait_user_message 上，下一句直接交给同一个进程；切走宽限到了就结束
   {
+    // 超时时带上状态和这个对话的生命周期日志：出包 CI 上偶发过一次，只有一句「等待超时」看不出卡在哪
+    const waitState = async (id) => {
+      const t = await call('GET', `/tasks/${id}`)
+      const life = await call('GET', `/tasks/${id}/lifecycle`)
+      return { status: t.status, working: t.working, error: t.error, log: life.nodes?.[0]?.log?.slice(-12) }
+    }
     const before = readLog(log + '.wait').length
     let w = await call('POST', '/tasks', {
       projectId: project.id,
@@ -607,7 +613,7 @@ await runShard('本机请求与设置', async (api) => {
         const t = await call('GET', `/tasks/${w.id}`)
         return t.awaitingUser ? t : null
       },
-      { timeout: 20000, label: '预热完停在等下一句' },
+      { timeout: 20000, label: '预热完停在等下一句', describe: () => waitState(w.id) },
     )
     assert.ok(w.awaitingUser, '回复完停在等下一句上')
     assert.equal(w.working, false, '等下一句不算执行中')
@@ -647,7 +653,7 @@ await runShard('本机请求与设置', async (api) => {
         const t = await call('GET', `/tasks/${left.id}`)
         return t.awaitingUser ? t : null
       },
-      { timeout: 20000, label: '预热完停在等下一句' },
+      { timeout: 20000, label: '预热完停在等下一句', describe: () => waitState(left.id) },
     )
     assert.ok(left.awaitingUser, '第二个对话也停在等下一句上')
     assert.equal(left.working, false, '等下一句不算执行中')
