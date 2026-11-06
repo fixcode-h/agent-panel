@@ -44,6 +44,9 @@ export interface ReviewVersion {
   detail: string
   /** 状态文字（已作废、已确认…）：看旧版时写在正文上面 */
   status?: string
+  /** 下拉里按组列（诊断报告按阶段分组）；group 有值时列表里显示 short，选中后框里仍显示完整的 label */
+  group?: string
+  short?: string
 }
 
 /** 标注和整体意见的原始内容：诊断报告要按种类、按编号交回；files 是整体意见框里附的日志文件 */
@@ -271,34 +274,36 @@ export function ReviewDialog({
     }
   }
 
+  // 多版时用下拉选看哪一版（用户 2026-11-05：不要把所有版本都排在正文上面）。
+  // 有分组时组按第一次出现的顺序排（诊断报告就是论证 → 验证），组里新的在上；没有版本的阶段自然不出现
+  const order = [...new Set((versions ?? []).map((v) => v.group ?? ''))]
+  const picker = versions && versions.length > 1 && (
+    <Select
+      size="xs"
+      aria-label={t('版本')}
+      value={shown?.key ?? ''}
+      onChange={(e) => {
+        // 换版本时文档重画，旧版本上画的标注位置对不上：切到旧版先不显示标注
+        setVer(e.target.value)
+        setPick(null)
+      }}
+      options={order.flatMap((g) =>
+        versions
+          .filter((v) => (v.group ?? '') === g)
+          .reverse()
+          .map((v) => {
+            const latest = v === versions.at(-1)
+            const mark = (x: string) => (latest ? t('{label}（最新）', { label: x }) : x)
+            return { value: v.key, label: mark(v.label), short: v.short && mark(v.short), group: v.group }
+          }),
+      )}
+      className="w-48 shrink-0"
+    />
+  )
+
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="xl">
-      <ModalHeader
-        icon={ClipboardCheck}
-        iconClass="text-warning"
-        title={req.title}
-        aside={
-          // 多版时在标题栏用下拉选看哪一版（用户 2026-11-05：不要把所有版本都排在正文上面）
-          versions &&
-          versions.length > 1 && (
-            <Select
-              size="xs"
-              aria-label={t('版本')}
-              value={shown?.key ?? ''}
-              onChange={(e) => {
-                // 换版本时文档重画，旧版本上画的标注位置对不上：切到旧版先不显示标注
-                setVer(e.target.value)
-                setPick(null)
-              }}
-              options={[...versions].reverse().map((v, i) => ({
-                value: v.key,
-                label: i ? v.label : t('{label}（最新）', { label: v.label }),
-              }))}
-              className="w-56"
-            />
-          )
-        }
-      >
+      <ModalHeader icon={ClipboardCheck} iconClass="text-warning" title={req.title} aside={!top && picker}>
         {agent && (
           <span className="hidden min-w-0 items-center gap-1.5 text-footnote text-subtle sm:flex">
             <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
@@ -318,17 +323,22 @@ export function ReviewDialog({
           {top && (
             // 吸在滚动区顶上（top 取负的上内边距：吸顶按滚动区的内容框算，不抵掉内边距会离顶边留一截），样式和对话的回复头一样是毛玻璃通栏（用户 2026-11-06 要求）；
             // 放在 docRef 外面，选中文字标注时不会把阶段名选进去
-            <div className="frost-bar sticky -top-4 z-20 [--frost-bg:var(--c-modal-bg)] mx-auto -mt-4 mb-3 max-w-[820px] py-2.5 select-none md:-top-6 md:-mt-6">
+            // 版本下拉放在这条的最右边（用户 2026-11-06 要求）
+            <div className="frost-bar sticky -top-4 z-20 [--frost-bg:var(--c-modal-bg)] -mt-4 mb-3 flex items-center gap-3 py-2.5 select-none md:-top-6 md:-mt-6">
               <FrostBarBg />
-              {typeof top === 'function'
-                ? top(shown?.key ?? '', (key) => {
-                    setVer(key)
-                    setPick(null)
-                  })
-                : top}
+              <div className="min-w-0 flex-1">
+                {typeof top === 'function'
+                  ? top(shown?.key ?? '', (key) => {
+                      setVer(key)
+                      setPick(null)
+                    })
+                  : top}
+              </div>
+              {picker}
             </div>
           )}
-          <div ref={docRef} className="mx-auto max-w-[820px]" onClick={onDocClick}>
+          {/* 正文随弹窗宽度铺满（用户 2026-11-06 要求自适应，不再限 820px 窄栏） */}
+          <div ref={docRef} onClick={onDocClick}>
             {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
             {detail ? (
               <Markdown key={shown?.key} text={detail} teamNames={teamNames} />

@@ -6,6 +6,7 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '你给了日志，它在分析': 'You provided logs; it is analysing them',
   '第 {n} 版 · {phase}': 'Version {n} · {phase}',
   '第 {n} 版 · {phase} · 第 {k} 轮': 'Version {n} · {phase} · round {k}',
+  '第 {n} 版 · 第 {k} 轮': 'Version {n} · round {k}',
   '日志已加好，等你复现': 'Logs added; waiting for you to reproduce',
   论证: 'Evidence',
   // 按阶段的按钮和提示
