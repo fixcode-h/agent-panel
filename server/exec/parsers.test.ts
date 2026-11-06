@@ -282,6 +282,31 @@ test('Claude Code：网关出错时自己重试（api_retry）画成「正在重
     waited_ms: 60_012,
   })
   assert.equal((ttfb[0] as { error: string }).error, 'unknown 等了 60 秒没收到响应头（首字节超时）')
+  // 2.1.318 把等待时间挪进了 no_response（实测输出）：同样认出来，并带上 waitedMs 让面板不再另算安静了多久
+  const nested = claudeParser(CWD)({
+    type: 'system',
+    subtype: 'api_retry',
+    attempt: 1,
+    max_retries: 10,
+    error_status: null,
+    error: 'unknown',
+    no_response: { waited_ms: 45_100, retry_wait_ms: 500 },
+  })
+  assert.equal((nested[0] as { error: string }).error, 'unknown 等了 45 秒没收到响应头（首字节超时）')
+  assert.equal((nested[0] as { waitedMs: number }).waitedMs, 45_100)
+  // 输出到一半断流：message_stop 带 abandoned_blocks、不发 api_retry（2.1.318 对真实网关实测），同样画成「正在重试」
+  const cut = claudeParser(CWD)
+  const dropped = cut({
+    type: 'stream_event',
+    event: { type: 'message_stop' },
+    abandoned_blocks: { api_message_id: 'resp_1', from_block_index: 0 },
+  })
+  assert.deepEqual(
+    dropped.map((e) => e.type === 'notice' && e.kind),
+    ['retry'],
+  )
+  const again = cut({ type: 'assistant', message: { id: 'resp_2', content: [{ type: 'text', text: '好' }] } })
+  assert.equal(again[0].type, 'retry_ok')
 })
 
 test('Codex app-server：网关把推理 delta 挂在回复条目上时思考不重复、正文不丢', async () => {

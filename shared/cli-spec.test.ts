@@ -142,7 +142,7 @@ test('插件来源去掉版本号再比：装的是带版本的、带 ref 的，
   assert.equal(packageIdentity('../local-pkg'), '../local-pkg')
 })
 
-test('推荐的插件：Pi 第一项是联网搜索插件；每个 CLI 推荐里的文案都有英文', () => {
+test('推荐的插件：Pi 第一项是联网搜索插件；每个 CLI 推荐里的文案、默认环境变量的中文名都有英文', () => {
   const pi = getCli('pi')!
   assert.equal(pi.packages?.recommended[0]?.source, 'npm:pi-web-access', '面板不自己做联网搜索，Pi 靠插件联网')
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'clis')
@@ -152,6 +152,12 @@ test('推荐的插件：Pi 第一项是联网搜索插件；每个 CLI 推荐里
     for (const r of spec.packages?.recommended ?? []) {
       assert.match(r.source, /^(npm|git):/, `${f}：推荐的 ${r.source} 要写 npm: 或 git: 来源`)
       for (const text of [r.name, r.desc, r.note].filter(Boolean)) assert.ok(en[text], `${f}：「${text}」没有英文`)
+    }
+    // 设置页「默认环境变量」只显示中文名，变量名放问号里：env 里每个键都要有一条
+    for (const key of Object.keys(spec.env)) {
+      const note = spec.envNotes[key]
+      assert.ok(note?.label, `${f}：env.${key} 要在 envNotes 里写中文名和说明`)
+      for (const text of [note.label, note.hint].filter(Boolean)) assert.ok(en[text], `${f}：「${text}」没有英文`)
     }
   }
 })

@@ -223,8 +223,10 @@ const sec = (ms: number) => Math.max(0, Math.round(ms / 1000))
 
 /** 模型多久没回算异常：大上下文的第一段输出几十秒很常见，一分半还没有就该看一眼了 */
 export const MODEL_SILENT_MS = 90_000
-/** 输出到一半停住多久算异常（没有工具在跑时）：和 runner 标卡住的 90 秒一致，免得面板已标卡住、诊断还说在输出 */
+/** 工具结果交回后多久没等到下一次回复算异常：和 runner 标卡住的 90 秒一致，免得面板已标卡住、诊断还说在输出 */
 export const OUTPUT_STALL_MS = 90_000
+/** 输出到一半停住多久算异常（没有工具在跑时）：和 runner 的 MIDWAY_STALL_MS（30 秒）一致 */
+export const MIDWAY_STALL_MS = 30_000
 /** 停止发出后多久还没收完算异常（正常几十毫秒，兜底 3 秒收口） */
 export const STOP_SLOW_MS = 5_000
 
@@ -300,7 +302,7 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
             : afterTool
               ? t('工具结果交回 {s} 秒了，等模型的下一次回复', { s: sec(ms) })
               : t('模型在输出：最后一段输出在 {s} 秒前', { s: sec(ms) })
-        if (ms > OUTPUT_STALL_MS || f.stalled)
+        if (ms > (afterTool ? OUTPUT_STALL_MS : MIDWAY_STALL_MS) || f.stalled)
           add(
             'output-stalled',
             'warning',

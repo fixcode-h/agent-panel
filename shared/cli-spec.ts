@@ -601,6 +601,8 @@ export const CliSpec = z.object({
         .object({
           id: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
           label: z.string(),
+          /** 标题下一行的短说明（20 字左右）；写了它，hint 只放问号里（变量名、参数名写在 hint 里，不直接露出来） */
+          desc: z.string().default(''),
           hint: z.string().default(''),
           default: z.union([z.boolean(), z.string()]).default(false),
           env: z.record(z.string(), z.string()).default({}),
@@ -616,6 +618,11 @@ export const CliSpec = z.object({
     .default([]),
   /** 每次运行都加的环境变量（用户在设置里写的同名变量优先）：例如让无界面运行信任工作目录 */
   env: z.record(z.string(), z.string()).default({}),
+  /**
+   * env 里每个变量在设置页「默认环境变量」显示的中文名和说明：标题只放中文名，变量名和说明放问号里，
+   * 用户看不懂一串大写的变量名（用户 2026-11-06 定）。env 里的键都要有一条（cli-spec.test.ts 核对）
+   */
+  envNotes: z.record(z.string(), z.object({ label: z.string(), hint: z.string().default('') })).default({}),
   /**
    * CLI 每次（或经常）往 stderr 打、和失败无关的提示行：pattern 是按行匹配的正则，why 写它是什么。
    * 进程中途退出时，失败原因里的「stderr 最后几行」去掉这些行，免得把常驻提示当成原因
@@ -861,11 +868,15 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     modelsRead: spec.modelsRead || undefined,
     envExample: spec.envExample,
     env: spec.env,
+    envNotes: Object.fromEntries(
+      Object.entries(spec.envNotes).map(([k, v]) => [k, { label: tr(v.label), hint: tr(v.hint) }]),
+    ),
     stderrNoise: spec.stderrNoise.map((x) => new RegExp(x.pattern)),
     compactThrash: spec.compactThrash && new RegExp(spec.compactThrash.pattern, 'i'),
     options: spec.options.map((x) => ({
       ...x,
       label: tr(x.label),
+      desc: tr(x.desc),
       hint: tr(x.hint),
       choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
     })),
