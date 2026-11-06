@@ -202,10 +202,8 @@ export function DiagnosisDialog({
       versions={versionsOf(list, author)}
       presets={presets}
       readOnly={last.status !== 'pending'}
-      // 阶段条按正在看的那一版画：切到旧版看的是那时候走到哪一步
-      top={(key) => (
-        <DiagnosisStages list={list.slice(0, list.findIndex((d) => String(d.version) === key) + 1 || list.length)} />
-      )}
+      // 阶段条按整份档案画走到哪一步，点走过的一步切到那一步的报告，正在看的那步描边
+      top={(key, show) => <DiagnosisStages list={list} shown={key} onShow={show} />}
       texts={cfg.texts}
       noApprove={cfg.noApprove}
       feedbackFirst

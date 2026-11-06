@@ -55,6 +55,9 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '论证 · 第 {n} 轮 · 等你复现': 'Evidence · round {n} · waiting for you to reproduce',
   '论证 · 第 {n} 轮': 'Evidence · round {n}',
   排查阶段: 'Investigation stage',
+  查看这一步的报告: "View this step's report",
+  '修复这一步没有单独的报告，改了什么写在验证报告里':
+    'The fix step has no report of its own; the changes are in the verification report',
   拖动调整标注栏宽度: 'Drag to resize the notes column',
   // 引入日志文件
   日志文件: 'Log files',
