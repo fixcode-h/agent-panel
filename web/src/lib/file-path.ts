@@ -86,7 +86,9 @@ const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 /**
  * 一个文件标记的 HTML：图标（CSS 按 data-kind 画）+ 文件名 + 灰色扩展名 + 行号。
- * label 是 Markdown 链接的文字（[配置](src/a.ts)），有它就显示它；parent 是重名时补在前面的上一级目录
+ * label 是 Markdown 链接的文字（[配置](src/a.ts)），有它就显示它；parent 是重名时补在前面的上一级目录。
+ * 文字整个包在 .fr-text 里：外层是 inline-flex，名字、扩展名、行号要是各自当一个弹性子项，
+ * 窄处（表格列、窄面板）会各自在自己那一列里折行，排成「名字两行 / .l ua / :42 19」三列（用户截图报过）
  */
 export function fileRefHtml(p: { path: string; line?: number }, opts: { label?: string; parent?: string } = {}) {
   const line = p.line ? ` data-md-line="${p.line}"` : ''
@@ -98,7 +100,7 @@ export function fileRefHtml(p: { path: string; line?: number }, opts: { label?: 
       (ext ? `<span class="fr-ext">${esc(ext)}</span>` : '')
   return (
     `<span class="md-path file-ref" role="button" tabindex="0" data-file-ref data-kind="${fileKind(p.path)}" ` +
-    `data-path="${attr(p.path)}"${line}>${body}${p.line ? `<span class="fr-line">:${p.line}</span>` : ''}</span>`
+    `data-path="${attr(p.path)}"${line}><span class="fr-text">${body}${p.line ? `<span class="fr-line">:${p.line}</span>` : ''}</span></span>`
   )
 }
 

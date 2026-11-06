@@ -79,14 +79,14 @@ test('linkPaths：行内代码换成文件标记（图标种类 + 文件名 + �
   assert.ok(
     out.includes(
       '<span class="md-path file-ref" role="button" tabindex="0" data-file-ref data-kind="image" data-path="ui-shots/107-对话-图片气泡.png">' +
-        '<span class="fr-name">107-对话-图片气泡</span><span class="fr-ext">.png</span></span>',
+        '<span class="fr-text"><span class="fr-name">107-对话-图片气泡</span><span class="fr-ext">.png</span></span></span>',
     ),
     out,
   )
   assert.match(out, /data-kind="code" data-path="web\/src\/lib\/file-path.ts" data-md-line="42"/)
   assert.ok(
     out.includes(
-      '<span class="fr-name">file-path</span><span class="fr-ext">.ts</span><span class="fr-line">:42</span>',
+      '<span class="fr-name">file-path</span><span class="fr-ext">.ts</span><span class="fr-line">:42</span></span>',
     ),
   )
   assert.ok(out.includes('<code>console.log</code>'), 'console.log 不该变成链接')
@@ -117,9 +117,15 @@ test('linkPaths：指向本机文件的 Markdown 链接换成文件标记，显�
     '<p><a href="src/App.tsx" target="_blank">入口组件</a>、<a href="docs/a.md">docs/a.md</a>、' +
       '<a href="https://example.com/a.ts" target="_blank">网页</a>、<a href="#x">锚点</a></p>',
   )
-  assert.match(out, /data-path="src\/App.tsx"><span class="fr-name">入口组件<\/span><\/span>/)
+  assert.match(
+    out,
+    /data-path="src\/App.tsx"><span class="fr-text"><span class="fr-name">入口组件<\/span><\/span><\/span>/,
+  )
   // 链接文字就是路径时按文件名显示
-  assert.match(out, /data-path="docs\/a.md"><span class="fr-name">a<\/span><span class="fr-ext">.md<\/span>/)
+  assert.match(
+    out,
+    /data-path="docs\/a.md"><span class="fr-text"><span class="fr-name">a<\/span><span class="fr-ext">.md<\/span>/,
+  )
   assert.ok(out.includes('<a href="https://example.com/a.ts" target="_blank">网页</a>'))
   assert.ok(out.includes('<a href="#x">锚点</a>'))
 })
