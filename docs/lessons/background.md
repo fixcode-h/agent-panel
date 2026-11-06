@@ -27,3 +27,9 @@ paths: server/background.ts, server/background-tools.ts, server/exec/parsers.ts,
 - 规则：按命令判断的守卫和用途检查都走 `shared/command-scope.ts`：先去掉 heredoc / here-string 正文再拆段，每段只看开头的程序名，快命令（读写文件、查找、git 本地操作）的参数里出现 `e2e`、`--watch` 不算。`run_background` 拒收写文件和几秒就完的命令，命令先过和 CLI 命令工具同一套守卫（`commandGuard`）；开发服务器、监听按常驻服务（`service`）跑，不催、不算对话在等它（`awaitedJob`）。新加「让 Agent 改用某个工具」的拦截时，先确认匹配的是在跑的程序，不是命令里的字样。
 - 起因：用户 2026-11-05 报「写文件命令怎么也用后台命令了」：长命令守卫把 heredoc 正文、`git commit -m '修复 e2e'`、`grep e2e` 都当成在跑完整测试拦下，让 Agent 改用 `run_background`；后台命令又不过任何守卫，成了绕过推送授权、只读角色的路。
 - 防线：`shared/command-scope.test.ts`、`server/hooks/guards.test.ts`「只看真正运行的程序」、`server/orch-mcp.test.ts`「后台命令只收长命令」、`server/background.test.ts`「常驻服务」。
+
+## 推回结果的提示只要求「结束时」总结，不要求「收到就总结」
+
+- 规则：推回给 Agent 的结果、提醒里，要它写总结、汇报的话一律限定在「要结束这一轮时」，并先说「接着做」；不写「处理完这个结果后重新总结」这类会让模型先发一条纯文字回复的要求——没有工具调用的回复会直接结束这一轮（同 `shared/turn-rules.ts` 的说明）。
+- 起因：92c4bc0 加的推回结果尾句「处理完这个结果后，重新总结整段工作」；用户 2026-11-06 报结束前钩子反复拦住，13 次里 6 次紧跟在推回结果之后：模型一收到结果先写总结和「接着做 X」，随即停下。
+- 防线：`scripts/e2e/09-subagent-runtime.mjs`「后台命令：说完时还在跑的列在任务上」断言新句子。

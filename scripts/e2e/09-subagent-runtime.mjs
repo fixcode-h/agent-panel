@@ -103,8 +103,8 @@ await runShard('子对话运行与监管', async (api) => {
     assert.deepEqual(settled.jobs ?? [], [], '跑完以后不再列在运行中')
     assert.match(
       settled.messages.find((m) => m.panel === 'background').text,
-      /重新总结整段工作/,
-      '推回的结果要 AI 处理完重新总结',
+      /要结束这一轮时，最后那条回复再重新总结整段工作/,
+      '推回的结果要 AI 接着做、结束这一轮时再重新总结',
     )
     await call('DELETE', `/tasks/${slow.id}`)
     step('后台命令：说完时还在跑的列在任务上，跑完推回并要求重新总结')
