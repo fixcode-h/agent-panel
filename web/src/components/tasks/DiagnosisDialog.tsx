@@ -57,6 +57,9 @@ function versionsOf(list: Diagnosis[], author: boolean) {
     return {
       key: String(d.version),
       label: k > 1 ? t('第 {n} 版 · {phase} · 第 {k} 轮', { n, phase, k }) : t('第 {n} 版 · {phase}', { n, phase }),
+      // 下拉按阶段分组（用户 2026-11-06 要求），组名已是阶段，列表里只写第几版、第几轮
+      group: phase,
+      short: k > 1 ? t('第 {n} 版 · 第 {k} 轮', { n, k }) : t('第 {n} 版', { n }),
       detail: diagnosisMarkdown(d, list[i - 1], { author, list }),
       status: statusOf(d),
     }

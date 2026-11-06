@@ -89,8 +89,8 @@ export function Select({
   size?: FieldSize
   /** 没选时显示的提示 */
   placeholder?: string
-  /** 带 group 的选项按组显示 */
-  options: { value: string; label: string; group?: string }[]
+  /** 带 group 的选项按组显示；short：列表里显示的短说法（组名已经说了的部分省掉），选中后框里仍显示 label */
+  options: { value: string; label: string; group?: string; short?: string }[]
   value: string
   onChange: (e: { target: { value: string } }) => void
   className?: string
@@ -148,7 +148,7 @@ export function Select({
                   .filter((o) => (o.group ?? '') === g)
                   .map((o) => (
                     <S.Item key={o.value} value={enc(o.value)} className={listItem}>
-                      <S.ItemText>{o.label}</S.ItemText>
+                      <S.ItemText>{o.short ?? o.label}</S.ItemText>
                       <S.ItemIndicator className="absolute right-2.5">
                         <Check className="h-3.5 w-3.5 text-accent-text" />
                       </S.ItemIndicator>
