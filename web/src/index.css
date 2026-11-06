@@ -691,6 +691,17 @@ body,
     animation-timeline: scroll(self);
   }
 }
+/* 页签条放不下时（ui/tab-bar.tsx）：还能往哪边滚，哪边的页签就渐隐 24px，提示后面还有。
+   用遮罩而不是盖一层渐变：页签条在不同底色上都有（设置弹窗、对话页、右栏），遮罩不用知道底色 */
+.tab-scroll[data-fade-start] {
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+.tab-scroll[data-fade-end] {
+  mask-image: linear-gradient(to left, transparent, #000 24px);
+}
+.tab-scroll[data-fade-start][data-fade-end] {
+  mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
 /* 展开收起（ui/collapse.tsx）：高度 200ms，内容晚 40ms 淡入；收起时内容先 60ms 淡出 */
 .collapse-grid {
   display: grid;
