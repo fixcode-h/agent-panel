@@ -1,6 +1,6 @@
 ---
 name: cpp-code-style
-description: 编写或修改 C++ / Unreal Engine C++ 代码时使用；规定换行（一条语句写一行，不按列宽折行）、声明与实现顺序、Tab 缩进与列对齐、初始化列表、if/switch 格式、命名与常用写法、校验与防御（什么时候判空、校验，避免过度防御）、注释、日志（格式 `[模块名称] 类名=>函数名  具体日志内容`，避免高频日志），以及 UE 反射宏和模块导出宏的用法。只约束新写的代码；不用于 Lua 或 Build.cs。
+description: 编写或修改 C++ / Unreal Engine C++ 代码时使用；规定换行（一条语句写一行，不按列宽折行）、声明与实现顺序、Tab 缩进与列对齐、初始化列表、if/switch 格式、命名与常用写法、校验与防御（什么时候判空、校验，避免过度防御）、避开静态分析告警的写法（循环里的 lambda 谓词、判空后解引用）、注释、日志（格式 `[模块名称] 类名=>函数名  具体日志内容`，避免高频日志），以及 UE 反射宏和模块导出宏的用法。只约束新写的代码；不用于 Lua 或 Build.cs。
 user-invocable: true
 ---
 
@@ -75,6 +75,50 @@ if ( CurrentState == EZoneState::EntryPreparing || CurrentState == EZoneState::U
 
 - 不能用 `if ( Ptr ) { ... }` 把本不该发生的空悄悄跳过。为空是正常情况就按正常流程处理；本不该出现的用 `ensure` / `ensureMsgf`（可恢复，会报出来）或 `check`（继续运行没有意义时），或 `UE_LOG` 打一条 Error。
 - 一个值只在进入可信区域的那一处检查，不在调用链每层都检查一遍。
+
+## 静态分析告警：写法上就避开
+
+cppcheck、PVS 这类工具看不懂一些合法写法，会报误报或「形态问题」。新写的代码直接用工具能看懂的写法；修已有告警时**只改写法、不改行为**：控制流、返回值、日志和失败处理都保持原样，不靠加分支、改逻辑或屏蔽注释来消告警（确认是误报又改不了写法时，才按项目约定加屏蔽并写明原因）。
+
+- **循环里不写带 `return` 的 lambda 谓词**（`unConditionalBreakinLoop`）：工具不认 lambda 边界，把谓词里的 `return` 当成「循环无条件跳出」。传给 `ContainsByPredicate` / `FindByPredicate` / `RemoveAll` / `std::find_if` 等的谓词，在循环里使用时提成具名谓词：把查找连同谓词包进循环外的文件级辅助函数或成员函数（或在循环外定义具名函数对象），循环里只调名字。
+
+```cpp
+// 错：循环体里的 lambda 带 return，被报「循环里无条件 break」
+for ( const FItem& Item : Items )
+{
+	if ( Slots.ContainsByPredicate( [ &Item ]( const FSlot& Slot ) { return Slot.ItemId == Item.Id; } ) ) continue;
+	AddSlot( Item );
+}
+
+// 对：谓词提成循环外的具名函数，循环里不出现 return
+static bool HasSlotOfItem( const TArray< FSlot >& Slots, int32 ItemId )
+{
+	return Slots.ContainsByPredicate( [ ItemId ]( const FSlot& Slot ) { return Slot.ItemId == ItemId; } );
+}
+
+for ( const FItem& Item : Items )
+{
+	if ( HasSlotOfItem( Slots, Item.Id ) ) continue;
+	AddSlot( Item );
+}
+```
+
+- **判空后要解引用，就在判空处显式返回**（`nullpointer`）：先 `if ( !Ptr )` 只打日志或记错误、不返回，后面又直接 `*Ptr` / `Ptr->`，运行时靠别处（如后续统一的错误检查）兜底，工具和读者都看不出来。失败分支在判空的地方直接 `return`（或跳过本次循环），让「读失败就返回」写在明处。
+
+```cpp
+// 错：判空后没返回，靠后面 ReadErrors 兜底，工具报空指针解引用
+if ( !ItemExcel ) ReadErrors.Add( TEXT( "ItemExcel" ) );
+if ( ReadErrors.Num() > 0 ) return false;
+ParseItems( *ItemExcel );
+
+// 对：显式判空守卫，行为不变（原本也会因读失败返回）
+if ( !ItemExcel )
+{
+	ReadErrors.Add( TEXT( "ItemExcel" ) );
+	return false;
+}
+ParseItems( *ItemExcel );
+```
 
 ## 缩进、对齐与空白
 
@@ -264,4 +308,5 @@ void AExampleHUD::SetCanDraw( bool bEnabled )
 2. 头文件分组、类内顺序和可见性合理；Tab 缩进、组内列对齐、初始化列表顺序正确；命名、`const` 符合约定；没有过度防御：契约明确的参数和生命周期有保证的成员没有层层判空，检查失败没有悄悄跳过；新函数没有 `_` 前缀；`.cpp` 定义顺序对应声明。
 3. 仅 UE：反射宏位置和 generated include 合法；没有整类导出，导出宏只加在确有跨模块需求的函数上。
 4. 日志是 `[模块名称] 类名=>函数名  具体日志内容`，只打在必要路径、没有高频日志，没有级别前缀、没有新增包装器。
-5. 注释讲意图不复述代码；没动范围外的旧代码。UE 项目还要实际跑 UHT / UBT 和相关测试，格式检查不等于编译通过。
+5. 循环里没有带 `return` 的 lambda 谓词；判空后要解引用的地方，判空分支显式返回；修静态分析告警只改了写法、没改行为。
+6. 注释讲意图不复述代码；没动范围外的旧代码。UE 项目还要实际跑 UHT / UBT 和相关测试，格式检查不等于编译通过。
