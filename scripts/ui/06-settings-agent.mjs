@@ -83,6 +83,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     'MCP 工具按需搜索',
     '关闭自带的后台命令',
     '输出中断判定（毫秒）',
+    '查找和搜索文件超时（秒）',
   ])
   await p.getByRole('dialog').getByText('Codex', { exact: true }).first().click()
   await p.getByText('没有设置最大输出的参数').first().scrollIntoViewIfNeeded()

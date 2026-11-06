@@ -243,7 +243,12 @@
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
     "ENABLE_TOOL_SEARCH": "false",
     "CLAUDE_CODE_MCP_STARTUP_WAIT_MS": "3000",
-    "CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS": "30000"
+    "CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS": "30000",
+    "CLAUDE_CODE_GLOB_TIMEOUT_SECONDS": "120",
+    "BASH_DEFAULT_TIMEOUT_MS": "120000",
+    "BASH_MAX_TIMEOUT_MS": "600000",
+    "BASH_MAX_OUTPUT_LENGTH": "30000",
+    "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS": "25000"
   },
   "envNotes": {
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": {
@@ -261,6 +266,26 @@
     "CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS": {
       "label": "输出中断判定（毫秒）",
       "hint": "模型输出到一半、这么久收不到任何数据就断开这次请求，面板接回会话续接；不设时 Claude Code 要等 5 分钟，中转网关往往等满它自己的读超时（常见 60 秒）才断开。设得太短，模型正常停顿较久时也会被打断（CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS）"
+    },
+    "CLAUDE_CODE_GLOB_TIMEOUT_SECONDS": {
+      "label": "查找和搜索文件超时（秒）",
+      "hint": "「查找文件」「搜索」在目录里扫文件，超过这么久就中止并报超时；不设时 Claude Code 只等 20 秒（WSL 里 60 秒），大工程的插件、第三方库目录常常扫不完（CLAUDE_CODE_GLOB_TIMEOUT_SECONDS）"
+    },
+    "BASH_DEFAULT_TIMEOUT_MS": {
+      "label": "命令默认超时（毫秒）",
+      "hint": "模型跑命令时没有自己指定超时，就按这个时长中止命令（BASH_DEFAULT_TIMEOUT_MS）"
+    },
+    "BASH_MAX_TIMEOUT_MS": {
+      "label": "命令最长超时（毫秒）",
+      "hint": "模型给命令指定的超时最多放宽到这么长；编译、跑全量测试这类慢命令被中途打断时调大（BASH_MAX_TIMEOUT_MS）"
+    },
+    "BASH_MAX_OUTPUT_LENGTH": {
+      "label": "命令输出保留字数",
+      "hint": "命令输出超过这么多字时中间截掉，只把开头和结尾交给模型；Claude Code 最多认 150000（BASH_MAX_OUTPUT_LENGTH）"
+    },
+    "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS": {
+      "label": "读文件单次上限（token）",
+      "hint": "读文件时一次最多读进这么多 token，超过就报错让模型分段读；调大能少读几次，但每次占的上下文更多（CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS）"
     }
   },
   "options": [
@@ -565,7 +590,17 @@
       "只读规划": "Read-only planning",
       "只分析和出方案，不改文件": "Only analyzes and proposes a plan; does not edit files",
       "逐项确认": "Confirm each action",
-      "改文件和需要审批的命令都会在任务页上请你确认": "File edits and commands that need approval are confirmed on the task page"
+      "改文件和需要审批的命令都会在任务页上请你确认": "File edits and commands that need approval are confirmed on the task page",
+      "查找和搜索文件超时（秒）": "Find and search files timeout (s)",
+      "「查找文件」「搜索」在目录里扫文件，超过这么久就中止并报超时；不设时 Claude Code 只等 20 秒（WSL 里 60 秒），大工程的插件、第三方库目录常常扫不完（CLAUDE_CODE_GLOB_TIMEOUT_SECONDS）": "How long \"Find files\" and \"Search\" may scan folders before giving up with a timeout. Without it Claude Code waits only 20 seconds (60 in WSL), which often isn't enough for plugin or third-party folders in large projects (CLAUDE_CODE_GLOB_TIMEOUT_SECONDS)",
+      "命令默认超时（毫秒）": "Default command timeout (ms)",
+      "模型跑命令时没有自己指定超时，就按这个时长中止命令（BASH_DEFAULT_TIMEOUT_MS）": "Commands the model runs without choosing a timeout are stopped after this long (BASH_DEFAULT_TIMEOUT_MS)",
+      "命令最长超时（毫秒）": "Longest command timeout (ms)",
+      "模型给命令指定的超时最多放宽到这么长；编译、跑全量测试这类慢命令被中途打断时调大（BASH_MAX_TIMEOUT_MS）": "The longest timeout the model can give a command. Raise it if slow commands such as builds or full test runs get cut off (BASH_MAX_TIMEOUT_MS)",
+      "命令输出保留字数": "Command output kept (characters)",
+      "命令输出超过这么多字时中间截掉，只把开头和结尾交给模型；Claude Code 最多认 150000（BASH_MAX_OUTPUT_LENGTH）": "Command output longer than this is cut in the middle and only the start and end go to the model. Claude Code accepts at most 150000 (BASH_MAX_OUTPUT_LENGTH)",
+      "读文件单次上限（token）": "File read limit per call (tokens)",
+      "读文件时一次最多读进这么多 token，超过就报错让模型分段读；调大能少读几次，但每次占的上下文更多（CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS）": "The most tokens a single file read may return; larger reads fail and the model reads in parts. A higher value means fewer reads but more context per read (CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS)"
     }
   }
 }
