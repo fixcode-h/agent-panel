@@ -37,3 +37,9 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, server/exec/worktre
 - 规则：假 CLI 按 input 里的场景标记（`COMMIT`、`SUBMIT_MERGE`、`REVIEW_BLOCK`……）行动，父对话的 input 里列着子对话标题，标题带标记时父对话也会照着在项目目录里提交、写文件。新加的父子用例单开一个父对话，子对话的标题（取 prompt 开头）不带标记；不要为了绕开父对话那一轮的崩溃去改假 CLI 的行为——崩溃原本挡住了后面的场景动作，改掉它会让父对话在共用目录里留下改动，污染后面的用例。改动之后某个分片失败（哪怕重跑过了），先在改动前的提交上用同样的方式（全量并行）跑一次对照，对照通过就是这次改出来的，不按偶发放过。
 - 起因：20b671c 给 04-subagents 加用例时把假 CLI 的 COMMIT 改成「没东西可提交就跳过」，父对话继续往下按 SUBMIT_MERGE 在项目目录写文件，CI 上「共用目录的子对话也过评审门禁」连续失败；本机第一次全量时就失败过，被当成偶发。
 - 防线：04-subagents「父对话收到收尾请求却没合回」单开父对话；CI 全量 e2e。
+
+## 假 CLI 启动时读一次 MCP 配置，按钩子地址认自己那一项
+
+- 规则：假 CLI 连面板工具走 `panelMcpUrl()`（启动时记下，有 `AGENT_PANEL_HOOK_URL` 就按它认），别在一轮中途再读 `.mcp.json`：同目录里别的对话收尾、新加条目会让「最后一项」不是自己的。等状态的 waitFor 带 `describe`。
+- 起因：出包 CI `07-local`「预热完停在等下一句」偶发超时（PR #227），dev 上同一提交是过的。
+- 防线：`fake-cli.mjs` 的 `panelMcpUrl`。
