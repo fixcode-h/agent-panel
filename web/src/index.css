@@ -1580,13 +1580,9 @@ body,
   display: var(--md-img-caption);
   max-width: var(--md-img-maxWidth);
 }
-/*
- * 行内代码：和 Claude Code 一样是带细边框的小标签，边框带一点文字色。
- * 上下不留内边距：等宽字体的行内盒本来就比汉字的字形高，再加 1px 内边距 + 1px 边框，框比同一行的汉字高出一截、
- * 下沿明显垂到字的下面，看着像一颗按钮嵌在句子里（用户 2026-11-06 截图报过）。不留内边距时框高正好等于正文汉字的行内盒。
- */
+/* 行内代码：和 Claude Code 一样是带细边框的小标签，边框带一点文字色 */
 .chat-md :not(pre) > code {
-  @apply chip-lift px-[5px] py-0 font-mono;
+  @apply chip-lift px-[5px] py-px font-mono;
   font-size: calc(var(--md-code-size) * var(--md-base));
   background: var(--md-code-bg);
   color: var(--md-code-color);
