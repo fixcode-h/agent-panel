@@ -785,6 +785,7 @@
     {
       "id": "offline",
       "label": "离线运行",
+      "desc": "Pi 自己不联网，模型请求照常",
       "hint": "不让 Pi 自己联网（例如刷新模型列表），模型请求不受影响（PI_OFFLINE=1）",
       "default": true,
       "env": {
@@ -800,6 +801,7 @@
     {
       "id": "cacheRetention",
       "label": "长时间提示词缓存",
+      "desc": "提示词缓存保留更久，长任务更省",
       "hint": "支持的服务商把提示词缓存保留更久（PI_CACHE_RETENTION=long），长任务里两轮之间隔得久也能命中缓存",
       "default": false,
       "env": {
@@ -809,6 +811,7 @@
     {
       "id": "noTelemetry",
       "label": "关闭匿名统计",
+      "desc": "不发 Pi 的匿名统计",
       "hint": "不发 Pi 的安装、更新匿名统计，请求里也不带来源标记（PI_TELEMETRY=0）；关着时跟随 Pi 自己的设置",
       "default": false,
       "env": {
@@ -1099,6 +1102,9 @@
   },
   "i18n": {
     "en": {
+      "不发 Pi 的匿名统计": "Don't send Pi's anonymous stats",
+      "提示词缓存保留更久，长任务更省": "Keep prompt cache longer for long tasks",
+      "Pi 自己不联网，模型请求照常": "Pi stays offline; model requests still work",
       "读 mcp.json 连接你配的 MCP 服务器；面板「MCP 工具」页配给 Pi 的服务器靠它。面板自己的工具不受影响": "Reads mcp.json and connects your MCP servers; servers you give Pi on the panel's MCP tools page depend on it. The panel's own tools are not affected",
       "让模型写脚本批量调用工具；关掉后设置里的「codemode 和工具搜索」也用不了": "Lets the model write scripts that call tools in batches. When off, \"Codemode and tool search\" in settings won't work either",
       "工具搜索": "Tool search",

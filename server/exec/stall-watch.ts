@@ -7,6 +7,13 @@ import type { Task, TaskMessage } from '../../shared/schema.ts'
 
 /** 交给 CLI 后多久没有真正的输出算卡住；测试用环境变量缩短 */
 export const NO_RESPONSE_MS = Number(process.env.AGENT_PANEL_NO_RESPONSE_MS) || 90_000
+/**
+ * 模型已经在输出（思考、正文、工具入参）又停住多久算断流。流式输出时各段之间正常只隔几秒
+ * （Claude Code 自己隔 30 秒就记一次 stall）；网关多半等满它的读超时（常见 60 秒）才断开，
+ * CLI 断开后才报重试，所以这里先提醒，不等网关（用户 2026-11-06 报失败提醒晚了快一分钟）
+ */
+// 测试缩短 NO_RESPONSE_MS 时跟着缩短，不比它长
+export const MIDWAY_STALL_MS = Number(process.env.AGENT_PANEL_MIDWAY_STALL_MS) || Math.min(30_000, NO_RESPONSE_MS)
 
 /** 卡住的记录：对话按任务 id，子任务按「任务#步骤」，免得子任务和派它的对话互相覆盖 */
 const stalled = new Map<string, { input: string; since: number }>()
@@ -47,10 +54,13 @@ export function createStallWatch(o: StallWatchOpts) {
   let midway = false
   /** 子任务标成卡住后到这个时间还没输出：停掉这次调用 */
   let killAt = 0
+  /** 最近一次有输出或开始计时的时间：重试提示里说明「之前多久没有输出」 */
+  let quietSince = 0
 
   const arm = (input?: string) => {
     if (!o.watch) return
     armedAt = Date.now()
+    quietSince = armedAt
     midway = false
     if (input !== undefined) armedInput = input
   }
@@ -59,7 +69,8 @@ export function createStallWatch(o: StallWatchOpts) {
   const heard = () => {
     // 有了输出也接着计时：模型（多是第三方网关）流到半句就断了、进程还活着时，页面会一直停在「等待模型」，
     // 用户只能自己停下再发。这一轮还在跑就从这次输出重新算，到点同样告诉用户
-    armedAt = o.watch && (o.helper || task.working) ? Date.now() : 0
+    quietSince = Date.now()
+    armedAt = o.watch && (o.helper || task.working) ? quietSince : 0
     midway = !!armedAt
     killAt = 0
     const st = stalled.get(key)
@@ -86,7 +97,7 @@ export function createStallWatch(o: StallWatchOpts) {
       return
     }
     const quiet = Date.now() - armedAt
-    if (quiet < NO_RESPONSE_MS) return
+    if (quiet < (midway ? MIDWAY_STALL_MS : NO_RESPONSE_MS)) return
     const since = armedAt
     armedAt = 0
     stalled.set(key, { input: armedInput, since })
@@ -99,7 +110,11 @@ export function createStallWatch(o: StallWatchOpts) {
       agentId: o.agentId,
       step,
       text: o.helper
-        ? t('{cli} {s} 秒没有新的输出。再过 {s} 秒还是没有，面板会停掉它、接回会话重试。', { cli, s: secs })
+        ? t('{cli} {s} 秒没有新的输出。再过 {k} 秒还是没有，面板会停掉它、接回会话重试。', {
+            cli,
+            s: secs,
+            k: Math.round(NO_RESPONSE_MS / 1000),
+          })
         : midway
           ? t('{cli} 输出到一半停了，{s} 秒没有新的内容。直接再发一条消息，面板会停掉它、接回这个会话重新开始。', {
               cli,
@@ -137,5 +152,7 @@ export function createStallWatch(o: StallWatchOpts) {
     clearInterval(timer)
     stalled.delete(key)
   }
-  return { arm, disarm, heard, stop }
+  /** 从上次输出（或开始等模型）到现在过了多久；没在计时返回 0 */
+  const quietMs = () => (quietSince ? Date.now() - quietSince : 0)
+  return { arm, disarm, heard, stop, quietMs }
 }

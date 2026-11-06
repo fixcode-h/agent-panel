@@ -15,7 +15,7 @@
     "shared/engine.ts": 4050,
     "shared/local-image.ts": 1450,
     "shared/plan.ts": 1650,
-    "shared/schema.ts": 2851,
+    "shared/schema.ts": 2800,
     "shared/task-export.ts": 2200,
     "shared/task.ts": 2400,
     "shared/umg.ts": 1350,

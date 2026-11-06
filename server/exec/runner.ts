@@ -152,6 +152,7 @@ import { pluginArgs } from '../../shared/role-plugins.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
 import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
+import { noticeRow } from './notice-row.ts'
 import { SUMMARY_PROMPT, reviewPrompt } from './op-prompts.ts'
 import { warnSlowMcp } from './mcp-probe.ts'
 import { bugMethodPrompt, bugSlash } from './bug-prompt.ts'
@@ -770,9 +771,11 @@ async function runAgent(
     kill: () => stallAc.abort('stalled'),
   })
   const { arm, heard } = watch
+  let quietBefore = 0 // 重试提示前安静了多久：heard() 清零前记下
   const drafting = createDrafting(task, () => ctx.changed())
   const apply = (ev: CliEvent) => {
     // 有了真正的输出：不算卡住。工具结果交回去、开始一次模型请求后，重新开始等模型的回应
+    if (ev.type === 'notice') quietBefore = watch.quietMs()
     if (!NOT_RESPONSE.has(ev.type)) heard()
     drafting.see(ev)
     if (ev.type === 'tool_result' || ev.type === 'request_start') arm()
@@ -974,30 +977,9 @@ async function runAgent(
         errors.push(ev.message)
         break
       case 'notice': {
-        // 重试、失败、面板工具没接上都要写进日志：界面上只留一行，事后统计「总是失败」要能查到是哪一类、第几次、恢复没有
-        const sec = {
-          task: task.id,
-          step,
-          cli: def.name,
-          kind: ev.kind,
-          attempt: ev.attempt,
-          maxAttempts: ev.maxAttempts,
-          error: ev.error,
-        }
-        if (ev.failed) log.warn('agent', ev.text, sec)
-        else if (ev.kind) log.info('agent', ev.text, sec)
-        // 放进回复里当一行状态，不打断回复：例如「模型请求失败，2 秒后第 1 次重试」
+        // 重试、失败、面板工具没接上：写进日志，放进回复里当一行状态，不打断回复（见 notice-row.ts）
         const m = !cur || cur.text.trim() ? newMsg() : cur
-        // CLI 自己报的重试、失败：画成警告行，点开看是哪一类、怎么办
-        const kind = !ev.failed && (ev.kind === 'retry' || /重试|retry/i.test(ev.text)) ? 'retry' : undefined
-        m.tools.push({
-          kind: 'other',
-          name: t('提示'),
-          label: ev.text,
-          detail: '',
-          ...(ev.failed ? { failed: true } : {}),
-          ...(ev.failed || kind ? { alert: makeAlert(ev.failed ? 'error' : 'warn', ev.text, kind) } : {}),
-        })
+        m.tools.push(noticeRow(ev, { task: task.id, step, cli: def.name }, quietBefore))
         break
       }
       case 'retry_ok': {
@@ -1343,6 +1325,8 @@ async function runAgent(
         if (!hasViewer(task.id)) return null
         // 这一轮什么都没收到：不保活，直接让它返回，交给收尾处报错
         if (emptyTurn()) return null
+        // 连接断了（含 Claude Code 的输出中断判定，触发后它不自己重试）：不保活，交给收尾处报错并续接会话
+        if (result && !result.ok && isNetError(result.error ?? '')) return null
         fromUser = false
         const text = await waitNext(false)
         // 拿到下一句就是新一轮开始了：上一轮模型有没有等过，跟新一轮无关

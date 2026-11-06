@@ -132,8 +132,11 @@ export const EN_ALERTS: Record<string, string> = {
   '已自动重试，继续做完了': 'Retried automatically and it finished',
   '{s} 秒后有输出了，接着在处理': 'Output resumed after {s}s and it is working again',
   '等了 {s} 秒没收到响应头（首字节超时）': 'no response headers after {s}s (first-byte timeout)',
-  '{cli} {s} 秒没有新的输出。再过 {s} 秒还是没有，面板会停掉它、接回会话重试。':
-    '{cli} has produced no new output for {s}s. If there is still none in another {s}s, the panel will stop it and retry in the same session.',
+  '（之前 {s} 秒没有新的输出）': ' (no new output for {s}s before this)',
+  '模型输出中途断了，Claude Code 丢掉没写完的这段、重新请求':
+    'The model output broke off partway; Claude Code dropped the unfinished part and is requesting again',
+  '{cli} {s} 秒没有新的输出。再过 {k} 秒还是没有，面板会停掉它、接回会话重试。':
+    '{cli} has produced no new output for {s}s. If there is still none in another {k}s, the panel will stop it and retry in the same session.',
   '{cli} 连续 {s} 秒没有任何输出，面板停掉了这次调用':
     '{cli} produced no output for {s}s, so the panel stopped this call',
   '{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。':
