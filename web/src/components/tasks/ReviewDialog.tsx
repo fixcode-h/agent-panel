@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Select, Textarea } from '@/components/ui/input'
 import { IconButton } from '@/components/ui/icon-button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { FrostBarBg } from '@/components/ui/frost'
 import { Markdown } from './Markdown'
 import { reviewFeedback } from '@/lib/review-feedback'
 import { Segmented } from '@/components/ui/segmented'
@@ -104,8 +105,11 @@ export function ReviewDialog({
     confirm: string
     onCancel: (overall: string) => Promise<void>
   }
-  /** 正文上方的内容（诊断报告的阶段条）：传函数时按正在看的那一版（版本的 key）画 */
-  top?: ReactNode | ((key: string) => ReactNode)
+  /**
+   * 正文上方吸顶的一条（诊断报告的阶段条）：传函数时拿到正在看的那一版（版本的 key）和切版本的 show，
+   * 阶段条点已完成的一步就切到那一步的报告
+   */
+  top?: ReactNode | ((key: string, show: (key: string) => void) => ReactNode)
   /**
    * 「交日志」这类按钮（诊断报告：贴日志让它接着分析）：整体意见的文字和附件交给 onSupply。
    * primary：它是主按钮（等你复现、验证）；否则是次按钮，写了整体意见或附了文件才能点
@@ -305,14 +309,27 @@ export function ReviewDialog({
       <div ref={rowRef} className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div
           ref={scrollRef}
-          className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-4 md:px-8 md:py-6"
+          // overflow-x 隐藏：吸顶条的毛玻璃底左右伸出去，靠这里裁到正好铺满滚动区（FrostBarBg）
+          className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4 md:px-8 md:py-6"
           onMouseUp={readSelection}
           onKeyUp={readSelection}
           onScroll={() => pick && setPick(null)}
         >
+          {top && (
+            // 吸在滚动区顶上（top 取负的上内边距：吸顶按滚动区的内容框算，不抵掉内边距会离顶边留一截），样式和对话的回复头一样是毛玻璃通栏（用户 2026-11-06 要求）；
+            // 放在 docRef 外面，选中文字标注时不会把阶段名选进去
+            <div className="frost-bar sticky -top-4 z-20 [--frost-bg:var(--c-modal-bg)] mx-auto -mt-4 mb-3 max-w-[820px] py-2.5 select-none md:-top-6 md:-mt-6">
+              <FrostBarBg />
+              {typeof top === 'function'
+                ? top(shown?.key ?? '', (key) => {
+                    setVer(key)
+                    setPick(null)
+                  })
+                : top}
+            </div>
+          )}
           <div ref={docRef} className="mx-auto max-w-[820px]" onClick={onDocClick}>
             {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
-            {typeof top === 'function' ? top(shown?.key ?? '') : top}
             {detail ? (
               <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
             ) : (
@@ -326,7 +343,7 @@ export function ReviewDialog({
               onMouseDown={(e) => e.preventDefault()}
               onClick={addNote}
               style={{ top: pick.top, left: pick.left }}
-              className="absolute z-10 flex -translate-x-1/2 cursor-pointer items-center gap-1 rounded-lg border border-line-strong bg-card px-2.5 py-1 text-xs font-medium shadow-pop hover:bg-sel animate-[pop-in_120ms_ease-out]"
+              className="absolute z-30 flex -translate-x-1/2 cursor-pointer items-center gap-1 rounded-lg border border-line-strong bg-card px-2.5 py-1 text-xs font-medium shadow-pop hover:bg-sel animate-[pop-in_120ms_ease-out]"
             >
               <Highlighter className="h-3.5 w-3.5 text-warning" />
               {t('标注')}

@@ -3005,7 +3005,8 @@ html [data-sonner-toast][data-styled='true'] {
   right: -100vw;
   z-index: -1;
   pointer-events: none;
-  background-color: color-mix(in oklab, var(--bg) 72%, transparent);
+  /* 默认按页面底色；放在弹窗里时在吸顶元素上设 --frost-bg 换成弹窗底色，不然通栏比弹窗正文深一截 */
+  background-color: color-mix(in oklab, var(--frost-bg, var(--bg)) 72%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
   backdrop-filter: blur(16px) saturate(1.6);
   border-bottom: 1px solid transparent;

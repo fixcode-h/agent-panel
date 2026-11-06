@@ -1,14 +1,28 @@
 import { Check } from 'lucide-react'
 import type { Diagnosis } from '@shared/bug-diagnosis-schema'
-import { phaseOf } from '@shared/bug-phase'
+import { causeInPlan, phaseOf } from '@shared/bug-phase'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 
+/** 一份报告落在阶段条的第几步：快速级别根因和方案合成一版，算在方案那一步；修复这一步没有单独的报告 */
+const STEP = { evidence: 0, cause: 1, plan: 2, verify: 4 } as const
+
 /**
- * 诊断报告弹窗正文上方的阶段条（用户 2026-11-05 定的流程）：论证 → 根因 → 修复方案 → 修复 → 验证，
- * 标出现在在哪一步；论证写第几轮、在等你复现时写出来
+ * 诊断报告弹窗正文上方吸顶的阶段条（用户 2026-11-05 定的流程）：论证 → 根因 → 修复方案 → 修复 → 验证，
+ * 按整份档案标出现在走到哪一步；论证写第几轮、在等你复现时写出来。
+ * 走过的和正在的那一步能点，切到那一步最后交的一份报告（用户 2026-11-06 要求），还没走到的不能点；
+ * 正在看的那一步加一圈描边
  */
-export function DiagnosisStages({ list }: { list: Diagnosis[] }) {
+export function DiagnosisStages({
+  list,
+  shown,
+  onShow,
+}: {
+  list: Diagnosis[]
+  /** 正在看的那一版（Diagnosis.version 的字符串） */
+  shown: string
+  onShow: (key: string) => void
+}) {
   const d = list.at(-1)
   if (!d) return null
   const phase = phaseOf(d)
@@ -36,25 +50,53 @@ export function DiagnosisStages({ list }: { list: Diagnosis[] }) {
         ? t('论证 · 第 {n} 轮', { n: rounds })
         : t('论证')
   const names = [evidence, t('根因'), t('修复方案'), t('修复'), t('验证')]
+  // 每一步最后交的那份报告；根因没单独交过、合在快速级别的方案里时，点根因看那份方案
+  const target = names.map((_, i) => {
+    const hit = [...list].reverse().find((x) => STEP[phaseOf(x)] === i)
+    if (hit || i !== 1) return hit
+    return [...list].reverse().find((x) => causeInPlan(x, list))
+  })
+  const viewing = list.find((x) => String(x.version) === shown) ?? d
+  const viewStep = STEP[phaseOf(viewing)]
   return (
-    <ol aria-label={t('排查阶段')} className="mb-4 flex flex-wrap items-center gap-1.5">
-      {names.map((n, i) => (
-        <li key={i} className="flex items-center gap-1.5">
-          <span
-            aria-current={i === at ? 'step' : undefined}
-            className={cn(
-              'inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-xs',
-              i < at && 'bg-success/10 text-success',
-              i === at && 'bg-warning/12 font-medium text-warning',
-              i > at && 'text-subtle',
-            )}
-          >
-            {i < at && <Check className="h-3 w-3" strokeWidth={3} />}
-            {n}
-          </span>
-          {i < names.length - 1 && <span aria-hidden className="h-px w-3 bg-line-strong" />}
-        </li>
-      ))}
+    <ol aria-label={t('排查阶段')} className="flex flex-wrap items-center gap-1.5">
+      {names.map((n, i) => {
+        const hit = i <= at ? target[i] : undefined
+        const key = hit && String(hit.version)
+        return (
+          <li key={i} className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={!key}
+              aria-current={i === at ? 'step' : undefined}
+              aria-pressed={key ? i === viewStep : undefined}
+              title={
+                key
+                  ? t('查看这一步的报告')
+                  : i === 3 && i < at
+                    ? t('修复这一步没有单独的报告，改了什么写在验证报告里')
+                    : undefined
+              }
+              onClick={() => key && key !== shown && onShow(key)}
+              className={cn(
+                'inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-xs transition-colors',
+                i < at && 'bg-success/10 text-success',
+                i === at && 'bg-warning/12 font-medium text-warning',
+                i > at && 'text-subtle',
+                key ? 'cursor-pointer' : 'cursor-default',
+                i < at && key && 'hover:bg-success/18',
+                i === at && key && 'hover:bg-warning/20',
+                // 正在看的那一步：一圈和字同色的细描边
+                key && i === viewStep && 'ring-1 ring-current/50 ring-inset',
+              )}
+            >
+              {i < at && <Check className="h-3 w-3" strokeWidth={3} />}
+              {n}
+            </button>
+            {i < names.length - 1 && <span aria-hidden className="h-px w-3 bg-line-strong" />}
+          </li>
+        )
+      })}
     </ol>
   )
 }
