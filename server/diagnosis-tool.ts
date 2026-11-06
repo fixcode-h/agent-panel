@@ -81,10 +81,11 @@ const CASE_PROPS = {
   },
   hypotheses: {
     type: 'array',
-    description: '假设表',
+    description: '假设表：论证时列全候选假设（沿调用栈每个能让结果走偏的分叉），不只眼前这一层',
     items: {
       type: 'object',
       properties: {
+        id: text('编号，例如 H1；日志计划的 hypothesis 按它对上'),
         text: text('假设'),
         status: { type: 'string', enum: ['confirmed', 'excluded', 'open'] },
         basis: text('依据'),
@@ -138,7 +139,8 @@ const CASE_PROPS = {
   next: text('补充说明：下一步还打算查什么'),
   logPlan: {
     type: 'array',
-    description: '论证阶段：这一轮要加的临时日志（前缀 [排查-<主题>]），每处写加在哪、打什么、用来区分哪个假设',
+    description:
+      '论证阶段：这一轮要加的临时日志（前缀 [排查-<主题>]），一次加够让用户复现一次就能定论：每个待验证的假设至少一处能判真假的，调用栈每一跳一处路标；每处写加在哪、打什么、对应哪个假设',
     items: {
       type: 'object',
       properties: {
@@ -147,7 +149,7 @@ const CASE_PROPS = {
         line: { type: 'number' },
         fn: text('函数'),
         print: text('打什么：分支条件、关键变量、旧值 → 新值'),
-        hypothesis: text('用来区分哪个假设'),
+        hypothesis: text('对应的假设编号（H1），或「路标」（标出走到了调用栈哪一跳）'),
       },
       required: ['file', 'print'],
     },
@@ -159,7 +161,7 @@ const CASE_PROPS = {
       steps: { type: 'array', items: { type: 'string' }, description: '复现步骤，一步一项' },
       where: text('日志在哪：日志文件路径、控制台、浏览器开发者工具'),
       filter: text('过滤条件，例如 [排查-拖线]'),
-      expect: text('论证：每种结果说明什么；验证：看到什么算修好了'),
+      expect: text('论证：判定表，每个假设看到什么算证实或排除、都对不上时看路标停在哪一跳；验证：看到什么算修好了'),
     },
     required: ['steps', 'expect'],
   },
