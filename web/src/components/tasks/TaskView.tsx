@@ -1379,7 +1379,7 @@ export function TaskView({
     !!task.projectId && !task.parentTaskId && task.mode !== 'workflow' && canStartFlow(localAgents, task.agentId)
   const send = async (input?: string) => {
     const text = input ?? followTa.current?.text() ?? ''
-    if (!text.trim() && !files.attachments.length) return
+    if (!text.trim() && !files.attachments.length && !files.needFrames) return
     // 输入框已经拦过一道（Enter 和按钮同一个 ready）：这里再拦一次，并说清原因，不默默丢掉用户写的字
     if (sending || files.uploading) {
       toast.info(
@@ -1387,8 +1387,11 @@ export function TaskView({
       )
       return
     }
+    // 视频卡片换成选好的帧；还有没选帧的视频时先打开截帧弹窗
+    const framed = files.prepare(text)
+    if (framed === null) return
     // 引入了工作流（行内的工作流卡片）：这条要求点名它，父对话照用户点名的起工作流子对话（ADR 0044）
-    const said = withWorkflow(expandQuotes(text, files.attachments), workflows)
+    const said = withWorkflow(expandQuotes(framed, files.attachments), workflows)
     const content = forSend(said, files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
     // 发出去的这一刻就清空输入框、把消息插进对话。清空不能等接口返回：服务端这条的响应要等

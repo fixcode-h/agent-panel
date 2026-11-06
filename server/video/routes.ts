@@ -11,6 +11,7 @@ import { AUTO_MODES, type AutoMode } from '../../shared/video.ts'
 import { cancelFfmpegDownload, downloadFfmpeg, ffmpegStatus, setFfmpegPath } from './ffmpeg.ts'
 import {
   autoFrames,
+  autoProgressOf,
   clearEnhanced,
   enhanceFrames,
   enhanceMethods,
@@ -131,6 +132,8 @@ export function videoApi() {
       return c.json(fail(e), 400)
     }
   })
+  // 自动截帧的进度：弹窗在等结果时轮询（没在截时为 null）
+  r.get('/frames/progress', (c) => c.json({ progress: autoProgressOf(c.req.query('key') ?? '') }))
   r.post('/frames/remove', async (c) => {
     const b = (await body(c)) as Body & { which?: string }
     const which = b.which === 'manual' || b.which === 'auto' ? b.which : undefined

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   ffmpegDownloadUrl,
+  ffmpegTime,
   ffmpegVersion,
   frameName,
   isVideoFile,
@@ -113,4 +114,9 @@ test('增强方式 id 和下载地址', () => {
   )
   assert.match(ffmpegDownloadUrl('darwin', 'arm64', true), /npmmirror\.com/)
   assert.equal(ffmpegDownloadUrl('freebsd', 'x64', false), '')
+})
+
+test('ffmpegTime 取状态行里最后一个 time=，N/A 时没有', () => {
+  assert.equal(ffmpegTime('frame=  1 time=00:00:01.50 bitrate=N/A\rframe=  2 time=00:01:02.25 speed=8x'), 62.25)
+  assert.equal(ffmpegTime('frame=    0 time=N/A bitrate=N/A'), undefined)
 })

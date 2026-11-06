@@ -157,7 +157,7 @@ export function ChatComposer({
     },
     [controlled, onChange, setDraft],
   )
-  const typed = canSend ?? (!!text.trim() || files.attachments.length > 0)
+  const typed = canSend ?? (!!text.trim() || files.attachments.length > 0 || !!files.needFrames)
   const ready = typed && !sending && !files.uploading
   const [hint, setHint] = useState('')
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)

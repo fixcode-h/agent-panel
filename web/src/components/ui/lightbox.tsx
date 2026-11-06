@@ -3,6 +3,7 @@ import * as D from '@radix-ui/react-dialog'
 import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { ZoomImage } from './zoom-image'
 
 export interface LightboxImage {
   src: string
@@ -11,7 +12,7 @@ export interface LightboxImage {
 
 /**
  * 看大图：在页面上弹出来，不另开标签页（和 Claude Code 一样）。
- * 点空白处或按 Esc 关掉，多张图时左右键切换
+ * 点空白处或按 Esc 关掉，多张图时左右键切换；滚轮缩放、放大后拖动看细节、双击切换放大 / 适应窗口
  */
 export function Lightbox({
   images,
@@ -47,15 +48,18 @@ export function Lightbox({
         >
           <D.Title className="sr-only">{cur?.name}</D.Title>
           {cur && (
-            <img
+            <ZoomImage
               src={cur.src}
               alt={cur.name}
-              draggable={false}
+              onBackdrop={onClose}
               className="max-h-[calc(100vh-120px)] max-w-[calc(100vw-48px)] rounded-lg object-contain shadow-2xl md:max-w-[calc(100vw-160px)]"
             />
           )}
           <div className="flex max-w-full items-center gap-3 text-footnote text-white/75">
             <span className="min-w-0 truncate">{cur?.name}</span>
+            <span className="hidden shrink-0 text-white/45 sm:inline">
+              {t('滚轮缩放 · 拖动查看 · 双击放大 / 还原')}
+            </span>
             {n > 1 && (
               <span className="shrink-0 font-mono text-white/50 tabular-nums">
                 {i + 1} / {n}

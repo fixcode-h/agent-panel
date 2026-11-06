@@ -132,7 +132,8 @@ export function TaskComposer({
 
   const canStart =
     (standalone || !!project) &&
-    (!!prompt.trim() || files.attachments.length > 0) &&
+    // 只放了还没选帧的视频也能点发送：发送时打开截帧弹窗选帧
+    (!!prompt.trim() || files.attachments.length > 0 || !!files.needFrames) &&
     (byCli ? !!chatRun.cli : !!agent) &&
     // 要问用户的参数没选好时不能开始：服务端也会拒绝，这里先挡住并让「参数」按钮显示警告
     !missing.length &&
@@ -156,15 +157,14 @@ export function TaskComposer({
     [asked, tasks, fixed, named],
   )
   const sendTo = async (id: string) => {
-    if ((!prompt.trim() && !files.attachments.length) || busy || files.uploading) return
+    if ((!prompt.trim() && !files.attachments.length && !files.needFrames) || busy || files.uploading) return
+    // 视频卡片换成选好的帧；还有没选帧的视频时先打开截帧弹窗
+    const text = files.prepare(prompt)
+    if (text === null) return
     setBusy(true)
     try {
       onCreated(
-        await api.sendMessage(
-          id,
-          forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
-          files.attachments,
-        ),
+        await api.sendMessage(id, forSend(text, files.attachments.length ? ATTACHMENT_PROMPT : ''), files.attachments),
       )
       setPrompt('')
       files.clear()
@@ -177,13 +177,16 @@ export function TaskComposer({
 
   const start = async () => {
     if (!canStart) return
+    // 视频卡片换成选好的帧；还有没选帧的视频时先打开截帧弹窗
+    const text = files.prepare(prompt)
+    if (text === null) return
     setBusy(true)
     try {
       try {
         if (project) localStorage.setItem('last-project', project.id)
       } catch {}
       // 引入了工作流（行内的工作流卡片）：第一条要求点名它，由这个父对话启动（ADR 0044）
-      const said = withWorkflow(prompt, workflows)
+      const said = withWorkflow(text, workflows)
       onCreated(
         await api.createTask({
           projectId: project?.id ?? '',

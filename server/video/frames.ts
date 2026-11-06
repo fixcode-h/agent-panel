@@ -25,7 +25,9 @@ import {
   showinfoTimes,
   sortFrames,
   uniformTimes,
+  ffmpegTime,
   type AutoMode,
+  type AutoProgress,
   type EnhanceMethod,
   type VideoInfo,
   type VideoSession,
@@ -40,6 +42,10 @@ const stateFile = (key: string) => path.join(sessionDir(key), 'state.json')
 
 /** key 只能是我们自己算出来的十六进制串：拿它拼目录，不能让外面传进 `..` */
 const validKey = (key: string) => /^[0-9a-f]{16}$/.test(key)
+
+/** 正在自动截帧的视频的进度（按 key），截帧弹窗轮询它画进度条；做完就删 */
+const autoProgress = new Map<string, AutoProgress>()
+export const autoProgressOf = (key: string) => autoProgress.get(key) ?? null
 
 /** 同一个视频的操作排队做：自动截帧还没写完时又点了手动截帧，记录不能互相覆盖 */
 const queues = new Map<string, Promise<unknown>>()
@@ -162,15 +168,32 @@ async function sharpestNear(full: string, time: number, info: VideoInfo, signal?
 }
 
 /** 自动截帧的候选时间点：画面变化（场景切换分数）或录屏（去掉和上一帧几乎一样的画面） */
-async function candidates(full: string, mode: AutoMode, info: VideoInfo, signal?: AbortSignal) {
+async function candidates(
+  full: string,
+  mode: AutoMode,
+  info: VideoInfo,
+  signal?: AbortSignal,
+  onRatio?: (r: number) => void,
+) {
   if (mode === 'uniform') return []
-  const vf =
+  const pick =
     mode === 'scene'
-      ? "fps=5,scale=320:-2,select='gt(scene\\,0.3)',showinfo"
-      : 'fps=4,scale=480:-2,mpdecimate=hi=64*24:lo=64*8:frac=0.1,showinfo'
+      ? "fps=5,scale=320:-2,split[a][b];[a]select='gt(scene\\,0.3)',showinfo[o]"
+      : 'fps=4,scale=480:-2,split[a][b];[a]mpdecimate=hi=64*24:lo=64*8:frac=0.1,showinfo[o]'
   // 整段解码一遍：给足时间（大约按视频时长算），长视频也不会被提前掐掉
   const timeoutMs = Math.max(60_000, info.duration * 3000)
-  const r = await runFfmpeg(await ffmpegBin(), ['-i', full, '-an', '-vf', vf, '-f', 'null', '-'], { timeoutMs, signal })
+  // 进度：ffmpeg 状态行的「time=…」按输出算，挑帧那一路画面没变化时一帧都不出、一直是 N/A，
+  // 所以分出一路每秒一帧的画面单独输出到 null，它的 time 就是已经解码到的位置，除以时长就是分析到哪儿了
+  const onStderr = (chunk: string) => {
+    const at = ffmpegTime(chunk)
+    if (at !== undefined && info.duration > 0) onRatio?.(Math.min(1, at / info.duration))
+  }
+  const graph = `[0:v]${pick};[b]fps=1[p]`
+  const r = await runFfmpeg(
+    await ffmpegBin(),
+    ['-i', full, '-an', '-filter_complex', graph, '-map', '[o]', '-f', 'null', '-', '-map', '[p]', '-f', 'null', '-'],
+    { timeoutMs, signal, onStderr },
+  )
   if (r.error) throw new Error(t('分析画面失败：{error}', { error: r.error }))
   return showinfoTimes(r.stderr)
 }
@@ -179,20 +202,27 @@ export async function autoFrames(key: string, file: string, mode: AutoMode, coun
   return serial(key, async () => {
     const s = await session(key, file)
     const n = Math.min(Math.max(1, Math.round(count)), AUTO_MAX)
-    const found = await candidates(s.path, mode, s.info, signal)
-    const times = mode === 'uniform' ? uniformTimes(s.info.duration, n) : pickTimes(found, s.info.duration, n)
     const fresh: VideoFrame[] = []
     try {
+      if (mode !== 'uniform') autoProgress.set(key, { stage: 'analyze', done: 0, total: 1 })
+      const found = await candidates(s.path, mode, s.info, signal, (r) =>
+        autoProgress.set(key, { stage: 'analyze', done: r, total: 1 }),
+      )
+      const times = mode === 'uniform' ? uniformTimes(s.info.duration, n) : pickTimes(found, s.info.duration, n)
+      autoProgress.set(key, { stage: 'grab', done: 0, total: times.length })
       for (const want of times) {
         if (signal?.aborted) throw new Error(t('已取消'))
         const at = await sharpestNear(s.path, want, s.info, signal)
         const g = await grab(s.path, key, at, s.info)
         fresh.push({ ...g, source: 'auto' })
+        autoProgress.set(key, { stage: 'grab', done: fresh.length, total: times.length })
       }
     } catch (e) {
       // 截到一半失败：这次截出来的都删掉，原来的帧不动
       await Promise.all(fresh.map((f) => rm(f.file, { force: true })))
       throw e
+    } finally {
+      autoProgress.delete(key)
     }
     // 自动帧整批换掉，手动帧保留
     const old = s.frames.filter((f) => f.source === 'auto')
