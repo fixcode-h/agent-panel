@@ -6,7 +6,7 @@ import type { HookFacts } from '../../shared/hooks.ts'
 import { globMatch } from '../../shared/hook-defs.ts'
 import { endlessSegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
-import { editScope } from '../../shared/bug-phase.ts'
+import { editScope, revOf } from '../../shared/bug-phase.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
 import { DATA_DIR } from '../store.ts'
 import { SECRET_RES } from './validate.ts'
@@ -80,7 +80,7 @@ export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   const extra = outOfPlan(files, scope.files)
   if (extra.length) {
     const d = latestDiagnosis(c.task)
-    return `【面板】${extra.join('、')} 不在用户同意的范围（第 ${d?.version} 版）里：确实要改，先交新一版写明为什么，等用户确认。`
+    return `【面板】${extra.join('、')} 不在用户同意的范围（第 ${d ? revOf(d) : ''} 版）里：确实要改，先重新交报告写明为什么，等用户确认。`
   }
   return ''
 }

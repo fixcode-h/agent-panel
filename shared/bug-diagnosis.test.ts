@@ -109,6 +109,7 @@ test('交诊断报告：记成等用户确认的一版，对话算执行中（�
   assert.deepEqual(childWait({ ...tk, status: 'done', working: false, steps: [], parentAsks: [] } as Task), {
     kind: 'diagnosis',
     version: 1,
+    rev: 1,
   })
   const md = diagnosisMarkdown(tk.diagnoses![0])
   assert.match(md, /## 根因（已证实）\nmax 用的是秒/)
@@ -183,7 +184,7 @@ test('论证：要日志计划和每种结果说明什么；同意后只放行�
   )
   assert.ok(sup.ok)
   assert.equal(tk.diagnoses![0].status, 'answered')
-  assert.match(sup.message, /只分析这一段.*交 phase: cause.*交 phase: evidence/s)
+  assert.match(sup.message, /只分析这一段.*交 phase: cause.*再交一轮 phase: evidence/s)
   assert.match(sup.message, /retries=3 max=30/)
   assert.match(sup.message, /app\.log/)
   assert.match(diagnosisMarkdown(tk.diagnoses![0]), /## 你贴的日志/)
@@ -208,7 +209,7 @@ test('根因：用户否决时可以回到论证；同意了才能交方案，�
   )
   assert.ok(r.ok)
   assert.match(r.message, /否决了这版根因.*回到论证.*phase: evidence/s)
-  assert.match(tk.messages.at(-1)!.text, /你对第 1 版提了 1 条意见/)
+  assert.match(tk.messages.at(-1)!.text, /你对第 1 版的根因提了 1 条意见/)
   ok(submitDiagnosis(tk, evidenceInput({ answers: [{ id: 1, answer: '证据确实不够，先加日志' }] }), id))
   assert.equal(tk.diagnoses![0].status, 'superseded')
   ok(decideDiagnosis(tk, 2, { approve: false, supply: true, logs: 'max=30', notes: [], overall: '' }, id))
@@ -261,7 +262,7 @@ test('用户标疑问：退回的话按编号列出；新一版要逐条回答�
   assert.equal(pendingDiagnosis(tk)?.version, 2)
   assert.match(
     diagnosisMarkdown(tk.diagnoses![1], tk.diagnoses![0]),
-    /## 回答上一版的意见\n1\. \*\*疑问\*\*「max 用的是秒」：配置里写的是毫秒吧？\n {3}- 回答：查了 config\.ts:8/,
+    /## 回答上一轮的意见\n1\. \*\*疑问\*\*「max 用的是秒」：配置里写的是毫秒吧？\n {3}- 回答：查了 config\.ts:8/,
   )
 })
 
@@ -308,7 +309,7 @@ test('收尾核对：要有确认过的方案、交过验证且用户给了结�
   assert.equal(diagnosisGate(tk, ['web/src/lib/login.ts', 'web/src/lib/login.test.ts', 'docs/x.md']), '')
   assert.match(
     diagnosisGate(tk, ['web/src/lib/login.ts', 'web/src/App.tsx']),
-    /不在用户确认的方案（第 2 版）里：web\/src\/App\.tsx/,
+    /不在用户确认的方案（第 1 版）里：web\/src\/App\.tsx/,
   )
   assert.equal(diagnosisGate({ bug: false }, ['any.ts']), '', '不是 Bug 子对话不核对')
   assert.deepEqual(outOfPlan(['./src/a/b.ts', 'src/c.ts'], ['src/a/']), ['src/c.ts'], '方案写目录时目录下的都算')
@@ -325,7 +326,7 @@ test('验证：用户可以直接点结束跳过验证；论证时加过日志�
   const r = decideDiagnosis(tk, 4, yes, id)
   assert.ok(r.ok)
   assert.match(r.message, /点了结束，跳过验证.*\[排查-.*正式日志.*submit_merge/s)
-  assert.match(tk.messages.at(-1)!.text, /你结束了第 4 版的验证/)
+  assert.match(tk.messages.at(-1)!.text, /你结束了第 1 版的验证/)
   assert.equal(diagnosisGate(tk, ['web/src/lib/login.ts', 'web/src/lib/api.ts']), '')
 })
 
@@ -460,7 +461,7 @@ test('评审对照和 Bug 记录草稿（ADR 0046）：只取用户确认过的�
   assert.equal(bugRecordDraft(tk), '')
   decideDiagnosis(tk, 2, yes, id)
   const brief = approvedBrief(tk)
-  assert.match(brief, /## 用户确认的诊断报告（第 2 版）/)
+  assert.match(brief, /## 用户确认的诊断报告（第 1 版）/)
   assert.match(brief, /选定方案 A：改成次数常量——login\.ts:44/)
   assert.match(brief, /  - 接口重试：共用常量（验证：api\.test\.ts）/)
   done(tk, ['登录重试', '接口重试'])
@@ -526,4 +527,47 @@ test('根因那一版：返回写明只确认根因；提前写的修法在弹�
   ok(p)
   assert.match(p.info, /等用户确认修复方案/)
   assert.doesNotMatch(diagnosisMarkdown(tk.diagnoses![1], undefined, { list: tk.diagnoses }), /一起确认/)
+})
+
+test('第几版（用户 2026-11-06 定）：按意见修改、阶段往下走不升版本；回到更早的阶段、换掉确认过的方案才升', () => {
+  const tk = bugTask()
+  const note = { approve: false, notes: [{ quote: '', kind: 'question' as const, comment: '为什么？' }], overall: '' }
+  const last = () => tk.diagnoses!.at(-1)!
+  // 论证两轮：同一版
+  ok(submitDiagnosis(tk, evidenceInput(), id))
+  ok(decideDiagnosis(tk, last().version, { ...yes, approve: false, supply: true, logs: 'max=30' }, id))
+  ok(submitDiagnosis(tk, evidenceInput(), id))
+  assert.equal(last().rev, 1, '论证多轮还是第 1 版')
+  ok(decideDiagnosis(tk, last().version, { ...yes, approve: false, supply: true, logs: 'max=30' }, id))
+  // 往下走到根因；用户提了疑问，逐条回答后再交：还是同一版
+  ok(submitDiagnosis(tk, input({ phase: 'cause' }), id))
+  ok(decideDiagnosis(tk, last().version, note, id))
+  const same = submitDiagnosis(tk, input({ phase: 'cause', answers: [{ id: 1, answer: '查了，证据够' }] }), id)
+  ok(same)
+  assert.equal(last().rev, 1, '按意见修改不升版本')
+  assert.match(same.info, /已交第 1 版的根因（这一版的第 2 轮，按意见修改不升版本号）（报告 #4）/)
+  // 用户否决根因、回到论证：之前的结论不成立，第 2 版
+  ok(decideDiagnosis(tk, last().version, note, id))
+  const back = submitDiagnosis(tk, evidenceInput({ answers: [{ id: 1, answer: '证据不够，重新加日志' }] }), id)
+  ok(back)
+  assert.equal(last().rev, 2)
+  assert.match(back.info, /已交第 2 版（论证）.*第 1 版的结论作废/)
+  ok(decideDiagnosis(tk, last().version, { ...yes, approve: false, supply: true, logs: 'max=30' }, id))
+  ok(submitDiagnosis(tk, input({ phase: 'cause' }), id))
+  ok(decideDiagnosis(tk, last().version, yes, id))
+  ok(submitDiagnosis(tk, input({ phase: 'plan' }), id))
+  assert.equal(last().rev, 2, '根因 → 方案往下走还是第 2 版')
+  ok(decideDiagnosis(tk, last().version, yes, id))
+  // 修的时候要多改文件：换掉确认过的方案，第 3 版
+  ok(submitDiagnosis(tk, input({ phase: 'plan', files: ['web/src/lib/login.ts', 'web/src/lib/api.ts'] }), id))
+  assert.equal(last().rev, 3)
+  ok(decideDiagnosis(tk, last().version, yes, id))
+  ok(done(tk))
+  ok(submitDiagnosis(tk, verifyInput(), id))
+  assert.equal(last().rev, 3, '交验证还是第 3 版')
+  // 验证没过、重出方案：第 4 版
+  ok(decideDiagnosis(tk, last().version, note, id))
+  ok(submitDiagnosis(tk, input({ phase: 'plan', answers: [{ id: 1, answer: '换修法' }] }), id))
+  assert.equal(last().rev, 4)
+  assert.match(tk.messages.at(-1)!.text, /你对第 3 版的验证提了 1 条意见/)
 })

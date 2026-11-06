@@ -18,17 +18,20 @@ import {
   inputPhase,
   lastPlan,
   logFilesOf,
+  nextRev,
   normPath,
   PHASE_TEXT,
   phaseFeedback,
   phaseOf,
   planApproved,
+  revOf,
+  roundOf,
 } from './bug-phase.ts'
 import { t } from './i18n.ts'
 import { settlePlan } from './plan.ts'
 
 export { blameLabel, diagnosisMarkdown } from './bug-diagnosis-md.ts'
-export { phaseOf } from './bug-phase.ts'
+export { phaseOf, revOf } from './bug-phase.ts'
 
 type DiagTask = Pick<Task, 'bug' | 'diagnoses' | 'messages' | 'changes' | 'bugCase'>
 
@@ -190,8 +193,8 @@ export function diagnosisProblem(
   const prev = list.at(-1)
   if (prev?.status === 'pending')
     return prev.awaiting
-      ? `第 ${prev.version} 版的日志已经加好、在等用户复现贴日志，不要再交：结束这一轮，等用户的日志。`
-      : `第 ${prev.version} 版还在等用户确认，不要重复交：结束这一轮，等确认结果交回给你。`
+      ? `第 ${revOf(prev)} 版的日志已经加好、在等用户复现贴日志，不要再交：结束这一轮，等用户的日志。`
+      : `第 ${revOf(prev)} 版还在等用户确认，不要重复交：结束这一轮，等确认结果交回给你。`
   const phase = inputPhase(input, c, list)
   const bad =
     phase === 'evidence'
@@ -206,7 +209,7 @@ export function diagnosisProblem(
     const answered = new Set(answers.map((a) => a.id))
     const left = prev.notes.filter((n) => needsAnswer(n) && !answered.has(n.id)).map((n) => n.id)
     if (left.length)
-      return `用户对第 ${prev.version} 版的这几条意见还没回答：${left.join('、')}。answers 里按编号逐条写：查了什么、结论、补了什么证据或改了哪一节。`
+      return `用户对第 ${revOf(prev)} 版的这几条意见还没回答：${left.join('、')}。answers 里按编号逐条写：查了什么、结论、补了什么证据或改了哪一节。`
   }
   return ''
 }
@@ -310,6 +313,7 @@ export function submitDiagnosis(
   // 用户的决定（取消、同意、贴了日志）留着：那是用户做过的事，不是被新一版顶掉的
   if (prev && (prev.status === 'pending' || prev.status === 'questioned')) prev.status = 'superseded'
   const version = (prev?.version ?? 0) + 1
+  const { rev, overturned } = nextRev(list, phase)
   const { result, updatedAt: _u, ...body } = c
   const files =
     phase === 'evidence'
@@ -324,6 +328,7 @@ export function submitDiagnosis(
     collect: phase === 'evidence' || phase === 'verify' ? c.collect : undefined,
     phase,
     version,
+    rev,
     at: now,
     files,
     answers,
@@ -350,10 +355,15 @@ export function submitDiagnosis(
           : causeInPlan(d, task.diagnoses)
             ? '等用户一起确认根因和修复方案（快速级别合成一版），确认了才改代码'
             : '等用户确认修复方案，确认了才改代码'
+  const round = roundOf(d, task.diagnoses)
+  const which = overturned
+    ? `已交第 ${rev} 版（${PHASE_TEXT[phase]}）：回到了更早的阶段或换掉了确认过的方案，第 ${rev - 1} 版的结论作废`
+    : `已交第 ${rev} 版的${PHASE_TEXT[phase]}${round > 1 ? `（这一版的第 ${round} 轮，按意见修改不升版本号）` : ''}`
+  // 「报告 #n」是交报告的顺序号：对话里那一行按它认出是哪一份（web/src/lib/tasks.ts）
   return {
     ok: true,
     version,
-    info: `已交第 ${version} 版（${PHASE_TEXT[phase]}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。`,
+    info: `${which}（报告 #${version}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。`,
   }
 }
 
@@ -382,7 +392,7 @@ export function requestLogs(
   d.collect = collect
   return {
     ok: true,
-    info: `已请用户按第 ${d.version} 版的日志计划复现。现在结束这一轮回复，等用户贴日志；日志会作为新消息交给你。`,
+    info: `已请用户按第 ${revOf(d)} 版的日志计划复现（报告 #${d.version}）。现在结束这一轮回复，等用户贴日志；日志会作为新消息交给你。`,
   }
 }
 
@@ -416,12 +426,15 @@ const MAX_LOGS = 20000
 
 /** 对话里记一行：你对第几版做了什么 */
 function decisionLine(d: Diagnosis, k: number): string {
-  const n = d.version
+  const n = revOf(d)
   if (d.status === 'answered')
     return phaseOf(d) === 'verify'
       ? t('你给了第 {n} 版的验证结果，交给它分析', { n })
       : t('你给了第 {n} 版要的日志，交给它分析', { n })
-  if (d.status === 'questioned') return t('你对第 {n} 版提了 {k} 条意见，要它接着分析', { n, k: k || 1 })
+  if (d.status === 'questioned') {
+    const phase = { evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), verify: t('验证') }[phaseOf(d)]
+    return t('你对第 {n} 版的{phase}提了 {k} 条意见，要它接着分析', { n, k: k || 1, phase })
+  }
   return {
     evidence: t('你同意了第 {n} 版的日志计划', { n }),
     cause: t('你同意了第 {n} 版的根因', { n }),
@@ -492,7 +505,12 @@ export function cancelDiagnosis(
   d.decidedAt = now
   settlePlan(task, now)
   task.messages.push(
-    diagnosisMessage(newId(), version, t('你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成', { n: version }), now),
+    diagnosisMessage(
+      newId(),
+      version,
+      t('你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成', { n: revOf(d) }),
+      now,
+    ),
   )
   return { ok: true }
 }
@@ -509,14 +527,14 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
   const list = task.diagnoses ?? []
   const d = list.at(-1)
   if (!d) return '没有请求收尾：这是父对话派来的 Bug，修之前要先用 submit_diagnosis 交报告，用户确认了方案再改。'
-  const v = d.version
+  const v = revOf(d)
   if (d.status === 'pending')
     return d.awaiting
       ? `没有请求收尾：第 ${v} 版在等用户复现贴日志。`
       : `没有请求收尾：第 ${v} 版还在等用户，用户回复之前不能收尾。`
-  if (d.status === 'questioned') return `没有请求收尾：用户对第 ${v} 版提了意见，先逐条处理、交新一版，等用户确认。`
+  if (d.status === 'questioned') return `没有请求收尾：用户对第 ${v} 版提了意见，先逐条处理、改好再交，等用户确认。`
   if (d.status === 'cancelled')
-    return `没有请求收尾：用户取消了第 ${v} 版，这次不修。用户之后要修，先交新一版报告，等用户确认。`
+    return `没有请求收尾：用户取消了第 ${v} 版，这次不修。用户之后要修，先重新交报告，等用户确认。`
   const phase = phaseOf(d)
   if (phase === 'evidence' || phase === 'cause')
     return '没有请求收尾：还没有用户确认的修复方案。按流程交根因（phase: cause）、修复方案（phase: plan），确认后再修。'
@@ -525,7 +543,7 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
   const plan = lastPlan(list)
   const extra = outOfPlan(changed, [...(plan?.files ?? []), ...logFilesOf(list)])
   if (extra.length)
-    return `没有请求收尾：这些文件不在用户确认的方案（第 ${plan?.version ?? v} 版）里：${extra.join('、')}。不需要的改回去；确实要改，交新一版方案写明为什么，等用户确认后再收尾。`
+    return `没有请求收尾：这些文件不在用户确认的方案（第 ${plan ? revOf(plan) : v} 版）里：${extra.join('、')}。不需要的改回去；确实要改，重新交 phase: plan 写明为什么，等用户确认后再收尾。`
   // ADR 0046：修完的结果要记进档案——回归测试、影响面逐条的验证
   const r = task.bugCase?.result
   if (!r?.regressionTests.length)
@@ -552,7 +570,7 @@ export function approvedBrief(task: Pick<Task, 'bug' | 'diagnoses'>): string {
   if (!d) return ''
   const chosen = d.options.find((o) => o.id === d.chosen?.id)
   const lines = [
-    `## 用户确认的诊断报告（第 ${d.version} 版）`,
+    `## 用户确认的诊断报告（第 ${revOf(d)} 版）`,
     '这是用户报的 Bug，改动应当照这份方案做。对照它看：改动是不是选定的方案、只改了方案里的文件、影响面每一条有没有对应的验证、同类现场处理了没有；对不上的按级别报出来。',
     `- 根因：${d.rootCause}`,
     chosen ? `- 选定方案 ${chosen.id}：${chosen.title}——${chosen.change}` : d.fix ? `- 修复方案：${d.fix}` : '',

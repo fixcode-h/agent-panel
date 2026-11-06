@@ -24,6 +24,33 @@ export const PHASE_TEXT: Record<BugPhase, string> = {
   verify: '验证',
 }
 
+/** 第几版：旧数据没有 rev，按交报告的顺序号 */
+export const revOf = (d: Pick<Diagnosis, 'rev' | 'version'>) => d.rev ?? d.version
+
+/**
+ * 新交的这一份是第几版（用户 2026-11-06 定：版本号只在方案被推翻时往上加）。
+ * - 回到更早的阶段（根因被否决回到论证、验证没过回到论证或重出方案）：之前的结论不成立了，+1。
+ * - 用户确认过的修复方案换成新方案（修的时候发现要改别的文件）：+1。
+ * - 按用户的意见修改、论证多轮、阶段往下走（论证 → 根因 → 方案 → 验证）：还是同一版。
+ * 只看阶段和用户的决定，不看回复的文字
+ */
+export function nextRev(list: Diagnosis[], phase: BugPhase): { rev: number; overturned: boolean } {
+  const prev = list.at(-1)
+  if (!prev) return { rev: 1, overturned: false }
+  const from = phaseOf(prev)
+  const back = PHASES.indexOf(phase) < PHASES.indexOf(from)
+  const replan = phase === 'plan' && from === 'plan' && prev.status === 'approved'
+  const overturned = back || replan
+  return { rev: revOf(prev) + (overturned ? 1 : 0), overturned }
+}
+
+/** 这一份是这一版里同一阶段的第几轮（按意见改了几次、论证了几轮）：弹窗的版本下拉用来区分 */
+export function roundOf(d: Diagnosis, list: Diagnosis[]): number {
+  const i = list.indexOf(d)
+  const before = i >= 0 ? list.slice(0, i + 1) : [...list, d]
+  return before.filter((x) => revOf(x) === revOf(d) && phaseOf(x) === phaseOf(d)).length
+}
+
 /** 最后一版论证或根因（判断能不能往方案走） */
 const lastCore = (list: Diagnosis[]) =>
   [...list].reverse().find((d) => phaseOf(d) === 'evidence' || phaseOf(d) === 'cause')
@@ -93,7 +120,7 @@ export function editScope(list: Diagnosis[]): { files: string[] } | { deny: stri
   const d = list.at(-1)
   if (!d) return { deny: '这是用户报的 Bug：先按流程查，用 submit_diagnosis 交报告，用户同意了再改文件。' }
   const phase = phaseOf(d)
-  const v = d.version
+  const v = revOf(d)
   if (d.status === 'pending')
     return {
       deny: d.awaiting
@@ -101,15 +128,15 @@ export function editScope(list: Diagnosis[]): { files: string[] } | { deny: stri
         : `第 ${v} 版报告还在等用户确认：确认之前不改文件，先等用户的回复。`,
     }
   if (d.status === 'questioned')
-    return { deny: `用户对第 ${v} 版提了意见：先逐条处理、用 submit_diagnosis 交新一版，用户同意后再改文件。` }
+    return { deny: `用户对第 ${v} 版提了意见：先逐条处理、用 submit_diagnosis 改好再交，用户同意后再改文件。` }
   if (d.status === 'cancelled')
     return {
-      deny: `用户取消了第 ${v} 版，这次不修：不改文件。用户要你接着修时，先用 submit_diagnosis 交新一版，确认后再改。`,
+      deny: `用户取消了第 ${v} 版，这次不修：不改文件。用户要你接着修时，先用 submit_diagnosis 重新交报告，确认后再改。`,
     }
   if (phase === 'evidence') {
     if (d.status === 'approved') return { files: d.files }
     return {
-      deny: `用户给了第 ${v} 版要的日志：先分析，交下一版（还没定论交 phase: evidence 继续论证，证实了交 phase: cause）。`,
+      deny: `用户给了第 ${v} 版要的日志：先分析，再交报告（还没定论交 phase: evidence 继续论证，证实了交 phase: cause）。`,
     }
   }
   if (phase === 'cause')
@@ -138,7 +165,7 @@ const CLEANUP =
 
 /** 用户的决定交给 AI 的话：按这一版的阶段和用户的选择分别写 */
 export function phaseFeedback(d: Diagnosis): string {
-  const v = d.version
+  const v = revOf(d)
   const phase = phaseOf(d)
   const overall = d.overall ? `\n\n用户的整体意见：${d.overall}` : ''
   const notes = d.notes.length ? `\n\n用户的标注：\n${notesList(d.notes)}` : ''
@@ -149,37 +176,37 @@ export function phaseFeedback(d: Diagnosis): string {
   if (d.status === 'questioned') {
     const back =
       phase === 'cause'
-        ? '\n\n用户否决了这版根因：觉得用户说得对、证据确实不完整，就回到论证，交 phase: evidence 的新一版（新的日志计划）；证据其实够，就交 phase: cause 的新一版逐条回答。'
+        ? `\n\n用户否决了这版根因：觉得用户说得对、证据确实不完整，就回到论证，交 phase: evidence（新的日志计划，面板记成第 ${v + 1} 版）；证据其实够，就再交 phase: cause 逐条回答（还是第 ${v} 版）。`
         : phase === 'verify'
-          ? '\n\n验证没通过：把这次修法和失败证据写进「已排除」，回到论证（phase: evidence）或交新一版修复方案（phase: plan）。'
+          ? `\n\n验证没通过：把这次修法和失败证据写进「已排除」，回到论证（phase: evidence）或重新出修复方案（phase: plan），面板记成第 ${v + 1} 版。`
           : ''
     return `用户对第 ${v} 版（${PHASE_TEXT[phase]}）还有意见，先不要改文件：
 ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}${back}
 
-逐条查清后用 submit_diagnosis 交新一版：answers 按编号回答「疑问」和「改方案」（查了什么、结论、补了什么证据或改了哪一节），「补充信息」用进报告里即可。只处理被问到的几条，别的小节照抄上一版，不要整份重写。`
+逐条查清后用 submit_diagnosis 再交（按意见修改还是第 ${v} 版，不升版本号）：answers 按编号回答「疑问」和「改方案」（查了什么、结论、补了什么证据或改了哪一节），「补充信息」用进报告里即可。只处理被问到的几条，别的小节照抄上一版，不要整份重写。`
   }
   if (d.status === 'answered') {
     if (phase === 'verify')
       return `用户按第 ${v} 版的验证步骤复现了，给了结果。只分析这一段日志，对照「看到什么算修好了」：
 - 没问题：用 update_bug_case 的 result 记下验证结果，${CLEANUP}然后请父对话收尾（submit_merge）。
-- 还有问题：不在这次修法上接着改，把修法和失败证据写进「已排除」，回到论证交 phase: evidence 的新一版，或交新一版 phase: plan。${overall}${logs}${files}`
+- 还有问题：不在这次修法上接着改，把修法和失败证据写进「已排除」，回到论证交 phase: evidence，或重新出方案交 phase: plan（面板记成第 ${v + 1} 版）。${overall}${logs}${files}`
     return `用户按第 ${v} 版的日志计划复现了，给了日志。只分析这一段（不混进以前的日志），对照「每种结果说明什么」更新假设表：
 - 证据链三环齐了、根因证实：交 phase: cause（confirmed: true），写清证据链和每条现象怎么解释。
-- 还没定论：交 phase: evidence 的新一版，写下一轮要加的日志和为什么；上一轮的临时日志先留着，最后一起删。${overall}${logs}${files}`
+- 还没定论：再交一轮 phase: evidence（还是第 ${v} 版），写下一轮要加的日志和为什么；上一轮的临时日志先留着，最后一起删。${overall}${logs}${files}`
   }
   // approved
   if (phase === 'evidence')
     return `用户同意了第 ${v} 版的日志计划，现在加日志：
 - 只在日志计划里的文件加，统一前缀 \`[排查-<主题>]\`，打出计划里写的值，不改任何逻辑。
-- 加完能自己复现（跑测试、跑命令）就自己跑，分析后交下一版（还没定论交 phase: evidence，证实了交 phase: cause）。
+- 加完能自己复现（跑测试、跑命令）就自己跑，分析后再交报告（还没定论交 phase: evidence，证实了交 phase: cause）。
 - 自己复现不了：调用 request_logs 写清复现步骤、日志在哪、过滤条件，然后结束这一轮，等用户贴日志。${notes}${overall}`
   if (phase === 'cause')
     return `用户同意了第 ${v} 版的根因。现在设计修复方案，交 phase: plan：影响面、至少两个有实质区别的修法和五项比较、选定和理由、要改的文件、验证计划；模块已有日志体系的，修改处要留哪些正式日志也写进方案。用户确认之前不改文件。${notes}${overall}`
   if (phase === 'plan')
     return `用户确认了第 ${v} 版的修复方案，按它修：
 - 先写改前失败的测试（没法自动化的写成可重复的手工步骤），再按方案改。
-- 只改方案里的文件：${d.files.map((f) => `\`${f}\``).join('、') || '（见方案）'}（补测试、回写文档、翻译不算）。要改别的文件，先交新一版方案写明为什么，等用户确认。
+- 只改方案里的文件：${d.files.map((f) => `\`${f}\``).join('、') || '（见方案）'}（补测试、回写文档、翻译不算）。要改别的文件，先重新交 phase: plan 写明为什么（换掉确认过的方案，面板记成第 ${v + 1} 版），等用户确认。
 - 修完用 update_bug_case 的 result 记下回归测试和影响面逐条的验证，然后交 phase: verify：collect 写用户怎么复现验证、日志在哪、看到什么算修好了，等用户给结果。
-- 改完验证不过：不要在这次修法上接着改，把修法和失败证据写进「已排除」，回到论证交新一版。${notes}${overall}`
+- 改完验证不过：不要在这次修法上接着改，把修法和失败证据写进「已排除」，回到论证重新交报告。${notes}${overall}`
   return `用户在第 ${v} 版点了结束，跳过验证。${CLEANUP}然后请父对话收尾（submit_merge）。${notes}${overall}`
 }
