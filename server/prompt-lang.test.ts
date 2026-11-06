@@ -260,3 +260,8 @@ test('配置助手和说明文件优化的提示词：语言规则不抢占第�
   assert.ok(doc.startsWith('你在帮忙优化项目根目录下的说明文件'), '开头不能被语言规则挤掉')
   assert.match(doc, /## 回复语言/)
 })
+
+test('末尾提醒带上「提到文件写完整路径」：只写文件名时面板打不开（用户 2026-11-06 定的）', () => {
+  for (const lang of ['zh', 'auto-zh'] as const) assert.match(promptLangReminder(lang), /完整的绝对路径/)
+  for (const lang of ['en', 'auto-en'] as const) assert.match(promptLangReminder(lang), /full absolute path/)
+})
