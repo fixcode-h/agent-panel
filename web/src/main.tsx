@@ -7,12 +7,15 @@ import './maple-mono.css'
 import { getLang } from '@shared/i18n'
 import { primeCjkFont } from './lib/appearance'
 import { installCaretAutoScroll } from './lib/caret'
+import { installScrollReveal } from './lib/scroll-reveal'
 
 const CaptureHost = lazy(() => import('./components/design/CaptureHost').then((m) => ({ default: m.CaptureHost })))
 
 document.documentElement.lang = getLang() === 'zh' ? 'zh-CN' : 'en'
 // 所有输入框统一：光标跑到可视区外时把输入框滚过去
 installCaretAutoScroll()
+// 所有滚动区统一：只显示正在滚动的那一块的滚动条，停下后自动隐藏
+installScrollReveal()
 
 // 面板更新后，开着的旧标签页再打开懒加载的页面时，请求的是已经不存在的旧文件名，只会看到「页面出错」。
 // 拦下这个错误刷新一次换上新版本；一分钟内只刷一次，新版本本身加载失败时不会无限刷新

@@ -1,8 +1,10 @@
-import { createContext, useContext, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { IconButton } from './icon-button'
 import { Spinner } from './status-pill'
+import { revealTab, useTabScroll } from './use-tab-scroll'
 
 /**
  * 页签条（照 Proma 的 TabBar）：直角、等宽，选中的页签不加底色，只在底部画一条 3px 指示条；
@@ -11,6 +13,7 @@ import { Spinner } from './status-pill'
  * variant="underline"：详情页、设置小节那种页内切换——没有条底色、页签按文字宽度排，选中是 2px 圆头强调色下划线
  * variant="fit"：对话右栏「项目文件 / 本对话改动」——条和 bar 一样，页签按内容宽度左对齐、间距 20px、两头留 16px，
  * 指示条和内容同宽（设计稿 `.ptab.sm`）
+ * 页签放不下时可以左右滚：滚轮横向滚、两端出箭头按钮和渐隐，选中的页签自动滚进可见区（use-tab-scroll.ts）。
  */
 type TabVariant = 'bar' | 'underline' | 'fit'
 /** TabItem 跟着所在 TabBar 的样式画，不用每个页签再传一遍 */
@@ -45,6 +48,21 @@ export function TabBar({
 }) {
   const underline = variant === 'underline'
   const fit = variant === 'fit'
+  const scroll = useTabScroll()
+  // 放不下时两端各一个箭头；滚到头的那一端变灰不可点，不隐藏，免得页签区宽度跟着来回跳
+  const arrow = (dir: -1 | 1) =>
+    scroll.overflow && (
+      <div className="flex shrink-0 items-center px-0.5">
+        <IconButton
+          icon={dir < 0 ? ChevronLeft : ChevronRight}
+          label={dir < 0 ? t('向左滚动') : t('向右滚动')}
+          tone="bare"
+          disabled={dir < 0 ? !scroll.start : !scroll.end}
+          onClick={() => scroll.scrollBy(dir)}
+          className="disabled:pointer-events-none disabled:opacity-30"
+        />
+      </div>
+    )
   return (
     <TabVariantContext.Provider value={variant}>
       <Root
@@ -56,17 +74,22 @@ export function TabBar({
         )}
       >
         {leading && <div className={cn('flex shrink-0 items-center px-1.5', !underline && 'border-r')}>{leading}</div>}
+        {arrow(-1)}
         <div
+          ref={scroll.ref}
           role="tablist"
           aria-label={label}
+          data-fade-start={scroll.start || undefined}
+          data-fade-end={scroll.end || undefined}
           className={cn(
-            'flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none]',
+            'tab-scroll relative flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
             underline && 'gap-1',
             fit && 'gap-5 px-4',
           )}
         >
           {children}
         </div>
+        {arrow(1)}
         {trailing &&
           (trailingLabel ? (
             <div role="toolbar" aria-label={trailingLabel} className="flex shrink-0 items-center gap-0.5 px-2">
@@ -121,8 +144,13 @@ export function TabItem({
   const variant = useContext(TabVariantContext)
   const underline = variant === 'underline'
   const fit = variant === 'fit'
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (active && ref.current) revealTab(ref.current)
+  }, [active])
   return (
     <div
+      ref={ref}
       className={cn(
         'group/tab relative flex min-w-0 items-center transition-colors',
         fit

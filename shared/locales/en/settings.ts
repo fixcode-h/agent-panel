@@ -1550,6 +1550,8 @@ export const EN_SETTINGS: Record<string, string> = {
   等你回复: 'Waiting for you',
   计划中: 'Planned',
   关闭页签: 'Close tab',
+  向左滚动: 'Scroll left',
+  向右滚动: 'Scroll right',
   '模型对话里 Agent 用 Blender 建模，网页右侧实时预览。面板在后台起一个 Blender，不弹窗口。':
     'In model conversations the Agent builds in Blender and the page previews it live on the right. The panel runs Blender in the background without a window.',
   'Blender 路径': 'Blender path',
