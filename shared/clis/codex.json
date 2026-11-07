@@ -246,7 +246,8 @@
         "openai-responses": "responses"
       },
       "baseUrl": {},
-      "thinkArgs": ["-c", "model_supports_reasoning_summaries=true"]
+      "thinkArgs": ["-c", "model_reasoning_summary=auto"],
+      "noImages": true
     },
     "apiSources": [
       {
