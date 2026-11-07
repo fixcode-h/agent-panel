@@ -58,3 +58,8 @@
 | SSE 空闲时 `store.list` 次数          | 两个对话开 10 秒 = 40 次 | 11 次（`CHILD_COUNT_TTL` 共享缓存）       |
 
 第二轮的回归测试（本轮新增四个单测文件，按用例说明）：分页与版本的纯函数单测（`messagePage` 切片、锚点找不到时取最早一段、`taskMessageRev` / `taskRevOffset` 对号与对不上）、路由层单测 `task-open-page`（`limit` / `before`、响应带的 `messageTotal` / `messageHasMore` / `messageRev`、SSE 首包按 `rev` 发 `patch` 或 `full`）、`task-list-etag`（ETag / 304 / 数据变化换 ETag）、`task-children-count`（子对话计数正确、缓存命中结果一致）。
+
+## 流式输出时写对话文件（2026-11-08）
+
+- 消息文件是整份重写（`JSON.stringify` + fsync + rename），长对话几 MB。合并窗口原来固定 400ms，现在按这个对话上一次写盘实际花的时间放宽：`server/task-store.ts` 的 `messageGap` 取「上次耗时 × 5」，最窄 400ms、最宽 2 秒，写盘最多占窗口的五分之一。关键节点（`update(..., { now: true })`）照旧立即写。
+- 写一次超过 300ms 记一条 `task` 警告「写对话文件慢」（带耗时和消息条数）：用户说「面板卡」时先看日志里有没有这条，确认是不是写盘拖的，再决定要不要改成追加写（JSONL）。

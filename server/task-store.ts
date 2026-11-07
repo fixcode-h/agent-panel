@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Task, TaskMessage, type TaskData } from '../shared/schema.ts'
 import { t } from '../shared/i18n.ts'
 import { messageStamp, taskTitle } from '../shared/task.ts'
+import { log } from './log.ts'
 import { removeTaskLog, setTaskLogPath } from './task-log.ts'
 import {
   CACHE_DIR,
@@ -135,6 +136,17 @@ export function createStampTracker(verifyMs = 10_000) {
  * 窗口内只留最后一次，到点写最新的；任务本身的小文件（不带对话）照旧每次写，崩溃最多丢窗口内这点对话。
  */
 const MSG_GAP = 400
+/** 写一次越慢、窗口越宽：写盘时间最多占窗口的五分之一，长对话流式输出时不至于一直在序列化几 MB 的 JSON */
+const MSG_GAP_FACTOR = 5
+/** 窗口最宽这么久：被强杀时最多丢这么久的流式输出；关键节点（结束、提问、停止）照旧立即写 */
+const MSG_GAP_MAX = 2000
+/** 写一次对话文件超过这么久就记一笔日志：分得清「面板卡」是不是卡在写盘上 */
+const SLOW_WRITE_MS = 300
+
+/** 下一次合并写至少隔多久：按这个对话上一次写盘实际花的时间放宽 */
+export function messageGap(lastWriteMs: number) {
+  return Math.min(MSG_GAP_MAX, Math.max(MSG_GAP, Math.round(lastWriteMs * MSG_GAP_FACTOR)))
+}
 
 /**
  * 任务记录：任务本身全部读进内存，对话消息按需读。写入按任务串行化、原子写；
@@ -172,6 +184,8 @@ export function createTaskStore() {
   const writing = new Map<string, Promise<void>>()
   /** 消息文件上次写入的时间、窗口内等着写的最新一份和定时器 */
   const msgAt = new Map<string, number>()
+  /** 每个对话上一次写对话文件花了多久（毫秒）：合并窗口按它放宽，见 messageGap */
+  const msgCost = new Map<string, number>()
   const msgPending = new Map<string, Task>()
   const msgTimers = new Map<string, ReturnType<typeof setTimeout>>()
   onReset(() => {
@@ -205,7 +219,12 @@ export function createTaskStore() {
   async function writeMessages(t: Task) {
     const stamp = stamps.stamp(t.id, t.messages)
     if (written.get(t.id) === stamp) return
+    const began = performance.now()
     await writeJsonAtomic(msgFileOf(t), t.messages, true)
+    const spent = performance.now() - began
+    msgCost.set(t.id, spent)
+    if (spent >= SLOW_WRITE_MS)
+      log.warn('task', '写对话文件慢', { task: t.id, ms: Math.round(spent), messages: t.messages.length })
     // 写成功才记指纹：写失败（磁盘满、杀毒软件占着文件）时下一次还要重试，不然这段对话就再也不落盘了
     written.set(t.id, stamp)
     // 窗口按「真的写了盘」的时间算：窗口里合并写的那一次也要算，不然下一次会提前破窗口
@@ -227,7 +246,7 @@ export function createTaskStore() {
    */
   function persistMessages(t: Task, window = true): Promise<void> | undefined {
     const id = t.id
-    const wait = (msgAt.get(id) ?? 0) + MSG_GAP - Date.now()
+    const wait = (msgAt.get(id) ?? 0) + messageGap(msgCost.get(id) ?? 0) - Date.now()
     if (window && wait > 0) {
       msgPending.set(id, t)
       if (!msgTimers.has(id)) {
@@ -525,6 +544,7 @@ export function createTaskStore() {
       if (!msgTimers.has(old)) {
         written.delete(old)
         msgAt.delete(old)
+        msgCost.delete(old)
       }
     }
   }
@@ -691,6 +711,7 @@ export function createTaskStore() {
       msgTimers.delete(id)
       msgPending.delete(id)
       msgAt.delete(id)
+      msgCost.delete(id)
       await (writing.get(id) ?? Promise.resolve()).catch(() => {})
       await unlink(fileOf(meta)).catch(() => {})
       await unlink(msgFileOf(meta)).catch(() => {})

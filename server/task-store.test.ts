@@ -14,7 +14,7 @@ const PERSIST_WAIT_TIMEOUT_MS = 5000
 /** 轮询间隔：够密才能尽快返回，又不至于空转抢 CPU */
 const PERSIST_WAIT_INTERVAL_MS = 20
 
-const { createStampTracker, createTaskStore, messageChars } = await import('./task-store.ts')
+const { createStampTracker, createTaskStore, messageChars, messageGap } = await import('./task-store.ts')
 
 /** 等落盘：写文件是真实 I/O（fsync + rename），慢盘上耗时不定，只能轮询；到点报出等的是什么 */
 async function until(cond: () => boolean, what: string, ms = PERSIST_WAIT_TIMEOUT_MS) {
@@ -546,4 +546,11 @@ test('任务记录过不了 schema 且没能留档：本次可见但不覆盖原
   assert.equal(readFileSync(metaFile, 'utf8'), before, '原来的任务记录没有被覆盖')
   // 这次启动仍然让它可见（能打开、能导出）
   assert.equal(list.find((t) => t.id === id)?.title, '帮我看一下这个问题')
+})
+
+test('messageGap：写盘越慢合并窗口越宽，最窄 400ms、最宽 2 秒', () => {
+  assert.equal(messageGap(0), 400, '没写过或写得很快：照旧 400ms')
+  assert.equal(messageGap(30), 400)
+  assert.equal(messageGap(200), 1000, '写一次 200ms：窗口放宽到 1 秒，写盘最多占五分之一')
+  assert.equal(messageGap(5000), 2000, '再慢也最多隔 2 秒，被强杀时丢的流式输出有上限')
 })
