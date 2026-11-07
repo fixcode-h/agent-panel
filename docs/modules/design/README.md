@@ -2,7 +2,7 @@
 
 - 状态：documented
 - 职责：UI 设计：设计数据、AI 对话（设计工具 MCP）、原画与图片生成、导出
-- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`, `server/design-crop.ts`, `shared/restore/`, `web/src/components/design/CompareOverlay.tsx`
+- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`, `server/design-crop.ts`, `shared/restore/`, `server/design-restore.ts`, `server/design-psd.ts`, `web/src/components/design/CompareOverlay.tsx`
 - 入口：`server/designs.ts`
 - 关键词：UI 设计、原画、生图、导出、ComfyUI、设计工具
 - 更新：2026-11-07
@@ -64,6 +64,28 @@
 - 门槛设置：`Settings.designRestore`（`shared/restore/thresholds.ts`：`posPx` 2、`posRatio` 0.95、`assetSim` 0.92），设置页「图片生成」下面的「原画还原」组。
 - 像素操作（`blank`、`resize`、`crop`、`paste`、`contentBox`、`hasAlpha`、`chromaKey`、`removeFlatBackground`）挪到 `shared/raster.ts`，`server/image.ts` 重新导出；浏览器里的演示版和后面的检测算法共用。
 - 回归：`shared/restore/similarity.test.ts`、`server/design-crop.test.ts`、`scripts/ui/04-design.mjs`（滑块对照）。
+
+## 原画还原 P3：PSD 导入（2026-11-07）
+
+照原画还原的原画可以是 PSD：图层就是元素、图层像素就是切图，位置不用猜。
+
+- 解析：`ag-psd`（MIT，锁 31.0.3）。`shared/restore/psd.ts` 的 `importPsd(psd)` 只认解析好的对象（服务端 `server/design-psd.ts` 的 `readPsdLayers` 在 Node 里用 `initializeCanvas` 换成字节数组读；演示版在浏览器里按需 `import('ag-psd')`）。
+- 命名约定（参照 psd2fgui、PSD → UMG 插件）：前缀定类型（`Btn_` `Panel_` `Slot_` `Icon_` `Txt_` `Bar_` `Input_` `Deco_` `Bg_`）；按钮组里 `@normal` `@hover` `@pressed` `@disabled` 是四态（存进元素的 `states`，切图存成 `rs_<id>_<态>`，搭建时按钮这几态用画好的，不再压暗派生）；容器组里叫 `bg` / `背景` / `底` 或最底下铺满整组的图层是容器底图；没约定的组只当文件夹；文字图层读内容、字号（×变换缩放，记成 0.85 倍的笔画高）、颜色、对齐、粗体，不拿像素当切图；隐藏、不透明度 0 的跳过；中文名留空、按类型编号。
+- 流程：上传时服务端存合成图（PSD 里没存就按图层叠）当原画、每个图层存一张 PNG，元素的 `layer` / `states` 换成文件名，`setSource(..., { elements, warnings })`。拆解那一步直接用这些元素（`psdElements`：不检测、不问模型，格子照样排组）；切图那一步 `extractAssets(art, elements, given)` 用图层像素，其余（背景等没图层的）照常从合成图抠。读不全的（图层样式、蒙版、混合模式、剪贴蒙版）在原画那一步的卡上提醒。
+- 回归：`server/design-psd.test.ts`（命名约定、文字图层、写一个 PSD 再读、走完六步校验全过）、`scripts/ui/04b-restore.mjs`（演示里上传 PSD 走完六步，悬停态有切图）。
+
+## 原画还原 P1：照原画还原的六步管线（2026-11-07）
+
+新建设计时选「照原画还原」并上传原画，设计带上 `restore`（`shared/restore/schema.ts` 的 `RestoreState`），标题行换成六步：原画 → 拆解 → 切图 → 搭建 → 校验 → 交付。原则：**坐标全由算法量，模型只标类型、名字、文字**；每一步出一版和一张决策卡，确认了才跑下一步，改了前面的步骤后面做过的标成「要更新」。
+
+- 拆解（`detect.ts`、`grid.ts`、`pixels.ts`）：找矩形（边框线段配对，侧边取最近的竖线段；拼出来的假框、两排拼一框、借别的元素边的都筛掉；`snap` 取描边最外面那道跳变），再找块（文字行、图标；贴在容器角上、颜色和底色一样的是容器自己的底；贴在格子角上的数量单独当文字）；同列同行一样大的排成格子组。然后把编号框画在原画上（`overlay.ts`）让模型按编号标（`label.ts`：只收类型 / 名字 / 文字 / 删掉，用户改过的不动）。标注失败只在卡上写一条提醒，元素框照用。
+- 切图（`assets.ts`）：容器擦掉子元素后补底（`fillHoles`，四向最近像素），九宫格自动判断；其余去平底，但抠透明的地方露出的父容器和原画差得多（格子里的光晕）时整块原样留；一样的切图共用一张（dHash + 相似度 + 变化像素）。把所有切图拼回去和原画比，每个元素记 `sim`。存成 `rs_<元素 id>` 的图片（`source: 'crop'`）。
+- 搭建（`compile.ts`）：元素按包含关系成树（≥90% 在里面的最小容器），容器是 CanvasPanel + 铺满的 `_Bg` 图，按钮四态共用切图，文字是 TextBlock；位置全部锁住（`Locked`）。
+- 校验（`verify.ts`）：按 `layoutTree` 算每个控件的实际位置和元素框比（门槛 `posPx`），加上切图相似度、文字有没有内容；总分 0.5 位置 + 0.35 相似度 + 0.15 文字。没过的可以「接受差异」。
+- 服务端 `server/design-restore.ts`：`POST /designs/:id/restore/source|run|confirm|accept|stop`、`PUT .../elements`，步骤在后台跑（`status: 'running'`，页面轮询），失败写进步骤并在对话里留一条错误。**还原有一步在跑时，页面保存设计只收标题、图片、标注**（`restoreRunning`），不然页面那份旧的控件树会盖掉搭好的树、旧图片列表会删掉刚抠的切图；演示版的保存也照服务端一样按 `baseRev` 拒收旧结构。
+- 界面：`NewDesign.tsx`（两种模式）、`components/design/restore/`（工作区、决策卡、元素框编辑器、切图墙、校验表）；`DesignPage` 的 `view` 多了 `restore`。
+- 演示：`demo-restore.ts` 在浏览器里跑同一套算法，标注用按位置猜的假标注（示例原画的字照抄）；示例设计「背包（照原画还原）」。
+- 回归：`shared/restore/restore.test.ts`（合成背包图：检测、切图、编译 + 校验、标注、六步流程）、`scripts/ui/04b-restore.mjs`（演示里走完六步，校验全对上）。
 
 ## 网页设计的位置计算（2026-11-01）
 

@@ -1,5 +1,6 @@
 /** 视频截帧的接口（server/video/routes.ts）；单独一个文件，api.ts 已经很长 */
 import type { AutoMode, AutoProgress, EnhanceMethod, FfmpegStatus, VideoRange, VideoSession } from '@shared/video'
+import type { DiffBox, FrameShape, NamedRange, VideoPrefs } from '@shared/video-tools'
 import { json, request } from './api'
 
 type Ref = { key: string; path: string }
@@ -23,6 +24,20 @@ export const videoApi = {
   enhance: (v: Ref, ids: string[], method: string, signal?: AbortSignal) =>
     request<VideoSession>('/video/frames/enhance', { ...json('POST', { ...v, ids, method }), signal }),
   unenhance: (v: Ref, ids?: string[]) => request<VideoSession>('/video/frames/unenhance', json('POST', { ...v, ids })),
+  /** 记下命名范围和弹窗设置 */
+  meta: (v: Ref, o: { ranges?: NamedRange[]; prefs?: Partial<VideoPrefs> }) =>
+    request<VideoSession>('/video/meta', json('POST', { ...v, ...o })),
+  shapes: (v: Ref, id: string, shapes: FrameShape[]) =>
+    request<VideoSession>('/video/frames/shapes', json('POST', { ...v, id, shapes })),
+  /** 浏览器画好的标注图（PNG 的 data URL）；from 是底图路径 */
+  annotated: (v: Ref, id: string, from: string, png: string) =>
+    request<VideoSession>('/video/frames/annotated', json('POST', { ...v, id, from, png })),
+  dedupe: (v: Ref) => request<{ session: VideoSession; removed: number }>('/video/frames/dedupe', json('POST', v)),
+  diff: (v: Ref, id: string) =>
+    request<{ prev: { id: string; time: number } | null; boxes: DiffBox[] }>(
+      '/video/frames/diff',
+      json('POST', { ...v, id }),
+    ),
 }
 
 /** 浏览器播放用的地址（支持拖进度条） */

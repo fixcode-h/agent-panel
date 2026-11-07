@@ -1,4 +1,4 @@
-// 截帧弹窗的「画面增强」一栏：选增强方式（FFmpeg 内置 / 面板内置的 ComfyUI 画质工作流 / 自己的工作流和链），处理勾选的帧。
+// 截帧弹窗右栏的「画面增强」：选增强方式（FFmpeg 内置 / 面板内置的 ComfyUI 画质工作流 / 自己的工作流和链），处理勾选的帧。
 // 内置的 ComfyUI 工作流缺模型时就地下载（复用设置 → 本机生图的下载通道，进度在这里显示），ComfyUI 没装时带去设置页装。
 import { useEffect, useState } from 'react'
 import { Download, Loader2, Sparkles } from 'lucide-react'
@@ -63,58 +63,63 @@ export function EnhanceBar(p: {
   const missing = cur?.missing
   const pct = job?.progress?.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3 py-2" data-surface="">
-      <Sparkles className="h-3.5 w-3.5 text-muted" />
-      <span className="text-body text-fg">{t('画面增强')}</span>
+    <div className="flex flex-col gap-2">
       <Select
         size="sm"
         aria-label={t('增强方式')}
         value={p.method}
         onChange={(e) => p.onMethod(e.target.value)}
-        className="w-[300px] max-w-full min-w-0"
+        className="w-full min-w-0"
         options={p.methods.map((m) => ({
           value: m.id,
           label: m.missing ? t('{name}（未就绪）', { name: m.label }) : m.label,
           group: groupName(m.group),
         }))}
       />
-      {missing?.kind === 'model' ? (
-        <Button variant="secondary" size="sm" disabled={downloading} onClick={() => download(missing.model)}>
-          {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          {downloading
-            ? t('下载中 {pct}%', { pct })
-            : t('下载 {name}（{gb} GB）', { name: missing.name, gb: missing.gb.toFixed(missing.gb < 1 ? 2 : 1) })}
-        </Button>
-      ) : missing?.kind === 'comfy' ? (
-        <Button variant="secondary" size="sm" onClick={() => openSettings('local-image')}>
-          {t('去安装 ComfyUI')}
-        </Button>
-      ) : (
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={p.busy || !p.chosen}
-          onClick={p.onEnhance}
-          title={!p.frames ? t('先截几帧再增强') : !p.chosen ? t('先勾选要处理的帧') : undefined}
-        >
-          {p.running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {t('处理选中的帧（{n}）', { n: p.chosen })}
-        </Button>
-      )}
-      {p.anyEnhanced && (
-        <Button variant="ghost" size="sm" disabled={p.busy} onClick={p.onUnenhance}>
-          {t('去掉增强')}
-        </Button>
-      )}
-      <span className="min-w-0 flex-1 basis-60 text-footnote text-subtle">
+      <p className="text-footnote leading-relaxed text-subtle">
         {missing?.kind === 'model'
           ? t('这个方式要先下载模型 {name}，下载一次之后离线也能用', { name: missing.name })
           : missing?.kind === 'comfy'
             ? t('这个方式在本机 ComfyUI 里跑，要先在设置 → 本机生图里装好 ComfyUI')
-            : !p.frames
-              ? t('先截几帧，勾选的帧会按这个方式处理')
-              : `${cur?.note ?? ''} · ${t('增强会补出原来没有的细节，读文字、数字以原图为准')}`}
-      </span>
+            : `${cur?.note ?? ''}${cur?.note ? ' · ' : ''}${t('增强会补出原来没有的细节，读文字、数字以原图为准')}`}
+      </p>
+      <div className="flex items-center gap-1.5">
+        {missing?.kind === 'model' ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="flex-1"
+            disabled={downloading}
+            onClick={() => download(missing.model)}
+          >
+            {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {downloading
+              ? t('下载中 {pct}%', { pct })
+              : t('下载 {name}（{gb} GB）', { name: missing.name, gb: missing.gb.toFixed(missing.gb < 1 ? 2 : 1) })}
+          </Button>
+        ) : missing?.kind === 'comfy' ? (
+          <Button variant="secondary" size="sm" className="flex-1" onClick={() => openSettings('local-image')}>
+            {t('去安装 ComfyUI')}
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="flex-1"
+            disabled={p.busy || !p.chosen}
+            onClick={p.onEnhance}
+            title={!p.frames ? t('先截几帧再增强') : !p.chosen ? t('先勾选要处理的帧') : undefined}
+          >
+            {p.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {t('处理选中的帧（{n}）', { n: p.chosen })}
+          </Button>
+        )}
+        {p.anyEnhanced && (
+          <Button variant="ghost" size="sm" disabled={p.busy} onClick={p.onUnenhance}>
+            {t('去掉增强')}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

@@ -88,6 +88,8 @@ import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/retry-policy.ts'
 import { decodePng, encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
 import { cropTemplateFile, pickRefined } from './design-crop.ts'
+import { restoreRoutes } from './design-restore.ts'
+import { restoreRunning, unstick } from '../shared/restore/schema.ts'
 import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
@@ -192,6 +194,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
             images: resetStuckImages(d.images),
           }),
         )
+        unstick(d.restore, t('面板重启，这一步被打断了，请重新运行'))
       } else log.warn('designs', `设计文件格式不对，跳过：${f}`)
     }
     loaded = true
@@ -1802,7 +1805,9 @@ ${prompt}`,
       // - 页面编辑时基于的版本（baseRev）比服务端旧：AI 已经改过了，页面这份是旧的。
       // 不收时其余的（标题、图片、标注）照常存，响应里带上服务端的设计，页面据此换成新的、把自己的改动放进撤销栈
       const job = jobs.get(d.id)
-      const aiEditing = starting.has(d.id) || (job?.status === 'running' && job.phase === 'design')
+      // 还原的某一步在跑（会整棵换掉控件树、加切图）也按「AI 正在改」处理
+      const aiEditing =
+        starting.has(d.id) || (job?.status === 'running' && job.phase === 'design') || restoreRunning(d.restore)
       const baseRev = typeof body?.baseRev === 'number' ? body.baseRev : undefined
       const stale = baseRev !== undefined && baseRev < d.rev
       const keepStructure = aiEditing || stale
@@ -1833,7 +1838,9 @@ ${prompt}`,
         }
       })
       // 后台正在生成、页面还不知道的新图片不能被页面的旧列表删掉
-      for (const old of d.images) if (old.status !== 'idle' && !images.some((i) => i.id === old.id)) images.push(old)
+      for (const old of d.images)
+        if ((old.status !== 'idle' || restoreRunning(d.restore)) && !images.some((i) => i.id === old.id))
+          images.push(old)
       Object.assign(d, {
         title: doc.title,
         images,
@@ -2392,6 +2399,22 @@ ${prompt}`,
       await writeFile(path.join(dir, EXPORT_MARK), JSON.stringify({ designId: d.id, title: d.title }, null, 2))
       return c.json({ dir })
     })
+
+  // 照原画还原的几个接口，见 design-restore.ts
+  routes.route(
+    '/',
+    restoreRoutes({
+      get,
+      save: (d) => save(d),
+      storeImage,
+      imagesDir,
+      askJson,
+      systemNote,
+      busy: (id) => jobs.get(id)?.status === 'running',
+      reply: (c, d) => c.json({ ...d, job: view(jobs.get(d.id)) }),
+      now,
+    }),
+  )
 
   return {
     routes,
