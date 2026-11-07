@@ -9,7 +9,14 @@ import type { Stage, StageId } from '@/lib/design-stages'
  * 顺序不强制：点原画 / 模板切到原画面板，点界面 / 切图回到画布（切图再打开「图片」页签）；
  * 当前这一步高亮，悬停看下一步做什么；窄的时候（@container）只留当前这一步的名字，其余只剩圆点
  */
-export function StageSteps({ stages, onPick }: { stages: Stage[]; onPick: (id: StageId) => void }) {
+export function StageSteps<T extends string = StageId>({
+  stages,
+  onPick,
+}: {
+  /** 照原画还原也用这条（六步：原画 → 拆解 → 切图 → 搭建 → 校验 → 交付） */
+  stages: (Omit<Stage, 'id'> & { id: T })[]
+  onPick: (id: T) => void
+}) {
   const cur = stages.find((s) => s.state === 'current' || s.state === 'busy')
   return (
     <nav aria-label={t('流程')} className="flex shrink-0 items-center gap-0.5">

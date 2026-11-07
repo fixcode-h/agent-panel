@@ -210,7 +210,9 @@ import {
   demoStyles,
   demoExtractStyle,
   demoVersions,
+  demoDesignOf,
 } from './demo-design'
+import { demoRestore } from './demo-restore'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
 import { DEMO_FILES, DEMO_README } from './demo-project-files'
@@ -2606,6 +2608,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'designs' && sub === 'extract-style') return demoExtractStyle(id)
   if (res === 'designs' && id === 'projects' && seg[3] === 'components') return demoProjectComponents(sub)
   if (res === 'designs' && sub === 'components') return demoImportComponent(id, body ?? {})
+  if (res === 'designs' && sub === 'restore') return demoRestore(demoDesignOf(id), seg[3], body ?? {})
   if (res === 'designs' && sub === 'versions') return demoVersions(method, id, seg[3], seg[4], body ?? {})
   if (res === 'designs')
     // 演示里没有失败的图，重试和生成一样

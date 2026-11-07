@@ -108,8 +108,11 @@ export function useDesignEditor(id: string) {
       .catch((e) => setError((e as Error).message))
   }, [id, absorb])
 
-  // 有 AI 对话或生成图片在进行时轮询
-  const running = server?.job?.status === 'running' || !!server?.images.some((i) => i.status === 'generating')
+  // 有 AI 对话、生成图片或者还原的某一步在进行时轮询
+  const running =
+    server?.job?.status === 'running' ||
+    !!server?.images.some((i) => i.status === 'generating') ||
+    Object.values(server?.restore?.steps ?? {}).some((st) => st?.status === 'running')
   useEffect(() => {
     if (!running) return
     // 轮询失败不能一直默默转圈：连续失败 3 次提示一次「连不上」，连上后再提示一次

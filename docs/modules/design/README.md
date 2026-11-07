@@ -65,6 +65,19 @@
 - 像素操作（`blank`、`resize`、`crop`、`paste`、`contentBox`、`hasAlpha`、`chromaKey`、`removeFlatBackground`）挪到 `shared/raster.ts`，`server/image.ts` 重新导出；浏览器里的演示版和后面的检测算法共用。
 - 回归：`shared/restore/similarity.test.ts`、`server/design-crop.test.ts`、`scripts/ui/04-design.mjs`（滑块对照）。
 
+## 原画还原 P1：照原画还原的六步管线（2026-11-07）
+
+新建设计时选「照原画还原」并上传原画，设计带上 `restore`（`shared/restore/schema.ts` 的 `RestoreState`），标题行换成六步：原画 → 拆解 → 切图 → 搭建 → 校验 → 交付。原则：**坐标全由算法量，模型只标类型、名字、文字**；每一步出一版和一张决策卡，确认了才跑下一步，改了前面的步骤后面做过的标成「要更新」。
+
+- 拆解（`detect.ts`、`grid.ts`、`pixels.ts`）：找矩形（边框线段配对，侧边取最近的竖线段；拼出来的假框、两排拼一框、借别的元素边的都筛掉；`snap` 取描边最外面那道跳变），再找块（文字行、图标；贴在容器角上、颜色和底色一样的是容器自己的底；贴在格子角上的数量单独当文字）；同列同行一样大的排成格子组。然后把编号框画在原画上（`overlay.ts`）让模型按编号标（`label.ts`：只收类型 / 名字 / 文字 / 删掉，用户改过的不动）。标注失败只在卡上写一条提醒，元素框照用。
+- 切图（`assets.ts`）：容器擦掉子元素后补底（`fillHoles`，四向最近像素），九宫格自动判断；其余去平底，但抠透明的地方露出的父容器和原画差得多（格子里的光晕）时整块原样留；一样的切图共用一张（dHash + 相似度 + 变化像素）。把所有切图拼回去和原画比，每个元素记 `sim`。存成 `rs_<元素 id>` 的图片（`source: 'crop'`）。
+- 搭建（`compile.ts`）：元素按包含关系成树（≥90% 在里面的最小容器），容器是 CanvasPanel + 铺满的 `_Bg` 图，按钮四态共用切图，文字是 TextBlock；位置全部锁住（`Locked`）。
+- 校验（`verify.ts`）：按 `layoutTree` 算每个控件的实际位置和元素框比（门槛 `posPx`），加上切图相似度、文字有没有内容；总分 0.5 位置 + 0.35 相似度 + 0.15 文字。没过的可以「接受差异」。
+- 服务端 `server/design-restore.ts`：`POST /designs/:id/restore/source|run|confirm|accept|stop`、`PUT .../elements`，步骤在后台跑（`status: 'running'`，页面轮询），失败写进步骤并在对话里留一条错误。**还原有一步在跑时，页面保存设计只收标题、图片、标注**（`restoreRunning`），不然页面那份旧的控件树会盖掉搭好的树、旧图片列表会删掉刚抠的切图；演示版的保存也照服务端一样按 `baseRev` 拒收旧结构。
+- 界面：`NewDesign.tsx`（两种模式）、`components/design/restore/`（工作区、决策卡、元素框编辑器、切图墙、校验表）；`DesignPage` 的 `view` 多了 `restore`。
+- 演示：`demo-restore.ts` 在浏览器里跑同一套算法，标注用按位置猜的假标注（示例原画的字照抄）；示例设计「背包（照原画还原）」。
+- 回归：`shared/restore/restore.test.ts`（合成背包图：检测、切图、编译 + 校验、标注、六步流程）、`scripts/ui/04b-restore.mjs`（演示里走完六步，校验全对上）。
+
 ## 网页设计的位置计算（2026-11-01）
 
 - `shared/web-layout.ts` 的 `webLayoutTree`：照 `shared/web.ts` 的 `webCss` 算 CSS flex——Frame 的 Direction、Gap、Padding、AlignItems（默认 stretch，AlignSelf 单独改）、JustifyContent（start / center / end / between / around / evenly）、Wrap（按宽度分行，容器高度算上所有行）；子控件宽高是像素 / fill / auto，fill 在排列方向上是 `flex: 1 1 0`（先扣掉自己的内边距和边框再平分），在交叉方向上拉伸；box-sizing 是 border-box，边框算在宽高里；绝对定位按 Pin 贴在父控件的内边距框上；平板 / 手机用断点里的属性（`propsAt`），Collapsed 的不占位置；UserWidget 画成子控件的根、名字记引用它的那个。

@@ -20,6 +20,7 @@ import { applyOps } from './design-ops.ts'
 import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
 import { DesignAnalysis } from './design-analysis.ts'
 import { DesignData, checkData, dataBrief, normalizeData } from './design-data.ts'
+import { RestoreState } from './restore/schema.ts'
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -321,6 +322,8 @@ export const Design = DesignDoc.extend({
   rev: z.number().int().default(0),
   /** 原画：候选图和确认的模板 */
   concept: ConceptState.default(emptyConcept),
+  /** 照原画一比一还原（有它就是还原模式）：见 shared/restore/schema.ts */
+  restore: RestoreState.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -331,6 +334,7 @@ export type Design = DesignDoc & {
   messages: DesignMessage[]
   rev: number
   concept?: ConceptState
+  restore?: RestoreState
   createdAt: string
   updatedAt: string
 }

@@ -386,7 +386,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, 'UI设计-画板数据', ['星辉宝石'])
   await p.waitForTimeout(300)
   assert.equal(await p.locator('[data-ac="WBP_ItemSlot"]').count(), 20, '背包按数据渲染 20 个格子')
-  assert.ok(await p.getByText('3', { exact: true }).first().isVisible(), '格子里显示物品数量')
+  // 只在格子里找：侧栏里设计的个数也可能是 3
+  assert.ok(
+    await p.locator('[data-an="WBP_ItemSlot/Count"]').filter({ hasText: /^3$/ }).first().isVisible(),
+    '格子里显示物品数量',
+  )
   // 第一个格子选中：高亮显示、锁定图标隐藏（隐藏的控件数就是锁定图标那一个）
   const hiddenInFirstSlot = () =>
     p.evaluate(() => {

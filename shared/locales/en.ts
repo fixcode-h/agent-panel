@@ -25,6 +25,7 @@ import { EN_BUG_FLOW } from './en/bug-flow.ts'
 import { EN_USER_ACTION } from './en/user-action.ts'
 import { EN_VIDEO } from './en/video.ts'
 import { EN_RESTORE } from './en/restore.ts'
+import { EN_RESTORE_FLOW } from './en/restore-flow.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
@@ -45,6 +46,7 @@ export const EN: Record<string, string> = {
   ...EN_USER_ACTION,
   ...EN_DESIGN,
   ...EN_RESTORE,
+  ...EN_RESTORE_FLOW,
   ...EN_EXTEND,
   ...EN_LOCAL_IMAGE,
   ...EN_MCP,

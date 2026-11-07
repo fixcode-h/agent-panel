@@ -99,6 +99,16 @@ export const UI_SHARD_COVERS = {
     'web/src/pages/DesignPage.tsx',
     'web/src/pages/ComfyPage.tsx',
   ],
+  '04b-restore': [
+    'web/src/components/design/restore/',
+    'web/src/components/design/NewDesign.tsx',
+    'web/src/lib/api-restore.ts',
+    'web/src/lib/demo-restore.ts',
+    'web/src/lib/demo-restore-art.ts',
+    'web/src/lib/restore-stages.ts',
+    'web/src/pages/DesignPage.tsx',
+    'shared/restore/',
+  ],
   '05-settings': ['web/src/components/settings/', 'web/src/components/usage/', 'web/src/pages/SettingsPage.tsx'],
   '06-settings-agent': [
     'web/src/components/settings/',
