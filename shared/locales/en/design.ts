@@ -300,6 +300,8 @@ export const EN_DESIGN: Record<string, string> = {
     '{cli} can’t generate images. Switch to Codex under “Default agent” in settings',
   '{error}。请确认已安装 {cli}': '{error}. Make sure {cli} is installed',
   '{cli} 没有生成图片': '{cli} didn’t generate any image',
+  '{cli} 用 API 方式时没有生图工具，请在设置里把 {cli} 换成账号登录（ChatGPT）后再生成图片':
+    '{cli} has no image tool when it uses an API key. Switch {cli} to account sign-in (ChatGPT) in Settings, then generate images again',
   '检查还有这些问题：': 'The check still found these issues:',
   '改好了。': 'Done.',
   设计不存在: 'Design not found',

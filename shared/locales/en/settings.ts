@@ -4,6 +4,7 @@ export const EN_SETTINGS: Record<string, string> = {
   测试步骤: 'Test steps',
   停用: 'Disabled',
   '，已停用': ', disabled',
+  'API 方式不能生图': 'no images with an API key',
   '，合并时编译': ', builds on merge',
   'AI 生成步骤': 'AI generate steps',
   'AI 生成测试步骤': 'AI generate test steps',
