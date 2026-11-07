@@ -1,3 +1,4 @@
+import { lastReplyText } from '../shared/task-helpers.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import {
@@ -552,8 +553,7 @@ export function tasksApi(deps: {
 
   /** 子对话的摘要：最近一条 Agent 回复的开头 */
   function lastReply(task: Task) {
-    const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
-    return last ? last.text.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+    return lastReplyText(task)
   }
 
   /**

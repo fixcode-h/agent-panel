@@ -71,3 +71,9 @@ export function helperShown(task: Pick<Task, 'status'>, s: Pick<TaskStep, 'statu
 export function helpersWorking(t: Pick<Task, 'status' | 'steps'>) {
   return t.status === 'running' && t.steps.some(helperRunning)
 }
+
+/** 子对话的摘要兜底：还没生成 summary 时取最近一条 Agent 回复的开头（正式后端和演示版共用，免得两边各写一份） */
+export function lastReplyText(task: Pick<Task, 'messages'>) {
+  const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
+  return last ? last.text.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+}
