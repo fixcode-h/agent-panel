@@ -115,6 +115,14 @@ test('rangeTask：只取窗口里的消息和节点，范围外和面板推的�
   assert.deepEqual(d.steps, [{ title: '定位', status: 'done' }])
   assert.equal(d.userBug, true)
   assert.equal(d.at, today(10))
+  // 窗口里各轮的改动区间：撤销过的那一轮和范围外的不算
+  const changed = (at: string, from: string, revertedAt?: string) =>
+    msg('agent', '改好了', at, { turnChanges: { spans: [{ from, to: `${from}2` }], files: [], revertedAt } })
+  const spans = rangeTask(
+    makeTask({ messages: [changed(yesterday, 'old'), changed(today(9), 'a'), changed(today(10), 'b', today(11))] }),
+    dayWin,
+  )!.spans
+  assert.deepEqual(spans, [{ from: 'a', to: 'a2' }])
   // 只有昨天的活动：今天不算执行过
   assert.equal(rangeTask(makeTask({ messages: [msg('user', '昨天的事', yesterday)] }), dayWin), null)
 })
@@ -143,7 +151,9 @@ test('rangeTask：总结卡的原因和修法交给 CLI，验证、改动、要�
     ['现象', '原因', '修复', '遗留'],
   )
   assert.equal(d.reply, '', '有卡片时不再带正文')
-  const ctx = tasksContext([{ projectId: 'p1', projectName: '面板', tasks: [d] }])
+  assert.equal(d.fixCard, true, '「修复」卡片：服务端会给它带代码改动')
+  const ctx = tasksContext([{ projectId: 'p1', projectName: '面板', tasks: [{ ...d, code: '+ refresh()' }] }])
+  assert.match(ctx, /代码改动（统一差异格式，测试和文档没放进来）：\n```diff\n\+ refresh\(\)\n```/)
   assert.match(ctx, /总结卡「修复｜登录后不再报 500」\n {4}现象：登录后首页报 500\n {4}原因：token 过期后没有刷新/)
   assert.doesNotMatch(ctx, /单测全过|合并到主干/)
   // 没有卡片的老对话：带最后一条回复的一段正文（代码块去掉），原因常写在中间
@@ -199,6 +209,7 @@ const entry = (over: Partial<SummaryEntry>): SummaryEntry => ({
   content: '',
   cause: '',
   fix: '',
+  code: [],
   link: '',
   ...over,
 })
@@ -206,7 +217,7 @@ const entry = (over: Partial<SummaryEntry>): SummaryEntry => ({
 const record = (over: Partial<SummaryRecord>) =>
   SummaryRecord.parse({ id: 'r', createdAt: today(9), updatedAt: today(9), day: '2026-10-23', ...over })
 
-test('renderReport：像人写的日报，每条一段话，不加粗、不写标签；有单子另起一行，没解决的问题只写问题（ADR 0043）', () => {
+test('renderReport：条目一个三级标题，内容按序号分点；问题分原因 / 修复 / 关键代码，没解决的只写原因（ADR 0056）', () => {
   const md = renderReport({
     grain: 'day',
     from: '2026-10-23',
@@ -214,17 +225,24 @@ test('renderReport：像人写的日报，每条一段话，不加粗、不写�
     items: [
       entry({
         title: '工作总结能按周生成',
-        content: '日期那里加了按天和按周的切换，按周时取周一到周日',
+        content: '日期那里加了按天和按周的切换\n按周时取周一到周日',
         link: 'https://x.test/REQ-1',
       }),
       entry({
         kind: 'bug',
         title: '点暂停后子任务显示**已停止**',
-        cause: '子任务进程已经退出，状态没跟着改——界面就一直显示已停止',
+        cause: '子任务进程已经退出——状态没跟着改\n界面就一直显示已停止',
         fix: '进程退出时同步状态',
+        code: [{ file: 'server/run.ts', lang: 'ts', text: '// 退出时同步状态\nsync(task)' }],
         link: 'BUG-7',
       }),
-      entry({ kind: 'bug', title: '日志偶尔不贴到最新', cause: '刷新时滚动位置被重置了，还在查' }),
+      // 没解决的：就算带了修复代码也不写
+      entry({
+        kind: 'bug',
+        title: '日志偶尔不贴到最新。',
+        cause: '刷新时滚动位置被重置了，还在查',
+        code: [{ file: 'a.ts', lang: 'ts', text: 'x()' }],
+      }),
       entry({ project: '后台', title: '加了删除报告的接口。', content: '' }),
     ],
   })
@@ -235,15 +253,43 @@ test('renderReport：像人写的日报，每条一段话，不加粗、不写�
       '',
       '## 需求',
       '',
-      '1. 工作总结能按周生成。日期那里加了按天和按周的切换，按周时取周一到周日。',
-      '   单子：https://x.test/REQ-1',
-      '2. 加了删除报告的接口。',
+      '### 1. 工作总结能按周生成',
+      '',
+      '1. 日期那里加了按天和按周的切换。',
+      '2. 按周时取周一到周日。',
+      '',
+      '单子：https://x.test/REQ-1',
+      '',
+      '### 2. 加了删除报告的接口',
       '',
       '## 问题',
       '',
-      '1. 点暂停后子任务显示已停止。子任务进程已经退出，状态没跟着改，界面就一直显示已停止。进程退出时同步状态。',
-      '   单子：BUG-7',
-      '2. 日志偶尔不贴到最新。刷新时滚动位置被重置了，还在查。',
+      '### 1. 点暂停后子任务显示已停止',
+      '',
+      '**原因**',
+      '',
+      '1. 子任务进程已经退出，状态没跟着改。',
+      '2. 界面就一直显示已停止。',
+      '',
+      '**修复**',
+      '',
+      '1. 进程退出时同步状态。',
+      '',
+      '**关键代码**',
+      '',
+      '`server/run.ts`',
+      '```ts',
+      '// 退出时同步状态',
+      'sync(task)',
+      '```',
+      '',
+      '单子：BUG-7',
+      '',
+      '### 2. 日志偶尔不贴到最新（未解决）',
+      '',
+      '**原因**',
+      '',
+      '1. 刷新时滚动位置被重置了，还在查。',
       '',
     ].join('\n'),
   )
@@ -290,6 +336,68 @@ test('parseExtract：取 JSON 代码块，丢掉认不出的条目，项目名�
   assert.deepEqual(parseExtract('{"items":[]}', [], id), { items: [] })
 })
 
+test('parseExtract：分点按行存，去掉 CLI 自带的序号；关键代码只收材料里真有的，没解决的不收代码（ADR 0056）', () => {
+  const material = [
+    '```diff',
+    '@@ -1,3 +1,4 @@',
+    '-  return view.scrollTop >= max',
+    '+  const scrollable = view.scrollHeight > view.clientHeight',
+    '+  return scrollable && view.scrollTop >= max',
+    '```',
+  ].join('\n')
+  const answer = JSON.stringify({
+    items: [
+      { kind: 'need', title: '按周', content: ['1. 加了切换', '- 按周取周一到周日', ''] },
+      {
+        kind: 'bug',
+        title: '高亮错位',
+        cause: ['内容不满一屏', '被当成滚到底'],
+        fix: ['能滚才算到底'],
+        code: [
+          // 真实改动：注释是加的，行尾注释也认
+          {
+            file: 'web/src/lib/section-nav.ts',
+            lang: 'ts',
+            text: '// 能滚才算\nconst scrollable = view.scrollHeight > view.clientHeight\nreturn scrollable && view.scrollTop >= max // 改了这里',
+          },
+          // diff 形式保留 +/- 号也认
+          {
+            file: 'x.ts',
+            lang: 'diff',
+            text: '-  return view.scrollTop >= max\n+  return scrollable && view.scrollTop >= max',
+          },
+          // 改写过的、编出来的：整段丢掉
+          { file: 'x.ts', lang: 'ts', text: '// 编的\nconst scrollable = true' },
+          // 只有注释：丢掉
+          { file: 'x.ts', lang: 'ts', text: '// 只有注释' },
+        ],
+      },
+      {
+        kind: 'bug',
+        title: '没修好',
+        cause: '还在查',
+        fix: [],
+        code: [{ file: 'x.ts', lang: 'ts', text: 'return scrollable && view.scrollTop >= max' }],
+      },
+    ],
+  })
+  const r = parseExtract(answer, [], () => 'id', material)
+  assert.equal(r.items[0].content, '加了切换\n按周取周一到周日')
+  assert.equal(r.items[1].cause, '内容不满一屏\n被当成滚到底')
+  assert.deepEqual(
+    r.items[1].code.map((c) => [c.file, c.lang]),
+    [
+      ['web/src/lib/section-nav.ts', 'ts'],
+      ['x.ts', 'diff'],
+    ],
+  )
+  assert.equal(r.items[2].fix, '')
+  assert.deepEqual(r.items[2].code, [], '没解决的问题不收代码')
+  // 老格式（一段话的字符串）照样收成一点
+  const old = parseExtract('{"items":[{"kind":"bug","title":"t","cause":"一段话","fix":"判空"}]}', [], () => 'id')
+  assert.equal(old.items[0].cause, '一段话')
+})
+
 test('extractPrompt：带上角色设定、范围、项目、JSON 约定和材料', () => {
   const p = extractPrompt({
     role: '你是「每日工作总结」',
@@ -303,6 +411,7 @@ test('extractPrompt：带上角色设定、范围、项目、JSON 约定和材�
   assert.match(p, /范围外的内容一律不写/)
   assert.match(p, /已经生成过的工作总结报告/)
   assert.match(p, /"kind":"bug".*"cause".*"fix"/)
+  assert.match(p, /"code":\[\{"file"/)
   assert.match(p, /## 材料\n## 报告：2026-10-20/)
 })
 

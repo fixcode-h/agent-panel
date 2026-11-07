@@ -1,4 +1,4 @@
-import { useCallback, useContext, useState } from 'react'
+import { useCallback, useContext, useRef, useState } from 'react'
 import type { Task } from '@shared/schema'
 import { PaneNavCtx } from './child-open'
 import { DiagnosisDialog } from './DiagnosisDialog'
@@ -15,13 +15,29 @@ export type DiagnosisTarget = Pick<Task, 'id' | 'title' | 'diagnoses'>
  */
 export function useDiagnosisHost(live?: DiagnosisTarget | null) {
   const [target, setTarget] = useState<DiagnosisTarget | null>(null)
+  // 先看哪一份（对话里点某一份报告的卡片）；不传看最新那份
+  const [version, setVersion] = useState<number | undefined>()
   // auto 是报告交上来时自动弹：已经开着另一个对话的报告就不顶掉它（用户可能正标注到一半），同一个对话的照常换成新的
-  const open = useCallback(
-    (task: DiagnosisTarget, auto?: boolean) => setTarget((cur) => (!auto || !cur || cur.id === task.id ? task : cur)),
-    [],
-  )
+  const cur = useRef<DiagnosisTarget | null>(null)
+  cur.current = target
+  const open = useCallback((task: DiagnosisTarget, auto?: boolean, ver?: number) => {
+    const c = cur.current
+    if (auto && c && c.id !== task.id) return
+    setTarget(task)
+    // 自动弹的是新交上来的那份：看最新的
+    setVersion(auto ? undefined : ver)
+  }, [])
   const shown = target && live && target.id === live.id ? live : target
-  const dialog = shown ? <DiagnosisDialog task={shown} open onOpenChange={(o) => !o && setTarget(null)} /> : null
+  const dialog = shown ? (
+    // 换了要看的那一份就重新挂：弹窗只在打开时读一次 version
+    <DiagnosisDialog
+      key={`${shown.id}:${version ?? ''}`}
+      task={shown}
+      version={version}
+      open
+      onOpenChange={(o) => !o && setTarget(null)}
+    />
+  ) : null
   const showing = !!target
   // 任务页把这两个放进 PaneNav，行里的 useDiagnosisWindow 从那里拿
   return { open, dialog, showing, nav: { diagnosis: open, diagnosisShowing: showing } }

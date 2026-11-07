@@ -1349,6 +1349,7 @@ export const EN_TASKS: Record<string, string> = {
   理由: 'Why',
   假设: 'Assumed',
   跳到某一轮: 'Jump to a turn',
+  文档目录: 'Contents',
   '第 {n} 轮：{text}': 'Turn {n}: {text}',
   // AI 分析窗口：排查的结构化结论（DiagnosisReport）
   排查结论: 'Diagnosis',
@@ -1799,7 +1800,6 @@ export const EN_TASKS: Record<string, string> = {
   '这一版已经处理过了，只能查看': 'This version has been handled; view only',
   '这是旧的一版，只能查看；切回最新一版再标注': 'This is an older version, view only; switch to the latest to annotate',
   交诊断报告: 'Submit diagnosis',
-  回答上一轮的意见: "Answers to the previous round's points",
   现象: 'Symptom',
   证据链: 'Evidence chain',
   '根因（已证实）': 'Root cause (confirmed)',
@@ -1808,8 +1808,8 @@ export const EN_TASKS: Record<string, string> = {
   修复方案: 'Fix plan',
   要改的文件: 'Files to change',
   影响和风险: 'Impact and risk',
-  验证计划: 'Verification plan',
   交报告前已改动的文件: 'Files already changed before the report',
+  '这些文件不在你同意过的范围里：': 'These files are outside what you have approved:',
   这一版诊断报告已经处理过了: 'This version of the diagnosis report has already been handled',
   '退回要写清哪里有疑问：先标注，或者写整体意见':
     "To send it back, say what's in question: annotate first, or write an overall comment",
@@ -1860,7 +1860,6 @@ export const EN_TASKS: Record<string, string> = {
   选定: 'chosen',
   '为什么选方案 {id}': 'Why option {id}',
   为什么不选别的: 'Why not the others',
-  级别: 'Level',
   时间线: 'Timeline',
   引入点: 'Introduced by',
   根因怎么解释每一条现象: 'How the root cause explains each symptom',

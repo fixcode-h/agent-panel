@@ -117,7 +117,11 @@ test('交诊断报告：记成等用户确认的一版，对话算执行中（�
   })
   const md = diagnosisMarkdown(tk.diagnoses![0])
   assert.match(md, /## 根因（已证实）\nmax 用的是秒/)
-  assert.match(md, /## 交报告前已改动的文件\n- `web\/src\/lib\/login\.ts`/, '确认之前就动了手的要摆出来')
+  assert.match(
+    md,
+    /## 交报告前已改动的文件\n> \[!CAUTION\]\n> 这些文件不在你同意过的范围里：\n> - `web\/src\/lib\/login\.ts`/,
+    '确认之前就动了手的要摆出来，用警告框',
+  )
   // 还在等确认时再交：不收
   assert.match(submitDiagnosis(tk, input(), id).info, /还在等用户确认/)
 })
@@ -153,7 +157,7 @@ test('论证：要日志计划和每种结果说明什么；同意后只放行�
   const d = tk.diagnoses![0]
   assert.deepEqual(d.files, ['web/src/lib/login.ts'], '日志计划里的位置去掉行号算进放行范围')
   assert.match(diagnosisMarkdown(d), /## 日志计划\n\| 编号 \| 位置/)
-  assert.match(diagnosisMarkdown(d), /## 每种结果说明什么\nmax 大于 10 说明是秒/)
+  assert.match(diagnosisMarkdown(d), /## 结果怎么判\nmax 大于 10 说明是秒/)
   assert.ok('deny' in editScope(tk.diagnoses!), '等用户同意时不改文件')
   assert.equal(requestLogs(tk, { added: ['L1'] }).ok, false, '还没同意加日志不能请复现')
   const r = decideDiagnosis(tk, 1, yes, id)
@@ -169,7 +173,7 @@ test('论证：要日志计划和每种结果说明什么；同意后只放行�
   assert.match(rl.info, /第 1 版/, '对话里那一行能认出是哪一版')
   assert.ok(diagnosisPending(tk) && tk.diagnoses![0].awaiting)
   assert.equal(bugStage(tk), '等你复现')
-  assert.match(diagnosisMarkdown(tk.diagnoses![0]), /## 等你复现\n加好的日志：\n- `L1 web\/src\/lib\/login\.ts:44`/)
+  assert.match(diagnosisMarkdown(tk.diagnoses![0]), /## 加好的日志\n- L1 `web\/src\/lib\/login\.ts:44`/)
   assert.match(submitDiagnosis(tk, evidenceInput(), id).info, /在等用户复现贴日志/)
   // 用户贴日志：交给它分析
   assert.equal(decideDiagnosis(tk, 1, { ...yes, approve: false, supply: true }, id).ok, false, '要有日志')
@@ -273,7 +277,7 @@ test('用户标疑问：退回的话按编号列出；新一版要逐条回答�
   assert.equal(pendingDiagnosis(tk)?.version, 2)
   assert.match(
     diagnosisMarkdown(tk.diagnoses![1], tk.diagnoses![0]),
-    /## 回答上一轮的意见\n1\. \*\*疑问\*\*「max 用的是秒」：配置里写的是毫秒吧？\n {3}- 回答：查了 config\.ts:8/,
+    /## 回答你的意见\n1\. \*\*疑问\*\*「max 用的是秒」：配置里写的是毫秒吧？\n {3}- 回答：查了 `config\.ts:8`/,
   )
 })
 
@@ -310,8 +314,8 @@ test('收尾核对：要有确认过的方案、交过验证且用户给了结�
   ok(done(tk))
   ok(submitDiagnosis(tk, verifyInput(), id))
   assert.equal(bugStage(tk), '等你验证')
-  assert.match(diagnosisMarkdown(tk.diagnoses![2]), /## 怎么验证\n1\. 登录一次，等超时/)
-  assert.match(diagnosisMarkdown(tk.diagnoses![2]), /## 修复结果/)
+  assert.match(diagnosisMarkdown(tk.diagnoses![2]), /## 你来验证\n1\. 登录一次，等超时/)
+  assert.match(diagnosisMarkdown(tk.diagnoses![2]), /## 自测结果/)
   assert.match(diagnosisGate(tk, ['web/src/lib/login.ts']), /还在等用户/)
   const r = decideDiagnosis(tk, 3, { approve: false, supply: true, logs: '提示重试', notes: [], overall: '' }, id)
   assert.ok(r.ok)
@@ -351,9 +355,10 @@ test('报告渲染：根因没证实要标出来，空的小节不写', () => {
   const md = diagnosisMarkdown(
     Diagnosis.parse({ ...input({ confirmed: false, risk: '' }), version: 1, at: '', status: 'pending' }),
   )
-  // 根因只有一行：写在结论里，不再单列一节；级别并进结论
-  assert.match(md, /\*\*根因（假设，还没证实）\*\*：max 用的是秒/)
-  assert.doesNotMatch(md, /## 根因|## 级别|影响和风险|交报告前已改动/)
+  // 论证这一步根因还只是假设：放在收起的「依据和背景」里，标明没证实；级别是决策卡上的胶囊
+  assert.match(md, /### 根因（假设，还没证实）\nmax 用的是秒/)
+  assert.match(md, /根因未证实/)
+  assert.doesNotMatch(md, /^## 根因|## 级别|影响和风险|交报告前已改动/m)
 })
 
 const standard = (over: Partial<DiagnosisInput> = {}) =>
@@ -490,7 +495,7 @@ test('评审对照和 Bug 记录草稿（ADR 0046）：只取用户确认过的�
   assert.match(rec, /- 接口重试：npm test → 通过/)
 })
 
-test('用户点取消：不再等确认，计划收口成完成，对话不算执行中、等下一句；之后改文件、收尾都要先交新一版', () => {
+test('用户点取消：不再等确认，计划收口成完成，对话不算执行中、等下一句；报告关闭，不能再交新一版', () => {
   const tk = bugTask({ plans: [], steps: [] })
   applyPlan(tk, {
     steps: [{ title: '查根因', status: 'done' }, { title: '交诊断报告', status: 'running' }, { title: '按方案修' }],
@@ -509,11 +514,13 @@ test('用户点取消：不再等确认，计划收口成完成，对话不算�
   assert.equal(childFlowOf({ ...tk, status: 'done', working: false, parentAsks: [] } as Task).requests, 0)
   assert.match(tk.messages.at(-1)!.text, /你取消了诊断报告第 1 版/)
   assert.equal(bugStage(tk), '已取消')
-  assert.match(diagnosisGate(tk, []), /用户取消了第 1 版/)
+  assert.match(diagnosisGate(tk, []), /第 1 版点了「不修了」/)
   assert.equal(decideDiagnosis(tk, 1, yes, id).ok, false, '取消过的不能再确认')
-  // 用户之后又要修：交新一版，取消过的那版留着「已取消」
+  // 不修了的报告关闭（用户 2026-11-07 定）：之后的对话不能再交新一版拉起它
   const v2 = submitDiagnosis(tk, input(), id)
-  assert.ok(v2.ok && v2.version === 2)
+  assert.equal(v2.ok, false)
+  assert.match(v2.info, /不修了.*不能再交新一版/)
+  assert.equal(tk.diagnoses!.length, 1)
   assert.equal(tk.diagnoses![0].status, 'cancelled')
 })
 
@@ -532,12 +539,15 @@ test('快速级别：根因和修复方案合成一版交，用户确认一次�
   assert.match(diagnosisMarkdown(tk.diagnoses![0], undefined, { list: tk.diagnoses }), /你同意了根因和方案/)
 })
 
-test('根因那一版：返回写明只确认根因；提前写的修法在弹窗里标成草案', () => {
+test('根因那一版：返回写明只确认根因；提前写的修法不摆出来，只留一行提示', () => {
   const tk = bugTask()
   const r = submitDiagnosis(tk, input({ phase: 'cause', level: 'quick' }), id)
   ok(r)
   assert.match(r.info, /只请用户确认根因.*标成草案.*不要说在等他确认方案/)
-  assert.match(diagnosisMarkdown(tk.diagnoses![0]), /## 修复方案草案（这一版不确认，同意根因后另交一版）\nlogin\.ts:44/)
+  // 用户 2026-11-07 确认的设计：根因页不再摆修复方案草案，免得以为在确认方案
+  const cause = diagnosisMarkdown(tk.diagnoses![0])
+  assert.match(cause, /已经想好修法，同意根因后单独交一版方案给你确认/)
+  assert.doesNotMatch(cause, /候选方案|修复方案草案/)
   // 同意根因后交的方案不算合成的一版
   ok(decideDiagnosis(tk, 1, yes, id))
   const p = submitDiagnosis(tk, input({ phase: 'plan' }), id)

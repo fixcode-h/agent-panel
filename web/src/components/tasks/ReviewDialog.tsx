@@ -12,6 +12,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FrostBarBg } from '@/components/ui/frost'
 import { Markdown } from './Markdown'
+import { DocOutline } from '@/components/ui/doc-outline'
 import { reviewFeedback } from '@/lib/review-feedback'
 import { Segmented } from '@/components/ui/segmented'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
@@ -47,6 +48,9 @@ export interface ReviewVersion {
   /** 下拉里按组列（诊断报告按阶段分组）；group 有值时列表里显示 short，选中后框里仍显示完整的 label */
   group?: string
   short?: string
+  /** 正文前后多画的（诊断报告的决策卡、收起的「依据和背景」）：在标注范围里，选中文字照样能标 */
+  lead?: ReactNode
+  after?: ReactNode
 }
 
 /** 标注和整体意见的原始内容：诊断报告要按种类、按编号交回；files 是整体意见框里附的日志文件 */
@@ -81,6 +85,7 @@ export function ReviewDialog({
   feedbackFirst,
   attach,
   overallPlaceholder,
+  initialVersion,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -125,6 +130,8 @@ export function ReviewDialog({
   /** 整体意见框用对话的输入框：能引入日志文件、图片（粘贴、拖进来、点「+」），大文件引用路径、小文件拷一份 */
   attach?: boolean
   overallPlaceholder?: string
+  /** 打开时先看哪一版（versions 的 key）：对话里点某一份报告的卡片打开的就是那一份；之后换了请求仍回到最新 */
+  initialVersion?: string
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -152,7 +159,9 @@ export function ReviewDialog({
   const resetLogs = logs.reset
   const [cancelAsk, setCancelAsk] = useState(false)
   // 多版时看的是哪一版：默认最新那版（要审的）；旧版只读，不能标注
-  const [ver, setVer] = useState('')
+  const [ver, setVer] = useState(initialVersion ?? '')
+  // 只在打开时用一次：之后来了新一版（换了请求）照旧回到最新那版
+  const firstVer = useRef(initialVersion)
   const shown = versions?.find((v) => v.key === ver) ?? versions?.at(-1)
   const old = !!versions && !!shown && shown !== versions.at(-1)
   const locked = readOnly || old
@@ -164,7 +173,8 @@ export function ReviewDialog({
     setOverall('')
     setPick(null)
     setActive(null)
-    setVer('')
+    setVer(firstVer.current ?? '')
+    firstVer.current = undefined
     resetLogs()
   }, [req.id, resetLogs])
 
@@ -275,9 +285,10 @@ export function ReviewDialog({
   }
 
   // 多版时用下拉选看哪一版（用户 2026-11-05：不要把所有版本都排在正文上面）。
-  // 有分组时组按第一次出现的顺序排（诊断报告就是论证 → 验证），组里新的在上；没有版本的阶段自然不出现
-  const order = [...new Set((versions ?? []).map((v) => v.group ?? ''))]
-  const picker = versions && versions.length > 1 && (
+  // 有分组时只列正在看的那一组（诊断报告就是正在看的那一步，用户 2026-11-07 要求不把所有步骤都列出来）：
+  // 换步骤靠阶段条，下拉只管这一步交了几版；这一步只有一版就不出下拉。组里新的在上
+  const same = (versions ?? []).filter((v) => (v.group ?? '') === (shown?.group ?? ''))
+  const picker = same.length > 1 && (
     <Select
       size="xs"
       aria-label={t('版本')}
@@ -287,16 +298,11 @@ export function ReviewDialog({
         setVer(e.target.value)
         setPick(null)
       }}
-      options={order.flatMap((g) =>
-        versions
-          .filter((v) => (v.group ?? '') === g)
-          .reverse()
-          .map((v) => {
-            const latest = v === versions.at(-1)
-            const mark = (x: string) => (latest ? t('{label}（最新）', { label: x }) : x)
-            return { value: v.key, label: mark(v.label), short: v.short && mark(v.short), group: v.group }
-          }),
-      )}
+      options={[...same].reverse().map((v) => {
+        const latest = v === versions?.at(-1)
+        const mark = (x: string) => (latest ? t('{label}（最新）', { label: x }) : x)
+        return { value: v.key, label: mark(v.label), short: v.short && mark(v.short), group: v.group }
+      })}
       className="w-48 shrink-0"
     />
   )
@@ -312,53 +318,63 @@ export function ReviewDialog({
         )}
       </ModalHeader>
       <div ref={rowRef} className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <div
-          ref={scrollRef}
-          // overflow-x 隐藏：吸顶条的毛玻璃底左右伸出去，靠这里裁到正好铺满滚动区（FrostBarBg）
-          className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4 md:px-8 md:py-6"
-          onMouseUp={readSelection}
-          onKeyUp={readSelection}
-          onScroll={() => pick && setPick(null)}
-        >
-          {top && (
-            // 吸在滚动区顶上（top 取负的上内边距：吸顶按滚动区的内容框算，不抵掉内边距会离顶边留一截），样式和对话的回复头一样是毛玻璃通栏（用户 2026-11-06 要求）；
-            // 放在 docRef 外面，选中文字标注时不会把阶段名选进去
-            // 版本下拉放在这条的最右边（用户 2026-11-06 要求）
-            <div className="frost-bar sticky -top-4 z-20 [--frost-bg:var(--c-modal-bg)] -mt-4 mb-3 flex items-center gap-3 py-2.5 select-none md:-top-6 md:-mt-6">
-              <FrostBarBg />
-              <div className="min-w-0 flex-1">
-                {typeof top === 'function'
-                  ? top(shown?.key ?? '', (key) => {
-                      setVer(key)
-                      setPick(null)
-                    })
-                  : top}
+        {/* 套一层 relative：标题目录浮在滚动区右边、不跟着滚 */}
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            ref={scrollRef}
+            // overflow-x 隐藏：吸顶条的毛玻璃底左右伸出去，靠这里裁到正好铺满滚动区（FrostBarBg）
+            className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4 md:px-8 md:py-6"
+            onMouseUp={readSelection}
+            onKeyUp={readSelection}
+            onScroll={(e) => {
+              // overflow-x 隐藏的滚动区照样能被聚焦、scrollIntoView 横向滚开（展开「依据和背景」时整块正文往左错一截），拉回来
+              if (e.currentTarget.scrollLeft) e.currentTarget.scrollLeft = 0
+              if (pick) setPick(null)
+            }}
+          >
+            {top && (
+              // 吸在滚动区顶上（top 取负的上内边距：吸顶按滚动区的内容框算，不抵掉内边距会离顶边留一截），样式和对话的回复头一样是毛玻璃通栏（用户 2026-11-06 要求）；
+              // 放在 docRef 外面，选中文字标注时不会把阶段名选进去
+              // 版本下拉放在这条的最右边（用户 2026-11-06 要求）
+              <div className="frost-bar sticky -top-4 z-20 [--frost-bg:var(--c-modal-bg)] -mt-4 mb-3 flex items-center gap-3 py-2.5 select-none md:-top-6 md:-mt-6">
+                <FrostBarBg />
+                <div className="min-w-0 flex-1">
+                  {typeof top === 'function'
+                    ? top(shown?.key ?? '', (key) => {
+                        setVer(key)
+                        setPick(null)
+                      })
+                    : top}
+                </div>
+                {picker}
               </div>
-              {picker}
+            )}
+            {/* 正文随弹窗宽度铺满（用户 2026-11-06 要求自适应，不再限 820px 窄栏） */}
+            <div ref={docRef} onClick={onDocClick}>
+              {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
+              {shown?.lead}
+              {detail ? (
+                <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
+              ) : (
+                !shown?.lead && <p className="text-body text-subtle">{t('这一步没有输出内容')}</p>
+              )}
+              {shown?.after}
             </div>
-          )}
-          {/* 正文随弹窗宽度铺满（用户 2026-11-06 要求自适应，不再限 820px 窄栏） */}
-          <div ref={docRef} onClick={onDocClick}>
-            {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
-            {detail ? (
-              <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
-            ) : (
-              <p className="text-body text-subtle">{t('这一步没有输出内容')}</p>
+            {pick && (
+              <button
+                type="button"
+                // 按下时不让选区丢掉，松开再加标注
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={addNote}
+                style={{ top: pick.top, left: pick.left }}
+                className="absolute z-30 flex -translate-x-1/2 cursor-pointer items-center gap-1 rounded-lg border border-line-strong bg-card px-2.5 py-1 text-xs font-medium shadow-pop hover:bg-sel animate-[pop-in_120ms_ease-out]"
+              >
+                <Highlighter className="h-3.5 w-3.5 text-warning" />
+                {t('标注')}
+              </button>
             )}
           </div>
-          {pick && (
-            <button
-              type="button"
-              // 按下时不让选区丢掉，松开再加标注
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={addNote}
-              style={{ top: pick.top, left: pick.left }}
-              className="absolute z-30 flex -translate-x-1/2 cursor-pointer items-center gap-1 rounded-lg border border-line-strong bg-card px-2.5 py-1 text-xs font-medium shadow-pop hover:bg-sel animate-[pop-in_120ms_ease-out]"
-            >
-              <Highlighter className="h-3.5 w-3.5 text-warning" />
-              {t('标注')}
-            </button>
-          )}
+          <DocOutline scrollEl={scrollRef} className="right-2" />
         </div>
         <aside
           aria-label={t('标注')}

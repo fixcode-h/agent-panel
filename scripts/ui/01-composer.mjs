@@ -461,6 +461,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
           '配置表：`Project/Designer/Excel/C_FunctionalNPCInfo.xlsx`',
           '',
           '不是路径的：`console.log`、`1.2.3`、`https://example.com/a.png`',
+          '',
+          '单独的文件名按代码显示：`Markdown.tsx`',
+          '',
+          '| 位置 | 说明 |',
+          '| --- | --- |',
+          '| `Project/Content/Script/lt_Common_CompanionNPC_Instance.lua:42` | 窄列里一行放下，名字缩略 |',
         ].join('\n'),
         tools: [],
         at: new Date().toISOString(),
@@ -509,6 +515,33 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
         .map((el) => el.textContent ?? '')
     })
     if (wrong.length) errors.push(`路径可点：${wrong.join('、')} 不该变成文件标记`)
+    // 单独的文件名是行内代码，不是文件标记（用户 2026-11-07 定：带目录的才画成能点的标记）
+    const bare = await p.evaluate(() => ({
+      code: [...document.querySelectorAll('.chat-md code')].some((el) => el.textContent === 'Markdown.tsx'),
+      ref: [...document.querySelectorAll('.chat-md .file-ref')].some((el) => el.textContent === 'Markdown.tsx'),
+    }))
+    if (!bare.code || bare.ref) errors.push('路径可点：单独的文件名 Markdown.tsx 应该按行内代码显示')
+    // 窄处一行放下：名字末尾省略、扩展名和行号露出来，图标和文字同一行（用户 2026-11-07 截图里折成两行）
+    const narrow = await p.evaluate(() => {
+      const el = document.querySelector('.chat-md td .file-ref[data-path*="lt_Common_CompanionNPC_Instance"]')
+      if (!el) return null
+      const cell = el.closest('td')
+      cell.style.maxWidth = '12em'
+      el.closest('table').style.tableLayout = 'fixed'
+      el.closest('table').style.width = '24em'
+      const r = el.getBoundingClientRect()
+      const lh = parseFloat(getComputedStyle(el).lineHeight)
+      const name = el.querySelector('.fr-name')
+      const ext = el.querySelector('.fr-ext').getBoundingClientRect()
+      return {
+        oneLine: r.height < lh * 1.5,
+        cut: name.scrollWidth > name.clientWidth,
+        extShown: ext.width > 0 && ext.right <= r.right + 0.5,
+      }
+    })
+    if (!narrow) errors.push('路径可点：表格里的长文件名没有变成文件标记')
+    else if (!narrow.oneLine || !narrow.cut || !narrow.extShown)
+      errors.push(`路径可点：窄处的文件标记没有一行缩略显示（${JSON.stringify(narrow)}）`)
     // 悬停：卡片里有完整路径和单击会做什么
     await mdPath.filter({ hasText: 'App.tsx:7' }).first().hover()
     const card = p.locator('[data-file-card]')
@@ -1053,6 +1086,28 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .getByTitle('排查：侧栏任务的时间显示偶尔不对', { exact: true })
       .waitFor({ state: 'detached', timeout: 5000 })
       .catch(() => errors.push('Chat 置顶：取消置顶后这条还留在「已置顶」组里'))
+
+    // 报错、警告卡片挂在回复体外面，要和回复正文左右对齐，不比正文往左多伸出一截（用户 2026-11-07 报）。
+    // 演示里这条聊天带三张报错卡片
+    await list.getByTitle('排查：侧栏任务的时间显示偶尔不对', { exact: true }).click()
+    await c
+      .locator('[role="alert"]')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => {})
+    const edges = await c.evaluate(() => {
+      const body = document.querySelector('.reply-body')
+      if (!body) return null
+      const r = body.getBoundingClientRect()
+      const left = r.left + parseFloat(getComputedStyle(body).paddingLeft)
+      const cards = [...document.querySelectorAll('[role="alert"]')].map((e) => e.getBoundingClientRect())
+      return { left, right: r.right, cards: cards.map((x) => [x.left, x.right]) }
+    })
+    if (!edges?.cards.length) errors.push('Chat 报错卡片：演示里那条聊天没画出报错卡片')
+    else if (edges.cards.some(([l, r]) => Math.abs(l - edges.left) > 1 || r > edges.right + 1))
+      errors.push(
+        `Chat 报错卡片：没和回复正文对齐（正文 ${edges.left}–${edges.right}，卡片 ${JSON.stringify(edges.cards)}）`,
+      )
 
     await list.getByTitle('React 19 的 use() 怎么用', { exact: true }).click()
     const rail = c.locator('[data-chat-rail]')

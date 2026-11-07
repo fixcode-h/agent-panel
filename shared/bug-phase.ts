@@ -113,6 +113,13 @@ export function inputPhase(input: Record<string, unknown>, c: BugCase, list: Dia
 }
 
 /**
+ * 用户点了「不修了」之后给 Agent 的话：报告关闭，不再交新版、不改文件；用户回头又要修，请他在父对话重新报这个 Bug。
+ * 交报告、改文件、收尾三处共用一个说法。发给 Agent 的提示词，不翻译
+ */
+export const closedInfo = (v: number) =>
+  `用户在第 ${v} 版点了「不修了」，这份诊断报告已经关闭：不能再交新一版，也不改文件。用户之后又要修，告诉用户在父对话里重新报这个 Bug（会开新的子对话），不要在这里接着修。`
+
+/**
  * 能改哪些文件：files 是放行的范围（还要排除 FREE_FILE 由调用方处理），deny 是不能改时给 Agent 的话。
  * 同意加日志后只放行日志计划里的文件；确认方案后放行方案里的文件，加上论证时加过日志的文件（要删临时日志）
  */
@@ -129,10 +136,7 @@ export function editScope(list: Diagnosis[]): { files: string[] } | { deny: stri
     }
   if (d.status === 'questioned')
     return { deny: `用户对第 ${v} 版提了意见：先逐条处理、用 submit_diagnosis 改好再交，用户同意后再改文件。` }
-  if (d.status === 'cancelled')
-    return {
-      deny: `用户取消了第 ${v} 版，这次不修：不改文件。用户要你接着修时，先用 submit_diagnosis 重新交报告，确认后再改。`,
-    }
+  if (d.status === 'cancelled') return { deny: closedInfo(v) }
   if (phase === 'evidence') {
     if (d.status === 'approved') return { files: d.files }
     return {
@@ -209,4 +213,16 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}$
 - 修完用 update_bug_case 的 result 记下回归测试和影响面逐条的验证，然后交 phase: verify：collect 写用户怎么复现验证、日志在哪、看到什么算修好了，等用户给结果。
 - 改完验证不过：不要在这次修法上接着改，把修法和失败证据写进「已排除」，回到论证重新交报告。${notes}${overall}`
   return `用户在第 ${v} 版点了结束，跳过验证。${CLEANUP}然后请父对话收尾（submit_merge）。${notes}${overall}`
+}
+
+/** 不改方案也能顺带改的：测试、文档、翻译（修 Bug 本来就要补回归测试、回写文档） */
+const FREE_FILE = /(^|\/)(tests?|__tests__|docs|locales?)\/|\.(test|spec)\.[^/]+$|\.md$/i
+
+/** 实际改动里超出已确认范围的文件：范围里写目录（以 / 结尾）时目录下的都算 */
+export function outOfPlan(changed: string[], files: string[]) {
+  const plan = files.map(normPath).filter(Boolean)
+  return changed
+    .map(normPath)
+    .filter((p) => p && !FREE_FILE.test(p))
+    .filter((p) => !plan.some((f) => p === f || (f.endsWith('/') && p.startsWith(f))))
 }

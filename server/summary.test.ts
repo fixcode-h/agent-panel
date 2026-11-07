@@ -112,7 +112,10 @@ test('确认生成、编辑与删除：只用传进来的分项拼报告，存�
   assert.equal(rec.day, '2026-10-23')
   assert.equal(rec.items.length, 2)
   assert.match(rec.md, /^# 10月23日工作日报\n/)
-  assert.match(rec.md, /## 需求[\s\S]*支持按周生成[\s\S]*## 问题[\s\S]*点暂停显示已停止。状态没同步。退出时同步状态。/)
+  assert.match(
+    rec.md,
+    /## 需求[\s\S]*### 1\. 支持按周生成[\s\S]*## 问题[\s\S]*### 1\. 点暂停显示已停止\n\n\*\*原因\*\*\n\n1\. 状态没同步。\n\n\*\*修复\*\*\n\n1\. 退出时同步状态。/,
+  )
 
   // 再次生成（ADR 0043）：分项连同单子回到一次已完成的提炼，确认后是一份新报告，原报告不动
   const redo = await app.request(`/summary/${rec.id}/redo`, json('POST', {}))

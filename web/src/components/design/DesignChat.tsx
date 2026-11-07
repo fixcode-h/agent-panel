@@ -46,7 +46,8 @@ import {
   ContextMenuLabel,
   ContextMenuTrigger,
 } from '@/components/ui/menu'
-import { ChatReply, DeliveryLine, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
+import { ChatReply, DeliveryLine, PendingAuthor } from '@/components/tasks/Messages'
+import { SystemNote } from '@/components/tasks/SystemNote'
 import { conversationAround } from '@shared/fix'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
@@ -1216,6 +1217,7 @@ function ChatMessage({
         <SystemNote
           text={msg.text}
           error={msg.error}
+          indent
           conversation={msg.error ? conversationAround(msgs, msgs.indexOf(msg)) : ''}
           cwd={dir}
         />

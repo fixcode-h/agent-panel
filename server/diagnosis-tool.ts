@@ -5,6 +5,7 @@
 import type { Orchestra } from '../shared/engine.ts'
 
 const text = (desc: string) => ({ type: 'string', description: desc })
+const GRADE = { type: 'string', enum: ['good', 'cost', 'bad'] }
 
 /** 档案的结构化字段（ADR 0046）：update_bug_case 和 submit_diagnosis 共用 */
 const CASE_PROPS = {
@@ -122,6 +123,23 @@ const CASE_PROPS = {
         risk: text('风险：可能引入的新问题和怎么防'),
         fit: text('契合：合不合现有架构和约定'),
         verifiable: text('可验证：怎么证明修好了'),
+        grades: {
+          type: 'object',
+          description: '上面六项各自的判定：good 好、cost 有代价、bad 不满足（比较表里画成 ✓ ⚠ ✗）',
+          properties: {
+            covers: GRADE,
+            misses: GRADE,
+            surface: GRADE,
+            risk: GRADE,
+            fit: GRADE,
+            verifiable: GRADE,
+          },
+        },
+        touches: {
+          type: 'array',
+          items: { type: 'string', enum: ['data', 'api', 'config'] },
+          description: '会动到的契约：data 数据格式、api 接口、config 配置项（报告最上面会提醒用户）',
+        },
       },
       required: ['id', 'title', 'change'],
     },
@@ -135,6 +153,44 @@ const CASE_PROPS = {
       whyNotOthers: text('为什么不选别的；只有一个方案时写为什么没有别的'),
     },
     required: ['id', 'why'],
+  },
+  chain: {
+    type: 'array',
+    description:
+      '证据链三环，按顺序各一项：trigger 触发（什么操作、什么输入）→ fault 出错点（哪段代码在什么条件下做错了什么）→ symptom 现象（用户看到什么）；每环 proof 写证据（日志原文、测试输出、path:line）',
+    items: {
+      type: 'object',
+      properties: {
+        step: { type: 'string', enum: ['trigger', 'fault', 'symptom'] },
+        text: text('这一环：一句话'),
+        proof: text('证据：日志原文、测试输出或 path:line'),
+      },
+      required: ['step', 'text', 'proof'],
+    },
+  },
+  codeRef: {
+    type: 'object',
+    description: '关键代码：出错的那几行（5~15 行）。面板从工作区读出来显示给用户，不要把代码抄进报告',
+    properties: {
+      file: text('文件（相对项目根）'),
+      start: { type: 'number', description: '起始行' },
+      end: { type: 'number', description: '结束行' },
+      mark: { type: 'number', description: '出错的那一行（高亮）' },
+    },
+    required: ['file', 'start', 'end'],
+  },
+  changes: {
+    type: 'array',
+    description: '选定方案的具体改动：一个文件一项，写这个文件要改什么（一两句，一件事）；files 没写时按它补',
+    items: {
+      type: 'object',
+      properties: {
+        file: text('文件（相对项目根）'),
+        what: text('改什么'),
+        isNew: { type: 'boolean', description: '新建的文件' },
+      },
+      required: ['file', 'what'],
+    },
   },
   next: text('补充说明：下一步还打算查什么'),
   logPlan: {
@@ -162,6 +218,15 @@ const CASE_PROPS = {
       where: text('日志在哪：日志文件路径、控制台、浏览器开发者工具'),
       filter: text('过滤条件，例如 [排查-拖线]'),
       expect: text('论证：判定表，每个假设看到什么算证实或排除、都对不上时看路标停在哪一跳；验证：看到什么算修好了'),
+      outcomes: {
+        type: 'array',
+        description: 'expect 的结构化写法（优先写这个）：一种结果一项，see 看到什么、means 说明什么',
+        items: {
+          type: 'object',
+          properties: { see: text('看到什么'), means: text('说明什么') },
+          required: ['see', 'means'],
+        },
+      },
     },
     required: ['steps', 'expect'],
   },
@@ -246,6 +311,7 @@ export const DIAGNOSIS_TOOL = {
       },
       ...TEXT_PROPS,
       ...CASE_PROPS,
+      whatChanged: text('第 2 份起：相比上一份改了什么，一两句（写在报告最上面）'),
       answers: {
         type: 'array',
         description: '用户提了意见后再交时：按编号回答用户上一轮的意见',
@@ -254,6 +320,11 @@ export const DIAGNOSIS_TOOL = {
           properties: {
             id: { type: 'number' },
             answer: text('查了什么、结论、补了什么证据或改了哪一节'),
+            stance: {
+              type: 'string',
+              enum: ['adopted', 'explained', 'disagree'],
+              description: 'adopted 采纳并改了、explained 解释清楚不用改、disagree 不同意（写理由）',
+            },
           },
           required: ['id', 'answer'],
         },

@@ -37,7 +37,6 @@ import { useDiagDialogs } from './diag-dialogs'
 import { useDiagnosisHost } from './diagnosis-window'
 import { ParentBar } from './ChildMail'
 import { ChildrenBar, plainRow } from './ChildrenBar'
-import { BugReportRow } from './BugReportCard'
 import { useOwnedRuns } from '@/lib/owned-runs'
 import { ProcessMenu } from './ProcessPanel'
 import { PinMenuRow, PinnedButton, useHeaderPins } from './HeaderPins'
@@ -96,7 +95,8 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Badge } from '@/components/ui/badge'
 import { StatusPill } from '@/components/ui/status-pill'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
-import { AgentMessage, DeliveryLine, NoteMessage } from './Messages'
+import { AgentMessage, DeliveryLine } from './Messages'
+import { NoteMessage } from './SystemNote'
 import { ReceivedRow } from './PeerMessage'
 import { LiveStats } from './LiveStats'
 import { AnalyzeDialog } from './Evolution'
@@ -1835,8 +1835,6 @@ export function TaskView({
           <ParentBar task={task} className="mx-auto mb-1 max-w-(--content-w)" />
         </div>
       )}
-      {/* Bug 修完以后的诊断报告入口：常驻在这一块，不跟着消息流滚走 */}
-      <BugReportRow task={task} />
       {(() => {
         // 子对话入口只在父对话里显示（右栏和子对话自己的页面不列子对话）；
         // 子任务入口哪里都显示：它派在哪个对话里，就在哪里看
@@ -2269,10 +2267,9 @@ export function TaskView({
           <InlineRoutes msgId={b.m.id} inline={false} />
         </Fragment>
       )
+    // 报错、警告卡片挂在回复体外面：缩进到和回复正文对齐，不比正文往左多伸出一截
     if (b.m.role === 'system')
-      return (
-        <NoteMessage key={b.m.id} m={b.m} msgs={task.messages} task={task} className="justify-center text-center" />
-      )
+      return <NoteMessage key={b.m.id} m={b.m} task={task} className="justify-center text-center" indent />
     return <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
   }
   // 一轮回复和后面的用户消息放同一个容器：吸顶署名的粘性包含块是它，会一直保持到下一段回复头
@@ -2510,6 +2507,7 @@ export function TaskView({
                         onTask={apply}
                         kids={children}
                         noProject={noFiles}
+                        railGutter={RAIL_GUTTER}
                         env={
                           <EnvChip
                             compact

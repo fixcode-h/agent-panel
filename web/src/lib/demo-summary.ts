@@ -17,32 +17,50 @@ import { dayKey } from '@shared/usage'
 import { LessonDraftInput, LessonDraftRecord, lessonDraftsFromReport, missingDrafts } from '@shared/lesson-draft'
 import { demoMs } from './demo-speed'
 
-/** 演示用的需求：标题 + 做了什么 */
+/** 演示用的需求：标题 + 怎么做的（每行一点，ADR 0056） */
 const NEEDS = [
   {
     title: '购物车数量与结算页保持一致',
-    content: '加购、改数量和结算都以服务端返回的数量为准，切页面后不再出现两个数字',
+    content: '加购、改数量和结算都以服务端返回的数量为准\n切页面回来时重新拉一次购物车，不再出现两个数字',
   },
-  { title: '商品列表首屏加载骨架', content: '首次加载时先显示和真实行等高的占位块，数据到了再替换，页面不再跳动' },
-  { title: '价格显示统一保留两位小数', content: '所有页面改用同一个价格格式化入口，列表、详情和订单里的金额写法一致' },
+  {
+    title: '商品列表首屏加载骨架',
+    content: '首次加载时先显示和真实行等高的占位块\n数据到了再整块替换，页面不再跳动',
+  },
+  { title: '价格显示统一保留两位小数', content: '列表、详情和订单都改用同一个价格格式化入口' },
   { title: '搜索框支持拼音首字母', content: '输入拼音首字母也能匹配商品名，例如输入 sj 能搜到「手机」' },
 ]
-/** 演示里的 Bug：只有用户在对话里报过的问题才写进来 */
+/** 演示里的 Bug：只有用户在对话里报过的问题才写进来；原因 / 修复每行一点，修好的附关键代码，没修好的只有原因 */
 const BUGS = [
   {
     title: '点「全部应用」后按钮状态不变',
-    cause: '保存只改了内存里的值，没有写回接口，刷新后又变回旧状态',
-    fix: '保存成功后重新拉取配置并刷新按钮；已用界面检查确认',
+    cause: '保存只改了内存里的值，没有写回接口\n刷新后按接口里的旧值画，又变回旧状态',
+    fix: '保存时先写回接口\n写成功后重新拉取配置再刷新按钮',
+    code: [
+      {
+        file: 'src/settings/apply.ts',
+        lang: 'ts',
+        text: '// 先写回接口再改本地：原来只改了内存，刷新后又变回旧值\nawait api.saveConfig(next)\n// 以接口返回的配置为准刷新按钮状态\nsetConfig(await api.getConfig())',
+      },
+    ],
   },
   {
     title: '设置弹窗打开时先闪在左上角',
-    cause: '弹窗挂载时还没拿到定位用的锚点，第一帧按默认位置画',
-    fix: '等挂载完成后再定位，打开即居中',
+    cause: '弹窗挂载时还没拿到定位用的锚点\n第一帧按默认位置画在左上角，下一帧才跳到中间',
+    fix: '等挂载完成、量到尺寸后再显示，打开就在中间',
+    code: [
+      {
+        file: 'src/ui/Dialog.tsx',
+        lang: 'diff',
+        text: '-  const [ready, setReady] = useState(true)\n+  // 量到尺寸前先不显示，避免第一帧画在左上角\n+  const [ready, setReady] = useState(false)',
+      },
+    ],
   },
   {
     title: '接口超时后页面一直转圈',
-    cause: '超时的请求没有走统一的错误处理，加载状态没被清掉',
-    fix: '所有请求失败都清掉加载状态并提示原因',
+    cause: '超时的请求没有走统一的错误处理，加载状态没被清掉\n还没确定是哪几个接口绕开了统一的请求入口',
+    fix: '',
+    code: [],
   },
 ]
 
@@ -70,6 +88,7 @@ function sampleItems(names: string[], round: number): SummaryEntry[] {
         ...n,
         cause: '',
         fix: '',
+        code: [],
         link: '',
       })),
       { id: crypto.randomUUID(), kind: 'bug' as const, project, content: '', ...bug, link: '' },

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
 import { splitSummaryCards, unfenceSummaries, type SummaryCard } from '@shared/summary-card'
-import { linkPaths } from '@/lib/file-path'
+import { isBareFileName, linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
 import { targetOf, useFileRef } from '@/components/files/FileRefLayer'
 import { useChildSummaryOpen } from './child-open'
@@ -235,6 +235,13 @@ export function Markdown({
     if (!live && ref.current && canOpen) refs?.mark(ref.current)
   }, [html, live, refs, canOpen])
 
+  /** 行内代码里单独的文件名（不带目录，2026-11-07 起按代码显示）：悬停时去对话目录里找完整路径 */
+  const nameAt = (e: React.SyntheticEvent) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>('code')
+    if (!el || el.closest('pre')) return null
+    const text = (el.textContent ?? '').trim()
+    return isBareFileName(text) ? { el, text: text.replace(/:\d+(?::\d+)?$/, '') } : null
+  }
   const refAt = (e: React.SyntheticEvent) =>
     canOpen ? (e.target as HTMLElement).closest<HTMLElement>('[data-file-ref]') : null
   // 复制按钮是渲染出来的 HTML，用事件委托处理
@@ -300,9 +307,11 @@ export function Markdown({
         const el = refAt(e)
         // 在同一个标记里面移动（从图标移到文件名）不重新计时
         if (el && refs && !el.contains(e.relatedTarget as Node | null)) refs.hover(el, targetOf(el))
+        const name = canOpen && !el ? nameAt(e) : null
+        if (name && refs && !name.el.contains(e.relatedTarget as Node | null)) refs.name(name.el, name.text)
       }}
       onMouseOut={(e) => {
-        const el = refAt(e)
+        const el = refAt(e) ?? (canOpen ? nameAt(e)?.el : null)
         if (el && refs && !el.contains(e.relatedTarget as Node | null)) refs.leave()
       }}
       onKeyDown={(e) => {

@@ -213,6 +213,7 @@ import {
 } from './demo-design'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
+import { DEMO_FILES, DEMO_README } from './demo-project-files'
 
 const KEY = 'agent-panel-demo-v3'
 
@@ -1257,31 +1258,9 @@ function demoResolve(paths: string[]): (Attachment & { from: string })[] {
   })
 }
 
-/** 演示项目里的文件，输入 @ 时从这里找 */
-const DEMO_FILES = [
-  'package.json',
-  'README.md',
-  'vite.config.ts',
-  'src/main.tsx',
-  'src/App.tsx',
-  'src/api/cart.ts',
-  'src/api/orders.ts',
-  'src/api/products.ts',
-  'src/components/CartBadge.tsx',
-  'src/components/ProductCard.tsx',
-  'src/components/RestockButton.tsx',
-  'src/pages/Login.tsx',
-  'src/pages/OrderList.tsx',
-  'src/pages/ProductDetail.tsx',
-  'src/store/cart.ts',
-  'src/utils/date.ts',
-  'src/utils/format.ts',
-  'tests/cart.test.ts',
-]
-
 /** 演示里几个文件有内容，其余只显示路径 */
 const DEMO_CONTENTS: Record<string, string> = {
-  'README.md': '# 示例商店\n\n演示用的前端项目，故意留了几处没改完的地方。\n',
+  'README.md': DEMO_README,
   'src/App.tsx':
     "import { Routes, Route } from 'react-router-dom'\nimport { Login } from './pages/Login'\nimport { ProductDetail } from './pages/ProductDetail'\nimport { OrderList } from './pages/OrderList'\n\nexport function App() {\n  return (\n    <Routes>\n      <Route path=\"/login\" element={<Login />} />\n      <Route path=\"/products/:id\" element={<ProductDetail />} />\n      <Route path=\"/orders\" element={<OrderList />} />\n    </Routes>\n  )\n}\n",
   'src/api/cart.ts':

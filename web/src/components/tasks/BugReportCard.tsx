@@ -1,45 +1,109 @@
-import { FileSearch } from 'lucide-react'
+import { useEffect } from 'react'
+import { FileSearch, Loader2 } from 'lucide-react'
 import type { Task } from '@shared/schema'
-import { bugStage } from '@shared/bug-diagnosis'
+import type { Diagnosis } from '@shared/bug-diagnosis-schema'
+import { phaseOf, revOf, roundOf } from '@shared/bug-phase'
 import { t } from '@shared/i18n'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { RowShell } from './ToolRow'
+import { firstShow, showTag } from './ChildReport'
+import { childLabelClass } from './child-line'
 import { useDiagnosisWindow } from './diagnosis-window'
-import { plainRow } from './ChildrenBar'
 
 /**
- * 用户报的 Bug 修完（或停下）以后，诊断报告的入口：交报告那一行早就收进折叠了，想回看各版报告时不用去翻。
- * 固定在输入框上方的状态栏里（和计划、子任务、子对话同一块，用户 2026-11-05 要的），不跟着消息流滚走。
- * 打开的弹窗只读（最新一版不在等你时没有操作），右上角下拉能切到任意一版。
- * 还在等你确认时运行区有「诊断报告」那一行，这里不重复
+ * 诊断报告在对话里的卡片（ADR 0045）：放在最新一段回复下面的运行区里，跟着消息流走。
+ * 用户 2026-11-07 定：报告入口只在这里，输入框上方的状态栏不再放「诊断报告 · 查看报告」那一行；
+ * 最多列最近 3 份，交了新的就顶掉最旧的；点了「不修了」的那份描红边，之后也不会再有新的（服务端拒交）
  */
-export function BugReportRow({ task }: { task: Pick<Task, 'id' | 'title' | 'bug' | 'diagnoses' | 'bugCase'> }) {
-  const { open, dialog } = useDiagnosisWindow(task)
-  const list = task.diagnoses ?? []
-  const last = list.at(-1)
-  if (!task.bug || !last || last.status === 'pending') return null
+export const MAX_REPORT_CARDS = 3
+
+/** 运行区要列的报告卡片：用户报的 Bug 子对话才有，取最近 3 份 */
+export const reportCards = (task?: Pick<Task, 'bug' | 'diagnoses'>): Diagnosis[] =>
+  task?.bug ? (task.diagnoses ?? []).slice(-MAX_REPORT_CARDS) : []
+
+const PHASE = () => ({ evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), verify: t('验证') })
+
+/** 卡片上的状态标签：等你的用提醒色，不修了用红色，别的淡色 */
+function statusChip(d: Diagnosis): { text: string; cls: string } {
+  const verify = phaseOf(d) === 'verify'
+  if (d.status === 'pending')
+    return {
+      text: d.awaiting ? t('等你复现') : verify ? t('等你验证') : t('等你确认'),
+      cls: childLabelClass.warning,
+    }
+  if (d.status === 'cancelled')
+    return { text: t('不修了'), cls: 'shrink-0 rounded-full bg-danger/12 px-1.5 text-caption text-danger' }
+  if (d.status === 'approved') return { text: verify ? t('已结束验证') : t('已同意'), cls: childLabelClass.success }
+  if (d.status === 'questioned') return { text: t('提了意见'), cls: childLabelClass.plain }
+  if (d.status === 'answered') return { text: verify ? t('给了验证结果') : t('给了日志'), cls: childLabelClass.plain }
+  return { text: t('已被取代'), cls: childLabelClass.plain }
+}
+
+/** 运行区里的报告卡片，一份一行，旧的在上、新的在下 */
+export function BugReportCards({ task, list }: { task: Task; list: Diagnosis[] }) {
+  const { open } = useDiagnosisWindow(task)
+  const last = task.diagnoses?.at(-1)
+  const pending = last?.status === 'pending' ? last.version : 0
+  // 交上来时自动弹一次（每一版一次，和父对话页共用记号）：交报告那一行折叠着时根本没挂上，不能只靠它弹
+  useEffect(() => {
+    if (pending && firstShow(task.id, pending, showTag(task))) open(task, true)
+    // 同一版加好日志回到等你时（showTag 变了）再弹一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id, pending, showTag(task)])
   return (
-    <div className="shrink-0 px-3 md:px-6">
-      <div className="mx-auto max-w-(--content-w)">
-        <div data-status-row="bug-report" className={cn(plainRow, 'mb-1 flex-nowrap')}>
-          {/* 整段字也能点开报告，和子对话、计划那几行一样是入口 */}
-          <button
-            type="button"
-            onClick={() => open(task)}
-            className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-body text-muted transition-colors hover:bg-sel hover:text-fg"
-          >
-            <FileSearch className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <span className="shrink-0 font-medium">{t('诊断报告')}</span>
-            <span className="min-w-0 truncate text-xs text-subtle">
-              {t('共 {n} 版', { n: list.length })} · {bugStage(task)}
-            </span>
-          </button>
-          <Button size="sm" variant="secondary" className="h-6 shrink-0 px-2 text-xs" onClick={() => open(task)}>
-            {t('查看报告')}
-          </Button>
-          {dialog}
-        </div>
-      </div>
-    </div>
+    <>
+      {list.map((d) => (
+        <ReportCard key={d.version} task={task} d={d} onOpen={() => open(task, false, d.version)} />
+      ))}
+    </>
+  )
+}
+
+function ReportCard({ task, d, onOpen }: { task: Task; d: Diagnosis; onOpen: () => void }) {
+  const all = task.diagnoses ?? []
+  const n = revOf(d)
+  const k = roundOf(d, all)
+  const phase = PHASE()[phaseOf(d)]
+  const waiting = d.status === 'pending'
+  const cancelled = d.status === 'cancelled'
+  const chip = statusChip(d)
+  return (
+    <RowShell
+      // 不修了的那份描红边（用户 2026-11-07 要的），一眼和别的分开
+      boxed={cancelled}
+      className={cancelled ? 'border-danger/60' : undefined}
+      glyph={
+        // 对话停下了：报告还能确认，但没有人在等着往下做，不再转圈
+        waiting && task.status !== 'stopped' ? (
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-warning" />
+        ) : (
+          <FileSearch
+            className={`h-3.5 w-3.5 shrink-0 ${cancelled ? 'text-danger' : waiting ? 'text-warning' : 'text-subtle'}`}
+          />
+        )
+      }
+      verb={t('诊断报告')}
+      title={k > 1 ? t('第 {n} 版 · {phase} · 第 {k} 轮', { n, phase, k }) : t('第 {n} 版 · {phase}', { n, phase })}
+      titleClass="font-sans text-footnote"
+      open={false}
+      rowOpen={onOpen}
+      onOpen={onOpen}
+      openTip={t('打开诊断报告第 {n} 版', { n })}
+      detailStart
+      detail={<span className={chip.cls}>{chip.text}</span>}
+      action={
+        <Button
+          size="sm"
+          variant={waiting ? 'primary' : 'secondary'}
+          className="h-6 shrink-0 px-2 text-xs"
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpen()
+          }}
+        >
+          {t('查看报告')}
+        </Button>
+      }
+    />
   )
 }

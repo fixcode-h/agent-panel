@@ -926,6 +926,20 @@ await runShard(import.meta.filename, async (api) => {
           },
         ],
         chosen: { id: 'A', why: '修在源头', whyNotOthers: 'B 只是绕过，别的订阅者照样收不到' },
+        // 2026-11-07 的报告字段：证据链三环、具体改动（一个文件一行）；方案比较带判定
+        chain: [
+          { step: 'trigger', text: '删除购物车最后一件商品', proof: '复现步骤第 2 步，必现' },
+          {
+            step: 'fault',
+            text: 'remove 在 left=0 时提前 return',
+            proof: '日志 [cart] remove id=3 left=0 之后没有 change',
+          },
+          { step: 'symptom', text: '角标停在 1', proof: '刷新后才归零' },
+        ],
+        changes: [
+          { file: 'web/src/cart/store.ts', what: 'remove 去掉 left === 0 时的提前 return，总是派发 change' },
+          { file: 'web/src/cart/store.test.ts', what: '删最后一件后断言角标归零', isNew: true },
+        ],
       }
       kid.bug = true
       kid.diagnoses = [
@@ -995,21 +1009,30 @@ await runShard(import.meta.filename, async (api) => {
     // 父对话页上也有入口：不用先进子对话找交报告那一行
     if (!(await p.locator('.proc-list').getByRole('button', { name: '查看报告' }).count()))
       errors.push('诊断报告：父对话页「正在运行」里那个子对话的行上没有「查看报告」')
-    const open = childView(p).getByRole('button', { name: '查看报告' })
+    // 「查看报告」只在运行区的报告卡片上（用户 2026-11-07 定），交报告那一行工具调用不再放
+    const open = childView(p).locator('.proc-list').getByRole('button', { name: '查看报告' })
     await open
       .first()
       .waitFor({ timeout: 10000 })
-      .catch(() => errors.push('诊断报告：子对话里交报告的那一行工具调用上没有「查看报告」'))
+      .catch(() => errors.push('诊断报告：子对话运行区的报告卡片上没有「查看报告」'))
     await check(p, '诊断报告-子对话里的工具行')
     if (!(await childView(p).getByText('等你查看报告').count()))
       errors.push('诊断报告：交报告那一行没有写「等你查看报告」')
     if (await open.count()) {
-      await open.first().click()
+      // 卡片旧的在上、新的在下：点最下面那张，看的是在等确认的最新一份
+      await open.last().click()
       const dlg = p.getByRole('dialog')
       await dlg
         .getByRole('button', { name: '确认方案，开始修' })
         .waitFor({ timeout: 10000 })
         .catch(() => errors.push('诊断报告：弹窗里没有「确认方案，开始修」'))
+      // 决策卡在最上面（用户 2026-11-07 确认的设计稿）：一句话结论、要你做的；背景收在「依据和背景」里
+      if (!(await dlg.locator('[data-diagnosis-card]').getByText('选方案 A：去掉提前 return').count()))
+        errors.push('诊断报告：最上面没有决策卡的一句话结论')
+      if (!(await dlg.getByRole('button', { name: /依据和背景/ }).count()))
+        errors.push('诊断报告：没有收起的「依据和背景」')
+      if (!(await dlg.getByText('具体改动').count())) errors.push('诊断报告：方案页没有「具体改动」')
+      await check(p, '诊断报告-决策卡')
       // 版本在标题栏的下拉里选（用户 2026-11-05：不要把所有版本排在正文上面）
       const verPick = dlg.getByRole('combobox', { name: '版本' })
       if (!(await verPick.count())) errors.push('诊断报告：有两版却没有版本下拉')
@@ -1046,6 +1069,12 @@ await runShard(import.meta.filename, async (api) => {
       } else errors.push('诊断报告：选中文字后没有出现「标注」按钮')
       // ADR 0046：引入点、时间线、候选方案画出来；没选的方案能一键加「改方案」意见
       // 候选方案并排成一张比较表：方案 B 是表头一列，做法写在「做法」那一行
+      // 方案页里引入点收在「依据和背景」里：展开再看
+      await dlg
+        .getByRole('button', { name: /依据和背景/ })
+        .first()
+        .click()
+      await settle(p)
       for (const text of ['引入于', '购物车删除重构', '角标自己轮询数量'])
         if (!(await dlg.getByText(text, { exact: false }).count())) errors.push(`诊断报告：没有显示「${text}」`)
       const useB = dlg.getByRole('button', { name: '改用方案 B' })
@@ -1094,14 +1123,19 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：取消后审阅弹窗还开着')
         if (await childView(p).getByText('等你查看报告').count())
           errors.push('诊断报告：取消后交报告那一行还写着「等你查看报告」')
-        // 不再等确认以后，诊断报告的入口固定在输入框上方的状态栏里（和子任务、子对话同一块），不跟着消息流滚走
-        const bugRow = childView(p).locator('[data-status-row="bug-report"]')
-        await bugRow
+        // 报告入口只在消息流里（用户 2026-11-07 定）：输入框上方不再有诊断报告那一行；
+        // 消息流里的报告卡片最多 3 份，不修了的那份描红边，状态写「不修了」
+        if (await childView(p).locator('[data-status-row="bug-report"]').count())
+          errors.push('诊断报告：输入框上方的状态栏里还有诊断报告那一行')
+        const cards = childView(p).locator('.proc-list').getByRole('button', { name: '查看报告' })
+        await cards
+          .first()
           .waitFor({ timeout: 5000 })
-          .catch(() => errors.push('诊断报告：不再等确认后，输入框上方的状态栏里没有诊断报告那一行'))
-        if (await childView(p).locator('.proc-list [data-status-row="bug-report"]').count())
-          errors.push('诊断报告：入口还在消息流里')
-        await check(p, '诊断报告-状态栏入口')
+          .catch(() => errors.push('诊断报告：不再等确认后，消息流里没有报告卡片'))
+        if ((await cards.count()) > 3) errors.push('诊断报告：消息流里的报告卡片超过 3 份')
+        if (!(await childView(p).locator('.proc-list .border-danger\\/60').getByText('不修了').count()))
+          errors.push('诊断报告：不修了的那份卡片没有红色边框')
+        await check(p, '诊断报告-消息流卡片')
       }
       await p.keyboard.press('Escape')
     }

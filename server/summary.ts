@@ -9,6 +9,7 @@
  * 口径（时间窗口、材料、提示词、解析、拼报告）都在 shared/summary.ts。
  */
 import { askSession } from './asks.ts'
+import { attachCode } from './summary-diff.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -108,6 +109,8 @@ export function summaryApi(deps: {
     )
     const full = (await Promise.all(candidates.map((x) => deps.tasks.get(x.id)))).filter((x): x is Task => !!x)
     const dayProjects = collectRangeProjects(full, chosen, win)
+    // 可能在修 Bug 的对话带上真实的代码改动：报告里的关键代码只能从这里挑（ADR 0056）
+    await attachCode(dayProjects, (id) => projects.find((x) => x.id === id)?.path ?? '')
     const skipped = skippedProjects(chosen, dayProjects)
     if (skipped.length) job.skipped = skipped
     job.taskCount = dayProjects.reduce((n, p) => n + p.tasks.length, 0)
@@ -215,14 +218,14 @@ export function summaryApi(deps: {
       let why = failure(await generate(prompt))
       if (why === 'stopped') return void (job.status = 'stopped')
       if (why) return failed(why)
-      let parsed = parseExtract(text, names, randomUUID)
+      let parsed = parseExtract(text, names, randomUUID, context)
       // 回答解析不了时带上原因再跑一次（只重试一次，日志里记下）；仍然不行就把原因交给页面，不当成「没有内容」
       if (parsed.error) {
         log.warn('summary', '工作总结的分项解析不了，重试一次', parsed.error)
         why = failure(await generate(prompt + extractRetryHint(parsed.error)))
         if (why === 'stopped') return void (job.status = 'stopped')
         if (why) return failed(why)
-        parsed = parseExtract(text, names, randomUUID)
+        parsed = parseExtract(text, names, randomUUID, context)
         if (parsed.error)
           return failed(t('{cli} 的回答解析不了（已重试一次）：{error}', { cli: def.name, error: parsed.error }))
       }

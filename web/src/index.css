@@ -1606,7 +1606,8 @@ body,
  */
 .file-ref {
   display: inline-flex;
-  align-items: center;
+  /* 图标对齐第一行（用户 2026-11-07：两行时图标居中像是挂在两行中间）；现在名字不折行，一行时和居中一样 */
+  align-items: flex-start;
   max-width: 100%;
   padding: 0 0.4em 0 0.3em;
   vertical-align: -0.2em;
@@ -1616,7 +1617,7 @@ body,
   color: var(--fg);
   cursor: pointer;
   font-size: 0.92em;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
   transition:
     border-color 0.12s,
     background-color 0.12s;
@@ -1626,6 +1627,8 @@ body,
   flex: none;
   width: 1.05em;
   height: 1.05em;
+  /* 行高 1.5em，图标 1.05em：上边留 (1.5 - 1.05) / 2，落在第一行正中 */
+  margin-top: 0.225em;
   margin-right: 0.25em;
   background: currentColor;
   -webkit-mask: var(--fr-icon) center / contain no-repeat;
@@ -1640,13 +1643,34 @@ body,
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-/* 文字是一整个弹性子项，窄处按普通文字折行（长名字任意处断开），扩展名和行号不拆开 */
+/*
+ * 一行放下：空间不够时名字（和重名时补的目录）末尾省略成「lt_Common_Comp…」，扩展名和行号始终露出来
+ * （用户 2026-11-07：窄处折成「名字 / .lua」两行不好看，要缩略不换行）。完整路径在悬停卡片上
+ */
 .file-ref .fr-text {
+  display: inline-flex;
+  /* 名字、扩展名、行号按基线对齐：行号是小一号的等宽字，默认的顶端对齐会让它比文件名高出一截（用户 2026-11-07 截图） */
+  align-items: baseline;
   min-width: 0;
+  overflow: hidden;
+}
+.file-ref .fr-name,
+.file-ref .fr-dim {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 名字至少留几个字，不被目录挤成只剩省略号；目录先让 */
+.file-ref .fr-name {
+  flex: 0 1 auto;
+  min-width: min(3em, 100%);
+}
+.file-ref .fr-dim {
+  flex: 0 100 auto;
 }
 .file-ref .fr-ext,
 .file-ref .fr-line {
-  white-space: nowrap;
+  flex: none;
 }
 .file-ref .fr-ext,
 .file-ref .fr-line,
@@ -1773,6 +1797,13 @@ body,
 }
 .chat-md .md-ln:hover {
   background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+/* 诊断报告关键代码里出错的那一行（信息串 mark=N）：和 diff 删除行同一个色相，行号也染上 */
+.chat-md .md-ln.md-mark {
+  background: color-mix(in srgb, var(--md-coral) 14%, transparent);
+}
+.chat-md .md-ln.md-mark::before {
+  color: var(--md-coral);
 }
 /* diff：增删的行整行着色，只用底色（docs/lessons/visual.md） */
 .chat-md .md-ln.md-add {
