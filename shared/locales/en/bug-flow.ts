@@ -148,7 +148,6 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '确认方案，它才开始改代码': 'Confirm the plan; it only starts changing code after that',
   '按下面的步骤复现一次，贴日志确认；不想验证可以直接结束':
     'Reproduce once with the steps below and paste the logs to confirm; or just finish if you do not want to verify',
-  已被取代: 'Superseded',
   它在分析: 'Analysing',
   '日志已经加好（{n} 处），按下面的步骤复现一次，把日志贴回来':
     'Logs added ({n} places): reproduce once with the steps below and paste the logs back',
