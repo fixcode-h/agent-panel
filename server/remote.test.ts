@@ -1,15 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { binaryProblem, hostOfUrl, isRemoteHostAllowed, normalizePublicUrl, tunnelUrl } from './remote.ts'
+import { hostOfUrl, normalizePublicUrl } from './remote.ts'
+import { binaryProblem } from './cloudflared.ts'
+import { serverHint } from './frp-test.ts'
+import { proxyHost, proxySnippet } from '../shared/remote.ts'
 import { isLocalHost } from './hosts.ts'
 import { Settings } from '../shared/schema.ts'
-
-test('从 cloudflared 的输出里取临时地址', () => {
-  const out = '2025-01-01T00:00:00Z INF |  https://funny-cats-jump.trycloudflare.com  |'
-  assert.equal(tunnelUrl(out), 'https://funny-cats-jump.trycloudflare.com')
-  assert.equal(tunnelUrl(out.toUpperCase().replace('HTTPS', 'https')), 'https://funny-cats-jump.trycloudflare.com')
-  assert.equal(tunnelUrl('INF Requesting new quick Tunnel...'), '')
-})
 
 test('外部地址补协议、去掉路径', () => {
   assert.equal(normalizePublicUrl('panel.example.com'), 'https://panel.example.com')
@@ -22,22 +18,52 @@ test('外部地址补协议、去掉路径', () => {
   assert.equal(hostOfUrl('not a url'), '')
 })
 
-test('外部访问默认关闭，默认用临时地址', () => {
+test('外部访问默认关闭，默认用 frp；老设置的 Cloudflare 方式按 frp 读，隧道字段丢掉', () => {
   const s = Settings.parse({})
   assert.equal(s.remoteAccess.enabled, false)
-  assert.equal(s.remoteAccess.mode, 'quick')
-  assert.equal(s.remoteAccess.tunnelToken, '')
+  assert.equal(s.remoteAccess.mode, 'frp')
   assert.equal(s.remoteAccess.publicUrl, '')
+  assert.equal(s.remoteAccess.listenHost, '127.0.0.1')
+  for (const mode of ['quick', 'token']) {
+    const old = Settings.parse({ remoteAccess: { enabled: true, mode, tunnelToken: 'tok', command: 'cloudflared' } })
+    assert.equal(old.remoteAccess.mode, 'frp')
+    assert.equal(old.remoteAccess.enabled, true)
+    assert.equal('tunnelToken' in old.remoteAccess, false)
+  }
+  assert.equal(Settings.parse({ remoteAccess: { mode: 'tailscale' } }).remoteAccess.mode, 'tailscale')
+  // funnel 只允许这三个端口
+  assert.equal(
+    Settings.parse({ remoteAccess: { tailscale: { httpsPort: 8080 } } }).remoteAccess.tailscale.httpsPort,
+    443,
+  )
+})
+
+test('反向代理的配置示例：转发到外网专用端口，Host 原样转发，SSE 不缓冲', () => {
+  assert.equal(proxyHost(''), 'panel.example.com')
+  assert.equal(proxyHost('https://Panel.Example.com/x'), 'panel.example.com')
+  const caddy = proxySnippet('caddy', 'https://panel.example.com', '127.0.0.1:8788')
+  assert.match(caddy, /^panel\.example\.com \{/)
+  assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8788/)
+  assert.match(caddy, /flush_interval -1/)
+  assert.match(proxySnippet('caddy', 'http://10.0.0.2', '127.0.0.1:8788'), /^http:\/\/10\.0\.0\.2 \{/)
+  const nginx = proxySnippet('nginx', 'panel.example.com', '192.168.1.5:8788')
+  assert.match(nginx, /proxy_pass http:\/\/192\.168\.1\.5:8788;/)
+  assert.match(nginx, /proxy_set_header Host \$host;/)
+  assert.match(nginx, /proxy_buffering off;/)
+  assert.match(nginx, /listen 443 ssl;/)
+  assert.match(proxySnippet('npm', '', '127.0.0.1:8788'), /proxy_buffering off;/)
+})
+
+test('frp 连接测试：连不上云服务器按原因给提示', () => {
+  assert.match(serverHint('ECONNREFUSED', 7000), /agent-panel-frps/)
+  assert.match(serverHint('ETIMEDOUT', 7000), /7000/)
+  assert.notEqual(serverHint('ENOTFOUND', 7000), serverHint('ETIMEDOUT', 7000))
 })
 
 test('本机主机名', () => {
   for (const h of ['127.0.0.1:8787', 'localhost:5173', '[::1]:8787', '::1']) assert.equal(isLocalHost(h), true)
   for (const h of ['panel.example.com', '192.168.1.2:8787', 'evil.localhost.example.com'])
     assert.equal(isLocalHost(h), false)
-})
-
-test('没开外部访问时，外网地址不允许', () => {
-  assert.equal(isRemoteHostAllowed('panel.example.com'), false)
 })
 
 test('frp：服务端只放行面板端口和映射范围，客户端只写合法的映射', async () => {

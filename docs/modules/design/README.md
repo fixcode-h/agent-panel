@@ -2,7 +2,7 @@
 
 - 状态：documented
 - 职责：UI 设计：设计数据、AI 对话（设计工具 MCP）、原画与图片生成、导出
-- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`, `server/design-crop.ts`, `shared/restore/`, `server/design-restore.ts`, `server/design-psd.ts`, `web/src/components/design/CompareOverlay.tsx`
+- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`, `server/design-crop.ts`, `shared/restore/`, `server/design-restore.ts`, `server/design-psd.ts`, `server/design-cli-image.ts`, `web/src/components/design/CompareOverlay.tsx`
 - 入口：`server/designs.ts`
 - 关键词：UI 设计、原画、生图、导出、ComfyUI、设计工具
 - 更新：2026-11-07
@@ -64,6 +64,19 @@
 - 门槛设置：`Settings.designRestore`（`shared/restore/thresholds.ts`：`posPx` 2、`posRatio` 0.95、`assetSim` 0.92），设置页「图片生成」下面的「原画还原」组。
 - 像素操作（`blank`、`resize`、`crop`、`paste`、`contentBox`、`hasAlpha`、`chromaKey`、`removeFlatBackground`）挪到 `shared/raster.ts`，`server/image.ts` 重新导出；浏览器里的演示版和后面的检测算法共用。
 - 回归：`shared/restore/similarity.test.ts`、`server/design-crop.test.ts`、`scripts/ui/04-design.mjs`（滑块对照）。
+
+## 原画还原 P5：拆件图（2026-11-07）
+
+用户反馈：直接从原画抠会夹带别的 UI（面板里的图标、按钮上的字、格子后面的光）。改成先让图片模型照原画出一张「拆件图」，切图从拆件图切。
+
+- 拆件图（`shared/restore/parts.ts`）：`partsPrompt` 让模型把每个元素单独画一遍——容器画成空的、图标不带后面的格子、重复的只画一次，**透明底**（部件之间的空白透明，每个部件保留自己的底色）；模型给不了透明才退回纯绿底。`splitParts` 切件：透明底直接切，不透明的先去色键（`chromaKey`），不是绿底再去平底；外扩 3 像素找连通块，碎块（光晕、断开的描边）并成一件。
+- 对上（`matchParts` / `partScore`）：原画里每个元素（文字、背景不切）和宽高比差不多的件比——一致率（件里不透明的像素和原画差不到 40 的占比）×0.6 + 贴回原画后的相似度 ×0.4，不透明不到一成的不算；容器拿「挖掉子元素补成底色」的样子比（`holesOf`，和切图同一套挖洞规则），否则会选中把子元素一起画进去的那件。门槛 0.6，一件可以给好几个元素用。
+- 照原画还原：切图那一步（`runAssets` → `partsOf`）没有拆件图就用设置里的图片 CLI 出一张（原画当参考图，`server/design-cli-image.ts` 的 `cliGenerate`，从 designs.ts 拆出来），存进 `RestoreState.parts`；重跑这一步写了意见才重出，意见带进提示词。对上的元素 `assetFrom: 'parts'`、记 `partScore`，不再和原画比逐像素相似度（拆件是模型重画的），校验也不按相似度判它；没对上的从原画抠、卡上列出来；出图失败写在卡上，这一版全部从原画抠。PSD 不出拆件图。
+- 对话设计的模板模式：生成切图前（`preparePartCrops` → `design-crop.ts` 的 `templatePartCrops`）确认的模板还没有拆件图就出一张（按模板 id 存成 images/ 下的 `parts-<模板 id>.png`，换了模板才重出），写了 ref 的切图先从拆件图对上，对不上的照旧从模板抠；只在生图方式是图片 CLI 时出，失败的原因写进对话。
+- 设置：「原画还原」组的「先出拆件图」（`designRestore.parts`，默认开）。界面：切图页把拆件图放在干净背景后面，从拆件图切的标「拆 分数」。
+- 演示版没有图片模型：`demo-restore.ts` 的 `fakePartsSheet` 按元素框现拼一张透明底拆件图。
+- ComfyUI 抠图和补底（原 P5 计划）降为以后的兜底，还没接。
+- 回归：`shared/restore/parts.test.ts`（切件、对上、切图那一步出图成功和失败）、`server/design-crop.test.ts`（模板模式出拆件图再切、已有的直接读）、`scripts/ui/04b-restore.mjs`（切图页有拆件图、标「拆」的切图）。
 
 ## 原画还原 P4：网页还原（2026-11-07）
 

@@ -1,6 +1,7 @@
 import { t } from '@shared/i18n'
 import type { RestoreThresholds } from '@shared/restore/thresholds'
 import { Select } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Group, Row } from './parts'
 
 /** UI 设计照原画还原的门槛：校验一步按它判过不过关，精修出来的切图低于相似度门槛不选用 */
@@ -60,6 +61,17 @@ export function RestoreSettings({
             value: String(n),
             label: n === 0.92 ? t('{n}（默认）', { n: pct(n) }) : pct(n),
           }))}
+        />
+      </Row>
+      <Row
+        title={t('先出拆件图')}
+        desc={t('切图前让图片模型照原画把每个元素单独画一遍，从拆件图里切')}
+        hint={t('直接从原画抠会夹带别的 UI；拆件图里每件都是干净的。对不上的元素仍从原画抠。用设置里的图片 CLI')}
+      >
+        <Switch
+          aria-label={t('先出拆件图')}
+          checked={value.parts}
+          onCheckedChange={(parts) => onChange({ ...value, parts })}
         />
       </Row>
     </Group>

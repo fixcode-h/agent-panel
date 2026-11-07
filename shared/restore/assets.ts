@@ -181,18 +181,30 @@ function clearRatio(img: Img) {
 const hamming = (a: number[], b: number[]) => a.reduce((s, v, i) => s + (v === b[i] ? 0 : 1), 0)
 
 /** given：已经有像素的元素（PSD 图层），直接用，不从原画里抠 */
-export function extractAssets(art: Img, elements: RestoreElement[], given?: Map<string, Img>): ExtractResult {
-  const live = elements.filter((e) => !e.hidden)
-  const parents = parentsOf(live)
-  const bg = live.find((e) => e.kind === 'background')
-  const kidsOf = (id: string | undefined) =>
-    live.filter(
-      (e) => e.kind !== 'background' && (id === bg?.id ? parents.get(e.id) === undefined : parents.get(e.id) === id),
-    )
+/**
+ * 容器（或背景）切图时要挖掉补底的洞：直接的子元素；子容器几乎铺满了它（详情面板 = 内容区 + 按钮栏）时，
+ * 挖掉子容器就没有能取色的地方了，改成挖所有后代里的图标、文字，保留子容器的框。返回相对这个元素框的像素框
+ */
+export function holesOf(e: RestoreElement, live: RestoreElement[], parents: Map<string, string | undefined>): Box[] {
+  const bg = live.find((x) => x.kind === 'background')
   const descends = (id: string, root: string) => {
     for (let p = parents.get(id); p; p = parents.get(p)) if (p === root) return true
     return false
   }
+  let kids = live.filter(
+    (k) => k.kind !== 'background' && (e.id === bg?.id ? parents.get(k.id) === undefined : parents.get(k.id) === e.id),
+  )
+  const covered = kids.reduce((s, k) => s + (CONTAINER_KINDS.includes(k.kind) ? k.box.w * k.box.h : 0), 0)
+  if (e.kind !== 'background' && covered > e.box.w * e.box.h * 0.85)
+    kids = live.filter((k) => !CONTAINER_KINDS.includes(k.kind) && k.kind !== 'background' && descends(k.id, e.id))
+  const b = rnd(e.box)
+  return kids.map((k) => ({ x: k.box.x - b.x, y: k.box.y - b.y, w: k.box.w, h: k.box.h }))
+}
+
+export function extractAssets(art: Img, elements: RestoreElement[], given?: Map<string, Img>): ExtractResult {
+  const live = elements.filter((e) => !e.hidden)
+  const parents = parentsOf(live)
+  const bg = live.find((e) => e.kind === 'background')
   const slices: Slice[] = []
   for (const e of live) {
     if (e.kind === 'text') continue
@@ -204,13 +216,7 @@ export function extractAssets(art: Img, elements: RestoreElement[], given?: Map<
     const b = rnd(e.box)
     const raw = crop(art, b.x, b.y, b.w, b.h)
     if (e.kind === 'background' || CONTAINER_KINDS.includes(e.kind)) {
-      // 子容器几乎铺满了它（详情面板 = 内容区 + 按钮栏）：挖掉子容器就没有能取色的地方了，
-      // 改成只挖所有后代里的图标、文字，保留子容器的框
-      let kids = kidsOf(e.id)
-      const covered = kids.reduce((s, k) => s + (CONTAINER_KINDS.includes(k.kind) ? k.box.w * k.box.h : 0), 0)
-      if (e.kind !== 'background' && covered > e.box.w * e.box.h * 0.85)
-        kids = live.filter((k) => !CONTAINER_KINDS.includes(k.kind) && k.kind !== 'background' && descends(k.id, e.id))
-      const holes = kids.map((k) => ({ x: k.box.x - b.x, y: k.box.y - b.y, w: k.box.w, h: k.box.h }))
+      const holes = holesOf(e, live, parents)
       const img = holes.length ? fillHoles(raw, holes) : raw
       slices.push({
         element: e.id,

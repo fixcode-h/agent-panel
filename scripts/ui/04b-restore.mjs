@@ -78,7 +78,10 @@ await runShard(import.meta.filename, async ({ base, page, check }) => {
 
   await confirm('assets')
   await p.locator('[data-restore-assets] figure').first().waitFor()
-  await check(p, '还原-切图', ['干净背景'])
+  // 先出拆件图（演示里按元素框现拼的透明底拆件图），对上的切图标「拆」
+  await p.locator('[data-restore-parts]').waitFor()
+  assert.ok((await p.locator('[data-restore-assets] [data-from="parts"]').count()) > 5, '从拆件图切的切图')
+  await check(p, '还原-切图', ['干净背景', '拆件图'])
 
   await confirm('build')
   await check(p, '还原-搭建', ['在画布里看'])
