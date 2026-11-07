@@ -4,6 +4,7 @@ import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
 import { pathsApi } from './api-paths'
 import { messagesApi } from './api-messages'
+import { remoteApi } from './api-remote'
 import type { CollabEvent } from '@shared/collab-timeline'
 import type { LifeReport } from '@shared/lifecycle'
 import type { TaskExport } from '@shared/task-export'
@@ -78,7 +79,6 @@ import type {
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ApiBalance } from '@shared/api-balance'
 import type { ModelCatalogEntry, ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
-import type { RemoteAccessStatus } from '@shared/remote'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
 import type { FixApplyItem, FixApplyResult } from '@shared/diagnosis'
@@ -156,6 +156,9 @@ export const lifecycleDownloadUrl = (id: string) => `/api/tasks/${id}/lifecycle/
 /** 非 2xx 的响应转成错误：响应体挂到错误上，有些接口（例如更新撞上「已经在更新」）会在里面带上要继续处理的信息 */
 async function failure(res: Response): Promise<never> {
   const body = await res.json().catch(() => ({}))
+  // 外网打开的面板登录失效了（改了密码、被踢下线、过期）：服务端回 401 并带 login，去登录页，登完回到这一页
+  if (res.status === 401 && body?.login === '/login')
+    location.href = `/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`
   const err = new Error(body.error ?? t('请求失败（{status}）', { status: res.status })) as Error & {
     status?: number
     body?: unknown
@@ -269,26 +272,6 @@ export const api = {
   settings: () => request<Settings>('/settings'),
   saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
   shells: (fresh = false) => request<ShellReport>(`/shells${fresh ? '?fresh=1' : ''}`),
-
-  remoteStatus: () => request<RemoteAccessStatus>('/remote/status'),
-  remoteCheck: () => request<RemoteAccessStatus>('/remote/check', { method: 'POST' }),
-  remoteInstall: () => request<RemoteAccessStatus>('/remote/install', { method: 'POST' }),
-  remoteRestart: () => request<RemoteAccessStatus>('/remote/restart', { method: 'POST' }),
-  /** 一键配置云服务器（frp）：密码只随这次请求发给本机服务，不保存 */
-  remoteDeploy: (body: {
-    server: string
-    sshPort: number
-    sshUser: string
-    password: string
-    bindPort: number
-    remotePort: number
-    rangeStart: number
-    rangeEnd: number
-  }) =>
-    request<{ remoteAccess: Settings['remoteAccess']; status: RemoteAccessStatus }>(
-      '/remote/frp/deploy',
-      json('POST', body),
-    ),
 
   /** 外部 CLI 的授权：检测、浏览器授权、token 授权、退出 */
   integrations: (refresh = false) => request<IntegrationView[]>(`/integrations${refresh ? '?refresh=1' : ''}`),
@@ -1190,4 +1173,5 @@ export const api = {
   ...summaryApi,
   ...pathsApi,
   ...messagesApi,
+  ...remoteApi,
 }

@@ -63,6 +63,10 @@ export const RestoreElement = z.object({
   /** 切图那一步给它的图片 id（设计的 images 里）、拼回去和原画那一块的相似度 */
   image: z.string().optional(),
   sim: z.number().optional(),
+  /** 切图从哪来：原画里抠的、拆件图里对上的、PSD 图层 */
+  assetFrom: z.enum(['art', 'parts', 'layer']).optional(),
+  /** 从拆件图来的：和原画那一块对上的分数（拆件是模型重画的，不和原画比逐像素相似度） */
+  partScore: z.number().optional(),
   /** 搭建那一步给它的控件名 */
   widget: z.string().optional(),
   /** 网页还原：底框能用 CSS 画（纯色 + 描边 + 圆角，原画像素）时量出来的样式，不用切图 */
@@ -185,6 +189,8 @@ export const RestoreState = z.object({
   score: RestoreScore.optional(),
   /** 干净的背景（擦掉元素补齐后的原画）：images/ 下的文件 */
   plate: z.string().optional(),
+  /** 拆件图（模型照原画把每个元素单独画在绿底上）：images/ 下的文件，切图从这里切 */
+  parts: z.object({ file: z.string(), width: z.number(), height: z.number() }).optional(),
 })
 export type RestoreState = z.infer<typeof RestoreState>
 

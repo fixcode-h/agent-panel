@@ -18,7 +18,7 @@ import { resolveCommand } from './cli-source.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
 import { DATA_DIR } from './store.ts'
-import { installCloudflared } from './remote.ts'
+import { installCloudflared } from './cloudflared.ts'
 import { expandWinVars, refreshWinPath } from './win-path.ts'
 
 /**

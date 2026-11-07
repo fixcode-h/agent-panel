@@ -1,7 +1,10 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { crop, decodePng, encodePng, removeFlatBackground, resize, type Img } from './image.ts'
 import { similarity } from '../shared/restore/similarity.ts'
-import type { DesignImage } from '../shared/design.ts'
+import type { Design, DesignImage } from '../shared/design.ts'
+import { t } from '../shared/i18n.ts'
+import { matchParts, partsPrompt, splitParts } from '../shared/restore/parts.ts'
+import type { RestoreElement } from '../shared/restore/schema.ts'
 
 /**
  * 切图默认从原画里抠，不重新画：重新生成每次都和原画不一样（Icon 永远对不上），
@@ -76,4 +79,72 @@ export async function pickRefined(
     selected: crop >= 0 ? crop : img.selected,
     low: scored.length ? Math.max(...scored) : undefined,
   }
+}
+
+type RefImage = Pick<DesignImage, 'id' | 'name' | 'width' | 'height' | 'transparent' | 'nineSlice' | 'ref'>
+
+/** 写了 ref 的切图当成元素（模板像素）：透明且不是九宫格的当图标，其余当容器 */
+function refElements(tpl: Img, designSize: { X: number; Y: number }, images: RefImage[]): RestoreElement[] {
+  const sx = tpl.width / designSize.X
+  const sy = tpl.height / designSize.Y
+  return images.flatMap((i) =>
+    i.ref
+      ? [
+          {
+            id: i.id,
+            kind: i.transparent && !i.nineSlice ? ('icon' as const) : ('panel' as const),
+            name: i.name,
+            box: { x: i.ref.x * sx, y: i.ref.y * sy, w: Math.max(1, i.ref.w * sx), h: Math.max(1, i.ref.h * sy) },
+            confidence: 1,
+            source: 'detect' as const,
+          },
+        ]
+      : [],
+  )
+}
+
+/** 出拆件图的提示词：模板当参考图，元素清单取写了 ref 的切图 */
+export function templatePartsPrompt(
+  tpl: Img,
+  designSize: { X: number; Y: number },
+  kind: 'game' | 'web' | undefined,
+  images: RefImage[],
+) {
+  return partsPrompt(kind, refElements(tpl, designSize, images), tpl)
+}
+
+/**
+ * 模板模式的切图从拆件图里切：每张写了 ref 的切图和拆件图里的件对上，缩放到它在界面上的尺寸。
+ * 对不上的不在结果里，调用方照旧从模板里抠。返回 图片 id → PNG 和对上的分数
+ */
+export function partCrops(tpl: Img, sheet: Img, designSize: { X: number; Y: number }, images: RefImage[]) {
+  const elements = refElements(tpl, designSize, images)
+  const m = matchParts(tpl, elements, splitParts(sheet))
+  const out = new Map<string, { png: Buffer; score: number }>()
+  for (const i of images) {
+    const hit = m.get(i.id)
+    if (hit)
+      out.set(i.id, { png: encodePng(resize(hit.img, i.width, i.height)), score: Math.round(hit.score * 1000) / 1000 })
+  }
+  return out
+}
+
+/** 模板模式出拆件图并切：sheetFile 已经有就直接读，没有就 generate 一张（模板当参考图）存到 sheetFile */
+export async function templatePartCrops(o: {
+  tplFile: string
+  sheetFile: string
+  design: Pick<Design, 'designSize' | 'kind' | 'images'>
+  want: RefImage[]
+  generate: (prompt: string, ref: string) => Promise<Buffer>
+}) {
+  const tpl = decodePng(await readFile(o.tplFile).catch(() => Buffer.alloc(0)))
+  if (!tpl) return undefined
+  let buf: Buffer | undefined = await readFile(o.sheetFile).catch(() => undefined)
+  if (!buf) {
+    buf = await o.generate(templatePartsPrompt(tpl, o.design.designSize, o.design.kind, o.design.images), o.tplFile)
+    await writeFile(o.sheetFile, buf)
+  }
+  const sheet = decodePng(buf)
+  if (!sheet) throw new Error(t('拆件图不是 PNG，读不出来'))
+  return partCrops(tpl, sheet, o.design.designSize, o.want)
 }

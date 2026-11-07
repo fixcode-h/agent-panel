@@ -146,4 +146,23 @@ export const EN_RESTORE_FLOW: Record<string, string> = {
   'CSS 画的底框': 'CSS-drawn boxes',
   设计变量: 'Design tokens',
   '颜色 {c} 档，字号 {s} 档': '{c} colors, {s} font sizes',
+  拆件图对上: 'Matched from parts sheet',
+  '拆件图没出来，这一版全部从原画抠：{error}':
+    'The parts sheet could not be generated, so this version cuts everything from the art: {error}',
+  '{n} 个元素在拆件图里没对上，从原画抠的：{names}':
+    '{n} elements did not match the parts sheet and were cut from the art: {names}',
+  '拆件图不是 PNG，读不出来': 'The parts sheet is not a PNG and cannot be read',
+  '图片 CLI 没有交回图片': 'The image CLI returned no image',
+  拆件图: 'Parts sheet',
+  '图片模型照原画把每个元素单独画在透明底上，切图从这里切':
+    'The image model redrew every element of the art separately on a transparent background; slices are cut from here',
+  '从拆件图切的，和原画对上的分数 {s}': 'Cut from the parts sheet; match score against the art {s}',
+  拆: 'Sheet',
+  先出拆件图: 'Generate a parts sheet first',
+  '切图前让图片模型照原画把每个元素单独画一遍，从拆件图里切':
+    'Before slicing, have the image model redraw every element of the art separately and cut slices from that sheet',
+  '直接从原画抠会夹带别的 UI；拆件图里每件都是干净的。对不上的元素仍从原画抠。用设置里的图片 CLI':
+    'Cutting straight from the art drags in neighboring UI; every piece on the parts sheet is clean. Elements that do not match are still cut from the art. Uses the image CLI from settings',
+  '拆件图没出来，这一轮的切图直接从原画模板抠：{error}':
+    'The parts sheet could not be generated, so this round cuts slices straight from the concept template: {error}',
 }

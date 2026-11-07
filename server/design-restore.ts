@@ -38,6 +38,8 @@ interface Deps {
   busy: (id: string) => boolean
   reply: (c: Context, d: Design) => Response
   now: () => string
+  /** 带一张参考图生成一张图（拆件图：原画当参考） */
+  generateWithRef?: (d: Design, prompt: string, ref: string, abort: AbortController) => Promise<Buffer>
 }
 
 const Run = z.object({ step: z.enum(RESTORE_STEPS), feedback: z.string().max(4000).default('') })
@@ -87,6 +89,18 @@ export function restoreRoutes(deps: Deps) {
             if (!img) throw new Error(t('PSD 图层文件读不出来：{file}', { file }))
             return img
           },
+          ...(deps.generateWithRef
+            ? {
+                partsSheet: async (prompt: string) => {
+                  const src = stateOf(d).source
+                  if (!src) throw new Error(t('还没有原画'))
+                  const buf = await deps.generateWithRef!(d, prompt, path.join(deps.imagesDir(d.id), src.file), abort)
+                  const img = decodePng(buf)
+                  if (!img) throw new Error(t('拆件图不是 PNG，读不出来'))
+                  return img
+                },
+              }
+            : {}),
         },
         feedback,
       )

@@ -2334,11 +2334,11 @@ export const ElementPicker = z.object({
 })
 export type ElementPicker = z.infer<typeof ElementPicker>
 
-/** 从外网访问面板：默认关闭，服务仍然只监听 127.0.0.1，由 cloudflared 或用户自己的反向代理把请求转进来。
- * 外网的请求一律要求访问令牌，和本机访问不同。
+/** 从外网访问面板：默认关闭。打开后另起一个带密码登录的外网专用端口，主端口仍然只给本机用。
+ * 外网的请求一律要求登录会话，和本机访问不同。
  */
 // 外部访问的设置拆在 remote-schema.ts（schema.ts 有行数上限），这里转出，调用方照旧从 schema 引
-export { FrpMapping, RemoteAccess, RemoteFrp } from './remote-schema.ts'
+export { FrpMapping, RemoteAccess, RemoteFrp, RemoteTailscale } from './remote-schema.ts'
 
 /**
  * 设置里各项默认值的迁移版本：改过默认值的项按版本升级一次。

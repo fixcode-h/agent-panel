@@ -139,7 +139,8 @@ import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-
 import { analyzeProject, detectVcs } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
 import { grantCookie, tokenGuard, viaProxy, withToken } from './auth.ts'
-import { isAllowedHost, isExternalRequest, isLocalHost, originAllowed } from './hosts.ts'
+import { isExternalRequest, isLocalHost } from './hosts.ts'
+import { originOk } from './guard/gate.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
 import { sweepPanelMcp } from './panel-mcp-files.ts'
@@ -368,8 +369,8 @@ const app = new Hono().basePath('/api')
 app.use('*', async (c, next) => {
   const host = c.req.header('host') ?? ''
   const external = isExternalRequest(c.env)
-  // 本机地址、当前外网访问地址，或外网专用端口（Host 不限，令牌由 tokenGuard 强制，Origin 要和 Host 同源，见 remote.ts）
-  if (!external && !isAllowedHost(host)) return c.json({ error: t('只接受来自本机的访问') }, 403)
+  // 主端口只认本机地址；外网专用端口 Host 不限（登录会话由 tokenGuard 强制，Origin 按访问地址比，见 guard/gate.ts）
+  if (!external && !isLocalHost(host)) return c.json({ error: t('只接受来自本机的访问') }, 403)
   const origin = c.req.header('origin')
   // 浏览器扩展只能调 /bridge 下面的接口（报标签页、取指令、交图片），别的一律不行
   if (/^(chrome|moz)-extension:\/\//.test(origin ?? '')) {
@@ -387,7 +388,7 @@ app.use('*', async (c, next) => {
     return next()
   }
   if (origin !== undefined) {
-    if (!originAllowed(origin, host, external)) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
+    if (!(await originOk(origin, c))) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   }
   if (c.req.header('sec-fetch-site') === 'cross-site') return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   if (
@@ -1160,7 +1161,7 @@ app.route(
     projectName: async (id) => (await projects.get(id))?.name ?? '',
   }),
 )
-app.route('/remote', remoteApi({ link: withToken }))
+app.route('/remote', remoteApi())
 // 设置里开了「重启后自动继续」：迁移做完后把上次被重启打断的对话逐个继续（和首页「全部继续」同一个名单、同一个接口）
 void tasks
   .ready()
@@ -1203,7 +1204,7 @@ const restarted = !!process.env.AGENT_PANEL_RESTARTED
 const tray = !!process.env.AGENT_PANEL_TRAY
 delete process.env.AGENT_PANEL_RESTARTED
 // 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网。
-// 要从外网访问时，由 cloudflared（或用户自己的反向代理）把请求转到 127.0.0.1，见 remote.ts
+// 要从外网访问时另起外网专用端口（带密码登录），由 Caddy / NPM 等反向代理转进来或直接监听，见 remote.ts
 configureRemote(root.fetch)
 const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
   // 把实际端口打出来（一行给工具解析）：PORT=0 时端口由系统分配，端到端测试照着它连，
@@ -1220,7 +1221,6 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   console.log(`Agent 面板服务已启动: ${url}`)
   log.info('server', '启动', { version: currentVersion(), data: DATA_DIR, log: logFile(), prod, tray, restarted })
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
-  // 设置里开着外网访问时启动隧道；quick 模式的地址要等 cloudflared 输出，设置页里能看到
   // 内存曲线：30 秒采一点（面板 server + 各对话的 CLI 进程树），落盘后重启接着用
   stopMemorySampler = startMemorySampler()
   // 定时计划：面板进程在跑时才有定时，错过的计划不补跑（见 shared/schedule.ts）
