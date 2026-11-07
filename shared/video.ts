@@ -119,6 +119,47 @@ export function pickTimes(candidates: number[], duration: number, n: number): nu
 const round3 = (x: number) => Math.round(x * 1000) / 1000
 
 /**
+ * 截帧范围（秒）：自动截帧只在这一段里分析、挑点（用户 2026-11-07 要的：长视频只关心其中一段）。
+ * 不选范围时就是整段
+ */
+export interface VideoRange {
+  start: number
+  end: number
+}
+
+/** 范围最短多长：再短 FFmpeg 分析不出画面变化，挑点也没意义 */
+export const RANGE_MIN = 0.2
+
+/**
+ * 把外面传来的范围收进视频时长里；无效（不是数、太短、反了）时返回整段。
+ * 起点终点颠倒时对调，用户先点了「终点」再点「起点」也不报错
+ */
+export function clampRange(range: Partial<VideoRange> | null | undefined, duration: number): VideoRange {
+  const full = { start: 0, end: Math.max(0, duration) }
+  if (!range || !(duration > 0)) return full
+  const a = Number(range.start)
+  const b = Number(range.end)
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return full
+  const start = round3(Math.min(Math.max(0, Math.min(a, b)), duration))
+  const end = round3(Math.min(Math.max(0, Math.max(a, b)), duration))
+  return end - start < RANGE_MIN ? full : { start, end }
+}
+
+/** 范围是不是整段（没选范围） */
+export const isFullRange = (r: VideoRange, duration: number) => r.start <= 0.001 && r.end >= duration - 0.001
+
+/** 在范围里均匀截帧：时间点仍然取每段中间，只是整体平移到范围里 */
+export const rangeUniformTimes = (r: VideoRange, n: number) =>
+  uniformTimes(r.end - r.start, n).map((x) => round3(x + r.start))
+
+/**
+ * 在范围里按候选挑点：候选是相对范围起点的秒数（FFmpeg 用 -ss 跳到起点后时间戳从 0 开始），
+ * 挑完再加回起点，得到在整段视频里的位置
+ */
+export const rangePickTimes = (candidates: number[], r: VideoRange, n: number) =>
+  pickTimes(candidates, r.end - r.start, n).map((x) => round3(x + r.start))
+
+/**
  * 一张灰度小图的清晰度：拉普拉斯算子响应的方差（越大边缘越锐利）。
  * 自动截帧时在目标时间前后取几帧，挑分数最高的那张，避开运动模糊、转场的半透明画面。
  */
@@ -231,25 +272,41 @@ export const sortFrames = (list: VideoFrame[]) =>
   [...list].sort((a, b) => a.time - b.time || (a.source === b.source ? 0 : a.source === 'manual' ? -1 : 1))
 
 /**
- * 自动截帧的结果并进已有的帧：自动帧整批换掉，手动帧无论如何都保留（用户要求）；
+ * 自动截帧的结果并进已有的帧：自动帧整批换掉（选了范围时只换范围里的），手动帧无论如何都保留（用户要求）；
  * 新的自动帧和某张手动帧几乎同一时刻（0.15 秒内）时不重复放
  */
-export function mergeAuto(old: VideoFrame[], auto: VideoFrame[]): VideoFrame[] {
-  const manual = old.filter((f) => f.source === 'manual')
-  const fresh = auto.filter((a) => !manual.some((m) => Math.abs(m.time - a.time) < 0.15))
-  return sortFrames([...manual, ...fresh])
+export function mergeAuto(old: VideoFrame[], auto: VideoFrame[], range?: VideoRange): VideoFrame[] {
+  // 选了范围时只换掉范围里的自动帧，范围外的留着：分几段各截几张时，前面截的不会被后一段冲掉
+  const kept = old.filter((f) => f.source === 'manual' || (range && !inRange(f.time, range)))
+  const fresh = auto.filter((a) => !kept.some((m) => Math.abs(m.time - a.time) < 0.15))
+  return sortFrames([...kept, ...fresh])
 }
 
-/** 增强方式：内置的 FFmpeg 放大锐化，以及本机 ComfyUI 里吃一张图的工作流 / 工作流链 */
+/** 时间点在不在范围里（两端都算） */
+export const inRange = (time: number, r: VideoRange) => time >= r.start - 0.001 && time <= r.end + 0.001
+
+/**
+ * 增强方式：FFmpeg 内置的放大锐化、去噪点，面板内置的 ComfyUI 画质工作流（提升清晰度、去噪点、画质修复），
+ * 以及用户自己在 ComfyUI 页做的吃一张图的工作流 / 工作流链
+ */
 export interface EnhanceMethod {
   id: string
   label: string
   /** 一句说明：在哪跑、要什么 */
   note: string
+  /** ffmpeg：马上能用；builtin：面板内置的 ComfyUI 工作流；custom：用户自己的工作流和链 */
+  group: 'ffmpeg' | 'builtin' | 'custom'
+  /**
+   * 还不能用的原因（只给内置的 ComfyUI 工作流算）：ComfyUI 没装，或者模型没下载（model 是 LOCAL_MODELS 的 id，
+   * 弹窗里可以直接点下载）。能用时为空
+   */
+  missing?: { kind: 'comfy' } | { kind: 'model'; model: string; name: string; gb: number }
 }
 
 /** 内置增强：FFmpeg 2 倍 lanczos 放大 + 锐化，不用模型、几乎瞬间完成 */
 export const FFMPEG_ENHANCE = 'ffmpeg-sharpen'
+/** 内置增强：FFmpeg 非局部均值去噪（nlmeans），尺寸不变，不用模型 */
+export const FFMPEG_DENOISE = 'ffmpeg-denoise'
 
 /** 增强方式 id：ComfyUI 工作流 `comfy:wf:<id>`、工作流链 `comfy:chain:<id>` */
 export const comfyMethod = (kind: 'wf' | 'chain', id: string) => `comfy:${kind}:${id}`

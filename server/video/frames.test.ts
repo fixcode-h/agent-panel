@@ -60,9 +60,27 @@ test('视频截帧：手动帧一直保留，原视频不变', { skip: !hasFfmpe
   // 画面变化方式要在 6 秒的切换附近截到一帧
   s = await f.autoFrames(s.key, video, 'scene', 4)
   assert.ok(s.frames.some((x) => x.source === 'auto' && Math.abs(x.time - 6) < 1))
+  // 只在 4~9 秒里截：新的自动帧都落在范围里，范围外原来的自动帧留着
+  const outside = s.frames.filter((x) => x.source === 'auto' && (x.time < 4 || x.time > 9)).map((x) => x.id)
+  s = await f.autoFrames(s.key, video, 'scene', 3, undefined, { start: 4, end: 9 })
+  const inside = s.frames.filter((x) => x.source === 'auto' && x.time >= 4 && x.time <= 9)
+  assert.ok(inside.length >= 1, '范围里截到了帧')
+  assert.ok(
+    inside.some((x) => Math.abs(x.time - 6) < 1),
+    '范围里的画面切换（6 秒）截到了',
+  )
+  for (const id of outside)
+    assert.ok(
+      s.frames.some((x) => x.id === id),
+      '范围外的自动帧还在',
+    )
+  s = await f.autoFrames(s.key, video, 'uniform', 2, undefined, { start: 4, end: 9 })
   s = await f.enhanceFrames(s.key, video, [manual.id], 'ffmpeg-sharpen')
   const enh = s.frames.find((x) => x.id === manual.id)?.enhanced
   assert.ok(enh?.file && enh.bytes > 0)
+  s = await f.enhanceFrames(s.key, video, [manual.id], 'ffmpeg-denoise')
+  const den = s.frames.find((x) => x.id === manual.id)?.enhanced
+  assert.ok(den?.file && den.bytes > 0 && den.method === 'ffmpeg-denoise')
   s = await f.removeFrames(s.key, video, { which: 'auto' })
   assert.deepEqual(
     s.frames.map((x) => x.id),

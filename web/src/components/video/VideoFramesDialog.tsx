@@ -1,14 +1,15 @@
 // 视频截帧弹窗：点输入框里的视频卡片打开（用户 2026-11-05 定的：不把视频发给 Agent，发截出来的帧图片）。
 // 上面是播放器 / 帧画面（占满剩下的高度），下面是「上一帧 · 播放视频 · 下一帧 · 帧播放」、时间轴（帧的位置标在上面）、
-// 截帧和增强的操作、截下来的帧。手动截的帧自动截帧时一直保留，只能用「清除手动帧」或单张删掉。
+// 截帧范围（自动截帧只在这一段里截）、截帧和增强的操作、截下来的帧。手动截的帧自动截帧时一直保留，只能用「清除手动帧」或单张删掉。
 // 选好的帧记在视频卡片上，发送时换成这些帧图片的路径。双击帧看大图，可以缩放、拖动看细节。
 // 原视频只读：播放走 /api/video/stream，截帧、增强都在服务端用 FFmpeg 写到数据目录（server/video/）。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Crosshair, Film, Loader2, Sparkles, Trash2, WandSparkles, X } from 'lucide-react'
+import { Crosshair, Film, Loader2, Trash2, WandSparkles, X } from 'lucide-react'
 import type { Attachment } from '@shared/schema'
 import {
   AUTO_MAX,
   FFMPEG_ENHANCE,
+  RANGE_MIN,
   browserPlayable,
   frameName,
   timeText,
@@ -16,6 +17,7 @@ import {
   type EnhanceMethod,
   type FfmpegStatus,
   type VideoFrame,
+  type VideoRange,
   type VideoSession,
 } from '@shared/video'
 import { t } from '@shared/i18n'
@@ -28,7 +30,8 @@ import { Segmented } from '@/components/ui/segmented'
 import { Lightbox } from '@/components/ui/lightbox'
 import { FfmpegSetup } from './FfmpegSetup'
 import { FrameStrip } from './FrameStrip'
-import { Timeline, Transport } from './VideoControls'
+import { EnhanceBar } from './EnhanceBar'
+import { RangeBar, Timeline, Transport } from './VideoControls'
 import { WorkBar, type Work } from './WorkBar'
 
 /** 要截帧的视频：本机绝对路径；chosen 是上次选好的帧（再打开时照着勾上） */
@@ -90,6 +93,8 @@ function Body({
   const [count, setCount] = useState(8)
   const [methods, setMethods] = useState<EnhanceMethod[]>([])
   const [method, setMethod] = useState(FFMPEG_ENHANCE)
+  /** 截帧范围：自动截帧只在这一段里分析、截图；为空时整段 */
+  const [range, setRange] = useState<VideoRange | null>(null)
   /** 浏览器播不了这个格式：改用 FFmpeg 取的画面预览 */
   const [noPlayer, setNoPlayer] = useState(!browserPlayable(target.name))
   const [previewT, setPreviewT] = useState(0)
@@ -105,6 +110,8 @@ function Body({
   const ref = session ? { key: session.key, path: session.path } : null
   const busy = !!work
 
+  /** 增强方式（内置 ComfyUI 工作流缺不缺模型由服务端算；模型下完再拉一次） */
+  const loadMethods = async () => setMethods((await videoApi.methods()).methods)
   // 先看有没有 FFmpeg，有了再打开视频（探测时长、读回之前截过的帧）
   const chosen0 = useRef(target.chosen ?? [])
   const load = useCallback(async () => {
@@ -121,10 +128,12 @@ function Body({
           new Set(opened.frames.filter((f) => !had.has(f.file) && !had.has(f.enhanced?.file ?? '')).map((f) => f.id)),
         )
       setSession(opened)
-      setMethods((await videoApi.methods()).methods)
+      await loadMethods()
     } catch (e) {
       setError((e as Error).message)
     }
+    // loadMethods 只调接口、不读状态，不放进依赖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [target.path])
   useEffect(() => {
     void load()
@@ -253,7 +262,7 @@ function Body({
           .catch(() => {})
       }, 400)
       try {
-        return await videoApi.auto(ref, mode, count, signal)
+        return await videoApi.auto(ref, mode, count, range, signal)
       } finally {
         clearInterval(poll)
       }
@@ -292,9 +301,23 @@ function Body({
   }
   const unenhance = () => ref && void run({ kind: 'clear' }, () => videoApi.unenhance(ref))
 
-  // 键盘：空格播放 / 暂停，K 截取当前帧，← → 上一帧 / 下一帧（在输入框、下拉里打字、看大图时不接）
-  const keys = useRef({ togglePlay, keyFrame, step })
-  keys.current = { togglePlay, keyFrame, step }
+  /** 当前位置：播放器能放时以播放器为准（播放中 cur 只在 timeupdate 时更新，会慢一拍） */
+  const nowAt = () => (video.current && !noPlayer ? video.current.currentTime : cur)
+  /** 设起点 / 终点：另一端没设时取整段的头尾；设反了（起点在终点后）就把另一端放回头尾 */
+  const setIn = () => {
+    const at = nowAt()
+    const end = range && range.end - at >= RANGE_MIN ? range.end : duration
+    if (end - at >= RANGE_MIN) setRange({ start: at, end })
+  }
+  const setOut = () => {
+    const at = nowAt()
+    const start = range && at - range.start >= RANGE_MIN ? range.start : 0
+    if (at - start >= RANGE_MIN) setRange({ start, end: at })
+  }
+
+  // 键盘：空格播放 / 暂停，K 截取当前帧，← → 上一帧 / 下一帧，I / O 设截帧范围的起点 / 终点（在输入框、下拉里打字、看大图时不接）
+  const keys = useRef({ togglePlay, keyFrame, step, setIn, setOut })
+  keys.current = { togglePlay, keyFrame, step, setIn, setOut }
   const zoomOpen = useRef(false)
   zoomOpen.current = zoomAt !== undefined
   useEffect(() => {
@@ -306,6 +329,8 @@ function Body({
       else if (e.key === 'k' || e.key === 'K') keys.current.keyFrame()
       else if (e.key === 'ArrowLeft') keys.current.step(-1)
       else if (e.key === 'ArrowRight') keys.current.step(1)
+      else if (e.key === 'i' || e.key === 'I') keys.current.setIn()
+      else if (e.key === 'o' || e.key === 'O') keys.current.setOut()
       else return
       e.preventDefault()
     }
@@ -469,12 +494,21 @@ function Body({
               duration={duration}
               frames={frames}
               viewId={viewId}
+              range={range}
+              onRange={setRange}
               onSeek={(v) => {
                 setSliding(false)
                 setViewId(null)
                 seek(v)
               }}
               onFrame={showFrame}
+            />
+            <RangeBar
+              range={range}
+              disabled={busy || !(duration > RANGE_MIN)}
+              onStart={setIn}
+              onEnd={setOut}
+              onClear={() => setRange(null)}
             />
 
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -529,6 +563,12 @@ function Body({
                 : mode === 'screen'
                   ? t('录屏：跳过一动不动的画面，在操作发生的地方截，适合软件录屏。')
                   : t('均匀：按时长平均截。')}{' '}
+              {range
+                ? t('只在 {from} – {to} 里截，范围外截过的自动帧留着；', {
+                    from: timeText(range.start),
+                    to: timeText(range.end),
+                  })
+                : ''}
               {t('每个时间点会在前后 0.25 秒里挑最清楚的一张；手动截的帧不受影响。')}
             </p>
 
@@ -551,45 +591,19 @@ function Body({
               onRemove={removeOne}
             />
 
-            <div
-              className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3 py-2"
-              data-surface=""
-            >
-              <Sparkles className="h-3.5 w-3.5 text-muted" />
-              <span className="text-body text-fg">{t('画面增强')}</span>
-              <select
-                aria-label={t('增强方式')}
-                value={method}
-                onChange={(e) => setMethod(e.target.value)}
-                className="h-8 max-w-[260px] min-w-0 rounded-lg border border-line-strong bg-field px-2 text-body text-fg"
-              >
-                {methods.map((m) => (
-                  <option key={m.id} value={m.id} title={m.note}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={busy || !chosen.length}
-                onClick={enhance}
-                title={!frames.length ? t('先截几帧再增强') : !chosen.length ? t('先勾选要处理的帧') : undefined}
-              >
-                {work?.kind === 'enhance' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {t('处理选中的帧（{n}）', { n: chosen.length })}
-              </Button>
-              {anyEnhanced && (
-                <Button variant="ghost" size="sm" disabled={busy} onClick={unenhance}>
-                  {t('去掉增强')}
-                </Button>
-              )}
-              <span className="min-w-0 flex-1 text-footnote text-subtle">
-                {!frames.length
-                  ? t('先截几帧，勾选的帧会按这个方式处理')
-                  : `${methods.find((m) => m.id === method)?.note ?? ''} · ${t('增强会补出原来没有的细节，读文字、数字以原图为准')}`}
-              </span>
-            </div>
+            <EnhanceBar
+              methods={methods}
+              method={method}
+              onMethod={setMethod}
+              busy={busy}
+              running={work?.kind === 'enhance'}
+              frames={frames.length}
+              chosen={chosen.length}
+              anyEnhanced={anyEnhanced}
+              onEnhance={enhance}
+              onUnenhance={unenhance}
+              onReload={() => void loadMethods().catch(() => {})}
+            />
           </>
         )}
       </div>

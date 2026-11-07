@@ -7,32 +7,30 @@
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { t } from '../../shared/i18n.ts'
-import { chainSize, needsInputImage } from '../../shared/local-image.ts'
 import {
   AUTO_MAX,
-  FFMPEG_ENHANCE,
   VideoFrame,
-  comfyMethod,
+  clampRange,
+  isFullRange,
   isVideoFile,
   mergeAuto,
-  parseComfyMethod,
   parseProbe,
-  pickTimes,
+  rangePickTimes,
+  rangeUniformTimes,
   sharpestIndex,
   showinfoTimes,
   sortFrames,
-  uniformTimes,
   ffmpegTime,
   type AutoMode,
   type AutoProgress,
-  type EnhanceMethod,
   type VideoInfo,
+  type VideoRange,
   type VideoSession,
 } from '../../shared/video.ts'
-import { allWorkflows, localGenerateChain, userChains } from '../comfy.ts'
+import { enhanceMethods, enhanceOne } from './enhance.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from '../store.ts'
 import { ffmpegBin, runFfmpeg } from './ffmpeg.ts'
 
@@ -138,19 +136,24 @@ async function grab(full: string, key: string, time: number, info: VideoInfo) {
   return { id, file: out, time: at, bytes: r.stdout.length, ...pngSize(r.stdout) }
 }
 
-/** 在 time 前后 0.25 秒里挑最清楚的那一刻（避开运动模糊、转场）；评不出来就用原来的时间 */
-async function sharpestNear(full: string, time: number, info: VideoInfo, signal?: AbortSignal) {
+/**
+ * 在 time 前后 0.25 秒里挑最清楚的那一刻（避开运动模糊、转场）；评不出来就用原来的时间。
+ * 选了截帧范围时只在范围里挑，不会挑到范围外面去
+ */
+async function sharpestNear(full: string, time: number, info: VideoInfo, range: VideoRange, signal?: AbortSignal) {
   const fps = 8
   const w = 160
   const h = Math.max(2, Math.round((w * info.height) / Math.max(1, info.width) / 2) * 2)
-  const start = Math.max(0, time - 0.25)
+  const start = Math.max(range.start, time - 0.25)
+  const len = Math.min(0.5, range.end - start)
+  if (!(len > 0.05)) return time
   const r = await runFfmpeg(
     await ffmpegBin(),
     [
       '-ss',
       start.toFixed(3),
       '-t',
-      '0.5',
+      len.toFixed(3),
       '-i',
       full,
       '-an',
@@ -164,55 +167,91 @@ async function sharpestNear(full: string, time: number, info: VideoInfo, signal?
   )
   if (r.error) return time
   const i = sharpestIndex(new Uint8Array(r.stdout), w, h)
-  return i < 0 ? time : Math.min(info.duration, start + i / fps)
+  return i < 0 ? time : Math.min(range.end, start + i / fps)
 }
 
-/** 自动截帧的候选时间点：画面变化（场景切换分数）或录屏（去掉和上一帧几乎一样的画面） */
+/**
+ * 自动截帧的候选时间点：画面变化（场景切换分数）或录屏（去掉和上一帧几乎一样的画面）。
+ * 选了范围时只解码这一段（-ss 放在 -i 前面快速跳到起点，-t 限定长度），返回的时间是相对范围起点的秒数
+ */
 async function candidates(
   full: string,
   mode: AutoMode,
-  info: VideoInfo,
+  range: VideoRange,
   signal?: AbortSignal,
   onRatio?: (r: number) => void,
 ) {
   if (mode === 'uniform') return []
+  const len = range.end - range.start
   const pick =
     mode === 'scene'
       ? "fps=5,scale=320:-2,split[a][b];[a]select='gt(scene\\,0.3)',showinfo[o]"
       : 'fps=4,scale=480:-2,split[a][b];[a]mpdecimate=hi=64*24:lo=64*8:frac=0.1,showinfo[o]'
   // 整段解码一遍：给足时间（大约按视频时长算），长视频也不会被提前掐掉
-  const timeoutMs = Math.max(60_000, info.duration * 3000)
+  const timeoutMs = Math.max(60_000, len * 3000)
   // 进度：ffmpeg 状态行的「time=…」按输出算，挑帧那一路画面没变化时一帧都不出、一直是 N/A，
   // 所以分出一路每秒一帧的画面单独输出到 null，它的 time 就是已经解码到的位置，除以时长就是分析到哪儿了
   const onStderr = (chunk: string) => {
     const at = ffmpegTime(chunk)
-    if (at !== undefined && info.duration > 0) onRatio?.(Math.min(1, at / info.duration))
+    if (at !== undefined && len > 0) onRatio?.(Math.min(1, at / len))
   }
   const graph = `[0:v]${pick};[b]fps=1[p]`
   const r = await runFfmpeg(
     await ffmpegBin(),
-    ['-i', full, '-an', '-filter_complex', graph, '-map', '[o]', '-f', 'null', '-', '-map', '[p]', '-f', 'null', '-'],
+    [
+      ...(range.start > 0 ? ['-ss', range.start.toFixed(3)] : []),
+      '-t',
+      len.toFixed(3),
+      '-i',
+      full,
+      '-an',
+      '-filter_complex',
+      graph,
+      '-map',
+      '[o]',
+      '-f',
+      'null',
+      '-',
+      '-map',
+      '[p]',
+      '-f',
+      'null',
+      '-',
+    ],
     { timeoutMs, signal, onStderr },
   )
   if (r.error) throw new Error(t('分析画面失败：{error}', { error: r.error }))
   return showinfoTimes(r.stderr)
 }
 
-export async function autoFrames(key: string, file: string, mode: AutoMode, count: number, signal?: AbortSignal) {
+/**
+ * 自动截帧：在 range（不传就是整段）里按 mode 挑 count 个时间点截图。
+ * 范围里原来的自动帧整批换掉，范围外的自动帧和所有手动帧都留着
+ */
+export async function autoFrames(
+  key: string,
+  file: string,
+  mode: AutoMode,
+  count: number,
+  signal?: AbortSignal,
+  want?: Partial<VideoRange> | null,
+) {
   return serial(key, async () => {
     const s = await session(key, file)
     const n = Math.min(Math.max(1, Math.round(count)), AUTO_MAX)
+    const range = clampRange(want, s.info.duration)
+    const partial = !isFullRange(range, s.info.duration)
     const fresh: VideoFrame[] = []
     try {
       if (mode !== 'uniform') autoProgress.set(key, { stage: 'analyze', done: 0, total: 1 })
-      const found = await candidates(s.path, mode, s.info, signal, (r) =>
+      const found = await candidates(s.path, mode, range, signal, (r) =>
         autoProgress.set(key, { stage: 'analyze', done: r, total: 1 }),
       )
-      const times = mode === 'uniform' ? uniformTimes(s.info.duration, n) : pickTimes(found, s.info.duration, n)
+      const times = mode === 'uniform' ? rangeUniformTimes(range, n) : rangePickTimes(found, range, n)
       autoProgress.set(key, { stage: 'grab', done: 0, total: times.length })
-      for (const want of times) {
+      for (const t0 of times) {
         if (signal?.aborted) throw new Error(t('已取消'))
-        const at = await sharpestNear(s.path, want, s.info, signal)
+        const at = await sharpestNear(s.path, t0, s.info, range, signal)
         const g = await grab(s.path, key, at, s.info)
         fresh.push({ ...g, source: 'auto' })
         autoProgress.set(key, { stage: 'grab', done: fresh.length, total: times.length })
@@ -224,9 +263,9 @@ export async function autoFrames(key: string, file: string, mode: AutoMode, coun
     } finally {
       autoProgress.delete(key)
     }
-    // 自动帧整批换掉，手动帧保留
+    // 自动帧整批换掉（选了范围时只换范围里的），手动帧保留
     const old = s.frames.filter((f) => f.source === 'auto')
-    s.frames = mergeAuto(s.frames, fresh)
+    s.frames = mergeAuto(s.frames, fresh, partial ? range : undefined)
     await save(s)
     await removeFiles(old.filter((f) => !s.frames.includes(f)))
     return s
@@ -259,72 +298,6 @@ export async function removeFrames(key: string, file: string, o: { which?: 'manu
     await removeFiles(gone)
     return s
   })
-}
-
-/** 能用的增强方式：内置 FFmpeg 锐化 + ComfyUI 里吃一张图的工作流和工作流链 */
-export async function enhanceMethods(): Promise<EnhanceMethod[]> {
-  const out: EnhanceMethod[] = [
-    { id: FFMPEG_ENHANCE, label: t('放大锐化（FFmpeg）'), note: t('2 倍放大再锐化，不用模型，马上出结果') },
-  ]
-  const workflows = await allWorkflows().catch(() => [])
-  for (const w of workflows)
-    if (needsInputImage(w.graph))
-      out.push({ id: comfyMethod('wf', w.id), label: w.name, note: t('本机 ComfyUI 工作流') })
-  const byId = new Map(workflows.map((w) => [w.id, w]))
-  for (const c of await userChains().catch(() => [])) {
-    const first = byId.get(c.steps[0]?.workflowId ?? '')
-    if (first && needsInputImage(first.graph))
-      out.push({ id: comfyMethod('chain', c.id), label: c.name, note: t('本机 ComfyUI 工作流链') })
-  }
-  return out
-}
-
-/** 增强一张帧图，返回增强图的内容 */
-async function enhanceOne(method: string, frame: VideoFrame, signal?: AbortSignal): Promise<Buffer> {
-  if (method === FFMPEG_ENHANCE) {
-    // 太大的图只放大到长边 4096：再大模型也看不过来，只会白占 token
-    const scale = Math.max(frame.width, frame.height) * 2 > 4096 ? 4096 / Math.max(frame.width, frame.height, 1) : 2
-    const r = await runFfmpeg(
-      await ffmpegBin(),
-      [
-        '-i',
-        frame.file,
-        '-vf',
-        `scale=trunc(iw*${scale.toFixed(4)}/2)*2:trunc(ih*${scale.toFixed(4)}/2)*2:flags=lanczos,unsharp=5:5:0.8:5:5:0`,
-        '-f',
-        'image2pipe',
-        '-c:v',
-        'png',
-        'pipe:1',
-      ],
-      { timeoutMs: 60_000, signal, maxOut: 300 * 1024 * 1024 },
-    )
-    if (r.error || !r.stdout.length)
-      throw new Error(t('增强失败：{error}', { error: r.error ?? r.stderr.trim().split('\n').pop() ?? '' }))
-    return r.stdout
-  }
-  const comfy = parseComfyMethod(method)
-  if (!comfy) throw new Error(t('不认识的增强方式：{id}', { id: method }))
-  const chain =
-    comfy.kind === 'chain'
-      ? (await userChains()).find((c) => c.id === comfy.id)
-      : { id: `video-${comfy.id}`, name: comfy.id, steps: [{ workflowId: comfy.id, prompt: '' }], updatedAt: '' }
-  if (!chain) throw new Error(t('工作流链已经不在了，请重新选一种增强方式'))
-  const images: Buffer[] = []
-  await localGenerateChain(
-    {
-      chain,
-      image: await readFile(frame.file),
-      prompt: '',
-      negative: '',
-      ...chainSize(frame.width, frame.height),
-      count: 1,
-      onImage: (b) => images.push(b),
-    },
-    signal ?? new AbortController().signal,
-  )
-  if (!images[0]) throw new Error(t('ComfyUI 没有返回图片'))
-  return images[0]
 }
 
 /** 增强选中的帧；已经增强过的换成新方式的结果 */

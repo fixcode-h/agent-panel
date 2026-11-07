@@ -242,8 +242,8 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
     'Fewer steps or quantized versions: faster and lighter on VRAM, good for batches of drafts and smaller GPUs',
   低显存: 'Low VRAM',
   图片处理: 'Image processing',
-  '不吃提示词，处理一张已有的图：去背景（透明底的 PNG）、放大':
-    'No prompt needed: process an existing image, like removing the background (transparent PNG) or upscaling',
+  '不吃提示词，处理一张已有的图：去背景（透明底的 PNG）、提升清晰度、去噪点、画质修复':
+    'No prompt needed: process an existing image, like removing the background (transparent PNG), sharpening, denoising or restoring quality',
   '按主体分割抠图，输出带透明通道的 PNG：图标去底、把生成的图叠到别的背景上时用':
     'Segments the subject and outputs a PNG with transparency: for icons without a backdrop, or layering generated art on another background',
   '去背景（透明底 PNG）': 'Remove background (transparent PNG)',
@@ -428,4 +428,21 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   试生成的尺寸: 'Test run size',
   试生成的张数: 'Test run image count',
   导入的: 'Imported',
+  // 画质修复类内置工作流（shared/comfy-restore.ts）
+  '提升清晰度、去噪点：放大的同时去掉噪点、压缩块和轻微模糊，64 MB、几秒一张；视频截帧的画面增强首选':
+    'Sharpen and denoise: upscales while removing noise, compression blocks and mild blur; 64 MB, a few seconds per image. The first choice for enhancing video frames',
+  '画质修复：一步扩散模型，去噪、去模糊、补细节都比 Real-ESRGAN 强，适合很糊、噪点很重的画面；慢，要显存':
+    'Quality restoration: a one-step diffusion model that denoises, deblurs and restores detail better than Real-ESRGAN, for very blurry or noisy images; slower and needs VRAM',
+  '提升清晰度 · 2 倍（Real-ESRGAN）': 'Sharpen · 2x (Real-ESRGAN)',
+  '模型放大 2 倍，同时去掉噪点、压缩块和轻微模糊：截图、视频帧、低清素材变清楚时用；64 MB 模型，几秒一张':
+    'Model upscale 2x while removing noise, compression blocks and mild blur: for making screenshots, video frames and low-res assets clearer; 64 MB model, a few seconds per image',
+  '去噪点 · 尺寸不变（Real-ESRGAN）': 'Denoise · same size (Real-ESRGAN)',
+  '尺寸不变，只去掉噪点、压缩块和色带：暗光录像、高压缩视频、颗粒重的截图用':
+    'Keeps the size and only removes noise, compression blocks and banding: for low-light footage, heavily compressed video and grainy screenshots',
+  '提升清晰度 · 4 倍（Real-ESRGAN）': 'Sharpen · 4x (Real-ESRGAN)',
+  '模型放大 4 倍：图很小（几百像素）时用；图本来就大时 4 倍会很大，优先用 2 倍':
+    'Model upscale 4x: for very small images (a few hundred pixels); large images get huge at 4x, so prefer 2x',
+  '画质修复（SeedVR2）': 'Restore quality (SeedVR2)',
+  '一步扩散的修复模型：去噪、去模糊、补细节，很糊或噪点很重的画面用；缩放到约 200 万像素输出，要 12GB 左右显存':
+    'One-step diffusion restoration: denoises, deblurs and restores detail for very blurry or noisy images; outputs about 2 megapixels and needs around 12 GB of VRAM',
 }
