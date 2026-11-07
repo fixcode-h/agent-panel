@@ -214,11 +214,20 @@ export const stageConfirm = (c: Pick<ChildEntry, 'resolved' | 'gone'> & { reques
   c.request?.kind === 'confirm' && !c.resolved && !c.gone
 
 /**
- * 运行区列的子对话：转圈的那一批（visibleChildren）加上等诊断报告时又提了问的、等你确认工作流阶段结果的；
- * 顺序同 sortChildren
+ * 在等你处理的子对话（提问、等你操作 request_user_action、权限确认、它下面的子对话在等）：
+ * 对话还没做完，只是卡在你这里。以前运行区只列转圈的（visibleChildren），这一类不转圈就整行消失，
+ * 父对话里看不出有个子对话在等你（用户 2026-11-07 报：子对话「等用户操作」时父对话的子对话列表里没有它）。
+ * 和 reportAsking 同一条线：停下的、已收起的不算（没人再处理），已解决的也不算
+ */
+export const childNeedsYou = (c: ChildEntry) =>
+  childIcon(c) === 'waiting' && c.status !== 'stopped' && !c.gone && !c.resolved
+
+/**
+ * 运行区列的子对话：转圈的那一批（visibleChildren）加上在等你处理的（提问、等你操作、等诊断报告时又提了问）、
+ * 等你确认工作流阶段结果的；顺序同 sortChildren
  */
 export function listedChildren<C extends ChildEntry & { request?: Pick<ChildRequest, 'kind'> }>(children: C[]): C[] {
   const shown = new Set(visibleChildren(children))
-  const extra = children.filter((c) => !shown.has(c) && (reportAsking(c) || stageConfirm(c)))
+  const extra = children.filter((c) => !shown.has(c) && (reportAsking(c) || childNeedsYou(c) || stageConfirm(c)))
   return extra.length ? sortChildren([...visibleChildren(children), ...extra]) : visibleChildren(children)
 }

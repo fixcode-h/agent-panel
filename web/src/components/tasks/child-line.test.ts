@@ -198,9 +198,34 @@ test('等诊断报告确认时又提了问：运行区仍列这一行，标签�
   const labels = childLabels(asking, '你').map((l) => l.text)
   assert.ok(labels.includes('等你选择'))
   assert.ok(labels.includes('报告待确认'))
-  // 停下的、已收起的、没有诊断报告只是在提问的：照旧不列（提问只在输入框上方显示）
+  // 停下的、已收起的：照旧不列（没人再处理它的提问）
   const stopped = closedWaiting({ ...base, id: 's', asking: 1, status: 'stopped', stopReason: 'user' })
   const gone = closedWaiting({ ...base, id: 'g', asking: 1, gone: true })
-  const plain = closedWaiting({ ...base, id: 'p', asking: 1, diagnosis: false })
-  assert.deepEqual(listedChildren([stopped, gone, plain]), [])
+  assert.deepEqual(listedChildren([stopped, gone]), [])
+})
+
+test('子对话在提问 / 等你操作：父对话运行区也列这一行（不只诊断报告、阶段确认）', () => {
+  const base = { cliAlive: true, background: 0, plan: undefined, waiting: undefined, status: 'done' as const }
+  // 用户 2026-11-07 报：子对话「等用户操作」时，父对话消息下面的子对话列表里没有它
+  const action = closedWaiting({
+    ...base,
+    id: 'act',
+    action: true,
+    waiting: { kind: 'action', title: '重启编辑器复现一次' },
+  })
+  const asking = closedWaiting({ ...base, id: 'ask', asking: 1 })
+  const permit = closedWaiting({ ...base, id: 'req', requests: 1 })
+  for (const c of [action, asking, permit]) assert.equal(childIcon(c), 'waiting', c.id)
+  assert.deepEqual(
+    listedChildren([action, asking, permit])
+      .map((c) => c.id)
+      .sort(),
+    ['act', 'ask', 'req'],
+  )
+  assert.ok(childLabels(action, '你').some((l) => l.text === '等你操作'))
+  // 停下的、已收起的、已解决的：不再算在等你
+  const stopped = closedWaiting({ ...base, id: 's', action: true, status: 'stopped', stopReason: 'user' })
+  const gone = closedWaiting({ ...base, id: 'g', asking: 1, gone: true })
+  const resolved = closedWaiting({ ...base, id: 'r', asking: 1, resolved: true })
+  assert.deepEqual(listedChildren([stopped, gone, resolved]), [])
 })

@@ -20,6 +20,7 @@ import {
   childClosedHint,
   childDirty,
   childNote,
+  childNeedsYou,
   listedChildren,
   stageConfirm,
   staleLine,
@@ -87,7 +88,8 @@ export function ChildrenBar({
   const asking = kids.filter((c) => c.asking && !c.resolved && !c.gone)
   // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、运行区的子对话是同一套判定（见 listedChildren）；
   // 等你确认工作流阶段结果、等诊断报告又提了问的也一直留着，不只在输入框上方另起一条
-  const busy = listedChildren(kids)
+  // 只在提问的子对话左边已经有「「X」请你选择」那个按钮，这一行的小块里不再重复放它
+  const busy = listedChildren(kids).filter((c) => !asking.includes(c) || c.diagnosis || stageConfirm(c))
   // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍
   const { running: working, total } = childCounts(kids)
   // 「运行中」列转圈的那些：计划没做完、后台命令还没回、已解决但还在跑的子对话也算（见 listedChildren）
@@ -217,10 +219,12 @@ export function ChildrenBar({
                       )}
                     >
                       {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
+                      {/* 等你处理（等你操作、等你确认）的也转圈，用提醒色：和阶段待确认、报告待确认一样 */}
                       <Loader2
                         className={cn(
                           'h-3 w-3 shrink-0 animate-spin',
-                          stale?.cls ?? (c.diagnosis || stageConfirm(c) ? 'text-warning' : 'text-accent-text'),
+                          stale?.cls ??
+                            (c.diagnosis || stageConfirm(c) || childNeedsYou(c) ? 'text-warning' : 'text-accent-text'),
                         )}
                       />
                       {c.analysis && <AnalysisMark kind={c.analysis} />}

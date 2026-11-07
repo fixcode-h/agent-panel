@@ -205,7 +205,7 @@ await runShard(import.meta.filename, async (api) => {
       errors.push(`输入框：名下还有子对话在跑时，占位文字要说明在等什么（实际「${ph}」）`)
     if (!ph.includes('可以直接输入要求')) errors.push('输入框：等子对话时要说明还能直接输入要求')
   }
-  // 运行区的子对话：五个在转圈（三个在跑、一个在等后台命令、一个已标记解决但还在跑），都要列出来（见 shared/task.ts 的 visibleChildren）。
+  // 运行区的子对话：五个在转圈（三个在跑、一个在等后台命令、一个已标记解决但还在跑），加一个在等你操作的，都要列出来（见 listedChildren）。
   // 在跑又带着没做完计划的也算「执行中」，不能一边转圈一边归到「未完成」。输入框上方不再有子对话栏，只看运行区
   {
     {
@@ -247,7 +247,9 @@ await runShard(import.meta.filename, async (api) => {
             const sepBox = tag.closest('.border-l')
             // 耗时是行尾那个等宽数字（tabular-nums），它要贴住行右边
             const ms = [...row.querySelectorAll('span')].find((s) => (s.className || '').includes('tabular-nums'))
-            const rowRight = row.getBoundingClientRect().right
+            // 行尾有按钮（去操作、查看报告）时耗时贴着按钮，量到按钮左边
+            const after = ms?.nextElementSibling
+            const rowRight = after ? after.getBoundingClientRect().left : row.getBoundingClientRect().right
             return {
               gap: Math.round(tag.getBoundingClientRect().left - title.getBoundingClientRect().right),
               // 分隔线不只看类名：类还在但样式被覆盖时也要能发现
@@ -261,9 +263,16 @@ await runShard(import.meta.filename, async (api) => {
             }
           })
           .filter(Boolean)
-        return { runs, align }
+        const act = [...document.querySelectorAll('[aria-label="运行中"] button[aria-label="去操作"]')].length > 0
+        return { runs, align, act }
       })
-      if (boxes.runs.length !== 5) errors.push(`运行区：应该列出 5 个在跑的子对话，实际 ${boxes.runs.length} 个`)
+      // 另两行在等你处理：「排查路牌偏移」等你操作（request_user_action，行尾给「去操作」）、「购物车缓存方案」在提问，
+      // 也要列（用户 2026-11-07 报：子对话等用户操作时父对话的子对话列表里没有它，见 child-line.ts 的 childNeedsYou）
+      if (boxes.runs.length !== 6)
+        errors.push(`运行区：应该列出 6 个子对话（5 个在跑、1 个等你操作），实际 ${boxes.runs.length} 个`)
+      if (!boxes.runs.some((x) => x.includes('排查路牌偏移') && /等.{1,6}操作/.test(x)))
+        errors.push('运行区：等你操作的子对话没有列出来，或者行上没有「等…操作」状态')
+      if (!boxes.act) errors.push('运行区：等你操作的子对话行尾没有「去操作」按钮')
       // 状态标签：计划没做完的写「计划 1/2」、在等后台命令的写「等结果」+ 在等什么、
       // 已标记解决但还在跑的仍然是「执行中」（完成标记不能盖住还在跑）
       for (const tag of ['计划 1/2', '等结果', '等 1 个后台命令', '执行中']) {
