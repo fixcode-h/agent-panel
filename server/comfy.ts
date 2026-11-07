@@ -502,6 +502,10 @@ export async function userWorkflows(): Promise<ComfyWorkflow[]> {
   })
 }
 export const allWorkflows = async () => [...BUILTIN_WORKFLOWS, ...(await userWorkflows())]
+/** ComfyUI 能不能用：面板装好了，或者设置里填了已有的 ComfyUI 地址（视频帧增强列方式时用，不探测 Python 和显卡） */
+export const comfyUsable = async () => !!(await getSettings()).imageGen.local.url || existsSync(marker())
+/** 模型文件（LOCAL_FILES 的 id）下载好了没有 */
+export const fileDownloaded = (id: string) => existsSync(filePath(id))
 let writing = Promise.resolve()
 async function saveWorkflows(fn: (list: ComfyWorkflow[]) => ComfyWorkflow[]) {
   const next = writing.then(async () => writeJsonAtomic(WORKFLOWS_FILE(), fn(await userWorkflows())))
