@@ -80,7 +80,15 @@ export function RestoreWorkspace({
       />
     )
   else if (step === 'assets')
-    view = <AssetsView restore={r} images={design.images} url={imgUrl} min={DEFAULT_THRESHOLDS.assetSim} />
+    view = (
+      <AssetsView
+        restore={r}
+        images={design.images}
+        url={imgUrl}
+        partsUrl={r.parts ? designFileUrl(id, r.parts.file) : undefined}
+        min={DEFAULT_THRESHOLDS.assetSim}
+      />
+    )
   else if (step === 'verify')
     view = (
       <VerifyView

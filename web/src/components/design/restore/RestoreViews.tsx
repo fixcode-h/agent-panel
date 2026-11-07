@@ -6,31 +6,50 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 
-/** 切图这一步：干净背景放最前面，其余按元素顺序；每张标出和原画的相似度、被几个元素共用 */
+/**
+ * 切图这一步：干净背景、拆件图放最前面，其余按元素顺序；每张标出被几个元素共用，
+ * 从原画抠的标和原画的相似度，从拆件图切的标「拆」和对上的分数
+ */
 export function AssetsView({
   restore,
   images,
   url,
+  partsUrl,
   min,
 }: {
   restore: RestoreState
   images: DesignImage[]
   url: (img: DesignImage) => string | undefined
+  partsUrl?: string
   min: number
 }) {
   const list = images.filter((i) => i.id.startsWith('rs_'))
   if (!list.length) return <Empty text={t('还没有切图：确认上一步后自动从原画里抠')} />
   const uses = new Map<string, number>()
   for (const e of restore.elements) if (e.image && !e.hidden) uses.set(e.image, (uses.get(e.image) ?? 0) + 1)
-  const simOf = (id: string) => restore.elements.find((e) => `rs_${e.id}` === id)?.sim
+  const elementOf = (id: string) => restore.elements.find((e) => `rs_${e.id}` === id)
   const ordered = [...list.filter((i) => i.id === restore.plate), ...list.filter((i) => i.id !== restore.plate)]
   return (
     <div
       data-restore-assets
       className="grid min-h-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(132px,1fr))] gap-2 overflow-y-auto bg-canvas p-3"
     >
+      {partsUrl && (
+        <figure data-restore-parts className="col-span-2 row-span-2 flex flex-col gap-1 rounded-lg bg-canvas-bar p-1.5">
+          <div className="grid aspect-square place-items-center overflow-hidden rounded-md bg-canvas-checker">
+            <img src={partsUrl} alt={t('拆件图')} className="max-h-full max-w-full object-contain" />
+          </div>
+          <figcaption
+            className="truncate text-caption text-canvas-fg"
+            title={t('图片模型照原画把每个元素单独画在透明底上，切图从这里切')}
+          >
+            {t('拆件图')}
+          </figcaption>
+        </figure>
+      )}
       {ordered.map((img) => {
-        const sim = simOf(img.id)
+        const e = elementOf(img.id)
+        const sim = e?.sim
         const n = uses.get(img.id) ?? 0
         const plate = img.id === restore.plate
         return (
@@ -45,6 +64,15 @@ export function AssetsView({
               <span className="min-w-0 flex-1 truncate">{plate ? t('干净背景') : img.name}</span>
               {img.nineSlice && <span title={t('九宫格：拉伸时边框不变形')}>9</span>}
               {n > 1 && <span title={t('{n} 个元素共用这张', { n })}>×{n}</span>}
+              {e?.assetFrom === 'parts' && (
+                <span
+                  data-from="parts"
+                  className="tabular-nums text-canvas-subtle"
+                  title={t('从拆件图切的，和原画对上的分数 {s}', { s: (e.partScore ?? 0).toFixed(2) })}
+                >
+                  {t('拆')} {(e.partScore ?? 0).toFixed(2)}
+                </span>
+              )}
               {sim !== undefined && (
                 <span className={cn('tabular-nums', sim < min ? 'text-warning' : 'text-canvas-subtle')}>
                   {sim.toFixed(2)}

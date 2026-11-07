@@ -1,8 +1,10 @@
 import type { Design } from '@shared/design'
-import type { Img } from '@shared/raster'
+import { blank, crop, paste, removeFlatBackground, type Img } from '@shared/raster'
+import { fillHoles, holesOf } from '@shared/restore/assets'
+import { parentsOf } from '@shared/restore/compile'
 import { DEFAULT_THRESHOLDS } from '@shared/restore/thresholds'
 import { labelNumbers, type LabelReply } from '@shared/restore/label'
-import { RESTORE_STEPS, RestoreElement, stepOf, type RestoreStep } from '@shared/restore/schema'
+import { CONTAINER_KINDS, RESTORE_STEPS, RestoreElement, stepOf, type RestoreStep } from '@shared/restore/schema'
 import { acceptDiff, confirmStep, editElements, runStep, setSource, stateOf, stepName } from '@shared/restore/steps'
 import { kindPrefix } from '@shared/restore/detect'
 import { demoMs } from './demo-speed'
@@ -91,6 +93,43 @@ function fakeLabel(list: RestoreElement[]): LabelReply {
   return { elements, groups: [], missing: [], note: '演示：类型和名字是按位置猜的，真实环境里由模型看图标注。' }
 }
 
+/**
+ * 演示里没有图片模型：拆件图按原画里的元素框现拼一张——容器挖掉里面的子元素补成自己的底色（模型画的是空框），
+ * 图标去掉平底，一件件按行排在透明底上，间距 24 像素
+ */
+function fakePartsSheet(art: Img, elements: RestoreElement[]): Img {
+  const live = elements.filter((e) => !e.hidden)
+  const parents = parentsOf(live)
+  const items = live
+    .filter((e) => e.kind !== 'background' && e.kind !== 'text')
+    .map((e) => {
+      const b = { x: Math.round(e.box.x), y: Math.round(e.box.y), w: Math.round(e.box.w), h: Math.round(e.box.h) }
+      const raw = crop(art, b.x, b.y, b.w, b.h)
+      if (!CONTAINER_KINDS.includes(e.kind)) return removeFlatBackground(raw)
+      const holes = holesOf(e, live, parents)
+      return holes.length ? fillHoles(raw, holes) : raw
+    })
+  const W = art.width
+  const gap = 24
+  let x = gap
+  let y = gap
+  let row = 0
+  const at: [number, number][] = []
+  for (const im of items) {
+    if (x + im.width + gap > W && x > gap) {
+      x = gap
+      y += row + gap
+      row = 0
+    }
+    at.push([x, y])
+    x += im.width + gap
+    row = Math.max(row, im.height)
+  }
+  const sheet = blank(W, y + row + gap, [0, 0, 0, 0])
+  items.forEach((im, i) => paste(sheet, im, at[i][0], at[i][1]))
+  return sheet
+}
+
 function start(d: Full, step: RestoreStep, feedback = '') {
   const r = stateOf(d)
   r.steps[step] = { ...stepOf(r, step), status: 'running', error: undefined }
@@ -104,6 +143,7 @@ function start(d: Full, step: RestoreStep, feedback = '') {
         store: async (img) => ({ file: encode(img), width: img.width, height: img.height }),
         label: async (_overlay, _prompt, list) => fakeLabel(list),
         layer: decode,
+        partsSheet: async () => fakePartsSheet(await decode(r.source!.file), r.elements),
         thresholds: DEFAULT_THRESHOLDS,
         now,
       },

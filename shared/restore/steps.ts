@@ -6,6 +6,7 @@ import { checkAdapt } from './adapt.ts'
 import { buildWeb, webImages } from './build-web.ts'
 import { flatStyle } from './css.ts'
 import { extractAssets } from './assets.ts'
+import { matchParts, partsPrompt, splitParts, unmatched, type PartMatch } from './parts.ts'
 import { deriveState } from './states.ts'
 import { compileRestore } from './compile.ts'
 import { detectElements } from './detect.ts'
@@ -44,8 +45,10 @@ export interface RestoreCtx {
   label?: (overlay: Img, prompt: (image: string) => string, elements: RestoreElement[]) => Promise<LabelReply>
   thresholds: RestoreThresholds
   now: () => string
-  /** 读 PSD 图层存下来的文件（元素的 layer / states 填的文件名）；原画不是 PSD 时用不到 */
+  /** 读设计图片目录里存下来的文件（PSD 图层、拆件图） */
   layer?: (file: string) => Promise<Img>
+  /** 让图片模型照原画出一张拆件图（原画当参考图）；不给就直接从原画抠 */
+  partsSheet?: (prompt: string) => Promise<Img>
 }
 
 /** PSD 导入时读不全的东西：写在原画那一步的卡上 */
@@ -154,7 +157,7 @@ export async function runStep(step: RestoreStep, ctx: RestoreCtx, feedback = '')
       card = await runElements(ctx, r, feedback)
       break
     case 'assets':
-      card = await runAssets(ctx, r)
+      card = await runAssets(ctx, r, feedback)
       break
     case 'build':
       card = runBuild(ctx, r)
@@ -290,12 +293,15 @@ function psdElements(r: RestoreState): StepCard {
   }
 }
 
-async function runAssets(ctx: RestoreCtx, r: RestoreState): Promise<StepCard> {
+async function runAssets(ctx: RestoreCtx, r: RestoreState, feedback: string): Promise<StepCard> {
   const d = ctx.design
   const art = await ctx.art()
   // PSD 图层的像素直接当切图
   const given = new Map<string, Img>()
   if (ctx.layer) for (const e of r.elements) if (e.layer && !e.hidden) given.set(e.id, await ctx.layer(e.layer))
+  // 不是 PSD：从拆件图里对上的件当切图，对不上的才从原画抠
+  const sheet = given.size ? undefined : await partsOf(ctx, r, art, feedback)
+  for (const [id, m] of sheet?.matched ?? []) given.set(id, m.img)
   const x = extractAssets(art, r.elements, given)
   const k = { x: d.designSize.X / art.width, y: d.designSize.Y / art.height }
   const byElement = new Map(r.elements.map((e) => [e.id, e]))
@@ -366,19 +372,33 @@ async function runAssets(ctx: RestoreCtx, r: RestoreState): Promise<StepCard> {
     const sl = own?.same ? sliceOf.get(own.same) : own
     return sl ? flatStyle(sl.img) : undefined
   }
-  r.elements = r.elements.map((e) => ({ ...e, image: imageOf.get(e.id), sim: x.sims[e.id], css: cssOf(e) }))
+  r.elements = r.elements.map((e) => {
+    const m = sheet?.matched.get(e.id)
+    return {
+      ...e,
+      image: imageOf.get(e.id),
+      // 拆件是模型重画的，不和原画比逐像素相似度，记对上的分数
+      sim: m ? undefined : x.sims[e.id],
+      partScore: m?.score,
+      assetFrom: m ? ('parts' as const) : e.layer ? ('layer' as const) : given.has(e.id) ? undefined : ('art' as const),
+      css: cssOf(e),
+    }
+  })
   const bg = r.elements.find((e) => e.kind === 'background')
   r.plate = bg ? imageOf.get(bg.id) : undefined
-  const sims = Object.values(x.sims)
+  const sims = r.elements.flatMap((e) => (e.sim === undefined ? [] : [e.sim]))
   const avg = sims.length ? sims.reduce((s, v) => s + v, 0) / sims.length : 1
   const low = r.elements.filter((e) => !e.hidden && e.sim !== undefined && e.sim < ctx.thresholds.assetSim)
   const shared = x.slices.filter((s) => s.same).length
   return {
     conclusion: t('抠出 {n} 张切图，{s} 个元素共用同一张', { n: images.length, s: shared }),
     todo: t('看一眼切图和干净背景；有不像的可以在图片里精修。确认后搭控件树'),
-    warnings: low
-      .slice(0, 5)
-      .map((e) => t('{name} 拼回去和原画只有 {s} 像', { name: e.name || e.id, s: (e.sim ?? 0).toFixed(2) })),
+    warnings: [
+      ...(sheet?.warnings ?? []),
+      ...low
+        .slice(0, 5)
+        .map((e) => t('{name} 拼回去和原画只有 {s} 像', { name: e.name || e.id, s: (e.sim ?? 0).toFixed(2) })),
+    ],
     diff: '',
     metrics: [
       { label: t('切图'), value: String(images.length) },
@@ -386,6 +406,7 @@ async function runAssets(ctx: RestoreCtx, r: RestoreState): Promise<StepCard> {
       { label: t('平均相似度'), value: avg.toFixed(3), ok: avg >= ctx.thresholds.assetSim },
       { label: t('九宫格'), value: String(x.slices.filter((s) => s.nineSlice).length) },
       { label: t('派生状态'), value: String(derived) },
+      ...(sheet ? [{ label: t('拆件图对上'), value: `${sheet.matched.size}/${sheet.total}`, ok: !sheet.missing }] : []),
     ],
     note: '',
   }
@@ -530,4 +551,48 @@ export function acceptDiff(d: Design, element: string, on: boolean, th: RestoreT
   const st = stepOf(r, 'verify')
   const last = st.versions.at(-1)
   if (last) last.card = { ...card, diff: last.card.diff }
+}
+
+/**
+ * 拆件图：没有就让模型出一张（重跑这一步时写了意见也重出，意见带进提示词），有就读上次的；
+ * 切开、和原画里的元素对上。出图失败写在卡上，这一版全部从原画抠
+ */
+async function partsOf(ctx: RestoreCtx, r: RestoreState, art: Img, feedback: string) {
+  if (!ctx.thresholds.parts || !ctx.partsSheet || r.source?.kind === 'psd') return undefined
+  const live = r.elements.filter((e) => !e.hidden)
+  let img: Img | undefined
+  try {
+    if (r.parts && !feedback.trim() && ctx.layer) img = await ctx.layer(r.parts.file)
+    else {
+      const prompt = partsPrompt(ctx.design.kind, live, art)
+      img = await ctx.partsSheet(
+        feedback.trim() ? `${prompt}\n\nUser feedback on the previous sheet: ${feedback.trim()}` : prompt,
+      )
+      const stored = await ctx.store(img)
+      r.parts = { file: stored.file, width: stored.width, height: stored.height }
+    }
+  } catch (e) {
+    return {
+      matched: new Map<string, PartMatch>(),
+      total: 0,
+      missing: 0,
+      warnings: [t('拆件图没出来，这一版全部从原画抠：{error}', { error: (e as Error).message })],
+    }
+  }
+  const parts = splitParts(img)
+  const matched = matchParts(art, live, parts)
+  const miss = unmatched(live, matched)
+  const total = matched.size + miss.length
+  const warnings = miss.length
+    ? [
+        t('{n} 个元素在拆件图里没对上，从原画抠的：{names}', {
+          n: miss.length,
+          names: miss
+            .slice(0, 6)
+            .map((e) => e.name || e.id)
+            .join('、'),
+        }),
+      ]
+    : []
+  return { matched, total, missing: miss.length, warnings }
 }
