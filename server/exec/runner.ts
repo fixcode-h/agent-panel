@@ -471,6 +471,8 @@ async function runAgent(
   // 用户报的 Bug：新会话第一轮带上完整查找流程（ADR 0046）
   const bugMethod = !op && bugMethodPrompt(task, ctx.prompt, !resume)
   if (bugMethod) input = `${input}\n\n${bugMethod}`
+  // 升级成 Bug 后补带的完整流程只带一次（这一轮是 /bug 时展开里已经带了，一样算带过）
+  if (!op && task.bugMethodPending) task.bugMethodPending = undefined
   // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取；
   // 子任务只查不记，不带记教训的说明
   if (!resume && !op && task.projectId) {

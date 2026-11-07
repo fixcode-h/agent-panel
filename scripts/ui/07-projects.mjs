@@ -203,6 +203,52 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           if (it.textH > it.lineH * 1.5) errors.push(`文件窗口：「${it.text}」折成了多行（文字高 ${it.textH}px）`)
       }
       await check(p, '文件窗口-Markdown标题栏', ['阅读', '编辑'])
+      // 标题目录（DocOutline）：阅读时右边是一列刻度，移上去展开成目录卡片，点标题跳过去
+      {
+        const dlg = p.getByRole('dialog')
+        const rail = dlg.getByRole('button', { name: '文档目录' })
+        await rail.waitFor({ timeout: 5000 }).catch(() => errors.push('标题目录：Markdown 阅读时右边没有标题刻度'))
+        await check(p, '文件窗口-标题目录-收起')
+        await rail.hover().catch(() => {})
+        const nav = dlg.getByRole('navigation', { name: '文档目录' })
+        await nav.waitFor({ timeout: 3000 }).catch(() => errors.push('标题目录：鼠标移上刻度没有展开目录'))
+        const items = await nav
+          .getByRole('button')
+          .allInnerTexts()
+          .catch(() => [])
+        for (const h of ['示例商店', '快速开始', '页面', '发布'])
+          if (!items.some((x) => x.trim() === h)) errors.push(`标题目录：目录里没有「${h}」`)
+        await check(p, '文件窗口-标题目录-展开', ['快速开始', '已知问题'])
+        await nav
+          .getByRole('button', { name: '发布', exact: true })
+          .click()
+          .catch(() => {})
+        await dlg
+          .getByRole('heading', { name: '发布' })
+          .evaluate(
+            (h) =>
+              new Promise((ok) => {
+                // 平滑滚动：等标题停到视口里再量
+                const t0 = performance.now()
+                const tick = () => {
+                  const r = h.getBoundingClientRect()
+                  if ((r.top >= 0 && r.bottom <= innerHeight) || performance.now() - t0 > 2000) ok(null)
+                  else requestAnimationFrame(tick)
+                }
+                tick()
+              }),
+          )
+          .catch(() => {})
+        const shown = await dlg
+          .getByRole('heading', { name: '发布' })
+          .evaluate((h) => {
+            const r = h.getBoundingClientRect()
+            return r.top >= 0 && r.bottom <= innerHeight
+          })
+          .catch(() => false)
+        if (!shown) errors.push('标题目录：点「发布」没有跳到那一节')
+        await p.mouse.move(5, 5)
+      }
       await seg.getByRole('radio', { name: '编辑' }).click()
       await p
         .getByRole('dialog')

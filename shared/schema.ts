@@ -2151,6 +2151,7 @@ export const TaskData = z.object({
   diagnoses: z.array(Diagnosis).optional(),
   userActions: z.array(UserAction).optional(), // 等你操作（request_user_action）：最近的在最后，见 shared/user-action.ts
   bugCase: BugCase.optional(), // Bug 档案草稿（ADR 0046）：update_bug_case 随查随记，submit_diagnosis 冻结成一版
+  bugMethodPending: z.boolean().optional(), // 父对话把已有子对话升级成用户报的 Bug（ADR 0057）：下一轮补带一次完整流程，带过就清掉
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
   imported: z
     .object({
