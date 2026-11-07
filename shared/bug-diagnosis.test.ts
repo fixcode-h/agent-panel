@@ -494,7 +494,7 @@ test('评审对照和 Bug 记录草稿（ADR 0046）：只取用户确认过的�
   assert.match(rec, /- 接口重试：npm test → 通过/)
 })
 
-test('用户点取消：不再等确认，计划收口成完成，对话不算执行中、等下一句；之后改文件、收尾都要先交新一版', () => {
+test('用户点取消：不再等确认，计划收口成完成，对话不算执行中、等下一句；报告关闭，不能再交新一版', () => {
   const tk = bugTask({ plans: [], steps: [] })
   applyPlan(tk, {
     steps: [{ title: '查根因', status: 'done' }, { title: '交诊断报告', status: 'running' }, { title: '按方案修' }],
@@ -513,11 +513,13 @@ test('用户点取消：不再等确认，计划收口成完成，对话不算�
   assert.equal(childFlowOf({ ...tk, status: 'done', working: false, parentAsks: [] } as Task).requests, 0)
   assert.match(tk.messages.at(-1)!.text, /你取消了诊断报告第 1 版/)
   assert.equal(bugStage(tk), '已取消')
-  assert.match(diagnosisGate(tk, []), /用户取消了第 1 版/)
+  assert.match(diagnosisGate(tk, []), /第 1 版点了「不修了」/)
   assert.equal(decideDiagnosis(tk, 1, yes, id).ok, false, '取消过的不能再确认')
-  // 用户之后又要修：交新一版，取消过的那版留着「已取消」
+  // 不修了的报告关闭（用户 2026-11-07 定）：之后的对话不能再交新一版拉起它
   const v2 = submitDiagnosis(tk, input(), id)
-  assert.ok(v2.ok && v2.version === 2)
+  assert.equal(v2.ok, false)
+  assert.match(v2.info, /不修了.*不能再交新一版/)
+  assert.equal(tk.diagnoses!.length, 1)
   assert.equal(tk.diagnoses![0].status, 'cancelled')
 })
 

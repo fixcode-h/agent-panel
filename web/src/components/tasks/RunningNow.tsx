@@ -1,6 +1,6 @@
 import { useUserName } from '@/lib/user-name'
-import { useEffect, useMemo, useState } from 'react'
-import { CircleSlash, ClipboardCheck, FileSearch, Loader2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { CircleSlash, ClipboardCheck, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import { helperRunning, helperShown, sortHelpers, stepMs, splitStepJobs, type ChildEntry } from '@shared/task'
 import { cn } from '@/lib/utils'
@@ -9,10 +9,8 @@ import { jobLabel, toolView } from '@/lib/tasks'
 import { toolTitle } from '@shared/tool-names'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
-import { ChildReportButton, DiagnosisAutoOpen, firstShow, showTag } from './ChildReport'
-import { bugStage, revOf } from '@shared/bug-diagnosis'
-import { useDiagnosisWindow } from './diagnosis-window'
-import { Button } from '@/components/ui/button'
+import { ChildReportButton, DiagnosisAutoOpen } from './ChildReport'
+import { BugReportCards, reportCards } from './BugReportCard'
 import { useChildList, useChildOpen, useJobOpen } from './child-open'
 import {
   childClosedHint,
@@ -61,10 +59,9 @@ export function runningRows<C extends ChildEntry>({
   // 对话派出的子任务：只要没结束（在跑、在排队）就列一行，跟子对话同一批出现在最新一段上；
   // 在跑的排前面，同一组按派出的顺序
   const helpers = kids && task ? activeHelpers(task) : []
-  // 在等你确认的诊断报告（ADR 0045）：交报告那一行会被收进工具的折叠里，像子任务一样放在最下面，
-  // 确认或提了意见之后（不再是 pending）就不在这里了，回到普通的记录里
-  const last = kids ? task?.diagnoses?.at(-1) : undefined
-  const report = last?.status === 'pending' ? last.version : 0
+  // 诊断报告卡片（ADR 0045）：交报告那一行会被收进工具的折叠里，报告入口只在这里（用户 2026-11-07 定，
+  // 输入框上方不再放），最近 3 份一直列着，确认、提意见、不修了之后也留着
+  const reports = kids ? reportCards(task) : []
   // 模型正在写一个工具调用的入参（交诊断报告这类要写一二十秒）：转圈写「正在写」，不然像卡死了。
   // 对话不在跑时不算（服务端没来得及清掉的旧记号）
   const drafting = kids && task?.working ? task.drafting : undefined
@@ -73,9 +70,10 @@ export function runningRows<C extends ChildEntry>({
     own,
     rows,
     helpers,
-    report,
+    reports,
     drafting,
-    empty: !tools.length && !own.length && !sub.length && !rows.length && !helpers.length && !report && !drafting,
+    empty:
+      !tools.length && !own.length && !sub.length && !rows.length && !helpers.length && !reports.length && !drafting,
   }
 }
 
@@ -86,61 +84,6 @@ export function activeHelpers(task: Task) {
     // 被打断的子任务在对话停着时不列（见 helperShown）
     .filter((s): s is TaskStep => !!s && helperShown(task, s))
   return sortHelpers(steps)
-}
-
-/**
- * 在等你确认的诊断报告：一直转圈、写明第几版，行尾「查看报告」打开审阅弹窗。
- * 和子任务行一样放在最下面，不跟着交报告那一行收进工具的折叠里
- */
-function ReportRow({ task, version }: { task: Task; version: number }) {
-  // 弹窗挂在任务页顶层（见 diagnosis-window.tsx）：一轮输出完、子任务做完时这一行会重挂，弹窗不能跟着关
-  const { open: show, dialog } = useDiagnosisWindow(task)
-  const setOpen = () => show(task)
-  // 显示的是第几版（只在结论被推翻时加）；version 是交报告的顺序号，自动弹窗的记号按它
-  const d = task.diagnoses?.find((x) => x.version === version)
-  const rev = d ? revOf(d) : version
-  // 交上来时自动弹一次（每一版一次，和父对话页共用记号）：交报告那一行折叠着时根本没挂上，不能只靠它弹
-  useEffect(() => {
-    if (firstShow(task.id, version, showTag(task))) show(task, true)
-    // 同一版加好日志回到等你时（showTag 变了）再弹一次
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [task.id, version, showTag(task)])
-  return (
-    <>
-      <RowShell
-        glyph={
-          // 对话停下了：报告还能确认，但没有人在等着往下做，不再转圈
-          task.status === 'stopped' ? (
-            <FileSearch className="h-3.5 w-3.5 shrink-0 text-warning" />
-          ) : (
-            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-warning" />
-          )
-        }
-        verb={t('诊断报告')}
-        title={t('第 {n} 版', { n: rev })}
-        titleClass={NAME_TITLE}
-        open={false}
-        rowOpen={setOpen}
-        onOpen={setOpen}
-        openTip={t('打开诊断报告第 {n} 版', { n: rev })}
-        detailStart
-        detail={<span className={childLabelClass.warning}>{bugStage(task) || t('等你确认')}</span>}
-        action={
-          <Button
-            size="sm"
-            className="h-6 shrink-0 px-2 text-xs"
-            onClick={(e) => {
-              e.stopPropagation()
-              setOpen()
-            }}
-          >
-            {t('查看报告')}
-          </Button>
-        }
-      />
-      {dialog}
-    </>
-  )
 }
 
 /**
@@ -382,7 +325,7 @@ export function RunningNow({
     own: ownJobs,
     rows,
     helpers,
-    report,
+    reports,
     drafting,
   } = runningRows({ task, tools, jobs, kids, children })
   // 已经有子任务行的，后台命令并进那一行；剩下的（子任务做完了命令还在跑）照旧单独一行
@@ -394,14 +337,22 @@ export function RunningNow({
   const now = useNow(ownJobs.length > 0 || stepJobs.length > 0 || rows.length > 0 || helpers.length > 0 || !!drafting)
   // 只为独立调用方保留的兜底：RunningFooter 已经用 runningRows 先判过空（判空和渲染读同一个值），
   // 这边不再判会画出只有分割线、没有内容的一块
-  if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length && !helpers.length && !report && !drafting)
+  if (
+    !tools.length &&
+    !ownJobs.length &&
+    !stepJobs.length &&
+    !rows.length &&
+    !helpers.length &&
+    !reports.length &&
+    !drafting
+  )
     return null
   const box = (
     // 过程行连成一组（见 index.css 的 proc-list）：每行默认浅底，行间留一点间距，不画分隔线
     <div className="proc-list flex flex-col" aria-label={t('运行中')}>
       <ToolRows tools={tools} task={task} />
       {drafting && <DraftRow tool={drafting.tool} since={drafting.at} now={now} />}
-      {task && report > 0 && <ReportRow task={task} version={report} />}
+      {task && reports.length > 0 && <BugReportCards task={task} list={reports} />}
       {task &&
         helpers.map((s) => (
           <HelperRow

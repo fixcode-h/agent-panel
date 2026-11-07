@@ -30,7 +30,6 @@ import { CommandDialog, OutputDialog } from './ToolDialog'
 import { RunDialog } from './RunCard'
 import { useDiagnosisWindow } from './diagnosis-window'
 import { firstShow } from './ChildReport'
-import { Button } from '@/components/ui/button'
 import { PeerLine } from './PeerMessage'
 import { AlertRow } from './AlertRow'
 import { makeAlert } from '@shared/alerts'
@@ -564,7 +563,8 @@ type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> & Partial<Pick<
 function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
-  // 交诊断报告那一行（ADR 0045）：那一版还在等用户确认时一直转圈，「查看报告」只放在这一行上
+  // 交诊断报告那一行（ADR 0045）：那一版还在等用户确认时一直转圈。「查看报告」不放在这一行，
+  // 报告入口只在运行区的报告卡片上（BugReportCard.tsx，用户 2026-11-07 定），这里只管交上来时自动弹一次
   // 弹窗挂在任务页顶层（见 diagnosis-window.tsx）：一轮输出完这一行会收进折叠、卸载，弹窗不能跟着关
   const diagTask = task && { id: task.id, title: task.title ?? '', diagnoses: task.diagnoses }
   const { open: showDiag, dialog: diagDialog } = useDiagnosisWindow(diagTask)
@@ -700,21 +700,6 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         openTip={target?.tip}
         titleTip={titleTip}
         failed={tool.failed}
-        action={
-          report && (
-            <Button
-              size="sm"
-              variant={waitReport ? 'primary' : 'secondary'}
-              className="h-6 shrink-0 px-2 text-xs"
-              onClick={(e) => {
-                e.stopPropagation()
-                if (diagTask) showDiag(diagTask)
-              }}
-            >
-              {t('查看报告')}
-            </Button>
-          )
-        }
       >
         {
           <div className="divide-y divide-pop-edge">

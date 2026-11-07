@@ -50,8 +50,8 @@ export const EN_BUG_FLOW: Record<string, string> = {
     'Paste the logs from verification here, or paste / drop log files',
   '你的决定已经记下，但没能交给子对话：{error}':
     "Decision saved, but couldn't deliver it to the sub-conversation: {error}",
-  '不再等你确认，这一轮就此结束，计划标记为完成，之后不会再改文件。已经加进代码的 [排查-…] 临时日志不会自动删，要删就在这个对话里跟它说。':
-    'Stop waiting for your confirmation: this round ends here and the plan is marked done; no more files will be changed. [排查-…] temporary logs already added to the code are not removed automatically; ask it in this conversation if you want them removed.',
+  '不再等你确认，这份诊断报告就此关闭：计划标记为完成，之后不会再改文件，这个对话也不能再交新的报告（真要修就在父对话里重新报这个 Bug）。已经加进代码的 [排查-…] 临时日志不会自动删，要删就在这个对话里跟它说。':
+    'Stop waiting for your confirmation and close this diagnosis report: the plan is marked done, no more files will be changed, and this conversation cannot submit a new report (to fix it later, report the bug again from the parent conversation). [排查-…] temporary logs already added to the code are not removed automatically; ask it in this conversation if you want them removed.',
   // 阶段条
   '论证 · 第 {n} 轮 · 等你复现': 'Evidence · round {n} · waiting for you to reproduce',
   '论证 · 第 {n} 轮': 'Evidence · round {n}',
@@ -126,7 +126,12 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '你结束了第 {n} 版的验证': 'You finished verification for version {n}',
   这一版不需要日志: 'This version does not need logs',
   先贴日志或引入日志文件: 'Paste logs or add log files first',
-  '共 {n} 版': '{n} versions',
+  已结束验证: 'Verification ended',
+  已同意: 'Approved',
+  提了意见: 'Feedback given',
+  给了验证结果: 'Results given',
+  给了日志: 'Logs given',
+  已被取代: 'Superseded',
   你结束了验证: 'You finished verification',
   '{label}（最新）': '{label} (latest)',
   正在写: 'Writing',

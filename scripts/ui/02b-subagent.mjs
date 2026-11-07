@@ -995,16 +995,18 @@ await runShard(import.meta.filename, async (api) => {
     // 父对话页上也有入口：不用先进子对话找交报告那一行
     if (!(await p.locator('.proc-list').getByRole('button', { name: '查看报告' }).count()))
       errors.push('诊断报告：父对话页「正在运行」里那个子对话的行上没有「查看报告」')
-    const open = childView(p).getByRole('button', { name: '查看报告' })
+    // 「查看报告」只在运行区的报告卡片上（用户 2026-11-07 定），交报告那一行工具调用不再放
+    const open = childView(p).locator('.proc-list').getByRole('button', { name: '查看报告' })
     await open
       .first()
       .waitFor({ timeout: 10000 })
-      .catch(() => errors.push('诊断报告：子对话里交报告的那一行工具调用上没有「查看报告」'))
+      .catch(() => errors.push('诊断报告：子对话运行区的报告卡片上没有「查看报告」'))
     await check(p, '诊断报告-子对话里的工具行')
     if (!(await childView(p).getByText('等你查看报告').count()))
       errors.push('诊断报告：交报告那一行没有写「等你查看报告」')
     if (await open.count()) {
-      await open.first().click()
+      // 卡片旧的在上、新的在下：点最下面那张，看的是在等确认的最新一份
+      await open.last().click()
       const dlg = p.getByRole('dialog')
       await dlg
         .getByRole('button', { name: '确认方案，开始修' })
@@ -1094,14 +1096,19 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：取消后审阅弹窗还开着')
         if (await childView(p).getByText('等你查看报告').count())
           errors.push('诊断报告：取消后交报告那一行还写着「等你查看报告」')
-        // 不再等确认以后，诊断报告的入口固定在输入框上方的状态栏里（和子任务、子对话同一块），不跟着消息流滚走
-        const bugRow = childView(p).locator('[data-status-row="bug-report"]')
-        await bugRow
+        // 报告入口只在消息流里（用户 2026-11-07 定）：输入框上方不再有诊断报告那一行；
+        // 消息流里的报告卡片最多 3 份，不修了的那份描红边，状态写「不修了」
+        if (await childView(p).locator('[data-status-row="bug-report"]').count())
+          errors.push('诊断报告：输入框上方的状态栏里还有诊断报告那一行')
+        const cards = childView(p).locator('.proc-list').getByRole('button', { name: '查看报告' })
+        await cards
+          .first()
           .waitFor({ timeout: 5000 })
-          .catch(() => errors.push('诊断报告：不再等确认后，输入框上方的状态栏里没有诊断报告那一行'))
-        if (await childView(p).locator('.proc-list [data-status-row="bug-report"]').count())
-          errors.push('诊断报告：入口还在消息流里')
-        await check(p, '诊断报告-状态栏入口')
+          .catch(() => errors.push('诊断报告：不再等确认后，消息流里没有报告卡片'))
+        if ((await cards.count()) > 3) errors.push('诊断报告：消息流里的报告卡片超过 3 份')
+        if (!(await childView(p).locator('.proc-list .border-danger\\/60').getByText('不修了').count()))
+          errors.push('诊断报告：不修了的那份卡片没有红色边框')
+        await check(p, '诊断报告-消息流卡片')
       }
       await p.keyboard.press('Escape')
     }

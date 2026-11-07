@@ -82,6 +82,7 @@ export function ReviewDialog({
   feedbackFirst,
   attach,
   overallPlaceholder,
+  initialVersion,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -126,6 +127,8 @@ export function ReviewDialog({
   /** 整体意见框用对话的输入框：能引入日志文件、图片（粘贴、拖进来、点「+」），大文件引用路径、小文件拷一份 */
   attach?: boolean
   overallPlaceholder?: string
+  /** 打开时先看哪一版（versions 的 key）：对话里点某一份报告的卡片打开的就是那一份；之后换了请求仍回到最新 */
+  initialVersion?: string
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -153,7 +156,9 @@ export function ReviewDialog({
   const resetLogs = logs.reset
   const [cancelAsk, setCancelAsk] = useState(false)
   // 多版时看的是哪一版：默认最新那版（要审的）；旧版只读，不能标注
-  const [ver, setVer] = useState('')
+  const [ver, setVer] = useState(initialVersion ?? '')
+  // 只在打开时用一次：之后来了新一版（换了请求）照旧回到最新那版
+  const firstVer = useRef(initialVersion)
   const shown = versions?.find((v) => v.key === ver) ?? versions?.at(-1)
   const old = !!versions && !!shown && shown !== versions.at(-1)
   const locked = readOnly || old
@@ -165,7 +170,8 @@ export function ReviewDialog({
     setOverall('')
     setPick(null)
     setActive(null)
-    setVer('')
+    setVer(firstVer.current ?? '')
+    firstVer.current = undefined
     resetLogs()
   }, [req.id, resetLogs])
 

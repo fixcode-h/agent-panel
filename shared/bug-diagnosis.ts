@@ -13,6 +13,7 @@ import type { Task, TaskMessage } from './schema.ts'
 import { BugCase, BugCollect, type BugLevel, type Diagnosis, type DiagnosisNote } from './bug-diagnosis-schema.ts'
 import {
   causeAgreed,
+  closedInfo,
   causeInPlan,
   evidenceFiles,
   inputPhase,
@@ -344,6 +345,8 @@ export function submitDiagnosis(
     }
   const list = task.diagnoses ?? []
   const prev = list.at(-1)
+  // 用户点过「不修了」：这份报告就此关闭，之后的对话不能再拉起它（用户 2026-11-07 定）
+  if (prev?.status === 'cancelled') return { ok: false, info: closedInfo(revOf(prev)) }
   const c = mergeCase(task, input)
   const answers = answersOf(input)
   const bad = diagnosisProblem(c, list, answers, input)
@@ -572,8 +575,7 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
       ? `没有请求收尾：第 ${v} 版在等用户复现贴日志。`
       : `没有请求收尾：第 ${v} 版还在等用户，用户回复之前不能收尾。`
   if (d.status === 'questioned') return `没有请求收尾：用户对第 ${v} 版提了意见，先逐条处理、改好再交，等用户确认。`
-  if (d.status === 'cancelled')
-    return `没有请求收尾：用户取消了第 ${v} 版，这次不修。用户之后要修，先重新交报告，等用户确认。`
+  if (d.status === 'cancelled') return `没有请求收尾：${closedInfo(v)}`
   const phase = phaseOf(d)
   if (phase === 'evidence' || phase === 'cause')
     return '没有请求收尾：还没有用户确认的修复方案。按流程交根因（phase: cause）、修复方案（phase: plan），确认后再修。'

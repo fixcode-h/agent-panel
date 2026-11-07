@@ -113,6 +113,13 @@ export function inputPhase(input: Record<string, unknown>, c: BugCase, list: Dia
 }
 
 /**
+ * 用户点了「不修了」之后给 Agent 的话：报告关闭，不再交新版、不改文件；用户回头又要修，请他在父对话重新报这个 Bug。
+ * 交报告、改文件、收尾三处共用一个说法。发给 Agent 的提示词，不翻译
+ */
+export const closedInfo = (v: number) =>
+  `用户在第 ${v} 版点了「不修了」，这份诊断报告已经关闭：不能再交新一版，也不改文件。用户之后又要修，告诉用户在父对话里重新报这个 Bug（会开新的子对话），不要在这里接着修。`
+
+/**
  * 能改哪些文件：files 是放行的范围（还要排除 FREE_FILE 由调用方处理），deny 是不能改时给 Agent 的话。
  * 同意加日志后只放行日志计划里的文件；确认方案后放行方案里的文件，加上论证时加过日志的文件（要删临时日志）
  */
@@ -129,10 +136,7 @@ export function editScope(list: Diagnosis[]): { files: string[] } | { deny: stri
     }
   if (d.status === 'questioned')
     return { deny: `用户对第 ${v} 版提了意见：先逐条处理、用 submit_diagnosis 改好再交，用户同意后再改文件。` }
-  if (d.status === 'cancelled')
-    return {
-      deny: `用户取消了第 ${v} 版，这次不修：不改文件。用户要你接着修时，先用 submit_diagnosis 重新交报告，确认后再改。`,
-    }
+  if (d.status === 'cancelled') return { deny: closedInfo(v) }
   if (phase === 'evidence') {
     if (d.status === 'approved') return { files: d.files }
     return {

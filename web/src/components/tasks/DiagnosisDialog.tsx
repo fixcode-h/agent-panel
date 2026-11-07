@@ -152,8 +152,11 @@ export function DiagnosisDialog({
   open,
   onOpenChange,
   onDone,
+  version,
 }: {
   task: Pick<Task, 'id' | 'title' | 'diagnoses'>
+  /** 打开时先看哪一份（交报告的顺序号）；不传看最新那份 */
+  version?: number
   open: boolean
   onOpenChange: (open: boolean) => void
   onDone?: (task: Task) => void
@@ -203,6 +206,7 @@ export function DiagnosisDialog({
       onOpenChange={onOpenChange}
       kinds={KINDS()}
       versions={versionsOf(list, author)}
+      initialVersion={version ? String(version) : undefined}
       presets={presets}
       readOnly={last.status !== 'pending'}
       // 阶段条按整份档案画走到哪一步，点走过的一步切到那一步的报告，正在看的那步描边
@@ -245,7 +249,7 @@ export function DiagnosisDialog({
         label: t('取消修复'),
         title: t('取消这次修复？'),
         description: t(
-          '不再等你确认，这一轮就此结束，计划标记为完成，之后不会再改文件。已经加进代码的 [排查-…] 临时日志不会自动删，要删就在这个对话里跟它说。',
+          '不再等你确认，这份诊断报告就此关闭：计划标记为完成，之后不会再改文件，这个对话也不能再交新的报告（真要修就在父对话里重新报这个 Bug）。已经加进代码的 [排查-…] 临时日志不会自动删，要删就在这个对话里跟它说。',
         ),
         confirm: t('不修了'),
         // 不发话给子对话：交报告那一轮已经结束了，计划由服务端收口，它停着等你的下一句
