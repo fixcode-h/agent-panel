@@ -103,6 +103,7 @@ function start(d: Full, step: RestoreStep, feedback = '') {
         art: async () => (art ??= await decode(r.source!.file)),
         store: async (img) => ({ file: encode(img), width: img.width, height: img.height }),
         label: async (_overlay, _prompt, list) => fakeLabel(list),
+        layer: decode,
         thresholds: DEFAULT_THRESHOLDS,
         now,
       },
@@ -124,10 +125,40 @@ function start(d: Full, step: RestoreStep, feedback = '') {
   }, demoMs(400))
 }
 
-export function demoRestore(d: Full, action: string | undefined, body: any): Full {
+/** PSD 在浏览器里读（ag-psd 按需加载）：合成图和每个图层都存成 data URL */
+async function psdSource(d: Full, data: string, name: string) {
+  const [{ readPsd }, { importPsd }] = await Promise.all([import('ag-psd'), import('@shared/restore/psd')])
+  const bin = atob(data.replace(/^data:[^,]*,/, ''))
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  const p = importPsd(readPsd(bytes.buffer, { useImageData: true, skipThumbnail: true }))
+  const files = new Map(p.layers.map((l) => [l.key, encode(l.img)]))
+  const fileOf = (k: string | undefined) => (k ? files.get(k) : undefined)
+  setSource(d, { kind: 'psd', file: encode(p.composite), name, width: p.width, height: p.height }, now(), {
+    elements: p.elements.map((e) => ({
+      ...e,
+      layer: fileOf(e.layer),
+      ...(e.states
+        ? {
+            states: {
+              hover: fileOf(e.states.hover),
+              pressed: fileOf(e.states.pressed),
+              disabled: fileOf(e.states.disabled),
+            },
+          }
+        : {}),
+    })),
+    warnings: p.warnings,
+  })
+  d.updatedAt = now()
+  return d
+}
+
+export function demoRestore(d: Full, action: string | undefined, body: any): Full | Promise<Full> {
   const r = stateOf(d)
   if (RESTORE_STEPS.some((s) => stepOf(r, s).status === 'running') && action !== 'stop')
     fail('正在处理上一个请求，等它完成或先停止')
+  if (action === 'source' && body.psd) return psdSource(d, String(body.data ?? ''), String(body.name ?? ''))
   if (action === 'source') {
     const url = String(body.data ?? '')
     if (!url.startsWith('data:image/')) fail('没有图片数据')

@@ -5,6 +5,7 @@ import { walk } from '../umg.ts'
 import { extractAssets } from './assets.ts'
 import { compileRestore } from './compile.ts'
 import { detectElements } from './detect.ts'
+import { findGroups } from './grid.ts'
 import { applyLabels, buildLabelPrompt, type LabelReply } from './label.ts'
 import { drawLabels } from './overlay.ts'
 import {
@@ -38,6 +39,16 @@ export interface RestoreCtx {
   label?: (overlay: Img, prompt: (image: string) => string, elements: RestoreElement[]) => Promise<LabelReply>
   thresholds: RestoreThresholds
   now: () => string
+  /** 读 PSD 图层存下来的文件（元素的 layer / states 填的文件名）；原画不是 PSD 时用不到 */
+  layer?: (file: string) => Promise<Img>
+}
+
+/** PSD 导入时读不全的东西：写在原画那一步的卡上 */
+const PSD_WARNINGS: Record<string, () => string> = {
+  style: () => t('有图层样式（描边、投影、发光）：切图只有图层本身的像素，样式要在引擎里补或者先在 PS 里栅格化'),
+  mask: () => t('有图层蒙版：切图没套蒙版，先在 PS 里应用蒙版再导入更准'),
+  blend: () => t('有非「正常」的混合模式：叠出来的颜色可能和 PS 里不一样'),
+  clip: () => t('有剪贴蒙版：被剪贴的图层按自己的像素切，没有裁到下面那层的形状'),
 }
 
 /** 还原用的图片 id 前缀：重新切图时先清掉上一版的 */
@@ -60,10 +71,18 @@ export function stateOf(d: Design): RestoreState {
   return d.restore
 }
 
-/** 换了原画：从头来，之前的步骤全清掉 */
-export function setSource(d: Design, source: RestoreSource, at: string) {
+/**
+ * 换了原画：从头来，之前的步骤全清掉。
+ * PSD 带上图层读出来的元素（layer、states 已经换成存好的文件名）：拆解那一步直接用，不再检测
+ */
+export function setSource(
+  d: Design,
+  source: RestoreSource,
+  at: string,
+  psd?: { elements: RestoreElement[]; warnings: string[] },
+) {
   const prev = d.restore
-  d.restore = { ...emptyRestore(), source }
+  d.restore = { ...emptyRestore(), source, elements: psd?.elements ?? [] }
   // 上一张原画的切图不再有用
   if (prev) d.images = d.images.filter((i) => !i.id.startsWith(IMG_PREFIX))
   pushVersion(
@@ -76,15 +95,20 @@ export function setSource(d: Design, source: RestoreSource, at: string) {
         X: d.designSize.X,
         Y: d.designSize.Y,
       }),
-      todo: t('确认这就是要还原的那张原画，下一步自动拆出所有元素'),
-      warnings:
-        Math.abs(source.width / source.height - d.designSize.X / d.designSize.Y) > 0.02
+      todo: psd
+        ? t('确认这就是要还原的 PSD，下一步按图层列出所有元素')
+        : t('确认这就是要还原的那张原画，下一步自动拆出所有元素'),
+      warnings: [
+        ...(Math.abs(source.width / source.height - d.designSize.X / d.designSize.Y) > 0.02
           ? [t('原画和设计稿的宽高比不一样，横竖会按各自的比例缩放')]
-          : [],
+          : []),
+        ...(psd?.warnings ?? []).flatMap((w) => (PSD_WARNINGS[w] ? [PSD_WARNINGS[w]()] : [])),
+      ],
       diff: '',
       metrics: [
         { label: t('原画'), value: `${source.width}×${source.height}` },
         { label: t('缩放'), value: `${(d.designSize.X / source.width).toFixed(2)}×` },
+        ...(psd ? [{ label: t('图层元素'), value: String(psd.elements.length) }] : []),
       ],
       note: '',
     },
@@ -168,6 +192,7 @@ const overlapsHidden = (e: RestoreElement, hidden: RestoreElement[]) =>
   )
 
 async function runElements(ctx: RestoreCtx, r: RestoreState, feedback: string): Promise<StepCard> {
+  if (r.source?.kind === 'psd') return psdElements(r)
   const art = await ctx.art()
   const det = detectElements(art)
   // 用户自己画、改过的框留着；删掉的那块重新检测出来也不要
@@ -222,10 +247,36 @@ async function runElements(ctx: RestoreCtx, r: RestoreState, feedback: string): 
   }
 }
 
+/** PSD：元素就是图层，位置、名字照图层，不检测也不问模型；重复的格子照样排成组 */
+function psdElements(r: RestoreState): StepCard {
+  // 重新排组：先清掉上一次的分组（findGroups 跳过已经有组的）
+  r.elements = r.elements.map((e) => ({ ...e, repeat: undefined }))
+  const live = r.elements.filter((e) => !e.hidden)
+  r.groups = findGroups(live, 'p')
+  const texts = live.filter((e) => e.kind === 'text')
+  const empty = texts.filter((e) => !e.text?.content.trim()).length
+  return {
+    conclusion: t('从 PSD 图层读出 {n} 个元素，{g} 组重复的', { n: live.length - 1, g: r.groups.length }),
+    todo: t('位置和名字都照图层来；类型不对的点开改，没问题就确认，下一步直接用图层的像素当切图'),
+    warnings: empty ? [t('{n} 段文字还没有内容，点开填上', { n: empty })] : [],
+    diff: '',
+    metrics: [
+      { label: t('元素'), value: String(live.length - 1) },
+      { label: t('来自图层'), value: String(live.filter((e) => e.source === 'psd').length - 1) },
+      { label: t('重复组'), value: r.groups.map((g) => `${g.rows}×${g.cols}`).join('、') || '0' },
+      { label: t('文字'), value: `${texts.length - empty}/${texts.length}`, ok: !empty },
+    ],
+    note: '',
+  }
+}
+
 async function runAssets(ctx: RestoreCtx, r: RestoreState): Promise<StepCard> {
   const d = ctx.design
   const art = await ctx.art()
-  const x = extractAssets(art, r.elements)
+  // PSD 图层的像素直接当切图
+  const given = new Map<string, Img>()
+  if (ctx.layer) for (const e of r.elements) if (e.layer && !e.hidden) given.set(e.id, await ctx.layer(e.layer))
+  const x = extractAssets(art, r.elements, given)
   const k = { x: d.designSize.X / art.width, y: d.designSize.Y / art.height }
   const byElement = new Map(r.elements.map((e) => [e.id, e]))
   const images: DesignImage[] = []
@@ -255,6 +306,31 @@ async function runAssets(ctx: RestoreCtx, r: RestoreState): Promise<StepCard> {
       ref: { x: e.box.x * k.x, y: e.box.y * k.y, w: e.box.w * k.x, h: e.box.h * k.y },
     })
   }
+  // PSD 按钮的其他状态：各存一张，搭建时按钮的悬停、按下、禁用用它们
+  if (ctx.layer)
+    for (const e of r.elements) {
+      if (e.hidden || !e.states) continue
+      for (const [s, file] of Object.entries(e.states)) {
+        if (!file) continue
+        const img = await ctx.layer(file)
+        const stored = await ctx.store(img)
+        const base = images.find((i) => i.id === `${IMG_PREFIX}${e.id}`)
+        images.push({
+          ...(base ?? {
+            prompt: '',
+            negative: '',
+            width: Math.max(1, Math.round(e.box.w * k.x)),
+            height: Math.max(1, Math.round(e.box.h * k.y)),
+            selected: 0,
+            status: 'idle' as const,
+          }),
+          id: `${IMG_PREFIX}${e.id}_${s}`,
+          name: `${base?.name ?? e.name ?? e.id}_${s[0].toUpperCase()}${s.slice(1)}`,
+          transparent: true,
+          variants: [{ ...stored, source: 'crop', score: 1, at: ctx.now() }],
+        })
+      }
+    }
   for (const s of x.slices) if (s.same) imageOf.set(s.element, imageOf.get(s.same)!)
   d.images = [...d.images.filter((i) => !i.id.startsWith(IMG_PREFIX)), ...images]
   r.elements = r.elements.map((e) => ({ ...e, image: imageOf.get(e.id), sim: x.sims[e.id] }))
@@ -285,7 +361,12 @@ function runBuild(ctx: RestoreCtx, r: RestoreState): StepCard {
   const d = ctx.design
   const images: Record<string, string | undefined> = {}
   const nine: Record<string, DesignImage['nineSlice']> = {}
-  for (const e of r.elements) images[e.id] = e.image
+  for (const e of r.elements) {
+    images[e.id] = e.image
+    for (const s of Object.keys(e.states ?? {}))
+      if (d.images.some((i) => i.id === `${IMG_PREFIX}${e.id}_${s}`))
+        images[`${e.id}:${s}`] = `${IMG_PREFIX}${e.id}_${s}`
+  }
   for (const i of d.images) if (i.nineSlice) nine[i.id] = i.nineSlice
   const c = compileRestore({ restore: r, designSize: d.designSize, images, nineSlice: nine })
   d.root = c.root

@@ -157,13 +157,14 @@ export function compileRestore(i: CompileInput): Compiled {
     } else if (e.kind === 'button') {
       w = base('Button', widgetIdOf(e.id), name, slot)
       const b = img(i.images[e.id])
-      // 四态先都用原画这一张（状态表那一步再派生悬停、按下）
+      // PSD 里画了别的状态就用画的；没有的先都用常态这一张（按下压暗、禁用半透明，状态表那一步再细派生）
+      const st = (s: string) => i.images[`${e.id}:${s}`]
       w.Properties.WidgetStyle = {
         ...w.Properties.WidgetStyle,
         Normal: b,
-        Hovered: { ...b },
-        Pressed: { ...b, TintColor: '#D9D9D9FF' },
-        Disabled: { ...b, TintColor: '#FFFFFF80' },
+        Hovered: st('hover') ? img(st('hover')) : { ...b },
+        Pressed: st('pressed') ? img(st('pressed')) : { ...b, TintColor: '#D9D9D9FF' },
+        Disabled: st('disabled') ? img(st('disabled')) : { ...b, TintColor: '#FFFFFF80' },
         NormalPadding: { Left: 0, Top: 0, Right: 0, Bottom: 0 },
         PressedPadding: { Left: 0, Top: 0, Right: 0, Bottom: 0 },
       }

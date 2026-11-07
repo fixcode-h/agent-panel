@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Gamepad2, Globe, ImageUp, Palette as PaletteIcon, Plus } from 'lucide-react'
+import { Gamepad2, Globe, ImageUp, Layers, Palette as PaletteIcon, Plus } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { toast } from '@/lib/toast'
 import { api } from '@/lib/api'
@@ -156,7 +156,7 @@ export function NewDesign({ projectId }: { projectId?: string }) {
                     <input
                       ref={pick}
                       type="file"
-                      accept="image/png,image/jpeg,image/webp"
+                      accept="image/png,image/jpeg,image/webp,.psd"
                       className="hidden"
                       data-restore-art
                       onChange={(e) => {
@@ -177,7 +177,16 @@ export function NewDesign({ projectId }: { projectId?: string }) {
                       onClick={() => pick.current?.click()}
                       className="mt-1 flex h-28 cursor-pointer items-center justify-center gap-3 overflow-hidden rounded-xl border border-dashed border-line-strong bg-panel text-body text-muted transition-colors hover:bg-hover hover:text-fg"
                     >
-                      {art ? (
+                      {art?.psd ? (
+                        <>
+                          <Layers className="h-6 w-6" />
+                          <span className="text-footnote">
+                            {art.name}
+                            <br />
+                            {t('PSD：按图层还原，位置和切图直接取自图层')}
+                          </span>
+                        </>
+                      ) : art ? (
                         <>
                           <img src={art.data} alt="" className="h-full max-w-[60%] object-contain" />
                           <span className="text-footnote">
@@ -189,7 +198,7 @@ export function NewDesign({ projectId }: { projectId?: string }) {
                       ) : (
                         <>
                           <ImageUp className="h-5 w-5" />
-                          {t('选择原画（PNG、JPG、WebP）')}
+                          {t('选择原画（PNG、JPG、WebP 或 PSD）')}
                         </>
                       )}
                     </button>

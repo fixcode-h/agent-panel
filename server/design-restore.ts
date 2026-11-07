@@ -18,6 +18,7 @@ import {
   stepName,
 } from '../shared/restore/steps.ts'
 import { decodePng, encodePng, type Img } from './image.ts'
+import { isPsd, readPsdLayers } from './design-psd.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
 
@@ -81,6 +82,11 @@ export function restoreRoutes(deps: Deps) {
           },
           thresholds: settings.designRestore,
           now: deps.now,
+          layer: async (file) => {
+            const img = decodePng(await readFile(path.join(deps.imagesDir(d.id), path.basename(file))))
+            if (!img) throw new Error(t('PSD 图层文件读不出来：{file}', { file }))
+            return img
+          },
         },
         feedback,
       )
@@ -106,6 +112,40 @@ export function restoreRoutes(deps: Deps) {
     return { d }
   }
 
+  /** PSD：合成图当原画，每个图层存成一张 PNG，元素里的图层 key 换成文件名 */
+  async function psdSource(c: Context, d: Design, buf: Buffer, name: string) {
+    if (buf.length > 200 * 1024 * 1024) return bad(c, t('PSD 太大（最多 200 MB）'))
+    let p
+    try {
+      p = readPsdLayers(buf)
+    } catch (e) {
+      return bad(c, t('PSD 读不出来：{error}', { error: (e as Error).message }))
+    }
+    const art = await deps.storeImage(d, encodePng(p.composite))
+    const files = new Map<string, string>()
+    for (const l of p.layers) files.set(l.key, (await deps.storeImage(d, encodePng(l.img))).file)
+    const fileOf = (k: string | undefined) => (k ? files.get(k) : undefined)
+    const elements = p.elements.map((e) => ({
+      ...e,
+      layer: fileOf(e.layer),
+      ...(e.states
+        ? {
+            states: {
+              hover: fileOf(e.states.hover),
+              pressed: fileOf(e.states.pressed),
+              disabled: fileOf(e.states.disabled),
+            },
+          }
+        : {}),
+    }))
+    setSource(d, { kind: 'psd', file: art.file, name, width: p.width, height: p.height }, deps.now(), {
+      elements,
+      warnings: p.warnings,
+    })
+    await deps.save(d)
+    return deps.reply(c, d)
+  }
+
   return new Hono()
     .post('/:id/restore/source', async (c) => {
       const g = await guard(c)
@@ -114,6 +154,7 @@ export function restoreRoutes(deps: Deps) {
       const body = (await c.req.json().catch(() => ({}))) as { data?: string; name?: string }
       const buf = Buffer.from(String(body.data ?? '').replace(/^data:[^,]*,/, ''), 'base64')
       if (!buf.length) return bad(c, t('没有图片数据'))
+      if (isPsd(buf)) return psdSource(c, d, buf, String(body.name ?? ''))
       if (buf.length > 40 * 1024 * 1024) return bad(c, t('图片太大（最多 40 MB）'))
       const img = decodePng(buf)
       if (!img) return bad(c, t('原画要是 PNG（页面上传时会自动转成 PNG）'))

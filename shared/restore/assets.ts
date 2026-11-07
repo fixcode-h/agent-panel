@@ -180,7 +180,8 @@ function clearRatio(img: Img) {
 }
 const hamming = (a: number[], b: number[]) => a.reduce((s, v, i) => s + (v === b[i] ? 0 : 1), 0)
 
-export function extractAssets(art: Img, elements: RestoreElement[]): ExtractResult {
+/** given：已经有像素的元素（PSD 图层），直接用，不从原画里抠 */
+export function extractAssets(art: Img, elements: RestoreElement[], given?: Map<string, Img>): ExtractResult {
   const live = elements.filter((e) => !e.hidden)
   const parents = parentsOf(live)
   const bg = live.find((e) => e.kind === 'background')
@@ -195,6 +196,11 @@ export function extractAssets(art: Img, elements: RestoreElement[]): ExtractResu
   const slices: Slice[] = []
   for (const e of live) {
     if (e.kind === 'text') continue
+    const own = given?.get(e.id)
+    if (own) {
+      slices.push({ element: e.id, img: own, transparent: hasAlpha(own) })
+      continue
+    }
     const b = rnd(e.box)
     const raw = crop(art, b.x, b.y, b.w, b.h)
     if (e.kind === 'background' || CONTAINER_KINDS.includes(e.kind)) {
@@ -224,7 +230,7 @@ export function extractAssets(art: Img, elements: RestoreElement[]): ExtractResu
   const sliceOf = new Map(slices.map((x) => [x.element, x]))
   const boxOf = new Map(live.map((e) => [e.id, rnd(e.box)]))
   for (const sl of slices) {
-    if (!sl.transparent) continue
+    if (!sl.transparent || given?.has(sl.element)) continue
     const pid = parents.get(sl.element) ?? bg?.id
     const parent = pid && sliceOf.get(pid)
     const pb = pid && boxOf.get(pid)

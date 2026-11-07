@@ -2,7 +2,7 @@
 
 - 状态：documented
 - 职责：UI 设计：设计数据、AI 对话（设计工具 MCP）、原画与图片生成、导出
-- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`, `server/design-crop.ts`, `shared/restore/`, `web/src/components/design/CompareOverlay.tsx`
+- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`, `server/design-crop.ts`, `shared/restore/`, `server/design-restore.ts`, `server/design-psd.ts`, `web/src/components/design/CompareOverlay.tsx`
 - 入口：`server/designs.ts`
 - 关键词：UI 设计、原画、生图、导出、ComfyUI、设计工具
 - 更新：2026-11-07
@@ -64,6 +64,15 @@
 - 门槛设置：`Settings.designRestore`（`shared/restore/thresholds.ts`：`posPx` 2、`posRatio` 0.95、`assetSim` 0.92），设置页「图片生成」下面的「原画还原」组。
 - 像素操作（`blank`、`resize`、`crop`、`paste`、`contentBox`、`hasAlpha`、`chromaKey`、`removeFlatBackground`）挪到 `shared/raster.ts`，`server/image.ts` 重新导出；浏览器里的演示版和后面的检测算法共用。
 - 回归：`shared/restore/similarity.test.ts`、`server/design-crop.test.ts`、`scripts/ui/04-design.mjs`（滑块对照）。
+
+## 原画还原 P3：PSD 导入（2026-11-07）
+
+照原画还原的原画可以是 PSD：图层就是元素、图层像素就是切图，位置不用猜。
+
+- 解析：`ag-psd`（MIT，锁 31.0.3）。`shared/restore/psd.ts` 的 `importPsd(psd)` 只认解析好的对象（服务端 `server/design-psd.ts` 的 `readPsdLayers` 在 Node 里用 `initializeCanvas` 换成字节数组读；演示版在浏览器里按需 `import('ag-psd')`）。
+- 命名约定（参照 psd2fgui、PSD → UMG 插件）：前缀定类型（`Btn_` `Panel_` `Slot_` `Icon_` `Txt_` `Bar_` `Input_` `Deco_` `Bg_`）；按钮组里 `@normal` `@hover` `@pressed` `@disabled` 是四态（存进元素的 `states`，切图存成 `rs_<id>_<态>`，搭建时按钮这几态用画好的，不再压暗派生）；容器组里叫 `bg` / `背景` / `底` 或最底下铺满整组的图层是容器底图；没约定的组只当文件夹；文字图层读内容、字号（×变换缩放，记成 0.85 倍的笔画高）、颜色、对齐、粗体，不拿像素当切图；隐藏、不透明度 0 的跳过；中文名留空、按类型编号。
+- 流程：上传时服务端存合成图（PSD 里没存就按图层叠）当原画、每个图层存一张 PNG，元素的 `layer` / `states` 换成文件名，`setSource(..., { elements, warnings })`。拆解那一步直接用这些元素（`psdElements`：不检测、不问模型，格子照样排组）；切图那一步 `extractAssets(art, elements, given)` 用图层像素，其余（背景等没图层的）照常从合成图抠。读不全的（图层样式、蒙版、混合模式、剪贴蒙版）在原画那一步的卡上提醒。
+- 回归：`server/design-psd.test.ts`（命名约定、文字图层、写一个 PSD 再读、走完六步校验全过）、`scripts/ui/04b-restore.mjs`（演示里上传 PSD 走完六步，悬停态有切图）。
 
 ## 原画还原 P1：照原画还原的六步管线（2026-11-07）
 

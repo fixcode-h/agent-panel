@@ -56,6 +56,10 @@ export const RestoreElement = z.object({
   hidden: z.boolean().optional(),
   /** PSD 图层：这个元素的像素直接取自图层文件（设计目录 images/ 下），不从合成图里抠 */
   layer: z.string().optional(),
+  /** PSD 按钮组里 @hover / @pressed / @disabled 的图层文件：搭建时按钮这几态用它们，不再从常态派生 */
+  states: z
+    .object({ hover: z.string().optional(), pressed: z.string().optional(), disabled: z.string().optional() })
+    .optional(),
   /** 切图那一步给它的图片 id（设计的 images 里）、拼回去和原画那一块的相似度 */
   image: z.string().optional(),
   sim: z.number().optional(),

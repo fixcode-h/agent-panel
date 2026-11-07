@@ -52,7 +52,7 @@ export const EN_RESTORE_FLOW: Record<string, string> = {
   '还没有校验：搭建确认后自动逐个核对': 'Not verified yet: each element is checked after you confirm Build',
   这一步还没开始: 'This step has not started',
   '这一版的意见：': 'Note for this version: ',
-  '选择原画（PNG、JPG、WebP）': 'Choose a concept (PNG, JPG, WebP)',
+  '选择原画（PNG、JPG、WebP 或 PSD）': 'Choose a concept (PNG, JPG, WebP or PSD)',
   重复组: 'Repeat group',
   重新跑这一步: 'Run this step again',
   '{name} 拼回去和原画只有 {s} 像': '{name} only matches the concept at {s} when put back',
@@ -104,4 +104,24 @@ export const EN_RESTORE_FLOW: Record<string, string> = {
   逐个核对和原画差多少: 'Check each element against the concept',
   '面板重启，这一步被打断了，请重新运行': 'The panel restarted and interrupted this step; run it again',
   位置对上: 'Positions OK',
+  'PSD：按图层还原，位置和切图直接取自图层':
+    'PSD: restored layer by layer, positions and slices come straight from the layers',
+  '有图层样式（描边、投影、发光）：切图只有图层本身的像素，样式要在引擎里补或者先在 PS 里栅格化':
+    'Some layers have layer styles (stroke, shadow, glow): slices only hold the layer pixels, so add the styles in the engine or rasterize them in Photoshop first',
+  '有图层蒙版：切图没套蒙版，先在 PS 里应用蒙版再导入更准':
+    'Some layers have masks: slices ignore them, so apply the masks in Photoshop before importing for a closer match',
+  '有非「正常」的混合模式：叠出来的颜色可能和 PS 里不一样':
+    'Some layers use a blend mode other than Normal: the stacked colors may differ from Photoshop',
+  '有剪贴蒙版：被剪贴的图层按自己的像素切，没有裁到下面那层的形状':
+    'Some layers are clipping masks: clipped layers are sliced with their own pixels, not trimmed to the layer below',
+  '确认这就是要还原的 PSD，下一步按图层列出所有元素':
+    'Confirm this is the PSD to restore; next, every element is listed from its layers',
+  图层元素: 'Layer elements',
+  '从 PSD 图层读出 {n} 个元素，{g} 组重复的': 'Read {n} elements from the PSD layers, {g} repeated groups',
+  '位置和名字都照图层来；类型不对的点开改，没问题就确认，下一步直接用图层的像素当切图':
+    'Positions and names come from the layers; open any element with the wrong type to fix it, then confirm and the layer pixels become the slices',
+  来自图层: 'From layers',
+  'PSD 图层文件读不出来：{file}': 'Cannot read the PSD layer file: {file}',
+  'PSD 太大（最多 200 MB）': 'The PSD is too large (200 MB max)',
+  'PSD 读不出来：{error}': 'Cannot read the PSD: {error}',
 }
