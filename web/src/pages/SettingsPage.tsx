@@ -71,6 +71,7 @@ import { DialogCloseButton } from '@/components/ui/dialog-nav'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { Advanced, Group, NumberField, ReadValue, Row } from '@/components/settings/parts'
+import { RestoreSettings } from '@/components/settings/RestoreSettings'
 import { SectionToc, revealSetting, setSectionScroll } from '@/components/settings/section-nav'
 import { SettingsSearchBox, SettingsSearchResults, type SettingsHitGroup } from '@/components/settings/SettingsSearch'
 import { fillVars, searchSettings, searchTerms, type SettingsItem } from '@/lib/settings-search'
@@ -264,6 +265,7 @@ function SettingsBody({
   const [detecting, setDetecting] = useState(false)
   const [assist, setAssist] = useState(initial.assist)
   const [imageGen, setImageGen] = useState(initial.imageGen)
+  const [designRestore, setDesignRestore] = useState(initial.designRestore)
   const [modelCatalog, setModelCatalog] = useState(initial.modelCatalog)
   const [blender, setBlender] = useState(initial.blender)
   // 用量统计的计价模型（存在设置里，跟着自动保存）
@@ -416,6 +418,7 @@ function SettingsBody({
     apis,
     assist: { ...assist, model: assist.model.trim() },
     imageGen: { ...imageGen, model: imageGen.model.trim() },
+    designRestore,
     modelCatalog,
     blender: { path: blender.path.trim() },
     usagePricingModel: pricingModel,
@@ -1364,6 +1367,7 @@ function SettingsBody({
                       />
                     </Row>
                   </Group>
+                  <RestoreSettings value={designRestore} onChange={setDesignRestore} />
                   <CustomClis demo={demo} />
                 </>
               )}
