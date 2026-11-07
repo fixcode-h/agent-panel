@@ -74,6 +74,26 @@ export async function scrollRevealProblems(p, rail, errors) {
   const outerNow = await scrollingIds(p)
   if (outerNow.length !== 1 || outerNow[0] !== String(outer.i))
     errors.push(`滚动条：滚会话栏外层时应只显示外层那条，实际 ${JSON.stringify(outerNow)}`)
+  // 会话栏外层不画自己的原生滚动条，滑块画在它右边、消息区滚动条的那条槽里：两块共用一根（用户要求）
+  {
+    const own = await rail
+      .locator(`[data-sr-probe="${outer.i}"]`)
+      .evaluate((el) => el.offsetWidth - el.clientWidth)
+      .catch(() => -1)
+    if (own !== 0) errors.push(`滚动条：会话栏外层还占着自己的滚动条宽度（${own}px），会和消息区的并排两根`)
+    const thumb = rail.locator('[data-rail-thumb]')
+    const tb = await thumb.boundingBox().catch(() => null)
+    if ((await thumb.getAttribute('data-rail-thumb').catch(() => null)) !== 'shown' || !tb)
+      errors.push('滚动条：滚会话栏时右边槽里没画出它的滑块')
+    else if (tb.x < railBox.x + railBox.width - 1) errors.push('滚动条：会话栏的滑块没画在右边的滚动槽里')
+    else
+      await p
+        .screenshot({
+          path: 'ui-shots/02-滚动条-会话栏共用槽.png',
+          clip: { x: railBox.x + railBox.width - 80, y: railBox.y, width: 110, height: railBox.height },
+        })
+        .catch(() => {})
+  }
   await p.evaluate(() => {
     for (const el of document.querySelectorAll('[data-sr-probe]')) el.removeAttribute('data-sr-probe')
   })

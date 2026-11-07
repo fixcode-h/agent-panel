@@ -18,6 +18,7 @@ paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Message
 
 ## 行内代码里的文件路径按段校验，字符集用 Unicode 属性
 
+- 规则：行内代码要带目录（`src/a.ts`、`./a.ts`、盘符路径）才画成文件标记，单独的文件名和函数名、字段一样按行内代码显示（`linkPaths` 的 `hasDir`）；面板自己拼给用户看的 Markdown（诊断报告的位置、要改的文件）写全路径，显示时标记只露文件名。Agent 没加反引号的报告文字由 `shared/bug-terms.ts` 补上。
 - 规则：认行内代码是不是文件路径用 `web/src/lib/file-path.ts` 的 `parsePath` / `linkPaths`，别另写正则；字符集用 `\p{L}\p{N}`（带 `u`），不用 `\w`（只认 ASCII）；扩展名白名单带图片格式；不误判靠「按段校验 + 白名单 + 拒绝 URL 和命令参数」，不收紧字符集。
 - 起因：`ui-shots/107-对话-图片气泡.png` 这类中文路径点不开。
 - 防线：`web/src/lib/file-path.test.ts`、`scripts/ui/01-composer.mjs` 的「对话-路径可点」。

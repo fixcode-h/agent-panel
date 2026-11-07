@@ -43,3 +43,27 @@ export function childKindArgs(a: Record<string, unknown> | undefined) {
     ...(a?.ignore_uncommitted === true && { ignoreDirty: true }),
   }
 }
+
+/**
+ * send_to_conversation 的 kind / level：用户要把已有子对话正在修的问题改走完整 Bug 流程时写 "bug"（ADR 0057）。
+ * 不写或写别的照常交消息，不会把已经是 Bug 的子对话降回去
+ */
+export const upgradeBugFields = {
+  kind: {
+    type: 'string',
+    enum: ['bug'],
+    description:
+      '用户要把这个子对话正在处理的问题改按完整 Bug 流程修（分阶段交诊断报告、用户确认后才改）时写 "bug"：面板把它标成用户报的 Bug。只是普通交代不写',
+  },
+  level: {
+    ...childKindFields.level,
+    description: 'kind 写 "bug" 时可以带级别初判，含义同 create_conversation 的 level',
+  },
+}
+
+/** send_to_conversation 写了 kind: "bug" 才返回升级参数 */
+export function upgradeBugArg(a: Record<string, unknown> | undefined) {
+  if (a?.kind !== 'bug') return undefined
+  const level = LEVELS.find((x) => x === a?.level)
+  return level ? { level } : {}
+}

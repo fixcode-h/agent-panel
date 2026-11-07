@@ -97,12 +97,32 @@ test('linkPaths：行内代码换成文件标记（图标种类 + 文件名 + �
   assert.equal(out.match(/data-file-ref/g)?.length, 2)
 })
 
-test('linkPaths：截图里那种表格路径认成表格，纯文件名的 Office 文档也认', () => {
+test('linkPaths：截图里那种表格路径认成表格，带目录的 Office 文档也认', () => {
   const out = linkPaths(
-    '<p><code>Project/Designer/Excel/FunctionalNPC/C_FunctionalNPCInfo.xlsx</code> 和 <code>需求.docx</code></p>',
+    '<p><code>Project/Designer/Excel/FunctionalNPC/C_FunctionalNPCInfo.xlsx</code> 和 <code>docs/需求.docx</code></p>',
   )
   assert.match(out, /data-kind="sheet" data-path="Project\/Designer\/Excel\/FunctionalNPC\/C_FunctionalNPCInfo.xlsx"/)
-  assert.match(out, /data-kind="doc" data-path="需求.docx"/)
+  assert.match(out, /data-kind="doc" data-path="docs\/需求.docx"/)
+})
+
+test('linkPaths：单独的文件名按行内代码显示，带目录的才是文件标记（用户 2026-11-07 定）', () => {
+  const out = linkPaths(
+    '<p><code>s_CSM_CompanionNPCSystem.lua</code>、<code>Markdown.tsx:42</code>、<code>需求.docx</code>、' +
+      '<code>./a.ts</code>、<code>C:\\x\\b.lua</code></p>',
+  )
+  assert.ok(out.includes('<code>s_CSM_CompanionNPCSystem.lua</code>'), out)
+  assert.ok(out.includes('<code>Markdown.tsx:42</code>'), out)
+  assert.ok(out.includes('<code>需求.docx</code>'), out)
+  assert.match(out, /data-path="\.\/a\.ts"/)
+  assert.match(out, /data-path="C:\\x\\b\.lua"/)
+})
+
+test('linkPaths：链接文字就是文件名时按普通标记画（灰色扩展名、行号照常）', () => {
+  const out = linkPaths('<p><a href="src/a_b.lua:42">a_b.lua</a></p>')
+  assert.ok(
+    out.includes('<span class="fr-name">a_b</span><span class="fr-ext">.lua</span><span class="fr-line">:42</span>'),
+    out,
+  )
 })
 
 test('linkPaths：同一条消息里同名不同路径的，名字前面补上一级目录', () => {
