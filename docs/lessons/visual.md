@@ -35,11 +35,6 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 - 规则：并排的栏（图标栏和会话侧栏、侧栏和面板）要么底色差一档，要么有一道分隔线；新加一栏时用 `color-mix` 从这套配色的 rail / fg 算出来（`.activity-bar`），不另写每套配色的颜色。
 - 起因：e8c094d 的图标栏和会话侧栏都是 `bg-rail`，用户反馈「侧栏和左侧栏要有边界，目前融合在一起」。
 
-## 卡片底和所在区域同色时，卡片靠细线分开
-
-- 规则：一套配色里 `--card` 和 `--window` / `--panel` / `--bg` 有同值的（「Claude Code」配色深浅两套都是），这套配色的 `--shadow`（即 `shadow-card`、`Card` 默认的 `--c-card-shadow`）用 `0 0 0 1px var(--line)` 细线，不用黑投影：同色底上投影只在下沿留一道脏边。自己带 `border` 的浮条走 `--shadow-raised`，不叠两道线。改卡片外观改这几个令牌，不在单个页面上补边框。
-- 起因：用户反馈项目设置「必备角色」的折叠卡片和弹窗底色糊在一起（c85b727 引入的配色）。
-
 ## 盖在滚动内容上的吸顶栏、浮条用毛玻璃
 
 - 规则：吸顶栏、浮在内容上的操作条和按钮用 `frost`（bg 底）/ `frost-card`（card 底），不再写 `bg-bg`、`bg-card/95 backdrop-blur`；对话里吸顶的回复头、工作流节点标题是通栏：加 `frost-bar` 类、第一个孩子放 `<FrostBarBg />`，所在滚动区要 `overflow-x-hidden`（底左右各伸出一屏宽，靠它裁掉）。

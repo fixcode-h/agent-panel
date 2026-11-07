@@ -70,6 +70,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [attachments.md](./attachments.md)               | 附件                             |
 | [background.md](./background.md)                 | 后台命令                         |
 | [builtin.md](./builtin.md)                       | 内置角色、工作流和 Skill         |
+| [card-surface.md](./card-surface.md)             | 卡片的边界                       |
 | [child-idle-ask.md](./child-idle-ask.md)         | 子对话没有输出时自动询问         |
 | [child-merge-fail.md](./child-merge-fail.md)     | 子对话合回失败退回给谁           |
 | [child-wrapup.md](./child-wrapup.md)             | 子对话收尾和独立分支             |
