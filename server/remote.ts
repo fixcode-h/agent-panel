@@ -12,7 +12,7 @@ import type { RemoteAccess } from '../shared/schema.ts'
 import type { FrpDeployStatus, RemoteAccessStatus, RemoteState } from '../shared/remote.ts'
 import { t } from '../shared/i18n.ts'
 import { getSettings, saveSettings } from './settings.ts'
-import { EXTERNAL_ENV } from './hosts.ts'
+import { EXTERNAL_ENV, FORWARDED_ENV } from './hosts.ts'
 import {
   FRPC_CONFIG,
   deployFrps,
@@ -92,7 +92,8 @@ async function startExternal(s: RemoteAccess): Promise<number> {
     new Promise<NonNullable<typeof external>>((resolve, reject) => {
       const server = serve(
         {
-          fetch: (req: Request, env: Record<string, unknown>) => fetch(req, { ...env, [EXTERNAL_ENV]: true }),
+          fetch: (req: Request, env: Record<string, unknown>) =>
+            fetch(req, { ...env, [EXTERNAL_ENV]: true, [FORWARDED_ENV]: custom }),
           port: p,
           hostname,
           ...(tls ? { createServer: createHttpsServer as never, serverOptions: tls } : {}),

@@ -78,7 +78,7 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - **密码登录门**（`server/guard/`，参考 dsh-web-guard）：带标记的请求一律进 `externalGate`，不认访问令牌。没会话时接口回 401 `{ login: '/login' }`（前端 `api.ts` 的 `failure` 据此跳转），页面 302 到 `/login?next=`；`next` 只收站内相对路径。登录页和退出页是服务端直接出的 HTML（`pages.ts`）。
   - 密码 scrypt 哈希存数据目录 `guard.json`（0600）；第一次打开外部访问时生成初始密码，明文也存在这里，只给本机打开的设置页看，改过密码就清掉。
   - 会话令牌服务端只存 SHA-256，落盘 `guard-sessions.json`，按 `sessionDays` 滑动过期，Cookie `agent_panel_session`（HttpOnly、SameSite=Lax，HTTPS 时加 Secure）。
-  - 输错按来源 IP 锁定（`maxAttempts` 次、`lockMinutes` 分钟），另有全局上限 `maxAttempts × 10`：经 frp / tailscale 进来时来源都是 127.0.0.1。`X-Forwarded-For` / `X-Real-IP` / `CF-Connecting-IP` 只在直连方是回环或内网地址时才认。
+  - 输错按来源 IP 锁定（`maxAttempts` 次、`lockMinutes` 分钟），另有全局上限 `maxAttempts × 10`：经 frp / tailscale 进来时来源都是 127.0.0.1。转发头只在**自建反代（custom）方式**且直连方是回环或内网地址时才认（`server/hosts.ts` 的 `FORWARDED_ENV`）：取 `X-Forwarded-For` 的最后一跳（nginx 的 `$proxy_add_x_forwarded_for` 是追加，第一个是访问者自己能写的），没有时看 `X-Real-IP`，不认 `CF-Connecting-IP`。frp 是 TCP 直通，进来的请求头全由访问者自己写，一律不认，否则换着假 IP 就能绕开按来源的锁定。
   - 外网的 POST 等要过来源检查（`gate.ts` 的 `originOk` / `sameSite`）：Origin 的主机名要和 Host、`X-Forwarded-Host` 或访问地址一致。本机请求照旧走 `originAllowed`。
   - 设置页「访问密码」（`GuardGroup.tsx`，接口 `/api/remote/guard/*`）：改密码（外网改要填当前密码，改完踢掉其他设备）、登录的设备列表、踢掉单个、全部退出。
 - **Tailscale**（`server/tailscale.ts`）：`tailscale serve|funnel --bg --https=<端口> http://127.0.0.1:<外网端口>`，关的时候只 `--https=<端口> off`，不 `reset` 用户自己的配置；机器名取 `tailscale status --json` 的 `Self.DNSName`。Funnel 只允许 443 / 8443 / 10000。
