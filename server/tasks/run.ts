@@ -658,7 +658,7 @@ export function createRun(sc: TasksScope) {
             ? (paths) => releaseUnchanged(sc.claims, entry.task, paths)
             : undefined,
         listConversations: async () => {
-          const kids = (await sc.store.list()).filter((x) => x.parentTaskId === entry.task.id)
+          const kids = await sc.store.childrenOf(entry.task.id)
           // 正在跑的对话用内存里的最新状态（标题只在创建时定，摘要随每一轮更新）
           return kids.map((k) => {
             const cur = sc.live.get(k.id)?.task ?? k

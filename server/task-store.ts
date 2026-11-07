@@ -188,7 +188,14 @@ export function createTaskStore() {
   const msgCost = new Map<string, number>()
   const msgPending = new Map<string, Task>()
   const msgTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /**
+   * 父对话 → 子对话 id 的索引：找子对话不再每次把全部对话过一遍（每轮结束、停止、合并都要找）。
+   * 只存 id、取的时候从 metas 拿最新的那份；父子关系变了（新建、删除、改了 parentTaskId）就整份作废，下次用到时重建
+   */
+  let kidsIndex: { src: Map<string, Task>; map: Map<string, Set<string>> } | null = null
+  const dropKidsIndex = () => (kidsIndex = null)
   onReset(() => {
+    dropKidsIndex()
     metas = null
     loading = null
     full.clear()
@@ -598,6 +605,29 @@ export function createTaskStore() {
     },
     get: getFull,
     /**
+     * 直接挂在这个对话下面的子对话（和 list 一样只带用户消息，含进了回收站的）：
+     * 等价于 `(await list()).filter((x) => x.parentTaskId === id)`，但走索引，不扫全部对话
+     */
+    async childrenOf(parentId: string): Promise<Task[]> {
+      const map = await all()
+      if (!kidsIndex || kidsIndex.src !== map) {
+        const idx = new Map<string, Set<string>>()
+        for (const t of map.values())
+          if (t.parentTaskId) {
+            let set = idx.get(t.parentTaskId)
+            if (!set) idx.set(t.parentTaskId, (set = new Set()))
+            set.add(t.id)
+          }
+        kidsIndex = { src: map, map: idx }
+      }
+      const out: Task[] = []
+      for (const id of kidsIndex.map.get(parentId) ?? []) {
+        const t = map.get(id)
+        if (t) out.push(t)
+      }
+      return out
+    },
+    /**
      * 只读对话消息，不进 full 缓存：对话搜索一次要扫几十个对话，
      * 走 get 会把用户正在看的那份挤出缓存（下次打开又要重读几 MB）
      */
@@ -633,6 +663,7 @@ export function createTaskStore() {
       const now = new Date().toISOString()
       const item = { ...input, id: input.id ?? randomUUID(), createdAt: now, updatedAt: now } as Task
       ;(await all()).set(item.id, head(item))
+      if (item.parentTaskId) dropKidsIndex()
       remember(item)
       await persist(item)
       return item
@@ -667,6 +698,7 @@ export function createTaskStore() {
       const updatedAt = opts?.keepUpdatedAt ? (input.updatedAt ?? old.updatedAt) : new Date().toISOString()
       const item = { ...old, ...input, id, projectId: old.projectId, updatedAt } as Task
       ;(await all()).set(id, head(item))
+      if (item.parentTaskId !== old.parentTaskId) dropKidsIndex()
       remember(item)
       await persist(item, opts)
       changed(old, item)
@@ -690,6 +722,7 @@ export function createTaskStore() {
       const updatedAt = opts?.keepUpdatedAt ? (patch.updatedAt ?? old.updatedAt) : new Date().toISOString()
       const item = { ...old, ...patch, id, projectId: old.projectId, updatedAt } as Task
       map.set(id, head(item))
+      if (item.parentTaskId !== old.parentTaskId) dropKidsIndex()
       // 内存里还留着这份对话（刚读过、正在执行）时一起改：不然下一次落盘或推送会把旧值带回去
       const hit = full.get(id)
       if (hit) Object.assign(hit, patch, { updatedAt })
@@ -702,6 +735,7 @@ export function createTaskStore() {
       const meta = map.get(id)
       if (!meta) return false
       map.delete(id)
+      dropKidsIndex()
       drop(id)
       written.delete(id)
       stamps.forget(id)

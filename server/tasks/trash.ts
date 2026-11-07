@@ -62,7 +62,7 @@ export function createTrash(s: TasksScope) {
     const task = await s.store.peek(id)
     if (!task) return s.bad(c, t('任务不存在'), 404)
     // 删父对话时把它的子对话一起带进回收站，不留孤儿（恢复时也一起回来）
-    const kids = (await s.store.list()).filter((x) => x.parentTaskId === id)
+    const kids = await s.store.childrenOf(id)
     await enterTrash(task)
     for (const k of kids) await enterTrash(k, 'parent')
     return c.body(null, 204)
@@ -77,9 +77,7 @@ export function createTrash(s: TasksScope) {
     s.stopTask(id, 'archive')
     forgetNotes(id)
     await s.endBackground(id)
-    const kids = await Promise.all(
-      (await s.store.list()).filter((x) => x.parentTaskId === id).map((x) => s.store.get(x.id)),
-    )
+    const kids = await Promise.all((await s.store.childrenOf(id)).map((x) => s.store.get(x.id)))
     await purgeTasks([task, ...kids.filter((x): x is Task => !!x)])
     return c.body(null, 204)
   })

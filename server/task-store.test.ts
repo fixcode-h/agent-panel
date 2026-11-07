@@ -554,3 +554,22 @@ test('messageGap：写盘越慢合并窗口越宽，最窄 400ms、最宽 2 秒'
   assert.equal(messageGap(200), 1000, '写一次 200ms：窗口放宽到 1 秒，写盘最多占五分之一')
   assert.equal(messageGap(5000), 2000, '再慢也最多隔 2 秒，被强杀时丢的流式输出有上限')
 })
+
+test('childrenOf：走索引找子对话，新建、改父对话、删除后都跟着变', async () => {
+  const store = createTaskStore()
+  const base = { projectId: '', mode: 'chat', status: 'done', messages: [], steps: [], requests: [] }
+  const p = await store.create({ ...base, title: 'p' } as never)
+  const q = await store.create({ ...base, title: 'q' } as never)
+  const a = await store.create({ ...base, title: 'a', parentTaskId: p.id } as never)
+  const ids = async (id: string) => (await store.childrenOf(id)).map((x) => x.title)
+  assert.deepEqual(await ids(p.id), ['a'])
+  const b = await store.create({ ...base, title: 'b', parentTaskId: p.id } as never)
+  assert.deepEqual(await ids(p.id), ['a', 'b'], '新建的子对话马上能找到')
+  await store.update(b.id, { title: 'b2' } as never)
+  assert.deepEqual(await ids(p.id), ['a', 'b2'], '取到的是最新的那份')
+  await store.update(a.id, { parentTaskId: q.id } as never)
+  assert.deepEqual(await ids(p.id), ['b2'])
+  assert.deepEqual(await ids(q.id), ['a'], '改了父对话，索引跟着变')
+  await store.remove(b.id)
+  assert.deepEqual(await ids(p.id), [], '删掉的不再出现')
+})
