@@ -3,39 +3,135 @@ import { t } from './i18n.ts'
 
 export type RemoteMode = RemoteAccess['mode']
 
-/** 隧道当前的状态：off 没开，starting 正在连，running 可用，error 出错 */
+/** 外部访问当前的状态：off 没开，starting 正在连（frpc），running 可用，error 出错 */
 export type RemoteState = 'off' | 'starting' | 'running' | 'error'
-
-export interface CloudflaredInfo {
-  installed: boolean
-  version: string
-  path: string
-  /** 没找到或检测失败的原因 */
-  error: string
-}
 
 /** 设置页「外部访问」显示的状态 */
 export interface RemoteAccessStatus {
   enabled: boolean
   mode: RemoteMode
   state: RemoteState
-  /** 外网访问地址（不带令牌） */
+  /** 外网访问地址 */
   url: string
-  /** 带访问令牌的地址，外网的浏览器用它打开一次 */
-  link: string
   /** 出错原因 */
   error: string
-  /** 外网专用端口（只监听 127.0.0.1），0 表示没在监听；自建反代要转到这里 */
+  /** 外网专用端口，0 表示没在监听；反向代理要转到这里 */
   localPort: number
+  /** 外网专用端口是不是自己做了 HTTPS（直接监听时配了证书） */
+  https: boolean
+  /** 本机的局域网 IPv4：直接监听时拼访问地址、反代跑在 Docker 里时当转发目标 */
+  lanIps: string[]
+  /** 设置好访问密码了没有（打开外部访问时自动生成一个） */
+  hasPassword: boolean
   /** 本机登录用户名：拼 SSH 连接命令用 */
   localUser: string
-  cloudflared: CloudflaredInfo
-  /** 正在下载 cloudflared；percent 为 -1 时不知道总大小 */
+  /** Tailscale 的检测结果（只在 Tailscale 方式下检测） */
+  tailscale: TailscaleInfo | null
+  /** 正在下载 frpc；percent 为 -1 时不知道总大小 */
   download: { running: boolean; percent: number; error: string } | null
   /** 一键配置云服务器的进度 */
   deploy: FrpDeployStatus | null
   /** 各条端口映射的状态（按映射 id）：ok 已在服务器上开好，error 是 frpc 报的原因 */
   mappings: Record<string, { ok: boolean; error: string }>
+}
+
+export interface TailscaleInfo {
+  installed: boolean
+  version: string
+  path: string
+  /** 登录了、连着 tailnet */
+  running: boolean
+  /** 这台机器在 tailnet 里的域名（<机器名>.<tailnet>.ts.net） */
+  dnsName: string
+  /** 没装、没登录的原因 */
+  error: string
+}
+
+/** 一个登录着的外网设备 */
+export interface GuardSession {
+  id: string
+  ip: string
+  ua: string
+  createdAt: number
+  lastSeen: number
+}
+
+/** 设置页「访问密码」「登录的设备」用的状态 */
+export interface GuardState {
+  hasPassword: boolean
+  /** 自动生成、还没改过的初始密码：只在本机打开设置页时给出，外网为空 */
+  initialPassword: string
+  /** 这次请求是不是从外网来的（外网改密码要先验证当前密码） */
+  external: boolean
+  /** 当前浏览器的会话 id（本机打开时为空） */
+  current: string
+  sessions: GuardSession[]
+}
+
+/** 设置页给出配置示例的反向代理 */
+export type ProxyKind = 'caddy' | 'npm' | 'nginx'
+
+/** 示例里用的域名：设置里填了访问地址就用它，没填用占位 */
+export function proxyHost(publicUrl: string) {
+  try {
+    const s = publicUrl.trim()
+    if (s) return new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`).hostname
+  } catch {}
+  return 'panel.example.com'
+}
+
+/**
+ * 反向代理的配置示例。upstream 是反代连面板用的地址：本机反代是 127.0.0.1:外网专用端口，
+ * 反代跑在 Docker 里是本机局域网 IP:端口，frp 方式下是云服务器上的 127.0.0.1:面板端口（反代装在云服务器上）。
+ * 要点：Host 原样转发、带上 X-Forwarded-*（登录来源检查和失败锁定要用）、不缓冲（任务进度走 SSE 长连接）、
+ * 上传上限放大（导入数据、上传图片和视频）
+ */
+export function proxySnippet(kind: ProxyKind, publicUrl: string, upstream: string) {
+  const host = proxyHost(publicUrl)
+  const plainHttp = /^http:\/\//i.test(publicUrl.trim())
+  if (kind === 'caddy')
+    return [
+      `${plainHttp ? 'http://' : ''}${host} {`,
+      `\treverse_proxy ${upstream} {`,
+      // 收到就转发，不等缓冲攒满：任务进度是 SSE；Caddy 默认就转 Host 和 X-Forwarded-*
+      '\t\tflush_interval -1',
+      '\t}',
+      '\trequest_body {',
+      '\t\tmax_size 2GB',
+      '\t}',
+      '}',
+      '',
+    ].join('\n')
+  // Nginx Proxy Manager 的「Advanced → Custom Nginx Configuration」：转发目标、Host、证书在界面里填，这里只补缓冲和上限
+  if (kind === 'npm')
+    return ['proxy_buffering off;', 'proxy_read_timeout 1d;', 'client_max_body_size 2g;', ''].join('\n')
+  return [
+    'server {',
+    `    listen ${plainHttp ? '80' : '443 ssl'};`,
+    `    server_name ${host};`,
+    ...(plainHttp
+      ? []
+      : [
+          `    ssl_certificate     /etc/letsencrypt/live/${host}/fullchain.pem;`,
+          `    ssl_certificate_key /etc/letsencrypt/live/${host}/privkey.pem;`,
+        ]),
+    '    client_max_body_size 2g;',
+    '',
+    '    location / {',
+    `        proxy_pass http://${upstream};`,
+    '        proxy_http_version 1.1;',
+    '        proxy_set_header Host $host;',
+    '        proxy_set_header X-Real-IP $remote_addr;',
+    '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;',
+    '        proxy_set_header X-Forwarded-Proto $scheme;',
+    '        proxy_set_header Upgrade $http_upgrade;',
+    '        proxy_set_header Connection $http_connection;',
+    '        proxy_buffering off;',
+    '        proxy_read_timeout 1d;',
+    '    }',
+    '}',
+    '',
+  ].join('\n')
 }
 
 /** 端口映射哪里不对：服务器端口要在一键配置时放行的范围里，不能和面板端口、别的映射重复；没问题返回空 */
@@ -115,4 +211,15 @@ export interface FrpDeployStatus {
   /** 下载进度，-1 表示不知道 */
   percent: number
   error: string
+}
+
+/** frp 连接测试的一步：ok 为 null 表示前面断了、这一步没测 */
+export interface FrpTestStep {
+  id: 'config' | 'local' | 'server' | 'frpc' | 'panel'
+  title: string
+  ok: boolean | null
+  /** 这一步用了多久（毫秒），没测为 0 */
+  ms: number
+  /** 通过时的说明，或没通过时该去查什么 */
+  detail: string
 }
