@@ -2486,6 +2486,11 @@ export const Settings = z.object({
    */
   fileFormat: FileFormat.prefault({}),
   language: z.enum(['auto', 'zh', 'en']).default('auto'), // 界面语言：auto 跟随浏览器
+  /**
+   * 语言设成 auto 时，浏览器识别出的语言（页面加载后回报，见 web/src/lib/data.tsx）。
+   * 服务端按它定界面文案和交给 Agent 的回复语言；没有（旧数据、还没打开过页面）才退回系统 locale
+   */
+  browserLang: z.enum(['zh', 'en']).optional().catch(undefined),
   bugAuthor: z.boolean().catch(true).default(true), // Bug 诊断报告的引入点显示作者（ADR 0046）；关了只显示提交号
   /**
    * 命令行环境：面板替 Agent 跑整行命令（后台命令、合并时编译里「自动」环境的步骤）用哪个 shell。

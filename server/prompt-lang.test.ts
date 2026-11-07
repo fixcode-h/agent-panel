@@ -4,7 +4,7 @@ import { FlowRun } from '../shared/task-flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
-import { getLang, resolveLang, setLang } from '../shared/i18n.ts'
+import { autoLangLabel, getLang, resolveLang, setLang } from '../shared/i18n.ts'
 import {
   PROMPT_LANG_ENV,
   VERDICT_LINE,
@@ -12,6 +12,7 @@ import {
   promptLangReminder,
   promptLangRules,
   promptLangWord,
+  replyLang,
 } from '../shared/prompt-lang.ts'
 import { buildAssistPrompt } from '../shared/assist.ts'
 import { docOptimizePrompt } from '../shared/docs.ts'
@@ -129,29 +130,50 @@ test('en：规则用英文写明 reply 和 reasoning / thinking，代码命令�
   assert.match(rules, /do not translate them/i)
 })
 
-test('auto：界面按系统 / 浏览器语言解析，回复语言跟随用户消息，不强制成界面语言', async () => {
+test('auto：按识别出的语言发固定规则（没有的语言用简体中文），浏览器回报的识别结果优先于系统 locale', async () => {
   assert.equal(resolveLang('auto', 'en-US'), 'en')
   assert.equal(resolveLang('auto', 'zh-CN'), 'zh')
+  // 没有的语言（法语）和看不出的默认简体中文；设置里的选项显示成「跟随浏览器 · 简体中文」
+  assert.equal(resolveLang('auto', 'fr-FR'), 'zh')
+  assert.equal(resolveLang('auto', 'C.UTF-8'), 'zh')
+  assert.equal(resolveLang('auto', undefined), 'zh')
+  assert.equal(autoLangLabel('fr-FR'), '简体中文')
+  assert.equal(autoLangLabel('en-GB'), 'English')
   // 设置成固定值时不受浏览器语言影响
   assert.equal(resolveLang('zh', 'en-US'), 'zh')
   assert.equal(resolveLang('en', 'zh-CN'), 'en')
-  // 系统语言 C.UTF-8 时「自动」解析成英文界面；以前规则也跟着写成「全部用英文」，中文提问收到英文回复
-  const before = getLang()
-  setLang(resolveLang('auto', 'C.UTF-8'), true)
+  // 以前「自动」发的是「按用户消息的语言」，界面已经认出是中文，思考过程仍常是英文（用户报的问题）；
+  // 现在系统语言是 C.UTF-8 时也按浏览器识别出的中文发「都用中文」
+  const before = { lang: getLang(), env: process.env.LANG }
+  // 动态引入：server/lang.ts 加载时会按本机设置改一次全局语言，静态引入会影响其他用例
+  const { applyServerLang } = await import('./lang.ts')
+  process.env.LANG = 'C.UTF-8'
   try {
-    assert.equal(getLang(), 'en')
-    const rules = promptLangRules()
-    assert.match(rules, /## Reply language/)
-    assert.match(rules, /in the language the user's message .* is written in/)
-    assert.doesNotMatch(rules, /reasoning \/ thinking in English/)
-    assert.match(promptLangReminder(), /language of the user's message/)
+    applyServerLang('auto', 'zh')
+    assert.equal(getLang(), 'zh')
+    assert.equal(replyLang(), 'zh')
+    assert.match(promptLangRules(), /## 回复语言\n界面语言设成了中文/)
+    assert.doesNotMatch(promptLangRules(), /用户消息/)
     const prompt = await nodePrompt()
-    assert.match(prompt, /完成后用用户消息所用的语言按上面的「总结格式」写总结卡/)
-    assert.doesNotMatch(prompt, /完成后用英文/)
+    assert.match(prompt, /完成后用中文按上面的「总结格式」写总结卡/)
+    // 浏览器认出英文
+    applyServerLang('auto', 'en')
+    assert.equal(replyLang(), 'en')
+    assert.match(promptLangReminder(), /in English/)
+    // 还没打开过页面（没有回报）：退回系统 locale；C.UTF-8 这种看不出的按简体中文
+    applyServerLang('auto')
+    assert.equal(replyLang(), 'zh')
+    process.env.LANG = 'en_US.UTF-8'
+    applyServerLang('auto')
+    assert.equal(replyLang(), 'en')
+    // 明确选的语言不看浏览器
+    applyServerLang('zh', 'en')
+    assert.equal(replyLang(), 'zh')
   } finally {
-    setLang(before)
+    if (before.env === undefined) delete process.env.LANG
+    else process.env.LANG = before.env
+    setLang(before.lang)
   }
-  assert.match(promptLangRules('auto-zh'), /## 回复语言\n面板语言设成了「自动」.*用户用中文写就用中文/)
 })
 
 test('语言名和要结论时的那句话：结论只认 submit_verdict 工具，不让模型在回复里写给面板识别的字（ADR 0041 第 16 节）', () => {
@@ -240,8 +262,6 @@ test('语言 mod：生成的源码可执行，按环境变量取规则（Command
   assert.match(hook!(), /思考过程（reasoning \/ thinking）都用中文/)
   process.env[PROMPT_LANG_ENV] = 'en'
   assert.match(hook!(), /## Reply language/)
-  process.env[PROMPT_LANG_ENV] = 'auto-en'
-  assert.match(hook!(), /language the user's message/)
   delete process.env[PROMPT_LANG_ENV]
   assert.equal(hook!(), '', '没有语言时不追加，避免把空规则塞进系统提示词')
 })
@@ -262,6 +282,6 @@ test('配置助手和说明文件优化的提示词：语言规则不抢占第�
 })
 
 test('末尾提醒带上「提到文件写完整路径」：只写文件名时面板打不开（用户 2026-11-06 定的）', () => {
-  for (const lang of ['zh', 'auto-zh'] as const) assert.match(promptLangReminder(lang), /完整的绝对路径/)
-  for (const lang of ['en', 'auto-en'] as const) assert.match(promptLangReminder(lang), /full absolute path/)
+  assert.match(promptLangReminder('zh'), /完整的绝对路径/)
+  assert.match(promptLangReminder('en'), /full absolute path/)
 })

@@ -11,14 +11,24 @@ export const LANGS = [
   { id: 'en', label: 'English' },
 ] as const
 export type Lang = (typeof LANGS)[number]['id']
-/** 设置里的语言：auto 跟随浏览器（服务端跟随系统） */
+/** 设置里的语言：auto 跟随浏览器（服务端跟随系统），解析见 resolveLang */
 export type LangSetting = Lang | 'auto'
 
 const DICTS: Record<Lang, Record<string, string> | null> = { zh: null, en: EN }
 
+/**
+ * 「自动」按浏览器（服务端按系统）语言选一个现有语言：英文浏览器用 English，其余（中文、法语这类没有的、
+ * C.UTF-8 这种看不出的）都用简体中文（用户 2026-11-07 定的）
+ */
 export function resolveLang(setting: string | undefined, fallback?: string): Lang {
   if (setting === 'zh' || setting === 'en') return setting
-  return /^zh/i.test(fallback ?? 'zh') ? 'zh' : 'en'
+  return /^en/i.test(fallback ?? '') ? 'en' : 'zh'
+}
+
+/** 「自动」时会选中的语言名，设置里的选项显示成「跟随浏览器 · 简体中文」 */
+export function autoLangLabel(fallback?: string): string {
+  const id = resolveLang('auto', fallback)
+  return LANGS.find((l) => l.id === id)?.label ?? id
 }
 
 function detect(): { lang: Lang; auto: boolean } {
@@ -38,9 +48,8 @@ let lang: Lang = detected.lang
 let auto = detected.auto
 export const getLang = () => lang
 /**
- * 设置里选的是不是「自动」。界面按解析出来的 lang 显示，但交给 Agent 的回复语言在「自动」时
- * 跟随用户消息（shared/prompt-lang.ts）：系统语言是 C.UTF-8 这类时「自动」会解析成英文，
- * 用户用中文提问却收到英文回复（真实 API 实测报告问题 20）
+ * 设置里选的是不是「自动」。浏览器靠它决定要不要把识别出的语言回报给服务端（web/src/lib/data.tsx）；
+ * 交给 Agent 的回复语言不看它，只用解析出来的 lang（shared/prompt-lang.ts）
  */
 export const isLangAuto = () => auto
 /**

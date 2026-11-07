@@ -108,7 +108,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '单个步骤最长运行时间（分钟）': 'Max run time per step (minutes)',
   '填 0 到 1440 之间的整数，0 表示不限制': 'Enter a whole number from 0 to 1440; 0 means no limit',
   语言: 'Language',
-  '跟随浏览器 · Auto': 'Follow browser · Auto',
+  '跟随浏览器 · {lang}': 'Follow browser · {lang}',
   内容宽度: 'Content width',
   '项目首页的输入框和任务列表、任务页的对话和工作流节点都用这个宽度，窗口窄时自动缩小。':
     'Used by the input box and task list on the project home, and by the conversation and workflow nodes on the task page. Shrinks automatically in narrow windows.',
