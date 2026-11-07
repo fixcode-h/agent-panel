@@ -275,9 +275,10 @@ export function ReviewDialog({
   }
 
   // 多版时用下拉选看哪一版（用户 2026-11-05：不要把所有版本都排在正文上面）。
-  // 有分组时组按第一次出现的顺序排（诊断报告就是论证 → 验证），组里新的在上；没有版本的阶段自然不出现
-  const order = [...new Set((versions ?? []).map((v) => v.group ?? ''))]
-  const picker = versions && versions.length > 1 && (
+  // 有分组时只列正在看的那一组（诊断报告就是正在看的那一步，用户 2026-11-07 要求不把所有步骤都列出来）：
+  // 换步骤靠阶段条，下拉只管这一步交了几版；这一步只有一版就不出下拉。组里新的在上
+  const same = (versions ?? []).filter((v) => (v.group ?? '') === (shown?.group ?? ''))
+  const picker = same.length > 1 && (
     <Select
       size="xs"
       aria-label={t('版本')}
@@ -287,16 +288,11 @@ export function ReviewDialog({
         setVer(e.target.value)
         setPick(null)
       }}
-      options={order.flatMap((g) =>
-        versions
-          .filter((v) => (v.group ?? '') === g)
-          .reverse()
-          .map((v) => {
-            const latest = v === versions.at(-1)
-            const mark = (x: string) => (latest ? t('{label}（最新）', { label: x }) : x)
-            return { value: v.key, label: mark(v.label), short: v.short && mark(v.short), group: v.group }
-          }),
-      )}
+      options={[...same].reverse().map((v) => {
+        const latest = v === versions?.at(-1)
+        const mark = (x: string) => (latest ? t('{label}（最新）', { label: x }) : x)
+        return { value: v.key, label: mark(v.label), short: v.short && mark(v.short), group: v.group }
+      })}
       className="w-48 shrink-0"
     />
   )
