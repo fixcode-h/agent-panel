@@ -461,6 +461,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
           '配置表：`Project/Designer/Excel/C_FunctionalNPCInfo.xlsx`',
           '',
           '不是路径的：`console.log`、`1.2.3`、`https://example.com/a.png`',
+          '',
+          '单独的文件名按代码显示：`Markdown.tsx`',
+          '',
+          '| 位置 | 说明 |',
+          '| --- | --- |',
+          '| `Project/Content/Script/lt_Common_CompanionNPC_Instance.lua:42` | 窄列里一行放下，名字缩略 |',
         ].join('\n'),
         tools: [],
         at: new Date().toISOString(),
@@ -509,6 +515,33 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
         .map((el) => el.textContent ?? '')
     })
     if (wrong.length) errors.push(`路径可点：${wrong.join('、')} 不该变成文件标记`)
+    // 单独的文件名是行内代码，不是文件标记（用户 2026-11-07 定：带目录的才画成能点的标记）
+    const bare = await p.evaluate(() => ({
+      code: [...document.querySelectorAll('.chat-md code')].some((el) => el.textContent === 'Markdown.tsx'),
+      ref: [...document.querySelectorAll('.chat-md .file-ref')].some((el) => el.textContent === 'Markdown.tsx'),
+    }))
+    if (!bare.code || bare.ref) errors.push('路径可点：单独的文件名 Markdown.tsx 应该按行内代码显示')
+    // 窄处一行放下：名字末尾省略、扩展名和行号露出来，图标和文字同一行（用户 2026-11-07 截图里折成两行）
+    const narrow = await p.evaluate(() => {
+      const el = document.querySelector('.chat-md td .file-ref[data-path*="lt_Common_CompanionNPC_Instance"]')
+      if (!el) return null
+      const cell = el.closest('td')
+      cell.style.maxWidth = '12em'
+      el.closest('table').style.tableLayout = 'fixed'
+      el.closest('table').style.width = '24em'
+      const r = el.getBoundingClientRect()
+      const lh = parseFloat(getComputedStyle(el).lineHeight)
+      const name = el.querySelector('.fr-name')
+      const ext = el.querySelector('.fr-ext').getBoundingClientRect()
+      return {
+        oneLine: r.height < lh * 1.5,
+        cut: name.scrollWidth > name.clientWidth,
+        extShown: ext.width > 0 && ext.right <= r.right + 0.5,
+      }
+    })
+    if (!narrow) errors.push('路径可点：表格里的长文件名没有变成文件标记')
+    else if (!narrow.oneLine || !narrow.cut || !narrow.extShown)
+      errors.push(`路径可点：窄处的文件标记没有一行缩略显示（${JSON.stringify(narrow)}）`)
     // 悬停：卡片里有完整路径和单击会做什么
     await mdPath.filter({ hasText: 'App.tsx:7' }).first().hover()
     const card = p.locator('[data-file-card]')

@@ -121,13 +121,26 @@ function linkTarget(href: string) {
 const CODE_OR_LINK = /(<pre\b[\s\S]*?<\/pre>)|<code>([^<\n]+)<\/code>|<a href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g
 
 /**
- * 渲染好的 Markdown 里，把像路径的行内代码（不在代码块里的）和指向本机文件的链接换成文件标记。
+ * 行内代码要带目录才算文件标记（用户 2026-11-07 定）：`src/a.ts`、`./a.ts`、`C:\x\a.lua` 是路径，画成能点的文件标记；
+ * 单独的文件名（`a.lua`、`Markdown.tsx:42`）和函数名、变量名一样按代码样式显示——只有名字定位不到是哪个文件，
+ * 画成文件标记看着能点、点了常常找不到。指向本机文件的 Markdown 链接不受这条限制
+ */
+const hasDir = (code: string) => /[\\/]/.test(code)
+
+/**
+ * 渲染好的 Markdown 里，把带目录、像路径的行内代码（不在代码块里的）和指向本机文件的链接换成文件标记。
  * 同一条消息里文件名相同、路径不同的，名字前面补上一级目录区分
  */
 export function linkPaths(html: string) {
   const found: { path: string; line?: number }[] = []
   const pick = (code?: string, href?: string) =>
-    code !== undefined ? parsePath(unescapeHtml(code)) : href !== undefined ? linkTarget(href) : null
+    code !== undefined
+      ? hasDir(unescapeHtml(code))
+        ? parsePath(unescapeHtml(code))
+        : null
+      : href !== undefined
+        ? linkTarget(href)
+        : null
   for (const m of html.matchAll(CODE_OR_LINK)) {
     const p = m[1] ? null : pick(m[2], m[3])
     if (p) found.push(p)
@@ -143,7 +156,9 @@ export function linkPaths(html: string) {
     const p = pick(code, href)
     if (!p) return all
     const dup = (byName.get(baseName(p.path).toLowerCase())?.size ?? 0) > 1
-    const label = href !== undefined && text && unescapeHtml(text.replace(/<[^>]+>/g, '')).trim() !== p.path ? text : ''
+    // 链接文字就是路径或文件名（诊断报告写成 [a.lua](src/a.lua:42)）时按普通标记画：灰色扩展名、行号照常
+    const plain = text ? unescapeHtml(text.replace(/<[^>]+>/g, '')).trim() : ''
+    const label = href !== undefined && plain && plain !== p.path && plain !== baseName(p.path) ? text : ''
     return fileRefHtml(p, { label, parent: dup && !label ? parentName(p.path) : '' })
   })
 }

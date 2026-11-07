@@ -117,7 +117,11 @@ test('交诊断报告：记成等用户确认的一版，对话算执行中（�
   })
   const md = diagnosisMarkdown(tk.diagnoses![0])
   assert.match(md, /## 根因（已证实）\nmax 用的是秒/)
-  assert.match(md, /## 交报告前已改动的文件\n- `web\/src\/lib\/login\.ts`/, '确认之前就动了手的要摆出来')
+  assert.match(
+    md,
+    /## 交报告前已改动的文件\n> \[!CAUTION\]\n> 这些文件不在你同意过的范围里：\n> - `web\/src\/lib\/login\.ts`/,
+    '确认之前就动了手的要摆出来，用警告框',
+  )
   // 还在等确认时再交：不收
   assert.match(submitDiagnosis(tk, input(), id).info, /还在等用户确认/)
 })
@@ -273,7 +277,7 @@ test('用户标疑问：退回的话按编号列出；新一版要逐条回答�
   assert.equal(pendingDiagnosis(tk)?.version, 2)
   assert.match(
     diagnosisMarkdown(tk.diagnoses![1], tk.diagnoses![0]),
-    /## 回答上一轮的意见\n1\. \*\*疑问\*\*「max 用的是秒」：配置里写的是毫秒吧？\n {3}- 回答：查了 config\.ts:8/,
+    /## 回答上一轮的意见\n1\. \*\*疑问\*\*「max 用的是秒」：配置里写的是毫秒吧？\n {3}- 回答：查了 `config\.ts:8`/,
   )
 })
 
@@ -537,7 +541,10 @@ test('根因那一版：返回写明只确认根因；提前写的修法在弹�
   const r = submitDiagnosis(tk, input({ phase: 'cause', level: 'quick' }), id)
   ok(r)
   assert.match(r.info, /只请用户确认根因.*标成草案.*不要说在等他确认方案/)
-  assert.match(diagnosisMarkdown(tk.diagnoses![0]), /## 修复方案草案（这一版不确认，同意根因后另交一版）\nlogin\.ts:44/)
+  assert.match(
+    diagnosisMarkdown(tk.diagnoses![0]),
+    /## 修复方案草案（这一版不确认，同意根因后另交一版）\n`login\.ts:44`/,
+  )
   // 同意根因后交的方案不算合成的一版
   ok(decideDiagnosis(tk, 1, yes, id))
   const p = submitDiagnosis(tk, input({ phase: 'plan' }), id)

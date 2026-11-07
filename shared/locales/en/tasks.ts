@@ -1810,6 +1810,7 @@ export const EN_TASKS: Record<string, string> = {
   影响和风险: 'Impact and risk',
   验证计划: 'Verification plan',
   交报告前已改动的文件: 'Files already changed before the report',
+  '这些文件不在你同意过的范围里：': 'These files are outside what you have approved:',
   这一版诊断报告已经处理过了: 'This version of the diagnosis report has already been handled',
   '退回要写清哪里有疑问：先标注，或者写整体意见':
     "To send it back, say what's in question: annotate first, or write an overall comment",
