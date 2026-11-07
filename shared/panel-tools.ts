@@ -73,6 +73,8 @@ export const PANEL_TOOL_NAMES = [
   // 操控软件的两个工具（见 docs/adr/0011）
   'app_actions',
   'app_do',
+  // 从视频截帧（server/video/agent-frames.ts）
+  'video_frames',
   // 不常用工具的入口（见下面的 DEFERRED_TOOLS）
   'more_tools',
 ] as const
@@ -142,6 +144,7 @@ export const DEFERRED_TOOLS: readonly string[] = [
   'p4_split_changelists',
   'app_actions',
   'app_do',
+  'video_frames',
 ]
 
 interface McpTool {
