@@ -1,3 +1,4 @@
+import { CompareOverlay, type CompareMode } from './CompareOverlay'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlignCenterHorizontal,
@@ -81,6 +82,7 @@ export function Viewport({
   onReorder,
   onNudge,
   overlay,
+  overlayMode = 'blend',
   animations,
   animCommand,
   dragImage,
@@ -124,6 +126,8 @@ export function Viewport({
   onNudge?: (id: string, dx: number, dy: number, key: string) => void
   /** 半透明盖在画布上的图（确认的原画模板），对照着调位置 */
   overlay?: string
+  /** 对照方式：半透明叠加，或者左右拖的滑块 */
+  overlayMode?: CompareMode
   /** 设计里的全部动画：运行模式里按触发方式播放 */
   animations?: UiAnimation[]
   /** 动画面板的指令：停在某个时间或播放一次 */
@@ -768,14 +772,7 @@ export function Viewport({
                 >
                   <UmgNode w={root} ctx={ctx} />
                 </div>
-                {overlay && (
-                  <img
-                    src={overlay}
-                    alt=""
-                    draggable={false}
-                    className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
-                  />
-                )}
+                {overlay && <CompareOverlay src={overlay} mode={overlayMode} />}
                 {box && !play && (
                   <div
                     className="pointer-events-none absolute"
