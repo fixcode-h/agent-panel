@@ -5,6 +5,7 @@ import { FULL_SUITE_COMMAND } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
 import { globMatch } from '../../shared/hook-defs.ts'
 import { endlessSegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
+import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
 import { editScope, revOf } from '../../shared/bug-phase.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
@@ -163,7 +164,21 @@ export function longDeny(c: GuardCtx, facts: HookFacts): string {
     if (FULL_SUITE_COMMAND.test(s) || extra.some((x) => s.startsWith(x)))
       return `【面板】${s.slice(0, 80)} 是要跑很久的完整检查：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
   }
-  return ''
+  return wideSearchDeny(c, facts)
+}
+
+/**
+ * 全项目全文搜索转后台：grep -r、findstr /s 这类从项目根起的递归搜索不跳过编译产物和缓存目录，大项目要扫几分钟
+ * （用户 2026-11-07 报前台 grep -rl 整个 UE 项目跑了 2 分钟，shared/wide-search.ts）。起点是项目根或更上层时拒绝，
+ * 让它放后台、或换成已经配好排除目录的 rg 并限定子目录；起点是子目录的照常放行
+ */
+function wideSearchDeny(c: GuardCtx, facts: HookFacts): string {
+  if (facts.tool?.kind !== 'shell') return ''
+  const cmd = String(facts.tool.input.command ?? '')
+  const roots = [c.cwd, c.project?.path].filter((x): x is string => !!x)
+  const wide = fullScanStarts(cmd).some((s) => roots.some((r) => inside(path.resolve(c.cwd, s), r)))
+  if (!wide) return ''
+  return `【面板】${cmd.trim().split('\n')[0].slice(0, 80)} 会把整个项目（连编译产物、缓存目录）逐个文件读一遍，大项目要跑几分钟，放在前台会一直挡着对话：确实要扫全项目就用面板工具 run_background 放后台跑（跑完结果推回来，交出去后做不依赖它的事）；只是找个东西就改用 rg（它跳过 .gitignore 和项目设置里的排除目录）并限定到具体子目录，几秒就完。`
 }
 
 /**

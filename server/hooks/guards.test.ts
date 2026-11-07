@@ -133,6 +133,22 @@ test('长命令转后台：只看真正运行的程序，写文件、查文件�
   assert.match(dangerDeny(ctx(), sh('git push --force origin dev')), /强制推送/)
 })
 
+test('长命令转后台：从项目根起的全项目 grep -r 放前台时拒绝，子目录、rg 放行（用户 2026-11-07 报前台 grep 跑了 2 分钟）', () => {
+  assert.match(longDeny(ctx(), sh(`grep -rl "Win-UE5" "${proj}" --include="*.ini"`)), /run_background/)
+  assert.match(longDeny(ctx(), sh('grep -rn foo .')), /rg/)
+  assert.match(longDeny(ctx(), sh(`grep -r foo ${path.dirname(proj)}`)), /run_background/, '项目根的上层也算')
+  assert.match(longDeny(ctx(), sh('find . -type f | xargs grep -l foo')), /run_background/)
+  for (const cmd of [
+    'grep -rn foo src',
+    'rg -n foo .',
+    'git grep foo',
+    'grep -n foo a.ts',
+    `grep -r foo ${proj}/Source`,
+  ])
+    assert.equal(longDeny(ctx(), sh(cmd)), '', cmd)
+  assert.equal(longDeny(ctx({ canBackground: false }), sh('grep -rn foo .')), '', '没有后台工具时不拦')
+})
+
 test('测试步骤归属：独立分支里的子对话跑「合回后由父对话跑」的步骤时拒绝，共用目录照常', () => {
   const steps = [{ name: '全量单测', command: 'npm run test:unit', scope: 'parent', enabled: true }] as never
   const wt = { parentTaskId: 'par', worktree: { path: proj, state: 'active' } as never }
