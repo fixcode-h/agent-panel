@@ -38,9 +38,8 @@ let lang: Lang = detected.lang
 let auto = detected.auto
 export const getLang = () => lang
 /**
- * 设置里选的是不是「自动」。界面按解析出来的 lang 显示，但交给 Agent 的回复语言在「自动」时
- * 跟随用户消息（shared/prompt-lang.ts）：系统语言是 C.UTF-8 这类时「自动」会解析成英文，
- * 用户用中文提问却收到英文回复（真实 API 实测报告问题 20）
+ * 设置里选的是不是「自动」。浏览器靠它决定要不要把识别出的语言回报给服务端（web/src/lib/data.tsx）；
+ * 交给 Agent 的回复语言不看它，只用解析出来的 lang（shared/prompt-lang.ts）
  */
 export const isLangAuto = () => auto
 /**

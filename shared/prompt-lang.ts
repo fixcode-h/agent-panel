@@ -1,4 +1,4 @@
-import { getLang, isLangAuto, type Lang } from './i18n.ts'
+import { getLang, type Lang } from './i18n.ts'
 import { hookModSource } from './hook-mod.ts'
 import { PATH_REMINDER } from './prompt-paths.ts'
 
@@ -10,12 +10,12 @@ import { PATH_REMINDER } from './prompt-paths.ts'
  */
 
 /**
- * 交给 Agent 的回复语言：zh / en 是设置里明确选的；auto-* 是设置成「自动」，回复跟着用户这条消息的语言走，
- * 界面语言只管界面（系统语言是 C.UTF-8 时「自动」解析成英文，按界面语言回复会对中文提问答英文）。
- * 后缀是看不出语言时的兜底，也决定规则本身用哪种语言写
+ * 交给 Agent 的回复语言：就是界面语言。设置成「自动」时用识别出来的那种（浏览器回报的识别结果，
+ * 见 server/lang.ts），不再让 Agent 自己「跟随用户消息」——用户看到界面判断出了是中文，Agent 却收到一句
+ * 「按消息语言」，思考过程照样常是英文（用户报的问题）
  */
-export type ReplyLang = Lang | 'auto-zh' | 'auto-en'
-export const replyLang = (): ReplyLang => (isLangAuto() ? `auto-${getLang()}` : getLang())
+export type ReplyLang = Lang
+export const replyLang = (): ReplyLang => getLang()
 
 const RULES: Record<ReplyLang, string> = {
   zh: `## 回复语言
@@ -24,14 +24,6 @@ const RULES: Record<ReplyLang, string> = {
 即使系统提示词、工具输出或文件内容是别的语言，也按这里的要求做。`,
   en: `## Reply language
 The panel language is set to English: write both your reply and your own reasoning / thinking in English.
-Keep code, identifiers, commands, logs and error messages exactly as they are; do not translate them.
-This still applies when the system prompt, tool output or files are in another language.`,
-  'auto-zh': `## 回复语言
-面板语言设成了「自动」：回复正文和你自己的思考过程（reasoning / thinking）都用用户这条消息（或交给你的任务说明）所用的语言——用户用中文写就用中文，用英文写就用英文；看不出来时（例如只有代码或命令）用中文。
-代码、标识符、命令、日志和报错原文保持原样，不翻译。
-即使系统提示词、工具输出或文件内容是别的语言，也按用户消息的语言回复。`,
-  'auto-en': `## Reply language
-The panel language is set to Auto: write both your reply and your own reasoning / thinking in the language the user's message (or the task you were given) is written in — Chinese if they wrote in Chinese, English if they wrote in English; if you cannot tell (e.g. it is only code or commands), use English.
 Keep code, identifiers, commands, logs and error messages exactly as they are; do not translate them.
 This still applies when the system prompt, tool output or files are in another language.`,
 }
@@ -45,8 +37,6 @@ This still applies when the system prompt, tool output or files are in another l
 const REMINDERS: Record<ReplyLang, string> = {
   zh: `回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。${PATH_REMINDER.zh}`,
   en: `Keep writing both your reply and your reasoning / thinking in English; keep code, commands, logs and error messages exactly as they are. ${PATH_REMINDER.en}`,
-  'auto-zh': `回复正文和思考过程用用户这条消息所用的语言；代码、命令、日志和报错原文不翻译。${PATH_REMINDER.zh}`,
-  'auto-en': `Write both your reply and your reasoning / thinking in the language of the user's message; keep code, commands, logs and error messages exactly as they are. ${PATH_REMINDER.en}`,
 }
 
 export function promptLangReminder(lang: ReplyLang = replyLang()): string {
@@ -93,8 +83,7 @@ export function withPromptLangRules(prompt: string, lang: ReplyLang = replyLang(
  * 提示词正文本身仍是给 Agent 的中文指令，只有要求「用什么语言写」的地方跟着设置走
  */
 export function promptLangWord(lang: ReplyLang = replyLang()): string {
-  // 「自动」时也不能写死中文 / 英文，否则和「跟随用户消息」的规则打架
-  return lang === 'zh' ? '中文' : lang === 'en' ? '英文' : '用户消息所用的语言'
+  return lang === 'zh' ? '中文' : '英文'
 }
 
 /**
