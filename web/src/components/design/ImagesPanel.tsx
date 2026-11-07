@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { AlertCircle, ImagePlus, Loader2, RefreshCw, Trash2, Upload, X } from 'lucide-react'
+import { AlertCircle, ImagePlus, Loader2, RefreshCw, Sparkles, Trash2, Upload, X } from 'lucide-react'
 import type { Annotation, AnnotationKind, DesignImage } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -180,6 +180,7 @@ export function ImageDetails({
   url,
   onChange,
   onGenerate,
+  onRefine,
   onUpload,
   onDelete,
   canGenerate,
@@ -205,6 +206,8 @@ export function ImageDetails({
   url: (file: string) => string
   onChange: (img: DesignImage, key: string) => void
   onGenerate: () => void
+  /** 有模板、写了 ref 的图从模板里抠；精修是照着抠出来的那块重画（和原画不够像时不选用） */
+  onRefine?: () => void
   onUpload: (file: File) => void
   onDelete: () => void
   canGenerate: boolean
@@ -226,13 +229,14 @@ export function ImageDetails({
             <button
               key={v.file}
               onClick={() => set({ selected: i }, 'sel')}
-              title={`${v.width}×${v.height} · ${{ cli: t('图片模型'), browser: t('浏览器'), local: t('本机模型'), upload: t('上传') }[v.source]}`}
+              title={`${v.width}×${v.height} · ${{ cli: t('图片模型'), browser: t('浏览器'), local: t('本机模型'), upload: t('上传'), crop: t('从原画抠的') }[v.source]}${v.score !== undefined && v.source !== 'crop' ? ` · ${t('和原画相似度 {n}', { n: `${Math.round(v.score * 100)}%` })}` : ''}`}
               className={cn(
-                'shrink-0 cursor-pointer rounded-md border-2 p-px',
+                'relative shrink-0 cursor-pointer rounded-md border-2 p-px',
                 i === image.selected ? 'border-accent' : 'border-transparent hover:border-line-strong',
               )}
             >
               <Thumb src={url(v.file)} className="h-14 w-14" />
+              <VariantBadge source={v.source} score={v.score} />
             </button>
           ))}
         </div>
@@ -340,16 +344,36 @@ export function ImageDetails({
             {t('，修改意见写在右边的对话框里发送')}
           </p>
         )}
+        {onRefine && (
+          <p className="px-3 pt-2 text-caption leading-relaxed text-subtle">
+            {t(
+              '这张从确认的原画里按位置抠出来，和原画一模一样。精修会照着它重画得更干净，和原画不够像（低于设置里的门槛）时不选用。',
+            )}
+          </p>
+        )}
         <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-3">
-          <Button
-            size="sm"
-            onClick={onGenerate}
-            disabled={!canGenerate || busy || !image.prompt.trim()}
-            title={sourceLabel}
-          >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            {marks.length ? t('按标记重新生成') : image.variants.length ? t('再生成') : t('生成')}
-          </Button>
+          {onRefine && image.variants.length > 0 ? (
+            <Button size="sm" onClick={onRefine} disabled={!canGenerate || busy} title={sourceLabel}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {t('精修')}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={onGenerate}
+              disabled={!canGenerate || busy || (!onRefine && !image.prompt.trim())}
+              title={sourceLabel}
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              {onRefine
+                ? t('从原画抠')
+                : marks.length
+                  ? t('按标记重新生成')
+                  : image.variants.length
+                    ? t('再生成')
+                    : t('生成')}
+            </Button>
+          )}
           <input
             ref={input}
             type="file"
@@ -369,6 +393,22 @@ export function ImageDetails({
         {canGenerate && <p className="px-3 pb-3 text-caption text-subtle">{sourceLabel}</p>}
       </div>
     </div>
+  )
+}
+
+/** 每一版缩略图角上的小标：从原画抠的、精修的相似度（低于门槛的标黄由服务端选回抠的那版） */
+function VariantBadge({ source, score }: { source: string; score?: number }) {
+  if (source === 'crop')
+    return (
+      <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/60 px-1 text-micro leading-4 text-white">
+        {t('原画')}
+      </span>
+    )
+  if (score === undefined) return null
+  return (
+    <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/60 px-1 text-micro leading-4 text-white tabular-nums">
+      {Math.round(score * 100)}%
+    </span>
   )
 }
 

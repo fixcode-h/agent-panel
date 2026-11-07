@@ -2,10 +2,10 @@
 
 - 状态：documented
 - 职责：UI 设计：设计数据、AI 对话（设计工具 MCP）、原画与图片生成、导出
-- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`
+- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`, `server/design-crop.ts`, `shared/restore/`, `web/src/components/design/CompareOverlay.tsx`
 - 入口：`server/designs.ts`
 - 关键词：UI 设计、原画、生图、导出、ComfyUI、设计工具
-- 更新：2026-10-24
+- 更新：2026-11-07
 
 ## 职责
 
@@ -52,6 +52,18 @@
 | `web/src/pages/DesignPage.tsx`             | 页面、`send()`、生成参数、导出                                                                |
 | `web/src/components/design/DesignChat.tsx` | 对话、发送、附件、控件引用、提问面板                                                          |
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
+
+## 原画还原 P0：切图从原画抠、滑块对照（2026-11-07）
+
+设计稿：项目文件 `designs/UI设计-原画还原重设计-设计稿.md`（6 步还原管线，分期做，这是第一期）。
+
+- 切图从模板抠（`server/design-crop.ts`）：确认了原画模板、切图写了 `ref` 时，`generateOne` 一开始就按 `ref` 从模板**原分辨率**裁下来（`cropTemplate`：ref 是设计稿像素，按模板实际宽高换算；透明且不是九宫格的去平底；直接缩到图片的显示尺寸，不留白、不按 96% 缩进去，框就是控件的位置），存成一版 `source: 'crop'`、`score: 1`。不再走图集、不调用图片模型。
+- 精修：`GenerateImageInput.refine`（只有单张生成接口收），记在 `Job.refine` 里；精修的图才往下走原来的生成链路（本机图生图降噪从 0.55 降到 0.3），出完 `pickRefined` 按 `shared/restore/similarity.ts` 给每版打分，选分最高且过门槛（设置 `designRestore.assetSim`，默认 0.92）的；都没过就选回抠的那版并在对话里写一条说明（不是错误）。
+- 提示词：模板模式第 3 条改成「每张切图都写 ref、从模板里抠」，有 ref 的不写 sheet。
+- 对照（`CompareOverlay.tsx`）：「对照模板」按钮循环 关 → 滑块（左原画右界面，拖竖线或左右方向键）→ 半透明叠加。
+- 门槛设置：`Settings.designRestore`（`shared/restore/thresholds.ts`：`posPx` 2、`posRatio` 0.95、`assetSim` 0.92），设置页「图片生成」下面的「原画还原」组。
+- 像素操作（`blank`、`resize`、`crop`、`paste`、`contentBox`、`hasAlpha`、`chromaKey`、`removeFlatBackground`）挪到 `shared/raster.ts`，`server/image.ts` 重新导出；浏览器里的演示版和后面的检测算法共用。
+- 回归：`shared/restore/similarity.test.ts`、`server/design-crop.test.ts`、`scripts/ui/04-design.mjs`（滑块对照）。
 
 ## 网页设计的位置计算（2026-11-01）
 

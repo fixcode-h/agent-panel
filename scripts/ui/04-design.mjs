@@ -610,6 +610,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   assert.ok(Math.abs(regionMoved.x - regionBefore.x) > 5 || Math.abs(regionMoved.y - regionBefore.y) > 5, '区块能拖动')
   await p.getByRole('button', { name: '确认区块，开始搭界面' }).click()
   await p.getByRole('button', { name: '对照模板' }).waitFor({ timeout: 15000 })
+  // 对照：点一下是左右拖的滑块（左边原画、右边还原的界面），再点是半透明叠加，再点关掉
+  await p.getByRole('button', { name: '对照模板' }).click()
+  await p.locator('[data-compare-slider]').waitFor()
+  await check(p, 'UI设计-滑块对照', ['滑块对照'])
+  await p.getByRole('button', { name: '滑块对照' }).click()
+  await p.getByRole('button', { name: '叠加对照' }).click()
+  await p.getByRole('button', { name: '对照模板' }).waitFor()
   await p.goto(base + '#/design/new')
   // 网页 UI：新建一个网页设计，让 AI 搭首页，看自动布局画出来的样子
   await p.getByRole('radio', { name: /网页 UI/ }).click()

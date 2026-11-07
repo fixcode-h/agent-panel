@@ -1150,7 +1150,7 @@ export const api = {
   generateDesignImage: (
     id: string,
     imageId: string,
-    body: { source: ImageSource; count: number; prompt?: string; revision?: string },
+    body: { source: ImageSource; count: number; prompt?: string; revision?: string; refine?: boolean },
   ) => request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
   projectComponents: (projectId: string) => request<ProjectComponents[]>(`/designs/projects/${projectId}/components`),
   importComponent: (id: string, body: { from: string; name: string }) =>
