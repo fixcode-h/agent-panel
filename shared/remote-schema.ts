@@ -52,22 +52,56 @@ export const RemoteFrp = z.object({
 })
 export type RemoteFrp = z.infer<typeof RemoteFrp>
 
+/** Tailscale 方式：tailscale serve（只有自己 tailnet 里的设备能打开）或 funnel（开到公网） */
+export const RemoteTailscale = z.object({
+  /** 打开后用 funnel 开到公网，任何人拿到地址都能打开登录页；关着只有自己登录了 Tailscale 的设备能访问 */
+  funnel: z.boolean().default(false),
+  /** 对外的 https 端口：funnel 只允许 443、8443、10000 */
+  httpsPort: z
+    .union([z.literal(443), z.literal(8443), z.literal(10000)])
+    .catch(443)
+    .default(443),
+  /** tailscale 可执行文件；留空自动找 */
+  command: z.string().trim().max(500).default(''),
+})
+export type RemoteTailscale = z.infer<typeof RemoteTailscale>
+
+/**
+ * 外部访问 = 一个带密码登录的外网专用端口（登录门参考 dsh-web-guard 的做法，见 server/guard/），外网连过来的路有三种：
+ * - frp：一键配置的云服务器，本机没有公网 IP 时用；
+ * - tailscale：用户装好的 Tailscale，serve 给自己的设备或 funnel 开到公网，不要公网 IP 也不要服务器；
+ * - custom：自己的反向代理（Caddy、Nginx Proxy Manager、nginx）或直接监听局域网 / 公网。
+ * 以前的 Cloudflare 隧道（quick、token）已经去掉：老设置里的 quick / token 读进来按 frp 处理，tunnelToken、command 丢掉
+ */
 export const RemoteAccess = z.object({
   enabled: z.boolean().default(false),
-  /** quick：Cloudflare 临时地址（重启后变）；token：Cloudflare Tunnel（固定域名）；custom：自己搭的反向代理；frp：一键配置的云服务器 */
-  mode: z.enum(['quick', 'token', 'custom', 'frp']).catch('quick').default('quick'),
-  /** Cloudflare Tunnel 的 token（mode=token 时用），也可以在 cloudflared 里预先配置好 */
-  tunnelToken: z.string().trim().max(4000).default(''),
-  /** 外网地址：token 模式填隧道的域名，custom 模式填反向代理后的地址；quick 模式自动生成 */
+  mode: z
+    .preprocess((v) => (v === 'quick' || v === 'token' ? 'frp' : v), z.enum(['frp', 'tailscale', 'custom']))
+    .catch('frp')
+    .default('frp'),
+  /** 浏览器里打开的地址（反代的域名、frp 云服务器上 Caddy 的域名，或直连时的 IP:端口）：登录的来源检查和配置示例用 */
   publicUrl: z.string().trim().max(300).default(''),
-  /** cloudflared 可执行文件；留空时依次找数据目录的 bin/ 和 PATH */
-  command: z.string().trim().max(500).default(''),
   /**
-   * 外网请求专用的本机端口（只监听 127.0.0.1）：隧道、frpc、反向代理都转到这里。
-   * 从这个端口进来的请求一律当外网处理（必须带访问令牌），不再靠 Host 头判断——
-   * 反向代理把 Host 改成 127.0.0.1 时，按 Host 判断会把外网请求当成本机、绕过令牌
+   * 外网请求专用的本机端口：frpc、反向代理都转到这里。
+   * 从这个端口进来的请求一律当外网处理（必须有密码登录的会话），不靠 Host 头判断——
+   * 反向代理把 Host 改成 127.0.0.1 时，按 Host 判断会把外网请求当成本机
    */
   localPort: z.number().int().min(1).max(65535).catch(8788).default(8788),
+  /**
+   * custom 方式下外网专用端口监听在哪：127.0.0.1 只给本机的反向代理；0.0.0.0 局域网、公网能直接连
+   * （反代跑在 Docker 里也要选它）。frp 方式固定 127.0.0.1，frpc 在本机
+   */
+  listenHost: z.enum(['127.0.0.1', '0.0.0.0']).catch('127.0.0.1').default('127.0.0.1'),
+  /** 直接监听时自己做 HTTPS：证书和私钥文件（PEM）路径，两个都填才启用；放在反向代理后面时留空 */
+  tlsCert: z.string().trim().max(1000).default(''),
+  tlsKey: z.string().trim().max(1000).default(''),
+  /** 登录多少天没有活动就要重新登录；0 = 关掉浏览器就失效 */
+  sessionDays: z.number().int().min(0).max(365).catch(7).default(7),
+  /** 同一个来源连续输错几次密码锁定 */
+  maxAttempts: z.number().int().min(1).max(50).catch(5).default(5),
+  /** 锁定多少分钟 */
+  lockMinutes: z.number().int().min(1).max(1440).catch(5).default(5),
   frp: RemoteFrp.prefault({}),
+  tailscale: RemoteTailscale.prefault({}),
 })
 export type RemoteAccess = z.infer<typeof RemoteAccess>

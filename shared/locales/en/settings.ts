@@ -859,23 +859,10 @@ export const EN_SETTINGS: Record<string, string> = {
   // 外部访问
   外部访问: 'Remote access',
   允许外部访问: 'Allow remote access',
-  '默认关闭。打开后，服务仍然只监听 127.0.0.1，由隧道、frp 或反向代理把外网的请求转到一个专用端口；本机和其他电脑打开的是同一个面板，数据、任务进度和对话实时同步。外网访问一律要求访问令牌。':
-    'Off by default. When on, the server still listens only on 127.0.0.1 and a tunnel, frp or reverse proxy forwards outside requests to a dedicated port. This computer and other computers open the same panel, with data, task progress and conversations syncing in real time. Remote requests always require the access token.',
   访问方式: 'Connection method',
   方式: 'Method',
-  临时地址: 'Temporary address',
-  固定域名: 'Fixed domain',
   自建反向代理: 'Own reverse proxy',
-  'Tunnel Token': 'Tunnel token',
-  'Cloudflare 后台创建 Tunnel 时给出的 token，只保存在本机数据目录里。':
-    'The token shown when creating a Tunnel in the Cloudflare dashboard. It is stored only in the local data directory.',
   外部访问地址: 'Public address',
-  环境检测: 'Environment check',
-  '已安装 {version}': 'Installed {version}',
-  '正在下载 {n}%': 'Downloading {n}%',
-  '正在下载…': 'Downloading…',
-  '下载 cloudflared': 'Download cloudflared',
-  'cloudflared 路径': 'cloudflared path',
   连接状态: 'Connection status',
   外网地址: 'Public address',
   复制地址: 'Copy address',
@@ -1648,26 +1635,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '检查更新、下载更新和安装 Agent 时走这个代理':
     'Use this proxy to check for and download updates, and to install agents',
   '只支持 http 代理': 'HTTP proxies only',
-  让其他电脑也能打开这个面板: 'Let other computers open this panel',
-  '不用账号，重启后地址会变': 'No account needed; the URL changes on restart',
-  'Cloudflare Tunnel，地址固定': 'Cloudflare Tunnel with a fixed URL',
-  '已用 frp、nginx 等转到外网': 'Already forwarded with frp, nginx, etc.',
-  '用 cloudflared 生成一个临时地址，适合临时给别的电脑看；国内网络经常连不上 Cloudflare。':
-    'Uses cloudflared to create a temporary URL, good for a quick look from another computer. Networks in mainland China often cannot reach Cloudflare.',
-  '在 Cloudflare 后台建好 Tunnel，把 token 和域名填进来。':
-    'Create a Tunnel in the Cloudflare dashboard and enter its token and domain.',
-  '把反向代理转到下面的「外网专用端口」，从这个端口进来的请求一律要求访问令牌。':
-    'Point your reverse proxy at the "Remote-only port" below; every request on that port requires the access token.',
-  只存在本机: 'Stored only on this computer',
   访问地址: 'Public URL',
-  'Tunnel 对外的域名': "The Tunnel's public domain",
-  反向代理后的完整地址: 'Full URL behind the reverse proxy',
-  '建立隧道用，不用在路由器上开端口': 'Builds the tunnel; no router ports to open',
-  '没有安装时可以直接下载到面板的数据目录；自己装好了（例如用 Homebrew、winget）就点重新检测。':
-    "If it isn't installed you can download it into the panel's data folder; if you installed it yourself (e.g. with Homebrew or winget), click Re-check.",
   自动找到的不用填: 'Leave empty if it was found automatically',
-  '装在别处时填可执行文件的完整路径。': 'Enter the full path to the executable if it lives elsewhere.',
-  '在其他电脑打开，链接里已带令牌': 'Open it on another computer; the link carries the token',
   正在登录服务器: 'Signing in to the server',
   '正在下载 frps': 'Downloading frps',
   正在上传到服务器: 'Uploading to the server',
@@ -1694,9 +1663,6 @@ export const EN_SETTINGS: Record<string, string> = {
     'The browser-to-server leg is plain HTTP, so the token travels unencrypted; use "Fixed domain" with HTTPS when security matters. The system firewall (firewalld, ufw) is opened automatically; the Alibaba Cloud security group must be opened in the console.',
   '配置中…': 'Setting up…',
   重新配置: 'Set up again',
-  '一键配置阿里云服务器，国内访问稳定': 'One-click Alibaba Cloud server setup, stable in mainland China',
-  '填云服务器的 IP、SSH 用户和密码，面板自动在服务器上装好 frps，本机运行 frpc。':
-    "Enter the cloud server's IP, SSH user and password; the panel installs frps on the server and runs frpc here.",
   '云服务器（frp）': 'Cloud server (frp)',
   '先在阿里云控制台「安全组 → 入方向」放行 TCP {ssh}、{bind}、{remote}，用端口映射时再放行 {range}':
     'First allow inbound TCP {ssh}, {bind} and {remote} in the Alibaba Cloud console (Security group → Inbound); also allow {range} if you use port mappings',
@@ -1752,9 +1718,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '正在重新连接…': 'Reconnecting…',
   重新连接: 'Reconnect',
   外网专用端口: 'Remote-only port',
-  '反向代理转到 127.0.0.1 的这个端口': 'Point the reverse proxy at this port on 127.0.0.1',
-  '只监听本机。以前转到 8787 的请求仍按访问地址校验，改转到这里更安全：Host 被反代改写也不会被当成本机请求。':
-    'Listens on this computer only. Requests forwarded to 8787 are still checked against the public URL, but this port is safer: a rewritten Host header is never mistaken for a local request.',
   '正在下载 frpc {n}%': 'Downloading frpc {n}%',
   '正在下载 frpc…': 'Downloading frpc…',
   '命令行 Shell': 'Command shell',

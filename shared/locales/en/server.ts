@@ -566,13 +566,6 @@ export const EN_SERVER: Record<string, string> = {
   出原画要先在对话框下面选生成图片的方式: 'To draw concepts, first pick an image source below the chat box',
   // 外部访问
   这个地址不能访问面板: "This address can't access the panel",
-  '没有找到 cloudflared': 'cloudflared not found',
-  '请填写外部访问地址，例如 https://panel.example.com': 'Enter the public address, e.g. https://panel.example.com',
-  '没有找到 cloudflared：请先在设置里下载，或安装后把路径填到「cloudflared 路径」。':
-    'cloudflared not found. Download it in settings, or install it and set its path.',
-  '请填写 Cloudflare Tunnel 的 token': 'Enter the Cloudflare Tunnel token',
-  '请填写隧道的域名，例如 https://panel.example.com': 'Enter the tunnel domain, e.g. https://panel.example.com',
-  'cloudflared 已退出（退出码 {code}）：{log}': 'cloudflared exited (code {code}): {log}',
   '不支持这个系统：{os} {arch}': 'Unsupported system: {os} {arch}',
   'frp 安装包里没有 {name}': '{name} is missing from the frp package',
   'SSH 登录失败：用户名或密码不对（{msg}）': 'SSH sign-in failed: wrong user name or password ({msg})',
@@ -614,8 +607,6 @@ export const EN_SERVER: Record<string, string> = {
   '正在配置，请稍候': 'Setup is in progress, please wait',
   'frp 端口和面板端口不能相同': 'The frp port and the panel port must differ',
   '服务器信息不完整：{msg}': 'Server details are incomplete: {msg}',
-  'cloudflared 已经启动，但 30 秒内没有拿到外网地址。国内网络经常连不上 Cloudflare，建议改用「云服务器（frp）」。':
-    'cloudflared started but no public address arrived within 30 seconds. Networks in mainland China often cannot reach Cloudflare; consider "Cloud server (frp)" instead.',
   '这个系统不支持自动下载，请手动安装 cloudflared。':
     'Automatic download is not supported on this system. Install cloudflared manually.',
   下载到数据目录: 'Download to the data folder',
