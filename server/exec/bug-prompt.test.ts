@@ -28,3 +28,9 @@ test('用户报的 Bug 新会话第一轮带完整流程；续接的会话、不
   assert.equal(bugMethodPrompt({ bug: false }, '角标不刷新', true), '')
   assert.equal(bugMethodPrompt({ bug: true }, '/bug 角标不刷新', true), '')
 })
+
+test('父对话刚升级成 Bug 的子对话：续接的会话也补带一次完整流程；没升级、不是 Bug 的不带', () => {
+  assert.equal(bugMethodPrompt({ bug: true, bugMethodPending: true }, '父对话交代的话', false), BUG_FULL_TEXT)
+  assert.equal(bugMethodPrompt({ bug: false, bugMethodPending: true }, '父对话交代的话', false), '')
+  assert.equal(bugMethodPrompt({ bug: true, bugMethodPending: true }, '/bug 角标', false), '')
+})
