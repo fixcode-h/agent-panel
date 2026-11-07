@@ -70,11 +70,15 @@ export function splitHtmlLines(html: string) {
   const open: string[] = []
   let cur = ''
   let i = 0
+  // 下一个换行的位置只在越过它之后才重新找：每段文字都从头 indexOf 的话，
+  // 一行很长（整张数据表写在一行的 lua / json）时每段都扫到结尾，变成平方级，167 KB 的文件能卡死好几秒
+  let nl = html.indexOf('\n')
   while (i < html.length) {
     if (html[i] === '\n') {
       out.push(cur + '</span>'.repeat(open.length))
       cur = open.join('')
       i++
+      nl = html.indexOf('\n', i)
     } else if (html[i] === '<') {
       const end = html.indexOf('>', i)
       const tag = html.slice(i, end < 0 ? html.length : end + 1)
@@ -86,7 +90,6 @@ export function splitHtmlLines(html: string) {
       // 一整段文字一次拷过去，只有换行需要单独处理
       const next = html.indexOf('<', i)
       const stop = next < 0 ? html.length : next
-      const nl = html.indexOf('\n', i)
       if (nl >= 0 && nl < stop) {
         cur += html.slice(i, nl)
         i = nl
@@ -100,25 +103,58 @@ export function splitHtmlLines(html: string) {
   return out
 }
 
-/** 高亮每一行；语言认不出来时返回 null，调用方按纯文本显示 */
+/**
+ * 一行超过这么多字就不上色、按纯文本画：整张数据表写在一行的 lua / json 高亮后一行有几万个 <span>，
+ * 浏览器排这一行就要好几秒（用户 2026-11-07 报打开 167 KB 的 lua 卡死）。纯文本的一长行排版很快
+ */
+export const LONG_LINE = 3000
+
+/**
+ * 高亮每一行；语言认不出来时返回 null，调用方按纯文本显示。
+ * 超长的行先换成空行再交给 highlight.js（结果里这一行是 undefined，调用方按纯文本画）：省掉给它上色的工夫，
+ * 也不会因为这一行里没配对的引号把后面几千行都染成字符串
+ */
 export function highlightLines(hl: Hljs | null, code: string, path: string) {
-  if (!hl || !code) return null
-  const ext = path.split('.').pop()?.toLowerCase() ?? ''
-  const lang = LANG[ext]
-  if (!lang || !hl.getLanguage(lang)) return null
-  return splitHtmlLines(hl.highlight(code, { language: lang, ignoreIllegals: true }).value)
+  const lang = langOf(hl, path)
+  if (!lang || !code) return null
+  const src = code.split('\n')
+  const long = src.map((l) => l.length > LONG_LINE)
+  const text = long.includes(true) ? src.map((l, i) => (long[i] ? '' : l)).join('\n') : code
+  const out: (string | undefined)[] = splitHtmlLines(
+    hl!.highlight(text, { language: lang, ignoreIllegals: true }).value,
+  )
+  long.forEach((on, i) => on && (out[i] = undefined))
+  return out
+}
+
+export const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/** 占两格的字（中日韩文字、全角符号）：估算一行有多宽时按两格算；emoji 在字符串里本来就占两个长度，不用另算 */
+const WIDE = /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/g
+
+/**
+ * 最长一行大约多少个字宽（ch）：分块懒渲染时屏幕外的块不排版，宽度要事先按最长的一行撑好，
+ * 不然往下滚到长行时横向滚动条才突然变长。制表符按 tabSize 对齐
+ */
+export function maxCols(lines: string[], tabSize: number) {
+  let max = 0
+  for (const l of lines) {
+    // 一个字最多占两格：长度的两倍都比现在的最大值小，这一行不用细算
+    if (l.length * 2 <= max) continue
+    let cols = 0
+    if (l.includes('\t')) {
+      for (const c of l) cols = c === '\t' ? cols + tabSize - (cols % tabSize) : cols + 1
+    } else cols = l.length
+    cols += l.match(WIDE)?.length ?? 0
+    max = Math.max(max, cols)
+  }
+  return max
 }
 
 /** 按扩展名认出的 highlight.js 语言；认不出来时返回空串 */
 export function langOf(hl: Hljs | null, path: string) {
   const lang = LANG[path.split('.').pop()?.toLowerCase() ?? '']
   return hl && lang && hl.getLanguage(lang) ? lang : ''
-}
-
-/** 整段高亮成 HTML（编辑区的底图用）；认不出语言时返回 null */
-export function highlightAll(hl: Hljs | null, code: string, path: string) {
-  const lang = langOf(hl, path)
-  return lang ? hl!.highlight(code, { language: lang, ignoreIllegals: true }).value : null
 }
 
 /** 高亮库按需加载：加载完这次渲染就有颜色了 */

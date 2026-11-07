@@ -14,6 +14,7 @@ import { DialogScroll, ProjectDiffDialog } from '@/components/tasks/DiffDialog'
 import { Markdown } from '@/components/tasks/Markdown'
 import { DocOutline } from '@/components/ui/doc-outline'
 import { FileEditor, FileModeBar, isMarkdownPath, useFileEditing } from './file-edit'
+import { CodeLines } from './CodeLines'
 
 /** 读回来的文件：dir 是「在编辑器中打开」用的目录；editable 为 false 时只读（附件、项目外的文件） */
 export type FileView = FileContent & { dir?: string; editable?: boolean }
@@ -111,19 +112,21 @@ export function FileViewDialog({
   // 阅读时看的是草稿：改了 Markdown 切回阅读就能看渲染效果
   const shown = canEdit ? ed.text : (file?.content ?? '')
   const body = shown ? shown.replace(/\n$/, '') : ''
-  const lines = body ? body.split('\n') : []
+  const mdPreview = isMd && !!file?.exists && !file.binary
+  // 只有阅读代码时才拆行、高亮：编辑时每敲一个字 body 都会变，在这里整份重新高亮，大文件打一个字就卡一下
+  const codeShown = !editing && !mdPreview
+  const lines = useMemo(() => (codeShown && body ? body.split('\n') : []), [codeShown, body])
   const highlighted = useMemo(
     () =>
       // 截断的文件、二进制都不用高亮：不是完整内容，或者根本不是代码
-      file?.exists && !file.binary && !file.truncated ? highlightLines(hl, body, path) : null,
-    [hl, body, path, file?.exists, file?.binary, file?.truncated],
+      codeShown && file?.exists && !file.binary && !file.truncated ? highlightLines(hl, body, path) : null,
+    [codeShown, hl, body, path, file?.exists, file?.binary, file?.truncated],
   )
   const size = typeof file?.size === 'number' ? sizeText(file.size) : ''
   const mtime = file?.mtime ? fmtClock(file.mtime) : ''
   const canDiff = !!source.diff && !!file?.exists && !file.binary && file.editable !== false
   const editorDir = source.dir || file?.dir || ''
   const textOpen = !!target && !raw
-  const mdPreview = isMd && !!file?.exists && !file.binary
 
   // 草稿不用在这里清：下次打开换了 target，编辑状态整个重置
   const close = () => {
@@ -162,7 +165,7 @@ export function FileViewDialog({
         closeOnOutside
         className={cn(
           // 只有一句说明（找不到、二进制、出错）时弹窗按内容高度，不撑满
-          editing || !file || lines.length ? 'h-[min(760px,calc(100dvh-3.75rem))] max-w-[1000px]' : 'max-w-[560px]',
+          editing || !file || body ? 'h-[min(760px,calc(100dvh-3.75rem))] max-w-[1000px]' : 'max-w-[560px]',
         )}
       >
         <ModalHeader
@@ -229,28 +232,7 @@ export function FileViewDialog({
               <Markdown text={shown} teamNames={NO_TEAM} />
             </div>
           ) : (
-            <pre className="min-w-max py-2 font-mono text-footnote leading-[1.6]">
-              {lines.map((l, i) => (
-                <div
-                  key={i}
-                  data-line={i + 1}
-                  // 不画斑马纹：深色下底色和隔行浅底明暗差太大，看久了累眼（用户 2026-10-31 反馈）。
-                  // 改成悬停那一行淡淡高亮帮着横向对行；跳到的那一行用强调色盖过悬停
-                  className={cn('flex whitespace-pre', target?.line === i + 1 ? 'bg-accent/12' : 'hover:bg-fg/4')}
-                >
-                  <span className="w-14 shrink-0 pr-3 text-right text-subtle/55 select-none">{i + 1}</span>
-                  {highlighted?.[i] !== undefined ? (
-                    <span
-                      className="pr-4"
-                      // 高亮结果是 highlight.js 生成的，内容已经过它转义
-                      dangerouslySetInnerHTML={{ __html: highlighted[i] || ' ' }}
-                    />
-                  ) : (
-                    <span className="pr-4 text-fg/90">{l || ' '}</span>
-                  )}
-                </div>
-              ))}
-            </pre>
+            <CodeLines lines={lines} highlighted={highlighted} target={target?.line} />
           )}
         </DialogScroll>
         {file?.truncated && (
