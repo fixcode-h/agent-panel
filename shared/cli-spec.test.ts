@@ -169,3 +169,23 @@ test('Codex 的 API 方式：思考摘要用新版认的 model_reasoning_summary
   // API Key、第三方接口下 Codex 不把 image_gen 交给模型，生图前要直接说明
   assert.equal(api.noImages, true)
 })
+
+test('CLI 定义：用量事件报了缓存的，必须写明 addInput 含不含缓存（inputExcludesCache），不让解析器去猜', () => {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'clis')
+  const missing: string[] = []
+  const walk = (node: unknown, file: string) => {
+    if (Array.isArray(node)) return node.forEach((x) => walk(x, file))
+    if (!node || typeof node !== 'object') return
+    const o = node as Record<string, unknown>
+    if (
+      o.type === 'usage' &&
+      ('addCacheRead' in o || 'addCacheWrite' in o) &&
+      typeof o.inputExcludesCache !== 'boolean'
+    )
+      missing.push(`${file}: ${JSON.stringify(o).slice(0, 80)}`)
+    Object.values(o).forEach((x) => walk(x, file))
+  }
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')))
+    walk(JSON.parse(readFileSync(path.join(dir, f), 'utf8')), f)
+  assert.deepEqual(missing, [])
+})

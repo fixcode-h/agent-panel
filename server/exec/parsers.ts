@@ -533,6 +533,20 @@ export function claudeParser(cwd: string): Parser {
             patch,
           })
     } else if (o.type === 'result' || (o.total_cost_usd !== undefined && o.usage)) {
+      // 重试之后一直没等到模型回应就结束了：Claude Code 把重试用完了。补一条 retry_failed，
+      // runner 据此把前面那张「正在重试」收掉，不然它一直挂成「还在重试」，和下面的失败原因并存
+      if (retrying && o.type === 'result') {
+        const err = oneLine(String(o.result ?? o.subtype ?? ''), 300)
+        out.push({
+          type: 'notice',
+          text: t('自动重试 {n} 次后仍然失败：{error}', { n: retrying, error: err || t('原因未知') }),
+          failed: true,
+          kind: 'retry_failed',
+          attempt: retrying,
+          ...(err ? { error: err } : {}),
+        })
+        retrying = 0
+      }
       const c = claudeInput(o.usage ?? {})
       const gap = (total: number, seen: number) => Math.max(0, total - seen)
       // 费用是会话累计：这一轮只记比上次多了多少（第一次就是总数）；没报这个字段时按不变算
@@ -890,8 +904,9 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
         }
         case 'usage': {
           // 各家 CLI 对 inputTokens 的口径不同：有的已含缓存（AI SDK），有的只算未命中的部分。
-          // 定义里写明 inputExcludesCache（Pi 的 usage.input 只算未命中的）时总是加上缓存；没写时按大小猜：
-          // 比缓存还小说明是不含缓存的口径。只靠猜不行：某一次未命中的比命中的多时会少算缓存那部分
+          // 定义里写明 inputExcludesCache（Pi 的 usage.input 只算未命中的）时照写的办；没写时才按大小猜：
+          // 比缓存还小说明是不含缓存的口径。只靠猜不行：未命中量正好等于缓存量时会少算一半，
+          // 所以内置定义报了缓存就必须写明（shared/cli-spec.test.ts 拦），猜只留给用户自己加的定义
           const rawIn = num(g('addInput'))
           const read = num(g('addCacheRead'))
           const write = num(g('addCacheWrite'))
@@ -901,7 +916,11 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
             window: num(g('window')),
             model: str(g('model')) || undefined,
             addInput:
-              rawIn === undefined ? undefined : e.inputExcludesCache === true || rawIn < cache ? rawIn + cache : rawIn,
+              rawIn === undefined
+                ? undefined
+                : (typeof e.inputExcludesCache === 'boolean' ? e.inputExcludesCache : rawIn < cache)
+                  ? rawIn + cache
+                  : rawIn,
             addOutput: num(g('addOutput')),
             addCacheRead: read,
             addCacheWrite: write,

@@ -980,6 +980,8 @@ async function runAgent(
         break
       case 'notice': {
         // 重试、失败、面板工具没接上：写进日志，放进回复里当一行状态，不打断回复（见 notice-row.ts）
+        // 重试用完了：前面那张「正在重试」收掉，失败原因看这一行
+        if (ev.kind === 'retry_failed') settleRetryNotes(task.messages, t('重试用完了，没有恢复'), turnStart)
         const m = !cur || cur.text.trim() ? newMsg() : cur
         m.tools.push(noticeRow(ev, { task: task.id, step, cli: def.name }, quietBefore))
         break
