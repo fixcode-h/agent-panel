@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { t } from './i18n.ts'
+import { RESTORE_FILES, RESTORE_MODELS, restoreWorkflowDefs } from './comfy-restore.ts'
 
 /**
  * 本机生图：用 ComfyUI 跑开源图片模型。
@@ -174,12 +175,15 @@ export const LOCAL_FILES: LocalFile[] = [
     url: `${HF}/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors`,
     gb: 0.42,
   },
+  // 超分、去噪、画质修复（Real-ESRGAN、SeedVR2），见 shared/comfy-restore.ts
+  ...RESTORE_FILES,
 ]
 
 /**
  * 处理类模型：不吃提示词，处理一张输入图（去背景、放大）。和文本生图分开列，自动选工作流时也不会被选中
  */
-export type LocalFamily = 'zimage' | 'flux2klein' | 'flux1' | 'flux1dev' | 'sdxl' | 'qwen' | 'moss' | 'birefnet'
+export type LocalFamily =
+  'zimage' | 'flux2klein' | 'flux1' | 'flux1dev' | 'sdxl' | 'qwen' | 'moss' | 'birefnet' | 'esrgan' | 'seedvr2'
 
 /** 模型按用途分组展示；顺序就是设置页里从上到下的顺序 */
 export const LOCAL_MODEL_GROUPS = [
@@ -196,7 +200,7 @@ export const LOCAL_MODEL_GROUPS = [
   {
     id: 'process',
     title: t('图片处理'),
-    desc: t('不吃提示词，处理一张已有的图：去背景（透明底的 PNG）、放大'),
+    desc: t('不吃提示词，处理一张已有的图：去背景（透明底的 PNG）、提升清晰度、去噪点、画质修复'),
   },
   {
     id: 'light',
@@ -351,6 +355,7 @@ export const LOCAL_MODELS: LocalModel[] = [
     base: 1024,
     natural: true,
   },
+  ...RESTORE_MODELS,
 ]
 
 export const localModel = (id: string) => LOCAL_MODELS.find((m) => m.id === id)
@@ -715,6 +720,8 @@ export function localWorkflow(
     }
     // 处理类模型不吃提示词和尺寸，走 removeBgGraph / upscaleGraph，不在这里生成文生图
     case 'birefnet':
+    case 'esrgan':
+    case 'seedvr2':
       throw new Error(t('{name} 是图片处理模型，不能用来文生图', { name: m.name }))
   }
 }
@@ -1038,6 +1045,8 @@ export const BUILTIN_WORKFLOWS: ComfyWorkflow[] = [
     model: '',
     graph: upscaleGraph(),
   }),
+  // 提升清晰度、去噪点、画质修复：模型放大和修复，视频截帧的画面增强也用这几个
+  ...restoreWorkflowDefs(IMAGE_PLACEHOLDER).map(processingBuiltin),
 ]
 
 /** 用到的占位符都换成实际的值 */

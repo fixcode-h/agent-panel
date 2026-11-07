@@ -5,6 +5,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  clampRange,
+  isFullRange,
+  rangePickTimes,
+  rangeUniformTimes,
   ffmpegDownloadUrl,
   ffmpegTime,
   ffmpegVersion,
@@ -119,4 +123,32 @@ test('增强方式 id 和下载地址', () => {
 test('ffmpegTime 取状态行里最后一个 time=，N/A 时没有', () => {
   assert.equal(ffmpegTime('frame=  1 time=00:00:01.50 bitrate=N/A\rframe=  2 time=00:01:02.25 speed=8x'), 62.25)
   assert.equal(ffmpegTime('frame=    0 time=N/A bitrate=N/A'), undefined)
+})
+
+test('截帧范围：收进时长、颠倒对调、太短退回整段', () => {
+  assert.deepEqual(clampRange({ start: 2, end: 6 }, 10), { start: 2, end: 6 })
+  assert.deepEqual(clampRange({ start: 8, end: 3 }, 10), { start: 3, end: 8 })
+  assert.deepEqual(clampRange({ start: -5, end: 40 }, 10), { start: 0, end: 10 })
+  assert.deepEqual(clampRange({ start: 4, end: 4.1 }, 10), { start: 0, end: 10 })
+  assert.deepEqual(clampRange(null, 10), { start: 0, end: 10 })
+  assert.deepEqual(clampRange({ start: Number.NaN, end: 3 }, 10), { start: 0, end: 10 })
+  assert.equal(isFullRange(clampRange(undefined, 10), 10), true)
+  assert.equal(isFullRange({ start: 1, end: 10 }, 10), false)
+})
+
+test('范围里截帧：均匀点平移进范围，候选按相对起点算再加回去', () => {
+  assert.deepEqual(rangeUniformTimes({ start: 10, end: 14 }, 4), [10.5, 11.5, 12.5, 13.5])
+  // 候选是相对范围起点的秒数：1 秒处的切换在整段里是 11 秒
+  const picked = rangePickTimes([1], { start: 10, end: 14 }, 1)
+  assert.deepEqual(picked, [11])
+  assert.ok(rangePickTimes([0.5, 3.5], { start: 10, end: 14 }, 3).every((x) => x >= 10 && x <= 14))
+})
+
+test('范围里自动截帧：只换范围里的自动帧，范围外的自动帧和手动帧都留着', () => {
+  const old = [frame('m1', 2, 'manual'), frame('a1', 1, 'auto'), frame('a2', 5, 'auto'), frame('a3', 9, 'auto')]
+  const next = mergeAuto(old, [frame('b1', 4.5, 'auto'), frame('b2', 6, 'auto')], { start: 4, end: 7 })
+  assert.deepEqual(
+    next.map((f) => f.id),
+    ['a1', 'm1', 'b1', 'b2', 'a3'],
+  )
 })

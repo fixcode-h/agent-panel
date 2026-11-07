@@ -112,4 +112,34 @@ export const EN_VIDEO: Record<string, string> = {
   '分析画面 {pct}%': 'Analyzing video {pct}%',
   '截取第 {i}/{n} 张': 'Capturing {i}/{n}',
   点击选帧: 'Click to pick frames',
+  // 截帧范围
+  截帧范围: 'Capture range',
+  截帧范围起点: 'Capture range start',
+  截帧范围终点: 'Capture range end',
+  起点: 'Start',
+  终点: 'End',
+  '{from} – {to}（{len} 秒）': '{from} – {to} ({len}s)',
+  整段视频: 'Whole video',
+  '把当前位置设为起点（I）': 'Set current position as start (I)',
+  设为起点: 'Set start',
+  '把当前位置设为终点（O）': 'Set current position as end (O)',
+  设为终点: 'Set end',
+  清除范围: 'Clear range',
+  '只在 {from} – {to} 里截，范围外截过的自动帧留着；':
+    'Only captures within {from} – {to}; auto frames already captured outside the range are kept. ',
+  // 画面增强
+  'FFmpeg（不用模型）': 'FFmpeg (no model)',
+  'ComfyUI 画质（面板内置）': 'ComfyUI quality (built in)',
+  '我的 ComfyUI 工作流': 'My ComfyUI workflows',
+  '{name}（未就绪）': '{name} (not ready)',
+  '下载中 {pct}%': 'Downloading {pct}%',
+  '下载 {name}（{gb} GB）': 'Download {name} ({gb} GB)',
+  '去安装 ComfyUI': 'Install ComfyUI',
+  '这个方式要先下载模型 {name}，下载一次之后离线也能用':
+    'This method needs the {name} model first; once downloaded it also works offline',
+  '这个方式在本机 ComfyUI 里跑，要先在设置 → 本机生图里装好 ComfyUI':
+    'This method runs in local ComfyUI; install ComfyUI first under Settings → Local image generation',
+  '去噪点（FFmpeg）': 'Denoise (FFmpeg)',
+  '尺寸不变，抹掉噪点和颗粒，不用模型；细节会略软':
+    'Same size, removes noise and grain without a model; details get slightly softer',
 }
