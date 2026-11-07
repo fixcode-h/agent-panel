@@ -4,7 +4,7 @@ import { FlowRun } from '../shared/task-flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
-import { getLang, resolveLang, setLang } from '../shared/i18n.ts'
+import { autoLangLabel, getLang, resolveLang, setLang } from '../shared/i18n.ts'
 import {
   PROMPT_LANG_ENV,
   VERDICT_LINE,
@@ -130,9 +130,15 @@ test('en：规则用英文写明 reply 和 reasoning / thinking，代码命令�
   assert.match(rules, /do not translate them/i)
 })
 
-test('auto：按识别出的语言发固定规则，浏览器回报的识别结果优先于系统 locale', async () => {
+test('auto：按识别出的语言发固定规则（没有的语言用简体中文），浏览器回报的识别结果优先于系统 locale', async () => {
   assert.equal(resolveLang('auto', 'en-US'), 'en')
   assert.equal(resolveLang('auto', 'zh-CN'), 'zh')
+  // 没有的语言（法语）和看不出的默认简体中文；设置里的选项显示成「跟随浏览器 · 简体中文」
+  assert.equal(resolveLang('auto', 'fr-FR'), 'zh')
+  assert.equal(resolveLang('auto', 'C.UTF-8'), 'zh')
+  assert.equal(resolveLang('auto', undefined), 'zh')
+  assert.equal(autoLangLabel('fr-FR'), '简体中文')
+  assert.equal(autoLangLabel('en-GB'), 'English')
   // 设置成固定值时不受浏览器语言影响
   assert.equal(resolveLang('zh', 'en-US'), 'zh')
   assert.equal(resolveLang('en', 'zh-CN'), 'en')
@@ -154,7 +160,10 @@ test('auto：按识别出的语言发固定规则，浏览器回报的识别结�
     applyServerLang('auto', 'en')
     assert.equal(replyLang(), 'en')
     assert.match(promptLangReminder(), /in English/)
-    // 还没打开过页面（没有回报）：退回系统 locale
+    // 还没打开过页面（没有回报）：退回系统 locale；C.UTF-8 这种看不出的按简体中文
+    applyServerLang('auto')
+    assert.equal(replyLang(), 'zh')
+    process.env.LANG = 'en_US.UTF-8'
     applyServerLang('auto')
     assert.equal(replyLang(), 'en')
     // 明确选的语言不看浏览器

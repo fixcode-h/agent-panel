@@ -10,7 +10,7 @@ import { resolveLang, setLang } from '../shared/i18n.ts'
  */
 export function applyServerLang(setting?: string, browserLang?: string) {
   // 「自动」先认浏览器回报的识别结果：界面和交给 Agent 的回复语言都按用户看到的那种走，
-  // 系统 locale（C.UTF-8 这类会解析成英文）只是还没打开过页面时的兜底
+  // 系统 locale 只是还没打开过页面时的兜底（不是英文的都按简体中文，见 resolveLang）
   setLang(
     resolveLang(setting, browserLang || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale),
     setting !== 'zh' && setting !== 'en',

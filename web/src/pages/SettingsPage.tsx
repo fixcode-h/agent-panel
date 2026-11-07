@@ -36,7 +36,7 @@ import { CLIS, type CliDefinition } from '@shared/clis'
 import { cliApi } from '@shared/accounts'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
 import { applyContentWidth, switchLang } from '@/lib/data'
-import { LANGS, t } from '@shared/i18n'
+import { LANGS, autoLangLabel, t } from '@shared/i18n'
 import { WEBHOOK_MAX_ATTEMPTS } from '@shared/schedule'
 import { defaultCli, mergeCliEnv, orderClis } from '@shared/settings'
 import { api } from '@/lib/api'
@@ -853,7 +853,10 @@ function SettingsBody({
                           switchLang(v)
                         }}
                         options={[
-                          { value: 'auto', label: t('跟随浏览器 · Auto') },
+                          {
+                            value: 'auto',
+                            label: t('跟随浏览器 · {lang}', { lang: autoLangLabel(navigator.language) }),
+                          },
                           ...LANGS.map((l) => ({ value: l.id, label: l.label })),
                         ]}
                         className="w-48"

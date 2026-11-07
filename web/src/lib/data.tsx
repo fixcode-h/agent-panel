@@ -153,7 +153,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!settings) return
     switchLang(settings.language)
     // 「自动」：把这个浏览器识别出的语言告诉服务端，交给 Agent 的回复语言、服务端文案都按它走；
-    // 不报的话服务端只能按系统 locale 猜（C.UTF-8 会猜成英文），以前干脆让 Agent 「跟随用户消息」，思考常是英文
+    // 不报的话服务端只能按系统 locale 猜（和浏览器可能不一样），以前干脆让 Agent 「跟随用户消息」，思考常是英文
     if (settings.language === 'auto' && isLangAuto() && settings.browserLang !== getLang())
       void api
         .saveSettings({ ...settings, browserLang: getLang() })
