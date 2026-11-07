@@ -11,6 +11,10 @@ import { Switch } from '@/components/ui/switch'
 import { Advanced, CopyText, Group, Row } from './parts'
 import { FrpCloudGroup } from './FrpCloudGroup'
 import { FrpMappingsGroup } from './FrpMappingsGroup'
+import { FrpTest } from './FrpTest'
+import { GuardGroup } from './GuardGroup'
+import { ProxyGuide } from './ProxyGuide'
+import { TailscaleGroup } from './TailscaleGroup'
 
 const STATE_TEXT: Record<RemoteAccessStatus['state'], string> = {
   off: t('未启用'),
@@ -19,10 +23,23 @@ const STATE_TEXT: Record<RemoteAccessStatus['state'], string> = {
   error: t('出错'),
 }
 
-/** 设置里的「外部访问」：开关、访问方式、cloudflared 环境检测与连接状态 */
+const MODE_DESC: Record<RemoteAccess['mode'], string> = {
+  frp: t('一键配置云服务器，本机没有公网 IP 也能用'),
+  tailscale: t('用 Tailscale 组网，不要公网 IP 也不要服务器'),
+  custom: t('Caddy、NPM、nginx，或直接监听局域网 / 公网'),
+}
+
+const port = (v: string, fallback: number) => {
+  const n = Number(v)
+  return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : fallback
+}
+
+/**
+ * 设置里的「外部访问」：开关、访问方式（frp / Tailscale / 自建反代）、访问密码与登录的设备、连接状态。
+ * 外网一律要密码登录（服务端的登录门在 server/guard/），和本机访问分开
+ */
 export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChange: (v: RemoteAccess) => void }) {
   const [status, setStatus] = useState<RemoteAccessStatus | null>(null)
-  const [checking, setChecking] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -34,7 +51,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
         })
         .catch(() => {})
     void load()
-    // 隧道启动、下载进度都在服务端，打开这一页时定时刷新
+    // frpc 连接、下载进度都在服务端，打开这一页时定时刷新
     const timer = setInterval(load, 2000)
     return () => {
       alive = false
@@ -42,26 +59,7 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
     }
   }, [])
 
-  const install = async () => {
-    try {
-      setStatus(await api.remoteInstall())
-    } catch (e) {
-      toast.error((e as Error).message)
-    }
-  }
-
-  const check = async () => {
-    setChecking(true)
-    try {
-      setStatus(await api.remoteCheck())
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setChecking(false)
-    }
-  }
-
-  // 「重新连接」：立刻重启隧道，不用等 frpc / cloudflared 自己的重试间隔
+  // 「重新连接」：立刻重启外网端口和 frpc / tailscale，不用把外部访问关掉再打开
   const [restarting, setRestarting] = useState(false)
   const restart = async () => {
     setRestarting(true)
@@ -74,17 +72,20 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
     }
   }
 
-  const cf = status?.cloudflared
   const tone = status?.state === 'running' ? 'bg-success' : status?.state === 'error' ? 'bg-danger' : 'bg-line-strong'
+  const custom = value.mode === 'custom'
+  const lan = status?.lanIps[0] ?? ''
+  // 自建反代转发的目标：反代在本机就是 127.0.0.1；监听所有网卡时多半是 Docker 里的 NPM / Caddy，给局域网 IP
+  const upstream = `${value.listenHost === '0.0.0.0' && lan ? lan : '127.0.0.1'}:${value.localPort}`
 
   return (
     <>
       <Group>
         <Row
           title={t('允许外部访问')}
-          desc={t('让其他电脑也能打开这个面板')}
+          desc={t('让其他电脑和手机也能打开这个面板')}
           hint={t(
-            '默认关闭。打开后，服务仍然只监听 127.0.0.1，由隧道、frp 或反向代理把外网的请求转到一个专用端口；本机和其他电脑打开的是同一个面板，数据、任务进度和对话实时同步。外网访问一律要求访问令牌。',
+            '默认关闭。打开后另起一个外网专用端口，经 frp、Tailscale 或反向代理连进来；本机和其他设备打开的是同一个面板，数据、任务进度和对话实时同步。外网打开时一律要输访问密码。',
           )}
         >
           <Switch
@@ -98,62 +99,60 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
       {value.enabled && (
         <>
           <Group title={t('访问方式')}>
-            <Row
-              title={t('方式')}
-              desc={
-                value.mode === 'quick'
-                  ? t('不用账号，重启后地址会变')
-                  : value.mode === 'token'
-                    ? t('Cloudflare Tunnel，地址固定')
-                    : value.mode === 'frp'
-                      ? t('一键配置阿里云服务器，国内访问稳定')
-                      : t('已用 frp、nginx 等转到外网')
-              }
-              hint={
-                value.mode === 'quick'
-                  ? t('用 cloudflared 生成一个临时地址，适合临时给别的电脑看；国内网络经常连不上 Cloudflare。')
-                  : value.mode === 'token'
-                    ? t('在 Cloudflare 后台建好 Tunnel，把 token 和域名填进来。')
-                    : value.mode === 'frp'
-                      ? t('填云服务器的 IP、SSH 用户和密码，面板自动在服务器上装好 frps，本机运行 frpc。')
-                      : t('把反向代理转到下面的「外网专用端口」，从这个端口进来的请求一律要求访问令牌。')
-              }
-            >
+            <Row title={t('方式')} desc={MODE_DESC[value.mode]}>
               <Select
                 aria-label={t('访问方式')}
                 value={value.mode}
                 onChange={(e) => onChange({ ...value, mode: e.target.value as RemoteAccess['mode'] })}
                 className="w-[200px]"
                 options={[
-                  { value: 'quick', label: t('临时地址') },
-                  { value: 'token', label: t('固定域名') },
                   { value: 'frp', label: t('云服务器（frp）') },
+                  { value: 'tailscale', label: 'Tailscale' },
                   { value: 'custom', label: t('自建反向代理') },
                 ]}
               />
             </Row>
-            {value.mode === 'token' && (
-              <Row
-                title={t('Tunnel Token')}
-                desc={t('只存在本机')}
-                hint={t('Cloudflare 后台创建 Tunnel 时给出的 token，只保存在本机数据目录里。')}
-              >
-                <Input
-                  type="password"
-                  value={value.tunnelToken}
-                  onChange={(e) => onChange({ ...value, tunnelToken: e.target.value })}
-                  placeholder="eyJhIjoi..."
-                  autoComplete="off"
-                  spellCheck={false}
-                  className="font-mono text-body"
-                  aria-label={t('Tunnel Token')}
-                />
-              </Row>
+            {custom && (
+              <>
+                <Row
+                  title={t('监听地址')}
+                  desc={
+                    value.listenHost === '0.0.0.0'
+                      ? t('局域网和公网能直接连，反向代理在 Docker 里时也选这个')
+                      : t('只给本机的反向代理转发')
+                  }
+                >
+                  <Select
+                    aria-label={t('监听地址')}
+                    value={value.listenHost}
+                    onChange={(e) => onChange({ ...value, listenHost: e.target.value as RemoteAccess['listenHost'] })}
+                    className="w-[200px]"
+                    options={[
+                      { value: '127.0.0.1', label: t('仅本机（127.0.0.1）') },
+                      { value: '0.0.0.0', label: t('所有网卡（0.0.0.0）') },
+                    ]}
+                  />
+                </Row>
+                <Row
+                  title={t('外网专用端口')}
+                  desc={t('反向代理转到这个端口；从这里进来的请求都要密码登录')}
+                  hint={t('主端口仍然只给本机用。反向代理改写了 Host 也不会被当成本机请求。')}
+                >
+                  <Input
+                    value={String(value.localPort)}
+                    onChange={(e) => onChange({ ...value, localPort: port(e.target.value, value.localPort) })}
+                    inputMode="numeric"
+                    className="w-[96px] font-mono text-body"
+                    aria-label={t('外网专用端口')}
+                  />
+                </Row>
+              </>
             )}
-            {(value.mode === 'token' || value.mode === 'custom') && (
+            {value.mode !== 'tailscale' && (
               <Row
                 title={t('访问地址')}
-                desc={value.mode === 'token' ? t('Tunnel 对外的域名') : t('反向代理后的完整地址')}
+                desc={custom ? t('反向代理的域名，或直连时的 IP:端口') : t('在云服务器上配了域名时填，没有就留空')}
+                hint={t('登录时用它核对请求来源，也用来生成下面的反向代理配置。')}
               >
                 <Input
                   value={value.publicUrl}
@@ -165,100 +164,48 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                 />
               </Row>
             )}
-            {value.mode === 'custom' && (
-              <Row
-                title={t('外网专用端口')}
-                desc={t('反向代理转到 127.0.0.1 的这个端口')}
-                hint={t(
-                  '只监听本机。以前转到 8787 的请求仍按访问地址校验，改转到这里更安全：Host 被反代改写也不会被当成本机请求。',
-                )}
-              >
-                <Input
-                  value={String(value.localPort)}
-                  onChange={(e) => {
-                    const n = Number(e.target.value)
-                    if (Number.isInteger(n) && n >= 1 && n <= 65535) onChange({ ...value, localPort: n })
-                  }}
-                  inputMode="numeric"
-                  className="w-[96px] font-mono text-body"
-                  aria-label={t('外网专用端口')}
-                />
-              </Row>
+            {custom && value.listenHost === '0.0.0.0' && (
+              <Advanced label="HTTPS">
+                <Row
+                  title={t('HTTPS 证书')}
+                  desc={
+                    value.tlsCert && value.tlsKey
+                      ? t('已启用 HTTPS')
+                      : t('直接对外时建议配上：明文 HTTP 下密码和登录状态可能被同一网络里的人截获')
+                  }
+                  stack
+                >
+                  <div className="flex flex-col gap-2">
+                    <Input
+                      value={value.tlsCert}
+                      onChange={(e) => onChange({ ...value, tlsCert: e.target.value })}
+                      placeholder={t('证书文件路径（fullchain.pem）')}
+                      spellCheck={false}
+                      className="font-mono text-body"
+                      aria-label={t('证书文件路径（fullchain.pem）')}
+                    />
+                    <Input
+                      value={value.tlsKey}
+                      onChange={(e) => onChange({ ...value, tlsKey: e.target.value })}
+                      placeholder={t('私钥文件路径（privkey.pem）')}
+                      spellCheck={false}
+                      className="font-mono text-body"
+                      aria-label={t('私钥文件路径（privkey.pem）')}
+                    />
+                  </div>
+                </Row>
+              </Advanced>
             )}
           </Group>
 
           {value.mode === 'frp' && (
             <FrpCloudGroup value={value} onChange={onChange} status={status} onStatus={setStatus} />
           )}
-
           {value.mode === 'frp' && value.frp.token && (
             <FrpMappingsGroup value={value} onChange={onChange} status={status} />
           )}
-
-          {(value.mode === 'quick' || value.mode === 'token') && (
-            <Group title={t('环境检测')}>
-              <Row
-                title="cloudflared"
-                desc={t('建立隧道用，不用在路由器上开端口')}
-                hint={t('没有安装时可以直接下载到面板的数据目录；自己装好了（例如用 Homebrew、winget）就点重新检测。')}
-              >
-                <div className="flex flex-col items-end gap-2">
-                  <div className="flex items-center gap-2 text-body">
-                    <Button size="sm" variant="ghost" onClick={check} disabled={checking}>
-                      {checking ? t('检测中…') : t('重新检测')}
-                    </Button>
-                    <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${cf?.installed ? 'bg-success' : 'bg-line-strong'}`}
-                    />
-                    <span className={cf?.installed ? 'text-fg' : 'text-muted'}>
-                      {!status
-                        ? t('检测中…')
-                        : cf?.installed
-                          ? t('已安装 {version}', { version: cf.version })
-                          : t('未安装')}
-                    </span>
-                  </div>
-                  {!cf?.installed && status && (
-                    <Button size="sm" variant="secondary" onClick={install} disabled={status.download?.running}>
-                      {status.download?.running
-                        ? status.download.percent >= 0
-                          ? t('正在下载 {n}%', { n: String(status.download.percent) })
-                          : t('正在下载…')
-                        : t('下载 cloudflared')}
-                    </Button>
-                  )}
-                  {cf?.installed && cf.path && (
-                    <span className="max-w-[280px] truncate font-mono text-caption text-subtle" title={cf.path}>
-                      {cf.path}
-                    </span>
-                  )}
-                  {!cf?.installed && cf?.error && (
-                    <span className="text-footnote leading-relaxed text-subtle">{cf.error}</span>
-                  )}
-                  {status?.download?.error && (
-                    <span className="max-w-[280px] text-footnote leading-relaxed text-danger">
-                      {status.download.error}
-                    </span>
-                  )}
-                </div>
-              </Row>
-              <Advanced label={t('cloudflared 路径')}>
-                <Row
-                  title={t('cloudflared 路径')}
-                  desc={t('自动找到的不用填')}
-                  hint={t('装在别处时填可执行文件的完整路径。')}
-                >
-                  <Input
-                    value={value.command}
-                    onChange={(e) => onChange({ ...value, command: e.target.value })}
-                    placeholder="cloudflared"
-                    spellCheck={false}
-                    className="font-mono text-body"
-                    aria-label={t('cloudflared 路径')}
-                  />
-                </Row>
-              </Advanced>
-            </Group>
+          {value.mode === 'tailscale' && (
+            <TailscaleGroup value={value} onChange={onChange} status={status} onStatus={setStatus} />
           )}
 
           <Group title={t('连接状态')}>
@@ -285,11 +232,11 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
               </div>
             </Row>
             {status?.url && (
-              <Row title={t('外网地址')} desc={t('在其他电脑打开，链接里已带令牌')} stack>
+              <Row title={t('外网地址')} desc={t('在其他设备上打开，输入访问密码登录')} stack>
                 <div className="flex min-w-0 items-center gap-3">
-                  <CopyText text={status.link || status.url} title={t('复制地址')} />
+                  <CopyText text={status.url} title={t('复制地址')} />
                   <a
-                    href={status.link || status.url}
+                    href={status.url}
                     target="_blank"
                     rel="noreferrer"
                     className="shrink-0 text-body text-accent-text hover:underline"
@@ -299,7 +246,15 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                 </div>
               </Row>
             )}
+            {value.mode === 'frp' && <FrpTest />}
           </Group>
+
+          <GuardGroup value={value} onChange={onChange} />
+
+          {custom && <ProxyGuide publicUrl={value.publicUrl} upstream={upstream} />}
+          {value.mode === 'frp' && value.frp.token && (
+            <ProxyGuide publicUrl={value.publicUrl} upstream={`127.0.0.1:${value.frp.remotePort}`} cloud />
+          )}
         </>
       )}
     </>
