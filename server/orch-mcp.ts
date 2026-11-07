@@ -20,7 +20,7 @@ import { askOptions } from '../shared/task.ts'
 import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
 import { overrideInput, triageInput } from '../shared/review-gate.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
-import { childKindArgs, childKindFields } from './child-kind-fields.ts'
+import { childKindArgs, childKindFields, upgradeBugArg, upgradeBugFields } from './child-kind-fields.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
 import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
 import { END_TURN_DEF, callEndTurn } from './end-turn-tool.ts'
@@ -184,6 +184,7 @@ export function orchTools(o: Orchestra) {
               properties: {
                 id: { type: 'string', description: '子对话 id' },
                 message: { type: 'string', description: '要交给它的消息，写清楚和原任务的关系' },
+                ...upgradeBugFields,
                 route: routeField(),
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },
@@ -903,7 +904,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const id = str(a?.id).trim()
       const message = str(a?.message).trim()
       if (!id || !message) return text('id 和 message 都要写', true)
-      const r = await o.sendToConversation(id, message, str(a?.step).trim(), routeOf(a?.route))
+      const r = await o.sendToConversation(id, message, str(a?.step).trim(), routeOf(a?.route), upgradeBugArg(a))
       return text(r.info, !r.ok)
     }
     case 'run_background':

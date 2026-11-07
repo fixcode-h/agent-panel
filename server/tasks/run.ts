@@ -77,6 +77,7 @@ import { projectDocRoot } from '../doc-root.ts'
 import { cherryPickFor } from '../cherry-pick.ts'
 import { TaskBusyError, isolated, parentRunRole, isP4, wrapUpFrom, wrapUpProbe } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { upgradeChildToBug } from './bug-upgrade.ts'
 import { pauseHelper, pauseUnit } from '../../shared/run-stops.ts'
 import { dirtyParentBlock, dirtyParentNote } from './dirty-parent.ts'
 
@@ -698,9 +699,13 @@ export function createRun(sc: TasksScope) {
           const r = await spawnChild(entry.task, project, agents, { title, message, files, agentId, bug, edits, level })
           return dirty ? { ...r, info: `${r.info}\n${dirty}` } : r
         },
-        sendToConversation: async (id, message) => {
+        sendToConversation: async (id, message, bug) => {
+          // 写了 kind: "bug"：先把子对话标成用户报的 Bug，交过去的话前面带上说明（bug-upgrade.ts）
+          const up = bug && (await upgradeChildToBug(sc, entry.task.id, id, message, bug.level))
+          if (up && !up.ok) return up
           // 父对话交给已有子对话：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
-          const r = await sc.sendToChild(entry.task.id, id, message, undefined, 'task')
+          const r = await sc.sendToChild(entry.task.id, id, up ? up.message : message, undefined, 'task')
+          if (up && r.ok) r.info = `${r.info}\n${up.note}`
           // 交给子对话就算回答了它的提问：父对话里的提问卡片收起
           if (r.ok && sc.settleAsks(entry.task, id, message, 'parent')) entry.rev++
           return r
