@@ -1649,6 +1649,8 @@ body,
  */
 .file-ref .fr-text {
   display: inline-flex;
+  /* 名字、扩展名、行号按基线对齐：行号是小一号的等宽字，默认的顶端对齐会让它比文件名高出一截（用户 2026-11-07 截图） */
+  align-items: baseline;
   min-width: 0;
   overflow: hidden;
 }
