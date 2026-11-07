@@ -1245,7 +1245,9 @@ function SettingsBody({
                                 ? ` · ${t('未安装')}`
                                 : !st.enabled
                                   ? ` · ${t('已停用')}`
-                                  : ''
+                                  : drafts[c.id]?.authMode === 'api' && c.auth?.api?.noImages
+                                    ? ` · ${t('API 方式不能生图')}`
+                                    : ''
                             return { value: c.id, label: c.name + note }
                           })}
                       />
@@ -1331,7 +1333,9 @@ function SettingsBody({
                                 ? ` · ${t('未安装')}`
                                 : !st.enabled
                                   ? ` · ${t('已停用')}`
-                                  : ''
+                                  : drafts[c.id]?.authMode === 'api' && c.auth?.api?.noImages
+                                    ? ` · ${t('API 方式不能生图')}`
+                                    : ''
                             return { value: c.id, label: c.name + note }
                           })}
                       />

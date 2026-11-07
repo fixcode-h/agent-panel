@@ -29,6 +29,11 @@ export async function cliGenerate(
     throw new Error(t('{cli} 不能生成图片，请在设置的「默认 Agent」里换成 Codex', { cli: def?.name ?? cliId }))
   const cs = cliSettings(settings, cliId)
   if (!cs.enabled) throw new Error(t('{cli} 在设置里被停用了', { cli: def.name }))
+  // API 方式下 CLI 不把生图工具交给模型，跑一轮只会得到「没有生成图片」
+  if (cs.api && def.auth?.api?.noImages)
+    throw new Error(
+      t('{cli} 用 API 方式时没有生图工具，请在设置里把 {cli} 换成账号登录（ChatGPT）后再生成图片', { cli: def.name }),
+    )
   const run = agentRun(
     { cli: cliId, model: settings.imageGen.model || '@high', effort: settings.imageGen.effort },
     settings,

@@ -161,3 +161,11 @@ test('推荐的插件：Pi 第一项是联网搜索插件；每个 CLI 推荐里
     }
   }
 })
+
+test('Codex 的 API 方式：思考摘要用新版认的 model_reasoning_summary，生图工具标成没有', () => {
+  // 0.167 起 model_supports_reasoning_summaries 不认了，每轮都报「session-flags ... is ignored」
+  const api = getCli('codex')!.auth!.api!
+  assert.deepEqual(api.thinkArgs, ['-c', 'model_reasoning_summary=auto'])
+  // API Key、第三方接口下 Codex 不把 image_gen 交给模型，生图前要直接说明
+  assert.equal(api.noImages, true)
+})
