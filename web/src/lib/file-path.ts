@@ -162,3 +162,9 @@ export function linkPaths(html: string) {
     return fileRefHtml(p, { label, parent: dup && !label ? parentName(p.path) : '' })
   })
 }
+
+/** 不带目录的文件名（`s_CSM_Foo.lua`、`a.ts:12`）：按代码显示，悬停时在对话目录里找完整路径 */
+export function isBareFileName(s: string) {
+  const p = parsePath(s)
+  return !!p && !/[\\/]/.test(p.path)
+}

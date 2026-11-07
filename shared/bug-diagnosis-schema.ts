@@ -60,6 +60,10 @@ export const BugAttribution = z.object({
 })
 export type BugAttribution = z.infer<typeof BugAttribution>
 
+/** 方案比较一项的判定 */
+export const Grade = z.enum(['good', 'cost', 'bad'])
+export type Grade = z.infer<typeof Grade>
+
 /** 一个候选修法和五项比较 */
 export const BugOption = z.object({
   id: str(20),
@@ -72,6 +76,26 @@ export const BugOption = z.object({
   risk: str(1500),
   fit: str(1000),
   verifiable: str(1000),
+  /**
+   * 五项各自的判定（用户 2026-11-07 确认的报告设计）：good 好、cost 有代价、bad 不满足，比较表里画成 ✓ ⚠ ✗，
+   * 不用读完每格就能比
+   */
+  grades: z
+    .object({
+      covers: Grade.optional().catch(undefined),
+      misses: Grade.optional().catch(undefined),
+      surface: Grade.optional().catch(undefined),
+      risk: Grade.optional().catch(undefined),
+      fit: Grade.optional().catch(undefined),
+      verifiable: Grade.optional().catch(undefined),
+    })
+    .catch({})
+    .default({}),
+  /** 会动到的契约：data 数据格式、api 接口、config 配置项；报告最上面的「要注意」按它提醒 */
+  touches: z
+    .array(z.enum(['data', 'api', 'config']))
+    .catch([])
+    .default([]),
 })
 export type BugOption = z.infer<typeof BugOption>
 
@@ -113,6 +137,11 @@ export const BugCollect = z.object({
   filter: str(300),
   /** 每种结果说明什么（论证）/ 看到什么算修好了（验证） */
   expect: str(2000),
+  /** expect 的结构化写法：看到什么 → 说明什么，一种结果一行（用户复现完自己就能对上） */
+  outcomes: z
+    .array(z.object({ see: str(1000), means: str(1000) }))
+    .catch([])
+    .default([]),
 })
 export type BugCollect = z.infer<typeof BugCollect>
 
@@ -150,6 +179,32 @@ export const BugCaseFields = {
     .catch(undefined),
   /** 根因还没找到时：下一步要加的日志、要用户提供什么 */
   next: str(3000),
+  /** 证据链三环：trigger 触发 → fault 出错点 → symptom 现象，每环一句话加证据（日志原文、测试输出、path:line） */
+  chain: z
+    .array(
+      z.object({
+        step: z.enum(['trigger', 'fault', 'symptom']).catch('fault').default('fault'),
+        text: str(1500),
+        proof: str(2000),
+      }),
+    )
+    .catch([])
+    .default([]),
+  /** 关键代码：出错的那几行（面板从工作区读出来显示，不让 Agent 抄）；mark 是出错的那一行 */
+  codeRef: z
+    .object({
+      file: str(500),
+      start: z.coerce.number().int().positive(),
+      end: z.coerce.number().int().positive(),
+      mark: z.coerce.number().int().positive().optional().catch(undefined),
+    })
+    .optional()
+    .catch(undefined),
+  /** 具体改动：一个文件一行写要改什么（方案页的「具体改动」表；files 没写时由它补） */
+  changes: z
+    .array(z.object({ file: str(500), what: str(2000), isNew: z.boolean().catch(false).default(false) }))
+    .catch([])
+    .default([]),
   /** 论证阶段：要加的临时日志 */
   logPlan: z.array(BugLogPoint).catch([]).default([]),
   /** 论证 / 验证阶段：复现步骤、日志在哪、过滤条件、每种结果说明什么 */
@@ -182,7 +237,18 @@ export const Diagnosis = z.object({
   risk: z.string().default(''),
   verify: z.string().default(''),
   /** 第 2 版起：逐条回答上一版的疑问和改方案（id 对上一版 notes 的 id） */
-  answers: z.array(z.object({ id: z.number().int(), answer: z.string() })).default([]),
+  answers: z
+    .array(
+      z.object({
+        id: z.number().int(),
+        answer: z.string(),
+        /** 对这条意见的态度：adopted 采纳、explained 解释、disagree 不同意（报告上画成胶囊） */
+        stance: z.enum(['adopted', 'explained', 'disagree']).optional().catch(undefined),
+      }),
+    )
+    .default([]),
+  /** 第 2 版起：相比上一份改了什么（一两句，写在报告最上面） */
+  whatChanged: z.string().default(''),
   /**
    * cancelled：用户在审阅弹窗里点了「取消」，这次不修了（计划收口成完成，对话等用户下一句）。
    * answered：用户贴了日志（论证阶段复现的结果、验证阶段的结果），交给 AI 分析

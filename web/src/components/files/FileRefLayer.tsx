@@ -35,6 +35,11 @@ interface FileRefApi {
     el: HTMLElement,
   ) => void
   hover: (el: HTMLElement, target: FileRefTarget) => void
+  /**
+   * 悬停在单独的文件名上（行内代码，不是文件标记）：在对话目录里按名字找，卡片列出完整路径
+   * （用户 2026-11-07 要求：不带目录的文件名按代码显示，悬停能看到它在哪）
+   */
+  name: (el: HTMLElement, name: string) => void
   leave: () => void
   /** 把 root 里的文件标记按真实情况标出来：找不到的划掉（回复渲染完调用） */
   mark: (root: HTMLElement) => void
@@ -50,6 +55,8 @@ export function targetOf(el: HTMLElement): FileRefTarget {
 
 /** 解析结果留这么久：Agent 正在新建、删除文件，太久的「不存在」会骗人 */
 const CACHE_MS = 15_000
+/** 按文件名找到的路径最多列这么多 */
+const NAME_MAX = 5
 /** 停这么久才弹悬停卡片：划过去不闪 */
 const HOVER_DELAY = 400
 
@@ -86,6 +93,24 @@ export function FileRefLayer({
   const resolve = useCallback((p: string) => resolveMany([p]).then((r) => r[0]), [resolveMany])
 
   const [card, setCard] = useState<{ el: HTMLElement; target: FileRefTarget; info?: PathInfo | null } | null>(null)
+  const [named, setNamed] = useState<{ el: HTMLElement; name: string; paths?: string[]; more?: boolean } | null>(null)
+  const names = useRef(new Map<string, { at: number; hits: Promise<{ paths: string[]; more: boolean }> }>())
+  const findName = useCallback(
+    (name: string) => {
+      const hit = names.current.get(name)
+      if (hit && Date.now() - hit.at < CACHE_MS) return hit.hits
+      const hits = api.searchTaskFileNames(taskId, name).then(
+        (r) => {
+          const all = r.files.map((f) => f.path).filter((p) => p.split('/').pop() === name)
+          return { paths: all.slice(0, NAME_MAX), more: all.length > NAME_MAX || r.truncated }
+        },
+        () => ({ paths: [], more: false }),
+      )
+      names.current.set(name, { at: Date.now(), hits })
+      return hits
+    },
+    [taskId],
+  )
   const timer = useRef(0)
   const [menu, setMenu] = useState<{
     at: { x: number; y: number }
@@ -144,9 +169,17 @@ export function FileRefLayer({
             void resolve(target.path).then((info) => setCard((c) => (c && c.el === el ? { ...c, info } : c)))
         }, HOVER_DELAY)
       },
+      name: (el, name) => {
+        clearTimeout(timer.current)
+        timer.current = window.setTimeout(() => {
+          setNamed({ el, name })
+          void findName(name).then((r) => setNamed((c) => (c && c.el === el ? { ...c, ...r } : c)))
+        }, HOVER_DELAY)
+      },
       leave: () => {
         clearTimeout(timer.current)
         setCard(null)
+        setNamed(null)
       },
       mark: (root) => {
         const els = [...root.querySelectorAll<HTMLElement>('[data-file-ref][data-path]')]
@@ -161,16 +194,19 @@ export function FileRefLayer({
         )
       },
     }),
-    [open, resolve, resolveMany],
+    [open, resolve, resolveMany, findName],
   )
   useEffect(() => () => clearTimeout(timer.current), [])
   // 滚动时卡片会和标记错开，直接收起
   useEffect(() => {
-    if (!card) return
-    const off = () => setCard(null)
+    if (!card && !named) return
+    const off = () => {
+      setCard(null)
+      setNamed(null)
+    }
     window.addEventListener('scroll', off, true)
     return () => window.removeEventListener('scroll', off, true)
-  }, [card])
+  }, [card, named])
 
   const closeMenu = () => {
     if (menu) delete menu.el.dataset.menu
@@ -180,6 +216,7 @@ export function FileRefLayer({
     <FileRefCtx.Provider value={api_}>
       {children}
       {card && <HoverCard el={card.el} target={card.target} info={card.info} />}
+      {named && <NameCard el={named.el} name={named.name} paths={named.paths} more={named.more} />}
       {menu && (
         <PointMenu at={menu.at} open onOpenChange={(v) => !v && closeMenu()}>
           <RefMenu
@@ -240,6 +277,46 @@ function HoverCard({ el, target, info }: { el: HTMLElement; target: FileRefTarge
         <span>{clickHint(target, info)}</span>
         <span>{t('右键 更多')}</span>
       </div>
+    </div>,
+    document.body,
+  )
+}
+
+/** 卡片贴着元素：默认在下面，贴近底边时翻到上面；左右不出视口 */
+function placeNear(el: HTMLElement): React.CSSProperties {
+  const r = el.getBoundingClientRect()
+  const width = Math.min(440, window.innerWidth - 16)
+  const below = r.bottom + 6 + 120 < window.innerHeight
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
+  return below ? { left, top: r.bottom + 6, width } : { left, bottom: window.innerHeight - r.top + 6, width }
+}
+
+/** 单独的文件名：对话目录里同名的文件（还在找时只写名字），一个都没有时说清 */
+function NameCard({ el, name, paths, more }: { el: HTMLElement; name: string; paths?: string[]; more?: boolean }) {
+  return createPortal(
+    <div
+      role="tooltip"
+      data-name-card
+      style={placeNear(el)}
+      className={cn(popoverPanel, 'pointer-events-none fixed min-w-0 space-y-1 px-3 py-2.5 text-footnote')}
+    >
+      {!paths ? (
+        <p className="text-subtle">{t('正在找 {name}…', { name })}</p>
+      ) : paths.length ? (
+        <>
+          <p className="text-subtle">
+            {paths.length > 1 ? t('项目里有 {n} 个同名文件', { n: paths.length }) : t('项目内')}
+          </p>
+          {paths.map((p) => (
+            <p key={p} className="font-mono text-caption break-all text-fg/90">
+              {p}
+            </p>
+          ))}
+          {more && <p className="text-subtle">{t('还有更多，只列出前几个')}</p>}
+        </>
+      ) : (
+        <p className="text-subtle">{t('对话目录里找不到叫这个名字的文件')}</p>
+      )}
     </div>,
     document.body,
   )

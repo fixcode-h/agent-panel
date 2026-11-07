@@ -79,28 +79,14 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '你同意了根因，它在设计修复方案': 'You agreed with the root cause; it is designing the fix',
   '你确认了方案，它在修': 'You approved the plan; it is fixing',
   '你结束了验证，它在收尾': 'You finished verification; it is wrapping up',
-  '日志已经加好：按下面的步骤复现，把日志贴回来':
-    'Logs are in place: reproduce with the steps below and paste the logs back',
-  '同意后它按日志计划加临时日志；你手上已有日志也可以直接贴':
-    'Once allowed it adds temporary logs per the log plan; if you already have logs, paste them directly',
-  '同意根因它就开始设计修复方案；不同意就标出疑问或补充':
-    'Agree and it starts designing the fix; otherwise mark your questions or facts',
-  确认方案它才开始改代码: 'It only starts changing code once you approve the plan',
-  '快速级别：根因和修复方案一起确认，确认了它才开始改代码':
-    'Quick level: approve the root cause and the fix together; it only starts changing code after that',
   '你同意了根因和方案，它在修': 'You agreed with the root cause and the plan; it is fixing',
   同意根因并按这个修: 'Agree and fix it this way',
   '根因和修复方案一起确认，确认了它才开始改代码；根因或方案有疑问先选中文字标注':
     'Approve the root cause and the fix together; it only starts changing code after that. Select text to annotate questions about either',
-  '修复方案草案（这一版不确认，同意根因后另交一版）':
-    'Draft fix (not approved in this version; it submits the plan separately after you agree with the root cause)',
-  '已经修好：按下面的步骤复现验证，把日志贴回来；不想验证可以直接结束':
-    'Fixed: reproduce with the steps below and paste the logs back; or finish without verifying',
   怎么复现: 'How to reproduce',
   '日志在：{where}': 'Logs are in: {where}',
   '过滤：`{filter}`': 'Filter: `{filter}`',
   看到什么算修好了: 'What counts as fixed',
-  每种结果说明什么: 'What each outcome means',
   编号: 'ID',
   打什么: 'What it prints',
   区分哪个假设: 'Hypothesis it tells apart',
@@ -110,7 +96,6 @@ export const EN_BUG_FLOW: Record<string, string> = {
   回归测试: 'Regression tests',
   等你复现: 'Waiting for you to reproduce',
   日志计划: 'Log plan',
-  修复结果: 'Fix results',
   改动的文件: 'Changed files',
   你贴的日志: 'Logs you provided',
   等你验证: 'Waiting for you to verify',
@@ -137,4 +122,76 @@ export const EN_BUG_FLOW: Record<string, string> = {
   结果: 'Result',
   跑了几次: 'Runs',
   位置和调用路径: 'Location and call path',
+  // 决策卡、按步骤排的报告（2026-11-07）
+  '正在找 {name}…': 'Looking for {name}…',
+  '项目里有 {n} 个同名文件': '{n} files with this name in the project',
+  '还有更多，只列出前几个': 'More matches; only the first few are listed',
+  对话目录里找不到叫这个名字的文件: 'No file with this name in the conversation folder',
+  '根因：': 'Root cause: ',
+  '要你做的：': 'Your move: ',
+  要注意: 'Watch out',
+  '相比上一份：': 'Since the last report: ',
+  依据和背景: 'Evidence and background',
+  '按下面的步骤复现一次，把日志贴在右边，点「交日志，继续分析」':
+    'Reproduce once with the steps below, paste the logs on the right and click "Submit logs, continue"',
+  '同意加日志，它只在日志计划里的文件加临时日志、不改逻辑；手上已有日志可以直接贴在右边':
+    'Agree to add logs: it only adds temporary logs in the files of the log plan and changes no logic. If you already have logs, paste them on the right',
+  '同意根因，它开始设计修复方案；不同意就选中文字标出疑问，点「否决」':
+    'Agree with the root cause and it designs the fix; if not, select text to mark your doubts and click "Reject"',
+  '根因和修复方案一起确认，确认了它才开始改代码':
+    'Confirm the root cause and the fix together; it only starts changing code after you confirm',
+  '确认方案，它才开始改代码': 'Confirm the plan; it only starts changing code after that',
+  '按下面的步骤复现一次，贴日志确认；不想验证可以直接结束':
+    'Reproduce once with the steps below and paste the logs to confirm; or just finish if you do not want to verify',
+  已被取代: 'Superseded',
+  它在分析: 'Analysing',
+  '日志已经加好（{n} 处），按下面的步骤复现一次，把日志贴回来':
+    'Logs added ({n} places): reproduce once with the steps below and paste the logs back',
+  '根因还没证实：先加 {n} 处临时日志，复现一次来区分 {ids}':
+    'Root cause not confirmed yet: add {n} temporary logs and reproduce once to tell {ids} apart',
+  '根因还没证实：先加 {n} 处临时日志，复现一次来确认':
+    'Root cause not confirmed yet: add {n} temporary logs and reproduce once to confirm',
+  根因还没证实: 'Root cause not confirmed yet',
+  '选方案 {id}：{title}': 'Option {id}: {title}',
+  '已经修好：回归测试 {n} 条，等你复现验证': 'Fixed: {n} regression tests; waiting for you to verify',
+  '已经修好，等你复现验证': 'Fixed; waiting for you to verify',
+  根因未证实: 'Root cause unconfirmed',
+  '改 {n} 个文件': '{n} files to change',
+  根因还没用日志或测试证实: 'The root cause has not been confirmed by logs or tests',
+  '{n} 项影响面还没有验证结果': '{n} affected areas have no verification result',
+  '交报告前已经改了 {n} 个你没同意过的文件': '{n} files you did not approve were changed before this report',
+  '改了方案以外的 {n} 个文件': '{n} files outside the plan were changed',
+  引入点还没定下来: 'Where it was introduced is not settled yet',
+  '有 {n} 条现象根因解释不了': '{n} observations are not explained by the root cause',
+  '会改{what}，旧数据和调用方要一起看': 'Changes {what}: check old data and callers too',
+  数据格式: 'the data format',
+  接口: 'the API',
+  配置项: 'config options',
+  要你做的: 'Your move',
+  相比上一份: 'Since the last report',
+  看到: 'You see',
+  触发: 'Trigger',
+  出错点: 'Fault',
+  '证据链缺了：{steps}': 'Evidence chain is missing: {steps}',
+  出错位置: 'Fault location',
+  改什么: 'What changes',
+  已解释: 'Explained',
+  不同意: 'Disagree',
+  解释不了: 'Not explained',
+  '{from} → {to}': '{from} → {to}',
+  这轮变化: 'This round',
+  没测: 'Not tested',
+  回答你的意见: 'Answers to your notes',
+  结果怎么判: 'How to read the result',
+  上一轮日志说明了什么: 'What the last round of logs showed',
+  为什么选这个方案: 'Why this option',
+  具体改动: 'Changes',
+  影响面和验证: 'Affected areas and verification',
+  '已经想好修法，同意根因后单独交一版方案给你确认。':
+    'A fix is already in mind; once you agree with the root cause, a separate plan will be sent for you to confirm.',
+  自测结果: 'Self-test results',
+  你来验证: 'Verify it yourself',
+  收尾时会做什么: 'What happens on wrap-up',
+  '删掉加在这些文件里的 `[排查-` 临时日志：{files}；修改里必要的正式日志保留。':
+    'Remove the temporary `[排查-` logs added in these files: {files}; necessary permanent logs in the changes are kept.',
 }

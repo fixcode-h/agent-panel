@@ -1,8 +1,9 @@
+import { useEffect, useMemo, useState } from 'react'
 import { FileSearch } from 'lucide-react'
 import type { Attachment, Task, TaskRequest } from '@shared/schema'
 import { attachChip } from '@shared/composer'
 import type { Diagnosis } from '@shared/bug-diagnosis-schema'
-import { diagnosisMarkdown } from '@shared/bug-diagnosis'
+import { diagnosisMarkdown, diagnosisView } from '@shared/bug-diagnosis'
 import { causeInPlan, phaseOf, revOf, roundOf } from '@shared/bug-phase'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -11,6 +12,7 @@ import { toast } from '@/lib/toast'
 import { readBase64 } from '@/components/chat/Attachments'
 import { ReviewDialog, type NoteKind, type ReviewRaw } from './ReviewDialog'
 import { DiagnosisStages } from './DiagnosisStages'
+import { DiagnosisCard, ReportFold } from './DiagnosisCard'
 
 /**
  * Bug 的诊断报告（ADR 0045）：父对话派来的 Bug，子对话每到一个关口交一版（论证、根因、修复方案、验证），
@@ -45,11 +47,52 @@ const statusOf = (d: Diagnosis) => {
   return STATUS[d.status]()
 }
 
+/** 关键代码的那几行：codeRef 写的是位置，代码从对话的工作区读（不让 Agent 抄，抄的会和实际对不上） */
+const refKey = (d: Diagnosis) => (d.codeRef?.file ? `${d.codeRef.file}:${d.codeRef.start}-${d.codeRef.end}` : '')
+
+/** 最多显示这么多行：Agent 写的范围太大时只取开头，出错行在范围外就不标 */
+const MAX_LINES = 30
+
+function useSnippets(taskId: string, list: Diagnosis[], open: boolean) {
+  const [map, setMap] = useState<Record<string, string>>({})
+  const want = useMemo(() => [...new Set(list.map(refKey).filter(Boolean))], [list])
+  useEffect(() => {
+    if (!open) return
+    let off = false
+    for (const d of list) {
+      const key = refKey(d)
+      const r = d.codeRef
+      if (!key || !r || key in map || !want.includes(key)) continue
+      api
+        .taskFile(taskId, r.file)
+        .then((f) => {
+          if (off || !f.exists || f.binary) return
+          const lines = f.content.split(/\r?\n/).slice(r.start - 1, Math.min(r.end, r.start - 1 + MAX_LINES))
+          if (lines.length) setMap((m) => ({ ...m, [key]: lines.join('\n') }))
+        })
+        // 读不到（文件删了、导入的对话没有目录）就只写出错位置，不打扰
+        .catch(() => {})
+    }
+    return () => {
+      off = true
+    }
+    // 只在打开、要读的位置变了时读；map 是结果，放进依赖会读完又触发一遍
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId, want, open])
+  return map
+}
+
 /**
- * 每一份报告的标题、正文和状态：正文按上一份补出「回答上一轮的意见」；author：引入点写不写作者（设置里的开关）。
- * 第几版只在结论被推翻时加（nextRev），同一版同一阶段交了几轮的标出第几轮
+ * 每一份报告的标题、正文和状态：决策卡、这一步要审的、收起的依据和背景（用户 2026-11-07 确认的设计稿）；
+ * author：引入点写不写作者（设置里的开关）。第几版只在结论被推翻时加（nextRev），同一版同一阶段交了几轮的标出第几轮
  */
-function versionsOf(list: Diagnosis[], author: boolean) {
+function versionsOf(
+  list: Diagnosis[],
+  author: boolean,
+  snippets: Record<string, string>,
+  changed: string[] | undefined,
+  teamNames: Set<string>,
+) {
   return list.map((d, i) => {
     const n = revOf(d)
     const k = roundOf(d, list)
@@ -60,10 +103,24 @@ function versionsOf(list: Diagnosis[], author: boolean) {
       // 下拉按阶段分组（用户 2026-11-06 要求），组名已是阶段，列表里只写第几版、第几轮
       group: phase,
       short: k > 1 ? t('第 {n} 版 · 第 {k} 轮', { n, k }) : t('第 {n} 版', { n }),
-      detail: diagnosisMarkdown(d, list[i - 1], { author, list }),
+      ...viewOf(d, list[i - 1], { author, list, snippet: snippets[refKey(d)], changed }, teamNames),
       status: statusOf(d),
     }
   })
+}
+
+function viewOf(
+  d: Diagnosis,
+  prev: Diagnosis | undefined,
+  opts: Parameters<typeof diagnosisView>[2],
+  teamNames: Set<string>,
+) {
+  const v = diagnosisView(d, prev, opts)
+  return {
+    detail: v.main,
+    lead: <DiagnosisCard card={v.card} teamNames={teamNames} />,
+    after: v.background ? <ReportFold text={v.background} teamNames={teamNames} /> : undefined,
+  }
 }
 
 const phaseLabel = (d: Diagnosis) =>
@@ -153,15 +210,19 @@ export function DiagnosisDialog({
   onOpenChange,
   onDone,
 }: {
-  task: Pick<Task, 'id' | 'title' | 'diagnoses'>
+  task: Pick<Task, 'id' | 'title' | 'diagnoses'> & Partial<Pick<Task, 'changes'>>
   open: boolean
   onOpenChange: (open: boolean) => void
   onDone?: (task: Task) => void
 }) {
-  const { settings } = useData()
+  const { settings, agents } = useData()
   const author = settings?.bugAuthor !== false
   const list = task.diagnoses ?? []
   const last = list.at(-1)
+  const snippets = useSnippets(task.id, list, open)
+  // 和 ReviewDialog 一样稳定下来：Markdown 按引用比较，变了会重新解析、冲掉标注的位置
+  const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
+  const changed = task.changes?.map((c) => c.path)
   if (!last) return null
   const req: Pick<TaskRequest, 'id' | 'title' | 'detail'> = {
     // 等你复现是同一版回到等你：换一个 id，标注和输入从头开始
@@ -202,7 +263,7 @@ export function DiagnosisDialog({
       open={open}
       onOpenChange={onOpenChange}
       kinds={KINDS()}
-      versions={versionsOf(list, author)}
+      versions={versionsOf(list, author, snippets, changed, teamNames)}
       presets={presets}
       readOnly={last.status !== 'pending'}
       // 阶段条按整份档案画走到哪一步，点走过的一步切到那一步的报告，正在看的那步描边
