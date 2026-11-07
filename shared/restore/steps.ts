@@ -1,8 +1,10 @@
 import { t } from '../i18n.ts'
-import type { Img } from '../raster.ts'
+import { hasAlpha, type Img } from '../raster.ts'
 import type { Design, DesignImage } from '../design.ts'
-import { walk } from '../umg.ts'
+import { walk, type Component } from '../umg.ts'
+import { checkAdapt } from './adapt.ts'
 import { extractAssets } from './assets.ts'
+import { deriveState } from './states.ts'
 import { compileRestore } from './compile.ts'
 import { detectElements } from './detect.ts'
 import { findGroups } from './grid.ts'
@@ -157,18 +159,32 @@ export async function runStep(step: RestoreStep, ctx: RestoreCtx, feedback = '')
     case 'verify':
       card = runVerify(d, ctx.thresholds, r)
       break
-    case 'deliver':
+    case 'deliver': {
+      // 换几种宽高比排一遍，看锚点对不对
+      const adapt = checkAdapt({ root: d.root, components: d.components, data: d.data, size: d.designSize })
+      const issues = adapt.flatMap((a) => a.issues)
       card = {
         conclusion: r.score?.passed
           ? t('还原完成：{n} 个元素，总分 {s}', { n: r.elements.filter((e) => !e.hidden).length, s: r.score.total })
           : t('还原完成（有没过门槛的差异已接受）'),
         todo: t('确认后就可以像平常的设计一样导出 UE 或者继续让 AI 改'),
-        warnings: [],
+        warnings: issues
+          .slice(0, 6)
+          .map((i) =>
+            i.kind === 'out'
+              ? t('{ratio} 下 {w} 跑出了画面', { ratio: i.ratio, w: i.widget })
+              : t('{ratio} 下 {w} 和 {o} 叠在一起了', { ratio: i.ratio, w: i.widget, o: i.other ?? '' }),
+          ),
         diff: '',
-        metrics: [],
+        metrics: adapt.map((a) => ({
+          label: a.ratio,
+          value: a.issues.length ? t('{n} 处问题', { n: a.issues.length }) : t('正常'),
+          ok: !a.issues.length,
+        })),
         note: '',
       }
       break
+    }
   }
   if (before && step !== 'deliver') card.diff = diffCards(before, card)
   pushVersion(r, step, card, feedback, ctx.now())
@@ -306,31 +322,36 @@ async function runAssets(ctx: RestoreCtx, r: RestoreState): Promise<StepCard> {
       ref: { x: e.box.x * k.x, y: e.box.y * k.y, w: e.box.w * k.x, h: e.box.h * k.y },
     })
   }
-  // PSD 按钮的其他状态：各存一张，搭建时按钮的悬停、按下、禁用用它们
-  if (ctx.layer)
-    for (const e of r.elements) {
-      if (e.hidden || !e.states) continue
-      for (const [s, file] of Object.entries(e.states)) {
-        if (!file) continue
-        const img = await ctx.layer(file)
-        const stored = await ctx.store(img)
-        const base = images.find((i) => i.id === `${IMG_PREFIX}${e.id}`)
-        images.push({
-          ...(base ?? {
-            prompt: '',
-            negative: '',
-            width: Math.max(1, Math.round(e.box.w * k.x)),
-            height: Math.max(1, Math.round(e.box.h * k.y)),
-            selected: 0,
-            status: 'idle' as const,
-          }),
-          id: `${IMG_PREFIX}${e.id}_${s}`,
-          name: `${base?.name ?? e.name ?? e.id}_${s[0].toUpperCase()}${s.slice(1)}`,
-          transparent: true,
-          variants: [{ ...stored, source: 'crop', score: 1, at: ctx.now() }],
-        })
-      }
+  // 按钮的悬停、按下、禁用：PSD 里画了的用画的，没有的按状态规则从常态切图派生（states.ts）
+  const sliceOf = new Map(x.slices.map((sl) => [sl.element, sl]))
+  let derived = 0
+  for (const e of r.elements) {
+    if (e.hidden || e.kind !== 'button') continue
+    const own = sliceOf.get(e.id)
+    const normal = own?.same ? sliceOf.get(own.same) : own
+    const base = images.find((i) => i.id === imageOf.get(e.id) || i.id === `${IMG_PREFIX}${e.id}`)
+    for (const st of ['hover', 'pressed', 'disabled'] as const) {
+      const file = e.states?.[st]
+      const img = file && ctx.layer ? await ctx.layer(file) : normal ? deriveState(normal.img, st) : undefined
+      if (!img) continue
+      if (!file) derived++
+      const stored = await ctx.store(img)
+      images.push({
+        ...(base ?? {
+          prompt: '',
+          negative: '',
+          width: Math.max(1, Math.round(e.box.w * k.x)),
+          height: Math.max(1, Math.round(e.box.h * k.y)),
+          selected: 0,
+          status: 'idle' as const,
+        }),
+        id: `${IMG_PREFIX}${e.id}_${st}`,
+        name: `${base?.name ?? (e.name || e.id)}_${st[0].toUpperCase()}${st.slice(1)}`,
+        transparent: hasAlpha(img),
+        variants: [{ ...stored, source: 'crop', score: 1, at: ctx.now() }],
+      })
     }
+  }
   for (const s of x.slices) if (s.same) imageOf.set(s.element, imageOf.get(s.same)!)
   d.images = [...d.images.filter((i) => !i.id.startsWith(IMG_PREFIX)), ...images]
   r.elements = r.elements.map((e) => ({ ...e, image: imageOf.get(e.id), sim: x.sims[e.id] }))
@@ -352,6 +373,7 @@ async function runAssets(ctx: RestoreCtx, r: RestoreState): Promise<StepCard> {
       { label: t('共用'), value: String(shared) },
       { label: t('平均相似度'), value: avg.toFixed(3), ok: avg >= ctx.thresholds.assetSim },
       { label: t('九宫格'), value: String(x.slices.filter((s) => s.nineSlice).length) },
+      { label: t('派生状态'), value: String(derived) },
     ],
     note: '',
   }
@@ -361,27 +383,83 @@ function runBuild(ctx: RestoreCtx, r: RestoreState): StepCard {
   const d = ctx.design
   const images: Record<string, string | undefined> = {}
   const nine: Record<string, DesignImage['nineSlice']> = {}
+  const has = new Set(d.images.map((i) => i.id))
   for (const e of r.elements) {
     images[e.id] = e.image
-    for (const s of Object.keys(e.states ?? {}))
-      if (d.images.some((i) => i.id === `${IMG_PREFIX}${e.id}_${s}`))
-        images[`${e.id}:${s}`] = `${IMG_PREFIX}${e.id}_${s}`
+    for (const st of ['hover', 'pressed', 'disabled'])
+      if (has.has(`${IMG_PREFIX}${e.id}_${st}`)) images[`${e.id}:${st}`] = `${IMG_PREFIX}${e.id}_${st}`
   }
   for (const i of d.images) if (i.nineSlice) nine[i.id] = i.nineSlice
-  const c = compileRestore({ restore: r, designSize: d.designSize, images, nineSlice: nine })
+  // 上一次搭建抽出来的子控件、数据集换掉，用户自己的留着
+  const mine = (c: Component) => c.Root.id.startsWith('rs-')
+  const others = d.components.filter((c) => !mine(c))
+  const otherSets = (d.data?.sets ?? []).filter((x) => !x.id.startsWith(IMG_PREFIX))
+  const taken = new Set([...others.map((c) => c.Name), ...otherSets.map((x) => x.name)])
+
+  // 自动修正：抽了子控件以后按元素框核对一遍位置，和模板差太多的元素挪出来单独摆，格子本身对不上的整组不抽，再编一次
+  const flat = new Set<string>()
+  const detached = new Set<string>()
+  const compile = () =>
+    compileRestore({
+      restore: r,
+      designSize: d.designSize,
+      images,
+      nineSlice: nine,
+      structure: { taken: new Set(taken), flat, detached },
+    })
+  let c = compile()
+  for (let round = 0; round < 3; round++) {
+    const els = r.elements.map((e) => ({ ...e, widget: c.names[e.id], grid: c.grids[e.id] }))
+    const s = verifyRestore({
+      restore: { ...r, elements: els },
+      root: c.root,
+      components: [...others, ...c.components],
+      designSize: d.designSize,
+      names: c.names,
+      thresholds: ctx.thresholds,
+    })
+    const off = s.items.filter((i) => /position|missing/.test(i.why) && c.grids[i.element])
+    if (!off.length) break
+    for (const i of off) {
+      const e = els.find((x) => x.id === i.element)
+      const cellOf = r.groups.find((g) => g.id === e?.repeat)
+      if (cellOf) flat.add(cellOf.id)
+      else detached.add(i.element)
+    }
+    c = compile()
+  }
   d.root = c.root
+  d.components = [...others, ...c.components]
+  d.data = { ...(d.data ?? { sets: [] }), sets: [...otherSets, ...c.sets] }
   d.rev++
-  r.elements = r.elements.map((e) => ({ ...e, widget: c.names[e.id] }))
+  r.elements = r.elements.map((e) => ({ ...e, widget: c.names[e.id], grid: c.grids[e.id] }))
   let n = 0
   walk(c.root, () => n++)
+  const buttons = r.elements.filter((e) => !e.hidden && e.kind === 'button')
+  const full = buttons.filter((e) => ['hover', 'pressed', 'disabled'].every((st) => images[`${e.id}:${st}`])).length
+  const warnings: string[] = []
+  if (detached.size)
+    warnings.push(t('自动修正：{n} 个元素和子控件的模板位置差太多，挪出来单独摆', { n: detached.size }))
+  if (flat.size) warnings.push(t('自动修正：{n} 组格子大小、间距不齐，没抽成子控件', { n: flat.size }))
   return {
-    conclusion: t('搭出 {n} 个控件，位置全部按元素框摆好并锁住', { n }),
+    conclusion: c.components.length
+      ? t('搭出 {n} 个控件，{c} 组重复的抽成了子控件，位置全部按元素框摆好并锁住', {
+          n,
+          c: c.components.length,
+        })
+      : t('搭出 {n} 个控件，位置全部按元素框摆好并锁住', { n }),
     todo: t('在画布上看看层级和名字；确认后逐个校验和原画差多少'),
-    warnings: [],
+    warnings,
     diff: '',
     metrics: [
       { label: t('控件'), value: String(n) },
-      { label: t('元素'), value: String(Object.keys(c.names).length) },
+      { label: t('子控件'), value: String(c.components.length) },
+      {
+        label: t('按钮四态'),
+        value: `${full}/${buttons.length}`,
+        ok: full === buttons.length,
+      },
+      { label: t('自动修正'), value: String(detached.size + flat.size) },
     ],
     note: '',
   }

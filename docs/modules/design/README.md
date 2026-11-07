@@ -65,6 +65,15 @@
 - 像素操作（`blank`、`resize`、`crop`、`paste`、`contentBox`、`hasAlpha`、`chromaKey`、`removeFlatBackground`）挪到 `shared/raster.ts`，`server/image.ts` 重新导出；浏览器里的演示版和后面的检测算法共用。
 - 回归：`shared/restore/similarity.test.ts`、`server/design-crop.test.ts`、`scripts/ui/04-design.mjs`（滑块对照）。
 
+## 原画还原 P2：结构、状态、自动修正、多分辨率（2026-11-07）
+
+- 重复组抽子控件（`shared/restore/structure.ts` 的 `planGrids`，`compileRestore` 传 `structure` 时启用）：拆解量出的组（同一个父元素下、每格落在不同行列）编成 `UniformGridPanel`（`EntryWidgetClass` + `NumColumns` + `SlotPadding` = 间距的一半 + `DataSet`），子控件 `WBP_<名字>`（`Root.id` 以 `rs-` 开头，重新搭建时换掉，用户自己的子控件留着），数据集 id `rs_<组 id>`。每格最大的非文字元素当 `Icon`、第一段字当 `Count`，模板位置取各格中位数；底图只有一格不一样的是原画里的选中态（`Highlight` + `selected` 状态），好几格不一样的每格底图写进数据（`bg` 字段）。收进网格的元素在 `RestoreElement.grid` 记下它在网格里的框，校验按「网格位置 + 这一块」算。
+- 自动修正（`runBuild`）：抽完按元素框核对位置，和模板差太多的元素挪出来单独摆（detached），格子本身对不上的整组不抽（flat），最多三轮；卡上写修了几处。示例背包原画里各格图标大小不一，图标都挪出来单独摆了，底图和数量收进了子控件。
+- 锚点：挂在根上的控件按中心落在左 / 中 / 右三分之一（上 / 中 / 下）定锚点，宽或高接近整屏的锚 0，设计尺寸下位置不变（`anchorSlot`）。
+- 按钮四态（`states.ts`）：PSD 有就用，没有按规则从常态切图派生（悬停亮度 ×1.12、按下 ×0.9、禁用去色 70% 不透明度 60%），存成 `rs_<id>_<态>`，编译时按钮 `WidgetStyle` 用它们。
+- 多分辨率（`adapt.ts`）：交付那一步高度不变、宽度换成 21:9 / 16:10 / 4:3 各排一遍，根上的控件跑出画面、新叠在一起的列在卡上。
+- 还没做：横排 / 竖排推断（等距一排换成 HorizontalBox）、模型对结构提建议、无头浏览器截图比整屏 SSIM。
+
 ## 原画还原 P3：PSD 导入（2026-11-07）
 
 照原画还原的原画可以是 PSD：图层就是元素、图层像素就是切图，位置不用猜。

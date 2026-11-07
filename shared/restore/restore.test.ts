@@ -193,6 +193,19 @@ test('六步流程：每步交一版等确认，确认了才跑下一步；改�
   }
   assert.ok(d.images.length > 0 && d.images.every((i) => i.variants[0].source === 'crop'), '切图都是从原画抠的')
   assert.ok(stateOf(d).score?.passed, JSON.stringify(stateOf(d).score?.items.filter((i) => !i.ok)))
+  // 结构推断：5×3 的格子抽成一个子控件，网格绑一份 15 行的数据；按钮四态都有图（派生的）
+  assert.equal(d.components.length, 1, '格子抽成子控件')
+  assert.equal(d.data?.sets[0]?.rows.length, 15)
+  const grid = JSON.stringify(d.root)
+  assert.ok(grid.includes('UniformGridPanel') && grid.includes(d.components[0].Name))
+  assert.ok(['hover', 'pressed', 'disabled'].every((st) => d.images.some((i) => i.id.endsWith(`_${st}`))))
+  // 交付：换成 21:9、16:10、4:3 排一遍，锚点推断对了就没有跑出画面、叠在一起的
+  await runStep('deliver', ctx)
+  const adapt = stepOf(d.restore, 'deliver').versions.at(-1)!.card
+  assert.ok(
+    adapt.metrics.length === 3 && adapt.metrics.every((m) => m.ok),
+    JSON.stringify(adapt.warnings),
+  )
   // 重跑拆解：出第 2 版，带上和上一版的差别；改元素让后面做过的都标成要更新
   await runStep('elements', ctx, '标题漏了')
   assert.equal(stepOf(d.restore, 'elements').versions.at(-1)?.feedback, '标题漏了')

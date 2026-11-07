@@ -36,7 +36,12 @@ export function verifyRestore(o: {
   for (const e of restore.elements) {
     if (e.hidden || e.kind === 'background') continue
     const widget = o.names[e.id] ?? ''
-    const r = rects.get(widget)
+    const at = rects.get(widget)
+    // 网格里的元素：网格的位置加上它在网格里的那一块
+    const r =
+      at && e.grid && e.grid.grid === widget
+        ? { x: at.x + e.grid.rel.x, y: at.y + e.grid.rel.y, w: e.grid.rel.w, h: e.grid.rel.h }
+        : at
     posTotal++
     const want = { x: e.box.x * k.x, y: e.box.y * k.y, w: e.box.w * k.x, h: e.box.h * k.y }
     const d = r

@@ -65,6 +65,8 @@ export const RestoreElement = z.object({
   sim: z.number().optional(),
   /** 搭建那一步给它的控件名 */
   widget: z.string().optional(),
+  /** 收进重复组网格的元素：它画在网格控件的哪一块（设计稿像素，相对网格左上角），校验按它算位置 */
+  grid: z.object({ grid: z.string(), rel: Box }).optional(),
 })
 export type RestoreElement = z.infer<typeof RestoreElement>
 
