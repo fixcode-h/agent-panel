@@ -4,7 +4,8 @@
  */
 import { useState } from 'react'
 import { Bug, Check, Link2, ListChecks, Pencil, Plus, Sparkle, X } from 'lucide-react'
-import type { SummaryEntry, SummaryKind } from '@shared/summary'
+import type { SummaryCode, SummaryEntry, SummaryKind } from '@shared/summary'
+import { splitPoints } from '@shared/summary-code'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -17,21 +18,66 @@ export const KIND_VIEW: Record<SummaryKind, { label: () => string; icon: typeof 
   bug: { label: () => t('Bug'), icon: Bug, tone: 'text-danger', soft: 'bg-danger/10' },
 }
 
-/** 分项的一行说明：需求写「内容」，Bug 写「原因 / 修复」；没写的那一栏不占位 */
+/** 一组分点：按序号一行一点（老报告的分项是一段话，就是一点） */
+function Points({ text }: { text: string }) {
+  const list = splitPoints(text)
+  if (!list.length) return null
+  return (
+    <ol className="list-decimal space-y-0.5 pl-5 text-muted marker:text-subtle">
+      {list.map((x, i) => (
+        <li key={i}>{x}</li>
+      ))}
+    </ol>
+  )
+}
+
+/** Bug 附的关键代码：文件路径 + 代码，太长时在框里滚动，不把列表撑得很长 */
+function CodePreview({ code }: { code: SummaryCode }) {
+  return (
+    <figure className="min-w-0 overflow-hidden rounded-lg border border-line bg-panel" data-summary-code>
+      {code.file && (
+        <figcaption className="truncate border-b border-line px-2.5 py-1 font-mono text-xs text-subtle">
+          {code.file}
+        </figcaption>
+      )}
+      <pre className="max-h-56 overflow-auto px-2.5 py-2 font-mono text-xs leading-relaxed text-fg">{code.text}</pre>
+    </figure>
+  )
+}
+
+/**
+ * 分项的说明：需求是怎么做的几点；Bug 分「原因 / 修复 / 关键代码」三块（ADR 0056），
+ * 没解决的没有修复和代码。没写的那一块不占位
+ */
 function EntryBody({ entry }: { entry: SummaryEntry }) {
   if (entry.kind === 'need')
-    return entry.content ? <p className="mt-1 text-body leading-relaxed text-muted">{entry.content}</p> : null
+    return entry.content ? (
+      <div className="mt-1 text-body leading-relaxed">
+        <Points text={entry.content} />
+      </div>
+    ) : null
+  const code = entry.fix ? (entry.code ?? []) : []
   const rows = [
-    { label: t('原因'), text: entry.cause },
-    { label: t('修复'), text: entry.fix },
-  ].filter((r) => r.text)
+    { label: t('原因'), node: entry.cause ? <Points text={entry.cause} /> : null },
+    { label: t('修复'), node: entry.fix ? <Points text={entry.fix} /> : null },
+    {
+      label: t('关键代码'),
+      node: code.length ? (
+        <div className="flex min-w-0 flex-col gap-1.5">
+          {code.map((c, i) => (
+            <CodePreview key={i} code={c} />
+          ))}
+        </div>
+      ) : null,
+    },
+  ].filter((r) => r.node)
   if (!rows.length) return null
   return (
-    <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1 text-body leading-relaxed">
+    <dl className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 text-body leading-relaxed">
       {rows.map((r) => (
         <div key={r.label} className="contents">
           <dt className="text-subtle">{r.label}</dt>
-          <dd className="text-muted">{r.text}</dd>
+          <dd className="min-w-0">{r.node}</dd>
         </div>
       ))}
     </dl>
@@ -140,6 +186,9 @@ export function EntryCard({
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <p className="min-w-0 text-prose leading-snug font-medium">{entry.title}</p>
+          {entry.kind === 'bug' && !entry.fix && (
+            <span className="shrink-0 rounded-md bg-warning/10 px-1.5 py-0.5 text-xs text-warning">{t('未解决')}</span>
+          )}
         </div>
         <EntryBody entry={entry} />
         {onLink && <EntryLink value={link ?? ''} onChange={onLink} />}

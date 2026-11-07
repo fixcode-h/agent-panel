@@ -973,6 +973,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .getByText('BUG-123')
       .waitFor({ timeout: 3000 })
       .catch(() => errors.push('工作总结：附加的单子没有显示在条目下'))
+    // 修好的 Bug 在待确认列表里就能看到关键代码（ADR 0056）
+    if (!(await p.getByRole('region', { name: 'Bug', exact: true }).locator('[data-summary-code]').count()))
+      errors.push('工作总结：修好的 Bug 下面没有显示关键代码')
     await check(p, '工作总结-采纳')
     await confirm.click()
     const view = p.getByRole('main', { name: '报告' })
@@ -987,14 +990,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       errors.push('工作总结：新报告没有出现在「今天」这一组')
     await check(p, '工作总结-报告')
 
-    // 编辑：Markdown 正文像人写的日报（ADR 0043）：不加粗、不写「原因：/修复：」标签，单子另起一行
+    // 编辑：Markdown 正文（ADR 0056）：条目是三级标题、内容分点，问题分「原因 / 修复 / 关键代码」三块，单子写在条目最后
     await view.getByRole('radio', { name: '编辑' }).click()
     const text = await view
       .getByLabel('报告正文')
       .inputValue()
       .catch(() => '')
     if (!/^# \d+月\d+日工作日报/.test(text)) errors.push(`工作总结：报告第一行不是日报标题（${text.slice(0, 30)}）`)
-    if (/\*\*|内容：|原因：|修复：/.test(text)) errors.push('工作总结：报告里还有加粗或「内容：/原因：/修复：」标签')
+    if (!/^### 1\. /m.test(text)) errors.push('工作总结：报告里的条目不是「### 序号. 标题」')
+    if (!/\*\*原因\*\*\n\n1\. /.test(text)) errors.push('工作总结：问题条目没有分点写的「原因」')
+    if (/内容：|原因：|修复：/.test(text)) errors.push('工作总结：报告里还有「内容：/原因：/修复：」这种行内标签')
     if (!/单子：BUG-123/.test(text)) errors.push('工作总结：待确认时附的单子没有写进报告')
     await view.getByRole('radio', { name: '预览' }).click()
 
@@ -1023,7 +1028,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(p, '工作总结-再次生成')
 
     // 复制：写到剪贴板，并弹出成功提示
-    await view.getByRole('button', { name: '复制' }).click()
+    await view.getByRole('button', { name: '复制', exact: true }).click()
     await p
       .getByText('已复制报告')
       .first()

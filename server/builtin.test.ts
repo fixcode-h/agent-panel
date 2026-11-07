@@ -129,24 +129,29 @@ test('「每日工作总结」：只出报告不改代码，需求 / 问题分�
   // 分类：需求和问题两类；问题只收用户自己报的
   assert.match(role, /\*\*需求\*\*/)
   assert.match(role, /只收用户自己报的问题/)
-  // 写法（ADR 0043）：像人写的日报——需求说怎么做的，问题说怎么回事、怎么解决的，没解决留空；去掉 AI 腔
+  // 写法（ADR 0056 取代 ADR 0043 的一段话写法）：有几项就分几点；问题分原因和修复，没解决不写修复；
+  // 修好的问题附带注释的关键代码，只抄真实改动；去掉 AI 腔
   assert.match(role, /像自己写给组长的日报/)
-  assert.match(role, /一两句说是怎么做的/)
-  assert.match(role, /还没解决就留空/)
+  assert.match(role, /有几项的内容就分几点写/)
+  assert.match(role, /还没解决就不写修复/)
+  assert.match(role, /关键代码（code）：只给已经解决的问题/)
+  assert.match(role, /不改写、不补全、不编/)
   assert.match(role, /「实现了」「优化了」/, '列出不许用的 AI 说法')
   // 版本管理操作不写（用户嫌报告里全是提交、合并这些）；测试过没过这类也不写
-  assert.match(role, /版本管理操作一律不写/)
+  assert.match(role, /版本管理操作：/)
   assert.match(role, /cherry-pick/)
   assert.match(role, /测试过没过/)
-  // 只写结果：真实跑一次时输出里贴了路径、函数名和接口名
-  assert.match(role, /不写文件名/)
+  // 只写结果：真实跑一次时输出里贴了路径、函数名和接口名；代码只放在关键代码里
+  assert.match(role, /不写文件名、函数名、命令/)
   assert.match(role, /不编造/)
-  // 自己跑（计划面板定时拉起）时读任务记录、有读取预算，输出 Markdown 两节，不加粗、不写标签
+  // 自己跑（计划面板定时拉起）时读任务记录、有读取预算，关键代码从 git 只读取；输出 Markdown 两节，条目是三级标题、内容分点
   assert.match(role, /tasks\/projects\//)
   assert.match(role, /读取预算/)
   assert.match(role, /## 需求/)
   assert.match(role, /## 问题/)
-  assert.match(role, /不加粗、不写「内容：\/原因：\/修复：」这类标签/)
+  assert.match(role, /git diff <from> <to>/)
+  assert.match(role, /### 1\. <标题>/)
+  assert.match(role, /\*\*原因\*\*/)
   assert.match(role, /只输出报告本身/)
   // 工作总结页调用时选「面板提供」：材料由面板给，不再去读数据目录
   const panel = composeRole(
