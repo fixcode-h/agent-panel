@@ -8,6 +8,7 @@
  * 原视频只读：截帧、增强的输出都写在数据目录的 video-frames/ 下，不拷视频、不改视频。
  */
 import { z } from 'zod'
+import { FrameShape, NamedRange, type VideoPrefs } from './video-tools.ts'
 
 /** 认作视频的扩展名（和 web/src/lib/file-ref.ts 的 media 类里视频那几种一致，另加常见录屏格式） */
 const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi|wmv|flv|mpg|mpeg|ts|3gp)$/i
@@ -210,12 +211,12 @@ export function timeText(sec: number, digits = 1) {
  * 帧发给 AI 时的文件名：视频名 + 时间（`录屏-00m12.3s.png`），AI 从名字就知道是第几秒；
  * 增强过的加 -enhanced。不用冒号，Windows 文件名里不能有
  */
-export function frameName(video: string, sec: number, enhanced = false) {
+export function frameName(video: string, sec: number, enhanced = false, annotated = false) {
   const base = video.replace(/^.*[\\/]/, '')
   const stem = base.replace(/\.[^.]+$/, '') || 'video'
   const m = Math.floor(sec / 60)
   const s = (sec % 60).toFixed(1).padStart(4, '0')
-  return `${stem}-${String(m).padStart(2, '0')}m${s}s${enhanced ? '-enhanced' : ''}.png`
+  return `${stem}-${String(m).padStart(2, '0')}m${s}s${enhanced ? '-enhanced' : ''}${annotated ? '-annotated' : ''}.png`
 }
 
 /** 一张截下来的帧 */
@@ -235,6 +236,16 @@ export const VideoFrame = z.object({
   enhanced: z
     .object({ method: z.string(), label: z.string(), file: z.string(), bytes: z.number().default(0) })
     .optional(),
+  /** 用户画在这张帧上的标注（框、箭头、备注），见 shared/video-tools.ts */
+  shapes: z.array(FrameShape).optional(),
+  /**
+   * 画上标注后的图（浏览器画好传上来的 PNG）：发送时发它。from 是画在哪张底图上（原图或增强图的路径），
+   * 底图换了（增强、去掉增强、切回原图）就过期，发送前重画
+   */
+  annotated: z.object({ file: z.string(), bytes: z.number().default(0), from: z.string() }).optional(),
+  /** 感知哈希（去重用）和清晰度分数：第一次去重时算，记下来下次不用再算 */
+  hash: z.string().optional(),
+  sharp: z.number().optional(),
 })
 export type VideoFrame = z.infer<typeof VideoFrame>
 
@@ -246,6 +257,9 @@ export interface VideoSession {
   size: number
   info: VideoInfo
   frames: VideoFrame[]
+  /** 记下来的命名范围和弹窗设置（见 shared/video-tools.ts） */
+  ranges: NamedRange[]
+  prefs: VideoPrefs
 }
 
 /**
@@ -253,7 +267,10 @@ export interface VideoSession {
  * 均匀模式不分析，直接从 grab 开始
  */
 export interface AutoProgress {
-  stage: 'analyze' | 'grab'
+  /** enhance：批量增强，done/total 是做完几张；running 是正在做的帧 id，finished 是做完的 */
+  stage: 'analyze' | 'grab' | 'enhance'
+  running?: string[]
+  finished?: string[]
   /** analyze 时是 0~1 的比例；grab 时是已经截好几张 */
   done: number
   /** grab 时一共要截几张；analyze 时为 1 */

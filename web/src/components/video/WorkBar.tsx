@@ -1,22 +1,27 @@
-// 截帧弹窗底部的进度：自动截帧（先分析画面、再一张张截）、增强（第几张）、截取 / 清除，带取消
+// 截帧弹窗底部的进度：自动截帧（先分析画面、再一张张截）、增强（做完几张）、截取 / 清除，带取消
 import { Loader2 } from 'lucide-react'
 import type { AutoProgress } from '@shared/video'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
 
-/** 正在跑的操作；enhance 的 cur 是正在处理的那张帧，queued 是还没轮到的 */
+/** 正在跑的操作；enhance 的 ids 是这一批要处理的帧，progress 是服务端报的进度（哪几张在做、哪几张做完） */
 export type Work =
   | { kind: 'manual' }
   | { kind: 'clear' }
   | { kind: 'auto'; progress: AutoProgress | null }
-  | { kind: 'enhance'; cur: string; queued: string[]; done: number; total: number }
+  | { kind: 'enhance'; ids: string[]; progress: AutoProgress | null }
 
 /** 文案和进度（0~1；不知道进度时为 null，进度条来回走） */
 export function workText(w: Work): { text: string; ratio: number | null } {
   if (w.kind === 'manual') return { text: t('截取中'), ratio: null }
   if (w.kind === 'clear') return { text: t('处理中'), ratio: null }
-  if (w.kind === 'enhance')
-    return { text: t('增强第 {i}/{n} 张', { i: w.done + 1, n: w.total }), ratio: w.done / Math.max(1, w.total) }
+  if (w.kind === 'enhance') {
+    const done = w.progress?.stage === 'enhance' ? w.progress.done : 0
+    return {
+      text: t('增强中，做完 {i}/{n} 张', { i: done, n: w.ids.length }),
+      ratio: done / Math.max(1, w.ids.length),
+    }
+  }
   const p = w.progress
   if (!p) return { text: t('准备自动截帧'), ratio: null }
   // 分析画面占进度条的前 70%，截图占后 30%：分析要整段解码，是最慢的一步

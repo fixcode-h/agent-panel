@@ -21,6 +21,7 @@ import {
   streamable,
 } from './frames.ts'
 import { enhanceMethods } from './enhance.ts'
+import { dedupeFrames, frameDiff, saveAnnotated, saveMeta, setShapes } from './frame-tools.ts'
 
 const MIME: Record<string, string> = {
   '.mp4': 'video/mp4',
@@ -170,6 +171,56 @@ export function videoApi() {
       return c.json(
         await enhanceFrames(String(b.key), String(b.path ?? ''), b.ids ?? [], String(b.method ?? ''), c.req.raw.signal),
       )
+    } catch (e) {
+      return c.json(fail(e), 400)
+    }
+  })
+  // 命名范围和弹窗设置
+  r.post('/meta', async (c) => {
+    const b = (await body(c)) as Body & { ranges?: unknown; prefs?: unknown }
+    try {
+      return c.json(await saveMeta(String(b.key), String(b.path ?? ''), { ranges: b.ranges, prefs: b.prefs }))
+    } catch (e) {
+      return c.json(fail(e), 400)
+    }
+  })
+  // 帧上的标注、浏览器画好的标注图
+  r.post('/frames/shapes', async (c) => {
+    const b = (await body(c)) as Body & { id?: string; shapes?: unknown }
+    try {
+      return c.json(await setShapes(String(b.key), String(b.path ?? ''), String(b.id ?? ''), b.shapes))
+    } catch (e) {
+      return c.json(fail(e), 400)
+    }
+  })
+  r.post('/frames/annotated', async (c) => {
+    const b = (await body(c)) as Body & { id?: string; from?: string; png?: string }
+    try {
+      return c.json(
+        await saveAnnotated(
+          String(b.key),
+          String(b.path ?? ''),
+          String(b.id ?? ''),
+          String(b.from ?? ''),
+          String(b.png ?? ''),
+        ),
+      )
+    } catch (e) {
+      return c.json(fail(e), 400)
+    }
+  })
+  r.post('/frames/dedupe', async (c) => {
+    const b = await body(c)
+    try {
+      return c.json(await dedupeFrames(String(b.key), String(b.path ?? '')))
+    } catch (e) {
+      return c.json(fail(e), 400)
+    }
+  })
+  r.post('/frames/diff', async (c) => {
+    const b = (await body(c)) as Body & { id?: string }
+    try {
+      return c.json(await frameDiff(String(b.key), String(b.path ?? ''), String(b.id ?? '')))
     } catch (e) {
       return c.json(fail(e), 400)
     }
