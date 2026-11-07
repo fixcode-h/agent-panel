@@ -1,4 +1,5 @@
 import { ExperienceSettings } from './experience.ts'
+import { RestoreThresholds } from './restore/thresholds.ts'
 import { Submitted } from './submitted.ts'
 import { z } from 'zod'
 import { DARK_TEXT_LEVEL_DEFAULT, LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
@@ -2523,6 +2524,8 @@ export const Settings = z.object({
       concurrency: 3,
       local: { mirror: false, port: 8188, url: '' },
     }),
+  /** UI 设计照原画还原的门槛：位置差几像素算对上、对上的要占多少、切图相似度至少多少 */
+  designRestore: RestoreThresholds.prefault({}),
   /** 模型设计用的 Blender（见 docs/adr/0025-model-design-blender.md）：可执行文件；空时按 PATH 和常见安装位置找 */
   blender: z.object({ path: z.string().trim().default('') }).prefault({}),
   /** 模型目录：三档模型的上下文窗口和最大输出按模型自动识别 */

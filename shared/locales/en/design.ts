@@ -654,7 +654,6 @@ export const EN_DESIGN: Record<string, string> = {
   '正在出原画 {i}/{n}': 'Drawing concepts {i}/{n}',
   '按确认的原画模板搭界面，并生成切图': 'Build the UI from the approved concept template and generate the assets',
   界面: 'UI',
-  '把确认的原画模板半透明盖在界面上，对照着调': 'Overlay the approved concept template on the UI to line things up',
   对照模板: 'Compare with template',
 
   // 动画

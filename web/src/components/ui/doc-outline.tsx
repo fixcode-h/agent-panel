@@ -86,10 +86,17 @@ export function DocOutline({
     const g = stickyGap(box)
     setGap(g)
     const line = r.top + g + Math.min((r.height - g) * READ_LINE, READ_MAX)
+    // 标题按文档顺序排，越往后越靠下：二分找最后一个越过阅读线的，几百个标题时滚动也只量十来个
+    let lo = 0
+    let hi = list.length - 1
     let at = 0
-    list.forEach((h, i) => {
-      if (h.el.getBoundingClientRect().top <= line) at = i
-    })
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (list[mid].el.getBoundingClientRect().top <= line) {
+        at = mid
+        lo = mid + 1
+      } else hi = mid - 1
+    }
     if (box.scrollTop + box.clientHeight >= box.scrollHeight - 2) at = list.length - 1
     setCurrent(at)
   }, [scrollEl])
@@ -155,8 +162,23 @@ export function DocOutline({
     if (!box || !h) return
     // 收起的一块（data-fold，诊断报告的「依据和背景」）：先展开，里面的小节才看得到
     if (h.el.dataset.fold === 'closed') h.el.querySelector('button')?.click()
-    const top = h.el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
-    box.scrollTo({ top: Math.max(0, top - stickyGap(box) - JUMP_GAP), behavior: 'smooth' })
+    const want = () =>
+      Math.max(
+        0,
+        h.el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - stickyGap(box) - JUMP_GAP,
+      )
+    // 分块排版的长文档（content-visibility）：屏幕外的高度是估的，滚过去途中排出真实高度，平滑滚动会停偏。
+    // 直接跳过去，再跟几帧把偏差补上
+    if (box.querySelector('.file-md-lazy')) {
+      box.scrollTop = want()
+      let n = 0
+      const fix = () => {
+        const top = want()
+        if (Math.abs(top - box.scrollTop) > 1) box.scrollTop = top
+        if (++n < 6) requestAnimationFrame(fix)
+      }
+      requestAnimationFrame(fix)
+    } else box.scrollTo({ top: want(), behavior: 'smooth' })
     setCurrent(i)
   }
 

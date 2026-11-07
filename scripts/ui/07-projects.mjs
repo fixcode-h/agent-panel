@@ -249,6 +249,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         if (!shown) errors.push('标题目录：点「发布」没有跳到那一节')
         await p.mouse.move(5, 5)
       }
+      // 弹窗自己的搜索（代码是虚拟渲染的，浏览器自带的查找搜不到屏幕外的行）：Ctrl+F 打开搜索框，
+      // Markdown 阅读时在渲染好的文档里找；Esc 先关搜索框，弹窗还在
+      {
+        await p.keyboard.press('Control+f')
+        const bar = p.getByRole('dialog').getByRole('search')
+        await bar.waitFor({ timeout: 3000 }).catch(() => errors.push('文件搜索：Ctrl+F 没有打开搜索框'))
+        await p.keyboard.type('已知问题')
+        await bar
+          .getByText('1 / 1')
+          .waitFor({ timeout: 3000 })
+          .catch(() => errors.push('文件搜索：Markdown 里没找到「已知问题」'))
+        await check(p, '文件窗口-搜索', ['已知问题'])
+        await p.keyboard.press('Escape')
+        await bar
+          .waitFor({ state: 'detached', timeout: 3000 })
+          .catch(() => errors.push('文件搜索：按 Esc 没有关掉搜索框'))
+        if (!(await p.getByRole('dialog').count())) errors.push('文件搜索：按 Esc 把弹窗也关了，应该只关搜索框')
+      }
       await seg.getByRole('radio', { name: '编辑' }).click()
       await p
         .getByRole('dialog')

@@ -1,0 +1,30 @@
+/* 文件弹窗：搜索命中和长 Markdown 的分块排版 */
+
+/* 搜索命中：所有命中淡黄底，当前那一处深一档（代码阅读和编辑区是 <mark>，Markdown 是 CSS 自定义高亮） */
+mark.file-hit,
+.cm-content .file-hit {
+  color: inherit;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+mark.file-hit-current,
+.cm-content .file-hit-current {
+  background: color-mix(in srgb, var(--warning) 60%, transparent);
+  box-shadow: 0 0 0 1px var(--warning);
+}
+::highlight(file-search) {
+  background-color: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+::highlight(file-search-current) {
+  background-color: color-mix(in srgb, var(--warning) 60%, transparent);
+}
+
+/* 长 Markdown：正文的每一块屏幕外先不排版、不绘制，高度先按估的留着，滚到附近再排；
+   auto 会记住真排出来的高度，滚过一次之后滚动条就准了 */
+.file-md-lazy > .chat-md > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 3em;
+}
+.file-md-lazy > .chat-md > :is(pre, .md-code, table, .md-mermaid) {
+  contain-intrinsic-size: auto none auto 12em;
+}

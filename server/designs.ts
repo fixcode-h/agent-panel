@@ -86,7 +86,8 @@ import { imageUse, type WorkflowUse } from '../shared/local-image.ts'
 import { designLayoutItems, type MossLayoutItem } from '../shared/moss.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/retry-policy.ts'
-import { encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
+import { decodePng, encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
+import { cropTemplateFile, pickRefined } from './design-crop.ts'
 import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
@@ -127,6 +128,8 @@ type Job = DesignJob & {
   control?: CliControl
   /** 这一轮列出的图标表：图片 id → sheet，生成图片时同一个 sheet 的图标一起生成 */
   sheets?: Map<string, string>
+  /** 点了「精修」的图：有模板也照着抠出来的那块重新画，不再直接抠 */
+  refine?: Set<string>
 }
 
 const now = () => new Date().toISOString()
@@ -313,12 +316,15 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     // 存图失败的原因：取到了图却存不下时，报给用户的是这个，不是笼统的「没有取到图片」
     let saveError = ''
     const kind = source.kind === 'browser' || source.kind === 'local' ? source.kind : ('cli' as const)
-    const add = (buf: Buffer, exact = false) => {
+    const add = (buf: Buffer, exact = false, meta: { source?: 'crop'; score?: number } = {}) => {
       chain = chain
         .then(async () => {
           const want = cur() ?? img
           const s = await storeImage(cache.get(d.id)!, exact ? buf : normalizeGenerated(buf, want))
-          const variants = [...(cur()?.variants ?? []), { ...s, source: kind, at: now() }]
+          const variants = [
+            ...(cur()?.variants ?? []),
+            { ...s, source: meta.source ?? kind, at: now(), score: meta.score },
+          ]
           if (first < 0) first = variants.length - 1
           set({ variants, selected: first })
           item.got++
@@ -329,6 +335,27 @@ export function designsApi(deps: { projects: Lister<Project> }) {
         })
     }
     return { set, add, done: () => chain, error: () => saveError }
+  }
+
+  /** 精修完打分：没有一版过门槛时选回原画抠的那版，并在对话里说明 */
+  async function scoreRefined(id: string, img: DesignImage, from: Buffer) {
+    const dd = cache.get(id)
+    const cur = dd?.images.find((i) => i.id === img.id)
+    if (!dd || !cur) return
+    const min = (await getSettings()).designRestore.assetSim
+    const r = await pickRefined(imagesDir(id), cur, from, min)
+    dd.images = dd.images.map((i) => (i.id === img.id ? { ...i, variants: r.variants, selected: r.selected } : i))
+    await save(dd)
+    if (r.low !== undefined)
+      systemNote(
+        id,
+        t('{name} 精修出来的和原画只有 {score} 像（门槛 {min}），仍用原画里抠的那版；想用精修版在图片里手动选', {
+          name: img.name,
+          score: r.low.toFixed(2),
+          min,
+        }),
+        false,
+      )
   }
 
   /** 生成一张图 */
@@ -354,6 +381,18 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const approvedFile = tplId ? conceptFile(cache.get(d.id) ?? d, tplId) : undefined
     const crop =
       img.ref && approvedFile ? await templateCrop(approvedFile, cache.get(d.id)!.designSize, img.ref) : undefined
+    // 有模板、写了 ref：默认直接从模板里抠（和原画一模一样），点了「精修」才往下重新画
+    const exact =
+      img.ref && approvedFile ? await cropTemplateFile(approvedFile, cache.get(d.id)!.designSize, img) : undefined
+    if (exact && !job.refine?.has(img.id)) {
+      sink.add(exact, true, { source: 'crop', score: 1 })
+      await sink.done()
+      if (!item.got) throw new Error(sink.error() || t('没有取到图片'))
+      sink.set({ status: 'idle' })
+      item.status = 'done'
+      return
+    }
+    const refineFrom = exact && decodePng(exact) ? exact : undefined
     const cropFile = crop && source.kind === 'cli' ? path.join(tmpdir(), `agent-panel-ref-${randomUUID()}.png`) : ''
     if (cropFile) await writeFile(cropFile, crop!)
     const local = source.kind === 'local' ? source : undefined
@@ -364,6 +403,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
           ? await templateImg2Img(
               {
                 crop,
+                denoise: refineFrom ? 0.3 : undefined,
                 prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
                 negative: img.negative,
                 width: img.width,
@@ -439,6 +479,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       await sink.done()
       if (!item.got) throw new Error(sink.error() || t('没有取到图片'))
       sink.set({ status: 'idle' })
+      if (refineFrom) await scoreRefined(d.id, img, refineFrom)
       item.status = 'done'
       item.text = undefined
     } catch (e) {
@@ -702,7 +743,9 @@ ${prompt}`,
       const sheet = job.sheets?.get(img.id)
       // 图集只放尺寸统一的小图标：大图、尺寸不同的分开（大图一张张生成）
       // 本机的扩散模型画不准等间距的格子：图标一张张生成
+      // 有模板、写了 ref 的从模板里抠，不进图集
       if (!sheet || source.kind === 'local' || Math.max(img.width, img.height) > SHEET_MAX_SIDE) return
+      if (img.ref && conceptOf(d).approved && !job.refine?.has(img.id)) return
       const key = `${sheet}:${img.transparent}:${img.width}x${img.height}`
       groups.set(key, [...(groups.get(key) ?? []), k])
     })
@@ -1918,12 +1961,14 @@ ${prompt}`,
         img.status = 'pending'
         img.error = undefined
         await save(d)
+        if (p.data.refine) (running.refine ??= new Set()).add(img.id)
         running.enqueue(img, p.data.revision)
         return c.json({ ...d, job: view(running) })
       }
       img.status = 'pending'
       await save(d)
       startJob(d, async (job) => {
+        if (p.data.refine) job.refine = new Set([img.id])
         const failed = await generateImages(d, [img.id], p.data.source, p.data.count, job, {
           [img.id]: p.data.revision ?? '',
         })

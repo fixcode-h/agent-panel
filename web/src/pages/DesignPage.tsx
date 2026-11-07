@@ -111,6 +111,7 @@ import { VersionCompare, VersionsButton } from '@/components/design/Versions'
 import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/web'
 import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
 import { ConceptBoard } from '@/components/design/ConceptBoard'
+import type { CompareMode } from '@/components/design/CompareOverlay'
 import { CanvasCapture } from '@/components/design/CanvasCapture'
 import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
@@ -356,7 +357,7 @@ function Designer({ id }: { id: string }) {
   const [view, setView] = useState<'ui' | 'concept'>('ui')
   /** 主区域显示画板还是数据面板：数据面板改的是画板用的运行时假数据 */
   const [board, setBoard] = useState<'canvas' | 'data'>('canvas')
-  const [overlay, setOverlay] = useState(false)
+  const [overlay, setOverlay] = useState<false | CompareMode>(false)
   /**
    * 左上角「画板 / 数据」切换（和「对照模板」）浮在画布上：量出它的宽度，写成 --board-switch-w 给画布、原画、
    * 对比、大图这几层的顶栏让位，免得画布窄时把标注工具栏左边几个工具、原画标题盖住
@@ -922,25 +923,23 @@ function Designer({ id }: { id: string }) {
     }
   }
 
-  const generate = async (img: DesignImage) => {
+  const generate = async (img: DesignImage, refine = false) => {
     if (source.kind === 'none') return toast.error(t('先在对话框下面选生成图片的方式'))
     const marks = doc.annotations.filter((a) => a.target === imgTarget(img.id))
-    const ok = await regenerate(img, '', marks, {
-      ...doc,
-      annotations: doc.annotations.filter((a) => !marks.includes(a)),
-    })
+    const next = { ...doc, annotations: doc.annotations.filter((a) => !marks.includes(a)) }
+    const ok = await regenerate(img, '', marks, next, refine)
     if (ok && marks.length)
       ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => !marks.includes(a)) }), 'ann:sent')
   }
 
   /** 按修改意见（对话框里写的）和图上的标记重新生成一张图；next 是先保存上去的设计 */
-  const regenerate = async (img: DesignImage, feedback: string, marks: Annotation[], next = doc) => {
+  const regenerate = async (img: DesignImage, feedback: string, marks: Annotation[], next = doc, refine = false) => {
     const v = img.variants[img.selected] ?? img.variants.at(-1)
     const revision = imageRevisionText(feedback, marks, { X: v?.width || img.width, Y: v?.height || img.height })
     try {
       // 先保存当前的描述和尺寸，服务端按保存的生成
       ed.absorb(await api.saveDesign(id, next))
-      ed.absorb(await api.generateDesignImage(id, img.id, { source, count, revision: revision || undefined }))
+      ed.absorb(await api.generateDesignImage(id, img.id, { source, count, revision: revision || undefined, refine }))
       return true
     } catch (e) {
       toast.error((e as Error).message)
@@ -1482,6 +1481,7 @@ function Designer({ id }: { id: string }) {
               images={renderImages}
               data={(shownDoc ?? doc).data ?? emptyData()}
               overlay={overlay && approvedConcept && !target ? conceptUrl(approvedConcept) : undefined}
+              overlayMode={overlay || undefined}
               components={shownDoc?.components ?? doc.components}
               selected={selected}
               onSelect={(wid) => {
@@ -1574,13 +1574,14 @@ function Designer({ id }: { id: string }) {
                 <Button
                   variant="on-canvas"
                   size="sm"
-                  onClick={() => setOverlay(!overlay)}
-                  aria-pressed={overlay}
-                  title={t('把确认的原画模板半透明盖在界面上，对照着调')}
+                  // 关 → 滑块（左原画右还原）→ 半透明叠加 → 关
+                  onClick={() => setOverlay(overlay === 'slider' ? 'blend' : overlay ? false : 'slider')}
+                  aria-pressed={!!overlay}
+                  title={t('和确认的原画对照：点一下左右拖着比，再点一下半透明叠加，再点关掉')}
                   className={cn('bg-canvas-bar shadow-pop', overlay && 'text-accent-text hover:text-accent-text')}
                 >
                   <Layers className="h-3.5 w-3.5" />
-                  {t('对照模板')}
+                  {overlay === 'blend' ? t('叠加对照') : overlay ? t('滑块对照') : t('对照模板')}
                 </Button>
               )}
             </div>
@@ -1876,6 +1877,7 @@ function Designer({ id }: { id: string }) {
               url={fileUrl}
               onChange={setImage}
               onGenerate={() => void generate(selImage)}
+              onRefine={approvedConcept && selImage.ref ? () => void generate(selImage, true) : undefined}
               onUpload={(f) => void upload([f], selImage.id)}
               onDelete={() => {
                 ed.change((d) => ({ ...d, images: d.images.filter((i) => i.id !== selImage.id) }))

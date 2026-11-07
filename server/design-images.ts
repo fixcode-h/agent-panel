@@ -110,6 +110,8 @@ const IMG2IMG_WORKFLOW = 'game-img2img'
 export async function templateImg2Img(
   o: {
     crop: Buffer
+    /** 降噪：默认 0.55（按描述重画干净）；精修时 0.3（尽量贴着原画那块） */
+    denoise?: number
     prompt: string
     negative: string
     width: number
@@ -125,7 +127,7 @@ export async function templateImg2Img(
       chain: {
         id: 'design-template-ref',
         name: '',
-        steps: [{ workflowId: IMG2IMG_WORKFLOW, prompt: '', denoise: 0.55 }],
+        steps: [{ workflowId: IMG2IMG_WORKFLOW, prompt: '', denoise: o.denoise ?? 0.55 }],
         updatedAt: new Date().toISOString(),
       },
       image: o.crop,
