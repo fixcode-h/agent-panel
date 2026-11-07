@@ -1,92 +1,157 @@
-// 截帧弹窗的播放控制和时间轴：上一帧 · 播放 / 暂停 · 下一帧 · 帧播放，时间轴上标着截下来的帧和截帧范围
-import { useRef } from 'react'
-import {
-  ArrowLeftToLine,
-  ArrowRightToLine,
-  ChevronLeft,
-  ChevronRight,
-  Film,
-  Loader2,
-  Pause,
-  Play,
-  Scissors,
-} from 'lucide-react'
+// 截帧弹窗的播放控制条：像视频播放器一样浮在画面下方（用户 2026-11-07 要的：按钮和进度条都悬浮在画面上，画面才能更大）。
+// 上面一行是进度条（截下来的帧标在上面、截帧范围画成高亮的一段、两端把手可以拖），
+// 下面一行左边是上一帧 · 播放 / 暂停 · 下一帧和时间，中间设范围的起点终点，右边是截取当前帧和帧播放。
+import { useRef, useState } from 'react'
+import { Camera, ChevronLeft, ChevronRight, Film, Loader2, Pause, Play, X } from 'lucide-react'
 import { RANGE_MIN, timeText, type VideoFrame, type VideoRange } from '@shared/video'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 
-/** 播放控制：上一帧 · 播放 / 暂停视频 · 下一帧，右边是帧播放 */
-export function Transport(p: {
+/** 浮在画面上的按钮：深色半透明底上的白色图标 */
+const glass =
+  'grid cursor-pointer place-items-center rounded-full text-white/90 transition-colors hover:bg-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none'
+const pill =
+  'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 text-footnote text-white/90 transition-colors hover:bg-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none'
+
+export function PlayerBar(p: {
+  cur: number
+  duration: number
+  frames: VideoFrame[]
+  viewId: string | null
+  range: VideoRange | null
   playing: boolean
-  /** 播放器在缓冲：按钮上转圈，用户看得出不是没反应 */
   loading: boolean
   sliding: boolean
   noPlayer: boolean
-  hasFrames: boolean
+  busy: boolean
+  onSeek: (t: number) => void
+  onFrame: (f: VideoFrame) => void
+  onRange: (r: VideoRange) => void
   onPrev: () => void
   onNext: () => void
   onPlay: () => void
   onSlides: () => void
+  onSetIn: () => void
+  onSetOut: () => void
+  onClearRange: () => void
+  onCapture: () => void
 }) {
-  const round =
-    'grid cursor-pointer place-items-center rounded-full text-fg transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40'
+  const hasFrames = p.frames.length > 0
   return (
-    <div className="relative flex items-center justify-center gap-3">
-      <button
-        type="button"
-        className={cn(round, 'h-9 w-9 border border-line-strong')}
-        onClick={p.onPrev}
-        disabled={!p.hasFrames}
-        aria-label={t('上一帧')}
-        title={t('上一帧（←）')}
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className={cn(round, 'h-11 w-11 bg-primary text-on-primary hover:bg-primary hover:opacity-90')}
-        onClick={p.onPlay}
-        disabled={p.noPlayer}
-        aria-label={p.playing ? t('暂停') : t('播放')}
-        title={p.noPlayer ? t('浏览器放不了这个格式') : p.playing ? t('暂停（空格）') : t('播放（空格）')}
-      >
-        {p.playing && p.loading ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
-        ) : p.playing ? (
-          <Pause className="h-5 w-5 fill-current" />
-        ) : (
-          <Play className="ml-0.5 h-5 w-5 fill-current" />
+    <div className="flex flex-col gap-1.5 px-4 pt-10 pb-3">
+      <Scrubber {...p} />
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className={cn(glass, 'h-9 w-9')}
+          onClick={p.onPrev}
+          disabled={!hasFrames}
+          aria-label={t('上一帧')}
+          title={t('上一帧（←）')}
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          className={cn(glass, 'h-10 w-10 bg-white/10')}
+          onClick={p.onPlay}
+          disabled={p.noPlayer}
+          aria-label={p.playing ? t('暂停') : t('播放')}
+          title={p.noPlayer ? t('浏览器放不了这个格式') : p.playing ? t('暂停（空格）') : t('播放（空格）')}
+        >
+          {p.playing && p.loading ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : p.playing ? (
+            <Pause className="h-5 w-5 fill-current" />
+          ) : (
+            <Play className="ml-0.5 h-5 w-5 fill-current" />
+          )}
+        </button>
+        <button
+          type="button"
+          className={cn(glass, 'h-9 w-9')}
+          onClick={p.onNext}
+          disabled={!hasFrames}
+          aria-label={t('下一帧')}
+          title={t('下一帧（→）')}
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+        <span className="ml-2 font-mono text-footnote text-white/90 tabular-nums">
+          {timeText(p.cur)}
+          <span className="text-white/50"> / {timeText(p.duration)}</span>
+        </span>
+
+        <span className="mx-2 h-4 w-px bg-white/20" aria-hidden />
+        <button
+          type="button"
+          className={pill}
+          onClick={p.onSetIn}
+          disabled={p.busy}
+          title={t('把当前位置设为起点（I）')}
+        >
+          <span className="font-mono text-micro text-white/60">I</span>
+          {t('起点')}
+        </button>
+        <button
+          type="button"
+          className={pill}
+          onClick={p.onSetOut}
+          disabled={p.busy}
+          title={t('把当前位置设为终点（O）')}
+        >
+          <span className="font-mono text-micro text-white/60">O</span>
+          {t('终点')}
+        </button>
+        {p.range && (
+          <span className="inline-flex h-7 items-center gap-1 rounded-full bg-accent/85 pr-1 pl-2.5 font-mono text-micro text-white tabular-nums">
+            {timeText(p.range.start)} – {timeText(p.range.end)}
+            <button
+              type="button"
+              onClick={p.onClearRange}
+              disabled={p.busy}
+              aria-label={t('清除范围')}
+              title={t('清除范围')}
+              className="grid h-5 w-5 cursor-pointer place-items-center rounded-full hover:bg-white/20"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
         )}
-      </button>
-      <button
-        type="button"
-        className={cn(round, 'h-9 w-9 border border-line-strong')}
-        onClick={p.onNext}
-        disabled={!p.hasFrames}
-        aria-label={t('下一帧')}
-        title={t('下一帧（→）')}
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        onClick={p.onSlides}
-        disabled={!p.hasFrames}
-        aria-pressed={p.sliding}
-        className="absolute right-0 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-line-strong px-2.5 text-body text-fg hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40 aria-pressed:border-accent aria-pressed:bg-accent-soft aria-pressed:text-accent-text"
-      >
-        {p.sliding ? <Pause className="h-3.5 w-3.5" /> : <Film className="h-3.5 w-3.5" />}
-        {p.sliding ? t('停止帧播放') : t('帧播放')}
-      </button>
+
+        <span className="flex-1" />
+        <button
+          type="button"
+          className={pill}
+          onClick={p.onSlides}
+          disabled={!hasFrames}
+          aria-pressed={p.sliding}
+          title={t('一张一张放截下来的帧')}
+        >
+          {p.sliding ? <Pause className="h-3.5 w-3.5" /> : <Film className="h-3.5 w-3.5" />}
+          {p.sliding ? t('停止帧播放') : t('帧播放')}
+        </button>
+        <button
+          type="button"
+          onClick={p.onCapture}
+          disabled={p.busy}
+          title={t('截取当前位置（K）')}
+          className="ml-1 inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full bg-white px-4 text-body font-medium text-black shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none"
+        >
+          <Camera className="h-4 w-4" />
+          {t('截取当前帧')}
+        </button>
+      </div>
     </div>
   )
 }
 
 /**
- * 时间轴：拖动跳到那一刻；截下来的帧标在上面（手动的用强调色），点标记看那一帧。
- * 选了截帧范围时，范围画在轨道下面，两端的把手可以拖；范围外的帧标记变淡
+ * 进度条：点、拖都能跳到那一刻（自己处理指针，不用原生 range：原生的轨道画不了帧标记和范围）。
+ * 悬停时轨道变粗、显示那一刻的时间；截下来的帧是轨道上方的小刻度（手动强调色），点刻度看那一帧；
+ * 截帧范围是轨道上一段强调色，两端的把手能拖，范围外的刻度变淡
  */
-export function Timeline(p: {
+function Scrubber(p: {
   cur: number
   duration: number
   frames: VideoFrame[]
@@ -96,19 +161,19 @@ export function Timeline(p: {
   onFrame: (f: VideoFrame) => void
   onRange: (r: VideoRange) => void
 }) {
-  const pct = (x: number) => `${p.duration > 0 ? (x / p.duration) * 100 : 0}%`
   const box = useRef<HTMLDivElement>(null)
-  /** 拖把手：按住时记下拖的是哪一端，松开清掉 */
-  const drag = useRef<'start' | 'end' | null>(null)
+  /** 正在拖什么：进度、范围起点、范围终点 */
+  const drag = useRef<'seek' | 'start' | 'end' | null>(null)
+  const [hover, setHover] = useState<number | null>(null)
+  const pct = (x: number) => `${p.duration > 0 ? (Math.min(Math.max(0, x), p.duration) / p.duration) * 100 : 0}%`
   const timeAt = (clientX: number) => {
     const r = box.current?.getBoundingClientRect()
     if (!r || !r.width) return 0
     return Math.min(Math.max(0, ((clientX - r.left) / r.width) * p.duration), p.duration)
   }
-  const move = (e: React.PointerEvent) => {
-    const which = drag.current
-    if (!which || !p.range) return
-    const at = timeAt(e.clientX)
+  const apply = (which: 'seek' | 'start' | 'end', at: number) => {
+    if (which === 'seek') return p.onSeek(at)
+    if (!p.range) return
     // 两端之间至少留 RANGE_MIN，拖过头时停在另一端旁边，不对调
     p.onRange(
       which === 'start'
@@ -116,54 +181,34 @@ export function Timeline(p: {
         : { start: p.range.start, end: Math.max(at, p.range.start + RANGE_MIN) },
     )
   }
+  const down = (which: 'seek' | 'start' | 'end') => (e: React.PointerEvent) => {
+    e.stopPropagation()
+    box.current?.setPointerCapture(e.pointerId)
+    drag.current = which
+    apply(which, timeAt(e.clientX))
+  }
   const handle = (which: 'start' | 'end') => (
     <button
       type="button"
       aria-label={which === 'start' ? t('截帧范围起点') : t('截帧范围终点')}
       title={`${which === 'start' ? t('起点') : t('终点')} · ${timeText(which === 'start' ? p.range!.start : p.range!.end)}`}
       style={{ left: pct(which === 'start' ? p.range!.start : p.range!.end) }}
-      onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId)
-        drag.current = which
-      }}
-      onPointerMove={move}
-      onPointerUp={() => (drag.current = null)}
-      onPointerCancel={() => (drag.current = null)}
+      onPointerDown={down(which)}
       onKeyDown={(e) => {
         // 键盘微调：← → 每次 0.1 秒（Shift 1 秒）
         const d = (e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0) * (e.shiftKey ? 1 : 0.1)
         if (!d || !p.range) return
         e.preventDefault()
         e.stopPropagation()
-        const r = p.range
-        p.onRange(
-          which === 'start'
-            ? { start: Math.min(Math.max(0, r.start + d), r.end - RANGE_MIN), end: r.end }
-            : { start: r.start, end: Math.max(Math.min(p.duration, r.end + d), r.start + RANGE_MIN) },
-        )
+        apply(which, (which === 'start' ? p.range.start : p.range.end) + d)
       }}
-      className="absolute bottom-0 h-3.5 w-2.5 -translate-x-1/2 cursor-ew-resize touch-none rounded-sm border border-accent bg-panel hover:bg-accent-soft focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+      className="absolute top-1/2 z-10 h-4 w-2 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none rounded-full border-2 border-white bg-accent shadow focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
     />
   )
   return (
-    <div className="flex items-center gap-3">
-      <span className="w-14 shrink-0 text-right font-mono text-footnote text-muted tabular-nums">
-        {timeText(p.cur)}
-      </span>
-      <div ref={box} className={cn('relative min-w-0 flex-1', p.range ? 'h-9' : 'h-7')}>
-        <input
-          type="range"
-          aria-label={t('视频位置')}
-          min={0}
-          max={p.duration || 0}
-          step={0.01}
-          value={Math.min(p.cur, p.duration)}
-          onChange={(e) => p.onSeek(Number(e.target.value))}
-          className={cn(
-            'absolute inset-x-0 w-full -translate-y-1/2 cursor-pointer accent-(--accent)',
-            p.range ? 'top-[14px]' : 'top-1/2',
-          )}
-        />
+    <div className="relative">
+      {/* 帧刻度：轨道上方一排，点了看那一帧 */}
+      <div className="relative h-3">
         {p.frames.map((f) => (
           <button
             key={f.id}
@@ -173,84 +218,67 @@ export function Timeline(p: {
             aria-label={t('看 {time} 的帧', { time: timeText(f.time) })}
             style={{ left: pct(f.time) }}
             className={cn(
-              'absolute top-0 h-2.5 w-1.5 -translate-x-1/2 cursor-pointer rounded-sm',
-              f.source === 'manual' ? 'bg-accent' : 'bg-muted',
+              'absolute top-0 h-2.5 w-1 -translate-x-1/2 cursor-pointer rounded-full transition-transform hover:scale-y-125',
+              f.source === 'manual' ? 'bg-accent' : 'bg-white/80',
               p.range && (f.time < p.range.start || f.time > p.range.end) && 'opacity-35',
-              p.viewId === f.id && 'ring-2 ring-focus',
+              p.viewId === f.id && 'ring-2 ring-white',
             )}
           />
         ))}
+      </div>
+      <div
+        ref={box}
+        role="slider"
+        tabIndex={0}
+        aria-label={t('视频位置')}
+        aria-valuemin={0}
+        aria-valuemax={Math.round(p.duration * 10) / 10}
+        aria-valuenow={Math.round(p.cur * 10) / 10}
+        aria-valuetext={timeText(p.cur)}
+        className="group relative flex h-4 cursor-pointer touch-none items-center outline-none"
+        onPointerDown={down('seek')}
+        onPointerMove={(e) => {
+          setHover(timeAt(e.clientX))
+          if (drag.current) apply(drag.current, timeAt(e.clientX))
+        }}
+        onPointerUp={() => (drag.current = null)}
+        onPointerCancel={() => (drag.current = null)}
+        onPointerLeave={() => setHover(null)}
+        onKeyDown={(e) => {
+          const d = (e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0) * (e.shiftKey ? 5 : 1)
+          if (!d) return
+          // 方向键默认是上一帧 / 下一帧（弹窗的快捷键）；焦点在进度条上时改成前后跳 1 秒（Shift 5 秒）
+          e.preventDefault()
+          e.stopPropagation()
+          p.onSeek(Math.min(Math.max(0, p.cur + d), p.duration))
+        }}
+      >
+        {/* 截帧范围：比轨道高一圈的强调色底，播放进度盖过去时上下沿照样看得见 */}
         {p.range && (
-          <>
-            <div className="absolute inset-x-0 bottom-1.5 h-0.5 rounded-full bg-line" aria-hidden />
-            <div
-              className="absolute bottom-1 h-1.5 rounded-full bg-accent"
-              style={{ left: pct(p.range.start), width: pct(p.range.end - p.range.start) }}
-              aria-hidden
-            />
-            {handle('start')}
-            {handle('end')}
-          </>
+          <div
+            className="pointer-events-none absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-accent/80"
+            style={{ left: pct(p.range.start), width: `calc(${pct(p.range.end)} - ${pct(p.range.start)})` }}
+          />
+        )}
+        <div className="relative h-1 w-full overflow-hidden rounded-full bg-white/25 transition-[height] group-hover:h-1.5 group-focus-visible:h-1.5">
+          <div className="absolute inset-y-0 left-0 bg-white" style={{ width: pct(p.cur) }} />
+        </div>
+        {/* 播放头 */}
+        <div
+          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 scale-0 rounded-full bg-white shadow transition-transform group-hover:scale-100 group-focus-visible:scale-100"
+          style={{ left: pct(p.cur) }}
+        />
+        {p.range && handle('start')}
+        {p.range && handle('end')}
+        {hover !== null && (
+          <span
+            className="pointer-events-none absolute bottom-5 -translate-x-1/2 rounded-md bg-black/80 px-1.5 py-0.5 font-mono text-micro text-white tabular-nums"
+            style={{ left: pct(hover) }}
+          >
+            {timeText(hover)}
+          </span>
         )}
       </div>
-      <span className="w-14 shrink-0 font-mono text-footnote text-subtle tabular-nums">{timeText(p.duration)}</span>
-    </div>
-  )
-}
-
-/**
- * 截帧范围：把当前位置设为起点 / 终点（快捷键 I / O，和剪辑软件一样），显示选了哪一段，清除回到整段。
- * 自动截帧只在这一段里截；手动截帧不受影响
- */
-export function RangeBar(p: {
-  range: VideoRange | null
-  disabled: boolean
-  onStart: () => void
-  onEnd: () => void
-  onClear: () => void
-}) {
-  const btn =
-    'inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg border border-line-strong px-2 text-footnote text-fg hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40'
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="inline-flex items-center gap-1.5 text-footnote text-muted">
-        <Scissors className="h-3.5 w-3.5" />
-        {t('截帧范围')}
-      </span>
-      <span className="font-mono text-footnote text-fg tabular-nums">
-        {p.range
-          ? t('{from} – {to}（{len} 秒）', {
-              from: timeText(p.range.start),
-              to: timeText(p.range.end),
-              len: (p.range.end - p.range.start).toFixed(1),
-            })
-          : t('整段视频')}
-      </span>
-      <button
-        type="button"
-        className={btn}
-        disabled={p.disabled}
-        onClick={p.onStart}
-        title={t('把当前位置设为起点（I）')}
-      >
-        <ArrowRightToLine className="h-3.5 w-3.5" />
-        {t('设为起点')}
-      </button>
-      <button
-        type="button"
-        className={btn}
-        disabled={p.disabled}
-        onClick={p.onEnd}
-        title={t('把当前位置设为终点（O）')}
-      >
-        <ArrowLeftToLine className="h-3.5 w-3.5" />
-        {t('设为终点')}
-      </button>
-      {p.range && (
-        <button type="button" className={btn} disabled={p.disabled} onClick={p.onClear}>
-          {t('清除范围')}
-        </button>
-      )}
     </div>
   )
 }

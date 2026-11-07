@@ -30,12 +30,13 @@ import {
   type VideoRange,
   type VideoSession,
 } from '../../shared/video.ts'
+import { DEFAULT_PREFS, NamedRange, VideoPrefs } from '../../shared/video-tools.ts'
 import { enhanceMethods, enhanceOne } from './enhance.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from '../store.ts'
 import { ffmpegBin, runFfmpeg } from './ffmpeg.ts'
 
 export const framesRoot = () => path.join(DATA_DIR, 'video-frames')
-const sessionDir = (key: string) => path.join(framesRoot(), key)
+export const sessionDir = (key: string) => path.join(framesRoot(), key)
 const stateFile = (key: string) => path.join(sessionDir(key), 'state.json')
 
 /** key 只能是我们自己算出来的十六进制串：拿它拼目录，不能让外面传进 `..` */
@@ -47,7 +48,7 @@ export const autoProgressOf = (key: string) => autoProgress.get(key) ?? null
 
 /** 同一个视频的操作排队做：自动截帧还没写完时又点了手动截帧，记录不能互相覆盖 */
 const queues = new Map<string, Promise<unknown>>()
-function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
+export function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const next = (queues.get(key) ?? Promise.resolve()).then(fn, fn)
   queues.set(
     key,
@@ -62,7 +63,7 @@ function pngSize(buf: Buffer) {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
 }
 
-async function videoStat(file: string) {
+export async function videoStat(file: string) {
   const full = path.resolve(file)
   if (!isVideoFile(full)) throw new Error(t('「{name}」不是视频文件', { name: path.basename(full) }))
   const s = await stat(full).catch(() => null)
@@ -75,7 +76,7 @@ async function videoStat(file: string) {
 }
 
 /** 读视频的时长、尺寸、帧率：`ffmpeg -i` 没有输出文件时退出码是 1，信息在 stderr 里 */
-async function probe(full: string): Promise<VideoInfo> {
+export async function probe(full: string): Promise<VideoInfo> {
   const r = await runFfmpeg(await ffmpegBin(), ['-i', full], { timeoutMs: 20_000 })
   if (r.error) throw new Error(r.error)
   const info = parseProbe(r.stderr)
@@ -83,32 +84,50 @@ async function probe(full: string): Promise<VideoInfo> {
   return info
 }
 
-async function readState(key: string, full: string): Promise<VideoFrame[]> {
-  const raw = (await readJson(stateFile(key))) as { path?: string; frames?: unknown[] } | undefined
-  if (!raw || raw.path !== full || !Array.isArray(raw.frames)) return []
-  return raw.frames.flatMap((x) => {
+type SavedState = Pick<VideoSession, 'frames' | 'ranges' | 'prefs'>
+
+async function readState(key: string, full: string): Promise<SavedState> {
+  const raw = (await readJson(stateFile(key))) as
+    { path?: string; frames?: unknown[]; ranges?: unknown[]; prefs?: unknown } | undefined
+  if (!raw || raw.path !== full) return { frames: [], ranges: [], prefs: DEFAULT_PREFS }
+  const frames = (Array.isArray(raw.frames) ? raw.frames : []).flatMap((x) => {
     const p = VideoFrame.safeParse(x)
-    // 帧图片被清掉了（清空缓存）：这一条也不要了；增强图没了只去掉增强
+    // 帧图片被清掉了（清空缓存）：这一条也不要了；增强图、标注图没了只去掉那一份
     if (!p.success || !existsSync(p.data.file)) return []
-    const f = p.data
-    return [f.enhanced && !existsSync(f.enhanced.file) ? { ...f, enhanced: undefined } : f]
+    const f = { ...p.data }
+    if (f.enhanced && !existsSync(f.enhanced.file)) f.enhanced = undefined
+    if (f.annotated && !existsSync(f.annotated.file)) f.annotated = undefined
+    return [f]
+  })
+  const ranges = (Array.isArray(raw.ranges) ? raw.ranges : []).flatMap((x) => {
+    const p = NamedRange.safeParse(x)
+    return p.success ? [p.data] : []
+  })
+  const prefs = VideoPrefs.safeParse(raw.prefs ?? {})
+  return { frames, ranges, prefs: prefs.success ? prefs.data : DEFAULT_PREFS }
+}
+
+export async function save(s: VideoSession) {
+  await mkdir(sessionDir(s.key), { recursive: true })
+  await writeJsonAtomic(stateFile(s.key), {
+    path: s.path,
+    name: s.name,
+    frames: sortFrames(s.frames),
+    ranges: s.ranges,
+    prefs: s.prefs,
   })
 }
 
-async function save(s: VideoSession) {
-  await mkdir(sessionDir(s.key), { recursive: true })
-  await writeJsonAtomic(stateFile(s.key), { path: s.path, name: s.name, frames: sortFrames(s.frames) })
-}
-
-/** 打开一个视频：探测信息，读回之前截过的帧 */
+/** 打开一个视频：探测信息，读回之前截过的帧、记下的范围和设置 */
 export async function openVideo(file: string): Promise<VideoSession> {
   const { full, size, key } = await videoStat(file)
   const info = await probe(full)
-  return { key, path: full, name: path.basename(full), size, info, frames: sortFrames(await readState(key, full)) }
+  const st = await readState(key, full)
+  return { key, path: full, name: path.basename(full), size, info, ...st, frames: sortFrames(st.frames) }
 }
 
 /** 按 key 取回会话：路径要和 key 对得上（视频换了内容、被改过时 key 就变了，要重新打开） */
-async function session(key: string, file: string): Promise<VideoSession> {
+export async function session(key: string, file: string): Promise<VideoSession> {
   if (!validKey(key)) throw new Error(t('截帧记录不对，请重新打开这个视频'))
   const s = await openVideo(file)
   if (s.key !== key) throw new Error(t('视频在打开之后被改过，请重新打开'))
@@ -140,7 +159,13 @@ async function grab(full: string, key: string, time: number, info: VideoInfo) {
  * 在 time 前后 0.25 秒里挑最清楚的那一刻（避开运动模糊、转场）；评不出来就用原来的时间。
  * 选了截帧范围时只在范围里挑，不会挑到范围外面去
  */
-async function sharpestNear(full: string, time: number, info: VideoInfo, range: VideoRange, signal?: AbortSignal) {
+export async function sharpestNear(
+  full: string,
+  time: number,
+  info: VideoInfo,
+  range: VideoRange,
+  signal?: AbortSignal,
+) {
   const fps = 8
   const w = 160
   const h = Math.max(2, Math.round((w * info.height) / Math.max(1, info.width) / 2) * 2)
@@ -174,7 +199,7 @@ async function sharpestNear(full: string, time: number, info: VideoInfo, range: 
  * 自动截帧的候选时间点：画面变化（场景切换分数）或录屏（去掉和上一帧几乎一样的画面）。
  * 选了范围时只解码这一段（-ss 放在 -i 前面快速跳到起点，-t 限定长度），返回的时间是相对范围起点的秒数
  */
-async function candidates(
+export async function candidates(
   full: string,
   mode: AutoMode,
   range: VideoRange,
@@ -282,10 +307,19 @@ export async function manualFrame(key: string, file: string, time: number) {
   })
 }
 
-async function removeFiles(list: VideoFrame[]) {
+export async function removeFiles(list: VideoFrame[]) {
   await Promise.all(
-    list.flatMap((f) => [rm(f.file, { force: true }), f.enhanced ? rm(f.enhanced.file, { force: true }) : []]).flat(),
+    list
+      .flatMap((f) => [f.file, f.enhanced?.file, f.annotated?.file])
+      .flatMap((x) => (x ? [rm(x, { force: true })] : [])),
   )
+}
+
+/** 底图换了（增强、去掉增强）：画好的标注图过期了，删掉；标注本身留着，发送前按新底图重画 */
+async function dropAnnotated(f: VideoFrame) {
+  if (!f.annotated) return
+  await rm(f.annotated.file, { force: true })
+  f.annotated = undefined
 }
 
 /** 删帧：which 是 manual / auto 时清掉这一类，ids 给了时只删这几张 */
@@ -300,21 +334,57 @@ export async function removeFrames(key: string, file: string, o: { which?: 'manu
   })
 }
 
-/** 增强选中的帧；已经增强过的换成新方式的结果 */
+/**
+ * 一次增强几张：ComfyUI 这几张一起排进它的队列（模型只加载一次，两张之间没有空档），FFmpeg 几张并行。
+ * 以前前端一张一张发请求，每张都要等上一张回来再提交，ComfyUI 中间总在空等（用户 2026-11-07 要的批量提交）
+ */
+const ENHANCE_PARALLEL = 3
+
+/** 增强选中的帧；已经增强过的换成新方式的结果。进度（做完几张、正在做哪张）记在 autoProgress 里给弹窗轮询 */
 export async function enhanceFrames(key: string, file: string, ids: string[], method: string, signal?: AbortSignal) {
   return serial(key, async () => {
     const s = await session(key, file)
     const label = (await enhanceMethods()).find((m) => m.id === method)?.label ?? method
-    for (const f of s.frames) {
-      if (!ids.includes(f.id)) continue
+    const todo = s.frames.filter((f) => ids.includes(f.id))
+    const running = new Set<string>()
+    const finished: string[] = []
+    const report = () =>
+      autoProgress.set(key, {
+        stage: 'enhance',
+        done: finished.length,
+        total: todo.length,
+        running: [...running],
+        finished: [...finished],
+      })
+    report()
+    // 存盘也排队：几张同时做完时不互相覆盖
+    let saving = Promise.resolve()
+    const one = async (f: VideoFrame) => {
       if (signal?.aborted) throw new Error(t('已取消'))
+      running.add(f.id)
+      report()
       const buf = await enhanceOne(method, f, signal)
       const out = path.join(sessionDir(key), `${f.id}-enhanced-${randomUUID().slice(0, 6)}.png`)
       await writeFile(out, buf)
       if (f.enhanced) await rm(f.enhanced.file, { force: true })
+      await dropAnnotated(f)
       f.enhanced = { method, label, file: out, bytes: buf.length }
+      running.delete(f.id)
+      finished.push(f.id)
+      report()
       // 每张做完就记一次：中途失败时已经做好的不丢
-      await save(s)
+      saving = saving.then(() => save(s))
+      await saving
+    }
+    try {
+      let next = 0
+      const worker = async () => {
+        while (next < todo.length) await one(todo[next++])
+      }
+      await Promise.all(Array.from({ length: Math.min(ENHANCE_PARALLEL, todo.length) }, worker))
+    } finally {
+      autoProgress.delete(key)
+      await saving.catch(() => {})
     }
     return s
   })
@@ -327,6 +397,7 @@ export async function clearEnhanced(key: string, file: string, ids?: string[]) {
     for (const f of s.frames) {
       if (!f.enhanced || (ids && !ids.includes(f.id))) continue
       await rm(f.enhanced.file, { force: true })
+      await dropAnnotated(f)
       f.enhanced = undefined
     }
     await save(s)
