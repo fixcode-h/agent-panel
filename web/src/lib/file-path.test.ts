@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setLang } from '@shared/i18n'
-import { isImagePath, linkPaths, parsePath } from '@/lib/file-path'
+import { isBareFileName, isImagePath, linkPaths, parsePath } from '@/lib/file-path'
 
 setLang('zh')
 
@@ -154,4 +154,12 @@ test('linkPaths：转义过的字符还原后再判断，属性里的 & 和引�
   const out = linkPaths('<p><code>a&amp;b/x.ts</code> 和 <code>&lt;div&gt;</code></p>')
   assert.match(out, /data-path="a&amp;b\/x.ts"/)
   assert.ok(out.includes('<code>&lt;div&gt;</code>'), '转义后的 HTML 不是路径')
+})
+
+test('单独的文件名：悬停时去对话目录里找完整路径；带目录的、不像文件的不算', () => {
+  assert.equal(isBareFileName('s_CSM_CompanionNPCSystem.lua'), true)
+  assert.equal(isBareFileName('store.ts:52'), true)
+  assert.equal(isBareFileName('web/src/cart/store.ts'), false)
+  assert.equal(isBareFileName('console.log'), false)
+  assert.equal(isBareFileName('removeItem'), false)
 })

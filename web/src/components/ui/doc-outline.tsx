@@ -24,7 +24,12 @@ const INDENT = 14
 function collect(root: HTMLElement): Heading[] {
   const els = [...root.querySelectorAll<HTMLElement>('h1, h2, h3, h4')]
   const list = els
-    .map((el) => ({ el, text: (el.textContent ?? '').replace(/\s+/g, ' ').trim(), level: Number(el.tagName[1]) }))
+    // data-outline-text：标题里还带着别的字（诊断报告「依据和背景」后面列着收起的几节），目录里只写它
+    .map((el) => ({
+      el,
+      text: (el.dataset.outlineText ?? el.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      level: Number(el.tagName[1]),
+    }))
     .filter((h) => h.text)
   const top = Math.min(...list.map((h) => h.level))
   return list.map((h) => ({ ...h, level: Math.min(h.level - top, DASH.length - 1) }))
@@ -148,6 +153,8 @@ export function DocOutline({
     const box = scrollEl.current
     const h = heads[i]
     if (!box || !h) return
+    // 收起的一块（data-fold，诊断报告的「依据和背景」）：先展开，里面的小节才看得到
+    if (h.el.dataset.fold === 'closed') h.el.querySelector('button')?.click()
     const top = h.el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
     box.scrollTo({ top: Math.max(0, top - stickyGap(box) - JUMP_GAP), behavior: 'smooth' })
     setCurrent(i)

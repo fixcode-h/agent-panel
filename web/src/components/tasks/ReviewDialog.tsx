@@ -48,6 +48,9 @@ export interface ReviewVersion {
   /** 下拉里按组列（诊断报告按阶段分组）；group 有值时列表里显示 short，选中后框里仍显示完整的 label */
   group?: string
   short?: string
+  /** 正文前后多画的（诊断报告的决策卡、收起的「依据和背景」）：在标注范围里，选中文字照样能标 */
+  lead?: ReactNode
+  after?: ReactNode
 }
 
 /** 标注和整体意见的原始内容：诊断报告要按种类、按编号交回；files 是整体意见框里附的日志文件 */
@@ -323,7 +326,11 @@ export function ReviewDialog({
             className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4 md:px-8 md:py-6"
             onMouseUp={readSelection}
             onKeyUp={readSelection}
-            onScroll={() => pick && setPick(null)}
+            onScroll={(e) => {
+              // overflow-x 隐藏的滚动区照样能被聚焦、scrollIntoView 横向滚开（展开「依据和背景」时整块正文往左错一截），拉回来
+              if (e.currentTarget.scrollLeft) e.currentTarget.scrollLeft = 0
+              if (pick) setPick(null)
+            }}
           >
             {top && (
               // 吸在滚动区顶上（top 取负的上内边距：吸顶按滚动区的内容框算，不抵掉内边距会离顶边留一截），样式和对话的回复头一样是毛玻璃通栏（用户 2026-11-06 要求）；
@@ -345,11 +352,13 @@ export function ReviewDialog({
             {/* 正文随弹窗宽度铺满（用户 2026-11-06 要求自适应，不再限 820px 窄栏） */}
             <div ref={docRef} onClick={onDocClick}>
               {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
+              {shown?.lead}
               {detail ? (
                 <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
               ) : (
-                <p className="text-body text-subtle">{t('这一步没有输出内容')}</p>
+                !shown?.lead && <p className="text-body text-subtle">{t('这一步没有输出内容')}</p>
               )}
+              {shown?.after}
             </div>
             {pick && (
               <button

@@ -21,6 +21,7 @@ import {
   logFilesOf,
   nextRev,
   normPath,
+  outOfPlan,
   PHASE_TEXT,
   phaseFeedback,
   phaseOf,
@@ -31,8 +32,8 @@ import {
 import { t } from './i18n.ts'
 import { settlePlan } from './plan.ts'
 
-export { blameLabel, diagnosisMarkdown } from './bug-diagnosis-md.ts'
-export { phaseOf, revOf } from './bug-phase.ts'
+export { blameLabel, diagnosisMarkdown, diagnosisView } from './bug-diagnosis-md.ts'
+export { outOfPlan, phaseOf, revOf } from './bug-phase.ts'
 
 type DiagTask = Pick<Task, 'bug' | 'diagnoses' | 'messages' | 'changes' | 'bugCase'>
 
@@ -50,8 +51,12 @@ const picked = (input: DiagnosisInput) =>
   Object.fromEntries(CASE_KEYS.filter((k) => input[k] !== undefined).map((k) => [k, input[k]]))
 
 /** 草稿合上这次写的字段 */
-const mergeCase = (task: Pick<Task, 'bugCase'>, input: DiagnosisInput) =>
-  BugCase.parse({ ...(task.bugCase ?? {}), ...picked(input) })
+const mergeCase = (task: Pick<Task, 'bugCase'>, input: DiagnosisInput) => {
+  const c = BugCase.parse({ ...(task.bugCase ?? {}), ...picked(input) })
+  // 只写了「具体改动」没写 files：要改的文件按它补，收尾核对照样有依据
+  if (!c.files.length && c.changes.length) c.files = c.changes.map((x) => x.file).filter(Boolean)
+  return c
+}
 
 const answersOf = (input: DiagnosisInput) =>
   (Array.isArray(input.answers) ? input.answers : [])
@@ -59,6 +64,7 @@ const answersOf = (input: DiagnosisInput) =>
     .map((x) => ({
       id: Number(x.id),
       answer: typeof x.answer === 'string' ? x.answer : '',
+      stance: (['adopted', 'explained', 'disagree'] as const).find((v) => v === x.stance),
     }))
     .filter((x) => Number.isFinite(x.id) && x.answer.trim())
 
@@ -73,18 +79,6 @@ const needsAnswer = (n: DiagnosisNote) => n.kind !== 'info'
 
 /** 影响面按名字对：忽略空白和大小写 */
 const norm = (v: string) => v.replace(/\s+/g, '').toLowerCase()
-
-/** 不改方案也能顺带改的：测试、文档、翻译（修 Bug 本来就要补回归测试、回写文档） */
-const FREE_FILE = /(^|\/)(tests?|__tests__|docs|locales?)\/|\.(test|spec)\.[^/]+$|\.md$/i
-
-/** 实际改动里超出已确认范围的文件：范围里写目录（以 / 结尾）时目录下的都算 */
-export function outOfPlan(changed: string[], files: string[]) {
-  const plan = files.map(normPath).filter(Boolean)
-  return changed
-    .map(normPath)
-    .filter((p) => p && !FREE_FILE.test(p))
-    .filter((p) => !plan.some((f) => p === f || (f.endsWith('/') && p.startsWith(f))))
-}
 
 const LEVEL_TEXT: Record<BugLevel, string> = {
   quick: '快速',
@@ -144,7 +138,8 @@ function evidenceProblem(c: BugCase, input: DiagnosisInput, list: Diagnosis[]): 
   if (againAfterLogs(list) && (!c.next.trim() || c.next.trim() === list.at(-1)!.next.trim()))
     lack.push('next（又一轮论证：上一轮的日志看到了什么、为什么没能定论、新假设从哪来）')
   if (input.collect === undefined || !c.collect?.steps.length) lack.push('collect.steps（怎么复现）')
-  if (!c.collect?.expect.trim()) lack.push('collect.expect（每种结果说明什么：看到 A 是哪个假设、看到 B 是哪个）')
+  if (!c.collect?.expect.trim() && !c.collect?.outcomes.length)
+    lack.push('collect.outcomes（每种结果说明什么：看到 A 是哪个假设、看到 B 是哪个）')
   return lack.length
     ? `论证这一版还缺：${lack.join('；')}。还没定论就按这个交，用户同意后加日志、复现；根因已经证实就交 phase: cause。`
     : ''
@@ -213,7 +208,7 @@ function verifyProblem(c: BugCase, list: Diagnosis[], input: DiagnosisInput): st
   if (!planApproved(list)) return '还没有用户确认的修复方案：先交 phase: plan，用户确认、修完之后再交验证。'
   const lack: string[] = []
   if (input.collect === undefined || !c.collect?.steps.length) lack.push('collect.steps（用户怎么复现验证）')
-  if (!c.collect?.expect.trim()) lack.push('collect.expect（看到什么算修好了）')
+  if (!c.collect?.expect.trim() && !c.collect?.outcomes.length) lack.push('collect.outcomes（看到什么算修好了）')
   if (!c.result?.regressionTests.length)
     lack.push(
       '先用 update_bug_case 的 result 记下修完的结果（regressionTests 回归测试、impactChecks 影响面逐条的验证）',
@@ -374,6 +369,7 @@ export function submitDiagnosis(
     at: now,
     files,
     answers,
+    whatChanged: typeof input.whatChanged === 'string' ? input.whatChanged.trim().slice(0, 2000) : '',
     status: 'pending',
     notes: [],
     overall: '',

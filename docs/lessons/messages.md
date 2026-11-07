@@ -1,5 +1,5 @@
 ---
-paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.tsx, web/src/components/tasks/PeerMessage.tsx, web/src/components/tasks/RunningNow.tsx, web/src/lib/tasks.ts, web/src/lib/file-path.ts, web/src/lib/useStickToBottom.ts, server/orch-mcp.ts
+paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Messages.tsx, web/src/components/tasks/SystemNote.tsx, web/src/components/tasks/TaskView.tsx, web/src/components/tasks/ToolRow.tsx, web/src/components/tasks/PeerMessage.tsx, web/src/components/tasks/RunningNow.tsx, web/src/lib/tasks.ts, web/src/lib/file-path.ts, web/src/lib/useStickToBottom.ts, server/orch-mcp.ts
 ---
 
 # 对话里的消息和条目
@@ -50,3 +50,9 @@ paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Message
 
 - 规则：工具 / 过程行（`RowShell`）每行一块默认浅底的圆角块（`bg-fg/[0.035]`），悬停再深一点；相邻行靠 4px 间距分开，不画分隔线（`index.css` 的 `proc-list`）。
 - 起因：dc23450 照设计稿改成「无底、行间细线、悬停才出底」，用户要求「工具不加分割线，背景默认显示」。
+
+## 挂在回复体外面的块要缩进到正文竖线上
+
+- 规则：对话流里不在 `.reply-body` 里的块（报错 / 警告卡片、工作流卡片、收到的消息）用 `reply-indent` 缩进到和回复正文同一条竖线，左右都不超出正文；报错卡片用 `NoteMessage` / `SystemNote` 的 `indent`。只有居中的一行说明、用户气泡不缩进。
+- 起因：用户 2026-11-07 报「没做完就停下了」卡片比正文往左多伸出一截（对话页、设计页的报错卡片都是）。
+- 防线：`scripts/ui/01-composer.mjs` 的「Chat 报错卡片」对齐断言。

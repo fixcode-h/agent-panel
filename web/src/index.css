@@ -1798,6 +1798,13 @@ body,
 .chat-md .md-ln:hover {
   background: color-mix(in srgb, var(--fg) 3%, transparent);
 }
+/* 诊断报告关键代码里出错的那一行（信息串 mark=N）：和 diff 删除行同一个色相，行号也染上 */
+.chat-md .md-ln.md-mark {
+  background: color-mix(in srgb, var(--md-coral) 14%, transparent);
+}
+.chat-md .md-ln.md-mark::before {
+  color: var(--md-coral);
+}
 /* diff：增删的行整行着色，只用底色（docs/lessons/visual.md） */
 .chat-md .md-ln.md-add {
   background: color-mix(in srgb, var(--md-teal) 11%, transparent);

@@ -1,14 +1,10 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
-import { BugReportLine } from './DiagnosisDialog'
-import type { AnalysisScope } from '@shared/analysis-home'
-import { ChevronRight, Brain, CircleAlert, Clock, Info, Loader2, RotateCw, TriangleAlert } from 'lucide-react'
+import { ChevronRight, Brain, CircleAlert, Clock, Loader2, RotateCw, TriangleAlert } from 'lucide-react'
 import { LEAD_TAG, PANEL_KIND } from './panel-kind'
 import { Button } from '@/components/ui/button'
-import type { Alert, Task, TaskMessage, ToolUse } from '@shared/schema'
-import { makeAlert } from '@shared/alerts'
+import type { Task, TaskMessage, ToolUse } from '@shared/schema'
 import { toast } from '@/lib/toast'
 import { api } from '@/lib/api'
-import { AlertRow } from './AlertRow'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRows } from './ToolRow'
@@ -32,8 +28,9 @@ import { ReceivedRow } from './PeerMessage'
 import { peerOfMessage } from '@shared/peer-message'
 import { useChildOpen, useChildList, useRunViewOpen, useRunViewTip } from './child-open'
 import { runRow, type WorkflowRun } from '@/lib/run-row'
-import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
+import { ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
+import { NoteMessage } from './SystemNote'
 import { stripNext } from '@shared/builtin/default'
 import { convStateText, deliveryStatus, isPlanNudge } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
@@ -50,7 +47,6 @@ import { StepCommand } from './StepCommand'
 import { RunningNow, runningRows, runningTools } from './RunningNow'
 import { ConvChangesCard } from './TurnChanges'
 import { useAgentView } from '@/lib/agent-view'
-import { conversationAround } from '@shared/fix'
 import { useNow } from '@/lib/useNow'
 import { t } from '@shared/i18n'
 import { useOwnedRuns } from '@/lib/owned-runs'
@@ -60,88 +56,6 @@ import { liveRuns, OwnedRunCards } from './OwnedRunCards'
 function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
   for (let i = list.length - 1; i >= 0; i--) if (ok(list[i])) return i
   return -1
-}
-
-export function SystemNote({
-  text,
-  error,
-  alert,
-  className,
-  conversation,
-  cwd,
-  home,
-}: {
-  text: string
-  error?: boolean
-  /** 报错、警告的分类和原始信息；旧数据只有 error 时按正文归类 */
-  alert?: Alert
-  className?: string
-  /** 报错前后的对话：交给 AI 时一起带上，它才知道出错时在做什么 */
-  conversation?: string
-  /** 报错所在的项目目录 */
-  cwd?: string
-  /** 报错属于哪个对话：「AI 处理」按它定分析对话开在哪 */
-  home?: AnalysisScope
-}) {
-  // 报错和警告都画成带底色的一行，点开看这是什么、怎么办和原始信息（见 shared/alerts.ts）。
-  // className 是给居中的说明用的，不传给它：点开的说明要左对齐
-  if (alert || error)
-    return (
-      <AlertRow
-        alert={alert ?? makeAlert('error', text)}
-        text={text}
-        conversation={conversation}
-        cwd={cwd}
-        home={home}
-      />
-    )
-  return (
-    <div className={cn('flex items-start gap-1.5 text-xs leading-relaxed whitespace-pre-wrap text-subtle', className)}>
-      <span className="flex h-[1.625em] shrink-0 items-center">
-        <Info className="h-3.5 w-3.5" />
-      </span>
-      <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
-    </div>
-  )
-}
-
-/**
- * 对话里的系统消息：用户对提问的回答像用户消息一样显示在正文里，其他的是一行说明。
- * 报错的「AI 处理」带上这条所在的对话（前后几条）和项目路径，AI 才看得出出错时在做什么
- */
-export function NoteMessage({
-  m,
-  msgs,
-  task,
-  className,
-}: {
-  m: TaskMessage
-  /** 整个对话：出错时把这条前后的几条一起交给 AI */
-  msgs?: TaskMessage[]
-  /** 任务：出错时带上项目路径（独立分支里执行时是分支目录） */
-  task?: Task
-  className?: string
-}) {
-  const { projects } = useData()
-  if (m.planStart) return null // 计划启动的那条提示只是把计划输入又抄了一遍，不画出来（按标记判断，不看文案）
-  if (m.bugReport) return <BugReportLine text={m.text} />
-  if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
-  const around = msgs && (m.error || m.alert) ? conversationAround(msgs, msgs.indexOf(m)) : ''
-  const cwd =
-    task?.worktree?.state === 'active'
-      ? task.worktree.path
-      : (projects.find((p) => p.id === task?.projectId)?.path ?? '')
-  return (
-    <SystemNote
-      text={m.text}
-      error={m.error}
-      alert={m.alert}
-      className={className}
-      conversation={around}
-      cwd={cwd}
-      home={task ? { kind: 'task', task } : undefined}
-    />
-  )
 }
 
 /**

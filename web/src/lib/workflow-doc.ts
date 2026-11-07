@@ -145,7 +145,18 @@ renderer.code = ({ text, lang }) => {
     // 高亮失败就显示原文
   }
   const lines = lineSpans(body, name === 'diff' || name === 'patch')
-  return `<div class="md-code" data-lines="${lines.count}">${codeBar(name || 'text', lines.count)}<pre><code class="hljs">${lines.html}</code></pre></div>`
+  // 信息串里的 start=48 mark=52（诊断报告的关键代码，shared/bug-diagnosis-md.ts）：行号从文件里的真实行开始，出错那行标出来
+  const start = Number(/(?:^|\s)start=(\d+)/.exec(lang ?? '')?.[1] ?? 1)
+  const mark = Number(/(?:^|\s)mark=(\d+)/.exec(lang ?? '')?.[1] ?? 0)
+  const html =
+    mark >= start
+      ? lines.html
+          .split('\n')
+          .map((l, i) => (i === mark - start ? l.replace('class="md-ln', 'class="md-ln md-mark') : l))
+          .join('\n')
+      : lines.html
+  const reset = start > 1 ? ` style="counter-reset: md-ln ${start - 1}"` : ''
+  return `<div class="md-code" data-lines="${lines.count}">${codeBar(name || 'text', lines.count)}<pre><code class="hljs"${reset}>${html}</code></pre></div>`
 }
 
 /**

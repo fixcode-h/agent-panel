@@ -214,3 +214,15 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}$
 - 改完验证不过：不要在这次修法上接着改，把修法和失败证据写进「已排除」，回到论证重新交报告。${notes}${overall}`
   return `用户在第 ${v} 版点了结束，跳过验证。${CLEANUP}然后请父对话收尾（submit_merge）。${notes}${overall}`
 }
+
+/** 不改方案也能顺带改的：测试、文档、翻译（修 Bug 本来就要补回归测试、回写文档） */
+const FREE_FILE = /(^|\/)(tests?|__tests__|docs|locales?)\/|\.(test|spec)\.[^/]+$|\.md$/i
+
+/** 实际改动里超出已确认范围的文件：范围里写目录（以 / 结尾）时目录下的都算 */
+export function outOfPlan(changed: string[], files: string[]) {
+  const plan = files.map(normPath).filter(Boolean)
+  return changed
+    .map(normPath)
+    .filter((p) => p && !FREE_FILE.test(p))
+    .filter((p) => !plan.some((f) => p === f || (f.endsWith('/') && p.startsWith(f))))
+}

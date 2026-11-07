@@ -77,3 +77,12 @@ test('链接：协议里夹着制表符、换行的 javascript: 不能被当成�
     assert.doesNotMatch(renderDoc(`[a](<${href}>)`, NONE), /<a /, href)
   assert.match(renderDoc('[a](https://example.com)', NONE), /<a href="https:\/\/example\.com"/)
 })
+
+test('代码块信息串里的 start、mark：行号从真实行开始，出错那行标出来（诊断报告的关键代码）', () => {
+  clearDocCache()
+  const html = renderDoc('```text start=48 mark=49\na\nb\nc\n```', NONE)
+  assert.match(html, /<code class="hljs" style="counter-reset: md-ln 47">/)
+  assert.match(html, /<span class="md-ln">a<\/span>\n<span class="md-ln md-mark">b<\/span>/)
+  // 没写 start 的照旧从 1 数
+  assert.doesNotMatch(renderDoc('```text\na\nb\n```', NONE), /counter-reset|md-mark/)
+})

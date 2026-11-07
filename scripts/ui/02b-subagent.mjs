@@ -926,6 +926,20 @@ await runShard(import.meta.filename, async (api) => {
           },
         ],
         chosen: { id: 'A', why: '修在源头', whyNotOthers: 'B 只是绕过，别的订阅者照样收不到' },
+        // 2026-11-07 的报告字段：证据链三环、具体改动（一个文件一行）；方案比较带判定
+        chain: [
+          { step: 'trigger', text: '删除购物车最后一件商品', proof: '复现步骤第 2 步，必现' },
+          {
+            step: 'fault',
+            text: 'remove 在 left=0 时提前 return',
+            proof: '日志 [cart] remove id=3 left=0 之后没有 change',
+          },
+          { step: 'symptom', text: '角标停在 1', proof: '刷新后才归零' },
+        ],
+        changes: [
+          { file: 'web/src/cart/store.ts', what: 'remove 去掉 left === 0 时的提前 return，总是派发 change' },
+          { file: 'web/src/cart/store.test.ts', what: '删最后一件后断言角标归零', isNew: true },
+        ],
       }
       kid.bug = true
       kid.diagnoses = [
@@ -1012,6 +1026,13 @@ await runShard(import.meta.filename, async (api) => {
         .getByRole('button', { name: '确认方案，开始修' })
         .waitFor({ timeout: 10000 })
         .catch(() => errors.push('诊断报告：弹窗里没有「确认方案，开始修」'))
+      // 决策卡在最上面（用户 2026-11-07 确认的设计稿）：一句话结论、要你做的；背景收在「依据和背景」里
+      if (!(await dlg.locator('[data-diagnosis-card]').getByText('选方案 A：去掉提前 return').count()))
+        errors.push('诊断报告：最上面没有决策卡的一句话结论')
+      if (!(await dlg.getByRole('button', { name: /依据和背景/ }).count()))
+        errors.push('诊断报告：没有收起的「依据和背景」')
+      if (!(await dlg.getByText('具体改动').count())) errors.push('诊断报告：方案页没有「具体改动」')
+      await check(p, '诊断报告-决策卡')
       // 版本在标题栏的下拉里选（用户 2026-11-05：不要把所有版本排在正文上面）
       const verPick = dlg.getByRole('combobox', { name: '版本' })
       if (!(await verPick.count())) errors.push('诊断报告：有两版却没有版本下拉')
@@ -1048,6 +1069,12 @@ await runShard(import.meta.filename, async (api) => {
       } else errors.push('诊断报告：选中文字后没有出现「标注」按钮')
       // ADR 0046：引入点、时间线、候选方案画出来；没选的方案能一键加「改方案」意见
       // 候选方案并排成一张比较表：方案 B 是表头一列，做法写在「做法」那一行
+      // 方案页里引入点收在「依据和背景」里：展开再看
+      await dlg
+        .getByRole('button', { name: /依据和背景/ })
+        .first()
+        .click()
+      await settle(p)
       for (const text of ['引入于', '购物车删除重构', '角标自己轮询数量'])
         if (!(await dlg.getByText(text, { exact: false }).count())) errors.push(`诊断报告：没有显示「${text}」`)
       const useB = dlg.getByRole('button', { name: '改用方案 B' })
