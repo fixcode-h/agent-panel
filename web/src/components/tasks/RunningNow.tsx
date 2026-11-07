@@ -1,6 +1,6 @@
 import { useUserName } from '@/lib/user-name'
 import { useMemo, useState } from 'react'
-import { CircleSlash, ClipboardCheck, Loader2 } from 'lucide-react'
+import { CircleSlash, ClipboardCheck, Hand, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import { helperRunning, helperShown, sortHelpers, stepMs, splitStepJobs, type ChildEntry } from '@shared/task'
 import { cn } from '@/lib/utils'
@@ -16,12 +16,14 @@ import {
   childClosedHint,
   childLabelClass,
   childLabels,
+  childNeedsYou,
   childNote,
   listedChildren,
   stageConfirm,
   staleLine,
 } from './child-line'
 import { ChildConfirmButton } from './ChildConfirm'
+import { Button } from '@/components/ui/button'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
 import { isHelperAgent } from '@shared/builtin/core'
@@ -382,6 +384,10 @@ export function RunningNow({
         const detail = [note, stale?.text, gone].filter(Boolean).join(' · ')
         // 工作流节点做完、等你确认这一步的结果（见 stageConfirm）：和诊断报告一样留在这一行，提醒色
         const stage = stageConfirm(k)
+        // 在等你处理（提问、等你操作）的：对话还没做完，和阶段确认一样用提醒色转圈留在这里（用户 2026-11-07 要求），
+        // 和别的「执行中」分开；等你操作的行尾另给「去操作」
+        const needs = childNeedsYou(k)
+        const act = needs && !k.diagnosis && !stage && k.waiting?.kind === 'action'
         return (
           <RowShell
             key={k.id}
@@ -398,7 +404,7 @@ export function RunningNow({
                 <Loader2
                   className={cn(
                     'h-3.5 w-3.5 shrink-0 animate-spin',
-                    stale?.cls ?? (k.diagnosis || stage ? 'text-warning' : 'text-accent-text'),
+                    stale?.cls ?? (k.diagnosis || stage || needs ? 'text-warning' : 'text-accent-text'),
                   )}
                 />
               )
@@ -453,6 +459,24 @@ export function RunningNow({
                 <ChildReportButton childId={k.id} />
               ) : stage ? (
                 <ChildConfirmButton childId={k.id} />
+              ) : act && openChild ? (
+                // 等你操作（request_user_action）：和子对话列表一样给「去操作」，在右栏打开它，
+                // 步骤和交回都在子对话自己的输入框上面
+                // 行窄时只留手势图标、再窄就不放（整行本来就能点开它）：按这一行自己的宽度（见 RowShell 的 container），
+                // 宽度先让给状态标签「等你操作」
+                <Button
+                  size="sm"
+                  className="h-6 shrink-0 px-1.5 text-xs @max-[360px]:hidden @min-[480px]:px-2"
+                  aria-label={t('去操作')}
+                  title={t('去操作')}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openChild(k.id)
+                  }}
+                >
+                  <Hand className="h-3 w-3" />
+                  <span className="hidden @min-[480px]:inline">{t('去操作')}</span>
+                </Button>
               ) : undefined
             }
           />

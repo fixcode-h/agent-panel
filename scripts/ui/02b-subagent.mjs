@@ -844,9 +844,12 @@ await runShard(import.meta.filename, async (api) => {
           // 前提：至少两个在跑，才测得出「运行区把在跑的全列出来，不只第一个」
           if (running.count < 2)
             errors.push(`父对话在跑时：演示数据只有 ${running.count} 个执行中的子对话，用例前提不成立`)
-          if (runTitles.join('\n') !== running.titles.join('\n'))
+          // 运行区还列在等你处理的（提问、等你操作，见 child-line.ts 的 childNeedsYou）：对照「需要你处理」+「执行中」两组
+          const needs = groups.find((g) => g.label === '需要你处理')?.titles ?? []
+          const expect = [...needs, ...running.titles]
+          if (runTitles.join('\n') !== expect.join('\n'))
             errors.push(
-              `父对话在跑时运行区列的子对话（${runTitles.length} 个：${runTitles.join('、')}）和弹层「执行中 · ${running.count}」（${running.titles.join('、')}）对不上`,
+              `父对话在跑时运行区列的子对话（${runTitles.length} 个：${runTitles.join('、')}）和弹层「需要你处理」+「执行中 · ${running.count}」（${expect.join('、')}）对不上`,
             )
         }
       }
