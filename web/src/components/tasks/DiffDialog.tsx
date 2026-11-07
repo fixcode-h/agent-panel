@@ -404,17 +404,21 @@ function UnifiedView({ rows, wrap, shown }: { rows: NumberedLine[]; wrap: boolea
 export function DialogScroll({
   box,
   children,
+  aside,
 }: {
   /** 需要滚动定位时（比如跳到某一行）要拿到的滚动容器 */
   box?: React.RefObject<HTMLDivElement | null>
   children: React.ReactNode
+  /** 浮在滚动区上、不跟着滚的东西（Markdown 的标题目录） */
+  aside?: React.ReactNode
 }) {
   return (
     // 代码区不另铺 --code-bg：深色下比弹窗底色暗一截，和标题栏一深一浅显得发黑，直接沿用弹窗底色
-    <div className="flex min-h-0 flex-1 flex-col pb-4">
+    <div className="relative flex min-h-0 flex-1 flex-col pb-4">
       <div ref={box} className="min-h-0 flex-1 overflow-auto">
         {children}
       </div>
+      {aside}
     </div>
   )
 }

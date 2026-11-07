@@ -12,6 +12,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FrostBarBg } from '@/components/ui/frost'
 import { Markdown } from './Markdown'
+import { DocOutline } from '@/components/ui/doc-outline'
 import { reviewFeedback } from '@/lib/review-feedback'
 import { Segmented } from '@/components/ui/segmented'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
@@ -312,53 +313,57 @@ export function ReviewDialog({
         )}
       </ModalHeader>
       <div ref={rowRef} className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <div
-          ref={scrollRef}
-          // overflow-x 隐藏：吸顶条的毛玻璃底左右伸出去，靠这里裁到正好铺满滚动区（FrostBarBg）
-          className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4 md:px-8 md:py-6"
-          onMouseUp={readSelection}
-          onKeyUp={readSelection}
-          onScroll={() => pick && setPick(null)}
-        >
-          {top && (
-            // 吸在滚动区顶上（top 取负的上内边距：吸顶按滚动区的内容框算，不抵掉内边距会离顶边留一截），样式和对话的回复头一样是毛玻璃通栏（用户 2026-11-06 要求）；
-            // 放在 docRef 外面，选中文字标注时不会把阶段名选进去
-            // 版本下拉放在这条的最右边（用户 2026-11-06 要求）
-            <div className="frost-bar sticky -top-4 z-20 [--frost-bg:var(--c-modal-bg)] -mt-4 mb-3 flex items-center gap-3 py-2.5 select-none md:-top-6 md:-mt-6">
-              <FrostBarBg />
-              <div className="min-w-0 flex-1">
-                {typeof top === 'function'
-                  ? top(shown?.key ?? '', (key) => {
-                      setVer(key)
-                      setPick(null)
-                    })
-                  : top}
+        {/* 套一层 relative：标题目录浮在滚动区右边、不跟着滚 */}
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            ref={scrollRef}
+            // overflow-x 隐藏：吸顶条的毛玻璃底左右伸出去，靠这里裁到正好铺满滚动区（FrostBarBg）
+            className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4 md:px-8 md:py-6"
+            onMouseUp={readSelection}
+            onKeyUp={readSelection}
+            onScroll={() => pick && setPick(null)}
+          >
+            {top && (
+              // 吸在滚动区顶上（top 取负的上内边距：吸顶按滚动区的内容框算，不抵掉内边距会离顶边留一截），样式和对话的回复头一样是毛玻璃通栏（用户 2026-11-06 要求）；
+              // 放在 docRef 外面，选中文字标注时不会把阶段名选进去
+              // 版本下拉放在这条的最右边（用户 2026-11-06 要求）
+              <div className="frost-bar sticky -top-4 z-20 [--frost-bg:var(--c-modal-bg)] -mt-4 mb-3 flex items-center gap-3 py-2.5 select-none md:-top-6 md:-mt-6">
+                <FrostBarBg />
+                <div className="min-w-0 flex-1">
+                  {typeof top === 'function'
+                    ? top(shown?.key ?? '', (key) => {
+                        setVer(key)
+                        setPick(null)
+                      })
+                    : top}
+                </div>
+                {picker}
               </div>
-              {picker}
+            )}
+            {/* 正文随弹窗宽度铺满（用户 2026-11-06 要求自适应，不再限 820px 窄栏） */}
+            <div ref={docRef} onClick={onDocClick}>
+              {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
+              {detail ? (
+                <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
+              ) : (
+                <p className="text-body text-subtle">{t('这一步没有输出内容')}</p>
+              )}
             </div>
-          )}
-          {/* 正文随弹窗宽度铺满（用户 2026-11-06 要求自适应，不再限 820px 窄栏） */}
-          <div ref={docRef} onClick={onDocClick}>
-            {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
-            {detail ? (
-              <Markdown key={shown?.key} text={detail} teamNames={teamNames} />
-            ) : (
-              <p className="text-body text-subtle">{t('这一步没有输出内容')}</p>
+            {pick && (
+              <button
+                type="button"
+                // 按下时不让选区丢掉，松开再加标注
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={addNote}
+                style={{ top: pick.top, left: pick.left }}
+                className="absolute z-30 flex -translate-x-1/2 cursor-pointer items-center gap-1 rounded-lg border border-line-strong bg-card px-2.5 py-1 text-xs font-medium shadow-pop hover:bg-sel animate-[pop-in_120ms_ease-out]"
+              >
+                <Highlighter className="h-3.5 w-3.5 text-warning" />
+                {t('标注')}
+              </button>
             )}
           </div>
-          {pick && (
-            <button
-              type="button"
-              // 按下时不让选区丢掉，松开再加标注
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={addNote}
-              style={{ top: pick.top, left: pick.left }}
-              className="absolute z-30 flex -translate-x-1/2 cursor-pointer items-center gap-1 rounded-lg border border-line-strong bg-card px-2.5 py-1 text-xs font-medium shadow-pop hover:bg-sel animate-[pop-in_120ms_ease-out]"
-            >
-              <Highlighter className="h-3.5 w-3.5 text-warning" />
-              {t('标注')}
-            </button>
-          )}
+          <DocOutline scrollEl={scrollRef} className="right-2" />
         </div>
         <aside
           aria-label={t('标注')}

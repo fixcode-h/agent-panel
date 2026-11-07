@@ -1349,6 +1349,7 @@ export const EN_TASKS: Record<string, string> = {
   理由: 'Why',
   假设: 'Assumed',
   跳到某一轮: 'Jump to a turn',
+  文档目录: 'Contents',
   '第 {n} 轮：{text}': 'Turn {n}: {text}',
   // AI 分析窗口：排查的结构化结论（DiagnosisReport）
   排查结论: 'Diagnosis',

@@ -12,6 +12,7 @@ import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { Lightbox } from '@/components/ui/lightbox'
 import { DialogScroll, ProjectDiffDialog } from '@/components/tasks/DiffDialog'
 import { Markdown } from '@/components/tasks/Markdown'
+import { DocOutline } from '@/components/ui/doc-outline'
 import { FileEditor, FileModeBar, isMarkdownPath, useFileEditing } from './file-edit'
 
 /** 读回来的文件：dir 是「在编辑器中打开」用的目录；editable 为 false 时只读（附件、项目外的文件） */
@@ -209,7 +210,8 @@ export function FileViewDialog({
         {ed.saveError && (
           <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-body text-danger">{ed.saveError}</p>
         )}
-        <DialogScroll box={box}>
+        {/* Markdown 阅读时右边是标题目录，编辑源码时不要 */}
+        <DialogScroll box={box} aside={mdPreview && !editing && <DocOutline scrollEl={box} className="bottom-7" />}>
           {error ? (
             <p className="p-6 text-body text-danger">{error}</p>
           ) : !file ? (
