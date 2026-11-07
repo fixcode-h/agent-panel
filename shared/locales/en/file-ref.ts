@@ -26,4 +26,10 @@ export const EN_FILE_REF: Record<string, string> = {
     'An agent may have just changed "{path}". Overwriting will discard those changes. You can also discard your edits and look at the current content first.',
   覆盖保存: 'Overwrite',
   只能查看任务目录里文件的改动: 'Changes can only be shown for files in the task folder',
+  在文件中查找: 'Find in file',
+  无结果: 'No results',
+  区分大小写: 'Match case',
+  上一个: 'Previous match',
+  下一个: 'Next match',
+  关闭搜索: 'Close search',
 }

@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Code2, Copy, GitCompareArrows, Loader2, FileText } from 'lucide-react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Code2, Copy, GitCompareArrows, Loader2, FileText, Search } from 'lucide-react'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
 import type { FileContent, FileDiff } from '@shared/files'
 import { editorUrl } from '@/lib/editor-url'
 import { fmtClock } from '@/lib/tasks'
-import { highlightLines, sizeText, useHljs } from '@/lib/file-highlight'
+import { sizeText, useHighlightedLines, useHljs } from '@/lib/file-highlight'
+import { findHits, hitsByLine, lineOf, lineStarts } from '@/lib/file-search'
 import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
@@ -13,8 +14,17 @@ import { Lightbox } from '@/components/ui/lightbox'
 import { DialogScroll, ProjectDiffDialog } from '@/components/tasks/DiffDialog'
 import { Markdown } from '@/components/tasks/Markdown'
 import { DocOutline } from '@/components/ui/doc-outline'
-import { FileEditor, FileModeBar, isMarkdownPath, useFileEditing } from './file-edit'
+import { FileModeBar, isMarkdownPath, useFileEditing } from './file-edit'
 import { CodeLines } from './CodeLines'
+import { FileSearchBar, useFileSearch } from './FileSearch'
+import { useDomSearch } from './dom-search'
+import './file-view.css'
+
+// 编辑器（CodeMirror）只在切到编辑时才加载：只看文件的人不用下载它
+const CodeEditor = lazy(() => import('./CodeEditor'))
+
+/** Markdown 超过这么多字就分块排版（屏幕外的段落先不排），短文档没必要 */
+const MD_LAZY = 40_000
 
 /** 读回来的文件：dir 是「在编辑器中打开」用的目录；editable 为 false 时只读（附件、项目外的文件） */
 export type FileView = FileContent & { dir?: string; editable?: boolean }
@@ -85,11 +95,6 @@ export function FileViewDialog({
     // source 每次渲染都是新对象，换了文件（target）才重新读
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [target, raw])
-  // 内容出来后滚到提到的那一行
-  useEffect(() => {
-    if (!file || !target?.line) return
-    box.current?.querySelector(`[data-line="${target.line}"]`)?.scrollIntoView({ block: 'center' })
-  }, [file, target])
 
   const write = source.write
   // 截断的文件不提供编辑：存回去会把后面没读到的部分删掉；附件、项目外的文件只读
@@ -116,21 +121,64 @@ export function FileViewDialog({
   // 只有阅读代码时才拆行、高亮：编辑时每敲一个字 body 都会变，在这里整份重新高亮，大文件打一个字就卡一下
   const codeShown = !editing && !mdPreview
   const lines = useMemo(() => (codeShown && body ? body.split('\n') : []), [codeShown, body])
-  const highlighted = useMemo(
-    () =>
-      // 截断的文件、二进制都不用高亮：不是完整内容，或者根本不是代码
-      codeShown && file?.exists && !file.binary && !file.truncated ? highlightLines(hl, body, path) : null,
-    [codeShown, hl, body, path, file?.exists, file?.binary, file?.truncated],
+  // 整份高亮在后台线程算，算好之前先按纯文本显示；截断的文件、二进制都不用高亮：不是完整内容，或者根本不是代码
+  const highlighted = useHighlightedLines(body, path, codeShown && !!file?.exists && !file.binary && !file.truncated)
+
+  // 弹窗自己的搜索：阅读代码和编辑在文字里找，Markdown 阅读在渲染好的文档里找
+  const search = useFileSearch()
+  const textSearch = search.open && !!search.query && (codeShown || editing)
+  const hits = useMemo(
+    () => (textSearch ? findHits(editing ? ed.text : body, search.query, search.caseSensitive) : []),
+    [textSearch, editing, ed.text, body, search.query, search.caseSensitive],
   )
+  const starts = useMemo(() => (textSearch && codeShown ? lineStarts(body) : []), [textSearch, codeShown, body])
+  const hitIndex = Math.min(search.index, Math.max(0, hits.length - 1))
+  const marks = useMemo(
+    () => (textSearch && codeShown ? hitsByLine(hits, starts, hitIndex) : undefined),
+    [textSearch, codeShown, hits, starts, hitIndex],
+  )
+  const currentHit = useMemo(
+    () => (marks && hits[hitIndex] ? { line: lineOf(starts, hits[hitIndex].from), seq: search.seq } : null),
+    // 只在换了当前那一处、按了上一个 / 下一个时滚动，打字改了命中不跳
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [hitIndex, search.seq, !!marks],
+  )
+  const domTotal = useDomSearch(
+    box,
+    search.query,
+    search.caseSensitive,
+    search.index,
+    search.seq,
+    search.open && mdPreview && !editing,
+  )
+  const total = mdPreview && !editing ? domTotal : hits.length
   const size = typeof file?.size === 'number' ? sizeText(file.size) : ''
   const mtime = file?.mtime ? fmtClock(file.mtime) : ''
   const canDiff = !!source.diff && !!file?.exists && !file.binary && file.editable !== false
   const editorDir = source.dir || file?.dir || ''
   const textOpen = !!target && !raw
 
+  // Ctrl/Cmd+F 打开弹窗自己的搜索（代码是虚拟渲染的，浏览器自带的查找搜不到屏幕外的行）；F3 / Shift+F3 上一个下一个
+  useEffect(() => {
+    if (!textOpen || !file?.exists || file.binary) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        search.show(getSelection()?.toString())
+      } else if (e.key === 'F3' && search.open) {
+        e.preventDefault()
+        if (e.shiftKey) search.prev(total)
+        else search.next(total)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  })
+
   // 草稿不用在这里清：下次打开换了 target，编辑状态整个重置
   const close = () => {
     setDiffOpen(false)
+    search.close()
     onOpenChange(false)
   }
   // 有没保存的修改时先问一句，别手滑关掉就丢了
@@ -163,6 +211,12 @@ export function FileViewDialog({
         title={null}
         bare
         closeOnOutside
+        // 搜索框开着时 Esc 先关搜索框，再按一次才关弹窗
+        onEscapeKeyDown={(e) => {
+          if (!search.open) return
+          e.preventDefault()
+          search.close()
+        }}
         className={cn(
           // 只有一句说明（找不到、二进制、出错）时弹窗按内容高度，不撑满
           editing || !file || body ? 'h-[min(760px,calc(100dvh-3.75rem))] max-w-[1000px]' : 'max-w-[560px]',
@@ -193,6 +247,9 @@ export function FileViewDialog({
           }
           actions={
             <>
+              {file?.exists && !file.binary && (
+                <ModalButton icon={Search} label={t('在文件中查找')} onClick={() => search.show()} />
+              )}
               <ModalButton
                 icon={Copy}
                 label={t('复制路径')}
@@ -213,6 +270,7 @@ export function FileViewDialog({
         {ed.saveError && (
           <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-body text-danger">{ed.saveError}</p>
         )}
+        {file?.exists && !file.binary && <FileSearchBar search={search} total={total} onClose={search.close} />}
         {/* Markdown 阅读时右边是标题目录，编辑源码时不要 */}
         <DialogScroll box={box} aside={mdPreview && !editing && <DocOutline scrollEl={box} className="bottom-7" />}>
           {error ? (
@@ -226,13 +284,37 @@ export function FileViewDialog({
           ) : file.binary ? (
             <p className="p-6 text-body text-subtle">{source.binaryText}</p>
           ) : editing ? (
-            <FileEditor ed={ed} line={target?.line} path={file.path} hl={hl} />
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center text-subtle">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              }
+            >
+              <CodeEditor
+                ed={ed}
+                line={target?.line}
+                path={file.path}
+                hl={hl}
+                hits={hits}
+                current={hitIndex}
+                seq={search.seq}
+              />
+            </Suspense>
           ) : mdPreview ? (
-            <div className="mx-auto max-w-[860px] px-8 py-6">
+            // 长文档分块排版（file-view.css）：屏幕外的段落先不排，打开不卡
+            <div className={cn('mx-auto max-w-[860px] px-8 py-6', shown.length > MD_LAZY && 'file-md-lazy')}>
               <Markdown text={shown} teamNames={NO_TEAM} />
             </div>
           ) : (
-            <CodeLines lines={lines} highlighted={highlighted} target={target?.line} />
+            <CodeLines
+              lines={lines}
+              highlighted={highlighted}
+              target={target?.line}
+              scrollEl={box}
+              marks={marks}
+              current={currentHit}
+            />
           )}
         </DialogScroll>
         {file?.truncated && (

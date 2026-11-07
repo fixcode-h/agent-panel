@@ -1,5 +1,5 @@
 /** 视频截帧的接口（server/video/routes.ts）；单独一个文件，api.ts 已经很长 */
-import type { AutoMode, AutoProgress, EnhanceMethod, FfmpegStatus, VideoSession } from '@shared/video'
+import type { AutoMode, AutoProgress, EnhanceMethod, FfmpegStatus, VideoRange, VideoSession } from '@shared/video'
 import { json, request } from './api'
 
 type Ref = { key: string; path: string }
@@ -11,9 +11,9 @@ export const videoApi = {
   setPath: (path: string) => request<FfmpegStatus>('/video/ffmpeg/path', json('PUT', { path })),
   open: (path: string) => request<VideoSession>('/video/open', json('POST', { path })),
   manual: (v: Ref, time: number) => request<VideoSession>('/video/frames/manual', json('POST', { ...v, time })),
-  /** signal：用户点「停止」时断开请求，服务端跟着停掉 FFmpeg */
-  auto: (v: Ref, mode: AutoMode, count: number, signal?: AbortSignal) =>
-    request<VideoSession>('/video/frames/auto', { ...json('POST', { ...v, mode, count }), signal }),
+  /** signal：用户点「停止」时断开请求，服务端跟着停掉 FFmpeg；range 为空时整段截 */
+  auto: (v: Ref, mode: AutoMode, count: number, range: VideoRange | null, signal?: AbortSignal) =>
+    request<VideoSession>('/video/frames/auto', { ...json('POST', { ...v, mode, count, range }), signal }),
   /** 自动截帧进行到哪了（没在截时 progress 为 null） */
   progress: (key: string) =>
     request<{ progress: AutoProgress | null }>(`/video/frames/progress?key=${encodeURIComponent(key)}`),

@@ -14,13 +14,13 @@ import {
   autoProgressOf,
   clearEnhanced,
   enhanceFrames,
-  enhanceMethods,
   manualFrame,
   openVideo,
   previewAt,
   removeFrames,
   streamable,
 } from './frames.ts'
+import { enhanceMethods } from './enhance.ts'
 
 const MIME: Record<string, string> = {
   '.mp4': 'video/mp4',
@@ -32,7 +32,16 @@ const MIME: Record<string, string> = {
   '.avi': 'video/x-msvideo',
 }
 
-type Body = { key?: string; path?: string; time?: number; mode?: string; count?: number; ids?: string[] }
+type Body = {
+  key?: string
+  path?: string
+  time?: number
+  mode?: string
+  count?: number
+  ids?: string[]
+  /** 自动截帧的范围（秒）；不传就是整段 */
+  range?: { start?: number; end?: number } | null
+}
 
 export function videoApi() {
   const r = new Hono()
@@ -127,7 +136,16 @@ export function videoApi() {
     const b = await body(c)
     const mode = (AUTO_MODES as readonly string[]).includes(b.mode ?? '') ? (b.mode as AutoMode) : 'uniform'
     try {
-      return c.json(await autoFrames(String(b.key), String(b.path ?? ''), mode, Number(b.count ?? 8), c.req.raw.signal))
+      return c.json(
+        await autoFrames(
+          String(b.key),
+          String(b.path ?? ''),
+          mode,
+          Number(b.count ?? 8),
+          c.req.raw.signal,
+          b.range && typeof b.range === 'object' ? b.range : null,
+        ),
+      )
     } catch (e) {
       return c.json(fail(e), 400)
     }
