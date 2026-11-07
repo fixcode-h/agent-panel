@@ -202,10 +202,7 @@ test('六步流程：每步交一版等确认，确认了才跑下一步；改�
   // 交付：换成 21:9、16:10、4:3 排一遍，锚点推断对了就没有跑出画面、叠在一起的
   await runStep('deliver', ctx)
   const adapt = stepOf(d.restore, 'deliver').versions.at(-1)!.card
-  assert.ok(
-    adapt.metrics.length === 3 && adapt.metrics.every((m) => m.ok),
-    JSON.stringify(adapt.warnings),
-  )
+  assert.ok(adapt.metrics.length === 3 && adapt.metrics.every((m) => m.ok), JSON.stringify(adapt.warnings))
   // 重跑拆解：出第 2 版，带上和上一版的差别；改元素让后面做过的都标成要更新
   await runStep('elements', ctx, '标题漏了')
   assert.equal(stepOf(d.restore, 'elements').versions.at(-1)?.feedback, '标题漏了')

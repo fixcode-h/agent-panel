@@ -116,4 +116,28 @@ await runShard(import.meta.filename, async ({ base, page, check }) => {
   await confirm('build')
   await confirm('verify')
   assert.equal(await p.locator('[data-restore-verify] [data-check="bad"]').count(), 0, 'PSD 校验有没对上的元素')
+
+  // 网页还原：同一份 PSD 按网页搭，搭成 flex 的 Frame 树，校验全部对上
+  await p.goto(base + '#/design/new')
+  await p.getByRole('radio', { name: '网页 UI（HTML / CSS）' }).click()
+  await p.getByRole('radio', { name: '照原画还原' }).click()
+  await p.locator('[data-restore-art]').setInputFiles({
+    name: 'page.psd',
+    mimeType: 'image/vnd.adobe.photoshop',
+    buffer: samplePsd(),
+  })
+  await p.getByRole('button', { name: '开始还原' }).click()
+  await p.locator('[data-restore-card="source"]').waitFor()
+  await confirm('elements')
+  await confirm('assets')
+  await confirm('build')
+  await check(p, '还原-网页-搭建', ['flex 容器'])
+  await confirm('verify')
+  assert.equal(await p.locator('[data-restore-verify] [data-check="bad"]').count(), 0, '网页校验有没对上的元素')
+  await confirm('deliver')
+  await p.locator('[data-restore-confirm]').click()
+  await p.locator('[data-restore-card="deliver"][data-status="done"]').waitFor()
+  await p.locator('[data-restore-open-canvas]').click()
+  await p.locator('[data-restore-card]').waitFor({ state: 'detached' })
+  await check(p, '还原-网页-画布', [])
 })

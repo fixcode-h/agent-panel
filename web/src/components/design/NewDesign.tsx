@@ -43,7 +43,7 @@ export function NewDesign({ projectId }: { projectId?: string }) {
   const [mode, setMode] = useState<'chat' | 'restore'>('chat')
   const [art, setArt] = useState<Awaited<ReturnType<typeof artToPng>>>()
   const pick = useRef<HTMLInputElement>(null)
-  const restore = kind === 'game' && mode === 'restore'
+  const restore = mode === 'restore'
   useEffect(() => {
     if (!pid && projects[0]) setPid(projects[0].id)
   }, [pid, projects])
@@ -134,78 +134,76 @@ export function NewDesign({ projectId }: { projectId?: string }) {
                 ]}
               />
             </div>
-            {kind === 'game' && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-body font-medium">{t('做法')}</span>
-                <Segmented
-                  label={t('做法')}
-                  value={mode}
-                  onChange={setMode}
-                  options={[
-                    { id: 'chat', label: t('和 AI 对话设计') },
-                    { id: 'restore', label: t('照原画还原') },
-                  ]}
-                />
-                {restore && (
-                  <>
-                    <span className="text-footnote text-subtle">
-                      {t(
-                        '上传一张画好的界面原画：按步骤拆出元素、从原画抠切图、搭成位置锁定的控件树，每一步你确认了才往下走。',
-                      )}
-                    </span>
-                    <input
-                      ref={pick}
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp,.psd"
-                      className="hidden"
-                      data-restore-art
-                      onChange={(e) => {
-                        const f = e.target.files?.[0]
-                        e.target.value = ''
-                        if (f)
-                          artToPng(f)
-                            .then((a) => {
-                              setArt(a)
-                              // 原画的宽高比和预设尺寸都对不上时，设计稿就用原画的尺寸
-                              if (!title.trim()) setTitle(f.name.replace(/\.\w+$/, ''))
-                            })
-                            .catch((err) => toast.error(t('读不出这张图：{error}', { error: (err as Error).message })))
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => pick.current?.click()}
-                      className="mt-1 flex h-28 cursor-pointer items-center justify-center gap-3 overflow-hidden rounded-xl border border-dashed border-line-strong bg-panel text-body text-muted transition-colors hover:bg-hover hover:text-fg"
-                    >
-                      {art?.psd ? (
-                        <>
-                          <Layers className="h-6 w-6" />
-                          <span className="text-footnote">
-                            {art.name}
-                            <br />
-                            {t('PSD：按图层还原，位置和切图直接取自图层')}
-                          </span>
-                        </>
-                      ) : art ? (
-                        <>
-                          <img src={art.data} alt="" className="h-full max-w-[60%] object-contain" />
-                          <span className="text-footnote">
-                            {art.name}
-                            <br />
-                            {art.width} × {art.height}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <ImageUp className="h-5 w-5" />
-                          {t('选择原画（PNG、JPG、WebP 或 PSD）')}
-                        </>
-                      )}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-body font-medium">{t('做法')}</span>
+              <Segmented
+                label={t('做法')}
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { id: 'chat', label: t('和 AI 对话设计') },
+                  { id: 'restore', label: t('照原画还原') },
+                ]}
+              />
+              {restore && (
+                <>
+                  <span className="text-footnote text-subtle">
+                    {t(
+                      '上传一张画好的界面原画：按步骤拆出元素、从原画抠切图、搭成位置锁定的控件树，每一步你确认了才往下走。',
+                    )}
+                  </span>
+                  <input
+                    ref={pick}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,.psd"
+                    className="hidden"
+                    data-restore-art
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      e.target.value = ''
+                      if (f)
+                        artToPng(f)
+                          .then((a) => {
+                            setArt(a)
+                            // 原画的宽高比和预设尺寸都对不上时，设计稿就用原画的尺寸
+                            if (!title.trim()) setTitle(f.name.replace(/\.\w+$/, ''))
+                          })
+                          .catch((err) => toast.error(t('读不出这张图：{error}', { error: (err as Error).message })))
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => pick.current?.click()}
+                    className="mt-1 flex h-28 cursor-pointer items-center justify-center gap-3 overflow-hidden rounded-xl border border-dashed border-line-strong bg-panel text-body text-muted transition-colors hover:bg-hover hover:text-fg"
+                  >
+                    {art?.psd ? (
+                      <>
+                        <Layers className="h-6 w-6" />
+                        <span className="text-footnote">
+                          {art.name}
+                          <br />
+                          {t('PSD：按图层还原，位置和切图直接取自图层')}
+                        </span>
+                      </>
+                    ) : art ? (
+                      <>
+                        <img src={art.data} alt="" className="h-full max-w-[60%] object-contain" />
+                        <span className="text-footnote">
+                          {art.name}
+                          <br />
+                          {art.width} × {art.height}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <ImageUp className="h-5 w-5" />
+                        {t('选择原画（PNG、JPG、WebP 或 PSD）')}
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <span className="text-body font-medium">{t('项目')}</span>

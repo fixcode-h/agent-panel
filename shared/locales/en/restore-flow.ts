@@ -136,4 +136,14 @@ export const EN_RESTORE_FLOW: Record<string, string> = {
     'Built {n} widgets with {c} repeated groups turned into sub-widgets; every position follows its element box and is locked',
   按钮四态: 'Button states',
   自动修正: 'Auto-fixed',
+  '自动修正：{n} 个容器按 flex 排会跑位，改成了绝对定位':
+    'Auto-fix: {n} containers drifted under flex layout and now use absolute positioning',
+  '{n} 个容器推断不出横排或竖排，用了绝对定位':
+    '{n} containers fit neither a row nor a column and use absolute positioning',
+  '搭出 {n} 个控件：{f} 个容器用 flex 排，{a} 个绝对定位':
+    'Built {n} widgets: {f} containers use flex, {a} use absolute positioning',
+  'flex 容器': 'Flex containers',
+  'CSS 画的底框': 'CSS-drawn boxes',
+  设计变量: 'Design tokens',
+  '颜色 {c} 档，字号 {s} 档': '{c} colors, {s} font sizes',
 }

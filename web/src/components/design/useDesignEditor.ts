@@ -89,7 +89,12 @@ export function useDesignEditor(id: string) {
           return next
         }
         const images = mergeImages(cur.images, d.images, deleted.current)
-        return JSON.stringify(images) === JSON.stringify(cur.images) ? cur : { ...cur, images }
+        if (JSON.stringify(images) === JSON.stringify(cur.images)) return cur
+        const next = { ...cur, images }
+        // 合进来的是服务端已有的图（还原切图、生成结果）：页面本来没改动时不算改动，
+        // 否则会拿旧版本号白存一次，服务端版本一更新就报「修改没有存上」
+        if (JSON.stringify(cur) === saved.current) saved.current = JSON.stringify(next)
+        return next
       })
     },
     [setDesigns],

@@ -3,6 +3,8 @@ import { hasAlpha, type Img } from '../raster.ts'
 import type { Design, DesignImage } from '../design.ts'
 import { walk, type Component } from '../umg.ts'
 import { checkAdapt } from './adapt.ts'
+import { buildWeb, webImages } from './build-web.ts'
+import { flatStyle } from './css.ts'
 import { extractAssets } from './assets.ts'
 import { deriveState } from './states.ts'
 import { compileRestore } from './compile.ts'
@@ -11,6 +13,7 @@ import { findGroups } from './grid.ts'
 import { applyLabels, buildLabelPrompt, type LabelReply } from './label.ts'
 import { drawLabels } from './overlay.ts'
 import {
+  CONTAINER_KINDS,
   RESTORE_STEPS,
   emptyRestore,
   markStale,
@@ -160,8 +163,9 @@ export async function runStep(step: RestoreStep, ctx: RestoreCtx, feedback = '')
       card = runVerify(d, ctx.thresholds, r)
       break
     case 'deliver': {
-      // 换几种宽高比排一遍，看锚点对不对
-      const adapt = checkAdapt({ root: d.root, components: d.components, data: d.data, size: d.designSize })
+      // 换几种宽高比排一遍，看锚点对不对（网页的断点要在画布里切到平板、手机看）
+      const adapt =
+        d.kind === 'web' ? [] : checkAdapt({ root: d.root, components: d.components, data: d.data, size: d.designSize })
       const issues = adapt.flatMap((a) => a.issues)
       card = {
         conclusion: r.score?.passed
@@ -354,7 +358,15 @@ async function runAssets(ctx: RestoreCtx, r: RestoreState): Promise<StepCard> {
   }
   for (const s of x.slices) if (s.same) imageOf.set(s.element, imageOf.get(s.same)!)
   d.images = [...d.images.filter((i) => !i.id.startsWith(IMG_PREFIX)), ...images]
-  r.elements = r.elements.map((e) => ({ ...e, image: imageOf.get(e.id), sim: x.sims[e.id] }))
+  // 网页：纯色 + 描边 + 圆角的底框量成 CSS，不用切图
+  const web = d.kind === 'web'
+  const cssOf = (e: RestoreElement) => {
+    if (!web || !CONTAINER_KINDS.includes(e.kind)) return undefined
+    const own = sliceOf.get(e.id)
+    const sl = own?.same ? sliceOf.get(own.same) : own
+    return sl ? flatStyle(sl.img) : undefined
+  }
+  r.elements = r.elements.map((e) => ({ ...e, image: imageOf.get(e.id), sim: x.sims[e.id], css: cssOf(e) }))
   const bg = r.elements.find((e) => e.kind === 'background')
   r.plate = bg ? imageOf.get(bg.id) : undefined
   const sims = Object.values(x.sims)
@@ -381,6 +393,7 @@ async function runAssets(ctx: RestoreCtx, r: RestoreState): Promise<StepCard> {
 
 function runBuild(ctx: RestoreCtx, r: RestoreState): StepCard {
   const d = ctx.design
+  if (d.kind === 'web') return buildWeb(d, r, ctx.thresholds)
   const images: Record<string, string | undefined> = {}
   const nine: Record<string, DesignImage['nineSlice']> = {}
   const has = new Set(d.images.map((i) => i.id))
@@ -476,6 +489,7 @@ function runVerify(d: Design, th: RestoreThresholds, r: RestoreState): StepCard 
     designSize: d.designSize,
     names,
     sims: Object.fromEntries(r.elements.map((e) => [e.id, e.sim])),
+    ...(d.kind === 'web' ? { web: { images: webImages(d) } } : {}),
     thresholds: th,
     accepted,
   })

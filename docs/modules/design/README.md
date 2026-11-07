@@ -65,6 +65,17 @@
 - 像素操作（`blank`、`resize`、`crop`、`paste`、`contentBox`、`hasAlpha`、`chromaKey`、`removeFlatBackground`）挪到 `shared/raster.ts`，`server/image.ts` 重新导出；浏览器里的演示版和后面的检测算法共用。
 - 回归：`shared/restore/similarity.test.ts`、`server/design-crop.test.ts`、`scripts/ui/04-design.mjs`（滑块对照）。
 
+## 原画还原 P4：网页还原（2026-11-07）
+
+新建网页设计也能选「照原画还原」，六步和游戏一样，搭建那一步换成网页的编法。
+
+- 编译（`shared/restore/compile-web.ts` 的 `compileWeb`）：元素表 → Frame 树，参照 Figma 自动布局 → CSS flex。每个有子元素的容器用 `inferFlex` 试横排、竖排：间距一样（差 1px 以内）、交叉轴顶齐 / 居中 / 底齐，就写 `Direction` + `Gap` + `Padding` + `AlignItems`，子控件宽高写死像素；排不成的才 `Position: absolute` + `Pin: top-left`（相对内边距框，有描边时减掉边宽）。文字是 `Text`（字号 = 笔画高 / 0.85，行高按框高），其余是 `Picture`（`Fit: fill`）。没有子元素的容器不记排法。
+- CSS 化（`shared/restore/css.ts` 的 `flatStyle`）：切图那一步给网页的容器量一下，中间八成九成七以上是同一个颜色的，量出底色、描边宽和颜色、圆角写进元素的 `css`，搭建时写成 `Background` / `BorderWidth` / `BorderColor` / `Radius`，不用切图；按钮的悬停用底色调亮。有渐变、纹理的照常用切图（悬停用派生的那张）。
+- 自动修正（`shared/restore/build-web.ts` 的 `buildWeb`）：编完用 `webLayoutTree` 按元素框核对（网页的位置门槛至少 3px），跑位的元素所在容器改成绝对定位重编，最多三轮。网页不抽子控件，上次游戏还原留下的 `rs-` 子控件和 `rs_` 数据集清掉。
+- 卡上：控件数、flex 容器占比、CSS 画的底框数、设计变量（颜色差 12 以内一档、字号差 1px 一档，`clusterColors` / `clusterSizes`）。交付不做宽高比检查（断点在画布里切）。
+- 界面：还原工作区盖着画布时不显示网页的预览宽度切换；编辑器合并服务端已有的图片时，页面没改动就不算改动（以前会拿旧版本号白存一次，还原改了版本号后报「修改没有存上」）。
+- 回归：`shared/restore/web.test.ts`（`inferFlex`、`flatStyle`、网页六步跑完校验全过、有 flex 容器、纯色框写成 CSS）、`scripts/ui/04b-restore.mjs`（演示里按网页还原一份 PSD 走完六步，打开画布）。
+
 ## 原画还原 P2：结构、状态、自动修正、多分辨率（2026-11-07）
 
 - 重复组抽子控件（`shared/restore/structure.ts` 的 `planGrids`，`compileRestore` 传 `structure` 时启用）：拆解量出的组（同一个父元素下、每格落在不同行列）编成 `UniformGridPanel`（`EntryWidgetClass` + `NumColumns` + `SlotPadding` = 间距的一半 + `DataSet`），子控件 `WBP_<名字>`（`Root.id` 以 `rs-` 开头，重新搭建时换掉，用户自己的子控件留着），数据集 id `rs_<组 id>`。每格最大的非文字元素当 `Icon`、第一段字当 `Count`，模板位置取各格中位数；底图只有一格不一样的是原画里的选中态（`Highlight` + `selected` 状态），好几格不一样的每格底图写进数据（`bg` 字段）。收进网格的元素在 `RestoreElement.grid` 记下它在网格里的框，校验按「网格位置 + 这一块」算。

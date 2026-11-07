@@ -1557,7 +1557,8 @@ function Designer({ id }: { id: string }) {
                 onClose={() => setCompare(undefined)}
               />
             )}
-            {server.kind === 'web' && (
+            {/* 还原工作区盖着画布时不显示预览宽度：它的层级比工作区高，会浮在切图上 */}
+            {server.kind === 'web' && view !== 'restore' && (
               <Segmented
                 tone="canvas"
                 size="sm"
