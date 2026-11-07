@@ -1087,6 +1087,28 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .waitFor({ state: 'detached', timeout: 5000 })
       .catch(() => errors.push('Chat 置顶：取消置顶后这条还留在「已置顶」组里'))
 
+    // 报错、警告卡片挂在回复体外面，要和回复正文左右对齐，不比正文往左多伸出一截（用户 2026-11-07 报）。
+    // 演示里这条聊天带三张报错卡片
+    await list.getByTitle('排查：侧栏任务的时间显示偶尔不对', { exact: true }).click()
+    await c
+      .locator('[role="alert"]')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => {})
+    const edges = await c.evaluate(() => {
+      const body = document.querySelector('.reply-body')
+      if (!body) return null
+      const r = body.getBoundingClientRect()
+      const left = r.left + parseFloat(getComputedStyle(body).paddingLeft)
+      const cards = [...document.querySelectorAll('[role="alert"]')].map((e) => e.getBoundingClientRect())
+      return { left, right: r.right, cards: cards.map((x) => [x.left, x.right]) }
+    })
+    if (!edges?.cards.length) errors.push('Chat 报错卡片：演示里那条聊天没画出报错卡片')
+    else if (edges.cards.some(([l, r]) => Math.abs(l - edges.left) > 1 || r > edges.right + 1))
+      errors.push(
+        `Chat 报错卡片：没和回复正文对齐（正文 ${edges.left}–${edges.right}，卡片 ${JSON.stringify(edges.cards)}）`,
+      )
+
     await list.getByTitle('React 19 的 use() 怎么用', { exact: true }).click()
     const rail = c.locator('[data-chat-rail]')
     await rail.waitFor({ timeout: 10000 }).catch(() => errors.push('Chat 右栏：有代码、来源和附件的聊天没有打开右栏'))

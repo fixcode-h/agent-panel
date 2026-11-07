@@ -96,7 +96,8 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Badge } from '@/components/ui/badge'
 import { StatusPill } from '@/components/ui/status-pill'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
-import { AgentMessage, DeliveryLine, NoteMessage } from './Messages'
+import { AgentMessage, DeliveryLine } from './Messages'
+import { NoteMessage } from './SystemNote'
 import { ReceivedRow } from './PeerMessage'
 import { LiveStats } from './LiveStats'
 import { AnalyzeDialog } from './Evolution'
@@ -2269,10 +2270,9 @@ export function TaskView({
           <InlineRoutes msgId={b.m.id} inline={false} />
         </Fragment>
       )
+    // 报错、警告卡片挂在回复体外面：缩进到和回复正文对齐，不比正文往左多伸出一截
     if (b.m.role === 'system')
-      return (
-        <NoteMessage key={b.m.id} m={b.m} msgs={task.messages} task={task} className="justify-center text-center" />
-      )
+      return <NoteMessage key={b.m.id} m={b.m} task={task} className="justify-center text-center" indent />
     return <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
   }
   // 一轮回复和后面的用户消息放同一个容器：吸顶署名的粘性包含块是它，会一直保持到下一段回复头
