@@ -30,19 +30,21 @@ export interface DiagnosisCard {
 
 /**
  * 存下来的旧报告没有 2026-11-07 加的字段（证据链、具体改动、方案判定……）：渲染前补上默认值。
- * 服务端读盘不过 schema，演示版的数据在浏览器里，都可能是旧形状
+ * 服务端读盘不过 schema，演示版的数据在浏览器里，都可能是旧形状。
+ * 就地补、不复制：列表里按对象认第几份（indexOf、causeInPlan），复制出来的对象认不出；补的只是空的默认值
  */
 export function fillDiagnosis(d: Diagnosis): Diagnosis {
-  const fill = <T extends { outcomes?: unknown[] } | undefined>(c: T) => c && { ...c, outcomes: c.outcomes ?? [] }
-  return {
-    ...d,
-    chain: d.chain ?? [],
-    changes: d.changes ?? [],
-    whatChanged: d.whatChanged ?? '',
-    options: (d.options ?? []).map((o) => ({ ...o, grades: o.grades ?? {}, touches: o.touches ?? [] })),
-    collect: fill(d.collect) as Diagnosis['collect'],
-    awaiting: d.awaiting && { ...d.awaiting, collect: fill(d.awaiting.collect) as Diagnosis['collect'] },
+  d.chain ??= []
+  d.changes ??= []
+  d.whatChanged ??= ''
+  d.options ??= []
+  for (const o of d.options) {
+    o.grades ??= {}
+    o.touches ??= []
   }
+  if (d.collect) d.collect.outcomes ??= []
+  if (d.awaiting?.collect) d.awaiting.collect.outcomes ??= []
+  return d
 }
 
 const first = (s: string) => s.trim().split('\n')[0]?.trim() ?? ''
@@ -169,7 +171,8 @@ function attentionOf(d: Diagnosis, list: Diagnosis[] | undefined, changed?: stri
 }
 
 export function diagnosisCard(d: Diagnosis, opts: { list?: Diagnosis[]; changed?: string[] } = {}): DiagnosisCard {
-  d = fillDiagnosis(d)
+  fillDiagnosis(d)
+  opts.list?.forEach(fillDiagnosis)
   const phase = phaseOf(d)
   const withCause = !!opts.list && causeInPlan(d, opts.list)
   const files = d.changes.length || d.files.length

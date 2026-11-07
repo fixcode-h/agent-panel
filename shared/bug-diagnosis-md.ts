@@ -198,8 +198,9 @@ export interface DiagnosisView {
 }
 
 export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisViewOpts = {}): DiagnosisView {
-  d = fillDiagnosis(d)
-  if (prev) prev = fillDiagnosis(prev)
+  fillDiagnosis(d)
+  if (prev) fillDiagnosis(prev)
+  opts.list?.forEach(fillDiagnosis)
   const phase = phaseOf(d)
   // 快速级别根因和方案合成的一版：根因那几节也是这一版要审的
   const withCause = !!opts.list && causeInPlan(d, opts.list)
