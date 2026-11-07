@@ -37,7 +37,7 @@ import {
 } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { apiModelInfo, apiModelKey } from '../shared/model-catalog.ts'
-import { apiBalanceUrl, apiBaseUrl } from '../shared/api-vendors.ts'
+import { ANTHROPIC_VERSION, apiBalanceUrl, apiBaseUrl, apiModelsRequest } from '../shared/api-vendors.ts'
 import { parseApiBalance, type ApiBalance } from '../shared/api-balance.ts'
 import { stripAnsi } from '../shared/ansi.ts'
 import { t } from '../shared/i18n.ts'
@@ -1072,8 +1072,6 @@ async function startLogin(def: CliDefinition): Promise<LoginJob> {
 
 // ---- 全局 API：读接口的模型列表 ----
 
-/** Anthropic 接口要求的版本头，列模型和发消息两处都用它 */
-const ANTHROPIC_VERSION = '2023-06-01'
 /** 探测用的提示词极短、输出只给 1 个 token：只为确认这个模型能通，不花额度 */
 const PROBE_PROMPT = 'ping'
 const PROBE_MAX_TOKENS = 1
@@ -1089,15 +1087,7 @@ export async function fetchApiModels(
 ) {
   const base = apiBaseUrl(api).replace(/\/+$/, '')
   if (!base) throw new Error(t('先填接口地址'))
-  const url =
-    api.protocol === 'anthropic' ? `${base}${/\/v1$/.test(base) ? '' : '/v1'}/models?limit=1000` : `${base}/models`
-  const headers: Record<string, string> =
-    api.protocol === 'anthropic'
-      ? {
-          'anthropic-version': ANTHROPIC_VERSION,
-          ...(api.authHeader === 'bearer' ? { authorization: `Bearer ${api.apiKey}` } : { 'x-api-key': api.apiKey }),
-        }
-      : { authorization: `Bearer ${api.apiKey}` }
+  const { url, headers } = apiModelsRequest(api, base)
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) }).catch((e: Error) => {
     throw new Error(t('连不上接口：{error}', { error: e.message }))
   })

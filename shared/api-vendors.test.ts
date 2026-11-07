@@ -1,7 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ApiConfig, apiVars } from './accounts.ts'
-import { apiBalanceUrl, apiBaseUrl, findVendor, isVendorUrl, vendorEndpoint } from './api-vendors.ts'
+import {
+  apiBalanceUrl,
+  apiVendorModelsUrl,
+  apiBaseUrl,
+  findVendor,
+  isVendorUrl,
+  vendorEndpoint,
+} from './api-vendors.ts'
 
 /** 选了 DeepSeek、接口地址留空的一条 API：地址全按厂家默认解析 */
 const deepseek = ApiConfig.parse({ id: 'a1', name: 'DeepSeek', protocol: 'openai-chat' })
@@ -61,4 +68,18 @@ test('余额接口：厂家定义里有才能查', () => {
   // OpenDesign 没有查证到公开的余额接口，定义里不加 balance，界面上就说明不支持查询
   assert.equal(apiBalanceUrl({ name: 'OpenDesign' }), '')
   assert.equal(apiBalanceUrl({ name: '自定义 API' }), '')
+})
+
+test('列模型接口：DeepSeek 的 Anthropic 接口没有 /v1/models，用厂家默认地址时改走它的 /models', () => {
+  const ds = { name: 'DeepSeek', protocol: 'anthropic' as const, baseUrl: '' }
+  assert.equal(apiVendorModelsUrl(ds), 'https://api.deepseek.com/models')
+  // 旧版本把厂家地址写进了真实值，同样认
+  assert.equal(
+    apiVendorModelsUrl({ ...ds, baseUrl: 'https://api.deepseek.com/anthropic/' }),
+    'https://api.deepseek.com/models',
+  )
+  assert.equal(apiVendorModelsUrl({ ...ds, protocol: 'openai-chat' }), 'https://api.deepseek.com/models')
+  // 用户自己填了地址（中转站）就照用户的地址列，不改道
+  assert.equal(apiVendorModelsUrl({ ...ds, baseUrl: 'https://relay.example.com/anthropic' }), '')
+  assert.equal(apiVendorModelsUrl({ ...ds, name: 'OpenAI' }), '')
 })
