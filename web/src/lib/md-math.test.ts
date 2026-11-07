@@ -18,6 +18,8 @@ test('行内 $…$ 和 \\(…\\) 变成行内公式占位，原文留着', () =>
 test('独占一块的 $$…$$ 和 \\[…\\] 变成块级公式', () => {
   assert.match(html('$$\nE = mc^2\n$$'), /<div class="md-math md-math-block" data-tex="E = mc\^2">/)
   assert.match(html('\\[\n\\sum_i x_i\n\\]'), /<div class="md-math md-math-block" data-tex="\\sum_i x_i">/)
+  // 紧跟在一段正文后面（start 只看到第一个空行，长文档才不会每段都扫到文末）
+  assert.match(html('一段说明\n\n$$\nE = mc^2\n$$'), /<p>一段说明<\/p>\n?<div class="md-math md-math-block"/)
 })
 
 test('金额和代码里的 $ 不当成公式', () => {
