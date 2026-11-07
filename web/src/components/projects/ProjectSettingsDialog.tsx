@@ -49,6 +49,7 @@ import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { IconButton } from '@/components/ui/icon-button'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { EmptyPanel } from '@/components/ui/empty-panel'
@@ -1439,7 +1440,7 @@ function Collapsible({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <section className="rounded-xl bg-card shadow-card">
+    <Card as="section">
       <div className="flex items-center gap-3 px-3.5 py-2.5">
         <button
           type="button"
@@ -1465,7 +1466,7 @@ function Collapsible({
         {actions}
       </div>
       {open && children && <div className="border-t px-3.5 py-3.5">{children}</div>}
-    </section>
+    </Card>
   )
 }
 
