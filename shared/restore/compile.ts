@@ -1,4 +1,15 @@
-import { COMMON_PROPS, WIDGETS, brush, defaultSlot, uniqueName, type Widget, type WidgetType } from '../umg.ts'
+import type { DataSet } from '../design-data.ts'
+import {
+  COMMON_PROPS,
+  WIDGETS,
+  brush,
+  defaultSlot,
+  uniqueName,
+  type Component,
+  type Widget,
+  type WidgetType,
+} from '../umg.ts'
+import { anchorSlot, gridWidget, planGrids } from './structure.ts'
 import { CONTAINER_KINDS, artScale, type Box, type RestoreElement, type RestoreState } from './schema.ts'
 
 /**
@@ -17,12 +28,26 @@ export interface CompileInput {
   images: Record<string, string | undefined>
   /** 每张切图的九宫格边距（比例 0~1），有的按 Box 方式拉伸 */
   nineSlice?: Record<string, { Left: number; Top: number; Right: number; Bottom: number } | undefined>
+  /** 结构推断：重复组抽子控件、挂在根上的控件推断锚点（不给就是最初的逐个绝对定位） */
+  structure?: {
+    /** 已经被占用的子控件名、数据集名 */
+    taken?: Set<string>
+    /** 不抽子控件的组（自动修正时整组对不上的） */
+    flat?: Set<string>
+    /** 不收进子控件、单独摆的元素（自动修正时和模板差太多的） */
+    detached?: Set<string>
+  }
 }
 
 export interface Compiled {
   root: Widget
   /** 元素 id → 控件名（校验按名字找控件的位置） */
   names: Record<string, string>
+  /** 重复组抽出来的子控件和它们的数据集 */
+  components: Component[]
+  sets: DataSet[]
+  /** 收进网格的元素：网格控件名、行列数、在网格里的框（设计稿像素，相对网格左上角） */
+  grids: Record<string, { grid: string; rel: Box }>
 }
 
 /** 控件 id 跟着元素走：画布上点控件能找回是哪个元素 */
@@ -114,6 +139,29 @@ export function compileRestore(i: CompileInput): Compiled {
     return w
   }
 
+  const plans = i.structure
+    ? planGrids({
+        elements: live,
+        groups: restore.groups,
+        parents,
+        k,
+        images: i.images,
+        nineSlice: i.nineSlice,
+        taken: i.structure.taken ?? new Set(),
+        flat: i.structure.flat,
+        detached: i.structure.detached,
+        fontSize: fontSizeOf,
+      })
+    : []
+  // 收进网格的格子和格子里的图标、数量不单独编；格子里其余的元素挂到网格的父控件下
+  const skip = new Set(plans.flatMap((p) => [...p.cells.map((c) => c.e.id), ...p.absorbed.keys()]))
+  const cellSet = new Set(plans.flatMap((p) => p.cells.map((c) => c.e.id)))
+  const parentOf = (id: string) => {
+    let p = parents.get(id)
+    while (p && cellSet.has(p)) p = parents.get(p)
+    return p
+  }
+
   const root = base('CanvasPanel', 'r-root', 'Root', undefined)
   const bg = live.find((e) => e.kind === 'background')
   if (bg && i.images[bg.id]) root.Children!.push(bgImage(bg, bg.name || 'Bg_Main'))
@@ -125,7 +173,8 @@ export function compileRestore(i: CompileInput): Compiled {
     .sort((a, b) => area(b.box) - area(a.box) || a.box.y - b.box.y || a.box.x - b.box.x)
   const holder = new Map<string, { widget: Widget; box: Box }>()
   for (const e of order) {
-    const pid = parents.get(e.id)
+    if (skip.has(e.id)) continue
+    const pid = parentOf(e.id)
     const parent = (pid && holder.get(pid)) || {
       widget: root,
       box: {
@@ -137,7 +186,8 @@ export function compileRestore(i: CompileInput): Compiled {
     }
     const local = scaled({ x: e.box.x - parent.box.x, y: e.box.y - parent.box.y, w: e.box.w, h: e.box.h })
     const name = nameOf(e)
-    const slot = canvasSlot(local)
+    // 挂在根上的按离哪条边近定锚点（设计尺寸下位置不变）
+    const slot = i.structure && parent.widget === root ? anchorSlot(local, designSize) : canvasSlot(local)
     let w: Widget
     if (e.kind === 'text') {
       w = base('TextBlock', widgetIdOf(e.id), name, slot)
@@ -188,8 +238,26 @@ export function compileRestore(i: CompileInput): Compiled {
     parent.widget.Children!.push(w)
   }
   const boxes = new Map(live.map((e) => [widgetIdOf(e.id), e.box]))
+  const grids: Compiled['grids'] = {}
+  for (const p of plans) {
+    const holderOf = p.parent ? holder.get(p.parent) : undefined
+    const parentBox = holderOf ? scaled(holderOf.box) : { x: 0, y: 0 }
+    const local = { ...p.box, x: p.box.x - parentBox.x, y: p.box.y - parentBox.y }
+    const name = uniqueName(p.name, names)
+    names.add(name)
+    const w = gridWidget(p, local, name)
+    w.id = widgetIdOf(`grid-${p.group.id}`)
+    if (!holderOf && i.structure) w.Slot = anchorSlot(local, designSize)
+    ;(holderOf?.widget ?? root).Children!.push(w)
+    // 网格按格子的原画框参与排序
+    boxes.set(w.id, { x: p.box.x / k.x, y: p.box.y / k.y, w: p.box.w / k.x, h: p.box.h / k.y })
+    for (const [id, rel] of p.rel) {
+      map[id] = name
+      grids[id] = { grid: name, rel }
+    }
+  }
   reorder(root, boxes)
-  return { root, names: map }
+  return { root, names: map, components: plans.map((p) => p.comp), sets: plans.map((p) => p.set), grids }
 }
 
 const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h

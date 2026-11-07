@@ -1,4 +1,5 @@
 import { layoutTree } from '../umg-layout.ts'
+import { webLayoutTree } from '../web-layout.ts'
 import type { Component, Widget } from '../umg.ts'
 import { artScale, type ElementCheck, type RestoreScore, type RestoreState } from './schema.ts'
 import type { RestoreThresholds } from './thresholds.ts'
@@ -21,12 +22,16 @@ export function verifyRestore(o: {
   thresholds: RestoreThresholds
   /** 用户点过「接受差异」的元素 */
   accepted?: Set<string>
+  /** 网页设计：按 CSS flex 排版算位置；浏览器排字有 1~2px 误差，位置门槛至少 3px */
+  web?: { images: { id: string; width: number; height: number }[] }
 }): RestoreScore {
-  const { restore, thresholds: th } = o
+  const { restore } = o
+  const th = o.web ? { ...o.thresholds, posPx: Math.max(3, o.thresholds.posPx) } : o.thresholds
   const k = artScale(restore, o.designSize)
-  const rects = new Map(
-    (layoutTree(o.root, { size: o.designSize, components: o.components ?? [] }) ?? []).map((r) => [r.name, r]),
-  )
+  const list = o.web
+    ? webLayoutTree(o.root, { size: o.designSize, components: o.components ?? [], images: o.web.images })
+    : (layoutTree(o.root, { size: o.designSize, components: o.components ?? [] }) ?? [])
+  const rects = new Map(list.map((r) => [r.name, r]))
   const items: ElementCheck[] = []
   let posOk = 0
   let posTotal = 0
@@ -36,7 +41,12 @@ export function verifyRestore(o: {
   for (const e of restore.elements) {
     if (e.hidden || e.kind === 'background') continue
     const widget = o.names[e.id] ?? ''
-    const r = rects.get(widget)
+    const at = rects.get(widget)
+    // 网格里的元素：网格的位置加上它在网格里的那一块
+    const r =
+      at && e.grid && e.grid.grid === widget
+        ? { x: at.x + e.grid.rel.x, y: at.y + e.grid.rel.y, w: e.grid.rel.w, h: e.grid.rel.h }
+        : at
     posTotal++
     const want = { x: e.box.x * k.x, y: e.box.y * k.y, w: e.box.w * k.x, h: e.box.h * k.y }
     const d = r

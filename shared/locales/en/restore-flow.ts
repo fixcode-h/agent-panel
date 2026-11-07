@@ -124,4 +124,26 @@ export const EN_RESTORE_FLOW: Record<string, string> = {
   'PSD 图层文件读不出来：{file}': 'Cannot read the PSD layer file: {file}',
   'PSD 太大（最多 200 MB）': 'The PSD is too large (200 MB max)',
   'PSD 读不出来：{error}': 'Cannot read the PSD: {error}',
+  '{ratio} 下 {w} 跑出了画面': '{w} goes off screen at {ratio}',
+  '{ratio} 下 {w} 和 {o} 叠在一起了': '{w} overlaps {o} at {ratio}',
+  '{n} 处问题': '{n} issues',
+  派生状态: 'Derived states',
+  '自动修正：{n} 个元素和子控件的模板位置差太多，挪出来单独摆':
+    'Auto-fix: {n} elements were too far from the sub-widget template and are placed on their own',
+  '自动修正：{n} 组格子大小、间距不齐，没抽成子控件':
+    'Auto-fix: {n} groups have uneven cell sizes or spacing and were not made into sub-widgets',
+  '搭出 {n} 个控件，{c} 组重复的抽成了子控件，位置全部按元素框摆好并锁住':
+    'Built {n} widgets with {c} repeated groups turned into sub-widgets; every position follows its element box and is locked',
+  按钮四态: 'Button states',
+  自动修正: 'Auto-fixed',
+  '自动修正：{n} 个容器按 flex 排会跑位，改成了绝对定位':
+    'Auto-fix: {n} containers drifted under flex layout and now use absolute positioning',
+  '{n} 个容器推断不出横排或竖排，用了绝对定位':
+    '{n} containers fit neither a row nor a column and use absolute positioning',
+  '搭出 {n} 个控件：{f} 个容器用 flex 排，{a} 个绝对定位':
+    'Built {n} widgets: {f} containers use flex, {a} use absolute positioning',
+  'flex 容器': 'Flex containers',
+  'CSS 画的底框': 'CSS-drawn boxes',
+  设计变量: 'Design tokens',
+  '颜色 {c} 档，字号 {s} 档': '{c} colors, {s} font sizes',
 }
