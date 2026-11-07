@@ -462,10 +462,11 @@ export function RunningNow({
               ) : act && openChild ? (
                 // 等你操作（request_user_action）：和子对话列表一样给「去操作」，在右栏打开它，
                 // 步骤和交回都在子对话自己的输入框上面
-                // 行窄时只留手势图标（按这一行自己的宽度，见 RowShell 的 container）：宽度先让给状态标签「等你操作」
+                // 行窄时只留手势图标、再窄就不放（整行本来就能点开它）：按这一行自己的宽度（见 RowShell 的 container），
+                // 宽度先让给状态标签「等你操作」
                 <Button
                   size="sm"
-                  className="h-6 shrink-0 px-1.5 text-xs @min-[480px]:px-2"
+                  className="h-6 shrink-0 px-1.5 text-xs @max-[360px]:hidden @min-[480px]:px-2"
                   aria-label={t('去操作')}
                   title={t('去操作')}
                   onClick={(e) => {

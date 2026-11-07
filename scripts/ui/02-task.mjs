@@ -268,8 +268,8 @@ await runShard(import.meta.filename, async (api) => {
       })
       // 另两行在等你处理：「排查路牌偏移」等你操作（request_user_action，行尾给「去操作」）、「购物车缓存方案」在提问，
       // 也要列（用户 2026-11-07 报：子对话等用户操作时父对话的子对话列表里没有它，见 child-line.ts 的 childNeedsYou）
-      if (boxes.runs.length !== 6)
-        errors.push(`运行区：应该列出 6 个子对话（5 个在跑、1 个等你操作），实际 ${boxes.runs.length} 个`)
+      if (boxes.runs.length !== 7)
+        errors.push(`运行区：应该列出 7 个子对话（5 个在跑、2 个等你处理），实际 ${boxes.runs.length} 个`)
       if (!boxes.runs.some((x) => x.includes('排查路牌偏移') && /等.{1,6}操作/.test(x)))
         errors.push('运行区：等你操作的子对话没有列出来，或者行上没有「等…操作」状态')
       if (!boxes.act) errors.push('运行区：等你操作的子对话行尾没有「去操作」按钮')
