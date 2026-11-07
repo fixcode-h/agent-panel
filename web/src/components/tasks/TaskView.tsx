@@ -2510,6 +2510,7 @@ export function TaskView({
                         onTask={apply}
                         kids={children}
                         noProject={noFiles}
+                        railGutter={RAIL_GUTTER}
                         env={
                           <EnvChip
                             compact

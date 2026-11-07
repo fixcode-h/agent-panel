@@ -61,6 +61,7 @@ import type { BugLevel } from './bug-diagnosis-schema.ts'
 import { resultLine, resultOf, runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
+import { bugRoutePart } from './bug-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
 import { orchAskPush, pushPolicyText } from './push-auth.ts'
 import { docRootText, plainDocRootText, p4DocsSkip, type DocRootInfo } from './doc-root.ts'
@@ -476,6 +477,8 @@ export interface Orchestra {
     message: string,
     step?: string,
     route?: RouteInput,
+    /** 把这个子对话正在处理的问题升级成用户报的 Bug（send_to_conversation 写了 kind: "bug"，ADR 0057） */
+    bug?: { level?: BugLevel },
   ): Promise<{ ok: boolean; info: string }>
   /** 调用者的角色挂了能力：可以 use_capability 就地加载它们的做法 */
   capabilities: boolean
@@ -726,7 +729,11 @@ export interface EngineHost {
     level?: BugLevel
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行 */
-  sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
+  sendToConversation?: (
+    id: string,
+    message: string,
+    bug?: { level?: BugLevel },
+  ) => Promise<{ ok: boolean; info: string }>
   /** 工作流运行的操作（父对话用，flow-run-orch.ts）：宿主在父对话名下起运行、补充、调整、终止、合回 */
   runs?: FlowRunHost
   /**
@@ -2720,7 +2727,7 @@ function makeOrchestra(
           : ''
       return { ok: r.ok, id: r.id, info: [r.info, wait, level].filter(Boolean).join('\n') }
     },
-    async sendToConversation(id, message, step, route) {
+    async sendToConversation(id, message, step, route, bug) {
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
       // 一条消息只交给一个子对话（用户 2026-10-24 定的）：同一段话逐个转给几个子对话，
@@ -2735,7 +2742,7 @@ function makeOrchestra(
           info: `这段话已经交给了子对话 ${other}，一条消息只交给一个子对话：选最相关的那一个交，别的子对话不用重复发。`,
         }
       noteHandOff(task.messages, handed, id.trim(), message)
-      const r = await host.sendToConversation(id.trim(), message)
+      const r = await host.sendToConversation(id.trim(), message, bug)
       if (!r.ok) handed.delete(message.trim())
       // 标题从子对话列表里取：补步骤时用它当标题（只看 id 的话计划里会出现「子对话：c1」这种没信息量的标题）
       const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''
@@ -3613,6 +3620,7 @@ async function conversationPrompt(
     buildPart(host),
     ...verifyPart(host),
     fixRoutePart(host, coordinator),
+    bugRoutePart(host, coordinator),
     editPart(host),
     backgroundPart(host),
     ...planPart(host, coordinator),
