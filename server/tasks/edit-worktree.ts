@@ -142,8 +142,7 @@ export function createEditWorktree(s: TasksScope) {
 
   /** 还在执行或正在启动的子对话 */
   async function busyChildren(parentId: string) {
-    return (await s.store.list())
-      .filter((x) => x.parentTaskId === parentId)
+    return (await s.store.childrenOf(parentId))
       .map((x) => s.live.get(x.id)?.task ?? x)
       .filter((x) => x.working || s.startQueue.has(x.id))
   }

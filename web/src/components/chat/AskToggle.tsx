@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { MessageCircleQuestion } from 'lucide-react'
 import type { TaskRequest } from '@shared/schema'
 import { api } from '@/lib/api'
+import { usePolling } from '@/lib/polling'
 import { useScopedSetting } from '@/lib/useScopedSetting'
 import { askUserDefault } from '@/lib/askUserDefault'
 import { useData } from '@/lib/data'
@@ -182,24 +183,22 @@ export function useNewAskUser() {
  */
 export function useScopeRequests(scope: string, active: boolean) {
   const [list, setList] = useState<TaskRequest[]>([])
+  const scopeRef = useRef(scope)
+  useLayoutEffect(() => {
+    scopeRef.current = scope
+  }, [scope])
   useEffect(() => {
-    if (!active) {
-      setList([])
-      return
-    }
-    let stop = false
-    const load = () =>
-      api
-        .asks(scope)
-        .then((l) => !stop && setList(l))
-        .catch(() => {})
-    void load()
-    const timer = setInterval(load, 1200)
-    return () => {
-      stop = true
-      clearInterval(timer)
-    }
-  }, [scope, active])
+    if (!active) setList([])
+  }, [active])
+  // 换了范围立即重查；返回前又换了范围的那次结果不要（按发出时的范围核对）
+  usePolling(
+    () => {
+      const at = scope
+      return api.asks(at).then((l) => at === scopeRef.current && setList(l))
+    },
+    active ? 1200 : null,
+    scope,
+  )
   const answer = async (id: string, r: { allow: boolean; answer?: string; answers?: string[] }) => {
     await api.answerAsk(id, r)
     setList((l) => l.filter((x) => x.id !== id))

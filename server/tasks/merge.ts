@@ -558,9 +558,7 @@ ${
    * 独立分支划的范围或已经改了的文件）时拒绝；能开始就记下声明的范围和工作区基线，结束时按它核对真实改动
    */
   async function beginInlineEdit(parent: Task, dir: string, files: string[], reason: string) {
-    const kids = (await sc.store.list())
-      .filter((x) => x.parentTaskId === parent.id)
-      .map((k) => sc.live.get(k.id)?.task ?? k)
+    const kids = (await sc.store.childrenOf(parent.id)).map((k) => sc.live.get(k.id)?.task ?? k)
     const merging = kids
       .filter((k) => k.wrapRequest && (k.wrapRequest.state === 'merging' || k.wrapRequest.state === 'testing'))
       .map((k) => k.title)
@@ -685,7 +683,7 @@ ${
    */
   /** 名下的子对话（计划对齐用，见 plan.ts 的 linkKids）：正在跑的用内存里的最新状态 */
   async function planKids(parentId: string): Promise<PlanKid[]> {
-    const kids = (await sc.store.list()).filter((x) => x.parentTaskId === parentId)
+    const kids = await sc.store.childrenOf(parentId)
     return kids.map((k) => {
       const cur = sc.live.get(k.id)?.task ?? k
       return {

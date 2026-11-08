@@ -1,20 +1,20 @@
+import { demoChildRows } from './demo-children'
 /**
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
-import { diagnosisPending } from '@shared/task'
 import { seedChatRail } from './demo-chat-rail'
 import { demoOwnedRun } from './demo-flow-run'
-import { bugStage, decideDiagnosis } from '@shared/bug-diagnosis'
+import { decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { demoFlowRun } from './demo-flow-run'
-import { descendantNeeds, pendingRequest } from '@shared/child-needs'
+import { descendantNeeds } from '@shared/child-needs'
 import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-summary'
 import { demoSettleAction, demoUserAction } from './demo-user-action'
-import { pendingAction, settleAction } from '@shared/user-action'
+import { settleAction } from '@shared/user-action'
 import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
@@ -153,23 +153,16 @@ import { stopHelper } from '@shared/engine'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
-  childActivity,
-  childLastActivity,
-  childStartedAt,
-  childWait,
   childFacts,
   closeFlow,
   convActive,
   convState,
   dropEndNotes,
   endRun,
-  helpersWorking,
   messagePage,
   taskMessageRev,
   newTask,
   questionAnswers,
-  runRunning,
-  taskGone,
   taskSummary,
   trackWait,
   trashLeftDays,
@@ -177,7 +170,7 @@ import {
   type TrashRow,
 } from '@shared/task'
 import { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK, messageHit, type SearchHit } from '@shared/task-search'
-import { openPlan, settlePlan } from '@shared/plan'
+import { settlePlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import {
@@ -3183,8 +3176,12 @@ function tasksRoute(
       // 名下还有在跑的子对话：和正式版一样补 childrenWorking——侧栏、输入框靠它说清在等什么，
       // 「继续执行」按钮也按它让位（演示版少了这个字段，这些界面分支永远走不到）
       const kids = new Map<string, number>()
+      // 和正式版一样：名下 CLI 还开着的子对话数，侧栏不点开父对话也能看出里面还开着 CLI
+      const kidsCli = new Map<string, number>()
       for (const k of tasks) {
-        if (!k.parentTaskId || !demoChildActive(k)) continue
+        if (!k.parentTaskId) continue
+        if (demoCliAlive(k)) kidsCli.set(k.parentTaskId, (kidsCli.get(k.parentTaskId) ?? 0) + 1)
+        if (!demoChildActive(k)) continue
         kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
       }
       // 和正式版一样：子对话在等你确认时父对话也是「等你处理」（见 shared/child-needs.ts）
@@ -3199,6 +3196,7 @@ function tasksRoute(
               ...t,
               cliAlive: demoCliAlive(t),
               childrenWorking: kids.get(t.id) ?? 0,
+              childrenCli: kidsCli.get(t.id) ?? 0,
               childrenNeeds: needs.get(t.id) ?? 0,
             }),
           )
@@ -3402,61 +3400,8 @@ function tasksRoute(
   }
   // 工作流运行的确认交给父对话（和正式版一样只是写信，演示版没有父对话的 CLI，直接回成功）
   if (sub === 'delegate' && method === 'POST') return { ok: true, info: '已交给父对话决定' }
-  if (sub === 'children' && method === 'GET')
-    return tasks
-      .filter((x) => x.parentTaskId === task.id)
-      .map((x) => {
-        const doing = childActivity(x)
-        const open = openPlan(x)
-        // 还在跑 / 排队的后台命令：和正式版一样，CLI 在等命令结果时也算还没做完
-        const background = (x.jobs ?? []).filter((j) => j.state === 'running' || j.state === 'queued').length
-        return {
-          id: x.id,
-          title: x.title,
-          status: x.status,
-          summary: x.summary,
-          working: x.working,
-          updatedAt: x.updatedAt,
-          // 进程还活着：正在跑的一定活着（演示里没有真的进程，就按 working 认）
-          cliAlive: demoCliAlive(x),
-          startedAt: childStartedAt(x),
-          // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
-          requests: (x.requests ?? []).length,
-          request: pendingRequest(x),
-          asking: x.parentAsks?.length ?? 0,
-          // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成；带上正在做的那一步
-          plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
-          // 和正式版一致：父对话的子对话栏靠这两项显示在做什么、多久没新输出
-          activity: doing,
-          lastActivityAt: childLastActivity(x),
-          // 和正式后端对齐：面板自动问过状态、还没回复时行上显示「已自动询问」
-          autoAsk: x.autoAsk,
-          // 和正式后端对齐：做完没看过 → 子对话行上画未读点（见 shared/task.ts 的 childDoneDot）
-          turnDoneAt: x.turnDoneAt ?? '',
-          turnSeenAt: x.turnSeenAt ?? '',
-          // 和正式后端对齐：运行区、悬浮层都靠这几项判断「还在跑 / 在等什么」
-          background,
-          workflow: runRunning(x),
-          diagnosis: diagnosisPending(x),
-          action: !!pendingAction(x),
-          bug: bugStage(x) || undefined,
-          helpers: helpersWorking(x),
-          unmerged: x.worktree?.state === 'active',
-          // 和正式后端对齐：独立分支目录里还有几个文件没提交（没真的 git，按工作区状态给一个固定的数）
-          dirty: x.worktree?.state === 'active' ? 1 : 0,
-          // 和正式后端对齐：这两项是不是已经用 git 核对过（演示版没有真的 git，给了值就算核对过）
-          worktreeChecked: true,
-          dir: x.worktree?.path ?? '',
-          wrapup: !!x.wrapRequest && x.wrapRequest.state !== 'failed',
-          branch: x.worktree?.branch ?? '',
-          stopReason: x.stopReason ?? '',
-          waiting: childWait(x, { background, cliAlive: demoCliAlive(x) }),
-          resolved: x.resolved === true,
-          analysis: x.analysis,
-          // 和正式后端对齐：归档 / 独立分支被删掉的条目不再算在跑（见 shared/task.ts 的 taskGone）
-          gone: taskGone(x),
-        }
-      })
+  // 和正式后端的 /children 一样的字段（行怎么拼见 demo-children.ts）
+  if (sub === 'children' && method === 'GET') return demoChildRows(task, tasks, demoCliAlive)
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
   if (sub === 'children' && method === 'POST' && rid === 'stop') return { stopped: 0 }
   // 终止一个子任务：和正式版一样走 stopHelper，排队的马上按「已终止」交回，在跑的这一步跑完后按终止交回
@@ -3811,7 +3756,16 @@ function tasksRoute(
   const withLive = { ...task, cliAlive: demoCliAlive(task) }
   const full = task.parentTaskId
     ? withLive
-    : { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
+    : (() => {
+        // 和正式后端的单任务一样带上三项计数（server/tasks/children.ts）：子对话刷新信号靠它们
+        const kids = tasks.filter((x) => x.parentTaskId === task.id)
+        return {
+          ...withLive,
+          childrenWorking: kids.filter(demoChildActive).length,
+          childrenCli: kids.filter(demoCliAlive).length,
+          childrenNeeds: descendantNeeds(tasks).get(task.id) ?? 0,
+        }
+      })()
   // 和正式后端一致：带 limit 时只回最近一段，往前翻页用 before（见 shared/task.ts 的 messagePage）
   const limit = Number(query.get('limit') ?? '')
   if (!Number.isInteger(limit) || limit <= 0) return full

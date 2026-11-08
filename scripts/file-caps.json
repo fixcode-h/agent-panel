@@ -12,7 +12,7 @@
     "shared/builtin/agents.ts": 1600,
     "shared/builtin/legacy.ts": 1800,
     "shared/design.ts": 1550,
-    "shared/engine.ts": 4050,
+    "shared/engine.ts": 3450,
     "shared/local-image.ts": 1450,
     "shared/plan.ts": 1650,
     "shared/schema.ts": 2800,
@@ -24,11 +24,11 @@
     "web/src/components/design/DesignChat.tsx": 1450,
     "web/src/components/files/FileTree.tsx": 1500,
     "web/src/components/projects/ProjectSettingsDialog.tsx": 2050,
-    "web/src/components/tasks/TaskView.tsx": 2800,
+    "web/src/components/tasks/TaskView.tsx": 2750,
     "web/src/lib/demo-backend.ts": 4900,
     "web/src/lib/demo-design.ts": 2000,
     "web/src/pages/ComfyPage.tsx": 1500,
-    "web/src/pages/DesignPage.tsx": 2150,
+    "web/src/pages/DesignPage.tsx": 2100,
     "web/src/pages/SettingsPage.tsx": 1550
   }
 }

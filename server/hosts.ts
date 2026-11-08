@@ -19,6 +19,15 @@ export const isExternalRequest = (env: unknown) =>
   !!env && typeof env === 'object' && (env as Record<string, unknown>)[EXTERNAL_ENV] === true
 
 /**
+ * 外网专用端口前面是不是用户自己的反向代理（custom 方式）：只有这时转发头（X-Forwarded-For 等）才是反代写的。
+ * frp 是 TCP 直通，frpc 在本机连进来，对端永远是 127.0.0.1，请求头全由外网访问者自己写，不能信
+ */
+export const FORWARDED_ENV = 'agentPanelForwarded'
+
+export const trustsForwarded = (env: unknown) =>
+  !!env && typeof env === 'object' && (env as Record<string, unknown>)[FORWARDED_ENV] === true
+
+/**
  * 主端口（只给本机用）的请求带的 Origin 能不能放行：只认本机页面。
  * 外网专用端口的来源检查见 guard/gate.ts 的 sameSite（反代常改写 Host，要按访问地址比）
  */

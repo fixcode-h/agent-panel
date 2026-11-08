@@ -10,7 +10,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { t } from '../../shared/i18n.ts'
-import { isExternalRequest, originAllowed } from '../hosts.ts'
+import { isExternalRequest, originAllowed, trustsForwarded } from '../hosts.ts'
 import { getSettings } from '../settings.ts'
 import { log } from '../log.ts'
 import { loginPage, logoutPage } from './pages.ts'
@@ -19,7 +19,7 @@ import { checkPassword, hasPassword, initialPassword, sessions, setPassword, syn
 
 export const SESSION_COOKIE = 'agent_panel_session'
 
-/** 本机或局域网地址：只有从这些地址连进来时才信 X-Forwarded-For（Caddy / NPM 和面板在同一台机器或同一个内网） */
+/** 本机或局域网地址：只有从这些地址连进来时才信转发头（Caddy / NPM 和面板在同一台机器或同一个内网） */
 const TRUSTED_PEER =
   /^(127\.|::1$|::ffff:127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::ffff:(10|192\.168|172\.(1[6-9]|2\d|3[01]))\.|f[cd])/i
 
@@ -27,13 +27,28 @@ const peerOf = (c: Context) =>
   ((c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming?.socket?.remoteAddress ??
     '') as string
 
-/** 访问者的地址：经过本机 / 内网的反代时取转发头里的第一个，否则取连接本身的地址 */
+/**
+ * 这个请求的转发头能不能信：要同时满足「外网端口前面是自建反代（custom 方式）」和「连接来自本机 / 内网」。
+ * frp 方式下 frpc 在本机连进来，对端也是 127.0.0.1，只看对端地址的话外网访问者随手写一个 X-Forwarded-For
+ * 就能每次换一个「IP」，按来源的输错锁定形同虚设
+ */
+const forwardTrusted = (c: Context) => trustsForwarded(c.env) && TRUSTED_PEER.test(peerOf(c))
+
+/**
+ * 访问者的地址：经过自建反代时取 X-Forwarded-For 的**最后一个**（离面板最近的那层反代写的）。
+ * 第一个是访问者自己能写的：nginx 的 $proxy_add_x_forwarded_for 是在访问者带来的值后面追加，取第一个照样能伪造。
+ * 没有 X-Forwarded-For 时才看 X-Real-IP（nginx 示例配置写的是 $remote_addr）；不认 CF-Connecting-IP（已经不支持 Cloudflare 隧道，
+ * 经过 Caddy 时访问者自己带的这个头会被原样转发）
+ */
 export function clientIp(c: Context) {
   const peer = peerOf(c)
-  if (TRUSTED_PEER.test(peer)) {
-    const fwd =
-      c.req.header('cf-connecting-ip') ?? c.req.header('x-real-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]
-    if (fwd?.trim()) return fwd.trim()
+  if (forwardTrusted(c)) {
+    const hops = (c.req.header('x-forwarded-for') ?? '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    const fwd = hops.at(-1) ?? c.req.header('x-real-ip')?.trim()
+    if (fwd) return fwd
   }
   return peer || 'unknown'
 }
@@ -41,7 +56,7 @@ export function clientIp(c: Context) {
 /** 浏览器看到的是不是 https：直接监听开了证书，或者反代告诉我们它对外是 https */
 const isHttps = (c: Context) =>
   new URL(c.req.url).protocol === 'https:' ||
-  (TRUSTED_PEER.test(peerOf(c)) && c.req.header('x-forwarded-proto')?.split(',')[0].trim() === 'https')
+  (forwardTrusted(c) && c.req.header('x-forwarded-proto')?.split(',').at(-1)?.trim() === 'https')
 
 /**
  * 写操作的来源检查：Origin 的主机名要等于请求的 Host、反代转来的 X-Forwarded-Host 或设置里的访问地址。

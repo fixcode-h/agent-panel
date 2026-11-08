@@ -206,7 +206,7 @@ export function createJobs(sc: TasksScope) {
    * CLI 因为页面切走被回收、换 CLI 重启时不调用，那时对话还在，结果推回会接着开一轮
    */
   async function endBackground(id: string) {
-    const kids = (await sc.store.list()).filter((x) => x.parentTaskId === id)
+    const kids = await sc.store.childrenOf(id)
     await noteStoppedJobs(id)
     // 父对话被停止 / 归档 / 删除（面板退出走 stopAll，不经过这里）：面板代它跑的测试命令跟着停了，
     // 结果不会再回来。先把正在跑的那批按未通过退回子对话（分支保留、可以重新 submit_merge），

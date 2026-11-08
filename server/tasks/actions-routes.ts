@@ -565,7 +565,7 @@ export function registerActionRoutes(s: TasksScope) {
       .catch((e) => log.warn('task', '停止整棵对话树失败', { task: id, error: (e as Error).message }))
     // 还在等回答的提问、确认马上作废并落盘：不然返回的任务还带着它们，提问窗口关不掉。
     // 停止是停掉这个对话附属的一切：名下子对话的提问、确认、请用户决定的选择也一起作废
-    const kids = (await s.store.list()).filter((x) => x.parentTaskId === id)
+    const kids = await s.store.childrenOf(id)
     for (const tid of [id, ...kids.map((k) => k.id)]) {
       const e = s.live.get(tid)
       const tk = e?.task ?? (await s.store.get(tid))

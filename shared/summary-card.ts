@@ -233,11 +233,6 @@ ${example}
 \`\`\``
 }
 
-/** 汇报里引用卡片时的一句话：「每件事一张总结卡（类型｜结论 + 字段）」 */
-export function summaryCardHint(lang: Lang = getLang()): string {
-  return `按「总结格式」写成总结卡（${KIND_KEYS.map((k) => SUMMARY_KINDS[k][lang]).join(' / ')}）`
-}
-
 // ── 解析：界面把卡片画出来 ──
 
 export interface SummaryField {

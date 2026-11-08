@@ -240,6 +240,28 @@ test('Claude Code：出错的结果、Bash 的退出码；每次模型回应开�
  * deepseek 中转网关（真实抓到的顺序）：推理 delta 记在回复条目的 id 下，推理条目完成时 id 不同；
  * 同一条回复发两次 item/started。思考和正文都只出一次，不多出一段空回复
  */
+test('Claude Code：重试用完就结束（result 前没等到模型回应）时补一条 retry_failed', () => {
+  const parse = claudeParser(CWD)
+  parse({ type: 'system', subtype: 'api_retry', attempt: 10, max_retries: 10, error_status: 529, error: 'overloaded' })
+  const end = parse({
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    result: 'API Error: 529 overloaded',
+  })
+  const failed = end.find((e) => e.type === 'notice')
+  assert.deepEqual(failed, {
+    type: 'notice',
+    text: '自动重试 10 次后仍然失败：API Error: 529 overloaded',
+    failed: true,
+    kind: 'retry_failed',
+    attempt: 10,
+    error: 'API Error: 529 overloaded',
+  })
+  // 没在重试时结束一轮不补
+  assert.ok(!parse({ type: 'result', subtype: 'success', result: 'ok' }).some((e) => e.type === 'notice'))
+})
+
 test('Claude Code：网关出错时自己重试（api_retry）画成「正在重试」，模型回应开始后收成已恢复', () => {
   const parse = claudeParser(CWD)
   // Claude Code 2.1.316 对着返回 529 的网关实测输出的行（去掉了 session_id / uuid）

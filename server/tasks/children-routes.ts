@@ -197,7 +197,7 @@ export function registerChildrenRoutes(s: TasksScope) {
   s.routes.post('/:id/children/stop', async (c) => {
     const parent = await s.current(c.req.param('id'))
     if (!parent) return s.bad(c, t('任务不存在'), 404)
-    const kids = (await s.store.list()).filter((x) => x.parentTaskId === parent.id)
+    const kids = await s.store.childrenOf(parent.id)
     const before = kids.filter((x) => s.live.has(x.id)).length
     await s.closeChildren(parent.id)
     await Promise.all(kids.map((k) => s.endBackground(k.id)))

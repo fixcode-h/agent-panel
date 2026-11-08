@@ -34,7 +34,7 @@
 
 ## 入口
 
-`server/exec/runner.ts`：由 `server/tasks.ts` 在节点执行时调用，宿主决定「怎么调用一个 Agent」，执行引擎本身在 `shared/engine.ts`。
+`server/exec/runner.ts`：由 `server/tasks/run.ts`（经 `server/exec/real-turn.ts`）在节点执行时调用，宿主决定「怎么调用一个 Agent」，执行引擎本身在 `shared/engine.ts`。
 
 `server/exec/real-turn.ts` 的 `runRealTurn` 是一轮真实执行的入口（把宿主能力交给 `shared/engine.ts`），调用 Agent 时经 `runner.ts` 的 `gatedRunAgent` 启动 CLI。`runner.ts` 只留一次 CLI 调用本身（`runAgent`：拼参数、收事件、写消息、保活等下一句），周边按功能拆在：
 
