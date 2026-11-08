@@ -97,13 +97,17 @@ await runShard(import.meta.filename, async (api) => {
   // （用户报「这个运行时间有问题」：等到子对话 / 后台命令时时间就消失了）
   {
     const header = p.locator('header').filter({ has: p.locator('[role="tablist"][aria-label="对话页签"]') })
-    const pill = header.locator('[title*="子对话执行中"]').first()
+    // 购物车对话名下有在等你操作的子对话：演示版补上 childrenNeeds 后和正式版一样，在等什么写成「子对话等你处理」
+    const pill = header.locator('[title*="子对话等你处理"]').first()
     if (!(await pill.count())) errors.push('状态胶囊：等子对话时悬停提示里没有说明在等什么')
     else {
+      // 等你处理时胶囊直接写出来（要你去点），执行时长放进悬停提示（head-status.test.ts 覆盖「子对话等你处理 · 3:00」）
       const text = (await pill.locator('[data-head-clock]').innerText()).trim()
-      if (!/^\d+:\d{2}(:\d{2})?$/.test(text)) errors.push(`状态胶囊：等子对话时应只显示执行时长，实际「${text}」`)
+      if (text !== '子对话等你处理') errors.push(`状态胶囊：子对话等你处理时应写出来，实际「${text}」`)
+      const title = (await pill.getAttribute('title')) ?? ''
+      if (!/\d+:\d{2}/.test(title)) errors.push(`状态胶囊：悬停提示里要留执行时长（实际「${title}」）`)
       const screen = ((await pill.locator('.sr-only').textContent()) ?? '').trim()
-      if (!screen.includes('子对话执行中')) errors.push(`状态胶囊：读屏说明里没有说明在等什么（实际「${screen}」）`)
+      if (!screen.includes('子对话等你处理')) errors.push(`状态胶囊：读屏说明里没有说明在等什么（实际「${screen}」）`)
       if (!(await shotOf(p, pill, '任务-状态胶囊-等子对话'))) errors.push('状态胶囊：截图失败')
     }
   }
@@ -201,7 +205,8 @@ await runShard(import.meta.filename, async (api) => {
   await check(p, '输入框-等子对话')
   {
     const ph = (await p.locator('#follow-up').first().getAttribute('aria-placeholder')) || ''
-    if (!ph.includes('子对话执行中'))
+    // 名下有子对话等你处理（演示版和正式版一样带 childrenNeeds）：占位文字先说这件事
+    if (!ph.includes('子对话等你处理'))
       errors.push(`输入框：名下还有子对话在跑时，占位文字要说明在等什么（实际「${ph}」）`)
     if (!ph.includes('可以直接输入要求')) errors.push('输入框：等子对话时要说明还能直接输入要求')
   }
