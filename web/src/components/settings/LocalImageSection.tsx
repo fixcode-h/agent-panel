@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from '@/lib/toast'
 import { ArrowDown, Check, Download, Loader2, Play, RefreshCw, Square, Trash2, X } from 'lucide-react'
 import {
@@ -15,6 +15,7 @@ import {
 import type { Settings } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { usePolling } from '@/lib/polling'
 import { cn } from '@/lib/utils'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { Button } from '@/components/ui/button'
@@ -32,20 +33,7 @@ type LocalSettings = Settings['imageGen']['local']
 export function useLocalImage(fast = false) {
   const [st, setSt] = useState<LocalStatus>()
   const running = st?.job?.status === 'running'
-  useEffect(() => {
-    let alive = true
-    const load = () =>
-      api
-        .localImage()
-        .then((s) => alive && setSt(s))
-        .catch(() => {})
-    void load()
-    const timer = setInterval(load, running || fast ? 1000 : 6000)
-    return () => {
-      alive = false
-      clearInterval(timer)
-    }
-  }, [running, fast])
+  usePolling(() => api.localImage().then(setSt), running || fast ? 1000 : 6000)
   return [st, setSt] as const
 }
 

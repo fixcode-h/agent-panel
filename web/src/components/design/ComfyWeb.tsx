@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { MODAL_BTN, Modal, ModalHeader } from '@/components/ui/modal'
 import { toast } from '@/lib/toast'
 import { ExternalLink, FileDown, Loader2, Play, Globe } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { usePolling } from '@/lib/polling'
 import { Button } from '@/components/ui/button'
 import { ComfyQueuePanel } from '@/components/comfy/ComfyQueuePanel'
 
@@ -39,21 +40,7 @@ export function ComfyWebDialog({
     }
   }
   // 打开时 ComfyUI 可能还没启动：导入工作流会顺带启动，启动好后自动换上网页
-  useEffect(() => {
-    if (!open || url) return
-    let alive = true
-    const load = () =>
-      api
-        .localImage()
-        .then((s) => alive && s.running && setUrl(s.url))
-        .catch(() => {})
-    void load()
-    const timer = setInterval(load, 3000)
-    return () => {
-      alive = false
-      clearInterval(timer)
-    }
-  }, [open, url])
+  usePolling(() => api.localImage().then((s) => s.running && setUrl(s.url)), open && !url ? 3000 : null)
   return (
     // 内嵌整个 ComfyUI 网页：和所有铺满的弹窗一样四边留 30px
     <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="full" closeOnOutside>

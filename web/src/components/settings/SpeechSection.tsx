@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Check, Download, Loader2, Trash2, X } from 'lucide-react'
 import { SPEECH_MODELS, speechModel, speechModelMb, type SpeechModel, type SpeechStatus } from '@shared/speech'
 import type { Settings } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { usePolling } from '@/lib/polling'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -19,20 +20,7 @@ type SpeechSettings = Settings['speech']
 function useSpeechStatus() {
   const [st, setSt] = useState<SpeechStatus>()
   const running = st?.job?.status === 'running'
-  useEffect(() => {
-    let alive = true
-    const load = () =>
-      api
-        .speech()
-        .then((s) => alive && setSt(s))
-        .catch(() => {})
-    void load()
-    const timer = setInterval(load, running ? 1000 : 6000)
-    return () => {
-      alive = false
-      clearInterval(timer)
-    }
-  }, [running])
+  usePolling(() => api.speech().then(setSt), running ? 1000 : 6000)
   return [st, setSt] as const
 }
 
