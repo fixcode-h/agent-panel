@@ -38,7 +38,7 @@ function msg(id: string, stepId = ''): TaskMessage {
   return { id, role: 'agent', agentId: '', step: stepId, text: id, tools: [], at }
 }
 
-/** 用户提的要求：没有节点，单独成一段（见 TaskView 的 toBlocks） */
+/** 用户提的要求：没有节点，单独成一段（见 task-blocks.ts 的 toBlocks） */
 const userMsg = (id: string): TaskMessage => ({ ...msg(id), role: 'user' })
 
 function run(status: TaskRun['status'], overrides: Partial<TaskRun> = {}): TaskRun {
@@ -153,7 +153,7 @@ test('不是最新的一轮不列：这一轮里没有最后一条对话消息�
 
 test('旧任务的编排器消息都带 @main 时，lastChatId 落到最后一条没有节点的消息上', () => {
   // 这条测的是 lastChatId 的取值：它跳过带 step 的消息，落到更早那条没有节点的消息（用户提的要求）。
-  // 真实分段（TaskView 的 toBlocks）里无 step 的用户消息单独成一段，不在主 Agent 那一轮的 msgs 里，
+  // 真实分段（task-blocks.ts 的 toBlocks）里无 step 的用户消息单独成一段，不在主 Agent 那一轮的 msgs 里，
   // 所以这个形态在界面上不靠兜底命中：由运行卡片承担显示（见下一条和交接的已知问题）
   const t = task({
     steps: [step('@main', 'running')],
