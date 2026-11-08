@@ -28,12 +28,9 @@ export function setSendWaitMs(ms: number) {
 
 /**
  * 父对话给同一个正在执行的子对话接连写信的最短间隔：间隔内再写，信照样交（内容不丢），
- * 回话里提醒它别连着催、等汇报。测试里可以改小
+ * 回话里提醒它别连着催、等汇报
  */
-export let LETTER_GAP_MS = 90_000
-export function setLetterGapMs(ms: number) {
-  LETTER_GAP_MS = ms
-}
+export const LETTER_GAP_MS = 90_000
 
 /**
  * 父子之间的通知：子对话状态变化写进父计划 / 收件箱（noteParent）、用户直接对子对话说的要求、新要求进计划、父对话交给子对话（sendToChild）。

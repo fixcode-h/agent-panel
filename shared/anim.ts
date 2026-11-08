@@ -546,7 +546,6 @@ export const ANIM_PRESETS: Record<string, Preset> = {
     ],
   },
 }
-export type PresetName = keyof typeof ANIM_PRESETS
 export const PRESET_GROUP_LABEL: Record<Preset['group'], string> = {
   enter: '入场',
   exit: '退场',
