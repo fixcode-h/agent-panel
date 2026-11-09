@@ -51,10 +51,6 @@ export function routeAnchors(messages: TaskMessage[], routes: TaskRoute[] | unde
   return out
 }
 
-/** 分诊和消息的签名：没变时不重算挂载位置（对话流式输出时每 200ms 来一次新数据，正文变了位置也不变） */
-export const routeAnchorKey = (messages: TaskMessage[], routes: TaskRoute[] | undefined) =>
-  `${(routes ?? []).map((r) => r.id).join(',')}|${messages.length}|${messages.at(-1)?.id ?? ''}`
-
 /** 两份挂载位置是否一样（同样的消息挂着同样的分诊）：一样时沿用旧的引用，消息列表不用重画 */
 export function sameAnchors(a: Map<string, TaskRoute[]>, b: Map<string, TaskRoute[]>) {
   if (a.size !== b.size) return false

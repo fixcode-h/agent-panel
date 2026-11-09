@@ -2239,7 +2239,8 @@ export function TaskView({
                 )}
 
                 {/* 父对话本身：中间换成子对话或运行页签时只是藏起来，切回来滚动位置、输入框里的字都还在 */}
-                <div className={cn('relative flex min-h-0 flex-1', showOther && 'hidden')}>
+                {/* data-scroll-pair：对话正文和会话栏的滚动条共用右边一条槽，鼠标在哪块显示哪块的（见 RailScrollbar） */}
+                <div data-scroll-pair className={cn('relative flex min-h-0 flex-1', showOther && 'hidden')}>
                   <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                     <ConversationShell
                       scroller={scroller}

@@ -5,22 +5,32 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { StepStatus, TaskMessage, ToolUse } from '@shared/schema'
+import type { TaskMessage, ToolUse } from '@shared/schema'
 import { setLang, t } from '@shared/i18n'
 import {
   addFoldCut,
   foldCuts,
-  foldStats,
+  foldLayout,
   keptOut,
-  liveHelpers,
   markFold,
   replyText,
   segOpenOf,
   splitFolds,
-  summaryStart,
   toggleSegOpen,
   unfoldedText,
 } from './fold.ts'
+import type { Dispatch } from './fold-dispatch.ts'
+
+/** 以前 foldStats 的口径：总结是第几条、主折叠行写什么 */
+const foldStats = (msgs: TaskMessage[], open?: (d: Dispatch) => boolean) => {
+  const l = foldLayout(msgs, open)
+  return {
+    last: l.flat ? -1 : Math.max(l.summary, l.ending),
+    first: l.summary,
+    parts: l.main.parts,
+    failed: l.main.failed,
+  }
+}
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
@@ -49,7 +59,6 @@ const panel = (id: string, kind: NonNullable<TaskMessage['panel']>, text: string
 })
 /** 派了子任务的那条消息：界面上在派出的位置画子任务卡片 */
 const spawned = (id: string, ids: string[]): TaskMessage => ({ ...agent(id, ''), role: 'system', spawned: ids })
-const step = (id: string, status: StepStatus) => ({ id, status })
 
 test('foldStats：折叠行只统计这一段里的操作，改的文件不多时直接写文件名', () => {
   const msgs = [
@@ -191,35 +200,6 @@ test('replyText：模型当成文字说出来的工具调用写法从正文里�
   assert.equal(replyText({ ...agent('u1', markup), role: 'user' }), markup)
 })
 
-test('liveHelpers：还在跑的子任务不收进折叠，交回结果后才跟着这一段收起', () => {
-  const msgs = [agent('m1', '', { thinking: '先派活' }), spawned('m2', ['s1']), agent('m3', '等它们回来')]
-  // 执行中、排队中都算还没收尾：卡片留在折叠外面
-  assert.deepEqual(
-    liveHelpers(msgs, [step('s1', 'running')]).map((x) => x.msg.id),
-    ['m2'],
-  )
-  assert.deepEqual(
-    liveHelpers(msgs, [step('s1', 'pending')]).map((x) => x.msg.id),
-    ['m2'],
-  )
-  // 跑完、失败都算收尾了：跟着这一段收进折叠
-  assert.deepEqual(liveHelpers(msgs, [step('s1', 'done')]), [])
-  assert.deepEqual(liveHelpers(msgs, [step('s1', 'failed')]), [])
-  // 没有任务对象（旧数据）时也安全
-  assert.deepEqual(liveHelpers(msgs, undefined), [])
-})
-
-test('liveHelpers：一次派了几个子任务，只有还在跑的那几个留在外面', () => {
-  const msgs = [spawned('m1', ['s1', 's2']), agent('m2', '两个都派完了')]
-  const live = liveHelpers(msgs, [step('s1', 'done'), step('s2', 'running')])
-  assert.deepEqual(
-    live.map((x) => x.ids),
-    [['s2']],
-  )
-  // 折叠行照旧统计这段派出了几个（运行中的工具也是这样：既在折叠行计数，又留在外面转圈）
-  assert.deepEqual(foldStats(msgs).parts, [t('派出 {n} 个子任务', { n: 2 })])
-})
-
 test('summaryStart：总结后面只跟着收尾动作和一句补充时，整段总结都留在折叠外面', () => {
   const suggest = tool('other', 'panel · suggest_next_step', { name: 'mcp__panel-1__suggest_next_step' })
   const msgs = [
@@ -235,7 +215,7 @@ test('summaryStart：总结后面只跟着收尾动作和一句补充时，整�
 
   // 隔着干活的工具（读、改、跑命令）就不算：前面那段是过程里的说明
   const work = [agent('n1', '我先看看代码'), agent('n2', '改好了', { tools: [tool('read', 'a.ts')] })]
-  assert.equal(summaryStart(work, 1), 1)
+  assert.equal(foldLayout(work).summary, 1)
   assert.deepEqual(foldStats(work).parts, [t('查看 {n} 个文件', { n: 1 }), t('{n} 段说明', { n: 1 })])
 })
 
@@ -250,4 +230,92 @@ test('unfoldedText：朗读只念收尾后留在外面的总结，中间的说�
   assert.equal(unfoldedText(msgs), '改好了，三个文件\n\n总结：登录页的报错改清楚了')
   // 还没有带正文的回复（只有思考）时没东西可念
   assert.equal(unfoldedText([agent('m1', '', { thinking: '想' })]), '')
+})
+
+/** 面板工具的一次调用：CLI 报上来的名字带服务名前缀 */
+const ptool = (name: string, input: Record<string, unknown> = {}, extra: Partial<ToolUse> = {}): ToolUse =>
+  tool('other', `panel · ${name}`, { name: `mcp__panel-1__${name}`, input: JSON.stringify(input), ...extra })
+
+test('foldLayout：总结后面接着建子对话、派子任务，总结仍然留在外面（用户 2026-11-09 报的）', () => {
+  const msgs = [
+    agent('w1', '我先看日志', { tools: [tool('read', 'a.log'), tool('search', 'AirWall')] }),
+    agent('w2', '', { tools: [tool('run', 'grep -n x a.log')] }),
+    agent('s1', '## 结论\n日志已经看完，结论比较明确'),
+    agent('c1', '', {
+      tools: [ptool('create_conversation', { title: '模块文档' }, { failed: true, output: '模块没有文档' })],
+    }),
+    agent('n1', '需要先给 AirWall 模块建模块文档'),
+    spawned('sp', ['h1']),
+    agent('e1', '已把 AirWall 模块的文档分析派出去了'),
+  ]
+  const l = foldLayout(msgs)
+  // 真正的结论是总结，最后那句交代是结尾，都在外面
+  assert.equal(msgs[l.summary].id, 's1')
+  assert.equal(msgs[l.ending].id, 'e1')
+  // 主折叠只写干活的过程：结论之前那句「我先看日志」是说明
+  assert.deepEqual(l.main.parts, [
+    t('查看 {n} 个文件', { n: 1 }),
+    t('运行 {n} 条命令', { n: 1 }),
+    t('搜索 {n} 次', { n: 1 }),
+    t('{n} 段说明', { n: 1 }),
+  ])
+  // 结论后面的派单和那句话折成协调小行
+  assert.equal(l.mid.show, true)
+  assert.deepEqual(l.mid.parts, [
+    t('新开 {n} 个子对话', { n: 1 }),
+    t('派出 {n} 个子任务', { n: 1 }),
+    t('{n} 段说明', { n: 1 }),
+  ])
+  assert.equal(l.mid.failed, 1)
+  // 朗读念总结和结尾，中间那句不念
+  assert.equal(unfoldedText(msgs), '## 结论\n日志已经看完，结论比较明确\n\n已把 AirWall 模块的文档分析派出去了')
+})
+
+test('foldLayout：还没办完的派单留在外面，不算进折叠行；办完后才收进去', () => {
+  const msgs = [
+    agent('m1', '', { tools: [tool('read', 'a.ts')] }),
+    spawned('sp', ['h1']),
+    agent('m2', '', { tools: [tool('read', 'b.ts')] }),
+    agent('m3', '排查下来主要是两处'),
+  ]
+  const running = foldLayout(msgs, (d) => d.key === 'sp#-1')
+  assert.deepEqual([...running.open], ['sp#-1'])
+  assert.ok(!running.main.parts.includes(t('派出 {n} 个子任务', { n: 1 })))
+  const done = foldLayout(msgs)
+  assert.deepEqual([...done.open], [])
+  assert.ok(done.main.parts.includes(t('派出 {n} 个子任务', { n: 1 })))
+})
+
+test('foldLayout：干完活一句话都没说（被插话打断、被停止）就没有总结，整段只剩折叠行', () => {
+  const msgs = [
+    agent('m1', '有 160 条相关记录，我看具体内容', { tools: [tool('search', 'x')] }),
+    agent('m2', '', { tools: [tool('read', 'a.ts'), tool('search', 'y')] }),
+  ]
+  const l = foldLayout(msgs)
+  assert.equal(l.summary, -1)
+  assert.equal(l.main.show, true)
+  assert.ok(l.main.parts.includes(t('{n} 段说明', { n: 1 })))
+  assert.equal(unfoldedText(msgs), '')
+})
+
+test('foldLayout：总结后面只有收尾动作（交建议、查工具定义）时不出协调小行', () => {
+  const lookup = tool('other', 'select:mcp__panel__suggest_next_step', { name: 'ToolSearch' })
+  const msgs = [
+    agent('m1', '', { tools: [tool('edit', 'a.ts')] }),
+    agent('m2', '改好了，测试通过'),
+    agent('m3', '已提交建议', { tools: [lookup, ptool('suggest_next_step', { text: '下一步' })] }),
+  ]
+  const l = foldLayout(msgs)
+  assert.equal(msgs[l.summary].id, 'm2')
+  assert.equal(msgs[l.ending].id, 'm3')
+  assert.equal(l.mid.show, false)
+})
+
+test('foldLayout：等子任务算干活，等回来之后写的那段才是总结', () => {
+  const msgs = [
+    spawned('sp', ['h1']),
+    agent('m1', '两个子任务派出去了，我等它们'),
+    agent('m2', '都交回了：结论如下', { tools: [ptool('wait_agents', {}, { output: '做完 2 个' })] }),
+  ]
+  assert.equal(msgs[foldLayout(msgs).summary].id, 'm2')
 })

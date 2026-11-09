@@ -34,6 +34,8 @@ import { PeerLine } from './PeerMessage'
 import { AlertRow } from './AlertRow'
 import { makeAlert } from '@shared/alerts'
 import { Collapse } from '@/components/ui/collapse'
+import { toolRole } from '@/lib/fold-roles'
+import { DispatchSlot } from './route-context'
 
 /** 命令还在跑时行内只跟这么多行：再长就把对话撑长了，完整输出去命令行窗口看 */
 const LIVE_ROWS = 8
@@ -497,12 +499,23 @@ export function ToolRow({
  * 一条消息里的一串工具调用：相邻几次把同一段话交给不同子对话的合成一行「发送消息」（见 groupTools），
  * 展开列出每个收件人
  */
-export function ToolRows({ tools, task }: { tools: ToolUse[]; task?: ToolTask }) {
+export function ToolRows({ tools, task, msgId }: { tools: ToolUse[]; task?: ToolTask; msgId?: string }) {
+  let at = 0
   return (
     <>
-      {groupTools(tools).map((g, i) =>
-        g.length === 1 ? <ToolRow key={i} tool={g[0]} task={task} /> : <SendGroupRow key={i} tools={g} task={task} />,
-      )}
+      {groupTools(tools).map((g, i) => {
+        const k = at
+        at += g.length
+        if (g.length > 1) return <SendGroupRow key={i} tools={g} task={task} />
+        const row = <ToolRow key={i} tool={g[0]} task={task} />
+        // 派单（新开 / 交回子对话、就地微改动、派子任务失败）画成派单行，分诊说明并在里面；
+        // 不在对话页（没有派单的数据）时照旧是工具行
+        return msgId && toolRole(g[0]) === 'dispatch' ? (
+          <DispatchSlot key={i} msgId={msgId} tool={k} fallback={row} />
+        ) : (
+          row
+        )
+      })}
     </>
   )
 }

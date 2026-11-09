@@ -85,6 +85,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [list-pane.md](./list-pane.md)                   | 中间列表栏                       |
 | [local-image.md](./local-image.md)               | 本机生图（ComfyUI 安装、启动）   |
 | [memory.md](./memory.md)                         | 对话数据的内存和落盘             |
+| [fold.md](./fold.md)                             | 回复的折叠和派单行               |
 | [messages.md](./messages.md)                     | 对话里的消息和条目               |
 | [plan.md](./plan.md)                             | 执行计划                         |
 | [process.md](./process.md)                       | CLI 进程：停止、保活和回收       |

@@ -9,7 +9,7 @@
  */
 
 import { chipAlignProblems, runShard, tabAlignProblems } from './harness.mjs'
-import { scrollRevealProblems } from './scroll-reveal.mjs'
+import { scrollPairProblems } from './scroll-pair.mjs'
 import { closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
 
 await runShard(import.meta.filename, async (api) => {
@@ -140,7 +140,7 @@ await runShard(import.meta.filename, async (api) => {
     )
       errors.push('会话栏：「状态」没有一句说明')
     await rail.screenshot({ path: 'ui-shots/02-会话栏-状态.png' }).catch(() => {})
-    await scrollRevealProblems(p, rail, errors)
+    await scrollPairProblems(p, rail, errors)
     // 右栏不再列子对话（ADR 0034）：「协作」卡去掉，状态卡里也不逐个列子对话，它们只在输入框上方的子对话面板里
     {
       const cards = await p.evaluate(() =>
@@ -716,6 +716,16 @@ await runShard(import.meta.filename, async (api) => {
       await closed()
     }
   }
+  // 总结之后的协调动作（交回子对话、传话、办完的后台命令）收在协调小行里（回复折叠重设计 §3.3）：
+  // 要看那几行工具先把它点开。展开状态不跨刷新，刷新后要重新点
+  const openCoord = async () => {
+    const line = p.locator('[data-fold="coord"][aria-expanded="false"]').last()
+    if (await line.count()) {
+      await line.scrollIntoViewIfNeeded()
+      await line.click()
+      await settle(p)
+    }
+  }
   // 面板的 run_background：解析层对带 command 的输入存的是命令原文（不是 JSON），
   // 折叠行要靠它兜底显示命令，不能只剩「后台命令」和耗时
   {
@@ -804,6 +814,7 @@ await runShard(import.meta.filename, async (api) => {
       // 事后再想回看这条命令：运行区那一行跑完就没了，只能靠对话里那条 run_background 工具行——
       // 它的标题也要能打开同一个后台命令窗口（输出、退出码都在里面）
       await patchJobs(null)
+      await openCoord()
       // 运行区那一行没了之后，只剩对话里那条 run_background 工具行的标题
       const pick = p.locator('button[title*="npm ci > /tmp/npmci.log"]').last()
       if (!(await pick.count())) errors.push('后台命令工具行：找不到那条 run_background 的标题')
@@ -845,6 +856,7 @@ await runShard(import.meta.filename, async (api) => {
     await patchJobs(null)
   }
   // 发出去的信也是工具行：父对话里画成「→ 收件方 · 传话」，不把正文铺成居中的系统块
+  await openCoord()
   {
     const row = p.locator('[aria-label^="发给 "]').first()
     if (!(await row.count())) errors.push('父对话里没有发出的信：send_message 又被铺成居中的说明块')

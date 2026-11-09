@@ -585,6 +585,18 @@ test('spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写
     lists[2].map((s) => s.params),
     [{ task: '清理用例' }, { task: '设计用例' }],
   )
+  // review 同理：顶层交接单给没写自己那份的任务
+  await callOrchTool(o, 'spawn_agents', {
+    review: { goal: '修好', checks: '单测通过' },
+    tasks: [
+      { title: '甲', instructions: 'x' },
+      { title: '乙', instructions: 'y', review: { goal: '另一件' } },
+    ],
+  })
+  assert.deepEqual(
+    lists[3].map((s) => s.review?.goal),
+    ['修好', '另一件'],
+  )
   const strParams = await callOrchTool(o, 'spawn_agents', { tasks: [{ instructions: 'x', params: '{"task":1}' }] })
   assert.match(text(strParams), /params 要写对象/)
   // 顶层 resume 只配一个任务：一个会话只能接着跑一轮，一批多个时说不清谁接它
@@ -607,7 +619,7 @@ test('spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写
     tasks: [{ title: '复看', instructions: '确认', resume: ['a/sub/h1'] }],
   })
   assert.match(text(wrongType), /tasks\[0\]\.resume 要写字符串/)
-  assert.equal(lists.length, 3, '被拒的调用不派子任务')
+  assert.equal(lists.length, 4, '被拒的调用不派子任务')
 })
 
 /**
@@ -644,7 +656,10 @@ test('resume：不写 agent 沿用原任务的角色，写了用写的，非 res
       const brief = { goal: '修好复看角色', checks: 'npm run test:unit 通过' }
       if (round === 1) {
         const r = await callOrchTool(call.orch!, 'spawn_agents', {
-          tasks: [{ title: '评审改动', instructions: '看代码', agent: '评审', review: brief }],
+          // 交接单写在顶层（模型照着顶层 agent 的写法常这样写）：当整批默认值，不拒
+          agent: '评审',
+          review: brief,
+          tasks: [{ title: '评审改动', instructions: '看代码' }],
         })
         assert.match(text(r), /@chat\/sub\/h1/)
       }
@@ -664,9 +679,9 @@ test('resume：不写 agent 沿用原任务的角色，写了用写的，非 res
         assert.match(text(r), /@chat\/sub\/h3/)
       }
       if (round === 4) {
-        // 复看：显式写「评审」，和没写时一致
+        // 复看：显式写「评审」，和没写时一致；id 丢了开头的「@」也认得（用户截图里模型就这样写）
         const r = await callOrchTool(call.orch!, 'spawn_agents', {
-          resume: '@chat/sub/h1',
+          resume: 'chat/sub/h1',
           agent: '评审',
           tasks: [{ title: '再复看', instructions: '确认增量' }],
         })

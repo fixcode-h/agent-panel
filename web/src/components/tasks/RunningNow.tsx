@@ -1,5 +1,6 @@
 import { useUserName } from '@/lib/user-name'
-import { useMemo, useState } from 'react'
+import { useContext, useMemo, useState } from 'react'
+import { InPlaceCtx, type InPlace } from './dispatch-ctx'
 import { CircleSlash, ClipboardCheck, Hand, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import { helperRunning, helperShown, sortHelpers, stepMs, splitStepJobs, type ChildEntry } from '@shared/task'
@@ -21,6 +22,7 @@ import {
   listedChildren,
   stageConfirm,
   staleLine,
+  type ChildSummary,
 } from './child-line'
 import { ChildConfirmButton } from './ChildConfirm'
 import { Button } from '@/components/ui/button'
@@ -44,23 +46,29 @@ export function runningRows<C extends ChildEntry>({
   jobs,
   kids,
   children,
+  skip,
 }: {
   task?: Task
   tools: ToolUse[]
   jobs: boolean
   kids: boolean
+  /** 最新一轮里已经画在原位的派单对象（派单行就是它们的现场行）：这里不再重复列 */
+  skip?: InPlace | null
   /** 子对话摘要：RunningNow 从 ChildListCtx 拿，调用处也拿得到同一份，传进来免得两处判断不一致 */
   children: C[]
 }) {
   const list = jobs ? (task?.jobs ?? []) : []
-  // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧
-  const { sub, own } = splitStepJobs(task?.steps ?? [], list)
+  // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧。
+  // 画在原位的子任务连同它起的命令一起由派单行画，这里不再剩半行「子任务 + 命令」
+  const split = splitStepJobs(task?.steps ?? [], list)
+  const own = split.own
+  const sub = split.sub.filter((x) => !skip?.helpers.has(x.step.id))
   // 已标记解决但还在跑、在等后台命令、计划没做完的子对话都要列（见 visibleChildren）；
   // 等你确认诊断报告、同时又提了问的子对话也留着（见 listedChildren）
-  const rows = kids ? listedChildren(children) : []
+  const rows = kids ? listedChildren(children).filter((k) => !skip?.children.has(k.id)) : []
   // 对话派出的子任务：只要没结束（在跑、在排队）就列一行，跟子对话同一批出现在最新一段上；
   // 在跑的排前面，同一组按派出的顺序
-  const helpers = kids && task ? activeHelpers(task) : []
+  const helpers = kids && task ? activeHelpers(task).filter((s) => !skip?.helpers.has(s.id)) : []
   // 诊断报告卡片（ADR 0045）：交报告那一行会被收进工具的折叠里，报告入口只在这里（用户 2026-11-07 定，
   // 输入框上方不再放），最近 3 份一直列着，确认、提意见、不修了之后也留着
   const reports = kids ? reportCards(task) : []
@@ -217,18 +225,21 @@ function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now
  * 对话派出的、还没结束的子任务：和子对话同一个样式的一行——转圈、「子任务」、标题（点开只读窗口）、
  * 状态标签、这会儿在做什么、耗时，最后是终止按钮。它起的后台命令并进这一行的标签，不再单独占一行
  */
-function HelperRow({
+export function HelperRow({
   task,
   step,
   jobs,
   now,
   onOpen,
+  className,
 }: {
   task: Task
   step: TaskStep
   jobs: TaskJob[]
   now: number
   onOpen: () => void
+  /** 画在派单行里时去掉自己的底色：外层派单行已经有一层 */
+  className?: string
 }) {
   const { agents } = useData()
   // 默认的「子任务」角色不用再写一遍，点名派给「测试验收」这类角色时才标出来（和子任务栏同一个口径）
@@ -239,6 +250,7 @@ function HelperRow({
   const names = jobs.map((j) => j.name).join(t('、'))
   return (
     <RowShell
+      className={className}
       glyph={
         // 被打断的不转圈：它这会儿没人在跑，等对话接着做时才会重新开始
         !running && step.interrupted ? (
@@ -329,7 +341,7 @@ export function RunningNow({
     helpers,
     reports,
     drafting,
-  } = runningRows({ task, tools, jobs, kids, children })
+  } = runningRows({ task, tools, jobs, kids, children, skip: useContext(InPlaceCtx) })
   // 已经有子任务行的，后台命令并进那一行；剩下的（子任务做完了命令还在跑）照旧单独一行
   const helperJobs = new Map(stepJobs.map((x) => [x.step.id, x.jobs]))
   const restJobs = stepJobs.filter((x) => !helpers.some((s) => s.id === x.step.id))
@@ -372,120 +384,137 @@ export function RunningNow({
       {ownJobs.map((j) => (
         <JobRow key={j.id} job={j} now={now} />
       ))}
-      {rows.map((k) => {
-        // 行上的状态标签、当前活动、多久没新输出都和悬浮层那一行读同一份（见 ./child-line）：
-        // 标题、状态、计划进度、正在做什么两处显示一致。
-        // 这段详情按弹层里的观感跟在标题后面左对齐（detailStart），不再贴到行尾
-        const labels = childLabels(k, user)
-        const note = childNote(k, true)
-        const stale = staleLine(k)
-        // 进程回收了、对话却还在跑：行上不说「已关闭」（那会和标签同屏矛盾），只在这里补一句
-        const gone = childClosedHint(k)
-        const detail = [note, stale?.text, gone].filter(Boolean).join(' · ')
-        // 工作流节点做完、等你确认这一步的结果（见 stageConfirm）：和诊断报告一样留在这一行，提醒色
-        const stage = stageConfirm(k)
-        // 在等你处理（提问、等你操作）的：对话还没做完，和阶段确认一样用提醒色转圈留在这里（用户 2026-11-07 要求），
-        // 和别的「执行中」分开；等你操作的行尾另给「去操作」
-        const needs = childNeedsYou(k)
-        const act = needs && !k.diagnosis && !stage && k.waiting?.kind === 'action'
-        return (
-          <RowShell
-            key={k.id}
-            // 行自己的宽度当容器查询的基准（见 RowShell 的 container）：右栏开着时同样的视口
-            // 宽度下行会窄一半，按视口断点会误判
-            container
-            // 行前不放切换子对话的下拉（用户要求去掉）：每个子对话自己一行，要换着看就点另一行
-            // 等你确认诊断报告的（ADR 0045）转圈用提醒色：和标签「报告待确认」一起，和别的执行中分开
-            // 等你确认阶段结果的也用提醒色转圈：工作流没走完，一直在这里转着等你看；对话停下了就不再转
-            glyph={
-              stage && k.status === 'stopped' ? (
-                <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
-              ) : (
-                <Loader2
-                  className={cn(
-                    'h-3.5 w-3.5 shrink-0 animate-spin',
-                    stale?.cls ?? (k.diagnosis || stage || needs ? 'text-warning' : 'text-accent-text'),
-                  )}
-                />
-              )
-            }
-            // 窄屏不写动作名：把宽度留给标题、状态标签和耗时，否则「计划 1/2」后面的「执行中」会被裁掉。
-            // 用 sr-only 不用 hidden：不占宽度，读屏仍能读到这行是子对话
-            verb={<span className="sr-only md:not-sr-only">{t('子对话')}</span>}
-            title={k.title || t('未命名')}
-            titleClass={NAME_TITLE}
-            open={false}
-            // 整段文本（动作名、标题、状态标签、正在做什么、耗时）都能点开这个子对话
-            rowOpen={openChild ? () => openChild(k.id) : undefined}
-            onOpen={openChild ? () => openChild(k.id) : undefined}
-            // 标题被前宽截断时，悬停能看全文（活动文字本来就有 title）
-            openTip={t('在右栏打开子对话「{title}」', { title: k.title || t('未命名') })}
-            detailStart
-            detail={
-              <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                {labels.map((l, i) => (
-                  // 超窄屏（<359px）只留第一个状态标签：两个并排会被 overflow-hidden 裁掉，
-                  // 读起来像「等结 0.1s」；这时活动文字也已隐藏，只保留最要紧的那个状态
-                  // 按这一行自己的宽度也收：右栏占宽时视口再宽，行也可能只剩两三百像素
-                  <span
-                    key={l.text}
-                    className={cn(childLabelClass[l.tone], i > 0 && 'max-[359px]:hidden @max-[300px]:hidden')}
-                  >
-                    {l.text}
-                  </span>
-                ))}
-                {/* 行的宽度留给状态标签和耗时：活动文字是补充信息，行够宽才显示（按这一行自己的
-                    宽度，见 RowShell 的 container），不让标签被 overflow-hidden 裁成「计划 1」。悬停看全文。
-                    gone 单独算在内：没有活动文字时也要能悬停看到「进程已回收」 */}
-                {(note || stale || gone) && (
-                  <span
-                    className={cn(
-                      'hidden min-w-0 truncate font-sans @min-[380px]:block',
-                      stale ? stale.cls : 'text-subtle',
-                    )}
-                    title={detail}
-                  >
-                    {/* 没有活动文字时退回「进程已回收」那句：不然 span 是空的，悬停根本悬不到 */}
-                    {stale ? stale.text : note || gone}
-                  </span>
-                )}
-              </span>
-            }
-            ms={childMs(k, now)}
-            // 在等你确认诊断报告：行尾直接给「查看报告」，不用先进子对话找交报告那一行
-            // 等你确认工作流阶段的结果：行尾「查看结果」在这里直接打开审阅弹窗
-            action={
-              k.diagnosis ? (
-                <ChildReportButton childId={k.id} />
-              ) : stage ? (
-                <ChildConfirmButton childId={k.id} />
-              ) : act && openChild ? (
-                // 等你操作（request_user_action）：和子对话列表一样给「去操作」，在右栏打开它，
-                // 步骤和交回都在子对话自己的输入框上面
-                // 行窄时只留手势图标、再窄就不放（整行本来就能点开它）：按这一行自己的宽度（见 RowShell 的 container），
-                // 宽度先让给状态标签「等你操作」
-                <Button
-                  size="sm"
-                  className="h-6 shrink-0 px-1.5 text-xs @max-[360px]:hidden @min-[480px]:px-2"
-                  aria-label={t('去操作')}
-                  title={t('去操作')}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openChild(k.id)
-                  }}
-                >
-                  <Hand className="h-3 w-3" />
-                  <span className="hidden @min-[480px]:inline">{t('去操作')}</span>
-                </Button>
-              ) : undefined
-            }
-          />
-        )
-      })}
+      {rows.map((k) => (
+        <ChildLiveRow key={k.id} k={k} now={now} user={user} openChild={openChild} />
+      ))}
       {/* 报告交上来时自动弹一次审阅弹窗（每一版只弹一次） */}
       <DiagnosisAutoOpen ids={rows.filter((k) => k.diagnosis).map((k) => k.id)} />
       {task && win && <HelperWindow task={task} id={win} teamNames={teamNames} onClose={() => setWin('')} />}
     </div>
   )
   return box
+}
+
+/**
+ * 一个还没做完的子对话：运行区列的那一行，派单行在最新一轮里也直接用它（设计稿：回复折叠与派单行重设计 §5.2），
+ * 状态标签、当前活动、等你确认的按钮两处一样
+ */
+export function ChildLiveRow({
+  k,
+  now,
+  user,
+  openChild,
+  className,
+}: {
+  k: ChildSummary
+  now: number
+  user: string
+  openChild: ((id: string) => void) | null
+  className?: string
+}) {
+  // 行上的状态标签、当前活动、多久没新输出都和悬浮层那一行读同一份（见 ./child-line）：
+  // 标题、状态、计划进度、正在做什么两处显示一致。
+  // 这段详情按弹层里的观感跟在标题后面左对齐（detailStart），不再贴到行尾
+  const labels = childLabels(k, user)
+  const note = childNote(k, true)
+  const stale = staleLine(k)
+  // 进程回收了、对话却还在跑：行上不说「已关闭」（那会和标签同屏矛盾），只在这里补一句
+  const gone = childClosedHint(k)
+  const detail = [note, stale?.text, gone].filter(Boolean).join(' · ')
+  // 工作流节点做完、等你确认这一步的结果（见 stageConfirm）：和诊断报告一样留在这一行，提醒色
+  const stage = stageConfirm(k)
+  // 在等你处理（提问、等你操作）的：对话还没做完，和阶段确认一样用提醒色转圈留在这里（用户 2026-11-07 要求），
+  // 和别的「执行中」分开；等你操作的行尾另给「去操作」
+  const needs = childNeedsYou(k)
+  const act = needs && !k.diagnosis && !stage && k.waiting?.kind === 'action'
+  return (
+    <RowShell
+      className={className}
+      // 行自己的宽度当容器查询的基准（见 RowShell 的 container）：右栏开着时同样的视口
+      // 宽度下行会窄一半，按视口断点会误判
+      container
+      // 行前不放切换子对话的下拉（用户要求去掉）：每个子对话自己一行，要换着看就点另一行
+      // 等你确认诊断报告的（ADR 0045）转圈用提醒色：和标签「报告待确认」一起，和别的执行中分开
+      // 等你确认阶段结果的也用提醒色转圈：工作流没走完，一直在这里转着等你看；对话停下了就不再转
+      glyph={
+        stage && k.status === 'stopped' ? (
+          <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
+        ) : (
+          <Loader2
+            className={cn(
+              'h-3.5 w-3.5 shrink-0 animate-spin',
+              stale?.cls ?? (k.diagnosis || stage || needs ? 'text-warning' : 'text-accent-text'),
+            )}
+          />
+        )
+      }
+      // 窄屏不写动作名：把宽度留给标题、状态标签和耗时，否则「计划 1/2」后面的「执行中」会被裁掉。
+      // 用 sr-only 不用 hidden：不占宽度，读屏仍能读到这行是子对话
+      verb={<span className="sr-only md:not-sr-only">{t('子对话')}</span>}
+      title={k.title || t('未命名')}
+      titleClass={NAME_TITLE}
+      open={false}
+      // 整段文本（动作名、标题、状态标签、正在做什么、耗时）都能点开这个子对话
+      rowOpen={openChild ? () => openChild(k.id) : undefined}
+      onOpen={openChild ? () => openChild(k.id) : undefined}
+      // 标题被前宽截断时，悬停能看全文（活动文字本来就有 title）
+      openTip={t('在右栏打开子对话「{title}」', { title: k.title || t('未命名') })}
+      detailStart
+      detail={
+        <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          {labels.map((l, i) => (
+            // 超窄屏（<359px）只留第一个状态标签：两个并排会被 overflow-hidden 裁掉，
+            // 读起来像「等结 0.1s」；这时活动文字也已隐藏，只保留最要紧的那个状态
+            // 按这一行自己的宽度也收：右栏占宽时视口再宽，行也可能只剩两三百像素
+            <span
+              key={l.text}
+              className={cn(childLabelClass[l.tone], i > 0 && 'max-[359px]:hidden @max-[300px]:hidden')}
+            >
+              {l.text}
+            </span>
+          ))}
+          {/* 行的宽度留给状态标签和耗时：活动文字是补充信息，行够宽才显示（按这一行自己的
+                宽度，见 RowShell 的 container），不让标签被 overflow-hidden 裁成「计划 1」。悬停看全文。
+                gone 单独算在内：没有活动文字时也要能悬停看到「进程已回收」 */}
+          {(note || stale || gone) && (
+            <span
+              className={cn('hidden min-w-0 truncate font-sans @min-[380px]:block', stale ? stale.cls : 'text-subtle')}
+              title={detail}
+            >
+              {/* 没有活动文字时退回「进程已回收」那句：不然 span 是空的，悬停根本悬不到 */}
+              {stale ? stale.text : note || gone}
+            </span>
+          )}
+        </span>
+      }
+      ms={childMs(k, now)}
+      // 在等你确认诊断报告：行尾直接给「查看报告」，不用先进子对话找交报告那一行
+      // 等你确认工作流阶段的结果：行尾「查看结果」在这里直接打开审阅弹窗
+      action={
+        k.diagnosis ? (
+          <ChildReportButton childId={k.id} />
+        ) : stage ? (
+          <ChildConfirmButton childId={k.id} />
+        ) : act && openChild ? (
+          // 等你操作（request_user_action）：和子对话列表一样给「去操作」，在右栏打开它，
+          // 步骤和交回都在子对话自己的输入框上面
+          // 行窄时只留手势图标、再窄就不放（整行本来就能点开它）：按这一行自己的宽度（见 RowShell 的 container），
+          // 宽度先让给状态标签「等你操作」
+          <Button
+            size="sm"
+            className="h-6 shrink-0 px-1.5 text-xs @max-[360px]:hidden @min-[480px]:px-2"
+            aria-label={t('去操作')}
+            title={t('去操作')}
+            onClick={(e) => {
+              e.stopPropagation()
+              openChild(k.id)
+            }}
+          >
+            <Hand className="h-3 w-3" />
+            <span className="hidden @min-[480px]:inline">{t('去操作')}</span>
+          </Button>
+        ) : undefined
+      }
+    />
+  )
 }

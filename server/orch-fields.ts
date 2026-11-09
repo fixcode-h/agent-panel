@@ -43,7 +43,7 @@ export const tierField = () => ({
 
 /** 接着之前哪个子任务（它的 id）的会话做 */
 export const RESUME_DESC =
-  '接着之前哪个子任务（它的 id，例如 chat/sub/h1）的会话做：复看的评审接着上一次评审，它读过的文档、代码和给过的意见都还在，只交给它增量。失败、被终止或中断的子任务要重试也写它的 id：就在原来那个子任务里接着做（同一个 id 和会话），不要另派一个新的。那个子任务要已经结束；agent 不写或写同一个角色'
+  '接着之前哪个子任务（它的 id，照 spawn_agents 返回的原样写，例如 @chat/sub/h1、n1/sub/h2）的会话做：复看的评审接着上一次评审，它读过的文档、代码和给过的意见都还在，只交给它增量。失败、被终止或中断的子任务要重试也写它的 id：就在原来那个子任务里接着做（同一个 id 和会话），不要另派一个新的。那个子任务要已经结束；agent 不写或写同一个角色'
 
 /** top：写在 spawn_agents 顶层。一个会话只能接着跑一轮，所以顶层只配一个任务时才允许 */
 export const resumeField = (top = false) => ({
@@ -61,7 +61,7 @@ export const batchField = <T extends { description: string }>(f: T) => ({
 })
 
 /** spawn_agents 顶层认得的字段：其余字段不静默丢掉（写错名字的 resume 一丢，复看就换了角色和会话） */
-export const SPAWN_TOP_FIELDS = ['tasks', 'step', 'agent', 'tier', 'resume', 'params', 'route']
+export const SPAWN_TOP_FIELDS = ['tasks', 'step', 'agent', 'tier', 'resume', 'params', 'review', 'route']
 
 /** 派出的角色参数：角色有几种做法（「测试验收」的 task）时靠它点名，不写按挂载上的或角色默认的 */
 export const paramsField = () => ({
@@ -93,6 +93,28 @@ export function routeOf(v: unknown): RouteInput | undefined {
   return out.understanding || out.reason || out.assumptions ? out : undefined
 }
 
+/** 派「评审」时的交接单：也能写在 spawn_agents 顶层整批共用（见 batchField） */
+export const reviewField = () => ({
+  type: 'object',
+  description:
+    '派「评审」看代码改动时的交接单（第一次评审必填 goal 和 checks，复看不用）：把你已经知道的整理给它，评审只看改动的代码，不再自己读文档、搜项目去还原背景',
+  properties: {
+    goal: { type: 'string', description: '这次改动要达成什么、验收标准（有口径的连口径）' },
+    changes: { type: 'string', description: '改了什么、为什么这样改：按文件或模块一两句' },
+    checks: { type: 'string', description: '已经跑过的检查：每条「命令 + 结果」' },
+    focus: { type: 'string', description: '希望重点看的风险点' },
+    context: {
+      type: 'string',
+      description: '判断要用、差异里又看不到的事实：调用方怎么用、上游保证了什么、相关接口签名（从你读过的代码里摘）',
+    },
+    files: {
+      type: 'array',
+      items: { type: 'string' },
+      description: '要评审的文件（相对项目根）：只取这些文件的差异；不写取这个对话改过的全部文件',
+    },
+  },
+})
+
 export const tasksField = (o: Orchestra) => ({
   type: 'array',
   description: '每一项是一个子任务，互相之间不能有依赖',
@@ -113,27 +135,7 @@ export const tasksField = (o: Orchestra) => ({
       tier: tierField(),
       resume: resumeField(),
       params: paramsField(),
-      review: {
-        type: 'object',
-        description:
-          '派「评审」看代码改动时的交接单（第一次评审必填 goal 和 checks，复看不用）：把你已经知道的整理给它，评审只看改动的代码，不再自己读文档、搜项目去还原背景',
-        properties: {
-          goal: { type: 'string', description: '这次改动要达成什么、验收标准（有口径的连口径）' },
-          changes: { type: 'string', description: '改了什么、为什么这样改：按文件或模块一两句' },
-          checks: { type: 'string', description: '已经跑过的检查：每条「命令 + 结果」' },
-          focus: { type: 'string', description: '希望重点看的风险点' },
-          context: {
-            type: 'string',
-            description:
-              '判断要用、差异里又看不到的事实：调用方怎么用、上游保证了什么、相关接口签名（从你读过的代码里摘）',
-          },
-          files: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '要评审的文件（相对项目根）：只取这些文件的差异；不写取这个对话改过的全部文件',
-          },
-        },
-      },
+      review: reviewField(),
     },
     // title 不必填：缺了引擎取 instructions 第一行（见 engine.ts 的 spawn），因为漏写标题被拒、白费一次调用不值
     required: ['instructions'],
