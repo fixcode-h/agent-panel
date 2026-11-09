@@ -1,4 +1,4 @@
-import { Fragment, memo, useContext, useEffect, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import { ChevronRight, Brain, CircleAlert, Clock, Loader2, RotateCw, TriangleAlert } from 'lucide-react'
 import { LEAD_TAG, PANEL_KIND } from './panel-kind'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,6 @@ import { fmtDuration } from '@/lib/tasks'
 import { replyText } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
 import { DispatchSlot, InlineRoutes, useRouteAnchors } from './route-context'
-import { InPlaceCtx } from './dispatch-ctx'
 import { ReceivedRow } from './PeerMessage'
 import { peerOfMessage } from '@shared/peer-message'
 import { useChildOpen, useChildList, useRunViewOpen, useRunViewTip } from './child-open'
@@ -729,7 +728,7 @@ export function RunningFooter({
   // 两个表达式能分叉（live 且 tools 非空时判空说「有内容」、RunningNow 却返回 null），
   // 总结下面就会出现一条没有内容的横线
   const shownTools = live ? [] : tools
-  const rows = runningRows({ task, tools: shownTools, jobs, kids, children, skip: useContext(InPlaceCtx) })
+  const rows = runningRows({ task, tools: shownTools, jobs, kids, children })
   // 工作流那一行和子对话、后台命令一样只在最新的一轮上列：latest 已经跳过尾部刚发出的用户消息，
   // 只看 last 的话，发送的一瞬间它也会跟着消失，AI 开始输出再回来。
   // 别的调用方（辅助对话、设计对话）没有 latest，仍然只按 last 判

@@ -255,19 +255,3 @@ export function staysOut(d: Dispatch, isOpen: (d: Dispatch) => boolean) {
   if (d.failed || d.grouped) return false
   return d.kind === 'child-new' || d.kind === 'child-resend' || d.kind === 'subtask' || isOpen(d)
 }
-
-/** 一串派单里还没办完的子对话、子任务：最新一轮里它们画在原位，运行区不再重复列（§5.2） */
-export function openTargets(ds: Dispatch[], isOpen: (d: Dispatch) => boolean) {
-  const out = { children: new Set<string>(), helpers: new Set<string>() }
-  for (const d of ds) {
-    if (!isOpen(d)) continue
-    const set =
-      d.kind === 'child-new' || d.kind === 'child-resend'
-        ? out.children
-        : d.kind === 'subtask'
-          ? out.helpers
-          : undefined
-    for (const x of d.targets) set?.add(x)
-  }
-  return out
-}

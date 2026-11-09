@@ -23,7 +23,7 @@ import {
   unfoldedText,
   type FoldPart,
 } from '@/lib/fold'
-import { dispatchKey, dispatchesOf, openTargets, staysOut } from '@/lib/fold-dispatch'
+import { dispatchKey, staysOut } from '@/lib/fold-dispatch'
 import { dedupePeerReports } from '@/lib/peer-dedupe'
 import { ReplyFrame } from '@/components/chat/ChatMessage'
 import { AgentMessage, inlineEntry, lastIndex, Msgs, RunningFooter, StickyAuthor, type Author } from './Messages'
@@ -33,7 +33,6 @@ import { runningTools } from './RunningNow'
 import { ConvChangesCard } from './TurnChanges'
 import { useEffortOf } from './ChatModelPicker'
 import { DispatchSlot, InlineRoutes, useDispatchOpen, useRouteAnchors } from './route-context'
-import { InPlaceCtx, LatestTurnCtx } from './dispatch-ctx'
 
 /** 折叠行：折起来的那部分做了什么、几次失败；点了展开收起 */
 function FoldLine({
@@ -301,9 +300,6 @@ export function ChatReply({
 
   // 一段已经收尾、又有新内容进来时分成几段：前面的段始终折叠，只有最后一段跟着 live 走
   const parts = fold ? splitFolds(list, cuts) : [list]
-  // 最新一轮里还没办完的派单画在原位、带着运行区那一行的操作，运行区不再重复列（设计稿 §5.2）
-  const isOpen = useDispatchOpen()
-  const inPlace = latest && fold && isOpen ? openTargets(dispatchesOf(list), isOpen) : null
   // 运行区（子对话、子任务、后台命令、工作流运行）挂在最新一段的总结下面；
   // 结果推回来开了新的一段，就跟着挂到新的总结下面
   const lastPart = lastIndex(parts, (p) => p.length > 0)
@@ -324,69 +320,67 @@ export function ChatReply({
         : undefined))
     : undefined
   const body = (
-    <LatestTurnCtx.Provider value={!!latest}>
-      <InPlaceCtx.Provider value={inPlace}>
-        {author && !hoistSticky && <StickyAuthor author={author} />}
-        {/* 回复完成后思考、工具调用和中间的说明自动收进一个折叠，折叠行写这段做了什么 */}
-        {parts.map((part, i) => {
-          if (!part.length) return null
-          const tail = i === parts.length - 1
-          // 名字只在第一段显示一次，后面几段接着上面那段接着写；
-          // 按 Agent 显示的对话没有外面的署名栏，名字行自己吸顶，和按 CLI 显示的一样
-          // 吸顶头由外层渲染时，这一段的正文不再自己画名字行
-          const same = { msgs: part, task, teamNames, author, command, hideAuthor: !!author || hoistSticky || i > 0 }
-          if (!fold) return <Msgs key={i} {...same} live={live} stickyAuthor={!author && !hoistSticky} />
-          const isLive = !!live && tail
-          const isTail = i === lastPart
-          // 子对话和后台命令只在最新的一轮上列。两者都跟 latest 走：latest 已经跳过尾部刚发出的
-          // 用户消息（见 latest-turn），发送的一瞬间它们不会整块消失；以前后台命令在对话停着时
-          // 看 last（「最后一段」），尾部多了用户消息就会和子对话分叉，两行一起闪一下
-          const kids = !!latest && isTail
-          const jobs = kids
-          // 运行区放在这一段的总结下面（它自己判空：没东西时连分割线也不画）。
-          // 不是最新的一段也可能有没收尾的工具（子对话回报把它顶下去了），那些工具仍归它自己列；
-          // 子对话、后台命令、工作流运行只在最新的一段列，旧段不重复
-          const footer = (
-            <RunningFooter
-              task={task}
-              msgs={msgs}
-              live={isLive}
-              tools={runningTools(part)}
-              jobs={jobs}
-              kids={kids}
-              last={last}
-              latest={latest}
-              isTail={isTail}
-            />
-          )
-          // 整个对话改了哪些文件：只在对话停下来以后、挂在最后一轮的最后一段下面（用户要的是整个对话的，
-          // 不是每一轮总结下面各一张）；对话还在跑时不出，跑完才出
-          const convCard = task && !isLive && last && isTail && !task.working
-          return (
-            <FoldedRun
-              key={i}
-              {...same}
-              live={isLive}
-              foldId={`${key}#${i}`}
-              // 对话停下了、这一段又没说完：折叠行尾写「已停止」
-              stopped={!!task && !!last && isTail && !task.working && task.status === 'stopped'}
-              stickyAuthor={!author && !hoistSticky && i === 0}
-              running={
-                convCard ? (
-                  <>
-                    <ConvChangesCard task={task!} />
-                    {footer}
-                  </>
-                ) : (
-                  footer
-                )
-              }
-            />
-          )
-        })}
-        {children}
-      </InPlaceCtx.Provider>
-    </LatestTurnCtx.Provider>
+    <>
+      {author && !hoistSticky && <StickyAuthor author={author} />}
+      {/* 回复完成后思考、工具调用和中间的说明自动收进一个折叠，折叠行写这段做了什么 */}
+      {parts.map((part, i) => {
+        if (!part.length) return null
+        const tail = i === parts.length - 1
+        // 名字只在第一段显示一次，后面几段接着上面那段接着写；
+        // 按 Agent 显示的对话没有外面的署名栏，名字行自己吸顶，和按 CLI 显示的一样
+        // 吸顶头由外层渲染时，这一段的正文不再自己画名字行
+        const same = { msgs: part, task, teamNames, author, command, hideAuthor: !!author || hoistSticky || i > 0 }
+        if (!fold) return <Msgs key={i} {...same} live={live} stickyAuthor={!author && !hoistSticky} />
+        const isLive = !!live && tail
+        const isTail = i === lastPart
+        // 子对话和后台命令只在最新的一轮上列。两者都跟 latest 走：latest 已经跳过尾部刚发出的
+        // 用户消息（见 latest-turn），发送的一瞬间它们不会整块消失；以前后台命令在对话停着时
+        // 看 last（「最后一段」），尾部多了用户消息就会和子对话分叉，两行一起闪一下
+        const kids = !!latest && isTail
+        const jobs = kids
+        // 运行区放在这一段的总结下面（它自己判空：没东西时连分割线也不画）。
+        // 不是最新的一段也可能有没收尾的工具（子对话回报把它顶下去了），那些工具仍归它自己列；
+        // 子对话、后台命令、工作流运行只在最新的一段列，旧段不重复
+        const footer = (
+          <RunningFooter
+            task={task}
+            msgs={msgs}
+            live={isLive}
+            tools={runningTools(part)}
+            jobs={jobs}
+            kids={kids}
+            last={last}
+            latest={latest}
+            isTail={isTail}
+          />
+        )
+        // 整个对话改了哪些文件：只在对话停下来以后、挂在最后一轮的最后一段下面（用户要的是整个对话的，
+        // 不是每一轮总结下面各一张）；对话还在跑时不出，跑完才出
+        const convCard = task && !isLive && last && isTail && !task.working
+        return (
+          <FoldedRun
+            key={i}
+            {...same}
+            live={isLive}
+            foldId={`${key}#${i}`}
+            // 对话停下了、这一段又没说完：折叠行尾写「已停止」
+            stopped={!!task && !!last && isTail && !task.working && task.status === 'stopped'}
+            stickyAuthor={!author && !hoistSticky && i === 0}
+            running={
+              convCard ? (
+                <>
+                  <ConvChangesCard task={task!} />
+                  {footer}
+                </>
+              ) : (
+                footer
+              )
+            }
+          />
+        )
+      })}
+      {children}
+    </>
   )
   // 正文比回复头缩进一格（reply-body）：图标在最左，名字、正文、下面的复制按钮在同一条竖线上
   // 吸顶头要跨过后面的用户消息时放在回复体外面（hoistSticky），由 TaskView 的分组容器当粘性包含块
