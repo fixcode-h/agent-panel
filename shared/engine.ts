@@ -1767,6 +1767,11 @@ const RETRY_HINT = (id: string) =>
 
 /** 节点结束前等它派出的子 Agent 都结束，返回它没取回的结果（并进节点的输出） */
 async function settleHelpers(host: EngineHost, step: TaskStep) {
+  return (await settleHelperBatch(host, step)).text
+}
+
+/** 同上，另外带上这一批交回结果的是哪几个子任务（步骤 id）：对话里那一行按它数个数 */
+async function settleHelperBatch(host: EngineHost, step: TaskStep): Promise<{ text: string; ids: string[] }> {
   const st = orchState(host)
   const kids = () => host.task.steps.filter((s) => s.parentId === step.id && s.slot === 'sub')
   // 等的这段时间里对话可能又派了几个（用户插进来聊的那一轮）：它们算进同一批，一起交回
@@ -1779,7 +1784,7 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
   // 计划里等这些子任务的步骤跟着收口：成功标完成，失败/被终止退回进行中
   settleHelperWaits(host)
   const outputs = await layeredBatch(host.saveHandoff, late, wholeReport(host))
-  return late
+  const text = late
     .map((k) =>
       k.status === 'done'
         ? `### ${k.title}${k.submitted?.verdict ? '' : resultLine(k)}\n${outputs.get(k.id) ?? (k.output || '（没有文字输出）')}`
@@ -1789,6 +1794,7 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
           `\n${RETRY_HINT(k.id)}`,
     )
     .join('\n\n')
+  return { text, ids: late.map((k) => k.id) }
 }
 
 /** 任务里各个 Agent 的状态，按层级缩进，给 get_status 用 */
@@ -1891,7 +1897,7 @@ function makeOrchestra(
       if (going) return going
       const kids = () => task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub')
       if (!kids().some((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))) return undefined
-      const batch = settleHelpers(host, self).then((late): HelperBatch => {
+      const batch = settleHelperBatch(host, self).then(({ text: late, ids }): HelperBatch => {
         st.batches.delete(self.id)
         if (late) {
           // 交回的结果记成面板消息：对话里显示成 AI 回复里的一行，不当作用户说的话
@@ -1903,6 +1909,8 @@ function makeOrchestra(
             text: late,
             tools: [],
             panel: 'helpers',
+            // 个数按交回的子任务记：正文里子任务自己的输出也会带「### 」小标题，按标题数会多算
+            results: ids,
             at: now(),
           })
           host.changed(true)

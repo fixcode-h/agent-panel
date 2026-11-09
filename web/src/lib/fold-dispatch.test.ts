@@ -10,6 +10,8 @@ import {
   dispatchesOf,
   latestChildDispatch,
   routeDispatches,
+  staysOut,
+  type Dispatch,
   type DispatchWorld,
 } from './fold-dispatch.ts'
 
@@ -116,4 +118,28 @@ test('dispatchState：子对话只有最近那次派单跟着它的状态走，�
   const w = world([child({})])
   w.rerouted.add('r9')
   assert.deepEqual(dispatchState(resend, [route('r9', 'resend', ['c1'], 6)], w), { status: 'rerouted', open: false })
+})
+
+test('staysOut：子对话、子任务做完也留在折叠外面；后台命令办完、调用失败、旧的合成一行照常收进去', () => {
+  const d = (kind: Dispatch['kind'], extra: Partial<Dispatch> = {}): Dispatch => ({
+    key: kind,
+    msgId: 'm',
+    index: 0,
+    tool: 0,
+    kind,
+    targets: [],
+    failed: false,
+    ...extra,
+  })
+  const done = () => false
+  assert.equal(staysOut(d('child-new'), done), true)
+  assert.equal(staysOut(d('child-resend'), done), true)
+  assert.equal(staysOut(d('subtask'), done), true)
+  assert.equal(staysOut(d('job'), done), false)
+  assert.equal(
+    staysOut(d('job'), () => true),
+    true,
+  )
+  assert.equal(staysOut(d('child-new', { failed: true }), done), false)
+  assert.equal(staysOut(d('child-resend', { grouped: true }), done), false)
 })

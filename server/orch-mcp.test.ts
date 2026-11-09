@@ -410,6 +410,8 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
   const back = task.messages.find((m) => m.panel === 'helpers')
   assert.equal(back?.role, 'system')
   assert.match(back!.text, /### 页面/)
+  // 交回的是哪几个子任务记在消息上：界面按它数个数，不数正文里的标题
+  assert.equal(back!.results?.length, 1)
   assert.equal(task.status, 'done')
 })
 

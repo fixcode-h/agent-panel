@@ -23,7 +23,7 @@ import {
   unfoldedText,
   type FoldPart,
 } from '@/lib/fold'
-import { dispatchKey, dispatchesOf, openTargets } from '@/lib/fold-dispatch'
+import { dispatchKey, dispatchesOf, openTargets, staysOut } from '@/lib/fold-dispatch'
 import { dedupePeerReports } from '@/lib/peer-dedupe'
 import { ReplyFrame } from '@/components/chat/ChatMessage'
 import { AgentMessage, inlineEntry, lastIndex, Msgs, RunningFooter, StickyAuthor, type Author } from './Messages'
@@ -122,7 +122,8 @@ export function FoldedRun({
   const effortOf = useEffortOf()
   const same = { task, teamNames, author, command }
   const all = <Msgs msgs={msgs} {...same} live={live} hideAuthor={hideAuthor} stickyAuthor={stickyAuthor} />
-  const layout = live ? undefined : foldLayout(msgs, isOpen)
+  // 子对话、子任务做完了也不折（staysOut）；没有派单上下文的地方（工作流节点、设计页）照旧都折
+  const layout = live ? undefined : foldLayout(msgs, isOpen && ((d) => staysOut(d, isOpen)))
   // 没有可折的过程：整段照常显示，还在运行的东西接在后面
   if (!layout || layout.flat || (!layout.main.parts.length && !layout.mid.show && !layout.tail.show))
     return (

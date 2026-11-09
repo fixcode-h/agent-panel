@@ -246,6 +246,16 @@ export function dispatchState(d: Dispatch, routes: TaskRoute[] | undefined, w: D
   }
 }
 
+/**
+ * 这次派单留不留在折叠外面：子对话、子任务做完了也留在原位（用户 2026-11-09 要求「完成也显示在那个地方不折叠」），
+ * 行尾的状态胶囊写「已完成」；别的派单（后台命令、就地微改动）没办完才留。调用本身失败的照工具失败收进折叠；
+ * 旧记录里同一段话发给几个子对话的合成一行画，不拆出来
+ */
+export function staysOut(d: Dispatch, isOpen: (d: Dispatch) => boolean) {
+  if (d.failed || d.grouped) return false
+  return d.kind === 'child-new' || d.kind === 'child-resend' || d.kind === 'subtask' || isOpen(d)
+}
+
 /** 一串派单里还没办完的子对话、子任务：最新一轮里它们画在原位，运行区不再重复列（§5.2） */
 export function openTargets(ds: Dispatch[], isOpen: (d: Dispatch) => boolean) {
   const out = { children: new Set<string>(), helpers: new Set<string>() }
