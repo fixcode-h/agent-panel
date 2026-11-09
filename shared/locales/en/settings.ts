@@ -312,6 +312,8 @@ export const EN_SETTINGS: Record<string, string> = {
   正式版: 'Stable',
   '没有更新说明。': 'No release notes.',
   查看更新说明: 'View release notes',
+  本版更新内容: "What's new in this version",
+  新版本更新内容: "What's new",
   当前: 'Current',
   '下载 zip 包（约 {size}）': 'Download zip (about {size})',
   '下载 zip 包': 'Download zip',

@@ -12,7 +12,7 @@ import {
   Undo2,
   Zap,
 } from 'lucide-react'
-import { compareVersions, minutesUntil, REPO, type AppRelease } from '@shared/version'
+import { compareVersions, minutesUntil, releasesSince, REPO, type AppRelease } from '@shared/version'
 import { hhmm, pad2, ymd } from '@shared/datetime'
 import {
   adoptRunningJob,
@@ -35,6 +35,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { LocalPackageButton } from './LocalPackageButton'
+import { ReleaseChanges } from './ReleaseChanges'
 
 /** 更新说明里没有 @角色 */
 const NO_TEAM = new Set<string>()
@@ -241,6 +242,9 @@ export function UpdateSection({
           <span className="text-xs text-subtle">{t('打开页面时和页面开着时每小时检查一次；关掉后只保留手动检查')}</span>
         </label>
 
+        {/* 这一版改了什么：更新完回来看一眼就知道新东西在哪 */}
+        {cur && <ReleaseChanges label={t('本版更新内容')} releases={[cur]} />}
+
         {running ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-xs">
@@ -338,27 +342,35 @@ export function UpdateSection({
               )
             )}
             {data.update ? (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-3.5 py-2.5">
-                <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent-text" />
-                <span className="min-w-0 flex-1 text-body">
-                  {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
-                  <span className="text-subtle"> · {dateTime(data.update.publishedAt)}</span>
-                </span>
-                {canInstall && data.update.tarUrl ? (
-                  <Button size="sm" onClick={() => setConfirm(data.update!)}>
-                    {t('更新到 {tag}', { tag: data.update.tag })}
-                  </Button>
-                ) : (
-                  <a
-                    href={data.update.url || RELEASES_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-body text-accent-text hover:underline"
-                  >
-                    {t('到 GitHub Releases 下载')}
-                  </a>
-                )}
-              </div>
+              <>
+                <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-3.5 py-2.5">
+                  <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent-text" />
+                  <span className="min-w-0 flex-1 text-body">
+                    {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
+                    <span className="text-subtle"> · {dateTime(data.update.publishedAt)}</span>
+                  </span>
+                  {canInstall && data.update.tarUrl ? (
+                    <Button size="sm" onClick={() => setConfirm(data.update!)}>
+                      {t('更新到 {tag}', { tag: data.update.tag })}
+                    </Button>
+                  ) : (
+                    <a
+                      href={data.update.url || RELEASES_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-body text-accent-text hover:underline"
+                    >
+                      {t('到 GitHub Releases 下载')}
+                    </a>
+                  )}
+                </div>
+                {/* 跳过几版再更新时，中间每一版的改动都列出来，默认展开 */}
+                <ReleaseChanges
+                  label={t('新版本更新内容')}
+                  releases={releasesSince(data.releases, current, data.update)}
+                  defaultOpen
+                />
+              </>
             ) : loading ? (
               // 已经读到本地版本、正在问 GitHub：不能显示成「还没有检查」
               <p className="flex items-center gap-1.5 text-body text-subtle">

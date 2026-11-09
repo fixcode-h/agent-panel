@@ -47,7 +47,7 @@ export function commitRange({ prev, channel, allowNoTag = false }) {
   if (prev) return { range: [`${prev}..HEAD`], warning: '' }
   if (channel !== 'dev' && !allowNoTag)
     throw new Error(
-      '找不到上一个正式版标签（v<主>.<次>.<提交数>，不带后缀）：更新说明没法确定从哪个提交开始。' +
+      '找不到上一个正式版标签（v<主>.<次>.<修订号>，不带后缀）：更新说明没法确定从哪个提交开始。' +
         '出包时检查 checkout 有没有带上标签（fetch-depth: 0）；本地试跑加 --allow-no-tag，或者第三个参数直接给标签',
     )
   return {
