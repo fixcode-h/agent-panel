@@ -59,6 +59,10 @@ process.on('exit', () => {
 let output = ''
 /** 面板开着的 tailscale serve / funnel：关外部访问、换方式时按它关掉 */
 let tsActive: { bin: string; cfg: RemoteAccess['tailscale'] } | null = null
+/** 正在跑的 tailscale serve / funnel（可能在等用户去后台开启）：换设置、关外部访问时停掉它 */
+let tsPending: AbortController | null = null
+/** tailscale 等用户去后台开启 Serve / Funnel 的链接，开好后清空 */
+let enableUrl = ''
 let tsCache: { key: string; at: number; data: TailscaleInfo } | null = null
 let download: { running: boolean; percent: number; error: string } | null = null
 
@@ -214,19 +218,51 @@ async function probeTailscale(s: RemoteAccess, force = false) {
   return data
 }
 
-/** Tailscale 方式：tailscale serve / funnel 把 https://<机器名>.ts.net 转到外网专用端口 */
+/**
+ * Tailscale 方式：tailscale serve / funnel 把 https://<机器名>.ts.net 转到外网专用端口。
+ * tailnet 还没开启 Serve / Funnel 时 tailscale 打出开启链接后一直等：这里不陪着等（不然「重新连接」一直转圈、状态停在未启用），
+ * 先把链接交给设置页、状态记为正在连接，命令在后台接着等，用户开好后它自己配完，状态转为已连接
+ */
 async function startTailscale(s: RemoteAccess, ext: number) {
+  state = 'starting'
   const info = await probeTailscale(s, true)
   if (!info.installed || !info.running) return fail(info.error)
-  await tailscaleStart(info.path, s.tailscale, ext)
+  const ac = new AbortController()
+  tsPending = ac
   tsActive = { bin: info.path, cfg: s.tailscale }
-  url = tailscaleUrl(info.dnsName, s.tailscale.httpsPort)
-  state = 'running'
-  error = ''
-  log.info('remote', '外部访问已启用（Tailscale）', { url, funnel: s.tailscale.funnel })
+  let needEnable!: () => void
+  const asked = new Promise<void>((resolve) => (needEnable = resolve))
+  const done = tailscaleStart(info.path, s.tailscale, ext, {
+    signal: ac.signal,
+    onNeedEnable: (link) => {
+      enableUrl = link
+      log.info('remote', 'Tailscale 等待在后台开启', { link, funnel: s.tailscale.funnel })
+      needEnable()
+    },
+  }).then(
+    () => {
+      if (tsPending !== ac) return
+      tsPending = null
+      enableUrl = ''
+      url = tailscaleUrl(info.dnsName, s.tailscale.httpsPort)
+      state = 'running'
+      error = ''
+      log.info('remote', '外部访问已启用（Tailscale）', { url, funnel: s.tailscale.funnel })
+    },
+    (e: Error) => {
+      if (tsPending !== ac) return
+      tsPending = null
+      enableUrl = ''
+      fail(e.message)
+    },
+  )
+  await Promise.race([done, asked])
 }
 
 async function stopTailscale() {
+  tsPending?.abort()
+  tsPending = null
+  enableUrl = ''
   const x = tsActive
   tsActive = null
   if (x) await tailscaleStop(x.bin, x.cfg)
@@ -416,6 +452,7 @@ async function status(): Promise<RemoteAccessStatus> {
     hasPassword: hasPassword(),
     localUser: localUser(),
     tailscale: s.mode === 'tailscale' ? await probeTailscale(s) : null,
+    enableUrl,
     download,
     deploy,
     mappings: s.mode === 'frp' && s.enabled ? await withLocalProbe(s) : mappingStates,
@@ -562,7 +599,8 @@ export function remoteApi() {
   routes.post('/tailscale/check', async (c) => {
     const s = (await getSettings()).remoteAccess
     await probeTailscale(s, true)
-    if (s.enabled && s.mode === 'tailscale' && state !== 'running') await applyRemote()
+    // 正在等用户去后台开启时不重来：开好后后台那条命令自己会连上，重来只会再打一遍链接
+    if (s.enabled && s.mode === 'tailscale' && state !== 'running' && !tsPending) await applyRemote()
     return c.json(await status())
   })
   routes.route('/guard', guardApi())

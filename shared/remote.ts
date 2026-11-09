@@ -27,6 +27,8 @@ export interface RemoteAccessStatus {
   localUser: string
   /** Tailscale 的检测结果（只在 Tailscale 方式下检测） */
   tailscale: TailscaleInfo | null
+  /** Tailscale 等你去后台开启 Serve / Funnel 的链接（tailscale 自己给的）；开好后自动连上，没在等时为空 */
+  enableUrl: string
   /** 正在下载 frpc；percent 为 -1 时不知道总大小 */
   download: { running: boolean; percent: number; error: string } | null
   /** 一键配置云服务器的进度 */

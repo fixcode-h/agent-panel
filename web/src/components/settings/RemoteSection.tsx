@@ -15,6 +15,7 @@ import { FrpTest } from './FrpTest'
 import { GuardGroup } from './GuardGroup'
 import { ProxyGuide } from './ProxyGuide'
 import { TailscaleGroup } from './TailscaleGroup'
+import { LinkedText, TailscaleEnableNotice } from './RemoteNotice'
 
 const STATE_TEXT: Record<RemoteAccessStatus['state'], string> = {
   off: t('未启用'),
@@ -72,7 +73,16 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
     }
   }
 
-  const tone = status?.state === 'running' ? 'bg-success' : status?.state === 'error' ? 'bg-danger' : 'bg-line-strong'
+  // Tailscale 在等你去后台开启 Serve / Funnel：不是出错，也不是还在连，单独说清楚
+  const waitingEnable = value.mode === 'tailscale' && !!status?.enableUrl
+  const tone =
+    status?.state === 'running'
+      ? 'bg-success'
+      : status?.state === 'error'
+        ? 'bg-danger'
+        : waitingEnable
+          ? 'bg-warning'
+          : 'bg-line-strong'
   const custom = value.mode === 'custom'
   const lan = status?.lanIps[0] ?? ''
   // 自建反代转发的目标：反代在本机就是 127.0.0.1；监听所有网卡时多半是 Docker 里的 NPM / Caddy，给局域网 IP
@@ -213,7 +223,9 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2 text-body">
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} />
-                  <span>{status ? STATE_TEXT[status.state] : t('检测中…')}</span>
+                  <span>
+                    {!status ? t('检测中…') : waitingEnable ? t('等你在 Tailscale 开启') : STATE_TEXT[status.state]}
+                  </span>
                   <Button size="sm" variant="ghost" onClick={restart} disabled={restarting} className="ml-auto">
                     <RefreshCw className={`h-3.5 w-3.5 ${restarting ? 'animate-spin' : ''}`} />
                     {restarting ? t('正在重新连接…') : t('重新连接')}
@@ -226,8 +238,13 @@ export function RemoteSection({ value, onChange }: { value: RemoteAccess; onChan
                     </span>
                   )}
                 </div>
+                {waitingEnable && status && (
+                  <TailscaleEnableNotice url={status.enableUrl} funnel={value.tailscale.funnel} />
+                )}
                 {status?.error && (
-                  <p className="text-footnote leading-relaxed whitespace-pre-wrap text-danger">{status.error}</p>
+                  <p className="text-footnote leading-relaxed whitespace-pre-wrap text-danger">
+                    <LinkedText text={status.error} />
+                  </p>
                 )}
               </div>
             </Row>

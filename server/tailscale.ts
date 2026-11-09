@@ -1,7 +1,7 @@
 import type { RemoteAccess } from '../shared/schema.ts'
 import type { TailscaleInfo } from '../shared/remote.ts'
 import { t } from '../shared/i18n.ts'
-import { capture, childEnv } from './exec/process.ts'
+import { capture, childEnv, runProcess } from './exec/process.ts'
 import { resolveCommand } from './cli-source.ts'
 import { refreshWinPath } from './win-path.ts'
 
@@ -66,14 +66,66 @@ export async function tailscaleInfo(command: string): Promise<TailscaleInfo> {
 export const tailscaleUrl = (dnsName: string, port: number) =>
   dnsName ? `https://${dnsName}${port === 443 ? '' : `:${port}`}` : ''
 
-/** 开转发：把 https 端口转到本机外网专用端口；失败抛出 tailscale 自己的报错 */
-export async function tailscaleStart(bin: string, s: RemoteAccess['tailscale'], localPort: number) {
+/**
+ * tailscale 要用户先去后台开启 Serve / Funnel 时打出来的链接（login.tailscale.com/f/serve?node=…）。
+ * 这时 tailscale serve / funnel 不退出，一直等到用户开好才接着配转发（tailscale 的 enableFeatureInteractive）
+ */
+export const enableUrlOf = (line: string) => line.match(/https:\/\/login\.tailscale\.com\/f\/\S+/)?.[0] ?? ''
+
+/**
+ * 开转发：把 https 端口转到本机外网专用端口；失败抛出 tailscale 自己的报错。
+ * tailscale 打出开启链接时调 onNeedEnable 并继续等它（不按 15 秒超时杀掉）：用户在后台开好后命令自己接着配完、正常退出；
+ * 换设置、关外部访问时由 signal 停掉
+ */
+export async function tailscaleStart(
+  bin: string,
+  s: RemoteAccess['tailscale'],
+  localPort: number,
+  o: { signal: AbortSignal; onNeedEnable: (url: string) => void },
+) {
   const verb = s.funnel ? 'funnel' : 'serve'
   // 先关掉另一种（serve 和 funnel 用的是同一个 https 端口），免得切换后还留着公网入口
   await run(bin, [s.funnel ? 'serve' : 'funnel', `--https=${s.httpsPort}`, 'off']).catch(() => {})
-  const r = await run(bin, [verb, '--bg', `--https=${s.httpsPort}`, `http://127.0.0.1:${localPort}`])
-  if (r.spawnError || r.killed || r.code !== 0)
-    throw new Error(t('tailscale {verb} 没有成功：{log}', { verb, log: tail(r) || String(r.code) }))
+  const stop = new AbortController()
+  const abort = () => stop.abort()
+  o.signal.addEventListener('abort', abort)
+  let waiting = false
+  let timedOut = false
+  // 没打出开启链接时 15 秒还没结束就算卡住；打出来以后在等用户，不限时
+  const timer = setTimeout(() => {
+    if (waiting) return
+    timedOut = true
+    stop.abort()
+  }, 15_000)
+  const lines: string[] = []
+  const r = await runProcess({
+    command: bin,
+    args: [verb, '--bg', `--https=${s.httpsPort}`, `http://127.0.0.1:${localPort}`],
+    cwd: process.cwd(),
+    env: childEnv([]),
+    signal: stop.signal,
+    onLine: (l) => {
+      lines.push(l)
+      const url = enableUrlOf(l)
+      if (url && !waiting) {
+        waiting = true
+        o.onNeedEnable(url)
+      }
+    },
+  }).finally(() => {
+    clearTimeout(timer)
+    o.signal.removeEventListener('abort', abort)
+  })
+  // 被换设置停掉的：调用方不再关心结果，不用给用户看的文案
+  if (o.signal.aborted) throw new Error('aborted')
+  if (r.spawnError || r.killed || r.code !== 0) {
+    const log = tail({ ...r, stdout: lines.join('\n') }) || String(r.code)
+    throw new Error(
+      timedOut
+        ? t('tailscale {verb} 15 秒没有结束：{log}', { verb, log })
+        : t('tailscale {verb} 没有成功：{log}', { verb, log }),
+    )
+  }
 }
 
 /** 关掉面板开的那条转发（只关这个端口，用户自己配的别的 serve 不动） */
