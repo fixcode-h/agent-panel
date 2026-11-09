@@ -46,7 +46,8 @@ import {
   ContextMenuLabel,
   ContextMenuTrigger,
 } from '@/components/ui/menu'
-import { ChatReply, DeliveryLine, PendingAuthor } from '@/components/tasks/Messages'
+import { DeliveryLine, PendingAuthor } from '@/components/tasks/Messages'
+import { ChatReply } from '@/components/tasks/FoldedRun'
 import { SystemNote } from '@/components/tasks/SystemNote'
 import { conversationAround } from '@shared/fix'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'

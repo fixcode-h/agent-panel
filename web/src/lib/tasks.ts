@@ -154,7 +154,7 @@ export function toolVerb(tool: ToolUse) {
 const OLD_WAIT = /^(做完 \d+ 个|还在执行 \d+ 个|你还没有派出子任务)/
 
 /** 面板工具的名字：认不出来时是空的 */
-function panelName(tool: ToolUse) {
+export function panelName(tool: ToolUse) {
   // 加载工具定义的那一步（新记录是 kind search，旧记录名字还是 ToolSearch）：参数里写着面板工具名，但不是在调用它
   if (tool.kind === 'search' || isToolLookup(tool.name ?? '')) return ''
   const hit = PANEL_TOOL_RE.exec(`${tool.name ?? ''} ${tool.label}`)
@@ -164,11 +164,21 @@ function panelName(tool: ToolUse) {
   return tool.kind === 'agent' && !tool.name && !tool.label && OLD_WAIT.test(tool.output ?? '') ? 'wait_agents' : ''
 }
 
+/**
+ * 这次调用实际调的面板工具：经 more_tools 调用的拆出真正的工具名（只查用法、没调用的仍是 more_tools），
+ * 和 panelTool 显示用的是同一个口径；不是面板工具返回空
+ */
+export function panelCallName(tool: ToolUse) {
+  const name = panelName(tool)
+  if (name !== 'more_tools') return name
+  return unwrapMoreTools(tool.input ?? '')?.name ?? name
+}
+
 /** 别的 MCP 工具：解析器记成 name「MCP」、label「服务名 · 工具名」 */
 const MCP_LABEL = /^(.+?) · (.+)$/
 
 /** 工具调用的参数：多数 CLI 给的是 JSON，解析不了就当没有 */
-function toolArgs(tool: ToolUse): Record<string, unknown> {
+export function toolArgs(tool: ToolUse): Record<string, unknown> {
   try {
     const v = JSON.parse(tool.input ?? '')
     return v && typeof v === 'object' ? v : {}

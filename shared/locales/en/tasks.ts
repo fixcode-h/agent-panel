@@ -1335,7 +1335,7 @@ export const EN_TASKS: Record<string, string> = {
   什么时候: 'When',
   为什么: 'Why',
   原本拦住的是: 'What it blocked',
-  // 分诊卡（RouteCard）
+  // 派单行（DispatchRow，原来的分诊卡）
   新开子对话: 'New child conversation',
   交回子对话: 'Back to child conversation',
   派子任务: 'Subtask',
@@ -1343,8 +1343,13 @@ export const EN_TASKS: Record<string, string> = {
   改为就地处理: 'Handle in place',
   改为子任务: 'Make it a subtask',
   改为子对话: 'Give to a child conversation',
-  分诊: 'Triage',
   已改派: 'Rerouted',
+  改派: 'Reroute',
+  展开分诊说明: 'Show triage notes',
+  收起分诊说明: 'Hide triage notes',
+  交接内容: 'Handoff',
+  '新开 {n} 个子对话': 'Opened {n} child conversations',
+  '交回子对话 {n} 次': 'Sent back to child conversations {n} times',
   理解: 'Understood as',
   理由: 'Why',
   假设: 'Assumed',

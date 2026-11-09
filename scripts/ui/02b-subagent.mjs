@@ -16,15 +16,28 @@ await runShard(import.meta.filename, async (api) => {
   const p = await openCartTask(api)
   const { backToTask } = taskPageHelpers(p, api)
 
-  // 分诊卡插在 AI 回复里派单的那一处（不堆在用户消息下面），回复收尾折叠后也照样看得到
+  // 分诊并进派单行（设计稿：回复折叠与派单行重设计 §4）：不再有单独的分诊卡片；
+  // 子任务已经做完，派单行跟着这一段收进折叠，折叠行写「派出 n 个子任务」，点开后派单行带着分诊的「理解」
   {
-    const card = p.locator('.reply-body [data-route-card="inline"]').filter({ hasText: '核对角标的订阅时机' })
-    if (!(await card.count())) errors.push('分诊卡：AI 回复里派子任务的那一处没有分诊卡')
+    if (await p.locator('[data-route-card]').count()) errors.push('派单行：还画着旧的分诊卡片')
+    const fold = p.getByRole('button', { name: /派出 \d+ 个子任务/ }).first()
+    if (!(await fold.count())) errors.push('派单行：做完的子任务没有收进折叠（折叠行里没有「派出 n 个子任务」）')
     else {
-      await card.first().scrollIntoViewIfNeeded()
-      if (!(await card.first().isVisible())) errors.push('分诊卡：回复折叠后分诊卡被收进了折叠')
-      if (await p.locator('[data-route-card=""]').count()) errors.push('分诊卡：对得上回复的分诊卡还画在用户消息下面')
-      await check(p, '分诊卡-插在回复里', ['分诊', '派子任务'])
+      await fold.scrollIntoViewIfNeeded()
+      await fold.click()
+      await settle(p)
+      const row = p.locator('.reply-body [data-dispatch="subtask"]').filter({ hasText: '核对角标的订阅时机' })
+      if (!(await row.count())) errors.push('派单行：展开过程后没有派子任务那一行')
+      else {
+        if (!(await row.first().getByText('加购后角标数字不变').count()))
+          errors.push('派单行：第二行没有分诊的「理解」')
+        if (await row.first().getByRole('button', { name: '改为就地处理' }).count())
+          errors.push('派单行：改派按钮还常驻在行上，应该收进 ⋯ 菜单')
+        await row.first().scrollIntoViewIfNeeded()
+        await check(p, '派单行-展开过程', ['派子任务', '加购后角标数字不变'])
+      }
+      await fold.click()
+      await settle(p)
     }
   }
 
@@ -1019,8 +1032,7 @@ await runShard(import.meta.filename, async (api) => {
       .waitFor({ timeout: 10000 })
       .catch(() => errors.push('诊断报告：子对话运行区的报告卡片上没有「查看报告」'))
     await check(p, '诊断报告-子对话里的工具行')
-    if (!(await childView(p).getByText('等你查看报告').count()))
-      errors.push('诊断报告：交报告那一行没有写「等你查看报告」')
+    // 交报告是收尾动作（回复折叠重设计 §3.1）：总结之后只剩收尾调用时不出协调小行，等你看的入口只在运行区的报告卡片上
     if (await open.count()) {
       // 卡片旧的在上、新的在下：点最下面那张，看的是在等确认的最新一份
       await open.last().click()
