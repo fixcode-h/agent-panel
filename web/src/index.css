@@ -991,64 +991,79 @@ body,
 ::selection {
   background: var(--selection);
 }
-/*
- * 滚动条只在正在滚动的那一块上显示，停下约 1 秒自动隐藏（web/src/lib/scroll-reveal.ts 给滚动中的元素挂
- * data-scrolling）。嵌套的滚动区（会话栏外层 + 里面的 MCP 工具列表）原来两条同时画着，用户要求同一时间只显示一条。
- * 滑块颜色只在这里决定，下面按区域调尺寸的规则（thin-scroll、侧栏、设置弹窗、Claude Code 配色）只改宽度和边距，
- * 不再各自写颜色，不然更高的优先级会把「平时隐藏」顶掉。鼠标正好停在滑块上（找位置、拖动）时也显示
- */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-::-webkit-scrollbar-track,
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
 ::-webkit-scrollbar-thumb {
-  background-color: transparent;
+  background: var(--scroll-thumb);
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
-[data-scrolling]::-webkit-scrollbar-thumb {
-  background-color: var(--scroll-thumb);
-}
-::-webkit-scrollbar-thumb:hover,
-::-webkit-scrollbar-thumb:active {
-  background-color: var(--scroll-thumb-hover);
-}
-/* 细滚动条（设计稿 `.sb`，对话消息区等长列表用）：轨道更宽、滑块留更宽的透明边，看起来细；显隐同上 */
+/*
+ * 细滚动条（设计稿 `.sb`，对话消息区等长列表用）：平时透明不占眼，鼠标进到这块区域才显出圆头滑块，
+ * 按住滑块再加深。写成普通类而不是 @utility：上面全局的 ::-webkit-scrollbar 不在层里，
+ * 放进 utilities 层会被它压住
+ */
 .thin-scroll::-webkit-scrollbar {
   width: 12px;
   height: 12px;
 }
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
 .thin-scroll::-webkit-scrollbar-thumb {
-  border-width: 4px;
+  background-color: transparent;
+  border-radius: 999px;
+  border: 4px solid transparent;
   background-clip: padding-box;
   min-height: 40px;
 }
-/* 没有 webkit 滚动条伪元素的浏览器（Firefox）：用标准属性。scrollbar-color 会继承，所以每个元素都显式写透明，
-   外层滚动时里面的区域不会跟着显示；放进 base 层，`[scrollbar-width:none]` 这类工具类照样生效 */
+.thin-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: var(--scroll-thumb);
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-thumb-hover);
+}
+/* 没有 webkit 滚动条伪元素的浏览器（Firefox）：用标准属性画细条，同样悬停才显色 */
 @supports not selector(::-webkit-scrollbar) {
-  @layer base {
-    * {
-      scrollbar-color: transparent transparent;
-    }
-    .thin-scroll {
-      scrollbar-width: thin;
-    }
-    [data-scrolling] {
-      scrollbar-color: var(--scroll-thumb) transparent;
-    }
+  .thin-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .thin-scroll:hover {
+    scrollbar-color: var(--scroll-thumb) transparent;
   }
 }
-/* 「Claude Code」配色的滚动条（照参考图）：滑块两边的透明边收窄（滑块变宽），轨道宽度不变，滚动区的排版不跟着动 */
+/*
+ * 「Claude Code」配色的滚动条（照参考图）：轨道透明，滑块是 6px 宽的圆头灰条，比分界线亮一档、一直看得见；
+ * 只把滑块两边的透明边收窄（滑块变宽），轨道宽度不变，滚动区的排版不跟着动
+ */
 [data-palette='code'] ::-webkit-scrollbar-thumb {
   border-width: 2px;
 }
 [data-palette='code'] .thin-scroll::-webkit-scrollbar-thumb {
   border-width: 3px;
+  background-color: var(--scroll-thumb);
+}
+[data-palette='code'] .thin-scroll::-webkit-scrollbar-thumb:hover,
+[data-palette='code'] ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-thumb-hover);
+}
+/*
+ * 对话正文和会话栏共用右边一条滚动槽（web/src/components/ui/rail-scrollbar.tsx）：鼠标在会话栏那块时，
+ * 槽里画会话栏的滑块，消息区自己的原生滑块藏掉，同一时间只显示一根（用户要求）。只管消息区这一个滚动区，
+ * 正文和会话栏里嵌套的滚动区照常显示。写在各配色的滑块规则后面，同优先级时靠后的生效
+ */
+[data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll]::-webkit-scrollbar-thumb,
+[data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll]::-webkit-scrollbar-thumb:hover {
+  background-color: transparent;
+}
+@supports not selector(::-webkit-scrollbar) {
+  [data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll] {
+    scrollbar-color: transparent transparent;
+  }
 }
 /*
  * 过程行一组：同一轮连续的过程行（工具调用、派发子对话、收到汇报、转交提问）每行一块默认浅底的圆角块，
@@ -2998,8 +3013,8 @@ html [data-sonner-toast][data-styled='true'] {
 /* 关掉动效时不动：sonner 自己的 `@media (prefers-reduced-motion)` 会把这些过渡全禁掉，
    这里不要用 !important 把它的兜底盖回来。 */
 
-/* 侧栏：滚动条比全局（10px）窄一档。侧栏本来就窄，滚动条占宽太明显；限定在 [data-sidebar] 里，不改别的面板。
-   颜色和显隐走全局规则（滚动时才显示） */
+/* 侧栏：滚动条比全局（10px）窄一档，平时更淡，鼠标移上去再加深。
+   侧栏本来就窄，滚动条占宽太明显；限定在 [data-sidebar] 里，不改别的面板 */
 [data-sidebar]::-webkit-scrollbar,
 [data-sidebar] *::-webkit-scrollbar {
   width: 8px;
@@ -3007,8 +3022,13 @@ html [data-sonner-toast][data-styled='true'] {
 }
 [data-sidebar]::-webkit-scrollbar-thumb,
 [data-sidebar] *::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
   border: 2px solid transparent;
   background-clip: content-box;
+}
+[data-sidebar]::-webkit-scrollbar-thumb:hover,
+[data-sidebar] *::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-thumb-hover);
 }
 
 /* 设置弹窗里的滚动条比全局细一号：弹窗里左栏和内容区各有一条，10px 的轨道挤占列表宽度。

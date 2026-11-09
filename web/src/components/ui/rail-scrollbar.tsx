@@ -8,10 +8,11 @@ const MIN_THUMB = 40
  * 画在旁边那条滚动槽里的滚动条：给自己的原生滚动条藏起来的区域用。
  *
  * 会话栏浮在对话右边，消息区的滚动条在它右边那一条槽（RAIL_GUTTER）里；会话栏自己再画一条原生滚动条，
- * 两条挨着竖在一起（用户要求合成一根、哪个在滚显示哪个）。所以会话栏藏掉原生的，滑块改画到同一条槽里。
- * 显隐跟原生滚动条走同一套：看目标元素上 scroll-reveal 挂的 data-scrolling，滚动时显示、停下隐藏；
- * scroll-reveal 同一时间只给一个区域挂这个标记，所以槽里任何时候只有一根滑块。
- * 隐藏时不接鼠标，底下消息区的原生滚动条照常能拖。
+ * 两条挨着竖在一起（用户要求合成一根）。所以会话栏藏掉原生的，滑块改画到同一条槽里。
+ * 槽里显示谁的滑块看鼠标在哪块（用户要求，不自动隐藏）：鼠标进会话栏（或焦点进去）显示会话栏的，
+ * 回到对话正文显示消息区的；在槽里移动不切换，不然想去拖会话栏的滑块时一进槽就换成了消息区的。
+ * 当前是哪块写在外层 [data-scroll-pair] 的 data-scroll-focus 上，index.css 按它在会话栏那一侧时藏掉消息区的滑块。
+ * 只管这两块互斥：会话栏和对话正文里面嵌套的滚动区（MCP 工具列表等）照常显示自己的滚动条。
  */
 export function RailScrollbar({
   target,
@@ -28,35 +29,72 @@ export function RailScrollbar({
   const [dragging, setDragging] = useState(false)
   const [geo, setGeo] = useState({ top: 0, height: 0 })
   const drag = useRef<{ y: number; scrollTop: number } | null>(null)
+  const slot = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const el = target.current
     if (!el) return
     const measure = () => {
       const { scrollHeight, clientHeight, scrollTop } = el
-      if (scrollHeight <= clientHeight + 1) return setGeo({ top: 0, height: 0 })
-      const height = Math.max(MIN_THUMB, (clientHeight * clientHeight) / scrollHeight)
-      const top = (scrollTop / (scrollHeight - clientHeight)) * (clientHeight - height)
-      setGeo({ top, height })
+      const next = { top: 0, height: 0 }
+      if (scrollHeight > clientHeight + 1) {
+        next.height = Math.max(MIN_THUMB, (clientHeight * clientHeight) / scrollHeight)
+        next.top = (scrollTop / (scrollHeight - clientHeight)) * (clientHeight - next.height)
+      }
+      // 会话栏里的数字一直在刷新，没变就不重画
+      setGeo((g) => (g.top === next.top && g.height === next.height ? g : next))
     }
-    const sync = () => setShown(el.hasAttribute('data-scrolling'))
     measure()
-    sync()
     el.addEventListener('scroll', measure, { passive: true })
-    const mo = new MutationObserver(sync)
-    mo.observe(el, { attributes: true, attributeFilter: ['data-scrolling'] })
     const ro = new ResizeObserver(measure)
     ro.observe(el)
+    // 内容变多变少（展开 MCP 工具列表）不一定改变滚动区自己的尺寸，滑块长短要跟着重算
+    const mo = new MutationObserver(measure)
+    mo.observe(el, { childList: true, subtree: true })
     return () => {
       el.removeEventListener('scroll', measure)
-      mo.disconnect()
       ro.disconnect()
+      mo.disconnect()
     }
   }, [target])
 
+  // 鼠标 / 焦点在哪块：会话栏（本组件挂在它里面，槽在它右边）还是旁边的对话正文
+  useEffect(() => {
+    const region = slot.current?.parentElement
+    const pair = region?.closest<HTMLElement>('[data-scroll-pair]')
+    if (!region || !pair) return
+    const set = (on: boolean) => {
+      pair.dataset.scrollFocus = on ? 'rail' : 'main'
+      setShown(on)
+    }
+    const onMove = (e: PointerEvent) => {
+      if (e.buttons) return // 拖着滑块（或选文字）时不切换
+      const node = e.target as Node
+      if (region.contains(node)) return set(true)
+      // 在会话栏右边那条槽里：保持现状，方便去拖当前显示的滑块
+      const r = region.getBoundingClientRect()
+      if (e.clientX >= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return
+      set(false)
+    }
+    const onFocus = (e: FocusEvent) => set(region.contains(e.target as Node))
+    set(false)
+    pair.addEventListener('pointermove', onMove, { passive: true })
+    pair.addEventListener('focusin', onFocus)
+    return () => {
+      pair.removeEventListener('pointermove', onMove)
+      pair.removeEventListener('focusin', onFocus)
+      delete pair.dataset.scrollFocus
+    }
+  }, [])
+
   const visible = (shown || dragging) && geo.height > 0
   return (
-    <div aria-hidden className={cn('pointer-events-none absolute inset-y-0 left-full', className)} style={{ width }}>
+    <div
+      ref={slot}
+      aria-hidden
+      className={cn('pointer-events-none absolute inset-y-0 left-full', className)}
+      style={{ width }}
+    >
       <div
         className={cn(
           'absolute inset-x-1 rounded-full transition-[background-color] duration-150',
