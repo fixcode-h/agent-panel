@@ -1,0 +1,8 @@
+{
+  "name": "dsh-blender-plugin-vendored",
+  "version": "3.1.0-alpha.1",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "description": "随 Agent 面板 Blender 插件发布的 dsh-blender-plugin 副本（上游 https://github.com/sixtysevenlf/dsh-blender-plugin ），见 VENDORED.md"
+}

@@ -61,3 +61,4 @@ extension/pairing.json
 
 # tsc -b 的增量记录（各层 tsconfig 已指到 .tmp/tsc/，这里兜底）
 *.tsbuildinfo
+plugins/blender/dsh/lib/
