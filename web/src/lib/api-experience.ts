@@ -14,5 +14,8 @@ export const experienceApi = {
     request<Items>(`/projects/${id}/experience/${eid}`, json('PUT', e)),
   apply: (id: string, input: { remove?: string[]; trim?: { id: string; title: string; body: string }[] }) =>
     request<Items>(`/projects/${id}/experience/apply`, json('POST', input)),
+  /** 按原样写回一条（撤销删除、撤回合并）；expect 是写回前应有的 updatedAt，对不上返回 409 */
+  restore: (id: string, item: ProjectExperience, expect?: string) =>
+    request<Items>(`/projects/${id}/experience/restore`, json('POST', { item, expect })),
   review: (id: string) => request<ExperienceReviewView>(`/projects/${id}/experience/review`, json('POST', {})),
 }

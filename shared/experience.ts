@@ -45,6 +45,32 @@ export const ProjectExperience = z.object({
 })
 export type ProjectExperience = z.infer<typeof ProjectExperience>
 
+/**
+ * 学到经验的那条系统消息（TaskMessage.learned）：对话里画成按条展示的卡片（web/src/components/tasks/LearnedCard.tsx）。
+ * 存写入后的快照：经验后来被删了，卡片还能画出来；并入已有的那条另存并入前的样子，「撤回这次合并」用它写回去
+ */
+export const LearnedEntry = z.object({
+  id: z.string(),
+  op: z.enum(['add', 'merge']).catch('add'),
+  snapshot: ProjectExperience,
+  before: ProjectExperience.optional(),
+})
+export type LearnedEntry = z.infer<typeof LearnedEntry>
+
+export const LearnedNote = z.object({
+  /** 为什么这次值得学（gateReason 的原文） */
+  reason: z.string().default(''),
+  items: z.array(LearnedEntry).max(4).default([]),
+  /** 模型给了、面板没收下的：只给用户看，不进经验库 */
+  dropped: z
+    .array(z.object({ title: z.string(), why: z.string() }))
+    .max(4)
+    .default([]),
+  /** 经验满了、这次没学：写当时的条数 */
+  full: z.number().int().optional(),
+})
+export type LearnedNote = z.infer<typeof LearnedNote>
+
 /** 设置 →「经验」：总开关管全部（检索、开头提示、自动学习），关了等于没有这个功能 */
 export const ExperienceSettings = z
   .object({

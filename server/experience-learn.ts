@@ -5,6 +5,8 @@ import {
   type ExperienceInput,
   EXP_PATHS_MAX,
   ExperienceSettings,
+  type LearnedEntry,
+  type LearnedNote,
   MAX_EXPERIENCES,
   ProjectExperience,
   experienceProblems,
@@ -43,8 +45,11 @@ export interface LearnDeps {
   isDone(task: Task): Promise<boolean>
   projects: Lister<Project>
   agents: Lister<Agent>
-  /** 在对话里写一行：学到了什么，或者提炼失败的原因 */
-  note(taskId: string, text: string, error?: string): Promise<void>
+  /**
+   * 在对话里写一条：学到了什么（learned：画成按条展示的卡片），或者提炼失败的原因（error：可点开的警告行）。
+   * text 照旧写一句话：导出、对话摘要和不认识 learned 的地方读它
+   */
+  note(taskId: string, text: string, opts?: { error?: string; learned?: LearnedNote }): Promise<void>
 }
 
 const STATE_FILE = () => path.join(DATA_DIR, 'experience-state.json')
@@ -53,11 +58,13 @@ interface LearnState {
   learned: Record<string, string>
   /** 项目 id → 当天提炼了几次 */
   daily: Record<string, { day: string; count: number }>
+  /** 项目 id → 哪天提示过「经验满了」：同一个项目一天只提示一次，不在每个对话里刷 */
+  fullNotified: Record<string, string>
 }
 
 async function readState(): Promise<LearnState> {
   const raw = (await readJson(STATE_FILE()).catch(() => undefined)) as Partial<LearnState> | undefined
-  return { learned: raw?.learned ?? {}, daily: raw?.daily ?? {} }
+  return { learned: raw?.learned ?? {}, daily: raw?.daily ?? {}, fullNotified: raw?.fullNotified ?? {} }
 }
 
 let stateChain: Promise<unknown> = Promise.resolve()
@@ -237,15 +244,18 @@ export function createExperienceLearner(deps: LearnDeps) {
       await mark()
       return 'covered'
     }
+    const day = today()
     if (current.items.length >= MAX_EXPERIENCES) {
       await mark()
+      if (st.fullNotified[project.id] === day) return 'full'
+      await updateState((s) => void (s.fullNotified[project.id] = day))
       await deps.note(
         task.id,
         t('经验已经有 {n} 条，这次没再学：先到项目设置的「经验」里用 AI 评审清理一下', { n: MAX_EXPERIENCES }),
+        { learned: { reason, items: [], dropped: [], full: current.items.length } },
       )
       return 'full'
     }
-    const day = today()
     const used = st.daily[project.id]?.day === day ? st.daily[project.id].count : 0
     if (exp.dailyLimit > 0 && used >= exp.dailyLimit) {
       log.info('task', '今天的经验提炼次数用完了，这次不学', { task: task.id, project: project.id })
@@ -271,45 +281,51 @@ export function createExperienceLearner(deps: LearnDeps) {
     // 失败也记下学到哪了：同一段对话不会每次空闲都再失败一次；用户在对话里能看到原因
     await mark()
     if (res.error) {
-      await deps.note(task.id, t('经验提炼失败，没有重试'), res.error)
+      await deps.note(task.id, t('经验提炼失败，没有重试'), { error: res.error })
       return 'error'
     }
     const parsed = parseLearned(res.text)
     if (parsed.error) {
-      await deps.note(
-        task.id,
-        t('经验提炼失败：模型的回复格式不对，没有重试'),
-        `${parsed.error}\n\n${res.text.slice(0, 2000)}`,
-      )
+      await deps.note(task.id, t('经验提炼失败：模型的回复格式不对，没有重试'), {
+        error: `${parsed.error}\n\n${res.text.slice(0, 2000)}`,
+      })
       return 'error'
     }
     if (!parsed.items.length) return 'none'
     const vcs = (await detectVcs(project.path).catch(() => null))?.vcs
     const branch = vcs === 'p4' || vcs === 'svn' ? branchNameOf(project.path) : ''
     const shaped: { item: ProjectExperience; update?: string }[] = []
-    const dropped: string[] = []
+    const dropped: { title: string; why: string }[] = []
     for (const it of parsed.items) {
       const r = await shapeLearned(it, project.path, { branch, taskId: task.id })
       if (r.item) shaped.push({ item: r.item, update: it.op === 'update' ? it.id : undefined })
-      else dropped.push(`${it.title}：${r.why}`)
+      else dropped.push({ title: it.title.slice(0, 60), why: r.why ?? '' })
     }
     if (dropped.length) log.info('task', '学到的经验不合规矩，丢掉了', { task: task.id, dropped })
     if (!shaped.length) return 'none'
     const saved = await mutateProjectExperience(project, agents, (items) => {
       let list = items
-      const titles: string[] = []
+      const entries: LearnedEntry[] = []
       for (const s of shaped) {
         // 模型点名要更新的那条按 id 合进去；没点名的按「同一件事」判重
-        list = mergeLearned(list, s.item, task.id, s.update).items
-        titles.push(s.item.title)
+        const m = mergeLearned(list, s.item, task.id, s.update)
+        list = m.items
+        // 两条都并进同一条时只列一行：快照用最后的样子，并入前用第一次之前的样子
+        const prev = entries.find((x) => x.id === m.id)
+        if (prev) prev.snapshot = m.item
+        else entries.push({ id: m.id, op: m.added ? 'add' : 'merge', snapshot: m.item, before: m.before })
       }
-      return { items: list, result: titles }
+      return { items: list, result: entries }
     })
     if (!saved.ok) {
-      await deps.note(task.id, t('学到的经验没能保存'), saved.error)
+      await deps.note(task.id, t('学到的经验没能保存'), { error: saved.error })
       return 'error'
     }
-    await deps.note(task.id, t('学到经验：{titles}', { titles: saved.result.join('；') }))
+    await deps.note(
+      task.id,
+      t('学到经验：{titles}', { titles: saved.result.map((x) => x.snapshot.title).join('；') }),
+      { learned: { reason, items: saved.result, dropped: dropped.slice(0, 4), full: undefined } },
+    )
     return 'learned'
   }
 

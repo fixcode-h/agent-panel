@@ -18,7 +18,7 @@ import { settleAction } from '@shared/user-action'
 import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
-import { demoExperience } from './demo-experience'
+import { demoExperience, demoLearnedNote } from './demo-experience'
 import { demoChatMemory } from './demo-chat-memory'
 import { demoCliPackages } from './demo-packages'
 import { demoLibrary, demoPanelCommands } from './demo-library'
@@ -4564,6 +4564,20 @@ async function seedTasks(d: Db) {
           { path: 'tests/cart.test.ts', add: 0, del: 62 },
         ],
       }
+    // 对话完成后学到经验：总结和改动卡片后面挂一张按条展示的经验卡片（LearnedCard.tsx）
+    if (summary) {
+      const learned = demoLearnedNote()
+      task.messages.splice(task.messages.indexOf(summary) + 1, 0, {
+        id: 'demo-learned',
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: `学到经验：${learned.items.map((x) => x.snapshot.title).join('；')}`,
+        tools: [],
+        at: summary.at,
+        learned,
+      })
+    }
     // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
     // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
     // 上下文浮层里的「上一次压缩」：和真实执行一样是回复里的一次工具调用，

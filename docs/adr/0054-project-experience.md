@@ -30,3 +30,10 @@
 
 - 新增面板工具 `project_experience`、`record_experience`（后者收进 `more_tools`，子任务没有）。
 - 经验文件进项目仓库，和模块文档一起提交，换机器、换人都能用。
+
+## 补充（2026-11-09）：学到的经验在对话里按条展示
+
+- 学到经验的系统消息带结构化的 `TaskMessage.learned`（`shared/experience.ts` 的 `LearnedNote`）：每条存写入后的快照，并入已有的另存并入前的样子；对话里画成一条一行的卡片（`web/src/components/tasks/LearnedCard.tsx`），能当场编辑、停用、删除（可撤销）、撤回合并。旧消息没有这个字段，照旧是一行字。
+- 模型给了但没通过校验的条目折叠在卡片底部给用户看（以前只进日志）；经验满了的提示同一个项目一天只出一次。
+- 合并时种类只在模型点名更新那条时才换；关键词、路径满了时这次新学的优先留下（`server/project-experience.ts` 的 `unionKeep`）。
+- `/learn` 让 Agent 记下的经验，`record_experience` 那一行下面画同一张卡片（标「手动」）。

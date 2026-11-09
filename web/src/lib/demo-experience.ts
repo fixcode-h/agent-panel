@@ -1,4 +1,10 @@
-import { ProjectExperience, experienceProblems, newExperienceId, type ExperienceEdit } from '@shared/experience'
+import {
+  ProjectExperience,
+  experienceProblems,
+  newExperienceId,
+  type ExperienceEdit,
+  type LearnedNote,
+} from '@shared/experience'
 
 /**
  * 演示版的项目经验（对应 server/experience-routes.ts）：每个项目一份内存里的列表，带几条示例；
@@ -23,6 +29,7 @@ const SAMPLES = (): ProjectExperience[] => [
     body: '前端叫 cart，后端接口和数据表叫 basket。',
     keywords: ['购物车', 'cart', 'basket'],
     paths: ['src/cart/'],
+    updatedAt: now,
   }),
   sample({
     id: 'e-demo-3',
@@ -55,6 +62,14 @@ export function demoExperience(projectId: string, method: string, seg: string[],
     const trims = new Map((b.trim ?? []).map((x) => [x.id, x]))
     return set(list.filter((e) => !gone.has(e.id)).map((e) => ({ ...e, ...trims.get(e.id) })))
   }
+  if (eid === 'restore') {
+    const b = body as { item: ProjectExperience; expect?: string }
+    const cur = list.find((e) => e.id === b.item.id)
+    if (b.expect !== undefined && (cur?.updatedAt ?? '') !== b.expect)
+      throw Object.assign(new Error('这条经验之后又改过，撤回会丢掉那些改动'), { status: 409 })
+    const item = ProjectExperience.parse(b.item)
+    return set(cur ? list.map((e) => (e === cur ? item : e)) : [...list, item])
+  }
   const edit = body as ExperienceEdit
   const problems = experienceProblems(edit)
   if (problems.length) throw Object.assign(new Error(problems.join('；')), { status: 400 })
@@ -64,4 +79,28 @@ export function demoExperience(projectId: string, method: string, seg: string[],
     ...list,
     ProjectExperience.parse({ ...edit, id: newExperienceId(), source: 'user', createdAt: new Date().toISOString() }),
   ])
+}
+
+/**
+ * 演示对话末尾那张「学到经验」卡片（TaskMessage.learned）：一条新加、一条并入已有（带并入前的样子），
+ * 外加一条没收下的。条目 id 和上面的示例经验对得上，卡片的停用、删除、撤回合并在演示里都能点
+ */
+export function demoLearnedNote(): LearnedNote {
+  const [locate, vocab] = SAMPLES()
+  const before = ProjectExperience.parse({
+    ...vocab,
+    title: '「购物车」在代码里叫 cart',
+    body: '前端叫 cart。',
+    keywords: ['购物车', 'cart'],
+    updatedAt: '',
+    createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+  })
+  return {
+    reason: '进入 src/payment 之前搜了 / 读了 14 次',
+    items: [
+      { id: locate.id, op: 'add', snapshot: locate },
+      { id: vocab.id, op: 'merge', snapshot: { ...vocab, updatedAt: now }, before },
+    ],
+    dropped: [{ title: '角标刷新逻辑在哪', why: '路径都不存在：src/badge/' }],
+  }
 }

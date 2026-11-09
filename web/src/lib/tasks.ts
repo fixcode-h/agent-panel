@@ -234,6 +234,8 @@ export interface ToolView {
   diagnosis?: number
   /** 给另一个对话发消息（交给子对话、回报父对话、给其他父对话传话）：画成一行「发送消息」 */
   send?: { kind: PeerKind; to: string; body: string }
+  /** /learn 让 Agent 记下的经验（record_experience 成功）：面板回执里的经验 id，这一行下面画经验卡片 */
+  learned?: string
 }
 
 /** 几次交给子对话合成一行时的一个收件方：名字、能打开的子对话、面板给的回执、有没有送到 */
@@ -301,6 +303,11 @@ export function toolView(tool: ToolUse): ToolView | null {
           Number((/报告 #(\d+)/.exec(tool.output ?? '') ?? /第 (\d+) 版/.exec(tool.output ?? ''))?.[1]) || 0
         : 0
     const send = sendOf(name, tool)
+    // 回执是面板自己写的（server/experience-learn.ts 的 recordExperience）：「已记下经验（id: e…）」
+    const learned =
+      name === 'record_experience' && !tool.failed
+        ? /已记下经验（id: ([\w-]+)）/.exec(tool.output ?? '')?.[1]
+        : undefined
     return {
       tool: panel,
       ...(send && { send }),
@@ -310,6 +317,7 @@ export function toolView(tool: ToolUse): ToolView | null {
       ...(waiting && { waiting }),
       ...(startsRun && { startsRun }),
       ...(diagnosis && { diagnosis }),
+      ...(learned && { learned }),
     }
   }
   const mcp = tool.name === 'MCP' ? MCP_LABEL.exec(tool.label) : null

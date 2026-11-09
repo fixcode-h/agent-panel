@@ -224,7 +224,7 @@ const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
 
 /** 工具行只用到任务的这几样；后台命令、诊断报告（ADR 0045）的状态变了，那一行才重画（停转 / 开始转） */
 type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> &
-  Partial<Pick<Task, 'analysis' | 'title' | 'diagnoses'>>
+  Partial<Pick<Task, 'analysis' | 'title' | 'diagnoses' | 'projectId'>>
 const jobsSig = (k?: ToolTask) => `${k?.jobs?.map((j) => `${j.id}:${j.state}`)}|${k?.diagnoses?.map((d) => d.status)}`
 
 type BodyProps = {

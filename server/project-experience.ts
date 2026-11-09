@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { readdir, readFile, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { joinPath } from '../shared/doc-root.ts'
-import { ProjectExperience, sameExperience } from '../shared/experience.ts'
+import { EXP_KEYWORDS_MAX, EXP_PATHS_MAX, ProjectExperience, sameExperience } from '../shared/experience.ts'
 import { hash53 } from '../shared/hash.ts'
 import { t } from '../shared/i18n.ts'
 import type { Agent, Project } from '../shared/schema.ts'
@@ -198,21 +198,45 @@ export async function mutateProjectExperience<R>(
 }
 
 /**
+ * 两组取并集、截到上限：放不下时这次新学的优先留下（旧实现「旧的在前再截」满了就把新学的全丢了），
+ * 留下的按原来的顺序排（旧的在前），界面上看着不乱。大小写不同算同一个
+ */
+export function unionKeep(old: string[], add: string[], max: number) {
+  const key = (s: string) => s.trim().toLowerCase()
+  const seen = new Set<string>()
+  const all: { v: string; fresh: boolean }[] = []
+  const push = (v: string, fresh: boolean) => {
+    if (seen.has(key(v))) return
+    seen.add(key(v))
+    all.push({ v, fresh })
+  }
+  for (const v of old) push(v, false)
+  for (const v of add) push(v, true)
+  if (all.length <= max) return all.map((x) => x.v)
+  const fresh = all.filter((x) => x.fresh).slice(0, max)
+  const keep = new Set([...all.filter((x) => !x.fresh).slice(0, max - fresh.length), ...fresh])
+  return all.filter((x) => keep.has(x)).map((x) => x.v)
+}
+
+/**
  * 学到的一条：同一件事已经有了就合进那条（关键词、路径取并集，标题说明用新的），否则新加。
- * into：模型点名要更新的那条 id（存在时直接合进它）
+ * into：模型点名要更新的那条 id（存在时直接合进它，种类也跟着换）；没点名、按「同一件事」判重合进去的，
+ * 种类保持旧的（判重只看路径和关键词，两条种类不同时不该被这次改掉）。
+ * before 是并入前的样子：对话里的卡片用它算「这次加了什么」，也用来撤回这次合并
  */
 export function mergeLearned(items: ProjectExperience[], add: ProjectExperience, taskId: string, into = '') {
-  const same = (into && items.find((x) => x.id === into)) || items.find((x) => sameExperience(x, add))
-  if (!same) return { items: [...items, add], added: true, id: add.id }
+  const named = into ? items.find((x) => x.id === into) : undefined
+  const same = named || items.find((x) => sameExperience(x, add))
+  if (!same) return { items: [...items, add], added: true, id: add.id, item: add }
   const merged: ProjectExperience = {
     ...same,
     title: add.title,
     body: add.body || same.body,
-    kind: add.kind,
-    keywords: [...new Set([...same.keywords, ...add.keywords])].slice(0, 8),
-    paths: [...new Set([...same.paths, ...add.paths])].slice(0, 4),
+    kind: named ? add.kind : same.kind,
+    keywords: unionKeep(same.keywords, add.keywords, EXP_KEYWORDS_MAX),
+    paths: unionKeep(same.paths, add.paths, EXP_PATHS_MAX),
     taskIds: [...new Set([...same.taskIds, taskId])].slice(-10),
     updatedAt: new Date().toISOString(),
   }
-  return { items: items.map((x) => (x === same ? merged : x)), added: false, id: same.id }
+  return { items: items.map((x) => (x === same ? merged : x)), added: false, id: same.id, item: merged, before: same }
 }
