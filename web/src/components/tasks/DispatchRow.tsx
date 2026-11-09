@@ -15,14 +15,10 @@ import type { Task, TaskRoute, TaskStep } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
-import { useNow } from '@/lib/useNow'
-import { useUserName } from '@/lib/user-name'
 import { toolArgs, toolView } from '@/lib/tasks'
 import { rerouteTag, type Dispatch, type DispatchState } from '@/lib/fold-dispatch'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { RowShell } from './ToolRow'
-import { splitStepJobs } from '@shared/task'
-import { ChildLiveRow, HelperRow } from './RunningNow'
 import { HelperWindow } from './HelperCards'
 import { useChildOpen } from './child-open'
 import type { ChildSummary } from './child-line'
@@ -138,7 +134,7 @@ function titleOf(
  * 派单行：新开 / 交回子对话、派子任务、就地微改动画成和工具调用一样的一行，分诊说明并进来
  * （设计稿：回复折叠与派单行重设计 §4）：
  * - 行尾是对象自己的状态；第二行小字放分诊的「理解」，理由、假设、交接内容点开看；改派收进 ⋯ 菜单
- * - 最新一轮里还没办完的，主行直接用运行区那一行（状态标签、去操作、查看报告、终止都在），运行区不再重复列
+ * - 没办完的子对话、子任务在原位只写状态，实时那一行固定在输入框上方的运行区（用户 2026-11-09 要求恢复）
  * - 没有派单只有分诊的（旧数据对不上调用）也用这一行，只是没有状态
  */
 export function DispatchRow({
@@ -147,7 +143,6 @@ export function DispatchRow({
   state,
   task,
   kids = [],
-  latest,
   onReroute,
 }: {
   d?: Dispatch
@@ -155,15 +150,12 @@ export function DispatchRow({
   state?: DispatchState
   task?: Task
   kids?: ChildSummary[]
-  /** 在最新一轮里：没办完的画现场行 */
-  latest?: boolean
   /** 不给时只读（导入的对话） */
   onReroute?: (text: string) => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [win, setWin] = useState('')
-  const user = useUserName()
   const openChild = useChildOpen()
   const { agents } = useData()
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
@@ -176,8 +168,6 @@ export function DispatchRow({
     d?.kind === 'subtask'
       ? d.targets.map((id) => task?.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s)
       : []
-  const live = !!latest && !!state?.open
-  const now = useNow(live)
   if (!kind) return null
   const { label, icon } = KIND[kind]
   const status = state?.status
@@ -233,65 +223,29 @@ export function DispatchRow({
         </MenuContent>
       </Menu>
     ) : null
-  // 主行：最新一轮里没办完的子对话、子任务直接用运行区那一行
   const transparent = '[--c-row-bg:transparent]'
-  // 子任务起的后台命令并进子任务那一行（和运行区同一个口径），运行区跳过画在这里的子任务时连命令一起跳过
-  const stepJobs = (id: string) =>
-    task ? (splitStepJobs(task.steps, task.jobs ?? []).sub.find((x) => x.step.id === id)?.jobs ?? []) : []
-  const helper = (s: TaskStep) => (
-    <HelperRow
-      key={s.id}
-      task={task!}
-      step={s}
-      jobs={stepJobs(s.id)}
-      now={now}
-      onOpen={() => setWin(s.id)}
+  // 主行只写派单本身和状态胶囊：实时状态、去操作、终止都在输入框上方的运行区（用户 2026-11-09 要求运行中的固定显示在那里）
+  const main = (
+    <RowShell
       className={transparent}
+      glyph={<Glyph status={status} icon={icon} />}
+      verb={label()}
+      title={title || undefined}
+      titleClass={cn('font-sans text-footnote', rerouted && 'line-through decoration-subtle')}
+      detail={status && <StatusChip status={status} />}
+      open={open}
+      onToggle={canOpen ? () => setOpen(!open) : undefined}
+      onOpen={openTarget}
+      openTip={isChild ? t('打开子对话') : undefined}
+      failed={status === 'failed'}
+      action={rows.length ? undefined : menu}
     />
   )
-  let main: React.ReactNode
-  // 现场行就是运行区那一行搬到了原位：同样标成「运行中」，读屏和找运行中的对象都按它认
-  if (live && kid)
-    main = (
-      <div role="group" aria-label={t('运行中')}>
-        <ChildLiveRow k={kid} now={now} user={user} openChild={openChild} className={transparent} />
-      </div>
-    )
-  else if (live && task && steps.length === 1 && state?.open)
-    main = (
-      <div role="group" aria-label={t('运行中')}>
-        {helper(steps[0])}
-      </div>
-    )
-  else
-    main = (
-      <RowShell
-        className={transparent}
-        glyph={<Glyph status={status} icon={icon} />}
-        verb={label()}
-        title={title || undefined}
-        titleClass={cn('font-sans text-footnote', rerouted && 'line-through decoration-subtle')}
-        detail={status && <StatusChip status={status} />}
-        open={open}
-        onToggle={canOpen ? () => setOpen(!open) : undefined}
-        onOpen={openTarget}
-        openTip={isChild ? t('打开子对话') : undefined}
-        failed={status === 'failed'}
-        action={rows.length ? undefined : menu}
-      />
-    )
   // 一次派了几个子任务：组头下面每个子任务一行
   const group =
     d?.kind === 'subtask' && steps.length > 1 ? (
       <div className="flex flex-col pb-1 pl-6">
         {steps.map((s) => {
-          const running = s.status === 'running' || s.status === 'pending'
-          if (latest && task && running && !s.interrupted)
-            return (
-              <div key={s.id} role="group" aria-label={t('运行中')}>
-                {helper(s)}
-              </div>
-            )
           const st: DispatchState['status'] =
             s.status === 'done' || s.status === 'skipped'
               ? 'done'

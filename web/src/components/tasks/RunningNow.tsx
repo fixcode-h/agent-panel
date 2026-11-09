@@ -1,6 +1,5 @@
 import { useUserName } from '@/lib/user-name'
-import { useContext, useMemo, useState } from 'react'
-import { InPlaceCtx, type InPlace } from './dispatch-ctx'
+import { useMemo, useState } from 'react'
 import { CircleSlash, ClipboardCheck, Hand, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import { helperRunning, helperShown, sortHelpers, stepMs, splitStepJobs, type ChildEntry } from '@shared/task'
@@ -46,29 +45,25 @@ export function runningRows<C extends ChildEntry>({
   jobs,
   kids,
   children,
-  skip,
 }: {
   task?: Task
   tools: ToolUse[]
   jobs: boolean
   kids: boolean
-  /** 最新一轮里已经画在原位的派单对象（派单行就是它们的现场行）：这里不再重复列 */
-  skip?: InPlace | null
   /** 子对话摘要：RunningNow 从 ChildListCtx 拿，调用处也拿得到同一份，传进来免得两处判断不一致 */
   children: C[]
 }) {
   const list = jobs ? (task?.jobs ?? []) : []
   // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧。
-  // 画在原位的子任务连同它起的命令一起由派单行画，这里不再剩半行「子任务 + 命令」
   const split = splitStepJobs(task?.steps ?? [], list)
   const own = split.own
-  const sub = split.sub.filter((x) => !skip?.helpers.has(x.step.id))
+  const sub = split.sub
   // 已标记解决但还在跑、在等后台命令、计划没做完的子对话都要列（见 visibleChildren）；
   // 等你确认诊断报告、同时又提了问的子对话也留着（见 listedChildren）
-  const rows = kids ? listedChildren(children).filter((k) => !skip?.children.has(k.id)) : []
+  const rows = kids ? listedChildren(children) : []
   // 对话派出的子任务：只要没结束（在跑、在排队）就列一行，跟子对话同一批出现在最新一段上；
   // 在跑的排前面，同一组按派出的顺序
-  const helpers = kids && task ? activeHelpers(task).filter((s) => !skip?.helpers.has(s.id)) : []
+  const helpers = kids && task ? activeHelpers(task) : []
   // 诊断报告卡片（ADR 0045）：交报告那一行会被收进工具的折叠里，报告入口只在这里（用户 2026-11-07 定，
   // 输入框上方不再放），最近 3 份一直列着，确认、提意见、不修了之后也留着
   const reports = kids ? reportCards(task) : []
@@ -225,7 +220,7 @@ function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now
  * 对话派出的、还没结束的子任务：和子对话同一个样式的一行——转圈、「子任务」、标题（点开只读窗口）、
  * 状态标签、这会儿在做什么、耗时，最后是终止按钮。它起的后台命令并进这一行的标签，不再单独占一行
  */
-export function HelperRow({
+function HelperRow({
   task,
   step,
   jobs,
@@ -341,7 +336,7 @@ export function RunningNow({
     helpers,
     reports,
     drafting,
-  } = runningRows({ task, tools, jobs, kids, children, skip: useContext(InPlaceCtx) })
+  } = runningRows({ task, tools, jobs, kids, children })
   // 已经有子任务行的，后台命令并进那一行；剩下的（子任务做完了命令还在跑）照旧单独一行
   const helperJobs = new Map(stepJobs.map((x) => [x.step.id, x.jobs]))
   const restJobs = stepJobs.filter((x) => !helpers.some((s) => s.id === x.step.id))
@@ -396,10 +391,9 @@ export function RunningNow({
 }
 
 /**
- * 一个还没做完的子对话：运行区列的那一行，派单行在最新一轮里也直接用它（设计稿：回复折叠与派单行重设计 §5.2），
- * 状态标签、当前活动、等你确认的按钮两处一样
+ * 一个还没做完的子对话：运行区列的那一行（状态标签、当前活动、等你确认的按钮）
  */
-export function ChildLiveRow({
+function ChildLiveRow({
   k,
   now,
   user,

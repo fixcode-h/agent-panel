@@ -14,7 +14,6 @@ import { sameAnchors } from '@/lib/route-anchor'
 import { useChildList } from './child-open'
 import type { ChildSummary } from './child-line'
 import { DispatchRow } from './DispatchRow'
-import { LatestTurnCtx } from './dispatch-ctx'
 
 /**
  * 对话里的派单（新开 / 交回子对话、派子任务、后台命令、就地微改动）和挂在上面的分诊。
@@ -119,7 +118,6 @@ export const useDispatchIndex = () => useContext(Index).byKey
 export function DispatchSlot({ msgId, tool, fallback }: { msgId: string; tool: number; fallback?: ReactNode }) {
   const entry = useContext(Index).byKey.get(`${msgId}#${tool}`)
   const live = useContext(Live)
-  const latest = useContext(LatestTurnCtx)
   if (!entry || !live || entry.d.kind === 'job' || entry.d.kind === 'run') return <>{fallback}</>
   return (
     <DispatchRow
@@ -128,7 +126,6 @@ export function DispatchSlot({ msgId, tool, fallback }: { msgId: string; tool: n
       state={live.state(entry.d, entry.routes)}
       task={live.task}
       kids={live.children}
-      latest={latest}
       onReroute={live.task?.imported ? undefined : live.onReroute}
     />
   )
