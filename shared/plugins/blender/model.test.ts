@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ModelObject, sceneText } from './blender.ts'
+import { ModelObject, sceneText } from './model.ts'
 
 test('sceneText：物体列表压成给 Agent 看的几行，空场景说清楚', () => {
   assert.equal(sceneText([]), '场景是空的。')

@@ -2534,8 +2534,20 @@ export const Settings = z.object({
     }),
   /** UI 设计照原画还原的门槛：位置差几像素算对上、对上的要占多少、切图相似度至少多少 */
   designRestore: RestoreThresholds.prefault({}),
-  /** 模型设计用的 Blender（见 docs/adr/0025-model-design-blender.md）：可执行文件；空时按 PATH 和常见安装位置找 */
-  blender: z.object({ path: z.string().trim().default('') }).prefault({}),
+  /**
+   * 插件（ADR 0059）：插件 id → 开没开、参数。没有记录 = 关。参数按插件清单里的声明取默认值和校验（shared/plugins）。
+   * 老设置里的 blender.path 在解析前搬进 plugins.blender.config.blenderPath（shared/settings.ts）
+   */
+  plugins: z
+    .record(
+      z.string(),
+      z.object({
+        enabled: z.boolean().default(false),
+        config: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).catch({}).default({}),
+      }),
+    )
+    .catch({})
+    .default({}),
   /** 模型目录：三档模型的上下文窗口和最大输出按模型自动识别 */
   modelCatalog: z
     .object({

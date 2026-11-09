@@ -12,7 +12,7 @@ import { autoLayout, END, START } from '../flow.ts'
 import { DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 
 /**
- * 内置工作流：项目常驻的「通用项目」「UE 项目」，加上规范开发、迁移、架构、评审、依赖、发布准备和美术资产链。
+ * 内置工作流：项目常驻的「通用项目」「UE 项目」，加上规范开发、迁移、架构、评审、依赖和发布准备；美术资产链（Blender）在 Blender 插件里（shared/plugins/blender）。
  * 启动时全部自动装一次（见 install.ts 的 seedProjectWorkflows），用户删掉的不再装回来。
  * 工作流只由父对话启动，是父对话名下的一次工作流运行（ADR 0053）；改代码的只做到「实现 + 快速检查 + 文档同步」，
  * 评审、完整测试和合回由那个子对话的执行角色收尾（见 CHILD_RULES）。when / notFor / kind 是父对话挑工作流看的。
@@ -88,7 +88,7 @@ export const UE_PROJECT_KEY = 'project-ue'
 export const UE_PROJECT_NAME = 'UE 项目'
 
 /** 串起来：a → b → c */
-const chain = (...ids: string[]) => ids.slice(1).map((id, i) => [ids[i], id] as [string, string])
+export const chain = (...ids: string[]) => ids.slice(1).map((id, i) => [ids[i], id] as [string, string])
 
 /** 项目结构技能的选择项：所有项目都用 project-structure，UE 项目再加 ue-project-structure（特化会自动带上通用的） */
 const STRUCTURE: WorkflowExpose = {
@@ -669,93 +669,6 @@ ${CHILD_RULES}`,
           },
         ],
         edges: chain(START, 'prepare', 'build', 'notes', END),
-      },
-    ],
-  },
-  {
-    key: 'blender',
-    name: 'Blender 建模与动画',
-    description: '规格确认 → 分件建模 → 装配、动画与减面 → 质检确认 → 导出 UE',
-    category: '美术',
-    when: '用 Blender 建模、做动画、导出 UE',
-    kind: 'change',
-    main: 'blender',
-    members: [['blender', '建模、装配、动画、减面、质检（体检、多视角对照、可拆分测试）和导出']],
-    document: `## 适用
-用无头 Blender 做可拆分的模型和动画，并导出到 UE。
-
-## 约定
-- 规格（部件清单、GRP_* 根、局部原点和轴、命名）确认后才开始建模。
-- 每个阶段都要有截图或体检结果；不能只看一个视角下结论。
-- 质检结果你确认后才导出 UE。不需要动画时在「装配、动画与减面」节点的说明里写明跳过。`,
-    flows: [
-      {
-        id: 'main',
-        name: '主流程',
-        nodes: [
-          {
-            id: 'spec',
-            title: '规格',
-            agent: 'blender',
-            tier: 'high',
-            params: { stage: '解析与规格' },
-            confirm: true,
-            instructions: '解析参考并写出规格和模块契约，请用户确认。',
-          },
-          {
-            id: 'parts',
-            title: '分件建模',
-            agent: 'blender',
-            tier: 'high',
-            params: { stage: '分件建模' },
-            review: 'qa',
-            maxRounds: 3,
-            instructions: '按规格逐个部件建模。',
-          },
-          {
-            id: 'assemble',
-            title: '装配、动画与减面',
-            agent: 'blender',
-            tier: 'medium',
-            params: { stage: '装配到减面' },
-            instructions:
-              '装配所有部件，处理材质和 UV；按需求做控制器动画（需求里没有动画就写明跳过）；最后在保持外观的前提下减面，和基线对照。',
-          },
-          {
-            id: 'qa',
-            title: '质检',
-            agent: 'blender',
-            tier: 'medium',
-            params: { stage: '质检' },
-            confirm: true,
-            instructions: '对完整模型做质检，把并排对照图列出来请用户确认外观。',
-          },
-          {
-            id: 'export',
-            title: '导出 UE',
-            agent: 'blender',
-            tier: 'low',
-            params: { stage: '导出 UE' },
-            instructions: '导出到 UE 并更新制作进度。',
-          },
-        ],
-        edges: chain(START, 'spec', 'parts', 'assemble', 'qa', 'export', END),
-      },
-      {
-        id: 'qa',
-        name: '质检',
-        description: '单件体检和参考对照',
-        nodes: [
-          {
-            id: 'qa',
-            title: '质检',
-            agent: 'blender',
-            tier: 'medium',
-            params: { stage: '质检' },
-            instructions: '检查上面「输入」里完成的部件：单件体检、和参考裁切并排对照。',
-          },
-        ],
-        edges: chain(START, 'qa', END),
       },
     ],
   },

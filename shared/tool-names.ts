@@ -1,9 +1,10 @@
 import { t } from './i18n.ts'
+import { mcpPlugin, PLUGINS } from './plugins/index.ts'
 
 /**
  * 面板自带的 MCP 工具在对话里的中文叫法，只在这一处维护：对话里的工具行、「正在写」那一行、子对话活动、
  * 查询 MCP 工具那一行的副标题都从这里取。没登记的工具会在工具行里露出英文原名（例如 update_bug_case 带个 panel 标签），
- * 所以新加面板工具（server/orch-mcp.ts、workflow-tools.ts、diagnosis-tool.ts、design-mcp.ts、blender-mcp.ts）时同时登记这里，
+ * 所以新加面板工具（server/orch-mcp.ts、workflow-tools.ts、diagnosis-tool.ts、design-mcp.ts）时同时登记这里；插件的工具登记在插件清单的 toolNames（shared/plugins），
  * web/src/lib/tool-names.test.ts 会核对面板工具总表（PANEL_TOOL_NAMES）都有中文名。
  * 写成函数：t() 要在切换界面语言之后再取，模块加载时取会定死成加载那一刻的语言
  */
@@ -107,18 +108,16 @@ const DESIGN_TOOLS = (): Record<string, string> => ({
   check: t('检查设计'),
 })
 
-/** 3D 对话的 Blender 工具（server/blender-mcp.ts） */
-const BLENDER_TOOLS = (): Record<string, string> => ({
-  blender_python: t('执行 Blender 脚本'),
-  blender_scene: t('查看场景'),
-})
+/** 插件带的工具（清单里的 toolNames），不论插件开没开：旧对话里的工具行照样要显示中文名 */
+const PLUGIN_TOOLS = (): Record<string, string> => Object.assign({}, ...PLUGINS.map((p) => p.toolNames()))
 
-/** 面板自己的 MCP 服务：工具行旁边那个淡色标签的叫法，也决定工具名查哪张表 */
-type Own = 'panel' | 'design' | 'blender'
+/** 面板自己的 MCP 服务：工具行旁边那个淡色标签的叫法，也决定工具名查哪张表；插件的服务写成 plugin:<id> */
+type Own = 'panel' | 'design' | `plugin:${string}`
 function ownServer(server: string): Own | '' {
   const s = server.trim().toLowerCase()
   if (s === 'design' || s === 'agent-panel-design') return 'design'
-  if (s === 'blender' || s === 'agent-panel-blender') return 'blender'
+  const plugin = mcpPlugin(s)
+  if (plugin) return `plugin:${plugin.id}`
   // 面板调度服务的几种写法：panel、panel-xxxx、agent-panel、agent-panel-xxxx、老版本的 orch（见 server/panel-mcp-files.ts）
   return /^(?:(?:agent-)?panel(?:[-_][\w-]*)?|orch)$/.test(s) ? 'panel' : ''
 }
@@ -129,7 +128,8 @@ export const panelToolTitle = (name: string): string => PANEL_TOOLS()[name] ?? '
 /** MCP 服务名的显示：面板自己的服务换成中文，别家的（notion、github）照原样 */
 export function serverTitle(server: string): string {
   const own = ownServer(server)
-  return own === 'panel' ? t('面板') : own === 'design' ? t('设计') : own === 'blender' ? 'Blender' : server
+  if (own.startsWith('plugin:')) return PLUGINS.find((p) => `plugin:${p.id}` === own)?.name ?? server
+  return own === 'panel' ? t('面板') : own === 'design' ? t('设计') : server
 }
 
 /**
@@ -143,14 +143,13 @@ export function toolTitle(name: string, server?: string): string {
   if (mcp) [srv, tool] = [mcp[1], mcp[2]]
   const own = srv === undefined ? '' : ownServer(srv)
   if (srv !== undefined && !own) return tool
-  const tables =
-    own === 'design'
+  const tables = own.startsWith('plugin:')
+    ? [PLUGINS.find((p) => `plugin:${p.id}` === own)?.toolNames() ?? {}]
+    : own === 'design'
       ? [DESIGN_TOOLS()]
-      : own === 'blender'
-        ? [BLENDER_TOOLS()]
-        : own === 'panel'
-          ? [PANEL_TOOLS()]
-          : [PANEL_TOOLS(), DESIGN_TOOLS(), BLENDER_TOOLS()]
+      : own === 'panel'
+        ? [PANEL_TOOLS()]
+        : [PANEL_TOOLS(), DESIGN_TOOLS(), PLUGIN_TOOLS()]
   for (const m of tables) if (m[tool]) return m[tool]
   return tool
 }

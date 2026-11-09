@@ -1,8 +1,10 @@
+import { pluginSkillGuide } from './plugins/index.ts'
+
 /**
  * 技能的触发说明：交给 CLI 的提示词里，每个技能写一句「什么时候用」。
  * 只列名字时模型常常不知道什么时候该读；写清触发条件才会在合适的时机用上。
  *
- * 这里的是内置技能；用户自己装的技能没有说明时只列名字。
+ * 这里的是核心的自带技能，插件带的技能写在插件清单里（skillGuide）；用户自己装的技能没有说明时只列名字。
  */
 const GUIDE: Record<string, string> = {
   'project-vcs': '任务开始时识别 Git / P4 / SVN / 无版本控制，保护已有改动；改完文件后做收尾、合并与工作区清理',
@@ -20,8 +22,6 @@ const GUIDE: Record<string, string> = {
   'verification-before-completion': '准备宣布完成、提交或创建 PR 之前，要先跑验证拿新鲜证据时',
   'cpp-code-style': '写或改 C++ / UE C++ 代码时',
   'lua-code-style': '写或改 Lua 代码时',
-  blender: '用无头 Blender 建模、检查、多视角截图或导出 FBX 时',
-  'blender-model-animation-workflow': '制作可拆分的 Blender 模型和循环动画时',
 }
 
 /**
@@ -65,7 +65,7 @@ export function resolveSkills(names: string[]) {
 
 /** 提示词里的一行：`- \`名字\`：什么时候用` */
 export function skillLine(name: string) {
-  const guide = GUIDE[name]
+  const guide = GUIDE[name] ?? pluginSkillGuide(name)
   return guide ? `- \`${name}\`：${guide}` : `- \`${name}\``
 }
 
