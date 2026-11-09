@@ -1580,8 +1580,11 @@ const helperLabel = (s: TaskStep) => `${s.id}｜${s.title}`
  * 模型常把「a/step/s1/sub/h1」写成「sub/h1」，只按全等比就整批被拒、重试一次白花一轮；
  * 结尾必须落在「/」上，「xsub/h1」也算不上；能对上多条时不猜，交给调用方报候选。
  */
-const resumeTarget = (mine: TaskStep[], id: string) => {
-  const exact = mine.find((s) => s.id === id)
+const resumeTarget = (mine: TaskStep[], raw: string) => {
+  // 对话里派的 id 以「@chat」开头，模型常丢掉「@」（@ 在 CLI 里多是引用文件）：两边都去掉开头的 @ 再比
+  const bare = (x: string) => x.replace(/^@/, '')
+  const id = bare(raw)
+  const exact = mine.find((s) => bare(s.id) === id)
   const picked = exact ? [exact] : mine.filter((s) => s.id.endsWith(`/${id}`))
   return { prev: picked.length === 1 ? picked[0] : undefined, picked }
 }

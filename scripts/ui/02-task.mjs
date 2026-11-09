@@ -9,7 +9,7 @@
  */
 
 import { chipAlignProblems, runShard, tabAlignProblems } from './harness.mjs'
-import { scrollRevealProblems } from './scroll-reveal.mjs'
+import { scrollPairProblems } from './scroll-pair.mjs'
 import { closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
 
 await runShard(import.meta.filename, async (api) => {
@@ -140,7 +140,7 @@ await runShard(import.meta.filename, async (api) => {
     )
       errors.push('会话栏：「状态」没有一句说明')
     await rail.screenshot({ path: 'ui-shots/02-会话栏-状态.png' }).catch(() => {})
-    await scrollRevealProblems(p, rail, errors)
+    await scrollPairProblems(p, rail, errors)
     // 右栏不再列子对话（ADR 0034）：「协作」卡去掉，状态卡里也不逐个列子对话，它们只在输入框上方的子对话面板里
     {
       const cards = await p.evaluate(() =>
