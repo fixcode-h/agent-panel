@@ -65,7 +65,7 @@ export function runningRows<C extends ChildEntry>({
   // 在跑的排前面，同一组按派出的顺序
   const helpers = kids && task ? activeHelpers(task) : []
   // 诊断报告卡片（ADR 0045）：交报告那一行会被收进工具的折叠里，报告入口只在这里（用户 2026-11-07 定，
-  // 输入框上方不再放），最近 3 份一直列着，确认、提意见、不修了之后也留着
+  // 输入框上方不再放），同一个 Bug 只列最新一份，一直列着，确认、提意见、不修了之后也留着
   const reports = kids ? reportCards(task) : []
   // 模型正在写一个工具调用的入参（交诊断报告这类要写一二十秒）：转圈写「正在写」，不然像卡死了。
   // 对话不在跑时不算（服务端没来得及清掉的旧记号）

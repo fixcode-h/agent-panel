@@ -51,10 +51,15 @@ export function DiagnosisStages({
         : t('论证')
   const names = [evidence, t('根因'), t('修复方案'), t('修复'), t('验证')]
   // 每一步最后交的那份报告；根因没单独交过、合在快速级别的方案里时，点根因看那份方案
-  const target = names.map((_, i) => {
-    const hit = [...list].reverse().find((x) => STEP[phaseOf(x)] === i)
-    if (hit || i !== 1) return hit
-    return [...list].reverse().find((x) => causeInPlan(x, list))
+  const own = names.map((_, i) => [...list].reverse().find((x) => STEP[phaseOf(x)] === i))
+  // 一上来就证实了、直接交根因（没有单独的论证报告）时，论证这一步照样算走过，
+  // 点它看最早那份报告：论证的证据写在它的「证据」里（用户 2026-11-09 报「论证没法点」）
+  const borrowed = !own[0] ? list[0] : undefined
+  const target = own.map((hit, i) => {
+    if (hit) return hit
+    if (i === 0) return borrowed
+    if (i === 1) return [...list].reverse().find((x) => causeInPlan(x, list))
+    return undefined
   })
   const viewing = list.find((x) => String(x.version) === shown) ?? d
   const viewStep = STEP[phaseOf(viewing)]
@@ -72,7 +77,9 @@ export function DiagnosisStages({
               aria-pressed={key ? i === viewStep : undefined}
               title={
                 key
-                  ? t('查看这一步的报告')
+                  ? i === 0 && borrowed
+                    ? t('没有单独的论证报告，证据写在这份报告里')
+                    : t('查看这一步的报告')
                   : i === 3 && i < at
                     ? t('修复这一步没有单独的报告，改了什么写在验证报告里')
                     : undefined

@@ -1133,7 +1133,7 @@ await runShard(import.meta.filename, async (api) => {
         if (await childView(p).getByText('等你查看报告').count())
           errors.push('诊断报告：取消后交报告那一行还写着「等你查看报告」')
         // 报告入口只在消息流里（用户 2026-11-07 定）：输入框上方不再有诊断报告那一行；
-        // 消息流里的报告卡片最多 3 份，不修了的那份描红边，状态写「不修了」
+        // 消息流里同一个 Bug 只有一张报告卡片（最新一份），不修了的那份描红边，状态写「不修了」
         if (await childView(p).locator('[data-status-row="bug-report"]').count())
           errors.push('诊断报告：输入框上方的状态栏里还有诊断报告那一行')
         const cards = childView(p).locator('.proc-list').getByRole('button', { name: '查看报告' })
@@ -1141,7 +1141,7 @@ await runShard(import.meta.filename, async (api) => {
           .first()
           .waitFor({ timeout: 5000 })
           .catch(() => errors.push('诊断报告：不再等确认后，消息流里没有报告卡片'))
-        if ((await cards.count()) > 3) errors.push('诊断报告：消息流里的报告卡片超过 3 份')
+        if ((await cards.count()) > 1) errors.push('诊断报告：同一个 Bug 在消息流里列了不止一张报告卡片')
         if (!(await childView(p).locator('.proc-list .border-danger\\/60').getByText('不修了').count()))
           errors.push('诊断报告：不修了的那份卡片没有红色边框')
         await check(p, '诊断报告-消息流卡片')
