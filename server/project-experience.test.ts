@@ -45,3 +45,19 @@ test('同一件事合进旧条目：关键词、路径取并集', () => {
   const other = { ...sample, id: 'e3', title: '网络', keywords: ['协议'], paths: ['Source/Net'] }
   assert.equal(mergeLearned([sample], other, 't3').added, true)
 })
+
+test('合并时关键词满了：这次新学的优先留下，旧的按原顺序排在前面', () => {
+  const full = { ...sample, keywords: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'] }
+  const add = { ...sample, id: 'e2', keywords: ['A1', 'b1', 'b2'] }
+  const r = mergeLearned([full], add, 't2')
+  assert.deepEqual(r.items[0].keywords, ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'b1', 'b2'])
+})
+
+test('按「同一件事」合并时种类不变，点名更新时才换；并入前的样子交回去', () => {
+  const add = { ...sample, id: 'e2', kind: 'flow' as const, title: '表格相关的代码和配置在哪' }
+  const r = mergeLearned([sample], add, 't2')
+  assert.equal(r.items[0].kind, 'locate')
+  assert.deepEqual(r.before, sample)
+  assert.equal(r.item.title, '表格相关的代码和配置在哪')
+  assert.equal(mergeLearned([sample], add, 't2', 'e1').items[0].kind, 'flow')
+})

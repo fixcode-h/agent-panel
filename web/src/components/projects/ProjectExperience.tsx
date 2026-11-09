@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Loader2, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
 import {
   EXPERIENCE_KINDS,
@@ -15,6 +15,7 @@ import {
 } from '@shared/experience'
 import { t } from '@shared/i18n'
 import { experienceApi } from '@/lib/api-experience'
+import { setProjectExperience } from '@/lib/experience-store'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/tasks'
@@ -42,19 +43,31 @@ type KindTab = ExperienceKind | 'all'
  * 「AI 评审」逐条判断符不符合「经验记什么」：不该记的和写得太细的默认勾上，用户确认后删掉或换成精简写法。
  * 每次改动直接存进项目文档的 agent-knowledge/experience/（不跟项目设置的「确认」一起保存）
  */
-export function ProjectExperience({ projectId }: { projectId: string }) {
+export function ProjectExperience({
+  projectId,
+  initialOpen = '',
+}: {
+  projectId: string
+  /**
+   * 打开时展开哪一条（对话里经验卡片的「编辑」）；写 review 表示打开就开始 AI 评审（经验满了那张卡片的按钮）
+   */
+  initialOpen?: string
+}) {
   const [data, setData] = useState<ExperienceListView>()
   const [error, setError] = useState('')
   const [q, setQ] = useState('')
   const [kind, setKind] = useState<KindTab>('all')
-  const [open, setOpen] = useState('')
+  const [open, setOpen] = useState(initialOpen === 'review' ? '' : initialOpen)
   const [adding, setAdding] = useState(false)
   const [review, setReview] = useState<ExperienceReviewView>()
   const [reviewing, setReviewing] = useState(false)
   useEffect(() => {
     experienceApi
       .list(projectId)
-      .then(setData)
+      .then((v) => {
+        setData(v)
+        setProjectExperience(projectId, v.items)
+      })
       .catch((e: Error) => setError(e.message))
   }, [projectId])
   const items = useMemo(() => data?.items ?? [], [data])
@@ -64,7 +77,11 @@ export function ProjectExperience({ projectId }: { projectId: string }) {
     [items, query],
   )
   const shown = kind === 'all' ? matched : matched.filter((e) => e.kind === kind)
-  const setItems = (next: Experience[]) => setData((d) => (d ? { ...d, items: next } : d))
+  // 对话里的经验卡片读同一份缓存：这里改了，卡片跟着变
+  const setItems = (next: Experience[]) => {
+    setData((d) => (d ? { ...d, items: next } : d))
+    setProjectExperience(projectId, next)
+  }
   const run = async (fn: () => Promise<{ items: Experience[] }>) => {
     try {
       setItems((await fn()).items)
@@ -86,6 +103,20 @@ export function ProjectExperience({ projectId }: { projectId: string }) {
     }
   }
 
+  // 从「经验满了」卡片点进来：列表拉到就开始 AI 评审，只开一次
+  const autoReview = useRef(initialOpen === 'review')
+  useEffect(() => {
+    if (!autoReview.current || !data?.items.length) return
+    autoReview.current = false
+    void startReview()
+    // startReview 每次渲染都是新函数，只在列表拉到时跑一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
+  // 从对话里的卡片点「编辑」进来：滚到那一条
+  useEffect(() => {
+    if (data && initialOpen && initialOpen !== 'review')
+      document.getElementById(`exp-${initialOpen}`)?.scrollIntoView({ block: 'center' })
+  }, [data, initialOpen])
   if (error) return <EmptyPanel size="sm">{error}</EmptyPanel>
   if (!data)
     return (
@@ -181,7 +212,11 @@ export function ProjectExperience({ projectId }: { projectId: string }) {
         {shown.map((e) => {
           const expanded = open === e.id
           return (
-            <li key={e.id} className={cn('rounded-xl bg-card shadow-card', !e.enabled && 'opacity-60')}>
+            <li
+              key={e.id}
+              id={`exp-${e.id}`}
+              className={cn('rounded-xl bg-card shadow-card', !e.enabled && 'opacity-60')}
+            >
               <div className="flex items-center gap-2 px-3 py-2">
                 <button
                   type="button"

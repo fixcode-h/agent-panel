@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpRight,
   Bot,
@@ -36,6 +36,9 @@ import { makeAlert } from '@shared/alerts'
 import { Collapse } from '@/components/ui/collapse'
 import { toolRole } from '@/lib/fold-roles'
 import { DispatchSlot } from './route-context'
+import { LearnedCard } from './LearnedCard'
+import { useProjectExperience } from '@/lib/experience-store'
+import type { ProjectExperience } from '@shared/experience'
 
 /** 命令还在跑时行内只跟这么多行：再长就把对话撑长了，完整输出去命令行窗口看 */
 const LIVE_ROWS = 8
@@ -492,6 +495,14 @@ export function ToolRow({
         at={raw.startedAt ? new Date(raw.startedAt).toISOString() : undefined}
       />
     )
+  // /learn 让 Agent 记下的经验：工具行下面画同一张经验卡片（标「手动」），能当场看、改、删
+  if (view.learned && task?.projectId)
+    return (
+      <>
+        <ToolLine view={view} task={task} />
+        <LearnedTool id={view.learned} projectId={task.projectId} />
+      </>
+    )
   return <ToolLine view={view} task={task} />
 }
 
@@ -517,6 +528,24 @@ export function ToolRows({ tools, task, msgId }: { tools: ToolUse[]; task?: Tool
         )
       })}
     </>
+  )
+}
+
+/** record_experience 那一行下面的卡片：经验库里现在的这条（还没拉到时不画，拉到了却没有就是被删了） */
+function LearnedTool({ id, projectId }: { id: string; projectId: string }) {
+  const { items } = useProjectExperience(projectId)
+  // 在卡片上删掉后库里没有了：按最后见过的样子接着画（标「已删除」、能撤销），不让卡片一下消失
+  const seen = useRef<ProjectExperience>(undefined)
+  const item = items?.find((x) => x.id === id)
+  if (item) seen.current = item
+  const snap = item ?? seen.current
+  if (!snap) return null
+  return (
+    <LearnedCard
+      projectId={projectId}
+      manual
+      note={{ reason: '', items: [{ id, op: 'add', snapshot: snap }], dropped: [] }}
+    />
   )
 }
 
@@ -571,7 +600,8 @@ function useFullOutput(tool: ToolUse, taskId: string | undefined, want: boolean)
 }
 
 /** 工具行要的任务字段：诊断报告那一行还要标题和各版报告（ADR 0045） */
-type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> & Partial<Pick<Task, 'title' | 'diagnoses'>>
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> &
+  Partial<Pick<Task, 'title' | 'diagnoses' | 'projectId'>>
 
 function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const { tool } = view

@@ -1,4 +1,4 @@
-import { ExperienceSettings } from './experience.ts'
+import { ExperienceSettings, LearnedNote } from './experience.ts'
 import { RestoreThresholds } from './restore/thresholds.ts'
 import { Submitted } from './submitted.ts'
 import { z } from 'zod'
@@ -1421,6 +1421,7 @@ export const TaskMessage = z.object({
    */
   planStart: z.boolean().optional(),
   bugReport: z.number().int().optional(), // Bug 诊断报告第几版（ADR 0045）：对话里画成可点开报告的一行
+  learned: LearnedNote.optional(), // 学到经验的那条系统消息：对话里画成按条展示的卡片（旧消息没有，照旧一行字）
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
   /** panel 为 helpers 时：这次交回结果的是哪几个子任务（步骤 id）。旧数据没有，按正文的「### 」标题数 */

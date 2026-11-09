@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { AnswerMessage } from '@/components/chat/ChatMessage'
 import { AlertRow } from './AlertRow'
 import { BugReportLine } from './DiagnosisDialog'
+import { LearnedCard } from './LearnedCard'
 
 /**
  * 对话里的系统消息：报错、警告的卡片和居中的一行说明。
@@ -88,6 +89,11 @@ export function NoteMessage({
   if (m.planStart) return null // 计划启动的那条提示只是把计划输入又抄了一遍，不画出来（按标记判断，不看文案）
   if (m.bugReport) return <BugReportLine text={m.text} />
   if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
+  // 学到经验：按条展示的卡片（旧消息没有 learned，照旧是下面那一行字）
+  if (m.learned) {
+    const card = <LearnedCard projectId={task?.projectId} note={m.learned} />
+    return indent ? <div className="reply-indent min-w-0">{card}</div> : card
+  }
   const around = msgs && (m.error || m.alert) ? conversationAround(msgs, msgs.indexOf(m)) : ''
   const cwd =
     task?.worktree?.state === 'active'

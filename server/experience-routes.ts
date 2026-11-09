@@ -77,6 +77,28 @@ export function experienceRoutes(app: Hono, deps: { projects: Lister<Project>; a
     return 'error' in r ? c.json({ error: r.error }, r.status) : c.json(r)
   })
 
+  /**
+   * 按原样写回一条（对话里学到经验卡片的「撤销删除」「撤回这次合并」）：id 不变，有就替换、没有就加回去。
+   * expect：写回前这条的 updatedAt 应该是什么；对不上（之后又被改过）时返回 409，界面问过用户再不带 expect 重发
+   */
+  app.post('/projects/:id/experience/restore', async (c) => {
+    const p = await projectOf(c.req.param('id'))
+    if (!p) return c.json(noProject, 404)
+    const body = z
+      .object({ item: ProjectExperience, expect: z.string().optional() })
+      .safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return c.json({ error: z.prettifyError(body.error) }, 400)
+    const { item, expect } = body.data
+    const r = await mutateProjectExperience(p, await deps.agents.list(), (items) => {
+      const cur = items.find((x) => x.id === item.id)
+      if (expect !== undefined && (cur?.updatedAt ?? '') !== expect) return { items, result: false }
+      return { items: cur ? items.map((x) => (x === cur ? item : x)) : [...items, item], result: true }
+    })
+    if (!r.ok) return c.json({ error: r.error }, 400)
+    if (!r.result) return c.json({ error: t('这条经验之后又改过，撤回会丢掉那些改动') }, 409)
+    return c.json({ items: r.items })
+  })
+
   /** 删一批（单条删除、AI 评审勾选后删），顺带应用评审给的精简写法 */
   app.post('/projects/:id/experience/apply', async (c) => {
     const p = await projectOf(c.req.param('id'))

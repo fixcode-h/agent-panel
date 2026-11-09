@@ -15,8 +15,8 @@ export function createTaskLearner(sc: TasksScope) {
     isDone: async (tk) => !sc.live.get(tk.id)?.task.working && taskState(await sc.withLive(tk)) === 'done',
     projects: sc.deps.projects,
     agents: sc.deps.agents,
-    // 学到什么、失败的原因都写进对话：失败画成可点开的警告行（原始报错在里面），不只留在日志
-    note: async (taskId, text, error) => {
+    // 学到什么、失败的原因都写进对话：学到的画成按条展示的卡片，失败画成可点开的警告行（原始报错在里面），不只留在日志
+    note: async (taskId, text, { error, learned } = {}) => {
       const entry = sc.live.get(taskId)
       const tk = entry?.task ?? (await sc.store.get(taskId).catch(() => null))
       if (!tk || tk.archived) return
@@ -28,6 +28,7 @@ export function createTaskLearner(sc: TasksScope) {
         text,
         tools: [],
         ...(error !== undefined && { alert: makeAlert('warn', error, 'panel') }),
+        ...(learned && { learned }),
         at: new Date().toISOString(),
       })
       if (entry) entry.rev++

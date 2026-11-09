@@ -115,4 +115,28 @@ export const EN_EXPERIENCE: Record<string, string> = {
   '经验用的 Agent': 'Agent for experience',
   '跟随对话的 Agent': "Follow the conversation's agent",
   经验用的模型: 'Model for experience',
+  // 对话里「学到经验」的卡片（web/src/components/tasks/LearnedCard.tsx）
+  标题改了: 'title changed',
+  说明改了: 'description changed',
+  '补了 {n} 个关键词': 'added {n} keyword(s)',
+  '补了 {n} 个位置': 'added {n} location(s)',
+  全部经验: 'All experience',
+  '记下 {n} 条经验': 'Recorded {n} experience item(s)',
+  '学到 {n} 条经验': 'Learned {n} experience item(s)',
+  '另有 {n} 条没收下：{why}': '{n} more not kept: {why}',
+  并入已有: 'Merged',
+  '不对，删掉': 'Wrong, delete it',
+  '并入已有的一条：{title}': 'Merged into an existing item: {title}',
+  '（框出来的是这次加的）': ' (outlined items were added this time)',
+  '来自 {n} 个对话': 'from {n} conversations',
+  撤销删除: 'Undo delete',
+  撤回这次合并: 'Undo this merge',
+  已撤回合并: 'Merge undone',
+  '还要撤回这次合并吗？': 'Undo this merge anyway?',
+  '这条经验在合并之后又改过，撤回会恢复成合并前的样子，之后的改动会丢掉。':
+    'This item was edited after the merge. Undoing restores it to how it was before the merge, and the later edits are lost.',
+  这次没学经验: 'No experience learned this time',
+  '这个项目的经验已经有 {n} 条，先用 AI 评审清理一下再学。':
+    'This project already has {n} experience items. Clean them up with AI review before learning more.',
+  '这条经验之后又改过，撤回会丢掉那些改动': 'This item was edited later; undoing would discard those edits',
 }
