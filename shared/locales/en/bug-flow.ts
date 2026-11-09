@@ -57,6 +57,7 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '论证 · 第 {n} 轮': 'Evidence · round {n}',
   排查阶段: 'Investigation stage',
   查看这一步的报告: "View this step's report",
+  '没有单独的论证报告，证据写在这份报告里': 'No separate evidence report; the evidence is in this report',
   '修复这一步没有单独的报告，改了什么写在验证报告里':
     'The fix step has no report of its own; the changes are in the verification report',
   拖动调整标注栏宽度: 'Drag to resize the notes column',

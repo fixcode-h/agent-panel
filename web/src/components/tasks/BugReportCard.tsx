@@ -13,11 +13,12 @@ import { useDiagnosisWindow } from './diagnosis-window'
 /**
  * 诊断报告在对话里的卡片（ADR 0045）：放在最新一段回复下面的运行区里，跟着消息流走。
  * 用户 2026-11-07 定：报告入口只在这里，输入框上方的状态栏不再放「诊断报告 · 查看报告」那一行；
- * 最多列最近 3 份，交了新的就顶掉最旧的；点了「不修了」的那份描红边，之后也不会再有新的（服务端拒交）
+ * 同一个 Bug 只列一张，写最新那一份（用户 2026-11-09 定：根因、修复方案各占一行像是两个 Bug），
+ * 更早的几份在审阅弹窗的版本下拉里看；点了「不修了」的那份描红边，之后也不会再有新的（服务端拒交）
  */
-export const MAX_REPORT_CARDS = 3
+export const MAX_REPORT_CARDS = 1
 
-/** 运行区要列的报告卡片：用户报的 Bug 子对话才有，取最近 3 份 */
+/** 运行区要列的报告卡片：用户报的 Bug 子对话才有，只取最新一份 */
 export const reportCards = (task?: Pick<Task, 'bug' | 'diagnoses'>): Diagnosis[] =>
   task?.bug ? (task.diagnoses ?? []).slice(-MAX_REPORT_CARDS) : []
 
@@ -39,7 +40,7 @@ function statusChip(d: Diagnosis): { text: string; cls: string } {
   return { text: t('已被取代'), cls: childLabelClass.plain }
 }
 
-/** 运行区里的报告卡片，一份一行，旧的在上、新的在下 */
+/** 运行区里的报告卡片：一个 Bug 一行（最新那一份） */
 export function BugReportCards({ task, list }: { task: Task; list: Diagnosis[] }) {
   const { open } = useDiagnosisWindow(task)
   const last = task.diagnoses?.at(-1)
