@@ -143,4 +143,9 @@ export const EN_REMOTE: Record<string, string> = {
     'Tailscale is not signed in or not connected: sign in to Tailscale, then click "Check again"',
   '没有找到 tailscale：请先安装 Tailscale 并登录': 'tailscale not found: install Tailscale and sign in first',
   'tailscale {verb} 没有成功：{log}': 'tailscale {verb} failed: {log}',
+  'tailscale {verb} 15 秒没有结束：{log}': 'tailscale {verb} did not finish within 15 seconds: {log}',
+  '等你在 Tailscale 开启': 'Waiting for you to enable it in Tailscale',
+  '你的 Tailscale 网络还没开启 {feature}：点下面的按钮到 Tailscale 后台点 Enable，开好后这里会自动连上。':
+    'Your Tailscale network has not enabled {feature} yet. Click the button below and press Enable in the Tailscale admin console; this panel connects automatically once it is on.',
+  '去 Tailscale 开启 {feature}': 'Enable {feature} in Tailscale',
 }
