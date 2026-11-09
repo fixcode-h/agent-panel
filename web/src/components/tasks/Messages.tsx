@@ -2,6 +2,7 @@ import { Fragment, memo, useContext, useEffect, useRef, useState } from 'react'
 import { ChevronRight, Brain, CircleAlert, Clock, Loader2, RotateCw, TriangleAlert } from 'lucide-react'
 import { LEAD_TAG, PANEL_KIND } from './panel-kind'
 import { Button } from '@/components/ui/button'
+import { helperResultCount } from '@/lib/helper-results'
 import type { Task, TaskMessage, ToolUse } from '@shared/schema'
 import { toast } from '@/lib/toast'
 import { api } from '@/lib/api'
@@ -404,7 +405,7 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
   // 子对话状态放「标题 · 状态」（新数据带 child，旧数据按第一行）
   const head =
     m.panel === 'helpers'
-      ? t('{n} 个子任务交回了结果', { n: Math.max(1, (body.match(/^### /gm) ?? []).length) })
+      ? t('{n} 个子任务交回了结果', { n: helperResultCount(m, body) })
       : m.child && m.panel === 'child'
         ? [m.child.title, convStateText(m.child.state)].filter(Boolean).join(' · ')
         : body

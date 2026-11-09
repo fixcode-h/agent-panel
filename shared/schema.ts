@@ -1423,6 +1423,8 @@ export const TaskMessage = z.object({
   bugReport: z.number().int().optional(), // Bug 诊断报告第几版（ADR 0045）：对话里画成可点开报告的一行
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
+  /** panel 为 helpers 时：这次交回结果的是哪几个子任务（步骤 id）。旧数据没有，按正文的「### 」标题数 */
+  results: z.array(z.string()).optional(),
   /** 面板推回的消息和父子对话之间的往来是哪一种（见 shared/panel-kind.ts）；用户、Agent 说的话没有 */
   panel: PanelKind.optional(),
   /**

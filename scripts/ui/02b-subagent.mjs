@@ -17,27 +17,21 @@ await runShard(import.meta.filename, async (api) => {
   const { backToTask } = taskPageHelpers(p, api)
 
   // 分诊并进派单行（设计稿：回复折叠与派单行重设计 §4）：不再有单独的分诊卡片；
-  // 子任务已经做完，派单行跟着这一段收进折叠，折叠行写「派出 n 个子任务」，点开后派单行带着分诊的「理解」
+  // 子任务做完了派单行也留在原位不折（用户 2026-11-09 要求），第二行带着分诊的「理解」
   {
     if (await p.locator('[data-route-card]').count()) errors.push('派单行：还画着旧的分诊卡片')
-    const fold = p.getByRole('button', { name: /派出 \d+ 个子任务/ }).first()
-    if (!(await fold.count())) errors.push('派单行：做完的子任务没有收进折叠（折叠行里没有「派出 n 个子任务」）')
+    if (await p.getByRole('button', { name: /派出 \d+ 个子任务/ }).count())
+      errors.push('派单行：做完的子任务又被收进了折叠（折叠行里写着「派出 n 个子任务」）')
+    const row = p.locator('.reply-body [data-dispatch="subtask"]').filter({ hasText: '核对角标的订阅时机' })
+    if (!(await row.count())) errors.push('派单行：做完的子任务没有留在原位')
     else {
-      await fold.scrollIntoViewIfNeeded()
-      await fold.click()
-      await settle(p)
-      const row = p.locator('.reply-body [data-dispatch="subtask"]').filter({ hasText: '核对角标的订阅时机' })
-      if (!(await row.count())) errors.push('派单行：展开过程后没有派子任务那一行')
-      else {
-        if (!(await row.first().getByText('加购后角标数字不变').count()))
-          errors.push('派单行：第二行没有分诊的「理解」')
-        if (await row.first().getByRole('button', { name: '改为就地处理' }).count())
-          errors.push('派单行：改派按钮还常驻在行上，应该收进 ⋯ 菜单')
-        await row.first().scrollIntoViewIfNeeded()
-        await check(p, '派单行-展开过程', ['派子任务', '加购后角标数字不变'])
-      }
-      await fold.click()
-      await settle(p)
+      if ((await row.first().getAttribute('data-dispatch-status')) !== 'done')
+        errors.push('派单行：做完的子任务行尾没有写「已完成」')
+      if (!(await row.first().getByText('加购后角标数字不变').count())) errors.push('派单行：第二行没有分诊的「理解」')
+      if (await row.first().getByRole('button', { name: '改为就地处理' }).count())
+        errors.push('派单行：改派按钮还常驻在行上，应该收进 ⋯ 菜单')
+      await row.first().scrollIntoViewIfNeeded()
+      await check(p, '派单行-做完不折', ['派子任务', '加购后角标数字不变'])
     }
   }
 
