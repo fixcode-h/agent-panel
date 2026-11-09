@@ -134,7 +134,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 内置工作流：正式版启动时全部加入，演示里手动添加；添加后连同 Agent 一起建好，直接打开
   await p.getByRole('button', { name: '添加内置或导入的工作流' }).click()
   await p.getByRole('menuitem', { name: '从内置工作流添加' }).click()
-  await check(p, '内置工作流', ['通用项目', '功能开发（OpenSpec）', 'Blender 建模与动画'])
+  await check(p, '内置工作流', ['通用项目', '功能开发（OpenSpec）'])
   await p.getByRole('button', { name: '添加', exact: true }).first().click()
   // 要建好几个 Agent，演示里每个请求都有模拟的延迟，等弹窗关掉
   await p.getByRole('dialog').waitFor({ state: 'hidden', timeout: 20000 })
@@ -764,7 +764,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (await kinds.getByRole('radio', { name: '命令', exact: true }).count())
     errors.push('Skills：分页里不该再有「命令」')
   await kinds.getByRole('radio', { name: /^自带 Skill/ }).click()
-  await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
+  await check(p, '自带Skill', ['brainstorming', 'task-records', '版本控制'])
   // 自带 Skill 分页没有可新建的东西：「新建」按钮不该出现（以前点了没反应）
   if (await p.getByRole('button', { name: '新建', exact: true }).count())
     errors.push('自带Skill：这一页不该有「新建」按钮')

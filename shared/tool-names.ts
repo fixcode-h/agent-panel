@@ -1,5 +1,5 @@
 import { t } from './i18n.ts'
-import { mcpPlugin, PLUGINS } from './plugins/index.ts'
+import { mcpPlugin, pluginById, pluginToolNames } from './plugins/index.ts'
 
 /**
  * 面板自带的 MCP 工具在对话里的中文叫法，只在这一处维护：对话里的工具行、「正在写」那一行、子对话活动、
@@ -108,8 +108,9 @@ const DESIGN_TOOLS = (): Record<string, string> => ({
   check: t('检查设计'),
 })
 
-/** 插件带的工具（清单里的 toolNames），不论插件开没开：旧对话里的工具行照样要显示中文名 */
-const PLUGIN_TOOLS = (): Record<string, string> => Object.assign({}, ...PLUGINS.map((p) => p.toolNames()))
+/** 装着的插件带的工具（清单里的 toolNames），不论插件开没开：旧对话里的工具行照样要显示中文名 */
+const PLUGIN_TOOLS = (): Record<string, string> => pluginToolNames()
+const ownPlugin = (own: string) => (own.startsWith('plugin:') ? pluginById(own.slice(7)) : undefined)
 
 /** 面板自己的 MCP 服务：工具行旁边那个淡色标签的叫法，也决定工具名查哪张表；插件的服务写成 plugin:<id> */
 type Own = 'panel' | 'design' | `plugin:${string}`
@@ -128,7 +129,7 @@ export const panelToolTitle = (name: string): string => PANEL_TOOLS()[name] ?? '
 /** MCP 服务名的显示：面板自己的服务换成中文，别家的（notion、github）照原样 */
 export function serverTitle(server: string): string {
   const own = ownServer(server)
-  if (own.startsWith('plugin:')) return PLUGINS.find((p) => `plugin:${p.id}` === own)?.name ?? server
+  if (own.startsWith('plugin:')) return ownPlugin(own)?.name ?? server
   return own === 'panel' ? t('面板') : own === 'design' ? t('设计') : server
 }
 
@@ -144,7 +145,7 @@ export function toolTitle(name: string, server?: string): string {
   const own = srv === undefined ? '' : ownServer(srv)
   if (srv !== undefined && !own) return tool
   const tables = own.startsWith('plugin:')
-    ? [PLUGINS.find((p) => `plugin:${p.id}` === own)?.toolNames() ?? {}]
+    ? [ownPlugin(own) ? pluginToolNames(ownPlugin(own)) : {}]
     : own === 'design'
       ? [DESIGN_TOOLS()]
       : own === 'panel'

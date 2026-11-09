@@ -1,6 +1,6 @@
 # ADR 0025：模型设计接入 Blender，对话驱动建模、网页实时预览
 
-状态：已接受（2026-10-31 由「提议」改：`server/blender.ts`、`server/blender-mcp.ts`、`server/blender/bridge.py` 和前端的模型对话已经落地） · 2026-10-29
+状态：已接受，实现位置被 [0059](./0059-plugin-system.md) 改（2026-11-09：模型设计整体搬进插件仓库 fixcode-h/agent-plugins 的 Blender 插件，面板核心不再有 Blender 代码；下面写的面板内路径是当时的位置，决策本身不变） · 2026-10-29
 
 ## 背景
 
@@ -23,7 +23,7 @@
 1. **模型设计是一种对话**：`Task.modelDesign = true` 的项目对话，不新建一种设计数据。
    - 理由：对话已经有 CLI / 角色 / 插话 / 提问 / 子对话 / 页签，模型设计要的正是这些；UI 设计的 `Design` 数据和流程全是控件树专用的，套进去要改一大片。
    - 放弃：在 `shared/design.ts` 里加 `kind: 'model'`。那样要把 `designs.ts` 的 job、版本、导出全部按种类分支。
-2. **Blender 在后台跑，由面板起停**：每个模型对话一个 Blender 进程（`blender -b --factory-startup --python server/blender/bridge.py`），桥接脚本在 Blender 里起一个只听本机的 HTTP 服务，面板用它执行 Python、读场景、导出。场景存在数据目录 `models/<对话 id>/scene.blend`，重开时接着用。
+2. **Blender 在后台跑，由面板起停**：每个模型对话一个 Blender 进程（`blender -b --factory-startup --python bridge.py`），桥接脚本在 Blender 里起一个只听本机的 HTTP 服务，面板用它执行 Python、读场景、导出。场景存在数据目录 `models/<对话 id>/scene.blend`，重开时接着用。
    - 放弃：让用户自己开着 Blender 装插件、面板连它的端口（blender-mcp 那种）。要用户先开软件、装插件、保持开着；可以以后作为「连接正在运行的 Blender」补上。
 3. **Agent 用 MCP 工具写 bpy 代码建模**：`/api/mcp/blender/<令牌>` 提供 `blender_python`（在当前场景里运行一段 bpy 代码）和 `blender_scene`（列出物体、尺寸、面数、材质）。代码能做的事 Blender 都能做，不需要为每种操作单独设计工具。
    - 放弃：一种操作一个工具（加立方体、加修改器…）。Blender 的能力太多，列不全，模型对 bpy 本来就熟。
@@ -32,15 +32,15 @@
 
 ## 操作清单 / 契约
 
-| 项                                 | 内容                                                                                                                                                                               |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 设置                               | `Settings.blender.path`：Blender 可执行文件；空时按 PATH 和常见安装位置找                                                                                                          |
-| 桥接（`server/blender/bridge.py`） | `POST /exec {code}` → `{ ok, output, error }`；`GET /scene` → 物体列表；`POST /export {path}` 导出 glb；`POST /save {path}` 存 .blend；只监听 127.0.0.1，启动后打印 `READY <端口>` |
-| 进程管理（`server/blender.ts`）    | 按对话起一个桥接进程，空闲 10 分钟关掉；执行成功后保存、导出、`version + 1`                                                                                                        |
-| MCP（`/api/mcp/blender/<令牌>`）   | `blender_python { code }`、`blender_scene {}`；令牌只在这一轮有效                                                                                                                  |
-| 对话执行                           | `Task.modelDesign` 为真时 `runner` 给 `invokeCli` 传 `mcp: [{ name: 'blender', url }]`，提示词里说明工具和约定（单位米、Z 轴向上、物体起好名字）                                   |
-| 接口                               | `GET /api/tasks/:id/model` → `{ version, objects, updatedAt }`；`GET /api/tasks/:id/model.glb`                                                                                     |
-| 界面                               | 设计模式顶部下拉切换「UI 设计 / 模型设计」；模型设计按项目列模型对话、新建；对话右栏多一个「模型」页签（three.js 预览）                                                            |
+| 项                               | 内容                                                                                                                                                                               |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 设置                             | `Settings.blender.path`：Blender 可执行文件；空时按 PATH 和常见安装位置找                                                                                                          |
+| 桥接（bridge.py）                | `POST /exec {code}` → `{ ok, output, error }`；`GET /scene` → 物体列表；`POST /export {path}` 导出 glb；`POST /save {path}` 存 .blend；只监听 127.0.0.1，启动后打印 `READY <端口>` |
+| 进程管理（model.ts）             | 按对话起一个桥接进程，空闲 10 分钟关掉；执行成功后保存、导出、`version + 1`                                                                                                        |
+| MCP（`/api/mcp/blender/<令牌>`） | `blender_python { code }`、`blender_scene {}`；令牌只在这一轮有效                                                                                                                  |
+| 对话执行                         | `Task.modelDesign` 为真时 `runner` 给 `invokeCli` 传 `mcp: [{ name: 'blender', url }]`，提示词里说明工具和约定（单位米、Z 轴向上、物体起好名字）                                   |
+| 接口                             | `GET /api/tasks/:id/model` → `{ version, objects, updatedAt }`；`GET /api/tasks/:id/model.glb`                                                                                     |
+| 界面                             | 设计模式顶部下拉切换「UI 设计 / 模型设计」；模型设计按项目列模型对话、新建；对话右栏多一个「模型」页签（three.js 预览）                                                            |
 
 ## 影响与风险
 

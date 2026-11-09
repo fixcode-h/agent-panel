@@ -67,7 +67,7 @@ const agents: Agent[] = BUILTIN_AGENTS.map((b) => ({
 }))
 
 test('自带 Skill：名字和文件夹一致、不重名、写了说明', () => {
-  assert.ok(skillDirs.length >= 15)
+  assert.ok(skillDirs.length >= 12)
   const names = skillDirs.map((s) => s.name)
   assert.equal(new Set(names).size, names.length, '不同分类里有同名的 Skill')
   for (const s of skillDirs) {
@@ -327,8 +327,8 @@ test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行
     const list = await listBundled()
     assert.equal(list.length, skillDirs.length)
     assert.ok(list.every((s) => s.status.shared === 'missing'))
-    const one = list.find((s) => s.name === 'blender')!
-    assert.ok(one.files > 5, '带上了脚本和参考资料')
+    const one = list.find((s) => s.name === 'task-records')!
+    assert.ok(one.files >= 4, '带上了模板')
     // 详情页要能列出它带哪些文件：树里不含 SKILL.md，目录排在文件前，files 和树里的文件数一致
     assert.ok(one.tree, '自带 Skill 要带文件树')
     assert.equal(
@@ -336,29 +336,29 @@ test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行
       false,
     )
     assert.equal(one.tree.entries.filter((x) => x.type === 'file').length, one.files)
-    assert.ok(one.tree.entries.some((x) => x.path === 'scripts' && x.type === 'dir'))
+    assert.ok(one.tree.entries.some((x) => x.path === 'templates' && x.type === 'dir'))
     // 父目录一定排在子项前面（前端的 toTree 依赖这个顺序）
     const at = (p: string) => one.tree!.entries.findIndex((x) => x.path === p)
-    assert.ok(at('scripts') < at('scripts/inspect_scene.py'))
+    assert.ok(at('templates') < at('templates/design.md'))
 
-    const r = await installBundled(['blender'], [], false)
-    assert.deepEqual(r.done, ['blender'])
-    const dir = path.join(home, '.agents/skills/blender')
+    const r = await installBundled(['task-records'], [], false)
+    assert.deepEqual(r.done, ['task-records'])
+    const dir = path.join(home, '.agents/skills/task-records')
     assert.ok(existsSync(path.join(dir, 'SKILL.md')))
-    assert.ok(existsSync(path.join(dir, 'scripts/inspect_scene.py')))
-    assert.equal((await listBundled()).find((s) => s.name === 'blender')!.status.shared, 'same')
+    assert.ok(existsSync(path.join(dir, 'templates/design.md')))
+    assert.equal((await listBundled()).find((s) => s.name === 'task-records')!.status.shared, 'same')
 
     // 用户改过的：不覆盖，状态是「不同」；明确覆盖时换回自带的
     writeFileSync(path.join(dir, 'SKILL.md'), '改过')
-    assert.equal((await listBundled()).find((s) => s.name === 'blender')!.status.shared, 'changed')
-    assert.deepEqual((await installBundled(['blender'], [], false)).skipped, ['blender'])
+    assert.equal((await listBundled()).find((s) => s.name === 'task-records')!.status.shared, 'changed')
+    assert.deepEqual((await installBundled(['task-records'], [], false)).skipped, ['task-records'])
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '改过')
-    await installBundled(['blender'], [], true)
+    await installBundled(['task-records'], [], true)
     assert.notEqual(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '改过')
 
     // 执行前补齐：只装缺的、只装自带的，用户的同名 Skill 不动
     writeFileSync(path.join(dir, 'SKILL.md'), '用户的')
-    const added = await ensureBundled(['blender', 'grilling', '不存在的'])
+    const added = await ensureBundled(['task-records', 'grilling', '不存在的'])
     assert.deepEqual(added, ['grilling'])
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '用户的')
   } finally {

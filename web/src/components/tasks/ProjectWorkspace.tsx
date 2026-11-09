@@ -50,6 +50,7 @@ import { TaskView } from './TaskView'
 import { ProjectFileExplorer } from '@/components/files/ProjectFileExplorer'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { IconButton } from '@/components/ui/icon-button'
+import { ownedDesign, useDesignModes } from '@/plugins/registry'
 import { t } from '@shared/i18n'
 
 /** 项目首页：参考 Claude Code，上面是这个项目的任务，输入框贴在底部，和对话页的输入框在同一个位置 */
@@ -66,8 +67,11 @@ function ProjectHome({ project }: { project: Project }) {
     return Math.max(320, width - 480)
   })
   // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）；子对话只在父对话页里看
-  // 模型设计对话属于设计模式（#/model），项目首页不列
-  const all = tasks.filter((t) => t.projectId === project.id && !t.parentTaskId && !t.flowRun?.owner && !t.modelDesign)
+  // 插件设计模式的对话（例如模型设计，#/pdesign）属于设计模式，项目首页不列；插件不在时照常列
+  const modes = useDesignModes()
+  const all = tasks.filter(
+    (t) => t.projectId === project.id && !t.parentTaskId && !t.flowRun?.owner && !ownedDesign(t, modes),
+  )
   const archived = all.filter((t) => t.archived).length
   const list = all.filter((t) => !t.archived).sort(byAskedAt)
   // 有任务真的在跑时每秒刷新，耗时跟着走

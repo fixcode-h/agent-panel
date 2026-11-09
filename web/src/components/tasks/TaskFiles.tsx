@@ -1,6 +1,5 @@
-import { Suspense, lazy, useContext, useEffect, useState, type ReactNode } from 'react'
+import { Suspense, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
-  Box,
   Diff,
   FileText,
   GitBranch,
@@ -34,8 +33,8 @@ import { PaneNavCtx, PaneToolbarCtx, useChildList } from './child-open'
 import { InlineRename } from '@/components/ui/inline-rename'
 
 /** 3D 预览要 three.js（几百 KB），只有模型设计对话用到：单独分块，按需加载 */
-const ModelPreview = lazy(() => import('./ModelPreview').then((m) => ({ default: m.ModelPreview })))
 import { DiffDialog } from './DiffDialog'
+import { useTaskTabs } from '@/plugins/registry'
 import { FileDialog } from './FileDialog'
 
 /**
@@ -115,9 +114,10 @@ export function TaskFiles({
   }
 }) {
   const { upsertTask } = useData()
-  // 模型设计对话（ADR 0025）默认看「模型」页签：建模时要盯的是模型，不是文件
-  const home = task.modelDesign ? 'model' : 'files'
-  const [tab, setTab] = useState<'files' | 'changes' | 'child' | 'model'>(child ? 'child' : home)
+  // 插件给的页签（ADR 0059，例如模型设计的「模型」）：标了 home 的默认停在它上面，建模时要盯的是模型，不是文件
+  const pluginTabs = useTaskTabs(task)
+  const home = pluginTabs.find((x) => x.home)?.id ?? 'files'
+  const [tab, setTab] = useState<string>(child ? 'child' : home)
   // 新开（或换了）子对话就切到它的页签；关掉后回默认页签
   const childId = child?.id ?? ''
   const childFocus = child?.focus
@@ -127,7 +127,8 @@ export function TaskFiles({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [childId, childFocus])
   const onChild = tab === 'child' && !!child
-  const onModel = tab === 'model' && !!task.modelDesign
+  const onPlugin = pluginTabs.find((x) => x.id === tab)
+  const onModel = !!onPlugin
   const [diffPath, setDiffPath] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [target, setTarget] = useState<{ path: string; line?: number; local?: boolean } | null>(null)
@@ -230,15 +231,16 @@ export function TaskFiles({
           </>
         }
       >
-        {task.modelDesign && (
+        {pluginTabs.map((x) => (
           <TabItem
-            active={onModel}
-            onSelect={() => setTab('model')}
-            icon={<Box className="h-[0.8125rem] w-[0.8125rem]" />}
+            key={x.id}
+            active={tab === x.id}
+            onSelect={() => setTab(x.id)}
+            icon={<x.icon className="h-[0.8125rem] w-[0.8125rem]" />}
           >
-            {t('模型')}
+            {x.label}
           </TabItem>
-        )}
+        ))}
         <TabItem
           active={tab === 'files'}
           onSelect={() => setTab('files')}
@@ -313,9 +315,9 @@ export function TaskFiles({
           <PaneToolbarCtx.Provider value={childSlot}>{child.view}</PaneToolbarCtx.Provider>
         </section>
       )}
-      {onModel && (
+      {onPlugin && (
         <Suspense fallback={<p className="p-4 text-body text-subtle">{t('读取中…')}</p>}>
-          <ModelPreview taskId={task.id} running={task.working} />
+          <onPlugin.Panel task={task} />
         </Suspense>
       )}
       {!onChild && !onModel && (

@@ -12,6 +12,7 @@ import {
 import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
 import { LEGACY_AGENT_FIELDS_MORE, MERGED_AGENTS } from '../shared/builtin/legacy.ts'
+import { MOVED_TO_PLUGINS } from '../shared/builtin/plugin-content.ts'
 import {
   pruneMergedAgents,
   redirectMergedProjects,
@@ -19,7 +20,7 @@ import {
   type BuiltinOps,
 } from '../shared/builtin/install.ts'
 
-// ---- 内置角色合并成通用角色（调研、方案设计、开发、评审、Blender 建模） ----
+// ---- 内置角色合并成通用角色（调研、方案设计、开发、评审；Blender 建模挪进了插件，ADR 0059） ----
 
 const def = (key: string) => BUILTIN_AGENTS.find((b) => b.key === key)!.agent
 /** 按参数渲染内置角色的设定，参数没给的按默认值 */
@@ -43,11 +44,11 @@ test('合并后的角色按参数切换做法，模板都能展开干净', () =>
   assert.match(render('reviewer', { target: '方案或结论' }), /同意 \/ 部分同意 \/ 不同意/)
   assert.match(render('reviewer'), /submit_verdict/)
   assert.match(render('analyst', { scale: 'architectural', stack: 'ue' }), /架构契约[\s\S]*gameplay-framework\.md/)
-  assert.match(render('blender', { stage: '质检' }), /不修改模型/)
-  // 每个合并掉的 key 都指向还在的内置角色
+  // 每个合并掉的 key 都指向还在的内置角色，或者挪进插件的（插件没开时由插件的清理规则处理）
   for (const [key, m] of Object.entries(MERGED_AGENTS))
     assert.ok(
-      BUILTIN_AGENTS.some((b) => b.key === m.into),
+      BUILTIN_AGENTS.some((b) => b.key === m.into) ||
+        Object.values(MOVED_TO_PLUGINS).some((k) => k.agents.includes(m.into)),
       `${key} → ${m.into}`,
     )
   // 评审现在是通用角色：任何节点都能派它复核
@@ -134,7 +135,6 @@ test('旧工作流引用合并掉的角色：改指到通用角色并换算参�
         nodes: [
           node('perf', 'old-debugger', { scene: true, focus: '性能问题', lang: 'cpp' }),
           node('scout', 'old-uescout', { scene: true, focus: '资产' }),
-          node('qa', 'old-qa', {}),
         ],
         edges: [],
       },
@@ -146,7 +146,6 @@ test('旧工作流引用合并掉的角色：改指到通用角色并换算参�
       oldCopy('impact', 'old-impact'),
       // 用户改过的旧副本：引用照样换掉，但副本留着
       oldCopy('uescout', 'old-uescout', { instructions: '我改过的 UE 侦察' }),
-      oldCopy('blenderqa', 'old-qa'),
       // 还被项目用作默认对话角色的：项目改过去后也能删
       oldCopy('second', 'old-second'),
     ],
@@ -156,17 +155,14 @@ test('旧工作流引用合并掉的角色：改指到通用角色并换算参�
   const find = (key: string) => seeded.state.agents.find((a) => a.origin === `builtin:${key}`)!
   const dev = find('developer')
   const explorer = find('explorer')
-  const blender = find('blender')
-  assert.ok(dev && explorer && blender, '合并目标原来没有，先建出来')
+  assert.ok(dev && explorer, '合并目标原来没有，先建出来')
   const w = seeded.state.workflows.find((x) => x.id === 'w1')!
-  const [perf, scout, qa] = w.flows[0].nodes
+  const [perf, scout] = w.flows[0].nodes
   assert.equal(perf.agentId, dev.id)
   assert.deepEqual(perf.params, { scene: true, lang: 'cpp', task: '性能问题' }, '排查方向换算成任务')
   assert.equal(perf.instructions, '我自己写的说明', '节点说明不动')
   assert.equal(scout.agentId, explorer.id)
   assert.deepEqual(scout.params, { scene: true, focus: '资产', target: '影响面', stack: 'ue' })
-  assert.equal(qa.agentId, blender.id)
-  assert.deepEqual(qa.params, { stage: '质检' })
   assert.equal(w.mainAgentId, dev.id, '主 Agent 一起换')
   assert.deepEqual(
     w.members.map((m) => m.agentId),
@@ -179,7 +175,7 @@ test('旧工作流引用合并掉的角色：改指到通用角色并换算参�
   assert.deepEqual(moved, [{ id: 'p1', defaultAgentId: reviewer.id }])
   // 项目还没改过去时，被项目用着的不删；其余没人用、没改过的删掉
   const first = await pruneMergedAgents(seeded.state, projects, ops)
-  assert.deepEqual(first.removed.map((a) => a.id).sort(), ['old-debugger', 'old-impact', 'old-qa'])
+  assert.deepEqual(first.removed.map((a) => a.id).sort(), ['old-debugger', 'old-impact'])
   assert.equal(first.aliases['old-debugger'], dev.id, '旧对话里的旧 id 转到合并目标')
 
   const after = { ...seeded.state, agents: state.agents }

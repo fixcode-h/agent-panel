@@ -120,7 +120,7 @@ export function newTask(
     childAskUser: input.childAskUser ?? true,
     ...(input.analysis && { analysis: input.analysis }),
     ...(input.analysisOf && { analysisOf: input.analysisOf }),
-    ...(input.modelDesign && { modelDesign: true }),
+    ...(input.plugin && { plugin: input.plugin }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,
@@ -2378,3 +2378,7 @@ export function closeFlow(task: Task, id: string, now = new Date().toISOString()
   })
   task.updatedAt = now
 }
+
+/** 对话归哪个插件的设计模式：旧版的模型设计对话（modelDesign）算 Blender 插件的 blender.model（ADR 0059） */
+export const taskPlugin = (task: { plugin?: string; modelDesign?: boolean }) =>
+  task.plugin || (task.modelDesign ? 'blender.model' : undefined)

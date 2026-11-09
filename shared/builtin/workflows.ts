@@ -12,7 +12,7 @@ import { autoLayout, END, START } from '../flow.ts'
 import { DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 
 /**
- * 内置工作流：项目常驻的「通用项目」「UE 项目」，加上规范开发、迁移、架构、评审、依赖和发布准备；美术资产链（Blender）在 Blender 插件里（shared/plugins/blender）。
+ * 内置工作流：项目常驻的「通用项目」「UE 项目」，加上规范开发、迁移、架构、评审、依赖和发布准备；美术资产链（Blender）在插件仓库 fixcode-h/agent-plugins 的 Blender 插件里（ADR 0059）。
  * 启动时全部自动装一次（见 install.ts 的 seedProjectWorkflows），用户删掉的不再装回来。
  * 工作流只由父对话启动，是父对话名下的一次工作流运行（ADR 0053）；改代码的只做到「实现 + 快速检查 + 文档同步」，
  * 评审、完整测试和合回由那个子对话的执行角色收尾（见 CHILD_RULES）。when / notFor / kind 是父对话挑工作流看的。

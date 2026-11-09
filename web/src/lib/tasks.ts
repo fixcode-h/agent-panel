@@ -324,7 +324,7 @@ export function toolView(tool: ToolUse): ToolView | null {
   if (!mcp) return { tool }
   const a = toolArgs(tool)
   const arg = Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined
-  // 面板自己的设计、Blender 服务的工具换成中文名，服务名也换成中文；别家的工具照原名
+  // 面板自己的设计、插件服务的工具换成中文名，服务名也换成中文；别家的工具照原名
   return {
     tool: { ...tool, name: toolTitle(mcp[2], mcp[1]), label: arg ? firstLine(arg).slice(0, 120) : '' },
     server: serverTitle(mcp[1]),

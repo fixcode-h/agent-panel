@@ -91,6 +91,7 @@ import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
+import { ownedDesign, useDesignModes } from '@/plugins/registry'
 
 /** 产品图标：陶土橙渐变圆角方块（--logo-bg，品牌色不跟配色变）+ 白色节点图，顶上一道高光、底下一点投影浮起来 */
 export function Logo({ className }: { className?: string }) {
@@ -314,7 +315,7 @@ export const homeRoute = (from?: PageId) =>
 /** 功能页：会话侧栏让开，整页给这个功能 */
 export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page)
 /** 设计模式：设计页和它的 ComfyUI 工作流页 */
-export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy' || page === 'model'
+export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy' || page === 'pdesign'
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
@@ -437,8 +438,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 免得同一次输入发两份请求或者为看不见的结果白扫一遍对话
   const content = useTaskSearch(chatMode || designMode ? '' : query)
   // 子对话只在父对话页的「子对话」一栏里看，不占项目下的任务列表
-  // 模型设计对话属于设计模式（#/model），不列进 Agent 模式的项目对话
-  const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.flowRun?.owner && !t.modelDesign)
+  // 插件设计模式的对话（例如模型设计，#/pdesign）属于设计模式，不列进 Agent 模式的项目对话；插件不在时照常列
+  const modes = useDesignModes()
+  const projectTasks = tasks.filter(
+    (t) => t.projectId && !t.parentTaskId && !t.flowRun?.owner && !ownedDesign(t, modes),
+  )
   const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter)).sort(byAskedAt) : []
   // 只留项目里的对话：侧栏这一栏不列 Chat，正文命中也不该混进来
   const contentHits = content.hits.filter((h) => projectTasks.some((x) => x.id === h.taskId))

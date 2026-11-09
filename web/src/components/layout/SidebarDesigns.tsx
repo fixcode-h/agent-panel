@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import {
-  Box,
   ChevronDown,
   ChevronRight,
   CopyPlus,
@@ -19,7 +18,8 @@ import { toast } from '@/lib/toast'
 import type { DesignMeta, DesignProject } from '@shared/design'
 import type { Task } from '@shared/schema'
 import { DesignProjectDialog, type DesignProjectSection } from '@/components/design/DesignProjectDialog'
-import { NewModelDesignDialog } from '@/components/design/NewModelDesignDialog'
+import { useDesignModes } from '@/plugins/registry'
+import type { DesignMode as PluginDesignMode } from '@/plugins/sdk'
 import { api } from '@/lib/api'
 import { useData, useNav, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -59,25 +59,27 @@ import {
 } from '@/components/ui/sidebar'
 import { TaskRow } from './SidebarTasks'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
-import { byAskedAt } from '@shared/task'
+import { byAskedAt, taskPlugin } from '@shared/task'
 import { t } from '@shared/i18n'
 
 /**
  * 设计模式的侧栏（照设计稿 Design.dc.html）：最上面一个下拉在「UI 设计 / 模型设计」之间切换，下面按项目列。
  * - UI 设计：UI 设计自己的项目（和 Agent 的项目分开），展开后是这个项目的各个界面。
- * - 模型设计：带 modelDesign 标记的对话（ADR 0025），按所在项目分组列出来，在 #/model 里打开，不进 Agent 模式。
+ * - 插件登记的设计模式（例如 Blender 插件的模型设计，ADR 0059）：task.plugin 归它的对话，按所在项目分组列出来，
+ *   在 #/pdesign/<模式>/<对话> 里打开，不进 Agent 模式。插件关掉或删掉后这一项就没了。
  */
 const KINDS = [
   { id: 'game', icon: Gamepad2 },
   { id: 'web', icon: Globe },
 ] as const
 
-type DesignMode = 'ui' | 'model'
+/** 'ui' 或插件设计模式的 id */
+type DesignMode = string
 /** 选了哪种设计只是这台浏览器上的习惯（下次打开还停在这一种），读写失败时退回 UI 设计 */
 const MODE_KEY = 'agent-panel:design-mode'
 const readMode = (): DesignMode => {
   try {
-    return localStorage.getItem(MODE_KEY) === 'model' ? 'model' : 'ui'
+    return localStorage.getItem(MODE_KEY) ?? 'ui'
   } catch {
     return 'ui'
   }
@@ -85,22 +87,31 @@ const readMode = (): DesignMode => {
 
 export function DesignList() {
   const { route, go } = useNav()
+  const plugins = useDesignModes()
   const [saved, setMode] = useState<DesignMode>(readMode)
-  // 打开着模型对话（#/model）时侧栏一定是模型设计，打开着 UI 设计时一定是 UI 设计，不看上次记的
-  const mode: DesignMode = route.page === 'model' ? 'model' : route.page === 'design' && route.id ? 'ui' : saved
+  // 打开着插件的设计（#/pdesign）时侧栏一定是那一种，打开着 UI 设计时一定是 UI 设计；记的那种插件没了退回 UI 设计
+  const mode: DesignMode =
+    route.page === 'pdesign' && route.id
+      ? route.id
+      : route.page === 'design' && route.id
+        ? 'ui'
+        : plugins.some((m) => m.id === saved)
+          ? saved
+          : 'ui'
+  const plugin = plugins.find((m) => m.id === mode)
   const pick = (m: DesignMode) => {
     setMode(m)
     try {
       localStorage.setItem(MODE_KEY, m)
     } catch {}
     // 换了类型就换到那一类的页面：停在原页面的话，下一次渲染又按页面把下拉改回去
-    if (m === 'model' && route.page !== 'model') go({ page: 'model' })
-    if (m === 'ui' && route.page === 'model') go({ page: 'design' })
+    if (m !== 'ui' && !(route.page === 'pdesign' && route.id === m)) go({ page: 'pdesign', id: m })
+    if (m === 'ui' && route.page === 'pdesign') go({ page: 'design' })
   }
   return (
     <div className="mt-2 flex min-h-0 flex-1 flex-col">
-      <DesignModeSwitch value={mode} onChange={pick} />
-      {mode === 'model' ? <ModelDesignList /> : <UiDesignList />}
+      <DesignModeSwitch value={mode} onChange={pick} plugins={plugins} />
+      {plugin ? <PluginDesignList mode={plugin} /> : <UiDesignList />}
     </div>
   )
 }
@@ -109,10 +120,18 @@ export function DesignList() {
  * 设计类型下拉：40 高的整块按钮，左边带底色的小图标、名字和一行说明，右边小箭头；
  * 点开列出两种，选中项打勾。颜色借现成的状态色（run / peer），不另起一套色板
  */
-function DesignModeSwitch({ value, onChange }: { value: DesignMode; onChange: (m: DesignMode) => void }) {
+function DesignModeSwitch({
+  value,
+  onChange,
+  plugins,
+}: {
+  value: DesignMode
+  onChange: (m: DesignMode) => void
+  plugins: PluginDesignMode[]
+}) {
   const modes = [
-    { id: 'ui' as const, name: t('UI 设计'), desc: t('界面 · 原画 · 切图'), icon: LayoutTemplate, tone: 'bg-run' },
-    { id: 'model' as const, name: t('模型设计'), desc: t('Blender 建模 · 按项目对话'), icon: Box, tone: 'bg-peer' },
+    { id: 'ui', name: t('UI 设计'), desc: t('界面 · 原画 · 切图'), icon: LayoutTemplate, tone: 'bg-run' },
+    ...plugins.map((m) => ({ id: m.id, name: m.name, desc: m.desc, icon: m.icon, tone: m.tone ?? 'bg-peer' })),
   ]
   const cur = modes.find((m) => m.id === value) ?? modes[0]
   const tile = (m: (typeof modes)[number], size: string) => (
@@ -167,17 +186,17 @@ function DesignModeSwitch({ value, onChange }: { value: DesignMode; onChange: (m
 }
 
 /**
- * 模型设计：Agent 项目里带 modelDesign 标记的顶层对话，按项目分组（只列有模型对话的项目）。
- * 点项目名打开那个 Agent 项目，点对话进对话页；对话自己的右键菜单（重命名、删除…）沿用 TaskRow
+ * 插件的设计模式：Agent 项目里 task.plugin 归它的顶层对话，按项目分组（只列有这类对话的项目）。
+ * 点对话进对话页；对话自己的右键菜单（重命名、删除…）沿用 TaskRow，新建用插件给的弹窗
  */
-function ModelDesignList() {
+function PluginDesignList({ mode }: { mode: PluginDesignMode }) {
   const { projects } = useData()
   const { tasks } = useTasks()
   const { route, go } = useNav()
   const [folded, setFolded] = useState<Set<string>>(new Set())
   const unread = useUnreadTasks()
   const [creating, setCreating] = useState(false)
-  const models = tasks.filter((x: Task) => x.modelDesign && x.projectId && !x.parentTaskId && !x.archived)
+  const models = tasks.filter((x: Task) => taskPlugin(x) === mode.id && x.projectId && !x.parentTaskId && !x.archived)
   const groups = projects
     .map((p) => ({ p, ts: models.filter((x) => x.projectId === p.id).sort(byAskedAt) }))
     .filter((g) => g.ts.length)
@@ -185,21 +204,23 @@ function ModelDesignList() {
     <div className="scroll-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
       <div className="mb-1.5 flex h-6 shrink-0 items-center pr-1 pl-2">
         <p className={cn('flex-1 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
-        <IconButton icon={Plus} label={t('新建模型设计')} size="sm" onClick={() => setCreating(true)} />
+        <IconButton icon={Plus} label={mode.newLabel} size="sm" onClick={() => setCreating(true)} />
       </div>
       {!groups.length && (
         <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
-          <Box className="h-5 w-5 text-subtle" strokeWidth={2} />
-          <p className="text-xs leading-relaxed text-subtle">
-            {t('还没有模型设计对话。模型设计用 Blender 建模，对话会按项目列在这里。')}
-          </p>
+          <mode.icon className="h-5 w-5 text-subtle" strokeWidth={2} />
+          <p className="text-xs leading-relaxed text-subtle">{mode.empty}</p>
           <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
             <Plus className="h-3.5 w-3.5" />
-            {t('新建模型设计')}
+            {mode.newLabel}
           </Button>
         </EmptyPanel>
       )}
-      <NewModelDesignDialog open={creating} onOpenChange={setCreating} />
+      <mode.NewDialog
+        open={creating}
+        onOpenChange={setCreating}
+        onCreated={(task) => go({ page: 'pdesign', id: mode.id, sub: task.id })}
+      />
       {groups.map(({ p, ts }) => {
         const open = !folded.has(p.id)
         return (
@@ -224,10 +245,10 @@ function ModelDesignList() {
                   <TaskRow
                     key={x.id}
                     task={x}
-                    active={route.page === 'model' && route.id === x.id}
+                    active={route.page === 'pdesign' && route.sub === x.id}
                     unread={isTaskUnread(x) || unread.includes(x.id)}
-                    onOpen={() => go({ page: 'model', id: x.id })}
-                    onDeleted={() => route.page === 'model' && route.id === x.id && go({ page: 'model' })}
+                    onOpen={() => go({ page: 'pdesign', id: mode.id, sub: x.id })}
+                    onDeleted={() => route.sub === x.id && go({ page: 'pdesign', id: mode.id })}
                     inBlock
                     className="pr-2 pl-2"
                   />

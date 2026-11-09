@@ -4,6 +4,8 @@ import { toolView } from './tasks.ts'
 import { PANEL_TOOL_NAMES } from '../../../shared/panel-tools.ts'
 import { panelToolTitle, serverTitle, toolTitle } from '../../../shared/tool-names.ts'
 import { setLang } from '../../../shared/i18n.ts'
+import { setInstalledPlugins } from '../../../shared/plugins/index.ts'
+import { PluginManifest } from '../../../shared/plugins/types.ts'
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
@@ -25,7 +27,17 @@ test('没有专门写法的面板工具也显示中文名，不露出英文原�
   assert.equal(toolView(tool('mcp__panel__list_workflows', ''))?.tool.name, '查看工作流运行')
 })
 
-test('设计、Blender 服务的工具和服务名换成中文，别家的 MCP 照原样', () => {
+test('设计、插件服务的工具和服务名换成中文，别家的 MCP 照原样', () => {
+  // 装着的插件按清单里的 mcpServers、toolNames 认（ADR 0059）
+  setInstalledPlugins([
+    PluginManifest.parse({
+      id: 'blender',
+      name: 'Blender',
+      version: '1.0.0',
+      mcpServers: ['blender'],
+      toolNames: { blender_python: '执行 Blender 脚本' },
+    }) as never,
+  ])
   const add = toolView(tool('MCP', 'design · add_widgets', { input: '{"parent":"Root"}' }))
   assert.deepEqual([add?.tool.name, add?.server], ['添加控件', '设计'])
   const py = toolView(tool('MCP', 'blender · blender_python', {}))

@@ -26,6 +26,7 @@ import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { loadPlugins } from '@/plugins/registry'
 
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
@@ -36,7 +37,7 @@ const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.M
 const OverviewPage = lazy(() => import('@/pages/OverviewPage').then((m) => ({ default: m.OverviewPage })))
 const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
-const ModelPage = lazy(() => import('@/pages/ModelPage').then((m) => ({ default: m.ModelPage })))
+const PluginDesignPage = lazy(() => import('@/plugins/DesignPage').then((m) => ({ default: m.PluginDesignPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
 const AiWindow = lazy(() => import('@/components/ai-window/AiWindow').then((m) => ({ default: m.AiWindow })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
@@ -55,7 +56,7 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   chat: () => <ChatPage />,
   design: () => <DesignPage />,
   comfy: () => <ComfyPage />,
-  model: () => <ModelPageRoute />,
+  pdesign: () => <PluginDesignPage />,
   library: () => <LibraryPage />,
   mcp: () => <McpPage />,
   summary: () => <SummaryPage />,
@@ -71,15 +72,9 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
 const splitPage = (r: Route) =>
   r.page === 'projects' ||
   (r.page === 'chat' && !!r.id) ||
-  (r.page === 'model' && !!r.id) ||
+  (r.page === 'pdesign' && !!r.sub) ||
   r.page === 'schedules' ||
   (r.page === 'design' && !!r.id && r.id !== 'new' && r.id !== 'home')
-
-/** 模型设计页按地址里的对话 id 打开（换对话时 TaskView 由 key 重建） */
-function ModelPageRoute() {
-  const { route } = useNav()
-  return <ModelPage id={route.id} />
-}
 
 function useTheme() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
@@ -231,6 +226,8 @@ export function App() {
   const [dark, toggleTheme] = useTheme()
   // 托盘右键「设置」：切到这个页面后打开设置
   usePageSignals((view) => view === 'settings' && setSettings({ open: true, loaded: true }))
+  // 插件（ADR 0059）：读装着的插件、加载开着的插件的网页部分；读不到不影响面板
+  useEffect(() => void loadPlugins().catch(() => {}), [])
 
   // 导航上下文有 37 个文件在用：每次渲染都新建对象会让它们全部跟着重渲染，只在路由变了时换
   const nav = useMemo(

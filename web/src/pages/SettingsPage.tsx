@@ -29,7 +29,7 @@ import {
   Mic,
   Volume2,
   Component,
-  Box,
+  Puzzle,
   Heading,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
@@ -89,7 +89,7 @@ import {
 } from '@/components/settings/CliSection'
 
 // 设置弹窗本身是第一次打开时才加载的，里面 25 个分页再按页加载：不常打开的几页（数据、用量、组件陈列、
-// 本地生图、Blender……）带着自己的大依赖，不该跟着「常规」一起下载
+// 本地生图、插件……）带着自己的大依赖，不该跟着「常规」一起下载
 const UpdateSection = lazy(() =>
   import('@/components/settings/UpdateSection').then((m) => ({ default: m.UpdateSection })),
 )
@@ -98,9 +98,7 @@ const UsageSection = lazy(() => import('@/components/usage/UsageSection').then((
 const LocalImageSection = lazy(() =>
   import('@/components/settings/LocalImageSection').then((m) => ({ default: m.LocalImageSection })),
 )
-const BlenderSection = lazy(() =>
-  import('@/components/settings/BlenderSection').then((m) => ({ default: m.BlenderSection })),
-)
+const PluginsSection = lazy(() => import('@/plugins/PluginsSection').then((m) => ({ default: m.PluginsSection })))
 const RemoteSection = lazy(() =>
   import('@/components/settings/RemoteSection').then((m) => ({ default: m.RemoteSection })),
 )
@@ -169,7 +167,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'network', label: t('网络与代理'), icon: Network, group: t('连接') },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
   { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
-  { id: 'blender', label: 'Blender', icon: Box, group: t('建模') },
+  { id: 'plugins', label: t('插件'), icon: Puzzle, group: t('扩展') },
   { id: 'data', label: t('数据'), icon: HardDrive, group: t('系统') },
   { id: 'usage', label: t('用量统计'), icon: Gauge, group: t('系统') },
   { id: 'update', label: t('版本更新'), icon: ArrowUpCircle, group: t('系统') },
@@ -267,7 +265,6 @@ function SettingsBody({
   const [imageGen, setImageGen] = useState(initial.imageGen)
   const [designRestore, setDesignRestore] = useState(initial.designRestore)
   const [modelCatalog, setModelCatalog] = useState(initial.modelCatalog)
-  const [blender, setBlender] = useState(initial.blender)
   // 用量统计的计价模型（存在设置里，跟着自动保存）
   const [pricingModel, setPricingModel] = useState(initial.usagePricingModel)
   const catalogInfo = useModelCatalog()
@@ -354,6 +351,7 @@ function SettingsBody({
   const tier = (x: CliSettings['tiers']['high']) => ({ ...x, model: x.model.trim() })
   const value: Settings = {
     defaultsVersion: initial.defaultsVersion,
+    plugins: initial.plugins,
     openBrowser,
     requireToken,
     remoteAccess,
@@ -420,7 +418,6 @@ function SettingsBody({
     imageGen: { ...imageGen, model: imageGen.model.trim() },
     designRestore,
     modelCatalog,
-    blender: { path: blender.path.trim() },
     usagePricingModel: pricingModel,
   }
   const save = useAutosave(
@@ -1398,9 +1395,7 @@ function SettingsBody({
               {cur.id === 'local-image' && (
                 <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
               )}
-              {cur.id === 'blender' && (
-                <BlenderSection path={blender.path} onPath={(path) => setBlender({ ...blender, path })} />
-              )}
+              {cur.id === 'plugins' && <PluginsSection />}
               {cur.id === 'data' && <DataSection />}
               {cur.id === 'usage' && <UsageSection pricingModel={pricingModel} onPricingModel={setPricingModel} />}
               {cur.id === 'deploy' && <DeploySection />}

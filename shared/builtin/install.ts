@@ -598,9 +598,15 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps,
     cur = seeded
     created = seeded.workflows.filter((w) => !state.workflows.some((x) => x.id === w.id))
   }
-  // 本机还有已合并的旧副本、却没有合并目标时（例如只装过「Bug 修复」，没有「开发」）先把目标建出来，下面才能重定向
+  // 本机还有已合并的旧副本、却没有合并目标时（例如只装过「Bug 修复」，没有「开发」）先把目标建出来，下面才能重定向。
+  // 合并目标是插件带的（例如 Blender 建模，ADR 0059）而插件没开时不建：旧副本由插件的清理规则处理
   const targets = Object.entries(MERGED_AGENTS)
-    .filter(([key, m]) => findBuiltin(cur.agents, key) && !findBuiltin(cur.agents, m.into))
+    .filter(
+      ([key, m]) =>
+        findBuiltin(cur.agents, key) &&
+        !findBuiltin(cur.agents, m.into) &&
+        builtinAgents().some((b) => b.key === m.into),
+    )
     .map(([, m]) => m.into)
   if (targets.length) {
     const r = await addBuiltinAgents(targets, cur, api)

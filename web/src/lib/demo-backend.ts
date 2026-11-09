@@ -10,7 +10,6 @@ import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { demoFlowRun } from './demo-flow-run'
 import { descendantNeeds } from '@shared/child-needs'
-import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-summary'
 import { demoSettleAction, demoUserAction } from './demo-user-action'
@@ -2084,21 +2083,10 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'speech') return demoSpeech(method, seg)
   if (res === 'video') fail('在线演示不能读本机视频，截帧要在本机运行面板')
   if (res === 'tts') return demoTts(method, seg)
-  // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
-  if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
-  // 演示里没有 Blender 建出来的模型：预览一直是「还没有模型」
-  if (res === 'blender' && id === 'models') {
-    // 模型设计对话给一只示例宝箱（demo-model.ts 现场拼的），其余对话还没有模型
-    const task = (d.tasks ?? []).find((x) => x.id === sub)
-    if (!task?.modelDesign) return { version: 0, updatedAt: '', objects: [], exportError: '' }
-    const { DEMO_MODEL_OBJECTS } = await import('./demo-model')
-    return {
-      version: 1,
-      updatedAt: task.createdAt,
-      objects: DEMO_MODEL_OBJECTS.map((o) => ModelObject.parse(o)),
-      exportError: '',
-    }
-  }
+  // 在线演示不装插件：插件页显示空列表，插件市场要连 GitHub，演示里不能装
+  if (res === 'plugins' && !id && method === 'GET')
+    return { plugins: [], broken: [], market: 'fixcode-h/agent-plugins' }
+  if (res === 'plugins') fail('在线演示不能安装插件，要在本机运行面板')
   if (res === 'project-trust') return { pi: ['.pi/skills'] }
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'project-mcp') {

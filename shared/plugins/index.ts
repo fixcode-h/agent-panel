@@ -1,16 +1,34 @@
+import { base } from '../builtin/agents.ts'
+import { t } from '../i18n.ts'
 import type { Settings } from '../schema.ts'
-import { BLENDER_PLUGIN } from './blender/manifest.ts'
 import type { PluginConfig, PluginManifest } from './types.ts'
 
-export type { PluginConfig, PluginManifest, PluginSetting } from './types.ts'
+export type { PluginConfig, PluginInfo, PluginManifest, PluginSetting, PluginSource } from './types.ts'
 
 /**
- * 随面板发布的插件（ADR 0059）。插件默认全关，用户在设置 →「插件」里打开。
- * 新插件：在 shared/plugins/<id>/ 写清单并加进这里，服务端部分登记到 server/plugins/index.ts，界面部分登记到 web/src/plugins/index.ts。
+ * 本机装着的插件（ADR 0059）。插件装在数据目录 plugins/<id>/，服务端启动和安装、删除时用 setInstalledPlugins 更新，
+ * 网页拿到 /api/plugins 时更新。插件默认关着，在设置 →「插件」里打开。
+ * 这里只放按清单就能算的东西（参数默认值、开着的插件带了哪些角色、工作流、技能说明、工具名），前后端共用。
  */
-export const PLUGINS: PluginManifest[] = [BLENDER_PLUGIN]
+let installed: PluginManifest[] = []
+let enabled = new Set<string>()
 
-export const pluginById = (id: string) => PLUGINS.find((p) => p.id === id)
+/** 插件清单里的角色只写了和默认值不同的字段：按内置角色的默认值补齐（和核心内置角色同一个 base） */
+function normalize(m: PluginManifest): PluginManifest {
+  return {
+    ...m,
+    agents: m.agents.map((a) => {
+      const { mounts, ...agent } = a.agent as typeof a.agent & { mounts?: [] }
+      return base(a.key, a.category, { ...agent, mounts: a.mounts ?? mounts ?? [] }, a.includes ?? ['rules'])
+    }),
+  }
+}
+
+export function setInstalledPlugins(list: PluginManifest[]) {
+  installed = list.map(normalize)
+}
+export const installedPlugins = () => installed
+export const pluginById = (id: string) => installed.find((p) => p.id === id)
 
 type PluginsSetting = Settings['plugins']
 
@@ -19,10 +37,9 @@ export const pluginOn = (plugins: PluginsSetting | undefined, id: string) => !!p
 
 /** 参数：设置里存的值，缺的、类型不对的按声明的默认值补齐 */
 export function pluginConfig(plugins: PluginsSetting | undefined, id: string): PluginConfig {
-  const m = pluginById(id)
   const saved = plugins?.[id]?.config ?? {}
   const out: PluginConfig = {}
-  for (const s of m?.settings() ?? []) {
+  for (const s of pluginById(id)?.settings ?? []) {
     const v = saved[s.key]
     const ok =
       (s.type === 'boolean' && typeof v === 'boolean') ||
@@ -43,27 +60,31 @@ export function pluginConfig(plugins: PluginsSetting | undefined, id: string): P
  * 当前开着的插件。服务端读设置、存设置时更新，网页拿到设置时更新；
  * 内置角色 / 工作流 / 技能列表、工具显示名都按它取，免得把设置一路传进每个函数。
  */
-let enabled = new Set<string>()
-
+let lastSetting: PluginsSetting | undefined
 export function setEnabledPlugins(plugins: PluginsSetting | undefined) {
-  enabled = new Set(PLUGINS.filter((p) => pluginOn(plugins, p.id)).map((p) => p.id))
+  lastSetting = plugins
+  enabled = new Set(installed.filter((p) => pluginOn(plugins, p.id)).map((p) => p.id))
+}
+/** 装的插件变了：按上次的设置重算哪些开着 */
+export function refreshEnabledPlugins() {
+  setEnabledPlugins(lastSetting)
 }
 
 export const pluginEnabled = (id: string) => enabled.has(id)
-export const activePlugins = () => PLUGINS.filter((p) => enabled.has(p.id))
-
-/** 开着的插件里有没有这个界面入口 */
-export const pluginFeature = (feature: string) => activePlugins().some((p) => p.features.includes(feature))
-
-/** 这个技能是哪个插件带来的（核心技能返回 undefined） */
-export const skillPlugin = (name: string) => PLUGINS.find((p) => p.skills.includes(name))
+export const activePlugins = () => installed.filter((p) => enabled.has(p.id))
 
 /** 这个内置角色 / 工作流 key 是哪个插件带来的 */
-export const agentPlugin = (key: string) => PLUGINS.find((p) => p.agents.some((a) => a.key === key))
-export const workflowPlugin = (key: string) => PLUGINS.find((p) => p.workflows.some((w) => w.key === key))
+export const agentPlugin = (key: string) => installed.find((p) => p.agents.some((a) => a.key === key))
+export const workflowPlugin = (key: string) => installed.find((p) => p.workflows.some((w) => w.key === key))
 
-/** 所有插件（不论开没开）的技能触发说明：已经装着的技能照样要说清什么时候用 */
-export const pluginSkillGuide = (name: string) => PLUGINS.find((p) => p.skillGuide?.[name])?.skillGuide?.[name]
+/** 装着的插件（不论开没开）的技能触发说明：已经装着的技能照样要说清什么时候用 */
+export const pluginSkillGuide = (name: string) => installed.find((p) => p.skillGuide[name])?.skillGuide[name]
 
-/** MCP 服务名属于哪个插件（对话里工具那一行按它显示中文名） */
-export const mcpPlugin = (server: string) => PLUGINS.find((p) => p.mcpServers.includes(server))
+/** MCP 服务名属于哪个插件（对话里工具那一行按它显示名字） */
+export const mcpPlugin = (server: string) => installed.find((p) => p.mcpServers.includes(server))
+
+/** 所有装着的插件的工具显示名（界面语言） */
+export const pluginToolNames = (p?: PluginManifest): Record<string, string> =>
+  Object.fromEntries(
+    (p ? [p] : installed).flatMap((x) => Object.entries(x.toolNames)).map(([k, v]) => [k, t(v)] as const),
+  )
