@@ -9,6 +9,7 @@ import {
   batchField,
   SPAWN_TOP_FIELDS,
   paramsField,
+  reviewField,
   routeField,
   routeOf,
   tasksField,
@@ -715,6 +716,7 @@ export function orchTools(o: Orchestra) {
                 tier: batchField(tierField()),
                 resume: resumeField(true),
                 params: batchField(paramsField()),
+                review: batchField(reviewField()),
                 // 和 create_conversation / run_background 一样：这批子任务全部结束、结果交回时，
                 // 计划里这一步标完成；失败或被终止退回进行中并写清原因
                 ...(o.plans ? { step: stepField('这批子任务') } : {}),
@@ -1027,7 +1029,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const unknown = Object.keys(a && typeof a === 'object' ? a : {}).filter((k) => !SPAWN_TOP_FIELDS.includes(k))
       if (unknown.length)
         return text(
-          `spawn_agents 不认得顶层字段${unknown.map((k) => `「${k}」`).join('、')}：每个子任务写进 tasks 的每一项；整批共用的 agent、tier 可以直接写在顶层，只派一个任务时 resume 也可以`,
+          `spawn_agents 不认得顶层字段${unknown.map((k) => `「${k}」`).join('、')}：每个子任务写进 tasks 的每一项；整批共用的 agent、tier、params、review 可以直接写在顶层，只派一个任务时 resume 也可以`,
           true,
         )
       const tasks: any[] = (Array.isArray(a?.tasks) ? a.tasks : []).filter((x: unknown) => x && typeof x === 'object')
@@ -1056,7 +1058,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
         tier: str(x.tier) || batch.tier,
         resume: str(x.resume) || batch.resume,
         params: x.params ?? a?.params ?? undefined,
-        review: briefOf(x.review),
+        // 顶层 review 是整批共用的交接单：模型常照着顶层 agent、tier 的写法把它也写在顶层，拒掉只会白费一轮
+        review: briefOf(x.review) ?? briefOf(a?.review),
       }))
       // 点名的计划步骤由面板在子任务全部结束后收口（见 engine.ts 的 settleHelperWaits）
       const stepId = str(a?.step).trim()
