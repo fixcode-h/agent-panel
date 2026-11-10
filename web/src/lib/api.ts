@@ -1,4 +1,6 @@
 import type { ShellReport } from '@shared/shells'
+import type { BugBrief } from '@shared/bug-overview'
+import type { SharedDirInfo } from '@shared/shared-dir'
 import type { SpeedRow } from '@shared/api-speed'
 import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
@@ -64,6 +66,8 @@ import type { SearchHit } from '@shared/task-search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
 import type { DiagnosisDecision } from '@shared/bug-diagnosis'
+import type { PatchResult, PatchStatus } from '@shared/bug-patch'
+import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug-log-watch'
 import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
 import type { LessonReviewItem } from '@shared/lesson-review'
@@ -614,6 +618,8 @@ export const api = {
     request<TaskJobView>(`/tasks/${taskId}/jobs/${encodeURIComponent(jobId)}`),
   /** 和实时推送的整份一样：更早的长工具输出只给开头（见 shared/task.ts 的 liteMessages） */
   taskLite: (id: string) => request<Task>(`/tasks/${id}?lite=1`),
+  /** 总览页 Bug 视图：所有用户报的 Bug 的精简行（含子对话，见 shared/bug-overview.ts） */
+  taskBugs: () => request<BugBrief[]>('/tasks/bugs'),
   /** 每个对话的磁盘占用 */
   taskDisk: () => request<TaskDiskItem[]>('/tasks/disk'),
   /** 保活中的会话（回复完 CLI 还留着等下一句）和各自进程的内存 */
@@ -901,6 +907,10 @@ export const api = {
   revealTaskFile: (id: string, path = '') =>
     request<{ ok: boolean; dir: string }>(`/tasks/${id}/reveal`, json('POST', { path })),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
+  /** 同一个目录里正在改文件的别的对话（输入框上方的提醒，见 shared/shared-dir.ts） */
+  sharedDir: (id: string) => request<SharedDirInfo>(`/tasks/${id}/shared-dir`),
+  /** 这个对话开独立分支：下一句起在分支的目录里做 */
+  isolateTask: (id: string) => request<Task>(`/tasks/${id}/isolate`, json('POST', {})),
   /** 这个对话和它名下子对话的独立分支，带上是否已经合回原分支 */
   taskWorktrees: (id: string) => request<{ items: WorktreeItem[] }>(`/tasks/${id}/worktrees`),
   /** 把独立分支合回原分支；分支和目录保留。冲突时错误的 body 带 conflict */
@@ -922,6 +932,19 @@ export const api = {
   /** 临时日志没删干净：retry 让它再删一次（返回交给它的话），finish 不再删、直接关闭报告 */
   cleanupAction: (id: string, action: 'retry' | 'finish') =>
     request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis-cleanup`, json('POST', { action })),
+  /** 排查补丁（分析稿 B1）：独立分支里的临时日志 / 修复有没有放在你的工作区里；不是 Git 独立分支的对话 eligible 为 false */
+  patchStatus: (id: string) => request<PatchStatus>(`/tasks/${id}/diagnosis-patch`),
+  /** apply 放到工作区、restore 还原、forget 我自己处理（不再记）；ok 为 false 时什么都没动，reason 是说明 */
+  patchAction: (id: string, action: 'apply' | 'restore' | 'forget') =>
+    request<PatchResult>(`/tasks/${id}/diagnosis-patch`, json('POST', { action })),
+  /** 面板自己取日志（分析稿 B3）：之前点没点过「开始复现」 */
+  logWatchStatus: (id: string) => request<LogWatchStatus>(`/tasks/${id}/diagnosis-log`),
+  /** start 记下日志文件现在多大，fetch 取新增的部分；confirm：报告里写的文件在项目目录外面，用户点了确认 */
+  logWatch: <A extends 'start' | 'fetch'>(id: string, action: A, confirm = false) =>
+    request<A extends 'start' ? LogStartResult : LogFetchResult>(
+      `/tasks/${id}/diagnosis-log`,
+      json('POST', { action, confirm }),
+    ),
   answerRequest: (
     id: string,
     rid: string,

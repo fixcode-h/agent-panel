@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { ArrowUp, Bot, Check, ChevronDown, CornerDownRight, FolderGit2, GitBranch, MessageSquare } from 'lucide-react'
 import { type ParamValues, type Project, type Task } from '@shared/schema'
@@ -31,10 +31,13 @@ import { ParamsChip } from '@/components/agents/ParamFields'
 import { AgentPicker } from '@/components/agents/AgentPicker'
 import { pickableChatRole, scopeOf } from '@shared/conv-mode'
 import { t } from '@shared/i18n'
+import { agentRun, defaultSettings } from '@shared/settings'
+import { ConvBudgetChip } from './ConvBudgetChip'
 
 export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-body text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
+import { newTaskHint } from './composer-hint'
 /**
  * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、Agent，从「+」里可以引入工作流。
  * 一律新建对话；引入了工作流时第一条要求点名它，由这个父对话启动（ADR 0044，不再新建老的工作流任务）。
@@ -46,6 +49,7 @@ export function TaskComposer({
   autoFocus,
   standalone,
   plugin,
+  fill,
 }: {
   project?: Project
   onCreated: (t: Task) => void
@@ -57,8 +61,10 @@ export function TaskComposer({
    * 不选 Chat 角色（插件自己给工具和说明），草稿单独记
    */
   plugin?: string
+  /** 从外面填进输入框的话（首页的示例任务）：n 每次点都变，同一句点两次也重新填 */
+  fill?: { text: string; n: number }
 }) {
-  const { workflows, agents, projects, loading } = useData()
+  const { workflows, agents, projects, loading, settings } = useData()
   const { tasks } = useTasks()
   const [projectId, setProjectId] = useState(() => {
     try {
@@ -122,8 +128,25 @@ export function TaskComposer({
     setIsolate(isolateDefault)
   }
   const [askUser, setAskUser] = useNewAskUser()
+  // 这个对话单独设的用量上限（A6 ①）：换了项目清掉，上限是按项目里的这件事设的
+  const [convBudget, setConvBudget] = useState({ tokens: 0, costUsd: 0 })
+  const [budgetFor, setBudgetFor] = useState(project?.id)
+  if (budgetFor !== project?.id) {
+    setBudgetFor(project?.id)
+    setConvBudget({ tokens: 0, costUsd: 0 })
+  }
+  // 费用算不算得出来看这一轮实际用的 CLI 和模型：用角色时按角色的
+  const costRun = byCli ? chatRun : agent ? agentRun(agent, settings ?? defaultSettings()) : chatRun
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
+  // 首页点了示例：换掉输入框里的内容并把光标放进去，用户改两句就能发
+  useEffect(() => {
+    if (!fill) return
+    setPrompt(fill.text)
+    editor.current?.focus()
+    // 只跟着这次点击（n）走；setPrompt 换草稿键时会变，不该因此再填一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [fill?.n])
   // Chat 页的新建输入框没有项目：@ 在所有项目里一起搜
   const mention = useFileMention(project, editor, files, standalone ? projects : [])
   const chips = useComposerChips({ files, editor, text: prompt, change: setPrompt })
@@ -216,6 +239,7 @@ export function TaskComposer({
           isolate: canIsolate && isolate ? true : undefined,
           askUser,
           plugin,
+          ...(project && (convBudget.tokens || convBudget.costUsd) ? { convBudget } : {}),
         }),
       )
       setPrompt('')
@@ -309,7 +333,7 @@ export function TaskComposer({
           actions={chips.chipActions}
           copyOf={chips.copyOfChip}
           info={chips.chipInfo}
-          placeholder={t('想问什么，或者让它做什么')}
+          placeholder={newTaskHint({ standalone, plugin })}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-heading leading-relaxed"
         />
@@ -368,8 +392,19 @@ export function TaskComposer({
               </AgentPicker>
             )}
             {isolateSwitch}
+            {!standalone && project && (
+              <ConvBudgetChip
+                value={convBudget}
+                onChange={setConvBudget}
+                cli={costRun.cli}
+                model={costRun.model}
+                projectBudget={project.budget}
+                chip={chip}
+              />
+            )}
             {byCli ? (
-              <ChatModelPicker value={chat} onChange={setChat} />
+              // 拆进工具条这一行一起折行：手机宽度下整个选择器换到下一行，不截断（分析稿 U9）
+              <ChatModelPicker value={chat} onChange={setChat} className="contents" />
             ) : (
               agentParams.length > 0 && <ParamsChip params={agentParams} values={params} onChange={setParams} />
             )}

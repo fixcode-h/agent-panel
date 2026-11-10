@@ -28,6 +28,7 @@ import {
 } from '../../shared/task.ts'
 import { rewaitDiagnosis } from '../../shared/task-settle.ts'
 import { agentRun } from '../../shared/settings.ts'
+import { retryModelPatch } from '../../shared/task-run.ts'
 import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
 import { CHILD_ASK_DEFAULT, childAskInitial } from '../../shared/child-ask.ts'
@@ -46,6 +47,7 @@ import { returnUserAction } from './user-actions.ts'
 import { PREWARM_PROMPT, RULE_CMD, TaskBusyError, settleBefore } from './helpers.ts'
 import { scopeError } from '../../shared/conv-mode.ts'
 import { BUG_CMD } from '../../shared/builtin/bug-method.ts'
+import { bugInPlace, inPlaceBugClosed } from '../../shared/bug-in-place.ts'
 import { pausedHelpers } from '../../shared/run-stops.ts'
 
 /**
@@ -144,6 +146,8 @@ export function registerConversationRoutes(s: TasksScope) {
     // 附件：图片拷进这个对话的对话目录（tasks/files/<id>/attachments/），交给 Agent 的是那里的绝对路径；
     // 其它文件原样用绝对路径。对话里显示的仍是原来那份（缩略图从附件目录读）
     const placed = await s.placeInTask(draft, input.attachments ?? [])
+    // 第一句就是 /bug 的普通对话：建好就是用户报的 Bug，第一轮就有 submit_diagnosis（分析稿 B10）
+    if (!parent && !sender && BUG_CMD.test(input.prompt.trim()) && bugInPlace(draft, agents)) draft.bug = true
     const task = await s.store.create(draft)
     return {
       task: await s.start(s.reserve(task).value, withAttachments(expanded || input.prompt, placed), true, agents),
@@ -198,9 +202,20 @@ export function registerConversationRoutes(s: TasksScope) {
     }
     // 用户在子对话里发 /bug：标成用户报的 Bug（ADR 0046），它才有 submit_diagnosis、按完整流程查。
     // 正在回复的这一轮里没法换工具，先拦住；挂着等下一句的旧进程由交付时的「选择对不上」重开（runner 的 stillCurrent）
-    if (BUG_CMD.test(text.trim()) && cur?.parentTaskId && !cur.bug && !peer) {
+    // 有项目的普通对话也一样就地标（分析稿 B10，shared/bug-in-place.ts）；父对话的 /bug 是派子对话，不标
+    const bugCmd = BUG_CMD.test(text.trim()) && !!cur && !peer
+    if (bugCmd && cur && !cur.parentTaskId && cur.bug && inPlaceBugClosed(cur))
+      return s.bad(c, t('这个对话里的 Bug 已经结束，新的 Bug 请新开一个对话发 /bug'), 409)
+    if (bugCmd && cur && !cur.bug && bugInPlace(cur, await s.deps.agents.list())) {
       const live = s.live.get(id)
-      if (live?.task.working) return s.bad(c, t('子对话正在回复，等这一轮结束或先停止，再发 /bug'), 409)
+      if (live?.task.working)
+        return s.bad(
+          c,
+          cur.parentTaskId
+            ? t('子对话正在回复，等这一轮结束或先停止，再发 /bug')
+            : t('对话正在回复，等这一轮结束或先停止，再发 /bug'),
+          409,
+        )
       // 在跑的以内存里那份为准（s.current 拿到的就是它），落盘也落它，不拿旧的盖新的
       cur.bug = true
       if (live && live.task !== cur) live.task.bug = true
@@ -481,7 +496,32 @@ export function registerConversationRoutes(s: TasksScope) {
         return c.json(saved ?? task)
       }
       // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
-      const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }
+      const { latest, model, efforts } = (await c.req.json().catch(() => ({}))) as {
+        latest?: boolean
+        model?: string
+        efforts?: string[]
+      }
+      // 换个模型重试：用户在失败提示上选的（不是面板自己换的，不违反「不悄悄重试」）。先把这个对话的模型改成选的那个，
+      // 再走下面同一条继续的路，失败的那一轮原样重发。放在这里而不是先 PATCH 再继续：PATCH 换模型会顺手预热一个进程，
+      // 紧跟着的「继续」会撞上它被当成「任务正在执行」
+      if (typeof model === 'string' && model.trim()) {
+        if (task.mode !== 'chat') {
+          s.release(entry)
+          return s.bad(c, t('只有对话可以换模型重试'))
+        }
+        const agent = task.agentId
+          ? (await s.deps.agents.list()).find((a) => a.id === task.agentId)
+          : { ...defaultAgent(), id: '' }
+        // 角色被删了也能重试（按内置助手跑，见 turnRole），这时没有角色的 CLI 可比，用对话定下的
+        const cli = agent
+          ? agentRun(withTaskModel(agent, task), await getSettings()).cli
+          : task.cli || task.sessionCli || ''
+        Object.assign(
+          entry.task,
+          retryModelPatch(task, { cli, model: model.trim(), efforts: Array.isArray(efforts) ? efforts : undefined }),
+        )
+        taskLog(id, '换个模型重试', { model: model.trim() })
+      }
       let fresh: Workflow | undefined
       if (latest && task.workflowId) {
         fresh = (await s.deps.workflows.get(task.workflowId)) ?? undefined

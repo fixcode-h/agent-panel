@@ -2,6 +2,7 @@ import { Task, type Project } from '../../shared/schema.ts'
 import { diagnosisPending } from '../../shared/task.ts'
 import { pendingAction } from '../../shared/user-action.ts'
 import { bugStage } from '../../shared/bug-diagnosis.ts'
+import { childBugStep, lastToolCall } from '../../shared/child-doing.ts'
 import {
   childActivity,
   childLastActivity,
@@ -145,6 +146,8 @@ export function registerChildrenRoutes(s: TasksScope) {
           action: !!pendingAction(liveTask),
           // 用户报的 Bug（ADR 0046）：查到哪个阶段了
           bug: bugStage(liveTask) || undefined,
+          // Bug 走到五步里的第几步：行上画五个小点（分析稿 U8）
+          bugStep: childBugStep(liveTask),
           // 它派出去的子任务还在跑：结果交回来它还要接着做，也不能算做完了
           helpers: helpersWorking(liveTask),
           // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」；带上正在做的那一步
@@ -169,6 +172,8 @@ export function registerChildrenRoutes(s: TasksScope) {
           // 独立分支目录：停下时告诉用户改动在哪个目录里
           dir: liveTask.worktree?.path ?? '',
           activity: doing,
+          // 最后一次工具调用：行上写「计划这一步 · 改 store.ts」（分析稿 U5）。和 doing 一样只有内存里的才算得出
+          lastTool: s.live.has(liveTask.id) ? lastToolCall(liveTask) : undefined,
           // 最后有动静的时间：几分钟没有新输出、又不能用等待解释时，界面上标黄 / 标红
           lastActivityAt: childLastActivity(liveTask),
           // 面板以父对话的名义自动问过它状态：之后还没有新输出时行上写「已自动询问，等回复」

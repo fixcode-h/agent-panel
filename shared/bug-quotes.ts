@@ -8,7 +8,7 @@
  * - 构造数据的复现只算推演，不能当排除假设的依据（实跑 F8）。
  * 这里只放纯函数；读文件、取版本管理的 diff 由宿主给（BugSource，server/exec 里接上）
  */
-import type { BugCase, BugCollect, BugLogPoint, CodeRef, Diagnosis } from './bug-diagnosis-schema.ts'
+import type { BugCase, BugCollect, BugEnv, BugLogPoint, CodeRef, Diagnosis } from './bug-diagnosis-schema.ts'
 import { lineDiff, TEMP_LOG } from './bug-cleanup.ts'
 import { phaseOf } from './bug-phase.ts'
 import type { TaskMessage } from './schema.ts'
@@ -23,6 +23,8 @@ export interface BugSource {
   commit?(rev: string): { author: string; date: string; title: string } | undefined
   /** 这个文件现在和对话开始时比的 diff（unified diff，新文件和空文件比）；取不到返回 undefined */
   diff?(file: string): string | undefined
+  /** 环境（操作系统、分支、最近提交…，shared/bug-env.ts）：交第一份报告时取一次；取不到返回 undefined */
+  env?(): BugEnv | undefined
 }
 
 /** 一段代码最多引用这么多行：出错的那几行，调用方另起一段 */

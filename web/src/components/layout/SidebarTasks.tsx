@@ -30,7 +30,8 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt, planLeft, taskBusy, taskDoneDot, taskState, taskWaitText } from '@shared/task'
+import { askedAt, byAskedAt, planLeft, taskBusy, taskDoneDot, taskState } from '@shared/task'
+import { taskWord } from '@shared/task-word'
 import { pendingAction } from '@shared/user-action'
 import {
   SIDEBAR_GROUP_LABEL,
@@ -169,7 +170,7 @@ export function TaskRow({
                     {attention === 'ask' ? (
                       // Agent 在等你确认操作或回答问题
                       <CircleAlert
-                        aria-label={t('需要你处理')}
+                        aria-label={taskWord(task).word}
                         className="h-3.5 w-3.5 shrink-0 text-warning"
                         strokeWidth={2.4}
                       />
@@ -225,8 +226,8 @@ export function TaskRow({
                 status={
                   <TaskRowStatus
                     needs={attention === 'ask'}
-                    // 是名下的子对话在等时写成「子对话等你处理」，和标题栏同一句（分析稿 U2）
-                    needsText={attention === 'ask' ? taskWaitText(task) : undefined}
+                    // 等的是什么（等你回答 / 等你确认 / 子对话等你处理）和标题栏、输入框占位同一个短词（分析稿 A8、U2）
+                    needsText={attention === 'ask' ? taskWord(task).word : undefined}
                     acting={attention === 'ask' && !!pendingAction(task)}
                     kids={busy ? (task.childrenWorking ?? 0) : 0}
                     running={busy}

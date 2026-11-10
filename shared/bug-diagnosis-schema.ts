@@ -124,9 +124,62 @@ export const BugResult = z.object({
     .catch([])
     .default([]),
   regressionTests: z.array(z.string().max(500)).catch([]).default([]),
+  /**
+   * 能直接跑的回归测试命令（分析稿 B9）：改前失败、改后通过的那几条。面板在改前的代码和现在的代码上各跑一次，
+   * 真实输出放进修复、验证页；只重跑这个对话里 Agent 自己跑过的命令（权限已经过了 CLI 那一关）
+   */
+  commands: z.array(z.string().max(1000)).max(5).catch([]).default([]),
   runs: str(500),
 })
 export type BugResult = z.infer<typeof BugResult>
+
+/** 面板跑一次命令的结果：code 是退出码（被停、没跑起来时为空），out 是输出的最后一段 */
+export const RecheckRun = z.object({
+  code: z.number().int().nullable(),
+  out: z.string().max(8000).default(''),
+  ms: z.number().default(0),
+  timedOut: z.boolean().default(false),
+  /** 没跑起来、没取到改前的代码：写原因，界面标「面板没有复核」 */
+  error: z.string().max(1000).default(''),
+})
+export type RecheckRun = z.infer<typeof RecheckRun>
+
+/**
+ * 面板复核回归测试（分析稿 B9）：修复、验证这一版交上来、这一轮结束后，面板把 result.commands 在改前
+ * （对话开始时的提交，加上现在的测试文件）和现在的代码上各跑一次。running 跑着；done 跑完（每条看 before / after）；
+ * skipped 整体跑不了（why 写原因）。只记事实，判定在 shared/bug-recheck.ts
+ */
+export const Recheck = z.object({
+  state: z.enum(['running', 'done', 'skipped']),
+  why: z.string().max(1000).default(''),
+  at: z.string(),
+  doneAt: z.string().optional(),
+  items: z
+    .array(
+      z.object({
+        command: z.string(),
+        before: RecheckRun.optional(),
+        after: RecheckRun.optional(),
+        /** 这条整条没跑（不是对话里跑过的命令）：写原因 */
+        skip: z.string().max(500).default(''),
+      }),
+    )
+    .default([]),
+})
+export type Recheck = z.infer<typeof Recheck>
+
+/**
+ * 直接修的 Bug（用户发 /fix 或选了直接修，分析稿 B2 第 ③ 条）的简版报告：不用确认，只读能回看。
+ * cause 是 Agent 写的根因一句，change / verify 是 submit_merge 的说明和验证，files 是面板取的实际改动
+ */
+export const FixBrief = z.object({
+  cause: z.string().max(2000),
+  change: z.string().max(2000).default(''),
+  verify: z.string().max(3000).default(''),
+  files: z.array(z.string()).default([]),
+  at: z.string(),
+})
+export type FixBrief = z.infer<typeof FixBrief>
 
 /**
  * 报告的阶段：evidence 论证（还没定论，要加日志复现）、cause 根因（等用户同意）、plan 修复方案、
@@ -223,6 +276,14 @@ export const BugCaseFields = {
   timeline: z.array(BugTimelineItem).catch([]).default([]),
   attribution: BugAttribution.optional().catch(undefined),
   rating: BugRating.optional().catch(undefined),
+  /**
+   * 查出来不用改代码（分析稿 B5）：是配置、数据、本来就这么设计、用法不对或外部依赖的问题。
+   * 根因那一版带上它，用户同意后不再出修复方案，按 how 告诉用户怎么处理后直接收尾
+   */
+  noFix: z
+    .object({ kind: z.enum(['config', 'data', 'design', 'usage', 'external']).catch('config'), how: str(2000) })
+    .optional()
+    .catch(undefined),
   consistency: z
     .array(z.object({ observation: str(1000), explanation: str(2000) }))
     .catch([])
@@ -352,6 +413,37 @@ export const CleanupState = z.object({
 })
 export type CleanupState = z.infer<typeof CleanupState>
 
+/**
+ * 环境（面板自动采集，分析稿 B4）：交第一份报告时面板自己取，不靠 Agent 填（Agent 填的经常是「未知」）。
+ * 每一项都可能取不到（不是 Git 仓库、命令超时），取不到就留空 / 不带，报告里只显示取到的
+ */
+export const BugEnv = z.object({
+  at: str(40),
+  /** 操作系统和版本，例如 Windows 11 Pro 10.0.26100 (x64) */
+  os: str(200),
+  node: str(50),
+  /** CLI 的名字和模型：从任务取 */
+  cli: str(100),
+  model: str(200),
+  /** 项目目录（用户的工作区）现在的分支 */
+  branch: str(300),
+  /** 最近 10 次提交：短哈希、标题、作者、日期 */
+  commits: z
+    .array(z.object({ hash: str(40), title: str(300), author: str(200), date: str(40) }))
+    .max(10)
+    .catch([])
+    .default([]),
+  /** 未提交改动的文件（最多 30 个，多出来的只记个数） */
+  dirty: z.array(z.string().max(500)).max(30).catch([]).default([]),
+  dirtyMore: z.coerce.number().int().min(0).catch(0).default(0),
+  /** 依赖锁文件最近一次改动的提交 */
+  lock: z
+    .object({ file: str(200), hash: str(40), title: str(300), date: str(40) })
+    .optional()
+    .catch(undefined),
+})
+export type BugEnv = z.infer<typeof BugEnv>
+
 export const Diagnosis = z.object({
   ...BugCaseFields,
   /** 旧数据没有：按 confirmed 推（phaseOf） */
@@ -418,6 +510,18 @@ export const Diagnosis = z.object({
   fixFiles: z.array(FixFile).default([]),
   /** 用户取消修复后删临时日志的进度（shared/bug-cleanup.ts）：Agent 删、面板核对，通过了才关闭报告 */
   cleanup: CleanupState.optional().catch(undefined),
+  /** 环境（面板自动采集）：交第一份报告时取，后面几份沿用同一份（shared/bug-env.ts）；旧报告没有 */
+  env: BugEnv.optional().catch(undefined),
+  /** 面板复核回归测试（分析稿 B9）：修复、验证这一版才有，见 shared/bug-recheck.ts */
+  recheck: Recheck.optional().catch(undefined),
+  /**
+   * 确认次数按风险收放（分析稿 B2）：autoNext 是用户同意这一版时勾了「后面几步没有要注意的就自动通过」；
+   * auto 是这一版由面板按这个设置自动通过的（不是用户点的）；merged 是用户确认修复时面板已复核过
+   * 「改前失败、改后通过」，验证合在这一次确认里，不再单独交验证（shared/bug-auto.ts）
+   */
+  autoNext: z.boolean().optional(),
+  auto: z.boolean().optional(),
+  merged: z.boolean().optional(),
 })
 export type Diagnosis = z.infer<typeof Diagnosis>
 
@@ -439,6 +543,24 @@ export const BugCase = z.object({
   verify: str(4000),
   ...BugCaseFields,
   result: BugResult.optional().catch(undefined),
+  /**
+   * 交报告被面板连续退回的次数（分析稿 B8）：从用户最近一条消息算起，交成功清零。
+   * total 是这个 Bug 一共被退回几次（流程数据用）；since 是开始计数时用户最后一条消息的 id
+   */
+  rejects: z
+    .object({ n: z.number().int().catch(0), total: z.number().int().catch(0), since: z.string().catch('') })
+    .optional()
+    .catch(undefined),
+  /**
+   * 观察期里又报了同类问题（分析稿 B13，shared/bug-observe.ts）：面板派新 Bug 时按关键词对上观察中的旧 Bug，
+   * 新的记 relapseOf（原来那个的 id），原来的记 relapses（又报的那几个）。Agent 不写，面板写
+   */
+  relapseOf: z.string().max(100).optional().catch(undefined),
+  relapses: z
+    .array(z.object({ id: str(100), title: str(200), at: str(40) }))
+    .max(20)
+    .optional()
+    .catch(undefined),
   updatedAt: z.string().optional(),
 })
 export type BugCase = z.infer<typeof BugCase>

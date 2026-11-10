@@ -1,4 +1,3 @@
-import { useUserName } from '@/lib/user-name'
 import { Fragment } from 'react'
 import * as M from '@radix-ui/react-dropdown-menu'
 import { Check, CheckCircle2, ChevronDown, GitBranch, ListTree } from 'lucide-react'
@@ -10,6 +9,7 @@ import { UnreadDot } from '@/components/ui/badge'
 import { IconButton } from '@/components/ui/icon-button'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { AnalysisMark } from './AnalysisMark'
+import { BugStepDots } from './BugStepDots'
 import { childClosedHint, childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
 
 /**
@@ -27,11 +27,10 @@ export function ChildRowContent({
   pending?: number
 }) {
   const icon = childIcon(c)
-  const user = useUserName()
   // 执行中写正在做什么，其余写在等什么或最近结果；很久没新输出时标色
   const line = childNote(c, icon === 'running')
   const stale = staleLine(c)
-  const labels = childLabels(c, user)
+  const labels = childLabels(c)
   // 做完、没看过、而且不是当前打开的那一个：画未读点（和侧栏橙点同一份口径，见 childDoneDot）
   const unread = childDoneDot(c, viewing)
   return (
@@ -60,6 +59,7 @@ export function ChildRowContent({
             <span key={l.text} className={childLabelClass[l.tone]}>
               {l.icon === 'check' && <CheckCircle2 className="h-3 w-3" />}
               {l.text}
+              {l.dots !== undefined && <BugStepDots step={l.dots} className="ml-1" />}
             </span>
           ))}
         </span>

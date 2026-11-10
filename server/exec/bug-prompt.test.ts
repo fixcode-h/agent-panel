@@ -22,6 +22,15 @@ test('/bug：父对话派 kind: "bug" 子对话，子对话就地交诊断报告
   assert.equal(bugCommandPrompt('solo', '', false).includes(BUG_FULL_TEXT), false)
 })
 
+test('/bug：有项目的普通对话已经标成 Bug，就地交诊断报告，没有父对话的收尾改成自己提交（分析稿 B10）', () => {
+  const inplace = bugSlash('/bug 角标不刷新', { parentTaskId: '', bug: true }, false)!
+  assert.match(inplace, /submit_diagnosis 分阶段交报告/)
+  assert.match(inplace, /没有父对话.*submit_merge.*本地提交/)
+  assert.ok(inplace.includes(BUG_FULL_TEXT))
+  // 子对话照旧，不带普通对话的收尾说明
+  assert.doesNotMatch(bugSlash('/bug 角标', { parentTaskId: 'p', bug: true }, false)!, /这是普通对话/)
+})
+
 test('用户报的 Bug 新会话第一轮带完整流程；续接的会话、不是 Bug、这一轮就是 /bug 时不重复带', () => {
   assert.equal(bugMethodPrompt({ bug: true }, '角标不刷新', true), BUG_FULL_TEXT)
   assert.equal(bugMethodPrompt({ bug: true }, '角标不刷新', false), '')

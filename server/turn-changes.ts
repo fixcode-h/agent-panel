@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { TaskMessage, TurnChanges } from '../shared/schema.ts'
+import type { TurnTrack } from '../shared/task-runtime-schema.ts'
 import {
   diffNames,
   gitHead,
@@ -10,6 +11,7 @@ import {
   type TreeSpan,
 } from './exec/git.ts'
 import { log } from './log.ts'
+import { closeTurn, namedSince, openTurn, splitOwned } from './turn-owners.ts'
 
 /**
  * 每轮对话改了哪些文件（总结下面那张「已更改 N 个文件」卡片的数据）。
@@ -24,9 +26,19 @@ import { log } from './log.ts'
  * - 子对话合回这个目录的那一下单独切掉（见 aroundMerge）：父对话的卡片不含子对话的改动
  * - 这一轮里拉代码、合并别的分支、切分支带进来的文件不算（见 dropSynced）：Agent 按规则 fetch + merge 同步，
  *   上游改的几百个文件不是这个对话改的
+ * - 同一个目录里别的对话这段时间改的文件不算（见 server/turn-owners.ts）：按改文件的工具调用认是谁的，
+ *   别的对话点名过、这个对话没点名的剔除，剔除了哪些记在 others 上给卡片说明
  *
- * 只记在内存里：面板重启时进行中的那一轮就没有卡片了，不影响已经记在消息上的。
+ * 起点存进任务数据（Task.turnTrack，分析稿 A10）：每次起点、终点、切段变了都写回（见 TrackKeep）。面板重启后
+ * 内存里没有这个对话的记录时，存着的那一轮还开着（open）就接着它的起点算，进行中那一轮照样有改动卡片；
+ * 接着做的一轮（carry）也从存着的终点接上。同目录别的对话的归属登记（turn-owners.ts）仍只在内存里，重启后那一轮不剔除别人的文件。
  */
+/** 起点落盘的接口：runner 把任务上存着的那份交进来，变了用 save 写回 */
+export interface TrackKeep {
+  saved?: TurnTrack
+  save: (rec: TurnTrack) => void
+}
+
 interface Track {
   dir: string
   ignore: string[]
@@ -37,6 +49,33 @@ interface Track {
   /** 这一段开始时的提交和时刻：中间 HEAD 动过时用来认出拉代码带进来的文件 */
   head: Promise<string>
   at: number
+  /** 这一轮开着还没收：存进任务时重启后要不要接上看它 */
+  open: boolean
+  keep?: TrackKeep
+}
+
+/** 起点、切段、终点变了：等快照拍完后写回任务（拍失败的空快照不写，免得把存着的起点盖成空的） */
+async function persist(tr: Track) {
+  if (!tr.keep) return
+  const [mark, head] = await Promise.all([tr.mark, tr.head])
+  if (!mark) return
+  tr.keep.save({ dir: tr.dir, mark, spans: tr.spans.slice(-200), head, at: tr.at, open: tr.open })
+}
+
+/** 存着的那份记录能不能接上：同一个目录，而且这一轮还开着（重启打断的）或者这一轮本来就接着上一轮做 */
+function revive(keep: TrackKeep | undefined, dir: string, carry: boolean, ignore: string[]): Track | undefined {
+  const r = keep?.saved
+  if (!r?.mark || path.resolve(r.dir) !== path.resolve(dir) || !(r.open || carry)) return undefined
+  return {
+    dir,
+    ignore,
+    mark: Promise.resolve(r.mark),
+    spans: [...r.spans],
+    head: Promise.resolve(r.head),
+    at: r.at,
+    open: true,
+    keep,
+  }
 }
 
 const tracks = new Map<string, Track>()
@@ -64,17 +103,31 @@ const snap = (dir: string, ignore: string[]) =>
  * 一轮开始。carry：这一轮接着上一轮做（子任务、工作流交回的结果），起点沿用上一轮的终点；
  * 目录换了（中途开了独立分支）或者没有上一轮的记录时照样重新拍
  */
-export function beginTurnChanges(taskId: string, dir: string, ignore: PlacedFiles, carry: boolean) {
+export function beginTurnChanges(taskId: string, dir: string, ignore: PlacedFiles, carry: boolean, keep?: TrackKeep) {
   const list = [...ignore]
+  // 归属的起点当场登记，不排队：排着的快照还没拍完时别的对话报的改文件也要算进这一轮
+  openTurn(taskId, dir, carry)
   // 不用等它拍完再交给 CLI：模型开始改文件至少要几秒，快照早就拍好了。返回的 Promise 给测试等
   return queued(taskId, async () => {
     const had = tracks.get(taskId)
-    if (carry && had && had.dir === dir) return
+    if (carry && had && had.dir === dir) {
+      had.keep = keep ?? had.keep
+      had.open = true
+      return persist(had)
+    }
+    // 内存里没有（面板重启过）：存着的那一轮还开着、或者这一轮接着上一轮做，就从存着的起点接上
+    const back = had ? undefined : revive(keep, dir, carry, list)
+    if (back) {
+      tracks.set(taskId, back)
+      return persist(back)
+    }
     const at = Date.now()
     const head = gitHead(dir).catch(() => '')
     const mark = snap(dir, list)
-    tracks.set(taskId, { dir, ignore: list, mark, spans: [], head, at })
+    const tr: Track = { dir, ignore: list, mark, spans: [], head, at, open: true, keep }
+    tracks.set(taskId, tr)
     await mark
+    await persist(tr)
   })
 }
 
@@ -83,6 +136,8 @@ export function beginTurnChanges(taskId: string, dir: string, ignore: PlacedFile
  * 终点留作下一段的起点（接着做的那一轮用）。没改文件时不调 put
  */
 export function endTurnChanges(taskId: string, put: (changes: TurnChanges) => void) {
+  // 这一轮的归属凭据当场取：等快照的时候下一轮可能已经开始，起点会被换掉
+  const owner = closeTurn(taskId)
   return queued(taskId, async () => {
     const tr = tracks.get(taskId)
     if (!tr) return
@@ -97,15 +152,22 @@ export function endTurnChanges(taskId: string, put: (changes: TurnChanges) => vo
     tr.mark = Promise.resolve(to)
     tr.head = Promise.resolve(endHead)
     tr.at = Date.now()
+    tr.open = false
+    // 终点留作接着做那一轮的起点，这一轮记成已收（重启后不再把它当成进行中的一轮接上）
+    await persist(tr)
     if (!from || !to || !spans.length) return
     const all = await spansNumstat(tr.dir, spans).catch((e) => {
       log.warn('task', '读这一轮的改动失败', { task: taskId, error: (e as Error).message })
       return []
     })
-    const files = await dropSynced(tr.dir, all, { head, endHead, from: first, to, since }).catch(() => all)
-    if (files.length < all.length)
-      log.info('task', '这一轮拉代码带进来的文件不算改动', { task: taskId, dropped: all.length - files.length })
-    if (files.length) put({ spans, files })
+    const own = await dropSynced(tr.dir, all, { head, endHead, from: first, to, since }).catch(() => all)
+    if (own.length < all.length)
+      log.info('task', '这一轮拉代码带进来的文件不算改动', { task: taskId, dropped: all.length - own.length })
+    // 终点拍完了再看谁点名过：别的对话在这一轮收尾时报的改动也已经登记上
+    const { kept: files, dropped } = owner ? splitOwned(own, namedSince(owner)) : { kept: own, dropped: [] }
+    if (dropped.length)
+      log.info('task', '同目录别的对话改的文件不算这一轮的改动', { task: taskId, dropped: dropped.length })
+    if (files.length) put({ spans, files, ...(dropped.length ? { others: dropped.map((f) => f.path) } : {}) })
   })
 }
 
@@ -153,6 +215,7 @@ export async function aroundMerge<T>(dir: string, run: () => Promise<T>): Promis
         const from = await tr.mark
         if (from && before) tr.spans.push({ from, to: before })
         tr.mark = Promise.resolve(before)
+        await persist(tr)
       }),
     ),
   )
@@ -164,7 +227,9 @@ export async function aroundMerge<T>(dir: string, run: () => Promise<T>): Promis
       ids.map((id) =>
         queued(id, async () => {
           const tr = tracks.get(id)
-          if (tr) tr.mark = Promise.resolve(after)
+          if (!tr) return
+          tr.mark = Promise.resolve(after)
+          await persist(tr)
         }),
       ),
     )

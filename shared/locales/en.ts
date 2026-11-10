@@ -19,16 +19,26 @@ import { EN_TOOL_NAMES } from './en/tool-names.ts'
 import { EN_SPEECH } from './en/speech.ts'
 import { EN_HOOKS } from './en/hooks.ts'
 import { EN_CLI_MORE } from './en/cli-more.ts'
+import { EN_NOTIFY_CHANNELS } from './en/notify-channels.ts'
 import { EN_EXPERIENCE } from './en/experience.ts'
 import { EN_FILE_REF } from './en/file-ref.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
 import { EN_BUG_LOCATE } from './en/bug-locate.ts'
+import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
+import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
+import { EN_BUG_INPLACE } from './en/bug-inplace.ts'
+import { EN_BUG_AUTO } from './en/bug-auto.ts'
 import { EN_USER_ACTION } from './en/user-action.ts'
+import { EN_AWAY } from './en/away.ts'
 import { EN_VIDEO } from './en/video.ts'
+import { EN_STATE_WORD } from './en/state-word.ts'
 import { EN_RESTORE } from './en/restore.ts'
 import { EN_RESTORE_FLOW } from './en/restore-flow.ts'
 import { EN_REMOTE } from './en/remote.ts'
 import { EN_PLUGINS } from './en/plugins.ts'
+import { EN_SHARED_DIR } from './en/shared-dir.ts'
+import { EN_DONE_GUARD } from './en/done-guard.ts'
+import { EN_UI_POLISH } from './en/ui-polish.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
@@ -47,7 +57,12 @@ export const EN: Record<string, string> = {
   ...EN_TOOL_NAMES,
   ...EN_BUG_FLOW,
   ...EN_BUG_LOCATE,
+  ...EN_BUG_OVERVIEW,
+  ...EN_BUG_EVIDENCE,
+  ...EN_BUG_INPLACE,
+  ...EN_BUG_AUTO,
   ...EN_USER_ACTION,
+  ...EN_AWAY,
   ...EN_DESIGN,
   ...EN_RESTORE,
   ...EN_RESTORE_FLOW,
@@ -61,7 +76,12 @@ export const EN: Record<string, string> = {
   ...EN_SPEECH,
   ...EN_HOOKS,
   ...EN_CLI_MORE,
+  ...EN_NOTIFY_CHANNELS,
   ...EN_EXPERIENCE,
   ...EN_FILE_REF,
   ...EN_PLUGINS,
+  ...EN_SHARED_DIR,
+  ...EN_STATE_WORD,
+  ...EN_DONE_GUARD,
+  ...EN_UI_POLISH,
 }

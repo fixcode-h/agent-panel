@@ -242,4 +242,16 @@ export const EN_BUG_FLOW: Record<string, string> = {
   已按版本记录核对: 'Checked against version history',
   '根因等级：**{label}**（{hint}）· 把握 **{n}%**': 'Root cause level: **{label}** ({hint}) · confidence **{n}%**',
   '引入：{who}{change}{title}{date} · {category}': 'Introduced by: {who}{change}{title}{date} · {category}',
+  改配置: 'change a setting',
+  处理数据: 'fix the data',
+  本来就是这么设计的: 'works as designed',
+  用法不对: 'used the wrong way',
+  外部依赖的问题: 'external dependency',
+  不用改代码: 'No code change',
+  '不用改代码：{kind}': 'No code change: {kind}',
+  '怎么处理（不用改代码）': 'What to do (no code change)',
+  '你同意了：不用改代码，它在告诉你怎么处理并收尾':
+    'You agreed no code change is needed; it is explaining what to do and wrapping up',
+  '它查下来不用改代码：同意这个结论，它告诉你怎么处理后收尾；不同意就选中文字标出疑问，点「否决」':
+    'It found no code change is needed: agree and it will explain what to do, then wrap up; if you disagree, select text to raise a question and click Reject',
 }

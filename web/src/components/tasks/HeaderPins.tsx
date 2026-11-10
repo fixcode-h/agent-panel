@@ -29,10 +29,12 @@ export type PinKey =
   | 'session'
 
 /**
- * 默认钉在标题栏的：状态、对话进程、任务进度、功能面板、会话栏（右栏开关不在清单里，固定在「更多操作」右边）。
- * 转成弹窗用得少，默认只放菜单里（用户要求）
+ * 默认钉在标题栏的只有「状态」和「会话栏」（分析稿 U4：原来一排五个图标都要悬停才知道是什么），
+ * 其余收进「更多操作」，用户要的可以自己钉回来。AI 分析对话的功能面板（report）照旧钉着：
+ * 它和会话栏一样是开关一栏的，分析对话的主体就在那一栏里。
+ * 右栏开关不在清单里，固定在「更多操作」右边（用户要求）；转成弹窗用得少，一直只放菜单里
  */
-const DEFAULT_PINS: ReadonlySet<PinKey> = new Set<PinKey>(['status', 'processes', 'progress', 'report', 'session'])
+const DEFAULT_PINS: ReadonlySet<PinKey> = new Set<PinKey>(['status', 'report', 'session'])
 
 const KEY = 'task-header-pins'
 /** 只记用户改过的项（钉上 true / 取下 false），没改过的按默认：以后调默认值时老用户没碰过的项跟着变 */

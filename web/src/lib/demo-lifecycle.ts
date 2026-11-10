@@ -9,8 +9,10 @@ import {
   type LifeNode,
   type LifeReport,
 } from '@shared/lifecycle'
+import { lifeWordFacts } from '@shared/life-next'
 import { subtreeTaskIds } from '@shared/run-usage'
-import { taskState } from '@shared/task'
+import { convActive, taskState } from '@shared/task'
+import { descendantNeeds } from '@shared/child-needs'
 
 /**
  * 在线演示的状态诊断：没有真的 CLI 进程和日志，按演示任务的状态编一份结构一样的报告（字段和正式后端一致），
@@ -22,13 +24,24 @@ export function demoLifecycle(task: Task, tasks: Task[]): LifeReport {
   const list = tasks.filter((x) => ids.has(x.id))
   const nodes: LifeNode[] = []
   let pid = 41200
+  // 和正式后端一样按界面拿到的那一份算状态和短词：补上名下子对话在跑 / 在等你的数
+  const needs = descendantNeeds(tasks)
+  const shownOf = (tk: Task) => ({
+    ...tk,
+    childrenNeeds: needs.get(tk.id) ?? 0,
+    // 正式后端只给顶层对话补在跑的子对话数（见 server/tasks/children.ts 的 withLive）
+    ...(!tk.parentTaskId && {
+      childrenWorking: tasks.filter((k) => k.parentTaskId === tk.id && convActive(taskState(k))).length,
+    }),
+  })
   for (const tk of list) {
+    const shown = shownOf(tk)
     const alive = !!tk.working || !!tk.awaitingUser
     const facts: LifeFacts = {
       kind: 'conversation',
       status: tk.status,
       stopReason: tk.stopReason,
-      state: taskState(tk),
+      state: taskState(shown),
       working: !!tk.working,
       awaitingUser: !!tk.awaitingUser,
       resolved: tk.resolved === true,
@@ -40,6 +53,7 @@ export function demoLifecycle(task: Task, tasks: Task[]): LifeReport {
       waitsOn: [],
       trace: tk.working ? { requests: 11, requestAt: now - 54_000, lastOutputAt: now - 60_000 } : undefined,
       exit: alive ? undefined : { at: now - 600_000, code: 0, aliveMs: 240_000 },
+      ...lifeWordFacts(shown),
     }
     // 已经退出的：整段往前挪，退出那一行排在最后
     const shift = alive ? 0 : 600_000

@@ -1,6 +1,7 @@
 /** 真实执行一轮：调度交给执行引擎（shared/engine.ts），调用 Agent 时经 runner 启动对应 CLI。从 runner.ts 拆出 */
 import { HANDOFF_DIR } from '../store.ts'
 import { bugSource, workDirOf } from './bug-source.ts'
+import { bugWho, collectBugEnv } from './bug-env.ts'
 import { docRootOf, lookupModuleDocs, moduleIndexText } from '../module-map.ts'
 import { type EngineHost, runEngineTurn } from '../../shared/engine.ts'
 import type { RealContext } from './real-context.ts'
@@ -85,7 +86,12 @@ export async function runRealTurn(ctx: RealContext) {
     changed: ctx.changed,
     newId: ctx.newId,
     // Bug 诊断报告交上来时取代码快照、核对原文（shared/bug-quotes.ts）
-    bugSource: ctx.task.bug ? bugSource(workDirOf(ctx.task, ctx.project), ctx.task.baseRef) : undefined,
+    // 环境（操作系统、分支、最近提交…）取用户的项目目录，交第一份报告时面板自己采集（shared/bug-env.ts）
+    bugSource: ctx.task.bug
+      ? bugSource(workDirOf(ctx.task, ctx.project), ctx.task.baseRef, () =>
+          collectBugEnv(ctx.project.path, bugWho(ctx)),
+        )
+      : undefined,
     // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
     fileFormat: projectFormat(ctx.project, ctx.settings),
     // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段
@@ -93,6 +99,8 @@ export async function runRealTurn(ctx: RealContext) {
     searchInGit: ctx.isGit,
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
+    // 项目要求改了代码先跑测试步骤再结束（A3）：end_turn 记成做完前核对；没开只记完成依据、不拦
+    verifyGate: ctx.project?.requireVerify ? { steps: ctx.project.testSteps } : undefined,
     listConversations: ctx.listConversations,
     createConversation: ctx.createConversation,
     sendToConversation: ctx.sendToConversation,

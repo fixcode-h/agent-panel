@@ -8,6 +8,7 @@ import { endlessSegment, quickSegment, runSegments } from '../../shared/command-
 import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
 import { cleaning, editScope, revOf } from '../../shared/bug-phase.ts'
+import { inPlaceBugClosed } from '../../shared/bug-in-place.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
 import { DATA_DIR } from '../store.ts'
 import { SECRET_RES } from './validate.ts'
@@ -69,7 +70,8 @@ export function pushDeny(c: GuardCtx, facts: HookFacts): string {
  * 模型常常已经改了一大堆再被打回。这里在改文件前查：还没确认就改、改到方案以外的文件都拒绝（测试文件这类不限）
  */
 export function bugDeny(c: GuardCtx, facts: HookFacts): string {
-  if (!c.task.bug) return ''
+  // 普通对话里就地查的 Bug 结束了：对话照常用，不再按诊断阶段拦（shared/bug-in-place.ts）
+  if (!c.task.bug || inPlaceBugClosed(c.task)) return ''
   // 取消修复后删临时日志：要一处一处删，不整文件还原（实跑时它用 git checkout -- 文件 还原，
   // 共用目录里会把文件里别的改动一起冲掉，用户 2026-11-10 定由 Agent 删、连空行一起删）
   if (cleaning(latestDiagnosis(c.task)) && segs(facts).some(wholeFileRevert))

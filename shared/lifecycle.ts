@@ -8,7 +8,8 @@
  * 判定复用已有的 convState / stopReasonText，不另写一套「算不算在跑」。
  */
 import { t } from './i18n.ts'
-import type { StopReason, TaskStatus } from './schema.ts'
+import type { StopReason, TaskMode, TaskStatus } from './schema.ts'
+import type { NeedKind } from './task-word.ts'
 import { convStateText, stopReasonText, type ConvState } from './task.ts'
 import type { TrailItem } from './end-turn.ts'
 import type { EndTurnRecord } from './turn-end.ts'
@@ -200,6 +201,16 @@ export interface LifeFacts {
   nudge?: { key: string; n: number }
   /** runner 已经把这一轮标成卡住（没有响应检测，见 server/exec/stall-watch.ts）：从什么时候起没输出 */
   stalled?: { since: number }
+  // 下面几项给「状态」窗口最上面那一句（shared/life-next.ts）：只有对话有，旧的诊断文件里没有
+  /** 和标题栏、侧栏同一个短词（shared/task-word.ts 的 taskWord） */
+  word?: string
+  /** 等你处理的是哪一类 */
+  need?: NeedKind
+  /** 交了诊断报告等你确认 */
+  report?: boolean
+  /** 这个状态从什么时候开始（毫秒）：等你处理是请求发出的时间，其余是这一轮结束的时间 */
+  since?: number
+  mode?: TaskMode
 }
 
 export type AnomalyLevel = 'danger' | 'warning' | 'info'

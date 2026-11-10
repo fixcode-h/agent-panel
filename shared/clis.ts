@@ -219,6 +219,8 @@ export interface CliDefinition {
   limitFile?: { file: string; at: string; context?: string; maxOutput?: string }
   /** 账号额度：query 能主动查，push 执行时才报告，none 没有 */
   limits: 'query' | 'push' | 'none'
+  /** CLI 自己报费用；不报的要在模型目录里填单价才算得出费用（见 cli-spec 的 features.cost） */
+  cost: boolean
   /** 项目里每次启动会读的说明文件；第一个是还没有文件时新建的那个 */
   docs: string[]
   /** 项目设置里说明文件那一页的说明 */

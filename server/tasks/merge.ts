@@ -3,6 +3,7 @@ import { goneModulesNote } from '../module-map.ts'
 import path from 'node:path'
 import { coreDefinition } from '../../shared/builtin/core.ts'
 import { bugRecordDraft, diagnosisGate } from '../../shared/bug-diagnosis.ts'
+import { fixBriefMd, fixBriefMissing, fixBriefOf, fixBriefPrompt } from '../../shared/bug-fix-brief.ts'
 import { projectChanges } from '../exec/file-events.ts'
 import { clipWithFile } from './inbox-file.ts'
 import { planProgressKey } from '../../shared/drive.ts'
@@ -184,6 +185,9 @@ export function createMerge(sc: TasksScope) {
         ok: false,
         info: `没有请求收尾：handoff 里还缺「${missing.join('、')}」。以后父对话再把消息交给你、上下文又大时，新会话只带这份交接摘要，按下面的模板写（每项写具体路径和结论，不写过程）：\n${handoffTemplate()}`,
       }
+    // 直接修的用户 Bug（kind: "fix"，分析稿 B2）：要写根因一句，面板出简版报告
+    const noBrief = fixBriefMissing(tk, handoff)
+    if (noBrief) return { ok: false, info: noBrief }
     const parentId = tk.parentTaskId
     const wt = own ? tk.worktree! : undefined
     // 先把现在的改动提交到它自己的分支：之后再改的不在这次合并里
@@ -225,6 +229,20 @@ export function createMerge(sc: TasksScope) {
     const noBuild = build ? await buildSkip(tk, files) : ''
     if (noBuild) build = false
     tk.wrapRequest = { state: 'requested', at, note, tests, ...(build && { build }), info: '' }
+    // 简版报告：不用用户确认，在子对话里记一行能展开回看（再次收尾时换成最新的）
+    if (tk.bugFix) {
+      tk.fixBrief = fixBriefOf(handoff, note, tests, files, at)
+      tk.messages.push({
+        id: randomUUID(),
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: fixBriefMd(tk.fixBrief),
+        tools: [],
+        panel: 'note',
+        at,
+      })
+    }
     // 校验都过了才记放行；这次没绕过门禁就清掉旧的，留着的只能是当前这次收尾的放行
     tk.reviewOverride = bypass
     markChildWrapUp(tk, 'waiting', wt ? '已请父对话收尾，等父对话合并' : '已请父对话验收，等父对话收下')
@@ -242,7 +260,7 @@ export function createMerge(sc: TasksScope) {
       parentId,
       tk,
       `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩${wt ? '合回' : '验收'}了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
-${wt ? `它在独立分支 ${wt.branch} 里的验证` : '它和你共用目录（改动已经在你的目录里，没有分支要合），它的验证'}：${clipWithFile(parentId, `「${tk.title}」的验证`, tests, 600)}${noBuild ? `\n合回后不用编译：${noBuild}` : ''}${note ? `\n它的说明：${clipWithFile(parentId, `「${tk.title}」的说明`, note, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${clipWithFile(parentId, `「${tk.title}」的评审处置`, triageText(triage), 1500)}` : ''}${record ? `\n这是用户报的 Bug，Bug 记录的草稿（派「文档」写 Bug 记录时原样附上，不用它再从对话里摘）：\n${clipWithFile(parentId, `「${tk.title}」的 Bug 记录草稿`, record, 1500)}` : ''}${bypass ? `\n⚠️ 它这次的收尾用了**显式放行**：评审门禁被绕过，记录如下（谁、什么时候、为什么、原本拦住什么）——用户要求带着这个问题先合并，你如果觉得理由站不住，打回给它或者直接问用户：\n${overrideText(bypass)}` : ''}
+${wt ? `它在独立分支 ${wt.branch} 里的验证` : '它和你共用目录（改动已经在你的目录里，没有分支要合），它的验证'}：${clipWithFile(parentId, `「${tk.title}」的验证`, tests, 600)}${noBuild ? `\n合回后不用编译：${noBuild}` : ''}${note ? `\n它的说明：${clipWithFile(parentId, `「${tk.title}」的说明`, note, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${clipWithFile(parentId, `「${tk.title}」的评审处置`, triageText(triage), 1500)}` : ''}${tk.fixBrief ? `\n${clipWithFile(parentId, `「${tk.title}」的修复简报`, fixBriefPrompt(tk.fixBrief), 1500)}` : ''}${record ? `\n这是用户报的 Bug，Bug 记录的草稿（派「文档」写 Bug 记录时原样附上，不用它再从对话里摘）：\n${clipWithFile(parentId, `「${tk.title}」的 Bug 记录草稿`, record, 1500)}` : ''}${bypass ? `\n⚠️ 它这次的收尾用了**显式放行**：评审门禁被绕过，记录如下（谁、什么时候、为什么、原本拦住什么）——用户要求带着这个问题先合并，你如果觉得理由站不住，打回给它或者直接问用户：\n${overrideText(bypass)}` : ''}
 ${
   wt
     ? `请你收尾：调用 finish_child（id ${tk.id}），面板把它的分支合回「${wt.baseBranch || '你所在的分支'}」、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支。`

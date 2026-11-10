@@ -144,5 +144,25 @@ export function taskPageHelpers(p, { settle, errors }) {
       .waitFor({ state: 'detached', timeout: 3000 })
       .catch(() => {})
 
-  return { openFiles, waitToastsGone, backToTask, closed }
+  /**
+   * 把「更多操作」菜单里的一项钉到标题栏（钉子所有对话共用、记在本机）。
+   * 标题栏默认只钉「状态」和「会话栏」（分析稿 U4），要点标题栏上的「对话进程」「任务进度」先钉上
+   */
+  const pinHeader = async (name) => {
+    if (await p.getByRole('button', { name, exact: true }).count()) return
+    await p.getByRole('button', { name: '更多操作', exact: true }).first().click()
+    await p
+      .getByRole('button', { name: `钉在标题栏：${name}`, exact: true })
+      .click({ timeout: 5000 })
+      .catch(() => errors.push(`标题栏：菜单里没有能钉上的「${name}」`))
+    await p.keyboard.press('Escape')
+    await p
+      .getByRole('menu')
+      .first()
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+    await settle(p)
+  }
+
+  return { openFiles, waitToastsGone, backToTask, closed, pinHeader }
 }

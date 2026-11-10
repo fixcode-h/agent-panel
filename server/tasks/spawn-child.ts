@@ -11,6 +11,7 @@ import { NewTaskInput, type Agent, type Project, type Task } from '../../shared/
 import { newTask, taskDeleted } from '../../shared/task.ts'
 import { childFilesInfo, hitList, holdTurn, normClaimPath, scopeOverlaps } from '../claims.ts'
 import { isolated } from './helpers.ts'
+import { linkRelapse } from './bug-relapse.ts'
 import type { TasksScope } from './scope.ts'
 
 export function createSpawnChild(sc: TasksScope) {
@@ -70,6 +71,7 @@ export function createSpawnChild(sc: TasksScope) {
       files,
       agentId,
       bug,
+      fix,
       edits,
       level,
     }: {
@@ -78,6 +80,8 @@ export function createSpawnChild(sc: TasksScope) {
       files?: string[]
       agentId?: string
       bug?: boolean
+      /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告 */
+      fix?: boolean
       /** Bug 的级别初判：档案从它开始，子对话查下来不符可以改 */
       level?: BugLevel
       /** 一定要改代码：第一次执行前就开好独立分支（只在独立分支模式下有用） */
@@ -87,6 +91,11 @@ export function createSpawnChild(sc: TasksScope) {
     const worker = agents.find((a) => a.origin === 'builtin:worker')
     const subId = randomUUID()
     const at = new Date().toISOString()
+    // 观察期里的偶发 Bug 又报了（分析稿 B13）：关联到原来那个，派单附上它的根因和修法
+    const relapse = bug
+      ? await linkRelapse(sc, { id: subId, title, projectId: parent.projectId, text: `${title}\n${message}` })
+      : undefined
+    if (relapse) message += relapse.note
     const input = NewTaskInput.parse({
       projectId: parent.projectId,
       mode: 'chat',
@@ -102,7 +111,14 @@ export function createSpawnChild(sc: TasksScope) {
       ...newTask(input, undefined, at, subId, [], {}),
       id: subId,
       ...(bug && { bug }),
-      ...(bug && level && { bugCase: BugCase.parse({ level, levelNote: '父对话初判' }) }),
+      ...(fix && !bug && { bugFix: true }),
+      ...(bug &&
+        (level || relapse) && {
+          bugCase: BugCase.parse({
+            ...(level && { level, levelNote: '父对话初判' }),
+            ...(relapse && { relapseOf: relapse.origId }),
+          }),
+        }),
       ...(edits && project.childIsolation === 'worktree' && { editFirst: true }),
     }
     // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
@@ -149,6 +165,7 @@ export function createSpawnChild(sc: TasksScope) {
           held: got.held,
           both,
         }),
+        relapse?.info,
       ]
         .filter(Boolean)
         .join('\n'),

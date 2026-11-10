@@ -200,6 +200,7 @@
   },
   "output": "claude",
   "features": {
+    "cost": true,
     "steer": true,
     "notes": false,
     "keepAlive": true,

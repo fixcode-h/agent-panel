@@ -13,13 +13,24 @@
  * changed-tests 对 scripts/ui/*.mjs 的改动按分片编号直接映射。
  */
 export const UI_SHARD_COVERS = {
-  '01-composer': ['web/src/components/chat/', 'web/src/pages/ChatPage.tsx'],
+  '01-composer': [
+    'web/src/components/chat/',
+    'web/src/pages/ChatPage.tsx',
+    // 输入框占位写明模式（分析稿 U10）
+    'web/src/components/tasks/composer-hint.ts',
+  ],
   // 任务页拆成 02 / 02b / 02c 三片：它们都经由 TaskView 的渲染树，但断言落在不同组件上。
   // 只登记「这一片真的断言了它渲染的东西」的文件：三片登记同一批前缀时，改任何一个 TaskView
   // 下的组件都要跑三片（02-task 一片就 2 分钟）。拿不准的组件不登记：changed-tests 映射不到会
   // 提示跑全量的界面检查，宁可多跑，也不会因为少登记一条而漏跑一个会坏的页面。
   '02-task': [
     'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
     'web/src/components/tasks/LoadTrace.tsx',
     'web/src/components/tasks/PeerMessage.tsx',
     'web/src/components/tasks/HelperCards.tsx',
@@ -31,6 +42,9 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/Evolution.tsx',
     'web/src/components/tasks/ChildSwitcher.tsx',
     'web/src/components/tasks/RunningNow.tsx',
+    // 子对话行的「计划这一步 · 最后一次工具调用」（分析稿 U5）
+    'web/src/components/tasks/child-line.ts',
+    'shared/child-doing.ts',
     'web/src/components/tasks/Messages.tsx',
     'web/src/components/tasks/TaskMeta.tsx',
     // 输入框下的「测试记录」（dev 的「任务-测试记录」断言它）
@@ -43,6 +57,19 @@ export const UI_SHARD_COVERS = {
   ],
   '02b-subagent': [
     'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
+    // 诊断报告：Bug 行的五个点（U8）、停靠到右栏、标注栏收起、方案表选定列（U7）
+    'web/src/components/tasks/BugStepDots.tsx',
+    'web/src/components/tasks/diagnosis-window.tsx',
+    'web/src/components/tasks/review-table.ts',
+    'web/src/components/tasks/ReviewDialog.tsx',
+    'web/src/components/tasks/TaskFiles.tsx',
+    'web/src/components/tasks/HeaderPins.tsx',
     'web/src/components/tasks/TaskMeta.tsx',
     'web/src/components/tasks/RunningNow.tsx',
     'web/src/components/tasks/Messages.tsx',
@@ -56,6 +83,12 @@ export const UI_SHARD_COVERS = {
   ],
   '02c-element-pick': [
     'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
     'web/src/components/tasks/TaskMeta.tsx',
     'web/src/components/tasks/Messages.tsx',
     'web/src/components/tasks/Worktrees.tsx',
@@ -65,6 +98,8 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/TaskMenu.tsx',
     'web/src/components/tasks/DiffDialog.tsx',
     'web/src/components/tasks/TurnChanges.tsx',
+    'web/src/components/tasks/DoneEvidenceCard.tsx',
+    'web/src/lib/demo-done-evidence.ts',
     'web/src/components/tasks/ChangesTree.tsx',
     'web/src/components/tasks/MemoryChart.tsx',
     'web/src/components/tasks/RequestCard.tsx',
@@ -85,6 +120,26 @@ export const UI_SHARD_COVERS = {
     'web/src/lib/diff-html.ts',
     'web/src/components/ui/UnifiedDiff.tsx',
   ],
+  // 诊断报告的确认收放和面板复核回归测试（分析稿 B2、B9）：复核通过时修复和验证合成一次确认、自动通过的勾选
+  '02h-bug-recheck': [
+    'web/src/components/tasks/DiagnosisDialog.tsx',
+    'web/src/components/tasks/ReviewDialog.tsx',
+    'web/src/components/tasks/BugReportCard.tsx',
+    'web/src/components/ui/checkbox.tsx',
+    'shared/bug-recheck.ts',
+    'shared/bug-auto.ts',
+    'shared/bug-diagnosis-card.ts',
+  ],
+  // 诊断报告「等你复现」的取证：放到工作区 / 还原、面板自己取日志、自动采集的环境
+  '02g-bug-evidence': [
+    'web/src/components/tasks/DiagnosisEvidence.tsx',
+    'web/src/components/tasks/DiagnosisDialog.tsx',
+    'web/src/components/tasks/ReviewDialog.tsx',
+    'web/src/lib/demo-evidence.ts',
+    'shared/bug-env.ts',
+    'shared/bug-patch.ts',
+    'shared/bug-log-watch.ts',
+  ],
   // 对话里「学到经验」的卡片（演示数据在 demo-experience.ts）
   '02e-learned': [
     'web/src/components/tasks/LearnedCard.tsx',
@@ -97,6 +152,12 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/RunView.tsx',
     'web/src/components/tasks/Messages.tsx',
     'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
     'web/src/components/tasks/TaskMeta.tsx',
     'web/src/components/files/FileTree.tsx',
     'web/src/lib/tasks.ts',
@@ -136,6 +197,8 @@ export const UI_SHARD_COVERS = {
   ],
   '07-projects': [
     'web/src/components/projects/',
+    // 新建输入框上的「这个对话的用量上限」（分析稿 A6）
+    'web/src/components/tasks/ConvBudgetChip.tsx',
     'web/src/components/layout/',
     'web/src/components/tags/',
     'web/src/pages/ProjectsPage.tsx',
@@ -156,8 +219,30 @@ export const UI_SHARD_COVERS = {
     'web/src/lib/demo-summary.ts',
     // 报告树分组、拼报告的逻辑：页面直接调，改了它就跑这一片
     'shared/summary.ts',
+    // 对话总览和它的 Bug 视图（分组、五步进度、流程数据）
+    'web/src/pages/OverviewPage.tsx',
+    'web/src/components/overview/',
+    'shared/overview.ts',
+    'shared/bug-overview.ts',
+    'shared/bug-stats.ts',
   ],
   '10-toast': ['web/src/lib/toast.ts', 'web/src/lib/toast-queue.ts'],
+  // 手机宽度走一遍「首页 → 总览 → 点进去 → 看报告 → 确认」（分析稿 U9）
+  '13-mobile': [
+    'web/src/components/tasks/TaskComposer.tsx',
+    'web/src/components/tasks/ChatModelPicker.tsx',
+    'web/src/components/tasks/ReviewDialog.tsx',
+    'web/src/components/tasks/DiagnosisDialog.tsx',
+    'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
+    'web/src/pages/OverviewPage.tsx',
+    'web/src/components/overview/',
+  ],
   // 弹窗调整大小：只登记专门承载这套逻辑的两个文件；modal.tsx / dialog.tsx 是所有页面都用的
   // 公共外壳，不登记在这里（changed-tests 映射不到会提示跑全量界面检查，宁可多跑）
   '12-modal-resize': ['web/src/lib/modal-size.ts', 'web/src/components/ui/modal-resize.tsx'],

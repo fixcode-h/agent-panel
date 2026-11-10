@@ -1,6 +1,6 @@
 import type { AgentResult } from '../../shared/engine.ts'
 import type { ContextSnapshot } from '../../shared/context-breakdown.ts'
-import type { TaskMessage, ToolUse } from '../../shared/schema.ts'
+import type { Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { t } from '../../shared/i18n.ts'
 import { fmtTokens, MIN_AGENT_CONTEXT } from '../../shared/model-limits.ts'
@@ -279,4 +279,32 @@ export function thrashNote(x: {
     alert: makeAlert('warn', x.raw, 'context'),
     at: new Date().toISOString(),
   }
+}
+
+/**
+ * 压缩时连压缩请求都超过模型上限：不再请求模型（它照样会拒），把裁剪后的记录当作摘要写进 rewind，
+ * 丢掉会话，按压缩成功返回，下一轮开新会话带上（从 runner.ts 拆出来）
+ */
+export function overflowCompact(x: {
+  task: Task
+  sessionKey: string
+  /** 按预算裁剪好的对话记录 */
+  clipped: string
+  usage: Usage
+  tracker: CompactTracker
+  /** 没有压缩那一行时另插的一条说明 */
+  msg: (text: string) => TaskMessage
+}): string {
+  const { task, sessionKey, usage, tracker } = x
+  const summary = [t('（原始对话已经超过模型上限，连压缩请求也被拒绝，以下是面板裁剪后保留的记录）'), x.clipped].join(
+    '\n\n',
+  )
+  task.rewind = { session: '', through: null, latest: false, summary }
+  delete task.sessions[sessionKey]
+  delete task.sessionDirs[sessionKey]
+  usage.context = 0
+  const note = t('已压缩上下文：对话本身太长，模型连压缩请求都拒绝了，已改为裁剪后开新会话带上（保留最近的内容）')
+  // 写在压缩那一行上，不另插一行居中的说明
+  if (!tracker.settle(t('对话太长，已裁剪后交给新会话'), note)) task.messages.push(x.msg(note))
+  return summary
 }

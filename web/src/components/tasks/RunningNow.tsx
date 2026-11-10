@@ -1,4 +1,3 @@
-import { useUserName } from '@/lib/user-name'
 import { useMemo, useState } from 'react'
 import { CircleSlash, ClipboardCheck, Hand, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
@@ -23,6 +22,7 @@ import {
   staleLine,
   type ChildSummary,
 } from './child-line'
+import { BugStepDots } from './BugStepDots'
 import { ChildConfirmButton } from './ChildConfirm'
 import { Button } from '@/components/ui/button'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
@@ -325,7 +325,6 @@ export function RunningNow({
    */
   kids: boolean
 }) {
-  const user = useUserName()
   const children = useChildList()
   const openChild = useChildOpen()
   // 列什么只算一次：RunningNow 自己列的行和外面画不画分隔线读的是同一个函数
@@ -380,7 +379,7 @@ export function RunningNow({
         <JobRow key={j.id} job={j} now={now} />
       ))}
       {rows.map((k) => (
-        <ChildLiveRow key={k.id} k={k} now={now} user={user} openChild={openChild} />
+        <ChildLiveRow key={k.id} k={k} now={now} openChild={openChild} />
       ))}
       {/* 报告交上来时自动弹一次审阅弹窗（每一版只弹一次） */}
       <DiagnosisAutoOpen ids={rows.filter((k) => k.diagnosis).map((k) => k.id)} />
@@ -396,20 +395,18 @@ export function RunningNow({
 function ChildLiveRow({
   k,
   now,
-  user,
   openChild,
   className,
 }: {
   k: ChildSummary
   now: number
-  user: string
   openChild: ((id: string) => void) | null
   className?: string
 }) {
   // 行上的状态标签、当前活动、多久没新输出都和悬浮层那一行读同一份（见 ./child-line）：
   // 标题、状态、计划进度、正在做什么两处显示一致。
   // 这段详情按弹层里的观感跟在标题后面左对齐（detailStart），不再贴到行尾
-  const labels = childLabels(k, user)
+  const labels = childLabels(k)
   const note = childNote(k, true)
   const stale = staleLine(k)
   // 进程回收了、对话却还在跑：行上不说「已关闭」（那会和标签同屏矛盾），只在这里补一句
@@ -465,6 +462,7 @@ function ChildLiveRow({
               className={cn(childLabelClass[l.tone], i > 0 && 'max-[359px]:hidden @max-[300px]:hidden')}
             >
               {l.text}
+              {l.dots !== undefined && <BugStepDots step={l.dots} className="ml-1" />}
             </span>
           ))}
           {/* 行的宽度留给状态标签和耗时：活动文字是补充信息，行够宽才显示（按这一行自己的

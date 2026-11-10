@@ -17,6 +17,14 @@ export const HANDOFF_FIELDS = [
   { key: 'decisions', title: '关键决定', description: '做了哪些取舍、为什么，没选的方案一句话', required: false },
   { key: 'pitfalls', title: '试过不行的和要注意的', description: '试过不行的做法、容易踩的坑', required: false },
   { key: 'followups', title: '遗留和后续', description: '没做的、已知问题、下次接手先做什么', required: false },
+  // 直接修的用户 Bug（kind: "fix"）收尾时必写，面板拿它出简版报告（shared/bug-fix-brief.ts）；别的对话不写
+  {
+    key: 'cause',
+    title: '修的 Bug 的根因',
+    description:
+      '修用户报的 Bug 时写根因一句：在什么条件下、哪个文件哪段代码做错了什么，所以用户看到了什么（直接修的 Bug 必填，面板据此出简版报告）；不是修 Bug 不写',
+    required: false,
+  },
 ] as const
 
 export type HandoffKey = (typeof HANDOFF_FIELDS)[number]['key']
