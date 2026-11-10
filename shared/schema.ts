@@ -9,6 +9,8 @@ import { t } from './i18n.ts'
 import { ProjectCliTrust } from './cli-trust.ts'
 import { RolePlugins } from './role-plugins.ts'
 import { RemoteAccess } from './remote-schema.ts'
+import { NotifyChannels, ScheduleWebhook } from './notify-channels.ts'
+import { ModelOverride } from './task-run.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
 import { DEFAULT_SPEECH_MODEL, SPEECH_MODEL_IDS } from './speech.ts'
@@ -1206,6 +1208,7 @@ export const TaskPatch = z
     cli: z.string().trim().max(40),
     model: z.string().trim().max(200),
     effort: z.string().trim().max(40),
+    modelOverride: ModelOverride, // 用角色的对话换模型（失败后「换个模型重试」），见 task-run.ts
     // 「提问」开关：Agent 有问题时交给你回答，还是让它自己选
     askUser: z.boolean(),
     // 父对话的「子对话也提问」：之后新建的子对话默认是否开启提问
@@ -1996,6 +1999,7 @@ export const TaskData = z.object({
   cli: z.string().default(''),
   model: z.string().default(''),
   effort: z.string().default(''),
+  modelOverride: ModelOverride.optional(), // 用角色的对话里用户换的模型，盖过角色的；见 task-run.ts 的 withTaskModel
   /** 「提问」开关：打开时 Agent 的提问交给用户回答，关着时让它自己选最合适的做法 */
   askUser: z.boolean().default(false),
   /**
@@ -2524,17 +2528,8 @@ export const Settings = z.object({
   requireToken: z.boolean().default(false),
   /** 外网访问：默认关闭 */
   remoteAccess: RemoteAccess.prefault({}),
-  /**
-   * 计划的 Webhook 出站：计划跑到终态（成功启动 / 启动失败 / 错过 / 上游没成功）时 POST 一份 JSON。
-   * 地址属于外部配置，只存在数据目录的设置里，不写进代码和测试数据；为空时即使打开也不投递
-   */
-  webhook: z
-    .object({
-      enabled: z.boolean().default(false),
-      /** 接收地址（http / https）：投递规则见 server/webhook.ts */
-      url: z.string().trim().default(''),
-    })
-    .prefault({}),
+  webhook: ScheduleWebhook, // 计划的 Webhook 出站（老配置，已迁成钩子）：定义和说明在 notify-channels.ts
+  notifyChannels: NotifyChannels, // 面板外的通知渠道（Webhook），见 notify-channels.ts；地址是凭据，只存在这份设置里
   /**
    * 本机语音输入（见 shared/speech.ts）：默认关，关着时输入框上不显示麦克风按钮，也不下载任何东西。
    * 模型和识别库要用户在设置里自己挑了才下载

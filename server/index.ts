@@ -499,7 +499,7 @@ app.route('/project-mcp', projectMcpApi({ projectPath: async (id) => (await proj
 app.route('/project-trust', trustApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
 app.route('/clis', installApi())
 // 本机生图、语音输入 / 朗读、Chat 记忆：各自一组的子路由（server/extra-routes.ts）
-mountExtras(app)
+mountExtras(app, { projects })
 app.route('/', envApi())
 app.route('/clis', modelsApi())
 app.route('/clis', packagesApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))

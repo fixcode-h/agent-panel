@@ -260,6 +260,38 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await mine.getByRole('button', { name: 'AI 创建' }).click()
   await check(p, '设置-钩子-AI创建', ['用 AI 创建钩子', '只读的评审角色不许跑 git commit'])
   await p.keyboard.press('Escape')
+  // 通知渠道（分析稿 A5）：四种格式都能加；一行里有地址、格式、勾选事件、发一条测试；演示里的测试是模拟的，
+  // 地址填对显示「最近一次已发出」，填错当场提示。地址只用 example.invalid 占位
+  await p.getByRole('button', { name: '通知渠道', exact: true }).first().click()
+  await check(p, '设置-通知渠道', ['添加渠道', '通用 JSON', '飞书机器人', '钉钉机器人', '企业微信机器人'])
+  {
+    const group = p.locator('[data-setting-group="Webhook"]')
+    await group.getByRole('button', { name: '钉钉机器人' }).first().click()
+    const row = group.locator('[data-notify-channel]').last()
+    await row.waitFor({ timeout: 5000 }).catch(() => errors.push('通知渠道：点「钉钉机器人」后没有新的一行'))
+    const test = row.getByRole('button', { name: '发一条测试' })
+    if (!(await test.isDisabled())) errors.push('通知渠道：还没填地址时「发一条测试」应该是灰的')
+    const url = row.getByLabel('Webhook 地址')
+    await url.fill('example.invalid/hook')
+    if (!(await group.getByText('地址要以 http:// 或 https:// 开头').count()))
+      errors.push('通知渠道：地址没写协议时没有提示')
+    await url.fill('https://example.invalid/hook')
+    for (const e of ['等你处理', '失败', '做完', '快到用量上限'])
+      if (!(await row.getByRole('checkbox', { name: e }).count())) errors.push(`通知渠道：没有「${e}」的勾选`)
+    // 默认勾等你处理和失败
+    if ((await row.getByRole('checkbox', { name: '做完' }).getAttribute('aria-checked')) !== 'false')
+      errors.push('通知渠道：新渠道默认不该勾「做完」')
+    await test.click()
+    await group
+      .getByText('最近一次已发出')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('通知渠道：发了测试后没有显示「最近一次已发出」'))
+    await check(p, '设置-通知渠道-新渠道', ['什么时候发', '自定义关键词', '最近一次已发出'])
+    await group
+      .getByRole('button', { name: /^删除渠道/ })
+      .last()
+      .click()
+  }
   // 回到 CLI 的默认 CLI 页（部署在它下面）
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   await p.getByRole('dialog').getByText('默认 Agent', { exact: true }).first().click()

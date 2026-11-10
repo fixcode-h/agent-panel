@@ -27,6 +27,7 @@ import {
 } from '../../shared/task.ts'
 import { rewaitDiagnosis } from '../../shared/task-settle.ts'
 import { agentRun } from '../../shared/settings.ts'
+import { retryModelPatch } from '../../shared/task-run.ts'
 import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
 import { CHILD_ASK_DEFAULT, childAskInitial } from '../../shared/child-ask.ts'
@@ -467,7 +468,32 @@ export function registerConversationRoutes(s: TasksScope) {
         return c.json(saved ?? task)
       }
       // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
-      const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }
+      const { latest, model, efforts } = (await c.req.json().catch(() => ({}))) as {
+        latest?: boolean
+        model?: string
+        efforts?: string[]
+      }
+      // 换个模型重试：用户在失败提示上选的（不是面板自己换的，不违反「不悄悄重试」）。先把这个对话的模型改成选的那个，
+      // 再走下面同一条继续的路，失败的那一轮原样重发。放在这里而不是先 PATCH 再继续：PATCH 换模型会顺手预热一个进程，
+      // 紧跟着的「继续」会撞上它被当成「任务正在执行」
+      if (typeof model === 'string' && model.trim()) {
+        if (task.mode !== 'chat') {
+          s.release(entry)
+          return s.bad(c, t('只有对话可以换模型重试'))
+        }
+        const agent = task.agentId
+          ? (await s.deps.agents.list()).find((a) => a.id === task.agentId)
+          : { ...defaultAgent(), id: '' }
+        // 角色被删了也能重试（按内置助手跑，见 turnRole），这时没有角色的 CLI 可比，用对话定下的
+        const cli = agent
+          ? agentRun(withTaskModel(agent, task), await getSettings()).cli
+          : task.cli || task.sessionCli || ''
+        Object.assign(
+          entry.task,
+          retryModelPatch(task, { cli, model: model.trim(), efforts: Array.isArray(efforts) ? efforts : undefined }),
+        )
+        taskLog(id, '换个模型重试', { model: model.trim() })
+      }
       let fresh: Workflow | undefined
       if (latest && task.workflowId) {
         fresh = (await s.deps.workflows.get(task.workflowId)) ?? undefined

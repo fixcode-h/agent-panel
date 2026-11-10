@@ -74,6 +74,12 @@ const setActive = (enabled: boolean, hosts: string[]) =>
 /** 外部请求只接受当前隧道/反代地址；本机地址由调用方另外判断 */
 export const isRemoteHostAllowed = (host: string) => active.enabled && active.hosts.has(host.toLowerCase())
 
+/**
+ * 现在能从外面打开面板的地址：外网访问开着、已经连上才有，否则为空。
+ * 通知里的直达链接用它（见 server/notify-channels.ts）；不带访问令牌：链接会发到第三方的群里，令牌不能跟着出去
+ */
+export const remotePublicUrl = () => (active.enabled && state === 'running' ? url : '')
+
 /** 交给外网专用端口的请求处理函数（和主端口同一个，见 server/index.ts） */
 export function configureRemote(fetch: FetchHandler) {
   handler = fetch

@@ -30,6 +30,7 @@ import {
   Component,
   Box,
   Heading,
+  BellRing,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { cliApi } from '@shared/accounts'
@@ -111,6 +112,9 @@ const ReadAloudSection = lazy(() =>
 const ChatMemorySection = lazy(() =>
   import('@/components/settings/ChatMemorySection').then((m) => ({ default: m.ChatMemorySection })),
 )
+const NotifyChannelsSection = lazy(() =>
+  import('@/components/settings/NotifyChannelsSection').then((m) => ({ default: m.NotifyChannelsSection })),
+)
 const HooksSection = lazy(() => import('@/components/settings/HooksSection').then((m) => ({ default: m.HooksSection })))
 const IntegrationsSection = lazy(() =>
   import('@/components/settings/IntegrationsSection').then((m) => ({ default: m.IntegrationsSection })),
@@ -160,6 +164,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   // 外部 CLI 的授权（GitHub CLI 等），以后加新的授权工具只加定义
   { id: 'integrations', label: t('授权'), icon: ShieldCheck, group: t('连接') },
   { id: 'remote', label: t('外部访问'), icon: Globe, group: t('连接') },
+  { id: 'notify-channels', label: t('通知渠道'), icon: BellRing, group: t('连接') },
   { id: 'network', label: t('网络与代理'), icon: Network, group: t('连接') },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
   { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
@@ -195,6 +200,7 @@ function SettingsBody({
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
+  const [notifyChannels, setNotifyChannels] = useState(initial.notifyChannels)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
   const [bugAuthor, setBugAuthor] = useState(initial.bugAuthor)
   const [userName, setUserName] = useState(initial.userName)
@@ -353,6 +359,7 @@ function SettingsBody({
     openBrowser,
     requireToken,
     remoteAccess,
+    notifyChannels,
     askUserDefault,
     bugAuthor,
     userName: userName.trim(),
@@ -805,6 +812,9 @@ function SettingsBody({
               {cur.id === 'components' && <ComponentsSection value={appearance} onChange={setAppearance} />}
               {cur.id === 'shortcuts' && <ShortcutsSection value={elementPicker} onChange={setElementPicker} />}
               {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}
+              {cur.id === 'notify-channels' && (
+                <NotifyChannelsSection value={notifyChannels} onChange={setNotifyChannels} />
+              )}
               {cur.id === 'network' && (
                 <NetworkSection
                   enabled={proxyOn}
