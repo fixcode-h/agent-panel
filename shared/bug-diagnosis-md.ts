@@ -22,6 +22,7 @@ import { t } from './i18n.ts'
 import { alert, at, px, sec, table } from './bug-md.ts'
 import { fixCardParts, fixSections } from './bug-fix-md.ts'
 import { envMd, envOf } from './bug-env.ts'
+import { recheckMd, recheckTag } from './bug-recheck.ts'
 import {
   attributionDiffMd,
   codeRefsMd,
@@ -188,7 +189,16 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
   const base = diagnosisCard(d, opts)
   // 修复这一步：一句话写按哪个方案改的，胶囊和要注意按实际改动算（bug-fix-md.ts）
   const fixed = phase === 'fix' ? fixCardParts(d, opts.list ?? [d]) : undefined
-  const card = fixed ? { ...base, ...fixed, attention: [...base.attention, ...fixed.attention].slice(0, 3) } : base
+  // 面板复核回归测试的胶囊（分析稿 B9）在修复这一步也要留着：fixed.tags 会换掉通用的那几个
+  const re = recheckTag(d)
+  const card = fixed
+    ? {
+        ...base,
+        ...fixed,
+        tags: [...fixed.tags, ...(re ? [re] : [])],
+        attention: [...base.attention, ...fixed.attention].slice(0, 3),
+      }
+    : base
   const stance = { adopted: t('已采纳'), explained: t('已解释'), disagree: t('不同意') }
   const answers = prev
     ? d.answers
@@ -416,12 +426,14 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     ]
   } else if (phase === 'fix') {
     const fix = fixSections(d, opts.list ?? [d])
-    main = [...head, ...fix.main, earlySec]
+    // 面板复核放在长长的代码 diff 前面（fix.main 最后一节是改动的代码），不然要翻到底才看得到
+    main = [...head, ...fix.main.slice(0, -1), recheckMd(d), ...fix.main.slice(-1), earlySec]
     back = [...fix.background, bg(t('原文'), quotes)]
   } else {
     main = [
       ...head,
       sec(t('自测结果'), result),
+      recheckMd(d),
       sec(t('出错点修前修后'), fixDiffsMd(d)),
       sec(t('你来验证'), stepsOf(d.collect)),
       sec(t('看到什么算修好了'), outcomesOf(d.collect)),

@@ -30,6 +30,8 @@ const Decision = z.object({
     .max(50)
     .default([]),
   overall: z.string().max(4000).default(''),
+  /** 同意时勾了「后面几步没有要注意的就自动通过」（分析稿 B2） */
+  autoNext: z.boolean().default(false),
 })
 
 /** 临时日志没删干净时用户的选择：retry 让它再删一次；finish 我自己删 / 保留，直接关闭报告 */

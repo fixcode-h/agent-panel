@@ -9,9 +9,9 @@ export const childKindFields = {
   // 用户也就看不到审阅弹窗（用户报过）。服务端没写时仍按 task 处理，老的调用照常能用
   kind: {
     type: 'string',
-    enum: ['task', 'bug'],
+    enum: ['task', 'bug', 'fix'],
     description:
-      '这个子对话是什么：用户报的 Bug（程序哪里坏了、行为不对要修）写 "bug"，子对话修之前先交诊断报告，用户确认了方案才改；其余（新功能、改进、评审或测试里发现的问题）写 "task"',
+      '这个子对话是什么：用户报的 Bug 走完整流程（程序哪里坏了、行为不对要查清再修）写 "bug"，子对话修之前先交诊断报告，用户确认了方案才改；用户报的 Bug 直接修（用户发了 /fix、选了直接修，或「提问」关着默认直接修）写 "fix"，子对话查清就修，收尾时交一份只读的简版报告；其余（新功能、改进、评审或测试里发现的问题）写 "task"',
   },
   level: {
     type: 'string',
@@ -38,6 +38,8 @@ export function childKindArgs(a: Record<string, unknown> | undefined) {
   const level = LEVELS.find((x) => x === a?.level)
   return {
     bug: a?.kind === 'bug',
+    // 直接修的用户 Bug（分析稿 B2 第 ③ 条）：不交诊断报告，收尾时留一份简版报告（根因一句、改了什么、怎么验证的）
+    ...(a?.kind === 'fix' && { fix: true }),
     ...(level && { level }),
     ...(a?.edits === true && { edits: true }),
     ...(a?.ignore_uncommitted === true && { ignoreDirty: true }),

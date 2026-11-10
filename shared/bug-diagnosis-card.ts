@@ -7,6 +7,7 @@
 import type { BugBlame, Diagnosis } from './bug-diagnosis-schema.ts'
 import { causeInPlan, logFilesOf, NOFIX_TEXT, noFixOf, normPath, outOfPlan, phaseOf } from './bug-phase.ts'
 import { codeTerms } from './bug-terms.ts'
+import { recheckTag, recheckVerdict } from './bug-recheck.ts'
 import { t } from './i18n.ts'
 
 export type CardTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
@@ -93,7 +94,7 @@ export function nextStep(d: Diagnosis, withCause = false): string {
       evidence: t('你同意了，它在加日志'),
       cause: noFixOf(d) ? t('你同意了：不用改代码，它在告诉你怎么处理并收尾') : t('你同意了根因，它在设计修复方案'),
       plan: withCause ? t('你同意了根因和方案，它在修') : t('你确认了方案，它在修'),
-      fix: t('你确认了修复，它在验证'),
+      fix: d.merged ? t('面板复核过回归测试，验证和修复一起通过了，它在收尾') : t('你确认了修复，它在验证'),
       verify: t('你结束了验证，它在收尾'),
     }[phase]
   if (d.awaiting) return t('按下面的步骤复现一次，把日志贴在右边，点「交日志，继续分析」')
@@ -103,9 +104,14 @@ export function nextStep(d: Diagnosis, withCause = false): string {
       ? t('它查下来不用改代码：同意这个结论，它告诉你怎么处理后收尾；不同意就选中文字标出疑问，点「否决」')
       : t('同意根因，它开始设计修复方案；不同意就选中文字标出疑问，点「否决」'),
     plan: withCause ? t('根因和修复方案一起确认，确认了它才开始改代码') : t('确认方案，它才开始改代码'),
-    fix: t(
-      '看下面改了哪些代码、为什么这么改：没问题就确认，它开始验证；对哪几行有疑问就选中标注，它逐条判断后改代码或给出依据',
-    ),
+    fix:
+      recheckVerdict(d.recheck) === 'pass'
+        ? t(
+            '面板复核过回归测试（改前失败、改后通过）：看下面改了哪些代码、为什么这么改，没问题就确认，验证一起算通过；对哪几行有疑问就选中标注',
+          )
+        : t(
+            '看下面改了哪些代码、为什么这么改：没问题就确认，它开始验证；对哪几行有疑问就选中标注，它逐条判断后改代码或给出依据',
+          ),
     verify: t('按下面的步骤复现一次，贴日志确认；不想验证可以直接结束'),
   }[phase]
 }
@@ -117,7 +123,7 @@ function statusOf(d: Diagnosis): DiagnosisCard['status'] {
       text: d.awaiting ? t('等你复现') : phase === 'verify' ? t('等你验证') : t('等你确认'),
       tone: 'warning',
     }
-  if (d.status === 'approved') return { text: t('你已同意'), tone: 'success' }
+  if (d.status === 'approved') return { text: d.auto ? t('面板自动通过') : t('你已同意'), tone: 'success' }
   if (d.status === 'cancelled')
     return d.cleanup?.state === 'running'
       ? { text: t('在删临时日志'), tone: 'accent' }
@@ -165,6 +171,8 @@ function tagsOf(d: Diagnosis, files: number): DiagnosisCard['tags'] {
   else tags.push(d.confirmed ? { text: t('已证实'), tone: 'success' } : { text: t('根因未证实'), tone: 'danger' })
   if (noFixOf(d)) tags.push({ text: t('不用改代码'), tone: 'accent' })
   if (phase === 'plan' && files) tags.push({ text: t('改 {n} 个文件', { n: files }), tone: 'neutral' })
+  const re = recheckTag(d)
+  if (re) tags.push(re)
   return tags
 }
 
@@ -178,6 +186,9 @@ function attentionOf(d: Diagnosis, list: Diagnosis[] | undefined, changed?: stri
     out.push({ text: t('根因还没用日志或测试证实'), tone: 'danger' })
   const fails = d.result?.impactChecks.filter((x) => !x.output.trim()).length ?? 0
   if (phase === 'verify' && fails) out.push({ text: t('{n} 项影响面还没有验证结果', { n: fails }), tone: 'danger' })
+  // 面板自己跑的回归测试和「改前失败、改后通过」对不上（分析稿 B9）
+  if ((phase === 'fix' || phase === 'verify') && recheckVerdict(d.recheck) === 'fail')
+    out.push({ text: t('面板复核回归测试没通过'), tone: 'danger' })
   const early = earlyFiles(d, list)
   if (early.length)
     out.push({ text: t('交报告前已经改了 {n} 个你没同意过的文件', { n: early.length }), tone: 'warning' })

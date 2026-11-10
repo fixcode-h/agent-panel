@@ -429,6 +429,12 @@ export const BUG_CASE_TOOL = {
             items: { type: 'string' },
             description: '回归测试：测试文件或用例名；没法自动化的写手工步骤',
           },
+          commands: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              '能在项目根直接跑的回归测试命令原文（最多 5 条，你在这个对话里跑过、改前失败改后通过的那几条，例如 npx vitest run src/a.test.ts）。面板会在改前的代码和现在的代码上各跑一次，真实输出给用户看；交 fix 前写好的，复核通过时用户确认修复就同时算验证通过',
+          },
           runs: text('偶发问题：跑了几次、坏了几次'),
         },
       },

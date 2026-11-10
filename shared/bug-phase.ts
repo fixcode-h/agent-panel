@@ -278,10 +278,16 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}$
 - 先写改前失败的测试（没法自动化的写成可重复的手工步骤），再按方案改。
 - 只改方案里的文件：${d.files.map((f) => `\`${f}\``).join('、') || '（见方案）'}（补测试、回写文档、翻译不算）。要改别的文件，先重新交 phase: plan 写明为什么（换掉确认过的方案，面板记成第 ${v + 1} 版），等用户确认。
 - 修完交 phase: fix 请用户看代码：changes 一个文件一项（含测试），what 写改了什么、why 写为什么这么改（这处改动怎么解决根因、为什么这样写），面板会取实际 diff 和它对上给用户看。用户确认修复之后才做验证。
+- 复现用例能自动跑的：交 fix 之前先用 update_bug_case 的 result 记下 commands（能在项目根直接跑的命令原文，你在这个对话里跑过、改后通过的那几条）、reproBefore / reproAfter、regressionTests。面板在这一轮结束后把 commands 在改前的代码和现在的代码上各跑一次；改前失败、改后通过的，用户确认修复就同时算验证通过，不用再单独交验证。
 - 改完自测不过：不要在这次修法上接着改，把修法和失败证据写进「已排除」，回到论证重新交报告。${notes}${overall}`
+  if (phase === 'fix' && d.merged)
+    return `用户确认了第 ${v} 版的修复。面板在改前的代码和现在的代码上各跑了一次你写的回归测试命令：改前失败、改后通过，验证合在这一次确认里，不再交 phase: verify：
+- 跑方案里影响面逐条的验证，用 update_bug_case 的 result 记下（impactChecks 的 area 照报告里的影响面写，附命令和本轮输出）。
+- 验证时发现还要改代码：改好后重新交 phase: fix 请用户再看一次；修法本身不对：把修法和失败证据写进「已排除」，回到论证或重新出方案（面板记成第 ${v + 1} 版）。
+- ${CLEANUP}然后请父对话收尾（submit_merge）。${notes}${overall}`
   if (phase === 'fix')
     return `用户确认了第 ${v} 版的修复，现在验证：
-- 跑回归测试（确认改前失败、改后通过）和方案里影响面逐条的验证，用 update_bug_case 的 result 记下（regressionTests、impactChecks、reproBefore / reproAfter）。
+- 跑回归测试（确认改前失败、改后通过）和方案里影响面逐条的验证，用 update_bug_case 的 result 记下（regressionTests、impactChecks、reproBefore / reproAfter；能直接跑的回归测试命令写进 commands，面板会复核）。
 - 然后交 phase: verify：collect 写用户怎么复现验证、日志在哪、看到什么算修好了，等用户给结果。
 - 验证时发现还要改代码：改好后重新交 phase: fix 请用户再看一次，不直接交验证；验证不过、修法本身不对：把修法和失败证据写进「已排除」，回到论证或重新出方案（面板记成第 ${v + 1} 版）。${notes}${overall}`
   return `用户在第 ${v} 版点了结束，跳过验证。${CLEANUP}然后请父对话收尾（submit_merge）。${notes}${overall}`

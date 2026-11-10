@@ -2074,6 +2074,7 @@ function makeOrchestra(
         files,
         ...(role && { agentId: role.id }),
         ...(extra?.bug && { bug: true }),
+        ...(extra?.fix && !extra.bug && { fix: true }),
         ...(extra?.edits && { edits: true }),
         ...(extra?.ignoreDirty && { ignoreDirty: true }),
         ...(extra?.bug && extra.level && { level: extra.level }),

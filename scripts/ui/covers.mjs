@@ -85,6 +85,16 @@ export const UI_SHARD_COVERS = {
     'web/src/lib/diff-html.ts',
     'web/src/components/ui/UnifiedDiff.tsx',
   ],
+  // 诊断报告的确认收放和面板复核回归测试（分析稿 B2、B9）：复核通过时修复和验证合成一次确认、自动通过的勾选
+  '02h-bug-recheck': [
+    'web/src/components/tasks/DiagnosisDialog.tsx',
+    'web/src/components/tasks/ReviewDialog.tsx',
+    'web/src/components/tasks/BugReportCard.tsx',
+    'web/src/components/ui/checkbox.tsx',
+    'shared/bug-recheck.ts',
+    'shared/bug-auto.ts',
+    'shared/bug-diagnosis-card.ts',
+  ],
   // 诊断报告「等你复现」的取证：放到工作区 / 还原、面板自己取日志、自动采集的环境
   '02g-bug-evidence': [
     'web/src/components/tasks/DiagnosisEvidence.tsx',

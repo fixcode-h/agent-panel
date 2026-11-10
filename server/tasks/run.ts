@@ -2,6 +2,7 @@ import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
 import { afterTurnCleanup } from './bug-cleanup.ts'
+import { recheckAfterTurn } from './bug-recheck.ts'
 
 import { Task, type Agent, type Attachment, type DeliveryHow, type TaskMessage } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
@@ -268,6 +269,8 @@ export function createRun(sc: TasksScope) {
               void afterTurnCleanup(sc, entry, randomUUID).catch((e) =>
                 log.warn('task', '核对临时日志失败', { task: task.id, error: (e as Error).message }),
               )
+              // 交了修复 / 验证、写了回归测试命令：面板在改前和现在的代码上各跑一次（分析稿 B9）
+              recheckAfterTurn(sc, task.id, randomUUID)
             }
           : (turn) => {
               // 经验学习按「一轮结束」排，不等 run 返回：CLI 保活时进程停在等下一句，run 一直不返回，
@@ -528,12 +531,21 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files, agentId, bug, edits, ignoreDirty, level }) => {
+        createConversation: async ({ title, message, files, agentId, bug, fix, edits, ignoreDirty, level }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
           // 独立分支看不到父对话没提交的改动：要改代码的先拦下交回清单，其余在返回里提醒（见 dirty-parent.ts）
           const dirty = ignoreDirty ? '' : await (edits ? dirtyParentBlock : dirtyParentNote)(sc, entry.task, project)
           if (dirty && edits) return { ok: false, info: dirty }
-          const r = await spawnChild(entry.task, project, agents, { title, message, files, agentId, bug, edits, level })
+          const r = await spawnChild(entry.task, project, agents, {
+            title,
+            message,
+            files,
+            agentId,
+            bug,
+            fix,
+            edits,
+            level,
+          })
           return dirty ? { ...r, info: `${r.info}\n${dirty}` } : r
         },
         sendToConversation: async (id, message, bug) => {

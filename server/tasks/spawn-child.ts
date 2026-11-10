@@ -71,6 +71,7 @@ export function createSpawnChild(sc: TasksScope) {
       files,
       agentId,
       bug,
+      fix,
       edits,
       level,
     }: {
@@ -79,6 +80,8 @@ export function createSpawnChild(sc: TasksScope) {
       files?: string[]
       agentId?: string
       bug?: boolean
+      /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告 */
+      fix?: boolean
       /** Bug 的级别初判：档案从它开始，子对话查下来不符可以改 */
       level?: BugLevel
       /** 一定要改代码：第一次执行前就开好独立分支（只在独立分支模式下有用） */
@@ -108,6 +111,7 @@ export function createSpawnChild(sc: TasksScope) {
       ...newTask(input, undefined, at, subId, [], {}),
       id: subId,
       ...(bug && { bug }),
+      ...(fix && !bug && { bugFix: true }),
       ...(bug &&
         (level || relapse) && {
           bugCase: BugCase.parse({

@@ -124,9 +124,62 @@ export const BugResult = z.object({
     .catch([])
     .default([]),
   regressionTests: z.array(z.string().max(500)).catch([]).default([]),
+  /**
+   * 能直接跑的回归测试命令（分析稿 B9）：改前失败、改后通过的那几条。面板在改前的代码和现在的代码上各跑一次，
+   * 真实输出放进修复、验证页；只重跑这个对话里 Agent 自己跑过的命令（权限已经过了 CLI 那一关）
+   */
+  commands: z.array(z.string().max(1000)).max(5).catch([]).default([]),
   runs: str(500),
 })
 export type BugResult = z.infer<typeof BugResult>
+
+/** 面板跑一次命令的结果：code 是退出码（被停、没跑起来时为空），out 是输出的最后一段 */
+export const RecheckRun = z.object({
+  code: z.number().int().nullable(),
+  out: z.string().max(8000).default(''),
+  ms: z.number().default(0),
+  timedOut: z.boolean().default(false),
+  /** 没跑起来、没取到改前的代码：写原因，界面标「面板没有复核」 */
+  error: z.string().max(1000).default(''),
+})
+export type RecheckRun = z.infer<typeof RecheckRun>
+
+/**
+ * 面板复核回归测试（分析稿 B9）：修复、验证这一版交上来、这一轮结束后，面板把 result.commands 在改前
+ * （对话开始时的提交，加上现在的测试文件）和现在的代码上各跑一次。running 跑着；done 跑完（每条看 before / after）；
+ * skipped 整体跑不了（why 写原因）。只记事实，判定在 shared/bug-recheck.ts
+ */
+export const Recheck = z.object({
+  state: z.enum(['running', 'done', 'skipped']),
+  why: z.string().max(1000).default(''),
+  at: z.string(),
+  doneAt: z.string().optional(),
+  items: z
+    .array(
+      z.object({
+        command: z.string(),
+        before: RecheckRun.optional(),
+        after: RecheckRun.optional(),
+        /** 这条整条没跑（不是对话里跑过的命令）：写原因 */
+        skip: z.string().max(500).default(''),
+      }),
+    )
+    .default([]),
+})
+export type Recheck = z.infer<typeof Recheck>
+
+/**
+ * 直接修的 Bug（用户发 /fix 或选了直接修，分析稿 B2 第 ③ 条）的简版报告：不用确认，只读能回看。
+ * cause 是 Agent 写的根因一句，change / verify 是 submit_merge 的说明和验证，files 是面板取的实际改动
+ */
+export const FixBrief = z.object({
+  cause: z.string().max(2000),
+  change: z.string().max(2000).default(''),
+  verify: z.string().max(3000).default(''),
+  files: z.array(z.string()).default([]),
+  at: z.string(),
+})
+export type FixBrief = z.infer<typeof FixBrief>
 
 /**
  * 报告的阶段：evidence 论证（还没定论，要加日志复现）、cause 根因（等用户同意）、plan 修复方案、
@@ -459,6 +512,16 @@ export const Diagnosis = z.object({
   cleanup: CleanupState.optional().catch(undefined),
   /** 环境（面板自动采集）：交第一份报告时取，后面几份沿用同一份（shared/bug-env.ts）；旧报告没有 */
   env: BugEnv.optional().catch(undefined),
+  /** 面板复核回归测试（分析稿 B9）：修复、验证这一版才有，见 shared/bug-recheck.ts */
+  recheck: Recheck.optional().catch(undefined),
+  /**
+   * 确认次数按风险收放（分析稿 B2）：autoNext 是用户同意这一版时勾了「后面几步没有要注意的就自动通过」；
+   * auto 是这一版由面板按这个设置自动通过的（不是用户点的）；merged 是用户确认修复时面板已复核过
+   * 「改前失败、改后通过」，验证合在这一次确认里，不再单独交验证（shared/bug-auto.ts）
+   */
+  autoNext: z.boolean().optional(),
+  auto: z.boolean().optional(),
+  merged: z.boolean().optional(),
 })
 export type Diagnosis = z.infer<typeof Diagnosis>
 
