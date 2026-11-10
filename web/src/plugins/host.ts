@@ -16,6 +16,7 @@ import { DirPicker, useDirInfo } from '@/components/projects/DirPicker'
 import { appendDraft } from '@/components/chat/ChatComposer'
 import { useNewAskUser } from '@/components/chat/AskToggle'
 import { TaskView } from '@/components/tasks/TaskView'
+import { TaskComposer } from '@/components/tasks/TaskComposer'
 
 /**
  * 交给插件网页部分的宿主（ADR 0059，类型见 sdk.ts 的 WebHost）：面板的数据、导航、界面组件和插件自己的接口。
@@ -80,7 +81,20 @@ export function host(id: string, config: () => PluginConfig) {
       usePluginRoute: () => usePluginRoute(id),
       useToChat,
     },
-    ui: { Button, IconButton, EmptyPanel, Field, Input, Select, Textarea, Modal, Segmented, DirPicker, TaskView },
+    ui: {
+      Button,
+      IconButton,
+      EmptyPanel,
+      Field,
+      Input,
+      Select,
+      Textarea,
+      Modal,
+      Segmented,
+      DirPicker,
+      TaskView,
+      TaskComposer,
+    },
     toast,
     cn,
     taskSummary,

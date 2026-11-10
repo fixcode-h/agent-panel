@@ -45,12 +45,18 @@ export function TaskComposer({
   onCreated,
   autoFocus,
   standalone,
+  plugin,
 }: {
   project?: Project
   onCreated: (t: Task) => void
   autoFocus?: boolean
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
+  /**
+   * 新对话归哪个插件（task.plugin，插件整页里的新建输入框，例如模型设计；ADR 0059）：和 standalone 一起用，
+   * 不选 Chat 角色（插件自己给工具和说明），草稿单独记
+   */
+  plugin?: string
 }) {
   const { workflows, agents, projects, loading } = useData()
   const { tasks } = useTasks()
@@ -69,7 +75,7 @@ export function TaskComposer({
   // 有自建的 Chat 角色时可以换成它们；只列 Chat 角色，项目里只用 Agent 角色（ADR 0038）
   const [chatRole, setChatRole] = useState('')
   const chatRoles = agents.filter(pickableChatRole)
-  const wanted = standalone ? chatRole : useAgent ? (project?.defaultAgentId ?? '') : ''
+  const wanted = standalone ? (plugin ? '' : chatRole) : useAgent ? (project?.defaultAgentId ?? '') : ''
   const agent = agents.find((a) => a.id === wanted && a.enabled && scopeOf(a) === (standalone ? 'chat' : 'agent'))
   const agentId = agent ? wanted : ''
   const byCli = !agentId
@@ -96,7 +102,13 @@ export function TaskComposer({
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
   const chatRun = useChatRun(chat).run
   // 没发出去的内容按模式各自记住：切到别的模式再回来还在
-  const draftKey = standalone ? 'new:chat' : fixed ? `new:project:${fixed.id}` : 'new:agent'
+  const draftKey = plugin
+    ? `new:plugin:${plugin}`
+    : standalone
+      ? 'new:chat'
+      : fixed
+        ? `new:project:${fixed.id}`
+        : 'new:agent'
   const [prompt, setPrompt] = useDraft(draftKey)
   // 「+」里引入工作流：只有项目里、用的角色能启动工作流时才有这一项；选中的插成输入框里的一张工作流卡片
   const canFlow = !standalone && !!project && canStartFlow(agents, agentId)
@@ -203,6 +215,7 @@ export function TaskComposer({
           // 只有打开了「独立分支」才传；子对话一律不建独立分支
           isolate: canIsolate && isolate ? true : undefined,
           askUser,
+          plugin,
         }),
       )
       setPrompt('')
@@ -338,7 +351,7 @@ export function TaskComposer({
                 <Bot className="h-4 w-4 shrink-0" />
               </button>
             )}
-            {standalone && chatRoles.length > 0 && (
+            {standalone && !plugin && chatRoles.length > 0 && (
               <AgentPicker
                 scope="chat"
                 // 默认的「助手」在「无」那一项、只供引入的「聊天约束」不能当角色：都不列
