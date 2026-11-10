@@ -22,6 +22,7 @@ import {
   staleLine,
   type ChildSummary,
 } from './child-line'
+import { BugStepDots } from './BugStepDots'
 import { ChildConfirmButton } from './ChildConfirm'
 import { Button } from '@/components/ui/button'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
@@ -461,6 +462,7 @@ function ChildLiveRow({
               className={cn(childLabelClass[l.tone], i > 0 && 'max-[359px]:hidden @max-[300px]:hidden')}
             >
               {l.text}
+              {l.dots !== undefined && <BugStepDots step={l.dots} className="ml-1" />}
             </span>
           ))}
           {/* 行的宽度留给状态标签和耗时：活动文字是补充信息，行够宽才显示（按这一行自己的

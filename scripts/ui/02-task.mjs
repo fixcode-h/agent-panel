@@ -660,6 +660,16 @@ await runShard(import.meta.filename, async (api) => {
     if (!midWide.rows) errors.push('运行区（1024px）：没有列出子对话')
     else if (!midWide.items.some((n) => n.noteShown)) errors.push('运行区（1024px）：行够宽，活动文字却不见了')
     await check(p, '子对话-运行区1024')
+    // 行上的活动文字写「计划这一步 · 最后一次工具调用」（分析稿 U5），不再是回复开头截的一段
+    {
+      const notes = await p
+        .locator('[aria-label="运行中"] span.font-sans.truncate')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('title') || e.textContent || ''))
+      const talk = notes.find((n) => n.includes('我先看了相关代码'))
+      if (talk) errors.push(`运行区：子对话行还在写回复开头那一段（${talk}），应写在做的事`)
+      if (!notes.some((n) => /(读取|编辑|运行命令) \S/.test(n)))
+        errors.push(`运行区：子对话行没有写最后一次工具调用（${notes.join(' / ')}）`)
+    }
     // 文件面板默认最宽 440，挤不出窄行：先把它「拖」到 600（写本地记的宽度），测完删掉。
     // 过程行不再缩进一列头像宽度后同样的窗口里行宽多了 38px，560 时这一行已经放得下活动文字
     await p.evaluate(() => localStorage.setItem('pane:task-panel', '600'))
@@ -1535,10 +1545,15 @@ await runShard(import.meta.filename, async (api) => {
     }
     await p.getByRole('button', { name: '更多操作', exact: true }).first().click()
     if (!(await p.getByRole('menuitem', { name: /^转成弹窗/ }).count())) errors.push('更多操作：菜单里没有「转成弹窗」')
-    for (const name of ['状态', '对话进程']) {
-      const pin = p.getByRole('button', { name: `从标题栏取下：${name}`, exact: true })
-      if (!(await pin.count())) errors.push(`更多操作：「${name}」默认应钉在标题栏`)
+    // 标题栏默认只钉「状态」和「会话栏」（分析稿 U4），对话进程、任务进度这些收在菜单里
+    for (const [name, re] of [
+      ['状态', /^从标题栏取下：状态$/],
+      ['会话栏', /^从标题栏取下：(隐藏|显示)会话栏$/],
+    ]) {
+      if (!(await p.getByRole('button', { name: re }).count())) errors.push(`更多操作：「${name}」默认应钉在标题栏`)
     }
+    if (!(await p.getByRole('button', { name: '钉在标题栏：对话进程', exact: true }).count()))
+      errors.push('更多操作：「对话进程」默认不该钉在标题栏（只留状态和会话栏）')
     await p.getByRole('button', { name: '钉在标题栏：转成弹窗', exact: true }).click()
     await check(p, '任务-更多操作-钉住转成弹窗')
     await p.keyboard.press('Escape')

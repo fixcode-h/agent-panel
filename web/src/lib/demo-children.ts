@@ -3,6 +3,7 @@
  * 从 demo-backend.ts 拆出来（那边顶到了行数上限），演示里没有真的进程和 git，按演示数据给值。
  */
 import { bugStage } from '@shared/bug-diagnosis'
+import { childBugStep, lastToolCall } from '@shared/child-doing'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
 import { openPlan } from '@shared/plan'
 import type { Task } from '@shared/schema'
@@ -61,6 +62,9 @@ export function demoChildRows(task: Task, tasks: Task[], demoCliAlive: (t: Task)
         diagnosis: diagnosisPending(x),
         action: !!pendingAction(x),
         bug: bugStage(x) || undefined,
+        // 和正式后端对齐：Bug 走到第几步、最后一次工具调用（子对话行的五个点和「在做什么」）
+        bugStep: childBugStep(x),
+        lastTool: lastToolCall(x),
         helpers: helpersWorking(x),
         unmerged: x.worktree?.state === 'active',
         // 和正式后端对齐：独立分支目录里还有几个文件没提交（没真的 git，按工作区状态给一个固定的数）

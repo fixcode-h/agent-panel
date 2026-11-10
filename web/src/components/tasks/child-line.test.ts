@@ -159,9 +159,28 @@ test('一轮结束、停在等下一句的子对话不写「正在思考…」�
   })
   const line = childNote(idle, true)
   assert.ok(!line.includes(t('正在思考…')), line)
-  assert.equal(line, [t('等下一句'), '合回'].join(' · '))
+  assert.equal(line, ['合回', t('等下一句')].join(' · '))
   const thinking = closedWaiting({ working: true, waiting: undefined, activity: { thinking: true } })
   assert.ok(childNote(thinking, true).startsWith(t('正在思考…')))
+})
+
+test('执行中的说明写「计划这一步 · 最后一次工具调用」，不写回复开头那一段（分析稿 U5）', () => {
+  const base = closedWaiting({ working: true, cliAlive: true, background: 0, waiting: undefined })
+  // 已经开口说话：activity 只剩那句话，最后一次工具调用单独给（lastTool）
+  const talking = {
+    ...base,
+    activity: { text: '我先看了相关代码。真实执行时会…', plan: { title: '改角标', done: 1, total: 4 } },
+    plan: { done: 1, total: 4, step: '改角标' },
+    lastTool: { kind: 'edit' as const, label: 'web/src/lib/store.ts' },
+  }
+  assert.equal(childNote(talking, true), ['改角标', `${t('编辑')} store.ts`].join(' · '))
+  // 正在调用的工具比上一次的新：用正在调用的
+  const running = { ...talking, activity: { tool: { kind: 'run' as const, label: 'npm test' } } }
+  assert.equal(childNote(running, true), ['改角标', `${t('运行命令')} npm test`].join(' · '))
+  // 没有计划也有工具调用：只写工具调用
+  assert.equal(childNote({ ...talking, plan: undefined }, true), `${t('编辑')} store.ts`)
+  // 计划和工具调用都没有：回退到原来的样子（那句话）
+  assert.equal(childNote({ ...talking, plan: undefined, lastTool: undefined }, true), '我先看了相关代码。真实执行时会…')
 })
 
 test('交了 Bug 诊断报告等你确认（ADR 0045）：还在转圈，状态写「报告待确认」，不写「执行中」', () => {

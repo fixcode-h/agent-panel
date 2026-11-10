@@ -25,6 +25,37 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     `侧栏项目没有按添加时间排序：${order0.join('、')}`,
   )
   await check(p, '侧栏-项目按添加时间', ['商城前台', '运营后台'])
+  // 图标栏能展开成带字的（分析稿 U4）：每格写名字，刷新后还是展开的；收起回到只有图标
+  {
+    const bar = p.locator('nav[aria-label="功能栏"]')
+    const narrowW = (await bar.boundingBox())?.width ?? 0
+    await bar.getByRole('button', { name: '图标旁显示名字', exact: true }).click()
+    await bar
+      .getByText('对话总览', { exact: true })
+      .waitFor({ timeout: 3000 })
+      .catch(() => {})
+    for (const name of ['对话总览', '工作流', '设置'])
+      if (
+        !(await bar
+          .getByText(name, { exact: true })
+          .isVisible()
+          .catch(() => false))
+      )
+        errors.push(`图标栏：展开后没有写出「${name}」`)
+    if (((await bar.boundingBox())?.width ?? 0) <= narrowW) errors.push('图标栏：展开后没有变宽')
+    await check(p, '图标栏-展开')
+    await p.reload()
+    if (
+      !(await bar
+        .getByRole('button', { name: '只显示图标', exact: true })
+        .isVisible()
+        .catch(() => false))
+    )
+      errors.push('图标栏：刷新后没记住展开')
+    await bar.getByRole('button', { name: '只显示图标', exact: true }).click()
+    if (await bar.getByText('对话总览', { exact: true }).count()) errors.push('图标栏：收起后还写着名字')
+    await p.locator('[data-sidebar] section button[title^="打开项目「"]').first().waitFor({ timeout: 10000 })
+  }
   // 拖住「运营后台」的手柄，放到「商城前台」上：出现插入提示
   const orderGrip = p.getByRole('button', { name: '拖动调整「运营后台」的顺序' })
   const target = (await p.locator('[data-sidebar] section').nth(0).boundingBox()) ?? null

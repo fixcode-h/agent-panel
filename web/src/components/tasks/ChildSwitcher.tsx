@@ -9,6 +9,7 @@ import { UnreadDot } from '@/components/ui/badge'
 import { IconButton } from '@/components/ui/icon-button'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { AnalysisMark } from './AnalysisMark'
+import { BugStepDots } from './BugStepDots'
 import { childClosedHint, childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
 
 /**
@@ -58,6 +59,7 @@ export function ChildRowContent({
             <span key={l.text} className={childLabelClass[l.tone]}>
               {l.icon === 'check' && <CheckCircle2 className="h-3 w-3" />}
               {l.text}
+              {l.dots !== undefined && <BugStepDots step={l.dots} className="ml-1" />}
             </span>
           ))}
         </span>

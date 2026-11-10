@@ -13,7 +13,12 @@
  * changed-tests 对 scripts/ui/*.mjs 的改动按分片编号直接映射。
  */
 export const UI_SHARD_COVERS = {
-  '01-composer': ['web/src/components/chat/', 'web/src/pages/ChatPage.tsx'],
+  '01-composer': [
+    'web/src/components/chat/',
+    'web/src/pages/ChatPage.tsx',
+    // 输入框占位写明模式（分析稿 U10）
+    'web/src/components/tasks/composer-hint.ts',
+  ],
   // 任务页拆成 02 / 02b / 02c 三片：它们都经由 TaskView 的渲染树，但断言落在不同组件上。
   // 只登记「这一片真的断言了它渲染的东西」的文件：三片登记同一批前缀时，改任何一个 TaskView
   // 下的组件都要跑三片（02-task 一片就 2 分钟）。拿不准的组件不登记：changed-tests 映射不到会
@@ -31,6 +36,9 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/Evolution.tsx',
     'web/src/components/tasks/ChildSwitcher.tsx',
     'web/src/components/tasks/RunningNow.tsx',
+    // 子对话行的「计划这一步 · 最后一次工具调用」（分析稿 U5）
+    'web/src/components/tasks/child-line.ts',
+    'shared/child-doing.ts',
     'web/src/components/tasks/Messages.tsx',
     'web/src/components/tasks/TaskMeta.tsx',
     // 输入框下的「测试记录」（dev 的「任务-测试记录」断言它）
@@ -43,6 +51,13 @@ export const UI_SHARD_COVERS = {
   ],
   '02b-subagent': [
     'web/src/components/tasks/TaskView.tsx',
+    // 诊断报告：Bug 行的五个点（U8）、停靠到右栏、标注栏收起、方案表选定列（U7）
+    'web/src/components/tasks/BugStepDots.tsx',
+    'web/src/components/tasks/diagnosis-window.tsx',
+    'web/src/components/tasks/review-table.ts',
+    'web/src/components/tasks/ReviewDialog.tsx',
+    'web/src/components/tasks/TaskFiles.tsx',
+    'web/src/components/tasks/HeaderPins.tsx',
     'web/src/components/tasks/TaskMeta.tsx',
     'web/src/components/tasks/RunningNow.tsx',
     'web/src/components/tasks/Messages.tsx',
@@ -188,6 +203,16 @@ export const UI_SHARD_COVERS = {
     'shared/bug-stats.ts',
   ],
   '10-toast': ['web/src/lib/toast.ts', 'web/src/lib/toast-queue.ts'],
+  // 手机宽度走一遍「首页 → 总览 → 点进去 → 看报告 → 确认」（分析稿 U9）
+  '13-mobile': [
+    'web/src/components/tasks/TaskComposer.tsx',
+    'web/src/components/tasks/ChatModelPicker.tsx',
+    'web/src/components/tasks/ReviewDialog.tsx',
+    'web/src/components/tasks/DiagnosisDialog.tsx',
+    'web/src/components/tasks/TaskView.tsx',
+    'web/src/pages/OverviewPage.tsx',
+    'web/src/components/overview/',
+  ],
   // 弹窗调整大小：只登记专门承载这套逻辑的两个文件；modal.tsx / dialog.tsx 是所有页面都用的
   // 公共外壳，不登记在这里（changed-tests 映射不到会提示跑全量界面检查，宁可多跑）
   '12-modal-resize': ['web/src/lib/modal-size.ts', 'web/src/components/ui/modal-resize.tsx'],
