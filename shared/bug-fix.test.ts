@@ -57,6 +57,7 @@ const input = (over: Partial<DiagnosisInput> = {}): DiagnosisInput => ({
   verify: 'login.test.ts 的超时用例改前失败、改后通过',
   level: 'quick',
   attribution: { category: 'recent', change: 'a1b2c3', author: '', date: '', title: '重试改成按秒', how: 'blame' },
+  rating: { tier: 'low', percent: 95 },
   ...over,
 })
 let n = 0

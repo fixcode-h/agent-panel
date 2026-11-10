@@ -98,6 +98,9 @@ const LEVEL_TEXT: Record<BugLevel, string> = {
   deep: '深入',
 }
 
+/** 责任在某次代码改动上的几类：要给出提交和提交人 */
+const BLAME_BY_CHANGE = ['current', 'recent', 'legacy']
+
 const ATTRIBUTION_NEED =
   'attribution 要写版本归因：引入点（提交 / CL / rev、作者、日期、标题）、怎么确定的（how）和责任类别（category）；查不到写 category: unknown，note 写试过什么、还缺什么。'
 
@@ -178,6 +181,11 @@ function causeProblem(c: BugCase): string {
     return '根因还没证实（confirmed 是 false）：交 phase: evidence，写这一轮要加的日志，用户复现贴日志后再分析。'
   const a = c.attribution
   if (!a || (a.category === 'unknown' && !a.note.trim())) return ATTRIBUTION_NEED
+  // 是代码改动引入的就要说清是谁提交的（用户 2026-11-10 定）；Git 里写了提交号面板会自己取，这里只拦两样都没有的
+  if (BLAME_BY_CHANGE.includes(a.category) && !a.change.trim() && !a.author.trim())
+    return 'attribution 的责任类别是代码改动（current / recent / legacy），要写引入的那次提交（change：提交号 / CL / rev）和提交人（author，照版本记录原文）；项目没有版本管理、查不到就把 category 写成 unknown，note 写试过什么。'
+  if (!c.rating)
+    return 'rating 要写根因评级：tier（low 低级：粗心疏漏；mid 中级：逻辑和边界；high 高级：设计、并发、跨模块）和 percent（对根因的把握，0–100 的整数），why 用一句话说依据。'
   const full = c.level !== 'quick'
   const lack: string[] = []
   if (full && !c.timeline.some((x) => x.kind === 'change'))

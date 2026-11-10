@@ -56,6 +56,14 @@ export function bugSource(dir: string, baseRef = ''): BugSource | undefined {
         return undefined
       }
     },
+    commit(rev) {
+      // 提交号是 Agent 写的：先确认它确实是一个提交（写成选项、路径的在这里就不成立），再取作者
+      if (gitSync(dir, ['cat-file', '-e', `${rev}^{commit}`])?.code !== 0) return undefined
+      const out = gitSync(dir, ['show', '-s', '--date=short', '--format=%an%x00%ad%x00%s', rev])
+      if (!out || out.code !== 0) return undefined
+      const [author = '', date = '', title = ''] = out.out.trim().split('\0')
+      return author ? { author, date, title } : undefined
+    },
     show(rev, file) {
       try {
         return execFileSync('git', ['-C', dir, 'show', '--format=', '--no-color', rev, '--', file], {

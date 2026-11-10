@@ -134,6 +134,8 @@ export function ToolFailuresChip({ task }: { task: Task }) {
         {all.failed > 0 ? <AlertTriangle className="h-3.5 w-3.5" /> : <Wrench className="h-3.5 w-3.5" />}
         {all.calls ? (
           <>
+            {/* 数字前写明是什么：只有「15 失败 2」看不出是工具调用（分析稿 U3） */}
+            <span>{t('工具')}</span>
             <span className="font-mono tabular-nums">{all.calls}</span>
             {all.failed > 0 && <span className="font-mono tabular-nums">{t('失败 {n}', { n: all.failed })}</span>}
           </>

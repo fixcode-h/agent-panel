@@ -30,7 +30,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt, planLeft, taskBusy, taskDoneDot, taskState } from '@shared/task'
+import { askedAt, byAskedAt, planLeft, taskBusy, taskDoneDot, taskState, taskWaitText } from '@shared/task'
 import { pendingAction } from '@shared/user-action'
 import {
   SIDEBAR_GROUP_LABEL,
@@ -225,6 +225,8 @@ export function TaskRow({
                 status={
                   <TaskRowStatus
                     needs={attention === 'ask'}
+                    // 是名下的子对话在等时写成「子对话等你处理」，和标题栏同一句（分析稿 U2）
+                    needsText={attention === 'ask' ? taskWaitText(task) : undefined}
                     acting={attention === 'ask' && !!pendingAction(task)}
                     kids={busy ? (task.childrenWorking ?? 0) : 0}
                     running={busy}
