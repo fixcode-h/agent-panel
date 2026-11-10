@@ -113,8 +113,8 @@ test('交修复：改了的文件都要写改了什么、为什么；报告上�
   assert.match(md, /## 改了哪些文件/)
   assert.match(md, /retries 按次数累加，上限也要按次数/)
   assert.match(md, /## 改动的代码/)
-  assert.match(md, /### login\.ts\n\n`web\/src\/lib\/login\.ts` · \+1 −1/)
-  assert.match(md, /```diff\n@@ -40,5 \+40,6 @@[\s\S]*\+ {2}const max = MAX_RETRIES/)
+  assert.match(md, /### login\.ts\n\n`max` 换成/)
+  assert.match(md, /```diff file=web%2Fsrc%2Flib%2Flogin\.ts\n@@ -40,5 \+40,6 @@[\s\S]*\+ {2}const max = MAX_RETRIES/)
   assert.doesNotMatch(md, /排查-登录/)
   // 修复等你确认：不能改文件、不能交验证
   assert.ok('deny' in editScope(tk.diagnoses!))

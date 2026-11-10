@@ -1,4 +1,4 @@
-import { lineClass } from './diff-rows'
+import { UnifiedDiff } from '@/components/ui/UnifiedDiff'
 import { ruleText } from '@shared/allow-rules'
 import { useState } from 'react'
 import { toast } from '@/lib/toast'
@@ -59,23 +59,15 @@ export function TaskRequestCard({ task, onAnswered }: { task: Task; onAnswered: 
   )
 }
 
-/** 改文件请求的差异：按行上色，只显示替换的那几段（shared/allow-rules.ts 的 editDiff），太长时在框里滚动 */
-function RequestDiff({ diff }: { diff: string }) {
-  const lines = diff.split('\n')
+/** 改文件请求的差异：只显示替换的那几段（shared/allow-rules.ts 的 editDiff），和别处的 diff 一个画法，太长时在框里滚动 */
+function RequestDiff({ diff, file }: { diff: string; file?: string }) {
   return (
-    <div
-      aria-label={t('要改的内容')}
-      className="max-h-64 overflow-auto rounded-lg border bg-field/50 py-1 font-mono text-footnote leading-relaxed"
-    >
-      {lines.map((l, i) => {
-        const cls = lineClass(l)
-        return cls === null ? null : (
-          <div key={i} className={cn('px-3 whitespace-pre-wrap [overflow-wrap:anywhere]', cls)}>
-            {l.startsWith('@@') ? '⋯' : l || ' '}
-          </div>
-        )
-      })}
-    </div>
+    <UnifiedDiff
+      diff={diff}
+      file={file}
+      label={t('要改的内容')}
+      className="max-h-64 overflow-y-auto rounded-lg border bg-field/50"
+    />
   )
 }
 

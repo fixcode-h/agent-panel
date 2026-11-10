@@ -285,7 +285,9 @@ export function Markdown({
     }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]')
     if (!btn) return
-    const code = btn.closest('.md-code')?.querySelector('code')?.textContent ?? ''
+    // diff 块画成了行号、记号、代码三栏：复制原文（diff-html.ts 放在 data-src 上）
+    const box = btn.closest<HTMLElement>('.md-code')
+    const code = box?.dataset.src ?? box?.querySelector('code')?.textContent ?? ''
     void copyText(code, { fail: false }).then((ok) => {
       if (!ok) return
       // 「复制」「已复制」两个字样叠在按钮里（workflow-doc.ts 的 codeBar），切 data-done 交叉切换，按钮宽度不跳

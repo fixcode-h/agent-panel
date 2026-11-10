@@ -152,11 +152,13 @@ export function reproKindMd(d: Pick<Diagnosis, 'reproKind'>): string {
 }
 
 /** diff 原文摆成 diff 代码块（增删行着色） */
-export const diffBlock = (diff: string) => `${fenceOf(diff)}diff\n${diff.replace(/\n$/, '')}\n${fenceOf(diff)}`
+/** file 写进信息串（file=，URL 编码）：界面顶栏写文件名、按语言着色（web/src/lib/diff-html.ts） */
+export const diffBlock = (diff: string, file?: string) =>
+  `${fenceOf(diff)}diff${file ? ` file=${encodeURIComponent(file)}` : ''}\n${diff.replace(/\n$/, '')}\n${fenceOf(diff)}`
 
 export const attributionDiffMd = (diff: string | undefined) =>
   diff?.trim() ? `**${t('引入的那段改动')}**\n\n${diffBlock(diff)}` : ''
 
 /** 验证页：出错点那几段代码修前（根因那一版的快照）和现在的对照 */
 export const fixDiffsMd = (d: Pick<Diagnosis, 'fixDiffs'>) =>
-  d.fixDiffs.map((x) => `**${x.id}** ${at(x.file)}\n\n${diffBlock(x.diff)}`).join('\n\n')
+  d.fixDiffs.map((x) => `**${x.id}** ${at(x.file)}\n\n${diffBlock(x.diff, x.file)}`).join('\n\n')

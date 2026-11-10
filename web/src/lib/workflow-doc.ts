@@ -6,6 +6,7 @@ marked.use({ extensions: mathExtensions })
 import type { Agent } from '@shared/schema'
 import { getLang, t } from '@shared/i18n'
 import type { LineMark } from '@shared/bug-quotes-md'
+import { markdownDiff } from './diff-html'
 
 type Hljs = typeof import('highlight.js/lib/common').default
 let hljs: Hljs | null = null
@@ -19,6 +20,8 @@ export function ensureHljs() {
   return hljsLoad
 }
 export const hljsReady = () => !!hljs
+/** 加载好的 highlight.js（没加载返回 null）：diff 组件按文件语言着色用 */
+export const loadedHljs = () => hljs
 
 /** 工作流说明的模板：目标、规范、完成标准（步骤在流程图里编辑） */
 export function docTemplate(main: Agent | undefined, members: { agent: Agent; responsibility: string }[]) {
@@ -217,6 +220,11 @@ renderer.code = ({ text, lang }) => {
   if (name === 'mermaid') {
     const src = lineSpans(escape(text))
     return `<div class="md-mermaid" data-src="${escape(text)}"><div class="md-code-bar"><span class="md-code-lang">mermaid <small>· ${t('正在绘制')}</small></span></div><pre><code>${src.html}</code></pre></div>`
+  }
+  // diff 和界面里别处的 diff 一个画法（diff-html.ts）；夹着别的文字认不出时照普通代码块画
+  if (name === 'diff' || name === 'patch') {
+    const diff = markdownDiff(text, lang ?? '', liveRender ? null : hljs, codeBar)
+    if (diff) return diff
   }
   let body = escape(text)
   // 流式输出时每 200ms 整段重新渲染，高亮先跳过；这段输出完再高亮一次，最终效果不变

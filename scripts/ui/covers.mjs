@@ -82,6 +82,8 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/ReviewDialog.tsx',
     'shared/bug-fix-md.ts',
     'shared/bug-md.ts',
+    'web/src/lib/diff-html.ts',
+    'web/src/components/ui/UnifiedDiff.tsx',
   ],
   // 对话里「学到经验」的卡片（演示数据在 demo-experience.ts）
   '02e-learned': [

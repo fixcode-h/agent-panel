@@ -25,7 +25,7 @@ import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { useFileRef, type FileRefTarget } from '@/components/files/FileRefLayer'
 import { DiffDialog } from './DiffDialog'
-import { DIFF_GUTTER, DIFF_HUNK, DIFF_TONE } from '@/components/ui/diff-tone'
+import { UnifiedDiff } from '@/components/ui/UnifiedDiff'
 import { CommandDialog, OutputDialog } from './ToolDialog'
 import { RunDialog } from './RunCard'
 import { useDiagnosisWindow } from './diagnosis-window'
@@ -85,86 +85,9 @@ export const toolTone: Record<keyof typeof toolIcon, string> = {
   other: 'text-subtle',
 }
 
-interface DiffLine {
-  kind: 'add' | 'del' | 'ctx' | 'hunk'
-  text: string
-  old?: number
-  new?: number
-}
-
-/** 解析 unified diff（也接受没有行号的 @@ @@ 段头）：每行带上改前、改后的行号 */
-export function parseDiff(diff: string): DiffLine[] {
-  const out: DiffLine[] = []
-  let o = 0
-  let n = 0
-  let numbered = false
-  for (const raw of diff.replace(/\n$/, '').split('\n')) {
-    if (raw.startsWith('+++') || raw.startsWith('---') || raw.startsWith('diff ') || raw.startsWith('index ')) continue
-    const h = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/)
-    if (h) {
-      o = Number(h[1])
-      n = Number(h[2])
-      numbered = true
-      out.push({ kind: 'hunk', text: h[3].trim() })
-      continue
-    }
-    if (raw.startsWith('@@')) {
-      numbered = false
-      if (out.length) out.push({ kind: 'hunk', text: '' })
-      continue
-    }
-    const c = raw[0]
-    const text = raw.slice(1)
-    if (c === '+') out.push({ kind: 'add', text, new: numbered ? n++ : undefined })
-    else if (c === '-') out.push({ kind: 'del', text, old: numbered ? o++ : undefined })
-    else
-      out.push({
-        kind: 'ctx',
-        text: c === ' ' ? text : raw,
-        old: numbered ? o++ : undefined,
-        new: numbered ? n++ : undefined,
-      })
-  }
-  return out
-}
-
-/** 文件改动：和 Claude Code 一样按行显示，左边改前 / 改后的行号，新增绿色、删除红色 */
-export function DiffView({ diff }: { diff: string }) {
-  const rows = useMemo(() => parseDiff(diff), [diff])
-  const numbered = rows.some((r) => r.old !== undefined || r.new !== undefined)
-  return (
-    <div className="max-h-[420px] overflow-auto font-mono text-footnote leading-[1.6]">
-      <table className="w-full border-collapse">
-        <tbody>
-          {rows.map((r, i) => {
-            if (r.kind === 'hunk')
-              return (
-                <tr key={i}>
-                  <td colSpan={numbered ? 4 : 2} className={DIFF_HUNK}>
-                    {r.text || '⋯'}
-                  </td>
-                </tr>
-              )
-            const tone = DIFF_TONE[r.kind]
-            return (
-              <tr key={i} className={tone.row}>
-                {numbered && (
-                  <>
-                    <td className={cn(DIFF_GUTTER, 'align-top', tone.gutter)}>{r.old ?? ''}</td>
-                    <td className={cn(DIFF_GUTTER, 'align-top', tone.gutter)}>{r.new ?? ''}</td>
-                  </>
-                )}
-                <td className={cn('w-5 pl-2 align-top select-none', tone.sign)}>
-                  {r.kind === 'add' ? '+' : r.kind === 'del' ? '-' : ' '}
-                </td>
-                <td className="pr-3 whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">{r.text || ' '}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
+/** 文件改动：和差异弹窗、报告里的 diff 一个画法（components/ui/UnifiedDiff.tsx，照 Claude Code）；file 用来按语言着色 */
+function DiffView({ diff, file }: { diff: string; file?: string }) {
+  return <UnifiedDiff diff={diff} file={file} className="max-h-[420px] overflow-y-auto" />
 }
 
 /**
@@ -748,7 +671,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
           <div className="divide-y divide-pop-edge">
             {isDiff ? (
               <div className="relative">
-                <DiffView diff={input} />
+                <DiffView diff={input} file={tool.label} />
                 <button
                   onClick={() => setWin('edit')}
                   className="absolute top-1.5 right-2 cursor-pointer rounded-md bg-card/90 px-2 py-1 font-sans text-caption text-muted hover:text-fg"

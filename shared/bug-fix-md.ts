@@ -105,16 +105,15 @@ export function fixSections(d: Diagnosis, list: Diagnosis[]): { main: string[]; 
     ]),
   )
   const extra = rows.filter((r) => r.extra)
-  // 每个文件一小节（目录里能跳）：位置和增删、改了什么和为什么、diff；用户直接在代码上选中标注
+  // 每个文件一小节（目录里能跳）：改了什么和为什么、diff（顶栏写文件名和增删数）；用户直接在代码上选中标注
   const code = rows
     .filter((r) => r.diff)
     .map((r) =>
       [
         `### ${baseName(r.file)}`,
-        `${at(r.file)} · +${r.add} −${r.del}`,
         r.what && codeTerms(r.what),
         r.why && `**${t('为什么')}**：${codeTerms(r.why)}`,
-        diffBlock(r.diff!),
+        diffBlock(r.diff!, r.file),
       ]
         .filter(Boolean)
         .join('\n\n'),

@@ -25,7 +25,7 @@ import { useData, useNav, type Route } from '@/lib/data'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { DIFF_TONE } from '@/components/ui/diff-tone'
+import { UnifiedDiff } from '@/components/ui/UnifiedDiff'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 import { useFileOpen } from './FileDialog'
 
@@ -535,15 +535,8 @@ function FixCard({ f, result }: { f: DiagnosisFix; result?: FixApplyResult }) {
       )}
       <p className="px-3 py-2.5 text-body leading-relaxed">{f.change}</p>
       {rows.length > 0 && (
-        <div className="overflow-x-auto font-mono text-footnote leading-5 whitespace-pre">
-          {rows.map(([k, x], i) => (
-            // 设计稿里删掉、加上的行连字一起染色，不只是行首的 -/+
-            <div key={i} className={cn('px-3', DIFF_TONE[k].row, DIFF_TONE[k].sign)}>
-              <span className={cn('mr-2 select-none', DIFF_TONE[k].sign)}>{k === 'add' ? '+' : '-'}</span>
-              {x}
-            </div>
-          ))}
-        </div>
+        // 和别处的 diff 一个画法（UnifiedDiff）：删掉的、加上的行整行着色
+        <UnifiedDiff rows={rows.map(([kind, text]) => ({ kind, text }))} wrap={false} />
       )}
     </section>
   )

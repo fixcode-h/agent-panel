@@ -1875,6 +1875,81 @@ body,
 }
 
 /*
+ * 所有 diff 的统一画法（照 Claude Code，web/src/lib/diff-html.ts 出 HTML）：一列行号、一列 +/− 记号、代码；
+ * 加的行绿底、删的行红底，行号槽再深一层；段与段之间一条浅底窄行「⋯ 第 n 行」。行号和记号选不中，复制、标注只带代码。
+ * 默认不折行、整块横向滚动；外层带 data-wrap 时折行（界面组件默认折行，Markdown 代码块点「折行」切换）
+ */
+.cdiff {
+  @apply overflow-x-auto font-mono text-footnote leading-[1.65];
+}
+.chat-md .cdiff {
+  font-size: calc(var(--md-pre-size) * var(--md-base));
+}
+.cdiff-in {
+  @apply inline-block min-w-full py-1;
+}
+.cdiff[data-wrap] .cdiff-in,
+.md-code[data-wrap] .cdiff-in {
+  @apply block;
+}
+.cdiff-row {
+  @apply flex whitespace-pre;
+}
+.cdiff[data-wrap] .cdiff-row,
+.md-code[data-wrap] .cdiff-row {
+  @apply whitespace-pre-wrap [overflow-wrap:anywhere];
+}
+.cdiff-n {
+  @apply w-11 shrink-0 bg-field/60 pr-2 text-right text-subtle/70 tabular-nums select-none;
+}
+.cdiff-s {
+  @apply w-5 shrink-0 text-center select-none;
+}
+.cdiff-c {
+  @apply min-w-0 flex-1 pr-4;
+}
+.cdiff-ctx .cdiff-c {
+  color: color-mix(in srgb, var(--fg) 88%, transparent);
+}
+.cdiff-add {
+  @apply bg-success/10;
+}
+.cdiff-add .cdiff-n {
+  @apply bg-success/20 text-success;
+}
+.cdiff-add .cdiff-s {
+  @apply text-success;
+}
+.cdiff-del {
+  @apply bg-danger/10;
+}
+.cdiff-del .cdiff-n {
+  @apply bg-danger/20 text-danger;
+}
+.cdiff-del .cdiff-s {
+  @apply text-danger;
+}
+.cdiff-hunk {
+  @apply bg-field/70 px-3 py-0.5 font-sans text-caption text-subtle select-none;
+}
+.cdiff-hunk .cdiff-ctx {
+  @apply ml-2 font-mono opacity-80;
+}
+.cdiff-note {
+  @apply px-3 text-subtle/70 italic;
+}
+/* 顶栏的增删数：+n 绿、−n 红 */
+.cdiff-stat {
+  @apply mr-1 font-mono tabular-nums;
+}
+.cdiff-stat-add {
+  @apply text-success;
+}
+.cdiff-stat-del {
+  @apply text-danger;
+}
+
+/*
  * mermaid（Markdown.tsx 画图、web/src/lib/mermaid-fx.ts 加动效和缩放）：顶栏 + 画布 + 收起的源码。
  * 画布带一层淡紫光晕和点阵底（设置里可关），图可以拖动、Ctrl+滚轮缩放、全屏看
  */
