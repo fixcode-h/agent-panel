@@ -14,6 +14,8 @@ import { ReviewDialog, type NoteKind, type ReviewRaw } from './ReviewDialog'
 import { DiagnosisStages } from './DiagnosisStages'
 import { DiagnosisCard, ReportFold } from './DiagnosisCard'
 import { CleanupStatus, useCancelCleanup } from './DiagnosisCleanup'
+import { LogWatch, PatchReminder, usePatch, WorkspacePatch } from './DiagnosisEvidence'
+import { patchKindOf } from '@shared/bug-patch'
 
 /**
  * Bug 的诊断报告（ADR 0045）：父对话派来的 Bug，子对话每到一个关口交一版（论证、根因、修复方案、验证），
@@ -251,7 +253,12 @@ export function DiagnosisDialog({
   const changed = task.changes?.map((c) => c.path)
   // 修复、验证这两步代码已经改了：取消时可以选连修复一起撤掉
   const cleanup = useCancelCleanup(task.id, !!last && (phaseOf(last) === 'fix' || phaseOf(last) === 'verify'))
+  // 排查补丁（分析稿 B1）：等你复现 / 验证时能把独立分支里的日志或修复放到你的工作区；打开时查一次状态
+  const patchKind = patchKindOf(last)
+  const patch = usePatch(task.id, open && !!last)
   if (!last) return null
+  // 面板自己取日志（分析稿 B3）：等你复现、等你验证时，报告里写了日志文件就出「开始复现 / 取日志」
+  const watchWhere = patchKind ? (last.awaiting?.collect ?? last.collect)?.where : undefined
   const req: Pick<TaskRequest, 'id' | 'title' | 'detail'> = {
     // 等你复现是同一版回到等你：换一个 id，标注和输入从头开始
     id: `${task.id}:${last.version}${last.awaiting ? ':logs' : ''}`,
@@ -292,8 +299,14 @@ export function DiagnosisDialog({
       onOpenChange={onOpenChange}
       kinds={KINDS()}
       versions={versionsOf(list, author, snippets, changed, teamNames, (d) => (
-        <CleanupStatus task={task} d={d} onDone={onDone} />
+        <>
+          {d === last && <WorkspacePatch patch={patch} kind={patchKind} />}
+          <CleanupStatus task={task} d={d} onDone={onDone} />
+        </>
       ))}
+      overallTools={
+        watchWhere ? (fill) => <LogWatch key={req.id} taskId={task.id} where={watchWhere} onFill={fill} /> : undefined
+      }
       initialVersion={version ? String(version) : undefined}
       presets={presets}
       readOnly={last.status !== 'pending'}
@@ -337,8 +350,18 @@ export function DiagnosisDialog({
         label: t('取消修复'),
         title: t('取消这次修复？'),
         description: cleanup.description,
-        extra: cleanup.extra,
-        onAsk: cleanup.ask,
+        // 补丁还在你的工作区里：提醒先还原（取消后分支不合回，留在工作区的日志、修复没人管）
+        extra:
+          patch.status?.applied || cleanup.extra ? (
+            <div className="flex flex-col gap-3">
+              <PatchReminder patch={patch} />
+              {cleanup.extra}
+            </div>
+          ) : undefined,
+        onAsk: () => {
+          cleanup.ask()
+          patch.refresh()
+        },
         confirm: t('不修了'),
         // 代码里有临时日志：服务端返回叫它删日志的话，交给子对话（删完面板核对干净才关闭报告，用户 2026-11-10 定）；
         // 没有日志就不发话：交报告那一轮已经结束了，计划由服务端收口，它停着等你的下一句

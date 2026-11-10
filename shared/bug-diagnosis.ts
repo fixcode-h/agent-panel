@@ -450,6 +450,8 @@ export function submitDiagnosis(
     before: (task.changes ?? []).map((x) => normPath(x.path)).filter(Boolean),
     fixDiffs: (phase === 'fix' || phase === 'verify') && src ? fixDiffs(list, src) : [],
     fixFiles,
+    // 环境：第一份报告时面板采集一次，后面几份沿用（中途重采会把「出问题时的环境」换成排查到一半的）
+    env: list.find((x) => x.env)?.env ?? src?.env?.(),
   }
   ;(task.diagnoses ??= []).push(d)
   // 草稿留着：下一版从它改起，用户只问了几条时别的小节不用重写

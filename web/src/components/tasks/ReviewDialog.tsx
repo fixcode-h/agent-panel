@@ -86,6 +86,7 @@ export function ReviewDialog({
   attach,
   overallPlaceholder,
   initialVersion,
+  overallTools,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -137,6 +138,8 @@ export function ReviewDialog({
   overallPlaceholder?: string
   /** 打开时先看哪一版（versions 的 key）：对话里点某一份报告的卡片打开的就是那一份；之后换了请求仍回到最新 */
   initialVersion?: string
+  /** 整体意见框上面多放的（诊断报告「面板自己取日志」）：fill 把取到的文字整个填进整体意见框 */
+  overallTools?: (fill: (text: string) => void) => ReactNode
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -467,6 +470,7 @@ export function ReviewDialog({
             ))}
           </div>
           <div className="border-t px-3 py-3">
+            {!locked && overallTools?.(setOverall)}
             {attach ? (
               <OverallComposer
                 value={overall}

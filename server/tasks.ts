@@ -67,6 +67,7 @@ import { registerChildrenRoutes } from './tasks/children-routes.ts'
 import { registerProcessRoutes } from './tasks/process-routes.ts'
 import { registerLifecycleRoutes } from './tasks/lifecycle-routes.ts'
 import { registerDiagnosisRoutes } from './tasks/diagnosis-routes.ts'
+import { registerEvidenceRoutes } from './tasks/evidence-routes.ts'
 import { registerUserActionRoutes } from './tasks/user-actions.ts'
 import { registerListRoutes } from './tasks/list-routes.ts'
 import { createIdleAsk } from './tasks/idle-ask.ts'
@@ -703,6 +704,7 @@ export function tasksApi(deps: {
   registerProcessRoutes(scope)
   registerLifecycleRoutes(scope)
   registerDiagnosisRoutes(scope)
+  registerEvidenceRoutes(scope)
   registerUserActionRoutes(scope)
   registerReadRoutes(scope)
   const { prewarmChat, createTask } = registerConversationRoutes(scope)

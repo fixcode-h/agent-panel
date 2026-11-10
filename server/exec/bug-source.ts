@@ -26,8 +26,11 @@ function gitSync(dir: string, args: string[]) {
   return r.error ? undefined : { code: r.status ?? 1, out: r.stdout ?? '' }
 }
 
-/** baseRef：对话开始时的提交（Task.baseRef），没有或找不到时和 HEAD 比 */
-export function bugSource(dir: string, baseRef = ''): BugSource | undefined {
+/**
+ * baseRef：对话开始时的提交（Task.baseRef），没有或找不到时和 HEAD 比；
+ * env：采集环境（server/exec/bug-env.ts），交第一份报告时才调
+ */
+export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): BugSource | undefined {
   if (!dir) return undefined
   let base: string | undefined
   const baseOf = () =>
@@ -38,6 +41,7 @@ export function bugSource(dir: string, baseRef = ''): BugSource | undefined {
           ? 'HEAD'
           : '')
   return {
+    env,
     diff(file) {
       const b = baseOf()
       let out = b ? gitSync(dir, ['diff', '--no-color', b, '--', file])?.out : ''

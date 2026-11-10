@@ -64,6 +64,8 @@ import type { SearchHit } from '@shared/task-search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
 import type { DiagnosisDecision } from '@shared/bug-diagnosis'
+import type { PatchResult, PatchStatus } from '@shared/bug-patch'
+import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug-log-watch'
 import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
 import type { LessonReviewItem } from '@shared/lesson-review'
@@ -922,6 +924,19 @@ export const api = {
   /** 临时日志没删干净：retry 让它再删一次（返回交给它的话），finish 不再删、直接关闭报告 */
   cleanupAction: (id: string, action: 'retry' | 'finish') =>
     request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis-cleanup`, json('POST', { action })),
+  /** 排查补丁（分析稿 B1）：独立分支里的临时日志 / 修复有没有放在你的工作区里；不是 Git 独立分支的对话 eligible 为 false */
+  patchStatus: (id: string) => request<PatchStatus>(`/tasks/${id}/diagnosis-patch`),
+  /** apply 放到工作区、restore 还原、forget 我自己处理（不再记）；ok 为 false 时什么都没动，reason 是说明 */
+  patchAction: (id: string, action: 'apply' | 'restore' | 'forget') =>
+    request<PatchResult>(`/tasks/${id}/diagnosis-patch`, json('POST', { action })),
+  /** 面板自己取日志（分析稿 B3）：之前点没点过「开始复现」 */
+  logWatchStatus: (id: string) => request<LogWatchStatus>(`/tasks/${id}/diagnosis-log`),
+  /** start 记下日志文件现在多大，fetch 取新增的部分；confirm：报告里写的文件在项目目录外面，用户点了确认 */
+  logWatch: <A extends 'start' | 'fetch'>(id: string, action: A, confirm = false) =>
+    request<A extends 'start' ? LogStartResult : LogFetchResult>(
+      `/tasks/${id}/diagnosis-log`,
+      json('POST', { action, confirm }),
+    ),
   answerRequest: (
     id: string,
     rid: string,

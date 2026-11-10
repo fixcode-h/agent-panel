@@ -6,6 +6,7 @@ import { demoChildRows } from './demo-children'
 import { seedChatRail } from './demo-chat-rail'
 import { demoOwnedRun } from './demo-flow-run'
 import { decideDiagnosis } from '@shared/bug-diagnosis'
+import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { demoFlowRun } from './demo-flow-run'
@@ -3461,6 +3462,7 @@ function tasksRoute(
     persist()
     return task
   }
+  if (sub === 'diagnosis-patch' || sub === 'diagnosis-log') return demoEvidence(task, sub, method, body)
   // 演示里没有真的代码目录：取消修复时查不到临时日志，直接按「没有日志」关闭
   if (sub === 'diagnosis-cleanup')
     return method === 'POST' ? { task, message: '' } : { found: [], created: [], isolated: false }

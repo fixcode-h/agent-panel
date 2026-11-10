@@ -352,6 +352,37 @@ export const CleanupState = z.object({
 })
 export type CleanupState = z.infer<typeof CleanupState>
 
+/**
+ * 环境（面板自动采集，分析稿 B4）：交第一份报告时面板自己取，不靠 Agent 填（Agent 填的经常是「未知」）。
+ * 每一项都可能取不到（不是 Git 仓库、命令超时），取不到就留空 / 不带，报告里只显示取到的
+ */
+export const BugEnv = z.object({
+  at: str(40),
+  /** 操作系统和版本，例如 Windows 11 Pro 10.0.26100 (x64) */
+  os: str(200),
+  node: str(50),
+  /** CLI 的名字和模型：从任务取 */
+  cli: str(100),
+  model: str(200),
+  /** 项目目录（用户的工作区）现在的分支 */
+  branch: str(300),
+  /** 最近 10 次提交：短哈希、标题、作者、日期 */
+  commits: z
+    .array(z.object({ hash: str(40), title: str(300), author: str(200), date: str(40) }))
+    .max(10)
+    .catch([])
+    .default([]),
+  /** 未提交改动的文件（最多 30 个，多出来的只记个数） */
+  dirty: z.array(z.string().max(500)).max(30).catch([]).default([]),
+  dirtyMore: z.coerce.number().int().min(0).catch(0).default(0),
+  /** 依赖锁文件最近一次改动的提交 */
+  lock: z
+    .object({ file: str(200), hash: str(40), title: str(300), date: str(40) })
+    .optional()
+    .catch(undefined),
+})
+export type BugEnv = z.infer<typeof BugEnv>
+
 export const Diagnosis = z.object({
   ...BugCaseFields,
   /** 旧数据没有：按 confirmed 推（phaseOf） */
@@ -418,6 +449,8 @@ export const Diagnosis = z.object({
   fixFiles: z.array(FixFile).default([]),
   /** 用户取消修复后删临时日志的进度（shared/bug-cleanup.ts）：Agent 删、面板核对，通过了才关闭报告 */
   cleanup: CleanupState.optional().catch(undefined),
+  /** 环境（面板自动采集）：交第一份报告时取，后面几份沿用同一份（shared/bug-env.ts）；旧报告没有 */
+  env: BugEnv.optional().catch(undefined),
 })
 export type Diagnosis = z.infer<typeof Diagnosis>
 
