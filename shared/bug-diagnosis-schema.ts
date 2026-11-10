@@ -223,6 +223,14 @@ export const BugCaseFields = {
   timeline: z.array(BugTimelineItem).catch([]).default([]),
   attribution: BugAttribution.optional().catch(undefined),
   rating: BugRating.optional().catch(undefined),
+  /**
+   * 查出来不用改代码（分析稿 B5）：是配置、数据、本来就这么设计、用法不对或外部依赖的问题。
+   * 根因那一版带上它，用户同意后不再出修复方案，按 how 告诉用户怎么处理后直接收尾
+   */
+  noFix: z
+    .object({ kind: z.enum(['config', 'data', 'design', 'usage', 'external']).catch('config'), how: str(2000) })
+    .optional()
+    .catch(undefined),
   consistency: z
     .array(z.object({ observation: str(1000), explanation: str(2000) }))
     .catch([])
@@ -439,6 +447,14 @@ export const BugCase = z.object({
   verify: str(4000),
   ...BugCaseFields,
   result: BugResult.optional().catch(undefined),
+  /**
+   * 交报告被面板连续退回的次数（分析稿 B8）：从用户最近一条消息算起，交成功清零。
+   * total 是这个 Bug 一共被退回几次（流程数据用）；since 是开始计数时用户最后一条消息的 id
+   */
+  rejects: z
+    .object({ n: z.number().int().catch(0), total: z.number().int().catch(0), since: z.string().catch('') })
+    .optional()
+    .catch(undefined),
   updatedAt: z.string().optional(),
 })
 export type BugCase = z.infer<typeof BugCase>

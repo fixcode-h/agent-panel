@@ -753,3 +753,37 @@ test('论证的日志一次加够（用户 2026-11-06 定）：至少两个假�
     ),
   )
 })
+
+test('连续退回（分析稿 B8）：同一段里第 3 次让它停下交给用户换模型；用户再发话重新数，交成功清零', () => {
+  const tk = bugTask({ messages: [{ id: 'u1', role: 'user', text: '查一下' }] as Task['messages'] })
+  const bad = () => submitDiagnosis(tk, input({ phase: 'cause', symptom: '' }), id)
+  assert.match(bad().info, /第 1 次被退回/)
+  assert.match(bad().info, /第 2 次被退回/)
+  assert.match(bad().info, /连续第 3 次被退回.*end_turn（outcome: blocked）.*换一个能力更强的模型/s)
+  assert.deepEqual(tk.bugCase?.rejects, { n: 3, total: 3, since: 'u1' })
+  tk.messages.push({ id: 'u2', role: 'user', text: '换了模型，继续' } as Task['messages'][number])
+  assert.match(bad().info, /第 1 次被退回/, '用户发了新消息：重新数')
+  ok(submitDiagnosis(tk, input({ phase: 'cause' }), id))
+  assert.deepEqual(tk.bugCase?.rejects, { n: 0, total: 4, since: 'u2' }, '交成功清零，总数留着')
+  // Agent 不能自己写退回次数
+  updateBugCase(tk, { rejects: { n: 0, total: 0, since: '' } } as unknown as DiagnosisInput)
+  assert.equal(tk.bugCase?.rejects?.total, 4)
+})
+
+test('不用改代码（分析稿 B5）：根因带 noFix，同意后不交方案、只放行删临时日志，没改代码就能收尾', () => {
+  const tk = bugTask()
+  agreeCause(tk, { noFix: { kind: 'config', how: '把 retry.max 改成 3' } } as Partial<DiagnosisInput>)
+  const d = tk.diagnoses!.at(-1)!
+  assert.equal(bugStage(tk), '收尾')
+  assert.deepEqual(editScope(tk.diagnoses!), { files: [] })
+  assert.equal(diagnosisGate(tk, []), '')
+  assert.match(diagnosisGate(tk, ['web/src/lib/login.ts']), /不用改代码.*login\.ts/)
+  const md = diagnosisMarkdown(d, undefined, { list: tk.diagnoses })
+  assert.match(md, /不用改代码：改配置/)
+  assert.match(md, /怎么处理（不用改代码）[\s\S]*retry\.max 改成 3/)
+  // 传 {} 去掉：之后照常要交修复方案
+  const tk2 = bugTask()
+  ok(updateBugCase(tk2, { noFix: { kind: 'config', how: 'x' } } as unknown as DiagnosisInput))
+  ok(updateBugCase(tk2, { noFix: {} } as unknown as DiagnosisInput))
+  assert.equal(tk2.bugCase?.noFix, undefined)
+})

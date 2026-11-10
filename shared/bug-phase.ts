@@ -5,6 +5,7 @@
  * 交报告、确认、收尾核对的入口在 bug-diagnosis.ts。交给 Agent 的话是提示词，不翻译
  */
 import type { BugCase, BugPhase, Diagnosis, DiagnosisNote } from './bug-diagnosis-schema.ts'
+import { t } from './i18n.ts'
 
 export const normPath = (p: string) => p.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
 
@@ -55,6 +56,19 @@ export function roundOf(d: Diagnosis, list: Diagnosis[]): number {
 /** 最后一版论证或根因（判断能不能往方案走） */
 const lastCore = (list: Diagnosis[]) =>
   [...list].reverse().find((d) => phaseOf(d) === 'evidence' || phaseOf(d) === 'cause')
+
+/** 这一版结论是「不用改代码」（分析稿 B5）：只看根因那一版带没带 noFix */
+export const noFixOf = (d: Pick<Diagnosis, 'noFix' | 'phase' | 'confirmed'> | undefined) =>
+  d && phaseOf(d) === 'cause' && d.noFix?.how.trim() ? d.noFix : undefined
+
+/** 不用改代码的几类在界面上的说法 */
+export const NOFIX_TEXT = (): Record<NonNullable<Diagnosis['noFix']>['kind'], string> => ({
+  config: t('改配置'),
+  data: t('处理数据'),
+  design: t('本来就是这么设计的'),
+  usage: t('用法不对'),
+  external: t('外部依赖的问题'),
+})
 
 /** 交方案要先有用户同意的根因：最后一版论证 / 根因是用户同意了的根因；旧数据里确认过的方案也算 */
 export function causeAgreed(list: Diagnosis[]): boolean {
@@ -180,6 +194,8 @@ export function editScope(list: Diagnosis[]): { files: string[] } | { deny: stri
       deny: `用户给了第 ${v} 版要的日志：先分析，再交报告（还没定论交 phase: evidence 继续论证，证实了交 phase: cause）。`,
     }
   }
+  // 不用改代码：只放行删临时日志
+  if (phase === 'cause' && noFixOf(d)) return { files: logFilesOf(list) }
   if (phase === 'cause')
     return { deny: `用户同意了第 ${v} 版的根因：先交 phase: plan 的修复方案，用户确认后再改文件。` }
   const plan = lastPlan(list)
@@ -250,6 +266,11 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}$
 - 日志计划里的每一处都加上（不挑几处先加），只在日志计划里的文件加，统一前缀 \`[排查-<主题>]\`，打出计划里写的值，不改任何逻辑。
 - 加完能自己复现（跑测试、跑命令）就自己跑，分析后再交报告（还没定论交 phase: evidence，证实了交 phase: cause）。
 - 自己复现不了：调用 request_logs 写清复现步骤、日志在哪、过滤条件，然后结束这一轮，等用户贴日志。${notes}${overall}`
+  if (phase === 'cause' && noFixOf(d))
+    return `用户同意了第 ${v} 版的结论：不用改代码（${noFixOf(d)!.how.trim().slice(0, 300)}）。
+- 不要改任何代码；在回复里按这个结论一步步告诉用户怎么处理（改哪项配置、怎么处理数据、正确的用法）。
+- ${CLEANUP}
+- 然后请父对话收尾（submit_merge），tests 写「不用改代码，没有要跑的测试」。${notes}${overall}`
   if (phase === 'cause')
     return `用户同意了第 ${v} 版的根因。现在设计修复方案，交 phase: plan：影响面、至少两个有实质区别的修法和五项比较、选定和理由、要改的文件、验证计划；模块已有日志体系的，修改处要留哪些正式日志也写进方案。用户确认之前不改文件。${notes}${overall}`
   if (phase === 'plan')

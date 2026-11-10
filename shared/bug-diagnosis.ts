@@ -31,6 +31,7 @@ import {
   lastPlan,
   logFilesOf,
   nextRev,
+  noFixOf,
   normPath,
   outOfPlan,
   PHASE_TEXT,
@@ -56,7 +57,8 @@ type DiagTask = Pick<Task, 'bug' | 'diagnoses' | 'messages' | 'changes' | 'bugCa
 export type DiagnosisInput = Record<string, unknown>
 
 /** 档案里能写的字段：只认这些，别的键忽略 */
-const CASE_KEYS = Object.keys(BugCase.shape).filter((k) => k !== 'updatedAt')
+// rejects 是面板记的退回次数，不让 Agent 写
+const CASE_KEYS = Object.keys(BugCase.shape).filter((k) => k !== 'updatedAt' && k !== 'rejects')
 
 /** 原始参数里写了的档案字段（没写的不动草稿里已有的） */
 const picked = (input: DiagnosisInput) =>
@@ -67,6 +69,8 @@ const mergeCase = (task: Pick<Task, 'bugCase'>, input: DiagnosisInput) => {
   const c = BugCase.parse({ ...(task.bugCase ?? {}), ...picked(input) })
   // 只写了「具体改动」没写 files：要改的文件按它补，收尾核对照样有依据
   if (!c.files.length && c.changes.length) c.files = c.changes.map((x) => x.file).filter(Boolean)
+  // noFix 传 {}（how 是空的）就是去掉：之前判成不用改代码、后来发现要改
+  if (c.noFix && !c.noFix.how.trim()) c.noFix = undefined
   return c
 }
 
@@ -311,7 +315,7 @@ export function bugStage(task: Pick<Task, 'bug' | 'bugCase' | 'diagnoses'>): str
       const round = list.filter((x) => phaseOf(x) === 'evidence').length
       return t('论证 · 第 {n} 轮', { n: round })
     }
-    if (phase === 'cause') return d.status === 'approved' ? t('修复设计') : t('根因')
+    if (phase === 'cause') return d.status === 'approved' ? (noFixOf(d) ? t('收尾') : t('修复设计')) : t('根因')
     if (phase === 'plan') return d.status === 'approved' ? t('修复') : t('修复设计')
     if (phase === 'fix') return d.status === 'approved' ? t('验证') : t('修复')
     return d.status === 'questioned' ? t('验证') : t('收尾')
@@ -374,11 +378,47 @@ export function updateBugCase(
  * 交一版报告：草稿合上这次交的内容，按阶段、级别检查后冻结成新的一版，上一版作废，等用户（不跟「提问」开关走）。
  * 返回给 Agent 的话；不合格时 ok 为 false、什么都不改
  */
+/** 同一段（用户最近一条消息以来）连续退回几次就停下来交给用户（分析稿 B8） */
+export const REJECT_MAX = 3
+
+/**
+ * 交诊断报告。被面板退回时记一次（rejects）：便宜模型交不出合格报告时会一直来回改，
+ * 连续 REJECT_MAX 次就让它停下来、用 end_turn（blocked）交给用户换模型，不再无限重试。
+ * 次数从用户最近一条消息算起：用户换了模型、说了「继续」，重新给它机会；交成功清零
+ */
 export function submitDiagnosis(
   task: DiagTask,
   input: DiagnosisInput,
   newId: () => string,
   now = new Date().toISOString(),
+  src?: BugSource,
+): { ok: boolean; info: string; version?: number } {
+  const r = submitOnce(task, input, newId, now, src)
+  if (!task.bug || task.diagnoses?.at(-1)?.status === 'cancelled') return r
+  const since = [...task.messages].reverse().find((m) => m.role === 'user' && !m.panel)?.id ?? ''
+  const prev = task.bugCase?.rejects
+  const base = task.bugCase ?? BugCase.parse({})
+  if (r.ok) {
+    task.bugCase = { ...base, rejects: prev ? { ...prev, n: 0 } : undefined }
+    return r
+  }
+  const n = prev && prev.since === since ? prev.n + 1 : 1
+  task.bugCase = { ...base, rejects: { n, total: (prev?.total ?? 0) + 1, since } }
+  if (n < REJECT_MAX)
+    return { ...r, info: `${r.info}\n\n（这是第 ${n} 次被退回，连续 ${REJECT_MAX} 次会停下来交给用户。）` }
+  return {
+    ...r,
+    info:
+      `${r.info}\n\n这已经是连续第 ${n} 次被退回。不要再交了：调用 end_turn（outcome: blocked），` +
+      `need 写「诊断报告连续 ${n} 次没通过面板核对（最后一次：缺什么），建议换一个能力更强的模型接着查」，然后结束这一轮。`,
+  }
+}
+
+function submitOnce(
+  task: DiagTask,
+  input: DiagnosisInput,
+  newId: () => string,
+  now: string,
   src?: BugSource,
 ): { ok: boolean; info: string; version?: number } {
   if (!task.bug)
@@ -422,7 +462,7 @@ export function submitDiagnosis(
   if (prev && (prev.status === 'pending' || prev.status === 'questioned')) prev.status = 'superseded'
   const version = (prev?.version ?? 0) + 1
   const { rev, overturned } = nextRev(list, phase)
-  const { result, updatedAt: _u, ...body } = c
+  const { result, updatedAt: _u, rejects: _r, ...body } = c
   const files =
     phase === 'evidence'
       ? evidenceFiles(c)
@@ -712,6 +752,13 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
   if (d.status === 'questioned') return `没有请求收尾：用户对第 ${v} 版提了意见，先逐条处理、改好再交，等用户确认。`
   if (d.status === 'cancelled') return `没有请求收尾：${closedOrCleaning(d, v)}`
   const phase = phaseOf(d)
+  // 用户同意了「不用改代码」：除了删临时日志什么都不该改（临时日志删没删干净由 submitMerge 另查）
+  if (phase === 'cause' && d.status === 'approved' && noFixOf(d)) {
+    const extra = outOfPlan(changed, logFilesOf(list))
+    return extra.length
+      ? `没有请求收尾：用户同意的结论是不用改代码，但这些文件改了：${extra.join('、')}。改回去再收尾。`
+      : ''
+  }
   if (phase === 'evidence' || phase === 'cause')
     return '没有请求收尾：还没有用户确认的修复方案。按流程交根因（phase: cause）、修复方案（phase: plan），确认后再修。'
   if (phase === 'plan')

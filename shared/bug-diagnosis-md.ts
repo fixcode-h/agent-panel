@@ -16,7 +16,7 @@ import {
   fillDiagnosis,
   type DiagnosisCard,
 } from './bug-diagnosis-card.ts'
-import { causeInPlan, KIND_TEXT, logFilesOf, phaseOf } from './bug-phase.ts'
+import { causeInPlan, KIND_TEXT, logFilesOf, NOFIX_TEXT, noFixOf, phaseOf } from './bug-phase.ts'
 import { codeTerms } from './bug-terms.ts'
 import { t } from './i18n.ts'
 import { alert, at, px, sec, table } from './bug-md.ts'
@@ -367,6 +367,8 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     main = [
       ...head,
       sec(rootTitle, root),
+      // 不用改代码（分析稿 B5）：怎么处理放在根因下面，用户同意的就是这一段
+      sec(t('怎么处理（不用改代码）'), noFixOf(d) ? `**${NOFIX_TEXT()[d.noFix!.kind]}**\n\n${px(d.noFix!.how)}` : ''),
       sec(t('期望和实际'), expectMd(d)),
       sec(t('证据链'), chainOf(d)),
       sec(t('原文'), quotes),
@@ -380,8 +382,10 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
             sec(t('影响面和验证'), impact),
             sec(t('影响和风险'), alert('warning', px(d.risk))),
           ]
-        : // 提前写好的修法只是草案，这一版只确认根因：只留一行提示，不摆出来（实测用户以为点「同意根因」就开始修）
-          [d.options.length || d.fix.trim() ? t('已经想好修法，同意根因后单独交一版方案给你确认。') : '']),
+        : noFixOf(d)
+          ? []
+          : // 提前写好的修法只是草案，这一版只确认根因：只留一行提示，不摆出来（实测用户以为点「同意根因」就开始修）
+            [d.options.length || d.fix.trim() ? t('已经想好修法，同意根因后单独交一版方案给你确认。') : '']),
       earlySec,
     ]
     back = [

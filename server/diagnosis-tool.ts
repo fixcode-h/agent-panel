@@ -71,6 +71,19 @@ const CASE_PROPS = {
     },
     required: ['category', 'how'],
   },
+  noFix: {
+    type: 'object',
+    description:
+      '查下来不用改代码时写（只在 phase: cause 用）：问题出在配置、数据、本来就这么设计、用法不对或外部依赖。用户同意后不再交修复方案，按 how 告诉用户怎么处理就收尾。之前写过、后来发现要改代码时传 {} 去掉',
+    properties: {
+      kind: {
+        type: 'string',
+        enum: ['config', 'data', 'design', 'usage', 'external'],
+        description: 'config 改配置、data 处理数据、design 本来就是这么设计的、usage 用法不对、external 外部依赖的问题',
+      },
+      how: text('用户怎么处理：改哪项配置、怎么处理数据、正确的用法是什么，一步一行'),
+    },
+  },
   rating: {
     type: 'object',
     description:

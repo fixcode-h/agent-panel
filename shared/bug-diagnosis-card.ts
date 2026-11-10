@@ -5,7 +5,7 @@
  * 审阅弹窗画成卡片（web/src/components/tasks/DiagnosisCard.tsx），别处（测试、整份 Markdown）用 cardMarkdown
  */
 import type { BugBlame, Diagnosis } from './bug-diagnosis-schema.ts'
-import { causeInPlan, logFilesOf, normPath, outOfPlan, phaseOf } from './bug-phase.ts'
+import { causeInPlan, logFilesOf, NOFIX_TEXT, noFixOf, normPath, outOfPlan, phaseOf } from './bug-phase.ts'
 import { codeTerms } from './bug-terms.ts'
 import { t } from './i18n.ts'
 
@@ -91,7 +91,7 @@ export function nextStep(d: Diagnosis, withCause = false): string {
   if (d.status === 'approved')
     return {
       evidence: t('你同意了，它在加日志'),
-      cause: t('你同意了根因，它在设计修复方案'),
+      cause: noFixOf(d) ? t('你同意了：不用改代码，它在告诉你怎么处理并收尾') : t('你同意了根因，它在设计修复方案'),
       plan: withCause ? t('你同意了根因和方案，它在修') : t('你确认了方案，它在修'),
       fix: t('你确认了修复，它在验证'),
       verify: t('你结束了验证，它在收尾'),
@@ -99,7 +99,9 @@ export function nextStep(d: Diagnosis, withCause = false): string {
   if (d.awaiting) return t('按下面的步骤复现一次，把日志贴在右边，点「交日志，继续分析」')
   return {
     evidence: t('同意加日志，它只在日志计划里的文件加临时日志、不改逻辑；手上已有日志可以直接贴在右边'),
-    cause: t('同意根因，它开始设计修复方案；不同意就选中文字标出疑问，点「否决」'),
+    cause: noFixOf(d)
+      ? t('它查下来不用改代码：同意这个结论，它告诉你怎么处理后收尾；不同意就选中文字标出疑问，点「否决」')
+      : t('同意根因，它开始设计修复方案；不同意就选中文字标出疑问，点「否决」'),
     plan: withCause ? t('根因和修复方案一起确认，确认了它才开始改代码') : t('确认方案，它才开始改代码'),
     fix: t(
       '看下面改了哪些代码、为什么这么改：没问题就确认，它开始验证；对哪几行有疑问就选中标注，它逐条判断后改代码或给出依据',
@@ -146,6 +148,8 @@ function headlineOf(d: Diagnosis, withCause: boolean): string {
   const plan = opt
     ? t('选方案 {id}：{title}', { id: opt.id, title: codeTerms(opt.title) })
     : codeTerms(first(d.fix)) || t('修复方案')
+  const nf = noFixOf(d)
+  if (phase === 'cause' && nf) return `${root}\n\n${t('不用改代码：{kind}', { kind: NOFIX_TEXT()[nf.kind] })}`
   if (phase === 'cause') return root
   if (phase === 'plan') return withCause ? `${root}\n\n${plan}` : plan
   const r = d.result
@@ -159,6 +163,7 @@ function tagsOf(d: Diagnosis, files: number): DiagnosisCard['tags'] {
   const tags: DiagnosisCard['tags'] = [{ text: level, tone: 'neutral' }]
   if (phase === 'evidence') tags.push({ text: t('根因未证实'), tone: 'warning' })
   else tags.push(d.confirmed ? { text: t('已证实'), tone: 'success' } : { text: t('根因未证实'), tone: 'danger' })
+  if (noFixOf(d)) tags.push({ text: t('不用改代码'), tone: 'accent' })
   if (phase === 'plan' && files) tags.push({ text: t('改 {n} 个文件', { n: files }), tone: 'neutral' })
   return tags
 }
