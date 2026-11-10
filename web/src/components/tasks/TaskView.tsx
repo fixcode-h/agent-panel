@@ -56,6 +56,7 @@ import {
   type TaskSeenResult,
 } from '@shared/schema'
 import { ChatModelPicker, RoleModelBadge, type ChatRun } from './ChatModelPicker'
+import { RetryModelMenu } from './RetryModelMenu'
 import { blockedStep, flowUnfinished, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childSeenLocally,
@@ -1610,7 +1611,7 @@ export function TaskView({
           {byCli ? (
             <ChatModelPicker value={chatRun} onChange={changeRun} />
           ) : (
-            chatAgent && <RoleModelBadge agent={chatAgent} />
+            chatAgent && <RoleModelBadge agent={withTaskModel(chatAgent, task)} />
           )}
           {task.mode === 'workflow' && (
             <span className="min-w-0 truncate pl-1 text-xs text-subtle">
@@ -1656,6 +1657,10 @@ export function TaskView({
               {resuming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
               {task.status === 'failed' ? t('重试') : t('继续执行')}
             </Button>
+          )}
+          {/* 失败后换个模型重发这一轮（用户自己点的）；只给对话，工作流节点的模型跟着节点走 */}
+          {!working && task.status === 'failed' && task.mode === 'chat' && canResume && (
+            <RetryModelMenu task={task} agent={chatAgent} disabled={resuming} onDone={apply} />
           )}
         </>
       }

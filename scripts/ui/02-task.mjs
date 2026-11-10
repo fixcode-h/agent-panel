@@ -1882,4 +1882,56 @@ await runShard(import.meta.filename, async (api) => {
       })
     }
   }
+  // 失败后「换个模型重试」（分析稿 A7）：这一轮失败时，「重试」旁边能换成这个 CLI 下的另一个模型重发；
+  // 选了之后对话离开失败、重新执行，列表里不列正在用的那个模型
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      task.status = 'failed'
+      task.working = false
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    // 整页导航：只改 hash 会被内存里的演示数据盖回去（见 docs/lessons/ui-check.md）
+    await p.goto(base)
+    await backToTask()
+    const retry = p.getByRole('button', { name: '换个模型重试' })
+    if (
+      !(await retry.waitFor({ timeout: 8000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('换个模型重试：失败的对话上没有「换个模型重试」按钮')
+    else {
+      if (!(await p.getByRole('button', { name: '重试', exact: true }).count()))
+        errors.push('换个模型重试：原来的「重试」按钮不该被换掉')
+      if (await retry.isDisabled()) errors.push('换个模型重试：按钮是灰的（这个 CLI 下应该有别的模型可选）')
+      await retry.click()
+      const menu = p.getByRole('menu')
+      await menu.waitFor({ timeout: 5000 }).catch(() => errors.push('换个模型重试：点了没有弹出模型列表'))
+      const items = menu.getByRole('menuitem')
+      if (!(await items.count())) errors.push('换个模型重试：列表里一个模型都没有')
+      await check(p, '任务-换个模型重试', ['的其他模型（现在是'])
+      // 列表不列正在用的模型：标题里写的「现在是 X」不能再出现在选项里
+      const head = (await menu.locator('p').first().textContent()) ?? ''
+      const now = head.match(/现在是 (.+)）/)?.[1] ?? ''
+      const names = await items.allTextContents()
+      if (now && names.some((x) => x.startsWith(now) && x.slice(now.length).match(/^\s|^$/)))
+        errors.push(`换个模型重试：列表里还列着正在用的模型 ${now}`)
+      if (await items.count()) {
+        await items.first().click()
+        await retry
+          .waitFor({ state: 'detached', timeout: 8000 })
+          .catch(() => errors.push('换个模型重试：选了模型后对话没有离开失败状态（按钮还在）'))
+        await check(p, '任务-换个模型重试-已重发')
+      }
+    }
+    // 改回现场
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.reload()
+    await backToTask()
+  }
 })

@@ -19,6 +19,7 @@ import { EN_TOOL_NAMES } from './en/tool-names.ts'
 import { EN_SPEECH } from './en/speech.ts'
 import { EN_HOOKS } from './en/hooks.ts'
 import { EN_CLI_MORE } from './en/cli-more.ts'
+import { EN_NOTIFY_CHANNELS } from './en/notify-channels.ts'
 import { EN_EXPERIENCE } from './en/experience.ts'
 import { EN_FILE_REF } from './en/file-ref.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
@@ -66,6 +67,7 @@ export const EN: Record<string, string> = {
   ...EN_SPEECH,
   ...EN_HOOKS,
   ...EN_CLI_MORE,
+  ...EN_NOTIFY_CHANNELS,
   ...EN_EXPERIENCE,
   ...EN_FILE_REF,
   ...EN_PLUGINS,

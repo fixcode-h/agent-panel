@@ -66,6 +66,12 @@ let enableUrl = ''
 let tsCache: { key: string; at: number; data: TailscaleInfo } | null = null
 let download: { running: boolean; percent: number; error: string } | null = null
 
+/**
+ * 现在能从外面打开面板的地址：外网访问已经连上才有，否则为空（关掉、连接中、出错时 state 都不是 running）。
+ * 通知里的直达链接用它（见 server/notify-channels.ts）；不带访问令牌：链接会发到第三方的群里，令牌不能跟着出去
+ */
+export const remotePublicUrl = () => (state === 'running' ? url : '')
+
 /** 交给外网专用端口的请求处理函数（和主端口同一个，见 server/index.ts） */
 export function configureRemote(fetch: FetchHandler) {
   handler = fetch
