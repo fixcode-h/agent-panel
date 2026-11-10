@@ -1,4 +1,5 @@
 import type { ShellReport } from '@shared/shells'
+import type { BugBrief } from '@shared/bug-overview'
 import type { SpeedRow } from '@shared/api-speed'
 import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
@@ -614,6 +615,8 @@ export const api = {
     request<TaskJobView>(`/tasks/${taskId}/jobs/${encodeURIComponent(jobId)}`),
   /** 和实时推送的整份一样：更早的长工具输出只给开头（见 shared/task.ts 的 liteMessages） */
   taskLite: (id: string) => request<Task>(`/tasks/${id}?lite=1`),
+  /** 总览页 Bug 视图：所有用户报的 Bug 的精简行（含子对话，见 shared/bug-overview.ts） */
+  taskBugs: () => request<BugBrief[]>('/tasks/bugs'),
   /** 每个对话的磁盘占用 */
   taskDisk: () => request<TaskDiskItem[]>('/tasks/disk'),
   /** 保活中的会话（回复完 CLI 还留着等下一句）和各自进程的内存 */
